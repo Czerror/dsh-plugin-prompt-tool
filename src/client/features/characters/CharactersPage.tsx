@@ -3,7 +3,7 @@
  *  （角色设定 / 系统提示 / 开场白 / 提示词库 / 采样参数）合并进当前激活预设，
  *  已导入的角色卡显示状态并可一键移除。 */
 import { memo, useEffect, useRef, useState, type ReactNode } from 'react'
-import { IconFolderOpenOutline16, IconTrashOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconFolderOpenOutlineRegular, IconTrashOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives'
 import { bridgeCall } from '../../data/bridge-client.ts'
 import { previewAsset, commitAsset } from '../../data/asset-import.ts'
 import { useImportPreviewFlow } from '../../data/use-import-preview-flow.ts'
@@ -180,7 +180,7 @@ export const CharactersPage = memo(function CharactersPage(props: { store: Promp
                     <button type="button" className={ui.presetIconButton}
                       aria-label={t('characters.openDir.aria', { name: card.name })}
                       onClick={() => void openLocation(card.id)}>
-                      <IconFolderOpenOutline16 />
+                      <IconFolderOpenOutlineRegular />
                     </button>
                   </HintTooltip>
                   {confirming && (
@@ -194,7 +194,7 @@ export const CharactersPage = memo(function CharactersPage(props: { store: Promp
                       <button type="button" className={ui.presetIconButton}
                         aria-label={t('characters.delete.aria', { name: card.name })}
                         onClick={() => setConfirmingDelete(card.id)}>
-                        <IconTrashOutline16 />
+                        <IconTrashOutlineRegular />
                       </button>
                     </HintTooltip>
                   )}

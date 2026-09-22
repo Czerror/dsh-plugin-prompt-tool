@@ -11,7 +11,7 @@ import { fileURLToPath } from 'node:url'
 import { join } from 'node:path'
 import { isDeepStrictEqual } from 'node:util'
 import { parse } from 'yaml'
-import { OFFICIAL_UPSTREAM, PRESET_SOURCE_PATH, verifyLatestCompositionSource } from '../../scripts/composition-source.mjs'
+import { OFFICIAL_UPSTREAM, PRESET_SKILLS_PATH, PRESET_SOURCE_PATH, verifyLatestCompositionSource } from '../../scripts/composition-source.mjs'
 
 // —— 组合库结构（原 composition-modules.test.mjs） ——
 
@@ -69,9 +69,9 @@ test('组合源与生成库职责分离：本地模块不复制到 library', () 
 
 test('模块来源可追溯：官方切块、本地源和通用 instruction-hint 各有明确归属', () => {
   const official = read('engine/compositions/library/agent-instructions.yml')
-  assert.match(official, /# source: .*agent-presets\/presets\/standard\/agent\.cordis\.yml/)
+  assert.match(official, /# source: .*web-app\/presets\/standard\.patch\.yml/)
   const ptc = read('engine/compositions/library/delegation-ptc.yml')
-  assert.match(ptc, /# source: .*agent-presets\/presets\/ptc\/agent\.cordis\.yml/)
+  assert.match(ptc, /# source: .*web-app\/presets\/ptc\.patch\.yml/)
   const local = read('engine/compositions/source/local/instruction-hint.yml')
   assert.match(local, /source\/local\/instruction-hint\.yml/)
   assert.ok(existsSync(join(root, 'engine/instruction-hint.mjs')), 'instruction-hint 必须位于通用 engine 根目录')
@@ -158,7 +158,7 @@ const fakeGit = (head = sha, dirty = '', remote = `${sha}\trefs/heads/master`) =
   }
   assert.deepEqual(args.slice(0, 2), ['-C', repo])
   if (args[2] === 'rev-parse') return head
-  assert.deepEqual(args.slice(2), ['status', '--porcelain', '--untracked-files=all', '--', PRESET_SOURCE_PATH])
+  assert.deepEqual(args.slice(2), ['status', '--porcelain', '--untracked-files=all', '--', PRESET_SOURCE_PATH, PRESET_SKILLS_PATH])
   return dirty
 }
 
@@ -184,7 +184,7 @@ test('官方来源：网络核验失败不能回落旧版本或继续生成', ()
 const ROOT = fileURLToPath(new URL('../..', import.meta.url))
 /** 离线复验最近一次同步的上游快照，不固定发布版本或请求实时网络。 */
 const FIXTURE = join(ROOT, 'test', 'fixtures', 'dsh', 'current')
-const FIXTURE_PRESETS = join(FIXTURE, 'packages', 'preset', 'agent-presets', 'presets')
+const FIXTURE_PRESETS = join(FIXTURE, PRESET_SOURCE_PATH)
 const SCRIPT = join(ROOT, 'scripts', 'rebuild-composition.mjs')
 
 function fixture() {
@@ -230,11 +230,11 @@ test('当前上游快照与 PROVENANCE 指纹一致，提交可更新但不能�
   }
   assert.ok(listed.size >= 4, 'PROVENANCE 必须列出全部 fixture 文件')
 
-  const actual = listFixtureFiles(FIXTURE_PRESETS)
+  const actual = listFixtureFiles(join(FIXTURE, 'packages'))
   for (const relative of actual) {
     const entry = listed.get(relative)
     assert.ok(entry !== undefined, `${relative} 未登记在 PROVENANCE.md`)
-    const bytes = readFileSync(join(FIXTURE_PRESETS, relative))
+    const bytes = readFileSync(join(FIXTURE, 'packages', relative))
     assert.equal(bytes.length, entry.size, `${relative} 字节数与固定输入不符`)
     assert.equal(createHash('sha256').update(bytes).digest('hex'), entry.sha256, `${relative} 内容与固定输入不符`)
   }
@@ -253,7 +253,7 @@ test('分发库记录当前上游快照的实际提交，不沿用旧发布版�
   for (const file of readdirSync(library).filter((name) => name.endsWith('.yml'))) {
     const source = readFileSync(join(library, file), 'utf8')
     assert.match(source, new RegExp(`^# commit: ${commit}$`, 'm'), file)
-    assert.match(source, /^# source: master\/packages\/preset\/agent-presets\/presets\//m, file)
+    assert.match(source, /^# source: master\/packages\/bundle\/web-app\/presets\//m, file)
   }
 })
 
@@ -276,7 +276,7 @@ test('rebuild-composition：动态发现官方预设并拒绝缺行、重复和�
     const generated = readdirSync(library).filter((name) => name.endsWith('.yml'))
     assert.equal(generated.length, 24)
     const upstreamRows = ['standard', 'minimal', 'ptc', 'cordis'].flatMap((name) =>
-      parse(readFileSync(join(FIXTURE_PRESETS, name, 'agent.cordis.yml'), 'utf8'), { logLevel: 'silent' }))
+      parse(readFileSync(join(FIXTURE_PRESETS, `${name}.patch.yml`), 'utf8'), { logLevel: 'silent' })[0].insert[0].config.plugins)
     for (const name of generated) {
       const rows = parse(readFileSync(join(library, name), 'utf8'), { logLevel: 'silent' })
       assert.equal(rows.length, 1)
@@ -287,7 +287,7 @@ test('rebuild-composition：动态发现官方预设并拒绝缺行、重复和�
     const present = readFileSync(join(library, 'tool-present.yml'), 'utf8')
     // 临时上游目录不带 PROVENANCE.md，来源行只保证指向 minimal 之外的官方基型；
     // tag/commit 由上面「固定上游 fixture 与 PROVENANCE 指纹一致」用例锁定。
-    assert.match(present, /^# source: .*\/packages\/preset\/agent-presets\/presets\/standard\/agent\.cordis\.yml$/m)
+    assert.match(present, /^# source: .*\/packages\/bundle\/web-app\/presets\/standard\.patch\.yml$/m)
 
     const before = readFileSync(join(library, 'tool-web.yml'), 'utf8')
     const file = join(root, 'preset', 'pt-standard', 'preset.yml')
@@ -323,9 +323,8 @@ test('rebuild-composition：缺失官方预设或必要技能资产时 fail loud
     assert.notEqual(missingAsset.status, 0)
     assert.match(missingAsset.stderr + missingAsset.stdout, /required asset missing/)
 
-    const extra = join(upstream, 'packages', 'preset', 'agent-presets', 'presets', 'new-preset')
-    mkdirSync(extra, { recursive: true })
-    writeFileSync(join(extra, 'agent.cordis.yml'), '- id: demo\n  name: demo\n', 'utf8')
+    const extra = join(upstream, PRESET_SOURCE_PATH, 'new-preset.patch.yml')
+    writeFileSync(extra, '- insert: []\n', 'utf8')
     const missingTarget = run(root, upstream)
     assert.notEqual(missingTarget.status, 0)
     assert.match(missingTarget.stderr + missingTarget.stdout, /no local target preset\/pt-new-preset\/preset\.yml/)

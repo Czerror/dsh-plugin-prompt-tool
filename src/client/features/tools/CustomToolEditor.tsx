@@ -1,6 +1,6 @@
 import { useEffect, useId, useRef, useState, type ReactNode } from 'react'
 import clsx from 'clsx'
-import { Button, IconChevronDownOutline14, Menu, Switch } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Button, IconChevronDownOutlineRegular, Menu, Switch } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { FieldDraft } from '../../data/workspace-drafts.ts'
 import { ConfirmDialog } from '../../ui/ConfirmDialog.tsx'
 import { useMenuFocus } from '../../ui/menu-focus.ts'
@@ -176,7 +176,7 @@ export function CustomToolCard(props: {
             </span>
             <span className={styles.configMeta}>{description || t('tools.surface.detail.noDescription')}{chips.length > 1 && ` · ${chips.slice(1).join(' · ')}`}</span>
           </span>
-          <IconChevronDownOutline14 className={clsx(styles.chevron, props.expanded && styles.chevronOpen)} />
+          <IconChevronDownOutlineRegular className={clsx(styles.chevron, props.expanded && styles.chevronOpen)} />
         </button>
         <div className={styles.configHeaderActions}>
           <fieldset className={styles.cardScopeActions} disabled={props.disabled === true}>

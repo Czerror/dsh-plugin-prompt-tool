@@ -97,7 +97,7 @@ export function orderTriggers(declarations) {
   return list
     .map((declaration, index) => ({ declaration, index }))
     .sort((left, right) => {
-      const delta = left.declaration.channelOrder - right.declaration.channelOrder
+      const delta = (left.declaration.channelOrder ?? 0) - (right.declaration.channelOrder ?? 0)
       return delta !== 0 ? delta : left.index - right.index
     })
     .map((entry) => entry.declaration)
@@ -261,7 +261,7 @@ export function wireTriggerObservers(ctx, triggers, { plugin, warnOnce } = {}) {
 export function mountTriggers(ctx, declarations, { plugin, warnOnce, diagnose } = {}) {
   const warn = typeof warnOnce === 'function' ? warnOnce : () => {}
   const disposers = []
-  const ordered = orderTriggers(declarations).map((raw) => validateTrigger(raw, plugin))
+  const ordered = orderTriggers((Array.isArray(declarations) ? declarations : []).map((raw) => validateTrigger(raw, plugin)))
 
   // 会话态生命周期：共用 `wireTriggerObservers`（与声明路径同一实现）。
   const observer = wireTriggerObservers(ctx, ordered, { plugin, warnOnce: warn })
@@ -271,6 +271,8 @@ export function mountTriggers(ctx, declarations, { plugin, warnOnce, diagnose } 
     const handler = async (...args) => {
       const next = args[args.length - 1]
       const payload = args.slice(0, -1)
+      const result = trigger.phase === 'after-next' ? await next() : undefined
+      const pass = () => trigger.phase === 'after-next' ? result : next()
       let decided
       try {
         decided = await trigger.when(subjectOf(trigger.channel, payload, warn))
@@ -278,11 +280,11 @@ export function mountTriggers(ctx, declarations, { plugin, warnOnce, diagnose } 
         // 判定失败只影响本触发器：告警一次并放行下游（expose-all 语义）。
         warn(`${plugin}: trigger ${trigger.id} predicate failed: ${String(error?.message ?? error)}`)
         diagnose?.step(args, `${trigger.id}@${trigger.channel} predicate=error action=skipped`)
-        return next()
+        return pass()
       }
       if (decided !== true) {
         diagnose?.step(args, `${trigger.id}@${trigger.channel} predicate=miss action=skipped`)
-        return next()
+        return pass()
       }
       diagnose?.step(args, `${trigger.id}@${trigger.channel} predicate=hit phase=${trigger.phase} action=ran`)
       if (trigger.phase === 'before-next') {
@@ -291,7 +293,6 @@ export function mountTriggers(ctx, declarations, { plugin, warnOnce, diagnose } 
         const early = await trigger.do(...payload)
         return early === undefined ? next() : early
       }
-      const result = await next()
       // 返回值同样参与瀑布：这正是裁决类动作（deny / ask / replace / block）的出口
       // ——丢弃它会让「命中却拦不住」，是本文件被 trigger-rebuild 对拍抓到的缺陷。
       const overridden = await trigger.do(...payload, result)

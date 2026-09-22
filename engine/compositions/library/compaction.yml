@@ -1,19 +1,8 @@
 # module: compaction
-# source: master/packages/preset/agent-presets/presets/standard/agent.cordis.yml
-# commit: ddefc45fbc7f8e46dd73185e68295696d1297887
+# source: master/packages/bundle/web-app/presets/standard.patch.yml
+# commit: c36a83ff6bb95e3f82cf79f9be7c724270a8aa61
 # local patches: 0
 
-# ── compaction ──────────────────────────────────────────────────────────────
-
-# `compaction-basic` reads `toolResultPrune` through `ctx.get`, so the pruner must
-# share this realm rather than sit outside it.
-#
-# `tokenMeter` is deliberately NOT in this realm: the meter stays on the HOST
-# plane, and the rows here resolve that one instance. It takes no configuration,
-# keys every fold by Session, and owns the context-meter projection units the
-# browser reads for every session — behind a realm those units would come and go
-# with whichever presets happen to be mounted. What a preset chooses is whether
-# its agent compacts at all, which is `compaction-basic` below.
 - id: compaction
   name: cordis:group
   group: true
@@ -23,10 +12,8 @@
   config:
     - id: compaction-basic
       name: '@deepseek-ai/dsh-compaction-basic'
-
     - id: command-compact
       name: '@deepseek-ai/dsh-command-compact'
-
     - id: tool-result-pruner
       name: '@deepseek-ai/dsh-compaction-tool-result-pruner'
       config:

@@ -1,10 +1,8 @@
 # module: tool-web
-# source: master/packages/preset/agent-presets/presets/standard/agent.cordis.yml
-# commit: ddefc45fbc7f8e46dd73185e68295696d1297887
+# source: master/packages/bundle/web-app/presets/standard.patch.yml
+# commit: c36a83ff6bb95e3f82cf79f9be7c724270a8aa61
 # local patches: 0
 
-# The `web` service and its search provider stay in the host composition; only
-# the model-facing tool is per-session.
 - id: tool-web
   name: '@deepseek-ai/dsh-tool-web'
   config:

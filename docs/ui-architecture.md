@@ -13,7 +13,7 @@
 结构重构遵循以下原则：
 
 - 宿主原子优先：标准按钮、模态框和布局能力优先复用 DSH 官方 primitive。
-- 现有 seam 深化：继续使用 SlotRegistry、SettingsScope、official remote/sessions 和 loopback bridge。
+- 现有 seam 深化：继续使用 SlotRegistry、ConfigForms、official remote/sessions 和 loopback bridge。
 - 领域文件归位：工作台壳、数据层、业务 feature、共享 UI 各自拥有清晰的变化原因。
 - 最小抽象：不为单一实现创建 Button、Card、Tabs、router、状态库或 service/repository 多层包装。
 - 确定性行为：页面顺序、slot 注册、保存保护、键盘操作和错误载荷均由契约测试锁定。
@@ -198,7 +198,7 @@ src/client/index.ts 的 inject 列表是：
 
     locale
     slots
-    settingsScope
+    configForms
     uiWorkspace
     uiSession
     remote
@@ -210,7 +210,7 @@ apply(ctx) 依次构造：
 
 1. locale 字典注册：`ctx.effect(() => registerPromptToolLocale(ctx.locale))` 把 `src/client/locales.ts` 的 zh/en 字典注册进官方命名空间 `prompt-tool`；卸载/重挂由 effect 释放，不重复注册。随后 `ctx.locale.bind(LOCALE_NS)` 得到引用稳定的 `t`。
 2. 连接世代重建：`ctx.on('connection/reset')` 触发一次 `bridgeCall('models', { refresh: true })`，让宿主重连后丢弃陈旧的模型目录缓存；失败静默，不阻塞启动。
-3. prompt-tool SettingsScope transport，用于标准部署设置的 mirror、ensure 和 mutate。
+3. prompt-tool ConfigForms transport：`configForms.get('prompt-tool')` 复用标准部署设置的镜像与写入队列；`mutate` 返回 false 必须显示保存失败，不推进保存基线。
 4. PromptToolHostApi，封装目录选择、打开路径、预设切换、当前会话模型选择与当前会话预设；`currentSessionId()` 经 `session-id-source.ts` 读 `ctx.uiSession.adapter.current` 的作用域绑定——官方在 `0.1.6-alpha.2` 删除了 `SessionListState.current`（当前选中会话已移出 Session Controller，`ISessions` 注释：navigation belongs to view owners），视图层的 selection 均为 private，作用域绑定是唯一公开读取路径。session-model-face 与 session-preset-face 在这里**内联构造**为 `api.sessionModel` / `api.sessionPreset` 字段（不单独成步），前者经 `remote.session.selectModel` 写回，后者只读官方会话投影 `agentPreset`（官方侧会话级预设切换的事实来源，投影缺失时按无记录处理）。
 5. PromptToolWorkbenchFace：controller / api / settings / `t`。
 6. registerWorkbenchSlots(ctx, face)，唯一负责 shell.overlay 悬浮入口与 settings.plugins.tab 的注册。
@@ -322,7 +322,7 @@ workspace-pages.ts 是页面元数据的唯一来源。默认页为 features，�
 | 工作台抽屉开关 | workspace-controller | 工作台实例内存态；刷新回落 |
 | 当前顶层页 | PromptWorkspace | 工作台挂载期；不写 URL 或 localStorage |
 | fields、meta、catalog | usePromptToolStore | 工作台挂载期；打开时重新同步 |
-| 标准设置值 | 官方 SettingsScope | 宿主 mirror 生命周期 |
+| 标准设置值 | 官方 ConfigForms | 宿主 mirror 生命周期 |
 | 当前会话模型 | session-model-face | 官方 sessions projection 生命周期 |
 | 当前会话预设的跟随 | session-preset-face + session-preset-follow | 读官方 sessions projection `agentPreset`；跟随写的是同一份插件预设事实（settings.presetTemplate），不为同一预设重复切换会话 |
 | filter、search、列表展开、页滚动 | workspace-browse-state | 工作台实例期，配置视图按页面/预设区分；异步资源就绪后一次恢复滚动 |
@@ -353,7 +353,7 @@ bootstrap 是首屏聚合请求，不因筛选或输入字符增加 bridge 请�
 
 ### 6.3 纯逻辑与 facade
 
-use-prompt-tool-store.ts 是唯一工作台 facade，负责把 SettingsScope mirror、typed bridge、字段快照、保存队列和 feature actions 组合成 React 可消费状态。可独立测试的逻辑放在以下模块：
+use-prompt-tool-store.ts 是唯一工作台 facade，负责把 ConfigForms mirror、typed bridge、字段快照、保存队列和 feature actions 组合成 React 可消费状态。可独立测试的逻辑放在以下模块：
 
 | 模块 | 责任 |
 |---|---|
@@ -605,7 +605,8 @@ world-book 视图只隐藏工具栏之外的列表主体之外的附加提示，
 - 首屏使用一次 bootstrap 聚合；模型目录惰性加载并缓存。
 - filter/search 只在客户端运行；不引入虚拟列表、dynamic import 或 code splitting 来解决尚未出现的规模问题。
 - UI 分组不建立六个插入点的全局执行顺序；order 只在同一官方 seam 内解释。
-- order 的官方刻度只出现在 `system-section` 与 `runtime-context` 两层的 order 字段旁（只有这两层把 order 交给官方 `section()` / `context()`）：一个「插入到官方位置…」下拉，选中即把该区段的边界值写入 order。它只是**快捷填值入口**——数字输入仍是唯一真相与唯一写入通道，下拉不持有独立草稿、不清空 order、不新增保存队列入口。其余层只显示「本层 order 只决定同层配置的执行顺序，不对应官方装配位置」，不展示任何档位数值。区段边界全部来自 bridge 下发的 `meta.officialOrders`（运行期取自官方服务），客户端不硬编码；服务降级时该字段缺席、下拉不渲染，数字输入照旧。
+- order 的官方刻度只出现在 `system-section` 与 `runtime-context` 两层。数字输入与「插入到官方位置…」共用同一 NumberField 草稿和接受值路径；选择快捷位置同时更新数字、清除该字段错误，不改其他草稿。区段之前使用 `from - 1`，全部之后使用 `max(to) + 1`，避免同值按名称排序导致位置不符。边界来自 bridge 的 `meta.officialOrders`；缺席或空表时只保留数字输入。其余层只显示层内顺序说明。
+- 配置表单保持基础信息、注入规则、作用范围、行为与内容的分区；共享层设置以独立描边折叠区呈现，默认不渲染内部控件。数字与快捷选择具有独立关联标签；窄容器下按单列排列。
 - 当前会话模型始终读取官方 sessions projection，切换始终走 official session.selectModel。
 - 未启用的可选模块保持 opt-in；生成结果、preset 优先级和 bridge 载荷不得因 UI 重构改变。
 

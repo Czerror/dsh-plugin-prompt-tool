@@ -69,7 +69,9 @@ UI fields
 ```
 
 本插件的种子化、预设列表、参数与内容读取、保存、物化及导入／导出／复制／删除，
-均使用官方预设根 `$DSH_HOME/.agent-presets`（`host/paths.ts#DEFAULT_PRESET_DIR`，不可配置）。
+均使用本插件的预设根 `$DSH_HOME/.agent-presets`（`host/paths.ts#DEFAULT_PRESET_DIR`，不可配置）。DSH 0.1.7 起不再自动扫描此目录；插件在物化后向官方 `agentPresets` 注册定义，并随删除、更新和卸载释放注册。已有会话保留其已绑定的 revision。
+
+注册包含仍存在的 `prompt-tool` 历史快照，供旧会话恢复；普通工作台列表继续隐藏该兼容项。注册元数据允许省略名称，排序读取 `preset.yml` 顶层 `order`，不从 `meta.order` 推断。
 该目录不只是输出位置，也是预设定义的读取根；不存在对应定义时回退包内模板，
 不读取其他部署根中的同名用户副本。
 
@@ -463,7 +465,7 @@ ST 转换（convertStToPreset）通过顶层 `persona: { prefix: '', complete: f
 - writer 直接读取手写/导入的 `subagentToolPolicy` 时同样先校验。历史“有段无模块”预设继续装配策略以保留既有授权；`effectiveModules` 和能力卡如实显示该装配，`declaredModules` 保持磁盘事实。显式创建或保存可补齐声明且不覆盖已有策略，删除能力会连段移除。**参数在 ⇒ 装配在**：预设 `params` 里出现登记参数键、或 `moduleConfigs` 里出现该能力的行键时，装配入口（`loadCompositionText`）与模块事实（`resolvePresetModuleFacts`）用同一份派生 `impliedModulesForParams` 自动补齐对应模块——`effectiveModules` 如实反映、`declaredModules` 仍是磁盘事实，组合源自带默认值不算信号。因此不存在"写了参数却长期不生效"的休眠配置，编辑卡也不会因此消失；相应地"移除能力"必须同时删除该能力的显式参数与行配置，否则会被隐含装配立刻拉回。
 - 策略启用后 `subagentModel` 路由、reasoningEffort、maxTokens 与 maxDepth 改写到策略模块，不再只落到被 shadow 的官方工具行。策略文件确实不存在时回落官方委派；现存文件解析或校验失败必须报错，错误文案不能作为缺文件依据。
 - 预览链路：`/subagent-tool-policy-preview` POST 与运行时 `resolveSubagentToolPolicy()` 同一 seam（不重复算法）；预览用 ceiling 工具宇宙。
-- 工具面：`/tool-surface` POST 接受互斥的 `{ sessionId }` 或 `{ presetId }`。前者只读返回当前存活本地 Agent 的 name/description 摘要；后者仅在用户明确选择预设时，经官方 `agentPresets.list()` 白名单、`standingKeyFor()` 和 `tools.schemas(scope)` 懒加载预设有效能力。两者均不下发完整 Schema、大文本或 secrets；PTC 下“预设工具能力”不等于模型 wire 直连工具。
+- 工具面：`/tool-surface` POST 接受互斥的 `{ sessionId }` 或 `{ presetId }`。前者只读当前存活本地 Agent 的 name/description 摘要；后者经官方 `agentPresets.list()` 白名单与 `acquireScope()` 取得当前 revision lease，读取 `tools.schemas(lease.key)` 后在 finally 中释放。两者均不下发完整 Schema、大文本或 secrets；PTC 下预设工具能力不等于模型 wire 直连工具。
 
 ### 独立指令文件来源与指令策略（2026-09-14）
 

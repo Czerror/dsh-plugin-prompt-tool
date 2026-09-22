@@ -81,8 +81,8 @@ test('cordis 基础行顺序对齐官方 Cordis，但不再复制 tool-cordis（
   ])
   assert.ok(!ids.includes('tool-cordis'), 'tool-cordis 由官方 shipped「创造模式」(cordis) 预设提供')
   const skill = readFileSync(join(root, 'preset/pt-cordis/skills/editing-cordis-compositions/SKILL.md'), 'utf8')
-  assert.match(skill, /supplies `standard`, `ptc`, `minimal`, and `cordis`/)
-  assert.doesNotMatch(skill, /supplies `standard`, `code`, `minimal`/)
+  const officialSkill = readFileSync(join(root, 'test/fixtures/dsh/current/packages/preset/agent-preset/skills/editing-cordis-compositions/SKILL.md'), 'utf8')
+  assert.equal(skill, officialSkill, '创作技能与本次核验的官方源码逐字一致')
 })
 
 test('minimal 对齐 rc.2 单 shell 基型，以顶层 persona 段驱动官方 dsh-persona 行', () => {

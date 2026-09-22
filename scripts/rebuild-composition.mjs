@@ -1,6 +1,6 @@
 // rebuild-composition.mjs — 从 DeepSeek Harness 官方内置预设重建共享组合模块。
 //
-// 数据来源(官方):standard / minimal / ptc / cordis 的 agent.cordis.yml。
+// 数据来源(官方):web-app/presets 下 standard / minimal / ptc / cordis 的 patch 声明。
 // 本脚本只保留一份共享行；官方预设确有语义差异时才生成变体模块
 // （PTC delegation、Cordis skill-filesystem）。本地改写属于 source/local，不冒充官方变体。
 // 本地模块以 engine/compositions/source/local/*.yml 为唯一源，不复制到 library/；
@@ -8,16 +8,19 @@
 //
 // 默认核验官方最新 master 后重建；不会修改宿主源码仓库。
 // 显式目录参数用于离线重放已记录提交的快照，不代表实时最新。
-import { readFileSync, writeFileSync, readdirSync, mkdirSync, rmSync, renameSync, existsSync } from 'node:fs'
+import { readFileSync, writeFileSync, readdirSync, mkdirSync, rmSync, renameSync, existsSync, cpSync } from 'node:fs'
+import { createHash } from 'node:crypto'
 import { basename, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { parse as parseYaml } from 'yaml'
-import { verifyLatestCompositionSource } from './composition-source.mjs'
+import { parse as parseYaml, parseDocument } from 'yaml'
+import { PRESET_SKILLS_PATH, PRESET_SOURCE_PATH, verifyLatestCompositionSource } from './composition-source.mjs'
 
 const root = fileURLToPath(new URL('..', import.meta.url))
-const repoArg = process.argv.slice(2).find((arg) => arg !== '--')
+const syncSource = process.argv.includes('--sync-source')
+const repoArg = process.argv.slice(2).find((arg) => !arg.startsWith('--'))
 const repo = resolve(repoArg ?? process.env.DSH_HARNESS_REPO ?? join(root, '..', 'deepseek-harness'))
-const presetsDir = join(repo, 'packages', 'preset', 'agent-presets', 'presets')
+const presetsDir = join(repo, PRESET_SOURCE_PATH)
+const skillsSourcePath = PRESET_SKILLS_PATH
 const compositionDir = join(root, 'engine', 'compositions')
 const libraryDir = join(compositionDir, 'library')
 const localDir = join(compositionDir, 'source', 'local')
@@ -45,18 +48,11 @@ const sourceRepo = upstream.label
  */
 function discoverOfficialPresets() {
   if (!existsSync(presetsDir)) throw new Error(`official preset directory not found: ${presetsDir}`)
-  const directories = readdirSync(presetsDir, { withFileTypes: true })
-    .filter((entry) => entry.isDirectory() && !entry.name.startsWith('.'))
-  for (const entry of directories) {
-    if (!existsSync(join(presetsDir, entry.name, 'agent.cordis.yml'))) {
-      throw new Error(`official preset ${entry.name} is missing agent.cordis.yml`)
-    }
-  }
-  return directories.map((entry) => entry.name).sort()
+  return readdirSync(presetsDir).filter((name) => name.endsWith('.patch.yml')).map((name) => name.slice(0, -10)).sort()
 }
 
 const OFFICIAL_PRESETS = discoverOfficialPresets()
-if (OFFICIAL_PRESETS.length === 0) throw new Error(`no official presets with agent.cordis.yml found in ${presetsDir}`)
+if (OFFICIAL_PRESETS.length === 0) throw new Error(`no official preset patches found in ${presetsDir}`)
 const OFFICIAL_PRESET_TARGETS = new Map(
   OFFICIAL_PRESETS.map((preset) => [preset, `pt-${preset}`]),
 )
@@ -114,8 +110,21 @@ function sections(text, source) {
 const officialSections = new Map()
 const officialRows = new Map()
 for (const preset of OFFICIAL_PRESETS) {
-  const source = `${preset}/agent.cordis.yml`
-  const text = readFileSync(join(presetsDir, preset, 'agent.cordis.yml'), 'utf8')
+  const source = `${preset}.patch.yml`
+  const patchText = readFileSync(join(presetsDir, source), 'utf8')
+  const declaration = parseYaml(patchText, { logLevel: 'silent' })?.[0]?.insert?.[0]
+  if (declaration?.name !== '@deepseek-ai/dsh-agent-preset' || declaration.config?.id !== preset) {
+    throw new Error(`${source}: expected one matching agent-preset declaration`)
+  }
+  // Keep !!js tags and comments byte-for-byte apart from the declaration's indentation.
+  const lines = patchText.replaceAll('\r\n', '\n').split('\n')
+  const pluginsAt = lines.findIndex((line) => /^        plugins:\s*$/.test(line))
+  if (pluginsAt < 0) throw new Error(`${source}: missing plugins list`)
+  const text = lines.slice(pluginsAt + 1).map((line) => {
+    if (line.trim() === '') return ''
+    if (!line.startsWith('          ')) throw new Error(`${source}: unexpected content after plugins`)
+    return line.slice(10)
+  }).join('\n')
   officialSections.set(preset, sections(text, source))
   const parsed = parseYaml(text, { logLevel: 'silent' })
   if (!Array.isArray(parsed)) throw new Error(`${source}: composition must be a top-level row list`)
@@ -250,8 +259,9 @@ function listFiles(dir, prefix = '') {
 
 /** Required non-definition assets (currently Cordis skills) must stay in sync. */
 function assertTargetAssets(sourcePreset, targetPreset) {
-  const sourceDir = join(presetsDir, sourcePreset)
-  const targetDir = join(root, 'preset', targetPreset)
+  if (sourcePreset !== 'cordis') return
+  const sourceDir = join(repo, skillsSourcePath)
+  const targetDir = join(root, 'preset', targetPreset, 'skills')
   for (const relative of listFiles(sourceDir)) {
     if (relative === 'preset.yml' || relative === 'agent.cordis.yml') continue
     const sourceFile = join(sourceDir, relative)
@@ -319,6 +329,17 @@ const personaSegments = (value) => String(value ?? '')
   .split(/\n\s*\n/)
   .map((part) => normalizePersonaText(part))
   .filter((part) => part.length > 0)
+if (syncSource) {
+  if (upstream.commit === undefined) throw new Error('--sync-source requires a verified upstream commit')
+  for (const [sourcePreset, targetPreset] of OFFICIAL_PRESET_TARGETS) {
+    const file = join(root, 'preset', targetPreset, 'preset.yml')
+    const document = parseDocument(readFileSync(file, 'utf8'))
+    document.set('persona', officialRows.get(sourcePreset).get('persona').config)
+    document.set('modules', expectedTargetModules(sourcePreset))
+    writeFileSync(file, document.toString())
+  }
+  cpSync(join(repo, skillsSourcePath), join(root, 'preset', 'pt-cordis', 'skills'), { recursive: true })
+}
 for (const [sourcePreset, targetPreset] of OFFICIAL_PRESET_TARGETS) {
   const spec = parseYaml(readFileSync(join(root, 'preset', targetPreset, 'preset.yml'), 'utf8'))
   const persona = spec?.persona
@@ -367,7 +388,7 @@ try {
     const section = officialSections.get(preset)?.get(rowId)
     if (section === undefined) throw new Error(`${id}: official ${preset} preset has no top-level row ${rowId}`)
     const commit = upstream.commit === undefined ? '' : `# commit: ${upstream.commit}\n`
-    const provenance = `# module: ${id}\n# source: ${sourceRepo}/packages/preset/agent-presets/presets/${preset}/agent.cordis.yml\n${commit}# local patches: 0\n\n`
+    const provenance = `# module: ${id}\n# source: ${sourceRepo}/${PRESET_SOURCE_PATH}/${preset}.patch.yml\n${commit}# local patches: 0\n\n`
     writeFileSync(join(tmpDir, `${id}.yml`), provenance + section)
   }
 
@@ -424,6 +445,32 @@ try {
     throw error
   }
   if (hadOld) rmSync(backupDir, { recursive: true, force: true })
+  if (syncSource) {
+    const snapshot = join(root, 'test', 'fixtures', 'dsh', 'current')
+    const candidate = `${snapshot}.next`
+    if (existsSync(candidate)) throw new Error(`snapshot candidate already exists: ${candidate}`)
+    for (const relative of [PRESET_SOURCE_PATH, skillsSourcePath]) {
+      mkdirSync(join(candidate, relative), { recursive: true })
+      cpSync(join(repo, relative), join(candidate, relative), { recursive: true })
+    }
+    const fingerprints = listFiles(join(candidate, 'packages')).map((relative) => {
+      const bytes = readFileSync(join(candidate, 'packages', relative))
+      return `| \`${relative.replaceAll('\\', '/')}\` | ${bytes.length} | \`${createHash('sha256').update(bytes).digest('hex')}\` |`
+    })
+    writeFileSync(join(candidate, 'PROVENANCE.md'), [
+      '# DeepSeek Harness 当前上游快照', '',
+      '- 来源仓库：`https://github.com/deepseek-ai/deepseek-harness`',
+      '- 来源分支：`master`', `- 来源提交：\`${upstream.commit}\``,
+      `- 导出路径：\`${PRESET_SOURCE_PATH}\` 与 \`${skillsSourcePath}\``,
+      '- 上游许可：MIT；文件保持上游原始字节，组合生成时只提取 plugins 层。', '',
+      '## 文件指纹', '', '| 相对 packages 路径 | 字节 | SHA-256 |', '|---|---|---|', ...fingerprints, '',
+    ].join('\n'))
+    const backup = `${snapshot}.previous`
+    if (existsSync(backup)) throw new Error(`snapshot backup already exists: ${backup}`)
+    renameSync(snapshot, backup)
+    try { renameSync(candidate, snapshot) } catch (error) { renameSync(backup, snapshot); throw error }
+    rmSync(backup, { recursive: true, force: true })
+  }
   console.log(`rebuilt ${OFFICIAL_MODULES.length} official modules from ${repo}; ${localFiles.length} local source modules kept in source/local`)
   console.log(`official presets covered: ${OFFICIAL_PRESETS.join(', ')}`)
   console.log(`preset modules checked: ${checked.join(', ')}`)

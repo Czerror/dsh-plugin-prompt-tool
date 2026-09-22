@@ -23,7 +23,8 @@ function makeHarness(otherServices = {}, logger = undefined) {
   const handlers = new Map()
   const agentPresets = {
     list: async () => [{ id: 'official', trust: 'system' }],
-    standingKeyFor: async (id) => ({ id }),
+    acquireScope: async (id) => ({ key: { id }, [Symbol.asyncDispose]: async () => {} }),
+    ...otherServices.agentPresets,
   }
   const sctx = {
     settings: {
@@ -38,6 +39,7 @@ function makeHarness(otherServices = {}, logger = undefined) {
     },
     tools: {
       schemas: () => [{ name: 'bash', description: '运行命令' }],
+      ...otherServices.tools,
     },
     get: (name) => name === 'agentPresets' ? agentPresets : otherServices[name],
     effect: (fn) => { const dispose = fn(); if (dispose) bridgeDisposers.push(dispose) },
@@ -331,6 +333,36 @@ test('契约：/persona 未配置 presetDir 时稳定拒绝', async () => {
   const payload = JSON.parse(res.body)
   assert.equal(payload.ok, false)
   assert.equal(payload.code, 'preset-dir-unavailable')
+})
+
+test('契约：工具预览在 schema 成功或抛错时均释放 revision lease', async () => {
+  for (const fail of [false, true]) {
+    const key = {}
+    let acquired = 0
+    let released = 0
+    const { ctx, handlers } = makeHarness({
+      agentPresets: { acquireScope: async () => {
+        acquired++
+        return { key, [Symbol.asyncDispose]: async () => { released++ } }
+      } },
+      tools: { schemas: (scope) => {
+        assert.equal(scope, key)
+        if (fail) throw new Error('schema failed')
+        return [{ name: 'example', description: 'example' }]
+      } },
+    })
+    registerSettingsBridge(ctx, 'prompt-tool', () => ({ available: true, providers: [] }), () => makeSkillsState(), () => '')
+    const handler = handlers.get(SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.toolSurface)
+    const res = fakeRes()
+    await handler(fakeReq({ body: JSON.stringify({ presetId: 'official' }) }), res)
+    assert.equal(res.status, fail ? 409 : 200)
+    assert.equal(acquired, 1)
+    assert.equal(released, 1)
+    const unknown = fakeRes()
+    await handler(fakeReq({ body: JSON.stringify({ presetId: 'unknown' }) }), unknown)
+    assert.equal(unknown.status, 404)
+    assert.equal(acquired, 1, '未知预设不得获取 scope')
+  }
 })
 
 test('契约：失败载荷统一为 { ok: false, code?, message? }', async () => {

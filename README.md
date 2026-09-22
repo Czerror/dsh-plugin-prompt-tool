@@ -40,7 +40,7 @@ node scripts/migrate-skills.mjs --rollback "<备份目录>\migration.json"
 
 旧的 base-only profile（只有 `dsh-base`）首次启动时，插件会把 `@deepseek-ai/dsh-web-app` 补进该 profile 的 `dsh.profile.bundles`（写前留 `.bak`，幂等），并提示重启；需要重启 DSH 服务后生效，插件不会替你重启运行中的服务。
 
-需要 DSH `0.1.6-alpha.1+`（官方在 0.1.6-alpha.1 删除了 `@deepseek-ai/dsh-workflow-worker-thread`，组合行改为 `@deepseek-ai/dsh-workflow-ptc`，快照与宿主必须同批升级）；实际开发与验证版本由 package.json 的已选发布包声明决定，不在验证脚本中重复锁死版本。官方组合模块跟随核验过的最新 master（`pnpm rebuild:composition`），记录实际提交并以当前快照离线复验。Node 需要 `^22.19.0 || >=24.0.0`，与官方宿主一致。
+需要 DSH `0.1.7-alpha.1+`（Cordis `4.0.3`）：设置接入 ConfigForms，插件持有的预设通过官方 agent-preset-registry 注册；宿主不再自动扫描 `.agent-presets`。本插件继续管理该目录里的定义与物化文件。官方组合模块跟随核验过的最新 master（`pnpm rebuild:composition`），记录实际提交并以当前快照离线复验。Node 需要 `^22.19.0 || >=24.0.0`，与官方宿主一致。升级后需要用户重启 DSH 服务。
 
 ## 特性
 

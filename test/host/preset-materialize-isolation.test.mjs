@@ -9,23 +9,14 @@ import { parse } from 'yaml'
 // 隔离 DSH_HOME：paths.ts 模块级常量在 import 时求值，必须先设 env 再动态 import lib。
 const home = mkdtempSync(join(tmpdir(), 'pt-preset-isolation-'))
 process.env.DSH_HOME = home
-const { apply, writePluginState } = await import('../../lib/index.mjs')
+const { apply, writePluginState } = await import('../../src/index.ts')
 
 function makeCtx(settingsValue) {
   let onChange
   const makeSctx = () => ({
     settings: {
       describe: () => [],
-      register: (_ns, _schema, opts) => {
-        try { opts.base() } catch { /* mock 环境无宿主上下文 */ }
-        return { get: () => settingsValue, watch: (cb) => cb(settingsValue) }
-      },
-      installSection: (_owner, _ns, _schema, _entry, hooks) => {
-        hooks.setSource(() => settingsValue)
-        hooks.onChange()
-        onChange = hooks.onChange
-      },
-      get: () => undefined,
+      configure: () => () => {},
       mutate: async () => {},
     },
     webServer: { register: () => () => {} },
@@ -36,15 +27,16 @@ function makeCtx(settingsValue) {
     get: () => undefined,
   })
   return {
+    config: Object.fromEntries(Object.keys(settingsValue).map((key) => [key, { get: () => settingsValue[key] }])),
     save: () => { settingsValue.presetOrder += 1; onChange() },
     logger: { warn: () => {} },
     effect: (fn) => { fn(); return () => {} },
-    on: () => () => {},
+    on: (event, callback) => { if (event === 'loader/volatile-update') onChange = callback; return () => {} },
     skills: { registerProvider: () => {} },
     get: (name) => (name === 'webServer' ? {} : undefined),
     provide: () => () => {},
     baseUrl: 'http://localhost:3000',
-    inject: (deps, cb) => { cb(makeSctx()); return () => {} },
+    inject: (deps, cb) => { if (!deps.includes('agentPresets')) cb(makeSctx()); return () => {} },
   }
 }
 
@@ -90,7 +82,7 @@ test('补建只创建缺失目录，已有非当前预设的定义与资源保�
 
   const value = settings('anchored')
   const ctx = makeCtx(value)
-  apply(ctx, value)
+  apply(ctx, ctx.config)
   assert.equal(readConfigs(presetDir, 'anchored'), '', '启动保留已有目录')
   ctx.save()
 
@@ -122,7 +114,7 @@ test('当前 pt-standard 保存物化自身的变量和能力模块，其他预�
   const other = readFileSync(join(presetDir, 'standard', 'preset.yml'), 'utf8')
   const value = settings('pt-standard')
   const ctx = makeCtx(value)
-  apply(ctx, value)
+  apply(ctx, ctx.config)
   assert.equal(existsSync(join(presetDir, 'pt-standard', 'agent.cordis.yml')), false, '启动不重建已有目录')
   ctx.save()
   const rows = parse(readFileSync(join(presetDir, 'pt-standard', 'agent.cordis.yml'), 'utf8'))

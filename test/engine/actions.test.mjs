@@ -25,6 +25,7 @@ import { SDK_SECTION_NAME, sdkToolNames, stripSdkDeclarations } from '../../engi
 import { applyAgentRequestParams, wireLayers } from '../../engine/layers.mjs'
 import { applyPromptConfigs } from '../../engine/executor.mjs'
 import { createPromptConfigs } from '../../engine/prompt-config-engine.mjs'
+import { compileDeclarations, mountDeclarations } from '../../engine/trigger-spec.mjs'
 
 /** 官方事件词汇表：动作声明的通道必须落在这里面。 */
 const OFFICIAL_EVENTS = new Set([
@@ -53,7 +54,7 @@ function recordingCtx(services = {}) {
       return disposer
     },
     get: (name) => services[name],
-    ...(services.ctx ?? {}),
+    ...services.ctx,
   }
   function entryOf(event, handler) {
     return events.find((entry) => entry.event === event && entry.handler === handler) ?? {}
@@ -131,6 +132,28 @@ test('动作注册：未知 kind fail loud', () => {
   assert.throws(() => registerAction(ctx, undefined), /unknown action kind/)
 })
 
+test('动作参数在接入任何监听器前校验，失败不得留下预算监听', () => {
+  for (const [action, error] of [
+    [{ kind: 'assembly', target: null }, /requires a target object/],
+    [{ kind: 'decision', phase: 'invalid' }, /phase must be one of pre, post/],
+    [{ kind: 'request-params', patch: [] }, /patch must be an object/],
+  ]) {
+    const recorder = recordingCtx()
+    assert.throws(() => registerAction(recorder.ctx, { ...action, maxPerTurn: 1 }), error)
+    assert.equal(recorder.events.length, 0)
+    assert.equal(recorder.effects.length, 0)
+  }
+})
+
+test('名单模式互斥：assembly、guard 与 sdk-strip 同时声明 allow/deny 一律拒绝', () => {
+  for (const kind of ['assembly', 'guard', 'sdk-strip']) {
+    for (const mask of [{ allow: ['read'], deny: ['bash'] }, { allow: [], deny: [] }]) {
+      const action = kind === 'assembly' ? { kind, target: { tools: mask } } : { kind, mask }
+      assert.throws(() => registerAction(recordingCtx().ctx, action), /cannot combine allow with deny/, kind)
+    }
+  }
+})
+
 test('动作声明 fail loud：名单形状错误、名单为空、名单命名 run_code 都在挂载期抛出', () => {
   const { ctx } = recordingCtx()
   assert.throws(() => registerAction(ctx, { kind: 'assembly', id: 'x', target: { tools: { deny: 'bash' } } }), /deny must be an array/)
@@ -188,14 +211,13 @@ test('(1) 注入文本：pre-step 走既有执行器通道，注册的监听器�
   )
 })
 
-test('(2) 改装配 tools：名单裁剪（deny / allow / 两者并存 / 空名单）', async () => {
+test('(2) 改装配 tools：名单裁剪（deny / allow / 空名单）', async () => {
   // B7 T3：原 `tool-filter` 模块已删除，本用例不再与它逐条对拍；期望值是按名单语义
   // 逐条算出的字面量 —— `createMask` 的剔出判据是「先看 deny、再看 allow 是否点名」
   // （actions.mjs:191-192）。
   const cases = [
     [{ deny: ['web_search'] }, ['bash', 'read']],
     [{ allow: ['bash', 'read'] }, ['bash', 'read']],
-    [{ allow: ['bash', 'read', 'web_search'], deny: ['web_search'] }, ['bash', 'read']],
   ]
   for (const [mask, expected] of cases) {
     const catalog = ['bash', 'read', 'web_search'].map(tool)
@@ -217,7 +239,7 @@ test('(2) 改装配 tools：名单裁剪（deny / allow / 两者并存 / 空名�
 })
 
 test('(2) 改装配 sections/contexts：增删改与既有形态一致，异常时返回未改装配', async () => {
-  const { ctx, events, warnings } = recordingCtx()
+  const { ctx, events } = recordingCtx()
   registerAction(ctx, {
     kind: 'assembly',
     id: 'sec',
@@ -398,6 +420,153 @@ async function ptcHarness({ language = 'typescript', mode = 'ptc' } = {}) {
   return { root, tools: root.tools, main, makeAgent, bodyRuns, programs, runCode, assemble }
 }
 
+test('文本条件：真实 tools/pre-execute 从 arguments 匹配并拒绝 DELETE', async (t) => {
+  const harness = await ptcHarness({ mode: 'native' })
+  t.after(() => harness.root.fiber.dispose())
+  mountDeclarations(harness.root, compileDeclarations([{
+    id: 'deny-delete', channel: 'tools/pre-execute',
+    when: { text: { subject: 'toolArgs', keys: ['DELETE'] } },
+    do: { kind: 'decision', decision: 'deny', reason: 'blocked DELETE' },
+  }]))
+  const execute = (command) => harness.tools.execute({
+    callId: command, name: 'bash', agent: harness.main, arguments: { command }, signal: new AbortController().signal,
+  })
+  const denied = await execute('DELETE')
+  assert.equal(denied.isError, true)
+  assert.match(denied.content[0].text, /blocked DELETE/)
+  assert.deepEqual(harness.bodyRuns, [])
+  assert.equal((await execute('SELECT')).isError, false)
+  assert.deepEqual(harness.bodyRuns, ['bash'])
+})
+
+test('主会话 guard 不删除子代理继承工具，允许子代理真实 PTC 调用', async (t) => {
+  const harness = await ptcHarness()
+  t.after(() => harness.root.fiber.dispose())
+  const child = await harness.makeAgent('child-inherited', harness.main)
+  const dispose = registerAction(harness.root, { kind: 'guard', mask: { deny: ['bash'] }, reason: 'main only' })
+  await harness.assemble(harness.main)
+  await harness.assemble(child)
+  assert.equal((await harness.runCode(harness.main, 'bash')).isError, true)
+  assert.equal(harness.tools.schemas(child).some((schema) => schema.name === 'bash'), true)
+  assert.equal((await harness.runCode(child, 'bash')).isError, false)
+  assert.deepEqual(harness.bodyRuns, ['bash'])
+  dispose()
+  assert.equal((await harness.runCode(harness.main, 'bash')).isError, false)
+})
+
+test('after-next 门控读取同次 pre-step 成功压缩的新 epoch，失败压缩保留晋升', async () => {
+  for (const failed of [false, true]) {
+    const recorder = recordingCtx()
+    const events = [{ type: 'tool/call', seq: 1, data: {} }]
+    const session = { id: `compact-${failed}`, header: {}, snapshotEvents: () => events }
+    const dispose = mountDeclarations(recorder.ctx, compileDeclarations([{
+      id: 'epoch-gate', channel: 'agent/pre-step',
+      when: { phase: { promoted: false } }, do: { kind: 'pre-step-filter', sources: ['user'] },
+    }]))
+    const handler = only(recorder.events, 'agent/pre-step')
+    const observe = only(recorder.events, 'session/event')
+    const message = { id: 'injected', role: 'user', source: { kind: 'plugin' } }
+    const decision = { kind: 'continue', messages: [message] }
+    const payload = { agent: { session }, messages: [] }
+    assert.equal(await handler(payload, async () => decision), decision)
+    const result = await handler(payload, async () => {
+      const event = { type: 'compaction/end', seq: 2, data: failed ? { error: 'failed' } : {} }
+      events.push(event)
+      observe(session, event)
+      return decision
+    })
+    assert.deepEqual(result.messages, failed ? [message] : [], `failed=${failed}`)
+    const promotion = { type: 'tool/call', seq: 3, data: {} }
+    events.push(promotion)
+    observe(session, promotion)
+    assert.equal(await handler(payload, async () => decision), decision, '新 epoch 再次晋升后恢复放行')
+    dispose()
+    assert.equal(recorder.events.length, 0)
+  }
+})
+
+test('每轮预算只在动作目标命中且即将生效时同步消耗', async () => {
+  const recorder = recordingCtx()
+  registerAction(recorder.ctx, {
+    kind: 'decision', toolNames: ['bash'], decision: 'deny', maxPerTurn: 1,
+    match: (exec) => exec.arguments?.command !== 'skip',
+  })
+  const handler = only(recorder.events, 'tools/pre-execute')
+  const target = agent()
+  const run = (name, command) => handler({ agent: target, name, arguments: { command } }, () => ({ kind: 'allow' }))
+  assert.equal((await run('read', 'ready')).kind, 'allow')
+  assert.equal((await run('bash', 'skip')).kind, 'allow')
+  assert.deepEqual((await Promise.all([run('bash', 'ready'), run('bash', 'ready')])).map((value) => value.kind), ['deny', 'allow'])
+})
+
+test('每轮预算：after-next 动作无实际变化不扣额度，下一次有效变化才占用', async () => {
+  const sdk = (names) => assembled([], { sections: [{ name: SDK_SECTION_NAME, text: renderToolsSdk(names.map(tool)) }] })
+  const cases = [
+    [{ kind: 'assembly', target: { tools: { deny: ['bash'] } } }, 'system-prompt/assemble', assembled([tool('read')]), assembled([tool('bash')])],
+    [{ kind: 'assembly', target: { sections: { remove: ['drop'] }, contexts: { clear: true } } }, 'system-prompt/assemble', assembled([]), assembled([], { contexts: [{ name: 'x', text: 'X' }] })],
+    [{ kind: 'sdk-strip', mask: { deny: ['bash'] } }, 'system-prompt/assemble', sdk(['read']), sdk(['read', 'bash'])],
+    [{ kind: 'request-params', patch: { maxTokens: 8 } }, 'agent/request', { maxTokens: 8 }, { maxTokens: 16 }],
+    [{ kind: 'request-params', unset: { maxTokens: 8 } }, 'agent/request', { maxTokens: 16 }, { maxTokens: 8 }],
+    [{ kind: 'request-params', replace: true, patch: { maxTokens: 8 } }, 'agent/request', { maxTokens: 8 }, { model: 'chat', maxTokens: 8 }],
+    [{ kind: 'append-context', text: 'NOTICE' }, 'tools/post-execute', { kind: 'block' }, { kind: 'accept' }],
+    [{ kind: 'pre-step-filter', sources: ['user'] }, 'agent/pre-step', { kind: 'enter', messages: [{ source: { kind: 'user' } }] }, { kind: 'enter', messages: [{ source: { kind: 'plugin' } }] }],
+  ]
+  for (const [action, channel, unchanged, changed] of cases) {
+    const recorder = recordingCtx()
+    const dispose = registerAction(recorder.ctx, { ...action, maxPerTurn: 1 })
+    const handler = only(recorder.events, channel)
+    const target = agent()
+    const payload = channel === 'system-prompt/assemble' ? [{}, { agent: target }]
+      : channel === 'tools/post-execute' ? [{ agent: target }, {}] : [{ agent: target }]
+    let nextCalls = 0
+    const run = (result) => handler(...payload, () => { nextCalls += 1; return result })
+    assert.equal(await run(unchanged), unchanged, `${action.kind}: 无效果保留原值`)
+    assert.notDeepEqual(await run(changed), changed, `${action.kind}: 首次有效变化获准`)
+    assert.equal(await run(changed), changed, `${action.kind}: 生效后额度耗尽`)
+    assert.equal(nextCalls, 3, `${action.kind}: 每次调用只结算一次下游`)
+    dispose()
+    assert.equal(recorder.events.length, 0)
+  }
+})
+
+test('每轮预算：emit/serial 的受众、服务与来源检查先于额度扣减', () => {
+  const inbox = recordingCtx()
+  registerAction(inbox.ctx, { kind: 'inbox-prepend', text: 'ANCHOR', maxPerTurn: 1 })
+  const inserted = only(inbox.events, 'agent/inbox/inserted')
+  const target = agent()
+  const user = { role: 'user', source: { kind: 'user' } }
+  inserted({ agent: target, message: user }) // 尚无 inbox 服务
+  const messages = []
+  target.inbox = { prepend: (_where, message) => messages.push(message) }
+  inserted({ agent: target, message: { source: { kind: 'plugin' } } })
+  inserted({ agent: target, message: user })
+  inserted({ agent: target, message: user })
+  assert.equal(messages.length, 1)
+
+  const continuation = recordingCtx()
+  registerAction(continuation.ctx, { kind: 'append-context', mode: 'continue', text: 'GO', maxPerTurn: 1 })
+  const stopping = only(continuation.events, 'agent/turn-stopping')
+  stopping({ agent: target, turn: 1 }) // 尚无 steer 服务
+  const steered = []
+  target.steer = (message) => steered.push(message)
+  stopping({ agent: target, turn: 1 })
+  stopping({ agent: target, turn: 1 })
+  assert.equal(steered.length, 1)
+})
+
+test('after-next 的条件拒绝或异常只读结算结果，不重复 next、不吞下游异常', async () => {
+  for (const when of [() => false, () => { throw new Error('predicate failed') }, async () => false]) {
+    const recorder = recordingCtx()
+    registerAction(recorder.ctx, { kind: 'request-params', patch: { maxTokens: 8 } }, { when })
+    const handler = only(recorder.events, 'agent/request')
+    const base = { maxTokens: 16 }
+    let nextCalls = 0
+    assert.equal(await handler({ agent: agent() }, () => { nextCalls += 1; return base }), base)
+    assert.equal(nextCalls, 1)
+    await assert.rejects(handler({}, async () => { throw new Error('downstream failed') }), /downstream failed/)
+  }
+})
+
 test('(5) 真实 PTC 子调用：guard 拦下本层工具（restrict 收不动）的调用，工具体一次都没执行（TS 载荷）', async () => {
   const h = await ptcHarness({ language: 'typescript' })
   // 注册在真实 root ctx 上：动作的 assembly 监听由真实 waterfall 触发（含首个请求）。
@@ -419,7 +588,7 @@ test('(5) 真实 PTC 子调用：guard 拦下本层工具（restrict 收不动�
 
 test('(5) 真实 PTC：继承面工具先被 restrict 拿掉绑定（guard 之外的第一层），两者同源同名单', async () => {
   const h = await ptcHarness({ language: 'typescript' })
-  const dispose = registerAction(h.root, { kind: 'guard', id: 'no-bash', mask: { deny: ['bash'] }, reason: 'inherited denied' })
+  const dispose = registerAction(h.root, { kind: 'guard', id: 'no-bash', mask: { deny: ['bash'] }, includeSubagents: true, reason: 'inherited denied' })
   await h.assemble(h.main)
   assert.equal(h.tools.schemas(h.main).some((schema) => schema.name === 'bash'), false, 'restrict 已在继承面移除 bash')
   const result = await h.runCode(h.main, 'bash')

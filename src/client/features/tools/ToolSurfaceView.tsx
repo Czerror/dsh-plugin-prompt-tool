@@ -1,5 +1,5 @@
 import { useEffect, useId, useState, type ReactNode } from 'react'
-import { IconChevronDownOutline14 } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconChevronDownOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives'
 import { StatusBadge } from '../../ui/StatusBadge.tsx'
 import type { PromptToolTranslate } from '../../locales.ts'
 import { loadToolSurface, type ToolSurfaceEntry, type ToolSurfaceResult, type ToolSurfaceSource } from './tool-surface-request.ts'
@@ -29,7 +29,7 @@ export function ToolSurfaceList({ tools, filter, t, sourceLabel, sourceId = '', 
             <button type="button" className={css.toolCardToggle} aria-expanded={open} aria-controls={detailId}
               aria-label={t('tools.surface.card.aria', { name: entry.name })} onClick={() => setExpanded(open ? null : key)}>
               <strong className={css.toolCardTitle}>{entry.name}</strong>
-              <span className={css.toolCardTrailing}><StatusBadge tone="success" label={t('tools.surface.badge.visible')} /><IconChevronDownOutline14 className={css.toolChevron} aria-hidden="true" /></span>
+              <span className={css.toolCardTrailing}><StatusBadge tone="success" label={t('tools.surface.badge.visible')} /><IconChevronDownOutlineRegular className={css.toolChevron} aria-hidden="true" /></span>
             </button>
             {open && <div id={detailId} className={css.toolCardDetails}>
               <code className={css.toolEntryValue}>{entry.name}</code>
@@ -73,7 +73,7 @@ function ToolSurfaceContent(props: ToolSurfaceProps): ReactNode {
         setExpanded(!open)
         if (props.expandedState) props.expandedState[groupKey] = !open
       }}>
-        <IconChevronDownOutline14 className={css.toolChevron} aria-hidden="true" /><span>{props.label}</span>
+        <IconChevronDownOutlineRegular className={css.toolChevron} aria-hidden="true" /><span>{props.label}</span>
       </button>
       <div className={css.toolHeaderAction}>{props.headerAction}</div>
     </div>

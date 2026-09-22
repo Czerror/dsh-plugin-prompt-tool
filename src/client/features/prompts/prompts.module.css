@@ -23,7 +23,7 @@
   justify-content: flex-end;
   margin-left: auto;
 }
-.configFormLayout { container: prompt-form / inline-size; gap: 24px; padding: 24px; }
+.configFormLayout { container: prompt-form / inline-size; gap: 24px; padding: clamp(12px, 3vw, 24px); }
 .configContext { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
 .configContext strong { font: var(--dsw-font-s-strong-14); color: var(--dsw-alias-label-primary); text-wrap: balance; }
 .configContext span, .configContext p { margin: 0; font: var(--dsw-font-xxs-12); color: var(--dsw-alias-label-secondary); text-wrap: pretty; overflow-wrap: anywhere; }
@@ -53,6 +53,9 @@
 .fieldSpan8 { grid-column: span 8; }
 .fieldSpan9 { grid-column: span 9; }
 .fieldControl { width: 100%; }
+.orderField { display: grid; grid-template-columns: minmax(64px, 1fr) minmax(0, 2fr); gap: 12px; min-width: 0; }
+.orderField > * { min-width: 0; }
+.orderField input { font-variant-numeric: tabular-nums; }
 .fieldFull { min-width: 0; grid-column: 1 / -1; }
 .configToggleField { display: flex; min-width: 0; flex-direction: column; align-items: flex-start; gap: 4px; }
 .configAdvanced {
@@ -60,13 +63,19 @@
   padding-top: 10px;
 }
 .configAdvancedSummary {
+  min-height: 32px;
+  padding-block: 8px;
   color: var(--dsw-alias-label-secondary);
   cursor: pointer;
   font: var(--dsw-font-xxs-strong-12);
+  text-wrap: balance;
 }
 .configAdvancedSummary:focus-visible { outline: 2px solid var(--dsw-alias-state-business-primary); outline-offset: 4px; }
 .configAdvancedSummary::marker { color: var(--dsw-alias-label-tertiary); }
 .configAdvanced[open] > .configAdvancedSummary { margin-bottom: 10px; }
+.layerSettingsPanel { padding: 12px 16px; border: 0.5px solid var(--dsw-alias-border-l2); border-radius: 8px; }
+.layerSettingsPanel > .configAdvancedSummary { color: var(--dsw-alias-label-primary); }
+.layerSettingsPanel > p { margin: 0 0 16px; text-wrap: pretty; }
 .variableHeader {
   display: flex;
   min-width: 0;
@@ -89,6 +98,8 @@
 
 @container prompt-form (max-width: 620px) {
   .configGrid { grid-template-columns: minmax(0, 1fr); }
+  .orderField { grid-template-columns: minmax(0, 1fr); }
+  .layerSettingsPanel { padding: 12px; }
   .fieldSpan2,
   .fieldSpan3,
   .fieldSpan4,
@@ -116,6 +127,7 @@
   }
   @media (max-width: 620px) {
     .configGrid { grid-template-columns: minmax(0, 1fr); }
+    .orderField { grid-template-columns: minmax(0, 1fr); }
     .fieldSpan2, .fieldSpan3, .fieldSpan4, .fieldSpan5, .fieldSpan6, .fieldSpan8, .fieldSpan9 { grid-column: 1 / -1; }
   }
 }

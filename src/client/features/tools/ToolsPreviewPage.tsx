@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState, useSyncExternalStore, type ReactNode } from 'react'
-import { IconSearchOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconSearchOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PromptToolHostApi } from '../../data/host-api.ts'
 import type { PromptToolTranslate } from '../../locales.ts'
 import { MenuSelect } from '../../ui/MenuSelect.tsx'
@@ -45,7 +45,7 @@ export function ToolsPreviewPage({ api, presetId, t, browse, onNavigate, onReady
 
   return <section className={css.toolsPreviewPage} aria-label={t('tools.aria')}>
     <label className={css.toolSearch}>
-      <IconSearchOutline16 aria-hidden="true" />
+      <IconSearchOutlineRegular aria-hidden="true" />
       <input type="search" aria-label={t('tools.search.aria')} placeholder={t('tools.search.placeholder')} value={query}
         onChange={(event) => setQuery(event.target.value)} />
     </label>

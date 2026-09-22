@@ -10,6 +10,7 @@ import { createRequire } from 'node:module'
 import { setImmediate } from 'node:timers/promises'
 import { nextDialogFocusIndex } from '../../src/client/ui/dialog-focus.ts'
 import { usePromptToolStore } from '../../src/client/data/use-prompt-tool-store.ts'
+import { withSsr } from './support/ssr-render.mjs'
 
 /** 三份源文件各自定义的 `read` 语义完全相同（仓库根相对路径 → UTF-8 文本），合并为一份。 */
 const read = (path) => readFileSync(new URL(`../../${path}`, import.meta.url), 'utf8')
@@ -283,4 +284,32 @@ test('契约：角色卡图片选择器与 PNG 解析范围一致', () => {
   const source = read('src/client/ui/ImportDialog.tsx')
   assert.match(source, /accept="\.zip,\.json,\.png,\.yml,\.yaml"/)
   assert.doesNotMatch(source, /image\/jpeg/, 'JPG/JPEG 会被 importCard 判为不支持，选择器不得声明')
+})
+
+test('新版 ConfigForms：宿主拒绝设置写入时不伪报成功', async () => {
+  const { apply, inject } = await withSsr([new URL('../../src/client/index.ts', import.meta.url).href])
+  assert.ok(inject.includes('configForms'))
+  assert.ok(!inject.includes('settingsScope'))
+  const writes = []
+  let accepted = false
+  let face
+  const scope = { mutate: async (...args) => { writes.push(args); return accepted } }
+  apply({
+    effect: (callback) => callback(),
+    on: () => () => {},
+    locale: { register: () => () => {}, bind: () => (key) => key },
+    configForms: {
+      get: (id) => { assert.equal(id, 'prompt-tool'); return scope },
+      describe: () => ({ ensure: async () => {} }),
+    },
+    slots: {
+      inject: (_name, callback) => callback(),
+      register: (options) => { face = options.inject(); return () => {} },
+    },
+  })
+  const operations = [{ op: 'set', path: ['presetTemplate'], value: 'pt-standard' }]
+  await assert.rejects(face.settings.mutate(operations, 4), /settings.saveRejected/)
+  accepted = true
+  await face.settings.mutate(operations, 5)
+  assert.deepEqual(writes, [[operations, 4], [operations, 5]])
 })

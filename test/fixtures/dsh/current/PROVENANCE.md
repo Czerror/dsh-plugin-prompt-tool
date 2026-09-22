@@ -1,40 +1,30 @@
 # DeepSeek Harness 当前上游快照
 
-本目录记录最近一次核验的官方 master，用于离线复验，不把发布版本作为永久目标。
-默认 `rebuild:composition` 会先核验官方实时 HEAD；本快照保留本次实际提交和文件指纹，保证测试可复现。
-
 - 来源仓库：`https://github.com/deepseek-ai/deepseek-harness`
 - 来源分支：`master`
-- 来源提交：`ddefc45fbc7f8e46dd73185e68295696d1297887`
-- 来源提交时间：`2026-09-17T13:19:19Z`
-- 导出路径：`packages/preset/agent-presets/presets`
-- 导出依据：上述提交的 `packages/preset/agent-presets/presets` 文件树；每次同步到新提交后更新下表。
-- 上游许可：MIT License（Copyright (c) 2026 DeepSeek），见上游仓库根目录 `LICENSE`
-
-本目录文件与上述 master 提交逐字节一致；下列 SHA-256 用于检测快照被意外修改。来源提交可随官方更新，测试不硬编码提交或版本号。
+- 来源提交：`c36a83ff6bb95e3f82cf79f9be7c724270a8aa61`
+- 导出路径：`packages/bundle/web-app/presets` 与 `packages/preset/agent-preset/skills`
+- 上游许可：MIT；文件保持上游原始字节，组合生成时只提取 plugins 层。
 
 ## 文件指纹
 
-| 相对路径 | 字节 | SHA-256 |
+| 相对 packages 路径 | 字节 | SHA-256 |
 |---|---|---|
-| `cordis/agent.cordis.yml` | 16231 | `d4882736a02aad417d8e93b73ea3b6b48eb39b5280c1a77e224ce73d38512984` |
-| `cordis/preset.yml` | 189 | `c8199388e494731f8d08c738a4220c059a089677d1bbb42d36f760ce9d882b02` |
-| `cordis/skills/cordis-plugin-development/SKILL.md` | 8289 | `84daca3e10f6e557e9b8462da035b8b7e5af8ca0b057427fc9a802d4a99c967e` |
-| `cordis/skills/editing-cordis-compositions/SKILL.md` | 8962 | `dbf68650fc61260b423844b4f96a35943bb8b6bafcc6ba90324abbbb4b8c46c9` |
-| `minimal/agent.cordis.yml` | 3119 | `e75af996ab8c4cc966f8c5b54cd8dc354d7ac71bfcedbe07c8896f63bb7f073b` |
-| `minimal/preset.yml` | 91 | `9369a101ebdae504c109d48dbccffeed236966e9cb818ae82277dd4347ad8eb8` |
-| `ptc/agent.cordis.yml` | 14512 | `830928ce6e1281bc000afbfc937664d1acf79811d870099fcf0d0951a8203680` |
-| `ptc/preset.yml` | 207 | `1bfc9606aa8537b34bec80d9f54392f159c0ffc045c9b1bb620f076038d5e5de` |
-| `standard/agent.cordis.yml` | 13422 | `0934f22b2fdbc158fd2edad33ec5dd2671b5b1f727800dcaab74cee3bd7294af` |
-| `standard/preset.yml` | 176 | `3c61b4ce68e5dd5cb2c099693fdcb30b91d5f22bbbef546e233321b0fa68f0e4` |
-
-## 本次同步说明
-
-- 本次 master（`dsh-0.1.6-alpha.2` 合并提交）相对上次快照（`0d1f5000`）的变化：`cordis`（创造模式）persona 新增四段
-  （plugin_manager 用法、Creator 模式下的 UI 插件目标、`cordis_inspect_*` 只读探查、MCP server 接入与 installed bundles 约定）；
-  `standard` / `ptc` / `cordis` 末尾新增 `tool-plugin-manager` 行（前两者 `disabled: true`，cordis 为启用态）；
-  `cordis` 的两个技能正文精简（`cordis-plugin-development` 20923→8289 字节、`editing-cordis-compositions` 14393→8962 字节）。
-- 同批把本地模板 `preset/creative` 对齐官方改名为 `preset/cordis`（`id: cordis`）：`rebuild:composition` 的目标覆盖表随之清空，
-  官方 `cordis` 行改为逐行拆解（`tool-cordis` 仍按全局 provider 重复注册的理由跳过），新增
-  `tool-plugin-manager`（cordis 启用态）与 `tool-plugin-manager-disabled`（standard/ptc）两个库模块。
-- 发布包按 package.json 明确选择已核实的可用版本；npm 的 latest 标签可能落后于 next，不据标签名称直接降级。
+| `bundle/web-app/presets/cordis.patch.yml` | 8089 | `b74d71901b692f11111d02d20072735b2fe94b74744ee7e3bfdc5d972f1a3aa5` |
+| `bundle/web-app/presets/minimal.patch.yml` | 3184 | `71ef887f43d8a37931ba3b014e5b116f79018af873d06625fb22e280a23c1dfc` |
+| `bundle/web-app/presets/ptc.patch.yml` | 7697 | `8fcf6b04dce7c2c76fab925129f6ac9b05ebb546840508e6cde72aa2da991832` |
+| `bundle/web-app/presets/standard.patch.yml` | 7511 | `6cd2f197737fc94a45e487d0bb57869461dd6f392d45f6429b576e75d973eda8` |
+| `preset/agent-preset/skills/cordis-composition-reference/references/packages.md` | 38109 | `0c7cabcc16045bf3d66bf2a452ed7f0ab16d417720da56b973a3de1a22aa5ea1` |
+| `preset/agent-preset/skills/cordis-composition-reference/SKILL.md` | 2806 | `6583a81d9f4de07032ebdee0d5ea1a925067277805798936a5297cf2bac4f5e3` |
+| `preset/agent-preset/skills/cordis-plugin-development/references/host-plugin.md` | 3280 | `ccfc3e1c7a98023f391eb24ad2f1cee1bcb984a26e77bcd994090041049eaa4b` |
+| `preset/agent-preset/skills/cordis-plugin-development/references/mcp-bundle.md` | 984 | `944b431411ba50582d690f03aa239044556d7a1395d50d3db69cff3920f61ff3` |
+| `preset/agent-preset/skills/cordis-plugin-development/references/ui-plugin.md` | 1905 | `0d5d5f60879f5db6d4da3575a8deacac8b8d6dfe6896b5e8a566c541b51bd7a5` |
+| `preset/agent-preset/skills/cordis-plugin-development/references/verification.md` | 954 | `25b24964778652c2ae675b496ead3025dd8246d50ff9f8b167aee0d053a99f68` |
+| `preset/agent-preset/skills/cordis-plugin-development/SKILL.md` | 5423 | `5c2ace82c973a2dc032550834abaea8bcf5eee85506579e8f3b34af60abbb33f` |
+| `preset/agent-preset/skills/cordis-plugin-development/templates/decoration/client.js` | 686 | `bb17be70ae65f05d2cb26dd18f54448d706a89a1ba4da7ee3fe46ed46ac89f69` |
+| `preset/agent-preset/skills/cordis-plugin-development/templates/decoration/cordis.patch.yml` | 69 | `542639675b704bbdfa7c6694011c6e57d05c403e4499baa35731902a9063e7fc` |
+| `preset/agent-preset/skills/cordis-plugin-development/templates/decoration/index.js` | 108 | `87edbe4014ee569545ade02f7aa1915f2d2135ffebad84016a247d4542d6f39a` |
+| `preset/agent-preset/skills/cordis-plugin-development/templates/decoration/package.json` | 360 | `a5c7505401c3ff0d97ef8305853533810be9672cd2322c39c630e8a5c3cc1201` |
+| `preset/agent-preset/skills/cordis-plugin-development/templates/mcp/cordis.patch.yml` | 217 | `9a828bb02bd1aa07a6f873d823b725e85279b7ddf4bebbba40aa391ac501e9b5` |
+| `preset/agent-preset/skills/cordis-plugin-development/templates/mcp/package.json` | 151 | `7ca0d8b112887f2619f387054cf6f926079addf4fe59dd5a2bc36078c4a5352e` |
+| `preset/agent-preset/skills/editing-cordis-compositions/SKILL.md` | 5739 | `974cc1e115bf07a8de7229c20a7e7aa7fa5cc5bfe0fbc22f86b5bc776a7298e6` |

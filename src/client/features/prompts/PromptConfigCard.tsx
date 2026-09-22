@@ -1,6 +1,6 @@
 import { memo, useEffect, useId, useRef, useState, type ReactNode } from 'react'
 import clsx from 'clsx'
-import { Button, IconChevronDownOutline14, Menu, Switch, type MenuEntry } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Button, IconChevronDownOutlineRegular, Menu, Switch, type MenuEntry } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PromptToolTranslate } from '../../locales.ts'
 import type { EngineMeta, PromptConfigDraft } from '../../prompt-tool-types.ts'
 import type { InstructionPolicyFileOverride } from '../../../shared/instructions.ts'
@@ -129,7 +129,7 @@ export const PromptConfigCard = memo(function PromptConfigCard(props: {
           <span className={styles.configTitleRow}><span className={styles.configName}>{name}</span></span>
           <span className={styles.configMeta}>{chips.join(' · ')}</span>
         </span>
-        <IconChevronDownOutline14 className={clsx(styles.chevron, props.expanded && styles.chevronOpen)} />
+        <IconChevronDownOutlineRegular className={clsx(styles.chevron, props.expanded && styles.chevronOpen)} />
       </button>
       {status && <StatusBadge tone={config.contentConflict ? 'warning' : fileNotWritable ? 'danger' : 'neutral'} label={status} />}
       <span className={styles.configHeaderActions}>

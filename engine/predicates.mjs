@@ -16,7 +16,7 @@
  *   | 计数     | createCountPredicate        | deliberation-gate / progress-reminder 的计数（冷扫重建） |
  *   | 名单     | createNameListPredicate     | tool-filter 的 nameSet + allow/deny 语义          |
  *   | 会话状态 | createSessionStatePredicate | anchor-turn 的 isFreshSession                    |
- *   | 当前预设 | createPresetPredicate       | 官方 agent-presets 的 composedPreset / standingMountFor |
+ *   | 当前预设 | createPresetPredicate       | 官方 agent-preset-registry 的 composedPreset / standingMountFor |
  *
  * 组合：`composite({ any | all | not | notAny })`，短路求值；运算符词汇与
  * anchor-match 的 `MATCH_LOGIC` 同源，但**语义不同**：组合层的 `not` 是标准取反，
@@ -25,7 +25,13 @@
 
 import { MATCH_LOGIC, createAnchorMatcher } from './anchor-match.mjs'
 import { createEpochPromotion } from './compaction-epoch.mjs'
-import { subjectTextOf } from './condition.mjs'
+import {
+  lastAssistantText,
+  subjectTextOf,
+  subagentTextOf,
+  toolArgsText,
+  userMessagesText,
+} from './condition.mjs'
 import { importHostPackage } from './host-package.mjs'
 import {
   MAX_TRACKED_SESSIONS,
@@ -105,14 +111,26 @@ export function subjectOf(channel, args, warn) {
   const first = args[0]
   const base = first !== null && typeof first === 'object' && !Array.isArray(first) ? { ...first } : {}
   const pick = CHANNEL_SUBJECTS[channel]
+  const text = (() => {
+    switch (channel) {
+      case 'tools/pre-execute': return { argsText: toolArgsText(args[0]?.arguments) }
+      case 'tools/post-execute': return { argsText: toolArgsText(args[0]?.arguments), resultText: extractText(args[1]) }
+      case 'agent/pre-step': return { userText: userMessagesText(args[0]?.messages) }
+      case 'agent/inbox/inserted': return { userText: userMessagesText([args[0]?.message]) }
+      case 'agent/turn-stopping': return { assistantText: lastAssistantText(args[0]?.agent?.session) }
+      case 'subagent/start':
+      case 'subagent/end': return { subagentText: subagentTextOf(args[0]) }
+      default: return {}
+    }
+  })()
   if (pick === undefined) {
     if (typeof warn === 'function' && !warnedChannels.has(channel)) {
       warnedChannels.add(channel)
       warn(`predicates: unknown channel ${JSON.stringify(channel)} — 无显式取法，退回「第一个实参即载荷」的旧语义`)
     }
-    return { ...base, [SUBJECT_MARK]: true, channel, args }
+    return { ...base, ...text, [SUBJECT_MARK]: true, channel, args }
   }
-  return { ...base, ...pick(args), [SUBJECT_MARK]: true, channel, args }
+  return { ...base, ...pick(args), ...text, [SUBJECT_MARK]: true, channel, args }
 }
 
 /**
@@ -567,8 +585,8 @@ export function createSessionStatePredicate(options = {}) {
   return predicate
 }
 
-/** 官方 agent-presets 包：`standingMountFor` 就是服务方法 `composedPreset` 的实现本体。 */
-const AGENT_PRESETS_PACKAGE = '@deepseek-ai/dsh-agent-presets'
+/** 官方 agent-preset-registry 包：standingMountFor 与 composedPreset 同源。 */
+const AGENT_PRESETS_PACKAGE = '@deepseek-ai/dsh-agent-preset-registry'
 
 /**
  * 当前预设 id（进程内判定；官方唯一正确取法）。
@@ -576,27 +594,23 @@ const AGENT_PRESETS_PACKAGE = '@deepseek-ai/dsh-agent-presets'
  *     const id = ctx.get?.('agentPresets')?.composedPreset?.(agent.ctx)   // 首选
  *       ?? standingMountFor(agent.ctx)?.presetId                          // 服务未就绪时的同源兜底
  *
- * 依据（官方源码，非转述）：
- *  - `agent-presets/src/index.ts:504-505`：`composedPreset(agentCtx) { return standingMountFor(agentCtx)?.presetId }`
- *    ——服务方法就是模块导出的包装，**同源不是两个来源**；
- *  - `agent-presets/src/invariant.ts:48,61-64`：内核自己就用 `composedPreset(agent.ctx) === undefined`
- *    判「这个 agent 有没有 join 预设」；
- *  - `agent-presets/src/mount.ts:243-248`：`standingMountFor` 读的是 **live scope chain**
- *    （`scopeParentOf(scopeOf(agentCtx))` 匹配 standing key），不依赖事件落盘。
+ * 依据：官方 0.1.7 的 `agent-preset-registry/src/index.ts` 中 composedPreset
+ * 直接包装 `standingMountFor(agentCtx)?.presetId`；mount.ts 读取 live scope chain，
+ * invariant.ts 也以该结果判定 agent 是否已绑定预设，不依赖事件落盘。
  *
  * 三条硬约束（改这里之前先读 PLAN 的「审查结论」）：
- *  1. **禁止读 `session.header.agentPreset`**——它是出生预设。官方 `agent-presets/src/session.ts`
+ *  1. **禁止读 `session.header.agentPreset`**——它是出生预设。官方 `agent-preset-registry/src/session.ts`
  *     明写「Reconstruction reads the `agentPreset` Session projection, never the header alone」，
  *     投影初值取自 header、之后由 `agent-preset/selected` 推进；真机实测亦有 header 与
  *     实际挂载不一致的案例。
- *  2. **禁止用 `agent-presets.default`**（宿主 settings 的 default）当当前预设——它是
+ *  2. **禁止用 registry 的 defaultId** 当当前预设——它是
  *     **新会话的默认值**，与任何已存在 agent 的挂载无关。
  *  3. **`undefined` 的含义是「该 agent 没有预设」**（裸 agent），不是「取不到」；
  *     **不得回退到默认值**，调用方按「不干预 / 不命中」处理。
  *
  * 适用边界：`composedPreset` 只在**进程内、拿得到 `agent.ctx`** 时可用（装配期
  * `context.agent.ctx`、子代理认领、引擎能力）。跨 API/客户端边界没有这个方法——
- * 官方 `ctx.remote.agentPresets` 只暴露 `list / read / copy / deletePreset / select`，
+ * 官方 `ctx.remote.agentPresets` 提供 `list / select` 等远程操作，
  * 客户端拿不到 `agent.ctx` 也无法用本方法。**两种取法是分工而非替代**：
  * 进程内判定用本函数，跨边界用会话投影（`sessionProjections.stateOf(session, 'agentPreset')`）。
  *

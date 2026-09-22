@@ -202,7 +202,7 @@ function createRequireStub(record) {
     useSyncExternalStore: () => null,
   }
   const runtime = { jsx: react.createElement, jsxs: react.createElement, Fragment: react.Fragment }
-  const primitives = { Button: (props) => react.createElement('button', props), Switch: (props) => react.createElement('button', props), IconChevronDownOutline14: () => null, useAnchoredPosition: () => null, useDismissOnOutsidePointer: () => {} }
+  const primitives = { Button: (props) => react.createElement('button', props), Switch: (props) => react.createElement('button', props), IconChevronDownOutlineRegular: () => null, useAnchoredPosition: () => null, useDismissOnOutsidePointer: () => {} }
   const dom = { createRoot: () => ({ render: () => {}, unmount: () => {} }), createPortal: (children) => children }
   return (specifier) => {
     record.requires.push(specifier)
@@ -264,7 +264,7 @@ test('client bundle registers through queue/live facade', () => {
   assert.deepEqual([...exports.inject], [
     'locale',
     'slots',
-    'settingsScope',
+    'configForms',
     'uiWorkspace',
     'uiSession',
     'remote',
@@ -298,7 +298,7 @@ test('manifest 合同：bundle 只有 patch、client 面使用包名说明边', 
   assert.equal(manifest.dsh.client.platform, 'web')
 
   // inject 是包名说明边，不是 Cordis 服务名；服务名由运行时 ctx.inject 负责。
-  const serviceNames = ['slots', 'settingsScope', 'uiWorkspace', 'uiSession', 'remote', 'remote.agentPresets', 'remote.session', 'sessions']
+  const serviceNames = ['slots', 'configForms', 'uiWorkspace', 'uiSession', 'remote', 'remote.agentPresets', 'remote.session', 'sessions']
   for (const entry of manifest.dsh.client.inject) {
     assert.ok(entry.startsWith('@'), `inject 必须是包名：${entry}`)
     assert.ok(!serviceNames.includes(entry), `inject 不得混入服务名：${entry}`)

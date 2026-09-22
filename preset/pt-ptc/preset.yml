@@ -26,10 +26,8 @@ modules:
   - tool-plugin-manager-disabled
   - prompt-config-engine
 persona:
-  suffix: >-
-    Your working directory is {{cwd}}.
-  prefix: >-
-    You are a coding agent powered by the {{model}} model.
+  suffix: Your working directory is {{cwd}}.
+  prefix: You are a coding agent powered by the {{model}} model.
 promptConfigs: []
 layerSettings:
   agent-request:

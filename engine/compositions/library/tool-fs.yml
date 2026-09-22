@@ -1,11 +1,7 @@
 # module: tool-fs
-# source: master/packages/preset/agent-presets/presets/standard/agent.cordis.yml
-# commit: ddefc45fbc7f8e46dd73185e68295696d1297887
+# source: master/packages/bundle/web-app/presets/standard.patch.yml
+# commit: c36a83ff6bb95e3f82cf79f9be7c724270a8aa61
 # local patches: 0
 
-# ── filesystem ──────────────────────────────────────────────────────────────
-
-# Both register into the host `tools` registry and provide nothing, so
-# they need no realm. The `fs` service and its policy stay in the host.
 - id: tool-fs
   name: '@deepseek-ai/dsh-tool-fs'

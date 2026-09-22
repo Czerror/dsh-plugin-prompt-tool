@@ -1,6 +1,6 @@
 import { useEffect, useId, useRef, useState, type ReactNode } from 'react'
 import clsx from 'clsx'
-import { IconChevronDownOutline14, IconTrashOutline16, Switch } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconChevronDownOutlineRegular, IconTrashOutlineRegular, Switch } from '@deepseek-ai/dsh-client-ui-primitives'
 import { HintTooltip } from './HintTooltip.tsx'
 import { ConfirmDialog } from './ConfirmDialog.tsx'
 import styles from './controls.module.css'
@@ -57,7 +57,7 @@ export function EngineModuleCard(props: {
       <header className={styles.configHeader}>
         {compact ? <span className={styles.configToggle} data-static>{title}</span> :
           <button type="button" className={styles.configToggle} aria-expanded={expanded} aria-controls={panelId} onClick={() => setExpanded(!expanded)}>
-            {title}<IconChevronDownOutline14 className={clsx(styles.chevron, expanded && styles.chevronOpen)} />
+            {title}<IconChevronDownOutlineRegular className={clsx(styles.chevron, expanded && styles.chevronOpen)} />
           </button>}
         {(props.topSwitch !== undefined || props.onDelete !== undefined) && (
           <span className={styles.configHeaderActions}>
@@ -74,7 +74,7 @@ export function EngineModuleCard(props: {
             {props.onDelete !== undefined && (
               <HintTooltip label={props.deleteLabels?.title ?? `删除 ${props.name}`}>
                 <button ref={deleteRef} type="button" className={styles.pillButton} data-danger aria-label={props.deleteLabels?.title ?? `删除引擎能力 ${props.name}`}
-                  onClick={() => setConfirmingDelete(true)}><IconTrashOutline16 /></button>
+                  onClick={() => setConfirmingDelete(true)}><IconTrashOutlineRegular /></button>
               </HintTooltip>
             )}
           </span>

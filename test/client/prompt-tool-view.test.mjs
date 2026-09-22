@@ -110,16 +110,16 @@ test('技能局部快照不包含预设字段；观测完整性只由 skillsComp
   assert.equal(patch.skillCatalog[0].canDelete, true)
 })
 
-test('预设参数投影完整读回列表、阶段与 false；settings 不覆盖预设行为', () => {
-  const fields = fieldsFromView({ ok: true, value: { ns: 'prompt-tool', revision: 1, value: { usePtcMode: true }, base: {} } })
-  assert.equal(fields.usePtcMode, false)
+test('预设参数投影完整读回列表、数字与 false；settings 不覆盖预设行为', () => {
+  const fields = fieldsFromView({ ok: true, value: { ns: 'prompt-tool', revision: 1, value: { instructionHint: true }, base: {} } })
+  assert.equal(fields.instructionHint, false)
   const next = mergePresetParams(fields, {
-    guideEnabled: true, toolFilterEnabled: false, messageSources: ['user'],
-    stages: [{ name: '读取', tools: ['read'] }], subagentTemperature: 0.2,
+    guideEnabled: true, toolGitBashEnabled: false, customToolRequireApproval: ['shell'],
+    strReplaceEditorMaxOutputChars: 4096, subagentTemperature: 0.2,
   })
   assert.equal(next.guideEnabled, true)
-  assert.equal(next.toolFilterEnabled, false)
-  assert.equal(next.messageSources, 'user')
-  assert.deepEqual(next.stages, [{ name: '读取', tools: 'read' }])
+  assert.equal(next.toolGitBashEnabled, false)
+  assert.equal(next.customToolRequireApproval, 'shell')
+  assert.equal(next.strReplaceEditorMaxOutputChars, 4096)
   assert.equal(next.subagentTemperature, '0.2')
 })

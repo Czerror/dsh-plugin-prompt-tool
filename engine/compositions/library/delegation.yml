@@ -1,19 +1,8 @@
 # module: delegation
-# source: master/packages/preset/agent-presets/presets/standard/agent.cordis.yml
-# commit: ddefc45fbc7f8e46dd73185e68295696d1297887
+# source: master/packages/bundle/web-app/presets/standard.patch.yml
+# commit: c36a83ff6bb95e3f82cf79f9be7c724270a8aa61
 # local patches: 0
 
-# ── delegation and workflows ────────────────────────────────────────────────
-
-# The `subagents` registry and its spawn/fork backends live in the HOST
-# composition: the registry is a process singleton whose cross-session queries
-# the api-proxy serves to the browser, and a provider name may only be
-# registered once. This preset contributes the delegation TOOLS, which resolve
-# that host registry.
-#
-# `workflows` is different — nothing outside an agent reads it — so every row
-# that reaches it shares one entry-local realm here, and a consumer left
-# outside would resolve a host registry this preset does not populate.
 - id: delegation
   name: cordis:group
   group: true
@@ -22,10 +11,8 @@
   config:
     - id: tool-subagent-control
       name: '@deepseek-ai/dsh-tool-subagent-control'
-
     - id: tool-subagent-list-agents
       name: '@deepseek-ai/dsh-tool-subagent-control/list-agents'
-
     - id: tool-subagent
       name: '@deepseek-ai/dsh-tool-subagent'
       config:
@@ -33,22 +20,12 @@
         toolName: subagent
         modelSelectionSettings: true
         backgroundMode: continuable
-
-    # Fork omits model selection so provider/model stay equal to the parent and
-    # the inherited history remains eligible for KV Cache reuse. This preset
-    # keeps fork continuable; parent and child inherit the same messaging tool,
-    # while the parent id and return guidance follow the inherited history.
     - id: tool-subagent-fork
       name: '@deepseek-ai/dsh-tool-subagent'
       config:
         provider: fork
         toolName: subagent_fork
         backgroundMode: continuable
-
-    # Production dsh does not install these optional providers. Install the
-    # matching Bundle in this Profile and restart the Host, then copy this
-    # preset and remove `disabled` from the matching tool row. Host availability
-    # alone grants no tool.
     - id: tool-subagent-codex
       name: '@deepseek-ai/dsh-tool-subagent'
       disabled: true
@@ -57,7 +34,6 @@
         toolName: subagent_codex
         backgroundMode: one-shot
         maxDepth: provider-managed
-
     - id: tool-subagent-claude-code
       name: '@deepseek-ai/dsh-tool-subagent'
       disabled: true
@@ -66,21 +42,12 @@
         toolName: subagent_claude_code
         backgroundMode: one-shot
         maxDepth: provider-managed
-
     - id: workflow-ptc
       name: '@deepseek-ai/dsh-workflow-ptc'
       config:
         provider: spawn
-
     - id: tool-workflow
       name: '@deepseek-ai/dsh-tool-workflow'
-
-    # Off by default with the base row it mirrors: the tool description
-    # restricts `ralph` to runs the human explicitly asked for, and completion
-    # is a worker self-report, not an independent evaluation. Preset files take
-    # no patches, so a session that wants it duplicates this preset under a new
-    # id and drops `disabled`; the shipped root shadows a copy that reuses this
-    # id.
     - id: tool-ralph
       name: '@deepseek-ai/dsh-tool-ralph'
       disabled: true

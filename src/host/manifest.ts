@@ -28,6 +28,8 @@ export { MODEL_SEGMENT_MAP, PresetLayerSettingsError } from './preset-layer-sett
 export interface PresetSpec {
   id: string
   name: string
+  /** 官方预设列表顺序；省略时由宿主排序。 */
+  order?: number
   /** 预设说明（官方用户预设格式元数据；列表展示用，可选）。 */
   description?: string
   version: string
@@ -236,15 +238,14 @@ export function resolveRenderablePresetDir(template: string, presetRoot = userPr
   return { dir: userDir, fallback: false }
 }
 
-/** 可用预设清单：全部来自预设根 ~/.dsh/.agent-presets（官方预设目录，含 agent.cordis.yml
- *  即被宿主挂载；点前缀目录与无 preset.yml 的官方目录跳过，不占本插件列表）。 */
-export function listPresets(presetRoot = userPresetsDir()): Array<{ id: string; name: string; user: boolean; renderable: boolean; description?: string; meta?: Record<string, unknown> }> {
+/** 本插件预设清单：默认隐藏历史兼容快照，宿主注册方可显式包含它；目录与定义身份仍须合法。 */
+export function listPresets(presetRoot = userPresetsDir(), options: { includeCompatibility?: boolean } = {}): Array<{ id: string; name: string; user: boolean; renderable: boolean; description?: string; meta?: Record<string, unknown> }> {
   const scan = (dir: string): Array<{ id: string; name: string; user: boolean; renderable: boolean; description?: string; meta?: Record<string, unknown> }> => {
     try {
       return readdirSync(dir, { withFileTypes: true })
         .filter((entry) => entry.isDirectory() && /^[a-z0-9][a-z0-9-]*$/.test(entry.name))
         // 旧容器 id 兼容快照仅供历史会话 resolve，不参与普通预设选择/重建。
-        .filter((entry) => entry.name !== 'prompt-tool')
+        .filter((entry) => options.includeCompatibility === true || entry.name !== 'prompt-tool')
         .flatMap((entry) => {
           try {
             const spec = loadPresetSpec(assertPresetDirectory(dir, entry.name))

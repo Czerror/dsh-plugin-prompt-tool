@@ -236,11 +236,11 @@ test('浏览器：真实模板实例内编辑各层引擎参数，保存不创�
     await waitFor(`window.requests.some(r=>r.endpoint==='param-overrides' && r.body.overrides?.maxDepth === 2)`)
     await openLayerSettings('tool-pipeline')
     await evaluate(`document.querySelector('[data-engine-create-layer="tool-pipeline"] button').click()`)
-    await click('添加模块 · deliberation-gate')
-    await waitFor(`document.querySelector('[aria-label="深思下限（0 默认）"]') !== null`)
-    await edit('[aria-label="深思下限（0 默认）"]', '25')
-    await evaluate(`document.querySelector('[aria-label="深思下限（0 默认）"]').blur()`)
-    await waitFor(`window.requests.some(r=>r.endpoint==='param-overrides' && r.body.overrides?.deliberationMinChars === 25)`)
+    await click('添加模块 · str-replace-editor')
+    await waitFor(`document.querySelector('[aria-label="编辑器输出上限"]') !== null`)
+    await edit('[aria-label="编辑器输出上限"]', '4096')
+    await evaluate(`document.querySelector('[aria-label="编辑器输出上限"]').blur()`)
+    await waitFor(`window.requests.some(r=>r.endpoint==='param-overrides' && r.body.overrides?.strReplaceEditorMaxOutputChars === 4096)`)
     assert.equal(await evaluate(`document.querySelector('[aria-label="按层级或策略过滤"]').textContent.trim()`), '全部')
     assert.deepEqual(await evaluate('window.store.fields.promptConfigs'), configs, '引擎参数编辑不生成提示词规则')
   }
@@ -288,34 +288,34 @@ test('浏览器：两页顶部创建菜单严格只有九层模板', { skip: ski
   }
 })
 
-test('浏览器：层内能力与组合创建保持筛选，变量空态立即渲染，只读禁用', { skip: skipBrowser, timeout: 60000 }, async () => {
+test('浏览器：层内能力创建保持筛选，变量空态立即渲染，只读禁用', { skip: skipBrowser, timeout: 60000 }, async () => {
   for (const page of ['main', 'subagent']) {
     await navigate('/')
     await waitFor('window.store?.moduleFacts?.editable === true')
     await evaluate(`window.loadPromptTemplates(['10-pre-step.yml','30-runtime-context.yml','60-tool-pipeline.yml'])`)
     await evaluate(`window.selectPage('${page}')`)
     const count = await evaluate('window.store.fields.promptConfigs.length')
-    await createInLayer('pre-step', '前置步骤', '连锁创建 · phase-control')
-    await waitFor(`window.store.moduleFacts.effectiveModules.includes('context-gate') && window.store.moduleFacts.effectiveModules.includes('tool-bootstrap')`)
-    assert.equal(await evaluate('window.store.fields.promptConfigs.length'), count, '能力组合不创建假提示词卡')
-    assert.equal(await evaluate(`document.querySelector('[aria-label="按层级或策略过滤"]').textContent.trim()`), '层级：前置步骤')
-    await edit('input[type="search"]', 'context')
-    await waitFor(`document.querySelector('[data-engine-create-layer="pre-step"]') !== null`)
-    await evaluate(`document.querySelector('[data-engine-create-layer="pre-step"] button').click()`)
+    await createInLayer('tool-pipeline', '工具链', '添加模块 · str-replace-editor')
+    await waitFor(`window.store.moduleFacts.effectiveModules.includes('filesystem-editor')`)
+    assert.equal(await evaluate('window.store.fields.promptConfigs.length'), count, '能力创建不创建假提示词卡')
+    assert.equal(await evaluate(`document.querySelector('[aria-label="按层级或策略过滤"]').textContent.trim()`), '层级：工具链')
+    await edit('input[type="search"]', 'str-replace')
+    await waitFor(`document.querySelector('[data-engine-create-layer="tool-pipeline"]') !== null`)
+    await evaluate(`document.querySelector('[data-engine-create-layer="tool-pipeline"] button').click()`)
     await sleep(50)
-    await click('添加模块 · anchor-turn')
-    await waitFor(`window.store.moduleFacts.effectiveModules.includes('anchor-turn')`)
-    assert.equal(await evaluate('document.querySelector("input[type=search]").value'), 'context', '层内创建不清搜索')
+    await click('添加模块 · tool-git-bash')
+    await waitFor(`window.store.moduleFacts.effectiveModules.includes('tool-git-bash')`)
+    assert.equal(await evaluate('document.querySelector("input[type=search]").value'), 'str-replace', '层内创建不清搜索')
     await edit('input[type="search"]', '')
     await openLayerSettings('tool-pipeline', '工具链')
     await evaluate(`document.querySelector('[data-engine-create-layer="tool-pipeline"] button').click()`)
     await waitFor(`document.querySelector('[role="menuitem"]') !== null`)
     const labels = await evaluate(`[...document.querySelectorAll('[role="menuitem"]')].map(item=>item.textContent.trim())`)
-    assert.equal(labels.includes('添加模块 · tool-filter'), page === 'main')
-    assert.ok(labels.includes('连锁创建 · deliberation'))
-    assert.equal(labels.some((label) => label.includes('phase-control')), false, '跨层组合只在首能力主层出现')
-    await click('连锁创建 · deliberation')
-    await waitFor(`window.store.moduleFacts.effectiveModules.includes('deliberation-gate') && window.store.moduleFacts.effectiveModules.includes('progress-reminder')`)
+    assert.ok(labels.includes('添加模块 · tool-config-engine'))
+    assert.equal(labels.some((label) => label.startsWith('连锁创建')), false, '撤销组合不再出现')
+    assert.equal(labels.includes('添加模块 · str-replace-editor'), false, '已装配能力不重复创建')
+    await click('添加模块 · tool-config-engine')
+    await waitFor(`window.store.moduleFacts.effectiveModules.includes('tool-config-engine')`)
     await openLayerSettings('runtime-context', '运行上下文')
     assert.equal(await evaluate(`document.querySelector('[aria-label="模板变量名"]') === null`), true)
     await evaluate(`[...document.querySelector('[data-layer-asset="variables"]').querySelectorAll('button')].find(button=>button.textContent==='添加').focus()`)
@@ -454,26 +454,26 @@ test('浏览器：六层空卡、跨层工具创建、筛选草稿与能力卡�
   assert.equal(await evaluate(`document.querySelector('[aria-label="模板变量名"]')!==null`), true)
   await chooseView('全部')
 
-  await createInLayer('pre-step', '前置步骤', '添加模块 · context-gate')
-  await waitFor(`window.store.moduleFacts.effectiveModules.includes('context-gate')`)
-  await createInLayer('pre-step', '前置步骤', '添加模块 · anchor-turn')
-  await waitFor(`window.store.moduleFacts.effectiveModules.includes('anchor-turn')`)
-  assert.equal(await evaluate(`[...document.querySelectorAll('[data-module-card="true"]')].some((card)=>card.textContent.includes('context-gate')||card.textContent.includes('anchor-turn'))`), false, '能力不再以独立卡片出现')
-  await openLayerSettings('pre-step', '前置步骤')
-  await waitFor(`document.querySelector('[data-layer-capability="context-gate"]') !== null`)
+  await createInLayer('tool-pipeline', '工具链', '添加模块 · str-replace-editor')
+  await waitFor(`window.store.moduleFacts.effectiveModules.includes('filesystem-editor')`)
+  await createInLayer('tool-pipeline', '工具链', '添加模块 · tool-config-engine')
+  await waitFor(`window.store.moduleFacts.effectiveModules.includes('tool-config-engine')`)
+  assert.equal(await evaluate(`[...document.querySelectorAll('[data-module-card="true"]')].some((card)=>card.textContent.includes('str-replace-editor')||card.textContent.includes('tool-config-engine'))`), false, '能力不再以独立卡片出现')
+  await openLayerSettings('tool-pipeline', '工具链')
+  await waitFor(`document.querySelector('[data-layer-capability="str-replace-editor"]') !== null`)
   assert.equal(await evaluate(`document.querySelectorAll('[data-layer-capability]').length`), 2, '本层两个已装配能力都列出')
-  assert.equal(await evaluate(`document.querySelector('[data-layer-capability="anchor-turn"]') !== null`), true, '另一个能力同区可见')
+  assert.equal(await evaluate(`document.querySelector('[data-layer-capability="tool-config-engine"]') !== null`), true, '另一个能力同区可见')
   // 参数也在同一设置区里：与本层其余实例卡同源。
-  assert.equal(await evaluate(`document.querySelector('[data-layer-param-group="context-gate"]') !== null`), true, '参数组随能力装配出现')
+  assert.equal(await evaluate(`document.querySelector('[data-layer-param-group="str-replace-editor"]') !== null`), true, '参数组随能力装配出现')
   assert.equal(await evaluate(`document.querySelector('[aria-label="编辑行为"]')===null`), true, '不再有编辑目标下拉')
-  assert.equal(await evaluate(`document.querySelector('[aria-label="按层级或策略过滤"]').textContent.trim()`), '层级：前置步骤')
-  assert.deepEqual(await evaluate('window.store.moduleFacts.effectiveModules'), ['context-gate', 'anchor-turn'])
+  assert.equal(await evaluate(`document.querySelector('[aria-label="按层级或策略过滤"]').textContent.trim()`), '层级：工具链')
+  assert.deepEqual(await evaluate('window.store.moduleFacts.effectiveModules'), ['filesystem-editor', 'tool-config-engine'])
 })
 
-test('浏览器：组合创建未完成时切换等待，移除真实生效且失败不阻塞队列', { skip: skipBrowser, timeout: 30000 }, async () => {
+test('浏览器：能力创建未完成时切换等待，移除真实生效且失败不阻塞队列', { skip: skipBrowser, timeout: 30000 }, async () => {
   await navigate('/')
   await waitFor('window.store?.moduleFacts?.editable === true')
-  await evaluate(`window.delayCapabilities=true; window.createDone=false; window.switchDone=false; window.store.createEngineCapability('create-recipe','phase-control-ptc').then(value=>window.createDone=value); true`)
+  await evaluate(`window.delayCapabilities=true; window.createDone=false; window.switchDone=false; window.store.createEngineCapability('create','str-replace-editor').then(value=>window.createDone=value); true`)
   await waitFor('window.pendingCapabilities.length === 1')
   await evaluate(`window.store.setPresetTemplate('other').then(()=>window.switchDone=true); true`)
   await sleep(100)
@@ -483,20 +483,20 @@ test('浏览器：组合创建未完成时切换等待，移除真实生效且�
   assert.equal(await evaluate('window.store.fields.presetTemplate'), 'other')
   assert.deepEqual(await evaluate('window.store.moduleFacts.effectiveModules'), [], '新预设不继承其他预设的能力')
   await evaluate(`window.store.setPresetTemplate('test')`)
-  assert.equal(await evaluate(`window.store.moduleFacts.effectiveModules.includes('context-gate')`), true)
+  assert.equal(await evaluate(`window.store.moduleFacts.effectiveModules.includes('filesystem-editor')`), true)
   const capabilityRequests = await evaluate(`window.requests.filter(request=>request.endpoint==='engine-capability').length`)
-  await evaluate(`window.delayOverrides=true; window.store.patch({allowKinds:'user'}); window.store.persistParamOverrides(); true`)
+  await evaluate(`window.delayOverrides=true; window.store.patch({strReplaceEditorMaxOutputChars:4096}); window.store.persistParamOverrides(); true`)
   await waitFor('window.pendingOverrides.length === 1')
-  await evaluate(`window.removeDone=false; window.store.removeEngineCapability('context-gate').then(value=>window.removeDone=value); true`)
+  await evaluate(`window.removeDone=false; window.store.removeEngineCapability('str-replace-editor').then(value=>window.removeDone=value); true`)
   await sleep(100)
   assert.equal(await evaluate(`window.requests.filter(request=>request.endpoint==='engine-capability').length`), capabilityRequests, '移除等待已入队参数写完，避免被旧参数重新装回')
   await evaluate('window.delayOverrides=false; window.pendingOverrides.shift()(); true')
   await waitFor('window.removeDone')
-  assert.equal(await evaluate(`window.store.moduleFacts.effectiveModules.includes('context-gate')`), false)
+  assert.equal(await evaluate(`window.store.moduleFacts.effectiveModules.includes('filesystem-editor')`), false)
   await evaluate('window.rejectCapability=true')
-  assert.equal(await evaluate(`window.store.createEngineCapability('create','context-gate')`), false)
+  assert.equal(await evaluate(`window.store.createEngineCapability('create','str-replace-editor')`), false)
   await evaluate('window.rejectCapability=false')
-  assert.equal(await evaluate(`window.store.createEngineCapability('create','context-gate')`), true)
+  assert.equal(await evaluate(`window.store.createEngineCapability('create','str-replace-editor')`), true)
 })
 
 test('浏览器：子代理策略失焦保存与草稿隔离', { skip: skipBrowser, timeout: 60000 }, async (t) => {
@@ -649,15 +649,15 @@ test('浏览器：复审修复覆盖创建、搜索、只读和折叠的生产�
   await t.test('N2：技术键、中文标签、能力名只保留真实实例，空层不派生卡且不扩大批量启停', async () => {
     await reset()
     await evaluate(`window.loadPromptTemplates(['60-tool-pipeline.yml'])`)
-    await createInLayer('tool-pipeline', '工具链', '添加模块 · deliberation-gate')
-    await waitFor(`window.store.moduleFacts.effectiveModules.includes('deliberation-gate')`)
+    await createInLayer('tool-pipeline', '工具链', '添加模块 · str-replace-editor')
+    await waitFor(`window.store.moduleFacts.effectiveModules.includes('filesystem-editor')`)
     await chooseView('全部')
     await evaluate(`window.store.patch({promptConfigs:[{id:'pipe-a',name:'普通规则',layer:'tool-pipeline',strategy:'static',enabled:true}]})`)
-    for (const keyword of ['deliberationMinChars', '深思', 'deliberation-gate']) {
+    for (const keyword of ['strReplaceEditorMaxOutputChars', '编辑器输出', 'str-replace-editor']) {
       await edit('input[type="search"]', keyword)
       await waitFor(`document.querySelector('[data-config-id="pipe-a"]') !== null`)
       await openSettings('pipe-a', 'tool-pipeline')
-      await waitFor(`document.querySelector('[data-layer-param-group="deliberation-gate"]') !== null`)
+      await waitFor(`document.querySelector('[data-layer-param-group="str-replace-editor"]') !== null`)
       assert.equal(await evaluate(`window.store.fields.promptConfigs[0].enabled`), true)
       assert.equal(await evaluate(`[...document.querySelectorAll('button')].find(b=>b.textContent.startsWith('停用可见'))?.disabled`), true)
       await evaluate(`document.querySelector('[data-config-id="pipe-a"] header button[aria-expanded]').click()`)
@@ -723,24 +723,24 @@ test('浏览器：参数镜像控件同步半成品输入与错误态，一次�
   }
   await navigate('/')
   await waitFor('window.store?.moduleFacts?.editable === true')
-  // 装配「上下文门控」能力：deferredGraceSteps 属于 pre-step 层，随后会出现在该层每张实例卡里。
-  await createInLayer('pre-step', '前置步骤', '添加模块 · context-gate')
-  await waitFor(`window.store.moduleFacts.effectiveModules.includes('context-gate')`)
+  await evaluate(`window.loadPromptTemplates(['60-tool-pipeline.yml'])`)
+  await createInLayer('tool-pipeline', '工具链', '添加模块 · str-replace-editor')
+  await waitFor(`window.store.moduleFacts.effectiveModules.includes('filesystem-editor')`)
   // 同层两张实例卡：每张卡内部各有一份「本层引擎设置」，两处读同一份值。
   await evaluate(`window.store.patch({ promptConfigs: [
-    { id: 'mirror-a', name: '镜像 A', layer: 'pre-step', strategy: 'static', order: 0, enabled: true, text: 'A' },
-    { id: 'mirror-b', name: '镜像 B', layer: 'pre-step', strategy: 'static', order: 10, enabled: true, text: 'B' }
+    { id: 'mirror-a', name: '镜像 A', layer: 'tool-pipeline', strategy: 'static', order: 0, enabled: true, text: 'A' },
+    { id: 'mirror-b', name: '镜像 B', layer: 'tool-pipeline', strategy: 'static', order: 10, enabled: true, text: 'B' }
   ] }); true`)
-  await chooseView('层级：前置步骤')
+  await chooseView('层级：工具链')
   await waitFor(`document.querySelector('[data-config-id="mirror-a"]') !== null`)
   // 列表是手风琴（一次展开一张卡）：在 A 卡里编辑，切到 B 卡验证读到同一份共享草稿。
   const openSettings = async (id) => {
     await evaluate(`document.querySelector('[data-config-id="${id}"] header button[aria-expanded]').click(); true`)
-    await waitFor(`document.querySelector('[data-config-id="${id}"] [data-layer-settings="pre-step"]') !== null`)
-    await evaluate(`document.querySelector('[data-config-id="${id}"] [data-layer-settings="pre-step"] summary').click(); true`)
+    await waitFor(`document.querySelector('[data-config-id="${id}"] [data-layer-settings="tool-pipeline"]') !== null`)
+    await evaluate(`document.querySelector('[data-config-id="${id}"] [data-layer-settings="tool-pipeline"] summary').click(); true`)
   }
-  const primary = '#pt-param-layer-pre-step-mirror-a-context-gate-deferredGraceSteps'
-  const mirror = '#pt-param-layer-pre-step-mirror-b-context-gate-deferredGraceSteps'
+  const primary = '#pt-param-layer-tool-pipeline-mirror-a-str-replace-editor-strReplaceEditorMaxOutputChars'
+  const mirror = '#pt-param-layer-tool-pipeline-mirror-b-str-replace-editor-strReplaceEditorMaxOutputChars'
   await openSettings('mirror-a')
   await waitFor(`document.querySelector(${JSON.stringify(primary)}) !== null`)
   // module fixture 没有额外的焦点目标，直接 blur 元素本身即可触发字段的 onBlur 保存语义。
@@ -753,7 +753,7 @@ test('浏览器：参数镜像控件同步半成品输入与错误态，一次�
   // 失焦校验失败：字段进入 aria-invalid 并播报错误。
   await blurField(primary)
   await waitFor(`document.querySelector(${JSON.stringify(primary)}).getAttribute('aria-invalid') === 'true'`)
-  assert.equal(await evaluate(`[...document.querySelectorAll('[role="alert"]')].filter((node) => node.textContent.includes('必须是非负整数')).length`), 1)
+  assert.equal(await evaluate(`[...document.querySelectorAll('[role="alert"]')].filter((node) => node.textContent.includes('必须是正整数')).length`), 1)
   assert.equal(await evaluate(saves), before, '校验失败不落盘')
   // 切到同层另一张卡：读到同一份半成品与同一条错误（同源同步，不是第二份状态）。
   await openSettings('mirror-b')
@@ -766,7 +766,7 @@ test('浏览器：参数镜像控件同步半成品输入与错误态，一次�
   await waitFor(`${saves} === ${before + 1}`)
   await sleep(200)
   assert.equal(await evaluate(saves), before + 1, '一次语义变更只保存一次')
-  assert.equal(await evaluate('window.store.fields.deferredGraceSteps'), 3)
+  assert.equal(await evaluate('window.store.fields.strReplaceEditorMaxOutputChars'), 3)
   assert.equal(await evaluate(`document.querySelectorAll('[role="alert"]').length`), 0, '保存成功后清掉错误态')
   // 切回 A 卡：读到保存后的同一份值。
   await openSettings('mirror-a')

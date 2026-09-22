@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode, type RefObject } from 'react'
-import { IconChevronDownOutline14, Menu } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconChevronDownOutlineRegular, Menu } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PromptToolStore } from '../../data/use-prompt-tool-store.ts'
 import type { PromptToolTranslate } from '../../locales.ts'
 import { EngineModuleCard } from '../../ui/EngineModuleCard.tsx'
@@ -78,7 +78,7 @@ export function EngineCapabilityCreateMenu(props: {
       } else onExtraSelect?.(id)
     }}
     anchor={<button ref={trigger} type="button" className={styles.pillButton} disabled={!editable} aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen(!open)}>
-      {t(props.templatesOnly ? 'modules.addTemplates' : 'modules.addCapability')}<IconChevronDownOutline14 />
+      {t(props.templatesOnly ? 'modules.addTemplates' : 'modules.addCapability')}<IconChevronDownOutlineRegular />
     </button>} /></span>
 }
 

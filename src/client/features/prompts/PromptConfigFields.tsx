@@ -4,7 +4,7 @@ import { Switch } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { FieldDraft } from '../../data/workspace-drafts.ts'
 import { FormField } from '../../ui/FormField.tsx'
 import { HintTooltip } from '../../ui/HintTooltip.tsx'
-import { MenuSelect } from '../../ui/MenuSelect.tsx'
+import { MenuSelect, type MenuSelectOption } from '../../ui/MenuSelect.tsx'
 import { TagInput } from '../../ui/TagInput.tsx'
 import type { PromptToolLocaleKey, PromptToolTranslate } from '../../locales.ts'
 import type { PromptConfigMatch } from '../../prompt-tool-types.ts'
@@ -134,11 +134,10 @@ function useFieldDraft(fields: Map<string, FieldDraft> | undefined, key: string 
   return [draft, update]
 }
 
-export function NumberField(props: { t: PromptToolTranslate; label: string; hint?: string; className?: string; value: number | string | undefined; fallback?: number | string; integer?: boolean; min?: number; disabled?: boolean; fieldDrafts?: Map<string, FieldDraft>; draftKey?: string; onChange: (value: number | string | undefined) => void }): ReactNode {
+export function NumberField(props: { t: PromptToolTranslate; label: string; hint?: string; className?: string; value: number | string | undefined; fallback?: number | string; integer?: boolean; min?: number; disabled?: boolean; fieldDrafts?: Map<string, FieldDraft>; draftKey?: string; quickOptions?: readonly MenuSelectOption[]; quickLabel?: string; onChange: (value: number | string | undefined) => void }): ReactNode {
   const [draft, update] = useFieldDraft(props.fieldDrafts, props.draftKey, String(props.value ?? props.fallback ?? ''))
-  const commit = (): void => {
+  const accept = (next: number | string | undefined): void => {
     if (props.disabled) return
-    const next = draft.text.trim() === '' ? props.fallback : Number(draft.text)
     if (typeof next === 'number' && (!Number.isFinite(next) || (props.integer && !Number.isSafeInteger(next)) || (props.min !== undefined && next < props.min))) {
       update({ ...draft, error: props.t(props.integer ? 'field.number.integer' : 'field.number.invalid') })
       return
@@ -147,10 +146,22 @@ export function NumberField(props: { t: PromptToolTranslate; label: string; hint
     const accepted = String(next ?? '')
     update({ source: accepted, text: accepted, error: '' })
   }
-  return <FormField label={props.label} hint={props.hint} hintMode="tooltip" className={props.className} error={draft.error}>
+  const quickOptions = props.quickOptions
+  const field = <FormField label={props.label} hint={props.hint} hintMode="tooltip" className={quickOptions === undefined ? props.className : undefined} error={draft.error}>
     <input className={clsx(styles.configInput, styles.fieldControl, styles.configNumberInput)} inputMode={props.integer ? 'numeric' : 'decimal'}
-      value={draft.text} readOnly={props.disabled} onChange={(event) => update({ ...draft, text: event.target.value, error: '' })} onBlur={commit} />
+      value={draft.text} readOnly={props.disabled} onChange={(event) => update({ ...draft, text: event.target.value, error: '' })}
+      onBlur={() => accept(draft.text.trim() === '' ? props.fallback : Number(draft.text))} />
   </FormField>
+  if (quickOptions === undefined) return field
+  const label = props.quickLabel ?? props.label
+  return <div className={clsx(styles.orderField, props.className)}>
+    {field}
+    <FormField label={label}>
+      <MenuSelect ariaLabel={label} placeholder={label} className={styles.fieldControl} disabled={props.disabled}
+        value={draft.error === '' && quickOptions.some((option) => option.value === draft.text) ? draft.text : ''}
+        options={quickOptions} onChange={(value) => accept(Number(value))} />
+    </FormField>
+  </div>
 }
 
 /** 布尔开关行（params 结构化编辑与条件判定开关共用）；disabled 只用于条件判定区（策略区整体在 fieldset 内）。 */

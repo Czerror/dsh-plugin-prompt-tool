@@ -520,9 +520,15 @@ export function registerSettingsBridge(
   afterPresetPackageImport?: (id: string) => void | Promise<void>,
   /** 能力/recipe 原子创建后重建回调；抛错时调用方恢复 preset.yml。 */
   afterCapabilityChange?: () => void,
+  /** 新建、复制或删除预设后刷新官方注册。 */
+  afterPresetListChange?: () => void | Promise<void>,
 ): { invalidateDescriptor: () => void } {
   let invalidateCachedDescriptor: () => void = () => {}
   let capabilityQueue: Promise<void> = Promise.resolve()
+  const refreshPresetList = async (): Promise<void> => {
+    try { await afterPresetListChange?.() }
+    catch (error) { ctx.logger?.warn(`prompt-tool: 预设目录已更新，但注册刷新失败：${String(error)}`) }
+  }
   /** 等待当前预设重建；不传播附加回调的返回值。 */
   const runOverridesChange = async (): Promise<void> => {
     try {
@@ -655,7 +661,7 @@ export function registerSettingsBridge(
         // 插件参数未设置（空 = 继承宿主）时回显给客户端（模型名下拉候选/状态行）。
         let hostDefaultModel: { provider?: string; model?: string; reasoningEffort?: string } | undefined
         try {
-          const selection = sctx.settings.get('agent-default-model') as
+          const selection = sctx.settings.describe().find((entry) => String(entry.ns) === 'agent-default-model')?.value as
             { provider?: unknown; model?: unknown; reasoningEffort?: unknown } | undefined
           if (selection !== null && typeof selection === 'object') {
             const record = selection as Record<string, unknown>
@@ -1801,12 +1807,13 @@ export function registerSettingsBridge(
               return
             }
             // 全部预设都在官方预设根（首次启动种子化）：删除 = 物理删除官方预设目录，插件目录模板保留。
-            // 宿主 agent-presets roster 即目录列表，删除后自然消失。
+            // 新版宿主不扫描目录，删除后显式撤销插件拥有的注册。
             const result = removeUserPreset(id)
             if (!result.ok) {
               writeBridgeJson(res, 400, { ok: false, code: 'preset-delete-rejected', message: result.message })
               return
             }
+            await refreshPresetList()
             writeBridgeJson(res, 200, { ok: true, value: { id } })
           },
         }),
@@ -1829,6 +1836,7 @@ export function registerSettingsBridge(
               writeBridgeJson(res, 400, { ok: false, code: 'preset-clone-rejected', message: result.message })
               return
             }
+            await refreshPresetList()
             writeBridgeJson(res, 200, { ok: true, value: { id: result.id } })
           },
         }),
@@ -1851,6 +1859,7 @@ export function registerSettingsBridge(
               writeBridgeJson(res, 400, { ok: false, code: 'preset-duplicate-rejected', message: result.message })
               return
             }
+            await refreshPresetList()
             writeBridgeJson(res, 200, { ok: true, value: { id: result.id } })
           },
         }),
@@ -2272,7 +2281,7 @@ export function registerSettingsBridge(
         }
         type AgentPresetsLike = {
           list: () => Promise<readonly { id?: unknown }[]>
-          standingKeyFor: (id: string) => Promise<unknown>
+          acquireScope: (id: string) => Promise<{ key: object } & AsyncDisposable>
         }
         // agentPresets 不在本端点的 inject 列表内：ctx.agentPresets 属性访问会被 Cordis
         // 拒绝（cannot get property "agentPresets" without inject），整条请求以 400 空响应
@@ -2295,8 +2304,13 @@ export function registerSettingsBridge(
           return
         }
         try {
-          const scope = await agentPresets.standingKeyFor(presetId!)
-          const tools = projectToolSchemas(stx.tools.schemas(scope as object))
+          const lease = await agentPresets.acquireScope(presetId!)
+          let tools: ReturnType<typeof projectToolSchemas>
+          try {
+            tools = projectToolSchemas(stx.tools.schemas(lease.key))
+          } finally {
+            await lease[Symbol.asyncDispose]()
+          }
           writeBridgeJson(res, 200, { ok: true, value: { source: 'preset', presetId, tools } })
         } catch (error) {
           const message = error instanceof Error ? error.message : String(error)

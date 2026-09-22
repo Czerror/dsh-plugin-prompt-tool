@@ -1,5 +1,6 @@
 /** 插件配置、settings 数据模型与默认常量（settings 接口层）。 */
 import z from '@deepseek-ai/schemastery'
+import type { Volatile } from '@deepseek-ai/cordis'
 import type { PromptConfigSpec } from './host/prompt-configs.ts'
 import { DEFAULT_PRESET_ORDER } from './host/paths.ts'
 import { DEFAULT_PRESET_ID } from './shared/preset-ids.ts'
@@ -12,22 +13,22 @@ export { PARAM_KEYS } from './shared/param-keys.ts'
 
 export interface Config {
   /** 是否生成注入预设（默认 true）。 */
-  writePreset: boolean
+  writePreset: Volatile<boolean>
   /** 预设模板名（默认 pt-standard：与宿主内置 standard 同名的用户目录会被遮蔽）。 */
-  presetTemplate: string
+  presetTemplate: Volatile<string>
   /** 生成 preset 的显示顺序。 */
-  presetOrder: number
+  presetOrder: Volatile<number>
   /** preset.md 缺失或不可读时使用的文本。 */
-  fallbackText: string
+  fallbackText: Volatile<string>
 }
 
 // 官方插件配置范式：同名 interface Config 与 Schemastery schema 成对导出，
 // 框架在插件加载时校验并填充默认值。
-export const Config: z<Config> = z.object({
-  writePreset: z.boolean().default(true),
-  presetTemplate: z.string().default(DEFAULT_PRESET_ID),
-  presetOrder: z.natural().default(DEFAULT_PRESET_ORDER),
-  fallbackText: z.string().default(''),
+export const Config = z.object({
+  writePreset: z.boolean().default(true).volatile(),
+  presetTemplate: z.string().default(DEFAULT_PRESET_ID).volatile(),
+  presetOrder: z.natural().default(DEFAULT_PRESET_ORDER).volatile(),
+  fallbackText: z.string().default('').volatile(),
 })
 
 export interface PromptSettings {

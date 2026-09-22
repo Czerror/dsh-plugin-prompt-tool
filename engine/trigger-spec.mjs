@@ -21,7 +21,7 @@
  * `trigger.mjs` 的 `mountTriggers` 要求 `do` 是**函数**，而声明的 `do` 是**动作声明**；
  * B3 收口时两者从未对接。本文件不去接那条线（查证过：`inject-text` 与 `guard` 不经
  * `on(...)` 注册，"执行体"抽不出来），而是编译出 `{when, actions}` 交给
- * `registerAction(ctx, action, { when })` ——判定前置由动作侧统一提供。
+ * `registerAction(ctx, action, { when })` ——判定由动作侧按固定执行阶段提供。
  * 调度层面仍复用 `trigger.mjs` 的 `orderTriggers` / `registrationOptions`。
  */
 import {
@@ -34,7 +34,7 @@ import {
   createSourcePredicate,
   createTextPredicate,
 } from './predicates.mjs'
-import { ACTION_KINDS, registerAction } from './actions.mjs'
+import { ACTION_KINDS, actionExecutionPoint, prepareAction, registerAction } from './actions.mjs'
 import { WATERFALL_POSITIONS, orderTriggers, registrationOptions, wireTriggerObservers } from './trigger.mjs'
 
 /** 七类判断原语：声明里的键 → 工厂。键名与 `predicates.mjs` 的工厂一一对应。 */
@@ -129,7 +129,7 @@ function compileActions(value) {
     if (action === null || typeof action !== 'object' || Array.isArray(action)) {
       throw new TypeError(`trigger-spec: do[${index}] must be an action declaration object`)
     }
-    if (typeof action.kind !== 'string' || !(action.kind in ACTION_KINDS)) {
+    if (typeof action.kind !== 'string' || !Object.hasOwn(ACTION_KINDS, action.kind)) {
       throw new TypeError(
         `trigger-spec: do[${index}].kind must be one of ${Object.keys(ACTION_KINDS).join(', ')} — got ${JSON.stringify(action.kind)}`,
       )
@@ -172,9 +172,22 @@ export function compileDeclaration(spec, context = {}) {
   if (!WATERFALL_POSITIONS.has(waterfallPosition)) {
     throw new TypeError(`trigger-spec: trigger ${spec.id}: waterfallPosition must be one of ${[...WATERFALL_POSITIONS].join(', ')}`)
   }
-  const phase = spec.phase ?? 'after-next'
+  const actions = compileActions(spec.do)
+  const when = compileWhen(spec.when, context)
+  // 保存期复用注册入口的纯准备阶段；不绑定 ctx，不创建预算或监听器。
+  for (const action of actions) prepareAction(action, { when, ...registrationOptions({ waterfallPosition }) })
+  const phase = spec.phase ?? actionExecutionPoint(actions[0]).phase
   if (!ACTION_PHASES.includes(phase)) {
     throw new TypeError(`trigger-spec: trigger ${spec.id}: phase must be one of ${ACTION_PHASES.join(', ')}`)
+  }
+  for (const action of actions) {
+    const point = actionExecutionPoint(action)
+    if (spec.channel !== point.channel) {
+      throw new TypeError(`trigger-spec: trigger ${spec.id}: action ${action.kind} channel must be ${point.channel}`)
+    }
+    if (phase !== point.phase) {
+      throw new TypeError(`trigger-spec: trigger ${spec.id}: action ${action.kind} phase must be ${point.phase}`)
+    }
   }
   return {
     id: spec.id,
@@ -182,18 +195,18 @@ export function compileDeclaration(spec, context = {}) {
     channelOrder,
     waterfallPosition,
     phase,
-    when: compileWhen(spec.when, context),
-    actions: compileActions(spec.do),
+    when,
+    actions,
   }
 }
 
 /**
- * 编译一组声明：按 `channelOrder` 做**稳定排序**（同值保持声明序），再逐条编译。
+ * 编译一组声明：先归一化，再按 `channelOrder` 做稳定排序（同值保持声明序）。
  * 排序复用 `trigger.mjs` 的 `orderTriggers`——声明路径与内联函数路径共用同一套调度语义。
  */
 export function compileDeclarations(specs, context = {}) {
   if (!Array.isArray(specs)) throw new TypeError('trigger-spec: triggers must be an array')
-  return orderTriggers(specs).map((spec) => compileDeclaration(spec, context))
+  return orderTriggers(specs.map((spec) => compileDeclaration(spec, context)))
 }
 
 /** 该声明在其通道上的注册选项（只有 `outermost` 才 prepend），转发 `trigger.mjs` 的实现。 */

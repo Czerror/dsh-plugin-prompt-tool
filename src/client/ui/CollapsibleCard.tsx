@@ -1,7 +1,7 @@
 /** 通用折叠卡片：设置区块统一折叠入口（除模块列表外全部卡片化）。 */
 import { useId, useState, type ReactNode } from 'react'
 import clsx from 'clsx'
-import { IconChevronDownOutline14 } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconChevronDownOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives'
 import styles from './controls.module.css'
 
 export function CollapsibleCard(props: {
@@ -21,7 +21,7 @@ export function CollapsibleCard(props: {
             <span className={styles.configName}>{props.title}</span>
             {props.meta !== undefined && <span className={styles.configMeta}>{props.meta}</span>}
           </span>
-          <IconChevronDownOutline14 className={clsx(styles.chevron, open && styles.chevronOpen)} />
+          <IconChevronDownOutlineRegular className={clsx(styles.chevron, open && styles.chevronOpen)} />
         </button>
       </header>
       <div id={panelId} hidden={!open} className={styles.configForm}>{open && props.children}</div>

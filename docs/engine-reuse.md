@@ -506,6 +506,11 @@ triggers:
 
 ## 重建与验证
 
+- 官方 0.1.7 的来源是 `packages/bundle/web-app/presets/*.patch.yml` 中 `config.plugins`，配套技能来自 `packages/preset/agent-preset/skills`。`pnpm rebuild:composition --sync-source` 核验当前官方提交后，同步包内模板的人设/模块和技能、记录原始来源快照与 SHA-256，再生成分发库；普通重建只校验并生成组合库。
+- 声明的 `channel` 和 `phase` 必须与动作的真实通道及执行阶段一致，不支持的组合在编译期拒绝；省略 `channelOrder` 按 0 排序。同次 waterfall 内下游压缩成功后，after-next 条件读取复位后的 epoch。
+- 动作先经 `prepareAction` 做纯参数校验，再绑定宿主；声明编译与运行时注册复用同一入口。非法动作与不支持的 when/prepend/maxPerTurn 在物化前拒绝，不改写现有组合、正文或共享引擎。
+- 工具名单的 `allow` 与 `deny` 互斥。仅主会话的 guard 不安装会传播到子代理的 restrict；受众仍在执行 guard 内校验。动作次数预算只在目标匹配并产生效果前消费，非目标工具和被阻止的结果不消耗额度。
+
 - 更新官方模块：`pnpm rebuild:composition`。默认读取同级 `deepseek-harness`（可用
   `DSH_HARNESS_REPO` 指定源码目录），先向官方远端核验 master HEAD；本地落后、预设文件
   有未提交改动或网络核验失败时拒绝生成，不回退旧版本，也不自动修改宿主源码仓库。

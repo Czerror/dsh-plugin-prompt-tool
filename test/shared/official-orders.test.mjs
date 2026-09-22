@@ -61,13 +61,13 @@ test('区段边界与官方逐名取值一一对应（section 6 组 + context 1 
   }
 })
 
-test('手抄的档位名覆盖官方全集（33 section + 3 context），无遗漏、无重复、组内升序', async (t) => {
+test('手抄的档位名覆盖官方全集（32 section + 3 context），无遗漏、无重复、组内升序', async (t) => {
   const systemPrompt = await officialSystemPrompt(t)
   const sectionNames = OFFICIAL_SECTION_ORDER_GROUPS.flatMap((group) => [...group.names])
   const contextNames = OFFICIAL_CONTEXT_ORDER_GROUPS.flatMap((group) => [...group.names])
 
-  assert.equal(sectionNames.length, 33, '官方 SECTION_ORDERS 共 33 项')
-  assert.equal(new Set(sectionNames).size, 33, '档位名不得重复归组或漏抄')
+  assert.equal(sectionNames.length, 32, '官方 SECTION_ORDERS 共 32 项')
+  assert.equal(new Set(sectionNames).size, 32, '档位名不得重复归组或漏抄')
   assert.equal(contextNames.length, 3, '官方 CONTEXT_ORDERS 共 3 项')
   assert.equal(new Set(contextNames).size, 3, '档位名不得重复归组或漏抄')
 

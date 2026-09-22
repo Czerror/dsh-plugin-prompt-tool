@@ -83,7 +83,7 @@ test('模块字段从目录渲染，每个参数有且只有一个配置卡 owne
     assert.ok(typeof label === 'string' && label.length > 0, `${key} 必须有 UI 字典词条`)
     const html = render(EngineParamFields, { store, card: definition.card, t })
     assert.ok(html.includes(label.replaceAll('&', '&amp;')), `${key} 必须有字段标签`)
-    if (key !== 'stages') assert.ok(html.includes(`aria-label="${label}"`), `${key} 必须有可访问输入控件`)
+    assert.ok(html.includes(`aria-label="${label}"`), `${key} 必须有可访问输入控件`)
   }
 })
 
@@ -91,14 +91,14 @@ test('层设置内容按装配事实列出本层能力，未装配的能力不�
   const active = {
     ...store,
     fields: { ...EMPTY_FIELDS, presetTemplate: 'pt-cards', writePreset: true },
-    moduleFacts: withModules(['tool-bootstrap', 'filesystem-editor', 'promoted-code-mode', 'progress-reminder']),
+    moduleFacts: withModules(['filesystem-editor', 'tool-config-engine', 'tool-git-bash']),
   }
   // 装配事实按主归属层分组：str-replace-editor 由 filesystem-editor 行提供，仍归 tool-pipeline。
-  assert.deepEqual(layerAssembledCapabilities(active, 'system-section'), ['tool-bootstrap'])
-  assert.deepEqual([...layerAssembledCapabilities(active, 'tool-pipeline')].sort(), ['progress-reminder', 'promoted-code-mode', 'str-replace-editor'])
+  assert.deepEqual(layerAssembledCapabilities(active, 'system-section'), [])
+  assert.deepEqual([...layerAssembledCapabilities(active, 'tool-pipeline')].sort(), ['str-replace-editor', 'tool-config-engine', 'tool-git-bash'])
   assert.deepEqual(layerAssembledCapabilities(active, 'pre-step'), [])
   const html = render(LayerSettingsContent, { store: active, t, layer: 'tool-pipeline' })
-  for (const id of ['promoted-code-mode', 'progress-reminder', 'str-replace-editor']) {
+  for (const id of ['tool-config-engine', 'tool-git-bash', 'str-replace-editor']) {
     assert.match(html, new RegExp(`data-layer-capability="${id}"`), `${id} 应出现在本层装配清单`)
   }
   assert.doesNotMatch(html, /data-layer-capability="tool-bootstrap"/, '不列其他层的能力')
@@ -115,7 +115,7 @@ test('能力与组合只引用新模块名，不接受旧模块名或编辑器�
   const editor = engineCapability('str-replace-editor')
   assert.deepEqual(editor.moduleKeys, ['filesystem-editor'])
   assert.deepEqual(editor.rowIds, ['str-replace-editor'])
-  for (const id of ['promoted-code-mode', 'progress-reminder']) {
+  for (const id of ['tool-config-engine', 'tool-git-bash']) {
     assert.deepEqual(engineCapability(id).moduleKeys, [id])
     assert.deepEqual(engineCapability(id).rowIds, [id])
   }
@@ -129,50 +129,36 @@ test('能力与组合只引用新模块名，不接受旧模块名或编辑器�
   assert.deepEqual(layerAssembledCapabilities(legacy, 'tool-pipeline'), [], '组合来源的旧模块名不生成能力条目')
   assert.deepEqual(layerParamCards(legacy, 'tool-pipeline'), [], '旧别名不产生可编辑参数组')
   // 旧别名既不生成能力条目，也不产生可编辑参数组。
-  assert.deepEqual(engineRecipe('phase-control-ptc'), {
-    id: 'phase-control-ptc', capabilities: ['context-gate', 'tool-bootstrap', 'promoted-code-mode'], initialParams: { usePtcMode: true },
-  })
-  assert.deepEqual(engineRecipe('deliberation'), {
-    id: 'deliberation', capabilities: ['deliberation-gate', 'progress-reminder'], initialParams: { deliberationGate: true, cotDrip: true },
-  })
+  for (const id of ['phase-control', 'phase-control-ptc', 'deliberation']) assert.equal(engineRecipe(id), undefined)
 })
 
 test('字段类型、零值与 system 只读由同一渲染器处理', () => {
-  const current = { ...store, fields: { ...EMPTY_FIELDS, stagePreUnlock: 0, stages: [{ name: '读取', tools: 'read' }] } }
-  const html = render(EngineParamFields, { store: current, card: 'tool-bootstrap', t })
-  assert.match(html, /id="pt-param-stagePreUnlock"[^>]*value="0"/)
-  assert.match(html, /阶段 1 名称/)
-  assert.match(html, /阶段 1 工具集/)
-  const readonly = render(EngineParamFields, { store: { ...store, moduleFacts: { ...store.moduleFacts, editable: false } }, card: 'anchor-turn', t })
+  const current = { ...store, fields: { ...EMPTY_FIELDS, modelTemperature: 0, customToolRequireApproval: 'shell' } }
+  assert.match(render(EngineParamFields, { store: current, card: 'main-model', t }), /id="pt-param-modelTemperature"[^>]*value="0"/)
+  assert.match(render(EngineParamFields, { store: current, card: 'tool-config-engine', t }), /shell/)
+  const readonly = render(EngineParamFields, { store: { ...store, moduleFacts: { ...store.moduleFacts, editable: false } }, card: 'prompt-defaults', t })
   assert.match(readonly, /disabled=""/)
-  assert.match(readonly, /aria-label="锚定轮文本"/)
+  assert.match(readonly, /readonly=""/)
+  assert.ok(readonly.includes(`aria-label="${zh['param.firstTurnText']}"`))
 })
 
-test('主功能与子代理参与开关按同一DOM顺序成对排列，参数不增不丢', () => {
-  const pairs = [
-    ['progress-reminder', 'cotDrip', 'cotDripSubagents'],
-    ['deliberation-gate', 'deliberationGate', 'deliberationSubagents'],
-    ['context-gate', 'contextGateEnabled', 'contextGateSubagents'],
-    ['anchor-turn', 'anchorTurn', 'anchorTurnSubagents'],
-    ['promoted-code-mode', 'usePtcMode', 'ptcSubagents'],
-  ]
-  for (const [card, primary, subagents] of pairs) {
+test('现存参数按目录顺序渲染，不生成已撤销能力的成对开关', () => {
+  for (const card of ['prompt-defaults', 'str-replace-editor', 'tool-config-engine', 'tool-git-bash']) {
     const html = render(EngineParamFields, { store, card, t })
     const keys = [...html.matchAll(/data-param-key="([^"]+)"/g)].map((match) => match[1])
-    assert.deepEqual(keys.slice(0, 2), [primary, subagents], card)
-    assert.match(html, new RegExp(`<fieldset[^>]*data-param-pair="${primary}"`))
     const expected = ENGINE_PARAM_KEYS.filter((key) => ENGINE_PARAM_DEFINITIONS[key].card === card)
-    assert.deepEqual([...keys].sort(), [...expected].sort(), '完整字段集合保持')
+    assert.deepEqual(keys, expected, '完整字段集合和顺序保持')
+    assert.doesNotMatch(html, /data-param-pair=/)
   }
 })
 
-test('阶段参数在两个设置实例中保留独立DOM身份与同一草稿值', () => {
-  const active = { ...store, fields: { ...EMPTY_FIELDS, writePreset: true, stages: [{ name: '读取', tools: 'read, grep' }] } }
-  const html = ['rule-a', 'rule-b'].map((instanceId) => render(EngineParamFields, { store: active, card: 'tool-bootstrap', t, instanceId })).join('')
-  const ids = [...html.matchAll(/id="([^"]+-stage-0-tools)"/g)].map((match) => match[1])
-  assert.deepEqual(ids, ['pt-param-rule-a-stages-stage-0-tools', 'pt-param-rule-b-stages-stage-0-tools'])
+test('数字参数在两个设置实例中保留独立DOM身份与同一草稿值', () => {
+  const active = { ...store, fields: { ...EMPTY_FIELDS, writePreset: true, strReplaceEditorMaxOutputChars: 4096 } }
+  const html = ['rule-a', 'rule-b'].map((instanceId) => render(EngineParamFields, { store: active, card: 'str-replace-editor', t, instanceId })).join('')
+  const ids = [...html.matchAll(/id="([^"]+-strReplaceEditorMaxOutputChars)"/g)].map((match) => match[1])
+  assert.deepEqual(ids, ['pt-param-rule-a-strReplaceEditorMaxOutputChars', 'pt-param-rule-b-strReplaceEditorMaxOutputChars'])
   assert.equal(new Set(ids).size, 2)
-  assert.equal((html.match(/value="读取"/g) ?? []).length, 2)
+  assert.equal((html.match(/value="4096"/g) ?? []).length, 2)
 })
 
 test('递归深度和专用模型卡保留，过滤字段不重复出现在委派卡', () => {
@@ -180,8 +166,8 @@ test('递归深度和专用模型卡保留，过滤字段不重复出现在委�
   assert.match(delegation, /ariaLabel=\{t\('param\.maxDepth'\)\}/)
   assert.match(delegation, /fields\.maxDepth/)
   assert.doesNotMatch(delegation, /pt-tool-filter-allow|pt-tool-filter-deny|pt-allow-kinds/)
-  assert.equal(ENGINE_PARAM_DEFINITIONS.toolFilterAllow.card, 'tool-filter')
-  assert.equal(ENGINE_PARAM_DEFINITIONS.allowKinds.card, 'context-gate')
+  assert.equal(ENGINE_PARAM_DEFINITIONS.customToolRequireApproval.card, 'tool-config-engine')
+  assert.equal(ENGINE_PARAM_DEFINITIONS.maxDepth.card, 'subagent-tools')
 })
 
 test('自定义工具编辑入口保留，能力删除仍需二次确认', () => {
@@ -198,16 +184,16 @@ test('自定义工具编辑入口保留，能力删除仍需二次确认', () =>
     store: {
       ...store,
       fields: { ...store.fields, writePreset: true },
-      moduleFacts: withModules(['context-gate', 'anchor-turn']),
+      moduleFacts: withModules(['filesystem-editor', 'tool-config-engine']),
       removeEngineCapability: (id) => removed.push(id),
     },
     t,
   })
-  const card = find(cards, (node) => node.props?.name === 'anchor-turn' && node.props.onDelete !== undefined)
-  assert.ok(card, 'anchor-turn 必须有自己的卡片')
+  const card = find(cards, (node) => node.props?.name === 'str-replace-editor' && node.props.onDelete !== undefined)
+  assert.ok(card, 'str-replace-editor 必须有自己的卡片')
   assert.deepEqual(removed, [])
   card.props.onDelete()
-  assert.deepEqual(removed, ['anchor-turn'], '删除回调只操作本卡对应的能力')
+  assert.deepEqual(removed, ['str-replace-editor'], '删除回调只操作本卡对应的能力')
 })
 
 test('插入点顺序恒为九层（含三个新层），层序由 meta.layerOrder 下发而非本地清单', () => {
@@ -291,7 +277,7 @@ test('统一列表平铺渲染配置与能力卡，层级筛选只过滤不分�
     strategies: [], slotKinds: [], positions: [], dedupes: [], promotions: [], audienceModes: [], modelScopes: [], roles: [], mergeModes: [], fills: [],
     layerFieldPolicies: {}, layerLabels: {},
   }
-  const active = { ...store, moduleFacts: withModules(['anchor-turn']) }
+  const active = { ...store, moduleFacts: withModules(['filesystem-editor']) }
   const props = {
     t,
     meta,
@@ -306,18 +292,20 @@ test('统一列表平铺渲染配置与能力卡，层级筛选只过滤不分�
   const html = render(PromptConfigList, props)
   assert.doesNotMatch(html, /data-insertion-point/)
   assert.ok(html.includes('persona-main'), '层级配置卡与模块卡同列表渲染')
-  assert.match(html, /class="configMeta">anchor-turn</)
+  assert.match(html, /class="configName">str-replace-editor</)
+  assert.match(html, /class="configMeta">filesystem-editor</)
   // 视觉排序：模块卡（引擎能力）在层级配置卡之前；promptConfigs 的注入顺序仍由 ordered 决定。
-  assert.ok(html.indexOf('anchor-turn') < html.indexOf('persona-main'), '模块卡排在层级配置卡之前')
+  assert.ok(html.indexOf('str-replace-editor') < html.indexOf('persona-main'), '模块卡排在层级配置卡之前')
   // 选中插入点层级：只留该层配置与能力卡，仍不生成分类区块。
   const filtered = render(PromptConfigList, {
     ...props,
-    viewFilter: 'pre-step',
-    moduleCards: createElement(EngineModuleCards, { store: active, t, layerFilter: 'pre-step', showActions: false, showPromptDefaults: false, showStatus: false }),
+    viewFilter: 'tool-pipeline',
+    moduleCards: createElement(EngineModuleCards, { store: active, t, layerFilter: 'tool-pipeline', showActions: false, showPromptDefaults: false, showStatus: false }),
   })
   assert.doesNotMatch(filtered, /data-insertion-point/)
   assert.doesNotMatch(filtered, /persona-main/)
-  assert.match(filtered, /class="configMeta">anchor-turn</)
+  assert.match(filtered, /class="configName">str-replace-editor</)
+  assert.match(filtered, /class="configMeta">filesystem-editor</)
   // 主会话把筛选值下发给统一层装配入口；编辑组卡在哪层可见由共享契约判定，
   // 页面不再各自手写层名（旧实现按 `viewFilter !== 'tool-pipeline'` 内联硬编码）。
   const page = read('app/workspace/pages/MainSessionPage.tsx')
@@ -334,21 +322,21 @@ test('统一列表平铺渲染配置与能力卡，层级筛选只过滤不分�
 })
 
 test('能力卡默认折叠，只有创建/定位到该能力才展开', () => {
-  const active = { ...store, moduleFacts: withModules(['context-gate', 'anchor-turn', 'tool-bootstrap']) }
+  const active = { ...store, moduleFacts: withModules(['filesystem-editor', 'tool-config-engine', 'tool-git-bash']) }
   const collapsed = render(EngineModuleCards, { store: active, t, showPromptDefaults: false })
   assert.equal((collapsed.match(/aria-expanded="true"/g) ?? []).length, 0, '未创建/未定位时全部折叠')
-  assert.doesNotMatch(collapsed, /aria-label="锚定轮文本"/, '折叠的卡不渲染参数表单')
-  const revealed = render(EngineModuleCards, { store: active, t, showPromptDefaults: false, focusCapability: { id: 'anchor-turn', token: 1 } })
+  assert.equal(collapsed.includes(`aria-label="${zh['param.strReplaceEditorMaxOutputChars']}"`), false, '折叠的卡不渲染参数表单')
+  const revealed = render(EngineModuleCards, { store: active, t, showPromptDefaults: false, focusCapability: { id: 'str-replace-editor', token: 1 } })
   assert.equal((revealed.match(/aria-expanded="true"/g) ?? []).length, 1, '只展开定位到的那张卡')
-  assert.match(revealed, /aria-label="锚定轮文本"/, '定位目标的参数表单可见')
+  assert.ok(revealed.includes(`aria-label="${zh['param.strReplaceEditorMaxOutputChars']}"`), '定位目标的参数表单可见')
   // 定位锚点与展开信号解耦：锚点始终是能力 id，展开信号只用于变化检测。
-  assert.match(revealed, /data-module-card-id="anchor-turn"/, '能力卡带稳定定位锚点')
+  assert.match(revealed, /data-module-card-id="str-replace-editor"/, '能力卡带稳定定位锚点')
   // 重复创建同一能力：token 变化 → 重新展开（旧实现在第二次创建时不展开）。
-  const again = render(EngineModuleCards, { store: active, t, showPromptDefaults: false, focusCapability: { id: 'anchor-turn', token: 2 } })
+  const again = render(EngineModuleCards, { store: active, t, showPromptDefaults: false, focusCapability: { id: 'str-replace-editor', token: 2 } })
   assert.equal((again.match(/aria-expanded="true"/g) ?? []).length, 1, '同一能力重复创建仍展开')
 })
 
-test('层内创建菜单按能力主层过滤，组合沿首个能力归位', async () => {
+test('层内创建菜单按能力主层过滤，撤销组合不再出现', async () => {
   const created = []
   const revealed = []
   const active = { ...store, fields: { ...store.fields, writePreset: true }, createEngineCapability: async (...args) => { created.push(args); return true } }
@@ -358,17 +346,16 @@ test('层内创建菜单按能力主层过滤，组合沿首个能力归位', as
   assert.deepEqual(menu.props.items.filter(({ id }) => id.startsWith('cap:')).map(({ id }) => id.slice(4)), ENGINE_CAPABILITIES.map(({ id }) => id))
   const pipeline = menuFor('tool-pipeline')
   const ids = pipeline.props.items.map(({ id }) => id)
-  assert.ok(ids.includes('cap:progress-reminder') && ids.includes('recipe:deliberation'))
-  assert.ok(!ids.includes('cap:tool-bootstrap') && !ids.includes('recipe:phase-control'))
-  const preStep = menuFor('pre-step').props.items.map(({ id }) => id)
-  assert.ok(preStep.includes('cap:context-gate') && preStep.includes('recipe:phase-control-ptc'))
+  assert.deepEqual(ids, ENGINE_CAPABILITIES.map(({ id }) => `cap:${id}`))
+  assert.equal(ids.some((id) => id.startsWith('recipe:')), false)
+  assert.equal(menuFor('pre-step'), undefined)
   pipeline.props.onSelect('cap:context-gate')
   await Promise.resolve()
   assert.deepEqual(created, [], '不接受不属于当前层菜单的选择')
-  pipeline.props.onSelect('cap:tool-filter')
+  pipeline.props.onSelect('cap:str-replace-editor')
   await Promise.resolve()
-  assert.deepEqual(created, [['create', 'tool-filter']])
-  assert.deepEqual(revealed, ['tool-filter'])
+  assert.deepEqual(created, [['create', 'str-replace-editor']])
+  assert.deepEqual(revealed, ['str-replace-editor'])
 })
 
 test('通用模板可重复创建空卡，独立指令提示入口归为动态填充', () => {
@@ -411,8 +398,8 @@ test('编辑组层可见性来自共享契约，页面不再各自手写层名',
   assert.equal(isEditorGroupVisible('subagent-model', 'subagent-start'), true)
   assert.equal(isEditorGroupVisible('subagent-model', 'agent-request'), true)
   // 能力组与专用编辑组共用一张归属表：能力 id 也能直接查询。
-  assert.equal(isEditorGroupVisible('deliberation-gate', 'tool-pipeline'), true)
-  assert.equal(isEditorGroupVisible('deliberation-gate', 'pre-step'), false)
+  assert.equal(isEditorGroupVisible('str-replace-editor', 'tool-pipeline'), true)
+  assert.equal(isEditorGroupVisible('str-replace-editor', 'pre-step'), false)
   // 未登记的 id 不猜归属：一律可见（新增卡忘登记时是「哪层都能看到」，不是整张消失）。
   assert.equal(isEditorGroupVisible('not-registered-yet', 'turn-stop'), true)
   // 主/子页面消费同一装配入口：页面只声明受众视图，层名判断由 EngineLayersPanel 统一提供。
@@ -432,20 +419,20 @@ test('编辑组层可见性来自共享契约，页面不再各自手写层名',
 
 test('共享参数镜像控件：两处渲染读同一 store 字段，DOM id 不重复', () => {
   const store = {
-    fields: { ...EMPTY_FIELDS, presetTemplate: 'pt-mirror', writePreset: true, toolFilterAllow: 'read' },
+    fields: { ...EMPTY_FIELDS, presetTemplate: 'pt-mirror', writePreset: true, customToolRequireApproval: 'shell' },
     moduleFacts: { editable: true },
     editorDrafts: undefined,
     patch() {},
     persistParamOverrides() { return Promise.resolve(true) },
   }
   // 层卡内的默认渲染点与工具管线共享设置区的镜像渲染点：值同源，只有 DOM id 不同。
-  const primary = render(EngineParamField, { store, param: 'toolFilterAllow', t })
-  const mirror = render(EngineParamField, { store, param: 'toolFilterAllow', t, instanceId: 'tool-pipeline' })
-  assert.match(primary, /id="pt-param-toolFilterAllow"/)
-  assert.match(mirror, /id="pt-param-tool-pipeline-toolFilterAllow"/)
+  const primary = render(EngineParamField, { store, param: 'customToolRequireApproval', t })
+  const mirror = render(EngineParamField, { store, param: 'customToolRequireApproval', t, instanceId: 'tool-pipeline' })
+  assert.match(primary, /id="pt-param-customToolRequireApproval"/)
+  assert.match(mirror, /id="pt-param-tool-pipeline-customToolRequireApproval"/)
   assert.ok(!primary.includes('pt-param-tool-pipeline-'), '默认渲染点不带实例前缀')
   // 两处读的是同一个 store 字段（TagInput 把列表值渲染成标签，断言值本身出现即可）。
-  assert.ok(primary.includes('read') && mirror.includes('read'), '两处读到同一 store 字段值')
+  assert.ok(primary.includes('shell') && mirror.includes('shell'), '两处读到同一 store 字段值')
   assert.notEqual(primary.match(/id="([^"]+)"/)?.[1], mirror.match(/id="([^"]+)"/)?.[1], 'DOM id 必须不同')
 })
 
@@ -481,15 +468,15 @@ test('工具链层参数分组覆盖本层每个带参数的能力，不漏键�
 })
 
 test('EngineParamFields 把 instanceId 透传给组内每个字段', () => {  const store = {
-    fields: { ...EMPTY_FIELDS, presetTemplate: 'pt-pipeline', writePreset: true, toolFilterEnabled: true, toolFilterAllow: 'read' },
+    fields: { ...EMPTY_FIELDS, presetTemplate: 'pt-pipeline', writePreset: true, customToolRequireApproval: 'shell' },
     moduleFacts: { editable: true },
     editorDrafts: undefined,
     patch() {},
     persistParamOverrides() { return Promise.resolve(true) },
   }
-  const html = render(EngineParamFields, { store, card: 'tool-filter', t, instanceId: 'tool-pipeline' })
-  assert.ok(html.includes(zh['param.toolFilterAllow']) && html.includes(zh['param.toolFilterDeny']))
-  assert.ok(html.includes('id="pt-param-tool-pipeline-toolFilterAllow"'), '组内字段继承实例前缀')
+  const html = render(EngineParamFields, { store, card: 'tool-config-engine', t, instanceId: 'tool-pipeline' })
+  assert.ok(html.includes(zh['param.customToolRequireApproval']))
+  assert.ok(html.includes('id="pt-param-tool-pipeline-customToolRequireApproval"'), '组内字段继承实例前缀')
 })
 
 test('共享参数的未完成输入与错误态在镜像控件之间同步，且一次修改只保存一次', () => {
@@ -498,7 +485,7 @@ test('共享参数的未完成输入与错误态在镜像控件之间同步，�
   let revision = 0
   let saves = 0
   const store = {
-    fields: { ...EMPTY_FIELDS, presetTemplate: 'pt-mirror', writePreset: true, deliberationMinChars: 10 },
+    fields: { ...EMPTY_FIELDS, presetTemplate: 'pt-mirror', writePreset: true, strReplaceEditorMaxOutputChars: 10 },
     moduleFacts: { editable: true },
     editorDrafts: drafts,
     patch(partial) { Object.assign(store.fields, partial) },
@@ -507,38 +494,38 @@ test('共享参数的未完成输入与错误态在镜像控件之间同步，�
     subscribeDrafts(listener) { listeners.add(listener); return () => { listeners.delete(listener) } },
     publishDrafts() { revision += 1; for (const listener of listeners) listener() },
   }
-  const control = (instanceId) => find(tree(EngineParamField, { store, param: 'deliberationMinChars', t, instanceId }), (node) => node.type === 'input')
+  const control = (instanceId) => find(tree(EngineParamField, { store, param: 'strReplaceEditorMaxOutputChars', t, instanceId }), (node) => node.type === 'input')
   // SSR 只用 getServerSnapshot，不会调用 subscribe：接线本身由源码契约守卫，
   // 真实重渲染同步由浏览器 smoke 覆盖（两处控件读同一草稿键）。
   assert.match(read('features/modules/EngineParamFields.tsx'), /useSyncExternalStore\(store\.subscribeDrafts \?\? subscribeNothing/,
     '参数控件订阅共享草稿通道')
   // 两处渲染点有独立 DOM id，但读同一字段与同一草稿键。
   assert.equal(control(undefined).props.value, '10')
-  assert.equal(control('tool-pipeline-deliberation-gate').props.value, '10')
+  assert.equal(control('tool-pipeline-str-replace-editor').props.value, '10')
   // 未完成的数字输入写在共享草稿里：另一处立即读到同一半成品，不是各自一份本地 state。
   control(undefined).props.onChange({ target: { value: '12a' } })
   assert.equal(control(undefined).props.value, '12a')
-  assert.equal(control('tool-pipeline-deliberation-gate').props.value, '12a')
+  assert.equal(control('tool-pipeline-str-replace-editor').props.value, '12a')
   assert.equal(saves, 0, '未完成的输入不落盘')
   // 在镜像渲染点失焦：错误态同为共享草稿，两处一起进入 aria-invalid 并播报同一条错误。
-  control('tool-pipeline-deliberation-gate').props.onBlur()
+  control('tool-pipeline-str-replace-editor').props.onBlur()
   assert.equal(saves, 0)
-  const primary = render(EngineParamField, { store, param: 'deliberationMinChars', t })
-  const mirror = render(EngineParamField, { store, param: 'deliberationMinChars', t, instanceId: 'tool-pipeline-deliberation-gate' })
+  const primary = render(EngineParamField, { store, param: 'strReplaceEditorMaxOutputChars', t })
+  const mirror = render(EngineParamField, { store, param: 'strReplaceEditorMaxOutputChars', t, instanceId: 'tool-pipeline-str-replace-editor' })
   for (const html of [primary, mirror]) {
     assert.match(html, /aria-invalid="true"/)
     assert.match(html, /role="alert"/)
   }
-  assert.equal(drafts.fields.get('pt-mirror:param:deliberationMinChars').text, '12a', '错误草稿保留半成品原文')
+  assert.equal(drafts.fields.get('pt-mirror:param:strReplaceEditorMaxOutputChars').text, '12a', '错误草稿保留半成品原文')
   // 改成合法值后失焦：一次语义变更只提交一次保存，两处回落到同一个字段值。
   control(undefined).props.onChange({ target: { value: '20' } })
   assert.equal(saves, 0, '输入过程不保存')
-  control('tool-pipeline-deliberation-gate').props.onBlur()
+  control('tool-pipeline-str-replace-editor').props.onBlur()
   assert.equal(saves, 1, '一次失焦只提交一次保存')
-  assert.equal(store.fields.deliberationMinChars, 20)
-  assert.equal(drafts.fields.has('pt-mirror:param:deliberationMinChars'), false, '保存成功后清掉草稿')
+  assert.equal(store.fields.strReplaceEditorMaxOutputChars, 20)
+  assert.equal(drafts.fields.has('pt-mirror:param:strReplaceEditorMaxOutputChars'), false, '保存成功后清掉草稿')
   assert.equal(control(undefined).props.value, '20')
-  assert.equal(control('tool-pipeline-deliberation-gate').props.value, '20')
+  assert.equal(control('tool-pipeline-str-replace-editor').props.value, '20')
 })
 
 test('切层与受众切换保留草稿：卡片隐藏而不卸载，草稿键与层无关', () => {
@@ -588,9 +575,9 @@ test('统一搜索：配置名、标识、注入层与参数名都能命中，�
 })
 
 test('统一搜索：生产层装配按中文名、技术键与能力名保留真实实例，不生成空层设置卡', () => {
-  const active = { ...store, fields: { ...EMPTY_FIELDS, writePreset: true }, moduleFacts: withModules(['deliberation-gate', 'progress-reminder']) }
+  const active = { ...store, fields: { ...EMPTY_FIELDS, writePreset: true }, moduleFacts: withModules(['filesystem-editor', 'tool-config-engine']) }
   const config = { id: 'pipe-a', layer: 'tool-pipeline', strategy: 'static' }
-  for (const keyword of ['深思门', 'deliberationminchars', 'deliberation-gate']) {
+  for (const keyword of [zh['param.strReplaceEditorMaxOutputChars'], 'strreplaceeditormaxoutputchars', 'str-replace-editor']) {
     const slots = engineLayerSlots({ store: active, t, viewFilter: 'all', audience: 'main', keyword })
     assert.equal(slots.matchesLayerSettings('tool-pipeline', keyword), true)
     assert.equal(slots.matchesLayerSettings('llm-stream', keyword), false)
@@ -598,8 +585,8 @@ test('统一搜索：生产层装配按中文名、技术键与能力名保留�
     assert.match(render(PromptConfigList, { ...base, configs: [config] }), /data-config-id="pipe-a"/)
     assert.doesNotMatch(render(PromptConfigList, { ...base, configs: [] }), /data-layer-config=|data-config-id=|data-layer-settings-standalone=/)
     const settings = tree(LayerSettingsContent, { store: active, t, layer: 'tool-pipeline', keyword })
-    assert.equal(find(settings, (node) => node.props['data-layer-param-group'] === 'deliberation-gate').props.hidden, false)
-    assert.equal(find(settings, (node) => node.props['data-layer-param-group'] === 'progress-reminder').props.hidden, true)
+    assert.equal(find(settings, (node) => node.props['data-layer-param-group'] === 'str-replace-editor').props.hidden, false)
+    assert.equal(find(settings, (node) => node.props['data-layer-param-group'] === 'tool-config-engine').props.hidden, true)
   }
 })
 
@@ -634,27 +621,27 @@ test('层设置内容：参数分组按共享契约派生，能力装配状态�
   const active = {
     ...store,
     fields: { ...EMPTY_FIELDS, presetTemplate: 'pt-layer', writePreset: true },
-    moduleFacts: withModules(['deliberation-gate', 'tool-filter']),
+    moduleFacts: withModules(['filesystem-editor', 'tool-config-engine']),
   }
   // 参数分组按主归属层派生，且只列当前确实可编辑的组：能力组要求真实装配。
-  assert.deepEqual(layerParamCards(active, 'tool-pipeline'), ['tool-filter', 'deliberation-gate'])
+  assert.deepEqual(layerParamCards(active, 'tool-pipeline'), ['str-replace-editor', 'tool-config-engine'])
   assert.deepEqual(layerParamCards(active, 'llm-stream'), [])
   // 专用编辑组不依赖模块装配（提示词生成默认值始终可编辑）；能力组随装配出现。
   assert.deepEqual(layerParamCards(active, 'pre-step'), ['prompt-defaults'])
   // 已有专属编辑器的组不再进通用参数分组（模型路由卡是唯一入口）。
-  const withModel = { ...active, moduleFacts: withModules(['context-gate']) }
+  const withModel = { ...active, moduleFacts: withModules([]) }
   assert.deepEqual(layerParamCards(withModel, 'agent-request'), [], '主模型参数由模型路由卡承载')
   assert.deepEqual(layerParamCards(withModel, 'subagent-start'), [], '子代理模型同理只留模型路由卡')
-  const withGate = { ...active, moduleFacts: withModules(['context-gate', 'deliberation-gate', 'tool-filter']) }
-  assert.deepEqual(layerParamCards(withGate, 'pre-step'), ['context-gate', 'prompt-defaults'])
-  assert.deepEqual([...layerParamCards(withGate, 'tool-pipeline')].sort(), ['deliberation-gate', 'tool-filter'])
+  const withBash = { ...active, moduleFacts: withModules(['filesystem-editor', 'tool-config-engine', 'tool-git-bash']) }
+  assert.deepEqual(layerParamCards(withBash, 'pre-step'), ['prompt-defaults'])
+  assert.deepEqual(layerParamCards(withBash, 'tool-pipeline'), ['str-replace-editor', 'tool-config-engine', 'tool-git-bash'])
   assert.equal(layerHasSettings(active, 'tool-pipeline'), true)
   assert.equal(layerHasSettings(active, 'llm-stream'), false)
   // 内容：本层参数组 + 已装配能力条目（只列本层，且装配事实来自 moduleFacts）。
   const html = render(LayerSettingsContent, { store: active, t, layer: 'tool-pipeline' })
-  assert.match(html, /data-layer-param-group="deliberation-gate"/)
-  assert.match(html, /data-layer-param-group="tool-filter"/)
-  assert.equal(html.includes('data-layer-param-group="progress-reminder"'), false, '只渲染本层 card')
+  assert.match(html, /data-layer-param-group="str-replace-editor"/)
+  assert.match(html, /data-layer-param-group="tool-config-engine"/)
+  assert.equal(html.includes('data-layer-param-group="tool-git-bash"'), false, '未装配能力不渲染参数组')
   assert.equal(html.includes('data-layer-insert-template'), false, '层设置区不提供重复的注入模板入口')
   // 代理请求层：模型路由卡仍是该层唯一模型入口，通用参数分组退场但设置区不空。
   // 资产计入 hasLayerSettings 的是 engineLayerSlots 的装配结果（导出的 layerHasSettings 只看参数与能力）。
@@ -662,14 +649,14 @@ test('层设置内容：参数分组按共享契约派生，能力装配状态�
   assert.equal(modelSlots.hasLayerSettings('agent-request'), true, '模型路由资产让该层仍有设置')
   assert.deepEqual(layerParamCards(withModel, 'agent-request'), [], '该层不再有重复的通用分组')
   assert.match(html, /data-layer-capabilities="tool-pipeline"/)
-  assert.match(html, /data-layer-capability="deliberation-gate"/)
-  assert.match(html, /data-layer-capability="tool-filter"/)
+  assert.match(html, /data-layer-capability="str-replace-editor"/)
+  assert.match(html, /data-layer-capability="tool-config-engine"/)
   assert.ok(html.includes(t('modules.layer.assembled')))
   // 镜像控件的 DOM id 带「层 + 卡身份」前缀：同层多张卡、能力卡默认渲染点都不冲突。
-  assert.match(html, /id="pt-param-layer-tool-pipeline-standalone-deliberation-gate-deliberationMinChars"/)
+  assert.match(html, /id="pt-param-layer-tool-pipeline-standalone-str-replace-editor-strReplaceEditorMaxOutputChars"/)
   // 只读预设：仍显示装配状态，但不提供移除入口。
   const readOnly = render(LayerSettingsContent, { store: { ...active, fields: { ...EMPTY_FIELDS, presetTemplate: 'pt-layer', writePreset: false } }, t, layer: 'tool-pipeline' })
-  assert.ok(readOnly.includes(t('modules.layer.capability', { id: 'tool-filter' })))
+  assert.ok(readOnly.includes(t('modules.layer.capability', { id: 'tool-config-engine' })))
   assert.equal(readOnly.includes(t('modules.layer.remove')), false)
   // 该层既没有参数也没有装配能力：不渲染任何内容（层设置区不出现空壳）。
   const empty = render(LayerSettingsContent, {
@@ -681,9 +668,9 @@ test('层设置内容：参数分组按共享契约派生，能力装配状态�
   // 同层两张实例卡各渲染一份：带卡身份的 DOM id 互不重复（同源同步靠同一 store 字段）。
   const cardA = render(LayerSettingsContent, { store: active, t, layer: 'tool-pipeline', configId: 'rule-a' })
   const cardB = render(LayerSettingsContent, { store: active, t, layer: 'tool-pipeline', configId: 'rule-b' })
-  const idOf = (html) => html.match(/id="(pt-param-layer-tool-pipeline-[^"]*deliberationMinChars)"/)?.[1]
-  assert.equal(idOf(cardA), 'pt-param-layer-tool-pipeline-rule-a-deliberation-gate-deliberationMinChars')
-  assert.equal(idOf(cardB), 'pt-param-layer-tool-pipeline-rule-b-deliberation-gate-deliberationMinChars')
+  const idOf = (html) => html.match(/id="(pt-param-layer-tool-pipeline-[^"]*strReplaceEditorMaxOutputChars)"/)?.[1]
+  assert.equal(idOf(cardA), 'pt-param-layer-tool-pipeline-rule-a-str-replace-editor-strReplaceEditorMaxOutputChars')
+  assert.equal(idOf(cardB), 'pt-param-layer-tool-pipeline-rule-b-str-replace-editor-strReplaceEditorMaxOutputChars')
   assert.notEqual(idOf(cardA), idOf(cardB), '同层多卡的镜像控件 DOM id 必须不同')
 })
 

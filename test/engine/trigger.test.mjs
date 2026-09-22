@@ -24,6 +24,16 @@ test('orderTriggers：channelOrder 升序，且同值保持声明序（稳定）
   assert.deepEqual(orderTriggers([]), [], '空声明返回空')
 })
 
+test('内联触发器缺省顺序为零，after-next 谓词读取下游结算后的状态', async () => {
+  const registered = []
+  let settled = false
+  const ctx = { on: (_channel, handler) => { registered.push(handler); return () => {} } }
+  mountTriggers(ctx, [5, undefined, 1].map((channelOrder, index) => decl({
+    id: String(index), channelOrder, when: () => settled, do: () => index,
+  })))
+  assert.equal(await registered[0]({}, async () => { settled = true; return 'base' }), 1)
+})
+
 test('registrationOptions：只有 outermost 才 prepend —— 位置字段不承担排序', () => {
   assert.deepEqual(registrationOptions({ waterfallPosition: 'outermost' }), { prepend: true })
   assert.deepEqual(registrationOptions({ waterfallPosition: 'default' }), {})

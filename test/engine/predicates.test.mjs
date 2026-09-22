@@ -479,18 +479,17 @@ test('预设类：header 与 live 挂载不一致时以 live 挂载为准', () =
   )
 })
 
-test('预设类：兜底解析——官方包在时解析到模块导出，缺席时不抛错', async () => {
-  // 缺席：本仓库不依赖 @deepseek-ai/dsh-agent-presets（宿主 profile 才有）
-  const absent = await loadStandingMountFor(fileURLToPath(new URL('../../package.json', import.meta.url)))
-  assert.equal(absent, undefined, '解析不到只表示没有兜底，不是错误')
-
+test('预设类：新版官方包解析到同源导出，隔离入口优先且加载失败不抛错', async () => {
+  const installed = await import('@deepseek-ai/dsh-agent-preset-registry')
+  assert.equal(await loadStandingMountFor(fileURLToPath(import.meta.url)), installed.standingMountFor)
   // 在时：隔离临时目录里的同名包（模拟 profile 已安装）必须被解析出来
   const dir = mkdtempSync(join(tmpdir(), 'pt-predicates-'))
   try {
-    const pkg = join(dir, 'node_modules', '@deepseek-ai', 'dsh-agent-presets')
+    const base = join(dir, 'entry.js')
+    const pkg = join(dir, 'node_modules', '@deepseek-ai', 'dsh-agent-preset-registry')
     mkdirSync(pkg, { recursive: true })
     writeFileSync(join(pkg, 'package.json'), JSON.stringify({
-      name: '@deepseek-ai/dsh-agent-presets',
+      name: '@deepseek-ai/dsh-agent-preset-registry',
       version: '0.0.0',
       type: 'module',
       main: 'index.js',
@@ -501,12 +500,16 @@ test('预设类：兜底解析——官方包在时解析到模块导出，缺�
       '}',
       '',
     ].join('\n'))
-    const base = join(dir, 'entry.js')
     writeFileSync(base, '')
     const resolved = await loadStandingMountFor(base)
     assert.equal(typeof resolved, 'function', '官方包在时必须解析到模块导出')
     assert.deepEqual(resolved({ mounted: 'pt-cordis' }), { presetId: 'pt-cordis' })
     assert.equal(resolved({}), undefined)
+    const brokenPackage = join(dir, 'broken', 'node_modules', '@deepseek-ai', 'dsh-agent-preset-registry')
+    mkdirSync(brokenPackage, { recursive: true })
+    writeFileSync(join(brokenPackage, 'package.json'), JSON.stringify({ type: 'module', main: 'index.js' }))
+    writeFileSync(join(brokenPackage, 'index.js'), 'throw new Error("package unavailable")')
+    assert.equal(await loadStandingMountFor(join(dir, 'broken', 'entry.js')), undefined, '官方包加载失败时安全降级')
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }

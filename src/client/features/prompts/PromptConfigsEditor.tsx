@@ -1,6 +1,6 @@
 import { useId, useRef, useState, type FocusEvent, type ReactNode } from 'react'
 import clsx from 'clsx'
-import { IconChevronDownOutline14, Switch } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconChevronDownOutlineRegular, Switch } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PromptToolTranslate } from '../../locales.ts'
 import { PromptConfigList, type PromptConfigListProps } from './PromptConfigList.tsx'
 import { HintTooltip } from '../../ui/HintTooltip.tsx'
@@ -107,7 +107,7 @@ export function TemplateVariablesModuleCard(props: {
             <span className={styles.configName}>{t('variables.title')}</span>
             <span className={styles.configMeta}>{t('variables.cardMeta', { count })}</span>
           </span>
-          <IconChevronDownOutline14 className={clsx(styles.chevron, props.expanded && styles.chevronOpen)} />
+          <IconChevronDownOutlineRegular className={clsx(styles.chevron, props.expanded && styles.chevronOpen)} />
         </button>
         <span className={styles.configHeaderActions}>
           <HintTooltip label={enabled ? t('variables.toggleDisable') : t('variables.toggleEnable')}>

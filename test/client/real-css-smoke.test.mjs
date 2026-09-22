@@ -15,7 +15,7 @@ const root = fileURLToPath(new URL('../../', import.meta.url))
 const require = createRequire(join(root, 'package.json'))
 const browserPath = process.env.PROMPT_TOOL_TEST_BROWSER ?? 'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe'
 
-test('真实CSS：层设置宽窄布局、键盘与就地错误，胶囊和鼠标过滤保持', { skip: !existsSync(browserPath), timeout: 30000 }, async () => {
+test('真实CSS：三层表单宽窄与明暗布局、键盘、数字恢复、只读和单次保存', { skip: !existsSync(browserPath), timeout: 30000 }, async () => {
   const { rolldown } = await import(pathToFileURL(createRequire(require.resolve('tsdown')).resolve('rolldown')))
   const { transform } = require('lightningcss'), ts = require('typescript')
   const css = []
@@ -26,14 +26,18 @@ import ui from ${JSON.stringify(join(root, 'src/client/ui/controls.module.css').
 import {PromptConfigForm} from ${JSON.stringify(join(root, 'src/client/features/prompts/PromptConfigForm.tsx').replaceAll('\\', '/'))};
 import {LayerSettingsContent} from ${JSON.stringify(join(root, 'src/client/app/workspace/pages/EngineLayersPanel.tsx').replaceAll('\\', '/'))};
 import {EMPTY_FIELDS} from ${JSON.stringify(join(root, 'src/client/data/prompt-tool-fields.ts').replaceAll('\\', '/'))};
-import {createWorkspaceDrafts} from ${JSON.stringify(join(root, 'src/client/data/workspace-drafts.ts').replaceAll('\\', '/'))};
+import {createWorkspaceDrafts,hasWorkspaceDrafts} from ${JSON.stringify(join(root, 'src/client/data/workspace-drafts.ts').replaceAll('\\', '/'))};
 import {PROMPT_TOOL_DICTS} from ${JSON.stringify(join(root, 'src/client/locales.ts').replaceAll('\\', '/'))};
 const t=(key,params={})=>Object.entries(params).reduce((text,[name,value])=>text.replaceAll('{'+name+'}',String(value)),PROMPT_TOOL_DICTS.zh[key]??key);
 function Settings(){
  const [,render]=React.useReducer(n=>n+1,0);
- const store=React.useMemo(()=>({fields:{...EMPTY_FIELDS,presetTemplate:'layout',writePreset:true},moduleFacts:{sourceMode:'explicit',editable:true,declaredModules:['deliberation-gate','progress-reminder'],effectiveModules:['deliberation-gate','progress-reminder'],rowIds:[]},editorDrafts:createWorkspaceDrafts(),publishDrafts:()=>render(),patch:next=>{Object.assign(store.fields,next);render()},persistParamOverrides:async()=>{window.paramWrites=(window.paramWrites??0)+1},removeEngineCapability:async()=>true}),[]);
+ const [configs,setConfigs]=React.useState(()=>['pre-step','tool-pipeline','system-section'].map(layer=>({id:'layout-'+layer,layer,strategy:'static',order:0,text:'布局验收'})));
+ const store=React.useMemo(()=>({fields:{...EMPTY_FIELDS,presetTemplate:'layout',writePreset:true},moduleFacts:{sourceMode:'explicit',editable:true,declaredModules:['filesystem-editor'],effectiveModules:['filesystem-editor'],rowIds:[]},editorDrafts:createWorkspaceDrafts(),publishDrafts:()=>render(),patch:next=>{Object.assign(store.fields,next);render()},persistParamOverrides:async()=>{window.paramWrites=(window.paramWrites??0)+1},removeEngineCapability:async()=>true}),[]);
  window.settingsStore=store;
- return React.createElement('div',{'data-settings-host':true,style:{width:'860px',maxWidth:'100%'}},React.createElement(PromptConfigForm,{t,meta:window.layerMeta,config:{id:'layout-pipe',layer:'tool-pipeline',strategy:'static',text:'布局验收'},onPatch:()=>{},renderLayerSettings:(layer,config)=>React.createElement(LayerSettingsContent,{store,t,layer,configId:config.id,excludeCapabilities:['custom-tools','subagent-tool-policy']})}));
+ window.hasDrafts=()=>hasWorkspaceDrafts(store.editorDrafts,'layout');
+ window.configs=configs;
+ window.setReadOnly=value=>{store.moduleFacts.editable=!value;render()};
+ return React.createElement('div',{'data-settings-host':true,style:{width:'860px',maxWidth:'100%'}},...configs.map(config=>React.createElement('section',{key:config.id,'data-form-layer':config.layer},React.createElement(PromptConfigForm,{t,meta:window.layerMeta,config,disabled:!store.moduleFacts.editable,fieldDrafts:store.editorDrafts.fields,draftScope:'layout',onPatch:patch=>{window.configWrites=(window.configWrites??0)+1;setConfigs(current=>current.map(item=>item.id===config.id?{...item,...patch}:item))},renderLayerSettings:config.layer==='system-section'?undefined:(layer,config)=>React.createElement(LayerSettingsContent,{store,t,layer,configId:config.id,excludeCapabilities:['custom-tools','subagent-tool-policy']})}))));
 }
 const names=['Anchored Standard(prompt-tool)','夏瑾 天琴座 Beta 2.42（SillyTavern 转换）'];
 const cards=names.map((name,index)=>
@@ -65,9 +69,10 @@ React.createElement('section',{className:ui.pageActions,'data-sticky':true},'模
   let output
   try { ({ output } = await bundle.generate({ format: 'iife' })) } finally { await bundle.close() }
   const js = output.find((item) => item.type === 'chunk').code
+  const meta = { ...getEngineMeta(), officialOrders: { sections: [{ id: 'identity', from: 500, to: 600 }], contexts: [] } }
   const server = createServer((req, res) => {
     res.setHeader('Content-Type', req.url === '/app.js' ? 'text/javascript' : 'text/html')
-    res.end(req.url === '/app.js' ? js : `<!doctype html><meta charset="utf-8"><style>${css.join('\n')}:root{color-scheme:light;--dsw-alias-label-primary:light-dark(#20242a,#eef0f3);--dsw-alias-label-secondary:light-dark(#5d6571,#b2bac7);--dsw-alias-label-tertiary:light-dark(#7a8391,#909bad);--dsw-alias-bg-layer-2:light-dark(#fff,#20242b);--dsw-alias-bg-layer-3:light-dark(#f6f7f9,#272c34);--dsw-alias-border-l1:light-dark(#e9ecf0,#323a46);--dsw-alias-border-l2:light-dark(#d9dfe7,#414c5c);--dsw-alias-border-l3:light-dark(#a5afbd,#637086);--dsw-alias-brand-primary:#3572d6;--dsw-alias-label-primary-foreground:#fff;--dsw-alias-bg-layer-1:light-dark(#fff,#20242b);--dsw-alias-state-business-primary:#3572d6;--dsw-alias-state-error-primary:#c63737;--dsw-font-xxs-12:400 12px/1.5 sans-serif;--dsw-font-xs-strong-13:600 13px/1.5 sans-serif;--dsw-font-s-14:400 14px/1.5 sans-serif;}body{font:12px/18px sans-serif;margin:8px;background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-primary)}article{margin-bottom:16px}strong{font:600 13px/20px sans-serif!important}</style><div id="root"></div><script>window.layerMeta=${JSON.stringify(getEngineMeta())}</script><script src="/app.js"></script>`)
+    res.end(req.url === '/app.js' ? js : `<!doctype html><meta charset="utf-8"><style>${css.join('\n')}:root{color-scheme:light;--dsw-alias-label-primary:light-dark(#20242a,#eef0f3);--dsw-alias-label-secondary:light-dark(#5d6571,#b2bac7);--dsw-alias-label-tertiary:light-dark(#7a8391,#909bad);--dsw-alias-bg-layer-2:light-dark(#fff,#20242b);--dsw-alias-bg-layer-3:light-dark(#f6f7f9,#272c34);--dsw-alias-border-l1:light-dark(#e9ecf0,#323a46);--dsw-alias-border-l2:light-dark(#d9dfe7,#414c5c);--dsw-alias-border-l3:light-dark(#a5afbd,#637086);--dsw-alias-brand-primary:#3572d6;--dsw-alias-label-primary-foreground:#fff;--dsw-alias-bg-layer-1:light-dark(#fff,#20242b);--dsw-alias-state-business-primary:#3572d6;--dsw-alias-state-error-primary:#c63737;--dsw-font-xxs-12:400 12px/1.5 sans-serif;--dsw-font-xs-strong-13:600 13px/1.5 sans-serif;--dsw-font-s-14:400 14px/1.5 sans-serif;}body{font:12px/18px sans-serif;margin:8px;background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-primary)}article{margin-bottom:16px}strong{font:600 13px/20px sans-serif!important}</style><div id="root"></div><script>window.layerMeta=${JSON.stringify(meta)}</script><script src="/app.js"></script>`)
   }).listen(0, '127.0.0.1')
   await once(server, 'listening')
   const profile = mkdtempSync(join(tmpdir(), 'pt-badge-browser-'))
@@ -120,33 +125,46 @@ React.createElement('section',{className:ui.pageActions,'data-sticky':true},'模
     // 生产表单默认折叠；用键盘打开后才创建本层参数控件。
     assert.equal(await evaluate(`document.querySelector('[data-layer-settings-content]') === null`), true)
     await send('Emulation.setDeviceMetricsOverride', { width: 1024, height: 900, deviceScaleFactor: 1, mobile: false })
-    await evaluate(`document.querySelector('[data-layer-settings="tool-pipeline"] summary').focus()`)
-    await send('Input.dispatchKeyEvent', { type: 'rawKeyDown', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 })
-    await send('Input.dispatchKeyEvent', { type: 'char', text: '\r', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 })
-    await send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 })
-    for (let i = 0; i < 100 && !await evaluate(`!!document.querySelector('[data-layer-settings-content]')`); i++) await delay(30)
-    assert.equal(await evaluate(`document.querySelector('[data-layer-settings="tool-pipeline"]').open`), true)
-    for (const width of [860, 420, 320]) {
-      await evaluate(`document.querySelector('[data-settings-host]').style.width='${width}px'`)
+    const pressKey = async (key, code, windowsVirtualKeyCode, text) => {
+      await send('Input.dispatchKeyEvent', { type: 'rawKeyDown', key, code, windowsVirtualKeyCode })
+      if (text !== undefined) await send('Input.dispatchKeyEvent', { type: 'char', text, key, code, windowsVirtualKeyCode })
+      await send('Input.dispatchKeyEvent', { type: 'keyUp', key, code, windowsVirtualKeyCode })
       await delay(40)
-      const layout = await evaluate(`(()=>{const root=document.querySelector('[data-layer-settings-content]');const grid=root.querySelector('[data-layer-param-fields="deliberation-gate"]');const text=grid.querySelector('textarea').closest('[data-param-key]');return {width:root.getBoundingClientRect().width,available:root.parentElement.getBoundingClientRect().width,overflow:root.scrollWidth>root.clientWidth+1,columns:getComputedStyle(grid).gridTemplateColumns.split(' ').length,textWidth:text.getBoundingClientRect().width,gridWidth:grid.getBoundingClientRect().width,groupWidths:[...root.querySelectorAll('[data-layer-param-group]')].map(e=>e.getBoundingClientRect().width)}})()`)
-      assert.ok(layout.width >= layout.available - 2, `设置内容占满外层网格：${JSON.stringify(layout)}`)
-      assert.equal(layout.overflow, false, `无水平溢出：${width}`)
-      assert.equal(layout.columns, width > 640 ? 2 : 1, `参数列数：${width}`)
-      assert.ok(layout.textWidth >= layout.gridWidth - 2, `长文本占整行：${JSON.stringify(layout)}`)
-      assert.ok(layout.groupWidths.every(value => value >= layout.width - 4), '每个分组占完整宽度')
-      const pairs = await evaluate(`(()=>[...document.querySelectorAll('[data-param-pair]')].map(group=>[...group.querySelectorAll('[role="switch"]')].map(button=>{const r=button.getBoundingClientRect();return {x:r.left,y:r.top,width:r.width}})))()`)
-      assert.equal(pairs.length, 2, '深思门与节拍都沿用同一关联开关规则')
-      for (const pair of pairs) {
-        assert.equal(pair.length, 2)
-        assert.ok(pair[1].x > pair[0].x + pair[0].width, `子代理开关位于右侧：${width}`)
-        assert.ok(Math.abs(pair[0].y - pair[1].y) <= 1, `关联开关同一行：${width}`)
+    }
+    for (const layer of ['pre-step', 'tool-pipeline']) {
+      await evaluate(`document.querySelector('[data-layer-settings="${layer}"] summary').focus()`)
+      await pressKey('Enter', 'Enter', 13, '\r')
+      assert.equal(await evaluate(`document.querySelector('[data-layer-settings="${layer}"]').open`), true)
+    }
+    assert.equal(await evaluate(`document.querySelectorAll('[data-layer-settings-content]').length`), 2)
+    const themeColors = []
+    for (const scheme of ['light', 'dark']) {
+      await evaluate(`document.documentElement.style.colorScheme='${scheme}'`)
+      themeColors.push(await evaluate(`getComputedStyle(document.querySelector('[data-settings-host]')).color`))
+      for (const width of [860, 420, 320]) {
+        await evaluate(`document.querySelector('[data-settings-host]').style.width='${width}px'`)
+        await delay(40)
+        const forms = await evaluate(`(()=>[...document.querySelectorAll('[data-form-layer]')].map(form=>{const r=form.getBoundingClientRect();return {layer:form.dataset.formLayer,overflow:form.scrollWidth>form.clientWidth+1,outside:[...form.querySelectorAll('input,textarea,button')].filter(e=>e.getClientRects().length).some(e=>{const b=e.getBoundingClientRect();return b.left<r.left-1||b.right>r.right+1})}}))()`)
+        assert.equal(forms.length, 3)
+        for (const form of forms) {
+          assert.equal(form.overflow, false, `表单无水平溢出：${scheme}/${width}/${form.layer}`)
+          assert.equal(form.outside, false, `控件保持在表单内：${scheme}/${width}/${form.layer}`)
+        }
+        for (const group of ['prompt-defaults', 'str-replace-editor']) {
+          const layout = await evaluate(`(()=>{const grid=document.querySelector('[data-layer-param-fields="${group}"]');const root=grid.closest('[data-layer-settings-content]');const text=grid.querySelector('textarea')?.closest('[data-param-key]');return {width:root.getBoundingClientRect().width,available:root.parentElement.getBoundingClientRect().width,overflow:root.scrollWidth>root.clientWidth+1,columns:getComputedStyle(grid).gridTemplateColumns.split(' ').length,textWidth:text?.getBoundingClientRect().width,gridWidth:grid.getBoundingClientRect().width,groupWidths:[...root.querySelectorAll('[data-layer-param-group]')].map(e=>e.getBoundingClientRect().width)}})()`)
+          assert.ok(layout.width >= layout.available - 2, `设置内容占满外层网格：${JSON.stringify(layout)}`)
+          assert.equal(layout.overflow, false, `设置无水平溢出：${scheme}/${width}/${group}`)
+          assert.equal(layout.columns, width > 640 ? 2 : 1, `参数列数：${scheme}/${width}/${group}`)
+          if (group === 'prompt-defaults') assert.ok(layout.textWidth >= layout.gridWidth - 2, `长文本占整行：${JSON.stringify(layout)}`)
+          assert.ok(layout.groupWidths.every(value => value >= layout.width - 4), '每个分组占完整宽度')
+        }
       }
     }
-    await evaluate(`document.querySelector('[data-layer-param-group="deliberation-gate"]').hidden=true`)
-    assert.equal(await evaluate(`getComputedStyle(document.querySelector('[data-layer-param-group="deliberation-gate"]')).display`), 'none')
-    await evaluate(`document.querySelector('[data-layer-param-group="deliberation-gate"]').hidden=false`)
-    const number = '#pt-param-layer-tool-pipeline-layout-pipe-deliberation-gate-deliberationMinChars'
+    assert.notEqual(themeColors[0], themeColors[1], '表单前景随明暗主题切换')
+    await evaluate(`document.querySelector('[data-layer-param-group="str-replace-editor"]').hidden=true`)
+    assert.equal(await evaluate(`getComputedStyle(document.querySelector('[data-layer-param-group="str-replace-editor"]')).display`), 'none')
+    await evaluate(`document.querySelector('[data-layer-param-group="str-replace-editor"]').hidden=false`)
+    const number = '#pt-param-layer-tool-pipeline-layout-tool-pipeline-str-replace-editor-strReplaceEditorMaxOutputChars'
     await evaluate(`document.querySelector('${number}').focus();document.querySelector('${number}').select()`)
     await send('Input.insertText', { text: '12a' })
     await evaluate(`document.querySelector('${number}').blur()`)
@@ -159,23 +177,59 @@ React.createElement('section',{className:ui.pageActions,'data-sticky':true},'模
     await evaluate(`document.querySelector('${number}').blur()`)
     await delay(40)
     assert.equal(await evaluate('window.paramWrites'), 1, '一次失焦仍只保存一次')
-    const mainSwitch = '[data-param-key="cotDrip"] [role="switch"]'
-    const childSwitch = '[data-param-key="cotDripSubagents"] [role="switch"]'
-    await evaluate(`document.querySelector('${mainSwitch}').focus()`)
-    await send('Input.dispatchKeyEvent', { type: 'rawKeyDown', key: 'Tab', code: 'Tab', windowsVirtualKeyCode: 9 })
-    await send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Tab', code: 'Tab', windowsVirtualKeyCode: 9 })
-    assert.equal(await evaluate(`document.activeElement===document.querySelector('${childSwitch}')`), true, '键盘顺序与左右排列一致')
-    const toggleWithSpace = async () => {
-      await send('Input.dispatchKeyEvent', { type: 'rawKeyDown', key: ' ', code: 'Space', windowsVirtualKeyCode: 32 })
-      await send('Input.dispatchKeyEvent', { type: 'char', text: ' ', key: ' ', code: 'Space', windowsVirtualKeyCode: 32 })
-      await send('Input.dispatchKeyEvent', { type: 'keyUp', key: ' ', code: 'Space', windowsVirtualKeyCode: 32 })
-      await delay(40)
+    assert.equal(await evaluate(`document.querySelector('${number}').getAttribute('aria-invalid')`), 'false')
+    const anchorSwitch = '[data-param-key="firstTurnAnchor"] [role="switch"]'
+    const hintSwitch = '[data-param-key="instructionHint"] [role="switch"]'
+    await evaluate(`document.querySelector('[data-param-key="guideEnabled"] [aria-haspopup="menu"]').focus()`)
+    await pressKey('Tab', 'Tab', 9)
+    assert.equal(await evaluate(`document.activeElement===document.querySelector('[data-param-key="injectPrompt"] [role="switch"]')`), true, '键盘顺序与目录中的控件顺序一致')
+    await evaluate(`document.querySelector('${hintSwitch}').focus()`)
+    await pressKey(' ', 'Space', 32, ' ')
+    assert.deepEqual(await evaluate('[window.settingsStore.fields.firstTurnAnchor,window.settingsStore.fields.instructionHint,window.paramWrites]'), [false, true, 2], '现存开关独立保存，不联动其他参数')
+    await evaluate(`document.querySelector('${anchorSwitch}').focus()`)
+    await pressKey(' ', 'Space', 32, ' ')
+    assert.deepEqual(await evaluate('[window.settingsStore.fields.firstTurnAnchor,window.settingsStore.fields.instructionHint,window.paramWrites]'), [true, true, 3])
+
+    // 数字与官方位置共用接受值路径：无效草稿不能在快捷选择后继续阻塞预设切换。
+    await evaluate(`(()=>{const form=document.querySelector('[data-form-layer="system-section"]');const label=[...form.querySelectorAll('label')].find(e=>e.textContent==='顺序');document.getElementById(label.htmlFor).dataset.orderInput='true'})()`)
+    const orderInput = '[data-order-input]'
+    const quickOrder = '[data-form-layer="system-section"] [aria-label="插入到官方位置…"]'
+    await evaluate(`document.querySelector('${orderInput}').focus();document.querySelector('${orderInput}').select()`)
+    await send('Input.insertText', { text: '12a' })
+    await evaluate(`document.querySelector('${orderInput}').blur()`)
+    await delay(40)
+    assert.equal(await evaluate(`document.querySelector('${orderInput}').getAttribute('aria-invalid')`), 'true')
+    assert.equal(await evaluate(`!!document.getElementById(document.querySelector('${orderInput}').getAttribute('aria-describedby'))?.textContent`), true)
+    assert.equal(await evaluate('window.hasDrafts()'), true)
+    assert.equal(await evaluate('window.configWrites??0'), 0)
+    await pointerClick(quickOrder)
+    await evaluate(`document.querySelector('[role="menuitem"]').dataset.orderOption='true'`)
+    const orderLabel = await evaluate(`document.querySelector('[data-order-option]').textContent.trim()`)
+    await pointerClick('[data-order-option]')
+    assert.equal(await evaluate(`document.querySelector('${orderInput}').value`), '499', '快捷值严格位于官方区段之前')
+    assert.equal(await evaluate(`document.querySelector('${quickOrder}').textContent.trim()`), orderLabel, '数字与快捷入口显示同步')
+    assert.equal(await evaluate(`document.querySelector('${orderInput}').hasAttribute('aria-invalid')`), false)
+    assert.equal(await evaluate(`document.querySelector('[data-form-layer="system-section"] [role="alert"]') === null`), true)
+    assert.equal(await evaluate('window.hasDrafts()'), false, '草稿恢复干净，不再阻止切换')
+    assert.deepEqual(await evaluate(`[window.configs.find(config=>config.layer==='system-section').order,window.configWrites]`), [499, 1], '一次快捷选择只写回一次')
+
+    await evaluate('window.setReadOnly(true)')
+    await delay(40)
+    assert.equal(await evaluate(`document.querySelector('${number}').readOnly`), true)
+    assert.equal(await evaluate(`document.querySelector('${orderInput}').readOnly`), true)
+    assert.equal(await evaluate(`document.querySelector('${quickOrder}').disabled`), true)
+    assert.equal(await evaluate(`document.querySelector('${hintSwitch}').disabled`), true)
+    await evaluate(`document.querySelector('${orderInput}').focus();document.querySelector('${orderInput}').select()`)
+    await send('Input.insertText', { text: '900' })
+    await evaluate(`document.querySelector('${orderInput}').blur()`)
+    await pointerClick(quickOrder)
+    assert.equal(await evaluate(`document.querySelector('[role="menu"]') === null`), true)
+    for (const expected of [false, true]) {
+      await evaluate(`document.querySelector('[data-layer-settings="tool-pipeline"] summary').focus()`)
+      await pressKey('Enter', 'Enter', 13, '\r')
+      assert.equal(await evaluate(`document.querySelector('[data-layer-settings="tool-pipeline"]').open`), expected, '只读时仍可用键盘折叠与展开')
     }
-    await toggleWithSpace()
-    assert.deepEqual(await evaluate('[window.settingsStore.fields.cotDrip,window.settingsStore.fields.cotDripSubagents,window.paramWrites]'), [false, true, 2], '子代理开关独立保存，不联动主开关')
-    await evaluate(`document.querySelector('${mainSwitch}').focus()`)
-    await toggleWithSpace()
-    assert.deepEqual(await evaluate('[window.settingsStore.fields.cotDrip,window.settingsStore.fields.cotDripSubagents,window.paramWrites]'), [true, true, 3])
+    assert.deepEqual(await evaluate(`[document.querySelector('${orderInput}').value,window.configWrites,window.paramWrites]`), ['499', 1, 3], '只读交互不改变值或追加保存')
     if (process.env.PROMPT_TOOL_LAYER_SCREENSHOT) {
       await evaluate(`document.querySelector('[data-sticky]').style.position='static'; window.scrollTo(0,0)`)
       await send('Emulation.setDeviceMetricsOverride', { width: 1024, height: 900, deviceScaleFactor: 1, mobile: false })

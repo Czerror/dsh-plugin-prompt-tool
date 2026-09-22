@@ -12,7 +12,7 @@ const home = mkdtempSync(join(tmpdir(), 'pt-wp-home-'))
 process.env.DSH_HOME = home
 const ROOT = fileURLToPath(new URL('../..', import.meta.url))
 const { FIXTURE_PRESET_ID, FIXTURE_PRESET_SRC, installFixturePreset, installFixturePresetInHome } = await import('../fixtures/preset-template.mjs')
-const { apply, writePreset, writePluginState, savePresetParams, loadPresetSpec } = await import('../../lib/index.mjs')
+const { apply, Config, writePreset, writePluginState, savePresetParams, loadPresetSpec } = await import('../../src/index.ts')
 // 夹具模板同时装进隔离 DSH_HOME 的官方预设根（resolvePresetDir 场景）与各测试的输出根（见 makeOptions）。
 installFixturePresetInHome(home)
 /** 指令文件正文 sentinel：任何预设产物都不得包含它（正文只属于用户文件）。 */
@@ -427,7 +427,9 @@ test('writePreset 四个官方基型以顶层 persona 段渲染官方 dsh-person
       if (template === 'pt-cordis') {
         const persona = readPersonaRow(presetDir, template)
         assert.ok(persona.config.prefix.includes('{{model}}'), 'cordis 人设应保留 {{model}} 变量')
-        assert.ok(persona.config.prefix.includes('editing-cordis-compositions'), 'cordis 人设应引用创作 skill')
+        const officialPatch = parseYaml(readFileSync(new URL('../fixtures/dsh/current/packages/bundle/web-app/presets/cordis.patch.yml', import.meta.url), 'utf8'), { logLevel: 'silent' })
+        const officialPersona = officialPatch[0].insert[0].config.plugins.find((row) => row.id === 'persona').config
+        assert.equal(persona.config.prefix.trim(), officialPersona.prefix.trim(), 'cordis 人设应对齐本次核验的官方声明')
         assert.equal(persona.config.suffix, 'Your working directory is {{cwd}}.', 'cordis 人设 suffix 应对齐官方原文')
         assert.ok(existsSync(join(presetDir, template, 'skills', 'editing-cordis-compositions', 'SKILL.md')), 'editing-cordis-compositions skill 应随预设复制')
         assert.ok(existsSync(join(presetDir, template, 'skills', 'cordis-plugin-development', 'SKILL.md')), 'cordis-plugin-development skill 应随预设复制')
@@ -986,19 +988,11 @@ function offSettings(writePreset) {
   }
 }
 
-function makeOffCtx(settingsValue) {
+function makeOffCtx() {
   const makeSctx = () => ({
     settings: {
       describe: () => [],
-      register: (_ns, _schema, opts) => {
-        try { opts.base() } catch { /* mock 环境无宿主上下文 */ }
-        return { get: () => settingsValue, watch: (cb) => cb(settingsValue) }
-      },
-      installSection: (_owner, _ns, _schema, _entry, hooks) => {
-        hooks.setSource(() => settingsValue)
-        hooks.onChange()
-      },
-      get: () => undefined,
+      configure: () => () => {},
       mutate: async () => {},
     },
     webServer: { register: () => () => {} },
@@ -1017,7 +1011,7 @@ function makeOffCtx(settingsValue) {
     get: (name) => (name === 'webServer' ? {} : undefined),
     provide: () => () => {},
     baseUrl: 'http://localhost:3000',
-    inject: (deps, cb) => { cb(makeSctx()); return () => {} },
+    inject: (deps, cb) => { if (!deps.includes('agentPresets')) cb(makeSctx()); return () => {} },
   }
 }
 
@@ -1037,7 +1031,7 @@ test('writePreset 关闭时清空组合为空数组，保留 preset.yml 与预�
   writeFileSync(join(presetDir, 'standard', 'prompt-configs', '00-a.yml'), 'id: a\n', 'utf8')
 
   const value = offSettings(false)
-  apply(makeOffCtx(value), value)
+  apply(makeOffCtx(value), Config(value))
 
   // 组合改写为空数组而非删除：官方 discovery 对缺 agent.cordis.yml 的目录仍占用
   // id 并判 broken（挂载抛 agent-preset/invalid、picker 丢弃该行），导致无法新建
@@ -1074,7 +1068,7 @@ test('writePreset 开启时不受影响：预设目录正常生成', () => {
     'id: pt-standard\nname: Standard\nmodules: [prompt-config-engine]\n', 'utf8')
 
   const value = offSettings(true)
-  apply(makeOffCtx(value), value)
+  apply(makeOffCtx(value), Config(value))
 
   assert.equal(existsSync(join(presetDir, 'pt-standard', 'preset.yml')), true, 'writePreset=true 预设参数保留')
   const rows = readFileSync(join(presetDir, 'pt-standard', 'agent.cordis.yml'), 'utf8')

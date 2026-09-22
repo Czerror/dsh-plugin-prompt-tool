@@ -21,6 +21,7 @@ const {
   loadPresetSpec,
   renderComposition,
   resolvePresetDir,
+  resolvePresetModuleFacts,
   resolvePresetParams,
 } = await import('../../src/host/manifest.ts')
 
@@ -155,6 +156,19 @@ test('参数桥透传模块行参数覆盖组合源行默认', () => {
   // 未传时用组合源行默认。
   const defaults = parseYaml(fixtureComposition())
   assert.equal(defaults.find((item) => item?.id === 'tool-git-bash').config.enabled, true)
+})
+
+test('instructionHint 的展示归属不影响显式参数及行配置隐含装配', () => {
+  for (const configuration of [{ params: { instructionHint: true } }, { moduleConfigs: { 'instruction-hint': { enabled: true } } }]) {
+    const spec = { id: 'hint-only', name: 'hint-only', modules: [], ...configuration }
+    const rows = parseYaml(renderComposition(spec, {}))
+    assert.deepEqual(rows.map((row) => row.id), ['instruction-hint'])
+    assert.equal(rows[0].config.enabled, true)
+    const facts = resolvePresetModuleFacts(spec)
+    assert.deepEqual(facts.declaredModules, [])
+    assert.deepEqual(facts.effectiveModules, ['instruction-hint'])
+  }
+  assert.deepEqual(parseYaml(renderComposition({ id: 'empty', name: 'empty', modules: [] }, {})), [])
 })
 
 test('参数桥：模块绑定参数直达该行 config（不 token 化）', () => {

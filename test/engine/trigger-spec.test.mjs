@@ -119,6 +119,48 @@ test('compileDeclaration：do 必须是已知动作，可给多个（数组）',
   assert.deepEqual(two.actions.map((action) => action.kind), ['assembly', 'sdk-strip'], '数组按序保留')
 })
 
+for (const [channel, action, error] of [
+  ['system-prompt/assemble', { kind: 'assembly', target: null }, /requires a target object/],
+  ['system-prompt/assemble', { kind: 'assembly', target: { tools: { deny: 'bash' } } }, /deny must be an array/],
+  ['system-prompt/assemble', { kind: 'guard', mask: { allow: [], deny: [] } }, /cannot combine allow with deny/],
+  ['system-prompt/assemble', { kind: 'sdk-strip', mask: { deny: ['run_code'] } }, /reserved run_code/],
+  ['tools/pre-execute', { kind: 'decision', phase: 'invalid' }, /phase must be one of pre, post/],
+  ['tools/pre-execute', { kind: 'decision', decision: 'invalid' }, /decision must be one of/],
+  ['tools/post-execute', { kind: 'decision', phase: 'post', action: 'invalid' }, /action must be one of/],
+  ['tools/post-execute', { kind: 'append-context', text: 1 }, /text must be a string/],
+  ['agent/request', { kind: 'request-params', patch: [] }, /patch must be an object/],
+  ['agent/inbox/inserted', { kind: 'inbox-prepend', text: null }, /text must be a string/],
+  ['agent/pre-step', { kind: 'pre-step-filter', sources: [], keepKinds: [] }, /cannot combine sources with keepKinds/],
+]) {
+  test(`compileDeclarations：保存前拒绝非法动作 ${JSON.stringify(action)}`, () => {
+    assert.throws(() => compileDeclarations([{ id: 'invalid', channel, do: action }]), error)
+  })
+}
+
+for (const action of [
+  { kind: 'inject-text', config: { layer: 'system-section' } },
+  { kind: 'guard', mask: { deny: ['bash'] } },
+]) {
+  for (const [options, extra, error] of [
+    [{ when: { names: { allow: ['bash'] } } }, {}, /does not support a when predicate/],
+    [{ waterfallPosition: 'outermost' }, {}, /does not support prepend/],
+    [{}, { maxPerTurn: 1 }, /does not support maxPerTurn/],
+  ]) {
+    test(`compileDeclarations：保存前拒绝 ${action.kind} 不支持的选项 ${JSON.stringify({ ...options, ...extra })}`, () => {
+      assert.throws(() => compileDeclarations([{
+        id: 'unsupported', channel: 'system-prompt/assemble', ...options, do: { ...action, ...extra },
+      }]), error)
+    })
+  }
+}
+
+test('compileDeclarations：保存前拒绝非法 maxPerTurn，包括同条声明的后续动作', () => {
+  assert.throws(() => compileDeclarations([{
+    id: 'budget', channel: 'agent/request',
+    do: [{ kind: 'request-params', patch: {} }, { kind: 'request-params', patch: {}, maxPerTurn: 0 }],
+  }]), /maxPerTurn must be a positive integer/)
+})
+
 // ───────────────────────── 字段归一与调度 ─────────────────────────
 
 test('compileDeclaration：缺省逐项填充，when 编译为函数', () => {
@@ -143,6 +185,48 @@ test('compileDeclarations：按 channelOrder 稳定排序，同值保持声明�
   ])
   assert.deepEqual(compiled.map((item) => item.id), ['a', 'b', 'c'], '升序 + 同值保持声明序')
   assert.throws(() => compileDeclarations('nope'), /triggers must be an array/)
+})
+
+test('compileDeclarations：缺省 channelOrder 按零参与稳定排序', () => {
+  const action = { kind: 'assembly', target: { contexts: { clear: true } } }
+  const compiled = compileDeclarations([5, undefined, 1, 0].map((channelOrder, index) => ({
+    id: String(index), channel: 'system-prompt/assemble', channelOrder, do: action,
+  })))
+  assert.deepEqual(compiled.map((trigger) => trigger.id), ['1', '3', '2', '0'])
+})
+
+test('声明通道与阶段必须匹配动作真实执行点，错误组合编译期拒绝', () => {
+  const base = { id: 'invalid', channel: 'agent/pre-step', do: { kind: 'request-params', patch: { maxTokens: 8 } } }
+  assert.throws(() => compileDeclaration(base), /channel.*agent\/request/)
+  assert.throws(() => compileDeclaration({ ...base, channel: 'agent/request', phase: 'before-next' }), /phase.*after-next/)
+  assert.throws(() => compileDeclaration({ id: 'post', channel: 'tools/pre-execute', do: { kind: 'decision', phase: 'post', action: 'block' } }), /channel.*tools\/post-execute/)
+  const decision = compileDeclaration({ id: 'pre', channel: 'tools/pre-execute', do: { kind: 'decision', decision: 'deny' } })
+  assert.equal(decision.phase, 'before-next')
+  assert.throws(() => compileDeclaration({
+    id: 'mixed', channel: 'tools/post-execute',
+    do: [{ kind: 'decision', phase: 'post', action: 'block' }, { kind: 'append-context', text: 'NOTICE' }],
+  }), /phase.*after-next/)
+  assert.throws(() => compileDeclaration({
+    id: 'inject', channel: 'agent/pre-step', do: { kind: 'inject-text', config: { layer: 'system-section' } },
+  }), /channel.*system-prompt\/assemble/)
+  assert.throws(() => compileDeclaration({
+    id: 'pipeline', channel: 'tools/pre-execute', do: { kind: 'inject-text', config: { layer: 'tool-pipeline' } },
+  }), /no single trigger channel/)
+  for (const [channel, phase, action] of [
+    ['tools/post-execute', 'before-next', { kind: 'decision', phase: 'post', action: 'block' }],
+    ['tools/post-execute', 'after-next', { kind: 'append-context', text: 'NOTICE' }],
+    ['agent/turn-stopping', 'before-next', { kind: 'append-context', mode: 'continue', text: 'GO' }],
+    ['agent/inbox/inserted', 'before-next', { kind: 'inbox-prepend', text: 'ANCHOR' }],
+    ['system-prompt/assemble', 'after-next', { kind: 'guard', mask: { deny: ['bash'] } }],
+  ]) {
+    const compiled = compileDeclaration({ id: action.kind, channel, do: action })
+    assert.equal(compiled.phase, phase)
+    const recorder = recordingCtx()
+    const dispose = mountDeclarations(recorder.ctx, [compiled])
+    assert.deepEqual(recorder.events.map((event) => event.event), [channel])
+    dispose()
+    assert.equal(recorder.events.length, 0)
+  }
 })
 
 test('declarationRegistrationOptions：只有 outermost 才 prepend（转发 trigger.mjs 的实现）', () => {

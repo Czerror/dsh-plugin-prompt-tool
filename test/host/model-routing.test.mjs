@@ -16,13 +16,14 @@ const { presetRoot } = isolatedHome('pt-model-routing-')
 const {
   BRIDGE_ENDPOINTS,
   apply,
+  Config,
   detectModels,
   invalidateModelCatalog,
   listAdvertisedModels,
   peekModelCatalog,
   registerSettingsBridge,
   resolveSubagentStartOptions,
-} = await import('../../lib/index.mjs')
+} = await import('../../src/index.ts')
 
 const PREFIX = '/api/prompt-tool/settings'
 
@@ -134,19 +135,10 @@ test('模型目录失效：invalidateModelCatalog 后重新全量查询，旧缓
  * mock ctx 的形状取自既有 `write-preset.test.mjs`（同一套可驱动 apply 的最小宿主面）。
  */
 function makeApplyProbeCtx(llm, listeners) {
-  const value = { writePreset: false, presetTemplate: 'standard', skillOrder: [], skillsDirs: [], skillRankBase: 250, presetOrder: 5, fallbackText: '' }
   const makeSctx = () => ({
     settings: {
       describe: () => [],
-      register: (_ns, _schema, opts) => {
-        try { opts.base() } catch { /* mock 环境无宿主上下文 */ }
-        return { get: () => value, watch: (cb) => cb(value) }
-      },
-      installSection: (_owner, _ns, _schema, _entry, hooks) => {
-        hooks.setSource(() => value)
-        hooks.onChange()
-      },
-      get: () => undefined,
+      configure: () => () => {},
       mutate: async () => {},
     },
     webServer: { register: () => () => {} },
@@ -165,7 +157,7 @@ function makeApplyProbeCtx(llm, listeners) {
     get: (name) => (name === 'webServer' ? {} : (name === 'llm' ? llm : undefined)),
     provide: () => () => {},
     baseUrl: 'http://localhost:3000',
-    inject: (_deps, cb) => { cb(makeSctx()); return () => {} },
+    inject: (deps, cb) => { if (!deps.includes('agentPresets')) cb(makeSctx()); return () => {} },
   }
 }
 
@@ -180,7 +172,7 @@ test('模型目录失效在 provider 拓扑变化时接线（llm/adapters-update
   }
   const listeners = new Map()
   const ctx = makeApplyProbeCtx(llm, listeners)
-  apply(ctx, { writePreset: false, presetTemplate: 'standard', skillOrder: [], skillsDirs: [], skillRankBase: 250, presetOrder: 5, fallbackText: '' })
+  apply(ctx, Config({ writePreset: false, presetTemplate: 'standard', presetOrder: 5, fallbackText: '' }))
 
   // 先填充缓存：目录来自 provider 的一次真实查询。
   assert.deepEqual(await listAdvertisedModels(ctx), { 'provider-e2e': ['provider-e2e-1'] })

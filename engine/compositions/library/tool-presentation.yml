@@ -1,13 +1,8 @@
 # module: tool-presentation
-# source: master/packages/preset/agent-presets/presets/ptc/agent.cordis.yml
-# commit: ddefc45fbc7f8e46dd73185e68295696d1297887
+# source: master/packages/bundle/web-app/presets/ptc.patch.yml
+# commit: c36a83ff6bb95e3f82cf79f9be7c724270a8aa61
 # local patches: 0
 
-# ── presentation ────────────────────────────────────────────────────────────
-
-# PTC mode for this agent alone. The row waits for the host's `ptcRuntime`
-# rather than assuming it: a deployment that composes no TypeScript runtime
-# fails this preset at mount, naming this id, instead of at the first request.
 - id: tool-presentation
   name: '@deepseek-ai/dsh-agent-tool-presentation'
   config:

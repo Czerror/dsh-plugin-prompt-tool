@@ -3,7 +3,8 @@ import { execFileSync } from 'node:child_process'
 
 export const OFFICIAL_UPSTREAM = 'https://github.com/deepseek-ai/deepseek-harness.git'
 export const OFFICIAL_BRANCH = 'master'
-export const PRESET_SOURCE_PATH = 'packages/preset/agent-presets/presets'
+export const PRESET_SOURCE_PATH = 'packages/bundle/web-app/presets'
+export const PRESET_SKILLS_PATH = 'packages/preset/agent-preset/skills'
 
 const runGit = (args) => execFileSync('git', args, { encoding: 'utf8', timeout: 30000 }).trim()
 
@@ -18,7 +19,7 @@ export function verifyLatestCompositionSource(repo, git = runGit) {
   if (head !== latest) {
     throw new Error(`official composition source is stale: local ${head}, latest ${latest}; update the source checkout before rebuilding`)
   }
-  const dirty = git(['-C', repo, 'status', '--porcelain', '--untracked-files=all', '--', PRESET_SOURCE_PATH]).trim()
+  const dirty = git(['-C', repo, 'status', '--porcelain', '--untracked-files=all', '--', PRESET_SOURCE_PATH, PRESET_SKILLS_PATH]).trim()
   if (dirty.length > 0) {
     throw new Error('official preset source has local changes; refusing to publish it as latest upstream')
   }

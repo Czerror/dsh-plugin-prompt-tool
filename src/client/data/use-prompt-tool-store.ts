@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { SettingsPathOpView } from '@deepseek-ai/dsh-api-remotes/client'
-import type { SettingsScope, SettingsScopeSnapshot } from '@deepseek-ai/dsh-client-ui-settings/client'
+import type { ConfigForm, ConfigFormSnapshot } from '@deepseek-ai/dsh-client-ui-settings/client'
 import type { EngineMeta, PromptConfigDraft } from '../prompt-tool-types.ts'
 import type { PromptToolHostApi } from './host-api.ts'
 import type { PresetModuleFacts } from '../../shared/engine-capabilities.ts'
@@ -57,10 +57,10 @@ import { createWorkspaceDrafts, hasWorkspaceDrafts, type WorkspaceDrafts } from 
 import { modelChoiceValue } from '../features/models/model-options.ts'
 import type { ModelReasoningView } from '../../shared/bridge-contract.ts'
 
-/** rc8 ui-settings 共享镜像传输面：标准字段经官方 settingsScope 读写。 */
+/** 官方 ConfigForms 共享镜像传输面：标准字段共用宿主读写队列。 */
 export interface PromptToolSettingsTransport {
   /** 宿主注册的 prompt-tool settings namespace 绑定。 */
-  scope: SettingsScope<Record<string, unknown>>
+  scope: ConfigForm<Record<string, unknown>>
   /** 触发一次共享 describe mirror 读取（idle 时才真正发 RPC）。 */
   ensure: () => Promise<void>
   /** 批量 path-op 写入；成功后 scope 快照已 fold 最新 revision。 */
@@ -171,7 +171,7 @@ export interface PromptToolStore {
 
 
 /** 等待共享 mirror 的首次应答离开 loading（ready/idle/unavailable 都会返回）。 */
-function waitForScope(scope: SettingsScope<Record<string, unknown>>): Promise<SettingsScopeSnapshot<Record<string, unknown>>> {
+function waitForScope(scope: ConfigForm<Record<string, unknown>>): Promise<ConfigFormSnapshot<Record<string, unknown>>> {
   const current = scope.getSnapshot()
   if (current.status !== 'loading') return Promise.resolve(current)
   return new Promise((resolve) => {

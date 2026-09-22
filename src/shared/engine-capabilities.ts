@@ -204,15 +204,22 @@ export function impliedModulesForParams(
     if (capability === undefined) return
     for (const module of capability.moduleKeys) implied.add(module)
   }
+  const addRow = (rowId: string): void => {
+    const capability = ENGINE_CAPABILITIES.find((item) => item.rowIds.includes(rowId) || item.moduleKeys.includes(rowId))
+    if (capability !== undefined) add(capability)
+    else if (ENGINE_PARAM_KEYS.some((key) => ENGINE_PARAM_DEFINITIONS[key].module?.row === rowId)) implied.add(rowId)
+  }
   if (params !== undefined && params !== null) {
     for (const key of ENGINE_PARAM_KEYS) {
       if (!Object.prototype.hasOwnProperty.call(params, key)) continue
-      add(engineCapability(ENGINE_PARAM_DEFINITIONS[key].card))
+      const definition = ENGINE_PARAM_DEFINITIONS[key]
+      if (definition.module !== undefined) addRow(definition.module.row)
+      else add(engineCapability(definition.card))
     }
   }
   if (moduleConfigs !== undefined && moduleConfigs !== null) {
     for (const rowId of Object.keys(moduleConfigs)) {
-      add(ENGINE_CAPABILITIES.find((capability) => capability.rowIds.includes(rowId) || capability.moduleKeys.includes(rowId)))
+      addRow(rowId)
     }
   }
   return [...implied]

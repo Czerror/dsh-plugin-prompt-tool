@@ -1,17 +1,8 @@
 # module: tool-bash
-# source: master/packages/preset/agent-presets/presets/standard/agent.cordis.yml
-# commit: ddefc45fbc7f8e46dd73185e68295696d1297887
+# source: master/packages/bundle/web-app/presets/standard.patch.yml
+# commit: c36a83ff6bb95e3f82cf79f9be7c724270a8aa61
 # local patches: 0
 
-# ── shell ───────────────────────────────────────────────────────────────────
-
-# `shell-env` stays in the HOST composition: `apps/cli/src/web.ts` injects it to
-# publish `DSH_WEB_URL`/`DSH_WEB_MODE`, and a host row that injects a service is
-# the criterion for host-plane ownership — injection resolves before any session
-# exists, so there is no agent to key by. Behind a preset realm those variables
-# never reached the model's shell at all. Both shell tools consume the host
-# registry from here; their executors (`bash-sandbox`/`pwsh-sandbox`) are
-# host-plane too.
 - id: tool-bash
   name: '@deepseek-ai/dsh-tool-bash'
   disabled: !!js process.platform === 'win32'

@@ -20,8 +20,8 @@
  * **不从裁过的 SDK 正文建绑定**——只裁文本挡不住「知道旧工具名」的调用；而
  * `scope restrict` 只收**继承面**，注册在 agent 本层与晚到的工具它收不动
  * （`view()` 对 own layer 豁免限制，`lib/index.js:2957-2977`）。因此：(a) 同一份名单
- * 判据同时驱动呈现过滤（第 (2) 类）与执行 guard（第 (5) 类）；(b) `restrict` 只在它能
- * 限制的继承面上做最佳努力复用，本层/晚到工具一律交给 guard 裁决；(c) SDK 文本裁剪
+ * 判据同时驱动呈现过滤（第 (2) 类）与执行 guard（第 (5) 类）；(b) `restrict` 只在
+ * includeSubagents=true 时复用，主会话专属限制、本层/晚到工具交给 guard 裁决；(c) SDK 文本裁剪
  * 只是剩余呈现补救，**不得替代执行边界**；(d) 不新增独立策略提供者。
  *
  * @module engine/actions
@@ -167,6 +167,9 @@ const labelOf = (action) => (typeof action?.id === 'string' && action.id.length 
 function createMask(source, label, plugin) {
   const allow = NAME_LIST.parse(source?.allow, plugin, `${label}.allow`)
   const deny = NAME_LIST.parse(source?.deny, plugin, `${label}.deny`)
+  if (allow !== undefined && deny !== undefined) {
+    throw new TypeError(`${plugin}: ${label} cannot combine allow with deny`)
+  }
   if (allow === undefined && deny === undefined) {
     throw new TypeError(`${plugin}: ${label} needs allow and/or deny — 空名单无法表达「剔哪些工具」`)
   }
@@ -212,7 +215,7 @@ function channelBinder(ctx, kind, plugin, prepend) {
 }
 
 /**
- * 支持 `when` 前置判定的动作：它们经 `on(...)` 注册处理器，判定可以在处理器入口统一前置。
+ * 支持 `when` 的动作：它们经 `on(...)` 注册处理器，判定按动作的固定执行阶段接线。
  *
  * 另外两类**不走这个入口**，所以传 `when` 会在挂载期 fail loud（而不是静默无效）：
  *   - `inject-text` 注册的是**层**（`applyPromptConfigs` / `wireLayers`），不是处理器；
@@ -238,17 +241,37 @@ const NEXT_FREE_CHANNELS = new Set([
   'agent/turn-stopping',
 ])
 
-/**
- * 给注册器的 `on` 包一层 `when` 前置判定（B7：`when` → 动作的接线）。
- *
- * 七个注册器**一行不用改**——它们照常调 `on`，判定只在这里统一前置。不命中即放行
- * （waterfall 调 `next()`；无 `next` 的通道什么都不做）。判定异常只告警并同样放行
- * （与「动作只 guard 自身逻辑」同一纪律，绝不卡死调用）。
- *
- * **同步谓词走同步路径**：`tools/pre-execute` 这类通道的裁决靠「deny 前无 await」保证
- * 并行调用不越过预算（见 `deliberation-gate.mjs` 的注释），无条件 `await` 会破坏它。
- * 返回 Promise 的谓词退回异步路径——声明编译出的谓词恒同步，这条兜底是给手写调用方的。
- */
+/** 动作的固定执行点；声明编译与 when 接线共用，不能用声明字段改变注册器。 */
+export function actionExecutionPoint(action) {
+  if (action.kind === 'decision') {
+    return { channel: action.phase === 'post' ? 'tools/post-execute' : 'tools/pre-execute', phase: 'before-next' }
+  }
+  if (action.kind === 'append-context') {
+    return action.mode === 'continue'
+      ? { channel: 'agent/turn-stopping', phase: 'before-next' }
+      : { channel: 'tools/post-execute', phase: 'after-next' }
+  }
+  if (action.kind === 'inject-text') {
+    const layer = action.config?.layer
+    const channel = {
+      'pre-step': 'agent/pre-step',
+      'system-section': 'system-prompt/assemble',
+      'runtime-context': 'system-prompt/assemble',
+      'agent-request': 'agent/request',
+      'llm-stream': 'llm/stream',
+      'turn-stop': 'agent/turn-stopping',
+      'subagent-start': 'subagent/start',
+      'subagent-end': 'subagent/end',
+    }[layer]
+    if (channel === undefined) {
+      throw new TypeError(`inject-text layer ${JSON.stringify(layer)} has no single trigger channel; tool-pipeline uses separate decision actions`)
+    }
+    return { channel, phase: ['pre-step', 'agent-request'].includes(layer) ? 'after-next' : 'before-next' }
+  }
+  const channel = ACTION_KINDS[action.kind].events[0]
+  return { channel, phase: NEXT_FREE_CHANNELS.has(channel) ? 'before-next' : 'after-next' }
+}
+
 /**
  * 每轮生效预算（动作声明的 `maxPerTurn`）。
  *
@@ -260,17 +283,13 @@ const NEXT_FREE_CHANNELS = new Set([
  * **轮号**取自 durable 事件的 `data.turn`（与 `predicates.mjs` 的 `trackTurn` 同规则：任何带
  * 有限轮号的事件都推进当前轮并取最大值），所以重启后计数虽从 0 开始，轮边界立刻是对的。
  *
- * **同步消耗**：`take()` 在谓词命中后的同步路径上查/增，与原 `deliberation-gate` 的
- * 「await 前同步自增」同纪律——并行工具调用不得越过预算。声明的谓词恒同步，所以这条成立。
+ * **同步消耗**：动作通过目标与有效结果检查后，紧邻实际效果同步 `take()`；
+ * claim 与效果之间没有 await，并行调用不得越过预算。
  *
  * @returns {{take: (subject: unknown) => boolean, observe: Function}|undefined} 无 `maxPerTurn` 时为 undefined
  */
-function createTurnBudget(action) {
-  const max = action?.maxPerTurn
+function createTurnBudget(max) {
   if (max === undefined) return undefined
-  if (!Number.isSafeInteger(max) || max <= 0) {
-    throw new TypeError(`${labelOf(action)}.maxPerTurn must be a positive integer`)
-  }
   /** sessionId -> { turn, used }（纯增量，与原模块同语义：重启从 0 开始）。 */
   const budgets = new Map()
   const entryOf = (session) => {
@@ -309,18 +328,16 @@ function createTurnBudget(action) {
 }
 
 /**
- * 给注册器的 `on` 包一层 `when` 前置判定（B7：`when` → 动作的接线）与可选的每轮预算。
- *
- * 七个注册器**一行不用改**——它们照常调 `on`，判定只在这里统一前置。不命中即放行
- * （waterfall 调 `next()`；无 `next` 的通道什么都不做）。判定异常只告警并同样放行
- * （与「动作只 guard 自身逻辑」同一纪律，绝不卡死调用）。
+ * 按动作实际阶段求值 when。after-next 先结算下游，再读取当前 epoch，
+ * 并向动作提供已结算结果，保证宿主 next 只调用一次；未命中或异常保持下游结果。
+ * 每轮预算由各动作在目标匹配且即将生效时同步 claim，不在谓词入口扣减。
  *
  * **同步谓词走同步路径**：`tools/pre-execute` 这类通道的裁决靠「deny 前无 await」保证
  * 并行调用不越过预算（见 `deliberation-gate.mjs` 的注释），无条件 `await` 会破坏它。
  * 返回 Promise 的谓词退回异步路径——声明编译出的谓词恒同步，这条兜底是给手写调用方的。
  */
-function withWhen(on, when, warnOnce, budget) {
-  if (typeof when !== 'function' && budget === undefined) return on
+function withWhen(on, when, warnOnce, phase) {
+  if (typeof when !== 'function') return on
   // 注意参数个数：`on` 的签名是 `(event, handler, options)`——包装后的处理器必须占据
   // **第二个**位置，多传一个参数会把 options 挤到错位（首版就踩了这个，被测试抓出）。
   return (event, handler, options) => on(event, (...args) => {
@@ -328,30 +345,30 @@ function withWhen(on, when, warnOnce, budget) {
     const payload = nextFree ? args : args.slice(0, -1)
     const pass = () => (nextFree ? undefined : args[args.length - 1]())
     // 谓词契约是**单个载荷对象**（见 predicates.mjs 头部的统一接口），而处理器收到的是
-    // 事件参数表：按通道归一后再交给谓词与预算——否则除 `names` 外，各原语在真实载荷上都
+    // 事件参数表：按通道归一后再交给谓词——否则除 `names` 外，各原语在真实载荷上都
     // 取不到它们要的域（`phase` 曾因此恒为「已晋升」、`count` 恒 0）。
-    const subject = subjectOf(event, payload, warnOnce)
-    const decide = (decided) => {
-      if (decided !== true) return pass()
-      // 每轮预算：命中后、动作体前**同步**查/增（并行调用不得越过预算）。
-      if (budget !== undefined && !budget.take(subject)) return pass()
-      return handler(...args)
+    const evaluate = (invoke, fallback) => {
+      const decide = (decided) => decided === true ? invoke() : fallback()
+      const failed = (error) => {
+        warnOnce(`when predicate failed: ${String(error?.message ?? error)}`)
+        return fallback()
+      }
+      let decided
+      try {
+        decided = when(subjectOf(event, payload, warnOnce))
+      } catch (error) {
+        return failed(error)
+      }
+      return decided !== null && typeof decided === 'object' && typeof decided.then === 'function'
+        ? decided.then(decide, failed)
+        : decide(decided)
     }
-    const failed = (error) => {
-      warnOnce(`when predicate failed: ${String(error?.message ?? error)}`)
-      return pass()
+    if (!nextFree && phase === 'after-next') {
+      return Promise.resolve(pass()).then((result) => evaluate(
+        () => handler(...payload, () => result), () => result,
+      ))
     }
-    if (typeof when !== 'function') return decide(true)
-    let decided
-    try {
-      decided = when(subject)
-    } catch (error) {
-      return failed(error)
-    }
-    if (decided !== null && typeof decided === 'object' && typeof decided.then === 'function') {
-      return decided.then(decide, failed)
-    }
-    return decide(decided)
+    return evaluate(() => handler(...args), pass)
   }, options)
 }
 
@@ -365,7 +382,7 @@ function requireString(value, label, plugin) {
  * (1) 注入文本：按声明的 layer 落到既有九层通道。
  * 不复制任何一层接线——`pre-step` 走 executor 的执行器，其余层走 layers 的接线。
  */
-function registerInjectText(ctx, action, { plugin, warnOnce, collect }) {
+function prepareInjectText(action, plugin) {
   const config = action.config
   if (config === null || typeof config !== 'object' || Array.isArray(config)) {
     throw new TypeError(`${plugin}: inject-text requires a config object (与 promptConfigs 同形状的提示词配置)`)
@@ -373,15 +390,17 @@ function registerInjectText(ctx, action, { plugin, warnOnce, collect }) {
   if (typeof config.layer !== 'string' || config.layer.length === 0) {
     throw new TypeError(`${plugin}: inject-text config.layer is required (九层之一)`)
   }
-  if (config.layer === 'pre-step') {
-    collect(applyPromptConfigs(ctx, [config], action.options ?? {}))
-    return
+  return (ctx, { warnOnce, collect }) => {
+    if (config.layer === 'pre-step') {
+      collect(applyPromptConfigs(ctx, [config], action.options ?? {}))
+      return
+    }
+    collect(wireLayers(ctx, [config], warnOnce))
   }
-  collect(wireLayers(ctx, [config], warnOnce))
 }
 
 /** (2) 改装配：一次 assembly 内的 tools / sections / contexts 增删改。 */
-function registerAssembly(ctx, action, { plugin, warnOnce, on, collect }) {
+function prepareAssembly(action, plugin) {
   const target = action.target
   if (target === null || typeof target !== 'object' || Array.isArray(target)) {
     throw new TypeError(`${plugin}: assembly requires a target object — { tools } / { sections } / { contexts }`)
@@ -408,7 +427,7 @@ function registerAssembly(ctx, action, { plugin, warnOnce, on, collect }) {
       requireString(entry.text, `assembly.${key}[].text`, plugin)
     }
   }
-  collect(on('system-prompt/assemble', async (assembly, context, next) => {
+  return (_ctx, { warnOnce, on, collect, take }) => collect(on('system-prompt/assemble', async (assembly, context, next) => {
     // Downstream errors propagate untouched; only this action's own logic is guarded.
     const assembled = await next()
     try {
@@ -427,7 +446,8 @@ function registerAssembly(ctx, action, { plugin, warnOnce, on, collect }) {
         if (missingRequired) {
           warnOnce(`${plugin}: assembly action ${labelOf(action)}: a requireMatch tool is absent — exposing the full tool set (fail-open)`)
         } else {
-          result = { ...result, tools: result.tools.filter((tool) => !tools.blocks(tool?.name)) }
+          const kept = result.tools.filter((tool) => !tools.blocks(tool?.name))
+          if (kept.length !== result.tools.length) result = { ...result, tools: kept }
         }
       }
       if (Array.isArray(result.sections) && (sectionsAdd !== undefined || sectionsRemove !== undefined || sectionsKeep !== undefined)) {
@@ -436,18 +456,23 @@ function registerAssembly(ctx, action, { plugin, warnOnce, on, collect }) {
           : sectionsRemove === undefined
             ? result.sections
             : result.sections.filter((section) => !sectionsRemove.has(section?.name))
-        result = { ...result, sections: sectionsAdd === undefined ? kept : [...kept, ...sectionsAdd] }
+        if (kept.length !== result.sections.length || sectionsAdd?.length > 0) {
+          result = { ...result, sections: sectionsAdd === undefined ? kept : [...kept, ...sectionsAdd] }
+        }
       }
       if (Array.isArray(result.contexts)) {
-        if (contextsClear) result = { ...result, contexts: [] }
-        else if (contextsAdd !== undefined || contextsRemove !== undefined) {
+        if (contextsClear) {
+          if (result.contexts.length > 0) result = { ...result, contexts: [] }
+        } else if (contextsAdd !== undefined || contextsRemove !== undefined) {
           const kept = contextsRemove === undefined
             ? result.contexts
             : result.contexts.filter((entry) => !contextsRemove.has(entry?.name))
-          result = { ...result, contexts: contextsAdd === undefined ? kept : [...kept, ...contextsAdd] }
+          if (kept.length !== result.contexts.length || contextsAdd?.length > 0) {
+            result = { ...result, contexts: contextsAdd === undefined ? kept : [...kept, ...contextsAdd] }
+          }
         }
       }
-      return result
+      return result !== assembled && take(context) ? result : assembled
     } catch (error) {
       warnOnce(`${plugin}: assembly action ${labelOf(action)} failed, exposing the full assembly: ${String(error?.message ?? error)}`)
       return assembled
@@ -463,43 +488,49 @@ function toolNameSet(value, plugin, field) {
 }
 
 /** (3) 裁决：与 wireToolPipelines 同语义，判定由触发器在动作入口求值。 */
-function registerDecision(ctx, action, { plugin, warnOnce, on, collect }) {
+function prepareDecision(action, plugin) {
   const label = labelOf(action)
   const names = toolNameSet(action.toolNames, plugin, `${label}.toolNames`)
   const matchesTool = (exec) => names === undefined || names.has(exec?.name)
   const hit = (exec, result) => typeof action.match !== 'function' || action.match(exec, result) === true
-  const phase = action.phase === 'post' ? 'post' : 'pre'
+  const phase = action.phase === undefined ? 'pre' : action.phase
+  if (!['pre', 'post'].includes(phase)) {
+    throw new TypeError(`${plugin}: ${label}.phase must be one of pre, post`)
+  }
   if (phase === 'pre') {
     const decision = action.decision ?? 'allow'
     if (!['allow', 'deny', 'ask'].includes(decision)) {
       throw new TypeError(`${plugin}: ${label}.decision must be one of allow, deny, ask`)
     }
-    collect(on('tools/pre-execute', async (exec, next) => {
+    return (_ctx, { warnOnce, on, collect, take }) => collect(on('tools/pre-execute', async (exec, next) => {
       try {
         if (!matchesTool(exec) || !hit(exec)) return next()
         if (decision === 'allow') return next()
-        if (decision === 'deny') return { kind: 'deny', reason: String(action.reason ?? `${label}: denied by action`) }
-        return { kind: 'ask' }
+        const outcome = decision === 'deny'
+          ? { kind: 'deny', reason: String(action.reason ?? `${label}: denied by action`) }
+          : { kind: 'ask' }
+        return take(exec) ? outcome : next()
       } catch (error) {
         warnOnce(`${plugin}: decision(pre) action ${label} failed: ${String(error?.message ?? error)}`)
         return next()
       }
     }))
-    return
   }
   const postAction = action.action ?? 'accept'
   if (!['accept', 'replace', 'block'].includes(postAction)) {
     throw new TypeError(`${plugin}: ${label}.action must be one of accept, replace, block`)
   }
   const text = typeof action.text === 'string' ? action.text : ''
-  collect(on('tools/post-execute', async (exec, result, next) => {
+  return (_ctx, { warnOnce, on, collect, take }) => collect(on('tools/post-execute', async (exec, result, next) => {
     try {
       if (!matchesTool(exec) || !hit(exec, result)) return next()
       if (postAction === 'accept') return next()
       if (postAction === 'replace' && text.length > 0) {
+        if (!take(exec)) return next()
         return { kind: 'accept', content: [{ type: 'text', text }] }
       }
       if (postAction === 'block') {
+        if (!take(exec)) return next()
         return { kind: 'block', feedback: [{ type: 'text', text: text.length > 0 ? text : `${label}: blocked by action` }] }
       }
       return next()
@@ -511,33 +542,34 @@ function registerDecision(ctx, action, { plugin, warnOnce, on, collect }) {
 }
 
 /** (4) 追加上下文与续跑：与 progress-reminder / turn-stop 同语义，续跑共用引擎预算。 */
-function registerAppendContext(ctx, action, { plugin, warnOnce, on, collect }) {
+function prepareAppendContext(action, plugin) {
   const label = labelOf(action)
   const text = requireString(action.text, `${label}.text`, plugin)
   if (text.length === 0) return
-  const budget = createTurnStopBudget()
   if (action.mode === 'continue') {
-    collect(on('agent/turn-stopping', ({ agent, turn } = {}) => {
-      try {
-        if (typeof action.match === 'function' && action.match(agent, turn) !== true) return
-        const session = agent?.session
-        if (session?.id === undefined || typeof agent.steer !== 'function') return
-        const entry = budget.entry(session.id, turn)
-        if (!budget.available(entry, turn)) return
-        // 计数在 steer 之前落账：steer 抛错也不允许下一步重试越过预算。
-        budget.claim(entry, turn)
-        // 身份归本动作：复用 pluginMessage 的形状，但 source.plugin 必须是动作命名空间
-        // （层模块的 pluginMessage 用 layers 自己的身份，那不是本动作的名字）。
-        const message = pluginMessage(`action-${label}`, text, `${label} continue`)
-        agent.steer({ ...message, source: { ...message.source, plugin: label } })
-      } catch (error) {
-        warnOnce(`${plugin}: append-context(continue) action ${label} failed: ${String(error?.message ?? error)}`)
-      }
-    }))
-    return
+    return (_ctx, { warnOnce, on, collect, take }) => {
+      const budget = createTurnStopBudget()
+      collect(on('agent/turn-stopping', ({ agent, turn } = {}) => {
+        try {
+          if (typeof action.match === 'function' && action.match(agent, turn) !== true) return
+          const session = agent?.session
+          if (session?.id === undefined || typeof agent.steer !== 'function') return
+          const entry = budget.entry(session.id, turn)
+          if (!budget.available(entry, turn) || !take({ agent })) return
+          // 计数在 steer 之前落账：steer 抛错也不允许下一步重试越过预算。
+          budget.claim(entry, turn)
+          // 身份归本动作：复用 pluginMessage 的形状，但 source.plugin 必须是动作命名空间
+          // （层模块的 pluginMessage 用 layers 自己的身份，那不是本动作的名字）。
+          const message = pluginMessage(`action-${label}`, text, `${label} continue`)
+          agent.steer({ ...message, source: { ...message.source, plugin: label } })
+        } catch (error) {
+          warnOnce(`${plugin}: append-context(continue) action ${label} failed: ${String(error?.message ?? error)}`)
+        }
+      }))
+    }
   }
   // 追加上下文：只回 user 角色的 durable 通知（宿主把 additionalContexts 落成 user 消息）。
-  collect(on('tools/post-execute', async (exec, result, next) => {
+  return (_ctx, { warnOnce, on, collect, take }) => collect(on('tools/post-execute', async (exec, result, next) => {
     const decision = await next()
     try {
       if (typeof action.match === 'function' && action.match(exec, result, decision) !== true) return decision
@@ -546,7 +578,8 @@ function registerAppendContext(ctx, action, { plugin, warnOnce, on, collect }) {
         ...pluginMessage(`action-${label}`, text, `${label} context`),
         source: { kind: 'plugin', plugin: label, form: 'notice', summary: `${label} context` },
       }
-      return { ...decision, additionalContexts: [...(decision.additionalContexts ?? []), notice] }
+      const updated = { ...decision, additionalContexts: [...(decision.additionalContexts ?? []), notice] }
+      return take(exec) ? updated : decision
     } catch (error) {
       warnOnce(`${plugin}: append-context action ${label} failed, keeping the plain result: ${String(error?.message ?? error)}`)
       return decision
@@ -557,86 +590,89 @@ function registerAppendContext(ctx, action, { plugin, warnOnce, on, collect }) {
 /**
  * (5) 执行层 guard —— 唯一能兜住执行的口子。
  * 注册面：`agent.ctx.tools.guard`（agent scope，故只作用于该 agent，且覆盖本层与晚到工具）；
- * 复用面：同一名单在能限制的继承面上顺带 `restrict`（最佳努力，失败不影响 guard）。
+ * 复用面：受众包含子代理时，同一名单顺带 `restrict`（最佳努力，失败不影响 guard）。
  * guard 自身**不包 try/catch**：官方 `guardReason()` 只收集「返回的拒绝原因」，
  * 而它在 `prepareExecution` 的 try 内被调用（安装包 `dsh-tools/lib/index.js:3236`），
  * 抛错会落进同一 try 的 catch（`:3262-3268`）变成失败的工具结果——所以"异常即失败"
  * 是构造上的 fail-closed，绝不退化成放行，也不需要用 catch 去"兜"成允许。
  */
-function registerGuard(ctx, action, { plugin, warnOnce, on, collect }) {
+function prepareGuard(action, plugin) {
   const label = labelOf(action)
   const mask = createMask(action.mask ?? action, `${label}.mask`, plugin)
   const includeSubagents = action.includeSubagents === true
   const reasonFor = (toolName) => String(action.reason ?? `${label}: tool ${JSON.stringify(toolName)} is denied by action`)
 
-  /** session -> { ctx, disposers }：同一 agent.ctx 只注册一次，重绑后按新 ctx 重注册。 */
-  const appliedBySession = new WeakMap()
-  const states = new Set()
-  const releaseState = (state) => {
-    states.delete(state)
-    for (const dispose of state.disposers.splice(0)) {
-      try { dispose() } catch { /* 释放失败不得反过来打断卸载 */ }
-    }
-  }
-  const releaseAll = () => { for (const state of [...states]) releaseState(state) }
-
-  const applyTo = (agent) => {
-    const session = agent?.session
-    const scoped = agent?.ctx
-    if (session === undefined || scoped === undefined) return
-    // 受众不在本动作的裁决面内就不注册（子代理的 guard 由它自己的 assembly 决定；
-    // 万一父 guard 经 scope 链被走到，guard 体内的同一道受众判定仍然放行）。
-    const depth = session.header?.delegationDepth ?? 0
-    if (depth > 0 ? !includeSubagents : action.audience === 'subagent') return
-    const existing = appliedBySession.get(session)
-    if (existing !== undefined) {
-      // 预设切换/重绑会换掉 agent.ctx：旧 scope 的 guard 随旧 scope 失效，必须重注册。
-      if (existing.ctx === scoped) return
-      releaseState(existing)
-      appliedBySession.delete(session)
-    }
-    const tools = scoped.tools
-    if (tools === undefined || typeof tools.guard !== 'function') {
-      warnOnce(`${plugin}: guard action ${label} found no agent-scoped tools service — execution guard not registered`)
-      return
-    }
-    const state = { ctx: scoped, disposers: [] }
-    states.add(state)
-    appliedBySession.set(session, state)
-    const denials = {
-      ...(mask.allow !== undefined ? { allow: [...mask.allow] } : {}),
-      ...(mask.deny !== undefined ? { deny: [...mask.deny] } : {}),
-    }
-    if (typeof tools.restrict === 'function') {
-      try {
-        const dispose = tools.restrict(denials)
-        if (typeof dispose === 'function') state.disposers.push(dispose)
-      } catch (error) {
-        // restrict 只收继承面：本层/晚到工具不在它的可限制集合里，交给 guard 裁决。
-        warnOnce(`${plugin}: guard action ${label} restrict skipped (own-layer/late tools stay covered by the guard): ${String(error?.message ?? error)}`)
+  return (_ctx, { warnOnce, on, collect }) => {
+    /** session -> { ctx, disposers }：同一 agent.ctx 只注册一次，重绑后按新 ctx 重注册。 */
+    const appliedBySession = new WeakMap()
+    const states = new Set()
+    const releaseState = (state) => {
+      states.delete(state)
+      for (const dispose of state.disposers.splice(0)) {
+        try { dispose() } catch { /* 释放失败不得反过来打断卸载 */ }
       }
     }
-    state.disposers.push(tools.guard((exec) => {
-      const toolName = exec?.name
-      if (toolName === RUN_CODE || typeof toolName !== 'string' || toolName.length === 0) return undefined
-      const depth = exec?.agent?.session?.header?.delegationDepth ?? 0
-      // 主子代理隔离：scope 注册之外再按受众判定一次（子代理 scope 可能挂在父链上）。
-      if (depth > 0 ? !includeSubagents : action.audience === 'subagent') return undefined
-      return mask.blocks(toolName) ? reasonFor(toolName) : undefined
+    const releaseAll = () => { for (const state of [...states]) releaseState(state) }
+
+    const applyTo = (agent) => {
+      const session = agent?.session
+      const scoped = agent?.ctx
+      if (session === undefined || scoped === undefined) return
+      // 受众不在本动作的裁决面内就不注册（子代理的 guard 由它自己的 assembly 决定；
+      // 万一父 guard 经 scope 链被走到，guard 体内的同一道受众判定仍然放行）。
+      const depth = session.header?.delegationDepth ?? 0
+      if (depth > 0 ? !includeSubagents : action.audience === 'subagent') return
+      const existing = appliedBySession.get(session)
+      if (existing !== undefined) {
+        // 预设切换/重绑会换掉 agent.ctx：旧 scope 的 guard 随旧 scope 失效，必须重注册。
+        if (existing.ctx === scoped) return
+        releaseState(existing)
+        appliedBySession.delete(session)
+      }
+      const tools = scoped.tools
+      if (tools === undefined || typeof tools.guard !== 'function') {
+        warnOnce(`${plugin}: guard action ${label} found no agent-scoped tools service — execution guard not registered`)
+        return
+      }
+      const state = { ctx: scoped, disposers: [] }
+      states.add(state)
+      appliedBySession.set(session, state)
+      const denials = {
+        ...(mask.allow !== undefined ? { allow: [...mask.allow] } : {}),
+        ...(mask.deny !== undefined ? { deny: [...mask.deny] } : {}),
+      }
+      // restrict 沿父 scope 链传播且不识别受众；只在子代理也受限时复用。
+      if (includeSubagents && typeof tools.restrict === 'function') {
+        try {
+          const dispose = tools.restrict(denials)
+          if (typeof dispose === 'function') state.disposers.push(dispose)
+        } catch (error) {
+          // restrict 只收继承面：本层/晚到工具不在它的可限制集合里，交给 guard 裁决。
+          warnOnce(`${plugin}: guard action ${label} restrict skipped (own-layer/late tools stay covered by the guard): ${String(error?.message ?? error)}`)
+        }
+      }
+      state.disposers.push(tools.guard((exec) => {
+        const toolName = exec?.name
+        if (toolName === RUN_CODE || typeof toolName !== 'string' || toolName.length === 0) return undefined
+        const depth = exec?.agent?.session?.header?.delegationDepth ?? 0
+        // 主子代理隔离：scope 注册之外再按受众判定一次（子代理 scope 可能挂在父链上）。
+        if (depth > 0 ? !includeSubagents : action.audience === 'subagent') return undefined
+        return mask.blocks(toolName) ? reasonFor(toolName) : undefined
+      }))
+    }
+
+    collect(releaseAll)
+    collect(on('system-prompt/assemble', async (assembly, context, next) => {
+      // Downstream errors propagate untouched; only this action's own logic is guarded.
+      const assembled = await next()
+      try {
+        applyTo(context?.agent)
+      } catch (error) {
+        warnOnce(`${plugin}: guard action ${label} failed to register: ${String(error?.message ?? error)}`)
+      }
+      return assembled
     }))
   }
-
-  collect(releaseAll)
-  collect(on('system-prompt/assemble', async (assembly, context, next) => {
-    // Downstream errors propagate untouched; only this action's own logic is guarded.
-    const assembled = await next()
-    try {
-      applyTo(context?.agent)
-    } catch (error) {
-      warnOnce(`${plugin}: guard action ${label} failed to register: ${String(error?.message ?? error)}`)
-    }
-    return assembled
-  }))
 }
 
 /**
@@ -646,10 +682,10 @@ function registerGuard(ctx, action, { plugin, warnOnce, on, collect }) {
  * assembly 里求值的结果），所以"按更新后的视图重生"并不改变文本——真正需要的是
  * 对**已产出正文**做删行；重生不是必需步骤，故这里直接改段文本。
  */
-function registerSdkStrip(ctx, action, { plugin, warnOnce, on, collect }) {
+function prepareSdkStrip(action, plugin) {
   const label = labelOf(action)
   const mask = createMask(action.mask ?? action, `${label}.mask`, plugin)
-  collect(on('system-prompt/assemble', async (assembly, context, next) => {
+  return (_ctx, { warnOnce, on, collect, take }) => collect(on('system-prompt/assemble', async (assembly, context, next) => {
     // Downstream errors propagate untouched; only this action's own logic is guarded.
     const assembled = await next()
     try {
@@ -666,7 +702,7 @@ function registerSdkStrip(ctx, action, { plugin, warnOnce, on, collect }) {
         changed = true
         return { ...section, text: stripped }
       })
-      return changed ? { ...assembled, sections } : assembled
+      return changed && take(context) ? { ...assembled, sections } : assembled
     } catch (error) {
       warnOnce(`${plugin}: sdk-strip action ${label} failed, keeping the original SDK text: ${String(error?.message ?? error)}`)
       return assembled
@@ -675,7 +711,7 @@ function registerSdkStrip(ctx, action, { plugin, warnOnce, on, collect }) {
 }
 
 /** (7) 改模型请求参数：与既有 agent-request 层共用同一实现，不另写一套请求改写。 */
-function registerRequestParams(ctx, action, { plugin, warnOnce, on, collect }) {
+function prepareRequestParams(action, plugin) {
   const label = labelOf(action)
   const patch = action.patch
   if (patch !== undefined && (patch === null || typeof patch !== 'object' || Array.isArray(patch))) {
@@ -689,11 +725,15 @@ function registerRequestParams(ctx, action, { plugin, warnOnce, on, collect }) {
     throw new TypeError(`${plugin}: ${label} cannot combine replace with unset — 整体替换没有可比较的下游值`)
   }
   const params = { ...(patch !== undefined ? { patch } : {}), ...(unset !== undefined ? { unset } : {}), ...(action.replace === true ? { replace: true } : {}) }
-  collect(on('agent/request', async (payload, next) => {
+  return (_ctx, { warnOnce, on, collect, take }) => collect(on('agent/request', async (payload, next) => {
     const base = await next()
     try {
       if (!matchesAgentScope(action, payload?.agent)) return base
-      return applyAgentRequestParams(params, base)
+      const result = applyAgentRequestParams(params, base)
+      const keys = Object.keys(result)
+      const changed = base == null || keys.length !== Object.keys(base).length
+        || keys.some((key) => !Object.hasOwn(base, key) || !Object.is(result[key], base[key]))
+      return changed && take(payload) ? result : base
     } catch (error) {
       warnOnce(`${plugin}: request-params action ${label} failed: ${String(error?.message ?? error)}`)
       return base
@@ -711,16 +751,16 @@ function registerRequestParams(ctx, action, { plugin, warnOnce, on, collect }) {
  * **防自触发**：插件来源消息（包括本动作自己插入的那条）永不再次前置——`anchor-turn` 的
  * 原实现也守这条，否则一条消息会引出无限插队。
  */
-function registerInboxPrepend(ctx, action, { plugin, warnOnce, on, collect }) {
+function prepareInboxPrepend(action, plugin) {
   const label = labelOf(action)
   const target = action.target ?? 'next-turn'
   if (target !== 'next-turn' && target !== 'next-step') {
     throw new TypeError(`${plugin}: ${label}.target must be "next-turn" or "next-step"`)
   }
-  const text = requireString(action.text, `${label}.text`)
+  const text = requireString(action.text, `${label}.text`, plugin)
   // 空正文 = 没有可插入的内容（empty 情形）：不注册，而不是插入一条空消息。
   if (text.length === 0) return
-  collect(on('agent/inbox/inserted', ({ agent, message } = {}) => {
+  return (_ctx, { warnOnce, on, collect, take }) => collect(on('agent/inbox/inserted', ({ agent, message } = {}) => {
     try {
       // 无 session 的 agent 不锚定（与原 `anchor-turn` 的守卫逐条对齐；声明侧见
       // `test/engine/declarations/anchor-turn.yml` 的 session 谓词）：锚定是**会话**
@@ -730,6 +770,7 @@ function registerInboxPrepend(ctx, action, { plugin, warnOnce, on, collect }) {
       if (typeof agent?.inbox?.prepend !== 'function') return
       if (message?.source?.kind === 'plugin') return
       if (typeof action.match === 'function' && action.match(agent, message) !== true) return
+      if (!take({ agent })) return
       agent.inbox.prepend(target, {
         id: newMessageId(`action-${label}`),
         role: 'user',
@@ -755,7 +796,7 @@ function registerInboxPrepend(ctx, action, { plugin, warnOnce, on, collect }) {
  *
  * **永不吞上下文**：异常一律返回未过滤的 decision。门控 bug 可以少拦，不可以吃掉会话内容。
  */
-function registerPreStepFilter(ctx, action, { plugin, warnOnce, on, collect }) {
+function preparePreStepFilter(action, plugin) {
   const label = labelOf(action)
   const sources = NAME_LIST.parse(action.sources, plugin, `${label}.sources`)
   const keepKinds = NAME_LIST.parse(action.keepKinds, plugin, `${label}.keepKinds`)
@@ -770,7 +811,7 @@ function registerPreStepFilter(ctx, action, { plugin, warnOnce, on, collect }) {
     throw new TypeError(`${plugin}: ${label} cannot combine sources with keepKinds — 两种过滤语义的保留集定义不同`)
   }
   if (sources === undefined && keepKinds === undefined && blockPlugins === undefined) return
-  collect(on('agent/pre-step', async ({ messages: claimed } = {}, next) => {
+  return (_ctx, { warnOnce, on, collect, take }) => collect(on('agent/pre-step', async ({ agent, messages: claimed } = {}, next) => {
     const decision = await next()
     try {
       if (decision?.kind === 'reject') return decision
@@ -797,7 +838,7 @@ function registerPreStepFilter(ctx, action, { plugin, warnOnce, on, collect }) {
           return typeof name !== 'string' || !blockPlugins.has(name.toLowerCase())
         })
       }
-      return messages.length === decision.messages.length ? decision : { ...decision, messages }
+      return messages.length !== decision.messages.length && take({ agent }) ? { ...decision, messages } : decision
     } catch (error) {
       warnOnce(`${plugin}: pre-step-filter action ${label} failed, keeping every message: ${String(error?.message ?? error)}`)
       return decision
@@ -805,22 +846,22 @@ function registerPreStepFilter(ctx, action, { plugin, warnOnce, on, collect }) {
   }))
 }
 
-const REGISTRARS = {
-  'inject-text': registerInjectText,
-  assembly: registerAssembly,
-  decision: registerDecision,
-  'append-context': registerAppendContext,
-  guard: registerGuard,
-  'sdk-strip': registerSdkStrip,
-  'request-params': registerRequestParams,
-  'inbox-prepend': registerInboxPrepend,
-  'pre-step-filter': registerPreStepFilter,
+const PREPARERS = {
+  'inject-text': prepareInjectText,
+  assembly: prepareAssembly,
+  decision: prepareDecision,
+  'append-context': prepareAppendContext,
+  guard: prepareGuard,
+  'sdk-strip': prepareSdkStrip,
+  'request-params': prepareRequestParams,
+  'inbox-prepend': prepareInboxPrepend,
+  'pre-step-filter': preparePreStepFilter,
 }
 
 /**
- * 把一个动作接到它唯一合法的通道上。
+ * 纯准备阶段：校验动作和注册选项，返回接收真实 ctx 的绑定函数。
+ * 声明编译只调用准备阶段；运行时注册复用同一入口，不复制校验或模拟宿主。
  *
- * @param ctx 注册作用域（挂载 ctx；guard 的生效作用域随后按 agent.ctx 决定）。
  * @param action `{ kind, id?, ... }`，形状见 {@link ACTION_KINDS}。
  * @param options.plugin 调用方插件名（错误消息 / 告警 / disposer 标签），与
  *   `mountTriggers(ctx, declarations, { plugin })` 同一约定；缺省 `prompt-actions`。
@@ -830,13 +871,12 @@ const REGISTRARS = {
  *   （那两类不走 `on(...)`，静默忽略就是"配了没效果"）。
  * @param options.prepend 让本动作落在宿主 waterfall 的**最外层**（否决型动作需要）。同样只对
  *   `ON_REGISTERED_KINDS` 有效；它表达的是**位置**，不承担声明之间的排序。
- * @returns 释放函数：撤销本动作注册的监听器与 agent scope 上的 guard/restrict。
+ * @returns 绑定函数：传入 ctx 后注册监听器，并返回 disposer。
  */
-export function registerAction(ctx, action, options = {}) {
+export function prepareAction(action, options = {}) {
   const kind = action?.kind
-  const declaration = ACTION_KINDS[kind]
   const plugin = typeof options.plugin === 'string' && options.plugin.length > 0 ? options.plugin : DEFAULT_PLUGIN
-  if (declaration === undefined) {
+  if (!Object.hasOwn(ACTION_KINDS, kind)) {
     throw new TypeError(`${plugin}: unknown action kind ${JSON.stringify(kind)} — known kinds: ${Object.keys(ACTION_KINDS).join(', ')}`)
   }
   if (!ON_REGISTERED_KINDS.has(kind) && (options.when !== undefined || options.prepend === true)) {
@@ -847,24 +887,38 @@ export function registerAction(ctx, action, options = {}) {
   if (!ON_REGISTERED_KINDS.has(kind) && action?.maxPerTurn !== undefined) {
     throw new TypeError(`${plugin}: action ${kind} does not support maxPerTurn — 它不经 on(...) 注册`)
   }
-  const warnOnce = options.warnOnce ?? createWarnOnce(ctx, plugin)
-  const budget = createTurnBudget(action)
-  const on = withWhen(channelBinder(ctx, kind, plugin, options.prepend === true), options.when, warnOnce, budget)
-  const disposers = []
-  const collect = (disposer) => { if (typeof disposer === 'function') disposers.push(disposer) }
-  // 每轮预算的轮边界由 durable 事件驱动（与谓词的 observe 同一事件源，但**独立记账**：
-  // 预算是「本动作生效次数」，不是 durable 事件计数）。
-  if (budget !== undefined) collect(ctx.on('session/event', (session, event) => budget.observe(session, event)))
-  REGISTRARS[kind](ctx, action, { plugin, warnOnce, on, collect })
-  const dispose = () => {
-    for (const release of disposers.splice(0)) {
-      try {
-        release()
-      } catch {
-        // 释放失败不得反过来打断卸载流程。
+  const max = action?.maxPerTurn
+  if (max !== undefined && (!Number.isSafeInteger(max) || max <= 0)) {
+    throw new TypeError(`${labelOf(action)}.maxPerTurn must be a positive integer`)
+  }
+  const bind = PREPARERS[kind](action, plugin)
+  const phase = ON_REGISTERED_KINDS.has(kind) ? actionExecutionPoint(action).phase : undefined
+  return (ctx) => {
+    const warnOnce = options.warnOnce ?? createWarnOnce(ctx, plugin)
+    const budget = createTurnBudget(max)
+    const on = withWhen(channelBinder(ctx, kind, plugin, options.prepend === true), options.when, warnOnce, phase)
+    const disposers = []
+    const collect = (disposer) => { if (typeof disposer === 'function') disposers.push(disposer) }
+    // 每轮预算的轮边界由 durable 事件驱动（与谓词的 observe 同一事件源，但**独立记账**：
+    // 预算是「本动作生效次数」，不是 durable 事件计数）。
+    if (budget !== undefined) collect(ctx.on('session/event', (session, event) => budget.observe(session, event)))
+    const take = (subject) => budget?.take(subject) ?? true
+    bind?.(ctx, { warnOnce, on, collect, take })
+    const dispose = () => {
+      for (const release of disposers.splice(0)) {
+        try {
+          release()
+        } catch {
+          // 释放失败不得反过来打断卸载流程。
+        }
       }
     }
+    keepDisposer(ctx, dispose, `${plugin}: action ${labelOf(action)}`)
+    return dispose
   }
-  keepDisposer(ctx, dispose, `${plugin}: action ${labelOf(action)}`)
-  return dispose
+}
+
+/** 校验后把动作接到其合法通道，返回释放函数。 */
+export function registerAction(ctx, action, options = {}) {
+  return prepareAction(action, options)(ctx)
 }

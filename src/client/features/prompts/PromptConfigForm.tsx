@@ -8,7 +8,6 @@ import type { PromptToolLocaleKey, PromptToolTranslate } from '../../locales.ts'
 import type { EngineMeta, PromptConfigDraft } from '../../prompt-tool-types.ts'
 import type { InstructionPolicyFileOverride } from '../../../shared/instructions.ts'
 import { MatchFields, NumberField, OptionField, StrategyParamsFields, VariablesEditor } from './PromptConfigFields.tsx'
-import { MenuSelect } from '../../ui/MenuSelect.tsx'
 import { autoResizeTextarea } from './textarea-resize.ts'
 import { instructionFileIdOf } from '../../data/prompt-config-content.ts'
 import { isManagedConfigField } from '../../../shared/managed-config-fields.ts'
@@ -118,11 +117,9 @@ export function PromptConfigForm(props: {
   const officialSegments = config.layer === 'system-section'
     ? meta.officialOrders?.sections
     : config.layer === 'runtime-context' ? meta.officialOrders?.contexts : undefined
-  // 下拉项的值一律来自下发数据：区段取 from（「插到该区段之前」），末项取全部 to 的最大值 + 1。
-  // 客户端不硬编码任何档位数值，服务降级时整组为 undefined ⇒ 不渲染下拉。
-  const officialOrderOptions = officialSegments === undefined ? undefined : [
+  const officialOrderOptions = officialSegments === undefined || officialSegments.length === 0 ? undefined : [
     ...officialSegments.map((segment) => ({
-      value: String(segment.from),
+      value: String(segment.from - 1),
       label: translateLabel(t, OFFICIAL_ORDER_GROUP_LABEL_KEYS, segment.id),
     })),
     {
@@ -130,7 +127,6 @@ export function PromptConfigForm(props: {
       label: t('form.order.insertLast'),
     },
   ]
-  const officialOrderSelectedValue = officialOrderOptions?.find((option) => Number(option.value) === config.order)?.value ?? ''
   const contentKind = contract?.content ?? 'text'
   const showContent = locked || contentKind === 'text'
     || (contentKind === 'stream' && config.params?.mode === 'replace')
@@ -197,16 +193,10 @@ export function PromptConfigForm(props: {
         {policy.role && roleDowngraded && <p className={clsx(styles.configFieldHint, styles.fieldSpan9)}>{t('form.role.downgraded')}</p>}
         {policy.position && <OptionField t={t} className={styles.fieldSpan3} label={t('form.position.label')} hint={t('form.position.hint')} value={config.position} options={meta.positions} fallback="after-user" labelKeys={POSITION_LABEL_KEYS} disabled={disabled} onChange={(value) => onPatch({ position: value })} />}
         {policy.merge && <OptionField t={t} className={styles.fieldSpan2} label={t('form.merge.label')} hint={t('form.merge.hint')} value={config.mergeMode} options={meta.mergeModes} fallback="separate" labelKeys={MERGE_MODE_LABEL_KEYS} disabled={locked || disabled} onChange={(value) => onPatch({ mergeMode: value })} />}
-        {policy.order && <NumberField t={t} className={styles.fieldSpan2} label={t('form.order.label')} hint={t('form.order.hint')}
+        {policy.order && <NumberField t={t} className={officialOrderOptions === undefined ? styles.fieldSpan2 : styles.fieldSpan6} label={t('form.order.label')} hint={t('form.order.hint')}
           value={config.order} fallback={locked ? 30 : 0} integer min={locked ? 0 : undefined} disabled={disabled}
+          quickOptions={officialOrderOptions} quickLabel={t('form.order.insert')}
           fieldDrafts={props.fieldDrafts} draftKey={`${props.draftScope}:order`} onChange={(value) => { if (typeof value === 'number') onPatch({ order: value }) }} />}
-        {/* 官方刻度快捷填值：只调用既有的 onPatch({ order })，不持有独立草稿、不清空 order ——
-            数字输入仍是唯一真相与唯一写入通道。 */}
-        {policy.order && officialOrderOptions !== undefined && (
-          <MenuSelect className={styles.fieldSpan2} ariaLabel={t('form.order.insert')} placeholder={t('form.order.insert')}
-            disabled={disabled} value={officialOrderSelectedValue} options={officialOrderOptions}
-            onChange={(value) => { const next = Number(value); if (Number.isSafeInteger(next)) onPatch({ order: next }) }} />
-        )}
         {policy.order && !layerShowsOfficialOrder && (
           <p className={clsx(styles.configFieldHint, styles.fieldSpan9)}>{t('form.order.layerOnly')}</p>
         )}
@@ -283,7 +273,7 @@ export function PromptConfigForm(props: {
 
       {/* 本层引擎设置：同层每张卡都显示同一份值（同源同步），默认折叠且折叠时不渲染内容。 */}
       {props.renderLayerSettings !== undefined && (
-        <details className={styles.configAdvanced} open={layerSettingsOpen} data-layer-settings={config.layer ?? 'pre-step'}
+        <details className={clsx(styles.configAdvanced, styles.layerSettingsPanel)} open={layerSettingsOpen} data-layer-settings={config.layer ?? 'pre-step'}
           onToggle={(event) => setLayerSettingsOpen(event.currentTarget.open)}>
           <summary className={styles.configAdvancedSummary}>
             {t('form.layerSettings.label', { layer: translateLabel(t, LAYER_LABEL_KEYS, config.layer ?? 'pre-step') })}

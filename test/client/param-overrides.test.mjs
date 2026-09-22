@@ -8,15 +8,13 @@ import { buildParamOverrides, isCurrentPresetDraft, readParamOverridesPatch, upd
 import { createSerialTaskQueue } from '../../src/client/data/save-queue.ts'
 
 for (const [name, run] of [
-  ['param overrides：列表与 stages 读回为 UI 草稿', () => {
+  ['param overrides：列表与深度读回为 UI 草稿', () => {
     assert.deepEqual(readParamOverridesPatch({
-      toolFilterAllow: ['read', 'glob'],
+      customToolRequireApproval: ['shell', 'http'],
       maxDepth: 3,
-      stages: [{ name: '了解', tools: ['read'] }],
     }), {
-      toolFilterAllow: 'read, glob',
+      customToolRequireApproval: 'shell, http',
       maxDepth: '3',
-      stages: [{ name: '了解', tools: 'read' }],
     })
   }],
   ['param overrides：只发送已有键或偏离默认值的字段', () => {
@@ -25,7 +23,7 @@ for (const [name, run] of [
     })
     assert.equal(overrides.firstTurnText, 'hello')
     assert.equal(overrides.guideText, '', '已有空键必须发送以执行删键语义')
-    assert.equal('promoteGate' in overrides, false)
+    assert.equal('toolGitBashEnabled' in overrides, false)
   }],
   ['param overrides：自动预选 provider 在模型为空时不落盘', () => {
     const overrides = buildParamOverrides({ ...EMPTY_FIELDS, modelProvider: 'deepseek' }, {
@@ -49,15 +47,15 @@ for (const [name, run] of [
     assert.equal(loadedKeys.has('firstTurnText'), false)
   }],
   ['有效组合默认值仅作回显，未编辑的值不因保存其他卡片而固化', () => {
-    const baseline = { ...EMPTY_FIELDS, bootstrapTools: 'read, write', maxPromoteSteps: 4, anchorTurn: true }
-    const result = buildParamOverrides({ ...baseline, usePtcMode: true }, { loadedKeys: new Set(), baseline })
-    assert.deepEqual(result, { usePtcMode: true })
-    assert.deepEqual(buildParamOverrides({ ...baseline, anchorTurn: false }, { loadedKeys: new Set(), baseline }), { anchorTurn: false })
+    const baseline = { ...EMPTY_FIELDS, customToolRequireApproval: 'shell, http', strReplaceEditorMaxOutputChars: 4096, firstTurnAnchor: true }
+    const result = buildParamOverrides({ ...baseline, instructionHint: true }, { loadedKeys: new Set(), baseline })
+    assert.deepEqual(result, { instructionHint: true })
+    assert.deepEqual(buildParamOverrides({ ...baseline, firstTurnAnchor: false }, { loadedKeys: new Set(), baseline }), { firstTurnAnchor: false })
   }],
   ['排队参数保存绑定原预设，切换后不发送旧草稿', async () => {
     const queue = createSerialTaskQueue()
     let current = { ...EMPTY_FIELDS, presetTemplate: 'a' }
-    const draft = { ...current, bootstrapSubagents: true }
+    const draft = { ...current, strReplaceEditorMaxOutputChars: 4096 }
     let release
     const sent = []
     const first = queue.enqueue(() => new Promise((resolve) => { release = resolve }))
@@ -79,17 +77,14 @@ for (const [name, run] of [
   }],
   ['参数保存的迟到响应不覆盖请求期间的新编辑', () => {
     // 参数保存发起时取快照；请求返回时若草稿已继续变化，则不得触发静默重载覆盖新值。
-    const saved = snapshotSwitches({ ...EMPTY_FIELDS, toolFilterAllow: 'read' })
-    assert.equal(shouldReloadAfterParamSave(snapshotSwitches({ ...EMPTY_FIELDS, toolFilterAllow: 'read' }), saved), true,
+    const saved = snapshotSwitches({ ...EMPTY_FIELDS, customToolRequireApproval: 'shell' })
+    assert.equal(shouldReloadAfterParamSave(snapshotSwitches({ ...EMPTY_FIELDS, customToolRequireApproval: 'shell' }), saved), true,
       '草稿未继续变化时可以静默重载')
-    assert.equal(shouldReloadAfterParamSave(snapshotSwitches({ ...EMPTY_FIELDS, toolFilterAllow: 'read, glob' }), saved), false,
+    assert.equal(shouldReloadAfterParamSave(snapshotSwitches({ ...EMPTY_FIELDS, customToolRequireApproval: 'shell, http' }), saved), false,
       '请求期间改了共享参数：迟到响应不重载')
-    // 未完成的阶段草稿同样阻止重载，避免服务端过滤结果覆盖正在编辑的行。
-    const withStage = { ...EMPTY_FIELDS, stages: [{ name: '了解', tools: '' }] }
-    assert.equal(shouldReloadAfterParamSave(snapshotSwitches(withStage), snapshotSwitches(withStage)), false)
     // 预设身份核对：跨预设的迟到响应一律拒绝，回显不串。
     assert.equal(isCurrentPresetDraft({ presetTemplate: 'a' }, { presetTemplate: 'a' }), true)
-    assert.equal(isCurrentPresetDraft({ presetTemplate: 'a', toolFilterAllow: 'read, glob' }, { presetTemplate: 'b' }), false)
+    assert.equal(isCurrentPresetDraft({ presetTemplate: 'a', customToolRequireApproval: 'shell, http' }, { presetTemplate: 'b' }), false)
   }],
 ]) {
   test(name, run)

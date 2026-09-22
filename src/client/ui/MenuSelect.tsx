@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import clsx from 'clsx'
-import { IconChevronDownOutline14, Menu, type MenuEntry } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconChevronDownOutlineRegular, Menu, type MenuEntry } from '@deepseek-ai/dsh-client-ui-primitives'
 import { useMenuFocus } from './menu-focus.ts'
 import styles from './controls.module.css'
 
@@ -101,7 +101,7 @@ export function MenuSelect(props: {
           <span className={styles.menuSelectLabel}>
             {selected?.label ?? (props.value.length > 0 ? props.value : props.placeholder ?? '（未选择）')}
           </span>
-          <IconChevronDownOutline14 className={styles.menuSelectChevron} />
+          <IconChevronDownOutlineRegular className={styles.menuSelectChevron} />
         </button>
       )}
     />

@@ -4,7 +4,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
-import { EMPTY_FIELDS, hasIncompleteStageDrafts } from '../../src/client/data/prompt-tool-fields.ts'
+import { EMPTY_FIELDS } from '../../src/client/data/prompt-tool-fields.ts'
 import {
   deepEqual,
   EMPTY_SWITCHES,
@@ -32,13 +32,13 @@ test('dirty state：两个独立空配置数组不误判脏', () => {
 })
 
 test('dirty state：snapshot 深拷贝可变集合并比较全字段', () => {
-  const fields = { ...EMPTY_FIELDS, stages: [{ name: 'a', tools: 'read' }] }
+  const fields = { ...EMPTY_FIELDS, customToolRequireApproval: ['shell'] }
   const snapshot = snapshotSwitches(fields)
-  fields.stages[0].name = 'changed'
-  fields.stages.push({ name: 'b', tools: 'write' })
-  assert.deepEqual(snapshot.stages, [{ name: 'a', tools: 'read' }], 'snapshot 深拷贝，隔离保存期间的继续编辑')
-  assert.equal(switchesEqual(snapshot, snapshotSwitches({ ...EMPTY_FIELDS, stages: [{ name: 'a', tools: 'read' }] })), true)
-  assert.equal(switchesEqual(snapshot, snapshotSwitches({ ...EMPTY_FIELDS, stages: [{ name: 'a', tools: 'write' }] })), false)
+  fields.customToolRequireApproval[0] = 'http'
+  fields.customToolRequireApproval.push('fs')
+  assert.deepEqual(snapshot.customToolRequireApproval, ['shell'], 'snapshot 深拷贝，隔离保存期间的继续编辑')
+  assert.equal(switchesEqual(snapshot, snapshotSwitches({ ...EMPTY_FIELDS, customToolRequireApproval: ['shell'] })), true)
+  assert.equal(switchesEqual(snapshot, snapshotSwitches({ ...EMPTY_FIELDS, customToolRequireApproval: ['http'] })), false)
   // 技能事实（清单 / 引用目录 / 用户根）不属于 settings 参数。这里断言快照的键集合
   // 恰好是参数键：写 Object.hasOwn(snapshot, key) 只会恒真（快照本就只挑参数键），
   // 有人把技能字段塞进 snapshotSwitches 时不会失败。
@@ -121,41 +121,13 @@ test('store：参数与提示词配置保存共用预设队列，旧响应不重
   assert.match(configSave, /!pendingVariableRows && shouldReloadAfterPresetSave/)
 })
 
-// —— 阶段草稿与重载判定（原 prompt-tool-stages.test.mjs） ——
-
-const cards = readFileSync(new URL('../../src/client/features/modules/EngineParamFields.tsx', import.meta.url), 'utf8')
-const snapshotWithStages = (stages) => snapshotSwitches({ ...EMPTY_FIELDS, stages })
-
-test('stages 添加按钮追加可编辑的空草稿行', () => {
-  const start = cards.indexOf("if (definition.kind === 'stages')")
-  const end = cards.indexOf("if (definition.kind === 'string-list')")
-  assert.ok(start >= 0 && end > start, '应找到 stages UI 区块')
-  const stagesUi = cards.slice(start, end)
-  assert.ok(stagesUi.includes("update([...stages, { name: '', tools: '' }])"), '添加按钮应追加空阶段草稿行，不立即保存')
-  // 按钮文案走 prompt-tool 字典（归档 §8.3.1 分词典）：断言键名而不是中文字面量。
-  assert.ok(stagesUi.includes("t('param.stages.add')"), '应显示添加阶段按钮')
-})
-
-test('stages 未完成草稿保存后不重载，避免新增行立即消失', () => {
-  for (const stages of [
-    [{ name: '', tools: '' }],
-    [{ name: '了解', tools: '' }],
-    [{ name: '', tools: 'read, glob' }],
-  ]) {
-    const snapshot = snapshotWithStages(stages)
-    assert.equal(hasIncompleteStageDrafts(stages), true)
-    assert.equal(shouldReloadAfterParamSave(snapshot, snapshot), false)
-  }
-})
-
-test('stages 完整且保存期间未继续编辑时允许重载', () => {
-  const saved = snapshotWithStages([{ name: '了解', tools: 'read, glob' }])
-  assert.equal(hasIncompleteStageDrafts(saved.stages), false)
+test('参数保存期间未继续编辑时允许重载', () => {
+  const saved = snapshotSwitches({ ...EMPTY_FIELDS, customToolRequireApproval: 'shell, http' })
   assert.equal(shouldReloadAfterParamSave(saved, saved), true)
 })
 
-test('stages 保存期间继续编辑时仍跳过旧快照重载', () => {
-  const saved = snapshotWithStages([{ name: '了解', tools: 'read' }])
-  const current = snapshotWithStages([{ name: '了解', tools: 'read, glob' }])
+test('参数保存期间继续编辑时仍跳过旧快照重载', () => {
+  const saved = snapshotSwitches({ ...EMPTY_FIELDS, customToolRequireApproval: 'shell' })
+  const current = snapshotSwitches({ ...EMPTY_FIELDS, customToolRequireApproval: 'shell, http' })
   assert.equal(shouldReloadAfterParamSave(current, saved), false)
 })

@@ -1,6 +1,6 @@
 # 九层配置卡与官方插入点契约
 
-核对基线：DSH 已发布包 `0.1.6-alpha.2`，本地官方源码 `ddefc45fbc`。九层是插件对公开扩展点的组织，不是宿主统一的九阶段管线。层序仅用于 UI；`order` 只在各自入口内解释。
+核对基线：DSH 已发布包 `0.1.7-alpha.1`，本地官方源码 `c36a83ff6b`。九层是插件对公开扩展点的组织，不是宿主统一的九阶段管线。层序仅用于 UI；`order` 只在各自入口内解释。
 
 ## 配置卡的共同结构
 
@@ -49,7 +49,7 @@ promptConfigs:
 
 这与 `docs/engine-reuse.md` 的「`order` 只在各自入口内解释」自洽：那条说的是**不建立跨层全局顺序**，本条补充的是**同层之内**哪两层的数值具备官方含义。
 
-**刻度来源**：UI 展示的区段边界**不是**手抄常量，而是运行期由 `/meta`（与 `/bootstrap`）下发 —— `src/runtime/settings-bridge.ts` 取 `systemPrompt` 服务后，对每组调用官方 `getSectionOrder(name)` / `getContextOrder(name)`；任一组取不到有限数时**整张表缺席**，绝不部分下发（否则会展示一份看似完整、实则缺口的刻度）。**档位名**分组由 `src/shared/official-orders.ts` 维护，手抄自已安装的 `@deepseek-ai/dsh-system-prompt@0.1.6-alpha.2`（section 33 项 / context 3 项）；官方新增、改名或删除档位时必须同步该文件，届时 `test/shared/official-orders.test.mjs` 会先红。客户端不硬编码任何档位数值。
+**刻度来源**：区段边界由 `/meta` 与 `/bootstrap` 运行时下发，数值取官方 `getSectionOrder(name)` / `getContextOrder(name)`。任一档位无法求值即整表降级。`src/shared/official-orders.ts` 的名字分组对应 `0.1.7-alpha.1`（section 32 项 / context 3 项，已删除 TOOL_CORDIS）；数值不硬编码。快捷入口使用 `from - 1` 插入区段之前，避免同 order 时按名称排序落到官方段之后；末项使用 `max(to) + 1`。
 
 ## 参数所有权与存储
 

@@ -1,14 +1,7 @@
 # module: skill-filesystem
-# source: master/packages/preset/agent-presets/presets/standard/agent.cordis.yml
-# commit: ddefc45fbc7f8e46dd73185e68295696d1297887
+# source: master/packages/bundle/web-app/presets/standard.patch.yml
+# commit: c36a83ff6bb95e3f82cf79f9be7c724270a8aa61
 # local patches: 0
 
-# ── skills ──────────────────────────────────────────────────────────────────
-
-# The skill REGISTRY lives in the host composition and is layered per scope:
-# these rows register into THIS preset's layer of it, so they need no realm.
-# `skill-filesystem` contributes local-root discovery for agents on this preset, and
-# `tool-skill` gives them the catalog and loader; the merged catalog also
-# carries whatever the deployment registered globally (repository plugins).
 - id: skill-filesystem
   name: '@deepseek-ai/dsh-skill-filesystem'

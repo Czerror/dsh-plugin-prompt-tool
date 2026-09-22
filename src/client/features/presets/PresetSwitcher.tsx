@@ -3,7 +3,7 @@ import { memo, useRef, useState, type ReactNode } from 'react'
 import { usePromptToolFields } from '../../data/use-prompt-tool-fields.ts'
 import { EMPTY_FIELDS } from '../../data/prompt-tool-fields.ts'
 import clsx from 'clsx'
-import { IconCopyOutline16, IconFolderOpenOutline16, IconTrashOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconCopyOutlineRegular, IconFolderOpenOutlineRegular, IconTrashOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives'
 import { bridgeCall } from '../../data/bridge-client.ts'
 import { previewAsset, commitAsset } from '../../data/asset-import.ts'
 import { hasWorkspaceDrafts } from '../../data/workspace-drafts.ts'
@@ -180,14 +180,14 @@ export const PresetSwitcher = memo(function PresetSwitcher(props: { store: Promp
             <button type="button" className={styles.presetIconButton}
               aria-label={t('presetSwitcher.duplicate.aria', { name: preset.name })}
               onClick={() => void duplicatePreset(preset.id)}>
-              <IconCopyOutline16 />
+              <IconCopyOutlineRegular />
             </button>
           </HintTooltip>
           <HintTooltip label={t('presetSwitcher.open.label')}>
             <button type="button" className={styles.presetIconButton}
               aria-label={t('presetSwitcher.open.aria', { name: preset.name })}
               onClick={() => void openLocation(preset.id)}>
-              <IconFolderOpenOutline16 />
+              <IconFolderOpenOutlineRegular />
             </button>
           </HintTooltip>
           {confirming && (
@@ -202,7 +202,7 @@ export const PresetSwitcher = memo(function PresetSwitcher(props: { store: Promp
                 aria-label={t('presetSwitcher.delete.aria', { name: preset.name })}
                 disabled={active}
                 onClick={() => setConfirmingDelete(preset.id)}>
-                <IconTrashOutline16 />
+                <IconTrashOutlineRegular />
               </button>
             </HintTooltip>
           )}

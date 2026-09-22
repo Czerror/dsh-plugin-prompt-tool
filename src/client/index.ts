@@ -21,7 +21,7 @@ import { PROMPT_TOOL_NS as LOCALE_NS, registerPromptToolLocale } from './locales
 export const inject = [
   'locale',
   'slots',
-  'settingsScope',
+  'configForms',
   'uiWorkspace',
   'uiSession',
   'remote',
@@ -44,14 +44,13 @@ export function apply(ctx: ClientContext): void {
   ctx.effect(() => ctx.on('connection/reset', () => {
     void bridgeCall('models', { refresh: true }).catch(() => undefined)
   }))
-  // alpha.1 ui-settings：标准字段读写走官方共享 describe mirror + scope mutate
-  // （revision 校验与 mirror fold 由 SettingsScopeController 内置，无需 acceptView）。
-  const scope = ctx.settingsScope.bind<Record<string, unknown>>({ namespace: PROMPT_TOOL_NS })
+  // 0.1.7 ui-settings：标准字段读写复用 ConfigForms 的共享镜像与写入队列。
+  const scope = ctx.configForms.get<Record<string, unknown>>(PROMPT_TOOL_NS)
   const settings: PromptToolSettingsTransport = {
     scope,
-    ensure: () => ctx.settingsScope.describe().ensure(),
+    ensure: () => ctx.configForms.describe().ensure(),
     mutate: async (ops, expectedRevision) => {
-      await scope.mutate(ops, expectedRevision)
+      if (!await scope.mutate(ops, expectedRevision)) throw new Error(t('settings.saveRejected'))
     },
   }
   // 当前会话 id：官方在 alpha.2 把「当前选中会话」移出 Session Controller

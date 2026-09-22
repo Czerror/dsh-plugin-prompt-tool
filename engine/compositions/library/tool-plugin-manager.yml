@@ -1,7 +1,8 @@
 # module: tool-plugin-manager
-# source: master/packages/preset/agent-presets/presets/cordis/agent.cordis.yml
-# commit: ddefc45fbc7f8e46dd73185e68295696d1297887
+# source: master/packages/bundle/web-app/presets/cordis.patch.yml
+# commit: c36a83ff6bb95e3f82cf79f9be7c724270a8aa61
 # local patches: 0
 
 - id: tool-plugin-manager
   name: '@deepseek-ai/dsh-plugin-manager/tools'
+  disabled: !!js "!ctx.get('profileContext')"

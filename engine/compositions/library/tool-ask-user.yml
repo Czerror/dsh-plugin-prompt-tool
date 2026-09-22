@@ -1,9 +1,7 @@
 # module: tool-ask-user
-# source: master/packages/preset/agent-presets/presets/standard/agent.cordis.yml
-# commit: ddefc45fbc7f8e46dd73185e68295696d1297887
+# source: master/packages/bundle/web-app/presets/standard.patch.yml
+# commit: c36a83ff6bb95e3f82cf79f9be7c724270a8aa61
 # local patches: 0
-
-# ── remaining model-facing rows ─────────────────────────────────────────────
 
 - id: tool-ask-user
   name: '@deepseek-ai/dsh-tool-ask-user'

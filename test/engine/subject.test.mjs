@@ -25,6 +25,7 @@ import {
   createPhasePredicate,
   createSessionStatePredicate,
   createSourcePredicate,
+  createTextPredicate,
   subjectOf,
 } from '../../engine/predicates.mjs'
 
@@ -33,6 +34,24 @@ const sessionWith = (...events) => ({
   id: 's-1',
   header: {},
   snapshotEvents: () => events,
+})
+
+test('subjectOf：真实通道载荷按共享 helper 提取五类匹配文本', () => {
+  const content = [{ type: 'text', text: 'MATCH' }]
+  const agent = { session: sessionWith({ type: 'assistant/message', data: { content } }) }
+  const cases = [
+    ['tools/pre-execute', [{ agent, arguments: { command: 'MATCH' } }], 'toolArgs'],
+    ['tools/post-execute', [{ agent, arguments: {} }, { content }], 'toolResult'],
+    ['agent/pre-step', [{ agent, messages: [{ role: 'user', content }] }], 'userMessage'],
+    ['agent/inbox/inserted', [{ agent, message: { role: 'user', content } }], 'userMessage'],
+    ['agent/turn-stopping', [{ agent }], 'assistantText'],
+    ['subagent/start', [{ id: 'child', prompt: 'MATCH' }], 'subagentInfo'],
+    ['subagent/end', [{ id: 'child', result: 'MATCH' }], 'subagentInfo'],
+  ]
+  for (const [channel, payload, subject] of cases) {
+    assert.equal(createTextPredicate({ subject, keys: ['MATCH'] })(subjectOf(channel, payload)), true, channel)
+    assert.equal(createTextPredicate({ subject, keys: ['MISSING'] })(subjectOf(channel, payload)), false, channel)
+  }
 })
 
 // ───────────────────────── 通道取法表 ─────────────────────────

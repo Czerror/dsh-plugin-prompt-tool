@@ -14,7 +14,7 @@ process.env.DSH_BUNDLED_SKILL_DIR = join(bridgeHome, 'bundled-skills')
 const {
   BRIDGE_ENDPOINTS, MAX_BRIDGE_BODY_BYTES, MAX_CHARACTER_CARD_STREAM_BYTES, registerSettingsBridge,
   catalogFromScan, readSkillInvocation, readSkillsState, scanRoots, setSkillInvocation, skillRoots, writeSkillsState,
-} = await import('../../lib/index.mjs')
+} = await import('../../src/index.ts')
 const { deleteSkillTarget } = await import('../../src/host/skills-actions.ts')
 after(() => {
   rmSync(bridgeHome, { recursive: true, force: true })
@@ -57,10 +57,10 @@ function makeHarness(services = {}) {
   const sctx = {
     get: (name) => services[name],
     settings: {
-      describe: () => [{ ns: 'prompt-tool', value: { promptText: 'P' }, base: {} }],
-      get: (ns) => ns === 'agent-default-model'
-        ? { provider: 'deepseek-official', model: 'deepseek-v4-flash', reasoningEffort: 'high' }
-        : undefined,
+      describe: () => [
+        { ns: 'prompt-tool', value: { promptText: 'P' }, base: {} },
+        { ns: 'agent-default-model', value: { provider: 'deepseek-official', model: 'deepseek-v4-flash', reasoningEffort: 'high' } },
+      ],
       mutate: async () => {},
     },
     webServer: {
@@ -634,6 +634,8 @@ test('模板变量与参数独立保存，读取与 bootstrap 不回退旧 param
 
 test('预设列表、导出、复制、删除、新建与导入都作用于官方预设根', async () => {
   const { ctx, handlers } = makeHarness()
+  let registryRefreshes = 0
+  const importedIds = []
   const id = 'root-management'
   const activeDir = join(userPresetRoot, id)
   const presetContent = `id: ${id}\nname: custom\nmodules: []\n`
@@ -642,7 +644,9 @@ test('预设列表、导出、复制、删除、新建与导入都作用于官�
   registerSettingsBridge(ctx, 'prompt-tool',
     () => ({ available: true, providers: [] }),
     () => skillsStateStub(),
-    () => '', undefined, () => activeDir)
+    () => '', undefined, () => activeDir, undefined, undefined,
+    (id) => { importedIds.push(id) }, undefined,
+    () => { registryRefreshes++ })
   const call = async (endpoint, payload = {}) => {
     const res = fakeRes()
     await handlers.get(PREFIX + BRIDGE_ENDPOINTS[endpoint])(fakeReq({ [Symbol.asyncIterator]: async function* () {
@@ -665,6 +669,8 @@ test('预设列表、导出、复制、删除、新建与导入都作用于官�
   const preview = await call('importPresetPackage', { files, preview: true })
   const imported = await call('importPresetPackage', { files, expectedSourceDigest: preview.sourceDigest, expectedPreviewRevision: preview.previewRevision })
   assert.ok(existsSync(join(userPresetRoot, imported.id, 'preset.yml')))
+  assert.equal(registryRefreshes, 3, '复制、删除、新建分别刷新官方注册')
+  assert.deepEqual(importedIds, [imported.id], '完整导入刷新最终 ID，预览不注册')
   assert.equal(readFileSync(join(activeDir, 'preset.yml'), 'utf8'), presetContent, '管理操作不得改动源预设')
 })
 

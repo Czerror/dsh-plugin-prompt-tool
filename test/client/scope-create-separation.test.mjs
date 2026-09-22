@@ -85,24 +85,23 @@ const configListProps = (overrides = {}) => ({
   ...overrides,
 })
 
-test('能力与组合从所属层创建，跨层组合入口取首能力主层，只读拒绝', async () => {
+test('能力从所属层创建，空层无入口且只读拒绝', async () => {
   const calls = []
   const store = { fields: { ...EMPTY_FIELDS, writePreset: true }, moduleFacts: { editable: true, declaredModules: [], effectiveModules: [] },
     createEngineCapability: async (...args) => { calls.push(args); return true } }
   const get = (layer, extra = {}) => find(tree(EngineCapabilityCreateMenu, { store, t, layer, ...extra }), (node) => Array.isArray(node.props.items))
-  const pre = get('pre-step')
-  assert.deepEqual(pre.props.items.map((item) => item.id), ['cap:context-gate', 'cap:anchor-turn', 'recipe:phase-control', 'recipe:phase-control-ptc'])
-  const system = get('system-section')
-  assert.deepEqual(system.props.items.map((item) => item.id), ['cap:tool-bootstrap'])
-  const tools = get('tool-pipeline', { excludeCapabilities: ['tool-filter'] })
-  assert.equal(tools.props.items.some((item) => item.id === 'cap:tool-filter'), false)
-  assert.ok(tools.props.items.some((item) => item.id === 'recipe:deliberation'))
-  pre.props.onSelect('recipe:phase-control')
+  assert.equal(get('pre-step'), undefined)
+  assert.equal(get('system-section'), undefined)
+  const tools = get('tool-pipeline', { excludeCapabilities: ['tool-git-bash'] })
+  assert.equal(tools.props.items.some((item) => item.id === 'cap:tool-git-bash'), false)
+  assert.ok(tools.props.items.some((item) => item.id === 'cap:str-replace-editor'))
+  assert.equal(tools.props.items.some((item) => item.id.startsWith('recipe:')), false)
+  tools.props.onSelect('cap:str-replace-editor')
   await Promise.resolve()
-  assert.deepEqual(calls, [['create-recipe', 'phase-control']])
-  pre.props.onSelect('cap:tool-filter')
+  assert.deepEqual(calls, [['create', 'str-replace-editor']])
+  tools.props.onSelect('cap:tool-git-bash')
   assert.equal(calls.length, 1, '不能绕过层内菜单白名单')
-  assert.equal(tree(EngineCapabilityCreateMenu, { store: { ...store, fields: { writePreset: false } }, t, layer: 'pre-step' }), null)
+  assert.equal(tree(EngineCapabilityCreateMenu, { store: { ...store, fields: { writePreset: false } }, t, layer: 'tool-pipeline' }), null)
 })
 
 test('新建派生纯函数：受众随作用域代入，不改模板与既有列表', () => {
@@ -248,43 +247,40 @@ test('模块列表只有一个创建入口：老「新建」按钮不再渲染�
   assert.match(subagent, /INSERTION_LAYERS\.map/)
 })
 
-test('子代理页不提供「仅主对话」能力：菜单排除 tool-filter、卡片不渲染、给出正确入口提示', () => {
+test('能力排除清单同时约束创建菜单与层参数，其他能力保持可用', () => {
   const store = {
     fields: { ...EMPTY_FIELDS, writePreset: true },
     moduleFacts: { sourceMode: 'explicit', effectiveModules: [], declaredModules: [], editable: true, rowIds: [] },
     createEngineCapability: async () => true,
   }
-  // 菜单：排除 tool-filter 后不再列出它，其他能力照常。
-  const menu = find(tree(EngineCapabilityCreateMenu, { t, store, excludeCapabilities: ['tool-filter'] }), (node) => Array.isArray(node.props.items))
+  const menu = find(tree(EngineCapabilityCreateMenu, { t, store, excludeCapabilities: ['str-replace-editor'] }), (node) => Array.isArray(node.props.items))
   const ids = menu.props.items.map((item) => item.id)
-  assert.equal(ids.includes('cap:tool-filter'), false, '子代理页菜单不列 tool-filter')
-  assert.ok(ids.includes('cap:tool-bootstrap'), '其他能力仍可创建')
+  assert.equal(ids.includes('cap:str-replace-editor'), false, '菜单不列被排除能力')
+  assert.ok(ids.includes('cap:tool-config-engine'), '其他能力仍可创建')
   // 未排除时（主会话页语义）仍列出。
   const mainMenu = find(tree(EngineCapabilityCreateMenu, { t, store }), (node) => Array.isArray(node.props.items))
-  assert.ok(mainMenu.props.items.map((item) => item.id).includes('cap:tool-filter'), '主会话页仍可创建 tool-filter')
+  assert.ok(mainMenu.props.items.map((item) => item.id).includes('cap:str-replace-editor'), '未排除时仍可创建')
   // 已装配时本来就不列（排除逻辑不改变这条既有语义）。
-  const assembled = { ...store, moduleFacts: { ...store.moduleFacts, declaredModules: ['tool-filter'], effectiveModules: ['tool-filter'] } }
+  const assembled = { ...store, moduleFacts: { ...store.moduleFacts, declaredModules: ['filesystem-editor'], effectiveModules: ['filesystem-editor'] } }
   const assembledMenu = find(tree(EngineCapabilityCreateMenu, { t, store: assembled }), (node) => Array.isArray(node.props.items))
-  assert.equal(assembledMenu.props.items.map((item) => item.id).includes('cap:tool-filter'), false)
-  // 配方：含被排除能力的 recipe 也一并隐藏。
+  assert.equal(assembledMenu.props.items.map((item) => item.id).includes('cap:str-replace-editor'), false)
   const recipeIds = menu.props.items.filter((item) => item.id.startsWith('recipe:')).map((item) => item.id)
-  assert.equal(recipeIds.some((id) => id.includes('tool-filter')), false)
-  // 卡片：即使预设已装配 tool-filter，子代理页也不提供它（能力卡已退场，排除语义保留在参数层）。
-  const active = { ...store, moduleFacts: { ...store.moduleFacts, effectiveModules: ['tool-filter'] } }
-  assert.deepEqual(layerParamCards(active, 'tool-pipeline', ['tool-filter']), [], '对子代理不生效的 tool-filter 参数不进子代理页')
+  assert.deepEqual(recipeIds, [])
+  const active = { ...store, moduleFacts: { ...store.moduleFacts, effectiveModules: ['filesystem-editor'] } }
+  assert.deepEqual(layerParamCards(active, 'tool-pipeline', ['str-replace-editor']), [], '被排除能力的参数不渲染')
   // 不排除时（主会话页语义）仍可取到它的参数。
-  assert.deepEqual(layerParamCards(active, 'tool-pipeline'), ['tool-filter'])
+  assert.deepEqual(layerParamCards(active, 'tool-pipeline'), ['str-replace-editor'])
 })
 
-test('子代理页能力卡排除清单由页面下发', () => {
+test('子代理页使用现存能力并保留正确入口提示', () => {
   // SSR 渲染真实子代理页：同一份 moduleFacts 下，页面下发的 mainSessionOnly 被真正消费 ——
   // 独立能力卡已退场，被排除的能力既不出现在参数层，也不出现在装配清单。
   const active = {
     fields: { ...EMPTY_FIELDS, writePreset: true, presetTemplate: 'demo', promptConfigs: [] },
     moduleFacts: {
       sourceMode: 'explicit', editable: true, rowIds: [],
-      effectiveModules: ['tool-filter', 'subagent-tool-policy'],
-      declaredModules: ['tool-filter', 'subagent-tool-policy'],
+      effectiveModules: ['filesystem-editor', 'subagent-tool-policy'],
+      declaredModules: ['filesystem-editor', 'subagent-tool-policy'],
     },
     api: { sessionModel: { subscribe: () => () => {}, snapshot: () => SESSION_SNAPSHOT, getServerSnapshot: () => SESSION_SNAPSHOT }, sessionPreset: { snapshot: () => undefined, subscribe: () => () => {} } },
     hostDefaultModel: undefined, modelCatalog: [], modelReasoning: {}, templatePreStepCount: 0,
@@ -302,8 +298,8 @@ test('子代理页能力卡排除清单由页面下发', () => {
   const html = render(SubagentPage, { t, store: active })
   assert.doesNotMatch(html, /data-module-card-id/, '独立能力卡已退场：子代理页不再有卡片形态的能力入口')
   // 被排除的能力连参数一起排除，未排除的能力正常进入本层设置内容。
-  assert.deepEqual(layerParamCards(active, 'tool-pipeline', ['tool-filter']), [])
-  assert.deepEqual(layerParamCards({ ...active, moduleFacts: { ...active.moduleFacts, effectiveModules: ['tool-filter', 'deliberation-gate'] } }, 'tool-pipeline', ['tool-filter']), ['deliberation-gate'])
+  assert.deepEqual(layerParamCards(active, 'tool-pipeline', ['str-replace-editor']), [])
+  assert.deepEqual(layerParamCards({ ...active, moduleFacts: { ...active.moduleFacts, effectiveModules: ['filesystem-editor', 'tool-config-engine'] } }, 'tool-pipeline', ['str-replace-editor']), ['tool-config-engine'])
   assert.ok(html.includes(t('modules.subagentScopeHint')), '替代入口说明仍随页面提示渲染')
   // 空装配 + 非 all 视图（页面 showStatus 分支）时给出去哪里授权的说明
   // （emptyHint 被真正消费，而不是只传了 prop）。

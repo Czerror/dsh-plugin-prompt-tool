@@ -17,6 +17,9 @@ import assert from 'node:assert/strict'
 import { readdirSync, readFileSync } from 'node:fs'
 import { createElement, isValidElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
+import { Context } from '@deepseek-ai/cordis'
+import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
+import { readOfficialOrderSegments } from '../../src/shared/official-orders.ts'
 import { getEngineMeta, createPromptConfigs } from '../../engine/schema.mjs'
 import { MATCH_LOGIC } from '../../engine/anchor-match.mjs'
 import { PROMPT_TOOL_DICTS } from '../../src/client/locales.ts'
@@ -28,7 +31,7 @@ const read = (file) => readFileSync(new URL(`../../${file}`, import.meta.url), '
 const t = makeTranslate()
 // 注意：withSsr 内部的 import() 以 **harness 自身**（test/client/support/）为基准解析，
 // 所以这里要写 `../../../src/...`（三层回到仓库根）；`read` 仍以本文件为基准。
-const { PromptConfigForm, PromptConfigCard, PromptConfigList, StrategyParamsFields, MatchFields, OptionField, TagInput } = await withSsr([
+const { PromptConfigForm, PromptConfigCard, PromptConfigList, StrategyParamsFields, MatchFields, OptionField, NumberField, TagInput } = await withSsr([
   '../../../src/client/features/prompts/PromptConfigList.tsx',
   '../../../src/client/features/prompts/PromptConfigCard.tsx',
   '../../../src/client/features/prompts/PromptConfigForm.tsx',
@@ -617,14 +620,17 @@ const OFFICIAL_ORDER_STUB = {
 const metaWithOrders = { ...meta, officialOrders: OFFICIAL_ORDER_STUB }
 const orderGroupLabel = (id) => t(`orderGroup.${id === 'runtime-policy' ? 'runtimePolicy' : id}`)
 const segmentsFor = (layer) => layer === 'system-section' ? OFFICIAL_ORDER_STUB.sections : OFFICIAL_ORDER_STUB.contexts
-const orderSelectOf = (tree) => findElement(tree, (node) => node.props?.ariaLabel === t('form.order.insert'))
+const orderSelectOf = (tree) => {
+  const field = findElement(tree, (node) => node.type === NumberField && node.props.label === t('form.order.label'))
+  return field === undefined ? undefined : findElement(treeOf(NumberField, field.props), (node) => node.props?.ariaLabel === t('form.order.insert'))
+}
 
-test('order 刻度：两层渲染区段下拉，值取各区段 from、末项为全部 to 的最大值 + 1', () => {
+test('order 刻度：两层渲染区段下拉，值落在各区段之前、末项为全部 to 的最大值 + 1', () => {
   for (const layer of ['system-section', 'runtime-context']) {
     const segments = segmentsFor(layer)
     const select = orderSelectOf(treeOf(PromptConfigForm, formProps({ layer, strategy: 'static' }, { meta: metaWithOrders })))
     assert.ok(select, `${layer} 必须渲染刻度下拉`)
-    assert.deepEqual(select.props.options.slice(0, -1).map((option) => option.value), segments.map((segment) => String(segment.from)))
+    assert.deepEqual(select.props.options.slice(0, -1).map((option) => option.value), segments.map((segment) => String(segment.from - 1)))
     assert.deepEqual(select.props.options.slice(0, -1).map((option) => option.label), segments.map((segment) => orderGroupLabel(segment.id)))
     const last = select.props.options.at(-1)
     assert.equal(last.label, t('form.order.insertLast'))
@@ -663,13 +669,44 @@ test('order 刻度：下拉只走既有 onPatch({ order })，选中态跟随 ord
   const props = formProps({ layer: 'system-section', strategy: 'static' }, { meta: metaWithOrders, onPatch: (patch) => patches.push(patch) })
   const select = orderSelectOf(treeOf(PromptConfigForm, props))
   assert.ok(select)
-  select.props.onChange(String(OFFICIAL_ORDER_STUB.sections[4].from))
-  assert.deepEqual(patches, [{ order: 9000 }], '下拉只发出 order 补丁，不新增写入通道')
+  select.props.onChange(String(OFFICIAL_ORDER_STUB.sections[4].from - 1))
+  assert.deepEqual(patches, [{ order: 8999 }], '下拉只发出 order 补丁，不新增写入通道')
   select.props.onChange(String(Math.max(...OFFICIAL_ORDER_STUB.sections.map((segment) => segment.to)) + 1))
   assert.deepEqual(patches.at(-1), { order: 10201 })
 
   const selected = (order) => orderSelectOf(treeOf(PromptConfigForm,
     formProps({ layer: 'runtime-context', strategy: 'static', order }, { meta: metaWithOrders })))
-  assert.equal(selected(110).props.value, '110', 'order 落在区段边界时下拉显示该区段')
+  assert.equal(selected(109).props.value, '109', 'order 落在区段之前时下拉显示该区段')
   assert.equal(selected(115).props.value, '', 'order 不落在任何边界时下拉回落到占位文案，且不改写 order')
+})
+
+test('order 快捷选择接受新值并清除对应错误草稿，不改其他字段', () => {
+  const fieldDrafts = new Map([
+    ['preset:rule:order', { source: '0', text: '-', error: '请输入整数' }],
+    ['preset:other:order', { source: '1', text: '2', error: '' }],
+  ])
+  const patches = []
+  const form = treeOf(PromptConfigForm, formProps({ layer: 'system-section', order: 0 }, {
+    meta: metaWithOrders, fieldDrafts, draftScope: 'preset:rule', onPatch: (patch) => patches.push(patch),
+  }))
+  orderSelectOf(form).props.onChange('499')
+  assert.deepEqual(patches, [{ order: 499 }])
+  assert.deepEqual(fieldDrafts.get('preset:rule:order'), { source: '499', text: '499', error: '' })
+  assert.deepEqual(fieldDrafts.get('preset:other:order'), { source: '1', text: '2', error: '' })
+})
+
+test('order 快捷位置在真实官方装配中严格早于目标区段', async (context) => {
+  const app = new Context()
+  context.after(() => app.fiber.dispose())
+  await app.plugin(SystemPrompt, { includeHarnessIdentity: true })
+  const officialOrders = readOfficialOrderSegments(app.systemPrompt)
+  let order
+  const form = treeOf(PromptConfigForm, formProps({ layer: 'system-section' }, {
+    meta: { ...meta, officialOrders }, onPatch: (patch) => { order = patch.order },
+  }))
+  const select = orderSelectOf(form)
+  select.props.onChange(select.props.options[0].value)
+  app.systemPrompt.section({ name: 'zz-ui-before-identity', order, text: 'probe' })
+  const names = (await app.systemPrompt.assemble()).sections.map((section) => section.name)
+  assert.ok(names.indexOf('zz-ui-before-identity') < names.indexOf('harness:identity'))
 })
