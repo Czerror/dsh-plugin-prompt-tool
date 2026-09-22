@@ -76,6 +76,35 @@ export function assertPresetTree(dir: string): void {
   } else if (!stat.isFile()) throw new Error(`预设包含特殊文件：${dir}`)
 }
 
+/**
+ * 引擎分发目录下的 `.mjs` 文件名集合 —— `rewritePresetEngineReferences` 的判定输入。
+ *
+ * 两处调用（`manifest.ts` 的预设 id 迁移、`write-preset.ts` 的写盘物化）共用这一份，
+ * 所以「哪些文件算引擎模块」只有一条规则；将来引擎增删扩展名时只改这里。
+ * 不设 `dir` 默认值：`packageEngineDir()` 在 `manifest.ts`，而 `manifest.ts` 已经 import
+ * 本文件——在这里反向 import 会成环。
+ */
+export function engineModuleFileNames(dir: string): Set<string> {
+  return new Set(readdirSync(dir).filter((name) => name.endsWith('.mjs')))
+}
+
+/**
+ * 引擎模块 → 它自己的**受管配置位置**（预设 id 迁移时的重写目标）。
+ *
+ * `field` 是该模块声明配置位置的键（`configsDir` / `policyFile`），`directory` 是重写后的
+ * 目标（相对预设目录）。三个值必须与组合源 `engine/compositions/source/local/*.yml` 里
+ * 对应模块的声明一致——守卫见 `test/host/preset-engine-managed-paths.test.mjs`。
+ *
+ * 与 yml 的分工：yml 声明**装配时的配置值**，本表声明**迁移时的改写规则**。两者共享
+ * 「哪个模块用哪个目录」这一事实，所以要有守卫；但规则本身不能反过来读 yml——重写面对的
+ * 是**用户预设**里可能已过时的值，靠读它无法判断该改成什么。
+ */
+export const ENGINE_MANAGED_PATHS = {
+  'prompt-config-engine.mjs': { field: 'configsDir', directory: 'prompt-configs' },
+  'tool-config-engine.mjs': { field: 'configsDir', directory: 'custom-tools' },
+  'subagent-tool-policy.mjs': { field: 'policyFile', directory: 'subagent-tools/policy.yml' },
+} as const
+
 /** 仅处理 Cordis 行的已知共享引擎引用和受管配置位置，正文与自有引擎保持不变。 */
 export function rewritePresetEngineReferences(raw: string, outputId: string, engineFiles: ReadonlySet<string>, sourceDir?: string): string {
   const doc = parseDocument(raw, { logLevel: 'silent' })
@@ -91,10 +120,11 @@ export function rewritePresetEngineReferences(raw: string, outputId: string, eng
         if (match[1] === './engine/') { row.set('name', `../.engine/${match[2]}`); changed = true }
         const config = row.get('config', true)
         if (config instanceof YAMLMap) {
-          const field = match[2] === 'subagent-tool-policy.mjs' ? 'policyFile' : 'configsDir'
-          const directory = match[2] === 'prompt-config-engine.mjs' ? 'prompt-configs'
-            : match[2] === 'tool-config-engine.mjs' ? 'custom-tools'
-              : match[2] === 'subagent-tool-policy.mjs' ? 'subagent-tools/policy.yml' : undefined
+          // 受管位置查表（与组合源 yml 的一致性由守卫保证）；表外的引擎模块不改写。
+          const managed = ENGINE_MANAGED_PATHS[match[2] as keyof typeof ENGINE_MANAGED_PATHS] as
+            { field: string; directory: string } | undefined
+          const field = managed?.field ?? 'configsDir'
+          const directory = managed?.directory
           const value = config.get(field)
           if (directory !== undefined && typeof value === 'string'
             && (value === `../${directory}` || new RegExp(`^\\.\\./[a-z0-9][a-z0-9-]*/${directory.replaceAll('.', '\\.')}\\/?$`).test(value))) {

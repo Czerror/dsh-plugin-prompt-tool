@@ -27,6 +27,13 @@ export type CardOrigin =
   | { kind: 'instruction-file'; fileId: string; contextId: string | null }
 
 /**
+ * 条件判定的组合逻辑取值域：与 engine/anchor-match.mjs 的 MATCH_LOGIC 同域。
+ * 下拉的取值与展示顺序表在 prompt-config-policy.ts 的 MATCH_LOGICS（同一取值域）；
+ * 与引擎的逐值对拍守卫见 test/client/prompt-config-form-layout.test.mjs。
+ */
+export type MatchLogic = 'any' | 'all' | 'not' | 'notAny'
+
+/**
  * 条件判定的匹配段（与引擎 match 同构，字段全部可选）：
  * 键默认按字面文本匹配（正则元字符自动转义），`/pattern/flags` 形态或 `useRegex` 才走正则；
  * 引擎要求主键与副键至少有一个非空，`logic` 缺省 any。
@@ -34,7 +41,7 @@ export type CardOrigin =
 export interface PromptConfigMatch {
   keys: string[]
   secondaryKeys?: string[]
-  logic?: 'any' | 'all' | 'not' | 'notAny'
+  logic?: MatchLogic
   caseSensitive?: boolean
   wholeWords?: boolean
   useRegex?: boolean
@@ -96,20 +103,19 @@ export interface PromptConfigTemplateEntry {
   spec: PromptConfigDraft
 }
 
-/** 每个注入层可用的字段开关。 */
-export interface LayerFieldPolicy {
-  position: boolean
-  dedupe: boolean
-  promotion: boolean
-  audience: boolean
-  modelScope: boolean
-  merge: boolean
-  order: boolean
-  role: boolean
-  placeholder: boolean
-  subject: boolean
-  match: boolean
-}
+/**
+ * 层字段能力矩阵（11 项）的**唯一常量表**：{@link LayerFieldPolicy} 与
+ * prompt-config-policy.ts 的 EMPTY_POLICY 都从本表派生，两处不再各自数一遍字段。
+ * 取值与 engine/schema.mjs 每层 `fields` 的键集一致（对拍守卫见 test/client/mirror-guards.test.mjs）。
+ */
+export const LAYER_FIELD_POLICY_KEYS = [
+  'position', 'dedupe', 'promotion', 'audience', 'modelScope', 'merge',
+  'order', 'role', 'placeholder', 'subject', 'match',
+] as const
+export type LayerFieldPolicyKey = (typeof LAYER_FIELD_POLICY_KEYS)[number]
+
+/** 每个注入层可用的字段开关（键集由 {@link LAYER_FIELD_POLICY_KEYS} 派生）。 */
+export type LayerFieldPolicy = Record<LayerFieldPolicyKey, boolean>
 
 /** settings bridge /meta 返回的引擎能力矩阵。层行为、顺序和编辑组见 {@link EngineMetaLayerContract}。 */
 export interface EngineMeta extends Partial<EngineMetaLayerContract> {

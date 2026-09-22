@@ -20,7 +20,7 @@ import { engineCapability, engineRecipe, impliedModulesForParams, isEngineCapabi
 import { ENGINE_PARAM_DEFINITIONS, ENGINE_PARAM_KEYS, buildEngineModuleParams, engineParamList, normalizeMaxDepth } from '../shared/engine-params.ts'
 import { personaRowConfig, readPersonaSpec, type PersonaSpec } from '../shared/persona-section.ts'
 import { DEFAULT_PRESET_ID } from '../shared/preset-ids.ts'
-import { assertPresetDirectory, assertPresetId, assertPresetTree, presetPathExists, rewritePresetEngineReferences, setPresetDefinitionId } from './preset-install.ts'
+import { assertPresetDirectory, assertPresetId, assertPresetTree, engineModuleFileNames, presetPathExists, rewritePresetEngineReferences, setPresetDefinitionId } from './preset-install.ts'
 import { engineParamPath, readLayerSettings, readPresetLayerSettings, PresetLayerSettingsError } from './preset-layer-settings.ts'
 import { modelRequestConfigs } from './prompt-configs.ts'
 export { MODEL_SEGMENT_MAP, PresetLayerSettingsError } from './preset-layer-settings.ts'
@@ -354,7 +354,7 @@ function copyPresetDirectory(source: string, root: string, targetId: string): vo
       setPresetDefinitionId(doc, targetId)
       writeFileSync(definition, doc.toString(), 'utf8')
     }
-    const files = new Set(readdirSync(packageEngineDir()).filter((name) => name.endsWith('.mjs')))
+    const files = engineModuleFileNames(packageEngineDir())
     for (const relative of ['agent.cordis.yml', typeof doc.get('composition') === 'string' && String(doc.get('composition')).startsWith('./') ? String(doc.get('composition')) : '']) {
       if (!relative) continue
       const file = resolve(candidate, relative)

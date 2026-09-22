@@ -11,7 +11,7 @@ import type { SettingsDescriptor, SettingsPathOp } from '@deepseek-ai/dsh-settin
 import { PARAM_KEYS } from '../config.ts'
 import { invalidateModelCatalog, listAdvertisedModels, peekModelCatalog, refreshModelReasoning, type ModelDetection } from './models.ts'
 import type { SkillCatalogEntry, SkillPolicyChange, SkillPolicyScope, SkillsCatalogSnapshot } from '../shared/skills.ts'
-import { loadPromptConfigFiles } from '../host/prompt-configs.ts'
+import { listPromptConfigSpecs } from '../host/prompt-configs.ts'
 import { readConfigFieldSources, stripConfigFieldSources } from '../shared/managed-config-fields.ts'
 import { validatePromptConfigs } from './configs-validate.ts'
 import { PresetLayerSettingsError } from '../host/preset-layer-settings.ts'
@@ -174,6 +174,26 @@ const SHA256_HEX_RE = /^[0-9a-f]{64}$/i
 /** promptOrderCharacterId 上界：ST character_id 实际很短，超长一律按非法输入拒绝。 */
 const MAX_ORDER_CHARACTER_ID_LENGTH = 128
 
+/**
+ * 导入请求字段白名单：与契约**双向绑定**。
+ *
+ * `Record<keyof AssetImportRequest, true>` 让两个方向都在编译期受控：白名单里多一个键、
+ * 或契约（含它所继承的 `ImportChoices`）新增/改名一个字段，`typecheck` 都会失败。
+ * 原先是手写字面量数组，与 `AssetImportRequest` 之间只有人眼维持一致。
+ */
+const IMPORT_REQUEST_FIELDS: Record<keyof AssetImportRequest, true> = {
+  files: true,
+  sourceId: true,
+  preview: true,
+  expectedSourceDigest: true,
+  expectedPreviewRevision: true,
+  targetId: true,
+  targetName: true,
+  overwrite: true,
+  sourceKind: true,
+  promptOrderCharacterId: true,
+}
+
 /** 导入端点（预设包 / 角色卡）的入口参数。 */
 interface ImportRequestParams extends AssetImportRequest {
   /** 省略 / false = 显式提交；true = 只读预览（不落盘）。 */
@@ -193,7 +213,7 @@ interface ImportRequestParams extends AssetImportRequest {
 function readImportRequestParams(record: Record<string, unknown>):
   | { ok: true; params: ImportRequestParams }
   | { ok: false; message: string } {
-  const allowed = new Set(['preview', 'files', 'sourceId', 'expectedSourceDigest', 'expectedPreviewRevision', 'promptOrderCharacterId', 'targetId', 'targetName', 'overwrite', 'sourceKind'])
+  const allowed = new Set(Object.keys(IMPORT_REQUEST_FIELDS))
   if (Object.keys(record).some((key) => !allowed.has(key))) return { ok: false, message: '导入请求包含未知字段' }
   if ((record.files === undefined) === (record.sourceId === undefined)) return { ok: false, message: 'files 与 sourceId 必须且只能提供一个' }
   if (record.sourceId !== undefined && (typeof record.sourceId !== 'string' || !/^[0-9a-f-]{36}$/i.test(record.sourceId))) return { ok: false, message: 'sourceId 必须是有效上传来源标识' }
@@ -734,7 +754,7 @@ export function registerSettingsBridge(
       /** 生成目录实际生效配置（/prompt-configs 读取）。 */
       const readPromptConfigs = (dir: string): unknown[] => {
         try {
-          return dir.length > 0 ? loadPromptConfigFiles(join(dir, 'prompt-configs')).map((config) => {
+          return dir.length > 0 ? listPromptConfigSpecs(join(dir, 'prompt-configs')).map((config) => {
             const raw = config as typeof config & { fieldSources?: unknown }
             const definition = stripConfigFieldSources(raw)
             const fieldSources = readConfigFieldSources(config.id, raw.fieldSources)

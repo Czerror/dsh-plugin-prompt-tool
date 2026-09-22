@@ -1,8 +1,12 @@
 import type { PromptToolLocaleKey, PromptToolTranslate } from '../../locales.ts'
-import { ENGINE_LAYER_ORDER, engineGroupParamKeys } from '../../../shared/engine-capabilities.ts'
-import type { EngineMeta, LayerFieldPolicy, PromptConfigDraft, PromptConfigMatch } from '../../prompt-tool-types.ts'
+import { ENGINE_LAYER_ORDER, engineGroupParamKeys, type EngineLayer } from '../../../shared/engine-capabilities.ts'
+import { LAYER_FIELD_POLICY_KEYS, type EngineMeta, type LayerFieldPolicy, type LayerFieldPolicyKey, type MatchLogic, type PromptConfigDraft, type PromptConfigMatch } from '../../prompt-tool-types.ts'
 import type { LayerContract } from '../../../shared/bridge-contract.ts'
-/** sourceKind / form 是少量固定语义值，用下拉选择；引擎不设枚举，因此额外保留当前值。 */
+/**
+ * sourceKind / form 是少量固定语义值，用下拉选择；**UI 专有，引擎无对应枚举**——
+ * 引擎把两者当自由字符串收（schema.mjs:605-606 只做非空与缺省 'notice'），
+ * 下列取值是客户端下拉的约定集合，引擎不校验、也不下发。引擎不设枚举故额外保留当前值。
+ */
 export const SOURCE_KINDS = ['', 'plugin', 'instruction-hint', 'instruction-file', 'skill-catalog', 'env-facts'] as const
 export const SOURCE_FORMS = ['notice', 'hint', 'instructions', ''] as const
 
@@ -36,7 +40,12 @@ export function translateLabel(
 
 /** audience：空值=公用（缺省，通用参数默认）；main=仅主会话；subagent=仅子代理。 */
 export const AUDIENCE_LABEL_KEYS: Record<string, PromptToolLocaleKey> = { '': 'audience.none', main: 'audience.main', subagent: 'audience.subagent' }
-export const LAYER_LABEL_KEYS: Record<string, PromptToolLocaleKey> = {
+/**
+ * 层显示标签的字典键：键集由共享契约的 {@link EngineLayer} 联合在编译期约束（九层穷尽、禁多余键），
+ * 与引擎下发的 layerLabels 的键集对拍见 test/client/mirror-guards.test.mjs。
+ * 文案仍归 `prompt-tool` 字典（zh/en 双份），不消费 /meta 的 layerLabels.title（引擎只下发中文单份）。
+ */
+export const LAYER_LABEL_KEYS: Record<EngineLayer, PromptToolLocaleKey> = {
   'pre-step': 'layer.pre-step',
   'system-section': 'layer.system-section',
   'runtime-context': 'layer.runtime-context',
@@ -64,9 +73,19 @@ export const DEDUPE_LABEL_KEYS: Record<string, PromptToolLocaleKey> = { none: 'd
 export const PROMOTION_LABEL_KEYS: Record<string, PromptToolLocaleKey> = { none: 'promotion.none', main: 'promotion.main', 'include-subagents': 'promotion.subagents' }
 export const MODEL_SCOPE_LABEL_KEYS: Record<string, PromptToolLocaleKey> = { all: 'modelScope.all', pro: 'modelScope.pro', flash: 'modelScope.flash' }
 export const FILL_LABEL_KEYS: Record<string, PromptToolLocaleKey> = { '': 'fill.none', 'instruction-hint': 'fill.instructionHint', 'env-facts': 'fill.envFacts', 'skill-catalog': 'fill.skillCatalog' }
+/** 上述两个 UI 专有取值集的标签键：没有引擎值可对拍，只给本地下拉用。 */
 export const SOURCE_KIND_LABEL_KEYS: Record<string, PromptToolLocaleKey> = { '': 'sourceKind.default', plugin: 'sourceKind.plugin', 'instruction-hint': 'sourceKind.instructionHint', 'instruction-file': 'sourceKind.instructionFile', 'skill-catalog': 'sourceKind.skillCatalog', 'env-facts': 'sourceKind.envFacts' }
 export const SOURCE_FORM_LABEL_KEYS: Record<string, PromptToolLocaleKey> = { notice: 'sourceForm.notice', hint: 'sourceForm.hint', instructions: 'sourceForm.instructions', '': 'sourceForm.default' }
+/**
+ * identity.field：引擎只接受 'plugin'（schema.mjs:450，kind 模式已与 sourceKind 归一），
+ * 表单也只提供 ['plugin']（PromptConfigForm 的 IdentityFields）；'kind' 是历史遗留标签键，
+ * 当前没有消费点，保留不改动（删它属于 UI 面收紧，不在本次零行为变更范围内）。
+ */
 export const IDENTITY_FIELD_LABEL_KEYS: Record<string, PromptToolLocaleKey> = { plugin: 'identity.plugin', kind: 'identity.kind' }
+/**
+ * emptyBehavior：引擎消费点内联取 'text'，其余一律按 'skip'（fillers.mjs），
+ * schema 未声明枚举，因此这里同样不引用 /meta。
+ */
 export const EMPTY_BEHAVIOR_LABEL_KEYS: Record<string, PromptToolLocaleKey> = { skip: 'emptyBehavior.skip', text: 'emptyBehavior.text' }
 /** 条件判定的匹配对象（''= 层缺省，不写 subject 字段）。 */
 export const SUBJECT_LABEL_KEYS: Record<string, PromptToolLocaleKey> = {
@@ -77,9 +96,13 @@ export const SUBJECT_LABEL_KEYS: Record<string, PromptToolLocaleKey> = {
   assistantText: 'subject.assistantText',
   subagentInfo: 'subject.subagentInfo',
 }
-/** 组合逻辑取值（引擎 MATCH_LOGIC 的四个值），顺序即下拉展示顺序。 */
-export const MATCH_LOGICS = ['any', 'all', 'not', 'notAny'] as const
-export const MATCH_LOGIC_LABEL_KEYS: Record<string, PromptToolLocaleKey> = {
+/**
+ * 组合逻辑取值（引擎 MATCH_LOGIC 的四个值），顺序即下拉展示顺序；取值域由 {@link MatchLogic} 约束。
+ * 不做运行期派生：产品代码不 import engine/*.mjs（无既有先例），
+ * 与 engine/anchor-match.mjs 的逐值对拍守卫见 test/client/prompt-config-form-layout.test.mjs。
+ */
+export const MATCH_LOGICS: readonly MatchLogic[] = ['any', 'all', 'not', 'notAny']
+export const MATCH_LOGIC_LABEL_KEYS: Record<MatchLogic, PromptToolLocaleKey> = {
   any: 'match.any',
   all: 'match.all',
   not: 'match.not',
@@ -88,6 +111,7 @@ export const MATCH_LOGIC_LABEL_KEYS: Record<string, PromptToolLocaleKey> = {
 /**
  * useRegex 是三态而非开关：缺省（自动识别 `/pattern/flags`）、强制正则、强制字面。
  * 做成开关会把用户手写的 `useRegex: false`（强制字面）在编辑后静默变成自动识别。
+ * 这三态是 **UI 专有**编辑形态（引擎只收 useRegex 布尔值），无对应引擎枚举。
  */
 export const MATCH_REGEX_MODES = ['auto', 'force', 'literal'] as const
 export const MATCH_REGEX_MODE_LABEL_KEYS: Record<string, PromptToolLocaleKey> = {
@@ -96,19 +120,11 @@ export const MATCH_REGEX_MODE_LABEL_KEYS: Record<string, PromptToolLocaleKey> = 
   literal: 'form.match.useRegex.literal',
 }
 
-/** 从引擎 /meta 中读取某层的字段能力；未知层回退 pre-step。 */const EMPTY_POLICY: LayerFieldPolicy = {
-  position: false,
-  dedupe: false,
-  promotion: false,
-  audience: false,
-  modelScope: false,
-  merge: false,
-  order: false,
-  role: false,
-  placeholder: false,
-  subject: false,
-  match: false,
-}
+/** 从引擎 /meta 中读取某层的字段能力；未知层回退 pre-step。空策略按键表派生，全 false。 */
+// Object.fromEntries 只能给索引签名，故此处断言：键集由 LAYER_FIELD_POLICY_KEYS 保证（不得手写第二份）。
+const EMPTY_POLICY = Object.fromEntries(
+  LAYER_FIELD_POLICY_KEYS.map((key): [LayerFieldPolicyKey, boolean] => [key, false]),
+) as LayerFieldPolicy
 
 export function fieldPolicyFor(meta: EngineMeta, layer: string | undefined): LayerFieldPolicy {
   return meta.layerFieldPolicies[(layer ?? 'pre-step')] ?? EMPTY_POLICY

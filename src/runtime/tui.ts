@@ -6,7 +6,7 @@ import type { ModelDetection } from './models.ts'
 import type { PromptSettings } from '../config.ts'
 import type { SkillCatalogEntry } from '../shared/skills.ts'
 import type { PromptConfigSpec } from '../host/prompt-configs.ts'
-import { loadPromptConfigFiles } from '../host/prompt-configs.ts'
+import { listPromptConfigSpecs } from '../host/prompt-configs.ts'
 import { loadPresetSpec, resolvePresetParams } from '../host/manifest.ts'
 
 /** dsh-tui 全局开关：键名与 settings 路径一致（settings mutate）。 */
@@ -44,7 +44,7 @@ const TUI_PARAM_TEXT_LINES: ReadonlyArray<readonly [key: string, label: string, 
 function resolvePromptConfigs(presetDir: string | undefined, fallback: PromptConfigSpec[]): PromptConfigSpec[] {
   if (presetDir === undefined || presetDir.length === 0) return fallback
   try {
-    const actual = loadPromptConfigFiles(join(presetDir, 'prompt-configs'))
+    const actual = listPromptConfigSpecs(join(presetDir, 'prompt-configs'))
     return actual.length > 0 ? actual : fallback
   } catch {
     return fallback

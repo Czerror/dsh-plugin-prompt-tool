@@ -11,6 +11,36 @@
 import { readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { parse as parseYaml, stringify as stringifyYamlValue } from 'yaml'
+// 枚举规则（扩展名 / 排序 / 跳过 variables.yml）与引擎共用同一份实现：两侧看到同一批文件，
+// 否则「host 让人编辑的文件」与「引擎实际加载的文件」会漂移。
+// @ts-expect-error 引擎 ESM 是权威实现，由构建器同源打包，无独立声明文件
+// （与 preset-package / instructions-policy / import-source 的既有做法一致）。
+import { promptConfigFileNames } from '../../engine/schema.mjs'
+
+/**
+ * `PromptConfigSpec` 各枚举字段的**运行期值清单**。
+ *
+ * 类型由它派生（`(typeof X)[number]`），守卫测试也读它——于是「类型允许的值」与
+ * 「守卫断言的值」是同一份，不可能各自漂移；而这两个值集合都必须与 `engine/schema.mjs`
+ * 的对应 `KNOWN_*` 一致（守卫见 `test/shared/prompt-config-spec-enums.test.mjs`）。
+ *
+ * 为什么不直接从引擎派生类型：引擎是仓库根的纯 `.mjs`（无 `.d.mts`，`src/` 侧靠
+ * `@ts-expect-error` 引入），其 `KNOWN_*` 在 TS 看来是 `any`，派生不出字面量联合。
+ */
+export const PROMPT_CONFIG_SPEC_ENUMS = {
+  configKind: ['ordered', 'anchor'],
+  role: ['user', 'assistant'],
+  position: ['after-user', 'before-all', 'after-all'],
+  dedupe: ['session', 'batch', 'none'],
+  promotion: ['none', 'main', 'include-subagents'],
+  audience: ['main', 'subagent'],
+  subject: ['toolArgs', 'toolResult', 'userMessage', 'assistantText', 'subagentInfo'],
+  modelScope: ['all', 'pro', 'flash'],
+  mergeMode: ['separate', 'merged'],
+} as const
+
+/** 取上面某一条枚举的值联合。 */
+type SpecEnum<K extends keyof typeof PROMPT_CONFIG_SPEC_ENUMS> = (typeof PROMPT_CONFIG_SPEC_ENUMS[K])[number]
 
 export interface PromptConfigSpec {
   id: string
@@ -18,21 +48,21 @@ export interface PromptConfigSpec {
   enabled?: boolean
   strategy?: string
   layer?: string
-  configKind?: 'ordered' | 'anchor'
+  configKind?: SpecEnum<'configKind'>
   order?: number
-  role?: 'user' | 'assistant'
+  role?: SpecEnum<'role'>
   group?: string
   exclusive?: boolean
-  position?: 'after-user' | 'before-all' | 'after-all'
-  dedupe?: 'session' | 'batch' | 'none'
-  promotion?: 'none' | 'main' | 'include-subagents'
+  position?: SpecEnum<'position'>
+  dedupe?: SpecEnum<'dedupe'>
+  promotion?: SpecEnum<'promotion'>
   /** 消息受众：缺省（省略/null）= 公用（主会话+子代理）；main=仅主会话；subagent=仅子代理。 */
-  audience?: 'main' | 'subagent' | null
+  audience?: SpecEnum<'audience'> | null
   /** 条件判定的匹配对象；缺省由层决定（engine/schema.mjs 的 LAYER_DEFAULT_SUBJECT）。 */
-  subject?: 'toolArgs' | 'toolResult' | 'userMessage' | 'assistantText' | 'subagentInfo'
+  subject?: SpecEnum<'subject'>
   /** 条件判定的键集合；省略 = 无条件（旧行为）。 */
   match?: PromptConfigMatch
-  modelScope?: 'all' | 'pro' | 'flash'
+  modelScope?: SpecEnum<'modelScope'>
   sourceKind?: string
   form?: string
   summary?: string
@@ -41,7 +71,7 @@ export interface PromptConfigSpec {
   /** 单条提示词配置的多段文本：注入为一条消息的多个 text 内容块。 */
   texts?: string[]
   /** 同位置多条提示词配置的插入方式：separate=先后插入独立消息（默认）；merged=拼接为一条消息。 */
-  mergeMode?: 'separate' | 'merged'
+  mergeMode?: SpecEnum<'mergeMode'>
   templateFile?: string
   fill?: string
   variables?: Record<string, string>
@@ -259,8 +289,18 @@ export function mergePromptConfigs(...sources: Array<PromptConfigSpec[] | undefi
   return ordered
 }
 
-/** 从用户提示词配置目录加载 yml/json 提示词配置（文件名排序；内容必须能解析）。 */
-export function loadPromptConfigFiles(dir: string): PromptConfigSpec[] {
+/**
+ * 从用户提示词配置目录加载 yml/json 提示词配置（文件名排序；内容必须能解析）。
+ *
+ * 与引擎的 `engine/schema.mjs loadPromptConfigFiles` **不是同一契约**（故不同名，见
+ * `src/preset-core.ts` 的兼容别名）：
+ *   - 本函数供**编辑/列举**使用（TUI `/prompt-tool config`、bridge `/prompt-configs`、bootstrap 聚合）；
+ *   - 引擎那个供**注入**使用，会额外把 `variables.yml` 合并进每条配置的 `variables`。
+ * 两者只共享**枚举规则**（`promptConfigFileNames`）与读取；解析、校验与错误包装各留边界
+ * ——本函数还会校验「单对象 + 字符串 id」并给出带文件名的错误，引擎侧不做这两项。
+ * 让本函数去合并变量会改变编辑器看到的内容、并可能把预设级变量写回配置文件，**不要合并**。
+ */
+export function listPromptConfigSpecs(dir: string): PromptConfigSpec[] {
   if (dir.length === 0) return []
   let entries
   try {
@@ -269,19 +309,14 @@ export function loadPromptConfigFiles(dir: string): PromptConfigSpec[] {
     throw new Error(`提示词配置目录 ${JSON.stringify(dir)} 不可读: ${String((error as Error).message ?? error)}`)
   }
   const specs: PromptConfigSpec[] = []
-  const files = entries
-    .filter((entry) => entry.isFile() && /\.(ya?ml|json)$/i.test(entry.name))
-    .sort((a, b) => a.name.localeCompare(b.name))
-  for (const entry of files) {
-    // 预设级模板变量文件（writePreset 生成）：非提示词配置，UI 由「模板变量」卡片管理。
-    if (entry.name === 'variables.yml') continue
-    const raw = readFileSync(join(dir, entry.name), 'utf8')
-    const parsed = /\.json$/i.test(entry.name) ? JSON.parse(raw) : parseYaml(raw, { logLevel: 'silent' })
+  for (const fileName of promptConfigFileNames(entries)) {
+    const raw = readFileSync(join(dir, fileName), 'utf8')
+    const parsed = /\.json$/i.test(fileName) ? JSON.parse(raw) : parseYaml(raw, { logLevel: 'silent' })
     if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
-      throw new Error(`prompt config file ${entry.name} must contain a single config object`)
+      throw new Error(`prompt config file ${fileName} must contain a single config object`)
     }
     if (typeof (parsed as { id?: unknown }).id !== 'string') {
-      throw new Error(`prompt config file ${entry.name} must declare a string id`)
+      throw new Error(`prompt config file ${fileName} must declare a string id`)
     }
     specs.push(parsed as PromptConfigSpec)
   }

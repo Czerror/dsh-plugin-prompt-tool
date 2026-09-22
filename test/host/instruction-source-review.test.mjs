@@ -46,7 +46,7 @@ const { agentsFileCardSpecs, agentsFileId, detectAgentsFiles, readAgentsFileSnap
 const { mergeInstructionCards, registerSettingsBridge } = await import('../../src/runtime/settings-bridge.ts')
 const { validatePromptConfigs } = await import('../../src/runtime/configs-validate.ts')
 const { loadPresetSpec, userPresetsDir } = await import('../../src/host/manifest.ts')
-const { loadPromptConfigFiles } = await import('../../src/host/prompt-configs.ts')
+const { listPromptConfigSpecs } = await import('../../src/host/prompt-configs.ts')
 const { BRIDGE_ENDPOINTS, SETTINGS_BRIDGE_PREFIX } = await import('../../src/shared/bridge-contract.ts')
 
 const ordinaryCards = [
@@ -173,7 +173,7 @@ for (const endpoint of [BRIDGE_ENDPOINTS.bootstrap, BRIDGE_ENDPOINTS.promptConfi
     const validation = await validatePromptConfigs(ordinaryCards)
     assert.equal(validation.valid, true, JSON.stringify(validation.errors))
     for (const file of validation.files) writeFileSync(join(dir, 'prompt-configs', file.file), file.content)
-    const expected = loadPromptConfigFiles(join(dir, 'prompt-configs'))
+    const expected = listPromptConfigSpecs(join(dir, 'prompt-configs'))
     const call = makeHarness(dir)
     const response = await call(endpoint)
     assert.equal(response.status, 200, JSON.stringify(response.body))

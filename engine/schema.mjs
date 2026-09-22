@@ -77,6 +77,27 @@ export function parsePromptConfigYaml(raw) {
 }
 
 /**
+ * 枚举提示词配置候选文件：**两条加载路径共用同一份枚举规则**。
+ *
+ * 扩展名、排序与跳过名单必须两侧一致——否则 host（编辑/列举）与引擎（注入）会看到不同的
+ * 文件集：host 让人编辑 A 文件、引擎却加载 B 文件。`variables.yml` 是模板变量源而非配置，
+ * 两侧都跳过（引擎另行读取它做合并，见 `loadPromptConfigFiles`）。
+ *
+ * 只共享**枚举**这一层：解析、结构校验、错误类型与包装都留在各自边界——两边的入参类型
+ * （URL vs 字符串路径）、空路径短路与异常消息本来就不同，强行合并会改变其中一侧的行为。
+ *
+ * @param entries `readdirSync(dir, { withFileTypes: true })` 的结果
+ * @returns 按名排序的文件名（含扩展名），已剔除 `variables.yml`
+ */
+export function promptConfigFileNames(entries) {
+  return entries
+    .filter((entry) => entry.isFile() && /\.(ya?ml|json)$/i.test(entry.name))
+    .sort((a, b) => a.name.localeCompare(b.name))
+    .map((entry) => entry.name)
+    .filter((fileName) => fileName !== 'variables.yml')
+}
+
+/**
  * 从提示词配置模块目录加载全部提示词配置描述:按文件名排序扫描 *.yml / *.yaml / *.json。
  * 文件名用数字前缀表达引擎执行顺序(00-…、10-…)。
  */
@@ -98,14 +119,9 @@ export function loadPromptConfigFiles(dirUrl) {
     // 无 variables.yml（旧产物/手写目录）或解析失败：保持空变量源。
   }
   const specs = []
-  const files = entries
-    .filter((entry) => entry.isFile() && /\.(ya?ml|json)$/i.test(entry.name))
-    .sort((a, b) => a.name.localeCompare(b.name))
-  for (const entry of files) {
-    if (entry.name === 'variables.yml') continue
-    const url = new URL(entry.name, dirUrl)
-    const raw = readFileSync(url, 'utf8')
-    if (/\.json$/i.test(entry.name)) {
+  for (const fileName of promptConfigFileNames(entries)) {
+    const raw = readFileSync(new URL(fileName, dirUrl), 'utf8')
+    if (/\.json$/i.test(fileName)) {
       specs.push(JSON.parse(raw))
     } else {
       specs.push(parsePromptConfigYaml(raw))

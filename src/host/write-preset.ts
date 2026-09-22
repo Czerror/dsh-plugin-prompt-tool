@@ -17,7 +17,7 @@ import { parseDocument, stringify as stringifyYaml } from 'yaml'
 import { validateSubagentToolPolicy } from '../../engine/subagent-tool-policy-core.mjs'
 import { DEFAULT_PRESET_DIR } from './paths.ts'
 import { DEFAULT_PRESET_ID } from '../shared/preset-ids.ts'
-import { assertPresetDirectory, assertPresetId, assertPresetTree, canonicalPresetRoot, presetPathExists, rewritePresetEngineReferences } from './preset-install.ts'
+import { assertPresetDirectory, assertPresetId, assertPresetTree, canonicalPresetRoot, engineModuleFileNames, presetPathExists, rewritePresetEngineReferences } from './preset-install.ts'
 import { compileCustomTool } from './custom-tools.ts'
 import { validateCustomToolIdentities } from '../shared/engine-capabilities.ts'
 import { ENGINE_PARAM_KEYS, type PresetWriterParams } from '../shared/engine-params.ts'
@@ -198,7 +198,16 @@ function syncDirInPlace(srcDir: string, destDir: string): void {
   }
 }
 
-function runtimeOf(options: WritePresetOptions, prompt: string): Record<string, unknown> {
+/**
+ * 写盘用的 runtime 参数对象。
+ *
+ * **导出供测试固化其归一化行为**（`test/shared/engine-param-schema.test.mjs` 的特性断言）：
+ * 这些逐键归一化**不是** `ENGINE_PARAM_DEFINITIONS` 类型信息的重复拷贝——规则取决于运行时的
+ * 需要，且与 `index.ts` 的 `reloadPresetParams` **不同**（例如 `firstTurnAnchor` 在这里
+ * 保留调用方显式的 `false`，读回时却布尔化成 `params.x === true`）。所以它必须被逐键钉住，
+ * 不能被「按 kind 统一驱动」取代。
+ */
+export function runtimeOf(options: WritePresetOptions, prompt: string): Record<string, unknown> {
   /** 未提供的参数保持 undefined：resolvePresetParams 跳过 undefined 键，
    *  预设 preset.yml 的 params/model 段才是缺省值来源。写成 false/''/true 会把
    *  「调用方没给」冒充成「调用方要求」，导入与离线物化时覆盖作者定义。 */
@@ -331,7 +340,7 @@ export function writePreset(prompt: string, options: WritePresetOptions): string
   // ./engine/ → ../.engine/（相对预设目录 = 预设根/.engine）；configsDir 相对
   // 引擎文件（.engine/）解析 → ../<template>/{prompt-configs,custom-tools}（指向本预设目录）。
   const subComposition = rewritePresetEngineReferences(composition, outputId,
-    new Set(readdirSync(ENGINE_DIR).filter((name) => name.endsWith('.mjs'))), templateDir)
+    engineModuleFileNames(ENGINE_DIR), templateDir)
   writeFileSync(join(outDir, 'agent.cordis.yml'), `${RENDER_STAMP}\n${subComposition}`, 'utf8')
 
   // 2) 宿主预设元数据：新布局 preset.yml = 参数 + 元数据一体。

@@ -17,11 +17,24 @@ const styles = { ...sharedCss, ...featureCss }
 const BUILTIN_TOOL_NAMES = ['character_list', 'character_import', 'character_apply', 'character_remove', 'character_delete',
   'world_book_list', 'world_book_upsert', 'world_book_delete', 'session_var']
 
-const KIND_OPTIONS = ['shell', 'http', 'delegate', 'fs', 'ask-user'] as const
-const FS_ACTIONS = ['read', 'write', 'append', 'list', 'delete'] as const
+/**
+ * execute.kind 下拉取值：必须与 engine/tool-definition.mjs:79 的校验列表逐值一致
+ * （对拍守卫见 test/client/mirror-guards.test.mjs，那里 import 引擎模块做行为对拍）。
+ */
+export const KIND_OPTIONS = ['shell', 'http', 'delegate', 'fs', 'ask-user'] as const
+/** fs 的 action 取值：与 engine/tool-definition.mjs:92 的 read/write/append/list/delete 同域（引擎另收 {{args.*}} 模板，UI 不提供）。 */
+export const FS_ACTIONS = ['read', 'write', 'append', 'list', 'delete'] as const
 const HTTP_METHODS = ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'] as const
 const SHELLS = ['pwsh', 'powershell', 'cmd', 'sh', 'bash'] as const
-const SCHEMA_TYPES = ['string', 'number', 'integer', 'boolean', 'null', 'array', 'object', 'json', 'oneOf'] as const
+/**
+ * parameters 行的 type 下拉：前 7 项 = engine/tool-definition.mjs:4 `JSON_SCHEMA_TYPES`（物化后的类型集）。
+ * 末两项 `json` / `oneOf` 是 **UI 专有**的作者侧形态：引擎只校验物化结果，`type: 'json'` / `type: 'oneOf'`
+ * 会被直接拒绝（tool-definition.mjs:17 的报错即为此而写）；二者由 host 保存前的
+ * parameterSchemaSpecToJsonSchema 物化——`json` → 仅注释节点（任意 JSON），`oneOf` → 分支联合。
+ * 因此行编辑器必须把「无 type 的节点」显示为 json、把 oneOf 节点显示为 oneOf（见下方 type 推导），
+ * 不能把这两个值当成引擎类型。对拍守卫见 test/client/mirror-guards.test.mjs。
+ */
+export const SCHEMA_TYPES = ['string', 'number', 'integer', 'boolean', 'null', 'array', 'object', 'json', 'oneOf'] as const
 
 export type ToolDraft = Record<string, unknown>
 
