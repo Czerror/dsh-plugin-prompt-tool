@@ -175,4 +175,19 @@
 | `st-world-book` | 3 × `WeakMap` | 纯缓存 | 同上 | **保留现状** |
 | `layers.mjs`（turn-stop 预算） | `Map<session.id>`（`createTurnStopBudget`） | 不重建 | 若同一个长生命周期 ctx 上被**重复挂载**，旧实例与新实例各持一份预算 → 每会话 3 次上限被**翻倍**。这是本表**唯一**具硬约束含义（强制续跑失控）的状态，也是唯一「补清理有价值」的候选 | **不在本支补**（见下） |
 
+## 迁移的行为差异登记（两个子代理各自独立探针复现，方向一致）
+
+**唯一差异：无 `session.id` 的会话**。旧实现把条目存在**共享的 `undefined` 键**上，新实现按 `sessionState` 的既有决定「无 id 不记账」，于是每次回到 durable 事件流。两个并行子代理用各自的对拍探针独立复现，结论相同：
+
+| 路径 | 旧行为 | 迁移后 | 说明 |
+|---|---|---|---|
+| turn-stop 预算（`layers.mjs:493`） | 连续 4 次判定 `[true,false,false,false]`（共享槽记账，预算被消耗） | `[true,true,true,true]`（不记账 → 每次新条目） | 差异**不可达**：两个调用点（`actions.mjs:316`、`layers.mjs:527`）都在 `entry()` 之前守卫 `session?.id === undefined → return` |
+| `tool-bootstrap` 阶段（`:296`） | 共享槽；监听器在 `session === undefined` 时读 `session.id` **抛 TypeError** | 静默 no-op（无 id 走冷扫） | 差异**可达但方向正确**：`currentStage` 的守卫只有 `session === undefined`（`:295`），不覆盖「有 session 但无 id」——旧实现此时会把别的无 id 会话的阶段串给本会话，新实现回到本会话的 durable 事件流 |
+| `compaction-epoch`（`:95`） | 共享槽钉住非 durable 状态（探针：`boundary=5/promoted=false`） | 回到事件流真实状态（`boundary=-1/promoted=true`） | 同上，方向正确 |
+| `strategies` 缓存（`:110`） | 第二个无 id 会话读到第一个的缓存 | 各自按自己的事件流判定 | 同上，方向正确 |
+
+**结论**：全部差异集中在无 id 路径，且**方向统一为「回到 durable 事实」**——这正是 `predicates.mjs:343` 与 `sessionState` JSDoc 刻意声明的那一档（无 id 不记账，避免共用 Map 键让两个会话串味）。因此**不为此加 sentinel 键**：那会绕开接口的刻意决定、并把「进程内共享槽」这一非 durable 真相重新引回来。若要位级一致，改动是一行 sentinel 键，但方向是错的。
+
+**未验证**：「宿主永不对空 id 的 session 发 `session/event`」这一点没有从宿主源码证实（子代理明确标注）——不过即便宿主会发，迁移后的行为也是**按该会话自己的事件流判定**，比跨会话共享槽更正确。
+
 **为何 `layers` 的预算也不补清理**：`applyPromptConfigs` 的注册**本身就已挂在宿主 fiber 上**（`ctx.on` 直接注册、`keepDisposer` 显式接管），因此宿主释放 fiber 时监听器与状态一并随实例不可达，不存在「旧状态污染新实例」的路径——真正能触发翻倍的场景是「同一个长生命周期 ctx 上重复调用挂载」，那本身就不在宿主的行为契约内。按 PLAN 的判据（「不得因为『统一』而给全部模块加清理」），**本支给 11 个模块全部记「保留现状」，且每条都写明判据**；若将来确认宿主会复用长生命周期 ctx 重挂，再单独为 `createTurnStopBudget` 补 `clear()`（`sessionState` 已提供该方法，改动是一行）。
