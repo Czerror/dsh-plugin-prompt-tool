@@ -50,6 +50,11 @@ function toJsonSchema(spec) {
 }
 
 /** Register the two on-demand skill tools. */
+/**
+ * 本模块**刻意保持单参形态**：它不读任何 config 键，因此没有白名单可声明。
+ * B2 T4 要求「四个无白名单插件行补字段声明与校验」，本行按 PLAN 的例外处理——
+ * 若将来需要 config，先确认组合行与调用方确实都在传 config，再补 defineConfig 声明。
+ */
 export function apply(ctx) {
   /** Normalize a query into lowercase tokens for simple substring matching. */
   const tokens = (text) => (text || '').toLowerCase().split(/[^\p{L}\p{N}_-]+/u).filter(Boolean)

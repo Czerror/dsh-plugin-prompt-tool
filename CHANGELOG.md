@@ -1,5 +1,11 @@
 # Changelog
 
+## 字段声明与能力开关统一（2026-09-22）
+
+- **字段声明取代手写白名单**：`run-code-env`、`tool-git-bash` 的配置键白名单与逐字段归一化改由 `engine/fields.mjs` 的字段声明（各模块导出的 `configContract`）派生；未知键、错类型、缺必填仍在挂载期 fail loud，逐字段的归一化结果与错误消息与迁移前逐字一致（含 `run-code-env` 为空数组与 trim 后为空的两条既有文案）。
+- **`enabled` 统一为 fail loud 的能力开关**（本轮唯一行为变更）：非布尔值（如 `enabled: "yes"`）在这两个模块的挂载期抛 `enabled must be a boolean`；`run-code-env` 原本已如此，`tool-git-bash` 由此前的「行在组合里即启用」改为「显式 `enabled: true` 才注册」，其组合源 `engine/compositions/source/local/tool-git-bash.yml` 已补 `enabled: true`，既有装配结果不变。其余待收敛模块的开关语义在后续轮次随各自声明迁移。
+- **`disabled:` 不是能力开关**：它只用于平台条件（如 `tool-git-bash` 的 `!!js process.platform !== 'win32'`）、树内子项与命名禁用变体（`tool-bash-disabled.yml`）；能力启停的唯一事实源是 `config.enabled`，UI 可管理的开关也只走后者。
+
 ## 引擎默认值下沉到模板/预设（2026-09-22）
 
 - 可配置默认值不再内置引擎：锚定轮正文、深思门控拒绝文案、节拍提醒正文、锚句确认词，以及节拍间隔/深思下限/每轮上限/门控回退步数/阶段预放档/推进工具名与描述/阶段状态模板/shell 超时与输出上限/run_code 环境变量白名单，全部改由组合源 `engine/compositions/source/local/*.yml`（及各预设 `moduleConfigs`）提供；引擎缺必填键在装配时响亮失败，显式空文本表示该能力不注册。

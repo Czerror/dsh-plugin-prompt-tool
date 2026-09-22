@@ -43,7 +43,7 @@
 
 import { access } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
-import { requiredInt, validateConfig } from './shared.mjs'
+import { bool, defineConfig, int } from './fields.mjs'
 
 /** Cordis plugin name used by loader diagnostics. */
 export const name = 'tool-git-bash'
@@ -51,11 +51,33 @@ export const name = 'tool-git-bash'
 /** The subprocess and tools services must exist before this tool can register. */
 export const inject = ['subprocess', 'tools']
 
+/**
+ * bashPath：显式非空路径无条件生效；缺键 / 空串 / 非字符串一律视为「未设置」走推断链。
+ *
+ * 迁移前是 `typeof source.bashPath === 'string' && source.bashPath.length > 0 ? … : undefined`，
+ * 非字符串是**静默忽略**而不是报错；B2 硬约束要求逐字段结果与消息逐字一致，故这里用直通字段
+ * 而不是 text()（text() 对非字符串 fail loud，会把既有的静默降级变成挂载期报错）。
+ */
+const bashPathField = {
+  kind: 'passthrough',
+  parse: (value) => (typeof value === 'string' && value.length > 0 ? value : undefined),
+}
+
 // 超时与输出上限无内置默认：取值归组合源 / 预设
 // （见 engine/compositions/source/local/tool-git-bash.yml）。
 
-/** Every config key this plugin accepts — anything else is a typo. */
-const ALLOWED_KEYS = new Set(['bashPath', 'timeoutMs', 'maxOutputBytes'])
+/**
+ * 配置契约：字段声明是白名单（未知键 = 打字错误）与逐字段归一化的单一来源
+ * （导出供契约对拍测试使用）。
+ * `enabled` 是本模块的能力开关：未声明 = 关闭，唯一事实源是 config.enabled；
+ * 组合源 tool-git-bash.yml 显式写 enabled: true（该行原本「在组合里即启用」）。
+ */
+export const configContract = defineConfig({
+  enabled: bool({ default: false }),
+  bashPath: bashPathField,
+  timeoutMs: int({ min: 1, required: true }),
+  maxOutputBytes: int({ min: 1, required: true }),
+})
 
 /**
  * Git Bash candidate paths, in probe order (see the header): the `git`
@@ -122,10 +144,13 @@ const commandSchema = {
 
 /** Register the model-facing `bash` tool. */
 export function apply(ctx, config) {
-  const source = validateConfig(name, config, ALLOWED_KEYS)
-  const explicitBashPath = typeof source.bashPath === 'string' && source.bashPath.length > 0 ? source.bashPath : undefined
-  const timeoutMs = requiredInt(name, source.timeoutMs, 'timeoutMs', 1)
-  const maxOutputBytes = requiredInt(name, source.maxOutputBytes, 'maxOutputBytes', 1)
+  // 校验入口：未知键 / enabled 非布尔 / timeoutMs 与 maxOutputBytes 缺失或越界一律挂载期 fail loud。
+  const source = configContract.parse(config, name)
+  // 能力开关：唯一事实源是 config.enabled；关闭时不注册工具（配置校验仍在上一步照常执行）。
+  if (!source.enabled) return
+  const explicitBashPath = source.bashPath
+  const timeoutMs = source.timeoutMs
+  const maxOutputBytes = source.maxOutputBytes
 
   // The inferred executable is memoized per plugin instance: candidate probing
   // walks the filesystem, and the answer cannot change within a mount. A

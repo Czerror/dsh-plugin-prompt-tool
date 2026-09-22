@@ -24,6 +24,7 @@ import { basename } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { createPromptConfigs, loadPromptConfigFiles, parsePromptConfigYaml } from './schema.mjs'
 import { applyPromptConfigs } from './executor.mjs'
+import { defineConfig, passthrough } from './fields.mjs'
 
 /** Cordis plugin name used by loader diagnostics. */
 export const name = 'prompt-config-engine'
@@ -61,16 +62,25 @@ function compositionFacts(dirUrl) {
  * config.strategyDir 为模板专属策略目录(可选)。引擎扫描目录内每个
  * *.yml / *.yaml / *.json 并装配为提示词配置。
  */
+/**
+ * 配置契约：白名单由字段声明派生（此前没有白名单，未知键被静默忽略）。
+ * 两个键都刻意用 passthrough 保住既有语义——迁移前它们对**非字符串或空串**是静默取默认值
+ * （`typeof x === 'string' && x.length > 0 ? x : 默认`），换成 text() 会把静默降级变成挂载期
+ * 报错，那是 B2 未授权的行为变更。归一化结果与迁移前逐字段一致，唯一新增的是「未知键报错」。
+ */
+export const configContract = defineConfig({
+  configsDir: passthrough((value) => (typeof value === 'string' && value.length > 0 ? value : './prompt-configs')),
+  strategyDir: passthrough((value) => (typeof value === 'string' && value.length > 0 ? value : undefined)),
+})
+
 export function apply(ctx, config) {
-  const dirName = typeof config?.configsDir === 'string' && config.configsDir.length > 0
-    ? config.configsDir
-    : './prompt-configs'
+  const { configsDir: dirName, strategyDir: rawStrategyDir } = configContract.parse(config, name)
   const dirUrl = new URL(dirName.endsWith('/') ? dirName : `${dirName}/`, import.meta.url)
   // strategyDir 在入口统一解析成绝对 URL：bindResolver 用 `new URL(x.mjs, strategyDir)`
   // 懒加载，相对写法的 base 不是合法绝对 URL（ERR_INVALID_URL），会让整行挂载失败。
-  const strategyDir = typeof config?.strategyDir === 'string' && config.strategyDir.length > 0
-    ? new URL(config.strategyDir.endsWith('/') ? config.strategyDir : `${config.strategyDir}/`, import.meta.url).href
-    : undefined
+  const strategyDir = rawStrategyDir === undefined
+    ? undefined
+    : new URL(rawStrategyDir.endsWith('/') ? rawStrategyDir : `${rawStrategyDir}/`, import.meta.url).href
   const facts = compositionFacts(dirUrl)
   applyPromptConfigs(ctx, createPromptConfigs(loadPromptConfigFiles(dirUrl), { strategyDir }), {
     prepend: true,

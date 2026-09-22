@@ -103,7 +103,7 @@
 
 **未验证项**：①本支改动集中在 `engine/*.mjs`，而 `lint` 的检查范围是 `src test tsdown.config.ts`（**不含 engine/**），这 5 个文件的静态质量由全量测试与人工 diff 复核保证，**未经 linter 检查**。②`fillers.mjs` 的本地 warnOnce 未替换，一次性语义因此存在**第二份实现**；待该工厂签名可调整时（或 B4 统一会话态时）再收敛。
 
-**交付凭据**：提交 SHA 与推送结果在归档后补记（随下一支的提交带入，避免为一个哈希多占一次提交）。
+**交付凭据**：提交 `ebb0d1e`（8 files changed, 362 insertions(+), 46 deletions(-)），已推送 `origin/dev`（`5e03ac8..ebb0d1e`）；推送后本地 `HEAD` 与 `origin/dev` 同为 `ebb0d1e`。暂存范围只含本支文件与 B0 归档的凭据补充，未包含 7 份未开工的支线 PLAN 与用户既有未跟踪 `skills/`。
 
 ## 实施取舍与已知边界
 

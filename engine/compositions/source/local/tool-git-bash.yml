@@ -1,10 +1,15 @@
 # module: tool-git-bash
 # source: engine/compositions/source/local/tool-git-bash.yml (本地附加,上游 dsh-anchored-standard 移植)
 # Windows Git Bash 适配；与 tool-bash-disabled 同时声明时，普通 tool-bash 保持关闭。
+# config.enabled 是本行的能力开关（引擎未声明 = 关闭）：本模块此前没有开关，靠「行在组合里」
+# 即启用，故这里补显式 true 保持既有装配结果不变。
+# 下面的 disabled 只是**平台条件**（非 Windows 不装配），不是能力开关；disabled: 只用于平台
+# 条件、树内子项与命名禁用变体（见 tool-bash-disabled.yml），能力启停一律走 config.enabled。
 
 - id: tool-git-bash
   name: ./engine/tool-git-bash.mjs
   disabled: !!js process.platform !== 'win32'
   config:
+    enabled: true
     timeoutMs: 120000
     maxOutputBytes: 64000

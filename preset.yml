@@ -418,6 +418,7 @@ promptConfigs:
 #     ptcSubagents: false # 子代理参与 PTC 晋升；boolean
 #     ptcPromoteOn: "" # PTC 晋升信号；string；either | tool-call | assistant-message
 #     toolFilterEnabled: true # 启用工具过滤；boolean
+#     toolGitBashEnabled: true # 启用 Git Bash 工具；boolean
 #     deliberationSubagents: false # 子代理参与深思门控；boolean
 #     deliberationGateText: "" # 深思门控提示文本；string
 #     cotDripSubagents: false # 子代理参与深思节拍；boolean

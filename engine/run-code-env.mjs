@@ -18,13 +18,10 @@
  * native 模式自动空转。
  */
 
-import { booleanOption, validateConfig } from './shared.mjs'
+import { bool, defineConfig, stringList } from './fields.mjs'
 
 /** Cordis 插件名，供 loader 诊断使用。 */
 export const name = 'run-code-env'
-
-/** Every config key this plugin accepts — anything else is a typo. */
-const ALLOWED_KEYS = new Set(['enabled', 'envKeys'])
 
 /** 需要 tools 视图与 systemPrompt 段。shellEnv 为机会型读取，不写进 inject。 */
 export const inject = ['tools', 'systemPrompt']
@@ -36,20 +33,52 @@ export const SENSITIVE_ENV_RE = /KEY|PASSWORD|SECRET|TOKEN/i
 const PATCHED = new WeakSet()
 
 /**
+ * envKeys 字段：非空字符串数组，逐项 trim 后去重。
+ * 两条消息与迁移前逐字一致：空数组/缺键 → 消息 A（白名单缺失），trim 后为空 → 消息 B。
+ * `allowEmpty: false` 是显式取值——迁移前 `!Array.isArray(value) || value.length === 0`
+ * 一律抛消息 A，空数组不得通过。
+ */
+const ENV_KEYS = stringList({
+  required: true,
+  trim: true,
+  dedupe: true,
+  allowEmpty: false,
+  message: `${name}: envKeys must be a non-empty array of env var names — 白名单归模板/预设，请在本预设或组合源提供`,
+  emptyMessage: `${name}: envKeys must contain at least one non-empty env var name`,
+})
+
+/**
+ * envKeys 声明的 parse 包一层「非字符串项降级为空串」：迁移前的 normalizeEnvKeys 对
+ * `[1, 'PATH']` 是**宽容**的（数字映射成空串后过滤掉，返回 ['PATH']），而 stringList 默认
+ * 对非字符串项 fail loud。B2 硬约束是「除 enabled 外逐字段结果与消息逐字一致」，故保留旧语义。
+ */
+const envKeysField = {
+  kind: 'stringList',
+  parse: (value, plugin, field) => ENV_KEYS.parse(
+    Array.isArray(value) ? value.map((item) => (typeof item === 'string' ? item : '')) : value,
+    plugin,
+    field,
+  ),
+}
+
+/**
+ * 配置契约：字段声明是白名单与逐字段归一化的单一来源（导出供契约对拍测试使用）。
+ * `enabled` 走 fail loud 的布尔开关：未声明 = 关闭（组合源 run-code-env.yml 显式 enabled: true），
+ * 非布尔在挂载期抛 `enabled must be a boolean`。
+ */
+export const configContract = defineConfig({
+  enabled: bool({ default: false }),
+  envKeys: envKeysField,
+})
+
+/**
  * 校验 envKeys：非空字符串数组；缺失或全空一律 fail loud——暴露哪些变量
  * 归组合源 / 预设（见 engine/compositions/source/local/run-code-env.yml）。
  * 单个键为敏感名时在 buildEnv 阶段过滤，这里只校验形状。
+ * 导出供测试直接调用；归一化规则归 configContract 的 envKeys 字段（此处不重复实现）。
  */
 export function normalizeEnvKeys(value) {
-  if (!Array.isArray(value) || value.length === 0) {
-    throw new TypeError(`${name}: envKeys must be a non-empty array of env var names — 白名单归模板/预设，请在本预设或组合源提供`)
-  }
-  const keys = value.map((key) => (typeof key === 'string' ? key.trim() : ''))
-    .filter((key) => key.length > 0)
-  if (keys.length === 0) {
-    throw new TypeError(`${name}: envKeys must contain at least one non-empty env var name`)
-  }
-  return [...new Set(keys)]
+  return envKeysField.parse(value, name, 'envKeys')
 }
 
 /**
@@ -158,10 +187,10 @@ export function patchRunCodeTool(tool, ctx, keys) {
 
 /** 注册 PTC env 注入：只在目标 scope 出现 run_code 时生效。 */
 export function apply(ctx, config) {
-  const source = validateConfig(name, config, ALLOWED_KEYS)
+  // 校验入口：未知键 / enabled 非布尔 / envKeys 缺失或全空都在挂载期 fail loud。
+  const source = configContract.parse(config, name)
   // 开关语义：未声明 = 关闭（组合源为本模块显式写 enabled: true）。
-  const enabled = booleanOption(name, source.enabled, 'enabled', false)
-  const keys = normalizeEnvKeys(source.envKeys)
+  const { enabled, envKeys: keys } = source
 
   const tryPatch = (scope) => {
     if (!enabled) return

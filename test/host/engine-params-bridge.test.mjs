@@ -456,13 +456,24 @@ test('组合源 yml 出现的键都有归属：参数目录登记，或该模块
   const ymlFiles = readdirSync(localDir).filter((name) => name.endsWith('.yml'))
   assert.ok(ymlFiles.length > 0, '本地组合源目录不得为空')
 
-  /** 模块自有配置键（engine/<row>.mjs 的 ALLOWED_KEYS）；无同名模块文件时返回 undefined。 */
+  /**
+   * 模块自有配置键；无同名模块文件时返回 undefined。
+   * 两种形态都要认：B2 起白名单由 `defineConfig({...})` 的字段声明派生（单一来源），
+   * 待删的 7 个模块仍是手写 `ALLOWED_KEYS` 字面量（B7 连模块一起删）。
+   * 只认旧的 `ALLOWED_KEYS` 会让迁移后的模块落回空集、被 pendingWhitelist 静默跳过——
+   * 守卫看着绿、实际不再检查（这条是 B2 实测暴露出来的空转）。
+   */
   const ownKeysOf = (rowId) => {
     let source
     try {
       source = readFileSync(new URL(`../../engine/${rowId}.mjs`, import.meta.url), 'utf8')
     } catch {
       return undefined
+    }
+    const declared = source.match(/defineConfig\(\{([\s\S]*?)\n\}\)/)?.[1]
+    if (declared !== undefined) {
+      const keys = [...declared.matchAll(/^ {2}([A-Za-z_][A-Za-z0-9_]*):/gm)].map((match) => match[1])
+      if (keys.length > 0) return new Set(keys)
     }
     const block = source.match(/const ALLOWED_KEYS = new Set\(\[([\s\S]*?)\]\)/)?.[1]
     return new Set(block === undefined ? [] : [...block.matchAll(/'([^']+)'/g)].map((match) => match[1]))

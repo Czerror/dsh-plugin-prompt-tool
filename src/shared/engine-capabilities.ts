@@ -106,6 +106,9 @@ export const ENGINE_CAPABILITIES: readonly EngineCapability[] = [
   { id: 'deliberation-gate', moduleKeys: ['deliberation-gate'], rowIds: ['deliberation-gate'], displayLayer: 'tool-pipeline' },
   { id: 'progress-reminder', moduleKeys: ['progress-reminder'], rowIds: ['progress-reminder'], displayLayer: 'tool-pipeline' },
   { id: 'tool-config-engine', moduleKeys: ['tool-config-engine'], rowIds: ['tool-config-engine'], displayLayer: 'tool-pipeline' },
+  // B2 T3：tool-git-bash 此前没有能力卡（开关只能靠「行在不在组合里」），补 `enabled` 键后登记卡片，
+  // 否则 impliedModulesForParams 查不到 card，「参数在 ⇒ 装配在」对该行静默失效。
+  { id: 'tool-git-bash', moduleKeys: ['tool-git-bash'], rowIds: ['tool-git-bash'], displayLayer: 'tool-pipeline' },
 ] as const
 
 /**

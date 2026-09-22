@@ -14,6 +14,7 @@ import {
   compileSubagentToolPolicy,
   resolveSubagentToolPolicy,
 } from './subagent-tool-policy-core.mjs'
+import { defineConfig, passthrough } from './fields.mjs'
 
 export const name = 'subagent-tool-policy'
 export const inject = ['agents', 'subagents', 'tools']
@@ -33,6 +34,22 @@ const SPAWN_PARAMETERS = {
   model: { type: 'string', description: '子代理模型 id；与 provider 成对提供' },
   reasoning_effort: { type: 'string', description: '子代理推理强度' },
 }
+
+/**
+ * 配置契约：白名单由字段声明派生（此前没有白名单，未知键被静默忽略）。
+ * 五个键**全部**用 passthrough：迁移前它们对非字符串/非对象值都是静默取默认或忽略
+ *（policyFile / spawnProvider / forkProvider 取默认名，agentOptions 非对象则 undefined，
+ * maxDepth 原样透传、由下游按 `'provider-managed'` 或数字自行判定），
+ * 换成严格字段类型会引入 B2 未授权的行为变更。归一化结果与迁移前逐字段等价，
+ * 唯一新增的是「未知键报错」。
+ */
+export const configContract = defineConfig({
+  policyFile: passthrough((value) => (typeof value === 'string' && value.length > 0 ? value : '../subagent-tools/policy.yml')),
+  spawnProvider: passthrough((value) => (typeof value === 'string' && value.length > 0 ? value : 'spawn')),
+  forkProvider: passthrough((value) => (typeof value === 'string' && value.length > 0 ? value : 'fork')),
+  maxDepth: passthrough((value) => value),
+  agentOptions: passthrough((value) => value),
+})
 
 function resolvePolicyFile(config) {
   const raw = typeof config?.policyFile === 'string' && config.policyFile.length > 0
@@ -218,9 +235,11 @@ function createShadowTool(ctx, tools, compositionScope, compiled, kind, config) 
 }
 
 export function apply(ctx, config) {
+  // 校验入口：未知键在挂载期报错；五个键的归一化结果与迁移前逐字段一致（见 configContract）。
+  const source = configContract.parse(config, name)
   let compiled
   try {
-    compiled = loadCompiledPolicy(config)
+    compiled = loadCompiledPolicy(source)
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
     // 策略文件缺失 = 用户在能力卡里把开关关掉了（模块声明保留）：降级为官方委派行为，
@@ -239,8 +258,8 @@ export function apply(ctx, config) {
     if (installs.has(agent) || !belongsToComposition(agent)) return
     const dispose = agent.ctx.effect(() => {
       const disposers = [
-        agent.ctx.tools.register(createShadowTool(ctx, agent.ctx.tools, compositionScope, compiled, 'spawn', config)),
-        agent.ctx.tools.register(createShadowTool(ctx, agent.ctx.tools, compositionScope, compiled, 'fork', config)),
+        agent.ctx.tools.register(createShadowTool(ctx, agent.ctx.tools, compositionScope, compiled, 'spawn', source)),
+        agent.ctx.tools.register(createShadowTool(ctx, agent.ctx.tools, compositionScope, compiled, 'fork', source)),
       ]
       return () => { for (const item of disposers) item() }
     }, `${name}: ${agent.id} shadow`)

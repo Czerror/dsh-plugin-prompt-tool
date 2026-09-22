@@ -142,6 +142,8 @@ export interface EngineParams {
   ptcSubagents?: boolean
   ptcPromoteOn?: string
   toolFilterEnabled?: boolean
+  /** tool-git-bash 行的能力开关（B2 T3 补；此前该行只能靠「在不在组合里」决定启停）。 */
+  toolGitBashEnabled?: boolean
   anchorTurnSubagents?: boolean
   deliberationSubagents?: boolean
   deliberationGateText?: string
@@ -281,6 +283,7 @@ export const ENGINE_PARAM_DEFINITIONS: Record<EngineParamKey, EngineParamDefinit
   ptcSubagents: { kind: 'boolean', defaultValue: false, card: 'promoted-code-mode', module: { row: 'promoted-code-mode', key: 'includeSubagents' } },
   ptcPromoteOn: { kind: 'string', options: PROMOTE_ON, defaultValue: '', card: 'promoted-code-mode', module: { row: 'promoted-code-mode', key: 'promoteOn' } },
   toolFilterEnabled: { kind: 'boolean', defaultValue: true, card: 'tool-filter', module: { row: 'tool-filter', key: 'enabled' } },
+  toolGitBashEnabled: { kind: 'boolean', defaultValue: true, card: 'tool-git-bash', module: { row: 'tool-git-bash', key: 'enabled' } },
   anchorTurnSubagents: { kind: 'boolean', defaultValue: false, card: 'anchor-turn', module: { row: 'anchor-turn', key: 'includeSubagents' } },
   deliberationSubagents: { kind: 'boolean', defaultValue: false, card: 'deliberation-gate', module: { row: 'deliberation-gate', key: 'includeSubagents' } },
   deliberationGateText: { kind: 'string', defaultValue: '', card: 'deliberation-gate', module: { row: 'deliberation-gate', key: 'gateText' } },

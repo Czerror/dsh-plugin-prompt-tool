@@ -29,6 +29,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 import { parse as parseYaml } from './vendor/yaml/index.js'
 import { importHostPackage } from './host-package.mjs'
 import { validateDefinition } from './tool-definition.mjs'
+import { defineConfig, passthrough } from './fields.mjs'
 
 const { ToolArgsError } = await importHostPackage('@deepseek-ai/dsh-tools')
 
@@ -366,14 +367,20 @@ function loadToolFiles(dirUrl) {
   return out
 }
 
+/**
+ * 配置契约：白名单由字段声明派生（此前没有白名单，未知键被静默忽略）。
+ * requireApproval 迁移前对**非数组取 `[]`**、对数组**过滤掉非字符串项**（宽容而非报错），
+ * configsDir 对非字符串/空串取默认值——两者都用 passthrough 保住该语义。
+ * 本任务只新增「未知键报错」，缺键与错类型的既有行为逐字段不变。
+ */
+export const configContract = defineConfig({
+  configsDir: passthrough((value) => (typeof value === 'string' && value.length > 0 ? value : './custom-tools')),
+  requireApproval: passthrough((value) => (Array.isArray(value) ? value.filter((kind) => typeof kind === 'string') : [])),
+})
+
 /** 插件入口：扫描 configsDir 注册全部自定义工具。 */
 export function apply(ctx, config) {
-  const dirName = typeof config?.configsDir === 'string' && config.configsDir.length > 0
-    ? config.configsDir
-    : './custom-tools'
-  const requireApproval = Array.isArray(config?.requireApproval)
-    ? config.requireApproval.filter((kind) => typeof kind === 'string')
-    : []
+  const { configsDir: dirName, requireApproval } = configContract.parse(config, name)
   let definitions = []
   try {
     definitions = loadToolFiles(dirName)
