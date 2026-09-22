@@ -4,6 +4,30 @@
  * 本模块通过运行中 DSH 入口解析同一份 dsh-tools / dsh-scope，避免生成目录
  * 加载第二份 registry 类型。每个 shadow 只安装到当前 preset generation 的
  * descendant Agent；实例权限在 SubagentStartRequest 创建窗口冻结。
+ *
+ * ── 能力提供者边界（T4）────────────────────────────────────────────────────
+ * 本模块是**能力提供者**，不是触发器。分类判据（与组合源 subagent-tool-policy.yml、
+ * tool-config-engine.yml 及 test/engine/provider-boundary.test.mjs 同一份措辞）：
+ *   - 会给模型提供可调用能力（注册工具 / 域 / 服务）的 → 能力提供者；
+ *   - 干预流程（改提示词、改装配、裁决、追加）的 → 声明式触发器。
+ * 因此本模块**不接入** engine/trigger.mjs：它不订阅装配 waterfall，也没有 when/do
+ * 声明，只在 agent 创建时向该 agent 的 scope 注册两个可调用工具。影子工具解决的是
+ * 「子代理能用什么工具」，属于能力面，不是流程干预面。
+ *
+ * 样板收敛：
+ *   - 配置声明走 fields.mjs 的 `defineConfig`（未知键在挂载期 fail loud）；
+ *   - 注册走 disposer 契约，但这里保留 `agent.ctx.effect(...)` 而不是 shared.keepDisposer，
+ *     依据见 install() 内的注释（整组原子回滚 + 按 agent 定向撤销句柄）；
+ *   - 降级告警统一 `${name}: <what>; <fallback>` 一个前缀格式。
+ *
+ * 安全边界（T4 明令不得触碰，改动本模块时同样不得放宽）：
+ *   - 扩权审批门 expansionApproval：requested additional_tools 必须先拿到
+ *     `allowed-once`，无 approval 通道时 fail loud（不静默放行）；
+ *   - fail loud 语义：策略文件存在但内容非法一律抛错；只有 ENOENT（用户关掉能力卡）
+ *     才降级为官方委派行为。
+ *
+ * 登记入口：`engineProvider`（数据导出），供边界守卫消费。提供者登记与声明式触发器
+ * 声明（约定为 `engineTriggers`）**互斥**，同一模块不得同时导出两者。
  */
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
@@ -35,6 +59,9 @@ const SPAWN_PARAMETERS = {
   reasoning_effort: { type: 'string', description: '子代理推理强度' },
 }
 
+/** 两个 shadow 的模型可见工具名：注册点与 engineProvider 登记共用这一份，防清单漂移。 */
+const SHADOW_TOOL_NAMES = { spawn: 'subagent', fork: 'subagent_fork' }
+
 /**
  * 配置契约：白名单由字段声明派生（此前没有白名单，未知键被静默忽略）。
  * 五个键**全部**用 passthrough：迁移前它们对非字符串/非对象值都是静默取默认或忽略
@@ -50,6 +77,18 @@ export const configContract = defineConfig({
   maxDepth: passthrough((value) => value),
   agentOptions: passthrough((value) => value),
 })
+
+/**
+ * 能力提供者登记（T4 边界守卫的数据源）。
+ * `provides.kind === 'fixed'`：工具名在装配期就是确定的（两种委派入口各一个 shadow），
+ * 守卫据此断言「提供者登记的工具名 = 实际注册的工具名」，并断言它们不出现在触发器声明里。
+ */
+export const engineProvider = {
+  kind: 'provider',
+  moduleId: name,
+  registers: 'tools',
+  provides: { kind: 'fixed', tools: Object.values(SHADOW_TOOL_NAMES) },
+}
 
 function resolvePolicyFile(config) {
   const raw = typeof config?.policyFile === 'string' && config.policyFile.length > 0
@@ -176,7 +215,7 @@ function availablePresetTools(tools, compositionScope) {
 }
 
 function createShadowTool(ctx, tools, compositionScope, compiled, kind, config) {
-  const toolName = kind === 'fork' ? 'subagent_fork' : 'subagent'
+  const toolName = SHADOW_TOOL_NAMES[kind]
   const provider = providerFor(kind, config)
   const properties = { ...BASE_PARAMETERS, ...(kind === 'spawn' ? SPAWN_PARAMETERS : {}), ...buildSubagentToolParameters(compiled) }
   return {
@@ -256,6 +295,10 @@ export function apply(ctx, config) {
   const belongsToComposition = (agent) => scopeChainOf(scopeOf(agent.ctx)).includes(compositionScope)
   const install = (agent) => {
     if (installs.has(agent) || !belongsToComposition(agent)) return
+    // 注册走 disposer 契约。这里保留 ctx.effect 而不是 shared.keepDisposer，两条依据：
+    // (1) 两个 shadow 必须整组注册：任一个失败时由 Cordis 回滚已注册的那个
+    //     （keepDisposer 无回滚语义，第二个失败会留下第一个的残留注册）；
+    // (2) remove(agent) 需要按 agent 定向撤销，而 keepDisposer 返回 void，拿不到句柄。
     const dispose = agent.ctx.effect(() => {
       const disposers = [
         agent.ctx.tools.register(createShadowTool(ctx, agent.ctx.tools, compositionScope, compiled, 'spawn', source)),

@@ -19,7 +19,30 @@
  *
  * 安全：行 config.requireApproval = [kind...] 时该执行器先过 approval 门
  * （无 approval 服务则拒绝）；单条定义非法 warnOnce 跳过（不挂整行）。
- * 工具注册经 ctx.effect，插件卸载自动撤销。
+ * 工具注册经 disposer 契约（keepDisposer），插件卸载自动撤销。
+ *
+ * ── 能力提供者边界（T4）────────────────────────────────────────────────────
+ * 本模块是**能力提供者**，不是触发器。分类判据（与组合源 tool-config-engine.yml、
+ * subagent-tool-policy.yml 及 test/engine/provider-boundary.test.mjs 同一份措辞）：
+ *   - 会给模型提供可调用能力（注册工具 / 域 / 服务）的 → 能力提供者；
+ *   - 干预流程（改提示词、改装配、裁决、追加）的 → 声明式触发器。
+ * 因此本模块**不接入** engine/trigger.mjs：它不订阅装配 waterfall，也没有
+ * when/do 声明，只在装配期把 preset.yml 的 customTools 段物化出的工具注册进官方
+ * registry。强行并进触发器会让引擎同时承担「提供能力」与「干预流程」两种职责。
+ *
+ * 样板收敛：
+ *   - 配置声明走 fields.mjs 的 `defineConfig`（未知键在挂载期 fail loud）；
+ *   - 注册走 disposer 契约：单次注册用 shared.keepDisposer（register() 返回的正是
+ *     它自己的 effect disposer）；需要整组原子回滚或定向撤销句柄时才用 ctx.effect；
+ *   - 降级告警统一 `${name}: <what>; <fallback>` 一个前缀格式（见 provider-boundary 用例）。
+ *
+ * 登记入口：`engineProvider`（数据导出），供边界守卫消费。提供者登记与声明式触发器
+ * 声明（约定为 `engineTriggers`）**互斥**，同一模块不得同时导出两者。
+ *
+ * 文件归属校正（PLAN T4）：第三个指定提供者 str-replace-editor 由
+ * engine/compositions/source/local/filesystem-editor.yml:20 引用**官方**包
+ * `@deepseek-ai/dsh-tool-str-replace-editor`，本仓库没有对应 `.mjs`；
+ * engine/tool-git-bash.mjs 提供的是 `bash` 工具，**不是**第三个指定提供者。
  */
 
 import { readFileSync, readdirSync, writeFileSync, appendFileSync, rmSync, statSync } from 'node:fs'
@@ -30,6 +53,7 @@ import { parse as parseYaml } from './vendor/yaml/index.js'
 import { importHostPackage } from './host-package.mjs'
 import { validateDefinition } from './tool-definition.mjs'
 import { defineConfig, passthrough } from './fields.mjs'
+import { keepDisposer } from './shared.mjs'
 
 const { ToolArgsError } = await importHostPackage('@deepseek-ai/dsh-tools')
 
@@ -378,6 +402,19 @@ export const configContract = defineConfig({
   requireApproval: passthrough((value) => (Array.isArray(value) ? value.filter((kind) => typeof kind === 'string') : [])),
 })
 
+/**
+ * 能力提供者登记（T4 边界守卫的数据源）。
+ * `provides.kind === 'dynamic'`：模型可见的工具名由 preset.yml 的 customTools 段在
+ * 装配期决定（物化为 custom-tools/*.yml），引擎侧无法静态枚举——守卫只断言登记形状、
+ * 注册通道，以及「提供者不导出触发器声明」这条互斥。
+ */
+export const engineProvider = {
+  kind: 'provider',
+  moduleId: name,
+  registers: 'tools',
+  provides: { kind: 'dynamic', source: 'preset.yml#customTools → custom-tools/*.yml' },
+}
+
 /** 插件入口：扫描 configsDir 注册全部自定义工具。 */
 export function apply(ctx, config) {
   const { configsDir: dirName, requireApproval } = configContract.parse(config, name)
@@ -396,7 +433,11 @@ export function apply(ctx, config) {
         continue
       }
       const tool = compileTool(ctx, def, requireApproval)
-      ctx.effect(() => ctx.tools.register(tool), `${name}: ${def.name}`)
+      // 注册走 disposer 契约：register() 返回的正是它自己的 effect disposer，
+      // keepDisposer 把该 disposer 纳入本插件的资源所有权（卸载即撤销）。fiber 已卸载时
+      // register() 内部先抛 INACTIVE_EFFECT（与改写前 ctx.effect 的前置断言同一错误），
+      // 因此注册不会发生——降级语义与错误消息逐字不变。
+      keepDisposer(ctx, ctx.tools.register(tool), `${name}: ${def.name}`)
       ctx.logger?.info(`${name}: registered custom tool ${def.name} (${def.execute.kind})`)
     } catch (error) {
       ctx.logger?.warn(`${name}: skipping tool ${JSON.stringify(def?.id ?? def?.name)}: ${error?.message ?? error}`)

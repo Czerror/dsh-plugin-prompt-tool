@@ -2,6 +2,14 @@
 # source: 本地新增（自定义工具引擎：preset.yml customTools 段 → 渲染 custom-tools/ → 运行时注册）
 # 工具定义在预设目录 custom-tools/*.yml；执行器 shell/http/delegate/fs/ask-user。
 # requireApproval 数组可列出需 approval 门的执行器（默认空 = 不要求）。
+#
+# 能力提供者边界（T4）：本行是**能力提供者**（把预设声明的自定义工具注册进官方
+# registry），**不接入** engine/trigger.mjs。判据：会给模型提供可调用能力
+# （注册工具/域）的 → 能力提供者；干预流程（改提示词、改装配、裁决、追加）的 →
+# 声明式触发器。登记数据在 engine/tool-config-engine.mjs 的 `engineProvider` 导出
+# （provides.kind = 'dynamic'：工具名在装配期才由 customTools 段决定），与
+# `engineTriggers`（声明式触发器）互斥；守卫见 test/engine/provider-boundary.test.mjs。
+# 模块内 approvalGate 与 withinCwd 是安全边界，改装配方式时不得放宽。
 
 - id: tool-config-engine
   name: ./engine/tool-config-engine.mjs

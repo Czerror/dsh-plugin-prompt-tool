@@ -3,6 +3,14 @@
 # 策略数据源 = 预设目录 subagent-tools/policy.yml（writePreset 从 preset.yml 顶层
 # subagentToolPolicy 物化）。策略启用时参数桥不再把主代理 toolFilter 写入
 # delegation.toolFilter；未启用策略的预设完全保持官方 delegation 行为。
+#
+# 能力提供者边界（T4）：本行是**能力提供者**（给模型提供 subagent/subagent_fork 两个
+# 可调用工具），**不接入** engine/trigger.mjs。判据：会给模型提供可调用能力
+# （注册工具/域）的 → 能力提供者；干预流程（改提示词、改装配、裁决、追加）的 →
+# 声明式触发器。登记数据在 engine/subagent-tool-policy.mjs 的 `engineProvider`
+# 导出，与 `engineTriggers`（声明式触发器）互斥；守卫见
+# test/engine/provider-boundary.test.mjs。模块内扩权审批门与 fail loud 语义是安全
+# 边界，改装配方式时不得放宽。
 
 - id: subagent-tool-policy
   name: ./engine/subagent-tool-policy.mjs

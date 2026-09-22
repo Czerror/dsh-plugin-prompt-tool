@@ -2,6 +2,14 @@
 # source: engine/compositions/source/local/filesystem-editor.yml (本地能力)
 # rc.2 官方 minimal 只保留单 shell 工具，不再提供 filesystem 组；本模块保留为
 # 本插件自己的引导期文件系统能力，只由显式声明本模块的预设装配（既有用户预设可继续引用）。
+#
+# 能力提供者边界（T4 文件归属校正）：本行行下的 str-replace-editor 是**官方实现**
+# —— `@deepseek-ai/dsh-tool-str-replace-editor`（官方包，配置声明与注册都在包内），
+# 本仓库**没有**对应的 .mjs。它连同 subagent-tool-policy、tool-config-engine 一起
+# 构成 PLAN T4 的三个能力提供者，三者都不接入 engine/trigger.mjs。
+# 判据：会给模型提供可调用能力（注册工具/域）的 → 能力提供者；干预流程
+# （改提示词、改装配、裁决、追加）的 → 声明式触发器。
+# 注意 engine/tool-git-bash.mjs 提供的是 `bash` 工具，**不是**这第三个提供者。
 
 # The bare local filesystem shadows the host's sandboxed provider only for this
 # preset. The editor shares that realm and requires absolute paths.

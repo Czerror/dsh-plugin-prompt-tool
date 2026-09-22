@@ -364,7 +364,7 @@ export function applyPromptConfigs(ctx, configs, options = {}) {
   const injectedMemo = new Map()
   const main = createEpochPromotion(PROMOTE_EVENTS.either, { includeSubagents: false })
   const withSubagents = createEpochPromotion(PROMOTE_EVENTS.either, { includeSubagents: true })
-  ctx.on('session/event', (session, event) => {
+  const observerDisposer = ctx.on('session/event', (session, event) => {
     main.observe(session, event)
     withSubagents.observe(session, event)
     // 独立路径的去重记账：只有宿主真正持久化的注入消息才确认投递（门控剥离的候选不算）。
@@ -391,15 +391,17 @@ export function applyPromptConfigs(ctx, configs, options = {}) {
     }
   }
   let active = true
-  keepDisposer(ctx, () => {
+  /** 释放本执行器：失效来源不再注入，也不再向新协调器重新注册。 */
+  const release = () => {
     active = false
     releaseRegistration()
     injectedMemo.clear()
-  })
+  }
+  keepDisposer(ctx, release)
 
   // 非 pre-step 提示词配置接入各自声明的官方层级通道(system-section /
   // runtime-context / agent-request / llm-stream / tool-pipeline)。
-  wireLayers(ctx, effectiveList.filter((config) => config.layer !== 'pre-step'), warnOnce)
+  const releaseLayers = wireLayers(ctx, effectiveList.filter((config) => config.layer !== 'pre-step'), warnOnce)
 
   // 协调器已在（正常装配顺序：插件先加载、预设后挂载）时立即登记来源；
   // 迟到/消失由下面的监听器按「先撤旧再启新」处理。
@@ -408,7 +410,7 @@ export function applyPromptConfigs(ctx, configs, options = {}) {
     registration = registeredCoordinator.registerPreset(ctx, sourceId, source) ?? null
   }
 
-  ctx.on('agent/pre-step', async (payload, next) => {
+  const preStepDisposer = ctx.on('agent/pre-step', async (payload, next) => {
     // waterfall 可已捕获随后被释放的回调；失效来源不得向新协调器重新注册。
     if (!active) return next()
     const coordinator = coordinatorOf(ctx)
@@ -437,4 +439,19 @@ export function applyPromptConfigs(ctx, configs, options = {}) {
       warnOnce,
     })
   }, { prepend })
+  // 释放边界：先摘监听器，再撤层级注册，最后丢弃去重快路径（顺序与 keepDisposer 内的 release 一致）。
+  return () => {
+    release()
+    try {
+      preStepDisposer()
+    } catch {
+      // 宿主已释放该 fiber 时监听器可能已不在：忽略。
+    }
+    try {
+      observerDisposer()
+    } catch {
+      // 同上。
+    }
+    releaseLayers()
+  }
 }

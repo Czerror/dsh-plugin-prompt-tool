@@ -133,7 +133,7 @@ function rewriteOfficialAliases(text, alias) {
 }
 
 /** agent/request 与 tools/* 层的作用域过滤。 */
-function matchesAgentScope(config, agent) {
+export function matchesAgentScope(config, agent) {
   if (agent === undefined) return true
   const delegated = isDelegated(agent.session)
   if (config.audience === 'main' && delegated) return false
@@ -180,10 +180,11 @@ function textLayerGroups(configs) {
 
 /** system-section:注册静态 system prompt 段(支持官方 {{variable}} 渲染与 merged 拼接)。 */
 function wireSystemSections(ctx, configs, registry, warnOnce) {
+  const disposers = []
   const systemPrompt = getService(ctx, 'systemPrompt')
   if (systemPrompt === undefined || typeof systemPrompt.section !== 'function') {
     if (configs.length > 0) warnOnce(`${name}: systemPrompt service unavailable — system-section configs skipped`)
-    return
+    return disposers
   }
   // 人设段（deployment:persona-prefix/suffix）由官方 @deepseek-ai/dsh-persona 行注册
   // （preset.yml 顶层 persona 段驱动）；本层只处理其余 system-section 配置。
@@ -215,14 +216,16 @@ function wireSystemSections(ctx, configs, registry, warnOnce) {
       warnOnce(`${name}: system-section config ${base.id} failed: ${String(error?.message ?? error)}`)
     }
   }
+  return disposers
 }
 
 /** runtime-context:注册运行时上下文；静态文本支持 merged，动态策略在官方 assembly waterfall 中填充。 */
 function wireRuntimeContexts(ctx, configs, registry, warnOnce) {
+  const disposers = []
   const systemPrompt = getService(ctx, 'systemPrompt')
   if (systemPrompt === undefined || typeof systemPrompt.context !== 'function') {
     if (configs.length > 0) warnOnce(`${name}: systemPrompt service unavailable — runtime-context configs skipped`)
-    return
+    return disposers
   }
   // 模板专属策略（strategyDir 懒加载）与 placeholder 一样由 waterfall 按 assembly 消费
   // resolve——`config.resolve` 只在这两层被调用，按静态注册会让「配了没效果也不报错」。
@@ -249,7 +252,7 @@ function wireRuntimeContexts(ctx, configs, registry, warnOnce) {
   // 标记随官方排序/遮蔽进入本次 assembly，无会话缓存，也不依赖调用方 context 的对象身份。
   const placeholders = configs.filter(needsResolver)
     .sort((a, b) => a.order - b.order)
-  if (placeholders.length === 0) return
+  if (placeholders.length === 0) return disposers
   const slotVariable = `pt_runtime_${newMessageId('context').replace(/[^a-z0-9_]/gi, '_').toLowerCase()}`
   const slotText = `{{${slotVariable}}}`
   const registered = new Map()
@@ -269,7 +272,7 @@ function wireRuntimeContexts(ctx, configs, registry, warnOnce) {
       warnOnce(`${name}: runtime-context placeholder ${config.id} failed: ${String(error?.message ?? error)}`)
     }
   }
-  ctx.on('system-prompt/assemble', async (assembly, context, next) => {
+  disposers.push(ctx.on('system-prompt/assemble', async (assembly, context, next) => {
     const entries = assembly.contexts.filter(entry => registered.has(entry.name) && entry.text === slotText)
     for (const entry of entries) {
       const config = registered.get(entry.name)
@@ -291,27 +294,58 @@ function wireRuntimeContexts(ctx, configs, registry, warnOnce) {
     }
     if (!active || context.signal?.aborted) for (const entry of entries) entry.text = ''
     return next()
-  })
+  }))
+  return disposers
 }
 
-/** agent-request:对冻结的 LlmCallConfig 做浅合并 / 整体替换。 */
+/**
+ * agent/request 载荷的唯一改写实现（B3 T2 第 (7) 类动作与既有 `agent-request`
+ * 层**共用这一份**，不另写一套请求改写）。三种语义：
+ *   - `patch`：对下游已解析的 LlmCallConfig 做浅合并；
+ *   - `replace: true`：整体替换为 `patch`（不叠加 base，故 `unset` 无比较对象）；
+ *   - `unset`：**按值条件删键** —— 仅当合并结果里的值**恰好等于**声明值时删除该键
+ *     （`Object.is` 比较）。这是 `tool-bootstrap` 剥离 `bootstrapMaxTokens` 的语义
+ *     （`tool-bootstrap.mjs:464-472`：「仅当解析后的 maxTokens 恰好等于本声明注入
+ *     的那个值时才删」），不是"存在即删"——模型或其它插件设置的同名参数不会被删。
+ *     浅合并做不到删键，故删键必须走显式通道。
+ * @param params 提示词配置的 `params`（或动作的等价声明）。
+ * @param base 下游 `next()` 已解析的请求配置。
+ * @returns 改写后的请求配置；无 unset 命中时零额外分配。
+ */
+export function applyAgentRequestParams(params, base) {
+  const patch = params?.patch !== null && typeof params?.patch === 'object' && !Array.isArray(params.patch)
+    ? params.patch
+    : {}
+  if (params?.replace === true) return { ...patch }
+  const merged = { ...base, ...patch }
+  const unset = params?.unset
+  if (unset === null || typeof unset !== 'object' || Array.isArray(unset)) return merged
+  let result
+  for (const [key, expected] of Object.entries(unset)) {
+    // 每个键都对着**合并结果**判定：一旦分配过副本，后续键不得跳过比较。
+    if (!Object.is(merged[key], expected)) continue
+    if (result === undefined) result = { ...merged }
+    delete result[key]
+  }
+  return result ?? merged
+}
+
+/** agent-request:对冻结的 LlmCallConfig 做浅合并 / 整体替换 / 按值条件删键。 */
 function wireAgentRequests(ctx, configs, warnOnce) {
+  const disposers = []
   for (const config of configs) {
-    ctx.on('agent/request', async (payload, next) => {
+    disposers.push(ctx.on('agent/request', async (payload, next) => {
       const base = await next()
       try {
         if (!matchesAgentScope(config, payload?.agent)) return base
-        const patch = config.params?.patch !== null && typeof config.params?.patch === 'object' && !Array.isArray(config.params.patch)
-          ? config.params.patch
-          : {}
-        if (config.params?.replace === true) return { ...patch }
-        return { ...base, ...patch }
+        return applyAgentRequestParams(config.params, base)
       } catch (error) {
         warnOnce(`${name}: agent-request config ${config.id} failed: ${String(error?.message ?? error)}`)
         return base
       }
-    })
+    }))
   }
+  return disposers
 }
 
 /** 把流替换为提示词配置文本的最小合法 chunk 序列。 */
@@ -323,8 +357,9 @@ async function* replacedStream(text) {
 
 /** llm-stream:pass 透传;replace 用提示词配置文本替代整个模型流。 */
 function wireLlmStreams(ctx, configs, warnOnce) {
+  const disposers = []
   for (const config of configs) {
-    ctx.on('llm/stream', (options, next) => {
+    disposers.push(ctx.on('llm/stream', (options, next) => {
       try {
         const mode = config.params?.mode ?? 'pass'
         if (mode === 'replace' && config.texts.length > 0 && matchesModel(config.modelScope, options?.model)) {
@@ -335,14 +370,15 @@ function wireLlmStreams(ctx, configs, warnOnce) {
         warnOnce(`${name}: llm-stream config ${config.id} failed: ${String(error?.message ?? error)}`)
         return next()
       }
-    })
+    }))
   }
+  return disposers
 }
 
 /** 条件判定的匹配器与取文本逻辑由 condition.mjs 承载（pre-step 与其他层共用）。 */
 
 /** 插件来源的 user 消息：与 anchor-turn / progress-reminder 同一形状。 */
-function pluginMessage(prefix, text, summary) {
+export function pluginMessage(prefix, text, summary) {
   return {
     id: newMessageId(prefix),
     role: 'user',
@@ -366,10 +402,11 @@ function layerText(config, agent, warnOnce) {
 
 /** tool-pipeline:pre-execute 判定、execute 包装、post-execute 结果替换/阻断。 */
 function wireToolPipelines(ctx, configs, warnOnce) {
+  const disposers = []
   for (const config of configs) {
     const names = parseToolNames(config.params?.toolNames)
     const matchesTool = (exec) => names.length === 0 || names.includes(exec?.name)
-    ctx.on('tools/pre-execute', async (exec, next) => {
+    disposers.push(ctx.on('tools/pre-execute', async (exec, next) => {
       try {
         if (!matchesTool(exec) || !matchesAgentScope(config, exec?.agent)) return next()
         if (!conditionHit(config, { argsText: toolArgsText(exec?.arguments) })) return next()
@@ -384,8 +421,8 @@ function wireToolPipelines(ctx, configs, warnOnce) {
         warnOnce(`${name}: tool-pipeline(pre) config ${config.id} failed: ${String(error?.message ?? error)}`)
         return next()
       }
-    })
-    ctx.on('tools/post-execute', async (exec, result, next) => {
+    }))
+    disposers.push(ctx.on('tools/post-execute', async (exec, result, next) => {
       try {
         if (!matchesTool(exec) || !matchesAgentScope(config, exec?.agent)) return next()
         if (!conditionHit(config, { argsText: toolArgsText(exec?.arguments), resultText: extractText(result) })) return next()
@@ -402,8 +439,9 @@ function wireToolPipelines(ctx, configs, warnOnce) {
         warnOnce(`${name}: tool-pipeline(post) config ${config.id} failed: ${String(error?.message ?? error)}`)
         return next()
       }
-    })
+    }))
   }
+  return disposers
 }
 
 /**
@@ -415,11 +453,17 @@ export const TURN_STOP_MAX_PER_TURN = 1
 export const TURN_STOP_MAX_PER_SESSION = 3
 
 /** 会话内保留的轮次计数上限（与 deliberation-gate 同规模）。 */
-const TURN_STOP_MAX_TRACKED_TURNS = 8
+export const TURN_STOP_MAX_TRACKED_TURNS = 8
 
-/** turn-stop：命中条件时阻止本轮停止并强制续跑一步，上限在引擎内。 */
-function wireTurnStops(ctx, configs, warnOnce) {
-  if (configs.length === 0) return
+/**
+ * 续跑预算（唯一实现）：B3 T2 第 (4) 类动作的「续跑」与既有 turn-stop 层共用它，
+ * 上限是引擎常量而不是配置——强制续跑失控会把会话卡在停不下来的循环里。
+ * 三步语义刻意与迁移前逐行一致：
+ *   entry(...)    取条目（含创建与超限轮次淘汰的副作用），在条件判定**之前**调用；
+ *   available(...) 只读判定，不落账；
+ *   claim(...)    落账，必须在 steer **之前**调用（steer 抛错也不允许重试越过预算）。
+ */
+export function createTurnStopBudget() {
   /** sessionId -> { turns: Map<turn, count>, total } */
   const state = new Map()
 
@@ -434,27 +478,45 @@ function wireTurnStops(ctx, configs, warnOnce) {
     return entry
   }
 
+  return {
+    entry: (sessionId, turn) => stateOf(sessionId, turn),
+    available: (entry, turn) => {
+      const turnCount = Number.isFinite(turn) ? (entry.turns.get(turn) ?? 0) : 0
+      return turnCount < TURN_STOP_MAX_PER_TURN && entry.total < TURN_STOP_MAX_PER_SESSION
+    },
+    claim: (entry, turn) => {
+      if (Number.isFinite(turn)) entry.turns.set(turn, (entry.turns.get(turn) ?? 0) + 1)
+      entry.total += 1
+    },
+  }
+}
+
+/** turn-stop：命中条件时阻止本轮停止并强制续跑一步，上限在引擎内。 */
+function wireTurnStops(ctx, configs, warnOnce) {
+  const disposers = []
+  if (configs.length === 0) return disposers
+  const budget = createTurnStopBudget()
+
   for (const config of configs) {
-    ctx.on('agent/turn-stopping', ({ agent, turn } = {}) => {
+    disposers.push(ctx.on('agent/turn-stopping', ({ agent, turn } = {}) => {
       try {
         const session = agent?.session
         if (session?.id === undefined || typeof agent.steer !== 'function') return
         if (!matchesAgentScope(config, agent)) return
-        const entry = stateOf(session.id, turn)
-        const turnCount = Number.isFinite(turn) ? (entry.turns.get(turn) ?? 0) : 0
-        if (turnCount >= TURN_STOP_MAX_PER_TURN || entry.total >= TURN_STOP_MAX_PER_SESSION) return
+        const entry = budget.entry(session.id, turn)
+        if (!budget.available(entry, turn)) return
         if (!conditionHit(config, { assistantText: lastAssistantText(session) })) return
         const text = layerText(config, agent, warnOnce)
         if (text.length === 0) return
         // 计数在 steer 之前落账：steer 抛错也不允许下一步重试越过预算。
-        if (Number.isFinite(turn)) entry.turns.set(turn, turnCount + 1)
-        entry.total += 1
+        budget.claim(entry, turn)
         agent.steer(pluginMessage(`turn-stop-${config.id}`, text, `turn-stop ${config.id}`))
       } catch (error) {
         warnOnce(`${name}: turn-stop config ${config.id} failed: ${String(error?.message ?? error)}`)
       }
-    })
+    }))
   }
+  return disposers
 }
 
 /** 沿官方持久 session 血缘找根会话，不根据当前 UI 会话或预设名称猜测。 */
@@ -476,23 +538,24 @@ function mainSessionForChild(ctx, id) {
 
 /** 子代理生命周期：启动注入子代理；结束默认观察，可显式给所属主会话投递上下文。 */
 function wireSubagentEvents(ctx, configs, warnOnce) {
+  const disposers = []
   const startConfigs = configs.filter((config) => config.layer === 'subagent-start')
   const endConfigs = configs.filter((config) => config.layer === 'subagent-end')
   const injectMain = endConfigs.some((config) => config.params?.action === 'inject-main')
   const runs = new Map()
   if (injectMain) {
-    ctx.on('subagent/start', (info) => {
+    disposers.push(ctx.on('subagent/start', (info) => {
       if (typeof info?.runId !== 'string' || typeof info?.id !== 'string') return
       const mainId = mainSessionForChild(ctx, info.id)
       if (mainId === undefined) return
       // ponytail: 有界运行记录；极端并发超过上限时，结束事件仍可通过存活会话血缘定位。
       if (runs.size >= MAX_TRACKED_SESSIONS) runs.delete(runs.keys().next().value)
       runs.set(info.runId, { id: info.id, mainId, model: getService(ctx, 'agents')?.get?.(info.id)?.options?.model })
-    })
+    }))
     ctx.effect?.(() => () => runs.clear())
   }
   if (startConfigs.length > 0) {
-    ctx.on('subagent/start', (info) => {
+    disposers.push(ctx.on('subagent/start', (info) => {
       try {
         const child = getService(ctx, 'agents')?.get?.(info?.id)
         if (child === undefined) return
@@ -508,10 +571,10 @@ function wireSubagentEvents(ctx, configs, warnOnce) {
       } catch (error) {
         warnOnce(`${name}: subagent-start failed: ${String(error?.message ?? error)}`)
       }
-    })
+    }))
   }
   if (endConfigs.length > 0) {
-    ctx.on('subagent/end', (info) => {
+    disposers.push(ctx.on('subagent/end', (info) => {
       try {
         const child = getService(ctx, 'agents')?.get?.(info?.id)
         const recorded = runs.get(info?.runId)
@@ -546,19 +609,35 @@ function wireSubagentEvents(ctx, configs, warnOnce) {
       } catch (error) {
         warnOnce(`${name}: subagent-end failed: ${String(error?.message ?? error)}`)
       }
-    })
+    }))
   }
+  return disposers
 }
 
-/** 把非 pre-step 提示词配置接入其声明的官方层级通道。 */
+/**
+ * 把非 pre-step 提示词配置接入其声明的官方层级通道。
+ * @returns 聚合 disposer：回收本次接线显式创建的 waterfall 监听器；段/上下文/
+ *   变量注册走 keepDisposer（随 ctx fiber 释放），不在本函数的回收面内。
+ */
 export function wireLayers(ctx, configs, warnOnce) {
   // 官方插值两层共享一份变量注册：运行时事实按 assembly 求值，非法名走别名改写。
   const registry = registerOfficialVariables(ctx, configs.filter((config) => config.layer === 'system-section' || config.layer === 'runtime-context'), warnOnce)
-  wireSystemSections(ctx, configs.filter((config) => config.layer === 'system-section'), registry, warnOnce)
-  wireRuntimeContexts(ctx, configs.filter((config) => config.layer === 'runtime-context'), registry, warnOnce)
-  wireAgentRequests(ctx, configs.filter((config) => config.layer === 'agent-request'), warnOnce)
-  wireLlmStreams(ctx, configs.filter((config) => config.layer === 'llm-stream'), warnOnce)
-  wireToolPipelines(ctx, configs.filter((config) => config.layer === 'tool-pipeline'), warnOnce)
-  wireTurnStops(ctx, configs.filter((config) => config.layer === 'turn-stop'), warnOnce)
-  wireSubagentEvents(ctx, configs.filter((config) => config.layer === 'subagent-start' || config.layer === 'subagent-end'), warnOnce)
+  const registered = [
+    wireSystemSections(ctx, configs.filter((config) => config.layer === 'system-section'), registry, warnOnce),
+    wireRuntimeContexts(ctx, configs.filter((config) => config.layer === 'runtime-context'), registry, warnOnce),
+    wireAgentRequests(ctx, configs.filter((config) => config.layer === 'agent-request'), warnOnce),
+    wireLlmStreams(ctx, configs.filter((config) => config.layer === 'llm-stream'), warnOnce),
+    wireToolPipelines(ctx, configs.filter((config) => config.layer === 'tool-pipeline'), warnOnce),
+    wireTurnStops(ctx, configs.filter((config) => config.layer === 'turn-stop'), warnOnce),
+    wireSubagentEvents(ctx, configs.filter((config) => config.layer === 'subagent-start' || config.layer === 'subagent-end'), warnOnce),
+  ].flat().filter((disposer) => typeof disposer === 'function')
+  return () => {
+    for (const dispose of registered.splice(0)) {
+      try {
+        dispose()
+      } catch {
+        // 释放失败不得反过来打断卸载流程。
+      }
+    }
+  }
 }
