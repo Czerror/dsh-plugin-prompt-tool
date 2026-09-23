@@ -38,7 +38,7 @@ import { ACTION_KINDS, actionExecutionPoint, prepareAction, registerAction } fro
 import { WATERFALL_POSITIONS, orderTriggers, registrationOptions, wireTriggerObservers } from './trigger.mjs'
 
 /** 七类判断原语：声明里的键 → 工厂。键名与 `predicates.mjs` 的工厂一一对应。 */
-const PREDICATE_FACTORIES = Object.freeze({
+export const PREDICATE_FACTORIES = Object.freeze({
   text: createTextPredicate,
   phase: createPhasePredicate,
   source: createSourcePredicate,
@@ -49,7 +49,7 @@ const PREDICATE_FACTORIES = Object.freeze({
 })
 
 /** 组合运算符（与 `composite` 的词汇同源，不另立别名）。 */
-const COMPOSITE_OPERATORS = Object.freeze(['any', 'all', 'not', 'notAny'])
+export const COMPOSITE_OPERATORS = Object.freeze(['any', 'all', 'not', 'notAny'])
 
 /** 声明允许的字段（未知字段 fail loud：写错键名是最容易被静默忽略的一类错）。 */
 const DECLARATION_FIELDS = Object.freeze(['id', 'channel', 'channelOrder', 'waterfallPosition', 'phase', 'when', 'do'])
@@ -142,8 +142,8 @@ function compileActions(value) {
  * 编译一条声明：校验字段 + 编译 `when` + 归一化 `do`。
  *
  * @param {object} spec 声明（`{ id, channel, when?, do, channelOrder?, waterfallPosition?, phase? }`）
- * @param {object} [context] 同 {@link compileWhen}
- * @returns {{id: string, channel: string, channelOrder: number, waterfallPosition: string, phase: string, when: Function|undefined, actions: object[]}}
+ * @param {object} [context] 同 {@link compileWhen}，另可提供 promptConfigOptions（createPromptConfigs 的模板/策略编译选项）。
+ * @returns {{id: string, channel: string, channelOrder: number, waterfallPosition: string, phase: string, when: Function|undefined, actions: object[], promptConfigOptions?: object}}
  */
 export function compileDeclaration(spec, context = {}) {
   if (spec === null || typeof spec !== 'object' || Array.isArray(spec)) {
@@ -175,7 +175,9 @@ export function compileDeclaration(spec, context = {}) {
   const actions = compileActions(spec.do)
   const when = compileWhen(spec.when, context)
   // 保存期复用注册入口的纯准备阶段；不绑定 ctx，不创建预算或监听器。
-  for (const action of actions) prepareAction(action, { when, ...registrationOptions({ waterfallPosition }) })
+  for (const action of actions) prepareAction(action, {
+    when, promptConfigOptions: context.promptConfigOptions, ...registrationOptions({ waterfallPosition }),
+  })
   const phase = spec.phase ?? actionExecutionPoint(actions[0]).phase
   if (!ACTION_PHASES.includes(phase)) {
     throw new TypeError(`trigger-spec: trigger ${spec.id}: phase must be one of ${ACTION_PHASES.join(', ')}`)
@@ -197,6 +199,7 @@ export function compileDeclaration(spec, context = {}) {
     phase,
     when,
     actions,
+    ...(context.promptConfigOptions === undefined ? {} : { promptConfigOptions: context.promptConfigOptions }),
   }
 }
 
@@ -236,6 +239,7 @@ export function mountDeclarations(ctx, compiled, { plugin, warnOnce } = {}) {
       disposers.push(registerAction(ctx, action, {
         plugin,
         warnOnce,
+        promptConfigOptions: trigger.promptConfigOptions,
         when: trigger.when,
         prepend: trigger.waterfallPosition === 'outermost',
       }))

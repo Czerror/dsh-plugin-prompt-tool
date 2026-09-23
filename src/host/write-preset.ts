@@ -18,6 +18,7 @@ import { validateSubagentToolPolicy } from '../../engine/subagent-tool-policy-co
 import { compileDeclarations } from '../../engine/trigger-spec.mjs'
 import { DEFAULT_PRESET_DIR } from './paths.ts'
 import { DEFAULT_PRESET_ID } from '../shared/preset-ids.ts'
+import { triggerPromptConfigOptions } from './preset-triggers.ts'
 import { assertPresetDirectory, assertPresetId, assertPresetTree, engineModuleFileNames, rewritePresetEngineReferences } from './preset-install.ts'
 import { compileCustomTool } from './custom-tools.ts'
 import { validateCustomToolIdentities } from '../shared/engine-capabilities.ts'
@@ -235,7 +236,7 @@ export function writePreset(prompt: string, options: WritePresetOptions): string
       throw new Error('invalid triggers: 必须是触发器声明数组')
     }
     try {
-      compileDeclarations(spec.triggers)
+      compileDeclarations(spec.triggers, { promptConfigOptions: triggerPromptConfigOptions(templateDir, spec.moduleConfigs?.['declared-triggers']?.strategyDir) })
     } catch (error) {
       throw new Error(`invalid triggers: ${String((error as Error)?.message ?? error)}`)
     }

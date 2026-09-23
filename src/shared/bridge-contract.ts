@@ -47,6 +47,7 @@ export const BRIDGE_ENDPOINTS = {
   presetContent: '/preset-content',
   importPreset: '/import-preset',
   paramOverrides: '/param-overrides',
+  triggers: '/triggers',
   persona: '/persona',
   presetVariables: '/preset-variables',
   customTools: '/custom-tools',
@@ -125,6 +126,7 @@ export interface BridgeRequestMap {
   presetContent: undefined
   importPreset: { contents: Array<{ scope: 'preset' | 'agents'; content: string }>; expectedPresetId?: string }
   paramOverrides: { overrides?: Record<string, unknown>; promptConfigs?: unknown[]; rebuild?: boolean; expectedPresetId?: string }
+  triggers: { expectedPresetId: string; triggers?: unknown[]; expectedRevision?: string; validateOnly?: boolean }
   /** 顶层 persona 段读写（官方 @deepseek-ai/dsh-persona 行 config 同构）；省略 persona 键 = 读取。 */
   persona: { persona?: PersonaSpec | null; expectedPresetId?: string } | undefined
   presetVariables: { variables?: Record<string, string>; enabled?: boolean; expectedPresetId?: string }
@@ -275,6 +277,14 @@ export interface LayerParamContract {
   values?: readonly string[]
 }
 
+/** 声明编辑目录由引擎提供；示例同时经过声明编译器验证。 */
+export interface TriggerEditorMeta {
+  predicates: Array<{ kind: string; example: Record<string, unknown> }>
+  actions: Array<{ kind: string; example: Record<string, unknown>; channel: string; phase: string; supportsWhen: boolean }>
+  composites: string[]
+  waterfallPositions: string[]
+}
+
 export interface LayerContract {
   strategies: readonly string[]
   subjects: readonly string[]
@@ -333,6 +343,7 @@ export interface BridgeValueMap {
   importPreset: { scopes: Array<'preset' | 'agents'> }
   /** 参数/提示词配置只保存当前预设，不同步宿主全局默认模型。 */
   paramOverrides: { overrides?: Record<string, unknown>; promptConfigs?: unknown[] }
+  triggers: { triggers: unknown[]; revision: string; meta: TriggerEditorMeta }
   persona: { persona: PersonaSpec | null }
   presetVariables: { variables: Record<string, string>; enabled: boolean }
   customTools: { customTools?: unknown[] }

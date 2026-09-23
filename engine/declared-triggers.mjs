@@ -18,7 +18,7 @@
  */
 import { readFileSync } from 'node:fs'
 import { isAbsolute } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import { parse as parseYaml } from './vendor/yaml/index.js'
 import { defineConfig, passthrough } from './fields.mjs'
 import { createWarnOnce, keepDisposer } from './shared.mjs'
@@ -33,11 +33,13 @@ export const inject = []
 
 export const configContract = defineConfig({
   triggersFile: passthrough((value) => (typeof value === 'string' && value.length > 0 ? value : '../triggers.yml')),
+  strategyDir: passthrough((value) => (typeof value === 'string' && value.length > 0 ? value : undefined)),
+  presetRoot: passthrough((value) => (typeof value === 'string' && value.length > 0 ? value : undefined)),
 })
 
 /**
- * 声明文件的路径：相对路径按**本模块**（`.engine/`）解析，所以 `../triggers.yml` = 预设根
- * ——与 `subagent-tool-policy` 的 `policyFile` 同一解析方式。
+ * 插件装配由注册层传入声明文件的绝对 file URL；引擎实现始终来自已安装插件包。
+ * 独立使用时才按本模块 URL 解析相对值，缺省路径不代表任何用户预设目录。
  *
  * 绝对路径必须走 `isAbsolute` 分支：`new URL(绝对路径, base)` 只在 POSIX 形态下忽略 base，
  * Windows 盘符会被当成 URL scheme 并抛 `ERR_INVALID_URL_SCHEME`。而「测试/嵌入可显式
@@ -52,10 +54,10 @@ function resolveTriggersFile(config) {
 }
 
 /** 读声明；文件缺失返回 `undefined`（= 没有声明，交由调用方静默返回）。 */
-function readTriggerSpecs(config) {
+function readTriggerSpecs(file) {
   let raw
   try {
-    raw = readFileSync(resolveTriggersFile(config), 'utf8')
+    raw = readFileSync(file, 'utf8')
   } catch (error) {
     if (error?.code === 'ENOENT') return undefined
     throw error
@@ -69,12 +71,23 @@ function readTriggerSpecs(config) {
 
 export async function apply(ctx, config) {
   const source = configContract.parse(config, name)
-  const specs = readTriggerSpecs(source)
+  const file = resolveTriggersFile(source)
+  const specs = readTriggerSpecs(file)
   if (specs === undefined || specs.length === 0) return
+  // 数据路径相对实际声明文件；允许根由注册层提供，不从包内引擎位置猜测用户目录。
+  const templateBaseUrl = pathToFileURL(file)
+  const templatePresetRoot = source.presetRoot === undefined
+    ? new URL('./', templateBaseUrl)
+    : isAbsolute(source.presetRoot) ? pathToFileURL(source.presetRoot.replace(/[\\/]?$/, '/'))
+      : new URL(source.presetRoot.replace(/\/?$/, '/'), templateBaseUrl)
+  const strategyDir = source.strategyDir === undefined ? undefined : (isAbsolute(source.strategyDir)
+    ? pathToFileURL(source.strategyDir).href
+    : new URL(source.strategyDir, templateBaseUrl).href)
+  const promptConfigOptions = { templateBaseUrl, templatePresetRoot, strategyDir }
   // `preset` 原语需要官方模块导出（判定期零 IO，故在这里一次解析）；其余原语用不到它。
   const standingMountFor = await loadStandingMountFor()
   // 声明非法在这里 fail loud——保存期已校验过一次，这里再炸说明文件被绕过保存手改了。
-  const compiled = compileDeclarations(specs, { ctx, standingMountFor })
+  const compiled = compileDeclarations(specs, { ctx, standingMountFor, promptConfigOptions })
   const dispose = mountDeclarations(ctx, compiled, { plugin: name, warnOnce: createWarnOnce(ctx, name) })
   keepDisposer(ctx, dispose, `${name}: declarations`)
 }

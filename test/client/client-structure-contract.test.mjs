@@ -55,7 +55,7 @@ test('客户端根目录只保留入口、字典、共享类型与待拆样式',
     .filter((entry) => entry.isFile())
     .map((entry) => entry.name)
     .sort()
-  assert.deepEqual(files, ['index.ts', 'locales-cards.ts', 'locales-params.ts', 'locales-prompts.ts', 'locales.ts', 'prompt-tool-types.ts'])
+  assert.deepEqual(files, ['index.ts', 'locales-cards.ts', 'locales-params.ts', 'locales-prompts.ts', 'locales-triggers.ts', 'locales.ts', 'prompt-tool-types.ts'])
 })
 
 // —— 结构与接线基线（原 structure-baseline.test.mjs） ——

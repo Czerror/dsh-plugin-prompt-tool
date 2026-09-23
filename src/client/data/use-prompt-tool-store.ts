@@ -134,6 +134,8 @@ export interface PromptToolStore {
   persistParamOverrides: () => Promise<void>
   /** 保存提示词配置；返回 false 表示未写入（预设切换中、跨预设旧草稿或失败）。 */
   persistConfigs: (configs: PromptConfigDraft[], options?: { reload?: boolean; rebuild?: boolean; includeInstructions?: boolean }) => Promise<boolean>
+  /** 规则声明复用预设队列；实际执行时复核目标预设与已加载身份。 */
+  enqueuePresetTask: <T>(presetId: string, task: () => Promise<T>) => Promise<T>
   /** 预设级模板变量（preset.yml 内容变量；writePreset 展开进 variables.yml，引擎合并进每条配置）。 */
   templateVariables: Record<string, string>
   setTemplateVariables: (value: Record<string, string>) => void
@@ -344,6 +346,10 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
   /** 已成功应用快照的预设 id：与当前 fields.presetTemplate 不一致时（切换/加载进行中）
    *  拒绝写盘，避免旧预设字段被当成当前预设数据写进新预设。 */
   const loadedPresetRef = useRef<string | undefined>(undefined)
+  const enqueuePresetTask = useCallback(<T,>(presetId: string, task: () => Promise<T>): Promise<T> => presetSaveQueueRef.current.enqueue(async () => {
+    if (fieldsRef.current.presetTemplate !== presetId || loadedPresetRef.current !== presetId) throw new Error(PRESET_PENDING_MESSAGE)
+    return task()
+  }), [])
   /** 会话预设跟随器：跨检查只保留「写盘进行中」与「已提示过的 id」。 */
   const presetFollowerRef = useRef<SessionPresetFollower | undefined>(undefined)
   if (presetFollowerRef.current === undefined) presetFollowerRef.current = createSessionPresetFollower()
@@ -962,7 +968,7 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
   const applyPresetTemplate = useCallback(async (id: string, switchSession: boolean, notice?: string): Promise<void> => {
     if (fieldsRef.current.presetTemplate === id) return
     if (hasWorkspaceDrafts(editorDrafts, fieldsRef.current.presetTemplate)) {
-      showNotice('error', '当前预设仍有未保存的工具、人设、策略或字段草稿，请返回对应页面保存或修正后再切换')
+      showNotice('error', '当前预设仍有未保存的规则、工具、人设、策略或字段草稿，请返回对应页面保存或修正后再切换')
       return
     }
     await presetSaveQueueRef.current.enqueue(async () => {})
@@ -1215,6 +1221,7 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
     persistSwitches,
     persistParamOverrides,
     persistConfigs,
+    enqueuePresetTask,
     templateVariables,
     setTemplateVariables,
     templateVariablesEnabled,

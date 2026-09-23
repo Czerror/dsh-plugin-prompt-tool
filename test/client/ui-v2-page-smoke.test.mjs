@@ -149,7 +149,11 @@ async function createSession() {
     // inputPage：只设值 + input/change（pages）；inputCard：先 focus + input，无 change（cards）；
     // inputDraft：按字典 key 定位、focus + input/change（drafts）。三者语义不同，故分开保留。
     const inputPage = async (selector, value) => { await evaluate(`(()=>{const e=document.querySelector(${JSON.stringify(selector)});Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(e,${JSON.stringify(value)});e.dispatchEvent(new Event('input',{bubbles:true}));e.dispatchEvent(new Event('change',{bubbles:true}))})()`); await sleep(60) }
-    const inputCard = async (selector, value) => { await evaluate(`(()=>{const el=document.querySelector(${JSON.stringify(selector)});el.focus();Object.getOwnPropertyDescriptor(el instanceof HTMLTextAreaElement?HTMLTextAreaElement.prototype:HTMLInputElement.prototype,'value').set.call(el,${JSON.stringify(value)});el.dispatchEvent(new Event('input',{bubbles:true}))})()`); await sleep(30) }
+    const inputCard = async (selector, value) => {
+      await evaluate(`(()=>{const panel=document.querySelector(${JSON.stringify(selector)})?.closest('[role="tabpanel"]');if(panel?.hidden)document.getElementById(panel.getAttribute('aria-labelledby')).click()})()`)
+      await sleep(20)
+      await evaluate(`(()=>{const el=document.querySelector(${JSON.stringify(selector)});el.focus();Object.getOwnPropertyDescriptor(el instanceof HTMLTextAreaElement?HTMLTextAreaElement.prototype:HTMLInputElement.prototype,'value').set.call(el,${JSON.stringify(value)});el.dispatchEvent(new Event('input',{bubbles:true}))})()`); await sleep(30)
+    }
     const inputDraft = async (key, value) => { await evaluate(`(()=>{const e=${field(key)};e.focus();Object.getOwnPropertyDescriptor(e.tagName==='TEXTAREA'?HTMLTextAreaElement.prototype:HTMLInputElement.prototype,'value').set.call(e,${JSON.stringify(value)});e.dispatchEvent(new Event('input',{bubbles:true}));e.dispatchEvent(new Event('change',{bubbles:true}))})()`); await sleep(30) }
     const blurDraft = async (key) => { await evaluate(`(()=>{const e=${field(key)};e.dispatchEvent(new FocusEvent('focusout',{bubbles:true,relatedTarget:document.querySelector('nav button')}));e.blur()})()`); await sleep(30) }
     const keyPress = async (value) => {
@@ -340,9 +344,9 @@ test('V2 卡片：展开语义、菜单焦点、删除/丢弃确认、portal保�
   await evaluate(`document.querySelector('#outside').focus()`)
   await waitFor('window.currentConfig.order===7')
   assert.equal(await evaluate(`[...window.fieldDrafts.values()].some(d=>d.text!==d.source||d.error)`), false)
-  await evaluate(`document.querySelector('[data-config-id="ordinary"] details').open=false; window.patchOrdinary({role:'future-role'})`)
+  await evaluate(`document.querySelector('[data-config-id="ordinary"] [data-config-tab="conditions"]').click(); window.patchOrdinary({role:'future-role'})`)
   await waitFor(`document.querySelector('[data-config-id="ordinary"] [aria-label="消息角色"]').textContent.includes('future-role')`)
-  assert.equal(await evaluate(`document.querySelector('[data-config-id="ordinary"] details').open`), false, '普通更新不重开details')
+  assert.equal(await evaluate(`document.querySelector('[data-config-id="ordinary"] [data-config-tab="conditions"]').getAttribute('aria-selected')`), 'true', '普通更新不改变用户选中的编辑视图')
   await evaluate('window.setReadOnly(true)')
   await waitFor(`document.querySelector('[data-config-id="ordinary"] input').readOnly`)
   assert.equal(await evaluate(`[...document.querySelectorAll('[data-config-id="ordinary"] textarea')].every(input=>input.readOnly||input.matches(':disabled'))`), true)

@@ -45,6 +45,7 @@ import {
 } from './layers.mjs'
 import { SDK_SECTION_NAME, sdkToolNames, stripSdkDeclarations } from './sdk-strip.mjs'
 import { subjectOf } from './predicates.mjs'
+import { createPromptConfigs } from './schema.mjs'
 
 /**
  * 标识来源：**由调用方经 `options.plugin` 传入**（与 `trigger.mjs` 的
@@ -224,6 +225,9 @@ function channelBinder(ctx, kind, plugin, prepend) {
  */
 const ON_REGISTERED_KINDS = new Set(['assembly', 'decision', 'append-context', 'sdk-strip', 'request-params', 'inbox-prepend', 'pre-step-filter'])
 
+/** 编辑目录与注册校验共用支持面；不另给客户端维护一份名单。 */
+export const actionSupportsWhen = (kind) => ON_REGISTERED_KINDS.has(kind)
+
 /**
  * **没有 `next` 的通道**（官方 `@mode emit` / `@mode serial`）：注册在这些通道上的动作
  * 不能靠「`args` 的最后一个参数是 `next`」工作——判定路径与载荷切分都要走无 `next` 分支。
@@ -382,14 +386,16 @@ function requireString(value, label, plugin) {
  * (1) 注入文本：按声明的 layer 落到既有九层通道。
  * 不复制任何一层接线——`pre-step` 走 executor 的执行器，其余层走 layers 的接线。
  */
-function prepareInjectText(action, plugin) {
-  const config = action.config
-  if (config === null || typeof config !== 'object' || Array.isArray(config)) {
+function prepareInjectText(action, plugin, promptConfigOptions) {
+  const source = action.config
+  if (source === null || typeof source !== 'object' || Array.isArray(source)) {
     throw new TypeError(`${plugin}: inject-text requires a config object (与 promptConfigs 同形状的提示词配置)`)
   }
-  if (typeof config.layer !== 'string' || config.layer.length === 0) {
+  if (typeof source.layer !== 'string' || source.layer.length === 0) {
     throw new TypeError(`${plugin}: inject-text config.layer is required (九层之一)`)
   }
+  // 纯声明复用提示词配置编译；函数仅来自已有编程接口，不写回可序列化声明。
+  const config = typeof source.resolve === 'function' ? source : createPromptConfigs([source], promptConfigOptions)[0]
   return (ctx, { warnOnce, collect }) => {
     if (config.layer === 'pre-step') {
       collect(applyPromptConfigs(ctx, [config], action.options ?? {}))
@@ -871,6 +877,7 @@ const PREPARERS = {
  *   （那两类不走 `on(...)`，静默忽略就是"配了没效果"）。
  * @param options.prepend 让本动作落在宿主 waterfall 的**最外层**（否决型动作需要）。同样只对
  *   `ON_REGISTERED_KINDS` 有效；它表达的是**位置**，不承担声明之间的排序。
+ * @param options.promptConfigOptions 宿主提供的 createPromptConfigs 选项（模板基准和策略目录），不从动作数据读取。
  * @returns 绑定函数：传入 ctx 后注册监听器，并返回 disposer。
  */
 export function prepareAction(action, options = {}) {
@@ -879,20 +886,20 @@ export function prepareAction(action, options = {}) {
   if (!Object.hasOwn(ACTION_KINDS, kind)) {
     throw new TypeError(`${plugin}: unknown action kind ${JSON.stringify(kind)} — known kinds: ${Object.keys(ACTION_KINDS).join(', ')}`)
   }
-  if (!ON_REGISTERED_KINDS.has(kind) && (options.when !== undefined || options.prepend === true)) {
+  if (!actionSupportsWhen(kind) && (options.when !== undefined || options.prepend === true)) {
     const feature = options.when !== undefined ? 'a when predicate' : 'prepend'
     throw new TypeError(`${plugin}: action ${kind} does not support ${feature} — 它不经 on(...) 注册（inject-text 注册层、guard 注册 agent scope 的最终拒绝）`)
   }
   // `maxPerTurn` 与 `when` 的支持面相同：都只对经 `on(...)` 注册的动作有效。
-  if (!ON_REGISTERED_KINDS.has(kind) && action?.maxPerTurn !== undefined) {
+  if (!actionSupportsWhen(kind) && action?.maxPerTurn !== undefined) {
     throw new TypeError(`${plugin}: action ${kind} does not support maxPerTurn — 它不经 on(...) 注册`)
   }
   const max = action?.maxPerTurn
   if (max !== undefined && (!Number.isSafeInteger(max) || max <= 0)) {
     throw new TypeError(`${labelOf(action)}.maxPerTurn must be a positive integer`)
   }
-  const bind = PREPARERS[kind](action, plugin)
-  const phase = ON_REGISTERED_KINDS.has(kind) ? actionExecutionPoint(action).phase : undefined
+  const bind = PREPARERS[kind](action, plugin, options.promptConfigOptions)
+  const phase = actionSupportsWhen(kind) ? actionExecutionPoint(action).phase : undefined
   return (ctx) => {
     const warnOnce = options.warnOnce ?? createWarnOnce(ctx, plugin)
     const budget = createTurnBudget(max)

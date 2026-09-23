@@ -23,7 +23,7 @@ const MANAGED_FIELDS: Record<string, readonly string[]> = {
 }
 
 /** 需要注入预设根基准的引擎模块——只有它们的 configContract 声明了 `presetRoot` 键。 */
-const PRESET_ROOT_MODULES = new Set(['prompt-config-engine.mjs', 'tool-config-engine.mjs'])
+const PRESET_ROOT_MODULES = new Set(['prompt-config-engine.mjs', 'tool-config-engine.mjs', 'declared-triggers.mjs'])
 
 type AbsolutizeContext = {
   /** 预设目录 `<预设根>/<id>`：其它本地模块说明符的基准。 */

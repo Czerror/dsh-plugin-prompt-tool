@@ -1,0 +1,15 @@
+.fieldset { display: flex; flex-direction: column; min-width: 0; gap: 16px; padding: 0; border: 0; }
+.fieldset > legend { padding: 0; margin-bottom: 12px; color: var(--dsw-alias-label-primary); font: var(--dsw-font-xs-strong-13); }
+.rule { display: flex; flex-direction: column; min-width: 0; gap: 16px; }
+.summary { margin: 0; font: var(--dsw-font-s-strong-14); color: var(--dsw-alias-label-primary); overflow-wrap: anywhere; }
+.rule [data-trigger-fields] { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px; min-width: 0; }
+.rule [data-trigger-fields] > p, .rule [data-trigger-execution] { grid-column: 1 / -1; }
+.rule [data-trigger-execution] { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.rule textarea, .rule input { max-width: 100%; min-width: 0; }
+.rule [hidden] { display: none; }
+@container prompt-form (max-width: 720px) {
+  .rule [data-trigger-fields], .rule [data-trigger-execution] { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 620px) {
+  .rule [data-trigger-fields], .rule [data-trigger-execution] { grid-template-columns: minmax(0, 1fr); }
+}

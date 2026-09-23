@@ -22,6 +22,7 @@ import { SubagentToolPolicyCard } from '../../../features/subagents/SubagentTool
 import { WorldBookDiagnosticsCard } from '../../../features/prompts/WorldBookDiagnosticsCard.tsx'
 import { TemplateVariablesModuleCard } from '../../../features/prompts/PromptConfigsEditor.tsx'
 import { CustomToolsCard } from '../../../features/tools/CustomToolsCard.tsx'
+import { TriggerRulesEditor } from '../../../features/triggers/TriggerRulesEditor.tsx'
 import { cssEscapeId, scrollToCreatedCard } from '../../../ui/reveal-card.ts'
 import ui from '../../../ui/controls.module.css'
 import css from './layer-settings.module.css'
@@ -152,10 +153,16 @@ export function LayerSettingsContent(props: {
   // 变量折叠保留到草稿池，并由当前设置实例触发渲染。
   const variablesExpandedKey = `${presetId}:layer-variables-${props.configId ?? 'standalone'}`
   const [variablesExpanded, setVariablesExpanded] = useState(() => store.editorDrafts?.expanded.get(variablesExpandedKey) ?? true)
+  const [editingRules, setEditingRules] = useState(false)
+  if (editingRules) return <div className={css.settings} data-layer-settings-content={layer}>
+    <button type="button" className={ui.pillButton} onClick={() => setEditingRules(false)}>{t('triggers.backToSettings')}</button>
+    <TriggerRulesEditor store={store} t={t} />
+  </div>
   if (cards.length === 0 && capabilities.length === 0 && assets.length === 0) return null
   return (
     <div className={css.settings} data-layer-settings-content={layer}>
       <EngineCapabilityCreateMenu store={store} t={t} layer={layer} excludeCapabilities={excluded} onCreated={props.onCreated} />
+      <button type="button" className={ui.pillButton} onClick={() => setEditingRules(true)}>{t('triggers.open')}</button>
       {cards.map((card) => (
         <section key={card} hidden={!matches(card)} className={css.group} data-layer-param-group={card}
           aria-label={t(CARD_LABEL_KEYS[card] ?? 'modules.group.other')}>

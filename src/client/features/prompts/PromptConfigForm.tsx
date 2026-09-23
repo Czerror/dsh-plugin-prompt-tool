@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react'
+import type { ReactNode } from 'react'
 import clsx from 'clsx'
 import { Switch } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { FieldDraft } from '../../data/workspace-drafts.ts'
@@ -9,6 +9,7 @@ import type { EngineMeta, PromptConfigDraft } from '../../prompt-tool-types.ts'
 import type { InstructionPolicyFileOverride } from '../../../shared/instructions.ts'
 import { MatchFields, NumberField, OptionField, StrategyParamsFields, VariablesEditor } from './PromptConfigFields.tsx'
 import { autoResizeTextarea } from './textarea-resize.ts'
+import { PromptConfigNavigation } from './PromptConfigNavigation.tsx'
 import { instructionFileIdOf } from '../../data/prompt-config-content.ts'
 import { isManagedConfigField } from '../../../shared/managed-config-fields.ts'
 import {
@@ -73,7 +74,7 @@ export function PromptConfigForm(props: {
   onPatchPolicy?: (patch: InstructionPolicyFileOverride) => void
   /**
    * 本层引擎设置的内容（由 app 层注入）：参数、已装配能力的装配状态与移除、按层归属的资产编辑器。
-   * 只在展开时求值——折叠区存在于每张同层实例卡，但折叠时零渲染成本。
+   * 只在首次进入本层设置时求值，切换视图后保留已挂载草稿。
    */
   renderLayerSettings?: (layer: string, config: PromptConfigDraft) => ReactNode
 }): ReactNode {
@@ -149,14 +150,6 @@ export function PromptConfigForm(props: {
   const strategy = instructionHint ? 'placeholder' : config.strategy ?? 'static'
   const placeholder = strategy === 'placeholder' && policy.placeholder
   const fillOptions = ['', ...meta.fills]
-  const advancedCount = [
-    ...(showMetadata ? [config.sourceKind, config.form !== undefined && config.form !== '' && config.form !== 'notice',
-      config.summary, config.identity !== undefined && (config.identity.field !== 'plugin' || config.identity.value.length > 0)] : []),
-    showContent && config.templateFile,
-  ].filter(Boolean).length
-  const [advancedOpen, setAdvancedOpen] = useState(advancedCount > 0)
-  /** 本层引擎设置折叠区：默认折叠，展开才渲染内容（同层 120 张卡也因此没有额外控件成本）。 */
-  const [layerSettingsOpen, setLayerSettingsOpen] = useState(false)
   return (
     <div className={clsx(styles.configForm, styles.configFormLayout)} data-config-layer={config.layer ?? 'pre-step'}>
       <div className={styles.configContext}>
@@ -164,17 +157,15 @@ export function PromptConfigForm(props: {
         <span>{t('form.instance.hint')}</span>
         {layerDetail !== undefined && <p>{layerDetail}</p>}
       </div>
-      <section className={styles.configSection} aria-label={t('form.section.basic')}>
-      <h4 className={styles.configSectionTitle}>{t('form.section.basic')}</h4>
+      <section className={styles.configIdentity} aria-label={t('form.section.basic')}>
       <div className={styles.configGrid}>
-        <FormField className={styles.fieldSpan3} label={t('form.id.label')} hint={t('form.id.hint')} hintMode="tooltip">
+        <FormField className={styles.fieldSpan4} label={t('form.id.label')} hint={t('form.id.hint')} hintMode="tooltip">
           <input className={inputClass} value={config.id} spellCheck={false} readOnly={locked || disabled} onChange={(e) => onPatch({ id: e.target.value })} />
         </FormField>
-        <FormField className={styles.fieldSpan3} label={t('form.name.label')} hint={t('form.name.hint')} hintMode="tooltip">
+        <FormField className={styles.fieldSpan4} label={t('form.name.label')} hint={t('form.name.hint')} hintMode="tooltip">
           <input className={inputClass} value={config.name ?? ''} spellCheck={false} readOnly={disabled} onChange={(e) => onPatch({ name: e.target.value })} />
         </FormField>
-        <OptionField t={t} className={styles.fieldSpan3} label={t('form.layer.label')} hint={t('form.layer.hint')} value={config.layer} options={meta.layers} fallback="pre-step" labelKeys={LAYER_LABEL_KEYS} disabled={locked || disabled} onChange={(value) => onPatch(layerChangePatch(meta, config, value))} />
-        <OptionField t={t} className={styles.fieldSpan3} label={t('form.strategy.label')} hint={t('form.strategy.hint')} value={strategy} options={strategies} fallback="static" labelKeys={STRATEGY_LABEL_KEYS} disabled={locked || disabled} onChange={(value) => onPatch({ strategy: value, fill: value === 'placeholder' ? (config.fill ?? (instructionHint ? 'instruction-hint' : 'env-facts')) : undefined })} />
+        <OptionField t={t} className={styles.fieldSpan4} label={t('form.layer.label')} hint={t('form.layer.hint')} value={config.layer} options={meta.layers} fallback="pre-step" labelKeys={LAYER_LABEL_KEYS} disabled={locked || disabled} onChange={(value) => onPatch(layerChangePatch(meta, config, value))} />
       </div>
       {locked && (
         <>
@@ -185,12 +176,32 @@ export function PromptConfigForm(props: {
       )}
       </section>
 
-      <section className={styles.configSection} aria-label={t('form.section.rules')}>
-      <h4 className={styles.configSectionTitle}>{t('form.section.rules')}</h4>
+      <PromptConfigNavigation t={t} layer={config.layer ?? 'pre-step'} renderLayerSettings={props.renderLayerSettings === undefined ? undefined : () => <>
+        <h4 className={styles.configSectionTitle}>{t('form.layerSettings.label', { layer: translateLabel(t, LAYER_LABEL_KEYS, config.layer ?? 'pre-step') })}</h4>
+        <p className={styles.configFieldHint}>{t('form.layerSettings.hint', { layer: translateLabel(t, LAYER_LABEL_KEYS, config.layer ?? 'pre-step') })}</p>
+        <div className={styles.configGrid}>{props.renderLayerSettings?.(config.layer ?? 'pre-step', config)}</div>
+      </>}>
+      {(conditional || policy.promotion || policy.audience || policy.modelScope) && <section className={styles.configSection} data-config-panel="conditions" aria-label={t('form.navigation.conditions')}>
+        <h4 className={styles.configSectionTitle}>{t('form.navigation.conditions')}</h4>
+        <div className={styles.configGrid}>
+          {policy.promotion && <OptionField t={t} className={styles.fieldSpan6} label={t('form.promotion.label')} hint={t('form.promotion.hint')} value={config.promotion} options={meta.promotions} fallback="none" labelKeys={PROMOTION_LABEL_KEYS} disabled={disabled} onChange={(value) => onPatch({ promotion: value })} />}
+          {policy.audience && <OptionField t={t} className={styles.fieldSpan6} label={t('form.audience.label')} hint={t('form.audience.hint')} value={config.audience ?? undefined} options={['', ...meta.audienceModes]} fallback="" labelKeys={AUDIENCE_LABEL_KEYS} disabled={disabled} onChange={(value) => onPatch(value === '' ? { audience: null } : { audience: value })} />}
+          {policy.modelScope && <OptionField t={t} className={styles.fieldSpan6} label={t('form.modelScope.label')} hint={t('form.modelScope.hint')} value={config.modelScope} options={meta.modelScopes} fallback="all" labelKeys={MODEL_SCOPE_LABEL_KEYS} disabled={disabled || isManagedConfigField(config, 'modelScope')} onChange={(value) => { if (!isManagedConfigField(config, 'modelScope')) onPatch({ modelScope: value }) }} />}
+          {conditional && <>
+            <p className={clsx(styles.configFieldLabel, styles.fieldFull)}>{t('form.match.group')}</p>
+            <OptionField t={t} className={styles.fieldSpan6} label={t('form.subject.label')} hint={t('form.subject.hint')}
+              value={config.subject} options={['', ...(contract?.subjects ?? meta.subjects ?? [])]} fallback="" labelKeys={SUBJECT_LABEL_KEYS} disabled={disabled}
+              onChange={(value) => onPatch({ subject: value === '' ? undefined : value })} />
+            {config.subject === undefined && defaultSubject !== undefined && <p className={clsx(styles.configFieldHint, styles.fieldFull)}>{t('form.subject.defaultHint', { value: translateLabel(t, SUBJECT_LABEL_KEYS, defaultSubject) })}</p>}
+            <MatchFields t={t} value={config.match} disabled={disabled} onChange={(value) => onPatch({ match: value })} />
+          </>}
+        </div>
+      </section>}
+      <section className={styles.configSection} data-config-panel="execution" aria-label={t('form.navigation.execution')}>
+      <h4 className={styles.configSectionTitle}>{t('form.navigation.execution')}</h4>
       <div className={styles.configGrid}>
+        <OptionField t={t} className={styles.fieldSpan6} label={t('form.strategy.label')} hint={t('form.strategy.hint')} value={strategy} options={strategies} fallback="static" labelKeys={STRATEGY_LABEL_KEYS} disabled={locked || disabled} onChange={(value) => onPatch({ strategy: value, fill: value === 'placeholder' ? (config.fill ?? (instructionHint ? 'instruction-hint' : 'env-facts')) : undefined })} />
         <OptionField t={t} className={styles.fieldSpan3} label={t('form.kind.label')} hint={t('form.kind.hint')} value={config.configKind} options={meta.slotKinds} fallback="ordered" labelKeys={SLOT_KIND_LABEL_KEYS} disabled={locked || disabled} onChange={(value) => onPatch({ configKind: value })} />
-        {policy.role && <OptionField t={t} className={styles.fieldSpan2} label={t('form.role.label')} hint={t('form.role.hint')} value={config.role} options={meta.roles} fallback="user" labelKeys={ROLE_LABEL_KEYS} disabled={locked || disabled} onChange={(value) => onPatch({ role: value })} />}
-        {policy.role && roleDowngraded && <p className={clsx(styles.configFieldHint, styles.fieldSpan9)}>{t('form.role.downgraded')}</p>}
         {policy.position && <OptionField t={t} className={styles.fieldSpan3} label={t('form.position.label')} hint={t('form.position.hint')} value={config.position} options={meta.positions} fallback="after-user" labelKeys={POSITION_LABEL_KEYS} disabled={disabled} onChange={(value) => onPatch({ position: value })} />}
         {policy.merge && <OptionField t={t} className={styles.fieldSpan2} label={t('form.merge.label')} hint={t('form.merge.hint')} value={config.mergeMode} options={meta.mergeModes} fallback="separate" labelKeys={MERGE_MODE_LABEL_KEYS} disabled={locked || disabled} onChange={(value) => onPatch({ mergeMode: value })} />}
         {policy.order && <NumberField t={t} className={officialOrderOptions === undefined ? styles.fieldSpan2 : styles.fieldSpan6} label={t('form.order.label')} hint={t('form.order.hint')}
@@ -208,33 +219,7 @@ export function PromptConfigForm(props: {
           </HintTooltip>
         </div>
         {policy.dedupe && <OptionField t={t} className={styles.fieldSpan4} label={t('form.dedupe.label')} hint={t('form.dedupe.hint')} value={config.dedupe} options={meta.dedupes} fallback="none" labelKeys={DEDUPE_LABEL_KEYS} disabled={locked || disabled} onChange={(value) => onPatch({ dedupe: value })} />}
-        {conditional && (
-          <>
-            <p className={clsx(styles.configFieldLabel, styles.fieldFull)}>{t('form.match.group')}</p>
-            <OptionField t={t} className={styles.fieldSpan3} label={t('form.subject.label')} hint={t('form.subject.hint')}
-              value={config.subject} options={['', ...(contract?.subjects ?? meta.subjects ?? [])]} fallback="" labelKeys={SUBJECT_LABEL_KEYS} disabled={disabled}
-              onChange={(value) => onPatch({ subject: value === '' ? undefined : value })} />
-            {config.subject === undefined && defaultSubject !== undefined && (
-              <p className={clsx(styles.configFieldHint, styles.fieldSpan9)}>{t('form.subject.defaultHint', { value: translateLabel(t, SUBJECT_LABEL_KEYS, defaultSubject) })}</p>
-            )}
-            <MatchFields t={t} value={config.match} disabled={disabled} onChange={(value) => onPatch({ match: value })} />
-          </>
-        )}
       </div>
-      </section>
-
-      {(policy.promotion || policy.audience || policy.modelScope) && (
-        <section className={styles.configSection} aria-label={t('form.section.scope')}>
-          <h4 className={styles.configSectionTitle}>{t('form.section.scope')}</h4>
-          <div className={styles.configGrid}>
-            {policy.promotion && <OptionField t={t} className={styles.fieldSpan3} label={t('form.promotion.label')} hint={t('form.promotion.hint')} value={config.promotion} options={meta.promotions} fallback="none" labelKeys={PROMOTION_LABEL_KEYS} disabled={disabled} onChange={(value) => onPatch({ promotion: value })} />}
-            {policy.audience && <OptionField t={t} className={styles.fieldSpan6} label={t('form.audience.label')} hint={t('form.audience.hint')} value={config.audience ?? undefined} options={['', ...meta.audienceModes]} fallback="" labelKeys={AUDIENCE_LABEL_KEYS} disabled={disabled} onChange={(value) => onPatch(value === '' ? { audience: null } : { audience: value })} />}
-            {policy.modelScope && <OptionField t={t} className={styles.fieldSpan3} label={t('form.modelScope.label')} hint={t('form.modelScope.hint')} value={config.modelScope} options={meta.modelScopes} fallback="all" labelKeys={MODEL_SCOPE_LABEL_KEYS} disabled={disabled || isManagedConfigField(config, 'modelScope')} onChange={(value) => { if (!isManagedConfigField(config, 'modelScope')) onPatch({ modelScope: value }) }} />}
-          </div>
-        </section>
-      )}
-
-      <section className={styles.configSection} aria-label={t('form.section.strategy')}>
       <h4 className={styles.configSectionTitle}>{t('form.section.strategy')}</h4>
       <fieldset disabled={disabled} className={clsx(styles.configGrid, styles.strategyGrid, styles.configFieldset)}>
         {placeholder && (
@@ -244,8 +229,9 @@ export function PromptConfigForm(props: {
       </fieldset>
       </section>
 
-      {showContent && <section className={styles.configSection} aria-label={t('form.section.content')}>
+      {(showContent || showMetadata) && <section className={styles.configSection} data-config-panel="content" aria-label={t('form.section.content')}>
       <h4 className={styles.configSectionTitle}>{t('form.section.content')}</h4>
+      {showContent && <>
       {locked && textReadOnly && <p className={styles.configFieldHint}>{t('form.text.fileReadOnly')}</p>}
       <FormField label={t(contentLabel)} hint={t(contentKind === 'text' ? 'form.text.hint' : 'form.text.actionHint')} hintMode="tooltip">
         <textarea
@@ -269,23 +255,11 @@ export function PromptConfigForm(props: {
         />
       </FormField>
       {!locked && contract?.variables !== false && <VariablesEditor t={t} value={config.variables} disabled={disabled} onChange={(value) => onPatch({ variables: value })} />}
-      </section>}
-
-      {/* 本层引擎设置：同层每张卡都显示同一份值（同源同步），默认折叠且折叠时不渲染内容。 */}
-      {props.renderLayerSettings !== undefined && (
-        <details className={clsx(styles.configAdvanced, styles.layerSettingsPanel)} open={layerSettingsOpen} data-layer-settings={config.layer ?? 'pre-step'}
-          onToggle={(event) => setLayerSettingsOpen(event.currentTarget.open)}>
-          <summary className={styles.configAdvancedSummary}>
-            {t('form.layerSettings.label', { layer: translateLabel(t, LAYER_LABEL_KEYS, config.layer ?? 'pre-step') })}
-          </summary>
-          <p className={styles.configFieldHint}>{t('form.layerSettings.hint', { layer: translateLabel(t, LAYER_LABEL_KEYS, config.layer ?? 'pre-step') })}</p>
-          {layerSettingsOpen && <div className={styles.configGrid}>{props.renderLayerSettings(config.layer ?? 'pre-step', config)}</div>}
-        </details>
-      )}
-
-      {(showMetadata || showContent) && <details className={styles.configAdvanced} open={advancedOpen} onToggle={(event) => setAdvancedOpen(event.currentTarget.open)}>
-        <summary className={styles.configAdvancedSummary}>{advancedCount > 0 ? t('form.advanced.setCount', { count: advancedCount }) : t('form.advanced.label')}</summary>
+      </>}
+      <h4 className={styles.configSectionTitle}>{t('form.advanced.label')}</h4>
         <div className={styles.configGrid}>
+          {policy.role && <OptionField t={t} className={styles.fieldSpan3} label={t('form.role.label')} hint={t('form.role.hint')} value={config.role} options={meta.roles} fallback="user" labelKeys={ROLE_LABEL_KEYS} disabled={locked || disabled} onChange={(value) => onPatch({ role: value })} />}
+          {policy.role && roleDowngraded && <p className={clsx(styles.configFieldHint, styles.fieldFull)}>{t('form.role.downgraded')}</p>}
           {showMetadata && <OptionField t={t} className={styles.fieldSpan3} label={t('form.sourceKind.label')} hint={t('form.sourceKind.hint')} value={config.sourceKind} options={SOURCE_KINDS} fallback="" keepCurrent labelKeys={SOURCE_KIND_LABEL_KEYS} disabled={locked || disabled} onChange={(value) => onPatch({ sourceKind: value || undefined })} />}
           {showMetadata && <OptionField t={t} className={styles.fieldSpan3} label={t('form.form.label')} hint={t('form.form.hint')} value={config.form} options={SOURCE_FORMS} fallback="notice" keepCurrent labelKeys={SOURCE_FORM_LABEL_KEYS} disabled={locked || disabled} onChange={(value) => onPatch({ form: value || undefined })} />}
           {!locked && (
@@ -300,7 +274,8 @@ export function PromptConfigForm(props: {
             </>
           )}
         </div>
-      </details>}
+      </section>}
+      </PromptConfigNavigation>
     </div>
   )
 }

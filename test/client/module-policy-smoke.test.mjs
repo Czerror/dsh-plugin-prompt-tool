@@ -132,6 +132,8 @@ before(async () => {
     await sleep(50)
   }
   edit = async (selector, value) => {
+    await evaluate(`(()=>{const field=document.querySelector(${JSON.stringify(selector)}),panel=field?.closest('[role="tabpanel"]');if(panel?.hidden)document.getElementById(panel.getAttribute('aria-labelledby')).click()})()`)
+    await sleep(20)
     await evaluate(`(()=>{const input=document.querySelector(${JSON.stringify(selector)});input.focus();input.select();return true})()`)
     await send('Input.insertText', { text: value })
   }
@@ -166,7 +168,7 @@ async function openLayerSettings(layer, label) {
   const card = `[data-config-id="${id}"]`
   await evaluate(`(()=>{const button=document.querySelector('${card} header button[aria-expanded]');if(button?.getAttribute('aria-expanded')==='false')button.click()})()`)
   await waitFor(`document.querySelector('${card} [data-layer-settings="${layer}"]') !== null`)
-  await evaluate(`(()=>{const details=document.querySelector('${card} [data-layer-settings="${layer}"]');if(!details.open)details.querySelector('summary').click()})()`)
+  await evaluate(`document.querySelector('${card} [data-config-tab="settings"]').click()`)
   await waitFor(`document.querySelector('[data-layer-settings-content="${layer}"]') !== null`)
 }
 
@@ -354,7 +356,7 @@ test('浏览器：工具模板切换实例锚点，Escape关闭后回到原按�
   for (const id of ['pipe-a', 'pipe-b']) {
     await evaluate(`document.querySelector('[data-config-id="${id}"] header button[aria-expanded]').click()`)
     await waitFor(`document.querySelector('[data-config-id="${id}"] [data-layer-settings]') !== null`)
-    await evaluate(`document.querySelector('[data-config-id="${id}"] [data-layer-settings] summary').click()`)
+    await evaluate(`document.querySelector('[data-config-id="${id}"] [data-config-tab="settings"]').click()`)
     await waitFor(`document.querySelector('[data-config-id="${id}"] [data-layer-asset="custom-tools"]') !== null`)
     await evaluate(`(()=>{window.clickedToolTrigger=[...document.querySelector('[data-config-id="${id}"] [data-layer-asset="custom-tools"]').querySelectorAll('button')].find(b=>b.textContent==='添加工具模板…');Object.assign(window.clickedToolTrigger.style,{position:'fixed',left:'220px',top:'400px'});window.clickedToolTrigger.click()})()`)
     await waitFor(`document.querySelector('[role="dialog"][aria-label="选择内置模板"]')?.style.visibility !== 'hidden' && document.querySelector('[role="dialog"][aria-label="选择内置模板"]') !== null`)
@@ -444,7 +446,7 @@ test('浏览器：六层空卡、跨层工具创建、筛选草稿与能力卡�
   await waitFor(`document.querySelector('[data-config-id]') !== null`)
   await evaluate(`document.querySelector('[data-config-id] header button[aria-expanded]').click(); true`)
   await waitFor(`document.querySelector('[data-layer-settings="runtime-context"]') !== null`)
-  await evaluate(`document.querySelector('[data-layer-settings="runtime-context"] summary').click(); true`)
+  await evaluate(`document.querySelector('[data-layer-settings="runtime-context"]').closest('[data-config-layer]').querySelector('[data-config-tab="settings"]').click(); true`)
   await waitFor(`document.querySelector('[data-layer-asset="variables"]') !== null`)
   await evaluate(`[...document.querySelector('[data-layer-asset="variables"]').querySelectorAll('button')].find(button=>button.textContent==='添加').click()`)
   await waitFor(`document.querySelector('[aria-label="模板变量名"]')!==null`)
@@ -624,7 +626,7 @@ test('浏览器：复审修复覆盖创建、搜索、只读和折叠的生产�
   const openSettings = async (id, layer) => {
     await evaluate(`document.querySelector('[data-config-id="${id}"] header button[aria-expanded]').click()`)
     await waitFor(`document.querySelector('[data-layer-settings="${layer}"]') !== null`)
-    await evaluate(`document.querySelector('[data-layer-settings="${layer}"] summary').click()`)
+    await evaluate(`document.querySelector('[data-layer-settings="${layer}"]').closest('[data-config-layer]').querySelector('[data-config-tab="settings"]').click()`)
   }
   await t.test('层内工具连续创建立即生成独立草稿，切页保留不重放且不保存', async () => {
     for (const page of ['main', 'subagent']) {
@@ -737,7 +739,7 @@ test('浏览器：参数镜像控件同步半成品输入与错误态，一次�
   const openSettings = async (id) => {
     await evaluate(`document.querySelector('[data-config-id="${id}"] header button[aria-expanded]').click(); true`)
     await waitFor(`document.querySelector('[data-config-id="${id}"] [data-layer-settings="tool-pipeline"]') !== null`)
-    await evaluate(`document.querySelector('[data-config-id="${id}"] [data-layer-settings="tool-pipeline"] summary').click(); true`)
+    await evaluate(`document.querySelector('[data-config-id="${id}"] [data-config-tab="settings"]').click(); true`)
   }
   const primary = '#pt-param-layer-tool-pipeline-mirror-a-str-replace-editor-strReplaceEditorMaxOutputChars'
   const mirror = '#pt-param-layer-tool-pipeline-mirror-b-str-replace-editor-strReplaceEditorMaxOutputChars'

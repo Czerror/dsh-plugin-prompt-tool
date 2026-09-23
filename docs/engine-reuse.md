@@ -134,7 +134,7 @@
 |---|---|---|
 | `instruction-hint` | engine/instruction-hint.mjs | 通用指令文件解析：`params.text` 自定义提示 → `params.file` 运行时读该文件正文（`Instructions from:` 头）→ `params.scope`（all / global / project）只发文件存在提示。**自带 plugin 形态**：挂本行并 `enabled: true`，即在晋升后把 agent-instructions 全文换成一次性 hint（原 `context-gate.instructionHint` 的归属；参数桥 `params.instructionHint` → 本行 `enabled`）；prompt-config 的 resolver 与本行共用同一实现 |
 | `declared-triggers` | engine/declared-triggers.mjs | 触发器声明入口：读 `triggers.yml`（preset.yml 顶层 `triggers` 段的物化产物）→ 编译 → 注册；有声明时由 `writePreset` 自动装配 |
-| （纯模块） | engine/trigger-spec.mjs / engine/actions.mjs / engine/predicates.mjs | 触发器引擎：声明编译器（校验 / 稳定排序 / 挂载）、七类动作（`inject-text` / `assembly` / `decision` / `append-context` / `guard` / `sdk-strip` / `request-params`）、条件谓词（`text` / `phase` / `source` / `count` / `names` / `session` / `preset` + `any` / `all` / `not` / `notAny`） |
+| （纯模块） | engine/trigger-spec.mjs / engine/actions.mjs / engine/predicates.mjs | 触发器引擎：声明编译器（校验 / 稳定排序 / 挂载）、九类动作（`inject-text` / `assembly` / `decision` / `append-context` / `guard` / `sdk-strip` / `request-params` / `inbox-prepend` / `pre-step-filter`）、条件谓词（`text` / `phase` / `source` / `count` / `names` / `session` / `preset` + `any` / `all` / `not` / `notAny`） |
 | `prompt-config-engine` | engine/prompt-config-engine.mjs | 提示词配置执行器（per-config `promotion: main / include-subagents` 门控） |
 | `tool-config-engine` | engine/tool-config-engine.mjs | 自定义工具引擎：preset.yml `customTools` 段 → 官方转换器物化标准 JSON Schema（`custom-tools/*.yml`）→ 运行时 `ctx.tools.register`（执行器 shell/http/delegate/fs/ask-user；行 `requireApproval` 门；delegate 经 `ctx.tools.execute` 嵌套调度走完整官方工具管线） |
 | `subagent-tool-policy` | engine/subagent-tool-policy.mjs | generation-scoped subagent/subagent_fork shadow：只安装到当前预设后代；spawn/fork 分别绑定官方 provider，foreground 读取 `SubagentRun.result`，continuable 读取 `childId` 并传顶层 signal；实例参数在 body 前校验，扩权经 approval 门，provider 能力不足 fail loud |
@@ -142,6 +142,16 @@
 | （纯模块） | engine/classify-task.mjs | `createOrderedTaskClassifier`：有序正则任务规则确定性分类（taskRules order 升序，首个命中生效） |
 | character-tools / world-book-tools / session-var-tools | engine/character-tools.mjs / engine/world-book-tools.mjs / engine/session-var-tools.mjs | 按预设模块分别挂载角色卡、世界书、会话变量模型工具；宿主只提供注册服务，工具随 agent scope 生命周期清理 |
 | `compaction-epoch` | engine/compaction-epoch.mjs | 晋升状态机（`phase` 谓词与既有注入路径共用；非插件行） |
+
+## 声明的条件与动作边界
+
+`when` 是判断树，`do` 接受单个动作或同一执行点上的动作数组。`channel`、`phase` 必须与动作真实执行点一致，`channelOrder` 只比较同一通道内的声明，不建立跨插入点顺序。
+
+`inject-text` 与 `guard` 不接受顶层 `when`、`waterfallPosition: outermost` 或 `maxPerTurn`；编译器明确拒绝这些组合。文本注入仍可使用提示词配置自身的条件、晋升、受众和模型范围。其他七类动作支持通用判断。未声明 `modelScope` 的请求参数动作沿用非 Flash 范围，需要所有模型时显式写 `all`。
+
+纯数据 `inject-text.config` 在动作准备阶段复用 `createPromptConfigs()`，保存期与运行期均校验；已有预编译配置的编程调用仍保留 resolver。引擎代码始终从已安装插件包解析；声明中的 `templateFile` 相对实际 `triggers.yml` 解析（例如 `./assets/notice.txt`），读取边界由注册层显式注入的 `presetRoot` 提供。独立使用未提供根时，边界仅为声明文件所在目录。自定义策略目录由该预设 `declared-triggers` 行的 `strategyDir` 提供，也相对声明文件解析；保存期通过 `promptConfigOptions` 传递同一基准。该链路不依赖物化的 `.engine/` 目录，也不从包内引擎位置反推数据目录。
+
+`trigger-editor-meta.mjs#getTriggerEditorMeta()` 从实际判断与动作目录派生可序列化编辑选项和示例，示例通过声明编译器验证；它不启用任何规则，也不提供运行时命中预览。当前可配置面不包含任意自定义判断算法，历史未迁移项仍以上文清单为准。
 
 ## pre-step 消息角色出口（2026-09-17）
 

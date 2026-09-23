@@ -131,6 +131,8 @@ for (const [channel, action, error] of [
   ['agent/request', { kind: 'request-params', patch: [] }, /patch must be an object/],
   ['agent/inbox/inserted', { kind: 'inbox-prepend', text: null }, /text must be a string/],
   ['agent/pre-step', { kind: 'pre-step-filter', sources: [], keepKinds: [] }, /cannot combine sources with keepKinds/],
+  ['agent/pre-step', { kind: 'inject-text', config: { layer: 'pre-step', text: 'MISSING ID' } }, /id must be a non-empty string/],
+  ['agent/pre-step', { kind: 'inject-text', config: { id: 'invalid', layer: 'pre-step', match: { keys: [] } } }, /at least one non-empty key/],
 ]) {
   test(`compileDeclarations：保存前拒绝非法动作 ${JSON.stringify(action)}`, () => {
     assert.throws(() => compileDeclarations([{ id: 'invalid', channel, do: action }]), error)
@@ -207,10 +209,10 @@ test('声明通道与阶段必须匹配动作真实执行点，错误组合编�
     do: [{ kind: 'decision', phase: 'post', action: 'block' }, { kind: 'append-context', text: 'NOTICE' }],
   }), /phase.*after-next/)
   assert.throws(() => compileDeclaration({
-    id: 'inject', channel: 'agent/pre-step', do: { kind: 'inject-text', config: { layer: 'system-section' } },
+    id: 'inject', channel: 'agent/pre-step', do: { kind: 'inject-text', config: { id: 'inject', layer: 'system-section' } },
   }), /channel.*system-prompt\/assemble/)
   assert.throws(() => compileDeclaration({
-    id: 'pipeline', channel: 'tools/pre-execute', do: { kind: 'inject-text', config: { layer: 'tool-pipeline' } },
+    id: 'pipeline', channel: 'tools/pre-execute', do: { kind: 'inject-text', config: { id: 'pipeline', layer: 'tool-pipeline' } },
   }), /no single trigger channel/)
   for (const [channel, phase, action] of [
     ['tools/post-execute', 'before-next', { kind: 'decision', phase: 'post', action: 'block' }],

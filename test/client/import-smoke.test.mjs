@@ -263,7 +263,7 @@ test('浏览器：子代理筛选、模板创建与只读边界保持', { skip: 
   await waitFor('document.querySelector("[data-config-id=tool-config]") !== null')
   await evaluate('document.querySelector("[data-config-id=tool-config] header button[aria-expanded]").click(); true')
   await waitFor('document.querySelector("[data-config-id=tool-config] [data-layer-settings=tool-pipeline]") !== null')
-  await evaluate('document.querySelector("[data-config-id=tool-config] [data-layer-settings=tool-pipeline] summary").click(); true')
+  await evaluate('document.querySelector("[data-config-id=tool-config] [data-config-tab=settings]").click(); true')
   await waitFor('document.querySelector("[data-layer-settings-content=tool-pipeline]") !== null')
   assert.equal(await evaluate('document.querySelector("[data-layer-capability=subagent-tool-policy]") !== null'), true, '层级配置卡列出本层已装配能力')
   assert.equal(await evaluate('document.querySelector("[data-layer-capability=anchor-turn]") === null'), true, '只列本层能力，不列其他层')

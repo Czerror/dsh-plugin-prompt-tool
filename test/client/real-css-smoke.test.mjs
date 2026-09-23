@@ -10,6 +10,7 @@ import { spawn } from 'node:child_process'
 import { once } from 'node:events'
 import { setTimeout as delay } from 'node:timers/promises'
 import { getEngineMeta } from '../../engine/schema.mjs'
+import { getTriggerEditorMeta } from '../../engine/trigger-editor-meta.mjs'
 
 const root = fileURLToPath(new URL('../../', import.meta.url))
 const require = createRequire(join(root, 'package.json'))
@@ -28,10 +29,11 @@ import {LayerSettingsContent} from ${JSON.stringify(join(root, 'src/client/app/w
 import {EMPTY_FIELDS} from ${JSON.stringify(join(root, 'src/client/data/prompt-tool-fields.ts').replaceAll('\\', '/'))};
 import {createWorkspaceDrafts,hasWorkspaceDrafts} from ${JSON.stringify(join(root, 'src/client/data/workspace-drafts.ts').replaceAll('\\', '/'))};
 import {PROMPT_TOOL_DICTS} from ${JSON.stringify(join(root, 'src/client/locales.ts').replaceAll('\\', '/'))};
+import {TriggerRulesEditor} from ${JSON.stringify(join(root, 'src/client/features/triggers/TriggerRulesEditor.tsx').replaceAll('\\', '/'))};
 const t=(key,params={})=>Object.entries(params).reduce((text,[name,value])=>text.replaceAll('{'+name+'}',String(value)),PROMPT_TOOL_DICTS.zh[key]??key);
 function Settings(){
  const [,render]=React.useReducer(n=>n+1,0);
- const [configs,setConfigs]=React.useState(()=>['pre-step','tool-pipeline','system-section'].map(layer=>({id:'layout-'+layer,layer,strategy:'static',order:0,text:'布局验收'})));
+ const [configs,setConfigs]=React.useState(()=>['pre-step','tool-pipeline','system-section'].map(layer=>({id:'layout-'+layer,layer,strategy:'static',order:0,text:'布局验收',...(layer==='tool-pipeline'?{params:{stMacros:true}}:{})})));
  const store=React.useMemo(()=>({fields:{...EMPTY_FIELDS,presetTemplate:'layout',writePreset:true},moduleFacts:{sourceMode:'explicit',editable:true,declaredModules:['filesystem-editor'],effectiveModules:['filesystem-editor'],rowIds:[]},editorDrafts:createWorkspaceDrafts(),publishDrafts:()=>render(),patch:next=>{Object.assign(store.fields,next);render()},persistParamOverrides:async()=>{window.paramWrites=(window.paramWrites??0)+1},removeEngineCapability:async()=>true}),[]);
  window.settingsStore=store;
  window.hasDrafts=()=>hasWorkspaceDrafts(store.editorDrafts,'layout');
@@ -44,9 +46,28 @@ const cards=names.map((name,index)=>
 React.createElement('article',{key:name,style:{width:'240px'},'data-card':index},React.createElement('div',{className:ui.presetCardHead},
 React.createElement('strong',{className:ui.presetCardName},name),React.createElement(StatusBadge,{className:ui.presetHeadBadge,tone:'success',label:'使用中'}))));
 function Filter(){const [value,setValue]=React.useState('all');return React.createElement(MenuSelect,{value,ariaLabel:'按层级或策略过滤',options:[{value:'all',label:'全部'},{value:'world-book',label:'世界书',group:'内容策略'},{value:'pre-step',label:'前置步骤',group:'插入点'},{value:'system-section',label:'系统提示段',group:'插入点'}],onChange:next=>{window.filterValue=next;setValue(next)}})}
+const triggerState={revision:'revision-1',triggers:[{id:'budget',channel:'agent/request',do:{kind:'request-params',patch:{maxTokens:64},modelScope:'all'}}]};
+window.triggerMeta=${JSON.stringify(getTriggerEditorMeta())};
+window.triggerWrites=0;window.triggerChecks=0;window.triggerConflict=false;
+const nativeFetch=window.fetch;
+window.fetch=async(url,init)=>{
+ if(!String(url).endsWith('/triggers'))return nativeFetch(url,init);
+ const body=JSON.parse(init.body);
+ if(body.triggers){
+  if(body.validateOnly)window.triggerChecks++;
+  else if(window.triggerConflict)return new Response(JSON.stringify({ok:false,code:'triggers-conflict',message:'conflict'}),{status:409});
+  else {window.triggerWrites++;triggerState.triggers=body.triggers;triggerState.revision='revision-'+(window.triggerWrites+1)}
+ }
+ return new Response(JSON.stringify({ok:true,value:{...triggerState,meta:window.triggerMeta}}),{status:200});
+};
+function TriggerFixture(){
+ const store=React.useMemo(()=>{let revision=0;const listeners=new Set();const fields={...EMPTY_FIELDS,presetTemplate:'layout',writePreset:true};return {fields,getFields:()=>fields,subscribeFields:()=>()=>{},editorDrafts:createWorkspaceDrafts(),moduleFacts:{editable:true},getDraftRevision:()=>revision,subscribeDrafts:fn=>{listeners.add(fn);return()=>listeners.delete(fn)},publishDrafts:()=>{revision++;listeners.forEach(fn=>fn())},enqueuePresetTask:(_id,task)=>task()}},[]);
+ window.triggerStore=store;
+ return React.createElement('section',{'data-trigger-host':true,style:{width:'860px',maxWidth:'100%',containerType:'inline-size',containerName:'prompt-form'}},React.createElement(TriggerRulesEditor,{store,t}));
+}
 createRoot(document.getElementById('root')).render(React.createElement(React.Fragment,null,...cards,
 React.createElement('section',{className:ui.settingRowStack,hidden:true,'data-hidden-group':true},'隐藏参数组'),
-React.createElement('section',{className:ui.pageActions,'data-sticky':true},'模块列表 / 保存配置',React.createElement(Filter)),React.createElement(Settings)));`
+React.createElement('section',{className:ui.pageActions,'data-sticky':true},'模块列表 / 保存配置',React.createElement(Filter)),React.createElement(Settings),React.createElement(TriggerFixture)));`
   const bundle = await rolldown({ input: 'badge-fixture', platform: 'browser', transform: { define: { 'process.env.NODE_ENV': '"production"', 'process.env': '{}', 'import.meta.env': '{}' } },
     plugins: [{ name: 'real-badge-css',
       resolveId(source, importer) {
@@ -122,7 +143,7 @@ React.createElement('section',{className:ui.pageActions,'data-sticky':true},'模
     await pointerClick('[data-target-filter="true"]')
     assert.equal(await evaluate('window.filterValue'), 'system-section', JSON.stringify(await evaluate('window.trace')))
 
-    // 生产表单默认折叠；用键盘打开后才创建本层参数控件。
+    // 本层设置首次进入才挂载；ARIA 导航支持方向键、Home/End 与关联面板。
     assert.equal(await evaluate(`document.querySelector('[data-layer-settings-content]') === null`), true)
     await send('Emulation.setDeviceMetricsOverride', { width: 1024, height: 900, deviceScaleFactor: 1, mobile: false })
     const pressKey = async (key, code, windowsVirtualKeyCode, text) => {
@@ -132,11 +153,24 @@ React.createElement('section',{className:ui.pageActions,'data-sticky':true},'模
       await delay(40)
     }
     for (const layer of ['pre-step', 'tool-pipeline']) {
-      await evaluate(`document.querySelector('[data-layer-settings="${layer}"] summary').focus()`)
-      await pressKey('Enter', 'Enter', 13, '\r')
-      assert.equal(await evaluate(`document.querySelector('[data-layer-settings="${layer}"]').open`), true)
+      await evaluate(`document.querySelector('[data-form-layer="${layer}"] [data-config-tab="conditions"]').focus()`)
+      await pressKey('End', 'End', 35)
+      assert.equal(await evaluate(`document.activeElement.dataset.configTab`), 'settings')
+      assert.equal(await evaluate(`document.querySelector('[data-layer-settings="${layer}"]').hidden`), false)
     }
     assert.equal(await evaluate(`document.querySelectorAll('[data-layer-settings-content]').length`), 2)
+    await pressKey('Home', 'Home', 36)
+    assert.equal(await evaluate('document.activeElement.dataset.configTab'), 'conditions')
+    await pressKey('ArrowDown', 'ArrowDown', 40)
+    assert.equal(await evaluate('document.activeElement.dataset.configTab'), 'execution')
+    await pressKey('ArrowUp', 'ArrowUp', 38)
+    assert.equal(await evaluate('document.activeElement.dataset.configTab'), 'conditions')
+    await pressKey('ArrowRight', 'ArrowRight', 39)
+    assert.equal(await evaluate('document.activeElement.dataset.configTab'), 'execution')
+    await pressKey('ArrowLeft', 'ArrowLeft', 37)
+    assert.equal(await evaluate('document.activeElement.dataset.configTab'), 'conditions')
+    await pressKey('End', 'End', 35)
+    assert.equal(await evaluate(`document.getElementById(document.activeElement.getAttribute('aria-controls')).hidden`), false)
     const themeColors = []
     for (const scheme of ['light', 'dark']) {
       await evaluate(`document.documentElement.style.colorScheme='${scheme}'`)
@@ -144,6 +178,16 @@ React.createElement('section',{className:ui.pageActions,'data-sticky':true},'模
       for (const width of [860, 420, 320]) {
         await evaluate(`document.querySelector('[data-settings-host]').style.width='${width}px'`)
         await delay(40)
+        for (const tab of ['conditions', 'execution', 'content', 'settings']) {
+          await evaluate(`document.querySelector('[data-form-layer="pre-step"] [data-config-tab="${tab}"]').click()`)
+          await delay(20)
+          const navigation = await evaluate(`(()=>{const form=document.querySelector('[data-form-layer="pre-step"]'),tabs=form.querySelector('[role="tablist"]'),panel=form.querySelector('[role="tabpanel"]:not([hidden])'),tr=tabs.getBoundingClientRect(),pr=panel.getBoundingClientRect();return {orientation:tabs.getAttribute('aria-orientation'),horizontal:pr.top>=tr.bottom-1,overflow:form.scrollWidth>form.clientWidth+1,selected:form.querySelectorAll('[role="tab"][aria-selected="true"]').length,tabStops:form.querySelectorAll('[role="tab"][tabindex="0"]').length}})()`)
+          assert.equal(navigation.orientation, width <= 620 ? 'horizontal' : 'vertical')
+          assert.equal(navigation.horizontal, width <= 620, '宽卡左侧导航，窄卡上方标签页')
+          assert.equal(navigation.overflow, false, `所有编辑面板均无横向溢出：${scheme}/${width}/${tab}`)
+          assert.equal(navigation.selected, 1)
+          assert.equal(navigation.tabStops, 1)
+        }
         const forms = await evaluate(`(()=>[...document.querySelectorAll('[data-form-layer]')].map(form=>{const r=form.getBoundingClientRect();return {layer:form.dataset.formLayer,overflow:form.scrollWidth>form.clientWidth+1,outside:[...form.querySelectorAll('input,textarea,button')].filter(e=>e.getClientRects().length).some(e=>{const b=e.getBoundingClientRect();return b.left<r.left-1||b.right>r.right+1})}}))()`)
         assert.equal(forms.length, 3)
         for (const form of forms) {
@@ -154,13 +198,15 @@ React.createElement('section',{className:ui.pageActions,'data-sticky':true},'模
           const layout = await evaluate(`(()=>{const grid=document.querySelector('[data-layer-param-fields="${group}"]');const root=grid.closest('[data-layer-settings-content]');const text=grid.querySelector('textarea')?.closest('[data-param-key]');return {width:root.getBoundingClientRect().width,available:root.parentElement.getBoundingClientRect().width,overflow:root.scrollWidth>root.clientWidth+1,columns:getComputedStyle(grid).gridTemplateColumns.split(' ').length,textWidth:text?.getBoundingClientRect().width,gridWidth:grid.getBoundingClientRect().width,groupWidths:[...root.querySelectorAll('[data-layer-param-group]')].map(e=>e.getBoundingClientRect().width)}})()`)
           assert.ok(layout.width >= layout.available - 2, `设置内容占满外层网格：${JSON.stringify(layout)}`)
           assert.equal(layout.overflow, false, `设置无水平溢出：${scheme}/${width}/${group}`)
-          assert.equal(layout.columns, width > 640 ? 2 : 1, `参数列数：${scheme}/${width}/${group}`)
+          assert.equal(layout.columns, layout.width > 640 ? 2 : 1, `参数列数：${scheme}/${width}/${group}`)
           if (group === 'prompt-defaults') assert.ok(layout.textWidth >= layout.gridWidth - 2, `长文本占整行：${JSON.stringify(layout)}`)
           assert.ok(layout.groupWidths.every(value => value >= layout.width - 4), '每个分组占完整宽度')
         }
       }
     }
     assert.notEqual(themeColors[0], themeColors[1], '表单前景随明暗主题切换')
+    await send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }] })
+    assert.deepEqual(await evaluate(`(()=>{const style=getComputedStyle(document.querySelector('[data-config-tab]'));return [style.animationName,style.transitionDuration]})()`), ['none', '0s'])
     await evaluate(`document.querySelector('[data-layer-param-group="str-replace-editor"]').hidden=true`)
     assert.equal(await evaluate(`getComputedStyle(document.querySelector('[data-layer-param-group="str-replace-editor"]')).display`), 'none')
     await evaluate(`document.querySelector('[data-layer-param-group="str-replace-editor"]').hidden=false`)
@@ -172,6 +218,11 @@ React.createElement('section',{className:ui.pageActions,'data-sticky':true},'模
     assert.equal(await evaluate(`document.querySelector('${number}').getAttribute('aria-invalid')`), 'true')
     assert.equal(await evaluate(`!!document.getElementById(document.querySelector('${number}').getAttribute('aria-describedby'))?.textContent`), true)
     assert.equal(await evaluate('window.paramWrites??0'), 0, '非法数字只展示就地错误')
+    await pointerClick('[data-form-layer="tool-pipeline"] [data-config-tab="execution"]')
+    assert.equal(await evaluate(`getComputedStyle(document.querySelector('[data-layer-settings="tool-pipeline"]')).display`), 'none')
+    assert.equal(await evaluate(`!!document.querySelector('[data-form-layer="tool-pipeline"] [data-config-tab="settings"] [aria-label="有未修正的输入错误"]')`), true)
+    await pointerClick('[data-form-layer="tool-pipeline"] [data-config-tab="settings"]')
+    assert.equal(await evaluate(`document.querySelector('${number}').value`), '12a', '切换视图保留非法数字中间态')
     await evaluate(`document.querySelector('${number}').focus();document.querySelector('${number}').select()`)
     await send('Input.insertText', { text: '120' })
     await evaluate(`document.querySelector('${number}').blur()`)
@@ -190,7 +241,34 @@ React.createElement('section',{className:ui.pageActions,'data-sticky':true},'模
     await pressKey(' ', 'Space', 32, ' ')
     assert.deepEqual(await evaluate('[window.settingsStore.fields.firstTurnAnchor,window.settingsStore.fields.instructionHint,window.paramWrites]'), [true, true, 3])
 
+    // 普通参数 JSON 与内容面板保留同一 DOM 和未完成输入，隐藏控件不在焦点序列。
+    await pointerClick('[data-form-layer="tool-pipeline"] [data-config-tab="execution"]')
+    const jsonInput = '[data-form-layer="tool-pipeline"] [data-config-view="execution"] textarea'
+    await evaluate(`window.jsonNode=document.querySelector('${jsonInput}');window.jsonNode.focus();window.jsonNode.select()`)
+    await send('Input.insertText', { text: '{' })
+    await pointerClick('[data-form-layer="tool-pipeline"] [data-config-tab="conditions"]')
+    assert.equal(await evaluate(`document.querySelector('${jsonInput}').getClientRects().length`), 0)
+    assert.equal(await evaluate(`!!document.querySelector('[data-form-layer="tool-pipeline"] [data-config-tab="execution"] [aria-label="有未修正的输入错误"]')`), true)
+    await pointerClick('[data-form-layer="tool-pipeline"] [data-config-tab="execution"]')
+    assert.equal(await evaluate(`document.querySelector('${jsonInput}')===window.jsonNode && window.jsonNode.value==='{'`), true)
+    await evaluate(`window.jsonNode.focus();window.jsonNode.select()`)
+    await send('Input.insertText', { text: '{"stMacros":true}' })
+    await evaluate('window.jsonNode.blur()')
+    await delay(40)
+    await evaluate('window.configWrites=0')
+    await pointerClick('[data-form-layer="pre-step"] [data-config-tab="content"]')
+    const bodyInput = '[data-form-layer="pre-step"] [data-config-view="content"] textarea[aria-label="注入内容（空 = 不注入）"]'
+    await evaluate(`window.bodyNode=document.querySelector('${bodyInput}');window.bodyNode.focus();window.bodyNode.select()`)
+    await send('Input.insertText', { text: '未完成正文' })
+    await pointerClick('[data-form-layer="pre-step"] [data-config-tab="execution"]')
+    await pointerClick('[data-form-layer="pre-step"] [data-config-tab="content"]')
+    assert.equal(await evaluate(`document.querySelector('${bodyInput}')===window.bodyNode && window.bodyNode.value==='未完成正文'`), true)
+    await pointerClick('[data-form-layer="pre-step"] [data-config-tab="settings"]')
+    await pointerClick('[data-form-layer="tool-pipeline"] [data-config-tab="settings"]')
+    await evaluate('window.configWrites=0')
+
     // 数字与官方位置共用接受值路径：无效草稿不能在快捷选择后继续阻塞预设切换。
+    await pointerClick('[data-form-layer="system-section"] [data-config-tab="execution"]')
     await evaluate(`(()=>{const form=document.querySelector('[data-form-layer="system-section"]');const label=[...form.querySelectorAll('label')].find(e=>e.textContent==='顺序');document.getElementById(label.htmlFor).dataset.orderInput='true'})()`)
     const orderInput = '[data-order-input]'
     const quickOrder = '[data-form-layer="system-section"] [aria-label="插入到官方位置…"]'
@@ -224,22 +302,57 @@ React.createElement('section',{className:ui.pageActions,'data-sticky':true},'模
     await evaluate(`document.querySelector('${orderInput}').blur()`)
     await pointerClick(quickOrder)
     assert.equal(await evaluate(`document.querySelector('[role="menu"]') === null`), true)
-    for (const expected of [false, true]) {
-      await evaluate(`document.querySelector('[data-layer-settings="tool-pipeline"] summary').focus()`)
-      await pressKey('Enter', 'Enter', 13, '\r')
-      assert.equal(await evaluate(`document.querySelector('[data-layer-settings="tool-pipeline"]').open`), expected, '只读时仍可用键盘折叠与展开')
-    }
+    await evaluate(`document.querySelector('[data-form-layer="tool-pipeline"] [data-config-tab="settings"]').focus()`)
+    await pressKey('Home', 'Home', 36)
+    assert.equal(await evaluate(`document.querySelector('[data-layer-settings="tool-pipeline"]').hidden`), true)
+    await pressKey('End', 'End', 35)
+    assert.equal(await evaluate(`document.querySelector('[data-layer-settings="tool-pipeline"]').hidden`), false, '只读时仍可用键盘导航')
     assert.deepEqual(await evaluate(`[document.querySelector('${orderInput}').value,window.configWrites,window.paramWrites]`), ['499', 1, 3], '只读交互不改变值或追加保存')
+    // 规则编辑实际点击、输入、校验、保存与冲突保留；宿主写盘另由 bridge 行为测试覆盖。
+    const ruleButton = async text => {
+      assert.equal(await evaluate(`(()=>{const b=[...document.querySelectorAll('[data-trigger-host] button')].find(e=>e.textContent.trim()===${JSON.stringify(text)});if(!b||b.disabled)return false;b.click();return true})()`), true, text)
+      await delay(60)
+    }
+    const ruleInput = async (label, text) => {
+      await evaluate(`(()=>{const e=document.querySelector('[data-trigger-host] [aria-label="${label}"]');Object.getOwnPropertyDescriptor(e.tagName==='TEXTAREA'?HTMLTextAreaElement.prototype:HTMLInputElement.prototype,'value').set.call(e,${JSON.stringify(text)});e.dispatchEvent(new Event('input',{bubbles:true}))})()`)
+      await delay(40)
+    }
+    assert.equal(await evaluate(`document.querySelector('[data-trigger-host] details')===null`), true, '规则编辑没有再次叠加折叠层')
+    assert.equal(await evaluate(`document.querySelector('[data-trigger-host] [aria-label="输出上限"]')!==null`), true, await evaluate(`document.querySelector('[data-trigger-host]').innerText`))
+    await ruleInput('输出上限', '128')
+    await ruleButton('校验规则')
+    assert.deepEqual(await evaluate('[window.triggerChecks,window.triggerWrites]'), [1,0])
+    await ruleButton('保存规则')
+    assert.equal(await evaluate('window.triggerWrites'), 1)
+    await ruleButton('重新读取')
+    assert.equal(await evaluate(`document.querySelector('[data-trigger-host] [aria-label="输出上限"]').value`), '128')
+    await ruleButton('完整声明 · JSON')
+    await ruleInput('完整声明 · JSON', '{invalid')
+    assert.equal(await evaluate(`document.querySelector('[data-trigger-host] [aria-label="完整声明 · JSON"]').getAttribute('aria-invalid')`), 'true')
+    assert.equal(await evaluate(`[...document.querySelectorAll('[data-trigger-host] button')].find(e=>e.textContent==='保存规则').disabled`), true)
+    await ruleInput('完整声明 · JSON', JSON.stringify({ id: 'budget', channel: 'agent/request', do: { kind: 'request-params', patch: { maxTokens: 256 }, modelScope: 'all' } }))
+    await evaluate('window.triggerConflict=true')
+    await ruleButton('保存规则')
+    assert.match(await evaluate(`document.querySelector('[data-trigger-host] [role="alert"]').textContent`), /变化|冲突/)
+    assert.match(await evaluate(`document.querySelector('[data-trigger-host] [aria-label="完整声明 · JSON"]').value`), /256/)
+    await evaluate('window.triggerConflict=false')
+    await ruleButton('保存规则')
+    await ruleButton('可视编辑')
+    for (const width of [860, 420, 320]) for (const scheme of ['light','dark']) {
+      await evaluate(`document.querySelector('[data-trigger-host]').style.width='${width}px';document.documentElement.style.colorScheme='${scheme}'`)
+      await delay(30)
+      assert.equal(await evaluate(`(()=>{const e=document.querySelector('[data-trigger-host]');return e.scrollWidth>e.clientWidth+1})()`), false, `${width}/${scheme} 规则编辑无溢出`)
+    }
     if (process.env.PROMPT_TOOL_LAYER_SCREENSHOT) {
       await evaluate(`document.querySelector('[data-sticky]').style.position='static'; window.scrollTo(0,0)`)
       await send('Emulation.setDeviceMetricsOverride', { width: 1024, height: 900, deviceScaleFactor: 1, mobile: false })
-      await evaluate(`document.querySelector('[data-settings-host]').style.width='860px'`)
-      for (const scheme of ['light', 'dark']) {
+      for (const width of [860, 420, 320]) for (const scheme of ['light', 'dark']) {
+        await evaluate(`document.querySelector('[data-settings-host]').style.width='${width}px'`)
         await evaluate(`document.documentElement.style.colorScheme='${scheme}'`)
         await delay(40)
         const clip = await evaluate(`(()=>{const r=document.querySelector('[data-settings-host]').getBoundingClientRect();return {x:r.left+scrollX,y:r.top+scrollY,width:r.width,height:r.height,scale:1}})()`)
         const image = await send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: true, clip })
-        writeFileSync(process.env.PROMPT_TOOL_LAYER_SCREENSHOT + '-' + scheme + '.png', Buffer.from(image.data, 'base64'))
+        writeFileSync(process.env.PROMPT_TOOL_LAYER_SCREENSHOT + '-' + width + '-' + scheme + '.png', Buffer.from(image.data, 'base64'))
       }
     }
   } finally {

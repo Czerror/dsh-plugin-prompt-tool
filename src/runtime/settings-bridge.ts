@@ -6,6 +6,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 import { createHash } from 'node:crypto'
 import { basename, dirname, join, resolve, sep } from 'node:path'
 import { pathToFileURL } from 'node:url'
+import { isDeepStrictEqual } from 'node:util'
 import { mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs'
 import type { SettingsDescriptor, SettingsPathOp } from '@deepseek-ai/dsh-settings'
 import { PARAM_KEYS } from '../config.ts'
@@ -16,6 +17,7 @@ import { readConfigFieldSources, stripConfigFieldSources } from '../shared/manag
 import { readOfficialOrderSegments, type OfficialOrderLookup } from '../shared/official-orders.ts'
 import { validatePromptConfigs } from './configs-validate.ts'
 import { PresetLayerSettingsError } from '../host/preset-layer-settings.ts'
+import { readPresetTriggers, savePresetTriggers, triggerPromptConfigOptions } from '../host/preset-triggers.ts'
 import { loadPromptTemplates, loadToolTemplates } from '../host/templates.ts'
 import { assertImportableSource, importSkillsDirectory, importSkillsPackage } from '../host/skills-import.ts'
 import { createSkill, type SkillActionResult } from '../host/skills-actions.ts'
@@ -59,7 +61,7 @@ import { assertPresetDirectory, assertPresetId, canonicalPresetRoot, presetPathE
 import { DSH_HOME } from '../host/paths.ts'
 import type { AssetFile, AssetImportRequest, ImportKind, PresetExportRequest } from '../shared/asset-transfer.ts'
 import { lastWorldBookDiagnostics } from '../../engine/st-world-book.mjs'
-import { BRIDGE_ENDPOINTS, MAX_BRIDGE_BODY_BYTES, SETTINGS_BRIDGE_PREFIX } from '../shared/bridge-contract.ts'
+import { BRIDGE_ENDPOINTS, MAX_BRIDGE_BODY_BYTES, SETTINGS_BRIDGE_PREFIX, type TriggerEditorMeta } from '../shared/bridge-contract.ts'
 import { moduleParamFallbacks, validateEngineParamValues } from '../shared/engine-params.ts'
 import { readPersonaSpec } from '../shared/persona-section.ts'
 import { SKILL_NAME_PATTERN, type SkillsStateRead } from '../host/skills-config.ts'
@@ -1382,6 +1384,77 @@ export function registerSettingsBridge(
             } catch (error) {
               const message = error instanceof Error ? error.message : String(error)
               writeBridgeJson(res, 500, { ok: false, code: 'preset-import-failed', message })
+            }
+          },
+        }),
+        sctx.webServer.register({
+          kind: 'exact',
+          path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.triggers,
+          handler: async (req, res) => {
+            if (!guard(req, res)) return
+            const dir = getPresetConfigsDir?.() ?? ''
+            if (dir.length === 0) {
+              writeBridgeJson(res, 400, { ok: false, code: 'preset-dir-unavailable', message: '当前预设目录不可用' })
+              return
+            }
+            const parsed = await readBridgeBodyForHandler(req, res)
+            if (parsed === undefined) return
+            const record = (parsed.body ?? {}) as Record<string, unknown>
+            if (typeof record.expectedPresetId !== 'string' || record.expectedPresetId.length === 0
+              || Object.keys(record).some(key => !['expectedPresetId', 'triggers', 'expectedRevision', 'validateOnly'].includes(key))
+              || (record.validateOnly !== undefined && typeof record.validateOnly !== 'boolean')
+              || (record.triggers !== undefined && !Array.isArray(record.triggers))
+              || (record.expectedRevision !== undefined && (typeof record.expectedRevision !== 'string' || !SHA256_HEX_RE.test(record.expectedRevision)))) {
+              writeBridgeJson(res, 400, { ok: false, code: 'triggers-invalid', message: '声明请求字段、预设身份或版本格式不合法' })
+              return
+            }
+            if (!guardPresetIdentity(record, dir, res)) return
+            const writing = record.triggers !== undefined && record.validateOnly !== true
+            if (writing && typeof record.expectedRevision !== 'string') {
+              writeBridgeJson(res, 400, { ok: false, code: 'triggers-invalid', message: '保存声明必须提供读取时的 expectedRevision' })
+              return
+            }
+            if (writing && !guardPresetWrite(dir, res)) return
+            try {
+              const { compileDeclarations } = await import(pathToFileURL(join(packageEngineDir(), 'trigger-spec.mjs')).href) as { compileDeclarations: (value: unknown[], context?: { promptConfigOptions: ReturnType<typeof triggerPromptConfigOptions> }) => unknown }
+              const { getTriggerEditorMeta } = await import(pathToFileURL(join(packageEngineDir(), 'trigger-editor-meta.mjs')).href) as { getTriggerEditorMeta: () => TriggerEditorMeta }
+              if (!guardPresetIdentity(record, dir, res)) return
+              const snapshot = readPresetTriggers(dir)
+              if (record.triggers !== undefined) {
+                try {
+                  const strategy = loadPresetSpec(dir).moduleConfigs?.['declared-triggers']?.strategyDir
+                  compileDeclarations(record.triggers as unknown[], { promptConfigOptions: triggerPromptConfigOptions(dir, strategy) })
+                }
+                catch (error) {
+                  writeBridgeJson(res, 400, { ok: false, code: 'triggers-invalid', message: String((error as Error).message ?? error) })
+                  return
+                }
+              }
+              if (writing) {
+                if (!Array.isArray(loadPresetSpec(dir).modules)) {
+                  writeBridgeJson(res, 400, { ok: false, code: 'triggers-composition-readonly', message: '当前组合没有可编辑的 modules 清单，无法自动装配声明引擎' })
+                  return
+                }
+                if (!savePresetTriggers(dir, record.triggers as unknown[], record.expectedRevision as string)) {
+                  writeBridgeJson(res, 409, { ok: false, code: 'triggers-conflict', message: '预设文件已变化；草稿未写入，请重新读取后保存' })
+                  return
+                }
+                try { await afterOverridesChange?.() }
+                catch (error) {
+                  writeBridgeJson(res, 500, { ok: false, code: 'triggers-rebuild-failed', message: `声明已保存，但预设重建失败；请重新读取后重试：${String(error)}` })
+                  return
+                }
+              }
+              const result = writing ? readPresetTriggers(dir) : snapshot
+              // 重建期间其他请求或外部编辑可能更新规则；不能把新版本签给本次旧草稿。
+              if (writing && !isDeepStrictEqual(result.triggers, record.triggers)) {
+                writeBridgeJson(res, 409, { ok: false, code: 'triggers-conflict', message: '重建期间规则已再次变化；请重新读取，当前草稿仍保留' })
+                return
+              }
+              writeBridgeJson(res, 200, { ok: true, value: { ...result, meta: getTriggerEditorMeta() } })
+            } catch (error) {
+              if (writeMigrationRequired(res, error)) return
+              writeBridgeJson(res, 500, { ok: false, code: 'triggers-failed', message: String((error as Error).message ?? error) })
             }
           },
         }),

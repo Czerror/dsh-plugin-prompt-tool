@@ -27,7 +27,18 @@
 .configContext { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
 .configContext strong { font: var(--dsw-font-s-strong-14); color: var(--dsw-alias-label-primary); text-wrap: balance; }
 .configContext span, .configContext p { margin: 0; font: var(--dsw-font-xxs-12); color: var(--dsw-alias-label-secondary); text-wrap: pretty; overflow-wrap: anywhere; }
-.configSection { display: flex; flex-direction: column; gap: 16px; min-width: 0; border-top: 0.5px solid var(--dsw-alias-border-l2); padding-top: 24px; }
+.configSection { display: flex; flex-direction: column; gap: 24px; min-width: 0; }
+.configIdentity { min-width: 0; }
+.configNavigation { display: grid; grid-template-columns: 128px minmax(0, 1fr); gap: 24px; min-width: 0; border-top: 0.5px solid var(--dsw-alias-border-l2); padding-top: 24px; }
+.configTabs { display: flex; flex-direction: column; gap: 4px; align-self: start; min-width: 0; }
+.configTab { display: flex; align-items: center; justify-content: space-between; gap: 4px; min-width: 0; min-height: 40px; border: 0; border-radius: 8px; padding: 8px 12px; font: var(--dsw-font-xs-strong-13); text-align: start; color: var(--dsw-alias-label-secondary); background: transparent; cursor: pointer; overflow-wrap: anywhere; }
+.configTab:hover { background: var(--dsw-alias-bg-layer-3); color: var(--dsw-alias-label-primary); }
+.configTab[aria-selected="true"] { background: var(--dsw-alias-bg-layer-3); color: var(--dsw-alias-label-primary); box-shadow: inset 3px 0 var(--dsw-alias-state-business-primary); }
+.configTab:focus-visible, .configPanel:focus-visible { outline: 2px solid var(--dsw-alias-state-business-primary); outline-offset: 2px; }
+.configTabError { color: var(--dsw-alias-state-error-primary); font-weight: 700; }
+.configPanels { min-width: 0; container: config-panel / inline-size; }
+.configPanel { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.configPanel[hidden] { display: none !important; }
 .configSectionTitle { margin: 0; padding: 0; border: 0; font: var(--dsw-font-xs-strong-13); color: var(--dsw-alias-label-primary); text-wrap: balance; }
 .configFieldset { min-width: 0; padding: 0; margin: 0; border: 0; }
 .configGrid {
@@ -58,24 +69,6 @@
 .orderField input { font-variant-numeric: tabular-nums; }
 .fieldFull { min-width: 0; grid-column: 1 / -1; }
 .configToggleField { display: flex; min-width: 0; flex-direction: column; align-items: flex-start; gap: 4px; }
-.configAdvanced {
-  border-top: 0.5px solid var(--dsw-alias-border-l2);
-  padding-top: 10px;
-}
-.configAdvancedSummary {
-  min-height: 32px;
-  padding-block: 8px;
-  color: var(--dsw-alias-label-secondary);
-  cursor: pointer;
-  font: var(--dsw-font-xxs-strong-12);
-  text-wrap: balance;
-}
-.configAdvancedSummary:focus-visible { outline: 2px solid var(--dsw-alias-state-business-primary); outline-offset: 4px; }
-.configAdvancedSummary::marker { color: var(--dsw-alias-label-tertiary); }
-.configAdvanced[open] > .configAdvancedSummary { margin-bottom: 10px; }
-.layerSettingsPanel { padding: 12px 16px; border: 0.5px solid var(--dsw-alias-border-l2); border-radius: 8px; }
-.layerSettingsPanel > .configAdvancedSummary { color: var(--dsw-alias-label-primary); }
-.layerSettingsPanel > p { margin: 0 0 16px; text-wrap: pretty; }
 .variableHeader {
   display: flex;
   min-width: 0;
@@ -97,9 +90,12 @@
 }
 
 @container prompt-form (max-width: 620px) {
+  .configNavigation { grid-template-columns: minmax(0, 1fr); gap: 24px; }
+  .configTabs { flex-direction: row; flex-wrap: wrap; }
+  .configTab { flex: 1 1 auto; justify-content: center; padding-inline: 8px; }
+  .configTab[aria-selected="true"] { box-shadow: inset 0 -3px var(--dsw-alias-state-business-primary); }
   .configGrid { grid-template-columns: minmax(0, 1fr); }
   .orderField { grid-template-columns: minmax(0, 1fr); }
-  .layerSettingsPanel { padding: 12px; }
   .fieldSpan2,
   .fieldSpan3,
   .fieldSpan4,
@@ -107,6 +103,15 @@
   .fieldSpan6,
   .fieldSpan8,
   .fieldSpan9 { grid-column: 1 / -1; }
+}
+@container config-panel (max-width: 720px) {
+  .configGrid { grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 16px; }
+  .fieldSpan2, .fieldSpan3, .fieldSpan4, .fieldSpan5 { grid-column: span 3; }
+  .fieldSpan6, .fieldSpan8, .fieldSpan9 { grid-column: span 6; }
+}
+@container config-panel (max-width: 420px) {
+  .configGrid, .orderField { grid-template-columns: minmax(0, 1fr); }
+  .fieldSpan2, .fieldSpan3, .fieldSpan4, .fieldSpan5, .fieldSpan6, .fieldSpan8, .fieldSpan9 { grid-column: 1 / -1; }
 }
 .configInputError { border-color: var(--dsw-alias-state-error-primary); }
 .configJsonInput { min-height: 88px; }
@@ -126,6 +131,9 @@
     .fieldSpan6, .fieldSpan8, .fieldSpan9 { grid-column: span 6; }
   }
   @media (max-width: 620px) {
+    .configNavigation { grid-template-columns: minmax(0, 1fr); }
+    .configTabs { flex-direction: row; flex-wrap: wrap; }
+    .configTab { flex: 1 1 auto; justify-content: center; }
     .configGrid { grid-template-columns: minmax(0, 1fr); }
     .orderField { grid-template-columns: minmax(0, 1fr); }
     .fieldSpan2, .fieldSpan3, .fieldSpan4, .fieldSpan5, .fieldSpan6, .fieldSpan8, .fieldSpan9 { grid-column: 1 / -1; }

@@ -188,7 +188,7 @@ test('(1) 注入文本：system-section 与既有 applyPromptConfigs 注册出�
 
   const viaAction = recordingCtx()
   viaAction.ctx.get = (serviceName) => (serviceName === 'systemPrompt' ? systemPromptStub(viaAction.calls) : undefined)
-  registerAction(viaAction.ctx, { kind: 'inject-text', id: 'sec', config: createPromptConfigs(spec)[0] })
+  registerAction(viaAction.ctx, { kind: 'inject-text', id: 'sec', config: spec[0] })
 
   const sectionsOf = (calls) => calls.filter((call) => call.service === 'section').map((call) => call.entry)
   assert.deepEqual(sectionsOf(viaAction.calls), sectionsOf(viaConfigs.calls), '段注册必须与既有接线逐字段一致')
@@ -209,6 +209,48 @@ test('(1) 注入文本：pre-step 走既有执行器通道，注册的监听器�
     viaAction.events.map((entry) => ({ event: entry.event, options: entry.options })),
     direct.events.map((entry) => ({ event: entry.event, options: entry.options })),
   )
+})
+
+test('(1) 纯数据声明：编译、挂载后实际注入正文，并遵守条件、受众与批次去重', async () => {
+  const recorder = recordingCtx()
+  const declaration = {
+    id: 'declared-text', channel: 'agent/pre-step',
+    do: { kind: 'inject-text', config: {
+      id: 'notice', layer: 'pre-step', text: 'HELLO {{who}}', variables: { who: 'WORLD' },
+      audience: 'main', dedupe: 'batch', match: { keys: ['RUN'] },
+    } },
+  }
+  const dispose = mountDeclarations(recorder.ctx, compileDeclarations([declaration]))
+  const handler = only(recorder.events, 'agent/pre-step')
+  const run = async (text, depth = 0) => {
+    const user = { id: 'u', role: 'user', content: [{ type: 'text', text }], source: { kind: 'user' } }
+    return handler({ agent: agent(depth), messages: [user] }, () => ({ kind: 'enter', messages: [user] }))
+  }
+  assert.equal((await run('SKIP')).messages.length, 1)
+  assert.equal((await run('RUN', 1)).messages.length, 1)
+  const result = await run('RUN')
+  assert.equal(result.messages.length, 2)
+  assert.equal(result.messages[1].content[0].text, 'HELLO WORLD')
+  const repeated = await handler({ agent: agent(), messages: result.messages }, () => result)
+  assert.equal(repeated.messages.length, 2, '已含本配置的批次不重复注入')
+  assert.deepEqual(recorder.warnings, [])
+  assert.equal(Object.hasOwn(declaration.do.config, 'resolve'), false, '编译不得把运行时函数写回声明')
+  dispose()
+  assert.deepEqual(recorder.events, [])
+})
+
+test('(1) 已编译配置：保留调用方提供的 resolver，不重复编译', async () => {
+  const recorder = recordingCtx()
+  const config = createPromptConfigs([{ id: 'compiled', layer: 'pre-step' }])[0]
+  config.resolve = () => ({ text: 'CUSTOM RESOLVER' })
+  const dispose = registerAction(recorder.ctx, { kind: 'inject-text', config })
+  const user = { id: 'u', role: 'user', content: [{ type: 'text', text: 'USER' }], source: { kind: 'user' } }
+  const result = await only(recorder.events, 'agent/pre-step')(
+    { agent: agent(), messages: [user] }, () => ({ kind: 'enter', messages: [user] }),
+  )
+  assert.equal(result.messages[1].content[0].text, 'CUSTOM RESOLVER')
+  assert.deepEqual(recorder.warnings, [])
+  dispose()
 })
 
 test('(2) 改装配 tools：名单裁剪（deny / allow / 空名单）', async () => {

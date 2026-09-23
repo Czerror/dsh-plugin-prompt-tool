@@ -102,7 +102,7 @@ test('层设置内容按装配事实列出本层能力，未装配的能力不�
     assert.match(html, new RegExp(`data-layer-capability="${id}"`), `${id} 应出现在本层装配清单`)
   }
   assert.doesNotMatch(html, /data-layer-capability="tool-bootstrap"/, '不列其他层的能力')
-  assert.doesNotMatch(html, /编辑行为/, '仍然不提供编辑目标选择器')
+  assert.doesNotMatch(html, /aria-label="编辑行为"/, '不恢复旧能力编辑目标选择器')
   // 历史隐式策略仍在运行：照样列出，便于管理授权。
   const legacyPolicy = { ...active, moduleFacts: { ...withModules(['delegation']), effectiveModules: ['delegation', 'subagent-tool-policy'] } }
   assert.deepEqual(layerAssembledCapabilities(legacyPolicy, 'tool-pipeline'), ['subagent-tool-policy'])

@@ -12,10 +12,12 @@
  */
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import { apply, configContract, inject, name } from '../../engine/declared-triggers.mjs'
+import { compileDeclarations, mountDeclarations } from '../../engine/trigger-spec.mjs'
 
 /** 独立临时目录，结束即清理（不依赖共享状态或执行顺序）。 */
 const dir = mkdtempSync(join(tmpdir(), 'declared-triggers-'))
@@ -66,14 +68,14 @@ const DECISION_SPEC = `- id: deny-bash
     reason: blocked
 `
 
-test('导出形态：name / inject 为空 / triggersFile 缺省指向预设根', () => {
+test('导出形态：name / inject 为空 / 文件与边界由装配配置提供', () => {
   assert.equal(name, 'declared-triggers')
   assert.deepEqual(inject, [], '只经 ctx.on 与 agent scope 工作，无宿主服务依赖')
-  assert.deepEqual(configContract.parse({}, name), { triggersFile: '../triggers.yml' })
+  assert.deepEqual(configContract.parse({}, name), { triggersFile: '../triggers.yml', strategyDir: undefined, presetRoot: undefined })
   // passthrough 的既有语义：非法值静默取默认（不是 fail loud）。
-  assert.deepEqual(configContract.parse({ triggersFile: '' }, name), { triggersFile: '../triggers.yml' })
-  assert.deepEqual(configContract.parse({ triggersFile: 42 }, name), { triggersFile: '../triggers.yml' })
-  assert.deepEqual(configContract.parse({ triggersFile: 'D:/x/t.yml' }, name), { triggersFile: 'D:/x/t.yml' })
+  assert.deepEqual(configContract.parse({ triggersFile: '' }, name), { triggersFile: '../triggers.yml', strategyDir: undefined, presetRoot: undefined })
+  assert.deepEqual(configContract.parse({ triggersFile: 42 }, name), { triggersFile: '../triggers.yml', strategyDir: undefined, presetRoot: undefined })
+  assert.deepEqual(configContract.parse({ triggersFile: 'D:/x/t.yml' }, name), { triggersFile: 'D:/x/t.yml', strategyDir: undefined, presetRoot: undefined })
   // 未知键仍 fail loud（信封校验来自 fields.mjs 的 defineConfig）。
   assert.throws(() => configContract.parse({ nope: 1 }, name), /nope/)
 })
@@ -85,9 +87,8 @@ test('文件缺失 = 没有声明：静默返回，不注册任何东西', async
   assert.deepEqual(recorder.effects, [], '没有注册就没有待释放资源')
 })
 
-test('缺省 triggersFile 指向预设根：该处没有文件时同样静默（引擎不带默认声明）', async () => {
-  // 这条同时钉住两件事：相对**模块自身**解析（`.engine/` 的父目录 = 预设根），以及
-  // "引擎不内置任何默认声明"——仓库根若真的出现 triggers.yml，本用例会红，正是提醒。
+test('独立使用缺少声明配置时保持无行为，不猜测用户预设目录', async () => {
+  // 缺省相对值只按包模块 URL 解析；生产装配传绝对 file URL，不从包目录反推用户目录。
   const recorder = recordingCtx()
   await apply(recorder.ctx, {})
   assert.deepEqual(recorder.events, [])
@@ -122,6 +123,63 @@ test('正常链路：声明被编译并注册到声明的通道，when 前置生
     'when 命中 → 动作体执行')
   assert.equal(await entry.handler({ name: 'read' }, () => 'downstream'), 'downstream',
     'when 不命中 → 放行下游')
+})
+
+test('声明模板：保存校验与运行时都从当前预设资产解析，并拒绝越界', async () => {
+  const presetRoot = join(dir, 'presets')
+  const presetDir = join(presetRoot, 'templated')
+  mkdirSync(join(presetDir, 'assets'), { recursive: true })
+  writeFileSync(join(presetDir, 'assets', 'notice.txt'), 'PRESET TEMPLATE')
+  writeFileSync(join(dir, 'outside.txt'), 'OUTSIDE')
+  const declarations = [{ id: 'template', channel: 'agent/pre-step', do: {
+    kind: 'inject-text', config: { id: 'template', layer: 'pre-step', templateFile: './assets/notice.txt' },
+  } }]
+  const rootUrl = new URL(`${pathToFileURL(presetRoot).href}/`)
+  const promptConfigOptions = {
+    templateBaseUrl: pathToFileURL(join(presetDir, 'triggers.yml')), templatePresetRoot: rootUrl,
+  }
+  const compiled = compileDeclarations(declarations, { promptConfigOptions })
+  const triggersFile = join(presetDir, 'triggers.yml')
+  writeFileSync(triggersFile, JSON.stringify(declarations))
+  for (const source of ['compiled', 'runtime']) {
+    const recorder = recordingCtx()
+    if (source === 'compiled') mountDeclarations(recorder.ctx, compiled)
+    else await apply(recorder.ctx, { triggersFile, presetRoot: rootUrl.href })
+    const user = { id: 'u', role: 'user', content: [{ type: 'text', text: 'USER' }], source: { kind: 'user' } }
+    const result = await recorder.events.find(item => item.event === 'agent/pre-step').handler({
+      agent: { session: { id: source, header: {}, snapshotEvents: () => [] }, options: { model: 'deepseek-chat' } }, messages: [user],
+    }, () => ({ kind: 'enter', messages: [user] }))
+    assert.equal(result.messages[1].content[0].text, 'PRESET TEMPLATE', source)
+  }
+  const escaped = structuredClone(declarations)
+  escaped[0].do.config.templateFile = '../../outside.txt'
+  assert.throws(() => compileDeclarations(escaped, { promptConfigOptions }), /escapes preset root/)
+  writeFileSync(triggersFile, JSON.stringify(escaped))
+  await assert.rejects(() => apply(recordingCtx().ctx, { triggersFile }), /escapes preset root/)
+})
+
+test('声明策略：显式 strategyDir 在编译与运行时保持同一解析基准', async () => {
+  const presetRoot = join(dir, 'strategy-presets')
+  const presetDir = join(presetRoot, 'custom')
+  const strategyDir = join(presetDir, 'strategies')
+  mkdirSync(strategyDir, { recursive: true })
+  writeFileSync(join(strategyDir, 'custom.mjs'), 'export const createResolver = () => () => ({ text: "CUSTOM STRATEGY" })')
+  const declarations = [{ id: 'strategy', channel: 'agent/pre-step', do: {
+    kind: 'inject-text', config: { id: 'strategy', layer: 'pre-step', strategy: 'custom' },
+  } }]
+  const compiled = compileDeclarations(declarations, { promptConfigOptions: { strategyDir: pathToFileURL(strategyDir).href } })
+  const triggersFile = join(presetDir, 'triggers.yml')
+  writeFileSync(triggersFile, JSON.stringify(declarations))
+  for (const source of ['compiled', 'runtime']) {
+    const recorder = recordingCtx()
+    if (source === 'compiled') mountDeclarations(recorder.ctx, compiled)
+    else await apply(recorder.ctx, { triggersFile: pathToFileURL(triggersFile).href, strategyDir: '../custom/strategies' })
+    const user = { id: 'u', role: 'user', content: [{ type: 'text', text: 'USER' }], source: { kind: 'user' } }
+    const result = await recorder.events.find(item => item.event === 'agent/pre-step').handler({
+      agent: { session: { id: source, header: {}, snapshotEvents: () => [] }, options: { model: 'deepseek-chat' } }, messages: [user],
+    }, () => ({ kind: 'enter', messages: [user] }))
+    assert.equal(result.messages[1].content[0].text, 'CUSTOM STRATEGY', source)
+  }
 })
 
 test('disposer 交给 ctx.effect，且释放真的撤销注册', async () => {

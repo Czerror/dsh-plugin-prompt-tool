@@ -11,6 +11,7 @@ import type { Translate } from '@deepseek-ai/dsh-client-ui-slots'
 import { PARAMS_EN, PARAMS_ZH } from './locales-params.ts'
 import { PROMPTS_EN, PROMPTS_ZH } from './locales-prompts.ts'
 import { CARDS_EN, CARDS_ZH } from './locales-cards.ts'
+import { TRIGGERS_EN, TRIGGERS_ZH } from './locales-triggers.ts'
 
 /** 官方 locale 服务注册用的命名空间。 */
 export const PROMPT_TOOL_NS = 'prompt-tool'
@@ -304,6 +305,7 @@ export type PromptToolLocaleKey =
   | keyof typeof PARAMS_ZH
   | keyof typeof PROMPTS_ZH
   | keyof typeof CARDS_ZH
+  | keyof typeof TRIGGERS_ZH
 
 const EN_CORE: Record<keyof typeof ZH_CORE, string> = {
   'app.title': 'Prompt Tool',
@@ -582,8 +584,8 @@ const EN_CORE: Record<keyof typeof ZH_CORE, string> = {
   'presetSwitcher.notice.cloneFailed': 'Failed to create the preset: {reason}',
 }
 
-const ZH: Record<PromptToolLocaleKey, string> = { ...ZH_CORE, ...PARAMS_ZH, ...PROMPTS_ZH, ...CARDS_ZH }
-const EN: Record<PromptToolLocaleKey, string> = { ...EN_CORE, ...PARAMS_EN, ...PROMPTS_EN, ...CARDS_EN }
+const ZH: Record<PromptToolLocaleKey, string> = { ...ZH_CORE, ...PARAMS_ZH, ...PROMPTS_ZH, ...CARDS_ZH, ...TRIGGERS_ZH }
+const EN: Record<PromptToolLocaleKey, string> = { ...EN_CORE, ...PARAMS_EN, ...PROMPTS_EN, ...CARDS_EN, ...TRIGGERS_EN }
 
 /** 官方 locale 服务的最小使用面（便于 node:test 用 mock 覆盖注册/释放）。 */
 export interface PromptToolLocaleRegistry {

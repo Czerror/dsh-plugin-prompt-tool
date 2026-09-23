@@ -292,6 +292,7 @@ export function apply(ctx: Context, configIn: Config): void {
         rebuildPreset()
       } catch (error) {
         warn(ctx, `prompt-tool: overrides rebuild failed: ${String(error)}`)
+        throw error
       }
     },
     // host 已安装完整候选；这里只刷新内存，不能二次物化覆盖导入资产。

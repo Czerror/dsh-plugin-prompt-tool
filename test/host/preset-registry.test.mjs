@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -212,6 +212,10 @@ test('装配期换算：引擎行识别、受管字段绝对化与 presetRoot �
     '  config:',
     '    configsDir: ../pt-eng/prompt-configs',
     '',
+    '- id: declared-triggers',
+    '  name: dsh-plugin-prompt-tool/engine/declared-triggers.mjs',
+    '  config:',
+    '    triggersFile: ../pt-eng/triggers.yml',
   ].join('\n'))
   const definitions = new Map()
   const registry = {
@@ -224,7 +228,7 @@ test('装配期换算：引擎行识别、受管字段绝对化与 presetRoot �
   const sync = createPresetRegistrySync({ agentPresets: registry }, root)
   try {
     await sync.refresh()
-    const [engine, legacy] = definitions.get('pt-eng').plugins
+    const [engine, legacy, triggers] = definitions.get('pt-eng').plugins
     assert.equal(engine.name, 'dsh-plugin-prompt-tool/engine/prompt-config-engine.mjs', '包名说明符不改写')
     assert.equal(
       engine.config.configsDir,
@@ -236,6 +240,21 @@ test('装配期换算：引擎行识别、受管字段绝对化与 presetRoot �
     assert.equal(legacy.name, pathToFileURL(join(root, '.engine', 'character-tools.mjs')).href)
     assert.equal(legacy.config.configsDir, '../pt-eng/prompt-configs', '非引擎行的字段不参与受管换算')
     assert.equal(legacy.config.presetRoot, undefined, '非引擎行不得注入 presetRoot（否则触发未知键报错）')
+    assert.equal(triggers.name, 'dsh-plugin-prompt-tool/engine/declared-triggers.mjs')
+    assert.equal(triggers.config.triggersFile, pathToFileURL(join(dir, 'triggers.yml')).href)
+    assert.equal(triggers.config.presetRoot, `${pathToFileURL(root).href}/`)
+    assert.equal(existsSync(join(root, '.engine')), false, '声明挂载不需要物化引擎目录')
+    mkdirSync(join(dir, 'assets'))
+    writeFileSync(join(dir, 'assets', 'notice.txt'), 'PACKAGE ENGINE DATA')
+    writeFileSync(join(dir, 'triggers.yml'), JSON.stringify([{ id: 'notice', channel: 'agent/pre-step', do: { kind: 'inject-text', config: { id: 'notice', layer: 'pre-step', templateFile: './assets/notice.txt' } } }]))
+    const events = new Map(), disposers = []
+    const recorder = { get: () => undefined, on: (event, fn) => { events.set(event, fn); return () => events.delete(event) }, effect: fn => { disposers.push(fn()) } }
+    const { apply } = await import('../../engine/declared-triggers.mjs')
+    await apply(recorder, triggers.config)
+    const user = { id: 'u', role: 'user', content: [{ type: 'text', text: 'USER' }], source: { kind: 'user' } }
+    const result = await events.get('agent/pre-step')({ agent: { session: { id: 'registered', header: {}, snapshotEvents: () => [] }, options: { model: 'deepseek-chat' } }, messages: [user] }, () => ({ kind: 'enter', messages: [user] }))
+    assert.equal(result.messages[1].content[0].text, 'PACKAGE ENGINE DATA')
+    for (const dispose of disposers.reverse()) dispose?.()
   } finally { await sync.dispose() }
 })
 

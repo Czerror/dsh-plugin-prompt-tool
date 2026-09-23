@@ -110,20 +110,31 @@ test('换层按完整字段矩阵清理不支持项，九种目标均能通过�
   }
 })
 
-test('模块卡参数按语义分区，并用容器网格限制短字段宽度', () => {
+test('模块卡以条件、执行和内容导航替换堆叠分区，面板保留字段与 ARIA 关联', () => {
   const css = read('src/client/features/prompts/prompts.module.css')
   const html = renderElement(PromptConfigForm, formProps())
 
   // 分区标题与字段标签：从「源码里有这个 t(...) 调用」升级为「渲染结果里真的出现这段文案」。
-  for (const section of ['basic', 'rules', 'scope', 'content', 'strategy']) {
+  for (const section of ['basic', 'content', 'strategy']) {
     assert.ok(html.includes(t(`form.section.${section}`)), `渲染结果缺分区标题 form.section.${section}`)
   }
   assert.ok(html.includes(t('form.kind.label')), '渲染结果缺「配置类型」字段标签')
   assert.ok(html.includes(t('form.audience.label')), '渲染结果缺「消息受众」字段标签')
 
-  // 高级元数据仍是原生 details + summary（原先只断言源码里有 `<details`）。
-  assert.match(html, /<details[^>]*class="[^"]*configAdvanced/)
-  assert.ok(html.includes(t('form.advanced.label')), 'details 的 summary 文案未渲染')
+  assert.doesNotMatch(html, /<details|<summary/)
+  assert.ok(html.includes(t('form.advanced.label')), '元数据仍在内容面板内')
+  const tabs = [...html.matchAll(/<button[^>]*role="tab"[^>]*>/g)].map(match => match[0])
+  assert.equal(tabs.length, 3)
+  assert.equal(tabs.filter(tab => tab.includes('aria-selected="true"')).length, 1)
+  assert.equal(tabs.filter(tab => tab.includes('tabindex="0"')).length, 1)
+  for (const tab of tabs) {
+    const controls = /aria-controls="([^"]+)"/.exec(tab)[1]
+    const tabId = /id="([^"]+)"/.exec(tab)[1]
+    assert.ok(html.includes(`id="${controls}" aria-labelledby="${tabId}"`))
+  }
+  assert.ok(html.includes(t('form.navigation.conditions')))
+  assert.ok(html.includes(t('form.navigation.execution')))
+  assert.match(html, /role="tabpanel"[^>]*hidden=""[^>]*data-config-view="execution"/)
 
   // 策略区是一个 fieldset，并带容器网格三件套类名（原先断言源码里的 clsx(...) 字面量）。
   assert.match(html, /<fieldset[^>]*class="[^"]*configGrid[^"]*strategyGrid[^"]*configFieldset/)
@@ -582,7 +593,7 @@ test('system-section：结构化字段之外的 params 仍可编辑，提交时�
   assert.ok(!onlyKnown.includes(t('field.json.advanced')), '已结构化覆盖的键不得再渲染一份 JSON 输入')
 })
 
-test('本层引擎设置：注入点默认折叠，折叠时不渲染内容', () => {
+test('本层引擎设置：提供明确导航入口，首次进入前不渲染控件', () => {
   const marker = 'LAYER-SETTINGS-MARKER'
   // 没有可编辑引擎设置的层不注入内容 → 不出现空的设置区。
   const without = renderElement(PromptConfigForm, formProps({ layer: 'llm-stream' }))
@@ -590,8 +601,9 @@ test('本层引擎设置：注入点默认折叠，折叠时不渲染内容', ()
   // 注入后：折叠区带该层标记，标题与说明来自字典。
   const injected = renderElement(PromptConfigForm, formProps({ layer: 'tool-pipeline' }, { renderLayerSettings: () => marker }))
   assert.match(injected, /data-layer-settings="tool-pipeline"/)
-  assert.ok(injected.includes(t('form.layerSettings.label', { layer: t('layer.tool-pipeline') })), '标题带层名')
-  assert.ok(injected.includes(t('form.layerSettings.hint', { layer: t('layer.tool-pipeline') })), '说明来自字典')
+  assert.ok(injected.includes(t('form.navigation.settings')), '导航文案为本层设置')
+  assert.match(injected, /role="tab"[^>]*data-config-tab="settings"/)
+  assert.doesNotMatch(injected, /<details|<summary/)
   // 默认折叠 = 内容不求值：同层 120 张实例卡不会因此多出成百上千控件。
   assert.equal(injected.includes(marker), false, '折叠时不渲染设置内容')
   // 折叠状态初始为关闭，注入回调不因渲染被调用。

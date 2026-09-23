@@ -95,6 +95,8 @@ test('合成 184 卡：渲染与层内顺序保持数量与身份，不折叠也
   assert.equal(new Set(ids).size, 184, '卡 id 不重复')
   assert.equal(ids.filter((id) => id.startsWith('pre-')).length, 120)
   assert.equal(ids.filter((id) => id.startsWith('sys-')).length, 64)
+  assert.equal((html.match(/aria-expanded="false"/g) ?? []).length >= 184, true, '每张实例保留最外层折叠入口')
+  assert.doesNotMatch(html, /data-config-tab=|data-config-view=|data-layer-settings-content=/, '折叠的巨量列表不挂载内部编辑器')
   // 层内顺序按 order 稳定排序，跨层不互相移动。
   const preIds = viewOrderedIds(configs, 'pre-step', meta.layers)
   assert.deepEqual(preIds.slice(0, 3), ['pre-000', 'pre-001', 'pre-002'])
