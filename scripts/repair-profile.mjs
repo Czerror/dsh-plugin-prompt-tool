@@ -206,7 +206,8 @@ export function repairProfiles(options) {
     reports.push(report)
     log(`[repair-profile] profile ${name}: ${report.dir}`)
     for (const entry of report.entries) {
-      const mark = entry.status === 'ok' ? '  ok  ' : ' FAIL '
+      // `ok-via-ancestor` 是「私有层未命中、由上层兜住」：不是失败，也不该打 FAIL 标记。
+      const mark = entry.status === 'ok' ? '  ok  ' : entry.status === 'ok-via-ancestor' ? ' note ' : ' FAIL '
       log(`[repair-profile]${mark}${entry.name}: ${entry.status} — ${entry.detail}`)
       if (entry.status === 'ok') continue
       if (!entry.fixable) {

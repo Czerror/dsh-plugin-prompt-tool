@@ -154,3 +154,16 @@ test('resolveDshHomeArg 优先级与官方 resolveDshHome 一致（自移除的 
   // 无任何来源 → ~/.dsh
   assert.equal(resolveDshHomeArg([], {}), join(homedir(), '.dsh'))
 })
+
+test('由上层兜住的项：不计失败，也不打 FAIL 标记', () => {
+  const { home, profileDir } = makeHome()
+  writeManifest(profileDir, { bundles: ['ancestor-pkg'] })
+  // 只放在 profiles 层（`profiles/node_modules` 兜底层），私有层故意留空。
+  makePackage(join(home, 'profiles', 'node_modules', 'ancestor-pkg'))
+  const lines = []
+  const result = repairProfiles({ dshHome: home, profile: 'web', log: (message) => lines.push(message) })
+  assert.equal(result.failures, 0, '由上层兜住不算失败')
+  assert.equal(result.changed, 0, '无需修复（也不该在私有层补一份）')
+  assert.ok(lines.some((line) => line.includes('ok-via-ancestor')), '应报出「由上层兜住」这一事实')
+  assert.equal(lines.some((line) => line.includes('FAIL')), false, '兜底项不得打 FAIL 标记')
+})
