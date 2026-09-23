@@ -8,31 +8,15 @@ export const ENGINE_PARAM_LAYERS = Object.fromEntries(ENGINE_PARAM_KEYS.map((key
   return [key, layer]
 })) as Record<EngineParamKey, string>
 
-/** 仅用于拒绝不支持的旧模型字段；不读取旧值，也不提供迁移。 */
-export const MODEL_SEGMENT_MAP: Record<string, [string, string]> = {
-  modelProvider: ['model', 'provider'],
-  modelName: ['model', 'name'],
-  modelReasoningEffort: ['model', 'reasoningEffort'],
-  modelTemperature: ['model', 'temperature'],
-  modelMaxTokens: ['model', 'maxTokens'],
-  subagentModelProvider: ['subagentModel', 'provider'],
-  subagentModelName: ['subagentModel', 'name'],
-  subagentReasoningEffort: ['subagentModel', 'reasoningEffort'],
-  subagentTemperature: ['subagentModel', 'temperature'],
-  subagentMaxTokens: ['subagentModel', 'maxTokens'],
-}
-
 export class PresetLayerSettingsError extends Error {
-  readonly code: 'preset-migration-required' | 'preset-layer-settings-invalid'
-  constructor(code: PresetLayerSettingsError['code'], message: string) {
-    super(`${code}: ${message}`)
+  readonly code = 'preset-layer-settings-invalid'
+  constructor(message: string) {
+    super(`preset-layer-settings-invalid: ${message}`)
     this.name = 'PresetLayerSettingsError'
-    this.code = code
   }
 }
 
 const isRecord = (value: unknown): value is Record<string, unknown> => value !== null && typeof value === 'object' && !Array.isArray(value)
-const own = (value: unknown, key: string): boolean => isRecord(value) && Object.prototype.hasOwnProperty.call(value, key)
 
 export function engineParamPath(key: string): [string, string, string] {
   if (!Object.prototype.hasOwnProperty.call(ENGINE_PARAM_LAYERS, key)) throw new Error(`未知引擎参数：${key}`)
@@ -41,7 +25,7 @@ export function engineParamPath(key: string): [string, string, string] {
 
 /** 未登记扩展字段留在原文档，不投影为运行时引擎参数。 */
 export function readLayerSettings(value: unknown): Record<string, unknown> {
-  const invalid = (message: string): never => { throw new PresetLayerSettingsError('preset-layer-settings-invalid', message) }
+  const invalid = (message: string): never => { throw new PresetLayerSettingsError(message) }
   if (value === undefined) return {}
   if (!isRecord(value)) return invalid('layerSettings 必须是对象')
   const params: Record<string, unknown> = {}
@@ -58,22 +42,8 @@ export function readLayerSettings(value: unknown): Record<string, unknown> {
   return params
 }
 
-function legacyParamPaths(source: Record<string, unknown>): Array<{ key: string; path: [string, string] }> {
-  const paths: Array<{ key: string; path: [string, string] }> = []
-  for (const key of ENGINE_PARAM_KEYS) {
-    if (own(source.params, key)) paths.push({ key, path: ['params', key] })
-    const segment = MODEL_SEGMENT_MAP[key]
-    if (segment !== undefined && own(source[segment[0]], segment[1])) paths.push({ key, path: segment })
-  }
-  return paths
-}
-
-/** 所有磁盘读写入口拒绝不支持的参数位置，预设直接维护当前 layerSettings 格式。 */
+/** 仅消费当前 layerSettings；其余段作为未知字段留存，不投影为运行时参数。 */
 export function readPresetLayerSettings(source: unknown): Record<string, unknown> {
-  if (!isRecord(source)) throw new PresetLayerSettingsError('preset-layer-settings-invalid', 'preset.yml 必须是对象')
-  const legacy = legacyParamPaths(source)
-  if (legacy.length > 0) {
-    throw new PresetLayerSettingsError('preset-migration-required', `不支持旧参数位置，请按 layerSettings 格式更新预设：${legacy.map(({ path }) => path.join('.')).join(', ')}`)
-  }
+  if (!isRecord(source)) throw new PresetLayerSettingsError('preset.yml 必须是对象')
   return readLayerSettings(source.layerSettings)
 }

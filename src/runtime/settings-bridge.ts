@@ -141,10 +141,10 @@ function writeBridgeJson(res: ServerResponse, status: number, body: unknown): vo
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   value !== null && typeof value === 'object' && !Array.isArray(value)
 
-/** 旧格式不能伪装成空配置；其余读取失败继续使用各端点原有规则。 */
-function writeMigrationRequired(res: ServerResponse, error: unknown): boolean {
-  if (!(error instanceof PresetLayerSettingsError) || error.code !== 'preset-migration-required') return false
-  writeBridgeJson(res, 409, { ok: false, code: error.code, message: error.message })
+/** 当前层参数格式错误统一反馈，不能在读回时伪装成空配置。 */
+function writeLayerSettingsError(res: ServerResponse, error: unknown): boolean {
+  if (!(error instanceof PresetLayerSettingsError)) return false
+  writeBridgeJson(res, 400, { ok: false, code: error.code, message: error.message })
   return true
 }
 
@@ -579,7 +579,7 @@ export function registerSettingsBridge(
       const guardPresetFormat = (dir: string, res: ServerResponse): boolean => {
         if (dir.length === 0) return true
         try { loadPresetSpec(dir) } catch (error) {
-          if (writeMigrationRequired(res, error)) return false
+          if (writeLayerSettingsError(res, error)) return false
         }
         return true
       }
@@ -721,7 +721,7 @@ export function registerSettingsBridge(
             return layer === undefined || layer === 'pre-step'
           }).length
         } catch (error) {
-          if (error instanceof PresetLayerSettingsError && error.code === 'preset-migration-required') throw error
+          if (error instanceof PresetLayerSettingsError) throw error
           templatePreStepCount = 0
         }
         return {
@@ -755,7 +755,7 @@ export function registerSettingsBridge(
           }
           return params
         } catch (error) {
-          if (error instanceof PresetLayerSettingsError && error.code === 'preset-migration-required') throw error
+          if (error instanceof PresetLayerSettingsError) throw error
           return {}
         }
       }
@@ -770,7 +770,7 @@ export function registerSettingsBridge(
           }
           return { variables, enabled: spec.variablesEnabled !== false }
         } catch (error) {
-          if (error instanceof PresetLayerSettingsError && error.code === 'preset-migration-required') throw error
+          if (error instanceof PresetLayerSettingsError) throw error
           return { variables: {}, enabled: true }
         }
       }
@@ -828,7 +828,7 @@ export function registerSettingsBridge(
                 ...extras,
               })
             } catch (error) {
-              if (writeMigrationRequired(res, error)) return
+              if (writeLayerSettingsError(res, error)) return
               const message = error instanceof Error ? error.message : String(error)
               writeBridgeJson(res, 500, { ok: false, code: 'bootstrap-failed', message })
             }
@@ -856,7 +856,7 @@ export function registerSettingsBridge(
             try {
               writeBridgeJson(res, 200, { ok: true, value: descriptor, ...await collectDescribeExtras() })
             } catch (error) {
-              if (!writeMigrationRequired(res, error)) throw error
+              if (!writeLayerSettingsError(res, error)) throw error
             }
           },
         }),
@@ -1453,7 +1453,7 @@ export function registerSettingsBridge(
               }
               writeBridgeJson(res, 200, { ok: true, value: { ...result, meta: getTriggerEditorMeta() } })
             } catch (error) {
-              if (writeMigrationRequired(res, error)) return
+              if (writeLayerSettingsError(res, error)) return
               writeBridgeJson(res, 500, { ok: false, code: 'triggers-failed', message: String((error as Error).message ?? error) })
             }
           },
@@ -1482,7 +1482,7 @@ export function registerSettingsBridge(
               writeBridgeJson(res, 400, { ok: false, code: 'overrides-invalid-shape', message: 'rebuild must be a boolean' })
               return
             }
-            // 无载荷 = 读取（preset.yml params 子集，兼容旧读回）。
+            // 无载荷 = 读取当前 layerSettings 展平后的参数子集。
             if (record.overrides === undefined && record.promptConfigs === undefined) {
               if (record.rebuild !== undefined) {
                 writeBridgeJson(res, 400, { ok: false, code: 'overrides-invalid-shape', message: 'rebuild requires overrides or promptConfigs' })
@@ -1573,7 +1573,7 @@ export function registerSettingsBridge(
                 },
               })
             } catch (error) {
-              if (writeMigrationRequired(res, error)) return
+              if (writeLayerSettingsError(res, error)) return
               const message = error instanceof Error ? error.message : String(error)
               writeBridgeJson(res, 500, { ok: false, code: 'overrides-write-failed', message })
             }
@@ -1655,7 +1655,7 @@ export function registerSettingsBridge(
                 const customTools = Array.isArray(spec.customTools) ? spec.customTools : []
                 writeBridgeJson(res, 200, { ok: true, value: { customTools } })
               } catch (error) {
-                if (writeMigrationRequired(res, error)) return
+                if (writeLayerSettingsError(res, error)) return
                 writeBridgeJson(res, 409, { ok: false, code: 'custom-tools-unavailable', message: '自定义工具读取失败，原文件保持不变' })
               }
               return
@@ -1707,7 +1707,7 @@ export function registerSettingsBridge(
               try {
                 writeBridgeJson(res, 200, { ok: true, value: { persona: readPersonaSpec(loadPresetSpec(dir).persona) ?? null } })
               } catch (error) {
-                if (writeMigrationRequired(res, error)) return
+                if (writeLayerSettingsError(res, error)) return
                 writeBridgeJson(res, 200, { ok: true, value: { persona: null } })
               }
               return
@@ -2164,7 +2164,7 @@ export function registerSettingsBridge(
                 const policy = spec.subagentToolPolicy ?? null
                 writeBridgeJson(res, 200, { ok: true, value: { policy } })
               } catch (error) {
-                if (writeMigrationRequired(res, error)) return
+                if (writeLayerSettingsError(res, error)) return
                 writeBridgeJson(res, 200, { ok: true, value: { policy: null } })
               }
               return

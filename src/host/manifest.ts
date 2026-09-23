@@ -21,9 +21,9 @@ import { ENGINE_PARAM_DEFINITIONS, ENGINE_PARAM_KEYS, buildEngineModuleParams, n
 import { personaRowConfig, readPersonaSpec, type PersonaSpec } from '../shared/persona-section.ts'
 import { DEFAULT_PRESET_ID } from '../shared/preset-ids.ts'
 import { assertPresetDirectory, assertPresetId, assertPresetTree, engineModuleFileNames, presetPathExists, rewritePresetEngineReferences, setPresetDefinitionId } from './preset-install.ts'
-import { engineParamPath, readLayerSettings, readPresetLayerSettings, PresetLayerSettingsError } from './preset-layer-settings.ts'
+import { engineParamPath, readPresetLayerSettings, PresetLayerSettingsError } from './preset-layer-settings.ts'
 import { modelRequestConfigs } from './prompt-configs.ts'
-export { MODEL_SEGMENT_MAP, PresetLayerSettingsError } from './preset-layer-settings.ts'
+export { PresetLayerSettingsError } from './preset-layer-settings.ts'
 
 export interface PresetSpec {
   id: string
@@ -40,14 +40,10 @@ export interface PresetSpec {
   modules?: string[]
   /** 兼容字段:内联组合文本或组合清单名。 */
   composition?: string
-  /** 内部运行时平铺适配面；磁盘上的同名段只允许未登记扩展字段。 */
+  /** 内部运行时平铺适配面；磁盘上的同名段不参与运行参数。 */
   params?: Record<string, unknown>
   /** 共享引擎参数按编辑组的主归属插入点存储；规则实例仍拥有各自 params。 */
   layerSettings?: Record<string, Record<string, unknown>>
-  /** 旧模型段仅保留未知字段；已登记模型字段必须显式迁移。 */
-  model?: Record<string, unknown>
-  /** 旧子代理模型段仅保留未知字段。 */
-  subagentModel?: Record<string, unknown>
   /** 顶层人设段（官方 @deepseek-ai/dsh-persona 行同构）：prefix/suffix/complete/includeRuntimeContext。 */
   persona?: PersonaSpec
   /** 预设级模板变量（{{key}} 插值源；与 layerSettings 分离，顶层 variables 段）。 */
@@ -596,10 +592,10 @@ export function normalizeParam(value: unknown): unknown {
   return value
 }
 
-/** 预设 params(默认参数)与运行时 settings 合并;settings 值优先。 */
+/** 当前 layerSettings 与显式运行参数合并；不从旧磁盘 params 段回退取值。 */
 export function resolvePresetParams(spec: PresetSpec, runtime: Record<string, unknown>): Record<string, unknown> {
   const params: Record<string, unknown> = {}
-  for (const [key, value] of Object.entries(spec.layerSettings === undefined ? spec.params ?? {} : readLayerSettings(spec.layerSettings))) {
+  for (const [key, value] of Object.entries(readPresetLayerSettings(spec))) {
     params[key] = normalizeParam(value)
   }
   for (const [key, value] of Object.entries(runtime)) {

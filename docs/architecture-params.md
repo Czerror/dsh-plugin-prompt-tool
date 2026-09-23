@@ -15,7 +15,7 @@
 
 显式模块预设存在 `promptConfigs` 或可生成的模型请求规则时，生成组合自动补齐 `prompt-config-engine`；`effectiveModules` 同步反映此依赖，`declaredModules` 保持磁盘声明。模型规则由 `host/prompt-configs.ts#modelRequestConfigs` 同时服务生成和依赖判定，避免“规则文件已生成但无消费者”。没有规则或请求参数的空预设仍为空，手写 composition 不被改写。
 
-正常读写不兼容旧位置中的登记参数：`params.<已登记键>`、`model`/`subagentModel` 已登记字段明确拒绝（错误码 `preset-migration-required`，bridge 返回 409），提示按当前 `layerSettings` 格式更新预设；未知字段保持原样，且不进入运行参数。`layerSettings` 中登记键放错层、层名或形态错误返回 `preset-layer-settings-invalid`，不静默回落成空值。
+正常读写仅消费 `layerSettings`；磁盘上的 `params`、`model`、`subagentModel` 和其他未知字段原样保留，但不参与运行参数，也不触发迁移阻断。`layerSettings` 中登记键放错层、层名或形态错误返回 `preset-layer-settings-invalid`（bridge 返回 400），不静默回落成空值。
 
 预设与代码同步维护当前格式，不提供层参数离线迁移、回滚脚本或迁移备份。参数保存直接更新 `preset.yml`，空预设保持为空，包内预设和导入产物使用当前格式。
 
@@ -203,7 +203,7 @@ ST 导入配置显式带 `params.stMacros: true`，赋值模板保留到运行�
 1. `shared/engine-params.ts`：`EngineParams` 加字段，并在 `ENGINE_PARAM_DEFINITIONS` 登记规则、默认草稿、卡片和组合映射；键集、默认值、普通字段渲染、读写和保存快照自动派生。
 2. 若需 writePreset 透传：`PresetWriterParams` Pick 加键 + `WRITER_PARAM_KEYS` 加键（断言强制）。
 3. 只有跨字段的模型／授权关系才修改 `host/manifest.ts`；普通模块参数不再额外手写双向映射。
-4. 存储：参数定义的 card 必须在编辑组目录登记主归属层，存储路径随目录派生；MODEL_SEGMENT_MAP 仅用于一次性旧格式迁移，不能新增运行时双读。
+4. 存储：参数定义的 card 必须在编辑组目录登记主归属层，存储路径随目录派生；只读取当前 layerSettings，不维护旧字段映射或运行时双读。
 5. UI：现有模块普通字段自动渲染；新增特殊交互才扩展专用编辑器，禁止增加第二份参数清单。
 6. 测试：`test/host/engine-params-bridge.test.mjs` 的 BRIDGE_SAMPLES 加样本值（若为参数桥消费键）。
 7. `docs/architecture-params.md` 如有语义变更同步；CHANGELOG 记条目。
@@ -554,5 +554,5 @@ buildSubagentToolParameters(c)     → 模型可见扩展参数 Schema
 
 完整预设导入复用 writer 的 `sourceDir` 与 `materializeOnly` 模式：从隔离来源物化到独立候选目录，最终 ID 与暂存位置分离，不写目标，也不再同步共享引擎（引擎由插件包提供）。安装方先完成工具／配置／附件校验，再版本复检和 rename 交换；普通保存与重建继续复用 writer。预设自有正文及本地 engine 保留，禁止遍历清理兄弟预设。详见 [资产交换](asset-transfer.md)。
 
-- `test/host/engine-params-bridge.test.mjs`：PARAM_KEYS 派生一致性；每个 ENGINE_PARAM_KEYS 键有装配消费；MODEL_SEGMENT_MAP 段目标唯一。
+- `test/host/engine-params-bridge.test.mjs`：PARAM_KEYS 派生一致性；每个 ENGINE_PARAM_KEYS 键有装配消费。
 - `test/host/write-preset.test.mjs`：模型参数 patch 生成/留空跳过；空值删键（''/[]）；变量文件只读顶层 variables，保留空串与同名键，清空后不回退旧 params。

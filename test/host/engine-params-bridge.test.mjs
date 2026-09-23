@@ -15,7 +15,6 @@ installFixturePresetInHome(home)
 const { ENGINE_PARAM_DEFINITIONS, ENGINE_PARAM_KEYS, buildEngineModuleParams } = await import('../../src/shared/engine-params.ts')
 const { PARAM_KEYS } = await import('../../src/shared/param-keys.ts')
 const {
-  MODEL_SEGMENT_MAP,
   applyModuleConfigs,
   buildModuleConfigsFromParams,
   loadPresetSpec,
@@ -81,18 +80,18 @@ test('moduleConfigs 未声明时返回原文（零开销）', () => {
   assert.equal(applyModuleConfigs(RAW, {}), RAW)
 })
 
-test('resolvePresetParams 模型路由/委派参数全扁平（preset.yml params 与运行时扁平键等价）', () => {
-  const flat = resolvePresetParams({ id: 't', params: { modelProvider: 'deepseek', modelName: 'deepseek-v4-flash-7013', customToolRequireApproval: ['shell', 'fs'], maxDepth: 2 } }, {})
+test('resolvePresetParams 从当前层结构展平模型路由与委派参数，显式运行参数优先', () => {
+  const flat = resolvePresetParams({ id: 't', layerSettings: { 'agent-request': { modelProvider: 'deepseek', modelName: 'deepseek-v4-flash-7013' }, 'tool-pipeline': { customToolRequireApproval: ['shell', 'fs'] }, 'subagent-start': { maxDepth: 2 } } }, {})
   assert.equal(flat.modelProvider, 'deepseek')
   assert.equal(flat.modelName, 'deepseek-v4-flash-7013')
   assert.deepEqual(flat.customToolRequireApproval, ['shell', 'fs'])
   assert.equal(flat.maxDepth, 2)
   // 运行时扁平键优先于 preset.yml 默认值。
-  const overridden = resolvePresetParams({ id: 't', params: { modelProvider: 'preset-default', modelName: 'm1' } }, { modelProvider: 'runtime-wins' })
+  const overridden = resolvePresetParams({ id: 't', layerSettings: { 'agent-request': { modelProvider: 'preset-default', modelName: 'm1' } } }, { modelProvider: 'runtime-wins' })
   assert.equal(overridden.modelProvider, 'runtime-wins')
   assert.equal(overridden.modelName, 'm1')
   // 空默认值不渲染（renderEngineTokens 对空串/空数组跳过）。
-  const empty = resolvePresetParams({ id: 't', params: { modelProvider: '', modelName: '', customToolRequireApproval: [], maxDepth: '' } }, {})
+  const empty = resolvePresetParams({ id: 't', layerSettings: { 'agent-request': { modelProvider: '', modelName: '' }, 'tool-pipeline': { customToolRequireApproval: [] }, 'subagent-start': { maxDepth: '' } } }, {})
   assert.equal(empty.modelProvider, '')
   assert.deepEqual(empty.customToolRequireApproval, [])
   assert.equal(empty.maxDepth, '')
@@ -159,7 +158,7 @@ test('参数桥透传模块行参数覆盖组合源行默认', () => {
 })
 
 test('instructionHint 的展示归属不影响显式参数及行配置隐含装配', () => {
-  for (const configuration of [{ params: { instructionHint: true } }, { moduleConfigs: { 'instruction-hint': { enabled: true } } }]) {
+  for (const configuration of [{ layerSettings: { 'pre-step': { instructionHint: true } } }, { moduleConfigs: { 'instruction-hint': { enabled: true } } }]) {
     const spec = { id: 'hint-only', name: 'hint-only', modules: [], ...configuration }
     const rows = parseYaml(renderComposition(spec, {}))
     assert.deepEqual(rows.map((row) => row.id), ['instruction-hint'])
@@ -402,17 +401,6 @@ test('组合源 yml 出现的键都有归属：参数目录登记，或该模块
   }
   assert.ok(checked > 0, `应检查到组合源 yml 的配置键（否则守卫空转）；跳过：无同名模块文件 ${[...skipped].join(',') || '无'}；待 B2 补白名单 ${[...pendingWhitelist].join(',') || '无'}`)
   assert.deepEqual(unowned, [], `这些键既未在参数目录登记，也不属于该模块的 ALLOWED_KEYS → 无人拥有（跳过：${[...skipped].join(',') || '无'}；待 B2 T4 补白名单：${[...pendingWhitelist].join(',') || '无'}）`)
-})
-
-test('MODEL_SEGMENT_MAP 显式迁移源唯一，覆盖全部旧模型字段', () => {
-  const targets = new Set()
-  for (const [flatKey, [segment, segmentKey]] of Object.entries(MODEL_SEGMENT_MAP)) {
-    assert.ok(flatKey.length > 0 && segment.length > 0 && segmentKey.length > 0, `映射项非空: ${flatKey}`)
-    const target = `${segment}.${segmentKey}`
-    assert.ok(!targets.has(target), `段目标重复: ${target}（两个扁平键映射到同一段键）`)
-    targets.add(target)
-  }
-  assert.equal(Object.keys(MODEL_SEGMENT_MAP).length, 10, '模型段映射应覆盖 10 个扁平键')
 })
 
 test('字符串深度与数字同义，普通委派及实例策略均接收归一后的限制', () => {

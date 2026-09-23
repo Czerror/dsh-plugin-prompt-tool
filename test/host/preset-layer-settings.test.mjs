@@ -9,7 +9,7 @@ const { presetRoot } = isolatedHome('pt-layer-settings-')
 const { ENGINE_PARAM_LAYERS, engineParamPath } = await import('../../src/host/preset-layer-settings.ts')
 const { ENGINE_PARAM_KEYS, ENGINE_PARAM_DEFINITIONS } = await import('../../src/shared/engine-params.ts')
 const { ENGINE_EDITOR_GROUP_MAP } = await import('../../src/shared/engine-capabilities.ts')
-const { loadPresetSpec, savePresetParams, savePresetPersona, withPresetDoc, createEngineCapabilityInPreset, removeEngineCapabilityFromPreset, resolvePresetModuleFacts, resolveRenderablePresetDir, duplicateUserPreset } = await import('../../src/host/manifest.ts')
+const { loadPresetSpec, savePresetParams, savePresetPersona, withPresetDoc, createEngineCapabilityInPreset, removeEngineCapabilityFromPreset, resolvePresetParams, renderComposition, resolvePresetModuleFacts, resolveRenderablePresetDir, duplicateUserPreset } = await import('../../src/host/manifest.ts')
 
 function preset(id, body) {
   const dir = join(presetRoot, id)
@@ -53,7 +53,7 @@ test('新格式按层往返、false/0 保留、空字符串和数组删除；规
   assert.deepEqual(readdirSync(dir), ['preset.yml'], '参数保存仅更新预设定义，不生成额外备份文件')
 })
 
-test('旧位置登记键明确拒绝，其他段保存与模板回退也不能绕过', () => {
+test('旧参数段按未知字段保留但不生效，读取和保存只使用 layerSettings', () => {
   for (const [id, body] of [
     ['old-flat', 'params: { injectPrompt: false }\n'],
     ['old-model', 'model: { provider: vendor }\n'],
@@ -62,17 +62,18 @@ test('旧位置登记键明确拒绝，其他段保存与模板回退也不能�
   ]) {
     const dir = preset(id, body)
     const file = join(dir, 'preset.yml')
-    const before = readFileSync(file)
-    const code = { code: 'preset-migration-required' }
-    assert.throws(() => loadPresetSpec(dir), code)
-    assert.throws(() => savePresetParams(presetRoot, id, undefined, []), code)
-    assert.throws(() => savePresetPersona(presetRoot, id, null), code)
-    assert.throws(() => withPresetDoc(dir, (doc) => doc.set('variables', { x: 'v' })), code)
-    assert.throws(() => createEngineCapabilityInPreset(dir, { action: 'create', capabilityId: 'tool-filter' }), code)
-    assert.throws(() => removeEngineCapabilityFromPreset(dir, 'tool-filter'), code)
-    assert.throws(() => resolveRenderablePresetDir(id, presetRoot), code)
-    assert.equal(duplicateUserPreset(id, presetRoot).ok, false)
-    assert.deepEqual(readFileSync(file), before)
+    const before = parseYaml(readFileSync(file, 'utf8'))
+    assert.deepEqual(loadPresetSpec(dir).params ?? {}, {})
+    savePresetParams(presetRoot, id, { injectPrompt: true }, [])
+    savePresetPersona(presetRoot, id, null)
+    withPresetDoc(dir, (doc) => doc.set('variables', { x: 'v' }))
+    assert.deepEqual(loadPresetSpec(dir).params, { injectPrompt: true })
+    assert.equal(resolveRenderablePresetDir(id, presetRoot).dir, dir)
+    const duplicate = duplicateUserPreset(id, presetRoot)
+    assert.equal(duplicate.ok, true, duplicate.message)
+    assert.deepEqual(loadPresetSpec(join(presetRoot, duplicate.id)).params, { injectPrompt: true })
+    const after = parseYaml(readFileSync(file, 'utf8'))
+    for (const segment of ['params', 'model', 'subagentModel']) assert.deepEqual(after[segment], before[segment])
   }
 })
 
@@ -85,6 +86,19 @@ test('新字段拒绝错误层和非对象形状，不写盘', () => {
     assert.throws(() => savePresetParams(presetRoot, `bad-shape-${index}`, undefined, []), { code: 'preset-layer-settings-invalid' })
     assert.deepEqual(readFileSync(join(dir, 'preset.yml')), before)
   })
+})
+
+test('直接渲染原始定义也忽略旧 params，能力编辑不会使旧值重新生效', () => {
+  const source = { id: 'raw', modules: [], params: { toolGitBashEnabled: true, modelName: 'old' }, model: { provider: 'old' } }
+  assert.deepEqual(resolvePresetParams(source, {}), { promptText: '' })
+  assert.deepEqual(resolvePresetModuleFacts(source).effectiveModules, [])
+  assert.deepEqual(parseYaml(renderComposition(source, {})), [])
+  assert.equal(resolvePresetParams(source, { modelName: 'explicit' }).modelName, 'explicit', '当前调用方的显式运行参数仍生效')
+  const dir = preset('raw-capability', 'params: { toolGitBashEnabled: true }\n')
+  createEngineCapabilityInPreset(dir, { action: 'create', capabilityId: 'tool-config-engine' })
+  const disk = parseYaml(readFileSync(join(dir, 'preset.yml'), 'utf8'))
+  assert.deepEqual(disk.params, { toolGitBashEnabled: true })
+  assert.ok(!resolvePresetModuleFacts(disk).effectiveModules.includes('tool-git-bash'))
 })
 
 test('新格式参数隐含装配，能力移除同时删除所属参数，不影响同层其他能力', () => {

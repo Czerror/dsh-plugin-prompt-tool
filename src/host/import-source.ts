@@ -71,7 +71,7 @@ export function assetSourceDigest(files: AssetFile[]): string {
 /** 角色片段只接受自包含配置，验证时不得读取上传来源以外的磁盘文件。 */
 export function validateCharacterSpec(spec: PresetSpec): void {
   readPresetLayerSettings(spec)
-  for (const field of ['composition', 'customTools', 'content', 'model', 'subagentModel', 'subagentToolPolicy', 'moduleConfigs'] as const) {
+  for (const field of ['composition', 'customTools', 'content', 'subagentToolPolicy', 'moduleConfigs'] as const) {
     const value = spec[field]
     if (value !== undefined && !(Array.isArray(value) && value.length === 0) && !(isRecord(value) && Object.keys(value).length === 0)) {
       throw new Error(`角色片段不支持 ${field}；请从预设页导入完整预设`)

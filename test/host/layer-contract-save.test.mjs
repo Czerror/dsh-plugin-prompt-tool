@@ -9,6 +9,7 @@ const home = mkdtempSync(join(process.cwd(), 'pt-layer-contract-save-'))
 process.env.DSH_HOME = home
 const { registerSettingsBridge } = await import('../../src/runtime/settings-bridge.ts')
 const { validatePromptConfigs } = await import('../../src/runtime/configs-validate.ts')
+const { validateCharacterSpec } = await import('../../src/host/import-source.ts')
 const { BRIDGE_ENDPOINTS, SETTINGS_BRIDGE_PREFIX } = await import('../../src/shared/bridge-contract.ts')
 after(() => {
   rmSync(home, { recursive: true, force: true })
@@ -100,8 +101,8 @@ test('保存校验按目标预设共享引擎位置解析有效 templateFile', a
   assert.equal(parse(readFileSync(target.file, 'utf8')).promptConfigs[0].templateFile, templateFile)
 })
 
-test('旧参数格式显式报告迁移要求，读写均不伪报成功或改动原文件', async () => {
-  const target = harness('params:\n  modelTemperature: 0.7\n')
+test('无效当前层参数由统一格式守卫拒绝，读写均不伪报成功或改动原文件', async () => {
+  const target = harness('layerSettings:\n  pre-step:\n    modelTemperature: 0.7\n')
   for (const [endpoint, body] of [
     ['bootstrap', undefined], ['describe', undefined], ['paramOverrides', {}],
     ['paramOverrides', { overrides: { modelTemperature: '0.8' } }],
@@ -109,10 +110,35 @@ test('旧参数格式显式报告迁移要求，读写均不伪报成功或改�
     ['presetVariables', {}], ['persona', {}], ['customTools', {}], ['subagentToolPolicy', {}],
   ]) {
     const result = await target.request(endpoint, body)
-    assert.equal(result.status, 409, `${endpoint}: ${JSON.stringify(result.payload)}`)
-    assert.match(result.payload.code, /migration-required/)
-    assert.match(result.payload.message, /迁移|migrat/i)
+    assert.equal(result.status, 400, `${endpoint}: ${JSON.stringify(result.payload)}`)
+    assert.equal(result.payload.code, 'preset-layer-settings-invalid')
+    assert.match(result.payload.message, /layerSettings/)
     assert.equal(readFileSync(target.file, 'utf8'), target.original)
     assert.equal(target.rebuilds, 0)
   }
+})
+
+test('旧模型和 params 字段不进入桥接读回，也不阻断当前层参数保存', async () => {
+  const target = harness('params: { modelTemperature: 0.7 }\nmodel: { provider: old }\nsubagentModel: { name: old-child }\nlayerSettings:\n  agent-request:\n    modelTemperature: 0.2\n')
+  for (const endpoint of ['bootstrap', 'describe', 'presetVariables', 'persona', 'customTools', 'subagentToolPolicy']) {
+    const result = await target.request(endpoint, {})
+    assert.equal(result.status, 200, `${endpoint}: ${JSON.stringify(result.payload)}`)
+  }
+  const before = await target.request('paramOverrides', {})
+  assert.deepEqual(before.payload.value.overrides, { modelTemperature: 0.2 })
+  const saved = await target.request('paramOverrides', { overrides: { modelTemperature: '0.8' } })
+  assert.equal(saved.status, 200)
+  const disk = parse(readFileSync(target.file, 'utf8'))
+  assert.deepEqual(disk.params, { modelTemperature: 0.7 })
+  assert.deepEqual(disk.model, { provider: 'old' })
+  assert.deepEqual(disk.subagentModel, { name: 'old-child' })
+  assert.equal(disk.layerSettings['agent-request'].modelTemperature, '0.8')
+  assert.deepEqual((await target.request('paramOverrides', {})).payload.value.overrides, { modelTemperature: '0.8' })
+})
+
+test('角色片段忽略无消费者的旧模型段，当前参数与工具边界仍校验', () => {
+  const spec = { id: 'character', name: 'Character', model: { provider: 'old' }, subagentModel: { name: 'old-child' }, promptConfigs: [] }
+  assert.doesNotThrow(() => validateCharacterSpec(spec))
+  assert.throws(() => validateCharacterSpec({ ...spec, customTools: [{ id: 'tool' }] }), /不支持 customTools/)
+  assert.throws(() => validateCharacterSpec({ ...spec, layerSettings: { 'pre-step': { modelName: 'wrong-layer' } } }), { code: 'preset-layer-settings-invalid' })
 })

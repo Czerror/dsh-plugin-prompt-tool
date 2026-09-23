@@ -621,7 +621,7 @@ export type {
 } from './runtime/pre-step-coordinator.ts'
 export { mergeInstructionCards } from './runtime/settings-bridge.ts'
 export { convertStToPreset, mergeStPresets, processStText, stPresetId } from './host/sillytavern.ts'
-export { applyModuleConfigs, buildModuleConfigsFromParams, removePresetModule, savePresetParams, savePresetPersona, MODEL_SEGMENT_MAP } from './host/manifest.ts'
+export { applyModuleConfigs, buildModuleConfigsFromParams, removePresetModule, savePresetParams, savePresetPersona } from './host/manifest.ts'
 export { createEngineCapabilityInPreset, loadPresetSpec, removeEngineCapabilityFromPreset, renderComposition, resolvePresetModuleFacts, resolvePresetParams } from './host/manifest.ts'
 export { ENGINE_PARAM_KEYS, WRITER_PARAM_KEYS, validateEngineParamValues } from './shared/engine-params.ts'
 export { assertSafeConfigId, configFileName } from './host/prompt-configs.ts'
