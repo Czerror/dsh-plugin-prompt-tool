@@ -5,10 +5,9 @@
  * 只承载行为开关与展示名：正文永远在用户的原文件里，策略文件不存正文、读取版本、
  * 会话 ID 或任意客户端路径——路径与文件身份由服务端探测结果解析。
  *
- * 缺省 `enabled: true`：指令文件即真相——探测到的文件默认参与注入，与官方
- * `@deepseek-ai/dsh-agent-instructions` 同装时由负责人冲突规则让位（同一正文只由一方
- * 注入），用户可在工作台关闭总开关或单文件开关。不从各预设的旧 agentsHints 推导；
- * 文件缺失时用默认值，不因读取自动创建。
+ * 缺省 `enabled: false`：独立来源必须先完成负责人切换（预设去掉官方指令行），再由用户
+ * 在工作台显式开启；键缺失 = 关闭，只有显式 `enabled: true` 才参战。不从各预设的旧
+ * agentsHints 推导；文件缺失时用默认值，不因读取自动创建。
  * 写入使用 yaml Document API 保留注释与未知字段；解析失败或 schemaVersion 不认识时
  * 拒绝写入（不把损坏文件当空配置覆盖）。
  */
@@ -57,7 +56,7 @@ const VALUE_KEYS = ['order', 'position', 'promotion', 'audience', 'modelScope'] 
 const OVERRIDE_KEYS = [...VALUE_KEYS, 'enabled', 'name'] as const
 
 export function defaultInstructionPolicy(): InstructionPolicy {
-  return { enabled: true, defaults: { ...DEFAULT_VALUES }, files: {} }
+  return { enabled: false, defaults: { ...DEFAULT_VALUES }, files: {} }
 }
 
 export function instructionPolicyPath(dshHome: string = DSH_HOME): string {
@@ -184,8 +183,8 @@ export function readInstructionPolicy(file: string = instructionPolicyPath()): I
   if (!validated.ok) return { ...empty, exists: true, revision, error: validated.message }
   const patch = validated.patch
   const policy: InstructionPolicy = {
-    // 缺省启用：键缺失 = 默认开启；只有显式 `enabled: false` 才关闭。
-    enabled: patch.enabled !== false,
+    // 缺省关闭：键缺失 = 关闭；只有显式 `enabled: true` 才参战。
+    enabled: patch.enabled ?? false,
     defaults: { ...DEFAULT_VALUES, ...patch.defaults },
     files: Object.fromEntries(Object.entries(patch.files ?? {}).flatMap(([fileId, override]) => (override === null ? [] : [[fileId, override]]))),
   }
@@ -264,9 +263,9 @@ export function writeInstructionPolicy(options: {
   const patch = validated.patch
 
   if (patch.enabled !== undefined) {
-    // 默认值不落键：true = 缺省（删除键），false = 显式关闭。
-    if (patch.enabled) doc.delete('enabled')
-    else doc.set('enabled', false)
+    // 默认值不落键：false = 缺省（删除键），true = 显式开启。
+    if (patch.enabled) doc.set('enabled', true)
+    else doc.delete('enabled')
   }
   if (patch.defaults !== undefined) {
     for (const key of VALUE_KEYS) {

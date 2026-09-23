@@ -137,7 +137,7 @@ src/client/
 独立指令来源与指令策略（2026-09-14 起）：
 
 - 注入由宿主侧 pre-step 协调器统一执行（预设卡 + 独立指令文件卡同一批算法、每个 scope 只有一个执行器）；正文以 `Instructions from: <路径>` 头 literal 注入，不经过预设变量插值。
-- 行为开关在 `$DSH_HOME/.prompt-tool/instructions.yml`：启停、层内序号、位置、晋升、受众、模型范围。**默认 `enabled: true`**（探测到的文件默认参与注入；键缺失即视为开启，只有显式 `enabled: false` 才关闭），工作台模块列表工具栏的「独立指令文件来源」总开关可随时关闭；与官方 `@deepseek-ai/dsh-agent-instructions` 同装时由负责人冲突规则让位（同一正文只由一方注入）。`preset.yml#agentsHints` 已不再生效（旧字段不迁移、不删除）。
+- 行为开关在 `$DSH_HOME/.prompt-tool/instructions.yml`：启停、层内序号、位置、晋升、受众、模型范围。**默认 `enabled: false`**（安全缺省：键缺失即视为关闭，只有显式 `enabled: true` 才参战；策略文件不因读取自动创建），需在工作台模块列表工具栏的「独立指令文件来源」总开关里显式开启；与官方 `@deepseek-ai/dsh-agent-instructions` 同装时由负责人冲突规则让位（同一正文只由一方注入）。`preset.yml#agentsHints` 已不再生效（旧字段不迁移、不删除）。
 - 同一文件同版本在可见上下文里只注入一次；文件内容变化会在下一个合适时机注入新版本；成功压缩后同版本会重新注入一次；已注入过的文件被清空/删除只发一次失效通知，历史正文不撤回。
 - 负责人冲突：预设里仍挂着官方 `@deepseek-ai/dsh-agent-instructions` 行时，独立来源**不注入**（同一正文只由一方注入），工作台会显示该状态；要用插件来源请先在预设里去掉官方指令行/模块再开启策略。
 

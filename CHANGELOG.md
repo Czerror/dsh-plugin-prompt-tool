@@ -1,5 +1,12 @@
 # Changelog
 
+## 指令策略回到安全缺省（2026-09-23）
+
+- **`enabled` 缺省恢复 `false`（需在工作台显式开启）**：`defaultInstructionPolicy()`、`readInstructionPolicy`（键缺失 = 关闭，只有显式 `true` 才参战）与落键规则一并反转——`true` 现在显式写 `enabled: true`，`false` 视为缺省而删除该键。`dfdac10`「指令文件默认启用」只同步了 README 与部分 UI 架构文档，其余 8 处注释/UI 文案/客户端兜底快照/两份 docs 仍写「默认关闭」，长期自相矛盾；本轮以「安全缺省」定案并统一。
+- 语义要点（本轮不变）：策略文件**缺失或损坏一律不参战**（不把损坏当空配置继续注入）；总开关关闭是硬关，`files.<id>.enabled: true` 无法在部署级关闭下单独开启；单文件 `enabled: false` 只关该文件、不影响其余；策略只影响未来注入，不撤回已进入会话历史的内容。
+- 回归同步：`pre-step-injection` 的 T15 改为「策略缺失（默认关闭）不注入文件正文」；`instructions-policy` 错误态回退断言改为缺省关闭，YAML 序列化失败用例改用 `enabled: false` 触发删键；`instructions-policy-endpoint` 缺失读取断言改为 `enabled: false`。
+- README 指令策略段改回 `默认 enabled: false`；`docs/` 三处原本就写缺省 false，未改动。
+
 ## 移除插件状态文件（2026-09-23）
 
 - **删除 `$DSH_HOME/.prompt-tool-state.json` 的全部读写**：`stateFilePath` / `PromptToolState` / `readPluginState` / `writePluginState` 及 `index` 导出整体移除，`ensurePresetSeed` 不再写 `seeded` 标记。

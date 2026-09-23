@@ -205,12 +205,11 @@ const registerPreset = (harness, configs, officialInstructions = false) =>
     officialInstructions,
   })
 
-test('T15 策略缺失（默认启用）按默认档位注入文件正文', async () => {
+test('T15 策略缺失（默认关闭）不注入文件正文', async () => {
   const harness = coordinatorFor({ policyFile: newPolicyFile() })
   const decision = await step(harness, agentAt(nested))
-  const cards = fileMessages(decision)
-  assert.equal(cards.length, 2, '默认启用时全局与项目文件都参战')
-  assert.deepEqual(decision.messages.map((message) => message.source.kind), ['user', 'instruction-file', 'instruction-file'])
+  assert.equal(fileMessages(decision).length, 0, '缺省关闭时没有文件卡参战')
+  assert.deepEqual(decision.messages.map((message) => message.id), ['task-1'])
   assert.deepEqual(harness.warnings, [])
 })
 
