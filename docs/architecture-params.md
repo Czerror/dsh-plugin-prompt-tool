@@ -15,22 +15,9 @@
 
 显式模块预设存在 `promptConfigs` 或可生成的模型请求规则时，生成组合自动补齐 `prompt-config-engine`；`effectiveModules` 同步反映此依赖，`declaredModules` 保持磁盘声明。模型规则由 `host/prompt-configs.ts#modelRequestConfigs` 同时服务生成和依赖判定，避免“规则文件已生成但无消费者”。没有规则或请求参数的空预设仍为空，手写 composition 不被改写。
 
-正常读写不兼容旧位置中的登记参数：`params.<已登记键>`、`model`/`subagentModel` 已登记字段返回 `preset-migration-required`；未知字段保持原样，且不进入运行参数。`layerSettings` 中登记键放错层、层名或形态错误返回 `preset-layer-settings-invalid`。bridge 对迁移要求返回 409，不静默回落成空值。
+正常读写不兼容旧位置中的登记参数：`params.<已登记键>`、`model`/`subagentModel` 已登记字段明确拒绝（错误码 `preset-migration-required`，bridge 返回 409），提示按当前 `layerSettings` 格式更新预设；未知字段保持原样，且不进入运行参数。`layerSettings` 中登记键放错层、层名或形态错误返回 `preset-layer-settings-invalid`，不静默回落成空值。
 
-一次性离线脚本为 `scripts/migrate-layer-settings.mjs`，不注册日常产品工具或 package script，也不在启动、读取、保存时自动迁移。由已授权的维护操作执行：
-
-```powershell
-Set-Location 'D:\AI\workspase\_temp'
-$PresetRoot = Join-Path $env:DSH_HOME '.agent-presets'
-$PresetFiles = Get-ChildItem -LiteralPath $PresetRoot -Directory |
-  Where-Object { -not $_.Name.StartsWith('.') } |
-  ForEach-Object { Join-Path $_.FullName 'preset.yml' } |
-  Where-Object { Test-Path -LiteralPath $_ }
-node D:/AI/GitHub/dsh-plugin-prompt-tool/scripts/migrate-layer-settings.mjs @PresetFiles
-node D:/AI/GitHub/dsh-plugin-prompt-tool/scripts/migrate-layer-settings.mjs @PresetFiles --write
-```
-
-上例要求 DSH_HOME 已设置；未设置时使用操作系统用户目录下的 `.dsh`。默认只预览；`--write` 才原子替换指定文件。脚本通过 YAML Document 移动节点，保留注释、未知字段、规则参数、false/0；冲突和并发改动拒绝覆盖。备份 `.layer-settings-backup.json` 保存原始字节及前后摘要，被预设导出排除。`--rollback --write` 对同一预设恢复，当前摘要必须仍等于迁移后或迁移前摘要；用户已有新改动时拒绝恢复。空预设保持为空，包内预设和导入产物直接使用新格式。
+预设与代码同步维护当前格式，不提供层参数离线迁移、回滚脚本或迁移备份。参数保存直接更新 `preset.yml`，空预设保持为空，包内预设和导入产物使用当前格式。
 
 九层 UI、官方参数与插件参数的对照见 [九层契约](injection-point-contracts.md)。
 

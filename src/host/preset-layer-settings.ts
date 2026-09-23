@@ -1,5 +1,4 @@
 /** 预设磁盘参数：按编辑组主归属层存储，运行时仍使用 EngineParams 平铺接口。 */
-import { parseDocument, Scalar, YAMLMap } from 'yaml'
 import { ENGINE_EDITOR_GROUP_MAP, ENGINE_LAYER_ORDER } from '../shared/engine-capabilities.ts'
 import { ENGINE_PARAM_DEFINITIONS, ENGINE_PARAM_KEYS, type EngineParamKey } from '../shared/engine-params.ts'
 
@@ -9,7 +8,7 @@ export const ENGINE_PARAM_LAYERS = Object.fromEntries(ENGINE_PARAM_KEYS.map((key
   return [key, layer]
 })) as Record<EngineParamKey, string>
 
-/** 只供旧格式识别与显式迁移；运行时不再读取这些位置。 */
+/** 仅用于拒绝不支持的旧模型字段；不读取旧值，也不提供迁移。 */
 export const MODEL_SEGMENT_MAP: Record<string, [string, string]> = {
   modelProvider: ['model', 'provider'],
   modelName: ['model', 'name'],
@@ -69,41 +68,12 @@ function legacyParamPaths(source: Record<string, unknown>): Array<{ key: string;
   return paths
 }
 
-/** 所有磁盘读写入口先检查旧格式；保存其他段也不能绕过显式迁移。 */
+/** 所有磁盘读写入口拒绝不支持的参数位置，预设直接维护当前 layerSettings 格式。 */
 export function readPresetLayerSettings(source: unknown): Record<string, unknown> {
   if (!isRecord(source)) throw new PresetLayerSettingsError('preset-layer-settings-invalid', 'preset.yml 必须是对象')
   const legacy = legacyParamPaths(source)
   if (legacy.length > 0) {
-    throw new PresetLayerSettingsError('preset-migration-required', `请先显式迁移旧参数：${legacy.map(({ path }) => path.join('.')).join(', ')}`)
+    throw new PresetLayerSettingsError('preset-migration-required', `不支持旧参数位置，请按 layerSettings 格式更新预设：${legacy.map(({ path }) => path.join('.')).join(', ')}`)
   }
   return readLayerSettings(source.layerSettings)
-}
-
-/** 迁移节点而非重建对象，保留值、注释、未知字段和规则实例参数。 */
-export function migratePresetLayerSettings(raw: string): { text: string; moved: string[] } {
-  const doc = parseDocument(raw, { logLevel: 'silent' })
-  if (doc.errors.length > 0 || !(doc.contents instanceof YAMLMap)) throw new Error('预设定义必须是合法 YAML 对象')
-  const source = doc.toJS() as Record<string, unknown>
-  readLayerSettings(source.layerSettings)
-  const paths = legacyParamPaths(source)
-  const seen = new Set<string>()
-  for (const { key } of paths) {
-    if (seen.has(key) || doc.hasIn(engineParamPath(key))) throw new Error(`迁移参数冲突：${key}`)
-    seen.add(key)
-  }
-  for (const { key, path } of paths) {
-    const parent = doc.getIn([path[0]], true)
-    if (!(parent instanceof YAMLMap)) throw new Error(`迁移源必须是 YAML 对象：${path[0]}`)
-    const pair = parent.items.find((item) => item.key instanceof Scalar && item.key.value === path[1])
-    if (pair === undefined || !(pair.key instanceof Scalar)) throw new Error(`无法迁移参数：${path.join('.')}`)
-    const targetPath = engineParamPath(key)
-    if (!doc.hasIn(targetPath.slice(0, 2))) doc.setIn(targetPath.slice(0, 2), doc.createNode({}))
-    const target = doc.getIn(targetPath.slice(0, 2), true)
-    if (!(target instanceof YAMLMap)) throw new Error(`迁移目标必须是 YAML 对象：${targetPath.slice(0, 2).join('.')}`)
-    parent.items.splice(parent.items.indexOf(pair), 1)
-    pair.key.value = key
-    target.items.push(pair)
-  }
-  readPresetLayerSettings(doc.toJS())
-  return { text: paths.length > 0 ? doc.toString() : raw, moved: [...seen] }
 }

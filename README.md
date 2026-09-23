@@ -159,7 +159,7 @@ src/client/
 | `layerSettings.agent-request`（主对话） | `modelProvider` `modelName` `modelReasoningEffort` `modelTemperature` `modelMaxTokens` |
 | `layerSettings.subagent-start`（子代理） | `subagentModelProvider` `subagentModelName` `subagentReasoningEffort` `subagentTemperature` `subagentMaxTokens` `maxDepth` |
 
-读取新结构后展平到内部 EngineParams；保存只更新所属层。旧 `params` / 模型段不双读、不在运行时自动迁移；一次性离线迁移与恢复见[参数框架](docs/architecture-params.md)。人设仍统一写顶层 `persona` 段；子代理独立人设由 `moduleConfigs.tool-subagent.persona` 声明。示例：
+读取当前结构后展平到内部 EngineParams；保存只更新所属层。预设与代码同步维护当前格式，不提供旧 `params` / 模型段的兼容读取、离线迁移或迁移备份，字段归属见[参数框架](docs/architecture-params.md)。人设仍统一写顶层 `persona` 段；子代理独立人设由 `moduleConfigs.tool-subagent.persona` 声明。示例：
 
 ```yaml
 persona:

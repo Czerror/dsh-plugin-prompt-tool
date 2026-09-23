@@ -303,7 +303,7 @@ export function validateEngineParamValues(overrides: Record<string, unknown>): E
     if (value === undefined || value === null) continue
     const rule = Object.hasOwn(ENGINE_PARAM_DEFINITIONS, key) ? ENGINE_PARAM_DEFINITIONS[key as EngineParamKey] : undefined
     if (rule === undefined) {
-      errors.push({ key, message: `${key}: 未知参数键（旧键已移除运行时兼容，请用迁移脚本清理）` })
+      errors.push({ key, message: `${key}: 未知参数键，请按当前参数定义更新预设` })
       continue
     }
     const message = validateParamValue(key, rule, value)
