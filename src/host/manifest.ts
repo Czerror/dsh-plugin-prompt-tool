@@ -15,7 +15,7 @@ import { spawn } from 'node:child_process'
 import { basename, join, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { Pair, Scalar, parse as parseYaml, parseDocument, YAMLMap, YAMLSeq } from 'yaml'
-import { DEFAULT_PRESET_DIR, DSH_HOME } from './paths.ts'
+import { DEFAULT_PRESET_DIR } from './paths.ts'
 import { engineCapability, engineRecipe, impliedModulesForParams, isEngineCapabilityPresent, type ModuleSourceMode, type PresetModuleFacts } from '../shared/engine-capabilities.ts'
 import { ENGINE_PARAM_DEFINITIONS, ENGINE_PARAM_KEYS, buildEngineModuleParams, normalizeMaxDepth } from '../shared/engine-params.ts'
 import { personaRowConfig, readPersonaSpec, type PersonaSpec } from '../shared/persona-section.ts'
@@ -296,34 +296,6 @@ export function listBuiltinTemplates(): Array<{ id: string; name: string }> {
   }
 }
 
-/** 插件状态文件（DSH_HOME 下，预设根之外）：与用户资产解耦，删除/备份/迁移预设根不影响状态。
- *  原子写（tmp+rename），避免半写文件。 */
-export function stateFilePath(): string {
-  return join(DSH_HOME, '.prompt-tool-state.json')
-}
-
-export interface PromptToolState {
-  seeded?: boolean
-}
-
-/** 读插件状态；文件缺失/损坏返回空对象（按未标记处理，触发首次动作）。 */
-export function readPluginState(): PromptToolState {
-  try {
-    const parsed = JSON.parse(readFileSync(stateFilePath(), 'utf8'))
-    return parsed !== null && typeof parsed === 'object' ? parsed as PromptToolState : {}
-  } catch {
-    return {}
-  }
-}
-
-/** 原子写插件状态（tmp+rename）。 */
-export function writePluginState(state: PromptToolState): void {
-  const file = stateFilePath()
-  const tmp = `${file}.tmp`
-  writeFileSync(tmp, JSON.stringify(state, null, 2), 'utf8')
-  renameSync(tmp, file)
-}
-
 /** 按包内同名目录补建缺失预设；已有目录的定义、生成物和资源保持原样。 */
 export function ensurePresetSeed(root = userPresetsDir()): { created: string[] } {
   const created: string[] = []
@@ -336,7 +308,6 @@ export function ensurePresetSeed(root = userPresetsDir()): { created: string[] }
       cpSync(join(packagePresetDir(), entry.name), target, { recursive: true })
       created.push(entry.name)
     }
-    writePluginState({ ...readPluginState(), seeded: true })
   } catch {
     // 种子化失败（目录不可写等）不阻断启动，用户仍可经 UI 新建/导入。
   }

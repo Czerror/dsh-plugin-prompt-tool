@@ -9,7 +9,7 @@ import { parse } from 'yaml'
 // 隔离 DSH_HOME：paths.ts 模块级常量在 import 时求值，必须先设 env 再动态 import lib。
 const home = mkdtempSync(join(tmpdir(), 'pt-preset-isolation-'))
 process.env.DSH_HOME = home
-const { apply, writePluginState } = await import('../../src/index.ts')
+const { apply } = await import('../../src/index.ts')
 
 function makeCtx(settingsValue) {
   let onChange
@@ -72,7 +72,6 @@ const readConfigs = (presetDir, id) => {
 test('补建只创建缺失目录，已有非当前预设的定义与资源保持原样', (t) => {
   t.after(() => rmSync(home, { recursive: true, force: true }))
   const presetDir = join(home, '.agent-presets')
-  writePluginState({ seeded: true })
   // 激活预设：有一条独有配置，切换前它是「当前编辑上下文」。
   mkdirSync(join(presetDir, 'anchored'), { recursive: true })
   writeFileSync(join(presetDir, 'anchored', 'preset.yml'), presetYml('anchored', 'anchored-only', 'ANCHORED-ONLY-TEXT'), 'utf8')
@@ -110,7 +109,6 @@ test('当前 pt-standard 保存物化自身的变量和能力模块，其他预�
     writeFileSync(join(presetDir, id, 'preset.yml'),
       `id: ${id}\nname: ${id}\nmodules: [prompt-config-engine, ${module}]\nvariables:\n  owner: ${value}\n`, 'utf8')
   }
-  writePluginState({ seeded: true })
   const other = readFileSync(join(presetDir, 'standard', 'preset.yml'), 'utf8')
   const value = settings('pt-standard')
   const ctx = makeCtx(value)

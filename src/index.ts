@@ -630,11 +630,9 @@ export {
   ensurePresetSeed,
   listBuiltinTemplates,
   listPresets,
-  readPluginState,
   removeUserPreset,
   resolvePresetDir,
   userPresetsDir,
-  writePluginState,
 } from './host/manifest.ts'
 export { buildWorldBookEntry } from './host/worldbook.ts'
 export { expandPresetSource, exportPresetPackage, presetImportPreview, installPresetPackage } from './host/preset-package.ts'

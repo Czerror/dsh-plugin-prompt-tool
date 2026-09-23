@@ -7,7 +7,7 @@ import { Document } from 'yaml'
 
 const home = mkdtempSync(join(tmpdir(), 'pt-preset-sync-'))
 process.env.DSH_HOME = home
-const { apply: applyPlugin, writePluginState } = await import('../../src/index.ts')
+const { apply: applyPlugin } = await import('../../src/index.ts')
 const apply = (ctx) => applyPlugin(ctx, ctx.config)
 const cleanup = []
 
@@ -126,7 +126,6 @@ function makeHarness(initial, options = {}) {
 test('预设模型参数只归当前预设，启动与切换不回写宿主全局默认模型', async () => {
   preset('route-a', { 'agent-request': { modelProvider: 'provider-a', modelName: 'model-a', modelReasoningEffort: 'high' } })
   preset('route-b')
-  writePluginState({ seeded: true })
   const globalSelection = { provider: 'host-provider', model: 'host-model' }
   const writes = []
   const initial = { writePreset: true, presetTemplate: 'route-a', presetOrder: 5, fallbackText: '' }
@@ -145,7 +144,6 @@ test('预设模型参数只归当前预设，启动与切换不回写宿主全�
 test('官方 selectedDefault 变化反向同步 prompt-tool.presetTemplate 且不回环', async () => {
   preset('anchored')
   preset('demo-preset')
-  writePluginState({ seeded: true })
   const initial = {
     writePreset: false,
     presetTemplate: 'anchored',
@@ -181,7 +179,6 @@ test('宿主关闭模式选择时：不假装同步，跟随服务生效默认�
   preset('anchored')
   preset('demo-preset')
   preset('minimal')
-  writePluginState({ seeded: true })
   const initial = {
     writePreset: false,
     presetTemplate: 'anchored',
@@ -216,7 +213,6 @@ test('宿主未声明策略时：正向写入 selectedDefault，反向跟随存�
   rmSync(presetDir, { recursive: true, force: true })
   preset('anchored')
   preset('demo-preset')
-  writePluginState({ seeded: true })
   const initial = {
     writePreset: false,
     presetTemplate: 'anchored',
@@ -245,7 +241,6 @@ test('兼容快照已处理后，官方预设切换不会创建或复活 prompt-
   rmSync(presetDir, { recursive: true, force: true })
   preset('anchored')
   preset('demo-preset')
-  writePluginState({ seeded: true })
   const initial = {
     writePreset: true,
     presetTemplate: 'anchored',
@@ -286,7 +281,6 @@ test('selectedDefault 未设置时跟随服务的部署默认；启动、重建�
   rmSync(presetDir, { recursive: true, force: true })
   preset('wire-a')
   preset('wire-b')
-  writePluginState({ seeded: true })
   const initial = { writePreset: false, presetTemplate: 'wire-a', presetOrder: 5, fallbackText: '' }
   const harness = makeHarness(initial, { omitSelectedDefault: true, serviceDefaultId: 'wire-b' })
   apply(harness.ctx, initial)

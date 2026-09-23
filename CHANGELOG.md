@@ -1,5 +1,12 @@
 # Changelog
 
+## 移除插件状态文件（2026-09-23）
+
+- **删除 `$DSH_HOME/.prompt-tool-state.json` 的全部读写**：`stateFilePath` / `PromptToolState` / `readPluginState` / `writePluginState` 及 `index` 导出整体移除，`ensurePresetSeed` 不再写 `seeded` 标记。
+- 移除依据：旧迁移通道退场后该文件只剩 `seeded` 一个字段且**无任何读点**——种子化是否执行由预设目录存在性决定（删除内置预设仍自动补建），状态文件不参与运行时分支；`paramsMigrated` / `legacyAliasHandled` 是已删除迁移通道留下的历史残留键。插件目录模板复制行为不变，仍原子写预设根。
+- 已存在的 `$DSH_HOME/.prompt-tool-state.json` 不由插件删除（只停止读写），用户可自行清理。
+- 回归换成 `test/host/preset-seed.test.mjs`：种子化补建 / 幂等 / 删除后恢复，以及种子化不写状态文件、DSH_HOME 根下其他文件逐字节不变。
+
 ## profile 解析修复器与外来脚本清理（2026-09-23）
 
 - **新增 `scripts/repair-profile.mjs`**（`pnpm repair:profile`）：体检并修复 profile **私有层**的包解析失败。启动日志出现 `skipping profile bundle` 时插件整体不加载、其自愈层也不会运行，这类零号故障只能由独立于插件的工具处理。判据与 dsh 的 `resolveBundleDir` 一致，并额外报出「链接在、目标不在」的悬空形态；只写 `<profiles>/<name>/node_modules/`，按 `link:` 声明重建为绝对 junction，真实文件/目录绝不删除，缺依赖只提示官方通道 `dsh plugin --profile <name> install`。

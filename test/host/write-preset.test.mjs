@@ -12,7 +12,7 @@ const home = mkdtempSync(join(tmpdir(), 'pt-wp-home-'))
 process.env.DSH_HOME = home
 const ROOT = fileURLToPath(new URL('../..', import.meta.url))
 const { FIXTURE_PRESET_ID, FIXTURE_PRESET_SRC, installFixturePreset, installFixturePresetInHome } = await import('../fixtures/preset-template.mjs')
-const { apply, Config, writePreset, writePluginState, savePresetParams, loadPresetSpec } = await import('../../src/index.ts')
+const { apply, Config, writePreset, savePresetParams, loadPresetSpec } = await import('../../src/index.ts')
 // 夹具模板同时装进隔离 DSH_HOME 的官方预设根（resolvePresetDir 场景）与各测试的输出根（见 makeOptions）。
 installFixturePresetInHome(home)
 /** 指令文件正文 sentinel：任何预设产物都不得包含它（正文只属于用户文件）。 */
@@ -1043,8 +1043,7 @@ test('writePreset 关闭时清空组合为空数组，保留 preset.yml 与预�
   // 清空预设根以恢复原用例的前置条件（原文件用的是全新 HOME），不放宽断言。
   rmSync(presetDir, { recursive: true, force: true })
   mkdirSync(join(presetDir, 'standard', 'prompt-configs'), { recursive: true })
-  // 预置已种子化状态：避免 ensurePresetSeed 复制全部内置模板干扰预设根断言。
-  writePluginState({ seeded: true })
+  // 内置模板由 ensurePresetSeed 幂等补建，下面的目录断言把补建结果计入期望集合。
   writeFileSync(join(presetDir, 'standard', 'preset.yml'),
     'id: standard\nname: Standard\nmodules: [prompt-config-engine]\n', 'utf8')
   writeFileSync(join(presetDir, 'standard', 'agent.cordis.yml'),
@@ -1066,7 +1065,7 @@ test('writePreset 关闭时清空组合为空数组，保留 preset.yml 与预�
   assert.equal(existsSync(join(presetDir, 'standard', 'prompt-configs')), false, 'prompt-configs 应被清理')
   // 参数源与预设根保留——绝不删除整个用户预设目录。
   assert.equal(existsSync(join(presetDir, 'standard', 'preset.yml')), true, 'preset.yml 参数必须保留')
-  // 状态文件已移出预设根；ensurePresetSeed 会幂等补建全部内置预设目录，
+  // ensurePresetSeed 会幂等补建全部内置预设目录，
   // 清理必须逐个保留其 preset.yml，不能删预设目录本身（防误删回归）。
   const dirs = readdirSync(presetDir).filter((name) => !name.startsWith('.')).sort()
   assert.deepEqual(dirs, ['pt-cordis', 'pt-custom', 'pt-minimal', 'pt-ptc', 'pt-standard', 'standard'].sort())
@@ -1084,7 +1083,6 @@ test('writePreset 开启时不受影响：预设目录正常生成', () => {
   const presetDir = join(home, '.agent-presets')
   // 激活预设 id 用默认值 pt-standard（与插件默认 presetTemplate 同源）。
   mkdirSync(join(presetDir, 'pt-standard'), { recursive: true })
-  writePluginState({ seeded: true })
   writeFileSync(join(presetDir, 'pt-standard', 'preset.yml'),
     'id: pt-standard\nname: Standard\nmodules: [prompt-config-engine]\n', 'utf8')
 
