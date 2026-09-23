@@ -65,7 +65,7 @@ doc.get('promptConfigs', true).commentBefore = ` 每条都是真实规则示例�
 
 const reference = new Document({ layerSettings: Object.fromEntries(LAYER_ORDER.map(layer => [layer, {}])) })
 const notes = {
-  guideEnabled: '不声明时跟随 firstTurnAnchor；false 为显式关闭',
+  guideEnabled: '仅 true 启用；缺省关闭，与 firstTurnAnchor 独立',
   maxDepth: '0 禁止委派；provider-managed 交给 provider；正整数限制深度；空继承',
   modelTemperature: '有限数；空继承宿主，不写入请求 patch',
   modelMaxTokens: '正整数；空继承宿主',

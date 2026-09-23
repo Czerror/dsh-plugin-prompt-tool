@@ -3,8 +3,8 @@
 // 证据链使用已发布的 `@deepseek-ai/dsh-session`：宿主把 decision.messages 逐条写成
 // `user/message` 事件（agent-loop:375–376），事件重载时校验 `role === 'user'`
 // （session index.ts:320–345 `MESSAGE_ROLE_BY_TYPE`）。因此：
-//   - 旧实现（配置/策略声明 assistant）写出的日志在重新加载时抛真实角色错误；
-//   - 新实现（出口统一降级）能持久化 → 重新加载 → 再派生请求。
+//   - 非法 assistant 消息写出的日志在重新加载时抛真实角色错误；
+//   - 配置拒绝 assistant，策略 patch 在出口统一降级后可以持久化往返。
 // 这里不用 stub 加载器：失败断言直接来自官方 Session.create(seed) 的校验路径。
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
@@ -75,32 +75,36 @@ const replay = (messages) => {
 
 const messagesOf = (decision) => (Array.isArray(decision?.messages) ? decision.messages : [])
 
-const install = (app, mount, specs, options = {}) => applyPromptConfigs(
-  mount.scope.ctx,
-  createPromptConfigs(specs, { strategyDir: ENGINE_DIR }),
-  { prepend: true, ...options },
-)
+const install = (app, mount, specs, options = {}) => {
+  const configs = createPromptConfigs(specs, { strategyDir: ENGINE_DIR })
+  applyPromptConfigs(mount.scope.ctx, configs, { prepend: true, ...options })
+  return configs
+}
 
-test('T00 旧 assistant 配置与策略 patch 在出口降级为 user，并能通过官方回放', async () => {
+test('T00 策略 patch 的 assistant 在出口降级为 user，并能通过官方回放', async () => {
   const app = new Context()
   installPreStepCoordinator(app, { collectFiles: () => [] })
-  const mount = scopedAgent(app, 'persist-legacy')
-  install(app, mount, [
-    { id: 'legacy-assistant', layer: 'pre-step', strategy: 'static', text: 'LEGACY', role: 'assistant', position: 'after-user' },
-    { id: 'merged-assistant', layer: 'pre-step', strategy: 'static', text: 'MERGED-A', role: 'assistant', position: 'after-all', mergeMode: 'merged' },
-    { id: 'merged-user', layer: 'pre-step', strategy: 'static', text: 'MERGED-B', role: 'user', position: 'after-all', mergeMode: 'merged' },
-  ], { sourceId: 'persist:legacy' })
+  const mount = scopedAgent(app, 'persist-patch')
+  const configs = install(app, mount, [
+    { id: 'patched-assistant', layer: 'pre-step', strategy: 'static', text: 'PATCHED', role: 'user', position: 'after-user' },
+    { id: 'merged-user', layer: 'pre-step', strategy: 'static', text: 'MERGED-A', role: 'user', position: 'after-all', mergeMode: 'merged' },
+    { id: 'merged-assistant', layer: 'pre-step', strategy: 'static', text: 'MERGED-B', role: 'user', position: 'after-all', mergeMode: 'merged' },
+  ], { sourceId: 'persist:patch' })
+  for (const config of configs.filter((config) => config.id.endsWith('assistant'))) {
+    const resolve = config.resolve
+    config.resolve = async (args) => ({ ...await resolve(args), role: 'assistant' })
+  }
 
   const decision = await dispatch(app, mount.agent)
   const injected = messagesOf(decision)
   assert.deepEqual(injected.map((message) => message.role), ['user', 'user', 'user'], '出口不再发出非法角色')
   assert.equal(injected[1].source.requestedRole, 'assistant', '保留原角色作为只读降级事实')
-  assert.equal(injected[1].source.plugin, 'legacy-assistant')
-  assert.equal(injected[2].source.requestedRole, 'assistant', '合并组的非法角色同样留痕')
+  assert.equal(injected[1].source.plugin, 'patched-assistant')
+  assert.equal(injected[2].source.requestedRole, 'assistant', '合并组非首条的非法角色同样留痕')
 
   assert.deepEqual(replay(injected), [
     ['user', 'claimed'],
-    ['user', 'LEGACY'],
+    ['user', 'PATCHED'],
     ['user', 'MERGED-A\nMERGED-B'],
   ], '正文、位置与次数经持久化往返不变')
 
@@ -166,10 +170,14 @@ test('T00 晋升前后、主子代理与 disposer 都不产生非法角色', asy
   const parent = scopedAgent(app, 'persist-parent')
   const child = scopedAgent(app, 'persist-child', [], { delegationDepth: 1 })
   bindScopeParent(child.agent, parent.agent)
-  install(app, parent, [
-    { id: 'promoted-card', layer: 'pre-step', strategy: 'static', text: 'PROMOTED', role: 'assistant', position: 'after-user', promotion: 'main' },
-    { id: 'subagent-card', layer: 'pre-step', strategy: 'static', text: 'SUBAGENT', role: 'assistant', position: 'after-user', audience: 'subagent' },
+  const configs = install(app, parent, [
+    { id: 'promoted-card', layer: 'pre-step', strategy: 'static', text: 'PROMOTED', role: 'user', position: 'after-user', promotion: 'main' },
+    { id: 'subagent-card', layer: 'pre-step', strategy: 'static', text: 'SUBAGENT', role: 'user', position: 'after-user', audience: 'subagent' },
   ], { sourceId: 'persist:promotion' })
+  for (const config of configs) {
+    const resolve = config.resolve
+    config.resolve = async (args) => ({ ...await resolve(args), role: 'assistant' })
+  }
 
   const before = messagesOf(await dispatch(app, parent.agent))
   assert.deepEqual(before.map((message) => message.content[0].text), ['claimed'], '未晋升步不注入')

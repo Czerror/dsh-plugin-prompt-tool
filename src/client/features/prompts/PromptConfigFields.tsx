@@ -291,9 +291,7 @@ function ManagedFieldsPanel(props: {
             : typeof value === 'boolean' ? t(value ? 'param.on' : 'param.off') : String(value)
           const note = field.derived === true
             ? t('strategyParam.managed.derived')
-            : field.fallbackNote === 'followsAnchor'
-              ? t('strategyParam.managed.followsAnchor')
-              : field.fallbackNote === 'followsCustom' ? t('strategyParam.managed.followsCustom') : undefined
+            : field.fallbackNote === 'followsCustom' ? t('strategyParam.managed.followsCustom') : undefined
           return (
             <li key={field.path} data-managed-path={field.path} data-managed-source={field.sourceParam}>
               {t(`param.${field.sourceParam}`)} · {t('strategyParam.managed.source', { param: field.sourceParam })} · {shown}
@@ -313,7 +311,7 @@ function ManagedFieldsPanel(props: {
  *   first-turn-anchor → near-anchor 锚点参数（开关/锚文本/任务正则/引导句）；
  *   guide-auto → router-guide 每轮引导参数（开关/文本/复杂正则/强弱引导句）；
  *   custom-fallback → prompt-injector 锚定词（params.text 为运行时注入内容，不暴露编辑）；
- *   placeholder / instruction-hint → fill 模板参数（text/envKeys/limit/fields/providers/emptyBehavior/emptyText）；
+ *   placeholder → fill 模板参数（text/envKeys/limit/fields/providers/emptyBehavior/emptyText）；
  * 无固定字段的策略回退 JSON 编辑（保留任意 params 能力）。
  */
 export function StrategyParamsFields(props: { t: PromptToolTranslate; strategy: string; layer?: string; contract?: LayerContract; params: Record<string, unknown> | undefined; onPatch: (params: Record<string, unknown>) => void; id?: string; fieldSources?: ConfigFieldSources; enabled?: boolean; modelScope?: string; fieldDrafts?: Map<string, FieldDraft>; draftScope?: string }): ReactNode {
@@ -463,7 +461,7 @@ export function StrategyParamsFields(props: { t: PromptToolTranslate; strategy: 
       </>
     )
   }
-  if (strategy === 'placeholder' || strategy === 'instruction-hint') {
+  if (strategy === 'placeholder') {
     const emptyBehavior = str('emptyBehavior') || 'skip'
     return (
       <>

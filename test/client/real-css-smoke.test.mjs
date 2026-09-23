@@ -231,7 +231,7 @@ React.createElement('section',{className:ui.pageActions,'data-sticky':true},'模
     assert.equal(await evaluate(`document.querySelector('${number}').getAttribute('aria-invalid')`), 'false')
     const anchorSwitch = '[data-param-key="firstTurnAnchor"] [role="switch"]'
     const hintSwitch = '[data-param-key="instructionHint"] [role="switch"]'
-    await evaluate(`document.querySelector('[data-param-key="guideEnabled"] [aria-haspopup="menu"]').focus()`)
+    await evaluate(`document.querySelector('[data-param-key="guideEnabled"] [role="switch"]').focus()`)
     await pressKey('Tab', 'Tab', 9)
     assert.equal(await evaluate(`document.activeElement===document.querySelector('[data-param-key="injectPrompt"] [role="switch"]')`), true, '键盘顺序与目录中的控件顺序一致')
     await evaluate(`document.querySelector('${hintSwitch}').focus()`)

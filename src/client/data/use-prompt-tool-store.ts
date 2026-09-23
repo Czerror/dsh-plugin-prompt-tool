@@ -5,7 +5,7 @@ import type { EngineMeta, PromptConfigDraft } from '../prompt-tool-types.ts'
 import type { PromptToolHostApi } from './host-api.ts'
 import type { PresetModuleFacts } from '../../shared/engine-capabilities.ts'
 import type { SkillCatalogEntry, SkillPolicyChange } from '../../shared/skills.ts'
-import { bridgeCall, errorMessage, normalizeEngineMeta, type BridgeResult, type BridgeSettingsView } from './bridge-client.ts'
+import { bridgeCall, errorMessage, type BridgeResult, type BridgeSettingsView } from './bridge-client.ts'
 import { requestSkillImport, type ConfirmSkillOverwrite } from './skill-import.ts'
 import { readImportFiles, type ImportFileEntry } from './import-files.ts'
 import { createSessionPresetFollower, type SessionPresetFollower } from './session-preset-follow.ts'
@@ -462,7 +462,7 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
       const policyRes = await bridgeCall('instructionsPolicy')
       if (seq !== loadSeqRef.current || sessionId !== api.currentSessionId()) return EMPTY_FIELDS
       if (draftVersionRef.current !== draftVersion || instructionPoolRef.current !== instructionSnapshot) return fieldsRef.current
-      if (boot.meta !== undefined) setMeta(normalizeEngineMeta(boot.meta.meta))
+      if (boot.meta !== undefined) setMeta(boot.meta.meta)
       // /bootstrap 已携带 settings descriptor（value/base/revision）：直接作为 fields
       // 主源，不再 await settings.ensure()——宿主全量 describe mirror 是切换预设后
       // 配置卡十几秒才出现的瓶颈。

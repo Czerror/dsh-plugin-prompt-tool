@@ -12,7 +12,7 @@ export interface ManagedConfigField {
    */
   derived?: boolean
   /** 来源参数缺省（undefined）时的回落说明键，供只读回显标注真实生效语义。 */
-  fallbackNote?: 'followsAnchor' | 'followsCustom'
+  fallbackNote?: 'followsCustom'
 }
 
 export interface ManagedConfigSpec {
@@ -39,8 +39,7 @@ export const MANAGED_CONFIG_FIELDS: readonly ManagedConfigSpec[] = [
   {
     configId: 'router-guide',
     fields: [
-      // guideEnabled 显式声明优先；缺省跟随锚定开关。
-      { path: 'enabled', sourceParam: 'guideEnabled', fallbackNote: 'followsAnchor' },
+      { path: 'enabled', sourceParam: 'guideEnabled' },
       // 自定义引导对所有模型注入，自动引导只服务 Flash 家族。
       { path: 'modelScope', sourceParam: 'guideCustom', derived: true, fallbackNote: 'followsCustom' },
       { path: 'params.useCustom', sourceParam: 'guideCustom', derived: true },

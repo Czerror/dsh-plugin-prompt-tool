@@ -1,9 +1,9 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { bridgeCall, normalizeEngineMeta } from '../../src/client/data/bridge-client.ts'
+import { bridgeCall } from '../../src/client/data/bridge-client.ts'
 import { BRIDGE_ENDPOINTS, SETTINGS_BRIDGE_PREFIX } from '../../src/shared/bridge-contract.ts'
-import { ENGINE_LAYER_ORDER } from '../../src/shared/engine-capabilities.ts'
-import { displayLayers } from '../../src/client/features/prompts/prompt-config-policy.ts'
+import { ENGINE_EDITOR_GROUP_MAP } from '../../src/shared/engine-capabilities.ts'
+import { getEngineMeta } from '../../engine/schema.mjs'
 
 test('typed bridge client：endpoint key 决定路径并序列化请求体', async () => {
   const originalFetch = globalThis.fetch
@@ -81,38 +81,33 @@ test('typed bridge client：非 JSON 响应体保留状态码与内容摘要', a
   }
 })
 
-test('typed bridge client：旧宿主 /meta 缺 layerOrder 与 editorGroups 时退化读取不崩', async () => {
+test('typed bridge client：/meta 不补齐旧版本缺失的字段', async () => {
   const originalFetch = globalThis.fetch
-  globalThis.fetch = async () => new Response(JSON.stringify({ ok: true, value: { meta: { layers: ['pre-step'] } } }), { status: 200 })
+  const suppliedMeta = { layers: ['pre-step'] }
+  globalThis.fetch = async () => new Response(JSON.stringify({ ok: true, value: { meta: suppliedMeta } }), { status: 200 })
   try {
     const result = await bridgeCall('meta')
     assert.equal(result.ok, true)
-    const meta = normalizeEngineMeta(result.value.meta)
-    assert.deepEqual(meta.layerOrder, [...ENGINE_LAYER_ORDER], '缺 layerOrder 时退化为共享九层')
-    assert.deepEqual(meta.editorGroups, [], '缺 editorGroups 时退化为空表，不让调用方判 null')
-    // 旧数据可读：未登记的层仍追加在九层之后，不丢未知配置。
-    assert.deepEqual(displayLayers(meta.layerOrder, ['pre-step', 'future-layer']), [...ENGINE_LAYER_ORDER, 'future-layer'])
+    const meta = result.value.meta
+    assert.deepEqual(meta, suppliedMeta)
   } finally {
     globalThis.fetch = originalFetch
   }
 })
 
-test('typed bridge client：宿主下发 layerOrder 时按宿主顺序消费，非数组同样退化', async () => {
+test('typed bridge client：/meta 完整传递当前引擎能力元数据', async () => {
   const originalFetch = globalThis.fetch
-  let payload = { ok: true, value: { meta: { layerOrder: ['tool-pipeline', 'pre-step'], editorGroups: [{ id: 'custom-tools', displayLayer: 'tool-pipeline', hook: 'tool-pipeline' }], layers: [] } } }
+  const suppliedMeta = JSON.parse(JSON.stringify({ ...getEngineMeta(), editorGroups: ENGINE_EDITOR_GROUP_MAP }))
+  const payload = { ok: true, value: { meta: suppliedMeta } }
   globalThis.fetch = async () => new Response(JSON.stringify(payload), { status: 200 })
   try {
     const result = await bridgeCall('meta')
     assert.equal(result.ok, true)
-    const meta = normalizeEngineMeta(result.value.meta)
-    assert.deepEqual(meta.layerOrder, ['tool-pipeline', 'pre-step'], '宿主下发的层序优先于本地退化默认')
-    assert.deepEqual(displayLayers(meta.layerOrder, []), ['tool-pipeline', 'pre-step'])
-    assert.equal(meta.editorGroups.length, 1)
-    // 坏数据（非数组）不穿透到 UI：同样退化为共享九层。
-    payload = { ok: true, value: { meta: { layerOrder: 'pre-step' } } }
-    const broken = normalizeEngineMeta((await bridgeCall('meta')).value.meta)
-    assert.deepEqual(broken.layerOrder, [...ENGINE_LAYER_ORDER])
-    assert.deepEqual(broken.editorGroups, [])
+    const meta = result.value.meta
+    assert.deepEqual(meta, suppliedMeta)
+    assert.equal(meta.layerOrder.length, 9)
+    assert.ok(meta.editorGroups.length > 0)
+    assert.ok(meta.layerContracts['pre-step'])
   } finally {
     globalThis.fetch = originalFetch
   }

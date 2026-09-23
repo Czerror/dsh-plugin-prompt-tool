@@ -1345,27 +1345,23 @@ export function registerSettingsBridge(
               return
             }
             const record = body as Record<string, unknown>
-            // 批量载荷 { contents: [{scope, content}] }：一次请求写多个内容资产、只触发
-            // 一次重建（此前逐条请求每条各重建一次）。旧单条形状 {scope, content} 兼容保留。
-            const contents: Array<{ scope: 'preset' | 'agents'; content: string }> = []
-            if (Array.isArray(record.contents)) {
-              for (const entry of record.contents) {
-                if (entry === null || typeof entry !== 'object') continue
-                const item = entry as Record<string, unknown>
-                contents.push({
-                  scope: item.scope === 'agents' ? 'agents' : 'preset',
-                  content: typeof item.content === 'string' ? item.content : '',
-                })
-              }
-            } else {
-              contents.push({
-                scope: record.scope === 'agents' ? 'agents' : 'preset',
-                content: typeof record.content === 'string' ? record.content : '',
-              })
-            }
-            if (contents.length === 0) {
-              writeBridgeJson(res, 400, { ok: false, code: 'settings-rejected', message: 'unreadable JSON body' })
+            // 先校验整批 contents，再写入内容资产并触发一次重建。
+            if (!Array.isArray(record.contents) || record.contents.length === 0) {
+              writeBridgeJson(res, 400, { ok: false, code: 'settings-rejected', message: 'contents 必须是非空数组' })
               return
+            }
+            const contents: Array<{ scope: 'preset' | 'agents'; content: string }> = []
+            for (const entry of record.contents) {
+              if (entry === null || typeof entry !== 'object' || Array.isArray(entry)) {
+                writeBridgeJson(res, 400, { ok: false, code: 'settings-rejected', message: 'contents 条目必须是对象' })
+                return
+              }
+              const item = entry as Record<string, unknown>
+              if ((item.scope !== 'preset' && item.scope !== 'agents') || typeof item.content !== 'string') {
+                writeBridgeJson(res, 400, { ok: false, code: 'settings-rejected', message: 'contents 条目必须提供合法 scope 和字符串 content' })
+                return
+              }
+              contents.push({ scope: item.scope, content: item.content })
             }
             const dir = getPresetConfigsDir?.() ?? ''
             if (dir.length === 0) {

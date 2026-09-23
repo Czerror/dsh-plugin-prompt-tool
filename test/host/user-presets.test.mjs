@@ -66,11 +66,11 @@ test('listPresets：全部来自用户目录（种子化后内置模板即为用
   assert.ok(!presets.some((preset) => preset.id.startsWith('.')), '点前缀目录（.engine/.bak）不列出')
 })
 
-test('listPresets：prompt-tool 兼容快照仅供旧会话 resolve，不进入普通选择列表', () => {
+test('listPresets：prompt-tool 目录遵循普通身份规则，不再特殊隐藏', () => {
   mkdirSync(join(PRESETS_DIR, 'prompt-tool'), { recursive: true })
   writeFileSync(join(PRESETS_DIR, 'prompt-tool', 'preset.yml'),
     'id: prompt-tool\nname: Prompt Tool（旧会话兼容）\n', 'utf8')
-  assert.ok(!listPresets().some((preset) => preset.id === 'prompt-tool'))
+  assert.ok(listPresets().some((preset) => preset.id === 'prompt-tool'))
 })
 
 test('cloneBuiltinPreset：非内置/非法 id/用户目录已存在同名拒绝', () => {
@@ -116,7 +116,7 @@ test.after(() => {
   delete process.env.DSH_HOME
 })
 
-test('listPresets：不可渲染预设标记 renderable=false；包内同名可回退则 true', () => {
+test('listPresets：可渲染性只由当前目录的组合源决定', () => {
   ensurePresetSeed()
   // 纯元数据 + 无组合文件 + 包内无同名模板 → 真不可用
   const broken = join(PRESETS_DIR, 'my-broken-preset')
@@ -127,10 +127,16 @@ test('listPresets：不可渲染预设标记 renderable=false；包内同名可�
     const bad = presets.find((preset) => preset.id === 'my-broken-preset')
     assert.ok(bad, '坏预设仍可列出（UI 展示并灰显，不再哑弹）')
     assert.equal(bad.renderable, false, '无组合源且包内无同名 → 不可渲染')
-    // 种子化 minimal 副本可渲染；包内同名模板可作为回退源。
+    // 完整种子副本可渲染，但删除组合源后不可借包内同名模板补齐。
     const minimal = presets.find((preset) => preset.id === 'pt-minimal')
     assert.ok(minimal, '种子化 minimal 在列表')
-    assert.equal(minimal.renderable, true, '包内同名模板可回退 → 可渲染')
+    assert.equal(minimal.renderable, true, '完整种子副本可渲染')
+    const partialRoot = mkdtempSync(join(tmpdir(), 'pt-incomplete-seed-'))
+    try {
+      mkdirSync(join(partialRoot, 'pt-minimal'))
+      writeFileSync(join(partialRoot, 'pt-minimal', 'preset.yml'), 'id: pt-minimal\nname: 部分定义\n')
+      assert.equal(listPresets(partialRoot)[0].renderable, false)
+    } finally { rmSync(partialRoot, { recursive: true, force: true }) }
   } finally {
     rmSync(broken, { recursive: true, force: true })
   }

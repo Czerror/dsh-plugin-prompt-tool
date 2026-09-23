@@ -49,7 +49,7 @@ UI fields
         → reloadPresetParams（runtime 态）
           → rebuildPreset → writePreset
             → runtimeOf（透传 WRITER_PARAM_KEYS）
-            → resolvePresetParams（spec.params + runtime 合并）
+            → resolvePresetParams（layerSettings 展平 + runtime 合并）
             → buildModuleConfigsFromParams（参数桥 → 行级 config）
             → renderComposition（参数桥 > moduleConfigs > 行默认）
               → agent.cordis.yml（宿主挂载生效）
@@ -58,9 +58,11 @@ UI fields
 本插件的种子化、预设列表、参数与内容读取、保存、物化及导入／导出／复制／删除，
 均使用本插件的预设根 `$DSH_HOME/.agent-presets`（`host/paths.ts#DEFAULT_PRESET_DIR`，不可配置）。DSH 0.1.7 起不再自动扫描此目录；插件在物化后向官方 `agentPresets` 注册定义，并随删除、更新和卸载释放注册。已有会话保留其已绑定的 revision。
 
-注册包含仍存在的 `prompt-tool` 历史快照，供旧会话恢复；普通工作台列表继续隐藏该兼容项。注册元数据允许省略名称，排序读取 `preset.yml` 顶层 `order`，不从 `meta.order` 推断。
+注册与工作台列表按同一身份规则列举预设，不因历史目录名隐藏或特殊处理。注册元数据允许省略名称，排序读取 `preset.yml` 顶层 `order`，不从 `meta.order` 推断。
 该目录不只是输出位置，也是预设定义的读取根；不存在对应定义时回退包内模板，
 不读取其他部署根中的同名用户副本。
+
+已有用户预设缺少组合源时标记为不可渲染，重建报错并保留原定义，不改用包内同名模板。
 
 ### 注册锚点与本地引用（2026-09-23）
 
@@ -268,9 +270,8 @@ moduleConfigs 仅补充参数桥未覆盖的键（如 ST 导入 tool-web.fetch�
 
 ## 8. 内容策略三功能与参数归属
 
-`engine/instruction-hint.mjs` 是通用内置能力：`strategy: instruction-hint`、
-`placeholder + fill: instruction-hint` 与 `params.instructionHint`（原 `context-gate.instructionHint`，
-现由 `instruction-hint` 模块行承接）共用同一组
+`engine/instruction-hint.mjs` 是通用内置能力：`placeholder + fill: instruction-hint`
+与共享参数 `instructionHint`（由 `instruction-hint` 模块行承接）共用同一组
 文件探测、提示文本与转换函数；它不属于任何预设专属模块。
 
 `engine/strategies.mjs` 三个内容策略是**独立功能**，仅分类器在 fallback 层共用：
@@ -327,10 +328,10 @@ writer 在每条受管生成配置里附 `fieldSources`（`configId` 与固定�
 - **任务分类器单一能力**：`engine/classify-task.mjs` 的 `createTaskClassifier({ buildPattern, complexPattern })`
   提供 `ready` / `classify`（complex > build > fix）/ `isComplex`——锚定三档判定与引导复杂判定共用，
   正则构建与判定逻辑不再双处内联。
-- **引导开关独立**：`guideEnabled?: boolean`——显式声明优先；`undefined` = 兼容旧行为（跟随
-  `firstTurnAnchor`，关锚定 = 关引导）。TUI `/prompt-tool toggle guideEnabled` 可独立控制。
+- **引导开关独立**：`guideEnabled` 仅在显式 `true` 时启用，缺省关闭，不跟随
+  `firstTurnAnchor`。TUI `/prompt-tool toggle guideEnabled` 可独立控制。
 - **自定义文本契约统一**：锚定/引导策略统一读 `config.params.text`（`useCustom + text` 契约形态），
-  `firstTurnText` 仅作存储键保留（writePreset 映射 `text: params.firstTurnText`，引擎兼容回退读旧键）。
+  共享层参数 `firstTurnText` 由 writePreset 映射为策略局部 `params.text`；策略不读取局部旧别名。
 
 ### 世界书条目结构归一（2026-08-25）
 
@@ -425,7 +426,7 @@ wholeWords/selectiveLogic）单一权威。两个写入端共用：
 ### 主会话人设参数化（2026-08-25）
 
 - 存储/契约：`ENGINE_PARAM_KEYS` + `WRITER_PARAM_KEYS` 完整透传（runtimeOf / index /
-  preset-core / reloadPresetParams / initialRuntime）；
+  write-preset / reloadPresetParams / initialRuntime）；
 - 渲染：writePreset templateDefaults 对 persona-main 配置覆盖 `text`（非空时）；
   空值 = 模板默认（空值删键语义已有），模块卡仍为底层编辑入口；
 - UI：模型路由卡（主对话）人设输入，persist 条件发送 + 读回。

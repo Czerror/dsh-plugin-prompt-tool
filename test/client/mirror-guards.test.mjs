@@ -71,14 +71,12 @@ test('层字段能力矩阵键集与引擎每层 fields 的键集一致', () => 
 
 test('EMPTY_META 的键都是引擎 /meta 的真实键，且引擎的列表键都已退化为空表', () => {
   const engineMeta = getEngineMeta()
-  const engineKeys = new Set(Object.keys(engineMeta))
+  const engineKeys = new Set([...Object.keys(engineMeta), 'editorGroups'])
   const keys = Object.keys(EMPTY_META)
   assert.ok(keys.length > 0, 'EMPTY_META 不得为空')
   for (const key of keys) assert.ok(engineKeys.has(key), `EMPTY_META.${key} 不是 getEngineMeta() 的键`)
-  // 客户端显式不提供的可选键；其余列表键都必须有退化空表（键名清单见 prompt-tool-fields.ts）。
-  const optional = new Set(['subjects', 'layerDefaultSubjects', 'layerContracts'])
   const requiredLists = Object.entries(engineMeta)
-    .filter(([key, value]) => Array.isArray(value) && !optional.has(key) && key !== 'layerOrder')
+    .filter(([key, value]) => Array.isArray(value) && key !== 'layerOrder')
     .map(([key]) => key)
   assert.ok(requiredLists.length > 0, '引擎列表键解析结果不得为空')
   for (const key of requiredLists) assert.ok(Array.isArray(EMPTY_META[key]), `EMPTY_META 缺 ${key} 的退化空表`)

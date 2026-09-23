@@ -89,9 +89,11 @@ test('instruction-hint 共享转换保留替换消息 id、只替换一次', () 
   assert.equal(state.instructionHinted, true)
 })
 
-test('instruction-hint 直接策略与 placeholder fill 共用同一能力', async () => {
-  const configs = createPromptConfigs([
+test('instruction-hint 只通过 placeholder fill 使用，不接受旧独立策略', async () => {
+  assert.throws(() => createPromptConfigs([
     { id: 'direct', strategy: 'instruction-hint', params: { text: '参考文件提示' } },
+  ]), /unknown strategy/)
+  const configs = createPromptConfigs([
     { id: 'filled', strategy: 'placeholder', fill: 'instruction-hint', params: { text: '参考文件提示' } },
   ])
   const args = {
@@ -99,14 +101,14 @@ test('instruction-hint 直接策略与 placeholder fill 共用同一能力', asy
     agent: { signal: undefined },
     session: { id: 's1', header: { cwd: '/repo' } },
   }
-  const direct = await configs.find((config) => config.id === 'direct').resolve(args)
   const filled = await configs.find((config) => config.id === 'filled').resolve(args)
-  for (const result of [direct, filled]) {
+  const repeated = await configs.find((config) => config.id === 'filled').resolve(args)
+  for (const result of [filled, repeated]) {
     assert.equal(result.text, '参考文件提示')
     assert.match(result.id, /^instruction-hint-s1-[0-9a-f-]+$/)
     assert.equal(result.source.kind, 'instruction-hint')
   }
-  assert.notEqual(direct.id, filled.id)
+  assert.notEqual(filled.id, repeated.id)
 })
 
 test('buildInstructionHint 兼容无 id 的输入并生成随机 id', () => {

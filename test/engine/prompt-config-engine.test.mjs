@@ -150,6 +150,20 @@ test('loadPromptConfigFiles 读 variables.yml 合并进每条配置（配置自�
   }
 })
 
+test('首轮锚定局部参数只读 text，旧 firstTurnText 不触发注入', async () => {
+  for (const [params, expected] of [
+    [{ useCustom: true, firstTurnText: 'OLD' }, []],
+    [{ useCustom: true, text: 'CURRENT', firstTurnText: 'OLD' }, ['CURRENT']],
+    [{ useCustom: true, text: '', firstTurnText: 'OLD' }, []],
+  ]) {
+    const { step } = makeHarness(createPromptConfigs([
+      { id: 'anchor', strategy: 'first-turn-anchor', params },
+    ]))
+    const result = await step(agent())
+    assert.deepEqual(result.messages.slice(1).map((message) => message.content[0].text), expected)
+  }
+})
+
 test('同位置多配置默认按声明顺序插入：near-anchor 与 router-guide 依次紧跟用户消息', async () => {
   const { step } = makeHarness(createPromptConfigs([
     {
@@ -834,10 +848,13 @@ test('config.variables 与内置 {{WORKSPACE}} 变量在注入前插值', async 
   assert.equal(decision.messages[1].content[0].text, '用户 张三 在工作区 D:/repo（cwd=D:/repo）')
 })
 
-test('role=assistant 的旧配置可加载，但在出口降级为 user 并保留原角色', async () => {
+test('role=assistant 的旧配置拒绝加载，策略 patch 仍在出口降级并保留原角色', async () => {
+  assert.throws(() => createPromptConfigs([
+    { id: 'asst', strategy: 'static', text: 'PREVIEW', role: 'assistant' },
+  ]), /unknown role/)
   const { step } = makeHarness(createPromptConfigs([{
-    id: 'asst', strategy: 'static', text: 'PREVIEW', role: 'assistant', position: 'after-all',
-  }]))
+    id: 'asst', strategy: 'static', templateFile: 'patch.json', position: 'after-all',
+  }], { loadTemplate: () => ({ text: 'PREVIEW', role: 'assistant' }) }))
   const decision = await step(agent())
   assert.equal(decision.messages[1].role, 'user')
   assert.equal(decision.messages[1].source.requestedRole, 'assistant')
@@ -1429,7 +1446,7 @@ test('getEngineMeta 返回引擎能力矩阵，内置策略集合稳定', () => 
   assert.ok(meta.strategies.includes('custom-fallback'))
   assert.ok(!meta.strategies.includes('anchor-fallback'))
   assert.ok(!meta.strategies.includes('we-fallback'))
-  assert.deepEqual(meta.strategies, ['custom-fallback', 'first-turn-anchor', 'guide-auto', 'instruction-hint', 'placeholder', 'static', 'world-book'])
+  assert.deepEqual(meta.strategies, ['custom-fallback', 'first-turn-anchor', 'guide-auto', 'placeholder', 'static', 'world-book'])
   assert.ok(meta.fills.includes('instruction-hint'))
   assert.ok(meta.fills.includes('skill-catalog'))
   assert.ok(meta.layerFieldPolicies['pre-step'].position === true)

@@ -21,6 +21,7 @@ import { basename, join } from 'node:path'
 import { setTimeout as sleep } from 'node:timers/promises'
 
 const sandbox = mkdtempSync(join(tmpdir(), 'pt-skill-policy-'))
+process.env.DSH_HOME = sandbox
 after(() => { rmSync(sandbox, { recursive: true, force: true }) })
 
 const { policyTarget, readSkillInvocation, setSkillInvocation } = await import('../../src/host/skills-policy.ts')
@@ -54,11 +55,11 @@ function flagsOf(raw) {
   let model
   let user
   for (const line of lines.slice(1, end)) {
-    const match = /^(disable-model-invocation|user-invocable|disableModelInvocation|userInvocable):\s*(\S+)\s*$/.exec(line)
+    const match = /^(disable-model-invocation|user-invocable):\s*(\S+)\s*$/.exec(line)
     if (match === null) continue
     const value = match[2] === 'true' ? true : match[2] === 'false' ? false : match[2]
-    if (match[1] === MODEL_KEY || match[1] === 'disableModelInvocation') model = value
-    if (match[1] === USER_KEY || match[1] === 'userInvocable') user = value
+    if (match[1] === MODEL_KEY) model = value
+    if (match[1] === USER_KEY) user = value
   }
   return {
     // 键的原始值本身就是「不可调用 / 允许调用」，这里统一归一成「可调用」两端的语义。
@@ -105,8 +106,8 @@ const LF_FIXTURE = [
   'sequence:',
   '  - one',
   '  - two',
-  'disableModelInvocation: true',
-  'userInvocable: false',
+  'disable-model-invocation: true',
+  'user-invocable: false',
   'trailing: value      # 行尾注释：也保留我',
   '---',
   '',
@@ -123,13 +124,12 @@ const LF_BODY = LF_FIXTURE.slice(LF_FIXTURE.indexOf('\n---\n', 20) + 5)
 /** 同一 fixture 里的 frontmatter 段（第二个 `---` 之前，首行 `---` 之后）。 */
 const LF_FRONTMATTER = LF_FIXTURE.slice(4, LF_FIXTURE.indexOf('\n---\n', 20))
 
-test('旧驼峰策略归一官方键：注释、未知字段、其余键与正文保留', () => {
+test('官方调用策略写入：注释、未知字段、其余键与正文保留', () => {
   const file = write(makeMarker(), LF_FIXTURE)
   const before = readFileSync(file, 'utf8')
   assert.equal(before, LF_FIXTURE, 'fixture 必须能被解析出 frontmatter（首行是 ---）')
 
-  // fixture 已有驼峰键 `disableModelInvocation: true`（= 模型端已停用）与 `userInvocable: false`。
-  // scope=model 的目标是「模型端停用、用户端可用」，两个旧键都必须归一成官方键。
+  // scope=model 的目标是「模型端停用、用户端可用」，只需改变用户端的值。
   const written = setSkillInvocation(file, 'model')
   assert.equal(written.ok, true, written.message)
   assert.equal(written.changed, true, '用户端需要从不可调用改为可调用')
@@ -143,21 +143,21 @@ test('旧驼峰策略归一官方键：注释、未知字段、其余键与正�
     extras: ['disable-model-invocation: true', 'name: demo-skill', 'whenToUse: 需要演示时', 'quoted: "双引号值"', "single: '单引号值'", 'flow: { a: 1, b: 2 }', 'block: |'],
   })
   const flags = flagsOf(text)
-  assert.deepEqual([flags.modelInvocable, flags.userInvocable], [false, true], '归一官方键后按真值表解读')
+  assert.deepEqual([flags.modelInvocable, flags.userInvocable], [false, true], '官方键按真值表解读')
   assert.deepEqual([flags.rawModel, flags.rawUser], [true, true], '落盘的原始值')
   assert.equal(text.includes('userInvocable'), false, '官方 provider 拒绝旧键，即使官方键同时存在')
   assert.equal(text.includes('disableModelInvocation'), false)
-  // 两个策略键归一；Document API 会折叠行尾注释前的多余空白。
+  // Document API 会折叠行尾注释前的多余空白。
   const beforeLines = before.split('\n')
   const afterLines = text.split('\n')
   assert.equal(afterLines.length, beforeLines.length)
   const changed = beforeLines.filter((line, index) => line !== afterLines[index])
-  assert.deepEqual(changed.sort(), ['disableModelInvocation: true', 'trailing: value      # 行尾注释：也保留我', 'userInvocable: false'].sort())
-  assert.equal(afterLines[beforeLines.indexOf('userInvocable: false')], 'user-invocable: true')
+  assert.deepEqual(changed.sort(), ['trailing: value      # 行尾注释：也保留我', 'user-invocable: false'].sort())
+  assert.equal(afterLines[beforeLines.indexOf('user-invocable: false')], 'user-invocable: true')
   assert.match(afterLines[beforeLines.indexOf('trailing: value      # 行尾注释：也保留我')], /^trailing: value # 行尾注释：也保留我$/, '只有键后的多余空白被折叠')
   // frontmatter 段之外的每个字节都不变：正文与第二个 --- 之前的所有行原样保留。
   assert.equal(text.slice(text.indexOf('\n---\n', 20) + 5), LF_BODY)
-  assert.equal(text.slice(4, text.indexOf('\n---\n', 20)), LF_FRONTMATTER.replace('disableModelInvocation:', 'disable-model-invocation:').replace('userInvocable: false', 'user-invocable: true').replace('trailing: value      #', 'trailing: value #'))
+  assert.equal(text.slice(4, text.indexOf('\n---\n', 20)), LF_FRONTMATTER.replace('user-invocable: false', 'user-invocable: true').replace('trailing: value      #', 'trailing: value #'))
 
   // 目标状态已达成时零写入：同一 scope 再写一次不得落盘。
   const stamp = statSync(file).mtimeMs
@@ -169,25 +169,23 @@ test('旧驼峰策略归一官方键：注释、未知字段、其余键与正�
   assert.deepEqual(leftovers(file), [], '成功写入不留暂存文件')
 })
 
-test('官方键与旧策略键共存时删除全部旧键，归一过程保留策略注释', () => {
-  const file = write(makeMarker(), [
-    '---', 'name: demo', 'description: D',
-    'disable-model-invocation: true # 官方模型注释',
-    '# 旧模型前置注释', 'disableModelInvocation: false # 旧模型行尾注释',
-    'modelInvocable: true # 另一旧模型注释',
-    'user-invocable: false', 'userInvocable: true # 旧用户注释',
-    'unknown: { keep: true }', '---', '正文\r\n',
-  ].join('\n'))
-  const result = setSkillInvocation(file, 'all')
-  assert.equal(result.ok, true, result.message)
-  assert.equal(result.changed, true, '策略值相同仍需清理旧键')
-  const text = readFileSync(file, 'utf8')
-  assert.doesNotMatch(text, /^(?:disableModelInvocation|modelInvocable|userInvocable):/m)
-  for (const comment of ['官方模型注释', '旧模型前置注释', '旧模型行尾注释', '另一旧模型注释', '旧用户注释']) assert.ok(text.includes(comment), comment)
-  assert.match(text, /unknown: \{ keep: true \}/)
-  assert.ok(text.endsWith('正文\r\n'))
-  assert.deepEqual(readSkillInvocation(file).invocation, { modelInvocable: false, userInvocable: false })
-  assert.equal(setSkillInvocation(file, 'all').changed, false)
+test('旧策略键读取与写入均拒绝，官方键共存也不转换或重新启用技能', () => {
+  for (const legacy of ['disableModelInvocation: true', 'modelInvocable: false', 'userInvocable: false']) {
+    for (const canonical of ['', 'disable-model-invocation: false\nuser-invocable: true\n']) {
+      const raw = `---\nname: demo\ndescription: D\n${canonical}${legacy} # 保留\n---\n正文\r\n`
+      const file = write(makeMarker(), raw)
+      const read = readSkillInvocation(file)
+      assert.equal(read.ok, false, `${legacy} 不得解释成调用策略`)
+      assert.match(read.message, /unsupported/)
+      for (const change of ['none', 'all', { side: 'model', enabled: true }, { side: 'user', enabled: true }]) {
+        const result = setSkillInvocation(file, change)
+        assert.equal(result.ok, false, `${legacy} 不得在修改任一端时隐式转换`)
+        assert.match(result.message, /unsupported/)
+        assert.equal(readFileSync(file, 'utf8'), raw, '拒绝后保留原始字节')
+        assert.deepEqual(leftovers(file), [])
+      }
+    }
+  }
 })
 
 test('两端独立：scope 只关对应的一端，none 两端恢复且写显式 true', () => {
@@ -200,9 +198,9 @@ test('两端独立：scope 只关对应的一端，none 两端恢复且写显式
   }
   for (const [scope, expected] of Object.entries(table)) {
     // 起点按 scope 选，保证每个 scope 的目标状态都与起点不同 —— `changed` 才有区分度。
-    // 同时覆盖三种键形态：两个连字符键（all/none）、只有连字符模型键（user）、只有驼峰键（model）。
+    // 同时覆盖缺省键、只有模型键、已有两个键。
     const start = {
-      model: 'disableModelInvocation: false\n',
+      model: '',
       user: `${MODEL_KEY}: false\n`,
       all: `${MODEL_KEY}: false\n${USER_KEY}: true\n`,
       none: `${MODEL_KEY}: true\n${USER_KEY}: false\n`,

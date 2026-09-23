@@ -66,9 +66,9 @@ test('深度限制只接受非负安全整数、数字字符串、provider-manag
   }
 })
 
-test('清除可选开关恢复继承，工具开关与编辑器上限按类型落位', () => {
+test('引导开关缺省关闭，工具开关与编辑器上限按类型落位', () => {
   const overrides = buildParamOverrides(EMPTY_FIELDS, { loadedKeys: new Set(['guideEnabled']) })
-  assert.deepEqual(overrides, { guideEnabled: '' })
+  assert.deepEqual(overrides, { guideEnabled: false })
   assert.deepEqual(validateEngineParamValues(overrides), [])
   assert.equal(buildEngineModuleParams({ toolGitBashEnabled: false })['tool-git-bash'].enabled, false)
   assert.equal(buildEngineModuleParams({ strReplaceEditorMaxOutputChars: '32000' })['str-replace-editor'].maxOutputChars, 32000)

@@ -26,17 +26,11 @@ dsh --profile prompt-tool
 
 **停用 = 改写技能文件的调用策略**：模型端写 `disable-model-invocation`、用户端写 `user-invocable`。单端开关只修改该端，保留另一端的最新状态；正文、注释和未知字段保留，提交前校验原文并原子替换。官方工具与可选 `skill_search/skill_load` 都执行调用策略。状态文件 `$DSH_HOME/skills/.system/prompt-tool/skills.yml` 只保存引用目录 `folders`（v4）；技能清单与调用策略均不进入 settings。详见 [docs/skills-management.md](docs/skills-management.md)。
 
-### 从旧版本升级
+### 当前格式与宿主要求
 
 预设参数只认 `preset.yml` 的当前字段，没有运行时兼容层。
 
-技能管理经历过一次模型替换：上一版把技能实体集中到 `skills/.system` 并用目录链接启停。若本机还留着那套布局，用迁移脚本回滚到「实体留在各技能根」的形态（按记录删链接、校验哈希后把实体搬回 `skills` 根，并删除旧的 v2 状态文件）：
-
-```powershell
-node scripts/migrate-skills.mjs --rollback "<备份目录>\migration.json"
-```
-
-该脚本只用于回滚历史迁移，不是运行时代码。
+技能调用策略只接受官方 frontmatter 键，状态文件只接受 v4；不提供旧布局迁移、回滚或备份脚本。
 
 旧的 base-only profile（只有 `dsh-base`）首次启动时，插件会把 `@deepseek-ai/dsh-web-app` 补进该 profile 的 `dsh.profile.bundles`（写前留 `.bak`，幂等），并提示重启；需要重启 DSH 服务后生效，插件不会替你重启运行中的服务。
 
@@ -50,9 +44,9 @@ node scripts/migrate-skills.mjs --rollback "<备份目录>\migration.json"
 - 🗂️ **内容与执行分离**：每条提示词配置渲染为 `~/.dsh/.agent-presets/<预设>/prompt-configs/` 下的 yml，引擎按文件名数字前缀顺序扫描
 - 🧩 **三层合并**：引擎默认（按 params 生成）< 模板默认 promptConfigs < 预设 promptConfigs，同名 `id` 覆盖
 - 🖥️ **可拖动悬浮工作台入口**：工作台经官方 `shell.overlay` 渲染悬浮触发器与 body portal 抽屉；按钮可拖动、位置存插件自己的 localStorage、窗口变化自动夹回可见区（不读宿主布局树，已移除 `sidebar.footer.action` 几何探针）；六页（主会话/子代理/工具预览/技能设置/预设配置/角色管理）在抽屉内渲染，抽屉用 fixed + z-index 置顶，不被宿主导航栏遮挡
-- 🧪 **七种内容策略**：`static / first-turn-anchor / guide-auto / custom-fallback / instruction-hint / placeholder / world-book`（world-book 支持 ST selectiveLogic 选择性触发：任一/副键全中/排除）
+- 🧪 **六种内容策略**：`static / first-turn-anchor / guide-auto / custom-fallback / placeholder / world-book`（world-book 支持 ST selectiveLogic 选择性触发：任一/副键全中/排除）
 - 🛡️ **失败不伤会话**：单条失败跳过 + `warnOnce`；配置错误挂载时 fail loud；`dedupe: session` 持久幂等
-- 🧭 **通用 instruction-hint 引擎**：所有预设都可通过 `strategy: instruction-hint` 或 `placeholder + fill: instruction-hint` 提示指令文件存在；实现位于 `engine/instruction-hint.mjs`，不绑定任何预设；它的 plugin 形态（挂 `instruction-hint` 行并 `enabled: true`，即参数桥 `params.instructionHint`）按模型可见 surface 去重，重挂不重复，被压缩遮蔽后才再次提示
+- 🧭 **通用 instruction-hint 引擎**：所有预设都可通过 `strategy: placeholder` 与 `fill: instruction-hint` 提示指令文件存在；实现位于 `engine/instruction-hint.mjs`，不绑定任何预设；它的 plugin 形态（挂 `instruction-hint` 行并 `enabled: true`，即参数桥 `params.instructionHint`）按模型可见 surface 去重，重挂不重复，被压缩遮蔽后才再次提示
 - 📦 **Bridge 载荷**：JSON 请求统一 32 MiB 硬上限并明确返回 413；角色卡原始图片走 64 MiB 流式通道，按 PNG 魔数识别。
 - 📂 **技能管理**：官方发现与会话快照统一技能来源、生效和遮蔽状态；单端开关写回技能文件。支持目录包与直属 Markdown 技能、创建、两种复制导入，以及用户根和引用根的可恢复删除；技能局部刷新保留其他页面草稿。
 - 🎭 **SillyTavern 导入**：JSON 预设、角色卡和独立世界书转换为本地预设——按官方顺序表保留启停，赋值模板运行时求值；不等价能力明确报告，采样参数由宿主管理

@@ -85,8 +85,7 @@ export function EngineParamField({ store, param, t, instanceId }: { store: Promp
     'tool-call': t('param.option.tool-call'),
     'assistant-message': t('param.option.assistant-message'),
   }
-  const menuField = (definition.kind === 'string' && definition.options !== undefined)
-    || (definition.kind === 'boolean' && definition.defaultValue === undefined)
+  const menuField = definition.kind === 'string' && definition.options !== undefined
   if (definition.kind === 'string-list') {
     return <div data-param-key={param} data-param-kind={definition.kind} data-control="list">
       <TagInput id={id} label={label} hint={hint} value={String(value ?? '')} disabled={disabled}
@@ -98,10 +97,6 @@ export function EngineParamField({ store, param, t, instanceId }: { store: Promp
     control = <MenuSelect compact ariaLabel={label} value={String(value ?? '')} disabled={disabled}
       options={[{ value: '', label: t('param.inheritPresetDefault') }, ...definition.options.map((item) => ({ value: item, label: optionLabels[item] ?? item }))]}
       onChange={(next) => { patch(next); save() }} />
-  } else if (definition.kind === 'boolean' && definition.defaultValue === undefined) {
-    control = <MenuSelect compact ariaLabel={label} value={value === undefined ? '' : String(value)} disabled={disabled}
-      options={[{ value: '', label: t('param.inheritAnchorSwitch') }, { value: 'true', label: t('param.on') }, { value: 'false', label: t('param.off') }]}
-      onChange={(next) => { patch(next === '' ? undefined : next === 'true'); save() }} />
   } else if (definition.kind === 'boolean') {
     control = <Switch className={styles.configEnable} checked={value === true} disabled={disabled} label={label}
       onChange={(next) => { patch(next); save() }} />

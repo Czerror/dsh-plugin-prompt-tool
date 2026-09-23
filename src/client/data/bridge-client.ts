@@ -24,5 +24,5 @@ export function bridgeUpload(file: Blob, fileName: string): Promise<BridgeResult
   return uploadBridge<BridgeValueMap['assetUpload']>(BRIDGE_ENDPOINTS.assetUpload, file, fileName)
 }
 
-export { errorMessage, normalizeEngineMeta, shouldStreamJsonFile } from './bridge-transport.ts'
+export { errorMessage, shouldStreamJsonFile } from './bridge-transport.ts'
 export type { BridgeResult, BridgeSettingsView } from './bridge-transport.ts'

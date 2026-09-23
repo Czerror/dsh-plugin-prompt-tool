@@ -1,7 +1,7 @@
 /** settings bridge 的底层 HTTP/文件传输与统一结果解析。 */
 import type { EngineMeta, PromptConfigDraft } from '../prompt-tool-types.ts'
 import type { HostDefaultModel, SkillCatalogEntry } from './prompt-tool-fields.ts'
-import { ENGINE_LAYER_ORDER, type PresetModuleFacts } from '../../shared/engine-capabilities.ts'
+import type { PresetModuleFacts } from '../../shared/engine-capabilities.ts'
 import type { InstructionsSnapshot } from '../../shared/instructions.ts'
 import {
   MAX_BRIDGE_BODY_BYTES,
@@ -34,18 +34,6 @@ export type { BridgeSettingsView } from '../../shared/bridge-contract.ts'
 export type BridgeResult<T> = ({ ok: true; value: T } & BridgeSuccessExtras) | BridgeErrorPayload
 
 export const errorMessage = (error: unknown): string => error instanceof Error ? error.message : String(error)
-
-/**
- * 旧宿主（或未同步升级的复制引擎目录）可能不下发 layerOrder / editorGroups：
- * 在传输边界补默认值，消费方不必各自判空 —— 缺字段是退化读取，不是失败。
- */
-export function normalizeEngineMeta(meta: EngineMeta): EngineMeta {
-  return {
-    ...meta,
-    layerOrder: Array.isArray(meta.layerOrder) && meta.layerOrder.length > 0 ? meta.layerOrder : [...ENGINE_LAYER_ORDER],
-    editorGroups: Array.isArray(meta.editorGroups) ? meta.editorGroups : [],
-  }
-}
 
 const isBridgeResultPayload = (payload: unknown): payload is BridgeResult<unknown> => {
   if (payload === null || typeof payload !== 'object' || Array.isArray(payload)) return false

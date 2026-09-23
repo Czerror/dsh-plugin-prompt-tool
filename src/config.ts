@@ -70,7 +70,7 @@ export interface RuntimeOptions extends PresetWriterParams {
   firstTurnCustom: boolean
   guideText: string
   guideCustom: boolean
-  /** 每轮引导独立开关（undefined = 跟随 firstTurnAnchor）。 */
+  /** 每轮引导独立开关，缺省关闭。 */
   guideEnabled?: boolean
   /** 模型路由 provider（主对话直派子代理与委派子代理通用）；与模型名同时非空时生效。 */
   modelProvider: string

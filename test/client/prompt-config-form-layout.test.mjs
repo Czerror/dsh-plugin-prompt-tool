@@ -77,7 +77,7 @@ test('九层卡片消费引擎契约，只展示实际可用策略、匹配对�
     const config = { layer, strategy: 'static', text: '保留原文', variables: { untouched: 'value' } }
     const tree = treeOf(PromptConfigForm, formProps(config))
     const strategy = findElement(tree, (node) => node.type === OptionField && node.props.label === t('form.strategy.label'))
-    assert.deepEqual(strategy.props.options, contract.strategies.filter((item) => item !== 'instruction-hint'))
+    assert.deepEqual(strategy.props.options, contract.strategies)
     const subject = findElement(tree, (node) => node.type === OptionField && node.props.label === t('form.subject.label'))
     if (contract.subjects.length > 0) assert.deepEqual(subject.props.options, ['', ...contract.subjects])
     else assert.equal(subject, undefined)
@@ -260,7 +260,6 @@ test('受管配置参数按 host 投影事实给出来源绑定与只读回显',
   assert.match(guideHtml, /data-managed-config="router-guide"/)
   assert.match(guideHtml, /data-managed-path="modelScope"/)
   assert.match(guideHtml, new RegExp(t('strategyParam.managed.derived')))
-  assert.match(guideHtml, new RegExp(t('strategyParam.managed.followsAnchor')))
   // 普通自建策略配置仍可编辑局部 params（受管判定按契约的配置 id，不按策略一刀切）。
   const customHtml = renderToStaticMarkup(createElement(StrategyParamsFields, {
     t, strategy: 'first-turn-anchor', layer: 'pre-step', id: 'my-own-anchor', params: { text: 'X' }, onPatch() {},

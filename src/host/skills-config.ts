@@ -1,8 +1,6 @@
 /** 技能插件状态（v4）：只保存用户显式引用的技能文件夹。
  *
- *  调用策略（模型端 / 用户端是否可调用）写在技能文件自己的 frontmatter 里，不进状态文件。
- *  v3 的 `blocked` 屏蔽表已弃用（注册层影子候选被最近层覆盖，见 docs/skills-management.md）：
- *  读取时忽略该键，写入时删除它——留着一个不再生效的键只会误导。 */
+ *  调用策略（模型端 / 用户端是否可调用）写在技能文件自己的 frontmatter 里，不进状态文件。 */
 import { existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs'
 import { randomUUID } from 'node:crypto'
 import { dirname, isAbsolute, join, resolve } from 'node:path'
@@ -45,12 +43,11 @@ function readFolders(value: unknown): string[] {
   })
 }
 
-/** 读写共用校验：非法状态不获得文件系统写入权限。
- *  接受缺失版本、v3（`blocked` 一并忽略，不校验其内容——它已经不影响任何行为）与 v4。 */
+/** 读写共用当前版本校验：非法状态不获得文件系统写入权限。 */
 export function validateSkillsState(value: unknown): SkillsState {
   if (value === null || typeof value !== 'object' || Array.isArray(value)) throw new Error('技能状态必须是映射')
   const data = value as Record<string, unknown>
-  if (data.version !== undefined && data.version !== 3 && data.version !== SKILLS_STATE_VERSION) {
+  if (data.version !== SKILLS_STATE_VERSION) {
     throw new Error(`不支持的技能状态版本：${String(data.version)}`)
   }
   return { version: SKILLS_STATE_VERSION, folders: readFolders(data.folders) }
@@ -74,8 +71,7 @@ export function readSkillsState(file: string = skillsStatePath()): SkillsStateRe
   }
 }
 
-/** 写状态：Document API 保留注释与未知字段；内容无变化时不落盘；提交前核对本次读取的原文，失败清理暂存文件。
- *  版本号一并抬到 v4，并删除 v3 留下的 `blocked` 键。 */
+/** 写状态：Document API 保留注释与未知字段；内容无变化时不落盘；提交前核对本次读取的原文，失败清理暂存文件。 */
 export function writeSkillsState(
   patch: Partial<Pick<SkillsState, 'folders'>>,
   file: string = skillsStatePath(),
@@ -89,8 +85,6 @@ export function writeSkillsState(
       version: SKILLS_STATE_VERSION,
       folders: patch.folders ?? current.folders,
     })
-    doc.set('version', SKILLS_STATE_VERSION)
-    doc.delete('blocked')
     if (patch.folders !== undefined) {
       if (next.folders.length === 0) doc.delete('folders')
       else doc.set('folders', doc.createNode(next.folders))

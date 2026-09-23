@@ -298,7 +298,7 @@ export interface LayerContract {
  * /meta 与 /bootstrap 的 meta 段下发的层契约：九层顺序 + 编辑组主归属。
  * 只含可序列化白名单字段（组 id / displayLayer / relatedLayers / hook）：
  * 不含路径、行级配置、校验函数或服务实例 —— 展示归属不扩大写权限。
- * 旧宿主可能缺省这两个字段，消费方必须退化（前端用 ENGINE_LAYER_ORDER）。
+ * 插件与内置引擎同步发布，这些字段由当前 bridge 完整下发。
  */
 export interface EngineMetaLayerContract {
   /** 九层固定顺序（引擎 LAYER_ORDER，host 不另写一份）。 */
@@ -320,7 +320,7 @@ export interface BridgeValueMap {
    * `/meta` 与 `/bootstrap` 的 meta 段：层契约 + 官方装配刻度。
    * `officialOrders` 缺席表示服务降级或官方档位名不匹配，消费方必须退化（不渲染刻度）。
    */
-  meta: { meta: Record<string, unknown> & Partial<EngineMetaLayerContract> & { officialOrders?: OfficialOrdersView } }
+  meta: { meta: Record<string, unknown> & EngineMetaLayerContract & { officialOrders?: OfficialOrdersView } }
   bootstrap: BridgeSettingsView
   describe: BridgeSettingsView
   models: { modelCatalog: Record<string, string[]> }

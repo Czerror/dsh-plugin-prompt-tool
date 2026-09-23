@@ -12,17 +12,15 @@ export const SOURCE_FORMS = ['notice', 'hint', 'instructions', ''] as const
 
 /**
  * 层序的唯一来源是宿主 meta.layerOrder（运行时由引擎 schema 下发）。
- * 这里只留共享契约里的九层作退化默认：旧宿主不下发 layerOrder 时仍能渲染完整菜单。
+ * 共享契约里的九层用于加载快照与模板菜单。
  */
 export const INSERTION_LAYERS = ENGINE_LAYER_ORDER
 
 /**
- * 九层顺序在前，其余层追加在末尾（旧数据里的未知层不丢）。
- * layerOrder 缺失或为空（旧宿主、首屏）时退化为共享九层，不崩也不清空层列表。
+ * 宿主层序在前，配置中的其他层追加在末尾，便于展示校验错误。
  */
-export function displayLayers(layerOrder: readonly string[] | undefined, layers: readonly string[]): string[] {
-  const base: readonly string[] = Array.isArray(layerOrder) && layerOrder.length > 0 ? layerOrder : INSERTION_LAYERS
-  return [...base, ...layers.filter((layer) => !base.includes(layer))]
+export function displayLayers(layerOrder: readonly string[], layers: readonly string[]): string[] {
+  return [...layerOrder, ...layers.filter((layer) => !layerOrder.includes(layer))]
 }
 
 /**
@@ -59,14 +57,13 @@ export const LAYER_LABEL_KEYS: Record<EngineLayer, PromptToolLocaleKey> = {
 export const STRATEGY_LABEL_KEYS: Record<string, PromptToolLocaleKey> = {
   static: 'strategy.static',
   placeholder: 'strategy.placeholder',
-  'instruction-hint': 'strategy.instructionHint',
   'first-turn-anchor': 'strategy.firstTurnAnchor',
   'guide-auto': 'strategy.guideAuto',
   'custom-fallback': 'strategy.customFallback',
   'world-book': 'strategy.worldBook',
 }
 export const SLOT_KIND_LABEL_KEYS: Record<string, PromptToolLocaleKey> = { ordered: 'slotKind.ordered', anchor: 'slotKind.anchor' }
-export const ROLE_LABEL_KEYS: Record<string, PromptToolLocaleKey> = { user: 'role.user', assistant: 'role.assistant' }
+export const ROLE_LABEL_KEYS: Record<string, PromptToolLocaleKey> = { user: 'role.user' }
 export const POSITION_LABEL_KEYS: Record<string, PromptToolLocaleKey> = { 'after-user': 'position.afterUser', 'before-all': 'position.beforeAll', 'after-all': 'position.afterAll' }
 export const MERGE_MODE_LABEL_KEYS: Record<string, PromptToolLocaleKey> = { separate: 'merge.separate', merged: 'merge.merged' }
 export const DEDUPE_LABEL_KEYS: Record<string, PromptToolLocaleKey> = { none: 'dedupe.none', session: 'dedupe.session', batch: 'dedupe.batch' }

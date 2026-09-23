@@ -354,9 +354,10 @@ test('settings bridge /prompt-configs 返回生成目录实际生效配置', asy
   assert.equal(payload.value.promptConfigs.length, 0)
 })
 
-test('settings bridge /import-preset 写入生成目录并触发回调；/preset-content 读回', async () => {
+test('settings bridge /import-preset 只接受 contents，批量写入后触发一次回调；/preset-content 读回', async () => {
   const { ctx, handlers } = makeHarness()
   let importedScopes
+  let imports = 0
   const dir = makeUserPresetDir('pt-content-')
   try {
     registerSettingsBridge(
@@ -367,18 +368,45 @@ test('settings bridge /import-preset 写入生成目录并触发回调；/preset
       () => '',
         undefined,
       () => dir,
-      (scopes) => { importedScopes = scopes },
+      (scopes) => { importedScopes = scopes; imports += 1 },
     )
     const write = handlers.get(`${PREFIX}/import-preset`)
     const read = handlers.get(`${PREFIX}/preset-content`)
     assert.ok(write && read, '/import-preset 与 /preset-content 应注册')
-    // 导入 preset
+    writeFileSync(join(dir, 'preset.md'), 'ORIGINAL PRESET', 'utf8')
+    writeFileSync(join(dir, 'agents.md'), 'ORIGINAL AGENTS', 'utf8')
+    for (const body of [
+      { scope: 'preset', content: 'OLD SHAPE' },
+      { contents: null },
+      { contents: [] },
+      { contents: [null] },
+      { contents: [[]] },
+      { contents: [{ scope: 'preset', content: 'PARTIAL WRITE' }, { scope: 'unknown', content: 'INVALID' }] },
+      { contents: [{ scope: 'preset', content: 123 }] },
+      { contents: [{ scope: 'preset' }] },
+    ]) {
+      const rejected = fakeRes()
+      await write(fakeReq({ [Symbol.asyncIterator]: async function* () {
+        yield Buffer.from(JSON.stringify(body))
+      } }), rejected)
+      assert.equal(rejected.status, 400, JSON.stringify(body))
+      assert.equal(JSON.parse(rejected.body).code, 'settings-rejected')
+      assert.equal(readFileSync(join(dir, 'preset.md'), 'utf8'), 'ORIGINAL PRESET')
+      assert.equal(readFileSync(join(dir, 'agents.md'), 'utf8'), 'ORIGINAL AGENTS')
+      assert.equal(imports, 0)
+    }
+    // 一次请求写入全部内容；空文本仍可显式清空。
     const wres = fakeRes()
     await write(fakeReq({ body: undefined, [Symbol.asyncIterator]: async function* () {
-      yield Buffer.from(JSON.stringify({ scope: 'preset', content: 'HELLO PRESET' }))
+      yield Buffer.from(JSON.stringify({ contents: [
+        { scope: 'preset', content: 'HELLO PRESET' },
+        { scope: 'agents', content: '' },
+      ] }))
     } }), wres)
     assert.equal(wres.status, 200)
-    assert.deepEqual(importedScopes, ['preset'])
+    assert.deepEqual(importedScopes, ['preset', 'agents'])
+    assert.equal(imports, 1)
+    assert.equal(readFileSync(join(dir, 'agents.md'), 'utf8'), '')
     // 读回
     const rres = fakeRes()
     await read(fakeReq({ body: undefined, [Symbol.asyncIterator]: async function* () {

@@ -144,7 +144,7 @@ test('来源参数的具体值逐字落到产物（含派生项的语义）', ()
   assert.equal(off.routerGuide.modelScope, 'flash')
 })
 
-test('guideEnabled 缺省时跟随首轮锚定开关（契约的 fallbackNote 与 writer 一致）', () => {
+test('guideEnabled 缺省关闭，不随首轮锚定开关启用', () => {
   const inherit = (flags, suffix) => {
     const presetDir = mkdtempSync(join(home, `preset-inherit-${suffix}-`))
     installFixturePreset(presetDir)
@@ -156,8 +156,8 @@ test('guideEnabled 缺省时跟随首轮锚定开关（契约的 fallbackNote �
     assert.ok(file, '生成产物里应有 router-guide')
     return parseYaml(readFileSync(join(configDir, file), 'utf8'))
   }
-  assert.equal(inherit(true, 'ON').enabled, true, '锚定开启且未显式声明引导开关时引导启用')
-  assert.equal(inherit(false, 'OFF').enabled, false, '锚定关闭时引导跟随关闭')
+  assert.equal(inherit(true, 'ON').enabled, false, '锚定开启也不隐式启用引导')
+  assert.equal(inherit(false, 'OFF').enabled, false, '缺省关闭')
 })
 
 test('writer 实际覆写的字段都已登记，未登记字段不会被静默覆盖', () => {

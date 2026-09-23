@@ -1,6 +1,6 @@
 /**
  * strategies — 引擎内容策略绑定(config.resolve)。
- * 内置策略: static / placeholder / instruction-hint / first-turn-anchor / guide-auto / custom-fallback。
+ * 内置策略: static / placeholder / first-turn-anchor / guide-auto / custom-fallback / world-book。
  * 策略参数全部来自 config.params（由 preset.yml 单一配置源下发），引擎只负责组装。
  * 仍支持 strategyDir 懒加载自定义模板策略。
  */
@@ -9,7 +9,6 @@ import { extractText, sessionEvents, sessionState } from './shared.mjs'
 import { MATCH_LOGIC, createAnchorMatcher } from './anchor-match.mjs'
 import { createTaskClassifier } from './classify-task.mjs'
 import { createPlaceholderResolver } from './fillers.mjs'
-import { createInstructionHintResolver } from './instruction-hint.mjs'
 
 const name = 'prompt-config-engine'
 
@@ -19,10 +18,7 @@ const name = 'prompt-config-engine'
  */
 function createFirstTurnAnchorResolver(config) {
   const useCustom = config.params?.useCustom === true
-  // 自定义文本统一读 text（与 guide-auto 同契约）；firstTurnText 旧键兼容。
-  const customText = typeof config.params?.text === 'string'
-    ? config.params.text
-    : (typeof config.params?.firstTurnText === 'string' ? config.params.firstTurnText : '')
+  const customText = typeof config.params?.text === 'string' ? config.params.text : ''
   const buildPattern = typeof config.params?.buildPattern === 'string' ? config.params.buildPattern : ''
   const complexPattern = typeof config.params?.complexPattern === 'string' ? config.params.complexPattern : ''
   const firstTurnBuild = typeof config.params?.firstTurnBuild === 'string' ? config.params.firstTurnBuild : ''
@@ -197,7 +193,6 @@ function createWorldBookResolver(config) {
 export function bindResolver(config, strategyDir) {
   switch (config.strategy) {
     case 'placeholder': return createPlaceholderResolver(config)
-    case 'instruction-hint': return createInstructionHintResolver(config)
     case 'first-turn-anchor': return createFirstTurnAnchorResolver(config)
     case 'guide-auto': return createGuideAutoResolver(config)
     case 'custom-fallback':

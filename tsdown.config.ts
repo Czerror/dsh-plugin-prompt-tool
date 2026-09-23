@@ -27,7 +27,7 @@ const CSS_VIRTUAL_SUFFIX = '.mjs'
 
 const lib: UserConfig = {
   name: PLUGIN_ID,
-  entry: ['src/index.ts', 'src/preset-core.ts', 'src/preset-transfer.ts'],
+  entry: ['src/index.ts', 'src/preset-transfer.ts'],
   outDir: 'lib',
   format: ['esm'],
   platform: 'node',

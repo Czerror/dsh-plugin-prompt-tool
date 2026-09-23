@@ -20,6 +20,7 @@ import { readSkillInvocation, setSkillInvocation } from '../../src/host/skills-p
 import { SKILL_MARKER } from '../../src/shared/skills.ts'
 
 const sandbox = mkdtempSync(join(tmpdir(), 'pt-skill-policy-e2e-'))
+process.env.DSH_HOME = sandbox
 after(() => { rmSync(sandbox, { recursive: true, force: true }) })
 
 const MODEL_KEY = 'disable-model-invocation'
@@ -69,11 +70,12 @@ const winnerOf = async (registry, name) => {
   return matches[0]
 }
 
-test('真实 filesystem provider：旧策略键写入后可被官方发现并正确限制调用', async () => {
+test('真实 filesystem provider 与策略读写共同拒绝旧键，文件保持不变', async () => {
   const root = join(sandbox, 'official-provider')
   const file = join(root, 'legacy', SKILL_MARKER)
   mkdirSync(join(root, 'legacy'), { recursive: true })
-  writeFileSync(file, '---\nname: legacy\ndescription: legacy\ndisableModelInvocation: false\nuserInvocable: true\nmodelInvocable: true\n---\nlegacy body\n')
+  const raw = '---\nname: legacy\ndescription: legacy\ndisableModelInvocation: false\nuserInvocable: true\nmodelInvocable: true\n---\nlegacy body\n'
+  writeFileSync(file, raw)
   const warnings = []
   const provider = new FileSystemSkillProvider({ get() {}, logger: { warn: (message) => warnings.push(message) } }, {
     signal: new AbortController().signal, invalidate() {},
@@ -81,14 +83,10 @@ test('真实 filesystem provider：旧策略键写入后可被官方发现并正
   try {
     assert.deepEqual(await provider.list({ cwd: sandbox }), [], '官方 provider 先拒绝旧策略键')
     assert.ok(warnings.some((message) => message.includes('unsupported')))
-    assert.equal(setSkillInvocation(file, 'model').ok, true)
-    const candidates = await provider.list({ cwd: sandbox })
-    assert.equal(candidates.length, 1)
-    assert.equal(candidates[0].name, 'legacy')
-    assert.deepEqual(candidates[0].invocation, { modelInvocable: false, userInvocable: true })
-    const loaded = await provider.get(candidates[0], {})
-    assert.equal(loaded.content, 'legacy body', '官方 provider 会 trim 正文')
-    assert.ok(readFileSync(file, 'utf8').endsWith('legacy body\n'), '磁盘正文换行保持原样')
+    assert.equal(readSkillInvocation(file).ok, false)
+    assert.equal(setSkillInvocation(file, 'model').ok, false)
+    assert.equal(readFileSync(file, 'utf8'), raw)
+    assert.deepEqual(await provider.list({ cwd: sandbox }), [], '策略写入不能隐式转换旧技能')
   } finally { await provider.dispose() }
 })
 

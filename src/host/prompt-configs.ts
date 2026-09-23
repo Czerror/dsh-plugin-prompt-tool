@@ -29,7 +29,7 @@ import { promptConfigFileNames } from '../../engine/schema.mjs'
  */
 export const PROMPT_CONFIG_SPEC_ENUMS = {
   configKind: ['ordered', 'anchor'],
-  role: ['user', 'assistant'],
+  role: ['user'],
   position: ['after-user', 'before-all', 'after-all'],
   dedupe: ['session', 'batch', 'none'],
   promotion: ['none', 'main', 'include-subagents'],
@@ -292,8 +292,7 @@ export function mergePromptConfigs(...sources: Array<PromptConfigSpec[] | undefi
 /**
  * 从用户提示词配置目录加载 yml/json 提示词配置（文件名排序；内容必须能解析）。
  *
- * 与引擎的 `engine/schema.mjs loadPromptConfigFiles` **不是同一契约**（故不同名，见
- * `src/preset-core.ts` 的兼容别名）：
+ * 与引擎的 `engine/schema.mjs loadPromptConfigFiles` **不是同一契约**：
  *   - 本函数供**编辑/列举**使用（TUI `/prompt-tool config`、bridge `/prompt-configs`、bootstrap 聚合）；
  *   - 引擎那个供**注入**使用，会额外把 `variables.yml` 合并进每条配置的 `variables`。
  * 两者只共享**枚举规则**（`promptConfigFileNames`）与读取；解析、校验与错误包装各留边界

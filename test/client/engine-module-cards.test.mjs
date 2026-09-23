@@ -203,9 +203,7 @@ test('插入点顺序恒为九层（含三个新层），层序由 meta.layerOrd
   assert.deepEqual(engineMeta.layerOrder, order)
   assert.deepEqual([...ENGINE_LAYER_ORDER], order, '前端退化默认必须与引擎 layerOrder 同源')
   assert.deepEqual(displayLayers(engineMeta.layerOrder, []), order)
-  // 旧宿主不下发 layerOrder（或首屏）时退化，不崩也不清空层列表。
-  assert.deepEqual(displayLayers(undefined, []), order)
-  assert.deepEqual(displayLayers([], []), order)
+  assert.deepEqual(displayLayers([], []), [], '消费实际层序，不补旧宿主缺省值')
   // 引擎 /meta 下发的层必须全部落在固定顺序里：只加一端会让下拉/模板菜单露出裸 id。
   for (const layer of engineMeta.layers) assert.ok(order.includes(layer), `引擎层 ${layer} 未进入客户端固定顺序`)
   for (const layer of ['turn-stop', 'subagent-start', 'subagent-end']) assert.ok(engineMeta.layers.includes(layer), `引擎未下发新层 ${layer}`)
@@ -273,6 +271,7 @@ test('模板浮层按层级只列该层模板，不再渲染分组标题', () =>
 test('统一列表平铺渲染配置与能力卡，层级筛选只过滤不分区', () => {
   const configs = [{ id: 'persona-main', layer: 'system-section', strategy: 'static' }]
   const meta = {
+    ...getEngineMeta(),
     layers: ['pre-step', 'system-section', 'runtime-context', 'agent-request', 'llm-stream', 'tool-pipeline'],
     strategies: [], slotKinds: [], positions: [], dedupes: [], promotions: [], audienceModes: [], modelScopes: [], roles: [], mergeModes: [], fills: [],
     layerFieldPolicies: {}, layerLabels: {},
@@ -359,7 +358,7 @@ test('层内创建菜单按能力主层过滤，撤销组合不再出现', async
 })
 
 test('通用模板可重复创建空卡，独立指令提示入口归为动态填充', () => {
-  const source = { file: 'hint.yml', spec: { id: 'hint', layer: 'pre-step', strategy: 'instruction-hint', text: '', identity: { field: 'plugin', value: 'hint' } } }
+  const source = { file: 'hint.yml', spec: { id: 'hint', layer: 'pre-step', strategy: 'placeholder', fill: 'instruction-hint', text: '', identity: { field: 'plugin', value: 'hint' } } }
   let picker
   const picked = []
   function Probe() { picker = useTemplatePicker([{ id: 'hint' }, { id: 'hint-2' }], (config) => picked.push(config), () => {}, t); return null }
@@ -370,7 +369,7 @@ test('通用模板可重复创建空卡，独立指令提示入口归为动态�
   assert.equal(picked[0].text, '')
   assert.equal(picked[0].strategy, 'placeholder')
   assert.equal(picked[0].fill, 'instruction-hint')
-  assert.equal(source.spec.strategy, 'instruction-hint', '不修改模板对象')
+  assert.equal(source.spec.strategy, 'placeholder', '不修改模板对象')
   const patches = []
   const form = tree(PromptConfigForm, { t, meta: getEngineMeta(), config: source.spec, onPatch: (patch) => patches.push(patch) })
   const strategy = find(form, (node) => node.type === OptionField && node.props.label === t('form.strategy.label'))
@@ -379,7 +378,7 @@ test('通用模板可重复创建空卡，独立指令提示入口归为动态�
   const fill = find(form, (node) => node.type === OptionField && node.props.label === t('form.fill.label'))
   assert.equal(fill.props.value, 'instruction-hint')
   fill.props.onChange('skill-catalog')
-  assert.deepEqual(patches, [{ strategy: 'placeholder', fill: 'skill-catalog' }])
+  assert.deepEqual(patches, [{ fill: 'skill-catalog' }])
 })
 
 test('编辑组层可见性来自共享契约，页面不再各自手写层名', () => {

@@ -1,4 +1,4 @@
-/** skills 域的 frontmatter 解析（从 preset-core 兼容层归位；消费方：技能清单扫描与导入）。 */
+/** skills 域的 frontmatter 解析；消费方：技能清单扫描与导入。 */
 import { parseDocument, isMap } from 'yaml'
 
 export interface SkillFrontmatter {

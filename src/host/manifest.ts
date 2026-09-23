@@ -38,7 +38,7 @@ export interface PresetSpec {
   content?: { presetText?: string; agentsText?: string }
   /** 模块清单(参数文件决定组合内容):按序装配 source/local 与 library 中的唯一模块。 */
   modules?: string[]
-  /** 兼容字段:内联组合文本或组合清单名。 */
+  /** 手写组合：内联文本或组合清单名。 */
   composition?: string
   /** 内部运行时平铺适配面；磁盘上的同名段不参与运行参数。 */
   params?: Record<string, unknown>
@@ -60,12 +60,6 @@ export interface PresetSpec {
   triggers?: unknown[]
   /** 模板变量插值开关（缺省 true = 启用；false = 停用，writePreset 不生成变量文件）。 */
   variablesEnabled?: boolean
-  /**
-   * @deprecated 自 2026-09-14 起不再生效：指令文件卡由独立指令来源
-   * （pre-step 协调器 + `$DSH_HOME/.prompt-tool/instructions.yml` 策略）按会话现场解析，
-   * 不再由 writePreset 物化。字段保留仅为兼容既有用户 preset.yml 的解析（不迁移、不删除）。
-   */
-  agentsHints?: boolean
   /** 可选:模板自定义提示词配置覆盖(纯数据,不使用模板语法)。 */
   promptConfigs?: unknown[]
   /** 可选:引擎组合模块行参数直写(行级 map config 浅合并;参数桥未覆盖的键生效,参数桥优先)。 */
@@ -204,9 +198,7 @@ export function resolvePresetDir(template: string, presetRoot = userPresetsDir()
   return found ?? join(packagePresetDir(), template)
 }
 
-/** 预设目录是否含可渲染组合源：modules 清单 / composition 声明 / 同目录
- *  agent.cordis.yml（官方用户预设约定）三者其一。旧版种子副本可能三者皆无
- *  （仅元数据 + 本地 .mjs），物化必失败——用于回退判定与 UI 可用性探测。 */
+/** 预设目录是否含组合源：modules、composition 或官方 agent.cordis.yml。 */
 export function isRenderablePresetDir(dir: string): boolean {
   try {
     const spec = loadPresetSpec(dir)
@@ -219,42 +211,22 @@ export function isRenderablePresetDir(dir: string): boolean {
   return existsSync(join(dir, 'agent.cordis.yml'))
 }
 
-/**
- * 解析可渲染预设目录（writePreset 专用）：用户副本优先；用户副本不可渲染
- * 且包内存在同名可渲染模板时回退包内——修复旧版种子副本（ensurePresetSeed
- * 幂等跳过导致模板升级无法到达用户目录）遮蔽包内新版模板的死路。
- * 返回 fallback=true 表示发生了包内回退，调用方负责 warn 与参数源升级判定。
- */
-export function resolveRenderablePresetDir(template: string, presetRoot = userPresetsDir()): { dir: string; fallback: boolean } {
-  const userDir = findPresetDir(presetRoot, template)
-  if (userDir === undefined) return { dir: resolvePresetDir(template, presetRoot), fallback: false }
-  if (isRenderablePresetDir(userDir)) return { dir: userDir, fallback: false }
-  const builtin = findPresetDir(packagePresetDir(), template)
-  if (builtin !== undefined && isRenderablePresetDir(builtin)) return { dir: builtin, fallback: true }
-  return { dir: userDir, fallback: false }
-}
-
-/** 本插件预设清单：默认隐藏历史兼容快照，宿主注册方可显式包含它；目录与定义身份仍须合法。 */
-export function listPresets(presetRoot = userPresetsDir(), options: { includeCompatibility?: boolean } = {}): Array<{ id: string; name: string; user: boolean; renderable: boolean; description?: string; meta?: Record<string, unknown> }> {
+/** 本插件预设清单；所有目录按同一身份与组合源规则列举。 */
+export function listPresets(presetRoot = userPresetsDir()): Array<{ id: string; name: string; user: boolean; renderable: boolean; description?: string; meta?: Record<string, unknown> }> {
   const scan = (dir: string): Array<{ id: string; name: string; user: boolean; renderable: boolean; description?: string; meta?: Record<string, unknown> }> => {
     try {
       return readdirSync(dir, { withFileTypes: true })
         .filter((entry) => entry.isDirectory() && /^[a-z0-9][a-z0-9-]*$/.test(entry.name))
-        // 旧容器 id 兼容快照仅供历史会话 resolve，不参与普通预设选择/重建。
-        .filter((entry) => options.includeCompatibility === true || entry.name !== 'prompt-tool')
         .flatMap((entry) => {
           try {
             const spec = loadPresetSpec(assertPresetDirectory(dir, entry.name))
             if (typeof spec.id !== 'string' || spec.id.length === 0) return []
             // 切换值用目录名（与 resolvePresetDir 路径一致）；name 保持 spec.name 契约。
-            // 可渲染性：用户副本缺组合源时，包内同名模板可回退渲染（writePreset
-            // 回退链）也算可用；两者皆无 = 真不可用，UI 灰显并给出原因。
             return [{
               id: entry.name,
               name: spec.name,
               user: true,
-              renderable: isRenderablePresetDir(join(dir, entry.name))
-                || isRenderablePresetDir(join(packagePresetDir(), entry.name)),
+              renderable: isRenderablePresetDir(join(dir, entry.name)),
               ...(typeof spec.description === 'string' && spec.description.length > 0 ? { description: spec.description } : {}),
               ...(spec.meta !== undefined && spec.meta !== null ? { meta: spec.meta } : {}),
             }]
@@ -835,7 +807,7 @@ export function loadCompositionText(spec: PresetSpec, templateDir?: string, runt
 
 /**
  * 解析预设的模块事实，供 UI 卡片存在性和受控创建共用。
- * 显式模块与历史策略兼容装配是可编辑插件能力；官方组合 row 仅保留为运行事实。
+ * 显式模块及当前参数/策略所需的装配是可编辑插件能力；官方组合 row 仅保留为运行事实。
  */
 export function resolvePresetModuleFacts(
   spec: PresetSpec,

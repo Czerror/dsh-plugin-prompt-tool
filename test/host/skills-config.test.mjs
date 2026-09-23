@@ -1,8 +1,6 @@
 // 技能插件状态文件（v4 文件层调用策略模型）：只记录用户显式引用的技能文件夹。
 // 调用策略（模型端 / 用户端是否可调用）写在技能文件自己的 frontmatter 里，不进状态文件：
-//  v3 的 `blocked` 屏蔽表随注册层影子候选方案移除，读取时忽略其内容（不校验、不报错），
-//  写入时删除该键并把版本抬到 v4 —— 留着一个不再生效的键只会误导。
-// 旧 v2 受管实体库 schema（dirs / order / rankBase / skills 记录）不是状态形状，仍按「不支持的版本」拒绝。
+// 只接受当前 v4；未知键保留原文，不参与调用策略，也不做旧版本升级。
 import { after, test } from 'node:test'
 import assert from 'node:assert/strict'
 import fs, { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
@@ -76,47 +74,20 @@ test('写入/读回往返：只记引用目录，并保留手写注释与未知�
   assert.equal(parsed.blocked, undefined, '写入后文件里不得有 blocked 键')
 })
 
-test('v3 输入被接受并升级到 v4：blocked 内容被忽略且写入时删除该键', () => {
-  const file = configFile('v3-upgrade')
-  // v3 的 blocked 内容刻意写得「不可能通过旧校验」：读取必须忽略它，而不是报错或去校验它。
-  const legacy = toYaml({
-    version: 3,
-    blocked: [{ name: 'Bad_Name', at: '不是时间', note: 'x'.repeat(1024), extra: { nested: true } }],
-    folders: [referenced],
-  })
-  writeFileSync(file, legacy, 'utf8')
-  const read = readSkillsState(file)
-  assert.equal(read.ok, true, read.message)
-  assert.equal(read.exists, true)
-  assert.deepEqual(read.state, { version: 4, folders: [referenced] }, 'v3 被读成 v4，blocked 整段丢弃')
-  assert.equal('blocked' in read.state, false)
-
-  // 校验函数同样接受 v3 且不校验 blocked 内容。
-  assert.deepEqual(validateSkillsState({ version: 3, blocked: 'demo', folders: [referenced] }),
-    { version: 4, folders: [referenced] })
-  assert.deepEqual(validateSkillsState({ version: 3, blocked: null, folders: [] }), { version: 4, folders: [] })
-  assert.deepEqual(validateSkillsState({ version: 3, folders: [referenced] }), { version: 4, folders: [referenced] })
-
-  // 写入后：版本抬到 4，blocked 键被删除，folders 不受影响。
-  const written = writeSkillsState({ folders: [referenced] }, file)
-  assert.equal(written.ok, true, written.message)
-  const { raw, parsed, keys } = stateKeys(file)
-  assert.equal(parsed.version, 4)
-  assert.equal(/^blocked:/m.test(raw), false, '写入必须删除 v3 遗留的 blocked 键')
-  assert.deepEqual(parsed.folders, [referenced])
-  assert.deepEqual(keys, ['folders', 'version'])
-
-  // 只抬版本、不动 folders 的写入同样清掉 blocked。
-  writeFileSync(file, legacy, 'utf8')
-  assert.equal(writeSkillsState({}, file).ok, true)
-  assert.equal(/^blocked:/m.test(readFileSync(file, 'utf8')), false)
-  assert.equal(parseYaml(readFileSync(file, 'utf8')).version, 4)
-  assert.deepEqual(readSkillsState(file).state, { version: 4, folders: [referenced] }, 'folders 不受影响')
+test('当前版本的未知 blocked 字段不生效，保存引用目录时原样保留', () => {
+  const file = configFile('unknown-field')
+  writeFileSync(file, 'version: 4\n# user note\nblocked: [demo]\n')
+  assert.deepEqual(readSkillsState(file).state, { version: 4, folders: [] })
+  assert.equal(writeSkillsState({ folders: [referenced] }, file).ok, true)
+  assert.deepEqual(parseYaml(readFileSync(file, 'utf8')).blocked, ['demo'])
+  assert.match(readFileSync(file, 'utf8'), /# user note/)
 })
 
 test('非法版本仍拒绝：v2 受管库 schema 与越界版本都不被当成合法状态', () => {
   const file = configFile('versions')
   const cases = [
+    ['v3', toYaml({ version: 3, blocked: ['demo'], folders: [referenced] })],
+    ['缺失版本', toYaml({ folders: [referenced] })],
     ['旧 v2 受管库 schema', toYaml({ version: 2, dirs: [referenced], order: ['alpha'], rankBase: 300, skills: {} })],
     ['v1', toYaml({ version: 1, folders: [referenced] })],
     ['v5（未来版本）', toYaml({ version: 5, folders: [referenced] })],
@@ -136,8 +107,7 @@ test('非法版本仍拒绝：v2 受管库 schema 与越界版本都不被当成
   // 校验函数直接拒绝非法版本，不依赖文件读路径。
   assert.throws(() => validateSkillsState({ version: 2, folders: [] }), /不支持的技能状态版本/)
   assert.throws(() => validateSkillsState({ version: 5, folders: [] }), /不支持的技能状态版本/)
-  // 缺失版本按当前版本处理（向前兼容字段可选）。
-  assert.deepEqual(validateSkillsState({ folders: [referenced] }), { version: 4, folders: [referenced] })
+  assert.throws(() => validateSkillsState({ folders: [referenced] }), /不支持的技能状态版本/)
 })
 
 test('空引用目录删除对应键，文件保持精简', () => {
@@ -263,5 +233,5 @@ test('Object.prototype 上的目录名是合法身份，__proto__ 同样不触�
   // 校验函数本身也拒绝非映射。
   assert.throws(() => validateSkillsState('nope'), /技能状态必须是映射/)
   assert.throws(() => validateSkillsState([]), /技能状态必须是映射/)
-  assert.deepEqual(validateSkillsState({ folders: [referenced] }).folders, [referenced])
+  assert.deepEqual(validateSkillsState({ version: 4, folders: [referenced] }).folders, [referenced])
 })

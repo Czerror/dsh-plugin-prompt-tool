@@ -15,7 +15,7 @@ const {
   renderComposition,
   writePreset,
 } = await import('../../lib/index.mjs')
-const { mergePromptConfigs } = await import('../../lib/preset-core.mjs')
+const { mergePromptConfigs } = await import('../../src/host/prompt-configs.ts')
 
 test('validateEngineParamValues：全量类型校验（布尔/数值/字符串/列表/枚举）', () => {
   // 合法值（含 '' = 删键、number 直写）无错误。
@@ -160,7 +160,6 @@ test('writePreset：13+ 配置生成 4 位零填充文件名，字典序稳定',
 })
 
 rmSync(home, { recursive: true, force: true })
-
 
 
 

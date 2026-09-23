@@ -24,7 +24,7 @@ export interface EngineParams {
   guideText?: string
   /** 自定义每轮引导开关：true 固定使用 guideText；false 按任务自动选择。 */
   guideCustom?: boolean
-  /** 每轮引导独立开关；undefined = 兼容旧行为：跟随 firstTurnAnchor（关锚定 = 关引导）。 */
+  /** 每轮引导独立开关；缺省关闭。 */
   guideEnabled?: boolean
   /** 锚定确认后注入 preset.md；关闭时仍保留工具引导，但不生成 prompt-injector 提示词配置内容。 */
   injectPrompt?: boolean
@@ -146,7 +146,7 @@ export const ENGINE_PARAM_DEFINITIONS: Record<EngineParamKey, EngineParamDefinit
   firstTurnCustom: { kind: 'boolean', defaultValue: false, card: 'prompt-defaults' },
   guideText: { kind: 'string', defaultValue: '', card: 'prompt-defaults' },
   guideCustom: { kind: 'boolean', defaultValue: false, card: 'prompt-defaults' },
-  guideEnabled: { kind: 'boolean', defaultValue: undefined, card: 'prompt-defaults' },
+  guideEnabled: { kind: 'boolean', defaultValue: false, card: 'prompt-defaults' },
   injectPrompt: { kind: 'boolean', defaultValue: true, card: 'prompt-defaults' },
   modelProvider: { kind: 'string', defaultValue: '', card: 'main-model' },
   modelName: { kind: 'string', defaultValue: '', card: 'main-model' },
@@ -177,7 +177,7 @@ export const ENGINE_PARAM_DEFINITIONS: Record<EngineParamKey, EngineParamDefinit
 
 export const ENGINE_PARAM_KEYS = Object.keys(ENGINE_PARAM_DEFINITIONS) as EngineParamKey[]
 
-/** writePreset.runtimeOf 实际透传键：全部引擎参数可直接进入兼容 writer。 */
+/** writePreset.runtimeOf 实际透传键：全部引擎参数可直接进入 writer。 */
 export const WRITER_PARAM_KEYS = ENGINE_PARAM_KEYS
 
 /** 编译期断言：WRITER_PARAM_KEYS 与 PresetWriterParams 键必须一致。 */

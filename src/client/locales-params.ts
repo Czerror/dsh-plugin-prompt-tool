@@ -11,7 +11,7 @@ export const PARAMS_ZH = {
   'param.firstTurnCustom': '使用自定义锚定文本',
   'param.guideText': '每轮引导文本',
   'param.guideCustom': '使用自定义引导文本',
-  'param.guideEnabled': '每轮引导（未设置时跟随锚定）',
+  'param.guideEnabled': '每轮引导',
   'param.injectPrompt': '锚定确认后注入内容',
   'param.modelProvider': '模型服务商',
   'param.modelName': '模型',
@@ -40,7 +40,6 @@ export const PARAMS_ZH = {
   // 参数卡通用文案。
   'param.hint': '{param}：{label}。空文本/列表回落预设默认；保存后用于后续 generation。',
   'param.inheritPresetDefault': '继承预设默认',
-  'param.inheritAnchorSwitch': '继承锚定开关',
   'param.on': '开启',
   'param.off': '关闭',
   'param.option.either': '工具调用或助手消息',
@@ -84,7 +83,7 @@ export const PARAMS_EN: Record<keyof typeof PARAMS_ZH, string> = {
   'param.firstTurnCustom': 'Use custom anchor text',
   'param.guideText': 'Per-turn guide text',
   'param.guideCustom': 'Use custom guide text',
-  'param.guideEnabled': 'Per-turn guide (follows the anchor when unset)',
+  'param.guideEnabled': 'Per-turn guide',
   'param.injectPrompt': 'Inject content after anchor confirmation',
   'param.modelProvider': 'Model provider',
   'param.modelName': 'Model',
@@ -112,7 +111,6 @@ export const PARAMS_EN: Record<keyof typeof PARAMS_ZH, string> = {
 
   'param.hint': '{param}: {label}. Empty text or list falls back to the preset default; used for later generations once saved.',
   'param.inheritPresetDefault': 'Inherit preset default',
-  'param.inheritAnchorSwitch': 'Inherit the anchor switch',
   'param.on': 'On',
   'param.off': 'Off',
   'param.option.either': 'Tool call or assistant message',

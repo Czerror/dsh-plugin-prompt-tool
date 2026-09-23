@@ -9,7 +9,7 @@ const { presetRoot } = isolatedHome('pt-layer-settings-')
 const { ENGINE_PARAM_LAYERS, engineParamPath } = await import('../../src/host/preset-layer-settings.ts')
 const { ENGINE_PARAM_KEYS, ENGINE_PARAM_DEFINITIONS } = await import('../../src/shared/engine-params.ts')
 const { ENGINE_EDITOR_GROUP_MAP } = await import('../../src/shared/engine-capabilities.ts')
-const { loadPresetSpec, savePresetParams, savePresetPersona, withPresetDoc, createEngineCapabilityInPreset, removeEngineCapabilityFromPreset, resolvePresetParams, renderComposition, resolvePresetModuleFacts, resolveRenderablePresetDir, duplicateUserPreset } = await import('../../src/host/manifest.ts')
+const { loadPresetSpec, savePresetParams, savePresetPersona, withPresetDoc, createEngineCapabilityInPreset, removeEngineCapabilityFromPreset, resolvePresetParams, renderComposition, resolvePresetModuleFacts, resolvePresetDir, duplicateUserPreset } = await import('../../src/host/manifest.ts')
 
 function preset(id, body) {
   const dir = join(presetRoot, id)
@@ -68,7 +68,7 @@ test('旧参数段按未知字段保留但不生效，读取和保存只使用 l
     savePresetPersona(presetRoot, id, null)
     withPresetDoc(dir, (doc) => doc.set('variables', { x: 'v' }))
     assert.deepEqual(loadPresetSpec(dir).params, { injectPrompt: true })
-    assert.equal(resolveRenderablePresetDir(id, presetRoot).dir, dir)
+    assert.equal(resolvePresetDir(id, presetRoot), dir)
     const duplicate = duplicateUserPreset(id, presetRoot)
     assert.equal(duplicate.ok, true, duplicate.message)
     assert.deepEqual(loadPresetSpec(join(presetRoot, duplicate.id)).params, { injectPrompt: true })

@@ -17,9 +17,8 @@ export type { SkillCatalogEntry } from '../../shared/skills.ts'
 
 /** 参数草稿类型从宿主契约派生，只转换 UI 的列表/深度形态。 */
 type EngineParamDrafts = {
-  [K in EngineParamKey]-?: K extends 'guideEnabled' ? boolean | undefined
-    : K extends 'maxDepth' ? string
-      : NonNullable<EngineParams[K]> extends string | string[] ? string : NonNullable<EngineParams[K]>
+  [K in EngineParamKey]-?: K extends 'maxDepth' ? string
+    : NonNullable<EngineParams[K]> extends string | string[] ? string : NonNullable<EngineParams[K]>
 }
 
 export interface Fields extends EngineParamDrafts {
@@ -46,14 +45,14 @@ export interface Fields extends EngineParamDrafts {
  * /meta 的**列表类事实键**（对应 getEngineMeta() 下发的列表）：EMPTY_META 按本表派生空表，
  * 新增列表键只改这一处。产品代码不 import engine/*.mjs（零引擎运行时依赖），故键名清单留在此处；
  * 漏掉必备键会在下面 EMPTY_META 的 `: EngineMeta` 赋值处直接编译报错（缺键会被列出）。
- * 客户端显式不提供的可选键（subjects / layerDefaultSubjects / layerContracts）不进本表：保持既有键集不变。
+ * 对象型契约在 EMPTY_META 中单独初始化。
  */
 const META_LIST_KEYS = [
   'layers', 'strategies', 'slotKinds', 'positions', 'dedupes', 'promotions',
-  'audienceModes', 'modelScopes', 'roles', 'acceptedRoles', 'mergeModes', 'fills',
+  'audienceModes', 'modelScopes', 'roles', 'mergeModes', 'fills', 'subjects',
 ] as const satisfies readonly MetaListKey[]
 
-/** EngineMeta 里字符串列表型的键（含可选键：acceptedRoles 引擎同样下发，退化空表不扩大键集）。 */
+/** EngineMeta 里字符串列表型的键。 */
 type MetaListKey = { [K in keyof EngineMeta]-?: NonNullable<EngineMeta[K]> extends string[] ? K : never }[keyof EngineMeta]
 
 /**
@@ -64,10 +63,12 @@ const emptyLists = <K extends MetaListKey>(keys: readonly K[]): Record<K, string
   Object.fromEntries(keys.map((key): [K, string[]] => [key, []])) as Record<K, string[]>
 
 export const EMPTY_META: EngineMeta = {
-  // 首屏（/bootstrap 未返回或宿主为旧版本）就有九层层序：来自共享契约，不等 host 下发。
+  // bootstrap 返回前的加载快照；收到响应后整体替换。
   layerOrder: ENGINE_LAYER_ORDER,
-  // 空表按键名清单派生：字段缺席时消费方按 ?? [] / 长度判空，退化渲染不抛错。
   ...emptyLists(META_LIST_KEYS),
+  editorGroups: [],
+  layerDefaultSubjects: {},
+  layerContracts: {} as EngineMeta['layerContracts'],
   layerFieldPolicies: {},
   layerLabels: {},
 }

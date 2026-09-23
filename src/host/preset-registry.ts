@@ -150,7 +150,7 @@ export function createPresetRegistrySync(ctx: Context, root: string): {
           registrations.delete(id)
         } catch (error) { errors.push(error) }
       }
-      for (const preset of listPresets(root, { includeCompatibility: true })) {
+      for (const preset of listPresets(root)) {
         try {
           const definition = readDefinition(root, preset.id)
           const fingerprint = JSON.stringify(definition)

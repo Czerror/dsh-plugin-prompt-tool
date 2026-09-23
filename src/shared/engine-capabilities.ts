@@ -225,7 +225,7 @@ export function impliedModulesForParams(
   return [...implied]
 }
 
-/** 显式模块预设中的实际能力；包含历史策略段仍在运行的兼容装配。
+/** 显式模块预设中的实际能力；包含当前参数与顶层策略所需的装配。
  *  创建补声明由 host 单独检查 declaredModules；官方组合行不伪装成可编辑能力。 */
 export function isEngineCapabilityPresent(id: string, facts: PresetModuleFacts | undefined): boolean {
   if (facts === undefined || facts.sourceMode !== 'explicit') return false

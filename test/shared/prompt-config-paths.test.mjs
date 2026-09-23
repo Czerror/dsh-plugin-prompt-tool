@@ -142,10 +142,3 @@ test('host 版输出不含仅存在于 variables.yml 的键（刻意设计：不
     '引擎侧合并 variables.yml，配置自身优先')
   dispose()
 })
-
-test('宿主调用方拿到的是新名字，兼容层旧名仍指向同一实现', async () => {
-  const source = await import('node:fs').then(({ readFileSync }) =>
-    readFileSync(new URL('../../src/preset-core.ts', import.meta.url), 'utf8'))
-  assert.match(source, /listPromptConfigSpecs as loadPromptConfigFiles/,
-    'preset-core 的兼容层必须保留旧名（外部/旧测试按旧名消费）')
-})

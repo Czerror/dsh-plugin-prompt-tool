@@ -13,7 +13,7 @@ import { registerHooks } from 'node:module'
 import { createElement, isValidElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import ts from 'typescript'
-import { EMPTY_FIELDS } from '../../src/client/data/prompt-tool-fields.ts'
+import { EMPTY_FIELDS, EMPTY_META } from '../../src/client/data/prompt-tool-fields.ts'
 import { PROMPT_TOOL_DICTS } from '../../src/client/locales.ts'
 import { createConfigFromTemplate } from '../../src/client/features/prompts/useTemplatePicker.ts'
 
@@ -68,6 +68,7 @@ const t = (key, params) => {
   return text
 }
 const meta = {
+  ...EMPTY_META,
   layers: ['pre-step', 'system-section', 'runtime-context', 'agent-request', 'llm-stream', 'tool-pipeline'],
   strategies: [], slotKinds: [], positions: [], dedupes: [], promotions: [], audienceModes: [], modelScopes: [], roles: [], mergeModes: [], fills: [],
   layerFieldPolicies: {}, layerLabels: {},
@@ -131,8 +132,8 @@ test('新建派生的 id 去重与 identity 跟随同时成立（同一模板重
   assert.equal(second.identity.value, 'dup-2', 'identity 跟随新 id，避免与首条碰撞')
 })
 
-test('新建派生保留策略降级（instruction-hint → placeholder）', () => {
-  const entry = { file: 'b.yml', spec: { id: 'hint', layer: 'pre-step', strategy: 'instruction-hint' } }
+test('新建派生保留 placeholder 的 instruction-hint 来源', () => {
+  const entry = { file: 'b.yml', spec: { id: 'hint', layer: 'pre-step', strategy: 'placeholder', fill: 'instruction-hint' } }
   const draft = createConfigFromTemplate(entry, [], 'subagent')
   assert.equal(draft.strategy, 'placeholder')
   assert.equal(draft.fill, 'instruction-hint')

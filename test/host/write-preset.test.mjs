@@ -467,7 +467,7 @@ test('writePreset 四个官方基型以顶层 persona 段渲染官方 dsh-person
   }
 })
 
-test('writePreset outputId 覆盖：别名目录独立渲染（旧容器 id 兼容物化路径）', () => {
+test('writePreset outputId 覆盖：来源模板与目标身份分离渲染', () => {
   const dir = join(tmpdir(), `prompt-tool-alias-${process.pid}-${Date.now()}`)
   const presetDir = join(dir, 'preset')
   try {
@@ -828,8 +828,7 @@ test.after(() => {
 })
 
 
-test('writePreset 组合源缺失回退：用户副本无组合源 → 回退包内模板渲染，不写回用户参数源', () => {
-  // 模拟真实布局：presetDir 即隔离 DSH_HOME 的 .agent-presets（参数源与目标同目录，升级闭环）
+test('writePreset 用户副本缺组合源时拒绝，不回退包内同名模板', () => {
   const presetDir = join(home, '.agent-presets')
   const userMinimal = join(presetDir, 'pt-minimal')
   try {
@@ -837,35 +836,34 @@ test('writePreset 组合源缺失回退：用户副本无组合源 → 回退包
     mkdirSync(userMinimal, { recursive: true })
     // 纯元数据副本：无 modules/params/promptConfigs，目录也无 agent.cordis.yml。
     writeFileSync(join(userMinimal, 'preset.yml'), 'name: 极简模式（旧）\ndescription: 旧版种子副本\norder: 3\n', 'utf8')
-    const warnings = []
-    writePreset('PROMPT', { ...makeOptions(presetDir), presetTemplate: 'pt-minimal', warn: (message) => warnings.push(message) })
-    // 回退包内模板渲染成功：组合精确对齐官方 Minimal 基型。
-    const cordis = readFileSync(join(userMinimal, 'agent.cordis.yml'), 'utf8')
-    assert.deepEqual(parseYaml(cordis).map((row) => row.id), ['persona', 'persistent-shell', 'prompt-config-engine'])
-    // 不回写用户参数源：没有迁移，modules 不落盘，用户命名与内容原样保留。
+    const before = readFileSync(join(userMinimal, 'preset.yml'), 'utf8')
+    assert.throws(() => writePreset('PROMPT', { ...makeOptions(presetDir), presetTemplate: 'pt-minimal' }), /no modules\/composition/)
+    assert.equal(existsSync(join(userMinimal, 'agent.cordis.yml')), false)
+    assert.equal(readFileSync(join(userMinimal, 'preset.yml'), 'utf8'), before)
     const spec = parseYaml(readFileSync(join(userMinimal, 'preset.yml'), 'utf8'))
     assert.equal(spec.modules, undefined, '不注入包内 modules（无迁移）')
     assert.equal(spec.name, '极简模式（旧）', '用户命名保留')
     assert.equal(spec.description, '旧版种子副本', '用户描述保留')
-    assert.ok(warnings.some((message) => message.includes('回退')), '回退发生时 warn')
   } finally {
     rmSync(userMinimal, { recursive: true, force: true })
   }
 })
 
-test('writePreset 非纯元数据副本不升级：仅回退渲染，参数源保持用户旧值', () => {
+test('writePreset 缺组合源的参数预设也不回退，失败保留定义', () => {
   const presetDir = join(home, '.agent-presets')
   const userPtc = join(presetDir, 'pt-ptc')
   try {
     mkdirSync(userPtc, { recursive: true })
     // 用户配置过（有 layerSettings 段）但不可渲染的副本
     writeFileSync(join(userPtc, 'preset.yml'), 'id: pt-ptc\nname: 用户改过的PTC\nlayerSettings:\n  pre-step:\n    injectPrompt: false\n', 'utf8')
-    writePreset('PROMPT', { ...makeOptions(presetDir), presetTemplate: 'pt-ptc' })
+    const before = readFileSync(join(userPtc, 'preset.yml'), 'utf8')
+    assert.throws(() => writePreset('PROMPT', { ...makeOptions(presetDir), presetTemplate: 'pt-ptc' }), /no modules\/composition/)
     // 参数源未被包内模板覆盖。
     const spec = parseYaml(readFileSync(join(userPtc, 'preset.yml'), 'utf8'))
     assert.equal(spec.name, '用户改过的PTC', '用户命名保留')
     assert.equal(spec.layerSettings['pre-step'].injectPrompt, false, '用户参数保留（不升级不覆盖）')
-    assert.ok(existsSync(join(userPtc, 'agent.cordis.yml')), '回退渲染仍产出组合')
+    assert.equal(existsSync(join(userPtc, 'agent.cordis.yml')), false)
+    assert.equal(readFileSync(join(userPtc, 'preset.yml'), 'utf8'), before)
   } finally {
     rmSync(userPtc, { recursive: true, force: true })
   }

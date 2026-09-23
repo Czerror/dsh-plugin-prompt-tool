@@ -10,7 +10,7 @@ import { existsSync, lstatSync, readFileSync, renameSync, unlinkSync, writeFileS
 import { randomUUID } from 'node:crypto'
 import { basename, dirname, join } from 'node:path'
 import { isAbsolute } from 'node:path'
-import { Document, isMap, isNode, isScalar, parseDocument, visit } from 'yaml'
+import { Document, isMap, parseDocument, visit } from 'yaml'
 import { SKILL_MARKER, invocationForScope, type SkillCatalogEntry, type SkillInvocation, type SkillPolicyChange, type SkillPolicyScope } from '../shared/skills.ts'
 import { parseSkillBoolean } from '../runtime/skills-parse.ts'
 import { assertUnlinkedPath } from './skills-actions.ts'
@@ -19,10 +19,6 @@ import { SKILL_NAME_PATTERN } from './skills-config.ts'
 const BOM = '\ufeff'
 /** 与 runtime/skills-parse.ts 同一套 frontmatter 边界（容忍 CRLF 与缺失尾换行）。 */
 const FRONTMATTER = /^---\r?\n([\s\S]*?)\r?\n---(\r?\n|$)/
-
-/** 读取兼容旧驼峰写法，写入统一为官方连字符键。 */
-const MODEL_KEYS = ['disable-model-invocation', 'disableModelInvocation'] as const
-const USER_KEYS = ['user-invocable', 'userInvocable'] as const
 
 export type SkillPolicyRead =
   | { ok: true; invocation: SkillInvocation; frontmatter?: string; body?: string }
@@ -68,17 +64,17 @@ function parseMarker(file: string): ParsedMarker {
   if (document.errors.length > 0) throw new Error(`frontmatter 不是合法 YAML：${document.errors[0]?.message ?? '解析失败'}`)
   if (!isMap(document.contents)) throw new Error('frontmatter 必须是 YAML 映射')
   visit(document, { Alias() { throw new Error('frontmatter 不支持 YAML 别名') } })
+  for (const key of ['disableModelInvocation', 'modelInvocable', 'userInvocable']) {
+    if (document.has(key)) throw new Error(`frontmatter field "${key}" is unsupported`)
+  }
   return { raw, frontmatter: match[1]!, rest: source.slice(match[0].length - match[2]!.length), bom, doc: document }
 }
 
 function currentInvocation(doc: Document): SkillInvocation {
   // 键语义不同：`disable-model-invocation: true` 表示模型不可调用，`user-invocable: false` 表示用户不可调用。
-  const read = (keys: readonly string[]): boolean | undefined => {
-    const key = keys.find((key) => doc.has(key))
-    return key === undefined ? undefined : parseSkillBoolean(doc.get(key), key)
-  }
-  const disabled = read(MODEL_KEYS) ?? (doc.has('modelInvocable') ? !parseSkillBoolean(doc.get('modelInvocable'), 'modelInvocable') : undefined)
-  const user = read(USER_KEYS)
+  const read = (key: string): boolean | undefined => doc.has(key) ? parseSkillBoolean(doc.get(key), key) : undefined
+  const disabled = read('disable-model-invocation')
+  const user = read('user-invocable')
   return { modelInvocable: disabled !== true, userInvocable: user !== false }
 }
 
@@ -92,29 +88,10 @@ export function readSkillInvocation(file: string): SkillPolicyRead {
   }
 }
 
-/** 保留 YAML 节点与注释，把旧策略键归一为官方键；共存的旧键必须删除。 */
-function writeKey(doc: Document, keys: readonly string[], value: boolean): boolean {
-  const canonical = keys[0]!
-  const legacy = keys.slice(1).filter((key) => doc.has(key))
-  if (legacy.length === 0 && doc.get(canonical) === value) return false
-  if (!isMap(doc.contents)) throw new Error('frontmatter 必须是 YAML 映射')
-  const pairs = doc.contents.items
-  const pairFor = (key: string) => pairs.find((pair) => isScalar(pair.key) && pair.key.value === key)
-  if (!doc.has(canonical) && legacy.length > 0) {
-    const pair = pairFor(legacy.shift()!)!
-    if (isScalar(pair.key)) pair.key.value = canonical
-  }
-  doc.set(canonical, value)
-  const target = pairFor(canonical)!
-  for (const key of legacy) {
-    const pair = pairFor(key)!
-    // 重复策略键上的说明仍是用户内容，删除键前把说明移到官方键前面。
-    const comments = [pair.key, pair.value].flatMap((node) => isNode(node) ? [node.commentBefore, node.comment] : []).filter(Boolean)
-    if (isScalar(target.key) && comments.length > 0) {
-      target.key.commentBefore = [target.key.commentBefore, ...comments].filter(Boolean).join('\n')
-    }
-    doc.delete(key)
-  }
+/** 只改官方策略键，保留 YAML 节点与注释。 */
+function writeKey(doc: Document, key: string, value: boolean): boolean {
+  if (doc.get(key) === value) return false
+  doc.set(key, value)
   return true
 }
 
@@ -148,8 +125,8 @@ export function setSkillInvocation(file: string, change: SkillPolicyChange | Ski
     }
     // 两个键的语义不同：`disable-model-invocation` 表达的是「禁用模型调用」，`user-invocable` 表达的是
     // 「允许用户调用」。前者必须取反写入——写成原值会让两端语义整体反转（探针实测过这个错误）。
-    const modelChanged = ('scope' in operation || operation.side === 'model') && writeKey(parsed.doc, [...MODEL_KEYS, 'modelInvocable'], !target.modelInvocable)
-    const userChanged = ('scope' in operation || operation.side === 'user') && writeKey(parsed.doc, USER_KEYS, target.userInvocable)
+    const modelChanged = ('scope' in operation || operation.side === 'model') && writeKey(parsed.doc, 'disable-model-invocation', !target.modelInvocable)
+    const userChanged = ('scope' in operation || operation.side === 'user') && writeKey(parsed.doc, 'user-invocable', target.userInvocable)
     if (!modelChanged && !userChanged) return { ok: true, changed: false, invocation: target }
     const content = `${parsed.bom}---\n${parsed.doc.toString()}---${parsed.rest}`
     temporary = join(dirname(file), `.${basename(file)}.tmp-${randomUUID()}`)

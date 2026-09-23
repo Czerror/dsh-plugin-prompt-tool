@@ -21,7 +21,7 @@ const { createPresetRegistrySync } = await import('../../src/host/preset-registr
 const { listPresets } = await import('../../src/host/manifest.ts')
 test.after(() => { rmSync(home, { recursive: true, force: true }); delete process.env.DSH_HOME })
 
-test('注册清单保留兼容快照、可选名称和顶层排序，UI仍隐藏兼容快照', async () => {
+test('注册与 UI 清单使用相同身份规则，支持可选名称和顶层排序', async () => {
   const root = join(home, 'metadata')
   for (const [id, definition] of [
     ['alpha', 'id: alpha\nmodules: []\norder: -7\nmeta: { order: 99 }\n'],
@@ -46,7 +46,7 @@ test('注册清单保留兼容快照、可选名称和顶层排序，UI仍隐藏
     assert.deepEqual([...definitions.keys()].sort(), ['alpha', 'prompt-tool'])
     assert.equal(definitions.get('alpha').name, undefined, '名称未设置仍可注册')
     assert.equal(definitions.get('alpha').order, -7, '使用顶层 order，不误读 meta.order')
-    assert.deepEqual(listPresets(root).map((preset) => preset.id), ['alpha'], '兼容快照不进入普通选择列表')
+    assert.deepEqual(listPresets(root).map((preset) => preset.id), ['alpha', 'prompt-tool'], '普通合法目录不因历史名称隐藏')
   } finally { await sync.dispose() }
 })
 

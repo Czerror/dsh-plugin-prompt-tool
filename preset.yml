@@ -38,7 +38,7 @@ promptConfigs:
   # 工具参数不可改写；toolResult 条件只作用于后置阶段。结束层 inject-main 不改写子代理结果、不唤醒空闲主会话。
   # 10-pre-step.yml — 官方默认层：agent/pre-step 消息批。支持 position / dedupe / promotion / audience / mergeMode 与文本插值。
   # 本层通用字段：position, dedupe, promotion, audience, modelScope, mergeMode, order, role, subject, match；未列字段不可从其他层直接照搬。
-  # 本层支持策略：static, placeholder, instruction-hint, first-turn-anchor, guide-auto, custom-fallback, world-book；匹配对象：userMessage。
+  # 本层支持策略：static, placeholder, first-turn-anchor, guide-auto, custom-fallback, world-book；匹配对象：userMessage。
   # 无额外层专属 params；策略字段仍按所选策略解释。
   - id: example-pre-step
     name: 示例：消息批注入
@@ -65,7 +65,7 @@ promptConfigs:
     params: {}
   # 14-first-turn-anchor.yml — 官方默认层：agent/pre-step 消息批。支持 position / dedupe / promotion / audience / mergeMode 与文本插值。
   # 本层通用字段：position, dedupe, promotion, audience, modelScope, mergeMode, order, role, subject, match；未列字段不可从其他层直接照搬。
-  # 本层支持策略：static, placeholder, instruction-hint, first-turn-anchor, guide-auto, custom-fallback, world-book；匹配对象：userMessage。
+  # 本层支持策略：static, placeholder, first-turn-anchor, guide-auto, custom-fallback, world-book；匹配对象：userMessage。
   # 无额外层专属 params；策略字段仍按所选策略解释。
   - id: example-first-turn-anchor
     name: 示例：首句锚点
@@ -92,7 +92,7 @@ promptConfigs:
       firstTurnDeep: ""
   # 15-guide-auto.yml — 官方默认层：agent/pre-step 消息批。支持 position / dedupe / promotion / audience / mergeMode 与文本插值。
   # 本层通用字段：position, dedupe, promotion, audience, modelScope, mergeMode, order, role, subject, match；未列字段不可从其他层直接照搬。
-  # 本层支持策略：static, placeholder, instruction-hint, first-turn-anchor, guide-auto, custom-fallback, world-book；匹配对象：userMessage。
+  # 本层支持策略：static, placeholder, first-turn-anchor, guide-auto, custom-fallback, world-book；匹配对象：userMessage。
   # 无额外层专属 params；策略字段仍按所选策略解释。
   - id: example-guide-auto
     name: 示例：每轮引导
@@ -116,7 +116,7 @@ promptConfigs:
       guideDeep: ""
   # 16-custom-fallback.yml — 官方默认层：agent/pre-step 消息批。支持 position / dedupe / promotion / audience / mergeMode 与文本插值。
   # 本层通用字段：position, dedupe, promotion, audience, modelScope, mergeMode, order, role, subject, match；未列字段不可从其他层直接照搬。
-  # 本层支持策略：static, placeholder, instruction-hint, first-turn-anchor, guide-auto, custom-fallback, world-book；匹配对象：userMessage。
+  # 本层支持策略：static, placeholder, first-turn-anchor, guide-auto, custom-fallback, world-book；匹配对象：userMessage。
   # 无额外层专属 params；策略字段仍按所选策略解释。
   - id: example-custom-fallback
     name: 示例：自定义锚词兜底注入
@@ -138,7 +138,7 @@ promptConfigs:
       firstTurnWord: ""
   # 18-placeholder-env-facts.yml — 官方默认层：agent/pre-step 消息批。支持 position / dedupe / promotion / audience / mergeMode 与文本插值。
   # 本层通用字段：position, dedupe, promotion, audience, modelScope, mergeMode, order, role, subject, match；未列字段不可从其他层直接照搬。
-  # 本层支持策略：static, placeholder, instruction-hint, first-turn-anchor, guide-auto, custom-fallback, world-book；匹配对象：userMessage。
+  # 本层支持策略：static, placeholder, first-turn-anchor, guide-auto, custom-fallback, world-book；匹配对象：userMessage。
   # 无额外层专属 params；策略字段仍按所选策略解释。
   - id: example-placeholder
     layer: pre-step
@@ -272,7 +272,7 @@ promptConfigs:
     enabled: false
   # 70-subagent-maintenance.yml — 官方默认层：agent/pre-step 消息批。支持 position / dedupe / promotion / audience / mergeMode 与文本插值。
   # 本层通用字段：position, dedupe, promotion, audience, modelScope, mergeMode, order, role, subject, match；未列字段不可从其他层直接照搬。
-  # 本层支持策略：static, placeholder, instruction-hint, first-turn-anchor, guide-auto, custom-fallback, world-book；匹配对象：userMessage。
+  # 本层支持策略：static, placeholder, first-turn-anchor, guide-auto, custom-fallback, world-book；匹配对象：userMessage。
   # 无额外层专属 params；策略字段仍按所选策略解释。
   - id: subagent-maintenance
     name: 子代理状态/记忆维护
@@ -349,7 +349,7 @@ promptConfigs:
 #     firstTurnCustom: false # 使用自定义锚定文本；boolean
 #     guideText: "" # 每轮引导文本；string
 #     guideCustom: false # 使用自定义引导文本；boolean
-#     guideEnabled: false # 每轮引导（未设置时跟随锚定）；boolean；不声明时跟随 firstTurnAnchor；false 为显式关闭
+#     guideEnabled: false # 每轮引导；boolean；仅 true 启用；缺省关闭，与 firstTurnAnchor 独立
 #     injectPrompt: true # 锚定确认后注入内容；boolean
 #     firstTurnWord: "" # 锚定确认词；string
 #     buildPattern: "" # 构建任务正则；pattern

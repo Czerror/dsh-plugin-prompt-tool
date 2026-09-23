@@ -2,7 +2,7 @@
  * instruction-hint — 通用内置指令文件提示引擎。
  *
  * 本模块同时是「可 import 的纯函数库」与「可被组合源挂载的 plugin」：
- * - prompt-config 的 strategy=instruction-hint / placeholder fill=instruction-hint
+ * - prompt-config 的 strategy=placeholder + fill=instruction-hint
  *   直接使用本模块的探测与消息构造；
  * - plugin 形态（见文件末尾 apply）：**挂本行 = 开启**「晋升后把
  *   agent-instructions 全文替换为一次性 hint，后续全文消息丢弃」的转换。
@@ -134,7 +134,7 @@ function hintScope(value) {
 }
 
 /**
- * prompt-config strategy=instruction-hint 的 resolver。
+ * prompt-config placeholder fill=instruction-hint 的 resolver。
  * params.text（自定义提示）优先；params.file（文件卡绑定的单个指令文件）次之——
  * 运行时读该文件正文并加 `Instructions from:` 头注入；最后按 params.scope 探测来源
  * （all / global / project）只发「文件存在」提示。

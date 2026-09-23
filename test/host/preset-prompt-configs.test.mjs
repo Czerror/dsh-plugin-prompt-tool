@@ -12,7 +12,7 @@ import { parse } from 'yaml'
 // 隔离 DSH_HOME：writePreset 的模板解析（resolvePresetDir）用户预设优先——
 // 真实用户环境 .agent-presets/<id> 会遮蔽包内模板，测试必须隔离。
 // 注意：paths 模块顶层缓存 DEFAULT_PRESET_DIR（join(DSH_HOME, ...)），
-// preset-core/index 必须全部在 env 设置后动态 import，否则读到真实用户根。
+// host/index 必须全部在 env 设置后动态 import，否则读到真实用户根。
 const home = mkdtempSync(join(tmpdir(), 'pt-prompt-configs-home-'))
 const previousHome = process.env.DSH_HOME
 process.env.DSH_HOME = home
@@ -23,10 +23,10 @@ after(() => {
 })
 const { FIXTURE_PRESET_ID, installFixturePreset } = await import('../fixtures/preset-template.mjs')
 const {
-  loadPromptConfigFiles,
+  listPromptConfigSpecs,
   mergePromptConfigs,
   renderPromptConfigYaml,
-} = await import('../../lib/preset-core.mjs')
+} = await import('../../src/host/prompt-configs.ts')
 const {
   Config,
   PromptSettingsSchema,
@@ -60,7 +60,7 @@ function generatedConfigs(options = {}, prompt = 'PROMPT') {
       usePtcMode: true,
       promptConfigs: [],
     })
-    const specs = loadPromptConfigFiles(join(dir, FIXTURE_PRESET_ID, 'prompt-configs'))
+    const specs = listPromptConfigSpecs(join(dir, FIXTURE_PRESET_ID, 'prompt-configs'))
     const byId = Object.fromEntries(specs.map((spec) => [spec.id, spec]))
     return { specs, byId }
   } finally {
@@ -82,16 +82,16 @@ test('mergePromptConfigs：同名 id 后者覆盖且保留位置，新 id 追加
   assert.equal(merged[3].layer, 'system-section')
 })
 
-test('loadPromptConfigFiles 扫描 yml 与 json，非法文件 fail loud', () => {
+test('listPromptConfigSpecs 扫描 yml 与 json，非法文件 fail loud', () => {
   const dir = mkdtempSync(join(tmpdir(), 'prompt-tool-user-configs-'))
   try {
     writeFileSync(join(dir, '10-a.yml'), 'id: a\nstrategy: static\ntext: A\n')
     writeFileSync(join(dir, '20-b.json'), JSON.stringify({ id: 'b', layer: 'agent-request', params: { patch: { maxTokens: 1 } } }))
     writeFileSync(join(dir, 'ignore.txt'), 'x')
-    const specs = loadPromptConfigFiles(dir)
+    const specs = listPromptConfigSpecs(dir)
     assert.deepEqual(specs.map((spec) => spec.id), ['a', 'b'])
     assert.equal(specs[1].layer, 'agent-request')
-    assert.throws(() => loadPromptConfigFiles(join(dir, 'missing')), /不可读/)
+    assert.throws(() => listPromptConfigSpecs(join(dir, 'missing')), /不可读/)
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }
@@ -143,7 +143,7 @@ test('renderPromptConfigYaml 全字段开放：variables/identity/params 嵌套�
     layer: 'tool-pipeline',
     configKind: 'anchor',
     order: 42,
-    role: 'assistant',
+    role: 'user',
     group: 'mode',
     exclusive: true,
     position: 'after-all',
@@ -252,26 +252,26 @@ test('writePreset 引导开关独立：guideEnabled=true 时锚定关闭仍启�
   assert.equal(byId['router-guide'].enabled, true, 'guideEnabled=true 时引导独立启用')
   assert.equal(byId['near-anchor'].enabled, false, '锚定仍关闭（两功能独立）')
   const { byId: fallback } = generatedConfigs({ firstTurnAnchor: false })
-  assert.equal(fallback['router-guide'].enabled, false, 'guideEnabled 缺省跟随锚定开关')
+  assert.equal(fallback['router-guide'].enabled, false, 'guideEnabled 缺省关闭')
 })
 
-test('writePreset 开启 firstTurnAnchor 时 router-guide 启用', () => {
+test('writePreset 开启 firstTurnAnchor 不隐式启用 router-guide', () => {
   const { byId } = generatedConfigs({ firstTurnAnchor: true })
-  assert.equal(byId['router-guide'].enabled, true)
+  assert.equal(byId['router-guide'].enabled, false)
   assert.equal(byId['router-guide'].modelScope, 'flash')
   assert.equal(byId['router-guide'].params.useCustom, false)
 })
 
 test('writePreset guideCustom=true 时固定自定义每轮引导（Pro/Flash 都注入）', () => {
-  const { byId } = generatedConfigs({ firstTurnAnchor: true, guideCustom: true, guideText: 'CUSTOM GUIDE' })
+  const { byId } = generatedConfigs({ firstTurnAnchor: true, guideEnabled: true, guideCustom: true, guideText: 'CUSTOM GUIDE' })
   assert.equal(byId['router-guide'].enabled, true)
   assert.equal(byId['router-guide'].modelScope, 'all')
   assert.equal(byId['router-guide'].params.useCustom, true)
   assert.equal(byId['router-guide'].params.text, 'CUSTOM GUIDE')
 })
 
-test('writePreset injectPrompt=false 且 firstTurnAnchor=true 只启用近锚与引导', () => {
-  const { byId } = generatedConfigs({ injectPrompt: false, firstTurnAnchor: true, firstTurnText: 'A' })
+test('writePreset 显式启用锚定与引导时，injectPrompt=false 只关闭正文注入', () => {
+  const { byId } = generatedConfigs({ injectPrompt: false, firstTurnAnchor: true, guideEnabled: true, firstTurnText: 'A' })
   assert.equal(byId['near-anchor'].enabled, true)
   assert.equal(byId['router-guide'].enabled, true)
   assert.equal(byId['prompt-injector'].enabled, false)

@@ -119,7 +119,7 @@ export type LayerFieldPolicyKey = (typeof LAYER_FIELD_POLICY_KEYS)[number]
 export type LayerFieldPolicy = Record<LayerFieldPolicyKey, boolean>
 
 /** settings bridge /meta 返回的引擎能力矩阵。层行为、顺序和编辑组见 {@link EngineMetaLayerContract}。 */
-export interface EngineMeta extends Partial<EngineMetaLayerContract> {
+export interface EngineMeta extends EngineMetaLayerContract {
   /**
    * 官方装配档位的区段刻度（B8 W2）：`from`/`to` 都是**运行期**从官方服务求得的值，
    * 客户端不得硬编码任何档位数值。只用于 `system-section` / `runtime-context` 两层的
@@ -141,14 +141,12 @@ export interface EngineMeta extends Partial<EngineMetaLayerContract> {
   modelScopes: string[]
   /** 实际可发出的注入角色（pre-step 只接受 user）；表单只提供这些值。 */
   roles: string[]
-  /** 仍可加载的旧输入角色（含 assistant）；不等于可以继续新建。 */
-  acceptedRoles?: string[]
   mergeModes: string[]
   fills: string[]
-  /** 条件判定的匹配对象清单；旧宿主可能不下发。 */
-  subjects?: string[]
-  /** 层 → 缺省匹配对象映射（「层缺省」选项的说明文本）；旧宿主可能不下发。 */
-  layerDefaultSubjects?: Record<string, string>
+  /** 条件判定的匹配对象清单。 */
+  subjects: string[]
+  /** 层 → 缺省匹配对象映射（「层缺省」选项的说明文本）。 */
+  layerDefaultSubjects: Record<string, string>
   layerFieldPolicies: Record<string, LayerFieldPolicy>
   layerLabels: Record<string, { title: string; detail: string }>
 }

@@ -162,8 +162,7 @@
   给出的其它值在出口降级，只 `warnOnce` 一次，原角色写入 `source.requestedRole`，正文、位置、
   次数、dedupe、order 与变量副作用都不变。合并组按首条配置的角色发出，其余成员声明的非法角色
   同样告警并留痕。
-- 引擎仍接受 `role: assistant` 作为**输入**（旧预设可加载，schema 不收紧），但 `getEngineMeta()`
-  的 `roles` 只返回可发出角色 `user`，`acceptedRoles` 另行列出仍可加载的旧角色供 UI 区分。
+- 配置的 `role` 只接受 `user`，`getEngineMeta().roles` 与表单同源；策略或模板 patch 的角色仍经出口守卫校验。
 - 想让消息以 assistant 出现在模型面前，只能走宿主 assistant 侧通道，不要在 pre-step 里伪造
   assistant 历史：那会写出宿主无法重新加载的会话日志。
 - 验收入口：`test/host/pre-step-persistence.test.mjs`（真实 `@deepseek-ai/dsh-session` 的

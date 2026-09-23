@@ -214,15 +214,13 @@ tokenizer 与上下文预算通道，超出本插件的宿主边界；`forbid_ov
 
 - 宿主把 pre-step 批次的每条消息写成 `user/message` 事件，事件校验要求 `role === "user"`；
   assistant 只能来自模型侧 `assistant/message` 事件。因此 ST 的 assistant/system 角色在
-  **导入期**就降级为 user，**运行出口**再兜底一次：执行器创建消息时统一发出 user，旧预设里
-  声明的 assistant（含模板 patch 给出的角色）保留正文、只告警一次，原角色记入
+  **导入期**就降级为 user，**运行出口**再兜底一次：执行器创建消息时统一发出 user，策略或模板
+  patch 给出的其他角色保留正文、只告警一次，原角色记入
   `source.requestedRole`，不把非法值传给宿主。
 - 导入期降级逐条留痕：条目分类为 `degraded`、原因码 `assistant-role-downgrade`，原角色保留在
   `params.stSource.role`（prompt / 开场白 / 示例对话）或 `params.stWorldBook.role`（世界书），
   并产生 info 级诊断（同类来源只发一条，不刷屏）。预览报告因此不把这些条目报成「等价」。
-- 兼容边界：旧 `preset.yml` 里的 `role: assistant` 仍可加载（引擎接受 `user` 与 `assistant`
-  两种输入），但工作台角色选项只提供可发出角色 `user`；已有 assistant 条目在表单里显示降级提示，
-  不做自动回写。
+- 原生提示词配置只接受 `role: user`；SillyTavern 的角色转换属于导入契约，转换后交给同一引擎校验。
 - 验收入口：`test/host/pre-step-persistence.test.mjs` 用已发布 `@deepseek-ai/dsh-session` 走
   「注入 → 事件持久化 → 重新加载 → 派生请求」，旧 assistant 夹具必须在加载时触发真实角色校验错误。
 

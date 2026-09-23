@@ -89,12 +89,11 @@ export function PromptConfigForm(props: {
     : typeof config.params?.file === 'string' ? config.params.file : ''
   const textReadOnly = isInstructionFile
     && ((config.contentStatus !== undefined && config.contentStatus !== 'ready') || config.contentConflict === true)
-  const instructionHint = config.strategy === 'instruction-hint'
   /** 普通卡写 preset 卡字段；指令文件卡的绑定由文件来源固定，只有策略字段落到独立策略。 */
   const onPatch = (patch: Partial<PromptConfigDraft>): void => {
     if (disabled) return
     if (!locked) {
-      patchConfig(instructionHint ? { strategy: 'placeholder', fill: 'instruction-hint', ...patch } : patch)
+      patchConfig(patch)
       return
     }
     if (typeof patch.text === 'string') {
@@ -137,17 +136,13 @@ export function PromptConfigForm(props: {
     : contentKind === 'tool-result' ? 'form.text.toolResult'
       : contentKind === 'subagent-result' ? 'form.text.mainSession' : 'form.text.label'
   const showMetadata = locked || contract?.messageMetadata !== false
-  const strategies = (contract?.strategies ?? meta.strategies).filter((value) => value !== 'instruction-hint')
+  const strategies = contract?.strategies ?? meta.strategies
   // 条件判定（subject / match）只在引擎字段矩阵允许的层可编辑；指令文件卡的绑定不可改，
   // 且独立指令策略不承载这两项，故整块隐藏，避免做出被 onPatch 静默丢弃的假入口。
   const conditional = !locked && (policy.subject || policy.match)
   const defaultSubject = meta.layerDefaultSubjects?.[config.layer ?? 'pre-step']
   const layerDetail = meta.layerLabels[config.layer ?? '']?.detail
-  // 可发出角色（引擎 EMITTABLE_ROLES）之外的值是旧输入：可加载、可保存，但运行时降级，
-  // 表单必须说明这一点，而不是把非法角色继续摆成可选新值。
-  const roleDowngraded = meta.roles.length > 0
-    && typeof config.role === 'string' && config.role.length > 0 && !meta.roles.includes(config.role)
-  const strategy = instructionHint ? 'placeholder' : config.strategy ?? 'static'
+  const strategy = config.strategy ?? 'static'
   const placeholder = strategy === 'placeholder' && policy.placeholder
   const fillOptions = ['', ...meta.fills]
   return (
@@ -200,7 +195,7 @@ export function PromptConfigForm(props: {
       <section className={styles.configSection} data-config-panel="execution" aria-label={t('form.navigation.execution')}>
       <h4 className={styles.configSectionTitle}>{t('form.navigation.execution')}</h4>
       <div className={styles.configGrid}>
-        <OptionField t={t} className={styles.fieldSpan6} label={t('form.strategy.label')} hint={t('form.strategy.hint')} value={strategy} options={strategies} fallback="static" labelKeys={STRATEGY_LABEL_KEYS} disabled={locked || disabled} onChange={(value) => onPatch({ strategy: value, fill: value === 'placeholder' ? (config.fill ?? (instructionHint ? 'instruction-hint' : 'env-facts')) : undefined })} />
+        <OptionField t={t} className={styles.fieldSpan6} label={t('form.strategy.label')} hint={t('form.strategy.hint')} value={strategy} options={strategies} fallback="static" labelKeys={STRATEGY_LABEL_KEYS} disabled={locked || disabled} onChange={(value) => onPatch({ strategy: value, fill: value === 'placeholder' ? (config.fill ?? 'env-facts') : undefined })} />
         <OptionField t={t} className={styles.fieldSpan3} label={t('form.kind.label')} hint={t('form.kind.hint')} value={config.configKind} options={meta.slotKinds} fallback="ordered" labelKeys={SLOT_KIND_LABEL_KEYS} disabled={locked || disabled} onChange={(value) => onPatch({ configKind: value })} />
         {policy.position && <OptionField t={t} className={styles.fieldSpan3} label={t('form.position.label')} hint={t('form.position.hint')} value={config.position} options={meta.positions} fallback="after-user" labelKeys={POSITION_LABEL_KEYS} disabled={disabled} onChange={(value) => onPatch({ position: value })} />}
         {policy.merge && <OptionField t={t} className={styles.fieldSpan2} label={t('form.merge.label')} hint={t('form.merge.hint')} value={config.mergeMode} options={meta.mergeModes} fallback="separate" labelKeys={MERGE_MODE_LABEL_KEYS} disabled={locked || disabled} onChange={(value) => onPatch({ mergeMode: value })} />}
@@ -223,7 +218,7 @@ export function PromptConfigForm(props: {
       <h4 className={styles.configSectionTitle}>{t('form.section.strategy')}</h4>
       <fieldset disabled={disabled} className={clsx(styles.configGrid, styles.strategyGrid, styles.configFieldset)}>
         {placeholder && (
-          <OptionField t={t} className={styles.fieldSpan3} label={t('form.fill.label')} hint={t('form.fill.hint')} value={config.fill ?? (instructionHint ? 'instruction-hint' : undefined)} options={fillOptions} fallback="" labelKeys={FILL_LABEL_KEYS} disabled={locked || disabled} onChange={(value) => onPatch({ fill: value || undefined })} />
+          <OptionField t={t} className={styles.fieldSpan3} label={t('form.fill.label')} hint={t('form.fill.hint')} value={config.fill} options={fillOptions} fallback="" labelKeys={FILL_LABEL_KEYS} disabled={locked || disabled} onChange={(value) => onPatch({ fill: value || undefined })} />
         )}
         {!locked && <StrategyParamsFields t={t} strategy={strategy} layer={config.layer} contract={contract} params={config.params} id={config.id} fieldSources={config.fieldSources} enabled={config.enabled} modelScope={config.modelScope} fieldDrafts={props.fieldDrafts} draftScope={props.draftScope} onPatch={(value) => onPatch({ params: value })} />}
       </fieldset>
@@ -259,7 +254,6 @@ export function PromptConfigForm(props: {
       <h4 className={styles.configSectionTitle}>{t('form.advanced.label')}</h4>
         <div className={styles.configGrid}>
           {policy.role && <OptionField t={t} className={styles.fieldSpan3} label={t('form.role.label')} hint={t('form.role.hint')} value={config.role} options={meta.roles} fallback="user" labelKeys={ROLE_LABEL_KEYS} disabled={locked || disabled} onChange={(value) => onPatch({ role: value })} />}
-          {policy.role && roleDowngraded && <p className={clsx(styles.configFieldHint, styles.fieldFull)}>{t('form.role.downgraded')}</p>}
           {showMetadata && <OptionField t={t} className={styles.fieldSpan3} label={t('form.sourceKind.label')} hint={t('form.sourceKind.hint')} value={config.sourceKind} options={SOURCE_KINDS} fallback="" keepCurrent labelKeys={SOURCE_KIND_LABEL_KEYS} disabled={locked || disabled} onChange={(value) => onPatch({ sourceKind: value || undefined })} />}
           {showMetadata && <OptionField t={t} className={styles.fieldSpan3} label={t('form.form.label')} hint={t('form.form.hint')} value={config.form} options={SOURCE_FORMS} fallback="notice" keepCurrent labelKeys={SOURCE_FORM_LABEL_KEYS} disabled={locked || disabled} onChange={(value) => onPatch({ form: value || undefined })} />}
           {!locked && (

@@ -67,7 +67,7 @@ export const PromptConfigCard = memo(function PromptConfigCard(props: {
   const fileNotWritable = config.contentStatus !== undefined && config.contentStatus !== 'ready'
   const focusAction = (): void => { actionRef.current?.querySelector('button')?.focus() }
   const policy = fieldPolicyFor(meta, config.layer)
-  const strategy = config.strategy === 'instruction-hint' ? 'placeholder' : config.strategy ?? 'static'
+  const strategy = config.strategy ?? 'static'
   const chips = [translateLabel(t, LAYER_LABEL_KEYS, config.layer ?? 'pre-step'), translateLabel(t, STRATEGY_LABEL_KEYS, strategy)]
   if (policy.position) chips.push(t('card.chip.position', { value: translateLabel(t, POSITION_LABEL_KEYS, config.position ?? 'after-user') }))
   if (config.audience && config.audience !== 'all') chips.push(t('card.chip.audience', { value: translateLabel(t, AUDIENCE_LABEL_KEYS, config.audience) }))

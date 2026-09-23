@@ -38,7 +38,7 @@ import {
   packageEngineDir,
   renderComposition,
   resolvePresetParams,
-  resolveRenderablePresetDir,
+  resolvePresetDir,
 } from './manifest.ts'
 
 const ENGINE_DIR = packageEngineDir()
@@ -153,7 +153,7 @@ export function runtimeOf(options: WritePresetOptions, prompt: string): Record<s
     firstTurnText: typeof options.firstTurnText === 'string' ? options.firstTurnText : undefined,
     guideCustom: providedBoolean(options.guideCustom),
     guideText: typeof options.guideText === 'string' ? options.guideText : undefined,
-    // 每轮引导独立开关：undefined = 跟随 firstTurnAnchor（兼容旧行为）。
+    // 每轮引导独立开关，仅显式 true 启用。
     guideEnabled: providedBoolean(options.guideEnabled),
     injectPrompt: providedBoolean(options.injectPrompt),
     // 字符串键：调用方给了就用它（'' = 显式不设置），没给才回落到 preset.yml 定义。
@@ -199,7 +199,7 @@ export function writePreset(prompt: string, options: WritePresetOptions): string
   if (!/^[a-z0-9][a-z0-9-]*$/.test(templateName)) {
     throw new Error(`invalid presetTemplate ${JSON.stringify(templateName)}: must match official agent-presets id /^[a-z0-9][a-z0-9-]*$/`)
   }
-  // 输出 id 覆盖：兼容别名（旧容器 id prompt-tool）与模板分离渲染——同一渲染输出到别名目录。
+  // 导入与复制时，来源定义和目标身份可以不同。
   const outputId = typeof options.outputId === 'string' && options.outputId.trim().length > 0
     ? options.outputId.trim()
     : templateName
@@ -208,17 +208,8 @@ export function writePreset(prompt: string, options: WritePresetOptions): string
   }
   assertPresetId(templateName)
   assertPresetId(outputId)
-  // 可渲染性回退：旧版种子副本（仅元数据 + 本地 .mjs，无 modules/composition/
-  // agent.cordis.yml）遮蔽包内新版模板时，直接物化必失败——回退包内模板渲染并
-  // warn；纯元数据参数源在第 2 步升级为包内新版（闭环后不再回退）。
-  const resolvedTemplate = options.sourceDir === undefined
-    ? resolveRenderablePresetDir(templateName, presetDir)
-    : { dir: options.sourceDir, fallback: false }
-  const templateDir = resolvedTemplate.dir
+  const templateDir = options.sourceDir ?? resolvePresetDir(templateName, presetDir)
   assertPresetTree(templateDir)
-  if (resolvedTemplate.fallback) {
-    options.warn?.(`prompt-tool: 预设 ${templateName} 用户副本缺组合源（modules/agent.cordis.yml），已回退包内模板渲染`)
-  }
   let spec = loadPresetSpec(templateDir)
   if (Array.isArray(spec.meta?.stWarnings)) {
     for (const warning of spec.meta.stWarnings) if (typeof warning === 'string') options.warn?.(`prompt-tool: ST 导入兼容提示：${warning}`)
@@ -276,9 +267,7 @@ export function writePreset(prompt: string, options: WritePresetOptions): string
     if (doc.errors.length > 0) throw new Error(`invalid preset.yml: ${doc.errors[0]!.message}`)
     doc.set('id', outputId)
     doc.setIn(['order'], options.presetOrder)
-    // 元数据合并：参数源已有值优先——正常场景 spec 与 existing 同源（写回同值
-    // 幂等）；回退渲染场景 spec 来自包内模板，不得覆盖用户命名与 meta。
-    // 空值（缺失/空白）才由模板值兜底。
+    // 元数据合并：目标已有值优先，缺失/空白才使用来源定义。
     const ensureMetaKey = (key: string, value: unknown): void => {
       if (value === undefined || value === null) return
       const current = doc.get(key)
@@ -345,10 +334,7 @@ export function writePreset(prompt: string, options: WritePresetOptions): string
           firstTurnDeep: asString(params.firstTurnDeep),
         }
       } else if (next.id === 'router-guide') {
-        // 引导开关独立：guideEnabled 显式声明优先；undefined = 兼容跟随锚定开关。
-        const guideEnabled = params.guideEnabled === undefined
-          ? params.firstTurnAnchor === true
-          : params.guideEnabled === true
+        const guideEnabled = params.guideEnabled === true
         next.enabled = guideEnabled
         // 自定义引导对所有模型注入（Pro/Flash），自动引导只服务 Flash 家族。
         const useCustom = guideEnabled && params.guideCustom === true
