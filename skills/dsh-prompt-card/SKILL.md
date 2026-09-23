@@ -36,14 +36,19 @@ description: 手写 dsh 注入卡（prompt card）：把规则包或一组引擎
 
 | 层 | 该层额外可用的字段 |
 |---|---|
-| `pre-step` | `position` `dedupe` `promotion` `audience` `modelScope` `mergeMode` `role` |
+| `pre-step` | `position` `dedupe` `promotion` `audience` `modelScope` `mergeMode` `role` `subject` `match` |
 | `system-section` | `audience` `mergeMode` |
 | `runtime-context` | `mergeMode`（没有 `audience`） |
 | `agent-request` | `audience` `modelScope` |
 | `llm-stream` | `modelScope` |
-| `tool-pipeline` | `audience` `modelScope` |
+| `tool-pipeline` | `audience` `modelScope` `subject` `match` |
+| `turn-stop` | `modelScope` `subject` `match` |
+| `subagent-start` | `modelScope` `subject` `match` |
+| `subagent-end` | `modelScope` `subject` `match` |
 
-任何层都能用：`id` `name` `strategy` `layer` `order` `group` `exclusive` `enabled` `text`（或 `texts`）。`order` 小的先注册。
+上表是九层全表，与引擎的层能力矩阵同源。`subject` / `match` 是条件门，只有 `pre-step`、`tool-pipeline`、`turn-stop`、`subagent-start`、`subagent-end` 五层合法；`role` 只在 `pre-step`，且只接受 `user`（写 `assistant` 会在运行出口降级为 `user` 并告警）。
+
+任何层都能用：`id` `name` `strategy` `layer` `order` `group` `exclusive` `enabled` `configKind`（缺省 `ordered`）`text`（或 `texts`）。`order` 小的先注册。
 
 **完成判据**：卡里出现的每个字段都在白名单里。
 
