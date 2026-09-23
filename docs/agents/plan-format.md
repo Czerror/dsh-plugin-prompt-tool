@@ -2,7 +2,7 @@
 
 本仓库每轮修复的 PLAN 按此格式编写。骨架源自 `dev-expert` 的「任务拆解与执行」，此处固化为本项目的创建与验收基准；PLAN 的位置、命名与归档动作见 `AGENTS.md` 的「审查后的决策」。
 
-完整实例：`.scratch/archive/` 下的任一份 plan 归档，如 `2026-09-18-plan-import-export-7a67b99.md`。
+完整实例：本地作业区 `.scratch/archive/` 下的任一份 plan 归档（该目录被 `.gitignore` 忽略，只在本地存在），如 `2026-09-18-plan-import-export-7a67b99.md`。
 
 ## 章节骨架
 

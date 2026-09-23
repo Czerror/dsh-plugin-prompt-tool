@@ -1,6 +1,6 @@
 # Issue tracker：本地 Markdown
 
-本仓库的 Issue 和规格文档存放在 `.scratch/` 中。
+本仓库的 Issue 和规格文档存放在本地作业区 `.scratch/` 中（该目录被 `.gitignore` 忽略，不入库；用 `read` 工具直接读文件，检索工具按默认忽略规则看不到它）。
 
 ## 约定
 
