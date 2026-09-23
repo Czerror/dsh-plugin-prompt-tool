@@ -380,15 +380,16 @@ test('技能页展示用户技能根与调用策略开关，引用目录只登�
   assert.doesNotMatch(skillsSettings, /rankBase|moveUp|moveDown|skills\.row\.move/, '排序与排序基数随旧技能模型移除')
   // 引用文件夹只登记路径（patchSkillFolders），不再是可增删的发现根管理界面。
   assert.match(skillsSettings, /store\.patchSkillFolders\(/)
-  assert.match(skillsSettings, /t\('skills\.folders\.add'\)/)
+  assert.match(skillsSettings, /t\('skills\.folders\.pick'\)/)
   assert.doesNotMatch(skillsSettings, /addSkillsDir|removeSkillsDir|displaySkillsDirs/, '目录引用入口已下线（外部目录只作一次性复制来源或路径引用）')
   assert.doesNotMatch(skillsSettings, /skills\.dirs\.(title|meta|add|empty)/, '旧发现根文案不再被引用（导入相关文案保留）')
 })
 
-test('技能页同时提供宿主机目录导入与浏览器文件夹导入', () => {
+test('技能页目录导入与文件夹引用仅消费宿主目录选择器', () => {
   assert.match(skillsSettings, /api\.pickDirectory\(\)/)
   assert.match(skillsSettings, /t\('skills\.import\.pick'\)/)
   assert.match(skillsSettings, /store\.importSkillsDirectory\(/)
-  assert.match(skillsSettings, /label=\{t\('skills\.dirs\.import'\)\}/)
-  assert.match(skillsSettings, /\bdirectory\b/, '技能页仍应保留文件夹导入入口')
+  assert.match(skillsSettings, /t\('skills\.folders\.pick'\)/)
+  assert.match(skillsSettings, /data-skill-directory-actions/)
+  assert.doesNotMatch(skillsSettings, /ImportFileButton|webkitdirectory|skills\.import\.path|skills\.folders\.aria|skills\.import\.fromDir/, '技能路径管理不再提供浏览器上传或手动路径')
 })

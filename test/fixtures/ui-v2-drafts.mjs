@@ -12,11 +12,21 @@ import { hasWorkspaceDrafts } from '../../src/client/data/workspace-drafts.ts'
 import { PROMPT_TOOL_DICTS } from '../../src/client/locales.ts'
 
 const session = {}
-const api = { sessionModel: { snapshot: () => session, subscribe: () => () => {} }, sessionPreset: { snapshot: () => undefined, subscribe: () => () => {} }, currentSessionId: () => window.currentSessionId, subscribeSessionChange: () => () => {}, pickDirectory: async () => null }
+const api = { sessionModel: { snapshot: () => session, subscribe: () => () => {} }, sessionPreset: { snapshot: () => undefined, subscribe: () => () => {} }, currentSessionId: () => window.currentSessionId, subscribeSessionChange: () => () => {}, pickDirectory: async () => {
+  const path = window.directoryPickPath, error = window.directoryPickError
+  window.directoryPicks.push({ path })
+  await new Promise((resolve) => setTimeout(resolve, window.directoryPickDelay))
+  if (error) throw new Error(error)
+  return path
+} }
 const settings = { scope: { getSnapshot: () => ({ status: 'ready', revision: 1 }) }, ensure: async () => {}, mutate: async () => {} }
 const t = (key, params = {}) => Object.entries(params).reduce((text, [key, value]) => text.replaceAll(`{${key}}`, String(value)), PROMPT_TOOL_DICTS.zh[key] ?? key)
 window.t = t
 window.requests = []
+window.directoryPicks = []
+window.directoryPickPath = null
+window.directoryPickError = ''
+window.directoryPickDelay = 0
 window.delay = 0
 window.rejectDelete = false
 window.rejectSkillDelete = false

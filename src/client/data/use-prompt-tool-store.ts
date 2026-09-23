@@ -7,7 +7,6 @@ import type { PresetModuleFacts } from '../../shared/engine-capabilities.ts'
 import type { SkillCatalogEntry, SkillContentSnapshot, SkillPolicyChange } from '../../shared/skills.ts'
 import { bridgeCall, errorMessage, type BridgeResult, type BridgeSettingsView } from './bridge-client.ts'
 import { requestSkillImport, type ConfirmSkillOverwrite } from './skill-import.ts'
-import { readImportFiles, type ImportFileEntry } from './import-files.ts'
 import { createSessionPresetFollower, type SessionPresetFollower } from './session-preset-follow.ts'
 import {
   EMPTY_FIELDS,
@@ -98,8 +97,6 @@ export interface PromptToolStore {
   ensureModelReasoning: (provider: string, model: string) => void
   hostDefaultModel?: HostDefaultModel
   moduleFacts?: PresetModuleFacts
-  /** 技能导入来源路径输入（宿主机目录；导入即复制，不再维护目录引用）。 */
-  skillsDirDraft: string
   /** 当前预设模板消息批层（pre-step）配置数；0 = 模板无配置（入口开关联动关闭）。 */
   templatePreStepCount: number
   savedSwitches: SwitchSnapshot
@@ -148,12 +145,8 @@ export interface PromptToolStore {
   setPresetTemplate: (id: string) => void
   createEngineCapability: (action: 'create' | 'create-recipe', id: string) => Promise<boolean>
   removeEngineCapability: (id: string) => Promise<boolean>
-  /** 导入来源路径草稿（宿主机目录；导入即复制，不保留引用）。 */
-  setSkillsDirDraft: (value: string) => void
   /** 从宿主机目录复制导入到用户技能根。 */
   importSkillsDirectory: (path: string, confirm?: ConfirmSkillOverwrite) => Promise<boolean>
-  /** 浏览器文件夹复制导入；与宿主目录入口共用忙期和覆盖确认。 */
-  importSkillsFiles: (files: readonly File[], confirm?: ConfirmSkillOverwrite) => Promise<boolean>
   /** 只刷新技能事实，不重读预设或覆盖其它草稿。 */
   refreshSkills: () => Promise<boolean>
   /** 创建标准技能到用户技能根。 */
@@ -263,7 +256,6 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
   const [moduleFacts, setModuleFacts] = useState<PresetModuleFacts | undefined>(undefined)
   const [fields, setFields] = useState<Fields>(EMPTY_FIELDS)
   const [meta, setMeta] = useState<EngineMeta>(EMPTY_META)
-  const [skillsDirDraft, setSkillsDirDraft] = useState('')
   const [templatePreStepCount, setTemplatePreStepCount] = useState(0)
   const [savedSwitches, setSavedSwitches] = useState<SwitchSnapshot>(EMPTY_SWITCHES)
   const [savedConfigs, setSavedConfigsState] = useState<PromptConfigDraft[]>([])
@@ -417,7 +409,6 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
       next.subagentModelProvider = autoSubagentModelProviderRef.current
     }
     publishFields(next)
-    setSkillsDirDraft('')
     setSavedSwitches(snapshotSwitches(next))
     setSavedConfigs(next.promptConfigs)
     // revision 只在首次建立，后续由 enqueueSave 的 mutate 应答维护——/bootstrap 的
@@ -1107,18 +1098,9 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
 
   const importSkillsDirectory = useCallback((path: string, confirm?: ConfirmSkillOverwrite): Promise<boolean> => {
     const source = path.trim()
-    if (source.length === 0) { showNotice('error', '请先填写要导入的目录路径'); return Promise.resolve(false) }
+    if (source.length === 0) { showNotice('error', '请选择要导入的目录'); return Promise.resolve(false) }
     return importSkills((overwrite) => bridgeCall('skillsImportDirectory', { path: source, ...(overwrite === undefined ? {} : { overwrite }) }), confirm)
   }, [importSkills, showNotice])
-
-  const importSkillsFiles = useCallback((files: readonly File[], confirm?: ConfirmSkillOverwrite): Promise<boolean> => {
-    if (files.length === 0) return Promise.resolve(false)
-    let payload: ImportFileEntry[] | undefined
-    return importSkills(async (overwrite) => {
-      payload ??= await readImportFiles(files, 'base64')
-      return bridgeCall('skillsImport', { files: payload, ...(overwrite === undefined ? {} : { overwrite }) })
-    }, confirm)
-  }, [importSkills])
 
   const createSkill = useCallback((input: { name: string; description: string; content: string }) =>
     writeSkill(() => bridgeCall('skillCreate', input), ({ id }) => `已创建技能：${id}`, '创建技能失败'), [writeSkill])
@@ -1222,7 +1204,6 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
     ensureModelReasoning,
     hostDefaultModel,
     moduleFacts,
-    skillsDirDraft,
     templatePreStepCount,
     savedSwitches,
     savedConfigs,
@@ -1254,9 +1235,7 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
     setPresetTemplate,
     createEngineCapability,
     removeEngineCapability,
-    setSkillsDirDraft,
     importSkillsDirectory,
-    importSkillsFiles,
     refreshSkills,
     createSkill,
     readSkill,

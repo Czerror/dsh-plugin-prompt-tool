@@ -78,9 +78,8 @@ test('工作台顶层页面 id 与顺序保持稳定', () => {
   assert.deepEqual(ids, ['features', 'subagent', 'tools', 'skills', 'presets', 'characters'])
 })
 
-test('导入入口统一复用 ImportFileButton，不在业务页重复实现 file input', () => {
+test('浏览器导入复用共享 file input；技能页只使用宿主目录选择', () => {
   for (const file of [
-    'features/skills/SkillsPage.tsx',
     'features/presets/PresetSwitcher.tsx',
     'features/characters/CharactersPage.tsx',
   ]) {
@@ -92,6 +91,9 @@ test('导入入口统一复用 ImportFileButton，不在业务页重复实现 fi
   assert.match(read('ui/ImportDialog.tsx'), /from ['"]\.\/ImportFileButton\.tsx['"]/, '共享弹窗复用唯一文件输入')
   assert.match(button, /<input\b[^>]*\btype="file"/, '共享导入按钮应保留唯一 file input')
   assert.match(button, /webkitdirectory/, '共享导入按钮应支持目录模式')
+  const skills = read('features/skills/SkillsPage.tsx')
+  assert.match(skills, /api\.pickDirectory\(\)/)
+  assert.doesNotMatch(skills, /ImportFileButton|webkitdirectory|type="file"/, '技能页不保留浏览器上传入口')
 })
 
 // —— 宿主 DOM 禁令与角色卡分流（原 no-host-dom.test.mjs） ——

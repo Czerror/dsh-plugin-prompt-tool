@@ -12,7 +12,6 @@ import { ConfirmDialog } from '../../ui/ConfirmDialog.tsx'
 import { HintTooltip } from '../../ui/HintTooltip.tsx'
 import { MenuSelect } from '../../ui/MenuSelect.tsx'
 import { SkillRow } from './SkillRow.tsx'
-import { ImportFileButton } from '../../ui/ImportFileButton.tsx'
 import sharedCss from '../../ui/controls.module.css'
 import featureCss from './skills.module.css'
 import { groupBySource, matchesSkillStatus, type SkillStatusTab } from './skill-status.ts'
@@ -35,11 +34,10 @@ export const SkillsPage = memo(function SkillsPage(props: { store: PromptToolSto
   const [skillFilter, setSkillFilter] = useState(props.browse?.query ?? '')
   const [statusTab, setStatusTab] = useState<SkillStatusTab>(props.browse?.status ?? 'all')
   const [sourceFilter, setSourceFilter] = useState('')
-  const [pickingDir, setPickingDir] = useState(false)
-  const [importingDir, setImportingDir] = useState(false)
+  const [picking, setPicking] = useState<'import' | 'reference'>()
+  const pickerBusy = useRef(false)
   const [creating, setCreating] = useState(false)
   const [createDraft, setCreateDraft] = useState({ name: '', description: '', content: '' })
-  const [folderDraft, setFolderDraft] = useState('')
   const [pendingDelete, setPendingDelete] = useState<SkillCatalogEntry | undefined>(undefined)
   const [overwriteNames, setOverwriteNames] = useState<string[]>()
   const overwriteDecision = useRef<((confirmed: boolean) => void) | undefined>(undefined)
@@ -95,28 +93,29 @@ export const SkillsPage = memo(function SkillsPage(props: { store: PromptToolSto
   }, [store])
   const onDelete = useCallback((skill: SkillCatalogEntry) => { setPendingDelete(skill) }, [])
 
-  /** 选择宿主机目录并复制进用户技能根。 */
-  const pickAndCopyDir = async (): Promise<void> => {
-    if (pickingDir || importingDir || store.skillsBusy) return
-    setPickingDir(true)
+  /** 两个明确操作共用目录选择；目录内容不决定复制还是引用。 */
+  const pickDirectory = async (action: 'import' | 'reference'): Promise<void> => {
+    if (pickerBusy.current || store.skillsBusy) return
+    pickerBusy.current = true
+    setPicking(action)
     try {
       const path = await api.pickDirectory()
-      if (path !== null && await store.importSkillsDirectory(path, confirmOverwrite)) store.setSkillsDirDraft('')
+      if (path === null || !mounted.current) return
+      if (action === 'import') {
+        await store.importSkillsDirectory(path, confirmOverwrite)
+        return
+      }
+      const folders = store.getFields().skillFolders
+      if (folders.includes(path)) {
+        store.showNotice('error', t('skills.folders.duplicate'))
+        return
+      }
+      await store.patchSkillFolders([...folders, path])
     } catch (error) {
-      store.showNotice('error', t('skills.notice.dirPickFailed', { reason: error instanceof Error ? error.message : String(error) }))
+      if (mounted.current) store.showNotice('error', t('skills.notice.dirPickFailed', { reason: error instanceof Error ? error.message : String(error) }))
     } finally {
-      if (mounted.current) setPickingDir(false)
-    }
-  }
-
-  /** 浏览器文件夹上传：复制进用户技能根。 */
-  const importSkillsDir = async (files: File[]): Promise<void> => {
-    if (files.length === 0) return
-    setImportingDir(true)
-    try {
-      await store.importSkillsFiles(files, confirmOverwrite)
-    } finally {
-      if (mounted.current) setImportingDir(false)
+      pickerBusy.current = false
+      if (mounted.current) setPicking(undefined)
     }
   }
 
@@ -130,16 +129,6 @@ export const SkillsPage = memo(function SkillsPage(props: { store: PromptToolSto
       setCreateDraft({ name: '', description: '', content: '' })
       setCreating(false)
     }
-  }
-
-  const addFolder = async (): Promise<void> => {
-    const path = folderDraft.trim()
-    if (path.length === 0) return
-    if (fields.skillFolders.includes(path)) {
-      store.showNotice('error', t('skills.folders.duplicate'))
-      return
-    }
-    if (await store.patchSkillFolders([...fields.skillFolders, path])) setFolderDraft('')
   }
 
   return (
@@ -186,52 +175,25 @@ export const SkillsPage = memo(function SkillsPage(props: { store: PromptToolSto
             <button type="button" className={ui.pillButton} disabled={store.skillsBusy} onClick={() => void store.refreshSkills()}>{t('skills.dir.rescan')}</button>
           </div>
         </div>
-        <div className={ui.dirAddBar}>
+        <div className={ui.dirAddBar} data-skill-directory-actions="">
           <HintTooltip label={t('skills.import.pick.hint')}>
             <button
               type="button"
               className={ui.primaryPill}
-              disabled={pickingDir || importingDir || store.skillsBusy}
-              onClick={() => void pickAndCopyDir()}
+              disabled={picking !== undefined || store.skillsBusy}
+              onClick={() => void pickDirectory('import')}
             >
-              {pickingDir && <span className={ui.spinner} aria-hidden="true" />}
-              {pickingDir ? t('skills.dirs.picking') : t('skills.import.pick')}
+              {picking === 'import' && <span className={ui.spinner} aria-hidden="true" />}
+              {t('skills.import.pick')}
             </button>
           </HintTooltip>
-          <ImportFileButton
-            label={t('skills.dirs.import')}
-            busyLabel={t('skills.dirs.importing')}
-            busy={importingDir}
-            disabled={pickingDir || store.skillsBusy}
-            directory
-            ariaLabel={t('skills.dirs.import.aria')}
-            title={t('skills.dirs.import.title')}
-            className={ui.pillButton}
-            onFiles={(files) => void importSkillsDir(files)}
-          />
-          <div className={ui.dirAddInput}>
-            <input
-              className={ui.directoryInput}
-              aria-label={t('skills.import.path.aria')}
-              value={store.skillsDirDraft}
-              placeholder={t('skills.import.path.placeholder')}
-              spellCheck={false}
-              onChange={(event) => store.setSkillsDirDraft(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key !== 'Enter' || store.skillsDirDraft.trim().length === 0) return
-                void store.importSkillsDirectory(store.skillsDirDraft, confirmOverwrite).then((ok) => { if (ok) store.setSkillsDirDraft('') })
-              }}
-            />
-            <button
-              type="button"
-              className={ui.pillButton}
-              disabled={store.skillsBusy || store.skillsDirDraft.trim().length === 0}
-              onClick={() => { void store.importSkillsDirectory(store.skillsDirDraft, confirmOverwrite).then((ok) => { if (ok) store.setSkillsDirDraft('') }) }}
-            >
-              {store.skillsBusy && <span className={ui.spinner} aria-hidden="true" />}
-              {t('skills.import.fromDir')}
+          <HintTooltip label={t('skills.folders.hint')}>
+            <button type="button" className={ui.pillButton} disabled={picking !== undefined || store.skillsBusy}
+              onClick={() => void pickDirectory('reference')}>
+              {picking === 'reference' && <span className={ui.spinner} aria-hidden="true" />}
+              {t('skills.folders.pick')}
             </button>
-          </div>
+          </HintTooltip>
         </div>
         <p className={ui.readOnly}>{t('skills.library.footnote')}</p>
         <div className={ui.cardDivider} />
@@ -290,22 +252,6 @@ export const SkillsPage = memo(function SkillsPage(props: { store: PromptToolSto
           </div>
         )}
         <div className={ui.cardDivider} />
-        <div className={ui.dirAddBar}>
-          <span className={ui.configFieldLabel}>{t('skills.folders.label')}</span>
-          <input
-            className={ui.directoryInput}
-            aria-label={t('skills.folders.aria')}
-            value={folderDraft}
-            placeholder={t('skills.folders.placeholder')}
-            spellCheck={false}
-            onChange={(event) => setFolderDraft(event.target.value)}
-            onKeyDown={(event) => { if (event.key === 'Enter') void addFolder() }}
-          />
-          <button type="button" className={ui.pillButton} disabled={store.skillsBusy || folderDraft.trim().length === 0}
-            onClick={() => void addFolder()}>
-            {t('skills.folders.add')}
-          </button>
-        </div>
         {fields.skillFolders.length === 0
           ? <p className={ui.readOnly}>{t('skills.folders.empty')}</p>
           : (
@@ -323,7 +269,6 @@ export const SkillsPage = memo(function SkillsPage(props: { store: PromptToolSto
               ))}
             </div>
           )}
-        <p className={ui.configFieldHint}>{t('skills.folders.hint')}</p>
       </CollapsibleCard>
 
       {fields.skillCatalog.length > 0 && (
@@ -356,7 +301,7 @@ export const SkillsPage = memo(function SkillsPage(props: { store: PromptToolSto
           <div>
             <h3>{t('skills.empty.title')}</h3>
             <p>{t('skills.empty.hint')}</p>
-            <button type="button" className={ui.pillButton} disabled={pickingDir} onClick={() => void pickAndCopyDir()}>{t('skills.import.pick')}</button>
+            <button type="button" className={ui.pillButton} disabled={picking !== undefined || store.skillsBusy} onClick={() => void pickDirectory('import')}>{t('skills.import.pick')}</button>
           </div>
         </div>
       ) : visible.length === 0 ? (

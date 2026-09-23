@@ -439,8 +439,6 @@
 }
 .dirCardActions { display: flex; flex: 0 0 auto; align-items: center; gap: 6px; flex-wrap: wrap; }
 .dirCardActions .pillButton { min-height: 28px; padding: 0 10px; font: var(--dsw-font-xxs-12); }
-.dirAddInput { display: flex; min-width: 0; flex: 1 1 280px; align-items: center; gap: 8px; }
-.dirAddInput .directoryInput { flex: 1; }
 
 .skillCardBody {
   display: flex;

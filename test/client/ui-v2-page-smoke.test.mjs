@@ -366,6 +366,55 @@ test('技能卡：正文与描述分开编辑、草稿恢复、冲突与重读�
   assert.equal(await evaluate(`window.requests.filter(r=>r.endpoint==='skill-write').at(-1).body.sessionId`), 'second-session', '读写绑定当前会话')
 })
 
+test('技能目录选择：取消与异常零写入、防重复选择、最新引用快照及卸载保护', { skip: !existsSync(browserPath) && '设置 PROMPT_TOOL_TEST_BROWSER', timeout: 30000 }, async () => {
+  const { evaluate, waitFor, click, clickKey, navigate, count } = await ensureSession()
+  await navigate('drafts')
+  await waitFor('window.store?.getFields().skillCatalog.length===2')
+  const openSkills = async () => {
+    await click('[data-page="skills"]')
+    await evaluate(`(()=>{const b=[...document.querySelectorAll('button[aria-expanded]')].find(e=>e.textContent.includes(window.t('skills.library.title')));if(b.getAttribute('aria-expanded')==='false')b.click()})()`)
+    await waitFor('document.querySelectorAll("[data-skill-directory-actions] button").length===2')
+  }
+  await openSkills()
+  const keys = ['skills.import.pick', 'skills.folders.pick']
+  for (const key of keys) {
+    await evaluate('window.directoryPickPath=null')
+    await clickKey(key)
+    assert.equal(await evaluate(count('skills-import-directory')), 0, '选择取消不导入')
+    assert.equal(await evaluate(count('skills-folders')), 0, '选择取消不写引用')
+    await evaluate(`window.directoryPickError='picker unavailable';window.directoryPickPath='D:/must-not-write'`)
+    await clickKey(key)
+    await waitFor(`document.querySelector('[data-notice]').textContent.includes(window.t('skills.notice.dirPickFailed',{reason:'picker unavailable'}))`)
+    assert.equal(await evaluate(count('skills-import-directory')), 0, '选择器失败不导入')
+    assert.equal(await evaluate(count('skills-folders')), 0, '选择器失败不写引用')
+    await evaluate('window.directoryPickError=""')
+  }
+  assert.equal(await evaluate('window.directoryPicks.length'), 4, '两个入口各自调用宿主选择器')
+
+  for (const key of keys) {
+    const picksBefore = await evaluate('window.directoryPicks.length')
+    await evaluate(`window.directoryPickDelay=180;window.directoryPickPath=null;(()=>{const buttons=[...document.querySelectorAll('[data-skill-directory-actions] button')],b=buttons.find(e=>e.textContent.trim()===window.t(${JSON.stringify(key)}));b.click();b.click();buttons.find(e=>e!==b).click()})()`)
+    assert.equal(await evaluate('window.directoryPicks.length'), picksBefore + 1, '同一事件循环内重复点击和跨入口点击都只开一个选择器')
+    await waitFor(`[...document.querySelectorAll('[data-skill-directory-actions] button')].every(e=>!e.disabled)`)
+  }
+
+  await evaluate(`window.directoryPickDelay=180;window.directoryPickPath='D:/referenced/new'`)
+  await clickKey('skills.folders.pick')
+  await evaluate(`window.store.patch({skillFolders:['D:/referenced/concurrent']})`)
+  await waitFor(`${count('skills-folders')}===1 && !window.store.skillsBusy`)
+  assert.deepEqual(await evaluate(`window.requests.find(r=>r.endpoint==='skills-folders').body`), { folders: ['D:/referenced/concurrent', 'D:/referenced/new'] }, '选择器返回后合并最新引用列表')
+
+  for (const key of keys) {
+    const before = await evaluate(`[${count('skills-import-directory')},${count('skills-folders')}]`)
+    await evaluate(`window.directoryPickDelay=180;window.directoryPickPath='D:/late-result'`)
+    await clickKey(key)
+    await click('[data-page="tools"]')
+    await sleep(200)
+    assert.deepEqual(await evaluate(`[${count('skills-import-directory')},${count('skills-folders')}]`), before, '切页卸载后忽略迟到目录，不提交到后台')
+    await openSkills()
+  }
+})
+
 test('V2 卡片：展开语义、菜单焦点、删除/丢弃确认、portal保存与原始草稿', { skip: !existsSync(browserPath) && '设置 PROMPT_TOOL_TEST_BROWSER', timeout: 60000 }, async () => {
   const { evaluate, waitForFast: waitFor, click: clickBase, keyPress: key, inputCard: input, chooseMenu, navigate } = await ensureSession()
   const click = (selector) => clickBase(selector, 30)
@@ -636,8 +685,9 @@ test('V2 草稿与资源：原文恢复、快照保存、技能目标及危险�
   // 技能资产卡默认折叠：展开后才是导入、创建与引用入口。
   await evaluate(`(()=>{const b=[...document.querySelectorAll('button[aria-expanded]')].find(e=>e.textContent.includes(window.t('skills.library.title')));if(b&&b.getAttribute('aria-expanded')!=='true')b.click()})()`)
   await sleep(80)
-  assert.equal(await evaluate(`document.querySelector('[aria-label="'+window.t('skills.import.path.aria')+'"]')!==null`), true, '展开后出现复制导入入口')
-  assert.equal(await evaluate(`document.querySelector('[aria-label="'+window.t('skills.folders.aria')+'"]')!==null`), true, '展开后出现文件夹引用入口')
+  assert.deepEqual(await evaluate(`[...document.querySelectorAll('[data-skill-directory-actions] button')].map(e=>e.textContent.trim())`), ['导入技能', '引用文件夹'], '路径管理只保留两个宿主目录入口')
+  assert.equal(await evaluate(`document.querySelector('input[type="file"],input[webkitdirectory]')===null`), true, '技能页不再提供浏览器上传')
+  assert.equal(await evaluate(`document.querySelector('[data-skill-directory-actions]').closest('article').querySelector('input,textarea')===null`), true, '未创建技能时资产卡没有任何手动路径输入')
 
   // 创建技能：写用户技能根，提交成功后收起表单。
   await clickKey('skills.create.open')
@@ -652,64 +702,56 @@ test('V2 草稿与资源：原文恢复、快照保存、技能目标及危险�
   assert.equal(await evaluate(`${field('skills.create.name')}===null`), true, '成功后收起创建表单')
 
   // 复制导入：宿主机目录只作一次性复制来源，不建立第二发现根。
-  await input('skills.import.path.aria', 'D:/drop/gamma')
-  await clickKey('skills.import.fromDir')
+  await evaluate(`window.directoryPickPath='D:/drop/gamma'`)
+  await clickKey('skills.import.pick')
   await waitFor(`${count('skills-import-directory')}===1`)
   assert.equal(await evaluate(`JSON.stringify(window.requests.find(r=>r.endpoint==='skills-import-directory').body)`), '{"path":"D:/drop/gamma"}')
-  await waitFor(`document.querySelector('[aria-label="'+window.t('skills.import.path.aria')+'"]').value===''`)
-
-  // 宿主目录与浏览器上传都先等待覆盖确认；取消不重发，确认只携带列出的目录。
+  // 宿主目录同名导入先等待覆盖确认；取消不重发，确认只携带列出的目录。
   await evaluate(`window.skillImportConflicts=['gamma']`)
-  await input('skills.import.path.aria', 'D:/drop/gamma')
-  await clickKey('skills.import.fromDir')
+  await clickKey('skills.import.pick')
   await waitFor(`document.querySelector('[role="alertdialog"]')!==null`)
   assert.equal(await evaluate(count('skills-import-directory')), 2, '确认前只有一次探测请求')
   await click('[role="alertdialog"] button:not([data-danger])')
   await waitFor(`window.store.skillsBusy===false`)
   assert.equal(await evaluate(count('skills-import-directory')), 2, '取消不覆盖')
-  await clickKey('skills.import.fromDir')
+  await clickKey('skills.import.pick')
   await waitFor(`document.querySelector('[role="alertdialog"]')!==null`)
   await click('[role="alertdialog"] button[data-danger]')
   await waitFor(`${count('skills-import-directory')}===4 && window.store.skillsBusy===false`)
   assert.equal(await evaluate(`JSON.stringify(window.requests.filter(r=>r.endpoint==='skills-import-directory').at(-1).body)`),
     '{"path":"D:/drop/gamma","overwrite":["gamma"]}')
-  await evaluate(`(()=>{const input=document.querySelector('input[webkitdirectory]');const files=new DataTransfer();const f=new File(['skill body'],'SKILL.md');Object.defineProperty(f,'webkitRelativePath',{value:'pack/gamma/SKILL.md'});files.items.add(f);input.files=files.files;input.dispatchEvent(new Event('change',{bubbles:true}))})()`)
-  await waitFor(`document.querySelector('[role="alertdialog"]')!==null`)
-  assert.equal(await evaluate(count('skills-import')), 1)
-  await click('[role="alertdialog"] button[data-danger]')
-  await waitFor(`${count('skills-import')}===2`)
-  assert.equal(await evaluate(`JSON.stringify(window.requests.filter(r=>r.endpoint==='skills-import').at(-1).body.overwrite)`), '["gamma"]')
-  assert.equal(await evaluate(`window.requests.filter(r=>r.endpoint==='skills-import')[0].body.files[0].content === window.requests.filter(r=>r.endpoint==='skills-import')[1].body.files[0].content`), true, '确认重用同一上传载荷')
+  assert.equal(await evaluate(count('skills-import')), 0, '目录导入不调用浏览器文件上传接口')
   await evaluate('window.skillImportConflicts=[]')
   await evaluate('window.skillImportWarning="retained-backup"')
-  await input('skills.import.path.aria', 'D:/drop/cleanup-warning')
-  await clickKey('skills.import.fromDir')
+  await evaluate(`window.directoryPickPath='D:/drop/cleanup-warning'`)
+  await clickKey('skills.import.pick')
   await waitFor('window.store.skillsBusy===false')
   assert.equal(await evaluate('document.querySelector("[data-notice]").textContent.includes("导入已完成，清理提示：retained-backup")'), true)
   await evaluate('window.skillImportWarning=undefined')
 
   // 文件夹引用：只登记路径，不复制文件；移除只删记录。
-  await input('skills.folders.aria', 'D:/referenced/skills')
-  await clickKey('skills.folders.add')
+  await evaluate(`window.directoryPickPath='D:/referenced/skills'`)
+  await clickKey('skills.folders.pick')
   await waitFor(`${count('skills-folders')}===1`)
   assert.equal(await evaluate(`JSON.stringify(window.requests.find(r=>r.endpoint==='skills-folders').body)`), '{"folders":["D:/referenced/skills"]}')
   await waitFor(`window.store.getFields().skillFolders.length===1`)
+  await clickKey('skills.folders.pick')
+  assert.equal(await evaluate(count('skills-folders')), 1, '重复引用相同目录零写入')
+  assert.equal(await evaluate(`document.querySelector('[data-notice]').textContent.includes(window.t('skills.folders.duplicate'))`), true)
   await clickKey('skills.folders.remove')
   await waitFor(`${count('skills-folders')}===2`)
   assert.equal(await evaluate(`JSON.stringify(window.requests.filter(r=>r.endpoint==='skills-folders')[1].body)`), '{"folders":[]}')
   await waitFor(`window.store.getFields().skillFolders.length===0`)
 
-  // 引用目录保存失败：错误进入通知、引用列表不变、输入草稿保留（失败不半提交、不静默清空）。
+  // 引用目录保存失败：错误进入通知、引用列表不变；再次选择可以恢复。
   await evaluate('window.rejectSkillsFolders=true')
-  await input('skills.folders.aria', 'D:/referenced/broken')
-  await clickKey('skills.folders.add')
+  await evaluate(`window.directoryPickPath='D:/referenced/broken'`)
+  await clickKey('skills.folders.pick')
   await waitFor(`${count('skills-folders')}===3`)
   await waitFor(`document.querySelector('[data-notice]').textContent.includes('skills folders rejected')`)
   assert.equal(await evaluate(`window.store.getFields().skillFolders.length`), 0, '失败不写入引用列表')
-  assert.equal(await evaluate(`document.querySelector('[aria-label="'+window.t('skills.folders.aria')+'"]').value`), 'D:/referenced/broken', '失败保留输入草稿')
   await evaluate('window.rejectSkillsFolders=false')
-  // 故障复位后重放同一次提交：草稿还在，成功路径必须走通（失败后的可恢复性）。
-  await clickKey('skills.folders.add')
+  await clickKey('skills.folders.pick')
   await waitFor(`${count('skills-folders')}===4`)
   await waitFor(`window.store.getFields().skillFolders.length===1`)
   assert.equal(await evaluate(`JSON.stringify(window.store.getFields().skillFolders)`), JSON.stringify(['D:/referenced/broken']))
