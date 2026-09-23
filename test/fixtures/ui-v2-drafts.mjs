@@ -25,6 +25,10 @@ window.failedSkill = ''
 window.skillImportConflicts = []
 window.skillsComplete = true
 window.skillsListDelay = 0
+window.skillWriteDelay = 0
+window.rejectSkillRead = false
+window.rejectSkillWrite = false
+window.skillFiles = new Map()
 window.policyServer = structuredClone(SUBAGENT_TOOL_POLICY_SKELETON)
 window.policyInFlight = 0
 window.policyMaxInFlight = 0
@@ -36,9 +40,13 @@ const skillsRoot = 'D:/isolated/skills'
 let skills = [
   { id: 'project-dsh:D:/workspace:.dsh:beta', folder: 'beta', name: 'beta', description: 'beta description', dir: 'D:/workspace/.dsh/skills', source: 'project-dsh', rank: 100, valid: true, modelInvocable: true, userInvocable: true, path: 'D:/workspace/.dsh/skills/beta/SKILL.md' },
   { id: `user-dsh:${skillsRoot}:alpha`, folder: 'alpha', name: 'alpha', description: 'alpha description', dir: skillsRoot, source: 'user-dsh', rank: 400, valid: true, modelInvocable: true, userInvocable: true, path: `${skillsRoot}/alpha/SKILL.md` },
-].map((skill) => ({ ...skill, availability: 'active', canSetPolicy: true, canDelete: skill.source === 'user-dsh' }))
+].map((skill) => ({ ...skill, availability: 'active', canSetPolicy: true, canEdit: true, canDelete: skill.source === 'user-dsh' }))
 window.getSkills = () => structuredClone(skills)
 window.setSkills = (next) => { skills = structuredClone(next) }
+const skillFile = (skill) => {
+  if (!window.skillFiles.has(skill.path)) window.skillFiles.set(skill.path, { content: `# ${skill.name}\nOriginal skill body.\n`, description: skill.description, revision: 'skill-1' })
+  return window.skillFiles.get(skill.path)
+}
 let skillFolders = []
 window.fetch = async (url, init) => {
   const endpoint = String(url).split('/').at(-1), body = JSON.parse(init?.body ?? '{}')
@@ -55,6 +63,21 @@ window.fetch = async (url, init) => {
   if (endpoint === 'skills-list') {
     value = { skills: structuredClone(skills), folders: [...skillFolders], roots: [skillsRoot], complete: window.skillsComplete }
     await new Promise((resolve) => setTimeout(resolve, window.skillsListDelay))
+  }
+  if (endpoint === 'skill-read' || endpoint === 'skill-write') {
+    const target = skills.find((skill) => skill.name === body.name && skill.path === body.path && skill.canEdit)
+    if (!target) return new Response(JSON.stringify({ ok: false, message: 'skill edit identity rejected' }))
+    if (endpoint === 'skill-read' && window.rejectSkillRead) return new Response(JSON.stringify({ ok: false, message: 'skill read rejected' }))
+    const snapshot = skillFile(target)
+    if (endpoint === 'skill-write') {
+      await new Promise((resolve) => setTimeout(resolve, window.skillWriteDelay))
+      if (window.rejectSkillWrite || body.expectedRevision !== snapshot.revision) return new Response(JSON.stringify({ ok: false, message: 'skill version conflict', code: 'skill-conflict' }), { status: 409 })
+      snapshot.content = body.content
+      snapshot.description = body.description
+      snapshot.revision = `skill-${Number(snapshot.revision.slice(6)) + 1}`
+      skills = skills.map((skill) => skill === target ? { ...skill, valid: true, description: body.description } : skill)
+    }
+    value = { ...snapshot }
   }
   if (endpoint === 'custom-tools') {
     if (body.customTools) { await new Promise((resolve) => setTimeout(resolve, window.delay)); tools = body.customTools }
@@ -100,7 +123,7 @@ window.fetch = async (url, init) => {
     value = { id: target.folder, path: `${target.dir}/.system/prompt-tool/.trash/skill-${target.folder}` }
   }
   if (endpoint === 'skill-create') {
-    skills = [...skills, { id: `user-dsh:${skillsRoot}:${body.name}`, folder: body.name, name: body.name, description: body.description, dir: skillsRoot, source: 'user-dsh', rank: 400, valid: true, modelInvocable: true, userInvocable: true, path: `${skillsRoot}/${body.name}/SKILL.md`, availability: 'active', canSetPolicy: true, canDelete: true }]
+    skills = [...skills, { id: `user-dsh:${skillsRoot}:${body.name}`, folder: body.name, name: body.name, description: body.description, dir: skillsRoot, source: 'user-dsh', rank: 400, valid: true, modelInvocable: true, userInvocable: true, path: `${skillsRoot}/${body.name}/SKILL.md`, availability: 'active', canSetPolicy: true, canEdit: true, canDelete: true }]
     value = { id: body.name, path: `${skillsRoot}/${body.name}` }
   }
   if (endpoint === 'skills-import') {

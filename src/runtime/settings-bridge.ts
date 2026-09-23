@@ -22,6 +22,8 @@ import { loadPromptTemplates, loadToolTemplates } from '../host/templates.ts'
 import { assertImportableSource, importSkillsDirectory, importSkillsPackage } from '../host/skills-import.ts'
 import { createSkill, type SkillActionResult } from '../host/skills-actions.ts'
 import type { SkillPolicyWrite } from '../host/skills-policy.ts'
+import type { SkillContentResult } from '../host/skills-content.ts'
+import { MAX_SKILL_CONTENT_BYTES } from '../shared/skills.ts'
 import {
   appendPresetModules,
   atomicWriteTextFile,
@@ -92,6 +94,8 @@ export interface SkillsBridgeState {
   snapshot?: (options: SkillViewOptions) => Promise<SkillsCatalogSnapshot>
   /** 单端写入只提交本端意图；路径必须命中当前来源白名单。 */
   setSkillPolicy: (name: string, path: string, change: SkillPolicyChange, cwd?: string) => SkillPolicyWrite
+  readSkillContent: (name: string, path: string, cwd?: string) => SkillContentResult
+  writeSkillContent: (name: string, path: string, content: string, description: string, expectedRevision: string, cwd?: string) => SkillContentResult
   deleteSkill: (name: string, path: string, cwd?: string) => SkillActionResult
   /** 添加 / 移除引用的技能文件夹。 */
   patchSkillFolders: (folders: string[]) => SkillsStateRead | Promise<SkillsStateRead>
@@ -1056,6 +1060,43 @@ export function registerSettingsBridge(
             writeBridgeJson(res, 200, { ok: true, value: await collectSkills(session.sessionId) })
           },
         }),
+        ...(['skillRead', 'skillWrite'] as const).map((endpoint) => sctx.webServer.register({
+          kind: 'exact',
+          path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS[endpoint],
+          handler: async (req, res) => {
+            if (!guard(req, res)) return
+            const parsedBody = await readBridgeBodyForHandler(req, res)
+            if (parsedBody === undefined) return
+            const body = parsedBody.body
+            const record = isRecord(body) ? body : {}
+            const code = endpoint === 'skillWrite' ? 'skill-write-rejected' : 'skill-read-rejected'
+            if (typeof record.name !== 'string' || record.name.length === 0 || record.name.length > 256
+              || typeof record.path !== 'string' || record.path.length === 0 || record.path.length > 32768
+              || (endpoint === 'skillWrite' && (typeof record.content !== 'string'
+                || Buffer.byteLength(record.content, 'utf8') > MAX_SKILL_CONTENT_BYTES
+                || typeof record.description !== 'string' || record.description.trim().length === 0 || record.description.length > 8192
+                || typeof record.expectedRevision !== 'string' || !/^[a-f0-9]{64}$/.test(record.expectedRevision)))) {
+              writeBridgeJson(res, 400, { ok: false, code, message: 'name、path 必填；保存需要 1 MiB 以内的 content、非空 description（最多 8192 字符）和有效 expectedRevision' })
+              return
+            }
+            const session = readSessionIdField(body)
+            if (!session.ok) {
+              writeBridgeJson(res, 400, { ok: false, code, message: session.message })
+              return
+            }
+            const cwd = session.sessionId === undefined ? undefined : localAgentCwd(sctx, session.sessionId)
+            const state = getSkillsState()
+            const result = endpoint === 'skillWrite'
+              ? state.writeSkillContent(record.name, record.path, record.content as string, record.description as string, record.expectedRevision as string, cwd)
+              : state.readSkillContent(record.name, record.path, cwd)
+            if (!result.ok) {
+              writeBridgeJson(res, 409, { ok: false, code, message: result.message })
+              return
+            }
+            if (endpoint === 'skillWrite' && result.changed) afterSkillsChange?.()
+            writeBridgeJson(res, 200, { ok: true, value: { content: result.content, description: result.description, revision: result.revision } })
+          },
+        })),
         sctx.webServer.register({
           kind: 'exact',
           path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.skillsFolders,

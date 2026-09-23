@@ -1,5 +1,16 @@
 /** 工作台实例期的业务草稿。每类数据有明确 owner，切页只卸载视图，不丢原始输入。 */
 import { triggerDraftDirty, type TriggerEditorDraft } from './trigger-drafts.ts'
+import type { SkillContentSnapshot } from '../../shared/skills.ts'
+
+export interface SkillEditorDraft {
+  saved?: SkillContentSnapshot
+  text: string
+  description: string
+  error: string
+  loading: boolean
+  saving: boolean
+  refresh?: () => void
+}
 export interface FieldDraft {
   source: string
   text: string
@@ -54,6 +65,7 @@ export interface PolicyEditorDraft {
 }
 
 export interface WorkspaceDrafts {
+  skills: Map<string, SkillEditorDraft>
   triggers: Map<string, TriggerEditorDraft>
   tools: Map<string, ToolsEditorDraft>
   persona: Map<string, PersonaEditorDraft>
@@ -63,7 +75,7 @@ export interface WorkspaceDrafts {
 }
 
 export function createWorkspaceDrafts(): WorkspaceDrafts {
-  return { triggers: new Map(), tools: new Map(), persona: new Map(), policies: new Map(), fields: new Map(), expanded: new Map() }
+  return { skills: new Map(), triggers: new Map(), tools: new Map(), persona: new Map(), policies: new Map(), fields: new Map(), expanded: new Map() }
 }
 
 /** 切换预设前阻止无声丢弃局部草稿；用户回对应页面处理，不替其隐式落盘。 */

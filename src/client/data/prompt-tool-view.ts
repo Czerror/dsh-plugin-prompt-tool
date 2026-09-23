@@ -66,6 +66,7 @@ const readSkillCatalog = (source: Record<string, unknown>, key: string): SkillCa
       // 只有遮蔽是注册表带来的事实；其余条目按文件声明为事实（不再有未注册／未确认）。
       availability: record.availability === 'shadowed' ? 'shadowed' : 'active',
       ...(typeof record.canSetPolicy === 'boolean' ? { canSetPolicy: record.canSetPolicy } : {}),
+      ...(typeof record.canEdit === 'boolean' ? { canEdit: record.canEdit } : {}),
       ...(typeof record.canDelete === 'boolean' ? { canDelete: record.canDelete } : {}),
       ...(readString(record, 'provider') !== undefined ? { provider: readString(record, 'provider')! } : {}),
       ...(readString(record, 'readonlyReason') !== undefined ? { readonlyReason: readString(record, 'readonlyReason')! } : {}),

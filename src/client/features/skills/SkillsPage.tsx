@@ -1,6 +1,4 @@
-/** 技能设置页：文件层调用策略。
- *  技能实体留在官方各自的技能根里；本页只做三件事——列清单（按来源分组）、
- *  改写技能文件 frontmatter 的两个官方调用策略键（正文与其余字段不动）、以及把技能复制进用户技能根。 */
+/** 技能设置页：来源清单、文件编辑、调用策略与资产管理。 */
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import clsx from 'clsx'
 import type { SkillCatalogEntry } from '../../data/prompt-tool-fields.ts'
@@ -93,7 +91,7 @@ export const SkillsPage = memo(function SkillsPage(props: { store: PromptToolSto
   }, [skillFilter, statusTab, props.browse])
 
   const onSetPolicy = useCallback((name: string, path: string, change: SkillPolicyChange) => {
-    void store.setSkillPolicy(name, path, change)
+    return store.setSkillPolicy(name, path, change)
   }, [store])
   const onDelete = useCallback((skill: SkillCatalogEntry) => { setPendingDelete(skill) }, [])
 
@@ -376,10 +374,12 @@ export const SkillsPage = memo(function SkillsPage(props: { store: PromptToolSto
             <div className={ui.skillCardList}>
               {group.skills.map((skill) => (
                 <SkillRow
-                  key={skill.id}
+                  key={JSON.stringify([api.currentSessionId(), skill.id, skill.path])}
                   skill={skill}
                   t={t}
                   busy={store.skillsBusy}
+                  store={store}
+                  sessionId={api.currentSessionId()}
                   onSetPolicy={onSetPolicy}
                   onDelete={onDelete}
                 />

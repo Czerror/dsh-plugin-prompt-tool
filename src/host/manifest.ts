@@ -23,6 +23,8 @@ import { DEFAULT_PRESET_ID } from '../shared/preset-ids.ts'
 import { assertPresetDirectory, assertPresetId, assertPresetTree, engineModuleFileNames, presetPathExists, rewritePresetEngineReferences, setPresetDefinitionId } from './preset-install.ts'
 import { engineParamPath, readPresetLayerSettings, PresetLayerSettingsError } from './preset-layer-settings.ts'
 import { modelRequestConfigs } from './prompt-configs.ts'
+import { atomicWriteTextFile } from './text-file.ts'
+export { atomicWriteTextFile } from './text-file.ts'
 export { PresetLayerSettingsError } from './preset-layer-settings.ts'
 
 export interface PresetSpec {
@@ -486,18 +488,6 @@ export function savePresetPersona(presetRoot: string, templateName: string, pers
   else doc.setIn(['persona'], personaRowConfig(persona))
   atomicWriteTextFile(file, doc.toString())
   invalidatePresetSpec(join(presetRoot, templateName))
-}
-
-/** 原子写文件（tmp + rename）：preset.yml 增量写路径防截断与半写。 */
-export function atomicWriteTextFile(file: string, content: string): void {
-  const tmp = `${file}.tmp-${process.pid}-${Date.now().toString(36)}`
-  try {
-    writeFileSync(tmp, content, 'utf8')
-    renameSync(tmp, file)
-  } catch (error) {
-    rmSync(tmp, { force: true })
-    throw error
-  }
 }
 
 /** 预设文件读-改-写（parseDocument 保留注释与未知键；mutate 内 setIn/deleteIn）。

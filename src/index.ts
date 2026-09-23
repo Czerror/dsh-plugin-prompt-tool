@@ -267,6 +267,8 @@ export function apply(ctx: Context, configIn: Config): void {
       snapshot: skillsRuntime.snapshot,
       deleteSkill: skillsRuntime.deleteSkill,
       setSkillPolicy: skillsRuntime.setPolicy,
+      readSkillContent: skillsRuntime.readContent,
+      writeSkillContent: skillsRuntime.writeContent,
       patchSkillFolders: skillsRuntime.setFolders,
     }),
     // 模板专属策略目录：当前内置策略全部随引擎提供，自定义模板可经此注入。

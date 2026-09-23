@@ -4,7 +4,7 @@ import type { ConfigForm, ConfigFormSnapshot } from '@deepseek-ai/dsh-client-ui-
 import type { EngineMeta, PromptConfigDraft } from '../prompt-tool-types.ts'
 import type { PromptToolHostApi } from './host-api.ts'
 import type { PresetModuleFacts } from '../../shared/engine-capabilities.ts'
-import type { SkillCatalogEntry, SkillPolicyChange } from '../../shared/skills.ts'
+import type { SkillCatalogEntry, SkillContentSnapshot, SkillPolicyChange } from '../../shared/skills.ts'
 import { bridgeCall, errorMessage, type BridgeResult, type BridgeSettingsView } from './bridge-client.ts'
 import { requestSkillImport, type ConfirmSkillOverwrite } from './skill-import.ts'
 import { readImportFiles, type ImportFileEntry } from './import-files.ts'
@@ -158,6 +158,8 @@ export interface PromptToolStore {
   refreshSkills: () => Promise<boolean>
   /** 创建标准技能到用户技能根。 */
   createSkill: (input: { name: string; description: string; content: string }) => Promise<boolean>
+  readSkill: (skill: SkillCatalogEntry, sessionId: string | undefined) => Promise<BridgeResult<SkillContentSnapshot>>
+  saveSkill: (skill: SkillCatalogEntry, content: string, description: string, expectedRevision: string, sessionId: string | undefined) => Promise<BridgeResult<SkillContentSnapshot>>
   /** 按准确文件身份删除服务端允许管理的技能。 */
   deleteSkill: (skill: Pick<SkillCatalogEntry, 'name' | 'path'>) => Promise<boolean>
   /** 开关只提交 side/enabled；完整 scope 仅供明确的双端操作。失败保持已读取事实。 */
@@ -1121,6 +1123,27 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
   const createSkill = useCallback((input: { name: string; description: string; content: string }) =>
     writeSkill(() => bridgeCall('skillCreate', input), ({ id }) => `已创建技能：${id}`, '创建技能失败'), [writeSkill])
 
+  const readSkill = useCallback(async (skill: SkillCatalogEntry, sessionId: string | undefined): Promise<BridgeResult<SkillContentSnapshot>> => {
+    if (skill.path === undefined || sessionId !== api.currentSessionId() || sessionId !== skillsSessionRef.current) {
+      return { ok: false, message: '技能上下文已变化，请刷新后重试' }
+    }
+    const result = await bridgeCall('skillRead', { name: skill.name, path: skill.path, ...(sessionId === undefined ? {} : { sessionId }) })
+    return sessionId === api.currentSessionId() ? result : { ok: false, message: '技能上下文已变化，请刷新后重试' }
+  }, [api])
+
+  const saveSkill = useCallback(async (skill: SkillCatalogEntry, content: string, description: string, expectedRevision: string, sessionId: string | undefined): Promise<BridgeResult<SkillContentSnapshot>> => {
+    const path = skill.path
+    if (path === undefined || sessionId !== api.currentSessionId() || sessionId !== skillsSessionRef.current) {
+      return { ok: false, message: '技能上下文已变化，请刷新后重试' }
+    }
+    let result: BridgeResult<SkillContentSnapshot> = { ok: false, message: '技能正在保存，请稍候再试' }
+    await writeSkill(async () => {
+      result = await bridgeCall('skillWrite', { name: skill.name, path, content, description, expectedRevision, ...(sessionId === undefined ? {} : { sessionId }) })
+      return result
+    }, () => `已保存技能：${skill.name}`, '技能保存失败')
+    return result
+  }, [api, writeSkill])
+
   const deleteSkill = useCallback((skill: Pick<SkillCatalogEntry, 'name' | 'path'>): Promise<boolean> => {
     const sessionId = api.currentSessionId()
     const path = skill.path
@@ -1236,6 +1259,8 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
     importSkillsFiles,
     refreshSkills,
     createSkill,
+    readSkill,
+    saveSkill,
     deleteSkill,
     setSkillPolicy,
     patchSkillFolders,

@@ -62,23 +62,16 @@
   flex-wrap: wrap;
 }
 
-.skillRankBadge {
-  display: grid;
-  width: 20px;
-  height: 20px;
-  flex: 0 0 auto;
-  place-items: center;
-  border: 0.5px solid var(--dsw-alias-border-l1);
-  border-radius: 50%;
-  corner-shape: round;
-  color: var(--dsw-alias-label-secondary);
-  background: var(--dsw-alias-bg-layer-2);
-  font: var(--dsw-font-xxxs-11);
-  font-variant-numeric: tabular-nums;
-}
-.skillCardTitleRow { display: flex; min-width: 0; align-items: center; gap: 8px; flex-wrap: wrap; }
-.skillCardTitleRow strong { font: var(--dsw-font-xs-strong-13); color: var(--dsw-alias-label-primary); overflow-wrap: anywhere; }
-.skillCardMeta { color: var(--dsw-alias-label-secondary); font: var(--dsw-font-xxs-12); overflow-wrap: anywhere; }
+/* 与九层模块卡共用外壳；摘要始终只占三行。 */
+.skillEntry[data-invalid] { border-color: var(--dsw-alias-state-error-primary); }
+.skillCardTitleRow { display: flex; min-width: 0; height: 24px; align-items: center; gap: 8px; }
+.skillName { min-width: 0; font: var(--dsw-font-xs-strong-13); color: var(--dsw-alias-label-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.skillCardMeta { display: block; min-width: 0; height: 20px; color: var(--dsw-alias-label-secondary); font: var(--dsw-font-xxs-12); line-height: 20px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.skillSourceLine { display: flex; min-width: 0; height: 18px; align-items: center; gap: 10px; white-space: nowrap; }
+.skillSourceLine .skillCardSource { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.skillPriority { flex: none; color: var(--dsw-alias-label-tertiary); font: var(--dsw-font-xxxs-11); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.skillDraftMark { flex: none; color: var(--dsw-alias-label-secondary); font: var(--dsw-font-xxxs-11); }
+.skillEditor { min-height: 240px; tab-size: 2; }
 
 /* 勾选框：只选择（职责分离——技能开关由 Switch 与批量按钮控制）。 */
 .skillSelect {
@@ -175,22 +168,18 @@
   overflow-wrap: anywhere;
 }
 
-/* 调用策略开关组：模型 / 用户各自独立；完全停用时整体不可编辑。 */
+/* 卡内调用策略：模型 / 用户各自独立，不添加胶囊背景。 */
 .skillPolicyGroup {
   display: inline-flex;
   flex: 0 0 auto;
   align-items: center;
   gap: 8px;
   flex-wrap: wrap;
-  border: 0.5px solid var(--dsw-alias-border-l1);
-  border-radius: 999px;
-  corner-shape: round;
-  padding: 2px 10px;
-  background: var(--dsw-alias-bg-layer-2);
 }
 .skillPolicyItem {
   display: inline-flex;
-  align-items: center;
+  flex-direction: column;
+  align-items: flex-start;
   gap: 4px;
   color: var(--dsw-alias-label-secondary);
   font: var(--dsw-font-xxxs-11);
@@ -229,26 +218,16 @@
   font-family: var(--ds-font-family-code, ui-monospace, monospace);
 }
 
-/* 来源徽章与行操作区（屏蔽开关 + 删除）。 */
-.skillSourceBadge {
-  display: inline-flex;
-  flex: 0 0 auto;
-  align-items: center;
-  border: 0.5px solid var(--dsw-alias-border-l2);
-  border-radius: 999px;
-  corner-shape: round;
-  padding: 1px 8px;
-  color: var(--dsw-alias-label-secondary);
-  background: var(--dsw-alias-bg-layer-2);
-  font: var(--dsw-font-xxxs-11);
-  white-space: nowrap;
-}
+/* 卡内行操作区。 */
 .skillRowActions {
   display: flex;
   flex: 0 0 auto;
   align-items: center;
   gap: 8px;
+  flex-wrap: wrap;
 }
+.skillFooter > button { flex: none; white-space: nowrap; }
+.skillFooter .skillDelete { margin-left: auto; }
 
 /* 来源分组：标题给出优先级，列表沿用共享技能卡。 */
 .skillGroup {

@@ -9,7 +9,7 @@ import type { AssetImportRequest, AssetSummary, ImportKind, PresetExportRequest,
 import type { EngineEditorGroup, EngineLayer } from './engine-capabilities.ts'
 import type { ConfigFieldSources } from './managed-config-fields.ts'
 import type { OfficialOrdersView } from './official-orders.ts'
-import type { SkillPolicyChange, SkillsCatalogSnapshot } from './skills.ts'
+import type { SkillContentSnapshot, SkillPolicyChange, SkillsCatalogSnapshot } from './skills.ts'
 import type {
   InstructionFileWriteResult,
   InstructionPolicy,
@@ -35,6 +35,8 @@ export const BRIDGE_ENDPOINTS = {
   configsValidate: '/configs-validate',
   skillsList: '/skills-list',
   skillPolicy: '/skill-policy',
+  skillRead: '/skill-read',
+  skillWrite: '/skill-write',
   skillsFolders: '/skills-folders',
   skillsImport: '/skills-import',
   skillsImportDirectory: '/skills-import-directory',
@@ -97,6 +99,10 @@ export interface BridgeRequestMap {
   /** 调用策略开关：改写该技能 SKILL.md frontmatter 的官方两个键（正文不动）；
    *  path 必须命中服务端当次扫描的同名条目，否则按陈旧界面拒绝。 */
   skillPolicy: { name: string; path: string; sessionId?: string } & SkillPolicyChange
+  /** 技能描述、Markdown 正文和完整原文摘要；重新扫描同名同路径身份。 */
+  skillRead: { name: string; path: string; sessionId?: string }
+  /** 仅保存描述与正文，保持其余 frontmatter，并用完整原文摘要拒绝并发覆盖。 */
+  skillWrite: { name: string; path: string; sessionId?: string; content: string; description: string; expectedRevision: string }
   /** 添加 / 移除引用的技能文件夹（只记状态，不复制文件）。 */
   skillsFolders: { folders: string[]; sessionId?: string }
   /** overwrite 仅包含用户已确认覆盖的技能目录名；缺省时遇到同名返回冲突且不写盘。 */
@@ -330,6 +336,8 @@ export interface BridgeValueMap {
   /** 技能清单 + 引用目录 + 技能根（客户端据此渲染来源分组与调用策略）。 */
   skillsList: SkillsCatalogSnapshot & { folders: string[]; roots: string[] }
   skillPolicy: SkillsCatalogSnapshot
+  skillRead: SkillContentSnapshot
+  skillWrite: SkillContentSnapshot
   skillsFolders: SkillsCatalogSnapshot & { folders: string[] }
   skillsImport: { path: string; count: number; overwritten: number; warning?: string }
   skillCreate: { id: string; path: string }

@@ -30,6 +30,7 @@ import {EMPTY_FIELDS} from ${JSON.stringify(join(root, 'src/client/data/prompt-t
 import {createWorkspaceDrafts,hasWorkspaceDrafts} from ${JSON.stringify(join(root, 'src/client/data/workspace-drafts.ts').replaceAll('\\', '/'))};
 import {PROMPT_TOOL_DICTS} from ${JSON.stringify(join(root, 'src/client/locales.ts').replaceAll('\\', '/'))};
 import {TriggerRulesEditor} from ${JSON.stringify(join(root, 'src/client/features/triggers/TriggerRulesEditor.tsx').replaceAll('\\', '/'))};
+import {SkillRow} from ${JSON.stringify(join(root, 'src/client/features/skills/SkillRow.tsx').replaceAll('\\', '/'))};
 const t=(key,params={})=>Object.entries(params).reduce((text,[name,value])=>text.replaceAll('{'+name+'}',String(value)),PROMPT_TOOL_DICTS.zh[key]??key);
 function Settings(){
  const [,render]=React.useReducer(n=>n+1,0);
@@ -65,9 +66,14 @@ function TriggerFixture(){
  window.triggerStore=store;
  return React.createElement('section',{'data-trigger-host':true,style:{width:'860px',maxWidth:'100%',containerType:'inline-size',containerName:'prompt-form'}},React.createElement(TriggerRulesEditor,{store,t}));
 }
+function SkillFixture(){
+ const store=React.useMemo(()=>({editorDrafts:createWorkspaceDrafts(),publishDrafts:()=>{},readSkill:async skill=>({ok:true,value:{content:'# '+skill.name+'\\nSkill body.',description:skill.description,revision:'skill-1'}})}),[]);
+ const skills=[{id:'long',name:'archify',description:'Create polished validated architecture workflow sequence data-flow and lifecycle diagrams with dark and light themes. '.repeat(5)},{id:'short',name:'ask-matt',description:'A short skill description.'},{id:'invalid',name:'a-very-long-skill-name-that-still-fits-one-title-line',description:'',valid:false,issue:'Invalid frontmatter details are only shown after expanding the card.'}];
+ return React.createElement('section',{'data-skill-host':true,style:{width:'860px',maxWidth:'100%'}},...skills.map(skill=>React.createElement(SkillRow,{key:skill.id,skill:{folder:skill.id,dir:'D:/AI/DeepSeek harness/.dsh/skills',path:'D:/AI/DeepSeek harness/.dsh/skills/'+skill.name+'/SKILL.md',source:'user-dsh',rank:400,valid:true,availability:'active',modelInvocable:true,userInvocable:true,canEdit:true,canSetPolicy:true,canDelete:true,...skill},store,t,busy:false,onSetPolicy:()=>{},onDelete:()=>{}})));
+}
 createRoot(document.getElementById('root')).render(React.createElement(React.Fragment,null,...cards,
 React.createElement('section',{className:ui.settingRowStack,hidden:true,'data-hidden-group':true},'隐藏参数组'),
-React.createElement('section',{className:ui.pageActions,'data-sticky':true},'模块列表 / 保存配置',React.createElement(Filter)),React.createElement(Settings),React.createElement(TriggerFixture)));`
+React.createElement('section',{className:ui.pageActions,'data-sticky':true},'模块列表 / 保存配置',React.createElement(Filter)),React.createElement(Settings),React.createElement(TriggerFixture),React.createElement(SkillFixture)));`
   const bundle = await rolldown({ input: 'badge-fixture', platform: 'browser', transform: { define: { 'process.env.NODE_ENV': '"production"', 'process.env': '{}', 'import.meta.env': '{}' } },
     plugins: [{ name: 'real-badge-css',
       resolveId(source, importer) {
@@ -91,6 +97,8 @@ React.createElement('section',{className:ui.pageActions,'data-sticky':true},'模
   try { ({ output } = await bundle.generate({ format: 'iife' })) } finally { await bundle.close() }
   const js = output.find((item) => item.type === 'chunk').code
   const meta = { ...getEngineMeta(), officialOrders: { sections: [{ id: 'identity', from: 500, to: 600 }], contexts: [] } }
+  // 隔离页面补齐宿主成功态 token，状态圆点和官方 Tag 都依赖它。
+  css.push(':root{--dsw-alias-state-success-primary:#24a368}')
   const server = createServer((req, res) => {
     res.setHeader('Content-Type', req.url === '/app.js' ? 'text/javascript' : 'text/html')
     res.end(req.url === '/app.js' ? js : `<!doctype html><meta charset="utf-8"><style>${css.join('\n')}:root{color-scheme:light;--dsw-alias-label-primary:light-dark(#20242a,#eef0f3);--dsw-alias-label-secondary:light-dark(#5d6571,#b2bac7);--dsw-alias-label-tertiary:light-dark(#7a8391,#909bad);--dsw-alias-bg-layer-2:light-dark(#fff,#20242b);--dsw-alias-bg-layer-3:light-dark(#f6f7f9,#272c34);--dsw-alias-border-l1:light-dark(#e9ecf0,#323a46);--dsw-alias-border-l2:light-dark(#d9dfe7,#414c5c);--dsw-alias-border-l3:light-dark(#a5afbd,#637086);--dsw-alias-brand-primary:#3572d6;--dsw-alias-label-primary-foreground:#fff;--dsw-alias-bg-layer-1:light-dark(#fff,#20242b);--dsw-alias-state-business-primary:#3572d6;--dsw-alias-state-error-primary:#c63737;--dsw-font-xxs-12:400 12px/1.5 sans-serif;--dsw-font-xs-strong-13:600 13px/1.5 sans-serif;--dsw-font-s-14:400 14px/1.5 sans-serif;}body{font:12px/18px sans-serif;margin:8px;background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-primary)}article{margin-bottom:16px}strong{font:600 13px/20px sans-serif!important}</style><div id="root"></div><script>window.layerMeta=${JSON.stringify(meta)}</script><script src="/app.js"></script>`)
@@ -342,6 +350,63 @@ React.createElement('section',{className:ui.pageActions,'data-sticky':true},'模
       await evaluate(`document.querySelector('[data-trigger-host]').style.width='${width}px';document.documentElement.style.colorScheme='${scheme}'`)
       await delay(30)
       assert.equal(await evaluate(`(()=>{const e=document.querySelector('[data-trigger-host]');return e.scrollWidth>e.clientWidth+1})()`), false, `${width}/${scheme} 规则编辑无溢出`)
+    }
+    for (const width of [860, 420, 320]) for (const scheme of ['light', 'dark']) {
+      await evaluate(`document.querySelector('[data-skill-host]').style.width='${width}px';document.documentElement.style.colorScheme='${scheme}'`)
+      await delay(30)
+      const cards = await evaluate(`(()=>[...document.querySelectorAll('[data-skill-card]')].map(card=>{const rows=['heading','description','source'].map(name=>{const e=card.querySelector('[data-skill-'+name+']'),r=e.getBoundingClientRect(),style=getComputedStyle(name==='source'?e.firstElementChild:e);return {name,top:r.top,bottom:r.bottom,height:r.height,whiteSpace:style.whiteSpace,ellipsis:style.textOverflow}});return {id:card.dataset.skillCard,height:card.getBoundingClientRect().height,overflow:card.scrollWidth>card.clientWidth+1,rows}}))()`)
+      assert.equal(cards.length, 3)
+      assert.ok(cards.every(card => Math.abs(card.height - cards[0].height) < 1), `${width}/${scheme} 长短描述与无效技能折叠等高：${JSON.stringify(cards)}`)
+      for (const card of cards) {
+        assert.equal(card.overflow, false, `${width}/${scheme}/${card.id} 卡片无横向溢出`)
+        assert.ok(card.rows[0].bottom <= card.rows[1].top + 1 && card.rows[1].bottom <= card.rows[2].top + 1, '技能名、描述、路径依次占三行')
+        for (const row of card.rows.slice(1)) {
+          assert.equal(row.whiteSpace, 'nowrap', `${row.name} 单行`)
+          assert.equal(row.ellipsis, 'ellipsis', `${row.name} 超长省略`)
+          assert.ok(row.height > 0 && row.height <= 24, `${row.name} 始终保留一行高度`)
+        }
+      }
+      const priority = await evaluate(`(()=>{const e=document.querySelector('[data-skill-source]').lastElementChild,s=getComputedStyle(e);return {text:e.textContent,border:s.borderTopWidth,background:s.backgroundColor,radius:s.borderTopLeftRadius,title:document.querySelector('[data-skill-heading]').textContent}})()`)
+      assert.equal(priority.text, '优先级 400')
+      assert.equal(priority.title.includes('400'), false, '优先级移出技能标题行')
+      assert.deepEqual([priority.border, priority.background, priority.radius], ['0px', 'rgba(0, 0, 0, 0)', '0px'], '优先级仅为弱文字，无徽章包裹')
+      const callable = await evaluate(`(()=>{const badge=document.querySelector('[data-skill-card="long"] [data-skill-heading] [aria-label]'),dot=badge.querySelector('i[data-tone="success"]'),tag=badge.querySelector('[data-tone="success"]:last-child'),d=getComputedStyle(dot),s=getComputedStyle(tag);return {dot:d.backgroundColor,width:dot.getBoundingClientRect().width,background:s.backgroundColor,radius:s.borderTopLeftRadius}})()`)
+      assert.equal(callable.dot, 'rgb(36, 163, 104)', '可调用状态保留绿色圆点')
+      assert.ok(callable.width > 0, '状态圆点可见')
+      assert.notEqual(callable.background, 'rgba(0, 0, 0, 0)', '可调用状态保留绿色胶囊底色')
+      assert.equal(callable.radius, '999px', '可调用状态保留胶囊圆角')
+      await pointerClick('[data-skill-card="long"] [data-skill-expand]')
+      assert.equal(await evaluate(`(()=>{const card=document.querySelector('[data-skill-card="long"]'),panel=document.getElementById(card.querySelector('[data-skill-expand]').getAttribute('aria-controls'));return panel.firstElementChild.hasAttribute('data-skill-block-group')})()`), true, '展开区直接从调用开关开始，不重复名称、描述和路径')
+      assert.equal(await evaluate(`document.querySelector('[data-skill-card="long"] [data-skill-editor]').value`), '# archify\nSkill body.', '正文区域没有 frontmatter')
+      assert.equal(await evaluate(`document.querySelector('[data-skill-card="long"] [data-skill-description-editor]').tagName`), 'INPUT', '描述使用独立输入框')
+      assert.equal(await evaluate(`document.querySelector('[data-skill-card="long"] [data-skill-description-editor]').value`), 'Create polished validated architecture workflow sequence data-flow and lifecycle diagrams with dark and light themes. '.repeat(5))
+      const expanded = await evaluate(`(()=>{const card=document.querySelector('[data-skill-card="long"]'),group=card.querySelector('[role="group"]'),style=getComputedStyle(group);return {overflow:card.scrollWidth>card.clientWidth+1,switches:card.querySelectorAll('[role="switch"]').length,border:style.borderTopWidth,background:style.backgroundColor,radius:style.borderTopLeftRadius}})()`)
+      assert.equal(expanded.overflow, false, `${width}/${scheme} 展开编辑无溢出`)
+      assert.equal(expanded.switches, 2)
+      assert.equal(expanded.border, '0px', '调用开关组不再有胶囊描边')
+      assert.equal(expanded.background, 'rgba(0, 0, 0, 0)', '调用开关组不再有胶囊底色')
+      assert.equal(expanded.radius, '0px', '调用开关组不再有胶囊圆角')
+      const policies = await evaluate(`(()=>[...document.querySelectorAll('[data-skill-card="long"] [data-skill-policy]')].map(item=>({label:item.firstElementChild.textContent,bottom:item.firstElementChild.getBoundingClientRect().bottom,top:item.querySelector('[role="switch"]').getBoundingClientRect().top})))()`)
+      assert.deepEqual(policies.map(item => item.label), ['模型', '用户'])
+      assert.ok(policies.every(item => item.bottom <= item.top), '开关名称位于各自开关上方')
+      const actions = await evaluate(`(()=>[...document.querySelectorAll('[data-skill-card="long"] [data-skill-actions] button')].map(button=>{const r=button.getBoundingClientRect();return {text:button.textContent.trim(),left:r.left,right:r.right,top:r.top,width:r.width,shrink:getComputedStyle(button).flexShrink}}))()`)
+      assert.deepEqual(actions.map(item => item.text), ['保存技能', '重新读取', '删除'])
+      assert.ok(actions.every(item => item.shrink === '0' && item.width > 40), '窄容器不压缩按钮')
+      const footerRight = await evaluate(`document.querySelector('[data-skill-card="long"] [data-skill-actions]').getBoundingClientRect().right`)
+      assert.ok(Math.abs(actions[2].right - footerRight) < 1, '删除按钮右对齐')
+      assert.ok(actions[2].top > actions[1].top || actions[2].left > actions[1].left, '删除位于重新读取右侧或换到后续行')
+      if (width === 320) assert.ok(actions[2].top > actions[1].top, '空间不足时删除按钮自动换行')
+      await pointerClick('[data-skill-card="long"] [data-skill-expand]')
+    }
+    if (process.env.PROMPT_TOOL_SKILL_SCREENSHOT) {
+      await send('Emulation.setDeviceMetricsOverride', { width: 1024, height: 900, deviceScaleFactor: 1, mobile: false })
+      for (const width of [860, 320]) {
+        await evaluate(`document.querySelector('[data-skill-host]').style.width='${width}px';document.documentElement.style.colorScheme='dark'`)
+        await delay(40)
+        const clip = await evaluate(`(()=>{const r=document.querySelector('[data-skill-host]').getBoundingClientRect();return {x:r.left+scrollX,y:r.top+scrollY,width:r.width,height:r.height,scale:1}})()`)
+        const image = await send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: true, clip })
+        writeFileSync(process.env.PROMPT_TOOL_SKILL_SCREENSHOT + '-' + width + '.png', Buffer.from(image.data, 'base64'))
+      }
     }
     if (process.env.PROMPT_TOOL_LAYER_SCREENSHOT) {
       await evaluate(`document.querySelector('[data-sticky]').style.position='static'; window.scrollTo(0,0)`)

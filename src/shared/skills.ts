@@ -4,6 +4,16 @@
  *  `collectFresh`），而本插件的提供方在 profile/全局层、官方文件提供方由预设常驻组合挂在预设层，
  *  影子候选必然被预设层候选覆盖。停用改为改写技能文件的两个官方调用策略键后，任何装配下都成立。 */
 export const SKILL_MARKER = 'SKILL.md'
+/** 技能文件编辑的 UTF-8 字节上限（包括 frontmatter）。 */
+export const MAX_SKILL_CONTENT_BYTES = 1024 * 1024
+
+export interface SkillContentSnapshot {
+  /** Markdown 正文，不含 YAML frontmatter 与分隔线。 */
+  content: string
+  description: string
+  /** 当前原始内容的 SHA-256；只用于冲突检查，不保存历史版本。 */
+  revision: string
+}
 
 /** 技能状态文件版本（v4：状态文件只保存引用目录，调用策略回到技能文件）。
  *  v3 里的 `blocked` 屏蔽表已弃用，读取时忽略、写入时删除。 */
@@ -102,6 +112,8 @@ export interface SkillCatalogEntry {
   availability?: 'active' | 'shadowed'
   provider?: string
   canSetPolicy?: boolean
+  /** 普通本地资产可编辑描述和正文；缺描述可修复，损坏的 frontmatter 拒绝读取。 */
+  canEdit?: boolean
   canDelete?: boolean
   readonlyReason?: string
 }

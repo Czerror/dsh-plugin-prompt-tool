@@ -8,6 +8,7 @@ import { createSkillsWatcher } from '../runtime/skills-watcher.ts'
 import { deleteSkillTarget, type SkillActionResult } from './skills-actions.ts'
 import { readSkillsState, skillsStatePath, writeSkillsState, type SkillsStateRead } from './skills-config.ts'
 import { policyTarget, setSkillInvocation, type SkillPolicyWrite } from './skills-policy.ts'
+import { readSkillContent, writeSkillContent, type SkillContentResult } from './skills-content.ts'
 import { createSkillsProvider } from './skills-provider.ts'
 import { createSkillsReloader } from './skills-refresh.ts'
 import { catalogFromScan, resolveBundledSkillsDir, scanRoots, skillPathKey, skillRoots, skillWriteRestriction, withGlobalSkillFallback, withSkillWinners } from './skills-scan.ts'
@@ -19,6 +20,8 @@ export interface SkillsRuntime {
   listSkills: (cwd?: string) => SkillCatalogEntry[]
   snapshot: (options?: SkillViewOptions) => Promise<SkillsCatalogSnapshot>
   setPolicy: (name: string, path: string, change: SkillPolicyChange, cwd?: string) => SkillPolicyWrite
+  readContent: (name: string, path: string, cwd?: string) => SkillContentResult
+  writeContent: (name: string, path: string, content: string, description: string, expectedRevision: string, cwd?: string) => SkillContentResult
   deleteSkill: (name: string, path: string, cwd?: string) => SkillActionResult
   setFolders: (folders: string[]) => SkillsStateRead
   invalidate: () => void
@@ -101,6 +104,8 @@ export function createSkillsRuntime(ctx: Context, options: { dshHome?: string } 
       const official = bundled !== undefined && entry.path !== undefined && within(entry.path, bundled)
       return {
         ...entry,
+        canEdit: !official && entry.source !== 'bundled' && entry.source !== 'other'
+          && entry.path !== undefined && skillWriteRestriction(entry.path) === undefined,
         canDelete: entry.valid && entry.path !== undefined && allowed.some((root) => skillPathKey(root) === skillPathKey(entry.dir))
           && skillWriteRestriction(entry.path) === undefined,
         ...(official ? { canSetPolicy: false, canDelete: false, readonlyReason: '官方内置技能只读' } : {}),
@@ -147,6 +152,12 @@ export function createSkillsRuntime(ctx: Context, options: { dshHome?: string } 
       if (!entry.canSetPolicy) return { ok: false, message: entry.readonlyReason ?? '该技能只读' }
       const result = setSkillInvocation(path, change)
       if (result.ok) invalidate()
+      return result
+    },
+    readContent: (name, path, cwd) => readSkillContent(() => listSkills(cwd), name, path),
+    writeContent: (name, path, content, description, expectedRevision, cwd) => {
+      const result = writeSkillContent(() => listSkills(cwd), name, path, content, description, expectedRevision)
+      if (result.ok && result.changed) invalidate()
       return result
     },
     deleteSkill: (name, path, cwd) => {
