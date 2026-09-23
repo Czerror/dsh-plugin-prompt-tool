@@ -1,5 +1,11 @@
 # Changelog
 
+## ADR-0003 按现状重写并复验注入引擎（2026-09-23）
+
+- **ADR-0003 从 3 行决策句扩写为按现有代码的事实记录**：正文在用户原文件、指令策略全局一份（缺省 `enabled: false`）、pre-step 协调器按会话工作区现场探测、按 `(fileId, revision, surface epoch)` 判定重发、负责人冲突与装配未知一律不注入、`agents-file-*` 卡与 `preset.yml#agentsHints` 的退场边界；并记录被取代的「每预设物化一份」形态（`777b1ff` → `205f847`/`11a9e73`）与「按预设各持一份」属未采纳方向（需新 ADR）。
+- **注入引擎复验**：12 个注入链路测试文件定向回归 **105 例全绿**（含真实 cordis 接线、E2E 物化预设 + 引擎 + 协调器）；另以真实 DSH_HOME + 本工作区直接调用 `detectAgentsFiles`，实测探测到 `~/.dsh/AGENTS.md`（global）与 `AGENTS.md`（project）两个候选——显示路径与官方 `dshHomeDisplay` 的 `$DSH_HOME/AGENTS.md` 不同，据此确认本会话由官方注入、插件按负责人冲突让位。
+- 未验证边界：真机模型会话端到端（需重启在役服务与真实 API 调用）不在本轮范围。
+
 ## 指令策略回到安全缺省（2026-09-23）
 
 - **`enabled` 缺省恢复 `false`（需在工作台显式开启）**：`defaultInstructionPolicy()`、`readInstructionPolicy`（键缺失 = 关闭，只有显式 `true` 才参战）与落键规则一并反转——`true` 现在显式写 `enabled: true`，`false` 视为缺省而删除该键。`dfdac10`「指令文件默认启用」只同步了 README 与部分 UI 架构文档，其余 8 处注释/UI 文案/客户端兜底快照/两份 docs 仍写「默认关闭」，长期自相矛盾；本轮以「安全缺省」定案并统一。
