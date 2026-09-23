@@ -74,8 +74,6 @@
 
 .canvas { min-width: 0; min-height: 0; flex: 1; overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; scroll-padding-block-start: calc(var(--pt-sticky-height, 0px) + 8px); }
 .canvas > div { width: 100%; padding: 14px 16px 16px; }
-.pageHeaderMeta { display: flex; min-width: 0; align-items: center; flex-wrap: wrap; gap: 8px; }
-.pageHeaderMeta > code { color: var(--dsw-alias-label-secondary); font: var(--dsw-font-markdown-code); font-family: var(--ds-font-family-code, ui-monospace, monospace); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
 
 @container workspace (max-width: 760px) {
   .masthead { padding: 8px 12px; }

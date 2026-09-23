@@ -24,9 +24,6 @@
   margin-left: auto;
 }
 .configFormLayout { container: prompt-form / inline-size; gap: 24px; padding: clamp(12px, 3vw, 24px); }
-.configContext { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
-.configContext strong { font: var(--dsw-font-s-strong-14); color: var(--dsw-alias-label-primary); text-wrap: balance; }
-.configContext span, .configContext p { margin: 0; font: var(--dsw-font-xxs-12); color: var(--dsw-alias-label-secondary); text-wrap: pretty; overflow-wrap: anywhere; }
 .configSection { display: flex; flex-direction: column; gap: 24px; min-width: 0; }
 .configIdentity { min-width: 0; }
 .configNavigation { display: grid; grid-template-columns: 128px minmax(0, 1fr); gap: 24px; min-width: 0; border-top: 0.5px solid var(--dsw-alias-border-l2); padding-top: 24px; }

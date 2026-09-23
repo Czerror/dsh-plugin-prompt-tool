@@ -81,7 +81,7 @@ export function EngineModuleCard(props: {
         )}
       </header>
       {props.readOnlyReason && <p className={styles.configFieldHint}>{props.readOnlyReason}</p>}
-      {!compact && <div id={panelId} hidden={!expanded} className={styles.configForm}>{expanded && <><p className={styles.configFullName}>{props.name}{props.anchorId && ` · ${props.anchorId}`}</p>{props.children}</>}</div>}
+      {!compact && <div id={panelId} hidden={!expanded} className={styles.configForm}>{expanded && props.children}</div>}
       {confirmingDelete && props.onDelete && <ConfirmDialog
         title={props.deleteLabels?.title ?? `删除 ${props.name}`} description={props.deleteLabels?.description ?? `从当前预设移除“${props.name}”能力。`}
         confirmLabel={props.deleteLabels?.confirm ?? '确认删除'} cancelLabel={props.deleteLabels?.cancel ?? '取消'}

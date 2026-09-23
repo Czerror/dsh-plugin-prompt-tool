@@ -141,17 +141,11 @@ export function PromptConfigForm(props: {
   // 且独立指令策略不承载这两项，故整块隐藏，避免做出被 onPatch 静默丢弃的假入口。
   const conditional = !locked && (policy.subject || policy.match)
   const defaultSubject = meta.layerDefaultSubjects?.[config.layer ?? 'pre-step']
-  const layerDetail = meta.layerLabels[config.layer ?? '']?.detail
   const strategy = config.strategy ?? 'static'
   const placeholder = strategy === 'placeholder' && policy.placeholder
   const fillOptions = ['', ...meta.fills]
   return (
     <div className={clsx(styles.configForm, styles.configFormLayout)} data-config-layer={config.layer ?? 'pre-step'}>
-      <div className={styles.configContext}>
-        <strong>{translateLabel(t, LAYER_LABEL_KEYS, config.layer ?? 'pre-step')}</strong>
-        <span>{t('form.instance.hint')}</span>
-        {layerDetail !== undefined && <p>{layerDetail}</p>}
-      </div>
       <section className={styles.configIdentity} aria-label={t('form.section.basic')}>
       <div className={styles.configGrid}>
         <FormField className={styles.fieldSpan4} label={t('form.id.label')} hint={t('form.id.hint')} hintMode="tooltip">

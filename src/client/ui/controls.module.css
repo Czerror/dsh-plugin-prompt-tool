@@ -11,30 +11,6 @@
   white-space: nowrap;
 }
 
-.pageHeader {
-  display: flex;
-  min-width: 0;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 16px;
-  flex-wrap: wrap;
-}
-
-.pageHeader h1,
-.pageHeader h2 {
-  margin: 0;
-  color: var(--dsw-alias-label-primary);
-  font: var(--dsw-font-base-strong-16);
-  overflow-wrap: anywhere;
-}
-
-.pageHeader p {
-  max-width: 64ch;
-  margin: 8px 0 0;
-  color: var(--dsw-alias-label-secondary);
-  font: var(--dsw-font-xxs-12);
-}
-
 .section {
   display: flex;
   min-width: 0;
@@ -932,7 +908,6 @@
 .actionFeedback { min-width: 0; font: var(--dsw-font-xxs-12); overflow-wrap: anywhere; }
 .actionHint { margin: 0; color: var(--dsw-alias-label-secondary); font: var(--dsw-font-xxs-12); overflow-wrap: anywhere; }
 .configStatus { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 14px; border-top: 0.5px solid var(--dsw-alias-border-l2); font: var(--dsw-font-xxs-12); overflow-wrap: anywhere; }
-.configFullName { margin: 0; padding: 8px 14px; border-top: 0.5px solid var(--dsw-alias-border-l2); color: var(--dsw-alias-label-secondary); font: var(--dsw-font-xxs-12); white-space: pre-wrap; overflow-wrap: anywhere; user-select: text; }
 .configStatus > p { margin: 0; }
 .configFieldError,
 .confirmError { margin: 0; color: color-mix(in srgb, var(--dsw-alias-state-error-primary) 80%, var(--dsw-alias-label-primary)); font: var(--dsw-font-xxs-12); overflow-wrap: anywhere; }

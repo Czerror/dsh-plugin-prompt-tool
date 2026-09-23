@@ -3,24 +3,14 @@ import { useLayoutEffect, useRef, type ReactNode } from 'react'
 import type { PromptToolStore } from '../../data/use-prompt-tool-store.ts'
 import type { PromptToolTranslate } from '../../locales.ts'
 import { WorkspaceNavigation } from './WorkspaceNavigation.tsx'
-import { WORKSPACE_PAGES, workspacePageMeta, type WorkspacePage } from './workspace-pages.ts'
+import { WORKSPACE_PAGES, type WorkspacePage } from './workspace-pages.ts'
 import { StatusDot } from '../../ui/StatusDot.tsx'
 import ui from '../../ui/controls.module.css'
 import css from './PromptWorkspace.module.css'
 
-function PageHeader(props: { title: string; description: string; meta: string }): ReactNode {
-  return (
-    <div className={ui.pageHeader}>
-      <div><h2 tabIndex={-1} data-workspace-heading>{props.title}</h2><p>{props.description}</p></div>
-      <div className={css.pageHeaderMeta}><span>{props.meta}</span></div>
-    </div>
-  )
-}
-
 export function WorkspaceFrame(props: {
   store: PromptToolStore
   page: WorkspacePage
-  pageMeta: string
   t: PromptToolTranslate
   onPageChange: (page: WorkspacePage) => void
   scrollKey?: string
@@ -35,7 +25,6 @@ export function WorkspaceFrame(props: {
   const restoredKey = useRef<string>()
   const lastFocusPage = useRef(props.focusPage)
   const scrollKey = props.scrollKey ?? props.page
-  const descriptor = workspacePageMeta(props.page)
   const enabledCount = store.fields.promptConfigs.filter((config) => config.enabled !== false).length
   // 角色库与工具面拥有独立请求，不能以全局配置数量判定它们的加载/空态。
   const usesBootstrap = props.page !== 'characters' && props.page !== 'tools'
@@ -45,12 +34,12 @@ export function WorkspaceFrame(props: {
     const canvas = canvasRef.current
     if (restoredKey.current !== scrollKey) restoredKey.current = undefined
     if (canvas === null || loadingInitial || props.contentReady === false) return
-    const focusHeading = props.focusPage !== lastFocusPage.current
-    if (restoredKey.current === scrollKey && !focusHeading) return
+    const focusPanel = props.focusPage !== lastFocusPage.current
+    if (restoredKey.current === scrollKey && !focusPanel) return
     restoredKey.current = undefined
     const frame = requestAnimationFrame(() => {
-      canvas.scrollTop = focusHeading ? 0 : (props.scrollPositions?.get(scrollKey) ?? 0)
-      if (focusHeading) canvas.querySelector<HTMLElement>('[data-workspace-heading]')?.focus({ preventScroll: true })
+      canvas.scrollTop = focusPanel ? 0 : (props.scrollPositions?.get(scrollKey) ?? 0)
+      if (focusPanel) canvas.querySelector<HTMLElement>('[role="tabpanel"]:not([hidden])')?.focus({ preventScroll: true })
       lastFocusPage.current = props.focusPage
       restoredKey.current = scrollKey
     })
@@ -111,7 +100,6 @@ export function WorkspaceFrame(props: {
             >
               {active && (
                 <>
-                  <PageHeader title={t(descriptor.titleKey)} description={t(descriptor.detailKey)} meta={props.pageMeta} />
                   {loadFailed ? <div className={ui.actionFeedback}>
                     <p className={ui.noticeError} role="status">{store.notice}</p>
                     <button type="button" className={ui.pillButton} onClick={() => void store.load()}>{t('workspace.retry')}</button>

@@ -9,44 +9,30 @@ export type WorkspacePage = 'features' | 'subagent' | 'tools' | 'skills' | 'pres
 export const WORKSPACE_PAGES: ReadonlyArray<{
   id: WorkspacePage
   labelKey: PromptToolLocaleKey
-  titleKey: PromptToolLocaleKey
-  detailKey: PromptToolLocaleKey
 }> = [
   {
     id: 'features',
     labelKey: 'page.features.label',
-    titleKey: 'page.features.title',
-    detailKey: 'page.features.detail',
   },
   {
     id: 'subagent',
     labelKey: 'page.subagent.label',
-    titleKey: 'page.subagent.title',
-    detailKey: 'page.subagent.detail',
   },
   {
     id: 'tools',
     labelKey: 'page.tools.label',
-    titleKey: 'page.tools.title',
-    detailKey: 'page.tools.detail',
   },
   {
     id: 'skills',
     labelKey: 'page.skills.label',
-    titleKey: 'page.skills.title',
-    detailKey: 'page.skills.detail',
   },
   {
     id: 'presets',
     labelKey: 'page.presets.label',
-    titleKey: 'page.presets.title',
-    detailKey: 'page.presets.detail',
   },
   {
     id: 'characters',
     labelKey: 'page.characters.label',
-    titleKey: 'page.characters.title',
-    detailKey: 'page.characters.detail',
   },
 ]
 

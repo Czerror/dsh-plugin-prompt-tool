@@ -51,16 +51,6 @@ export function PromptWorkspace(props: PromptWorkspaceProps): ReactNode {
     if (open) void store.load()
   }, [open, store.load])
 
-  const pageMeta = page === 'skills'
-    ? t('meta.skills', { count: store.fields.skillCatalog.length })
-    : page === 'features'
-      ? t('meta.features')
-      : page === 'presets'
-        ? t('meta.presets')
-        : page === 'characters'
-          ? t('meta.characters', { count: (store.meta.presets ?? []).filter((preset) => preset.meta?.source === 'sillytavern').length })
-          : page === 'tools' ? t('meta.tools') : t('meta.subagent')
-
   const content = page === 'features'
     ? <MainSessionPage key={presetId} store={store} t={t} browse={configPageBrowse(browse, scrollKey)} onNavigate={navigate} />
     : page === 'subagent'
@@ -77,7 +67,6 @@ export function PromptWorkspace(props: PromptWorkspaceProps): ReactNode {
     <WorkspaceFrame
       store={store}
       page={page}
-      pageMeta={pageMeta}
       t={t}
       onPageChange={changePage}
       scrollKey={scrollKey}

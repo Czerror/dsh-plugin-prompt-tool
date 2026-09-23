@@ -170,7 +170,6 @@ export const PromptConfigCard = memo(function PromptConfigCard(props: {
     </div>}
     <div id={panelId} hidden={!props.expanded}>
       {props.expanded && <>
-        <p className={styles.configFullName}>{config.id}{config.name && config.name !== config.id ? ` · ${config.name}` : ''}</p>
         <PromptConfigForm t={t} meta={meta} config={config} disabled={props.disabled} fieldDrafts={props.fieldDrafts} draftScope={`${props.draftScope}:${config.id}`}
           renderLayerSettings={props.renderLayerSettings}
           onPatch={(patch) => props.onPatch(config.id, patch)}

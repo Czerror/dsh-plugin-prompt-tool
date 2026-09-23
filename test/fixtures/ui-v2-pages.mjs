@@ -9,7 +9,7 @@ const api = {
   sessionPreset: { snapshot: () => undefined, subscribe: () => () => {} },
   currentSessionId: () => undefined,
   subscribeSessionChange: () => () => {},
-  listAgentPresets: async () => { window.previewRequests++; return [{ id: 'test', name: 'Test' }] },
+  listAgentPresets: async () => { window.previewRequests++; return window.emptyPresets ? [] : [{ id: 'test', name: 'Test' }] },
 }
 const settings = { scope: { getSnapshot: () => ({ status: 'ready', revision: 1 }) }, ensure: async () => {}, mutate: async () => {} }
 const controllerState = { open: true }

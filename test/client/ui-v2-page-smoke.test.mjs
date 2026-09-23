@@ -199,6 +199,7 @@ test('V2 页面：导航、浏览恢复、配置筛选与保存反馈', { skip: 
   const { evaluate, waitFor, click, clickText, inputPage, navigate, send } = await ensureSession()
   await navigate('pages')
   await waitFor(`document.querySelectorAll('[data-config-id]').length===36`)
+  assert.equal(await evaluate(`document.querySelector('.pageHeader,[data-workspace-heading]')===null`), true, '页签内容不重复标题与概述')
   assert.equal(await evaluate('window.previewRequests'), 0, '未打开工具页不预取')
   await inputPage('[aria-label="过滤提示词配置"]', 'config-1')
   await click('[data-config-id="config-1"] button[aria-expanded]')
@@ -246,6 +247,13 @@ test('V2 页面：导航、浏览恢复、配置筛选与保存反馈', { skip: 
   await click('#pt-workspace-tab-characters')
   await waitFor(`document.querySelectorAll('.presetCard').length===20`)
   await waitFor(`Math.abs(document.querySelector('.canvas').scrollTop-700)<2`)
+  await evaluate('window.emptyPresets=true')
+  await click('#pt-workspace-tab-tools')
+  await waitFor(`Array.from(document.querySelectorAll('button')).some(button=>button.textContent==='选择或新建可编辑预设')`)
+  await clickText('选择或新建可编辑预设')
+  await waitFor(`document.activeElement.id==='pt-workspace-panel-presets'`)
+  assert.equal(await evaluate(`document.activeElement.getAttribute('aria-labelledby')`), 'pt-workspace-tab-presets', '跨页跳转聚焦有页签命名的内容面板')
+  assert.equal(await evaluate(`document.querySelector('.canvas').scrollTop`), 0, '跨页跳转仍将内容滚动到顶部')
 })
 
 test('技能卡：正文与描述分开编辑、草稿恢复、冲突与重读确认、在途输入和可编辑边界', { skip: !existsSync(browserPath) && '设置 PROMPT_TOOL_TEST_BROWSER', timeout: 30000 }, async () => {
