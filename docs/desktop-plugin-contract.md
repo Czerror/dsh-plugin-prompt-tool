@@ -130,6 +130,7 @@
 - bridge 的 loopback、Host/Origin 校验、请求体上限、统一 `{ ok, value }` 包装在两端一致，桌面版不额外放宽。
 - 桌面版多一层 Electron HTTP 转发，**插件侧不需要为之做任何特殊处理**；反向代理式的头改写由壳负责。
 - 诊断插件问题时，页面文档是 `dsh-app://app`，不要把 `http://127.0.0.1:19387/...` 的裸探测结果当成插件行为的证据：该端口需要 Host 认证 cookie，且 `/plugins/*` 与 `/api/prompt-tool/*` 的认证要求不同。
+- **目录选择走官方原生抽象**：本插件用 `ctx.uiWorkspace.pickDirectory()`（`src/client/index.ts`），而不是直接调桌面桥 `__DSH_DIRECTORY_PICKER__`。2026-09-26 在 Windows 桌面版实测：技能导入/引用的目录选择入口**弹出原生资源管理器对话框**，功能正常。官方自身也是二选一（`ui-directory-picker-native` 在桥存在时用 `desktop.pick()`，否则回落到同一抽象），因此复用抽象即可，无需为桌面版特判。
 
 ### 7.1 窗口 chrome 让位（消费官方 CSS 变量）
 
