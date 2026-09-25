@@ -33,7 +33,14 @@
   width: var(--pt-drawer-width);
   box-sizing: border-box;
   border: 0;
-  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+  /* 桌面版：让开窗口顶部原生 chrome（Windows caption 行另有 40px 高度；Web 版两个
+     变量都未定义，回退 0 后与原来逐像素一致）。顶部让开 caption 行可避免抽屉
+     masthead 的按钮落在拖拽区，行内让开则避开 macOS 交通灯。 */
+  padding:
+    calc(env(safe-area-inset-top) + var(--dsh-windows-titlebar-height, 0px))
+    env(safe-area-inset-right)
+    env(safe-area-inset-bottom)
+    calc(env(safe-area-inset-left) + var(--dsh-frame-leading-clearance, 0px));
   min-width: 0;
   min-height: 0;
   overflow: clip;

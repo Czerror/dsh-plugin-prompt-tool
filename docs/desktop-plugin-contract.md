@@ -131,7 +131,35 @@
 - 桌面版多一层 Electron HTTP 转发，**插件侧不需要为之做任何特殊处理**；反向代理式的头改写由壳负责。
 - 诊断插件问题时，页面文档是 `dsh-app://app`，不要把 `http://127.0.0.1:19387/...` 的裸探测结果当成插件行为的证据：该端口需要 Host 认证 cookie，且 `/plugins/*` 与 `/api/prompt-tool/*` 的认证要求不同。
 
-## 8. 与本文相关的官方文档/源码不一致
+### 7.1 窗口 chrome 让位（消费官方 CSS 变量）
+
+桌面版的窗口顶部有一段**原生** chrome 不参与网页布局；插件若把可交互控件画在那里，点击会被 Electron 判成拖窗口。官方为此在根元素发布三个变量，**插件只消费它们，不做运行时平台探测**：
+
+| 变量 | 桌面版取值 | Web 版 | 用途 |
+|---|---|---|---|
+| `--dsh-windows-titlebar-height` | Windows 40px | 未定义 → 回退 0 | 精确的原生 caption 行高度 |
+| `--dsh-frame-top-clearance` | 固定 48px | 未定义 | 「窗口顶带下沉量」语义，含额外 8px |
+| `--dsh-frame-leading-clearance` | macOS 收起侧栏时 160px / 全屏 84px | 未定义 | 左上角窗口 chrome 的行内带宽 |
+
+**为什么选 `--dsh-windows-titlebar-height`**：它是唯一精确的 caption 高度真源（`apps/desktop/src/preload-windows.ts:13` 设为 40px），而 `--dsh-frame-top-clearance` 面向「窗口顶带下沉」语义、会多让 8px。变量在 Web 版未定义即回退 0，因此叠加写法两端都对，**不需要任何 `data-platform` 分支**。
+
+本插件消费这些变量的位置：
+
+| 位置 | 变量 | 解决的问题 |
+|---|---|---|
+| `src/client/app/workspace/PromptWorkspace.module.css`（masthead 上内边距） | titlebar-height | 标题栏内的「返回对话」/关闭按钮落在拖拽带上点不动 |
+| `src/client/app/workbench/Workbench.module.css`（抽屉面板四向 padding） | titlebar-height + leading-clearance | 抽屉内容顶到窗口边缘；macOS 交通灯压住品牌与标题 |
+| `src/client/ui/controls.module.css`（模态背板与最大高度） | titlebar-height | 矮窗口下居中模态的头部进入拖拽带 |
+| `src/client/app/workbench/floating-trigger-position.ts`（`titlebarTopInset()`） | titlebar-height | 悬浮入口被拖进拖拽带后**点不开也拖不回来**（位置已持久化，等于永久失去入口） |
+
+悬浮入口的夹取下界取「边缘留白」与「顶部安全线」的较大者；视口矮到两者无法同时满足时，退化为「按钮完整可见」，与 `clampAxis` 的既有契约一致。
+
+## 8. 已知残留
+
+- **预设导出的下载确认**：`src/client/features/presets/PresetExportDialog.tsx` 用 blob URL + `a[download]` 触发下载。桌面主窗口 session 没有 `will-download` 处理（只有 guest 侧 session 注册并 `preventDefault`），因此走 Electron 默认下载流程（原生「另存为」对话框）。当前把 `revokeObjectURL` 的宽限期设为 60 秒作为冗余保险；blob 数据在下载启动时已被读取，**这是保险而非功能依赖**。
+- **悬浮入口位置偏好不做跨载体迁移**：位置只写 `localStorage`，桌面 origin 是 `dsh-app://app`，与 Web 版互不相通，清站点数据即丢。官方同类偏好在桌面版有走原生文件适配器的先例（快捷键存 `userData/keybindings.json`），本插件暂不跟进。
+
+## 9. 与本文相关的官方文档/源码不一致
 
 排查时已核对并记录，供后续升级时复核：
 
@@ -143,7 +171,7 @@
 | `packages/bundle/web-app/cordis.patch.yml:271` | 注释称 "Web profiles opt in"，与 `:274` 表达式（非 desktop 一律 disabled，无 opt-in 开关）不符 |
 | `docs/cookbook/adding-a-settings-card.zh.md:42` | 写 `form.state`；源码无 `state` 成员，只有 `getSnapshot()` / `subscribe()` |
 
-## 9. 更新本文的方式
+## 10. 更新本文的方式
 
 改动本插件的桌面版适配时：
 

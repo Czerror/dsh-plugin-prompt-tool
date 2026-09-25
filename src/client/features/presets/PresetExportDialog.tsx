@@ -57,7 +57,10 @@ export function PresetExportDialog(props: { preset: { id: string; name: string }
       document.body.append(anchor)
       anchor.click()
       anchor.remove()
-      setTimeout(() => URL.revokeObjectURL(url), 1000)
+      // 宽限期远长于浏览器默认下载：桌面版走 Electron 默认下载流程（原生「另存为」
+      // 对话框），用户可能长时间停留在那里；blob 数据在下载启动时已被读取，这里只是
+      // 冗余保险，避免对话框尚未确认时 URL 先被回收。每次导出是一条待回收 URL。
+      setTimeout(() => URL.revokeObjectURL(url), 60_000)
       setPhase('done')
     } catch (reason) { if (sequence === version.current) { setError(errorMessage(reason)); setPhase('error') } }
     finally { pending.current = false }

@@ -34,7 +34,10 @@
   align-items: center;
   flex-wrap: wrap;
   gap: 8px 12px;
-  padding: 10px 16px;
+  /* 桌面版：Windows 把 40px 原生 caption 行顶到内容之上，masthead 里的按钮若落在
+     该带内，按下会被判成拖窗口而点不动（官方 AppFrame 同样以该变量避让）。Web 版
+     变量未定义 → 回退 0，与原来的 10px 16px 完全一致。 */
+  padding: calc(10px + var(--dsh-windows-titlebar-height, 0px)) 16px 10px;
   border-bottom: 0.5px solid var(--dsw-alias-border-l2);
   background: var(--dsw-alias-bg-base);
 }

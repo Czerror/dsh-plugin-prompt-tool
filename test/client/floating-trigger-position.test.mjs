@@ -20,6 +20,7 @@ import {
   isDragGesture,
   readStoredTriggerPosition,
   storeTriggerPosition,
+  titlebarTopInset,
 } from '../../src/client/app/workbench/floating-trigger-position.ts'
 
 test('clampPoint：按钮始终完整可见（含窄屏 40px 尺寸与极小视口）', () => {
@@ -32,6 +33,49 @@ test('clampPoint：按钮始终完整可见（含窄屏 40px 尺寸与极小视�
     ['默认位置在常规视口内不变', DEFAULT_TRIGGER, { width: 1200, height: 900 }, undefined, DEFAULT_TRIGGER],
   ]) {
     assert.deepEqual(clampPoint(point, viewport, size), expected, label)
+  }
+})
+
+test('titlebarTopInset：只认官方标题栏变量，缺失或非法一律回退 0', () => {
+  // Node 环境没有 document：桌面探测必须安静回退，不能抛错。
+  assert.equal(titlebarTopInset(), 0, '无 document 时回退 0')
+  const previousDocument = Object.getOwnPropertyDescriptor(globalThis, 'document')
+  const previousGetComputedStyle = Object.getOwnPropertyDescriptor(globalThis, 'getComputedStyle')
+  const withVariable = (raw) => {
+    globalThis.document = { documentElement: {} }
+    globalThis.getComputedStyle = () => ({ getPropertyValue: () => raw })
+  }
+  try {
+    withVariable('')
+    assert.equal(titlebarTopInset(), 0, '变量未定义（Web 版 / macOS）回退 0')
+    withVariable('   ')
+    assert.equal(titlebarTopInset(), 0, '空白值回退 0')
+    withVariable('auto')
+    assert.equal(titlebarTopInset(), 0, '非数值回退 0')
+    withVariable('-8px')
+    assert.equal(titlebarTopInset(), 0, '非正数回退 0')
+    withVariable('40px')
+    assert.equal(titlebarTopInset(), 40, 'Windows 桌面的 40px 原样读出')
+  } finally {
+    if (previousDocument === undefined) delete globalThis.document
+    else Object.defineProperty(globalThis, 'document', previousDocument)
+    if (previousGetComputedStyle === undefined) delete globalThis.getComputedStyle
+    else Object.defineProperty(globalThis, 'getComputedStyle', previousGetComputedStyle)
+  }
+})
+
+test('clampPoint：topInset 只抬高下界，缺省时与既有行为逐像素一致', () => {
+  for (const [label, point, viewport, size, topInset, expected] of [
+    ['不传 topInset 时行为不变（Web 版 / macOS）', { x: 10, y: 8 }, { width: 1000, height: 800 }, undefined, undefined, { x: 10, y: 8 }],
+    ['topInset 把上方越界的按钮压回安全线以下', { x: 10, y: 8 }, { width: 1000, height: 800 }, undefined, 40, { x: 10, y: 40 }],
+    ['按钮在安全线以下时不受影响', { x: 10, y: 120 }, { width: 1000, height: 800 }, undefined, 40, { x: 10, y: 120 }],
+    ['topInset 不影响横轴夹取', { x: 5000, y: 8 }, { width: 1000, height: 800 }, undefined, 40, { x: 964, y: 40 }],
+    ['顶部安全线与底部留白同时生效', { x: 10, y: 5000 }, { width: 1000, height: 800 }, undefined, 40, { x: 10, y: 764 }],
+    // 极矮视口（60px）下安全线 40 与底部留白 8 无法同时满足：上界 60−28−8=24 先夹住下界，
+    // 退化为「按钮完整可见」（24 ≤ y ≤ 32），与 clampAxis 的既有契约一致。
+    ['矮视口放不下安全线时仍保证按钮完整可见（退化为 60−28−8=24）', { x: 10, y: 0 }, { width: 1000, height: 60 }, { width: 28, height: 28 }, 40, { x: 10, y: 24 }],
+  ]) {
+    assert.deepEqual(clampPoint(point, viewport, size ?? {}, topInset ?? 0), expected, label)
   }
 })
 

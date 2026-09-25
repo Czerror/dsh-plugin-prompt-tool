@@ -58,7 +58,10 @@
   display: grid;
   place-items: center;
   box-sizing: border-box;
-  padding: max(12px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right)) max(12px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left));
+  /* 桌面版：桌面窗口顶部的原生 caption 行不参与网页布局，矮窗口下居中的模态顶边
+     会落进拖拽带，头部与关闭按钮被压窄。叠加官方发布的标题栏高度让开它；Web 版
+     变量未定义 → 回退 0，与原来的 12px 一致。 */
+  padding: calc(max(12px, env(safe-area-inset-top)) + var(--dsh-windows-titlebar-height, 0px)) max(12px, env(safe-area-inset-right)) max(12px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left));
   max-height: 100dvh;
   overflow-y: auto;
   background: var(--dsw-alias-bg-mask-1);
@@ -68,7 +71,7 @@
 .templateModal {
   display: flex;
   width: min(440px, 100%);
-  max-height: calc(100dvh - 24px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+  max-height: calc(100dvh - 24px - var(--dsh-windows-titlebar-height, 0px) - env(safe-area-inset-top) - env(safe-area-inset-bottom));
   flex-direction: column;
   overflow: hidden;
   border: 0;
