@@ -279,13 +279,22 @@ export function writeInstructionPolicy(options: {
     if (isMap(defaults) && defaults.items.length === 0) doc.delete('defaults')
   }
   if (patch.files !== undefined) {
+    // 先建立 files 映射：新建文档（文件不存在或只有注释）没有该键，而
+    // deleteIn 只沿已存在的集合遍历，会抛 Expected YAML collection at files
+    // （setIn 会自建中间节点，deleteIn 不会）。空覆盖清理仍按 items.length 判定。
+    if (!isMap(doc.get('files'))) doc.setIn(['files'], doc.createNode({}))
     for (const [fileId, override] of Object.entries(patch.files)) {
       if (override === null) {
         doc.deleteIn(['files', fileId])
         continue
       }
       const previous = doc.getIn(['files', fileId], true)
-      if (isScalar(previous) && previous.value === null) {
+      if (previous === undefined) {
+        // 该文件的覆盖节点尚不存在：先建空映射。deleteIn 不会自建中间集合，
+        // 下面 `enabled: true` 的缺省态删除键必须落在已存在的映射上。
+        const created = doc.createNode({})
+        doc.setIn(['files', fileId], created)
+      } else if (isScalar(previous) && previous.value === null) {
         // ponytail: 共享 null 锚点不自动展开；保值解引用需要独立的编辑协议。
         let referenced = false
         if (previous.anchor !== undefined) {

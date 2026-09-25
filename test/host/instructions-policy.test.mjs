@@ -313,7 +313,28 @@ test('共享 null 锚点不能因局部更新改变其他字段，拒写时保�
   const unshared = newFile()
   writeFileSync(unshared, 'schemaVersion: 1\nfiles:\n  f1: &unused null\n')
   const unsharedBefore = readInstructionPolicy(unshared)
-  const saved = writeInstructionPolicy({ file: unshared, expectedRevision: unsharedBefore.revision, patch: { files: { f1: { order: 40 } } } })
-  assert.equal(saved.ok, true, '未被引用的 null 锚点仍可正常更新')
-  assert.equal(saved.policy.files.f1.order, 40)
+  const savedNullAnchor = writeInstructionPolicy({ file: unshared, expectedRevision: unsharedBefore.revision, patch: { files: { f1: { order: 40 } } } })
+  assert.equal(savedNullAnchor.ok, true)
+
+  // 页面真实载荷（fileId 是路径 sha256 前 16 位）：文件不存在时新建文档还没有
+  // files / files[fileId] 集合，而 `enabled: true` 是缺省态要 deleteIn 删键 ——
+  // deleteIn 不会自建中间集合，曾整条请求以 400 空响应结束（webserver 兜底）。
+  const fresh = newFile()
+  const enabledDefault = writeInstructionPolicy({
+    file: fresh,
+    expectedRevision: null,
+    patch: { files: { a46fcc520645f05a: { enabled: true } } },
+  })
+  assert.equal(enabledDefault.ok, true, '首次保存 enabled:true 必须成功而不是抛 YAML collection 异常')
+  assert.equal(enabledDefault.policy.files.a46fcc520645f05a, undefined, 'true = 缺省态，不落键')
+
+  // 显式 false 与空覆盖各走一条：前者写入键，后者因无剩余字段而整条清掉。
+  const explicit = writeInstructionPolicy({
+    file: fresh,
+    expectedRevision: enabledDefault.revision,
+    patch: { files: { a46fcc520645f05a: { enabled: false }, deadbeefdeadbeef: {} } },
+  })
+  assert.equal(explicit.ok, true)
+  assert.equal(explicit.policy.files.a46fcc520645f05a.enabled, false)
+  assert.equal(explicit.policy.files.deadbeefdeadbeef, undefined, '只写了缺省态的空覆盖不留空壳')
 })
