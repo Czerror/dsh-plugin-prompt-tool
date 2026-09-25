@@ -8,7 +8,6 @@ import {
   isDragGesture,
   readStoredTriggerPosition,
   storeTriggerPosition,
-  titlebarTopInset,
   type TriggerPoint,
 } from './floating-trigger-position.ts'
 import css from './Workbench.module.css'
@@ -27,38 +26,27 @@ export function FloatingTrigger(props: { controller: PromptToolWorkspaceControll
   const open = useSyncExternalStore(controller.subscribe, controller.getSnapshot, controller.getSnapshot).open
   // useRef<T>(null) 在 @types/react 18 走 readonly 的 RefObject 重载：显式标注可变 ref。
   const localRef = useRef<HTMLButtonElement | null>(null) as MutableRefObject<HTMLButtonElement | null>
-  // 桌面版顶部原生 chrome 高度（Windows 40px，Web/macOS 为 0）。拖动期间读 ref，
-  // 避免每次 pointermove 都查计算样式。
-  const topInsetValue = titlebarTopInset()
-  const topInsetRef = useRef(topInsetValue)
-  const [position, setPosition] = useState<TriggerPoint>(() => clampPoint(
-    readStoredTriggerPosition() ?? DEFAULT_TRIGGER,
-    { width: window.innerWidth, height: window.innerHeight },
-    {},
-    topInsetValue,
-  ))
-  /** 夹取到视口：尺寸取实际渲染尺寸，下界含桌面原生 chrome 的安全线。 */
-  const clampToViewport = useCallback((point: TriggerPoint, element: HTMLButtonElement | null): TriggerPoint => clampPoint(
-    point,
-    { width: window.innerWidth, height: window.innerHeight },
-    element === null ? {} : { width: element.offsetWidth, height: element.offsetHeight },
-    topInsetRef.current,
-  ), [])
+  const [position, setPosition] = useState<TriggerPoint>(() => readStoredTriggerPosition() ?? DEFAULT_TRIGGER)
   const dragRef = useRef<{ pointerId: number; startPointer: TriggerPoint; startPosition: TriggerPoint; moved: boolean } | null>(null)
   const suppressClickRef = useRef(false)
 
   // 窗口变化（含窄屏断点改变按钮尺寸）后把按钮夹回可见区域。
   useEffect(() => {
-    const reclamp = (): void => {
+    const clampToViewport = (): void => {
       setPosition((current) => {
-        const next = clampToViewport(current, localRef.current)
+        const rect = localRef.current?.getBoundingClientRect()
+        const next = clampPoint(
+          current,
+          { width: window.innerWidth, height: window.innerHeight },
+          rect === undefined ? {} : { width: rect.width, height: rect.height },
+        )
         return next.x === current.x && next.y === current.y ? current : next
       })
     }
-    reclamp()
-    window.addEventListener('resize', reclamp)
-    return () => window.removeEventListener('resize', reclamp)
-  }, [clampToViewport])
+    clampToViewport()
+    window.addEventListener('resize', clampToViewport)
+    return () => window.removeEventListener('resize', clampToViewport)
+  }, [])
 
   const onPointerDown = useCallback((event: ReactPointerEvent<HTMLButtonElement>) => {
     if (event.button !== 0) return
@@ -80,11 +68,12 @@ export function FloatingTrigger(props: { controller: PromptToolWorkspaceControll
       // 指针捕获：拖出按钮范围仍持续收到 move/up，也避免拖动选中文本。
       event.currentTarget.setPointerCapture(event.pointerId)
     }
-    setPosition(clampToViewport(
+    setPosition(clampPoint(
       { x: drag.startPosition.x + delta.x, y: drag.startPosition.y + delta.y },
-      event.currentTarget,
+      { width: window.innerWidth, height: window.innerHeight },
+      { width: event.currentTarget.offsetWidth, height: event.currentTarget.offsetHeight },
     ))
-  }, [clampToViewport])
+  }, [])
 
   const endDrag = useCallback((event: ReactPointerEvent<HTMLButtonElement>) => {
     const drag = dragRef.current

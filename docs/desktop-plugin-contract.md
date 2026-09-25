@@ -150,14 +150,12 @@
 | `src/client/app/workspace/PromptWorkspace.module.css`（masthead 上内边距） | titlebar-height | 标题栏内的「返回对话」/关闭按钮落在拖拽带上点不动 |
 | `src/client/app/workbench/Workbench.module.css`（抽屉面板四向 padding） | titlebar-height + leading-clearance | 抽屉内容顶到窗口边缘；macOS 交通灯压住品牌与标题 |
 | `src/client/ui/controls.module.css`（模态背板与最大高度） | titlebar-height | 矮窗口下居中模态的头部进入拖拽带 |
-| `src/client/app/workbench/floating-trigger-position.ts`（`titlebarTopInset()`） | titlebar-height | 悬浮入口被拖进拖拽带后**点不开也拖不回来**（位置已持久化，等于永久失去入口） |
-
-悬浮入口的夹取下界取「边缘留白」与「顶部安全线」的较大者；视口矮到两者无法同时满足时，退化为「按钮完整可见」，与 `clampAxis` 的既有契约一致。
 
 ## 8. 已知残留
 
 - **预设导出的下载确认**：`src/client/features/presets/PresetExportDialog.tsx` 用 blob URL + `a[download]` 触发下载。桌面主窗口 session 没有 `will-download` 处理（只有 guest 侧 session 注册并 `preventDefault`），因此走 Electron 默认下载流程（原生「另存为」对话框）。当前把 `revokeObjectURL` 的宽限期设为 60 秒作为冗余保险；blob 数据在下载启动时已被读取，**这是保险而非功能依赖**。
 - **悬浮入口位置偏好不做跨载体迁移**：位置只写 `localStorage`，桌面 origin 是 `dsh-app://app`，与 Web 版互不相通，清站点数据即丢。官方同类偏好在桌面版有走原生文件适配器的先例（快捷键存 `userData/keybindings.json`），本插件暂不跟进。
+- **悬浮入口仍可能被拖进窗口顶部拖拽带**：`src/client/app/workbench/floating-trigger-position.ts` 的夹取下界只保留 8px 边缘留白，没有避开 Windows 原生 caption 行的安全线；一旦拖进该带，按下会被判成拖窗口，按钮既点不开也拖不回来，而位置已持久化。**这是本文件记录的已知缺口，不是待修实现**——判定该交互该怎么改属产品决策，需要时以官方变量 `--dsh-windows-titlebar-height` 为下界。
 
 ## 9. 与本文相关的官方文档/源码不一致
 

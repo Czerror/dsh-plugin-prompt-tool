@@ -25,55 +25,33 @@ export const TRIGGER_MARGIN_PX = 8
 /** 悬浮按钮尺寸（px）：与 Workbench.module.css 的 .floatingTrigger 保持一致。 */
 export const TRIGGER_SIZE_PX = 28
 
-/**
- * 桌面版窗口顶部被原生 chrome 占用的高度（px）。
- *
- * 只读官方发布的 CSS 变量：Windows 桌面由 preload 设成 40px，Web 版与 macOS 未定义
- * （回退 0）。按钮只要落在该带内，按下会被 Electron 判成拖窗口，`pointerdown` 永远
- * 到不了这里——既点不开也拖不回来，而位置已写进偏好，等于永久失去入口。
- *
- * `dsh-windows-titlebar-height` 是唯一的原生 chrome 高度真源：插件无权测量 caption 行，
- * 官方 `--dsh-frame-top-clearance` 是另一套语义（固定 48px 的窗口顶带下沉量）。
- */
-export function titlebarTopInset(): number {
-  if (typeof document === 'undefined') return 0
-  const raw = getComputedStyle(document.documentElement).getPropertyValue('--dsh-windows-titlebar-height').trim()
-  if (raw.length === 0) return 0
-  const value = Number.parseFloat(raw)
-  return Number.isFinite(value) && value > 0 ? value : 0
-}
+const STORAGE_KEY = 'dsh-plugin-prompt-tool:trigger-position'
+/** 早期提交写过的键：读到就沿用，避免用户位置偏好丢失。 */
+const LEGACY_STORAGE_KEY = 'dsh-plugin-prompt-tool:floating-trigger'
 
-/** 单轴夹取：先保留边缘留白，留白放不下时退化为「按钮完整可见」。
- *  `topInset` 只抬高下界（顶部原生 chrome），不影响右/下边留白语义。 */
-function clampAxis(value: number, limit: number, topInset = 0): number {
+/** 单轴夹取：先保留边缘留白，留白放不下时退化为「按钮完整可见」。 */
+function clampAxis(value: number, limit: number): number {
   const max = Math.max(0, limit - TRIGGER_MARGIN_PX)
-  // 下界取「留白」与「顶部安全距离」的较大者，且不超过上界（视口比两者还矮时保留完整可见）。
-  const min = Math.min(Math.max(TRIGGER_MARGIN_PX, topInset), max)
+  const min = Math.min(TRIGGER_MARGIN_PX, max)
   return Math.min(Math.max(value, min), max)
 }
 
 /**
  * 夹取到视口内：按钮必须完整可见。
  * 尺寸取实际渲染尺寸（窄屏断点下按钮是 40px），缺省用设计尺寸 28px。
- * `topInset` 由调用方按桌面环境传入（见 {@link titlebarTopInset}），缺省 0 时与原先一致。
  */
 export function clampPoint(
   point: TriggerPoint,
   bounds: TriggerBounds,
   size: Partial<TriggerBounds> = {},
-  topInset = 0,
 ): TriggerPoint {
   const width = size.width ?? TRIGGER_SIZE_PX
   const height = size.height ?? TRIGGER_SIZE_PX
   return {
     x: clampAxis(point.x, bounds.width - width),
-    y: clampAxis(point.y, bounds.height - height, topInset),
+    y: clampAxis(point.y, bounds.height - height),
   }
 }
-
-const STORAGE_KEY = 'dsh-plugin-prompt-tool:trigger-position'
-/** 早期提交写过的键：读到就沿用，避免用户位置偏好丢失。 */
-const LEGACY_STORAGE_KEY = 'dsh-plugin-prompt-tool:floating-trigger'
 
 /** 拖动等价判定：位移超过阈值才算拖动（拖动结束必须吞掉尾随 click）。 */
 export function isDragGesture(start: TriggerPoint, current: TriggerPoint): boolean {
