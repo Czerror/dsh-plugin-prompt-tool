@@ -51,16 +51,16 @@ export function ToolsPreviewPage({ api, presetId, t, browse, onNavigate, onReady
     </label>
     <ToolSurfaceView sessionId={sessionId ?? ''} onReady={sessionReady} expandedState={browse?.expanded} label={t('tools.surface.session')} t={t} query={query} />
     <ToolSurfaceView presetId={selectedId} onReady={presetReady} expandedState={browse?.expanded} label={t('tools.surface.preset')} t={t} query={query} headerAction={
-      <MenuSelect ariaLabel={t('tools.surface.source.aria')} value={selectedId} placeholder={t('tools.surface.source.placeholder')}
-        disabled={loading || presets.length === 0} className={css.toolPresetSelect} onChange={setSelectedId}
-        options={presets.map((preset) => ({ value: preset.id, label: preset.name ?? preset.id }))} />
-    }>
-      <div className={css.toolSurfaceControls}>
+      // 预设来源控制区住在标题行：分组默认折叠，来源选择、刷新与空态引导不能跟着藏进内容区。
+      <div className={css.toolPresetControls}>
+        <MenuSelect ariaLabel={t('tools.surface.source.aria')} value={selectedId} placeholder={t('tools.surface.source.placeholder')}
+          disabled={loading || presets.length === 0} className={css.toolPresetSelect} onChange={setSelectedId}
+          options={presets.map((preset) => ({ value: preset.id, label: preset.name ?? preset.id }))} />
         <button type="button" className={css.toolRefresh} disabled={loading} onClick={() => setRevision((value) => value + 1)}>{t('tools.refreshPresets')}</button>
         {loading && <span className={css.toolSurfaceHint} role="status">{t('tools.loadingPresets')}</span>}
         {error && <span className={css.toolSurfaceError} role="alert">{error}</span>}
         {!loading && !error && presets.length === 0 && <span className={css.toolSurfaceHint}>{t('tools.noPresets')} {onNavigate && <button type="button" className={css.toolRefresh} onClick={() => onNavigate('presets')}>{t('configs.chooseEditable')}</button>}</span>}
       </div>
-    </ToolSurfaceView>
+    } />
   </section>
 }

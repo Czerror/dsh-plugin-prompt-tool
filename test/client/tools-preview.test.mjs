@@ -130,16 +130,27 @@ test('自定义工具按预设隔离，system 或关闭 writePreset 时禁用写
 
 test('官方目录式搜索、可折叠分组与标题右侧预设选择；不再嵌套 tabs', () => {
   const snapshot = { sessionId: 'current-session', selectable: true }
+  const api = { sessionModel: { subscribe() { return () => {} }, snapshot: () => snapshot }, sessionPreset: { snapshot: () => undefined, subscribe() { return () => {} } }, listAgentPresets() { throw new Error('当前会话视角不得加载预设') } }
+  // 默认折叠：进页面只有标题行，内容区不渲染；展开由用户点击决定并按分组记忆。
+  const collapsed = render(ToolsPreviewPage, { api, t })
+  assert.equal((collapsed.match(/class="toolGroupToggle" aria-expanded="false"/g) ?? []).length, 2, '分组默认折叠')
+  assert.doesNotMatch(collapsed, /class="toolGroupBody"/)
+  assert.match(collapsed, /aria-label="当前会话工具"/)
+  assert.match(collapsed, /aria-label="预设工具能力"/)
+  // 预设来源控制区住在标题行：折叠时也要看得到，否则空态引导与刷新入口会被藏进内容区。
+  assert.match(collapsed, /正在读取预设/)
+
   const html = render(ToolsPreviewPage, {
-    api: { sessionModel: { subscribe() { return () => {} }, snapshot: () => snapshot }, sessionPreset: { snapshot: () => undefined, subscribe() { return () => {} } }, listAgentPresets() { throw new Error('当前会话视角不得加载预设') } },
+    api,
     t,
+    browse: { query: '', selectedId: 'next-preset', expanded: { 'session:current-session': true, 'preset:next-preset': true } },
   })
   assert.match(html, /aria-label="搜索工具"/)
   assert.match(html, /aria-label="当前会话工具"/)
   assert.match(html, /aria-label="预设工具能力"/)
   assert.match(html, /aria-label="预设工具能力来源"/)
   assert.match(read('src/client/features/tools/ToolSurfaceView.tsx'), /<StatusBadge tone="success" label=\{t\('tools\.surface\.badge\.visible'\)\} \/>/)
-  assert.equal((html.match(/class="toolGroupToggle" aria-expanded="true"/g) ?? []).length, 2)
+  assert.equal((html.match(/class="toolGroupToggle" aria-expanded="true"/g) ?? []).length, 2, '记忆为展开的分组确实展开')
   assert.doesNotMatch(html, /role="tablist"|role="tabpanel"/)
   assert.ok(html.indexOf('搜索工具') < html.indexOf('当前会话工具'))
   assert.match(html, /current-session/)
@@ -148,7 +159,7 @@ test('官方目录式搜索、可折叠分组与标题右侧预设选择；不�
   assert.match(read('src/client/features/tools/ToolSurfaceView.tsx'), /<StatusBadge tone="success" label=\{t\('tools\.surface\.sub\.count', \{ count \}\)\} \/>/)
   assert.match(html, /不会自动 resume 会话/)
   assert.match(html, /刷新预设列表/)
-  const preset = render(ToolSurfaceView, { presetId: 'next-preset', label: '预设工具能力', t })
+  const preset = render(ToolSurfaceView, { presetId: 'next-preset', label: '预设工具能力', t, expandedState: { 'preset:next-preset': true } })
   assert.doesNotMatch(preset, /后续 generation/)
   assert.match(preset, /不代表当前会话/)
   assert.match(preset, /next-preset/)
@@ -238,8 +249,9 @@ test('搜索只过滤名称或描述，空列表与无匹配状态分开', () =>
   assert.match(render(ToolSurfaceList, { tools, filter: '文件', t }), /显示 1 \/ 2 个工具/)
   assert.match(render(ToolSurfaceList, { tools, filter: 'missing', t }), /无匹配工具/)
   assert.match(render(ToolSurfaceList, { tools: [], filter: '', t }), /该来源暂无可见工具/)
-  assert.match(render(ToolSurfaceView, { sessionId: '', label: '当前会话工具', t }), /尚未选择当前会话/)
-  assert.match(render(ToolSurfaceView, { presetId: '', label: '预设工具能力', t }), /请选择预设/)
+  // 默认折叠，内容区要显式展开（用户点击记忆为 true）才渲染。
+  assert.match(render(ToolSurfaceView, { sessionId: '', label: '当前会话工具', t, expandedState: { 'session:': true } }), /尚未选择当前会话/)
+  assert.match(render(ToolSurfaceView, { presetId: '', label: '预设工具能力', t, expandedState: { 'preset:': true } }), /请选择预设/)
 })
 
 test('来源切换、刷新及卸载均丢弃过期成功和失败响应，bridge 载荷不变', async (t) => {

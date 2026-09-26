@@ -5,7 +5,7 @@ import type { PromptToolTranslate } from '../../locales.ts'
 import { loadToolSurface, type ToolSurfaceEntry, type ToolSurfaceResult, type ToolSurfaceSource } from './tool-surface-request.ts'
 import css from './tools.module.css'
 
-type ToolSurfaceProps = ToolSurfaceSource & { label: string; t: PromptToolTranslate; query?: string; headerAction?: ReactNode; children?: ReactNode; expandedState?: Record<string, boolean>; onReady?: () => void }
+type ToolSurfaceProps = ToolSurfaceSource & { label: string; t: PromptToolTranslate; query?: string; headerAction?: ReactNode; expandedState?: Record<string, boolean>; onReady?: () => void }
 const matches = (entry: ToolSurfaceEntry, query: string): boolean =>
   entry.name.toLowerCase().includes(query) || entry.description.toLowerCase().includes(query)
 
@@ -58,7 +58,8 @@ function ToolSurfaceContent(props: ToolSurfaceProps): ReactNode {
   const [result, setResult] = useState<ToolSurfaceResult | null>(null)
   const [revision, setRevision] = useState(0)
   const groupKey = sessionId !== undefined ? `session:${sessionId}` : `preset:${presetId}`
-  const [expanded, setExpanded] = useState(props.expandedState?.[groupKey] ?? true)
+  // 默认折叠：进页面只看分组标题与计数胶囊；展开与否由用户点击决定并按分组记忆。
+  const [expanded, setExpanded] = useState(props.expandedState?.[groupKey] ?? false)
   const contentId = useId()
   const sourceId = sessionId ?? presetId ?? ''
   const loading = sourceId.length > 0 && result === null
@@ -79,7 +80,6 @@ function ToolSurfaceContent(props: ToolSurfaceProps): ReactNode {
       <div className={css.toolHeaderAction}>{props.headerAction}</div>
     </div>
     {open && <div className={css.toolGroupBody} id={contentId}>
-      {props.children}
       {sourceId.length === 0 ? <p className={css.toolSurfaceHint}>{sessionId !== undefined ? t('tools.surface.noSession') : t('tools.surface.noPreset')}</p> : <>
         <div className={css.toolSurfaceControls}>
           <p className={css.toolSurfaceHint}>{t('tools.surface.origin')}<code>{sourceId}</code></p>
