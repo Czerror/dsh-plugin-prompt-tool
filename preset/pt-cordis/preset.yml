@@ -4,6 +4,7 @@ description: 用于创建自定义 Agent preset：具备标准模式的全部能
 version: 1.0.0
 engineCompat: ">=0.4.2"
 modules:
+  - agent-instructions
   - tool-bash
   - tool-pwsh
   - tool-fs

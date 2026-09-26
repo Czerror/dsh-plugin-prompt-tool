@@ -40,10 +40,8 @@ test('内置预设集合移除 liangshen 与 anchored，保留四个官方基型
 
 test('standard 对齐官方 Standard，以官方 dsh-persona 行承载人设', () => {
   const ids = idsOf(rowsOf('standard'))
-  // 唯一有意偏离官方的地方：不装配 agent-instructions——指令注入由插件自己的 pre-step
-  // 协调器按指令文件卡接管（ADR-0005），装上官方行会让同一批文件被两方注入。
   assert.deepEqual(ids, [
-    'persona', 'tool-bash', 'tool-pwsh', 'tool-fs', 'tool-fs-search',
+    'persona', 'agent-instructions', 'tool-bash', 'tool-pwsh', 'tool-fs', 'tool-fs-search',
     'tool-jobs', 'skill-filesystem', 'tool-skill', 'command-goal', 'tool-goal',
     'planning', 'compaction', 'delegation', 'tool-ask-user', 'tool-todo', 'tool-web', 'present',
     'tool-plugin-manager', 'prompt-config-engine',
@@ -61,7 +59,7 @@ test('ptc 使用官方 alpha.4 呈现与 delegation 变体，不重复挂 promot
   const rows = rowsOf('ptc')
   const ids = idsOf(rows)
   assert.deepEqual(ids, [
-    'persona', 'tool-bash', 'tool-pwsh', 'tool-fs', 'tool-fs-search',
+    'persona', 'agent-instructions', 'tool-bash', 'tool-pwsh', 'tool-fs', 'tool-fs-search',
     'tool-jobs', 'skill-filesystem', 'tool-skill', 'command-goal', 'tool-goal',
     'planning', 'compaction', 'delegation', 'tool-ask-user', 'tool-todo', 'tool-web',
     'tool-presentation', 'present', 'tool-plugin-manager', 'prompt-config-engine',
@@ -76,7 +74,7 @@ test('ptc 使用官方 alpha.4 呈现与 delegation 变体，不重复挂 promot
 test('cordis 基础行顺序对齐官方 Cordis，但不再复制 tool-cordis（避免全局 provider 重复注册）', () => {
   const ids = idsOf(rowsOf('cordis'))
   assert.deepEqual(ids, [
-    'persona', 'tool-bash', 'tool-pwsh', 'tool-fs', 'tool-fs-search',
+    'persona', 'agent-instructions', 'tool-bash', 'tool-pwsh', 'tool-fs', 'tool-fs-search',
     'tool-jobs', 'command-goal', 'tool-goal', 'planning', 'compaction', 'delegation',
     'tool-ask-user', 'tool-todo', 'tool-web', 'skill-filesystem', 'tool-skill', 'present',
     'tool-plugin-manager', 'prompt-config-engine',

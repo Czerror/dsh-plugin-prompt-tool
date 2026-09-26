@@ -4,11 +4,8 @@
  * 引擎侧的位置/晋升/受众算法不在这里复制。
  */
 
-/**
- * 单个指令文件正文上限（与官方 `dsh-agent-instructions` 的 `maxSourceBytes` 缺省值对齐：
- * 官方能读的文件，插件接管后也必须能读，否则移除官方行等于让大文件静默不再注入）。
- */
-export const MAX_INSTRUCTION_FILE_BYTES = 1024 * 1024
+/** 单个指令文件正文上限（与官方指令行的 maxBytes 基线对齐；读写限制一致）。 */
+export const MAX_INSTRUCTION_FILE_BYTES = 64 * 1024
 
 export const INSTRUCTION_FILE_STATUSES = ['ready', 'missing', 'unreadable', 'too-large'] as const
 
@@ -81,22 +78,12 @@ export interface InstructionFileWriteResult {
  * 会话 ID 或任意客户端路径。**每个探测到的文件默认参与注入**，由卡片开关逐个关闭；
  * 预设仍挂官方指令行时整体不参战——那条由装配事实（协调器）决定，不由本策略决定。
  */
-/** 注入形态：全文注入 / 只提示路径（模型按需自读）。 */
-export const INSTRUCTION_MODES = ['full', 'hint'] as const
-
-export type InstructionMode = (typeof INSTRUCTION_MODES)[number]
-
 export interface InstructionPolicyValues {
   order: number
   position: string
   promotion: string
   audience: string | null
   modelScope: string
-  /**
-   * 注入形态（ADR-0005）：`full` = 正文 literal 注入；`hint` = 只给路径提示，
-   * 模型按需自读。官方指令行装配时由劫持层按此改写官方消息，未装配时由插件自行注入。
-   */
-  mode: InstructionMode
 }
 
 export interface InstructionPolicyFileOverride extends Partial<InstructionPolicyValues> {
