@@ -143,8 +143,9 @@ test('官方目录式搜索、可折叠分组与标题右侧预设选择；不�
   assert.doesNotMatch(html, /role="tablist"|role="tabpanel"/)
   assert.ok(html.indexOf('搜索工具') < html.indexOf('当前会话工具'))
   assert.match(html, /current-session/)
-  // 副标题只承载数量：加载中计数未知时整行不渲染（底部说明仍保留 generation 措辞）。
-  assert.doesNotMatch(html, /class="toolGroupSub"/)
+  // 计数与标题同行、用绿色胶囊呈现；计数未知（加载中）时整块不渲染。
+  assert.doesNotMatch(html, /toolGroupSub/)
+  assert.match(read('src/client/features/tools/ToolSurfaceView.tsx'), /<StatusBadge tone="success" label=\{t\('tools\.surface\.sub\.count', \{ count \}\)\} \/>/)
   assert.match(html, /不会自动 resume 会话/)
   assert.match(html, /刷新预设列表/)
   const preset = render(ToolSurfaceView, { presetId: 'next-preset', label: '预设工具能力', t })

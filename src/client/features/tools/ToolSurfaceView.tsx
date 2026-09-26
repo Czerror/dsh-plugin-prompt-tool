@@ -75,9 +75,9 @@ function ToolSurfaceContent(props: ToolSurfaceProps): ReactNode {
       }}>
         <IconChevronDownOutlineRegular className={css.toolChevron} aria-hidden="true" /><span>{props.label}</span>
       </button>
+      {count !== undefined && <StatusBadge tone="success" label={t('tools.surface.sub.count', { count })} />}
       <div className={css.toolHeaderAction}>{props.headerAction}</div>
     </div>
-    {count !== undefined && <p className={css.toolGroupSub}>{t('tools.surface.sub.count', { count })}</p>}
     {open && <div className={css.toolGroupBody} id={contentId}>
       {props.children}
       {sourceId.length === 0 ? <p className={css.toolSurfaceHint}>{sessionId !== undefined ? t('tools.surface.noSession') : t('tools.surface.noPreset')}</p> : <>
