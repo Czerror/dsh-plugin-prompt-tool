@@ -57,9 +57,6 @@ export const PARAMS_ZH = {
   'modules.status.emptyAll': '当前预设无已装配的引擎能力；可按需添加模块。',
   'modules.status.emptyFiltered': '当前分类无已装配的引擎能力；可按需添加模块。',
   'modules.status.emptySearch': '没有匹配「{keyword}」的能力模块；提示词配置按各自层级另计。',
-  // 子代理页不提供「仅主对话」能力的创建与卡片：引导到实例级策略能力卡。
-  'modules.subagentScopeHint': '子代理工具面由「subagent-tool-policy」能力管理，可在工具链层的设置区创建。',
-  'modules.subagentEmptyHint': '子代理页不显示「仅主对话」的引擎能力；子代理工具面请启用「subagent-tool-policy」能力。',
   // 共享设置区的能力参数分组标题（按真实能力 card 分组，不另抄键表）。
   'modules.group.str-replace-editor': '编辑器',
   'modules.group.tool-config-engine': '工具配置',
@@ -127,9 +124,6 @@ export const PARAMS_EN: Record<keyof typeof PARAMS_ZH, string> = {
   'modules.status.emptyAll': 'This preset has no mounted engine capability; add modules as needed.',
   'modules.status.emptyFiltered': 'No mounted engine capability in this category; add modules as needed.',
   'modules.status.emptySearch': 'No capability module matches "{keyword}"; prompt configs are counted per layer.',
-  // Subagent page omits main-session-only capabilities and points at the per-instance policy capability card.
-  'modules.subagentScopeHint': 'The subagent tool surface is managed by the "subagent-tool-policy" capability, created in the tool-pipeline layer settings.',
-  'modules.subagentEmptyHint': 'Main-session-only engine capabilities are not shown on the subagent page; enable the "subagent-tool-policy" capability for the subagent tool surface.',
   'modules.group.str-replace-editor': 'Editor',
   'modules.group.tool-config-engine': 'Tool config',
   'modules.group.subagent-delegation': 'Subagent delegation',

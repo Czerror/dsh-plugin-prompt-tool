@@ -301,15 +301,15 @@ test('子代理页使用现存能力并保留正确入口提示', () => {
   // 被排除的能力连参数一起排除，未排除的能力正常进入本层设置内容。
   assert.deepEqual(layerParamCards(active, 'tool-pipeline', ['str-replace-editor']), [])
   assert.deepEqual(layerParamCards({ ...active, moduleFacts: { ...active.moduleFacts, effectiveModules: ['filesystem-editor', 'tool-config-engine'] } }, 'tool-pipeline', ['str-replace-editor']), ['tool-config-engine'])
-  assert.ok(html.includes(t('modules.subagentScopeHint')), '替代入口说明仍随页面提示渲染')
-  // 空装配 + 非 all 视图（页面 showStatus 分支）时给出去哪里授权的说明
-  // （emptyHint 被真正消费，而不是只传了 prop）。
+  // 被排除的能力不再附带任何替位说明（用户 2026-09-27 判定冗余）。
   const empty = render(SubagentPage, {
     t,
     store: { ...active, moduleFacts: { ...active.moduleFacts, effectiveModules: [], declaredModules: [] } },
     browse: { viewFilter: 'pre-step' },
   })
-  assert.ok(empty.includes(t('modules.subagentEmptyHint').slice(0, 12)), '空清单时渲染替代入口说明')
+  assert.doesNotMatch(html + empty, /subagent-tool-policy/)
+  assert.equal(PROMPT_TOOL_DICTS.zh['modules.subagentScopeHint'], undefined, '替位说明词条已删除')
+  assert.equal(PROMPT_TOOL_DICTS.zh['modules.subagentEmptyHint'], undefined, '空清单说明词条已删除')
   // 说明文字挂在能力卡列表侧，不得塞进工具栏按钮行（曾导致按钮偏移）。
   const modulesSource = read('features/modules/EngineModuleList.tsx')
   const actionsBlock = modulesSource.slice(0, modulesSource.indexOf('export function EnginePromptDefaultsCard'))

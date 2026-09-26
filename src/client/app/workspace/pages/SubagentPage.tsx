@@ -75,8 +75,6 @@ export const SubagentPage = memo(function SubagentPage(props: { store: PromptToo
     onCreated: revealCapability,
     toolEditor: toolEditor.content,
     excludeCapabilities: mainSessionOnly,
-    moduleHint: t('modules.subagentScopeHint'),
-    moduleEmptyHint: t('modules.subagentEmptyHint'),
   })
   return (
     <>

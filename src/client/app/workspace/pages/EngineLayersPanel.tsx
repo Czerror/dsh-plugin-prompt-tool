@@ -250,8 +250,6 @@ export interface EngineLayerSlotsInput {
   onCreated?: (capabilityId: string) => void
   /** 本页既不创建也不渲染的能力（受众视图差异，如仅主对话生效的能力）。 */
   excludeCapabilities?: readonly string[]
-  moduleHint?: string
-  moduleEmptyHint?: string
 }
 
 /**
@@ -268,10 +266,7 @@ export function engineLayerSlots(input: EngineLayerSlotsInput): EngineLayerSlots
   const moduleCards = (
     <>
       {/* 独立卡片（能力卡、单例参数卡与资产卡）已全部退场：参数、装配状态、资产编辑器
-          都由本层实例卡内的设置区承载。页面级提示仍在这里渲染，不进工具栏按钮行。 */}
-      {input.moduleHint !== undefined && <p className={ui.configFieldHint}>{input.moduleHint}</p>}
-      {input.moduleEmptyHint !== undefined && !ENGINE_CAPABILITIES.some(({ id }) => !(input.excludeCapabilities ?? []).includes(id) && isEngineCapabilityPresent(id, store.moduleFacts))
-        && <p className={ui.configFieldHint} role="status">{input.moduleEmptyHint}</p>}
+          都由本层实例卡内的设置区承载，这里只剩聚焦锚。 */}
       <LayerSettingsFocus layer={input.focusCapability?.layer} token={input.focusCapability?.token ?? 0} />
     </>
   )
