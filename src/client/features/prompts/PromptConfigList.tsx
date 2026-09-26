@@ -375,10 +375,11 @@ export function PromptConfigList(props: PromptConfigListProps): ReactNode {
               ...allLayers.map((item) => ({ value: item, label: t('configs.view.layer', { layer: translateLabel(t, LAYER_LABEL_KEYS, item) }), group: t('configs.view.insertion') })),
             ]} onChange={changeViewFilter} />}
           <span className={styles.batchControls}>
-            <button type="button" className={styles.pillButton} disabled={batchConfigs.length === 0 || props.readOnlyReason !== undefined}
-              onClick={() => batchSetEnabled(true)}>{t('configs.batch.enableVisible', { count: batchConfigs.length })}</button>
-            <button type="button" className={styles.pillButton} disabled={batchConfigs.length === 0 || props.readOnlyReason !== undefined}
-              onClick={() => batchSetEnabled(false)}>{t('configs.batch.disableVisible', { count: batchConfigs.length })}</button>
+            <button type="button" className={styles.pillButton} data-batch="enable" disabled={batchConfigs.length === 0 || props.readOnlyReason !== undefined}
+              onClick={() => batchSetEnabled(true)}>{t('configs.batch.enableVisible')}</button>
+            {/* 停用是可逆的反向操作，但仍按危险操作呈现：复用删除按钮的描边染红形态（data-danger）。 */}
+            <button type="button" className={styles.pillButton} data-danger data-batch="disable" disabled={batchConfigs.length === 0 || props.readOnlyReason !== undefined}
+              onClick={() => batchSetEnabled(false)}>{t('configs.batch.disableVisible')}</button>
           </span>
         </div>
         {props.readOnlyReason !== undefined && <p className={styles.actionHint}>{props.readOnlyReason} <button type="button" className={styles.pillButton} onClick={props.onChoosePreset}>{t('configs.chooseEditable')}</button></p>}

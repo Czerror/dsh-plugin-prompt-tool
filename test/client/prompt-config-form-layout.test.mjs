@@ -322,19 +322,19 @@ test('列表批量启停跳过真实投影，局部覆盖和普通配置仍按�
   let patched
   const props = { t, meta, configs, onPatchConfigs(next) { patched = next }, onSaveConfigs: async () => true, onNotice() {} }
   const tree = treeOf(PromptConfigList, props)
-  const disable = findElement(tree, (element) => element.type === 'button' && element.props.children === t('configs.batch.disableVisible', { count: 2 }))
+  const disable = findElement(tree, (element) => element.type === 'button' && element.props.children === t('configs.batch.disableVisible'))
   assert.equal(disable.props.disabled, false)
   disable.props.onClick()
   assert.equal(patched[0], configs[0], '投影启用字段不改写')
   assert.deepEqual(patched.map((config) => config.enabled), [true, false, false])
   patched = undefined
   const readonly = treeOf(PromptConfigList, { ...props, readOnlyReason: '只读' })
-  const locked = findElement(readonly, (element) => element.type === 'button' && element.props.children === t('configs.batch.disableVisible', { count: 2 }))
+  const locked = findElement(readonly, (element) => element.type === 'button' && element.props.children === t('configs.batch.disableVisible'))
   assert.equal(locked.props.disabled, true)
   locked.props.onClick()
   assert.equal(patched, undefined)
   const settingsOnly = treeOf(PromptConfigList, { ...props, keyword: 'bootstrapMaxTokens', matchesLayerSettings: () => true })
-  const none = findElement(settingsOnly, (element) => element.type === 'button' && element.props.children === t('configs.batch.disableVisible', { count: 0 }))
+  const none = findElement(settingsOnly, (element) => element.type === 'button' && element.props.children === t('configs.batch.disableVisible'))
   assert.equal(none.props.disabled, true, '仅因层设置搜索保留的卡不进入批量操作集合')
 })
 

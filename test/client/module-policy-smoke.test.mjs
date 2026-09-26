@@ -661,7 +661,7 @@ test('浏览器：复审修复覆盖创建、搜索、只读和折叠的生产�
       await openSettings('pipe-a', 'tool-pipeline')
       await waitFor(`document.querySelector('[data-layer-param-group="str-replace-editor"]') !== null`)
       assert.equal(await evaluate(`window.store.fields.promptConfigs[0].enabled`), true)
-      assert.equal(await evaluate(`[...document.querySelectorAll('button')].find(b=>b.textContent.startsWith('停用可见'))?.disabled`), true)
+      assert.equal(await evaluate(`document.querySelector('[data-batch="disable"]')?.disabled`), true)
       await evaluate(`document.querySelector('[data-config-id="pipe-a"] header button[aria-expanded]').click()`)
     }
     await evaluate(`window.store.patch({promptConfigs:[]})`)

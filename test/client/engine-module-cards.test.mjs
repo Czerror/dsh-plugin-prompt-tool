@@ -733,6 +733,6 @@ test('所有参数设置只内嵌真实配置卡，空层即使有设置也不�
   assert.doesNotMatch(render(PromptConfigList, base({ configs, scope: 'subagent' })), /data-layer-config=|data-config-id=/, '受众不可见时也不补卡')
   assert.doesNotMatch(render(PromptConfigList, base({ configs, scope: 'main', keyword: '不存在' })), /data-layer-config=/, '搜索隐藏实例时不额外生成设置卡')
   const nodes = tree(PromptConfigList, base({ configs }))
-  find(nodes, (node) => node.type === 'button' && node.props.children === t('configs.batch.disableVisible', { count: 1 })).props.onClick()
+  find(nodes, (node) => node.type === 'button' && node.props.children === t('configs.batch.disableVisible')).props.onClick()
   assert.deepEqual(patches, [[{ ...configs[0], enabled: false }]], '批量操作只处理真实规则')
 })
