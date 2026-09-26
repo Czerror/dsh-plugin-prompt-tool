@@ -5,7 +5,7 @@
 ## 全局规则
 
 - 思维链和回答使用简体中文。
-- 所有 shell 指令使用 pwsh：D:\AI\workspase\PowerShell\7\pwsh.exe；禁止调用系统 Windows PowerShell 5.1。
+- 所有 shell 指令使用 pwsh：D:\AI\PowerShell\7\pwsh.exe；禁止调用系统 Windows PowerShell 5.1。
 - 只能使用 Codex 内置编辑器直接编辑文件；禁止用脚本做文本替换。
 - 只有用户明确要求“查经验/recall/记一下/remember”等记忆操作时，才读取 mnemon 技能并执行记忆读写；不得保存 token、密码、密钥等秘密。
 - 不修改 DeepSeek Harness 源码仓库；插件只通过本仓库的 cordis.patch.yml、package.json#dsh、已发布的 @deepseek-ai/* 包和 DSH profile 装配。
