@@ -62,6 +62,5 @@ export function ToolsPreviewPage({ api, presetId, t, browse, onNavigate, onReady
         {!loading && !error && presets.length === 0 && <span className={css.toolSurfaceHint}>{t('tools.noPresets')} {onNavigate && <button type="button" className={css.toolRefresh} onClick={() => onNavigate('presets')}>{t('configs.chooseEditable')}</button>}</span>}
       </div>
     </ToolSurfaceView>
-    <p className={css.toolSurfaceHint}>{t('tools.footnote')}</p>
   </section>
 }

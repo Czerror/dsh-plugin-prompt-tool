@@ -77,7 +77,7 @@ function ToolSurfaceContent(props: ToolSurfaceProps): ReactNode {
       </button>
       <div className={css.toolHeaderAction}>{props.headerAction}</div>
     </div>
-    <p className={css.toolGroupSub}>{sessionId !== undefined ? t('tools.surface.sub.session') : t('tools.surface.sub.preset')}{count !== undefined && t('tools.surface.sub.count', { count })}</p>
+    {count !== undefined && <p className={css.toolGroupSub}>{t('tools.surface.sub.count', { count })}</p>}
     {open && <div className={css.toolGroupBody} id={contentId}>
       {props.children}
       {sourceId.length === 0 ? <p className={css.toolSurfaceHint}>{sessionId !== undefined ? t('tools.surface.noSession') : t('tools.surface.noPreset')}</p> : <>
