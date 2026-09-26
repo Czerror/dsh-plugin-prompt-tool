@@ -68,8 +68,6 @@ export const ConfigListWithTemplates = memo(function ConfigListWithTemplates(pro
       commonCards={props.commonCards}
       fieldDrafts={store.editorDrafts?.fields}
       draftScope={fields.presetTemplate}
-      notice={store.notice}
-      noticeKind={store.noticeKind}
       readOnlyReason={!fields.writePreset ? t('configs.readOnly.disabled') : store.moduleFacts?.editable !== true ? t('configs.readOnly.system') : undefined}
       onCreate={props.onCreate}
       onChoosePreset={props.onChoosePreset}

@@ -20,12 +20,10 @@ export interface PromptConfigListProps {
   t: PromptToolTranslate
   meta: EngineMeta
   configs: PromptConfigDraft[]
-  browse?: { filter: string; expanded?: string; feedback?: { kind: 'ok' | 'error'; message: string } }
+  browse?: { filter: string; expanded?: string }
   fieldDrafts?: ComponentProps<typeof PromptConfigCard>['fieldDrafts']
   draftScope?: string
   commonCards?: ReactNode
-  notice?: string
-  noticeKind?: 'ok' | 'error'
   readOnlyReason?: string
   onCreate?: () => void
   onChoosePreset?: () => void
@@ -90,19 +88,10 @@ export function PromptConfigList(props: PromptConfigListProps): ReactNode {
   }
   const [createdId, setCreatedId] = useState<string>()
   const busyRef = useRef(false)
-  const [feedback, setFeedback] = useState<{ kind: 'ok' | 'error'; message: string } | undefined>(props.browse?.feedback)
-  const lastNotice = useRef(props.notice)
+  // 状态反馈统一走全局通知（渲染在工作台标题行），本页不再自留一份 feedback。
   const report = (kind: 'ok' | 'error', message: string): void => {
-    setFeedback({ kind, message })
     onNotice(kind, message)
   }
-  useEffect(() => {
-    if (props.notice && props.notice !== lastNotice.current) setFeedback({ kind: props.noticeKind ?? 'ok', message: props.notice })
-    lastNotice.current = props.notice
-  }, [props.notice, props.noticeKind])
-  useEffect(() => {
-    if (props.browse !== undefined) props.browse.feedback = feedback
-  }, [feedback, props.browse])
   useEffect(() => {
     if (props.browse !== undefined) props.browse.expanded = expanded
   }, [expanded, props.browse])
@@ -204,7 +193,7 @@ export function PromptConfigList(props: PromptConfigListProps): ReactNode {
       setErrors([])
       const saved = await onSaveConfigs(configs)
       if (saved) report('ok', t('configs.notice.savedSnapshot'))
-      else setFeedback({ kind: 'error', message: t('configs.notice.saveIncomplete') })
+      else report('error', t('configs.notice.saveIncomplete'))
       return saved
     } catch (error) {
       report('error', t('configs.notice.saveFailed', { reason: errorMessage(error) }))
@@ -392,10 +381,8 @@ export function PromptConfigList(props: PromptConfigListProps): ReactNode {
               onClick={() => batchSetEnabled(false)}>{t('configs.batch.disableVisible', { count: batchConfigs.length })}</button>
           </span>
         </div>
-        <p className={styles.actionHint}>{t('configs.saveScope')}</p>
         {props.readOnlyReason !== undefined && <p className={styles.actionHint}>{props.readOnlyReason} <button type="button" className={styles.pillButton} onClick={props.onChoosePreset}>{t('configs.chooseEditable')}</button></p>}
         {keyword.length > 0 && <p className={styles.actionHint}>{t('configs.searchSorting')}</p>}
-        {feedback !== undefined && <p className={feedback.kind === 'error' ? styles.noticeError : styles.actionFeedback} role="status">{feedback.message}</p>}
         {hiddenCreated && <p className={styles.actionHint}>{t('configs.createdHidden')} <button type="button" className={styles.pillButton} onClick={() => {
           clearFilters()
           props.onShowCreated?.()

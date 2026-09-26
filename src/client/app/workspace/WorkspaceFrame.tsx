@@ -71,6 +71,15 @@ export function WorkspaceFrame(props: {
           <span className={css.brandLogo} aria-hidden="true">⌁</span>
           <h1>{t('app.title')}</h1>
         </div>
+        {/* 状态反馈住在标题行：内容区不再为它留行；长文本单行截断，title 给全文。
+            加载失败时这里与内容区的重试块并存——同一条消息，标题行先让人看见错误。 */}
+        {store.notice !== '' && (
+          <p className={clsx(css.mastheadNotice, store.noticeKind === 'error' && css.mastheadNoticeError)} role="status" data-workspace-notice="true" title={store.notice}>
+            {store.noticePill === undefined
+              ? store.notice
+              : <><StatusBadge tone="success" label={store.noticePill} /> {store.notice}</>}
+          </p>
+        )}
         <div className={css.statusCluster}>
           <StatusDot tone={store.loading ? 'neutral' : 'success'} />
           <span>{store.loading
@@ -111,14 +120,6 @@ export function WorkspaceFrame(props: {
                       </div>
                     </div>
                   ) : props.children}
-                  {store.notice && !loadFailed && props.page !== 'features' && props.page !== 'subagent' && (
-                    <p className={clsx(ui.notice, store.noticeKind === 'error' && ui.noticeError)} role="status">
-                      {/* 会话名前导胶囊（绿色）：与消息同一条 live region，只播报一次。 */}
-                      {store.noticePill === undefined
-                        ? store.notice
-                        : <><StatusBadge tone="success" label={store.noticePill} /> {store.notice}</>}
-                    </p>
-                  )}
                 </>
               )}
             </div>

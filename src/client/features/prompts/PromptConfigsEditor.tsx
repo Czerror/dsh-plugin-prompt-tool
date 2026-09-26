@@ -23,7 +23,7 @@ export { SOURCE_FORMS, SOURCE_KINDS, fieldPolicyFor } from './prompt-config-poli
 
 export type { PromptConfigTemplateEntry } from '../../prompt-tool-types.ts'
 
-export interface PromptConfigsEditorProps extends Pick<PromptConfigListProps, 'browse' | 'fieldDrafts' | 'draftScope' | 'notice' | 'noticeKind' | 'readOnlyReason' | 'onChoosePreset' | 'onCreate' | 'createdHidden' | 'onShowCreated'> {
+export interface PromptConfigsEditorProps extends Pick<PromptConfigListProps, 'browse' | 'fieldDrafts' | 'draftScope' | 'readOnlyReason' | 'onChoosePreset' | 'onCreate' | 'createdHidden' | 'onShowCreated'> {
   t: PromptToolTranslate
   meta: EngineMeta
   configs: PromptConfigDraft[]
@@ -153,8 +153,6 @@ export function PromptConfigsEditor(props: PromptConfigsEditorProps): ReactNode 
         browse={props.browse}
         fieldDrafts={props.fieldDrafts}
         draftScope={props.draftScope}
-        notice={props.notice}
-        noticeKind={props.noticeKind}
         readOnlyReason={props.readOnlyReason}
         onChoosePreset={props.onChoosePreset}
         onCreate={props.onCreate}

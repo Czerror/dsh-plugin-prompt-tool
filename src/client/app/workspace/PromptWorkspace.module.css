@@ -43,6 +43,10 @@
   background: var(--dsw-alias-bg-base);
 }
 
+/* 标题行的状态反馈：单行截断——长文本若换行会把 masthead 撑高，破坏与官方会话头的对齐。 */
+.mastheadNotice { min-width: 0; max-width: 42%; flex: 0 1 auto; margin: 0; color: var(--dsw-alias-label-secondary); font: var(--dsw-font-xxs-12); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mastheadNoticeError { color: var(--dsw-alias-state-error-primary); }
+
 .brand { display: flex; min-width: 0; flex: 1 1 160px; align-items: center; flex-wrap: wrap; gap: 8px; }
 .brandLogo { display: grid; width: 28px; height: 28px; flex: none; place-items: center; color: var(--dsw-alias-label-secondary); font: var(--dsw-font-base-strong-16); }
 .brand h1 { margin: 0; font: var(--dsw-font-base-strong-16); overflow-wrap: anywhere; }
