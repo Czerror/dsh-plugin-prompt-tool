@@ -370,7 +370,8 @@ test('T21 不可用文件：曾注入过发一次失效通知，从未注入过�
 
   const bigDir = join(ws, 'big-case')
   mkdirSync(bigDir, { recursive: true })
-  writeFileSync(join(bigDir, 'AGENTS.md'), 'x'.repeat(64 * 1024 + 1), 'utf8')
+  // 上限已对齐官方 maxSourceBytes 缺省值（1 MiB）：这里写到刚好超过它。
+  writeFileSync(join(bigDir, 'AGENTS.md'), 'x'.repeat(1024 * 1024 + 1), 'utf8')
   const bigId = agentsFileId(join(bigDir, 'AGENTS.md'))
   const big = await step(harness, agentAt(bigDir, [injectedEvent(bigId, rev16('OLD\n'))]))
   assert.match(bodyOf(fileMessages(big)[0]), /no longer available/)
@@ -688,15 +689,19 @@ test('E2E 助手删掉文件：曾注入过 → 只发一次失效通知', async
   assert.match(textsOf({ messages: gone }).join('\n'), /no longer available/)
 })
 
-test('E2E 负责人冲突：standard 模板仍挂着官方指令行 → 文件正文不注入', async () => {
+test('E2E 负责人冲突：预设仍挂着官方指令行 → 独立来源让位，文件正文不注入', async () => {
   const workspace = join(workspaceRoot, 'workspace-3')
   mkdirSync(join(workspace, '.git'), { recursive: true })
   writeFileSync(join(workspace, 'AGENTS.md'), 'CONFLICT RULES\n', 'utf8')
   writeFileSync(e2ePolicyFile, 'schemaVersion: 1\nenabled: true\n', 'utf8')
   const { presetDir, mountDir } = materialize('e2e-standard', 'pt-standard')
+  // 自带模板已不再装配官方指令行；这里补回去，模拟用户自己导入的官方预设——
+  // 官方行仍在时插件必须让位（同一正文只由一方注入）。
+  const composed = join(mountDir, 'agent.cordis.yml')
+  writeFileSync(composed, `${readFileSync(composed, 'utf8')}\n- id: agent-instructions\n  name: '@deepseek-ai/dsh-agent-instructions'\n  config:\n    maxBytes: 65536\n`, 'utf8')
   const agent = makeAgent(workspace)
   const app = await mountPreset(presetDir, mountDir, agent)
 
   const decision = await dispatch(app, agent)
-  assert.deepEqual(instructionMessages(decision), [], '官方指令行仍在 → 独立来源不注入')
+  assert.deepEqual(instructionMessages(decision), [], '官方指令行仍在 → 独立来源让位')
 })

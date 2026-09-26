@@ -283,6 +283,15 @@ function assertTargetAssets(sourcePreset, targetPreset) {
   }
 }
 
+/**
+ * 官方行里由插件自己接管、因此**故意不装配**的行（ADR-0005）。
+ * `agent-instructions` 的注入由 prompt-tool 的 pre-step 协调器按指令文件卡负责（位置、
+ * 顺序、受众、全文/路径提示都由卡片决定）；再装官方行会让同一批文件被两方注入——历史上
+ * 777b1ff 时期就是这个状态，也是 11a9e73 引入「官方优先让位」的原因。
+ * 用户自己导入的官方预设仍带该行，此时协调器按装配事实让位，不重复注入。
+ */
+const PLUGIN_OWNED_ROWS = new Set(['agent-instructions'])
+
 function assertTargetModules(sourcePreset, targetPreset, tmpDir) {
   const specFile = join(root, 'preset', targetPreset, 'preset.yml')
   let spec
@@ -302,7 +311,7 @@ function assertTargetModules(sourcePreset, targetPreset, tmpDir) {
   if (duplicate.length > 0) {
     throw new Error(`${targetPreset}: duplicate modules: ${duplicate.join(', ')}`)
   }
-  const expected = expectedTargetModules(sourcePreset)
+  const expected = expectedTargetModules(sourcePreset).filter((name) => !PLUGIN_OWNED_ROWS.has(name))
   if (actual.length !== expected.length || actual.some((name, index) => name !== expected[index])) {
     throw new Error(`${targetPreset}: modules do not match official ${sourcePreset} order (expected ${JSON.stringify(expected)}, got ${JSON.stringify(actual)})`)
   }

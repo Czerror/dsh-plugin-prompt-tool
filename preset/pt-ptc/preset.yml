@@ -5,7 +5,6 @@ description: 功能完整的编码 Agent，但默认不提供 workflow 工具；
 version: 1.0.0
 engineCompat: ">=0.4.2"
 modules:
-  - agent-instructions
   - tool-bash
   - tool-pwsh
   - tool-fs

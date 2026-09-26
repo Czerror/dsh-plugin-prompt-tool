@@ -4,8 +4,11 @@
  * 引擎侧的位置/晋升/受众算法不在这里复制。
  */
 
-/** 单个指令文件正文上限（与官方指令行的 maxBytes 基线对齐；读写限制一致）。 */
-export const MAX_INSTRUCTION_FILE_BYTES = 64 * 1024
+/**
+ * 单个指令文件正文上限（与官方 `dsh-agent-instructions` 的 `maxSourceBytes` 缺省值对齐：
+ * 官方能读的文件，插件接管后也必须能读，否则移除官方行等于让大文件静默不再注入）。
+ */
+export const MAX_INSTRUCTION_FILE_BYTES = 1024 * 1024
 
 export const INSTRUCTION_FILE_STATUSES = ['ready', 'missing', 'unreadable', 'too-large'] as const
 
