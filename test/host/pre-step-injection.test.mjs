@@ -205,7 +205,22 @@ const registerPreset = (harness, configs, officialInstructions = false) =>
     officialInstructions,
   })
 
-test('T15 按会话工作区探测：全局 + 项目文件各一张，字段来自策略 defaults', async () => {
+test('T15 策略缺失（默认关闭）不注入文件正文', async () => {
+  const harness = coordinatorFor({ policyFile: newPolicyFile() })
+  const decision = await step(harness, agentAt(nested))
+  assert.equal(fileMessages(decision).length, 0, '缺省关闭时没有文件卡参战')
+  assert.deepEqual(decision.messages.map((message) => message.id), ['task-1'])
+  assert.deepEqual(harness.warnings, [])
+})
+
+test('T15 显式 enabled=false 时不注入文件正文', async () => {
+  const harness = coordinatorFor({ policyFile: policyWith('schemaVersion: 1\nenabled: false\n') })
+  const decision = await step(harness, agentAt(nested))
+  assert.deepEqual(decision.messages.map((message) => message.id), ['task-1'])
+  assert.deepEqual(harness.warnings, [])
+})
+
+test('T15 enabled 后按会话工作区探测：全局 + 项目文件各一张，字段来自策略 defaults', async () => {
   const file = policyWith('schemaVersion: 1\nenabled: true\ndefaults:\n  order: 12\n  position: before-all\n')
   const harness = coordinatorFor({ policyFile: file })
   const decision = await step(harness, agentAt(nested))
@@ -671,7 +686,7 @@ test('E2E 物化 preset + 引擎 + 协调器：按会话工作区注入文件正
   assert.notEqual(updated[0].source.plugin, injected[0].source.plugin, '新版本身份与旧版本不同')
 })
 
-test('E2E 助手删掉文件：曾注入过 → 只发一次失效通知', async () => {
+test('E2E 助手删掉文件：曾注入过 → 只发一次失效通知；策略关闭 → 不再注入', async () => {
   const workspace = join(workspaceRoot, 'workspace-2')
   mkdirSync(join(workspace, '.git'), { recursive: true })
   writeFileSync(join(workspace, 'AGENTS.md'), 'TEMP RULES\n', 'utf8')
@@ -686,6 +701,10 @@ test('E2E 助手删掉文件：曾注入过 → 只发一次失效通知', async
   const gone = instructionMessages(await dispatch(app, agent))
   assert.equal(gone.length, 1, '已注入过的文件消失 → 一次失效通知')
   assert.match(textsOf({ messages: gone }).join('\n'), /no longer available/)
+
+  writeFileSync(e2ePolicyFile, 'schemaVersion: 1\nenabled: false\n', 'utf8')
+  const off = await dispatch(app, agent)
+  assert.deepEqual(instructionMessages(off), [], '策略关闭 → 文件来源整体不参战')
 })
 
 test('E2E 负责人冲突：standard 模板仍挂着官方指令行 → 文件正文不注入', async () => {

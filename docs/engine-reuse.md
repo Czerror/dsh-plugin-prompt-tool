@@ -197,9 +197,8 @@
 正文永远在用户自己的指令文件里；独立来源只是「按会话工作区现场探测 + 独立策略」的第二类
 pre-step 来源：
 
-- 候选资格 = 文件可读且非空 + 独立策略（`$DSH_HOME/.prompt-tool/instructions.yml`）未被
-  逐文件关闭（缺省参与注入，见 [ADR-0004](adr/0004-instruction-injection-per-file.md)）+
-  该 `(fileId, revision, surface epoch)` 身份尚未出现在当前可见
+- 候选资格 = 文件可读且非空 + 独立策略（`$DSH_HOME/.prompt-tool/instructions.yml`，缺省
+  `enabled: false`）启用 + 该 `(fileId, revision, surface epoch)` 身份尚未出现在当前可见
   上下文里。可见面以 `session.deriveMessages()` 为准，缺失时回退「持久日志里最后一次成功
   `compaction/end` 之后的消息」。
 - 因此：同版本已可见不重复注入；内容变化在下一个合适 pre-step 注入一次新版本；成功压缩后

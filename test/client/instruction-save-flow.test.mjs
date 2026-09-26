@@ -32,6 +32,7 @@ const { MainSessionPage } = await import('../../src/client/app/workspace/pages/M
 const { ConfigListWithTemplates } = await import('../../src/client/app/workspace/pages/ConfigListWithTemplates.tsx')
 const { PromptConfigsEditor } = await import('../../src/client/features/prompts/PromptConfigsEditor.tsx')
 const { PromptConfigList } = await import('../../src/client/features/prompts/PromptConfigList.tsx')
+const { ToggleRow } = await import('../../src/client/ui/ToggleRow.tsx')
 const { PromptConfigCard } = await import('../../src/client/features/prompts/PromptConfigCard.tsx')
 const { PromptConfigForm } = await import('../../src/client/features/prompts/PromptConfigForm.tsx')
 const { FormField } = await import('../../src/client/ui/FormField.tsx')
@@ -676,6 +677,83 @@ test('R7：保存全部汇总失败，保留已成功文件/预设及失败草�
     const presetWrites = requests.filter(({ endpoint }) => endpoint === 'param-overrides')
     assert.deepEqual(presetWrites[0].body.promptConfigs.map(({ id }) => id), ['preset-card'])
     assert.equal(requests.filter(({ endpoint }) => endpoint === 'bootstrap').length, 1)
+  } finally { restore() }
+})
+
+test('R5：实际工作台来源总开关写顶层 enabled，不暗改文件开关或官方负责人', async () => {
+  for (const Page of [MainSessionPage, ConfigListWithTemplates]) {
+    const requests = []
+    let policy = { enabled: false, defaults: policyValues(), files: {} }
+    let revision = 'pol-1'
+    const restore = installFetch(requests, {
+      bootstrap: bootstrapPayload({ ownerOfficialInstructions: true }),
+      instructionsPolicy: ({ policy: patch }) => {
+        if (patch) {
+          policy = { ...policy, ...patch, files: { ...policy.files, ...patch.files } }
+          revision = 'pol-2'
+        }
+        return policyPayload({}, { policy, revision })
+      },
+    })
+    try {
+      const store = mountStore(makeApi(), makeSettings())
+      await store.load()
+      assert.equal(await store.updateInstructionPolicy('f1', { enabled: true }), true)
+      assert.equal(store.getInstructionPolicy().policy.enabled, false, '文件启用不应偷偷开启独立来源')
+      assert.equal(store.getFields().promptConfigs[0].enabled, false)
+      const tree = listFromPage(Page, store)
+      const toggle = findElement(tree, (node) => node.type === ToggleRow && node.props.label === '独立指令文件来源')
+      assert.ok(toggle, '总开关必须从真实页面可达，而不是孤立 store API')
+      assert.equal(toggle.props.checked, false)
+      assert.match(toggle.props.hint, /已关闭.*文件开关不会生效/)
+      assert.match(toggle.props.hint, /官方指令仍负责.*不会接管官方负责人/)
+      assert.equal(await toggle.props.onChange(true), true)
+      assert.deepEqual(requests.at(-1).body, { policy: { enabled: true }, expectedRevision: 'pol-2' })
+      assert.equal(store.getFields().promptConfigs[0].enabled, true)
+      assert.equal(store.getFields().promptConfigs[0].contentOwnerConflict, true)
+      assert.deepEqual(store.getInstructionPool().owner, { officialInstructions: true })
+      assert.ok(requests.every(({ endpoint }) => ['bootstrap', 'instructions-policy'].includes(endpoint)))
+    } finally { restore() }
+  }
+})
+
+test('R5：来源总开关等待写入结果，失败/缺少快照不假成功，读取失败时禁用', async () => {
+  for (const response of [{ ok: false, message: 'denied' }, { ok: true, value: {} }]) {
+    const gate = Promise.withResolvers()
+    const entered = Promise.withResolvers()
+    const restore = installFetch([], {
+      instructionsPolicy: async ({ policy: patch }) => {
+        if (!patch) return policyPayload({}, { policy: { enabled: false, defaults: policyValues(), files: {} } })
+        entered.resolve()
+        await gate.promise
+        return response
+      },
+    })
+    try {
+      const store = mountStore(makeApi(), makeSettings())
+      await store.load()
+      const initial = store.getInstructionPolicy()
+      const toggle = findElement(listFromPage(MainSessionPage, store), (node) => node.type === ToggleRow && node.props.label === '独立指令文件来源')
+      assert.ok(toggle)
+      const saving = toggle.props.onChange(true)
+      await entered.promise
+      assert.equal(store.getInstructionPolicy(), initial, '请求中不得乐观显示已开启')
+      gate.resolve()
+      assert.equal(await saving, false)
+      assert.equal(store.getInstructionPolicy(), initial)
+    } finally { gate.resolve(); restore() }
+  }
+  const requests = []
+  const restore = installFetch(requests, { instructionsPolicy: { ok: false, message: 'unavailable' } })
+  try {
+    const store = mountStore(makeApi(), makeSettings())
+    await store.load()
+    const toggle = findElement(listFromPage(MainSessionPage, store), (node) => node.type === ToggleRow && node.props.label === '独立指令文件来源')
+    assert.ok(toggle)
+    assert.equal(toggle.props.disabled, true)
+    assert.match(toggle.props.hint, /unavailable/)
+    assert.equal(await store.setInstructionSourceEnabled(true), false)
+    assert.equal(requests.filter(({ body }) => body.policy).length, 0)
   } finally { restore() }
 })
 

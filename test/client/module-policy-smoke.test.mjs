@@ -391,6 +391,8 @@ test('浏览器：六层空卡、跨层工具创建、筛选草稿与能力卡�
   const agentsCards = await evaluate(`[...document.querySelectorAll('article')].map((card) => card.textContent).filter((text) => text.includes('AGENTS：'))`)
   assert.equal(agentsCards.length, 2)
   assert.ok(agentsCards.every((text) => text.includes('前置步骤 · 动态填充 · 位置：用户消息后')), '指令文件卡折叠态保留插入点、策略和位置')
+  assert.ok(agentsCards.every((text) => !text.includes('独立指令文件来源')), '来源开关不塞进新的指令文件卡')
+  assert.equal(await evaluate(`document.body.innerText.includes('独立指令文件来源')`), true, '来源开关仍在列表工具栏行')
   await evaluate(`[...document.querySelectorAll('button[aria-expanded]')].find((b) => b.textContent.includes('AGENTS：AGENTS.md')).click()`)
   await waitFor(`document.querySelector('[aria-label="注入内容（空 = 不注入）"]')?.value==='项目指令正文'`)
   assert.equal(await evaluate(`document.querySelector('[aria-label="填充来源"]')?.textContent.includes('指令提示')`), true, '展开后完整读取填充来源')

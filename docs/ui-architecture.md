@@ -415,8 +415,8 @@ JSON bridge 的统一上限为 32 MiB；角色卡原始文件流独立限制为 
 8. 切换预设是事务：先保存当前预设草稿，保存未成功（失败/被拒）即取消切换并保留草稿；切换成功后等 settings 写入与随后的静默 load 完成才返回。切换或首次加载完成前，`loadedPresetRef` 拒绝参数、promptConfigs 与模板变量写盘——旧预设字段不会带新 `presetTemplate` 落盘；重新加载成功应用该预设数据后才恢复写入。官方侧给空白会话切换预设（会话级 select，只改那个会话、不改宿主默认预设）走同一事务的**跟随**变体：读会话投影 `agentPreset`，一致、首次加载未完成、投影所属会话与工作台数据所属会话不同源、目标不在插件管理目录、当前预设仍有未保存草稿或写盘进行中都不动作；不可跟随的 id 只提示一次，提示用绿色胶囊标出是哪个会话（官方 `title` 投影，无标题时退回会话 id 短号），不要求用户对着一个预设 id 猜；跟随时不再 select 会话——会话已经运行在该预设上，重复 select 只会多记一条 `agent-preset/selected` 事件。
 9. 技能清单和策略均不进 settings：单端调用策略走 `/skill-policy`（`name/path/side/enabled/sessionId?`，服务器在同工作区重新校验身份；显式两端操作可用 `scope`），引用走 `/skills-folders`，清单走 `/skills-list`。快照保留 `complete`，空数组是权威空结果；调用声明和当前会话注册状态分别呈现。创建/导入走既有端点；删除提交 `name/path/sessionId?`，确认框与请求使用同一条目，用户根及显式引用根按服务器能力开放回收站删除。契约见 [skills-management.md](skills-management.md)。
 10. 指令文件正文走独立草稿池（`data/instruction-drafts.ts`），不与预设保存队列混用：预设 debounce 自动保存与预设切换一律不带文件正文；焦点离开指令文件卡（或列表「保存全部」）时提交 dirty 文件，成功只把请求时快照记为基线，冲突/失败保留草稿并显示「重新读取」。会话或工作区切换建立新的指令上下文（`instructions.context.contextId` 变化即新上下文）：旧上下文的迟到响应不覆盖当前视图，旧 `contextId` 的保存被服务端 409 拒绝。
-11. 指令负责人事实来自 `/bootstrap` 的 `instructions.owner.officialInstructions`（服务端从 pre-step 协调器观察结果取，`null` = 尚未观察到，不当冲突处理）：`true` 时文件卡就地说明「官方指令行仍装配在本预设里：这个文件本次不注入，卡片开关不会生效」（`contentOwnerConflict` → `card.fileOwnerConflict`），不做「已生效」暗示。
-12. 指令注入没有部署级总开关（[ADR-0004](adr/0004-instruction-injection-per-file.md) 废除）：每个探测到的文件默认参与注入，由卡片开关逐个关闭（`files[fileId].enabled: false`），卡片开关就是唯一闸门。策略载荷与策略文件共用同一个归一化层——已知键按白名单取用并校验取值，未知键一律舍弃（不报错、不进 patch、不写盘），旧文件里残留的顶层 `enabled` 由此在读取时退场、首次写入时被清掉。策略不可读时不参战，不伪装成默认值。
+11. 指令负责人事实来自 `/bootstrap` 的 `instructions.owner.officialInstructions`（服务端从 pre-step 协调器观察结果取，`null` = 尚未观察到，不当冲突处理）：`true` 时文件卡显示「官方指令行仍在 → 独立来源不注入」，不做「已生效」暗示。
+12. 模块列表工具栏下的「独立指令文件来源」总开关复用 ToggleRow，只修改独立策略顶层 `enabled`，默认关闭；单文件开关不隐式开启总来源，也不改变官方负责人。策略不可读时禁用总开关；应答成功前不乐观显示已启用。
 13. bootstrap 与策略快照均读取完成后再应用，异步边界复核请求序号、会话与草稿状态。暂时离开工作区只暂停文件写资格，保留草稿与版本基线；返回并读取时，版本未变可继续保存，版本变化仍须解决冲突。
 14. 列表保存按钮等待真实 `Promise<boolean>` 结果；文件或预设部分失败时不显示整体成功、不以静默重载清除错误。已经成功保存的文件立即更新其基线，不因后续失败回滚或丢失确认。
 
