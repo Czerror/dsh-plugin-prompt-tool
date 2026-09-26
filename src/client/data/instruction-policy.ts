@@ -17,6 +17,7 @@ export const DEFAULT_INSTRUCTION_POLICY_VALUES: InstructionPolicyValues = {
   promotion: 'none',
   audience: null,
   modelScope: 'all',
+  mode: 'full',
 }
 
 export const EMPTY_INSTRUCTION_POLICY_SNAPSHOT: InstructionPolicySnapshot = {

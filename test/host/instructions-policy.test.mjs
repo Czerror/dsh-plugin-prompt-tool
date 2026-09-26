@@ -34,7 +34,7 @@ const newFile = () => {
   return join(dir, 'instructions.yml')
 }
 
-test('策略文件缺失：使用默认值（独立来源默认禁用）且不自动创建文件', () => {
+test('策略文件缺失：使用默认值且不自动创建文件', () => {
   const file = newFile()
   const snapshot = readInstructionPolicy(file)
   assert.equal(snapshot.exists, false)
@@ -47,6 +47,7 @@ test('策略文件缺失：使用默认值（独立来源默认禁用）且不�
     promotion: 'none',
     audience: null,
     modelScope: 'all',
+    mode: 'full',
   })
   // 只读不落盘。
   assert.throws(() => readFileSync(file, 'utf8'), /ENOENT/)
@@ -265,7 +266,7 @@ test('请求归一化：未知键一律舍弃，非法值仍拒绝', () => {
 
 test('有效策略：每文件覆盖 defaults，缺省参与注入，name 只作显示', () => {
   const policy = {
-    defaults: { order: 30, position: 'after-user', promotion: 'none', audience: null, modelScope: 'all' },
+    defaults: { order: 30, position: 'after-user', promotion: 'none', audience: null, modelScope: 'all', mode: 'full' },
     files: { f1: { order: 40, name: '项目规范' }, f2: { enabled: false } },
   }
   assert.deepEqual(resolveInstructionPolicy(policy, 'f1'), {
@@ -274,6 +275,7 @@ test('有效策略：每文件覆盖 defaults，缺省参与注入，name 只作
     promotion: 'none',
     audience: null,
     modelScope: 'all',
+    mode: 'full',
     name: '项目规范',
     enabled: true,
   })

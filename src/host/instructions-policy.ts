@@ -20,6 +20,7 @@ import { Document, isMap, isScalar, parseDocument, visit } from 'yaml'
 // @ts-expect-error 仓库根 ESM 引擎文件由 tsdown 作为源码依赖打包，无独立声明文件。
 import { KNOWN_AUDIENCES, KNOWN_MODEL_SCOPES, KNOWN_POSITIONS, KNOWN_PROMOTIONS } from '../../engine/schema.mjs'
 import { DSH_HOME } from './paths.ts'
+import { INSTRUCTION_MODES } from '../shared/instructions.ts'
 import type {
   InstructionPolicy,
   InstructionPolicyFileOverride,
@@ -51,9 +52,10 @@ const DEFAULT_VALUES: InstructionPolicyValues = {
   promotion: 'none',
   audience: null,
   modelScope: 'all',
+  mode: 'full',
 }
 
-const VALUE_KEYS = ['order', 'position', 'promotion', 'audience', 'modelScope'] as const
+const VALUE_KEYS = ['order', 'position', 'promotion', 'audience', 'modelScope', 'mode'] as const
 const OVERRIDE_KEYS = [...VALUE_KEYS, 'enabled', 'name'] as const
 
 export function defaultInstructionPolicy(): InstructionPolicy {
@@ -80,6 +82,11 @@ function valueError(key: (typeof VALUE_KEYS)[number], value: unknown): string | 
     return value === null || (typeof value === 'string' && KNOWN_AUDIENCES.has(value))
       ? undefined
       : 'audience 必须是 null/main/subagent'
+  }
+  if (key === 'mode') {
+    return typeof value === 'string' && (INSTRUCTION_MODES as readonly string[]).includes(value)
+      ? undefined
+      : 'mode 必须是 full/hint'
   }
   if (typeof value !== 'string') return `${key} 必须是字符串`
   const allowed = key === 'position' ? KNOWN_POSITIONS : key === 'promotion' ? KNOWN_PROMOTIONS : KNOWN_MODEL_SCOPES

@@ -75,7 +75,7 @@ test('读取：策略文件缺失时返回默认值且不创建文件', async ()
   assert.equal(payload.ok, true)
   assert.equal(payload.value.exists, false)
   assert.equal(payload.value.revision, null)
-  assert.deepEqual(payload.value.policy.defaults, { order: 30, position: 'after-user', promotion: 'none', audience: null, modelScope: 'all' })
+  assert.deepEqual(payload.value.policy.defaults, { order: 30, position: 'after-user', promotion: 'none', audience: null, modelScope: 'all', mode: 'full' })
   assert.equal(existsSync(policyPath), false)
 })
 

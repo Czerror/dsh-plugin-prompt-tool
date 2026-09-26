@@ -115,7 +115,7 @@ const makeSettings = () => ({
   mutate: async () => {},
 })
 
-const policyValues = (over = {}) => ({ order: 30, position: 'after-user', promotion: 'none', audience: null, modelScope: 'all', ...over })
+const policyValues = (over = {}) => ({ order: 30, position: 'after-user', promotion: 'none', audience: null, modelScope: 'all', mode: 'full', ...over })
 
 const policyPayload = (files = {}, over = {}) => ({
   ok: true,
