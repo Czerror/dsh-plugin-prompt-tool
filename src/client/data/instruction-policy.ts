@@ -20,12 +20,12 @@ export const DEFAULT_INSTRUCTION_POLICY_VALUES: InstructionPolicyValues = {
 }
 
 export const EMPTY_INSTRUCTION_POLICY_SNAPSHOT: InstructionPolicySnapshot = {
-  policy: { enabled: false, defaults: { ...DEFAULT_INSTRUCTION_POLICY_VALUES }, files: {} },
+  policy: { defaults: { ...DEFAULT_INSTRUCTION_POLICY_VALUES }, files: {} },
   revision: null,
   exists: false,
 }
 
-/** 单个文件的有效策略：覆盖优先于 defaults；部署级 enabled 优先于每文件开关。 */
+/** 单个文件的有效策略：覆盖优先于 defaults；缺省参与注入（enabled 缺省 = true）。 */
 export function resolveInstructionFilePolicy(
   policy: InstructionPolicy,
   fileId: string,
@@ -36,7 +36,7 @@ export function resolveInstructionFilePolicy(
     ...DEFAULT_INSTRUCTION_POLICY_VALUES,
     ...policy.defaults,
     ...override,
-    enabled: policy.enabled && override.enabled !== false,
+    enabled: override.enabled !== false,
   }
 }
 

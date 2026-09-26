@@ -5,9 +5,10 @@
  * 只承载行为开关与展示名：正文永远在用户的原文件里，策略文件不存正文、读取版本、
  * 会话 ID 或任意客户端路径——路径与文件身份由服务端探测结果解析。
  *
- * 缺省 `enabled: false`：独立来源必须先完成负责人切换（预设去掉官方指令行），再由用户
- * 在工作台显式开启；键缺失 = 关闭，只有显式 `enabled: true` 才参战。不从各预设的旧
- * agentsHints 推导；文件缺失时用默认值，不因读取自动创建。
+ * 每个探测到的文件默认参战，由卡片开关逐个关闭；预设仍挂官方指令行时由装配事实
+ * （协调器）整体拒绝注入，不由本策略决定。顶层 `enabled` 已废除：旧文件里的该键
+ * 读入时忽略、写入时不再产生。不从各预设的旧 agentsHints 推导；文件缺失时用默认值，
+ * 不因读取自动创建。
  * 写入使用 yaml Document API 保留注释与未知字段；解析失败或 schemaVersion 不认识时
  * 拒绝写入（不把损坏文件当空配置覆盖）。
  */
@@ -56,7 +57,7 @@ const VALUE_KEYS = ['order', 'position', 'promotion', 'audience', 'modelScope'] 
 const OVERRIDE_KEYS = [...VALUE_KEYS, 'enabled', 'name'] as const
 
 export function defaultInstructionPolicy(): InstructionPolicy {
-  return { enabled: false, defaults: { ...DEFAULT_VALUES }, files: {} }
+  return { defaults: { ...DEFAULT_VALUES }, files: {} }
 }
 
 export function instructionPolicyPath(dshHome: string = DSH_HOME): string {
@@ -85,26 +86,21 @@ function valueError(key: (typeof VALUE_KEYS)[number], value: unknown): string | 
   return allowed.has(value) ? undefined : `${key} 取值非法：${value}`
 }
 
-/** 请求体白名单校验：未知键一律拒绝，避免正文/路径/版本混进策略文件。 */
+/**
+ * 载荷归一化（读取与写入共用）：已知键按白名单取用并校验取值，**未知键一律舍弃**——
+ * 不报错、不进 patch、不写盘。这既挡住正文/路径/版本混进策略文件，也让旧文件里废弃的
+ * 键（例如已废除的顶层 enabled）在读取与写入时自然退场，不需要逐键兼容分支。
+ */
 export function validateInstructionPolicyPatch(
   input: unknown,
 ): { ok: true; patch: InstructionPolicyPatch } | { ok: false; message: string } {
   if (!isRecord(input)) return { ok: false, message: '策略载荷必须是对象' }
-  for (const key of Object.keys(input)) {
-    if (key !== 'enabled' && key !== 'defaults' && key !== 'files') {
-      return { ok: false, message: `未知字段：${key}` }
-    }
-  }
   const patch: InstructionPolicyPatch = {}
-  if (input.enabled !== undefined) {
-    if (typeof input.enabled !== 'boolean') return { ok: false, message: 'enabled 必须是布尔值' }
-    patch.enabled = input.enabled
-  }
   if (input.defaults !== undefined) {
     if (!isRecord(input.defaults)) return { ok: false, message: 'defaults 必须是对象' }
     const defaults: Partial<InstructionPolicyValues> = {}
     for (const [key, value] of Object.entries(input.defaults)) {
-      if (!(VALUE_KEYS as readonly string[]).includes(key)) return { ok: false, message: `defaults 未知字段：${key}` }
+      if (!(VALUE_KEYS as readonly string[]).includes(key)) continue
       const error = valueError(key as (typeof VALUE_KEYS)[number], value)
       if (error !== undefined) return { ok: false, message: error }
       ;(defaults as Record<string, unknown>)[key] = value
@@ -123,7 +119,7 @@ export function validateInstructionPolicyPatch(
       if (!isRecord(raw)) return { ok: false, message: `files.${fileId} 必须是对象或 null` }
       const override: InstructionPolicyFileOverride = {}
       for (const [key, value] of Object.entries(raw)) {
-        if (!(OVERRIDE_KEYS as readonly string[]).includes(key)) return { ok: false, message: `files.${fileId} 未知字段：${key}` }
+        if (!(OVERRIDE_KEYS as readonly string[]).includes(key)) continue
         if (key === 'enabled') {
           if (typeof value !== 'boolean') return { ok: false, message: `files.${fileId}.enabled 必须是布尔值` }
           override.enabled = value
@@ -175,23 +171,18 @@ export function readInstructionPolicy(file: string = instructionPolicyPath()): I
   if (version !== undefined && version !== INSTRUCTIONS_POLICY_VERSION) {
     return { ...empty, exists: true, revision, error: `指令策略 schemaVersion 不受支持：${String(version)}` }
   }
-  const validated = validateInstructionPolicyPatch({
-    ...(data.enabled === undefined ? {} : { enabled: data.enabled }),
-    ...(data.defaults === undefined ? {} : { defaults: data.defaults }),
-    ...(data.files === undefined ? {} : { files: data.files }),
-  })
+  // 归一化：未知键（含已废除的顶层 enabled）由过滤层舍弃，读盘不会因一个死键判损坏。
+  const validated = validateInstructionPolicyPatch(data)
   if (!validated.ok) return { ...empty, exists: true, revision, error: validated.message }
   const patch = validated.patch
   const policy: InstructionPolicy = {
-    // 缺省关闭：键缺失 = 关闭；只有显式 `enabled: true` 才参战。
-    enabled: patch.enabled ?? false,
     defaults: { ...DEFAULT_VALUES, ...patch.defaults },
     files: Object.fromEntries(Object.entries(patch.files ?? {}).flatMap(([fileId, override]) => (override === null ? [] : [[fileId, override]]))),
   }
   return { policy, revision, exists: true, path: file }
 }
 
-/** 单文件的有效策略：部署级开关优先于每文件开关。 */
+/** 单文件的有效策略：每文件覆盖优先；缺省参与注入（enabled 缺省 = true）。 */
 export function resolveInstructionPolicy(
   policy: InstructionPolicy,
   fileId: string,
@@ -200,7 +191,7 @@ export function resolveInstructionPolicy(
   return {
     ...policy.defaults,
     ...override,
-    enabled: policy.enabled && override.enabled !== false,
+    enabled: override.enabled !== false,
   }
 }
 
@@ -209,8 +200,8 @@ function documentFor(file: string): { doc: Document } | { error: string } {
   if (!existsSync(file)) {
     const doc = new Document({})
     doc.commentBefore = ' prompt-tool 指令文件卡策略（独立于预设与 settings）\n'
-      + ' enabled: 文件来源是否参与注入（缺省 false，先完成负责人切换再开启）\n'
       + ' defaults: 未单独覆盖的文件使用的行为；files: 按 fileId 的覆盖\n'
+      + ' files[id].enabled: false 可关闭该文件的注入（缺省注入）\n'
       + ' 这里不放正文：正文始终在用户自己的 AGENTS.md/CLAUDE.md 里'
     doc.set('schemaVersion', INSTRUCTIONS_POLICY_VERSION)
     return { doc }
@@ -262,11 +253,8 @@ export function writeInstructionPolicy(options: {
   const { doc } = prepared
   const patch = validated.patch
 
-  if (patch.enabled !== undefined) {
-    // 默认值不落键：false = 缺省（删除键），true = 显式开启。
-    if (patch.enabled) doc.set('enabled', true)
-    else doc.delete('enabled')
-  }
+  // 旧文件的顶层 enabled 在首次写入时清掉：读路径已忽略它，留着只会误导后来者。
+  doc.delete('enabled')
   if (patch.defaults !== undefined) {
     for (const key of VALUE_KEYS) {
       const value = patch.defaults[key]

@@ -222,12 +222,8 @@ test('子代理页创建入口对等，且不下发指令文件卡（单编辑�
   // 指令文件卡是主会话概念：子代理作用域不下发，避免同一文件双编辑入口。
   const wrapper = read('app/workspace/pages/ConfigListWithTemplates.tsx')
   assert.match(wrapper, /const instructionScope = scope === undefined \|\| scope === 'main'/)
-  assert.match(wrapper, /instructionPolicy=\{instructionScope \? store\.instructionPolicy : undefined\}/)
   assert.match(wrapper, /onSaveInstructionFile=\{instructionScope \? saveInstructionFile : undefined\}/)
   assert.match(wrapper, /onPatchInstructionPolicy=\{instructionScope \? patchInstructionPolicy : undefined\}/)
-  // 列表侧：未下发策略时不渲染指令文件卡（undefined 分支）。
-  const list = read('features/prompts/PromptConfigList.tsx')
-  assert.match(list, /props\.instructionPolicy !== undefined && props\.onToggleInstructionSource !== undefined/)
 })
 
 test('模块列表只有一个创建入口：老「新建」按钮不再渲染，入口收敛到合并菜单', () => {
@@ -294,7 +290,7 @@ test('子代理页使用现存能力并保留正确入口提示', () => {
     createEngineCapability: async () => true, removeEngineCapability: async () => true,
     load: async () => {}, setPresetTemplate() {},
     persistConfigs: async () => true, persistInstructionFiles: async () => true, persistParamOverrides: async () => true,
-    reloadInstructionFile: async () => true, setInstructionSourceEnabled: async () => true, updateInstructionPolicy: async () => true,
+    reloadInstructionFile: async () => true, updateInstructionPolicy: async () => true,
   }
   const html = render(SubagentPage, { t, store: active })
   assert.doesNotMatch(html, /data-module-card-id/, '独立能力卡已退场：子代理页不再有卡片形态的能力入口')

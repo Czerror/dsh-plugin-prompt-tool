@@ -284,7 +284,9 @@ function defaultCollectFiles(readPolicy: () => InstructionPolicy | undefined, ho
   const lastSeen = new Map<string, { displayPath: string; values: ReturnType<typeof resolveInstructionPolicy> }>()
   return (_agent: unknown, session: unknown): PreStepFileContribution[] => {
     const policy = readPolicy()
-    if (policy === undefined || policy.enabled !== true) return []
+    // 只有策略不可读（损坏/版本不认识）才整体不参战；文件缺失时 readInstructionPolicy
+    // 给的是默认策略，逐文件判定即可——注入默认开启，由卡片开关关闭。
+    if (policy === undefined) return []
     const cwd = sessionCwd(session)
     const cards = cwd === undefined
       ? detectAgentsFiles({ projects: false, home })

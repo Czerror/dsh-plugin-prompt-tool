@@ -513,8 +513,10 @@ ST 转换（convertStToPreset）通过顶层 `persona: { prefix: '', complete: f
   403、缺失 404、版本或上下文过期 409、超限 413，tmp + rename 原子写且保留原权限），写盘不
   触发预设重建。
 - **独立策略**：`$DSH_HOME/.prompt-tool/instructions.yml`（`src/host/instructions-policy.ts`）
-  承载启停、层内序号、位置、晋升、受众与模型范围；默认 `enabled: false`（安全缺省，需显式
-  开启），用 Document API 保留注释与未知字段、原始字节 SHA-256 乐观并发及严格字段白名单。
+  承载启停、层内序号、位置、晋升、受众与模型范围；每个文件缺省参与注入，由卡片开关逐个关闭
+  （[ADR-0004](adr/0004-instruction-injection-per-file.md)）。用 Document API 保留注释与未知
+  字段、原始字节 SHA-256 乐观并发；归一化层对已知键取白名单并校验取值、**未知键一律舍弃**
+  （不报错、不写盘，旧文件里残留的顶层 `enabled` 由此在读取时退场、首次写入时被清掉）。
   非法 UTF-8、YAML 解析/转换失败均作为不可读状态拒绝写入；未被 alias 引用的 null 文件
   覆盖可被后续局部保存替换为有效覆盖。被引用的 null 锚点须先解除共享引用；局部更新拒写
   且保留原字节，避免连带改变其他字段。策略只影响未来的注入，不撤回已进入会话历史的内容。

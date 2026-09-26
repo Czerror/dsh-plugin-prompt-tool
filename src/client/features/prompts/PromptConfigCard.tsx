@@ -159,8 +159,10 @@ export const PromptConfigCard = memo(function PromptConfigCard(props: {
         </span>
       </span>
     </header>
-    {(config.contentConflict || fileNotWritable || config.contentMessage || props.readOnlyReason) && <div className={styles.configStatus}>
+    {(config.contentConflict || config.contentOwnerConflict || fileNotWritable || config.contentMessage || props.readOnlyReason) && <div className={styles.configStatus}>
       {config.contentConflict && <p>{t('card.fileConflictDetail')}</p>}
+      {/* 官方指令行仍在：这个文件的开关不会生效，就地说明，别让用户对着没反应的开关猜。 */}
+      {config.contentOwnerConflict && <p>{t('card.fileOwnerConflict')}</p>}
       {config.contentDirty && (config.contentConflict || fileNotWritable) && <p>{t('card.chip.fileDirty')}</p>}
       {config.contentMessage && <p>{t('card.fileStatusDetail', { message: config.contentMessage })}</p>}
       {props.readOnlyReason && <p>{props.readOnlyReason}</p>}

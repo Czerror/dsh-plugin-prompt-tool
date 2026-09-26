@@ -1,5 +1,7 @@
 # 指令文件与预设配置分离
 
+> 注入闸门已由 [ADR-0004](0004-instruction-injection-per-file.md) 重定：部署级 `enabled` 已废除，改为每个文件默认注入、由卡片开关逐个关闭。本文其余部分继续有效。
+
 指令文件的正文（工作区与用户目录的 `AGENTS.md`、`CLAUDE.md` 及其 `.local` 变体）属于用户磁盘上的原文件，指令文件卡的行为策略属于插件独立的指令策略（`$DSH_HOME/.prompt-tool/instructions.yml`，同一 DSH_HOME 下所有预设共享一份），两者都不进入 preset.yml，也不随预设复制、导出、删除或重建。ADR-0001「预设定义是行为配置的唯一来源」的适用范围由此限定为预设自身行为（参数、模块、提示词配置、变量、模型路由与工具策略）；指令正文的事实来源是原文件，策略的事实来源是插件自有状态，缺省 `enabled: false`，需在工作台显式开启。注入由宿主侧 pre-step 协调器按会话工作区现场探测执行（全局 `$DSH_HOME/AGENTS.md` + cwd→项目根链），与预设卡共用同一批执行算法，正文以 `Instructions from: <显示路径>` 头 literal 注入。
 
 每预设一份的形态曾在同一时期落地并被取代：`writePreset`（`777b1ff`）为每个探测到的文件在**各预设的生成目录**里物化 `agents-file-<hash>` 卡，开关是 `preset.yml#agentsHints`。`205f847` 与 `11a9e73`（2026-09-14，BREAKING）将其废除，当时记录给出的理由是：同一文件被多个预设与会话共享，按预设保存会产生互相覆盖的多份副本，使「编辑框里的是哪个版本」无法回答，也无法在外部编辑后可信地判定新旧。退场边界保持显式：`preset.yml#agentsHints` 仅保留解析、不再生效；旧生成目录里的 `agents-file-*` 卡在运行时跳过（`isLegacyFileCard`），重新物化一次后消失。

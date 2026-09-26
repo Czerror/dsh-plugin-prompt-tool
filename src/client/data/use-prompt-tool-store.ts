@@ -118,7 +118,7 @@ export interface PromptToolStore {
   /** 写单个文件的行为策略（null = 删除覆盖、恢复默认）；带 revision 乐观并发。 */
   updateInstructionPolicy: (fileId: string, override: InstructionPolicyFileOverride | null) => Promise<boolean>
   /** 独立来源总开关：仅写策略顶层 enabled，不改变官方负责人或单文件覆盖。 */
-  setInstructionSourceEnabled: (enabled: boolean) => Promise<boolean>
+  /** 指令文件卡的行为策略改动（独立策略存储，写单文件覆盖）。 */
   /** 技能资产写入忙碌态（复制导入 / 创建 / 删除）。 */
   skillsBusy: boolean
   notice: string
@@ -827,9 +827,6 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
   const updateInstructionPolicy = useCallback((fileId: string, override: InstructionPolicyFileOverride | null): Promise<boolean> => (
     persistInstructionPolicy(instructionPolicyPatchForFile(fileId, override))
   ), [persistInstructionPolicy])
-  const setInstructionSourceEnabled = useCallback((enabled: boolean): Promise<boolean> => (
-    persistInstructionPolicy({ enabled })
-  ), [persistInstructionPolicy])
 
   /** 冲突处理：重新读取单个文件并丢弃本地草稿（不自动重载，避免悄悄覆盖用户输入）。 */
   const reloadInstructionFile = useCallback(async (fileId: string): Promise<void> => {
@@ -1241,7 +1238,6 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
     instructionPolicy,
     getInstructionPolicy: () => instructionPolicyRef.current,
     updateInstructionPolicy,
-    setInstructionSourceEnabled,
     skillsBusy,
     notice,
     noticeKind,

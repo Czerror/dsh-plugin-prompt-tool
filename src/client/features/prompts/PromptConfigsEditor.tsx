@@ -12,7 +12,7 @@ import featureCss from './prompts.module.css'
 const styles = { ...sharedCss, ...featureCss }
 
 import type { EngineMeta, PromptConfigDraft } from '../../prompt-tool-types.ts'
-import type { InstructionPolicyFileOverride, InstructionPolicySnapshot } from '../../../shared/instructions.ts'
+import type { InstructionPolicyFileOverride } from '../../../shared/instructions.ts'
 
 export type { PromptConfigDraft, LayerFieldPolicy } from '../../prompt-tool-types.ts'
 export type { ValidationErrorEntry } from '../../prompt-tool-types.ts'
@@ -30,8 +30,6 @@ export interface PromptConfigsEditorProps extends Pick<PromptConfigListProps, 'b
   onPatchConfigs: (configs: PromptConfigDraft[]) => void
   onSaveConfigs: (configs: PromptConfigDraft[]) => Promise<boolean>
   onSaveInstructions?: () => Promise<boolean>
-  instructionPolicy?: InstructionPolicySnapshot
-  onToggleInstructionSource?: (enabled: boolean) => Promise<boolean>
   /** 指令文件卡：显式写盘 / 重新读取（不经预设保存路径）。 */
   onSaveInstructionFile?: (fileId: string) => void
   onReloadInstructionFile?: (fileId: string) => void
@@ -177,8 +175,6 @@ export function PromptConfigsEditor(props: PromptConfigsEditorProps): ReactNode 
         onPatchConfigs={props.onPatchConfigs}
         onSaveConfigs={props.onSaveConfigs}
         onSaveInstructions={props.onSaveInstructions}
-        instructionPolicy={props.instructionPolicy}
-        onToggleInstructionSource={props.onToggleInstructionSource}
         onSaveInstructionFile={props.onSaveInstructionFile}
         onReloadInstructionFile={props.onReloadInstructionFile}
         onPatchInstructionPolicy={props.onPatchInstructionPolicy}

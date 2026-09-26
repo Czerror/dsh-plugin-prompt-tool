@@ -67,7 +67,7 @@ const call = async (handler, body) => {
   return { status: res.status, payload: JSON.parse(res.body) }
 }
 
-test('读取：策略文件缺失时返回默认值（enabled=false，安全缺省）且不创建文件', async () => {
+test('读取：策略文件缺失时返回默认值且不创建文件', async () => {
   const handler = handlers().get(endpoint)
   assert.ok(handler, '端点未注册')
   const { status, payload } = await call(handler, {})
@@ -75,38 +75,38 @@ test('读取：策略文件缺失时返回默认值（enabled=false，安全缺�
   assert.equal(payload.ok, true)
   assert.equal(payload.value.exists, false)
   assert.equal(payload.value.revision, null)
-  assert.equal(payload.value.policy.enabled, false, '缺省关闭：需显式开启')
   assert.deepEqual(payload.value.policy.defaults, { order: 30, position: 'after-user', promotion: 'none', audience: null, modelScope: 'all' })
   assert.equal(existsSync(policyPath), false)
 })
 
 test('写入：expectedRevision=null 创建策略；过期版本返回 409 且文件不变', async () => {
   const handler = handlers().get(endpoint)
-  const created = await call(handler, { policy: { enabled: true, files: { f1: { order: 45 } } }, expectedRevision: null })
+  const created = await call(handler, { policy: { files: { f1: { order: 45 } } }, expectedRevision: null })
   assert.equal(created.status, 200)
-  assert.equal(created.payload.value.policy.enabled, true)
+  assert.equal(created.payload.value.policy.files.f1.order, 45)
   assert.equal(existsSync(policyPath), true)
   const raw = readFileSync(policyPath, 'utf8')
-  const stale = await call(handler, { policy: { enabled: false }, expectedRevision: null })
+  const stale = await call(handler, { policy: {}, expectedRevision: null })
   assert.equal(stale.status, 409)
   assert.equal(stale.payload.code, 'instructions-policy-conflict')
   assert.equal(readFileSync(policyPath, 'utf8'), raw)
 })
 
-test('写入：未知字段与非有限 order 拒绝，文件不变', async () => {
+test('写入：未知字段被舍弃不入盘，非有限 order 仍拒绝', async () => {
   const handler = handlers().get(endpoint)
-  const created = await call(handler, { policy: { enabled: true }, expectedRevision: null })
+  const created = await call(handler, { policy: { defaults: { order: 45 } }, expectedRevision: null })
   assert.equal(created.status, 200)
   const raw = readFileSync(policyPath, 'utf8')
   const current = await call(handler, {})
-  const withText = await call(handler, { policy: { files: { f1: { text: '正文不得进策略' } } }, expectedRevision: current.payload.value.revision })
-  assert.equal(withText.status, 400)
-  assert.match(withText.payload.message, /未知字段/)
   const badOrder = await call(handler, { policy: { defaults: { order: -3 } }, expectedRevision: current.payload.value.revision })
   assert.equal(badOrder.status, 400)
-  const missingRevision = await call(handler, { policy: { enabled: false } })
+  const missingRevision = await call(handler, { policy: { defaults: { order: 50 } } })
   assert.equal(missingRevision.status, 400)
-  assert.equal(readFileSync(policyPath, 'utf8'), raw)
+  assert.equal(readFileSync(policyPath, 'utf8'), raw, '被拒绝的写入不改文件')
+  // 未知键不再报错，而是被归一化层舍弃：响应成功，正文仍然进不了策略文件。
+  const withText = await call(handler, { policy: { files: { f1: { text: '正文不得进策略' } } }, expectedRevision: current.payload.value.revision })
+  assert.equal(withText.status, 200)
+  assert.doesNotMatch(readFileSync(policyPath, 'utf8'), /正文不得进策略/)
 })
 
 test('损坏文件：读取带 error，写入拒绝且不覆盖', async () => {

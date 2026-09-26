@@ -5,12 +5,11 @@ import { isManagedConfigField } from '../../../shared/managed-config-fields.ts'
 import { instructionFileIdOf } from '../../data/prompt-config-content.ts'
 import type { PromptToolTranslate } from '../../locales.ts'
 import { MenuSelect } from '../../ui/MenuSelect.tsx'
-import { ToggleRow } from '../../ui/ToggleRow.tsx'
 import { PromptConfigCard } from './PromptConfigCard.tsx'
 import { moveToView, moveWithinLayer, promptConfigLayer, viewOrderedIds } from './prompt-config-order.ts'
 import { displayLayers, LAYER_LABEL_KEYS, matchesConfigKeyword, translateLabel } from './prompt-config-policy.ts'
 import type { EngineMeta, PromptConfigDraft, ValidationErrorEntry } from '../../prompt-tool-types.ts'
-import type { InstructionPolicyFileOverride, InstructionPolicySnapshot } from '../../../shared/instructions.ts'
+import type { InstructionPolicyFileOverride } from '../../../shared/instructions.ts'
 import sharedCss from '../../ui/controls.module.css'
 import featureCss from './prompts.module.css'
 
@@ -54,8 +53,6 @@ export interface PromptConfigListProps {
   onPatchConfigs: (configs: PromptConfigDraft[]) => void
   onSaveConfigs: (configs: PromptConfigDraft[]) => Promise<boolean>
   onSaveInstructions?: () => Promise<boolean>
-  instructionPolicy?: InstructionPolicySnapshot
-  onToggleInstructionSource?: (enabled: boolean) => Promise<boolean>
   /** 指令文件卡：显式写盘与重新读取（不经预设保存路径）。 */
   onSaveInstructionFile?: (fileId: string) => void
   onReloadInstructionFile?: (fileId: string) => void
@@ -79,14 +76,13 @@ export function PromptConfigList(props: PromptConfigListProps): ReactNode {
   const [errors, setErrors] = useState<ValidationErrorEntry[]>([])
   const [validating, setValidating] = useState(false)
   const [saving, setSaving] = useState(false)
-  const [savingSource, setSavingSource] = useState(false)
+  const [createdId, setCreatedId] = useState<string>()
   const [filterState, setFilterState] = useState(props.browse?.filter ?? '')
   const changeFilter = (value: string): void => {
     if (props.browse !== undefined) props.browse.filter = value
     props.onKeywordChange?.(value)
     setFilterState(value)
   }
-  const [createdId, setCreatedId] = useState<string>()
   const busyRef = useRef(false)
   // 状态反馈统一走全局通知（渲染在工作台标题行），本页不再自留一份 feedback。
   const report = (kind: 'ok' | 'error', message: string): void => {
@@ -395,32 +391,6 @@ export function PromptConfigList(props: PromptConfigListProps): ReactNode {
       </div>
 
       {props.commonCards}
-      {props.instructionPolicy !== undefined && props.onToggleInstructionSource !== undefined && (
-        <ToggleRow
-          id="prompt-tool-instruction-source"
-          label={t('instructions.source.label')}
-          checked={props.instructionPolicy.policy.enabled}
-          disabled={savingSource || props.instructionPolicy.error !== undefined}
-          hint={[
-            props.instructionPolicy.error !== undefined
-              ? t('instructions.source.unavailable', { reason: props.instructionPolicy.error })
-              : t(props.instructionPolicy.policy.enabled ? 'instructions.source.enabled' : 'instructions.source.disabled'),
-            ...(configs.some((config) => config.contentOwnerConflict === true) ? [t('instructions.source.ownerConflict')] : []),
-          ].join('；')}
-          onChange={async (enabled) => {
-            if (savingSource || props.instructionPolicy?.error !== undefined) return false
-            setSavingSource(true)
-            try {
-              return await props.onToggleInstructionSource!(enabled)
-            } catch (error) {
-              onNotice('error', t('configs.notice.saveFailed', { reason: errorMessage(error) }))
-              return false
-            } finally {
-              setSavingSource(false)
-            }
-          }}
-        />
-      )}
       {/* 配置列表下的置顶固定卡片（人设、模板变量等单例配置，不参与层过滤与搜索）。 */}
       {beforeCards}
 

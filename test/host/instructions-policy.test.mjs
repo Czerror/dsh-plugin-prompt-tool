@@ -57,13 +57,12 @@ test('首次保存（expectedRevision=null）创建文件并读回一致', () =>
   const written = writeInstructionPolicy({
     file,
     expectedRevision: null,
-    patch: { enabled: true, files: { f1: { order: 40, position: 'before-all', name: '项目规范' } } },
+    patch: { files: { f1: { order: 40, position: 'before-all', name: '项目规范' } } },
   })
   assert.equal(written.ok, true)
   assert.ok(typeof written.revision === 'string' && written.revision.length === 64)
   const snapshot = readInstructionPolicy(file)
   assert.equal(snapshot.error, undefined)
-  assert.equal(snapshot.policy.enabled, true)
   assert.deepEqual(snapshot.policy.files.f1, { order: 40, position: 'before-all', name: '项目规范' })
   assert.equal(snapshot.revision, written.revision)
 })
@@ -121,10 +120,10 @@ test('null 文件覆盖：可替换为合法映射并保留注释与未知字段
 
 test('乐观并发：过期 expectedRevision 返回 409 且文件字节不变', () => {
   const file = newFile()
-  const created = writeInstructionPolicy({ file, expectedRevision: null, patch: { enabled: true } })
+  const created = writeInstructionPolicy({ file, expectedRevision: null, patch: { defaults: { order: 45 } } })
   assert.equal(created.ok, true)
   const raw = readFileSync(file, 'utf8')
-  const stale = writeInstructionPolicy({ file, expectedRevision: null, patch: { enabled: false } })
+  const stale = writeInstructionPolicy({ file, expectedRevision: null, patch: { defaults: { order: 46 } } })
   assert.equal(stale.ok, false)
   assert.equal(stale.status, 409)
   assert.equal(stale.code, 'instructions-policy-conflict')
@@ -144,8 +143,7 @@ test('非法 UTF-8：revision 区分原始字节，读取报错且拒绝覆盖',
     assert.equal(snapshot.exists, true)
     assert.match(snapshot.revision, /^[a-f0-9]{64}$/)
     assert.match(snapshot.error ?? '', /UTF-8/)
-    assert.equal(snapshot.policy.enabled, false, '错误态回退缺省（关闭）')
-    const refused = writeInstructionPolicy({ file, expectedRevision: snapshot.revision, patch: { enabled: false } })
+    const refused = writeInstructionPolicy({ file, expectedRevision: snapshot.revision, patch: { defaults: { order: 30 } } })
     assert.equal(refused.ok, false)
     assert.equal(refused.status, 409)
     assert.equal(refused.code, 'instructions-policy-unreadable')
@@ -159,7 +157,7 @@ test('YAML 损坏或 schemaVersion 不支持：读取进入错误态，写入拒
   const brokenRead = readInstructionPolicy(broken)
   assert.match(brokenRead.error ?? '', /YAML/)
   const before = readFileSync(broken, 'utf8')
-  const refused = writeInstructionPolicy({ file: broken, expectedRevision: brokenRead.revision, patch: { enabled: true } })
+  const refused = writeInstructionPolicy({ file: broken, expectedRevision: brokenRead.revision, patch: { defaults: { order: 30 } } })
   assert.equal(refused.ok, false)
   assert.equal(refused.code, 'instructions-policy-unreadable')
   assert.equal(readFileSync(broken, 'utf8'), before)
@@ -168,7 +166,7 @@ test('YAML 损坏或 schemaVersion 不支持：读取进入错误态，写入拒
   writeFileSync(future, 'schemaVersion: 99\nenabled: true\n', 'utf8')
   const futureRead = readInstructionPolicy(future)
   assert.match(futureRead.error ?? '', /schemaVersion/)
-  assert.equal(writeInstructionPolicy({ file: future, expectedRevision: futureRead.revision, patch: { enabled: false } }).ok, false)
+  assert.equal(writeInstructionPolicy({ file: future, expectedRevision: futureRead.revision, patch: { defaults: { order: 30 } } }).ok, false)
   assert.equal(readFileSync(future, 'utf8'), 'schemaVersion: 99\nenabled: true\n')
 })
 
@@ -181,8 +179,7 @@ test('未解析 YAML alias：读取返回错误快照，写入拒绝且不覆盖
     assert.equal(snapshot.exists, true)
     assert.match(snapshot.revision, /^[a-f0-9]{64}$/)
     assert.match(snapshot.error ?? '', /YAML/)
-    assert.equal(snapshot.policy.enabled, false, '错误态回退缺省（关闭）')
-    const refused = writeInstructionPolicy({ file, expectedRevision: snapshot.revision, patch: { enabled: false } })
+    const refused = writeInstructionPolicy({ file, expectedRevision: snapshot.revision, patch: { defaults: { order: 30 } } })
     assert.equal(refused.ok, false)
     assert.equal(refused.status, 409)
     assert.equal(refused.code, 'instructions-policy-unreadable')
@@ -213,7 +210,7 @@ test('写盘准备：再次读取失败或文档变坏时规范拒绝，不覆�
       })
       syncBuiltinESMExports()
       t.after(() => { mocked.mock.restore(); syncBuiltinESMExports() })
-      const refused = writeInstructionPolicy({ file, expectedRevision: before.revision, patch: { enabled: false } })
+      const refused = writeInstructionPolicy({ file, expectedRevision: before.revision, patch: { defaults: { order: 30 } } })
       assert.equal(refused.ok, false)
       assert.equal(refused.status, 409)
       assert.equal(refused.code, 'instructions-policy-unreadable')
@@ -224,46 +221,50 @@ test('写盘准备：再次读取失败或文档变坏时规范拒绝，不覆�
 
 test('YAML 序列化失败：返回规范写入失败且不改原文件', () => {
   const file = newFile()
-  const raw = Buffer.from('schemaVersion: 1\nenabled: &switch true\ncustomUnknownKey: *switch\n')
+  const raw = Buffer.from('schemaVersion: 1\ndefaults:\n  order: &switch 45\ncustomUnknownKey: *switch\n')
   writeFileSync(file, raw)
   const before = readInstructionPolicy(file)
   assert.equal(before.error, undefined)
-  // enabled: false 现在等于「恢复默认」→ 删除锚点节点，让 *switch 别名悬空以触发序列化失败。
-  const refused = writeInstructionPolicy({ file, expectedRevision: before.revision, patch: { enabled: false } })
+  // order 恢复默认值（30）会删掉定义锚点的那一行，让 *switch 别名悬空以触发序列化失败。
+  const refused = writeInstructionPolicy({ file, expectedRevision: before.revision, patch: { defaults: { order: 30 } } })
   assert.equal(refused.ok, false)
   assert.equal(refused.status, 409)
   assert.equal(refused.code, 'instructions-policy-write-failed')
   assert.deepEqual(readFileSync(file), raw)
 })
 
-test('请求白名单：未知字段、非法枚举与非有限 order 一律拒绝', () => {
-  const cases = [
-    [{ text: '正文不得进策略文件' }, /未知字段/],
-    [{ revision: 'r1' }, /未知字段/],
-    [{ defaults: { path: 'D:/repo/AGENTS.md' } }, /未知字段/],
+test('请求归一化：未知键一律舍弃，非法值仍拒绝', () => {
+  const rejected = [
     [{ defaults: { order: Number.NaN } }, /order/],
     [{ defaults: { order: -1 } }, /order/],
     [{ defaults: { position: 'sideways' } }, /position/],
     [{ defaults: { promotion: 'all' } }, /promotion/],
     [{ defaults: { audience: 'everyone' } }, /audience/],
     [{ defaults: { modelScope: 'turbo' } }, /modelScope/],
-    [{ enabled: 'yes' }, /enabled/],
     [{ files: { f1: { enabled: 1 } } }, /enabled/],
     [{ files: { f1: { name: '' } } }, /name/],
-    [{ files: { f1: { dedupe: 'session' } } }, /未知字段/],
     [{ files: { ' ': { order: 1 } } }, /fileId/],
   ]
-  for (const [input, pattern] of cases) {
+  for (const [input, pattern] of rejected) {
     const result = validateInstructionPolicyPatch(input)
     assert.equal(result.ok, false, `应拒绝：${JSON.stringify(input)}`)
     assert.match(result.message, pattern)
   }
-  assert.equal(validateInstructionPolicyPatch({ enabled: true, defaults: { audience: null }, files: { f1: null } }).ok, true)
+  // 未知键（含已废除的顶层 enabled）一律舍弃：不报错、不进 patch、不写盘——
+  // 正文与版本键由此被挡在策略文件之外，旧文件里的废弃键也自动退场。
+  const dropped = validateInstructionPolicyPatch({
+    enabled: true,
+    text: '正文不得进策略文件',
+    revision: 'r1',
+    defaults: { path: 'D:/repo/AGENTS.md', audience: null },
+    files: { f1: { dedupe: 'session', order: 60 }, f2: null },
+  })
+  assert.equal(dropped.ok, true)
+  assert.deepEqual(dropped.patch, { defaults: { audience: null }, files: { f1: { order: 60 }, f2: null } })
 })
 
-test('有效策略：每文件覆盖 defaults，部署级 enabled 优先，name 只作显示', () => {
+test('有效策略：每文件覆盖 defaults，缺省参与注入，name 只作显示', () => {
   const policy = {
-    enabled: true,
     defaults: { order: 30, position: 'after-user', promotion: 'none', audience: null, modelScope: 'all' },
     files: { f1: { order: 40, name: '项目规范' }, f2: { enabled: false } },
   }
@@ -278,7 +279,6 @@ test('有效策略：每文件覆盖 defaults，部署级 enabled 优先，name 
   })
   assert.equal(resolveInstructionPolicy(policy, 'f2').enabled, false)
   assert.equal(resolveInstructionPolicy(policy, 'unknown').enabled, true)
-  assert.equal(resolveInstructionPolicy({ ...policy, enabled: false }, 'f1').enabled, false, '部署级关闭优先于每文件开关')
 })
 
 test('策略路径只在 host/paths 之外有一处定义，并落在 DSH_HOME 下', () => {

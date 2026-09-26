@@ -75,8 +75,8 @@ export interface InstructionFileWriteResult {
  * 指令文件卡策略（独立于预设与 settings 的本插件自有状态）。
  *
  * 只承载行为开关与展示名：正文永远在用户的原文件里，策略不存正文、读取版本、
- * 会话 ID 或任意客户端路径。缺省 `enabled: false`——独立来源必须先完成负责人
- * 切换验收，再由用户显式开启。
+ * 会话 ID 或任意客户端路径。**每个探测到的文件默认参与注入**，由卡片开关逐个关闭；
+ * 预设仍挂官方指令行时整体不参战——那条由装配事实（协调器）决定，不由本策略决定。
  */
 export interface InstructionPolicyValues {
   order: number
@@ -87,15 +87,13 @@ export interface InstructionPolicyValues {
 }
 
 export interface InstructionPolicyFileOverride extends Partial<InstructionPolicyValues> {
-  /** 每文件可关闭注入（默认开启）；部署级 enabled 为 false 时整体不注入。 */
+  /** 每文件可关闭注入（默认开启）；官方指令行仍在时整体不注入。 */
   enabled?: boolean
   /** 可选显示名（只影响 UI 标题）。 */
   name?: string
 }
 
 export interface InstructionPolicy {
-  /** 部署级开关：文件来源是否参与注入。 */
-  enabled: boolean
   /** 未单独覆盖的文件使用这些值。 */
   defaults: InstructionPolicyValues
   /** 按 fileId 的覆盖；缺省即用 defaults，删除覆盖恢复默认。 */
@@ -104,7 +102,6 @@ export interface InstructionPolicy {
 
 /** 局部更新：只写传入的键；files[fileId] = null 表示删除该覆盖。 */
 export interface InstructionPolicyPatch {
-  enabled?: boolean
   defaults?: Partial<InstructionPolicyValues>
   files?: Record<string, InstructionPolicyFileOverride | null>
 }
