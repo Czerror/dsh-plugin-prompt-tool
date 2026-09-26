@@ -26,8 +26,8 @@
 .configFormLayout { container: prompt-form / inline-size; gap: 24px; padding: clamp(12px, 3vw, 24px); }
 .configSection { display: flex; flex-direction: column; gap: 24px; min-width: 0; }
 .configIdentity { min-width: 0; }
-.configNavigation { display: grid; grid-template-columns: 128px minmax(0, 1fr); gap: 24px; min-width: 0; border-top: 0.5px solid var(--dsw-alias-border-l2); padding-top: 24px; }
-/* 竖排页签贴合自身文字宽度，不撑满 128px 导航列；窄容器改横排后恢复等宽。 */
+.configNavigation { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 24px; min-width: 0; border-top: 0.5px solid var(--dsw-alias-border-l2); padding-top: 24px; }
+/* 导航列与页签都贴合自身文字宽度：固定列宽会在页签右侧留出大片空白（看起来就是「页签与内容间隔太大」）。 */
 .configTabs { display: flex; flex-direction: column; gap: 4px; align-self: start; align-items: flex-start; min-width: 0; }
 .configTab { display: flex; align-items: center; justify-content: space-between; gap: 4px; min-width: 0; min-height: 40px; border: 0; border-radius: 8px; padding: 8px 12px; font: var(--dsw-font-xs-strong-13); text-align: start; color: var(--dsw-alias-label-secondary); background: transparent; cursor: pointer; overflow-wrap: anywhere; }
 .configTab:hover { background: var(--dsw-alias-bg-layer-3); color: var(--dsw-alias-label-primary); }
