@@ -3,18 +3,30 @@ import assert from 'node:assert/strict'
 // lib/client.js 是宿主 ModuleLoader 注册格式（不可 import）；Node 26 直接类型剥离加载 .ts 源。
 import { createSessionPresetFace } from '../../src/client/data/session-preset-face.ts'
 
-/** 构造结构 mock：当前会话来源 + 该会话的 agentPreset 投影。 */
+/** 构造结构 mock：当前会话来源 + 该会话的 agentPreset / title 投影。 */
 function mockSessions() {
   const state = { current: undefined }
   const currentListeners = new Set()
   const projections = new Map()
+  const titles = new Map()
   return {
     state,
     projections,
+    titles,
     currentSessionId: () => state.current,
     subscribeCurrent: (listener) => { currentListeners.add(listener); return () => currentListeners.delete(listener) },
     binding: (id) => projections.has(id)
-      ? { session: { projections: { faceOf: (key) => { if (key !== 'agentPreset') throw new Error(`unknown projection ${key}`); return projections.get(id) } } } }
+      ? {
+          session: {
+            projections: {
+              faceOf: (key) => {
+                if (key === 'agentPreset') return projections.get(id)
+                if (key === 'title') return titles.get(id)
+                throw new Error(`unknown projection ${key}`)
+              },
+            },
+          },
+        }
       : undefined,
     emitCurrentChange: () => { for (const listener of currentListeners) listener() },
   }
@@ -55,6 +67,24 @@ test('session-preset-face：投影不存在或读取抛错时按无记录处理�
   }
   assert.doesNotThrow(() => createSessionPresetFace(throwing).snapshot())
   assert.equal(createSessionPresetFace(throwing).snapshot(), undefined)
+  assert.doesNotThrow(() => createSessionPresetFace(throwing).sessionLabel())
+  assert.equal(createSessionPresetFace(throwing).sessionLabel(), undefined)
+})
+
+test('session-preset-face：sessionLabel 读官方 title 投影，缺标题或未命名按无标题', () => {
+  const sessions = mockSessions()
+  const face = createSessionPresetFace(sessions)
+  assert.equal(face.sessionLabel(), undefined, '无当前会话')
+  sessions.state.current = 's1'
+  sessions.projections.set('s1', mockProjection('pt-standard'))
+  assert.equal(face.sessionLabel(), undefined, '没有 title 投影行时不猜标题')
+  sessions.titles.set('s1', mockProjection(null))
+  assert.equal(face.sessionLabel(), undefined, '官方 title 的未命名态是 null')
+  sessions.titles.set('s1', mockProjection(''))
+  assert.equal(face.sessionLabel(), undefined, '空串不当作标题')
+  sessions.titles.set('s1', mockProjection('工作台未跟随预设的原因'))
+  assert.equal(face.sessionLabel(), '工作台未跟随预设的原因')
+  assert.equal(face.snapshot(), 'pt-standard', '读标题不影响预设事实')
 })
 
 test('session-preset-face：订阅覆盖会话切换与该会话投影帧；旧会话退订，退订后静默', () => {

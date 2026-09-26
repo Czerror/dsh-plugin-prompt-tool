@@ -369,8 +369,8 @@ use-prompt-tool-store.ts 是唯一工作台 facade，负责把 ConfigForms mirro
 | instruction-drafts.ts | 指令文件正文的独立草稿池与版本基线 |
 | instruction-policy.ts | 指令策略的读写、默认值与单文件开关推导 |
 | session-model-face.ts | 官方会话模型 projection 与选择动作 |
-| session-preset-face.ts | 官方会话预设 projection `agentPreset` 的读取与订阅（当前会话真正运行的预设） |
-| session-preset-follow.ts | 会话预设跟随决策：一致/未加载/不可跟随/有草稿/写盘中的分支与防重入 |
+| session-preset-face.ts | 官方会话预设 projection `agentPreset` 与标题 projection `title` 的读取与订阅（当前会话真正运行的预设；标题只用于提示指名会话，缺失退回 id 短号） |
+| session-preset-follow.ts | 会话预设跟随决策：投影与工作台数据不同源/一致/未加载/不可跟随/有草稿/写盘中的分支与防重入 |
 
 这些模块不重复实现页面渲染，也不把 feature 专属网络流程塞回通用 transport。
 
@@ -412,7 +412,7 @@ JSON bridge 的统一上限为 32 MiB；角色卡原始文件流独立限制为 
 5. promptConfigs 自动保存使用 debounce；工具栏手动保存仍经过配置校验，模块列表不再提供未保存提示、放弃修改和浮动保存条。
 6. 参数空字符串/空数组沿用删除键语义；variables 的空字符串仍是合法占位值。详细参数规则见 [architecture-params.md](architecture-params.md)。
 7. 预设写入携带 `expectedPresetId`，读回失败的自定义工具不降级为空列表供覆盖；跨预设旧草稿被拒绝，切换等待参数保存队列。
-8. 切换预设是事务：先保存当前预设草稿，保存未成功（失败/被拒）即取消切换并保留草稿；切换成功后等 settings 写入与随后的静默 load 完成才返回。切换或首次加载完成前，`loadedPresetRef` 拒绝参数、promptConfigs 与模板变量写盘——旧预设字段不会带新 `presetTemplate` 落盘；重新加载成功应用该预设数据后才恢复写入。官方侧给空白会话切换预设（会话级 select，只改那个会话、不改宿主默认预设）走同一事务的**跟随**变体：读会话投影 `agentPreset`，一致、首次加载未完成、目标不在插件管理目录、当前预设仍有未保存草稿或写盘进行中都不动作（不可跟随的 id 只提示一次）；跟随时不再 select 会话——会话已经运行在该预设上，重复 select 只会多记一条 `agent-preset/selected` 事件。
+8. 切换预设是事务：先保存当前预设草稿，保存未成功（失败/被拒）即取消切换并保留草稿；切换成功后等 settings 写入与随后的静默 load 完成才返回。切换或首次加载完成前，`loadedPresetRef` 拒绝参数、promptConfigs 与模板变量写盘——旧预设字段不会带新 `presetTemplate` 落盘；重新加载成功应用该预设数据后才恢复写入。官方侧给空白会话切换预设（会话级 select，只改那个会话、不改宿主默认预设）走同一事务的**跟随**变体：读会话投影 `agentPreset`，一致、首次加载未完成、投影所属会话与工作台数据所属会话不同源、目标不在插件管理目录、当前预设仍有未保存草稿或写盘进行中都不动作；不可跟随的 id 只提示一次，提示用绿色胶囊标出是哪个会话（官方 `title` 投影，无标题时退回会话 id 短号），不要求用户对着一个预设 id 猜；跟随时不再 select 会话——会话已经运行在该预设上，重复 select 只会多记一条 `agent-preset/selected` 事件。
 9. 技能清单和策略均不进 settings：单端调用策略走 `/skill-policy`（`name/path/side/enabled/sessionId?`，服务器在同工作区重新校验身份；显式两端操作可用 `scope`），引用走 `/skills-folders`，清单走 `/skills-list`。快照保留 `complete`，空数组是权威空结果；调用声明和当前会话注册状态分别呈现。创建/导入走既有端点；删除提交 `name/path/sessionId?`，确认框与请求使用同一条目，用户根及显式引用根按服务器能力开放回收站删除。契约见 [skills-management.md](skills-management.md)。
 10. 指令文件正文走独立草稿池（`data/instruction-drafts.ts`），不与预设保存队列混用：预设 debounce 自动保存与预设切换一律不带文件正文；焦点离开指令文件卡（或列表「保存全部」）时提交 dirty 文件，成功只把请求时快照记为基线，冲突/失败保留草稿并显示「重新读取」。会话或工作区切换建立新的指令上下文（`instructions.context.contextId` 变化即新上下文）：旧上下文的迟到响应不覆盖当前视图，旧 `contextId` 的保存被服务端 409 拒绝。
 11. 指令负责人事实来自 `/bootstrap` 的 `instructions.owner.officialInstructions`（服务端从 pre-step 协调器观察结果取，`null` = 尚未观察到，不当冲突处理）：`true` 时文件卡显示「官方指令行仍在 → 独立来源不注入」，不做「已生效」暗示。

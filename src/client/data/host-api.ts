@@ -22,6 +22,8 @@ export interface SessionModelFace {
 export interface SessionPresetFace {
   /** 当前会话记录的预设 id；无会话、无投影或无记录时 undefined。 */
   snapshot(): string | undefined
+  /** 当前会话标题（官方 `title` 投影）；无会话或无标题时 undefined，仅用于显示。 */
+  sessionLabel(): string | undefined
   /** 会话切换或该会话预设变化时通知；退订后静默。 */
   subscribe(listener: () => void): () => void
 }

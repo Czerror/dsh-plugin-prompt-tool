@@ -4,6 +4,7 @@ import type { PromptToolStore } from '../../data/use-prompt-tool-store.ts'
 import type { PromptToolTranslate } from '../../locales.ts'
 import { WorkspaceNavigation } from './WorkspaceNavigation.tsx'
 import { WORKSPACE_PAGES, type WorkspacePage } from './workspace-pages.ts'
+import { StatusBadge } from '../../ui/StatusBadge.tsx'
 import { StatusDot } from '../../ui/StatusDot.tsx'
 import ui from '../../ui/controls.module.css'
 import css from './PromptWorkspace.module.css'
@@ -110,7 +111,14 @@ export function WorkspaceFrame(props: {
                       </div>
                     </div>
                   ) : props.children}
-                  {store.notice && !loadFailed && props.page !== 'features' && props.page !== 'subagent' && <p className={clsx(ui.notice, store.noticeKind === 'error' && ui.noticeError)} role="status">{store.notice}</p>}
+                  {store.notice && !loadFailed && props.page !== 'features' && props.page !== 'subagent' && (
+                    <p className={clsx(ui.notice, store.noticeKind === 'error' && ui.noticeError)} role="status">
+                      {/* 会话名前导胶囊（绿色）：与消息同一条 live region，只播报一次。 */}
+                      {store.noticePill === undefined
+                        ? store.notice
+                        : <><StatusBadge tone="success" label={store.noticePill} /> {store.notice}</>}
+                    </p>
+                  )}
                 </>
               )}
             </div>

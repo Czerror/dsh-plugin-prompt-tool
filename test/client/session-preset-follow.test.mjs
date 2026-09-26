@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 // lib/client.js 是宿主 ModuleLoader 注册格式（不可 import）；Node 26 直接类型剥离加载 .ts 源。
 import { createSessionPresetFollower } from '../../src/client/data/session-preset-follow.ts'
 
-/** 一次检查的事实与动作记录器（默认：目标可跟随、无草稿、已完成加载）。 */
+/** 一次检查的事实与动作记录器（默认：同一会话、目标可跟随、无草稿、已完成加载）。 */
 function harness(overrides = {}) {
   const applied = []
   const warned = []
@@ -12,6 +12,8 @@ function harness(overrides = {}) {
     warned,
     snapshot: {
       sessionPreset: 'pt-standard',
+      sessionId: 's1',
+      loadedSessionId: 's1',
       currentPreset: 'prompt-tool',
       loadedPreset: 'prompt-tool',
       followable: () => true,
@@ -84,4 +86,26 @@ test('session-preset-follow：写盘进行中不重复 apply（防重入）', as
   release()
   await Promise.all([first, second])
   assert.deepEqual(applied, ['pt-standard'], '并发检查只有一次真正写盘')
+})
+
+test('session-preset-follow：主绑定漂移到别的会话时不判定（不写盘、不提示）', async () => {
+  const follower = createSessionPresetFollower()
+  // 官方 publishMain 在没有「被主视图 retain 的当前会话」时会回退到列表里第一个
+  // 仍被 retain 的旧会话；那不是工作台数据所属的会话，其预设（例如 standard）
+  // 不能拿来判定，更不能据此提示或写盘。
+  const drifted = harness({ sessionId: 'stale-session' })
+  await follower.check(drifted.snapshot)
+  assert.deepEqual(drifted.applied, [], '漂移绑定不得写盘')
+  assert.deepEqual(drifted.warned, [], '漂移绑定不得拿旧会话的预设提示')
+
+  // 没有会话事实（首屏 / 主视图尚未 retain）同样不判定。
+  const absent = harness({ sessionId: undefined })
+  await follower.check(absent.snapshot)
+  assert.deepEqual(absent.warned, [])
+  assert.deepEqual(absent.applied, [])
+
+  // 绑定回到工作台数据所属的会话后恢复判定。
+  const back = harness()
+  await follower.check(back.snapshot)
+  assert.deepEqual(back.applied, ['pt-standard'])
 })

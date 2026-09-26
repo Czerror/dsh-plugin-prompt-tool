@@ -123,8 +123,10 @@ export interface PromptToolStore {
   skillsBusy: boolean
   notice: string
   noticeKind: 'ok' | 'error'
+  /** 通知前导的绿色胶囊文本（会话名）；undefined 表示这条通知没有胶囊。 */
+  noticePill: string | undefined
   load: () => Promise<Fields>
-  showNotice: (kind: 'ok' | 'error', message: string) => void
+  showNotice: (kind: 'ok' | 'error', message: string, pill?: string) => void
   patch: (partial: Partial<Fields>) => void
   /** 保存全局开关与技能顺序/rank；返回两个通道是否都成功（失败字段保持 dirty）。 */
   persistSwitches: (onSaved?: () => void) => Promise<boolean>
@@ -276,6 +278,8 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
   const skillWriteRef = useRef(false)
   const [notice, setNotice] = useState('')
   const [noticeKind, setNoticeKind] = useState<'ok' | 'error'>('ok')
+  /** 通知前导胶囊（会话名）：与 notice 同批更新，清空时一并清掉。 */
+  const [noticePill, setNoticePill] = useState<string | undefined>(undefined)
   const fieldsRef = useRef<Fields>(EMPTY_FIELDS)
   /** fields 订阅者集合：patch/load 每次产生新 fields 引用时广播。
    *  ponytail: 单订阅通道（无 selector 缓存层），selector 在消费侧 useRef 缓存。 */
@@ -340,6 +344,8 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
   /** 已成功应用快照的预设 id：与当前 fields.presetTemplate 不一致时（切换/加载进行中）
    *  拒绝写盘，避免旧预设字段被当成当前预设数据写进新预设。 */
   const loadedPresetRef = useRef<string | undefined>(undefined)
+  /** 已成功应用快照的会话 id：跟随判定据此拒绝漂移到别的会话的主绑定。 */
+  const loadedSessionRef = useRef<string | undefined>(undefined)
   const enqueuePresetTask = useCallback(<T,>(presetId: string, task: () => Promise<T>): Promise<T> => presetSaveQueueRef.current.enqueue(async () => {
     if (fieldsRef.current.presetTemplate !== presetId || loadedPresetRef.current !== presetId) throw new Error(PRESET_PENDING_MESSAGE)
     return task()
@@ -357,9 +363,16 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
   const loadedKeysRef = useRef<Set<string>>(new Set())
   const paramBaselineRef = useRef<SwitchSnapshot>(EMPTY_SWITCHES)
 
-  const showNotice = useCallback((kind: 'ok' | 'error', message: string) => {
+  const showNotice = useCallback((kind: 'ok' | 'error', message: string, pill?: string) => {
     setNotice(message)
     setNoticeKind(kind)
+    setNoticePill(pill)
+  }, [])
+
+  /** 清空通知（含胶囊）：快照应用完成后调用，旧提示不跨加载常驻。 */
+  const clearNotice = useCallback(() => {
+    setNotice('')
+    setNoticePill(undefined)
   }, [])
 
   /** 模型目录惰性加载：独立于主 load（/describe 不再阻塞等模型查询）。 */
@@ -527,8 +540,9 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
       }
       // 快照已完整应用：该预设自此可写（切换/首次加载期间由 loadedPresetRef 拦截写盘）。
       loadedPresetRef.current = fieldsRef.current.presetTemplate
+      loadedSessionRef.current = sessionId
       paramBaselineRef.current = snapshotSwitches(fieldsRef.current)
-      setNotice('')
+      clearNotice()
       // 加载完成后补一次会话预设检查：工作台打开时会话可能已经运行在别的预设上
       // （官方侧切换发生在订阅建立之前，不会有投影通知）。
       followCheckRef.current()
@@ -539,7 +553,7 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
     } finally {
       if (seq === loadSeqRef.current && !options?.silent) setLoading(false)
     }
-  }, [api, applyView, publishInstructionPolicy, publishInstructions, settings, showNotice])
+  }, [api, applyView, clearNotice, publishInstructionPolicy, publishInstructions, settings, showNotice])
 
   // 挂载即后台拉取模型目录（不阻塞工作台首屏；10min 缓存兜底重复打开）。
   useEffect(() => {
@@ -1003,12 +1017,18 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
    * 跟随官方会话级预设选择：会话投影 agentPreset 记的是该会话真正运行的预设，
    * 官方「新建会话」旁的选择器只改那个空白会话、不改宿主默认预设，因此插件镜像宿主
    * 默认的 presetTemplate 只有读这个投影才能跟随（决策与守卫见 session-preset-follow）。
+   *
+   * 事实里的会话 id 与 load 时记录的会话 id 一并交出：官方主绑定会回退到仍被主视图
+   * retain 的旧会话，只有两者同源时那条投影才代表用户正在看的会话。
    */
   const followCheck = useCallback((): void => {
     const follower = presetFollowerRef.current
     if (follower === undefined) return
+    const sessionId = api.currentSessionId()
     void follower.check({
       sessionPreset: api.sessionPreset.snapshot(),
+      sessionId,
+      loadedSessionId: loadedSessionRef.current,
       currentPreset: fieldsRef.current.presetTemplate,
       loadedPreset: loadedPresetRef.current,
       // 只跟随插件管理目录中可渲染的预设：别处（官方随包预设等）不由本插件物化。
@@ -1016,7 +1036,13 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
         .some((preset) => preset.id === presetId && preset.renderable !== false),
       blocked: (presetId) => hasWorkspaceDrafts(editorDrafts, presetId),
       apply: (presetId) => applyPresetTemplate(presetId, false, `已跟随当前会话预设：${presetId}`),
-      warn: (presetId) => showNotice('error', `当前会话预设 ${presetId} 不在提示词工具管理目录中，工作台未跟随`),
+      // 提示指名会话（渲染成绿色胶囊）：只报一个预设 id 会让用户对着「standard」
+      // 猜是哪个会话。无标题时退回会话 id 短号，缺失胶囊则退回无胶囊文案。
+      warn: (presetId) => showNotice(
+        'error',
+        `会话预设 ${presetId} 不在提示词工具管理目录中，工作台未跟随`,
+        api.sessionPreset.sessionLabel() ?? sessionId?.slice(0, 8),
+      ),
     })
   }, [api, applyPresetTemplate, editorDrafts, meta.presets, showNotice])
   followCheckRef.current = followCheck
@@ -1219,6 +1245,7 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
     skillsBusy,
     notice,
     noticeKind,
+    noticePill,
     load,
     showNotice,
     patch,

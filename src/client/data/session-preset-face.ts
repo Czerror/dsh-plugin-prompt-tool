@@ -9,6 +9,8 @@
  *
  * 读取路径与官方 ui-agent-preset 的 chip 同源：会话投影值。宿主未装 agent-presets
  * 时投影不存在，按「无记录」处理，不让工作台因此报错。
+ * 同一路径也读官方 `title` 投影（`sessionLabel`）：提示里要指名是哪个会话，
+ * 而不是让用户对着一个预设 id 猜。标题缺失只影响显示，不参与任何判定。
  * 依赖以结构类型声明，便于 node:test 以纯 mock 做确定性回归。
  */
 
@@ -28,6 +30,9 @@ export interface SessionPresetSessionsLike {
   binding(id: string): { session: { projections: { faceOf(key: string): SnapshotLike<unknown> } } } | undefined
 }
 
+/** 本面读取的官方会话投影键：预设事实，以及用于辨认会话的标题。 */
+type SessionProjectionKey = 'agentPreset' | 'title'
+
 /** 投影值 → 预设 id：非字符串或空串表示该会话没有记录预设。 */
 function presetIdOf(value: unknown): string | undefined {
   return typeof value === 'string' && value.length > 0 ? value : undefined
@@ -36,17 +41,24 @@ function presetIdOf(value: unknown): string | undefined {
 /** 创建当前会话预设面（引用稳定快照 + 当前会话/投影双层订阅）。 */
 export function createSessionPresetFace(sessions: SessionPresetSessionsLike): SessionPresetFace {
   /** 投影缺失（宿主未装 agent-presets）或 face 读取失败都按「无记录」。 */
-  const faceOf = (id: string): SnapshotLike<unknown> | undefined => {
+  const faceOf = (id: string, key: SessionProjectionKey): SnapshotLike<unknown> | undefined => {
     try {
-      return sessions.binding(id)?.session.projections.faceOf('agentPreset')
+      return sessions.binding(id)?.session.projections.faceOf(key)
     } catch {
       return undefined
     }
   }
-  const presetOf = (id: string | undefined): string | undefined =>
-    id === undefined ? undefined : presetIdOf(faceOf(id)?.getSnapshot())
+  const valueOf = (id: string | undefined, key: SessionProjectionKey): unknown =>
+    id === undefined ? undefined : faceOf(id, key)?.getSnapshot()
+  const presetOf = (id: string | undefined): string | undefined => presetIdOf(valueOf(id, 'agentPreset'))
+  /** 会话标题投影（官方会话列表与 hero 同源）；无标题时 undefined。 */
+  const labelOf = (id: string | undefined): string | undefined => {
+    const value = valueOf(id, 'title')
+    return typeof value === 'string' && value.length > 0 ? value : undefined
+  }
   return {
     snapshot: () => presetOf(sessions.currentSessionId()),
+    sessionLabel: () => labelOf(sessions.currentSessionId()),
     subscribe(listener) {
       let watched: string | undefined
       let stopProjection: (() => void) | undefined
@@ -56,7 +68,7 @@ export function createSessionPresetFace(sessions: SessionPresetSessionsLike): Se
         watched = id
         stopProjection?.()
         stopProjection = undefined
-        if (id !== undefined) stopProjection = faceOf(id)?.subscribe(listener)
+        if (id !== undefined) stopProjection = faceOf(id, 'agentPreset')?.subscribe(listener)
       }
       watchCurrent()
       const stopList = sessions.subscribeCurrent(() => {
