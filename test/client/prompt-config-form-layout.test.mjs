@@ -600,7 +600,7 @@ test('本层引擎设置：提供明确导航入口，首次进入前不渲染�
   // 注入后：折叠区带该层标记，标题与说明来自字典。
   const injected = renderElement(PromptConfigForm, formProps({ layer: 'tool-pipeline' }, { renderLayerSettings: () => marker }))
   assert.match(injected, /data-layer-settings="tool-pipeline"/)
-  assert.ok(injected.includes(t('form.navigation.settings')), '导航文案为本层设置')
+  assert.ok(injected.includes(t('form.navigation.settings')), '导航文案为设置')
   assert.match(injected, /role="tab"[^>]*data-config-tab="settings"/)
   assert.doesNotMatch(injected, /<details|<summary/)
   // 默认折叠 = 内容不求值：同层 120 张实例卡不会因此多出成百上千控件。

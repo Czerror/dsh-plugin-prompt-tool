@@ -196,6 +196,11 @@ React.createElement('section',{className:ui.pageActions,'data-sticky':true},'模
           assert.equal(navigation.selected, 1)
           assert.equal(navigation.tabStops, 1)
         }
+        // 竖排页签贴合自身文案，不撑满左侧导航列（横排才等宽铺满）。
+        if (width > 620) {
+          const fits = await evaluate(`(()=>{const form=document.querySelector('[data-form-layer="pre-step"]'),tab=form.querySelector('[data-config-tab="settings"]'),tabs=form.querySelector('[role="tablist"]');return {tab:tab.getBoundingClientRect().width,tabs:tabs.getBoundingClientRect().width}})()`)
+          assert.ok(fits.tab < fits.tabs - 1, `竖排页签贴合文案：${scheme}/${width} → ${JSON.stringify(fits)}`)
+        }
         const forms = await evaluate(`(()=>[...document.querySelectorAll('[data-form-layer]')].map(form=>{const r=form.getBoundingClientRect();return {layer:form.dataset.formLayer,overflow:form.scrollWidth>form.clientWidth+1,outside:[...form.querySelectorAll('input,textarea,button')].filter(e=>e.getClientRects().length).some(e=>{const b=e.getBoundingClientRect();return b.left<r.left-1||b.right>r.right+1})}}))()`)
         assert.equal(forms.length, 3)
         for (const form of forms) {
