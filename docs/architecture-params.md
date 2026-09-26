@@ -272,7 +272,8 @@ moduleConfigs 仅补充参数桥未覆盖的键（如 ST 导入 tool-web.fetch�
 
 `engine/instruction-hint.mjs` 是通用内置能力：`placeholder + fill: instruction-hint`
 与共享参数 `instructionHint`（由 `instruction-hint` 模块行承接）共用同一组
-文件探测、提示文本与转换函数；它不属于任何预设专属模块。
+文件探测、提示文本与转换函数；它不属于任何预设专属模块。`instructionHint` 是默认关闭的
+预设级转换开关；对官方待注入消息先应用逐文件过滤，再转换剩余符合条件的全文，不替换历史。
 
 `engine/strategies.mjs` 三个内容策略是**独立功能**，仅分类器在 fallback 层共用：
 
@@ -492,41 +493,47 @@ ST 转换（convertStToPreset）通过顶层 `persona: { prefix: '', complete: f
 - 预览链路：`/subagent-tool-policy-preview` POST 与运行时 `resolveSubagentToolPolicy()` 同一 seam（不重复算法）；预览用 ceiling 工具宇宙。
 - 工具面：`/tool-surface` POST 接受互斥的 `{ sessionId }` 或 `{ presetId }`。前者只读当前存活本地 Agent 的 name/description 摘要；后者经官方 `agentPresets.list()` 白名单与 `acquireScope()` 取得当前 revision lease，读取 `tools.schemas(lease.key)` 后在 finally 中释放。两者均不下发完整 Schema、大文本或 secrets；PTC 下预设工具能力不等于模型 wire 直连工具。
 
-### 独立指令文件来源与指令策略（2026-09-14）
+### 指令文件与逐文件过滤策略
 
-指令文件（AGENTS.md / CLAUDE.md 等）不属于预设生命周期：正文在用户自己的文件里，行为在
-独立策略文件里，两者都不写进 `preset.yml`。
+指令文件（AGENTS.md / CLAUDE.md 等）不属于预设生命周期：正文在用户自己的文件里，显示名
+与逐文件开关在独立策略文件里，两者都不写进 `preset.yml`。官方负责注入，插件只过滤未来消息。
 
 - **不再物化生成卡**：`writePreset` 不再探测指令文件、不再把 `agents-file-*` 卡写进生成
   目录；`preset.yml#agentsHints` 已不是运行时开关（字段仅为兼容既有用户预设保留解析，不再
   生效）。文件集合、正文、版本与读取状态由 `/bootstrap`、`/prompt-configs` 按**本会话工作区**
-  现场解析（`agent.session.header.cwd`；无本地会话时只保留 `$DSH_HOME/AGENTS.md`，不拿进程
-  cwd 冒充工作区）。
+  现场解析（优先 `agent.session.header.cwd`；无本地会话时回退部署进程 cwd，并以
+  `context.source: deploy-cwd` 区分，不把该范围提示当作会话写授权）。
 - **探测范围**：用户级 `$DSH_HOME/AGENTS.md` + 工作区 cwd→项目根链（`.git` 为根标记）每个
   目录的 `AGENTS.md` / `CLAUDE.md` / `AGENTS.local.md` / `CLAUDE.local.md`；只接受普通文件，
   候选文件与授权根均先解析真实路径，允许根目录本身是目录链接；越出获准范围（全局限
-  DSH_HOME、项目限项目根）的文件不收录也不可写。普通预设卡的 `params.file` 不是独立
-  来源身份，不能因此被过滤或改走指令文件保存通道。
+  DSH_HOME、项目限项目根）的文件不收录也不可写。这是本地文件卡的编辑范围，官方注入
+  仍使用自身发现规则与配置。普通预设卡的 `params.file` 不是指令文件身份，不能因此被
+  逐文件开关过滤或改走指令文件保存通道。
 - **编辑框**：`/bootstrap` 与 `/prompt-configs` 读时把同一份快照（正文 + 文件身份 + 字节
   SHA-256 + 读取状态）附到文件卡；改后经 `/agents-file` 写回真实文件（`fileId` + `contextId`
   必须命中服务端当次探测白名单，`expectedRevision` 做乐观并发，未知 id / 类型错误 400、越界
   403、缺失 404、版本或上下文过期 409、超限 413，tmp + rename 原子写且保留原权限），写盘不
   触发预设重建。
 - **独立策略**：`$DSH_HOME/.prompt-tool/instructions.yml`（`src/host/instructions-policy.ts`）
-  承载启停、层内序号、位置、晋升、受众与模型范围；默认 `enabled: false`（安全缺省，需显式
-  开启），用 Document API 保留注释与未知字段、原始字节 SHA-256 乐观并发及严格字段白名单。
+  形状为 `{ files: { [fileId]: { enabled?, name? } } }`；同一 DSH_HOME 下所有预设共享，
+  缺省放行，只有文件级 `enabled: false` 过滤后续官方注入。显示名仅改变 UI 标题；没有总
+  开关、默认行为段或文件级位置／顺序／晋升／受众／模型范围。旧顶层 `enabled` / `defaults`
+  及文件级 `order` / `position` / `promotion` / `audience` / `modelScope` 读取时忽略，下一次
+  成功保存时清理；旧顶层关闭不迁移为文件关闭。其他未知字段与注释由 Document API 保留，
+  写入继续使用原始字节 SHA-256 乐观并发及严格字段白名单。
   非法 UTF-8、YAML 解析/转换失败均作为不可读状态拒绝写入；未被 alias 引用的 null 文件
   覆盖可被后续局部保存替换为有效覆盖。被引用的 null 锚点须先解除共享引用；局部更新拒写
-  且保留原字节，避免连带改变其他字段。策略只影响未来的注入，不撤回已进入会话历史的内容。
-- **注入**：宿主侧 pre-step 协调器（`src/runtime/pre-step-coordinator.ts`）按会话工作区实时
-  探测并编译文件卡，与预设卡共用 `engine/executor.mjs#runPreStepBatch`；文件正文 literal、
-  身份含 `(fileId, revision, epoch)`、按可见面判定是否需要重发。运行时语义见
-  [engine-reuse.md](engine-reuse.md#pre-step-协调器与独立指令文件来源2026-09-14)。
-- **负责人冲突与未知装配**：该 mount 的组合仍挂着官方 `@deepseek-ai/dsh-agent-instructions`
-  行时，独立来源不参战（同一正文只由一方注入）；该 Agent 的 scope 里没有任何已注册的 preset
-  来源（mount 没有 `prompt-config-engine` 行或引擎未注册）按「未知」处理，同样不注入。
-  `instructions.owner.officialInstructions` 把 `true/false/null(未知)` 发给工作台。切换到插件
-  负责需要用户先在自己的预设里去掉官方指令行/模块，再显式开启独立策略。
+  且保留原字节，避免连带改变其他字段。策略缺失或不可读时不阻断官方内容，不可读时报告诊断。
+- **过滤**：宿主侧 pre-step 协调器（`src/runtime/pre-step-coordinator.ts`）只处理官方待注入
+  消息；以 `source.changes` 路径对应本地文件身份及模板段落，删除关闭文件的正文与变更
+  元数据。未知身份原样保留；无法可靠分段时原样放行并诊断。官方预算、增量更新与压缩恢复
+  不由插件重做，不补回已省略内容，不撤回历史或因重新开启而强制重放。`instructionHint`
+  在过滤之后转换剩余官方消息。运行时语义见
+  [engine-reuse.md](engine-reuse.md#pre-step-协调器与官方指令过滤)。
+- **装配状态**：`instructions.owner.officialInstructions` 把 `true/false/null(未知)` 发给
+  工作台，分别表示官方负责、未装配、尚未观察到；不证明某个文件已经注入。预设保留官方
+  指令行，未装配时插件不补建文件注入。边界与旧决策替代关系见
+  [ADR-0004](adr/0004-official-instruction-filter.md)。
 
 ### 模块事实与能力卡（2026-09-05）
 

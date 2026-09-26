@@ -118,7 +118,6 @@ export interface PromptToolStore {
   /** 写单个文件的行为策略（null = 删除覆盖、恢复默认）；带 revision 乐观并发。 */
   updateInstructionPolicy: (fileId: string, override: InstructionPolicyFileOverride | null) => Promise<boolean>
   /** 独立来源总开关：仅写策略顶层 enabled，不改变官方负责人或单文件覆盖。 */
-  setInstructionSourceEnabled: (enabled: boolean) => Promise<boolean>
   /** 技能资产写入忙碌态（复制导入 / 创建 / 删除）。 */
   skillsBusy: boolean
   notice: string
@@ -205,7 +204,7 @@ function withInstructionState(
   return configs.map((config) => {
     const fileId = instructionFileIdOf(config)
     if (fileId === undefined) return config
-    // 行为字段来自独立策略（不是预设卡字段），文件卡的显隐/顺序/位置等以它为准。
+    // 文件卡只从独立策略读取开关和名称；注入位置与生命周期归官方所有。
     const resolved = resolveInstructionFilePolicy(policy.policy, fileId)
     const draft = pool.drafts.find((entry) => entry.fileId === fileId)
     if (draft === undefined) {
@@ -228,8 +227,6 @@ function withInstructionState(
       contentMessage: message,
       contentDirty: draft.content !== draft.savedContent,
       contentConflict: draft.conflict === true ? true : undefined,
-      // 负责人冲突是会话级事实（服务端观察），不是文件自身状态：只在确认冲突时显示。
-      contentOwnerConflict: pool.owner?.officialInstructions === true ? true : undefined,
       contentSaving: draft.saving === true ? true : undefined,
     }
   })
@@ -237,15 +234,10 @@ function withInstructionState(
 
 /** 策略值 → 卡片行为字段（文件卡的行为不来自 preset.yml）。 */
 function policyFields(
-  resolved: { order: number; position: string; promotion: string; audience: string | null; modelScope: string; enabled: boolean; name?: string },
+  resolved: { enabled: boolean; name?: string },
 ): Partial<PromptConfigDraft> {
   return {
     enabled: resolved.enabled,
-    order: resolved.order,
-    position: resolved.position,
-    promotion: resolved.promotion,
-    audience: resolved.audience,
-    modelScope: resolved.modelScope,
     ...(resolved.name === undefined ? {} : { name: resolved.name }),
   }
 }
@@ -800,7 +792,7 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
   }, [api, publishInstructions, showNotice, syncInstructionCards])
 
   /**
-   * 写单个文件的指令卡策略（独立于预设）：enabled/顺序/位置/晋升/受众/模型范围/显示名。
+   * 写单个文件的开关与显示名（独立于预设）。
    * 带读取时 revision 的乐观并发；失败保留快照并提示，不偷偷改本地状态。
    */
   const persistInstructionPolicy = useCallback((policy: InstructionPolicyPatch): Promise<boolean> => saveQueueRef.current.enqueue(async () => {
@@ -826,9 +818,6 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
 
   const updateInstructionPolicy = useCallback((fileId: string, override: InstructionPolicyFileOverride | null): Promise<boolean> => (
     persistInstructionPolicy(instructionPolicyPatchForFile(fileId, override))
-  ), [persistInstructionPolicy])
-  const setInstructionSourceEnabled = useCallback((enabled: boolean): Promise<boolean> => (
-    persistInstructionPolicy({ enabled })
   ), [persistInstructionPolicy])
 
   /** 冲突处理：重新读取单个文件并丢弃本地草稿（不自动重载，避免悄悄覆盖用户输入）。 */
@@ -1241,7 +1230,6 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
     instructionPolicy,
     getInstructionPolicy: () => instructionPolicyRef.current,
     updateInstructionPolicy,
-    setInstructionSourceEnabled,
     skillsBusy,
     notice,
     noticeKind,

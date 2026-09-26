@@ -168,13 +168,14 @@
 - 验收入口：`test/host/pre-step-persistence.test.mjs`（真实 `@deepseek-ai/dsh-session` 的
   持久化 → 重新加载 → 派生请求）。
 
-## pre-step 协调器与独立指令文件来源（2026-09-14）
+## pre-step 协调器与官方指令过滤
 
 `prompt-config-engine` 行不再无条件自建 pre-step 监听器：
 
 - 宿主插件提供 `promptToolPreStep` 协调服务时，引擎行把本 mount 的提示词配置注册给协调器
   （`registerPreset`），由协调器用**同一个** `engine/executor.mjs#runPreStepBatch` 统一执行
-  预设来源与独立指令文件来源；任一时刻每个 scope 只有一条执行路径。
+  预设来源；任一时刻每个 scope 只有一条预设配置执行路径。文件正文由官方来源生成，插件
+  在消息进入会话前执行逐文件过滤，不把文件卡编译为第二批注入配置。
 - 没有该服务（引擎被复制到无宿主的目录复用）时，引擎行仍自带 pre-step 监听器，只执行自身
   预设配置；引擎不 import `src/host`，也不强制协调服务存在。
 - 协调服务迟到时，引擎行先停止本地注入再启用管理路径；服务消失时反向恢复独立执行。
@@ -187,37 +188,42 @@
   无法切换预设）。被顶替的旧登记句柄迟到撤销是空操作，不会移除已接管的登记；接管只在
   同一 scope 内发生，兄弟 scope 的同名来源互不顶替。父 scope 的来源对子代理可见、兄弟
   scope 互不串，scope dispose 即释放。resolver 也绑定来源 ctx，不因合并批次而改读协调器的
-  全局服务。协调器使用普通监听顺序，留在最外层 pre-step 门（声明式 `pre-step-filter`，
-  `waterfallPosition: outermost`）内侧；迟到或重挂不改变该门对预设与文件消息的约束。
+  全局服务。预设批执行器使用普通监听顺序，留在最外层 pre-step 门（声明式 `pre-step-filter`，
+  `waterfallPosition: outermost`）内侧；官方指令过滤在官方消息生成之后、写入会话之前完成。
+  迟到或重挂不改变外层门对最终消息批的约束。
 - 验收入口：`test/host/pre-step-wiring.test.mjs`（来源 scope 隔离与 dispose 释放、同一 scope
   同名来源接管与旧句柄幂等、协调服务迟到与 HMR 重登）。
 
-### 独立指令文件来源
+### 官方指令的逐文件过滤
 
-正文永远在用户自己的指令文件里；独立来源只是「按会话工作区现场探测 + 独立策略」的第二类
-pre-step 来源：
+官方 `@deepseek-ai/dsh-agent-instructions` 是文件正文的注入来源，负责发现、读取、预算、
+增量更新和压缩恢复。插件只对待注入消息应用 `$DSH_HOME/.prompt-tool/instructions.yml`
+中的 `files[fileId].enabled: false`，没有独立来源总开关，也不接管官方生命周期：
 
-- 候选资格 = 文件可读且非空 + 独立策略（`$DSH_HOME/.prompt-tool/instructions.yml`，缺省
-  `enabled: false`）启用 + 该 `(fileId, revision, surface epoch)` 身份尚未出现在当前可见
-  上下文里。可见面以 `session.deriveMessages()` 为准，缺失时回退「持久日志里最后一次成功
-  `compaction/end` 之后的消息」。
-- 因此：同版本已可见不重复注入；内容变化在下一个合适 pre-step 注入一次新版本；成功压缩后
-  同版本恢复一次（新 epoch 身份）；失败压缩不推进 epoch、不重放；`reject`、缺少
-  `after-user` 锚点、后续 prepare/admission 取消都不算已注入，条件恢复后仍可重试；重挂或
-  进程恢复直接从持久记录重建，不依赖进程内已投递集合。
-- 文件正文以 content 块注入并加 `Instructions from: <显示路径>` 头，不经过预设变量插值；
-  同一文件只有一份身份，不同文件不互相去重；多个文件按全局 → 项目根 → cwd 的探测顺序、
-  与预设卡一起按 `order` 升序执行。
-- 已注入过的文件被清空/删除/超限时，不再注入新全文，只发一次带文件身份的失效通知；历史
-  正文仍在会话日志里，插件不谎称已撤回，也不篡改旧消息。
-- 旧版物化在生成目录里的 `agents-file-*` 卡（`sourceKind: instruction-file`）不再参战：
-  独立来源接管后统一跳过，避免同一正文双份注入。
-- 负责人冲突：该 mount 的组合仍挂着官方 `@deepseek-ai/dsh-agent-instructions` 行时（引擎行
-  从物化组合读取该装配事实），协调器整体跳过文件正文注入——同一正文只由一方注入；工作台
-  通过 `instructions.owner.officialInstructions` 显示该事实（`null` = 尚未观察到，不猜）。
-- 装配未知同样不注入：该 Agent 的 scope 里没有任何已注册的 preset 来源（mount 没有
-  `prompt-config-engine` 行，或引擎行未注册）时不确认负责人，文件正文一律不注入，
-  `instructions.owner.officialInstructions` 保持 `null`——不靠「先注入再说」赌只有一个负责人。
+- 仅处理 `source.kind: agent-instructions` 的官方消息；通过 `source.changes` 路径与
+  `Instructions from:`、`Additional instructions from:`、`Updated instructions from:`、
+  `Instructions removed:` 模板段落共同定位关闭的文件。其他来源不受逐文件过滤影响。
+- 基线、附加、更新和移除消息使用同一过滤入口；删除对应正文时同步删除该文件的
+  `source.changes`，保留其他文件、消息身份及其余元数据。该消息没有剩余文件时整条移除。
+- 项目路径按当批或当前可见官方基线 `baselineIdentity` 中的项目根解析，不用插件的 `.git`
+  探测替代官方根；路径必须能映射到本地文件身份，未知身份原样保留。格式歧义、标题重复或元数据与正文不
+  一致时原样放行该条消息并报告诊断，不通过猜测段落边界误删官方内容。策略损坏同样诊断
+  并放行，工作台拒绝覆盖损坏的策略文件。
+- 完整替代基线中的移除记录可能只由共同引言表达，没有独立正文区间；此类基线需要过滤时
+  原样放行并诊断，避免误删正文中的移除示例或确认模型没有收到的移除。
+- 缺省放行；首次请求前关闭可阻止可识别文件进入新历史。会话中关闭只作用于后续注入，
+  已有正文不撤回，重新开启也不强制重放；官方后续产生消息时再按当前开关处理。主会话、
+  子代理及压缩恢复使用同一过滤规则，不新增文件级位置、晋升、受众或模型控制。
+- 官方已经完成预算裁剪，插件不补回被省略的其他内容，不重复读取文件来生成注入正文。
+  文件卡为了编辑原文仍可读取文件；关闭不是文件访问控制，也不阻止官方读取。
+- `instructionHint` 默认关闭。显式开启后先调用同一过滤入口，再转换剩余符合条件的官方
+  消息；转换与过滤都不改写历史。未装配官方指令时，插件不补建文件注入。
+- 旧版生成目录里的 `agents-file-*` 卡（或 `sourceKind: instruction-file`）继续跳过，
+  避免旧产物恢复插件自注入。`instructions.owner.officialInstructions` 只报告官方装配
+  事实（`true` / `false` / `null`），不表示某个文件已经进入模型上下文。
+
+策略结构与旧字段清理见 [参数架构](architecture-params.md#指令文件与逐文件过滤策略)。
+取舍记录见 [ADR-0004](adr/0004-official-instruction-filter.md)。
 
 ## 提示词配置插入点与顺序
 

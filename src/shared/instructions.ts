@@ -4,7 +4,7 @@
  * 引擎侧的位置/晋升/受众算法不在这里复制。
  */
 
-/** 单个指令文件正文上限（与官方指令行的 maxBytes 基线对齐；读写限制一致）。 */
+/** 文件卡正文读写上限；官方注入的读取与渲染预算由官方配置决定。 */
 export const MAX_INSTRUCTION_FILE_BYTES = 64 * 1024
 
 export const INSTRUCTION_FILE_STATUSES = ['ready', 'missing', 'unreadable', 'too-large'] as const
@@ -58,8 +58,7 @@ export interface InstructionsSnapshot {
 
 /**
  * 指令负责人事实：本会话实际装配里是否仍挂着官方指令加载行。
- * `true` 时独立文件来源整体不参战（同一正文只由一方注入）；`false` 表示由本插件
- * 的独立来源负责；`null` 表示本次请求还没有该会话的装配观察结果（不猜）。
+ * `true` 表示官方负责注入；`false` 表示预设未装配官方来源；`null` 表示尚未观察到。
  */
 export interface InstructionsOwnerView {
   officialInstructions: boolean | null
@@ -74,38 +73,23 @@ export interface InstructionFileWriteResult {
 /**
  * 指令文件卡策略（独立于预设与 settings 的本插件自有状态）。
  *
- * 只承载行为开关与展示名：正文永远在用户的原文件里，策略不存正文、读取版本、
- * 会话 ID 或任意客户端路径。缺省 `enabled: false`——独立来源必须先完成负责人
- * 切换验收，再由用户显式开启。
+ * 只承载逐文件开关与展示名；正文、读取版本、会话 ID 和路径不进入策略。
+ * 默认放行官方注入，关闭只过滤后续消息，不撤回已持久历史。
  */
-export interface InstructionPolicyValues {
-  order: number
-  position: string
-  promotion: string
-  audience: string | null
-  modelScope: string
-}
-
-export interface InstructionPolicyFileOverride extends Partial<InstructionPolicyValues> {
-  /** 每文件可关闭注入（默认开启）；部署级 enabled 为 false 时整体不注入。 */
+export interface InstructionPolicyFileOverride {
+  /** 缺省开启；false 拦截该文件后续的官方注入。 */
   enabled?: boolean
   /** 可选显示名（只影响 UI 标题）。 */
   name?: string
 }
 
 export interface InstructionPolicy {
-  /** 部署级开关：文件来源是否参与注入。 */
-  enabled: boolean
-  /** 未单独覆盖的文件使用这些值。 */
-  defaults: InstructionPolicyValues
-  /** 按 fileId 的覆盖；缺省即用 defaults，删除覆盖恢复默认。 */
+  /** 按 fileId 的覆盖；删除覆盖恢复默认放行。 */
   files: Record<string, InstructionPolicyFileOverride>
 }
 
 /** 局部更新：只写传入的键；files[fileId] = null 表示删除该覆盖。 */
 export interface InstructionPolicyPatch {
-  enabled?: boolean
-  defaults?: Partial<InstructionPolicyValues>
   files?: Record<string, InstructionPolicyFileOverride | null>
 }
 

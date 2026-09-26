@@ -19,7 +19,7 @@
 import { randomUUID } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { createEpochPromotion } from './compaction-epoch.mjs'
-import { booleanOption, createWarnOnce, parsePromoteOn, validateConfig } from './shared.mjs'
+import { booleanOption, createWarnOnce, getService, parsePromoteOn, validateConfig } from './shared.mjs'
 
 export const name = 'instruction-hint'
 
@@ -272,10 +272,14 @@ export function apply(ctx, config) {
       if (!promotion.status(agent).promoted) return decision
       if (!Array.isArray(decision.messages)) return decision
       if (agent?.session === undefined) return decision
+      const coordinator = getService(ctx, 'promptToolPreStep')
+      const messages = typeof coordinator?.filterInstructions === 'function'
+        ? coordinator.filterInstructions(agent, decision.messages)
+        : decision.messages
       // 1 换 1 的转换不能按长度判断（长度相同仍可能已转换），
       // instructionHintMessages 本身保留非目标消息，直接采用结果。
       const hintState = { instructionHinted: hasVisibleInstructionHint(agent.session) }
-      return { ...decision, messages: instructionHintMessages(decision.messages, hintState, name) }
+      return { ...decision, messages: instructionHintMessages(messages, hintState, name) }
     } catch (error) {
       // 转换失败不阻断会话：保留原消息。
       warnOnce(`${name}: instruction hint conversion failed, keeping messages: ${String((error && error.message) || error)}`)

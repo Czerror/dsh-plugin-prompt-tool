@@ -31,7 +31,6 @@ export interface PromptConfigsEditorProps extends Pick<PromptConfigListProps, 'b
   onSaveConfigs: (configs: PromptConfigDraft[]) => Promise<boolean>
   onSaveInstructions?: () => Promise<boolean>
   instructionPolicy?: InstructionPolicySnapshot
-  onToggleInstructionSource?: (enabled: boolean) => Promise<boolean>
   /** 指令文件卡：显式写盘 / 重新读取（不经预设保存路径）。 */
   onSaveInstructionFile?: (fileId: string) => void
   onReloadInstructionFile?: (fileId: string) => void
@@ -178,7 +177,6 @@ export function PromptConfigsEditor(props: PromptConfigsEditorProps): ReactNode 
         onSaveConfigs={props.onSaveConfigs}
         onSaveInstructions={props.onSaveInstructions}
         instructionPolicy={props.instructionPolicy}
-        onToggleInstructionSource={props.onToggleInstructionSource}
         onSaveInstructionFile={props.onSaveInstructionFile}
         onReloadInstructionFile={props.onReloadInstructionFile}
         onPatchInstructionPolicy={props.onPatchInstructionPolicy}

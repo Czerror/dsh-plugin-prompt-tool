@@ -225,9 +225,10 @@ test('子代理页创建入口对等，且不下发指令文件卡（单编辑�
   assert.match(wrapper, /instructionPolicy=\{instructionScope \? store\.instructionPolicy : undefined\}/)
   assert.match(wrapper, /onSaveInstructionFile=\{instructionScope \? saveInstructionFile : undefined\}/)
   assert.match(wrapper, /onPatchInstructionPolicy=\{instructionScope \? patchInstructionPolicy : undefined\}/)
-  // 列表侧：未下发策略时不渲染指令文件卡（undefined 分支）。
+  // 列表没有独立来源总开关；策略读取错误仍有就地反馈。
   const list = read('features/prompts/PromptConfigList.tsx')
-  assert.match(list, /props\.instructionPolicy !== undefined && props\.onToggleInstructionSource !== undefined/)
+  assert.doesNotMatch(list, /onToggleInstructionSource/)
+  assert.match(list, /props\.instructionPolicy\?\.error/)
 })
 
 test('模块列表只有一个创建入口：老「新建」按钮不再渲染，入口收敛到合并菜单', () => {

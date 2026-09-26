@@ -128,6 +128,7 @@ export interface BridgeRequestMap {
    * 指令文件卡策略（独立存储，默认禁用）：省略 `policy` = 读取；
    * 写入必须带读取时的 `expectedRevision`（文件缺失为 null）。
    */
+  /** 逐文件启停/名称；无 policy 时读取，写入仍校验原始字节版本。 */
   instructionsPolicy: { policy?: InstructionPolicyPatch; expectedRevision?: string | null } | undefined
   presetContent: undefined
   importPreset: { contents: Array<{ scope: 'preset' | 'agents'; content: string }>; expectedPresetId?: string }

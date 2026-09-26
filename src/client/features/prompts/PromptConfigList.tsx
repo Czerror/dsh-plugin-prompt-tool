@@ -5,7 +5,6 @@ import { isManagedConfigField } from '../../../shared/managed-config-fields.ts'
 import { instructionFileIdOf } from '../../data/prompt-config-content.ts'
 import type { PromptToolTranslate } from '../../locales.ts'
 import { MenuSelect } from '../../ui/MenuSelect.tsx'
-import { ToggleRow } from '../../ui/ToggleRow.tsx'
 import { PromptConfigCard } from './PromptConfigCard.tsx'
 import { moveToView, moveWithinLayer, promptConfigLayer, viewOrderedIds } from './prompt-config-order.ts'
 import { displayLayers, LAYER_LABEL_KEYS, matchesConfigKeyword, translateLabel } from './prompt-config-policy.ts'
@@ -55,7 +54,6 @@ export interface PromptConfigListProps {
   onSaveConfigs: (configs: PromptConfigDraft[]) => Promise<boolean>
   onSaveInstructions?: () => Promise<boolean>
   instructionPolicy?: InstructionPolicySnapshot
-  onToggleInstructionSource?: (enabled: boolean) => Promise<boolean>
   /** 指令文件卡：显式写盘与重新读取（不经预设保存路径）。 */
   onSaveInstructionFile?: (fileId: string) => void
   onReloadInstructionFile?: (fileId: string) => void
@@ -79,7 +77,6 @@ export function PromptConfigList(props: PromptConfigListProps): ReactNode {
   const [errors, setErrors] = useState<ValidationErrorEntry[]>([])
   const [validating, setValidating] = useState(false)
   const [saving, setSaving] = useState(false)
-  const [savingSource, setSavingSource] = useState(false)
   const [filterState, setFilterState] = useState(props.browse?.filter ?? '')
   const changeFilter = (value: string): void => {
     if (props.browse !== undefined) props.browse.filter = value
@@ -210,7 +207,7 @@ export function PromptConfigList(props: PromptConfigListProps): ReactNode {
   // 避免与不可见配置交换顺序。
   const viewStrategy = viewFilter === 'world-book' ? 'world-book' : undefined
   const viewIds = useMemo(
-    () => viewOrderedIds(configs, effectiveLayer, allLayers, viewStrategy, ordered.map((config) => config.id)),
+    () => viewOrderedIds(configs, effectiveLayer, allLayers, viewStrategy, ordered.filter(config => instructionFileIdOf(config) === undefined).map(config => config.id)),
     [configs, effectiveLayer, allLayers, viewStrategy, ordered],
   )
 
@@ -305,9 +302,9 @@ export function PromptConfigList(props: PromptConfigListProps): ReactNode {
   const handleMoveDown = useCallback((id: string) => handleMove(id, 1), [handleMove])
 
   const renderCard = (config: PromptConfigDraft) => {
-    const layerIds = ordered.filter((item) => promptConfigLayer(item) === promptConfigLayer(config)).map((item) => item.id)
+    const layerIds = ordered.filter((item) => promptConfigLayer(item) === promptConfigLayer(config) && instructionFileIdOf(item) === undefined).map((item) => item.id)
     const position = layerIds.indexOf(config.id)
-    const sorting = keyword.length === 0 && props.readOnlyReason === undefined
+    const sorting = keyword.length === 0 && props.readOnlyReason === undefined && instructionFileIdOf(config) === undefined
     return (
       <PromptConfigCard
         key={config.id}
@@ -333,7 +330,7 @@ export function PromptConfigList(props: PromptConfigListProps): ReactNode {
         onDelete={handleDelete}
         onSaveInstructionFile={onSaveInstructionFile}
         onReloadInstructionFile={onReloadInstructionFile}
-        onPatchInstructionPolicy={onPatchInstructionPolicy}
+        onPatchInstructionPolicy={props.instructionPolicy?.error === undefined ? onPatchInstructionPolicy : undefined}
         onDragStart={sorting ? handleDragStart : undefined}
         onDragOver={handleDragOver}
         onDrop={handleDrop}
@@ -395,32 +392,7 @@ export function PromptConfigList(props: PromptConfigListProps): ReactNode {
       </div>
 
       {props.commonCards}
-      {props.instructionPolicy !== undefined && props.onToggleInstructionSource !== undefined && (
-        <ToggleRow
-          id="prompt-tool-instruction-source"
-          label={t('instructions.source.label')}
-          checked={props.instructionPolicy.policy.enabled}
-          disabled={savingSource || props.instructionPolicy.error !== undefined}
-          hint={[
-            props.instructionPolicy.error !== undefined
-              ? t('instructions.source.unavailable', { reason: props.instructionPolicy.error })
-              : t(props.instructionPolicy.policy.enabled ? 'instructions.source.enabled' : 'instructions.source.disabled'),
-            ...(configs.some((config) => config.contentOwnerConflict === true) ? [t('instructions.source.ownerConflict')] : []),
-          ].join('；')}
-          onChange={async (enabled) => {
-            if (savingSource || props.instructionPolicy?.error !== undefined) return false
-            setSavingSource(true)
-            try {
-              return await props.onToggleInstructionSource!(enabled)
-            } catch (error) {
-              onNotice('error', t('configs.notice.saveFailed', { reason: errorMessage(error) }))
-              return false
-            } finally {
-              setSavingSource(false)
-            }
-          }}
-        />
-      )}
+      {props.instructionPolicy?.error !== undefined && <p role="alert" className={styles.configErrorBox}>{props.instructionPolicy.error}</p>}
       {/* 配置列表下的置顶固定卡片（人设、模板变量等单例配置，不参与层过滤与搜索）。 */}
       {beforeCards}
 

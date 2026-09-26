@@ -1,15 +1,13 @@
 /**
  * AGENTS 指令文件探测与文件卡合成。
- * 文件即真相：探测到的 AGENTS.md 不写进 preset.yml，只作为生成目录的 pre-step 卡；
- * 卡内编辑框经 bridge 直接读写该文件；注入侧运行时读该文件正文
- * （fill=instruction-file），文件缺失或空内容就不注入。
+ * 文件卡只作编辑视图，不写进 preset.yml 或生成目录；正文经 bridge 写回原文件。
+ * 官方负责注入，运行时只复用本模块的文件身份映射应用逐文件开关。
  *
- * 本模块是文件身份、读取快照与读写校验的唯一来源：UI 与运行时都走同一套规则，
- * 不各自实现一套转换。读取失败与「读取成功的空文件」严格区分。
+ * 本模块拥有本地卡片的文件身份、读取快照与读写校验；读取失败与空文件严格区分。
  */
 import { createHash } from 'node:crypto'
 import { chmodSync, existsSync, mkdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
-import { dirname, join, relative, resolve, sep } from 'node:path'
+import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { DSH_HOME } from './paths.ts'
 import type { PromptConfigSpec } from './prompt-configs.ts'
 import {
@@ -74,6 +72,19 @@ function findProjectRoot(cwd: string): string {
     if (parent === current) return start
     current = parent
   }
+}
+
+/** 官方展示路径 → 既有卡片身份；只解析路径，不读取正文，也不构成写入授权。 */
+export function instructionFileIdFromDisplayPath(displayPath: string, projectRoot?: string, home: string = DSH_HOME): string | undefined {
+  const global = displayPath === '~/.dsh/AGENTS.md' || displayPath === '$DSH_HOME/AGENTS.md'
+  if (!global && (projectRoot === undefined || isAbsolute(displayPath) || displayPath.includes('\0'))) return undefined
+  const root = global ? resolve(home) : resolve(projectRoot!)
+  const path = global ? join(root, AGENTS_USER_GLOBAL_FILE) : resolve(root, displayPath)
+  if (!within(root, path)) return undefined
+  // 文件已删除时仍按原普通路径匹配其关闭策略，允许过滤 remove 通知。
+  const realPath = realPathOf(path) ?? path
+  if (!within(realPathOf(root) ?? root, realPath)) return undefined
+  return agentsFileId(realPath)
 }
 
 /** 项目根 → cwd 的目录链（broad→specific）。 */

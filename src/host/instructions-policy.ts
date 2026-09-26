@@ -5,9 +5,8 @@
  * 只承载行为开关与展示名：正文永远在用户的原文件里，策略文件不存正文、读取版本、
  * 会话 ID 或任意客户端路径——路径与文件身份由服务端探测结果解析。
  *
- * 缺省 `enabled: false`：独立来源必须先完成负责人切换（预设去掉官方指令行），再由用户
- * 在工作台显式开启；键缺失 = 关闭，只有显式 `enabled: true` 才参战。不从各预设的旧
- * agentsHints 推导；文件缺失时用默认值，不因读取自动创建。
+ * 缺省放行官方注入；只有逐文件 enabled:false 才拦截后续内容。旧独立来源总开关与
+ * 注入参数已退役，读取时忽略，下一次保存清理；文件缺失不因读取自动创建。
  * 写入使用 yaml Document API 保留注释与未知字段；解析失败或 schemaVersion 不认识时
  * 拒绝写入（不把损坏文件当空配置覆盖）。
  */
@@ -15,19 +14,15 @@ import { createHash } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { Document, isMap, isScalar, parseDocument, visit } from 'yaml'
-// 枚举取值与引擎同源，避免两处常量漂移。
-// @ts-expect-error 仓库根 ESM 引擎文件由 tsdown 作为源码依赖打包，无独立声明文件。
-import { KNOWN_AUDIENCES, KNOWN_MODEL_SCOPES, KNOWN_POSITIONS, KNOWN_PROMOTIONS } from '../../engine/schema.mjs'
 import { DSH_HOME } from './paths.ts'
 import type {
   InstructionPolicy,
   InstructionPolicyFileOverride,
   InstructionPolicyPatch,
   InstructionPolicySnapshot,
-  InstructionPolicyValues,
 } from '../shared/instructions.ts'
 
-export type { InstructionPolicy, InstructionPolicyFileOverride, InstructionPolicyPatch, InstructionPolicySnapshot, InstructionPolicyValues }
+export type { InstructionPolicy, InstructionPolicyFileOverride, InstructionPolicyPatch, InstructionPolicySnapshot }
 
 /** 相对 DSH_HOME 的策略文件位置（唯一权威定义）。 */
 export const INSTRUCTIONS_POLICY_RELATIVE = join('.prompt-tool', 'instructions.yml')
@@ -44,19 +39,11 @@ export interface InstructionPolicyRead extends InstructionPolicySnapshot {
   path: string
 }
 
-const DEFAULT_VALUES: InstructionPolicyValues = {
-  order: 30,
-  position: 'after-user',
-  promotion: 'none',
-  audience: null,
-  modelScope: 'all',
-}
-
-const VALUE_KEYS = ['order', 'position', 'promotion', 'audience', 'modelScope'] as const
-const OVERRIDE_KEYS = [...VALUE_KEYS, 'enabled', 'name'] as const
+const RETIRED_FILE_KEYS = ['order', 'position', 'promotion', 'audience', 'modelScope'] as const
+const OVERRIDE_KEYS = ['enabled', 'name'] as const
 
 export function defaultInstructionPolicy(): InstructionPolicy {
-  return { enabled: false, defaults: { ...DEFAULT_VALUES }, files: {} }
+  return { files: {} }
 }
 
 export function instructionPolicyPath(dshHome: string = DSH_HOME): string {
@@ -68,49 +55,17 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 
 const sha256 = (bytes: Buffer | string): string => createHash('sha256').update(bytes).digest('hex')
 
-/** 校验单个字段值；返回错误消息或 undefined。 */
-function valueError(key: (typeof VALUE_KEYS)[number], value: unknown): string | undefined {
-  if (key === 'order') {
-    return typeof value === 'number' && Number.isFinite(value) && Number.isSafeInteger(value) && value >= 0
-      ? undefined
-      : 'order 必须是非负安全整数'
-  }
-  if (key === 'audience') {
-    return value === null || (typeof value === 'string' && KNOWN_AUDIENCES.has(value))
-      ? undefined
-      : 'audience 必须是 null/main/subagent'
-  }
-  if (typeof value !== 'string') return `${key} 必须是字符串`
-  const allowed = key === 'position' ? KNOWN_POSITIONS : key === 'promotion' ? KNOWN_PROMOTIONS : KNOWN_MODEL_SCOPES
-  return allowed.has(value) ? undefined : `${key} 取值非法：${value}`
-}
-
 /** 请求体白名单校验：未知键一律拒绝，避免正文/路径/版本混进策略文件。 */
 export function validateInstructionPolicyPatch(
   input: unknown,
 ): { ok: true; patch: InstructionPolicyPatch } | { ok: false; message: string } {
   if (!isRecord(input)) return { ok: false, message: '策略载荷必须是对象' }
   for (const key of Object.keys(input)) {
-    if (key !== 'enabled' && key !== 'defaults' && key !== 'files') {
+    if (key !== 'files') {
       return { ok: false, message: `未知字段：${key}` }
     }
   }
   const patch: InstructionPolicyPatch = {}
-  if (input.enabled !== undefined) {
-    if (typeof input.enabled !== 'boolean') return { ok: false, message: 'enabled 必须是布尔值' }
-    patch.enabled = input.enabled
-  }
-  if (input.defaults !== undefined) {
-    if (!isRecord(input.defaults)) return { ok: false, message: 'defaults 必须是对象' }
-    const defaults: Partial<InstructionPolicyValues> = {}
-    for (const [key, value] of Object.entries(input.defaults)) {
-      if (!(VALUE_KEYS as readonly string[]).includes(key)) return { ok: false, message: `defaults 未知字段：${key}` }
-      const error = valueError(key as (typeof VALUE_KEYS)[number], value)
-      if (error !== undefined) return { ok: false, message: error }
-      ;(defaults as Record<string, unknown>)[key] = value
-    }
-    patch.defaults = defaults
-  }
   if (input.files !== undefined) {
     if (!isRecord(input.files)) return { ok: false, message: 'files 必须是对象' }
     const files: Record<string, InstructionPolicyFileOverride | null> = {}
@@ -134,9 +89,6 @@ export function validateInstructionPolicyPatch(
           override.name = value
           continue
         }
-        const error = valueError(key as (typeof VALUE_KEYS)[number], value)
-        if (error !== undefined) return { ok: false, message: `files.${fileId}.${error}` }
-        ;(override as Record<string, unknown>)[key] = value
       }
       files[fileId] = override
     }
@@ -175,32 +127,28 @@ export function readInstructionPolicy(file: string = instructionPolicyPath()): I
   if (version !== undefined && version !== INSTRUCTIONS_POLICY_VERSION) {
     return { ...empty, exists: true, revision, error: `指令策略 schemaVersion 不受支持：${String(version)}` }
   }
-  const validated = validateInstructionPolicyPatch({
-    ...(data.enabled === undefined ? {} : { enabled: data.enabled }),
-    ...(data.defaults === undefined ? {} : { defaults: data.defaults }),
-    ...(data.files === undefined ? {} : { files: data.files }),
-  })
+  const validated = validateInstructionPolicyPatch(data.files === undefined ? {} : { files: isRecord(data.files)
+      ? Object.fromEntries(Object.entries(data.files).map(([id, value]) => [id, isRecord(value)
+          ? Object.fromEntries(Object.entries(value).filter(([key]) => !(RETIRED_FILE_KEYS as readonly string[]).includes(key)))
+          : value]))
+      : data.files })
   if (!validated.ok) return { ...empty, exists: true, revision, error: validated.message }
   const patch = validated.patch
   const policy: InstructionPolicy = {
-    // 缺省关闭：键缺失 = 关闭；只有显式 `enabled: true` 才参战。
-    enabled: patch.enabled ?? false,
-    defaults: { ...DEFAULT_VALUES, ...patch.defaults },
     files: Object.fromEntries(Object.entries(patch.files ?? {}).flatMap(([fileId, override]) => (override === null ? [] : [[fileId, override]]))),
   }
   return { policy, revision, exists: true, path: file }
 }
 
-/** 单文件的有效策略：部署级开关优先于每文件开关。 */
+/** 单文件的有效策略：未配置时放行官方注入。 */
 export function resolveInstructionPolicy(
   policy: InstructionPolicy,
   fileId: string,
-): InstructionPolicyValues & { enabled: boolean; name?: string } {
+): { enabled: boolean; name?: string } {
   const override = policy.files[fileId] ?? {}
   return {
-    ...policy.defaults,
     ...override,
-    enabled: policy.enabled && override.enabled !== false,
+    enabled: override.enabled !== false,
   }
 }
 
@@ -209,8 +157,7 @@ function documentFor(file: string): { doc: Document } | { error: string } {
   if (!existsSync(file)) {
     const doc = new Document({})
     doc.commentBefore = ' prompt-tool 指令文件卡策略（独立于预设与 settings）\n'
-      + ' enabled: 文件来源是否参与注入（缺省 false，先完成负责人切换再开启）\n'
-      + ' defaults: 未单独覆盖的文件使用的行为；files: 按 fileId 的覆盖\n'
+      + ' files: 按 fileId 保存开关和显示名；enabled:false 只拦截后续官方注入\n'
       + ' 这里不放正文：正文始终在用户自己的 AGENTS.md/CLAUDE.md 里'
     doc.set('schemaVersion', INSTRUCTIONS_POLICY_VERSION)
     return { doc }
@@ -262,21 +209,26 @@ export function writeInstructionPolicy(options: {
   const { doc } = prepared
   const patch = validated.patch
 
-  if (patch.enabled !== undefined) {
-    // 默认值不落键：false = 缺省（删除键），true = 显式开启。
-    if (patch.enabled) doc.set('enabled', true)
-    else doc.delete('enabled')
-  }
-  if (patch.defaults !== undefined) {
-    for (const key of VALUE_KEYS) {
-      const value = patch.defaults[key]
-      if (value === undefined) continue
-      if (value === DEFAULT_VALUES[key]) doc.deleteIn(['defaults', key])
-      else doc.setIn(['defaults', key], value)
+  // 退役键所在映射若被 alias 共享，删除它也会修改用户的其他字段：保留原字节并拒写。
+  const existingFiles = doc.get('files')
+  const retiredMaps = new Set<unknown>(isMap(existingFiles) ? existingFiles.items.flatMap(item => {
+    const value = item.value
+    return isMap(value) && RETIRED_FILE_KEYS.some(key => value.has(key)) ? [value] : []
+  }) : [])
+  let sharedRetired = false
+  visit(doc, { Alias(_key, alias) {
+    const target = alias.resolve(doc)
+    if (target === undefined || !retiredMaps.has(target)) return
+    sharedRetired = true
+    return visit.BREAK
+  } })
+  if (sharedRetired) return { ok: false, status: 400, code: 'instructions-policy-invalid', message: '退役指令字段被 YAML alias 共享，无法安全清理；请先解除引用' }
+  doc.delete('enabled')
+  doc.delete('defaults')
+  if (isMap(existingFiles)) {
+    for (const item of existingFiles.items) {
+      if (isMap(item.value)) for (const key of RETIRED_FILE_KEYS) item.value.delete(key)
     }
-    // 空 defaults（全部恢复默认）不留空壳映射。
-    const defaults = doc.get('defaults')
-    if (isMap(defaults) && defaults.items.length === 0) doc.delete('defaults')
   }
   if (patch.files !== undefined) {
     // 先建立 files 映射：新建文档（文件不存在或只有注释）没有该键，而

@@ -617,7 +617,6 @@ export { installPreStepCoordinator, PRE_STEP_COORDINATOR_SERVICE, PRE_STEP_COORD
 export type {
   PreStepCoordinatorOptions,
   PreStepCoordinatorService,
-  PreStepFileContribution,
   PreStepPromptConfig,
   PreStepSource,
 } from './runtime/pre-step-coordinator.ts'

@@ -368,7 +368,7 @@ test('R1 reject 与空候选不产生投递记账', async () => {
   assert.deepEqual(textsOf(decision), ['claimed', 'ONCE'], 'reject 的步不记账，下一步仍可正常注入')
 })
 
-test('T15 文件来源与预设来源同批执行：同一算法里按 order 排序、身份互不覆盖', async () => {
+test('T15 协调器仅执行预设配置，不再自行读取和注入文件', async () => {
   const app = new Context()
   installPreStepCoordinator(app, {
     collectFiles: () => [{
@@ -387,9 +387,8 @@ test('T15 文件来源与预设来源同批执行：同一算法里按 order 排
   const agent = scopedAgent(app, 'agent-mixed')
   installEngine(app, agent, [staticSpec('preset-card', 'PRESET BODY', { order: 30 })], { sourceId: 'preset:mixed' })
   const decision = await dispatch(app, agent.agent)
-  assert.deepEqual(textsOf(decision), ['claimed', 'Instructions from: AGENTS.md\n\nFILE BODY', 'PRESET BODY'], 'order 升序:文件卡在前')
-  assert.equal(decision.messages[1].source.kind, 'instruction-file')
-  assert.equal(decision.messages[2].source.plugin, 'preset-card')
+  assert.deepEqual(textsOf(decision), ['claimed', 'PRESET BODY'])
+  assert.equal(decision.messages[1].source.plugin, 'preset-card')
 })
 
 const instructionFile = {
@@ -456,7 +455,7 @@ for (const empty of [false, true]) {
     const mount = scopedAgent(app, `hmr-${empty}`)
     installEngine(app, mount, empty ? [] : [staticSpec('hmr-card', 'PRESET BODY')], { sourceId: 'hmr' })
     const before = await dispatch(app, mount.agent)
-    assert.equal(before.messages.filter((message) => message.source.kind === 'instruction-file').length, 1)
+    assert.equal(before.messages.filter((message) => message.source.kind === 'instruction-file').length, 0)
     await old.dispose()
     const fresh = start()
     await fresh
@@ -472,13 +471,14 @@ for (const empty of [false, true]) {
   })
 }
 
-test('T22 空预设同样响应协调器迟到，不丢失文件来源资格', async () => {
+test('T22 空预设同样响应协调器迟到，确认来源但不自行注入文件', async () => {
   const app = new Context()
   const mount = scopedAgent(app, 'empty-late')
   installEngine(app, mount, [], { sourceId: 'empty' })
   assert.deepEqual(textsOf(await dispatch(app, mount.agent)), ['claimed'])
-  installPreStepCoordinator(app, { collectFiles: () => [instructionFile] })
-  assert.deepEqual(textsOf(await dispatch(app, mount.agent)), ['claimed', 'Instructions from: AGENTS.md\n\nFILE BODY'])
+  const coordinator = installPreStepCoordinator(app)
+  assert.deepEqual(textsOf(await dispatch(app, mount.agent)), ['claimed'])
+  assert.equal(coordinator.officialOwnerOf(mount.agent.session.id), false)
   await mount.scope.dispose()
 })
 

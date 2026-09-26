@@ -91,7 +91,6 @@ export const ConfigListWithTemplates = memo(function ConfigListWithTemplates(pro
       onSaveConfigs={saveConfigs}
       onSaveInstructions={instructionScope ? store.persistInstructionFiles : undefined}
       instructionPolicy={instructionScope ? store.instructionPolicy : undefined}
-      onToggleInstructionSource={instructionScope ? store.setInstructionSourceEnabled : undefined}
       onSaveInstructionFile={instructionScope ? saveInstructionFile : undefined}
       onReloadInstructionFile={instructionScope ? reloadInstructionFile : undefined}
       onPatchInstructionPolicy={instructionScope ? patchInstructionPolicy : undefined}

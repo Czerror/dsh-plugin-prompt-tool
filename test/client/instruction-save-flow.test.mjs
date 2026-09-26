@@ -35,9 +35,6 @@ const { PromptConfigList } = await import('../../src/client/features/prompts/Pro
 const { ToggleRow } = await import('../../src/client/ui/ToggleRow.tsx')
 const { PromptConfigCard } = await import('../../src/client/features/prompts/PromptConfigCard.tsx')
 const { PromptConfigForm } = await import('../../src/client/features/prompts/PromptConfigForm.tsx')
-const { FormField } = await import('../../src/client/ui/FormField.tsx')
-const { OptionField, NumberField } = await import('../../src/client/features/prompts/PromptConfigFields.tsx')
-const { MenuSelect } = await import('../../src/client/ui/MenuSelect.tsx')
 const { getEngineMeta } = await import('../../engine/schema.mjs')
 loader.deregister()
 const t = (key, params = {}) => Object.entries(params).reduce((text, [name, value]) => text.replaceAll(`{${name}}`, String(value)), PROMPT_TOOL_DICTS.zh[key] ?? key)
@@ -116,11 +113,10 @@ const makeSettings = () => ({
   mutate: async () => {},
 })
 
-const policyValues = (over = {}) => ({ order: 30, position: 'after-user', promotion: 'none', audience: null, modelScope: 'all', ...over })
 
 const policyPayload = (files = {}, over = {}) => ({
   ok: true,
-  value: { policy: { enabled: true, defaults: policyValues(), files }, revision: 'pol-1', exists: true, ...over },
+  value: { policy: { files }, revision: 'pol-1', exists: true, ...over },
 })
 
 const makeApi = (options = {}) => ({
@@ -312,10 +308,10 @@ test('预设切换不隐式保存文件，草稿跨预设保留', async () => {
   }
 })
 
-test('负责人冲突：服务端说官方指令行仍在 → 卡片显示冲突，false/null 不显示', async () => {
+test('官方装配事实不再被当作文件开关冲突', async () => {
   const cases = [
-    [true, true, '官方指令行仍在 → 独立来源本次不注入，必须有提示'],
-    [false, undefined, '插件独立来源负责 → 不显示冲突'],
+    [true, undefined, '官方负责注入，插件可过滤后续内容，不是冲突'],
+    [false, undefined, '未装配官方来源 → 不显示冲突'],
     [null, undefined, '尚未观察到 → 不当冲突处理'],
   ]
   for (const [ownerValue, expected, message] of cases) {
@@ -421,19 +417,19 @@ test('读取失败的文件卡不可保存，正文保持空且状态可见', as
   }
 })
 
-test('指令策略：读取后按 fileId 生效到卡片（顺序/位置/启用）', async () => {
+test('指令策略：只把名称和逐文件开关应用到卡片', async () => {
   const requests = []
   const restore = installFetch(requests, {
-    instructionsPolicy: policyPayload({ f1: { order: 42, position: 'before-all', audience: 'main', name: '项目规范' } }),
+    instructionsPolicy: policyPayload({ f1: { order: 42, position: 'before-all', audience: 'main', name: '项目规范', enabled: false } }),
   })
   try {
     const store = mountStore(makeApi(), makeSettings())
     await store.load()
     const card = store.getFields().promptConfigs[0]
-    assert.equal(card.order, 42)
-    assert.equal(card.position, 'before-all')
-    assert.equal(card.audience, 'main')
-    assert.equal(card.enabled, true)
+    assert.notEqual(card.order, 42)
+    assert.equal(card.position, 'after-user')
+    assert.notEqual(card.audience, 'main')
+    assert.equal(card.enabled, false)
     assert.equal(card.name, '项目规范')
     assert.equal(store.getInstructionPolicy().revision, 'pol-1')
   } finally {
@@ -451,19 +447,19 @@ test('指令策略：改动按 revision 提交并回写快照；失败保留旧�
     if (endpoint === 'bootstrap') return okResponse(bootstrapPayload())
     if (endpoint === 'instructions-policy') {
       if (body.policy === undefined) return okResponse(policyPayload())
-      return okResponse({ ok: true, value: { policy: { enabled: true, defaults: policyValues(), files: { f1: { position: 'before-all' } } }, revision: 'pol-2', exists: true } })
+      return okResponse({ ok: true, value: { policy: { files: { f1: { enabled: false } } }, revision: 'pol-2', exists: true } })
     }
     return okResponse({ ok: true, value: {} })
   }
   try {
     const store = mountStore(makeApi(), makeSettings())
     await store.load()
-    assert.equal(await store.updateInstructionPolicy('f1', { position: 'before-all' }), true)
+    assert.equal(await store.updateInstructionPolicy('f1', { enabled: false }), true)
     const write = writes.find(({ body }) => body.policy !== undefined)
-    assert.deepEqual(write.body.policy, { files: { f1: { position: 'before-all' } } })
+    assert.deepEqual(write.body.policy, { files: { f1: { enabled: false } } })
     assert.equal(write.body.expectedRevision, 'pol-1')
     assert.equal(store.getInstructionPolicy().revision, 'pol-2')
-    assert.equal(store.getFields().promptConfigs[0].position, 'before-all')
+    assert.equal(store.getFields().promptConfigs[0].enabled, false)
   } finally {
     globalThis.fetch = original
   }
@@ -476,7 +472,7 @@ test('指令策略：读取失败或缺快照时禁用策略编辑', async () =>
     const store = mountStore(makeApi(), makeSettings())
     await store.load()
     assert.match(store.getInstructionPolicy().error ?? '', /未读取到指令策略/)
-    await store.updateInstructionPolicy('f1', { order: 40 })
+    await store.updateInstructionPolicy('f1', { enabled: false })
     assert.equal(requests.filter(({ body }) => body.policy !== undefined).length, 0, '策略不可信时不得发出写入')
   } finally {
     restore()
@@ -680,10 +676,10 @@ test('R7：保存全部汇总失败，保留已成功文件/预设及失败草�
   } finally { restore() }
 })
 
-test('R5：实际工作台来源总开关写顶层 enabled，不暗改文件开关或官方负责人', async () => {
+test('R5：实际工作台没有独立总开关，逐文件开关直接保存且不改变官方负责人', async () => {
   for (const Page of [MainSessionPage, ConfigListWithTemplates]) {
     const requests = []
-    let policy = { enabled: false, defaults: policyValues(), files: {} }
+    let policy = { files: {} }
     let revision = 'pol-1'
     const restore = installFetch(requests, {
       bootstrap: bootstrapPayload({ ownerOfficialInstructions: true }),
@@ -698,32 +694,31 @@ test('R5：实际工作台来源总开关写顶层 enabled，不暗改文件开�
     try {
       const store = mountStore(makeApi(), makeSettings())
       await store.load()
-      assert.equal(await store.updateInstructionPolicy('f1', { enabled: true }), true)
-      assert.equal(store.getInstructionPolicy().policy.enabled, false, '文件启用不应偷偷开启独立来源')
+      assert.equal(store.getFields().promptConfigs[0].enabled, true, '缺省放行')
+      assert.equal(await store.updateInstructionPolicy('f1', { enabled: false }), true)
+      assert.equal(store.getInstructionPolicy().policy.enabled, undefined, '没有顶层总开关')
       assert.equal(store.getFields().promptConfigs[0].enabled, false)
       const tree = listFromPage(Page, store)
       const toggle = findElement(tree, (node) => node.type === ToggleRow && node.props.label === '独立指令文件来源')
-      assert.ok(toggle, '总开关必须从真实页面可达，而不是孤立 store API')
-      assert.equal(toggle.props.checked, false)
-      assert.match(toggle.props.hint, /已关闭.*文件开关不会生效/)
-      assert.match(toggle.props.hint, /官方指令仍负责.*不会接管官方负责人/)
-      assert.equal(await toggle.props.onChange(true), true)
-      assert.deepEqual(requests.at(-1).body, { policy: { enabled: true }, expectedRevision: 'pol-2' })
+      assert.equal(toggle, undefined)
+      assert.equal(store.setInstructionSourceEnabled, undefined)
+      assert.equal(await store.updateInstructionPolicy('f1', { enabled: true }), true)
+      assert.deepEqual(requests.at(-1).body, { policy: { files: { f1: { enabled: true } } }, expectedRevision: 'pol-2' })
       assert.equal(store.getFields().promptConfigs[0].enabled, true)
-      assert.equal(store.getFields().promptConfigs[0].contentOwnerConflict, true)
+      assert.equal(store.getFields().promptConfigs[0].contentOwnerConflict, undefined)
       assert.deepEqual(store.getInstructionPool().owner, { officialInstructions: true })
       assert.ok(requests.every(({ endpoint }) => ['bootstrap', 'instructions-policy'].includes(endpoint)))
     } finally { restore() }
   }
 })
 
-test('R5：来源总开关等待写入结果，失败/缺少快照不假成功，读取失败时禁用', async () => {
+test('R5：逐文件开关等待写入结果，失败/缺少快照不假成功，读取失败时拒写', async () => {
   for (const response of [{ ok: false, message: 'denied' }, { ok: true, value: {} }]) {
     const gate = Promise.withResolvers()
     const entered = Promise.withResolvers()
     const restore = installFetch([], {
       instructionsPolicy: async ({ policy: patch }) => {
-        if (!patch) return policyPayload({}, { policy: { enabled: false, defaults: policyValues(), files: {} } })
+        if (!patch) return policyPayload()
         entered.resolve()
         await gate.promise
         return response
@@ -733,9 +728,7 @@ test('R5：来源总开关等待写入结果，失败/缺少快照不假成功�
       const store = mountStore(makeApi(), makeSettings())
       await store.load()
       const initial = store.getInstructionPolicy()
-      const toggle = findElement(listFromPage(MainSessionPage, store), (node) => node.type === ToggleRow && node.props.label === '独立指令文件来源')
-      assert.ok(toggle)
-      const saving = toggle.props.onChange(true)
+      const saving = store.updateInstructionPolicy('f1', { enabled: false })
       await entered.promise
       assert.equal(store.getInstructionPolicy(), initial, '请求中不得乐观显示已开启')
       gate.resolve()
@@ -749,10 +742,8 @@ test('R5：来源总开关等待写入结果，失败/缺少快照不假成功�
     const store = mountStore(makeApi(), makeSettings())
     await store.load()
     const toggle = findElement(listFromPage(MainSessionPage, store), (node) => node.type === ToggleRow && node.props.label === '独立指令文件来源')
-    assert.ok(toggle)
-    assert.equal(toggle.props.disabled, true)
-    assert.match(toggle.props.hint, /unavailable/)
-    assert.equal(await store.setInstructionSourceEnabled(true), false)
+    assert.equal(toggle, undefined)
+    assert.equal(await store.updateInstructionPolicy('f1', { enabled: false }), false)
     assert.equal(requests.filter(({ body }) => body.policy).length, 0)
   } finally { restore() }
 })
@@ -949,7 +940,8 @@ test('指令文件复用标准配置卡：与普通前置步骤卡同组件同�
     assert.equal(fileElement.props.config.layer, 'pre-step')
     assert.equal(typeof fileElement.props.onSaveInstructionFile, 'function', '卡片保留原文件写回通道（失焦触发）')
     const html = renderToString(React.createElement(PromptConfigCard, { ...fileElement.props, expanded: false }))
-    assert.match(html, /前置步骤/, '卡片头部显示标准的层级信息')
+    assert.match(html, /AGENTS.md/, '卡片头部显示真实文件路径')
+    assert.doesNotMatch(html, /用户消息之后/, '不显示不生效的拼接位置')
     const expanded = componentTree(PromptConfigCard, { ...fileElement.props, expanded: true })
     const form = findElement(expanded, (node) => node.type === PromptConfigForm)
     assert.equal(form.props.config.id, 'agents-file-f1', '展开后就地编辑该文件正文')
@@ -957,7 +949,7 @@ test('指令文件复用标准配置卡：与普通前置步骤卡同组件同�
   } finally { restore() }
 })
 
-test('指令文件与普通前置步骤卡共用同一套表单字段：绑定项置灰、策略项可写', () => {
+test('指令文件只编辑名称与正文，普通配置保留完整注入字段', () => {
   const meta = getEngineMeta()
   const plain = { id: 'example-pre-step', name: '示例：消息批注入', layer: 'pre-step', strategy: 'static', position: 'after-user', order: 0, text: '示例正文' }
   const treeOf = (config) => componentTree(PromptConfigForm, { t, meta, config, onPatch() {}, onPatchPolicy() {} })
@@ -968,24 +960,10 @@ test('指令文件与普通前置步骤卡共用同一套表单字段：绑定�
     return labelsOf(node.props.children, out)
   }
   const shared = ['标识', '名称', '注入层', '内容策略', '配置类型', '消息角色', '拼接位置', '合并方式', '顺序', '互斥组', '去重方式', '晋升范围', '消息受众', '模型范围', '注入内容']
-  for (const config of [plain, fileCard()]) {
-    const labels = labelsOf(treeOf(config))
-    for (const label of shared) assert.ok(labels.includes(label), `${config.id} 缺少字段 ${label}`)
-  }
-  const fileTree = treeOf(fileCard())
-  const controlDisabled = (label) => {
-    const field = findElement(fileTree, (node) => (node.type === FormField || node.type === OptionField || node.type === NumberField) && node.props.label === label)
-    assert.ok(field, `找不到字段 ${label}`)
-    const body = field.type === FormField ? field.props.children : componentTree(field.type, field.props)
-    const control = findElement(body, (node) => node.type === MenuSelect || node.type === 'input')
-    return control?.props.disabled === true || control?.props.readOnly === true
-  }
-  for (const label of ['标识', '注入层', '内容策略', '配置类型', '消息角色', '合并方式', '去重方式', '填充来源', '来源类型', '消息形式']) {
-    assert.equal(controlDisabled(label), true, `${label} 由指令文件来源固定，应只读`)
-  }
-  for (const label of ['名称', '拼接位置', '顺序', '晋升范围', '消息受众', '模型范围']) {
-    assert.equal(controlDisabled(label), false, `${label} 应可写（落独立指令策略）`)
-  }
+  const plainLabels = labelsOf(treeOf(plain))
+  for (const label of shared) assert.ok(plainLabels.includes(label), `普通配置缺少字段 ${label}`)
+  const fileLabels = labelsOf(treeOf(fileCard()))
+  assert.deepEqual(fileLabels, ['名称', '注入内容'])
 })
 
 test('指令文件正文失焦自动写回：无「保存到文件」按钮，脏草稿在焦点离开卡片时提交', async () => {

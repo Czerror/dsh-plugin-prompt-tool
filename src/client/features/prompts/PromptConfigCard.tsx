@@ -68,9 +68,11 @@ export const PromptConfigCard = memo(function PromptConfigCard(props: {
   const focusAction = (): void => { actionRef.current?.querySelector('button')?.focus() }
   const policy = fieldPolicyFor(meta, config.layer)
   const strategy = config.strategy ?? 'static'
-  const chips = [translateLabel(t, LAYER_LABEL_KEYS, config.layer ?? 'pre-step'), translateLabel(t, STRATEGY_LABEL_KEYS, strategy)]
-  if (policy.position) chips.push(t('card.chip.position', { value: translateLabel(t, POSITION_LABEL_KEYS, config.position ?? 'after-user') }))
-  if (config.audience && config.audience !== 'all') chips.push(t('card.chip.audience', { value: translateLabel(t, AUDIENCE_LABEL_KEYS, config.audience) }))
+  const chips = instructionFileId === undefined
+    ? [translateLabel(t, LAYER_LABEL_KEYS, config.layer ?? 'pre-step'), translateLabel(t, STRATEGY_LABEL_KEYS, strategy)]
+    : [String(config.params?.displayPath ?? config.params?.file ?? '')]
+  if (instructionFileId === undefined && policy.position) chips.push(t('card.chip.position', { value: translateLabel(t, POSITION_LABEL_KEYS, config.position ?? 'after-user') }))
+  if (instructionFileId === undefined && config.audience && config.audience !== 'all') chips.push(t('card.chip.audience', { value: translateLabel(t, AUDIENCE_LABEL_KEYS, config.audience) }))
   const status = config.contentConflict === true ? t('card.chip.fileConflict')
     : fileNotWritable ? (config.contentStatus === 'missing' ? t('card.fileMissing') : config.contentStatus === 'too-large' ? t('card.fileTooLarge') : t('card.chip.fileUnavailable'))
       : config.contentSaving === true ? t('card.chip.fileSaving') : config.contentDirty === true ? t('card.chip.fileDirty') : undefined
@@ -133,13 +135,13 @@ export const PromptConfigCard = memo(function PromptConfigCard(props: {
       </button>
       {status && <StatusBadge tone={config.contentConflict ? 'warning' : fileNotWritable ? 'danger' : 'neutral'} label={status} />}
       <span className={styles.configHeaderActions}>
-        <Switch className={styles.configEnable} checked={enabled} label={t('card.enableAria', { name })} disabled={props.disabled || isManagedConfigField(config, 'enabled') || (instructionFileId !== undefined && config.contentSaving === true)}
+        <Switch className={styles.configEnable} checked={enabled} label={t('card.enableAria', { name })} disabled={props.disabled || isManagedConfigField(config, 'enabled') || (instructionFileId !== undefined && (config.contentSaving === true || props.onPatchInstructionPolicy === undefined))}
           onChange={(next) => {
             if (props.disabled || isManagedConfigField(config, 'enabled')) return
             if (instructionFileId !== undefined) props.onPatchInstructionPolicy?.(instructionFileId, { enabled: next })
             else props.onToggleEnabled(config.id, next)
           }} />
-        <span ref={actionRef} tabIndex={-1} onKeyDown={(event) => {
+        {instructionFileId === undefined && <span ref={actionRef} tabIndex={-1} onKeyDown={(event) => {
           if (!menuOpen || (event.key !== 'Escape' && event.key !== 'Tab')) return
           event.stopPropagation()
           if (event.key === 'Escape') event.preventDefault()
@@ -156,7 +158,7 @@ export const PromptConfigCard = memo(function PromptConfigCard(props: {
               else if (action === 'duplicate') props.onDuplicate(config.id)
             }}
             anchor={<Button size="sm" variant="ghost" aria-label={t('card.actionsAria', { name })} aria-haspopup="menu" aria-expanded={menuOpen} onClick={() => setMenuOpen(!menuOpen)}>⋯</Button>} />
-        </span>
+        </span>}
       </span>
     </header>
     {(config.contentConflict || fileNotWritable || config.contentMessage || props.readOnlyReason) && <div className={styles.configStatus}>
@@ -173,7 +175,7 @@ export const PromptConfigCard = memo(function PromptConfigCard(props: {
         <PromptConfigForm t={t} meta={meta} config={config} disabled={props.disabled} fieldDrafts={props.fieldDrafts} draftScope={`${props.draftScope}:${config.id}`}
           renderLayerSettings={props.renderLayerSettings}
           onPatch={(patch) => props.onPatch(config.id, patch)}
-          {...(instructionFileId === undefined ? {} : { onPatchPolicy: (patch: InstructionPolicyFileOverride) => props.onPatchInstructionPolicy?.(instructionFileId, patch) })} />
+          {...(instructionFileId === undefined || props.onPatchInstructionPolicy === undefined ? {} : { onPatchPolicy: (patch: InstructionPolicyFileOverride) => props.onPatchInstructionPolicy?.(instructionFileId, patch) })} />
       </>}
     </div>
     {confirmation && <ConfirmDialog title={t(confirmation === 'delete' ? 'card.deleteTitle' : 'card.reloadTitle', { name })}

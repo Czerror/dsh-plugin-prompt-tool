@@ -91,8 +91,6 @@ export interface PromptConfigDraft extends PromptConfigSourceView {
   contentDirty?: boolean
   /** 视图元数据：外部编辑造成版本冲突，必须先重新读取。 */
   contentConflict?: boolean
-  /** 视图元数据：该会话装配仍由官方指令行负责，独立来源本次不注入正文。 */
-  contentOwnerConflict?: boolean
   /** 视图元数据：该文件正在保存。 */
   contentSaving?: boolean
 }

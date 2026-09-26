@@ -105,7 +105,6 @@ export const MainSessionPage = memo(function MainSessionPage(props: { store: Pro
         onSaveConfigs={saveConfigs}
         onSaveInstructions={store.persistInstructionFiles}
         instructionPolicy={store.instructionPolicy}
-        onToggleInstructionSource={store.setInstructionSourceEnabled}
         onSaveInstructionFile={saveInstructionFile}
         onReloadInstructionFile={reloadInstructionFile}
         onPatchInstructionPolicy={patchInstructionPolicy}

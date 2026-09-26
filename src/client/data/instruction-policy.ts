@@ -7,36 +7,24 @@ import type {
   InstructionPolicyFileOverride,
   InstructionPolicyPatch,
   InstructionPolicySnapshot,
-  InstructionPolicyValues,
 } from '../../shared/instructions.ts'
 
-/** 与 host 默认值一致（host 是事实源；这里是未读到快照前的显示兜底）。 */
-export const DEFAULT_INSTRUCTION_POLICY_VALUES: InstructionPolicyValues = {
-  order: 30,
-  position: 'after-user',
-  promotion: 'none',
-  audience: null,
-  modelScope: 'all',
-}
-
 export const EMPTY_INSTRUCTION_POLICY_SNAPSHOT: InstructionPolicySnapshot = {
-  policy: { enabled: false, defaults: { ...DEFAULT_INSTRUCTION_POLICY_VALUES }, files: {} },
+  policy: { files: {} },
   revision: null,
   exists: false,
 }
 
-/** 单个文件的有效策略：覆盖优先于 defaults；部署级 enabled 优先于每文件开关。 */
+/** 单文件缺省放行官方注入。 */
 export function resolveInstructionFilePolicy(
   policy: InstructionPolicy,
   fileId: string,
-): InstructionPolicyValues & { enabled: boolean; name?: string } {
+): { enabled: boolean; name?: string } {
   // 服务端载荷可能不完整（老宿主/异常）：缺字段按默认，不当作「无策略」或抛错。
   const override = policy.files?.[fileId] ?? {}
   return {
-    ...DEFAULT_INSTRUCTION_POLICY_VALUES,
-    ...policy.defaults,
-    ...override,
-    enabled: policy.enabled && override.enabled !== false,
+    ...(override.name === undefined ? {} : { name: override.name }),
+    enabled: override.enabled !== false,
   }
 }
 
