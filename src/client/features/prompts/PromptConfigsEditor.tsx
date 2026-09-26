@@ -186,9 +186,6 @@ export function PromptConfigsEditor(props: PromptConfigsEditorProps): ReactNode 
         onPatchInstructionPolicy={props.onPatchInstructionPolicy}
         onNotice={props.onNotice}
       />
-
-      <p className={styles.settingsNote}>{t('configs.note.preset')}</p>
-      <p className={styles.settingsNote}>{t('configs.note.variables')}</p>
     </section>
   )
 }

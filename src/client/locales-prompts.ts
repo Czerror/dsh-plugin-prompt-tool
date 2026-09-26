@@ -97,8 +97,6 @@ export const PROMPTS_ZH = {
   'configs.notice.deleted': '已删除',
   'configs.editor.aria': '主会话模块列表',
   'configs.common.aria': '公共配置',
-  'configs.note.preset': '提示词配置写入激活预设的 preset.yml（随预设存储，不占用 settings）；外部提示词配置可经「预设配置 → 导入预设」引入。',
-  'configs.note.variables': '模板变量空字符串是合法占位值（{{key}} 动态引用），不会被当作「删键」处理。',
 
   // 配置卡（PromptConfigCard）。
   'card.dragHint': '拖动调整顺序',
@@ -555,8 +553,6 @@ export const PROMPTS_EN: Record<keyof typeof PROMPTS_ZH, string> = {
   'configs.notice.deleted': 'Deleted',
   'configs.editor.aria': 'Main-session module list',
   'configs.common.aria': 'Shared configuration',
-  'configs.note.preset': 'Prompt configs are written into the active preset\'s preset.yml (stored with the preset, not in settings); external prompt configs can be brought in via "Presets → Import preset".',
-  'configs.note.variables': 'An empty template-variable value is a valid placeholder ({{key}} dynamic reference) and is never treated as deleting the key.',
 
   'card.dragHint': 'Drag to reorder',
   'card.enableHint': 'Click to enable',
