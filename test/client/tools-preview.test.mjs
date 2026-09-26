@@ -158,7 +158,11 @@ test('官方目录式搜索、可折叠分组与标题右侧预设选择；不�
   assert.doesNotMatch(html, /toolGroupSub/)
   assert.match(read('src/client/features/tools/ToolSurfaceView.tsx'), /<StatusBadge tone="success" label=\{t\('tools\.surface\.sub\.count', \{ count \}\)\} \/>/)
   assert.match(html, /不会自动 resume 会话/)
-  assert.match(html, /刷新预设列表/)
+  // 预设 roster 由「展开下拉」实时读取，页面不再提供独立刷新按钮。
+  assert.doesNotMatch(html, /刷新预设列表/)
+  assert.equal(PROMPT_TOOL_DICTS.zh['tools.refreshPresets'], undefined, '刷新按钮词条已删除')
+  assert.match(read('src/client/features/tools/ToolsPreviewPage.tsx'), /onOpen=\{\(\) => setRevision\(\(value\) => value \+ 1\)\}/)
+  assert.match(read('src/client/ui/MenuSelect.tsx'), /if \(!open\) props\.onOpen\?\.\(\)/)
   const preset = render(ToolSurfaceView, { presetId: 'next-preset', label: '预设工具能力', t, expandedState: { 'preset:next-preset': true } })
   assert.doesNotMatch(preset, /后续 generation/)
   assert.match(preset, /不代表当前会话/)

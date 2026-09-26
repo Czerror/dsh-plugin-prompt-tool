@@ -17,6 +17,8 @@ export function MenuSelect(props: {
   value: string
   options: readonly MenuSelectOption[]
   onChange: (value: string) => void
+  /** 由关闭切到打开时调用：调用方据此在展开瞬间重新拉取选项，无需独立刷新按钮。 */
+  onOpen?: () => void
   ariaLabel: string
   disabled?: boolean
   placeholder?: string
@@ -96,7 +98,11 @@ export function MenuSelect(props: {
           aria-invalid={props['aria-invalid']}
           aria-describedby={props['aria-describedby']}
           disabled={disabled}
-          onClick={() => setOpen((value) => !value)}
+          onClick={() => {
+            // 副作用留在事件处理器里，不进 setState 的 updater（StrictMode 会双调用 updater）。
+            if (!open) props.onOpen?.()
+            setOpen(!open)
+          }}
         >
           <span className={styles.menuSelectLabel}>
             {selected?.label ?? (props.value.length > 0 ? props.value : props.placeholder ?? '（未选择）')}
