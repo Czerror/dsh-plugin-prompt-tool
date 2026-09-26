@@ -29,15 +29,16 @@
 
 .masthead {
   display: flex;
-  min-height: 50px;
+  min-height: 40px;
   flex: 0 0 auto;
   align-items: center;
   flex-wrap: wrap;
   gap: 8px 12px;
-  /* 桌面版：Windows 把 40px 原生 caption 行顶到内容之上，masthead 里的按钮若落在
-     该带内，按下会被判成拖窗口而点不动（官方 AppFrame 同样以该变量避让）。Web 版
-     变量未定义 → 回退 0，与原来的 10px 16px 完全一致。 */
-  padding: calc(10px + var(--dsh-windows-titlebar-height, 0px)) 16px 10px;
+  /* 桌面版的 caption 让位只做一次，由抽屉负责（Workbench .drawerPanel 的 padding-top）。
+     这里再叠加 --dsh-windows-titlebar-height 会把标题推到 caption 下沿的两倍处（约 90px），
+     比官方 AppFrame 的内容起点低一整条 caption 行。总高 40px 与官方会话头对齐：
+     标题与会话标题同线，页签行与官方「对话/轨迹」同线。 */
+  padding: 6px 16px;
   border-bottom: 0.5px solid var(--dsw-alias-border-l2);
   background: var(--dsw-alias-bg-base);
 }

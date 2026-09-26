@@ -148,9 +148,10 @@
 
 | 位置 | 变量 | 解决的问题 |
 |---|---|---|
-| `src/client/app/workspace/PromptWorkspace.module.css`（masthead 上内边距） | titlebar-height | 标题栏内的「返回对话」/关闭按钮落在拖拽带上点不动 |
 | `src/client/app/workbench/Workbench.module.css`（抽屉面板四向 padding） | titlebar-height + leading-clearance | 抽屉内容顶到窗口边缘；macOS 交通灯压住品牌与标题 |
 | `src/client/ui/controls.module.css`（模态背板与最大高度） | titlebar-height | 矮窗口下居中模态的头部进入拖拽带 |
+
+**让位只做一次**：工作台是 body portal 抽屉，不继承官方 `AppFrame` 的 `padding-top: var(--dsh-windows-titlebar-height)`（`packages/client/ui-layout/src/client/AppFrame.module.css:26-32`），所以这一次让位由抽屉面板承担；masthead 等内层**不再叠加**同一变量。叠加两次会把标题推到 caption 下沿的两倍处（实测约 90px），比官方内容起点低一整条 caption 行，页签行也跟着下移；masthead 自身只保留呼吸空间（总高 40px，与官方会话头持平），标题因此与会话标题同线、页签与官方「对话/轨迹」同线。
 
 ## 8. 已知残留
 
