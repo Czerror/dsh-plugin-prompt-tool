@@ -48,7 +48,6 @@ test('状态文件缺失时回退默认 v4 状态，路径固定在用户技能�
   assert.deepEqual(defaultSkillsState(), { version: 4, folders: [] })
   // 技能实体留在官方各自技能根里：状态文件不含任何实体库/链接/排序字段，也不含屏蔽表。
   assert.deepEqual(Object.keys(defaultSkillsState()).sort(), ['folders', 'version'])
-  assert.equal('blocked' in defaultSkillsState(), false, '屏蔽表不再是状态形状的一部分')
 })
 
 test('写入/读回往返：只记引用目录，并保留手写注释与未知字段', () => {
@@ -71,7 +70,6 @@ test('写入/读回往返：只记引用目录，并保留手写注释与未知�
   const parsed = parseYaml(text)
   assert.deepEqual(parsed.folders, [referenced])
   assert.equal(parsed.version, 4)
-  assert.equal(parsed.blocked, undefined, '写入后文件里不得有 blocked 键')
 })
 
 test('当前版本的未知 blocked 字段不生效，保存引用目录时原样保留', () => {
@@ -118,7 +116,6 @@ test('空引用目录删除对应键，文件保持精简', () => {
   const text = readFileSync(file, 'utf8')
   assert.equal(/^folders:/m.test(text), false)
   assert.equal(/^version:/m.test(text), true)
-  assert.equal(/^blocked:/m.test(text), false)
   assert.deepEqual(readSkillsState(file).state, { version: 4, folders: [] })
 })
 

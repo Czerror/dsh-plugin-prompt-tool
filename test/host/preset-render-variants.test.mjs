@@ -28,14 +28,12 @@ function rowsOf(id) {
 
 const idsOf = (rows) => rows.map((row) => row.id)
 
-test('内置预设集合移除 liangshen 与 anchored，保留四个官方基型 + custom', () => {
+test('内置预设集合：四个官方基型 + custom', () => {
   const dirs = readdirSync(join(root, 'preset'), { withFileTypes: true })
     .filter((entry) => entry.isDirectory())
     .map((entry) => entry.name)
     .sort()
   assert.deepEqual(dirs, ['pt-cordis', 'pt-custom', 'pt-minimal', 'pt-ptc', 'pt-standard'])
-  assert.equal(existsSync(join(root, 'preset', 'liangshen')), false)
-  assert.equal(existsSync(join(root, 'preset', 'anchored')), false, 'anchored 预设已下线，不再随包分发')
 })
 
 test('standard 对齐官方 Standard，以官方 dsh-persona 行承载人设', () => {
@@ -55,7 +53,7 @@ test('rc.2 新增 present 行：standard / ptc / cordis 按官方层内顺序覆
   assert.equal(idsOf(rowsOf('minimal')).includes('present'), false, 'minimal 基型没有 present 行')
 })
 
-test('ptc 使用官方 alpha.4 呈现与 delegation 变体，不重复挂 promoted-code-mode', () => {
+test('ptc 使用官方 alpha.4 呈现与 delegation 变体', () => {
   const rows = rowsOf('ptc')
   const ids = idsOf(rows)
   assert.deepEqual(ids, [
@@ -66,12 +64,11 @@ test('ptc 使用官方 alpha.4 呈现与 delegation 变体，不重复挂 promot
   ])
   const presentation = rows.find((row) => row.id === 'tool-presentation')
   assert.equal(presentation.config.mode, 'ptc')
-  assert.equal(ids.includes('promoted-code-mode'), false, '官方 tool-presentation 已承担 PTC 呈现，不重复注册')
   const delegation = rows.find((row) => row.id === 'delegation')
   assert.equal(delegation.config.find((row) => row.id === 'tool-workflow').disabled, true)
 })
 
-test('cordis 基础行顺序对齐官方 Cordis，但不再复制 tool-cordis（避免全局 provider 重复注册）', () => {
+test('cordis 基础行顺序对齐官方 Cordis', () => {
   const ids = idsOf(rowsOf('cordis'))
   assert.deepEqual(ids, [
     'persona', 'agent-instructions', 'tool-bash', 'tool-pwsh', 'tool-fs', 'tool-fs-search',
@@ -79,7 +76,6 @@ test('cordis 基础行顺序对齐官方 Cordis，但不再复制 tool-cordis（
     'tool-ask-user', 'tool-todo', 'tool-web', 'skill-filesystem', 'tool-skill', 'present',
     'tool-plugin-manager', 'prompt-config-engine',
   ])
-  assert.ok(!ids.includes('tool-cordis'), 'tool-cordis 由官方 shipped「创造模式」(cordis) 预设提供')
   const skill = readFileSync(join(root, 'preset/pt-cordis/skills/editing-cordis-compositions/SKILL.md'), 'utf8')
   const officialSkill = readFileSync(join(root, 'test/fixtures/dsh/current/packages/preset/agent-preset/skills/editing-cordis-compositions/SKILL.md'), 'utf8')
   assert.equal(skill, officialSkill, '创作技能与本次核验的官方源码逐字一致')

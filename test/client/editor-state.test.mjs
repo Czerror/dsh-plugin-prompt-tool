@@ -109,7 +109,6 @@ test('store：参数与提示词配置保存共用预设队列，旧响应不重
   const paramSave = source.slice(source.indexOf('const persistParamOverrides'), source.indexOf('const persistConfigs'))
   const configSave = source.slice(source.indexOf('const persistConfigs'), source.indexOf('const saveTemplateVariables'))
   assert.match(source, /const presetSaveQueueRef = useRef\(createSerialTaskQueue\(\)\)/)
-  assert.doesNotMatch(source, /paramSaveQueueRef/)
   assert.match(paramSave, /presetSaveQueueRef\.current\.enqueue/)
   assert.match(configSave, /presetSaveQueueRef\.current\.enqueue/)
   assert.match(paramSave, /shouldReloadAfterPresetSave/)

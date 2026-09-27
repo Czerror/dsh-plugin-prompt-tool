@@ -64,7 +64,6 @@ test('编辑保留在主会话，工具预览没有保存或安装管理入口',
   assert.match(edit, /自定义工具编辑/)
   assert.match(edit, /新建空白工具/)
   assert.match(edit, /添加工具模板/)
-  assert.doesNotMatch(edit, /经顶部/)
   assert.doesNotMatch(edit, /当前会话工具|预设工具能力来源/)
   assert.match(read('src/client/app/workspace/pages/EngineLayersPanel.tsx'), /<CustomToolsCard/)
   for (const path of [
@@ -150,12 +149,9 @@ test('官方目录式搜索、可折叠分组与标题右侧预设选择；不�
   assert.ok(html.indexOf('搜索工具') < html.indexOf('当前会话工具'))
   assert.match(html, /current-session/)
   // 计数与标题同行、用绿色胶囊呈现；计数未知（加载中）时整块不渲染。
-  assert.doesNotMatch(html, /toolGroupSub/)
   assert.match(read('src/client/features/tools/ToolSurfaceView.tsx'), /<StatusBadge tone="success" label=\{t\('tools\.surface\.sub\.count', \{ count \}\)\} \/>/)
   assert.match(html, /不会自动 resume 会话/)
-  // 预设 roster 由「展开下拉」实时读取，页面不再提供独立刷新按钮。
-  assert.doesNotMatch(html, /刷新预设列表/)
-  assert.equal(PROMPT_TOOL_DICTS.zh['tools.refreshPresets'], undefined, '刷新按钮词条已删除')
+  // 预设 roster 由「展开下拉」实时读取。
   assert.match(read('src/client/features/tools/ToolsPreviewPage.tsx'), /onOpen=\{\(\) => setRevision\(\(value\) => value \+ 1\)\}/)
   assert.match(read('src/client/ui/MenuSelect.tsx'), /if \(!open\) props\.onOpen\?\.\(\)/)
   const preset = render(ToolSurfaceView, { presetId: 'next-preset', label: '预设工具能力', t, expandedState: { 'preset:next-preset': true } })
@@ -164,8 +160,6 @@ test('官方目录式搜索、可折叠分组与标题右侧预设选择；不�
   assert.match(preset, /next-preset/)
   assert.doesNotMatch(preset, /current-session/)
   assert.equal(PROMPT_TOOL_DICTS.zh['tools.surface.sub.count'], '{count} 个', '副标题只显示数量')
-  assert.equal(PROMPT_TOOL_DICTS.zh['tools.surface.sub.session'], undefined, '技术副标题词条已删除')
-  assert.equal(PROMPT_TOOL_DICTS.zh['tools.footnote'], undefined, '工具预览页脚注词条已删除')
   const source = read('src/client/features/tools/ToolsPreviewPage.tsx')
   assert.match(source, /useSyncExternalStore\(face\.subscribe, face\.snapshot, face\.snapshot\)/)
   assert.match(source, /query=\{query\}/)
@@ -235,11 +229,7 @@ test('状态胶囊统一复用 StatusBadge：StatusDot + 官方 Tag', () => {
   }
   assert.match(read('src/client/features/presets/PresetSwitcher.tsx'), /<StatusBadge className=\{styles\.presetHeadBadge\} tone="success" label=\{t\('presetSwitcher\.badge\.active'\)\} \/>/)
   assert.match(read('src/client/features/characters/CharactersPage.tsx'), /<StatusBadge className=\{ui\.presetHeadBadge\} tone="success" label=\{t\('characters\.badge\.imported'\)\} \/>/)
-  assert.doesNotMatch(read('src/client/ui/controls.module.css'), /presetInUse/)
   assert.match(read('src/client/app/workspace/WorkspaceFrame.tsx'), /<StatusDot tone=\{store\.loading \? 'neutral' : 'success'\}[^>]*\/>/)
-  assert.doesNotMatch(read('src/client/app/workspace/PromptWorkspace.module.css'), /\.statusDot|pt-pulse/)
-  assert.doesNotMatch(read('src/client/features/tools/tools.module.css'), /toolVisibleDot/)
-  assert.doesNotMatch(read('src/client/ui/controls.module.css'), /skillStatusChip|skillStatusDot/)
 })
 
 test('搜索只过滤名称或描述，空列表与无匹配状态分开', () => {

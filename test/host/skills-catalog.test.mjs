@@ -102,11 +102,7 @@ test('catalogFromScan：一层发现、来源优先级、调用策略投影与�
   assert.equal(projectEntry.userInvocable, true)
   assert.equal(projectEntry.path, join(project, '.dsh', 'skills', 'project-skill', 'SKILL.md'))
   assert.equal(projectEntry.winnerId, undefined)
-  // 屏蔽相关的旧字段彻底消失（它们在注册层模型里存在过）；可用状态也不在扫描层产生，
-  // 它由 withSkillWinners 按注册表胜出路径投影——扫描本身只报文件事实。
-  for (const gone of ['blocked', 'blockedModel', 'blockedUser', 'availability']) {
-    assert.equal(gone in projectEntry, false, `${gone} 不是扫描层字段`)
-  }
+  // 可用状态不在扫描层产生，它由 withSkillWinners 按注册表胜出路径投影——扫描本身只报文件事实。
   assert.deepEqual(Object.keys(projectEntry).sort(), [
     'canDelete', 'canSetPolicy', 'description', 'dir', 'folder', 'id', 'modelInvocable', 'name', 'path', 'rank', 'source', 'userInvocable', 'valid',
   ])
@@ -230,7 +226,6 @@ test('/skills-list 端点：按会话 cwd 解析项目来源，无存活会话�
   assert.equal(value.skills.some((skill) => skill.name === 'project-skill'), true)
   assert.deepEqual(value.roots, [skillsRoot])
   assert.deepEqual(value.folders, [referenced])
-  assert.equal('blocked' in value, false, '响应里不再有屏蔽表（避免第二个真相）')
   // 按端事实随清单下发：声明停用的技能如实带 modelInvocable/userInvocable。
   const agentsEntry = value.skills.find((skill) => skill.name === 'agents-skill')
   assert.deepEqual([agentsEntry.modelInvocable, agentsEntry.userInvocable], [false, false])

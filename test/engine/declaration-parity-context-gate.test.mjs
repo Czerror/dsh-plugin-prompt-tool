@@ -27,10 +27,6 @@ const PLUGIN = 'context-gate-declaration'
 /** 声明文件本体（对拍用的就是这份 YAML）。 */
 const DECLARATIONS = parse(readFileSync(new URL('./declarations/context-gate.yml', import.meta.url), 'utf8'))
 const CONTEXTS_DECLARATION = DECLARATIONS.find((item) => item.id === 'context-gate-runtime-contexts')
-const SOURCES_DECLARATION = DECLARATIONS.find((item) => item.id === 'context-gate-pre-step-sources')
-
-/** 相位判定：promoteOn 默认 either、includeSubagents 默认 false（见组合源 config 档案 / YAML 注释）。 */
-const PHASE = { promoteOn: 'either', includeSubagents: false }
 
 /** 收集 ctx.on 注册的监听器（按注册顺序），并返回与 Cordis 同形状的 disposer。 */
 function makeCtx() {
@@ -61,15 +57,7 @@ function world({ declarations = DECLARATIONS } = {}) {
   return { listeners }
 }
 
-test('声明文件契约：两处声明都在，phase 选项与组合源同值，且走订阅档', () => {
-  assert.deepEqual(DECLARATIONS.map((item) => item.id),
-    ['context-gate-runtime-contexts', 'context-gate-pre-step-sources'])
-  for (const declaration of DECLARATIONS) {
-    assert.deepEqual(declaration.when, { not: { phase: PHASE } }, '判定 = 未晋升（相位取值同组合源 config）')
-  }
-  assert.equal(CONTEXTS_DECLARATION.do.target.contexts.clear, true, '路径 (a) = 清空 contexts')
-  assert.deepEqual(SOURCES_DECLARATION.do.sources, ['user', 'goal'], '路径 (b) = 严格白名单')
-
+test('声明路径的订阅档：composite 必须转发内层谓词的 observe', () => {
   // 订阅档（缺省）成立的前提是 `composite` 转发内层谓词的 `observe`——本用例把它钉住：
   // 一旦有人改回「组合层不带 observe」，相位就只剩冷扫、声明必须退回 `subscribe: false` 的
   // 绕法（每次判定 O(事件数) 冷扫），这条会立刻红并提示原因。

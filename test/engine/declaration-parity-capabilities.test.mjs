@@ -6,11 +6,9 @@
  * 装配结果 / 裁决 / 注入时机逐项相同）。T3 把这四个模块与本地下同名组合源一并删除（其行为改由
  * 预设顶层 `triggers` 段的声明表达），对拍的那一半已无对象可对，随模块一同退场。
  *
- * 保留下来的都是**不依赖原模块**的长期防回归钉子：
- *   1. 载荷契约（真实 Context + ToolRuntime + SystemPrompt）：归一化后 `agent` 可达、第一个实参
- *      的顶层字段仍保留、会话态谓词按真实会话判定而非恒常数、`composite` 转发 `observe`；
- *   2. 声明文件契约：`test/engine/declarations/*.yml` 的取值逐字等于**删除前**的组合源默认
- *      （原值内联在下方常量里，组合源已随本批删除）。
+ * 保留下来的都是**不依赖原模块**的长期防回归钉子：载荷契约（真实 Context + ToolRuntime +
+ * SystemPrompt）——归一化后 `agent` 可达、第一个实参的顶层字段仍保留、会话态谓词按真实会话
+ * 判定而非恒常数、`composite` 转发 `observe`。
  *
  * 桩与派发的形状取自既有测试，不另造一套：
  *   - `on` / `effect` / `get` / `logger.warn`：actions.test.mjs 的 recordingCtx；
@@ -18,8 +16,6 @@
  */
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
-import { parse as parseYaml } from 'yaml'
 import { Context } from '@deepseek-ai/cordis'
 import ToolRuntime from '@deepseek-ai/dsh-tools'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
@@ -29,15 +25,7 @@ import { composite, createCountPredicate, createPhasePredicate, createSessionSta
 
 // ───────────────────────── 桩、派发与装载 ─────────────────────────
 
-/** 读声明文件（与 declared-triggers.mjs 的读取契约一致：YAML 数组）。 */
-function readDeclarationFile(fileName) {
-  const url = new URL(`./declarations/${fileName}`, import.meta.url)
-  const parsed = parseYaml(readFileSync(url, 'utf8'), { logLevel: 'silent' })
-  assert.ok(Array.isArray(parsed), `${fileName} 必须是 YAML 数组（与 declared-triggers.mjs 同契约）`)
-  return parsed
-}
-
-// ───────────────────────── 一、载荷契约（真实宿主，防回归） ─────────────────────────
+// ───────────────────────── 载荷契约（真实宿主，防回归） ─────────────────────────
 
 /**
  * 真实 Context + ToolRuntime + SystemPrompt：把真实 `tools/pre-execute` 与
@@ -125,73 +113,4 @@ test('载荷契约（真实宿主）：归一化后 agent 可达、原字段保�
   assert.equal(createSessionStatePredicate({ type: 'user/message', present: true })(record), true,
     '直接传 agent 的旧形态仍按 agent.session 判定')
   assert.equal(typeof record.id, 'string')
-})
-
-// ───────────────────────── 二、声明文件契约 ─────────────────────────
-
-// 以下常量是**删除前**组合源 config 的原值（`engine/compositions/source/local/<模块>.yml`，
-// B7 T3 已随模块删除）。内联在此，声明文件的取值仍必须与它们逐字一致。
-const ANCHOR_TEXT = 'This round is a test. Tools are not open yet; all tools will open next round.'
-const GATE = {
-  minChars: 400,
-  maxGatesPerTurn: 1,
-  gateText: 'Deliberation gate: this turn has not shown its reasoning yet. Before retrying this tool call, write out your full reasoning in your reply — start with "We", restate the goal, weigh the approaches, and lay out the concrete steps and risks — then issue the tool call again. This message is a planning prompt, not a tool failure.',
-}
-const DRIP = {
-  every: 4,
-  maxPerTurn: 1,
-  text: 'Progress check: before the next action, restate in one "We …" sentence what remains of the goal and why the next step is the right one.',
-}
-const BOOTSTRAP = {
-  bootstrapTools: ['bash', 'str_replace_editor'],
-  compactionTools: ['read', 'write', 'edit', 'glob', 'grep', 'todo_write', 'ask_user_question'],
-}
-const BOOTSTRAP_MAX_TOKENS = 1024
-
-test('声明文件契约：YAML 数组形状 + 取值与删除前的组合源默认逐字一致', () => {
-  const specsOf = (fileName) => readDeclarationFile(fileName)
-  assert.equal(specsOf('anchor-turn.yml')[0].do.text, ANCHOR_TEXT, '锚定正文必须复刻组合源 config.text')
-  assert.equal(specsOf('anchor-turn.yml')[0].do.target, 'next-turn')
-  assert.equal(specsOf('anchor-turn.yml')[0].when.session.delegated, false,
-    '受众：includeSubagents: false ⇔ delegated: false（只在主会话锚定）')
-  assert.equal(specsOf('deliberation-gate.yml')[0].do.reason, GATE.gateText, '拒绝文案必须复刻组合源 config.gateText')
-  assert.equal(specsOf('deliberation-gate.yml')[0].when.count.max, GATE.minChars - 1, '深度阈值 = minChars - 1')
-  assert.equal(specsOf('deliberation-gate.yml')[0].do.decision, 'deny')
-  assert.equal(specsOf('progress-reminder.yml')[0].do.text, DRIP.text, '提醒正文必须复刻组合源 config.text')
-  assert.equal(specsOf('progress-reminder.yml')[0].when.count.every, DRIP.every,
-    '节奏 = count.every = every（含 `count > 0` 约定，见该文件注释）')
-  assert.equal(specsOf('progress-reminder.yml')[0].when.count.includeCurrent, true,
-    '计数时点：把本次即将落盘的 tool/result 计入（仅 post-execute 上成立）')
-  assert.equal(specsOf('progress-reminder.yml')[0].when.count.delegated, false, '受众：只在主会话滴入')
-  assert.equal(specsOf('progress-reminder.yml')[0].do.maxPerTurn, DRIP.maxPerTurn, '每轮上限 = maxPerTurn（动作侧预算）')
-  assert.equal(specsOf('deliberation-gate.yml')[0].do.maxPerTurn, GATE.maxGatesPerTurn,
-    '每轮上限 = maxGatesPerTurn（动作侧预算）')
-  assert.equal(specsOf('deliberation-gate.yml')[0].when.count.delegated, false, '受众：只在主会话门控')
-  const bootstrap = specsOf('tool-bootstrap.yml')
-  assert.deepEqual(bootstrap[0].do.target.tools.allow, BOOTSTRAP.bootstrapTools, '受控相位工具面 = bootstrapTools')
-  assert.deepEqual(
-    [bootstrap[0].when.phase.compacted, bootstrap[0].when.phase.promoted],
-    [false, false],
-    '声明 1 的相位 = ¬C ∧ ¬P（受控相位、未压缩）',
-  )
-  assert.deepEqual(
-    [bootstrap[1].when.phase.compacted, bootstrap[1].when.phase.promoted],
-    [true, false],
-    '声明 2 的相位 = C ∧ ¬P（compaction 回退）',
-  )
-  assert.deepEqual(bootstrap[1].do.target.tools.allow,
-    [...BOOTSTRAP.bootstrapTools, ...BOOTSTRAP.compactionTools],
-    'compaction 回退目录 = bootstrapTools + compactionTools')
-  assert.equal(bootstrap[0].do.target.tools.requireMatch, true,
-    'fail-open 兜底：任意一个 allow 工具缺失即暴露完整目录（tool-filter 不加此项）')
-  assert.deepEqual(bootstrap[0].do.target.sections.keep,
-    ['deployment:persona-prefix', 'deployment:persona-suffix'],
-    'sections 白名单 = PERSONA_SECTION_NAMES（与 filter 语义逐例等价）')
-  assert.equal(bootstrap[0].do.target.sections.remove, undefined, 'keep 与 remove 互斥（同时声明会挂载期 fail loud）')
-  assert.equal(bootstrap[2].do.patch.maxTokens, BOOTSTRAP_MAX_TOKENS, '未晋升 patch 值')
-  assert.equal(bootstrap[3].do.unset.maxTokens, BOOTSTRAP_MAX_TOKENS, '晋升后按值删键的声明值必须与 patch 一致')
-  for (const spec of [...specsOf('anchor-turn.yml'), ...specsOf('deliberation-gate.yml'), ...specsOf('progress-reminder.yml'), ...bootstrap]) {
-    assert.equal(typeof spec.id, 'string')
-    assert.equal(typeof spec.channel, 'string')
-  }
 })

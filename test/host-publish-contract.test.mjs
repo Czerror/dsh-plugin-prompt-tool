@@ -381,8 +381,6 @@ test('技能页展示用户技能根与调用策略开关，引用目录只登�
   // 引用文件夹只登记路径（patchSkillFolders），不再是可增删的发现根管理界面。
   assert.match(skillsSettings, /store\.patchSkillFolders\(/)
   assert.match(skillsSettings, /t\('skills\.folders\.pick'\)/)
-  assert.doesNotMatch(skillsSettings, /addSkillsDir|removeSkillsDir|displaySkillsDirs/, '目录引用入口已下线（外部目录只作一次性复制来源或路径引用）')
-  assert.doesNotMatch(skillsSettings, /skills\.dirs\.(title|meta|add|empty)/, '旧发现根文案不再被引用（导入相关文案保留）')
 })
 
 test('技能页目录导入与文件夹引用仅消费宿主目录选择器', () => {

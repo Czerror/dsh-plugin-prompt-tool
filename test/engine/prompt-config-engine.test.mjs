@@ -1444,8 +1444,6 @@ test('getEngineMeta 返回引擎能力矩阵，内置策略集合稳定', () => 
   assert.ok(meta.layers.includes('pre-step'))
   assert.ok(meta.layers.includes('tool-pipeline'))
   assert.ok(meta.strategies.includes('custom-fallback'))
-  assert.ok(!meta.strategies.includes('anchor-fallback'))
-  assert.ok(!meta.strategies.includes('we-fallback'))
   assert.deepEqual(meta.strategies, ['custom-fallback', 'first-turn-anchor', 'guide-auto', 'placeholder', 'static', 'world-book'])
   assert.ok(meta.fills.includes('instruction-hint'))
   assert.ok(meta.fills.includes('skill-catalog'))

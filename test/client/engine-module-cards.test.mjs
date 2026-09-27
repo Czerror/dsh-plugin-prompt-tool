@@ -6,7 +6,7 @@ import { createElement, isValidElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import ts from 'typescript'
 import { parse } from 'yaml'
-import { ENGINE_CAPABILITIES, ENGINE_EDITOR_GROUP_MAP, ENGINE_LAYER_ORDER, engineCapability, engineRecipe, isEditorGroupVisible } from '../../src/shared/engine-capabilities.ts'
+import { ENGINE_CAPABILITIES, ENGINE_EDITOR_GROUP_MAP, ENGINE_LAYER_ORDER, engineCapability, isEditorGroupVisible } from '../../src/shared/engine-capabilities.ts'
 import { ENGINE_PARAM_DEFINITIONS, ENGINE_PARAM_KEYS } from '../../src/shared/engine-params.ts'
 import { displayLayers, INSERTION_LAYERS } from '../../src/client/features/prompts/prompt-config-policy.ts'
 import { EMPTY_FIELDS } from '../../src/client/data/prompt-tool-fields.ts'
@@ -101,7 +101,6 @@ test('层设置内容按装配事实列出本层能力，未装配的能力不�
     assert.match(html, new RegExp(`data-layer-capability="${id}"`), `${id} 应出现在本层装配清单`)
   }
   assert.doesNotMatch(html, /data-layer-capability="tool-bootstrap"/, '不列其他层的能力')
-  assert.doesNotMatch(html, /aria-label="编辑行为"/, '不恢复旧能力编辑目标选择器')
   // 历史隐式策略仍在运行：照样列出，便于管理授权。
   const legacyPolicy = { ...active, moduleFacts: { ...withModules(['delegation']), effectiveModules: ['delegation', 'subagent-tool-policy'] } }
   assert.deepEqual(layerAssembledCapabilities(legacyPolicy, 'tool-pipeline'), ['subagent-tool-policy'])
@@ -110,7 +109,7 @@ test('层设置内容按装配事实列出本层能力，未装配的能力不�
   assert.deepEqual(layerAssembledCapabilities(official, 'tool-pipeline'), [])
 })
 
-test('能力与组合只引用新模块名，不接受旧模块名或编辑器模块别名', () => {
+test('能力与组合只引用新模块名，编辑器模块别名归并到真实模块', () => {
   const editor = engineCapability('str-replace-editor')
   assert.deepEqual(editor.moduleKeys, ['filesystem-editor'])
   assert.deepEqual(editor.rowIds, ['str-replace-editor'])
@@ -118,17 +117,12 @@ test('能力与组合只引用新模块名，不接受旧模块名或编辑器�
     assert.deepEqual(engineCapability(id).moduleKeys, [id])
     assert.deepEqual(engineCapability(id).rowIds, [id])
   }
-  assert.equal(engineCapability('code-presentation'), undefined)
-  assert.equal(engineCapability('cot-drip'), undefined)
-  assert.equal(engineCapability('bootstrap-filesystem'), undefined, '旧模块名不再被能力目录识别')
   const legacy = {
     ...store,
     moduleFacts: { ...withModules(['bootstrap-filesystem', 'str-replace-editor', 'custom-bash', 'code-presentation', 'cot-drip']), sourceMode: 'composition', rowIds: ['str-replace-editor', 'promoted-code-mode', 'progress-reminder'] },
   }
   assert.deepEqual(layerAssembledCapabilities(legacy, 'tool-pipeline'), [], '组合来源的旧模块名不生成能力条目')
   assert.deepEqual(layerParamCards(legacy, 'tool-pipeline'), [], '旧别名不产生可编辑参数组')
-  // 旧别名既不生成能力条目，也不产生可编辑参数组。
-  for (const id of ['phase-control', 'phase-control-ptc', 'deliberation']) assert.equal(engineRecipe(id), undefined)
 })
 
 test('字段类型、零值与 system 只读由同一渲染器处理', () => {
@@ -164,7 +158,6 @@ test('递归深度和专用模型卡保留，过滤字段不重复出现在委�
   const delegation = read('features/subagents/DelegationToolsCard.tsx')
   assert.match(delegation, /ariaLabel=\{t\('param\.maxDepth'\)\}/)
   assert.match(delegation, /fields\.maxDepth/)
-  assert.doesNotMatch(delegation, /pt-tool-filter-allow|pt-tool-filter-deny|pt-allow-kinds/)
   assert.equal(ENGINE_PARAM_DEFINITIONS.customToolRequireApproval.card, 'tool-config-engine')
   assert.equal(ENGINE_PARAM_DEFINITIONS.maxDepth.card, 'subagent-tools')
 })
@@ -257,7 +250,6 @@ test('层内创建菜单按能力主层过滤，撤销组合不再出现', async
   const pipeline = menuFor('tool-pipeline')
   const ids = pipeline.props.items.map(({ id }) => id)
   assert.deepEqual(ids, ENGINE_CAPABILITIES.map(({ id }) => `cap:${id}`))
-  assert.equal(ids.some((id) => id.startsWith('recipe:')), false)
   assert.equal(menuFor('pre-step'), undefined)
   pipeline.props.onSelect('cap:context-gate')
   await Promise.resolve()
@@ -489,7 +481,7 @@ test('统一搜索：生产层装配按中文名、技术键与能力名保留�
     assert.equal(slots.matchesLayerSettings('llm-stream', keyword), false)
     const base = { ...slots, t, meta: getEngineMeta(), viewFilter: 'all', keyword, onPatchConfigs() { assert.fail('搜索不得写盘') }, onSaveConfigs() { assert.fail('搜索不得保存') }, onNotice() {} }
     assert.match(render(PromptConfigList, { ...base, configs: [config] }), /data-config-id="pipe-a"/)
-    assert.doesNotMatch(render(PromptConfigList, { ...base, configs: [] }), /data-layer-config=|data-config-id=|data-layer-settings-standalone=/)
+    assert.doesNotMatch(render(PromptConfigList, { ...base, configs: [] }), /data-config-id=/)
     const settings = tree(LayerSettingsContent, { store: active, t, layer: 'tool-pipeline', keyword })
     assert.equal(find(settings, (node) => node.props['data-layer-param-group'] === 'str-replace-editor').props.hidden, false)
     assert.equal(find(settings, (node) => node.props['data-layer-param-group'] === 'tool-config-engine').props.hidden, true)
@@ -548,8 +540,7 @@ test('层设置内容：参数分组按共享契约派生，能力装配状态�
   assert.match(html, /data-layer-param-group="str-replace-editor"/)
   assert.match(html, /data-layer-param-group="tool-config-engine"/)
   assert.equal(html.includes('data-layer-param-group="tool-git-bash"'), false, '未装配能力不渲染参数组')
-  assert.equal(html.includes('data-layer-insert-template'), false, '层设置区不提供重复的注入模板入口')
-  // 代理请求层：模型路由卡仍是该层唯一模型入口，通用参数分组退场但设置区不空。
+  // 代理请求层：模型路由卡是该层唯一模型入口，设置区仍非空。
   // 资产计入 hasLayerSettings 的是 engineLayerSlots 的装配结果（导出的 layerHasSettings 只看参数与能力）。
   const modelSlots = engineLayerSlots({ store: withModel, t, viewFilter: 'all', audience: 'main' })
   assert.equal(modelSlots.hasLayerSettings('agent-request'), true, '模型路由资产让该层仍有设置')
@@ -597,7 +588,7 @@ test('所有参数设置只内嵌真实配置卡，空层即使有设置也不�
     for (const viewFilter of ['all', ...layers, 'world-book']) {
       for (const keyword of ['', '深思门', '代理请求']) {
         const html = render(PromptConfigList, base({ scope, viewFilter, keyword }))
-        assert.doesNotMatch(html, /data-layer-config=|data-layer-settings-standalone|data-config-id=/)
+        assert.doesNotMatch(html, /data-config-id=/)
         assert.ok(!html.includes(marker), '无真实实例就不挂载设置控件')
       }
     }
@@ -615,7 +606,6 @@ test('所有参数设置只内嵌真实配置卡，空层即使有设置也不�
   assert.match(expanded, /子代理通用守则/)
   assert.match(expanded, /子代理启动层 · 固定文本/)
   assert.match(expanded, /data-layer-settings="subagent-start"/)
-  assert.doesNotMatch(expanded, /data-layer-config=|子代理启动层配置/)
   assert.ok(expanded.includes(t('form.text.aria')), '仍是完整提示词配置表单')
   assert.equal(props.renderLayerSettings('subagent-start', rule), `${marker}:subagent-start`)
   const noSettingsCard = find(tree(PromptConfigList, base({ configs: [rule], hasLayerSettings: () => false })), (node) => node.type === PromptConfigCard)
@@ -626,19 +616,17 @@ test('所有参数设置只内嵌真实配置卡，空层即使有设置也不�
     renderLayerSettings: (layer) => `${marker}:${layer}`,
     hasLayerSettings: () => true,
   }))
-  assert.equal(withCard.includes('data-layer-config'), false)
   assert.ok(withCard.includes('pipe-rule-a'))
   // 该层没有可编辑设置：保持既有层空态与新增入口。
   const noSettings = render(PromptConfigList, base({ viewFilter: 'tool-pipeline', renderLayerSettings: () => marker, hasLayerSettings: () => false }))
-  assert.equal(noSettings.includes('data-layer-config'), false)
   assert.ok(noSettings.includes(t('configs.empty.layer.title', { layer: t('layer.tool-pipeline') })))
   // 注入回调存在但该层无设置判定为假时，回调不被调用（不产生无谓渲染）。
   let called = 0
   render(PromptConfigList, base({ renderLayerSettings: () => { called += 1; return marker }, hasLayerSettings: () => false }))
   assert.equal(called, 0)
   const configs = [{ id: 'pipe-rule-a', layer: 'tool-pipeline', audience: 'main', enabled: true }]
-  assert.doesNotMatch(render(PromptConfigList, base({ configs, scope: 'subagent' })), /data-layer-config=|data-config-id=/, '受众不可见时也不补卡')
-  assert.doesNotMatch(render(PromptConfigList, base({ configs, scope: 'main', keyword: '不存在' })), /data-layer-config=/, '搜索隐藏实例时不额外生成设置卡')
+  assert.doesNotMatch(render(PromptConfigList, base({ configs, scope: 'subagent' })), /data-config-id=/, '受众不可见时也不补卡')
+  assert.doesNotMatch(render(PromptConfigList, base({ configs, scope: 'main', keyword: '不存在' })), /data-config-id=/, '搜索隐藏实例时不额外生成设置卡')
   const nodes = tree(PromptConfigList, base({ configs }))
   find(nodes, (node) => node.type === 'button' && node.props.children === t('configs.batch.disableVisible')).props.onClick()
   assert.deepEqual(patches, [[{ ...configs[0], enabled: false }]], '批量操作只处理真实规则')

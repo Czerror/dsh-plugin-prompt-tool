@@ -289,7 +289,6 @@ test('契约：角色卡图片选择器与 PNG 解析范围一致', () => {
 test('新版 ConfigForms：宿主拒绝设置写入时不伪报成功', async () => {
   const { apply, inject } = await withSsr([new URL('../../src/client/index.ts', import.meta.url).href])
   assert.ok(inject.includes('configForms'))
-  assert.ok(!inject.includes('settingsScope'))
   const writes = []
   let accepted = false
   let face

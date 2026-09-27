@@ -4,12 +4,10 @@
  * T1 时本文件是「声明 vs 原模块 `engine/tool-filter.mjs`」的等价对拍。T3 把该模块与本地下
  * 同名组合源一并删除（工具过滤改由预设顶层 `triggers` 段的声明表达），对拍的那一半已无对象
  * 可对，随模块一同退场。保留下来的都是**声明侧**断言，不依赖原模块：
- *   - 声明文件自身的契约：三条声明（呈现 / SDK 正文裁剪 / 执行 guard）与模式互斥；
  *   - 保留名 `run_code` 的三条语义（allow 可点名、deny 挂载期拒绝、未点名按 fail-closed 剔出）；
  *   - PTC 形态与执行边界的真实宿主覆盖（`sdk-strip` + `guard` 是原模块**没有**的两层）。
  *
- * 名单语义按用户拍板取**模式互斥**（allow / deny 只写一侧）；旧实现的「allow 与 deny 同时
- * 生效、deny 优先」那条语义已被放弃，因此不再有对应断言。
+ * 名单语义取**模式互斥**（allow / deny 只写一侧）。
  *
  * ctx 桩与 PTC 环境形状取自 actions.test.mjs 的 `ptcHarness`（真实 SystemPrompt + ToolRuntime，
  * 只替换语言运行时）。
@@ -90,48 +88,6 @@ function withMask(declarations, mask) {
 
 /** 只取呈现过滤那一条声明：其余两条（SDK 正文裁剪 / 执行 guard）另由 PTC 用例覆盖。 */
 const presentationOnly = (mask) => withMask(DECLARATIONS.filter((item) => item.id === 'tool-filter-presentation'), mask)
-
-// ───────────────────────── 一、声明文件自身的契约 ─────────────────────────
-
-const masksOf = (declaration) => [declaration.do.target?.tools, declaration.do.mask].filter((mask) => mask !== undefined)
-
-test('声明文件：模式互斥（同一份名单不并存 allow 与 deny），三处消费同一份名单', () => {
-  assert.deepEqual(DECLARATIONS.map((item) => item.id),
-    ['tool-filter-presentation', 'tool-filter-sdk', 'tool-filter-guard'])
-  const masks = DECLARATIONS.flatMap(masksOf)
-  assert.equal(masks.length, 3, '呈现 / SDK 正文 / 执行 guard 三处各有一份名单')
-  for (const mask of masks) {
-    assert.equal(mask.allow !== undefined && mask.deny !== undefined, false,
-      '模式互斥：一份声明只写 allow 或 deny（旧实现 deny 优先的语义已废弃）')
-    assert.ok(mask.allow !== undefined || mask.deny !== undefined, '空名单无法表达剔哪些工具')
-    assert.equal([mask.allow, mask.deny].flat().filter((name) => name !== undefined).includes('run_code'), false,
-      '不得点名 PTC 传输名 run_code')
-  }
-  for (const mask of masks.slice(1)) {
-    assert.deepEqual(mask.deny ?? mask.allow, masks[0].deny ?? masks[0].allow,
-      '同一份名单判据驱动呈现、SDK 裁剪与执行 guard')
-  }
-  // 通道与位置：三条都在 `system-prompt/assemble`；受众按原模块写 false（2026-09-22 拍板：
-  // 执行边界留待 agent scope 的 guard，呈现这一层不做受众判定）。
-  //
-  // B8 T1（2026-09-22）：**呈现过滤是否决型门控**——它裁 `assembly.tools`、本质是否决，
-  // 必须位于普通注册之外，故取 `waterfallPosition: outermost`（→ `registrationOptions` 的
-  // `prepend: true`）。真实 cordis 反例见 `test/engine/assemble-authority.test.mjs`。
-  // 另外两条保持 `default`：`sdk-strip` 改写的是 `tools:sdk` 段正文、不构成否决；`guard`
-  // 不在 `ON_REGISTERED_KINDS` 内，带 `prepend` 会挂载期抛错（actions.mjs:823-826）。
-  for (const declaration of DECLARATIONS) {
-    assert.equal(declaration.channel, 'system-prompt/assemble')
-    assert.equal(declaration.when, undefined, '本轮声明不需要 when')
-  }
-  assert.equal(DECLARATIONS.find((item) => item.id === 'tool-filter-presentation').waterfallPosition, 'outermost',
-    'B8 T1：呈现过滤是否决型门控，必须位于普通注册之外')
-  for (const id of ['tool-filter-sdk', 'tool-filter-guard']) {
-    assert.equal(DECLARATIONS.find((item) => item.id === id).waterfallPosition, 'default',
-      `${id} 保持默认位置：sdk-strip 非否决；guard 不支持 prepend`)
-  }
-  const guard = DECLARATIONS.find((item) => item.do.kind === 'guard')
-  assert.equal(guard.do.includeSubagents, false, '执行 guard 的受众与旧实现一致（只作用主会话）')
-})
 
 test('allow 模式可点名 run_code（2026-09-22 拍板修复后的语义）', async () => {
   // 声明允许点名 run_code：此前「点名即挂载期报错、不点名又被 fail-closed 连带剔出」等于

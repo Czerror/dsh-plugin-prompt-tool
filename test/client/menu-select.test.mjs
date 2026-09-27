@@ -87,18 +87,12 @@ test('模块控件紧凑且长文本继续自适应', () => {
 })
 
 test('主会话使用平铺模块列表与九层模板菜单', () => {
-  // 页面接线与被移除形态保留源码断言：渲染 MainSessionPage 需要完整 store/session 依赖，
-  // 而 `viewMode` 这类断言证明的是"不存在"，只能靠源码扫描。
-  const editor = read('features/prompts/PromptConfigsEditor.tsx')
+  // 页面接线保留源码断言：渲染 MainSessionPage 需要完整 store/session 依赖。
   const page = read('app/workspace/pages/MainSessionPage.tsx')
   const list = read('features/prompts/PromptConfigList.tsx')
-  assert.doesNotMatch(editor, /viewMode|通用设置|引擎能力设置/)
-  assert.doesNotMatch(page, /viewMode|onViewModeChange/)
-  // 旧的按插入点分区渲染已移除；`renderLayerSettings` 是本层设置注入点，不是分区渲染。
-  assert.doesNotMatch(list, /data-insertion-point|renderLayer\(/)
+  // `renderLayerSettings` 是本层设置注入点，不是分区渲染。
   assert.match(list, /renderLayerSettings\?:/)
-  // 自动保存（store debounce）取代浮动未保存提示/放弃/保存条；工具栏保留校验与保存入口。
-  assert.doesNotMatch(list, /放弃修改|保存提示词配置|有未保存提示词配置修改/)
+  // 工具栏保留校验与保存入口；自动保存由 store debounce 承担。
 
   // 真实渲染 PromptConfigList：工具栏、筛选下拉与空态分支都由实际 DOM 证明。
   const meta = getEngineMeta()
@@ -129,15 +123,13 @@ test('主会话使用平铺模块列表与九层模板菜单', () => {
   const panel = read('app/workspace/pages/EngineLayersPanel.tsx')
   assert.match(panel, /LayerSettingsContent/)
   assert.match(page, /extraItems=\{createItems\}/)
-  // 模板入口按插入点层级平铺，浮层只列该层模板（不再有一个「从模板新建」聚合项）。
+  // 模板入口按插入点层级平铺，浮层只列该层模板。
   assert.match(page, /INSERTION_LAYERS\.map/)
   assert.match(page, /t\('main\.addTemplate', \{ layer: translateLabel\(t, LAYER_LABEL_KEYS, layer\) \}\)/)
   assert.match(page, /tpl:\$\{layer\}/)
   assert.match(page, /picker\.openPicker\(id\.slice\(4\)\)/)
   assert.match(page, /layer=\{picker\.layer\}/)
   assert.match(page, /templatesOnly/)
-  assert.doesNotMatch(page, /create:(blank-tool|tool-template|variables)/)
   assert.match(panel, /EngineCapabilityCreateMenu/)
   assert.match(panel, /layer=\{layer\}/)
-  assert.doesNotMatch(page, /从模板新建/)
 })

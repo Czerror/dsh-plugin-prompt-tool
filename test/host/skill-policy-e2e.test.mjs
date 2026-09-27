@@ -130,7 +130,6 @@ test('setSkillInvocation 之后重新 list()：模型端不可调用、用户端
   // 不存在影子/覆盖候选：同一次发现里 demo-skill 只出现一次，且描述未被任何替身文案顶掉。
   assert.equal(list.filter((skill) => skill.name === 'demo-skill').length, 1, '不存在同名影子候选')
   assert.equal(after.description, '端到端演示技能', '候选描述直接来自文件 frontmatter')
-  assert.equal(list.some((skill) => skill.name.startsWith('blocked-')), false, '不存在任何屏蔽占位技能')
 
   // 正文仍可从文件加载（停用不损伤技能本体）。
   const loaded = await registry.get('demo-skill', { cwd: sandbox })

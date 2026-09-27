@@ -96,7 +96,6 @@ test('动作声明：九类动作的合法通道都在官方事件表内，降�
     assert.ok(vocabulary.has(declaration.degrade), `${kind} 的降级语义必须在固定词汇内`)
     assert.ok(declaration.timing.length > 0 && declaration.note.length > 0, `${kind} 必须声明触发时机与降级说明`)
   }
-  assert.equal(ACTION_KINDS.injectText, undefined)
   assert.equal(ACTION_KINDS['inject-text'].degrade, ACTION_DEGRADE.keep)
   assert.equal(ACTION_KINDS.assembly.degrade, ACTION_DEGRADE.exposeAll)
   assert.equal(ACTION_KINDS.guard.degrade, ACTION_DEGRADE.silent)

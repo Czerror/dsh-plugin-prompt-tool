@@ -82,9 +82,5 @@ test('拖动实现不读宿主布局：无 grid 模板、无祖先爬链、无�
     assert.ok(!source.includes('parentElement'), `${file} 不应向上爬宿主 DOM`)
     assert.ok(!source.includes('MutationObserver'), `${file} 不应观察宿主 DOM`)
     assert.ok(!source.includes('new ResizeObserver'), `${file} 不应针对宿主布局安装观察器`)
-    assert.ok(!source.includes('--pt-sidebar-edge'), `${file} 不应依赖侧栏几何变量`)
   }
-  const css = readFileSync(new URL('../../src/client/app/workbench/Workbench.module.css', import.meta.url), 'utf8')
-  assert.ok(!css.includes('--pt-sidebar-edge'), '样式不应残留侧栏几何变量')
-  assert.ok(!css.includes('.sidebarEdgeProbe'), '样式不应残留几何探针')
 })

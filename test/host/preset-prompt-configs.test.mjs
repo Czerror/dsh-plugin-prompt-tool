@@ -182,14 +182,12 @@ test('renderPromptConfigYaml：空 match 不落盘半成品（引擎会在挂载
 test('writePreset 生成夹具模板的提示词配置模块（人设走顶层 persona 段，不再生成 persona 配置卡），数字前缀决定执行顺序', () => {
   const { specs } = generatedConfigs()
   assert.deepEqual(specs.map((spec) => spec.id), ['near-anchor', 'router-guide', 'prompt-injector'])
-  assert.deepEqual(specs.map((spec) => spec.id).filter((id) => id.startsWith('agents-file-')), [], '指令文件卡不再物化')
   for (const spec of specs) {
     assert.equal(spec.layer, 'pre-step')
     assert.equal(spec.configKind, 'ordered')
     assert.equal(typeof spec.order, 'number')
     assert.equal(spec.role, 'user')
   }
-  assert.equal(specs.some((spec) => spec.layer === 'system-section'), false, '人设不再以 system-section 配置卡承载')
 })
 
 test('writePreset 处理空提示词时 prompt-injector 结构完整', () => {
@@ -275,7 +273,6 @@ test('writePreset 显式启用锚定与引导时，injectPrompt=false 只关闭�
   assert.equal(byId['near-anchor'].enabled, true)
   assert.equal(byId['router-guide'].enabled, true)
   assert.equal(byId['prompt-injector'].enabled, false)
-  assert.equal(Object.keys(byId).some((id) => id.startsWith('agents-file-')), false, '不再物化指令文件卡')
 })
 
 // —— 提示词配置校验（原 configs-validate.test.mjs） ——
@@ -363,7 +360,6 @@ test('Config / PromptSettingsSchema：引擎参数（promptConfigs 等）按预�
   const settings = PromptSettingsSchema({})
   assert.equal('promptConfigs' in config, false)
   assert.equal('firstTurnAnchor' in config, false)
-  assert.equal('usePtcMode' in config, false)
   assert.equal('promptConfigs' in settings, false)
   assert.equal('firstTurnAnchor' in settings, false)
   assert.equal('promptText' in settings, false)

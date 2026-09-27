@@ -77,7 +77,6 @@ test('cloneBuiltinPreset：非内置/非法 id/用户目录已存在同名拒绝
   assert.equal(cloneBuiltinPreset('not-a-builtin').ok, false)
   assert.equal(cloneBuiltinPreset('a/b').ok, false)
   assert.equal(cloneBuiltinPreset('pt-standard').ok, false, '已有同名用户目录应拒绝')
-  assert.equal(cloneBuiltinPreset('anchored').ok, false, 'anchored 已下线，不再是内置模板')
 })
 
 test('cloneBuiltinPreset：删除后可新建还原', () => {

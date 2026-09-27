@@ -217,9 +217,8 @@ test('子代理页创建入口对等，且不下发指令文件卡（单编辑�
   assert.match(wrapper, /instructionPolicy=\{instructionScope \? store\.instructionPolicy : undefined\}/)
   assert.match(wrapper, /onSaveInstructionFile=\{instructionScope \? saveInstructionFile : undefined\}/)
   assert.match(wrapper, /onPatchInstructionPolicy=\{instructionScope \? patchInstructionPolicy : undefined\}/)
-  // 列表没有独立来源总开关；策略读取错误仍有就地反馈。
+  // 策略读取错误有就地反馈。
   const list = read('features/prompts/PromptConfigList.tsx')
-  assert.doesNotMatch(list, /onToggleInstructionSource/)
   assert.match(list, /props\.instructionPolicy\?\.error/)
 })
 
@@ -272,7 +271,6 @@ test('子代理工具策略卡：单一开关，无额外保存/停用按钮', (
   for (const key of ['policy.save', 'policy.saving', 'policy.enable', 'policy.disable']) {
     assert.equal(card.includes(`t('${key}')`), false, `不渲染 ${key} 对应的按钮`)
   }
-  assert.doesNotMatch(card, /toggleEnabled/, '旧的启用/停用分支已移除')
   assert.match(card, /<Switch checked=\{enabled\} label=\{t\('policy\.toggleLabel'\)\}/)
   assert.match(card, /disabled=\{props\.disabled \|\| !loaded \|\| loadError\.length > 0 \|\| saving\} onChange=\{toggle\}/)
   // 开关骨架、只读、标签失焦与异步保存由 module-policy-smoke 的真实 DOM 行为验证。
@@ -292,7 +290,5 @@ test('工具栏先于置顶卡，置顶卡不参与过滤且只渲染一次', ()
 
 test('空状态文案不再承诺 settings 覆盖层语义', () => {
   const zhDict = read('locales.ts')
-  assert.doesNotMatch(zhDict, /settings 覆盖层，切换预设后仍保留/)
-  assert.doesNotMatch(zhDict, /stored as a settings overlay and kept across preset switches/)
   assert.match(zhDict, /写入激活预设 preset\.yml，随预设走/)
 })

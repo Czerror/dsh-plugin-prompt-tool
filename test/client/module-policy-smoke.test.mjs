@@ -392,7 +392,6 @@ test('浏览器：六层空卡、跨层工具创建、筛选草稿与能力卡�
   assert.equal(agentsCards.length, 2)
   assert.ok(agentsCards.every((text) => !text.includes('位置：')), '文件卡不显示由官方负责的位置控制')
   assert.ok(agentsCards.every((text) => !text.includes('独立指令文件来源')), '来源开关不塞进新的指令文件卡')
-  assert.equal(await evaluate(`document.body.innerText.includes('独立指令文件来源')`), false, '独立来源总开关已移除')
   await evaluate(`[...document.querySelectorAll('button[aria-expanded]')].find((b) => b.textContent.includes('AGENTS：AGENTS.md')).click()`)
   await waitFor(`document.querySelector('[aria-label="注入内容（空 = 不注入）"]')?.value==='项目指令正文'`)
   assert.equal(await evaluate(`document.querySelector('[aria-label="填充来源"]')===null`), true, '文件卡只有正文和名称编辑')
@@ -466,7 +465,6 @@ test('浏览器：六层空卡、跨层工具创建、筛选草稿与能力卡�
   assert.equal(await evaluate(`document.querySelector('[data-layer-capability="tool-config-engine"]') !== null`), true, '另一个能力同区可见')
   // 参数也在同一设置区里：与本层其余实例卡同源。
   assert.equal(await evaluate(`document.querySelector('[data-layer-param-group="str-replace-editor"]') !== null`), true, '参数组随能力装配出现')
-  assert.equal(await evaluate(`document.querySelector('[aria-label="编辑行为"]')===null`), true, '不再有编辑目标下拉')
   assert.equal(await evaluate(`document.querySelector('[aria-label="按层级或策略过滤"]').textContent.trim()`), '层级：工具链')
   assert.deepEqual(await evaluate('window.store.moduleFacts.effectiveModules'), ['filesystem-editor', 'tool-config-engine'])
 })

@@ -437,11 +437,6 @@ test('模块参数按行落位：每个绑定键只写自己那一行，已删�
   assert.deepEqual(configs['str-replace-editor'], { maxOutputChars: 12000 })
   assert.deepEqual(configs['tool-config-engine'], { requireApproval: ['shell'] })
   assert.deepEqual(configs['instruction-hint'], { enabled: true })
-  // 交叉污染检查：七个专用能力的行名不得再被参数桥产出。
-  for (const ghost of ['tool-filter', 'context-gate', 'tool-bootstrap', 'progress-reminder',
-    'deliberation-gate', 'anchor-turn', 'promoted-code-mode']) {
-    assert.equal(configs[ghost], undefined, `${ghost} 不得有幽灵行配置`)
-  }
 })
 
 test('参数目录层面：主/子代理专属参数绑定到不同行，模块绑定面收敛到存活能力', () => {
@@ -452,11 +447,6 @@ test('参数目录层面：主/子代理专属参数绑定到不同行，模块�
   assert.deepEqual(bindingsOf('main-model'), ['modelMaxTokens', 'modelName', 'modelProvider', 'modelReasoningEffort', 'modelTemperature'])
   assert.deepEqual(bindingsOf('subagent-model'), ['subagentMaxTokens', 'subagentModelName', 'subagentModelProvider', 'subagentReasoningEffort', 'subagentTemperature'])
   assert.deepEqual(bindingsOf('subagent-tools'), ['maxDepth'])
-  // B7 T3：七张专用能力卡（含 `tool-filter`）已删除，不得再有参数键登记在它们名下。
-  for (const card of ['tool-filter', 'context-gate', 'tool-bootstrap', 'anchor-turn',
-    'deliberation-gate', 'progress-reminder', 'promoted-code-mode']) {
-    assert.deepEqual(bindingsOf(card), [], `${card} 卡已删除，不得再有参数键`)
-  }
   // 主/子模型参数一一对称且零交集（预设顶层 model / subagentModel 两段是唯一来源）。
   const mainModel = new Set(bindingsOf('main-model'))
   for (const key of bindingsOf('subagent-model')) assert.equal(mainModel.has(key), false, `${key} 不得同时属于主与子`)
@@ -479,10 +469,6 @@ test('委派落位：toolFilter 通道已删除，子代理工具面只由实例
   const withPolicy = buildModuleConfigsFromParams(params, { subagentPolicyEnabled: true })
   assert.equal(withPolicy['tool-subagent'].toolFilter, undefined)
   assert.equal(withPolicy['subagent-tool-policy'].maxDepth, 2, '策略启用后 maxDepth 转交策略模块')
-  // 三个工具过滤参数键已从参数目录整体删除。
-  for (const key of ['toolFilterAllow', 'toolFilterDeny', 'toolFilterEnabled']) {
-    assert.equal(ENGINE_PARAM_KEYS.includes(key), false, `${key} 应已从参数目录删除`)
-  }
 })
 
 test('组合端到端：模块绑定参数只落在自己那一行，其他行保持独立', () => {

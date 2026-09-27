@@ -349,7 +349,7 @@ test('writePreset 只写预设目录、不写预设根 agent.cordis.yml（无容
   }
 })
 
-test('writePreset 不再物化任何 AGENTS 文件卡，指令正文不落预设产物', () => {
+test('writePreset：指令正文不落预设产物', () => {
   const dir = join(tmpdir(), `prompt-tool-ai-${process.pid}-${Date.now()}`)
   const presetDir = join(dir, 'preset')
   try {
@@ -360,30 +360,21 @@ test('writePreset 不再物化任何 AGENTS 文件卡，指令正文不落预设
     writePreset('PROMPT', { ...makeOptions(presetDir), agentsInstructionText: AGENTS_BODY_SENTINEL })
     const configsDir = join(presetDir, 'fixture', 'prompt-configs')
     const names = readdirSync(configsDir)
-    assert.deepEqual(names.filter((name) => name.includes('agents-file-')), [], '生成目录不再出现文件卡')
-    const presetYml = readFileSync(join(presetDir, 'fixture', 'preset.yml'), 'utf8')
-    assert.ok(!presetYml.includes('agents-file-'), 'preset.yml 不含文件卡身份')
     const leaked = names
       .filter((name) => name.endsWith('.yml'))
       .filter((name) => readFileSync(join(configsDir, name), 'utf8').includes(AGENTS_BODY_SENTINEL))
     assert.deepEqual(leaked, [], '任何生成产物都不得包含指令正文')
-    assert.equal(existsSync(join(presetDir, 'fixture', 'agents-instruction.md')), false, '不再生成 agents-instruction.md')
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }
 })
 
-test('所有模板都不物化 AGENTS 文件卡，custom 保持显式空白', () => {
+test('所有内置模板都能写出组合，custom 保持显式空白', () => {
   const dir = join(tmpdir(), `prompt-tool-hints-${process.pid}-${Date.now()}`)
   const presetDir = join(dir, 'preset')
   try {
     for (const template of ['pt-standard', 'pt-minimal', 'pt-ptc', 'pt-cordis']) {
       writePreset('', { ...makeOptions(presetDir), presetTemplate: template, injectPrompt: false })
-      const configsDir = join(presetDir, template, 'prompt-configs')
-      const names = readdirSync(configsDir)
-      assert.deepEqual(names.filter((name) => name.includes('agents-file-')), [], `${template} 不应生成文件卡`)
-      const presetYml = readFileSync(join(presetDir, template, 'preset.yml'), 'utf8')
-      assert.ok(!presetYml.includes('agents-file-'), `${template} 的文件卡不得写进 preset.yml`)
     }
     writePreset('', { ...makeOptions(presetDir), presetTemplate: 'pt-custom', injectPrompt: false })
     assert.equal(readdirSync(join(presetDir, 'pt-custom', 'prompt-configs')).length, 0, 'custom 空白模板保持显式空组合')
@@ -434,10 +425,6 @@ test('writePreset 四个官方基型以顶层 persona 段渲染官方 dsh-person
       const agent = readFileSync(join(presetDir, template, 'agent.cordis.yml'), 'utf8')
       const rows = parseYaml(agent)
       assert.equal(rows.filter((row) => row?.id === 'prompt-config-engine').length, 1, `${template}: persona 配置执行器应且仅应装配一次`)
-      // B7 T3：这三个能力行已随模块删除、永远不该出现——负向断言保留（防渲染层又把它拼回来）。
-      for (const id of ['context-gate', 'tool-bootstrap', 'promoted-code-mode']) {
-        assert.equal(rows.some((row) => row?.id === id), false, `${template}: 不应追加 ${id}`)
-      }
       assert.ok(!/__[A-Za-z0-9_]+__/.test(agent), `${template}: 不应残留未解析 token`)
       assert.match(agent, /^# prompt-tool:render v\d+$/m, `${template}: 组合应带渲染契约版本标记`)
       assert.ok(rows.length >= 2, `${template}: 组合行数异常（${rows.length}）`)

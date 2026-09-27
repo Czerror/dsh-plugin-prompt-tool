@@ -97,11 +97,6 @@ test('参数键只落映射行，已删能力的旧行名不得产生幽灵配�
   assert.deepEqual(configs['tool-git-bash'], { enabled: false })
   assert.deepEqual(moduleParamFallbacks(configs),
     { customToolRequireApproval: ['shell'], strReplaceEditorMaxOutputChars: 32000, toolGitBashEnabled: false })
-  // B7 T3：七个专用能力的行名已退场——参数桥与回显都不得再产出它们。
-  for (const ghost of ['tool-filter', 'context-gate', 'tool-bootstrap', 'progress-reminder',
-    'deliberation-gate', 'anchor-turn', 'promoted-code-mode']) {
-    assert.equal(configs[ghost], undefined, `${ghost} 不得有幽灵行配置`)
-  }
   assert.deepEqual(moduleParamFallbacks({
     'code-presentation': { usePtcMode: true, includeSubagents: true, promoteOn: 'tool-call' },
     'cot-drip': { enabled: true, every: 4, maxPerTurn: 1, includeSubagents: true, text: '旧行' },

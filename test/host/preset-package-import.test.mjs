@@ -297,9 +297,8 @@ test('importPresetPackage：SillyTavern JSON 单文件经转换引擎导入（�
   ], 'ST 管理工具按固定集合装配；persona 行由顶层 persona 段渲染时自动前插')
   assert.deepEqual(converted.persona, { prefix: '', complete: false }, 'system-section 注入需要顶层 persona（complete: false 允许其生效）')
   assert.equal(converted.modules.includes('tool-web'), false, 'enable_web_search: false 不组装 tool-web')
-  // B7 T3「3+1 结合」：`enable_web_search: false` 不再写已删除的 `tool-filter` 行配置，
-  // 改由三条声明式触发器（呈现裁剪 / SDK 正文裁剪 / 执行 guard）共用同一份 deny 名单。
-  assert.equal(converted.moduleConfigs?.['tool-filter'], undefined, 'tool-filter 模块与行配置已退场')
+  // B7 T3「3+1 结合」：`enable_web_search: false` 由三条声明式触发器
+  // （呈现裁剪 / SDK 正文裁剪 / 执行 guard）共用同一份 deny 名单表达。
   assert.deepEqual(converted.triggers.map((trigger) => [trigger.id, trigger.do.kind]), [
     ['st-web-assembly', 'assembly'],
     ['st-web-sdk-strip', 'sdk-strip'],

@@ -190,7 +190,6 @@ test('模块参数使用简体中文标签与统一说明浮窗', () => {
 test('说明浮窗只复用宿主视觉，并自行跟随指针或聚焦控件', () => {
   const hintTooltip = read('src/client/ui/HintTooltip.tsx')
   const hintCss = read('src/client/ui/HintTooltip.module.css')
-  const fields = read('src/client/features/prompts/PromptConfigFields.tsx')
   const promptCss = read('src/client/features/prompts/prompts.module.css')
 
   assert.doesNotMatch(hintTooltip, /@deepseek-ai\/dsh-client-ui-primitives/)
@@ -205,7 +204,6 @@ test('说明浮窗只复用宿主视觉，并自行跟随指针或聚焦控件',
   assert.match(hintCss, /var\(--dsw-alias-tooltip-bg\)/)
   assert.match(read('src/client/ui/FormField.tsx'), /configFieldControlAnchor/)
   assert.doesNotMatch(read('src/client/features/prompts/PromptConfigCard.tsx'), /<(?:button|label|span|div|code|input|textarea)\b[^>]*\btitle=/gs)
-  assert.doesNotMatch(fields, /isPersonaSectionName/)
   const personaCard = read('src/client/features/persona/PresetPersonaCard.tsx')
   assert.match(personaCard, /aria-label=\{t\('persona\.prefix\.aria'\)\}/)
   assert.match(personaCard, /aria-label=\{t\('persona\.suffix\.aria'\)\}/)

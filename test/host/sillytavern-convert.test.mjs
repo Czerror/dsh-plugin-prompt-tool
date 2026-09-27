@@ -470,9 +470,8 @@ test('convertStToPreset：空世界书不装工具，enable_web_search 缺省时
   assert.deepEqual(spec.modules, [
     'prompt-config-engine', 'character-tools', 'session-var-tools', 'tool-config-engine',
   ])
-  // B7 T3：`tool-filter` 模块已删除；web 拒绝只在 `enable_web_search: false` 时以三条声明表达
-  // （见 preset-package-import 的「3+1 结合」用例），缺省不产出触发器。
-  assert.equal(spec.moduleConfigs['tool-filter'], undefined)
+  // web 拒绝只在 `enable_web_search: false` 时以三条声明表达
+  // （见 preset-package-import 的「3+1 结合」用例）；缺省不产出触发器。
   assert.equal(spec.triggers, undefined, '未声明 enable_web_search 时不产出触发器')
 })
 
