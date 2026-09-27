@@ -174,8 +174,7 @@ export const PromptConfigCard = memo(function PromptConfigCard(props: {
       {props.expanded && <>
         <PromptConfigForm t={t} meta={meta} config={config} disabled={props.disabled} fieldDrafts={props.fieldDrafts} draftScope={`${props.draftScope}:${config.id}`}
           renderLayerSettings={props.renderLayerSettings}
-          onPatch={(patch) => props.onPatch(config.id, patch)}
-          {...(instructionFileId === undefined || props.onPatchInstructionPolicy === undefined ? {} : { onPatchPolicy: (patch: InstructionPolicyFileOverride) => props.onPatchInstructionPolicy?.(instructionFileId, patch) })} />
+          onPatch={(patch) => props.onPatch(config.id, patch)} />
       </>}
     </div>
     {confirmation && <ConfirmDialog title={t(confirmation === 'delete' ? 'card.deleteTitle' : 'card.reloadTitle', { name })}

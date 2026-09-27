@@ -46,7 +46,6 @@ const formProps = (config = {}, extra = {}) => ({
   meta,
   config: { id: 'layout-probe', layer: 'pre-step', strategy: 'static', text: '', configKind: 'ordered', ...config },
   onPatch() {},
-  onPatchPolicy() {},
   ...extra,
 })
 /** 取函数组件返回的元素树（SSR 只读 props/回调，不声称验证 DOM 事件与重渲染）。 */

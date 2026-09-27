@@ -6,7 +6,6 @@ import { FormField } from '../../ui/FormField.tsx'
 import { HintTooltip } from '../../ui/HintTooltip.tsx'
 import type { PromptToolLocaleKey, PromptToolTranslate } from '../../locales.ts'
 import type { EngineMeta, PromptConfigDraft } from '../../prompt-tool-types.ts'
-import type { InstructionPolicyFileOverride } from '../../../shared/instructions.ts'
 import { MatchFields, NumberField, OptionField, StrategyParamsFields, VariablesEditor } from './PromptConfigFields.tsx'
 import { autoResizeTextarea } from './textarea-resize.ts'
 import { PromptConfigNavigation } from './PromptConfigNavigation.tsx'
@@ -60,7 +59,7 @@ function IdentityFields(props: { t: PromptToolTranslate; identity: { field: stri
 }
 
 /** 单条提示词配置表单：按注入层级的能力矩阵过滤字段，只显示本层生效的参数。
- *  指令文件卡复用名称与正文编辑；注入参数归官方所有，不提供无效控制。 */
+ *  指令文件卡复用正文编辑；身份、注入参数与策略归文件来源和卡头所有，不提供无效控制。 */
 export function PromptConfigForm(props: {
   t: PromptToolTranslate
   meta: EngineMeta
@@ -69,39 +68,29 @@ export function PromptConfigForm(props: {
   fieldDrafts?: Map<string, FieldDraft>
   draftScope?: string
   onPatch: (patch: Partial<PromptConfigDraft>) => void
-  /** 指令文件卡：行为策略写独立策略存储（不写 preset.yml）。 */
-  onPatchPolicy?: (patch: InstructionPolicyFileOverride) => void
   /**
    * 本层引擎设置的内容（由 app 层注入）：参数、已装配能力的装配状态与移除、按层归属的资产编辑器。
    * 只在首次进入本层设置时求值，切换视图后保留已挂载草稿。
    */
   renderLayerSettings?: (layer: string, config: PromptConfigDraft) => ReactNode
 }): ReactNode {
-  const { t, meta, config, onPatch: patchConfig, onPatchPolicy } = props
+  const { t, meta, config, onPatch: patchConfig } = props
   // 指令文件卡：正文对应磁盘上的原文件；读取失败或磁盘已变时不得继续编辑覆盖。
   // 与写盘路径共用同一身份判定：origin 或 sourceKind+params.fileId 都算指令文件卡。
   const isInstructionFile = config.contentStatus !== undefined || instructionFileIdOf(config) !== undefined
   const locked = isInstructionFile
   const disabled = props.disabled === true
-  const filePath = typeof config.params?.displayPath === 'string' && config.params.displayPath.length > 0
-    ? config.params.displayPath
-    : typeof config.params?.file === 'string' ? config.params.file : ''
   const textReadOnly = isInstructionFile
     && ((config.contentStatus !== undefined && config.contentStatus !== 'ready') || config.contentConflict === true)
-  /** 普通卡写 preset 卡字段；指令文件卡的绑定由文件来源固定，只有策略字段落到独立策略。 */
+  /** 普通卡写 preset 卡字段；指令文件卡的绑定由文件来源固定，表单只提交正文，
+   *  启停写独立策略存储（不写 preset.yml，由卡头开关承载）。 */
   const onPatch = (patch: Partial<PromptConfigDraft>): void => {
     if (disabled) return
     if (!locked) {
       patchConfig(patch)
       return
     }
-    if (typeof patch.text === 'string') {
-      patchConfig({ text: patch.text })
-      return
-    }
-    const next: InstructionPolicyFileOverride = {}
-    if (typeof patch.name === 'string') next.name = patch.name
-    if (Object.keys(next).length > 0) onPatchPolicy?.(next)
+    if (typeof patch.text === 'string') patchConfig({ text: patch.text })
   }
   const policy = fieldPolicyFor(meta, config.layer)
   const contract = layerContractFor(meta, config.layer)
@@ -140,23 +129,17 @@ export function PromptConfigForm(props: {
   const fillOptions = ['', ...meta.fills]
   return (
     <div className={clsx(styles.configForm, styles.configFormLayout)} data-config-layer={config.layer ?? 'pre-step'}>
-      <section className={styles.configIdentity} aria-label={t('form.section.basic')}>
+      {!locked && <section className={styles.configIdentity} aria-label={t('form.section.basic')}>
       <div className={styles.configGrid}>
-        {!locked && <FormField className={styles.fieldSpan4} label={t('form.id.label')} hint={t('form.id.hint')} hintMode="tooltip">
-          <input className={inputClass} value={config.id} spellCheck={false} readOnly={locked || disabled} onChange={(e) => onPatch({ id: e.target.value })} />
-        </FormField>}
-        <FormField className={styles.fieldSpan4} label={t('form.name.label')} hint={t('form.name.hint')} hintMode="tooltip">
-          <input className={inputClass} value={config.name ?? ''} spellCheck={false} readOnly={disabled || (locked && onPatchPolicy === undefined)} onChange={(e) => onPatch({ name: e.target.value })} />
+        <FormField className={styles.fieldSpan4} label={t('form.id.label')} hint={t('form.id.hint')} hintMode="tooltip">
+          <input className={inputClass} value={config.id} spellCheck={false} readOnly={disabled} onChange={(e) => onPatch({ id: e.target.value })} />
         </FormField>
-        {!locked && <OptionField t={t} className={styles.fieldSpan4} label={t('form.layer.label')} hint={t('form.layer.hint')} value={config.layer} options={meta.layers} fallback="pre-step" labelKeys={LAYER_LABEL_KEYS} disabled={disabled} onChange={(value) => onPatch(layerChangePatch(meta, config, value))} />}
+        <FormField className={styles.fieldSpan4} label={t('form.name.label')} hint={t('form.name.hint')} hintMode="tooltip">
+          <input className={inputClass} value={config.name ?? ''} spellCheck={false} readOnly={disabled} onChange={(e) => onPatch({ name: e.target.value })} />
+        </FormField>
+        <OptionField t={t} className={styles.fieldSpan4} label={t('form.layer.label')} hint={t('form.layer.hint')} value={config.layer} options={meta.layers} fallback="pre-step" labelKeys={LAYER_LABEL_KEYS} disabled={disabled} onChange={(value) => onPatch(layerChangePatch(meta, config, value))} />
       </div>
-      {locked && (
-        <>
-          <p className={styles.configFieldHint}>{t('form.text.fileTarget', { path: filePath })}</p>
-          <p className={styles.configFieldHint}>{t('file.policyNote')}</p>
-        </>
-      )}
-      </section>
+      </section>}
 
       <PromptConfigNavigation t={t} layer={config.layer ?? 'pre-step'} renderLayerSettings={locked || props.renderLayerSettings === undefined ? undefined : () => <>
         <h4 className={styles.configSectionTitle}>{t('form.layerSettings.label', { layer: translateLabel(t, LAYER_LABEL_KEYS, config.layer ?? 'pre-step') })}</h4>
@@ -212,7 +195,8 @@ export function PromptConfigForm(props: {
       </section>}
 
       {(showContent || showMetadata) && <section className={styles.configSection} data-config-panel="content" aria-label={t('form.section.content')}>
-      <h4 className={styles.configSectionTitle}>{t('form.section.content')}</h4>
+      {/* 指令文件卡的页签已写明「内容」，正文卡头已给出文件路径：不再重复分区标题。 */}
+      {!locked && <h4 className={styles.configSectionTitle}>{t('form.section.content')}</h4>}
       {showContent && <>
       {locked && textReadOnly && <p className={styles.configFieldHint}>{t('form.text.fileReadOnly')}</p>}
       <FormField label={t(contentLabel)} hint={t(contentKind === 'text' ? 'form.text.hint' : 'form.text.actionHint')} hintMode="tooltip">

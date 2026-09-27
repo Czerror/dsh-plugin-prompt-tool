@@ -949,10 +949,10 @@ test('指令文件复用标准配置卡：与普通前置步骤卡同组件同�
   } finally { restore() }
 })
 
-test('指令文件只编辑名称与正文，普通配置保留完整注入字段', () => {
+test('指令文件卡只编辑正文，普通配置保留完整注入字段', () => {
   const meta = getEngineMeta()
   const plain = { id: 'example-pre-step', name: '示例：消息批注入', layer: 'pre-step', strategy: 'static', position: 'after-user', order: 0, text: '示例正文' }
-  const treeOf = (config) => componentTree(PromptConfigForm, { t, meta, config, onPatch() {}, onPatchPolicy() {} })
+  const treeOf = (config) => componentTree(PromptConfigForm, { t, meta, config, onPatch() {} })
   const labelsOf = (node, out = []) => {
     if (Array.isArray(node)) { for (const child of node) labelsOf(child, out); return out }
     if (!React.isValidElement(node)) return out
@@ -963,7 +963,8 @@ test('指令文件只编辑名称与正文，普通配置保留完整注入字�
   const plainLabels = labelsOf(treeOf(plain))
   for (const label of shared) assert.ok(plainLabels.includes(label), `普通配置缺少字段 ${label}`)
   const fileLabels = labelsOf(treeOf(fileCard()))
-  assert.deepEqual(fileLabels, ['名称', '注入内容'])
+  // 指令文件卡的身份（文件名、启停）由卡头承载，表单只留正文编辑。
+  assert.deepEqual(fileLabels, ['注入内容'])
 })
 
 test('指令文件正文失焦自动写回：无「保存到文件」按钮，脏草稿在焦点离开卡片时提交', async () => {
