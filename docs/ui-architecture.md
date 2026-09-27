@@ -602,6 +602,7 @@ world-book 视图只隐藏工具栏之外的列表主体之外的附加提示，
 - 中性平面边框使用 0.5px；高层浮层使用 DSH elevation token：悬浮入口抽屉/触发器用 body portal 的 1000 / 1100 固定层级，不叠加无意义的中性 border。
 - 圆形和胶囊与 corner-shape: round 配对。
 - 动画提供 prefers-reduced-motion 分支；不新增组件专用全局滚动条规则。
+- 页面级垂直节奏只有一档：主会话根容器 `.page`（features/prompts）与子代理根容器 `.section`（ui/controls）必须同为 12px，否则同一批卡片在两侧的「指令卡与模块列表」间距会相差一倍；`test/client/style-ownership.test.mjs` 直接对拍这两个值。
 - 不为减少文件数把不相关领域重新合并，也不先复制旧 selector 再长期双写。
 
 ## 11. 性能与行为不变量

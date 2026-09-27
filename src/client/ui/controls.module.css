@@ -18,9 +18,6 @@
   gap: 12px;
 }
 
-/* 子代理页 / 注入层开关页：上方卡片区与下方模块列表之间的间距（与 section gap 一致）。 */
-.subagentConfigs { margin-top: 12px; }
-
 .sectionHeading {
   display: flex;
   min-width: 0;

@@ -4,7 +4,8 @@
   width: 100%;
   min-width: 0;
   flex-direction: column;
-  gap: 24px;
+  /* 与子代理页根容器（ui.section）同节奏：两侧都是「指令卡与模块列表」的页面级间距，不一致会一边宽一倍。 */
+  gap: 12px;
   padding-bottom: 16px;
   color: var(--dsw-alias-label-primary);
   font-family: inherit;

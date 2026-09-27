@@ -116,3 +116,18 @@ test('危险按钮统一为描边染红：data-danger 只落在 .pillButton 上'
   assert.match(dialog, /styles\.pillButton\}/)
   assert.match(dialog, /className=\{styles\.pillButton\} data-danger/)
 })
+
+test('页面级垂直节奏一致：主会话与子代理的根容器用同一档 gap', () => {
+  // 主会话根容器是 features/prompts 的 .page，子代理根容器是 ui.section；
+  // 两者之间的间距不一致会表现为「指令卡与模块列表」一边比另一边宽一倍。
+  const gapOf = (file, selector) => {
+    const rule = readFileSync(join(root, file), 'utf8').match(new RegExp(`${selector}\\s*\\{([^{}]*)\\}`))
+    assert.ok(rule, `${file} 缺少 ${selector}`)
+    const gap = rule[1].match(/gap:\s*([0-9.]+)px/)
+    assert.ok(gap, `${file} 的 ${selector} 未声明像素 gap`)
+    return Number(gap[1])
+  }
+  const page = gapOf(join('features', 'prompts', 'prompts.module.css'), '\\.page')
+  const section = gapOf(join('ui', 'controls.module.css'), '\\.section')
+  assert.equal(page, section, `主会话 .page 的 gap(${page}px) 必须与子代理 .section(${section}px) 一致`)
+})
