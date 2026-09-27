@@ -18,8 +18,6 @@
 
 项目是位置、时机与受众可配置的提示词注入引擎。promptConfigs 按自身声明的官方插入点按需注册，预设组合行为；不同插入点没有插件自定义的全局运行顺序。PTC、首轮锚定、router-guide、Flash 路由及其他模型增强保持可选或 opt-in。
 
-不修改 DeepSeek Harness 源码仓库；插件只通过本仓库的 cordis.patch.yml、package.json#dsh、已发布的 @deepseek-ai/* 包和 DSH profile 装配。
-
 ## 环境与验证
 
 交付前至少运行：
