@@ -3,5 +3,4 @@ lib/
 *.tgz
 *.zip
 
-.ai-memory/
 .scratch/
