@@ -26,6 +26,8 @@ import {MenuSelect} from ${JSON.stringify(join(root, 'src/client/ui/MenuSelect.t
 import ui from ${JSON.stringify(join(root, 'src/client/ui/controls.module.css').replaceAll('\\', '/'))};
 import {PromptConfigForm} from ${JSON.stringify(join(root, 'src/client/features/prompts/PromptConfigForm.tsx').replaceAll('\\', '/'))};
 import {LayerSettingsContent} from ${JSON.stringify(join(root, 'src/client/app/workspace/pages/EngineLayersPanel.tsx').replaceAll('\\', '/'))};
+import {MainSessionPage} from ${JSON.stringify(join(root, 'src/client/app/workspace/pages/MainSessionPage.tsx').replaceAll('\\', '/'))};
+import {SubagentPage} from ${JSON.stringify(join(root, 'src/client/app/workspace/pages/SubagentPage.tsx').replaceAll('\\', '/'))};
 import {EMPTY_FIELDS} from ${JSON.stringify(join(root, 'src/client/data/prompt-tool-fields.ts').replaceAll('\\', '/'))};
 import {createWorkspaceDrafts,hasWorkspaceDrafts} from ${JSON.stringify(join(root, 'src/client/data/workspace-drafts.ts').replaceAll('\\', '/'))};
 import {PROMPT_TOOL_DICTS} from ${JSON.stringify(join(root, 'src/client/locales.ts').replaceAll('\\', '/'))};
@@ -52,6 +54,8 @@ window.triggerMeta=${JSON.stringify(getTriggerEditorMeta())};
 window.triggerWrites=0;window.triggerChecks=0;window.triggerConflict=false;
 const nativeFetch=window.fetch;
 window.fetch=async(url,init)=>{
+ if(String(url).endsWith('/custom-tools'))return new Response(JSON.stringify({ok:true,value:{customTools:[]}}),{status:200});
+ if(String(url).endsWith('/world-book-diagnostics'))return new Response(JSON.stringify({ok:true,value:{records:[],truncated:false,step:0,evaluated:false}}),{status:200});
  if(!String(url).endsWith('/triggers'))return nativeFetch(url,init);
  const body=JSON.parse(init.body);
  if(body.triggers){
@@ -71,9 +75,19 @@ function SkillFixture(){
  const skills=[{id:'long',name:'archify',description:'Create polished validated architecture workflow sequence data-flow and lifecycle diagrams with dark and light themes. '.repeat(5)},{id:'short',name:'ask-matt',description:'A short skill description.'},{id:'invalid',name:'a-very-long-skill-name-that-still-fits-one-title-line',description:'',valid:false,issue:'Invalid frontmatter details are only shown after expanding the card.'}];
  return React.createElement('section',{'data-skill-host':true,style:{width:'860px',maxWidth:'100%'}},...skills.map(skill=>React.createElement(SkillRow,{key:skill.id,skill:{folder:skill.id,dir:'D:/AI/DeepSeek harness/.dsh/skills',path:'D:/AI/DeepSeek harness/.dsh/skills/'+skill.name+'/SKILL.md',source:'user-dsh',rank:400,valid:true,availability:'active',modelInvocable:true,userInvocable:true,canEdit:true,canSetPolicy:true,canDelete:true,...skill},store,t,busy:false,onSetPolicy:()=>{},onDelete:()=>{}})));
 }
+function ListLayoutFixture({scope}){
+ const store=React.useMemo(()=>{
+  const fields={...EMPTY_FIELDS,presetTemplate:'layout',writePreset:true,promptConfigs:[
+   {id:'layout-instruction',name:'AGENTS: ~/.dsh/AGENTS.md',layer:'pre-step',strategy:'placeholder',fill:'instruction-hint',order:0,audience:'main',sourceKind:'instruction-file',origin:{kind:'instruction-file',fileId:'layout-file'},params:{displayPath:'~/.dsh/AGENTS.md'},contentStatus:'ready'},
+   {id:'layout-shared',name:'共享配置',layer:'pre-step',strategy:'static',order:1,text:'布局验收'}
+  ]};
+  return {fields,getFields:()=>fields,subscribeFields:()=>()=>{},meta:window.layerMeta,moduleFacts:{sourceMode:'explicit',editable:true,declaredModules:[],effectiveModules:[],rowIds:[]},editorDrafts:createWorkspaceDrafts(),api:{currentSessionId:()=>undefined},showNotice:()=>{}};
+ },[]);
+ return React.createElement('section',{'data-list-layout':scope,style:{width:'860px',maxWidth:'100%'}},React.createElement(scope==='subagent'?SubagentPage:MainSessionPage,{store,t,browse:{viewFilter:scope==='world-book'?'world-book':'all',filter:''}}));
+}
 createRoot(document.getElementById('root')).render(React.createElement(React.Fragment,null,...cards,
 React.createElement('section',{className:ui.settingRowStack,hidden:true,'data-hidden-group':true},'隐藏参数组'),
-React.createElement('section',{className:ui.pageActions,'data-sticky':true},'模块列表 / 保存配置',React.createElement(Filter)),React.createElement(Settings),React.createElement(TriggerFixture),React.createElement(SkillFixture)));`
+React.createElement('section',{className:ui.pageActions,'data-sticky':true},'模块列表 / 保存配置',React.createElement(Filter)),React.createElement(Settings),React.createElement(TriggerFixture),React.createElement(SkillFixture),...['main','subagent','world-book'].map(scope=>React.createElement(ListLayoutFixture,{key:scope,scope}))));`
   const bundle = await rolldown({ input: 'badge-fixture', platform: 'browser', transform: { define: { 'process.env.NODE_ENV': '"production"', 'process.env': '{}', 'import.meta.env': '{}' } },
     plugins: [{ name: 'real-badge-css',
       resolveId(source, importer) {
@@ -125,6 +139,12 @@ React.createElement('section',{className:ui.pageActions,'data-sticky':true},'模
     const evaluate = async (expression) => { const result = await send('Runtime.evaluate', { expression, returnByValue: true }); assert.equal(result.exceptionDetails, undefined); return result.result.value }
     await send('Page.navigate', { url: `http://127.0.0.1:${server.address().port}/` })
     for (let i = 0; i < 100 && !await evaluate('document.querySelectorAll("[data-card]").length===2'); i++) await delay(30)
+    const listLayouts = await evaluate(`['main','subagent'].map(scope=>{const root=document.querySelector('[data-list-layout="'+scope+'"]'),toolbar=root.querySelector('[data-workspace-sticky]'),card=root.querySelector('[data-config-id]');return {scope,first:card.dataset.configId,gap:card.getBoundingClientRect().top-toolbar.getBoundingClientRect().bottom,empty:[...toolbar.parentElement.children].filter(node=>node.getClientRects().length&&!node.childElementCount&&!node.textContent.trim()).length}})`)
+    assert.deepEqual(listLayouts, [
+      { scope: 'main', first: 'layout-instruction', gap: 12, empty: 0 },
+      { scope: 'subagent', first: 'layout-shared', gap: 12, empty: 0 },
+    ], '主会话与子代理工具栏到首卡只保留一档间距，不由空布局容器叠加')
+    assert.equal(await evaluate(`!!document.querySelector('[data-list-layout="world-book"] h2')?.getClientRects().length`), true, '世界书筛选仍显示诊断卡')
     assert.equal(await evaluate(`getComputedStyle(document.querySelector('[data-hidden-group]')).display`), 'none', '参数组的布局样式不得覆盖搜索隐藏状态')
     for (const width of [240, 160]) for (const scale of [1, 2]) {
       const rows = await evaluate(`(()=>{document.querySelectorAll('[data-card]').forEach(e=>e.style.width=${width}+'px');return [...document.querySelectorAll('[data-card]')].map(card=>{const tag=card.querySelector('[data-tone=success]:last-child');tag.style.fontSize=${scale * 12}+'px';tag.style.lineHeight=${scale * 18}+'px';const title=card.querySelector('strong');title.style.setProperty('font-size',${scale * 13}+'px','important');title.style.setProperty('line-height',${scale * 20}+'px','important');const range=document.createRange();range.selectNodeContents(tag);return {lines:range.getClientRects().length,textWidth:range.getBoundingClientRect().width,width:tag.getBoundingClientRect().width,cardWidth:card.clientWidth,overflow:card.scrollWidth>card.clientWidth+1}})})()`)

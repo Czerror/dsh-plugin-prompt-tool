@@ -512,7 +512,7 @@ Menu显式启用autoFocus；已发布0.1.6-alpha.1的portal先隐藏后定位，
 
 主会话与子代理列表只显示真实的**提示词配置实例卡**，统一使用 `PromptConfigCard`，同一层可以有多张。**最外层折叠始终保留**：折叠时仅显示摘要，不挂载内部导航和表单，支持同层大量规则。卡片展开后，在“设置”视图访问该层参数、装配能力与资产编辑器；其中的“编辑行为规则”切换到预设共享的声明编辑，返回后继续编辑本层参数。声明编辑不改变该预设的受众或通道归属，不把全预设规则伪装成单张配置的局部行为。列表外不增设声明编辑入口。页面顺序不建立跨插入点的全局执行顺序。
 
-`EngineLayersPanel#engineLayerSlots({ store, t, viewFilter, audience, keyword, … })` 是唯一的层装配入口，返回 `beforeCards` / `commonCards` / `moduleCards`（只含页面级提示与定位锚）以及 `renderLayerSettings`、`hasLayerSettings` 和 `matchesLayerSettings`；两个页面声明受众视图、创建编排并持有工具草稿所有者，不手写层名判断或重复资产布局。
+`EngineLayersPanel#engineLayerSlots({ store, t, viewFilter, audience, keyword, … })` 是唯一的层装配入口，返回 `beforeCards`（页面级诊断卡与不占布局的定位 effect）以及 `renderLayerSettings`、`hasLayerSettings` 和 `matchesLayerSettings`；已退场的 `commonCards` / `moduleCards` 返回 `undefined`，避免下游生成空容器。两个页面声明受众视图、创建编排并持有工具草稿所有者，不手写层名判断或重复资产布局。
 
 `LayerSettingsContent` 的参数、装配能力与资产都按共享契约派生：`layerParamCards` 只列当前层实际装配且拥有通用参数的组，`layerAssembledCapabilities` 列出该层已装配能力，资产按 `displayLayer` 归位并复用各自专用编辑器、草稿池与写端点。模型参数不重复生成通用控件。创建本层能力复用 `EngineCapabilityCreateMenu`，提示词模板仍从原九层模板菜单创建。无可编辑设置的层不生成设置页签，无实例不生成兜底卡。设置视图首次进入才挂载，卡片保持展开时切换视图不丢输入；外层折叠卸载视图，草稿仍由工作台持有。
 
@@ -602,7 +602,7 @@ world-book 视图只隐藏工具栏之外的列表主体之外的附加提示，
 - 中性平面边框使用 0.5px；高层浮层使用 DSH elevation token：悬浮入口抽屉/触发器用 body portal 的 1000 / 1100 固定层级，不叠加无意义的中性 border。
 - 圆形和胶囊与 corner-shape: round 配对。
 - 动画提供 prefers-reduced-motion 分支；不新增组件专用全局滚动条规则。
-- 页面级垂直节奏只有一档：主会话根容器 `.page`（features/prompts）与子代理根容器 `.section`（ui/controls）必须同为 12px，否则同一批卡片在两侧的「指令卡与模块列表」间距会相差一倍；`test/client/style-ownership.test.mjs` 直接对拍这两个值。
+- 页面级垂直节奏只有一档：主会话根容器 `.page`（features/prompts）与子代理根容器 `.section`（ui/controls）同为 12px；工具栏到首张卡之间不插入空的公共配置或模块列表容器，避免空 flex 子项叠加间距。`test/client/style-ownership.test.mjs` 对拍 gap 声明，`test/client/real-css-smoke.test.mjs` 用真实 CSS 与浏览器验证两页实际首卡间距均为 12px、无可见空占位，并保留世界书诊断卡。
 - 不为减少文件数把不相关领域重新合并，也不先复制旧 selector 再长期双写。
 
 ## 11. 性能与行为不变量

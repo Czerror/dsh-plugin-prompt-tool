@@ -252,28 +252,21 @@ export interface EngineLayerSlotsInput {
   excludeCapabilities?: readonly string[]
 }
 
-/**
- * 按受众视图装配层内卡片：主归属与 `relatedLayers` 命中的层才显示，
- * 不可见的卡用 `LayerCard` 的 `hidden` 隐藏而不卸载，所以切层不丢草稿、不重跑读取。
- */
+/** 按受众视图装配层内设置；页面级只保留诊断卡与不占布局的定位 effect。 */
 export function engineLayerSlots(input: EngineLayerSlotsInput): EngineLayerSlots {
   const { store, t, viewFilter, audience } = input
   // 主会话页保留世界书只读诊断卡（策略视图）；其余单例卡与资产编辑器都进本层设置区。
-  const beforeCards = audience === 'main'
-    ? <div hidden={viewFilter !== 'world-book'}><WorldBookDiagnosticsCard store={store} t={t} /></div>
-    : null
-  const commonCards = null
-  const moduleCards = (
+  const beforeCards = (
     <>
-      {/* 独立卡片（能力卡、单例参数卡与资产卡）已全部退场：参数、装配状态、资产编辑器
-          都由本层实例卡内的设置区承载，这里只剩聚焦锚。 */}
+      {audience === 'main' && <div hidden={viewFilter !== 'world-book'}><WorldBookDiagnosticsCard store={store} t={t} /></div>}
       <LayerSettingsFocus layer={input.focusCapability?.layer} token={input.focusCapability?.token ?? 0} />
     </>
   )
   return {
     beforeCards,
-    commonCards,
-    moduleCards,
+    // 空槽必须缺省，避免列表为已退场的卡片生成空容器、叠加 flex gap。
+    commonCards: undefined,
+    moduleCards: undefined,
     renderLayerSettings: (layer: string, config: PromptConfigDraft) => (
       <LayerSettingsContent
         key={`${store.fields.presetTemplate}:${config.id}`}
