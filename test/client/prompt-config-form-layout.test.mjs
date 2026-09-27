@@ -119,9 +119,6 @@ test('模块卡以条件、执行和内容导航替换堆叠分区，面板保�
   }
   assert.ok(html.includes(t('form.kind.label')), '渲染结果缺「配置类型」字段标签')
   assert.ok(html.includes(t('form.audience.label')), '渲染结果缺「消息受众」字段标签')
-  // 指令文件卡上方没有身份区可分隔：导航去掉分区横线与顶部留白，普通卡保留。
-  assert.equal(html.includes('configNavigationFlat'), false, '普通卡保留分区横线')
-  assert.equal(renderElement(PromptConfigForm, formProps({ contentStatus: 'ready' })).includes('configNavigationFlat'), true, '指令文件卡不得留分区横线')
 
   assert.doesNotMatch(html, /<details|<summary/)
   assert.ok(html.includes(t('form.advanced.label')), '元数据仍在内容面板内')

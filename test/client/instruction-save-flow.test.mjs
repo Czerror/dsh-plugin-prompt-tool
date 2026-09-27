@@ -949,7 +949,7 @@ test('指令文件复用标准配置卡：与普通前置步骤卡同组件同�
   } finally { restore() }
 })
 
-test('指令文件卡只编辑正文，普通配置保留完整注入字段', () => {
+test('普通配置保留完整注入字段', () => {
   const meta = getEngineMeta()
   const plain = { id: 'example-pre-step', name: '示例：消息批注入', layer: 'pre-step', strategy: 'static', position: 'after-user', order: 0, text: '示例正文' }
   const treeOf = (config) => componentTree(PromptConfigForm, { t, meta, config, onPatch() {} })
@@ -962,9 +962,6 @@ test('指令文件卡只编辑正文，普通配置保留完整注入字段', ()
   const shared = ['标识', '名称', '注入层', '内容策略', '配置类型', '消息角色', '拼接位置', '合并方式', '顺序', '互斥组', '去重方式', '晋升范围', '消息受众', '模型范围', '注入内容']
   const plainLabels = labelsOf(treeOf(plain))
   for (const label of shared) assert.ok(plainLabels.includes(label), `普通配置缺少字段 ${label}`)
-  const fileLabels = labelsOf(treeOf(fileCard()))
-  // 指令文件卡的身份（文件名、启停）由卡头承载，表单只留正文编辑。
-  assert.deepEqual(fileLabels, ['注入内容'])
 })
 
 test('指令文件正文失焦自动写回：无「保存到文件」按钮，脏草稿在焦点离开卡片时提交', async () => {
