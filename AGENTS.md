@@ -22,12 +22,7 @@
 
 ## 环境与验证
 
-测试与脚本从隔离 cwd 执行：
-
-    $Repo = 'D:\AI\GitHub\dsh-plugin-prompt-tool'
-    Set-Location 'D:\AI\workspase\_temp'
-
-常用命令以 package.json scripts 为准；交付前至少运行：
+交付前至少运行：
 
     pnpm --dir $Repo typecheck
     pnpm --dir $Repo lint
@@ -45,7 +40,7 @@
 - **真值源**：期望值来自独立真值源——规格、已知良好字面量、手算样例。
 - **公共接口**：断言落在调用方观察到的行为上，改实现时依然成立。
 
-三条全过 → 写 `test/<域>/<主题>.test.mjs`，用 Node 内置 test runner 与现有 helper，新框架或依赖需用户确认。任一条不过 → 脚本写在临时目录（`Set-Location` 的目标），跑完删除：一次性复现、探针、性能对比、外部工具验证都归这里。
+三条全过 → 写 `test/<域>/<主题>.test.mjs`，用 Node 内置 test runner 与现有 helper，新框架或依赖需用户确认。任一条不过 → 脚本写在临时目录，跑完删除：一次性复现、探针、性能对比、外部工具验证都归这里。
 
 **既有要求**：
 
