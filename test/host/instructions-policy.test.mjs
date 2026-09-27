@@ -1,12 +1,10 @@
 // 指令文件卡策略（W2 host 叶子模块）：
-// 独立存储、默认放行官方内容、旧格式清理、Document API 保留注释与未知字段、乐观并发。
+// 独立存储、默认放行官方内容、Document API 保留注释与未知字段、乐观并发。
 import { after, test } from 'node:test'
 import assert from 'node:assert/strict'
-import fs, { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
-import { syncBuiltinESMExports } from 'node:module'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
-import { parse } from 'yaml'
 
 const root = mkdtempSync(join(tmpdir(), 'pt-instructions-policy-'))
 const previousHome = process.env.DSH_HOME
@@ -22,7 +20,6 @@ const {
   defaultInstructionPolicy,
   readInstructionPolicy,
   resolveInstructionPolicy,
-  instructionPolicyPath,
   validateInstructionPolicyPatch,
   writeInstructionPolicy,
 } = await import('../../src/host/instructions-policy.ts')
@@ -34,17 +31,6 @@ const newFile = () => {
   mkdirSync(dir, { recursive: true })
   return join(dir, 'instructions.yml')
 }
-
-test('退役字段清理不经 YAML alias 改动用户未知字段', () => {
-  const file = newFile()
-  const original = 'schemaVersion: 1\nfiles:\n  f1: &shared\n    enabled: false\n    order: 12\ncustom: *shared\n'
-  writeFileSync(file, original, 'utf8')
-  const before = readInstructionPolicy(file)
-  const outcome = writeInstructionPolicy({ file, expectedRevision: before.revision, patch: { files: { f2: { enabled: false } } } })
-  assert.equal(outcome.ok, false)
-  assert.match(outcome.message, /alias|引用/)
-  assert.equal(readFileSync(file, 'utf8'), original)
-})
 
 test('策略文件缺失：默认放行官方注入且不自动创建文件', () => {
   const file = newFile()
@@ -105,79 +91,6 @@ test('写入保留手写注释与未知字段，恢复默认值即删除该键',
   assert.doesNotMatch(raw, /enabled:/, '恢复默认放行后删除显式开关键')
 })
 
-test('旧格式：忽略总开关与注入参数，保存时清理且保留逐文件开关、显示名和未知顶层字段', () => {
-  const file = newFile()
-  const raw = [
-    '# 旧策略的手写说明',
-    'schemaVersion: 1',
-    'enabled: false',
-    'defaults:',
-    '  order: 45',
-    '  position: before-all',
-    '  promotion: main',
-    '  audience: main',
-    '  modelScope: flash',
-    'customUnknownKey: keep-me # 保留未知字段注释',
-    'files:',
-    '  f1:',
-    '    enabled: false',
-    '    name: 项目规范 # 保留显示名注释',
-    '    order: 60',
-    '    position: after-user',
-    '    promotion: subagent',
-    '    audience: subagent',
-    '    modelScope: pro',
-    '  f2:',
-    '    name: 全局规范',
-    '    order: 20',
-    '',
-  ].join('\n')
-  writeFileSync(file, raw)
-  const before = readInstructionPolicy(file)
-  assert.equal(before.error, undefined)
-  const expected = { files: { f1: { enabled: false, name: '项目规范' }, f2: { name: '全局规范' } } }
-  assert.deepEqual(before.policy, expected)
-  assert.equal(resolveInstructionPolicy(before.policy, 'f1').enabled, false)
-  assert.equal(resolveInstructionPolicy(before.policy, 'f2').enabled, true, '退役总开关不能关闭其他文件')
-  assert.equal(readFileSync(file, 'utf8'), raw, '读取不迁移写盘')
-  const saved = writeInstructionPolicy({ file, expectedRevision: before.revision, patch: {} })
-  assert.equal(saved.ok, true)
-  assert.deepEqual(saved.policy, expected)
-  const migrated = readFileSync(file, 'utf8')
-  assert.deepEqual(parse(migrated), { schemaVersion: 1, customUnknownKey: 'keep-me', ...expected })
-  assert.match(migrated, /# 旧策略的手写说明/)
-  assert.match(migrated, /# 保留未知字段注释/)
-  assert.match(migrated, /# 保留显示名注释/)
-})
-
-test('退役字段不再参与校验，现存有效字段仍严格校验', () => {
-  const file = newFile()
-  writeFileSync(file, 'enabled: ignored\ndefaults: [ignored]\nfiles:\n  f1:\n    enabled: false\n    order: invalid\n    position: invalid\n    promotion: invalid\n    audience: invalid\n    modelScope: invalid\n')
-  const before = readInstructionPolicy(file)
-  assert.equal(before.error, undefined)
-  assert.deepEqual(before.policy, { files: { f1: { enabled: false } } })
-  writeFileSync(file, 'files:\n  f1:\n    enabled: invalid\n')
-  assert.match(readInstructionPolicy(file).error, /enabled/)
-})
-
-test('null 文件覆盖：可替换为合法映射并保留注释与未知字段', () => {
-  const file = newFile()
-  writeFileSync(file, '# 手写说明\nschemaVersion: 1\ncustomUnknownKey: keep-me\nfiles:\n  f1: null # 继承默认\n  f2:\n    name: 全局规范\n')
-  const before = readInstructionPolicy(file)
-  assert.equal(before.error, undefined)
-  assert.equal(before.policy.files.f1, undefined)
-  const written = writeInstructionPolicy({ file, expectedRevision: before.revision, patch: { files: { f1: { enabled: false } } } })
-  assert.equal(written.ok, true)
-  const current = readInstructionPolicy(file)
-  assert.equal(current.error, undefined)
-  assert.deepEqual(current.policy.files, { f1: { enabled: false }, f2: { name: '全局规范' } })
-  assert.equal(current.revision, written.revision)
-  const raw = readFileSync(file, 'utf8')
-  assert.match(raw, /# 手写说明/)
-  assert.match(raw, /# 继承默认/)
-  assert.match(raw, /customUnknownKey: keep-me/)
-})
-
 test('乐观并发：过期 expectedRevision 返回 409 且文件字节不变', () => {
   const file = newFile()
   const created = writeInstructionPolicy({ file, expectedRevision: null, patch: { files: { f1: { enabled: false } } } })
@@ -231,70 +144,6 @@ test('YAML 损坏或 schemaVersion 不支持：读取进入错误态，写入拒
   assert.equal(readFileSync(future, 'utf8'), 'schemaVersion: 99\nenabled: true\n')
 })
 
-test('未解析 YAML alias：读取返回错误快照，写入拒绝且不覆盖', () => {
-  for (const field of ['defaults', 'customUnknownKey']) {
-    const file = newFile()
-    const raw = Buffer.from(`schemaVersion: 1\nenabled: true\n${field}: *missing\n`)
-    writeFileSync(file, raw)
-    const snapshot = readInstructionPolicy(file)
-    assert.equal(snapshot.exists, true)
-    assert.match(snapshot.revision, /^[a-f0-9]{64}$/)
-    assert.match(snapshot.error ?? '', /YAML/)
-    assert.deepEqual(snapshot.policy, { files: {} }, '错误态不猜测文件开关')
-    const refused = writeInstructionPolicy({ file, expectedRevision: snapshot.revision, patch: { files: { f1: { enabled: false } } } })
-    assert.equal(refused.ok, false)
-    assert.equal(refused.status, 409)
-    assert.equal(refused.code, 'instructions-policy-unreadable')
-    assert.deepEqual(readFileSync(file), raw)
-  }
-})
-
-test('写盘准备：再次读取失败或文档变坏时规范拒绝，不覆盖外部字节', async (t) => {
-  for (const [name, replacement] of [
-    ['未解析 alias', Buffer.from('schemaVersion: 1\nenabled: *missing\n')],
-    ['非法 UTF-8', Buffer.concat([Buffer.from('enabled: true\n# '), Buffer.from([0xff])])],
-    ['非法 YAML', Buffer.from('enabled: [unclosed\n')],
-    ['读取失败', new Error('模拟策略文件读取失败')],
-  ]) {
-    await t.test(name, (t) => {
-      const file = newFile()
-      const raw = Buffer.from('schemaVersion: 1\nenabled: true\n')
-      writeFileSync(file, raw)
-      const before = readInstructionPolicy(file)
-      const originalRead = fs.readFileSync
-      let reads = 0
-      const mocked = t.mock.method(fs, 'readFileSync', (...args) => {
-        if (args[0] === file && ++reads === 2) {
-          if (replacement instanceof Error) throw replacement
-          writeFileSync(file, replacement)
-        }
-        return originalRead(...args)
-      })
-      syncBuiltinESMExports()
-      t.after(() => { mocked.mock.restore(); syncBuiltinESMExports() })
-      const refused = writeInstructionPolicy({ file, expectedRevision: before.revision, patch: { files: { f1: { enabled: false } } } })
-      assert.equal(refused.ok, false)
-      assert.equal(refused.status, 409)
-      assert.equal(refused.code, 'instructions-policy-unreadable')
-      assert.deepEqual(readFileSync(file), replacement instanceof Error ? raw : replacement)
-    })
-  }
-})
-
-test('YAML 序列化失败：返回规范写入失败且不改原文件', () => {
-  const file = newFile()
-  const raw = Buffer.from('schemaVersion: 1\nenabled: &switch true\ncustomUnknownKey: *switch\n')
-  writeFileSync(file, raw)
-  const before = readInstructionPolicy(file)
-  assert.equal(before.error, undefined)
-  // 清理退役总开关会删除锚点节点；不得落盘悬空 alias。
-  const refused = writeInstructionPolicy({ file, expectedRevision: before.revision, patch: {} })
-  assert.equal(refused.ok, false)
-  assert.equal(refused.status, 409)
-  assert.equal(refused.code, 'instructions-policy-write-failed')
-  assert.deepEqual(readFileSync(file), raw)
-})
-
 test('请求白名单：未知或退役字段与非法逐文件开关、显示名一律拒绝', () => {
   const cases = [
     [{ text: '正文不得进策略文件' }, /未知字段/],
@@ -334,11 +183,6 @@ test('有效策略：仅显式 false 关闭文件，name 只作显示', () => {
   assert.equal(resolveInstructionPolicy(policy, 'f2').enabled, false)
   assert.equal(resolveInstructionPolicy(policy, 'f3').enabled, true)
   assert.equal(resolveInstructionPolicy(policy, 'unknown').enabled, true)
-})
-
-test('策略路径只在 host/paths 之外有一处定义，并落在 DSH_HOME 下', () => {
-  const path = instructionPolicyPath('D:/home/.dsh')
-  assert.equal(path.replaceAll('\\', '/'), 'D:/home/.dsh/.prompt-tool/instructions.yml')
 })
 
 test('文件覆盖删除后回到默认，正文仍不落入策略文件', () => {

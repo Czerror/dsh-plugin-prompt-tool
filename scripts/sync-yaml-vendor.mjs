@@ -10,8 +10,7 @@
  *   - 元数据 package.json（记录版本与来源）
  *
  * 用法：pnpm sync:yaml
- * 升级流程：pnpm add -D yaml@<version>（或按依赖范围重装）→ pnpm sync:yaml
- *           → 跑 test/engine/yaml-vendor-parity.test.mjs 验证双解析器一致。
+ * 升级流程：pnpm add -D yaml@<version>（或按依赖范围重装）→ pnpm sync:yaml。
  */
 import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'

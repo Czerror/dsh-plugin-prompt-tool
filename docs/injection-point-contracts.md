@@ -82,4 +82,4 @@ promptConfigs:
 - [Tools：各工具阶段及不可修改的参数](https://github.com/deepseek-ai/deepseek-harness/blob/ddefc45fbc/docs/subsystems/tools.md)
 - [Subagent：只读生命周期与投递接口](https://github.com/deepseek-ai/deepseek-harness/blob/ddefc45fbc/docs/subsystems/subagent.md)
 
-运行时动态上下文在官方异步 waterfall 内完成填充，随后继续 `next()`，保留作用域遮蔽、顺序、上下文抑制与晋升门控。同步占位由私有空变量承载；空值、异常、取消或卸载不会复用旧正文。真实官方装配回归见 `test/engine/official-variable-regression.test.mjs`。
+运行时动态上下文在官方异步 waterfall 内完成填充，随后继续 `next()`，保留作用域遮蔽、顺序、上下文抑制与晋升门控。同步占位由私有空变量承载；空值、异常、取消或卸载不会复用旧正文。

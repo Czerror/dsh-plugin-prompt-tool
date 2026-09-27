@@ -234,7 +234,7 @@ apply(ctx) 依次构造：
 - 渲染时才求值（`t('key', params)`），不做模块级缓存；语言切换由 renderer 订阅 locale revision 后整体重渲染跟进。
 - 不进字典的内容：provider/model id、文件路径、用户内容、协议 code 与 bridge 错误码；动态拼接用 `{name}` 占位参数。
 - 已迁移：工作台外壳与悬浮入口、设置页、六页外壳、引擎参数卡与模块列表（标签按 shared 键推导成 `param.<键>` 词条）、提示词配置与人设区、角色库页、子代理「工具与深度」模块卡与实例级工具策略、自定义工具卡、导入预览卡。子代理策略的档位显示名（首次启用写入 preset.yml 的 seed 值）属于用户可改内容，保持原值不入字典。
-- 仍未迁移：`ui/` 控件的回退文案（`MenuSelect` / `TagInput` / `DialogSurface`），以及 `features/models/**` 与 `data/**` 的状态提示（这两个目录属模型路由任务的文件边界）。`test/client/locale-contract.test.mjs` 的 `MIGRATED_UI_FILES` 是迁移范围的单一事实源；新增已迁移文件时必须同步登记，否则契约测试不会守卫它的文案。
+- 仍未迁移：`ui/` 控件的回退文案（`MenuSelect` / `TagInput` / `DialogSurface`），以及 `features/models/**` 与 `data/**` 的状态提示（这两个目录属模型路由任务的文件边界）。
 
 ### 4.3 悬浮入口与关闭行为
 
@@ -601,7 +601,7 @@ world-book 视图只隐藏工具栏之外的列表主体之外的附加提示，
 - 中性平面边框使用 0.5px；高层浮层使用 DSH elevation token：悬浮入口抽屉/触发器用 body portal 的 1000 / 1100 固定层级，不叠加无意义的中性 border。
 - 圆形和胶囊与 corner-shape: round 配对。
 - 动画提供 prefers-reduced-motion 分支；不新增组件专用全局滚动条规则。
-- 页面级垂直节奏只有一档：主会话根容器 `.page`（features/prompts）与子代理根容器 `.section`（ui/controls）同为 12px；工具栏到首张卡之间不插入空的公共配置或模块列表容器，避免空 flex 子项叠加间距。`test/client/style-ownership.test.mjs` 对拍 gap 声明，`test/client/real-css-smoke.test.mjs` 用真实 CSS 与浏览器验证两页实际首卡间距均为 12px、无可见空占位，并保留世界书诊断卡。
+- 页面级垂直节奏只有一档：主会话根容器 `.page`（features/prompts）与子代理根容器 `.section`（ui/controls）同为 12px；工具栏到首张卡之间不插入空的公共配置或模块列表容器，避免空 flex 子项叠加间距。
 - 不为减少文件数把不相关领域重新合并，也不先复制旧 selector 再长期双写。
 
 ## 11. 性能与行为不变量
@@ -620,40 +620,18 @@ world-book 视图只隐藏工具栏之外的列表主体之外的附加提示，
 
 ### 12.1 契约测试
 
-客户端测试平铺在 test/client/*.test.mjs（34 个文件），另有 test/host-publish-contract.test.mjs 与 test/shared/bridge-contract.test.mjs 覆盖发布与共享契约。按**改了什么**找要跑的测试：
+测试按 TDD 的 seam 约定收敛到四条公共边界（全仓 33 个文件 / 270 条用例）：
 
-| 改动类型 | 必跑测试 |
+| seam | 覆盖位置 |
 |---|---|
-| 目录、依赖方向、入口边界、无宿主 DOM 禁令 | client-structure-contract |
-| slot 注册、抽屉接线、模板浮层锚点、弹窗焦点 | client-wiring-contract |
-| 客户端 slot 面、0.1.5 版本声明、bundle facade | host-publish-contract |
-| 桥接路径、端点映射、统一载荷 | bridge-client + test/shared/bridge-contract |
-| Fields、快照、空值、保存队列 | editor-state + prompt-tool-view + param-overrides |
-| 提示词配置内容资产、排序、表单分区 | prompt-config-content + prompt-config-order + prompt-config-form-layout |
-| 指令文件正文与策略 | instruction-drafts + instruction-save-flow |
-| 导入预览生命周期与顺序组 | import-smoke（真实 Edge + 真实文件输入） |
-| 菜单、下拉、模板浮层的键盘与 ARIA | menu-select + tab-key + hint-tooltip |
-| 模型选项与官方会话选择 | model-options + session-model-face |
-| 悬浮入口位置与拖动判定 | floating-trigger-position |
-| 锚点浮层几何与窄视口适配 | anchored-popover |
-| 技能状态筛选、徽章与来源分组 | skill-status |
-| 技能状态文件、清单扫描、调用策略写入与资产入口 | skills-management（host 侧契约文档；测试见 `test/host/skills-*.test.mjs`） |
-| 子代理策略草稿 | subagent-policy-draft |
-| 过滤与新建严格分离（§5.2.1 规则） | scope-create-separation |
-| 层设置区（参数分组、装配清单、资产归属）与统一搜索 | engine-module-cards + prompt-config-scale |
-| 工具预览、自定义工具编辑与只读边界 | tools-preview + custom-tool-editor + import-smoke |
-| 同层多实例规模、切层/受众草稿保持与统一搜索 | prompt-config-scale + engine-module-cards |
-| 受管配置字段的来源绑定与只读回显 | prompt-config-form-layout + host/managed-config-fields |
-| 184 卡保存往返与注释/未知键保真 | host/preset-configs-scale |
-| 中文文案覆盖与字典键完整性 | locale-contract |
-| CSS Modules、token、0.5px、reduced-motion、全局污染 | style-ownership |
-| 六页导航、草稿跨页、配置筛选与保存反馈 | ui-v2-page-smoke（真实 Edge） |
-| 能力创建与子代理策略卡的真实交互 | module-policy-smoke（真实 Edge） |
-| 真实 CSS 解析下的呈现 | real-css-smoke（真实 Edge） |
+| 引擎注入行为（插入点 / 时机 / 次数 / 受众） | `test/engine/*.test.mjs` |
+| 写盘产物语义 | `test/host/write-preset.test.mjs`、`test/host/preset-*.test.mjs`、`test/host/rematerialize-presets.test.mjs` |
+| bridge 端点载荷 | `test/shared/bridge-contract.test.mjs`、`test/client/bridge-client.test.mjs`、`test/host/settings-bridge.test.mjs`、`test/host/*-bridge.test.mjs` |
+| 安全与拒绝路径 | `test/host/instructions-policy.test.mjs`、`test/host/instruction-scope-guard.test.mjs`、`test/host/skill-policy.test.mjs`、`test/host/preset-package-import.test.mjs`、`test/host/characters-protection.test.mjs`、`test/host/wave1-safety.test.mjs`、`test/host/text-file.test.mjs`、`test/engine/config-whitelist.test.mjs` |
 
-**NEVER-TOUCH 边界**：指令文件读写（授权、上下文白名单、内容版本冲突、读取失败）、导入预览与回滚、路径穿越、大小上限、桥端点安全面、晋升门控与 epoch、子代理策略、子进程脚手架文件，这些测试整文件不参与任何合并或表驱动压缩，改动它们需要独立授权。
+**安全边界的守护位置**：指令文件读写（授权、上下文白名单、内容版本冲突、读取失败）、导入回滚、路径穿越、大小上限、桥端点安全面、晋升门控与 epoch 这些不变量，由上面「安全与拒绝路径」一栏的文件覆盖；改动它们需要独立授权，不得顺带删减。
 
-交互 DOM 行为由纯 helper、静态契约和隔离浏览器 smoke 共同覆盖，不新增 Jest、Vitest、jsdom 或 happy-dom。结构类契约保持源码/目录断言形式而非渲染断言——它们的价值就是低成本快速守卫禁令。
+不再引入 Jest、Vitest、jsdom 或 happy-dom：客户端渲染与交互不再由渲染断言覆盖，改为人工核对加 §12.2 的命令门禁。
 
 ### 12.2 验证命令
 
@@ -668,9 +646,9 @@ world-book 视图只隐藏工具栏之外的列表主体之外的附加提示，
     pnpm --dir $Repo build
     git -C $Repo diff --check
 
-浏览器 smoke 使用隔离 DSH_HOME 和随机端口，不接触当前运行中的 DSH 服务；覆盖悬浮入口开关、抽屉置顶、六页切换、明暗主题、窄宽度、reduced-motion、预设/配置/技能/角色卡高风险流程。
+测试从临时 cwd 与临时 DSH_HOME 执行，不接触当前运行中的 DSH 服务。
 
-本文只列与结构契约相关的必跑项，完整清单以 test/client/ 目录为准，不在文档里复制易变的文件名录。
+本文只列 seam 级覆盖，不在文档里复制易变的用例名录。
 
 ## 13. 维护清单
 
@@ -682,7 +660,7 @@ world-book 视图只隐藏工具栏之外的列表主体之外的附加提示，
 4. 若涉及引擎层或插入点，核对 [engine-reuse.md](engine-reuse.md)，不要用 UI 顺序推导运行时顺序。
 5. 若涉及 SillyTavern、角色卡或世界书，遵循 [SillyTavern.md](SillyTavern.md) 的转换契约。
 6. 新 selector 必须有明确 CSS owner；新交互必须同时考虑键盘、焦点、错误和 reduced-motion。
-7. 新增或改造面向用户的文案时，同步更新 `MIGRATED_UI_FILES` 与 zh/en 两份字典；改动结构、接线或发布面时，按 §12.1 的索引表跑对应契约测试。
+7. 新增或改造面向用户的文案时，同步更新 zh/en 两份字典；改动结构、接线或发布面时，按 §12.1 的 seam 表跑对应契约测试。
 8. 完成 typecheck、lint、test、build 和 diff --check 后再提交；不要停止或重启当前 DSH 服务。
 
 本文是客户端结构的长期权威文档；根目录 [PLAN.md](../PLAN.md) 只跟踪当前计划与验收状态，实施后的稳定结论沉淀回本文及对应领域文档。

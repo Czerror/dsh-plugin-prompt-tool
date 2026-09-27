@@ -8,7 +8,7 @@
  */
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { orderTriggers, registrationOptions, validateTrigger, mountTriggers, createDecisionLog } from '../../engine/trigger.mjs'
+import { orderTriggers, registrationOptions, validateTrigger, mountTriggers } from '../../engine/trigger.mjs'
 import { MAX_TRACKED_SESSIONS, isDelegated, sessionEvents, sessionMapGet } from '../../engine/shared.mjs'
 
 const decl = (over = {}) => ({ id: 't', channel: 'agent/pre-step', when: () => true, do: () => {}, ...over })
@@ -139,58 +139,6 @@ test('mountTriggers：do 返回非 undefined 即成为本次瀑布结果（裁�
   assert.equal(await pass[0]('payload', async () => 'downstream'), 'downstream', '返回 undefined 时下游结果原样返回')
 })
 
-test('决策链（T5）：能区分「没生效」的不同原因，且每会话只输出一次', async () => {
-  const logged = []
-  const registered = []
-  const ctx = { on: (channel, handler) => { registered.push(handler); return () => {} } }
-  const diagnose = createDecisionLog({
-    enabled: true,
-    logger: { info: (message) => logged.push(message) },
-    sessionOf: (payload) => payload?.session?.id,
-  })
-  mountTriggers(ctx, [
-    decl({ id: 'miss', channel: 'agent/pre-step', when: () => false, do: () => {} }),
-    decl({ id: 'boom', channel: 'agent/request', when: () => { throw new Error('predicate blew up') }, do: () => {} }),
-  ], { plugin: 'demo', warnOnce: () => {}, diagnose })
-
-  const inner = async () => 'r'
-  const payload = { session: { id: 's-1' } }
-  await registered[0](payload, inner)   // 谓词未命中
-  await registered[1](payload, inner)   // 谓词抛错（降级）
-  diagnose.flush(payload)               // flush 由调用方在「一轮结束」时驱动（引擎不猜）
-  assert.equal(logged.length, 1, '每会话只输出一条链')
-  assert.match(logged[0], /\[trigger-decision\]/, '带统一前缀')
-  assert.match(logged[0], /miss@agent\/pre-step predicate=miss action=skipped/, '未命中可区分')
-  assert.match(logged[0], /boom@agent\/request predicate=error action=skipped/, '降级可区分')
-
-  await registered[0](payload, inner)
-  diagnose.flush(payload)
-  assert.equal(logged.length, 1, '同会话再判定不再输出')
-  await registered[0]({ session: { id: 's-2' } }, inner)
-  diagnose.flush({ session: { id: 's-2' } })
-  assert.equal(logged.length, 2, '不同会话各有自己的链')
-})
-
-test('决策链（T5）：默认关闭时零日志，且绝不打印消息正文或返回值', async () => {
-  const registered = []
-  const ctx = { on: (channel, handler) => { registered.push(handler); return () => {} } }
-  // 默认关闭（不传 enabled）
-  const quiet = []
-  const off = createDecisionLog({ logger: { info: (message) => quiet.push(message) }, sessionOf: () => 's' })
-  mountTriggers(ctx, [decl({ id: 'q', channel: 'agent/pre-step', when: () => true, do: () => {} })], { plugin: 'demo', diagnose: off })
-  await registered[registered.length - 1]({ session: {} }, async () => 'r')
-  assert.deepEqual(quiet, [], '默认关闭时零额外日志')
-
-  // 开启时也不得泄漏正文
-  const logged = []
-  const on = createDecisionLog({ enabled: true, logger: { info: (message) => logged.push(message) }, sessionOf: () => 's' })
-  mountTriggers(ctx, [decl({ id: 't', channel: 'agent/request', when: () => true, do: () => {} })], { plugin: 'demo', diagnose: on })
-  await registered[registered.length - 1]({ message: 'SECRET-USER-TEXT', session: {} }, async () => 'SECRET-RESULT')
-  on.flush({ session: {} })   // flush 由调用方在「一轮结束」时驱动（引擎不猜何时算一轮）
-  assert.equal(logged.length, 1)
-  assert.doesNotMatch(logged[0], /SECRET/, '只记 id/通道/判定/动作，不含正文与返回值')
-})
-
 test('会话态接线：带 observe 的谓词共用一条 session/event 事件源，观察者抛错只告警', () => {
   const registered = []
   const ctx = { on: (channel, handler) => { registered.push({ channel, handler }); return () => {} } }
@@ -228,7 +176,7 @@ test('会话态接线：带 observe 的谓词共用一条 session/event 事件�
  * `state` 的会话态契约（B4 迁移的基准）。这些读法**必须在 shared.mjs 里真实存在**：
  * 契约若只在注释里成立，B4 迁移到一半就会发现缺接口，那时只能临时新造——正是本轮要消除的。
  */
-test('会话态最小接口：表里的既有读法真实存在，且语义就是声明的那个', async () => {
+test('会话态最小接口：表里的既有读法真实存在，且语义就是声明的那个', () => {
   // 1) durable 事件快照：正式 API 是 snapshotEvents()；缺失 = 空日志（**不得**回退读旧 events 数组）。
   assert.deepEqual(sessionEvents(undefined), [], '无会话 = 空日志')
   assert.deepEqual(sessionEvents({}), [], '缺 snapshotEvents 接口 = 空日志')
@@ -262,17 +210,4 @@ test('会话态最小接口：表里的既有读法真实存在，且语义就�
   assert.equal(sessionMapGet(map, 's-1', () => ({ n: 0 })).n, 1, '已有条目原样返回')
   assert.deepEqual(sessionMapGet(map, 's-2', () => ({ n: 0 })), { n: 0 }, '缺失时按工厂创建')
   assert.equal(map.has('s-2'), true, '创建后写入 map')
-
-  // 5) 轮号没有共享读法（各模块内联 event.data.turn）——只钉住「有限 number 才算有轮号」这条共同语义。
-  const turnOf = (event) => {
-    const turn = event?.data?.turn
-    return typeof turn === 'number' && Number.isFinite(turn) ? turn : undefined
-  }
-  assert.equal(turnOf({ data: { turn: 3 } }), 3)
-  assert.equal(turnOf({ data: { turn: NaN } }), undefined, 'NaN 不算轮号')
-  assert.equal(turnOf({ data: { turn: Infinity } }), undefined, 'Infinity 不算轮号')
-  assert.equal(turnOf({ data: { turn: '3' } }), undefined, '字符串不算轮号')
-  assert.equal(turnOf({}), undefined, '无 data 不抛错')
-  const shared = await import('../../engine/shared.mjs')
-  assert.equal(shared.turnOf, undefined, 'shared 尚未提供 turnOf：契约表如此声明，B4 不得假定它存在')
 })

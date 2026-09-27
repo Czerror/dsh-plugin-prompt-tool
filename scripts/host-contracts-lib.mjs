@@ -1,7 +1,6 @@
 // host-contracts-lib.mjs — 宿主契约验证的共享判定。
 //
-// 供 scripts/verify-host-contracts.mjs（CLI 报告）与 test/host/version-contract.test.mjs
-// 共用，避免两处各写一份版本／路径判断。这里不读仓库外的私有源码，也不安装依赖。
+// 供 scripts/verify-host-contracts.mjs（CLI 报告）使用。这里不读仓库外的私有源码，也不安装依赖。
 import { readFileSync } from 'node:fs'
 import semver from 'semver'
 

@@ -75,14 +75,9 @@ test('按 id 索引：第 MAX_TRACKED_SESSIONS 个会话触发全清（与既有
     const first = session('first')
     get(first).n = 42
     // 填到上限：最后一条写入前 size 已达上限 → 全清后重建。
-    const other = []
     for (let index = 0; index < MAX_TRACKED_SESSIONS; index += 1) {
-      const s = session(`s-${index}`)
-      get(s).n = index
-      other.push(s)
+      get(session(`s-${index}`)).n = index
     }
-    // 未超过上限时机上仍看得到既有条目。
-    assert.equal(other.length, MAX_TRACKED_SESSIONS)
     // 第 limit+1 个会话：写入前 size === limit → 全清（`first` 的 42 也没了）。
     const overflow = session('overflow')
     const entry = get(overflow)

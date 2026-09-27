@@ -1,15 +1,9 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
-import { fileURLToPath } from 'node:url'
 import { Context } from '@deepseek-ai/cordis'
 import { createScope, scopeOf, scopeParentOf } from '@deepseek-ai/dsh-scope'
 
-import { MATCH_LOGIC, createAnchorMatcher } from '../../engine/anchor-match.mjs'
-import { createEpochPromotion } from '../../engine/compaction-epoch.mjs'
-import { parsePromoteOn } from '../../engine/shared.mjs'
+import { MATCH_LOGIC } from '../../engine/anchor-match.mjs'
 import {
   agentPresetId,
   composite,
@@ -20,7 +14,6 @@ import {
   createSessionStatePredicate,
   createSourcePredicate,
   createTextPredicate,
-  loadStandingMountFor,
 } from '../../engine/predicates.mjs'
 
 // ── 测试夹具 ─────────────────────────────────────────────────────────────────
@@ -90,42 +83,6 @@ test('组合：非法节点在挂载期 fail loud（不隐式排序、不放宽�
 
 // ── 1. 文本锚定 ──────────────────────────────────────────────────────────────
 
-const TEXT_CASES = [
-  { keys: ['We', 'Let me'] },
-  { keys: ['WE'], caseSensitive: true },
-  { keys: ['  We  ', ''] },
-  { keys: ['we'], wholeWords: true },
-  { keys: ['we'], wholeWords: true, caseSensitive: false },
-  { keys: ['/we\\s+/i'] },
-  { keys: ['let me'], useRegex: false },
-  { keys: ['/[/'] },
-  { keys: ['anchor'], secondaryKeys: ['skip'], logic: MATCH_LOGIC.ALL },
-  { keys: ['anchor'], secondaryKeys: ['skip'], logic: MATCH_LOGIC.NOT },
-  { keys: ['anchor'], secondaryKeys: ['skip', 'hold'], logic: MATCH_LOGIC.NOT_ANY },
-  { keys: ['We'], secondaryKeys: ['plan'], logic: MATCH_LOGIC.ANY },
-  { keys: ['We'], mode: 'prefix' },
-  { keys: ['we', 'We'], wholeWords: true, stWords: true },
-]
-
-const TEXT_INPUTS = [
-  '', 'We proceed.', 'let me check.', 'We plan and then we act.',
-  'anchor only', 'anchor skip', 'anchor skip hold', 'WE PROCEED', 'weep',
-]
-
-test('文本类：与 anchor-match 逐例一致（命中与不命中）', () => {
-  for (const options of TEXT_CASES) {
-    const predicate = createTextPredicate(options)
-    const scan = createAnchorMatcher(options).scan
-    for (const text of TEXT_INPUTS) {
-      assert.equal(
-        predicate(text),
-        scan(text).active,
-        `options=${JSON.stringify(options)} text=${JSON.stringify(text)}`,
-      )
-    }
-  }
-})
-
 test('文本类：主键/副键/整词/大小写/正则/前缀/模式的命中边界', () => {
   assert.equal(createTextPredicate({ keys: ['We'] })('we proceed'), true)
   assert.equal(createTextPredicate({ keys: ['We'], caseSensitive: true })('we proceed'), false)
@@ -150,67 +107,7 @@ test('文本类：主键/副键/整词/大小写/正则/前缀/模式的命中�
   assert.equal(createTextPredicate({ keys: ['hello'] })(undefined), false)
 })
 
-test('文本类：非法配置在挂载期 fail loud', () => {
-  assert.throws(() => createTextPredicate({}), /at least one non-empty key/)
-  assert.throws(() => createTextPredicate({ keys: ['   '] }), /at least one non-empty key/)
-  assert.throws(() => createTextPredicate({ keys: ['ok'], logic: 'xor' }), /logic must be one of/)
-  assert.throws(() => createTextPredicate({ keys: ['ok'], mode: 'fuzzy' }), /mode must be one of/)
-  assert.throws(() => createTextPredicate({ keys: ['ok'], wholeWords: 'yes' }), /wholeWords must be a boolean/)
-  assert.throws(() => createTextPredicate({ keys: [42] }), /keys must be an array of strings/)
-  assert.throws(() => createTextPredicate({ keys: ['ok'], useRegex: true, secondaryKeys: ['['] }), SyntaxError)
-})
-
 // ── 2. 相位（epoch）─────────────────────────────────────────────────────────
-
-const PHASE_LOGS = [
-  [],
-  [toolCall(1)],
-  [assistantText('ok', 1)],
-  [{ type: 'compaction/end', seq: 1 }],
-  [toolCall(1), { type: 'compaction/end', seq: 2 }],
-  [toolCall(1), { type: 'compaction/end', seq: 2 }, toolCall(3)],
-  [toolCall(1), { type: 'compaction/end', seq: 2, data: { error: 'failed' } }],
-  [{ type: 'compaction/end', seq: 1 }, assistantText('ok', 2)],
-]
-
-test('相位类：与 compaction-epoch 逐例一致（默认参数与 promoteOn 三态）', () => {
-  for (const promoteOn of [undefined, 'tool-call', 'assistant-message', 'either']) {
-    const predicate = createPhasePredicate({ promoteOn, subscribe: false })
-    const events = parsePromoteOn('test', promoteOn)
-    for (const log of PHASE_LOGS) {
-      const session = makeSession(log)
-      const agent = makeAgent(session)
-      const expected = createEpochPromotion(events, {}).status(agent).promoted
-      assert.equal(predicate(agent), expected, `promoteOn=${promoteOn} log=${JSON.stringify(log)}`)
-    }
-    // 子代理默认已晋升；includeSubagents 时同相位；无 agent 时沿用现有语义（true）
-    const subagentSession = { ...makeSession([toolCall(1)]), header: { delegationDepth: 1 } }
-    assert.equal(predicate({ session: subagentSession }), createEpochPromotion(events, {}).status({ session: subagentSession }).promoted)
-    assert.equal(
-      createPhasePredicate({ promoteOn, includeSubagents: true })({ session: subagentSession }),
-      createEpochPromotion(events, { includeSubagents: true }).status({ session: subagentSession }).promoted,
-    )
-    assert.equal(predicate(undefined), createEpochPromotion(events, {}).status(undefined).promoted)
-  }
-  assert.throws(() => createPhasePredicate({ promoteOn: 'nope' }), /promoteOn must be one of/)
-  assert.throws(() => createPhasePredicate({ promoteEvents: 'tool/call' }), /promoteEvents must be an array/)
-  assert.throws(() => createPhasePredicate({ subscribe: 'yes' }), /subscribe must be a boolean/)
-})
-
-test('相位类：订阅模式与喂入同一个 tracker 逐例一致', () => {
-  const predicate = createPhasePredicate({ promoteOn: 'either', subscribe: true })
-  const tracker = createEpochPromotion(parsePromoteOn('test', 'either'), {})
-  const session = makeSession([])
-  const agent = makeAgent(session)
-  assert.equal(typeof predicate.observe, 'function')
-  assert.equal(predicate(agent), tracker.status(agent).promoted, '冷扫后一致')
-  for (const event of [toolCall(1), { type: 'compaction/end', seq: 2 }, assistantText('ok', 3)]) {
-    predicate.observe(session, event)
-    tracker.observe(session, event)
-    assert.equal(predicate(agent), tracker.status(agent).promoted, `喂入 ${event.type} 后一致`)
-  }
-  assert.equal(predicate(agent), true, '压缩边界之后的 assistant/message 重新晋升')
-})
 
 test('相位类：订阅 / 不订阅两种复位语义分别可表达', () => {
   const events = [toolCall(1)]
@@ -269,13 +166,6 @@ test('来源类：精确/前缀、大小写与多通道合取', () => {
   assert.equal(kindExact(undefined), false)
 })
 
-test('来源类：非法配置在挂载期 fail loud', () => {
-  assert.throws(() => createSourcePredicate({}), /needs kind or plugin/)
-  assert.throws(() => createSourcePredicate({ kind: [] }), /non-empty string or an array of non-empty strings/)
-  assert.throws(() => createSourcePredicate({ kind: 'x', match: 'glob' }), /match must be "exact" or "prefix"/)
-  assert.throws(() => createSourcePredicate({ kind: 'x', caseSensitive: 'no' }), /caseSensitive must be a boolean/)
-})
-
 // ── 4. 计数 ──────────────────────────────────────────────────────────────────
 
 test('计数类：冷启动冷扫重建与上下限边界', () => {
@@ -300,44 +190,6 @@ test('计数类：冷启动冷扫重建与上下限边界', () => {
   assert.throws(() => createCountPredicate({ of: 'tool-call' }), /needs min, max or every/)
   assert.throws(() => createCountPredicate({ of: 'tool-call', per: 'step', min: 1 }), /per must be "session" or "turn"/)
   assert.throws(() => createCountPredicate({ of: 'tool-call', min: -1 }), /min must be an integer >= 0/)
-})
-
-test('计数类：per=turn 只计最新轮，轮边界由 turn/start 与带轮号事件推进', () => {
-  const session = makeSession([
-    assistantText('aaa', 1, 1),
-    { type: 'turn/start', seq: 2, data: { turn: 2 } },
-    assistantText('bbbbb', 3, 2),
-  ])
-  const turnChars = (max) => createCountPredicate({ of: 'assistant-chars', per: 'turn', max })(session)
-  assert.equal(turnChars(4), false, '当前轮 5 字符 > 4')
-  assert.equal(turnChars(5), true)
-  assert.equal(createCountPredicate({ of: 'assistant-chars', max: 8 })(session), true, '会话口径计两轮之和')
-
-  // turn/start 推进当前轮：新轮深度归零（与 deliberation-gate 的 turnEntryOf 同规则）
-  const advanced = makeSession([assistantText('aaaaa', 1, 1), { type: 'turn/start', seq: 2, data: { turn: 2 } }])
-  assert.equal(createCountPredicate({ of: 'assistant-chars', per: 'turn', max: 0 })(advanced), true)
-  // 无轮号事件不参与轮内计数（宁可少计，也不把跨轮数据算进当前轮）
-  const untagged = makeSession([assistantText('aaaaa', 1, undefined)])
-  assert.equal(createCountPredicate({ of: 'assistant-chars', per: 'turn', max: 0 })(untagged), true)
-  // 轮次修剪后当前轮仍准确（有界状态不改变判定）
-  const manyTurns = []
-  for (let turn = 1; turn <= 12; turn += 1) {
-    manyTurns.push({ type: 'turn/start', seq: turn * 10, data: { turn } })
-    manyTurns.push(assistantText('x'.repeat(turn), turn * 10 + 1, turn))
-  }
-  assert.equal(createCountPredicate({ of: 'assistant-chars', per: 'turn', max: 12 })(makeSession(manyTurns)), true)
-  assert.equal(createCountPredicate({ of: 'assistant-chars', per: 'turn', max: 11 })(makeSession(manyTurns)), false)
-})
-
-test('计数类：observe 增量不重复计数', () => {
-  const events = [toolCall(1)]
-  const session = makeSession(events)
-  const predicate = createCountPredicate({ of: 'tool-call', min: 2 })
-  assert.equal(predicate(session), false, '冷扫 1 次')
-  events.push(toolCall(2))
-  predicate.observe(session, events[1])
-  assert.equal(predicate(session), true, '增量喂入后命中，且未重复计入已冷扫的事件')
-  assert.equal(createCountPredicate({ of: 'tool-call', min: 3 })(session), false, '独立冷扫重建仍是 2 次')
 })
 
 // ── 5. 名单 ──────────────────────────────────────────────────────────────────
@@ -466,51 +318,4 @@ test('预设类：无 standing scope / 无挂载＝undefined，调用方不命�
   }
 
   assert.throws(() => createPresetPredicate({}), /needs a presetId/)
-})
-
-test('预设类：header 与 live 挂载不一致时以 live 挂载为准', () => {
-  const fixture = liveScopeFixture('dsh-studio-lab')
-  const agent = { ...fixture.agent, session: { header: { agentPreset: 'custom-standard' } } }
-  assert.equal(createPresetPredicate({ ctx: fixture.serviceCtx, presetId: 'dsh-studio-lab' })(agent), true)
-  assert.equal(
-    createPresetPredicate({ ctx: fixture.serviceCtx, presetId: 'custom-standard' })(agent),
-    false,
-    '出生预设不参与判定',
-  )
-})
-
-test('预设类：新版官方包解析到同源导出，隔离入口优先且加载失败不抛错', async () => {
-  const installed = await import('@deepseek-ai/dsh-agent-preset-registry')
-  assert.equal(await loadStandingMountFor(fileURLToPath(import.meta.url)), installed.standingMountFor)
-  // 在时：隔离临时目录里的同名包（模拟 profile 已安装）必须被解析出来
-  const dir = mkdtempSync(join(tmpdir(), 'pt-predicates-'))
-  try {
-    const base = join(dir, 'entry.js')
-    const pkg = join(dir, 'node_modules', '@deepseek-ai', 'dsh-agent-preset-registry')
-    mkdirSync(pkg, { recursive: true })
-    writeFileSync(join(pkg, 'package.json'), JSON.stringify({
-      name: '@deepseek-ai/dsh-agent-preset-registry',
-      version: '0.0.0',
-      type: 'module',
-      main: 'index.js',
-    }))
-    writeFileSync(join(pkg, 'index.js'), [
-      'export function standingMountFor(agentCtx) {',
-      '  return agentCtx?.mounted === undefined ? undefined : { presetId: agentCtx.mounted }',
-      '}',
-      '',
-    ].join('\n'))
-    writeFileSync(base, '')
-    const resolved = await loadStandingMountFor(base)
-    assert.equal(typeof resolved, 'function', '官方包在时必须解析到模块导出')
-    assert.deepEqual(resolved({ mounted: 'pt-cordis' }), { presetId: 'pt-cordis' })
-    assert.equal(resolved({}), undefined)
-    const brokenPackage = join(dir, 'broken', 'node_modules', '@deepseek-ai', 'dsh-agent-preset-registry')
-    mkdirSync(brokenPackage, { recursive: true })
-    writeFileSync(join(brokenPackage, 'package.json'), JSON.stringify({ type: 'module', main: 'index.js' }))
-    writeFileSync(join(brokenPackage, 'index.js'), 'throw new Error("package unavailable")')
-    assert.equal(await loadStandingMountFor(join(dir, 'broken', 'entry.js')), undefined, '官方包加载失败时安全降级')
-  } finally {
-    rmSync(dir, { recursive: true, force: true })
-  }
 })

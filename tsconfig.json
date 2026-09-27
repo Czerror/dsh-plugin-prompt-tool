@@ -13,6 +13,6 @@
     "noEmit": true,
     "types": ["node"]
   },
-  "include": ["src", "test/types"],
+  "include": ["src"],
   "exclude": ["src/client"]
 }

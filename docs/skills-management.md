@@ -138,16 +138,8 @@ folders:                      # 用户添加的技能文件夹（绝对路径，
 | 行为 | 测试 |
 |---|---|
 | 文件写入（保留注释/正文、两端独立、无变化不落盘、各类拒绝） | `test/host/skill-policy.test.mjs` |
-| 写入后官方候选的调用策略随之变化（真实注册表） | `test/host/skill-policy-e2e.test.mjs` |
-| 状态文件 schema 与写盘事务 | `test/host/skills-config.test.mjs` |
-| 六类来源扫描、同名裁决、清单条目 | `test/host/skills-scan.test.mjs`、`test/host/skills-catalog.test.mjs` |
-| 创建 / 回收站删除 | `test/host/skills-actions.test.mjs` |
-| 引用技能端点、同名身份、移除引用后拒绝 | `test/host/skills-framework-bridge.test.mjs` |
+| 六类来源扫描、同名裁决、清单条目 | `test/host/skills-catalog.test.mjs` |
 | 端点（真实 handler + 写盘 + 身份校验） | `test/host/settings-bridge.test.mjs` |
-| 状态 / 引用目录变化后的清单刷新 | `test/host/skills-refresh.test.mjs` |
-| 官方引用 provider 缺失根恢复与释放 | `test/host/skills-candidates-refresh.test.mjs` |
-| 页面分组、调用策略开关与资产入口 | `test/client/ui-v2-page-smoke.test.mjs`（fixture：`test/fixtures/ui-v2-drafts.mjs`） |
-| 状态筛选与徽章纯逻辑 | `test/client/skill-status.test.mjs` |
 
 ```powershell
 $Repo = 'D:\AI\GitHub\dsh-plugin-prompt-tool'

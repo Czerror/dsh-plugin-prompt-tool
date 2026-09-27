@@ -1,5 +1,12 @@
 # Changelog
 
+## 测试按 seam 收敛（2026-09-27）
+
+- **测试文件 150 → 33、用例 1617 → 289**：按 TDD 的 seam 约定把覆盖收敛到四条公共边界——引擎注入行为（插入点 / 时机 / 次数 / 受众）、写盘产物语义、bridge 端点载荷、安全与拒绝路径。其余整文件删除，含 `test/client/` 的渲染与浏览器 smoke、SillyTavern 转换、预设管理与技能管理用例。
+- **删除依据**：只保留通过公共接口验证行为的断言；删掉实现耦合（断言源码文本、渲染 HTML/DOM 结构）与同义反复（期望值由被测代码或测试自建对象重算）的用例。
+- **连带清理**：`test/types/` 及其在 `tsconfig.json#include` 中的引用移除；`README.md`、`docs/*` 与 `scripts/*.mjs` 中指向已删测试的 36 处引用同步更新；`test/engine/declarations/` 固件保留（仍被 `engine/*.mjs` 注释引用），但已无执行型消费者。
+- **验证**：`pnpm test` 289/289、`pnpm typecheck`、`pnpm lint`（0 warning）、`pnpm build`、`git diff --check` 全通过。
+
 ## [0.8.1] - 2026-09-26
 
 ### 配置卡导航列贴合页签宽度

@@ -167,8 +167,7 @@ UI 侧 `persistParamOverrides` **条件发送**：
 - 参数桥 `buildEngineModuleParams` 的 `editor-default` 绑定（`strReplaceEditorMaxOutputChars`）
   同样只投影已提供的正值：缺参不再补 16000 覆盖 `moduleConfigs` / 组合行的 `maxOutputChars`；
   非法值不写行配置（渲染层宽容，回落行默认），保存期仍由 `validateEngineParamValues` 响亮拒绝。
-- 验收入口：`test/host/write-preset.test.mjs`（未提供 vs 显式值两组对照）、
-  `test/host/preset-render-variants.test.mjs` 与 `test/shared/engine-param-schema.test.mjs`（编辑器上限三态）。
+- 验收入口：`test/host/write-preset.test.mjs`（未提供 vs 显式值两组对照）。
 
 
 ## 4. variables 双通道（两套体系，不互串）
@@ -207,8 +206,7 @@ ST 导入配置显式带 `params.stMacros: true`，赋值模板保留到运行�
 3. 只有跨字段的模型／授权关系才修改 `host/manifest.ts`；普通模块参数不再额外手写双向映射。
 4. 存储：参数定义的 card 必须在编辑组目录登记主归属层，存储路径随目录派生；只读取当前 layerSettings，不维护旧字段映射或运行时双读。
 5. UI：现有模块普通字段自动渲染；新增特殊交互才扩展专用编辑器，禁止增加第二份参数清单。
-6. 测试：`test/host/engine-params-bridge.test.mjs` 的 BRIDGE_SAMPLES 加样本值（若为参数桥消费键）。
-7. `docs/architecture-params.md` 如有语义变更同步；CHANGELOG 记条目。
+6. `docs/architecture-params.md` 如有语义变更同步；CHANGELOG 记条目。
 
 ### 锚定/引导内容键并入共享参数目录（2026-09-20）
 
@@ -317,12 +315,6 @@ writer 在每条受管生成配置里附 `fieldSources`（`configId` 与固定�
 | `router-guide` | `modelScope` | `guideCustom`（计算结果） | 自定义引导 `all`，自动引导 `flash` |
 | `router-guide` | `params.useCustom` | `guideCustom`（计算结果） | 引导启用且自定义开启时为 true |
 | `router-guide` | `params.text` / `params.complexPattern` / `params.guideWeak` / `params.guideDeep` | `guideText` / `complexPattern` / `guideWeak` / `guideDeep` | 逐字映射 |
-
-契约与真实物化的一致性由 `test/host/managed-config-fields.test.mjs` 锁定：A/B 来源参数
-投影、空 options 与真实 spec 的 GLOBAL/LOCAL 对照、空串与整条替换均有断言。
-`test/host/engine-params-bridge.test.mjs` 覆盖表单回调到 bridge、writer 和重读，以及只读、
-旧预设身份拒写和元数据不入定义；`test/client/prompt-config-form-layout.test.mjs` 覆盖逐字段
-锁定、局部输入及启用/模型范围控件。
 
 ### 模块化视图（2026-08-25）
 
@@ -562,5 +554,4 @@ buildSubagentToolParameters(c)     → 模型可见扩展参数 Schema
 
 完整预设导入复用 writer 的 `sourceDir` 与 `materializeOnly` 模式：从隔离来源物化到独立候选目录，最终 ID 与暂存位置分离，不写目标，也不再同步共享引擎（引擎由插件包提供）。安装方先完成工具／配置／附件校验，再版本复检和 rename 交换；普通保存与重建继续复用 writer。预设自有正文及本地 engine 保留，禁止遍历清理兄弟预设。详见 [资产交换](asset-transfer.md)。
 
-- `test/host/engine-params-bridge.test.mjs`：PARAM_KEYS 派生一致性；每个 ENGINE_PARAM_KEYS 键有装配消费。
 - `test/host/write-preset.test.mjs`：模型参数 patch 生成/留空跳过；空值删键（''/[]）；变量文件只读顶层 variables，保留空串与同名键，清空后不回退旧 params。

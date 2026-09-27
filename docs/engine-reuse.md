@@ -165,8 +165,6 @@
 - 配置的 `role` 只接受 `user`，`getEngineMeta().roles` 与表单同源；策略或模板 patch 的角色仍经出口守卫校验。
 - 想让消息以 assistant 出现在模型面前，只能走宿主 assistant 侧通道，不要在 pre-step 里伪造
   assistant 历史：那会写出宿主无法重新加载的会话日志。
-- 验收入口：`test/host/pre-step-persistence.test.mjs`（真实 `@deepseek-ai/dsh-session` 的
-  持久化 → 重新加载 → 派生请求）。
 
 ## pre-step 协调器与官方指令过滤
 
@@ -191,8 +189,6 @@
   全局服务。预设批执行器使用普通监听顺序，留在最外层 pre-step 门（声明式 `pre-step-filter`，
   `waterfallPosition: outermost`）内侧；官方指令过滤在官方消息生成之后、写入会话之前完成。
   迟到或重挂不改变外层门对最终消息批的约束。
-- 验收入口：`test/host/pre-step-wiring.test.mjs`（来源 scope 隔离与 dispose 释放、同一 scope
-  同名来源接管与旧句柄幂等、协调服务迟到与 HMR 重登）。
 
 ### 官方指令的逐文件过滤
 
@@ -241,7 +237,7 @@
 - 普通注册（`push`）**先注册者在外**；`prepend: true` 等价 `unshift`，插到链首 = 最外层，且**同为 prepend 时后注册者更外层**。
 - 因此**否决型**动作（清空 `contexts`、窄化 `tools`、按名单掩码、剥离请求参数）必须 prepend 才能落在普通注册之外；**协作式填充**（`runtime-context` 的同步占位与填充）与**纯副作用**监听器保持普通注册，不去抢外层。
 - 本引擎把这条位置表达在声明里：`triggers` 声明的 `waterfallPosition: outermost` 映射为 `prepend: true`（`engine/trigger.mjs` 的 `registrationOptions`），**缺省 `default` 即普通注册**。它表达的是**位置**，不承担同一通道内声明之间的排序——后者归 `channelOrder`。
-- 顺序语义只能用真实 cordis 用例证明：`test/engine/assemble-authority.test.mjs` 用「先注册的 `prepend` 竞争者」作反例，验证三类否决型装配门控确实位于普通注册之外。手写的 mock `ctx.on` 只记录选项、**不实现顺序**，不能用作顺序证据。
+- 顺序语义只能用真实 cordis 用例证明；手写的 mock `ctx.on` 只记录选项、**不实现顺序**，不能用作顺序证据。
 - **已知边界**：`prepend` 只保证「比**已存在**的普通注册更外层」。若第三方插件同样 `prepend` 且注册更晚，它仍处于更外层、可以翻越门控；`global: true` 的注册也不受本 scope 约束。这正是「不再依赖组合行序」的确切含义——位置改由注册选项保证，而该保证有明确上界，不等价于「与顺序无关」。
 
 ### 条件判定与事件层（2026-09-19）
@@ -286,8 +282,6 @@
 - 后到的获准模板按 `order` 在同一变量帧内补求值，已求值的模板不重放副作用或随机宏；
   已返回的官方文本也不因后续 pre-step 赋值而倒放重算。两种入口顺序均沿用已有变量帧，
   新步骤与成功压缩创建新帧，失败压缩不推进。该规则不增加跨插入点的全局调度顺序。
-  验收入口：`test/engine/official-variable-regression.test.mjs`（真实官方组装先行、条件与
-  受众/模型/晋升/去重边界、重复组装与新 epoch）及 `test/engine/st-render-macros.test.mjs`。
 
 ## 会话去重以「宿主接纳」为准（2026-09-20）
 
@@ -307,8 +301,7 @@
   `source.plugin` / `source.kind` 两条匹配规则一致；不同字段恰好同值不会误判已投递。
 - 独立执行路径与管理路径（协调器）共用同一确认实现，两条路径的去重语义一致；重挂或
   进程恢复直接从持久记录重建，不依赖进程内已投递集合。
-- 验收入口：`test/host/pre-step-wiring.test.mjs`（门控剥离→晋升补发的独立/管理双路径、
-  接纳后不重复、重挂按持久事实恢复、reject 不记账）与 `test/engine/prompt-config-engine.test.mjs`。
+- 验收入口：`test/engine/prompt-config-engine.test.mjs`。
 
 ## 晋升语义（epoch-aware）
 
@@ -355,8 +348,6 @@
   返回 `evaluated: false`，不伪报已检查。
 - 只读端点每次读取都在对象上限内切片，但快照对象本身仍是引擎内部事实，读取不触发求值、
   抽样或时间窗推进。
-- 接线回归：`test/host/st-preview-report.test.mjs#T08` 用物化引擎行把来源交给 bundle
-  协调器，经真实 `agent/pre-step` 注入后由 bridge 读到非空 `selected`/`committed` 记录。
 
 ### 条目级条件字段：延迟到递归与组内评分（2026-09-17）
 

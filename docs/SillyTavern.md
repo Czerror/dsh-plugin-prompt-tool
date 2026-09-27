@@ -206,9 +206,6 @@ tokenizer 与上下文预算通道，超出本插件的宿主边界；`forbid_ov
 - 新导入才能恢复源文件中的纯赋值卡、真实顺序表及遗漏字段；旧转换产物没有这些信息，
   单纯重新物化不能恢复，需用户重新导入并确认是否覆盖手工修改。
 - 引擎更新后通过现有重建流程物化；运行中的 DSH 是否重启由用户决定，插件不会自动重启。
-- 回归入口：`test/host/sillytavern-convert.test.mjs`、`test/host/pre-step-persistence.test.mjs`、
-  `test/engine/st-render-macros.test.mjs`、`test/engine/st-world-book.test.mjs` 和
-  `test/engine/official-variable-regression.test.mjs`。从仓库规定的隔离 cwd 运行完整测试。
 
 ### pre-step 角色出口（2026-09-17）
 
@@ -221,8 +218,6 @@ tokenizer 与上下文预算通道，超出本插件的宿主边界；`forbid_ov
   `params.stSource.role`（prompt / 开场白 / 示例对话）或 `params.stWorldBook.role`（世界书），
   并产生 info 级诊断（同类来源只发一条，不刷屏）。预览报告因此不把这些条目报成「等价」。
 - 原生提示词配置只接受 `role: user`；SillyTavern 的角色转换属于导入契约，转换后交给同一引擎校验。
-- 验收入口：`test/host/pre-step-persistence.test.mjs` 用已发布 `@deepseek-ai/dsh-session` 走
-  「注入 → 事件持久化 → 重新加载 → 派生请求」，旧 assistant 夹具必须在加载时触发真实角色校验错误。
 
 ### 顺序组选择、预览版本与报告身份（2026-09-17）
 
