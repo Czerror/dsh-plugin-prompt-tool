@@ -2,14 +2,6 @@
 
 本文件只保留跨任务的仓库边界、工具约束、验证和交付规则。具体框架说明按任务路由到对应文档，不在这里复制。
 
-## 全局规则
-
-- 思维链和回答使用简体中文。
-- 所有 shell 指令使用 pwsh：D:\AI\PowerShell\7\pwsh.exe；禁止调用系统 Windows PowerShell 5.1。
-- 只能使用 Codex 内置编辑器直接编辑文件；禁止用脚本做文本替换。
-- 只有用户明确要求“查经验/recall/记一下/remember”等记忆操作时，才读取 mnemon 技能并执行记忆读写；不得保存 token、密码、密钥等秘密。
-- 不修改 DeepSeek Harness 源码仓库；插件只通过本仓库的 cordis.patch.yml、package.json#dsh、已发布的 @deepseek-ai/* 包和 DSH profile 装配。
-
 ## 任务路由
 
 开始修改前，按触发条件读取唯一权威文档：
@@ -26,9 +18,11 @@
 
 项目是位置、时机与受众可配置的提示词注入引擎。promptConfigs 按自身声明的官方插入点按需注册，预设组合行为；不同插入点没有插件自定义的全局运行顺序。PTC、首轮锚定、router-guide、Flash 路由及其他模型增强保持可选或 opt-in。
 
+不修改 DeepSeek Harness 源码仓库；插件只通过本仓库的 cordis.patch.yml、package.json#dsh、已发布的 @deepseek-ai/* 包和 DSH profile 装配。
+
 ## 环境与验证
 
-测试和脚本从隔离 cwd 执行，不能把仓库目录作为测试 cwd：
+测试与脚本从隔离 cwd 执行：
 
     $Repo = 'D:\AI\GitHub\dsh-plugin-prompt-tool'
     Set-Location 'D:\AI\workspase\_temp'
@@ -51,7 +45,7 @@
 - **真值源**：期望值来自独立真值源——规格、已知良好字面量、手算样例。
 - **公共接口**：断言落在调用方观察到的行为上，改实现时依然成立。
 
-三条全过 → 写 `test/<域>/<主题>.test.mjs`，用 Node 内置 test runner 与现有 helper，新框架或依赖需用户确认。任一条不过 → 脚本写在 `D:\AI\workspase\_temp`，跑完删除：一次性复现、探针、性能对比、外部工具验证都归这里。
+三条全过 → 写 `test/<域>/<主题>.test.mjs`，用 Node 内置 test runner 与现有 helper，新框架或依赖需用户确认。任一条不过 → 脚本写在临时目录（`Set-Location` 的目标），跑完删除：一次性复现、探针、性能对比、外部工具验证都归这里。
 
 **既有要求**：
 
@@ -101,7 +95,7 @@
 
 ## 项目修改记忆（.ai-memory）
 
-本仓库用 `.ai-memory/` 保存项目修改记忆（dev-expert「写后即记」协议）。它与 mnemon 是两套机制：mnemon 仍需用户明确要求才读写，`.ai-memory/` 按本节触发条件直接追加。
+本仓库用 `.ai-memory/` 保存项目修改记忆（dev-expert「写后即记」协议），与 mnemon 是两套机制：本节触发条件满足即直接追加。
 
 - 触发（完成即追加，不等用户确认）：Bug 修复、功能实现、代码审查或重构结论、技术选型定案、配置或迁移变更、文档与规范沉淀、新发现的项目约定或用户偏好。
 - 不触发：纯信息查询、只读检查、临时测试。
