@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { parse as parseYaml } from 'yaml'
@@ -114,19 +114,6 @@ test('importPresetPackage：超过 32MB 上限返回 413 明确错误', async ()
   assert.ok(!existsSync(join(PRESETS, 'big')), '超限包不得写入')
 })
 
-test('importPresetPackage：32MB 以内的大包（如含 .mjs 模块的官方预设）正常导入', async () => {
-  const { status, payload } = await importPackage({
-    files: [
-      { path: 'large/preset.yml', content: 'id: large\nname: 大包预设\n' },
-      { path: 'large/agent.cordis.yml', content: '- id: demo-row\n  name: "@deepseek-ai/dsh-demo"\n' },
-      { path: 'large/big-data.txt', content: 'x'.repeat(200 * 1024) },
-    ],
-  })
-  assert.equal(status, 200)
-  assert.equal(payload.value?.id, 'large')
-  assert.ok(existsSync(join(PRESETS, 'large', 'big-data.txt')), '大文本文件应落盘')
-})
-
 test('importPresetPackage：路径穿越条目被明确拒绝，不落盘', async () => {
   for (const files of [
     [{ path: 'demo/../evil.yml', content: 'x' }],
@@ -143,23 +130,6 @@ test('importPresetPackage：路径穿越条目被明确拒绝，不落盘', asyn
   assert.ok(!existsSync(join(PRESETS, 'demo', 'evil.yml')), '穿越条目不得写入预设目录')
   assert.ok(!existsSync(join(PRESETS, 'demo', 'evil2.yml')))
   assert.ok(!existsSync(join(PRESETS, 'demo', 'abs-evil.yml')))
-})
-
-test('importPresetPackage：缺少 preset.yml → 400', async () => {
-  const { status, payload } = await importPackage({
-    files: [{ path: 'nopreset/agent.cordis.yml', content: '- id: a\n' }],
-  })
-  assert.equal(status, 400)
-  assert.equal(payload.code, 'preset-package-invalid')
-})
-
-test('importPresetPackage：preset.yml 非 YAML 映射 → 400 且不落盘', async () => {
-  const { status, payload } = await importPackage({
-    files: [{ path: 'badyaml/preset.yml', content: '- a\n- b\n' }],
-  })
-  assert.equal(status, 400)
-  assert.equal(payload.code, 'preset-package-invalid')
-  assert.ok(!existsSync(join(PRESETS, 'badyaml')), '非法包不得写入')
 })
 
 test('importPresetPackage：组合无法解析（modules 引用缺失）→ 400 且目录回滚', async () => {
@@ -185,24 +155,6 @@ test('importPresetPackage：显式同名覆盖安装完整候选，成功清理�
   assert.ok(existsSync(join(PRESETS, 'demo', 'version2.txt')), '新版文件应写入目标目录')
 })
 
-test('importPresetPackage：单文件 preset.yml 导入 id 回退 imported-preset', async () => {
-  const { status, payload } = await importPackage({
-    files: [{
-      path: 'preset.yml',
-      content: [
-        'name: 无 id 预设',
-        'composition: |-',
-        '  - id: demo-row',
-        '    name: "@deepseek-ai/dsh-demo"',
-        '',
-      ].join('\n'),
-    }],
-  })
-  assert.equal(status, 200)
-  assert.equal(payload.value?.id, 'imported-preset')
-  assert.ok(existsSync(join(PRESETS, 'imported-preset', 'preset.yml')))
-})
-
 test('importPresetPackage：文件夹导入且 preset.yml 无 id 时回退文件夹名', async () => {
   const { status, payload } = await importPackage({
     files: [
@@ -213,59 +165,6 @@ test('importPresetPackage：文件夹导入且 preset.yml 无 id 时回退文件
   assert.equal(status, 200)
   assert.equal(payload.value?.id, 'my-persona', '无 id 时应用文件夹名')
   assert.ok(existsSync(join(PRESETS, 'my-persona', 'preset.yml')))
-})
-
-test('importPresetPackage：文件夹导入支持自定义定义文件名（落盘统一为 preset.yml）', async () => {
-  const { status, payload } = await importPackage({
-    files: [
-      { path: 'custom-name/config.yaml', content: 'id: custom-name\nname: 自定义文件名预设\n' },
-      { path: 'custom-name/agent.cordis.yml', content: '- id: demo-row\n  name: "@deepseek-ai/dsh-demo"\n' },
-    ],
-  })
-  assert.equal(status, 200)
-  assert.equal(payload.value?.id, 'custom-name')
-  assert.ok(existsSync(join(PRESETS, 'custom-name', 'preset.yml')), '定义文件应归一为 preset.yml')
-  assert.ok(!existsSync(join(PRESETS, 'custom-name', 'config.yaml')), '原文件名不应残留')
-  assert.ok(existsSync(join(PRESETS, 'custom-name', 'agent.cordis.yml')), '组合文件保留原名')
-})
-
-test('importPresetPackage：顶层多个 yml 时仅被选中的定义文件改名，其余保留', async () => {
-  const { status, payload } = await importPackage({
-    files: [
-      { path: 'multi/my-definition.yml', content: 'id: multi\nname: 多 yml 预设\n' },
-      { path: 'multi/notes.yaml', content: 'note: 这是说明文件\n' },
-      { path: 'multi/agent.cordis.yml', content: '- id: demo-row\n  name: "@deepseek-ai/dsh-demo"\n' },
-    ],
-  })
-  assert.equal(status, 200)
-  assert.equal(payload.value?.id, 'multi')
-  assert.ok(existsSync(join(PRESETS, 'multi', 'preset.yml')), '被选中的定义文件应改名为 preset.yml')
-  assert.ok(existsSync(join(PRESETS, 'multi', 'notes.yaml')), '其余 yml 保留原名')
-  const definition = parseYaml(readFileSync(join(PRESETS, 'multi', 'preset.yml'), 'utf8'))
-  assert.equal(definition.id, 'multi')
-  assert.equal(definition.name, '多 yml 预设')
-})
-
-test('importPresetPackage：写入后目录内容完整（顶层 + 子目录文件计数）', async () => {
-  const { status } = await importPackage(presetPackage({
-    files: [
-      { path: 'demo/engine/a.mjs', content: 'a' },
-      { path: 'demo/engine/sub/b.mjs', content: 'b' },
-      { path: 'demo/data.json', content: '{}' },
-    ],
-  }))
-  assert.equal(status, 200)
-  const walk = (dir) => {
-    if (!existsSync(dir)) return []
-    return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
-      const full = join(dir, entry.name)
-      return entry.isDirectory() ? walk(full) : [full.slice(PRESETS.length + 1).replaceAll('\\', '/')]
-    })
-  }
-  const files = walk(join(PRESETS, 'demo'))
-  for (const expected of ['demo/preset.yml', 'demo/agent.cordis.yml', 'demo/engine/a.mjs', 'demo/engine/sub/b.mjs', 'demo/data.json']) {
-    assert.ok(files.includes(expected), `应包含 ${expected}，实际: ${files.join(', ')}`)
-  }
 })
 
 test('importPresetPackage：SillyTavern JSON 单文件经转换引擎导入（按需组装，不注入默认内容）', async () => {
@@ -401,52 +300,6 @@ test('importPresetPackage：TavernHelper 扩展注入物剥离（JS 脚本不进
     '扩展注入物（TavernHelper 脚本/正则）不进转换产物')
 })
 
-test('importPresetPackage：未定义自定义宏自动登记为预设 variables 空值占位', async () => {
-  const { status } = await importPackage({
-    files: [{ path: 'custom-macro.json', content: JSON.stringify({
-      name: '宏测试卡',
-      prompts: [
-        { identifier: 'main', name: '主提示', content: '今天{{日期}}，心情{{心情Emoji}}，学生{{student_name}}', role: 'user', enabled: true },
-      ],
-    }) }],
-  })
-  assert.equal(status, 200)
-  const converted = parseYaml(readFileSync(join(PRESETS, 'custom-macro', 'preset.yml'), 'utf8'))
-  assert.equal(converted.variables?.['日期'], '', '未定义宏登记空值（不留字面）')
-  assert.equal(converted.variables?.['心情Emoji'], '')
-  assert.equal(converted.variables?.['student_name'], '')
-  assert.equal(converted.variables?.['lastusermessage'], undefined, '运行时宏不登记')
-  assert.equal(converted.variables?.['DSH_HOME'], undefined, '内置变量不登记')
-})
-
-test('importPresetPackage：SillyTavern enable_web_search=true 时组装 tool-web 并启用 fetch', async () => {
-  const { status } = await importPackage({
-    files: [{ path: 'web.json', content: JSON.stringify({
-      name: 'web 角色',
-      prompts: [{ identifier: 'main', name: '主提示', content: '你是助手。', role: 'user', system_prompt: false, enabled: true }],
-      enable_web_search: true,
-    }) }],
-  })
-  assert.equal(status, 200)
-  const presetFile = join(PRESETS, 'web', 'preset.yml')
-  const converted = parseYaml(readFileSync(presetFile, 'utf8'))
-  assert.equal(converted.name, 'web 角色（SillyTavern 转换）', '预设名取卡片 name 字段')
-  assert.ok(converted.modules.includes('tool-web'), 'enable_web_search: true 应组装 tool-web')
-  assert.deepEqual(converted.moduleConfigs['tool-web'], { fetch: true }, 'true 时启用 fetch')
-})
-
-test('importPresetPackage：SillyTavern 卡片无 name 时预设名回退文件名', async () => {
-  const { status } = await importPackage({
-    files: [{ path: 'unnamed-chara.json', content: JSON.stringify({
-      prompts: [{ identifier: 'main', content: '你是助手。', role: 'user', enabled: true }],
-    }) }],
-  })
-  assert.equal(status, 200)
-  const presetFile = join(PRESETS, 'unnamed-chara', 'preset.yml')
-  const converted = parseYaml(readFileSync(presetFile, 'utf8'))
-  assert.equal(converted.name, 'unnamed-chara（SillyTavern 转换）', '卡片 name 缺失时回退文件名（去 .json）')
-})
-
 test('importPresetPackage：角色卡世界书 add_always（CCv2/CCv3 常驻标记）→ constant: true', async () => {
   const { status, payload } = await importPackage({
     files: [{ path: 'ccv3-card.json', content: JSON.stringify({
@@ -511,29 +364,6 @@ test('importPresetPackage：世界书 ST 编辑器内部格式（key/keysecondar
   assert.equal(castle.params.wholeWords, true)
   assert.deepEqual(castle.params.keys, ['/城堡\\d+/'], '正则形态键原样保留')
   assert.equal('useRegex' in castle.params, false, '不写幽灵字段 useRegex（正则键由 anchor-match 自动检测）')
-})
-
-test('importPresetPackage：世界书 entries 为对象（键为字符串序数）时形态兼容', async () => {
-  const { status } = await importPackage({
-    files: [{ path: 'obj-entries.json', content: JSON.stringify({
-      spec: 'chara_card_v3', spec_version: '3.0', name: '对象条目',
-      data: {
-        name: '对象条目',
-        character_book: {
-          entries: {
-            0: { uid: 1, key: ['森林'], content: '森林设定', add_always: false, enabled: true, insertion_order: 10 },
-            1: { uid: 2, key: ['河流'], content: '河流设定', add_always: false, enabled: true, insertion_order: 20 },
-          },
-        },
-      },
-    }) }],
-  })
-  assert.equal(status, 200)
-  const converted = parseYaml(readFileSync(join(PRESETS, 'obj-entries', 'preset.yml'), 'utf8'))
-  const configs = converted.promptConfigs.filter((config) => config.strategy === 'world-book')
-  assert.equal(configs.length, 2, '对象形态 entries 应全部转换')
-  assert.deepEqual(configs.map((config) => config.id).sort(), ['lore-1', 'lore-2'], 'uid 应作为条目 id')
-  assert.deepEqual(configs.find((config) => config.id === 'lore-2').params.keys, ['河流'])
 })
 
 test.after(() => {

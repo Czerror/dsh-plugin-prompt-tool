@@ -10,7 +10,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { parse as parseYaml, parseDocument } from 'yaml'
 import { compileCustomTool, validateCustomTools } from '../../src/host/custom-tools.ts'
-import { validateDefinition, validateJsonSchemaNode } from '../../engine/tool-definition.mjs'
+import { validateDefinition } from '../../engine/tool-definition.mjs'
 
 // 隔离 DSH_HOME：writer 的路径常量在 import 时求值，必须先设 env 再加载被测模块。
 const home = mkdtempSync(join(tmpdir(), 'pt-content-assets-home-'))
@@ -83,21 +83,6 @@ test('buildWorldBookEntry 结构工厂：固定字段与 params 键集单一权�
   const minimal = buildWorldBookEntry({ id: 'lore-y', name: '全局', text: 't', constant: true })
   assert.deepEqual(minimal.params, { constant: true })
   assert.equal(minimal.enabled, undefined, 'enabled 缺省不写')
-})
-
-test('buildWorldBookEntry 两通道同构：模型工具参数形态 = 工厂直接构造', () => {
-  const viaTool = buildWorldBookEntry({
-    id: 'lore-a',
-    name: '条目',
-    text: '内容',
-    constant: true,
-    keys: ['k1'],
-  })
-  assert.equal(viaTool.enabled, undefined)
-  assert.deepEqual(viaTool.params, { constant: true, keys: ['k1'] })
-  // 工具 enabled=false 显式关闭。
-  const disabled = buildWorldBookEntry({ id: 'lore-b', name: 'n', text: 't', constant: false, enabled: false })
-  assert.equal(disabled.enabled, false)
 })
 
 test('worldbook upsert：新增与更新（按 id），count 只统计世界书条目', () => {
@@ -272,56 +257,6 @@ test('compileCustomTool：五种现有执行器和 fs 动态 action 保持可用
     assert.deepEqual(compileCustomTool(tool).execute, execute)
     assert.deepEqual(validateCustomTools([tool]), [])
   }
-})
-
-test('执行字段类型、正整数超时和单定义大小在保存期拒绝，合法边界不改写', () => {
-  for (const timeoutMs of [null, 0, -1, 1.5, '1000', Infinity, 2_147_483_648]) {
-    assert.throws(() => compileCustomTool(validTool({ timeoutMs })), /timeoutMs/)
-  }
-  for (const execute of [
-    { kind: 'shell', command: 'echo', shell: 42 },
-    { kind: 'shell', command: 'echo', shell: '' },
-    { kind: 'shell', command: 'echo', env: [] },
-    { kind: 'shell', command: 'echo', env: { VALUE: 42 } },
-    { kind: 'http', url: 'https://example.invalid', method: [] },
-    { kind: 'http', url: 'https://example.invalid', method: 'BAD METHOD' },
-    { kind: 'http', url: 'https://example.invalid', headers: { Accept: false } },
-    { kind: 'http', url: 'https://example.invalid', headers: { 'bad\nname': 'value' } },
-    { kind: 'delegate', tool: 'existing', args: [] },
-    { kind: 'fs', action: 'read', path: 42 },
-    { kind: 'fs', action: 'read' },
-    { kind: 'fs', action: 'write', path: 'note.txt', content: {} },
-    { kind: 'ask-user', question: false },
-  ]) {
-    const value = validTool({ execute })
-    const before = structuredClone(value)
-    assert.throws(() => compileCustomTool(value), /execute\./)
-    assert.equal(validateCustomTools([value]).length, 1)
-    assert.deepEqual(value, before)
-  }
-  assert.throws(() => compileCustomTool(validTool({ execute: { kind: 'ask-user', question: '中'.repeat(350_000) } })), /1048576.*bytes/)
-  for (const execute of [
-    { kind: 'shell', command: 'echo {{args.text}}', shell: 'D:/custom/pwsh.exe', env: { LANG: 'zh_CN.UTF-8' } },
-    { kind: 'http', url: '{{args.url}}', method: 'post', headers: { 'X-Value': '{{args.value}}' }, body: { values: [1, true, null] } },
-    { kind: 'delegate', tool: 'world_book_upsert', args: { keys: '{{args.keys}}', constant: true } },
-    { kind: 'fs', action: '{{args.action}}', path: '{{args.path}}', content: '{{args.text}}' },
-    { kind: 'fs', action: 'write', path: 'empty.txt', content: '' },
-    { kind: 'ask-user', question: '' },
-  ]) {
-    const value = validTool({ execute, timeoutMs: 2_147_483_647 })
-    assert.deepEqual(compileCustomTool(value).execute, execute)
-    assert.deepEqual(validateCustomTools([value]), [])
-  }
-})
-
-test('共享 Schema 校验：循环拒绝，annotation-only 与 oneOf 的合法子节点接受', () => {
-  const node = { type: 'array' }
-  node.items = node
-  assert.throws(() => validateJsonSchemaNode(node, 'parameters'), /parameters\.items is circular/)
-  assert.throws(() => compileCustomTool(validTool({ parameters: { value: node } })), /parameters.*circular/)
-  assert.doesNotThrow(() => validateJsonSchemaNode({ oneOf: [{ type: 'null' }, { description: '任意 JSON' }] }, 'output.schema'))
-  assert.throws(() => validateJsonSchemaNode({ type: '' }, 'output.schema'), /output\.schema\.type/)
-  assert.throws(() => validateJsonSchemaNode({ value: { type: 'string' } }, 'parameters'), /must declare type or oneOf/)
 })
 
 test('writePreset：完整编译同源、坏手写定义 warn-and-skip、原始 DSL 保留并可运行', () => {

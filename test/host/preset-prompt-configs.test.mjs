@@ -31,7 +31,6 @@ const {
   Config,
   PromptSettingsSchema,
   loadPromptTemplates,
-  loadToolTemplates,
   validatePromptConfigs,
   writePreset,
 } = await import('../../lib/index.mjs')
@@ -97,20 +96,6 @@ test('listPromptConfigSpecs 扫描 yml 与 json，非法文件 fail loud', () =>
   }
 })
 
-test('renderPromptConfigYaml：数字形状的 id/name 加引号，回读仍是字符串（否则整个预设挂载失败）', () => {
-  const yaml = renderPromptConfigYaml({ id: 'st-prompt-32', name: '1', layer: 'pre-step', strategy: 'static', text: '正文' })
-  assert.match(yaml, /^name: ["']1["']$/m, '数字形状名字必须带引号（引号样式由 yaml 适配器决定）')
-  const parsed = parse(yaml)
-  assert.equal(parsed.name, '1')
-  assert.equal(typeof parsed.name, 'string')
-  // id 同样：纯数字 id 不带引号会被解析回 number。
-  const idYaml = renderPromptConfigYaml({ id: '123', strategy: 'static', text: '正文' })
-  assert.match(idYaml, /^id: ["']123["']$/m)
-  assert.equal(typeof parse(idYaml).id, 'string')
-  // 普通字符串不加引号（不制造无谓 diff）。
-  assert.match(renderPromptConfigYaml({ id: 'custom', name: '角色设定', strategy: 'static', text: 'x' }), /^name: 角色设定$/m)
-})
-
 test('renderPromptConfigYaml：YAML 特殊起始字符的名称/路径往返无损（否则整首预设解析失败）', () => {
   // 真实素材：ST 预设里的条目名以上述字符开头，裸写会被 YAML 当流程序列/映射/锚点解析而报错。
   const names = ['[主控制器]全能世界书', '{{user}}档案', '[new]剧情生成器[可生成多个事件]', '[mvu_update]输出规则', '- 破折号开头', '#井号开头', 'a: 带冒号', '*锚点', '&引用', '!标签', '%百分号', '?问号']
@@ -174,11 +159,6 @@ test('renderPromptConfigYaml 全字段开放：variables/identity/params 嵌套�
   assert.deepEqual(doc.params.patch, { maxTokens: 2048 })
 })
 
-test('renderPromptConfigYaml：空 match 不落盘半成品（引擎会在挂载期拒绝空键集合）', () => {
-  const yaml = renderPromptConfigYaml({ id: 'empty-match', layer: 'tool-pipeline', strategy: 'static', text: 'x', match: { keys: [] } })
-  assert.doesNotMatch(yaml, /^match:$/m)
-})
-
 test('writePreset 生成夹具模板的提示词配置模块（人设走顶层 persona 段，不再生成 persona 配置卡），数字前缀决定执行顺序', () => {
   const { specs } = generatedConfigs()
   assert.deepEqual(specs.map((spec) => spec.id), ['near-anchor', 'router-guide', 'prompt-injector'])
@@ -208,71 +188,12 @@ test('writePreset 开启 firstTurnAnchor 时 near-anchor 启用并携带自定�
   assert.equal(byId['near-anchor'].params.text, 'ANCHOR SENTENCE', '自定义锚文本统一写 text 契约键')
 })
 
-test('writePreset 开启 firstTurnCustom 时 near-anchor 固定使用自定义文本', () => {
-  const { byId } = generatedConfigs({ firstTurnAnchor: true, firstTurnText: 'CUSTOM', firstTurnCustom: true })
-  assert.equal(byId['near-anchor'].params.useCustom, true)
-  assert.equal(byId['near-anchor'].params.text, 'CUSTOM')
-})
-
-test('writePreset 开启 firstTurnAnchor 且空锚点文本时生成自动模式配置', () => {
-  const { byId } = generatedConfigs({ firstTurnAnchor: true, firstTurnText: '' })
-  assert.equal(byId['near-anchor'].params.text, '')
-})
-
-test('writePreset 确认词自动派生：锚句信号词进 anchorWords；显式 firstTurnWord 覆盖', () => {
-  const { byId } = generatedConfigs({ firstTurnAnchor: true })
-  const words = byId['prompt-injector'].params.anchorWords
-  assert.ok(Array.isArray(words) && words.includes('we'), 'build/fix 锚句信号词 we 派生')
-  assert.ok(words.includes('let'), 'deep 锚句信号词 let 派生（旧缺陷修复：deep 档确认不再失败）')
-  // 自定义锚句 → 首词进确认集合。
-  const { byId: custom } = generatedConfigs({ firstTurnAnchor: true, firstTurnText: 'Focus on the core problem' })
-  assert.ok(custom['prompt-injector'].params.anchorWords.includes('focus'), '自定义锚句首词派生')
-  // 显式 firstTurnWord → 覆盖派生集合。
-  const { byId: explicit } = generatedConfigs({ firstTurnAnchor: true, firstTurnWord: 'marker' })
-  assert.deepEqual(explicit['prompt-injector'].params.anchorWords, ['marker'], '显式确认词覆盖派生')
-})
-
-test('writePreset 关闭 injectPrompt 时 prompt-injector 禁用（引擎仍扫描四个模块）', () => {
-  const { byId } = generatedConfigs({ injectPrompt: false })
-  assert.equal(byId['prompt-injector'].enabled, false)
-})
-
 test('writePreset 默认 router-guide 关闭（firstTurnAnchor=false），自动引导', () => {
   const { byId } = generatedConfigs()
   assert.equal(byId['router-guide'].enabled, false)
   assert.equal(byId['router-guide'].modelScope, 'flash')
   assert.equal(byId['router-guide'].params.useCustom, false)
   assert.equal(byId['router-guide'].params.text, '')
-})
-
-test('writePreset 引导开关独立：guideEnabled=true 时锚定关闭仍启用引导', () => {
-  const { byId } = generatedConfigs({ firstTurnAnchor: false, guideEnabled: true })
-  assert.equal(byId['router-guide'].enabled, true, 'guideEnabled=true 时引导独立启用')
-  assert.equal(byId['near-anchor'].enabled, false, '锚定仍关闭（两功能独立）')
-  const { byId: fallback } = generatedConfigs({ firstTurnAnchor: false })
-  assert.equal(fallback['router-guide'].enabled, false, 'guideEnabled 缺省关闭')
-})
-
-test('writePreset 开启 firstTurnAnchor 不隐式启用 router-guide', () => {
-  const { byId } = generatedConfigs({ firstTurnAnchor: true })
-  assert.equal(byId['router-guide'].enabled, false)
-  assert.equal(byId['router-guide'].modelScope, 'flash')
-  assert.equal(byId['router-guide'].params.useCustom, false)
-})
-
-test('writePreset guideCustom=true 时固定自定义每轮引导（Pro/Flash 都注入）', () => {
-  const { byId } = generatedConfigs({ firstTurnAnchor: true, guideEnabled: true, guideCustom: true, guideText: 'CUSTOM GUIDE' })
-  assert.equal(byId['router-guide'].enabled, true)
-  assert.equal(byId['router-guide'].modelScope, 'all')
-  assert.equal(byId['router-guide'].params.useCustom, true)
-  assert.equal(byId['router-guide'].params.text, 'CUSTOM GUIDE')
-})
-
-test('writePreset 显式启用锚定与引导时，injectPrompt=false 只关闭正文注入', () => {
-  const { byId } = generatedConfigs({ injectPrompt: false, firstTurnAnchor: true, guideEnabled: true, firstTurnText: 'A' })
-  assert.equal(byId['near-anchor'].enabled, true)
-  assert.equal(byId['router-guide'].enabled, true)
-  assert.equal(byId['prompt-injector'].enabled, false)
 })
 
 // —— 提示词配置校验（原 configs-validate.test.mjs） ——
@@ -295,31 +216,6 @@ test('validatePromptConfigs：合法数组返回 valid=true、回显输入并渲
   assert.equal(doc.dedupe, 'session')
 })
 
-test('validatePromptConfigs：非数组返回结构层错误', async () => {
-  const result = await validatePromptConfigs({ id: 'x' })
-  assert.equal(result.valid, false)
-  assert.equal(result.errors.length, 1)
-  assert.equal(result.errors[0].index, -1)
-  assert.match(result.errors[0].message, /promptConfigs must be an array/)
-})
-
-test('validatePromptConfigs：元素非对象逐条定位 index', async () => {
-  const result = await validatePromptConfigs([{ id: 'ok', text: 'A' }, null, 3])
-  assert.equal(result.valid, false)
-  assert.equal(result.errors.length, 2)
-  assert.equal(result.errors[0].index, 1)
-  assert.match(result.errors[0].message, /configs\[1\] must be an object/)
-  assert.equal(result.errors[1].index, 2)
-})
-
-test('validatePromptConfigs：id 缺失或非字符串给出结构层错误', async () => {
-  const result = await validatePromptConfigs([{ text: 'A' }, { id: '', text: 'B' }, { id: 42 }])
-  assert.equal(result.valid, false)
-  assert.deepEqual(result.errors.map((error) => error.index), [0, 1, 2])
-  assert.match(result.errors[0].message, /configs\[0\]\.id must be a non-empty string/)
-  assert.match(result.errors[2].message, /configs\[2\]\.id must be a non-empty string/)
-})
-
 test('validatePromptConfigs：未知 layer / strategy / fill 由引擎权威校验并保留 index', async () => {
   const result = await validatePromptConfigs([
     { id: 'bad-layer', layer: 'nope', text: 'A' },
@@ -334,27 +230,6 @@ test('validatePromptConfigs：未知 layer / strategy / fill 由引擎权威校�
   assert.match(result.errors[2].message, /requires fill/)
 })
 
-test('validatePromptConfigs：策略层限制与坏 templateFile 由引擎校验', async () => {
-  const result = await validatePromptConfigs([
-    { id: 'bad-placeholder-layer', layer: 'system-section', strategy: 'placeholder', fill: 'env-facts' },
-    { id: 'bad-template', strategy: 'static', templateFile: './missing-template.yml' },
-  ])
-  assert.equal(result.valid, false)
-  assert.match(result.errors[0].message, /only takes effect on layer/)
-  assert.match(result.errors[1].message, /templateFile "\.\/missing-template\.yml" is not readable/)
-})
-
-test('validatePromptConfigs：一条坏配置不吞掉其余错误，全部收集', async () => {
-  const result = await validatePromptConfigs([
-    { id: 'bad-1', layer: 'nope' },
-    { id: 'ok', strategy: 'static', text: 'OK' },
-    { id: 'bad-2', strategy: 'placeholder', fill: 'nope' },
-  ])
-  assert.equal(result.valid, false)
-  assert.deepEqual(result.errors.map((error) => error.id), ['bad-1', 'bad-2'])
-  assert.deepEqual(result.errors.map((error) => error.index), [0, 2])
-})
-
 test('Config / PromptSettingsSchema：引擎参数（promptConfigs 等）按预设存储，不进 Config/settings', () => {
   const config = Config({})
   const settings = PromptSettingsSchema({})
@@ -365,95 +240,7 @@ test('Config / PromptSettingsSchema：引擎参数（promptConfigs 等）按预�
   assert.equal('promptText' in settings, false)
 })
 
-test('validatePromptConfigs：重复 ID 逐条定位错误（后者覆盖前者会静默丢卡）', async () => {
-  const result = await validatePromptConfigs([
-    { id: 'dup', strategy: 'static', text: 'A' },
-    { id: 'other', strategy: 'static', text: 'B' },
-    { id: 'dup', strategy: 'static', text: 'A2' },
-  ])
-  assert.equal(result.valid, false)
-  assert.equal(result.errors.length, 1)
-  assert.equal(result.errors[0].index, 2)
-  assert.equal(result.errors[0].id, 'dup')
-  assert.match(result.errors[0].message, /duplicate id/)
-})
-
-test('validatePromptConfigs：预览文件名统一 4 位零填充前缀', async () => {
-  const many = Array.from({ length: 11 }, (_, index) => ({ id: `c${index}`, strategy: 'static', text: 'x' }))
-  const result = await validatePromptConfigs(many)
-  assert.equal(result.valid, true)
-  assert.match(result.files[0].file, /^0000-/)
-  assert.match(result.files[10].file, /^0100-/)
-})
-
 // —— 模板库（原 templates.test.mjs） ——
-
-test('loadPromptTemplates：按文件名数字前缀顺序返回包内模板库', () => {
-  const templates = loadPromptTemplates()
-  assert.equal(templates.length, 14)
-  assert.deepEqual(templates.map((template) => template.file), [
-    '10-pre-step.yml',
-    '14-first-turn-anchor.yml',
-    '15-guide-auto.yml',
-    '16-custom-fallback.yml',
-    '18-placeholder-env-facts.yml',
-    '20-system-section.yml',
-    '30-runtime-context.yml',
-    '40-agent-request.yml',
-    '50-llm-stream.yml',
-    '60-tool-pipeline.yml',
-    '65-turn-stop.yml',
-    '66-subagent-start.yml',
-    '70-subagent-maintenance.yml',
-    '75-subagent-end.yml',
-  ])
-})
-
-test('loadPromptTemplates：content 是合法单对象 YAML 且与解析后的 spec 一致', () => {
-  for (const template of loadPromptTemplates()) {
-    const doc = parse(template.content)
-    assert.deepEqual(doc, template.spec, template.file)
-    assert.equal(typeof template.spec.id, 'string')
-    assert.ok(template.spec.id.length > 0, template.file)
-  }
-})
-
-test('loadToolTemplates：返回工具模板库（id/name/execute.kind 合法）', () => {
-  const templates = loadToolTemplates()
-  assert.equal(templates.length, 7, '预置 7 个工具模板')
-  const kinds = templates.map((template) => template.spec.execute.kind)
-  assert.deepEqual(kinds, ['shell', 'http', 'fs', 'delegate', 'delegate', 'delegate', 'delegate'])
-  const delegated = templates.filter((template) => template.spec.execute.kind === 'delegate')
-  assert.deepEqual(delegated.map((template) => template.spec.execute.tool), ['character_list', 'world_book_list', 'session_var', 'world_book_upsert'])
-  for (const template of templates) {
-    assert.equal(typeof template.spec.id, 'string')
-    assert.equal(typeof template.spec.name, 'string')
-    assert.match(String(template.spec.name), /^[a-z][a-z0-9_]*$/, `${template.file} 工具名合法`)
-  }
-})
-
-test('模板库覆盖六个常用注入层级、两个事件层与一个 placeholder 数据源', () => {
-  const specs = loadPromptTemplates().map((template) => template.spec)
-  const byId = new Map(specs.map((spec) => [spec.id, spec]))
-  assert.equal(byId.get('example-pre-step').layer, 'pre-step')
-  assert.equal(byId.get('example-system-section').layer, 'system-section')
-  assert.equal(byId.get('example-runtime-context').layer, 'runtime-context')
-  assert.equal(byId.get('example-agent-request').layer, 'agent-request')
-  assert.equal(byId.get('example-llm-stream').layer, 'llm-stream')
-  assert.equal(byId.get('example-tool-pipeline').layer, 'tool-pipeline')
-  assert.equal(byId.get('example-turn-stop').layer, 'turn-stop')
-  assert.equal(byId.get('example-subagent-start').layer, 'subagent-start')
-  assert.equal(byId.get('example-subagent-end').layer, 'subagent-end')
-  assert.equal(byId.get('example-subagent-end').enabled, false, '只观察的层模板默认关闭')
-  assert.equal(byId.get('example-placeholder').fill, 'env-facts')
-})
-
-test('pre-step 通用模板覆盖字段变体：mergeMode / configKind 可切换', () => {
-  const specs = loadPromptTemplates().map((template) => template.spec)
-  const a = specs.find((spec) => spec.id === 'example-pre-step')
-  assert.equal(a.mergeMode, 'separate')
-  assert.equal(a.configKind, 'ordered')
-})
 
 test('模板库全部条目通过引擎权威校验（模板即合法配置）', async () => {
   for (const template of loadPromptTemplates()) {

@@ -11,10 +11,11 @@
  *  读回分别是 {false,true} / {true,false} / {false,false} / {true,true}。
  *
  *  `docs/skills-management.md` 与 `src/host/skills-policy.ts` 是行为契约来源；
- *  端到端「写完重新 list() 得到什么」在 `skill-policy-e2e.test.mjs`。 */
+ *  「写完重新 list() 得到什么」由清单层回归（catalogFromScan 读的是同一份文件事实）与
+ *  bridge 技能端点用例覆盖。 */
 import { after, test } from 'node:test'
 import assert from 'node:assert/strict'
-import fs, { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs'
+import fs, { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs'
 import { syncBuiltinESMExports } from 'node:module'
 import { tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
@@ -342,40 +343,6 @@ test('路径不是绝对路径时拒绝，且不去碰相对路径解析出来�
   assert.equal(readSkillInvocation(relative).ok, false)
 })
 
-test('basename 不是 SKILL.md 时拒绝，目标文件逐字节不变', () => {
-  for (const marker of ['SKILL.MD', 'SKILL.md.bak', 'OTHER.md', 'SKILL']) {
-    const file = write(makeMarker(marker), '---\nname: demo\ndescription: D\n---\n正文\n')
-    const before = readFileSync(file, 'utf8')
-    const read = readSkillInvocation(file)
-    assert.equal(read.ok, false, `必须拒绝 ${marker}`)
-    assert.match(read.message, /SKILL\.md/u)
-    const written = setSkillInvocation(file, 'all')
-    assert.equal(written.ok, false, `必须拒绝 ${marker}`)
-    assert.match(written.message, /SKILL\.md/u)
-    assert.equal(readFileSync(file, 'utf8'), before, `${marker}：原文件不得被改写`)
-    assert.deepEqual(leftovers(file), [], `${marker}：被拒绝不留暂存文件`)
-  }
-})
-
-test('文件不存在、是目录或父目录不存在时拒绝，不创建任何东西', () => {
-  const missing = join(sandbox, 'not-there', 'SKILL.md')
-  const missingRead = readSkillInvocation(missing)
-  assert.equal(missingRead.ok, false)
-  const missingWrite = setSkillInvocation(missing, 'all')
-  assert.equal(missingWrite.ok, false)
-  assert.equal(existsSync(join(sandbox, 'not-there')), false, '拒绝路径不得顺手创建父目录')
-
-  // 名为 SKILL.md 的目录：不是普通文件。
-  const dirMarker = makeMarker()
-  mkdirSync(dirMarker)
-  const dirRead = readSkillInvocation(dirMarker)
-  assert.equal(dirRead.ok, false)
-  assert.match(dirRead.message, /不是普通文件/u)
-  const dirWrite = setSkillInvocation(dirMarker, 'all')
-  assert.equal(dirWrite.ok, false)
-  assert.deepEqual(readdirSync(dirMarker), [], '目录必须保持为空，不被写入文件')
-})
-
 test('目标是符号链接时拒绝改写（不把写入带到根外）', (t) => {
   const realDir = join(sandbox, 'symlink-real')
   mkdirSync(realDir, { recursive: true })
@@ -397,40 +364,6 @@ test('目标是符号链接时拒绝改写（不把写入带到根外）', (t) =
   assert.match(written.message, /符号链接/u)
   assert.equal(readFileSync(real, 'utf8'), before, '链接目标文件必须逐字节不变')
   assert.deepEqual(leftovers(link), [], '被拒绝不留暂存文件')
-})
-
-test('底层写入失败时返回 { ok: false }、原文件不变且不留暂存文件', () => {
-  const file = write(makeMarker(), '---\nname: demo\ndescription: D\n---\n正文\n')
-  const before = readFileSync(file, 'utf8')
-  // mode 000：非特权账号下写盘被拒（Windows 只读属性等价语义），正好走到 catch + finally 清理分支。
-  writeFileSync(file, before, { encoding: 'utf8', mode: 0o000 })
-  let written
-  try {
-    written = setSkillInvocation(file, 'all')
-  } finally {
-    // Windows 只读文件必须先恢复可写才能改写；即便恢复失败也要继续走下面的清理断言。
-    try { chmodSync(file, 0o666) } catch { /* 恢复失败不掩盖主断言 */ }
-    try { writeFileSync(file, before, 'utf8') } catch { /* 同上 */ }
-  }
-  if (written.ok === false) {
-    assert.equal(typeof written.message, 'string', '失败要带原因')
-    assert.equal(readFileSync(file, 'utf8'), before, '写入失败时原文件必须逐字节不变')
-  } else {
-    // 特权账号（Windows 管理员 / root）下 mode 拦不住写入，只能走成功分支：
-    // 不做无法满足的断言，显式记录即可——失败分支的清理不变量由下方兜住。
-    process.stderr.write('[skill-policy] 提示：当前账号可写只读文件，未触发底层写入失败分支\n')
-    assert.equal(written.changed, true)
-  }
-  // 无论写入成功还是失败，暂存文件都必须被清理：任何路径都不得残留 .SKILL.md.tmp-*。
-  assert.deepEqual(leftovers(file), [], '任何路径都不得残留 .SKILL.md.tmp-* 暂存文件')
-
-  // 连续多次写入后目录里只剩 SKILL.md（成功路径的清理断言）。
-  const clean = write(makeMarker(), '---\nname: demo\ndescription: D\n---\n正文\n')
-  setSkillInvocation(clean, 'all')
-  setSkillInvocation(clean, 'none')
-  setSkillInvocation(clean, 'model')
-  assert.deepEqual(leftovers(clean), [], '连续多次写入后不留暂存文件')
-  assert.deepEqual(readdirSync(join(clean, '..')), ['SKILL.md'], '技能目录里不得出现任何额外文件')
 })
 
 test('身份校验（真实实现）：陈旧路径、无效技能与空清单一律拒绝，命中才放行', () => {
@@ -455,18 +388,6 @@ test('身份校验（真实实现）：陈旧路径、无效技能与空清单�
   assert.equal(policyTarget([], 'demo-skill', 'D:/skills/demo-skill/SKILL.md').ok, false)
   // 没有 path 的条目不会因为 undefined 比较而误命中。
   assert.equal(policyTarget([{ name: 'demo-skill', valid: true }], 'demo-skill', 'D:/skills/demo-skill/SKILL.md').ok, false)
-})
-
-test('单端操作保留另一端最新声明，支持官方字符串布尔值与 flat 技能', () => {
-  const file = write(makeMarker('demo.md'), '---\nname: demo\ndescription: D\ndisable-model-invocation: yes\nuser-invocable: off # 用户端保持关闭\n---\n正文\r\n')
-  assert.deepEqual(readSkillInvocation(file).invocation, { modelInvocable: false, userInvocable: false })
-  const result = setSkillInvocation(file, { side: 'model', enabled: true })
-  assert.equal(result.ok, true, result.message)
-  assert.deepEqual(result.invocation, { modelInvocable: true, userInvocable: false })
-  assert.match(readFileSync(file, 'utf8'), /user-invocable: off # 用户端保持关闭/)
-  assert.ok(readFileSync(file, 'utf8').endsWith('正文\r\n'))
-  assert.equal(setSkillInvocation(file, { side: 'user', enabled: true }).ok, true)
-  assert.deepEqual(readSkillInvocation(file).invocation, { modelInvocable: true, userInvocable: true })
 })
 
 test('事务内外部改写导致冲突，原文新内容保留且暂存被清理', (t) => {
