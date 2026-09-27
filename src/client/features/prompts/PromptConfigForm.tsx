@@ -141,7 +141,7 @@ export function PromptConfigForm(props: {
       </div>
       </section>}
 
-      <PromptConfigNavigation t={t} layer={config.layer ?? 'pre-step'} renderLayerSettings={locked || props.renderLayerSettings === undefined ? undefined : () => <>
+      <PromptConfigNavigation t={t} layer={config.layer ?? 'pre-step'} flat={locked} renderLayerSettings={locked || props.renderLayerSettings === undefined ? undefined : () => <>
         <h4 className={styles.configSectionTitle}>{t('form.layerSettings.label', { layer: translateLabel(t, LAYER_LABEL_KEYS, config.layer ?? 'pre-step') })}</h4>
         <p className={styles.configFieldHint}>{t('form.layerSettings.hint', { layer: translateLabel(t, LAYER_LABEL_KEYS, config.layer ?? 'pre-step') })}</p>
         <div className={styles.configGrid}>{props.renderLayerSettings?.(config.layer ?? 'pre-step', config)}</div>

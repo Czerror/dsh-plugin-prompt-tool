@@ -8,6 +8,8 @@ export function PromptConfigNavigation(props: {
   t: PromptToolTranslate
   children: ReactNode
   layer: string
+  /** 上方没有可分隔的身份区（指令文件卡）时去掉分区横线与顶部留白。 */
+  flat?: boolean
   renderLayerSettings?: () => ReactNode
 }): ReactNode {
   const id = useId()
@@ -42,7 +44,7 @@ export function PromptConfigNavigation(props: {
     if (key === 'settings') setVisitedSettings(props.layer)
     setSelected(key)
   }
-  return <div ref={root} className={styles.configNavigation}>
+  return <div ref={root} className={props.flat === true ? `${styles.configNavigation} ${styles.configNavigationFlat}` : styles.configNavigation}>
     <div role="tablist" aria-label={props.t('form.navigation.label')} aria-orientation={horizontal ? 'horizontal' : 'vertical'} className={styles.configTabs}>
       {panels.map((panel, index) => <button key={panel.key} type="button" role="tab" id={`${id}-tab-${panel.key}`}
         data-config-tab={panel.key} aria-controls={`${id}-panel-${panel.key}`} aria-selected={active === panel.key}
