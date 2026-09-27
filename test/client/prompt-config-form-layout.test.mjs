@@ -113,16 +113,13 @@ test('模块卡以条件、执行和内容导航替换堆叠分区，面板保�
   const css = read('src/client/features/prompts/prompts.module.css')
   const html = renderElement(PromptConfigForm, formProps())
 
-  // 分区标题与字段标签：从「源码里有这个 t(...) 调用」升级为「渲染结果里真的出现这段文案」。
-  for (const section of ['basic', 'content', 'strategy']) {
-    assert.ok(html.includes(t(`form.section.${section}`)), `渲染结果缺分区标题 form.section.${section}`)
-  }
+  // 字段标签：断言渲染结果里真的出现这段文案，而不是源码里有这个 t(...) 调用。
   assert.ok(html.includes(t('form.kind.label')), '渲染结果缺「配置类型」字段标签')
   assert.ok(html.includes(t('form.audience.label')), '渲染结果缺「消息受众」字段标签')
 
   assert.doesNotMatch(html, /<details|<summary/)
   assert.ok(html.includes(t('form.advanced.label')), '元数据仍在内容面板内')
-  const tabs = [...html.matchAll(/<button[^>]*role="tab"[^>]*>/g)].map(match => match[0])
+  const tabs = [...html.matchAll(/<button[^>]*role="tab"[^>]*>(.*?)<\/button>/g)].map(match => match[0])
   assert.equal(tabs.length, 3)
   assert.equal(tabs.filter(tab => tab.includes('aria-selected="true"')).length, 1)
   assert.equal(tabs.filter(tab => tab.includes('tabindex="0"')).length, 1)
@@ -133,6 +130,10 @@ test('模块卡以条件、执行和内容导航替换堆叠分区，面板保�
   }
   assert.ok(html.includes(t('form.navigation.conditions')))
   assert.ok(html.includes(t('form.navigation.execution')))
+  // 面板 section 的 aria-label 就是页签文字来源：删掉它，页签会变成空胶囊（真实回归，见 .ai-memory/20260927）。
+  for (const key of ['form.navigation.conditions', 'form.navigation.execution', 'form.section.content']) {
+    assert.ok(tabs.some(tab => tab.includes(`>${t(key)}`)), `页签缺文字「${t(key)}」`)
+  }
   assert.match(html, /role="tabpanel"[^>]*hidden=""[^>]*data-config-view="execution"/)
 
   // 策略区是一个 fieldset，并带容器网格三件套类名（原先断言源码里的 clsx(...) 字面量）。

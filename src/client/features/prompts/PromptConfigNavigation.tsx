@@ -18,6 +18,11 @@ export function PromptConfigNavigation(props: {
   const [visitedSettings, setVisitedSettings] = useState<string>()
   const [horizontal, setHorizontal] = useState(false)
   const [invalid, setInvalid] = useState<string[]>([])
+  /**
+   * 页签名取自各面板元素自己的 `aria-label`：面板 section 用它声明自己的名字，导航据此取页签文字。
+   * 它是页签文字的唯一来源——删掉面板的 aria-label，页签会渲染成空胶囊（真实回归，见 .ai-memory/20260927）。
+   * 面板内因此不再渲染同名可见标题，界面上只有页签一处名字。
+   */
   const panels = Children.toArray(props.children).filter(isValidElement<{ 'data-config-panel': string; 'aria-label': string }>).map(child => ({
     key: child.props['data-config-panel'], label: child.props['aria-label'], content: child,
   }))

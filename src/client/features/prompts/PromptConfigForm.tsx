@@ -147,7 +147,6 @@ export function PromptConfigForm(props: {
         <div className={styles.configGrid}>{props.renderLayerSettings?.(config.layer ?? 'pre-step', config)}</div>
       </>}>
       {!locked && (conditional || policy.promotion || policy.audience || policy.modelScope) && <section className={styles.configSection} data-config-panel="conditions" aria-label={t('form.navigation.conditions')}>
-        <h4 className={styles.configSectionTitle}>{t('form.navigation.conditions')}</h4>
         <div className={styles.configGrid}>
           {policy.promotion && <OptionField t={t} className={styles.fieldSpan6} label={t('form.promotion.label')} hint={t('form.promotion.hint')} value={config.promotion} options={meta.promotions} fallback="none" labelKeys={PROMOTION_LABEL_KEYS} disabled={disabled} onChange={(value) => onPatch({ promotion: value })} />}
           {policy.audience && <OptionField t={t} className={styles.fieldSpan6} label={t('form.audience.label')} hint={t('form.audience.hint')} value={config.audience ?? undefined} options={['', ...meta.audienceModes]} fallback="" labelKeys={AUDIENCE_LABEL_KEYS} disabled={disabled} onChange={(value) => onPatch(value === '' ? { audience: null } : { audience: value })} />}
@@ -163,7 +162,6 @@ export function PromptConfigForm(props: {
         </div>
       </section>}
       {!locked && <section className={styles.configSection} data-config-panel="execution" aria-label={t('form.navigation.execution')}>
-      <h4 className={styles.configSectionTitle}>{t('form.navigation.execution')}</h4>
       <div className={styles.configGrid}>
         <OptionField t={t} className={styles.fieldSpan6} label={t('form.strategy.label')} hint={t('form.strategy.hint')} value={strategy} options={strategies} fallback="static" labelKeys={STRATEGY_LABEL_KEYS} disabled={locked || disabled} onChange={(value) => onPatch({ strategy: value, fill: value === 'placeholder' ? (config.fill ?? 'env-facts') : undefined })} />
         <OptionField t={t} className={styles.fieldSpan3} label={t('form.kind.label')} hint={t('form.kind.hint')} value={config.configKind} options={meta.slotKinds} fallback="ordered" labelKeys={SLOT_KIND_LABEL_KEYS} disabled={locked || disabled} onChange={(value) => onPatch({ configKind: value })} />
@@ -195,8 +193,6 @@ export function PromptConfigForm(props: {
       </section>}
 
       {(showContent || showMetadata) && <section className={styles.configSection} data-config-panel="content" aria-label={t('form.section.content')}>
-      {/* 指令文件卡的页签已写明「内容」，正文卡头已给出文件路径：不再重复分区标题。 */}
-      {!locked && <h4 className={styles.configSectionTitle}>{t('form.section.content')}</h4>}
       {showContent && <>
       {locked && textReadOnly && <p className={styles.configFieldHint}>{t('form.text.fileReadOnly')}</p>}
       <FormField label={t(contentLabel)} hint={t(contentKind === 'text' ? 'form.text.hint' : 'form.text.actionHint')} hintMode="tooltip">
