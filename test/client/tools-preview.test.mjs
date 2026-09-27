@@ -88,14 +88,9 @@ test('子代理仅保留实例策略解析，旧工具面标签、session 输入
   assert.match(policy, /t\('policy\.preview\.title'\)/, '预览标题必须来自 prompt-tool 字典')
   assert.match(PROMPT_TOOL_DICTS.zh['policy.preview.title'], /实例解析预览/)
   assert.match(policy, /bridgeCall\('subagentToolPolicyPreview', previewInput\)/)
-  // 策略编辑器唯一入口 = 工具链层的层设置区资产分区；页面不再注入能力卡插槽，
-  // 「工具与深度」卡只保留深度与入口提示，避免双入口。
-  const chat = read('src/client/app/workspace/pages/MainSessionPage.tsx')
-  const subagent = read('src/client/app/workspace/pages/SubagentPage.tsx')
+  // 策略编辑器入口在工具链层的层设置区资产分区。
   const panel = read('src/client/app/workspace/pages/EngineLayersPanel.tsx')
   assert.match(panel, /id === 'subagent-tool-policy' && \(\s*<SubagentToolPolicyCard/)
-  assert.doesNotMatch(chat, /renderCapabilityExtra/)
-  assert.doesNotMatch(subagent, /renderCapabilityExtra/)
   assert.match(delegation, /policy\.delegation\.policyMoved/)
   assert.doesNotMatch(delegation, /<SubagentToolPolicyCard/)
 })

@@ -90,7 +90,6 @@ export const PROMPTS_ZH = {
   'configs.notice.copied': '已复制',
   'configs.notice.deleted': '已删除',
   'configs.editor.aria': '主会话模块列表',
-  'configs.common.aria': '公共配置',
 
   // 配置卡（PromptConfigCard）。
   'card.dragHint': '拖动调整顺序',
@@ -537,7 +536,6 @@ export const PROMPTS_EN: Record<keyof typeof PROMPTS_ZH, string> = {
   'configs.notice.copied': 'Copied',
   'configs.notice.deleted': 'Deleted',
   'configs.editor.aria': 'Main-session module list',
-  'configs.common.aria': 'Shared configuration',
 
   'card.dragHint': 'Drag to reorder',
   'card.enableHint': 'Click to enable',

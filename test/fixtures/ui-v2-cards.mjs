@@ -1,7 +1,6 @@
 import React, { useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import { PromptConfigCard } from '../../src/client/features/prompts/PromptConfigCard.tsx'
-import { EngineModuleCard } from '../../src/client/ui/EngineModuleCard.tsx'
 import { CollapsibleCard } from '../../src/client/ui/CollapsibleCard.tsx'
 import { HintTooltip } from '../../src/client/ui/HintTooltip.tsx'
 import { Switch } from '@deepseek-ai/dsh-client-ui-primitives'
@@ -15,7 +14,6 @@ function App() {
   const [visible, setVisible] = useState(true)
   const [hasOrdinary, setHasOrdinary] = useState(true)
   const [readOnly, setReadOnly] = useState(false)
-  const [capabilityOpen, setCapabilityOpen] = useState(false)
   const [expanded, setExpanded] = useState({ ordinary: true, file: true })
   const [ordinary, setOrdinary] = useState({ id: 'ordinary', name: '普通配置', layer: 'pre-step', strategy: 'static', order: 2, params: { nested: true }, sourceKind: 'preset' })
   const [file, setFile] = useState({ id: 'file', name: 'AGENTS.md', layer: 'pre-step', strategy: 'placeholder', fill: 'instruction-hint', sourceKind: 'instruction-file', origin: { kind: 'instruction-file', fileId: 'file1' }, params: { fileId: 'file1', file: 'AGENTS.md' }, text: 'disk', contentStatus: 'ready' })
@@ -32,8 +30,6 @@ function App() {
   }
   return React.createElement('main', { onKeyDown: (event) => { if (event.key === 'Escape') window.events.outerEscape++ } },
     React.createElement('button', { id: 'switch-page', onClick: () => setVisible(!visible) }, '切页'),
-    React.createElement(EngineModuleCard, { name: '纯开关', meta: '静态能力', topSwitch: { id: 'compact', label: '启用纯开关', hint: '帮助', checked: true, onToggle() {} } }),
-    visible && React.createElement(EngineModuleCard, { name: '可控能力', meta: '参数', anchorId: 'controlled', expanded: capabilityOpen, onExpandedChange: setCapabilityOpen }, React.createElement('input', { 'aria-label': '能力字段' })),
     React.createElement(CollapsibleCard, { id: 'basic', title: '普通折叠' }, React.createElement('input', { 'aria-label': '折叠内容' })),
     visible && hasOrdinary && React.createElement(PromptConfigCard, { ...common, config: ordinary, expanded: expanded.ordinary, disabled: readOnly, readOnlyReason: readOnly ? '只读预设' : undefined,
       onPatch: (_, patch) => setOrdinary((prev) => ({ ...prev, ...patch })),

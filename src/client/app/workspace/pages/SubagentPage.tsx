@@ -89,7 +89,6 @@ export const SubagentPage = memo(function SubagentPage(props: { store: PromptToo
           createdHidden={createdHidden}
           onShowCreated={() => { changeViewFilter('all'); setCreatedHidden(false) }}
           createdConfigId={picker.createdConfigId}
-          commonCards={layers.commonCards}
           beforeCards={layers.beforeCards}
           toolbarActions={
             <EngineModuleActions
@@ -102,7 +101,6 @@ export const SubagentPage = memo(function SubagentPage(props: { store: PromptToo
               excludeCapabilities={mainSessionOnly}
             />
           }
-          moduleCards={layers.moduleCards}
           viewFilter={viewFilter}
           onViewFilterChange={changeViewFilter}
           keyword={keyword}

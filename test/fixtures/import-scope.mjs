@@ -36,7 +36,7 @@ window.addEventListener('error', event => window.errors.push(String(event.messag
 window.addEventListener('unhandledrejection', event => window.errors.push(String(event.reason)))
 const scroll = Element.prototype.scrollIntoView
 Element.prototype.scrollIntoView = function (options) {
-  window.scrolls.push(this.getAttribute('data-config-id') ?? this.getAttribute('data-module-card-id'))
+  window.scrolls.push(this.getAttribute('data-config-id'))
   scroll.call(this, options)
 }
 window.fetch = async (url, init) => {

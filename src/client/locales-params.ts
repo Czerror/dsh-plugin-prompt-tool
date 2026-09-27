@@ -46,17 +46,11 @@ export const PARAMS_ZH = {
   'param.option.tool-call': '工具调用',
   'param.option.assistant-message': '助手消息',
 
-  // 模块列表（EngineModuleList）。
+  // 能力与模板创建菜单（EngineModuleList）。
   'modules.addTemplates': '添加注入模板',
   'modules.addCapability': '添加能力 / 工具模块',
   'modules.addCapabilityItem': '添加模块 · {id}',
   'modules.createRecipeItem': '连锁创建 · {id}',
-  'modules.promptDefaults.name': '提示词生成默认值',
-  'modules.promptDefaults.meta': '预设级提示词生成默认值；不自动添加能力模块。',
-  'modules.status.reading': '正在读取当前预设模块事实…',
-  'modules.status.emptyAll': '当前预设无已装配的引擎能力；可按需添加模块。',
-  'modules.status.emptyFiltered': '当前分类无已装配的引擎能力；可按需添加模块。',
-  'modules.status.emptySearch': '没有匹配「{keyword}」的能力模块；提示词配置按各自层级另计。',
   // 共享设置区的能力参数分组标题（按真实能力 card 分组，不另抄键表）。
   'modules.group.str-replace-editor': '编辑器',
   'modules.group.tool-config-engine': '工具配置',
@@ -118,12 +112,6 @@ export const PARAMS_EN: Record<keyof typeof PARAMS_ZH, string> = {
   'modules.addCapability': 'Add capability / tool module',
   'modules.addCapabilityItem': 'Add module · {id}',
   'modules.createRecipeItem': 'Create chained modules · {id}',
-  'modules.promptDefaults.name': 'Prompt generation defaults',
-  'modules.promptDefaults.meta': 'Preset-level prompt generation defaults; no capability module is added automatically.',
-  'modules.status.reading': 'Reading the current preset module facts…',
-  'modules.status.emptyAll': 'This preset has no mounted engine capability; add modules as needed.',
-  'modules.status.emptyFiltered': 'No mounted engine capability in this category; add modules as needed.',
-  'modules.status.emptySearch': 'No capability module matches "{keyword}"; prompt configs are counted per layer.',
   'modules.group.str-replace-editor': 'Editor',
   'modules.group.tool-config-engine': 'Tool config',
   'modules.group.subagent-delegation': 'Subagent delegation',

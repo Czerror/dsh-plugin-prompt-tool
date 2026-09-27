@@ -578,8 +578,6 @@
 
 /* 提示词配置列表：卡片 + 开关 + 四按钮 + 表单。 */
 .configList { display: flex; min-width: 0; flex-direction: column; gap: 10px; }
-/* 模块卡容器同时承担 world-book 视图的 hidden 隐藏：作者样式不得盖掉 UA 的 hidden。 */
-.configList[hidden] { display: none; }
 .configCard {
   container: config-card / inline-size;
   display: flex;
@@ -604,7 +602,6 @@
   margin-left: auto;
 }
 .configToggle { flex: 1 1 160px; min-width: 0; min-height: 28px; appearance: none; border: 0; background: none; font: inherit; color: inherit; text-align: left; cursor: pointer; display: flex; align-items: center; gap: 8px; padding: 4px 0; }
-.configToggle[data-static] { cursor: default; }
 .configToggle:focus-visible { outline: 2px solid var(--dsw-alias-state-business-primary); outline-offset: 2px; }
 .configTitle { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .configTitleRow { display: flex; align-items: center; gap: 6px; min-width: 0; flex-wrap: wrap; }

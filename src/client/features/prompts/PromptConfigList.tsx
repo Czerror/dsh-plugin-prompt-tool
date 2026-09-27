@@ -22,7 +22,6 @@ export interface PromptConfigListProps {
   browse?: { filter: string; expanded?: string }
   fieldDrafts?: ComponentProps<typeof PromptConfigCard>['fieldDrafts']
   draftScope?: string
-  commonCards?: ReactNode
   readOnlyReason?: string
   onCreate?: () => void
   onChoosePreset?: () => void
@@ -34,10 +33,8 @@ export interface PromptConfigListProps {
   scope?: 'main' | 'subagent'
   /** 列表工具栏追加操作（如「新建模板」）。 */
   extraActions?: ReactNode
-  /** 列表头部之后、配置卡片之前渲染的固定卡片（如模板变量——归类于配置列表下）。 */
+  /** 工具栏之后、配置卡片之前的页面级诊断卡与定位 effect。 */
   beforeCards?: ReactNode
-  /** 模块卡（引擎能力、自定义工具）：视觉上排在层级配置卡之前；世界书视图不渲染。 */
-  moduleCards?: ReactNode
   /** 工具栏中的非提示词配置操作（如能力创建）。 */
   toolbarActions?: ReactNode
   /** 受控层筛选（全部/世界书/层级）；未传时内部 state 兜底（子代理页等独立实例）。 */
@@ -72,7 +69,7 @@ export interface PromptConfigListProps {
 
 /** 共享的提示词配置列表：校验、保存、脏检测、复制、删除、层内移动。 */
 export function PromptConfigList(props: PromptConfigListProps): ReactNode {
-  const { t, meta, configs, layer, scope, extraActions, beforeCards, moduleCards, toolbarActions, viewFilter: viewFilterProp, onViewFilterChange, emptyHint, onPatchConfigs, onSaveConfigs, onSaveInstructionFile, onReloadInstructionFile, onPatchInstructionPolicy, onNotice } = props
+  const { t, meta, configs, layer, scope, extraActions, beforeCards, toolbarActions, viewFilter: viewFilterProp, onViewFilterChange, emptyHint, onPatchConfigs, onSaveConfigs, onSaveInstructionFile, onReloadInstructionFile, onPatchInstructionPolicy, onNotice } = props
   const [expanded, setExpanded] = useState<string | undefined>(props.browse?.expanded)
   const [errors, setErrors] = useState<ValidationErrorEntry[]>([])
   const [validating, setValidating] = useState(false)
@@ -391,14 +388,8 @@ export function PromptConfigList(props: PromptConfigListProps): ReactNode {
         </div>}
       </div>
 
-      {props.commonCards}
       {props.instructionPolicy?.error !== undefined && <p role="alert" className={styles.configErrorBox}>{props.instructionPolicy.error}</p>}
-      {/* 配置列表下的置顶固定卡片（人设、模板变量等单例配置，不参与层过滤与搜索）。 */}
       {beforeCards}
-
-      {/* 模块卡（引擎能力、自定义工具）：与层级配置卡同款列表间距（configList），
-          这里只定义展示分组，不建立插入点间运行顺序。 */}
-      {moduleCards !== undefined && <div className={styles.configList} hidden={viewFilter === 'world-book'}>{moduleCards}</div>}
 
       {ordered.length === 0 ? (keyword.length > 0 || worldBookView) ? (
         <p className={styles.readOnly}>{t('configs.noMatch', { keyword: filter.trim() || translateLabel(t, LAYER_LABEL_KEYS, viewFilter) })} <button type="button" className={styles.pillButton} onClick={clearFilters}>{t('configs.clearFilters')}</button></p>

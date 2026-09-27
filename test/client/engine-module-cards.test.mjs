@@ -35,8 +35,7 @@ const loader = registerHooks({
 })
 const { EngineParamFields, EngineParamField } = await import('../../src/client/features/modules/EngineParamFields.tsx')
 const { LayerSettingsContent, layerParamCards, layerHasSettings, layerAssembledCapabilities, engineLayerSlots } = await import('../../src/client/app/workspace/pages/EngineLayersPanel.tsx')
-const { LayerCard } = await import('../../src/client/ui/LayerCard.tsx')
-const { EngineModuleCards, EngineCapabilityCreateMenu } = await import('../../src/client/features/modules/EngineModuleList.tsx')
+const { EngineCapabilityCreateMenu } = await import('../../src/client/features/modules/EngineModuleList.tsx')
 const { PromptConfigForm } = await import('../../src/client/features/prompts/PromptConfigForm.tsx')
 const { OptionField } = await import('../../src/client/features/prompts/PromptConfigFields.tsx')
 const { PromptConfigList } = await import('../../src/client/features/prompts/PromptConfigList.tsx')
@@ -170,7 +169,7 @@ test('递归深度和专用模型卡保留，过滤字段不重复出现在委�
   assert.equal(ENGINE_PARAM_DEFINITIONS.maxDepth.card, 'subagent-tools')
 })
 
-test('自定义工具编辑入口保留，能力删除仍需二次确认', () => {
+test('自定义工具编辑入口保留', () => {
   const page = read('app/workspace/pages/MainSessionPage.tsx')
   assert.match(page, /t\('main\.addTemplate', \{ layer: translateLabel\(t, LAYER_LABEL_KEYS, layer\) \}\)/)
   assert.match(page, /templatesOnly/)
@@ -178,22 +177,6 @@ test('自定义工具编辑入口保留，能力删除仍需二次确认', () =>
   assert.match(page, /toolEditor: toolEditor\.content/)
   assert.match(read('app/workspace/pages/EngineLayersPanel.tsx'), /<CustomToolsCard/)
   assert.match(read('features/tools/CustomToolsCard.tsx'), /<CustomToolCard/)
-  assert.match(read('ui/EngineModuleCard.tsx'), /确认删除/)
-  const removed = []
-  const cards = tree(EngineModuleCards, {
-    store: {
-      ...store,
-      fields: { ...store.fields, writePreset: true },
-      moduleFacts: withModules(['filesystem-editor', 'tool-config-engine']),
-      removeEngineCapability: (id) => removed.push(id),
-    },
-    t,
-  })
-  const card = find(cards, (node) => node.props?.name === 'str-replace-editor' && node.props.onDelete !== undefined)
-  assert.ok(card, 'str-replace-editor 必须有自己的卡片')
-  assert.deepEqual(removed, [])
-  card.props.onDelete()
-  assert.deepEqual(removed, ['str-replace-editor'], '删除回调只操作本卡对应的能力')
 })
 
 test('插入点顺序恒为九层（含三个新层），层序由 meta.layerOrder 下发而非本地清单', () => {
@@ -209,11 +192,6 @@ test('插入点顺序恒为九层（含三个新层），层序由 meta.layerOrd
   for (const layer of ['turn-stop', 'subagent-start', 'subagent-end']) assert.ok(engineMeta.layers.includes(layer), `引擎未下发新层 ${layer}`)
   // 固定顺序之外的层仍追加在末尾，不丢未知配置（旧数据可读）。
   assert.deepEqual(displayLayers(engineMeta.layerOrder, ['future-layer']), [...order, 'future-layer'])
-  const list = read('features/modules/EngineModuleList.tsx')
-  assert.match(list, /EnginePromptDefaultsCard/)
-  assert.doesNotMatch(list, /name="提示词生成默认值" layer="pre-step"/)
-  const editor = read('features/prompts/PromptConfigsEditor.tsx')
-  assert.match(editor, /aria-label=\{t\('configs\.common\.aria'\)\}/)
 })
 
 test('编辑组主归属唯一且只引用合法层：能力卡与专用卡共用同一份映射', () => {
@@ -266,73 +244,6 @@ test('模板浮层按层级只列该层模板，不再渲染分组标题', () =>
   assert.match(html, /20-system-section\.yml/)
   assert.doesNotMatch(html, /10-pre-step\.yml/)
   assert.doesNotMatch(html, /templateGroupTitle/)
-})
-
-test('统一列表平铺渲染配置与能力卡，层级筛选只过滤不分区', () => {
-  const configs = [{ id: 'persona-main', layer: 'system-section', strategy: 'static' }]
-  const meta = {
-    ...getEngineMeta(),
-    layers: ['pre-step', 'system-section', 'runtime-context', 'agent-request', 'llm-stream', 'tool-pipeline'],
-    strategies: [], slotKinds: [], positions: [], dedupes: [], promotions: [], audienceModes: [], modelScopes: [], roles: [], mergeModes: [], fills: [],
-    layerFieldPolicies: {}, layerLabels: {},
-  }
-  const active = { ...store, moduleFacts: withModules(['filesystem-editor']) }
-  const props = {
-    t,
-    meta,
-    configs,
-    viewFilter: 'all',
-    onViewFilterChange() {},
-    moduleCards: createElement(EngineModuleCards, { store: active, t, showActions: false, showPromptDefaults: false, showStatus: false }),
-    onPatchConfigs() {},
-    onSaveConfigs() {},
-    onNotice() {},
-  }
-  const html = render(PromptConfigList, props)
-  assert.doesNotMatch(html, /data-insertion-point/)
-  assert.ok(html.includes('persona-main'), '层级配置卡与模块卡同列表渲染')
-  assert.match(html, /class="configName">str-replace-editor</)
-  assert.match(html, /class="configMeta">filesystem-editor</)
-  // 视觉排序：模块卡（引擎能力）在层级配置卡之前；promptConfigs 的注入顺序仍由 ordered 决定。
-  assert.ok(html.indexOf('str-replace-editor') < html.indexOf('persona-main'), '模块卡排在层级配置卡之前')
-  // 选中插入点层级：只留该层配置与能力卡，仍不生成分类区块。
-  const filtered = render(PromptConfigList, {
-    ...props,
-    viewFilter: 'tool-pipeline',
-    moduleCards: createElement(EngineModuleCards, { store: active, t, layerFilter: 'tool-pipeline', showActions: false, showPromptDefaults: false, showStatus: false }),
-  })
-  assert.doesNotMatch(filtered, /data-insertion-point/)
-  assert.doesNotMatch(filtered, /persona-main/)
-  assert.match(filtered, /class="configName">str-replace-editor</)
-  assert.match(filtered, /class="configMeta">filesystem-editor</)
-  // 主会话把筛选值下发给统一层装配入口；编辑组卡在哪层可见由共享契约判定，
-  // 页面不再各自手写层名（旧实现按 `viewFilter !== 'tool-pipeline'` 内联硬编码）。
-  const page = read('app/workspace/pages/MainSessionPage.tsx')
-  assert.match(page, /const layers = engineLayerSlots\(\{/)
-  assert.match(page, /viewFilter,/)
-  assert.doesNotMatch(page, /isEditorGroupVisible/)
-  assert.doesNotMatch(page, /hidden=\{viewFilter !== 'all' && viewFilter !== 'tool-pipeline'\}/, '层可见性不再内联硬编码层名')
-  // 世界书只隐藏模块区域，不卸载工具草稿 owner。
-  const worldBook = tree(PromptConfigList, { ...props, viewFilter: 'world-book' })
-  const owner = find(worldBook, (node) => node.props.children === props.moduleCards)
-  assert.equal(owner.props.hidden, true)
-  // 模块卡容器与层级配置卡同款列表间距（configList），不是无间距的裸 div。
-  assert.match(owner.props.className, /configList/)
-})
-
-test('能力卡默认折叠，只有创建/定位到该能力才展开', () => {
-  const active = { ...store, moduleFacts: withModules(['filesystem-editor', 'tool-config-engine', 'tool-git-bash']) }
-  const collapsed = render(EngineModuleCards, { store: active, t, showPromptDefaults: false })
-  assert.equal((collapsed.match(/aria-expanded="true"/g) ?? []).length, 0, '未创建/未定位时全部折叠')
-  assert.equal(collapsed.includes(`aria-label="${zh['param.strReplaceEditorMaxOutputChars']}"`), false, '折叠的卡不渲染参数表单')
-  const revealed = render(EngineModuleCards, { store: active, t, showPromptDefaults: false, focusCapability: { id: 'str-replace-editor', token: 1 } })
-  assert.equal((revealed.match(/aria-expanded="true"/g) ?? []).length, 1, '只展开定位到的那张卡')
-  assert.ok(revealed.includes(`aria-label="${zh['param.strReplaceEditorMaxOutputChars']}"`), '定位目标的参数表单可见')
-  // 定位锚点与展开信号解耦：锚点始终是能力 id，展开信号只用于变化检测。
-  assert.match(revealed, /data-module-card-id="str-replace-editor"/, '能力卡带稳定定位锚点')
-  // 重复创建同一能力：token 变化 → 重新展开（旧实现在第二次创建时不展开）。
-  const again = render(EngineModuleCards, { store: active, t, showPromptDefaults: false, focusCapability: { id: 'str-replace-editor', token: 2 } })
-  assert.equal((again.match(/aria-expanded="true"/g) ?? []).length, 1, '同一能力重复创建仍展开')
 })
 
 test('层内创建菜单按能力主层过滤，撤销组合不再出现', async () => {
@@ -527,11 +438,7 @@ test('共享参数的未完成输入与错误态在镜像控件之间同步，�
   assert.equal(control('tool-pipeline-str-replace-editor').props.value, '20')
 })
 
-test('切层与受众切换保留草稿：卡片隐藏而不卸载，草稿键与层无关', () => {
-  const hidden = render(LayerCard, { visible: false, children: 'CARD-MARKER' })
-  assert.match(hidden, /hidden=""/)
-  assert.ok(hidden.includes('CARD-MARKER'), '不可见的卡留在 DOM 里：切层不丢草稿、不重跑读取')
-  assert.doesNotMatch(render(LayerCard, { visible: true, children: 'CARD-MARKER' }), /hidden=/)
+test('切层与受众切换保留草稿：草稿键与层无关', () => {
   // 参数草稿键按「预设 + 参数字段」保存，展开键按「预设 + 卡片身份」保存：都不含层名，
   // 因此切层、筛选与主/子受众切换后读回的是同一份草稿。
   assert.match(read('features/modules/EngineParamFields.tsx'),

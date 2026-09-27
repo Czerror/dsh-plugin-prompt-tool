@@ -120,8 +120,6 @@
 .configErrorBox { display: flex; flex-direction: column; gap: 4px; border: 0.5px solid var(--dsw-alias-state-error-primary); border-radius: 8px; padding: 8px 10px; background: var(--dsw-alias-bg-layer-2); }
 .configErrorLine { font: var(--dsw-font-xxs-12); font-family: var(--ds-font-family-code, ui-monospace, monospace); color: color-mix(in srgb, var(--dsw-alias-state-error-primary) 80%, var(--dsw-alias-label-primary)); overflow-wrap: anywhere; }
 
-.commonCards { display: flex; min-width: 0; flex-direction: column; gap: 10px; }
-
 @supports not (container-type: inline-size) {
   @media (max-width: 720px) {
     .configGrid { grid-template-columns: repeat(6, minmax(0, 1fr)); }

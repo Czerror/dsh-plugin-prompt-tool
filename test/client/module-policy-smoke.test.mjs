@@ -460,7 +460,6 @@ test('浏览器：六层空卡、跨层工具创建、筛选草稿与能力卡�
   await waitFor(`window.store.moduleFacts.effectiveModules.includes('filesystem-editor')`)
   await createInLayer('tool-pipeline', '工具链', '添加模块 · tool-config-engine')
   await waitFor(`window.store.moduleFacts.effectiveModules.includes('tool-config-engine')`)
-  assert.equal(await evaluate(`[...document.querySelectorAll('[data-module-card="true"]')].some((card)=>card.textContent.includes('str-replace-editor')||card.textContent.includes('tool-config-engine'))`), false, '能力不再以独立卡片出现')
   await openLayerSettings('tool-pipeline', '工具链')
   await waitFor(`document.querySelector('[data-layer-capability="str-replace-editor"]') !== null`)
   assert.equal(await evaluate(`document.querySelectorAll('[data-layer-capability]').length`), 2, '本层两个已装配能力都列出')

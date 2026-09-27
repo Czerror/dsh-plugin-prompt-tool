@@ -11,7 +11,7 @@ import type { InstructionPolicyFileOverride } from '../../../../shared/instructi
  *  本组件不再提供独立的「新建」按钮：创建入口统一收敛到工具栏的合并菜单
  *  （`EngineModuleActions` 的「添加模板 · 层级」/「添加工具模板…」/「添加模板变量」），
  *  避免同一列表出现两个创建入口。 */
-export const ConfigListWithTemplates = memo(function ConfigListWithTemplates(props: Pick<PromptConfigListProps, 'browse' | 'commonCards' | 'onCreate' | 'onChoosePreset' | 'createdHidden' | 'onShowCreated'> & {
+export const ConfigListWithTemplates = memo(function ConfigListWithTemplates(props: Pick<PromptConfigListProps, 'browse' | 'onCreate' | 'onChoosePreset' | 'createdHidden' | 'onShowCreated'> & {
   store: PromptToolStore
   t: PromptToolTranslate
   layer?: string
@@ -19,8 +19,6 @@ export const ConfigListWithTemplates = memo(function ConfigListWithTemplates(pro
   beforeCards?: ReactNode
   /** 工具栏中的非提示词配置操作（如能力模块创建菜单）。 */
   toolbarActions?: ReactNode
-  /** 模块卡（引擎能力、自定义工具）：渲染在层级配置卡之前。 */
-  moduleCards?: ReactNode
   /** 受控视图过滤（页面持有）：不传时列表内部维护。 */
   viewFilter?: string
   onViewFilterChange?: (value: string) => void
@@ -35,7 +33,7 @@ export const ConfigListWithTemplates = memo(function ConfigListWithTemplates(pro
   /** 与页面合并创建入口使用同一定位信号。 */
   createdConfigId?: string
 }): ReactNode {
-  const { store, t, layer, scope, beforeCards, toolbarActions, moduleCards, viewFilter, onViewFilterChange, keyword, onKeywordChange, renderLayerSettings, hasLayerSettings, createdConfigId } = props
+  const { store, t, layer, scope, beforeCards, toolbarActions, viewFilter, onViewFilterChange, keyword, onKeywordChange, renderLayerSettings, hasLayerSettings, createdConfigId } = props
   const fields = usePromptToolFields(store, (value) => value)
   // 稳定回调：卡片 memo 的生效前提（store 引用已稳定）。
   const patchConfigs = useCallback((configs: PromptToolStore['fields']['promptConfigs']) => {
@@ -65,7 +63,6 @@ export const ConfigListWithTemplates = memo(function ConfigListWithTemplates(pro
       meta={store.meta}
       configs={fields.promptConfigs}
       browse={props.browse}
-      commonCards={props.commonCards}
       fieldDrafts={store.editorDrafts?.fields}
       draftScope={fields.presetTemplate}
       readOnlyReason={!fields.writePreset ? t('configs.readOnly.disabled') : store.moduleFacts?.editable !== true ? t('configs.readOnly.system') : undefined}
@@ -77,7 +74,6 @@ export const ConfigListWithTemplates = memo(function ConfigListWithTemplates(pro
       layer={layer}
       scope={scope}
       beforeCards={beforeCards}
-      moduleCards={moduleCards}
       toolbarActions={toolbarActions}
       viewFilter={viewFilter}
       onViewFilterChange={onViewFilterChange}

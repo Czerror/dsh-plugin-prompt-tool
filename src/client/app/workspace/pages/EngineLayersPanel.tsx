@@ -225,8 +225,6 @@ function LayerSettingsFocus(props: { layer?: string; token: number }): ReactNode
 
 export interface EngineLayerSlots {
   beforeCards: ReactNode
-  commonCards: ReactNode
-  moduleCards: ReactNode
   /** 本层引擎设置内容，仅由真实实例卡内的设置区承载。 */
   renderLayerSettings: (layer: string, config: PromptConfigDraft) => ReactNode
   /** 该层是否有可编辑设置，控制真实实例卡内的设置区。 */
@@ -264,9 +262,6 @@ export function engineLayerSlots(input: EngineLayerSlotsInput): EngineLayerSlots
   )
   return {
     beforeCards,
-    // 空槽必须缺省，避免列表为已退场的卡片生成空容器、叠加 flex gap。
-    commonCards: undefined,
-    moduleCards: undefined,
     renderLayerSettings: (layer: string, config: PromptConfigDraft) => (
       <LayerSettingsContent
         key={`${store.fields.presetTemplate}:${config.id}`}

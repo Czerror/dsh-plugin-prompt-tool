@@ -117,9 +117,7 @@ export const MainSessionPage = memo(function MainSessionPage(props: { store: Pro
         hasLayerSettings={layers.hasLayerSettings}
         matchesLayerSettings={layers.matchesLayerSettings}
         beforeCards={layers.beforeCards}
-        commonCards={layers.commonCards}
         toolbarActions={<EngineModuleActions store={store} t={t} anchorRef={picker.anchorRef} extraItems={createItems} templatesOnly onExtraSelect={onCreateSelect} />}
-        moduleCards={layers.moduleCards}
       />
       {picker.open && (
         <TemplatePicker

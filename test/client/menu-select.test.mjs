@@ -80,7 +80,6 @@ test('模块控件紧凑且长文本继续自适应', () => {
   assert.match(css, /\.configInput\s*\{[^}]*min-height:\s*32px/s)
   assert.match(css, /\.moduleCard \.configInput,\s*\.toolCard \.configInput,\s*\.configForm \.configInput\s*\{[^}]*min-height:\s*28px/s)
   assert.doesNotMatch(css, /\.switch\b/, '开关几何由官方 Switch 拥有')
-  assert.match(read('ui/EngineModuleCard.tsx'), /<Switch\s/)
   assert.match(css, /\.menuSelectTriggerCompact\s*\{[^}]*min-height:\s*28px/s)
   assert.match(css, /\.menuSelectTriggerStandard\s*\{[^}]*min-height:\s*36px/s)
   assert.match(css, /\.configTextarea\s*\{[^}]*field-sizing:\s*content;[^}]*max-height:\s*max\(72px,\s*60dvh\)/s)
@@ -95,7 +94,6 @@ test('主会话使用平铺模块列表与九层模板菜单', () => {
   const list = read('features/prompts/PromptConfigList.tsx')
   assert.doesNotMatch(editor, /viewMode|通用设置|引擎能力设置/)
   assert.doesNotMatch(page, /viewMode|onViewModeChange/)
-  assert.match(editor, /moduleCards\?: ReactNode/)
   // 旧的按插入点分区渲染已移除；`renderLayerSettings` 是本层设置注入点，不是分区渲染。
   assert.doesNotMatch(list, /data-insertion-point|renderLayer\(/)
   assert.match(list, /renderLayerSettings\?:/)
@@ -115,12 +113,8 @@ test('主会话使用平铺模块列表与九层模板菜单', () => {
   assert.match(plain, /<div class="emptyState">/, '无配置且无筛选时渲染空态容器')
   assert.match(plain, /还没有自定义配置/, '空态给出模板引导文案')
 
-  // moduleCards 的隐藏语义由真实 hidden 属性证明（世界书视图只隐藏模块卡容器，不卸载它）。
-  const worldBook = renderList({ viewFilter: 'world-book', moduleCards: 'MODULE-MARKER' })
-  assert.match(worldBook, /<div class="configList" hidden="">MODULE-MARKER<\/div>/, '世界书视图隐藏模块卡容器')
-  assert.match(renderList({ viewFilter: 'all', moduleCards: 'MODULE-MARKER' }), /<div class="configList">MODULE-MARKER<\/div>/, '非世界书视图显示模块卡容器')
-
   // 空态区分与清除筛选入口：被筛掉的配置给可操作提示，且与「没有任何配置」不是同一文案。
+  const worldBook = renderList({ viewFilter: 'world-book' })
   assert.match(worldBook, new RegExp(t('configs.noMatch', { keyword: 'world-book' })), '筛选无匹配给出定位提示')
   assert.match(worldBook, new RegExp(`<button[^>]*>${t('configs.clearFilters')}</button>`), '空态提供清除筛选入口')
 
@@ -129,13 +123,11 @@ test('主会话使用平铺模块列表与九层模板菜单', () => {
   assert.match(list, /\.\.\.allLayers\.map\(/)
   assert.match(list, /t\('configs\.view\.layer', \{ layer: translateLabel\(t, LAYER_LABEL_KEYS, item\) \}\)/)
   // 层内卡片由统一装配入口下发；筛选值仍由页面持有并下发（创建路径不写过滤）。
-  assert.match(page, /commonCards=\{layers\.commonCards\}/)
   assert.match(page, /viewFilter=\{viewFilter\}/)
   assert.match(page, /renderLayerSettings=\{layers\.renderLayerSettings\}/)
-  // 独立能力卡已退场：引擎参数只由层设置区承载，列表不再渲染能力卡。
+  // 引擎参数由层设置区承载。
   const panel = read('app/workspace/pages/EngineLayersPanel.tsx')
   assert.match(panel, /LayerSettingsContent/)
-  assert.doesNotMatch(panel, /<EngineModuleCards/)
   assert.match(page, /extraItems=\{createItems\}/)
   // 模板入口按插入点层级平铺，浮层只列该层模板（不再有一个「从模板新建」聚合项）。
   assert.match(page, /INSERTION_LAYERS\.map/)

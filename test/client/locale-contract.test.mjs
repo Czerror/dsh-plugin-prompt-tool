@@ -9,7 +9,7 @@ const read = (path) => readFileSync(new URL(`../../${path}`, import.meta.url), '
 
 /**
  * R1 迁移范围：这些文件的用户可见文案必须归入 prompt-tool 字典。
- * 未列入的文件仍持有硬编码文案：ui 控件的回退文案（MenuSelect/TagInput/DialogSurface/EngineModuleCard），
+ * 未列入的文件仍持有硬编码文案：ui 控件的回退文案（MenuSelect/TagInput/DialogSurface），
  * 以及 features/models、data 的状态提示（属模型路由任务的文件边界）；
  * character-card.ts 的 PNG 解析错误不直接面向用户（导入走 host 上传），不在迁移范围。
  */

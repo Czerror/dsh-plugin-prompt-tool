@@ -174,7 +174,6 @@
        ├─ hint-tooltip-position.ts
        ├─ ImportFileButton.tsx
        ├─ ImportPreviewCard.tsx
-       ├─ LayerCard.tsx
        ├─ MenuSelect.tsx
        ├─ menu-focus.ts
        ├─ reveal-card.ts
@@ -235,7 +234,7 @@ apply(ctx) 依次构造：
 - 渲染时才求值（`t('key', params)`），不做模块级缓存；语言切换由 renderer 订阅 locale revision 后整体重渲染跟进。
 - 不进字典的内容：provider/model id、文件路径、用户内容、协议 code 与 bridge 错误码；动态拼接用 `{name}` 占位参数。
 - 已迁移：工作台外壳与悬浮入口、设置页、六页外壳、引擎参数卡与模块列表（标签按 shared 键推导成 `param.<键>` 词条）、提示词配置与人设区、角色库页、子代理「工具与深度」模块卡与实例级工具策略、自定义工具卡、导入预览卡。子代理策略的档位显示名（首次启用写入 preset.yml 的 seed 值）属于用户可改内容，保持原值不入字典。
-- 仍未迁移：`ui/` 控件的回退文案（`MenuSelect` / `TagInput` / `DialogSurface` / `EngineModuleCard`），以及 `features/models/**` 与 `data/**` 的状态提示（这两个目录属模型路由任务的文件边界）。`test/client/locale-contract.test.mjs` 的 `MIGRATED_UI_FILES` 是迁移范围的单一事实源；新增已迁移文件时必须同步登记，否则契约测试不会守卫它的文案。
+- 仍未迁移：`ui/` 控件的回退文案（`MenuSelect` / `TagInput` / `DialogSurface`），以及 `features/models/**` 与 `data/**` 的状态提示（这两个目录属模型路由任务的文件边界）。`test/client/locale-contract.test.mjs` 的 `MIGRATED_UI_FILES` 是迁移范围的单一事实源；新增已迁移文件时必须同步登记，否则契约测试不会守卫它的文案。
 
 ### 4.3 悬浮入口与关闭行为
 
@@ -291,7 +290,7 @@ workspace-pages.ts 是页面元数据的唯一来源。默认页为 features，�
 
 工具栏的「添加注入模板」只包含九个插入点的模板入口，不按当前层筛选删减。能力模块和连锁组合放在对应层设置区的「添加本层能力」入口；组合以首个能力的主归属层为入口，其跨层装配行为仍由既有配方声明决定。自定义工具区内提供空白工具和工具模板创建，模板变量在自己的编辑区内添加，空资产仍保留创建入口。引擎参数与资产编辑器只内嵌在真实提示词配置卡中；当前受众没有该层实例时保持空状态，由用户显式插入模板创建，不自动生成设置卡或提示词规则。
 
-**过滤与新建严格分离**：过滤下拉与搜索词只由用户手动改变，创建路径一律不写入过滤状态；新建只做两件事——展开新卡并滚动定位到它（能力卡定位锚点是能力 id，配置卡锚点是配置 id，节点未就绪时按上限重试后静默退出）。因此目标卡落在被筛掉的层或作用域时保持不可见，切到该层或「全部」即可见；同一能力重复创建每次都重新展开（定位信号带递增 token，不依赖 id 变化）。模板重复创建时分配唯一标识，不覆盖原配置。
+**过滤与新建严格分离**：过滤下拉与搜索词只由用户手动改变，创建路径一律不写入过滤状态；新建提示词配置展开并定位到新卡，能力创建定位到当前实例卡内的本层设置区。配置锚点是配置 id，能力定位锚点是层设置区的层名，节点未就绪时按上限重试后静默退出。因此目标落在被筛掉的层或作用域时保持不可见，切到该层或「全部」即可见；同一能力重复创建仍会触发定位（信号带递增 token，不依赖 id 变化）。模板重复创建时分配唯一标识，不覆盖原配置。
 
 **新建即可见由受众代入保证**：子代理列表新建的配置写 `audience: subagent`，主会话列表新建的配置清除模板自带的「仅子代理」限制回落公用，二者都不改动过滤框。工具模板浮层锚定本次实际点击的层内按钮，和顶部模板入口分开保存锚点；选中或Escape关闭后回到原按钮。浮层初始焦点在定位可见帧设置，不落到仍隐藏的控件；空变量创建后焦点进入新增变量名输入。空白工具的id和模型可见名均不重复，创建绑定发起预设，切换后不能重放。子代理页复用同一套创建纪律。
 
@@ -475,7 +474,7 @@ ui/ 只接收 props/callback，当前真实共享 seam 包括：
 - FormField：label/id、说明与错误关联；MenuSelect转发id到真实触发器，hint可内联或使用HintTooltip。
 - SettingInputRow、ToggleRow、TagInput：设置和字段编辑形态；ToggleRow 的开关使用官方 Switch。
 - ImportPreviewCard：导入预览卡，展示服务端同源转换报告与有损信息（warning/info/被排除条目各自滚动容器）；预设包与角色卡 JSON 两处入口共用。
-- reveal-card.ts：创建后的「展开并定位到新卡」纯逻辑，能力卡与配置卡共用。
+- reveal-card.ts：创建后的滚动定位与重试，层设置区与配置卡共用。
 - MenuSelect：直接封装官方 Menu 的单选胶囊；支持连续选项的 `group` 分组标题。标准设置使用 36px，模块卡内使用 28px 紧凑形态，浮层统一 portal。
 - CollapsibleCard、EngineModuleCard：具体可复用的折叠/模块卡形态，不是万能 Card。
 - StatusDot：6px实心状态点与3px柔和静态光晕，含success/neutral/danger/warning，语义由相邻文字表达，不使用循环动画。
@@ -512,7 +511,7 @@ Menu显式启用autoFocus；已发布0.1.6-alpha.1的portal先隐藏后定位，
 
 主会话与子代理列表只显示真实的**提示词配置实例卡**，统一使用 `PromptConfigCard`，同一层可以有多张。**最外层折叠始终保留**：折叠时仅显示摘要，不挂载内部导航和表单，支持同层大量规则。卡片展开后，在“设置”视图访问该层参数、装配能力与资产编辑器；其中的“编辑行为规则”切换到预设共享的声明编辑，返回后继续编辑本层参数。声明编辑不改变该预设的受众或通道归属，不把全预设规则伪装成单张配置的局部行为。列表外不增设声明编辑入口。页面顺序不建立跨插入点的全局执行顺序。
 
-`EngineLayersPanel#engineLayerSlots({ store, t, viewFilter, audience, keyword, … })` 是唯一的层装配入口，返回 `beforeCards`（页面级诊断卡与不占布局的定位 effect）以及 `renderLayerSettings`、`hasLayerSettings` 和 `matchesLayerSettings`；已退场的 `commonCards` / `moduleCards` 返回 `undefined`，避免下游生成空容器。两个页面声明受众视图、创建编排并持有工具草稿所有者，不手写层名判断或重复资产布局。
+`EngineLayersPanel#engineLayerSlots({ store, t, viewFilter, audience, keyword, … })` 是唯一的层装配入口，返回 `beforeCards`（页面级诊断卡与不占布局的定位 effect）以及 `renderLayerSettings`、`hasLayerSettings` 和 `matchesLayerSettings`。两个页面声明受众视图、创建编排并持有工具草稿所有者，不手写层名判断或重复资产布局。能力参数和资产编辑器由实例卡内的层设置区承载；共享 `EngineModuleCard` 只为模型、人设与子代理参数提供折叠形态。
 
 `LayerSettingsContent` 的参数、装配能力与资产都按共享契约派生：`layerParamCards` 只列当前层实际装配且拥有通用参数的组，`layerAssembledCapabilities` 列出该层已装配能力，资产按 `displayLayer` 归位并复用各自专用编辑器、草稿池与写端点。模型参数不重复生成通用控件。创建本层能力复用 `EngineCapabilityCreateMenu`，提示词模板仍从原九层模板菜单创建。无可编辑设置的层不生成设置页签，无实例不生成兜底卡。设置视图首次进入才挂载，卡片保持展开时切换视图不丢输入；外层折叠卸载视图，草稿仍由工作台持有。
 

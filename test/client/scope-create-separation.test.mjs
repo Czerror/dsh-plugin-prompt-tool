@@ -29,11 +29,6 @@ const loader = registerHooks({
       const names = [...new Set([...source.matchAll(/\.([A-Za-z_][\w-]*)/g)].map(([, name]) => name))]
       return { format: 'module', shortCircuit: true, source: `export default ${JSON.stringify(Object.fromEntries(names.map((name) => [name, name])))}` }
     }
-    // 模型路由卡在服务端渲染必然抛错（`useSyncExternalStore` 只传两个参数、缺 getServerSnapshot），
-    // 它与本文件所有断言无关：桩成 null 组件后，子代理页其余链路（能力卡排除清单下发）仍走真实实现。
-    if (url.endsWith('/features/models/ModelRouteCard.tsx')) {
-      return { format: 'module', shortCircuit: true, source: 'export function ModelRouteModuleCard() { return null }' }
-    }
     if (url.endsWith('.tsx')) return { format: 'module', shortCircuit: true, source: ts.transpileModule(readFileSync(new URL(url), 'utf8'), {
       compilerOptions: { jsx: ts.JsxEmit.ReactJSX, module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2024 },
     }).outputText }
@@ -43,7 +38,6 @@ const loader = registerHooks({
 const { PromptConfigList } = await import('../../src/client/features/prompts/PromptConfigList.tsx')
 const { EngineCapabilityCreateMenu } = await import('../../src/client/features/modules/EngineModuleList.tsx')
 const { layerParamCards } = await import('../../src/client/app/workspace/pages/EngineLayersPanel.tsx')
-const { SubagentPage } = await import('../../src/client/app/workspace/pages/SubagentPage.tsx')
 loader.deregister()
 
 const render = (component, props) => renderToStaticMarkup(createElement(component, props))
@@ -73,8 +67,6 @@ const meta = {
   strategies: [], slotKinds: [], positions: [], dedupes: [], promotions: [], audienceModes: [], modelScopes: [], roles: [], mergeModes: [], fills: [],
   layerFieldPolicies: {}, layerLabels: {},
 }
-/** 会话模型投影桩：服务端渲染要求 getServerSnapshot，且快照必须是稳定引用。 */
-const SESSION_SNAPSHOT = { selection: undefined }
 const configListProps = (overrides = {}) => ({
   t,
   meta,
@@ -274,52 +266,6 @@ test('能力排除清单同时约束创建菜单与层参数，其他能力保�
   assert.deepEqual(layerParamCards(active, 'tool-pipeline'), ['str-replace-editor'])
 })
 
-test('子代理页使用现存能力并保留正确入口提示', () => {
-  // SSR 渲染真实子代理页：同一份 moduleFacts 下，页面下发的 mainSessionOnly 被真正消费 ——
-  // 独立能力卡已退场，被排除的能力既不出现在参数层，也不出现在装配清单。
-  const active = {
-    fields: { ...EMPTY_FIELDS, writePreset: true, presetTemplate: 'demo', promptConfigs: [] },
-    moduleFacts: {
-      sourceMode: 'explicit', editable: true, rowIds: [],
-      effectiveModules: ['filesystem-editor', 'subagent-tool-policy'],
-      declaredModules: ['filesystem-editor', 'subagent-tool-policy'],
-    },
-    api: { sessionModel: { subscribe: () => () => {}, snapshot: () => SESSION_SNAPSHOT, getServerSnapshot: () => SESSION_SNAPSHOT }, sessionPreset: { snapshot: () => undefined, subscribe: () => () => {} } },
-    hostDefaultModel: undefined, modelCatalog: [], modelReasoning: {}, templatePreStepCount: 0,
-    notice: undefined, noticeKind: undefined, meta,
-    templateVariables: {}, templateVariablesEnabled: false,
-    editorDrafts: { tools: new Map(), persona: new Map(), fields: new Map(), policyProfiles: new Map(), expanded: new Map() },
-    instructionPolicy: undefined,
-    patch() {}, getFields() { return active.fields }, showNotice() {},
-    setTemplateVariables() {}, setTemplateVariablesEnabled() {}, saveTemplateVariables: async () => {},
-    createEngineCapability: async () => true, removeEngineCapability: async () => true,
-    load: async () => {}, setPresetTemplate() {},
-    persistConfigs: async () => true, persistInstructionFiles: async () => true, persistParamOverrides: async () => true,
-    reloadInstructionFile: async () => true, setInstructionSourceEnabled: async () => true, updateInstructionPolicy: async () => true,
-  }
-  const html = render(SubagentPage, { t, store: active })
-  assert.doesNotMatch(html, /data-module-card-id/, '独立能力卡已退场：子代理页不再有卡片形态的能力入口')
-  // 被排除的能力连参数一起排除，未排除的能力正常进入本层设置内容。
-  assert.deepEqual(layerParamCards(active, 'tool-pipeline', ['str-replace-editor']), [])
-  assert.deepEqual(layerParamCards({ ...active, moduleFacts: { ...active.moduleFacts, effectiveModules: ['filesystem-editor', 'tool-config-engine'] } }, 'tool-pipeline', ['str-replace-editor']), ['tool-config-engine'])
-  // 被排除的能力不再附带任何替位说明（用户 2026-09-27 判定冗余）。
-  const empty = render(SubagentPage, {
-    t,
-    store: { ...active, moduleFacts: { ...active.moduleFacts, effectiveModules: [], declaredModules: [] } },
-    browse: { viewFilter: 'pre-step' },
-  })
-  assert.doesNotMatch(html + empty, /subagent-tool-policy/)
-  assert.equal(PROMPT_TOOL_DICTS.zh['modules.subagentScopeHint'], undefined, '替位说明词条已删除')
-  assert.equal(PROMPT_TOOL_DICTS.zh['modules.subagentEmptyHint'], undefined, '空清单说明词条已删除')
-  // 说明文字挂在能力卡列表侧，不得塞进工具栏按钮行（曾导致按钮偏移）。
-  const modulesSource = read('features/modules/EngineModuleList.tsx')
-  const actionsBlock = modulesSource.slice(0, modulesSource.indexOf('export function EnginePromptDefaultsCard'))
-  assert.doesNotMatch(actionsBlock, /configFieldHint/, '工具栏只放按钮，说明文字由卡片列表渲染')
-  // 主会话页不排除任何能力。
-  const main = read('app/workspace/pages/MainSessionPage.tsx')
-  assert.doesNotMatch(main, /excludeCapabilities/)
-})
-
 test('子代理工具策略卡：单一开关，无额外保存/停用按钮', () => {
   const card = read('features/subagents/SubagentToolPolicyCard.tsx')
   // 无保存 / 停用 / 启用策略按钮（用户要求的简化设计）。
@@ -332,20 +278,15 @@ test('子代理工具策略卡：单一开关，无额外保存/停用按钮', (
   // 开关骨架、只读、标签失焦与异步保存由 module-policy-smoke 的真实 DOM 行为验证。
 })
 
-test('工具栏先于公共区与置顶卡，置顶卡不参与过滤且只渲染一次', () => {
+test('工具栏先于置顶卡，置顶卡不参与过滤且只渲染一次', () => {
   const html = render(PromptConfigList, configListProps({
     viewFilter: 'pre-step',
     browse: { filter: '无匹配' },
-    commonCards: createElement('div', { 'data-common-card': true }),
     beforeCards: createElement('div', { 'data-pinned-card': true }),
-    moduleCards: createElement('div', { 'data-capability-card': true }),
   }))
   const filterIndex = html.indexOf('class="listFilterRow"')
-  const commonIndex = html.indexOf('data-common-card="true"')
   const pinnedIndex = html.indexOf('data-pinned-card="true"')
-  const capabilityIndex = html.indexOf('data-capability-card="true"')
-  assert.ok(filterIndex > 0 && commonIndex > filterIndex, '工具栏在公共区之前')
-  assert.ok(pinnedIndex > commonIndex && capabilityIndex > pinnedIndex, '置顶卡在公共区之后、能力卡之前')
+  assert.ok(filterIndex > 0 && pinnedIndex > filterIndex, '工具栏在置顶卡之前')
   assert.equal((html.match(/data-pinned-card="true"/g) ?? []).length, 1, '过滤时置顶卡仍只渲染一次')
 })
 

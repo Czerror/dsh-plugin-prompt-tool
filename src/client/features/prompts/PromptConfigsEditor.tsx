@@ -48,20 +48,15 @@ export interface PromptConfigsEditorProps extends Pick<PromptConfigListProps, 'b
   hasLayerSettings?: (layer: string) => boolean
   matchesLayerSettings?: (layer: string, keyword: string) => boolean
   createdConfigId?: string
-  /** 公共配置：模型、模板变量以外的预设级默认值等，不属于任何插入点。 */
-  commonCards?: ReactNode
-  /** 模块列表置顶卡片：脱离「公共配置」分组的单例配置（人设），不参与层过滤。 */
+  /** 页面级诊断卡与不占布局的定位 effect。 */
   beforeCards?: ReactNode
-  /** 模块卡（引擎能力、自定义工具）：视觉上排在层级配置卡之前。 */
-  moduleCards?: ReactNode
   /** 模块列表工具栏中的合并创建菜单。 */
   toolbarActions?: ReactNode
 }
 
-/** 预设级模板变量模块卡片（归类于配置列表下）：{{key}} 插值源，非 promptConfig——
+/** 层设置区的模板变量卡片：{{key}} 插值源，非 promptConfig——
  *  不进配置保存路径，保存走 /preset-variables 写 preset.yml 顶层 variables 段。
  *  可折叠（chevron）/ 可删除（清空全部变量，两段式确认）/ 可新建（VariablesEditor 添加变量）。 */
-/** 模板变量卡（模块列表置顶单例）；子代理页的「添加模板变量」入口复用同一实现。 */
 export function TemplateVariablesModuleCard(props: {
   t: PromptToolTranslate
   templateVariables: Record<string, string>
@@ -141,7 +136,7 @@ export function TemplateVariablesModuleCard(props: {
 }
 
 
-/** 提示词配置编辑器：配置列表（策略过滤已并入列表）+ 公共配置卡 + 保存前权威校验。 */
+/** 主会话提示词配置编辑器：列表、筛选与保存前权威校验。 */
 export function PromptConfigsEditor(props: PromptConfigsEditorProps): ReactNode {
   const t = props.t
   return (
@@ -157,9 +152,6 @@ export function PromptConfigsEditor(props: PromptConfigsEditorProps): ReactNode 
         onCreate={props.onCreate}
         createdHidden={props.createdHidden}
         onShowCreated={props.onShowCreated}
-        commonCards={props.commonCards === undefined ? undefined : <div className={styles.commonCards} aria-label={t('configs.common.aria')} data-module-category="common">
-          {props.commonCards}
-        </div>}
         meta={props.meta}
         configs={props.configs}
         viewFilter={props.viewFilter}
@@ -172,7 +164,6 @@ export function PromptConfigsEditor(props: PromptConfigsEditorProps): ReactNode 
         createdConfigId={props.createdConfigId}
         toolbarActions={props.toolbarActions}
         beforeCards={props.beforeCards}
-        moduleCards={props.moduleCards}
         onPatchConfigs={props.onPatchConfigs}
         onSaveConfigs={props.onSaveConfigs}
         onSaveInstructions={props.onSaveInstructions}
