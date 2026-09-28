@@ -34,7 +34,7 @@ dsh --profile prompt-tool
 
 旧的 base-only profile（只有 `dsh-base`）首次启动时，插件会把 `@deepseek-ai/dsh-web-app` 补进该 profile 的 `dsh.profile.bundles`（写前留 `.bak`，幂等），并提示重启；需要重启 DSH 服务后生效，插件不会替你重启运行中的服务。
 
-需要 DSH `0.2.0-rc.1+`（Cordis `4.0.3`）：设置接入 ConfigForms，插件持有的预设通过官方 agent-preset-registry 注册；宿主不再自动扫描 `.agent-presets`。本插件继续管理该目录里的定义与物化文件。官方组合模块跟随核验过的最新 master（`pnpm rebuild:composition`），记录实际提交并以当前快照离线复验。Node 需要 `^22.19.0 || >=24.0.0`，与官方宿主一致。升级后需要用户重启 DSH 服务。
+需要 DSH `0.2.0-rc.1+`（Cordis `4.0.4`）：设置接入 ConfigForms，插件持有的预设通过官方 agent-preset-registry 注册；宿主不再自动扫描 `.agent-presets`。本插件继续管理该目录里的定义与物化文件。官方组合模块跟随核验过的最新 master（`pnpm rebuild:composition`），记录实际提交并以当前快照离线复验。Node 需要 `^22.19.0 || >=24.0.0`，与官方宿主一致。升级后需要用户重启 DSH 服务。
 
 `peerDependencies` 里的 `@deepseek-ai/dsh-*` 声明为 `>=0.2.0-rc.1`（无上界）：宿主在加载插件时会逐条校验这些 peer，范围写死到某个次版本会让每次宿主升版都判为不兼容；这个范围覆盖 0.2.0 及以上，同时把已知不兼容的更早版本挡在外面。实际锁定的版本以 `pnpm-lock.yaml` 为准。`minimumReleaseAgeExclude` 由 pnpm 维护——安装时 pnpm 会把 lockfile 拿去比对供应链策略，因此升级 DSH 后跑一次 `pnpm install` 即可，不要手工逐条增删。
 
