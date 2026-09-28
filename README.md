@@ -34,7 +34,7 @@ dsh --profile prompt-tool
 
 旧的 base-only profile（只有 `dsh-base`）首次启动时，插件会把 `@deepseek-ai/dsh-web-app` 补进该 profile 的 `dsh.profile.bundles`（写前留 `.bak`，幂等），并提示重启；需要重启 DSH 服务后生效，插件不会替你重启运行中的服务。
 
-需要 DSH `0.1.7-alpha.1+`（Cordis `4.0.3`）：设置接入 ConfigForms，插件持有的预设通过官方 agent-preset-registry 注册；宿主不再自动扫描 `.agent-presets`。本插件继续管理该目录里的定义与物化文件。官方组合模块跟随核验过的最新 master（`pnpm rebuild:composition`），记录实际提交并以当前快照离线复验。Node 需要 `^22.19.0 || >=24.0.0`，与官方宿主一致。升级后需要用户重启 DSH 服务。
+需要 DSH `0.2.0-rc.1+`（Cordis `4.0.3`）：设置接入 ConfigForms，插件持有的预设通过官方 agent-preset-registry 注册；宿主不再自动扫描 `.agent-presets`。本插件继续管理该目录里的定义与物化文件。官方组合模块跟随核验过的最新 master（`pnpm rebuild:composition`），记录实际提交并以当前快照离线复验。Node 需要 `^22.19.0 || >=24.0.0`，与官方宿主一致。升级后需要用户重启 DSH 服务。
 
 ## 特性
 

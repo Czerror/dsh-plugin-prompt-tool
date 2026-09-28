@@ -3,9 +3,9 @@
  *
  * ## 来源与同源纪律
  *
- * 抄录自已安装的 `@deepseek-ai/dsh-system-prompt@0.1.7-alpha.1`：
+ * 抄录自已安装的 `@deepseek-ai/dsh-system-prompt@0.2.0-rc.1`：
  * 官方源码 `packages/core/system-prompt/src/index.ts` 的 `SECTION_ORDERS`（32 项）与
- * `CONTEXT_ORDERS`（3 项），核对基线 `c36a83ff6b`。
+ * `CONTEXT_ORDERS`（3 项），核对基线 `4878cdabd8`。
  *
  * 官方**新增、改名或删除**档位时必须同步本文件——本文件与官方包同源，不构成第二权威。
  * 数值一律**不抄**：运行时用官方 `getSectionOrder(name)` / `getContextOrder(name)` 求值，

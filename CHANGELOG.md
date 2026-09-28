@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.8.2] - 2026-09-28
+
+### 兼容 DSH 0.2.0-rc.1
+
+- **修复插件被宿主判为不兼容而拒绝加载**：`peerDependencies` 里的 `@deepseek-ai/dsh-*` 原为 `^0.1.7-alpha.1`，`0.2.0-rc.1` 不满足该区间，宿主的 `evaluatePluginCompatibility` 因此报「不兼容（要求 …），运行它可能导致崩溃或数据丢失」。全部 `@deepseek-ai/dsh-*` 依赖（`peerDependencies` 与 `devDependencies`）对齐到 `0.2.0-rc.1`。
+- **API 面复核**：插件实际使用的宿主导出（`useAnchoredPosition`、`useDismissOnOutsidePointer`、`Menu`/`MenuEntry`、图标族、`Switch`/`Button`/`Tag`，以及 `InjectFace`/`PropsLocale`/`PropsRuntime`/`Translate`）在 0.2.0-rc.1 中均保留，无需改动 `src/`。
+- **宿主要求**：最低版本由 DSH `0.1.7-alpha.1` 提升为 `0.2.0-rc.1`。
+
 ## 测试按 seam 收敛（2026-09-27）
 
 - **测试文件 150 → 33、用例 1617 → 289**：按 TDD 的 seam 约定把覆盖收敛到四条公共边界——引擎注入行为（插入点 / 时机 / 次数 / 受众）、写盘产物语义、bridge 端点载荷、安全与拒绝路径。其余整文件删除，含 `test/client/` 的渲染与浏览器 smoke、SillyTavern 转换、预设管理与技能管理用例。
