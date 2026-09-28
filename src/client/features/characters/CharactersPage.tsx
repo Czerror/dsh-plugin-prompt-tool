@@ -3,7 +3,7 @@
  *  （角色设定 / 系统提示 / 开场白 / 提示词库 / 采样参数）合并进当前激活预设，
  *  已导入的角色卡显示状态并可一键移除。 */
 import { memo, useEffect, useRef, useState, type ReactNode } from 'react'
-import { IconFolderOpenOutlineRegular, IconTrashOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconFolderOpenOutlineRegular, IconTrashOutlineRegular } from '../../ui/icons.tsx'
 import { bridgeCall } from '../../data/bridge-client.ts'
 import { previewAsset, commitAsset } from '../../data/asset-import.ts'
 import { useImportPreviewFlow } from '../../data/use-import-preview-flow.ts'

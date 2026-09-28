@@ -25,9 +25,7 @@ export interface ModelDetection {
 export function detectModels(ctx: Context): ModelDetection {
   const empty = { available: false, providers: [] }
   try {
-    const llm = ctx.get('llm') as {
-      listProviders?: () => Array<{ id?: string; name?: string }>
-    } | undefined
+    const llm = ctx.get('llm')
     if (llm === undefined) return { ...empty, error: 'ctx.get("llm") 返回 undefined' }
     const live = llm.listProviders?.() ?? []
     const liveNames = new Set<string>()
@@ -140,15 +138,13 @@ export async function refreshModelReasoning(ctx: Context, provider: string, mode
   if (pending !== undefined) return pending
   const query = (async (): Promise<ModelReasoningView | undefined> => {
     try {
-      const llm = ctx.get('llm') as {
-        resolveModelInfo?: (provider: string, model: string, signal?: AbortSignal) => Promise<unknown>
-      } | undefined
+      const llm = ctx.get('llm')
       if (llm?.resolveModelInfo === undefined) return undefined
       // 官方方法是类方法（内部经 this 访问 adapters）：解构调用会丢 this，必须 bind。
       const resolveModelInfo = llm.resolveModelInfo.bind(llm)
       const resolved = await withModelTimeout(resolveModelInfo(provider, model), REASONING_QUERY_TIMEOUT_MS)
       if (resolved === undefined) return undefined
-      const view = reasoningViewOf((resolved as { reasoning?: unknown }).reasoning)
+      const view = reasoningViewOf(resolved.reasoning)
       cache.set(key, view)
       return view
     } catch {
@@ -251,10 +247,7 @@ export async function listAdvertisedModels(ctx: Context): Promise<Record<string,
 /** 单次全量刷新；单 provider 失败只丢弃该 provider 的本轮结果，其余照常入目录。 */
 async function refreshModelCatalog(ctx: Context): Promise<Record<string, string[]>> {
   const catalog: Record<string, string[]> = {}
-  const llm = ctx.get('llm') as {
-    listProviders?: () => Array<{ id?: string; name?: string }>
-    listModels?: (provider: string) => Promise<Array<{ id?: string; name?: string }>>
-  } | undefined
+  const llm = ctx.get('llm')
   if (llm?.listProviders === undefined || llm.listModels === undefined) return catalog
   // 官方 llm 服务方法是类方法（内部经 this 访问 adapters/registration）：
   // 解构后直接调用会丢失 this 绑定（TypeError）→ 必须 bind。

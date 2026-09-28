@@ -19,7 +19,7 @@
   pointer-events: auto;
   opacity: 0;
   background: var(--dsw-alias-bg-mask-1);
-  backdrop-filter: var(--dsw-mask-blur);
+  backdrop-filter: none;
 }
 
 .drawerLayer:not([data-open]) .drawerBackdrop { pointer-events: none; }
@@ -46,7 +46,9 @@
   overflow: clip;
   pointer-events: auto;
   background: var(--dsw-alias-bg-layer-2);
-  box-shadow: var(--dsw-elevation-prominent);
+  box-shadow: 0 0 0 0.5px var(--dsw-alias-border-l4),
+    0 3px 8px color-mix(in srgb, var(--dsw-alias-label-primary) 4%, transparent),
+    0 0 20px color-mix(in srgb, var(--dsw-alias-label-primary) 5%, transparent);
 }
 
 .floatingTriggerLayer {
@@ -75,8 +77,8 @@
   cursor: pointer;
   /* 拖动中不要 transition，否则位置滞后于指针。 */
   transition:
-    background-color var(--ds-transition-duration-fast) var(--ds-ease-in-out),
-    color var(--ds-transition-duration-fast) var(--ds-ease-in-out);
+    background-color 150ms ease-in-out,
+    color 150ms ease-in-out;
 }
 
 .floatingTrigger:hover {

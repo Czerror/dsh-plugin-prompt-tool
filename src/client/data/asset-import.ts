@@ -15,5 +15,5 @@ export async function previewAsset(endpoint: ImportEndpoint, request: AssetImpor
 export async function commitAsset(endpoint: ImportEndpoint, preview: ImportPreviewState): Promise<ImportCommitResult> {
   const { files, sourceId, targetId, targetName, overwrite, sourceKind, promptOrderCharacterId, sourceDigest, previewRevision } = preview
   const response = await bridgeCall(endpoint, { files, sourceId, targetId, targetName, overwrite, sourceKind, promptOrderCharacterId, expectedSourceDigest: sourceDigest, expectedPreviewRevision: previewRevision })
-  return response.ok ? { ok: true, label: response.value.id, refreshWarning: 'refreshWarning' in response.value ? response.value.refreshWarning : undefined } : { ok: false, stale: response.code?.endsWith('preview-stale'), message: response.message ?? 'settings bridge unavailable' }
+  return response.ok ? { ok: true, label: response.value.id } : { ok: false, stale: response.code?.endsWith('preview-stale'), message: response.message ?? 'settings bridge unavailable' }
 }

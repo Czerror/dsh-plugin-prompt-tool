@@ -1,6 +1,6 @@
 import { useId, useState, type ReactNode } from 'react'
 import clsx from 'clsx'
-import { IconChevronDownOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconChevronDownOutlineRegular } from './icons.tsx'
 import styles from './controls.module.css'
 /** 模型路由、人设和子代理参数共用的可折叠卡片。 */
 export function EngineModuleCard(props: {

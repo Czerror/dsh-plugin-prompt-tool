@@ -3,13 +3,14 @@ import { memo, useRef, useState, type ReactNode } from 'react'
 import { usePromptToolFields } from '../../data/use-prompt-tool-fields.ts'
 import { EMPTY_FIELDS } from '../../data/prompt-tool-fields.ts'
 import clsx from 'clsx'
-import { IconCopyOutlineRegular, IconFolderOpenOutlineRegular, IconTrashOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconCopyOutlineRegular, IconFolderOpenOutlineRegular, IconTrashOutlineRegular } from '../../ui/icons.tsx'
 import { bridgeCall } from '../../data/bridge-client.ts'
 import { previewAsset, commitAsset } from '../../data/asset-import.ts'
 import { hasWorkspaceDrafts } from '../../data/workspace-drafts.ts'
 import { deepEqual } from '../../data/dirty-state.ts'
 import type { PromptToolStore } from '../../data/use-prompt-tool-store.ts'
 import type { PromptToolTranslate } from '../../locales.ts'
+import type { PresetSummary } from '../../../shared/bridge-contract.ts'
 import { DialogSurface } from '../../ui/DialogSurface.tsx'
 import { ConfirmDialog } from '../../ui/ConfirmDialog.tsx'
 import { HintTooltip } from '../../ui/HintTooltip.tsx'
@@ -150,17 +151,17 @@ export const PresetSwitcher = memo(function PresetSwitcher(props: { store: Promp
     </div>
   )
 
-  function renderCard(preset: { id: string; name: string; description?: string; renderable?: boolean }): ReactNode {
+  function renderCard(preset: PresetSummary): ReactNode {
     const active = fields.presetTemplate === preset.id
     const confirming = confirmingDelete === preset.id
     // 不可渲染（缺 modules/组合文件，包内也无同名模板可回退）：灰显禁切换，
     // 提示还原路径——避免点击后宿主挂载失败的哑弹。
-    const blocked = preset.renderable === false
+    const blocked = preset.renderable === false || preset.broken !== undefined
     return (
       <article key={preset.id} className={clsx(styles.presetCard, blocked && styles.presetCardBlocked)}
         data-active={active ? '' : undefined}>
         <HintTooltip label={blocked
-            ? t('presetSwitcher.card.blocked.hint')
+            ? preset.broken ?? t('presetSwitcher.card.blocked.hint')
             : active ? t('presetSwitcher.card.active.hint') : t('presetSwitcher.card.switch.hint', { name: preset.name })}>
           <button type="button" className={styles.presetCardMain} disabled={blocked}
             onClick={() => store.setPresetTemplate(preset.id)}>
@@ -171,6 +172,7 @@ export const PresetSwitcher = memo(function PresetSwitcher(props: { store: Promp
             </span>
             {preset.description !== undefined && preset.description.length > 0
               && <p className={styles.presetCardDesc}>{preset.description}</p>}
+            {preset.broken !== undefined && <p className={styles.presetBlocked} role="alert">{preset.broken}</p>}
             <code className={styles.presetCardId}>{preset.id}</code>
           </button>
         </HintTooltip>

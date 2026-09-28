@@ -2,7 +2,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import type SettingsService from '@deepseek-ai/dsh-settings'
 import type {} from '@deepseek-ai/dsh-host-webserver'
 import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
-import { basename, dirname, join } from 'node:path'
+import { join } from 'node:path'
 import {
   asString,
   loadPresetContent,
@@ -38,14 +38,16 @@ import { DEFAULT_PRESET_DIR } from './host/paths.ts'
 import { DEFAULT_PRESET_ID } from './shared/preset-ids.ts'
 import { createSkillsRuntime } from './host/skills-runtime.ts'
 import { createPresetRegistrySync } from './host/preset-registry.ts'
+import { resolvePresetToolTarget } from './host/preset-tool-target.ts'
+import type { PresetToolHost } from './host/preset-tool-target.ts'
 
 export const name = 'prompt-tool'
 // 内容走 user 层（AGENTS.md 常驻层 + skill 按需层），
 // 不再注册 system prompt section（否则会被 persona 的 complete:true 整个清零）。
 // 注意：webServer 不放在静态 inject 里——profile 首次可能只有
 // @deepseek-ai/dsh-base（没有 @deepseek-ai/dsh-web-app），硬注入会让插件
-// pending 并导致启动失败。Web 表面改为动态等待 webServer；首次启动时由
-// ensureWebSurface 自动把 web-app bundle 补进 profile，重启一次后生效。
+// pending 并导致启动失败。Web 表面动态等待 webServer，缺失时仅诊断；
+// profile 装配交给官方插件管理流程。
 export const inject = ['skills', 'commands', 'llm', 'subagents']
 
 function readPromptFile(template: string, fallbackText: string): string {
@@ -85,7 +87,8 @@ export function apply(ctx: Context, configIn: Config): void {
   })
   const config = readConfig()
   let registrySync: ReturnType<typeof createPresetRegistrySync> | undefined
-  const refreshPresets = (forceIds?: readonly string[]): Promise<void> => registrySync?.refresh(forceIds) ?? Promise.resolve()
+  const refreshPresets = (forceIds?: readonly string[]): Promise<void> =>
+    registrySync?.refresh(forceIds) ?? Promise.reject(new Error('agentPresets 服务尚未就绪，预设已保存但尚未注册'))
   const modelsState = (): ModelDetection => detectModels(ctx)
   const getModelsState = (): ModelDetection => modelsState()
   // 内容资产优先读生成目录文件（writePreset 落盘），模板 content 作回退；
@@ -93,7 +96,7 @@ export function apply(ctx: Context, configIn: Config): void {
   const initialTemplate = typeof config.presetTemplate === 'string' && config.presetTemplate.length > 0
       ? config.presetTemplate
       : DEFAULT_PRESET_ID
-  // 预设分离：每个预设 = 官方预设根（DEFAULT_PRESET_DIR）下的官方预设目录 <template>/。
+  // 插件自有预设存储：每份定义独立保存在 DEFAULT_PRESET_DIR/<template>/。
   const initialPresetDir = join(DEFAULT_PRESET_DIR, /^[a-zA-Z0-9_-]+$/.test(initialTemplate) ? initialTemplate : DEFAULT_PRESET_ID)
   // 引擎参数从激活预设 preset.yml 读（settings 不再承载参数；每预设独立，随预设走）。
   let initialParams: Record<string, unknown> = {}
@@ -143,9 +146,28 @@ export function apply(ctx: Context, configIn: Config): void {
   }
 
   /** 重建生成目录并刷新官方注册；writePreset 关闭时保留空组合。 */
-  const rebuildPreset = (initial = false): void => {
+  const rebuildPreset = async (initial = false, id = runtime.presetTemplate): Promise<void> => {
+    // 旧会话可继续编辑自身预设；不能借用工作台当前草稿或改动其 runtime。
+    if (id !== runtime.presetTemplate && runtime.writePreset) {
+      const dir = resolvePresetDir(id)
+      const params = resolvePresetParams(loadPresetSpec(dir), {})
+      const prompt = readGeneratedContent(dir, 'preset.md') || readPromptFile(id, runtime.fallbackText)
+      writePreset(params.injectPrompt === false ? '' : prompt, {
+        ...params,
+        presetDir: DEFAULT_PRESET_DIR,
+        presetOrder: runtime.presetOrder,
+        presetTemplate: id,
+        outputId: id,
+        promptConfigs: [],
+        agentsInstructionText: readGeneratedContent(dir, 'agents.md') || readAgents(id),
+        warn: (message) => warn(ctx, message),
+      })
+      await refreshPresets([id])
+      return
+    }
     // 先重读激活预设参数（/param-overrides 保存、TUI 开关、预设切换后生效）。
     reloadPresetParams()
+    const rebuiltIds = new Set([id])
     if (runtime.writePreset) {
       const presetPrompt = runtime.injectPrompt && current.length > 0 ? current : ''
       const options: WritePresetOptions = {
@@ -207,6 +229,7 @@ export function apply(ctx: Context, configIn: Config): void {
             promptConfigs: [],
             agentsInstructionText: '',
           })
+          rebuiltIds.add(preset.id)
         } catch (error) {
           warn(ctx, `prompt-tool: 补建预设 ${preset.id} 失败（切换时可重试）：${error instanceof Error ? error.message : String(error)}`)
         }
@@ -218,10 +241,8 @@ export function apply(ctx: Context, configIn: Config): void {
       seededPresets.clear()
     } else {
       // writePreset 关闭时清空各预设目录的生成物，保留 preset.yml 参数源与预设根本身。
-      // agent.cordis.yml 改写为空组合而非删除：官方 discovery 对缺组合文件的目录
-      // 仍占用 id 并判 broken（挂载抛 agent-preset/invalid、picker 丢弃该行），
-      // 会导致 default 预设无法新建会话、全部预设无法切换；空组合零行可正常
-      // 挂载，等价「停止注入」语义，重新开启后由重建恢复完整组合。
+      // 保留空组合供注册层读取：缺少组合会使刷新失败并继续保留旧 revision；
+      // 空组合可正常注册，后续会话停止注入，重新开启后由重建恢复。
       // 绝不删除整个用户预设目录（旧版误删预设根：用户全部预设、
       // 种子标记 .pt-seeded、共享 .engine 一并清空）。
       let cleaned = 0
@@ -243,8 +264,10 @@ export function apply(ctx: Context, configIn: Config): void {
       }
       warn(ctx, `prompt-tool: writePreset 已关闭，清空 ${cleaned} 个预设目录的组合（preset.yml 参数保留）`)
     }
-    void refreshPresets(runtime.writePreset ? [runtime.presetTemplate] : listPresets().map((preset) => preset.id))
-      .catch((error) => warn(ctx, `prompt-tool: 重建后的预设注册刷新失败：${String(error)}`))
+    // 首次物化发生在服务注入前；稍后的 agentPresets 回调负责注册，用户保存则必须等待。
+    if (!initial || registrySync !== undefined) {
+      await refreshPresets(runtime.writePreset ? [...rebuiltIds] : listPresets().map((preset) => preset.id))
+    }
   }
 
   /** 激活预设目录（内容按预设根 <template>/ 隔离；非法名回退 standard）。 */
@@ -276,27 +299,15 @@ export function apply(ctx: Context, configIn: Config): void {
     skillsRuntime.invalidate,
     // 激活预设目录：内容资产/提示词配置按预设隔离在预设根 <template>/。
     () => activePresetDir(),
-    (scopes) => {
+    async (scopes) => {
       // 内容导入后：批量更新运行时文本，单次重建生成目录（一次自动保存只重建一次）。
       for (const scope of scopes) {
         if (scope === 'preset') current = readGeneratedContent(activePresetDir(), 'preset.md')
         else currentAgents = readGeneratedContent(activePresetDir(), 'agents.md')
       }
-      try {
-        rebuildPreset()
-      } catch (error) {
-        warn(ctx, `prompt-tool: preset import rebuild failed: ${String(error)}`)
-      }
+      await rebuildPreset()
     },
-    () => {
-      // 参数覆盖变更：应用参数并重建。
-      try {
-        rebuildPreset()
-      } catch (error) {
-        warn(ctx, `prompt-tool: overrides rebuild failed: ${String(error)}`)
-        throw error
-      }
-    },
+    () => rebuildPreset(),
     // host 已安装完整候选；这里只刷新内存，不能二次物化覆盖导入资产。
     async (id) => {
       if (id === runtime.presetTemplate) {
@@ -307,15 +318,11 @@ export function apply(ctx: Context, configIn: Config): void {
       skillsRuntime.invalidate()
       await refreshPresets([id])
     },
-    () => {
-      rebuildPreset()
-    },
-    () => refreshPresets(),
+    () => rebuildPreset(),
+    (id) => refreshPresets([id]),
   )
 
-  // 首次以 base-only profile 启动时自动补 @deepseek-ai/dsh-web-app：
-  // 写进 profile bundles（下一次启动由官方装配路径生效），并提示重启。
-  // 延迟任务挂在 effect 上：插件卸载后不再补写 profile，也不残留计时器。
+  // 装配结束后只读诊断 Web 能力；插件卸载时取消任务，不编辑 profile。
   scheduleWebSurfaceRepair(ctx, (message) => warn(ctx, message))
 
   // provider 拓扑变化（适配器注册/移除）会让已缓存的模型目录过期：
@@ -364,35 +371,8 @@ export function apply(ctx: Context, configIn: Config): void {
     return typeof candidate === 'string' && candidate.length > 0 ? candidate : undefined
   }
   /** 官方生效默认值（包含未设置 selectedDefault 时的部署回退）。 */
-  type AgentPresetsPolicyService = {
-    readonly defaultId?: unknown
-  }
-  let agentPresetsService: AgentPresetsPolicyService | undefined
-  let modeSelectionWarned = false
-  /**
-   * 官方 modeSelectionEnabled=false 时忽略 selectedDefault，使用部署 default。
-   */
-  const modeSelectionEnabled = (value: unknown): boolean | undefined => {
-    if (value === null || typeof value !== 'object') return undefined
-    const flag = (value as { modeSelectionEnabled?: unknown }).modeSelectionEnabled
-    return typeof flag === 'boolean' ? flag : undefined
-  }
-  const warnModeSelectionOnce = (): void => {
-    if (modeSelectionWarned) return
-    modeSelectionWarned = true
-    warn(ctx, 'prompt-tool: 宿主已关闭 agent-preset-registry 模式选择（modeSelectionEnabled=false）：写入 selectedDefault 不影响新会话。请修改 profile 的 agent-preset-registry config.default，或重新开启模式选择。')
-  }
-  /**
-   * 生效默认预设（与官方 selectionPolicy 同源）：开关关闭时 official 只认
-   * `config.default`，该值只有服务 getter 能给出；服务未就绪时返回 undefined，
-   * 由 agentPresets 的迟到回调再对齐一次。
-   */
-  const effectiveHostDefault = (value?: unknown): string | undefined => {
-    const document = value ?? (hostSettingsService === undefined ? undefined : settingsDocument(hostSettingsService, agentPresetsNs))
-    if (modeSelectionEnabled(document) !== false && readHostDefault(document) !== undefined) return readHostDefault(document)
-    const effective = agentPresetsService?.defaultId
-    return typeof effective === 'string' && effective.length > 0 ? effective : undefined
-  }
+  let agentPresetsService: Context['agentPresets'] | undefined
+  let hostDefaultRevision = 0
   const managedPresetExists = (id: string): boolean => {
     try {
       return listPresets().some(preset => preset.id === id)
@@ -410,11 +390,6 @@ export function apply(ctx: Context, configIn: Config): void {
       warn(ctx, `prompt-tool: 预设 id ${JSON.stringify(template)} 不符合预设目录命名（^[a-z0-9][a-z0-9-]*$），跳过 selectedDefault 同步`)
       return
     }
-    // 策略关闭时写入必然被忽略：不假装同步成功，只告警一次。
-    if (modeSelectionEnabled(settingsDocument(s, agentPresetsNs)) === false) {
-      warnModeSelectionOnce()
-      return
-    }
     if (readHostDefault(settingsDocument(s, agentPresetsNs)) === template) return
     // 持久化更新异步完成，必须处理 rejection。
     void s.update(agentPresetsNs, { selectedDefault: template })
@@ -422,11 +397,11 @@ export function apply(ctx: Context, configIn: Config): void {
         warn(ctx, `prompt-tool: 同步宿主 selectedDefault 失败：${error instanceof Error ? error.message : String(error)}`)
       })
   }
-  const syncTemplateFromHostDefault = (value?: unknown, initial = false): void => {
+  const syncTemplateFromHostDefault = (initial = false): void => {
     const s = hostSettingsService
     if (s === undefined) return
-    // 跟随的是「生效默认」而不是存储值：策略关闭时存储值已不再决定新会话。
-    const raw = effectiveHostDefault(value)
+    // 官方 getter 负责 selectedDefault 与部署 default 的优先级；迟到时由 inject 重试。
+    const raw = agentPresetsService?.defaultId
     if (raw === undefined) return
     const template = raw
     if (template === runtime.presetTemplate) return
@@ -465,14 +440,14 @@ registerTuiCommand(
   () => activePresetDir(),
   // TUI 参数开关：写激活预设 preset.yml（settings 不再承载引擎参数）。
   // 保存/重建失败直接抛给命令层，由 CommandResult:error 呈现给用户。
-  (key, value) => {
+  async (key, value) => {
     if (key === 'promptConfigs') {
       savePresetParams(DEFAULT_PRESET_DIR, runtime.presetTemplate, undefined, Array.isArray(value) ? value as unknown[] : undefined)
     } else {
       savePresetParams(DEFAULT_PRESET_DIR, runtime.presetTemplate, { [key]: value }, undefined)
     }
     reloadPresetParams()
-    rebuildPreset()
+    await rebuildPreset()
   },
   // 技能启停：改写技能文件的调用策略键（正文不动），失败原因回给命令层。
   (name, enabled) => {
@@ -486,7 +461,7 @@ registerTuiCommand(
 )
 
   let needsInitialApply = true
-  const applyState = (): void => {
+  const applyState = async (): Promise<void> => {
     const next = currentSource()
     const nextTemplate = typeof next.presetTemplate === 'string' && next.presetTemplate.length > 0
       ? next.presetTemplate
@@ -521,39 +496,24 @@ registerTuiCommand(
     runtime.presetOrder = nextRuntime.presetOrder
     runtime.fallbackText = nextRuntime.fallbackText
 
-    rebuildPreset(initial)
-    if (presetTemplateChanged) {
+    const defaultRevision = hostDefaultRevision
+    await rebuildPreset(initial)
+    if (presetTemplateChanged && runtime.presetTemplate === nextRuntime.presetTemplate && defaultRevision === hostDefaultRevision) {
       syncHostDefault()
       // 内置工具面随组合行走（per-session 挂载），无需宿主平面重挂。
     }
   }
 
   // 内置模型工具由三个独立预设模块按需挂载；宿主只提供对应注册服务。
+  const presetToolHost: PresetToolHost = {
+    target: (exec) => resolvePresetToolTarget(ctx, exec, DEFAULT_PRESET_DIR, (id) => registrySync?.owns(id) === true),
+    rebuild: (id) => rebuildPreset(false, id),
+  }
   ctx.provide('pt-character-tools', {
-    mount: (scopeCtx: Context): (() => void) => registerCharacterTools(scopeCtx, {
-      presetRoot: () => dirname(activePresetDir()),
-      templateName: () => basename(activePresetDir()),
-      rebuild: () => {
-        try {
-          rebuildPreset()
-        } catch (error) {
-          warn(ctx, 'prompt-tool: character tool rebuild failed: ' + String(error))
-        }
-      },
-    }),
+    mount: (scopeCtx: Context): (() => void) => registerCharacterTools(scopeCtx, presetToolHost),
   })
   ctx.provide('pt-world-book-tools', {
-    mount: (scopeCtx: Context): (() => void) => registerWorldBookTools(scopeCtx, {
-      activeDir: () => activePresetDir(),
-      presetRoot: () => dirname(activePresetDir()),
-      rebuild: () => {
-        try {
-          rebuildPreset()
-        } catch (error) {
-          warn(ctx, 'prompt-tool: world-book tool rebuild failed: ' + String(error))
-        }
-      },
-    }),
+    mount: (scopeCtx: Context): (() => void) => registerWorldBookTools(scopeCtx, presetToolHost),
   })
   ctx.provide('pt-session-var-tools', {
     mount: (scopeCtx: Context): (() => void) => registerSessionVarTools(scopeCtx),
@@ -566,13 +526,13 @@ registerTuiCommand(
 
   const applyConfig = (): void => {
     settingsBridge.invalidateDescriptor()
-    try { applyState() } catch (error) { warn(ctx, `prompt-tool: applyState failed: ${error instanceof Error ? error.message : String(error)}`) }
+    void applyState().catch((error) => warn(ctx, `prompt-tool: applyState failed: ${error instanceof Error ? error.message : String(error)}`))
   }
   applyConfig()
   ctx.effect(() => ctx.on('loader/volatile-update', applyConfig))
 
   ctx.inject(['agentPresets'], (apctx: Context) => {
-    agentPresetsService = apctx.get('agentPresets') as AgentPresetsPolicyService | undefined
+    agentPresetsService = apctx.agentPresets
     const sync = createPresetRegistrySync(apctx, DEFAULT_PRESET_DIR)
     registrySync = sync
     apctx.effect(() => async () => {
@@ -583,18 +543,22 @@ registerTuiCommand(
       await sync.dispose()
     })
     void sync.refresh().catch((error) => warn(ctx, `prompt-tool: 初始预设注册失败：${String(error)}`))
-    syncTemplateFromHostDefault(undefined, true)
+    syncTemplateFromHostDefault(true)
   })
   ctx.inject(['settings'], (sctx: Context) => {
     hostSettingsService = sctx.settings
     sctx.effect(() => sctx.settings.configure({ auto: false }, ctx.fiber))
     sctx.effect(() => () => { if (hostSettingsService === sctx.settings) hostSettingsService = undefined })
     sctx.effect(() => sctx.on('settings/document-updated', (ns) => {
-      if (String(ns) === agentPresetsNs) syncTemplateFromHostDefault()
+      if (String(ns) === agentPresetsNs) {
+        // 注册期间发生的新默认选择优先，旧的 applyState 完成后不得反向覆盖。
+        hostDefaultRevision++
+        syncTemplateFromHostDefault()
+      }
       if (String(ns) === NS) applyConfig()
     }), 'prompt-tool: follow settings documents')
     settingsBridge.invalidateDescriptor()
-    syncTemplateFromHostDefault(undefined, true)
+    syncTemplateFromHostDefault(true)
   })
 }
 

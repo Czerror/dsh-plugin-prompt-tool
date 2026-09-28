@@ -1,6 +1,7 @@
 import { useId, useRef, useState, type FocusEvent, type ReactNode } from 'react'
 import clsx from 'clsx'
-import { IconChevronDownOutlineRegular, Switch } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconChevronDownOutlineRegular } from '../../ui/icons.tsx'
+import { Switch } from '../../ui/Switch.tsx'
 import type { PromptToolTranslate } from '../../locales.ts'
 import { PromptConfigList, type PromptConfigListProps } from './PromptConfigList.tsx'
 import { HintTooltip } from '../../ui/HintTooltip.tsx'

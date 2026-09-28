@@ -6,7 +6,7 @@
  *  既有子代理不变，策略只影响后续新实例。 */
 import { useCallback, useEffect, useId, useMemo, useRef, useState, type FocusEvent, type ReactNode } from 'react'
 import clsx from 'clsx'
-import { Switch } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Switch } from '../../ui/Switch.tsx'
 import type { FieldDraft, PolicyEditorDraft, WorkspaceDrafts } from '../../data/workspace-drafts.ts'
 import { bridgeCall } from '../../data/bridge-client.ts'
 import { deepEqual } from '../../data/dirty-state.ts'

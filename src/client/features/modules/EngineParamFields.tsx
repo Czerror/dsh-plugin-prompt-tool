@@ -1,6 +1,6 @@
 import { useSyncExternalStore, type ReactNode } from 'react'
 import clsx from 'clsx'
-import { Switch } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Switch } from '../../ui/Switch.tsx'
 import { ENGINE_PARAM_DEFINITIONS, ENGINE_PARAM_KEYS, type EngineParamKey } from '../../../shared/engine-params.ts'
 import { engineGroupParamKeys } from '../../../shared/engine-capabilities.ts'
 import type { PromptToolStore } from '../../data/use-prompt-tool-store.ts'

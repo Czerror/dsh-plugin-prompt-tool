@@ -6,12 +6,12 @@
   padding: 3px 7px;
   border-radius: 8px;
   background: color-mix(in srgb, var(--dsw-alias-tooltip-bg) 94%, var(--dsw-alias-bg-base));
-  color: var(--dsw-static-neutral-bluish-00);
-  font: var(--dsw-font-xs-13);
+  color: var(--dsw-alias-toast-label);
+  font: 13px/20px system-ui, sans-serif;
   white-space: pre-line;
   overflow-wrap: break-word;
   pointer-events: auto;
-  animation: hint-tooltip-in var(--ds-transition-duration-fast) var(--ds-ease-in-out);
+  animation: hint-tooltip-in 150ms ease-in-out;
 }
 
 @keyframes hint-tooltip-in {

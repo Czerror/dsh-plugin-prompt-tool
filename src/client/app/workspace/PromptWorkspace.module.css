@@ -10,7 +10,7 @@
   overflow: clip;
   color: var(--dsw-alias-label-primary);
   background: var(--dsw-alias-bg-base);
-  font: var(--dsw-font-xxs-12);
+  font: 12px/18px system-ui, sans-serif;
 }
 
 .shell *,
@@ -44,13 +44,13 @@
 }
 
 /* 标题行的状态反馈：单行截断——长文本若换行会把 masthead 撑高，破坏与官方会话头的对齐。 */
-.mastheadNotice { min-width: 0; max-width: 42%; flex: 0 1 auto; margin: 0; color: var(--dsw-alias-label-secondary); font: var(--dsw-font-xxs-12); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mastheadNotice { min-width: 0; max-width: 42%; flex: 0 1 auto; margin: 0; color: var(--dsw-alias-label-secondary); font: 12px/18px system-ui, sans-serif; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mastheadNoticeError { color: var(--dsw-alias-state-error-primary); }
 
 .brand { display: flex; min-width: 0; flex: 1 1 160px; align-items: center; flex-wrap: wrap; gap: 8px; }
-.brandLogo { display: grid; width: 28px; height: 28px; flex: none; place-items: center; color: var(--dsw-alias-label-secondary); font: var(--dsw-font-base-strong-16); }
-.brand h1 { margin: 0; font: var(--dsw-font-base-strong-16); overflow-wrap: anywhere; }
-.statusCluster { display: flex; min-width: 0; align-items: center; gap: 8px; color: var(--dsw-alias-label-secondary); font: var(--dsw-font-xxs-12); font-variant-numeric: tabular-nums; }
+.brandLogo { display: grid; width: 28px; height: 28px; flex: none; place-items: center; color: var(--dsw-alias-label-secondary); font: 600 16px/24px system-ui, sans-serif; }
+.brand h1 { margin: 0; font: 600 16px/24px system-ui, sans-serif; overflow-wrap: anywhere; }
+.statusCluster { display: flex; min-width: 0; align-items: center; gap: 8px; color: var(--dsw-alias-label-secondary); font: 12px/18px system-ui, sans-serif; font-variant-numeric: tabular-nums; }
 .statusCluster > span:last-child { overflow-wrap: anywhere; }
 
 .backButton {
@@ -67,17 +67,17 @@
   color: var(--dsw-alias-label-primary);
   background: transparent;
   cursor: pointer;
-  font: var(--dsw-font-xxs-12);
+  font: 12px/18px system-ui, sans-serif;
 }
 .backButton:hover { background: var(--dsw-alias-interactive-bg-hover); }
 
 .topNavigation { display: flex; min-width: 0; flex: 0 0 auto; padding: 0 16px; background: var(--dsw-alias-bg-base); }
 .nav { display: flex; min-width: 0; flex: 1; align-items: stretch; gap: 4px; overflow-x: auto; overscroll-behavior-inline: contain; border-bottom: 0.5px solid var(--dsw-alias-border-l2); padding: 4px 2px; }
-.nav button { display: flex; min-width: max-content; min-height: 36px; align-items: center; padding: 6px 12px; border: 0; border-bottom: 2px solid transparent; border-radius: 8px 8px 0 0; color: var(--dsw-alias-label-secondary); background: transparent; text-align: left; cursor: pointer; font: var(--dsw-font-xs-13); }
+.nav button { display: flex; min-width: max-content; min-height: 36px; align-items: center; padding: 6px 12px; border: 0; border-bottom: 2px solid transparent; border-radius: 8px 8px 0 0; color: var(--dsw-alias-label-secondary); background: transparent; text-align: left; cursor: pointer; font: 13px/20px system-ui, sans-serif; }
 .nav button:hover { color: var(--dsw-alias-label-primary); background: var(--dsw-alias-interactive-bg-hover); }
 .nav button > span { display: grid; min-width: 0; gap: 2px; }
-.nav button strong { font: var(--dsw-font-xs-strong-13); }
-.nav button small { color: var(--dsw-alias-label-secondary); font: var(--dsw-font-xxxs-11); }
+.nav button strong { font: 600 13px/20px system-ui, sans-serif; }
+.nav button small { color: var(--dsw-alias-label-secondary); font: 11px/16px system-ui, sans-serif; }
 .nav button[data-active] { color: var(--dsw-alias-label-primary); border-bottom-color: var(--dsw-alias-state-business-primary); }
 
 .canvas { min-width: 0; min-height: 0; flex: 1; overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; scroll-padding-block-start: calc(var(--pt-sticky-height, 0px) + 8px); }

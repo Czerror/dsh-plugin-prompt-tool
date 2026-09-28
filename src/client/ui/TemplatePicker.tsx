@@ -1,7 +1,8 @@
 /** 内置模板选择浮层：body 顶层 portal，并持续跟随触发按钮。 */
 import type { ReactNode, RefObject } from 'react'
 import { createPortal } from 'react-dom'
-import { Button, useDismissOnOutsidePointer } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Button } from './Button.tsx'
+import { useDismissOnOutsidePointer } from './outside-pointer.ts'
 import type { PromptToolLocaleKey, PromptToolTranslate } from '../locales.ts'
 import { useAnchoredPopoverStyle } from './anchored-popover.ts'
 import { useDialogFocus } from './dialog-focus.ts'

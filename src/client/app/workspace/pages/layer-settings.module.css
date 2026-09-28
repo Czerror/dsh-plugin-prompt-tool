@@ -21,7 +21,7 @@
 .groupTitle {
   margin: 0 0 16px;
   color: var(--dsw-alias-label-primary);
-  font: var(--dsw-font-xs-strong-13);
+  font: 600 13px/20px system-ui, sans-serif;
   text-wrap: balance;
   overflow-wrap: anywhere;
 }
@@ -80,7 +80,7 @@
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   gap: 12px;
-  font: var(--dsw-font-xxs-12);
+  font: 12px/18px system-ui, sans-serif;
 }
 
 .capabilityRow > span { min-width: 0; overflow-wrap: anywhere; text-wrap: pretty; }

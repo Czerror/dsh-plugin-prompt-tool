@@ -1,6 +1,6 @@
-/** 开关行：label + hint + 可选 extra + 官方 Switch。 */
+/** 开关行：label + hint + 可选 extra。 */
 import type { ReactNode } from 'react'
-import { Switch } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Switch } from './Switch.tsx'
 import styles from './controls.module.css'
 
 export function ToggleRow(props: { id: string; label: string; hint: string; checked: boolean; disabled?: boolean; extra?: ReactNode; onChange: (value: boolean) => void }): ReactNode {

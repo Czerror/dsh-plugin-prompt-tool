@@ -1,8 +1,8 @@
 import { useRef, useState, type ReactNode, type RefObject } from 'react'
-import { IconChevronDownOutlineRegular, Menu } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconChevronDownOutlineRegular } from '../../ui/icons.tsx'
+import { Menu } from '../../ui/Menu.tsx'
 import type { PromptToolStore } from '../../data/use-prompt-tool-store.ts'
 import type { PromptToolTranslate } from '../../locales.ts'
-import { useMenuFocus } from '../../ui/menu-focus.ts'
 import { ENGINE_CAPABILITIES, ENGINE_RECIPES, engineRecipe, isEngineCapabilityPresent } from '../../../shared/engine-capabilities.ts'
 import styles from '../../ui/controls.module.css'
 
@@ -28,7 +28,6 @@ export function EngineCapabilityCreateMenu(props: {
 }): ReactNode {
   const { store, t, anchorRef, extraItems = [], onExtraSelect, excludeCapabilities = [] } = props
   const [open, setOpen] = useState(false)
-  const firstItemRef = useMenuFocus(open)
   const fallbackAnchor = useRef<HTMLButtonElement>(null)
   const trigger = anchorRef ?? fallbackAnchor
   const editable = store.fields.writePreset && store.moduleFacts?.editable === true
@@ -48,13 +47,7 @@ export function EngineCapabilityCreateMenu(props: {
       : []),
   ]
   if (items.length === 0) return null
-  return <span data-engine-create-layer={props.layer} onKeyDown={(event) => {
-    if (!open || !['Escape', 'Tab'].includes(event.key)) return
-    event.stopPropagation()
-    if (event.key === 'Escape') event.preventDefault()
-    trigger.current?.focus()
-    setOpen(false)
-  }}><Menu open={open} onClose={() => setOpen(false)} items={items.map((item, index) => ({ ...item, label: <span ref={index === 0 ? firstItemRef : undefined}>{item.label}</span> }))} align="end" portal compact autoFocus
+  return <span data-engine-create-layer={props.layer}><Menu open={open} onClose={() => setOpen(false)} items={items} align="end" compact
     onSelect={(id) => {
       setOpen(false)
       trigger.current?.focus()

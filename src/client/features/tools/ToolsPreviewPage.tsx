@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState, useSyncExternalStore, type ReactNode } from 'react'
-import { IconSearchOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconSearchOutlineRegular } from '../../ui/icons.tsx'
 import type { PromptToolHostApi } from '../../data/host-api.ts'
 import type { PromptToolTranslate } from '../../locales.ts'
 import { MenuSelect } from '../../ui/MenuSelect.tsx'
@@ -32,8 +32,9 @@ export function ToolsPreviewPage({ api, presetId, t, browse, onNavigate, onReady
     void Promise.resolve().then(() => api.listAgentPresets()).then((options) => {
       if (!active) return
       setPresets(options)
-      setSelectedId((current) => options.some((preset) => preset.id === current)
-        ? current : options.some((preset) => preset.id === presetId) ? presetId! : options[0]?.id ?? '')
+      const available = options.filter((preset) => preset.broken === undefined)
+      setSelectedId((current) => available.some((preset) => preset.id === current)
+        ? current : available.some((preset) => preset.id === presetId) ? presetId! : available[0]?.id ?? '')
       setLoading(false)
     }, (reason: unknown) => {
       if (!active) return
@@ -57,7 +58,8 @@ export function ToolsPreviewPage({ api, presetId, t, browse, onNavigate, onReady
         <MenuSelect ariaLabel={t('tools.surface.source.aria')} value={selectedId} placeholder={t('tools.surface.source.placeholder')}
           disabled={presets.length === 0} className={css.toolPresetSelect} onChange={setSelectedId}
           onOpen={() => setRevision((value) => value + 1)}
-          options={presets.map((preset) => ({ value: preset.id, label: preset.name ?? preset.id }))} />
+          options={presets.map((preset) => ({ value: preset.id, disabled: preset.broken !== undefined,
+            label: `${preset.name ?? preset.id}${preset.broken === undefined ? '' : ` · ${preset.broken}`}` }))} />
         {loading && <span className={css.toolSurfaceHint} role="status">{t('tools.loadingPresets')}</span>}
         {error && <span className={css.toolSurfaceError} role="alert">{error}</span>}
         {!loading && !error && presets.length === 0 && <span className={css.toolSurfaceHint}>{t('tools.noPresets')} {onNavigate && <button type="button" className={css.toolRefresh} onClick={() => onNavigate('presets')}>{t('configs.chooseEditable')}</button>}</span>}

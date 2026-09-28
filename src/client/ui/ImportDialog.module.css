@@ -1,5 +1,5 @@
-.content { display: grid; gap: 16px; padding: 6px; font: var(--dsw-font-xs-13); overflow-wrap: anywhere; }
-.heading { margin: 0; font: var(--dsw-font-xs-strong-13); }
+.content { display: grid; gap: 16px; padding: 6px; font: 13px/20px system-ui, sans-serif; overflow-wrap: anywhere; }
+.heading { margin: 0; font: 500 13px/20px system-ui, sans-serif; }
 .avatar { width: 80px; height: 80px; object-fit: cover; border-radius: 8px; }
 .content p { margin: 0; }
 .content fieldset { min-width: 0; border: 0.5px solid var(--dsw-alias-border-l1); border-radius: 8px; padding: 12px; }

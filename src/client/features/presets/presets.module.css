@@ -34,7 +34,7 @@
   padding: 1px 8px;
   background: color-mix(in srgb, var(--dsw-alias-state-error-primary) 8%, transparent);
   color: color-mix(in srgb, var(--dsw-alias-state-error-primary) 80%, var(--dsw-alias-label-primary));
-  font: var(--dsw-font-xxs-12);
+  font: 12px/18px system-ui, sans-serif;
   overflow-wrap: anywhere;
 }
 .presetCardBlocked {

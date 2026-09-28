@@ -11,7 +11,7 @@
   corner-shape: round;
   color: var(--dsw-alias-label-tertiary);
   background: var(--dsw-alias-bg-layer-2);
-  font: var(--dsw-font-xxxs-11);
+  font: 11px/14px system-ui, sans-serif;
 }
 
 .duplicateBadge {
@@ -24,7 +24,7 @@
   padding: 1px 8px;
   color: color-mix(in srgb, var(--dsw-alias-state-error-primary) 80%, var(--dsw-alias-label-primary));
   background: color-mix(in srgb, var(--dsw-alias-state-error-primary) 7%, transparent);
-  font: var(--dsw-font-xxs-12);
+  font: 12px/18px system-ui, sans-serif;
   overflow-wrap: anywhere;
 }
 
@@ -47,11 +47,11 @@
 .dirPath {
   min-width: 0;
   color: var(--dsw-alias-label-primary);
-  font: var(--dsw-font-markdown-code);
-  font-family: var(--ds-font-family-code, ui-monospace, monospace);
+  font: 12px/19px ui-monospace, monospace;
+  font-family: ui-monospace, monospace;
   overflow-wrap: anywhere;
 }
-.dirCardMeta { color: var(--dsw-alias-label-secondary); font: var(--dsw-font-xxs-12); overflow-wrap: anywhere; }
+.dirCardMeta { color: var(--dsw-alias-label-secondary); font: 12px/18px system-ui, sans-serif; overflow-wrap: anywhere; }
 
 /* 添加目录行：选择器主按钮 + 输入路径次要。 */
 .dirAddBar {
@@ -65,12 +65,12 @@
 /* 与九层模块卡共用外壳；摘要始终只占三行。 */
 .skillEntry[data-invalid] { border-color: var(--dsw-alias-state-error-primary); }
 .skillCardTitleRow { display: flex; min-width: 0; height: 24px; align-items: center; gap: 8px; }
-.skillName { min-width: 0; font: var(--dsw-font-xs-strong-13); color: var(--dsw-alias-label-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.skillCardMeta { display: block; min-width: 0; height: 20px; color: var(--dsw-alias-label-secondary); font: var(--dsw-font-xxs-12); line-height: 20px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.skillName { min-width: 0; font: 500 13px/20px system-ui, sans-serif; color: var(--dsw-alias-label-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.skillCardMeta { display: block; min-width: 0; height: 20px; color: var(--dsw-alias-label-secondary); font: 12px/18px system-ui, sans-serif; line-height: 20px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .skillSourceLine { display: flex; min-width: 0; height: 18px; align-items: center; gap: 10px; white-space: nowrap; }
 .skillSourceLine .skillCardSource { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.skillPriority { flex: none; color: var(--dsw-alias-label-tertiary); font: var(--dsw-font-xxxs-11); font-variant-numeric: tabular-nums; white-space: nowrap; }
-.skillDraftMark { flex: none; color: var(--dsw-alias-label-secondary); font: var(--dsw-font-xxxs-11); }
+.skillPriority { flex: none; color: var(--dsw-alias-label-tertiary); font: 11px/14px system-ui, sans-serif; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.skillDraftMark { flex: none; color: var(--dsw-alias-label-secondary); font: 11px/14px system-ui, sans-serif; }
 .skillEditor { min-height: 240px; tab-size: 2; }
 
 /* 勾选框：只选择（职责分离——技能开关由 Switch 与批量按钮控制）。 */
@@ -131,8 +131,8 @@
 .skillStats button[data-active] {
   border-color: var(--dsw-alias-state-business-primary);
 }
-.skillStats strong { font: var(--dsw-font-base-strong-16); font-variant-numeric: tabular-nums; }
-.skillStats small { color: var(--dsw-alias-label-secondary); font: var(--dsw-font-xxs-12); overflow-wrap: anywhere; }
+.skillStats strong { font: 500 16px/24px system-ui, sans-serif; font-variant-numeric: tabular-nums; }
+.skillStats small { color: var(--dsw-alias-label-secondary); font: 12px/18px system-ui, sans-serif; overflow-wrap: anywhere; }
 .skillStatDot { width: 8px; height: 8px; margin-bottom: 1px; border-radius: 50%; corner-shape: round; background: var(--chip); }
 .skillStatAll { --chip: var(--dsw-alias-label-tertiary); }
 .skillStatusModel { --chip: var(--dsw-alias-state-business-primary); }
@@ -143,7 +143,7 @@
 .selectionCount {
   flex: 0 0 auto;
   color: var(--dsw-alias-label-secondary);
-  font: var(--dsw-font-xxs-strong-12);
+  font: 500 12px/18px system-ui, sans-serif;
   font-variant-numeric: tabular-nums;
 }
 
@@ -158,13 +158,13 @@
   padding-left: 2px;
   overflow-wrap: anywhere;
   color: color-mix(in srgb, var(--dsw-alias-state-error-primary) 80%, var(--dsw-alias-label-primary));
-  font: var(--dsw-font-xxs-12);
+  font: 12px/18px system-ui, sans-serif;
 }
 
 /* 来源标注：导入来源目录或通道，只读事实，不是写入授权。 */
 .skillCardSource {
   color: var(--dsw-alias-label-tertiary);
-  font: var(--dsw-font-xxxs-11);
+  font: 11px/14px system-ui, sans-serif;
   overflow-wrap: anywhere;
 }
 
@@ -182,7 +182,7 @@
   align-items: flex-start;
   gap: 4px;
   color: var(--dsw-alias-label-secondary);
-  font: var(--dsw-font-xxxs-11);
+  font: 11px/14px system-ui, sans-serif;
   cursor: pointer;
   white-space: nowrap;
 }
@@ -210,12 +210,12 @@
   flex-direction: column;
   gap: 4px;
   color: var(--dsw-alias-label-secondary);
-  font: var(--dsw-font-xxs-12);
+  font: 12px/18px system-ui, sans-serif;
 }
 .skillCreateField textarea {
   resize: vertical;
   min-height: 96px;
-  font-family: var(--ds-font-family-code, ui-monospace, monospace);
+  font-family: ui-monospace, monospace;
 }
 
 /* 卡内行操作区。 */
@@ -246,7 +246,7 @@
 }
 .skillGroupHead strong {
   color: var(--dsw-alias-label-primary);
-  font: var(--dsw-font-xs-strong-13);
+  font: 500 13px/20px system-ui, sans-serif;
 }
 
 @container workspace (max-width: 620px) {

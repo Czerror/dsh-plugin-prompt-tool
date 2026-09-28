@@ -4,12 +4,11 @@ import { join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { parse } from 'yaml'
 import type { Context } from '@deepseek-ai/cordis'
-import { entryListProblem } from '@deepseek-ai/dsh-agent-preset-registry'
 import type { PresetDefinition } from '@deepseek-ai/dsh-agent-preset-registry'
 import { listPresets, loadPresetSpec } from './manifest.ts'
 import { PRESET_ENGINE_PREFIX } from './preset-install.ts'
 
-type Registration = { definition: PresetDefinition; fingerprint: string; dispose: () => Promise<void> }
+type Registration = { definition: PresetDefinition; fingerprint: string; dispose: () => Promise<void>; broken?: string }
 
 /**
  * 共享引擎模块的受管配置字段：值按**历史语义**相对 `<预设根>/.engine/` 书写
@@ -118,8 +117,6 @@ function readDefinition(root: string, id: string): PresetDefinition {
     version: '1.2',
     customTags: [{ tag: 'tag:yaml.org,2002:js', resolve: (__jsExpr: string) => ({ __jsExpr }) }],
   })
-  const problem = entryListProblem(plugins)
-  if (problem !== undefined) throw new Error(`预设 ${preset.id}：${problem}`)
   const order = typeof preset.order === 'number' && Number.isFinite(preset.order) ? preset.order : undefined
   return {
     id,
@@ -130,32 +127,37 @@ function readDefinition(root: string, id: string): PresetDefinition {
   }
 }
 
-/** Register generated user preset compositions with the v0.1.7 registry. */
+/** 将插件自有预设定义注册到官方服务，并拥有每份声明的 disposer。 */
 export function createPresetRegistrySync(ctx: Context, root: string): {
   refresh: (forceIds?: readonly string[]) => Promise<void>
+  owns: (id: string) => boolean
   dispose: () => Promise<void>
 } {
   const registrations = new Map<string, Registration>()
   let queue = Promise.resolve()
   let closed = false
-  const refresh = (forceIds: readonly string[] = []): Promise<void> => {
+  const refresh = (forceIds?: readonly string[]): Promise<void> => {
+    const targets = forceIds === undefined ? undefined : new Set(forceIds)
     const turn = queue.then(async () => {
       if (closed) return
       const errors: unknown[] = []
       // 清单会跳过损坏的 preset.yml；只有目录确实被删除才撤销旧注册。
       for (const [id, current] of registrations) {
+        if (targets !== undefined && !targets.has(id)) continue
         try {
           if (statSync(join(root, id), { throwIfNoEntry: false }) !== undefined) continue
           await current.dispose()
           registrations.delete(id)
         } catch (error) { errors.push(error) }
       }
-      for (const preset of listPresets(root)) {
+      // 指定目标的保存只激活该目标；无参数的启动/清单刷新仍审计全部定义。
+      for (const id of targets ?? listPresets(root).map((preset) => preset.id)) {
         try {
-          const definition = readDefinition(root, preset.id)
+          if (targets !== undefined && statSync(join(root, id), { throwIfNoEntry: false }) === undefined) continue
+          const definition = readDefinition(root, id)
           const fingerprint = JSON.stringify(definition)
-          const current = registrations.get(preset.id)
-          if (current?.fingerprint === fingerprint && !forceIds.includes(preset.id)) continue
+          const current = registrations.get(id)
+          if (current?.fingerprint === fingerprint && current.broken === undefined && targets === undefined) continue
           // 不改写 baseUrl：Loader 树继承宿主锚点，包名行才解析得到；预设目录内的相对
           // 说明符已由 readDefinition 换算为绝对 file URL。
           const registry = ctx.agentPresets
@@ -170,29 +172,46 @@ export function createPresetRegistrySync(ctx: Context, root: string): {
               throw error
             }
           }
-          if (current !== undefined) {
-            // 官方不提供原子 replace。先审计临时候选，失败时旧定义和 revision 均不动。
+          if (current !== undefined && current.broken === undefined) {
+            // 官方没有原子 replace：候选会真实激活插件，并非纯校验；失败保留旧定义及 revision。
             const discard = await register({ ...definition, id: `prompt-tool-candidate-${randomUUID()}` })
             await discard()
+          }
+          if (current !== undefined) {
             await current.dispose()
-            registrations.delete(preset.id)
+            registrations.delete(id)
           }
           try {
-            const dispose = await register(definition)
-            registrations.set(preset.id, { definition, fingerprint, dispose })
+            if (current === undefined || current.broken !== undefined) {
+              // 没有可用旧版本可回退时，保留官方 broken 行供列表展示，错误仍传给保存调用方。
+              const dispose = await registry.register(definition)
+              const registration: Registration = { definition, fingerprint, dispose }
+              registrations.set(id, registration)
+              const result = await registry.resolve(id)
+              if (result.broken !== undefined) {
+                registration.broken = result.broken
+                throw new Error(result.broken)
+              }
+            } else {
+              const dispose = await register(definition)
+              registrations.set(id, { definition, fingerprint, dispose })
+            }
           } catch (error) {
-            if (current !== undefined) {
+            if (current !== undefined && current.broken === undefined) {
               const dispose = await register(current.definition)
-              registrations.set(preset.id, { ...current, dispose })
+              registrations.set(id, { ...current, dispose })
+            } else {
+              const failed = registrations.get(id)
+              if (failed !== undefined) failed.broken = String(error)
             }
             throw error
           }
         } catch (error) {
           errors.push(error)
-          ctx.logger?.warn?.(`prompt-tool: 预设 ${preset.id} 注册刷新失败：${String(error)}`)
+          ctx.logger?.warn?.(`prompt-tool: 预设 ${id} 注册刷新失败：${String(error)}`)
         }
       }
-      if (errors.length > 0) throw new AggregateError(errors, '预设注册刷新失败')
+      if (errors.length > 0) throw new AggregateError(errors, `预设注册刷新失败：${errors.map(String).join('；')}`)
     })
     // 保留当前调用的失败结果；下次刷新仍可重试。
     queue = turn.catch(() => {})
@@ -200,6 +219,7 @@ export function createPresetRegistrySync(ctx: Context, root: string): {
   }
   return {
     refresh,
+    owns: (id) => !closed && registrations.has(id),
     dispose: async () => {
       closed = true
       await queue

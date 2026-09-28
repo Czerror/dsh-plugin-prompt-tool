@@ -13,7 +13,7 @@ export type ImportPreviewOutcome =
   | { kind: 'candidates'; candidates: StOrderGroupCandidate[]; sourceName?: string }
   | { kind: 'kinds'; kinds: ImportKind[] }
   | { kind: 'error'; message: string; stale?: boolean }
-export interface ImportCommitResult { ok: boolean; stale?: boolean; message?: string; label?: string; refreshWarning?: string }
+export interface ImportCommitResult { ok: boolean; stale?: boolean; message?: string; label?: string }
 export interface ImportFlowHandlers {
   preview: (request: AssetImportRequest) => Promise<ImportPreviewOutcome>
   commit: (preview: ImportPreviewState) => Promise<ImportCommitResult>
@@ -189,7 +189,6 @@ export function useImportPreviewFlow(handlers: ImportFlowHandlers) {
       setProgress((previous) => ({ ...previous, imported: previous.imported + 1 }))
       try {
         await api.current.onCommitted?.(committed.label)
-        if (committed.refreshWarning) throw new Error(committed.refreshWarning)
       } catch (reason) {
         if (!alive.current) return
         setRefreshError(errorMessage(reason))

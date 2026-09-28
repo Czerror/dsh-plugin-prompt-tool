@@ -29,7 +29,7 @@ export function HintTooltip(props: { label: string; children: ReactElement<HintA
   const pointerDownAt = useRef(0)
   const triggers = useRef({ hover: false, focus: false })
   const [position, setPosition] = useState<HintTooltipPosition | null>(null)
-  // 官方 Switch 等函数组件不透传 ref/焦点事件；只为这种锚点补一个可冒泡的 DOM owner。
+  // Switch 等函数组件不透传 ref/焦点事件；只为这种锚点补一个可冒泡的 DOM owner。
   const source: ReactElement<HintAnchorProps> = typeof props.children.type === 'string'
     ? props.children : <span>{props.children}</span>
   const childRef = (source as ReactElement<HintAnchorProps> & { ref?: Ref<HTMLElement> }).ref

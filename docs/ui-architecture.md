@@ -12,10 +12,10 @@
 
 结构重构遵循以下原则：
 
-- 宿主原子优先：标准按钮、模态框和布局能力优先复用 DSH 官方 primitive。
+- 控件由插件持有：以官方控件的结构和交互为参考，仅共享主题 alias token；不运行时加载 Harness Client 包。
 - 现有 seam 深化：继续使用 SlotRegistry、ConfigForms、official remote/sessions 和 loopback bridge。
 - 领域文件归位：工作台壳、数据层、业务 feature、共享 UI 各自拥有清晰的变化原因。
-- 最小抽象：不为单一实现创建 Button、Card、Tabs、router、状态库或 service/repository 多层包装。
+- 最小抽象：只维护实际使用的控件与交互，不复制完整组件库或新增路由、状态框架。
 - 确定性行为：页面顺序、slot 注册、保存保护、键盘操作和错误载荷均由契约测试锁定。
 
 本层不做：
@@ -41,17 +41,17 @@
               |
               +-- data + ui
                       |
-                      +-- shared contract / React / DSH primitives
+                      +-- shared contract / React / 插件自有控件
 
 依赖规则如下：
 
 | 层 | 责任 | 可以依赖 | 不应依赖 |
 |---|---|---|---|
 | index.ts | 声明 inject、构造宿主适配面、注册工作台 | app/workbench、data、shared | 具体页面、业务卡片、CSS 细节 |
-| app/ | Slot owner、工作台壳、页面组合 | features、data、ui、官方 client API | host 内部实现、另一套导航/状态框架 |
-| features/ | 单一业务领域的视图、瞬时状态和领域 helper | data、ui、自己的 CSS、官方 primitives | 其他 feature 的内部文件、slot 注册 |
+| app/ | Slot owner、工作台壳、页面组合 | features、data、ui、官方槽位类型与注入面 | host 内部实现、另一套导航/状态框架 |
+| features/ | 单一业务领域的视图、瞬时状态和领域 helper | data、ui、自己的 CSS | 其他 feature 的内部文件、slot 注册 |
 | data/ | bridge、Fields、store facade、保存与纯逻辑 | shared contract、React hooks（仅 hook 文件） | React 业务视图、feature 组件 |
-| ui/ | 只接收 props/callback 的共享呈现和交互 | React、同层 helper、官方 primitives、controls.module.css | store、bridge、data、features、宿主 DOM |
+| ui/ | 只接收 props/callback 的共享呈现和交互 | React、同层 helper、插件 CSS | store、bridge、data、features、宿主 DOM |
 | shared/ | client/host 共用的字段、路径和载荷契约 | 标准 TypeScript | 任一具体 UI 实现 |
 
 跨领域组合只发生在 app/workspace/pages/。feature 可以消费 data 和 ui，但不能通过 feature 之间的内部 import 形成环。相对 TypeScript import 保留显式 .ts/.tsx 扩展名，不新增 feature barrel。
@@ -175,7 +175,6 @@
        ├─ ImportFileButton.tsx
        ├─ ImportPreviewCard.tsx
        ├─ MenuSelect.tsx
-       ├─ menu-focus.ts
        ├─ reveal-card.ts
        ├─ SettingInputRow.tsx
        ├─ StatusBadge.module.css
@@ -187,7 +186,7 @@
        ├─ TemplatePicker.tsx
        └─ ToggleRow.tsx
 
-共 107 个源文件：app 16、data 18、features 40、ui 28、顶层 5。生成目录 lib/ 不属于源码 owner，不手工编辑。客户端样式已按 owner 分开，PromptUi.module.css 不再存在。
+共享控件还包括 `ui/Button.tsx`、`Switch.tsx`、`Menu.tsx`、`icons.tsx` 和 `outside-pointer.ts`。生成目录 lib/ 不属于源码 owner，不手工编辑。客户端样式已按 owner 分开。
 
 ## 4. 宿主接入与生命周期
 
@@ -206,6 +205,8 @@ src/client/index.ts 的 inject 列表是：
     sessions
 
 apply(ctx) 依次构造：
+
+CSS 构建模块只收集样式数据；`styles.ts` 在入口 `ctx.effect` 中安装插件样式，disposer 只移除本次创建的 style。factory 求值不写 DOM，卸载与重挂不会保留旧样式。
 
 1. locale 字典注册：`ctx.effect(() => registerPromptToolLocale(ctx.locale))` 把 `src/client/locales.ts` 的 zh/en 字典注册进官方命名空间 `prompt-tool`；卸载/重挂由 effect 释放，不重复注册。随后 `ctx.locale.bind(LOCALE_NS)` 得到引用稳定的 `t`。
 2. 连接世代重建：`ctx.on('connection/reset')` 触发一次 `bridgeCall('models', { refresh: true })`，让宿主重连后丢弃陈旧的模型目录缓存；失败静默，不阻塞启动。
@@ -246,7 +247,7 @@ apply(ctx) 依次构造：
 
 ### 4.4 0.1.5 新能力采用面
 
-- 采用：shell.overlay 可拖动悬浮入口、官方 Switch / Tag。
+- 采用：shell.overlay 可拖动悬浮入口；Switch 与状态徽章由插件实现。
 - 已满足、无需接入：`host-open-in-app`。`PromptToolHostApi.openPath` 走 `remote.session.openWorkspacePath`，其契约就是宿主交给原生打开器；官方 `ui-open-in-app` 客户端包不提供跨插件服务，只是会话头部的分割按钮。
 - 不适用：`ctx.workspaceFiles` 只覆盖 workspace 根，插件的读写路径域是 DSH_HOME（预设、技能、角色卡）。
 - 不采用：官方右侧栏（`ui-sidebar-right`）实测不适合本项目，已移除（决策见 §4.3）；`client-resources` 资源 tab 需要自建 provider 与第二个 tab 类型，而工作台已在抽屉内就地编辑这些文件，重复呈现没有收益。
@@ -298,7 +299,7 @@ workspace-pages.ts 是页面元数据的唯一来源。默认页为 features，�
 
 工具预览与工具编辑分离。`useCustomToolsEditor` 由主/子页面常驻调用，负责同一预设的读取、草稿与显式保存；创建直接消费动作并写共享草稿池，设置区只渲染其内容。连续创建不依赖卡片挂载，切页后已建立的草稿继续保留，不重放请求。加载或读取失败、预设不匹配和只读时拒绝创建并给出提示，不将空列表当读取成功。预览不隐藏自定义工具，不自动创建／恢复会话；当前会话读取冻结 generation，所选预设读取后续 generation，切换来源或刷新会丢弃旧请求响应。
 
-样式参照官方 `ui-settings-plugin-inventory/PluginInventorySettingsTab`，不是可配置插件表单。卡头复用共享 `StatusBadge`（StatusDot + 官方 Tag）与官方 Chevron，标记真实的「模型可见」；展开显示完整名称、来源视角、可见状态与描述。工具摘要没有插件配置启停或运行阶段，不显示虚构的「已启用／运行中」。搜索只在客户端过滤，并自动展开分组，不增加 bridge 请求。
+样式参照官方 `ui-settings-plugin-inventory/PluginInventorySettingsTab`，不是可配置插件表单。卡头使用自有 `StatusBadge` 与 Chevron 图标，标记真实的「模型可见」；展开显示完整名称、来源视角、可见状态与描述。工具摘要没有插件配置启停或运行阶段，不显示虚构的「已启用／运行中」。搜索只在客户端过滤，并自动展开分组，不增加 bridge 请求。
 
 引擎字段由 `EngineParamFields` 按 `ENGINE_PARAM_DEFINITIONS` 生成，能力存在性仍由真实模块事实决定。普通参数不再在 JSX、默认值、读回、保存和快照中各抄一遍；枚举使用 MenuSelect，列表使用 TagInput。
 
@@ -472,24 +473,24 @@ feature 只拥有自己的视图、瞬时状态、领域纯 helper 和 CSS：
 ui/ 只接收 props/callback，当前真实共享 seam 包括：
 
 - FormField：label/id、说明与错误关联；MenuSelect转发id到真实触发器，hint可内联或使用HintTooltip。
-- SettingInputRow、ToggleRow、TagInput：设置和字段编辑形态；ToggleRow 的开关使用官方 Switch。
+- SettingInputRow、ToggleRow、TagInput：设置和字段编辑形态；ToggleRow 使用自有 Switch，保留 role、aria-checked 与键盘行为。
 - ImportPreviewCard：导入预览卡，展示服务端同源转换报告与有损信息（warning/info/被排除条目各自滚动容器）；预设包与角色卡 JSON 两处入口共用。
 - reveal-card.ts：创建后的滚动定位与重试，层设置区与配置卡共用。
-- MenuSelect：直接封装官方 Menu 的单选胶囊；支持连续选项的 `group` 分组标题。标准设置使用 36px，模块卡内使用 28px 紧凑形态，浮层统一 portal。
+- MenuSelect：封装自有 Menu 的单选胶囊；支持连续选项的 `group` 分组标题。标准设置使用 36px，模块卡内使用 28px 紧凑形态，浮层统一 portal。
 - CollapsibleCard、EngineModuleCard：具体可复用的折叠/模块卡形态，不是万能 Card。
 - StatusDot：6px实心状态点与3px柔和静态光晕，含success/neutral/danger/warning，语义由相邻文字表达，不使用循环动画。
-- StatusBadge：只读状态徽章，StatusDot + 官方 Tag 胶囊；tone 同时驱动两者颜色，技能卡、工具预览、预设「使用中」与角色卡「已导入当前预设」共用。
+- StatusBadge：StatusDot 与自有胶囊；tone 同时驱动两者颜色，技能卡、工具预览、预设「使用中」与角色卡「已导入当前预设」共用。
 - 状态徽章与内部Tag均不参与flex收缩，短状态文字保持单行；预设/角色标题承担剩余宽度并允许换行，长名称不把「使用中」挤成竖排胶囊。
 - ImportFileButton：隐藏原生 file input 的导入入口。
-- TemplatePicker、DialogSurface：模板和预设操作的portal浮层；ConfirmDialog复用DialogSurface的警告对话、初始焦点与还焦能力，不叠加第二套焦点陷阱。ConfirmDialog 的两个按钮是同一个本地胶囊 `.pillButton`（确认按钮加 `data-danger`）：官方 Button 没有 danger 变体，`<Button data-danger>` 不会染红，且取消按钮需要原生 ref 承载初始焦点与 busy 还焦，因此这一对按钮不包官方 Button。
+- TemplatePicker、DialogSurface：模板和预设操作的 portal 浮层；ConfirmDialog 复用 DialogSurface 的警告对话、初始焦点与还焦能力。确认按钮沿用 `.pillButton[data-danger]`，取消按钮的 ref 承载初始焦点与 busy 还焦。
 - anchored-popover.ts / anchored-popover-fit.ts：锚点位置和窄视口适配。
 - hint-tooltip-focus.ts / hint-tooltip-position.ts：HintTooltip 的键盘读取与视口翻转定位。
-- menu-focus.ts：菜单浮层的首项焦点补位（官方 portal 先隐藏后定位，需在定位帧补焦点）。
+- Menu 在定位完成的可见帧聚焦首个可用项，统一处理上下键、Home/End、Escape/Tab、禁用项及焦点恢复。
 - tab-key.ts、dialog-focus.ts：纯键盘索引及弹窗焦点行为。
 
-单行 input 与 textarea 继续使用原生元素；下拉单选统一使用官方 Menu，经 MenuSelect 保持触发器、浮层和 ARIA 一致。新按钮优先使用官方 Button/Pill/icon primitive，不创建本地 Button wrapper。
+单行 input 与 textarea 使用原生元素；下拉单选经 MenuSelect 保持触发器、浮层和 ARIA 一致。Button、Switch、Menu 和五个 SVG 图标只实现当前消费面，Tag 的外观直接归 StatusBadge。
 
-Menu显式启用autoFocus；已发布0.1.6-alpha.1的portal先隐藏后定位，因此menu-focus只通过调用方自己传入的首项label ref，在定位帧补首项焦点。fieldset禁用时MenuSelect同时拒绝portal中的选择。Tooltip兼容官方函数控件，键盘说明绑定实际聚焦目标，Escape关闭说明。
+fieldset 禁用时 MenuSelect 同时拒绝 portal 中的选择。Tooltip 的键盘说明绑定实际聚焦目标，Escape 关闭说明。
 
 菜单失焦通过relatedTarget识别自己的触发器/portal条目，跨React portal的焦点归属在下一帧复核；不在focusout微任务中先卸载菜单，以免真实鼠标的click丢失。该回归使用原生pointer按下/抬起，不能仅用element.click代替。
 
@@ -596,9 +597,9 @@ world-book 视图只隐藏工具栏之外的列表主体之外的附加提示，
 约束：
 
 - 组件移动时同步移动其独占 selector；共享 selector 必须对应稳定的真实共享形态。
-- 使用 --dsw-* / --dsw-alias-* 语义 token，不复制静态色板，不写 :root 主题。
+- 主题颜色只使用 `--dsw-alias-*`；字体、间距和动效由插件持有，不复制宿主静态色板，不写 :root 主题。窗口 chrome 避让继续消费官方布局公开的 `--dsh-*` 几何变量，不读取宿主 DOM。
 - feature CSS 不选择宿主 class、id 或页面结构。
-- 中性平面边框使用 0.5px；高层浮层使用 DSH elevation token：悬浮入口抽屉/触发器用 body portal 的 1000 / 1100 固定层级，不叠加无意义的中性 border。
+- 中性平面边框使用 0.5px；高层浮层用 alias 颜色组合自有阴影。悬浮入口抽屉/触发器使用 body portal 的 1000 / 1100 层级，不叠加无意义的中性 border。
 - 圆形和胶囊与 corner-shape: round 配对。
 - 动画提供 prefers-reduced-motion 分支；不新增组件专用全局滚动条规则。
 - 页面级垂直节奏只有一档：主会话根容器 `.page`（features/prompts）与子代理根容器 `.section`（ui/controls）同为 12px；工具栏到首张卡之间不插入空的公共配置或模块列表容器，避免空 flex 子项叠加间距。
@@ -620,7 +621,7 @@ world-book 视图只隐藏工具栏之外的列表主体之外的附加提示，
 
 ### 12.1 契约测试
 
-四条 seam 的覆盖位置（定义与准入见 [AGENTS.md](../AGENTS.md#测试)；全仓 33 个文件 / 270 条用例）：
+四条 seam 的覆盖位置（定义与准入见 [AGENTS.md](../AGENTS.md#测试)）：
 
 | seam | 覆盖位置 |
 |---|---|
@@ -663,4 +664,4 @@ world-book 视图只隐藏工具栏之外的列表主体之外的附加提示，
 7. 新增或改造面向用户的文案时，同步更新 zh/en 两份字典；改动结构、接线或发布面时，按 §12.1 的 seam 表跑对应契约测试。
 8. 完成 typecheck、lint、test、build 和 diff --check 后再提交；不要停止或重启当前 DSH 服务。
 
-本文是客户端结构的长期权威文档；根目录 [PLAN.md](../PLAN.md) 只跟踪当前计划与验收状态，实施后的稳定结论沉淀回本文及对应领域文档。
+本文是客户端结构的长期权威文档；本地 `.scratch/plan/` 跟踪当前计划与验收，稳定结论沉淀回本文及对应领域文档。

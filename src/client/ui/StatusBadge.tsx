@@ -1,13 +1,12 @@
 import type { ReactNode } from 'react'
 import clsx from 'clsx'
-import { Tag } from '@deepseek-ai/dsh-client-ui-primitives'
 import { StatusDot, type StatusDotTone } from './StatusDot.tsx'
 import css from './StatusBadge.module.css'
 
-/** 状态色调：成功 / 中性 / 失败；同时驱动共享 StatusDot 与官方 Tag 胶囊。 */
+/** 状态色调同时驱动共享 StatusDot 与状态胶囊。 */
 export type StatusBadgeTone = StatusDotTone
 
-/** 只读状态徽章：共享 StatusDot + 官方 Tag，跨 feature 复用的唯一状态呈现形态。 */
+/** 只读状态徽章：跨 feature 复用的状态呈现。 */
 export function StatusBadge(props: {
   tone: StatusBadgeTone
   label: ReactNode
@@ -17,7 +16,7 @@ export function StatusBadge(props: {
   return (
     <span className={clsx(css.badge, props.className)} aria-label={props.ariaLabel}>
       <StatusDot tone={props.tone} />
-      <Tag tone={props.tone}>{props.label}</Tag>
+      <span className={css.tag} data-tone={props.tone}>{props.label}</span>
     </span>
   )
 }

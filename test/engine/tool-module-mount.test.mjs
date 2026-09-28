@@ -244,16 +244,21 @@ const modules = [
 
 /** tool-modules 组专用桩 ctx（与上面的 makeCtx 同名不同责，故分开命名）。 */
 function makeToolModuleCtx(serviceKey, service) {
-  const state = { warnings: [], disposers: [] }
+  const state = { disposers: [], pending: undefined }
   state.ctx = {
     get: (key) => key === serviceKey ? service : undefined,
-    logger: { warn: (message) => state.warnings.push(message) },
+    inject: (deps, callback) => {
+      assert.deepEqual(deps, [serviceKey])
+      state.pending = callback
+      if (service !== undefined) callback(state.ctx)
+    },
     effect: (fn) => {
       const dispose = fn()
       if (typeof dispose === "function") state.disposers.push(dispose)
       return dispose
     },
   }
+  state.provide = (value) => { service = value; state.pending(state.ctx) }
   return state
 }
 
@@ -269,11 +274,14 @@ for (const [id, serviceKey] of modules) {
     assert.deepEqual(calls, [state.ctx, "disposed"])
   })
 
-  test(id + "：服务缺失时降级", () => {
+  test(id + "：等待晚到服务后挂载并释放", () => {
     const state = makeToolModuleCtx(serviceKey, undefined)
     mod.apply(state.ctx)
     assert.equal(state.disposers.length, 0)
-    assert.equal(state.warnings.length, 1)
-    assert.match(state.warnings[0], /service unavailable/)
+    let mounts = 0
+    state.provide({ mount: () => { mounts++; return () => { mounts-- } } })
+    assert.equal(mounts, 1)
+    state.disposers[0]()
+    assert.equal(mounts, 0)
   })
 }

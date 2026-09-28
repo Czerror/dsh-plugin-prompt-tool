@@ -1,9 +1,11 @@
 import { useEffect, useId, useRef, useState, type ReactNode } from 'react'
 import clsx from 'clsx'
-import { Button, IconChevronDownOutlineRegular, Menu, Switch } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Button } from '../../ui/Button.tsx'
+import { IconChevronDownOutlineRegular } from '../../ui/icons.tsx'
+import { Menu } from '../../ui/Menu.tsx'
+import { Switch } from '../../ui/Switch.tsx'
 import type { FieldDraft } from '../../data/workspace-drafts.ts'
 import { ConfirmDialog } from '../../ui/ConfirmDialog.tsx'
-import { useMenuFocus } from '../../ui/menu-focus.ts'
 import { FormField } from '../../ui/FormField.tsx'
 import { HintTooltip } from '../../ui/HintTooltip.tsx'
 import { MenuSelect } from '../../ui/MenuSelect.tsx'
@@ -142,7 +144,6 @@ export function CustomToolCard(props: {
   const { tool, index, t } = props
   const [confirmingDelete, setConfirmingDelete] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
-  const firstItemRef = useMenuFocus(menuOpen)
   const actionRef = useRef<HTMLSpanElement>(null)
   const focusAction = (): void => { actionRef.current?.querySelector('button')?.focus() }
   const bodyId = useId()
@@ -184,20 +185,14 @@ export function CustomToolCard(props: {
               <Switch label={t('toolEditor.enable.aria', { id })} checked={enabled} disabled={props.disabled}
                 onChange={props.onToggleEnabled} />
             </HintTooltip>
-            <span ref={actionRef} tabIndex={-1} onKeyDown={(event) => {
-              if (!menuOpen || !['Escape', 'Tab'].includes(event.key)) return
-              event.stopPropagation()
-              if (event.key === 'Escape') event.preventDefault()
-              focusAction()
-              setMenuOpen(false)
-            }}><Menu open={menuOpen && !props.disabled} portal autoFocus compact
+            <span ref={actionRef} tabIndex={-1}><Menu open={menuOpen && !props.disabled} compact
               anchor={<Button size="sm" variant="ghost" aria-label={t('card.actionsAria', { name: name || id })}
                 aria-haspopup="menu" aria-expanded={menuOpen} disabled={props.disabled} onClick={() => setMenuOpen((open) => !open)}>⋯</Button>}
               onClose={() => setMenuOpen(false)}
               items={[
-                { id: 'up', label: <span ref={props.canMoveUp ? firstItemRef : undefined}>{t('toolEditor.moveUp')}</span>, disabled: !props.canMoveUp },
-                { id: 'down', label: <span ref={!props.canMoveUp && props.canMoveDown ? firstItemRef : undefined}>{t('toolEditor.moveDown')}</span>, disabled: !props.canMoveDown },
-                { id: 'copy', label: <span ref={!props.canMoveUp && !props.canMoveDown ? firstItemRef : undefined}>{t('toolEditor.duplicate')}</span> },
+                { id: 'up', label: t('toolEditor.moveUp'), disabled: !props.canMoveUp },
+                { id: 'down', label: t('toolEditor.moveDown'), disabled: !props.canMoveDown },
+                { id: 'copy', label: t('toolEditor.duplicate') },
                 { id: 'delete', label: t('toolEditor.remove'), danger: true },
               ]}
               onSelect={(action) => {

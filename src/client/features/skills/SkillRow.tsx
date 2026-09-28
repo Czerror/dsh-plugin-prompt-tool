@@ -1,6 +1,7 @@
 import { memo, useEffect, useId, useMemo, useReducer, useState, type ReactNode } from 'react'
 import clsx from 'clsx'
-import { IconChevronDownOutlineRegular, Switch } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconChevronDownOutlineRegular } from '../../ui/icons.tsx'
+import { Switch } from '../../ui/Switch.tsx'
 import type { SkillCatalogEntry } from '../../data/prompt-tool-fields.ts'
 import type { SkillPolicyChange } from '../../../shared/skills.ts'
 import type { SkillEditorDraft } from '../../data/workspace-drafts.ts'

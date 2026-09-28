@@ -4,7 +4,7 @@
  *  params.sectionName + text 的人设承载方式；complete 与提示词配置的「独占」互斥，
  *  由 bridge 写盘前 fail loud。 */
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { Button } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Button } from '../../ui/Button.tsx'
 import type { PersonaDraft, PersonaEditorDraft, WorkspaceDrafts } from '../../data/workspace-drafts.ts'
 import { bridgeCall } from '../../data/bridge-client.ts'
 import type { PromptToolTranslate } from '../../locales.ts'

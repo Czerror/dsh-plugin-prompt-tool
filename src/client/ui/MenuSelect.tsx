@@ -1,18 +1,18 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import clsx from 'clsx'
-import { IconChevronDownOutlineRegular, Menu, type MenuEntry } from '@deepseek-ai/dsh-client-ui-primitives'
-import { useMenuFocus } from './menu-focus.ts'
+import { IconChevronDownOutlineRegular } from './icons.tsx'
+import { Menu, type MenuEntry } from './Menu.tsx'
 import styles from './controls.module.css'
 
 export interface MenuSelectOption {
   value: string
   label: string
   disabled?: boolean
-  /** 连续相同 group 的选项会在官方 Menu 中显示分组标题。 */
+  /** 连续相同 group 的选项显示分组标题。 */
   group?: string
 }
 
-/** 官方 Menu 外观的紧凑单选控件。 */
+/** 紧凑单选控件，保留未知值与分组。 */
 export function MenuSelect(props: {
   value: string
   options: readonly MenuSelectOption[]
@@ -34,8 +34,6 @@ export function MenuSelect(props: {
   const ownsFocus = useRef(false)
   const disabled = props.disabled === true
   const compact = props.compact === true
-  const firstItemRef = useMenuFocus(open && !disabled)
-  const firstEnabledIndex = props.options.findIndex((option) => !option.disabled)
   const selected = props.options.find((option) => option.value === props.value)
   let previousGroup: string | undefined
   const items: MenuEntry[] = props.options.flatMap((option, index) => {
@@ -46,7 +44,7 @@ export function MenuSelect(props: {
     previousGroup = option.group
     entries.push({
       id: option.value,
-      label: <span ref={index === firstEnabledIndex ? firstItemRef : undefined}>{option.label}</span>,
+      label: option.label,
       ...(option.disabled !== undefined ? { disabled: option.disabled } : {}),
     })
     return entries
@@ -57,15 +55,9 @@ export function MenuSelect(props: {
   }, [disabled])
 
   return (
-    <span className={styles.menuSelectOwner} onKeyDown={(event) => {
-      if (!open || (event.key !== 'Escape' && event.key !== 'Tab')) return
-      event.stopPropagation()
-      if (event.key === 'Escape') event.preventDefault()
-      triggerRef.current?.focus()
-      setOpen(false)
-    }} onBlur={(event) => {
+    <span className={styles.menuSelectOwner} onBlur={(event) => {
       const next = event.relatedTarget
-      if (next instanceof Node && (event.currentTarget.contains(next) || firstItemRef.current?.closest('[role="menu"]')?.contains(next))) return
+      if (next instanceof Node && event.currentTarget.contains(next)) return
       ownsFocus.current = false
       // 原生鼠标的focusout与focusin之间会执行微任务，须等焦点转移结束，避免卸载待点击选项。
       requestAnimationFrame(() => { if (!ownsFocus.current) setOpen(false) })
@@ -73,8 +65,6 @@ export function MenuSelect(props: {
     <Menu
       open={open && !disabled}
       compact={compact}
-      portal
-      autoFocus
       align={props.align ?? 'end'}
       className={clsx(styles.menuSelect, compact ? styles.menuSelectCompact : styles.menuSelectStandard, props.className)}
       items={items}

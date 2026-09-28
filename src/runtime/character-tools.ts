@@ -1,7 +1,9 @@
-/** 角色卡库模型工具：模型可在会话中直接导入角色卡、应用/移除到当前预设。
+/** 角色卡库模型工具：模型可导入角色卡、应用/移除到执行会话绑定的预设。
  *  与 UI 角色管理页共用 host/characters.ts 同一套库与合并逻辑。 */
 import type { Context } from '@deepseek-ai/cordis'
 import { defineTool } from '@deepseek-ai/dsh-tools'
+import { rebuildSavedPreset } from '../host/preset-tool-target.ts'
+import type { PresetToolHost } from '../host/preset-tool-target.ts'
 import {
   applyCharacterToPreset,
   deleteCharacterCard,
@@ -10,20 +12,10 @@ import {
   removeCharacterFromPreset,
 } from '../host/characters.ts'
 
-/** 工具执行所需的运行时宿主能力（index.ts 闭包提供）。 */
-export interface CharacterToolHost {
-  /** 预设根目录（presetDir）。 */
-  presetRoot: () => string
-  /** 当前激活预设模板名。 */
-  templateName: () => string
-  /** 应用/移除后重建生成目录（写 preset.yml 后使参数生效）。 */
-  rebuild: () => void
-}
-
 const text = (text: string): Array<{ type: 'text'; text: string }> => [{ type: 'text', text }]
 
 /** 注册角色卡库模型工具；返回 disposer，随 character-tools 预设模块生命周期清理。 */
-export function registerCharacterTools(ctx: Context, host: CharacterToolHost): () => void {
+export function registerCharacterTools(ctx: Context, host: PresetToolHost): () => void {
   const fiber = ctx.inject(['tools'], (toolsCtx) => {
     const disposers: Array<() => void> = []
     disposers.push(toolsCtx.tools.register(defineTool({
@@ -55,9 +47,10 @@ export function registerCharacterTools(ctx: Context, host: CharacterToolHost): (
         },
         render: (_args, value) => text(JSON.stringify(value.characters)),
       },
-      execute: async () => ({
-        characters: listCharacterCards(host.presetRoot(), host.templateName()),
-      }),
+      execute: async (_args, exec) => {
+        const target = host.target(exec)
+        return { characters: listCharacterCards(target.root, target.id) }
+      },
     })))
 
     disposers.push(toolsCtx.tools.register(defineTool({
@@ -87,8 +80,9 @@ export function registerCharacterTools(ctx: Context, host: CharacterToolHost): (
         },
         render: (_args, value) => text(`角色卡已入库：${value.name}（id=${value.id}）。调用 character_apply 可应用到当前预设。`),
       },
-      execute: async (args) => {
-        const result = importCharacterCard(host.presetRoot(), [{ path: `${args.name}.json`, content: args.content }])
+      execute: async (args, exec) => {
+        const target = host.target(exec)
+        const result = importCharacterCard(target.root, [{ path: `${args.name}.json`, content: args.content }])
         if (!result.ok) throw new Error(result.message)
         return { id: result.id, name: result.name }
       },
@@ -97,7 +91,7 @@ export function registerCharacterTools(ctx: Context, host: CharacterToolHost): (
     disposers.push(toolsCtx.tools.register(defineTool({
       name: 'character_apply',
       description: '把角色卡库中一张角色卡的参数（角色设定 / 系统提示 / 开场白 / 世界书 / 提示词配置）'
-        + '合并进当前激活预设（promptConfigs 带 chara-<id>- 前缀防冲突，params 合并，meta.importedCharacters 记录），'
+        + '合并进当前会话绑定的预设（promptConfigs 带 chara-<id>- 前缀防冲突，params 合并，meta.importedCharacters 记录），'
         + '并立即重建生成目录。重复应用幂等。',
       parameters: {
         id: {
@@ -117,17 +111,18 @@ export function registerCharacterTools(ctx: Context, host: CharacterToolHost): (
         },
         render: (_args, value) => text(`已导入到当前预设（${value.count} 条配置），生成目录已重建。`),
       },
-      execute: async (args) => {
-        const result = applyCharacterToPreset(host.presetRoot(), host.templateName(), args.id)
+      execute: async (args, exec) => {
+        const target = host.target(exec)
+        const result = applyCharacterToPreset(target.root, target.id, args.id)
         if (!result.ok) throw new Error(result.message)
-        host.rebuild()
+        await rebuildSavedPreset(host, target.id)
         return { id: args.id, count: result.count }
       },
     })))
 
     disposers.push(toolsCtx.tools.register(defineTool({
       name: 'character_remove',
-      description: '从当前激活预设移除一张已导入角色卡的参数（删 chara-<id>- 前缀配置、该卡声明的 params 键、'
+      description: '从当前会话绑定的预设移除一张已导入角色卡的参数（删 chara-<id>- 前缀配置、该卡声明的 params 键、'
         + 'meta.importedCharacters 除名），并立即重建生成目录。角色卡库条目不受影响。',
       parameters: {
         id: {
@@ -147,10 +142,11 @@ export function registerCharacterTools(ctx: Context, host: CharacterToolHost): (
         },
         render: (_args, value) => text(`已从当前预设移除（${value.count} 条配置），生成目录已重建。`),
       },
-      execute: async (args) => {
-        const result = removeCharacterFromPreset(host.presetRoot(), host.templateName(), args.id)
+      execute: async (args, exec) => {
+        const target = host.target(exec)
+        const result = removeCharacterFromPreset(target.root, target.id, args.id)
         if (!result.ok) throw new Error(result.message)
-        host.rebuild()
+        await rebuildSavedPreset(host, target.id)
         return { id: args.id, count: result.count }
       },
     })))
@@ -176,8 +172,8 @@ export function registerCharacterTools(ctx: Context, host: CharacterToolHost): (
         },
         render: (_args, value) => text(`角色卡 ${value.id} 已从库中删除。`),
       },
-      execute: async (args) => {
-        const result = deleteCharacterCard(host.presetRoot(), args.id)
+      execute: async (args, exec) => {
+        const result = deleteCharacterCard(host.target(exec).root, args.id)
         if (!result.ok) throw new Error(result.message)
         return { id: args.id }
       },

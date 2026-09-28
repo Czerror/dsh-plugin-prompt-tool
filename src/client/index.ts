@@ -1,4 +1,5 @@
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
+import { install as installStyles } from 'virtual:prompt-tool-styles'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-client-connection/client'
 import type {} from '@deepseek-ai/dsh-api-session-controller/client'
@@ -34,6 +35,7 @@ export const inject = [
 const PROMPT_TOOL_NS = 'prompt-tool'
 
 export function apply(ctx: ClientContext): void {
+  ctx.effect(installStyles)
   // 官方 locale 字典：注册挂 effect（卸载/重挂自动释放，不会重复注册同一命名空间）。
   // 命名空间在 locales.ts 里并入官方 LocaleNamespaceMap，slot 注册据此拿到 typed t。
   ctx.effect(() => registerPromptToolLocale(ctx.locale))
@@ -61,19 +63,14 @@ export function apply(ctx: ClientContext): void {
     currentSessionId,
     subscribeSessionChange: (listener) => subscribeSessionIdChange(ctx.uiSession.adapter, ctx.sessions, listener),
     listAgentPresets: async () => {
-      try {
-        const result = await ctx.remote.agentPresets.list()
-        if (!result.ok) return []
-        const presets = (result.value as { presets?: readonly { id: string; name?: string; description?: string; trust?: 'system' | 'user'; broken?: string }[] }).presets
-        return (presets ?? []).filter((preset) => preset.broken === undefined).map(({ id, name, description, trust }) => ({
-          id,
-          ...(name === undefined ? {} : { name }),
-          ...(description === undefined ? {} : { description }),
-          ...(trust === undefined ? {} : { trust }),
-        }))
-      } catch {
-        return []
-      }
+      const result = await ctx.remote.agentPresets.list()
+      if (!result.ok) throw new Error(result.error.message)
+      return result.value.presets.map(({ id, name, description, broken }) => ({
+        id,
+        ...(name === undefined ? {} : { name }),
+        ...(description === undefined ? {} : { description }),
+        ...(broken === undefined ? {} : { broken }),
+      }))
     },
     pickDirectory: () => ctx.uiWorkspace.pickDirectory(),
     openPath: async (path) => {

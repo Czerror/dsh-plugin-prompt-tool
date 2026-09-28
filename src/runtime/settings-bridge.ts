@@ -1,5 +1,6 @@
 /** 自建 loopback settings bridge：Web 设置页数据通道（提示词配置数组经此输出到 UI）。 */
 import type { Context } from '@deepseek-ai/cordis'
+import type {} from '@deepseek-ai/dsh-agent-preset-registry'
 import { scopeOf } from '@deepseek-ai/dsh-scope'
 import type { SkillRegistry, SkillViewOptions } from '@deepseek-ai/dsh-skill'
 import type { IncomingMessage, ServerResponse } from 'node:http'
@@ -63,7 +64,7 @@ import { assertPresetDirectory, assertPresetId, canonicalPresetRoot, presetPathE
 import { DSH_HOME } from '../host/paths.ts'
 import type { AssetFile, AssetImportRequest, ImportKind, PresetExportRequest } from '../shared/asset-transfer.ts'
 import { lastWorldBookDiagnostics } from '../../engine/st-world-book.mjs'
-import { BRIDGE_ENDPOINTS, MAX_BRIDGE_BODY_BYTES, SETTINGS_BRIDGE_PREFIX, type TriggerEditorMeta } from '../shared/bridge-contract.ts'
+import { BRIDGE_ENDPOINTS, MAX_BRIDGE_BODY_BYTES, PRESET_ACTIVATION_FAILED, SETTINGS_BRIDGE_PREFIX, type TriggerEditorMeta } from '../shared/bridge-contract.ts'
 import { moduleParamFallbacks, validateEngineParamValues } from '../shared/engine-params.ts'
 import { readPersonaSpec } from '../shared/persona-section.ts'
 import { SKILL_NAME_PATTERN, type SkillsStateRead } from '../host/skills-config.ts'
@@ -519,33 +520,33 @@ export function registerSettingsBridge(
   /** 生成目录（presetDir）：读取实际生效的提示词配置（引擎加载源）。 */
   getPresetConfigsDir?: () => string,
   /** 内容导入完成回调：批量 scope 只触发一次重建（更新运行时文本并重建预设）。 */
-  afterPresetImport?: (scopes: Array<'preset' | 'agents'>) => void,
+  afterPresetImport?: (scopes: Array<'preset' | 'agents'>) => void | Promise<void>,
   /** 参数覆盖写入后重建当前预设。 */
   afterOverridesChange?: () => void | Promise<void>,
-  /** 预设已完整安装后的刷新回调；失败只返回 refreshWarning，不再物化或撤销安装。 */
+  /** 预设已完整安装后的刷新回调；失败返回未生效诊断，不再物化或撤销安装。 */
   afterPresetPackageImport?: (id: string) => void | Promise<void>,
   /** 能力/recipe 原子创建后重建回调；抛错时调用方恢复 preset.yml。 */
-  afterCapabilityChange?: () => void,
+  afterCapabilityChange?: () => void | Promise<void>,
   /** 新建、复制或删除预设后刷新官方注册。 */
-  afterPresetListChange?: () => void | Promise<void>,
+  afterPresetListChange?: (id: string) => void | Promise<void>,
 ): { invalidateDescriptor: () => void } {
   let invalidateCachedDescriptor: () => void = () => {}
   let capabilityQueue: Promise<void> = Promise.resolve()
-  const refreshPresetList = async (): Promise<void> => {
-    try { await afterPresetListChange?.() }
-    catch (error) { ctx.logger?.warn(`prompt-tool: 预设目录已更新，但注册刷新失败：${String(error)}`) }
-  }
-  /** 等待当前预设重建；不传播附加回调的返回值。 */
-  const runOverridesChange = async (): Promise<void> => {
+  /** 写盘已完成：等待宿主注册，失败立即返回统一错误，不覆盖持久化结果。 */
+  const finishPresetChange = async (res: ServerResponse, activate: () => void | Promise<void>): Promise<boolean> => {
     try {
-      await afterOverridesChange?.()
-    } catch {
-      // 预设参数已落盘；重建回调自行记录诊断。
+      await activate()
+      return true
+    } catch (error) {
+      writeBridgeJson(res, 500, { ok: false, code: PRESET_ACTIVATION_FAILED, message: `更改已保存，但预设未生效；请重试：${String(error)}` })
+      return false
     }
   }
+  const runOverridesChange = (res: ServerResponse): Promise<boolean> => finishPresetChange(res, () => afterOverridesChange?.())
+  const refreshPresetList = (res: ServerResponse, id: string): Promise<boolean> => finishPresetChange(res, () => afterPresetListChange?.(id))
   // 动态等待 webServer：webServer 由 @deepseek-ai/dsh-web-app 提供。
   // profile 首次缺少该 bundle 时，本子插件先 pending 但不阻塞启动审计；
-  // ensureWebSurface 会把 bundle 补进 manifest，重启后本子插件自动激活。
+  // ensureWebSurface 仅报告缺失能力，profile 装配交给官方插件管理流程。
   ctx.inject(['settings', 'webServer'], (sctx: Context) => {
     sctx.effect(() => {
       const assetSources = createAssetSources(join(DSH_HOME, '.prompt-tool-uploads'))
@@ -611,7 +612,13 @@ export function registerSettingsBridge(
           getEngineMeta: () => Record<string, unknown>
         }
         const meta = getEngineMeta() as Record<string, unknown>
-        meta.presets = listPresets()
+        const registry = sctx.get?.('agentPresets')
+        const roster = registry === undefined ? [] : await registry.list()
+        const diagnostics = new Map(roster.map(({ id, broken }) => [id, broken]))
+        meta.presets = listPresets().map((preset) => ({
+          ...preset,
+          ...(diagnostics.get(preset.id) === undefined ? {} : { broken: diagnostics.get(preset.id) }),
+        }))
         meta.builtinTemplates = listBuiltinTemplates()
         // 编辑组主归属与引擎 meta 同源组合下发：layerOrder 由引擎 schema 提供（不另写层序清单），
         // editorGroups 来自共享契约。逐条挑白名单字段，避免将来给契约加字段就顺带泄漏到浏览器。
@@ -843,8 +850,12 @@ export function registerSettingsBridge(
           path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.meta,
           handler: async (req, res) => {
             if (!guard(req, res)) return
-            const meta = await loadEngineMeta()
-            writeBridgeJson(res, 200, { ok: true, value: { meta } })
+            try {
+              const meta = await loadEngineMeta()
+              writeBridgeJson(res, 200, { ok: true, value: { meta } })
+            } catch (error) {
+              writeBridgeJson(res, 503, { ok: false, code: 'meta-unavailable', message: String(error) })
+            }
           },
         }),
         sctx.webServer.register({
@@ -1416,7 +1427,7 @@ export function registerSettingsBridge(
               for (const entry of contents) {
                 writeFileSync(join(dir, entry.scope === 'preset' ? 'preset.md' : 'agents.md'), entry.content, 'utf8')
               }
-              afterPresetImport?.(contents.map((entry) => entry.scope))
+              if (!await finishPresetChange(res, () => afterPresetImport?.(contents.map((entry) => entry.scope)))) return
               writeBridgeJson(res, 200, { ok: true, value: { scopes: contents.map((entry) => entry.scope) } })
             } catch (error) {
               const message = error instanceof Error ? error.message : String(error)
@@ -1601,7 +1612,7 @@ export function registerSettingsBridge(
               )
               // 预设切换前保存当前配置卡时只需落盘，不立即重建；
               // 后续 settings presetTemplate 变更会让目标预设完成唯一一次重建。
-              if (record.rebuild !== false) await runOverridesChange()
+              if (record.rebuild !== false && !await runOverridesChange(res)) return
               writeBridgeJson(res, 200, {
                 ok: true,
                 value: {
@@ -1662,7 +1673,7 @@ export function registerSettingsBridge(
                 record.variables as Record<string, string> | undefined,
                 record.enabled as boolean | undefined,
               )
-              void runOverridesChange()
+              if (!await runOverridesChange(res)) return
               writeBridgeJson(res, 200, { ok: true, value: { variables: record.variables } })
             } catch (error) {
               const message = error instanceof Error ? error.message : String(error)
@@ -1717,7 +1728,7 @@ export function registerSettingsBridge(
                   appendPresetModules(doc, customToolModules(customTools))
                 }
               })
-              void runOverridesChange()
+              if (!await runOverridesChange(res)) return
               writeBridgeJson(res, 200, { ok: true, value: { customTools } })
             } catch (error) {
               const message = error instanceof Error ? error.message : String(error)
@@ -1781,7 +1792,7 @@ export function registerSettingsBridge(
                 }
               }
               savePresetPersona(dirname(dir), basename(dir), persona)
-              void runOverridesChange()
+              if (!await runOverridesChange(res)) return
               writeBridgeJson(res, 200, { ok: true, value: { persona } })
             } catch (error) {
               const message = error instanceof Error ? error.message : String(error)
@@ -1854,10 +1865,8 @@ export function registerSettingsBridge(
               }
               const installed = await installPresetPackage(userPresetsDir(), files, request.params)
               invalidateDescriptor()
-              let refreshWarning: string | undefined
-              try { await afterPresetPackageImport?.(installed.id) }
-              catch (error) { refreshWarning = `预设已安装，但刷新失败：${error instanceof Error ? error.message : String(error)}` }
-              writeBridgeJson(res, 200, { ok: true, value: { ...installed, sourceDigest, ...(prepared.report === undefined ? {} : { report: prepared.report }), ...(refreshWarning === undefined ? {} : { refreshWarning }) } })
+              if (!await finishPresetChange(res, () => afterPresetPackageImport?.(installed.id))) return
+              writeBridgeJson(res, 200, { ok: true, value: { ...installed, sourceDigest, ...(prepared.report === undefined ? {} : { report: prepared.report }) } })
             } catch (error) {
               const code = typeof (error as { code?: unknown }).code === 'string' ? String((error as { code: string }).code) : 'preset-package-invalid'
               writeBridgeJson(res, code === 'preset-preview-stale' ? 409 : 400, { ok: false, code, message: error instanceof Error ? error.message : String(error) })
@@ -1916,14 +1925,14 @@ export function registerSettingsBridge(
               writeBridgeJson(res, 400, { ok: false, code: 'preset-in-use', message: `预设「${id}」正在使用中，请先切换其他预设再删除` })
               return
             }
-            // 全部预设都在官方预设根（首次启动种子化）：删除 = 物理删除官方预设目录，插件目录模板保留。
+            // 删除插件自有预设存储中的用户副本，包内模板保留。
             // 新版宿主不扫描目录，删除后显式撤销插件拥有的注册。
             const result = removeUserPreset(id)
             if (!result.ok) {
               writeBridgeJson(res, 400, { ok: false, code: 'preset-delete-rejected', message: result.message })
               return
             }
-            await refreshPresetList()
+            if (!await refreshPresetList(res, id)) return
             writeBridgeJson(res, 200, { ok: true, value: { id } })
           },
         }),
@@ -1946,7 +1955,7 @@ export function registerSettingsBridge(
               writeBridgeJson(res, 400, { ok: false, code: 'preset-clone-rejected', message: result.message })
               return
             }
-            await refreshPresetList()
+            if (!await refreshPresetList(res, result.id)) return
             writeBridgeJson(res, 200, { ok: true, value: { id: result.id } })
           },
         }),
@@ -1969,7 +1978,7 @@ export function registerSettingsBridge(
               writeBridgeJson(res, 400, { ok: false, code: 'preset-duplicate-rejected', message: result.message })
               return
             }
-            await refreshPresetList()
+            if (!await refreshPresetList(res, result.id)) return
             writeBridgeJson(res, 200, { ok: true, value: { id: result.id } })
           },
         }),
@@ -2146,7 +2155,7 @@ export function registerSettingsBridge(
               writeBridgeJson(res, 400, { ok: false, code: 'characters-rejected', message: result.message })
               return
             }
-            void runOverridesChange()
+            if (!await runOverridesChange(res)) return
             writeBridgeJson(res, 200, { ok: true, value: { id, count: result.count } })
           },
         }),
@@ -2175,7 +2184,7 @@ export function registerSettingsBridge(
               writeBridgeJson(res, 400, { ok: false, code: 'characters-rejected', message: result.message })
               return
             }
-            void runOverridesChange()
+            if (!await runOverridesChange(res)) return
             writeBridgeJson(res, 200, { ok: true, value: { id, count: result.count } })
           },
         }),
@@ -2230,7 +2239,7 @@ export function registerSettingsBridge(
                   appendPresetModules(doc, ['subagent-tool-policy'])
                 }
               })
-              void runOverridesChange()
+              if (!await runOverridesChange(res)) return
               writeBridgeJson(res, 200, { ok: true, value: { policy, errors } })
             } catch (error) {
               const message = error instanceof Error ? error.message : String(error)
@@ -2310,7 +2319,7 @@ export function registerSettingsBridge(
                   : createEngineCapabilityInPreset(dir, action === 'create'
                     ? { action: 'create', capabilityId: id.trim() }
                     : { action: 'create-recipe', recipeId: id.trim() })
-                if (result.changed) afterCapabilityChange?.()
+                if (result.changed && !await finishPresetChange(res, () => afterCapabilityChange?.())) return
                 writeBridgeJson(res, 200, { ok: true, value: result })
               } catch (error) {
                 // 候选校验或重建失败：恢复原 preset.yml；生成目录由 writePreset 自身保留旧版。
@@ -2389,19 +2398,15 @@ export function registerSettingsBridge(
           }
           return
         }
-        type AgentPresetsLike = {
-          list: () => Promise<readonly { id?: unknown }[]>
-          acquireScope: (id: string) => Promise<{ key: object } & AsyncDisposable>
-        }
         // agentPresets 不在本端点的 inject 列表内：ctx.agentPresets 属性访问会被 Cordis
         // 拒绝（cannot get property "agentPresets" without inject），整条请求以 400 空响应
         // 结束；与官方 plugin-inventory/session-controller 一致，用 ctx.get 解析可选服务。
-        const agentPresets = (stx as Context & { get?: (name: string) => unknown }).get?.('agentPresets') as AgentPresetsLike | undefined
+        const agentPresets = stx.get?.('agentPresets')
         if (agentPresets === undefined) {
           writeBridgeJson(res, 503, { ok: false, code: 'tool-surface-unavailable', message: 'agentPresets 服务尚未就绪' })
           return
         }
-        let roster: readonly { id?: unknown }[]
+        let roster: Awaited<ReturnType<NonNullable<typeof agentPresets>['list']>>
         try {
           roster = await agentPresets.list()
         } catch (error) {

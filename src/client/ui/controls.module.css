@@ -37,7 +37,7 @@
 .sectionHeading h3 {
   margin: 0;
   color: var(--dsw-alias-label-primary);
-  font: var(--dsw-font-xs-strong-13);
+  font: 500 13px/20px system-ui, sans-serif;
   overflow-wrap: anywhere;
 }
 
@@ -45,7 +45,7 @@
   max-width: 66ch;
   margin: 1px 0 0;
   color: var(--dsw-alias-label-secondary);
-  font: var(--dsw-font-xxs-12);
+  font: 12px/18px system-ui, sans-serif;
 }
 
 .modalBackdrop {
@@ -62,7 +62,7 @@
   max-height: 100dvh;
   overflow-y: auto;
   background: var(--dsw-alias-bg-mask-1);
-  backdrop-filter: var(--dsw-mask-blur);
+  backdrop-filter: none;
 }
 
 .templateModal {
@@ -75,8 +75,8 @@
   border-radius: 14px;
   background: var(--dsw-alias-bg-layer-2);
   color: var(--dsw-alias-label-primary);
-  font: var(--dsw-font-xxs-12);
-  box-shadow: var(--dsw-elevation-prominent);
+  font: 12px/18px system-ui, sans-serif;
+  box-shadow: 0 0 0 .5px var(--dsw-alias-border-l4), 0 3px 8px color-mix(in srgb, var(--dsw-alias-label-primary) 4%, transparent), 0 0 20px color-mix(in srgb, var(--dsw-alias-label-primary) 5%, transparent);
 }
 
 .templatePopover {
@@ -91,8 +91,8 @@
   border-radius: 14px;
   background: var(--dsw-alias-bg-layer-2);
   color: var(--dsw-alias-label-primary);
-  font: var(--dsw-font-xxs-12);
-  box-shadow: var(--dsw-elevation-prominent);
+  font: 12px/18px system-ui, sans-serif;
+  box-shadow: 0 0 0 .5px var(--dsw-alias-border-l4), 0 3px 8px color-mix(in srgb, var(--dsw-alias-label-primary) 4%, transparent), 0 0 20px color-mix(in srgb, var(--dsw-alias-label-primary) 5%, transparent);
 }
 .templateModalHead {
   display: flex;
@@ -107,7 +107,7 @@
 .dialogFooter { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; padding: 12px 16px; border-top: 0.5px solid var(--dsw-alias-border-l1); }
 .dialogFooter button { min-height: 44px; }
 .templateModalWide .dialogClose { min-height: 44px; min-width: 44px; }
-.templateModalHead > strong { flex: 1 1 0; min-width: 0; font: var(--dsw-font-xs-strong-13); overflow-wrap: anywhere; }
+.templateModalHead > strong { flex: 1 1 0; min-width: 0; font: 500 13px/20px system-ui, sans-serif; overflow-wrap: anywhere; }
 
 .dialogClose {
   flex: none;
@@ -137,13 +137,13 @@
 }
 
 .templateModalItem strong {
-  font: var(--dsw-font-xs-strong-13);
+  font: 500 13px/20px system-ui, sans-serif;
   overflow-wrap: anywhere;
 }
 
 .templateModalItem small {
   color: var(--dsw-alias-label-secondary);
-  font: var(--dsw-font-xxs-12);
+  font: 12px/18px system-ui, sans-serif;
   overflow-wrap: anywhere;
 }
 
@@ -173,9 +173,9 @@
   color: var(--dsw-alias-label-primary);
   background: transparent;
   cursor: pointer;
-  font: var(--dsw-font-s-14);
+  font: 14px/22px system-ui, sans-serif;
   overflow-wrap: anywhere;
-  transition: background-color var(--ds-transition-duration-fast) var(--ds-ease-in-out), border-color var(--ds-transition-duration-fast) var(--ds-ease-in-out);
+  transition: background-color 150ms ease-in-out, border-color 150ms ease-in-out;
 }
 
 .pillButton:hover:not(:disabled) { background: var(--dsw-alias-interactive-bg-hover-solid); }
@@ -274,14 +274,14 @@
 
 .switchGridLabel {
   color: var(--dsw-alias-label-primary);
-  font: var(--dsw-font-xxs-12);
+  font: 12px/18px system-ui, sans-serif;
   overflow-wrap: anywhere;
 }
 
 .settingCopy { display: flex; min-width: 0; flex: 1; flex-direction: column; }
-.settingCopy strong { color: var(--dsw-alias-label-primary); font: var(--dsw-font-xxs-strong-12); }
-.settingCopy small { color: var(--dsw-alias-label-secondary); font: var(--dsw-font-xxs-12); overflow-wrap: anywhere; }
-.settingCopy code { font-family: var(--ds-font-family-code, ui-monospace, monospace); }
+.settingCopy strong { color: var(--dsw-alias-label-primary); font: 500 12px/18px system-ui, sans-serif; }
+.settingCopy small { color: var(--dsw-alias-label-secondary); font: 12px/18px system-ui, sans-serif; overflow-wrap: anywhere; }
+.settingCopy code { font-family: ui-monospace, monospace; }
 
 .directoryControl {
   display: flex;
@@ -301,7 +301,7 @@
   padding: 4px 8px;
   color: var(--dsw-alias-label-primary);
   background: var(--dsw-alias-bg-layer-1);
-  font: var(--dsw-font-s-14);
+  font: 14px/22px system-ui, sans-serif;
 }
 .directoryInput::placeholder { color: var(--dsw-alias-label-caption); }
 .directoryInput:disabled { cursor: default; opacity: .46; }
@@ -379,21 +379,21 @@
   flex: 1 1 auto;
   color: var(--dsw-alias-label-primary);
   min-width: 0;
-  font: var(--dsw-font-xs-strong-13);
+  font: 500 13px/20px system-ui, sans-serif;
   overflow-wrap: anywhere;
 }
 .presetCardId {
   margin-top: auto;
   color: var(--dsw-alias-label-secondary);
-  font: var(--dsw-font-markdown-code);
-  font-family: var(--ds-font-family-code, ui-monospace, monospace);
+  font: 12px/19px ui-monospace, monospace;
+  font-family: ui-monospace, monospace;
   overflow-wrap: anywhere;
 }
 .presetCardDesc {
   min-height: 36px;
   margin: 0;
   color: var(--dsw-alias-label-secondary);
-  font: var(--dsw-font-xxs-12);
+  font: 12px/18px system-ui, sans-serif;
   overflow-wrap: anywhere;
 }
 .presetCardFooter {
@@ -438,7 +438,7 @@
   outline-offset: 2px;
 }
 .dirCardActions { display: flex; flex: 0 0 auto; align-items: center; gap: 6px; flex-wrap: wrap; }
-.dirCardActions .pillButton { min-height: 28px; padding: 0 10px; font: var(--dsw-font-xxs-12); }
+.dirCardActions .pillButton { min-height: 28px; padding: 0 10px; font: 12px/18px system-ui, sans-serif; }
 
 .skillCardBody {
   display: flex;
@@ -474,7 +474,7 @@
   color: var(--dsw-alias-label-secondary);
   background: transparent;
   cursor: grab;
-  font: var(--dsw-font-s-14);
+  font: 14px/22px system-ui, sans-serif;
   user-select: none;
 }
 
@@ -534,7 +534,7 @@
   padding: 2px 9px;
   color: var(--dsw-alias-label-primary);
   background: var(--dsw-alias-bg-layer-2);
-  font: var(--dsw-font-xxs-12);
+  font: 12px/18px system-ui, sans-serif;
   overflow-wrap: anywhere;
 }
 
@@ -552,7 +552,7 @@
   color: var(--dsw-alias-label-tertiary);
   background: transparent;
   cursor: pointer;
-  font: var(--dsw-font-xxs-12);
+  font: 12px/18px system-ui, sans-serif;
 }
 
 .tagChipRemove:hover {
@@ -568,12 +568,12 @@
   padding: 4px 2px;
   color: var(--dsw-alias-label-primary);
   background: transparent;
-  font: var(--dsw-font-xxs-12);
+  font: 12px/18px system-ui, sans-serif;
 }
 
 .tagInputField::placeholder { color: var(--dsw-alias-label-caption); }
 
-.notice { font: var(--dsw-font-xxs-12); color: color-mix(in srgb, var(--dsw-alias-state-success-primary) 60%, var(--dsw-alias-label-primary)); overflow-wrap: anywhere; }
+.notice { font: 12px/18px system-ui, sans-serif; color: color-mix(in srgb, var(--dsw-alias-state-success-primary) 60%, var(--dsw-alias-label-primary)); overflow-wrap: anywhere; }
 .noticeError { color: color-mix(in srgb, var(--dsw-alias-state-error-primary) 80%, var(--dsw-alias-label-primary)); }
 
 /* 提示词配置列表：卡片 + 开关 + 四按钮 + 表单。 */
@@ -605,16 +605,16 @@
 .configToggle:focus-visible { outline: 2px solid var(--dsw-alias-state-business-primary); outline-offset: 2px; }
 .configTitle { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .configTitleRow { display: flex; align-items: center; gap: 6px; min-width: 0; flex-wrap: wrap; }
-.configName { font: var(--dsw-font-xs-strong-13); color: var(--dsw-alias-label-primary); overflow-wrap: anywhere; }
-.configMeta { font: var(--dsw-font-xxs-12); color: var(--dsw-alias-label-secondary); overflow-wrap: anywhere; }
-.configChip { max-width: 100%; padding: 1px 8px; border: 0.5px solid var(--dsw-alias-border-l2); border-radius: 999px; corner-shape: round; font: var(--dsw-font-xxxs-11); color: var(--dsw-alias-label-secondary); background: transparent; overflow-wrap: anywhere; }
-.configSectionTitle { margin: 16px 0 8px; padding-top: 16px; border-top: 0.5px solid var(--dsw-alias-border-l2); font: var(--dsw-font-xxs-strong-12); color: var(--dsw-alias-label-secondary); }
+.configName { font: 500 13px/20px system-ui, sans-serif; color: var(--dsw-alias-label-primary); overflow-wrap: anywhere; }
+.configMeta { font: 12px/18px system-ui, sans-serif; color: var(--dsw-alias-label-secondary); overflow-wrap: anywhere; }
+.configChip { max-width: 100%; padding: 1px 8px; border: 0.5px solid var(--dsw-alias-border-l2); border-radius: 999px; corner-shape: round; font: 11px/14px system-ui, sans-serif; color: var(--dsw-alias-label-secondary); background: transparent; overflow-wrap: anywhere; }
+.configSectionTitle { margin: 16px 0 8px; padding-top: 16px; border-top: 0.5px solid var(--dsw-alias-border-l2); font: 500 12px/18px system-ui, sans-serif; color: var(--dsw-alias-label-secondary); }
 .configSectionTitle:first-child { margin-top: 0; padding-top: 0; border-top: 0; }
-.chevron { flex: none; color: var(--dsw-alias-label-secondary); transition: transform var(--ds-transition-duration-fast) var(--ds-ease-in-out); }
+.chevron { flex: none; color: var(--dsw-alias-label-secondary); transition: transform 150ms ease-in-out; }
 .chevronOpen { transform: rotate(180deg); }
 
 .configActions { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-left: auto; }
-.configActions .pillButton { min-height: 28px; padding: 0 10px; font: var(--dsw-font-xxs-12); border-radius: 14px; corner-shape: round; }
+.configActions .pillButton { min-height: 28px; padding: 0 10px; font: 12px/18px system-ui, sans-serif; border-radius: 14px; corner-shape: round; }
 
 .configForm {
   display: flex;
@@ -630,8 +630,8 @@
 }
 .configForm[hidden] { display: none; }
 .configField { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
-.configFieldLabel { font: var(--dsw-font-xxs-strong-12); color: var(--dsw-alias-label-primary); }
-.configFieldHint { margin: 0; font: var(--dsw-font-xxs-12); color: var(--dsw-alias-label-secondary); overflow-wrap: anywhere; }
+.configFieldLabel { font: 500 12px/18px system-ui, sans-serif; color: var(--dsw-alias-label-primary); }
+.configFieldHint { margin: 0; font: 12px/18px system-ui, sans-serif; color: var(--dsw-alias-label-secondary); overflow-wrap: anywhere; }
 .configFieldControlAnchor { min-width: 0; }
 .configFieldStack { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
 .configFieldStack > textarea { margin-top: 2px; }
@@ -642,7 +642,7 @@
   border: 0.5px solid var(--dsw-alias-label-tertiary);
   background: var(--dsw-alias-bg-layer-1);
   min-height: 32px;
-  font: var(--dsw-font-s-14);
+  font: 14px/22px system-ui, sans-serif;
   color: var(--dsw-alias-label-primary);
   border-radius: 8px;
   padding: 4px 8px;
@@ -650,7 +650,7 @@
 .configInput:disabled { color: var(--dsw-alias-label-tertiary); cursor: default; }
 .moduleCard .configInput,
 .toolCard .configInput,
-.configForm .configInput { min-height: 28px; padding: 4px 8px; font: var(--dsw-font-xxs-12); }
+.configForm .configInput { min-height: 28px; padding: 4px 8px; font: 12px/18px system-ui, sans-serif; }
 .configNumberInput { width: 12ch; max-width: 100%; }
 .settingRowStack > .menuSelect,
 .settingRowStack > .menuSelectOwner { width: min(100%, 280px); }
@@ -661,8 +661,8 @@
   field-sizing: content;
   max-height: max(72px, 60dvh);
   box-sizing: border-box;
-  font: var(--dsw-font-markdown-code);
-  font-family: var(--ds-font-family-code, ui-monospace, monospace);
+  font: 12px/19px ui-monospace, monospace;
+  font-family: ui-monospace, monospace;
   color: var(--dsw-alias-label-primary);
   background: var(--dsw-alias-bg-layer-1);
   border: 0.5px solid var(--dsw-alias-label-tertiary);
@@ -690,11 +690,11 @@
   flex: 0 0 auto;
   place-items: center;
   color: var(--dsw-alias-label-secondary);
-  font: var(--dsw-font-base-16);
+  font: 16px/24px system-ui, sans-serif;
 }
-.emptyState h3 { margin: 0 0 4px; font: var(--dsw-font-xs-strong-13); }
-.emptyState p { max-width: 520px; margin: 0; color: var(--dsw-alias-label-secondary); font: var(--dsw-font-xxs-12); overflow-wrap: anywhere; }
-.readOnly { color: var(--dsw-alias-label-secondary); font: var(--dsw-font-xxs-12); overflow-wrap: anywhere; }
+.emptyState h3 { margin: 0 0 4px; font: 500 13px/20px system-ui, sans-serif; }
+.emptyState p { max-width: 520px; margin: 0; color: var(--dsw-alias-label-secondary); font: 12px/18px system-ui, sans-serif; overflow-wrap: anywhere; }
+.readOnly { color: var(--dsw-alias-label-secondary); font: 12px/18px system-ui, sans-serif; overflow-wrap: anywhere; }
 
 /* 次级按钮语义变体：显式声明，避免未来主按钮规则误伤。 */
 .pillButton[data-variant='secondary'] {
@@ -716,13 +716,13 @@
   padding: 4px 8px;
   color: var(--dsw-alias-label-primary);
   background: var(--dsw-alias-bg-layer-1);
-  font: var(--dsw-font-s-14);
+  font: 14px/22px system-ui, sans-serif;
 }
 .listFilter::placeholder { color: var(--dsw-alias-label-caption); }
 .listFilterRow .menuSelect.listFilter,
 .listFilterRow .menuSelectOwner.listFilter { flex: 0 1 auto; width: auto; max-width: 100%; }
 
-/* 官方 Settings Menu 选择器：卡片内使用紧凑触发器，菜单由 primitive portal 渲染。 */
+/* 紧凑触发器留在卡片内，菜单由插件自己的 body portal 渲染。 */
 .menuSelect,
 .menuSelectOwner {
   display: inline-flex;
@@ -767,7 +767,7 @@
   padding: 4px 10px;
   border-radius: 14px;
   corner-shape: round;
-  font: var(--dsw-font-xxs-12);
+  font: 12px/18px system-ui, sans-serif;
 }
 
 .menuSelectTriggerStandard {
@@ -776,7 +776,7 @@
   padding: 6px 14px;
   border-radius: 18px;
   corner-shape: round;
-  font: var(--dsw-font-s-14);
+  font: 14px/22px system-ui, sans-serif;
 }
 
 .menuSelectTrigger:hover:not(:disabled) { background: var(--dsw-alias-interactive-bg-hover); }
@@ -806,7 +806,7 @@
   padding: 0 10px;
   border-radius: 14px;
   corner-shape: round;
-  font: var(--dsw-font-xxs-12);
+  font: 12px/18px system-ui, sans-serif;
 }
 
 /* 加载骨架保留布局占位，不使用循环装饰动画。 */
@@ -876,12 +876,12 @@
 /* 模板选择弹窗按层分组。 */
 .templateGroup { display: flex; flex-direction: column; gap: 4px; }
 .templateGroup + .templateGroup { margin-top: 12px; }
-.templateGroupTitle { font: var(--dsw-font-xxs-12); color: var(--dsw-alias-label-secondary); padding: 0 4px; }
+.templateGroupTitle { font: 12px/18px system-ui, sans-serif; color: var(--dsw-alias-label-secondary); padding: 0 4px; }
 
 /* 导入预览的有损信息列表：服务端有界数据全部展示，长列表在容器内滚动
    （可聚焦，支持键盘滚动），不做二次截断，也不隐藏条目。 */
 .previewGroup { display: flex; flex-direction: column; gap: 4px; margin-top: 8px; }
-.previewGroupTitle { font: var(--dsw-font-xxs-12); color: var(--dsw-alias-label-secondary); }
+.previewGroupTitle { font: 12px/18px system-ui, sans-serif; color: var(--dsw-alias-label-secondary); }
 .previewList {
   max-height: 12rem;
   overflow-y: auto;
@@ -893,20 +893,20 @@
 }
 .previewList:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
 .previewItem { overflow-wrap: anywhere; }
-.previewLocation { display: block; font: var(--dsw-font-xxs-12); color: var(--dsw-alias-label-secondary); }
+.previewLocation { display: block; font: 12px/18px system-ui, sans-serif; color: var(--dsw-alias-label-secondary); }
 
 /* 列表操作区高度由页面 owner 测量，短视口解除 sticky。 */
 .pageActions { position: sticky; top: 0; z-index: 1; isolation: isolate; display: flex; flex-direction: column; gap: 8px; min-width: 0; padding: 8px 0; background: Canvas; border-bottom: .5px solid var(--dsw-alias-border-l2); }
 /* 第三方主题可把表面设为透明：语义表面叠在系统不透明基底上，滚动正文不会透出。 */
 .pageActions::before { content: ''; position: absolute; inset: 0; z-index: -1; pointer-events: none; background: var(--dsw-alias-bg-layer-2, var(--dsw-alias-bg-base, Canvas)); }
 [data-sticky-disabled='true'] .pageActions { position: relative; top: auto; }
-.actionFeedback { min-width: 0; font: var(--dsw-font-xxs-12); overflow-wrap: anywhere; }
-.actionHint { margin: 0; color: var(--dsw-alias-label-secondary); font: var(--dsw-font-xxs-12); overflow-wrap: anywhere; }
-.configStatus { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 14px; border-top: 0.5px solid var(--dsw-alias-border-l2); font: var(--dsw-font-xxs-12); overflow-wrap: anywhere; }
+.actionFeedback { min-width: 0; font: 12px/18px system-ui, sans-serif; overflow-wrap: anywhere; }
+.actionHint { margin: 0; color: var(--dsw-alias-label-secondary); font: 12px/18px system-ui, sans-serif; overflow-wrap: anywhere; }
+.configStatus { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 14px; border-top: 0.5px solid var(--dsw-alias-border-l2); font: 12px/18px system-ui, sans-serif; overflow-wrap: anywhere; }
 .configStatus > p { margin: 0; }
 .configFieldError,
-.confirmError { margin: 0; color: color-mix(in srgb, var(--dsw-alias-state-error-primary) 80%, var(--dsw-alias-label-primary)); font: var(--dsw-font-xxs-12); overflow-wrap: anywhere; }
-.confirmDescription { margin: 0; padding: 12px 16px; color: var(--dsw-alias-label-primary); font: var(--dsw-font-xxs-12); overflow-wrap: anywhere; }
+.confirmError { margin: 0; color: color-mix(in srgb, var(--dsw-alias-state-error-primary) 80%, var(--dsw-alias-label-primary)); font: 12px/18px system-ui, sans-serif; overflow-wrap: anywhere; }
+.confirmDescription { margin: 0; padding: 12px 16px; color: var(--dsw-alias-label-primary); font: 12px/18px system-ui, sans-serif; overflow-wrap: anywhere; }
 .confirmActions { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 8px; padding: 12px 16px; }
 
 @media (pointer: coarse) {

@@ -1,6 +1,6 @@
 # module: tool-ask-user
 # source: master/packages/bundle/web-app/presets/standard.patch.yml
-# commit: c36a83ff6bb95e3f82cf79f9be7c724270a8aa61
+# commit: 4878cdabd87d4041bdaff61d04c966883b9fd07a
 # local patches: 0
 
 - id: tool-ask-user

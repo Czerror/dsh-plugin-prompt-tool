@@ -2,14 +2,15 @@
  * prompt-tool 自建 tsdown 构建配置
  */
 import { readFile } from 'node:fs/promises'
-import { basename, dirname, resolve as resolvePath } from 'node:path'
+import { dirname, resolve as resolvePath } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import type { UserConfig } from 'tsdown'
 import { transform } from 'lightningcss'
 
 const PLUGIN_ID = 'dsh-plugin-prompt-tool'
 
 /**
- * rc.2 client-modules baseline：全部由宿主模块表（PLATFORM_MODULES 与预载
+ * 0.2.0 client-modules baseline：全部由宿主模块表（PLATFORM_MODULES 与预载
  * 客户端模块）提供，从 loader 解析，不打包进 lib/client.js。
  *
  * 只列本插件真正产生的模块请求：值 import 才会形成 require 边，
@@ -19,11 +20,11 @@ const PLUGIN_ID = 'dsh-plugin-prompt-tool'
 const CLIENT_EXTERNALS = [
   'react', 'react/jsx-runtime', 'react-dom', 'react-dom/client',
   '@deepseek-ai/cordis',
-  '@deepseek-ai/dsh-client-ui-primitives',
 ]
 
 const CSS_VIRTUAL_PREFIX = '\0dsh-css:'
 const CSS_VIRTUAL_SUFFIX = '.mjs'
+const CSS_RUNTIME = '\0prompt-tool-styles'
 
 const lib: UserConfig = {
   name: PLUGIN_ID,
@@ -67,11 +68,17 @@ const client: UserConfig = {
   plugins: [{
     name: 'dsh-css-modules-inline',
     resolveId(source: string, importer: string | undefined) {
+      if (source === 'virtual:prompt-tool-styles') return CSS_RUNTIME
       if (!source.endsWith('.module.css')) return null
       const abs = importer !== undefined ? resolvePath(dirname(importer), source) : source
       return CSS_VIRTUAL_PREFIX + abs + CSS_VIRTUAL_SUFFIX
     },
     async load(virtualId: string) {
+      if (virtualId === CSS_RUNTIME) return [
+        `import { installClientStyles } from ${JSON.stringify(fileURLToPath(new URL('./src/client/styles.ts', import.meta.url)).replaceAll('\\', '/'))};`,
+        'export const sheets = [];',
+        'export function install() { return installClientStyles(sheets); }',
+      ].join('\n')
       if (!virtualId.startsWith(CSS_VIRTUAL_PREFIX)) return null
       const fileId = virtualId.slice(CSS_VIRTUAL_PREFIX.length, -CSS_VIRTUAL_SUFFIX.length)
       this.addWatchFile(fileId)
@@ -79,7 +86,7 @@ const client: UserConfig = {
       const { code, exports: cssExports } = transform({
         filename: fileId,
         code: source,
-        cssModules: { pattern: '[hash]_[local]' },
+        cssModules: { pattern: 'pt_[hash]_[local]' },
         minify: true,
       })
       const classMap: Record<string, string> = {}
@@ -87,15 +94,8 @@ const client: UserConfig = {
         classMap[local] = exp.name
       }
       return [
-        `const css = ${JSON.stringify(code.toString())};`,
-        `const tagId = ${JSON.stringify(`${PLUGIN_ID}/${basename(fileId)}`)};`,
-        'if (typeof document !== \'undefined\' && document.querySelector(\'style[data-plugin-css=\' + JSON.stringify(tagId) + \']\') === null) {',
-        '  const tag = document.createElement(\'style\');',
-        `  tag.dataset.plugin = ${JSON.stringify(PLUGIN_ID)};`,
-        '  tag.dataset.pluginCss = tagId;',
-        '  tag.textContent = css;',
-        '  document.head.appendChild(tag);',
-        '}',
+        'import { sheets } from "virtual:prompt-tool-styles";',
+        `sheets.push(${JSON.stringify(code.toString())});`,
         `export default ${JSON.stringify(classMap)};`,
       ].join('\n')
     },

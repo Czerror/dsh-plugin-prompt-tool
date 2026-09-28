@@ -79,7 +79,9 @@ src/client/
 └─ ui/        # 仅 props/callback 的共享交互与 CSS Modules
 ```
 
-依赖方向固定为 `app → features → data/ui → shared contract`：跨领域组合只在 `app/workspace/pages/`，feature 不导入其他 feature 内部实现；标准控件优先复用 `@deepseek-ai/dsh-client-ui-primitives`。Client bridge 通过 `src/shared/bridge-contract.ts` 的 endpoint key 与 request/value map 调用，业务代码不拼接路径。样式按 owner 拆分，使用 DSH `--dsw-*` 语义 token，不定义插件级全局主题。
+依赖方向固定为 `app → features → data/ui → shared contract`：跨领域组合只在 `app/workspace/pages/`，feature 不导入其他 feature 内部实现。控件由插件持有，不运行时加载 Harness Client 包；官方能力通过 Cordis 服务与 slot 接入，类型依赖保留。Client bridge 使用 `src/shared/bridge-contract.ts` 的 endpoint key 与 request/value map。样式按 owner 拆分，只共享 `--dsw-alias-*` 主题颜色，安装和释放随插件生命周期。
+
+角色卡与世界书模型工具操作执行会话绑定的预设，工作台的编辑选择不会改变工具目标。保存等待物化与官方注册完成；已保存但未生效会明确返回失败，旧会话仍保留官方绑定的 revision。失败预设保留诊断，方便修复。
 完整的当前目录、slot 生命周期、状态边界、可访问性和维护约束见 [Web 客户端 UI 结构框架](docs/ui-architecture.md)。
 
 ### 配置卡与工具预览
@@ -247,7 +249,7 @@ UI / 写盘按上表分组；这是展示顺序，不是模型提示词优先级
 pnpm install && pnpm build
 pnpm test          # 全量契约与行为测试（隔离 cwd 运行）：参数契约/注入装配/六插入点/生成链路/引擎语义/组合重建/模型路由/UI 契约/安全边界
 pnpm typecheck && pnpm lint
-pnpm verify:host         # 官方包基线：声明范围、安装版本、解析目标（拒绝源码 link）、缺失声明与 inject peer
+pnpm verify:host         # 官方包范围、安装版本、解析目标、类型/运行时依赖与 Client 模块边界
 pnpm sync:yaml           # 刷新 engine/vendor/yaml（生成目录运行时 YAML 解析器）
 pnpm rebuild:composition # 只生成官方切块/变体；source/local 本地源不复制（失败安全）
 ```
@@ -260,7 +262,7 @@ pnpm rebuild:composition # 只生成官方切块/变体；source/local 本地源
 
 ## 排障：插件未加载时
 
-启动日志出现 `dsh: skipping profile bundle "dsh-plugin-prompt-tool"` 时，插件**整体未加载**——dsh 在包解析阶段就跳过了它，插件自己的自愈层（web 表层补装配、预设种子补建）也不会运行。按顺序查三步：
+启动日志出现 `dsh: skipping profile bundle "dsh-plugin-prompt-tool"` 时，插件整体未加载，预设种子补建也不会运行。插件启动只诊断缺失 Web 能力，不写 profile manifest 或修复包链接。按顺序检查：
 
 1. **看 bundles 列表**：`<DSH_HOME>/profiles/<name>/package.json` 的 `dsh.profile.bundles` 是否含 `dsh-plugin-prompt-tool`。
 2. **体检依赖链接**（只读、零写入）：
@@ -270,13 +272,13 @@ pnpm rebuild:composition # 只生成官方切块/变体；source/local 本地源
    ```
 
    它按 dsh 同一口径（`createRequire(<profile>/package.json).resolve.paths`）逐项判定，并额外报出**链接目标是否存在**——「链接在、目标不在」的悬空链接正是最常见的失败形态（例如相对深度算错一层）。
-3. **修复**：去掉 `--dry-run` 重跑即可自动重建悬空或缺失的链接（只写 profile 私有层，真实文件与目录绝不删除，不改动 `profiles/node_modules` 兜底层）。若脚本报告需人工处理、或依赖本身缺失，走官方通道：
+3. **修复**：体检命令始终只读。缺失依赖或链接交给官方插件管理器；在 Harness 中使用 `plugin_manager` 安装或管理 bundle，CLI 的依赖修复入口为：
 
    ```powershell
    dsh plugin --profile web install
    ```
 
-修复后需**重启 DSH** 生效。
+替换已安装包后需要用户重启 DSH；插件不自动重启服务。
 
 ## 许可
 

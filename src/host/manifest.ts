@@ -522,8 +522,8 @@ export function appendPresetModules(
 }
 
 /** 删除具有合法身份的预设目录（预设根/<id>）；隐藏备份不经公共接口删除。
- *  仅作用于预设根（官方 USER_PRESET_DIR），包内置模板天然不受影响；路径越界与非法 id 拒绝。
- *  删除后宿主 agent-presets 目录列表自然不再出现该预设（官方 roster 即目录列表）。 */
+ *  仅作用于插件自有预设根，包内置模板不受影响；路径越界与非法 id 拒绝。
+ *  调用方在删除后刷新注册，撤销本插件拥有的官方定义。 */
 export function removeUserPreset(id: string, presetRoot = userPresetsDir()): { ok: true } | { ok: false; message: string } {
   try {
     const target = assertPresetDirectory(presetRoot, id)

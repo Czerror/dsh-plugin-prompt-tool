@@ -2,10 +2,7 @@
 export const name = "world-book-tools"
 
 export function apply(ctx) {
-  const service = ctx.get("pt-world-book-tools")
-  if (service === null || service === undefined || typeof service.mount !== "function") {
-    ctx.logger?.warn(name + ": service unavailable; world-book tools not mounted for this preset")
-    return
-  }
-  ctx.effect(() => service.mount(ctx), name + ": mount")
+  ctx.inject(["pt-world-book-tools"], (scopeCtx) => {
+    scopeCtx.effect(() => scopeCtx.get("pt-world-book-tools").mount(scopeCtx), name + ": mount")
+  })
 }

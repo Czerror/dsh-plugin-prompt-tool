@@ -1,22 +1,15 @@
-/** 世界书模型工具：维护当前预设的 world-book 策略配置（promptConfigs 模块体系，
+/** 世界书模型工具：维护执行会话绑定预设的 world-book 策略配置（promptConfigs 模块体系，
  *  与模块卡片同一存储/编辑）。list/upsert/delete 保留；injectMode 批量模式已废弃
  *  （keyword 语义由逐条 constant/keys 表达）。note 按条目 id 前缀归属写入角色卡
  *  记忆（.characters/<cardId>/memory.md，跟随角色卡跨预设），无前缀回退预设 memory.md。 */
 import type { Context } from '@deepseek-ai/cordis'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import { readdirSync } from 'node:fs'
-import { basename, join } from 'node:path'
+import { join } from 'node:path'
 import { appendMemoryFile, syncImportedCharacterMemory } from '../host/characters.ts'
 import { buildWorldBookEntry, deleteWorldBookEntry, listWorldBookEntries, upsertWorldBookEntry } from '../host/worldbook.ts'
-
-export interface WorldBookToolHost {
-  /** 当前激活预设目录（preset.yml 所在目录）。 */
-  activeDir: () => string
-  /** 预设根目录（角色卡库 .characters/<id> 所在根）。 */
-  presetRoot: () => string
-  /** 写盘后重建生成目录。 */
-  rebuild: () => void
-}
+import { rebuildSavedPreset } from '../host/preset-tool-target.ts'
+import type { PresetToolHost, PresetToolTarget } from '../host/preset-tool-target.ts'
 
 const text = (text: string): Array<{ type: 'text'; text: string }> => [{ type: 'text', text }]
 
@@ -39,23 +32,23 @@ function sourceCardId(presetRoot: string, entryId: string): string | undefined {
 }
 
 /** 注册世界书条目级模型工具；返回 disposer，随 world-book-tools 预设模块生命周期清理。 */
-export function registerWorldBookTools(ctx: Context, host: WorldBookToolHost): () => void {
+export function registerWorldBookTools(ctx: Context, host: PresetToolHost): () => void {
   const fiber = ctx.inject(['tools'], (toolsCtx) => {
     const disposers: Array<() => void> = []
     /** note 归属写入：角色卡条目 → 卡记忆；其他 → 预设记忆。 */
-    const writeNote = (entryId: string | undefined, note: string): void => {
+    const writeNote = (target: PresetToolTarget, entryId: string | undefined, note: string): void => {
       if (note === undefined || note.trim().length === 0) return
-      const cardId = entryId !== undefined ? sourceCardId(host.presetRoot(), entryId) : undefined
+      const cardId = entryId !== undefined ? sourceCardId(target.root, entryId) : undefined
       if (cardId !== undefined) {
-        appendMemoryFile(join(host.presetRoot(), '.characters', cardId, 'memory.md'), note, '# 角色记忆')
+        appendMemoryFile(join(target.root, '.characters', cardId, 'memory.md'), note, '# 角色记忆')
         // 该卡已导入当前预设时同步刷新 chara-<id>-memory 注入条目（跨会话记忆即刻生效）。
         try {
-          syncImportedCharacterMemory(host.presetRoot(), basename(host.activeDir()), cardId)
+          syncImportedCharacterMemory(target.root, target.id, cardId)
         } catch {
           // 同步失败不阻断 note 写入（下次 apply 仍会重建条目）。
         }
       } else {
-        appendMemoryFile(join(host.activeDir(), 'memory.md'), note, '# 本地记忆')
+        appendMemoryFile(join(target.dir, 'memory.md'), note, '# 本地记忆')
       }
     }
 
@@ -89,8 +82,8 @@ export function registerWorldBookTools(ctx: Context, host: WorldBookToolHost): (
         },
         render: (_args, value) => text(JSON.stringify(value.entries)),
       },
-      execute: async () => {
-        const entries = listWorldBookEntries(host.activeDir())
+      execute: async (_args, exec) => {
+        const entries = listWorldBookEntries(host.target(exec).dir)
           .map((config) => {
             const params = config.params as Record<string, unknown> | undefined
             const keys = params?.keys
@@ -138,8 +131,8 @@ export function registerWorldBookTools(ctx: Context, host: WorldBookToolHost): (
         },
         render: (_args, value) => text(`世界书条目 ${value.id} 已保存（当前共 ${value.count} 条），生成目录已重建。`),
       },
-      execute: async (args) => {
-        const dir = host.activeDir()
+      execute: async (args, exec) => {
+        const target = host.target(exec)
         const targetId = args.id !== undefined && args.id.length > 0 ? args.id : `lore-${Date.now().toString(36)}`
         const entry = buildWorldBookEntry({
           id: targetId,
@@ -151,9 +144,9 @@ export function registerWorldBookTools(ctx: Context, host: WorldBookToolHost): (
           keys: Array.isArray(args.keys) && args.keys.length > 0 ? args.keys : undefined,
           secondaryKeys: Array.isArray(args.secondaryKeys) && args.secondaryKeys.length > 0 ? args.secondaryKeys : undefined,
         })
-        const count = upsertWorldBookEntry(dir, { ...entry, id: targetId })
-        writeNote(targetId, typeof args.note === 'string' ? args.note : '')
-        host.rebuild()
+        const count = upsertWorldBookEntry(target.dir, { ...entry, id: targetId })
+        writeNote(target, targetId, typeof args.note === 'string' ? args.note : '')
+        await rebuildSavedPreset(host, target.id)
         return { id: targetId, count }
       },
     })))
@@ -177,11 +170,11 @@ export function registerWorldBookTools(ctx: Context, host: WorldBookToolHost): (
         },
         render: (_args, value) => text(`世界书条目 ${value.id} 已删除（剩余 ${value.count} 条），生成目录已重建。`),
       },
-      execute: async (args) => {
-        const dir = host.activeDir()
-        const keptCount = deleteWorldBookEntry(dir, args.id)
-        writeNote(args.id, typeof args.note === 'string' ? args.note : '')
-        host.rebuild()
+      execute: async (args, exec) => {
+        const target = host.target(exec)
+        const keptCount = deleteWorldBookEntry(target.dir, args.id)
+        writeNote(target, args.id, typeof args.note === 'string' ? args.note : '')
+        await rebuildSavedPreset(host, target.id)
         return { id: args.id, count: keptCount }
       },
     })))

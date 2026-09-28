@@ -1,6 +1,6 @@
 import { useEffect, useId, useMemo, useState, type ReactNode } from 'react'
 import clsx from 'clsx'
-import { Switch } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Switch } from '../../ui/Switch.tsx'
 import type { FieldDraft } from '../../data/workspace-drafts.ts'
 import { FormField } from '../../ui/FormField.tsx'
 import { HintTooltip } from '../../ui/HintTooltip.tsx'

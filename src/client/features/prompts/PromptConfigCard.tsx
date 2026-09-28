@@ -1,6 +1,9 @@
 import { memo, useEffect, useId, useRef, useState, type ReactNode } from 'react'
 import clsx from 'clsx'
-import { Button, IconChevronDownOutlineRegular, Menu, Switch, type MenuEntry } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Button } from '../../ui/Button.tsx'
+import { IconChevronDownOutlineRegular } from '../../ui/icons.tsx'
+import { Menu, type MenuEntry } from '../../ui/Menu.tsx'
+import { Switch } from '../../ui/Switch.tsx'
 import type { PromptToolTranslate } from '../../locales.ts'
 import type { EngineMeta, PromptConfigDraft } from '../../prompt-tool-types.ts'
 import type { InstructionPolicyFileOverride } from '../../../shared/instructions.ts'
@@ -8,7 +11,6 @@ import type { FieldDraft } from '../../data/workspace-drafts.ts'
 import { HintTooltip } from '../../ui/HintTooltip.tsx'
 import { ConfirmDialog } from '../../ui/ConfirmDialog.tsx'
 import { StatusBadge } from '../../ui/StatusBadge.tsx'
-import { useMenuFocus } from '../../ui/menu-focus.ts'
 import { PromptConfigForm } from './PromptConfigForm.tsx'
 import { instructionFileIdOf } from '../../data/prompt-config-content.ts'
 import { isManagedConfigField } from '../../../shared/managed-config-fields.ts'
@@ -54,7 +56,6 @@ export const PromptConfigCard = memo(function PromptConfigCard(props: {
   const { t, meta, config } = props
   const [confirmation, setConfirmation] = useState<'delete' | 'reload'>()
   const [menuOpen, setMenuOpen] = useState(false)
-  const firstItemRef = useMenuFocus(menuOpen)
   useEffect(() => { setMenuOpen(false); setConfirmation(undefined) }, [props.draftScope, config.id])
   const cardRef = useRef<HTMLElement>(null)
   const actionRef = useRef<HTMLSpanElement>(null)
@@ -84,8 +85,6 @@ export const PromptConfigCard = memo(function PromptConfigCard(props: {
       { id: 'delete', label: <span className={styles.configFieldError}>{t('card.delete')}</span>, danger: true, disabled: props.disabled },
     ] : []),
   ]
-  const firstItem = menuItems.find((item) => !('type' in item) && !item.disabled)
-  if (firstItem && !('type' in firstItem)) firstItem.label = <span ref={firstItemRef}>{firstItem.label}</span>
   const reload = (): void => {
     if (instructionFileId === undefined) return
     if (config.contentDirty) setConfirmation('reload')
@@ -141,14 +140,8 @@ export const PromptConfigCard = memo(function PromptConfigCard(props: {
             if (instructionFileId !== undefined) props.onPatchInstructionPolicy?.(instructionFileId, { enabled: next })
             else props.onToggleEnabled(config.id, next)
           }} />
-        {instructionFileId === undefined && <span ref={actionRef} tabIndex={-1} onKeyDown={(event) => {
-          if (!menuOpen || (event.key !== 'Escape' && event.key !== 'Tab')) return
-          event.stopPropagation()
-          if (event.key === 'Escape') event.preventDefault()
-          focusAction()
-          setMenuOpen(false)
-        }}>
-          <Menu open={menuOpen} portal autoFocus compact align="end" items={menuItems} onClose={() => setMenuOpen(false)}
+        {instructionFileId === undefined && <span ref={actionRef} tabIndex={-1}>
+          <Menu open={menuOpen} compact align="end" items={menuItems} onClose={() => setMenuOpen(false)}
             onSelect={(action) => {
               setMenuOpen(false)
               focusAction()

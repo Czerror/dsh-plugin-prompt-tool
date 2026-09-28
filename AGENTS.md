@@ -55,7 +55,7 @@
 
 - src/index.ts 只做编排和宿主适配；host、runtime、client、shared 的细节放回所属模块。
 - inject 只使用字符串数组；可选或晚到服务用 ctx.inject([...], callback) 等待。
-- agentPresets 负责官方会话预设切换与同步；webServer 不放入静态入口 inject，按现有 ensureWebSurface() 路径处理。
+- agentPresets 负责官方会话预设切换与同步；webServer 动态等待，ensureWebSurface() 只读诊断。安装和 profile 装配走官方插件管理流程，插件不修改 profile manifest 或包链接。
 - 监听器、工具、watcher 和动态服务挂在 ctx.effect 或 disposer 上；重挂前释放旧实例。
 - 仅依赖已发布的官方包和 node_modules 类型；相对 TypeScript import 保留显式扩展名，纯类型依赖使用 import type。
 - Skills、SillyTavern、角色卡、世界书和自定义工具复用既有 provider、host 工厂和 rebuildPreset()，不在 UI 复制转换或热装配通道。

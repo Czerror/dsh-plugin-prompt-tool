@@ -1,36 +1,30 @@
 #!/usr/bin/env node
 /**
- * repair-profile.mjs —— 体检并修复 profile **私有层**的包解析失败。
+ * repair-profile.mjs —— 只读诊断 profile 的包解析失败。
  *
  * 为什么需要独立工具：dsh 解析 `dsh.profile.bundles` 时按 Node 包解析从 profile 目录向上找
  * `node_modules`，解析失败只打印 `skipping profile bundle` 并**跳过整个 bundle**——插件的
- * 任何自愈代码（web-surface 补装配、预设种子补建、注册）都不会执行。这类「插件根本没加载」
+ * 任何插件代码（能力诊断、预设种子补建、注册）都不会执行。这类「插件根本没加载」
  * 的零号故障因此只能由独立于插件的工具处理，本脚本即此工具。
  *
- * 范围（2026-09-23 裁定）：只写 profile 私有层 `<profiles>/<name>/node_modules/`。
- * `<DSH_HOME>/profiles/node_modules` 是 dsh 的**运行时解析拦截层**（`app-boot` 的
- * profile-resolution 在该层「占名」），语义归官方，本脚本不写它。缺依赖也不自动安装，
- * 只提示官方通道 `dsh plugin --profile <name> install`。
+ * profile 与 node_modules 全部只读。安装、链接和装配由官方 plugin_manager 管理。
  *
  * 判据与 dsh 一致：`createRequire(<profile>/package.json).resolve.paths(name)` 中任一
  * `join(search, name)/package.json` 存在即视为可解析（见 app-boot `resolveBundleDir`）。
  * 额外报出「链接目标是否存在」——本次真实故障正是「链接在、目标不在」，只看链接本身会漏。
  *
- * 幂等：健康项不动；悬空/错误的链接按 `dependencies` 的 `link:` 目标重建为绝对 junction；
- * 真实文件或目录**绝不删除**，只报告。用法：
+ * 仅报告缺失、悬空与异常解析；保留 --dry-run 作为旧调用方兼容参数。用法：
  *   node scripts/repair-profile.mjs [--dsh-home <dir>] [--profile <name>] [--dry-run]
- * 退出码：0 = 全部健康或已修复；1 = 存在需人工处理的项。
+ * 退出码：0 = 全部健康；1 = 存在需通过官方管理器处理的项。
  */
 import {
-  existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, readlinkSync,
-  rmdirSync, symlinkSync, unlinkSync,
+  existsSync, lstatSync, readdirSync, readFileSync, readlinkSync,
 } from 'node:fs'
 import { createRequire } from 'node:module'
 import { dirname, join, resolve as resolvePath } from 'node:path'
 import { homedir } from 'node:os'
 import { fileURLToPath } from 'node:url'
 
-const WIN32 = process.platform === 'win32'
 const MANIFEST = 'package.json'
 
 /** 展开 `~`、`~/`、`~\` 前缀（与官方 @deepseek-ai/dsh-home-paths 的 expandHomePath 一致）。 */
@@ -172,8 +166,6 @@ export function diagnoseProfile(dshHome, profileName) {
     entries.push({
       name, status, detail, linkPath,
       ...(declared === undefined ? {} : { declaredTarget: declared }),
-      // 可自动修复：坏了或缺了，且 dependencies 里有 `link:` 目标可依。
-      fixable: (status === 'broken-link' || status === 'missing') && declared !== undefined,
     })
   }
   return { name: profileName, dir, entries }
@@ -191,15 +183,14 @@ export function listProfiles(dshHome) {
 }
 
 /**
- * 体检（并在非 dry-run 时修复）指定 profile。
+ * 只读体检指定 profile；保留函数名与 changed 字段兼容旧调用方。
  * @param {{dshHome:string, profile?:string, dryRun?:boolean, log?:(m:string)=>void}} options
  * @returns {{changed:number, failures:number, reports:Array<object>}}
  */
 export function repairProfiles(options) {
-  const { dshHome, profile, dryRun = false, log = (message) => console.log(message) } = options
+  const { dshHome, profile, log = (message) => console.log(message) } = options
   const names = profile === undefined ? listProfiles(dshHome) : [profile]
   const reports = []
-  let changed = 0
   let failures = 0
   for (const name of names) {
     const report = diagnoseProfile(dshHome, name)
@@ -209,50 +200,17 @@ export function repairProfiles(options) {
       // `ok-via-ancestor` 是「私有层未命中、由上层兜住」：不是失败，也不该打 FAIL 标记。
       const mark = entry.status === 'ok' ? '  ok  ' : entry.status === 'ok-via-ancestor' ? ' note ' : ' FAIL '
       log(`[repair-profile]${mark}${entry.name}: ${entry.status} — ${entry.detail}`)
-      if (entry.status === 'ok') continue
-      if (!entry.fixable) {
-        if (entry.status !== 'ok-via-ancestor') failures++
-        continue
-      }
-      const linkPath = entry.linkPath
-      if (dryRun) {
-        log(`[repair-profile]   would relink ${linkPath} -> ${entry.declaredTarget}`)
-        changed++
-        continue
-      }
-      try {
-        mkdirSync(dirname(linkPath), { recursive: true })
-        const current = classifyEntry(linkPath)
-        if (current.kind === 'symlink') {
-          // Windows junction 是目录再解析点：unlink 会 EPERM，必须 rmdir。
-          if (current.isJunction) rmdirSync(linkPath)
-          else unlinkSync(linkPath)
-        }
-        symlinkSync(entry.declaredTarget, linkPath, WIN32 ? 'junction' : undefined)
-        const after = dshResolvable(join(report.dir, MANIFEST), entry.name)
-        if (after === undefined) {
-          failures++
-          log(`[repair-profile]   relinked but still unresolvable: ${linkPath}`)
-        } else {
-          changed++
-          log(`[repair-profile]   relinked ${linkPath} -> ${entry.declaredTarget}`)
-        }
-      } catch (error) {
-        failures++
-        log(`[repair-profile]   cannot relink ${linkPath}: ${error instanceof Error ? error.message : String(error)}`)
-      }
+      if (entry.status !== 'ok' && entry.status !== 'ok-via-ancestor') failures++
     }
   }
   if (failures > 0) {
-    log('[repair-profile] 仍有需人工处理的项。缺依赖请走官方通道：'
-      + `dsh plugin --profile ${profile ?? '<name>'} install`)
+    log(`[repair-profile] 请在目标 profile "${profile ?? '<name>'}" 中通过官方 plugin_manager 检查并重新安装插件；本工具未修改 profile 或包链接。`)
   }
-  return { changed, failures, reports }
+  return { changed: 0, failures, reports }
 }
 
 function main() {
   const args = process.argv.slice(2)
-  const dryRun = args.includes('--dry-run')
   const profileFlag = args.indexOf('--profile')
   const profile = profileFlag >= 0 && profileFlag + 1 < args.length ? args[profileFlag + 1] : undefined
   const dshHome = resolveDshHomeArg(args)
@@ -260,9 +218,9 @@ function main() {
     console.error(`[repair-profile] no profiles directory under ${dshHome}; pass --dsh-home <dir> or set DSH_HOME`)
     process.exit(1)
   }
-  const { failures, changed } = repairProfiles({ dshHome, profile, dryRun })
-  console.log(`[repair-profile] dsh home: ${dshHome}${dryRun ? ' (dry-run)' : ''}`)
-  console.log(`[repair-profile] ${changed} ${dryRun ? 'would be ' : ''}repaired, ${failures} need attention`)
+  const { failures } = repairProfiles({ dshHome, profile })
+  console.log(`[repair-profile] dsh home: ${dshHome} (read-only)`)
+  console.log(`[repair-profile] ${failures} need attention`)
   process.exit(failures > 0 ? 1 : 0)
 }
 

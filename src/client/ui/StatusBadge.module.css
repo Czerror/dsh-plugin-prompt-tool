@@ -1,4 +1,4 @@
-/* 只读状态徽章：官方 StateDot + Tag 胶囊的横向布局。 */
+/* 只读状态徽章：状态圆点与胶囊的横向布局。 */
 .badge {
   display: inline-flex;
   flex: none;
@@ -9,6 +9,11 @@
   overflow-wrap: normal;
 }
 .badge > :last-child { flex: none; min-width: max-content; white-space: nowrap; overflow-wrap: normal; }
+.tag { display: inline-flex; align-items: center; border-radius: 999px; corner-shape: round; padding: 1px 8px; font: 500 11px/17px system-ui, sans-serif; white-space: nowrap; }
+.tag[data-tone='neutral'] { background: var(--dsw-alias-bg-module-platform); color: var(--dsw-alias-label-secondary); }
+.tag[data-tone='success'] { background: color-mix(in srgb, var(--dsw-alias-state-success-primary) 10%, transparent); }
+.tag[data-tone='warning'] { background: color-mix(in srgb, var(--dsw-alias-state-warn-primary) 12%, transparent); }
+.tag[data-tone='danger'] { background: color-mix(in srgb, var(--dsw-alias-state-error-primary) 10%, transparent); }
 /* 宿主状态色用于小字时，在明暗表面混入正文色以维持可读性。 */
 .badge > [data-tone='success']:last-child { color: color-mix(in srgb, var(--dsw-alias-state-success-primary) 60%, var(--dsw-alias-label-primary)); }
 .badge > [data-tone='warning']:last-child { color: color-mix(in srgb, var(--dsw-alias-state-warn-primary) 60%, var(--dsw-alias-label-primary)); }

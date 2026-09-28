@@ -1,6 +1,7 @@
 import { useId, useRef, type ReactNode, type RefObject } from 'react'
 import { createPortal } from 'react-dom'
-import { Button, useDismissOnOutsidePointer } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Button } from './Button.tsx'
+import { useDismissOnOutsidePointer } from './outside-pointer.ts'
 import { useAnchoredPopoverStyle } from './anchored-popover.ts'
 import { useDialogFocus } from './dialog-focus.ts'
 import styles from './controls.module.css'

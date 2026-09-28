@@ -79,6 +79,20 @@ export type BridgeEndpoint = (typeof BRIDGE_ENDPOINTS)[keyof typeof BRIDGE_ENDPO
 /** 失败载荷：两端共用。 */
 export type BridgeErrorPayload = { ok: false; code?: string; message?: string; conflicts?: string[] }
 
+/** 文件已保存，但宿主未采用新定义；调用方保留草稿并显示失败，不宣称已生效。 */
+export const PRESET_ACTIVATION_FAILED = 'preset-activation-failed'
+
+/** 插件可编辑定义与官方注册诊断；失败项保留身份供用户修复。 */
+export interface PresetSummary {
+  id: string
+  name: string
+  user?: boolean
+  renderable?: boolean
+  description?: string
+  meta?: Record<string, unknown>
+  broken?: string
+}
+
 /**
  * 端点级请求体契约（body 形状；无请求体端点 = undefined）。
  * 与 BRIDGE_ENDPOINTS 一一对应：新增端点必须同时补请求/响应映射，否则编译期断言失败。
@@ -369,7 +383,6 @@ export interface BridgeValueMap {
     report?: StConversionReport
     summary?: AssetSummary
     kinds?: ImportKind[]
-    refreshWarning?: string
   }
   assetUpload: { sourceId: string; name: string; bytes: number }
   assetRelease: { released: boolean }

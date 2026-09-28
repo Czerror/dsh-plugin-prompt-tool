@@ -2,10 +2,7 @@
 export const name = "character-tools"
 
 export function apply(ctx) {
-  const service = ctx.get("pt-character-tools")
-  if (service === null || service === undefined || typeof service.mount !== "function") {
-    ctx.logger?.warn(name + ": service unavailable; character tools not mounted for this preset")
-    return
-  }
-  ctx.effect(() => service.mount(ctx), name + ": mount")
+  ctx.inject(["pt-character-tools"], (scopeCtx) => {
+    scopeCtx.effect(() => scopeCtx.get("pt-character-tools").mount(scopeCtx), name + ": mount")
+  })
 }

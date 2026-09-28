@@ -1,6 +1,6 @@
 /** 工具管理（tool-pipeline 层）：自定义工具定义。 */
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { Button } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Button } from '../../ui/Button.tsx'
 import { bridgeCall } from '../../data/bridge-client.ts'
 import type { PromptToolTranslate } from '../../locales.ts'
 import type { ToolsEditorDraft, WorkspaceDrafts } from '../../data/workspace-drafts.ts'

@@ -1,5 +1,5 @@
 /** 客户端共享类型：提示词配置草稿、层能力矩阵与引擎 /meta 载荷。 */
-import type { EngineMetaLayerContract, PromptConfigSourceView, StConversionReport, StOrderGroupCandidate } from '../shared/bridge-contract.ts'
+import type { EngineMetaLayerContract, PresetSummary, PromptConfigSourceView, StConversionReport, StOrderGroupCandidate } from '../shared/bridge-contract.ts'
 import type { OfficialOrdersView } from '../shared/official-orders.ts'
 import type { AssetImportRequest, AssetSummary } from '../shared/asset-transfer.ts'
 
@@ -126,7 +126,7 @@ export interface EngineMeta extends EngineMetaLayerContract {
    */
   officialOrders?: OfficialOrdersView
   /** 可用预设模板清单（UI 预设切换器）。 */
-  presets?: Array<{ id: string; name: string; user?: boolean; renderable?: boolean; description?: string; meta?: Record<string, unknown> }>
+  presets?: PresetSummary[]
   /** 插件目录内置模板清单（「新建预设」选择器数据源）。 */
   builtinTemplates?: Array<{ id: string; name: string }>
   layers: string[]

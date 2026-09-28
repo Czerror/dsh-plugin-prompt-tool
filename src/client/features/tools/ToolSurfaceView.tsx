@@ -1,5 +1,5 @@
 import { useEffect, useId, useState, type ReactNode } from 'react'
-import { IconChevronDownOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconChevronDownOutlineRegular } from '../../ui/icons.tsx'
 import { StatusBadge } from '../../ui/StatusBadge.tsx'
 import type { PromptToolTranslate } from '../../locales.ts'
 import { loadToolSurface, type ToolSurfaceEntry, type ToolSurfaceResult, type ToolSurfaceSource } from './tool-surface-request.ts'

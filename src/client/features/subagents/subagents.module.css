@@ -4,7 +4,7 @@
 .switchGridHint {
   display: block;
   color: var(--dsw-alias-label-secondary);
-  font: var(--dsw-font-xxs-12);
+  font: 12px/18px system-ui, sans-serif;
 }
 
 /* 子代理工具策略编辑器分组（profile / 角色绑定 / 任务规则 / 预览）：细边框分组，内部纵向排布。 */

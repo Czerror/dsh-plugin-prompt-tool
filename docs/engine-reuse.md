@@ -72,7 +72,7 @@
    |---|---|---|
    | 核心可复制 | 触发器引擎（声明编译器 / 动作库 / 条件谓词）、提示词注入引擎、条件判定、ST 渲染、世界书选择、`compaction-epoch`、`subagent-tool-policy-core`、`classify-task` | 无额外依赖：隔离复制后即可挂载并完成注入 |
    | 需官方 DSH 包 | 依赖宿主服务（`tools` / `systemPrompt` / `llm` / `agents` / `scope`）的模块行 | 目标项目需装配同名宿主服务；缺服务时按各自契约报错或跳过（`inject` 声明的行保持 pending） |
-   | 需 Prompt Tool 私有服务 | `character-tools.mjs`、`world-book-tools.mjs`、`session-var-tools.mjs` | 各自适配私有 `pt-*` 服务（角色卡 / 世界书 / 会话变量存取）：隔离复制后三条各告警一次并跳过，提供同名 mount 服务后 3/3 正常挂载 |
+   | 需 Prompt Tool 私有服务 | `character-tools.mjs`、`world-book-tools.mjs`、`session-var-tools.mjs` | 经 `ctx.inject` 等待各自 `pt-*` 服务；服务迟到后挂载，服务移除或组合卸载时释放 |
 
    实测（2026-09-20）：把 `engine/` 复制到隔离目录、由最小 Cordis 根挂载并触发一次 `agent/pre-step`，
    核心模块完成注入（正文 `COPIED`）；三条私有适配器在缺服务时各告警一次，补齐 mount 服务后全部注册成功。
@@ -140,7 +140,7 @@
 | `subagent-tool-policy` | engine/subagent-tool-policy.mjs | generation-scoped subagent/subagent_fork shadow：只安装到当前预设后代；spawn/fork 分别绑定官方 provider，foreground 读取 `SubagentRun.result`，continuable 读取 `childId` 并传顶层 signal；实例参数在 body 前校验，扩权经 approval 门，provider 能力不足 fail loud |
 | （纯模块） | engine/subagent-tool-policy-core.mjs | 策略 validate/compile/resolve/buildParameters 单一 seam（纯模块：不 import dsh-tools、不写文件，包内引擎与 host 两侧共用；bridge 预览与运行时同一 resolver） |
 | （纯模块） | engine/classify-task.mjs | `createOrderedTaskClassifier`：有序正则任务规则确定性分类（taskRules order 升序，首个命中生效） |
-| character-tools / world-book-tools / session-var-tools | engine/character-tools.mjs / engine/world-book-tools.mjs / engine/session-var-tools.mjs | 按预设模块分别挂载角色卡、世界书、会话变量模型工具；宿主只提供注册服务，工具随 agent scope 生命周期清理 |
+| character-tools / world-book-tools / session-var-tools | engine/character-tools.mjs / engine/world-book-tools.mjs / engine/session-var-tools.mjs | 按预设 scope 贡献角色卡、世界书、会话变量工具；宿主提供注册服务，贡献随组合 disposer 清理。角色卡/世界书写入目标取执行 Agent 的官方预设绑定，并等待该目标的重建与注册 |
 | `compaction-epoch` | engine/compaction-epoch.mjs | 晋升状态机（`phase` 谓词与既有注入路径共用；非插件行） |
 
 ## 声明的条件与动作边界
