@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.8.3] - 2026-09-28
+
+### 依赖声明收敛：peer 改宽范围，删掉失效的 release-age 白名单
+
+- **peer 范围由精确版改为无上界**：24 条 `@deepseek-ai/dsh-*` 从 `^0.2.0-rc.1` 改为 `>=0.2.0-rc.1`。此前每次 DSH 升一个次版本，24 条 peer 全部落到区间外、插件被判为不兼容；现在 0.2 以上的次版本无需再改声明。取无上界是有意的：宿主只在插件加载时校验，而 DSH 0.2.x 的次版本升级从未破坏过本插件用到的 API。实测该范围覆盖 `0.2.0-rc.1`～`2.0.0`，同时仍把 `0.1.7-alpha.1` 这类已知不兼容的旧版本挡在外面。
+- **devDependencies 同步改宽**：29 条同样改为 `>=0.2.0-rc.1`。`pnpm install` 仍解析到 `0.2.0-rc.1`，实际锁定版本由 `pnpm-lock.yaml` 负责，可复现性不受影响。之所以不再用 `^0.2.0-rc.1` 这类 caret：caret 只覆盖同一个次版本（`^0.2.0-rc.1` 到 0.2.x 为止），而 `^0.1.7-rc.2` 这种更旧的 caret 连 0.2.x 都不覆盖，会让本地类型基线与运行时静默错开。
+- **`minimumReleaseAgeExclude` 收敛为 pnpm 的当前形态**：`pnpm-workspace.yaml` 由 85 行缩到 82 行，清单从 80 条（历史上逐版本累积、还留着已废弃的 `@deepseek-ai/dsh-agent-presets`）收敛为 73 条、只含当前安装的 `0.2.0-rc.1`。**这份清单不是手工维护项**：pnpm 12 安装时会把 lockfile 拿去比对供应链策略（`Verifying lockfile against supply-chain policies`），当前版本不在清单里就被拒装，随后 pnpm 把整块重写为「只含当前版本」的形态。升级 DSH 的后续动作因此只有「跑一次 `pnpm install`」，不必再逐条增删。
+
+> 更正：本条最初写成「删除失效的 `minimumReleaseAgeExclude`」，是错的。当时只测了 `pnpm config get minimumReleaseAge` 返回 `undefined` 就下了结论，而实际门控在 lockfile 的供应链策略校验里——删掉该块后 pnpm 直接拒装并把它重写回来。
+
 ## [0.8.2] - 2026-09-28
 
 ### 兼容 DSH 0.2.0-rc.1
