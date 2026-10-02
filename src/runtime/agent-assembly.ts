@@ -108,6 +108,23 @@ export async function prepareAssembly(
   const configs = existsSync(promptDir)
     ? loadPromptConfigFiles(pathToFileURL(promptDir + sep))
     : (spec.promptConfigs ?? [])
+  // 「独占」（`complete`）组装期兜底：宿主 system-prompt 对「多于一个生效 complete 段」
+  // 直接抛错（packages/core/system-prompt/src/index.ts:597-600），而写盘前的互斥门控只
+  // 覆盖两个 bridge 端点——手改 module.yml、还原 ZIP/备份、导入包都能绕过。这里在装配前
+  // 查一次，把「system 提示被清到只剩一段 / 组装失败」挡在 Agent 创建之前。
+  // 判据与写门控同源：`enabled !== false` 才参与，「独占」是 system-section 的 params.complete。
+  const exclusiveConfigs = configs.filter((config: unknown) => {
+    if (config === null || typeof config !== 'object') return false
+    const entry = config as { enabled?: unknown; params?: { complete?: unknown } }
+    return entry.enabled !== false && entry.params?.complete === true
+  })
+  const personaComplete = spec.persona?.complete === true
+  if (exclusiveConfigs.length > 1 || (personaComplete && exclusiveConfigs.length > 0)) {
+    throw new Error(
+      `预设 ${presetId} 有多个生效的「独占」段（顶层人设${personaComplete ? '已' : '未'}开启），`
+      + '同一模块只能有一个：请先关闭其一',
+    )
+  }
   const engineDir = packageEngineDir()
   const services = new Set<string>()
   const modules: PreparedAssembly['modules'] = []

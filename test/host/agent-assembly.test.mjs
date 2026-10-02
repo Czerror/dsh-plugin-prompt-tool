@@ -51,11 +51,11 @@ const LITERAL_SLICES = [
   },
 ]
 
-function writePreset(id, { modules, promptConfigs = [], moduleConfigs }) {
+function writePreset(id, { modules, promptConfigs = [], moduleConfigs, persona }) {
   const dir = join(presetRoot, id)
   mkdirSync(dir, { recursive: true })
   writeFileSync(join(dir, 'module.yml'), `${JSON.stringify({
-    id, name: id, modules, ...(moduleConfigs === undefined ? {} : { moduleConfigs }),
+    id, name: id, modules, ...(moduleConfigs === undefined ? {} : { moduleConfigs }), ...(persona === undefined ? {} : { persona }),
   }, null, 2)}\n`, 'utf8')
   if (promptConfigs.length > 0) {
     const configsDir = join(dir, 'configs')
@@ -157,6 +157,61 @@ test('拒绝路径：非法 id、无效模块声明、缺失宿主能力都在�
     prepareAssembly(presetRoot, 'requires-missing-service', () => false),
     /配装所需宿主能力不可用/,
   )
+})
+
+test('「独占」段唯一性：装配前拒绝两个生效 complete（含人设×配置），禁用不算冲突', async () => {
+  // 真值源：宿主 system-prompt 对「多于一个生效 complete 段」直接抛错
+  // （packages/core/system-prompt/src/index.ts:597-600）。写门控只覆盖两个 bridge 端点，
+  // 手改 YAML / 还原备份 / 导入包能绕过，这里钉住装配期的那道兜底。
+  const exclusive = (id, enabled = true) => ({
+    id,
+    enabled,
+    layer: 'system-section',
+    strategy: 'static',
+    order: 0,
+    text: `${id} 正文`,
+    params: { complete: true },
+  })
+
+  // ① 两个启用的独占配置 → 装配前 fail loud。
+  writePreset('double-complete', {
+    modules: ['prompt-config-engine'],
+    promptConfigs: [exclusive('excl-a'), exclusive('excl-b')],
+  })
+  await assert.rejects(
+    prepareAssembly(presetRoot, 'double-complete', hasEveryService),
+    /多个生效的「独占」段/,
+    '两个启用 complete 必须被拒',
+  )
+
+  // ② 顶层人设独占 × 配置独占 → 同样被拒。
+  writePreset('persona-complete', {
+    modules: ['prompt-config-engine'],
+    promptConfigs: [exclusive('excl-a')],
+    persona: { prefix: 'PREFIX', complete: true },
+  })
+  await assert.rejects(
+    prepareAssembly(presetRoot, 'persona-complete', hasEveryService),
+    /人设已开启/,
+    '人设与配置同时独占必须被拒',
+  )
+
+  // ③ 边界一：第二个独占被 `enabled: false` 关掉 → 不算冲突。
+  writePreset('one-complete-disabled', {
+    modules: ['prompt-config-engine'],
+    promptConfigs: [exclusive('excl-a'), exclusive('excl-b', false)],
+  })
+  const allowed = await prepareAssembly(presetRoot, 'one-complete-disabled', hasEveryService)
+  assert.equal(allowed.configs.length, 2, '禁用的切片仍进装配输入（由引擎过滤 enabled）')
+
+  // ④ 边界二：单独一个独占（无人设）→ 放行，且人设存在但未开独占也放行。
+  writePreset('single-complete', {
+    modules: ['prompt-config-engine'],
+    promptConfigs: [exclusive('excl-a')],
+    persona: { prefix: 'PREFIX' },
+  })
+  const single = await prepareAssembly(presetRoot, 'single-complete', hasEveryService)
+  assert.equal(single.configs.length, 1, '单个独占段正常装配')
 })
 
 test('官方挂载行与本通道不重复装载：引擎能力只出现一次', async () => {
