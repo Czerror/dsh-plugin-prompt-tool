@@ -3,7 +3,7 @@ import { memo, useRef, useState, type ReactNode } from 'react'
 import { usePromptToolFields } from '../../data/use-prompt-tool-fields.ts'
 import { EMPTY_FIELDS } from '../../data/prompt-tool-fields.ts'
 import clsx from 'clsx'
-import { IconCopyOutlineRegular, IconFolderOpenOutlineRegular, IconTrashOutlineRegular } from '../../ui/icons.tsx'
+import { IconCopyOutlineRegular, IconDownloadOutlineRegular, IconFolderOpenOutlineRegular, IconTrashOutlineRegular } from '../../ui/icons.tsx'
 import { bridgeCall } from '../../data/bridge-client.ts'
 import { previewAsset, commitAsset } from '../../data/asset-import.ts'
 import { hasWorkspaceDrafts } from '../../data/workspace-drafts.ts'
@@ -186,7 +186,13 @@ export const PresetSwitcher = memo(function PresetSwitcher(props: { store: Promp
                 : active ? t('presetSwitcher.card.active.hint') : t('presetSwitcher.card.switch.hint', { name: preset.name })}
               onChange={() => store.setPresetTemplate(preset.id)} />
           </HintTooltip>
-          <button type="button" className={styles.pillButton} onClick={() => setExportTarget({ id: preset.id, name: preset.name })}>{t('presetSwitcher.export')}…</button>
+          <HintTooltip label={t('presetSwitcher.export')}>
+            <button type="button" className={styles.presetIconButton}
+              aria-label={t('presetSwitcher.export.aria', { name: preset.name })}
+              onClick={() => setExportTarget({ id: preset.id, name: preset.name })}>
+              <IconDownloadOutlineRegular />
+            </button>
+          </HintTooltip>
           <HintTooltip label={t('presetSwitcher.duplicate.label')}>
             <button type="button" className={styles.presetIconButton}
               aria-label={t('presetSwitcher.duplicate.aria', { name: preset.name })}
