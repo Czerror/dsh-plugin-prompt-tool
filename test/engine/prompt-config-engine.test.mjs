@@ -102,6 +102,29 @@ test('order 决定同位置插入顺序与 merged 拼接顺序', async () => {
   assert.deepEqual(merged.content.map((block) => block.text), ['A', 'B'])
 })
 
+test('group + exclusive 是静默互斥：同组只运行声明序第一个，且不返回错误码', async () => {
+  // PLAN 的 T8 verify 原话是「两条 complete 互斥仍返回同一错误码」——实证查证后不存在
+  // 这样一处校验（engine/executor.mjs 的 claimedGroups 是纯过滤，不产生错误码）。
+  // 按用户拍板，这条 verify 改断言真实语义：同 group 且 exclusive=true 时，
+  // 只有列表里第一个启用的配置运行；其余同组独占配置被安静丢弃，不抛错、不返回 code。
+  const specs = [
+    { id: 'a-excl', strategy: 'static', text: 'A', position: 'after-user', group: 'g1', exclusive: true },
+    { id: 'b-excl', strategy: 'static', text: 'B', position: 'after-user', group: 'g1', exclusive: true },
+    { id: 'c-disabled', strategy: 'static', text: 'C', position: 'after-user', group: 'g1', exclusive: true, enabled: false },
+    { id: 'd-other', strategy: 'static', text: 'D', position: 'after-user', group: 'g2', exclusive: true },
+    { id: 'e-shared', strategy: 'static', text: 'E', position: 'after-user', group: 'g1' },
+  ]
+  const { step, warnings } = makeHarness(createPromptConfigs(specs))
+  const decision = await step(agent())
+  assert.deepEqual(
+    decision.messages.filter((message) => message.source?.plugin !== undefined).map((message) => message.source.plugin),
+    ['a-excl', 'd-other', 'e-shared'],
+    '同组独占只留声明序第一个；非独占成员与其它组不受影响',
+  )
+  assert.equal(decision.code, undefined, '静默互斥不产生错误码')
+  assert.deepEqual(warnings, [], '静默互斥不告警')
+})
+
 test('createPromptConfigs 默认 layer=pre-step；未知 layer fail loud', () => {
   assert.equal(createPromptConfigs([{ id: 'x', strategy: 'static' }])[0].layer, 'pre-step')
   assert.throws(() => createPromptConfigs([{ id: 'x', layer: 'nope' }]), /unknown layer/)
