@@ -513,11 +513,11 @@ test('settings bridge /subagent-tool-policy 保存、停用与模块装配均为
   }
 })
 
-test('settings bridge /persona 读写顶层 persona 段（官方 dsh-persona config 同构）并重建', async () => {
+test('settings bridge /persona 读写顶层 persona 段并按实际模块身份重建', async () => {
   const { ctx, handlers } = makeHarness()
   const dir = makeUserPresetDir('pt-persona-')
   writeFileSync(join(dir, 'module.yml'), `id: ${basename(dir)}\nname: beta\nunknown: keep\n`, 'utf8')
-  let rebuilds = 0
+  const rebuilds = []
   try {
     registerSettingsBridge(ctx, 'prompt-tool',
       () => ({ available: true, providers: [] }),
@@ -526,7 +526,7 @@ test('settings bridge /persona 读写顶层 persona 段（官方 dsh-persona con
       undefined,
       () => dir,
       undefined,
-      () => { rebuilds += 1 },
+      (id) => { rebuilds.push(id) },
     )
     const handler = handlers.get(PREFIX + BRIDGE_ENDPOINTS.persona)
     assert.ok(handler, '/persona 端点应注册')
@@ -538,7 +538,7 @@ test('settings bridge /persona 读写顶层 persona 段（官方 dsh-persona con
     const written = parseYaml(readFileSync(join(dir, 'module.yml'), 'utf8'))
     assert.deepEqual(written.persona, { prefix: 'PREFIX', suffix: 'SUFFIX', complete: true, includeRuntimeContext: false })
     assert.equal(written.unknown, 'keep', '未知字段保留')
-    assert.equal(rebuilds, 1, '写盘后触发重建')
+    assert.deepEqual(rebuilds, [basename(dir)], '写盘后把实际模块身份交给运行时')
     // 无 persona 载荷 = 读取。
     const read = fakeRes()
     await handler(fakeReq(), read)
@@ -551,7 +551,7 @@ test('settings bridge /persona 读写顶层 persona 段（官方 dsh-persona con
     } }), remove)
     assert.equal(remove.status, 200)
     assert.equal(parseYaml(readFileSync(join(dir, 'module.yml'), 'utf8')).persona, undefined)
-    assert.equal(rebuilds, 2)
+    assert.deepEqual(rebuilds, [basename(dir), basename(dir)])
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }
@@ -614,6 +614,7 @@ test('/persona：已有启用「独占」的提示词配置时拒绝顶层人设
 test('/param-overrides：顶层人设已开「独占」时拒绝启用提示词配置独占（未声明/禁用不算冲突）', async () => {
   const { ctx, handlers } = makeHarness()
   const dir = makeUserPresetDir('pt-overrides-complete-')
+  const rebuilds = []
   const base = `id: ${basename(dir)}\nname: complete\npersona:\n  prefix: PREFIX\n`
   const exclusiveConfig = (enabled) => [{
     id: 'exclusive-section',
@@ -637,10 +638,13 @@ test('/param-overrides：顶层人设已开「独占」时拒绝启用提示词�
       () => '',
       undefined,
       () => dir,
+      undefined,
+      (id) => { rebuilds.push(id) },
     )
     // 前置：人设未开独占 → 启用提示词配置独占允许。
     writeFileSync(join(dir, 'module.yml'), base, 'utf8')
     assert.equal((await post({ promptConfigs: exclusiveConfig(true) })).status, 200)
+    assert.deepEqual(rebuilds, [basename(dir)], '提示词配置保存后按实际模块身份装配')
 
     // 磁盘人设开独占 → 再启用提示词配置独占必须被拒。
     writeFileSync(join(dir, 'module.yml'), `${base}  complete: true\n`, 'utf8')
@@ -649,9 +653,11 @@ test('/param-overrides：顶层人设已开「独占」时拒绝启用提示词�
     assert.equal(rejected.status, 400)
     assert.equal(JSON.parse(rejected.body).code, 'overrides-invalid-value')
     assert.equal(readFileSync(join(dir, 'module.yml'), 'utf8'), before, '被拒时不落盘')
+    assert.deepEqual(rebuilds, [basename(dir)], '被拒时不触发运行时装配')
 
     // 边界：同步提交的配置是禁用的 → 不算冲突。
     assert.equal((await post({ promptConfigs: exclusiveConfig(false) })).status, 200, '禁用的「独占」段不算冲突')
+    assert.deepEqual(rebuilds, [basename(dir), basename(dir)])
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }

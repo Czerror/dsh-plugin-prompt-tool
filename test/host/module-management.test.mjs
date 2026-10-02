@@ -37,7 +37,7 @@ function makeHarness(activeTemplate) {
   return { ctx: { inject: (_deps, cb) => cb(sctx) }, handlers }
 }
 
-function register(ctx, activeTemplate) {
+function register(ctx, activeTemplate, afterOverridesChange) {
   registerSettingsBridge(
     ctx,
     'prompt-tool',
@@ -53,7 +53,7 @@ function register(ctx, activeTemplate) {
     undefined,
     () => undefined,
     undefined,
-    undefined,
+    afterOverridesChange,
     undefined,
     undefined,
     () => {},
@@ -204,10 +204,20 @@ test('普通模块之间的并入是往返且幂等的：重复并入不翻倍�
   assert.match(afterRemove, /text: OWN/, '自带内容不得被移除波及')
 })
 
-test('module-enable：写启用表，不存在/非法载荷被拒且不落盘', async () => {
+test('module-enable：写启用表后等待装配，失败如实返回，非法载荷不落盘', async () => {
   // 真值源是「模块页唯一改变装配范围的动作」这一契约：启用即写启用表，停用即摘除。
   const { ctx, handlers } = makeHarness(undefined)
-  register(ctx, undefined)
+  const entered = Promise.withResolvers()
+  const resume = Promise.withResolvers()
+  const refreshed = []
+  let hold = true
+  let failRefresh = false
+  register(ctx, undefined, async (moduleId) => {
+    refreshed.push(moduleId)
+    entered.resolve()
+    if (hold) await resume.promise
+    if (failRefresh) throw new Error('runtime refresh failed')
+  })
   const configFile = join(dirname(moduleRoot), 'config.yml')
   const readEnabled = () => readFileSync(configFile, 'utf8')
 
@@ -215,9 +225,27 @@ test('module-enable：写启用表，不存在/非法载荷被拒且不落盘', 
   writeModule(id)
 
   // 主路径：启用 → 写进表；幂等重复启用不产生第二条。
-  const on = await call(handlers, 'moduleEnable', { id, enabled: true })
+  let responded = false
+  const enabling = call(handlers, 'moduleEnable', { id, enabled: true }).then(result => {
+    responded = true
+    return result
+  })
+  try {
+    assert.equal(await Promise.race([
+      entered.promise.then(() => 'refresh'),
+      enabling.then(() => 'response'),
+    ]), 'refresh', '成功响应必须等到启用表对应的运行时装配完成')
+    assert.match(readEnabled(), /- enable-target/, '先写盘，再等待装配')
+    await new Promise(setImmediate)
+    assert.equal(responded, false, '装配尚未完成时不能提前报告启用成功')
+  } finally {
+    hold = false
+    resume.resolve()
+  }
+  const on = await enabling
   assert.equal(on.status, 200, on.message)
   assert.deepEqual(on.value, { enabled: [id] })
+  assert.deepEqual(refreshed, [undefined], '启用表改变需刷新全部实例，不只重装已包含该模块的实例')
   assert.equal((readEnabled().match(new RegExp(`- ${id}$`, 'm')) ?? []).length, 1)
   const again = await call(handlers, 'moduleEnable', { id, enabled: true })
   assert.deepEqual(again.value, { enabled: [id] }, '重复启用幂等')
@@ -244,4 +272,14 @@ test('module-enable：写启用表，不存在/非法载荷被拒且不落盘', 
   assert.equal(missing.code, 'preset-enable-rejected')
   assert.equal(readEnabled(), before, '被拒的启用不得改动启用表')
   assert.deepEqual((await call(handlers, 'moduleEnable', { id, enabled: false })).value.enabled.includes('no-such-module'), false)
+  assert.equal(refreshed.length, 5, '非法请求不得触发装配')
+
+  failRefresh = true
+  const failed = await call(handlers, 'moduleEnable', { id, enabled: true })
+  assert.equal(failed.status, 500)
+  assert.equal(failed.code, 'preset-activation-failed')
+  assert.match(failed.message, /更改已保存，但模块未生效/)
+  assert.match(readEnabled(), /- enable-target/, '装配失败保留已保存的启用表，便于重试')
+  failRefresh = false
+  assert.deepEqual((await call(handlers, 'moduleEnable', { id, enabled: false })).value, { enabled: [] })
 })

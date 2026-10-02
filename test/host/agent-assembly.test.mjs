@@ -12,13 +12,179 @@ import assert from 'node:assert/strict'
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { Context } from '@deepseek-ai/cordis'
+import { createScope, scopeTarget } from '@deepseek-ai/dsh-scope'
+import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
+import ToolRuntime from '@deepseek-ai/dsh-tools'
 import { isolatedHome } from '../fixtures/host-harness.mjs'
 
 const { moduleRoot } = isolatedHome('pt-assembly-')
 const { prepareAssembly, createAgentAssembly } = await import('../../src/runtime/agent-assembly.ts')
+const { installPreStepCoordinator } = await import('../../src/runtime/pre-step-coordinator.ts')
 
 /** 装配能力探针：装配只问「宿主是否提供该服务」，这里全部视为提供。 */
 const hasEveryService = () => true
+
+/** 只替代 Agent/模型驱动；注册、scope 路由与注入执行器使用真实实现。 */
+async function liveAssembly(t, enabledModules) {
+  const root = new Context()
+  await root.plugin(SystemPrompt)
+  await root.plugin(ToolRuntime)
+  root.provide('llm', {})
+  const agents = []
+  root.provide('agents', { list: () => agents })
+  installPreStepCoordinator(root)
+  const warnings = []
+  const runtime = createAgentAssembly(root, { moduleRoot, enabledModules, warn: (message) => warnings.push(message) })
+  t.after(async () => { await runtime.dispose(); await root.fiber.dispose() })
+  const makeAgent = async (id, depth = 0) => {
+    const events = []
+    const agent = { id, options: {}, session: { id, header: { delegationDepth: depth }, snapshotEvents: () => events } }
+    agent.ctx = createScope(root, agent).ctx
+    agents.push(agent)
+    await root.serial(scopeTarget(agent, agent), 'agent/created', { agent, source: 'startup' })
+    return agent
+  }
+  const inject = (agent) => root.waterfall(scopeTarget(agent, agent), 'agent/pre-step', { agent }, async () => ({
+    kind: 'continue', messages: [{ role: 'user', source: { kind: 'user' }, content: [{ type: 'text', text: 'USER' }] }],
+  }))
+  return { root, runtime, makeAgent, inject, warnings }
+}
+
+test('真实注入：启用配置进入主/子会话正确位置，关闭项不注入，释放后不再贡献', async (t) => {
+  writePreset('live-injection', {
+    modules: ['prompt-config-engine'],
+    persona: { prefix: 'PERSONA', suffix: 'SUFFIX', includeRuntimeContext: false },
+    promptConfigs: [
+      { id: 'main', text: 'MAIN', audience: 'main', position: 'before-all' },
+      { id: 'child', text: 'CHILD', audience: 'subagent', position: 'after-user' },
+      { id: 'off', text: 'OFF', enabled: false },
+      { id: 'system', layer: 'system-section', text: 'SYSTEM' },
+      { id: 'promoted', text: 'PROMOTED', promotion: 'main', audience: 'main', position: 'after-user' },
+    ],
+  })
+  const h = await liveAssembly(t, () => ['live-injection'])
+  h.root.systemPrompt.context({ name: 'test:context', order: 0, text: 'CONTEXT' })
+  const main = await h.makeAgent('main-live')
+  const child = await h.makeAgent('child-live', 1)
+  await h.runtime.settled()
+  const texts = (result) => result.messages.flatMap((message) => message.content.map((block) => block.text))
+  assert.deepEqual(texts(await h.inject(main)), ['MAIN', 'USER'])
+  assert.deepEqual(texts(await h.inject(child)), ['USER', 'CHILD'])
+  const system = await h.root.systemPrompt.assemble({ agent: main, scope: main })
+  for (const text of ['SYSTEM', 'PERSONA', 'SUFFIX']) assert.ok(system.sections.some((section) => section.text === text))
+  assert.deepEqual(system.contexts, [])
+  const record = (type) => {
+    const events = main.session.snapshotEvents()
+    const event = { seq: events.length + 1, type, data: {} }
+    events.push(event)
+    h.root.emit(scopeTarget(main.session, main), 'session/event', main.session, event)
+  }
+  record('assistant/message')
+  assert.deepEqual(texts(await h.inject(main)), ['MAIN', 'USER', 'PROMOTED'])
+  record('compaction/end')
+  assert.deepEqual(texts(await h.inject(main)), ['MAIN', 'USER'])
+  record('assistant/message')
+  assert.deepEqual(texts(await h.inject(main)), ['MAIN', 'USER', 'PROMOTED'])
+  assert.deepEqual(h.warnings, [])
+  await h.runtime.dispose()
+  assert.deepEqual(texts(await h.inject(main)), ['USER'])
+  const after = await h.root.systemPrompt.assemble({ agent: main, scope: main })
+  assert.equal(after.sections.some((section) => ['SYSTEM', 'PERSONA', 'SUFFIX'].includes(section.text)), false)
+  assert.ok(after.contexts.some((context) => context.text === 'CONTEXT'))
+})
+
+test('创建边界：agent/created 返回时首条请求已经能注入，无需额外等待队列', async (t) => {
+  writePreset('first-request', {
+    modules: ['prompt-config-engine'],
+    promptConfigs: [{ id: 'first', text: 'FIRST', position: 'after-user' }],
+  })
+  const h = await liveAssembly(t, () => ['first-request'])
+  const agent = await h.makeAgent('first-request-agent')
+  assert.deepEqual(h.runtime.moduleIds(agent.id), ['first-request'])
+  const result = await h.inject(agent)
+  assert.equal(result.messages.at(-1).content[0].text, 'FIRST')
+})
+
+test('热更新：空启用表到多模块、配置启停与拒绝后重试都更新同一个 Agent，重复刷新不重复注入', async (t) => {
+  const { setModuleEnabled, enabledModuleIds } = await import('../../src/host/config-store.ts')
+  for (const id of ['hot-a', 'hot-b']) writePreset(id, {
+    modules: ['prompt-config-engine'],
+    promptConfigs: [{ id, text: id, position: 'after-user' }],
+  })
+  const h = await liveAssembly(t, () => enabledModuleIds(moduleRoot))
+  const agent = await h.makeAgent('hot-agent')
+  const injected = async () => (await h.inject(agent)).messages.flatMap(message => message.content.map(block => block.text))
+  assert.deepEqual(await injected(), ['USER'])
+  setModuleEnabled(moduleRoot, 'hot-a', true)
+  await h.runtime.refresh()
+  assert.deepEqual(await injected(), ['USER', 'hot-a'])
+  setModuleEnabled(moduleRoot, 'hot-b', true)
+  await h.runtime.refresh()
+  await h.runtime.refresh()
+  assert.deepEqual(await injected(), ['USER', 'hot-a', 'hot-b'])
+  writePreset('hot-a', {
+    modules: ['prompt-config-engine'],
+    promptConfigs: [{ id: 'hot-a', text: 'CHANGED', enabled: false, position: 'after-user' }],
+  })
+  await h.runtime.refresh('hot-a')
+  assert.deepEqual(await injected(), ['USER', 'hot-b'])
+  writePreset('hot-a', {
+    modules: ['prompt-config-engine'],
+    promptConfigs: [{ id: 'hot-a', text: 'CHANGED', position: 'after-user' }],
+  })
+  await h.runtime.refresh('hot-a')
+  assert.deepEqual(await injected(), ['USER', 'CHANGED', 'hot-b'])
+  writePreset('hot-b', {
+    modules: ['prompt-config-engine'],
+    promptConfigs: [{ id: 'hot-b', strategy: 'invalid', text: 'BROKEN' }],
+  })
+  await assert.rejects(h.runtime.refresh('hot-b'), /运行时配装更新失败/)
+  assert.deepEqual(await injected(), ['USER', 'CHANGED', 'hot-b'], '准备失败保留旧贡献')
+  setModuleEnabled(moduleRoot, 'hot-b', false)
+  await h.runtime.refresh()
+  assert.deepEqual(await injected(), ['USER', 'CHANGED'])
+  setModuleEnabled(moduleRoot, 'hot-a', false)
+  await h.runtime.refresh()
+  assert.deepEqual(await injected(), ['USER'])
+  assert.deepEqual(h.runtime.moduleIds(agent.id), [])
+})
+
+test('能力注册：私有工具服务与物化工具接入官方注册表，禁用后释放', async (t) => {
+  const dir = writePreset('live-tools', { modules: ['character-tools', 'tool-config-engine'] })
+  const { writePreset: materialize } = await import('../../src/host/write-preset.ts')
+  writeFileSync(join(dir, 'module.yml'), JSON.stringify({
+    id: 'live-tools', name: 'live-tools', modules: ['character-tools', 'tool-config-engine'],
+    layerSettings: { 'agent-request': { modelTemperature: '0.25' } },
+    customTools: [{ id: 'delegated_tool', description: 'delegate', output: { schema: { type: 'json' } }, execute: { kind: 'delegate', tool: 'assembly_tool' } }],
+    triggers: [{ id: 'runtime-trigger', channel: 'agent/pre-step', do: { kind: 'inject-text', config: {
+      id: 'trigger-text', layer: 'pre-step', text: 'TRIGGER', position: 'after-user',
+    } } }],
+  }), 'utf8')
+  materialize('', { moduleDir: moduleRoot, presetTemplate: 'live-tools', presetOrder: 0, agentsInstructionText: '' })
+  const h = await liveAssembly(t, () => ['live-tools'])
+  const tool = {
+    name: 'assembly_tool', description: 'assembly tool',
+    parameters: { type: 'object', properties: {} },
+    output: { schema: { type: 'object' }, render: () => [] },
+    execute: async () => ({}),
+  }
+  h.root.provide('pt-character-tools', { mount: (ctx) => ctx.tools.register(tool) })
+  const agent = await h.makeAgent('tools-agent')
+  assert.deepEqual(h.warnings, [])
+  assert.equal(h.root.tools.schemas(agent).filter(schema => schema.name === 'assembly_tool').length, 1)
+  assert.equal(h.root.tools.schemas(agent).filter(schema => schema.name === 'delegated_tool').length, 1)
+  assert.equal((await h.inject(agent)).messages.at(-1).content[0].text, 'TRIGGER')
+  const request = () => h.root.waterfall(scopeTarget(agent, agent), 'agent/request', { agent }, async () => ({ temperature: 1 }))
+  assert.equal((await request()).temperature, 0.25)
+  await h.runtime.refresh()
+  assert.equal(h.root.tools.schemas(agent).filter(schema => schema.name === 'assembly_tool').length, 1)
+  await h.runtime.dispose()
+  assert.equal(h.root.tools.schemas(agent).some(schema => schema.name === 'assembly_tool'), false)
+  assert.equal(h.root.tools.schemas(agent).some(schema => schema.name === 'delegated_tool'), false)
+  assert.equal((await h.inject(agent)).messages.length, 1)
+  assert.equal((await request()).temperature, 1)
+})
 
 /** 手写字面量切片：真值源，不经任何被测代码生成。 */
 const LITERAL_SLICES = [
@@ -82,7 +248,7 @@ test('装配切片逐条来自预设目录的字面量：层/位置/时机/次�
     assert.equal(actual.dedupe, expected.dedupe, '次数/去重')
     assert.equal(actual.audience, expected.audience, '受众')
     assert.equal(actual.order, expected.order)
-    assert.equal(actual.modelScope, expected.modelScope)
+    assert.equal(actual.modelScope, expected.modelScope ?? 'all')
   }
   // 有切片就有注入执行器：三个宿主能力进装配依赖。
   for (const name of ['systemPrompt', 'tools', 'llm']) {
@@ -100,7 +266,7 @@ test('受管字段一律解析到当前预设目录内：新写法 `./` 与历�
       'tool-config-engine': { configsDir: './custom-tools' },
       // 历史写法：相对历史引擎位置书写，必须仍解析到同一处。
       'declared-triggers': { triggersFile: `../${id}/triggers.yml` },
-      // 历史写法（`../` 但不带 id 段）：落到预设根，引擎的越界校验负责拒绝。
+      // 组合源默认相对模块内引擎位置，仍然必须消费本模块的物化策略。
       'subagent-tool-policy': { policyFile: '../subagent-tools/policy.yml' },
     },
   })
@@ -114,9 +280,7 @@ test('受管字段一律解析到当前预设目录内：新写法 `./` 与历�
   const cases = [
     ['tool-config-engine', 'configsDir', join(dir, 'custom-tools')],
     ['declared-triggers', 'triggersFile', join(dir, 'triggers.yml')],
-    // `../` 按 path.resolve 语义上溯一级：以预设目录为基准，落点是预设根下的兄弟路径
-    // ——`subagent-tool-policy` 组合源的缺省值就是这种形态。
-    ['subagent-tool-policy', 'policyFile', join(moduleRoot, 'subagent-tools', 'policy.yml')],
+    ['subagent-tool-policy', 'policyFile', join(dir, 'subagent-tools', 'policy.yml')],
   ]
   for (const [moduleId, field, expectedPath] of cases) {
     const value = configOf(moduleId)[field]
@@ -133,13 +297,13 @@ test('模块清单：引擎能力装载，官方组合行与能力 recipe 留给
   const ids = prepared.modules.map((module) => module.id)
 
   // 插件包内确有 engine mjs 的能力：装载（官方行的 config 已由参数桥并入）。
-  assert.deepEqual(ids, ['tool-config-engine'])
+  assert.deepEqual(ids, ['character-tools', 'tool-config-engine'])
   // 只有 library yml、没有 engine mjs 的官方行与 recipe：跳过，不装第二棵官方树。
   assert.equal(ids.includes('tool-pwsh'), false)
   assert.equal(ids.includes('planning'), false)
-  // 私有服务能力经服务判定挂载，不从包内 engine 目录 import。
+  // 私有能力复用现有适配器挂载服务，而不是只登记依赖。
   assert.equal(prepared.services.has('pt-character-tools'), true)
-  assert.equal(ids.includes('character-tools'), false)
+  assert.equal(ids.includes('character-tools'), true)
 })
 
 test('拒绝路径：非法 id、无效模块声明、缺失宿主能力都在装配前 fail loud', async () => {

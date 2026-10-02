@@ -164,6 +164,7 @@ export function apply(ctx: Context, configIn: Config): void {
         agentsInstructionText: readGeneratedContent(dir, 'agents.md') || readAgents(id),
         warn: (message) => warn(ctx, message),
       })
+      await assembly?.refresh(id)
       return
     }
     // 先重读激活模块参数（/param-overrides 保存、TUI 开关、模块切换后生效）。
@@ -263,6 +264,7 @@ export function apply(ctx: Context, configIn: Config): void {
       }
       warn(ctx, `prompt-tool: writePreset 已关闭，清空 ${cleaned} 个模块目录的组合（preset.yml 参数保留）`)
     }
+    await assembly?.refresh(runtime.writePreset ? id : undefined)
   }
 
   /** 激活模块目录（内容按模块根 <template>/ 隔离；非法名回退内置模块）。 */
@@ -296,15 +298,15 @@ export function apply(ctx: Context, configIn: Config): void {
     // （当前激活模块目录），启用表首项只在两者都拿不到时兜底。
     // 这样客户端尚未带头的阶段行为不变，带头之后才切到按卡定位。
     (moduleId) => resolveEditDir(MODULES_DIR, moduleId) || activeModuleDir(),
-    async (scopes) => {
+    async (scopes, id = runtime.presetTemplate) => {
       // 内容导入后：批量更新运行时文本，单次重建生成目录（一次自动保存只重建一次）。
-      for (const scope of scopes) {
+      for (const scope of id === runtime.presetTemplate ? scopes : []) {
         if (scope === 'preset') current = readGeneratedContent(activeModuleDir(), 'preset.md')
         else currentAgents = readGeneratedContent(activeModuleDir(), 'agents.md')
       }
-      await rebuildPreset()
+      await rebuildPreset(false, id)
     },
-    () => rebuildPreset(),
+    (id) => id === undefined ? assembly?.refresh() : rebuildPreset(false, id),
     // host 已安装完整候选；这里只刷新内存，不能二次物化覆盖导入资产。
     async (id) => {
       if (id === runtime.presetTemplate) {
@@ -313,9 +315,10 @@ export function apply(ctx: Context, configIn: Config): void {
         reloadPresetParams()
       }
       skillsRuntime.invalidate()
+      await assembly?.refresh(id)
     },
-    () => rebuildPreset(),
-    () => rebuildPreset(),
+    (id) => rebuildPreset(false, id),
+    () => assembly?.refresh(),
   )
 
   // 装配结束后只读诊断 Web 能力；插件卸载时取消任务，不编辑 profile。
@@ -395,26 +398,6 @@ registerTuiCommand(
   },
 )
 
-  // 运行时配装通道：每个 Agent 在自己的 scope 里得到一份装配（切片 + 引擎能力）。
-  // 官方工具行由会话原有预设提供，本通道不装第二棵官方插件树；两者并存不重复。
-  ctx.inject(['agents'], (actx: Context) => {
-    const mounted = createAgentAssembly(actx, {
-      moduleRoot: MODULES_DIR,
-      // 启用即配装：只认存储根 `config.yml` 的启用表，且只装磁盘上真实存在的模块
-      // （`moduleDirExists` 判的就是 `<模块根>/<id>/module.yml`，不走包内回退）。
-      // `writePreset` 关闭时装配为空（与「关闭生成=停止注入」的既有语义一致）。
-      enabledModules: () => runtime.writePreset
-        ? enabledModuleIds(MODULES_DIR).filter((id) => moduleDirExists(MODULES_DIR, id))
-        : [],
-      warn: (message) => warn(ctx, message),
-    })
-    assembly = mounted
-    actx.effect(() => () => {
-      if (assembly === mounted) assembly = undefined
-      return mounted.dispose()
-    }, 'prompt-tool assembly')
-  })
-
   let needsInitialApply = true
   const applyState = async (): Promise<void> => {
     const next = currentSource()
@@ -430,6 +413,7 @@ registerTuiCommand(
     }
     const fallbackTextChanged = runtime.fallbackText !== nextRuntime.fallbackText
     const presetTemplateChanged = runtime.presetTemplate !== nextRuntime.presetTemplate
+    const writePresetChanged = runtime.writePreset !== nextRuntime.writePreset
     const settingsChanged = runtime.writePreset !== nextRuntime.writePreset
       || runtime.presetTemplate !== nextRuntime.presetTemplate
       || runtime.presetOrder !== nextRuntime.presetOrder
@@ -452,6 +436,7 @@ registerTuiCommand(
     runtime.fallbackText = nextRuntime.fallbackText
 
     await rebuildPreset(initial)
+    if (writePresetChanged && runtime.writePreset) await assembly?.refresh()
     // 切换模块只影响本插件的物化与配装，不再向宿主写 selectedDefault。
     // 内置工具面随组合行走（per-session 挂载），无需宿主平面重挂。
   }
@@ -477,6 +462,22 @@ registerTuiCommand(
   // 查询本服务（ctx.get('promptToolPreStep')），不注册第二个 pre-step 监听器。
   // 策略缺省 enabled=false；服务缺失时引擎只执行模块卡（独立引擎复制场景）。
   installPreStepCoordinator(ctx)
+
+  // 私有工具服务与协调器就绪后，再按官方 Agent 生命周期挂载既有引擎。
+  ctx.inject(['agents'], (actx: Context) => {
+    const mounted = createAgentAssembly(actx, {
+      moduleRoot: MODULES_DIR,
+      enabledModules: () => runtime.writePreset
+        ? enabledModuleIds(MODULES_DIR).filter((id) => moduleDirExists(MODULES_DIR, id))
+        : [],
+      warn: (message) => warn(ctx, message),
+    })
+    assembly = mounted
+    actx.effect(() => () => {
+      if (assembly === mounted) assembly = undefined
+      return mounted.dispose()
+    }, 'prompt-tool assembly')
+  })
 
   const applyConfig = (): void => {
     settingsBridge.invalidateDescriptor()

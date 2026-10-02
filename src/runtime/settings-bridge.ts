@@ -528,13 +528,13 @@ export function registerSettingsBridge(
    */
   getPresetConfigsDir?: (moduleId?: string) => string,
   /** 内容导入完成回调：批量 scope 只触发一次重建（更新运行时文本并重建模块）。 */
-  afterPresetImport?: (scopes: Array<'preset' | 'agents'>) => void | Promise<void>,
-  /** 参数覆盖写入后重建当前模块。 */
-  afterOverridesChange?: () => void | Promise<void>,
+  afterPresetImport?: (scopes: Array<'preset' | 'agents'>, moduleId?: string) => void | Promise<void>,
+  /** 参数写入后重建指定模块；省略身份表示启用表变化，刷新全部运行实例。 */
+  afterOverridesChange?: (moduleId?: string) => void | Promise<void>,
   /** 模块已完整安装后的刷新回调；失败返回未生效诊断，不再物化或撤销安装。 */
   afterPresetPackageImport?: (id: string) => void | Promise<void>,
   /** 能力/recipe 原子创建后重建回调；抛错时调用方恢复 preset.yml。 */
-  afterCapabilityChange?: () => void | Promise<void>,
+  afterCapabilityChange?: (moduleId?: string) => void | Promise<void>,
   /** 新建、复制或删除模块后重建当前模块。 */
   afterPresetListChange?: (id: string) => void | Promise<void>,
 ): { invalidateDescriptor: () => void } {
@@ -550,7 +550,7 @@ export function registerSettingsBridge(
       return false
     }
   }
-  const runOverridesChange = (res: ServerResponse): Promise<boolean> => finishPresetChange(res, () => afterOverridesChange?.())
+  const runOverridesChange = (res: ServerResponse, moduleId?: string): Promise<boolean> => finishPresetChange(res, () => afterOverridesChange?.(moduleId))
   /**
    * 本次请求的编辑目标目录：读 `x-module-id` 头（形状不合法当未声明），交给注入的实现定位。
    * 所有「读/写哪个模块的配置」都走这里，端点不再各自记一个全局目标。
@@ -1445,7 +1445,7 @@ export function registerSettingsBridge(
               for (const entry of contents) {
                 writeFileSync(join(dir, entry.scope === 'preset' ? 'preset.md' : 'agents.md'), entry.content, 'utf8')
               }
-              if (!await finishPresetChange(res, () => afterPresetImport?.(contents.map((entry) => entry.scope)))) return
+              if (!await finishPresetChange(res, () => afterPresetImport?.(contents.map((entry) => entry.scope), basename(dir)))) return
               writeBridgeJson(res, 200, { ok: true, value: { scopes: contents.map((entry) => entry.scope) } })
             } catch (error) {
               const message = error instanceof Error ? error.message : String(error)
@@ -1505,7 +1505,7 @@ export function registerSettingsBridge(
                   writeBridgeJson(res, 409, { ok: false, code: 'triggers-conflict', message: '模块文件已变化；草稿未写入，请重新读取后保存' })
                   return
                 }
-                try { await afterOverridesChange?.() }
+                try { await afterOverridesChange?.(basename(dir)) }
                 catch (error) {
                   writeBridgeJson(res, 500, { ok: false, code: 'triggers-rebuild-failed', message: `声明已保存，但模块重建失败；请重新读取后重试：${String(error)}` })
                   return
@@ -1630,7 +1630,7 @@ export function registerSettingsBridge(
               )
               // 模块切换前保存当前配置卡时只需落盘，不立即重建；
               // 后续 settings presetTemplate 变更会让目标模块完成唯一一次重建。
-              if (record.rebuild !== false && !await runOverridesChange(res)) return
+              if (record.rebuild !== false && !await runOverridesChange(res, basename(dir))) return
               writeBridgeJson(res, 200, {
                 ok: true,
                 value: {
@@ -1691,7 +1691,7 @@ export function registerSettingsBridge(
                 record.variables as Record<string, string> | undefined,
                 record.enabled as boolean | undefined,
               )
-              if (!await runOverridesChange(res)) return
+              if (!await runOverridesChange(res, basename(dir))) return
               writeBridgeJson(res, 200, { ok: true, value: { variables: record.variables } })
             } catch (error) {
               const message = error instanceof Error ? error.message : String(error)
@@ -1746,7 +1746,7 @@ export function registerSettingsBridge(
                   appendPresetModules(doc, customToolModules(customTools))
                 }
               })
-              if (!await runOverridesChange(res)) return
+              if (!await runOverridesChange(res, basename(dir))) return
               writeBridgeJson(res, 200, { ok: true, value: { customTools } })
             } catch (error) {
               const message = error instanceof Error ? error.message : String(error)
@@ -1810,7 +1810,7 @@ export function registerSettingsBridge(
                 }
               }
               savePresetPersona(dirname(dir), basename(dir), persona)
-              if (!await runOverridesChange(res)) return
+              if (!await runOverridesChange(res, basename(dir))) return
               writeBridgeJson(res, 200, { ok: true, value: { persona } })
             } catch (error) {
               const message = error instanceof Error ? error.message : String(error)
@@ -2046,6 +2046,7 @@ export function registerSettingsBridge(
               return
             }
             setModuleEnabled(userModulesDir(), id, record.enabled)
+            if (!await runOverridesChange(res)) return
             writeBridgeJson(res, 200, { ok: true, value: { enabled: enabledModuleIds(userModulesDir()) } })
           },
         }),
@@ -2200,7 +2201,7 @@ export function registerSettingsBridge(
               writeBridgeJson(res, 400, { ok: false, code: 'characters-rejected', message: result.message })
               return
             }
-            if (!await runOverridesChange(res)) return
+            if (!await runOverridesChange(res, basename(dir))) return
             writeBridgeJson(res, 200, { ok: true, value: { id, count: result.count } })
           },
         }),
@@ -2229,7 +2230,7 @@ export function registerSettingsBridge(
               writeBridgeJson(res, 400, { ok: false, code: 'characters-rejected', message: result.message })
               return
             }
-            if (!await runOverridesChange(res)) return
+            if (!await runOverridesChange(res, basename(dir))) return
             writeBridgeJson(res, 200, { ok: true, value: { id, count: result.count } })
           },
         }),
@@ -2284,7 +2285,7 @@ export function registerSettingsBridge(
                   appendPresetModules(doc, ['subagent-tool-policy'])
                 }
               })
-              if (!await runOverridesChange(res)) return
+              if (!await runOverridesChange(res, basename(dir))) return
               writeBridgeJson(res, 200, { ok: true, value: { policy, errors } })
             } catch (error) {
               const message = error instanceof Error ? error.message : String(error)
@@ -2364,7 +2365,7 @@ export function registerSettingsBridge(
                   : createEngineCapabilityInPreset(dir, action === 'create'
                     ? { action: 'create', capabilityId: id.trim() }
                     : { action: 'create-recipe', recipeId: id.trim() })
-                if (result.changed && !await finishPresetChange(res, () => afterCapabilityChange?.())) return
+                if (result.changed && !await finishPresetChange(res, () => afterCapabilityChange?.(basename(dir)))) return
                 writeBridgeJson(res, 200, { ok: true, value: result })
               } catch (error) {
                 // 候选校验或重建失败：恢复原 preset.yml；生成目录由 writePreset 自身保留旧版。

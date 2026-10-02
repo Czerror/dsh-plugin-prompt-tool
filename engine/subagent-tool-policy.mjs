@@ -291,22 +291,30 @@ export function apply(ctx, config) {
   }
   const compositionScope = scopeOf(ctx)
   if (compositionScope === undefined) throw new Error(`${name}: requires a preset scope`)
-  const installs = new WeakMap()
+  const installs = new Map()
+  const installing = new WeakSet()
+  let active = true
   const belongsToComposition = (agent) => scopeChainOf(scopeOf(agent.ctx)).includes(compositionScope)
   const install = (agent) => {
-    if (installs.has(agent) || !belongsToComposition(agent)) return
+    if (!active || installing.has(agent) || installs.has(agent) || !belongsToComposition(agent)) return
     // 注册走 disposer 契约。这里保留 ctx.effect 而不是 shared.keepDisposer，两条依据：
     // (1) 两个 shadow 必须整组注册：任一个失败时由 Cordis 回滚已注册的那个
     //     （keepDisposer 无回滚语义，第二个失败会留下第一个的残留注册）；
     // (2) remove(agent) 需要按 agent 定向撤销，而 keepDisposer 返回 void，拿不到句柄。
-    const dispose = agent.ctx.effect(() => {
-      const disposers = [
-        agent.ctx.tools.register(createShadowTool(ctx, agent.ctx.tools, compositionScope, compiled, 'spawn', source)),
-        agent.ctx.tools.register(createShadowTool(ctx, agent.ctx.tools, compositionScope, compiled, 'fork', source)),
-      ]
-      return () => { for (const item of disposers) item() }
-    }, `${name}: ${agent.id} shadow`)
-    installs.set(agent, dispose)
+    // register/unregister 同步发 tools/change；登记完成前的重入不能再次注册同名工具。
+    installing.add(agent)
+    try {
+      const dispose = agent.ctx.effect(() => {
+        const disposers = [
+          agent.ctx.tools.register(createShadowTool(ctx, agent.ctx.tools, compositionScope, compiled, 'spawn', source)),
+          agent.ctx.tools.register(createShadowTool(ctx, agent.ctx.tools, compositionScope, compiled, 'fork', source)),
+        ]
+        return () => { for (const item of disposers) item() }
+      }, `${name}: ${agent.id} shadow`)
+      installs.set(agent, dispose)
+    } finally {
+      installing.delete(agent)
+    }
   }
   const remove = (agent) => {
     const dispose = installs.get(agent)
@@ -323,5 +331,12 @@ export function apply(ctx, config) {
     }
   }
   ctx.on('tools/change', reconcile)
+  ctx.effect(() => () => {
+    // Agent 可以继续存活：模块先停接线，再撤回其持有的 Agent scope 贡献。
+    active = false
+    const disposers = [...installs.values()]
+    installs.clear()
+    return Promise.all(disposers.map(dispose => dispose())).then(() => undefined)
+  }, `${name}: shadows`)
   reconcile()
 }

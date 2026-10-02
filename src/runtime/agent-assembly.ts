@@ -7,7 +7,7 @@
  * 判据（与原模块形态逐项对齐，能力一项不删）：
  *   - 挂的是插件自己的引擎模块（`engine/*.mjs` 的 `apply(ctx, config)`），
  *     不再声明 `agent.cordis.yml` 这类「给宿主 Loader 用的组合本体」；
- *   - 官方工具行（`@deepseek-ai/dsh-persona` / `dsh-tool-*` 等）由会话原有预设提供，
+ *   - 官方工具行（`dsh-tool-*` 等）由宿主提供；模块人设通过 systemPrompt 注册，
  *     本通道**不**装第二棵官方插件树——那些包也不在插件包的解析面内；
  *   - 物化目录优先：`configs/`（原 `prompt-configs/`）、`custom-tools/` 存在就按它装配，
  *     缺失时回退 `module.yml` 内嵌，两条路径的切片同源（`resolveModuleFacts`）。
@@ -15,7 +15,7 @@
  * 与官方挂载并存时不会重复：官方树里没有引擎行，引擎贡献只由本通道提供。
  */
 import { existsSync } from 'node:fs'
-import { join, resolve, sep } from 'node:path'
+import { basename, join, resolve, sep } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import type { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
@@ -25,14 +25,14 @@ import { assertPresetId } from '../host/module-install.ts'
 import { MODULE_CONFIGS_DIR } from '../host/paths.ts'
 
 // @ts-expect-error ESM 引擎源码随插件提供。
-import { loadPromptConfigFiles } from '../../engine/schema.mjs'
+import { createPromptConfigs, loadPromptConfigFiles } from '../../engine/schema.mjs'
 // @ts-expect-error ESM 引擎源码随插件提供。
 import { applyPromptConfigs } from '../../engine/executor.mjs'
 
 /** 引擎模块的受管配置字段：值按历史语义相对模块根书写（如 `../<id>/custom-tools`）。 */
 const MANAGED_FIELDS = ['configsDir', 'strategyDir', 'policyFile', 'triggersFile'] as const
 
-/** 私有服务提供的引擎能力：以 `pt-*` 服务挂载，不从包内 engine 目录 import。 */
+/** 私有工具适配器依赖的服务；适配器仍复用包内引擎入口。 */
 const PRIVATE_SERVICES: Record<string, string> = {
   'character-tools': 'pt-character-tools',
   'world-book-tools': 'pt-world-book-tools',
@@ -51,6 +51,8 @@ export interface AgentAssemblyRuntime {
    * 因此不必再去问宿主「这个会话绑定了哪个官方预设」——模块早已与官方预设解耦。
    */
   moduleIds(sessionId: string): readonly string[]
+  /** 保存完成后重装存活 Agent；省略 id 表示启用表或部署开关改变。 */
+  refresh(moduleId?: string): Promise<void>
   dispose(): Promise<void>
 }
 
@@ -74,8 +76,8 @@ export interface AgentAssemblyOptions {
  *   - `./configs`（新形态）→ `<模块目录>/configs`；
  *   - `../<id>/triggers.yml`（历史形态：`ENGINE_MANAGED_PATHS` 的改写成这样，语义是
  *     「从历史引擎位置 `<模块根>/.engine/` 回到 `<模块根>/<id>/`」）→ `<模块目录>/triggers.yml`；
- *   - `../subagent-tools/policy.yml`（引擎行**初值**形态，只有组合源这么写）→ 同样按模块目录，
- *     落进该模块目录内——越出模块根的值由引擎自己的越界校验拒绝，不会被静默采信。
+ *   - `../subagent-tools/policy.yml`（组合源初值）→ 相对模块内历史引擎位置，
+ *     同样落进当前模块目录；引擎继续负责资源越界校验。
  * 已是 `file:` URL 的值原样保留。
  */
 function absolutizeManagedFields(
@@ -86,7 +88,10 @@ function absolutizeManagedFields(
     const value = out[field]
     if (typeof value !== 'string' || value.length === 0) continue
     if (value.startsWith('file:')) continue
-    out[field] = pathToFileURL(resolve(moduleDir, value)).href
+    // 组合源的 ../configs 等相对模块内的历史引擎位置；../<id>/ 则相对共享引擎。
+    const base = value.startsWith('../') && !value.startsWith(`../${basename(moduleDir)}/`)
+      ? join(moduleDir, '.engine') : moduleDir
+    out[field] = pathToFileURL(resolve(base, value)).href
   }
   return out
 }
@@ -102,6 +107,7 @@ export interface PreparedAssembly {
   modules: Array<{ id: string; apply: (ctx: Context, config: Record<string, unknown>) => unknown; config: Record<string, unknown> }>
   services: Set<string>
   moduleId: string
+  persona?: ModuleSpec['persona']
 }
 
 /**
@@ -119,9 +125,16 @@ export async function prepareAssembly(
   if (facts.effectiveModules === null) throw new Error(`模块 ${moduleId} 的模块声明无效，无法配装`)
   const configsByModule = facts.effectiveConfigs ?? {}
   const promptDir = join(moduleDir, MODULE_CONFIGS_DIR)
-  const configs = existsSync(promptDir)
+  const specs = existsSync(promptDir)
     ? loadPromptConfigFiles(pathToFileURL(promptDir + sep))
     : (spec.promptConfigs ?? [])
+  const promptConfig = absolutizeManagedFields(configsByModule['prompt-config-engine'] ?? {}, moduleDir)
+  const configs = createPromptConfigs(specs, {
+    templateBaseUrl: pathToFileURL(join(moduleRoot, '.engine', 'prompt-config-engine.mjs')),
+    templatePresetRoot: pathToFileURL(moduleRoot + sep),
+    strategyDir: typeof promptConfig.strategyDir === 'string'
+      ? promptConfig.strategyDir.replace(/\/?$/, '/') : undefined,
+  })
   // 「独占」（`complete`）组装期兜底：宿主 system-prompt 对「多于一个生效 complete 段」
   // 直接抛错（packages/core/system-prompt/src/index.ts:597-600），而写盘前的互斥门控只
   // 覆盖两个 bridge 端点——手改 module.yml、还原 ZIP/备份、导入包都能绕过。这里在装配前
@@ -142,13 +155,12 @@ export async function prepareAssembly(
   const engineDir = packageEngineDir()
   const services = new Set<string>()
   const modules: PreparedAssembly['modules'] = []
-  for (const id of facts.effectiveModules) {
+  for (const id of new Set([...facts.effectiveModules, ...facts.rowIds])) {
     if (id === 'prompt-config-engine') continue
     const privateService = PRIVATE_SERVICES[id]
     if (privateService !== undefined) {
       if (!hasService(privateService)) throw new Error(`配装所需能力不可用：${privateService}`)
       services.add(privateService)
-      continue
     }
     const file = engineModuleFile(engineDir, id)
     // 官方组合行与能力 recipe（只有 library yml、没有 engine mjs）由会话原有预设提供。
@@ -160,6 +172,9 @@ export async function prepareAssembly(
     if (typeof module.apply !== 'function') throw new Error(`引擎能力缺少 apply：${id}`)
     for (const dependency of module.inject ?? []) services.add(dependency)
     const config = absolutizeManagedFields(configsByModule[id] ?? {}, moduleDir)
+    if (id === 'tool-config-engine' || id === 'declared-triggers') {
+      config.presetRoot = pathToFileURL(moduleRoot + sep).href
+    }
     // 引擎自带的声明就绪校验（未知键 fail loud）在装配期先跑一次，避免挂载到一半才炸。
     const contract = (module as { configContract?: { parse?: (value: unknown, name: string) => unknown } }).configContract
     contract?.parse?.(config, id)
@@ -170,16 +185,16 @@ export async function prepareAssembly(
     services.add('tools')
     services.add('llm')
   }
+  if (spec.persona !== undefined) services.add('systemPrompt')
   for (const name of services) {
     if (!hasService(name)) throw new Error(`配装所需宿主能力不可用：${name}`)
   }
-  return { configs, modules, services, moduleId }
+  return { configs, modules, services, moduleId, persona: spec.persona }
 }
 
 export function createAgentAssembly(ctx: Context, options: AgentAssemblyOptions): AgentAssemblyRuntime {
-  const mounts = new Map<string, { agent: Agent; fiber: { dispose(): Promise<void> | void }; moduleIds: readonly string[] }>()
-  /** 准备期就失败的 Agent：不反复重试同一份坏定义。 */
-  const failed = new Set<string>()
+  const mounts = new Map<string, { agent: Agent; fiber: { dispose(): Promise<void> | void }; prepared: PreparedAssembly[]; moduleIds: readonly string[] }>()
+  const disposed = new WeakSet<Agent>()
   const queues = new Map<string, Promise<void>>()
   let active = true
   const warn = (error: unknown): void => {
@@ -202,20 +217,7 @@ export function createAgentAssembly(ctx: Context, options: AgentAssemblyOptions)
     await current.fiber.dispose()
   }
 
-  const install = async (agent: Agent): Promise<void> => {
-    if (!active || failed.has(agent.id) || mounts.has(agent.id)) return
-    const moduleIds = options.enabledModules()
-    const prepared: PreparedAssembly[] = []
-    try {
-      for (const id of moduleIds) {
-        prepared.push(await prepareAssembly(options.moduleRoot, id, (name) => agent.ctx.get(name) !== undefined))
-      }
-    } catch (error) {
-      // 同一个 Agent 不反复重试同一份坏定义；改好定义后的新 Agent 会重新尝试。
-      failed.add(agent.id)
-      throw error
-    }
-    if (!active || failed.has(agent.id)) return
+  const mount = async (agent: Agent, prepared: PreparedAssembly[]): Promise<void> => {
     // 启用表的每一项各贡献一份：宿主能力取并集，装配时逐模块各挂一次（同键参数按此顺序叠加）。
     const services = new Set<string>()
     for (const item of prepared) for (const name of item.services) services.add(name)
@@ -224,12 +226,27 @@ export function createAgentAssembly(ctx: Context, options: AgentAssemblyOptions)
       inject: [...services],
       apply: async (scopeCtx: Context) => {
         for (const item of prepared) {
+          if (item.persona !== undefined) {
+            const persona = item.persona
+            // 独立模块贡献使用独立段名，避免覆盖宿主或子代理 setup 的同名注册。
+            scopeCtx.systemPrompt.section({
+              name: `prompt-tool:${item.moduleId}:persona-prefix`,
+              order: scopeCtx.systemPrompt.getSectionOrder('DEPLOYMENT_PERSONA_PREFIX'),
+              text: persona.prefix, complete: persona.complete === true,
+            })
+            scopeCtx.systemPrompt.section({
+              name: `prompt-tool:${item.moduleId}:persona-suffix`,
+              order: scopeCtx.systemPrompt.getSectionOrder('DEPLOYMENT_PERSONA_SUFFIX'),
+              text: persona.suffix ?? '',
+            })
+            if (persona.includeRuntimeContext === false) scopeCtx.systemPrompt.suppressRuntimeContext()
+          }
           if (item.configs.length > 0) {
-            applyPromptConfigs(scopeCtx, item.configs, {
+            scopeCtx.effect(() => applyPromptConfigs(scopeCtx, item.configs, {
               sourceId: `module:${item.moduleId}`,
               prepend: true,
               officialInstructions: false,
-            })
+            }))
           }
         }
         for (const item of prepared) {
@@ -249,12 +266,34 @@ export function createAgentAssembly(ctx: Context, options: AgentAssemblyOptions)
       await disposeFiber()
       throw error
     }
-    if (!active) { await disposeFiber(); return }
+    if (!active || disposed.has(agent)) { await disposeFiber(); return }
     mounts.set(agent.id, {
       agent,
       fiber: { dispose: async () => { await disposeFiber() } },
+      prepared,
       moduleIds: prepared.map((item) => item.moduleId),
     })
+  }
+
+  const install = async (agent: Agent, refresh = false): Promise<void> => {
+    if (!active || disposed.has(agent)) return
+    const previous = mounts.get(agent.id)
+    if (!refresh && previous?.agent === agent) return
+    // 完整准备后才撤旧；坏配置不得拆掉当前可用贡献。
+    const prepared: PreparedAssembly[] = []
+    for (const id of options.enabledModules()) {
+      prepared.push(await prepareAssembly(options.moduleRoot, id, (name) => agent.ctx.get(name) !== undefined))
+    }
+    if (!active || disposed.has(agent)) return
+    await release(agent.id)
+    try {
+      await mount(agent, prepared)
+    } catch (error) {
+      if (previous?.agent === agent && active && !disposed.has(agent)) {
+        await mount(agent, previous.prepared)
+      }
+      throw error
+    }
   }
 
     const listeners = [
@@ -262,9 +301,9 @@ export function createAgentAssembly(ctx: Context, options: AgentAssemblyOptions)
       // Agent。**装配失败不得冒泡**：该事件的监听器被 await，抛错会让会话创建整个失败
       // （`dsh-agent` 的 runtime-types 契约），那会违背「任何一步停下插件都完整可用」。
       // 装载后由 mounts 的身份判据挡住重复；失败的不记入，避免重试风暴。
-      ctx.on('agent/created', ({ agent }) => {
-        // 返回 undefined 而非 void：该事件的回调契约是 `Promise<undefined> | undefined`。
-        void serial(agent.id, async () => {
+      ctx.on('agent/created', async ({ agent }) => {
+        // 宿主在首条请求前等待此 Promise；失败只告警，不中止官方会话创建。
+        await serial(agent.id, async () => {
           try {
             await install(agent)
           } catch (error) {
@@ -274,14 +313,16 @@ export function createAgentAssembly(ctx: Context, options: AgentAssemblyOptions)
         return undefined
       }),
       ctx.on('agent/disposed', ({ agent }) => {
+        disposed.add(agent)
         void serial(agent.id, () => release(agent.id, agent)).catch(warn)
       }),
     ]
   ctx.effect(() => () => {
     active = false
     for (const remove of listeners) remove()
-    // release 会改 mounts：先把迭代器收敛成任务数组，再等它们结束。
-    return Promise.all(Array.from(mounts.keys(), (id) => release(id))).then(() => undefined)
+    return Promise.all(queues.values()).then(async () => {
+      for (const id of mounts.keys()) await release(id)
+    })
   }, 'prompt-tool assembly runtime')
   // 启动时已存在的 Agent 也要补装；`agents` 服务缺失时（极简/嵌入运行时）静默跳过，
   // 新增 Agent 仍由 `agent/created` 兜住——构造期绝不因缺服务而抛。
@@ -296,8 +337,20 @@ export function createAgentAssembly(ctx: Context, options: AgentAssemblyOptions)
     settled: () => Promise.all(queues.values()).then(() => undefined),
     hasMounted: (sessionId) => mounts.has(sessionId),
     moduleIds: (sessionId) => mounts.get(sessionId)?.moduleIds ?? [],
+    refresh: async (moduleId) => {
+      if (!active) throw new Error('运行时配装已释放')
+      const results = await Promise.allSettled(ctx.agents.list().map((agent) => serial(agent.id, async () => {
+        const current = mounts.get(agent.id)
+        if (moduleId !== undefined && current !== undefined
+          && !current.moduleIds.includes(moduleId) && !options.enabledModules().includes(moduleId)) return
+        await install(agent, true)
+      })))
+      const errors = results.filter((result): result is PromiseRejectedResult => result.status === 'rejected')
+      if (errors.length > 0) throw new AggregateError(errors.map((result) => result.reason), '模块已保存，但运行时配装更新失败')
+    },
     dispose: async () => {
       active = false
+      for (const remove of listeners) remove()
       await Promise.all(queues.values())
       for (const id of mounts.keys()) await release(id)
     },
