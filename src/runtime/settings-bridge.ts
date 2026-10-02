@@ -228,7 +228,7 @@ function readImportRequestParams(record: Record<string, unknown>):
   if ((record.files === undefined) === (record.sourceId === undefined)) return { ok: false, message: 'files 与 sourceId 必须且只能提供一个' }
   if (record.sourceId !== undefined && (typeof record.sourceId !== 'string' || !/^[0-9a-f-]{36}$/i.test(record.sourceId))) return { ok: false, message: 'sourceId 必须是有效上传来源标识' }
   if (record.overwrite !== undefined && typeof record.overwrite !== 'boolean') return { ok: false, message: 'overwrite 必须是布尔值' }
-  if (record.targetId !== undefined && (typeof record.targetId !== 'string' || record.targetId.length > 128 || !/^[a-z0-9][a-z0-9-]*$/.test(record.targetId))) return { ok: false, message: 'targetId 必须是合法小写预设 ID（最多 128 字符）' }
+  if (record.targetId !== undefined && (typeof record.targetId !== 'string' || record.targetId.length > 128 || !/^[a-z0-9][a-z0-9-]*$/.test(record.targetId))) return { ok: false, message: 'targetId 必须是合法小写模块 ID（最多 128 字符）' }
   if (record.targetName !== undefined && (typeof record.targetName !== 'string' || record.targetName.trim().length === 0 || record.targetName.length > 256)) return { ok: false, message: 'targetName 必须是 1–256 字符的非空字符串' }
   const kinds: ImportKind[] = ['native-preset', 'native-character', 'st-preset', 'st-character', 'world-book']
   if (record.sourceKind !== undefined && !kinds.includes(record.sourceKind as ImportKind)) return { ok: false, message: 'sourceKind 不是支持的内容类型' }
@@ -415,7 +415,7 @@ function isEditablePresetDir(dir: string, presetRoot = userPresetsDir()): boolea
 
 function guardEditablePresetDir(dir: string, res: ServerResponse): boolean {
   if (isEditablePresetDir(dir)) return true
-  writeBridgeJson(res, 403, { ok: false, code: 'preset-readonly', message: 'system preset 只读，请先复制为用户预设' })
+  writeBridgeJson(res, 403, { ok: false, code: 'preset-readonly', message: 'system preset 只读，请先复制为用户模块' })
   return false
 }
 
@@ -531,7 +531,7 @@ export function registerSettingsBridge(
   afterPresetImport?: (scopes: Array<'preset' | 'agents'>) => void | Promise<void>,
   /** 参数覆盖写入后重建当前预设。 */
   afterOverridesChange?: () => void | Promise<void>,
-  /** 预设已完整安装后的刷新回调；失败返回未生效诊断，不再物化或撤销安装。 */
+  /** 模块已完整安装后的刷新回调；失败返回未生效诊断，不再物化或撤销安装。 */
   afterPresetPackageImport?: (id: string) => void | Promise<void>,
   /** 能力/recipe 原子创建后重建回调；抛错时调用方恢复 preset.yml。 */
   afterCapabilityChange?: () => void | Promise<void>,
@@ -546,7 +546,7 @@ export function registerSettingsBridge(
       await activate()
       return true
     } catch (error) {
-      writeBridgeJson(res, 500, { ok: false, code: PRESET_ACTIVATION_FAILED, message: `更改已保存，但预设未生效；请重试：${String(error)}` })
+      writeBridgeJson(res, 500, { ok: false, code: PRESET_ACTIVATION_FAILED, message: `更改已保存，但模块未生效；请重试：${String(error)}` })
       return false
     }
   }
@@ -607,11 +607,11 @@ export function registerSettingsBridge(
       const guardPresetIdentity = (record: Record<string, unknown>, dir: string, res: ServerResponse): boolean => {
         const expected = record.expectedPresetId
         if (expected !== undefined && (typeof expected !== 'string' || expected.length === 0 || expected.length > 256)) {
-          writeBridgeJson(res, 400, { ok: false, code: 'preset-identity-invalid', message: 'expectedPresetId 必须是非空预设 ID' })
+          writeBridgeJson(res, 400, { ok: false, code: 'preset-identity-invalid', message: 'expectedPresetId 必须是非空模块 ID' })
           return false
         }
         if ((getPresetConfigsDir?.() ?? '') !== dir || (expected !== undefined && expected !== basename(dir))) {
-          writeBridgeJson(res, 409, { ok: false, code: 'preset-changed', message: '当前预设已切换；旧草稿未写入，请重新读取后保存' })
+          writeBridgeJson(res, 409, { ok: false, code: 'preset-changed', message: '当前模块已切换；旧草稿未写入，请重新读取后保存' })
           return false
         }
         return guardPresetFormat(dir, res)
