@@ -88,6 +88,7 @@
 
 ## Git 与交付
 
+- **分支约定**：开发线唯一是 `dev`；`main` 只在发版（npm publish + tag + Release）时从 `dev` 快进同步。`beta` 与 `beta2` 两条并行重构线已于 1.0.0 发布时废弃并从本地与远端删除，不要再基于它们开工；旧 `beta` 线的末次提交保留在本地 `archive/beta` 引用里（不在远端）。
 - 保留用户已有改动和现有历史，不执行 reset --hard、clean、checkout 覆盖或其他破坏性操作。
 - 每次完成修改并通过验证后，在同一轮创建中文 Conventional Commit，并推送 origin/dev；未经明确要求不切换或推送 main，不创建 PR。
 - 提交前只暂存本次任务文件，检查 diff、验证结果和工作树。
