@@ -915,11 +915,9 @@
 .previewItem { overflow-wrap: anywhere; }
 .previewLocation { display: block; font: 12px/18px system-ui, sans-serif; color: var(--dsw-alias-label-secondary); }
 
-/* 列表操作区高度由页面 owner 测量，短视口解除 sticky。 */
-.pageActions { position: sticky; top: 0; z-index: 1; isolation: isolate; display: flex; flex-direction: column; gap: 8px; min-width: 0; padding: 8px 0; background: Canvas; }
-/* 第三方主题可把表面设为透明：语义表面叠在系统不透明基底上，滚动正文不会透出。
-   表面色取页面画布底色（不是更高的 bg-layer-2），吸顶区不再形成第二条可见背景带。 */
-.pageActions::before { content: ''; position: absolute; inset: 0; z-index: -1; pointer-events: none; background: var(--dsw-alias-bg-base, Canvas); }
+/* 列表操作区高度由页面 owner 测量，短视口解除 sticky。
+   工具条自身不画背景：区内每行都是不透明卡片，吸顶可读性由卡片提供。 */
+.pageActions { position: sticky; top: 0; z-index: 1; display: flex; flex-direction: column; gap: 8px; min-width: 0; padding: 8px 0; }
 [data-sticky-disabled='true'] .pageActions { position: relative; top: auto; }
 .actionFeedback { min-width: 0; font: 12px/18px system-ui, sans-serif; overflow-wrap: anywhere; }
 .actionHint { margin: 0; color: var(--dsw-alias-label-secondary); font: 12px/18px system-ui, sans-serif; overflow-wrap: anywhere; }
