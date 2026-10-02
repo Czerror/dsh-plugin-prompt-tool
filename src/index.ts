@@ -37,7 +37,7 @@ import type { PromptSettings, RuntimeOptions } from './config.ts'
 import { DEFAULT_PRESET_DIR } from './host/paths.ts'
 import { DEFAULT_PRESET_ID } from './shared/preset-ids.ts'
 import { createSkillsRuntime } from './host/skills-runtime.ts'
-import { createPresetRegistrySync } from './host/preset-registry.ts'
+import { createPresetRegistrySync, presetDirExists } from './host/preset-registry.ts'
 import { createAgentAssembly } from './runtime/agent-assembly.ts'
 import { resolvePresetToolTarget } from './host/preset-tool-target.ts'
 import type { PresetToolHost } from './host/preset-tool-target.ts'
@@ -518,7 +518,7 @@ registerTuiCommand(
 
   // 内置模型工具由三个独立预设模块按需挂载；宿主只提供对应注册服务。
   const presetToolHost: PresetToolHost = {
-    target: (exec) => resolvePresetToolTarget(ctx, exec, DEFAULT_PRESET_DIR, (id) => registrySync?.owns(id) === true),
+    target: (exec) => resolvePresetToolTarget(ctx, exec, DEFAULT_PRESET_DIR, (id) => presetDirExists(DEFAULT_PRESET_DIR, id)),
     rebuild: (id) => rebuildPreset(false, id),
   }
   ctx.provide('pt-character-tools', {
@@ -621,6 +621,7 @@ export { detectModels, invalidateModelCatalog, listAdvertisedModels, peekModelCa
 export type { PluginSubagentSeam } from './runtime/models.ts'
 export type { WritePresetOptions } from './host/write-preset.ts'
 export { validatePromptConfigs } from './runtime/configs-validate.ts'
+export { createPresetRegistrySync, presetDirExists } from './host/preset-registry.ts'
 export { registerSettingsBridge } from './runtime/settings-bridge.ts'
 export { registerCharacterTools } from './runtime/character-tools.ts'
 export { registerWorldBookTools } from './runtime/world-book-tools.ts'

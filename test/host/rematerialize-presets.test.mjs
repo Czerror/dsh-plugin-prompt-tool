@@ -46,7 +46,7 @@ test('rematerialize-presets：按当前 preset.yml 重新物化组合，共享�
     const rows = parseYaml(composition)
     assert.ok(Array.isArray(rows), '组合是 YAML 数组')
     // 阶段 2 起共享引擎由插件包提供：组合行写包名说明符，受管配置位置仍按历史语义
-    // 相对 <预设根>/.engine/ 书写（注册期由 preset-registry 换算为绝对 file://）。
+    // 相对 <预设根>/.engine/ 书写（由配装通道在挂载期换算为绝对 file://）。
     const engineRow = rows.find((row) => row?.id === 'prompt-config-engine')
     assert.equal(engineRow?.name, 'dsh-plugin-prompt-tool/engine/prompt-config-engine.mjs',
       '共享引擎行引用插件包说明符')

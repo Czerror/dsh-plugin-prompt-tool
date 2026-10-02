@@ -1,133 +1,45 @@
-import { randomUUID } from 'node:crypto'
-import { readFileSync, statSync } from 'node:fs'
-import { join, resolve } from 'node:path'
-import { pathToFileURL } from 'node:url'
-import { parse } from 'yaml'
+/**
+ * preset-registry — 把插件存储根里的预设登记为官方预设**身份**。
+ *
+ * 这一层只做一件事：让宿主在创建会话时 `agentPresets.mount(agentCtx, id)` 找得到 id。
+ * 组合本体不再注册（`plugins: []`）——运行时装配由 `runtime/agent-assembly.ts` 在
+ * Agent 自己的 scope 里承担，官方工具行由会话原有预设提供。
+ *
+ * 因此这里**不读** `agent.cordis.yml`：它是给宿主 Loader 用的组合本体，随自建装配一起退场。
+ * 登记的身份语义（id、显示元数据、排序）仍来自 `preset.yml`。
+ */
+import { statSync } from 'node:fs'
+import { join } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import type { PresetDefinition } from '@deepseek-ai/dsh-agent-preset-registry'
 import { listPresets, loadPresetSpec } from './manifest.ts'
-import { PRESET_ENGINE_PREFIX } from './preset-install.ts'
 
-type Registration = { definition: PresetDefinition; fingerprint: string; dispose: () => Promise<void>; broken?: string }
-
-/**
- * 共享引擎模块的受管配置字段：值按**历史语义**相对 `<预设根>/.engine/` 书写
- * （如 `../<id>/prompt-configs`），装配期换算为绝对 `file://`。
- */
-const MANAGED_FIELDS: Record<string, readonly string[]> = {
-  'prompt-config-engine.mjs': ['configsDir', 'strategyDir'],
-  'tool-config-engine.mjs': ['configsDir'],
-  'subagent-tool-policy.mjs': ['policyFile'],
-  'declared-triggers.mjs': ['triggersFile'],
-}
-
-/** 需要注入预设根基准的引擎模块——只有它们的 configContract 声明了 `presetRoot` 键。 */
-const PRESET_ROOT_MODULES = new Set(['prompt-config-engine.mjs', 'tool-config-engine.mjs', 'declared-triggers.mjs'])
-
-type AbsolutizeContext = {
-  /** 预设目录 `<预设根>/<id>`：其它本地模块说明符的基准。 */
-  presetDir: string
-  /** 历史引擎位置 `<预设根>/.engine/`：受管配置字段的基准。 */
-  engineDir: string
-  /** 预设根 file URL（带尾斜杠）：注入给引擎做 `templateFile` 越界校验基准。 */
-  presetRootUrl: string
-}
-
-function isJsExpr(value: unknown): boolean {
-  return typeof value === 'object' && value !== null && typeof (value as { __jsExpr?: unknown }).__jsExpr === 'string'
-}
-
-/** 行名引用的共享引擎模块名；只认插件包的说明符前缀（不再兼容旧布局）。 */
-function engineModuleOf(name: unknown): string | undefined {
-  return typeof name === 'string' && name.startsWith(PRESET_ENGINE_PREFIX)
-    ? name.slice(PRESET_ENGINE_PREFIX.length)
-    : undefined
-}
-
-/** config 层换算：受管字段 → 绝对 `file://`；需要基准的引擎行注入预设根。 */
-function absolutizeConfig(
-  config: Record<string, unknown>, engineModule: string | undefined, context: AbsolutizeContext,
-): Record<string, unknown> {
-  const fields = engineModule === undefined ? undefined : MANAGED_FIELDS[engineModule]
-  const out: Record<string, unknown> = {}
-  for (const [key, value] of Object.entries(config)) {
-    if (fields !== undefined && fields.includes(key) && typeof value === 'string' && value.startsWith('.')) {
-      out[key] = pathToFileURL(resolve(context.engineDir, value)).href
-    } else out[key] = value
-  }
-  if (engineModule !== undefined && PRESET_ROOT_MODULES.has(engineModule)) out.presetRoot = context.presetRootUrl
-  return out
-}
-
-/** 行级换算：只认行对象自己的 `name` 与 `config`，不误伤 config 里的同名业务字段。 */
-function absolutizeRow(row: unknown, context: AbsolutizeContext): unknown {
-  if (row === null || typeof row !== 'object' || Array.isArray(row) || isJsExpr(row)) return row
-  const source = row as Record<string, unknown>
-  const engineModule = engineModuleOf(source.name)
-  const out: Record<string, unknown> = {}
-  for (const [key, item] of Object.entries(source)) {
-    if (key === 'name' && typeof item === 'string') {
-      // 引擎行已是包名说明符，不改写；其余本地说明符按预设目录换算。
-      out[key] = item.startsWith('.') && engineModule === undefined
-        ? pathToFileURL(resolve(context.presetDir, item)).href
-        : item
-    } else if (key === 'config' && Array.isArray(item)) {
-      // `cordis:group` 的子行列表：递归换算，组内引擎行同样成立。
-      out[key] = item.map((child) => absolutizeRow(child, context))
-    } else if (key === 'config' && item !== null && typeof item === 'object' && !isJsExpr(item)) {
-      out[key] = absolutizeConfig(item as Record<string, unknown>, engineModule, context)
-    } else out[key] = item
-  }
-  return out
-}
+type Registration = { dispose: () => Promise<void>; fingerprint: string }
 
 /**
- * 装配期换算：把组合里的本地引用换成 Loader 与引擎都能解析的绝对形态。
+ * 预设目录确实存在于本插件存储根（身份判定与官方登记状态无关）。
  *
- * 三件事，全部只发生在内存注册定义，正本 `agent.cordis.yml` 一字不改：
- * 1. **本地模块说明符**（`name` 以 `.` 开头）：相对预设目录 → 绝对 `file://`。注册用的 Loader
- *    树必须以**宿主锚点**建（`register()` 取调用方 ctx 的 `baseUrl` 解析每一行），否则组合内的
- *    包名行会从预设目录起解析、整份注册被拒；锚点归宿主后，预设目录内的相对说明符必须在此换算。
- * 2. **受管配置字段**（`configsDir` / `strategyDir` / `policyFile` / `triggersFile`）：按历史语义
- *    相对 `<预设根>/.engine/` 解析为绝对 `file://`。引擎由插件包提供后其 `import.meta.url` 不再
- *    位于该目录，`file://` 也是对全部受管字段一致有效的唯一形态。
- * 3. **预设根基准**：给需要 `templateFile` 越界校验的引擎行注入 `presetRoot`。
- *
- * 共享引擎行本身写 `dsh-plugin-prompt-tool/engine/*.mjs`（由生成侧 `rewritePresetEngineReferences`
- * 产出），本函数不改写它。**不兼容旧预设**：仍写 `./engine/`、`../.engine/` 的预设按普通本地
- * 说明符处理，指向已不再物化的目录并因此挂载失败，需重建后重新物化。
+ * 工具写入目标、TUI 目标与 `owns` 共用这一条判据：本插件管理的预设 = 存储根里含
+ * `preset.yml` 的目录，与「宿主有没有把它登记成官方预设」是两回事。
  */
-export function absolutizeLocalModules(rows: unknown, presetDir: string): unknown {
-  if (!Array.isArray(rows)) return rows
-  const presetRoot = resolve(presetDir, '..')
-  const context: AbsolutizeContext = {
-    presetDir,
-    engineDir: join(presetRoot, '.engine'),
-    presetRootUrl: `${pathToFileURL(presetRoot).href}/`,
-  }
-  return rows.map((row) => absolutizeRow(row, context))
+export function presetDirExists(root: string, id: string): boolean {
+  return statSync(join(root, id, 'preset.yml'), { throwIfNoEntry: false }) !== undefined
 }
 
+/** 登记身份：元数据来自 preset.yml，组合本体为空（装配不归官方 Loader）。 */
 function readDefinition(root: string, id: string): PresetDefinition {
   const preset = loadPresetSpec(join(root, id))
-  const file = join(root, id, 'agent.cordis.yml')
-  const source = readFileSync(file, 'utf8')
-  // 保留官方 Loader 的延迟表达式标记；不能把 !!js 当普通字符串或在宿主提前执行。
-  const plugins = parse(source, {
-    version: '1.2',
-    customTags: [{ tag: 'tag:yaml.org,2002:js', resolve: (__jsExpr: string) => ({ __jsExpr }) }],
-  })
   const order = typeof preset.order === 'number' && Number.isFinite(preset.order) ? preset.order : undefined
   return {
     id,
     ...(typeof preset.name === 'string' && preset.name.length > 0 ? { name: preset.name } : {}),
     ...(typeof preset.description === 'string' ? { description: preset.description } : {}),
     ...(order === undefined ? {} : { order }),
-    plugins: absolutizeLocalModules(plugins, join(root, id)) as PresetDefinition['plugins'],
+    plugins: [],
   }
 }
 
-/** 将插件自有预设定义注册到官方服务，并拥有每份声明的 disposer。 */
+/** 将插件自有预设登记到官方服务，并拥有每份登记的 disposer。 */
 export function createPresetRegistrySync(ctx: Context, root: string): {
   refresh: (forceIds?: readonly string[]) => Promise<void>
   owns: (id: string) => boolean
@@ -141,77 +53,34 @@ export function createPresetRegistrySync(ctx: Context, root: string): {
     const turn = queue.then(async () => {
       if (closed) return
       const errors: unknown[] = []
-      // 清单会跳过损坏的 preset.yml；只有目录确实被删除才撤销旧注册。
+      // 目录被删除才撤销登记；清单会跳过损坏的 preset.yml。
       for (const [id, current] of registrations) {
         if (targets !== undefined && !targets.has(id)) continue
         try {
-          if (statSync(join(root, id), { throwIfNoEntry: false }) !== undefined) continue
+          if (presetDirExists(root, id)) continue
           await current.dispose()
           registrations.delete(id)
         } catch (error) { errors.push(error) }
       }
-      // 指定目标的保存只激活该目标；无参数的启动/清单刷新仍审计全部定义。
       for (const id of targets ?? listPresets(root).map((preset) => preset.id)) {
         try {
-          if (targets !== undefined && statSync(join(root, id), { throwIfNoEntry: false }) === undefined) continue
+          if (!presetDirExists(root, id)) continue
           const definition = readDefinition(root, id)
-          const fingerprint = JSON.stringify(definition)
           const current = registrations.get(id)
-          if (current?.fingerprint === fingerprint && current.broken === undefined && targets === undefined) continue
-          // 不改写 baseUrl：Loader 树继承宿主锚点，包名行才解析得到；预设目录内的相对
-          // 说明符已由 readDefinition 换算为绝对 file URL。
-          const registry = ctx.agentPresets
-          const register = async (candidate: PresetDefinition): Promise<() => Promise<void>> => {
-            const dispose = await registry.register(candidate)
-            try {
-              const result = await registry.resolve(candidate.id)
-              if (result.broken !== undefined) throw new Error(result.broken)
-              return dispose
-            } catch (error) {
-              await dispose()
-              throw error
-            }
-          }
-          if (current !== undefined && current.broken === undefined) {
-            // 官方没有原子 replace：候选会真实激活插件，并非纯校验；失败保留旧定义及 revision。
-            const discard = await register({ ...definition, id: `prompt-tool-candidate-${randomUUID()}` })
-            await discard()
-          }
+          // 显示元数据变了才重登记；目录仍在且元数据未变时幂等跳过。
+          if (current !== undefined && current.fingerprint === JSON.stringify(definition)) continue
           if (current !== undefined) {
             await current.dispose()
             registrations.delete(id)
           }
-          try {
-            if (current === undefined || current.broken !== undefined) {
-              // 没有可用旧版本可回退时，保留官方 broken 行供列表展示，错误仍传给保存调用方。
-              const dispose = await registry.register(definition)
-              const registration: Registration = { definition, fingerprint, dispose }
-              registrations.set(id, registration)
-              const result = await registry.resolve(id)
-              if (result.broken !== undefined) {
-                registration.broken = result.broken
-                throw new Error(result.broken)
-              }
-            } else {
-              const dispose = await register(definition)
-              registrations.set(id, { definition, fingerprint, dispose })
-            }
-          } catch (error) {
-            if (current !== undefined && current.broken === undefined) {
-              const dispose = await register(current.definition)
-              registrations.set(id, { ...current, dispose })
-            } else {
-              const failed = registrations.get(id)
-              if (failed !== undefined) failed.broken = String(error)
-            }
-            throw error
-          }
+          const dispose = await ctx.agentPresets.register(definition)
+          registrations.set(id, { dispose, fingerprint: JSON.stringify(definition) })
         } catch (error) {
           errors.push(error)
-          ctx.logger?.warn?.(`prompt-tool: 预设 ${id} 注册刷新失败：${String(error)}`)
+          ctx.logger?.warn?.(`prompt-tool: 预设 ${id} 登记失败：${String(error)}`)
         }
       }
-      if (errors.length > 0) throw new AggregateError(errors, `预设注册刷新失败：${errors.map(String).join('；')}`)
+      if (errors.length > 0) throw new AggregateError(errors, `预设登记刷新失败：${errors.map(String).join('；')}`)
     })
     // 保留当前调用的失败结果；下次刷新仍可重试。
     queue = turn.catch(() => {})
@@ -219,14 +88,15 @@ export function createPresetRegistrySync(ctx: Context, root: string): {
   }
   return {
     refresh,
-    owns: (id) => !closed && registrations.has(id),
+    // 身份判定按存储根，不按登记状态：登记只是一个空壳，用来让宿主找得到 id。
+    owns: (id) => !closed && presetDirExists(root, id),
     dispose: async () => {
       closed = true
       await queue
       const results = await Promise.allSettled([...registrations.values()].map((registration) => registration.dispose()))
       registrations.clear()
       const errors = results.filter((result) => result.status === 'rejected').map((result) => result.reason)
-      if (errors.length > 0) throw new AggregateError(errors, '预设注册释放失败')
+      if (errors.length > 0) throw new AggregateError(errors, '预设登记释放失败')
     },
   }
 }

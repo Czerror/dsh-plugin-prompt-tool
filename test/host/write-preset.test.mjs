@@ -63,7 +63,7 @@ test('writePreset 共享引擎：预设根不物化 .engine，组合引用插件
     assert.equal(existsSync(join(presetDir, 'agent.cordis.yml')), false, '预设根不再写容器根转发')
     // 组合路径重写：引擎行改引用包名说明符（预设包不再携带 engine/，旧 ./engine/ 与
     // ../.engine/ 都不再被识别）；configsDir 保持历史语义 `../<id>/...`
-    //（相对 <预设根>/.engine/ 解析 = 预设目录/prompt-configs），由 preset-registry 注册期换算。
+    //（相对 <预设根>/.engine/ 解析 = 预设目录/prompt-configs），由配装通道在挂载期换算。
     const sub = readFileSync(join(presetDir, 'fixture', 'agent.cordis.yml'), 'utf8')
     assert.doesNotMatch(sub, /name: ['"]?\.{1,2}\/\.?engine\//,
       '产物不得残留 ./engine/ 或 ../.engine/ 本地引用')
