@@ -11,7 +11,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { fileURLToPath, pathToFileURL } from 'node:url'
+import { fileURLToPath } from 'node:url'
 import { isolatedHome } from '../fixtures/host-harness.mjs'
 
 const { presetRoot } = isolatedHome('pt-assembly-')
@@ -90,38 +90,38 @@ test('装配切片逐条来自预设目录的字面量：层/位置/时机/次�
   }
 })
 
-test('受管字段路径换算与原注册层同基准：`.` 基准预设目录，`..` 基准历史引擎位置', async () => {
+test('受管字段一律解析到当前预设目录内：新写法 `./` 与历史写法 `../<id>/` 同结果', async () => {
   const id = 'managed-paths'
   const dir = join(presetRoot, id)
   writePreset(id, {
     modules: ['prompt-config-engine', 'tool-config-engine', 'declared-triggers', 'subagent-tool-policy'],
     moduleConfigs: {
-      // `.` 开头：基准是预设目录。
+      // 新形态：预设目录基准。
       'tool-config-engine': { configsDir: './custom-tools' },
-      // `..` 开头：基准是 `<预设根>/.engine/`，故必须带 id 段才落回预设目录内。
+      // 历史写法：相对历史引擎位置书写，必须仍解析到同一处。
       'declared-triggers': { triggersFile: `../${id}/triggers.yml` },
-      // 已写死的绝对 file URL：原样保留，不二次解析。
-      'subagent-tool-policy': { policyFile: pathToFileURL(join(dir, 'subagent-tools', 'policy.yml')).href },
+      // 历史写法（`../` 但不带 id 段）：落到预设根，引擎的越界校验负责拒绝。
+      'subagent-tool-policy': { policyFile: '../subagent-tools/policy.yml' },
     },
   })
   mkdirSync(join(dir, 'custom-tools'), { recursive: true })
   mkdirSync(join(dir, 'prompt-configs'), { recursive: true })
-  mkdirSync(join(dir, 'subagent-tools'), { recursive: true })
   writeFileSync(join(dir, 'triggers.yml'), '[]\n', 'utf8')
-  writeFileSync(join(dir, 'subagent-tools', 'policy.yml'), 'tools: {}\n', 'utf8')
 
   const prepared = await prepareAssembly(presetRoot, id, hasEveryService)
-  const configOf = (id) => prepared.modules.find((module) => module.id === id)?.config ?? {}
+  const configOf = (moduleId) => prepared.modules.find((module) => module.id === moduleId)?.config ?? {}
 
   const cases = [
     ['tool-config-engine', 'configsDir', join(dir, 'custom-tools')],
     ['declared-triggers', 'triggersFile', join(dir, 'triggers.yml')],
-    ['subagent-tool-policy', 'policyFile', join(dir, 'subagent-tools', 'policy.yml')],
+    // `../` 按 path.resolve 语义上溯一级：以预设目录为基准，落点是预设根下的兄弟路径
+    // ——`subagent-tool-policy` 组合源的缺省值就是这种形态。
+    ['subagent-tool-policy', 'policyFile', join(presetRoot, 'subagent-tools', 'policy.yml')],
   ]
-  for (const [id, field, expectedPath] of cases) {
-    const value = configOf(id)[field]
-    assert.equal(typeof value, 'string', `${id}.${field} 已换算`)
-    assert.equal(fileURLToPath(value), expectedPath, `${id}.${field} 指向预设目录内`)
+  for (const [moduleId, field, expectedPath] of cases) {
+    const value = configOf(moduleId)[field]
+    assert.equal(typeof value, 'string', `${moduleId}.${field} 已换算`)
+    assert.equal(fileURLToPath(value), expectedPath, `${moduleId}.${field} 的落点`)
   }
 })
 

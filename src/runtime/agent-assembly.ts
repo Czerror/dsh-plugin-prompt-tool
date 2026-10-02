@@ -15,7 +15,7 @@
  * 与官方挂载并存时不会重复：官方树里没有引擎行，引擎贡献只由本通道提供。
  */
 import { existsSync } from 'node:fs'
-import { dirname, join, resolve, sep } from 'node:path'
+import { join, resolve, sep } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import type { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
@@ -54,22 +54,24 @@ export interface AgentAssemblyOptions {
 }
 
 /**
- * 受管字段的路径换算，与原注册层的换算逐字对齐（`preset-registry.ts` 的 `absolutizeConfig`）：
- *   - 声明里的值按**历史引擎位置**（`<预设根>/.engine/`）书写，故 `..` 开头的值以该目录为基准；
- *   - `.` 开头的值以预设目录为基准；
- *   - 已是 `file:` URL 的值原样保留。
- * 证据：`ENGINE_MANAGED_PATHS` 的改写成 `../<id>/<相对路径>`（`preset-install.ts:102-107`）。
+ * 受管字段的路径换算：`configsDir` / `strategyDir` / `policyFile` / `triggersFile`
+ * 一律解析到**当前预设目录内的真实位置**——声明怎么写都按预设目录作基准，三种形态同结果：
+ *   - `./configs`（新形态）→ `<预设目录>/configs`；
+ *   - `../<id>/triggers.yml`（历史形态：`ENGINE_MANAGED_PATHS` 的改写成这样，语义是
+ *     「从历史引擎位置 `<预设根>/.engine/` 回到 `<预设根>/<id>/`」）→ `<预设目录>/triggers.yml`；
+ *   - `../subagent-tools/policy.yml`（引擎行**初值**形态，只有组合源这么写）→ 同样按预设目录，
+ *     落进该预设目录内——越出预设根的值由引擎自己的越界校验拒绝，不会被静默采信。
+ * 已是 `file:` URL 的值原样保留。
  */
 function absolutizeManagedFields(
   config: Record<string, unknown>, presetDir: string,
 ): Record<string, unknown> {
-  const engineBase = join(dirname(presetDir), '.engine')
   const out: Record<string, unknown> = { ...config }
   for (const field of MANAGED_FIELDS) {
     const value = out[field]
     if (typeof value !== 'string' || value.length === 0) continue
     if (value.startsWith('file:')) continue
-    out[field] = pathToFileURL(resolve(value.startsWith('.') ? presetDir : engineBase, value)).href
+    out[field] = pathToFileURL(resolve(presetDir, value)).href
   }
   return out
 }
