@@ -156,7 +156,6 @@ export const SkillsPage = memo(function SkillsPage(props: { store: PromptToolSto
               </button>
             ))}
           </div>
-          <button type="button" className={ui.pillButton} disabled={store.skillsBusy} onClick={() => void store.refreshSkills()}>{t('skills.refresh')}</button>
         </div>
       )}
 
@@ -291,7 +290,9 @@ export const SkillsPage = memo(function SkillsPage(props: { store: PromptToolSto
             className={ui.listFilter}
             compact
           />
-          <span className={ui.selectionCount} role="status">{t('skills.visible', { count: visible.length })}</span>
+          <span className={ui.skillFilterActions}>
+            <button type="button" className={ui.pillButton} disabled={store.skillsBusy} onClick={() => void store.refreshSkills()}>{t('skills.refresh')}</button>
+          </span>
         </div>
       )}
 

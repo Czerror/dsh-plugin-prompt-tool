@@ -110,9 +110,6 @@
   min-width: 0;
   grid-template-columns: repeat(4, minmax(0, 1fr));
 }
-.skillStatsRow > button {
-  flex: 0 0 auto;
-}
 .skillStats button {
   appearance: none;
   display: flex;
@@ -139,12 +136,18 @@
 .skillStatusUser { --chip: var(--dsw-alias-state-success-primary); }
 .skillStatusOff { --chip: var(--dsw-alias-label-secondary); }
 
-/* 已选计数（批量按钮旁）。 */
-.selectionCount {
+/* 过滤行内的刷新入口：紧跟来源下拉，与同行搜索框、下拉同高。 */
+.skillFilterActions {
+  display: flex;
   flex: 0 0 auto;
-  color: var(--dsw-alias-label-secondary);
-  font: 500 12px/18px system-ui, sans-serif;
-  font-variant-numeric: tabular-nums;
+  align-items: center;
+}
+.skillFilterActions button {
+  min-height: 28px;
+  padding: 0 12px;
+  border-radius: 14px;
+  corner-shape: round;
+  font: 12px/18px system-ui, sans-serif;
 }
 
 /* 卡片内部分隔（configForm 内的次级设置分区）。 */
