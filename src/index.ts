@@ -299,9 +299,10 @@ export function apply(ctx: Context, configIn: Config): void {
     // 模板专属策略目录：当前内置策略全部随引擎提供，自定义模板可经此注入。
     () => '',
     skillsRuntime.invalidate,
-    // 编辑目标目录：请求带 `x-module-id` 就定位那个模块，不带则回退启用表首项。
-    // 编辑器因此按配置卡自己的模块身份写盘，不依赖某个全局单选的目标。
-    (moduleId) => resolveEditDir(DEFAULT_PRESET_DIR, moduleId),
+    // 编辑目标目录：请求带 `x-module-id` 就定位那个模块；不带则维持原有语义
+    // （当前激活预设目录），启用表首项只在两者都拿不到时兜底。
+    // 这样客户端尚未带头的阶段行为不变，带头之后才切到按卡定位。
+    (moduleId) => resolveEditDir(DEFAULT_PRESET_DIR, moduleId) || activePresetDir(),
     async (scopes) => {
       // 内容导入后：批量更新运行时文本，单次重建生成目录（一次自动保存只重建一次）。
       for (const scope of scopes) {

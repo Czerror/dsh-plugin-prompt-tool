@@ -6,6 +6,7 @@ import type { PromptToolHostApi } from './host-api.ts'
 import type { PresetModuleFacts } from '../../shared/engine-capabilities.ts'
 import type { SkillCatalogEntry, SkillContentSnapshot, SkillPolicyChange } from '../../shared/skills.ts'
 import { bridgeCall, errorMessage, type BridgeResult, type BridgeSettingsView } from './bridge-client.ts'
+import { setEditTarget } from './bridge-transport.ts'
 import { requestSkillImport, type ConfirmSkillOverwrite } from './skill-import.ts'
 import { createSessionPresetFollower, type SessionPresetFollower } from './session-preset-follow.ts'
 import {
@@ -278,6 +279,9 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
   const fieldsListenersRef = useRef(new Set<() => void>())
   const publishFields = useCallback((next: Fields) => {
     fieldsRef.current = next
+    // 编辑目标随当前模块走：模块内的配置卡启停/编辑与模块级写盘都按这个身份定位
+    // （模块 id 唯一，复制必带 `-copy` 后缀）。这里是 fields 更新的唯一收口，故一处即可。
+    setEditTarget(next.presetTemplate)
     setFields(next)
     for (const listener of fieldsListenersRef.current) listener()
   }, [])

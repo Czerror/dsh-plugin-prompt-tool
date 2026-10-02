@@ -4,6 +4,7 @@ import type { HostDefaultModel, SkillCatalogEntry } from './prompt-tool-fields.t
 import type { PresetModuleFacts } from '../../shared/engine-capabilities.ts'
 import type { InstructionsSnapshot } from '../../shared/instructions.ts'
 import {
+  EDIT_TARGET_HEADER,
   MAX_BRIDGE_BODY_BYTES,
   SETTINGS_BRIDGE_PREFIX,
   type BridgeErrorPayload,
@@ -62,11 +63,29 @@ async function readBridgeResponse<T>(response: Response): Promise<BridgeResult<T
   return { ok: false, message: `invalid settings bridge payload (HTTP ${response.status})` }
 }
 
+/**
+ * 当前**编辑目标**（模块 id）。
+ *
+ * 同一身份路径：模块内的配置卡启停、编辑与模块级写盘都按它定位——模块 id 唯一
+ * （复制必带 `-copy` 后缀），加上卡自身的 id 就唯一确定一张配置卡。
+ * 未设置时不带该头，host 侧维持既有语义（当前激活预设目录）。
+ */
+let editTarget: string | undefined
+
+/** 由工作台在编辑目标变化时调用（来源：当前激活的模块）。 */
+export function setEditTarget(moduleId: string | undefined): void {
+  editTarget = moduleId !== undefined && moduleId.length > 0 ? moduleId : undefined
+}
+
+function editTargetHeader(): Record<string, string> {
+  return editTarget === undefined ? {} : { [EDIT_TARGET_HEADER]: editTarget }
+}
+
 export async function postBridge<T>(path: string, body: unknown): Promise<BridgeResult<T>> {
   try {
     const response = await fetch(SETTINGS_BRIDGE_PREFIX + path, {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      headers: { 'content-type': 'application/json', ...editTargetHeader() },
       body: JSON.stringify(body ?? {}),
     })
     return await readBridgeResponse<T>(response)
@@ -83,6 +102,7 @@ export async function uploadBridge<T>(path: string, file: Blob, fileName: string
       headers: {
         'content-type': file.type || 'application/octet-stream',
         'x-file-name': encodeURIComponent(fileName),
+        ...editTargetHeader(),
       },
       body: file,
     })
