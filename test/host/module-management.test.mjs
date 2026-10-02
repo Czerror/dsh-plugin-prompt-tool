@@ -203,3 +203,45 @@ test('普通模块之间的并入是往返且幂等的：重复并入不翻倍�
   assert.match(afterRemove, /id: own/, '目标模块自带内容必须保留')
   assert.match(afterRemove, /text: OWN/, '自带内容不得被移除波及')
 })
+
+test('module-enable：写启用表，不存在/非法载荷被拒且不落盘', async () => {
+  // 真值源是「模块页唯一改变装配范围的动作」这一契约：启用即写启用表，停用即摘除。
+  const { ctx, handlers } = makeHarness(undefined)
+  register(ctx, undefined)
+  const configFile = join(dirname(presetRoot), 'config.yml')
+  const readEnabled = () => readFileSync(configFile, 'utf8')
+
+  const id = 'enable-target'
+  writeModule(id)
+
+  // 主路径：启用 → 写进表；幂等重复启用不产生第二条。
+  const on = await call(handlers, 'moduleEnable', { id, enabled: true })
+  assert.equal(on.status, 200, on.message)
+  assert.deepEqual(on.value, { enabled: [id] })
+  assert.equal((readEnabled().match(new RegExp(`- ${id}$`, 'm')) ?? []).length, 1)
+  const again = await call(handlers, 'moduleEnable', { id, enabled: true })
+  assert.deepEqual(again.value, { enabled: [id] }, '重复启用幂等')
+
+  // 停用：从表里摘除；幂等重复停用不报错。
+  const off = await call(handlers, 'moduleEnable', { id, enabled: false })
+  assert.deepEqual(off.value, { enabled: [] })
+  assert.deepEqual((await call(handlers, 'moduleEnable', { id, enabled: false })).value, { enabled: [] }, '重复停用幂等')
+
+  // 拒绝路径一：缺 id。
+  const noId = await call(handlers, 'moduleEnable', { enabled: true })
+  assert.equal(noId.status, 400)
+  assert.equal(noId.code, 'preset-enable-rejected')
+
+  // 拒绝路径二：enabled 不是布尔值。
+  const badFlag = await call(handlers, 'moduleEnable', { id, enabled: 'yes' })
+  assert.equal(badFlag.status, 400)
+  assert.equal(badFlag.code, 'preset-enable-rejected')
+
+  // 拒绝路径三：启用一个磁盘上不存在的模块——写进表会让装配静默少装一个。
+  const before = readEnabled()
+  const missing = await call(handlers, 'moduleEnable', { id: 'no-such-module', enabled: true })
+  assert.equal(missing.status, 400)
+  assert.equal(missing.code, 'preset-enable-rejected')
+  assert.equal(readEnabled(), before, '被拒的启用不得改动启用表')
+  assert.deepEqual((await call(handlers, 'moduleEnable', { id, enabled: false })).value.enabled.includes('no-such-module'), false)
+})

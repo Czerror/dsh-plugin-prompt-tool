@@ -61,6 +61,7 @@ export const BRIDGE_ENDPOINTS = {
   moduleClone: '/module-clone',
   moduleDuplicate: '/module-duplicate',
   moduleOpen: '/module-open',
+  moduleEnable: '/module-enable',
   charactersImport: '/characters-import',
   charactersImportStream: '/characters-import-stream',
   charactersList: '/characters-list',
@@ -108,6 +109,8 @@ export interface PresetSummary {
   description?: string
   meta?: Record<string, unknown>
   broken?: string
+  /** 是否在存储根 `config.yml` 的启用表里（启用即参与运行时装配）。 */
+  enabled?: boolean
 }
 
 /**
@@ -186,6 +189,7 @@ export interface BridgeRequestMap {
   moduleClone: { id: string; autoSuffix?: boolean }
   moduleDuplicate: { id: string }
   moduleOpen: { id: string }
+  moduleEnable: { id: string; enabled: boolean }
   /** 角色卡 PNG/JSON/YAML 导入；预览不写角色库，提交必验版本，目标和选组均绑定预览。 */
   charactersImport: AssetImportRequest
   charactersImportStream: undefined
@@ -408,6 +412,7 @@ export interface BridgeValueMap {
   moduleClone: { id: string }
   moduleDuplicate: { id: string }
   moduleOpen: { path: string }
+  moduleEnable: { enabled: string[] }
   charactersImport: {
     id?: string
     name?: string

@@ -14,6 +14,8 @@ import { PARAM_KEYS } from '../config.ts'
 import { invalidateModelCatalog, listAdvertisedModels, peekModelCatalog, refreshModelReasoning, type ModelDetection } from './models.ts'
 import type { SkillCatalogEntry, SkillPolicyChange, SkillPolicyScope, SkillsCatalogSnapshot } from '../shared/skills.ts'
 import { listPromptConfigSpecs } from '../host/prompt-configs.ts'
+import { enabledModuleIds, setModuleEnabled } from '../host/config-store.ts'
+import { presetDirExists } from '../host/preset-registry.ts'
 import { readConfigFieldSources, stripConfigFieldSources } from '../shared/managed-config-fields.ts'
 import { readOfficialOrderSegments, type OfficialOrderLookup } from '../shared/official-orders.ts'
 import { validatePromptConfigs } from './configs-validate.ts'
@@ -626,8 +628,11 @@ export function registerSettingsBridge(
         const registry = sctx.get?.('agentPresets')
         const roster = registry === undefined ? [] : await registry.list()
         const diagnostics = new Map(roster.map(({ id, broken }) => [id, broken]))
+        // 启用表是「参与运行时装配」的唯一事实来源；随每个模块下发，UI 的开关据此显示。
+        const enabledSet = new Set(enabledModuleIds(userPresetsDir()))
         meta.presets = listPresets().map((preset) => ({
           ...preset,
+          enabled: enabledSet.has(preset.id),
           ...(diagnostics.get(preset.id) === undefined ? {} : { broken: diagnostics.get(preset.id) }),
         }))
         meta.builtinTemplates = listBuiltinTemplates()
@@ -2015,6 +2020,33 @@ export function registerSettingsBridge(
               return
             }
             writeBridgeJson(res, 200, { ok: true, value: { path: result.path } })
+          },
+        }),
+        sctx.webServer.register({
+          kind: 'exact',
+          path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.moduleEnable,
+          handler: async (req, res) => {
+            if (!guard(req, res)) return
+            const parsedBody = await readBridgeBodyForHandler(req, res)
+            if (parsedBody === undefined) return
+            const { body } = parsedBody
+            const record = (body ?? {}) as Record<string, unknown>
+            const id = typeof record.id === 'string' ? record.id.trim() : ''
+            if (id.length === 0) {
+              writeBridgeJson(res, 400, { ok: false, code: 'preset-enable-rejected', message: '缺少模块 id' })
+              return
+            }
+            if (typeof record.enabled !== 'boolean') {
+              writeBridgeJson(res, 400, { ok: false, code: 'preset-enable-rejected', message: 'enabled 必须是布尔值' })
+              return
+            }
+            // 只允许启用磁盘上真实存在的模块：启用表写进一个不存在的 id 会让装配静默少装一个。
+            if (record.enabled && !presetDirExists(userPresetsDir(), id)) {
+              writeBridgeJson(res, 400, { ok: false, code: 'preset-enable-rejected', message: `模块 ${id} 不存在` })
+              return
+            }
+            setModuleEnabled(userPresetsDir(), id, record.enabled)
+            writeBridgeJson(res, 200, { ok: true, value: { enabled: enabledModuleIds(userPresetsDir()) } })
           },
         }),
         // ---- 角色卡库：素材+参数独立存储，按需导入/移除当前预设 ----

@@ -234,9 +234,8 @@ const ZH_CORE = {
   'presetSwitcher.custom.detail': 'custom · 所有参数为空（空白起点，重名自动加序号）',
   'presetSwitcher.template.hint': '新建到用户目录：{id}',
   'presetSwitcher.card.blocked.hint': '模块不可渲染（缺模块清单/组合文件）：可删除后经「新建模块」从内置模板还原，或检查 module.yml',
-  'presetSwitcher.card.active.hint': '当前模块',
-  'presetSwitcher.card.switch.hint': '切换到 {name}',
-  'presetSwitcher.badge.active': '使用中',
+  'presetSwitcher.card.enable.hint': '启用 {name}：参与运行时装配',
+  'presetSwitcher.card.disable.hint': '停用 {name}：退出运行时装配',
   'presetSwitcher.blocked': '不可用',
   'presetSwitcher.duplicate.label': '复制模块',
   'presetSwitcher.duplicate.aria': '复制模块：{name}',
@@ -260,6 +259,9 @@ const ZH_CORE = {
   'presetSwitcher.notice.openFailed': '打开模块文件夹失败：{reason}',
   'presetSwitcher.notice.cloned': '已从内置模板新建模块 {id}',
   'presetSwitcher.notice.cloneFailed': '新建模块失败：{reason}',
+  'presetSwitcher.notice.enabled': '模块 {id} 已启用（参与运行时装配）',
+  'presetSwitcher.notice.disabled': '模块 {id} 已停用（退出运行时装配）',
+  'presetSwitcher.notice.enableFailed': '切换模块启用状态失败：{reason}',
 } as const
 
 /**
@@ -494,9 +496,8 @@ const EN_CORE: Record<keyof typeof ZH_CORE, string> = {
   'presetSwitcher.custom.detail': 'custom · every parameter empty (blank start, duplicate names get a suffix)',
   'presetSwitcher.template.hint': 'Create in the user directory: {id}',
   'presetSwitcher.card.blocked.hint': 'Module cannot be rendered (missing module list/composition files): delete it and restore a built-in template, or inspect module.yml',
-  'presetSwitcher.card.active.hint': 'Current module',
-  'presetSwitcher.card.switch.hint': 'Switch to {name}',
-  'presetSwitcher.badge.active': 'In use',
+  'presetSwitcher.card.enable.hint': 'Enable {name}: take part in runtime assembly',
+  'presetSwitcher.card.disable.hint': 'Disable {name}: leave runtime assembly',
   'presetSwitcher.blocked': 'Unavailable',
   'presetSwitcher.duplicate.label': 'Duplicate preset',
   'presetSwitcher.duplicate.aria': 'Duplicate preset: {name}',
@@ -520,6 +521,9 @@ const EN_CORE: Record<keyof typeof ZH_CORE, string> = {
   'presetSwitcher.notice.openFailed': 'Failed to open the module folder: {reason}',
   'presetSwitcher.notice.cloned': 'Created module {id} from a built-in template',
   'presetSwitcher.notice.cloneFailed': 'Failed to create the module: {reason}',
+  'presetSwitcher.notice.enabled': 'Module {id} enabled (takes part in runtime assembly)',
+  'presetSwitcher.notice.disabled': 'Module {id} disabled (leaves runtime assembly)',
+  'presetSwitcher.notice.enableFailed': 'Failed to toggle the module enable state: {reason}',
 }
 
 const ZH: Record<PromptToolLocaleKey, string> = { ...ZH_CORE, ...PARAMS_ZH, ...PROMPTS_ZH, ...CARDS_ZH, ...TRIGGERS_ZH }

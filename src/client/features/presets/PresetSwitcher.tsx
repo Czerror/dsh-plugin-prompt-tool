@@ -17,7 +17,6 @@ import { HintTooltip } from '../../ui/HintTooltip.tsx'
 import { ImportDialog } from '../../ui/ImportDialog.tsx'
 import { PresetExportDialog } from './PresetExportDialog.tsx'
 import { useImportPreviewFlow } from '../../data/use-import-preview-flow.ts'
-import { StatusBadge } from '../../ui/StatusBadge.tsx'
 import { Switch } from '../../ui/Switch.tsx'
 import sharedCss from '../../ui/controls.module.css'
 import featureCss from './presets.module.css'
@@ -106,6 +105,24 @@ export const PresetSwitcher = memo(function PresetSwitcher(props: { store: Promp
     }
   }
 
+  /**
+   * 启用/停用模块 = 改存储根 `config.yml` 的启用表。
+   *
+   * 启用即配装：打开 A、再打开 B 就是 A+B 的组合，追加 C 就是 A+B+C——每个模块各自
+   * 贡献自己的配置与参数，互不合并。这是模块页唯一改变装配范围的动作。
+   */
+  const setModuleEnabled = async (id: string, enabled: boolean): Promise<void> => {
+    const res = await bridgeCall('moduleEnable', { id, enabled })
+    if (res.ok) {
+      store.showNotice('ok', enabled
+        ? t('presetSwitcher.notice.enabled', { id })
+        : t('presetSwitcher.notice.disabled', { id }))
+      await store.load()
+    } else {
+      store.showNotice('error', t('presetSwitcher.notice.enableFailed', { reason: res.message ?? 'settings bridge unavailable' }))
+    }
+  }
+
   return (
     <div className={styles.rowGroup}>
       <div className={styles.settingRowStack}>
@@ -164,7 +181,6 @@ export const PresetSwitcher = memo(function PresetSwitcher(props: { store: Promp
         <div className={styles.moduleCardBody}>
           <span className={styles.presetCardHead}>
             <strong className={styles.presetCardName}>{preset.name}</strong>
-            {active && <StatusBadge className={styles.presetHeadBadge} tone="success" label={t('presetSwitcher.badge.active')} />}
             {blocked && <span className={styles.presetBlocked}>{t('presetSwitcher.blocked')}</span>}
           </span>
           {preset.description !== undefined && preset.description.length > 0
@@ -173,19 +189,17 @@ export const PresetSwitcher = memo(function PresetSwitcher(props: { store: Promp
           <code className={styles.presetCardId}>{preset.id}</code>
         </div>
         <span className={styles.presetCardFooter}>
-          <HintTooltip label={blocked
-            ? preset.broken ?? t('presetSwitcher.card.blocked.hint')
-            : active ? t('presetSwitcher.card.active.hint') : t('presetSwitcher.card.switch.hint', { name: preset.name })}>
-            {/* 「启用」= 滑动开关：开态即当前模块。关没有独立语义（预设身份只有一个值），
-                故当前模块的开关保持开态且不可点关闭，切换靠点亮别的卡。 */}
-            <Switch className={styles.presetActivate}
-              checked={active}
-              disabled={blocked || active}
-              label={blocked
-                ? preset.broken ?? t('presetSwitcher.card.blocked.hint')
-                : active ? t('presetSwitcher.card.active.hint') : t('presetSwitcher.card.switch.hint', { name: preset.name })}
-              onChange={() => store.setPresetTemplate(preset.id)} />
-          </HintTooltip>
+          {/* 滑动开关 = 启用表成员：开即参与运行时装配（N 个模块各贡献一份，互不合并）。
+              卡头不再放「使用中」徽章；编辑目标只由卡片边框高亮（data-active）表达。 */}
+          <Switch className={styles.presetActivate}
+            checked={preset.enabled === true}
+            disabled={blocked}
+            label={blocked
+              ? preset.broken ?? t('presetSwitcher.card.blocked.hint')
+              : preset.enabled === true
+                ? t('presetSwitcher.card.disable.hint', { name: preset.name })
+                : t('presetSwitcher.card.enable.hint', { name: preset.name })}
+            onChange={(next) => void setModuleEnabled(preset.id, next)} />
           <HintTooltip label={t('presetSwitcher.export')}>
             <button type="button" className={styles.presetIconButton}
               aria-label={t('presetSwitcher.export.aria', { name: preset.name })}
