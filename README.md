@@ -45,7 +45,7 @@ dsh --profile prompt-tool
 - 🧑‍🤝‍🧑 **消息受众三态**：`audience: main / subagent`，省略 `audience` 表示公用；身份类提示词可只注入子代理
 - 🗂️ **内容与执行分离**：每条提示词配置渲染为 `~/.dsh/.prompt-tool/modules/<预设>/configs/` 下的 yml，引擎按文件名数字前缀顺序扫描
 - 🧩 **三层合并**：引擎默认（按 params 生成）< 模板默认 promptConfigs < 预设 promptConfigs，同名 `id` 覆盖
-- 🖥️ **可拖动悬浮工作台入口**：工作台经官方 `shell.overlay` 渲染悬浮触发器与 body portal 抽屉；按钮可拖动、位置存插件自己的 localStorage、窗口变化自动夹回可见区（不读宿主布局树，已移除 `sidebar.footer.action` 几何探针）；六页（主会话/子代理/工具预览/技能设置/预设配置/角色管理）在抽屉内渲染，抽屉用 fixed + z-index 置顶，不被宿主导航栏遮挡
+- 🖥️ **可拖动悬浮工作台入口**：工作台经官方 `shell.overlay` 渲染悬浮触发器与 body portal 抽屉；按钮可拖动、位置存插件自己的 localStorage、窗口变化自动夹回可见区（不读宿主布局树，已移除 `sidebar.footer.action` 几何探针）；五页（主会话/子代理/工具预览/技能设置/模块）在抽屉内渲染，抽屉用 fixed + z-index 置顶，不被宿主导航栏遮挡
 - 🧪 **六种内容策略**：`static / first-turn-anchor / guide-auto / custom-fallback / placeholder / world-book`（world-book 支持 ST selectiveLogic 选择性触发：任一/副键全中/排除）
 - 🛡️ **失败不伤会话**：单条失败跳过 + `warnOnce`；配置错误挂载时 fail loud；`dedupe: session` 持久幂等
 - 🧭 **通用 instruction-hint 引擎**：所有预设都可通过 `strategy: placeholder` 与 `fill: instruction-hint` 提示指令文件存在；实现位于 `engine/instruction-hint.mjs`，不绑定任何预设；它的 plugin 形态（挂 `instruction-hint` 行并 `enabled: true`，即参数桥 `params.instructionHint`）按模型可见 surface 去重，重挂不重复，被压缩遮蔽后才再次提示
@@ -73,7 +73,7 @@ Web 客户端按四层组织：
 
 ```text
 src/client/
-├─ app/       # SlotRegistry owner、工作台壳与六页组合
+├─ app/       # SlotRegistry owner、工作台壳与五页组合
 ├─ data/      # typed bridge、Fields、状态 facade、保存与脏检测纯逻辑
 ├─ features/  # prompts / tools / subagents / skills / presets / characters
 └─ ui/        # 仅 props/callback 的共享交互与 CSS Modules
@@ -86,7 +86,7 @@ src/client/
 
 ### 配置卡与工具预览
 
-- 六页工作台保留搜索、展开和滚动位置；工具、人设、策略以及非法 JSON/数字输入可跨页继续编辑。存在未保存草稿时，预设切换会提示先处理，不会无声覆盖。
+- 五页工作台保留搜索、展开和滚动位置；工具、人设、策略以及非法 JSON/数字输入可跨页继续编辑。存在未保存草稿时，模块切换会提示先处理，不会无声覆盖。
 - 配置保存与校验位于长列表操作区，失败就近显示；低频卡片操作收进菜单，删除和丢弃文件草稿需明确确认。窄容器自动换行，键盘操作、明暗主题和减弱动效均沿用宿主规范。
 
 - 参数在模块列表的配置卡内编辑。引擎能力按实际 `modules` 装配显示，一项已装配能力一张卡，直接编辑自身参数；删除只移除该能力的模块声明。共享参数定义继续拥有字段、校验、默认草稿、保存快照和组合行映射。主／子代理模型保留专用配置卡。
@@ -202,7 +202,7 @@ UI / 写盘按上表分组；这是展示顺序，不是模型提示词优先级
 
 ## SillyTavern 导入
 
-工作台「预设配置」页按内容识别原生预设与 SillyTavern 来源；ST JSON/YAML 预设卡片经预览确认后，按注入层级映射为本地预设：
+工作台「模块」页按内容识别原生模块与 SillyTavern 来源；ST JSON/YAML 预设卡片经预览确认后，按注入层级映射为本地模块：
 
 - `prompts[]` → `promptConfigs`：system 角色进入 `system-section`，其余进入 `pre-step`；官方 `prompt_order[].order[]` 决定启停与相对顺序，深度位置保留来源并报告降级
 - 采样参数（`temperature` / `openai_max_tokens` / `reasoning_effort`）**剥离**——模型参数统一由「模型设置」UI / 宿主默认管理
@@ -215,11 +215,11 @@ UI / 写盘按上表分组；这是展示顺序，不是模型提示词优先级
 - 角色卡 `extensions.depth_prompt` 保留为一条**默认禁用**的 pre-step 配置（ST 只在群聊自动注入），可在工作台手动启用
 - `modules` 按需装配：`prompt-config-engine` 与上述 ST 管理工具始终存在；含 system-section 时补 `persona`（`complete: false` 允许 system 段生效）；含有效世界书条目时补 `world-book-tools`
 
-转换结果是一个普通预设（id 由文件名生成），可在工作台预设切换器中直接使用。字段级参数对照与完整示例见 [SillyTavern.md](docs/SillyTavern.md)。
+转换结果是一个普通模块（id 由文件名生成），可在工作台「模块」页的模块列表中直接启用。字段级参数对照与完整示例见 [SillyTavern.md](docs/SillyTavern.md)。
 
 ### 角色卡（PNG / JSON）与角色卡库
 
-工作台「角色管理」页导入角色卡到**角色卡库**（`~/.dsh/.prompt-tool/.characters/<id>/`）：
+工作台「模块」页的角色卡素材区把角色卡导入**角色卡库**（`~/.dsh/.prompt-tool/.characters/<id>/`）：
 
 - **PNG**：`ccv3` 优先 / `chara` 兜底；按魔数识别并受限解码，原始文件先暂存、预览确认后入库，保留原图。
 - **JSON／YAML**：支持 ST 角色数据和自包含原生角色片段。批次逐张预览，不把多份来源合并成一张角色卡；所有大小的文件都先预览再提交。
