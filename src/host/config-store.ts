@@ -14,6 +14,7 @@ import { existsSync, readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { isMap, parseDocument } from 'yaml'
 import { atomicWriteTextFile } from './text-file.ts'
+import { presetDirExists } from './preset-registry.ts'
 
 /** 启用表 schema：3 = `config.yml` 只有 `schemaVersion` 与 `enabled`。 */
 export const ENABLE_TABLE_SCHEMA = 3
@@ -73,6 +74,19 @@ function writeEnabled(presetRoot: string, ids: readonly string[]): void {
   doc.set('schemaVersion', ENABLE_TABLE_SCHEMA)
   doc.set('enabled', [...ids])
   atomicWriteTextFile(file, doc.toString())
+}
+
+/**
+ * 解析**编辑目标**模块目录：请求声明了目标就按它定位，没声明则回退启用表首项。
+ *
+ * 这是「按请求定位编辑目标」的唯一入口——编辑器不必依赖某个全局单选：写请求带上
+ * 模块 id 就写那个模块，不带则落到启用表第一项（= 装配顺序首项）。目标不存在时返回
+ * 空串，由调用方按「无目标」拒绝，不静默改写到别的模块。
+ */
+export function resolveEditDir(presetRoot: string, moduleId?: string): string {
+  const target = moduleId !== undefined && moduleId.trim().length > 0 ? moduleId.trim() : enabledModuleIds(presetRoot)[0]
+  if (target === undefined) return ''
+  return presetDirExists(presetRoot, target) ? join(presetRoot, target) : ''
 }
 
 /**
