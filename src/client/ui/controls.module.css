@@ -713,8 +713,18 @@
   background: transparent;
 }
 
-/* 列表过滤框（配置 / 技能）。 */
-.listFilterRow { display: flex; min-width: 0; align-items: center; gap: 8px; flex-wrap: wrap; }
+/* 列表过滤行：卡片包裹 + 单行布局（配置列表与技能列表共用），内含搜索框、视图／来源下拉与紧凑胶囊按钮。 */
+.listFilterRow {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 10px 14px;
+  border: 0.5px solid var(--dsw-alias-border-l2);
+  border-radius: 12px;
+  background: var(--dsw-alias-bg-layer-3);
+}
 .listFilter {
   width: 100%;
   min-width: 0;
@@ -906,9 +916,10 @@
 .previewLocation { display: block; font: 12px/18px system-ui, sans-serif; color: var(--dsw-alias-label-secondary); }
 
 /* 列表操作区高度由页面 owner 测量，短视口解除 sticky。 */
-.pageActions { position: sticky; top: 0; z-index: 1; isolation: isolate; display: flex; flex-direction: column; gap: 8px; min-width: 0; padding: 8px 0; background: Canvas; border-bottom: .5px solid var(--dsw-alias-border-l2); }
-/* 第三方主题可把表面设为透明：语义表面叠在系统不透明基底上，滚动正文不会透出。 */
-.pageActions::before { content: ''; position: absolute; inset: 0; z-index: -1; pointer-events: none; background: var(--dsw-alias-bg-layer-2, var(--dsw-alias-bg-base, Canvas)); }
+.pageActions { position: sticky; top: 0; z-index: 1; isolation: isolate; display: flex; flex-direction: column; gap: 8px; min-width: 0; padding: 8px 0; background: Canvas; }
+/* 第三方主题可把表面设为透明：语义表面叠在系统不透明基底上，滚动正文不会透出。
+   表面色取页面画布底色（不是更高的 bg-layer-2），吸顶区不再形成第二条可见背景带。 */
+.pageActions::before { content: ''; position: absolute; inset: 0; z-index: -1; pointer-events: none; background: var(--dsw-alias-bg-base, Canvas); }
 [data-sticky-disabled='true'] .pageActions { position: relative; top: auto; }
 .actionFeedback { min-width: 0; font: 12px/18px system-ui, sans-serif; overflow-wrap: anywhere; }
 .actionHint { margin: 0; color: var(--dsw-alias-label-secondary); font: 12px/18px system-ui, sans-serif; overflow-wrap: anywhere; }

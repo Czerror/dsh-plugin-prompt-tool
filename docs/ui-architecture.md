@@ -311,7 +311,7 @@ workspace-pages.ts 是页面元数据的唯一来源。默认页为 features，�
 - destructive action：配置、能力、预设、角色库删除以及丢弃文件草稿使用 ConfirmDialog；取消先聚焦、请求中防重复提交，失败保留确认面，关闭后还焦。危险按钮统一为「描边染红」形态（`.pillButton[data-danger]`：透明底 + error 混色的文字与描边），确认按钮与取消按钮是同一个 `.pillButton` 胶囊（尺寸、圆角、字号一致），只以 `data-danger` 区分主次；所有删除入口共用该组件，外观不各走一套。
 - 长路径与名称允许换行或在展开区提供完整可选择文本，不以原生 title 作为唯一读取入口。
 - 配置操作区与列表共用 canvas 滚动根，sticky 高度由自身 ResizeObserver 测量；短视口退回普通流，焦点与定位避开操作区。
-- 吸顶操作区用系统Canvas作为不透明基底，其上叠宿主语义表面；第三方主题将背景设为透明/半透明或省略变量时，正文仍不会透出。
+- 吸顶操作区用系统Canvas作为不透明基底，其上叠页面画布语义底色（`bg-base`）：与画布同色，不再形成第二条可见背景带；第三方主题将背景设为透明/半透明或省略变量时，正文仍不会透出。
 
 ## 6. 状态与数据流
 
@@ -477,6 +477,7 @@ ui/ 只接收 props/callback，当前真实共享 seam 包括：
 - ImportPreviewCard：导入预览卡，展示服务端同源转换报告与有损信息（warning/info/被排除条目各自滚动容器）；预设包与角色卡 JSON 两处入口共用。
 - reveal-card.ts：创建后的滚动定位与重试，层设置区与配置卡共用。
 - MenuSelect：封装自有 Menu 的单选胶囊；支持连续选项的 `group` 分组标题。标准设置使用 36px；模块卡内与列表过滤行（`listFilterRow`，与 32px 搜索框、紧凑胶囊按钮同行）使用 28px 紧凑形态，浮层统一 portal。
+- 列表过滤行：配置列表与技能列表共用 `.listFilterRow` 的卡片包裹（0.5px 边框、12px 圆角、`bg-layer-3`），内放搜索框、视图／来源下拉与紧凑胶囊按钮；吸顶工具条自身只画与画布同色的不透明基底，不叠第二条背景。
 - CollapsibleCard、EngineModuleCard：具体可复用的折叠/模块卡形态，不是万能 Card。
 - StatusDot：6px实心状态点与3px柔和静态光晕，含success/neutral/danger/warning，语义由相邻文字表达，不使用循环动画。
 - StatusBadge：StatusDot 与自有胶囊；tone 同时驱动两者颜色，技能卡、工具预览、模块「使用中」与角色卡「已导入当前模块」共用。
