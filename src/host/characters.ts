@@ -106,7 +106,7 @@ export function projectCharacterMemories(
     if (cardId === undefined) continue
     // 原生卡定义的同名普通配置是独立内容，不按 ID 猜作记忆。
     if (presetRoot !== undefined && validCardId(cardId)) {
-      const original = loadConverted(cardDir(presetRoot, cardId))
+      const original = loadImportSource(presetRoot, cardId)
       if (original?.promptConfigs?.some(entry => isRecord(entry) && importPrefixes(cardId).some(base => `${base}${String(entry.id)}` === id))) continue
       const memory = original === undefined ? undefined : buildCharacterMemoryEntry(original, readCharacterMemory(presetRoot, cardId))
       if (memory !== undefined && contentHash({ ...memory, id }) === contentHash(config)) { excluded.add(index); continue }
@@ -206,7 +206,7 @@ function modulesClaimedByOtherCards(
   }
   for (const id of importedCards) {
     if (id === cardId || !validCardId(id)) continue
-    const spec = loadConverted(cardDir(presetRoot, id))
+    const spec = loadImportSource(presetRoot, id)
     if (spec === undefined) continue
     for (const module of declaredCharacterModules(spec)) claimed.add(module)
   }
@@ -229,7 +229,7 @@ export function syncImportedCharacterMemory(
   if (!validCardId(cardId)) return { ok: false, message: `非法角色卡 id：${cardId}` }
   let synced = false
   try {
-    const spec = loadConverted(cardDir(presetRoot, cardId))
+    const spec = loadImportSource(presetRoot, cardId)
     if (spec === undefined) return { ok: false, message: `角色卡 ${cardId} 不存在或参数损坏` }
     const memory = readCharacterMemory(presetRoot, cardId)
     withPresetDoc(join(presetRoot, templateName), (doc) => {
@@ -282,13 +282,31 @@ function cardDir(presetRoot: string, id: string): string {
   return join(charactersDir(presetRoot), id)
 }
 
-function loadConverted(dir: string): PresetSpec | undefined {
-  const file = join(dir, 'converted.yml')
+/** 读一个 PresetSpec 形状的定义文件（`converted.yml` 与 `module.yml` 同构）。 */
+function loadSpecFile(file: string): PresetSpec | undefined {
   assertNoLinks(file)
   if (!presetPathExists(file)) return undefined
   const parsed = parseYaml(readFileSync(file, 'utf8'), { logLevel: 'silent' })
   if (!isRecord(parsed)) throw new Error(`角色定义不是对象：${file}`)
   return parsed as unknown as PresetSpec
+}
+
+function loadConverted(dir: string): PresetSpec | undefined {
+  return loadSpecFile(join(dir, 'converted.yml'))
+}
+
+/**
+ * 并入与移除的**源**：模块优先（`<模块根>/<id>/module.yml`），回退角色卡库
+ * （`.characters/<id>/converted.yml`）。
+ *
+ * 模块是统一身份——并入因此成为**模块间**能力，而不是只为角色卡存在的一套；
+ * 角色卡库保留为素材来源与历史形态，所以仍作回退，已有卡片不迁移。
+ * 一个入口、一套前缀（`module-<id>-`），不另立第二套机制。
+ */
+function loadImportSource(presetRoot: string, id: string): PresetSpec | undefined {
+  const moduleFile = join(presetRoot, id, MODULE_DEFINITION_FILE)
+  if (presetPathExists(moduleFile)) return loadSpecFile(moduleFile)
+  return loadConverted(cardDir(presetRoot, id))
 }
 
 /** 追加角色卡本地记忆（.characters/<id>/memory.md，跟随角色卡跨预设）。 */
@@ -543,7 +561,7 @@ export function applyCharacterToPreset(
   // persona.complete = false 语义对齐）。
   let personaOpened = false
   try {
-    const spec = loadConverted(cardDir(presetRoot, cardId))
+    const spec = loadImportSource(presetRoot, cardId)
     if (spec === undefined) return { ok: false, message: `角色卡 ${cardId} 不存在或参数损坏` }
     validateCharacterSpec(spec)
     const hasSystemSections = (spec.promptConfigs ?? []).some(config => isRecord(config) && config.layer === 'system-section')
@@ -626,7 +644,7 @@ export function removeCharacterFromPreset(
   if (!validCardId(cardId)) return { ok: false, message: `非法角色卡 id：${cardId}` }
   const prefixes = importPrefixes(cardId)
   try {
-    const spec = loadConverted(cardDir(presetRoot, cardId))
+    const spec = loadImportSource(presetRoot, cardId)
     let removed = 0
     withPresetDoc(join(presetRoot, templateName), (doc) => {
       const current = doc.toJS() as { promptConfigs?: unknown[]; meta?: { importedCharacters?: unknown[] } }

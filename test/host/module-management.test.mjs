@@ -11,7 +11,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { join, dirname } from 'node:path'
 import { fakeReq, fakeRes, isolatedHome } from '../fixtures/host-harness.mjs'
 
 // 隔离 HOME 必须在动态 import 之前（仓库约定，见 host-harness 注释）。
@@ -145,4 +145,29 @@ test('导出：不存在的模块被拒，不回传任何定义内容', async ()
   assert.equal(result.status, 400, result.message)
   assert.equal(result.ok, false)
   assert.equal(result.value, undefined, '失败载荷不得携带定义内容')
+})
+
+test('并入的源模块优先：同名模块与角色卡并存时取模块定义', async () => {
+  const characters = await import('../../src/host/characters.ts')
+  const id = 'dual-source'
+  // 模块源：modules/<id>/module.yml
+  mkdirSync(join(presetRoot, id), { recursive: true })
+  writeFileSync(join(presetRoot, id, 'module.yml'), `id: ${id}\nname: 模块源\nmodules: []\npromptConfigs:\n  - id: intro\n    strategy: static\n    layer: system-section\n    text: FROM-MODULE\n`, 'utf8')
+  // 同名角色卡源：存储根下的 .characters/<id>/converted.yml（与模块根同级）
+  const legacyDir = join(dirname(presetRoot), '.characters', id)
+  mkdirSync(legacyDir, { recursive: true })
+  writeFileSync(join(legacyDir, 'converted.yml'), JSON.stringify({
+    id, name: '卡片源',
+    promptConfigs: [{ id: 'intro', strategy: 'static', layer: 'system-section', text: 'FROM-CARD' }],
+  }), 'utf8')
+  // 目标模块
+  mkdirSync(join(presetRoot, 'target'), { recursive: true })
+  writeFileSync(join(presetRoot, 'target', 'module.yml'), 'id: target\nname: Target\nmodules: []\n', 'utf8')
+
+  const applied = characters.applyCharacterToPreset(presetRoot, 'target', id)
+  assert.equal(applied.ok, true, applied.message)
+  const written = readFileSync(join(presetRoot, 'target', 'module.yml'), 'utf8')
+  assert.match(written, /FROM-MODULE/, '并入必须取模块定义（模块优先）')
+  assert.doesNotMatch(written, /FROM-CARD/, '不得取同名的角色卡定义')
+  assert.match(written, new RegExp(`module-${id}-intro`), '条目 id 用统一前缀')
 })
