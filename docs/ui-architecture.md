@@ -108,6 +108,7 @@
     │  ├─ session-model-face.ts
     │  ├─ session-preset-face.ts
     │  ├─ use-import-preview-flow.ts
+    │  ├─ use-module-config-order.ts
     │  ├─ use-prompt-tool-fields.ts
     │  ├─ use-prompt-tool-store.ts
     │  └─ workspace-drafts.ts
@@ -121,7 +122,6 @@
     │  ├─ modules/
     │  │  ├─ EngineModuleList.tsx
     │  │  ├─ EngineParamFields.tsx
-    │  │  ├─ ModuleConfigOrderCard.tsx
     │  │  └─ ModulesPage.tsx
     │  ├─ persona/
     │  │  └─ PresetPersonaCard.tsx
@@ -281,11 +281,13 @@ workspace-pages.ts 是页面元数据的唯一来源。默认页为 features，�
 | subagent | 子代理 | 同一 `engineLayerSlots(audience: 'subagent')`、顶部九层模板菜单与各层内创建入口、ConfigListWithTemplates（scope=subagent）；引擎设置同样嵌在该层实例卡内 |
 | tools | 工具预览 | 顶置统一搜索；当前会话／所选预设两个可折叠分组，预设选择位于分组标题右侧；双列展开详情卡，680px 以下单列 |
 | skills | 技能设置 | 技能根与资产卡（用户技能根、创建、复制导入、技能文件夹引用）、状态与来源筛选、按来源分组的 SkillRow（三行摘要、文件编辑、调用策略开关、删除） |
-| modules | 模块 | 模块列表（启用、新建、复制、导出、删除、打开目录、导入）、运行总闸、已启用配置排序，以及角色卡素材区（导入、并入当前模块、移除、删除） |
+| modules | 模块 | 模块列表（启用、新建、复制、导出、删除、打开目录、导入）、运行总闸，以及角色卡素材区（导入、并入当前模块、移除、删除） |
 
 模块页由原「预设配置」页与「角色管理」页合并而成（页 id 从 `presets`/`characters` 收敛为 `modules`）：模块既是载体也是库成员，列表、导入、并入、移除、删除与新建/复制/导出属于同一件事。**卡片形态只有一种**——卡体（`.moduleCardBody`）只承载名称、描述、id 与状态徽章，没有点击语义；动作全部在卡脚（`.presetCardFooter`）的胶囊与图标按钮上，启用是其中一枚胶囊。删除守卫按「是否仍在别处生效」判定：当前模块的删除按钮禁用（先切换），已并入当前模块的角色卡删除按钮同样禁用（先从模块移除），两处禁用都带原因提示。数据源不强行统一：模块列表读工作台 store 的 `meta.presets`，角色卡读 `charactersList` 端点 + 页内状态，为「看起来一致」把角色卡搬进 store 不换算。
 
-“已启用配置排序”复用折叠卡与现有列表控件，按插入点、位置直接分组，支持跨模块拖拽及上移／下移键盘替代。只提交模块 ID＋配置 ID 列表与版本，不编辑正文或任意序号；自动保存失败保留当前顺序，显式刷新可重新读取。普通配置列表移动复用同一端点，交换自己原有的槽位。纯移动算法位于 `data/prompt-config-order.ts`，两个 feature 不互相导入内部实现。
+排序只在主会话与子代理的 `PromptConfigList` 内呈现，模块页不另设排序区。列表范围默认为“当前模块”，保留原有编辑与本模块排序；“跨模块排序”复用同一卡片、筛选、拖拽和上下移入口，显示已启用模块的配置摘要及所属模块，按当前受众和世界书策略筛选。跨模块只交换同插入点、位置与官方 order 档位中的可见配置，隐藏条目的槽位不变；同名卡以模块 ID＋配置 ID 区分。摘要不提供正文编辑、复制、删除或启停，不进入配置验证和正文保存通道。
+
+进入跨模块范围前等待当前模块保存队列，复用模块切换的草稿守卫；未完成的字段、工具等草稿阻止切换，指令文件草稿不隐式保存。跨模块排序由 `data/use-module-config-order.ts` 读取和自动保存，仅提交完整身份列表与版本；保存成功同步当前模块 store，返回当前模块也等待重新读取。失败保留排序草稿与提示，显式刷新可丢弃草稿重读；页面卸载或编辑目标变化后，迟到响应不再更新旧列表。纯移动算法位于 `data/prompt-config-order.ts`。
 
 预设人设卡（`features/persona/PresetPersonaCard.tsx`）编辑 module.yml 顶层 `persona` 段的四个可编辑项：`prefix`、`suffix`，以及 `complete`（独占）与 `includeRuntimeContext`（动态运行时上下文）两个开关（后者默认开启）。读写都走 `/persona`，写由 host 校验并原子写盘；`complete` 与提示词配置的「独占」互斥，由 bridge 在写盘前 fail loud。卡头 meta 区分「存在 persona 段」与「继承预设」——空对象 `{}` 也算存在，不等于有实际内容。四项均未改动时保存落成删除语义（不带 persona 写盘）；二次确认的移除入口只在 persona 段已存在时渲染。它只在主会话页出现，不在子代理页渲染。
 
@@ -367,6 +369,7 @@ use-prompt-tool-store.ts 是唯一工作台 facade，负责把 ConfigForms mirro
 | param-overrides.ts | params 的列表拆分、条件发送和读回 patch |
 | prompt-config-content.ts | preset.md 内容资产的提升与剥离；AGENTS 文件卡（`params.file`）的正文提升与文件写回分流 |
 | prompt-config-order.ts | 配置视图内的移动算法；普通列表与跨模块排序共同复用 |
+| use-module-config-order.ts | 跨模块排序摘要、版本读写与请求生命周期；只由现有配置列表消费 |
 | save-queue.ts | 串行保存任务的最小队列 |
 | import-files.ts | 浏览器文件导入的纯读取辅助 |
 | use-import-preview-flow.ts | 导入的预览→确认→提交流程状态机（预设包与角色卡共用） |
@@ -462,7 +465,7 @@ feature 只拥有自己的视图、瞬时状态、领域纯 helper 和 CSS：
 | prompts | 六层配置卡、字段策略、排序、模板插入、变量编辑和内容配置；世界书只读诊断卡 |
 | persona | module.yml 顶层 persona 段的编辑卡；prefix/suffix 与 complete 互斥校验，写盘经 host 校验与重建 |
 | models | 当前预设的主/子代理模型路由卡；模型下拉展示完整目录并按服务商分组，选择模型时内部回写 provider + model，不提供独立服务商选择控件 |
-| modules | 模块页与跨模块配置排序；引擎能力身份、存在性判定及「本层引擎设置」内容装配；消费 `/bootstrap.moduleFacts`，其中 `subagentToolPolicyEnabled` 区分插件策略与宿主委派 |
+| modules | 模块页管理；引擎能力身份、存在性判定及「本层引擎设置」内容装配；消费 `/bootstrap.moduleFacts`，其中 `subagentToolPolicyEnabled` 区分插件策略与宿主委派 |
 | subagents | 委派工具、实例级工具策略草稿及策略解析预览；不重复嵌入工具面 |
 | tools | 自定义工具编辑/保存、参数模板；独立工具预览页与只读工具面 |
 | skills | 按官方六类技能根分组展示清单、来源与遮蔽判定、调用策略开关、宿主目录选择导入与引用、创建、回收站删除；契约见 [skills-management.md](skills-management.md) |
@@ -501,7 +504,7 @@ fieldset 禁用时 MenuSelect 同时拒绝 portal 中的选择。Tooltip 的键�
 
 菜单失焦通过relatedTarget识别自己的触发器/portal条目，跨React portal的焦点归属在下一帧复核；不在focusout微任务中先卸载菜单，以免真实鼠标的click丢失。该回归使用原生pointer按下/抬起，不能仅用element.click代替。
 
-卡头自然增高，compact纯开关卡用静态标题；操作区与展开按钮互为兄弟。多项低频操作收进Menu，保留上移/下移点击及键盘替代。层内排序限于同一插入点和当前策略/受众集合，搜索时暂停排序。数字和JSON错误原文跨折叠/切页保留，原生输入允许粘贴；指令卡自己的portal焦点移动不视为离卡写盘。
+卡头自然增高，compact纯开关卡用静态标题；操作区与展开按钮互为兄弟。可排序配置卡沿用原模块页的 `dragHandle` 原生按钮：`⋮⋮` 图标、28px 尺寸、8px 圆角，卡片悬停时使用共享主题色，粗指针目标44px。按钮支持拖拽与上下方向键；搜索或保存期间禁用排序但保留按钮。多项低频操作收进Menu，保留上移/下移点击。层内排序限于同一插入点和当前策略/受众集合，跨模块还保持位置和官方档位边界。数字和JSON错误原文跨折叠/切页保留，原生输入允许粘贴；指令卡自己的portal焦点移动不视为离卡写盘。
 
 技能卡复用 `configCard/configToggle/configForm`，收起摘要固定三行：名称与状态、单行描述、来源路径与弱化优先级文字。描述、名称和路径超长省略；来源类别由分组标题承载，可调用状态保留绿色圆点与胶囊。展开区不重复名称、描述和路径，从调用开关开始；开关组没有胶囊边框或背景，模型/用户名称位于各自开关上方。底部操作按保存、重新读取、删除排列；删除靠右，窄容器自动换行而不压缩按钮。可编辑来源展开后惰性读取描述与 Markdown 正文，正文输入排除 YAML frontmatter 和头部后的分隔空行；显式保存携带完整文件版本，服务端保留原有名称、调用策略、注释与未知字段。读取失败禁用未加载的编辑器，保存失败保留草稿，重新读取脏草稿需确认。草稿与展开状态按会话和文件身份保存在工作台，跨折叠、筛选及切页保留，隐藏区域不进入键盘顺序。
 

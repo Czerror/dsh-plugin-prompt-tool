@@ -48,7 +48,7 @@ promptConfigs:
 - **官方定位**：`system-section` 与 `runtime-context` 仍把 `order` 交给官方注册接口。默认注册名包含配置序号，使同一官方 `order` 下的模块配置可按该序号打破平局；显式 `sectionName` / `contextName` 保留其名字，继续遵循官方同 `order` 按名称比较的规则。
 - **独立消费**：没有模块来源的独立引擎与触发器保留原有 `order` 行为；ST 世界书使用的候选预算／优先级语义也不因拖拽改写。配置序号不建立跨插入点的全局生命周期。
 
-模块页排序与普通卡片移动都通过 `/module-config-order` 提交身份列表与版本；后者只交换自身原槽位。排序不会改写正文、官方定位 `order` 或世界书语义。详见 [ADR-0006](adr/0006-module-config-order.md)。
+主会话与子代理的配置列表在“当前模块”和“跨模块排序”范围共用 `/module-config-order`；前者只交换自身原槽位，后者在同插入点、位置与官方档位内交换当前受众可见的槽位，均只提交完整身份列表与版本。排序不会改写正文、官方定位 `order` 或世界书语义。详见 [ADR-0006](adr/0006-module-config-order.md)。
 
 **刻度来源**：区段边界由 `/meta` 与 `/bootstrap` 运行时下发，数值取官方 `getSectionOrder(name)` / `getContextOrder(name)`。任一档位无法求值即整表降级。`src/shared/official-orders.ts` 的名字分组对应 `0.2.0-rc.1`（section 32 项 / context 3 项，不含已移除的 TOOL_CORDIS）；数值不硬编码。快捷入口使用 `from - 1` 插入区段之前，避免同 order 时按名称排序落到官方段之后；末项使用 `max(to) + 1`。
 

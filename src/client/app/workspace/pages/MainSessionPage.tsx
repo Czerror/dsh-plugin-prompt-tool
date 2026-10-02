@@ -1,6 +1,7 @@
 import { memo, useCallback, useState, type ReactNode } from 'react'
 import type { PromptToolStore } from '../../../data/use-prompt-tool-store.ts'
 import { usePromptToolFields } from '../../../data/use-prompt-tool-fields.ts'
+import { EMPTY_FIELDS } from '../../../data/prompt-tool-fields.ts'
 import type { PromptToolTranslate } from '../../../locales.ts'
 import { PromptConfigsEditor } from '../../../features/prompts/PromptConfigsEditor.tsx'
 import { useTemplatePicker } from '../../../features/prompts/useTemplatePicker.ts'
@@ -103,6 +104,8 @@ export const MainSessionPage = memo(function MainSessionPage(props: { store: Pro
         createdConfigId={picker.createdConfigId}
         onPatchConfigs={patchConfigs}
         onSaveConfigs={saveConfigs}
+        onPrepareOrder={store.saveCurrentModuleDrafts}
+        onReloadConfigs={async () => await store.load() !== EMPTY_FIELDS}
         onSaveInstructions={store.persistInstructionFiles}
         instructionPolicy={store.instructionPolicy}
         onSaveInstructionFile={saveInstructionFile}

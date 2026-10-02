@@ -144,6 +144,8 @@ export interface PromptToolStore {
   saveTemplateVariables: (next?: Record<string, string>, enabled?: boolean) => Promise<boolean>
   toggle: (key: SwitchKey) => void
   setPresetTemplate: (id: string) => void
+  /** 切换模块或进入跨模块排序前，等待保存并保护尚未提交的字段草稿。 */
+  saveCurrentModuleDrafts: () => Promise<boolean>
   createEngineCapability: (action: 'create' | 'create-recipe', id: string) => Promise<boolean>
   removeEngineCapability: (id: string) => Promise<boolean>
   /** 从宿主机目录复制导入到用户技能根。 */
@@ -953,12 +955,10 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
     else void persistSwitches()
   }, [patch, persistParamOverrides, persistSwitches, load])
 
-  /** 切换编辑目标：先保存原模块，再按请求头读取新模块；不改变会话预设或启用集合。 */
-  const setPresetTemplate = useCallback(async (id: string): Promise<void> => {
-    if (fieldsRef.current.presetTemplate === id) return
+  const saveCurrentModuleDrafts = useCallback(async (): Promise<boolean> => {
     if (hasWorkspaceDrafts(editorDrafts, fieldsRef.current.presetTemplate)) {
       showNotice('error', '当前模块仍有未保存的规则、工具、人设、策略或字段草稿，请返回对应页面保存或修正后再切换')
-      return
+      return false
     }
     await presetSaveQueueRef.current.enqueue(async () => {})
     // 切换即保存：模块列表有未保存的提示词配置修改时先提交（写当前激活模块），
@@ -971,13 +971,19 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
       const savedDraft = await persistConfigs(fieldsRef.current.promptConfigs, { reload: false, includeInstructions: false })
       if (!savedDraft) {
         showNotice('error', '当前模块的提示词配置未保存成功，已取消切换')
-        return
+        return false
       }
     }
+    return true
+  }, [editorDrafts, persistConfigs, showNotice])
+
+  /** 切换编辑目标：先保存原模块，再按请求头读取新模块；不改变会话预设或启用集合。 */
+  const setPresetTemplate = useCallback(async (id: string): Promise<void> => {
+    if (fieldsRef.current.presetTemplate === id || !await saveCurrentModuleDrafts()) return
     patch({ presetTemplate: id })
     // 新数据应用前保留现有loadedModule守卫，旧草稿不能写入新目标。
     await load({ silent: true })
-  }, [editorDrafts, load, patch, persistConfigs, showNotice])
+  }, [load, patch, saveCurrentModuleDrafts])
 
   /** 能力变更和参数保存共用队列；模块切换等待写入及其读回完成。 */
   const changeEngineCapability = useCallback((action: 'create' | 'create-recipe' | 'remove', id: string): Promise<boolean> => {
@@ -1184,6 +1190,7 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
     saveTemplateVariables,
     toggle,
     setPresetTemplate,
+    saveCurrentModuleDrafts,
     createEngineCapability,
     removeEngineCapability,
     importSkillsDirectory,

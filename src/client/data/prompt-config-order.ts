@@ -1,4 +1,21 @@
 import type { PromptConfigDraft } from '../prompt-tool-types.ts'
+import { configIdentityKey, type ModuleConfigOrderEntry } from '../../shared/module-config-order.ts'
+
+/** 只供跨模块排序视图使用：同名配置用完整身份区分，摘要不进入正文保存通道。 */
+export function moduleOrderConfigs(entries: readonly ModuleConfigOrderEntry[]): PromptConfigDraft[] {
+  return entries.map(entry => ({
+    id: configIdentityKey(entry), name: entry.name, enabled: entry.enabled,
+    layer: entry.layer, position: entry.position, order: entry.order, sequence: entry.sequence,
+    audience: entry.audience, strategy: entry.strategy,
+  }))
+}
+
+/** 跨模块只交换同插入点、位置与官方档位中的可见槽位。 */
+export function sameConfigPosition(left: PromptConfigDraft, right: PromptConfigDraft): boolean {
+  return promptConfigLayer(left) === promptConfigLayer(right)
+    && (left.position ?? 'after-user') === (right.position ?? 'after-user')
+    && (!(left.layer === 'system-section' || left.layer === 'runtime-context') || (left.order ?? 0) === (right.order ?? 0))
+}
 
 export const promptConfigLayer = (config: PromptConfigDraft): string => config.layer ?? 'pre-step'
 export const promptConfigViewOrder = (config: PromptConfigDraft): number =>

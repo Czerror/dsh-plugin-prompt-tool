@@ -1,5 +1,5 @@
 /** 「模块」页：模块的列表与管理（切换 / 新建 / 复制 / 导出 / 删除 / 打开目录 / 导入）+
- *  生成开关与顺序 + 角色卡素材（并入当前模块 / 移除）。
+ *  运行总闸 + 角色卡素材（并入当前模块 / 移除）。
  *
  *  这一页由原来的「模块配置」页与「角色管理」页合并而成：模块统一了载体与库成员两种身份，
  *  所以列表、导入、并入、移除、删除与新建/复制/导出属于同一件事，不再分成两页两套列表。
@@ -13,7 +13,6 @@ import { usePromptToolFields } from '../../data/use-prompt-tool-fields.ts'
 import { PresetSwitcher } from '../presets/PresetSwitcher.tsx'
 import { CharactersPage } from '../characters/CharactersPage.tsx'
 import { ToggleRow } from '../../ui/ToggleRow.tsx'
-import { ModuleConfigOrderCard } from './ModuleConfigOrderCard.tsx'
 import sharedCss from '../../ui/controls.module.css'
 import featureCss from '../presets/presets.module.css'
 
@@ -36,7 +35,6 @@ export const ModulesPage = memo(function ModulesPage(
             checked={fields.writePreset} onChange={() => store.toggle('writePreset')} />
         </div>
       </section>
-      <ModuleConfigOrderCard store={store} t={t} />
       <CharactersPage store={store} t={t} onReady={props.onReady} />
     </>
   )

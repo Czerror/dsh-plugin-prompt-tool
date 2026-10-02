@@ -10,6 +10,8 @@ export interface ModuleConfigOrderEntry extends ModuleConfigIdentity {
   position: string
   sequence: number
   enabled: boolean
+  audience?: 'main' | 'subagent' | null
+  strategy?: string
   /** 官方文本层的定位档位；其他层不使用。 */
   order?: number
 }

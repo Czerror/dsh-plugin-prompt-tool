@@ -488,7 +488,8 @@
   user-select: none;
 }
 
-.skillCard:hover .dragHandle {
+.skillCard:hover .dragHandle,
+.configCard:hover .dragHandle {
   color: var(--dsw-alias-label-primary);
   background: var(--dsw-alias-interactive-bg-hover);
 }

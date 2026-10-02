@@ -74,6 +74,7 @@ function readInput(root: string, moduleId: string): ModuleOrderInput {
     const sequence = saved[card.id] ?? files.get(card.id)?.sequence ?? index * 10
     if (!Number.isSafeInteger(sequence) || sequence < 0) throw new Error(`配置卡 ${card.id} 的文件序号无效`)
     return { moduleId, configId: card.id, name: card.name ?? card.id, layer: card.layer ?? 'pre-step', position: card.position ?? 'after-user', sequence, enabled: card.enabled !== false,
+      strategy: card.strategy ?? 'static', ...(card.audience === undefined ? {} : { audience: card.audience }),
       ...(card.layer === 'system-section' || card.layer === 'runtime-context' ? { order: card.order ?? 0 } : {}) }
   })
   return { moduleId, dir, raw, doc, saved, entries }

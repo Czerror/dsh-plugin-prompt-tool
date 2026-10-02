@@ -1,6 +1,7 @@
 import { memo, useCallback, type ReactNode } from 'react'
 import type { PromptToolStore } from '../../../data/use-prompt-tool-store.ts'
 import { usePromptToolFields } from '../../../data/use-prompt-tool-fields.ts'
+import { EMPTY_FIELDS } from '../../../data/prompt-tool-fields.ts'
 import type { PromptToolTranslate } from '../../../locales.ts'
 import { PromptConfigList, type PromptConfigListProps } from '../../../features/prompts/PromptConfigList.tsx'
 import type { PromptConfigDraft } from '../../../prompt-tool-types.ts'
@@ -85,6 +86,8 @@ export const ConfigListWithTemplates = memo(function ConfigListWithTemplates(pro
       emptyHint={preStepEmpty ? t('configList.emptyPreStep') : undefined}
       onPatchConfigs={patchConfigs}
       onSaveConfigs={saveConfigs}
+      onPrepareOrder={store.saveCurrentModuleDrafts}
+      onReloadConfigs={async () => await store.load() !== EMPTY_FIELDS}
       onSaveInstructions={instructionScope ? store.persistInstructionFiles : undefined}
       instructionPolicy={instructionScope ? store.instructionPolicy : undefined}
       onSaveInstructionFile={instructionScope ? saveInstructionFile : undefined}

@@ -4,6 +4,8 @@ import { mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { parse } from 'yaml'
 import { isolatedHome } from '../fixtures/host-harness.mjs'
+import { moduleOrderConfigs, moveToView, sameConfigPosition } from '../../src/client/data/prompt-config-order.ts'
+import { configIdentityKey } from '../../src/shared/module-config-order.ts'
 
 const { moduleRoot } = isolatedHome('pt-config-order-')
 const { appendModuleConfigOrder, readModuleConfigOrder, saveModuleConfigOrder } = await import('../../src/host/module-config-order.ts')
@@ -21,23 +23,47 @@ function fixture(name, cards) {
 }
 const identities = snapshot => snapshot.entries.map(({ moduleId, configId }) => ({ moduleId, configId }))
 
-test('配置排序：新模块尾部追加，跨模块拖拽写回各自定义，重读保序且正文不变', () => {
-  const root = fixture('append', { a: [{ id: 'first', text: 'A1' }, { id: 'last', text: 'A2' }], b: [{ id: 'middle', text: 'B' }] })
+test('配置排序：跨模块同名卡保留受众与策略，身份排序写回各自定义且正文不变', () => {
+  const root = fixture('append', {
+    a: [{ id: 'same', text: 'A1', audience: 'main' }, { id: 'last', text: 'A2', audience: 'subagent', strategy: 'world-book' }],
+    b: [{ id: 'same', text: 'B1' }, { id: 'shared', text: 'B2', audience: null }],
+  })
   assert.deepEqual(appendModuleConfigOrder(root, 'a'), ['a'])
   setModuleEnabled(root, 'a', true)
   appendModuleConfigOrder(root, 'b')
   setModuleEnabled(root, 'b', true)
   const initial = readModuleConfigOrder(root)
-  assert.deepEqual(initial.entries.map(x => [x.moduleId, x.configId, x.sequence]), [['a', 'first', 0], ['a', 'last', 10], ['b', 'middle', 20]])
-  const reordered = [initial.entries[0], initial.entries[2], initial.entries[1]]
-  saveModuleConfigOrder(root, initial.revision, reordered.map(({ moduleId, configId }) => ({ moduleId, configId })))
-  assert.deepEqual(identities(readModuleConfigOrder(root)), identities({ entries: reordered }))
+  assert.deepEqual(initial.entries.map(x => [x.moduleId, x.configId, x.sequence, x.audience, x.strategy]), [
+    ['a', 'same', 0, 'main', 'static'], ['a', 'last', 10, 'subagent', 'world-book'],
+    ['b', 'same', 20, undefined, 'static'], ['b', 'shared', 30, null, 'static'],
+  ])
+  assert.ok(initial.entries.every(entry => !('text' in entry) && !('templateFile' in entry)))
+  const drafts = moduleOrderConfigs(initial.entries)
+  const mainIds = drafts.filter(card => card.audience !== 'subagent').map(card => card.id)
+  assert.deepEqual(mainIds, ['["a","same"]', '["b","same"]', '["b","shared"]'])
+  const entryByKey = new Map(initial.entries.map(entry => [configIdentityKey(entry), entry]))
+  const movedMain = moveToView(drafts, '["b","same"]', '["a","same"]', true, undefined, ['pre-step'], undefined, mainIds)
+  const mainOrder = movedMain.map(card => entryByKey.get(card.id))
+  saveModuleConfigOrder(root, initial.revision, identities({ entries: mainOrder }))
+  const afterMain = readModuleConfigOrder(root)
+  assert.deepEqual(afterMain.entries.map(entry => [entry.moduleId, entry.configId]), [['b', 'same'], ['a', 'last'], ['a', 'same'], ['b', 'shared']], '主会话移动保留不可见子代理卡的槽位')
+  const subDrafts = moduleOrderConfigs(afterMain.entries)
+  const subIds = subDrafts.filter(card => card.audience !== 'main').map(card => card.id)
+  assert.deepEqual(subIds, ['["b","same"]', '["a","last"]', '["b","shared"]'])
+  const worldBookIds = subDrafts.filter(card => card.audience !== 'main' && card.strategy === 'world-book').map(card => card.id)
+  assert.deepEqual(worldBookIds, ['["a","last"]'])
+  assert.equal(moveToView(subDrafts, '["a","last"]', '["b","shared"]', false, undefined, ['pre-step'], 'world-book', worldBookIds), subDrafts)
+  assert.equal(sameConfigPosition(subDrafts[0], { ...subDrafts[1], position: 'before-user' }), false)
+  const movedSub = moveToView(subDrafts, '["a","last"]', '["b","shared"]', false, undefined, ['pre-step'], undefined, subIds)
+  const reordered = movedSub.map(card => entryByKey.get(card.id))
+  saveModuleConfigOrder(root, afterMain.revision, identities({ entries: reordered }))
+  assert.deepEqual(readModuleConfigOrder(root).entries.map(entry => [entry.moduleId, entry.configId]), [['b', 'same'], ['b', 'shared'], ['a', 'same'], ['a', 'last']], '子代理移动保留不可见主会话卡的槽位')
   for (const id of ['a', 'b']) materializeModule(id, { moduleDir: root })
-  assert.deepEqual(readdirSync(join(root, 'a', 'configs')), ['0000-first.yml', '0020-last.yml'])
-  assert.deepEqual(readdirSync(join(root, 'b', 'configs')), ['0010-middle.yml'])
+  assert.deepEqual(readdirSync(join(root, 'a', 'configs')), ['0020-same.yml', '0030-last.yml'])
+  assert.deepEqual(readdirSync(join(root, 'b', 'configs')), ['0000-same.yml', '0010-shared.yml'])
   for (const id of ['b', 'a']) materializeModule(id, { moduleDir: root })
   assert.deepEqual(identities(readModuleConfigOrder(root)), identities({ entries: reordered }), '重建不会按模块数组重新编号')
-  for (const [id, texts] of [['a', ['A1', 'A2']], ['b', ['B']]]) {
+  for (const [id, texts] of [['a', ['A1', 'A2']], ['b', ['B1', 'B2']]]) {
     const raw = readFileSync(join(root, id, 'module.yml'), 'utf8')
     assert.match(raw, /# keep comment/)
     const spec = parse(raw)

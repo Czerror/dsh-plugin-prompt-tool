@@ -26,6 +26,9 @@ export const PromptConfigCard = memo(function PromptConfigCard(props: {
   t: PromptToolTranslate
   meta: EngineMeta
   config: PromptConfigDraft
+  /** 跨模块排序只显示摘要与移动操作，不编辑配置正文。 */
+  summaryOnly?: boolean
+  sourceLabel?: string
   expanded: boolean
   canMoveUp: boolean
   canMoveDown: boolean
@@ -34,6 +37,7 @@ export const PromptConfigCard = memo(function PromptConfigCard(props: {
   fieldDrafts?: Map<string, FieldDraft>
   draftScope?: string
   dragging?: boolean
+  dragDisabled?: boolean
   dropBefore?: boolean
   dropAfter?: boolean
   onToggleExpanded: (id: string) => void
@@ -80,7 +84,7 @@ export const PromptConfigCard = memo(function PromptConfigCard(props: {
   const menuItems: MenuEntry[] = [
     { id: 'up', label: t('card.moveUp'), disabled: props.disabled || !props.canMoveUp },
     { id: 'down', label: t('card.moveDown'), disabled: props.disabled || !props.canMoveDown },
-    ...(instructionFileId === undefined ? [
+    ...(instructionFileId === undefined && !props.summaryOnly ? [
       { id: 'duplicate', label: t('card.duplicate'), disabled: props.disabled },
       { id: 'delete', label: <span className={styles.configFieldError}>{t('card.delete')}</span>, danger: true, disabled: props.disabled },
     ] : []),
@@ -101,6 +105,11 @@ export const PromptConfigCard = memo(function PromptConfigCard(props: {
     if (config.contentSaving === true || config.contentConflict === true) return
     props.onSaveInstructionFile?.(instructionFileId)
   }
+  const title = <span className={styles.configTitle}>
+    <span className={styles.configTitleRow}><span className={styles.configName}>{name}</span></span>
+    {props.sourceLabel && <span className={styles.configMeta}>{props.sourceLabel}</span>}
+    <span className={styles.configMeta}>{chips.join(' · ')}</span>
+  </span>
   return <article ref={cardRef} className={clsx(styles.configCard, props.expanded && styles.configCardOpen)}
     data-config-id={config.id} data-dragging={props.dragging ? '' : undefined}
     data-drop-before={props.dropBefore ? '' : undefined} data-drop-after={props.dropAfter ? '' : undefined}
@@ -118,28 +127,33 @@ export const PromptConfigCard = memo(function PromptConfigCard(props: {
     <span className={styles.visuallyHidden} role="status" aria-atomic="true">{status && !fileNotWritable && !config.contentConflict ? `${name}：${status}` : ''}</span>
     <header className={styles.configHeader}>
       {props.onDragStart !== undefined && <HintTooltip label={t('card.dragHint')}>
-        <span className={styles.dragHandle} aria-hidden="true" draggable onDragStart={(event) => props.onDragStart!(config.id, event)}>⠿</span>
+        <button type="button" className={styles.dragHandle} aria-label={`${name} · ${t('card.dragHint')}`}
+          aria-keyshortcuts="ArrowUp ArrowDown" disabled={props.disabled || props.dragDisabled} draggable={!props.disabled && !props.dragDisabled}
+          onDragStart={(event) => props.onDragStart!(config.id, event)}
+          onKeyDown={(event) => {
+            if (props.disabled || props.dragDisabled || (event.key !== 'ArrowUp' && event.key !== 'ArrowDown')) return
+            event.preventDefault()
+            if (event.key === 'ArrowUp' && props.canMoveUp) props.onMoveUp(config.id)
+            if (event.key === 'ArrowDown' && props.canMoveDown) props.onMoveDown(config.id)
+          }}>⋮⋮</button>
       </HintTooltip>}
-      <button type="button" className={styles.configToggle} aria-expanded={props.expanded} aria-controls={panelId}
+      {props.summaryOnly ? <div className={styles.configToggle}>{title}</div> : <button type="button" className={styles.configToggle} aria-expanded={props.expanded} aria-controls={panelId}
         onClick={() => {
           // 折叠会让编辑区卸载、焦点仍留在卡片内，失焦保存不会触发；先落盘再切换。
           if (props.expanded) flushInstructionSave()
           props.onToggleExpanded(config.id)
         }}>
-        <span className={styles.configTitle}>
-          <span className={styles.configTitleRow}><span className={styles.configName}>{name}</span></span>
-          <span className={styles.configMeta}>{chips.join(' · ')}</span>
-        </span>
+        {title}
         <IconChevronDownOutlineRegular className={clsx(styles.chevron, props.expanded && styles.chevronOpen)} />
-      </button>
+      </button>}
       {status && <StatusBadge tone={config.contentConflict ? 'warning' : fileNotWritable ? 'danger' : 'neutral'} label={status} />}
       <span className={styles.configHeaderActions}>
-        <Switch className={styles.configEnable} checked={enabled} label={t('card.enableAria', { name })} disabled={props.disabled || isManagedConfigField(config, 'enabled') || (instructionFileId !== undefined && (config.contentSaving === true || props.onPatchInstructionPolicy === undefined))}
+        {props.summaryOnly ? !enabled && <span className={styles.configMeta}>{t('moduleOrder.disabled')}</span> : <Switch className={styles.configEnable} checked={enabled} label={t('card.enableAria', { name })} disabled={props.disabled || isManagedConfigField(config, 'enabled') || (instructionFileId !== undefined && (config.contentSaving === true || props.onPatchInstructionPolicy === undefined))}
           onChange={(next) => {
             if (props.disabled || isManagedConfigField(config, 'enabled')) return
             if (instructionFileId !== undefined) props.onPatchInstructionPolicy?.(instructionFileId, { enabled: next })
             else props.onToggleEnabled(config.id, next)
-          }} />
+          }} />}
         {instructionFileId === undefined && <span ref={actionRef} tabIndex={-1}>
           <Menu open={menuOpen} compact align="end" items={menuItems} onClose={() => setMenuOpen(false)}
             onSelect={(action) => {
@@ -163,13 +177,13 @@ export const PromptConfigCard = memo(function PromptConfigCard(props: {
         <Button size="sm" variant="outline" disabled={config.contentSaving} onClick={reload}>{t('card.reloadFile')}</Button>
       </span>}
     </div>}
-    <div id={panelId} hidden={!props.expanded}>
+    {!props.summaryOnly && <div id={panelId} hidden={!props.expanded}>
       {props.expanded && <>
         <PromptConfigForm t={t} meta={meta} config={config} disabled={props.disabled} fieldDrafts={props.fieldDrafts} draftScope={`${props.draftScope}:${config.id}`}
           renderLayerSettings={props.renderLayerSettings}
           onPatch={(patch) => props.onPatch(config.id, patch)} />
       </>}
-    </div>
+    </div>}
     {confirmation && <ConfirmDialog title={t(confirmation === 'delete' ? 'card.deleteTitle' : 'card.reloadTitle', { name })}
       description={t(confirmation === 'delete' ? 'card.deleteDescription' : 'card.reloadDescription', { name })}
       confirmLabel={t(confirmation === 'delete' ? 'card.confirmDelete' : 'card.reloadFile')} cancelLabel={t('card.cancel')}
