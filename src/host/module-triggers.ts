@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs'
 import { basename, dirname, isAbsolute, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { parseDocument } from 'yaml'
-import { assertModuleDirectory } from './preset-install.ts'
+import { assertModuleDirectory } from './module-install.ts'
 import { MODULE_DEFINITION_FILE } from './paths.ts'
 import { withPresetDoc } from './manifest.ts'
 

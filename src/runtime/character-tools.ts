@@ -2,8 +2,8 @@
  *  与 UI 角色管理页共用 host/characters.ts 同一套库与合并逻辑。 */
 import type { Context } from '@deepseek-ai/cordis'
 import { defineTool } from '@deepseek-ai/dsh-tools'
-import { rebuildSavedPreset } from '../host/preset-tool-target.ts'
-import type { PresetToolHost } from '../host/preset-tool-target.ts'
+import { rebuildSavedPreset } from '../host/module-tool-target.ts'
+import type { PresetToolHost } from '../host/module-tool-target.ts'
 import {
   applyCharacterToPreset,
   deleteCharacterCard,

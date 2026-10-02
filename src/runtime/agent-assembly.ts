@@ -21,7 +21,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import { packageEngineDir, resolveModuleFacts, resolveModuleDir, loadModuleSpec } from '../host/manifest.ts'
 import type { ModuleSpec } from '../host/manifest.ts'
-import { assertPresetId } from '../host/preset-install.ts'
+import { assertPresetId } from '../host/module-install.ts'
 import { MODULE_CONFIGS_DIR } from '../host/paths.ts'
 
 // @ts-expect-error ESM 引擎源码随插件提供。

@@ -9,7 +9,7 @@
 
 共享引擎参数唯一存于 `layerSettings.<层名>.<参数键>`，例如 `layerSettings.subagent-start.maxDepth: 2`。归属由 `ENGINE_PARAM_DEFINITIONS.card` → `ENGINE_EDITOR_GROUP_MAP.displayLayer` 派生；该段不创建提示词实例，也不生成空 UI 卡。
 
-`promptConfigs[].params` 仍属于单条规则。persona、variables、customTools、subagentToolPolicy 和 moduleConfigs 保留独立所有者。`loadPresetSpec().params` 是读取新格式后得到的**内部平铺适配面**，本文下文的参数桥 `params` 均指该内部对象，不再表示旧磁盘位置。
+`promptConfigs[].params` 仍属于单条规则。persona、variables、customTools、subagentToolPolicy 和 moduleConfigs 保留独立所有者。`loadModuleSpec().params` 是读取新格式后得到的**内部平铺适配面**，本文下文的参数桥 `params` 均指该内部对象，不再表示旧磁盘位置。
 
 共享只限于同一预设内的配置卡。预设主模型的 provider/model 与采样参数通过该预设的 `agent-request` 规则生效；预设加载、保存和能力操作不再调用 `agentDefaultModel.saveSelection` 改写宿主全局默认。模型未配置时继承该会话选择。用户在官方“当前会话模型”控件中的显式选择仍遵循官方接口语义。
 
@@ -29,7 +29,7 @@
 |---|---|---|
 | 契约层 | `shared/engine-params.ts` | `EngineParams` + 完整覆盖其键的 `ENGINE_PARAM_DEFINITIONS`（类型规则、卡片归属、标签、默认草稿、枚举、组合行映射）；`ENGINE_PARAM_KEYS` 与 `WRITER_PARAM_KEYS` 从目录派生 |
 | 键集合 | `shared/param-keys.ts` | `PARAM_KEYS` = `ENGINE_PARAM_KEYS` 派生 + 锚定内容键 + `promptConfigs`；参数写入白名单 / mutate 拦截 / 读回遍历共用，不推断模板变量 |
-| 存储层 | `host/manifest.ts`、`host/preset-layer-settings.ts` | `loadPresetSpec`（layerSettings → 内部平铺值）、`savePresetParams`（平铺值 → 所属层；空值删键）、`buildModuleConfigsFromParams`（参数桥）、`renderComposition`（参数桥 > moduleConfigs > 行默认） |
+| 存储层 | `host/manifest.ts`、`host/module-layer-settings.ts` | `loadModuleSpec`（layerSettings → 内部平铺值）、`saveModuleParams`（平铺值 → 所属层；空值删键）、`buildModuleConfigsFromParams`（参数桥）、`renderComposition`（参数桥 > moduleConfigs > 行默认） |
 | 物化层 | `host/write-preset.ts` | `writePreset`：参数 + 内容资产 → 官方预设目录（agent.cordis.yml / configs / variables.yml）；`runtimeOf` 透传、`modelRequestConfigs` 模型 patch |
 | 装配层 | `index.ts` | `reloadPresetParams`（module.yml → runtime）、`rebuildPreset`（写入触发） |
 | 接线层 | `runtime/settings-bridge.ts` | `/param-overrides` GET（读回）/ POST（保存到激活预设 module.yml） |
@@ -45,7 +45,7 @@
 UI fields
   → persistParamOverrides（只发送已存键或用户已改动键；含需清除的 '' / [] 与合法的 false / 0）
     → /param-overrides POST（settings-bridge）
-      → savePresetParams（写 module.yml：layerSettings 的所属层；空值删键）
+      → saveModuleParams（写 module.yml：layerSettings 的所属层；空值删键）
         → reloadPresetParams（runtime 态）
           → rebuildPreset → writePreset
             → runtimeOf（透传 WRITER_PARAM_KEYS）
@@ -111,7 +111,7 @@ packages rather than a preset directory」，并把 `!!js` 限制在插件配置
 
 ### 操作目标与生效结果
 
-工作台编辑目标、宿主默认预设和执行 Agent 绑定的预设是三种身份。角色卡和世界书模型工具通过 `ToolExecution.agent.ctx` 调用官方 `agentPresets.composedPreset()` 取得该 Agent 的官方预设 id，再用**存储根目录事实**判定是否受管：模块目录含 `module.yml` 的即本插件管理的预设（`presetDirExists`），与官方登记状态无关。未绑定、非受管身份和不匹配目录拒绝。主会话与子代理均依官方绑定，不因工作台切换到另一预设而改变工具写入目标。
+工作台编辑目标、宿主默认预设和执行 Agent 绑定的预设是三种身份。角色卡和世界书模型工具通过 `ToolExecution.agent.ctx` 调用官方 `agentPresets.composedPreset()` 取得该 Agent 的官方预设 id，再用**存储根目录事实**判定是否受管：模块目录含 `module.yml` 的即本插件管理的预设（`moduleDirExists`），与官方登记状态无关。未绑定、非受管身份和不匹配目录拒绝。主会话与子代理均依官方绑定，不因工作台切换到另一预设而改变工具写入目标。
 
 重建按明确预设 ID 读取其自身定义和内容，再等待官方注册刷新。bridge、TUI 和工具只有在回调完成后报告成功。定义已保存而重建或注册失败时，bridge 返回 `preset-activation-failed`（声明端点保留 `triggers-rebuild-failed`），明确说明已落盘但未生效；客户端保留草稿，已保存的定义不被回滚成旧数据。
 
@@ -127,7 +127,7 @@ packages rather than a preset directory」，并把 `!!js` 限制在插件配置
 
 ## 3. 空值语义（统一规则）
 
-`savePresetParams` 对空值统一处理（2026-08-25 起）：
+`saveModuleParams` 对空值统一处理（2026-08-25 起）：
 
 | 值 | 处理 | 原因 |
 |---|---|---|
@@ -491,7 +491,7 @@ ST 转换（convertStToPreset）通过顶层 `persona: { prefix: '', complete: f
 - 策略启用（段非空）：子代理由 `subagent-tool-policy` 模块的 agent-local shadow 在创建窗口解析并冻结 toolFilter（不再热更新；需要更高权限时创建新实例）。
 - `subagent-tools/policy.yml` 是生成物（writePreset 从 module.yml 顶层段物化）；module.yml 仍是单一来源。
 - 保存链路：`/subagent-tool-policy` POST → `validateSubagentToolPolicy()` 校验 → 原子写盘并补齐模块声明；关闭开关只删策略段并保留模块声明，删除能力才同时移除两者。
-- writer 直接读取手写/导入的 `subagentToolPolicy` 时同样先校验。历史“有段无模块”预设继续装配策略以保留既有授权；`effectiveModules` 和能力卡如实显示该装配，`declaredModules` 保持磁盘事实。显式创建或保存可补齐声明且不覆盖已有策略，删除能力会连段移除。**参数在 ⇒ 装配在**：预设 `params` 里出现登记参数键、或 `moduleConfigs` 里出现该能力的行键时，装配入口（`loadCompositionText`）与模块事实（`resolvePresetModuleFacts`）用同一份派生 `impliedModulesForParams` 自动补齐对应模块——`effectiveModules` 如实反映、`declaredModules` 仍是磁盘事实，组合源自带默认值不算信号。因此不存在"写了参数却长期不生效"的休眠配置，编辑卡也不会因此消失；相应地"移除能力"必须同时删除该能力的显式参数与行配置，否则会被隐含装配立刻拉回。
+- writer 直接读取手写/导入的 `subagentToolPolicy` 时同样先校验。历史“有段无模块”预设继续装配策略以保留既有授权；`effectiveModules` 和能力卡如实显示该装配，`declaredModules` 保持磁盘事实。显式创建或保存可补齐声明且不覆盖已有策略，删除能力会连段移除。**参数在 ⇒ 装配在**：预设 `params` 里出现登记参数键、或 `moduleConfigs` 里出现该能力的行键时，装配入口（`loadCompositionText`）与模块事实（`resolveModuleFacts`）用同一份派生 `impliedModulesForParams` 自动补齐对应模块——`effectiveModules` 如实反映、`declaredModules` 仍是磁盘事实，组合源自带默认值不算信号。因此不存在"写了参数却长期不生效"的休眠配置，编辑卡也不会因此消失；相应地"移除能力"必须同时删除该能力的显式参数与行配置，否则会被隐含装配立刻拉回。
 - 策略启用后 `subagentModel` 路由、reasoningEffort、maxTokens 与 maxDepth 改写到策略模块，不再只落到被 shadow 的官方工具行。策略文件确实不存在时回落官方委派；现存文件解析或校验失败必须报错，错误文案不能作为缺文件依据。
 - 预览链路：`/subagent-tool-policy-preview` POST 与运行时 `resolveSubagentToolPolicy()` 同一 seam（不重复算法）；预览用 ceiling 工具宇宙。
 - 工具面：`/tool-surface` POST 接受互斥的 `{ sessionId }` 或 `{ presetId }`。前者只读当前存活本地 Agent 的 name/description 摘要；后者经官方 `agentPresets.list()` 白名单与 `acquireScope()` 取得当前 revision lease，读取 `tools.schemas(lease.key)` 后在 finally 中释放。两者均不下发完整 Schema、大文本或 secrets；PTC 下预设工具能力不等于模型 wire 直连工具。

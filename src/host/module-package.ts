@@ -10,10 +10,10 @@ import { directoryVersionOf, computePreviewRevision } from './preview-revision.t
 import { resolveModuleDir, invalidateModuleSpec, packageEngineDir, type ModuleSpec } from './manifest.ts'
 import { MODULE_CONFIGS_DIR, MODULE_DEFINITION_FILE } from './paths.ts'
 import { validateCustomTools } from './custom-tools.ts'
-import { readPresetLayerSettings } from './preset-layer-settings.ts'
+import { readPresetLayerSettings } from './module-layer-settings.ts'
 import { projectCharacterMemories } from './characters.ts'
 import { writePreset, RENDER_VERSION } from './write-preset.ts'
-import { assertPresetId, assertModuleDirectory, canonicalPresetRoot, setPresetDefinitionId } from './preset-install.ts'
+import { assertPresetId, assertModuleDirectory, canonicalPresetRoot, setPresetDefinitionId } from './module-install.ts'
 // @ts-expect-error 引擎 ESM 是权威校验实现，由构建器同源打包。
 import { createPromptConfigs } from '../../engine/schema.mjs'
 

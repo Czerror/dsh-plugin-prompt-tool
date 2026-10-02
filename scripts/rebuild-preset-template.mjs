@@ -4,7 +4,7 @@ import { readFileSync, readdirSync, writeFileSync, renameSync, rmSync, openSync,
 import { fileURLToPath } from 'node:url'
 import { Document, parseDocument } from 'yaml'
 import { ENGINE_PARAM_DEFINITIONS, ENGINE_PARAM_KEYS } from '../src/shared/engine-params.ts'
-import { ENGINE_PARAM_LAYERS } from '../src/host/preset-layer-settings.ts'
+import { ENGINE_PARAM_LAYERS } from '../src/host/module-layer-settings.ts'
 import { PARAMS_ZH } from '../src/client/locales-params.ts'
 import { LAYER_CONTRACTS, LAYER_FIELD_POLICIES, LAYER_LABELS, LAYER_ORDER, createPromptConfigs } from '../engine/schema.mjs'
 

@@ -683,7 +683,7 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
     )
   }, [enqueueSave])
 
-  /** 参数类设置：写入激活模块 module.yml（savePresetParams；随模块隔离）。
+  /** 参数类设置：写入激活模块 module.yml（saveModuleParams；随模块隔离）。
    *  与提示词配置共用模块队列；请求成功只把「发起时快照」标记为已保存。若用户在请求期间
    *  继续编辑，则跳过静默重载，避免磁盘旧快照覆盖未保存草稿。 */
   const persistParamOverrides = useCallback(async () => {
@@ -864,7 +864,7 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
     const contentEntries = configs.filter(isContentAsset)
     const draftVersion = draftVersionRef.current
     const switchesWereClean = switchesEqual(snapshotSwitches(fieldsRef.current), savedSwitches)
-    // 待编辑变量行（空 key）不落盘（服务端 savePresetParams 清理）；此时跳过保存后静默重载，
+    // 待编辑变量行（空 key）不落盘（服务端 saveModuleParams 清理）；此时跳过保存后静默重载，
     // 否则服务端状态覆盖草稿，刚点开的变量编辑行立即消失。
     const pendingVariableRows = hasPendingVariableRows(configs)
     return presetSaveQueueRef.current.enqueue(async () => {
@@ -922,7 +922,7 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
     })
   }, [api, load, persistInstructionFiles, savedConfigs, savedSwitches, showNotice])
 
-  /** 模板变量：写激活模块 module.yml 内容变量（后端 savePresetParams + afterOverridesChange 触发重建）。 */
+  /** 模板变量：写激活模块 module.yml 内容变量（后端 saveModuleParams + afterOverridesChange 触发重建）。 */
   const saveTemplateVariables = useCallback(async (next?: Record<string, string>, enabledOverride?: boolean): Promise<boolean> => {
     // 切换进行中（目标模块数据未应用）：变量仍是旧模块值，拒绝写入 presetTemplate。
     if (loadedModuleRef.current !== undefined && loadedModuleRef.current !== fieldsRef.current.presetTemplate) {

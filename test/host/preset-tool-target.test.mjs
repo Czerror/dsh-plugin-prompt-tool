@@ -8,7 +8,7 @@ const previousHome = process.env.DSH_HOME
 process.env.DSH_HOME = sandbox
 const { registerWorldBookTools } = await import('../../src/runtime/world-book-tools.ts')
 const { registerCharacterTools } = await import('../../src/runtime/character-tools.ts')
-const { resolvePresetToolTarget } = await import('../../src/host/preset-tool-target.ts')
+const { resolveModuleToolTarget } = await import('../../src/host/module-tool-target.ts')
 after(() => {
   if (previousHome === undefined) delete process.env.DSH_HOME
   else process.env.DSH_HOME = previousHome
@@ -32,7 +32,7 @@ function fixture(rebuild = async () => {}) {
     },
   }
   const host = {
-    target: (exec) => resolvePresetToolTarget(ctx, exec, root, (id) => ['preset-a', 'preset-b'].includes(id)),
+    target: (exec) => resolveModuleToolTarget(ctx, exec, root, (id) => ['preset-a', 'preset-b'].includes(id)),
     rebuild,
   }
   const disposers = [registerWorldBookTools(ctx, host), registerCharacterTools(ctx, host)]

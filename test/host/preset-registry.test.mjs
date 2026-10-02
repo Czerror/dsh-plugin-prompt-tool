@@ -11,7 +11,7 @@ import { join } from 'node:path'
 const sandbox = mkdtempSync(join(process.cwd(), 'pt-registry-home-'))
 const previousHome = process.env.DSH_HOME
 process.env.DSH_HOME = sandbox
-const { createModuleRegistrySync } = await import('../../src/host/preset-registry.ts')
+const { createModuleRegistrySync } = await import('../../src/host/module-registry.ts')
 after(() => {
   if (previousHome === undefined) delete process.env.DSH_HOME
   else process.env.DSH_HOME = previousHome

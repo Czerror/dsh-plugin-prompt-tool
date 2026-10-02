@@ -38,10 +38,10 @@ import { MODULES_DIR, MODULE_CONFIGS_DIR } from './host/paths.ts'
 import { enabledModuleIds, resolveEditDir } from './host/config-store.ts'
 import { DEFAULT_MODULE_ID } from './shared/preset-ids.ts'
 import { createSkillsRuntime } from './host/skills-runtime.ts'
-import { createModuleRegistrySync, moduleDirExists } from './host/preset-registry.ts'
+import { createModuleRegistrySync, moduleDirExists } from './host/module-registry.ts'
 import { createAgentAssembly } from './runtime/agent-assembly.ts'
-import { resolvePresetToolTarget } from './host/preset-tool-target.ts'
-import type { PresetToolHost } from './host/preset-tool-target.ts'
+import { resolveModuleToolTarget } from './host/module-tool-target.ts'
+import type { PresetToolHost } from './host/module-tool-target.ts'
 
 export const name = 'prompt-tool'
 // 内容走 user 层（AGENTS.md 常驻层 + skill 按需层），
@@ -493,7 +493,7 @@ registerTuiCommand(
 
   // 内置模型工具由三个独立模块按需挂载；宿主只提供对应注册服务。
   const presetToolHost: PresetToolHost = {
-    target: (exec) => resolvePresetToolTarget(ctx, exec, MODULES_DIR, (id) => moduleDirExists(MODULES_DIR, id)),
+    target: (exec) => resolveModuleToolTarget(ctx, exec, MODULES_DIR, (id) => moduleDirExists(MODULES_DIR, id)),
     rebuild: (id) => rebuildPreset(false, id),
   }
   ctx.provide('pt-character-tools', {
@@ -585,7 +585,7 @@ export {
   userModulesDir,
 } from './host/manifest.ts'
 export { buildWorldBookEntry } from './host/worldbook.ts'
-export { expandPresetSource, exportPresetPackage, presetImportPreview, installPresetPackage } from './host/preset-package.ts'
+export { expandPresetSource, exportPresetPackage, presetImportPreview, installPresetPackage } from './host/module-package.ts'
 export { ensureWebSurface, resolveProfileDir, scheduleWebSurfaceRepair } from './web-surface.ts'
 export { USER_SKILLS_DIR } from './host/paths.ts'
 export { importSkillsPackage } from './host/skills-import.ts'
@@ -593,7 +593,7 @@ export { detectModels, invalidateModelCatalog, listAdvertisedModels, peekModelCa
 export type { PluginSubagentSeam } from './runtime/models.ts'
 export type { WritePresetOptions } from './host/write-preset.ts'
 export { validatePromptConfigs } from './runtime/configs-validate.ts'
-export { createModuleRegistrySync, moduleDirExists } from './host/preset-registry.ts'
+export { createModuleRegistrySync, moduleDirExists } from './host/module-registry.ts'
 export { registerSettingsBridge } from './runtime/settings-bridge.ts'
 export { registerCharacterTools } from './runtime/character-tools.ts'
 export { registerWorldBookTools } from './runtime/world-book-tools.ts'

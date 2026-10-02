@@ -8,8 +8,8 @@ import { readdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { appendMemoryFile, charactersDir, syncImportedCharacterMemory } from '../host/characters.ts'
 import { buildWorldBookEntry, deleteWorldBookEntry, listWorldBookEntries, upsertWorldBookEntry } from '../host/worldbook.ts'
-import { rebuildSavedPreset } from '../host/preset-tool-target.ts'
-import type { PresetToolHost, PresetToolTarget } from '../host/preset-tool-target.ts'
+import { rebuildSavedPreset } from '../host/module-tool-target.ts'
+import type { PresetToolHost, PresetToolTarget } from '../host/module-tool-target.ts'
 
 const text = (text: string): Array<{ type: 'text'; text: string }> => [{ type: 'text', text }]
 

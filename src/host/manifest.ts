@@ -20,12 +20,12 @@ import { engineCapability, engineRecipe, impliedModulesForParams, isEngineCapabi
 import { ENGINE_PARAM_DEFINITIONS, ENGINE_PARAM_KEYS, buildEngineModuleParams, normalizeMaxDepth } from '../shared/engine-params.ts'
 import { personaRowConfig, readPersonaSpec, type PersonaSpec } from '../shared/persona-section.ts'
 import { DEFAULT_MODULE_ID } from '../shared/preset-ids.ts'
-import { assertModuleDirectory, assertPresetId, assertPresetTree, engineModuleFileNames, presetPathExists, rewritePresetEngineReferences, setPresetDefinitionId } from './preset-install.ts'
-import { engineParamPath, readPresetLayerSettings, PresetLayerSettingsError } from './preset-layer-settings.ts'
+import { assertModuleDirectory, assertPresetId, assertPresetTree, engineModuleFileNames, presetPathExists, rewritePresetEngineReferences, setPresetDefinitionId } from './module-install.ts'
+import { engineParamPath, readPresetLayerSettings, PresetLayerSettingsError } from './module-layer-settings.ts'
 import { modelRequestConfigs } from './prompt-configs.ts'
 import { atomicWriteTextFile } from './text-file.ts'
 export { atomicWriteTextFile } from './text-file.ts'
-export { PresetLayerSettingsError } from './preset-layer-settings.ts'
+export { PresetLayerSettingsError } from './module-layer-settings.ts'
 
 export interface ModuleSpec {
   id: string

@@ -519,7 +519,7 @@ export function VariablesEditor(props: { t: PromptToolTranslate; value: Record<s
   const t = props.t
   const entries = Object.entries(props.value ?? {})
   const commit = (next: Array<[string, string]>) => {
-    // 保留空 key 行（「添加变量」新增的待编辑行）；空 key 由保存端（savePresetParams）
+    // 保留空 key 行（「添加变量」新增的待编辑行）；空 key 由保存端（saveModuleParams）
     // 统一清理，避免新增行被立即过滤导致按钮失效。
     props.onChange(next.length > 0 ? Object.fromEntries(next) : undefined)
   }

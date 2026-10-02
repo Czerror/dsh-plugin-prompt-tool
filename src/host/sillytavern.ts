@@ -16,7 +16,7 @@
  */
 import { createHash } from 'node:crypto'
 import type { ModuleSpec } from './manifest.ts'
-import { readPresetLayerSettings } from './preset-layer-settings.ts'
+import { readPresetLayerSettings } from './module-layer-settings.ts'
 import type { PersonaSpec } from '../shared/persona-section.ts'
 import type {
   StConversionDiagnostic,

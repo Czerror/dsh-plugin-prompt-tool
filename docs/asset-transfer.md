@@ -55,8 +55,8 @@ node scripts/export-preset.mjs pt-standard new-output-directory
 | `shared/asset-transfer.ts`、`bridge-contract.ts` | 字节、选择、摘要与响应契约 |
 | `host/import-source.ts`、`character-png.ts` | 内容判别、转换、来源报告、受限 PNG 解码 |
 | `host/asset-sources.ts`、`asset-archive.ts` | 生命周期暂存、ZIP 载体与边界校验 |
-| `host/preset-package.ts` | 预览、严格候选、安装与导出 |
-| `host/preset-install.ts`、`manifest.ts`、`write-preset.ts` | 合法身份、根归属、复制、候选物化与引擎引用改写 |
+| `host/module-package.ts` | 预览、严格候选、安装与导出 |
+| `host/module-install.ts`、`manifest.ts`、`write-preset.ts` | 合法身份、根归属、复制、候选物化与引擎引用改写 |
 | `host/characters.ts` | 角色库更新、应用／移除及记忆来源证明 |
 | `client/data/use-import-preview-flow.ts`、`ui/ImportDialog.tsx` | 读取到结果的统一生命周期与共享呈现 |
 
