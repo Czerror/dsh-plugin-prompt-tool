@@ -54,7 +54,7 @@ test('预设工具写入执行 Agent 的 A/B 绑定，子代理继承 A，卸载
     const card = await f.execute('character_import', { name: 'alice', content: JSON.stringify({ id: 'alice', name: 'Alice', promptConfigs: [{ id: 'intro', text: 'Alice intro' }] }) }, 'preset-a')
     await f.execute('character_apply', { id: card.id }, 'preset-a')
     const read = (id) => parse(readFileSync(join(f.root, id, 'module.yml'), 'utf8')).promptConfigs.map((row) => row.id).sort()
-    assert.deepEqual(read('preset-a'), ['a', 'chara-alice-intro', 'child'])
+    assert.deepEqual(read('preset-a'), ['a', 'child', 'module-alice-intro'])
     assert.deepEqual(read('preset-b'), ['b'])
     assert.deepEqual(rebuilt, ['preset-a', 'preset-a', 'preset-b', 'preset-a'])
   } finally { f.dispose() }

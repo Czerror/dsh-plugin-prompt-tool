@@ -13,16 +13,18 @@ import type { PresetToolHost, PresetToolTarget } from '../host/preset-tool-targe
 
 const text = (text: string): Array<{ type: 'text'; text: string }> => [{ type: 'text', text }]
 
-/** 从条目 id 解析来源角色卡（chara-<cardId>- 前缀，cardId 可含连字符：遍历库目录取最长匹配）。 */
+/** 从条目 id 解析来源角色卡（并入前缀 + cardId，cardId 可含连字符：遍历库目录取最长匹配）。
+ *  前缀**两种都认**：新写入是 `module-<id>-`，用户既有的老条目仍是 `chara-<id>-`。 */
 function sourceCardId(presetRoot: string, entryId: string): string | undefined {
   // 角色卡库在**存储根**下（与模块根 modules/ 同级），从模块根上溯一级。
   const root = charactersDir(presetRoot)
-  if (!entryId.startsWith('chara-')) return undefined
+  if (!entryId.startsWith('module-') && !entryId.startsWith('chara-')) return undefined
   let best: string | undefined
   try {
     for (const dir of readdirSync(root, { withFileTypes: true })) {
       if (!dir.isDirectory() || dir.name.startsWith('.')) continue
-      if (entryId.startsWith(`chara-${dir.name}-`) && (best === undefined || dir.name.length > best.length)) {
+      if ((entryId.startsWith(`module-${dir.name}-`) || entryId.startsWith(`chara-${dir.name}-`))
+        && (best === undefined || dir.name.length > best.length)) {
         best = dir.name
       }
     }

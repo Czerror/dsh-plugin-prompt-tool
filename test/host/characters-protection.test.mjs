@@ -53,8 +53,8 @@ test('原生角色应用计数包含 texts 和控制配置，记忆同名普通�
   const before = readFileSync(file, 'utf8')
   const doc = parseDocument(before)
   const configs = doc.toJS().promptConfigs
-  assert.equal(configs.find(c => c.id === 'chara-alice-memory').text, 'ordinary text')
-  assert.deepEqual(configs.find(c => c.id === 'chara-alice-multi').texts, ['A', 'B'])
+  assert.equal(configs.find(c => c.id === 'module-alice-memory').text, 'ordinary text')
+  assert.deepEqual(configs.find(c => c.id === 'module-alice-multi').texts, ['A', 'B'])
   assert.equal(new Set(configs.map(c => c.id)).size, 4)
   const projected = characters.projectCharacterMemories(doc, {}, presetRoot)
   assert.equal(projected.excludedMemoryCount, 1)
@@ -65,7 +65,7 @@ test('原生角色应用计数包含 texts 和控制配置，记忆同名普通�
   characters.appendCharacterMemory(presetRoot, 'alice', 'SECOND MEMORY')
   assert.equal(characters.syncImportedCharacterMemory(presetRoot, 'target', 'alice').ok, true)
   const next = parseDocument(readFileSync(file, 'utf8')).toJS().promptConfigs
-  assert.equal(next.find(c => c.id === 'chara-alice-memory').text, 'ordinary text')
+  assert.equal(next.find(c => c.id === 'module-alice-memory').text, 'ordinary text')
   assert.equal(next.length, 4)
 })
 
@@ -134,14 +134,14 @@ test('改过的记忆生成项需要显式选择；投影不修改源定义', t 
   characters.applyCharacterToPreset(presetRoot, 'target', 'alice')
   const doc = parseDocument(readFileSync(join(presetRoot, 'target', 'module.yml'), 'utf8'))
   const configs = doc.toJS().promptConfigs
-  const memory = configs.find(config => config.id === 'chara-alice-memory')
+  const memory = configs.find(config => config.id === 'module-alice-memory')
   memory.text += '\nEDITED'
   doc.set('promptConfigs', configs)
   const original = doc.toString()
   const result = characters.projectCharacterMemories(doc, {}, presetRoot)
-  assert.deepEqual(result.memoryConflicts.map(item => item.id), ['chara-alice-memory'])
-  assert.match(String(characters.projectCharacterMemories(doc, { 'chara-alice-memory': 'include' }, presetRoot).doc), /EDITED/)
-  assert.doesNotMatch(String(characters.projectCharacterMemories(doc, { 'chara-alice-memory': 'exclude' }, presetRoot).doc), /PRIVATE/)
+  assert.deepEqual(result.memoryConflicts.map(item => item.id), ['module-alice-memory'])
+  assert.match(String(characters.projectCharacterMemories(doc, { 'module-alice-memory': 'include' }, presetRoot).doc), /EDITED/)
+  assert.doesNotMatch(String(characters.projectCharacterMemories(doc, { 'module-alice-memory': 'exclude' }, presetRoot).doc), /PRIVATE/)
   assert.equal(doc.toString(), original)
 })
 
@@ -160,4 +160,28 @@ test('安装成功但备份清理失败仍报告已安装并给出备份位置',
     assert.match(result.warning, /已安装.*备份.*\.bak-/)
     assert.ok(readFileSync(join(storageRoot, '.characters', 'alice', 'converted.yml'), 'utf8'))
   } finally { remove.mock.restore(); syncBuiltinESMExports() }
+})
+
+test('并入前缀统一为 module-，历史的 chara- 条目仍按前缀撤销（不迁移、不留孤儿）', t => {
+  const { presetRoot } = setup(t)
+  const spec = { id: 'alice', name: 'Alice', promptConfigs: [{ id: 'intro', text: 'HELLO' }] }
+  assert.equal(characters.importCharacterCard(presetRoot, [{ path: 'converted.yml', content: JSON.stringify(spec) }]).ok, true)
+  mkdirSync(join(presetRoot, 'target'), { recursive: true })
+  const file = join(presetRoot, 'target', 'module.yml')
+  writeFileSync(file, 'id: target\nname: Target\nmodules: []\n')
+
+  const applied = characters.applyCharacterToPreset(presetRoot, 'target', 'alice')
+  assert.equal(applied.ok, true, applied.message)
+  const afterApply = readFileSync(file, 'utf8')
+  assert.match(afterApply, /module-alice-intro/, '新并入的条目必须写 module- 前缀')
+
+  // 模拟用户既有数据：前缀改回历史的 chara-（老数据不迁移，读取端必须两种都认）
+  writeFileSync(file, afterApply.replaceAll('module-alice-', 'chara-alice-'))
+  assert.match(readFileSync(file, 'utf8'), /chara-alice-intro/)
+
+  const removed = characters.removeCharacterFromPreset(presetRoot, 'target', 'alice')
+  assert.equal(removed.ok, true, removed.message)
+  const afterRemove = readFileSync(file, 'utf8')
+  assert.doesNotMatch(afterRemove, /chara-alice-intro/, '历史前缀的条目必须被撤销，否则留下撤不掉的孤儿')
+  assert.doesNotMatch(afterRemove, /module-alice-intro/)
 })

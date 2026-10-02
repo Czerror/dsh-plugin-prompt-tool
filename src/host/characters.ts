@@ -67,8 +67,18 @@ function recordMemory(doc: ReturnType<typeof parseDocument>, cardId: string, con
   doc.setIn(['meta', CHARACTER_MEMORIES_KEY, cardId], { characterId: cardId, configId: String(config.id), contentHash: contentHash(config) })
 }
 
+/**
+ * 并入条目的前缀集合：**写入统一用 `module-<id>-`**，读取端同时接受历史的 `chara-<id>-`。
+ *
+ * 不迁移老数据：用户已并入的条目 id 就长成 `chara-…`，改写它们等于重写用户的 module.yml；
+ * 而「按前缀差集撤销」的移除逻辑必须认得两种前缀，否则老条目会撤不掉、新条目会重复并入。
+ */
+function importPrefixes(id: string): readonly string[] {
+  return [`module-${id}-`, `chara-${id}-`]
+}
+
 function availableMemoryId(configs: readonly Record<string, unknown>[], cardId: string): string {
-  const base = `chara-${cardId}-memory`
+  const base = `module-${cardId}-memory`
   const used = new Set(configs.map(config => config.id))
   let id = base
   for (let suffix = 2; used.has(id); suffix += 1) id = `${base}-${suffix}`
@@ -92,12 +102,12 @@ export function projectCharacterMemories(
     const id = config.id
     const proof = Object.values(records).find(record => record.configId === id)
     if (proof !== undefined && proof.contentHash === contentHash(config)) { excluded.add(index); continue }
-    const cardId = imported.find(card => id === `chara-${card}-memory` || id.startsWith(`chara-${card}-memory-`)) ?? proof?.characterId
+    const cardId = imported.find(card => importPrefixes(card).some(base => id === `${base}memory` || id.startsWith(`${base}memory-`))) ?? proof?.characterId
     if (cardId === undefined) continue
     // 原生卡定义的同名普通配置是独立内容，不按 ID 猜作记忆。
     if (presetRoot !== undefined && validCardId(cardId)) {
       const original = loadConverted(cardDir(presetRoot, cardId))
-      if (original?.promptConfigs?.some(entry => isRecord(entry) && `chara-${cardId}-${String(entry.id)}` === id)) continue
+      if (original?.promptConfigs?.some(entry => isRecord(entry) && importPrefixes(cardId).some(base => `${base}${String(entry.id)}` === id))) continue
       const memory = original === undefined ? undefined : buildCharacterMemoryEntry(original, readCharacterMemory(presetRoot, cardId))
       if (memory !== undefined && contentHash({ ...memory, id }) === contentHash(config)) { excluded.add(index); continue }
     }
@@ -172,7 +182,10 @@ export function characterModuleStillNeeded(module: string, context: CharacterMod
       return context.customTools
     case 'character-tools':
       return context.importedCharacters.length > 0
-        || context.configs.some((config) => String(config.id ?? '').startsWith('chara-'))
+        || context.configs.some((config) => {
+          const id = String(config.id ?? '')
+          return id.startsWith('module-') || id.startsWith('chara-')
+        })
     default:
       return true
   }
@@ -523,7 +536,7 @@ export function applyCharacterToPreset(
   cardId: string,
 ): { ok: true; count: number; personaOpened?: boolean } | { ok: false; message: string } {
   if (!validCardId(cardId)) return { ok: false, message: `非法角色卡 id：${cardId}` }
-  const prefix = `chara-${cardId}-`
+  const prefix = `module-${cardId}-`
   // ST system-section 开放：导入卡含 system-section 段（角色设定/系统提示/后续指令）
   // 时，激活预设 persona.complete: true 会在 assembly 抑制这些段（官方 complete
   // 只保留 persona 段）——自动置 complete: false 开放（与 ST 转换自身的
@@ -611,15 +624,16 @@ export function removeCharacterFromPreset(
   cardId: string,
 ): { ok: true; count: number } | { ok: false; message: string } {
   if (!validCardId(cardId)) return { ok: false, message: `非法角色卡 id：${cardId}` }
-  const prefix = `chara-${cardId}-`
+  const prefixes = importPrefixes(cardId)
   try {
     const spec = loadConverted(cardDir(presetRoot, cardId))
     let removed = 0
     withPresetDoc(join(presetRoot, templateName), (doc) => {
       const current = doc.toJS() as { promptConfigs?: unknown[]; meta?: { importedCharacters?: unknown[] } }
       const kept = (Array.isArray(current.promptConfigs) ? current.promptConfigs as Array<Record<string, unknown>> : []).filter((config) => {
+        // 两种前缀都要撤：老条目是 `chara-`，新写入是 `module-`；只认一种会留下孤儿条目。
         const isCard = config !== null && typeof config === 'object'
-          && String(config.id ?? '').startsWith(prefix)
+          && prefixes.some((base) => String(config.id ?? '').startsWith(base))
         if (isCard) removed += 1
         return !isCard
       })
