@@ -159,6 +159,56 @@ test('拒绝路径：非法 id、无效模块声明、缺失宿主能力都在�
   )
 })
 
+test('官方挂载行与本通道不重复装载：引擎能力只出现一次', async () => {
+  // 物化产物里既有官方工具行，也有引擎行；自建通道只认引擎能力。
+  const dir = writePreset('mixed-rows', {
+    modules: ['prompt-config-engine', 'tool-config-engine', 'tool-pwsh', 'planning', 'compaction'],
+  })
+  mkdirSync(join(dir, 'prompt-configs'), { recursive: true })
+  mkdirSync(join(dir, 'custom-tools'), { recursive: true })
+
+  const prepared = await prepareAssembly(presetRoot, 'mixed-rows', hasEveryService)
+  const ids = prepared.modules.map((module) => module.id)
+  assert.deepEqual(ids, ['tool-config-engine'], '只装引擎能力，官方行不在本通道内')
+  assert.equal(new Set(ids).size, ids.length, '同一份组合不会装入重复模块')
+  // 切片只由 applyPromptConfigs 挂一次，不由模块清单再挂一遍。
+  assert.equal(ids.includes('prompt-config-engine'), false)
+})
+
+test('与官方物化路径同源：writePreset 落盘的切片 = 配装读出的切片', async () => {
+  const { writePreset } = await import('../../src/host/write-preset.ts')
+  const id = 'materialized-slices'
+  // 定义来源目录（writePreset 的模板解析基准：sourceDir 优先于同名已安装预设）。
+  const sourceDir = join(presetRoot, '.source-materialized')
+  mkdirSync(sourceDir, { recursive: true })
+  writeFileSync(join(sourceDir, 'preset.yml'), `${JSON.stringify({
+    id, name: id, modules: ['prompt-config-engine'],
+  }, null, 2)}\n`, 'utf8')
+  // 官方路径：把同一份切片交给 writePreset 物化到 <预设根>/<id>/prompt-configs。
+  writePreset('materialized prompt', {
+    presetDir: presetRoot,
+    presetOrder: 5,
+    promptConfigs: LITERAL_SLICES,
+    presetTemplate: id,
+    outputId: id,
+    sourceDir,
+    agentsInstructionText: '',
+  })
+  const prepared = await prepareAssembly(presetRoot, id, hasEveryService)
+  assert.equal(prepared.configs.length, LITERAL_SLICES.length, '条数与落盘一致')
+  for (const [index, expected] of LITERAL_SLICES.entries()) {
+    const actual = prepared.configs[index]
+    // 五个维度逐条对拍：写的层/位置/时机/次数/受众，读回来一项不改。
+    assert.equal(actual.id, expected.id)
+    assert.equal(actual.strategy, expected.strategy)
+    assert.equal(actual.layer, expected.layer)
+    assert.equal(actual.position, expected.position)
+    assert.equal(actual.promotion, expected.promotion)
+    assert.equal(actual.dedupe, expected.dedupe)
+    assert.equal(actual.audience, expected.audience)
+  }
+})
+
 /**
  * 装配失败**不得冒泡**：`agent/created` 的监听器被 await，抛错会让会话创建整个失败。
  * 这里用最小桩上下文走完挂载路径，断言「只告警、不抛、不留半挂状态」。
