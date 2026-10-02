@@ -123,7 +123,7 @@ export const PresetSwitcher = memo(function PresetSwitcher(props: { store: Promp
         onRepreview={() => { void flow.repreview() }} onRefresh={() => { void flow.retryRefresh() }}
         onUse={flow.resultLabel === undefined ? undefined : () => { store.setPresetTemplate(flow.resultLabel!); flow.cancel(); setImportOpen(false) }} />}
       {exportTarget && <PresetExportDialog t={t} preset={exportTarget} onClose={() => setExportTarget(undefined)} />}
-      <div>
+      <div className={styles.presetGrid}>
         {presets.length === 0 ? (
           <p className={styles.readOnly} role="status">{t('presetSwitcher.empty')}</p>
         ) : presets.map((preset) => renderCard(preset))}
