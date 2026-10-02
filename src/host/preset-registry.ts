@@ -13,6 +13,7 @@ import { join } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import type { PresetDefinition } from '@deepseek-ai/dsh-agent-preset-registry'
 import { listPresets, loadPresetSpec } from './manifest.ts'
+import { MODULE_DEFINITION_FILE } from './paths.ts'
 
 type Registration = { dispose: () => Promise<void>; fingerprint: string }
 
@@ -23,7 +24,7 @@ type Registration = { dispose: () => Promise<void>; fingerprint: string }
  * `preset.yml` 的目录，与「宿主有没有把它登记成官方预设」是两回事。
  */
 export function presetDirExists(root: string, id: string): boolean {
-  return statSync(join(root, id, 'preset.yml'), { throwIfNoEntry: false }) !== undefined
+  return statSync(join(root, id, MODULE_DEFINITION_FILE), { throwIfNoEntry: false }) !== undefined
 }
 
 /** 登记身份：元数据来自 preset.yml，组合本体为空（装配不归官方 Loader）。 */

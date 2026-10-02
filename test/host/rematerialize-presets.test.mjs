@@ -26,14 +26,14 @@ function seedPreset(home, name, template = 'pt-minimal') {
   const dir = join(home, '.prompt-tool', 'modules', name)
   mkdirSync(dir, { recursive: true })
   cpSync(join(ROOT, 'preset', template), dir, { recursive: true })
-  const file = join(dir, 'preset.yml')
+  const file = join(dir, 'module.yml')
   const doc = parseDocument(readFileSync(file, 'utf8'))
   doc.set('id', name)
   writeFileSync(file, doc.toString(), 'utf8')
   return dir
 }
 
-test('rematerialize-presets：按当前 preset.yml 重新物化组合，共享引擎引用为包名说明符', () => {
+test('rematerialize-presets：按当前 module.yml 重新物化组合，共享引擎引用为包名说明符', () => {
   const home = mkdtempSync(join(tmpdir(), 'pt-remat-'))
   try {
     const dir = seedPreset(home, 'minimal')
@@ -64,14 +64,14 @@ test('rematerialize-presets：手写/官方格式预设（无 modules/params）�
   try {
     const dir = join(home, '.prompt-tool', 'modules', 'liangshen')
     mkdirSync(dir, { recursive: true })
-    writeFileSync(join(dir, 'preset.yml'), 'name: 梁神模式\ndescription: 手写预设\norder: 9\n', 'utf8')
+    writeFileSync(join(dir, 'module.yml'), 'name: 梁神模式\ndescription: 手写预设\norder: 9\n', 'utf8')
     const composition = '# hand-written composition\n[]\n'
     writeFileSync(join(dir, 'agent.cordis.yml'), composition, 'utf8')
 
     const output = run(home)
     assert.match(output, /1 skipped/)
     assert.equal(readFileSync(join(dir, 'agent.cordis.yml'), 'utf8'), composition, '手写组合不被覆盖')
-    assert.match(readFileSync(join(dir, 'preset.yml'), 'utf8'), /手写预设/)
+    assert.match(readFileSync(join(dir, 'module.yml'), 'utf8'), /手写预设/)
   } finally {
     rmSync(home, { recursive: true, force: true })
   }
@@ -85,7 +85,7 @@ test('rematerialize-presets：dry-run 只报告不写盘', () => {
     writeFileSync(skill, 'dry-run 不刷新\n', 'utf8')
     mkdirSync(join(dir, 'skills', 'extra'))
     writeFileSync(join(dir, 'skills', 'extra', 'SKILL.md'), '独有技能\n', 'utf8')
-    const before = readFileSync(join(dir, 'preset.yml'), 'utf8')
+    const before = readFileSync(join(dir, 'module.yml'), 'utf8')
     const entries = readdirSync(home, { recursive: true }).sort()
     const output = run(home, '--dry-run', '--refresh-skills')
     assert.match(output, /dry-run/)
@@ -94,7 +94,7 @@ test('rematerialize-presets：dry-run 只报告不写盘', () => {
     assert.equal(readFileSync(skill, 'utf8'), 'dry-run 不刷新\n')
     assert.equal(readFileSync(join(dir, 'skills', 'extra', 'SKILL.md'), 'utf8'), '独有技能\n')
     assert.deepEqual(readdirSync(home, { recursive: true }).sort(), entries, '不创建暂存目录或备份')
-    assert.equal(readFileSync(join(dir, 'preset.yml'), 'utf8'), before, 'dry-run 不写 preset.yml')
+    assert.equal(readFileSync(join(dir, 'module.yml'), 'utf8'), before, 'dry-run 不写模块定义')
     assert.equal(existsSync(join(dir, 'agent.cordis.yml')), false, 'dry-run 不生成组合')
     assert.equal(existsSync(join(home, '.prompt-tool', '.engine')), false, 'dry-run 不物化引擎')
   } finally {
@@ -102,14 +102,14 @@ test('rematerialize-presets：dry-run 只报告不写盘', () => {
   }
 })
 
-test('rematerialize-presets：引擎参数按 preset.yml 解析，不回落 writePreset 默认值', () => {
+test('rematerialize-presets：引擎参数按 module.yml 解析，不回落 writePreset 默认值', () => {
   const home = mkdtempSync(join(tmpdir(), 'pt-remat-'))
   try {
     const dir = installFixturePresetInHome(home)
-    const doc = parseDocument(readFileSync(join(dir, 'preset.yml'), 'utf8'))
+    const doc = parseDocument(readFileSync(join(dir, 'module.yml'), 'utf8'))
     doc.setIn(['layerSettings', 'pre-step', 'firstTurnAnchor'], true)
     doc.setIn(['layerSettings', 'pre-step', 'injectPrompt'], false)
-    writeFileSync(join(dir, 'preset.yml'), doc.toString(), 'utf8')
+    writeFileSync(join(dir, 'module.yml'), doc.toString(), 'utf8')
 
     const output = run(home)
     assert.match(output, /1 materialized/)
@@ -201,7 +201,7 @@ test('rematerialize-presets：刷新不沿同名目录链接外写，独有链�
   try {
     const dir = seedPreset(home, 'pt-cordis', 'pt-cordis')
     // skills 刷新也适用于手写预设；跳过 writePreset，直接验证本脚本的链接边界。
-    writeFileSync(join(dir, 'preset.yml'), 'name: cordis\norder: 0\n', 'utf8')
+    writeFileSync(join(dir, 'module.yml'), 'name: cordis\norder: 0\n', 'utf8')
     const skills = join(dir, 'skills')
     const linked = join(skills, 'editing-cordis-compositions')
     const packaged = readFileSync(join(linked, 'SKILL.md'), 'utf8')

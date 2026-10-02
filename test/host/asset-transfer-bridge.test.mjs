@@ -12,7 +12,7 @@ const { BRIDGE_ENDPOINTS, MAX_BRIDGE_BODY_BYTES, SETTINGS_BRIDGE_PREFIX } = awai
 const root = join(home, '.prompt-tool', 'modules')
 const storageRoot = join(home, '.prompt-tool')
 mkdirSync(join(root, 'owner'), { recursive: true })
-writeFileSync(join(root, 'owner/preset.yml'), 'id: owner\nname: Owner\nmodules: []\n')
+writeFileSync(join(root, 'owner/module.yml'), 'id: owner\nname: Owner\nmodules: []\n')
 test.after(() => rmSync(home, { recursive: true, force: true }))
 
 function harness(t, refresh = () => {}) {
@@ -45,7 +45,7 @@ async function call(h, endpoint, body, overrides = {}) {
   return res
 }
 
-const filesFor = (id, extra = []) => [{ path: 'preset.yml', encoding: 'utf8', content: `# SOURCE\nid: ${id}\nname: ${id}\nmodules: []\n` }, ...extra]
+const filesFor = (id, extra = []) => [{ path: 'module.yml', encoding: 'utf8', content: `# SOURCE\nid: ${id}\nname: ${id}\nmodules: []\n` }, ...extra]
 const credentials = (preview) => ({ expectedSourceDigest: preview.payload.value.sourceDigest, expectedPreviewRevision: preview.payload.value.previewRevision })
 
 test('预设真实安装保留自有资源；刷新报错明确返回已保存但未生效', async (t) => {
@@ -69,7 +69,7 @@ test('预设真实安装保留自有资源；刷新报错明确返回已保存�
   assert.equal(readFileSync(join(root, 'roundtrip/preset.md'), 'utf8'), 'BODY\r\n')
   assert.deepEqual(readFileSync(join(root, 'roundtrip/cover.png')), png)
   assert.equal(readFileSync(join(root, 'roundtrip/engine/private.mjs'), 'utf8'), 'export default {}')
-  assert.equal(existsSync(join(root, 'owner/preset.yml')), true)
+  assert.equal(existsSync(join(root, 'owner/module.yml')), true)
 })
 
 test('提交必须匹配预览；默认重名另存、明确更新及目标版本复检', async (t) => {
@@ -154,11 +154,11 @@ test('新参数、来源、载荷上限和回环边界均在写盘前拒绝；�
   for (const extra of [{ preview: 'true' }, { overwrite: 1 }, { targetId: 'UPPER' }, { targetName: [] }, { sourceKind: 'unknown' }, { expectedSourceDigest: 'bad' }, { sourceId: 'wrong' }, { unknown: true }]) {
     assert.equal((await call(h, 'importPresetPackage', { files, ...extra })).status, 400, JSON.stringify(extra))
   }
-  assert.equal((await call(h, 'importPresetPackage', { files: [{ path: 'preset.yml', content: 'x', encoding: 'binary' }], preview: true })).status, 400)
+  assert.equal((await call(h, 'importPresetPackage', { files: [{ path: 'module.yml', content: 'x', encoding: 'binary' }], preview: true })).status, 400)
   assert.equal((await call(h, 'importPresetPackage', { files, preview: true }, { socket: { remoteAddress: '192.0.2.1' } })).status, 403)
   assert.equal((await call(h, 'importPresetPackage', { files, preview: true }, { headers: { host: 'localhost', origin: 'https://evil.invalid' } })).status, 403)
   assert.equal((await call(h, 'importPresetPackage', { files, preview: true }, { method: 'GET' })).status, 405)
-  assert.equal((await call(h, 'importPresetPackage', { files: [{ path: 'preset.yml', content: 'x'.repeat(MAX_BRIDGE_BODY_BYTES) }] })).status, 413)
+  assert.equal((await call(h, 'importPresetPackage', { files: [{ path: 'module.yml', content: 'x'.repeat(MAX_BRIDGE_BODY_BYTES) }] })).status, 413)
   assert.equal((await call(h, 'charactersImportStream', {})).status, 410)
   assert.equal(existsSync(join(root, 'invalid-new')), false)
 })

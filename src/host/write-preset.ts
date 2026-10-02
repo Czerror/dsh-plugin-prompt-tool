@@ -16,7 +16,7 @@ import { parseDocument, stringify as stringifyYaml } from 'yaml'
 import { validateSubagentToolPolicy } from '../../engine/subagent-tool-policy-core.mjs'
 // @ts-expect-error 仓库根 ESM 引擎文件由 tsdown 作为源码依赖打包，无独立声明文件。
 import { compileDeclarations } from '../../engine/trigger-spec.mjs'
-import { DEFAULT_PRESET_DIR } from './paths.ts'
+import { DEFAULT_PRESET_DIR, MODULE_DEFINITION_FILE } from './paths.ts'
 import { DEFAULT_PRESET_ID } from '../shared/preset-ids.ts'
 import { triggerPromptConfigOptions } from './preset-triggers.ts'
 import { assertPresetDirectory, assertPresetId, assertPresetTree, engineModuleFileNames, rewritePresetEngineReferences } from './preset-install.ts'
@@ -257,8 +257,8 @@ export function writePreset(prompt: string, options: WritePresetOptions): string
   //    已存在参数文件（种子化/新建复制）时只合并元数据键（name/description/order/meta），
   //    保留 params/modules/promptConfigs/content——不得整体覆盖（会摧毁参数源）。
   const meta = spec.meta !== null && typeof spec.meta === 'object' ? spec.meta as Record<string, unknown> : {}
-  const sourceYamlPath = options.sourceDir !== undefined || !existsSync(join(targetDir, 'preset.yml'))
-    ? join(templateDir, 'preset.yml') : join(targetDir, 'preset.yml')
+  const sourceYamlPath = options.sourceDir !== undefined || !existsSync(join(targetDir, MODULE_DEFINITION_FILE))
+    ? join(templateDir, MODULE_DEFINITION_FILE) : join(targetDir, MODULE_DEFINITION_FILE)
   const existingPresetYaml = existsSync(sourceYamlPath)
     ? readFileSync(sourceYamlPath, 'utf8')
     : undefined
@@ -279,9 +279,9 @@ export function writePreset(prompt: string, options: WritePresetOptions): string
     ensureMetaKey('name', typeof spec.name === 'string' && spec.name.length > 0 ? spec.name : undefined)
     ensureMetaKey('description', typeof spec.description === 'string' && spec.description.length > 0 ? spec.description : undefined)
     ensureMetaKey('meta', Object.keys(meta).length > 0 ? meta : undefined)
-    writeFileSync(join(outDir, 'preset.yml'), doc.toString(), 'utf8')
+    writeFileSync(join(outDir, MODULE_DEFINITION_FILE), doc.toString(), 'utf8')
   } else {
-    writeFileSync(join(outDir, 'preset.yml'), stringifyYaml({ ...meta, order: options.presetOrder }) + '\n', 'utf8')
+    writeFileSync(join(outDir, MODULE_DEFINITION_FILE), stringifyYaml({ ...meta, order: options.presetOrder }) + '\n', 'utf8')
   }
 
   // 2.5) 内容资产:preset.md / agents.md(与组合文件同层;大文本存文件而非 settings)。
@@ -302,7 +302,7 @@ export function writePreset(prompt: string, options: WritePresetOptions): string
   // 内容资产 preset.md / agents.md——后者由运行时 prompt 决定）。
   const templateEntries = readdirSync(templateDir, { withFileTypes: true })
   for (const entry of templateEntries) {
-    if (entry.name === 'preset.yml' || entry.name === 'agent.cordis.yml'
+    if (entry.name === MODULE_DEFINITION_FILE || entry.name === 'agent.cordis.yml'
       || entry.name === 'preset.md' || entry.name === 'agents.md') continue
     const source = join(templateDir, entry.name)
     const target = join(outDir, entry.name)

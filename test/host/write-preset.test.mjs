@@ -19,8 +19,8 @@ test.after(() => rmSync(home, { recursive: true, force: true }))
 
 function makeOptions(presetDir) {
   // writePreset 的模板解析根 = options.presetDir（其次包内 preset/）：夹具缺失时安装；
-  // 测试已自行复制并改写过 preset.yml 时不覆盖。
-  if (!existsSync(join(presetDir, FIXTURE_PRESET_ID, 'preset.yml'))) installFixturePreset(presetDir)
+  // 测试已自行复制并改写过模块定义时不覆盖。
+  if (!existsSync(join(presetDir, FIXTURE_PRESET_ID, 'module.yml'))) installFixturePreset(presetDir)
   return {
     firstTurnAnchor: false,
     firstTurnText: '',
@@ -39,7 +39,7 @@ function makeOptions(presetDir) {
   }
 }
 
-/** 读取生成组合里的官方 persona 行（preset.yml 顶层 persona 段的渲染产物）。 */
+/** 读取生成组合里的官方 persona 行（module.yml 顶层 persona 段的渲染产物）。 */
 function readPersonaRow(presetDir, template) {
   const agent = readFileSync(join(presetDir, template, 'agent.cordis.yml'), 'utf8')
   const row = parseYaml(agent).find((item) => item?.id === 'persona')
@@ -135,14 +135,14 @@ test('writePreset 模型参数（思维程度/温度/输出上限）→ agent-re
   }
 })
 
-test('writePreset：preset.yml 的模块行参数经参数桥注入 agent.cordis.yml', () => {
+test('writePreset：module.yml 的模块行参数经参数桥注入 agent.cordis.yml', () => {
   const dir = join(tmpdir(), `prompt-tool-wp-${process.pid}-${Date.now()}`)
   const presetDir = join(dir, 'preset')
   try {
     // B7 T3：原用例的载体是 `pre-step.allowKinds` → `context-gate` 行；两者都已删除。
     // 换成本地自己写的模板（不污染共享夹具），机制与断言不变。
     mkdirSync(join(presetDir, FIXTURE_PRESET_ID), { recursive: true })
-    writeFileSync(join(presetDir, FIXTURE_PRESET_ID, 'preset.yml'),
+    writeFileSync(join(presetDir, FIXTURE_PRESET_ID, 'module.yml'),
       'id: fixture\nname: fixture\nversion: "1"\nengineCompat: ">=0.4.2"\n'
       + 'modules: [tool-git-bash]\nlayerSettings:\n  tool-pipeline:\n    toolGitBashEnabled: false\n', 'utf8')
     writePreset('PROMPT', makeOptions(presetDir))
@@ -308,7 +308,7 @@ test('writePreset 预设变量只读顶层 variables，清空后不复活 params
   try {
     // 旧 params 内容键及嵌套 params.variables 保留原文件，但不再成为变量源。
     cpSync(FIXTURE_PRESET_SRC, join(presetDir, 'fixture'), { recursive: true })
-    const presetFile = join(presetDir, 'fixture', 'preset.yml')
+    const presetFile = join(presetDir, 'fixture', 'module.yml')
     const doc = parseDocument(readFileSync(presetFile, 'utf8'))
     doc.setIn(['params', 'legacyVar'], '旧值')
     doc.setIn(['params', 'legacyEmpty'], '')
@@ -355,12 +355,12 @@ test('writePreset 预设变量只读顶层 variables，清空后不复活 params
   }
 })
 
-test('writePreset 自定义工具渲染 custom-tools/<n>-<id>.yml（源 = preset.yml 顶层 customTools 段）', () => {
+test('writePreset 自定义工具渲染 custom-tools/<n>-<id>.yml（源 = module.yml 顶层 customTools 段）', () => {
   const dir = join(tmpdir(), `prompt-tool-ctools-${process.pid}-${Date.now()}`)
   const presetDir = join(dir, 'preset')
   try {
     cpSync(FIXTURE_PRESET_SRC, join(presetDir, 'fixture'), { recursive: true })
-    const presetFile = join(presetDir, 'fixture', 'preset.yml')
+    const presetFile = join(presetDir, 'fixture', 'module.yml')
     const doc = parseDocument(readFileSync(presetFile, 'utf8'))
     doc.setIn(['customTools'], [
       {
@@ -402,12 +402,12 @@ test('writePreset 用户副本缺组合源时拒绝，不回退包内同名模�
     rmSync(userMinimal, { recursive: true, force: true })
     mkdirSync(userMinimal, { recursive: true })
     // 纯元数据副本：无 modules/params/promptConfigs，目录也无 agent.cordis.yml。
-    writeFileSync(join(userMinimal, 'preset.yml'), 'name: 极简模式（旧）\ndescription: 旧版种子副本\norder: 3\n', 'utf8')
-    const before = readFileSync(join(userMinimal, 'preset.yml'), 'utf8')
+    writeFileSync(join(userMinimal, 'module.yml'), 'name: 极简模式（旧）\ndescription: 旧版种子副本\norder: 3\n', 'utf8')
+    const before = readFileSync(join(userMinimal, 'module.yml'), 'utf8')
     assert.throws(() => writePreset('PROMPT', { ...makeOptions(presetDir), presetTemplate: 'pt-minimal' }), /no modules\/composition/)
     assert.equal(existsSync(join(userMinimal, 'agent.cordis.yml')), false)
-    assert.equal(readFileSync(join(userMinimal, 'preset.yml'), 'utf8'), before)
-    const spec = parseYaml(readFileSync(join(userMinimal, 'preset.yml'), 'utf8'))
+    assert.equal(readFileSync(join(userMinimal, 'module.yml'), 'utf8'), before)
+    const spec = parseYaml(readFileSync(join(userMinimal, 'module.yml'), 'utf8'))
     assert.equal(spec.modules, undefined, '不注入包内 modules（无迁移）')
     assert.equal(spec.name, '极简模式（旧）', '用户命名保留')
     assert.equal(spec.description, '旧版种子副本', '用户描述保留')
@@ -416,12 +416,12 @@ test('writePreset 用户副本缺组合源时拒绝，不回退包内同名模�
   }
 })
 
-test('R3 未提供的引擎参数保留 preset.yml 定义，显式值才覆盖（导入/离线物化同源）', () => {
+test('R3 未提供的引擎参数保留 module.yml 定义，显式值才覆盖（导入/离线物化同源）', () => {
   const dir = join(tmpdir(), `prompt-tool-preserve-${process.pid}-${Date.now()}`)
   /** 安装夹具并把定义改成「作者显式声明」形态，覆盖 runtimeOf 曾补默认值的键。 */
   const install = (presetDir) => {
     installFixturePreset(presetDir)
-    const file = join(presetDir, FIXTURE_PRESET_ID, 'preset.yml')
+    const file = join(presetDir, FIXTURE_PRESET_ID, 'module.yml')
     const doc = parseDocument(readFileSync(file, 'utf8'))
     doc.setIn(['layerSettings', 'pre-step', 'firstTurnAnchor'], true)
     doc.setIn(['layerSettings', 'pre-step', 'firstTurnText'], 'ANCHOR TEXT')

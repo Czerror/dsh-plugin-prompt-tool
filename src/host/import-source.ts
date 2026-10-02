@@ -3,6 +3,7 @@ import { posix } from 'node:path'
 import { parseDocument, stringify, YAMLMap } from 'yaml'
 // @ts-expect-error 引擎 ESM 是权威校验实现，由构建器同源打包。
 import { createPromptConfigs } from '../../engine/schema.mjs'
+import { MODULE_DEFINITION_FILE } from './paths.ts'
 import type { AssetFile, ImportChoices, ImportKind } from '../shared/asset-transfer.ts'
 import { MAX_ASSET_BYTES, MAX_ASSET_FILES } from '../shared/asset-transfer.ts'
 import type { StConversionReport } from '../shared/bridge-contract.ts'
@@ -123,7 +124,7 @@ function classify(raw: unknown, target: 'preset' | 'character'): ImportKind {
 export function prepareImport(input: AssetFile[], target: 'preset' | 'character', choices: ImportChoices = {}): PreparedImport {
   const files = normalizeAssetFiles(input)
   const sourceDigest = assetSourceDigest(files)
-  const named = files.filter(file => /^(preset|converted)\.ya?ml$/i.test(file.path))
+  const named = files.filter(file => /^(?:module|preset|converted)\.ya?ml$/i.test(file.path))
   if (named.length > 1) throw new Error(`存在多个定义候选：${named.map(file => file.path).join('、')}`)
   const topFiles = files.filter(file => !file.path.includes('/'))
   const structured = topFiles.filter(file => /\.(json|ya?ml)$/i.test(file.path))
@@ -154,7 +155,7 @@ export function prepareImport(input: AssetFile[], target: 'preset' | 'character'
         const fragment = Array.isArray(raw.promptConfigs) && !['version', 'engineCompat', 'modules', 'composition', 'customTools', 'persona', 'content'].some(key => key in raw)
         let selfContained = false
         try { validateCharacterSpec(raw as unknown as PresetSpec); selfContained = true } catch { /* 完整预设仍可由候选物化校验其附件与模块。 */ }
-        if (selfContained && fragment && !/^preset\.ya?ml$/i.test(file.path) && !/^converted\.ya?ml$/i.test(file.path) && choices.sourceKind === undefined) {
+        if (selfContained && fragment && !/^(?:module|preset)\.ya?ml$/i.test(file.path) && !/^converted\.ya?ml$/i.test(file.path) && choices.sourceKind === undefined) {
           return { state: 'needs-kind-selection', kinds: ['native-preset', 'native-character'], sourceName: file.path }
         }
         if (choices.sourceKind === 'native-character' || /^converted\.ya?ml$/i.test(file.path)) {
@@ -209,7 +210,7 @@ export function prepareImport(input: AssetFile[], target: 'preset' | 'character'
   const avatarFile = resources.find(file => /^avatar\.png$/i.test(file.path))
   const avatar = first.avatar ?? (avatarFile === undefined ? undefined : decodeAssetFile(avatarFile))
   if (avatar !== undefined && !isPngBuffer(avatar)) throw new Error('avatar.png 必须提供显式编码的 PNG 原始字节')
-  const preparedFiles: AssetFile[] = [{ path: 'preset.yml', content: yaml, encoding: 'utf8' }, ...resources]
+  const preparedFiles: AssetFile[] = [{ path: MODULE_DEFINITION_FILE, content: yaml, encoding: 'utf8' }, ...resources]
   if (first.avatar !== undefined && !resources.some(file => file.path.toLowerCase() === 'avatar.png')) preparedFiles.push({ path: 'avatar.png', content: first.avatar.toString('base64'), encoding: 'base64' })
   return { state: 'ready', kind: first.kind, spec, yaml, files: preparedFiles, sourceName: candidates.map(file => file.path).join('、'), sourceDigest,
     ...(report === undefined ? {} : { report }), ...(avatar === undefined ? {} : { avatar }), sourceText: first.sourceText }

@@ -1,7 +1,7 @@
 /**
  * 预设登记 seam：登记只是让宿主找得到 id 的**空壳**，装配不归官方 Loader。
  *
- * 真值源是存储根里的目录事实（`preset.yml` 存在与否）与宿主侧的登记调用记录；
+ * 真值源是存储根里的目录事实（`module.yml` 存在与否）与宿主侧的登记调用记录；
  * 断言落在调用方观察到的行为上：登记了什么、什么时候撤销、失败时旧登记是否还在。
  */
 import { after, test } from 'node:test'
@@ -38,7 +38,7 @@ function fixture() {
   const sync = createPresetRegistrySync({ agentPresets: registry, logger: { warn: (m) => { warnings.push(m) } } }, root)
   const write = (id, meta = {}) => {
     mkdirSync(join(root, id), { recursive: true })
-    writeFileSync(join(root, id, 'preset.yml'), `${JSON.stringify({ id, name: meta.name ?? id, ...meta }, null, 2)}\n`)
+    writeFileSync(join(root, id, 'module.yml'), `${JSON.stringify({ id, name: meta.name ?? id, ...meta }, null, 2)}\n`)
   }
   return {
     root, records, calls, warnings, write, sync,

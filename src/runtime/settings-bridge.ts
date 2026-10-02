@@ -61,7 +61,7 @@ import { createAssetSources } from '../host/asset-sources.ts'
 import { expandPresetSource, exportPresetPackage, installPresetPackage, presetImportPreview } from '../host/preset-package.ts'
 import { decodeAssetFile, prepareImport } from '../host/import-source.ts'
 import { assertPresetDirectory, assertPresetId, canonicalPresetRoot, presetPathExists } from '../host/preset-install.ts'
-import { DSH_HOME } from '../host/paths.ts'
+import { DSH_HOME, MODULE_DEFINITION_FILE } from '../host/paths.ts'
 import type { AssetFile, AssetImportRequest, ImportKind, PresetExportRequest } from '../shared/asset-transfer.ts'
 import { lastWorldBookDiagnostics } from '../../engine/st-world-book.mjs'
 import { BRIDGE_ENDPOINTS, MAX_BRIDGE_BODY_BYTES, PRESET_ACTIVATION_FAILED, SETTINGS_BRIDGE_PREFIX, type TriggerEditorMeta } from '../shared/bridge-contract.ts'
@@ -2310,7 +2310,7 @@ export function registerSettingsBridge(
             if (!guardPresetWrite(dir, res)) return
             const run = capabilityQueue.then(async () => {
               if (!guardPresetIdentity(body, dir, res)) return
-              const file = join(dir, 'preset.yml')
+              const file = join(dir, MODULE_DEFINITION_FILE)
               let original: string | undefined
               try {
                 original = readFileSync(file, 'utf8')

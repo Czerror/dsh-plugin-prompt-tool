@@ -35,7 +35,7 @@ const {
   writePreset,
 } = await import('../../lib/index.mjs')
 
-/** writePreset 生成夹具模板的提示词配置（生产路径：preset.yml 数据 + 顶层 params 动态字段）。 */
+/** writePreset 生成夹具模板的提示词配置（生产路径：module.yml 数据 + 顶层 params 动态字段）。 */
 function generatedConfigs(options = {}, prompt = 'PROMPT') {
   const dir = mkdtempSync(join(tmpdir(), 'pt-wp-configs-'))
   try {

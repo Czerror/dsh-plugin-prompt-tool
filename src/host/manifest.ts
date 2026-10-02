@@ -15,7 +15,7 @@ import { spawn } from 'node:child_process'
 import { basename, join, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { Pair, Scalar, parse as parseYaml, parseDocument, YAMLMap, YAMLSeq } from 'yaml'
-import { DEFAULT_PRESET_DIR } from './paths.ts'
+import { DEFAULT_PRESET_DIR, MODULE_DEFINITION_FILE } from './paths.ts'
 import { engineCapability, engineRecipe, impliedModulesForParams, isEngineCapabilityPresent, type ModuleSourceMode, type PresetModuleFacts } from '../shared/engine-capabilities.ts'
 import { ENGINE_PARAM_DEFINITIONS, ENGINE_PARAM_KEYS, buildEngineModuleParams, normalizeMaxDepth } from '../shared/engine-params.ts'
 import { personaRowConfig, readPersonaSpec, type PersonaSpec } from '../shared/persona-section.ts'
@@ -104,7 +104,7 @@ const presetSpecCache = new Map<string, { mtimeMs: number; size: number; spec: P
 
 /** 写盘后失效缓存（调用方在写完 preset.yml 后调用；不调用也安全——stat 签名兜底）。 */
 export function invalidatePresetSpec(dir: string): void {
-  presetSpecCache.delete(join(dir, 'preset.yml'))
+  presetSpecCache.delete(join(dir, MODULE_DEFINITION_FILE))
 }
 
 /**
@@ -112,7 +112,7 @@ export function invalidatePresetSpec(dir: string): void {
  * 与其余字段）。返回是否发生修改；文件缺失或没有该模块时返回 false。
  */
 export function removePresetModule(dir: string, moduleId: string): boolean {
-  const file = join(dir, 'preset.yml')
+  const file = join(dir, MODULE_DEFINITION_FILE)
   if (!existsSync(file)) return false
   const doc = parseDocument(readFileSync(file, 'utf8'), { logLevel: 'silent' })
   if (doc.errors.length > 0) return false
@@ -129,7 +129,7 @@ export function removePresetModule(dir: string, moduleId: string): boolean {
 
 /** 加载某个预设模板的单一参数文件 preset/<name>/preset.yml。 */
 export function loadPresetSpec(dir: string): PresetSpec {
-  const file = join(dir, 'preset.yml')
+  const file = join(dir, MODULE_DEFINITION_FILE)
   let stat: ReturnType<typeof statSync>
   try {
     stat = statSync(file)
@@ -148,7 +148,7 @@ export function loadPresetSpec(dir: string): PresetSpec {
     throw new Error(`preset ${file} YAML 解析失败: ${String((error as Error).message ?? error)}`)
   }
   if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
-    throw new Error(`preset ${join(dir, 'preset.yml')} is not a YAML map`)
+    throw new Error(`preset ${join(dir, MODULE_DEFINITION_FILE)} is not a YAML map`)
   }
   // 官方用户预设格式：preset.yml 仅元数据（name/description/order），id 回退目录名。
   if (typeof parsed.id !== 'string' || parsed.id.length === 0) {
@@ -294,7 +294,7 @@ function copyPresetDirectory(source: string, root: string, targetId: string): vo
   const candidate = mkdtempSync(join(root, `.${targetId}.copy-`))
   try {
     cpSync(source, candidate, { recursive: true })
-    const definition = join(candidate, 'preset.yml')
+    const definition = join(candidate, MODULE_DEFINITION_FILE)
     const doc = parseDocument(readFileSync(definition, 'utf8'), { logLevel: 'silent' })
     if (doc.errors.length > 0 || !(doc.contents instanceof YAMLMap)) throw new Error('预设定义必须是合法 YAML 对象')
     const oldId = doc.get('id')
@@ -419,7 +419,7 @@ export function savePresetParams(
   variables?: Record<string, string>,
   variablesEnabled?: boolean,
 ): void {
-  const file = join(assertPresetDirectory(presetRoot, templateName), 'preset.yml')
+  const file = join(assertPresetDirectory(presetRoot, templateName), MODULE_DEFINITION_FILE)
   if (!existsSync(file)) throw new Error(`preset ${templateName} 无 preset.yml`)
   const doc = parseDocument(readFileSync(file, 'utf8'), { logLevel: 'silent' })
   readPresetLayerSettings(doc.toJS())
@@ -480,7 +480,7 @@ export function savePresetParams(
  * null = 删除该段（回落宿主部署人设）；默认值不落键（见 personaRowConfig）。
  */
 export function savePresetPersona(presetRoot: string, templateName: string, persona: PersonaSpec | null): void {
-  const file = join(assertPresetDirectory(presetRoot, templateName), 'preset.yml')
+  const file = join(assertPresetDirectory(presetRoot, templateName), MODULE_DEFINITION_FILE)
   if (!existsSync(file)) throw new Error(`preset ${templateName} 无 preset.yml`)
   const doc = parseDocument(readFileSync(file, 'utf8'), { logLevel: 'silent' })
   readPresetLayerSettings(doc.toJS())
@@ -494,7 +494,7 @@ export function savePresetPersona(presetRoot: string, templateName: string, pers
  *  角色卡库（characters）与世界书工具（world-book-tools）共用此入口，避免
  *  各自实现 parseDocument 往返。写盘走原子替换，失败保留旧文件。 */
 export function withPresetDoc(presetDir: string, mutate: (doc: ReturnType<typeof parseDocument>) => void): void {
-  const file = join(presetDir, 'preset.yml')
+  const file = join(presetDir, MODULE_DEFINITION_FILE)
   if (!existsSync(file)) throw new Error(`${presetDir} 无 preset.yml`)
   const doc = parseDocument(readFileSync(file, 'utf8'), { logLevel: 'silent' })
   readPresetLayerSettings(doc.toJS())
@@ -906,7 +906,7 @@ export function createEngineCapabilityInPreset(
   presetDir: string,
   request: EngineCapabilityCreateRequest,
 ): EngineCapabilityCreateResult {
-  const file = join(presetDir, 'preset.yml')
+  const file = join(presetDir, MODULE_DEFINITION_FILE)
   if (!existsSync(file)) throw new Error(`预设目录缺少 preset.yml：${presetDir}`)
   const original = readFileSync(file, 'utf8')
   const doc = parseDocument(original, { logLevel: 'silent' })
@@ -990,7 +990,7 @@ export function removeEngineCapabilityFromPreset(
   presetDir: string,
   capabilityId: string,
 ): EngineCapabilityRemoveResult {
-  const file = join(presetDir, 'preset.yml')
+  const file = join(presetDir, MODULE_DEFINITION_FILE)
   if (!existsSync(file)) throw new Error(`预设目录缺少 preset.yml：${presetDir}`)
   const doc = parseDocument(readFileSync(file, 'utf8'), { logLevel: 'silent' })
   const source = doc.toJS() as unknown as PresetSpec & Record<string, unknown>

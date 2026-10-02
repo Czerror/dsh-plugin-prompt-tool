@@ -53,7 +53,7 @@ export function PresetExportDialog(props: { preset: { id: string; name: string }
       const url = URL.createObjectURL(new Blob([bytes], { type: mode === 'zip' ? 'application/zip' : 'application/yaml' }))
       const anchor = document.createElement('a')
       anchor.href = url
-      anchor.download = exported.filename ?? `${preset.id}.${mode === 'zip' ? 'zip' : 'preset.yml'}`
+      anchor.download = exported.filename ?? `${preset.id}.${mode === 'zip' ? 'zip' : 'module.yml'}`
       document.body.append(anchor)
       anchor.click()
       anchor.remove()

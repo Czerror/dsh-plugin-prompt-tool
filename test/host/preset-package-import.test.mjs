@@ -86,7 +86,7 @@ async function importPackage(body) {
 function presetPackage(overrides = {}) {
   return {
     files: [
-      { path: 'demo/preset.yml', content: overrides.presetYml ?? 'id: demo\nname: Demo 预设\n' },
+      { path: 'demo/module.yml', content: overrides.presetYml ?? 'id: demo\nname: Demo 预设\n' },
       { path: 'demo/agent.cordis.yml', content: '- id: demo-row\n  name: "@deepseek-ai/dsh-demo"\n' },
       ...(overrides.files ?? []),
     ],
@@ -107,7 +107,7 @@ test('importPresetPackage：文件夹导入保留子目录（服务端为唯一�
 
 test('importPresetPackage：超过 32MB 上限返回 413 明确错误', async () => {
   const { status, payload } = await importPackage({
-    files: [{ path: 'big/preset.yml', content: 'id: big\n' + 'x'.repeat(MAX_BRIDGE_BODY_BYTES) }],
+    files: [{ path: 'big/module.yml', content: 'id: big\n' + 'x'.repeat(MAX_BRIDGE_BODY_BYTES) }],
   })
   assert.equal(status, 413)
   assert.equal(payload.code, 'bridge-body-too-large')
@@ -155,16 +155,16 @@ test('importPresetPackage：显式同名覆盖安装完整候选，成功清理�
   assert.ok(existsSync(join(PRESETS, 'demo', 'version2.txt')), '新版文件应写入目标目录')
 })
 
-test('importPresetPackage：文件夹导入且 preset.yml 无 id 时回退文件夹名', async () => {
+test('importPresetPackage：文件夹导入且 module.yml 无 id 时回退文件夹名', async () => {
   const { status, payload } = await importPackage({
     files: [
-      { path: 'my-persona/preset.yml', content: 'name: 我的预设\n' },
+      { path: 'my-persona/module.yml', content: 'name: 我的预设\n' },
       { path: 'my-persona/agent.cordis.yml', content: '- id: demo-row\n  name: "@deepseek-ai/dsh-demo"\n' },
     ],
   })
   assert.equal(status, 200)
   assert.equal(payload.value?.id, 'my-persona', '无 id 时应用文件夹名')
-  assert.ok(existsSync(join(PRESETS, 'my-persona', 'preset.yml')))
+  assert.ok(existsSync(join(PRESETS, 'my-persona', 'module.yml')))
 })
 
 test('importPresetPackage：SillyTavern JSON 单文件经转换引擎导入（按需组装，不注入默认内容）', async () => {
@@ -186,8 +186,8 @@ test('importPresetPackage：SillyTavern JSON 单文件经转换引擎导入（�
   })
   assert.equal(status, 200)
   assert.equal(payload.value?.id, 'my-chara')
-  const presetFile = join(PRESETS, 'my-chara', 'preset.yml')
-  assert.ok(existsSync(presetFile), '转换产物应落盘为 preset.yml')
+  const presetFile = join(PRESETS, 'my-chara', 'module.yml')
+  assert.ok(existsSync(presetFile), '转换产物应落盘为 module.yml')
   const converted = parseYaml(readFileSync(presetFile, 'utf8'))
   assert.equal(converted.name, '我的角色（SillyTavern 转换）', '预设名取卡片 name 字段')
   assert.deepEqual(converted.modules, [
@@ -255,7 +255,7 @@ test('importPresetPackage：SillyTavern UUID identifier 的 prompt_order 禁用�
     }],
   })
   assert.equal(status, 200)
-  const converted = parseYaml(readFileSync(join(PRESETS, 'uuid-card', 'preset.yml'), 'utf8'))
+  const converted = parseYaml(readFileSync(join(PRESETS, 'uuid-card', 'module.yml'), 'utf8'))
   const configs = converted.promptConfigs
   const system = configs.find((config) => config.id === 'st-prompt-1')
   const disabled = configs.find((config) => config.id === 'st-prompt-2')
@@ -294,7 +294,7 @@ test('importPresetPackage：TavernHelper 扩展注入物剥离（JS 脚本不进
   // 纯中文文件名 → id 退化为 st-<hash>（官方 agent-presets 不接受中文目录名）。
   const presetId = stPresetId('带扩展角色')
   assert.match(presetId, /^st-[0-9a-f]{6}$/)
-  const presetFile = join(PRESETS, presetId, 'preset.yml')
+  const presetFile = join(PRESETS, presetId, 'module.yml')
   const content = readFileSync(presetFile, 'utf8')
   assert.ok(!content.includes('opencc') && !content.includes('tavern_helper') && !content.includes('regex_scripts'),
     '扩展注入物（TavernHelper 脚本/正则）不进转换产物')
@@ -320,7 +320,7 @@ test('importPresetPackage：角色卡世界书 add_always（CCv2/CCv3 常驻标�
   })
   assert.equal(status, 200)
   assert.equal(payload.value?.id, 'ccv3-card')
-  const converted = parseYaml(readFileSync(join(PRESETS, 'ccv3-card', 'preset.yml'), 'utf8'))
+  const converted = parseYaml(readFileSync(join(PRESETS, 'ccv3-card', 'module.yml'), 'utf8'))
   const configs = converted.promptConfigs.filter((config) => config.strategy === 'world-book')
   assert.equal(configs.length, 3, '三条世界书条目全部转换')
   assert.equal(configs.find((config) => config.id === 'lore-1').params.constant, true, 'add_always: true 应常驻')
@@ -348,7 +348,7 @@ test('importPresetPackage：世界书 ST 编辑器内部格式（key/keysecondar
     }) }],
   })
   assert.equal(status, 200)
-  const converted = parseYaml(readFileSync(join(PRESETS, 'editor-format', 'preset.yml'), 'utf8'))
+  const converted = parseYaml(readFileSync(join(PRESETS, 'editor-format', 'module.yml'), 'utf8'))
   const configs = converted.promptConfigs.filter((config) => config.strategy === 'world-book')
   assert.equal(configs.length, 3)
   const bar = configs.find((config) => config.id === 'lore-10')

@@ -299,7 +299,7 @@ test('settings bridge /import-preset 只接受 contents，批量写入后触发�
 test('模板变量与参数独立保存，读取与 bootstrap 不回退旧 params 内容键', async () => {
   const { ctx, handlers } = makeHarness()
   const dir = makeUserPresetDir('pt-variable-isolation-')
-  const file = join(dir, 'preset.yml')
+  const file = join(dir, 'module.yml')
   const params = { legacyOnly: '旧值', variables: { nested: '嵌套旧值' } }
   // B7 T3：变量名故意与**已登记的存活引擎参数**同名（原 usePtcMode / stagePreUnlock 已删除）——
   // 模板变量只写顶层 `variables`，不得污染 `layerSettings` 上的同名引擎参数。
@@ -346,7 +346,7 @@ test('预设列表、导出、复制、删除、新建与导入都作用于官�
   const activeDir = join(userPresetRoot, id)
   const presetContent = `id: ${id}\nname: custom\nmodules: []\n`
   mkdirSync(activeDir, { recursive: true })
-  writeFileSync(join(activeDir, 'preset.yml'), presetContent, 'utf8')
+  writeFileSync(join(activeDir, 'module.yml'), presetContent, 'utf8')
   registerSettingsBridge(ctx, 'prompt-tool',
     () => ({ available: true, providers: [] }),
     () => skillsStateStub(),
@@ -364,25 +364,25 @@ test('预设列表、导出、复制、删除、新建与导入都作用于官�
   const meta = await call('meta')
   assert.ok(meta.meta.presets.some(preset => preset.id === id), '预设列表应含官方预设根下的预设')
   const exported = await call('exportPreset', { id, mode: 'definition' })
-  assert.equal(exported.content, readFileSync(join(activeDir, 'preset.yml'), 'utf8'))
+  assert.equal(exported.content, readFileSync(join(activeDir, 'module.yml'), 'utf8'))
   const copied = await call('presetDuplicate', { id })
-  assert.deepEqual(parseYaml(readFileSync(join(userPresetRoot, copied.id, 'preset.yml'), 'utf8')), { ...parseYaml(exported.content), id: copied.id })
+  assert.deepEqual(parseYaml(readFileSync(join(userPresetRoot, copied.id, 'module.yml'), 'utf8')), { ...parseYaml(exported.content), id: copied.id })
   await call('presetDelete', { id: copied.id })
   assert.equal(existsSync(join(userPresetRoot, copied.id)), false)
   const cloned = await call('presetClone', { id: 'pt-custom' })
-  assert.ok(existsSync(join(userPresetRoot, cloned.id, 'preset.yml')))
-  const files = [{ path: 'preset.yml', content: 'id: root-import\nname: Root Import\nmodules: []\n' }]
+  assert.ok(existsSync(join(userPresetRoot, cloned.id, 'module.yml')))
+  const files = [{ path: 'module.yml', content: 'id: root-import\nname: Root Import\nmodules: []\n' }]
   const preview = await call('importPresetPackage', { files, preview: true })
   const imported = await call('importPresetPackage', { files, expectedSourceDigest: preview.sourceDigest, expectedPreviewRevision: preview.previewRevision })
-  assert.ok(existsSync(join(userPresetRoot, imported.id, 'preset.yml')))
+  assert.ok(existsSync(join(userPresetRoot, imported.id, 'module.yml')))
   assert.equal(registryRefreshes, 3, '复制、删除、新建分别刷新官方注册')
   assert.deepEqual(importedIds, [imported.id], '完整导入刷新最终 ID，预览不注册')
-  assert.equal(readFileSync(join(activeDir, 'preset.yml'), 'utf8'), presetContent, '管理操作不得改动源预设')
+  assert.equal(readFileSync(join(activeDir, 'module.yml'), 'utf8'), presetContent, '管理操作不得改动源预设')
 })
 
 test('settings bridge：system 预设拒绝全部当前预设写入', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'pt-system-readonly-'))
-  const presetFile = join(dir, 'preset.yml')
+  const presetFile = join(dir, 'module.yml')
   const original = 'id: system\nmodules: []\n'
   writeFileSync(presetFile, original, 'utf8')
   try {
@@ -414,7 +414,7 @@ test('settings bridge：system 预设拒绝全部当前预设写入', async () =
       assert.equal(res.status, 403, endpoint)
       assert.equal(JSON.parse(res.body).code, 'preset-readonly', endpoint)
       assert.equal(readFileSync(presetFile, 'utf8'), original, `${endpoint} 不得修改 system 预设`)
-      assert.deepEqual(readdirSync(dir), ['preset.yml'], `${endpoint} 不得创建 system 预设文件`)
+      assert.deepEqual(readdirSync(dir), ['module.yml'], `${endpoint} 不得创建 system 预设文件`)
     }
   } finally {
     rmSync(dir, { recursive: true, force: true })
@@ -449,7 +449,7 @@ test('settings bridge：JSON 端点限制 32 MiB，角色卡原始流限制 64 M
 test('settings bridge /custom-tools 保存时自动追加工具模块', async () => {
   const dir = makeUserPresetDir('pt-custom-tools-modules-')
   try {
-    writeFileSync(join(dir, 'preset.yml'), [`id: ${basename(dir)}`, 'modules: []', ''].join(String.fromCharCode(10)), 'utf8')
+    writeFileSync(join(dir, 'module.yml'), [`id: ${basename(dir)}`, 'modules: []', ''].join(String.fromCharCode(10)), 'utf8')
     const { ctx, handlers } = makeHarness()
     registerSettingsBridge(ctx, 'prompt-tool',
       () => ({ available: true, providers: [] }),
@@ -470,7 +470,7 @@ test('settings bridge /custom-tools 保存时自动追加工具模块', async ()
     const res = fakeRes()
     await handler(fakeReq({ [Symbol.asyncIterator]: async function* () { yield payload } }), res)
     assert.equal(res.status, 200)
-    const parsed = parseYaml(readFileSync(join(dir, 'preset.yml'), 'utf8'))
+    const parsed = parseYaml(readFileSync(join(dir, 'module.yml'), 'utf8'))
     assert.deepEqual(parsed.modules, ['tool-config-engine', 'world-book-tools'], '只装配自定义工具实际依赖的模块')
   } finally {
     rmSync(dir, { recursive: true, force: true })
@@ -480,7 +480,7 @@ test('settings bridge /custom-tools 保存时自动追加工具模块', async ()
 test('settings bridge /subagent-tool-policy 保存、停用与模块装配均为原子操作', async () => {
   const dir = makeUserPresetDir('pt-subagent-policy-')
   try {
-    writeFileSync(join(dir, 'preset.yml'), `id: ${basename(dir)}\nmodules: []\nunknown: keep\n`, 'utf8')
+    writeFileSync(join(dir, 'module.yml'), `id: ${basename(dir)}\nmodules: []\nunknown: keep\n`, 'utf8')
     const { ctx, handlers } = makeHarness()
     let rebuilds = 0
     registerSettingsBridge(ctx, 'prompt-tool', () => ({ available: true, providers: [] }),
@@ -496,14 +496,14 @@ test('settings bridge /subagent-tool-policy 保存、停用与模块装配均为
     const save = fakeRes()
     await handler(fakeReq({ [Symbol.asyncIterator]: async function* () { yield Buffer.from(JSON.stringify({ policy })) } }), save)
     assert.equal(save.status, 200)
-    let parsed = parseYaml(readFileSync(join(dir, 'preset.yml'), 'utf8'))
+    let parsed = parseYaml(readFileSync(join(dir, 'module.yml'), 'utf8'))
     assert.deepEqual(parsed.subagentToolPolicy, policy)
     assert.deepEqual(parsed.modules, ['subagent-tool-policy'], '空白预设只装配子代理策略模块')
     assert.equal(parsed.unknown, 'keep')
     const disable = fakeRes()
     await handler(fakeReq({ [Symbol.asyncIterator]: async function* () { yield Buffer.from(JSON.stringify({ policy: null })) } }), disable)
     assert.equal(disable.status, 200)
-    parsed = parseYaml(readFileSync(join(dir, 'preset.yml'), 'utf8'))
+    parsed = parseYaml(readFileSync(join(dir, 'module.yml'), 'utf8'))
     assert.equal(parsed.subagentToolPolicy, undefined)
     assert.ok(parsed.modules.includes('subagent-tool-policy'), '关闭开关只删策略段，模块声明保留（能力卡可再次打开）')
     assert.equal(parsed.unknown, 'keep')
@@ -516,7 +516,7 @@ test('settings bridge /subagent-tool-policy 保存、停用与模块装配均为
 test('settings bridge /persona 读写顶层 persona 段（官方 dsh-persona config 同构）并重建', async () => {
   const { ctx, handlers } = makeHarness()
   const dir = makeUserPresetDir('pt-persona-')
-  writeFileSync(join(dir, 'preset.yml'), `id: ${basename(dir)}\nname: beta\nunknown: keep\n`, 'utf8')
+  writeFileSync(join(dir, 'module.yml'), `id: ${basename(dir)}\nname: beta\nunknown: keep\n`, 'utf8')
   let rebuilds = 0
   try {
     registerSettingsBridge(ctx, 'prompt-tool',
@@ -535,7 +535,7 @@ test('settings bridge /persona 读写顶层 persona 段（官方 dsh-persona con
       yield Buffer.from(JSON.stringify({ persona: { prefix: 'PREFIX', suffix: 'SUFFIX', complete: true, includeRuntimeContext: false } }))
     } }), write)
     assert.equal(write.status, 200)
-    const written = parseYaml(readFileSync(join(dir, 'preset.yml'), 'utf8'))
+    const written = parseYaml(readFileSync(join(dir, 'module.yml'), 'utf8'))
     assert.deepEqual(written.persona, { prefix: 'PREFIX', suffix: 'SUFFIX', complete: true, includeRuntimeContext: false })
     assert.equal(written.unknown, 'keep', '未知字段保留')
     assert.equal(rebuilds, 1, '写盘后触发重建')
@@ -550,7 +550,7 @@ test('settings bridge /persona 读写顶层 persona 段（官方 dsh-persona con
       yield Buffer.from(JSON.stringify({ persona: null }))
     } }), remove)
     assert.equal(remove.status, 200)
-    assert.equal(parseYaml(readFileSync(join(dir, 'preset.yml'), 'utf8')).persona, undefined)
+    assert.equal(parseYaml(readFileSync(join(dir, 'module.yml'), 'utf8')).persona, undefined)
     assert.equal(rebuilds, 2)
   } finally {
     rmSync(dir, { recursive: true, force: true })

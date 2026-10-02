@@ -1,6 +1,7 @@
 import { lstatSync, readdirSync, readFileSync, realpathSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { parseDocument, YAMLMap, YAMLSeq } from 'yaml'
+import { MODULE_DEFINITION_FILE } from './paths.ts'
 
 export function assertPresetId(id: unknown): asserts id is string {
   if (typeof id !== 'string' || !/^[a-z0-9][a-z0-9-]*$/.test(id)) {
@@ -57,7 +58,7 @@ export function assertPresetDirectory(root: string, id: string, allowMissing = f
   }
   // Windows 的文件查找不区分大小写，宿主发现规则区分大小写。
   if (!readdirSync(canonicalRoot).includes(id)) throw new Error(`预设目录身份不匹配：${id}`)
-  const definition = join(target, 'preset.yml')
+  const definition = join(target, MODULE_DEFINITION_FILE)
   const fileStat = lstatSync(definition)
   if (fileStat.isSymbolicLink() || !fileStat.isFile()) throw new Error(`预设定义不是普通文件：${id}`)
   const doc = parseDocument(readFileSync(definition, 'utf8'), { logLevel: 'silent' })

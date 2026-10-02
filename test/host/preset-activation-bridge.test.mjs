@@ -9,7 +9,7 @@ const { presetRoot } = isolatedHome('pt-activation-bridge-')
 const { registerSettingsBridge } = await import('../../src/runtime/settings-bridge.ts')
 const dir = join(presetRoot, 'editable')
 mkdirSync(dir, { recursive: true })
-const file = join(dir, 'preset.yml')
+const file = join(dir, 'module.yml')
 writeFileSync(file, 'id: editable\nmodules: []\n')
 
 test('预设保存等待宿主采用；异步拒绝保留定义并可重试；只保存不触发注册', async () => {

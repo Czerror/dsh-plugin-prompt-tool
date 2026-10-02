@@ -16,7 +16,7 @@ function harness({ readonly = false, rebuildFails = false, afterRebuild } = {}) 
   const id = `rules-${++sequence}`
   const directory = join(readonly ? join(home, 'system') : presetRoot, id)
   mkdirSync(directory, { recursive: true })
-  const file = join(directory, 'preset.yml')
+  const file = join(directory, 'module.yml')
   const original = `# 用户注释\nid: ${id}\nmodules: []\nunknown: keep # 未知字段注释\n`
   writeFileSync(file, original)
   let activeDirectory = directory

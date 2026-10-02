@@ -16,7 +16,7 @@ import { fileURLToPath } from 'node:url'
 /** 夹具模板 id（= 目录名 = presetTemplate 取值）。 */
 export const FIXTURE_PRESET_ID = 'fixture'
 
-/** 夹具模板源目录（仓库内，含 preset.yml）。 */
+/** 夹具模板源目录（仓库内，含模块定义 module.yml）。 */
 export const FIXTURE_PRESET_SRC = fileURLToPath(new URL('./preset-template', import.meta.url))
 
 /**

@@ -1,7 +1,7 @@
 /**
  * 运行时配装通道回归：装配输入必须与原预设形态逐项同源。
  *
- * 真值源是**预设目录里的字面量**（`preset.yml` 的 modules 声明与 `prompt-configs/*.yml`），
+ * 真值源是**预设目录里的字面量**（`module.yml` 的 modules 声明与 `prompt-configs/*.yml`），
  * 不是被测实现自己算出的另一份结果——两条路径互相比对会让同一个错误在两边同时通过。
  *
  * 断言落在调用方观察到的装配输入上：切片（层/位置/时机/次数/受众）、引擎模块清单、
@@ -54,7 +54,7 @@ const LITERAL_SLICES = [
 function writePreset(id, { modules, promptConfigs = [], moduleConfigs }) {
   const dir = join(presetRoot, id)
   mkdirSync(dir, { recursive: true })
-  writeFileSync(join(dir, 'preset.yml'), `${JSON.stringify({
+  writeFileSync(join(dir, 'module.yml'), `${JSON.stringify({
     id, name: id, modules, ...(moduleConfigs === undefined ? {} : { moduleConfigs }),
   }, null, 2)}\n`, 'utf8')
   if (promptConfigs.length > 0) {
@@ -181,7 +181,7 @@ test('与官方物化路径同源：writePreset 落盘的切片 = 配装读出�
   // 定义来源目录（writePreset 的模板解析基准：sourceDir 优先于同名已安装预设）。
   const sourceDir = join(presetRoot, '.source-materialized')
   mkdirSync(sourceDir, { recursive: true })
-  writeFileSync(join(sourceDir, 'preset.yml'), `${JSON.stringify({
+  writeFileSync(join(sourceDir, 'module.yml'), `${JSON.stringify({
     id, name: id, modules: ['prompt-config-engine'],
   }, null, 2)}\n`, 'utf8')
   // 官方路径：把同一份切片交给 writePreset 物化到 <预设根>/<id>/prompt-configs。

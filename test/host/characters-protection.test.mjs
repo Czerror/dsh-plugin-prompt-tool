@@ -44,12 +44,12 @@ test('原生角色应用计数包含 texts 和控制配置，记忆同名普通�
   const imported = characters.importCharacterCard(presetRoot, [{ path: 'converted.yml', content: JSON.stringify(spec) }])
   assert.equal(imported.ok, true, imported.message)
   mkdirSync(join(presetRoot, 'target'), { recursive: true })
-  writeFileSync(join(presetRoot, 'target', 'preset.yml'), 'id: target\nname: Target\nmodules: []\n')
+  writeFileSync(join(presetRoot, 'target', 'module.yml'), 'id: target\nname: Target\nmodules: []\n')
   characters.appendCharacterMemory(presetRoot, 'alice', 'PRIVATE MEMORY')
   const applied = characters.applyCharacterToPreset(presetRoot, 'target', 'alice')
   assert.equal(applied.ok, true, applied.message)
   assert.equal(applied.count, 4)
-  const file = join(presetRoot, 'target', 'preset.yml')
+  const file = join(presetRoot, 'target', 'module.yml')
   const before = readFileSync(file, 'utf8')
   const doc = parseDocument(before)
   const configs = doc.toJS().promptConfigs
@@ -129,10 +129,10 @@ test('改过的记忆生成项需要显式选择；投影不修改源定义', t 
   const { presetRoot } = setup(t)
   characters.importCharacterCard(presetRoot, source)
   mkdirSync(join(presetRoot, 'target'), { recursive: true })
-  writeFileSync(join(presetRoot, 'target', 'preset.yml'), 'id: target\nname: Target\nmodules: []\n')
+  writeFileSync(join(presetRoot, 'target', 'module.yml'), 'id: target\nname: Target\nmodules: []\n')
   characters.appendCharacterMemory(presetRoot, 'alice', 'PRIVATE')
   characters.applyCharacterToPreset(presetRoot, 'target', 'alice')
-  const doc = parseDocument(readFileSync(join(presetRoot, 'target', 'preset.yml'), 'utf8'))
+  const doc = parseDocument(readFileSync(join(presetRoot, 'target', 'module.yml'), 'utf8'))
   const configs = doc.toJS().promptConfigs
   const memory = configs.find(config => config.id === 'chara-alice-memory')
   memory.text += '\nEDITED'

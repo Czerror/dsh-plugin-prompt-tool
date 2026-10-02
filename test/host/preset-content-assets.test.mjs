@@ -28,7 +28,7 @@ const { apply } = await import('../../engine/tool-config-engine.mjs')
 // —— 世界书条目（原 worldbook.test.mjs） ——
 
 const dir = mkdtempSync(join(tmpdir(), 'pt-wb-preset-'))
-writeFileSync(join(dir, 'preset.yml'), [
+writeFileSync(join(dir, 'module.yml'), [
   'id: wb-test',
   'name: 世界书测试',
   'version: 1.0.0',
@@ -108,7 +108,7 @@ test('worldbook upsert：新增与更新（按 id），count 只统计世界书�
   })
   assert.equal(updated, 2, '更新不新增')
 
-  const preset = parseYaml(readFileSync(join(dir, 'preset.yml'), 'utf8'))
+  const preset = parseYaml(readFileSync(join(dir, 'module.yml'), 'utf8'))
   const lore1 = preset.promptConfigs.find((config) => config.id === 'lore-1')
   assert.equal(lore1.text, '更新内容')
   assert.equal(lore1.order, -200)
@@ -271,7 +271,7 @@ test('writePreset：完整编译同源、坏手写定义 warn-and-skip、原始 
     validTool({ id: 'bad_shell', execute: { kind: 'shell' } }),
     validTool({ id: 'bad_schema', output: { schema: { type: 'unknown' } } }),
   ]
-  const file = join(dir, 'preset.yml')
+  const file = join(dir, 'module.yml')
   const doc = parseDocument('# 保留手写预设\nname: 测试工具\nmodules: []\n')
   doc.setIn(['customTools'], tools)
   writeFileSync(file, doc.toString(), 'utf8')

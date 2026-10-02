@@ -8,6 +8,7 @@ import { MAX_ASSET_BYTES, MAX_ASSET_FILES, packZip, safeAssetPath, unpackZip } f
 import { decodeAssetFile, normalizeAssetFiles, prepareImport, assetSourceDigest } from './import-source.ts'
 import { directoryVersionOf, computePreviewRevision } from './preview-revision.ts'
 import { resolvePresetDir, invalidatePresetSpec, packageEngineDir, type PresetSpec } from './manifest.ts'
+import { MODULE_DEFINITION_FILE } from './paths.ts'
 import { validateCustomTools } from './custom-tools.ts'
 import { readPresetLayerSettings } from './preset-layer-settings.ts'
 import { projectCharacterMemories } from './characters.ts'
@@ -18,6 +19,13 @@ import { createPromptConfigs } from '../../engine/schema.mjs'
 
 const MANIFEST = 'prompt-tool-package.json'
 const PACKAGE_VERSION = 1
+/**
+ * 包内定义文件名：写入用新名，**读取接受历史名**。
+ *
+ * 包是可分享的外部产物，用户手里可能有旧版导出的包（清单 `definition: preset.yml`）；
+ * 导入是信任边界，拒绝它等于把用户已有的包判为损坏。
+ */
+const DEFINITION_NAMES: readonly string[] = [MODULE_DEFINITION_FILE, 'preset.yml']
 const sha = (bytes: Uint8Array | string): string => createHash('sha256').update(bytes).digest('hex')
 const isRecord = (value: unknown): value is Record<string, unknown> => value !== null && typeof value === 'object' && !Array.isArray(value)
 
@@ -66,7 +74,7 @@ export async function expandPresetSource(input: AssetFile[]): Promise<AssetFile[
   const manifest = files.find((file) => file.path === MANIFEST)
   if (manifest !== undefined) {
     const value: unknown = JSON.parse(decodeAssetFile(manifest).toString('utf8'))
-    if (!isRecord(value) || value.version !== PACKAGE_VERSION || value.definition !== 'preset.yml' || !isRecord(value.files)) throw new Error('不支持或损坏的预设包清单')
+    if (!isRecord(value) || value.version !== PACKAGE_VERSION || typeof value.definition !== 'string' || !DEFINITION_NAMES.includes(value.definition) || !isRecord(value.files)) throw new Error('不支持或损坏的预设包清单')
     if (isRecord(value.requires) && typeof value.requires.renderVersion === 'number' && value.requires.renderVersion > RENDER_VERSION) throw new Error('预设包需要较新的 Prompt Tool')
     const entries = files.filter((file) => file !== manifest)
     if (Object.keys(value.files).length !== entries.length) throw new Error('包清单与文件集合不一致')
@@ -75,7 +83,8 @@ export async function expandPresetSource(input: AssetFile[]): Promise<AssetFile[
   }
   // 官方目录可只声明 name 并携带 agent.cordis.yml；保留既有无 ID 回退语义。
   const yaml = files.filter((file) => !file.path.includes('/') && /\.ya?ml$/i.test(file.path) && file.path !== 'agent.cordis.yml')
-  const definition = yaml.find((file) => /^preset\.ya?ml$/i.test(file.path)) ?? (yaml.length === 1 ? yaml[0] : undefined)
+  // 定义文件名接受新旧两种（旧包 = 用户手里已导出的产物，导入是信任边界）。
+  const definition = yaml.find((file) => /^(?:module|preset)\.ya?ml$/i.test(file.path)) ?? (yaml.length === 1 ? yaml[0] : undefined)
   if (definition !== undefined) {
     const doc = parseDocument(decodeAssetFile(definition).toString('utf8'), { logLevel: 'silent' })
     const value: unknown = doc.errors.length === 0 ? doc.toJS({ maxAliasCount: 100 }) : undefined
@@ -171,7 +180,7 @@ export async function installPresetPackage(root: string, files: AssetFile[], req
     let moved = false
     const backup = join(stage, 'previous')
     try {
-      for (const file of preview.prepared.files.filter((file) => !['preset.yml', MANIFEST].includes(file.path))) {
+      for (const file of preview.prepared.files.filter((file) => file.path !== MANIFEST && !DEFINITION_NAMES.includes(file.path))) {
         const path = join(source, safeAssetPath(file.path))
         mkdirSync(dirname(path), { recursive: true })
         writeFileSync(path, decodeAssetFile(file), { flag: 'wx' })
@@ -180,7 +189,7 @@ export async function installPresetPackage(root: string, files: AssetFile[], req
       setPresetDefinitionId(doc, preview.summary.targetId)
       doc.set('name', preview.summary.targetName)
       const spec = doc.toJS() as PresetSpec
-      writeFileSync(join(source, 'preset.yml'), doc.toString(), 'utf8')
+      writeFileSync(join(source, MODULE_DEFINITION_FILE), doc.toString(), 'utf8')
       checkCandidate(spec, source, root, preview.summary.targetId)
       generated = writePreset(existsSync(join(source, 'preset.md')) ? readFileSync(join(source, 'preset.md'), 'utf8') : '', {
         presetDir: root, presetTemplate: preview.summary.targetId, outputId: preview.summary.targetId,
@@ -252,7 +261,7 @@ function dependencyErrors(files: Array<{ path: string; bytes: Buffer }>, spec: P
     if (typeof config.templateFile === 'string') {
       const prefix = `../${spec.id}/`
       if (!config.templateFile.startsWith(prefix)) errors.add(`外部模板：${config.templateFile}`)
-      else check('./' + config.templateFile.slice(prefix.length), 'preset.yml')
+      else check('./' + config.templateFile.slice(prefix.length), MODULE_DEFINITION_FILE)
     }
   }
   for (const file of files) {
@@ -280,7 +289,7 @@ export async function exportPresetPackage(root: string, request: PresetExportReq
   const before = directoryVersionOf(dir)
   if (before === null) throw new Error('预设不存在')
   const files = collectFiles(dir)
-  const definition = files.find((file) => file.path === 'preset.yml')
+  const definition = files.find((file) => file.path === MODULE_DEFINITION_FILE)
   if (!definition) throw new Error('缺少预设定义')
   const original = parseDocument(definition.bytes.toString('utf8'))
   if (original.errors.length > 0) throw new Error(original.errors[0]!.message)
@@ -296,7 +305,7 @@ export async function exportPresetPackage(root: string, request: PresetExportReq
   const revision = sha(JSON.stringify([before, mode, request.memoryChoices ?? {}]))
   const result: PresetExportResult = {
     id: request.id, name: spec.name || request.id, content: '', revision,
-    filename: `${request.id}.${mode === 'zip' ? 'zip' : 'preset.yml'}`,
+    filename: `${request.id}.${mode === 'zip' ? 'zip' : MODULE_DEFINITION_FILE}`,
     files: files.map((file) => ({ path: file.path, bytes: file.bytes.length })),
     warnings: ['不包含工作区指令、角色记忆文件、技能库；需要兼容的 Prompt Tool 与宿主。'],
     blockers: mode === 'zip' ? blockers : projection.memoryConflicts.length ? ['请先处理记忆条目'] : [],
@@ -309,7 +318,7 @@ export async function exportPresetPackage(root: string, request: PresetExportReq
   if (result.blockers!.length) throw new Error(result.blockers!.join('\n'))
   if (mode === 'definition') return { ...result, encoding: 'utf8', content: definition.bytes.toString('utf8') }
   const plugin = JSON.parse(readFileSync(join(dirname(packageEngineDir()), 'package.json'), 'utf8')) as { version: string }
-  const manifest = Buffer.from(JSON.stringify({ version: PACKAGE_VERSION, definition: 'preset.yml', requires: { promptTool: plugin.version, renderVersion: RENDER_VERSION }, files: Object.fromEntries(files.map((file) => [file.path, sha(file.bytes)])) }, null, 2))
+  const manifest = Buffer.from(JSON.stringify({ version: PACKAGE_VERSION, definition: MODULE_DEFINITION_FILE, requires: { promptTool: plugin.version, renderVersion: RENDER_VERSION }, files: Object.fromEntries(files.map((file) => [file.path, sha(file.bytes)])) }, null, 2))
   if (files.reduce((sum, file) => sum + file.bytes.length, manifest.length) > MAX_ASSET_BYTES) throw new Error('包含清单后的预设包超过 64 MiB')
   const archive = await packZip([...files, { path: MANIFEST, bytes: manifest }].map((file) => ({ ...file, path: `${request.id}/${file.path}` })))
   if (archive.length > MAX_ASSET_BYTES) throw new Error('ZIP 超过 64 MiB，无法通过导入上限')

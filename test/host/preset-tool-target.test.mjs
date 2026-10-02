@@ -19,7 +19,7 @@ function fixture(rebuild = async () => {}) {
   const root = mkdtempSync(join(sandbox, 'presets-'))
   for (const id of ['preset-a', 'preset-b']) {
     mkdirSync(join(root, id))
-    writeFileSync(join(root, id, 'preset.yml'), `id: ${id}\nmodules: []\npromptConfigs: []\n`)
+    writeFileSync(join(root, id, 'module.yml'), `id: ${id}\nmodules: []\npromptConfigs: []\n`)
   }
   const tools = new Map()
   const bindings = new Map()
@@ -53,7 +53,7 @@ test('预设工具写入执行 Agent 的 A/B 绑定，子代理继承 A，卸载
     await f.execute('world_book_upsert', { id: 'b', name: 'B', content: 'B' }, 'preset-b')
     const card = await f.execute('character_import', { name: 'alice', content: JSON.stringify({ id: 'alice', name: 'Alice', promptConfigs: [{ id: 'intro', text: 'Alice intro' }] }) }, 'preset-a')
     await f.execute('character_apply', { id: card.id }, 'preset-a')
-    const read = (id) => parse(readFileSync(join(f.root, id, 'preset.yml'), 'utf8')).promptConfigs.map((row) => row.id).sort()
+    const read = (id) => parse(readFileSync(join(f.root, id, 'module.yml'), 'utf8')).promptConfigs.map((row) => row.id).sort()
     assert.deepEqual(read('preset-a'), ['a', 'chara-alice-intro', 'child'])
     assert.deepEqual(read('preset-b'), ['b'])
     assert.deepEqual(rebuilt, ['preset-a', 'preset-a', 'preset-b', 'preset-a'])
@@ -64,12 +64,12 @@ test('预设工具写入执行 Agent 的 A/B 绑定，子代理继承 A，卸载
 test('未绑定和非受管预设不能通过模型工具读写用户预设', async () => {
   const f = fixture()
   try {
-    const before = readFileSync(join(f.root, 'preset-b', 'preset.yml'), 'utf8')
+    const before = readFileSync(join(f.root, 'preset-b', 'module.yml'), 'utf8')
     await assert.rejects(f.execute('world_book_upsert', { id: 'no', name: 'no', content: 'no' }, undefined), /不可写/)
     await assert.rejects(f.execute('character_list', {}, 'system'), /不可写/)
-    writeFileSync(join(f.root, 'preset-a', 'preset.yml'), 'id: foreign\nmodules: []\n')
+    writeFileSync(join(f.root, 'preset-a', 'module.yml'), 'id: foreign\nmodules: []\n')
     await assert.rejects(f.execute('world_book_list', {}, 'preset-a'), /身份不匹配/)
-    assert.equal(readFileSync(join(f.root, 'preset-b', 'preset.yml'), 'utf8'), before)
+    assert.equal(readFileSync(join(f.root, 'preset-b', 'module.yml'), 'utf8'), before)
   } finally { f.dispose() }
 })
 
@@ -84,6 +84,6 @@ test('预设工具等待重建；重建失败保留已保存定义并向调用�
     assert.equal(settled, false)
     release(new Error('注册失败'))
     await assert.rejects(pending, /已保存.*注册失败/)
-    assert.equal(parse(readFileSync(join(f.root, 'preset-a', 'preset.yml'), 'utf8')).promptConfigs[0].id, 'saved')
+    assert.equal(parse(readFileSync(join(f.root, 'preset-a', 'module.yml'), 'utf8')).promptConfigs[0].id, 'saved')
   } finally { f.dispose() }
 })

@@ -5,6 +5,7 @@ import { basename, dirname, isAbsolute, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { parseDocument } from 'yaml'
 import { assertPresetDirectory } from './preset-install.ts'
+import { MODULE_DEFINITION_FILE } from './paths.ts'
 import { withPresetDoc } from './manifest.ts'
 
 /** 声明数据以实际 triggers.yml 为基准；允许根与注册层注入的 presetRoot 一致。 */
@@ -18,7 +19,7 @@ export function triggerPromptConfigOptions(directory: string, strategy?: unknown
 
 export function readPresetTriggers(directory: string): { triggers: unknown[]; revision: string } {
   const dir = assertPresetDirectory(dirname(directory), basename(directory))
-  const source = readFileSync(join(dir, 'preset.yml'), 'utf8')
+  const source = readFileSync(join(dir, MODULE_DEFINITION_FILE), 'utf8')
   const doc = parseDocument(source, { logLevel: 'silent' })
   const triggers: unknown = doc.toJS().triggers ?? []
   if (!Array.isArray(triggers)) throw new TypeError('preset.yml 的 triggers 必须是数组')

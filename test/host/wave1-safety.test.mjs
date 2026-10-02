@@ -82,7 +82,7 @@ test('mergePromptConfigs：单源数组内重复 ID 合并前拒绝；跨源覆�
 test('loadPresetSpec：坏 YAML fail loud 且带文件上下文', () => {
   const dir = mkdtempSync(join(tmpdir(), 'pt-w1-badyaml-'))
   try {
-    writeFileSync(join(dir, 'preset.yml'), 'a: &x 1\nb: *y\n', 'utf8')
+    writeFileSync(join(dir, 'module.yml'), 'a: &x 1\nb: *y\n', 'utf8')
     assert.throws(() => loadPresetSpec(dir), /YAML 解析失败/)
   } finally {
     rmSync(dir, { recursive: true, force: true })

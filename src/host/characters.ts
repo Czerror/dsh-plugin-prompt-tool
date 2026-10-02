@@ -12,6 +12,7 @@ import { createHash, randomUUID } from 'node:crypto'
 import type { StConversionOptions, StOrderGroupSummary } from './sillytavern.ts'
 import { prepareImport, assetSourceDigest, normalizeAssetFiles, validateCharacterSpec } from './import-source.ts'
 import { assertPresetId, assertPresetTree, presetPathExists } from './preset-install.ts'
+import { MODULE_DEFINITION_FILE } from './paths.ts'
 import { appendPresetModules, withPresetDoc } from './manifest.ts'
 import { engineParamPath, readPresetLayerSettings } from './preset-layer-settings.ts'
 import { buildWorldBookEntry } from './worldbook.ts'
@@ -474,7 +475,7 @@ export function listCharacterCards(
   let importedIds: Set<string>
   try {
     const presetFile = activeTemplate !== undefined && activeTemplate.length > 0
-      ? join(presetRoot, activeTemplate, 'preset.yml')
+      ? join(presetRoot, activeTemplate, MODULE_DEFINITION_FILE)
       : ''
     const meta = existsSync(presetFile)
       ? (parseDocument(readFileSync(presetFile, 'utf8'), { logLevel: 'silent' }).toJS() as { meta?: Record<string, unknown> }).meta

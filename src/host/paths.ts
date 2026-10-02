@@ -41,4 +41,15 @@ const STORAGE_ROOT = join(DSH_HOME, '.prompt-tool')
  * （`assertPresetDirectory` 的一层深度契约由此成立）。
  */
 export const DEFAULT_PRESET_DIR = join(STORAGE_ROOT, 'modules')
+/**
+ * 模块定义文件名：`<模块根>/<id>/module.yml`。
+ *
+ * 与物化产物（`configs/`、`custom-tools/`、`triggers.yml`、`subagent-tools/`）同目录。
+ * 旧形态的 `preset.yml` **不做兼容读取**：实测真实数据（beta 形态遗留）已经是本名，
+ * 且仓库从 `02754cc` 起就没有 `preset.yml` 形态的用户数据；读到旧名目录时由
+ * `listPresets` 给出明确诊断，而不是静默跳过。
+ */
+export const MODULE_DEFINITION_FILE = 'module.yml'
+/** 模块物化目录名：提示词配置切片的落点（原 `prompt-configs/`）。 */
+export const MODULE_CONFIGS_DIR = 'configs'
 export const DEFAULT_PRESET_ORDER = 5
