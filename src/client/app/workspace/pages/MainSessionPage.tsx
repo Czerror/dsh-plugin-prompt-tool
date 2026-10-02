@@ -96,7 +96,7 @@ export const MainSessionPage = memo(function MainSessionPage(props: { store: Pro
         fieldDrafts={store.editorDrafts?.fields}
         draftScope={fields.presetTemplate}
         readOnlyReason={!canEditPreset ? t(fields.writePreset ? 'configs.readOnly.system' : 'configs.readOnly.disabled') : undefined}
-        onChoosePreset={() => props.onNavigate?.('presets')}
+        onChoosePreset={() => props.onNavigate?.('modules')}
         onCreate={() => picker.openPicker(INSERTION_LAYERS.find((layer) => layer === viewFilter) ?? 'pre-step')}
         createdHidden={createdHidden}
         onShowCreated={() => { changeViewFilter('all'); setCreatedHidden(false) }}

@@ -7,7 +7,7 @@ import { ToolSurfaceView } from './ToolSurfaceView.tsx'
 import css from './tools.module.css'
 
 /** 参考官方 plugin-inventory 的搜索、分组与详情卡；数据仍是模型工具面。 */
-export function ToolsPreviewPage({ api, presetId, t, browse, onNavigate, onReady }: { api: PromptToolHostApi; presetId?: string; t: PromptToolTranslate; browse?: { query: string; selectedId: string; expanded: Record<string, boolean> }; onNavigate?: (page: 'presets') => void; onReady?: () => void }): ReactNode {
+export function ToolsPreviewPage({ api, presetId, t, browse, onNavigate, onReady }: { api: PromptToolHostApi; presetId?: string; t: PromptToolTranslate; browse?: { query: string; selectedId: string; expanded: Record<string, boolean> }; onNavigate?: (page: 'modules') => void; onReady?: () => void }): ReactNode {
   const [query, setQuery] = useState(browse?.query ?? '')
   const [revision, setRevision] = useState(0)
   const [selectedId, setSelectedId] = useState(browse?.selectedId ?? '')
@@ -62,7 +62,7 @@ export function ToolsPreviewPage({ api, presetId, t, browse, onNavigate, onReady
             label: `${preset.name ?? preset.id}${preset.broken === undefined ? '' : ` · ${preset.broken}`}` }))} />
         {loading && <span className={css.toolSurfaceHint} role="status">{t('tools.loadingPresets')}</span>}
         {error && <span className={css.toolSurfaceError} role="alert">{error}</span>}
-        {!loading && !error && presets.length === 0 && <span className={css.toolSurfaceHint}>{t('tools.noPresets')} {onNavigate && <button type="button" className={css.toolRefresh} onClick={() => onNavigate('presets')}>{t('configs.chooseEditable')}</button>}</span>}
+        {!loading && !error && presets.length === 0 && <span className={css.toolSurfaceHint}>{t('tools.noPresets')} {onNavigate && <button type="button" className={css.toolRefresh} onClick={() => onNavigate('modules')}>{t('configs.chooseEditable')}</button>}</span>}
       </div>
     } />
   </section>

@@ -3,8 +3,7 @@ import type { PromptToolHostApi } from '../../data/host-api.ts'
 import type { PromptToolTranslate } from '../../locales.ts'
 import { usePromptToolStore, type PromptToolSettingsTransport } from '../../data/use-prompt-tool-store.ts'
 import type { PromptToolWorkspaceController } from '../workbench/workspace-controller.ts'
-import { CharactersPage } from '../../features/characters/CharactersPage.tsx'
-import { PresetsPage } from '../../features/presets/PresetsPage.tsx'
+import { ModulesPage } from '../../features/modules/ModulesPage.tsx'
 import { SkillsPage } from '../../features/skills/SkillsPage.tsx'
 import { ToolsPreviewPage } from '../../features/tools/ToolsPreviewPage.tsx'
 import { MainSessionPage } from './pages/MainSessionPage.tsx'
@@ -59,9 +58,7 @@ export function PromptWorkspace(props: PromptWorkspaceProps): ReactNode {
         ? <ToolsPreviewPage api={props.api} presetId={presetId} t={t} browse={browse.tools} onNavigate={navigate} onReady={markReady} />
         : page === 'skills'
           ? <SkillsPage store={store} api={props.api} t={t} browse={browse.skills} />
-          : page === 'presets'
-            ? <PresetsPage store={store} t={t} />
-            : <CharactersPage store={store} t={t} onReady={markReady} />
+          : <ModulesPage store={store} t={t} onReady={markReady} />
 
   return (
     <WorkspaceFrame
@@ -72,7 +69,7 @@ export function PromptWorkspace(props: PromptWorkspaceProps): ReactNode {
       scrollKey={scrollKey}
       scrollPositions={browse.scroll}
       focusPage={focusPage}
-      contentReady={page !== 'characters' && page !== 'tools' || readyPage === page}
+      contentReady={page !== 'modules' && page !== 'tools' || readyPage === page}
       onClose={props.onClose}
     >
       {content}

@@ -28,7 +28,7 @@ export function WorkspaceFrame(props: {
   const scrollKey = props.scrollKey ?? props.page
   const enabledCount = store.fields.promptConfigs.filter((config) => config.enabled !== false).length
   // 角色库与工具面拥有独立请求，不能以全局配置数量判定它们的加载/空态。
-  const usesBootstrap = props.page !== 'characters' && props.page !== 'tools'
+  const usesBootstrap = props.page !== 'modules' && props.page !== 'tools'
   const loadingInitial = usesBootstrap && store.loading && store.meta.layers.length === 0
   const loadFailed = usesBootstrap && !store.loading && store.meta.layers.length === 0 && store.noticeKind === 'error'
   useLayoutEffect(() => {
@@ -115,7 +115,7 @@ export function WorkspaceFrame(props: {
                     <button type="button" className={ui.pillButton} onClick={() => void store.load()}>{t('workspace.retry')}</button>
                   </div> : loadingInitial ? (
                     <div aria-busy="true" aria-label={t('app.loading')}>
-                      <div className={props.page === 'presets' ? ui.presetGrid : ui.skeletonStack} aria-hidden="true">
+                      <div className={props.page === 'modules' ? ui.presetGrid : ui.skeletonStack} aria-hidden="true">
                         {[0, 1, 2, 3].map((row) => <div key={row} className={ui.skeletonRow} />)}
                       </div>
                     </div>

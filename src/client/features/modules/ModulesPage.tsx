@@ -1,18 +1,26 @@
-/** 「预设和配置」页：全局开关 + 预设切换/导入 + 提示词配置列表统一管理。 */
+/** 「模块」页：模块的列表与管理（切换 / 新建 / 复制 / 导出 / 删除 / 打开目录 / 导入）+
+ *  生成开关与预设顺序 + 模块库（角色卡素材与并入当前模块）。
+ *
+ *  这一页由原来的「预设配置」页与「角色管理」页合并而成：模块统一了载体与库成员两种身份，
+ *  所以列表、导入、并入、移除、删除与新建/复制/导出属于同一件事，不再分成两页两套列表。
+ *  页 id 用 `modules`（已进 DOM 契约，见 WorkspaceNavigation/WorkspaceFrame）。 */
 import { memo, type ReactNode } from 'react'
 import { usePromptToolFields } from '../../data/use-prompt-tool-fields.ts'
-import { PresetSwitcher } from './PresetSwitcher.tsx'
+import { PresetSwitcher } from '../presets/PresetSwitcher.tsx'
+import { CharactersPage } from '../characters/CharactersPage.tsx'
 import { ToggleRow } from '../../ui/ToggleRow.tsx'
 import { CollapsibleCard } from '../../ui/CollapsibleCard.tsx'
 import { SettingInputRow } from '../../ui/SettingInputRow.tsx'
 import sharedCss from '../../ui/controls.module.css'
-import featureCss from './presets.module.css'
+import featureCss from '../presets/presets.module.css'
 
 const ui = { ...sharedCss, ...featureCss }
 import type { PromptToolStore } from '../../data/use-prompt-tool-store.ts'
 import type { PromptToolTranslate } from '../../locales.ts'
 
-export const PresetsPage = memo(function PresetsPage(props: { store: PromptToolStore; t: PromptToolTranslate }): ReactNode {
+export const ModulesPage = memo(function ModulesPage(
+  props: { store: PromptToolStore; t: PromptToolTranslate; onReady?: () => void },
+): ReactNode {
   const { store, t } = props
   const fields = usePromptToolFields(store, (value) => value)
   return (
@@ -31,6 +39,7 @@ export const PresetsPage = memo(function PresetsPage(props: { store: PromptToolS
           onInput={(value) => store.patch({ presetOrder: Number(value) || 0 })}
           onCommit={store.persistSwitches} />
       </CollapsibleCard>
+      <CharactersPage store={store} t={t} onReady={props.onReady} />
     </>
   )
 })

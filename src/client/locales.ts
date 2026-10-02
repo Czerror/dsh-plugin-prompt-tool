@@ -44,8 +44,7 @@ const ZH_CORE = {
   'page.subagent.label': '子代理',
   'page.tools.label': '工具预览',
   'page.skills.label': '技能设置',
-  'page.presets.label': '模块配置',
-  'page.characters.label': '角色管理',
+  'page.modules.label': '模块',
 
   'main.aria': '主会话与全局',
   'main.addTemplate': '添加模板 · {layer}',
@@ -317,8 +316,7 @@ const EN_CORE: Record<keyof typeof ZH_CORE, string> = {
   'page.subagent.label': 'Subagent',
   'page.tools.label': 'Tool preview',
   'page.skills.label': 'Skills',
-  'page.presets.label': 'Presets',
-  'page.characters.label': 'Characters',
+  'page.modules.label': 'Modules',
 
   'main.aria': 'Main session and global',
   'main.addTemplate': 'Add template · {layer}',
