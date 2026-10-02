@@ -14,7 +14,7 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { isolatedHome } from '../fixtures/host-harness.mjs'
 
-const { presetRoot } = isolatedHome('pt-assembly-')
+const { moduleRoot } = isolatedHome('pt-assembly-')
 const { prepareAssembly, createAgentAssembly } = await import('../../src/runtime/agent-assembly.ts')
 
 /** 装配能力探针：装配只问「宿主是否提供该服务」，这里全部视为提供。 */
@@ -52,7 +52,7 @@ const LITERAL_SLICES = [
 ]
 
 function writePreset(id, { modules, promptConfigs = [], moduleConfigs, persona }) {
-  const dir = join(presetRoot, id)
+  const dir = join(moduleRoot, id)
   mkdirSync(dir, { recursive: true })
   writeFileSync(join(dir, 'module.yml'), `${JSON.stringify({
     id, name: id, modules, ...(moduleConfigs === undefined ? {} : { moduleConfigs }), ...(persona === undefined ? {} : { persona }),
@@ -69,7 +69,7 @@ function writePreset(id, { modules, promptConfigs = [], moduleConfigs, persona }
 
 test('装配切片逐条来自预设目录的字面量：层/位置/时机/次数/受众一项不改', async () => {
   writePreset('literal-slices', { modules: ['prompt-config-engine'], promptConfigs: LITERAL_SLICES })
-  const prepared = await prepareAssembly(presetRoot, 'literal-slices', hasEveryService)
+  const prepared = await prepareAssembly(moduleRoot, 'literal-slices', hasEveryService)
 
   assert.equal(prepared.presetId, 'literal-slices')
   assert.equal(prepared.configs.length, LITERAL_SLICES.length, '切片条数与字面量一致')
@@ -92,7 +92,7 @@ test('装配切片逐条来自预设目录的字面量：层/位置/时机/次�
 
 test('受管字段一律解析到当前预设目录内：新写法 `./` 与历史写法 `../<id>/` 同结果', async () => {
   const id = 'managed-paths'
-  const dir = join(presetRoot, id)
+  const dir = join(moduleRoot, id)
   writePreset(id, {
     modules: ['prompt-config-engine', 'tool-config-engine', 'declared-triggers', 'subagent-tool-policy'],
     moduleConfigs: {
@@ -108,7 +108,7 @@ test('受管字段一律解析到当前预设目录内：新写法 `./` 与历�
   mkdirSync(join(dir, 'configs'), { recursive: true })
   writeFileSync(join(dir, 'triggers.yml'), '[]\n', 'utf8')
 
-  const prepared = await prepareAssembly(presetRoot, id, hasEveryService)
+  const prepared = await prepareAssembly(moduleRoot, id, hasEveryService)
   const configOf = (moduleId) => prepared.modules.find((module) => module.id === moduleId)?.config ?? {}
 
   const cases = [
@@ -116,7 +116,7 @@ test('受管字段一律解析到当前预设目录内：新写法 `./` 与历�
     ['declared-triggers', 'triggersFile', join(dir, 'triggers.yml')],
     // `../` 按 path.resolve 语义上溯一级：以预设目录为基准，落点是预设根下的兄弟路径
     // ——`subagent-tool-policy` 组合源的缺省值就是这种形态。
-    ['subagent-tool-policy', 'policyFile', join(presetRoot, 'subagent-tools', 'policy.yml')],
+    ['subagent-tool-policy', 'policyFile', join(moduleRoot, 'subagent-tools', 'policy.yml')],
   ]
   for (const [moduleId, field, expectedPath] of cases) {
     const value = configOf(moduleId)[field]
@@ -129,7 +129,7 @@ test('模块清单：引擎能力装载，官方组合行与能力 recipe 留给
   writePreset('module-roster', {
     modules: ['character-tools', 'tool-config-engine', 'tool-pwsh', 'planning'],
   })
-  const prepared = await prepareAssembly(presetRoot, 'module-roster', hasEveryService)
+  const prepared = await prepareAssembly(moduleRoot, 'module-roster', hasEveryService)
   const ids = prepared.modules.map((module) => module.id)
 
   // 插件包内确有 engine mjs 的能力：装载（官方行的 config 已由参数桥并入）。
@@ -144,17 +144,17 @@ test('模块清单：引擎能力装载，官方组合行与能力 recipe 留给
 
 test('拒绝路径：非法 id、无效模块声明、缺失宿主能力都在装配前 fail loud', async () => {
   await assert.rejects(
-    prepareAssembly(presetRoot, 'Not_An_Id', hasEveryService),
+    prepareAssembly(moduleRoot, 'Not_An_Id', hasEveryService),
     /非法预设 id/,
   )
   writePreset('unknown-capability', { modules: ['no-such-capability-anywhere'] })
   await assert.rejects(
-    prepareAssembly(presetRoot, 'unknown-capability', hasEveryService),
+    prepareAssembly(moduleRoot, 'unknown-capability', hasEveryService),
     /模块声明无效/,
   )
   writePreset('requires-missing-service', { modules: ['prompt-config-engine'], promptConfigs: LITERAL_SLICES })
   await assert.rejects(
-    prepareAssembly(presetRoot, 'requires-missing-service', () => false),
+    prepareAssembly(moduleRoot, 'requires-missing-service', () => false),
     /配装所需宿主能力不可用/,
   )
 })
@@ -179,7 +179,7 @@ test('「独占」段唯一性：装配前拒绝两个生效 complete（含人�
     promptConfigs: [exclusive('excl-a'), exclusive('excl-b')],
   })
   await assert.rejects(
-    prepareAssembly(presetRoot, 'double-complete', hasEveryService),
+    prepareAssembly(moduleRoot, 'double-complete', hasEveryService),
     /多个生效的「独占」段/,
     '两个启用 complete 必须被拒',
   )
@@ -191,7 +191,7 @@ test('「独占」段唯一性：装配前拒绝两个生效 complete（含人�
     persona: { prefix: 'PREFIX', complete: true },
   })
   await assert.rejects(
-    prepareAssembly(presetRoot, 'persona-complete', hasEveryService),
+    prepareAssembly(moduleRoot, 'persona-complete', hasEveryService),
     /人设已开启/,
     '人设与配置同时独占必须被拒',
   )
@@ -201,7 +201,7 @@ test('「独占」段唯一性：装配前拒绝两个生效 complete（含人�
     modules: ['prompt-config-engine'],
     promptConfigs: [exclusive('excl-a'), exclusive('excl-b', false)],
   })
-  const allowed = await prepareAssembly(presetRoot, 'one-complete-disabled', hasEveryService)
+  const allowed = await prepareAssembly(moduleRoot, 'one-complete-disabled', hasEveryService)
   assert.equal(allowed.configs.length, 2, '禁用的切片仍进装配输入（由引擎过滤 enabled）')
 
   // ④ 边界二：单独一个独占（无人设）→ 放行，且人设存在但未开独占也放行。
@@ -210,7 +210,7 @@ test('「独占」段唯一性：装配前拒绝两个生效 complete（含人�
     promptConfigs: [exclusive('excl-a')],
     persona: { prefix: 'PREFIX' },
   })
-  const single = await prepareAssembly(presetRoot, 'single-complete', hasEveryService)
+  const single = await prepareAssembly(moduleRoot, 'single-complete', hasEveryService)
   assert.equal(single.configs.length, 1, '单个独占段正常装配')
 })
 
@@ -222,7 +222,7 @@ test('官方挂载行与本通道不重复装载：引擎能力只出现一次',
   mkdirSync(join(dir, 'configs'), { recursive: true })
   mkdirSync(join(dir, 'custom-tools'), { recursive: true })
 
-  const prepared = await prepareAssembly(presetRoot, 'mixed-rows', hasEveryService)
+  const prepared = await prepareAssembly(moduleRoot, 'mixed-rows', hasEveryService)
   const ids = prepared.modules.map((module) => module.id)
   assert.deepEqual(ids, ['tool-config-engine'], '只装引擎能力，官方行不在本通道内')
   assert.equal(new Set(ids).size, ids.length, '同一份组合不会装入重复模块')
@@ -234,14 +234,14 @@ test('与官方物化路径同源：writePreset 落盘的切片 = 配装读出�
   const { writePreset } = await import('../../src/host/write-preset.ts')
   const id = 'materialized-slices'
   // 定义来源目录（writePreset 的模板解析基准：sourceDir 优先于同名已安装预设）。
-  const sourceDir = join(presetRoot, '.source-materialized')
+  const sourceDir = join(moduleRoot, '.source-materialized')
   mkdirSync(sourceDir, { recursive: true })
   writeFileSync(join(sourceDir, 'module.yml'), `${JSON.stringify({
     id, name: id, modules: ['prompt-config-engine'],
   }, null, 2)}\n`, 'utf8')
   // 官方路径：把同一份切片交给 writePreset 物化到 <预设根>/<id>/configs。
   writePreset('materialized prompt', {
-    presetDir: presetRoot,
+    moduleDir: moduleRoot,
     presetOrder: 5,
     promptConfigs: LITERAL_SLICES,
     presetTemplate: id,
@@ -249,7 +249,7 @@ test('与官方物化路径同源：writePreset 落盘的切片 = 配装读出�
     sourceDir,
     agentsInstructionText: '',
   })
-  const prepared = await prepareAssembly(presetRoot, id, hasEveryService)
+  const prepared = await prepareAssembly(moduleRoot, id, hasEveryService)
   assert.equal(prepared.configs.length, LITERAL_SLICES.length, '条数与落盘一致')
   for (const [index, expected] of LITERAL_SLICES.entries()) {
     const actual = prepared.configs[index]
@@ -318,7 +318,7 @@ test('装配失败降级为告警：不抛出、不阻塞会话创建、不留�
   writePreset('assembly-target', { modules: ['tool-config-engine'] })
   const host = stubHostContext()
   const runtime = createAgentAssembly(host.ctx, {
-    presetRoot,
+    moduleRoot,
     enabledModules: () => ['Not_An_Id'],
     warn: (message) => { host.warnings.push(message) },
   })
@@ -347,7 +347,7 @@ test('启用即配装：启用表里的每个模块各贡献一份，清单为�
   const host = stubHostContext({ services: ['systemPrompt', 'tools', 'llm'] })
   let enabled = ['enabled-a', 'enabled-b']
   const runtime = createAgentAssembly(host.ctx, {
-    presetRoot,
+    moduleRoot,
     enabledModules: () => enabled,
     warn: (message) => { host.warnings.push(message) },
   })
@@ -369,7 +369,7 @@ test('启用即配装：启用表里的每个模块各贡献一份，清单为�
   enabled = ['enabled-a', 'enabled-b', 'enabled-c']
   const host3 = stubHostContext({ services: ['systemPrompt', 'tools', 'llm'] })
   const runtime3 = createAgentAssembly(host3.ctx, {
-    presetRoot,
+    moduleRoot,
     enabledModules: () => enabled,
     warn: (message) => { host3.warnings.push(message) },
   })
@@ -387,7 +387,7 @@ test('启用即配装：启用表里的每个模块各贡献一份，清单为�
   // 空启用表：不注册任何贡献（写盘关闭时上层就是这么返回的）。
   const host0 = stubHostContext({ services: ['systemPrompt', 'tools', 'llm'] })
   const runtime0 = createAgentAssembly(host0.ctx, {
-    presetRoot,
+    moduleRoot,
     enabledModules: () => [],
     warn: (message) => { host0.warnings.push(message) },
   })

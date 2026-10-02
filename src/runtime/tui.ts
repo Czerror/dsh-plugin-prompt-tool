@@ -8,14 +8,14 @@ import type { SkillCatalogEntry } from '../shared/skills.ts'
 import type { PromptConfigSpec } from '../host/prompt-configs.ts'
 import { listPromptConfigSpecs } from '../host/prompt-configs.ts'
 import { MODULE_CONFIGS_DIR } from '../host/paths.ts'
-import { loadPresetSpec, resolvePresetParams } from '../host/manifest.ts'
+import { loadModuleSpec, resolvePresetParams } from '../host/manifest.ts'
 
 /** dsh-tui 全局开关：键名与 settings 路径一致（settings mutate）。 */
 const TUI_GLOBAL_SWITCHES: ReadonlyArray<readonly [key: string, label: string]> = [
-  ['writePreset', '启用锚定预设'],
+  ['writePreset', '启用锚定模块'],
 ]
 
-/** dsh-tui 参数开关：写激活预设 preset.yml（settings 不再承载引擎参数）。 */
+/** dsh-tui 参数开关：写激活模块 preset.yml（settings 不再承载引擎参数）。 */
 const TUI_PARAM_SWITCHES: ReadonlyArray<readonly [key: string, label: string]> = [
   ['injectPrompt', '锚定确认后注入 preset.md'],
   ['firstTurnAnchor', '追加任务引导'],
@@ -24,7 +24,7 @@ const TUI_PARAM_SWITCHES: ReadonlyArray<readonly [key: string, label: string]> =
   ['guideCustom', '使用自定义引导（每轮）'],
 ] as const
 
-/** 参数显示行（从激活预设 preset.yml params 读）。 */
+/** 参数显示行（从激活模块 preset.yml params 读）。 */
 const TUI_PARAM_TEXT_LINES: ReadonlyArray<readonly [key: string, label: string, emptyText: string]> = [
   ['firstTurnText', 'firstTurnText', '（空 = 按任务自动选择）'],
   ['modelProvider', 'modelProvider', '（空 = 不设置）'],
@@ -41,21 +41,21 @@ const TUI_PARAM_TEXT_LINES: ReadonlyArray<readonly [key: string, label: string, 
 
 /** 把布尔开关渲染成 dsh-tui 命令输出。 */
 /** 实际生效配置：生成目录优先（引擎加载源），settings 覆盖层作回退。 */
-function resolvePromptConfigs(presetDir: string | undefined, fallback: PromptConfigSpec[]): PromptConfigSpec[] {
-  if (presetDir === undefined || presetDir.length === 0) return fallback
+function resolvePromptConfigs(moduleDir: string | undefined, fallback: PromptConfigSpec[]): PromptConfigSpec[] {
+  if (moduleDir === undefined || moduleDir.length === 0) return fallback
   try {
-    const actual = listPromptConfigSpecs(join(presetDir, MODULE_CONFIGS_DIR))
+    const actual = listPromptConfigSpecs(join(moduleDir, MODULE_CONFIGS_DIR))
     return actual.length > 0 ? actual : fallback
   } catch {
     return fallback
   }
 }
 
-/** 激活预设参数（status 显示与参数开关来源；settings 不再承载引擎参数）。 */
-function readPresetParams(presetDir: string | undefined): Record<string, unknown> {
-  if (presetDir === undefined || presetDir.length === 0) return {}
+/** 激活模块参数（status 显示与参数开关来源；settings 不再承载引擎参数）。 */
+function readPresetParams(moduleDir: string | undefined): Record<string, unknown> {
+  if (moduleDir === undefined || moduleDir.length === 0) return {}
   try {
-    const spec = loadPresetSpec(presetDir)
+    const spec = loadModuleSpec(moduleDir)
     const params = resolvePresetParams(spec, {})
     if (Array.isArray(spec.promptConfigs)) params.promptConfigs = spec.promptConfigs
     return params
@@ -80,7 +80,7 @@ function renderTuiStatus(source: TuiSource, params: Record<string, unknown>, pro
       return `${key.padEnd(22)}${onOff(typeof value === 'boolean' ? value : false)}  ${label}`
     }),
     ...TUI_PARAM_SWITCHES.map(([key, label]) => {
-      return `${key.padEnd(22)}${onOff(paramBoolean(key))}  ${label}（预设）`
+      return `${key.padEnd(22)}${onOff(paramBoolean(key))}  ${label}（模块）`
     }),
     '锚点文本:',
     ...TUI_PARAM_TEXT_LINES.map(([key, label, emptyText]) => {
@@ -186,7 +186,7 @@ function parseIdentifierAndAction(
   return { id: tokens.join(' ') }
 }
 
-/** 参数保存回调：写激活预设 preset.yml；失败必须抛给命令层渲染为错误。 */
+/** 参数保存回调：写激活模块 preset.yml；失败必须抛给命令层渲染为错误。 */
 export type SavePresetParam = (key: string, value: unknown) => void | Promise<void>
 
 /** 技能启停回调：切换受管实体的根链接。 */
@@ -219,7 +219,7 @@ export function registerTuiCommand(
         })
         const persistPresetParam = async (key: string, value: unknown): Promise<CommandResult | undefined> => {
           if (savePresetParam === undefined) {
-            return { kind: 'error', text: `无法保存 ${key}：预设参数保存回调不可用` }
+            return { kind: 'error', text: `无法保存 ${key}：模块参数保存回调不可用` }
           }
           try {
             await savePresetParam(key, value)
@@ -230,9 +230,9 @@ export function registerTuiCommand(
         }
         const tokens = invocation.rawInput.trim().split(/\s+/).filter((token) => token.length > 0)
         const source = getSource()
-        const presetDir = getPresetConfigsDir?.()
-        const params = readPresetParams(presetDir)
-        const promptConfigs = resolvePromptConfigs(presetDir, Array.isArray(params.promptConfigs) ? params.promptConfigs as PromptConfigSpec[] : [])
+        const moduleDir = getPresetConfigsDir?.()
+        const params = readPresetParams(moduleDir)
+        const promptConfigs = resolvePromptConfigs(moduleDir, Array.isArray(params.promptConfigs) ? params.promptConfigs as PromptConfigSpec[] : [])
         if (tokens.length === 0 || tokens[0] === 'status') {
           const detection = getModelsState()
           const catalog = await getModelCatalog()
@@ -282,7 +282,7 @@ ${renderTuiStatus(getSource(), readPresetParams(getPresetConfigsDir?.()), resolv
           const next = parseTuiBoolean(action, current.enabled !== false)
           if (next === undefined) return usage()
           const nextConfigs = promptConfigs.map((config) => config.id === id ? { ...config, enabled: next } : config)
-          // promptConfigs 按预设存储：写激活预设 preset.yml；失败时不再报告成功。
+          // promptConfigs 按模块存储：写激活模块 preset.yml；失败时不再报告成功。
           const failure = await persistPresetParam('promptConfigs', nextConfigs)
           if (failure !== undefined) return failure
           return { kind: 'success', text: `已把提示词配置 ${id} 设为 ${next ? '开' : '关'}
@@ -307,7 +307,7 @@ ${renderConfigDetail(getSource(), id, resolvePromptConfigs(getPresetConfigsDir?.
         if (globalSwitch) {
           await sctx.settings.mutate(ns, [{ op: 'set', path: [key], value: next }])
         } else {
-          // 参数开关：写激活预设 preset.yml（settings 不再承载引擎参数）。
+          // 参数开关：写激活模块 preset.yml（settings 不再承载引擎参数）。
           const failure = await persistPresetParam(key, next)
           if (failure !== undefined) return failure
         }

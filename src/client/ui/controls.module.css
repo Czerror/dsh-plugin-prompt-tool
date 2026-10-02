@@ -228,7 +228,7 @@
   flex: 1 1 auto;
 }
 
-/* 模型选择合并行（当前会话 / 预设模型 / 采样参数）：控件横排，窄面板允许换行，均分不挤压文字。 */
+/* 模型选择合并行（当前会话 / 模块模型 / 采样参数）：控件横排，窄面板允许换行，均分不挤压文字。 */
 .sessionModelRow {
   display: flex;
   min-width: 0;
@@ -345,7 +345,7 @@
 /* 未通过官方校验的技能：弱化主体文字，状态徽章与修复按钮保持满对比度。 */
 .skillRowInvalid .skillCardBody { color: var(--dsw-alias-label-secondary); }
 .skillRowInvalid .dragHandle { opacity: .4; cursor: not-allowed; }
-/* 预设卡片：对齐官方主菜单 agent 预设（自定义预设组）的卡片样式。 */
+/* 模块卡片：对齐官方主菜单 agent 预设（自定义预设组）的卡片样式。 */
 .presetGrid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 268px), 1fr));

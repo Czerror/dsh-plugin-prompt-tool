@@ -1,7 +1,7 @@
 /** settings bridge 的底层 HTTP/文件传输与统一结果解析。 */
 import type { EngineMeta, PromptConfigDraft } from '../prompt-tool-types.ts'
 import type { HostDefaultModel, SkillCatalogEntry } from './prompt-tool-fields.ts'
-import type { PresetModuleFacts } from '../../shared/engine-capabilities.ts'
+import type { ModuleFacts } from '../../shared/engine-capabilities.ts'
 import type { InstructionsSnapshot } from '../../shared/instructions.ts'
 import {
   EDIT_TARGET_HEADER,
@@ -21,7 +21,7 @@ interface BridgeSuccessExtras {
   templatePreStepCount?: number
   presetParams?: Record<string, unknown>
   hostDefaultModel?: HostDefaultModel
-  moduleFacts?: PresetModuleFacts
+  moduleFacts?: ModuleFacts
   meta?: { meta: EngineMeta }
   overrides?: { overrides: Record<string, unknown> }
   variables?: { variables: Record<string, string>; enabled: boolean }
@@ -68,7 +68,7 @@ async function readBridgeResponse<T>(response: Response): Promise<BridgeResult<T
  *
  * 同一身份路径：模块内的配置卡启停、编辑与模块级写盘都按它定位——模块 id 唯一
  * （复制必带 `-copy` 后缀），加上卡自身的 id 就唯一确定一张配置卡。
- * 未设置时不带该头，host 侧维持既有语义（当前激活预设目录）。
+ * 未设置时不带该头，host 侧维持既有语义（当前激活模块目录）。
  */
 let editTarget: string | undefined
 

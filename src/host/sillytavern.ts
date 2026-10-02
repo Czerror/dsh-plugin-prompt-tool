@@ -15,7 +15,7 @@
  *     persona（complete: false 允许 system-section 生效），世界书条目需要 world-book-tools。
  */
 import { createHash } from 'node:crypto'
-import type { PresetSpec } from './manifest.ts'
+import type { ModuleSpec } from './manifest.ts'
 import { readPresetLayerSettings } from './preset-layer-settings.ts'
 import type { PersonaSpec } from '../shared/persona-section.ts'
 import type {
@@ -68,7 +68,7 @@ export type MergeIdMap = Map<number, Map<number, string>>
  *
  * 报告必须消费这份映射，而不是按后缀规则另行推测：后缀分配只发生在这里一次。
  */
-export function mergeStPresetsWithReport(specs: PresetSpec[]): { spec: PresetSpec; idMap: MergeIdMap } {
+export function mergeStPresetsWithReport(specs: ModuleSpec[]): { spec: ModuleSpec; idMap: MergeIdMap } {
   const promptConfigs: Array<Record<string, unknown>> = []
   const seen = new Set<string>()
   const idMap: MergeIdMap = new Map()
@@ -89,7 +89,7 @@ export function mergeStPresetsWithReport(specs: PresetSpec[]): { spec: PresetSpe
     idMap.set(sourceIndex, perSource)
   }
   const params: Record<string, unknown> = {}
-  const layerSettings: NonNullable<PresetSpec['layerSettings']> = {}
+  const layerSettings: NonNullable<ModuleSpec['layerSettings']> = {}
   for (const spec of specs) {
     readPresetLayerSettings(spec)
     Object.assign(params, spec.params ?? {})
@@ -132,7 +132,7 @@ export function mergeStPresetsWithReport(specs: PresetSpec[]): { spec: PresetSpe
     }
   }
   const stripSuffix = (name: string): string => name.replace(/（SillyTavern 转换）$/, '')
-  const spec: PresetSpec = {
+  const spec: ModuleSpec = {
     // 多源合并：id 拼接（2 + beta-2-42 → 2-beta-2-42），避免与任一源预设冲突。
     id: specs.length > 1 ? specs.map((item) => item.id).join('-') : specs[0]!.id,
     name: specs.map((item) => stripSuffix(item.name)).join(' × ') + '（SillyTavern 合并）',
@@ -152,7 +152,7 @@ export function mergeStPresetsWithReport(specs: PresetSpec[]): { spec: PresetSpe
 }
 
 /** 合并多个转换结果为一个预设（角色卡 × 响应预设 → 单预设）。 */
-export function mergeStPresets(specs: PresetSpec[]): PresetSpec {
+export function mergeStPresets(specs: ModuleSpec[]): ModuleSpec {
   return mergeStPresetsWithReport(specs).spec
 }
 
@@ -230,8 +230,8 @@ export function stOrderSelectionState(card: unknown, options: StConversionOption
   return { needsSelection: false }
 }
 
-/** SillyTavern JSON 预设卡片 → 本项目 PresetSpec（导入端点直接消费）。 */
-export function convertStToPreset(card: unknown, baseName: string, options: StConversionOptions = {}): PresetSpec {
+/** SillyTavern JSON 预设卡片 → 本项目 ModuleSpec（导入端点直接消费）。 */
+export function convertStToPreset(card: unknown, baseName: string, options: StConversionOptions = {}): ModuleSpec {
   return convertStToPresetWithReport(card, baseName, options).spec
 }
 
@@ -243,7 +243,7 @@ export function convertStToPresetWithReport(
   card: unknown,
   baseName: string,
   options: StConversionOptions = {},
-): { spec: PresetSpec; report: StConversionReport } {
+): { spec: ModuleSpec; report: StConversionReport } {
   const record = card !== null && typeof card === 'object' ? card as Record<string, unknown> : {}
   const prompts = Array.isArray(record.prompts)
     ? (record.prompts as Array<Record<string, unknown>>).filter((item) => item !== null && typeof item === 'object')
@@ -854,7 +854,7 @@ export function convertStToPresetWithReport(
     ...(reportTruncated ? { truncated: true } : {}),
   }
   // 预设名优先取卡片 name 字段；缺失/空白时回退文件名（去 .json 的 baseName）。
-  const spec: PresetSpec = {
+  const spec: ModuleSpec = {
     id: presetId,
     name: `${cardName || baseName}（SillyTavern 转换）`,
     version: '1.0.0',

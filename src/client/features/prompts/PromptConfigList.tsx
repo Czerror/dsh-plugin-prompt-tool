@@ -45,13 +45,13 @@ export interface PromptConfigListProps {
   onKeywordChange?: (value: string) => void
   /** 只响应明确的创建动作；后台读取已有配置不抢占筛选或展开状态。 */
   createdConfigId?: string
-  /** 空状态追加提示（如「当前预设模板该层无配置」）。 */
+  /** 空状态追加提示（如「当前模块模板该层无配置」）。 */
   emptyHint?: string
   onPatchConfigs: (configs: PromptConfigDraft[]) => void
   onSaveConfigs: (configs: PromptConfigDraft[]) => Promise<boolean>
   onSaveInstructions?: () => Promise<boolean>
   instructionPolicy?: InstructionPolicySnapshot
-  /** 指令文件卡：显式写盘与重新读取（不经预设保存路径）。 */
+  /** 指令文件卡：显式写盘与重新读取（不经模块保存路径）。 */
   onSaveInstructionFile?: (fileId: string) => void
   onReloadInstructionFile?: (fileId: string) => void
   /** 指令文件卡的行为策略改动（独立策略存储）。 */

@@ -9,7 +9,7 @@
  *  - 本文件 = 引擎参数「契约层」（类型）：参数桥/模板/UI 可配置的键与类型；
  *  - ENGINE_PARAM_DEFINITIONS 统一键、校验、卡片、默认草稿与组合映射；
  *    Record<keyof EngineParams, ...> 强制完整覆盖，ENGINE_PARAM_KEYS 与 PARAM_KEYS 从其派生；
- *  - layerSettings ↔ 运行时平铺键：loadPresetSpec 展平 / savePresetParams 按层写入。
+ *  - layerSettings ↔ 运行时平铺键：loadModuleSpec 展平 / saveModuleParams 按层写入。
  *
  * 全部字段可选：缺省 = 模板 preset.yml layerSettings / 引擎默认，符合「一切皆可自定义」。
  */
@@ -202,7 +202,7 @@ export function buildEngineModuleParams(params: Record<string, unknown>): Record
     let value = params[key]
     // editor-default：只投影调用方真正提供的合法值。缺参不补目录默认值——参数桥
     // 优先级高于 moduleConfigs 与行默认，补值会把「未配置」写成显式覆盖，压掉
-    // 模板/导入预设的行级 maxOutputChars；非法值同样不写，交给行默认兜底。
+    // 模板/导入模块的行级 maxOutputChars；非法值同样不写，交给行默认兜底。
     if (binding.mode === 'editor-default') {
       if (typeof value === 'string' && value.trim().length > 0) value = Number(value)
       if (typeof value !== 'number' || !Number.isSafeInteger(value) || value <= 0) continue
@@ -303,7 +303,7 @@ export function validateEngineParamValues(overrides: Record<string, unknown>): E
     if (value === undefined || value === null) continue
     const rule = Object.hasOwn(ENGINE_PARAM_DEFINITIONS, key) ? ENGINE_PARAM_DEFINITIONS[key as EngineParamKey] : undefined
     if (rule === undefined) {
-      errors.push({ key, message: `${key}: 未知参数键，请按当前参数定义更新预设` })
+      errors.push({ key, message: `${key}: 未知参数键，请按当前参数定义更新模块` })
       continue
     }
     const message = validateParamValue(key, rule, value)

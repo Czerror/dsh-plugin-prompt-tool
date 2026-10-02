@@ -43,7 +43,7 @@ export const MainSessionPage = memo(function MainSessionPage(props: { store: Pro
   const saveConfigs = useCallback((configs: PromptToolStore['fields']['promptConfigs']) => {
     return store.persistConfigs(configs)
   }, [store])
-  // 指令文件卡：正文只显式写盘（不随预设 debounce），冲突时用重新读取恢复。
+  // 指令文件卡：正文只显式写盘（不随模块 debounce），冲突时用重新读取恢复。
   const saveInstructionFile = useCallback((fileId: string) => {
     void store.persistInstructionFiles([fileId])
   }, [store])

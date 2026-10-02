@@ -162,7 +162,7 @@ export function layerChangePatch(meta: EngineMeta, config: PromptConfigDraft, la
 
 /**
  * 切换注入层的补丁：目标层不支持 subject/match 时清空旧值。
- * 引擎对不支持这两个字段的层直接 fail loud（整个预设无法挂载），
+ * 引擎对不支持这两个字段的层直接 fail loud（整个模块无法挂载），
  * 所以「切过去顺手清掉」是唯一安全的层切换语义。
  */
 export function clearedConditionPatch(meta: EngineMeta, layer: string): Pick<PromptConfigDraft, 'subject' | 'match'> {

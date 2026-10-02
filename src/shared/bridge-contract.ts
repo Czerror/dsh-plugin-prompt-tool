@@ -87,7 +87,7 @@ export const PRESET_ACTIVATION_FAILED = 'preset-activation-failed'
  * **编辑目标**只在请求头里声明：body 是各端点自己的载荷形状，不掺公共键。
  *
  * 身份是 `模块 id`（模块目录名）。加上卡自身的 id 就唯一确定一张配置卡——模块 id 形状受限
- * 且复制必带 `-copy` 后缀（`duplicateUserPreset`），卡 id 在模块内唯一（引擎 `createPromptConfigs`
+ * 且复制必带 `-copy` 后缀（`duplicateUserModule`），卡 id 在模块内唯一（引擎 `createPromptConfigs`
  * 拒绝重复），所以「模块 id + 卡 id」不存在重复可能。
  */
 export const EDIT_TARGET_HEADER = 'x-module-id'
@@ -173,7 +173,7 @@ export interface BridgeRequestMap {
   presetVariables: { variables?: Record<string, string>; enabled?: boolean; expectedPresetId?: string }
   customTools: { customTools?: unknown[]; expectedPresetId?: string } | undefined
   /**
-   * 预设包导入（原生/ST/PNG/ZIP）。`preview: true` 只转换并返回报告，不写目标；
+   * 模块包导入（原生/ST/PNG/ZIP）。`preview: true` 只转换并返回报告，不写目标；
    * 提交必须携带 expectedSourceDigest 和 expectedPreviewRevision，服务端重算并拒绝过期预览。
    * `expectedPreviewRevision` 是预览返回的版本凭据：绑定文件、实际选组、转换器版本与
    * 目标身份（含目标当前内容），服务端提交时重算，不符返回 409 且零写盘。
@@ -385,7 +385,7 @@ export interface BridgeValueMap {
   instructionsPolicy: { policy: InstructionPolicy; revision: string | null; exists: boolean; error?: string }
   presetContent: Record<string, unknown>
   importPreset: { scopes: Array<'preset' | 'agents'> }
-  /** 参数/提示词配置只保存当前预设，不同步宿主全局默认模型。 */
+  /** 参数/提示词配置只保存当前模块，不同步宿主全局默认模型。 */
   paramOverrides: { overrides?: Record<string, unknown>; promptConfigs?: unknown[] }
   triggers: { triggers: unknown[]; revision: string; meta: TriggerEditorMeta }
   persona: { persona: PersonaSpec | null }

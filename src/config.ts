@@ -2,8 +2,8 @@
 import z from '@deepseek-ai/schemastery'
 import type { Volatile } from '@deepseek-ai/cordis'
 import type { PromptConfigSpec } from './host/prompt-configs.ts'
-import { DEFAULT_PRESET_ORDER } from './host/paths.ts'
-import { DEFAULT_PRESET_ID } from './shared/preset-ids.ts'
+import { DEFAULT_MODULE_ORDER } from './host/paths.ts'
+import { DEFAULT_MODULE_ID } from './shared/preset-ids.ts'
 import type { PresetWriterParams } from './shared/engine-params.ts'
 
 export const NS = 'prompt-tool' as const
@@ -26,8 +26,8 @@ export interface Config {
 // 框架在插件加载时校验并填充默认值。
 export const Config = z.object({
   writePreset: z.boolean().default(true).volatile(),
-  presetTemplate: z.string().default(DEFAULT_PRESET_ID).volatile(),
-  presetOrder: z.natural().default(DEFAULT_PRESET_ORDER).volatile(),
+  presetTemplate: z.string().default(DEFAULT_MODULE_ID).volatile(),
+  presetOrder: z.natural().default(DEFAULT_MODULE_ORDER).volatile(),
   fallbackText: z.string().default('').volatile(),
 })
 
@@ -44,10 +44,10 @@ export interface PromptSettings {
 
 export const PromptSettingsSchema: z<PromptSettings> = z.object({
   modelsAvailable: z.boolean().default(true),
-  presetOrder: z.natural().default(DEFAULT_PRESET_ORDER),
+  presetOrder: z.natural().default(DEFAULT_MODULE_ORDER),
   fallbackText: z.string().default(''),
   writePreset: z.boolean().default(true),
-  presetTemplate: z.string().default(DEFAULT_PRESET_ID),
+  presetTemplate: z.string().default(DEFAULT_MODULE_ID),
 })
 
 /**

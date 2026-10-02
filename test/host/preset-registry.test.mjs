@@ -11,7 +11,7 @@ import { join } from 'node:path'
 const sandbox = mkdtempSync(join(process.cwd(), 'pt-registry-home-'))
 const previousHome = process.env.DSH_HOME
 process.env.DSH_HOME = sandbox
-const { createPresetRegistrySync } = await import('../../src/host/preset-registry.ts')
+const { createModuleRegistrySync } = await import('../../src/host/preset-registry.ts')
 after(() => {
   if (previousHome === undefined) delete process.env.DSH_HOME
   else process.env.DSH_HOME = previousHome
@@ -35,7 +35,7 @@ function fixture() {
     resolve: async (id) => ({ id, ...(records.has(id) ? {} : { broken: 'not registered' }) }),
   }
   const warnings = []
-  const sync = createPresetRegistrySync({ agentPresets: registry, logger: { warn: (m) => { warnings.push(m) } } }, root)
+  const sync = createModuleRegistrySync({ agentPresets: registry, logger: { warn: (m) => { warnings.push(m) } } }, root)
   const write = (id, meta = {}) => {
     mkdirSync(join(root, id), { recursive: true })
     writeFileSync(join(root, id, 'module.yml'), `${JSON.stringify({ id, name: meta.name ?? id, ...meta }, null, 2)}\n`)

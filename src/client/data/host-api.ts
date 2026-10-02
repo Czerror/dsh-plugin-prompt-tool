@@ -47,7 +47,7 @@ export interface PromptToolHostApi {
    * 实现契约：绑定对象换引用不算变化，只有 id 取值变化才通知。
    */
   subscribeSessionChange(listener: () => void): () => void
-  /** 读取官方 agent-presets roster，供预设工具能力选择器使用。 */
+  /** 读取官方 agent-presets roster，供模块工具能力选择器使用。 */
   listAgentPresets(): Promise<Array<{ id: string; name?: string; description?: string; broken?: string }>>
 }
 

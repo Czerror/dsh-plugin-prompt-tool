@@ -27,7 +27,7 @@ export interface PreviewTargetIdentity {
   kind: 'preset-package' | 'character-card'
   targetId: string
   targetVersion: string | null
-  /** 目标归属（预设包 = 目标预设目录名；角色卡 = 角色库所属预设）。 */
+  /** 目标归属（模块包 = 目标模块目录名；角色卡 = 角色库所属模块）。 */
   ownerPreset: string
 }
 

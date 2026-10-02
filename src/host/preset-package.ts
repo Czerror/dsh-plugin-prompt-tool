@@ -1,4 +1,4 @@
-/** 预设交换：有界资源、完整候选与可恢复提交，Web 和 CLI 共用。 */
+/** 模块交换：有界资源、完整候选与可恢复提交，Web 和 CLI 共用。 */
 import { createHash } from 'node:crypto'
 import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { basename, dirname, join, posix, resolve, sep } from 'node:path'
@@ -7,13 +7,13 @@ import type { AssetFile, AssetImportRequest, AssetSummary, PresetExportRequest, 
 import { MAX_ASSET_BYTES, MAX_ASSET_FILES, packZip, safeAssetPath, unpackZip } from './asset-archive.ts'
 import { decodeAssetFile, normalizeAssetFiles, prepareImport, assetSourceDigest } from './import-source.ts'
 import { directoryVersionOf, computePreviewRevision } from './preview-revision.ts'
-import { resolvePresetDir, invalidatePresetSpec, packageEngineDir, type PresetSpec } from './manifest.ts'
+import { resolveModuleDir, invalidateModuleSpec, packageEngineDir, type ModuleSpec } from './manifest.ts'
 import { MODULE_CONFIGS_DIR, MODULE_DEFINITION_FILE } from './paths.ts'
 import { validateCustomTools } from './custom-tools.ts'
 import { readPresetLayerSettings } from './preset-layer-settings.ts'
 import { projectCharacterMemories } from './characters.ts'
 import { writePreset, RENDER_VERSION } from './write-preset.ts'
-import { assertPresetId, assertPresetDirectory, canonicalPresetRoot, setPresetDefinitionId } from './preset-install.ts'
+import { assertPresetId, assertModuleDirectory, canonicalPresetRoot, setPresetDefinitionId } from './preset-install.ts'
 // @ts-expect-error 引擎 ESM 是权威校验实现，由构建器同源打包。
 import { createPromptConfigs } from '../../engine/schema.mjs'
 
@@ -45,7 +45,7 @@ function ownedFile(path: string): boolean {
   const root = path.split('/')[0]!
   if (root.startsWith('.') || [MODULE_CONFIGS_DIR, 'custom-tools', 'subagent-tools', 'skills'].includes(root)) return false
   if (path === 'variables.yml' || path === MANIFEST) return false
-  // 根 agents.md 是预设自有旧内容资产，工作区指令文件绝不沿路径收集。
+  // 根 agents.md 是模块自有旧内容资产，工作区指令文件绝不沿路径收集。
   return path === 'agents.md' || !/^(?:AGENTS|CLAUDE)(?:\.local)?\.md$/i.test(basename(path))
 }
 
@@ -118,7 +118,7 @@ export function presetImportPreview(root: string, files: AssetFile[], request: A
   const prepared = prepareImport(files, 'preset', { ...request, targetId: undefined, targetName: undefined })
   if (prepared.state !== 'ready') return prepared
   const id = targetId(root, request.targetId ?? prepared.spec.id, request)
-  const target = assertPresetDirectory(root, id, true)
+  const target = assertModuleDirectory(root, id, true)
   const version = directoryVersionOf(target)
   const sourceDigest = assetSourceDigest(files)
   const previewRevision = computePreviewRevision({
@@ -149,7 +149,7 @@ function candidateTemplate(source: string, root: string, id: string, file: unkno
   return { text: raw }
 }
 
-function checkCandidate(spec: PresetSpec, source: string, root: string, id: string): void {
+function checkCandidate(spec: ModuleSpec, source: string, root: string, id: string): void {
   if (spec.customTools !== undefined) {
     if (!Array.isArray(spec.customTools)) throw new Error('customTools 必须是数组')
     const errors = validateCustomTools(spec.customTools)
@@ -188,11 +188,11 @@ export async function installPresetPackage(root: string, files: AssetFile[], req
       const doc = parseDocument(preview.prepared.yaml)
       setPresetDefinitionId(doc, preview.summary.targetId)
       doc.set('name', preview.summary.targetName)
-      const spec = doc.toJS() as PresetSpec
+      const spec = doc.toJS() as ModuleSpec
       writeFileSync(join(source, MODULE_DEFINITION_FILE), doc.toString(), 'utf8')
       checkCandidate(spec, source, root, preview.summary.targetId)
       generated = writePreset(existsSync(join(source, 'preset.md')) ? readFileSync(join(source, 'preset.md'), 'utf8') : '', {
-        presetDir: root, presetTemplate: preview.summary.targetId, outputId: preview.summary.targetId,
+        moduleDir: root, presetTemplate: preview.summary.targetId, outputId: preview.summary.targetId,
         sourceDir: source, materializeOnly: true, presetOrder: 5, promptConfigs: [],
       })
       const now = presetImportPreview(root, files, request)
@@ -206,7 +206,7 @@ export async function installPresetPackage(root: string, files: AssetFile[], req
         }
         throw error
       }
-      invalidatePresetSpec(target)
+      invalidateModuleSpec(target)
       // 备份清理失败不会把已经成功的安装说成失败；保留路径供诊断。
       try { rmSync(stage, { recursive: true, force: true }); moved = false } catch { return { id: preview.summary.targetId, backupPath: stage } }
       return { id: preview.summary.targetId }
@@ -246,11 +246,11 @@ function collectFiles(dir: string): Array<{ path: string; bytes: Buffer }> {
   return files
 }
 
-function dependencyErrors(files: Array<{ path: string; bytes: Buffer }>, spec: PresetSpec): string[] {
+function dependencyErrors(files: Array<{ path: string; bytes: Buffer }>, spec: ModuleSpec): string[] {
   const paths = new Set(files.map((file) => file.path))
   const errors = new Set<string>()
   const check = (ref: string, from: string): void => {
-    // 共享引擎不再随包分发（引擎由插件提供，组合行用包名说明符）：旧预设包里的
+    // 共享引擎不再随包分发（引擎由插件提供，组合行用包名说明符）：旧模块包里的
     // `../.engine/x.mjs` 引用不再豁免，会按越界资源在下面被拒绝。
     const rel = posix.normalize(posix.join(posix.dirname(from), ref))
     if (rel.startsWith('../') || posix.isAbsolute(rel) || ref.includes(':')) errors.add(`外部资源：${ref}`)
@@ -285,7 +285,7 @@ function dependencyErrors(files: Array<{ path: string; bytes: Buffer }>, spec: P
 
 export async function exportPresetPackage(root: string, request: PresetExportRequest): Promise<PresetExportResult> {
   assertTransferId(request.id)
-  const dir = resolvePresetDir(request.id, root)
+  const dir = resolveModuleDir(request.id, root)
   const before = directoryVersionOf(dir)
   if (before === null) throw new Error('预设不存在')
   const files = collectFiles(dir)
@@ -297,7 +297,7 @@ export async function exportPresetPackage(root: string, request: PresetExportReq
   if (original.get('id') === undefined) original.set('id', request.id)
   const projection = projectCharacterMemories(original, request.memoryChoices ?? {}, root)
   definition.bytes = Buffer.from(projection.doc.toString())
-  const spec = projection.doc.toJS() as PresetSpec
+  const spec = projection.doc.toJS() as ModuleSpec
   readPresetLayerSettings(spec)
   const blockers = dependencyErrors(files, spec)
   if (projection.memoryConflicts.length > 0) blockers.push('请明确选择来源不明的记忆条目是否分享')

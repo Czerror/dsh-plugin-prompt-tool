@@ -38,7 +38,7 @@ export const PARAMS_ZH = {
   'param.customToolRequireApproval': '执行前需用户批准的工具种类',
 
   // 参数卡通用文案。
-  'param.hint': '{param}：{label}。空文本/列表回落预设默认；保存后用于后续 generation。',
+  'param.hint': '{param}：{label}。空文本/列表回落模块默认；保存后用于后续 generation。',
   'param.inheritPresetDefault': '继承模块默认',
   'param.on': '开启',
   'param.off': '关闭',
@@ -65,7 +65,7 @@ export const PARAMS_ZH = {
   'modules.layer.capability': '能力：{id}',
   'modules.layer.remove': '移除能力',
   'modules.layer.removeTitle': '移除「{id}」能力？',
-  'modules.layer.removeDesc': '从当前预设移除该能力：模块声明与行配置一起移除，它的参数不再生效；其他能力与本层配置不受影响。',
+  'modules.layer.removeDesc': '从当前模块移除该能力：模块声明与行配置一起移除，它的参数不再生效；其他能力与本层配置不受影响。',
 }
 
 export const PARAMS_EN: Record<keyof typeof PARAMS_ZH, string> = {

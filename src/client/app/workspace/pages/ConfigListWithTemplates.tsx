@@ -42,7 +42,7 @@ export const ConfigListWithTemplates = memo(function ConfigListWithTemplates(pro
   const saveConfigs = useCallback((configs: PromptToolStore['fields']['promptConfigs']) => {
     return store.persistConfigs(configs)
   }, [store])
-  // 指令文件卡：显式写盘与重新读取（与预设保存分流）。指令文件是主会话概念，
+  // 指令文件卡：显式写盘与重新读取（与模块保存分流）。指令文件是主会话概念，
   // 只在主会话作用域下发，避免子代理页重复挂载产生同一文件的双编辑入口。
   const instructionScope = scope === undefined || scope === 'main'
   const saveInstructionFile = useCallback((fileId: string) => {
@@ -54,8 +54,8 @@ export const ConfigListWithTemplates = memo(function ConfigListWithTemplates(pro
   const patchInstructionPolicy = useCallback((fileId: string, override: InstructionPolicyFileOverride) => {
     void store.updateInstructionPolicy(fileId, override)
   }, [store])
-  // 当前预设模板消息批层无配置时，pre-step 层空状态追加提示（列表仍可自定义：
-  // 新建配置写入激活预设 preset.yml 的 promptConfigs，随预设走、不随切换保留）。
+  // 当前模块模板消息批层无配置时，pre-step 层空状态追加提示（列表仍可自定义：
+  // 新建配置写入激活模块 module.yml 的 promptConfigs，随模块走、不随切换保留）。
   const preStepEmpty = store.templatePreStepCount === 0 && (layer === undefined || layer === 'pre-step')
   return (
     <PromptConfigList

@@ -5,9 +5,9 @@ import { join } from 'node:path'
 import { parse } from 'yaml'
 import { isolatedHome, fakeReq, fakeRes, readBridge } from '../fixtures/host-harness.mjs'
 
-const { presetRoot } = isolatedHome('pt-activation-bridge-')
+const { moduleRoot } = isolatedHome('pt-activation-bridge-')
 const { registerSettingsBridge } = await import('../../src/runtime/settings-bridge.ts')
-const dir = join(presetRoot, 'editable')
+const dir = join(moduleRoot, 'editable')
 mkdirSync(dir, { recursive: true })
 const file = join(dir, 'module.yml')
 writeFileSync(file, 'id: editable\nmodules: []\n')

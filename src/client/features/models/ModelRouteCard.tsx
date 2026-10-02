@@ -4,7 +4,7 @@ import { EngineModuleCard } from '../../ui/EngineModuleCard.tsx'
 import { MenuSelect } from '../../ui/MenuSelect.tsx'
 import styles from '../../ui/controls.module.css'
 import { buildEffortOptions, buildModelOptions, modelChoiceValue, parseModelChoice } from './model-options.ts'
-/** 模型路由模块卡（主模型走当前预设请求覆盖，子代理走委派参数）：
+/** 模型路由模块卡（主模型走当前模块请求覆盖，子代理走委派参数）：
  *  主对话/子代理共用同一配置源（缺省继承宿主默认）；模型路由与人设按作用域完全分离
  *  （main=主对话模型、subagent=子代理模型，参数各自独立）。 */
 export function ModelRouteModuleCard(props: { store: PromptToolStore; scope: 'main' | 'subagent' }): ReactNode {
@@ -79,7 +79,7 @@ export function ModelRouteModuleCard(props: { store: PromptToolStore; scope: 'ma
       .finally(() => setSelecting(false))
   }
   const scopeMeta = props.scope === 'main'
-    ? { title: '模型路由', idle: '未设置：展开选择模型（留空 = 继承当前会话）', active: '固定模型路由已设置（仅当前预设请求）' }
+    ? { title: '模型路由', idle: '未设置：展开选择模型（留空 = 继承当前会话）', active: '固定模型路由已设置（仅当前模块请求）' }
     : { title: '子代理模型', idle: '未设置：展开选择模型（留空 = 继承主会话）', active: '子代理固定模型路由已设置' }
   // 主对话卡片：宿主默认模型名回显（子代理默认继承主会话，不回显宿主）。
   const idleMeta = props.scope === 'main' && host?.model !== undefined && host.model.length > 0
@@ -96,7 +96,7 @@ export function ModelRouteModuleCard(props: { store: PromptToolStore; scope: 'ma
             <small>{sessionView.sessionId === undefined
               ? '无活动会话：打开会话后此处显示其模型选择并可切换。'
               : sessionView.selectable
-                ? '与官方模型选择器同源（session.selectModel）：切换即对当前会话生效，并保存为宿主新会话默认。下方预设参数非空时按请求覆盖会话选择。'
+                ? '与官方模型选择器同源（session.selectModel）：切换即对当前会话生效，并保存为宿主新会话默认。下方模块参数非空时按请求覆盖会话选择。'
                 : '子代理会话不支持会话级切换（走子代理固定路由）。'}</small>
           </span>
           <div className={styles.sessionModelRow}>
@@ -126,16 +126,16 @@ export function ModelRouteModuleCard(props: { store: PromptToolStore; scope: 'ma
       )}
       <div className={styles.settingRowStack}>
         <span className={styles.settingCopy}>
-          <strong>预设模型</strong>
+          <strong>模块模型</strong>
           <small>{props.scope === 'main'
-            ? `选择模型后保存到当前预设；思维程度档位按所选模型声明展示，不改写宿主全局默认模型。留空 = 继承宿主默认${hostEffort !== undefined ? `（思维程度当前为 ${hostEffort}）` : ''}。`
+            ? `选择模型后保存到当前模块；思维程度档位按所选模型声明展示，不改写宿主全局默认模型。留空 = 继承宿主默认${hostEffort !== undefined ? `（思维程度当前为 ${hostEffort}）` : ''}。`
             : '选择模型后自动绑定对应服务商（agentOptions 注入 tool-subagent），调用方显式模型优先；思维程度档位按所选模型声明展示，留空 = 不设置（模型默认）。'}</small>
         </span>
         <div className={styles.sessionModelRow}>
           <MenuSelect
             className={styles.configInput}
             compact
-            ariaLabel="预设模型"
+            ariaLabel="模块模型"
             value={active ? modelChoiceValue(provider, modelName) : ''}
             disabled={disabled}
             options={modelOptions}

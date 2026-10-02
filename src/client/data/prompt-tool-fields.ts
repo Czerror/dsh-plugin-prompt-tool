@@ -1,7 +1,7 @@
 /** 提示词工具客户端状态模型与稳定默认值（无网络、无 React）。 */
 import { ENGINE_PARAM_DEFINITIONS, ENGINE_PARAM_KEYS, type EngineParamKey, type EngineParams } from '../../shared/engine-params.ts'
 import { ENGINE_LAYER_ORDER } from '../../shared/engine-capabilities.ts'
-import { DEFAULT_PRESET_ID } from '../../shared/preset-ids.ts'
+import { DEFAULT_MODULE_ID } from '../../shared/preset-ids.ts'
 import type { SkillCatalogEntry } from '../../shared/skills.ts'
 import type { EngineMeta, PromptConfigDraft } from '../prompt-tool-types.ts'
 
@@ -85,7 +85,7 @@ export const EMPTY_FIELDS: Fields = {
   presetOrder: 5,
   fallbackText: '',
   writePreset: true,
-  presetTemplate: DEFAULT_PRESET_ID,
+  presetTemplate: DEFAULT_MODULE_ID,
   promptConfigs: [],
 }
 /** 编译期契约：所有引擎参数键都必须进入 Fields，防止 host 新增参数后 client 静默丢弃。 */

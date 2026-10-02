@@ -1,10 +1,10 @@
 /**
- * write-preset — 单一参数 YAML 驱动的官方预设目录物化器。
+ * write-preset — 单一参数 YAML 驱动的模块目录物化器。
  *
- * 用户只需编写 preset/<template>/preset.yml(纯参数):
+ * 用户只需编写 modules/<template>/module.yml(纯参数):
  *   meta + content + modules(模块清单)+ params(直读参数)+ 可选 promptConfigs 覆盖。
  * 默认提示词配置与组合 token 都由引擎按 params 生成,参数文件不含任何模板语法。
- * 输出 = 官方对齐布局：presetDir/<template>/（预设目录，agent.cordis.yml 组合本体
+ * 输出 = 官方对齐布局：moduleDir/<template>/（模块目录，agent.cordis.yml 组合本体
  * 直接可挂载）。共享引擎自阶段 2 起由插件包提供（组合行引用包内说明符），不再物化。
  */
 
@@ -16,10 +16,10 @@ import { parseDocument, stringify as stringifyYaml } from 'yaml'
 import { validateSubagentToolPolicy } from '../../engine/subagent-tool-policy-core.mjs'
 // @ts-expect-error 仓库根 ESM 引擎文件由 tsdown 作为源码依赖打包，无独立声明文件。
 import { compileDeclarations } from '../../engine/trigger-spec.mjs'
-import { DEFAULT_PRESET_DIR, MODULE_CONFIGS_DIR, MODULE_DEFINITION_FILE } from './paths.ts'
-import { DEFAULT_PRESET_ID } from '../shared/preset-ids.ts'
+import { MODULES_DIR, MODULE_CONFIGS_DIR, MODULE_DEFINITION_FILE } from './paths.ts'
+import { DEFAULT_MODULE_ID } from '../shared/preset-ids.ts'
 import { triggerPromptConfigOptions } from './preset-triggers.ts'
-import { assertPresetDirectory, assertPresetId, assertPresetTree, engineModuleFileNames, rewritePresetEngineReferences } from './preset-install.ts'
+import { assertModuleDirectory, assertPresetId, assertPresetTree, engineModuleFileNames, rewritePresetEngineReferences } from './preset-install.ts'
 import { compileCustomTool } from './custom-tools.ts'
 import { validateCustomToolIdentities } from '../shared/engine-capabilities.ts'
 import { ENGINE_PARAM_KEYS, type PresetWriterParams } from '../shared/engine-params.ts'
@@ -34,24 +34,24 @@ import type { PromptConfigSpec } from './prompt-configs.ts'
 import {
   assertCompositionArray,
   asString,
-  loadPresetSpec,
+  loadModuleSpec,
   packageEngineDir,
   renderComposition,
   resolvePresetParams,
-  resolvePresetDir,
+  resolveModuleDir,
 } from './manifest.ts'
 
 const ENGINE_DIR = packageEngineDir()
 
 /**
- * 渲染契约版本：包内预设模板/引擎契约变化（modules 清单、persona 顶层段与
+ * 渲染契约版本：包内模块模板/引擎契约变化（modules 清单、persona 顶层段与
  * dsh-persona 行 config 字段等）时 +1。启动重建据此重刷用户目录旧产物——
- * 否则旧产物只会在用户手动切换该预设时才会重新渲染。
+ * 否则旧产物只会在用户手动切换该模块时才会重新渲染。
  */
 export const RENDER_VERSION = 5
 export const RENDER_STAMP = `# prompt-tool:render v${RENDER_VERSION}`
 
-/** 剥离文本中的预设级变量引用（{{key}} → 空串）；内置变量（{{DSH_HOME}} 等）保留。
+/** 剥离文本中的模块级变量引用（{{key}} → 空串）；内置变量（{{DSH_HOME}} 等）保留。
  *  模板变量插值停用时由 writePreset 调用，避免 {{key}} 残留导致官方渲染 unknown variable。 */
 function stripVariableRefs(text: string, keys: ReadonlySet<string>): string {
   return text.replace(/\{\{([A-Za-z0-9_.\u4e00-\u9fff-]+)\}\}/g, (whole, key: string) => keys.has(key) ? '' : whole)
@@ -63,22 +63,22 @@ function stripVariableRefs(text: string, keys: ReadonlySet<string>): string {
 const DISABLED_TEXT_SLIM_THRESHOLD = 32 * 1024
 
 /**
- * 把任意单一参数预设模板物化到生成目录（writePreset）的写入态选项。
+ * 把任意单一参数模块模板物化到生成目录（writePreset）的写入态选项。
  * 引擎参数契约来自 shared/engine-params.ts（PresetWriterParams：runtimeOf 透传子集），
  * 此处只保留 writePreset 专属字段——加引擎参数只需改一处契约，漏透传变成编译错误。
  */
 export interface WritePresetOptions extends PresetWriterParams {
   /** AGENTS.md 内容资产（写生成目录 agents.md）：常驻层写盘的唯一来源，不再注入提示词。 */
   agentsInstructionText?: string
-  presetDir: string
+  moduleDir: string
   presetOrder: number
   /** settings 层用户自定义提示词配置(优先级最高)。 */
   promptConfigs: PromptConfigSpec[]
-  /** 当前预设目录名；默认 pt-standard。 */
+  /** 当前模块目录名；默认 pt-standard。 */
   presetTemplate?: string
-  /** 输出目录/预设 id 覆盖；缺省 = presetTemplate 同名输出。 */
+  /** 输出目录/模块 id 覆盖；缺省 = presetTemplate 同名输出。 */
   outputId?: string
-  /** 隔离的定义/资源来源；与最终 outputId 分离，不回退同名已安装预设。 */
+  /** 隔离的定义/资源来源；与最终 outputId 分离，不回退同名已安装模块。 */
   sourceDir?: string
   /** 只生成并返回暂存目录；调用方负责安装或清理，不更新共享引擎及目标目录。 */
   materializeOnly?: boolean
@@ -105,7 +105,7 @@ function isLockError(error: unknown): boolean {
 }
 
 // 共享引擎自阶段 2 起由**插件包**提供（组合行引用 `dsh-plugin-prompt-tool/engine/*.mjs`），
-// 不再物化到 `<预设根>/.engine/`；用户目录里既有的 `.engine/` 不再被引用，保留不主动清理。
+// 不再物化到 `<模块根>/.engine/`；用户目录里既有的 `.engine/` 不再被引用，保留不主动清理。
 
 /**
  * 原地合并写：srcDir 覆盖到已存在的 destDir（目录交换被占用时的回退路径）。
@@ -140,7 +140,7 @@ function syncDirInPlace(srcDir: string, destDir: string): void {
  */
 export function runtimeOf(options: WritePresetOptions, prompt: string): Record<string, unknown> {
   /** 未提供的参数保持 undefined：resolvePresetParams 跳过 undefined 键，
-   *  预设 preset.yml 的 params/model 段才是缺省值来源。写成 false/''/true 会把
+   *  模块 module.yml 的 params/model 段才是缺省值来源。写成 false/''/true 会把
    *  「调用方没给」冒充成「调用方要求」，导入与离线物化时覆盖作者定义。 */
   const providedBoolean = (value: boolean | undefined): boolean | undefined =>
     typeof value === 'boolean' ? value : undefined
@@ -168,14 +168,14 @@ export function runtimeOf(options: WritePresetOptions, prompt: string): Record<s
     subagentTemperature: typeof options.subagentTemperature === 'string' ? options.subagentTemperature : undefined,
     subagentMaxTokens: typeof options.subagentMaxTokens === 'string' ? options.subagentMaxTokens : undefined,
     maxDepth: options.maxDepth,
-    // firstTurnWord 空 = 不写该键，由模板/预设的 prompt-injector 条目决定确认词。
+    // firstTurnWord 空 = 不写该键，由模板/模块的 prompt-injector 条目决定确认词。
     firstTurnWord: typeof options.firstTurnWord === 'string' && options.firstTurnWord.length > 0
       ? options.firstTurnWord
       : undefined,
   }
 }
 
-/** 手写/导入预设恢复路径：与保存方完整编译同源，但坏定义仍逐条告警跳过。 */
+/** 手写/导入模块恢复路径：与保存方完整编译同源，但坏定义仍逐条告警跳过。 */
 function materializeCustomTool(tool: Record<string, unknown>, warn: (message: string) => void): Record<string, unknown> | undefined {
   try {
     return compileCustomTool(tool)
@@ -185,14 +185,14 @@ function materializeCustomTool(tool: Record<string, unknown>, warn: (message: st
   }
 }
 
-/** 把任意单一参数预设模板物化到生成目录;全部失败 fail loud。 */
+/** 把任意单一参数模块模板物化到生成目录;全部失败 fail loud。 */
 export function writePreset(prompt: string, options: WritePresetOptions): string {
-  // 空路径兜底:旧版 UI 保存的空串 presetDir 不得传入 mkdirSync('')。
-  const presetDir = options.presetDir.trim().length > 0 ? options.presetDir : DEFAULT_PRESET_DIR
+  // 空路径兜底:旧版 UI 保存的空串 moduleDir 不得传入 mkdirSync('')。
+  const moduleDir = options.moduleDir.trim().length > 0 ? options.moduleDir : MODULES_DIR
   const templateName = typeof options.presetTemplate === 'string' && options.presetTemplate.trim().length > 0
     ? options.presetTemplate.trim()
-    : DEFAULT_PRESET_ID
-  // 安全边界：templateName 现在是写入路径段（presetDir/<template>/），同时必须是
+    : DEFAULT_MODULE_ID
+  // 安全边界：templateName 现在是写入路径段（moduleDir/<template>/），同时必须是
   // 官方 agent-presets 可发现的预设 id（PRESET_ID = /^[a-z0-9][a-z0-9-]*$/）——
   // 含中文等非法 id 会被宿主 discovery 静默跳过（会话 resume 报 preset not found），
   // 这里 fail loud 拒绝，防止生成官方不可见目录。
@@ -208,9 +208,9 @@ export function writePreset(prompt: string, options: WritePresetOptions): string
   }
   assertPresetId(templateName)
   assertPresetId(outputId)
-  const templateDir = options.sourceDir ?? resolvePresetDir(templateName, presetDir)
+  const templateDir = options.sourceDir ?? resolveModuleDir(templateName, moduleDir)
   assertPresetTree(templateDir)
-  let spec = loadPresetSpec(templateDir)
+  let spec = loadModuleSpec(templateDir)
   if (Array.isArray(spec.meta?.stWarnings)) {
     for (const warning of spec.meta.stWarnings) if (typeof warning === 'string') options.warn?.(`prompt-tool: ST 导入兼容提示：${warning}`)
   }
@@ -235,12 +235,12 @@ export function writePreset(prompt: string, options: WritePresetOptions): string
   const runtime = runtimeOf(options, prompt)
   const params = resolvePresetParams(spec, runtime)
 
-  // 官方对齐布局：presetDir 是预设根（官方 USER_PRESET_DIR），每个预设一个
-  // 官方预设目录 presetDir/<template>/（agent.cordis.yml 组合本体直接可挂载），
-  // 共享引擎由插件包提供（组合行引用包名说明符），不再物化到 presetDir/.engine。
-  const targetDir = assertPresetDirectory(presetDir, outputId, true)
-  mkdirSync(presetDir, { recursive: true })
-  const tmpDir = mkdtempSync(join(presetDir, `.${outputId}.tmp-`))
+  // 官方对齐布局：moduleDir 是模块根（官方 USER_PRESET_DIR），每个模块一个
+  // 官方模块目录 moduleDir/<template>/（agent.cordis.yml 组合本体直接可挂载），
+  // 共享引擎由插件包提供（组合行引用包名说明符），不再物化到 moduleDir/.engine。
+  const targetDir = assertModuleDirectory(moduleDir, outputId, true)
+  mkdirSync(moduleDir, { recursive: true })
+  const tmpDir = mkdtempSync(join(moduleDir, `.${outputId}.tmp-`))
   const outDir = tmpDir
   try {
   // 1) 组合文件:modules 模块库装配 + 参数桥行级合并 + YAML 校验。
@@ -248,12 +248,12 @@ export function writePreset(prompt: string, options: WritePresetOptions): string
   assertCompositionArray(composition, spec)
   // 引擎引用重写：组合源的 ./engine/ 与旧预设的 ../.engine/ 一律写成包名说明符
   // dsh-plugin-prompt-tool/engine/<module>.mjs（引擎不再物化）；受管配置字段保持
-  // 「相对历史引擎位置 <预设根>/.engine/」的形态，由 preset-registry 在注册期换算为绝对 file://。
+  // 「相对历史引擎位置 <模块根>/.engine/」的形态，由 preset-registry 在注册期换算为绝对 file://。
   const subComposition = rewritePresetEngineReferences(composition, outputId,
     engineModuleFileNames(ENGINE_DIR))
   writeFileSync(join(outDir, 'agent.cordis.yml'), `${RENDER_STAMP}\n${subComposition}`, 'utf8')
 
-  // 2) 宿主预设元数据：新布局 preset.yml = 参数 + 元数据一体。
+  // 2) 宿主模块元数据：新布局 module.yml = 参数 + 元数据一体。
   //    已存在参数文件（种子化/新建复制）时只合并元数据键（name/description/order/meta），
   //    保留 params/modules/promptConfigs/content——不得整体覆盖（会摧毁参数源）。
   const meta = spec.meta !== null && typeof spec.meta === 'object' ? spec.meta as Record<string, unknown> : {}
@@ -285,7 +285,7 @@ export function writePreset(prompt: string, options: WritePresetOptions): string
   }
 
   // 2.5) 内容资产:preset.md / agents.md(与组合文件同层;大文本存文件而非 settings)。
-  //      空白预设（custom 等无 content）不生成空内容资产——prompt-injector 无文本即禁用。
+  //      空白模块（custom 等无 content）不生成空内容资产——prompt-injector 无文本即禁用。
   if (prompt.trim().length > 0) {
     writeFileSync(join(outDir, 'preset.md'), prompt, 'utf8')
   } else if (existsSync(join(templateDir, 'preset.md'))) {
@@ -297,8 +297,8 @@ export function writePreset(prompt: string, options: WritePresetOptions): string
     cpSync(join(templateDir, 'agents.md'), join(outDir, 'agents.md'))
   }
 
-  // 2.6) 模板目录本地文件复制（官方格式预设的组合引用 ./xxx.mjs 等相对路径模块，
-  // 必须随预设进入生成目录；跳过定义文件 preset.yml / agent.cordis.yml 与
+  // 2.6) 模板目录本地文件复制（官方格式模块的组合引用 ./xxx.mjs 等相对路径模块，
+  // 必须随模块进入生成目录；跳过定义文件 module.yml / agent.cordis.yml 与
   // 内容资产 preset.md / agents.md——后者由运行时 prompt 决定）。
   const templateEntries = readdirSync(templateDir, { withFileTypes: true })
   for (const entry of templateEntries) {
@@ -340,7 +340,7 @@ export function writePreset(prompt: string, options: WritePresetOptions): string
         const useCustom = guideEnabled && params.guideCustom === true
         next.modelScope = useCustom ? 'all' : 'flash'
         // 复杂任务判定 fallback 复用锚定的 complexPattern；guideComplexPattern
-        // 旧键回退读取（旧预设平滑，不混入 variables.yml）。
+        // 旧键回退读取（旧模块平滑，不混入 variables.yml）。
         next.params = {
           ...next.params,
           useCustom,
@@ -361,10 +361,10 @@ export function writePreset(prompt: string, options: WritePresetOptions): string
   // 指令文件卡不再物化：正文与行为由独立指令来源（pre-step 协调器 + 独立策略）按会话
   // 现场解析，生成目录里不再出现 agents-file-*，preset.yml#agentsHints 也不再是开关。
   const merged = mergePromptConfigs(modelRequestConfigs(params), templateDefaults, options.promptConfigs)
-  // 预设级模板变量 → prompt-configs/variables.yml（单一文件）：引擎加载时合并进
+  // 模块级模板变量 → prompt-configs/variables.yml（单一文件）：引擎加载时合并进
   // 每条配置 variables（配置自身优先）。唯一来源 = preset.yml 顶层 variables；
   // params 与 runtime 参数不进入变量文件。variablesEnabled=false（卡片
-  // 开关停用）时不生成变量文件，并把配置文本中的预设变量引用 {{key}} 剥离
+  // 开关停用）时不生成变量文件，并把配置文本中的模块变量引用 {{key}} 剥离
   //（避免字面残留与官方 unknown variable 报错）。
   const presetVariables: Record<string, string> = {}
   for (const [key, value] of Object.entries(spec.variables ?? {})) {
@@ -391,7 +391,7 @@ export function writePreset(prompt: string, options: WritePresetOptions): string
     if (config.id === 'prompt-injector') {
       delete config.text
       config.texts = []
-      // 无注入内容（空白预设）时禁用，避免注入空消息。
+      // 无注入内容（空白模块）时禁用，避免注入空消息。
       config.enabled = params.injectPrompt !== false && prompt.trim().length > 0
       // 锚定确认词归一：显式/模板给出的词优先，其余从锚句文本自动派生（派生集合进
       // anchorWords）；两者都没有 = 留空，引擎据此不做词确认（不再内置 we 兜底）。
@@ -419,7 +419,7 @@ export function writePreset(prompt: string, options: WritePresetOptions): string
         anchorWords,
       }
     }
-    // 停用模板变量插值：剥离配置文本（texts/text/params.text）中的预设变量引用，
+    // 停用模板变量插值：剥离配置文本（texts/text/params.text）中的模块变量引用，
     // 内置变量（{{DSH_HOME}}/{{WORKSPACE}}/{{CWD}}）保留。
     if (!variablesEnabled && presetVariableKeys.size > 0) {
       const strip = (item: string): string => stripVariableRefs(item, presetVariableKeys)
@@ -493,10 +493,10 @@ export function writePreset(prompt: string, options: WritePresetOptions): string
   if (options.materializeOnly) return outDir
 
   // 7) 原子提交:新目录完全写好后替换旧目录;失败时恢复旧目录并清理临时目录。
-  //    目录被占用（Windows 打开句柄/进程 cwd 拒绝整目录改名，如预设内 skills 被
+  //    目录被占用（Windows 打开句柄/进程 cwd 拒绝整目录改名，如模块内 skills 被
   //    技能监听器持有）时退回原地合并写，语义与整目录交换一致：同名项覆盖、
   //    多余项删除，被占用的目录只刷新内容。
-  const backupDir = join(presetDir, `.${templateName}.bak-${Date.now().toString(36)}`)
+  const backupDir = join(moduleDir, `.${templateName}.bak-${Date.now().toString(36)}`)
   let oldMoved = false
   let inPlace = false
   if (existsSync(targetDir)) {

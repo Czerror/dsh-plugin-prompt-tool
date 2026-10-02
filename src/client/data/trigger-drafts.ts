@@ -22,23 +22,23 @@ export interface TriggerEditorDraft {
 export const hasTriggerFieldDrafts = (draft: TriggerEditorDraft): boolean => [...draft.fields.values()].some((field) => field.text !== field.source || field.error.length > 0)
 export const triggerDraftDirty = (draft: TriggerEditorDraft): boolean => !deepEqual(draft.value, draft.saved) || hasTriggerFieldDrafts(draft)
 
-export function getTriggerDraft(drafts: WorkspaceDrafts, presetId: string): TriggerEditorDraft {
-  let draft = drafts.triggers.get(presetId)
+export function getTriggerDraft(drafts: WorkspaceDrafts, moduleId: string): TriggerEditorDraft {
+  let draft = drafts.triggers.get(moduleId)
   if (draft === undefined) {
     draft = { value: [], saved: [], fields: new Map(), loaded: false, validated: false, sequence: 0 }
-    drafts.triggers.set(presetId, draft)
+    drafts.triggers.set(moduleId, draft)
   }
   return draft
 }
 
 interface TriggerEditorDependencies {
   request(body: BridgeRequestMap['triggers']): Promise<BridgeResult<TriggerSnapshot>>
-  enqueue<T>(presetId: string, task: () => Promise<T>): Promise<T>
+  enqueue<T>(moduleId: string, task: () => Promise<T>): Promise<T>
   isCurrent(): boolean
   changed(): void
 }
 
-export function createTriggerEditor(presetId: string, draft: TriggerEditorDraft, deps: TriggerEditorDependencies) {
+export function createTriggerEditor(moduleId: string, draft: TriggerEditorDraft, deps: TriggerEditorDependencies) {
   const current = (sequence: number): boolean => sequence === draft.sequence && deps.isCurrent()
   const failure = (error: unknown): BridgeErrorPayload => ({ ok: false, code: 'trigger-request-failed', message: error instanceof Error ? error.message : String(error) })
   const finish = (sequence: number): void => {
@@ -56,12 +56,12 @@ export function createTriggerEditor(presetId: string, draft: TriggerEditorDraft,
     draft.busy = 'read'
     deps.changed()
     try {
-      const result = await deps.request({ expectedPresetId: presetId })
+      const result = await deps.request({ expectedPresetId: moduleId })
       if (!current(sequence)) return false
       if (!result.ok) { draft.error = result; return false }
       const snapshot = result.value
       draft.meta = snapshot.meta
-      // 其他预设设置也改变整文件版本：仅当规则未被他人修改时，才可保留本地输入并推进基线。
+      // 其他模块设置也改变整文件版本：仅当规则未被他人修改时，才可保留本地输入并推进基线。
       if (triggerDraftDirty(draft) && !deepEqual(snapshot.triggers, draft.saved)) {
         draft.remote = snapshot
         draft.error = { ok: false, code: 'trigger-rules-changed' }
@@ -90,9 +90,9 @@ export function createTriggerEditor(presetId: string, draft: TriggerEditorDraft,
     draft.error = undefined
     deps.changed()
     try {
-      const result = await deps.enqueue(presetId, async () => {
+      const result = await deps.enqueue(moduleId, async () => {
         if (!current(sequence)) return undefined
-        return deps.request({ expectedPresetId: presetId, expectedRevision, triggers: submitted, ...(validateOnly ? { validateOnly: true } : {}) })
+        return deps.request({ expectedPresetId: moduleId, expectedRevision, triggers: submitted, ...(validateOnly ? { validateOnly: true } : {}) })
       })
       if (!current(sequence) || result === undefined) return false
       if (!result.ok) { draft.error = result; return false }

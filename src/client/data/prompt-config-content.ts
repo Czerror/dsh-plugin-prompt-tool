@@ -24,7 +24,7 @@ export const instructionFileIdOf = (config: PromptConfigDraft): string | undefin
 /** 指令文件卡：正文与卡片定义都不写进 preset.yml，正文只能经 /agents-file 显式写盘。 */
 export const isAgentsFileCard = (config: PromptConfigDraft): boolean => instructionFileIdOf(config) !== undefined
 
-/** 预设卡（不含指令文件来源）。 */
+/** 模块卡（不含指令文件来源）。 */
 export const isPresetCard = (config: PromptConfigDraft): boolean => !isAgentsFileCard(config)
 
 /**

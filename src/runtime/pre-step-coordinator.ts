@@ -1,4 +1,4 @@
-/** 预设 pre-step 批执行与官方指令逐文件过滤；正文发现、读取和重注入归官方所有。 */
+/** 模块 pre-step 批执行与官方指令逐文件过滤；正文发现、读取和重注入归官方所有。 */
 import { statSync } from 'node:fs'
 import { resolve } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'

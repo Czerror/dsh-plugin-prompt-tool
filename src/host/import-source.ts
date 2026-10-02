@@ -7,7 +7,7 @@ import { MODULE_DEFINITION_FILE } from './paths.ts'
 import type { AssetFile, ImportChoices, ImportKind } from '../shared/asset-transfer.ts'
 import { MAX_ASSET_BYTES, MAX_ASSET_FILES } from '../shared/asset-transfer.ts'
 import type { StConversionReport } from '../shared/bridge-contract.ts'
-import type { PresetSpec } from './manifest.ts'
+import type { ModuleSpec } from './manifest.ts'
 import { readPresetLayerSettings } from './preset-layer-settings.ts'
 import { assertPresetId } from './preset-install.ts'
 import { assertSafeConfigId } from './prompt-configs.ts'
@@ -70,7 +70,7 @@ export function assetSourceDigest(files: AssetFile[]): string {
 }
 
 /** 角色片段只接受自包含配置，验证时不得读取上传来源以外的磁盘文件。 */
-export function validateCharacterSpec(spec: PresetSpec): void {
+export function validateCharacterSpec(spec: ModuleSpec): void {
   readPresetLayerSettings(spec)
   for (const field of ['composition', 'customTools', 'content', 'subagentToolPolicy', 'moduleConfigs'] as const) {
     const value = spec[field]
@@ -91,7 +91,7 @@ export function validateCharacterSpec(spec: PresetSpec): void {
 }
 
 export type PreparedImport = {
-  state: 'ready'; kind: ImportKind; spec: PresetSpec; yaml: string; files: AssetFile[]
+  state: 'ready'; kind: ImportKind; spec: ModuleSpec; yaml: string; files: AssetFile[]
   sourceName: string; sourceDigest: string; report?: StConversionReport; avatar?: Buffer; sourceText?: string
 } | { state: 'needs-order-selection'; candidates: StOrderGroupSummary[]; sourceName: string }
   | { state: 'needs-kind-selection'; kinds: ImportKind[]; sourceName: string }
@@ -140,7 +140,7 @@ export function prepareImport(input: AssetFile[], target: 'preset' | 'character'
     || (isPngBuffer(decodeAssetFile(file)) && !(structured.length === 1 && /^avatar\.png$/i.test(file.path))))
   if (candidates.length === 0) throw new Error(`${files[0]!.path}: 未发现可识别的预设或角色内容`)
   if (target === 'character' && candidates.length !== 1) throw new Error('角色库每次只能导入一张角色卡，请逐张预览')
-  const parts: Array<{ spec: PresetSpec; report?: StConversionReport; kind: ImportKind; yaml: string; file: AssetFile; sourceText: string; avatar?: Buffer }> = []
+  const parts: Array<{ spec: ModuleSpec; report?: StConversionReport; kind: ImportKind; yaml: string; file: AssetFile; sourceText: string; avatar?: Buffer }> = []
   for (const file of candidates) {
     try {
       const bytes = decodeAssetFile(file)
@@ -154,12 +154,12 @@ export function prepareImport(input: AssetFile[], target: 'preset' | 'character'
       if (kind === 'native-preset' && isRecord(raw)) {
         const fragment = Array.isArray(raw.promptConfigs) && !['version', 'engineCompat', 'modules', 'composition', 'customTools', 'persona', 'content'].some(key => key in raw)
         let selfContained = false
-        try { validateCharacterSpec(raw as unknown as PresetSpec); selfContained = true } catch { /* 完整预设仍可由候选物化校验其附件与模块。 */ }
+        try { validateCharacterSpec(raw as unknown as ModuleSpec); selfContained = true } catch { /* 完整预设仍可由候选物化校验其附件与模块。 */ }
         if (selfContained && fragment && !/^(?:module|preset)\.ya?ml$/i.test(file.path) && !/^converted\.ya?ml$/i.test(file.path) && choices.sourceKind === undefined) {
           return { state: 'needs-kind-selection', kinds: ['native-preset', 'native-character'], sourceName: file.path }
         }
         if (choices.sourceKind === 'native-character' || /^converted\.ya?ml$/i.test(file.path)) {
-          validateCharacterSpec(raw as unknown as PresetSpec)
+          validateCharacterSpec(raw as unknown as ModuleSpec)
           kind = 'native-character'
         }
       }
@@ -171,15 +171,15 @@ export function prepareImport(input: AssetFile[], target: 'preset' | 'character'
         if (state.needsSelection) return { state: 'needs-order-selection', candidates: state.candidates, sourceName: file.path }
         if (state.error !== undefined) throw new Error(state.error)
       }
-      let spec: PresetSpec
+      let spec: ModuleSpec
       let report: StConversionReport | undefined
       if (kind.startsWith('native-')) {
-        spec = raw as PresetSpec
+        spec = raw as ModuleSpec
         if (spec.id === undefined) doc.set('id', stPresetId(posix.basename(file.path).replace(/\.[^.]+$/, '')))
         if (spec.name === undefined) doc.set('name', String(doc.get('id')))
         // 来源中的生成项证明不可信。分享出口必须经本机重新核验。
         if (doc.hasIn(['meta', 'characterMemories'])) doc.deleteIn(['meta', 'characterMemories'])
-        spec = doc.toJS() as PresetSpec
+        spec = doc.toJS() as ModuleSpec
       } else {
         const converted = convertStToPresetWithReport(raw, posix.basename(file.path).replace(/\.[^.]+$/, ''), options)
         spec = converted.spec
@@ -201,7 +201,7 @@ export function prepareImport(input: AssetFile[], target: 'preset' | 'character'
   const doc = parseDocument(yaml)
   if (choices.targetId !== undefined) doc.set('id', choices.targetId)
   if (choices.targetName !== undefined) doc.set('name', choices.targetName)
-  const spec = doc.toJS() as PresetSpec
+  const spec = doc.toJS() as ModuleSpec
   try { assertPresetId(spec.id) } catch (error) { throw new Error(`${first.file.path}: ${String(error)}`) }
   if (typeof spec.name !== 'string' || spec.name.trim().length === 0) throw new Error(`${first.file.path}: 名称必须为非空字符串`)
   yaml = doc.toString()

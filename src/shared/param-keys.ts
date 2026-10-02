@@ -1,7 +1,7 @@
 /**
- * 引擎行为参数键（按预设存储：激活预设 preset.yml 的 layerSettings + promptConfigs）。
- * 不进 Config schema、不进 settings namespace——每预设一份，随预设走（官方范式：
- * Config = 部署轴，引擎行为在预设文件）。
+ * 引擎行为参数键（按模块存储：激活模块 module.yml 的 layerSettings + promptConfigs）。
+ * 不进 Config schema、不进 settings namespace——每模块一份，随模块走（官方范式：
+ * Config = 部署轴，引擎行为在 module.yml）。
  *
  * = ENGINE_PARAM_KEYS（唯一权威）+ promptConfigs，不再有旁路键清单。
  * 锚定/引导内容键（buildPattern、complexPattern、firstTurnBuild 等）已并入

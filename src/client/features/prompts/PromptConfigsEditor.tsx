@@ -32,7 +32,7 @@ export interface PromptConfigsEditorProps extends Pick<PromptConfigListProps, 'b
   onSaveConfigs: (configs: PromptConfigDraft[]) => Promise<boolean>
   onSaveInstructions?: () => Promise<boolean>
   instructionPolicy?: InstructionPolicySnapshot
-  /** 指令文件卡：显式写盘 / 重新读取（不经预设保存路径）。 */
+  /** 指令文件卡：显式写盘 / 重新读取（不经模块保存路径）。 */
   onSaveInstructionFile?: (fileId: string) => void
   onReloadInstructionFile?: (fileId: string) => void
   /** 指令文件卡的行为策略改动（独立策略存储）。 */

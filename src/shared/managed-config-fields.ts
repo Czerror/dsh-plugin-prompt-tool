@@ -4,7 +4,7 @@ import type { EngineParamKey } from './engine-params.ts'
 export interface ManagedConfigField {
   /** 配置内的字段路径：`params.<键>` 或顶层字段名（`enabled` / `modelScope`）。 */
   path: string
-  /** 该字段由 writer 投影时使用的预设级扁平参数键。 */
+  /** 该字段由 writer 投影时使用的模块级扁平参数键。 */
   sourceParam: EngineParamKey
   /**
    * 计算结果而不是逐字映射：来源参数的组合结果（或集合开关），
@@ -71,7 +71,7 @@ export function readConfigFieldSources(configId: string, raw: unknown): ConfigFi
   return { configId, fields }
 }
 
-/** 只有本次物化确由预设参数投影的字段才锁定；重命名或缺少事实均不按 id 猜测。 */
+/** 只有本次物化确由模块参数投影的字段才锁定；重命名或缺少事实均不按 id 猜测。 */
 export function managedConfigSpec(configId: string | undefined, sources?: ConfigFieldSources): ManagedConfigSpec | undefined {
   if (configId === undefined || sources?.configId !== configId) return undefined
   const spec = MANAGED_CONFIG_FIELDS.find((entry) => entry.configId === configId)
@@ -83,7 +83,7 @@ export function isManagedConfigField(config: { id: string; fieldSources?: Config
   return managedConfigSpec(config.id, config.fieldSources)?.fields.some((field) => field.path === path) === true
 }
 
-/** 来源只用于读回；无论客户端传了什么来源，都不能写入预设定义。 */
+/** 来源只用于读回；无论客户端传了什么来源，都不能写入模块定义。 */
 export function stripConfigFieldSources<T extends { fieldSources?: unknown }>(config: T): Omit<T, 'fieldSources'> {
   const { fieldSources: _fieldSources, ...definition } = config
   return definition

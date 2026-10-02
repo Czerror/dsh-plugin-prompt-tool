@@ -1,4 +1,4 @@
-/** 浏览器文件到 bridge 载荷的共享转换：预设文本与技能二进制共用同一入口。 */
+/** 浏览器文件到 bridge 载荷的共享转换：模块文本与技能二进制共用同一入口。 */
 export interface ImportFileEntry {
   path: string
   content: string

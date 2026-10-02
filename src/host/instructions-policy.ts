@@ -1,7 +1,7 @@
 /**
- * 指令文件卡策略：独立于预设与 settings 的本插件自有状态。
+ * 指令文件卡策略：独立于模块与 settings 的本插件自有状态。
  *
- * 位置：`<DSH_HOME>/.prompt-tool/instructions.yml`（同一 DSH_HOME 下的所有预设共享）。
+ * 位置：`<DSH_HOME>/.prompt-tool/instructions.yml`（同一 DSH_HOME 下的所有模块共享）。
  * 只承载行为开关与展示名：正文永远在用户的原文件里，策略文件不存正文、读取版本、
  * 会话 ID 或任意客户端路径——路径与文件身份由服务端探测结果解析。
  *

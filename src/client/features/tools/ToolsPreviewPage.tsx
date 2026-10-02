@@ -52,7 +52,7 @@ export function ToolsPreviewPage({ api, presetId, t, browse, onNavigate, onReady
     </label>
     <ToolSurfaceView sessionId={sessionId ?? ''} onReady={sessionReady} expandedState={browse?.expanded} label={t('tools.surface.session')} t={t} query={query} />
     <ToolSurfaceView presetId={selectedId} onReady={presetReady} expandedState={browse?.expanded} label={t('tools.surface.preset')} t={t} query={query} headerAction={
-      // 预设来源控制区住在标题行：分组默认折叠，来源选择、加载/错误与空态引导不能跟着藏进内容区。
+      // 模块来源控制区住在标题行：分组默认折叠，来源选择、加载/错误与空态引导不能跟着藏进内容区。
       <div className={css.toolPresetControls}>
         {/* 展开下拉即重新读取 roster（不设独立刷新按钮）；列表非空时不禁用，刷新期间保留旧选项。 */}
         <MenuSelect ariaLabel={t('tools.surface.source.aria')} value={selectedId} placeholder={t('tools.surface.source.placeholder')}

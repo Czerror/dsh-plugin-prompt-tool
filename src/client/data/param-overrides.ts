@@ -83,6 +83,6 @@ export function buildParamOverrides(fields: Fields, options: ParamOverrideBuildO
   return overrides
 }
 
-/** 保存队列中的过期草稿不得发往新预设；服务端另校验 expectedPresetId。 */
+/** 保存队列中的过期草稿不得发往新模块；服务端另校验 expectedPresetId。 */
 export const isCurrentPresetDraft = (draft: Pick<Fields, 'presetTemplate'>, current: Pick<Fields, 'presetTemplate'>): boolean =>
   draft.presetTemplate === current.presetTemplate

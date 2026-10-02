@@ -1,4 +1,4 @@
-/** 预设切换器：预设全部在用户目录（首次启动种子化），列表点击切换；新建 = 从内置模板复制还原。 */
+/** 模块切换器：模块全部在用户目录（首次启动种子化），列表点击切换；新建 = 从内置模板复制还原。 */
 import { memo, useRef, useState, type ReactNode } from 'react'
 import { usePromptToolFields } from '../../data/use-prompt-tool-fields.ts'
 import { EMPTY_FIELDS } from '../../data/prompt-tool-fields.ts'
@@ -60,7 +60,7 @@ export const PresetSwitcher = memo(function PresetSwitcher(props: { store: Promp
     },
   })
 
-  /** 删除预设（物理删除用户目录副本；插件目录模板保留，可经「新建预设」还原）。 */
+  /** 删除模块（物理删除用户目录副本；插件目录模板保留，可经「新建模块」还原）。 */
   const deletePreset = async (id: string): Promise<void> => {
     const res = await bridgeCall('moduleDelete', { id })
     if (res.ok) {
@@ -72,7 +72,7 @@ export const PresetSwitcher = memo(function PresetSwitcher(props: { store: Promp
     }
   }
 
-  /** 复制预设：用户目录完整副本，id 自动递增（<id>-copy / <id>-copy-2 / …）。 */
+  /** 复制模块：用户目录完整副本，id 自动递增（<id>-copy / <id>-copy-2 / …）。 */
   const duplicatePreset = async (id: string): Promise<void> => {
     const res = await bridgeCall('moduleDuplicate', { id })
     if (res.ok) {
@@ -83,7 +83,7 @@ export const PresetSwitcher = memo(function PresetSwitcher(props: { store: Promp
     }
   }
 
-  /** 打开预设文件夹（宿主系统文件管理器；失败时提示路径）。 */
+  /** 打开模块文件夹（宿主系统文件管理器；失败时提示路径）。 */
   const openLocation = async (id: string): Promise<void> => {
     const res = await bridgeCall('moduleOpen', { id })
     if (res.ok) {

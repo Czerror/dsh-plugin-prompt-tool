@@ -4,7 +4,7 @@ import type { OfficialOrdersView } from '../shared/official-orders.ts'
 import type { AssetImportRequest, AssetSummary } from '../shared/asset-transfer.ts'
 
 /**
- * 导入预览态（预设包与角色卡 JSON 共用）：文件与凭据在确认时原样回传。
+ * 导入预览态（模块包与角色卡 JSON 共用）：文件与凭据在确认时原样回传。
  * `previewRevision` 是服务端算的版本（绑定文件、选组、转换器与目标身份），
  * 客户端不计算、只回传；凭据本身不是写入授权。
  */
@@ -22,7 +22,7 @@ export interface ImportOrderCandidates {
   candidates: StOrderGroupCandidate[]
 }
 
-/** 卡片来源：预设卡，或指向用户磁盘指令文件的文件卡（服务端生成，客户端只读）。 */
+/** 卡片来源：模块卡，或指向用户磁盘指令文件的文件卡（服务端生成，客户端只读）。 */
 export type CardOrigin =
   | { kind: 'preset'; presetId: string }
   | { kind: 'instruction-file'; fileId: string; contextId: string | null }
@@ -81,7 +81,7 @@ export interface PromptConfigDraft extends PromptConfigSourceView {
   variables?: Record<string, string>
   params?: Record<string, unknown>
   identity?: { field: string; value: string }
-  /** 视图元数据：来源归属；不写进 preset.yml，也不参与预设序列化。 */
+  /** 视图元数据：来源归属；不写进 module.yml，也不参与模块序列化。 */
   origin?: CardOrigin
   /** 视图元数据：指令文件读取状态（ready 之外不可编辑、不可保存）。 */
   contentStatus?: 'ready' | 'missing' | 'unreadable' | 'too-large'
@@ -125,9 +125,9 @@ export interface EngineMeta extends EngineMetaLayerContract {
    * （数字输入仍是唯一真相与唯一写入通道）。
    */
   officialOrders?: OfficialOrdersView
-  /** 可用预设模板清单（UI 预设切换器）。 */
+  /** 可用模块模板清单（UI 模块切换器）。 */
   presets?: PresetSummary[]
-  /** 插件目录内置模板清单（「新建预设」选择器数据源）。 */
+  /** 插件目录内置模板清单（「新建模块」选择器数据源）。 */
   builtinTemplates?: Array<{ id: string; name: string }>
   layers: string[]
   strategies: string[]

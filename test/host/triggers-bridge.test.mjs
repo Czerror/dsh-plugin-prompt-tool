@@ -5,7 +5,7 @@ import { join, basename } from 'node:path'
 import { parse } from 'yaml'
 import { isolatedHome, fakeReq, fakeRes, readBridge } from '../fixtures/host-harness.mjs'
 
-const { home, presetRoot } = isolatedHome('pt-triggers-bridge-')
+const { home, moduleRoot } = isolatedHome('pt-triggers-bridge-')
 const { registerSettingsBridge } = await import('../../src/runtime/settings-bridge.ts')
 const { writePreset } = await import('../../src/host/write-preset.ts')
 const { compileDeclarations } = await import('../../engine/trigger-spec.mjs')
@@ -14,7 +14,7 @@ let sequence = 0
 
 function harness({ readonly = false, rebuildFails = false, afterRebuild } = {}) {
   const id = `rules-${++sequence}`
-  const directory = join(readonly ? join(home, 'system') : presetRoot, id)
+  const directory = join(readonly ? join(home, 'system') : moduleRoot, id)
   mkdirSync(directory, { recursive: true })
   const file = join(directory, 'module.yml')
   const original = `# 用户注释\nid: ${id}\nmodules: []\nunknown: keep # 未知字段注释\n`
@@ -34,7 +34,7 @@ function harness({ readonly = false, rebuildFails = false, afterRebuild } = {}) 
     () => activeDirectory, undefined, async () => {
       rebuilds++
       if (rebuildFails) throw new Error('REBUILD_FAILED')
-      writePreset('', { presetDir: presetRoot, presetTemplate: id, outputId: id, presetOrder: 0, promptConfigs: [] })
+      writePreset('', { moduleDir: moduleRoot, presetTemplate: id, outputId: id, presetOrder: 0, promptConfigs: [] })
       await afterRebuild?.(file)
     })
   test.after(() => disposers.forEach(dispose => dispose()))

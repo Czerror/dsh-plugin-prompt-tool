@@ -15,7 +15,7 @@ import { join, dirname } from 'node:path'
 import { fakeReq, fakeRes, isolatedHome } from '../fixtures/host-harness.mjs'
 
 // 隔离 HOME 必须在动态 import 之前（仓库约定，见 host-harness 注释）。
-const { home, presetRoot } = isolatedHome('pt-module-mgmt-')
+const { home, moduleRoot } = isolatedHome('pt-module-mgmt-')
 process.env.DSH_AGENTS_HOME = join(home, 'agents')
 
 const { registerSettingsBridge, BRIDGE_ENDPOINTS } = await import('../../src/index.ts')
@@ -82,7 +82,7 @@ async function call(handlers, endpoint, payload = {}) {
 }
 
 function writeModule(id, content = `id: ${id}\nname: ${id}\nmodules: []\n`) {
-  const dir = join(presetRoot, id)
+  const dir = join(moduleRoot, id)
   mkdirSync(dir, { recursive: true })
   writeFileSync(join(dir, 'module.yml'), content, 'utf8')
   return dir
@@ -129,12 +129,12 @@ test('新建：同名且未要求递增时被拒，既有模块不被覆盖', as
 test('复制：源不存在时被拒，模块根不留残留目录', async () => {
   const { ctx, handlers } = makeHarness(undefined)
   register(ctx, undefined)
-  const before = readdirSync(presetRoot).sort()
+  const before = readdirSync(moduleRoot).sort()
 
   const result = await call(handlers, 'moduleDuplicate', { id: 'no-such-module' })
   assert.equal(result.status, 400, result.message)
   assert.equal(result.code, 'preset-duplicate-rejected')
-  assert.deepEqual(readdirSync(presetRoot).sort(), before, '被拒的复制不得留下候选目录')
+  assert.deepEqual(readdirSync(moduleRoot).sort(), before, '被拒的复制不得留下候选目录')
 })
 
 test('导出：不存在的模块被拒，不回传任何定义内容', async () => {
@@ -151,22 +151,22 @@ test('并入的源模块优先：同名模块与角色卡并存时取模块定�
   const characters = await import('../../src/host/characters.ts')
   const id = 'dual-source'
   // 模块源：modules/<id>/module.yml
-  mkdirSync(join(presetRoot, id), { recursive: true })
-  writeFileSync(join(presetRoot, id, 'module.yml'), `id: ${id}\nname: 模块源\nmodules: []\npromptConfigs:\n  - id: intro\n    strategy: static\n    layer: system-section\n    text: FROM-MODULE\n`, 'utf8')
+  mkdirSync(join(moduleRoot, id), { recursive: true })
+  writeFileSync(join(moduleRoot, id, 'module.yml'), `id: ${id}\nname: 模块源\nmodules: []\npromptConfigs:\n  - id: intro\n    strategy: static\n    layer: system-section\n    text: FROM-MODULE\n`, 'utf8')
   // 同名角色卡源：存储根下的 .characters/<id>/converted.yml（与模块根同级）
-  const legacyDir = join(dirname(presetRoot), '.characters', id)
+  const legacyDir = join(dirname(moduleRoot), '.characters', id)
   mkdirSync(legacyDir, { recursive: true })
   writeFileSync(join(legacyDir, 'converted.yml'), JSON.stringify({
     id, name: '卡片源',
     promptConfigs: [{ id: 'intro', strategy: 'static', layer: 'system-section', text: 'FROM-CARD' }],
   }), 'utf8')
   // 目标模块
-  mkdirSync(join(presetRoot, 'target'), { recursive: true })
-  writeFileSync(join(presetRoot, 'target', 'module.yml'), 'id: target\nname: Target\nmodules: []\n', 'utf8')
+  mkdirSync(join(moduleRoot, 'target'), { recursive: true })
+  writeFileSync(join(moduleRoot, 'target', 'module.yml'), 'id: target\nname: Target\nmodules: []\n', 'utf8')
 
-  const applied = characters.applyCharacterToPreset(presetRoot, 'target', id)
+  const applied = characters.applyCharacterToPreset(moduleRoot, 'target', id)
   assert.equal(applied.ok, true, applied.message)
-  const written = readFileSync(join(presetRoot, 'target', 'module.yml'), 'utf8')
+  const written = readFileSync(join(moduleRoot, 'target', 'module.yml'), 'utf8')
   assert.match(written, /FROM-MODULE/, '并入必须取模块定义（模块优先）')
   assert.doesNotMatch(written, /FROM-CARD/, '不得取同名的角色卡定义')
   assert.match(written, new RegExp(`module-${id}-intro`), '条目 id 用统一前缀')
@@ -175,28 +175,28 @@ test('并入的源模块优先：同名模块与角色卡并存时取模块定�
 test('普通模块之间的并入是往返且幂等的：重复并入不翻倍，移除后自有内容原样保留', async () => {
   const characters = await import('../../src/host/characters.ts')
   const src = 'roundtrip-src'
-  mkdirSync(join(presetRoot, src), { recursive: true })
-  writeFileSync(join(presetRoot, src, 'module.yml'), `id: ${src}\nname: 源\nmodules: []\npromptConfigs:\n  - id: a\n    strategy: static\n    layer: system-section\n    text: A\n  - id: b\n    strategy: static\n    layer: system-section\n    text: B\n`, 'utf8')
+  mkdirSync(join(moduleRoot, src), { recursive: true })
+  writeFileSync(join(moduleRoot, src, 'module.yml'), `id: ${src}\nname: 源\nmodules: []\npromptConfigs:\n  - id: a\n    strategy: static\n    layer: system-section\n    text: A\n  - id: b\n    strategy: static\n    layer: system-section\n    text: B\n`, 'utf8')
   const target = 'roundtrip-target'
-  mkdirSync(join(presetRoot, target), { recursive: true })
-  const targetFile = join(presetRoot, target, 'module.yml')
+  mkdirSync(join(moduleRoot, target), { recursive: true })
+  const targetFile = join(moduleRoot, target, 'module.yml')
   writeFileSync(targetFile, 'id: roundtrip-target\nname: 目标\nmodules: []\npromptConfigs:\n  - id: own\n    strategy: static\n    layer: system-section\n    text: OWN\n', 'utf8')
 
   // 幂等判据用「条目 id 出现的次数」，不做字节级对齐：并入会按需补 variables 等字段，
   // 字节相等不是这层语义的契约；PLAN 要的是不翻倍、撤得干净、自有内容不动。
   const count = (text, token) => text.split(token).length - 1
 
-  assert.equal(characters.applyCharacterToPreset(presetRoot, target, src).ok, true)
+  assert.equal(characters.applyCharacterToPreset(moduleRoot, target, src).ok, true)
   const afterApply = readFileSync(targetFile, 'utf8')
   assert.equal(count(afterApply, `module-${src}-a`), 1)
   assert.equal(count(afterApply, `module-${src}-b`), 1)
 
-  assert.equal(characters.applyCharacterToPreset(presetRoot, target, src).ok, true, '重复并入应成功')
+  assert.equal(characters.applyCharacterToPreset(moduleRoot, target, src).ok, true, '重复并入应成功')
   const afterTwice = readFileSync(targetFile, 'utf8')
   assert.equal(count(afterTwice, `module-${src}-a`), 1, '重复并入不得产生重复条目')
   assert.equal(count(afterTwice, `module-${src}-b`), 1)
 
-  assert.equal(characters.removeCharacterFromPreset(presetRoot, target, src).ok, true)
+  assert.equal(characters.removeCharacterFromPreset(moduleRoot, target, src).ok, true)
   const afterRemove = readFileSync(targetFile, 'utf8')
   assert.equal(count(afterRemove, `module-${src}-a`), 0, '移除必须按前缀撤销干净')
   assert.equal(count(afterRemove, `module-${src}-b`), 0)
@@ -208,7 +208,7 @@ test('module-enable：写启用表，不存在/非法载荷被拒且不落盘', 
   // 真值源是「模块页唯一改变装配范围的动作」这一契约：启用即写启用表，停用即摘除。
   const { ctx, handlers } = makeHarness(undefined)
   register(ctx, undefined)
-  const configFile = join(dirname(presetRoot), 'config.yml')
+  const configFile = join(dirname(moduleRoot), 'config.yml')
   const readEnabled = () => readFileSync(configFile, 'utf8')
 
   const id = 'enable-target'

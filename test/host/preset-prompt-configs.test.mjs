@@ -9,9 +9,9 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { parse } from 'yaml'
 
-// 隔离 DSH_HOME：writePreset 的模板解析（resolvePresetDir）用户预设优先——
+// 隔离 DSH_HOME：writePreset 的模板解析（resolveModuleDir）用户预设优先——
 // 真实用户环境 .prompt-tool/<id> 会遮蔽包内模板，测试必须隔离。
-// 注意：paths 模块顶层缓存 DEFAULT_PRESET_DIR（join(DSH_HOME, ...)），
+// 注意：paths 模块顶层缓存 MODULES_DIR（join(DSH_HOME, ...)），
 // host/index 必须全部在 env 设置后动态 import，否则读到真实用户根。
 const home = mkdtempSync(join(tmpdir(), 'pt-prompt-configs-home-'))
 const previousHome = process.env.DSH_HOME
@@ -39,10 +39,10 @@ const {
 function generatedConfigs(options = {}, prompt = 'PROMPT') {
   const dir = mkdtempSync(join(tmpdir(), 'pt-wp-configs-'))
   try {
-    // writePreset 的模板解析根 = presetDir：先把夹具模板装到输出根。
+    // writePreset 的模板解析根 = moduleDir：先把夹具模板装到输出根。
     installFixturePreset(dir)
     writePreset(prompt, {
-      presetDir: dir,
+      moduleDir: dir,
       presetTemplate: FIXTURE_PRESET_ID,
       presetOrder: 5,
       firstTurnAnchor: options.firstTurnAnchor === true,

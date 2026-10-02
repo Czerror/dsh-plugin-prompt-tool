@@ -96,19 +96,19 @@ if (!existsSync(fileURLToPath(LIB_ENTRY))) {
   console.error(`rematerialize-presets: 缺少构建产物 ${fileURLToPath(LIB_ENTRY)}，请先运行 pnpm build`)
   process.exit(1)
 }
-const { writePreset, listPresets, loadPresetSpec, resolvePresetParams, userPresetsDir } = await import(LIB_ENTRY.href)
+const { writePreset, listModules, loadModuleSpec, resolvePresetParams, userModulesDir } = await import(LIB_ENTRY.href)
 
-// 逐预设重新物化：插件格式（modules/params）走 writePreset；手写/官方格式跳过。
-const presetRoot = userPresetsDir()
+// 逐模块重新物化：插件格式（modules/params）走 writePreset；手写/官方格式跳过。
+const presetRoot = userModulesDir()
 const materializedIds = []
 const failures = []
 let skipped = 0
-const presets = listPresets()
+const presets = listModules()
 for (const [index, preset] of presets.entries()) {
   const dir = join(presetRoot, preset.id)
   let spec
   try {
-    spec = loadPresetSpec(dir)
+    spec = loadModuleSpec(dir)
   } catch (error) {
     failures.push(`${preset.id}: 读取 preset.yml 失败：${error instanceof Error ? error.message : String(error)}`)
     continue
@@ -136,7 +136,7 @@ for (const [index, preset] of presets.entries()) {
   try {
     writePreset(prompt, {
       ...params,
-      presetDir: presetRoot,
+      moduleDir: presetRoot,
       presetTemplate: preset.id,
       presetOrder: order,
       promptConfigs: [],

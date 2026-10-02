@@ -11,10 +11,10 @@ const {
   validateEngineParamValues,
   assertSafeConfigId,
   configFileName,
-  loadPresetSpec,
+  loadModuleSpec,
   renderComposition,
   writePreset,
-  DEFAULT_PRESET_ID,
+  DEFAULT_MODULE_ID,
 } = await import('../../lib/index.mjs')
 const { mergePromptConfigs } = await import('../../src/host/prompt-configs.ts')
 
@@ -80,11 +80,11 @@ test('mergePromptConfigs：单源数组内重复 ID 合并前拒绝；跨源覆�
   assert.equal(merged[0].text, 'override')
 })
 
-test('loadPresetSpec：坏 YAML fail loud 且带文件上下文', () => {
+test('loadModuleSpec：坏 YAML fail loud 且带文件上下文', () => {
   const dir = mkdtempSync(join(tmpdir(), 'pt-w1-badyaml-'))
   try {
     writeFileSync(join(dir, 'module.yml'), 'a: &x 1\nb: *y\n', 'utf8')
-    assert.throws(() => loadPresetSpec(dir), /YAML 解析失败/)
+    assert.throws(() => loadModuleSpec(dir), /YAML 解析失败/)
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }
@@ -116,17 +116,17 @@ test('renderComposition：命名组合只允许 source/local 或 library 的裸�
 test('writePreset：恶意 promptConfigs id 物化前 fail loud，不留半成品目录', () => {
   const dir = mkdtempSync(join(tmpdir(), 'pt-w1-malid-'))
   try {
-    const presetDir = join(dir, 'preset')
+    const moduleDir = join(dir, 'preset')
     assert.throws(
       () => writePreset('PROMPT', {
-        presetDir,
+        moduleDir,
         presetOrder: 5,
         promptConfigs: [{ id: '../../evil', strategy: 'static', text: 'x' }],
       }),
       /config id/,
     )
     // 原子物化失败：目标目录不存在（tmp 已清理）。缺省 presetTemplate = standard。
-    assert.equal(existsSync(join(presetDir, 'standard')), false)
+    assert.equal(existsSync(join(moduleDir, 'standard')), false)
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }
@@ -135,17 +135,17 @@ test('writePreset：恶意 promptConfigs id 物化前 fail loud，不留半成�
 test('writePreset：13+ 配置生成 4 位零填充文件名，字典序稳定', () => {
   const dir = mkdtempSync(join(tmpdir(), 'pt-w1-many-'))
   try {
-    const presetDir = join(dir, 'preset')
+    const moduleDir = join(dir, 'preset')
     const many = Array.from({ length: 13 }, (_, index) => ({
       id: `cfg-${String(index).padStart(2, '0')}`,
       strategy: 'static',
       layer: 'system-section',
       text: `内容 ${index}`,
     }))
-    writePreset('PROMPT', { presetDir, presetOrder: 5, promptConfigs: many })
+    writePreset('PROMPT', { moduleDir, presetOrder: 5, promptConfigs: many })
     // 缺省 presetTemplate = 包内默认模块（现为 `ponytail`）。它自带几条配置，所以这里
     // 只看本次写入的 `cfg-*`：零填充与字典序是 writePreset 的契约，与模板自带内容无关。
-    const files = readdirSync(join(presetDir, DEFAULT_PRESET_ID, 'configs'))
+    const files = readdirSync(join(moduleDir, DEFAULT_MODULE_ID, 'configs'))
       .filter((name) => name.endsWith('.yml') && name.includes('-cfg-'))
       .sort()
     assert.equal(files.length, many.length, '本次写入的 13 条都落了盘')

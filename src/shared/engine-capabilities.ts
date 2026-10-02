@@ -36,7 +36,7 @@ export const ENGINE_LAYER_ORDER: readonly EngineLayer[] = [
   'subagent-end',
 ]
 
-export interface PresetModuleFacts {
+export interface ModuleFacts {
   declaredModules: string[] | null
   effectiveModules: string[] | null
   rowIds: string[]
@@ -129,9 +129,9 @@ export const ENGINE_EDITOR_GROUPS: readonly EngineEditorGroup[] = [
   { id: 'prompt-defaults', displayLayer: 'pre-step', hook: 'pre-step' },
   // 人设注册 system-section 段；includeRuntimeContext 同时抑制 runtime-context 快照，属真实跨层。
   { id: 'persona', displayLayer: 'system-section', relatedLayers: ['runtime-context'], hook: 'system-section' },
-  // 预设顶层 variables 是插值源，由 runtime-context 的 placeholder 消费。
+  // 模块顶层 variables 是插值源，由 runtime-context 的 placeholder 消费。
   { id: 'variables', displayLayer: 'runtime-context', hook: 'runtime-context' },
-  // 主模型 provider/model 与采样参数经当前预设生成的 agent-request patch 生效。
+  // 主模型 provider/model 与采样参数经当前模块生成的 agent-request patch 生效。
   { id: 'main-model', displayLayer: 'agent-request', hook: 'agent-request' },
   // 子代理模型路由随子代理启动注入 tool-subagent 行 agentOptions；同卡采样三参数写
   // agent-request 的 subagent-model-params patch，因此关联 agent-request。
@@ -189,10 +189,10 @@ export function engineRecipe(id: string): EngineRecipe | undefined {
 }
 
 /**
- * 预设里显式写了的引擎参数 / 行配置所隐含的模块：**参数在 ⇒ 装配在**。
+ * 模块里显式写了的引擎参数 / 行配置所隐含的模块：**参数在 ⇒ 装配在**。
  *
  * 只认显式声明（`params` 的登记参数键与 `moduleConfigs` 的行键），组合源自带的默认值不算——
- * 否则任何预设都会把全部能力装回来。返回能力拥有的模块 id（去重，顺序稳定）。
+ * 否则任何模块都会把全部能力装回来。返回能力拥有的模块 id（去重，顺序稳定）。
  * 装配入口、模块事实与"移除能力"三处共用这一份派生，避免各自判断漂移。
  */
 export function impliedModulesForParams(
@@ -225,9 +225,9 @@ export function impliedModulesForParams(
   return [...implied]
 }
 
-/** 显式模块预设中的实际能力；包含当前参数与顶层策略所需的装配。
+/** 显式模块声明中的实际能力；包含当前参数与顶层策略所需的装配。
  *  创建补声明由 host 单独检查 declaredModules；官方组合行不伪装成可编辑能力。 */
-export function isEngineCapabilityPresent(id: string, facts: PresetModuleFacts | undefined): boolean {
+export function isEngineCapabilityPresent(id: string, facts: ModuleFacts | undefined): boolean {
   if (facts === undefined || facts.sourceMode !== 'explicit') return false
   const capability = engineCapability(id)
   if (capability === undefined) return false

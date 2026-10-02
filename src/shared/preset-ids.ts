@@ -4,4 +4,4 @@
  * 内置模块随包分发在仓库根的 `modules/`。旧的内置预设 `pt-*` 已整体退场——它们是官方
  * 预设形态的遗留，重构后不再读取也不再维护；这里指向当前随包分发的内置模块作为兜底。
  */
-export const DEFAULT_PRESET_ID = 'ponytail'
+export const DEFAULT_MODULE_ID = 'ponytail'

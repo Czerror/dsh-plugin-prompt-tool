@@ -36,7 +36,7 @@ export function SettingsTab(props: TabProps): ReactNode {
     setSwitchingPreset(true)
     setPresetNotice(undefined)
     try {
-      // 先持久化默认值：Host applyState 会物化目标预设并同步 agent-presets default；
+      // 先持久化默认值：Host applyState 会物化目标模块并同步 agent-presets default；
       // settlement 后再重组当前空会话，避免目标生成物尚未就绪。
       await scope.set('presetTemplate', id)
       const result = await props.api.switchPreset(id)

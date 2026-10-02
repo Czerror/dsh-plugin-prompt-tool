@@ -1,15 +1,15 @@
-# dsh-plugin-prompt-tool — 全参数 preset.yml 模板（自动生成）
+# dsh-plugin-prompt-tool — 全参数 module.yml 模板（自动生成）
 # 生成来源：scripts/rebuild-preset-template.mjs + ENGINE_PARAM_DEFINITIONS + engine/schema.mjs + templates/
 # 重建：pnpm rebuild:preset-template；检查：pnpm rebuild:preset-template -- --check
-# 复制到 DSH_HOME/.agent-presets/<id>/preset.yml，id 与目录名保持一致。
+# 复制到 DSH_HOME/.prompt-tool/modules/<id>/module.yml，id 与目录名保持一致。
 # 真实提示词规则与共享参数分属两个所有者：promptConfigs[].params / layerSettings.<层名>.<键>。
 # 共享设置只内嵌真实配置卡；空层不自动创建 UI 卡或提示词规则。
 # 九层是独立官方扩展点，没有插件定义的跨层执行顺序。详见 docs/injection-point-contracts.md。
 # 默认不启用锚定或模型增强；下方参考参数全部为注释，按需启用。
 # 指令文件正文和指令策略不放在本文件；不得将用户 AGENTS.md/CLAUDE.md 正文复制进来。
 
-id: my-preset
-name: 我的预设
+id: my-module
+name: 我的模块
 description: 九层配置与全部共享参数参考；所有示例规则默认关闭。
 version: 1.0.0
 engineCompat: ">=0.7.2"
@@ -22,7 +22,7 @@ layerSettings:
   # 唯一共享参数磁盘位置。按下方参考取消所需注释，不要复制旧 params/model/subagentModel 段。
   {}
 variables:
-  # 预设内容变量；与共享参数、每条规则的 variables 都是独立命名空间。空字符串是合法占位值。
+  # 模块内容变量；与共享参数、每条规则的 variables 都是独立命名空间。空字符串是合法占位值。
   {}
 customTools:
   # 自定义模型工具列表；结构示例见 templates/tools。工具权限和执行器通过既有专用编辑器配置。
@@ -32,7 +32,7 @@ promptConfigs:
   # id 必填且唯一；name 可选；configKind: ordered | anchor；order 只在同一入口比较。
   # group + exclusive 控制互斥；text 与 texts 为正文来源；策略专属 params 只属于本条。
   # pre-step 可声明 position/dedupe/promotion/audience/modelScope/mergeMode/role(user)/sourceKind/form/summary/identity。
-  # identity 只允许 {field: plugin, value: 唯一值}；templateFile 可选，须在预设目录内，内嵌正文优先。
+  # identity 只允许 {field: plugin, value: 唯一值}；templateFile 可选，须在模块目录内，内嵌正文优先。
   # match: {keys:[关键字], secondaryKeys:[], logic:any|all|not|notAny, caseSensitive:false, wholeWords:false, useRegex:false}。
   # useRegex 缺省自动识别 /pattern/flags，true 强制正则，false 强制字面；subject 必须是本层支持的对象。
   # 工具参数不可改写；toolResult 条件只作用于后置阶段。结束层 inject-main 不改写子代理结果、不唤醒空闲主会话。
@@ -301,7 +301,7 @@ promptConfigs:
         「状态变量」清单；状态未变化时不要重复写入。
       - 记忆（跨会话持久）：有人际关系进展或重要事实时，用 world_book_upsert
         的 note 参数写入来源角色卡记忆（条目 id 带 chara- 前缀 → 角色卡
-        memory.md，跨会话跟随角色卡）；无归属条目写入预设记忆。
+        memory.md，跨会话跟随角色卡）；无归属条目写入模块记忆。
       - 克制：仅在状态确实变化时更新；不确定时保留原值；不编造未发生的内容。
       状态变量清单：{{stateKeys}}
     variables:

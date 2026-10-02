@@ -1,16 +1,16 @@
 /**
  * agent-assembly — 运行时配装通道。
  *
- * 目标形态：预设不再靠「注册进官方 agent-presets + 由宿主 Loader 挂载插件树」装配，
+ * 目标形态：模块不再靠「注册进官方 agent-presets + 由宿主 Loader 挂载插件树」装配，
  * 而是插件在**每个 Agent 自己的 scope** 里建一份装配。
  *
- * 判据（与原预设形态逐项对齐，能力一项不删）：
+ * 判据（与原模块形态逐项对齐，能力一项不删）：
  *   - 挂的是插件自己的引擎模块（`engine/*.mjs` 的 `apply(ctx, config)`），
  *     不再声明 `agent.cordis.yml` 这类「给宿主 Loader 用的组合本体」；
  *   - 官方工具行（`@deepseek-ai/dsh-persona` / `dsh-tool-*` 等）由会话原有预设提供，
  *     本通道**不**装第二棵官方插件树——那些包也不在插件包的解析面内；
  *   - 物化目录优先：`configs/`（原 `prompt-configs/`）、`custom-tools/` 存在就按它装配，
- *     缺失时回退 `preset.yml` 内嵌，两条路径的切片同源（`resolvePresetModuleFacts`）。
+ *     缺失时回退 `module.yml` 内嵌，两条路径的切片同源（`resolveModuleFacts`）。
  *
  * 与官方挂载并存时不会重复：官方树里没有引擎行，引擎贡献只由本通道提供。
  */
@@ -19,8 +19,8 @@ import { join, resolve, sep } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import type { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
-import { packageEngineDir, resolvePresetModuleFacts, resolvePresetDir, loadPresetSpec } from '../host/manifest.ts'
-import type { PresetSpec } from '../host/manifest.ts'
+import { packageEngineDir, resolveModuleFacts, resolveModuleDir, loadModuleSpec } from '../host/manifest.ts'
+import type { ModuleSpec } from '../host/manifest.ts'
 import { assertPresetId } from '../host/preset-install.ts'
 import { MODULE_CONFIGS_DIR } from '../host/paths.ts'
 
@@ -29,7 +29,7 @@ import { loadPromptConfigFiles } from '../../engine/schema.mjs'
 // @ts-expect-error ESM 引擎源码随插件提供。
 import { applyPromptConfigs } from '../../engine/executor.mjs'
 
-/** 引擎模块的受管配置字段：值按历史语义相对预设根书写（如 `../<id>/custom-tools`）。 */
+/** 引擎模块的受管配置字段：值按历史语义相对模块根书写（如 `../<id>/custom-tools`）。 */
 const MANAGED_FIELDS = ['configsDir', 'strategyDir', 'policyFile', 'triggersFile'] as const
 
 /** 私有服务提供的引擎能力：以 `pt-*` 服务挂载，不从包内 engine 目录 import。 */
@@ -48,7 +48,7 @@ export interface AgentAssemblyRuntime {
 }
 
 export interface AgentAssemblyOptions {
-  presetRoot: string
+  moduleRoot: string
   /**
    * 参与装配的模块 id 列表（= 存储根 `config.yml` 启用表 ∩ 磁盘存在）。
    *
@@ -63,23 +63,23 @@ export interface AgentAssemblyOptions {
 
 /**
  * 受管字段的路径换算：`configsDir` / `strategyDir` / `policyFile` / `triggersFile`
- * 一律解析到**当前预设目录内的真实位置**——声明怎么写都按预设目录作基准，三种形态同结果：
- *   - `./configs`（新形态）→ `<预设目录>/configs`；
+ * 一律解析到**当前模块目录内的真实位置**——声明怎么写都按模块目录作基准，三种形态同结果：
+ *   - `./configs`（新形态）→ `<模块目录>/configs`；
  *   - `../<id>/triggers.yml`（历史形态：`ENGINE_MANAGED_PATHS` 的改写成这样，语义是
- *     「从历史引擎位置 `<预设根>/.engine/` 回到 `<预设根>/<id>/`」）→ `<预设目录>/triggers.yml`；
- *   - `../subagent-tools/policy.yml`（引擎行**初值**形态，只有组合源这么写）→ 同样按预设目录，
- *     落进该预设目录内——越出预设根的值由引擎自己的越界校验拒绝，不会被静默采信。
+ *     「从历史引擎位置 `<模块根>/.engine/` 回到 `<模块根>/<id>/`」）→ `<模块目录>/triggers.yml`；
+ *   - `../subagent-tools/policy.yml`（引擎行**初值**形态，只有组合源这么写）→ 同样按模块目录，
+ *     落进该模块目录内——越出模块根的值由引擎自己的越界校验拒绝，不会被静默采信。
  * 已是 `file:` URL 的值原样保留。
  */
 function absolutizeManagedFields(
-  config: Record<string, unknown>, presetDir: string,
+  config: Record<string, unknown>, moduleDir: string,
 ): Record<string, unknown> {
   const out: Record<string, unknown> = { ...config }
   for (const field of MANAGED_FIELDS) {
     const value = out[field]
     if (typeof value !== 'string' || value.length === 0) continue
     if (value.startsWith('file:')) continue
-    out[field] = pathToFileURL(resolve(presetDir, value)).href
+    out[field] = pathToFileURL(resolve(moduleDir, value)).href
   }
   return out
 }
@@ -98,20 +98,20 @@ export interface PreparedAssembly {
 }
 
 /**
- * 读一份预设的装配输入：切片、引擎模块、所需宿主能力。
+ * 读一份模块的装配输入：切片、引擎模块、所需宿主能力。
  *
- * 纯读缝（只依赖包内引擎与预设目录），供挂载与回归测试共用；`hasService` 是宿主能力探针。
+ * 纯读缝（只依赖包内引擎与模块目录），供挂载与回归测试共用；`hasService` 是宿主能力探针。
  */
 export async function prepareAssembly(
-  presetRoot: string, presetId: string, hasService: (name: string) => boolean,
+  moduleRoot: string, presetId: string, hasService: (name: string) => boolean,
 ): Promise<PreparedAssembly> {
   assertPresetId(presetId)
-  const presetDir = resolvePresetDir(presetId, presetRoot)
-  const spec = loadPresetSpec(presetDir) as PresetSpec
-  const facts = resolvePresetModuleFacts(spec, presetDir)
-  if (facts.effectiveModules === null) throw new Error(`预设 ${presetId} 的模块声明无效，无法配装`)
+  const moduleDir = resolveModuleDir(presetId, moduleRoot)
+  const spec = loadModuleSpec(moduleDir) as ModuleSpec
+  const facts = resolveModuleFacts(spec, moduleDir)
+  if (facts.effectiveModules === null) throw new Error(`模块 ${presetId} 的模块声明无效，无法配装`)
   const configsByModule = facts.effectiveConfigs ?? {}
-  const promptDir = join(presetDir, MODULE_CONFIGS_DIR)
+  const promptDir = join(moduleDir, MODULE_CONFIGS_DIR)
   const configs = existsSync(promptDir)
     ? loadPromptConfigFiles(pathToFileURL(promptDir + sep))
     : (spec.promptConfigs ?? [])
@@ -128,7 +128,7 @@ export async function prepareAssembly(
   const personaComplete = spec.persona?.complete === true
   if (exclusiveConfigs.length > 1 || (personaComplete && exclusiveConfigs.length > 0)) {
     throw new Error(
-      `预设 ${presetId} 有多个生效的「独占」段（顶层人设${personaComplete ? '已' : '未'}开启），`
+      `模块 ${presetId} 有多个生效的「独占」段（顶层人设${personaComplete ? '已' : '未'}开启），`
       + '同一模块只能有一个：请先关闭其一',
     )
   }
@@ -152,7 +152,7 @@ export async function prepareAssembly(
     }
     if (typeof module.apply !== 'function') throw new Error(`引擎能力缺少 apply：${id}`)
     for (const dependency of module.inject ?? []) services.add(dependency)
-    const config = absolutizeManagedFields(configsByModule[id] ?? {}, presetDir)
+    const config = absolutizeManagedFields(configsByModule[id] ?? {}, moduleDir)
     // 引擎自带的声明就绪校验（未知键 fail loud）在装配期先跑一次，避免挂载到一半才炸。
     const contract = (module as { configContract?: { parse?: (value: unknown, name: string) => unknown } }).configContract
     contract?.parse?.(config, id)
@@ -201,7 +201,7 @@ export function createAgentAssembly(ctx: Context, options: AgentAssemblyOptions)
     const prepared: PreparedAssembly[] = []
     try {
       for (const id of moduleIds) {
-        prepared.push(await prepareAssembly(options.presetRoot, id, (name) => agent.ctx.get(name) !== undefined))
+        prepared.push(await prepareAssembly(options.moduleRoot, id, (name) => agent.ctx.get(name) !== undefined))
       }
     } catch (error) {
       // 同一个 Agent 不反复重试同一份坏定义；改好定义后的新 Agent 会重新尝试。

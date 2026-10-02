@@ -1,4 +1,4 @@
-/** 预设磁盘参数：按编辑组主归属层存储，运行时仍使用 EngineParams 平铺接口。 */
+/** 模块磁盘参数：按编辑组主归属层存储，运行时仍使用 EngineParams 平铺接口。 */
 import { ENGINE_EDITOR_GROUP_MAP, ENGINE_LAYER_ORDER } from '../shared/engine-capabilities.ts'
 import { ENGINE_PARAM_DEFINITIONS, ENGINE_PARAM_KEYS, type EngineParamKey } from '../shared/engine-params.ts'
 

@@ -1,13 +1,13 @@
 /**
- * manifest — 预设模板单一参数 YAML(preset.yml)的加载与引擎参数解析。
+ * manifest — 模块模板单一参数 YAML(module.yml)的加载与引擎参数解析。
  *
- * 一个预设 = 一个 preset.yml:
+ * 一个模块 = 一个 module.yml:
  *   - modules/layerSettings/content/meta 全部是直读参数,无模板语法;
  *   - layerSettings 展平为内部 params，供引擎生成默认提示词配置，promptConfigs 仅为可选覆盖;
  *   - 组合模块的行级 config 由参数桥 buildModuleConfigsFromParams 按 params
  *     构造对象合并（取代旧 __TOKEN__ 文本渲染，无占位符、无文本往返），
  *     params（UI/基础层）优先于 moduleConfigs 行级直写（旧作者锁定语义已移除）。
- * 本模块负责参数归一化与引擎模块配置装配;所有预设专属行为都在引擎内部。
+ * 本模块负责参数归一化与引擎模块配置装配;所有模块专属行为都在引擎内部。
  */
 
 import { readFileSync, existsSync, readdirSync, mkdirSync, mkdtempSync, rmSync, writeFileSync, cpSync, renameSync, statSync } from 'node:fs'
@@ -15,19 +15,19 @@ import { spawn } from 'node:child_process'
 import { basename, join, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { Pair, Scalar, parse as parseYaml, parseDocument, YAMLMap, YAMLSeq } from 'yaml'
-import { DEFAULT_PRESET_DIR, MODULE_DEFINITION_FILE } from './paths.ts'
-import { engineCapability, engineRecipe, impliedModulesForParams, isEngineCapabilityPresent, type ModuleSourceMode, type PresetModuleFacts } from '../shared/engine-capabilities.ts'
+import { MODULES_DIR, MODULE_DEFINITION_FILE } from './paths.ts'
+import { engineCapability, engineRecipe, impliedModulesForParams, isEngineCapabilityPresent, type ModuleSourceMode, type ModuleFacts } from '../shared/engine-capabilities.ts'
 import { ENGINE_PARAM_DEFINITIONS, ENGINE_PARAM_KEYS, buildEngineModuleParams, normalizeMaxDepth } from '../shared/engine-params.ts'
 import { personaRowConfig, readPersonaSpec, type PersonaSpec } from '../shared/persona-section.ts'
-import { DEFAULT_PRESET_ID } from '../shared/preset-ids.ts'
-import { assertPresetDirectory, assertPresetId, assertPresetTree, engineModuleFileNames, presetPathExists, rewritePresetEngineReferences, setPresetDefinitionId } from './preset-install.ts'
+import { DEFAULT_MODULE_ID } from '../shared/preset-ids.ts'
+import { assertModuleDirectory, assertPresetId, assertPresetTree, engineModuleFileNames, presetPathExists, rewritePresetEngineReferences, setPresetDefinitionId } from './preset-install.ts'
 import { engineParamPath, readPresetLayerSettings, PresetLayerSettingsError } from './preset-layer-settings.ts'
 import { modelRequestConfigs } from './prompt-configs.ts'
 import { atomicWriteTextFile } from './text-file.ts'
 export { atomicWriteTextFile } from './text-file.ts'
 export { PresetLayerSettingsError } from './preset-layer-settings.ts'
 
-export interface PresetSpec {
+export interface ModuleSpec {
   id: string
   name: string
   /** 官方预设列表顺序；省略时由宿主排序。 */
@@ -48,7 +48,7 @@ export interface PresetSpec {
   layerSettings?: Record<string, Record<string, unknown>>
   /** 顶层人设段（官方 @deepseek-ai/dsh-persona 行同构）：prefix/suffix/complete/includeRuntimeContext。 */
   persona?: PersonaSpec
-  /** 预设级模板变量（{{key}} 插值源；与 layerSettings 分离，顶层 variables 段）。 */
+  /** 模块级模板变量（{{key}} 插值源；与 layerSettings 分离，顶层 variables 段）。 */
   variables?: Record<string, string>
   /** 自定义工具定义（tool-config-engine 渲染进 custom-tools/ 后运行时注册）。 */
   customTools?: unknown[]
@@ -56,7 +56,7 @@ export interface PresetSpec {
   subagentToolPolicy?: Record<string, unknown>
   /**
    * 触发器声明（`triggers` 顶层段）：`{ id, channel, when?, do, … }` 的数组。
-   * 声明**由预设提供**（引擎不带默认），物化为 `triggers.yml` 后由 `declared-triggers`
+   * 声明**由模块提供**（引擎不带默认），物化为 `triggers.yml` 后由 `declared-triggers`
    * 运行时模块读入并注册；形状与校验归 `engine/trigger-spec.mjs` 的声明编译器。
    */
   triggers?: unknown[]
@@ -75,7 +75,7 @@ export interface PresetSpec {
  * 兼容源码运行（`src/host/`）与打包运行（`lib/`）。旧的内置预设目录 `preset/` 已整体
  * 退场——那些是官方预设形态的遗留，重构后不再读取也不再维护。
  */
-export function packagePresetDir(): string {
+export function packageModulesDir(): string {
   const candidates = [
     new URL('../modules/', import.meta.url),
     new URL('../../modules/', import.meta.url),
@@ -102,18 +102,18 @@ export function packageEngineDir(): string {
 
 /**
  * preset.yml 读缓存：按 mtime+size 签名失效。load()/describe/param-overrides 等
- * 每次请求读盘解析，加缓存后同一文件只解析一次；写盘路径（savePresetParams /
+ * 每次请求读盘解析，加缓存后同一文件只解析一次；写盘路径（saveModuleParams /
  * withPresetDoc）与外部编辑（stat 签名变化）都会正确失效。
  */
-const presetSpecCache = new Map<string, { mtimeMs: number; size: number; spec: PresetSpec }>()
+const presetSpecCache = new Map<string, { mtimeMs: number; size: number; spec: ModuleSpec }>()
 
 /** 写盘后失效缓存（调用方在写完 preset.yml 后调用；不调用也安全——stat 签名兜底）。 */
-export function invalidatePresetSpec(dir: string): void {
+export function invalidateModuleSpec(dir: string): void {
   presetSpecCache.delete(join(dir, MODULE_DEFINITION_FILE))
 }
 
 /**
- * 从预设 preset.yml 的 modules 清单移除一个模块 id（YAML Document 保留注释
+ * 从模块 module.yml 的 modules 清单移除一个模块 id（YAML Document 保留注释
  * 与其余字段）。返回是否发生修改；文件缺失或没有该模块时返回 false。
  */
 export function removePresetModule(dir: string, moduleId: string): boolean {
@@ -128,27 +128,27 @@ export function removePresetModule(dir: string, moduleId: string): boolean {
   if (kept.length === modules.items.length) return false
   modules.items = kept
   atomicWriteTextFile(file, doc.toString())
-  invalidatePresetSpec(dir)
+  invalidateModuleSpec(dir)
   return true
 }
 
-/** 加载某个预设模板的单一参数文件 preset/<name>/preset.yml。 */
-export function loadPresetSpec(dir: string): PresetSpec {
+/** 加载某个模块模板的单一参数文件 modules/<name>/module.yml。 */
+export function loadModuleSpec(dir: string): ModuleSpec {
   const file = join(dir, MODULE_DEFINITION_FILE)
   let stat: ReturnType<typeof statSync>
   try {
     stat = statSync(file)
   } catch {
-    // 兜底路径（resolvePresetDir 未命中时 join(packagePresetDir, template) 可能不存在）
+    // 兜底路径（resolveModuleDir 未命中时 join(packageModulesDir, template) 可能不存在）
     // 不让裸 ENOENT 冒给调用方；findPresetDir 等扫描方 catch 任意错误不受影响。
     throw new Error(`preset.yml not found in ${dir}（预设模板不存在或目录不完整）`)
   }
   const cached = presetSpecCache.get(file)
   if (cached !== undefined && cached.mtimeMs === stat.mtimeMs && cached.size === stat.size) return cached.spec
   const raw = readFileSync(file, 'utf8')
-  let parsed: Partial<PresetSpec> | null
+  let parsed: Partial<ModuleSpec> | null
   try {
-    parsed = parseYaml(raw, { logLevel: 'silent' }) as Partial<PresetSpec> | null
+    parsed = parseYaml(raw, { logLevel: 'silent' }) as Partial<ModuleSpec> | null
   } catch (error) {
     throw new Error(`preset ${file} YAML 解析失败: ${String((error as Error).message ?? error)}`)
   }
@@ -161,15 +161,15 @@ export function loadPresetSpec(dir: string): PresetSpec {
   }
   const params = readPresetLayerSettings(parsed)
   if (parsed.layerSettings !== undefined || parsed.params !== undefined) parsed.params = params
-  presetSpecCache.set(file, { mtimeMs: stat.mtimeMs, size: stat.size, spec: parsed as PresetSpec })
-  return parsed as PresetSpec
+  presetSpecCache.set(file, { mtimeMs: stat.mtimeMs, size: stat.size, spec: parsed as ModuleSpec })
+  return parsed as ModuleSpec
 }
 
-/** 读取预设模板内容资产(presetText / agentsText);模板缺失时静默降级。
- *  模板目录按 resolvePresetDir 解析（用户自定义预设优先，包内模板回退）。 */
-export function loadPresetContent(template = DEFAULT_PRESET_ID, presetRoot = userPresetsDir()): { presetText: string; agentsText: string } {
+/** 读取模块模板内容资产(presetText / agentsText);模板缺失时静默降级。
+ *  模板目录按 resolveModuleDir 解析（用户自定义模块优先，包内模板回退）。 */
+export function loadModuleContent(template = DEFAULT_MODULE_ID, moduleRoot = userModulesDir()): { presetText: string; agentsText: string } {
   try {
-    const spec = loadPresetSpec(resolvePresetDir(template, presetRoot))
+    const spec = loadModuleSpec(resolveModuleDir(template, moduleRoot))
     return {
       presetText: typeof spec.content?.presetText === 'string' ? spec.content.presetText : '',
       agentsText: typeof spec.content?.agentsText === 'string' ? spec.content.agentsText : '',
@@ -185,30 +185,30 @@ export const asString = (value: unknown, fallback = ''): string => {
   return String(value)
 }
 
-/** 预设根：本插件的存储根（~/.dsh/.prompt-tool），导入/新建/种子化的预设都放这里。 */
-export function userPresetsDir(): string {
-  return DEFAULT_PRESET_DIR
+/** 模块根：本插件的存储根（~/.dsh/.prompt-tool），导入/新建/种子化的模块都放这里。 */
+export function userModulesDir(): string {
+  return MODULES_DIR
 }
 
 /** 只按合法目录身份定位；现存坏身份必须报错，不能绕到同名模板。 */
 function findPresetDir(scanDir: string, template: string): string | undefined {
-  const exact = assertPresetDirectory(scanDir, template, true)
+  const exact = assertModuleDirectory(scanDir, template, true)
   return presetPathExists(exact) ? exact : undefined
 }
 
 /**
- * 解析预设模板目录：当前预设根优先，包内模板回退；不读取其他部署根的同名预设。
+ * 解析模块模板目录：当前模块根优先，包内模板回退；不读取其他部署根的同名模块。
  * 目录名与声明的 preset.yml id 一致；不扫描其他目录的 id 别名。
  */
-export function resolvePresetDir(template: string, presetRoot = userPresetsDir()): string {
-  const found = findPresetDir(presetRoot, template) ?? findPresetDir(packagePresetDir(), template)
-  return found ?? join(packagePresetDir(), template)
+export function resolveModuleDir(template: string, moduleRoot = userModulesDir()): string {
+  const found = findPresetDir(moduleRoot, template) ?? findPresetDir(packageModulesDir(), template)
+  return found ?? join(packageModulesDir(), template)
 }
 
-/** 预设目录是否含组合源：modules、composition 或官方 agent.cordis.yml。 */
+/** 模块目录是否含组合源：modules、composition 或官方 agent.cordis.yml。 */
 export function isRenderablePresetDir(dir: string): boolean {
   try {
-    const spec = loadPresetSpec(dir)
+    const spec = loadModuleSpec(dir)
     if (Array.isArray(spec.modules)) return true
     if (typeof spec.composition === 'string' && spec.composition.length > 0) return true
   } catch (error) {
@@ -218,17 +218,17 @@ export function isRenderablePresetDir(dir: string): boolean {
   return existsSync(join(dir, 'agent.cordis.yml'))
 }
 
-/** 本插件预设清单；所有目录按同一身份与组合源规则列举。 */
-export function listPresets(presetRoot = userPresetsDir()): Array<{ id: string; name: string; user: boolean; renderable: boolean; description?: string; meta?: Record<string, unknown> }> {
+/** 本插件模块清单；所有目录按同一身份与组合源规则列举。 */
+export function listModules(moduleRoot = userModulesDir()): Array<{ id: string; name: string; user: boolean; renderable: boolean; description?: string; meta?: Record<string, unknown> }> {
   const scan = (dir: string): Array<{ id: string; name: string; user: boolean; renderable: boolean; description?: string; meta?: Record<string, unknown> }> => {
     try {
       return readdirSync(dir, { withFileTypes: true })
         .filter((entry) => entry.isDirectory() && /^[a-z0-9][a-z0-9-]*$/.test(entry.name))
         .flatMap((entry) => {
           try {
-            const spec = loadPresetSpec(assertPresetDirectory(dir, entry.name))
+            const spec = loadModuleSpec(assertModuleDirectory(dir, entry.name))
             if (typeof spec.id !== 'string' || spec.id.length === 0) return []
-            // 切换值用目录名（与 resolvePresetDir 路径一致）；name 保持 spec.name 契约。
+            // 切换值用目录名（与 resolveModuleDir 路径一致）；name 保持 spec.name 契约。
             return [{
               id: entry.name,
               name: spec.name,
@@ -246,18 +246,18 @@ export function listPresets(presetRoot = userPresetsDir()): Array<{ id: string; 
     }
   }
   const byId = new Map<string, { id: string; name: string; user: boolean; renderable: boolean }>()
-  for (const preset of scan(presetRoot)) byId.set(preset.id, preset)
+  for (const preset of scan(moduleRoot)) byId.set(preset.id, preset)
   return [...byId.values()].sort((a, b) => a.id.localeCompare(b.id))
 }
 
-/** 插件目录模板清单（「新建」选择器与首次种子化数据源；不直接出现在预设列表）。 */
+/** 插件目录模板清单（「新建」选择器与首次种子化数据源；不直接出现在模块列表）。 */
 export function listBuiltinTemplates(): Array<{ id: string; name: string }> {
   try {
-    return readdirSync(packagePresetDir(), { withFileTypes: true })
+    return readdirSync(packageModulesDir(), { withFileTypes: true })
       .filter((entry) => entry.isDirectory())
       .flatMap((entry) => {
         try {
-          const spec = loadPresetSpec(join(packagePresetDir(), entry.name))
+          const spec = loadModuleSpec(join(packageModulesDir(), entry.name))
           return [{ id: entry.name, name: spec.name }]
         } catch {
           return []
@@ -269,16 +269,16 @@ export function listBuiltinTemplates(): Array<{ id: string; name: string }> {
   }
 }
 
-/** 按包内同名目录补建缺失预设；已有目录的定义、生成物和资源保持原样。 */
-export function ensurePresetSeed(root = userPresetsDir()): { created: string[] } {
+/** 按包内同名目录补建缺失的内置模块；已有目录的定义、生成物和资源保持原样。 */
+export function ensurePresetSeed(root = userModulesDir()): { created: string[] } {
   const created: string[] = []
   try {
     mkdirSync(root, { recursive: true })
-    for (const entry of readdirSync(packagePresetDir(), { withFileTypes: true })) {
+    for (const entry of readdirSync(packageModulesDir(), { withFileTypes: true })) {
       if (!entry.isDirectory() || entry.name.startsWith('.')) continue
       const target = join(root, entry.name)
       if (existsSync(target)) continue
-      cpSync(join(packagePresetDir(), entry.name), target, { recursive: true })
+      cpSync(join(packageModulesDir(), entry.name), target, { recursive: true })
       created.push(entry.name)
     }
   } catch {
@@ -290,8 +290,8 @@ export function ensurePresetSeed(root = userPresetsDir()): { created: string[] }
 /** 完整复制到隐藏候选；只更新定义 ID 和已知共享引擎配置位置。 */
 function copyPresetDirectory(source: string, root: string, targetId: string): void {
   assertPresetTree(source)
-  loadPresetSpec(source)
-  const target = assertPresetDirectory(root, targetId, true)
+  loadModuleSpec(source)
+  const target = assertModuleDirectory(root, targetId, true)
   if (presetPathExists(target)) throw new Error(`目标预设已存在：${targetId}`)
   mkdirSync(root, { recursive: true })
   const candidate = mkdtempSync(join(root, `.${targetId}.copy-`))
@@ -328,41 +328,41 @@ function copyPresetDirectory(source: string, root: string, targetId: string): vo
   }
 }
 
-/** 从包内同名目录复制预设；autoSuffix=true 时递增目录名并同步定义身份。 */
-export function cloneBuiltinPreset(id: string, autoSuffix = false, presetRoot = userPresetsDir()): { ok: true; id: string } | { ok: false; message: string } {
+/** 从包内同名目录复制模块；autoSuffix=true 时递增目录名并同步定义身份。 */
+export function cloneBuiltinPreset(id: string, autoSuffix = false, moduleRoot = userModulesDir()): { ok: true; id: string } | { ok: false; message: string } {
   try {
     assertPresetId(id)
-    const builtin = findPresetDir(packagePresetDir(), id)
+    const builtin = findPresetDir(packageModulesDir(), id)
     if (builtin === undefined) {
       return { ok: false, message: `预设 ${id} 不是包内置预设` }
     }
     let targetId = id
-    let target = join(presetRoot, targetId)
+    let target = join(moduleRoot, targetId)
     if (presetPathExists(target)) {
       if (!autoSuffix) {
         return { ok: false, message: `用户目录已存在同名预设 ${targetId}，请先删除再新建` }
       }
       for (let suffix = 2; ; suffix++) {
         targetId = `${id}-${suffix}`
-        target = join(presetRoot, targetId)
+        target = join(moduleRoot, targetId)
         if (!presetPathExists(target)) break
       }
     }
-    copyPresetDirectory(builtin, presetRoot, targetId)
+    copyPresetDirectory(builtin, moduleRoot, targetId)
     return { ok: true, id: targetId }
   } catch (error) {
     return { ok: false, message: `新建预设失败：${error instanceof Error ? error.message : String(error)}` }
   }
 }
 
-/** 复制用户预设目录为新预设（id 自动递增：<id>-copy / <id>-copy-2 / …）。
+/** 复制用户模块目录为新模块（id 自动递增：<id>-copy / <id>-copy-2 / …）。
  *  复制的是用户目录完整副本（preset.yml / agent.cordis.yml / prompt-configs /
  *  内容资产 / 覆盖文件），与「从内置模板新建」互补：后者还原模板，前者备份现状。 */
-export function duplicateUserPreset(id: string, presetRoot = userPresetsDir()): { ok: true; id: string } | { ok: false; message: string } {
+export function duplicateUserModule(id: string, moduleRoot = userModulesDir()): { ok: true; id: string } | { ok: false; message: string } {
   try {
     assertPresetId(id)
-    const root = resolve(presetRoot)
-    const source = assertPresetDirectory(root, id)
+    const root = resolve(moduleRoot)
+    const source = assertModuleDirectory(root, id)
     let targetId = `${id}-copy`
     let target = join(root, targetId)
     for (let suffix = 2; presetPathExists(target); suffix++) {
@@ -376,16 +376,16 @@ export function duplicateUserPreset(id: string, presetRoot = userPresetsDir()): 
   }
 }
 
-/** 在系统文件管理器中打开预设目录（尽力而为：无桌面环境时打开失败也返回路径供 UI 展示）。 */
-export function openPresetLocation(id: string, presetRoot = userPresetsDir()): { ok: true; path: string } | { ok: false; message: string; path: string } {
-  // 普通预设 id（裸目录名）或角色卡库子路径（/.characters/<cardId>）两种形态。
+/** 在系统文件管理器中打开模块目录（尽力而为：无桌面环境时打开失败也返回路径供 UI 展示）。 */
+export function openModuleLocation(id: string, moduleRoot = userModulesDir()): { ok: true; path: string } | { ok: false; message: string; path: string } {
+  // 普通模块 id（裸目录名）或角色卡库子路径（/.characters/<cardId>）两种形态。
   const isBareId = typeof id === 'string' && /^[a-z0-9][a-z0-9-]*$/.test(id)
   const isCardPath = typeof id === 'string' && /^\/\.[a-zA-Z0-9_-]+\/[^/\\]+$/.test(id)
   if (!isBareId && !isCardPath) {
     return { ok: false, message: `非法预设 id：${id}`, path: '' }
   }
-  const dir = resolve(join(presetRoot, id))
-  const rootResolved = resolve(presetRoot)
+  const dir = resolve(join(moduleRoot, id))
+  const rootResolved = resolve(moduleRoot)
   if (dir !== rootResolved && !dir.startsWith(rootResolved + sep)) {
     return { ok: false, message: `预设路径越界：${id}`, path: dir }
   }
@@ -393,7 +393,7 @@ export function openPresetLocation(id: string, presetRoot = userPresetsDir()): {
     return { ok: false, message: `预设 ${id} 不存在`, path: dir }
   }
   try {
-    if (isBareId) assertPresetDirectory(presetRoot, id)
+    if (isBareId) assertModuleDirectory(moduleRoot, id)
     const command = process.platform === 'win32' ? 'explorer'
       : process.platform === 'darwin' ? 'open' : 'xdg-open'
     const child = spawn(command, [dir], { detached: true, stdio: 'ignore' })
@@ -410,19 +410,19 @@ function deleteYamlPath(doc: ReturnType<typeof parseDocument>, path: string[]): 
 }
 
 /**
- * 保存预设参数：写 layerSettings（merge）/ promptConfigs（整体替换）。
+ * 保存模块参数：写 layerSettings（merge）/ promptConfigs（整体替换）。
  * parseDocument 保留注释与未知键（preset.yml 模板含大量注释）；空值键删除（'' / []，
  * 回落模板/引擎默认；0 与 false 照常写入——语义与函数内注释、docs §3 一致）。
  */
-export function savePresetParams(
-  presetRoot: string,
+export function saveModuleParams(
+  moduleRoot: string,
   templateName: string,
   params: Record<string, unknown> | undefined,
   promptConfigs: unknown[] | undefined,
   variables?: Record<string, string>,
   variablesEnabled?: boolean,
 ): void {
-  const file = join(assertPresetDirectory(presetRoot, templateName), MODULE_DEFINITION_FILE)
+  const file = join(assertModuleDirectory(moduleRoot, templateName), MODULE_DEFINITION_FILE)
   if (!existsSync(file)) throw new Error(`preset ${templateName} 无 preset.yml`)
   const doc = parseDocument(readFileSync(file, 'utf8'), { logLevel: 'silent' })
   readPresetLayerSettings(doc.toJS())
@@ -475,36 +475,36 @@ export function savePresetParams(
     }
   }
   atomicWriteTextFile(file, doc.toString())
-  invalidatePresetSpec(join(presetRoot, templateName))
+  invalidateModuleSpec(join(moduleRoot, templateName))
 }
 
 /**
- * 保存激活预设的顶层 persona 段（官方 `@deepseek-ai/dsh-persona` 行 config 同构）。
+ * 保存激活模块的顶层 persona 段（官方 `@deepseek-ai/dsh-persona` 行 config 同构）。
  * null = 删除该段（回落宿主部署人设）；默认值不落键（见 personaRowConfig）。
  */
-export function savePresetPersona(presetRoot: string, templateName: string, persona: PersonaSpec | null): void {
-  const file = join(assertPresetDirectory(presetRoot, templateName), MODULE_DEFINITION_FILE)
+export function savePresetPersona(moduleRoot: string, templateName: string, persona: PersonaSpec | null): void {
+  const file = join(assertModuleDirectory(moduleRoot, templateName), MODULE_DEFINITION_FILE)
   if (!existsSync(file)) throw new Error(`preset ${templateName} 无 preset.yml`)
   const doc = parseDocument(readFileSync(file, 'utf8'), { logLevel: 'silent' })
   readPresetLayerSettings(doc.toJS())
   if (persona === null) doc.deleteIn(['persona'])
   else doc.setIn(['persona'], personaRowConfig(persona))
   atomicWriteTextFile(file, doc.toString())
-  invalidatePresetSpec(join(presetRoot, templateName))
+  invalidateModuleSpec(join(moduleRoot, templateName))
 }
 
-/** 预设文件读-改-写（parseDocument 保留注释与未知键；mutate 内 setIn/deleteIn）。
+/** 模块文件读-改-写（parseDocument 保留注释与未知键；mutate 内 setIn/deleteIn）。
  *  角色卡库（characters）与世界书工具（world-book-tools）共用此入口，避免
  *  各自实现 parseDocument 往返。写盘走原子替换，失败保留旧文件。 */
-export function withPresetDoc(presetDir: string, mutate: (doc: ReturnType<typeof parseDocument>) => void): void {
-  const file = join(presetDir, MODULE_DEFINITION_FILE)
-  if (!existsSync(file)) throw new Error(`${presetDir} 无 preset.yml`)
+export function withPresetDoc(moduleDir: string, mutate: (doc: ReturnType<typeof parseDocument>) => void): void {
+  const file = join(moduleDir, MODULE_DEFINITION_FILE)
+  if (!existsSync(file)) throw new Error(`${moduleDir} 无 preset.yml`)
   const doc = parseDocument(readFileSync(file, 'utf8'), { logLevel: 'silent' })
   readPresetLayerSettings(doc.toJS())
   mutate(doc)
   readPresetLayerSettings(doc.toJS())
   atomicWriteTextFile(file, doc.toString())
-  invalidatePresetSpec(presetDir)
+  invalidateModuleSpec(moduleDir)
 }
 
 /** 向 preset.yml 的 modules 追加功能模块；空数组保持按需装配语义。 */
@@ -524,15 +524,15 @@ export function appendPresetModules(
   doc.set('modules', modules)
 }
 
-/** 删除具有合法身份的预设目录（预设根/<id>）；隐藏备份不经公共接口删除。
- *  仅作用于插件自有预设根，包内置模板不受影响；路径越界与非法 id 拒绝。
+/** 删除具有合法身份的模块目录（模块根/<id>）；隐藏备份不经公共接口删除。
+ *  仅作用于插件自有模块根，包内置模板不受影响；路径越界与非法 id 拒绝。
  *  调用方在删除后刷新注册，撤销本插件拥有的官方定义。 */
-export function removeUserPreset(id: string, presetRoot = userPresetsDir()): { ok: true } | { ok: false; message: string } {
+export function removeUserPreset(id: string, moduleRoot = userModulesDir()): { ok: true } | { ok: false; message: string } {
   try {
-    const target = assertPresetDirectory(presetRoot, id)
+    const target = assertModuleDirectory(moduleRoot, id)
     assertPresetTree(target)
     rmSync(target, { recursive: true, force: true })
-    invalidatePresetSpec(target)
+    invalidateModuleSpec(target)
     return { ok: true }
   } catch (error) {
     return { ok: false, message: `删除失败：${error instanceof Error ? error.message : String(error)}` }
@@ -558,7 +558,7 @@ export function normalizeParam(value: unknown): unknown {
 }
 
 /** 当前 layerSettings 与显式运行参数合并；不从旧磁盘 params 段回退取值。 */
-export function resolvePresetParams(spec: PresetSpec, runtime: Record<string, unknown>): Record<string, unknown> {
+export function resolvePresetParams(spec: ModuleSpec, runtime: Record<string, unknown>): Record<string, unknown> {
   const params: Record<string, unknown> = {}
   for (const [key, value] of Object.entries(readPresetLayerSettings(spec))) {
     params[key] = normalizeParam(value)
@@ -629,7 +629,7 @@ export function buildModuleConfigsFromParams(params: Record<string, unknown>, op
  * 组合模块目录分工：
  * - source/local：本项目自有模块的唯一源文件；
  * - library：随包分发的官方切块与官方预设变体快照（版本化产物，不手工编辑）；
- *   生成它的 `rebuild-composition` 脚本随内置预设目录 `preset/` 一并退场——输入源已不存在，
+ *   生成它的 `rebuild-composition` 脚本随内置模块目录 `modules/` 一并退场——输入源已不存在，
  *   快照本体保留为既成事实，不再重建。
  * 同名文件禁止同时存在，避免 source 与产物漂移。
  */
@@ -657,7 +657,7 @@ function moduleFile(name: string): string {
   return existing[0]!
 }
 
-function assembleModules(spec: PresetSpec): string {
+function assembleModules(spec: ModuleSpec): string {
   const parts: string[] = []
   const seen = new Set<string>()
   for (const name of spec.modules ?? []) {
@@ -682,7 +682,7 @@ function assembleModules(spec: PresetSpec): string {
  * 行级 config 合并:仅支持 map 型 config 浅合并;
  * 数组型 config(如 delegation 组)按子行 id 嵌套合并;未声明模块原样保留。
  * 未声明 configs 时返回原文(零开销);parseDocument 往返保留注释。
- * 本函数是参数桥产物落位组合行的唯一机制(含 delegation 组子行嵌套),不是预设覆盖通道。
+ * 本函数是参数桥产物落位组合行的唯一机制(含 delegation 组子行嵌套),不是模块覆盖通道。
  */
 export function applyModuleConfigs(raw: string, configs: Record<string, Record<string, unknown>> | undefined): string {
   if (configs === undefined || Object.keys(configs).length === 0) return raw
@@ -738,12 +738,12 @@ export function applyModuleConfigs(raw: string, configs: Record<string, Record<s
 }
 
 /**
- * 加载预设声明的组合(原始 token 文本,未渲染)。
+ * 加载模块声明的组合(原始 token 文本,未渲染)。
  *  - `modules:` 清单 → 引擎模块库按序装配;
- *  - `composition: ./xxx.yml` → 预设模板目录内组合文件(官方预设直用);
+ *  - `composition: ./xxx.yml` → 模块模板目录内组合文件(官方预设直用);
  *  - `composition:` 内联文本或组合清单名。
  */
-export function loadCompositionText(spec: PresetSpec, templateDir?: string, runtime: Record<string, unknown> = {}): string {
+export function loadCompositionText(spec: ModuleSpec, templateDir?: string, runtime: Record<string, unknown> = {}): string {
   let raw: string
   let modules = spec.modules
   if (Array.isArray(modules)) {
@@ -801,14 +801,14 @@ export function loadCompositionText(spec: PresetSpec, templateDir?: string, runt
 }
 
 /**
- * 解析预设的模块事实，供 UI 卡片存在性和受控创建共用。
+ * 解析模块的模块事实，供 UI 卡片存在性和受控创建共用。
  * 显式模块及当前参数/策略所需的装配是可编辑插件能力；官方组合 row 仅保留为运行事实。
  */
-export function resolvePresetModuleFacts(
-  spec: PresetSpec,
+export function resolveModuleFacts(
+  spec: ModuleSpec,
   templateDir?: string,
   editable = false,
-): PresetModuleFacts {
+): ModuleFacts {
   const declaredModules = Array.isArray(spec.modules)
     ? [...new Set(spec.modules.filter((item): item is string => typeof item === 'string' && item.trim().length > 0).map((item) => item.trim()))]
     : null
@@ -906,16 +906,16 @@ export interface EngineCapabilityRemoveResult {
   capabilityIds: string[]
 }
 
-/** 在内存候选文档中展开能力/recipe，校验成功后一次原子替换 preset.yml。 */
+/** 在内存候选文档中展开能力/recipe，校验成功后一次原子替换 module.yml。 */
 export function createEngineCapabilityInPreset(
-  presetDir: string,
+  moduleDir: string,
   request: EngineCapabilityCreateRequest,
 ): EngineCapabilityCreateResult {
-  const file = join(presetDir, MODULE_DEFINITION_FILE)
-  if (!existsSync(file)) throw new Error(`预设目录缺少 preset.yml：${presetDir}`)
+  const file = join(moduleDir, MODULE_DEFINITION_FILE)
+  if (!existsSync(file)) throw new Error(`模块目录缺少 preset.yml：${moduleDir}`)
   const original = readFileSync(file, 'utf8')
   const doc = parseDocument(original, { logLevel: 'silent' })
-  const source = doc.toJS() as PresetSpec
+  const source = doc.toJS() as ModuleSpec
   const sourceParams = readPresetLayerSettings(source)
   if (!Array.isArray(source.modules)) throw new Error('当前预设没有可编辑的 modules 数组；请先复制为插件用户预设')
   const capabilityIds = request.action === 'create'
@@ -924,7 +924,7 @@ export function createEngineCapabilityInPreset(
   if (capabilityIds.length === 0 || capabilityIds.some((id) => engineCapability(id) === undefined)) {
     throw new Error(`未知引擎能力或 recipe：${request.action === 'create' ? request.capabilityId : request.recipeId}`)
   }
-  const currentFacts = resolvePresetModuleFacts(source, presetDir, true)
+  const currentFacts = resolveModuleFacts(source, moduleDir, true)
   // 创建检查磁盘声明，而不是实际装配：历史策略虽然已经运行，仍需允许补齐 modules。
   const declaredFacts = { ...currentFacts, effectiveModules: currentFacts.declaredModules }
   const additions = capabilityIds
@@ -954,8 +954,8 @@ export function createEngineCapabilityInPreset(
     doc.setIn([section.key], JSON.parse(JSON.stringify(section.skeleton)))
     sectionWritten = true
   }
-  const candidate = doc.toJS() as PresetSpec
-  const rendered = renderComposition(candidate, {}, presetDir)
+  const candidate = doc.toJS() as ModuleSpec
+  const rendered = renderComposition(candidate, {}, moduleDir)
   const rows = assertCompositionArray(rendered, candidate)
   const rowPaths = new Map<string, string>()
   const visit = (value: unknown, path: string): void => {
@@ -984,7 +984,7 @@ export function createEngineCapabilityInPreset(
     return { changed: false, addedModules, capabilityIds }
   }
   atomicWriteTextFile(file, doc.toString())
-  invalidatePresetSpec(presetDir)
+  invalidateModuleSpec(moduleDir)
   return { changed: true, addedModules, capabilityIds }
 }
 
@@ -992,13 +992,13 @@ export function createEngineCapabilityInPreset(
  *  参数在 ⇒ 装配在（见 impliedModulesFromParams）：留下参数会让移除立刻被隐含装配拉回来，
  *  所以"移除能力"必须是完整移除。未登记参数、其他能力的数据与未知字段一律不动。 */
 export function removeEngineCapabilityFromPreset(
-  presetDir: string,
+  moduleDir: string,
   capabilityId: string,
 ): EngineCapabilityRemoveResult {
-  const file = join(presetDir, MODULE_DEFINITION_FILE)
-  if (!existsSync(file)) throw new Error(`预设目录缺少 preset.yml：${presetDir}`)
+  const file = join(moduleDir, MODULE_DEFINITION_FILE)
+  if (!existsSync(file)) throw new Error(`模块目录缺少 preset.yml：${moduleDir}`)
   const doc = parseDocument(readFileSync(file, 'utf8'), { logLevel: 'silent' })
-  const source = doc.toJS() as unknown as PresetSpec & Record<string, unknown>
+  const source = doc.toJS() as unknown as ModuleSpec & Record<string, unknown>
   const params = readPresetLayerSettings(source)
   if (!Array.isArray(source.modules)) throw new Error('当前预设没有可编辑的 modules 数组；官方组合不支持删除插件能力')
   const capability = engineCapability(capabilityId)
@@ -1020,20 +1020,20 @@ export function removeEngineCapabilityFromPreset(
   if (sectionPresent) doc.deleteIn([section!.key])
   for (const key of paramKeys) doc.deleteIn(engineParamPath(key))
   for (const rowId of configRows) doc.deleteIn(['moduleConfigs', rowId])
-  const candidate = doc.toJS() as PresetSpec
-  assertCompositionArray(renderComposition(candidate, {}, presetDir), candidate)
+  const candidate = doc.toJS() as ModuleSpec
+  assertCompositionArray(renderComposition(candidate, {}, moduleDir), candidate)
   atomicWriteTextFile(file, doc.toString())
-  invalidatePresetSpec(presetDir)
+  invalidateModuleSpec(moduleDir)
   return { changed: true, removedModules, capabilityIds: [capabilityId] }
 }
 
 /**
- * 预设组合渲染完整链路:模块装配 → 参数桥(moduleConfigs + params)行级合并。
+ * 模块组合渲染完整链路:模块装配 → 参数桥(moduleConfigs + params)行级合并。
  * 合并优先级:参数桥(params/UI 基础层) > moduleConfigs(模板/ST 行级直写) > 行默认。
  * moduleConfigs 仅补充参数桥未覆盖的行级 config(如 ST 导入的 tool-web.fetch),
  * 不再锁定覆盖 UI 可管理参数(旧作者锁定语义已移除)。
  */
-export function renderComposition(spec: PresetSpec, runtime: Record<string, unknown>, templateDir?: string): string {
+export function renderComposition(spec: ModuleSpec, runtime: Record<string, unknown>, templateDir?: string): string {
   const params = resolvePresetParams(spec, runtime)
   const merged: Record<string, Record<string, unknown>> = buildModuleConfigsFromParams(params, {
     subagentPolicyEnabled: spec.subagentToolPolicy !== undefined && spec.subagentToolPolicy !== null,
@@ -1043,7 +1043,7 @@ export function renderComposition(spec: PresetSpec, runtime: Record<string, unkn
     merged[id] = { ...cfg, ...merged[id] }
   }
   let raw = loadCompositionText(spec, templateDir, runtime)
-  // 人设由预设字段直接生成官方行，不查模块库，也不改写 modules 清单。
+  // 人设由模块字段直接生成官方行，不查模块库，也不改写 modules 清单。
   // composition 文件仍自行提供该行；顶层字段只覆盖它的配置。
   const persona = readPersonaSpec(spec.persona)
   if (persona !== undefined && Array.isArray(spec.modules)) {
@@ -1066,7 +1066,7 @@ export function renderComposition(spec: PresetSpec, runtime: Record<string, unkn
 }
 
 /** 组合文本基础校验（模板无关）：无未解析 token，且必须是 YAML 数组。 */
-export function assertCompositionArray(raw: string, spec: PresetSpec): unknown[] {
+export function assertCompositionArray(raw: string, spec: ModuleSpec): unknown[] {
   const unresolved = raw.match(/__[A-Za-z0-9_]+__/g)
   if (unresolved !== null) throw new Error(`generated agent.cordis.yml has unresolved variables: ${unresolved.join(', ')}`)
   const parsed = parseYaml(raw, { logLevel: 'silent' })

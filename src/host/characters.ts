@@ -1,8 +1,8 @@
 /** 角色卡库：独立于模块根的素材+参数存储（**存储根**下点前缀目录，官方 discovery 跳过）。
- *  注意区分两种语义：`presetRoot` 形参指的是**模块根**（`<存储根>/modules`），角色卡库
+ *  注意区分两种语义：`moduleRoot` 形参指的是**模块根**（`<存储根>/modules`），角色卡库
  *  在它的上一级（`<存储根>/.characters`）——两者是兄弟，不是父子。
- *  角色卡参数（converted.yml = convertStToPreset 产物）不直接生成预设，而是
- *  由用户按需「导入到当前预设」合并进激活预设 preset.yml（promptConfigs 带
+ *  角色卡参数（converted.yml = convertStToPreset 产物）不直接生成模块，而是
+ *  由用户按需「导入到当前模块」合并进激活模块 module.yml（promptConfigs 带
  *  chara-<cardId>- 前缀防冲突，params 合并，meta.importedCharacters 记录来源），
  *  并可一键移除。 */
 import { readFileSync, writeFileSync, mkdirSync, mkdtempSync, renameSync, rmSync, existsSync, readdirSync, appendFileSync, lstatSync, cpSync } from 'node:fs'
@@ -16,7 +16,7 @@ import { MODULE_DEFINITION_FILE } from './paths.ts'
 import { appendPresetModules, withPresetDoc } from './manifest.ts'
 import { engineParamPath, readPresetLayerSettings } from './preset-layer-settings.ts'
 import { buildWorldBookEntry } from './worldbook.ts'
-import type { PresetSpec } from './manifest.ts'
+import type { ModuleSpec } from './manifest.ts'
 import { ENGINE_LAYER_ORDER } from '../shared/engine-capabilities.ts'
 import type { StConversionReport } from '../shared/bridge-contract.ts'
 import type { AssetFile, ImportChoices, ImportKind } from '../shared/asset-transfer.ts'
@@ -35,7 +35,7 @@ function sortConfigs(configs: Array<Record<string, unknown>>): Array<Record<stri
 }
 
 /** 角色卡记忆条目字段（不含 id；id 由调用方加 chara-<卡>- 前缀）。 */
-function buildCharacterMemoryEntry(spec: PresetSpec, memory: string): Record<string, unknown> | undefined {
+function buildCharacterMemoryEntry(spec: ModuleSpec, memory: string): Record<string, unknown> | undefined {
   if (memory.trim().length === 0) return undefined
   // 结构经世界书条目工厂（与 ST 导入/模型工具同源，strategy/layer/position 单一权威）。
   return buildWorldBookEntry({
@@ -89,10 +89,10 @@ function availableMemoryId(configs: readonly Record<string, unknown>[], cardId: 
 export function projectCharacterMemories(
   source: ReturnType<typeof parseDocument>,
   choices: Record<string, 'include' | 'exclude'> = {},
-  presetRoot?: string,
+  moduleRoot?: string,
 ): { doc: ReturnType<typeof parseDocument>; excludedMemoryCount: number; memoryConflicts: Array<{ id: string; name: string }> } {
   const doc = source.clone()
-  const spec = doc.toJS() as PresetSpec
+  const spec = doc.toJS() as ModuleSpec
   const records = memoryRecords(spec.meta)
   const imported = Array.isArray(spec.meta?.importedCharacters) ? spec.meta.importedCharacters.filter((id): id is string => typeof id === 'string') : []
   const conflicts: Array<{ id: string; name: string }> = []
@@ -105,10 +105,10 @@ export function projectCharacterMemories(
     const cardId = imported.find(card => importPrefixes(card).some(base => id === `${base}memory` || id.startsWith(`${base}memory-`))) ?? proof?.characterId
     if (cardId === undefined) continue
     // 原生卡定义的同名普通配置是独立内容，不按 ID 猜作记忆。
-    if (presetRoot !== undefined && validCardId(cardId)) {
-      const original = loadImportSource(presetRoot, cardId)
+    if (moduleRoot !== undefined && validCardId(cardId)) {
+      const original = loadImportSource(moduleRoot, cardId)
       if (original?.promptConfigs?.some(entry => isRecord(entry) && importPrefixes(cardId).some(base => `${base}${String(entry.id)}` === id))) continue
-      const memory = original === undefined ? undefined : buildCharacterMemoryEntry(original, readCharacterMemory(presetRoot, cardId))
+      const memory = original === undefined ? undefined : buildCharacterMemoryEntry(original, readCharacterMemory(moduleRoot, cardId))
       if (memory !== undefined && contentHash({ ...memory, id }) === contentHash(config)) { excluded.add(index); continue }
     }
     if (choices[id] === 'exclude') excluded.add(index)
@@ -144,7 +144,7 @@ export function recordedCharacterModules(meta: unknown): Record<string, string[]
 
 /** 卡自身声明的模块（声明优先：ST 转换产物自带六件套声明，行为因此不变）。
  *  只丢弃非字符串与空串；模块名合法性仍由 appendPresetModules 校验（非法名 fail loud）。 */
-export function declaredCharacterModules(spec: PresetSpec): string[] {
+export function declaredCharacterModules(spec: ModuleSpec): string[] {
   const list = Array.isArray(spec.modules) ? spec.modules : []
   return [...new Set(list.filter((item): item is string => typeof item === 'string' && item.length > 0))]
 }
@@ -157,13 +157,13 @@ export function requiredCharacterModules(configs: readonly unknown[]): string[] 
   return required
 }
 
-/** 移除一张卡之后，某个模块是否仍被预设内容或其他卡需要（需要则不回退）。 */
+/** 移除一张卡之后，某个模块是否仍被模块内容或其他卡需要（需要则不回退）。 */
 export interface CharacterModuleContext {
   /** 移除本卡前缀配置之后的提示词配置。 */
   configs: readonly Record<string, unknown>[]
-  /** 移除本卡声明的 params 键之后的预设参数。 */
+  /** 移除本卡声明的 params 键之后的模块参数。 */
   params: Record<string, unknown>
-  /** 预设顶层是否仍有自定义工具。 */
+  /** 模块顶层是否仍有自定义工具。 */
   customTools: boolean
   /** 移除本卡之后仍标记为已导入的角色卡 id。 */
   importedCharacters: readonly string[]
@@ -194,7 +194,7 @@ export function characterModuleStillNeeded(module: string, context: CharacterMod
 /** 其他已导入卡「引入过」或「声明过」的模块：移除本卡时不得夺走别人要用的模块。
  *  声明这一路必须读卡库的 converted.yml——第二张卡声明同一模块时差集为空、不会留下引入记录。 */
 function modulesClaimedByOtherCards(
-  presetRoot: string,
+  moduleRoot: string,
   importedCards: readonly string[],
   meta: unknown,
   cardId: string,
@@ -206,7 +206,7 @@ function modulesClaimedByOtherCards(
   }
   for (const id of importedCards) {
     if (id === cardId || !validCardId(id)) continue
-    const spec = loadImportSource(presetRoot, id)
+    const spec = loadImportSource(moduleRoot, id)
     if (spec === undefined) continue
     for (const module of declaredCharacterModules(spec)) claimed.add(module)
   }
@@ -219,25 +219,25 @@ function readPresetModules(doc: ReturnType<typeof parseDocument>): string[] {
   return Array.isArray(source.modules) ? source.modules.filter((item): item is string => typeof item === 'string') : []
 }
 
-/** 角色卡记忆变更后同步已导入预设的 chara-<id>-memory 注入条目
- *  （world_book note 写入卡记忆后调用；未导入当前预设的卡返回 synced=false）。 */
+/** 角色卡记忆变更后同步已导入模块的 chara-<id>-memory 注入条目
+ *  （world_book note 写入卡记忆后调用；未导入当前模块的卡返回 synced=false）。 */
 export function syncImportedCharacterMemory(
-  presetRoot: string,
+  moduleRoot: string,
   templateName: string,
   cardId: string,
 ): { ok: true; synced: boolean } | { ok: false; message: string } {
   if (!validCardId(cardId)) return { ok: false, message: `非法角色卡 id：${cardId}` }
   let synced = false
   try {
-    const spec = loadImportSource(presetRoot, cardId)
+    const spec = loadImportSource(moduleRoot, cardId)
     if (spec === undefined) return { ok: false, message: `角色卡 ${cardId} 不存在或参数损坏` }
-    const memory = readCharacterMemory(presetRoot, cardId)
-    withPresetDoc(join(presetRoot, templateName), (doc) => {
+    const memory = readCharacterMemory(moduleRoot, cardId)
+    withPresetDoc(join(moduleRoot, templateName), (doc) => {
       const current = doc.toJS() as { promptConfigs?: unknown[]; meta?: { importedCharacters?: unknown[] } }
       const imported = Array.isArray(current.meta?.importedCharacters)
         ? current.meta.importedCharacters.map(String)
         : []
-      if (!imported.includes(cardId)) return // 卡未导入当前预设，无需同步
+      if (!imported.includes(cardId)) return // 卡未导入当前模块，无需同步
       const configs = Array.isArray(current.promptConfigs)
         ? current.promptConfigs as Array<Record<string, unknown>>
         : []
@@ -268,30 +268,30 @@ export function syncImportedCharacterMemory(
 /**
  * 角色卡库根：**存储根**下的点前缀目录（`<存储根>/.characters`）。
  *
- * 本模块形参 `presetRoot` 的语义是**模块根**（`<存储根>/modules`），角色卡库与模块目录
+ * 本模块形参 `moduleRoot` 的语义是**模块根**（`<存储根>/modules`），角色卡库与模块目录
  * 是兄弟：从模块根上溯一级即存储根。**必须由参数推导、不读模块级常量**——常量在
  * import 时按 `DSH_HOME` 冻结，测试内改 `DSH_HOME` 对它无效，会直接写进真实
  * `DSH_HOME`（2026-10-02 实测踩过：5 个用例把夹具角色卡写进了活的数据目录）。
  * 官方 roster 不扫描它（点前缀，与 `.engine` 同机制）。
  */
-export function charactersDir(presetRoot: string): string {
-  return join(dirname(presetRoot), '.characters')
+export function charactersDir(moduleRoot: string): string {
+  return join(dirname(moduleRoot), '.characters')
 }
 
-function cardDir(presetRoot: string, id: string): string {
-  return join(charactersDir(presetRoot), id)
+function cardDir(moduleRoot: string, id: string): string {
+  return join(charactersDir(moduleRoot), id)
 }
 
-/** 读一个 PresetSpec 形状的定义文件（`converted.yml` 与 `module.yml` 同构）。 */
-function loadSpecFile(file: string): PresetSpec | undefined {
+/** 读一个 ModuleSpec 形状的定义文件（`converted.yml` 与 `module.yml` 同构）。 */
+function loadSpecFile(file: string): ModuleSpec | undefined {
   assertNoLinks(file)
   if (!presetPathExists(file)) return undefined
   const parsed = parseYaml(readFileSync(file, 'utf8'), { logLevel: 'silent' })
   if (!isRecord(parsed)) throw new Error(`角色定义不是对象：${file}`)
-  return parsed as unknown as PresetSpec
+  return parsed as unknown as ModuleSpec
 }
 
-function loadConverted(dir: string): PresetSpec | undefined {
+function loadConverted(dir: string): ModuleSpec | undefined {
   return loadSpecFile(join(dir, 'converted.yml'))
 }
 
@@ -303,16 +303,16 @@ function loadConverted(dir: string): PresetSpec | undefined {
  * 角色卡库保留为素材来源与历史形态，所以仍作回退，已有卡片不迁移。
  * 一个入口、一套前缀（`module-<id>-`），不另立第二套机制。
  */
-function loadImportSource(presetRoot: string, id: string): PresetSpec | undefined {
-  const moduleFile = join(presetRoot, id, MODULE_DEFINITION_FILE)
+function loadImportSource(moduleRoot: string, id: string): ModuleSpec | undefined {
+  const moduleFile = join(moduleRoot, id, MODULE_DEFINITION_FILE)
   if (presetPathExists(moduleFile)) return loadSpecFile(moduleFile)
-  return loadConverted(cardDir(presetRoot, id))
+  return loadConverted(cardDir(moduleRoot, id))
 }
 
-/** 追加角色卡本地记忆（.characters/<id>/memory.md，跟随角色卡跨预设）。 */
-export function appendCharacterMemory(presetRoot: string, cardId: string, note: string): void {
+/** 追加角色卡本地记忆（.characters/<id>/memory.md，跟随角色卡跨模块）。 */
+export function appendCharacterMemory(moduleRoot: string, cardId: string, note: string): void {
   assertPresetId(cardId)
-  appendMemoryFile(join(cardDir(presetRoot, cardId), 'memory.md'), note, '# 角色记忆')
+  appendMemoryFile(join(cardDir(moduleRoot, cardId), 'memory.md'), note, '# 角色记忆')
 }
 
 /** 检查现有祖先和最终文件，不能通过角色目录 junction 或单文件链接越界。 */
@@ -336,9 +336,9 @@ export function appendMemoryFile(file: string, note: string, header = '# 本地�
 }
 
 /** 读角色卡本地记忆文本（无记忆返回空串）。 */
-export function readCharacterMemory(presetRoot: string, cardId: string): string {
+export function readCharacterMemory(moduleRoot: string, cardId: string): string {
   assertPresetId(cardId)
-  const file = join(cardDir(presetRoot, cardId), 'memory.md')
+  const file = join(cardDir(moduleRoot, cardId), 'memory.md')
   assertNoLinks(file)
   return presetPathExists(file) ? readFileSync(file, 'utf8').trim() : ''
 }
@@ -354,7 +354,7 @@ function importChoices(options: CharacterImportOptions): ImportChoices {
   return { ...options, promptOrderCharacterId: options.promptOrderCharacterId ?? options.characterId }
 }
 
-/** 角色卡 JSON 的选组状态：与预设包共用同一实现，预览用候选、提交用拒绝。 */
+/** 角色卡 JSON 的选组状态：与模块包共用同一实现，预览用候选、提交用拒绝。 */
 export function characterOrderSelectionState(files: AssetFile[], options: CharacterImportOptions = {}):
   { needsSelection: true; candidates: StOrderGroupSummary[] }
   | { needsSelection: false; error?: string } {
@@ -384,21 +384,21 @@ export function previewCharacterCard(
 }
 
 function persistCharacterCard(
-  presetRoot: string,
-  converted: PresetSpec,
+  moduleRoot: string,
+  converted: ModuleSpec,
   sourceText: string,
   avatar?: Buffer,
   convertedYaml = stringifyYaml(converted, { lineWidth: 0 }),
 ): CharacterImportResult {
   if (!validCardId(converted.id)) return { ok: false, message: `非法角色卡 id：${converted.id}` }
-  const parent = charactersDir(presetRoot)
-  const dir = cardDir(presetRoot, converted.id)
+  const parent = charactersDir(moduleRoot)
+  const dir = cardDir(moduleRoot, converted.id)
   let tmp: string | undefined
   let installed = false
   try {
     assertNoLinks(dir)
     const before = characterDirectoryDigest(dir)
-    if (presetPathExists(join(dir, 'memory.md'))) readCharacterMemory(presetRoot, converted.id)
+    if (presetPathExists(join(dir, 'memory.md'))) readCharacterMemory(moduleRoot, converted.id)
     mkdirSync(parent, { recursive: true })
     tmp = mkdtempSync(join(parent, `.${converted.id}.tmp-`))
     // 同步调用在当前进程与记忆追加串行；保留未知资产，交换前再次核对所有字节。
@@ -460,14 +460,14 @@ function characterDirectoryDigest(dir: string): string | undefined {
 
 /** 角色卡入库：PNG 原图（可选）+ 角色卡 JSON → 转换参数存 converted.yml。 */
 export function importCharacterCard(
-  presetRoot: string,
+  moduleRoot: string,
   files: AssetFile[],
   options: CharacterImportOptions = {},
 ): CharacterImportResult {
   try {
     const prepared = prepareImport(files, 'character', importChoices(options))
     if (prepared.state !== 'ready') return { ok: false, message: '请先选择角色内容类型或提示顺序组' }
-    return persistCharacterCard(presetRoot, prepared.spec, prepared.sourceText ?? prepared.yaml, prepared.avatar, prepared.yaml)
+    return persistCharacterCard(moduleRoot, prepared.spec, prepared.sourceText ?? prepared.yaml, prepared.avatar, prepared.yaml)
   } catch (error) {
     return { ok: false, message: `角色卡转换失败：${error instanceof Error ? error.message : String(error)}` }
   }
@@ -475,14 +475,14 @@ export function importCharacterCard(
 
 /** 原始文件流导入：识别 PNG 魔数后在 host 侧提取角色卡，避免客户端 base64 膨胀 JSON。 */
 export function importCharacterCardFile(
-  presetRoot: string,
+  moduleRoot: string,
   filePath: string,
   fileName = basename(filePath),
   options: CharacterImportOptions = {},
 ): CharacterImportResult {
   try {
     const buffer = readFileSync(filePath)
-    return importCharacterCard(presetRoot, [{ path: basename(fileName), content: buffer.toString('base64'), encoding: 'base64' }], options)
+    return importCharacterCard(moduleRoot, [{ path: basename(fileName), content: buffer.toString('base64'), encoding: 'base64' }], options)
   } catch (error) {
     return { ok: false, message: `角色卡转换失败：${error instanceof Error ? error.message : String(error)}` }
   }
@@ -493,27 +493,27 @@ export interface CharacterCardListItem {
   name: string
   description?: string
   hasAvatar: boolean
-  /** 是否已导入当前预设（激活预设 meta.importedCharacters 含该 id）。 */
+  /** 是否已导入当前模块（激活模块 meta.importedCharacters 含该 id）。 */
   imported: boolean
 }
 
-/** 角色卡库清单 + 各卡在当前预设的导入状态。 */
+/** 角色卡库清单 + 各卡在当前模块的导入状态。 */
 export function listCharacterCards(
-  presetRoot: string,
+  moduleRoot: string,
   activeTemplate: string | undefined,
 ): CharacterCardListItem[] {
-  const root = charactersDir(presetRoot)
+  const root = charactersDir(moduleRoot)
   let importedIds: Set<string>
   try {
-    const presetFile = activeTemplate !== undefined && activeTemplate.length > 0
-      ? join(presetRoot, activeTemplate, MODULE_DEFINITION_FILE)
+    const moduleFile = activeTemplate !== undefined && activeTemplate.length > 0
+      ? join(moduleRoot, activeTemplate, MODULE_DEFINITION_FILE)
       : ''
-    const meta = existsSync(presetFile)
-      ? (parseDocument(readFileSync(presetFile, 'utf8'), { logLevel: 'silent' }).toJS() as { meta?: Record<string, unknown> }).meta
+    const meta = existsSync(moduleFile)
+      ? (parseDocument(readFileSync(moduleFile, 'utf8'), { logLevel: 'silent' }).toJS() as { meta?: Record<string, unknown> }).meta
       : undefined
     const list = meta?.importedCharacters
     importedIds = new Set(Array.isArray(list) ? list.map(String) : [])
-  } catch (error) { throw new Error(`读取当前预设角色状态失败：${String(error)}`) }
+  } catch (error) { throw new Error(`读取当前模块角色状态失败：${String(error)}`) }
   if (!presetPathExists(root)) return []
   assertNoLinks(root)
   return readdirSync(root, { withFileTypes: true })
@@ -533,9 +533,9 @@ export function listCharacterCards(
 }
 
 /** 删除角色卡库条目。 */
-export function deleteCharacterCard(presetRoot: string, id: string): { ok: true } | { ok: false; message: string } {
+export function deleteCharacterCard(moduleRoot: string, id: string): { ok: true } | { ok: false; message: string } {
   if (!validCardId(id)) return { ok: false, message: `非法角色卡 id：${id}` }
-  const dir = cardDir(presetRoot, id)
+  const dir = cardDir(moduleRoot, id)
   if (!existsSync(dir)) return { ok: false, message: `角色卡 ${id} 不存在` }
   try {
     assertNoLinks(dir)
@@ -546,27 +546,27 @@ export function deleteCharacterCard(presetRoot: string, id: string): { ok: true 
   }
 }
 
-/** 角色卡参数导入当前预设：promptConfigs 合并（chara-<id>- 前缀防冲突）、
+/** 角色卡参数导入当前模块：promptConfigs 合并（chara-<id>- 前缀防冲突）、
  *  params 合并（角色卡覆盖同键）、meta.importedCharacters 记录来源。 */
 export function applyCharacterToPreset(
-  presetRoot: string,
+  moduleRoot: string,
   templateName: string,
   cardId: string,
 ): { ok: true; count: number; personaOpened?: boolean } | { ok: false; message: string } {
   if (!validCardId(cardId)) return { ok: false, message: `非法角色卡 id：${cardId}` }
   const prefix = `module-${cardId}-`
   // ST system-section 开放：导入卡含 system-section 段（角色设定/系统提示/后续指令）
-  // 时，激活预设 persona.complete: true 会在 assembly 抑制这些段（官方 complete
+  // 时，激活模块 persona.complete: true 会在 assembly 抑制这些段（官方 complete
   // 只保留 persona 段）——自动置 complete: false 开放（与 ST 转换自身的
   // persona.complete = false 语义对齐）。
   let personaOpened = false
   try {
-    const spec = loadImportSource(presetRoot, cardId)
+    const spec = loadImportSource(moduleRoot, cardId)
     if (spec === undefined) return { ok: false, message: `角色卡 ${cardId} 不存在或参数损坏` }
     validateCharacterSpec(spec)
     const hasSystemSections = (spec.promptConfigs ?? []).some(config => isRecord(config) && config.layer === 'system-section')
     let count = 0
-    withPresetDoc(join(presetRoot, templateName), (doc) => {
+    withPresetDoc(join(moduleRoot, templateName), (doc) => {
       const current = doc.toJS() as { persona?: unknown; promptConfigs?: unknown[]; meta?: { importedCharacters?: unknown[]; stWarnings?: unknown[] } }
       if (hasSystemSections) {
         const persona = current.persona
@@ -594,7 +594,7 @@ export function applyCharacterToPreset(
         doc.setIn(engineParamPath(key), value)
       }
       // 角色卡本地记忆（memory.md）合并为 world-book constant 配置（chara-<卡>-memory）。
-      const memory = readCharacterMemory(presetRoot, cardId)
+      const memory = readCharacterMemory(moduleRoot, cardId)
       const memoryEntry = buildCharacterMemoryEntry(spec, memory)
       const memoryConfig = memoryEntry === undefined ? undefined : { ...memoryEntry, id: availableMemoryId([...existing, ...added], cardId) }
       if (memoryConfig !== undefined) recordMemory(doc, cardId, memoryConfig)
@@ -608,7 +608,7 @@ export function applyCharacterToPreset(
       count = added.length + (memoryConfig === undefined ? 0 : 1)
       // 模块按卡的实际需要装配：卡声明优先（ST 产物自带六件套声明，行为不变），必需项兜底
       // （prompt-config-engine 缺失会让 promptConfigs 静默失效）。只把「追加前没有、追加后
-      // 有」的差集写进 meta.characterModules[cardId]，移除时按此回退，不误删预设自带模块。
+      // 有」的差集写进 meta.characterModules[cardId]，移除时按此回退，不误删模块自带模块。
       const before = readPresetModules(doc)
       appendPresetModules(doc, [...new Set([
         ...declaredCharacterModules(spec),
@@ -634,19 +634,19 @@ export function applyCharacterToPreset(
   }
 }
 
-/** 从当前预设移除角色卡参数：删前缀 promptConfigs、删该卡声明的 params 键、
+/** 从当前模块移除角色卡参数：删前缀 promptConfigs、删该卡声明的 params 键、
  *  meta.importedCharacters 除名。 */
 export function removeCharacterFromPreset(
-  presetRoot: string,
+  moduleRoot: string,
   templateName: string,
   cardId: string,
 ): { ok: true; count: number } | { ok: false; message: string } {
   if (!validCardId(cardId)) return { ok: false, message: `非法角色卡 id：${cardId}` }
   const prefixes = importPrefixes(cardId)
   try {
-    const spec = loadImportSource(presetRoot, cardId)
+    const spec = loadImportSource(moduleRoot, cardId)
     let removed = 0
-    withPresetDoc(join(presetRoot, templateName), (doc) => {
+    withPresetDoc(join(moduleRoot, templateName), (doc) => {
       const current = doc.toJS() as { promptConfigs?: unknown[]; meta?: { importedCharacters?: unknown[] } }
       const kept = (Array.isArray(current.promptConfigs) ? current.promptConfigs as Array<Record<string, unknown>> : []).filter((config) => {
         // 两种前缀都要撤：老条目是 `chara-`，新写入是 `module-`；只认一种会留下孤儿条目。
@@ -657,7 +657,7 @@ export function removeCharacterFromPreset(
       })
       doc.setIn(['promptConfigs'], kept)
       if (doc.hasIn(['meta', CHARACTER_MEMORIES_KEY, cardId])) doc.deleteIn(['meta', CHARACTER_MEMORIES_KEY, cardId])
-      // 删除该卡声明的 params 键（若曾覆盖预设原值无法恢复——文档说明）。
+      // 删除该卡声明的 params 键（若曾覆盖模块原值无法恢复——文档说明）。
       // 现值判断：仅当当前值仍等于卡声明值才删——用户手改过或他卡同键覆盖过的值不误删。
       for (const [key, value] of Object.entries(spec === undefined ? {} : readPresetLayerSettings(spec))) {
         const path = engineParamPath(key)
@@ -667,11 +667,11 @@ export function removeCharacterFromPreset(
       const remainingCards = list.map(String).filter((entry) => entry !== cardId)
       doc.setIn(['meta', 'importedCharacters'], remainingCards)
       // 检查所有已知的卡引入模块：首张卡先移除时，其来源仍须保留到最后消费者移除。
-      // 没有任何来源记录的老卡或预设自带模块不回退。
+      // 没有任何来源记录的老卡或模块自带内容不回退。
       const records = recordedCharacterModules(current.meta)
       const recorded = Object.values(records).flat()
       if (recorded.length > 0) {
-        const others = modulesClaimedByOtherCards(presetRoot, remainingCards, current.meta, cardId)
+        const others = modulesClaimedByOtherCards(moduleRoot, remainingCards, current.meta, cardId)
         const after = doc.toJS() as { params?: unknown; customTools?: unknown }
         const context: CharacterModuleContext = {
           configs: kept.filter(isRecord),

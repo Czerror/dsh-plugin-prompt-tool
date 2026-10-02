@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-/** 从共享参数目录、九层契约和真实模板重建根 preset.yml；YAML 统一使用 Document API。 */
+/** 从共享参数目录、九层契约和真实模板重建根 module.yml；YAML 统一使用 Document API。 */
 import { readFileSync, readdirSync, writeFileSync, renameSync, rmSync, openSync, closeSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { Document, parseDocument } from 'yaml'
@@ -11,7 +11,7 @@ import { LAYER_CONTRACTS, LAYER_FIELD_POLICIES, LAYER_LABELS, LAYER_ORDER, creat
 const root = new URL('../', import.meta.url)
 const output = new URL('module.yml', root)
 const doc = new Document({
-  id: 'my-preset', name: '我的预设', description: '九层配置与全部共享参数参考；所有示例规则默认关闭。',
+  id: 'my-module', name: '我的模块', description: '九层配置与全部共享参数参考；所有示例规则默认关闭。',
   version: '1.0.0', engineCompat: '>=0.7.2', modules: ['prompt-config-engine'], layerSettings: {},
   variables: {}, customTools: [], promptConfigs: [],
 })
@@ -28,7 +28,7 @@ doc.get('modules', true).commentBefore = ` 仅启用提示词引擎。其他能�
  官方与本地可用模块：${['engine/compositions/library/', 'engine/compositions/source/local/'].flatMap(dir => readdirSync(new URL(dir, root)).filter(name => name.endsWith('.yml')).map(name => name.slice(0, -4))).join(', ')}
  人设使用顶层 persona；不存在 persona、code-presentation、cot-drip 等已撤销模块别名。`
 doc.get('layerSettings', true).commentBefore = ' 唯一共享参数磁盘位置。按下方参考取消所需注释，不要复制旧 params/model/subagentModel 段。'
-doc.get('variables', true).commentBefore = ' 预设内容变量；与共享参数、每条规则的 variables 都是独立命名空间。空字符串是合法占位值。'
+doc.get('variables', true).commentBefore = ' 模块内容变量；与共享参数、每条规则的 variables 都是独立命名空间。空字符串是合法占位值。'
 doc.get('customTools', true).commentBefore = ' 自定义模型工具列表；结构示例见 templates/tools。工具权限和执行器通过既有专用编辑器配置。'
 const specs = readdirSync(new URL('templates/', root)).filter(name => name.endsWith('.yml')).sort().map(file => {
   const template = parseDocument(readFileSync(new URL(`templates/${file}`, root), 'utf8'))
@@ -58,7 +58,7 @@ doc.get('promptConfigs', true).commentBefore = ` 每条都是真实规则示例�
  id 必填且唯一；name 可选；configKind: ordered | anchor；order 只在同一入口比较。
  group + exclusive 控制互斥；text 与 texts 为正文来源；策略专属 params 只属于本条。
  pre-step 可声明 position/dedupe/promotion/audience/modelScope/mergeMode/role(user)/sourceKind/form/summary/identity。
- identity 只允许 {field: plugin, value: 唯一值}；templateFile 可选，须在预设目录内，内嵌正文优先。
+ identity 只允许 {field: plugin, value: 唯一值}；templateFile 可选，须在模块目录内，内嵌正文优先。
  match: {keys:[关键字], secondaryKeys:[], logic:any|all|not|notAny, caseSensitive:false, wholeWords:false, useRegex:false}。
  useRegex 缺省自动识别 /pattern/flags，true 强制正则，false 强制字面；subject 必须是本层支持的对象。
  工具参数不可改写；toolResult 条件只作用于后置阶段。结束层 inject-main 不改写子代理结果、不唤醒空闲主会话。`
@@ -99,4 +99,4 @@ if (process.argv.includes('--check')) {
   }
   finally { rmSync(temporary, { force: true }) }
 }
-console.log(`preset.yml: ${ENGINE_PARAM_KEYS.length} 个共享参数，${LAYER_ORDER.length} 层，${specs.length} 条默认关闭的规则示例`)
+console.log(`module.yml: ${ENGINE_PARAM_KEYS.length} 个共享参数，${LAYER_ORDER.length} 层，${specs.length} 条默认关闭的规则示例`)

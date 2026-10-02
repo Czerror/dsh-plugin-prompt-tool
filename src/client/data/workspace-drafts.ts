@@ -78,16 +78,16 @@ export function createWorkspaceDrafts(): WorkspaceDrafts {
   return { skills: new Map(), triggers: new Map(), tools: new Map(), persona: new Map(), policies: new Map(), fields: new Map(), expanded: new Map() }
 }
 
-/** 切换预设前阻止无声丢弃局部草稿；用户回对应页面处理，不替其隐式落盘。 */
-export function hasWorkspaceDrafts(drafts: WorkspaceDrafts, presetId: string): boolean {
-  const triggers = drafts.triggers.get(presetId)
-  const tools = drafts.tools.get(presetId)
-  const persona = drafts.persona.get(presetId)
-  const policy = drafts.policies.get(presetId)
+/** 切换模块前阻止无声丢弃局部草稿；用户回对应页面处理，不替其隐式落盘。 */
+export function hasWorkspaceDrafts(drafts: WorkspaceDrafts, moduleId: string): boolean {
+  const triggers = drafts.triggers.get(moduleId)
+  const tools = drafts.tools.get(moduleId)
+  const persona = drafts.persona.get(moduleId)
+  const policy = drafts.policies.get(moduleId)
   return (triggers !== undefined && (triggers.busy === 'save' || triggerDraftDirty(triggers)))
     || (tools !== undefined && (tools.saving || JSON.stringify(tools.tools) !== JSON.stringify(tools.saved)
     || [...tools.fields.values()].some((field) => field.text !== field.source || field.error.length > 0)))
     || (persona !== undefined && (persona.saving || JSON.stringify(persona.value) !== JSON.stringify(persona.saved)))
     || (policy !== undefined && (policy.saving || JSON.stringify(policy.draft) !== JSON.stringify(policy.saved)))
-    || [...drafts.fields].some(([key, field]) => key.startsWith(`${presetId}:`) && (field.text !== field.source || field.error.length > 0))
+    || [...drafts.fields].some(([key, field]) => key.startsWith(`${moduleId}:`) && (field.text !== field.source || field.error.length > 0))
 }

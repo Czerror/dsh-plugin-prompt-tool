@@ -11,7 +11,7 @@
  * 用法（**顺序要紧**：隔离 HOME 必须在动态 import 插件入口之前）：
  *
  *     import { isolatedHome, fakeReq, fakeRes, readBridge } from '../fixtures/host-harness.mjs'
- *     const { home, presetRoot } = isolatedHome('pt-xxx-')
+ *     const { home, moduleRoot } = isolatedHome('pt-xxx-')
  *     const { registerSettingsBridge } = await import('../../lib/index.mjs')
  *
  * 为什么不在这里包 `registerSettingsBridge`：现有测试对它的实参形态并不统一
@@ -35,8 +35,8 @@ export function isolatedHome(prefix) {
     else process.env.DSH_HOME = previous
     rmSync(home, { recursive: true, force: true })
   })
-  // 与 paths.ts#DEFAULT_PRESET_DIR 同源：预设根是存储根下的 `modules/`（不是存储根本身）。
-  return { home, presetRoot: join(home, '.prompt-tool', 'modules'), skillsRoot: join(home, 'skills') }
+  // 与 paths.ts#MODULES_DIR 同源：模块根是存储根下的 `modules/`（不是存储根本身）。
+  return { home, moduleRoot: join(home, '.prompt-tool', 'modules'), skillsRoot: join(home, 'skills') }
 }
 
 /** 临时目录：登记 after() 清理，返回绝对路径（不触碰 DSH_HOME）。 */

@@ -1,7 +1,7 @@
 import type { Context } from '@deepseek-ai/cordis'
 import type { ToolExecution } from '@deepseek-ai/dsh-tools'
 import type {} from '@deepseek-ai/dsh-agent-preset-registry'
-import { assertPresetDirectory } from './preset-install.ts'
+import { assertModuleDirectory } from './preset-install.ts'
 
 export interface PresetToolTarget {
   id: string
@@ -21,7 +21,7 @@ export function resolvePresetToolTarget(
   const registry = ctx.get('agentPresets')
   const id = exec.agent === undefined ? undefined : registry?.composedPreset(exec.agent.ctx)
   if (id === undefined || !owns(id)) throw new Error('会话预设不可写：未绑定本插件管理的用户预设')
-  return { id, root, dir: assertPresetDirectory(root, id) }
+  return { id, root, dir: assertModuleDirectory(root, id) }
 }
 
 /** 定义已经保存时，不把注册失败伪装成整个写入未发生。 */

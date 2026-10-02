@@ -1,6 +1,6 @@
 /** 角色管理页：角色卡库（PNG / JSON 素材 + 转换参数独立存储）。
- *  库中角色卡不直接生成预设——点击「导入到当前预设」把角色卡参数
- *  （角色设定 / 系统提示 / 开场白 / 提示词库 / 采样参数）合并进当前激活预设，
+ *  库中角色卡不直接生成模块——点击「导入到当前模块」把角色卡参数
+ *  （角色设定 / 系统提示 / 开场白 / 提示词库 / 采样参数）合并进当前激活模块，
  *  已导入的角色卡显示状态并可一键移除。 */
 import { memo, useEffect, useRef, useState, type ReactNode } from 'react'
 import { IconFolderOpenOutlineRegular, IconTrashOutlineRegular } from '../../ui/icons.tsx'
@@ -48,7 +48,7 @@ export const CharactersPage = memo(function CharactersPage(props: { store: Promp
   }, [])
   useEffect(() => { if (!loading) props.onReady?.() }, [loading, props.onReady])
 
-  /** 角色卡参数导入当前预设（合并 promptConfigs + params，重建后生效）。 */
+  /** 角色卡参数导入当前模块（合并 promptConfigs + params，重建后生效）。 */
   const applyCard = async (id: string): Promise<void> => {
     setBusy(id)
     try {
@@ -65,7 +65,7 @@ export const CharactersPage = memo(function CharactersPage(props: { store: Promp
     }
   }
 
-  /** 从当前预设移除该角色卡参数。 */
+  /** 从当前模块移除该角色卡参数。 */
   const removeCard = async (id: string): Promise<void> => {
     setBusy(id)
     try {

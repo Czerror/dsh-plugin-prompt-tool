@@ -58,7 +58,7 @@ export interface InstructionsSnapshot {
 
 /**
  * 指令负责人事实：本会话实际装配里是否仍挂着官方指令加载行。
- * `true` 表示官方负责注入；`false` 表示预设未装配官方来源；`null` 表示尚未观察到。
+ * `true` 表示官方负责注入；`false` 表示模块未装配官方来源；`null` 表示尚未观察到。
  */
 export interface InstructionsOwnerView {
   officialInstructions: boolean | null
@@ -71,7 +71,7 @@ export interface InstructionFileWriteResult {
 }
 
 /**
- * 指令文件卡策略（独立于预设与 settings 的本插件自有状态）。
+ * 指令文件卡策略（独立于模块与 settings 的本插件自有状态）。
  *
  * 只承载逐文件开关与展示名；正文、读取版本、会话 ID 和路径不进入策略。
  * 默认放行官方注入，关闭只过滤后续消息，不撤回已持久历史。

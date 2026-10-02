@@ -2,7 +2,7 @@
  * 会话变量模型工具（session_var）：ST getvar/setvar 运行时语义。
  *   list                 → 当前会话全部变量
  *   get <key>            → 读取单个变量
- *   set <key> <value>    → 设置（模板 {{key}} 注入时替换；会话覆盖预设默认）
+ *   set <key> <value>    → 设置（模板 {{key}} 注入时替换；会话覆盖模块默认）
  *   clear <key> | 全部    → 清除
  * 变量挂在 session 对象（SESSION_VARS_KEY）上——与 .engine 的 executor 共享同一
  * 会话数据（模块实例不同但键字符串一致）；对应 ST 正则/STscript 更新状态变量的语义。
@@ -12,7 +12,7 @@ import { defineTool } from '@deepseek-ai/dsh-tools'
 
 const text = (value: string): Array<{ type: 'text'; text: string }> => [{ type: 'text', text: value }]
 
-/** 注册会话变量模型工具；返回 disposer，随 session-var-tools 预设模块生命周期清理。 */
+/** 注册会话变量模型工具；返回 disposer，随 session-var-tools 模块生命周期清理。 */
 export function registerSessionVarTools(ctx: Context): () => void {
   const fiber = ctx.inject(['tools'], (toolsCtx) => {
     const disposers: Array<() => void> = []
@@ -23,7 +23,7 @@ export function registerSessionVarTools(ctx: Context): () => void {
       // 占位符示例一律用单花括号 {变量名} 示意，真实语法为双花括号包裹变量名。
       description: '会话变量管理（SillyTavern setvar/getvar 语义）：list 查看当前会话全部变量、'
           + 'get 读取、set 设置、clear 清除。提示词/世界书文本中的模板占位符（形如 {变量名}，'
-          + '即双花括号包裹变量名）会在注入时替换为会话变量值（会话级覆盖预设默认值）；'
+          + '即双花括号包裹变量名）会在注入时替换为会话变量值（会话级覆盖模块默认值）；'
           + '适合维护角色状态（如 {心情}、{接受度} 等）。'
           + '注意：会话变量仅存于当前会话（结束即失）；跨会话长期记忆请用 world_book 工具的 note 参数写入角色卡记忆（持久，跟随角色卡）。',
       parameters: {

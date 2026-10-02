@@ -3,7 +3,7 @@ import type { PromptConfigDraft } from '../prompt-tool-types.ts'
 import type { BridgeResult, BridgeSettingsView } from './bridge-transport.ts'
 import { EMPTY_FIELDS, type Fields, type SkillCatalogEntry } from './prompt-tool-fields.ts'
 import { readParamOverridesPatch } from './param-overrides.ts'
-import { DEFAULT_PRESET_ID } from '../../shared/preset-ids.ts'
+import { DEFAULT_MODULE_ID } from '../../shared/preset-ids.ts'
 import { SKILL_SOURCES } from '../../shared/skills.ts'
 import type { BridgeValueMap } from '../../shared/bridge-contract.ts'
 import { readConfigFieldSources, stripConfigFieldSources } from '../../shared/managed-config-fields.ts'
@@ -119,7 +119,7 @@ export function fieldsFromView(res: BridgeResult<BridgeSettingsView>): Fields {
     presetOrder: readNumber(value, 'presetOrder', readNumber(base, 'presetOrder', 5)),
     fallbackText: readString(value, 'fallbackText') ?? readString(base, 'fallbackText') ?? '',
     writePreset: readBoolean(value, 'writePreset', readBoolean(base, 'writePreset', true)),
-    presetTemplate: readString(value, 'presetTemplate') ?? readString(base, 'presetTemplate') ?? DEFAULT_PRESET_ID,
+    presetTemplate: readString(value, 'presetTemplate') ?? readString(base, 'presetTemplate') ?? DEFAULT_MODULE_ID,
     promptConfigs: value.promptConfigs !== undefined
       ? readPromptConfigs(value, 'promptConfigs')
       : readPromptConfigs(base, 'promptConfigs'),
@@ -150,7 +150,7 @@ export function bridgeViewFromBoot(boot: BridgeResult<BridgeSettingsView>): Brid
   }
 }
 
-/** 只从预设投影行为参数；不把 settings 重新引入预设优先级链。 */
+/** 只从模块投影行为参数；不把 settings 重新引入模块优先级链。 */
 export function mergePresetParams(fields: Fields, params: Record<string, unknown> | undefined): Fields {
   return params === undefined ? fields : { ...fields, ...readParamOverridesPatch(params) }
 }

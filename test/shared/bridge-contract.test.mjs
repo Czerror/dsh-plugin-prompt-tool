@@ -321,7 +321,7 @@ test('契约：/tool-surface 支持官方 preset scope 且只读有效 schema', 
   assert.equal(JSON.parse(invalid.body).code, 'tool-surface-invalid')
 })
 
-test('契约：/persona 未配置 presetDir 时稳定拒绝', async () => {
+test('契约：/persona 未配置 moduleDir 时稳定拒绝', async () => {
   const handlers = register()
   const handler = handlers.get(SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.persona)
   assert.ok(handler, '/persona 端点未注册')

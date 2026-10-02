@@ -27,9 +27,9 @@ export interface SessionPresetFollowSnapshot {
   sessionId: string | undefined
   /** 工作台本次数据所属的会话 id（最近一次成功 load 的会话）。 */
   loadedSessionId: string | undefined
-  /** 工作台当前预设。 */
+  /** 工作台当前模块。 */
   currentPreset: string
-  /** 已成功应用快照的预设 id；与 currentPreset 不同表示数据尚未加载完成。 */
+  /** 已成功应用快照的模块 id；与 currentPreset 不同表示数据尚未加载完成。 */
   loadedPreset: string | undefined
   /** 该预设是否可跟随（在插件管理目录中且可渲染）。 */
   followable(presetId: string): boolean

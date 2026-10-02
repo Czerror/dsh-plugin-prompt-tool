@@ -244,7 +244,7 @@ function ParamInput(props: { label: string; hint?: string; className?: string; v
   )
 }
 
-/** 官方 LlmCallConfig 的六个可写字段；实例 patch 与预设共享模型参数保持不同所有者。 */
+/** 官方 LlmCallConfig 的六个可写字段；实例 patch 与模块共享模型参数保持不同所有者。 */
 function RequestPatchFields(props: { t: PromptToolTranslate; value: Record<string, unknown>; onChange: (value: Record<string, unknown>) => void; fieldDrafts?: Map<string, FieldDraft>; draftScope?: string }): ReactNode {
   const { t, value } = props
   const set = (key: string, next: unknown): void => {
@@ -485,7 +485,7 @@ export function StrategyParamsFields(props: { t: PromptToolTranslate; strategy: 
       </>
     )
   }
-  // 无策略参数的配置（static 等）：预设级内容变量已展开进 variables（官方插值
+  // 无策略参数的配置（static 等）：模块级内容变量已展开进 variables（官方插值
   // 机制，由上方 VariablesEditor 结构化编辑），params 为空时不再渲染 JSON 框。
   if (Object.keys(value).length === 0) {
     return (

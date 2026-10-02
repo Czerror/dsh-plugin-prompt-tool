@@ -44,7 +44,7 @@ export function canonicalPresetRoot(root: string, allowMissing = false): string 
 }
 
 /** 根与目标先解析真实路径，拒绝链接目录及定义身份不一致。 */
-export function assertPresetDirectory(root: string, id: string, allowMissing = false): string {
+export function assertModuleDirectory(root: string, id: string, allowMissing = false): string {
   assertPresetId(id)
   const canonicalRoot = canonicalPresetRoot(root, allowMissing)
   const target = join(canonicalRoot, id)

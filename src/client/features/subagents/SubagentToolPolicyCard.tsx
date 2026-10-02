@@ -138,7 +138,7 @@ export function SubagentToolPolicyCard(props: {
         editor.pending = undefined
         if (deepEqual(submitted, editor.saved)) continue
         const result = await bridgeCall('subagentToolPolicy', { policy: submitted, expectedPresetId: props.presetId })
-        // 已发请求只确认自身快照；卸载取消未发队列，同预设重挂仍共享串行状态。
+        // 已发请求只确认自身快照；卸载取消未发队列，同模块重挂仍共享串行状态。
         if (result.ok) {
           editor.saved = submitted
           if (editor.draft === submitted) editor.report?.('ok', t('policy.notice.autosaved'))

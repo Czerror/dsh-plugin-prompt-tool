@@ -14,7 +14,7 @@ import { existsSync, readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { isMap, parseDocument } from 'yaml'
 import { atomicWriteTextFile } from './text-file.ts'
-import { presetDirExists } from './preset-registry.ts'
+import { moduleDirExists } from './preset-registry.ts'
 
 /** 启用表 schema：3 = `config.yml` 只有 `schemaVersion` 与 `enabled`。 */
 export const ENABLE_TABLE_SCHEMA = 3
@@ -26,10 +26,10 @@ export const STORAGE_CONFIG_FILE = 'config.yml'
  *
  * 以**模块根**为入口、上溯一级取存储根：模块级常量在 import 时按 `DSH_HOME` 冻结，
  * 而测试会在动态 import 之后才设 `DSH_HOME`，所以这里必须按传入的根现算
- * （与 `charactersDir(presetRoot)` 同一条约定）。
+ * （与 `charactersDir(moduleRoot)` 同一条约定）。
  */
-export function enableTablePath(presetRoot: string): string {
-  return join(dirname(presetRoot), STORAGE_CONFIG_FILE)
+export function enableTablePath(moduleRoot: string): string {
+  return join(dirname(moduleRoot), STORAGE_CONFIG_FILE)
 }
 
 function readDocument(file: string): ReturnType<typeof parseDocument> | undefined {
@@ -46,8 +46,8 @@ function readDocument(file: string): ReturnType<typeof parseDocument> | undefine
  * 空表意味着「没有模块参与装配」，这是明确状态，不是错误：旧版本的索引文件里
  * `enabled` 还没有启用语义，当成启用会让历史键意外参与装配。
  */
-export function enabledModuleIds(presetRoot: string): string[] {
-  const doc = readDocument(enableTablePath(presetRoot))
+export function enabledModuleIds(moduleRoot: string): string[] {
+  const doc = readDocument(enableTablePath(moduleRoot))
   if (doc === undefined) return []
   if (Number(doc.get('schemaVersion')) < ENABLE_TABLE_SCHEMA) return []
   const list: unknown = doc.toJS()?.enabled
@@ -56,8 +56,8 @@ export function enabledModuleIds(presetRoot: string): string[] {
 }
 
 /** 写启用表：保留既有注释与未知字段，只改 `schemaVersion` 与 `enabled`。 */
-function writeEnabled(presetRoot: string, ids: readonly string[]): void {
-  const file = enableTablePath(presetRoot)
+function writeEnabled(moduleRoot: string, ids: readonly string[]): void {
+  const file = enableTablePath(moduleRoot)
   const doc = readDocument(file)
   if (doc === undefined) {
     const lines = [
@@ -83,21 +83,21 @@ function writeEnabled(presetRoot: string, ids: readonly string[]): void {
  * 模块 id 就写那个模块，不带则落到启用表第一项（= 装配顺序首项）。目标不存在时返回
  * 空串，由调用方按「无目标」拒绝，不静默改写到别的模块。
  */
-export function resolveEditDir(presetRoot: string, moduleId?: string): string {
-  const target = moduleId !== undefined && moduleId.trim().length > 0 ? moduleId.trim() : enabledModuleIds(presetRoot)[0]
+export function resolveEditDir(moduleRoot: string, moduleId?: string): string {
+  const target = moduleId !== undefined && moduleId.trim().length > 0 ? moduleId.trim() : enabledModuleIds(moduleRoot)[0]
   if (target === undefined) return ''
-  return presetDirExists(presetRoot, target) ? join(presetRoot, target) : ''
+  return moduleDirExists(moduleRoot, target) ? join(moduleRoot, target) : ''
 }
 
 /**
  * 启用或停用一个模块。幂等：已在表里再启用不产生第二条，不在表里再停用不报错。
  * 顺序即装配顺序，新模块追加在末尾（同键参数的覆盖顺序因此可预测）。
  */
-export function setModuleEnabled(presetRoot: string, id: string, enabled: boolean): void {
-  const current = enabledModuleIds(presetRoot)
+export function setModuleEnabled(moduleRoot: string, id: string, enabled: boolean): void {
+  const current = enabledModuleIds(moduleRoot)
   const next = enabled
     ? (current.includes(id) ? current : [...current, id])
     : current.filter((existing) => existing !== id)
   if (next.length === current.length && next.every((value, index) => value === current[index])) return
-  writeEnabled(presetRoot, next)
+  writeEnabled(moduleRoot, next)
 }

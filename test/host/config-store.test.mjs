@@ -11,13 +11,13 @@ import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { isolatedHome } from '../fixtures/host-harness.mjs'
 
-const { presetRoot } = isolatedHome('pt-enable-')
+const { moduleRoot } = isolatedHome('pt-enable-')
 const { enabledModuleIds, setModuleEnabled, enableTablePath, ENABLE_TABLE_SCHEMA } =
   await import('../../src/host/config-store.ts')
 
 /** 每个用例独立的存储根（上溯一级就是 home，故模块根随意命名但互不共用）。 */
 function freshRoot(name) {
-  const root = join(presetRoot, '..', `enable-${name}`, 'modules')
+  const root = join(moduleRoot, '..', `enable-${name}`, 'modules')
   mkdirSync(root, { recursive: true })
   return root
 }
