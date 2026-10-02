@@ -18,6 +18,7 @@ import { ImportDialog } from '../../ui/ImportDialog.tsx'
 import { PresetExportDialog } from './PresetExportDialog.tsx'
 import { useImportPreviewFlow } from '../../data/use-import-preview-flow.ts'
 import { StatusBadge } from '../../ui/StatusBadge.tsx'
+import { Switch } from '../../ui/Switch.tsx'
 import sharedCss from '../../ui/controls.module.css'
 import featureCss from './presets.module.css'
 
@@ -175,8 +176,15 @@ export const PresetSwitcher = memo(function PresetSwitcher(props: { store: Promp
           <HintTooltip label={blocked
             ? preset.broken ?? t('presetSwitcher.card.blocked.hint')
             : active ? t('presetSwitcher.card.active.hint') : t('presetSwitcher.card.switch.hint', { name: preset.name })}>
-            <button type="button" className={styles.pillButton} disabled={blocked || active}
-              onClick={() => store.setPresetTemplate(preset.id)}>{t('presetSwitcher.activate')}</button>
+            {/* 「启用」= 滑动开关：开态即当前模块。关没有独立语义（预设身份只有一个值），
+                故当前模块的开关保持开态且不可点关闭，切换靠点亮别的卡。 */}
+            <Switch className={styles.presetActivate}
+              checked={active}
+              disabled={blocked || active}
+              label={blocked
+                ? preset.broken ?? t('presetSwitcher.card.blocked.hint')
+                : active ? t('presetSwitcher.card.active.hint') : t('presetSwitcher.card.switch.hint', { name: preset.name })}
+              onChange={() => store.setPresetTemplate(preset.id)} />
           </HintTooltip>
           <button type="button" className={styles.pillButton} onClick={() => setExportTarget({ id: preset.id, name: preset.name })}>{t('presetSwitcher.export')}…</button>
           <HintTooltip label={t('presetSwitcher.duplicate.label')}>

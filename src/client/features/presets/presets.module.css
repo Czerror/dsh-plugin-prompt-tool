@@ -1,6 +1,9 @@
 /* presets feature。 */
 
 /* 模块卡体在 controls.module.css（与角色卡共用）。 */
+
+/* 卡脚上的激活开关：与右侧的导出/复制/打开/删除拉开，避免误点。 */
+.presetActivate { margin-right: auto; }
 .presetBlocked {
   flex: none;
   margin-left: auto;
