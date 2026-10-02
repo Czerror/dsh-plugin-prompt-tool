@@ -4,8 +4,10 @@
 .drawerLayer {
   --pt-drawer-width: min(920px, 100vw);
   position: fixed;
-  inset: 0;
+  /* 整层避开宿主标题栏；全屏与 Web 下官方几何回退为 0。 */
+  inset: var(--dsh-frame-chrome-top, 0px) 0 0;
   max-height: 100dvh;
+  overflow: clip;
   z-index: 1000;
   visibility: hidden;
   pointer-events: none;
@@ -33,11 +35,9 @@
   width: var(--pt-drawer-width);
   box-sizing: border-box;
   border: 0;
-  /* 桌面版：让开窗口顶部原生 chrome（Windows caption 行另有 40px 高度；Web 版两个
-     变量都未定义，回退 0 后与原来逐像素一致）。顶部让开 caption 行可避免抽屉
-     masthead 的按钮落在拖拽区，行内让开则避开 macOS 交通灯。 */
+  /* 标题栏已由 drawerLayer 整层避让；这里只保留安全区与 macOS 交通灯行内避让。 */
   padding:
-    calc(env(safe-area-inset-top) + var(--dsh-windows-titlebar-height, 0px))
+    env(safe-area-inset-top)
     env(safe-area-inset-right)
     env(safe-area-inset-bottom)
     calc(env(safe-area-inset-left) + var(--dsh-frame-leading-clearance, 0px));

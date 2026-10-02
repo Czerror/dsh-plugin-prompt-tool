@@ -34,10 +34,8 @@
   align-items: center;
   flex-wrap: wrap;
   gap: 8px 12px;
-  /* 桌面版的 caption 让位只做一次，由抽屉负责（Workbench .drawerPanel 的 padding-top）。
-     这里再叠加 --dsh-windows-titlebar-height 会把标题推到 caption 下沿的两倍处（约 90px），
-     比官方 AppFrame 的内容起点低一整条 caption 行。总高 40px 与官方会话头对齐：
-     标题与会话标题同线，页签行与官方「对话/轨迹」同线。 */
+  /* 标题栏让位只做一次，由 Workbench .drawerLayer 的 inset 负责。
+     这里不重复叠加标题栏高度；总高 40px 与官方会话头对齐。 */
   padding: 6px 16px;
   border-bottom: 0.5px solid var(--dsw-alias-border-l2);
   background: var(--dsw-alias-bg-base);
