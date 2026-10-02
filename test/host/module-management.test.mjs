@@ -171,3 +171,35 @@ test('并入的源模块优先：同名模块与角色卡并存时取模块定�
   assert.doesNotMatch(written, /FROM-CARD/, '不得取同名的角色卡定义')
   assert.match(written, new RegExp(`module-${id}-intro`), '条目 id 用统一前缀')
 })
+
+test('普通模块之间的并入是往返且幂等的：重复并入不翻倍，移除后自有内容原样保留', async () => {
+  const characters = await import('../../src/host/characters.ts')
+  const src = 'roundtrip-src'
+  mkdirSync(join(presetRoot, src), { recursive: true })
+  writeFileSync(join(presetRoot, src, 'module.yml'), `id: ${src}\nname: 源\nmodules: []\npromptConfigs:\n  - id: a\n    strategy: static\n    layer: system-section\n    text: A\n  - id: b\n    strategy: static\n    layer: system-section\n    text: B\n`, 'utf8')
+  const target = 'roundtrip-target'
+  mkdirSync(join(presetRoot, target), { recursive: true })
+  const targetFile = join(presetRoot, target, 'module.yml')
+  writeFileSync(targetFile, 'id: roundtrip-target\nname: 目标\nmodules: []\npromptConfigs:\n  - id: own\n    strategy: static\n    layer: system-section\n    text: OWN\n', 'utf8')
+
+  // 幂等判据用「条目 id 出现的次数」，不做字节级对齐：并入会按需补 variables 等字段，
+  // 字节相等不是这层语义的契约；PLAN 要的是不翻倍、撤得干净、自有内容不动。
+  const count = (text, token) => text.split(token).length - 1
+
+  assert.equal(characters.applyCharacterToPreset(presetRoot, target, src).ok, true)
+  const afterApply = readFileSync(targetFile, 'utf8')
+  assert.equal(count(afterApply, `module-${src}-a`), 1)
+  assert.equal(count(afterApply, `module-${src}-b`), 1)
+
+  assert.equal(characters.applyCharacterToPreset(presetRoot, target, src).ok, true, '重复并入应成功')
+  const afterTwice = readFileSync(targetFile, 'utf8')
+  assert.equal(count(afterTwice, `module-${src}-a`), 1, '重复并入不得产生重复条目')
+  assert.equal(count(afterTwice, `module-${src}-b`), 1)
+
+  assert.equal(characters.removeCharacterFromPreset(presetRoot, target, src).ok, true)
+  const afterRemove = readFileSync(targetFile, 'utf8')
+  assert.equal(count(afterRemove, `module-${src}-a`), 0, '移除必须按前缀撤销干净')
+  assert.equal(count(afterRemove, `module-${src}-b`), 0)
+  assert.match(afterRemove, /id: own/, '目标模块自带内容必须保留')
+  assert.match(afterRemove, /text: OWN/, '自带内容不得被移除波及')
+})
