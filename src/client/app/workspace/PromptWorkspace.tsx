@@ -55,7 +55,8 @@ export function PromptWorkspace(props: PromptWorkspaceProps): ReactNode {
     : page === 'subagent'
       ? <SubagentPage key={presetId} store={store} t={t} browse={configPageBrowse(browse, scrollKey)} onNavigate={navigate} />
       : page === 'tools'
-        ? <ToolsPreviewPage api={props.api} presetId={presetId} t={t} browse={browse.tools} onNavigate={navigate} onReady={markReady} />
+        ? <ToolsPreviewPage api={props.api} presetId={presetId} t={t} browse={browse.tools} onNavigate={navigate} onReady={markReady}
+            managedIds={(store.meta.presets ?? []).map((preset) => preset.id)} />
         : page === 'skills'
           ? <SkillsPage store={store} api={props.api} t={t} browse={browse.skills} />
           : <ModulesPage store={store} t={t} onReady={markReady} />

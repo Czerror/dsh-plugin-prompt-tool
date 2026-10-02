@@ -4,10 +4,11 @@ import type { PromptToolHostApi } from '../../data/host-api.ts'
 import type { PromptToolTranslate } from '../../locales.ts'
 import { MenuSelect } from '../../ui/MenuSelect.tsx'
 import { ToolSurfaceView } from './ToolSurfaceView.tsx'
+import { officialPresetSources } from './preset-sources.ts'
 import css from './tools.module.css'
 
 /** 参考官方 plugin-inventory 的搜索、分组与详情卡；数据仍是模型工具面。 */
-export function ToolsPreviewPage({ api, presetId, t, browse, onNavigate, onReady }: { api: PromptToolHostApi; presetId?: string; t: PromptToolTranslate; browse?: { query: string; selectedId: string; expanded: Record<string, boolean> }; onNavigate?: (page: 'modules') => void; onReady?: () => void }): ReactNode {
+export function ToolsPreviewPage({ api, presetId, t, browse, onNavigate, onReady, managedIds }: { api: PromptToolHostApi; presetId?: string; t: PromptToolTranslate; browse?: { query: string; selectedId: string; expanded: Record<string, boolean> }; onNavigate?: (page: 'modules') => void; onReady?: () => void; managedIds?: readonly string[] }): ReactNode {
   const [query, setQuery] = useState(browse?.query ?? '')
   const [revision, setRevision] = useState(0)
   const [selectedId, setSelectedId] = useState(browse?.selectedId ?? '')
@@ -31,8 +32,11 @@ export function ToolsPreviewPage({ api, presetId, t, browse, onNavigate, onReady
     setError('')
     void Promise.resolve().then(() => api.listAgentPresets()).then((options) => {
       if (!active) return
-      setPresets(options)
-      const available = options.filter((preset) => preset.broken === undefined)
+      // 本插件的模块不列在这里：它们已被登记成官方预设身份，但**模块的工具面由会话装配
+      // 决定**，已由上方的「当前会话工具」完整体现；混进来会让这一栏名不符实（列出的
+      // 其实是宿主预设的工具面）。规则与回归测试同源，见 preset-sources.ts。
+      const available = officialPresetSources(options, managedIds)
+      setPresets(available)
       setSelectedId((current) => available.some((preset) => preset.id === current)
         ? current : available.some((preset) => preset.id === presetId) ? presetId! : available[0]?.id ?? '')
       setLoading(false)
@@ -42,7 +46,7 @@ export function ToolsPreviewPage({ api, presetId, t, browse, onNavigate, onReady
       setLoading(false)
     })
     return () => { active = false }
-  }, [api.listAgentPresets, presetId, revision, t])
+  }, [api.listAgentPresets, presetId, revision, t, managedIds])
 
   return <section className={css.toolsPreviewPage} aria-label={t('tools.aria')}>
     <label className={css.toolSearch}>
