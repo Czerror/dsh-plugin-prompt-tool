@@ -14,7 +14,7 @@ import { parse as parseYaml, stringify as stringifyYamlValue } from 'yaml'
 // 枚举规则（扩展名 / 排序 / 跳过 variables.yml）与引擎共用同一份实现：两侧看到同一批文件，
 // 否则「host 让人编辑的文件」与「引擎实际加载的文件」会漂移。
 // @ts-expect-error 引擎 ESM 是权威实现，由构建器同源打包，无独立声明文件
-// （与 preset-package / instructions-policy / import-source 的既有做法一致）。
+// （与 module-package / instructions-policy / import-source 的既有做法一致）。
 import { promptConfigFileNames } from '../../engine/schema.mjs'
 
 /**

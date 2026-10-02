@@ -1,5 +1,5 @@
 /**
- * preset-registry — 把插件存储根里的模块登记为官方预设**身份**。
+ * module-registry — 把插件存储根里的模块登记为官方预设**身份**。
  *
  * 这一层只做一件事：让宿主在创建会话时 `agentPresets.mount(agentCtx, id)` 找得到 id。
  * 组合本体不再注册（`plugins: []`）——运行时装配由 `runtime/agent-assembly.ts` 在
@@ -54,7 +54,7 @@ export function createModuleRegistrySync(ctx: Context, root: string): {
     const turn = queue.then(async () => {
       if (closed) return
       const errors: unknown[] = []
-      // 目录被删除才撤销登记；清单会跳过损坏的 preset.yml。
+      // 目录被删除才撤销登记；清单会跳过损坏的 module.yml。
       for (const [id, current] of registrations) {
         if (targets !== undefined && !targets.has(id)) continue
         try {

@@ -248,7 +248,7 @@ export function writePreset(prompt: string, options: WritePresetOptions): string
   assertCompositionArray(composition, spec)
   // 引擎引用重写：组合源的 ./engine/ 与旧预设的 ../.engine/ 一律写成包名说明符
   // dsh-plugin-prompt-tool/engine/<module>.mjs（引擎不再物化）；受管配置字段保持
-  // 「相对历史引擎位置 <模块根>/.engine/」的形态，由 preset-registry 在注册期换算为绝对 file://。
+  // 「相对历史引擎位置 <模块根>/.engine/」的形态，由 module-registry 在注册期换算为绝对 file://。
   const subComposition = rewritePresetEngineReferences(composition, outputId,
     engineModuleFileNames(ENGINE_DIR))
   writeFileSync(join(outDir, 'agent.cordis.yml'), `${RENDER_STAMP}\n${subComposition}`, 'utf8')
