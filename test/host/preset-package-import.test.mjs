@@ -114,6 +114,36 @@ test('importPresetPackage：超过 32MB 上限返回 413 明确错误', async ()
   assert.ok(!existsSync(join(PRESETS, 'big')), '超限包不得写入')
 })
 
+test('准备期被改动即拒写：预览后源内容变化，旧凭据提交不得落盘', async () => {
+  const handler = register().get(`${PREFIX}/import-preset-package`)
+  assert.ok(handler, '/import-preset-package 端点应注册')
+  const target = join(PRESETS, 'demo')
+
+  // 1) 用原始包预览并取得本次提交凭据（sourceDigest + previewRevision）。
+  const previewRes = fakeRes()
+  await handler(fakeReq({ ...presetPackage({}), overwrite: true, preview: true }), previewRes)
+  assert.equal(previewRes.status, 200, previewRes.body)
+  const preview = JSON.parse(previewRes.body).value
+  assert.equal(preview.state, 'ready')
+  assert.ok(typeof preview.previewRevision === 'string' && preview.previewRevision.length > 0)
+
+  // 2) 提交时源已变（多带一个文件），却仍用上一步的凭据 —— 必须被拒。
+  const staleRes = fakeRes()
+  await handler(fakeReq({
+    ...presetPackage({ files: [{ path: 'demo/added-after-preview.txt', content: 'changed\n' }] }),
+    overwrite: true,
+    expectedSourceDigest: preview.sourceDigest,
+    expectedPreviewRevision: preview.previewRevision,
+  }), staleRes)
+
+  assert.notEqual(staleRes.status, 200, `准备期已变仍应拒绝，实际 ${staleRes.body}`)
+  const definition = join(target, 'module.yml')
+  if (existsSync(definition)) {
+    assert.doesNotMatch(readFileSync(definition, 'utf8'), /changed/, '被拒的提交不得改动目标定义')
+  }
+  assert.ok(!existsSync(join(target, 'added-after-preview.txt')), '被拒的提交不得写入新增文件')
+})
+
 test('importPresetPackage：路径穿越条目被明确拒绝，不落盘', async () => {
   for (const files of [
     [{ path: 'demo/../evil.yml', content: 'x' }],
