@@ -436,7 +436,7 @@ export const PROMPTS_ZH = {
 
   // 人设卡（PresetPersonaCard）。
   'persona.name': '人设',
-  'persona.meta.declared': 'preset.yml 顶层 persona · 官方 @deepseek-ai/dsh-persona 行同构',
+  'persona.meta.declared': 'module.yml 顶层 persona · 官方 @deepseek-ai/dsh-persona 行同构',
   'persona.meta.inherited': '未声明：继承宿主部署人设',
   'persona.prefix.label': '前缀 prefix',
   'persona.prefix.aria': '人设前缀',
@@ -872,7 +872,7 @@ export const PROMPTS_EN: Record<keyof typeof PROMPTS_ZH, string> = {
   'templates.layer.subagent-end': 'Subagent end',
 
   'persona.name': 'Persona',
-  'persona.meta.declared': 'Top-level persona in preset.yml · same shape as the official @deepseek-ai/dsh-persona row',
+  'persona.meta.declared': 'Top-level persona in module.yml · same shape as the official @deepseek-ai/dsh-persona row',
   'persona.meta.inherited': 'Not declared: inherits the host deployment persona',
   'persona.prefix.label': 'Prefix',
   'persona.prefix.aria': 'Persona prefix',
