@@ -355,38 +355,7 @@ export function apply(ctx: Context, configIn: Config): void {
     promptConfigs: Array.isArray(initialSpec?.promptConfigs) ? initialSpec.promptConfigs as PromptConfigSpec[] : [],
   }
 
-  // 与官方 agent-preset-registry 的关系是**只读跟随**：本插件不再向宿主写
-  // `selectedDefault`。登记层只登记身份（组合本体为空），把官方默认预设指到本插件的
-  // 模块会让会话挂载一个不含官方工具行的空壳——会话不可用。官方默认预设由用户或
-  // 部署在宿主侧决定；本插件只跟随「官方生效默认值」里那些自己管理的模块。
-  //
-  // 单向跟随也没有回环：写入侧已不存在，因此不需要 revision 比较或双向事件防护。
-  const agentPresetsNs = 'agent-preset-registry' as const
   let hostSettingsService: SettingsService | undefined
-  /** 官方生效默认值（包含未设置 selectedDefault 时的部署回退）。 */
-  let agentPresetsService: Context['agentPresets'] | undefined
-  const managedPresetExists = (id: string): boolean => {
-    try {
-      return listModules().some(preset => preset.id === id)
-    } catch {
-      return false
-    }
-  }
-  /** 跟随官方当前默认预设：不是本插件管理的模块（shipped/第三方）一律不跟。 */
-  const syncTemplateFromHostDefault = (): void => {
-    const s = hostSettingsService
-    if (s === undefined) return
-    // 官方 getter 负责 selectedDefault 与部署 default 的优先级；迟到时由 inject 重试。
-    const template = agentPresetsService?.defaultId
-    if (template === undefined) return
-    if (template === runtime.presetTemplate) return
-    if (!managedPresetExists(template)) return
-    void s.update(NS, { presetTemplate: template })
-      .catch((error: unknown) => {
-        warn(ctx, `prompt-tool: 跟随官方默认预设失败：${error instanceof Error ? error.message : String(error)}`)
-      })
-  }
-
   // 子代理固定模型路由：不替换 ctx.subagents 的 start/startContinuable 方法，
   // 只经 buildModuleConfigsFromParams 把 agentOptions 写进本插件生成的
   // tool-subagent / tool-subagent-fork 行；第三方直派保持官方默认继承语义。
@@ -516,25 +485,14 @@ registerTuiCommand(
   applyConfig()
   ctx.effect(() => ctx.on('loader/volatile-update', applyConfig))
 
-  // 模块不再登记为官方预设：这里只读宿主的当前默认预设，用于跟随模板。
-  ctx.inject(['agentPresets'], (apctx: Context) => {
-    agentPresetsService = apctx.agentPresets
-    apctx.effect(() => () => {
-      if (agentPresetsService === apctx.agentPresets) agentPresetsService = undefined
-    })
-    syncTemplateFromHostDefault()
-  })
   ctx.inject(['settings'], (sctx: Context) => {
     hostSettingsService = sctx.settings
     sctx.effect(() => sctx.settings.configure({ auto: false }, ctx.fiber))
     sctx.effect(() => () => { if (hostSettingsService === sctx.settings) hostSettingsService = undefined })
     sctx.effect(() => sctx.on('settings/document-updated', (ns) => {
-      // 官方默认预设变了就跟随；写入侧已不存在，无需防止回环。
-      if (String(ns) === agentPresetsNs) syncTemplateFromHostDefault()
       if (String(ns) === NS) applyConfig()
     }), 'prompt-tool: follow settings documents')
     settingsBridge.invalidateDescriptor()
-    syncTemplateFromHostDefault()
   })
 }
 

@@ -269,7 +269,7 @@ CSS 构建模块只收集样式数据；`styles.ts` 在入口 `ctx.effect` 中�
 
 settings tab 不复制工作台内容。完整工作台由 PromptWorkspace 创建 store、保存当前页，并在打开时触发一次 load；WorkspaceFrame 负责公共 header、导航、canvas、loading 和 notice。
 
-模块的目录物化、复制、删除和参数由本插件维护；模块**不进入**官方 `agentPresets` 注册表，该服务只用于会话预设切换，本插件**单向跟随**官方当前默认预设，不向宿主写 `selectedDefault`。
+模块的目录物化、复制、删除和参数由本插件维护；模块**不进入**官方 `agentPresets` 注册表，该服务只用于会话预设切换，本插件既不读也不写它的默认值（`selectedDefault` / `defaultId`）。
 
 ### 5.2 页面 ID、顺序与组合
 
