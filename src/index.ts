@@ -35,6 +35,7 @@ import {
 } from './config.ts'
 import type { PromptSettings, RuntimeOptions } from './config.ts'
 import { DEFAULT_PRESET_DIR, MODULE_CONFIGS_DIR } from './host/paths.ts'
+import { enabledModuleIds } from './host/config-store.ts'
 import { DEFAULT_PRESET_ID } from './shared/preset-ids.ts'
 import { createSkillsRuntime } from './host/skills-runtime.ts'
 import { createPresetRegistrySync, presetDirExists } from './host/preset-registry.ts'
@@ -436,7 +437,12 @@ registerTuiCommand(
   ctx.inject(['agents'], (actx: Context) => {
     const assembly = createAgentAssembly(actx, {
       presetRoot: DEFAULT_PRESET_DIR,
-      currentPreset: () => runtime.presetTemplate.length > 0 ? runtime.presetTemplate : DEFAULT_PRESET_ID,
+      // 启用即配装：只认存储根 `config.yml` 的启用表，且只装磁盘上真实存在的模块
+      // （`presetDirExists` 判的就是 `<模块根>/<id>/module.yml`，不走包内回退）。
+      // `writePreset` 关闭时装配为空（与「关闭生成=停止注入」的既有语义一致）。
+      enabledModules: () => runtime.writePreset
+        ? enabledModuleIds(DEFAULT_PRESET_DIR).filter((id) => presetDirExists(DEFAULT_PRESET_DIR, id))
+        : [],
       warn: (message) => warn(ctx, message),
     })
     actx.effect(() => () => assembly.dispose(), 'prompt-tool assembly')

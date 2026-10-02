@@ -268,21 +268,44 @@ test('与官方物化路径同源：writePreset 落盘的切片 = 配装读出�
  * 装配失败**不得冒泡**：`agent/created` 的监听器被 await，抛错会让会话创建整个失败。
  * 这里用最小桩上下文走完挂载路径，断言「只告警、不抛、不留半挂状态」。
  */
-function stubHostContext() {
+function stubHostContext(options = {}) {
   const listeners = new Map()
+  const counts = new Map()
+  const mounts = []
   const warnings = []
   const disposers = []
+  // 宿主能力探针：默认全不可用（与「装配失败降级为告警」那条用例的前提一致）；
+  // 传 `services` 时才视为可用——带切片的模块要求 systemPrompt/tools/llm。
+  const services = new Set(options.services ?? [])
   return {
     warnings,
+    counts,
+    mounts,
+    /** 假 Agent：真实 Agent 的 ctx 是可安装插件的 scope 上下文；这里只记下安装请求。 */
+    makeAgent: (id) => ({
+      id,
+      ctx: {
+        get: (name) => services.has(name) ? {} : undefined,
+        plugin: (definition) => {
+          mounts.push({ id, definition })
+          return Promise.resolve({ dispose: async () => {} })
+        },
+      },
+    }),
     fire: async (name, payload) => {
       const handler = listeners.get(name)
       if (handler === undefined) throw new Error(`no listener for ${name}`)
       return handler(payload)
     },
     ctx: {
-      on: (name, handler) => { listeners.set(name, handler); return () => { listeners.delete(name) } },
+      // 同名监听按事件语义可以注册多份（每个模块各一份贡献），所以除最新处理器外还记次数。
+      on: (name, handler) => {
+        listeners.set(name, handler)
+        counts.set(name, (counts.get(name) ?? 0) + 1)
+        return () => { listeners.delete(name); counts.set(name, (counts.get(name) ?? 1) - 1) }
+      },
       effect: (register) => { const remove = register(); disposers.push(remove); return () => {} },
-      get: () => undefined,
+      get: (name) => services.has(name) ? {} : undefined,
       // 构造期会枚举存量 Agent；由 index.ts 的 ctx.inject(['agents']) 保证真实可用。
       agents: { list: () => [] },
       logger: { warn: (message) => { warnings.push(message) } },
@@ -291,12 +314,12 @@ function stubHostContext() {
 }
 
 test('装配失败降级为告警：不抛出、不阻塞会话创建、不留半挂状态', async () => {
-  // 预设 id 非法 ⇒ prepareAssembly 在准备期就抛（与真实坏定义同一条路径）。
+  // 启用表里有一项非法 id ⇒ prepareAssembly 在准备期就抛（与真实坏定义同一条路径）。
   writePreset('assembly-target', { modules: ['tool-config-engine'] })
   const host = stubHostContext()
   const runtime = createAgentAssembly(host.ctx, {
     presetRoot,
-    currentPreset: () => 'Not_An_Id',
+    enabledModules: () => ['Not_An_Id'],
     warn: (message) => { host.warnings.push(message) },
   })
   const agent = { id: 'session-broken', ctx: { get: () => undefined } }
@@ -308,4 +331,71 @@ test('装配失败降级为告警：不抛出、不阻塞会话创建、不留�
   assert.equal(runtime.hasMounted(agent.id), false, '失败的装配不留下已挂载状态')
   assert.equal(host.warnings.some((line) => line.includes('运行时配装失败')), true, '失败被降级为告警')
   await runtime.dispose()
+})
+
+test('启用即配装：启用表里的每个模块各贡献一份，清单为空则不装配', async () => {
+  // 两个模块各有自己的提示词配置与引擎模块声明：合起来应当两份都进装配输入。
+  writePreset('enabled-a', {
+    modules: ['prompt-config-engine'],
+    promptConfigs: [{ id: 'from-a', strategy: 'static', text: 'A', position: 'after-user' }],
+  })
+  writePreset('enabled-b', {
+    modules: ['prompt-config-engine'],
+    promptConfigs: [{ id: 'from-b', strategy: 'static', text: 'B', position: 'after-user' }],
+  })
+
+  const host = stubHostContext({ services: ['systemPrompt', 'tools', 'llm'] })
+  let enabled = ['enabled-a', 'enabled-b']
+  const runtime = createAgentAssembly(host.ctx, {
+    presetRoot,
+    enabledModules: () => enabled,
+    warn: (message) => { host.warnings.push(message) },
+  })
+  const agent = host.makeAgent('session-enabled')
+
+  await host.fire('agent/created', { agent, source: 'startup' })
+  await runtime.settled()
+  assert.equal(host.mounts.length, 1, '启用表里的模块装配成功（发出了一次安装）')
+  assert.equal(await host.mounts[0].definition.apply(host.ctx), undefined)
+  assert.equal(host.counts.get('agent/pre-step'), 2, '两个模块各贡献一份 pre-step 装配')
+
+  await runtime.dispose()
+
+  // 追加 C：装配范围随之变成三项（启用即配装，无需别的指针）。
+  writePreset('enabled-c', {
+    modules: ['prompt-config-engine'],
+    promptConfigs: [{ id: 'from-c', strategy: 'static', text: 'C', position: 'after-user' }],
+  })
+  enabled = ['enabled-a', 'enabled-b', 'enabled-c']
+  const host3 = stubHostContext({ services: ['systemPrompt', 'tools', 'llm'] })
+  const runtime3 = createAgentAssembly(host3.ctx, {
+    presetRoot,
+    enabledModules: () => enabled,
+    warn: (message) => { host3.warnings.push(message) },
+  })
+  const agent3 = host3.makeAgent('session-three')
+  await host3.fire('agent/created', { agent: agent3, source: 'startup' })
+  await runtime3.settled()
+  assert.equal(host3.mounts.length, 1, '追加后仍然只安装一次（一份装配承载 N 个模块）')
+  await host3.mounts[0].definition.apply(host3.ctx)
+  assert.equal(
+    host3.counts.get('agent/pre-step'), 3,
+    '追加一个模块后装配范围随之增加一份',
+  )
+  await runtime3.dispose()
+
+  // 空启用表：不注册任何贡献（写盘关闭时上层就是这么返回的）。
+  const host0 = stubHostContext({ services: ['systemPrompt', 'tools', 'llm'] })
+  const runtime0 = createAgentAssembly(host0.ctx, {
+    presetRoot,
+    enabledModules: () => [],
+    warn: (message) => { host0.warnings.push(message) },
+  })
+  const agent0 = host0.makeAgent('session-empty')
+  await host0.fire('agent/created', { agent: agent0, source: 'startup' })
+  await runtime0.settled()
+  assert.equal(host0.mounts.length, 1, '空启用表仍然成功装配（零贡献，但装配生效）')
+  await host0.mounts[0].definition.apply(host0.ctx)
+  assert.equal(host0.counts.get('agent/pre-step') ?? 0, 0, '空启用表零贡献')
+  await runtime0.dispose()
 })

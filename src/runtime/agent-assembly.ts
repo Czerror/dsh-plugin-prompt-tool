@@ -49,8 +49,15 @@ export interface AgentAssemblyRuntime {
 
 export interface AgentAssemblyOptions {
   presetRoot: string
-  /** 当前激活预设 id（缺省或非法时回退默认预设）。 */
-  currentPreset: () => string
+  /**
+   * 参与装配的模块 id 列表（= 存储根 `config.yml` 启用表 ∩ 磁盘存在）。
+   *
+   * **启用即配装**：列了 A+B 就装 A+B，追加 C 就是 A+B+C。每个模块各自贡献自己的
+   * 提示词配置、引擎参数与能力声明，彼此不合并、不互相改写；同键参数由引擎的
+   * `agent-request` 依次叠加（靠后的模块覆盖靠前的），顺序即启用表顺序。
+   * 返回空数组表示没有模块参与装配（此时不注册任何贡献）。
+   */
+  enabledModules: () => readonly string[]
   warn?: (message: string) => void
 }
 
@@ -190,32 +197,41 @@ export function createAgentAssembly(ctx: Context, options: AgentAssemblyOptions)
 
   const install = async (agent: Agent): Promise<void> => {
     if (!active || failed.has(agent.id) || mounts.has(agent.id)) return
-    const presetId = options.currentPreset()
-    let prepared: PreparedAssembly
+    const moduleIds = options.enabledModules()
+    const prepared: PreparedAssembly[] = []
     try {
-      prepared = await prepareAssembly(options.presetRoot, presetId, (name) => agent.ctx.get(name) !== undefined)
+      for (const id of moduleIds) {
+        prepared.push(await prepareAssembly(options.presetRoot, id, (name) => agent.ctx.get(name) !== undefined))
+      }
     } catch (error) {
       // 同一个 Agent 不反复重试同一份坏定义；改好定义后的新 Agent 会重新尝试。
       failed.add(agent.id)
       throw error
     }
     if (!active || failed.has(agent.id)) return
+    // 启用表的每一项各贡献一份：宿主能力取并集，装配时逐模块各挂一次（同键参数按此顺序叠加）。
+    const services = new Set<string>()
+    for (const item of prepared) for (const name of item.services) services.add(name)
     const fiber = agent.ctx.plugin({
       name: 'prompt-tool-assembly',
-      inject: [...prepared.services],
+      inject: [...services],
       apply: async (scopeCtx: Context) => {
-        if (prepared.configs.length > 0) {
-          applyPromptConfigs(scopeCtx, prepared.configs, {
-            sourceId: `preset:${prepared.presetId}`,
-            prepend: true,
-            officialInstructions: false,
-          })
+        for (const item of prepared) {
+          if (item.configs.length > 0) {
+            applyPromptConfigs(scopeCtx, item.configs, {
+              sourceId: `module:${item.presetId}`,
+              prepend: true,
+              officialInstructions: false,
+            })
+          }
         }
-        for (const module of prepared.modules) {
-          // 引擎入口既有同步也有 async（`declared-triggers.apply` 是 async）：先 await 再判
-          // disposer，否则 Promise 会被当成清理函数存下来，永不被调用。
-          const result: unknown = await module.apply(scopeCtx, module.config)
-          if (typeof result === 'function') scopeCtx.effect(() => result as () => void, module.id)
+        for (const item of prepared) {
+          for (const module of item.modules) {
+            // 引擎入口既有同步也有 async（`declared-triggers.apply` 是 async）：先 await 再判
+            // disposer，否则 Promise 会被当成清理函数存下来，永不被调用。
+            const result: unknown = await module.apply(scopeCtx, module.config)
+            if (typeof result === 'function') scopeCtx.effect(() => result as () => void, module.id)
+          }
         }
       },
     })
