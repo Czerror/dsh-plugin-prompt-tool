@@ -39,7 +39,7 @@ export const PARAMS_ZH = {
 
   // 参数卡通用文案。
   'param.hint': '{param}：{label}。空文本/列表回落预设默认；保存后用于后续 generation。',
-  'param.inheritPresetDefault': '继承预设默认',
+  'param.inheritPresetDefault': '继承模块默认',
   'param.on': '开启',
   'param.off': '关闭',
   'param.option.either': '工具调用或助手消息',
@@ -61,7 +61,7 @@ export const PARAMS_ZH = {
   'modules.group.subagent-model': '子代理模型',
   'modules.group.other': '其他设置',
   'modules.layer.assembled': '本层已装配的能力',
-  'modules.layer.asset': '本层的预设资产',
+  'modules.layer.asset': '本层的模块资产',
   'modules.layer.capability': '能力：{id}',
   'modules.layer.remove': '移除能力',
   'modules.layer.removeTitle': '移除「{id}」能力？',
@@ -100,8 +100,8 @@ export const PARAMS_EN: Record<keyof typeof PARAMS_ZH, string> = {
   'param.toolGitBashEnabled': 'Enable Git Bash tool',
   'param.customToolRequireApproval': 'Tool kinds that need user approval before running',
 
-  'param.hint': '{param}: {label}. Empty text or list falls back to the preset default; used for later generations once saved.',
-  'param.inheritPresetDefault': 'Inherit preset default',
+  'param.hint': '{param}: {label}. Empty text or list falls back to the module default; used for later generations once saved.',
+  'param.inheritPresetDefault': 'Inherit module default',
   'param.on': 'On',
   'param.off': 'Off',
   'param.option.either': 'Tool call or assistant message',
@@ -120,9 +120,9 @@ export const PARAMS_EN: Record<keyof typeof PARAMS_ZH, string> = {
   'modules.group.subagent-model': 'Subagent model',
   'modules.group.other': 'Other settings',
   'modules.layer.assembled': 'Capabilities mounted in this layer',
-  'modules.layer.asset': 'Preset assets of this layer',
+  'modules.layer.asset': 'Module assets of this layer',
   'modules.layer.capability': 'Capability: {id}',
   'modules.layer.remove': 'Remove capability',
   'modules.layer.removeTitle': 'Remove the "{id}" capability?',
-  'modules.layer.removeDesc': 'Removes this capability from the current preset: the module declaration and its row config go away and its parameters stop applying; other capabilities and this layer configs are unaffected.',
+  'modules.layer.removeDesc': 'Removes this capability from the current module: the module declaration and its row config go away and its parameters stop applying; other capabilities and this layer configs are unaffected.',
 }
