@@ -64,7 +64,7 @@ import { assertPresetDirectory, assertPresetId, canonicalPresetRoot, presetPathE
 import { DSH_HOME, MODULE_CONFIGS_DIR, MODULE_DEFINITION_FILE } from '../host/paths.ts'
 import type { AssetFile, AssetImportRequest, ImportKind, PresetExportRequest } from '../shared/asset-transfer.ts'
 import { lastWorldBookDiagnostics } from '../../engine/st-world-book.mjs'
-import { BRIDGE_ENDPOINTS, MAX_BRIDGE_BODY_BYTES, PRESET_ACTIVATION_FAILED, SETTINGS_BRIDGE_PREFIX, type TriggerEditorMeta } from '../shared/bridge-contract.ts'
+import { BRIDGE_ENDPOINTS, EDIT_TARGET_HEADER, MAX_BRIDGE_BODY_BYTES, PRESET_ACTIVATION_FAILED, SETTINGS_BRIDGE_PREFIX, readEditTarget, type TriggerEditorMeta } from '../shared/bridge-contract.ts'
 import { moduleParamFallbacks, validateEngineParamValues } from '../shared/engine-params.ts'
 import { readPersonaSpec } from '../shared/persona-section.ts'
 import { SKILL_NAME_PATTERN, type SkillsStateRead } from '../host/skills-config.ts'
@@ -517,8 +517,14 @@ export function registerSettingsBridge(
   getSkillsState: () => SkillsBridgeState,
   getEngineStrategyDir: () => string,
   afterSkillsChange?: () => void,
-  /** 生成目录（presetDir）：读取实际生效的提示词配置（引擎加载源）。 */
-  getPresetConfigsDir?: () => string,
+  /**
+   * 生成目录（模块目录）：读取/写入哪一份提示词配置。
+   *
+   * 参数是**请求声明的编辑目标**（`x-module-id` 头解析而来）：给了就定位那个模块，
+   * 没给则由 host 回退启用表首项。编辑器因此不必依赖某个全局单选——配置卡自己的
+   * 模块身份决定写哪里。
+   */
+  getPresetConfigsDir?: (moduleId?: string) => string,
   /** 内容导入完成回调：批量 scope 只触发一次重建（更新运行时文本并重建预设）。 */
   afterPresetImport?: (scopes: Array<'preset' | 'agents'>) => void | Promise<void>,
   /** 参数覆盖写入后重建当前预设。 */
@@ -543,6 +549,11 @@ export function registerSettingsBridge(
     }
   }
   const runOverridesChange = (res: ServerResponse): Promise<boolean> => finishPresetChange(res, () => afterOverridesChange?.())
+  /**
+   * 本次请求的编辑目标目录：读 `x-module-id` 头（形状不合法当未声明），交给注入的实现定位。
+   * 所有「读/写哪个模块的配置」都走这里，端点不再各自记一个全局目标。
+   */
+  const editDir = (req: IncomingMessage): string => getPresetConfigsDir?.(readEditTarget(req.headers[EDIT_TARGET_HEADER])) ?? ''
   const refreshPresetList = (res: ServerResponse, id: string): Promise<boolean> => finishPresetChange(res, () => afterPresetListChange?.(id))
   // 动态等待 webServer：webServer 由 @deepseek-ai/dsh-web-app 提供。
   // profile 首次缺少该 bundle 时，本子插件先 pending 但不阻塞启动审计；
@@ -705,6 +716,8 @@ export function registerSettingsBridge(
           // 激活预设目录以服务端 runtime 为准（getPresetConfigsDir），而不是 descriptor
           // 缓存里的 presetTemplate——descriptor 有 30s TTL，切换预设后若缓存未失效，
           // 这里会读旧预设参数，与下方 readParamOverrides/readPromptConfigs(新目录) 不同源。
+          // `/describe` 是全局描述端点（无请求级目标）：这里读**当前激活目标**，
+          // 与下方 readParamOverrides/readPromptConfigs 同源；各写端点则按请求头定位。
           const activeDir = getPresetConfigsDir?.() ?? ''
           const templateName = activeDir.length > 0 ? basename(activeDir) : DEFAULT_PRESET_ID
           const spec = loadPresetSpec(activeDir.length > 0 ? activeDir : resolvePresetDir(templateName))
@@ -825,7 +838,7 @@ export function registerSettingsBridge(
             // mtime 缓存仅解析一次。文件卡正文与 /prompt-configs 走同一读取入口。
             try {
               const meta = await loadEngineMeta()
-              const dir = getPresetConfigsDir?.() ?? ''
+              const dir = editDir(req) ?? ''
               const extras = await collectDescribeExtras(session.sessionId)
               const scope = resolveInstructionScope(sctx, session.sessionId)
               writeBridgeJson(res, 200, {
@@ -975,7 +988,7 @@ export function registerSettingsBridge(
               writeBridgeJson(res, 400, { ok: false, code: 'prompt-configs-invalid', message: 'promptConfigs must be an array' })
               return
             }
-            const result = await validatePromptConfigs(record.promptConfigs, { strategyDir: getEngineStrategyDir(), presetDir: getPresetConfigsDir?.() })
+            const result = await validatePromptConfigs(record.promptConfigs, { strategyDir: getEngineStrategyDir(), presetDir: editDir(req) })
             writeBridgeJson(res, 200, { ok: true, value: result })
           },
         }),
@@ -1237,7 +1250,7 @@ export function registerSettingsBridge(
             }
             // 实际生效配置 = 生成目录 prompt-configs/（引擎加载源）；
             // settings.promptConfigs 仅是用户覆盖层，默认为空不代表无配置。
-            const dir = getPresetConfigsDir?.() ?? ''
+            const dir = editDir(req) ?? ''
             if (!guardPresetFormat(dir, res)) return
             // 独立文件来源：与 /bootstrap 共用同一读取入口，附正文、字节版本与读取状态。
             const scope = resolveInstructionScope(sctx, session.sessionId)
@@ -1374,7 +1387,7 @@ export function registerSettingsBridge(
             const scope = record.scope === 'agents' ? 'agents' : 'preset'
             try {
               // 内容资产在生成目录 preset.md / agents.md（settings 不承载大文本）。
-              const dir = getPresetConfigsDir?.() ?? ''
+              const dir = editDir(req) ?? ''
               const content = dir.length > 0
                 ? readFileSync(join(dir, scope === 'preset' ? 'preset.md' : 'agents.md'), 'utf8')
                 : ''
@@ -1415,7 +1428,7 @@ export function registerSettingsBridge(
               }
               contents.push({ scope: item.scope, content: item.content })
             }
-            const dir = getPresetConfigsDir?.() ?? ''
+            const dir = editDir(req) ?? ''
             if (dir.length === 0) {
               writeBridgeJson(res, 400, { ok: false, code: 'preset-dir-unavailable', message: 'presetDir 未配置' })
               return
@@ -1440,7 +1453,7 @@ export function registerSettingsBridge(
           path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.triggers,
           handler: async (req, res) => {
             if (!guard(req, res)) return
-            const dir = getPresetConfigsDir?.() ?? ''
+            const dir = editDir(req) ?? ''
             if (dir.length === 0) {
               writeBridgeJson(res, 400, { ok: false, code: 'preset-dir-unavailable', message: '当前预设目录不可用' })
               return
@@ -1511,7 +1524,7 @@ export function registerSettingsBridge(
           path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.paramOverrides,
           handler: async (req, res) => {
             if (!guard(req, res)) return
-            const dir = getPresetConfigsDir?.() ?? ''
+            const dir = editDir(req) ?? ''
             if (dir.length === 0) {
               writeBridgeJson(res, 400, { ok: false, code: 'preset-dir-unavailable', message: 'presetDir 未配置' })
               return
@@ -1632,7 +1645,7 @@ export function registerSettingsBridge(
           path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.presetVariables,
           handler: async (req, res) => {
             if (!guard(req, res)) return
-            const dir = getPresetConfigsDir?.() ?? ''
+            const dir = editDir(req) ?? ''
             if (dir.length === 0) {
               writeBridgeJson(res, 400, { ok: false, code: 'preset-dir-unavailable', message: 'presetDir 未配置' })
               return
@@ -1686,7 +1699,7 @@ export function registerSettingsBridge(
           path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.customTools,
           handler: async (req, res) => {
             if (!guard(req, res)) return
-            const dir = getPresetConfigsDir?.() ?? ''
+            const dir = editDir(req) ?? ''
             if (dir.length === 0) {
               writeBridgeJson(res, 400, { ok: false, code: 'preset-dir-unavailable', message: 'presetDir 未配置' })
               return
@@ -1741,7 +1754,7 @@ export function registerSettingsBridge(
           path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.persona,
           handler: async (req, res) => {
             if (!guard(req, res)) return
-            const dir = getPresetConfigsDir?.() ?? ''
+            const dir = editDir(req) ?? ''
             if (dir.length === 0) {
               writeBridgeJson(res, 400, { ok: false, code: 'preset-dir-unavailable', message: 'presetDir 未配置' })
               return
@@ -2010,7 +2023,7 @@ export function registerSettingsBridge(
           path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.charactersImport,
           handler: async (req, res) => {
             if (!guard(req, res)) return
-            const dir = getPresetConfigsDir?.() ?? ''
+            const dir = editDir(req) ?? ''
             if (dir.length === 0) {
               writeBridgeJson(res, 400, { ok: false, code: 'preset-dir-unavailable', message: 'presetDir 未配置' })
               return
@@ -2032,7 +2045,7 @@ export function registerSettingsBridge(
             if (!guardPresetWrite(dir, res)) return
             try {
               const files = await expandPresetSource(request.params.sourceId === undefined ? readBridgeFiles(record.files) : assetSources.read(request.params.sourceId))
-              if (getPresetConfigsDir?.() !== dir) {
+              if (editDir(req) !== dir) {
                 writeBridgeJson(res, 409, { ok: false, code: 'characters-preview-stale', message: '当前预设已切换，请重新预览' })
                 return
               }
@@ -2093,7 +2106,7 @@ export function registerSettingsBridge(
           path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.charactersList,
           handler: async (req, res) => {
             if (!guard(req, res)) return
-            const dir = getPresetConfigsDir?.() ?? ''
+            const dir = editDir(req) ?? ''
             if (dir.length === 0) {
               writeBridgeJson(res, 400, { ok: false, code: 'preset-dir-unavailable', message: 'presetDir 未配置' })
               return
@@ -2107,7 +2120,7 @@ export function registerSettingsBridge(
           path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.charactersDelete,
           handler: async (req, res) => {
             if (!guard(req, res)) return
-            const dir = getPresetConfigsDir?.() ?? ''
+            const dir = editDir(req) ?? ''
             if (dir.length === 0) {
               writeBridgeJson(res, 400, { ok: false, code: 'preset-dir-unavailable', message: 'presetDir 未配置' })
               return
@@ -2135,7 +2148,7 @@ export function registerSettingsBridge(
           path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.charactersApply,
           handler: async (req, res) => {
             if (!guard(req, res)) return
-            const dir = getPresetConfigsDir?.() ?? ''
+            const dir = editDir(req) ?? ''
             if (dir.length === 0) {
               writeBridgeJson(res, 400, { ok: false, code: 'preset-dir-unavailable', message: 'presetDir 未配置' })
               return
@@ -2164,7 +2177,7 @@ export function registerSettingsBridge(
           path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.charactersRemove,
           handler: async (req, res) => {
             if (!guard(req, res)) return
-            const dir = getPresetConfigsDir?.() ?? ''
+            const dir = editDir(req) ?? ''
             if (dir.length === 0) {
               writeBridgeJson(res, 400, { ok: false, code: 'preset-dir-unavailable', message: 'presetDir 未配置' })
               return
@@ -2193,7 +2206,7 @@ export function registerSettingsBridge(
           path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.subagentToolPolicy,
           handler: async (req, res) => {
             if (!guard(req, res)) return
-            const dir = getPresetConfigsDir?.() ?? ''
+            const dir = editDir(req) ?? ''
             if (dir.length === 0) {
               writeBridgeJson(res, 400, { ok: false, code: 'preset-dir-unavailable', message: 'presetDir 未配置' })
               return
@@ -2252,7 +2265,7 @@ export function registerSettingsBridge(
           path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.subagentToolPolicyPreview,
           handler: async (req, res) => {
             if (!guard(req, res)) return
-            const dir = getPresetConfigsDir?.() ?? ''
+            const dir = editDir(req) ?? ''
             if (dir.length === 0) {
               writeBridgeJson(res, 400, { ok: false, code: 'preset-dir-unavailable', message: 'presetDir 未配置' })
               return
@@ -2292,7 +2305,7 @@ export function registerSettingsBridge(
           path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.engineCapability,
           handler: async (req, res) => {
             if (!guard(req, res)) return
-            const dir = getPresetConfigsDir?.() ?? ''
+            const dir = editDir(req) ?? ''
             if (dir.length === 0) {
               writeBridgeJson(res, 400, { ok: false, code: 'preset-dir-unavailable', message: 'presetDir 未配置' })
               return

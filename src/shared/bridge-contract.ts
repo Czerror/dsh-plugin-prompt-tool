@@ -82,6 +82,23 @@ export type BridgeErrorPayload = { ok: false; code?: string; message?: string; c
 /** 文件已保存，但宿主未采用新定义；调用方保留草稿并显示失败，不宣称已生效。 */
 export const PRESET_ACTIVATION_FAILED = 'preset-activation-failed'
 
+/**
+ * **编辑目标**只在请求头里声明：body 是各端点自己的载荷形状，不掺公共键。
+ *
+ * 身份是 `模块 id`（模块目录名）。加上卡自身的 id 就唯一确定一张配置卡——模块 id 形状受限
+ * 且复制必带 `-copy` 后缀（`duplicateUserPreset`），卡 id 在模块内唯一（引擎 `createPromptConfigs`
+ * 拒绝重复），所以「模块 id + 卡 id」不存在重复可能。
+ */
+export const EDIT_TARGET_HEADER = 'x-module-id'
+const MODULE_ID_PATTERN = /^[a-z0-9][a-z0-9-]*$/
+
+/** 读编辑目标：形状不合法（空、超长、含非法字符）一律当「未声明」，由 host 回退启用表首项。 */
+export function readEditTarget(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined
+  const id = value.trim()
+  return id.length > 0 && id.length <= 64 && MODULE_ID_PATTERN.test(id) ? id : undefined
+}
+
 /** 插件可编辑定义与官方注册诊断；失败项保留身份供用户修复。 */
 export interface PresetSummary {
   id: string

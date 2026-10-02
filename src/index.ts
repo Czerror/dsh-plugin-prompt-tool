@@ -35,7 +35,7 @@ import {
 } from './config.ts'
 import type { PromptSettings, RuntimeOptions } from './config.ts'
 import { DEFAULT_PRESET_DIR, MODULE_CONFIGS_DIR } from './host/paths.ts'
-import { enabledModuleIds } from './host/config-store.ts'
+import { enabledModuleIds, resolveEditDir } from './host/config-store.ts'
 import { DEFAULT_PRESET_ID } from './shared/preset-ids.ts'
 import { createSkillsRuntime } from './host/skills-runtime.ts'
 import { createPresetRegistrySync, presetDirExists } from './host/preset-registry.ts'
@@ -299,8 +299,9 @@ export function apply(ctx: Context, configIn: Config): void {
     // 模板专属策略目录：当前内置策略全部随引擎提供，自定义模板可经此注入。
     () => '',
     skillsRuntime.invalidate,
-    // 激活预设目录：内容资产/提示词配置按预设隔离在预设根 <template>/。
-    () => activePresetDir(),
+    // 编辑目标目录：请求带 `x-module-id` 就定位那个模块，不带则回退启用表首项。
+    // 编辑器因此按配置卡自己的模块身份写盘，不依赖某个全局单选的目标。
+    (moduleId) => resolveEditDir(DEFAULT_PRESET_DIR, moduleId),
     async (scopes) => {
       // 内容导入后：批量更新运行时文本，单次重建生成目录（一次自动保存只重建一次）。
       for (const scope of scopes) {
