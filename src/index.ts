@@ -38,6 +38,7 @@ import { DEFAULT_PRESET_DIR } from './host/paths.ts'
 import { DEFAULT_PRESET_ID } from './shared/preset-ids.ts'
 import { createSkillsRuntime } from './host/skills-runtime.ts'
 import { createPresetRegistrySync } from './host/preset-registry.ts'
+import { createAgentAssembly } from './runtime/agent-assembly.ts'
 import { resolvePresetToolTarget } from './host/preset-tool-target.ts'
 import type { PresetToolHost } from './host/preset-tool-target.ts'
 
@@ -459,6 +460,17 @@ registerTuiCommand(
     return result.ok ? { ok: true } : { ok: false, message: result.message }
   },
 )
+
+  // 运行时配装通道：每个 Agent 在自己的 scope 里得到一份装配（切片 + 引擎能力）。
+  // 官方工具行由会话原有预设提供，本通道不装第二棵官方插件树；两者并存不重复。
+  ctx.inject(['agents'], (actx: Context) => {
+    const assembly = createAgentAssembly(actx, {
+      presetRoot: DEFAULT_PRESET_DIR,
+      currentPreset: () => runtime.presetTemplate.length > 0 ? runtime.presetTemplate : DEFAULT_PRESET_ID,
+      warn: (message) => warn(ctx, message),
+    })
+    actx.effect(() => () => assembly.dispose(), 'prompt-tool assembly')
+  })
 
   let needsInitialApply = true
   const applyState = async (): Promise<void> => {
