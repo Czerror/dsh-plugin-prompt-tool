@@ -69,17 +69,22 @@ export interface PresetSpec {
   upstream?: Record<string, unknown>
 }
 
-/** 包根 preset/ 目录(配置/模板文件夹):兼容源码运行(src/host)与打包运行(lib/)。 */
+/**
+ * 包根 `modules/` 目录：随包分发的**内置模块库**（模块目录形态与存储根同构）。
+ *
+ * 兼容源码运行（`src/host/`）与打包运行（`lib/`）。旧的内置预设目录 `preset/` 已整体
+ * 退场——那些是官方预设形态的遗留，重构后不再读取也不再维护。
+ */
 export function packagePresetDir(): string {
   const candidates = [
-    new URL('../preset/', import.meta.url),
-    new URL('../../preset/', import.meta.url),
+    new URL('../modules/', import.meta.url),
+    new URL('../../modules/', import.meta.url),
   ]
   for (const candidate of candidates) {
     const dir = fileURLToPath(candidate)
     if (existsSync(dir)) return dir
   }
-  throw new Error('prompt-tool: cannot locate package preset/ directory')
+  throw new Error('prompt-tool: cannot locate package modules/ directory')
 }
 
 /** 包根 engine/ 目录(插件引擎,与配置文件夹分离):兼容源码与打包运行。 */

@@ -1,2 +1,7 @@
-/** 包内模板、用户副本与当前预设共用同名 ID；避免与宿主官方预设重名。 */
-export const DEFAULT_PRESET_ID = 'pt-standard'
+/**
+ * 包内模块与用户副本共用同名 ID；避免与宿主官方预设重名。
+ *
+ * 内置模块随包分发在仓库根的 `modules/`。旧的内置预设 `pt-*` 已整体退场——它们是官方
+ * 预设形态的遗留，重构后不再读取也不再维护；这里指向当前随包分发的内置模块作为兜底。
+ */
+export const DEFAULT_PRESET_ID = 'ponytail'

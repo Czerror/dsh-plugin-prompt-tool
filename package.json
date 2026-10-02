@@ -105,7 +105,7 @@
     "engine",
     "cordis.patch.yml",
     "LICENSE",
-    "preset",
+    "modules",
     "templates",
     "README.md"
   ],

@@ -1,0 +1,19 @@
+id: ponytail-level-full
+name: Ponytail 档位：full（标准档，默认）
+layer: system-section
+order: 200
+enabled: true
+strategy: static
+group: ponytail-level
+exclusive: true
+text: |-
+  PONYTAIL MODE ACTIVE — level: full
+
+  ## Intensity
+
+  | Level | What change |
+  |-------|------------|
+  | **full** | The ladder enforced. Stdlib and native first. Shortest diff, shortest explanation. Default. |
+
+  Example: "Add a cache for these API responses."
+  - full: "`@lru_cache(maxsize=1000)` on the fetch function. Skipped custom cache class, add when lru_cache measurably falls short."
