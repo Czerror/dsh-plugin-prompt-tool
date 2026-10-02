@@ -3,7 +3,10 @@
 # 人设用法：params.sectionName = deployment:persona-prefix（第一方指导之前）或
 # deployment:persona-suffix（第一方指导之后）时注册为人设段
 # （同名 shadow 全局 persona，模块列表显示「人设」徽标；子代理经 scope 链继承）。
-#   - complete: true 独占整个 system prompt（预设内互斥，UI 自动收敛，手写冲突官方 fail loud）
+#   - complete: true 让本段成为唯一的 system prompt 段（身份注入、人设后缀、工具指南等
+#     其余 system 段全部被抑制；工具链、运行时上下文与变量仍保留）。同一模块只能有一个，
+#     且与顶层人设的「独占」互斥：写盘前由 bridge 拒绝（400），装配前另有一道兜底校验，
+#     手改 YAML / 还原备份 / 导入包同样会被挡住。UI 不做自动收敛，需手动关闭其一。
 #   - suppressRuntimeContext: true 抑制动态运行时快照（等价官方 includeRuntimeContext:false）
 id: example-system-section
 name: 示例：system 静态段
