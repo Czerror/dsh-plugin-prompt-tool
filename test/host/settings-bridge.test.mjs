@@ -505,6 +505,27 @@ test('模块配置排序端点：启用尾部追加、跨模块保存、冲突�
     assert.deepEqual((await call('moduleConfigOrder')).value, snapshot, '默认全局列表仍只含启用模块')
   })
 
+  await t.test('真实客户端无参数读取全局排序，不写定义或触发重建', async (t) => {
+    const { bridgeCall } = await import('../../src/client/data/bridge-client.ts')
+    const before = dirs.map((dir) => readFileSync(join(dir, 'module.yml'), 'utf8'))
+    const count = rebuilt.length
+    t.mock.method(globalThis, 'fetch', async (url, init) => {
+      const handler = handlers.get(url)
+      assert.equal(typeof handler, 'function')
+      assert.deepEqual(JSON.parse(init.body), {})
+      const res = fakeRes()
+      await handler(fakeReq({ method: init.method, headers: { host: 'localhost', ...init.headers },
+        async *[Symbol.asyncIterator]() { yield Buffer.from(init.body) },
+      }), res)
+      return new Response(res.body, { status: res.status })
+    })
+    const result = await bridgeCall('moduleConfigOrder')
+    assert.equal(result.ok, true, result.message)
+    assert.deepEqual(result.value, snapshot)
+    assert.deepEqual(dirs.map((dir) => readFileSync(join(dir, 'module.yml'), 'utf8')), before)
+    assert.equal(rebuilt.length, count)
+  })
+
   await t.test('过期版本、重复身份、未知字段和超限载荷拒绝且零写入', async () => {
     const before = dirs.map((dir) => readFileSync(join(dir, 'module.yml'), 'utf8'))
     const count = rebuilt.length
@@ -518,7 +539,8 @@ test('模块配置排序端点：启用尾部追加、跨模块保存、冲突�
       [{ moduleId: '../outside' }, 400],
       [{ moduleId: ids[0], expectedRevision: scoped.revision, entries: [{ moduleId: ids[1], configId: 'card' }] }, 400],
       [{ moduleId: ids[0], expectedRevision: '0'.repeat(64), entries: identities(scoped) }, 409],
-      [{ entries }, 400], [null, 400], [[], 400],
+      [{ entries }, 400], [{ expectedRevision: snapshot.revision }, 400],
+      [{ text: 'FORBIDDEN' }, 400], [null, 400], [[], 400],
     ]) assert.equal((await call('moduleConfigOrder', body)).status, status, JSON.stringify(body))
     const oversized = fakeRes()
     await handlers.get(PREFIX + BRIDGE_ENDPOINTS.moduleConfigOrder)(fakeReq({ async *[Symbol.asyncIterator]() {

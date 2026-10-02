@@ -2084,11 +2084,11 @@ export function registerSettingsBridge(
             const parsed = await readBridgeBodyForHandler(req, res)
             if (parsed === undefined) return
             const body = parsed.body
+            // 客户端无参数读取序列化为 {}；与空请求体一样读取全局排序。
             const writing = isRecord(body) && (body.entries !== undefined || body.expectedRevision !== undefined)
             if (body !== undefined && (!isRecord(body)
               || Object.keys(body).some((key) => key !== 'moduleId' && key !== 'entries' && key !== 'expectedRevision')
               || (body.moduleId !== undefined && (typeof body.moduleId !== 'string' || readEditTarget(body.moduleId) !== body.moduleId))
-              || (!writing && body.moduleId === undefined)
               || (writing && (typeof body.expectedRevision !== 'string' || !SHA256_HEX_RE.test(body.expectedRevision)
                 || !Array.isArray(body.entries)
                 || body.entries.some((entry) => !isRecord(entry)
