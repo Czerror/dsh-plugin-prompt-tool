@@ -476,7 +476,7 @@ ui/ 只接收 props/callback，当前真实共享 seam 包括：
 - SettingInputRow、ToggleRow、TagInput：设置和字段编辑形态；ToggleRow 使用自有 Switch，保留 role、aria-checked 与键盘行为。
 - ImportPreviewCard：导入预览卡，展示服务端同源转换报告与有损信息（warning/info/被排除条目各自滚动容器）；预设包与角色卡 JSON 两处入口共用。
 - reveal-card.ts：创建后的滚动定位与重试，层设置区与配置卡共用。
-- MenuSelect：封装自有 Menu 的单选胶囊；支持连续选项的 `group` 分组标题。标准设置使用 36px，模块卡内使用 28px 紧凑形态，浮层统一 portal。
+- MenuSelect：封装自有 Menu 的单选胶囊；支持连续选项的 `group` 分组标题。标准设置使用 36px；模块卡内与列表过滤行（`listFilterRow`，与 32px 搜索框、紧凑胶囊按钮同行）使用 28px 紧凑形态，浮层统一 portal。
 - CollapsibleCard、EngineModuleCard：具体可复用的折叠/模块卡形态，不是万能 Card。
 - StatusDot：6px实心状态点与3px柔和静态光晕，含success/neutral/danger/warning，语义由相邻文字表达，不使用循环动画。
 - StatusBadge：StatusDot 与自有胶囊；tone 同时驱动两者颜色，技能卡、工具预览、模块「使用中」与角色卡「已导入当前模块」共用。

@@ -362,7 +362,7 @@ export function PromptConfigList(props: PromptConfigListProps): ReactNode {
           <input type="search" className={styles.listFilter} value={filter}
             aria-label={t('configs.filter.aria')} placeholder={t('configs.filter.placeholder')}
             spellCheck={false} onChange={(event) => changeFilter(event.target.value)} />
-          {layer === undefined && <MenuSelect className={styles.listFilter} value={viewFilter} ariaLabel={t('configs.view.aria')}
+          {layer === undefined && <MenuSelect className={styles.listFilter} compact value={viewFilter} ariaLabel={t('configs.view.aria')}
             options={[
               { value: 'all', label: t('configs.view.all') },
               { value: 'world-book', label: t('configs.view.worldBook'), group: t('configs.view.strategy') },
