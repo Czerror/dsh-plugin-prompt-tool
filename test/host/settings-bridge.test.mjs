@@ -51,13 +51,13 @@ function makeUserPresetDir(prefix) {
   return dir
 }
 
-function makeHarness(services = {}) {
+function makeHarness(services = {}, value = { promptText: 'P' }) {
   const handlers = new Map()
   const sctx = {
     get: (name) => services[name],
     settings: {
       describe: () => [
-        { ns: 'prompt-tool', value: { promptText: 'P' }, base: {} },
+        { ns: 'prompt-tool', value, base: {} },
         { ns: 'agent-default-model', value: { provider: 'deepseek-official', model: 'deepseek-v4-flash', reasoningEffort: 'high' } },
       ],
       mutate: async () => {},
@@ -336,6 +336,218 @@ test('模板变量与参数独立保存，读取与 bootstrap 不回退旧 param
   assert.equal(rejected.status, 400)
   assert.equal(JSON.parse(rejected.body).code, 'overrides-unknown-key')
   assert.equal(readFileSync(file, 'utf8'), before)
+})
+
+test('请求模块身份统一 bootstrap 快照与参数写入；错误身份和途中换目标零写盘', async (t) => {
+  const dirA = makeUserPresetDir('target-a-')
+  const dirB = makeUserPresetDir('target-b-')
+  const idA = basename(dirA)
+  const idB = basename(dirB)
+  const fileA = join(dirA, 'module.yml')
+  const fileB = join(dirB, 'module.yml')
+  const cardA = { id: 'module-a-card', layer: 'pre-step', text: 'A' }
+  writeFileSync(fileA, JSON.stringify({
+    id: idA, modules: ['prompt-config-engine'],
+    layerSettings: { 'agent-request': { modelTemperature: '0.2' } },
+    variables: { owner: 'A' }, promptConfigs: [cardA],
+  }))
+  writeFileSync(fileB, JSON.stringify({
+    id: idB, modules: [], layerSettings: { 'agent-request': { modelMaxTokens: '888' } },
+    variables: { owner: 'B' }, promptConfigs: [],
+  }))
+  mkdirSync(join(dirA, 'configs'))
+  writeFileSync(join(dirA, 'configs', '00-module-a-card.yml'), JSON.stringify(cardA))
+  const descriptorValue = {}
+  const { ctx, handlers } = makeHarness({}, descriptorValue)
+  let requestedDir = dirA
+  const rebuilt = []
+  registerSettingsBridge(ctx, 'prompt-tool', () => ({ available: true, providers: [] }),
+    () => skillsStateStub(), () => '', undefined,
+    (id) => id === idA ? requestedDir : dirB, undefined, (id) => { rebuilt.push(id) })
+  const call = async (endpoint, body = {}, { target = idA, onRead } = {}) => {
+    const res = fakeRes()
+    await handlers.get(PREFIX + BRIDGE_ENDPOINTS[endpoint])(fakeReq({
+      headers: { host: 'localhost', ...(target === undefined ? {} : { 'x-module-id': target }) },
+      async *[Symbol.asyncIterator]() {
+        onRead?.()
+        yield Buffer.from(JSON.stringify(body))
+      },
+    }), res)
+    return { status: res.status, payload: JSON.parse(res.body) }
+  }
+
+  await t.test('显式 A 的 descriptor、共享参数、配置卡、变量和能力事实均来自 A', async () => {
+    for (const endpoint of ['bootstrap', 'describe']) {
+      const { status, payload } = await call(endpoint)
+      assert.equal(status, 200)
+      assert.equal(payload.value.value.presetTemplate, idA)
+      assert.equal(payload.presetParams.modelTemperature, '0.2')
+      assert.equal(payload.presetParams.modelMaxTokens, undefined)
+      assert.deepEqual(payload.moduleFacts.declaredModules, ['prompt-config-engine'])
+      assert.equal(payload.templatePreStepCount, 1)
+      if (endpoint === 'bootstrap') {
+        assert.deepEqual(payload.overrides.overrides, { modelTemperature: '0.2' })
+        assert.deepEqual(payload.variables, { variables: { owner: 'A' }, enabled: true })
+        assert.deepEqual(payload.promptConfigs.promptConfigs.map((card) => card.id), ['module-a-card'])
+      }
+    }
+    assert.deepEqual(descriptorValue, {}, '响应投影不修改全局设置')
+    const noHeader = fakeRes()
+    await handlers.get(PREFIX + BRIDGE_ENDPOINTS.bootstrap)(fakeReq(), noHeader)
+    assert.equal(noHeader.status, 200)
+    assert.equal(JSON.parse(noHeader.body).value.value.presetTemplate, idB, '未声明目标时描述身份也来自实际回退目录')
+    assert.equal(JSON.parse(noHeader.body).presetParams.modelMaxTokens, '888', '未声明目标仍使用原回退')
+  })
+
+  await t.test('A 请求可以保存 A，expected B 被拒且不改任一模块', async () => {
+    const beforeB = readFileSync(fileB, 'utf8')
+    const saved = await call('paramOverrides', { expectedPresetId: idA, overrides: { modelTemperature: '0.4' } })
+    assert.equal(saved.status, 200, JSON.stringify(saved.payload))
+    assert.equal(parseYaml(readFileSync(fileA, 'utf8')).layerSettings['agent-request'].modelTemperature, '0.4')
+    assert.equal(readFileSync(fileB, 'utf8'), beforeB)
+    assert.deepEqual(rebuilt, [idA])
+    const beforeA = readFileSync(fileA, 'utf8')
+    const deleting = await call('moduleDelete', { id: idA })
+    assert.equal(deleting.status, 400)
+    assert.equal(deleting.payload.code, 'preset-in-use')
+    assert.equal(readFileSync(fileA, 'utf8'), beforeA, '当前编辑目标不因全局设置移除而变得可删')
+    const rejected = await call('paramOverrides', { expectedPresetId: idB, overrides: { modelTemperature: '0.8' } })
+    assert.equal(rejected.status, 409)
+    assert.equal(rejected.payload.code, 'preset-changed')
+    assert.equal(readFileSync(fileA, 'utf8'), beforeA)
+    assert.equal(readFileSync(fileB, 'utf8'), beforeB)
+    assert.deepEqual(rebuilt, [idA])
+  })
+
+  await t.test('读取载荷期间同一请求目标变化时拒绝写入', async () => {
+    const beforeA = readFileSync(fileA, 'utf8')
+    const beforeB = readFileSync(fileB, 'utf8')
+    const beforeRebuilds = rebuilt.length
+    const rejected = await call('paramOverrides', { expectedPresetId: idA, overrides: { modelTemperature: '0.9' } },
+      { onRead: () => { requestedDir = dirB } })
+    assert.equal(rejected.status, 409)
+    assert.equal(rejected.payload.code, 'preset-changed')
+    assert.equal(readFileSync(fileA, 'utf8'), beforeA)
+    assert.equal(readFileSync(fileB, 'utf8'), beforeB)
+    assert.equal(rebuilt.length, beforeRebuilds)
+  })
+})
+
+test('模块配置排序端点：启用尾部追加、跨模块保存、冲突零写入与生效失败反馈', async (t) => {
+  const { enabledModuleIds, setModuleEnabled } = await import('../../src/host/config-store.ts')
+  const dirs = ['order-a-', 'order-b-', 'order-bad-', 'order-disabled-'].map(makeUserPresetDir)
+  const ids = dirs.map((dir) => basename(dir))
+  for (const [index, dir] of dirs.entries()) {
+    writeFileSync(join(dir, 'module.yml'), JSON.stringify({
+      id: ids[index], modules: ['prompt-config-engine'],
+      promptConfigs: [{ id: 'card', text: `BODY ${index}` }, ...(index === 3 ? [{ id: 'second', text: 'SECOND' }] : [])],
+      ...(index === 2 ? { configOrder: { card: -1 } } : {}),
+    }))
+  }
+  t.after(() => ids.forEach((id) => setModuleEnabled(userPresetRoot, id, false)))
+  const { ctx, handlers } = makeHarness({}, { writePreset: false })
+  const rebuilt = []
+  let beforeRebuild = async () => {}
+  registerSettingsBridge(ctx, 'prompt-tool', () => ({ available: true, providers: [] }),
+    () => skillsStateStub(), () => '', undefined, () => dirs[0], undefined,
+    async (id) => { await beforeRebuild(id); rebuilt.push(id) })
+  const call = async (endpoint, body) => {
+    const handler = handlers.get(PREFIX + BRIDGE_ENDPOINTS[endpoint])
+    assert.equal(typeof handler, 'function', `${endpoint} 端点已注册`)
+    const res = fakeRes()
+    await handler(fakeReq({ async *[Symbol.asyncIterator]() {
+      if (body !== undefined) yield Buffer.from(JSON.stringify(body))
+    } }), res)
+    return { status: res.status, ...JSON.parse(res.body) }
+  }
+  const identities = (snapshot) => snapshot.entries.map(({ moduleId, configId }) => ({ moduleId, configId }))
+  let snapshot
+
+  await t.test('总闸关闭仍可编辑定义；响应等待全部重建，重复启用不改已存序号', async () => {
+    assert.equal((await call('moduleEnable', { id: ids[0], enabled: true })).status, 200)
+    assert.equal((await call('moduleEnable', { id: ids[1], enabled: true })).status, 200)
+    snapshot = (await call('moduleConfigOrder')).value
+    assert.deepEqual(snapshot.entries.map(({ moduleId, sequence }) => [moduleId, sequence]), [[ids[0], 0], [ids[1], 10]])
+    const before = readFileSync(join(dirs[0], 'module.yml'), 'utf8')
+    const count = rebuilt.filter((id) => id === ids[0]).length
+    assert.equal((await call('moduleEnable', { id: ids[0], enabled: true })).status, 200)
+    assert.equal(readFileSync(join(dirs[0], 'module.yml'), 'utf8'), before)
+    assert.equal(rebuilt.filter((id) => id === ids[0]).length, count)
+    let release
+    let entered
+    const ready = new Promise((resolve) => { entered = resolve })
+    const gate = new Promise((resolve) => { release = resolve })
+    beforeRebuild = async () => { entered(); await gate }
+    let settled = false
+    const saving = call('moduleConfigOrder', { expectedRevision: snapshot.revision, entries: identities(snapshot).reverse() })
+      .then((result) => { settled = true; return result })
+    await ready
+    assert.equal(settled, false)
+    release()
+    const result = await saving
+    assert.equal(result.status, 200, result.message)
+    snapshot = result.value
+    assert.deepEqual(snapshot.entries.map((entry) => entry.moduleId), [ids[1], ids[0]])
+    assert.deepEqual(rebuilt.slice(-2).sort(), ids.slice(0, 2).sort())
+    for (const [index, dir] of dirs.entries()) {
+      assert.equal(parseYaml(readFileSync(join(dir, 'module.yml'), 'utf8')).promptConfigs[0].text, `BODY ${index}`)
+    }
+    beforeRebuild = async () => {}
+    const enabledBefore = dirs.slice(0, 2).map((dir) => readFileSync(join(dir, 'module.yml'), 'utf8'))
+    const disabled = await call('moduleConfigOrder', { moduleId: ids[3] })
+    assert.equal(disabled.status, 200, disabled.message)
+    assert.deepEqual(disabled.value.entries.map((entry) => entry.configId), ['card', 'second'])
+    const sorted = await call('moduleConfigOrder', { moduleId: ids[3], expectedRevision: disabled.value.revision, entries: identities(disabled.value).reverse() })
+    assert.equal(sorted.status, 200, sorted.message)
+    assert.deepEqual(sorted.value.entries.map((entry) => entry.configId), ['second', 'card'])
+    assert.equal(rebuilt.at(-1), ids[3], '停用模块排序也等待自身重建')
+    assert.deepEqual(dirs.slice(0, 2).map((dir) => readFileSync(join(dir, 'module.yml'), 'utf8')), enabledBefore)
+    assert.deepEqual((await call('moduleConfigOrder')).value, snapshot, '默认全局列表仍只含启用模块')
+  })
+
+  await t.test('过期版本、重复身份、未知字段和超限载荷拒绝且零写入', async () => {
+    const before = dirs.map((dir) => readFileSync(join(dir, 'module.yml'), 'utf8'))
+    const count = rebuilt.length
+    const entries = identities(snapshot)
+    const scoped = (await call('moduleConfigOrder', { moduleId: ids[0] })).value
+    for (const [body, status] of [
+      [{ expectedRevision: '0'.repeat(64), entries }, 409],
+      [{ expectedRevision: snapshot.revision, entries: [entries[0], entries[0]] }, 400],
+      [{ expectedRevision: snapshot.revision, entries, text: 'FORBIDDEN' }, 400],
+      [{ expectedRevision: snapshot.revision, entries: [{ ...entries[0], text: 'FORBIDDEN' }, entries[1]] }, 400],
+      [{ moduleId: '../outside' }, 400],
+      [{ moduleId: ids[0], expectedRevision: scoped.revision, entries: [{ moduleId: ids[1], configId: 'card' }] }, 400],
+      [{ moduleId: ids[0], expectedRevision: '0'.repeat(64), entries: identities(scoped) }, 409],
+      [{ entries }, 400], [null, 400], [[], 400],
+    ]) assert.equal((await call('moduleConfigOrder', body)).status, status, JSON.stringify(body))
+    const oversized = fakeRes()
+    await handlers.get(PREFIX + BRIDGE_ENDPOINTS.moduleConfigOrder)(fakeReq({ async *[Symbol.asyncIterator]() {
+      yield Buffer.alloc(MAX_BRIDGE_BODY_BYTES + 1)
+    } }), oversized)
+    assert.equal(oversized.status, 413)
+    assert.deepEqual(dirs.map((dir) => readFileSync(join(dir, 'module.yml'), 'utf8')), before)
+    assert.equal(rebuilt.length, count)
+  })
+
+  await t.test('追加失败不启用；定义已保存而重建失败返回明确500', async () => {
+    assert.equal((await call('moduleEnable', { id: ids[2], enabled: true })).ok, false)
+    assert.equal(enabledModuleIds(userPresetRoot).includes(ids[2]), false)
+    beforeRebuild = async () => { throw new Error('MATERIALIZE_FAILED') }
+    const rebuildCount = rebuilt.filter(id => id === ids[3]).length
+    const failedEnable = await call('moduleEnable', { id: ids[3], enabled: true })
+    assert.equal(failedEnable.status, 500)
+    assert.equal(enabledModuleIds(userPresetRoot).includes(ids[3]), false)
+    beforeRebuild = async () => {}
+    assert.equal((await call('moduleEnable', { id: ids[3], enabled: true })).status, 200)
+    assert.equal(rebuilt.filter(id => id === ids[3]).length, rebuildCount + 1, '上次已分配序号但物化失败，重试仍必须成功物化目标')
+    await call('moduleEnable', { id: ids[3], enabled: false })
+    beforeRebuild = async () => { throw new Error('MATERIALIZE_FAILED') }
+    const result = await call('moduleConfigOrder', { expectedRevision: snapshot.revision, entries: identities(snapshot).reverse() })
+    assert.equal(result.status, 500)
+    assert.equal(result.code, 'preset-activation-failed')
+    assert.match(result.message, /已保存/)
+    assert.deepEqual((await call('moduleConfigOrder')).value.entries.map((entry) => entry.moduleId), [ids[0], ids[1]])
+  })
 })
 
 test('预设列表、导出、复制、删除、新建与导入都作用于官方预设根', async () => {

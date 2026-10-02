@@ -11,7 +11,8 @@ import { readConfigFieldSources, stripConfigFieldSources } from '../../shared/ma
 /** 来源随当前物化快照读回，不从配置 id 或参数值猜测。 */
 export function withConfigFieldSources(config: PromptConfigDraft): PromptConfigDraft {
   const fieldSources = readConfigFieldSources(config.id, config.fieldSources)
-  return { ...stripConfigFieldSources(config), ...(fieldSources === undefined ? {} : { fieldSources }) }
+  return { ...stripConfigFieldSources(config), ...(fieldSources === undefined ? {} : { fieldSources }),
+    ...(typeof config.sequence === 'number' ? { sequence: config.sequence } : {}) }
 }
 
 const asRecord = (value: unknown): Record<string, unknown> =>
@@ -116,8 +117,6 @@ export function fieldsFromView(res: BridgeResult<BridgeSettingsView>): Fields {
       folders: res.ok ? res.skillFolders ?? [] : [],
       roots: res.ok ? res.activeSkillsDirs ?? [] : [],
     }),
-    presetOrder: readNumber(value, 'presetOrder', readNumber(base, 'presetOrder', 5)),
-    fallbackText: readString(value, 'fallbackText') ?? readString(base, 'fallbackText') ?? '',
     writePreset: readBoolean(value, 'writePreset', readBoolean(base, 'writePreset', true)),
     presetTemplate: readString(value, 'presetTemplate') ?? readString(base, 'presetTemplate') ?? DEFAULT_MODULE_ID,
     promptConfigs: value.promptConfigs !== undefined

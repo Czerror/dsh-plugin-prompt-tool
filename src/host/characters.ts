@@ -15,6 +15,7 @@ import { assertPresetId, assertPresetTree, presetPathExists } from './module-ins
 import { MODULE_DEFINITION_FILE } from './paths.ts'
 import { appendPresetModules, withPresetDoc } from './manifest.ts'
 import { engineParamPath, readPresetLayerSettings } from './module-layer-settings.ts'
+import { resolveLegacyPromptConfigs } from './legacy-prompt-params.ts'
 import { buildWorldBookEntry } from './worldbook.ts'
 import type { ModuleSpec } from './manifest.ts'
 import { ENGINE_LAYER_ORDER } from '../shared/engine-capabilities.ts'
@@ -288,7 +289,9 @@ function loadSpecFile(file: string): ModuleSpec | undefined {
   if (!presetPathExists(file)) return undefined
   const parsed = parseYaml(readFileSync(file, 'utf8'), { logLevel: 'silent' })
   if (!isRecord(parsed)) throw new Error(`角色定义不是对象：${file}`)
-  return parsed as unknown as ModuleSpec
+  const spec = parsed as unknown as ModuleSpec
+  const legacy = resolveLegacyPromptConfigs(spec, { moduleDir: dirname(file) })
+  return legacy.active ? { ...spec, promptConfigs: legacy.configs, legacyParamWarnings: legacy.warnings } : spec
 }
 
 function loadConverted(dir: string): ModuleSpec | undefined {

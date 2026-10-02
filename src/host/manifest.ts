@@ -23,6 +23,8 @@ import { DEFAULT_MODULE_ID } from '../shared/preset-ids.ts'
 import { assertModuleDirectory, assertPresetId, assertPresetTree, engineModuleFileNames, presetPathExists, rewritePresetEngineReferences, setPresetDefinitionId } from './module-install.ts'
 import { engineParamPath, readPresetLayerSettings, PresetLayerSettingsError } from './module-layer-settings.ts'
 import { modelRequestConfigs } from './prompt-configs.ts'
+import { readLegacyPromptParams, resolveLegacyPromptConfigs } from './legacy-prompt-params.ts'
+import { isLegacyPromptParam, legacyPromptParamPath } from '../shared/legacy-prompt-params.ts'
 import { atomicWriteTextFile } from './text-file.ts'
 export { atomicWriteTextFile } from './text-file.ts'
 export { PresetLayerSettingsError } from './module-layer-settings.ts'
@@ -56,6 +58,8 @@ export interface ModuleSpec {
   params?: Record<string, unknown>
   /** 共享引擎参数按编辑组的主归属插入点存储；规则实例仍拥有各自 params。 */
   layerSettings?: Record<string, Record<string, unknown>>
+  /** 兼容读取诊断，不写回模块定义。 */
+  legacyParamWarnings?: string[]
   /** 顶层人设段（官方 @deepseek-ai/dsh-persona 行同构）：prefix/suffix/complete/includeRuntimeContext。 */
   persona?: PersonaSpec
   /** 模块级模板变量（{{key}} 插值源；与 layerSettings 分离，顶层 variables 段）。 */
@@ -74,6 +78,8 @@ export interface ModuleSpec {
   variablesEnabled?: boolean
   /** 可选:模板自定义提示词配置覆盖(纯数据,不使用模板语法)。 */
   promptConfigs?: unknown[]
+  /** 配置卡的持久文件序号；跨模块UI排序只改此轻量元数据。 */
+  configOrder?: Record<string, number>
   /** 可选:引擎组合模块行参数直写(行级 map config 浅合并;参数桥未覆盖的键生效,参数桥优先)。 */
   moduleConfigs?: Record<string, Record<string, unknown>>
   upstream?: Record<string, unknown>
@@ -143,7 +149,13 @@ export function removePresetModule(dir: string, moduleId: string): boolean {
 }
 
 /** 加载某个模块模板的单一参数文件 modules/<name>/module.yml。 */
-export function loadModuleSpec(dir: string): ModuleSpec {
+export function loadModuleSpec(dir: string, options: { legacyParams?: boolean } = {}): ModuleSpec {
+  const project = (spec: ModuleSpec): ModuleSpec => {
+    // writer 延后到合并显式兼容输入后再投影，其余读取直接得到可执行规则。
+    if (options.legacyParams === false) return spec
+    const legacy = resolveLegacyPromptConfigs(spec, { moduleDir: dir })
+    return legacy.active ? { ...spec, ...(Array.isArray(spec.promptConfigs) ? { promptConfigs: legacy.configs } : {}), legacyParamWarnings: legacy.warnings } : spec
+  }
   const file = join(dir, MODULE_DEFINITION_FILE)
   let stat: ReturnType<typeof statSync>
   try {
@@ -154,7 +166,7 @@ export function loadModuleSpec(dir: string): ModuleSpec {
     throw new Error(`preset.yml not found in ${dir}（预设模板不存在或目录不完整）`)
   }
   const cached = presetSpecCache.get(file)
-  if (cached !== undefined && cached.mtimeMs === stat.mtimeMs && cached.size === stat.size) return cached.spec
+  if (cached !== undefined && cached.mtimeMs === stat.mtimeMs && cached.size === stat.size) return project(cached.spec)
   const raw = readFileSync(file, 'utf8')
   let parsed: Partial<ModuleSpec> | null
   try {
@@ -170,9 +182,10 @@ export function loadModuleSpec(dir: string): ModuleSpec {
     parsed.id = basename(dir)
   }
   const params = readPresetLayerSettings(parsed)
+  readLegacyPromptParams(parsed)
   if (parsed.layerSettings !== undefined || parsed.params !== undefined) parsed.params = params
   presetSpecCache.set(file, { mtimeMs: stat.mtimeMs, size: stat.size, spec: parsed as ModuleSpec })
-  return parsed as ModuleSpec
+  return project(parsed as ModuleSpec)
 }
 
 /** 读取模块模板内容资产(presetText / agentsText);模板缺失时静默降级。
@@ -436,6 +449,8 @@ export function saveModuleParams(
   if (!existsSync(file)) throw new Error(`preset ${templateName} 无 preset.yml`)
   const doc = parseDocument(readFileSync(file, 'utf8'), { logLevel: 'silent' })
   readPresetLayerSettings(doc.toJS())
+  const previousLegacy = readLegacyPromptParams(doc.toJS() as ModuleSpec)
+  const legacyOverrides: Record<string, unknown> = {}
   // 空值 = 删除键（回落模板/引擎默认）：''（字符串清空）、[]（列表清空）。
   // 其余 0/false 照常写入——0 是合法档位（如 maxDepth 0 = 禁止委派），不能当空值吞掉。
   if (params !== undefined) {
@@ -444,14 +459,25 @@ export function saveModuleParams(
       // 「从有值改回留空」依赖空值清掉旧键（渲染层空值跳过 = 继承模板/宿主默认）。
       if (value === undefined || value === null || key.trim().length === 0) continue
       const isEmpty = value === '' || (Array.isArray(value) && value.length === 0)
-      const path = engineParamPath(key)
+      if (isLegacyPromptParam(key)) legacyOverrides[key] = value
+      const path = isLegacyPromptParam(key) ? legacyPromptParamPath(key) : engineParamPath(key)
       if (isEmpty) deleteYamlPath(doc, path)
       else doc.setIn(path, value)
     }
   }
-  if (promptConfigs !== undefined) {
+  const source = doc.toJS() as ModuleSpec
+  const legacy = resolveLegacyPromptConfigs(source, {
+    moduleDir: join(moduleRoot, templateName), overrides: legacyOverrides, partial: Object.keys(previousLegacy).length === 0,
+  })
+  const legacyWrite = Object.keys(legacyOverrides).length > 0 && legacy.consumedKeys.length > 0
+  if (promptConfigs !== undefined || legacyWrite) {
+    const rules = promptConfigs === undefined ? legacy.configs
+      : Object.keys(legacyOverrides).length === 0 ? promptConfigs
+        : resolveLegacyPromptConfigs({ ...source, promptConfigs }, {
+          moduleDir: join(moduleRoot, templateName), overrides: legacyOverrides, partial: Object.keys(previousLegacy).length === 0,
+        }).configs
     // 逐条清理 variables 空 key（待编辑行），避免脏数据落盘。
-    const cleaned = (promptConfigs as Array<Record<string, unknown>>).map((config) => {
+    const cleaned = (rules as Array<Record<string, unknown>>).map((config) => {
       if (config === null || typeof config !== 'object' || Array.isArray(config)) return config
       const vars = config.variables
       if (vars === null || typeof vars !== 'object' || Array.isArray(vars)) return config
@@ -464,6 +490,13 @@ export function saveModuleParams(
       return next
     })
     doc.setIn(['promptConfigs'], cleaned)
+    const accepted = resolveLegacyPromptConfigs({ ...source, promptConfigs: cleaned }, {
+      moduleDir: join(moduleRoot, templateName), overrides: legacyOverrides,
+    })
+    for (const key of accepted.consumedKeys) deleteYamlPath(doc, legacyPromptParamPath(key))
+    for (const warning of accepted.warnings) console.warn(`prompt-tool: ${warning}`)
+  } else {
+    for (const warning of legacy.warnings) console.warn(`prompt-tool: ${warning}`)
   }
   if (variables !== undefined) {
     // 模板变量只写顶层 variables 段，不修改 layerSettings 中的同名引擎参数。
@@ -897,7 +930,8 @@ export function resolveModuleFacts(
   for (const [id, config] of Object.entries(generated)) {
     effectiveConfigs[id] = { ...effectiveConfigs[id], ...config }
   }
-  return { declaredModules, effectiveModules, rowIds, sourceMode, editable: editable && sourceMode === 'explicit', effectiveConfigs }
+  return { declaredModules, effectiveModules, rowIds, sourceMode, editable: editable && sourceMode === 'explicit', effectiveConfigs,
+    subagentToolPolicyEnabled: spec.subagentToolPolicy !== undefined && spec.subagentToolPolicy !== null }
 }
 
 export type EngineCapabilityCreateRequest =

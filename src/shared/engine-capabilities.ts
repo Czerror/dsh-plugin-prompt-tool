@@ -43,6 +43,8 @@ export interface ModuleFacts {
   sourceMode: ModuleSourceMode
   editable: boolean
   effectiveConfigs?: Record<string, Record<string, unknown>>
+  /** 策略段真实存在；能力声明仍在并不代表策略已开启。 */
+  subagentToolPolicyEnabled?: boolean
 }
 
 export interface EngineCapability {
@@ -98,8 +100,6 @@ export const ENGINE_CAPABILITIES: readonly EngineCapability[] = [
     displayLayer: 'tool-pipeline',
     ownSection: { key: 'subagentToolPolicy', skeleton: SUBAGENT_TOOL_POLICY_SKELETON },
   },
-  // filesystem-editor 同时提供 fs-local 与 str-replace-editor，二者必须同域。
-  { id: 'str-replace-editor', moduleKeys: ['filesystem-editor'], rowIds: ['str-replace-editor'], displayLayer: 'tool-pipeline' },
   { id: 'tool-config-engine', moduleKeys: ['tool-config-engine'], rowIds: ['tool-config-engine'], displayLayer: 'tool-pipeline' },
   // B2 T3：tool-git-bash 此前没有能力卡（开关只能靠「行在不在组合里」），补 `enabled` 键后登记卡片，
   // 否则 impliedModulesForParams 查不到 card，「参数在 ⇒ 装配在」对该行静默失效。
@@ -122,7 +122,7 @@ export interface EngineEditorGroup {
 
 /**
  * 非能力编辑组的主归属。能力组不在这里重复登记：它们的 displayLayer 由能力定义本身承载
- * （例如「编辑器输出上限」参数的 card 就是能力 id `str-replace-editor`，已随能力登记）。
+ * （例如工具批准策略的 card 就是能力 id `tool-config-engine`，已随能力登记）。
  */
 export const ENGINE_EDITOR_GROUPS: readonly EngineEditorGroup[] = [
   // 提示词默认值（injectPrompt / firstTurnAnchor / guideText）改写 pre-step 消息批。
@@ -133,11 +133,9 @@ export const ENGINE_EDITOR_GROUPS: readonly EngineEditorGroup[] = [
   { id: 'variables', displayLayer: 'runtime-context', hook: 'runtime-context' },
   // 主模型 provider/model 与采样参数经当前模块生成的 agent-request patch 生效。
   { id: 'main-model', displayLayer: 'agent-request', hook: 'agent-request' },
-  // 子代理模型路由随子代理启动注入 tool-subagent 行 agentOptions；同卡采样三参数写
-  // agent-request 的 subagent-model-params patch，因此关联 agent-request。
-  { id: 'subagent-model', displayLayer: 'subagent-start', relatedLayers: ['agent-request'], hook: 'subagent-start' },
-  // 委派递归深度（maxDepth）经 tool-subagent / tool-subagent-fork 行 config 下发，
-  // 启用实例策略时改由 subagent-tool-policy 承载：两条通道都在子代理启动处生效。
+  // 本地子代理的模型路由与采样参数都在 agent-request 生效；磁盘仍沿用 subagent-start。
+  { id: 'subagent-model', displayLayer: 'agent-request', hook: 'agent-request' },
+  // maxDepth 仅由已开启的 subagent-tool-policy 承载；普通官方委派由宿主管理。
   { id: 'subagent-tools', displayLayer: 'subagent-start', hook: 'subagent-start' },
   // 自定义工具定义进 tools/* 管线。
   { id: 'custom-tools', displayLayer: 'tool-pipeline', hook: 'tool-pipeline' },

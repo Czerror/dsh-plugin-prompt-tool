@@ -13,8 +13,7 @@ import { usePromptToolFields } from '../../data/use-prompt-tool-fields.ts'
 import { PresetSwitcher } from '../presets/PresetSwitcher.tsx'
 import { CharactersPage } from '../characters/CharactersPage.tsx'
 import { ToggleRow } from '../../ui/ToggleRow.tsx'
-import { CollapsibleCard } from '../../ui/CollapsibleCard.tsx'
-import { SettingInputRow } from '../../ui/SettingInputRow.tsx'
+import { ModuleConfigOrderCard } from './ModuleConfigOrderCard.tsx'
 import sharedCss from '../../ui/controls.module.css'
 import featureCss from '../presets/presets.module.css'
 
@@ -37,12 +36,7 @@ export const ModulesPage = memo(function ModulesPage(
             checked={fields.writePreset} onChange={() => store.toggle('writePreset')} />
         </div>
       </section>
-      <CollapsibleCard id="pt-host-generated" title={t('presets.agents.title')} meta={t('presets.agents.meta')}>
-        <SettingInputRow id="pt-preset-order" label={t('presets.order.label')} hint={t('presets.order.hint')}
-          type="number" value={String(fields.presetOrder)}
-          onInput={(value) => store.patch({ presetOrder: Number(value) || 0 })}
-          onCommit={store.persistSwitches} />
-      </CollapsibleCard>
+      <ModuleConfigOrderCard store={store} t={t} />
       <CharactersPage store={store} t={t} onReady={props.onReady} />
     </>
   )

@@ -12,6 +12,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join, dirname } from 'node:path'
+import { parse } from 'yaml'
 import { fakeReq, fakeRes, isolatedHome } from '../fixtures/host-harness.mjs'
 
 // 隔离 HOME 必须在动态 import 之前（仓库约定，见 host-harness 注释）。
@@ -22,13 +23,13 @@ const { registerSettingsBridge, BRIDGE_ENDPOINTS } = await import('../../src/ind
 
 const PREFIX = '/api/prompt-tool/settings'
 
-/** 最小宿主桩：`settings.describe()` 的 presetTemplate 就是「使用中禁删」的判据来源。 */
-function makeHarness(activeTemplate) {
+/** 最小宿主桩：编辑目标由请求目录解析器提供，不再存入 settings。 */
+function makeHarness() {
   const handlers = new Map()
   const sctx = {
     get: () => undefined,
     settings: {
-      describe: () => [{ ns: 'prompt-tool', value: activeTemplate === undefined ? {} : { presetTemplate: activeTemplate }, base: {} }],
+      describe: () => [{ ns: 'prompt-tool', value: {}, base: {} }],
       mutate: async () => {},
     },
     webServer: { register: ({ path, handler }) => { handlers.set(path, handler) } },
@@ -51,14 +52,16 @@ function register(ctx, activeTemplate, afterOverridesChange) {
     }),
     () => '',
     undefined,
-    () => undefined,
+    (requested) => {
+      const id = requested ?? activeTemplate
+      return id === undefined ? '' : join(moduleRoot, id)
+    },
     undefined,
     afterOverridesChange,
     undefined,
     undefined,
     () => {},
   )
-  void activeTemplate
 }
 
 /** 调端点；不假定成功，原样返回状态与错误载荷。 */
@@ -152,7 +155,16 @@ test('并入的源模块优先：同名模块与角色卡并存时取模块定�
   const id = 'dual-source'
   // 模块源：modules/<id>/module.yml
   mkdirSync(join(moduleRoot, id), { recursive: true })
-  writeFileSync(join(moduleRoot, id, 'module.yml'), `id: ${id}\nname: 模块源\nmodules: []\npromptConfigs:\n  - id: intro\n    strategy: static\n    layer: system-section\n    text: FROM-MODULE\n`, 'utf8')
+  writeFileSync(join(moduleRoot, id, 'module.yml'), JSON.stringify({
+    id, name: '模块源', modules: [],
+    layerSettings: { 'pre-step': { firstTurnAnchor: true, firstTurnCustom: true, firstTurnText: 'LEGACY ANCHOR' } },
+    promptConfigs: [
+      { id: 'intro', strategy: 'static', layer: 'system-section', text: 'FROM-MODULE' },
+      { id: 'near-anchor', strategy: 'first-turn-anchor', enabled: false },
+      { id: 'prompt-injector', strategy: 'custom-fallback' },
+    ],
+  }), 'utf8')
+  writeFileSync(join(moduleRoot, id, 'preset.md'), 'LEGACY BODY', 'utf8')
   // 同名角色卡源：存储根下的 .characters/<id>/converted.yml（与模块根同级）
   const legacyDir = join(dirname(moduleRoot), '.characters', id)
   mkdirSync(legacyDir, { recursive: true })
@@ -170,6 +182,11 @@ test('并入的源模块优先：同名模块与角色卡并存时取模块定�
   assert.match(written, /FROM-MODULE/, '并入必须取模块定义（模块优先）')
   assert.doesNotMatch(written, /FROM-CARD/, '不得取同名的角色卡定义')
   assert.match(written, new RegExp(`module-${id}-intro`), '条目 id 用统一前缀')
+  const configs = parse(written).promptConfigs
+  const anchor = configs.find(config => config.id === `module-${id}-near-anchor`)
+  assert.equal(anchor.enabled, true, '并入前先把旧开关交给规则实例')
+  assert.equal(anchor.params.text, 'LEGACY ANCHOR')
+  assert.equal(configs.find(config => config.id === `module-${id}-prompt-injector`).params.text, 'LEGACY BODY')
 })
 
 test('普通模块之间的并入是往返且幂等的：重复并入不翻倍，移除后自有内容原样保留', async () => {

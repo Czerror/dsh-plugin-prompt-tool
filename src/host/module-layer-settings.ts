@@ -1,11 +1,9 @@
-/** 模块磁盘参数：按编辑组主归属层存储，运行时仍使用 EngineParams 平铺接口。 */
-import { ENGINE_EDITOR_GROUP_MAP, ENGINE_LAYER_ORDER } from '../shared/engine-capabilities.ts'
+/** 模块磁盘参数：按稳定存储层归属，运行时仍使用 EngineParams 平铺接口。 */
+import { ENGINE_LAYER_ORDER } from '../shared/engine-capabilities.ts'
 import { ENGINE_PARAM_DEFINITIONS, ENGINE_PARAM_KEYS, type EngineParamKey } from '../shared/engine-params.ts'
 
 export const ENGINE_PARAM_LAYERS = Object.fromEntries(ENGINE_PARAM_KEYS.map((key) => {
-  const layer = ENGINE_EDITOR_GROUP_MAP.find((group) => group.id === ENGINE_PARAM_DEFINITIONS[key].card)?.displayLayer
-  if (layer === undefined) throw new Error(`引擎参数未登记所属层：${key}`)
-  return [key, layer]
+  return [key, ENGINE_PARAM_DEFINITIONS[key].storageLayer]
 })) as Record<EngineParamKey, string>
 
 export class PresetLayerSettingsError extends Error {

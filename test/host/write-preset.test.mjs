@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { parse as parseYaml, parseDocument } from 'yaml'
+import { Context } from '@deepseek-ai/cordis'
 
 // 隔离 DSH_HOME：writePreset 的模板解析（resolveModuleDir）用户预设优先——
 // 真实用户环境 .prompt-tool/modules/<id> 会遮蔽包内模板，测试必须隔离。
@@ -12,7 +13,9 @@ const home = mkdtempSync(join(tmpdir(), 'pt-wp-home-'))
 process.env.DSH_HOME = home
 const ROOT = fileURLToPath(new URL('../..', import.meta.url))
 const { FIXTURE_PRESET_ID, FIXTURE_PRESET_SRC, installFixturePreset, installFixturePresetInHome } = await import('../fixtures/preset-template.mjs')
-const { writePreset, saveModuleParams } = await import('../../src/index.ts')
+const { apply, writePreset, saveModuleParams } = await import('../../src/index.ts')
+const { materializeModule } = await import('../../src/host/write-preset.ts')
+const { loadModuleSpec } = await import('../../src/host/manifest.ts')
 // 夹具模板同时装进隔离 DSH_HOME 的官方模块根（resolveModuleDir 场景）与各测试的输出根（见 makeOptions）。
 installFixturePresetInHome(home)
 test.after(() => rmSync(home, { recursive: true, force: true }))
@@ -38,6 +41,152 @@ function makeOptions(moduleDir) {
     promptConfigs: [],
   }
 }
+
+async function liveWriter(t, initial) {
+  const ctx = new Context()
+  t.after(() => ctx.fiber.dispose())
+  ctx.provide('skills', { registerProvider: (factory) => { factory({ invalidate() {}, signal: new AbortController().signal }); return () => {} } })
+  ctx.provide('agents', { list: () => [] })
+  ctx.provide('webServer', {})
+  const values = { writePreset: true, ...initial }
+  apply(ctx, Object.fromEntries(Object.keys(values).map(key => [key, { get: () => values[key] }])))
+  return async (patch) => {
+    Object.assign(values, patch)
+    ctx.emit('loader/volatile-update')
+    await new Promise(resolve => setImmediate(resolve))
+  }
+}
+
+function installWriterModule(id) {
+  const moduleDir = join(home, '.prompt-tool', 'modules')
+  const dir = join(moduleDir, id)
+  mkdirSync(dir, { recursive: true })
+  writeFileSync(join(dir, 'module.yml'), JSON.stringify({
+    id, modules: ['prompt-config-engine'],
+    content: { presetText: `BODY-${id}`, agentsText: `AGENTS-${id}` },
+    layerSettings: { 'pre-step': {
+      firstTurnAnchor: true, firstTurnCustom: true, firstTurnText: `PARAM-${id}`,
+      guideEnabled: true, guideCustom: true, guideText: `GUIDE-${id}`,
+    } },
+    promptConfigs: [
+      { id: 'near-anchor', strategy: 'first-turn-anchor', enabled: false, params: { useCustom: true, text: 'RULE' } },
+      { id: 'router-guide', strategy: 'guide-auto', enabled: false, params: { useCustom: false, text: 'RULE' } },
+    ],
+  }), 'utf8')
+  writePreset(`BODY-${id}`, { moduleDir, presetTemplate: id, presetOrder: 5, promptConfigs: [], agentsInstructionText: `AGENTS-${id}` })
+  return dir
+}
+
+test('公共重建入口：逐模块重建不改变旧参数投影，也不串用模块正文', async () => {
+  const dirs = ['writer-a', 'writer-b'].map(installWriterModule)
+  for (const id of ['writer-b', 'writer-a']) materializeModule(id, { moduleDir: join(home, '.prompt-tool', 'modules') })
+  for (const [index, id] of ['writer-a', 'writer-b'].entries()) {
+    const dir = dirs[index]
+    const file = readdirSync(join(dir, 'configs')).find(name => name.endsWith('-near-anchor.yml'))
+    const config = parseYaml(readFileSync(join(dir, 'configs', file), 'utf8'))
+    assert.equal(config.enabled, true, `${id} 使用定义中的共享开关`)
+    assert.equal(config.params.text, `PARAM-${id}`, `${id} 使用定义中的共享正文`)
+    const guideFile = readdirSync(join(dir, 'configs')).find(name => name.endsWith('-router-guide.yml'))
+    const guide = parseYaml(readFileSync(join(dir, 'configs', guideFile), 'utf8'))
+    assert.equal(guide.enabled, true)
+    assert.equal(guide.params.text, `GUIDE-${id}`)
+    assert.equal(guide.modelScope, 'all', '自定义引导的派生模型范围保留')
+    assert.equal(readFileSync(join(dir, 'preset.md'), 'utf8'), `BODY-${id}`)
+    assert.equal(readFileSync(join(dir, 'agents.md'), 'utf8'), `AGENTS-${id}`)
+  }
+})
+
+test('规则所有者：无旧快捷参数的同名规则保留自身字段，物化不覆盖模块排序', () => {
+  const root = mkdtempSync(join(home, 'rule-owner-'))
+  const dir = join(root, 'example')
+  mkdirSync(dir)
+  const configs = [
+    { id: 'near-anchor', strategy: 'first-turn-anchor', enabled: true, params: { useCustom: true, text: 'RULE ANCHOR' } },
+    { id: 'router-guide', strategy: 'guide-auto', enabled: true, modelScope: 'all', params: { useCustom: true, text: 'RULE GUIDE' } },
+    { id: 'prompt-injector', strategy: 'custom-fallback', enabled: false, params: { text: 'RULE BODY', firstTurnWord: 'custom' } },
+  ]
+  writeFileSync(join(dir, 'module.yml'), JSON.stringify({ id: 'example', order: 91, modules: [], promptConfigs: configs }), 'utf8')
+  writePreset('UNRELATED BODY', { moduleDir: root, presetTemplate: 'example', presetOrder: 5, promptConfigs: [] })
+  const files = readdirSync(join(dir, 'configs')).sort()
+  for (const [index, expected] of configs.entries()) {
+    const actual = parseYaml(readFileSync(join(dir, 'configs', files[index]), 'utf8'))
+    assert.equal(actual.enabled, expected.enabled)
+    assert.deepEqual(actual.params, expected.params)
+    assert.equal(actual.fieldSources, undefined, '新产物不再声明模块快捷参数拥有规则字段')
+  }
+  assert.equal(parseYaml(readFileSync(join(dir, 'module.yml'), 'utf8')).order, 91)
+})
+
+test('旧参数收口：读取与导入同源，保存规则后旧键不复活，未承接键保留', () => {
+  const root = mkdtempSync(join(home, 'legacy-rules-'))
+  installFixturePreset(root)
+  const dir = join(root, FIXTURE_PRESET_ID)
+  const file = join(dir, 'module.yml')
+  const doc = parseDocument(readFileSync(file, 'utf8'))
+  doc.setIn(['layerSettings', 'pre-step', 'firstTurnAnchor'], true)
+  doc.setIn(['layerSettings', 'pre-step', 'firstTurnText'], 'Start your reasoning with the exact sentence: Go now.')
+  doc.setIn(['layerSettings', 'pre-step', 'complexPattern'], 'complex-task')
+  doc.setIn(['layerSettings', 'pre-step', 'guideEnabled'], false)
+  doc.setIn(['layerSettings', 'pre-step', 'guideCustom'], true)
+  doc.setIn(['layerSettings', 'pre-step', 'guideText'], 'LEGACY GUIDE')
+  writeFileSync(file, doc.toString(), 'utf8')
+  writeFileSync(join(dir, 'preset.md'), 'LEGACY BODY', 'utf8')
+  const loaded = loadModuleSpec(dir)
+  const near = loaded.promptConfigs.find(config => config.id === 'near-anchor')
+  const guide = loaded.promptConfigs.find(config => config.id === 'router-guide')
+  const injector = loaded.promptConfigs.find(config => config.id === 'prompt-injector')
+  assert.equal(near.enabled, true)
+  assert.equal(near.params.complexPattern, 'complex-task')
+  assert.equal(guide.params.complexPattern, 'complex-task', '共享复杂模式交给两条规则')
+  assert.equal(guide.enabled, false)
+  assert.equal(guide.params.useCustom, true, '停用不丢弃已保存的自定义模式偏好')
+  assert.equal(guide.modelScope, 'all')
+  assert.equal(injector.params.text, 'LEGACY BODY')
+  assert.ok(injector.params.anchorWords.includes('go'))
+  const imported = writePreset('LEGACY BODY', { moduleDir: root, presetTemplate: FIXTURE_PRESET_ID, outputId: 'imported', sourceDir: dir, promptConfigs: [] })
+  const importedNear = readdirSync(imported + '/configs').find(name => name.endsWith('-near-anchor.yml'))
+  assert.equal(parseYaml(readFileSync(join(imported, 'configs', importedNear), 'utf8')).params.complexPattern, 'complex-task')
+  const edited = loaded.promptConfigs.map(config => config.id === 'near-anchor'
+    ? { ...config, enabled: false, params: { ...config.params, text: 'OWNED RULE' } } : config)
+  saveModuleParams(root, FIXTURE_PRESET_ID, { maxDepth: 0 }, edited)
+  const saved = parseYaml(readFileSync(file, 'utf8'))
+  assert.equal(saved.layerSettings['pre-step']?.firstTurnText, undefined)
+  assert.equal(saved.layerSettings['pre-step']?.complexPattern, undefined)
+  assert.equal(saved.layerSettings['subagent-start'].maxDepth, 0)
+  materializeModule(FIXTURE_PRESET_ID, { moduleDir: root })
+  const ownedNear = loadModuleSpec(dir).promptConfigs.find(config => config.id === 'near-anchor')
+  assert.equal(ownedNear.enabled, false)
+  assert.equal(ownedNear.params.text, 'OWNED RULE')
+  saveModuleParams(root, FIXTURE_PRESET_ID, { firstTurnText: '' }, undefined)
+  assert.equal(loadModuleSpec(dir).promptConfigs.find(config => config.id === 'near-anchor').params.text, '')
+  const orphanDir = join(root, 'orphan')
+  mkdirSync(orphanDir)
+  writeFileSync(join(orphanDir, 'module.yml'), 'id: orphan\nmodules: []\nlayerSettings:\n  pre-step:\n    guideWeak: KEEP\n', 'utf8')
+  saveModuleParams(root, 'orphan', undefined, [])
+  assert.equal(parseYaml(readFileSync(join(orphanDir, 'module.yml'), 'utf8')).layerSettings['pre-step'].guideWeak, 'KEEP')
+  const warnings = []
+  writePreset('', { moduleDir: root, presetTemplate: 'orphan', promptConfigs: [], warn: message => warnings.push(message) })
+  assert.ok(warnings.some(message => message.includes('guideWeak')), '未承接旧键有明确诊断')
+})
+
+test('运行总闸：关闭再开启不改模块定义或物化产物字节', async (t) => {
+  const dir = installWriterModule('writer-gate')
+  const files = ['module.yml', 'agent.cordis.yml', 'preset.md', 'agents.md', ...readdirSync(join(dir, 'configs')).map(file => join('configs', file))]
+  const before = files.map(file => readFileSync(join(dir, file)))
+  const update = await liveWriter(t, { presetTemplate: 'writer-gate' })
+  for (const writePreset of [false, true]) {
+    await update({ writePreset })
+    for (const [index, file] of files.entries()) {
+      assert.equal(existsSync(join(dir, file)), true, `${file} 不能被总闸删除`)
+      assert.deepEqual(readFileSync(join(dir, file)), before[index], `${file} 不能被总闸改写`)
+    }
+  }
+  await update({ writePreset: false })
+  saveModuleParams(join(home, '.prompt-tool', 'modules'), 'writer-gate', { firstTurnText: 'SAVED-WHILE-OFF' })
+  materializeModule('writer-gate', { moduleDir: join(home, '.prompt-tool', 'modules'), presetOrder: 5 })
+  const configFile = readdirSync(join(dir, 'configs')).find(file => file.endsWith('-near-anchor.yml'))
+  assert.equal(parseYaml(readFileSync(join(dir, 'configs', configFile), 'utf8')).params.text, 'SAVED-WHILE-OFF')
+})
 
 test('writePreset 共享引擎：模块根不物化 .engine，组合引用插件包说明符', () => {
   const dir = join(tmpdir(), `prompt-tool-wp-${process.pid}-${Date.now()}`)

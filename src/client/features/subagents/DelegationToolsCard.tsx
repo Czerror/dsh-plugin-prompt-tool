@@ -16,15 +16,17 @@ export function DelegationToolsModuleCard(props: {
 }): ReactNode {
   const { store, t } = props
   const fields = store.fields
+  const disabled = !fields.writePreset || store.moduleFacts?.editable !== true
+    || store.moduleFacts.subagentToolPolicyEnabled !== true
   const maxDepthOptions = ['', 'provider-managed', '0', '1', '2', '3', '5']
   return (
     <EngineModuleCard name={t('policy.delegation.name')} meta={t('policy.delegation.meta')}
       defaultExpanded={store.editorDrafts?.expanded.get(`${fields.presetTemplate}:delegation`)}
       onExpandedChange={(value) => store.editorDrafts?.expanded.set(`${fields.presetTemplate}:delegation`, value)}>
-      <p className={styles.configFieldHint}>{t('policy.delegation.hint')}</p>
+      <p className={styles.configFieldHint}>{t('param.maxDepth.hint')}</p>
       <div className={styles.settingRowStack}>
         <div className={styles.switchGrid}>
-          <HintTooltip label={t('policy.delegation.depthHint')}>
+          <HintTooltip label={t('param.maxDepth.hint')}>
             <span className={clsx(styles.switchGridItem, styles.switchGridField)}>
               <span className={styles.switchGridLabel}>{t('param.maxDepth')}</span>
               <MenuSelect
@@ -32,9 +34,10 @@ export function DelegationToolsModuleCard(props: {
                 compact
                 ariaLabel={t('param.maxDepth')}
                 value={fields.maxDepth}
-                disabled={!fields.writePreset}
+                disabled={disabled}
                 options={maxDepthOptions.map((item) => ({ value: item, label: item === '' ? t('policy.delegation.depthUnset') : item }))}
                 onChange={(value) => {
+                  if (disabled) return
                   store.patch({ maxDepth: value })
                   void store.persistParamOverrides()
                 }}

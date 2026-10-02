@@ -100,13 +100,13 @@
     │  ├─ instruction-policy.ts
     │  ├─ model-sync-notice.ts
     │  ├─ param-overrides.ts
+    │  ├─ prompt-config-order.ts
     │  ├─ prompt-config-content.ts
     │  ├─ prompt-tool-fields.ts
     │  ├─ prompt-tool-view.ts
     │  ├─ save-queue.ts
     │  ├─ session-model-face.ts
     │  ├─ session-preset-face.ts
-    │  ├─ session-preset-follow.ts
     │  ├─ use-import-preview-flow.ts
     │  ├─ use-prompt-tool-fields.ts
     │  ├─ use-prompt-tool-store.ts
@@ -121,6 +121,7 @@
     │  ├─ modules/
     │  │  ├─ EngineModuleList.tsx
     │  │  ├─ EngineParamFields.tsx
+    │  │  ├─ ModuleConfigOrderCard.tsx
     │  │  └─ ModulesPage.tsx
     │  ├─ persona/
     │  │  └─ PresetPersonaCard.tsx
@@ -129,7 +130,6 @@
     │  │  ├─ PresetExportDialog.tsx
     │  │  └─ PresetSwitcher.tsx
     │  ├─ prompts/
-    │  │  ├─ prompt-config-order.ts
     │  │  ├─ prompt-config-policy.ts
     │  │  ├─ prompts.module.css
     │  │  ├─ PromptConfigCard.tsx
@@ -211,7 +211,7 @@ CSS 构建模块只收集样式数据；`styles.ts` 在入口 `ctx.effect` 中�
 1. locale 字典注册：`ctx.effect(() => registerPromptToolLocale(ctx.locale))` 把 `src/client/locales.ts` 的 zh/en 字典注册进官方命名空间 `prompt-tool`；卸载/重挂由 effect 释放，不重复注册。随后 `ctx.locale.bind(LOCALE_NS)` 得到引用稳定的 `t`。
 2. 连接世代重建：`ctx.on('connection/reset')` 触发一次 `bridgeCall('models', { refresh: true })`，让宿主重连后丢弃陈旧的模型目录缓存；失败静默，不阻塞启动。
 3. prompt-tool ConfigForms transport：`configForms.get('prompt-tool')` 复用标准部署设置的镜像与写入队列；`mutate` 返回 false 必须显示保存失败，不推进保存基线。
-4. PromptToolHostApi，封装目录选择、打开路径、预设切换、当前会话模型选择与当前会话预设；`currentSessionId()` 经 `session-id-source.ts` 读 `ctx.uiSession.adapter.current` 的作用域绑定——官方在 `0.1.6-alpha.2` 删除了 `SessionListState.current`（当前选中会话已移出 Session Controller，`ISessions` 注释：navigation belongs to view owners），视图层的 selection 均为 private，作用域绑定是唯一公开读取路径。session-model-face 与 session-preset-face 在这里**内联构造**为 `api.sessionModel` / `api.sessionPreset` 字段（不单独成步），前者经 `remote.session.selectModel` 写回，后者只读官方会话投影 `agentPreset`（官方侧会话级预设切换的事实来源，投影缺失时按无记录处理）。
+4. PromptToolHostApi，提供目录选择、打开路径与当前会话模型等宿主适配。`currentSessionId()` 经 `session-id-source.ts` 读 `ctx.uiSession.adapter.current` 的作用域绑定；当前会话模型经 `session-model-face` 读取并通过官方 `selectModel` 写回。官方会话预设投影与模块编辑目标分离，工作台切换模块不调用官方预设切换，也不订阅预设跟随。
 5. PromptToolWorkbenchFace：controller / api / settings / `t`。
 6. registerWorkbenchSlots(ctx, face)，唯一负责 shell.overlay 悬浮入口与 settings.plugins.tab 的注册。
 
@@ -221,7 +221,7 @@ CSS 构建模块只收集样式数据；`styles.ts` 在入口 `ctx.effect` 中�
 
 | 官方注册面 | id / key | 位置 | owner | 作用 |
 |---|---|---|---|---|
-| settings.plugins.tab | prompt-tool | order 40 | SettingsTab | 部署开关、AGENTS 写入/注入和默认预设 |
+| settings.plugins.tab | prompt-tool | order 40 | SettingsTab | 模块运行总闸（兼容持久键 `writePreset`） |
 | shell.overlay | prompt-tool-workbench | order 50 | WorkbenchOverlay | 可拖动悬浮触发器 + body portal 抽屉 |
 
 两处 slot 都使用 ctx.slots.inject() 等待官方槽位声明，再调用 ctx.slots.register()。返回的 disposer 在 register-workbench.tsx 中统一释放。不要添加第二个注册入口，也不要改变 id 或 inject face 的形状。
@@ -257,7 +257,7 @@ CSS 构建模块只收集样式数据；`styles.ts` 在入口 `ctx.effect` 中�
 ### 5.1 可见入口
 
     settings.plugins.tab
-      └─ 基础设置：部署开关 + 默认预设
+      └─ 基础设置：模块运行总闸
 
     悬浮入口（shell.overlay 可拖动触发器，位置存插件 localStorage）
       └─ 完整工作台（body portal 抽屉）
@@ -269,7 +269,7 @@ CSS 构建模块只收集样式数据；`styles.ts` 在入口 `ctx.effect` 中�
 
 settings tab 不复制工作台内容。完整工作台由 PromptWorkspace 创建 store、保存当前页，并在打开时触发一次 load；WorkspaceFrame 负责公共 header、导航、canvas、loading 和 notice。
 
-模块的目录物化、复制、删除和参数由本插件维护；模块**不进入**官方 `agentPresets` 注册表，该服务只用于会话预设切换，本插件既不读也不写它的默认值（`selectedDefault` / `defaultId`）。
+模块的目录物化、复制、删除和参数由本插件维护；模块不进入官方 `agentPresets` 注册表，编辑目标不驱动官方会话预设切换。工具预览仍可只读官方 roster；默认值 `selectedDefault` / `defaultId` 不参与模块设置。
 
 ### 5.2 页面 ID、顺序与组合
 
@@ -281,9 +281,11 @@ workspace-pages.ts 是页面元数据的唯一来源。默认页为 features，�
 | subagent | 子代理 | 同一 `engineLayerSlots(audience: 'subagent')`、顶部九层模板菜单与各层内创建入口、ConfigListWithTemplates（scope=subagent）；引擎设置同样嵌在该层实例卡内 |
 | tools | 工具预览 | 顶置统一搜索；当前会话／所选预设两个可折叠分组，预设选择位于分组标题右侧；双列展开详情卡，680px 以下单列 |
 | skills | 技能设置 | 技能根与资产卡（用户技能根、创建、复制导入、技能文件夹引用）、状态与来源筛选、按来源分组的 SkillRow（三行摘要、文件编辑、调用策略开关、删除） |
-| modules | 模块 | 模块列表（启用、新建、复制、导出、删除、打开目录、导入）、全局生成开关与 AGENTS 路径／生成顺序，以及角色卡素材区（导入、并入当前模块、移除、删除） |
+| modules | 模块 | 模块列表（启用、新建、复制、导出、删除、打开目录、导入）、运行总闸、已启用配置排序，以及角色卡素材区（导入、并入当前模块、移除、删除） |
 
 模块页由原「预设配置」页与「角色管理」页合并而成（页 id 从 `presets`/`characters` 收敛为 `modules`）：模块既是载体也是库成员，列表、导入、并入、移除、删除与新建/复制/导出属于同一件事。**卡片形态只有一种**——卡体（`.moduleCardBody`）只承载名称、描述、id 与状态徽章，没有点击语义；动作全部在卡脚（`.presetCardFooter`）的胶囊与图标按钮上，启用是其中一枚胶囊。删除守卫按「是否仍在别处生效」判定：当前模块的删除按钮禁用（先切换），已并入当前模块的角色卡删除按钮同样禁用（先从模块移除），两处禁用都带原因提示。数据源不强行统一：模块列表读工作台 store 的 `meta.presets`，角色卡读 `charactersList` 端点 + 页内状态，为「看起来一致」把角色卡搬进 store 不换算。
+
+“已启用配置排序”复用折叠卡与现有列表控件，按插入点、位置直接分组，支持跨模块拖拽及上移／下移键盘替代。只提交模块 ID＋配置 ID 列表与版本，不编辑正文或任意序号；自动保存失败保留当前顺序，显式刷新可重新读取。普通配置列表移动复用同一端点，交换自己原有的槽位。纯移动算法位于 `data/prompt-config-order.ts`，两个 feature 不互相导入内部实现。
 
 预设人设卡（`features/persona/PresetPersonaCard.tsx`）编辑 module.yml 顶层 `persona` 段的四个可编辑项：`prefix`、`suffix`，以及 `complete`（独占）与 `includeRuntimeContext`（动态运行时上下文）两个开关（后者默认开启）。读写都走 `/persona`，写由 host 校验并原子写盘；`complete` 与提示词配置的「独占」互斥，由 bridge 在写盘前 fail loud。卡头 meta 区分「存在 persona 段」与「继承预设」——空对象 `{}` 也算存在，不等于有实际内容。四项均未改动时保存落成删除语义（不带 persona 写盘）；二次确认的移除入口只在 persona 段已存在时渲染。它只在主会话页出现，不在子代理页渲染。
 
@@ -322,9 +324,9 @@ workspace-pages.ts 是页面元数据的唯一来源。默认页为 features，�
 | 工作台抽屉开关 | workspace-controller | 工作台实例内存态；刷新回落 |
 | 当前顶层页 | PromptWorkspace | 工作台挂载期；不写 URL 或 localStorage |
 | fields、meta、catalog | usePromptToolStore | 工作台挂载期；打开时重新同步 |
-| 标准设置值 | 官方 ConfigForms | 宿主 mirror 生命周期 |
+| 模块运行总闸 | 官方 ConfigForms | 仅持久键 `writePreset`；关闭卸载贡献，不清盘 |
 | 当前会话模型 | session-model-face | 官方 sessions projection 生命周期 |
-| 当前会话预设的跟随 | session-preset-face + session-preset-follow | 读官方 sessions projection `agentPreset`；跟随写的是同一份插件预设事实（settings.presetTemplate），不为同一预设重复切换会话 |
+| 模块编辑目标 | store + bridge 请求头 | 客户端编辑状态；通过 `x-module-id` 指定，不写部署设置，不决定启用集合 |
 | filter、search、列表展开、页滚动 | workspace-browse-state | 工作台实例期，配置视图按页面/预设区分；异步资源就绪后一次恢复滚动 |
 | 工具、人设、策略、原始 JSON/数字草稿 | store.editorDrafts / workspace-drafts | 按预设和字段身份保留；未存草稿或保存中阻止预设切换；改名迁移、删除清理对应字段 |
 | 指令文件正文草稿 | instruction-drafts | 与预设保存队列分离；按指令上下文（`contextId`）隔离，旧上下文迟到响应不覆盖当前视图 |
@@ -349,6 +351,8 @@ workspace-pages.ts 是页面元数据的唯一来源。默认页为 features，�
 
 bootstrap 是首屏聚合请求，不因筛选或输入字符增加 bridge 请求。模型目录保持惰性加载；技能筛选、状态筛选和搜索在客户端完成。技能写入后局部刷新 `/skills-list`，不重载预设或指令草稿；技能页仅提供“导入技能”和“引用文件夹”两个宿主目录选择按钮，不保留浏览器上传与手动路径输入。复制导入继续经过数据层的覆盖确认与写入流程，引用只登记目录；取消、选择器失败或离页后的迟到结果不提交。
 
+同一 bootstrap 请求只解析一次模块目录，描述身份、参数、能力事实、变量与配置卡均来自该目录。未带目标请求头时，响应身份也投影实际默认目录，不从已退役的部署选择字段推断。
+
 同一预设的后台刷新同时保护请求开始前已有的未保存提示词配置与模板变量草稿，以及请求期间新增的编辑。保存后同步元数据时，已确认写入的提示词定义不被暂时为空的生成快照覆盖。未填写名称的变量行只在写入载荷中清理，本地编辑行保留；预设身份切换仍按原保存与上下文边界处理。
 
 ### 6.3 纯逻辑与 facade
@@ -362,6 +366,7 @@ use-prompt-tool-store.ts 是唯一工作台 facade，负责把 ConfigForms mirro
 | dirty-state.ts | snapshot、深比较和 reload 判定 |
 | param-overrides.ts | params 的列表拆分、条件发送和读回 patch |
 | prompt-config-content.ts | preset.md 内容资产的提升与剥离；AGENTS 文件卡（`params.file`）的正文提升与文件写回分流 |
+| prompt-config-order.ts | 配置视图内的移动算法；普通列表与跨模块排序共同复用 |
 | save-queue.ts | 串行保存任务的最小队列 |
 | import-files.ts | 浏览器文件导入的纯读取辅助 |
 | use-import-preview-flow.ts | 导入的预览→确认→提交流程状态机（预设包与角色卡共用） |
@@ -370,7 +375,6 @@ use-prompt-tool-store.ts 是唯一工作台 facade，负责把 ConfigForms mirro
 | instruction-policy.ts | 指令策略的读写、默认值与单文件开关推导 |
 | session-model-face.ts | 官方会话模型 projection 与选择动作 |
 | session-preset-face.ts | 官方会话预设 projection `agentPreset` 与标题 projection `title` 的读取与订阅（当前会话真正运行的预设；标题只用于提示指名会话，缺失退回 id 短号） |
-| session-preset-follow.ts | 会话预设跟随决策：投影与工作台数据不同源/一致/未加载/不可跟随/有草稿/写盘中的分支与防重入 |
 
 这些模块不重复实现页面渲染，也不把 feature 专属网络流程塞回通用 transport。
 
@@ -412,13 +416,14 @@ JSON bridge 的统一上限为 32 MiB；角色卡原始文件流独立限制为 
 5. promptConfigs 自动保存使用 debounce；工具栏手动保存仍经过配置校验，模块列表不再提供未保存提示、放弃修改和浮动保存条。
 6. 参数空字符串/空数组沿用删除键语义；variables 的空字符串仍是合法占位值。详细参数规则见 [architecture-params.md](architecture-params.md)。
 7. 预设写入携带 `expectedPresetId`，读回失败的自定义工具不降级为空列表供覆盖；跨预设旧草稿被拒绝，切换等待参数保存队列。
-8. 切换预设是事务：先保存当前预设草稿，保存未成功（失败/被拒）即取消切换并保留草稿；切换成功后等 settings 写入与随后的静默 load 完成才返回。切换或首次加载完成前，`loadedModuleRef` 拒绝参数、promptConfigs 与模板变量写盘——旧预设字段不会带新 `presetTemplate` 落盘；重新加载成功应用该预设数据后才恢复写入。官方侧给空白会话切换预设（会话级 select，只改那个会话、不改宿主默认预设）走同一事务的**跟随**变体：读会话投影 `agentPreset`，一致、首次加载未完成、投影所属会话与工作台数据所属会话不同源、目标不在插件管理目录、当前预设仍有未保存草稿或写盘进行中都不动作；不可跟随的 id 只提示一次，提示用绿色胶囊标出是哪个会话（官方 `title` 投影，无标题时退回会话 id 短号），不要求用户对着一个预设 id 猜；跟随时不再 select 会话——会话已经运行在该预设上，重复 select 只会多记一条 `agent-preset/selected` 事件。
+8. 切换编辑模块先保存当前草稿，失败即取消切换并保留草稿；成功后更新请求头目标并等待重读，不写 settings、不切换或跟随官方会话预设。首次加载或切换完成前，`loadedModuleRef` 拒绝参数、promptConfigs 与模板变量写盘，避免旧字段带新目标落盘。
 9. 技能清单和策略均不进 settings：单端调用策略走 `/skill-policy`（`name/path/side/enabled/sessionId?`，服务器在同工作区重新校验身份；显式两端操作可用 `scope`），引用走 `/skills-folders`，清单走 `/skills-list`。快照保留 `complete`，空数组是权威空结果；调用声明和当前会话注册状态分别呈现。创建/导入走既有端点；删除提交 `name/path/sessionId?`，确认框与请求使用同一条目，用户根及显式引用根按服务器能力开放回收站删除。契约见 [skills-management.md](skills-management.md)。
 10. 指令文件正文走独立草稿池（`data/instruction-drafts.ts`），不与预设保存队列混用：预设 debounce 自动保存与预设切换一律不带文件正文；焦点离开指令文件卡（或列表「保存全部」）时提交 dirty 文件，成功只把请求时快照记为基线，冲突/失败保留草稿并显示「重新读取」。会话或工作区切换建立新的指令上下文（`instructions.context.contextId` 变化即新上下文）：旧上下文的迟到响应不覆盖当前视图，旧 `contextId` 的保存被服务端 409 拒绝。
 11. 指令负责人事实来自 `/bootstrap` 的 `instructions.owner.officialInstructions`（服务端从 pre-step 协调器观察结果取）：`true` 表示官方负责注入，`false` 表示未装配官方来源，`null` 表示尚未观察到。文件可读与官方已装配都不能显示为该文件「已经注入」；官方未装配时插件不补建文件注入。
 12. 不再提供「独立指令文件来源」总开关。文件卡启停仅写独立策略 `files[fileId].enabled`，默认放行；关闭只拦截后续官方注入，不撤回历史，重新开启不强制重放。策略不可读时禁用策略编辑，保留诊断；应答成功前不乐观显示已保存。名称与开关跨预设共享，位置、顺序、晋升、受众和模型范围不属于文件卡控制项。
 13. bootstrap 与策略快照均读取完成后再应用，异步边界复核请求序号、会话与草稿状态。暂时离开工作区只暂停文件写资格，保留草稿与版本基线；返回并读取时，版本未变可继续保存，版本变化仍须解决冲突。
 14. 列表保存按钮等待真实 `Promise<boolean>` 结果；文件或预设部分失败时不显示整体成功、不以静默重载清除错误。已经成功保存的文件立即更新其基线，不因后续失败回滚或丢失确认。
+15. 配置排序走 typed `moduleConfigOrder` 端点，服务端校验身份集合与 revision，拒绝未知、重复身份及过期版本。顺序写回 `module.yml.configOrder`，客户端不提交正文、文件路径或序号；模块启用或停用均可保存自身排序，总闸关闭仍可改排序定义。
 
 ### 7.4 导入预览与提交
 
@@ -457,11 +462,11 @@ feature 只拥有自己的视图、瞬时状态、领域纯 helper 和 CSS：
 | prompts | 六层配置卡、字段策略、排序、模板插入、变量编辑和内容配置；世界书只读诊断卡 |
 | persona | module.yml 顶层 persona 段的编辑卡；prefix/suffix 与 complete 互斥校验，写盘经 host 校验与重建 |
 | models | 当前预设的主/子代理模型路由卡；模型下拉展示完整目录并按服务商分组，选择模型时内部回写 provider + model，不提供独立服务商选择控件 |
-| modules | 引擎能力身份、存在性判定与「本层引擎设置」内容装配（`LayerSettingsContent`：参数分组、已装配能力的装配状态与移除、按层归属的资产编辑器）；消费 `/bootstrap.moduleFacts`（显式模块及仍在运行的历史策略兼容装配），卡片壳 ui/EngineModuleCard.tsx 现在只服务资产编辑器 |
+| modules | 模块页与跨模块配置排序；引擎能力身份、存在性判定及「本层引擎设置」内容装配；消费 `/bootstrap.moduleFacts`，其中 `subagentToolPolicyEnabled` 区分插件策略与宿主委派 |
 | subagents | 委派工具、实例级工具策略草稿及策略解析预览；不重复嵌入工具面 |
 | tools | 自定义工具编辑/保存、参数模板；独立工具预览页与只读工具面 |
 | skills | 按官方六类技能根分组展示清单、来源与遮蔽判定、调用策略开关、宿主目录选择导入与引用、创建、回收站删除；契约见 [skills-management.md](skills-management.md) |
-| presets | 模块页的模块列表：生成开关与路径、切换、新建/克隆、导入导出、复制/删除/打开（页面壳在 `features/modules/ModulesPage.tsx`） |
+| presets | 模块页的模块列表：启停、编辑选择、新建/克隆、导入导出、复制/删除/打开（页面壳在 `features/modules/ModulesPage.tsx`） |
 | characters | 模块页的角色卡素材区：SillyTavern PNG/JSON 导入、角色卡库存、并入当前模块/移除/删除 |
 
 业务 feature 直接使用 data/bridge-client.ts 的 endpoint key；共享控件从 ui/导入。跨 feature 组合由 app/workspace/pages/完成，不在 feature 内建立第二个工作台。
@@ -530,7 +535,7 @@ world-book 视图只隐藏工具栏之外的列表主体之外的附加提示，
 
 世界书是提示词策略筛选，不承载引擎设置（只读诊断卡只在 `world-book` 视图显示）；自定义工具编辑器按 `custom-tools` 编辑组归位到 tool-pipeline 层。配置卡及设置内容可随筛选和折叠卸载，未保存资产与字段草稿由既有共享草稿池保留；工具读取与创建由页面所有者承载，保存失败保留原输入。
 
-搜索统一覆盖「中文名 + 技术键」，且只影响展示：配置实例使用 `matchesConfigKeyword`；真实层装配通过既有 `matchesEditorGroup` 与分组标题判定设置匹配，匹配时保留同层承载实例，展开后隐藏未命中的组。没有实例的层不会因为设置命中而生成卡片。批量启停仍只作用原配置搜索集合，并排除 host 标记的受管投影，不把仅因设置命中而保留的卡算进写范围。清空搜索恢复原列表，不创建配置或保存。
+搜索统一覆盖「中文名 + 技术键」，且只影响展示：配置实例使用 `matchesConfigKeyword`；真实层装配通过既有 `matchesEditorGroup` 与分组标题判定设置匹配，匹配时保留同层承载实例，展开后隐藏未命中的组。没有实例的层不会因为设置命中而生成卡片。批量启停只作用原配置搜索集合；旧快捷参数的 `fieldSources` 不再锁定规则或排除其编辑能力，不把仅因设置命中而保留的卡算进写范围。清空搜索恢复原列表，不创建配置或保存。
 
 变量卡的输入、启停、删除和失焦保存受真实预设可写性约束；折叠按钮继续可用，React 状态立即更新并记入既有草稿键。模型资产的预设参数同样只读，但当前会话的 `selectModel` 仍单独按官方 selectable 决定可用性。
 
@@ -612,7 +617,7 @@ world-book 视图只隐藏工具栏之外的列表主体之外的附加提示，
 - 不把 store 放进 Context 触发整树广播；只在有实测收益时保留 memo 和稳定 callback。
 - 首屏使用一次 bootstrap 聚合；模型目录惰性加载并缓存。
 - filter/search 只在客户端运行；不引入虚拟列表、dynamic import 或 code splitting 来解决尚未出现的规模问题。
-- UI 分组不建立六个插入点的全局执行顺序；order 只在同一官方 seam 内解释。
+- UI 分组不建立九个插入点的全局执行顺序；配置序号控制对应插入点、位置内的次序，官方定位 `order` 独立保留。
 - order 的官方刻度只出现在 `system-section` 与 `runtime-context` 两层。数字输入与「插入到官方位置…」共用同一 NumberField 草稿和接受值路径；选择快捷位置同时更新数字、清除该字段错误，不改其他草稿。区段之前使用 `from - 1`，全部之后使用 `max(to) + 1`，避免同值按名称排序导致位置不符。边界来自 bridge 的 `meta.officialOrders`；缺席或空表时只保留数字输入。其余层只显示层内顺序说明。
 - 配置卡最外层折叠保留；内部使用条件、执行、内容和设置导航，隐藏面板不进入 Tab 顺序，错误状态能在页签提示。数字与快捷选择具有独立关联标签；窄容器下改成上方标签页和单列字段。竖排导航列与页签按钮都贴合自身文案宽度，页签与右侧面板之间不留空白。
 - 当前会话模型始终读取官方 sessions projection，切换始终走 official session.selectModel。

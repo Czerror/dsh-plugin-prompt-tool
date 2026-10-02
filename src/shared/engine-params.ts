@@ -13,26 +13,15 @@
  *
  * 全部字段可选：缺省 = 模板 preset.yml layerSettings / 引擎默认，符合「一切皆可自定义」。
  */
+import type { EngineLayer } from './engine-capabilities.ts'
+import { LEGACY_PROMPT_PARAM_DEFINITIONS, LEGACY_PROMPT_PARAM_KEYS, isLegacyPromptParam, type LegacyPromptParams } from './legacy-prompt-params.ts'
+
 export interface EngineParams {
-  /** 首轮近距离锚定：首条真实用户消息后追加一次性首句锚点。 */
-  firstTurnAnchor?: boolean
-  /** 自定义锚点文本；firstTurnCustom=true 时固定使用。 */
-  firstTurnText?: string
-  /** 自定义锚点开关：true 固定使用 firstTurnText；false 按任务自动选择。 */
-  firstTurnCustom?: boolean
-  /** 自定义每轮引导文本；guideCustom=true 时固定使用。 */
-  guideText?: string
-  /** 自定义每轮引导开关：true 固定使用 guideText；false 按任务自动选择。 */
-  guideCustom?: boolean
-  /** 每轮引导独立开关；缺省关闭。 */
-  guideEnabled?: boolean
-  /** 锚定确认后注入 preset.md；关闭时仍保留工具引导，但不生成 prompt-injector 提示词配置内容。 */
-  injectPrompt?: boolean
-  /** 模型路由 provider；与模型名同时非空时给 subagent/subagent_fork 行加 agentOptions（主对话直派子代理与委派子代理通用）。 */
+  /** 主会话请求路由 provider；与模型名同时非空时生效。 */
   modelProvider?: string
   /** 模型名；与 provider 同时非空时生效。 */
   modelName?: string
-  /** 子代理固定模型路由 provider（agentOptions 注入 tool-subagent）。 */
+  /** 本地子代理请求路由 provider；不改写普通官方委派的创建参数。 */
   subagentModelProvider?: string
   /** 子代理固定模型名。 */
   subagentModelName?: string
@@ -48,33 +37,10 @@ export interface EngineParams {
   subagentTemperature?: string
   /** 子代理输出上限（agent-request patch，audience=subagent；''=不设置）。 */
   subagentMaxTokens?: string
-  /** 委派递归深度上限（0 禁止委派 / provider-managed / 正整数；数字字符串同义）。 */
+  /** 已启用子代理工具策略的递归深度上限；普通官方委派由宿主管理。 */
   maxDepth?: number | 'provider-managed' | string
-  /** custom-fallback 锚定词（prompt-injector params.firstTurnWord）。 */
-  firstTurnWord?: string
-  /**
-   * 锚定/引导内容键：writePreset 把它们映射进 near-anchor / router-guide 的
-   * promptConfig params（由对应策略消费）。此前只在 PARAM_KEYS 旁路白名单里，
-   * 保存链接受键名却被值校验拒绝，形成「白名单通过、写盘前报未知键」的断层。
-   */
-  /** 构建任务正则（锚定三档分类的 build 档；编译规则与 engine/classify-task.mjs 同源，flags=i）。 */
-  buildPattern?: string
-  /** 复杂任务正则（锚定 complex 档与引导深度判定共用）。 */
-  complexPattern?: string
-  /** 构建档锚句。 */
-  firstTurnBuild?: string
-  /** 排查档锚句。 */
-  firstTurnInspect?: string
-  /** 深度档锚句。 */
-  firstTurnDeep?: string
-  /** 引导-简短档正文。 */
-  guideWeak?: string
-  /** 引导-深度档正文。 */
-  guideDeep?: string
   /** 晋升后 agent-instructions 全文 → 一次性 hint。 */
   instructionHint?: boolean
-  /** str-replace-editor 最大输出字符数（参数桥默认官方值 16000；由引擎能力卡编辑）。 */
-  strReplaceEditorMaxOutputChars?: number
   /** tool-git-bash 行的能力开关（B2 T3 补；此前该行只能靠「在不在组合里」决定启停）。 */
   toolGitBashEnabled?: boolean
   /** 自定义模型工具在执行前需用户批准的执行器种类。 */
@@ -94,7 +60,7 @@ type AssertKeysEqual<A extends string, B extends string> =
  * RuntimeOptions（装配态）与 WritePresetOptions（写入态）都从这里派生，
  * 防止「加参数只改一处、writePreset 忘透传」的静默漂移（如 stageAdvanceDescription 历史事故）。
  */
-export type PresetWriterParams = Partial<EngineParams>
+export type PresetWriterParams = Partial<EngineParams & LegacyPromptParams>
 
 /**
  * 数值型引擎参数保存前校验（与 write-preset.modelRequestConfigs 消费规则同源）。
@@ -130,55 +96,41 @@ const POSITIVE_INTEGER: (value: number) => string | undefined = (value) =>
 
 export type EngineParamDefinition = ParamRule & {
   card: string
+  /** 稳定磁盘归属，不随编辑卡的显示位置改变。 */
+  storageLayer: EngineLayer
   /**
    * 显示标签不进 shared：UI 侧按 `param.<键>` 查 prompt-tool 字典（见
    * src/client/locales-params.ts）。shared 不 import client 字典，也不持有任何文案。
    */
   /** 未配置时的编辑草稿；不等于强制写入运行时默认值。 */
   defaultValue: string | number | boolean | undefined
-  module?: { row: string; key?: string; mode?: 'editor-default' }
+  module?: { row: string; key?: string }
 }
 
 /** 类型、校验、卡片归属、草稿默认值和组合行映射的唯一运行时目录。 */
 export const ENGINE_PARAM_DEFINITIONS: Record<EngineParamKey, EngineParamDefinition> = {
-  firstTurnAnchor: { kind: 'boolean', defaultValue: false, card: 'prompt-defaults' },
-  firstTurnText: { kind: 'string', defaultValue: '', card: 'prompt-defaults' },
-  firstTurnCustom: { kind: 'boolean', defaultValue: false, card: 'prompt-defaults' },
-  guideText: { kind: 'string', defaultValue: '', card: 'prompt-defaults' },
-  guideCustom: { kind: 'boolean', defaultValue: false, card: 'prompt-defaults' },
-  guideEnabled: { kind: 'boolean', defaultValue: false, card: 'prompt-defaults' },
-  injectPrompt: { kind: 'boolean', defaultValue: true, card: 'prompt-defaults' },
-  modelProvider: { kind: 'string', defaultValue: '', card: 'main-model' },
-  modelName: { kind: 'string', defaultValue: '', card: 'main-model' },
-  subagentModelProvider: { kind: 'string', defaultValue: '', card: 'subagent-model' },
-  subagentModelName: { kind: 'string', defaultValue: '', card: 'subagent-model' },
-  modelReasoningEffort: { kind: 'string', defaultValue: '', card: 'main-model' },
-  modelTemperature: { kind: 'number', check: FINITE_NUMBER, defaultValue: '', card: 'main-model' },
-  modelMaxTokens: { kind: 'number', check: POSITIVE_INTEGER, defaultValue: '', card: 'main-model' },
-  subagentReasoningEffort: { kind: 'string', defaultValue: '', card: 'subagent-model' },
-  subagentTemperature: { kind: 'number', check: FINITE_NUMBER, defaultValue: '', card: 'subagent-model' },
-  subagentMaxTokens: { kind: 'number', check: POSITIVE_INTEGER, defaultValue: '', card: 'subagent-model' },
-  maxDepth: { kind: 'max-depth', defaultValue: '', card: 'subagent-tools' },
-  firstTurnWord: { kind: 'string', defaultValue: '', card: 'prompt-defaults' },
-  buildPattern: { kind: 'pattern', defaultValue: '', card: 'prompt-defaults' },
-  complexPattern: { kind: 'pattern', defaultValue: '', card: 'prompt-defaults' },
-  firstTurnBuild: { kind: 'string', defaultValue: '', card: 'prompt-defaults' },
-  firstTurnInspect: { kind: 'string', defaultValue: '', card: 'prompt-defaults' },
-  firstTurnDeep: { kind: 'string', defaultValue: '', card: 'prompt-defaults' },
-  guideWeak: { kind: 'string', defaultValue: '', card: 'prompt-defaults' },
-  guideDeep: { kind: 'string', defaultValue: '', card: 'prompt-defaults' },
+  modelProvider: { kind: 'string', defaultValue: '', card: 'main-model', storageLayer: 'agent-request' },
+  modelName: { kind: 'string', defaultValue: '', card: 'main-model', storageLayer: 'agent-request' },
+  subagentModelProvider: { kind: 'string', defaultValue: '', card: 'subagent-model', storageLayer: 'subagent-start' },
+  subagentModelName: { kind: 'string', defaultValue: '', card: 'subagent-model', storageLayer: 'subagent-start' },
+  modelReasoningEffort: { kind: 'string', defaultValue: '', card: 'main-model', storageLayer: 'agent-request' },
+  modelTemperature: { kind: 'number', check: FINITE_NUMBER, defaultValue: '', card: 'main-model', storageLayer: 'agent-request' },
+  modelMaxTokens: { kind: 'number', check: POSITIVE_INTEGER, defaultValue: '', card: 'main-model', storageLayer: 'agent-request' },
+  subagentReasoningEffort: { kind: 'string', defaultValue: '', card: 'subagent-model', storageLayer: 'subagent-start' },
+  subagentTemperature: { kind: 'number', check: FINITE_NUMBER, defaultValue: '', card: 'subagent-model', storageLayer: 'subagent-start' },
+  subagentMaxTokens: { kind: 'number', check: POSITIVE_INTEGER, defaultValue: '', card: 'subagent-model', storageLayer: 'subagent-start' },
+  maxDepth: { kind: 'max-depth', defaultValue: '', card: 'subagent-tools', storageLayer: 'subagent-start' },
   // B7 T3：card 随 `context-gate` 卡删除一并改到 prompt-defaults。`module.row` 早已绑定到
   // `instruction-hint`（B7 T1），所以这条只改展示归属，不改它写进哪一行配置。
-  instructionHint: { kind: 'boolean', defaultValue: false, card: 'prompt-defaults', module: { row: 'instruction-hint', key: 'enabled' } },
-  strReplaceEditorMaxOutputChars: { kind: 'number', check: POSITIVE_INTEGER, defaultValue: 16000, card: 'str-replace-editor', module: { row: 'str-replace-editor', key: 'maxOutputChars', mode: 'editor-default' } },
-  toolGitBashEnabled: { kind: 'boolean', defaultValue: true, card: 'tool-git-bash', module: { row: 'tool-git-bash', key: 'enabled' } },
-  customToolRequireApproval: { kind: 'string-list', options: ['shell', 'http', 'delegate', 'fs', 'ask-user'], defaultValue: '', card: 'tool-config-engine', module: { row: 'tool-config-engine', key: 'requireApproval' } },
+  instructionHint: { kind: 'boolean', defaultValue: false, card: 'prompt-defaults', storageLayer: 'pre-step', module: { row: 'instruction-hint', key: 'enabled' } },
+  toolGitBashEnabled: { kind: 'boolean', defaultValue: true, card: 'tool-git-bash', storageLayer: 'tool-pipeline', module: { row: 'tool-git-bash', key: 'enabled' } },
+  customToolRequireApproval: { kind: 'string-list', options: ['shell', 'http', 'delegate', 'fs', 'ask-user'], defaultValue: '', card: 'tool-config-engine', storageLayer: 'tool-pipeline', module: { row: 'tool-config-engine', key: 'requireApproval' } },
 }
 
 export const ENGINE_PARAM_KEYS = Object.keys(ENGINE_PARAM_DEFINITIONS) as EngineParamKey[]
 
 /** writePreset.runtimeOf 实际透传键：全部引擎参数可直接进入 writer。 */
-export const WRITER_PARAM_KEYS = ENGINE_PARAM_KEYS
+export const WRITER_PARAM_KEYS = [...ENGINE_PARAM_KEYS, ...LEGACY_PROMPT_PARAM_KEYS]
 
 /** 编译期断言：WRITER_PARAM_KEYS 与 PresetWriterParams 键必须一致。 */
 const _assertWriterParamsKeys: AssertKeysEqual<typeof WRITER_PARAM_KEYS[number], keyof PresetWriterParams> = true
@@ -200,13 +152,6 @@ export function buildEngineModuleParams(params: Record<string, unknown>): Record
     const binding = definition.module
     if (binding === undefined) continue
     let value = params[key]
-    // editor-default：只投影调用方真正提供的合法值。缺参不补目录默认值——参数桥
-    // 优先级高于 moduleConfigs 与行默认，补值会把「未配置」写成显式覆盖，压掉
-    // 模板/导入模块的行级 maxOutputChars；非法值同样不写，交给行默认兜底。
-    if (binding.mode === 'editor-default') {
-      if (typeof value === 'string' && value.trim().length > 0) value = Number(value)
-      if (typeof value !== 'number' || !Number.isSafeInteger(value) || value <= 0) continue
-    }
     if (value === undefined || value === null) continue
     if (definition.kind === 'boolean') value = value === true
     else if (definition.kind === 'string-list') value = engineParamList(value)
@@ -301,7 +246,8 @@ export function validateEngineParamValues(overrides: Record<string, unknown>): E
   for (const [key, value] of Object.entries(overrides)) {
     // undefined/null 由保存层跳过。
     if (value === undefined || value === null) continue
-    const rule = Object.hasOwn(ENGINE_PARAM_DEFINITIONS, key) ? ENGINE_PARAM_DEFINITIONS[key as EngineParamKey] : undefined
+    const rule = Object.hasOwn(ENGINE_PARAM_DEFINITIONS, key) ? ENGINE_PARAM_DEFINITIONS[key as EngineParamKey]
+      : isLegacyPromptParam(key) ? LEGACY_PROMPT_PARAM_DEFINITIONS[key] : undefined
     if (rule === undefined) {
       errors.push({ key, message: `${key}: 未知参数键，请按当前参数定义更新模块` })
       continue

@@ -4,7 +4,7 @@
 // 校验纯函数，不读 DSH_HOME，语义等价）；原 prompt-configs 缺 after 清理，这里统一登记还原。
 import { after, test } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { parse } from 'yaml'
@@ -25,15 +25,16 @@ const { FIXTURE_PRESET_ID, installFixturePreset } = await import('../fixtures/pr
 const {
   listPromptConfigSpecs,
   mergePromptConfigs,
+  modelRequestConfigs,
   renderPromptConfigYaml,
 } = await import('../../src/host/prompt-configs.ts')
 const {
   Config,
-  PromptSettingsSchema,
-  loadPromptTemplates,
   validatePromptConfigs,
   writePreset,
-} = await import('../../lib/index.mjs')
+} = await import('../../src/index.ts')
+// 模板定位契约以打包目录 lib/ 为锚；其余行为直接覆盖当前源码。
+const { loadPromptTemplates } = await import('../../lib/index.mjs')
 
 /** writePreset 生成夹具模板的提示词配置（生产路径：module.yml 数据 + 顶层 params 动态字段）。 */
 function generatedConfigs(options = {}, prompt = 'PROMPT') {
@@ -68,6 +69,50 @@ function generatedConfigs(options = {}, prompt = 'PROMPT') {
 }
 
 // —— 提示词配置的合并、读写与 writePreset 生成（原 prompt-configs.test.mjs） ——
+
+test('子代理模型路由：生成的请求补丁只覆盖本地子代理，缺少完整路由时继承', async () => {
+  const { createPromptConfigs } = await import('../../engine/schema.mjs')
+  const { applyPromptConfigs } = await import('../../engine/executor.mjs')
+  const handlers = new Map()
+  const ctx = {
+    on: (name, handler) => { handlers.set(name, handler); return () => handlers.delete(name) },
+    get: () => undefined,
+    effect: (register) => register(),
+    logger: { warn: (message) => assert.fail(message) },
+  }
+  const patches = modelRequestConfigs({
+    subagentModelProvider: ' child-provider ', subagentModelName: ' child-model ', subagentTemperature: '0.25',
+  })
+  const release = applyPromptConfigs(ctx, createPromptConfigs(patches))
+  const request = handlers.get('agent/request')
+  const base = { provider: 'parent-provider', model: 'parent-model', temperature: 1 }
+  const agent = (depth) => ({ options: {}, session: { header: { delegationDepth: depth } } })
+  assert.deepEqual(await request({ agent: agent(0) }, async () => base), base, '主会话保持原请求')
+  assert.deepEqual(await request({ agent: agent(1) }, async () => base), {
+    provider: 'child-provider', model: 'child-model', temperature: 0.25,
+  }, '本地子代理请求使用完整路由与采样参数')
+  assert.deepEqual(modelRequestConfigs({ subagentModelProvider: 'child-provider' }), [], '半路由不产生请求覆盖')
+  release()
+  assert.equal(handlers.has('agent/request'), false, '释放后撤回本地请求监听')
+})
+
+test('共享参数存储：显示层变化不迁移磁盘路径，退役编辑器参数原样留存', async () => {
+  const { engineParamPath, readLayerSettings } = await import('../../src/host/module-layer-settings.ts')
+  const { saveModuleParams } = await import('../../src/host/manifest.ts')
+  const { validateEngineParamValues } = await import('../../src/shared/engine-params.ts')
+  const root = mkdtempSync(join(home, 'layer-settings-'))
+  const dir = join(root, 'example')
+  mkdirSync(dir)
+  const file = join(dir, 'module.yml')
+  writeFileSync(file, 'id: example\nlayerSettings:\n  tool-pipeline:\n    strReplaceEditorMaxOutputChars: 16000\n    toolGitBashEnabled: false\n', 'utf8')
+  saveModuleParams(root, 'example', { toolGitBashEnabled: true }, undefined)
+  const saved = parse(readFileSync(file, 'utf8'))
+  assert.equal(saved.layerSettings['tool-pipeline'].strReplaceEditorMaxOutputChars, 16000, '旧值作为未知数据保留')
+  assert.deepEqual(readLayerSettings(saved.layerSettings), { toolGitBashEnabled: true }, '旧值不再投影到公开参数')
+  assert.equal(validateEngineParamValues({ strReplaceEditorMaxOutputChars: 2000 }).length, 1, '新写入拒绝退役参数')
+  assert.deepEqual(engineParamPath('subagentModelProvider'), ['layerSettings', 'subagent-start', 'subagentModelProvider'])
+  assert.deepEqual(engineParamPath('maxDepth'), ['layerSettings', 'subagent-start', 'maxDepth'])
+})
 
 test('mergePromptConfigs：同名 id 后者覆盖且保留位置，新 id 追加末尾', () => {
   const defaults = generatedConfigs().specs
@@ -230,14 +275,9 @@ test('validatePromptConfigs：未知 layer / strategy / fill 由引擎权威校�
   assert.match(result.errors[2].message, /requires fill/)
 })
 
-test('Config / PromptSettingsSchema：引擎参数（promptConfigs 等）按预设存储，不进 Config/settings', () => {
+test('Config：部署设置仅保留模块运行总闸', () => {
   const config = Config({})
-  const settings = PromptSettingsSchema({})
-  assert.equal('promptConfigs' in config, false)
-  assert.equal('firstTurnAnchor' in config, false)
-  assert.equal('promptConfigs' in settings, false)
-  assert.equal('firstTurnAnchor' in settings, false)
-  assert.equal('promptText' in settings, false)
+  assert.deepEqual(Object.keys(config), ['writePreset'])
 })
 
 // —— 模板库（原 templates.test.mjs） ——

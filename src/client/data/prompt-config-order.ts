@@ -1,6 +1,8 @@
-import type { PromptConfigDraft } from '../../prompt-tool-types.ts'
+import type { PromptConfigDraft } from '../prompt-tool-types.ts'
 
 export const promptConfigLayer = (config: PromptConfigDraft): string => config.layer ?? 'pre-step'
+export const promptConfigViewOrder = (config: PromptConfigDraft): number =>
+  config.layer === 'system-section' || config.layer === 'runtime-context' ? config.order ?? 0 : config.sequence ?? config.order ?? 0
 /** 与列表一致的显示视图排序：按（层序, order, 声明序）稳定排序，返回排序后 id 序列。
  *  strategy 传入时（世界书筛选视图）只在该策略子集内移动/排序，避免与不可见配置交换。 */
 export function viewOrderedIds(
@@ -22,8 +24,10 @@ export function viewOrderedIds(
     .sort((a, b) => {
       const byLayer = layerRank(a.config) - layerRank(b.config)
       if (byLayer !== 0) return byLayer
-      const byOrder = (a.config.order ?? 0) - (b.config.order ?? 0)
+      const byOrder = promptConfigViewOrder(a.config) - promptConfigViewOrder(b.config)
       if (byOrder !== 0) return byOrder
+      const bySequence = (a.config.sequence ?? 0) - (b.config.sequence ?? 0)
+      if (bySequence !== 0) return bySequence
       return a.index - b.index
     })
     .map((entry) => entry.config.id)
@@ -60,8 +64,8 @@ export function moveWithinLayer(
   // 引擎按 order 升序渲染（executor pre-step / layers 同规则）：层内移动必须同步
   // 交换 order，否则拖拽后实际注入顺序不变（显示与引擎脱节 = 排序混乱）。
   if (current === undefined || targetCard === undefined) return all
-  next[currentIndex] = { ...targetCard, order: current.order ?? 0 }
-  next[targetIndex] = { ...current, order: targetCard.order ?? 0 }
+  next[currentIndex] = { ...targetCard, order: current.order ?? 0, ...(current.sequence === undefined ? {} : { sequence: current.sequence }) }
+  next[targetIndex] = { ...current, order: targetCard.order ?? 0, ...(targetCard.sequence === undefined ? {} : { sequence: targetCard.sequence }) }
   return next
 }
 

@@ -106,6 +106,137 @@ test('创建边界：agent/created 返回时首条请求已经能注入，无需
   assert.equal(result.messages.at(-1).content[0].text, 'FIRST')
 })
 
+test('跨模块配置按文件序号交错执行，后序请求覆盖且不受启用表反转影响', async (t) => {
+  for (const [moduleId, entries] of [
+    ['sequence-a', [
+      [10, { id: 'shared-card', text: 'A10', position: 'after-user', order: 900, group: 'shared', exclusive: true }],
+      [30, { id: 'tail-card', text: 'A30', position: 'after-user', order: -900 }],
+      [40, { id: 'system-a', layer: 'system-section', text: 'SYS-A', order: -50 }],
+      [70, { id: 'request', layer: 'agent-request', order: -900, params: { patch: { temperature: 0.7 } } }],
+    ]],
+    ['sequence-b', [
+      [20, { id: 'shared-card', text: 'B20', position: 'after-user', order: 0, group: 'shared', exclusive: true }],
+      [50, { id: 'system-b', layer: 'system-section', text: 'SYS-B', order: -100 }],
+      [60, { id: 'request', layer: 'agent-request', order: 900, params: { patch: { temperature: 0.6, maxTokens: 512 } } }],
+    ]],
+  ]) {
+    const dir = writePreset(moduleId, { modules: ['prompt-config-engine'] })
+    mkdirSync(join(dir, 'configs'), { recursive: true })
+    for (const [sequence, config] of entries) {
+      writeFileSync(join(dir, 'configs', `${String(sequence).padStart(4, '0')}-${config.id}.yml`), JSON.stringify(config), 'utf8')
+    }
+  }
+  let enabled = ['sequence-a', 'sequence-b']
+  const h = await liveAssembly(t, () => enabled)
+  const agent = await h.makeAgent('sequence-agent')
+  for (const reverse of [false, true]) {
+    if (reverse) { enabled = [...enabled].reverse(); await h.runtime.refresh() }
+    const decision = await h.inject(agent)
+    const request = await h.root.waterfall(scopeTarget(agent, agent), 'agent/request', { agent }, async () => ({ temperature: 1 }))
+    assert.deepEqual({
+      texts: decision.messages.flatMap(message => message.content.map(block => block.text)),
+      request,
+    }, { texts: ['USER', 'A10', 'B20', 'A30'], request: { temperature: 0.7, maxTokens: 512 } })
+    const system = await h.root.systemPrompt.assemble({ agent, scope: agent })
+    assert.deepEqual(system.sections.filter(section => section.text.startsWith('SYS-')).map(section => section.text), ['SYS-B', 'SYS-A'],
+      '官方 system-section 定位仍由 order 决定')
+    assert.deepEqual(h.runtime.moduleIds(agent.id), enabled, '工具写入目标的启用表顺序不随配置执行序改写')
+  }
+  assert.deepEqual(h.warnings, [])
+})
+
+test('持久序号覆盖文件旧前缀，ST 宏按全局调度求值并保留模块自己的变量帧', async (t) => {
+  for (const [id, promptConfigs, configOrder] of [
+    ['sequence-macro-a', [
+      { id: 'a10', text: 'A10 {{setvar::scope::A}}{{roll::100}}', params: { stMacros: true } },
+      { id: 'a30', text: 'A30 {{getvar::scope}} {{roll::100}}', params: { stMacros: true } },
+    ], { a10: 10, a30: 30 }],
+    ['sequence-macro-b', [
+      { id: 'b20', text: 'B20 {{setvar::scope::B}}{{roll::100}}', params: { stMacros: true } },
+    ], { b20: 20 }],
+  ]) {
+    const dir = writePreset(id, { modules: ['prompt-config-engine'], promptConfigs })
+    writeFileSync(join(dir, 'module.yml'), JSON.stringify({ id, modules: ['prompt-config-engine'], configOrder }), 'utf8')
+  }
+  const h = await liveAssembly(t, () => ['sequence-macro-b', 'sequence-macro-a'])
+  const agent = await h.makeAgent('sequence-macro-agent')
+  const draws = [0.1, 0.2, 0.3]
+  const random = t.mock.method(Math, 'random', () => draws.shift())
+  const texts = async () => (await h.inject(agent)).messages.flatMap(message => message.content.map(block => block.text))
+  assert.deepEqual(await texts(), ['USER', 'A10 11', 'B20 21', 'A30 A 31'])
+  assert.deepEqual(await texts(), ['USER', 'A10 11', 'B20 21', 'A30 A 31'], '同帧不重放随机宏')
+  assert.equal(random.mock.callCount(), 3)
+})
+
+test('交错来源只合并连续段，保留 merged 身份与独立续跑预算', async (t) => {
+  for (const [id, first, second] of [['source-a', 10, 30], ['source-b', 20, 21]]) {
+    const dir = writePreset(id, {
+      modules: ['prompt-config-engine'],
+      promptConfigs: [
+        { id: 'same-system-id', layer: 'system-section', text: `${id}-one`, mergeMode: 'merged', order: 5 },
+        { id: 'second', layer: 'system-section', text: `${id}-two`, mergeMode: 'merged', order: 5 },
+        { id: 'pre-one', text: `${id}-pre-one`, mergeMode: 'merged', position: 'after-user' },
+        { id: 'pre-two', text: `${id}-pre-two`, mergeMode: 'merged', position: 'after-user' },
+        { id: 'stop', layer: 'turn-stop', text: `${id}-stop` },
+      ],
+    })
+    writeFileSync(join(dir, 'module.yml'), JSON.stringify({
+      id, modules: ['prompt-config-engine'],
+      configOrder: { 'same-system-id': first, second, 'pre-one': first + 100, 'pre-two': second + 100, stop: first + 200 },
+    }), 'utf8')
+  }
+  const h = await liveAssembly(t, () => ['source-b', 'source-a'])
+  const agent = await h.makeAgent('source-budget-agent')
+  const system = await h.root.systemPrompt.assemble({ agent, scope: agent })
+  const decision = await h.inject(agent)
+  const messages = decision.messages.filter(message => message.source?.plugin === 'merged:after-user')
+  assert.deepEqual({
+    sections: system.sections.filter(section => section.text.startsWith('source-')).map(section => section.text),
+    messages: messages.map(message => message.content.map(block => block.text)),
+  }, {
+    sections: ['source-a-one', 'source-b-one\n\nsource-b-two', 'source-a-two'],
+    messages: [['source-a-pre-one'], ['source-b-pre-one', 'source-b-pre-two'], ['source-a-pre-two']],
+  })
+  const steered = []
+  agent.steer = message => steered.push(message.content[0].text)
+  const stop = () => h.root.emit(scopeTarget(agent, agent), 'agent/turn-stopping', { agent, turn: 1 })
+  stop()
+  stop()
+  assert.deepEqual(steered, ['source-a-stop', 'source-b-stop'], '每个来源各保留一次/轮预算')
+  await h.runtime.dispose()
+  stop()
+  assert.equal(steered.length, 2)
+})
+
+test('官方文本层同 order 的默认段按 sequence 排列，显式注册名保留官方语义', async (t) => {
+  for (const [id, sequence, explicitName] of [['text-order-a', 10000, 'explicit-a'], ['text-order-z', 9990, 'explicit-z']]) {
+    const dir = writePreset(id, {
+      modules: ['prompt-config-engine'],
+      promptConfigs: [
+        { id: 'system', layer: 'system-section', text: `SYSTEM-${id}`, order: 50 },
+        { id: 'context', layer: 'runtime-context', text: `CONTEXT-${id}`, order: 50 },
+        { id: 'explicit-system', layer: 'system-section', text: `EXPLICIT-${id}`, order: 60, params: { sectionName: explicitName } },
+        { id: 'explicit-context', layer: 'runtime-context', text: `EXPLICIT-${id}`, order: 60, params: { contextName: explicitName } },
+      ],
+    })
+    writeFileSync(join(dir, 'module.yml'), JSON.stringify({
+      id, modules: ['prompt-config-engine'],
+      configOrder: { system: sequence, context: sequence + 1, 'explicit-system': sequence + 2, 'explicit-context': sequence + 3 },
+    }), 'utf8')
+  }
+  const h = await liveAssembly(t, () => ['text-order-a', 'text-order-z'])
+  const agent = await h.makeAgent('text-order-agent')
+  const result = await h.root.systemPrompt.assemble({ agent, scope: agent })
+  for (const [kind, prefix] of [['sections', 'SYSTEM'], ['contexts', 'CONTEXT']]) {
+    assert.deepEqual(result[kind].filter(entry => entry.text.startsWith(`${prefix}-`)).map(entry => entry.text),
+      [`${prefix}-text-order-z`, `${prefix}-text-order-a`])
+    assert.deepEqual(result[kind].filter(entry => entry.text.startsWith('EXPLICIT-')).map(entry => entry.name),
+      kind === 'sections' ? ['explicit-a', 'explicit-z'] : ['explicit-z', 'explicit-a'],
+      '显式名字不被改写：sections 同 order 按名字，contexts 同 order 保留注册次序')
+  }
+  assert.deepEqual(h.warnings, [])
+})
+
 test('热更新：空启用表到多模块、配置启停与拒绝后重试都更新同一个 Agent，重复刷新不重复注入', async (t) => {
   const { setModuleEnabled, enabledModuleIds } = await import('../../src/host/config-store.ts')
   for (const id of ['hot-a', 'hot-b']) writePreset(id, {

@@ -9,24 +9,19 @@ import type { PromptConfigSpec } from '../host/prompt-configs.ts'
 import { listPromptConfigSpecs } from '../host/prompt-configs.ts'
 import { MODULE_CONFIGS_DIR } from '../host/paths.ts'
 import { loadModuleSpec, resolvePresetParams } from '../host/manifest.ts'
+import { ENGINE_PARAM_DEFINITIONS, type EngineParamKey } from '../shared/engine-params.ts'
 
 /** dsh-tui 全局开关：键名与 settings 路径一致（settings mutate）。 */
 const TUI_GLOBAL_SWITCHES: ReadonlyArray<readonly [key: string, label: string]> = [
-  ['writePreset', '启用锚定模块'],
+  ['writePreset', '模块运行总开关'],
 ]
 
 /** dsh-tui 参数开关：写激活模块 preset.yml（settings 不再承载引擎参数）。 */
-const TUI_PARAM_SWITCHES: ReadonlyArray<readonly [key: string, label: string]> = [
-  ['injectPrompt', '锚定确认后注入 preset.md'],
-  ['firstTurnAnchor', '追加任务引导'],
-  ['guideEnabled', '每轮引导（独立开关；缺省关闭）'],
-  ['firstTurnCustom', '使用自定义引导（首句）'],
-  ['guideCustom', '使用自定义引导（每轮）'],
-] as const
+const TUI_PARAM_SWITCHES = Object.entries(ENGINE_PARAM_DEFINITIONS)
+  .filter(([, definition]) => definition.kind === 'boolean').map(([key]) => [key, key] as const)
 
 /** 参数显示行（从激活模块 preset.yml params 读）。 */
 const TUI_PARAM_TEXT_LINES: ReadonlyArray<readonly [key: string, label: string, emptyText: string]> = [
-  ['firstTurnText', 'firstTurnText', '（空 = 按任务自动选择）'],
   ['modelProvider', 'modelProvider', '（空 = 不设置）'],
   ['modelName', 'modelName', '（空 = 不设置）'],
   ['subagentModelProvider', 'subagentModelProvider', '（空 = 不设置）'],
@@ -68,7 +63,7 @@ type TuiSource = PromptSettings & { skillCatalog: SkillCatalogEntry[]; activeSki
 
 function renderTuiStatus(source: TuiSource, params: Record<string, unknown>, promptConfigs: PromptConfigSpec[]): string {
   const onOff = (value: boolean): string => value ? '开' : '关'
-  const paramBoolean = (key: string): boolean => params[key] === true
+  const paramBoolean = (key: string): boolean => (params[key] ?? ENGINE_PARAM_DEFINITIONS[key as EngineParamKey]?.defaultValue) === true
   const paramText = (key: string): string => {
     const value = params[key]
     return typeof value === 'string' && value.length > 0 ? value : ''
@@ -82,7 +77,7 @@ function renderTuiStatus(source: TuiSource, params: Record<string, unknown>, pro
     ...TUI_PARAM_SWITCHES.map(([key, label]) => {
       return `${key.padEnd(22)}${onOff(paramBoolean(key))}  ${label}（模块）`
     }),
-    '锚点文本:',
+    '模型请求参数:',
     ...TUI_PARAM_TEXT_LINES.map(([key, label, emptyText]) => {
       const text = paramText(key)
       return `  ${label.padEnd(26)}${text.length > 0 ? text : emptyText}`
@@ -212,7 +207,7 @@ export function registerTuiCommand(
         const usage = (): CommandResult => ({
           kind: 'error',
           text: '用法：/prompt-tool status\n' +
-            '      /prompt-tool on|off|toggle <writePreset|injectPrompt|firstTurnAnchor|firstTurnCustom|guideEnabled|guideCustom>\n' +
+            `      /prompt-tool on|off|toggle <${[...TUI_GLOBAL_SWITCHES, ...TUI_PARAM_SWITCHES].map(([key]) => key).join('|')}>\n` +
             '      /prompt-tool skill <frontmatter 技能名> on|off|toggle\n' +
             '      /prompt-tool config <id>（id 可含空格）\n' +
             '      /prompt-tool config <id> on|off|toggle',
@@ -298,7 +293,7 @@ ${renderConfigDetail(getSource(), id, resolvePromptConfigs(getPresetConfigsDir?.
           return usage()
         }
         const globalSwitch = TUI_GLOBAL_SWITCHES.some(([candidate]) => candidate === key)
-        const currentValue = globalSwitch ? source[key as keyof PromptSettings] : params[key]
+        const currentValue = globalSwitch ? source[key as keyof PromptSettings] : params[key] ?? ENGINE_PARAM_DEFINITIONS[key as EngineParamKey]?.defaultValue
         if (typeof currentValue !== 'boolean') {
           return { kind: 'error', text: `${key} 不是布尔开关，不能这样切换` }
         }

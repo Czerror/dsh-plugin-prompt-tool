@@ -1,18 +1,7 @@
 import type { Context } from '@deepseek-ai/cordis'
-import type SettingsService from '@deepseek-ai/dsh-settings'
 import type {} from '@deepseek-ai/dsh-host-webserver'
-import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
-import {
-  asString,
-  loadModuleContent,
-  loadModuleSpec,
-  resolveModuleDir,
-  resolvePresetParams,
-  saveModuleParams,
-} from './host/manifest.ts'
-import type { ModuleSpec } from './host/manifest.ts'
-import type { PromptConfigSpec } from './host/prompt-configs.ts'
+import { basename, join } from 'node:path'
+import { saveModuleParams } from './host/manifest.ts'
 import { scheduleWebSurfaceRepair } from './web-surface.ts'
 import { detectModels, invalidateModelCatalog, listAdvertisedModels } from './runtime/models.ts'
 import type { ModelDetection } from './runtime/models.ts'
@@ -22,12 +11,9 @@ import { registerWorldBookTools } from './runtime/world-book-tools.ts'
 import { registerSessionVarTools } from './runtime/session-var-tools.ts'
 import { installPreStepCoordinator } from './runtime/pre-step-coordinator.ts'
 import { registerTuiCommand } from './runtime/tui.ts'
-import { writePreset } from './host/write-preset.ts'
-import type { WritePresetOptions } from './host/write-preset.ts'
-import { ENGINE_PARAM_KEYS } from './shared/engine-params.ts'
+import { materializeModule } from './host/write-preset.ts'
 import {
   ensurePresetSeed,
-  listModules,
   moduleDirExists,
 } from './host/manifest.ts'
 import {
@@ -35,7 +21,7 @@ import {
   NS,
 } from './config.ts'
 import type { PromptSettings, RuntimeOptions } from './config.ts'
-import { MODULES_DIR, MODULE_CONFIGS_DIR } from './host/paths.ts'
+import { MODULES_DIR } from './host/paths.ts'
 import { enabledModuleIds, resolveEditDir } from './host/config-store.ts'
 import { DEFAULT_MODULE_ID } from './shared/preset-ids.ts'
 import { createSkillsRuntime } from './host/skills-runtime.ts'
@@ -53,24 +39,6 @@ export const name = 'prompt-tool'
 // profile 装配交给官方插件管理流程。
 export const inject = ['skills', 'commands', 'llm', 'subagents']
 
-function readPromptFile(template: string, fallbackText: string): string {
-  const text = loadModuleContent(template).presetText
-  return text.length > 0 ? text : fallbackText
-}
-
-function readAgents(template: string): string {
-  return loadModuleContent(template).agentsText
-}
-
-/** 生成目录内容文件（writePreset 落盘；大文本存文件而非 settings）。 */
-function readGeneratedContent(moduleDir: string, name: string): string {
-  try {
-    return readFileSync(join(moduleDir, name), 'utf8')
-  } catch {
-    return ''
-  }
-}
-
 function warn(ctx: Context, message: string): void {
   try {
     ctx.logger?.warn(message)
@@ -84,192 +52,30 @@ export function apply(ctx: Context, configIn: Config): void {
   const seededPresets = new Set(ensurePresetSeed(MODULES_DIR).created)
   const readConfig = () => ({
     writePreset: configIn.writePreset.get(),
-    presetTemplate: configIn.presetTemplate.get(),
-    presetOrder: configIn.presetOrder.get(),
-    fallbackText: configIn.fallbackText.get(),
   })
   const config = readConfig()
   /** 运行时配装通道的运行态：工具写入目标按它报告的「本 Agent 装了哪几层提示词」解析。 */
   let assembly: AgentAssemblyRuntime | undefined
   const modelsState = (): ModelDetection => detectModels(ctx)
   const getModelsState = (): ModelDetection => modelsState()
-  // 内容资产优先读生成目录文件（writePreset 落盘），模板 content 作回退；
-  // settings.yaml 不再承载大文本（web 打开加载慢的根因）。
-  const initialTemplate = typeof config.presetTemplate === 'string' && config.presetTemplate.length > 0
-      ? config.presetTemplate
-      : DEFAULT_MODULE_ID
-  // 插件自有模块存储：每份定义独立保存在 MODULES_DIR/<template>/。
-  const initialModuleDir = join(MODULES_DIR, /^[a-zA-Z0-9_-]+$/.test(initialTemplate) ? initialTemplate : DEFAULT_MODULE_ID)
-  // 引擎参数从激活模块 preset.yml 读（settings 不再承载参数；每模块独立，随模块走）。
-  let initialParams: Record<string, unknown> = {}
-  let initialSpec: ModuleSpec | undefined
-  try {
-    initialSpec = loadModuleSpec(resolveModuleDir(initialTemplate))
-    initialParams = resolvePresetParams(initialSpec, {})
-  } catch (error) {
-    warn(ctx, `prompt-tool: 激活模块参数读取失败（使用默认值）：${error instanceof Error ? error.message : String(error)}`)
+  // 运行态只保留部署设置；每次保存都从目标模块重读参数和正文。
+  const runtime: RuntimeOptions = {
+    ...config,
   }
-  let current = readGeneratedContent(initialModuleDir, 'preset.md') || readPromptFile(initialTemplate, config.fallbackText)
-  let currentAgents = readGeneratedContent(initialModuleDir, 'agents.md') || readAgents(initialTemplate)
-
-  /** 从激活模块 preset.yml 重读引擎参数到 runtime（参数保存/切换后调用）。 */
-  const reloadPresetParams = (): void => {
-    let spec: ModuleSpec | undefined
-    try {
-      spec = loadModuleSpec(resolveModuleDir(runtime.presetTemplate))
-    } catch (error) {
-      warn(ctx, `prompt-tool: 读取激活模块参数失败：${error instanceof Error ? error.message : String(error)}`)
-      return
-    }
-    const params = resolvePresetParams(spec, {})
-    for (const key of ENGINE_PARAM_KEYS) (runtime as unknown as Record<string, unknown>)[key] = params[key]
-    runtime.firstTurnAnchor = params.firstTurnAnchor === true
-    runtime.firstTurnText = asString(params.firstTurnText)
-    runtime.firstTurnCustom = params.firstTurnCustom === true
-    runtime.guideText = asString(params.guideText)
-    runtime.guideCustom = params.guideCustom === true
-    runtime.guideEnabled = typeof params.guideEnabled === 'boolean' ? params.guideEnabled : undefined
-    runtime.modelProvider = asString(params.modelProvider)
-    runtime.modelName = asString(params.modelName)
-    runtime.subagentModelProvider = asString(params.subagentModelProvider)
-    runtime.subagentModelName = asString(params.subagentModelName)
-    runtime.modelReasoningEffort = asString(params.modelReasoningEffort)
-    runtime.modelTemperature = asString(params.modelTemperature)
-    runtime.modelMaxTokens = asString(params.modelMaxTokens)
-    runtime.subagentReasoningEffort = asString(params.subagentReasoningEffort)
-    runtime.subagentTemperature = asString(params.subagentTemperature)
-    runtime.subagentMaxTokens = asString(params.subagentMaxTokens)
-    runtime.injectPrompt = params.injectPrompt !== false
-    runtime.maxDepth = params.maxDepth as RuntimeOptions['maxDepth']
-    runtime.firstTurnWord = asString(params.firstTurnWord) || undefined
-    runtime.promptConfigs = Array.isArray(spec.promptConfigs)
-      ? spec.promptConfigs as PromptConfigSpec[]
-      : []
+  const materialize = (id: string): void => {
+    materializeModule(id, {
+      moduleDir: MODULES_DIR,
+      warn: (message) => warn(ctx, message),
+    })
+  }
+  const rebuildPreset = async (id = basename(activeModuleDir())): Promise<void> => {
+    materialize(id)
+    await assembly?.refresh(id)
   }
 
-  /** 重建生成目录；writePreset 关闭时保留空组合。 */
-  const rebuildPreset = async (initial = false, id = runtime.presetTemplate): Promise<void> => {
-    // 旧会话可继续编辑自身模块；不能借用工作台当前草稿或改动其 runtime。
-    if (id !== runtime.presetTemplate && runtime.writePreset) {
-      const dir = resolveModuleDir(id)
-      const params = resolvePresetParams(loadModuleSpec(dir), {})
-      const prompt = readGeneratedContent(dir, 'preset.md') || readPromptFile(id, runtime.fallbackText)
-      writePreset(params.injectPrompt === false ? '' : prompt, {
-        ...params,
-        moduleDir: MODULES_DIR,
-        presetOrder: runtime.presetOrder,
-        presetTemplate: id,
-        outputId: id,
-        promptConfigs: [],
-        agentsInstructionText: readGeneratedContent(dir, 'agents.md') || readAgents(id),
-        warn: (message) => warn(ctx, message),
-      })
-      await assembly?.refresh(id)
-      return
-    }
-    // 先重读激活模块参数（/param-overrides 保存、TUI 开关、模块切换后生效）。
-    reloadPresetParams()
-    if (runtime.writePreset) {
-      const presetPrompt = runtime.injectPrompt && current.length > 0 ? current : ''
-      const options: WritePresetOptions = {
-        ...Object.fromEntries(ENGINE_PARAM_KEYS.map((key) => [key, (runtime as unknown as Record<string, unknown>)[key]])),
-        firstTurnAnchor: runtime.firstTurnAnchor,
-        firstTurnText: runtime.firstTurnText,
-        firstTurnCustom: runtime.firstTurnCustom,
-        guideText: runtime.guideText,
-        guideCustom: runtime.guideCustom,
-        guideEnabled: runtime.guideEnabled,
-        injectPrompt: runtime.injectPrompt,
-        modelProvider: runtime.modelProvider,
-        modelName: runtime.modelName,
-        subagentModelProvider: runtime.subagentModelProvider,
-        subagentModelName: runtime.subagentModelName,
-        modelReasoningEffort: runtime.modelReasoningEffort,
-        modelTemperature: runtime.modelTemperature,
-        modelMaxTokens: runtime.modelMaxTokens,
-        subagentReasoningEffort: runtime.subagentReasoningEffort,
-        subagentTemperature: runtime.subagentTemperature,
-        subagentMaxTokens: runtime.subagentMaxTokens,
-        maxDepth: runtime.maxDepth,
-        firstTurnWord: runtime.firstTurnWord,
-        agentsInstructionText: currentAgents,
-        moduleDir: MODULES_DIR,
-        presetOrder: runtime.presetOrder,
-        promptConfigs: runtime.promptConfigs,
-        presetTemplate: runtime.presetTemplate,
-        outputId: runtime.presetTemplate,
-        warn: (message) => warn(ctx, message),
-      }
-      // 初始化只物化刚补建的目录；全局开关恢复时只恢复曾被该开关清空的组合。
-      for (const preset of listModules()) {
-        if (preset.id === runtime.presetTemplate) continue
-        const targetDir = join(MODULES_DIR, preset.id)
-        if (!seededPresets.has(preset.id)
-          && !readGeneratedContent(targetDir, 'agent.cordis.yml').startsWith('# prompt-tool writePreset disabled')) continue
-        // 手写/官方格式模块（无 modules/params）不自动重渲染：参数桥无从下手，
-        // 重渲染只会覆盖用户手写组合；其 persona 契约由就地迁移修正。
-        try {
-          const spec = loadModuleSpec(resolveModuleDir(preset.id))
-          const pluginFormat = Array.isArray(spec.modules) || (spec.params !== null && typeof spec.params === 'object')
-          if (!pluginFormat && existsSync(join(targetDir, 'agent.cordis.yml'))) continue
-        } catch {
-          // 读取失败按缺失处理：writePreset 会给出明确报错。
-        }
-        try {
-          writePreset(readPromptFile(preset.id, runtime.fallbackText), {
-            ...resolvePresetParams(loadModuleSpec(resolveModuleDir(preset.id)), {}),
-            moduleDir: MODULES_DIR,
-            presetOrder: runtime.presetOrder,
-            presetTemplate: preset.id,
-            outputId: preset.id,
-            // 补建的是**别的**模块：必须清空 promptConfigs 覆盖层。它承载的是激活模块的
-            // 编辑上下文（settings 层），writePreset 又把它当最高优先级——透传会把激活模块
-            // 的提示词配置写进目标模块，切换过去后注入的仍是旧模块内容；且目标组合带上
-            // 渲染标记后不再重建，污染被固化。目标模块的配置一律以自身 preset.yml +
-            // 包内模板默认为准（与导入候选物化同源理由）。
-            promptConfigs: [],
-            agentsInstructionText: '',
-          })
-        } catch (error) {
-          warn(ctx, `prompt-tool: 补建模块 ${preset.id} 失败（切换时可重试）：${error instanceof Error ? error.message : String(error)}`)
-        }
-      }
-      if (!initial || seededPresets.has(runtime.presetTemplate)
-        || readGeneratedContent(activeModuleDir(), 'agent.cordis.yml').startsWith('# prompt-tool writePreset disabled')) {
-        writePreset(presetPrompt, options)
-      }
-      seededPresets.clear()
-    } else {
-      // writePreset 关闭时清空各模块目录的生成物，保留 preset.yml 参数源与模块根本身。
-      // 保留空组合供装配期读取：缺少组合会让模块声明解析失败；
-      // 空组合可正常装配（零贡献），后续会话停止注入，重新开启后由重建恢复。
-      // 绝不删除整个用户模块目录（旧版误删模块根：用户全部模块、
-      // 种子标记 .pt-seeded、共享 .engine 一并清空）。
-      let cleaned = 0
-      for (const preset of listModules()) {
-        const dir = join(MODULES_DIR, preset.id)
-        for (const name of [MODULE_CONFIGS_DIR, 'custom-tools', 'preset.md', 'agents.md', 'agents-instruction.md', 'engine']) {
-          try {
-            rmSync(join(dir, name), { recursive: true, force: true })
-          } catch {
-            // Windows 瞬时锁：残留无害（下次重建/清理重试）。
-          }
-        }
-        try {
-          writeFileSync(join(dir, 'agent.cordis.yml'), '# prompt-tool writePreset disabled\n[]\n', 'utf8')
-        } catch {
-          // 写失败保留旧组合：注入未停止，下次重建重试；preset.yml 参数不受影响。
-        }
-        cleaned += 1
-      }
-      warn(ctx, `prompt-tool: writePreset 已关闭，清空 ${cleaned} 个模块目录的组合（preset.yml 参数保留）`)
-    }
-    await assembly?.refresh(runtime.writePreset ? id : undefined)
-  }
-
-  /** 激活模块目录（内容按模块根 <template>/ 隔离；非法名回退内置模块）。 */
+  /** 无请求目标时供TUI使用的模块；编辑器的显式ID始终单独解析。 */
   const activeModuleDir = (): string =>
-    join(MODULES_DIR, /^[a-zA-Z0-9\u4e00-\u9fff_-]+$/.test(runtime.presetTemplate) ? runtime.presetTemplate : DEFAULT_MODULE_ID)
+    resolveEditDir(MODULES_DIR) || (moduleDirExists(MODULES_DIR, DEFAULT_MODULE_ID) ? join(MODULES_DIR, DEFAULT_MODULE_ID) : '')
 
   // 宿主模块拥有技能状态、官方引用 provider 与资产操作的生命周期。
   const skillsRuntime = createSkillsRuntime(ctx)
@@ -294,30 +100,16 @@ export function apply(ctx: Context, configIn: Config): void {
     // 模板专属策略目录：当前内置策略全部随引擎提供，自定义模板可经此注入。
     () => '',
     skillsRuntime.invalidate,
-    // 编辑目标目录：请求带 `x-module-id` 就定位那个模块；不带则维持原有语义
-    // （当前激活模块目录），启用表首项只在两者都拿不到时兜底。
-    // 这样客户端尚未带头的阶段行为不变，带头之后才切到按卡定位。
-    (moduleId) => resolveEditDir(MODULES_DIR, moduleId) || activeModuleDir(),
-    async (scopes, id = runtime.presetTemplate) => {
-      // 内容导入后：批量更新运行时文本，单次重建生成目录（一次自动保存只重建一次）。
-      for (const scope of id === runtime.presetTemplate ? scopes : []) {
-        if (scope === 'preset') current = readGeneratedContent(activeModuleDir(), 'preset.md')
-        else currentAgents = readGeneratedContent(activeModuleDir(), 'agents.md')
-      }
-      await rebuildPreset(false, id)
-    },
-    (id) => id === undefined ? assembly?.refresh() : rebuildPreset(false, id),
-    // host 已安装完整候选；这里只刷新内存，不能二次物化覆盖导入资产。
+    // 显式目标不存在就拒绝，不能落到另一个模块；编辑选择不进入部署设置。
+    (moduleId) => moduleId === undefined ? activeModuleDir() : resolveEditDir(MODULES_DIR, moduleId),
+    (_scopes, id) => rebuildPreset(id),
+    (id) => id === undefined ? assembly?.refresh() : rebuildPreset(id),
+    // host 已安装完整候选；不能二次物化覆盖导入资产。
     async (id) => {
-      if (id === runtime.presetTemplate) {
-        current = readGeneratedContent(activeModuleDir(), 'preset.md')
-        currentAgents = readGeneratedContent(activeModuleDir(), 'agents.md')
-        reloadPresetParams()
-      }
       skillsRuntime.invalidate()
       await assembly?.refresh(id)
     },
-    (id) => rebuildPreset(false, id),
+    (id) => rebuildPreset(id),
     () => assembly?.refresh(),
   )
 
@@ -327,41 +119,6 @@ export function apply(ctx: Context, configIn: Config): void {
   // provider 拓扑变化（适配器注册/移除）会让已缓存的模型目录过期：
   // 订阅官方 payload-free 事件，按 Context 失效缓存；监听器挂在 effect 上，重挂无残留。
   ctx.effect(() => ctx.on('llm/adapters-updated', () => invalidateModelCatalog(ctx)))
-
-  // 部署轴读取 volatile Config；行为参数仍以当前 preset.yml 为准。
-  const runtime: RuntimeOptions = {
-    ...Object.fromEntries(ENGINE_PARAM_KEYS.map((key) => [key, initialParams[key]])),
-    writePreset: config.writePreset,
-    presetTemplate: initialTemplate,
-    // 引擎参数：激活模块 preset.yml（每模块独立，settings 不再承载）。
-    firstTurnAnchor: initialParams.firstTurnAnchor === true,
-    firstTurnText: asString(initialParams.firstTurnText),
-    firstTurnCustom: initialParams.firstTurnCustom === true,
-    guideText: asString(initialParams.guideText),
-    guideCustom: initialParams.guideCustom === true,
-    guideEnabled: typeof initialParams.guideEnabled === 'boolean' ? initialParams.guideEnabled : undefined,
-    injectPrompt: initialParams.injectPrompt !== false,
-    modelProvider: asString(initialParams.modelProvider),
-    modelName: asString(initialParams.modelName),
-    subagentModelProvider: asString(initialParams.subagentModelProvider),
-    subagentModelName: asString(initialParams.subagentModelName),
-    modelReasoningEffort: asString(initialParams.modelReasoningEffort),
-    modelTemperature: asString(initialParams.modelTemperature),
-    modelMaxTokens: asString(initialParams.modelMaxTokens),
-    subagentReasoningEffort: asString(initialParams.subagentReasoningEffort),
-    subagentTemperature: asString(initialParams.subagentTemperature),
-    subagentMaxTokens: asString(initialParams.subagentMaxTokens),
-    maxDepth: initialParams.maxDepth as RuntimeOptions['maxDepth'],
-    firstTurnWord: asString(initialParams.firstTurnWord) || undefined,
-    presetOrder: config.presetOrder,
-    fallbackText: config.fallbackText,
-    promptConfigs: Array.isArray(initialSpec?.promptConfigs) ? initialSpec.promptConfigs as PromptConfigSpec[] : [],
-  }
-
-  let hostSettingsService: SettingsService | undefined
-  // 子代理固定模型路由：不替换 ctx.subagents 的 start/startContinuable 方法，
-  // 只经 buildModuleConfigsFromParams 把 agentOptions 写进本插件生成的
-  // tool-subagent / tool-subagent-fork 行；第三方直派保持官方默认继承语义。
 
   const currentSource = (): PromptSettings => ({
     ...readConfig(),
@@ -380,11 +137,10 @@ registerTuiCommand(
   // 保存/重建失败直接抛给命令层，由 CommandResult:error 呈现给用户。
   async (key, value) => {
     if (key === 'promptConfigs') {
-      saveModuleParams(MODULES_DIR, runtime.presetTemplate, undefined, Array.isArray(value) ? value as unknown[] : undefined)
+      saveModuleParams(MODULES_DIR, basename(activeModuleDir()), undefined, Array.isArray(value) ? value as unknown[] : undefined)
     } else {
-      saveModuleParams(MODULES_DIR, runtime.presetTemplate, { [key]: value }, undefined)
+      saveModuleParams(MODULES_DIR, basename(activeModuleDir()), { [key]: value }, undefined)
     }
-    reloadPresetParams()
     await rebuildPreset()
   },
   // 技能启停：改写技能文件的调用策略键（正文不动），失败原因回给命令层。
@@ -401,44 +157,21 @@ registerTuiCommand(
   let needsInitialApply = true
   const applyState = async (): Promise<void> => {
     const next = currentSource()
-    const nextTemplate = typeof next.presetTemplate === 'string' && next.presetTemplate.length > 0
-      ? next.presetTemplate
-      : DEFAULT_MODULE_ID
-    const nextRuntime: Pick<RuntimeOptions,
-      'writePreset' | 'presetTemplate' | 'presetOrder' | 'fallbackText'> = {
+    const nextRuntime: RuntimeOptions = {
       writePreset: typeof next.writePreset === 'boolean' ? next.writePreset : config.writePreset,
-      presetTemplate: nextTemplate,
-      presetOrder: Number.isSafeInteger(next.presetOrder) && next.presetOrder >= 0 ? next.presetOrder : config.presetOrder,
-      fallbackText: typeof next.fallbackText === 'string' ? next.fallbackText : config.fallbackText,
     }
-    const fallbackTextChanged = runtime.fallbackText !== nextRuntime.fallbackText
-    const presetTemplateChanged = runtime.presetTemplate !== nextRuntime.presetTemplate
     const writePresetChanged = runtime.writePreset !== nextRuntime.writePreset
-    const settingsChanged = runtime.writePreset !== nextRuntime.writePreset
-      || runtime.presetTemplate !== nextRuntime.presetTemplate
-      || runtime.presetOrder !== nextRuntime.presetOrder
-      || fallbackTextChanged
-    // 首次只补建新目录；后续设置变更正常生成当前模块。
-    if (!needsInitialApply && !settingsChanged) return
+    if (!needsInitialApply && !writePresetChanged) return
     const initial = needsInitialApply
     needsInitialApply = false
 
-    // 切换模块：内容资产从新模块目录重读——否则 rebuildPreset 会把旧模块的
-    // preset.md/agents.md 内容复制进新模块（custom 空白模块被写入其他模块文本）。
-    if (presetTemplateChanged) {
-      const newDir = join(MODULES_DIR, /^[a-zA-Z0-9\u4e00-\u9fff_-]+$/.test(nextRuntime.presetTemplate) ? nextRuntime.presetTemplate : DEFAULT_MODULE_ID)
-      current = readGeneratedContent(newDir, 'preset.md') || readPromptFile(nextRuntime.presetTemplate, nextRuntime.fallbackText)
-      currentAgents = readGeneratedContent(newDir, 'agents.md') || readAgents(nextRuntime.presetTemplate)
+    Object.assign(runtime, nextRuntime)
+    if (initial) {
+      for (const id of seededPresets) materialize(id)
+      seededPresets.clear()
     }
-    runtime.writePreset = nextRuntime.writePreset
-    runtime.presetTemplate = nextRuntime.presetTemplate
-    runtime.presetOrder = nextRuntime.presetOrder
-    runtime.fallbackText = nextRuntime.fallbackText
-
-    await rebuildPreset(initial)
-    if (writePresetChanged && runtime.writePreset) await assembly?.refresh()
-    // 切换模块只影响本插件的物化与配装，不再向宿主写 selectedDefault。
-    // 内置工具面随组合行走（per-session 挂载），无需宿主平面重挂。
+    // 总闸只撤回/恢复运行时贡献，物化文件保留；关闭期间保存仍可重建。
+    await assembly?.refresh()
   }
 
   // 内置模型工具由三个独立模块按需挂载；宿主只提供对应注册服务。
@@ -446,7 +179,7 @@ registerTuiCommand(
     // 写入目标按该 Agent 的运行时配装记录解析（启用表 ∩ 磁盘，多个时取第一个），
     // 不再查询官方 `agentPresets` 的会话绑定。
     target: (exec) => resolveModuleToolTarget(exec, MODULES_DIR, (sessionId) => assembly?.moduleIds(sessionId) ?? []),
-    rebuild: (id) => rebuildPreset(false, id),
+    rebuild: (id) => rebuildPreset(id),
   }
   ctx.provide('pt-character-tools', {
     mount: (scopeCtx: Context): (() => void) => registerCharacterTools(scopeCtx, moduleToolHost),
@@ -487,9 +220,7 @@ registerTuiCommand(
   ctx.effect(() => ctx.on('loader/volatile-update', applyConfig))
 
   ctx.inject(['settings'], (sctx: Context) => {
-    hostSettingsService = sctx.settings
     sctx.effect(() => sctx.settings.configure({ auto: false }, ctx.fiber))
-    sctx.effect(() => () => { if (hostSettingsService === sctx.settings) hostSettingsService = undefined })
     sctx.effect(() => sctx.on('settings/document-updated', (ns) => {
       if (String(ns) === NS) applyConfig()
     }), 'prompt-tool: follow settings documents')
@@ -498,7 +229,7 @@ registerTuiCommand(
 }
 
 // 公共 API：宿主与测试复用 settings schema 与提示词配置权威校验。
-export { Config, PromptSettingsSchema } from './config.ts'
+export { Config } from './config.ts'
 export { writePreset } from './host/write-preset.ts'
 // AGENTS 文件卡：探测 → 卡片合成与文件写盘（bridge 端点与回归测试共用）。
 export {

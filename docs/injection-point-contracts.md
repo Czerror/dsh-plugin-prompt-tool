@@ -1,13 +1,13 @@
 # 九层配置卡与官方插入点契约
 
-核对基线：DSH 已发布包 `0.2.0-rc.1`，本地官方源码 `4878cdabd8`。九层是插件对公开扩展点的组织，不是宿主统一的九阶段管线。层序仅用于 UI；`order` 只在各自入口内解释。
+核对基线：DSH 已发布包 `0.2.0-rc.1`，本地官方源码 `4878cdabd8`。九层是插件对公开扩展点的组织，不是宿主统一的九阶段管线。层序仅用于 UI；模块配置序号只在对应插入点、位置内比较，`order` 保留各入口的独立语义。
 
 ## 配置卡的共同结构
 
 列表只显示真实 `promptConfigs` 实例，不生成空层卡。卡内按「基础信息 → 注入规则 → 作用范围 → 本条规则的行为 → 条件需要的内容 → 本层共享设置 → 可用的高级元数据」组织。
 
 - `layerFieldPolicies` 控制通用字段；`layerContracts` 控制合法策略、匹配对象、内容类型、局部参数类型与枚举。两者都由 `engine/schema.mjs` 下发到 `/meta` 和 `/bootstrap`，保存端调用同一校验。
-- 规则参数属于该实例；共享参数属于当前预设的对应层。共享设置放在真实卡内的原生折叠区，同层多卡共用同一份值与草稿。
+- 规则参数属于该实例；共享参数属于当前模块的固定存储层。共享设置放在真实卡内的原生折叠区，同层多卡共用同一份值与草稿；展示分组不改写磁盘归属。
 - 换层只在用户操作时清除新层拒绝的通用字段，并把不适用策略改为固定文本。正文、变量、未知局部参数不因隐藏而删除。
 - UI 使用现有 DSH primitive、CSS Modules 和主题 token。分区间距 24px、字段间距 16/24px；窄卡自动单列；错误紧邻控件，键盘焦点可见。未引入新的组件库。
 
@@ -42,12 +42,13 @@ promptConfigs:
 
 ## order 的作用面与刻度来源
 
-`order` 有**两个**作用面，二者互不替代：
+模块配置序号与官方定位 `order` 分属不同作用面：
 
-- **加载期（全部九层）**：`engine/schema.mjs` 对每条配置做 anchor 优先 + ordered 升序，决定同层配置的执行与渲染次序。
-- **运行期（只有两层）**：只有 `system-section` 与 `runtime-context` 把 `order` 原样交给官方 `systemPrompt.section()` / `systemPrompt.context()`，因而**只有这两层**的数值能与官方装配位置比较。其余六层（`agent-request`、`llm-stream`、`tool-pipeline`、`turn-stop`、`subagent-start`、`subagent-end`）的 `order` 只在本插入点内比较，UI 对它们只显示说明、不显示任何档位数值。
+- **模块配置次序**：`module.yml.configOrder` 以配置 ID 保存序号，装配时带上模块来源，跨模块按序号排列。文件名前缀与读回的 `sequence` 是投影，不是新的可写正文。启用表成员顺序不参与配置次序裁决。
+- **官方定位**：`system-section` 与 `runtime-context` 仍把 `order` 交给官方注册接口。默认注册名包含配置序号，使同一官方 `order` 下的模块配置可按该序号打破平局；显式 `sectionName` / `contextName` 保留其名字，继续遵循官方同 `order` 按名称比较的规则。
+- **独立消费**：没有模块来源的独立引擎与触发器保留原有 `order` 行为；ST 世界书使用的候选预算／优先级语义也不因拖拽改写。配置序号不建立跨插入点的全局生命周期。
 
-这与 `docs/engine-reuse.md` 的「`order` 只在各自入口内解释」自洽：那条说的是**不建立跨层全局顺序**，本条补充的是**同层之内**哪两层的数值具备官方含义。
+模块页排序与普通卡片移动都通过 `/module-config-order` 提交身份列表与版本；后者只交换自身原槽位。排序不会改写正文、官方定位 `order` 或世界书语义。详见 [ADR-0006](adr/0006-module-config-order.md)。
 
 **刻度来源**：区段边界由 `/meta` 与 `/bootstrap` 运行时下发，数值取官方 `getSectionOrder(name)` / `getContextOrder(name)`。任一档位无法求值即整表降级。`src/shared/official-orders.ts` 的名字分组对应 `0.2.0-rc.1`（section 32 项 / context 3 项，不含已移除的 TOOL_CORDIS）；数值不硬编码。快捷入口使用 `from - 1` 插入区段之前，避免同 order 时按名称排序落到官方段之后；末项使用 `max(to) + 1`。
 
@@ -61,7 +62,7 @@ layerSettings:
     subagentTemperature: 0.9
     maxDepth: 2
   tool-pipeline:
-    strReplaceEditorMaxOutputChars: 16000
+    customToolRequireApproval: [shell]
 promptConfigs:
   - id: example-subagent-start
     name: 子代理通用守则
@@ -70,7 +71,7 @@ promptConfigs:
     text: 先核实调用链，再开始修改。
 ```
 
-共享参数位置由既有参数目录的 `card` 与编辑组 `displayLayer` 派生，不再另写九份键清单。内部运行时与 bridge 仍使用 EngineParams 平铺值，避免把存储重排变成接口及各模块的重复改造。persona、variables、customTools、subagentToolPolicy、moduleConfigs 保留独立所有者，不复制到每条规则。详情见 [参数框架](architecture-params.md)。
+共享参数位置由参数目录的 `storageLayer` 固定，`card` 与编辑组 `displayLayer` 只决定 UI 展示。内部运行时与 bridge 仍使用平铺 EngineParams；14 个公开键与 15 个旧规则快捷键分别管理。`maxDepth` 只在插件子代理工具策略启用时生效；子模型 provider/name 作用于本地子代理的实际请求，不改普通官方 spawn 预检。persona、variables、customTools、subagentToolPolicy、moduleConfigs 保留独立所有者，不复制到每条规则。详情见 [参数框架](architecture-params.md)。
 
 ## 官方依据
 

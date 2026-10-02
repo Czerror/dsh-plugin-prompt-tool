@@ -9,6 +9,7 @@ import { sep } from 'node:path'
 import { parse as parseYaml } from './vendor/yaml/index.js'
 import { bindResolver } from './strategies.mjs'
 import { attachStRenderers } from './st-render.mjs'
+import { FILE_SEQUENCE, compareConfigSequence } from './order.mjs'
 import { MATCH_LOGIC, createAnchorMatcher } from './anchor-match.mjs'
 
 const name = 'prompt-config-engine'
@@ -126,11 +127,14 @@ export function loadPromptConfigFiles(dirUrl) {
   const specs = []
   for (const fileName of promptConfigFileNames(entries)) {
     const raw = readFileSync(new URL(fileName, dirUrl), 'utf8')
-    if (/\.json$/i.test(fileName)) {
-      specs.push(JSON.parse(raw))
-    } else {
-      specs.push(parsePromptConfigYaml(raw))
+    const spec = /\.json$/i.test(fileName) ? JSON.parse(raw) : parsePromptConfigYaml(raw)
+    const prefix = /^(\d+)-/.exec(fileName)
+    if (prefix !== null && spec !== null && typeof spec === 'object' && !Array.isArray(spec)) {
+      const sequence = Number(prefix[1])
+      if (!Number.isSafeInteger(sequence)) throw new TypeError(`${name}: unsafe config sequence in ${fileName}`)
+      Object.defineProperty(spec, FILE_SEQUENCE, { value: sequence })
     }
+    specs.push(spec)
   }
   for (const spec of specs) {
     if (spec === null || typeof spec !== 'object' || Array.isArray(spec)) continue
@@ -632,17 +636,23 @@ export function createPromptConfigs(specs, options = {}) {
       templatePatch,
       params,
     }
+    const sequence = (Object.hasOwn(options.configOrder ?? {}, spec.id) ? options.configOrder[spec.id] : undefined) ?? spec[FILE_SEQUENCE]
+      ?? (typeof options.sourceModuleId === 'string' ? index * 10 : undefined)
+    if (sequence !== undefined) config.sequence = sequence
+    if (typeof options.sourceModuleId === 'string') config.sourceModuleId = options.sourceModuleId
     // 条件判定的匹配器在挂载期编译一次，执行侧（condition.mjs）直接复用：
     // normalizeMatch 已用同一份参数试编译过，这里是同源的第二句（失败会抛出）。
     config.matchScan = match === undefined ? undefined : createAnchorMatcher(match).scan
     config.resolve = bindResolver(config, options.strategyDir)
     return config
   })
-  // 排序契约:anchor 提示词配置保持模块文件相对顺序(固定锚点),ordered 提示词配置按 order
-  // 稳定升序排在其后。默认 order=0 时等价于文件顺序。
+  // 模块/物化来源按持久序号；没有文件来源的独立数组继续采用 anchor + order 契约。
   return attachStRenderers(configs
     .map((config, fileOrder) => ({ config, fileOrder }))
     .sort((a, b) => {
+      if (a.config.sequence !== undefined || b.config.sequence !== undefined) {
+        return compareConfigSequence(a.config, b.config) || a.fileOrder - b.fileOrder
+      }
       const aAnchor = a.config.configKind === 'anchor' ? 0 : 1
       const bAnchor = b.config.configKind === 'anchor' ? 0 : 1
       if (aAnchor !== bAnchor) return aAnchor - bAnchor

@@ -18,6 +18,7 @@ import { KNOWN_STRATEGIES } from './schema.mjs'
 import { interpolateVariables, stripUnresolvedRefs, RUNTIME_FACTS, runtimeFactValue } from './interpolate.mjs'
 import { getSessionVar, sessionVarsSnapshot } from './session-vars.mjs'
 import { conditionHit, lastAssistantText, subagentTextOf, toolArgsText } from './condition.mjs'
+import { compareConfigSequence, compareTextPlacement } from './order.mjs'
 
 const name = 'prompt-config-engine'
 // 同一宿主会话共享投递账本，避免预设作用域重挂后重投同一次结束通知。
@@ -160,26 +161,29 @@ function officialChannelText(text, label, registry, warnOnce) {
   return result.text
 }
 
-/** 文本型层分组:merged 模式按位置分组,否则每条独立。 */
+/** 只合并排序后同来源、同官方档位和位置的连续 merged 卡，不跨过穿插段。 */
 function textLayerGroups(configs) {
-  const sorted = [...configs].sort((a, b) => a.order - b.order)
+  const sorted = [...configs].sort(compareTextPlacement)
   const groups = []
-  const index = new Map()
   for (const config of sorted) {
-    const key = config.mergeMode === 'merged' ? `merged:${config.position ?? ''}` : undefined
-    if (key === undefined) {
-      groups.push([config])
-      continue
-    }
-    let at = index.get(key)
-    if (at === undefined) {
-      at = groups.length
-      index.set(key, at)
-      groups.push([])
-    }
-    groups[at].push(config)
+    const previous = groups.at(-1)
+    const base = previous?.[0]
+    if (config.mergeMode === 'merged' && base?.mergeMode === 'merged'
+      && config.sourceModuleId === base.sourceModuleId
+      && config.position === base.position && config.order === base.order) previous.push(config)
+    else groups.push([config])
   }
   return groups
+}
+
+/** 官方同 order 按 name 排序：默认名编码安全整数序号，显式名仍由作者拥有。 */
+function textRegistrationName(config, field) {
+  const explicit = config.params?.[field]
+  if (typeof explicit === 'string' && explicit.length > 0) return explicit
+  if (config.sourceModuleId === undefined) return config.id
+  // 非负安全整数最多 16 位，跨过四位文件前缀后仍保持数值顺序。
+  const sequence = String(config.sequence).padStart(16, '0')
+  return `prompt-tool:${sequence}:${config.sourceModuleId}:${config.id}`
 }
 
 /** system-section:注册静态 system prompt 段(支持官方 {{variable}} 渲染与 merged 拼接)。 */
@@ -207,7 +211,7 @@ function wireSystemSections(ctx, configs, registry, warnOnce) {
               .join('\n\n')
         : groupText
       keepDisposer(ctx, systemPrompt.section({
-        name: typeof base.params?.sectionName === 'string' && base.params.sectionName.length > 0 ? base.params.sectionName : base.id,
+        name: textRegistrationName(base, 'sectionName'),
         order: base.order,
         text,
         ...(base.params?.complete === true ? { complete: true } : {}),
@@ -244,7 +248,7 @@ function wireRuntimeContexts(ctx, configs, registry, warnOnce) {
       const text = dynamic ? render : render()
       if (!dynamic && text.length === 0) continue
       keepDisposer(ctx, systemPrompt.context({
-        name: typeof base.params?.contextName === 'string' && base.params.contextName.length > 0 ? base.params.contextName : base.id,
+        name: textRegistrationName(base, 'contextName'),
         order: base.order,
         text,
       }), `${name}: context ${base.id}`)
@@ -255,7 +259,7 @@ function wireRuntimeContexts(ctx, configs, registry, warnOnce) {
   // 官方 provider 必须同步：先注册可渲染为空的私有变量占位，再在 waterfall 中填充。
   // 标记随官方排序/遮蔽进入本次 assembly，无会话缓存，也不依赖调用方 context 的对象身份。
   const placeholders = configs.filter(needsResolver)
-    .sort((a, b) => a.order - b.order)
+    .sort(compareTextPlacement)
   if (placeholders.length === 0) return disposers
   const slotVariable = `pt_runtime_${newMessageId('context').replace(/[^a-z0-9_]/gi, '_').toLowerCase()}`
   const slotText = `{{${slotVariable}}}`
@@ -265,7 +269,7 @@ function wireRuntimeContexts(ctx, configs, registry, warnOnce) {
   keepDisposer(ctx, systemPrompt.variable(slotVariable, () => ''), `${name}: runtime-context placeholder`)
   for (const config of placeholders) {
     try {
-      const contextName = typeof config.params?.contextName === 'string' && config.params.contextName.length > 0 ? config.params.contextName : config.id
+      const contextName = textRegistrationName(config, 'contextName')
       keepDisposer(ctx, systemPrompt.context({
         name: contextName,
         order: config.order,
@@ -337,20 +341,20 @@ export function applyAgentRequestParams(params, base) {
 
 /** agent-request:对冻结的 LlmCallConfig 做浅合并 / 整体替换 / 按值条件删键。 */
 function wireAgentRequests(ctx, configs, warnOnce) {
-  const disposers = []
-  for (const config of configs) {
-    disposers.push(ctx.on('agent/request', async (payload, next) => {
-      const base = await next()
+  if (configs.length === 0) return []
+  const ordered = configs.some(config => config.sequence !== undefined) ? configs : [...configs].reverse()
+  return [ctx.on('agent/request', async (payload, next) => {
+    let result = await next()
+    // 模块请求在 next 返回后按序合并；无文件来源的独立调用保持原回栈顺序。
+    for (const config of ordered) {
       try {
-        if (!matchesAgentScope(config, payload?.agent)) return base
-        return applyAgentRequestParams(config.params, base)
+        if (matchesAgentScope(config, payload?.agent)) result = applyAgentRequestParams(config.params, result)
       } catch (error) {
         warnOnce(`${name}: agent-request config ${config.id} failed: ${String(error?.message ?? error)}`)
-        return base
       }
-    }))
-  }
-  return disposers
+    }
+    return result
+  })]
 }
 
 /** 把流替换为提示词配置文本的最小合法 chunk 序列。 */
@@ -518,9 +522,12 @@ export function createTurnStopBudget() {
 function wireTurnStops(ctx, configs, warnOnce) {
   const disposers = []
   if (configs.length === 0) return disposers
-  const budget = createTurnStopBudget()
+  const budgets = new Map()
 
   for (const config of configs) {
+    const source = config.sourceModuleId ?? ''
+    if (!budgets.has(source)) budgets.set(source, createTurnStopBudget())
+    const budget = budgets.get(source)
     disposers.push(ctx.on('agent/turn-stopping', ({ agent, turn } = {}) => {
       try {
         const session = agent?.session
@@ -646,6 +653,7 @@ function wireSubagentEvents(ctx, configs, warnOnce) {
  *   变量注册走 keepDisposer（随 ctx fiber 释放），不在本函数的回收面内。
  */
 export function wireLayers(ctx, configs, warnOnce) {
+  configs = [...configs].sort(compareConfigSequence)
   // 官方插值两层共享一份变量注册：运行时事实按 assembly 求值，非法名走别名改写。
   const registry = registerOfficialVariables(ctx, configs.filter((config) => config.layer === 'system-section' || config.layer === 'runtime-context'), warnOnce)
   const registered = [

@@ -10,6 +10,8 @@ import { createEpochPromotion } from '../../engine/compaction-epoch.mjs'
 import { PROMOTE_EVENTS, createWarnOnce } from '../../engine/shared.mjs'
 // @ts-expect-error 引擎 ESM 随插件打包。
 import { runPreStepBatch, confirmDelivered } from '../../engine/executor.mjs'
+// @ts-expect-error 引擎 ESM 随插件打包。
+import { compareConfigSequence } from '../../engine/order.mjs'
 import { instructionFileIdFromDisplayPath } from '../host/agents-cards.ts'
 import { instructionPolicyPath, readInstructionPolicy, resolveInstructionPolicy } from '../host/instructions-policy.ts'
 import { filterOfficialInstructionMessages } from './official-instruction-filter.ts'
@@ -24,6 +26,8 @@ export interface PreStepPromptConfig {
   layer: string
   enabled?: boolean
   order: number
+  sequence?: number
+  sourceModuleId?: string
   position: string
   promotion: string
   audience: string | null
@@ -154,6 +158,7 @@ export function installPreStepCoordinator(ctx: Context, options: PreStepCoordina
       const sources = [...layers.merge(scope, (layer) => layer.entries).values()]
       const configs = sources.flatMap(source => source.configs).filter(config =>
         !config.id.startsWith('agents-file-') && config.sourceKind !== 'instruction-file')
+        .sort(compareConfigSequence)
       const sessionId = isRecord(session) && typeof session.id === 'string' ? session.id : undefined
       if (sessionId !== undefined) {
         if (officialOwner.size >= MAX_TRACKED_OWNER_SESSIONS) officialOwner.clear()

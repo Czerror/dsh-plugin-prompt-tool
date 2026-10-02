@@ -23,11 +23,12 @@ import { packageEngineDir, resolveModuleFacts, resolveModuleDir, loadModuleSpec 
 import type { ModuleSpec } from '../host/manifest.ts'
 import { assertPresetId } from '../host/module-install.ts'
 import { MODULE_CONFIGS_DIR } from '../host/paths.ts'
+import { readConfigOrder } from '../host/module-config-order.ts'
 
 // @ts-expect-error ESM 引擎源码随插件提供。
 import { createPromptConfigs, loadPromptConfigFiles } from '../../engine/schema.mjs'
 // @ts-expect-error ESM 引擎源码随插件提供。
-import { applyPromptConfigs } from '../../engine/executor.mjs'
+import { applyPromptConfigSources } from '../../engine/executor.mjs'
 
 /** 引擎模块的受管配置字段：值按历史语义相对模块根书写（如 `../<id>/custom-tools`）。 */
 const MANAGED_FIELDS = ['configsDir', 'strategyDir', 'policyFile', 'triggersFile'] as const
@@ -62,8 +63,8 @@ export interface AgentAssemblyOptions {
    * 参与装配的模块 id 列表（= 存储根 `config.yml` 启用表 ∩ 磁盘存在）。
    *
    * **启用即配装**：列了 A+B 就装 A+B，追加 C 就是 A+B+C。每个模块各自贡献自己的
-   * 提示词配置、引擎参数与能力声明，彼此不合并、不互相改写；同键参数由引擎的
-   * `agent-request` 依次叠加（靠后的模块覆盖靠前的），顺序即启用表顺序。
+   * 提示词配置、引擎参数与能力声明，彼此不合并、不互相改写。配置执行按各卡的持久序号，
+   * `agent-request` 后序覆盖前序；启用表顺序仅保留模块身份与工具写入目标语义。
    * 返回空数组表示没有模块参与装配（此时不注册任何贡献）。
    */
   enabledModules: () => readonly string[]
@@ -130,6 +131,8 @@ export async function prepareAssembly(
     : (spec.promptConfigs ?? [])
   const promptConfig = absolutizeManagedFields(configsByModule['prompt-config-engine'] ?? {}, moduleDir)
   const configs = createPromptConfigs(specs, {
+    sourceModuleId: moduleId,
+    configOrder: readConfigOrder(spec.configOrder),
     templateBaseUrl: pathToFileURL(join(moduleRoot, '.engine', 'prompt-config-engine.mjs')),
     templatePresetRoot: pathToFileURL(moduleRoot + sep),
     strategyDir: typeof promptConfig.strategyDir === 'string'
@@ -218,7 +221,7 @@ export function createAgentAssembly(ctx: Context, options: AgentAssemblyOptions)
   }
 
   const mount = async (agent: Agent, prepared: PreparedAssembly[]): Promise<void> => {
-    // 启用表的每一项各贡献一份：宿主能力取并集，装配时逐模块各挂一次（同键参数按此顺序叠加）。
+    // 宿主能力取并集；模块身份独立保留，提示词配置在各自插入点按持久序号执行。
     const services = new Set<string>()
     for (const item of prepared) for (const name of item.services) services.add(name)
     const fiber = agent.ctx.plugin({
@@ -241,14 +244,10 @@ export function createAgentAssembly(ctx: Context, options: AgentAssemblyOptions)
             })
             if (persona.includeRuntimeContext === false) scopeCtx.systemPrompt.suppressRuntimeContext()
           }
-          if (item.configs.length > 0) {
-            scopeCtx.effect(() => applyPromptConfigs(scopeCtx, item.configs, {
-              sourceId: `module:${item.moduleId}`,
-              prepend: true,
-              officialInstructions: false,
-            }))
-          }
         }
+        scopeCtx.effect(() => applyPromptConfigSources(scopeCtx, prepared
+          .filter(item => item.configs.length > 0)
+          .map(item => ({ sourceId: `module:${item.moduleId}`, configs: item.configs })), { prepend: true }))
         for (const item of prepared) {
           for (const module of item.modules) {
             // 引擎入口既有同步也有 async（`declared-triggers.apply` 是 async）：先 await 再判

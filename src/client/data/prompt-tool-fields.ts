@@ -34,8 +34,6 @@ export interface Fields extends EngineParamDrafts {
   skillFolders: string[]
   /** 用户技能根（创建、复制导入与回收站的落点）。 */
   skillsRoot: string
-  presetOrder: number
-  fallbackText: string
   writePreset: boolean
   presetTemplate: string
   promptConfigs: PromptConfigDraft[]
@@ -82,8 +80,6 @@ export const EMPTY_FIELDS: Fields = {
   skillsComplete: false,
   skillFolders: [],
   skillsRoot: '',
-  presetOrder: 5,
-  fallbackText: '',
   writePreset: true,
   presetTemplate: DEFAULT_MODULE_ID,
   promptConfigs: [],

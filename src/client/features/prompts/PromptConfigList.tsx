@@ -6,7 +6,7 @@ import { instructionFileIdOf } from '../../data/prompt-config-content.ts'
 import type { PromptToolTranslate } from '../../locales.ts'
 import { MenuSelect } from '../../ui/MenuSelect.tsx'
 import { PromptConfigCard } from './PromptConfigCard.tsx'
-import { moveToView, moveWithinLayer, promptConfigLayer, viewOrderedIds } from './prompt-config-order.ts'
+import { moveToView, moveWithinLayer, promptConfigLayer, promptConfigViewOrder, viewOrderedIds } from '../../data/prompt-config-order.ts'
 import { displayLayers, LAYER_LABEL_KEYS, matchesConfigKeyword, translateLabel } from './prompt-config-policy.ts'
 import type { EngineMeta, PromptConfigDraft, ValidationErrorEntry } from '../../prompt-tool-types.ts'
 import type { InstructionPolicyFileOverride, InstructionPolicySnapshot } from '../../../shared/instructions.ts'
@@ -139,8 +139,10 @@ export function PromptConfigList(props: PromptConfigListProps): ReactNode {
     .sort((a, b) => {
       const byLayer = layerRank(a.config) - layerRank(b.config)
       if (byLayer !== 0) return byLayer
-      const byOrder = (a.config.order ?? 0) - (b.config.order ?? 0)
+      const byOrder = promptConfigViewOrder(a.config) - promptConfigViewOrder(b.config)
       if (byOrder !== 0) return byOrder
+      const bySequence = (a.config.sequence ?? 0) - (b.config.sequence ?? 0)
+      if (bySequence !== 0) return bySequence
       return a.index - b.index
     })
     .map((entry) => entry.config)

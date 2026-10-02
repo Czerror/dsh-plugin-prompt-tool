@@ -344,21 +344,6 @@ promptConfigs:
 # layerSettings:
 #   pre-step:
 #     # 消息批层：共享参数，不属于该层某一条提示词规则。
-#     firstTurnAnchor: false # 首轮锚定；boolean
-#     firstTurnText: "" # 首轮锚定文本；string
-#     firstTurnCustom: false # 使用自定义锚定文本；boolean
-#     guideText: "" # 每轮引导文本；string
-#     guideCustom: false # 使用自定义引导文本；boolean
-#     guideEnabled: false # 每轮引导；boolean；仅 true 启用；缺省关闭，与 firstTurnAnchor 独立
-#     injectPrompt: true # 锚定确认后注入内容；boolean
-#     firstTurnWord: "" # 锚定确认词；string
-#     buildPattern: "" # 构建任务正则；pattern
-#     complexPattern: "" # 复杂任务正则；pattern
-#     firstTurnBuild: "" # 构建档锚句；string
-#     firstTurnInspect: "" # 排查档锚句；string
-#     firstTurnDeep: "" # 深度档锚句；string
-#     guideWeak: "" # 简短引导正文；string
-#     guideDeep: "" # 深度引导正文；string
 #     instructionHint: false # 指令路径提示；boolean
 #   system-section:
 #     # 系统段层：共享参数，不属于该层某一条提示词规则。
@@ -378,7 +363,6 @@ promptConfigs:
 #     {}
 #   tool-pipeline:
 #     # 工具管线层：共享参数，不属于该层某一条提示词规则。
-#     strReplaceEditorMaxOutputChars: 16000 # 编辑器输出上限；number
 #     toolGitBashEnabled: true # 启用 Git Bash 工具；boolean
 #     customToolRequireApproval: "" # 执行前需用户批准的工具种类；string-list；shell | http | delegate | fs | ask-user
 #   turn-stop:
@@ -386,12 +370,12 @@ promptConfigs:
 #     {}
 #   subagent-start:
 #     # 子代理启动层：共享参数，不属于该层某一条提示词规则。
-#     subagentModelProvider: "" # 子代理模型服务商；string
-#     subagentModelName: "" # 子代理模型；string
+#     subagentModelProvider: "" # 本地子代理请求服务商；string
+#     subagentModelName: "" # 本地子代理请求模型；string
 #     subagentReasoningEffort: "" # 子代理思维程度；string
 #     subagentTemperature: "" # 子代理采样温度；number；子代理采样最终通过 agent-request 生效
 #     subagentMaxTokens: "" # 子代理输出上限；number；正整数；空继承宿主
-#     maxDepth: "" # 递归深度；max-depth；0 禁止委派；provider-managed 交给 provider；正整数限制深度；空继承
+#     maxDepth: "" # 策略委派深度；max-depth；0 禁止委派；provider-managed 交给 provider；正整数限制深度；空继承
 #   subagent-end:
 #     # 子代理结束层：共享参数，不属于该层某一条提示词规则。
 #     {}

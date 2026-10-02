@@ -28,6 +28,7 @@ import { createEpochPromotion } from './compaction-epoch.mjs'
 import { wireLayers } from './layers.mjs'
 import { sessionVarsSnapshot } from './session-vars.mjs'
 import { selectStWorldBook } from './st-world-book.mjs'
+import { compareConfigSequence } from './order.mjs'
 
 const name = 'prompt-config-engine'
 
@@ -253,28 +254,23 @@ export async function runPreStepBatch(options) {
       }
     }
 
-    // order 升序(同值保持声明顺序):决定拼接顺序与同位置插入顺序。
-    due.sort((a, b) => a.config.order - b.config.order)
+    // 模块来源按序号；独立调用仍按 order，同值保留稳定身份顺序。
+    due.sort((a, b) => compareConfigSequence(a.config, b.config))
 
-    // merged 模式的多条提示词配置在首条配置的位置合并为一条消息;
-    // 文本按内容块拼接,source 身份改用 merged:<position> 以保持持久幂等。
+    // 每个落位内只合并同来源的连续 merged 卡；其他落位不会穿插在本落位的输出中。
+    // source 仍用既有 merged:<position>，不因分段或排序改写持久去重身份。
     const orderedGroups = []
-    const groupIndex = new Map()
+    const lastAtPosition = new Map()
     for (const entry of due) {
-      const group = entry.config.mergeMode === 'merged'
-        ? mergedIdentity(entry.config)
-        : undefined
-      if (group === undefined) {
-        orderedGroups.push([entry])
-        continue
+      const previous = lastAtPosition.get(entry.config.position)
+      const base = previous?.[0].config
+      if (entry.config.mergeMode === 'merged' && base?.mergeMode === 'merged'
+        && entry.config.sourceModuleId === base.sourceModuleId) previous.push(entry)
+      else {
+        const group = [entry]
+        orderedGroups.push(group)
+        lastAtPosition.set(entry.config.position, group)
       }
-      let index = groupIndex.get(group)
-      if (index === undefined) {
-        index = orderedGroups.length
-        groupIndex.set(group, index)
-        orderedGroups.push([])
-      }
-      orderedGroups[index].push(entry)
     }
 
     const planned = []
@@ -345,15 +341,10 @@ export async function runPreStepBatch(options) {
  * @param options.officialInstructions 本 mount 的组合是否仍挂着官方指令加载行
  *   (负责人冲突事实;协调器据此拒绝同时注入文件正文)。
  */
-export function applyPromptConfigs(ctx, configs, options = {}) {
+function effectivePromptConfigs(configs) {
   const list = configs.filter((config) => config !== undefined && config !== null)
-  const sourceId = typeof options.sourceId === 'string' && options.sourceId.length > 0
-    ? options.sourceId
-    : `preset:${String(list[0]?.id ?? 'unknown')}`
-  // 空 mount 同样保留接管监听：装配事实与协调器迟到/HMR 不依赖是否有预设卡。
-  // 互斥组:同一 group 且 exclusive=true 时,只保留排序后第一个 enabled 提示词配置。
   const claimedGroups = new Set()
-  const effectiveList = list.filter((config) => {
+  return list.filter((config) => {
     if (config.enabled === false) return false
     if (config.group !== undefined && config.exclusive === true) {
       if (claimedGroups.has(config.group)) return false
@@ -361,6 +352,27 @@ export function applyPromptConfigs(ctx, configs, options = {}) {
     }
     return true
   })
+}
+
+/** 多模块仍各自拥有来源/互斥组；只有非 pre-step 层汇总接线，避免模块块状执行。 */
+export function applyPromptConfigSources(ctx, sources, options = {}) {
+  const selected = sources.map(source => ({ ...source, configs: effectivePromptConfigs(source.configs) }))
+  const releases = selected.map(source => applyPromptConfigs(ctx, source.configs, { ...options, ...source, layers: false }))
+  const releaseLayers = wireLayers(ctx, selected.flatMap(source => source.configs)
+    .filter(config => config.layer !== 'pre-step'), createWarnOnce(ctx, name))
+  return () => {
+    for (const release of releases) release()
+    releaseLayers()
+  }
+}
+
+export function applyPromptConfigs(ctx, configs, options = {}) {
+  const list = configs.filter((config) => config !== undefined && config !== null)
+  const sourceId = typeof options.sourceId === 'string' && options.sourceId.length > 0
+    ? options.sourceId
+    : `preset:${String(list[0]?.id ?? 'unknown')}`
+  // 互斥组仍在本来源内筛选；空来源也保留协调器迟到/HMR 接管。
+  const effectiveList = effectivePromptConfigs(list)
   const injectedMemo = new Map()
   const main = createEpochPromotion(PROMOTE_EVENTS.either, { includeSubagents: false })
   const withSubagents = createEpochPromotion(PROMOTE_EVENTS.either, { includeSubagents: true })
@@ -401,7 +413,8 @@ export function applyPromptConfigs(ctx, configs, options = {}) {
 
   // 非 pre-step 提示词配置接入各自声明的官方层级通道(system-section /
   // runtime-context / agent-request / llm-stream / tool-pipeline)。
-  const releaseLayers = wireLayers(ctx, effectiveList.filter((config) => config.layer !== 'pre-step'), warnOnce)
+  const releaseLayers = options.layers === false ? () => {}
+    : wireLayers(ctx, effectiveList.filter((config) => config.layer !== 'pre-step'), warnOnce)
 
   // 协调器已在（正常装配顺序：插件先加载、预设后挂载）时立即登记来源；
   // 迟到/消失由下面的监听器按「先撤旧再启新」处理。

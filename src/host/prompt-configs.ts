@@ -134,6 +134,12 @@ export function modelRequestConfigs(params: Record<string, unknown>): PromptConf
   }
   if (Object.keys(mainPatch).length > 0) configs.push({ id: 'model-params', name: '模型参数（主对话）', layer: 'agent-request', audience: 'main', order: -100, params: { patch: mainPatch } })
   const subagentPatch = patchOf('subagent')
+  // 本地子代理请求路由；不改写官方委派工具的创建参数或外部子代理运行时。
+  if (typeof params.subagentModelProvider === 'string' && params.subagentModelProvider.trim().length > 0
+    && typeof params.subagentModelName === 'string' && params.subagentModelName.trim().length > 0) {
+    subagentPatch.provider = params.subagentModelProvider.trim()
+    subagentPatch.model = params.subagentModelName.trim()
+  }
   if (Object.keys(subagentPatch).length > 0) configs.push({ id: 'subagent-model-params', name: '模型参数（子代理）', layer: 'agent-request', audience: 'subagent', order: -100, params: { patch: subagentPatch } })
   return configs
 }

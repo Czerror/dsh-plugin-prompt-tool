@@ -5,6 +5,7 @@ import { sessionVarsSnapshot } from './session-vars.mjs'
 import { sessionEvents, isDelegated, matchesModel } from './shared.mjs'
 import { stripUnresolvedRefs } from './interpolate.mjs'
 import { isSuccessfulCompactionEnd } from './compaction-epoch.mjs'
+import { compareConfigSequence } from './order.mjs'
 
 function visible(config, agent) {
   if (config.enabled === false) return false
@@ -92,10 +93,13 @@ export function attachStRenderers(configs) {
         frame.evaluate = evaluate
         if (session) sessions.set(session, frame)
       }
-      // 同一帧允许后到的 pre-step 资格补入；已求值模板不重放副作用或随机宏。
-      for (const config of templates.filter(config => approved(config)
-        && config.strategy === 'static' && config.dedupe === 'none' && !frame.text.has(config))
-        .sort((a, b) => a.order - b.order)) frame.evaluate(config)
+      // 模块 pre-step 已跨来源按序调度，不能预跑本模块后面的卡而越过另一模块。
+      // 其它入口沿用原预求值语义；同帧已求值模板不重放副作用或随机宏。
+      if (target.sequence === undefined || eligible === undefined) {
+        for (const config of templates.filter(config => approved(config)
+          && config.strategy === 'static' && config.dedupe === 'none' && !frame.text.has(config))
+          .sort(compareConfigSequence)) frame.evaluate(config)
+      }
       if (token && typeof token === 'object') tokens.set(token, frame)
       if (!frame.text.has(target)) frame.evaluate(target)
       return frame.text.get(target) ?? ''

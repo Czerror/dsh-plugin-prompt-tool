@@ -15,6 +15,8 @@ import { invalidateModelCatalog, listAdvertisedModels, peekModelCatalog, refresh
 import type { SkillCatalogEntry, SkillPolicyChange, SkillPolicyScope, SkillsCatalogSnapshot } from '../shared/skills.ts'
 import { listPromptConfigSpecs } from '../host/prompt-configs.ts'
 import { enabledModuleIds, setModuleEnabled } from '../host/config-store.ts'
+import { appendModuleConfigOrder, ModuleConfigOrderError, readModuleConfigOrder, saveModuleConfigOrder } from '../host/module-config-order.ts'
+import type { ModuleConfigIdentity } from '../shared/module-config-order.ts'
 import { moduleDirExists } from '../host/manifest.ts'
 import { readConfigFieldSources, stripConfigFieldSources } from '../shared/managed-config-fields.ts'
 import { readOfficialOrderSegments, type OfficialOrderLookup } from '../shared/official-orders.ts'
@@ -540,6 +542,7 @@ export function registerSettingsBridge(
 ): { invalidateDescriptor: () => void } {
   let invalidateCachedDescriptor: () => void = () => {}
   let capabilityQueue: Promise<void> = Promise.resolve()
+  let moduleOrderQueue: Promise<void> = Promise.resolve()
   /** 写盘已完成：等待重建，失败立即返回统一错误，不覆盖持久化结果。 */
   const finishPresetChange = async (res: ServerResponse, activate: () => void | Promise<void>): Promise<boolean> => {
     try {
@@ -578,6 +581,11 @@ export function registerSettingsBridge(
         cachedAt = now
         return cachedDescriptor
       }
+      /** 已解析的编辑目标只投影到本次响应，不改宿主设置或缓存描述符。 */
+      const descriptorForTarget = (descriptor: SettingsDescriptor, dir: string): SettingsDescriptor =>
+        dir.length === 0
+          ? descriptor
+          : { ...descriptor, value: { ...asRecord(descriptor.value), presetTemplate: basename(dir) } }
       /** mutate 成功后强制失效，下次 findDescriptor 重查宿主（响应必须带新 view）。 */
       const invalidateDescriptor = (): void => {
         cachedDescriptor = undefined
@@ -603,14 +611,19 @@ export function registerSettingsBridge(
       }
       const guardPresetWrite = (dir: string, res: ServerResponse): boolean =>
         guardEditablePresetDir(dir, res) && guardPresetFormat(dir, res)
+      const writeModuleOrderError = (res: ServerResponse, error: unknown): void => {
+        const status = error instanceof ModuleConfigOrderError ? error.status : 500
+        const code = error instanceof ModuleConfigOrderError ? error.code : 'module-config-order-failed'
+        writeBridgeJson(res, status, { ok: false, code, message: String((error as Error)?.message ?? error) })
+      }
       /** 模块身份只作一致性检查，绝不用客户端 ID 构造写入路径。 */
-      const guardPresetIdentity = (record: Record<string, unknown>, dir: string, res: ServerResponse): boolean => {
+      const guardPresetIdentity = (req: IncomingMessage, record: Record<string, unknown>, dir: string, res: ServerResponse): boolean => {
         const expected = record.expectedPresetId
         if (expected !== undefined && (typeof expected !== 'string' || expected.length === 0 || expected.length > 256)) {
           writeBridgeJson(res, 400, { ok: false, code: 'preset-identity-invalid', message: 'expectedPresetId 必须是非空模块 ID' })
           return false
         }
-        if ((getPresetConfigsDir?.() ?? '') !== dir || (expected !== undefined && expected !== basename(dir))) {
+        if (editDir(req) !== dir || (expected !== undefined && expected !== basename(dir))) {
           writeBridgeJson(res, 409, { ok: false, code: 'preset-changed', message: '当前模块已切换；旧草稿未写入，请重新读取后保存' })
           return false
         }
@@ -682,7 +695,7 @@ export function registerSettingsBridge(
           return { skills: withSkillWinners(state.listSkills(cwd), []), complete: false }
         }
       }
-      const collectDescribeExtras = async (sessionId?: string): Promise<Record<string, unknown>> => {
+      const collectDescribeExtras = async (activeDir: string, sessionId?: string): Promise<Record<string, unknown>> => {
         const detection = getModelsState()
         const skillsState = getSkillsState()
         const skillsSnapshot = await collectSkills(sessionId)
@@ -718,12 +731,7 @@ export function registerSettingsBridge(
         // 模板无 pre-step 配置（layer 缺省即 pre-step）时开关关闭且禁编辑。
         let templatePreStepCount = 0
         try {
-          // 激活模块目录以服务端 runtime 为准（getPresetConfigsDir），而不是 descriptor
-          // 缓存里的 presetTemplate——descriptor 有 30s TTL，切换模块后若缓存未失效，
-          // 这里会读旧模块参数，与下方 readParamOverrides/readPromptConfigs(新目录) 不同源。
-          // `/describe` 是全局描述端点（无请求级目标）：这里读**当前激活目标**，
-          // 与下方 readParamOverrides/readPromptConfigs 同源；各写端点则按请求头定位。
-          const activeDir = getPresetConfigsDir?.() ?? ''
+          // 聚合响应复用端点已解析的请求目录，与 overrides、配置卡和变量同源。
           const templateName = activeDir.length > 0 ? basename(activeDir) : DEFAULT_MODULE_ID
           const spec = loadModuleSpec(activeDir.length > 0 ? activeDir : resolveModuleDir(templateName))
           presetParams = resolvePresetParams(spec, {})
@@ -741,6 +749,7 @@ export function registerSettingsBridge(
             rowIds: resolvedFacts.rowIds,
             sourceMode: resolvedFacts.sourceMode,
             editable: resolvedFacts.editable,
+            subagentToolPolicyEnabled: resolvedFacts.subagentToolPolicyEnabled === true,
           }
           if (Array.isArray(spec.promptConfigs)) {
             presetParams.promptConfigs = spec.promptConfigs
@@ -807,11 +816,13 @@ export function registerSettingsBridge(
       /** 生成目录实际生效配置（/prompt-configs 读取）。 */
       const readPromptConfigs = (dir: string): unknown[] => {
         try {
+          const order = loadModuleSpec(dir).configOrder ?? {}
           return dir.length > 0 ? listPromptConfigSpecs(join(dir, MODULE_CONFIGS_DIR)).map((config) => {
             const raw = config as typeof config & { fieldSources?: unknown }
             const definition = stripConfigFieldSources(raw)
             const fieldSources = readConfigFieldSources(config.id, raw.fieldSources)
-            return { ...definition, ...(fieldSources === undefined ? {} : { fieldSources }) }
+            return { ...definition, ...(fieldSources === undefined ? {} : { fieldSources }),
+              ...(Object.hasOwn(order, config.id) ? { sequence: order[config.id] } : {}) }
           }) : []
         } catch {
           return []
@@ -825,6 +836,7 @@ export function registerSettingsBridge(
           path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.bootstrap,
           handler: async (req, res) => {
             if (!guard(req, res)) return
+            const dir = editDir(req)
             const descriptor = findDescriptor()
             if (descriptor === undefined) {
               writeBridgeJson(res, 404, { ok: false, code: 'settings-not-exposed', message: 'prompt-tool settings namespace is not registered' })
@@ -843,12 +855,11 @@ export function registerSettingsBridge(
             // mtime 缓存仅解析一次。文件卡正文与 /prompt-configs 走同一读取入口。
             try {
               const meta = await loadEngineMeta()
-              const dir = editDir(req) ?? ''
-              const extras = await collectDescribeExtras(session.sessionId)
+              const extras = await collectDescribeExtras(dir, session.sessionId)
               const scope = resolveInstructionScope(sctx, session.sessionId)
               writeBridgeJson(res, 200, {
                 ok: true,
-                value: descriptor,
+                value: descriptorForTarget(descriptor, dir),
                 meta: { meta },
                 overrides: { overrides: dir.length > 0 ? readParamOverrides(dir) : {} },
                 variables: dir.length > 0 ? readPresetVariables(dir) : { variables: {}, enabled: true },
@@ -881,13 +892,14 @@ export function registerSettingsBridge(
           path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.describe,
           handler: async (req, res) => {
             if (!guard(req, res)) return
+            const dir = editDir(req)
             const descriptor = findDescriptor()
             if (descriptor === undefined) {
               writeBridgeJson(res, 404, { ok: false, code: 'settings-not-exposed', message: 'prompt-tool settings namespace is not registered' })
               return
             }
             try {
-              writeBridgeJson(res, 200, { ok: true, value: descriptor, ...await collectDescribeExtras() })
+              writeBridgeJson(res, 200, { ok: true, value: descriptorForTarget(descriptor, dir), ...await collectDescribeExtras(dir) })
             } catch (error) {
               if (!writeLayerSettingsError(res, error)) throw error
             }
@@ -1440,7 +1452,7 @@ export function registerSettingsBridge(
             }
             if (!guardPresetWrite(dir, res)) return
             try {
-              if (!guardPresetIdentity(record, dir, res)) return
+              if (!guardPresetIdentity(req, record, dir, res)) return
               mkdirSync(dir, { recursive: true })
               for (const entry of contents) {
                 writeFileSync(join(dir, entry.scope === 'preset' ? 'preset.md' : 'agents.md'), entry.content, 'utf8')
@@ -1474,7 +1486,7 @@ export function registerSettingsBridge(
               writeBridgeJson(res, 400, { ok: false, code: 'triggers-invalid', message: '声明请求字段、模块身份或版本格式不合法' })
               return
             }
-            if (!guardPresetIdentity(record, dir, res)) return
+            if (!guardPresetIdentity(req, record, dir, res)) return
             const writing = record.triggers !== undefined && record.validateOnly !== true
             if (writing && typeof record.expectedRevision !== 'string') {
               writeBridgeJson(res, 400, { ok: false, code: 'triggers-invalid', message: '保存声明必须提供读取时的 expectedRevision' })
@@ -1484,7 +1496,7 @@ export function registerSettingsBridge(
             try {
               const { compileDeclarations } = await import(pathToFileURL(join(packageEngineDir(), 'trigger-spec.mjs')).href) as { compileDeclarations: (value: unknown[], context?: { promptConfigOptions: ReturnType<typeof triggerPromptConfigOptions> }) => unknown }
               const { getTriggerEditorMeta } = await import(pathToFileURL(join(packageEngineDir(), 'trigger-editor-meta.mjs')).href) as { getTriggerEditorMeta: () => TriggerEditorMeta }
-              if (!guardPresetIdentity(record, dir, res)) return
+              if (!guardPresetIdentity(req, record, dir, res)) return
               const snapshot = readModuleTriggers(dir)
               if (record.triggers !== undefined) {
                 try {
@@ -1543,7 +1555,7 @@ export function registerSettingsBridge(
             if (parsedBody === undefined) return
             const { body } = parsedBody
             const record = (body ?? {}) as Record<string, unknown>
-            if (!guardPresetIdentity(record, dir, res)) return
+            if (!guardPresetIdentity(req, record, dir, res)) return
             if (record.rebuild !== undefined && typeof record.rebuild !== 'boolean') {
               writeBridgeJson(res, 400, { ok: false, code: 'overrides-invalid-shape', message: 'rebuild must be a boolean' })
               return
@@ -1621,7 +1633,7 @@ export function registerSettingsBridge(
                   return
                 }
               }
-              if (!guardPresetIdentity(record, dir, res)) return
+              if (!guardPresetIdentity(req, record, dir, res)) return
               saveModuleParams(
                 moduleRoot,
                 templateName,
@@ -1665,7 +1677,7 @@ export function registerSettingsBridge(
             if (parsedBody === undefined) return
             const { body } = parsedBody
             const record = (body ?? {}) as Record<string, unknown>
-            if (!guardPresetIdentity(record, dir, res)) return
+            if (!guardPresetIdentity(req, record, dir, res)) return
             // 无载荷 = 读取（preset.yml 顶层 variables + 插值开关，不回退 params）。
             if (record.variables === undefined && record.enabled === undefined) {
               writeBridgeJson(res, 200, { ok: true, value: readPresetVariables(dir) })
@@ -1682,7 +1694,7 @@ export function registerSettingsBridge(
             }
             if (!guardPresetWrite(dir, res)) return
             try {
-              if (!guardPresetIdentity(record, dir, res)) return
+              if (!guardPresetIdentity(req, record, dir, res)) return
               saveModuleParams(
                 moduleRoot,
                 templateName,
@@ -1713,7 +1725,7 @@ export function registerSettingsBridge(
             if (parsedBody === undefined) return
             const { body } = parsedBody
             const record = (body ?? {}) as Record<string, unknown>
-            if (!guardPresetIdentity(record, dir, res)) return
+            if (!guardPresetIdentity(req, record, dir, res)) return
             // 无载荷 = 读取（preset.yml 顶层 customTools 段）。
             if (record.customTools === undefined) {
               try {
@@ -1738,7 +1750,7 @@ export function registerSettingsBridge(
                 return
               }
               if (!guardPresetWrite(dir, res)) return
-              if (!guardPresetIdentity(record, dir, res)) return
+              if (!guardPresetIdentity(req, record, dir, res)) return
               withPresetDoc(dir, (doc) => {
                 if (customTools.length === 0) doc.deleteIn(['customTools'])
                 else {
@@ -1767,7 +1779,7 @@ export function registerSettingsBridge(
             const parsedBody = await readBridgeBodyForHandler(req, res)
             if (parsedBody === undefined) return
             const record = (parsedBody.body ?? {}) as Record<string, unknown>
-            if (!guardPresetIdentity(record, dir, res)) return
+            if (!guardPresetIdentity(req, record, dir, res)) return
             // 无 persona 载荷 = 读取（preset.yml 顶层 persona 段）。
             if (record.persona === undefined) {
               try {
@@ -1934,12 +1946,8 @@ export function registerSettingsBridge(
               return
             }
             // 当前使用中的模块不可删除（先切换再删）。
-            const descriptor = findDescriptor()
-            const value = (descriptor?.value ?? {}) as Record<string, unknown>
-            const base = (descriptor?.base ?? {}) as Record<string, unknown>
-            const active = typeof value.presetTemplate === 'string' ? value.presetTemplate
-              : typeof base.presetTemplate === 'string' ? base.presetTemplate : undefined
-            if (typeof active === 'string' && active.length > 0 && active === id) {
+            const activeDir = editDir(req)
+            if (activeDir.length > 0 && basename(activeDir) === id) {
               writeBridgeJson(res, 400, { ok: false, code: 'preset-in-use', message: `模块「${id}」正在使用中，请先切换其他模块再删除` })
               return
             }
@@ -2045,9 +2053,67 @@ export function registerSettingsBridge(
               writeBridgeJson(res, 400, { ok: false, code: 'preset-enable-rejected', message: `模块 ${id} 不存在` })
               return
             }
-            setModuleEnabled(userModulesDir(), id, record.enabled)
-            if (!await runOverridesChange(res)) return
-            writeBridgeJson(res, 200, { ok: true, value: { enabled: enabledModuleIds(userModulesDir()) } })
+            const enabled = record.enabled
+            const run = moduleOrderQueue.then(async () => {
+              try {
+                if (enabled) {
+                  const changed = appendModuleConfigOrder(userModulesDir(), id)
+                  // 上次可能已保存序号却未物化成功；从停用态启用有卡模块时仍须重建。
+                  if (!changed.includes(id) && !enabledModuleIds(userModulesDir()).includes(id)
+                    && readModuleConfigOrder(userModulesDir(), id).entries.length > 0) changed.push(id)
+                  for (const changedId of changed) {
+                    if (!await runOverridesChange(res, changedId)) return
+                  }
+                }
+                setModuleEnabled(userModulesDir(), id, enabled)
+                if (!await runOverridesChange(res)) return
+                writeBridgeJson(res, 200, { ok: true, value: { enabled: enabledModuleIds(userModulesDir()) } })
+              } catch (error) {
+                writeModuleOrderError(res, error)
+              }
+            })
+            moduleOrderQueue = run.catch(() => {})
+            await run
+          },
+        }),
+        sctx.webServer.register({
+          kind: 'exact',
+          path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.moduleConfigOrder,
+          handler: async (req, res) => {
+            if (!guard(req, res)) return
+            const parsed = await readBridgeBodyForHandler(req, res)
+            if (parsed === undefined) return
+            const body = parsed.body
+            const writing = isRecord(body) && (body.entries !== undefined || body.expectedRevision !== undefined)
+            if (body !== undefined && (!isRecord(body)
+              || Object.keys(body).some((key) => key !== 'moduleId' && key !== 'entries' && key !== 'expectedRevision')
+              || (body.moduleId !== undefined && (typeof body.moduleId !== 'string' || readEditTarget(body.moduleId) !== body.moduleId))
+              || (!writing && body.moduleId === undefined)
+              || (writing && (typeof body.expectedRevision !== 'string' || !SHA256_HEX_RE.test(body.expectedRevision)
+                || !Array.isArray(body.entries)
+                || body.entries.some((entry) => !isRecord(entry)
+                || Object.keys(entry).some((key) => key !== 'moduleId' && key !== 'configId')
+                || typeof entry.moduleId !== 'string' || readEditTarget(entry.moduleId) !== entry.moduleId
+                || typeof entry.configId !== 'string' || entry.configId.length === 0 || entry.configId.length > 256))))) {
+              writeBridgeJson(res, 400, { ok: false, code: 'module-config-order-invalid', message: '排序只接受配置身份列表和读取时的版本' })
+              return
+            }
+            const run = moduleOrderQueue.then(async () => {
+              try {
+                const moduleId = isRecord(body) ? body.moduleId as string | undefined : undefined
+                if (writing) {
+                  const changedIds = saveModuleConfigOrder(userModulesDir(), body.expectedRevision as string, body.entries as ModuleConfigIdentity[], moduleId)
+                  for (const id of changedIds) {
+                    if (!await runOverridesChange(res, id)) return
+                  }
+                }
+                writeBridgeJson(res, 200, { ok: true, value: readModuleConfigOrder(userModulesDir(), moduleId) })
+              } catch (error) {
+                writeModuleOrderError(res, error)
+              }
+            })
+            moduleOrderQueue = run.catch(() => {})
+            await run
           },
         }),
         // ---- 角色卡库：素材+参数独立存储，按需导入/移除当前模块 ----
@@ -2248,7 +2314,7 @@ export function registerSettingsBridge(
             if (parsedBody === undefined) return
             const { body } = parsedBody
             const record = (body ?? {}) as Record<string, unknown>
-            if (!guardPresetIdentity(record, dir, res)) return
+            if (!guardPresetIdentity(req, record, dir, res)) return
             // 无 policy 载荷 = 读取（preset.yml 顶层 subagentToolPolicy 段）。
             if (record.policy === undefined) {
               try {
@@ -2274,7 +2340,7 @@ export function registerSettingsBridge(
                 writeBridgeJson(res, 409, { ok: false, code: 'subagent-tool-policy-rejected', message: '策略校验失败：' + errors.join('; '), value: { errors } })
                 return
               }
-              if (!guardPresetIdentity(record, dir, res)) return
+              if (!guardPresetIdentity(req, record, dir, res)) return
               withPresetDoc(dir, (doc) => {
                 if (isEmpty) {
                   // 关闭开关：只删除策略段，**保留模块声明**——能力卡仍在，用户可再次打开；
@@ -2346,7 +2412,7 @@ export function registerSettingsBridge(
             const parsedBody = await readBridgeBodyForHandler(req, res)
             if (parsedBody === undefined) return
             const body = asRecord(parsedBody.body)
-            if (!guardPresetIdentity(body, dir, res)) return
+            if (!guardPresetIdentity(req, body, dir, res)) return
             const action = body.action
             const id = action === 'create' || action === 'remove' ? body.capabilityId : action === 'create-recipe' ? body.recipeId : undefined
             if ((action !== 'create' && action !== 'remove' && action !== 'create-recipe') || typeof id !== 'string' || id.trim().length === 0 || id.length > 128) {
@@ -2355,7 +2421,7 @@ export function registerSettingsBridge(
             }
             if (!guardPresetWrite(dir, res)) return
             const run = capabilityQueue.then(async () => {
-              if (!guardPresetIdentity(body, dir, res)) return
+              if (!guardPresetIdentity(req, body, dir, res)) return
               const file = join(dir, MODULE_DEFINITION_FILE)
               let original: string | undefined
               try {

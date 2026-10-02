@@ -97,6 +97,7 @@ export function PromptConfigForm(props: {
   // 官方装配刻度（B8 W2）：只有把 order 原样交给官方 `section()` / `context()` 的两层才有刻度。
   // 其余层只给说明——展示档位数值会让人以为可与官方装配位置比较。
   const layerShowsOfficialOrder = OFFICIAL_ORDER_LAYERS.some((layer) => layer === (config.layer ?? ''))
+  const worldBookPriority = config.strategy === 'world-book' && config.params?.stWorldBook !== undefined
   const officialSegments = config.layer === 'system-section'
     ? meta.officialOrders?.sections
     : config.layer === 'runtime-context' ? meta.officialOrders?.contexts : undefined
@@ -167,7 +168,7 @@ export function PromptConfigForm(props: {
         <OptionField t={t} className={styles.fieldSpan3} label={t('form.kind.label')} hint={t('form.kind.hint')} value={config.configKind} options={meta.slotKinds} fallback="ordered" labelKeys={SLOT_KIND_LABEL_KEYS} disabled={locked || disabled} onChange={(value) => onPatch({ configKind: value })} />
         {policy.position && <OptionField t={t} className={styles.fieldSpan3} label={t('form.position.label')} hint={t('form.position.hint')} value={config.position} options={meta.positions} fallback="after-user" labelKeys={POSITION_LABEL_KEYS} disabled={disabled} onChange={(value) => onPatch({ position: value })} />}
         {policy.merge && <OptionField t={t} className={styles.fieldSpan2} label={t('form.merge.label')} hint={t('form.merge.hint')} value={config.mergeMode} options={meta.mergeModes} fallback="separate" labelKeys={MERGE_MODE_LABEL_KEYS} disabled={locked || disabled} onChange={(value) => onPatch({ mergeMode: value })} />}
-        {policy.order && <NumberField t={t} className={officialOrderOptions === undefined ? styles.fieldSpan2 : styles.fieldSpan6} label={t('form.order.label')} hint={t('form.order.hint')}
+        {policy.order && (layerShowsOfficialOrder || worldBookPriority) && <NumberField t={t} className={officialOrderOptions === undefined ? styles.fieldSpan2 : styles.fieldSpan6} label={t(worldBookPriority ? 'form.order.worldBookPriority' : 'form.order.label')} hint={t(worldBookPriority ? 'form.order.worldBookHint' : 'form.order.hint')}
           value={config.order} fallback={locked ? 30 : 0} integer min={locked ? 0 : undefined} disabled={disabled}
           quickOptions={officialOrderOptions} quickLabel={t('form.order.insert')}
           fieldDrafts={props.fieldDrafts} draftKey={`${props.draftScope}:order`} onChange={(value) => { if (typeof value === 'number') onPatch({ order: value }) }} />}

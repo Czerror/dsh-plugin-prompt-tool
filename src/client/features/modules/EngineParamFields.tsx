@@ -63,6 +63,7 @@ export function EngineParamField({ store, param, t, instanceId }: { store: Promp
   const definition = ENGINE_PARAM_DEFINITIONS[param]
   const value = store.fields[param]
   const disabled = !store.fields.writePreset || store.moduleFacts?.editable !== true
+    || (param === 'maxDepth' && store.moduleFacts?.subagentToolPolicyEnabled !== true)
   const draftKey = `${store.fields.presetTemplate}:param:${param}`
   const getDraftRevision = store.getDraftRevision ?? getZero
   useSyncExternalStore(store.subscribeDrafts ?? subscribeNothing, getDraftRevision, getDraftRevision)
@@ -79,7 +80,7 @@ export function EngineParamField({ store, param, t, instanceId }: { store: Promp
   // 默认渲染点沿用 `pt-param-<键>`（层卡内唯一）；镜像渲染点带实例前缀，DOM id 不重复。
   const id = instanceId === undefined ? `pt-param-${param}` : `pt-param-${instanceId}-${param}`
   const label = t(`param.${param}`)
-  const hint = t('param.hint', { param, label })
+  const hint = param === 'maxDepth' ? t('param.maxDepth.hint') : t('param.hint', { param, label })
   const optionLabels: Record<string, string> = {
     either: t('param.option.either'),
     'tool-call': t('param.option.tool-call'),

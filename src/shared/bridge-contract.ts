@@ -5,6 +5,7 @@
  * 改路径或载荷形状必须同步更新 test/shared/bridge-contract.test.mjs。
  */
 import type { PersonaSpec } from './persona-section.ts'
+import type { ModuleConfigIdentity, ModuleConfigOrderSnapshot } from './module-config-order.ts'
 import type { AssetImportRequest, AssetSummary, ImportKind, PresetExportRequest, PresetExportResult } from './asset-transfer.ts'
 import type { EngineEditorGroup, EngineLayer } from './engine-capabilities.ts'
 import type { ConfigFieldSources } from './managed-config-fields.ts'
@@ -62,6 +63,7 @@ export const BRIDGE_ENDPOINTS = {
   moduleDuplicate: '/module-duplicate',
   moduleOpen: '/module-open',
   moduleEnable: '/module-enable',
+  moduleConfigOrder: '/module-config-order',
   charactersImport: '/characters-import',
   charactersImportStream: '/characters-import-stream',
   charactersList: '/characters-list',
@@ -190,6 +192,7 @@ export interface BridgeRequestMap {
   moduleDuplicate: { id: string }
   moduleOpen: { id: string }
   moduleEnable: { id: string; enabled: boolean }
+  moduleConfigOrder: { moduleId: string } | { moduleId?: string; entries: ModuleConfigIdentity[]; expectedRevision: string } | undefined
   /** 角色卡 PNG/JSON/YAML 导入；预览不写角色库，提交必验版本，目标和选组均绑定预览。 */
   charactersImport: AssetImportRequest
   charactersImportStream: undefined
@@ -354,6 +357,8 @@ export interface EngineMetaLayerContract {
 /** 物化配置的只读来源；与配置一同读回，不能作为写入字段或授权。 */
 export interface PromptConfigSourceView {
   fieldSources?: ConfigFieldSources
+  /** 只读排序投影；不能作为客户端提供的写盘序号。 */
+  sequence?: number
 }
 
 /** 端点级响应 value 契约（value 字段形状；扩展字段仍以 value 旁可选字段出现）。 */
@@ -413,6 +418,7 @@ export interface BridgeValueMap {
   moduleDuplicate: { id: string }
   moduleOpen: { path: string }
   moduleEnable: { enabled: string[] }
+  moduleConfigOrder: ModuleConfigOrderSnapshot
   charactersImport: {
     id?: string
     name?: string

@@ -19,11 +19,13 @@ import { compileDeclarations } from '../../engine/trigger-spec.mjs'
 import { MODULES_DIR, MODULE_CONFIGS_DIR, MODULE_DEFINITION_FILE } from './paths.ts'
 import { DEFAULT_MODULE_ID } from '../shared/preset-ids.ts'
 import { triggerPromptConfigOptions } from './module-triggers.ts'
+import { appendModuleConfigOrder, readConfigOrder } from './module-config-order.ts'
+import { enabledModuleIds } from './config-store.ts'
 import { assertModuleDirectory, assertPresetId, assertPresetTree, engineModuleFileNames, rewritePresetEngineReferences } from './module-install.ts'
 import { compileCustomTool } from './custom-tools.ts'
 import { validateCustomToolIdentities } from '../shared/engine-capabilities.ts'
-import { ENGINE_PARAM_KEYS, type PresetWriterParams } from '../shared/engine-params.ts'
-import { MANAGED_CONFIG_FIELDS, type ConfigFieldSources } from '../shared/managed-config-fields.ts'
+import { WRITER_PARAM_KEYS, type PresetWriterParams } from '../shared/engine-params.ts'
+import { resolveLegacyPromptConfigs } from './legacy-prompt-params.ts'
 import {
   configFileName,
   mergePromptConfigs,
@@ -71,7 +73,8 @@ export interface WritePresetOptions extends PresetWriterParams {
   /** AGENTS.md 内容资产（写生成目录 agents.md）：常驻层写盘的唯一来源，不再注入提示词。 */
   agentsInstructionText?: string
   moduleDir: string
-  presetOrder: number
+  /** @deprecated 模块排序归模块定义；该旧输入已不再覆盖顶层 order。 */
+  presetOrder?: number
   /** settings 层用户自定义提示词配置(优先级最高)。 */
   promptConfigs: PromptConfigSpec[]
   /** 当前模块目录名；默认 pt-standard。 */
@@ -84,6 +87,33 @@ export interface WritePresetOptions extends PresetWriterParams {
   materializeOnly?: boolean
   /** 目录加载失败等非致命告警回调。 */
   warn?: (message: string) => void
+}
+
+/** 按模块身份重建：定义与正文均读取该模块，不叠加工作台当前编辑态。 */
+export function materializeModule(
+  id: string,
+  options: Pick<WritePresetOptions, 'moduleDir' | 'presetOrder' | 'warn'>,
+): string {
+  if (enabledModuleIds(options.moduleDir).includes(id)) appendModuleConfigOrder(options.moduleDir, id)
+  const dir = resolveModuleDir(id, options.moduleDir)
+  const spec = loadModuleSpec(dir)
+  const content = (file: string, fallback: string): string => {
+    try {
+      return readFileSync(join(dir, file), 'utf8') || fallback
+    } catch {
+      return fallback
+    }
+  }
+  const prompt = content('preset.md', asString(spec.content?.presetText))
+  return writePreset(prompt, {
+    moduleDir: options.moduleDir,
+    presetOrder: options.presetOrder,
+    presetTemplate: id,
+    outputId: id,
+    promptConfigs: [],
+    agentsInstructionText: content('agents.md', asString(spec.content?.agentsText)),
+    warn: options.warn,
+  })
 }
 
 /** Windows 瞬时文件锁（杀软/宿主短读）下的重试：rename/写文件失败最多重试 3 次、间隔 400ms。 */
@@ -132,11 +162,8 @@ function syncDirInPlace(srcDir: string, destDir: string): void {
 /**
  * 写盘用的 runtime 参数对象。
  *
- * **导出供测试固化其归一化行为**（`test/shared/engine-param-schema.test.mjs` 的特性断言）：
- * 这些逐键归一化**不是** `ENGINE_PARAM_DEFINITIONS` 类型信息的重复拷贝——规则取决于运行时的
- * 需要，且与 `index.ts` 的 `reloadPresetParams` **不同**（例如 `firstTurnAnchor` 在这里
- * 保留调用方显式的 `false`，读回时却布尔化成 `params.x === true`）。所以它必须被逐键钉住，
- * 不能被「按 kind 统一驱动」取代。
+ * 保留外部调用方的显式覆盖语义；普通模块重建不再回传定义中的参数副本。
+ * 未提供与显式 false / 0 / 空字符串不同，不能用编辑器默认值补齐。
  */
 export function runtimeOf(options: WritePresetOptions, prompt: string): Record<string, unknown> {
   /** 未提供的参数保持 undefined：resolvePresetParams 跳过 undefined 键，
@@ -146,7 +173,7 @@ export function runtimeOf(options: WritePresetOptions, prompt: string): Record<s
     typeof value === 'boolean' ? value : undefined
   return {
     // 所有引擎参数可直接用于 writePreset；undefined 不覆盖模板值。
-    ...Object.fromEntries(ENGINE_PARAM_KEYS.map((key) => [key, options[key]])),
+    ...Object.fromEntries(WRITER_PARAM_KEYS.map((key) => [key, options[key]])),
     promptText: prompt,
     firstTurnAnchor: providedBoolean(options.firstTurnAnchor),
     firstTurnCustom: providedBoolean(options.firstTurnCustom),
@@ -210,7 +237,7 @@ export function writePreset(prompt: string, options: WritePresetOptions): string
   assertPresetId(outputId)
   const templateDir = options.sourceDir ?? resolveModuleDir(templateName, moduleDir)
   assertPresetTree(templateDir)
-  let spec = loadModuleSpec(templateDir)
+  const spec = loadModuleSpec(templateDir, { legacyParams: false })
   if (Array.isArray(spec.meta?.stWarnings)) {
     for (const warning of spec.meta.stWarnings) if (typeof warning === 'string') options.warn?.(`prompt-tool: ST 导入兼容提示：${warning}`)
   }
@@ -234,6 +261,10 @@ export function writePreset(prompt: string, options: WritePresetOptions): string
   }
   const runtime = runtimeOf(options, prompt)
   const params = resolvePresetParams(spec, runtime)
+  const legacy = resolveLegacyPromptConfigs(spec, {
+    moduleDir: templateDir, prompt, overrides: runtime, promptConfigs: options.promptConfigs,
+  })
+  for (const warning of legacy.warnings) (options.warn ?? console.warn)(`prompt-tool: ${warning}`)
 
   // 官方对齐布局：moduleDir 是模块根（官方 USER_PRESET_DIR），每个模块一个
   // 官方模块目录 moduleDir/<template>/（agent.cordis.yml 组合本体直接可挂载），
@@ -244,7 +275,7 @@ export function writePreset(prompt: string, options: WritePresetOptions): string
   const outDir = tmpDir
   try {
   // 1) 组合文件:modules 模块库装配 + 参数桥行级合并 + YAML 校验。
-  const composition = renderComposition(Array.isArray(options.promptConfigs) && options.promptConfigs.length > 0 ? { ...spec, promptConfigs: options.promptConfigs } : spec, runtime, templateDir)
+  const composition = renderComposition({ ...spec, promptConfigs: legacy.configs }, runtime, templateDir)
   assertCompositionArray(composition, spec)
   // 引擎引用重写：组合源的 ./engine/ 与旧预设的 ../.engine/ 一律写成包名说明符
   // dsh-plugin-prompt-tool/engine/<module>.mjs（引擎不再物化）；受管配置字段保持
@@ -267,7 +298,6 @@ export function writePreset(prompt: string, options: WritePresetOptions): string
     const doc = parseDocument(existingPresetYaml, { logLevel: 'silent' })
     if (doc.errors.length > 0) throw new Error(`invalid preset.yml: ${doc.errors[0]!.message}`)
     doc.set('id', outputId)
-    doc.setIn(['order'], options.presetOrder)
     // 元数据合并：目标已有值优先，缺失/空白才使用来源定义。
     const ensureMetaKey = (key: string, value: unknown): void => {
       if (value === undefined || value === null) return
@@ -282,7 +312,7 @@ export function writePreset(prompt: string, options: WritePresetOptions): string
     ensureMetaKey('meta', Object.keys(meta).length > 0 ? meta : undefined)
     writeFileSync(join(outDir, MODULE_DEFINITION_FILE), doc.toString(), 'utf8')
   } else {
-    writeFileSync(join(outDir, MODULE_DEFINITION_FILE), stringifyYaml({ ...meta, order: options.presetOrder }) + '\n', 'utf8')
+    writeFileSync(join(outDir, MODULE_DEFINITION_FILE), stringifyYaml(meta) + '\n', 'utf8')
   }
 
   // 2.5) 内容资产:preset.md / agents.md(与组合文件同层;大文本存文件而非 settings)。
@@ -315,53 +345,10 @@ export function writePreset(prompt: string, options: WritePresetOptions): string
   const promptConfigsDir = join(outDir, MODULE_CONFIGS_DIR)
   rmSync(promptConfigsDir, { recursive: true, force: true })
   mkdirSync(promptConfigsDir, { recursive: true })
-  const templateConfigs = Array.isArray(spec.promptConfigs) ? spec.promptConfigs as PromptConfigSpec[] : []
-  let templateDefaults: PromptConfigSpec[]
-  if (templateConfigs.length > 0) {
-    // 模板自带默认提示词配置：运行时只覆盖 near-anchor / router-guide 的动态字段，结构数据来自 preset.yml。
-    templateDefaults = templateConfigs.map((config) => {
-      const next: PromptConfigSpec = { ...config, params: { ...config.params } }
-      if (next.id === 'near-anchor') {
-        next.enabled = params.firstTurnAnchor === true
-        next.params = {
-          ...next.params,
-          useCustom: params.firstTurnCustom === true,
-          // 自定义文本契约统一为 text（与 router-guide 同构）；存储键 firstTurnText 保留。
-          text: asString(params.firstTurnText),
-          buildPattern: asString(params.buildPattern),
-          complexPattern: asString(params.complexPattern),
-          firstTurnBuild: asString(params.firstTurnBuild),
-          firstTurnInspect: asString(params.firstTurnInspect),
-          firstTurnDeep: asString(params.firstTurnDeep),
-        }
-      } else if (next.id === 'router-guide') {
-        const guideEnabled = params.guideEnabled === true
-        next.enabled = guideEnabled
-        // 自定义引导对所有模型注入（Pro/Flash），自动引导只服务 Flash 家族。
-        const useCustom = guideEnabled && params.guideCustom === true
-        next.modelScope = useCustom ? 'all' : 'flash'
-        // 复杂任务判定 fallback 复用锚定的 complexPattern；guideComplexPattern
-        // 旧键回退读取（旧模块平滑，不混入 variables.yml）。
-        next.params = {
-          ...next.params,
-          useCustom,
-          text: asString(params.guideText),
-          complexPattern: asString(params.complexPattern),
-          guideWeak: asString(params.guideWeak),
-          guideDeep: asString(params.guideDeep),
-        }
-      }
-      return next
-    })
-  } else {
-    // 通用模板未提供 promptConfigs 时，writer 不注入任何引擎默认配置；
-    // 全部内容由模板数据或用户 settings 提供。
-    templateDefaults = []
-  }
   // 模型参数（agent-request）作为引擎默认级注入，优先级低于模板与 settings。
   // 指令文件卡不再物化：正文与行为由独立指令来源（pre-step 协调器 + 独立策略）按会话
   // 现场解析，生成目录里不再出现 agents-file-*，preset.yml#agentsHints 也不再是开关。
-  const merged = mergePromptConfigs(modelRequestConfigs(params), templateDefaults, options.promptConfigs)
+  const merged = mergePromptConfigs(modelRequestConfigs(params), legacy.configs)
   // 模块级模板变量 → prompt-configs/variables.yml（单一文件）：引擎加载时合并进
   // 每条配置 variables（配置自身优先）。唯一来源 = preset.yml 顶层 variables；
   // params 与 runtime 参数不进入变量文件。variablesEnabled=false（卡片
@@ -378,6 +365,7 @@ export function writePreset(prompt: string, options: WritePresetOptions): string
   if (variablesEnabled && presetVariableKeys.size > 0) {
     writeFileSync(join(promptConfigsDir, 'variables.yml'), stringifyYaml(presetVariables), 'utf8')
   }
+  const configOrder = readConfigOrder(spec.configOrder)
   for (const [index, source] of merged.entries()) {
     // 浅克隆：merged 元素可能是 settings 层/模板 spec 的引用（mergePromptConfigs
     // 不拷贝），循环内的变异（prompt-injector 参数桥/变量剥离/瘦身）不得污染
@@ -385,40 +373,6 @@ export function writePreset(prompt: string, options: WritePresetOptions): string
     const config: PromptConfigSpec = {
       ...source,
       params: source.params !== undefined && source.params !== null ? { ...source.params } : source.params,
-    }
-    // 内容资产单一事实源（大文本存生成目录文件，settings 覆盖层只保留轻字段）：
-    // prompt-injector 的注入文本永远来自 preset.md（presetPrompt），settings 条目即使带 text 也强制清空，
-    // 避免「settings 覆盖层整体替换模板条目」时把渲染产物 params.text 挤掉。
-    if (config.id === 'prompt-injector') {
-      delete config.text
-      config.texts = []
-      // 无注入内容（空白模块）时禁用，避免注入空消息。
-      config.enabled = params.injectPrompt !== false && prompt.trim().length > 0
-      // 锚定确认词归一：显式/模板给出的词优先，其余从锚句文本自动派生（派生集合进
-      // anchorWords）；两者都没有 = 留空，引擎据此不做词确认（不再内置 we 兜底）。
-      // 确认词 = 锚句要求的 reasoning 开头信号（内置格式 the exact sentence: X → X 首词；
-      // 无格式 → 文本首词，小写去重）——deep 档（Let…）与自定义锚句不再因固定确认词
-      // we 而确认失败（旧缺陷：锚句要求 We/Let，确认词恒 we）。
-      const explicitWord = asString(config.params?.firstTurnWord ?? params.firstTurnWord, '')
-      const signalWord = (text: string): string | undefined => {
-        const sentence = /the exact sentence:\s*([A-Za-z]+)/i.exec(text)
-        if (sentence !== null && sentence[1] !== undefined) return sentence[1].toLowerCase()
-        const first = /^\P{L}*([\p{L}]+)/u.exec(text.trim())
-        return first !== null && first[1] !== undefined ? first[1].toLowerCase() : undefined
-      }
-      const derivedWords = [...new Set([
-        signalWord(asString(params.firstTurnText)),
-        signalWord(asString(params.firstTurnBuild)),
-        signalWord(asString(params.firstTurnInspect)),
-        signalWord(asString(params.firstTurnDeep)),
-      ].filter((word): word is string => word !== undefined))]
-      const anchorWords = explicitWord.length > 0 ? [explicitWord] : derivedWords
-      config.params = {
-        ...config.params,
-        text: prompt,
-        firstTurnWord: explicitWord,
-        anchorWords,
-      }
     }
     // 停用模板变量插值：剥离配置文本（texts/text/params.text）中的模块变量引用，
     // 内置变量（{{DSH_HOME}}/{{WORKSPACE}}/{{CWD}}）保留。
@@ -440,14 +394,8 @@ export function writePreset(prompt: string, options: WritePresetOptions): string
       delete config.text
       config.texts = []
     }
-    // mergePromptConfigs 按 id 整条替换；来源由胜出的对象身份决定，不能按值相等反推。
-    const binding = MANAGED_CONFIG_FIELDS.find((entry) => entry.configId === config.id)
-    const fieldSources: ConfigFieldSources | undefined = binding === undefined ? undefined : {
-      configId: config.id,
-      fields: binding.fields.map(({ path }) => ({ path, source: templateDefaults.includes(source) ? 'preset-param' : 'prompt-config' })),
-    }
-    const provenance = fieldSources === undefined ? '' : '\n' + stringifyYaml({ fieldSources })
-    writeFileSync(join(promptConfigsDir, configFileName(index * 10, config.id)), renderPromptConfigYaml(config) + provenance, 'utf8')
+    const sequence = configOrder[config.id] ?? index * 10
+    writeFileSync(join(promptConfigsDir, configFileName(sequence, config.id)), renderPromptConfigYaml(config), 'utf8')
   }
 
   // 4.5) 自定义工具（preset.yml 顶层 customTools 段）→ custom-tools/<n>-<id>.yml：
