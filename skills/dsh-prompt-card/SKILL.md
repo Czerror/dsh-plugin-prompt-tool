@@ -54,7 +54,7 @@ description: 手写 dsh 注入卡（prompt card）：把规则包或一组引擎
 
 ## 第 3 步 写卡
 
-路径：`$DSH_HOME/.agent-presets/.characters/<id>/converted.yml`。`<id>` 同时是卡 id 与目录名，用小写字母、数字、连字符。
+路径：`$DSH_HOME/.prompt-tool/.characters/<id>/converted.yml`。`<id>` 同时是卡 id 与目录名，用小写字母、数字、连字符。
 
 ```yaml
 id: my-rules

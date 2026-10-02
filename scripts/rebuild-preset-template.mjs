@@ -18,7 +18,7 @@ const doc = new Document({
 doc.commentBefore = ` dsh-plugin-prompt-tool — 全参数 preset.yml 模板（自动生成）
  生成来源：scripts/rebuild-preset-template.mjs + ENGINE_PARAM_DEFINITIONS + engine/schema.mjs + templates/
  重建：pnpm rebuild:preset-template；检查：pnpm rebuild:preset-template -- --check
- 复制到 DSH_HOME/.agent-presets/<id>/preset.yml，id 与目录名保持一致。
+ 复制到 DSH_HOME/.prompt-tool/<id>/preset.yml，id 与目录名保持一致。
  真实提示词规则与共享参数分属两个所有者：promptConfigs[].params / layerSettings.<层名>.<键>。
  共享设置只内嵌真实配置卡；空层不自动创建 UI 卡或提示词规则。
  九层是独立官方扩展点，没有插件定义的跨层执行顺序。详见 docs/injection-point-contracts.md。

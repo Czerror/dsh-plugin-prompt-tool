@@ -9,7 +9,7 @@ const home = mkdtempSync(join(process.cwd(), 'pt-assets-bridge-'))
 process.env.DSH_HOME = home
 const { registerSettingsBridge } = await import('../../src/runtime/settings-bridge.ts')
 const { BRIDGE_ENDPOINTS, MAX_BRIDGE_BODY_BYTES, SETTINGS_BRIDGE_PREFIX } = await import('../../src/shared/bridge-contract.ts')
-const root = join(home, '.agent-presets')
+const root = join(home, '.prompt-tool')
 mkdirSync(join(root, 'owner'), { recursive: true })
 writeFileSync(join(root, 'owner/preset.yml'), 'id: owner\nname: Owner\nmodules: []\n')
 test.after(() => rmSync(home, { recursive: true, force: true }))

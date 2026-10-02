@@ -15,7 +15,7 @@ const { stPresetId } = await import('../../src/host/sillytavern.ts')
 const bridgeDisposers = []
 
 const PREFIX = '/api/prompt-tool/settings'
-const PRESETS = join(home, '.agent-presets')
+const PRESETS = join(home, '.prompt-tool')
 
 function makeHarness() {
   const handlers = new Map()

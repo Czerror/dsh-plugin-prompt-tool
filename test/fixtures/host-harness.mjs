@@ -35,7 +35,7 @@ export function isolatedHome(prefix) {
     else process.env.DSH_HOME = previous
     rmSync(home, { recursive: true, force: true })
   })
-  return { home, presetRoot: join(home, '.agent-presets'), skillsRoot: join(home, 'skills') }
+  return { home, presetRoot: join(home, '.prompt-tool'), skillsRoot: join(home, 'skills') }
 }
 
 /** 临时目录：登记 after() 清理，返回绝对路径（不触碰 DSH_HOME）。 */

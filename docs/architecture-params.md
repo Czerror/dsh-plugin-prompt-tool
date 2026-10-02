@@ -56,7 +56,10 @@ UI fields
 ```
 
 本插件的种子化、预设列表、参数与内容读取、保存、物化及导入／导出／复制／删除，
-均使用本插件的预设根 `$DSH_HOME/.agent-presets`（`host/paths.ts#DEFAULT_PRESET_DIR`，不可配置）。DSH 0.1.7 起不再自动扫描此目录；插件在物化后向官方 `agentPresets` 注册定义，并随删除、更新和卸载释放注册。已有会话保留其已绑定的 revision。
+均使用本插件的预设根 `$DSH_HOME/.prompt-tool`（`host/paths.ts#DEFAULT_PRESET_DIR`，不可配置）。
+宿主从不扫描此目录：定义由插件自己解析，运行时装配由插件的配装通道承担（见
+[engine-reuse.md](engine-reuse.md)）；会话原有的宿主预设继续提供官方工具行。旧根
+`.agent-presets/` 只读不删，本插件不再读写它，也不为其写迁移代码。
 
 注册与工作台列表按同一身份规则列举预设，不因历史目录名隐藏或特殊处理。注册元数据允许省略名称，排序读取 `preset.yml` 顶层 `order`，不从 `meta.order` 推断。
 该目录不只是输出位置，也是预设定义的读取根；不存在对应定义时回退包内模板，

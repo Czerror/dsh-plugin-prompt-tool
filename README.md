@@ -34,7 +34,7 @@ dsh --profile prompt-tool
 
 旧的 base-only profile（只有 `dsh-base`）首次启动时，插件会把 `@deepseek-ai/dsh-web-app` 补进该 profile 的 `dsh.profile.bundles`（写前留 `.bak`，幂等），并提示重启；需要重启 DSH 服务后生效，插件不会替你重启运行中的服务。
 
-需要 DSH `0.2.0-rc.1+`（Cordis `4.0.4`）：设置接入 ConfigForms，插件持有的预设通过官方 agent-preset-registry 注册；宿主不再自动扫描 `.agent-presets`。本插件继续管理该目录里的定义与物化文件。官方组合模块跟随核验过的最新 master（`pnpm rebuild:composition`），记录实际提交并以当前快照离线复验。Node 需要 `^22.19.0 || >=24.0.0`，与官方宿主一致。升级后需要用户重启 DSH 服务。
+需要 DSH `0.2.0-rc.1+`（Cordis `4.0.4`）：设置接入 ConfigForms，预设定义与物化文件保存在插件自己的存储根 `$DSH_HOME/.prompt-tool/`（宿主从不扫描该目录），运行时装配由插件的配装通道在每个 Agent 的 scope 里完成。官方组合模块跟随核验过的最新 master（`pnpm rebuild:composition`），记录实际提交并以当前快照离线复验。Node 需要 `^22.19.0 || >=24.0.0`，与官方宿主一致。升级后需要用户重启 DSH 服务。
 
 `peerDependencies` 里的 `@deepseek-ai/dsh-*` 声明为 `>=0.2.0-rc.1`（无上界）：宿主在加载插件时会逐条校验这些 peer，范围写死到某个次版本会让每次宿主升版都判为不兼容；这个范围覆盖 0.2.0 及以上，同时把已知不兼容的更早版本挡在外面。实际锁定的版本以 `pnpm-lock.yaml` 为准。`minimumReleaseAgeExclude` 由 pnpm 维护——安装时 pnpm 会把 lockfile 拿去比对供应链策略，因此升级 DSH 后跑一次 `pnpm install` 即可，不要手工逐条增删。
 
@@ -43,7 +43,7 @@ dsh --profile prompt-tool
 - 🔌 **六个官方插入点一次接线**：一个引擎注册全部可注入层级，共享同一套过滤与降级语义
 - ✍️ **一切皆可配置**：`layer / strategy / position / promotion / audience / modelScope / mergeMode / order / text / texts / fill / variables / params` 全开放
 - 🧑‍🤝‍🧑 **消息受众三态**：`audience: main / subagent`，省略 `audience` 表示公用；身份类提示词可只注入子代理
-- 🗂️ **内容与执行分离**：每条提示词配置渲染为 `~/.dsh/.agent-presets/<预设>/prompt-configs/` 下的 yml，引擎按文件名数字前缀顺序扫描
+- 🗂️ **内容与执行分离**：每条提示词配置渲染为 `~/.dsh/.prompt-tool/<预设>/prompt-configs/` 下的 yml，引擎按文件名数字前缀顺序扫描
 - 🧩 **三层合并**：引擎默认（按 params 生成）< 模板默认 promptConfigs < 预设 promptConfigs，同名 `id` 覆盖
 - 🖥️ **可拖动悬浮工作台入口**：工作台经官方 `shell.overlay` 渲染悬浮触发器与 body portal 抽屉；按钮可拖动、位置存插件自己的 localStorage、窗口变化自动夹回可见区（不读宿主布局树，已移除 `sidebar.footer.action` 几何探针）；六页（主会话/子代理/工具预览/技能设置/预设配置/角色管理）在抽屉内渲染，抽屉用 fixed + z-index 置顶，不被宿主导航栏遮挡
 - 🧪 **六种内容策略**：`static / first-turn-anchor / guide-auto / custom-fallback / placeholder / world-book`（world-book 支持 ST selectiveLogic 选择性触发：任一/副键全中/排除）
@@ -219,7 +219,7 @@ UI / 写盘按上表分组；这是展示顺序，不是模型提示词优先级
 
 ### 角色卡（PNG / JSON）与角色卡库
 
-工作台「角色管理」页导入角色卡到**角色卡库**（`~/.dsh/.agent-presets/.characters/<id>/`）：
+工作台「角色管理」页导入角色卡到**角色卡库**（`~/.dsh/.prompt-tool/.characters/<id>/`）：
 
 - **PNG**：`ccv3` 优先 / `chara` 兜底；按魔数识别并受限解码，原始文件先暂存、预览确认后入库，保留原图。
 - **JSON／YAML**：支持 ST 角色数据和自包含原生角色片段。批次逐张预览，不把多份来源合并成一张角色卡；所有大小的文件都先预览再提交。

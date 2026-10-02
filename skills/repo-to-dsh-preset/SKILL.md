@@ -45,7 +45,7 @@ description: 把 GitHub 仓库做成 dsh 预设：先判定仓库形态（规范
 
 ## 第 3 步 写预设
 
-- 位置：`$DSH_HOME/.agent-presets/<id>/preset.yml`。
+- 位置：`$DSH_HOME/.prompt-tool/<id>/preset.yml`。
 - **目录名不能与宿主内置预设同名**（内置 id 是 `standard` / `ptc` / `minimal` / `cordis`）：同名的用户目录会被内置版遮蔽、从不挂载，界面上一切正常而模型一个字都收不到（真机踩过）。用 `pt-<名字>` 形态。
 - 内置预设只读：要改它的行为，复制成新目录再改。
 - `modules` 从既有模块库挑。库里没有的能力就是边界，走第 5 步。

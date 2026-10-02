@@ -7,7 +7,7 @@
  *
  * 安装目标取决于消费方（写两个入口，避免猜路径）：
  *  - writePreset(options.presetDir) 的模板解析根就是 options.presetDir → 用 installFixturePreset(presetDir)；
- *  - resolvePresetDir(template) 的默认根是 $DSH_HOME/.agent-presets → 用 installFixturePresetInHome(dshHome)。
+ *  - resolvePresetDir(template) 的默认根是 $DSH_HOME/.prompt-tool → 用 installFixturePresetInHome(dshHome)。
  */
 import { cpSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
@@ -21,7 +21,7 @@ export const FIXTURE_PRESET_SRC = fileURLToPath(new URL('./preset-template', imp
 
 /**
  * 把夹具模板安装到指定预设根：`<presetRoot>/fixture`。
- * @param {string} presetRoot 预设根目录（writePreset 的 presetDir / DSH_HOME 的 .agent-presets）
+ * @param {string} presetRoot 预设根目录（writePreset 的 presetDir / DSH_HOME 的 .prompt-tool）
  * @returns {string} 安装后的预设目录
  */
 export function installFixturePreset(presetRoot) {
@@ -32,10 +32,10 @@ export function installFixturePreset(presetRoot) {
 }
 
 /**
- * 把夹具模板安装到隔离 DSH_HOME 的官方预设根：`<dshHome>/.agent-presets/fixture`。
+ * 把夹具模板安装到隔离 DSH_HOME 的预设根：`<dshHome>/.prompt-tool/fixture`。
  * @param {string} dshHome 隔离的 DSH_HOME（测试用临时目录）
  * @returns {string} 安装后的预设目录
  */
 export function installFixturePresetInHome(dshHome) {
-  return installFixturePreset(join(dshHome, '.agent-presets'))
+  return installFixturePreset(join(dshHome, '.prompt-tool'))
 }

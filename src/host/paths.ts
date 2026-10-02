@@ -25,11 +25,11 @@ export const DSH_HOME = resolveDshHome()
  *  插件不再内置任何技能：包内没有 skills 目录，也不再有安装副本与内容账本。 */
 export const USER_SKILLS_DIR = join(DSH_HOME, 'skills')
 /**
- * 插件自有预设存储（DSH_HOME/.agent-presets）。
- * 每份目录保存 agent.cordis.yml 与 preset.yml，由插件解析并注册到 agentPresets；
- * 宿主不扫描此目录。共享引擎由插件包提供，组合行使用包名说明符。
+ * 插件自有存储根（DSH_HOME/.prompt-tool）。
+ * 每份定义保存模块声明与物化产物，由插件自己解析并装配（不再依赖宿主扫描此目录）。
+ * 旧根 `.agent-presets/` 只读不删，本插件不再读写它。
  */
-export const DEFAULT_PRESET_DIR = join(DSH_HOME, '.agent-presets')
+export const DEFAULT_PRESET_DIR = join(DSH_HOME, '.prompt-tool')
 /** 历史共享引擎目录：阶段 2 起不再物化，保留常量仅供引用/清理判定，勿据此写盘。 */
 export const SHARED_ENGINE_DIR = join(DEFAULT_PRESET_DIR, '.engine')
 export const DEFAULT_PRESET_ORDER = 5

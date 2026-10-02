@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * rematerialize-presets.mjs — 离线重新物化 <DSH_HOME>/.agent-presets 下的预设与共享引擎。
+ * rematerialize-presets.mjs — 离线重新物化 <DSH_HOME>/.prompt-tool 下的预设与共享引擎。
  *
  * 背景：插件只在启动/切换预设时按需重建生成产物；仓库引擎契约、组合库或
  * RENDER_VERSION 升级后，用户目录里已存在的产物不会自动刷新。本脚本以各预设

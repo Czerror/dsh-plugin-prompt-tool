@@ -8,7 +8,7 @@
 
 - 「预设配置」导入：没有 YAML 预设定义时，JSON 可为含 `prompts[]` 的预设、角色卡，
   或顶层 `entries` 的独立世界书；多个 JSON 合并后沿同一预设物化通道写盘。
-- 「角色管理」导入：PNG/JSON 先进入 `.agent-presets/.characters/<id>/`，再由用户应用到预设。
+- 「角色管理」导入：PNG/JSON 先进入 `.prompt-tool/.characters/<id>/`，再由用户应用到预设。
 - PNG 按魔数判断而非扩展名，读取 `tEXt` 的 `ccv3`，缺失时回退 `chara`；保留原图和原始 JSON。
 - id 从文件名生成合法英文 slug；纯中文文件名回退 `st-<短哈希>`，显示名仍保留中文。
 - 兼容提示存放于 `meta.stWarnings`；物化时通过现有 warn 通道报告。原始文件不修改。

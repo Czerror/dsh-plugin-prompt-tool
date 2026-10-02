@@ -180,7 +180,7 @@ export const asString = (value: unknown, fallback = ''): string => {
   return String(value)
 }
 
-/** 预设根：官方 USER_PRESET_DIR（~/.dsh/.agent-presets），导入/新建/种子化的预设都放这里。 */
+/** 预设根：本插件的存储根（~/.dsh/.prompt-tool），导入/新建/种子化的预设都放这里。 */
 export function userPresetsDir(): string {
   return DEFAULT_PRESET_DIR
 }
