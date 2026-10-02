@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type CSSProperties, type MutableRefObject, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type CSSProperties, type MouseEvent as ReactMouseEvent, type MutableRefObject, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
 import { HintTooltip } from '../../ui/HintTooltip.tsx'
 import type { PromptToolTranslate } from '../../locales.ts'
 import type { PromptToolWorkspaceController } from './workspace-controller.ts'
@@ -48,52 +48,58 @@ export function FloatingTrigger(props: { controller: PromptToolWorkspaceControll
     return () => window.removeEventListener('resize', clampToViewport)
   }, [])
 
+  const endDrag = useCallback((event?: ReactPointerEvent<HTMLButtonElement>) => {
+    const drag = dragRef.current
+    if (drag === null || (event !== undefined && drag.pointerId !== event.pointerId)) return
+    dragRef.current = null
+    // 捕获丢失也可能有尾随 click；下一次按下会重置，取消不会吞掉新点击。
+    suppressClickRef.current = drag.moved
+    const node = localRef.current
+    if (node?.hasPointerCapture(drag.pointerId)) node.releasePointerCapture(drag.pointerId)
+    if (drag.moved) setPosition((current) => {
+      storeTriggerPosition(current)
+      return current
+    })
+  }, [])
+
+  useEffect(() => {
+    const cancelDrag = (): void => endDrag()
+    window.addEventListener('blur', cancelDrag)
+    return () => window.removeEventListener('blur', cancelDrag)
+  }, [endDrag])
+
   const onPointerDown = useCallback((event: ReactPointerEvent<HTMLButtonElement>) => {
-    if (event.button !== 0) return
+    if (event.button !== 0 || !event.isPrimary) return
+    suppressClickRef.current = false
     dragRef.current = {
       pointerId: event.pointerId,
       startPointer: { x: event.clientX, y: event.clientY },
       startPosition: position,
       moved: false,
     }
+    // 按下即捕获，避免达到拖动阈值前在按钮外释放而漏收 pointerup。
+    event.currentTarget.setPointerCapture(event.pointerId)
   }, [position])
 
   const onPointerMove = useCallback((event: ReactPointerEvent<HTMLButtonElement>) => {
     const drag = dragRef.current
     if (drag === null || drag.pointerId !== event.pointerId) return
+    if ((event.buttons & 1) === 0) { endDrag(); return }
     const delta = { x: event.clientX - drag.startPointer.x, y: event.clientY - drag.startPointer.y }
     if (!drag.moved && !isDragGesture(drag.startPointer, { x: event.clientX, y: event.clientY })) return
-    if (!drag.moved) {
-      drag.moved = true
-      // 指针捕获：拖出按钮范围仍持续收到 move/up，也避免拖动选中文本。
-      event.currentTarget.setPointerCapture(event.pointerId)
-    }
+    drag.moved = true
     setPosition(clampPoint(
       { x: drag.startPosition.x + delta.x, y: drag.startPosition.y + delta.y },
       { width: window.innerWidth, height: window.innerHeight },
       { width: event.currentTarget.offsetWidth, height: event.currentTarget.offsetHeight },
     ))
-  }, [])
+  }, [endDrag])
 
-  const endDrag = useCallback((event: ReactPointerEvent<HTMLButtonElement>) => {
-    const drag = dragRef.current
-    if (drag === null || drag.pointerId !== event.pointerId) return
-    dragRef.current = null
-    if (!drag.moved) return
-    suppressClickRef.current = true
-    // 拖动后解除捕获，并把最终位置写成偏好。
-    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId)
-    setPosition((current) => {
-      storeTriggerPosition(current)
-      return current
-    })
-  }, [])
-
-  const onClick = useCallback(() => {
+  const onClick = useCallback((event: ReactMouseEvent<HTMLButtonElement>) => {
     // 拖动收尾会派发一次 click：这里吞掉，拖动不触发开合。
     if (suppressClickRef.current) {
       suppressClickRef.current = false
-      return
+      if (event.detail !== 0) return
     }
     controller.toggle()
   }, [controller])
@@ -121,6 +127,7 @@ export function FloatingTrigger(props: { controller: PromptToolWorkspaceControll
           onPointerMove={onPointerMove}
           onPointerUp={endDrag}
           onPointerCancel={endDrag}
+          onLostPointerCapture={endDrag}
           onClick={onClick}
         >
           <svg viewBox="0 0 16 16" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
