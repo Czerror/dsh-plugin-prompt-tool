@@ -1903,7 +1903,7 @@ export function registerSettingsBridge(
         }),
         sctx.webServer.register({
           kind: 'exact',
-          path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.presetDelete,
+          path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.moduleDelete,
           handler: async (req, res) => {
             if (!guard(req, res)) return
             const parsedBody = await readBridgeBodyForHandler(req, res)
@@ -1938,7 +1938,7 @@ export function registerSettingsBridge(
         }),
         sctx.webServer.register({
           kind: 'exact',
-          path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.presetClone,
+          path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.moduleClone,
           handler: async (req, res) => {
             if (!guard(req, res)) return
             const parsedBody = await readBridgeBodyForHandler(req, res)
@@ -1961,7 +1961,7 @@ export function registerSettingsBridge(
         }),
         sctx.webServer.register({
           kind: 'exact',
-          path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.presetDuplicate,
+          path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.moduleDuplicate,
           handler: async (req, res) => {
             if (!guard(req, res)) return
             const parsedBody = await readBridgeBodyForHandler(req, res)
@@ -1984,7 +1984,7 @@ export function registerSettingsBridge(
         }),
         sctx.webServer.register({
           kind: 'exact',
-          path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.presetOpen,
+          path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.moduleOpen,
           handler: async (req, res) => {
             if (!guard(req, res)) return
             const parsedBody = await readBridgeBodyForHandler(req, res)

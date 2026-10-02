@@ -62,7 +62,7 @@ export const PresetSwitcher = memo(function PresetSwitcher(props: { store: Promp
 
   /** 删除预设（物理删除用户目录副本；插件目录模板保留，可经「新建预设」还原）。 */
   const deletePreset = async (id: string): Promise<void> => {
-    const res = await bridgeCall('presetDelete', { id })
+    const res = await bridgeCall('moduleDelete', { id })
     if (res.ok) {
       store.showNotice('ok', t('presetSwitcher.notice.deleted', { id }))
       await store.load()
@@ -74,7 +74,7 @@ export const PresetSwitcher = memo(function PresetSwitcher(props: { store: Promp
 
   /** 复制预设：用户目录完整副本，id 自动递增（<id>-copy / <id>-copy-2 / …）。 */
   const duplicatePreset = async (id: string): Promise<void> => {
-    const res = await bridgeCall('presetDuplicate', { id })
+    const res = await bridgeCall('moduleDuplicate', { id })
     if (res.ok) {
       store.showNotice('ok', t('presetSwitcher.notice.duplicated', { id: res.value.id }))
       await store.load()
@@ -85,7 +85,7 @@ export const PresetSwitcher = memo(function PresetSwitcher(props: { store: Promp
 
   /** 打开预设文件夹（宿主系统文件管理器；失败时提示路径）。 */
   const openLocation = async (id: string): Promise<void> => {
-    const res = await bridgeCall('presetOpen', { id })
+    const res = await bridgeCall('moduleOpen', { id })
     if (res.ok) {
       store.showNotice('ok', t('presetSwitcher.notice.opened', { path: res.value.path }))
     } else {
@@ -95,7 +95,7 @@ export const PresetSwitcher = memo(function PresetSwitcher(props: { store: Promp
 
   /** 新建：从插件目录模板复制到用户目录（还原/自定义起点）；自定义入口重名自动递增。 */
   const clonePreset = async (id: string, autoSuffix = false): Promise<void> => {
-    const res = await bridgeCall('presetClone', { id, autoSuffix })
+    const res = await bridgeCall('moduleClone', { id, autoSuffix })
     if (res.ok) {
       setPickerOpen(false)
       store.showNotice('ok', t('presetSwitcher.notice.cloned', { id: res.value.id }))

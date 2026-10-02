@@ -57,10 +57,10 @@ export const BRIDGE_ENDPOINTS = {
   assetUpload: '/asset-upload',
   assetRelease: '/asset-release',
   exportPreset: '/export-preset',
-  presetDelete: '/preset-delete',
-  presetClone: '/preset-clone',
-  presetDuplicate: '/preset-duplicate',
-  presetOpen: '/preset-open',
+  moduleDelete: '/module-delete',
+  moduleClone: '/module-clone',
+  moduleDuplicate: '/module-duplicate',
+  moduleOpen: '/module-open',
   charactersImport: '/characters-import',
   charactersImportStream: '/characters-import-stream',
   charactersList: '/characters-list',
@@ -165,10 +165,10 @@ export interface BridgeRequestMap {
   assetUpload: undefined
   assetRelease: { sourceId: string }
   exportPreset: PresetExportRequest
-  presetDelete: { id: string }
-  presetClone: { id: string; autoSuffix?: boolean }
-  presetDuplicate: { id: string }
-  presetOpen: { id: string }
+  moduleDelete: { id: string }
+  moduleClone: { id: string; autoSuffix?: boolean }
+  moduleDuplicate: { id: string }
+  moduleOpen: { id: string }
   /** 角色卡 PNG/JSON/YAML 导入；预览不写角色库，提交必验版本，目标和选组均绑定预览。 */
   charactersImport: AssetImportRequest
   charactersImportStream: undefined
@@ -387,10 +387,10 @@ export interface BridgeValueMap {
   assetUpload: { sourceId: string; name: string; bytes: number }
   assetRelease: { released: boolean }
   exportPreset: PresetExportResult
-  presetDelete: { id: string }
-  presetClone: { id: string }
-  presetDuplicate: { id: string }
-  presetOpen: { path: string }
+  moduleDelete: { id: string }
+  moduleClone: { id: string }
+  moduleDuplicate: { id: string }
+  moduleOpen: { path: string }
   charactersImport: {
     id?: string
     name?: string

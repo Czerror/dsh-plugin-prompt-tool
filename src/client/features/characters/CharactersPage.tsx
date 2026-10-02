@@ -114,7 +114,7 @@ export const CharactersPage = memo(function CharactersPage(props: { store: Promp
   }
 
   const openLocation = async (id: string): Promise<void> => {
-    const res = await bridgeCall('presetOpen', { id: `/.characters/${id}` })
+    const res = await bridgeCall('moduleOpen', { id: `/.characters/${id}` })
     if (res.ok) store.showNotice('ok', t('characters.notice.opened', { path: res.value.path }))
     else store.showNotice('error', t('characters.notice.openFailed', { reason: res.message ?? 'settings bridge unavailable' }))
   }
