@@ -107,12 +107,11 @@ packages rather than a preset directory」，并把 `!!js` 限制在插件配置
 - **保存**：当前预设以自身目录为唯一来源生成，模块、人设、变量、工具和子代理策略都从该目录读取。
   保存当前预设不会为了更新渲染版本而重铺其他预设；全局生成开关恢复时，会恢复先前被该开关清空的组合。
 - **新建**：直接复制包内同名目录；显式要求递增副本时仍沿用现有目录后缀规则。
-- **默认同步**：官方 `agentPresets.defaultId` 决定生效默认（`selectedDefault ?? default`）；`modeSelectionEnabled` 已退役，不再参与判断。启动时若宿主默认不在插件可管理的预设中，则同步到当前有效用户预设。
-  宿主后续选择已管理预设仍反向同步，已存在的用户目录不自动改名。
+- **默认同步（单向跟随）**：官方 `agentPresets.defaultId` 决定生效默认（`selectedDefault ?? default`）；`modeSelectionEnabled` 已退役，不再参与判断。本插件**不再向宿主写** `selectedDefault`：登记层只登记身份（组合本体为空），把官方默认预设指到本插件的预设会让会话挂载一个不含官方工具行的空壳。启动与官方设置变化时只做单向跟随——宿主有效默认命中本插件管理的预设才写入 `presetTemplate`；不在管理目录中的 shipped／第三方预设保持不动，已存在的用户目录不自动改名。
 
 ### 操作目标与生效结果
 
-工作台编辑目标、宿主默认预设和执行 Agent 绑定的预设是三种身份。角色卡和世界书模型工具通过 `ToolExecution.agent.ctx` 调用官方 `agentPresets.composedPreset()`，只允许操作本插件拥有注册且通过目录校验的用户预设；未绑定、非受管身份和不匹配目录拒绝。主会话与子代理均依官方绑定，不因工作台切换到另一预设而改变工具写入目标。
+工作台编辑目标、宿主默认预设和执行 Agent 绑定的预设是三种身份。角色卡和世界书模型工具通过 `ToolExecution.agent.ctx` 调用官方 `agentPresets.composedPreset()` 取得该 Agent 的官方预设 id，再用**存储根目录事实**判定是否受管：根目录含 `preset.yml` 的目录即本插件管理的预设（`presetDirExists`），与官方登记状态无关。未绑定、非受管身份和不匹配目录拒绝。主会话与子代理均依官方绑定，不因工作台切换到另一预设而改变工具写入目标。
 
 重建按明确预设 ID 读取其自身定义和内容，再等待官方注册刷新。bridge、TUI 和工具只有在回调完成后报告成功。定义已保存而重建或注册失败时，bridge 返回 `preset-activation-failed`（声明端点保留 `triggers-rebuild-failed`），明确说明已落盘但未生效；客户端保留草稿，已保存的定义不被回滚成旧数据。
 

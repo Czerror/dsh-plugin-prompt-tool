@@ -360,20 +360,16 @@ export function apply(ctx: Context, configIn: Config): void {
     promptConfigs: Array.isArray(initialSpec?.promptConfigs) ? initialSpec.promptConfigs as PromptConfigSpec[] : [],
   }
 
-  // 与官方 agent-preset-registry.selectedDefault 双向同步：
-  // 两个设置面最终收敛到同一个预设。比较权威当前值后才写，避免双向事件回环。
+  // 与官方 agent-preset-registry 的关系是**只读跟随**：本插件不再向宿主写
+  // `selectedDefault`。登记层只登记身份（组合本体为空），把官方默认预设指到本插件的
+  // 预设会让会话挂载一个不含官方工具行的空壳——会话不可用。官方默认预设由用户或
+  // 部署在宿主侧决定；本插件只跟随「官方生效默认值」里那些自己管理的预设。
+  //
+  // 单向跟随也没有回环：写入侧已不存在，因此不需要 revision 比较或双向事件防护。
   const agentPresetsNs = 'agent-preset-registry' as const
   let hostSettingsService: SettingsService | undefined
-  const settingsDocument = (service: SettingsService, ns: string): unknown =>
-    service.describe().find((item) => String(item.ns) === ns)?.value
-  const readHostDefault = (value: unknown): string | undefined => {
-    if (value === null || typeof value !== 'object') return undefined
-    const candidate = (value as { selectedDefault?: unknown }).selectedDefault
-    return typeof candidate === 'string' && candidate.length > 0 ? candidate : undefined
-  }
   /** 官方生效默认值（包含未设置 selectedDefault 时的部署回退）。 */
   let agentPresetsService: Context['agentPresets'] | undefined
-  let hostDefaultRevision = 0
   const managedPresetExists = (id: string): boolean => {
     try {
       return listPresets().some(preset => preset.id === id)
@@ -381,41 +377,15 @@ export function apply(ctx: Context, configIn: Config): void {
       return false
     }
   }
-  /** 把本插件当前预设写进官方 selectedDefault。 */
-  const syncHostDefault = (): void => {
-    const s = hostSettingsService
-    if (s === undefined) return
-    const template = runtime.presetTemplate
-    // 同步 ID 必须命中本插件预设目录的命名契约。
-    if (!/^[a-z0-9][a-z0-9-]*$/.test(template)) {
-      warn(ctx, `prompt-tool: 预设 id ${JSON.stringify(template)} 不符合预设目录命名（^[a-z0-9][a-z0-9-]*$），跳过 selectedDefault 同步`)
-      return
-    }
-    if (readHostDefault(settingsDocument(s, agentPresetsNs)) === template) return
-    // 持久化更新异步完成，必须处理 rejection。
-    void s.update(agentPresetsNs, { selectedDefault: template })
-      .catch((error: unknown) => {
-        warn(ctx, `prompt-tool: 同步宿主 selectedDefault 失败：${error instanceof Error ? error.message : String(error)}`)
-      })
-  }
-  const syncTemplateFromHostDefault = (initial = false): void => {
+  /** 跟随官方当前默认预设：不是本插件管理的预设（shipped/第三方）一律不跟。 */
+  const syncTemplateFromHostDefault = (): void => {
     const s = hostSettingsService
     if (s === undefined) return
     // 官方 getter 负责 selectedDefault 与部署 default 的优先级；迟到时由 inject 重试。
-    const raw = agentPresetsService?.defaultId
-    if (raw === undefined) return
-    const template = raw
+    const template = agentPresetsService?.defaultId
+    if (template === undefined) return
     if (template === runtime.presetTemplate) return
-    // 官方设置可列出插件未管理的 shipped/第三方预设；只跟随本项目能解析/编辑的预设，
-    // 避免把不存在的 presetTemplate 写进本插件后导致 writePreset 失败。
-    if (!managedPresetExists(template)) {
-      if (initial && managedPresetExists(runtime.presetTemplate)) {
-        syncHostDefault()
-        return
-      }
-      warn(ctx, `prompt-tool: 官方默认预设已切换为 ${JSON.stringify(template)}，但该预设不在提示词工具管理目录中，跳过反向同步`)
-      return
-    }
+    if (!managedPresetExists(template)) return
     void s.update(NS, { presetTemplate: template })
       .catch((error: unknown) => {
         warn(ctx, `prompt-tool: 跟随官方默认预设失败：${error instanceof Error ? error.message : String(error)}`)
@@ -508,12 +478,9 @@ registerTuiCommand(
     runtime.presetOrder = nextRuntime.presetOrder
     runtime.fallbackText = nextRuntime.fallbackText
 
-    const defaultRevision = hostDefaultRevision
     await rebuildPreset(initial)
-    if (presetTemplateChanged && runtime.presetTemplate === nextRuntime.presetTemplate && defaultRevision === hostDefaultRevision) {
-      syncHostDefault()
-      // 内置工具面随组合行走（per-session 挂载），无需宿主平面重挂。
-    }
+    // 切换预设只影响本插件的物化与配装，不再向宿主写 selectedDefault。
+    // 内置工具面随组合行走（per-session 挂载），无需宿主平面重挂。
   }
 
   // 内置模型工具由三个独立预设模块按需挂载；宿主只提供对应注册服务。
@@ -554,23 +521,20 @@ registerTuiCommand(
       }
       await sync.dispose()
     })
-    void sync.refresh().catch((error) => warn(ctx, `prompt-tool: 初始预设注册失败：${String(error)}`))
-    syncTemplateFromHostDefault(true)
+    void sync.refresh().catch((error) => warn(ctx, `prompt-tool: 初始预设登记失败：${String(error)}`))
+    syncTemplateFromHostDefault()
   })
   ctx.inject(['settings'], (sctx: Context) => {
     hostSettingsService = sctx.settings
     sctx.effect(() => sctx.settings.configure({ auto: false }, ctx.fiber))
     sctx.effect(() => () => { if (hostSettingsService === sctx.settings) hostSettingsService = undefined })
     sctx.effect(() => sctx.on('settings/document-updated', (ns) => {
-      if (String(ns) === agentPresetsNs) {
-        // 注册期间发生的新默认选择优先，旧的 applyState 完成后不得反向覆盖。
-        hostDefaultRevision++
-        syncTemplateFromHostDefault()
-      }
+      // 官方默认预设变了就跟随；写入侧已不存在，无需防止回环。
+      if (String(ns) === agentPresetsNs) syncTemplateFromHostDefault()
       if (String(ns) === NS) applyConfig()
     }), 'prompt-tool: follow settings documents')
     settingsBridge.invalidateDescriptor()
-    syncTemplateFromHostDefault(true)
+    syncTemplateFromHostDefault()
   })
 }
 
