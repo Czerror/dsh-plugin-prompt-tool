@@ -16,7 +16,7 @@ import { parseDocument, stringify as stringifyYaml } from 'yaml'
 import { validateSubagentToolPolicy } from '../../engine/subagent-tool-policy-core.mjs'
 // @ts-expect-error 仓库根 ESM 引擎文件由 tsdown 作为源码依赖打包，无独立声明文件。
 import { compileDeclarations } from '../../engine/trigger-spec.mjs'
-import { DEFAULT_PRESET_DIR, MODULE_DEFINITION_FILE } from './paths.ts'
+import { DEFAULT_PRESET_DIR, MODULE_CONFIGS_DIR, MODULE_DEFINITION_FILE } from './paths.ts'
 import { DEFAULT_PRESET_ID } from '../shared/preset-ids.ts'
 import { triggerPromptConfigOptions } from './preset-triggers.ts'
 import { assertPresetDirectory, assertPresetId, assertPresetTree, engineModuleFileNames, rewritePresetEngineReferences } from './preset-install.ts'
@@ -311,7 +311,7 @@ export function writePreset(prompt: string, options: WritePresetOptions): string
   }
 
   // 4) 提示词配置:引擎默认(按 params)< 模板覆盖 < settings。
-  const promptConfigsDir = join(outDir, 'prompt-configs')
+  const promptConfigsDir = join(outDir, MODULE_CONFIGS_DIR)
   rmSync(promptConfigsDir, { recursive: true, force: true })
   mkdirSync(promptConfigsDir, { recursive: true })
   const templateConfigs = Array.isArray(spec.promptConfigs) ? spec.promptConfigs as PromptConfigSpec[] : []

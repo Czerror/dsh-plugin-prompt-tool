@@ -50,10 +50,10 @@ test('rematerialize-presets：按当前 module.yml 重新物化组合，共享�
     const engineRow = rows.find((row) => row?.id === 'prompt-config-engine')
     assert.equal(engineRow?.name, 'dsh-plugin-prompt-tool/engine/prompt-config-engine.mjs',
       '共享引擎行引用插件包说明符')
-    assert.equal(engineRow?.config?.configsDir, '../minimal/prompt-configs', '受管配置位置按历史语义书写')
+    assert.equal(engineRow?.config?.configsDir, '../minimal/configs', '受管配置位置按历史语义书写')
     assert.equal(existsSync(join(home, '.prompt-tool', '.engine')), false,
       '共享引擎不再物化到 <预设根>/.engine/，也没有引擎指纹文件')
-    assert.ok(existsSync(join(dir, 'prompt-configs')), '提示词配置目录已物化')
+    assert.ok(existsSync(join(dir, 'configs')), '提示词配置目录已物化')
   } finally {
     rmSync(home, { recursive: true, force: true })
   }
@@ -113,7 +113,7 @@ test('rematerialize-presets：引擎参数按 module.yml 解析，不回落 writ
 
     const output = run(home)
     assert.match(output, /1 materialized/)
-    const configs = join(dir, 'prompt-configs')
+    const configs = join(dir, 'configs')
     assert.match(readFileSync(join(configs, '0000-near-anchor.yml'), 'utf8'), /enabled: true/)
     assert.match(readFileSync(join(configs, '0020-prompt-injector.yml'), 'utf8'), /enabled: false/)
   } finally {

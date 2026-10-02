@@ -63,7 +63,7 @@ test('writePreset 共享引擎：预设根不物化 .engine，组合引用插件
     assert.equal(existsSync(join(presetDir, 'agent.cordis.yml')), false, '预设根不再写容器根转发')
     // 组合路径重写：引擎行改引用包名说明符（预设包不再携带 engine/，旧 ./engine/ 与
     // ../.engine/ 都不再被识别）；configsDir 保持历史语义 `../<id>/...`
-    //（相对 <预设根>/.engine/ 解析 = 预设目录/prompt-configs），由配装通道在挂载期换算。
+    //（相对 <预设根>/.engine/ 解析 = 预设目录/configs），由配装通道在挂载期换算。
     const sub = readFileSync(join(presetDir, 'fixture', 'agent.cordis.yml'), 'utf8')
     assert.doesNotMatch(sub, /name: ['"]?\.{1,2}\/\.?engine\//,
       '产物不得残留 ./engine/ 或 ../.engine/ 本地引用')
@@ -73,7 +73,7 @@ test('writePreset 共享引擎：预设根不物化 .engine，组合引用插件
       assert.ok(existsSync(join(ROOT, 'engine', `${module}.mjs`)),
         `说明符 ${module}.mjs 应在包内引擎目录存在（否则引用悬空）`)
     }
-    assert.match(sub, /configsDir: \.\.\/fixture\/prompt-configs/, 'configsDir 相对 .engine 指向预设目录')
+    assert.match(sub, /configsDir: \.\.\/fixture\/configs/, 'configsDir 相对 .engine 指向预设目录')
     const engineRow = parseYaml(sub).find((row) => row?.id === 'prompt-config-engine')
     // 虚拟引擎基准 <预设根>/.engine/（注册期换算用的同一基准；URL 解析无需目录真实存在）。
     const engineFileUrl = pathToFileURL(join(presetDir, '.engine', 'prompt-config-engine.mjs'))
@@ -118,7 +118,7 @@ test('writePreset 模型参数（思维程度/温度/输出上限）→ agent-re
       subagentTemperature: '',
       subagentMaxTokens: '',
     })
-    const configsDir = join(presetDir, 'fixture', 'prompt-configs')
+    const configsDir = join(presetDir, 'fixture', 'configs')
     const files = readdirSync(configsDir).sort()
     const modelParams = files.find((file) => file.includes('model-params'))
     assert.ok(modelParams, `缺 model-params 配置，实际文件: ${files.join(', ')}`)
@@ -165,7 +165,7 @@ test('writePreset 内容资产单一事实源：settings 覆盖层带 text 也�
         { id: 'prompt-injector', name: '用户覆盖', enabled: true, strategy: 'custom-fallback', text: 'SETTINGS TEXT' },
       ],
     })
-    const injector = readFileSync(join(presetDir, 'fixture', 'prompt-configs', '0020-prompt-injector.yml'), 'utf8')
+    const injector = readFileSync(join(presetDir, 'fixture', 'configs', '0020-prompt-injector.yml'), 'utf8')
     assert.ok(injector.includes('text: |-') && injector.includes('FILE CONTENT'), injector)
     assert.ok(!injector.includes('SETTINGS TEXT'), injector)
     assert.ok(!injector.includes('texts:'), injector)
@@ -241,7 +241,7 @@ test('writePreset 自定义预设（custom）保持显式空组合', () => {
     const rows = parseYaml(agent)
     assert.deepEqual(rows, [], '空白预设不应隐式装配引擎能力')
     assert.ok(!/__[A-Za-z0-9_]+__/.test(agent), '不应残留未解析 token')
-    const promptConfigs = readdirSync(join(presetDir, 'pt-custom', 'prompt-configs'))
+    const promptConfigs = readdirSync(join(presetDir, 'pt-custom', 'configs'))
     assert.equal(promptConfigs.length, 0, '自定义预设 promptConfigs 应为空')
     assert.equal(existsSync(join(presetDir, 'pt-custom', 'engine')), false, '子预设不复制 engine（共享于容器根）')
   } finally {
@@ -330,7 +330,7 @@ test('writePreset 预设变量只读顶层 variables，清空后不复活 params
       injectPrompt: true,
       bootstrapMaxTokens: 4096,
     })
-    const pcDir = join(presetDir, 'fixture', 'prompt-configs')
+    const pcDir = join(presetDir, 'fixture', 'configs')
     const file = readdirSync(pcDir).find((name) => name.endsWith('-near-anchor.yml'))
     assert.ok(file, '提示词配置文件存在')
     const parsed = parseYaml(readFileSync(join(pcDir, file), 'utf8'))
@@ -432,7 +432,7 @@ test('R3 未提供的引擎参数保留 module.yml 定义，显式值才覆盖�
     return presetDir
   }
   const readConfig = (presetDir, id) => {
-    const configsDir = join(presetDir, FIXTURE_PRESET_ID, 'prompt-configs')
+    const configsDir = join(presetDir, FIXTURE_PRESET_ID, 'configs')
     const file = readdirSync(configsDir).find((name) => name.endsWith(`-${id}.yml`))
     assert.ok(file, `应生成 ${id}`)
     return parseYaml(readFileSync(join(configsDir, file), 'utf8'))
@@ -474,7 +474,7 @@ test('writePreset：模板名与输出目录名分离，安全 id 输出仍渲�
     outputId: 'pt-safe',
   })
   const composition = readFileSync(join(outputRoot, 'pt-safe', 'agent.cordis.yml'), 'utf8')
-  assert.match(composition, /configsDir: \.\.\/pt-safe\/prompt-configs/, '引擎配置目录应指向输出目录自身')
+  assert.match(composition, /configsDir: \.\.\/pt-safe\/configs/, '引擎配置目录应指向输出目录自身')
   assert.match(composition, /name: dsh-plugin-prompt-tool\/engine\/prompt-config-engine\.mjs/,
     '引擎引用插件包说明符（与输出目录名解耦）')
   assert.equal(existsSync(join(outputRoot, 'standard')), false, '模板名不会被当成输出目录')

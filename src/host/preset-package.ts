@@ -8,7 +8,7 @@ import { MAX_ASSET_BYTES, MAX_ASSET_FILES, packZip, safeAssetPath, unpackZip } f
 import { decodeAssetFile, normalizeAssetFiles, prepareImport, assetSourceDigest } from './import-source.ts'
 import { directoryVersionOf, computePreviewRevision } from './preview-revision.ts'
 import { resolvePresetDir, invalidatePresetSpec, packageEngineDir, type PresetSpec } from './manifest.ts'
-import { MODULE_DEFINITION_FILE } from './paths.ts'
+import { MODULE_CONFIGS_DIR, MODULE_DEFINITION_FILE } from './paths.ts'
 import { validateCustomTools } from './custom-tools.ts'
 import { readPresetLayerSettings } from './preset-layer-settings.ts'
 import { projectCharacterMemories } from './characters.ts'
@@ -43,7 +43,7 @@ export function assertTransferId(id: string): void {
 
 function ownedFile(path: string): boolean {
   const root = path.split('/')[0]!
-  if (root.startsWith('.') || ['prompt-configs', 'custom-tools', 'subagent-tools', 'skills'].includes(root)) return false
+  if (root.startsWith('.') || [MODULE_CONFIGS_DIR, 'custom-tools', 'subagent-tools', 'skills'].includes(root)) return false
   if (path === 'variables.yml' || path === MANIFEST) return false
   // 根 agents.md 是预设自有旧内容资产，工作区指令文件绝不沿路径收集。
   return path === 'agents.md' || !/^(?:AGENTS|CLAUDE)(?:\.local)?\.md$/i.test(basename(path))

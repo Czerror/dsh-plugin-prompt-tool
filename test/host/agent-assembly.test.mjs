@@ -1,7 +1,7 @@
 /**
  * 运行时配装通道回归：装配输入必须与原预设形态逐项同源。
  *
- * 真值源是**预设目录里的字面量**（`module.yml` 的 modules 声明与 `prompt-configs/*.yml`），
+ * 真值源是**预设目录里的字面量**（`module.yml` 的 modules 声明与 `configs/*.yml`），
  * 不是被测实现自己算出的另一份结果——两条路径互相比对会让同一个错误在两边同时通过。
  *
  * 断言落在调用方观察到的装配输入上：切片（层/位置/时机/次数/受众）、引擎模块清单、
@@ -58,7 +58,7 @@ function writePreset(id, { modules, promptConfigs = [], moduleConfigs }) {
     id, name: id, modules, ...(moduleConfigs === undefined ? {} : { moduleConfigs }),
   }, null, 2)}\n`, 'utf8')
   if (promptConfigs.length > 0) {
-    const configsDir = join(dir, 'prompt-configs')
+    const configsDir = join(dir, 'configs')
     mkdirSync(configsDir, { recursive: true })
     for (const [index, config] of promptConfigs.entries()) {
       writeFileSync(join(configsDir, `${index}-${config.id}.yml`), `${JSON.stringify(config, null, 2)}\n`, 'utf8')
@@ -105,7 +105,7 @@ test('受管字段一律解析到当前预设目录内：新写法 `./` 与历�
     },
   })
   mkdirSync(join(dir, 'custom-tools'), { recursive: true })
-  mkdirSync(join(dir, 'prompt-configs'), { recursive: true })
+  mkdirSync(join(dir, 'configs'), { recursive: true })
   writeFileSync(join(dir, 'triggers.yml'), '[]\n', 'utf8')
 
   const prepared = await prepareAssembly(presetRoot, id, hasEveryService)
@@ -164,7 +164,7 @@ test('官方挂载行与本通道不重复装载：引擎能力只出现一次',
   const dir = writePreset('mixed-rows', {
     modules: ['prompt-config-engine', 'tool-config-engine', 'tool-pwsh', 'planning', 'compaction'],
   })
-  mkdirSync(join(dir, 'prompt-configs'), { recursive: true })
+  mkdirSync(join(dir, 'configs'), { recursive: true })
   mkdirSync(join(dir, 'custom-tools'), { recursive: true })
 
   const prepared = await prepareAssembly(presetRoot, 'mixed-rows', hasEveryService)
@@ -184,7 +184,7 @@ test('与官方物化路径同源：writePreset 落盘的切片 = 配装读出�
   writeFileSync(join(sourceDir, 'module.yml'), `${JSON.stringify({
     id, name: id, modules: ['prompt-config-engine'],
   }, null, 2)}\n`, 'utf8')
-  // 官方路径：把同一份切片交给 writePreset 物化到 <预设根>/<id>/prompt-configs。
+  // 官方路径：把同一份切片交给 writePreset 物化到 <预设根>/<id>/configs。
   writePreset('materialized prompt', {
     presetDir: presetRoot,
     presetOrder: 5,

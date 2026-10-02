@@ -1,7 +1,7 @@
 import { lstatSync, readdirSync, readFileSync, realpathSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { parseDocument, YAMLMap, YAMLSeq } from 'yaml'
-import { MODULE_DEFINITION_FILE } from './paths.ts'
+import { MODULE_CONFIGS_DIR, MODULE_DEFINITION_FILE } from './paths.ts'
 
 export function assertPresetId(id: unknown): asserts id is string {
   if (typeof id !== 'string' || !/^[a-z0-9][a-z0-9-]*$/.test(id)) {
@@ -101,7 +101,7 @@ export function engineModuleFileNames(dir: string): Set<string> {
  * 是**用户预设**里可能已过时的值，靠读它无法判断该改成什么。
  */
 export const ENGINE_MANAGED_PATHS = {
-  'prompt-config-engine.mjs': { field: 'configsDir', directory: 'prompt-configs' },
+  'prompt-config-engine.mjs': { field: 'configsDir', directory: MODULE_CONFIGS_DIR },
   'tool-config-engine.mjs': { field: 'configsDir', directory: 'custom-tools' },
   'subagent-tool-policy.mjs': { field: 'policyFile', directory: 'subagent-tools/policy.yml' },
   'declared-triggers.mjs': { field: 'triggersFile', directory: 'triggers.yml' },

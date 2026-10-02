@@ -4,4 +4,4 @@
 - id: prompt-config-engine
   name: ./engine/prompt-config-engine.mjs
   config:
-    configsDir: ../prompt-configs
+    configsDir: ../configs

@@ -59,7 +59,7 @@ function generatedConfigs(options = {}, prompt = 'PROMPT') {
       usePtcMode: true,
       promptConfigs: [],
     })
-    const specs = listPromptConfigSpecs(join(dir, FIXTURE_PRESET_ID, 'prompt-configs'))
+    const specs = listPromptConfigSpecs(join(dir, FIXTURE_PRESET_ID, 'configs'))
     const byId = Object.fromEntries(specs.map((spec) => [spec.id, spec]))
     return { specs, byId }
   } finally {

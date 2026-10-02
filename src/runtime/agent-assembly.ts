@@ -22,6 +22,7 @@ import type { Agent } from '@deepseek-ai/dsh-agent'
 import { packageEngineDir, resolvePresetModuleFacts, resolvePresetDir, loadPresetSpec } from '../host/manifest.ts'
 import type { PresetSpec } from '../host/manifest.ts'
 import { assertPresetId } from '../host/preset-install.ts'
+import { MODULE_CONFIGS_DIR } from '../host/paths.ts'
 
 // @ts-expect-error ESM 引擎源码随插件提供。
 import { loadPromptConfigFiles } from '../../engine/schema.mjs'
@@ -103,7 +104,7 @@ export async function prepareAssembly(
   const facts = resolvePresetModuleFacts(spec, presetDir)
   if (facts.effectiveModules === null) throw new Error(`预设 ${presetId} 的模块声明无效，无法配装`)
   const configsByModule = facts.effectiveConfigs ?? {}
-  const promptDir = join(presetDir, 'prompt-configs')
+  const promptDir = join(presetDir, MODULE_CONFIGS_DIR)
   const configs = existsSync(promptDir)
     ? loadPromptConfigFiles(pathToFileURL(promptDir + sep))
     : (spec.promptConfigs ?? [])

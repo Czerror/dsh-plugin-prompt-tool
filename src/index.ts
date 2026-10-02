@@ -34,7 +34,7 @@ import {
   NS,
 } from './config.ts'
 import type { PromptSettings, RuntimeOptions } from './config.ts'
-import { DEFAULT_PRESET_DIR } from './host/paths.ts'
+import { DEFAULT_PRESET_DIR, MODULE_CONFIGS_DIR } from './host/paths.ts'
 import { DEFAULT_PRESET_ID } from './shared/preset-ids.ts'
 import { createSkillsRuntime } from './host/skills-runtime.ts'
 import { createPresetRegistrySync, presetDirExists } from './host/preset-registry.ts'
@@ -249,7 +249,7 @@ export function apply(ctx: Context, configIn: Config): void {
       let cleaned = 0
       for (const preset of listPresets()) {
         const dir = join(DEFAULT_PRESET_DIR, preset.id)
-        for (const name of ['prompt-configs', 'custom-tools', 'preset.md', 'agents.md', 'agents-instruction.md', 'engine']) {
+        for (const name of [MODULE_CONFIGS_DIR, 'custom-tools', 'preset.md', 'agents.md', 'agents-instruction.md', 'engine']) {
           try {
             rmSync(join(dir, name), { recursive: true, force: true })
           } catch {

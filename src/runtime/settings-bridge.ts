@@ -61,7 +61,7 @@ import { createAssetSources } from '../host/asset-sources.ts'
 import { expandPresetSource, exportPresetPackage, installPresetPackage, presetImportPreview } from '../host/preset-package.ts'
 import { decodeAssetFile, prepareImport } from '../host/import-source.ts'
 import { assertPresetDirectory, assertPresetId, canonicalPresetRoot, presetPathExists } from '../host/preset-install.ts'
-import { DSH_HOME, MODULE_DEFINITION_FILE } from '../host/paths.ts'
+import { DSH_HOME, MODULE_CONFIGS_DIR, MODULE_DEFINITION_FILE } from '../host/paths.ts'
 import type { AssetFile, AssetImportRequest, ImportKind, PresetExportRequest } from '../shared/asset-transfer.ts'
 import { lastWorldBookDiagnostics } from '../../engine/st-world-book.mjs'
 import { BRIDGE_ENDPOINTS, MAX_BRIDGE_BODY_BYTES, PRESET_ACTIVATION_FAILED, SETTINGS_BRIDGE_PREFIX, type TriggerEditorMeta } from '../shared/bridge-contract.ts'
@@ -789,7 +789,7 @@ export function registerSettingsBridge(
       /** 生成目录实际生效配置（/prompt-configs 读取）。 */
       const readPromptConfigs = (dir: string): unknown[] => {
         try {
-          return dir.length > 0 ? listPromptConfigSpecs(join(dir, 'prompt-configs')).map((config) => {
+          return dir.length > 0 ? listPromptConfigSpecs(join(dir, MODULE_CONFIGS_DIR)).map((config) => {
             const raw = config as typeof config & { fieldSources?: unknown }
             const definition = stripConfigFieldSources(raw)
             const fieldSources = readConfigFieldSources(config.id, raw.fieldSources)
