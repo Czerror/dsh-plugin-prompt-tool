@@ -28,7 +28,7 @@ dsh --profile prompt-tool
 
 ### 当前格式与宿主要求
 
-预设参数只认 `preset.yml` 的当前字段，没有运行时兼容层。
+预设参数只认 `module.yml` 的当前字段，没有运行时兼容层。
 
 技能调用策略只接受官方 frontmatter 键，状态文件只接受 v4；不提供旧布局迁移、回滚或备份脚本。
 
@@ -43,7 +43,7 @@ dsh --profile prompt-tool
 - 🔌 **六个官方插入点一次接线**：一个引擎注册全部可注入层级，共享同一套过滤与降级语义
 - ✍️ **一切皆可配置**：`layer / strategy / position / promotion / audience / modelScope / mergeMode / order / text / texts / fill / variables / params` 全开放
 - 🧑‍🤝‍🧑 **消息受众三态**：`audience: main / subagent`，省略 `audience` 表示公用；身份类提示词可只注入子代理
-- 🗂️ **内容与执行分离**：每条提示词配置渲染为 `~/.dsh/.prompt-tool/<预设>/prompt-configs/` 下的 yml，引擎按文件名数字前缀顺序扫描
+- 🗂️ **内容与执行分离**：每条提示词配置渲染为 `~/.dsh/.prompt-tool/modules/<预设>/configs/` 下的 yml，引擎按文件名数字前缀顺序扫描
 - 🧩 **三层合并**：引擎默认（按 params 生成）< 模板默认 promptConfigs < 预设 promptConfigs，同名 `id` 覆盖
 - 🖥️ **可拖动悬浮工作台入口**：工作台经官方 `shell.overlay` 渲染悬浮触发器与 body portal 抽屉；按钮可拖动、位置存插件自己的 localStorage、窗口变化自动夹回可见区（不读宿主布局树，已移除 `sidebar.footer.action` 几何探针）；六页（主会话/子代理/工具预览/技能设置/预设配置/角色管理）在抽屉内渲染，抽屉用 fixed + z-index 置顶，不被宿主导航栏遮挡
 - 🧪 **六种内容策略**：`static / first-turn-anchor / guide-auto / custom-fallback / placeholder / world-book`（world-book 支持 ST selectiveLogic 选择性触发：任一/副键全中/排除）
@@ -55,8 +55,8 @@ dsh --profile prompt-tool
 - 🎴 **角色卡库**：PNG／JSON／YAML 角色卡与原生角色片段经统一预览后逐张入库；PNG 保留原图，更新保留角色记忆，按需应用到当前预设。
 - 📦 **预设交换**：文件夹、ZIP、原生 JSON/YAML 与 ST 来源共用识别、预览和完整候选安装；导出可选完整 ZIP 或仅定义 YAML。资源、覆盖及分享边界见 [资产交换文档](docs/asset-transfer.md)。
 - 📚 **世界书**：`character_book` 转 world-book 策略配置（`keys` 命中触发 / `constant` 常驻 / 正则键自动检测 / `selectiveLogic` 组合逻辑），与模块卡片同一存储与编辑（模块列表「世界书」过滤 + 批量启用/禁用）
-- 🛠️ **自定义工具**：preset.yml `customTools` 段声明式定义模型工具（执行器 shell/http/delegate/fs/ask-user，`{{args.x}}` 参数插值）；参数与输出经官方 `dsh-tools` 转换器物化为标准 JSON Schema，非法参数产生标准工具错误，delegate 经 `ctx.tools.execute` 嵌套调度走完整官方工具管线；`customTools.scope` 暂不支持（显式拒绝）
-- 🛡️ **子代理工具策略**：preset.yml 顶层 `subagentToolPolicy` 段（opt-in）声明 ceiling、profiles、角色卡绑定、有序任务规则与受控模型扩权；`subagent` 固定走 spawn、`subagent_fork` 固定走 fork，按官方 `SubagentRun`/continuable 契约创建并在窗口内冻结 toolFilter；模型选择器和扩权参数在工具 body 前校验，模型路由经过 LLM preflight；UI 从官方 sessions snapshot 读取当前会话，并可编辑、停用、预览策略及查询存活 Agent 工具面
+- 🛠️ **自定义工具**：module.yml `customTools` 段声明式定义模型工具（执行器 shell/http/delegate/fs/ask-user，`{{args.x}}` 参数插值）；参数与输出经官方 `dsh-tools` 转换器物化为标准 JSON Schema，非法参数产生标准工具错误，delegate 经 `ctx.tools.execute` 嵌套调度走完整官方工具管线；`customTools.scope` 暂不支持（显式拒绝）
+- 🛡️ **子代理工具策略**：module.yml 顶层 `subagentToolPolicy` 段（opt-in）声明 ceiling、profiles、角色卡绑定、有序任务规则与受控模型扩权；`subagent` 固定走 spawn、`subagent_fork` 固定走 fork，按官方 `SubagentRun`/continuable 契约创建并在窗口内冻结 toolFilter；模型选择器和扩权参数在工具 body 前校验，模型路由经过 LLM preflight；UI 从官方 sessions snapshot 读取当前会话，并可编辑、停用、预览策略及查询存活 Agent 工具面
 - ♻️ **Session 日志读取**：引擎冷启动与幂等扫描统一走官方 `session.snapshotEvents()`（DSH `0.1.2-alpha.4+`），不再读取已移除的 `session.events` 数组。
 - 🧩 **模板变量**：仅从预设顶层 `variables` 段提供 `{{key}}` 插值默认值，单条提示词配置的 `variables` 可局部覆盖——模块列表顶部「模板变量」卡片统一编辑（可折叠/清空/停用/失焦自动保存）。`params` 中的旧内容变量及 `params.variables` 不再读取，也不自动迁移；旧预设需自行整理到顶层后重新物化。锚定匹配引擎（anchor-match）统一 custom-fallback 与 world-book 的匹配语义
 - 💬 **会话变量工具**：`session_var`（list/get/set/clear）——模型维护角色状态（`{{心情}}` 等），会话级覆盖预设默认；ST 运行时宏（`{{lastusermessage}}` / `{{lastcharmessage}}`）从会话事件提取
@@ -112,9 +112,9 @@ src/client/
 
 包内目录及定义 id 统一为 `pt-standard` / `pt-ptc` / `pt-minimal` / `pt-cordis` / `pt-custom`，默认 `pt-standard`。
 初始化直接按同名复制：缺哪个目录只补哪个，已有目录不覆盖，也不运行时探测官方名称或重命名。
-用户保存时以当前预设自身的 `preset.yml` 生成运行产物；现有用户预设不自动改名。
+用户保存时以当前预设自身的 `module.yml` 生成运行产物；现有用户预设不自动改名。
 
-预设行为由一份 `preset.yml` 单一配置源下发，参数所有者各自独立：
+预设行为由一份 `module.yml` 单一配置源下发，参数所有者各自独立：
 
 | 层 | 职责 |
 |---|---|
@@ -129,19 +129,19 @@ src/client/
 | 锚定 | `firstTurnAnchor` `firstTurnCustom` `firstTurnText` `firstTurnWord`（空 = 自动从锚句派生确认词）`firstTurnBuild` `firstTurnInspect` `firstTurnDeep` |
 | 引导 | `guideCustom` `guideText` `guideWeak` `guideDeep`（复杂判定 fallback 复用锚定的 `complexPattern`） |
 | 指令 | `instructionHint`（挂 `instruction-hint` 行并 `enabled: true`，晋升后只发一次文件路径提示） |
-| 人设 | preset.yml 顶层 `persona` 段（官方 `@deepseek-ai/dsh-persona` 行 config 同构）：`prefix`（必填）/ `suffix` / `complete` / `includeRuntimeContext`；`complete` 独占 system prompt，与提示词配置的「独占」互斥；子代理独立人设走 `moduleConfigs.tool-subagent.persona`（官方 per-child persona，不继承主会话） |
+| 人设 | module.yml 顶层 `persona` 段（官方 `@deepseek-ai/dsh-persona` 行 config 同构）：`prefix`（必填）/ `suffix` / `complete` / `includeRuntimeContext`；`complete` 独占 system prompt，与提示词配置的「独占」互斥；子代理独立人设走 `moduleConfigs.tool-subagent.persona`（官方 per-child persona，不继承主会话） |
 | 深度 | `maxDepth`（0 禁止委派 / `provider-managed` / 正整数） |
 
 > 首轮工具面与输出封顶、`stages` 式阶段窄化、pre-step 来源名单、常驻工具白/黑名单、锚句、深思门与进度节拍都没有共享参数键：它们改由预设顶层 `triggers` 段声明（示例见 [engine 复用指南](docs/engine-reuse.md)）。其中 `stages` 阶段窄化与「晋升后才切 PTC 呈现」是本轮的两项净损失；子代理工具面只能由 `subagentToolPolicy` 实例策略授权。
 
-> 注：`injectPrompt`（params）= 锚定确认后注入 preset.md 的开关。AGENTS.md 走「文件即真相」：文件集合、正文与版本**不再物化进生成目录**，而是由宿主按**本会话工作区**现场解析（`$DSH_HOME/AGENTS.md` + 工作区 cwd→项目根链的 AGENTS.md/CLAUDE.md/AGENTS.local.md/CLAUDE.local.md）；工作台里的文件卡就是该文件，编辑框里的内容保存后直接写回原文件，卡片定义与正文都不进 preset.yml。插件不写常驻受管块。
+> 注：`injectPrompt`（params）= 锚定确认后注入 preset.md 的开关。AGENTS.md 走「文件即真相」：文件集合、正文与版本**不再物化进生成目录**，而是由宿主按**本会话工作区**现场解析（`$DSH_HOME/AGENTS.md` + 工作区 cwd→项目根链的 AGENTS.md/CLAUDE.md/AGENTS.local.md/CLAUDE.local.md）；工作台里的文件卡就是该文件，编辑框里的内容保存后直接写回原文件，卡片定义与正文都不进 module.yml。插件不写常驻受管块。
 
 官方指令注入与逐文件开关：
 
 - 官方 `@deepseek-ai/dsh-agent-instructions` 负责发现、读取、预算、更新与压缩恢复，预设须保留官方指令行；插件只在消息进入会话前过滤，不再自行注入文件正文。文件可读不代表已经注入。
 - 指令文件卡保留名称、正文编辑和启停；关闭只拦截该文件**后续**的官方注入，历史正文不撤回，重新开启不强制重放。首次请求前关闭即可阻止可识别文件进入新历史；开关不阻止官方读取文件。
 - `$DSH_HOME/.prompt-tool/instructions.yml` 只保存 `files[fileId].enabled` 与 `name`，跨预设共享，**默认放行**。不再提供「独立指令文件来源」总开关或文件级位置、顺序、晋升、受众、模型范围；自定义消息仍用普通前置步骤配置。
-- 旧策略顶层 `enabled` / `defaults` 及文件级注入参数读取时忽略、下一次成功保存时清理；旧顶层关闭不会转换为逐文件关闭。`preset.yml#agentsHints` 仍不生效，策略缺失不因读取自动创建。
+- 旧策略顶层 `enabled` / `defaults` 及文件级注入参数读取时忽略、下一次成功保存时清理；旧顶层关闭不会转换为逐文件关闭。`module.yml#agentsHints` 仍不生效，策略缺失不因读取自动创建。
 - 过滤覆盖官方基线、附加、更新和移除消息，并同步对应 `source.changes`。无法可靠分段的官方内容原样放行并诊断；不识别的文件身份也保持官方内容，不新增远程来源管理。已被官方预算省略的内容不由插件补回。
 - 预设级 `instructionHint` 保持可选、默认关闭；启用后先过滤，再把剩余符合条件的官方全文转换为路径提示。它不替换已经进入历史的全文。决策边界见 [ADR-0004](docs/adr/0004-official-instruction-filter.md)。
 
@@ -173,7 +173,7 @@ persona:
 
 预设事实同样跟随官方会话：官方「新建会话」旁的预设选择器走**会话级**切换（只改那个空白会话，不改宿主默认预设），插件读会话投影 `agentPreset` 后自动把工作台切到该预设——跟随只写同一份插件预设事实（不重复切换会话），官方侧选完，主会话页的配置、参数与工具预览即刻对应该预设。目标预设不在插件管理目录（例如官方随包预设）时**不跟随**并提示，提示用绿色胶囊标出是哪个会话（官方 `title` 投影，无标题时退回会话 id 短号）；投影所属会话与工作台数据不同源时不做判定（官方主绑定可能回退到仍被主视图保留的旧会话，那不是你正在看的会话）；当前预设仍有未保存草稿时保持不动，等草稿处理完再跟随。
 
-> 根目录 [preset.yml](preset.yml) 覆盖全部 30 个共享参数与九层规则。`pnpm rebuild:preset-template` 从权威契约重建；规则默认关闭，共享参数按需取消注释。
+> 根目录 [module.yml](module.yml) 覆盖全部 30 个共享参数与九层规则。`pnpm rebuild:preset-template` 从权威契约重建；规则默认关闭，共享参数按需取消注释。
 
 ## 提示词配置（九个官方插入点）
 

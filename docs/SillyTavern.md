@@ -71,7 +71,7 @@
   所以 ST 卡的应用行为与改造前一致。
 - **必需项兜底**：`prompt-config-engine` 始终补齐——缺少该行时 `promptConfigs` 不会生效，且不会有任何报错；
   卡含 `world-book` 策略配置时补 `world-book-tools`。因此未声明 `modules` 的手写卡只会得到必需项。
-- **来源记录**：应用时把「追加前没有、追加后有」的差集写入 `preset.yml` 的 `meta.characterModules[<卡 id>]`；
+- **来源记录**：应用时把「追加前没有、追加后有」的差集写入 `module.yml` 的 `meta.characterModules[<卡 id>]`；
   预设原本就有的模块不会被记成这张卡引入的。来源记录保留到模块完成回退；首次引入它的卡先被移除时，
   记录仍保留给后续消费者，因此两张卡按任意顺序全部移除都能回退共享模块。
 - **移除回退**：按记录删除模块，删除前检查消费者——其他已导入卡仍引用（各自的记录或 `converted.yml` 里的声明）、
@@ -248,7 +248,7 @@ tokenizer 与上下文预算通道，超出本插件的宿主边界；`forbid_ov
 ### 导入预览与转换报告（2026-09-16）
 
 `convertStToPreset()` 仍是唯一转换实现；`convertStToPresetWithReport()` 在同一路径上额外
-返回结构化报告。报告是派生元数据：不写入 `preset.yml`、不进入模型上下文、也不是写入凭证。
+返回结构化报告。报告是派生元数据：不写入 `module.yml`、不进入模型上下文、也不是写入凭证。
 
 - 预览与提交同源：`/import-preset-package`、`/characters-import` 带 `preview: true` 时
   只做转换并返回 `report` + `sourceDigest`，不落盘、不重建、不执行宏。

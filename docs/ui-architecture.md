@@ -23,7 +23,7 @@
 - 修改 DeepSeek Harness 源码、bundle 顺序或 profile 装配。
 - 使用宿主 DOM 选择器、MutationObserver 或独立 React root。
 - 引入 Tailwind、CSS-in-JS、第二套主题变量、Redux、Zustand、路由库或新的测试框架。
-- 改变 preset.yml 的字段、优先级、空值语义、原子写盘和引擎运行时顺序。
+- 改变 module.yml 的字段、优先级、空值语义、原子写盘和引擎运行时顺序。
 - 将 PTC、首轮锚定、router-guide、Flash 路由等可选能力变成默认主线。
 
 ## 2. 分层与依赖方向
@@ -234,7 +234,7 @@ CSS 构建模块只收集样式数据；`styles.ts` 在入口 `ctx.effect` 中�
 - 组件树很深，不逐层重建 i18n 上下文：入口组件用注入的 `t`，`PromptToolWorkbenchFace.t` 作为同一 bind 结果的稳定引用向下传递（页面与卡片按需加 `t` prop）。
 - 渲染时才求值（`t('key', params)`），不做模块级缓存；语言切换由 renderer 订阅 locale revision 后整体重渲染跟进。
 - 不进字典的内容：provider/model id、文件路径、用户内容、协议 code 与 bridge 错误码；动态拼接用 `{name}` 占位参数。
-- 已迁移：工作台外壳与悬浮入口、设置页、六页外壳、引擎参数卡与模块列表（标签按 shared 键推导成 `param.<键>` 词条）、提示词配置与人设区、角色库页、子代理「工具与深度」模块卡与实例级工具策略、自定义工具卡、导入预览卡。子代理策略的档位显示名（首次启用写入 preset.yml 的 seed 值）属于用户可改内容，保持原值不入字典。
+- 已迁移：工作台外壳与悬浮入口、设置页、六页外壳、引擎参数卡与模块列表（标签按 shared 键推导成 `param.<键>` 词条）、提示词配置与人设区、角色库页、子代理「工具与深度」模块卡与实例级工具策略、自定义工具卡、导入预览卡。子代理策略的档位显示名（首次启用写入 module.yml 的 seed 值）属于用户可改内容，保持原值不入字典。
 - 仍未迁移：`ui/` 控件的回退文案（`MenuSelect` / `TagInput` / `DialogSurface`），以及 `features/models/**` 与 `data/**` 的状态提示（这两个目录属模型路由任务的文件边界）。
 
 ### 4.3 悬浮入口与关闭行为
@@ -285,7 +285,7 @@ workspace-pages.ts 是页面元数据的唯一来源。默认页为 features，�
 | presets | 预设配置 | 全局生成开关、AGENTS 路径与生成顺序设置、PresetSwitcher 与预设 CRUD |
 | characters | 角色管理 | PNG/JSON/YAML 预览导入、角色卡库、应用/移除/删除与目录打开 |
 
-预设人设卡（`features/persona/PresetPersonaCard.tsx`）编辑 preset.yml 顶层 `persona` 段的四个可编辑项：`prefix`、`suffix`，以及 `complete`（独占）与 `includeRuntimeContext`（动态运行时上下文）两个开关（后者默认开启）。读写都走 `/persona`，写由 host 校验并原子写盘；`complete` 与提示词配置的「独占」互斥，由 bridge 在写盘前 fail loud。卡头 meta 区分「存在 persona 段」与「继承预设」——空对象 `{}` 也算存在，不等于有实际内容。四项均未改动时保存落成删除语义（不带 persona 写盘）；二次确认的移除入口只在 persona 段已存在时渲染。它只在主会话页出现，不在子代理页渲染。
+预设人设卡（`features/persona/PresetPersonaCard.tsx`）编辑 module.yml 顶层 `persona` 段的四个可编辑项：`prefix`、`suffix`，以及 `complete`（独占）与 `includeRuntimeContext`（动态运行时上下文）两个开关（后者默认开启）。读写都走 `/persona`，写由 host 校验并原子写盘；`complete` 与提示词配置的「独占」互斥，由 bridge 在写盘前 fail loud。卡头 meta 区分「存在 persona 段」与「继承预设」——空对象 `{}` 也算存在，不等于有实际内容。四项均未改动时保存落成删除语义（不带 persona 写盘）；二次确认的移除入口只在 persona 段已存在时渲染。它只在主会话页出现，不在子代理页渲染。
 
 ### 5.2.1 创建入口与过滤的分工
 
@@ -386,7 +386,7 @@ src/shared/bridge-contract.ts 同时拥有：
 - BridgeValueMap 响应 value 映射；
 - 请求/响应覆盖的编译期断言。
 
-data/bridge-client.ts 提供泛型 bridgeCall(endpoint key, typed body) 和角色卡专用 bridgeUpload。业务组件不得拼接 /bootstrap、/preset-delete 等原始路径。新增或改名端点必须同步 shared map、host 注册和契约测试。
+data/bridge-client.ts 提供泛型 bridgeCall(endpoint key, typed body) 和角色卡专用 bridgeUpload。业务组件不得拼接 /bootstrap、/module-delete 等原始路径。新增或改名端点必须同步 shared map、host 注册和契约测试。
 
 ### 7.2 传输层
 
@@ -455,7 +455,7 @@ feature 只拥有自己的视图、瞬时状态、领域纯 helper 和 CSS：
 | feature | 责任边界 |
 |---|---|
 | prompts | 六层配置卡、字段策略、排序、模板插入、变量编辑和内容配置；世界书只读诊断卡 |
-| persona | preset.yml 顶层 persona 段的编辑卡；prefix/suffix 与 complete 互斥校验，写盘经 host 校验与重建 |
+| persona | module.yml 顶层 persona 段的编辑卡；prefix/suffix 与 complete 互斥校验，写盘经 host 校验与重建 |
 | models | 当前预设的主/子代理模型路由卡；模型下拉展示完整目录并按服务商分组，选择模型时内部回写 provider + model，不提供独立服务商选择控件 |
 | modules | 引擎能力身份、存在性判定与「本层引擎设置」内容装配（`LayerSettingsContent`：参数分组、已装配能力的装配状态与移除、按层归属的资产编辑器）；消费 `/bootstrap.moduleFacts`（显式模块及仍在运行的历史策略兼容装配），卡片壳 ui/EngineModuleCard.tsx 现在只服务资产编辑器 |
 | subagents | 委派工具、实例级工具策略草稿及策略解析预览；不重复嵌入工具面 |
@@ -569,13 +569,13 @@ world-book 视图只隐藏工具栏之外的列表主体之外的附加提示，
 ### 9.4 模块参数命名与说明
 
 - 可见参数名使用简洁简体中文，优先采用 2-6 字的领域名称；不在标签中显示内部键名、英文枚举或括号实现说明。
-- 内部键和值、bridge 载荷和 preset.yml 保持英文契约；下拉选项通过中文映射展示，未知旧值仍回显原值，不能因汉化丢失编辑能力。
+- 内部键和值、bridge 载荷和 module.yml 保持英文契约；下拉选项通过中文映射展示，未知旧值仍回显原值，不能因汉化丢失编辑能力。
 - 布尔参数使用正向短名称，例如「独占」「互斥」「动态运行时上下文」；名称位于开关上方，与输入框和选择框保持相同字段节奏。
 - 字段说明统一经 `ui/HintTooltip.tsx`。组件只复用宿主 Tooltip 的视觉 token、内边距、圆角、字号与淡入效果，不调用宿主 Tooltip 的定位实现。
 - HintTooltip 通过 `body` portal 与 `position: fixed` 定位：鼠标悬停延迟 500ms 后在指针附近显示并随指针移动；键盘聚焦即时读取控件 `getBoundingClientRect()`，紧邻控件显示（鼠标点击产生的聚焦不锁定说明，失焦后回到悬停延迟）；视口边缘自动翻转或收敛。
 - `HintTooltip.module.css` 使用宿主 `--dsw-alias-tooltip-bg` 和静态前景 token，并与宿主尺寸一致；背景混入工作台底色以降低透明度。业务组件不得再使用原生 `title` 或自制 `data-tip` 伪元素。
 - 字段错误、只读警告、保存状态和空状态不是帮助说明，继续就地显示，不藏入 Tooltip。
-- 系统提示段配置卡保留「段名」「独占」「动态抑制」三个字段；人设内容不在这张卡上编辑，改由主会话页的预设人设卡承载 preset.yml 顶层 `persona` 段（见 §5.2）。字段各占三格，720px 以上保持同一行，620px 以下改为单列。
+- 系统提示段配置卡保留「段名」「独占」「动态抑制」三个字段；人设内容不在这张卡上编辑，改由主会话页的预设人设卡承载 module.yml 顶层 `persona` 段（见 §5.2）。字段各占三格，720px 以上保持同一行，620px 以下改为单列。
 
 ## 10. 样式所有权
 

@@ -8,7 +8,7 @@
 
 装配遵循按需语义：空模块、无规则且无请求参数时生成合法空组合；显式参数补齐对应能力，
 真实提示词规则或模型请求参数补齐必要的 `prompt-config-engine`，不创建额外 UI 配置卡。
-四个官方基型保留上游工具能力，人设统一由 preset.yml 顶层 `persona` 段（官方
+四个官方基型保留上游工具能力，人设统一由 module.yml 顶层 `persona` 段（官方
 `@deepseek-ai/dsh-persona` 行 config 同构）驱动——`renderComposition` 在 `modules` 清单预设中
 直接从字段生成该行，不读取任何 persona 模块。模块库不提供 `persona`，不得把人设
 重新拆回模块清单；ST/角色卡转换也遵循顶层字段契约。
@@ -133,10 +133,10 @@
 | 模块行 | 引擎文件 | 职责 |
 |---|---|---|
 | `instruction-hint` | engine/instruction-hint.mjs | 通用指令文件解析：`params.text` 自定义提示 → `params.file` 运行时读该文件正文（`Instructions from:` 头）→ `params.scope`（all / global / project）只发文件存在提示。**自带 plugin 形态**：挂本行并 `enabled: true`，即在晋升后把 agent-instructions 全文换成一次性 hint（原 `context-gate.instructionHint` 的归属；参数桥 `params.instructionHint` → 本行 `enabled`）；prompt-config 的 resolver 与本行共用同一实现 |
-| `declared-triggers` | engine/declared-triggers.mjs | 触发器声明入口：读 `triggers.yml`（preset.yml 顶层 `triggers` 段的物化产物）→ 编译 → 注册；有声明时由 `writePreset` 自动装配 |
+| `declared-triggers` | engine/declared-triggers.mjs | 触发器声明入口：读 `triggers.yml`（module.yml 顶层 `triggers` 段的物化产物）→ 编译 → 注册；有声明时由 `writePreset` 自动装配 |
 | （纯模块） | engine/trigger-spec.mjs / engine/actions.mjs / engine/predicates.mjs | 触发器引擎：声明编译器（校验 / 稳定排序 / 挂载）、九类动作（`inject-text` / `assembly` / `decision` / `append-context` / `guard` / `sdk-strip` / `request-params` / `inbox-prepend` / `pre-step-filter`）、条件谓词（`text` / `phase` / `source` / `count` / `names` / `session` / `preset` + `any` / `all` / `not` / `notAny`） |
 | `prompt-config-engine` | engine/prompt-config-engine.mjs | 提示词配置执行器（per-config `promotion: main / include-subagents` 门控） |
-| `tool-config-engine` | engine/tool-config-engine.mjs | 自定义工具引擎：preset.yml `customTools` 段 → 官方转换器物化标准 JSON Schema（`custom-tools/*.yml`）→ 运行时 `ctx.tools.register`（执行器 shell/http/delegate/fs/ask-user；行 `requireApproval` 门；delegate 经 `ctx.tools.execute` 嵌套调度走完整官方工具管线） |
+| `tool-config-engine` | engine/tool-config-engine.mjs | 自定义工具引擎：module.yml `customTools` 段 → 官方转换器物化标准 JSON Schema（`custom-tools/*.yml`）→ 运行时 `ctx.tools.register`（执行器 shell/http/delegate/fs/ask-user；行 `requireApproval` 门；delegate 经 `ctx.tools.execute` 嵌套调度走完整官方工具管线） |
 | `subagent-tool-policy` | engine/subagent-tool-policy.mjs | generation-scoped subagent/subagent_fork shadow：只安装到当前预设后代；spawn/fork 分别绑定官方 provider，foreground 读取 `SubagentRun.result`，continuable 读取 `childId` 并传顶层 signal；实例参数在 body 前校验，扩权经 approval 门，provider 能力不足 fail loud |
 | （纯模块） | engine/subagent-tool-policy-core.mjs | 策略 validate/compile/resolve/buildParameters 单一 seam（纯模块：不 import dsh-tools、不写文件，包内引擎与 host 两侧共用；bridge 预览与运行时同一 resolver） |
 | （纯模块） | engine/classify-task.mjs | `createOrderedTaskClassifier`：有序正则任务规则确定性分类（taskRules order 升序，首个命中生效） |
@@ -527,5 +527,5 @@ triggers:
   npm 的版本列表与 dist-tags，不能把名字为 latest 的旧标签误当成更新版本。
 - 本地新增模块放 `engine/compositions/source/local/<name>.yml`，重建脚本校验后直接装配；
   官方预设行变体在 `OFFICIAL_MODULES` 显式登记并生成到 `library/`；本地改写不得加入生成器补丁表，两处同名会 fail loud；
-- 用户目录刷新：`pnpm rematerialize:presets` 按各预设 `preset.yml` 重新物化组合（引擎由插件包提供，不再物化共享引擎）。预设内嵌 `skills/` 不由 `writePreset` 管理，脚本默认只报告漂移；`--refresh-skills` 暂存包内文件与用户独有文件的合并树，再备份旧树并切换，失败恢复原目录。同名文件按模板更新，独有文件仍在有效目录，仅独有文件不触发重复备份；不沿符号链接外写。
+- 用户目录刷新：`pnpm rematerialize:presets` 按各预设 `module.yml` 重新物化组合（引擎由插件包提供，不再物化共享引擎）。预设内嵌 `skills/` 不由 `writePreset` 管理，脚本默认只报告漂移；`--refresh-skills` 暂存包内文件与用户独有文件的合并树，再备份旧树并切换，失败恢复原目录。同名文件按模板更新，独有文件仍在有效目录，仅独有文件不触发重复备份；不沿符号链接外写。
 - 验证三连：`pnpm typecheck` + `pnpm lint` + `pnpm test`。
