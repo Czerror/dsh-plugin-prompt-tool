@@ -63,7 +63,10 @@ try {
     const patterns = forward.length > 0
       ? forward
       : [join(root, 'test', '**', '*.test.mjs').replaceAll('\\', '/')]
-    code = run(process.execPath, ['--test', ...patterns])
+    // 测试进程不得写用户真实的 DSH_HOME：默认指到本次临时目录，忘记隔离的用例
+    // 最多写进 runDir（用完即删），而不是 `~/.dsh`。自己隔离的用例照旧在文件顶部覆盖本值。
+    // （2026-10-02 实测踩过：一个在 import 之后才设 DSH_HOME 的用例把夹具角色卡写进了真实 .dsh。）
+    code = run(process.execPath, ['--test', ...patterns], { env: { DSH_HOME: join(runDir, 'dsh-home') } })
   }
 } finally {
   // 只清理本次创建、路径已确认的临时目录。

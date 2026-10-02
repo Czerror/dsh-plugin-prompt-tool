@@ -6,7 +6,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import { readdirSync } from 'node:fs'
 import { join } from 'node:path'
-import { appendMemoryFile, syncImportedCharacterMemory } from '../host/characters.ts'
+import { appendMemoryFile, charactersDir, syncImportedCharacterMemory } from '../host/characters.ts'
 import { buildWorldBookEntry, deleteWorldBookEntry, listWorldBookEntries, upsertWorldBookEntry } from '../host/worldbook.ts'
 import { rebuildSavedPreset } from '../host/preset-tool-target.ts'
 import type { PresetToolHost, PresetToolTarget } from '../host/preset-tool-target.ts'
@@ -15,7 +15,8 @@ const text = (text: string): Array<{ type: 'text'; text: string }> => [{ type: '
 
 /** 从条目 id 解析来源角色卡（chara-<cardId>- 前缀，cardId 可含连字符：遍历库目录取最长匹配）。 */
 function sourceCardId(presetRoot: string, entryId: string): string | undefined {
-  const root = join(presetRoot, '.characters')
+  // 角色卡库在**存储根**下（与模块根 modules/ 同级），从模块根上溯一级。
+  const root = charactersDir(presetRoot)
   if (!entryId.startsWith('chara-')) return undefined
   let best: string | undefined
   try {

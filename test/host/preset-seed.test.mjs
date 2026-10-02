@@ -9,7 +9,7 @@ const home = mkdtempSync(join(tmpdir(), 'pt-seed-'))
 process.env.DSH_HOME = home
 const { ensurePresetSeed } = await import('../../lib/index.mjs')
 
-const PRESETS_DIR = join(home, '.prompt-tool')
+const PRESETS_DIR = join(home, '.prompt-tool', 'modules')
 const STATE_FILE = join(home, '.prompt-tool-state.json')
 
 test('ensurePresetSeed：首次复制内置模板，二次幂等，删除后自动补建', () => {

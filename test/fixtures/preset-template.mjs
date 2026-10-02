@@ -32,10 +32,10 @@ export function installFixturePreset(presetRoot) {
 }
 
 /**
- * 把夹具模板安装到隔离 DSH_HOME 的预设根：`<dshHome>/.prompt-tool/fixture`。
+ * 把夹具模板安装到隔离 DSH_HOME 的模块根：`<dshHome>/.prompt-tool/modules/fixture`。
  * @param {string} dshHome 隔离的 DSH_HOME（测试用临时目录）
  * @returns {string} 安装后的预设目录
  */
 export function installFixturePresetInHome(dshHome) {
-  return installFixturePreset(join(dshHome, '.prompt-tool'))
+  return installFixturePreset(join(dshHome, '.prompt-tool', 'modules'))
 }

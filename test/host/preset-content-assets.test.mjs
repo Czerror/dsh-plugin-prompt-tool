@@ -260,7 +260,7 @@ test('compileCustomTool：五种现有执行器和 fs 动态 action 保持可用
 })
 
 test('writePreset：完整编译同源、坏手写定义 warn-and-skip、原始 DSL 保留并可运行', () => {
-  const presetDir = join(home, '.prompt-tool')
+  const presetDir = join(home, '.prompt-tool', 'modules')
   const dir = join(presetDir, 'custom-tools-test')
   mkdirSync(dir, { recursive: true })
   const tools = [

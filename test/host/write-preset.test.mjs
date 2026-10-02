@@ -7,7 +7,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 import { parse as parseYaml, parseDocument } from 'yaml'
 
 // 隔离 DSH_HOME：writePreset 的模板解析（resolvePresetDir）用户预设优先——
-// 真实用户环境 .prompt-tool/<id> 会遮蔽包内模板，测试必须隔离。
+// 真实用户环境 .prompt-tool/modules/<id> 会遮蔽包内模板，测试必须隔离。
 const home = mkdtempSync(join(tmpdir(), 'pt-wp-home-'))
 process.env.DSH_HOME = home
 const ROOT = fileURLToPath(new URL('../..', import.meta.url))
@@ -396,7 +396,7 @@ test('writePreset 自定义工具渲染 custom-tools/<n>-<id>.yml（源 = preset
 })
 
 test('writePreset 用户副本缺组合源时拒绝，不回退包内同名模板', () => {
-  const presetDir = join(home, '.prompt-tool')
+  const presetDir = join(home, '.prompt-tool', 'modules')
   const userMinimal = join(presetDir, 'pt-minimal')
   try {
     rmSync(userMinimal, { recursive: true, force: true })

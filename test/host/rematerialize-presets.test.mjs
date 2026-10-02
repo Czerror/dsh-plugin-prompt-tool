@@ -7,7 +7,7 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { parse as parseYaml, parseDocument } from 'yaml'
 // 内置 anchored 预设已随上游冻结下线；夹具模板承接它的「锚定/门控装配 + 三条
-// 提示词配置」结构。rematerialize 脚本按 $DSH_HOME/.prompt-tool 扫描预设根，
+// 提示词配置」结构。rematerialize 脚本按 $DSH_HOME/.prompt-tool/modules 扫描预设根，
 // 因此夹具必须装进隔离 DSH_HOME 的官方预设根（而非 writePreset 的输出根）。
 import { installFixturePresetInHome } from '../fixtures/preset-template.mjs'
 
@@ -23,7 +23,7 @@ function run(home, ...extra) {
 
 /** 用包内模板播种一个插件格式用户预设目录。 */
 function seedPreset(home, name, template = 'pt-minimal') {
-  const dir = join(home, '.prompt-tool', name)
+  const dir = join(home, '.prompt-tool', 'modules', name)
   mkdirSync(dir, { recursive: true })
   cpSync(join(ROOT, 'preset', template), dir, { recursive: true })
   const file = join(dir, 'preset.yml')
@@ -62,7 +62,7 @@ test('rematerialize-presets：按当前 preset.yml 重新物化组合，共享�
 test('rematerialize-presets：手写/官方格式预设（无 modules/params）跳过，不覆盖组合', () => {
   const home = mkdtempSync(join(tmpdir(), 'pt-remat-'))
   try {
-    const dir = join(home, '.prompt-tool', 'liangshen')
+    const dir = join(home, '.prompt-tool', 'modules', 'liangshen')
     mkdirSync(dir, { recursive: true })
     writeFileSync(join(dir, 'preset.yml'), 'name: 梁神模式\ndescription: 手写预设\norder: 9\n', 'utf8')
     const composition = '# hand-written composition\n[]\n'

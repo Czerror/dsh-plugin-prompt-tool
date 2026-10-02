@@ -1,4 +1,6 @@
-/** 角色卡库：独立于预设根的素材+参数存储（预设根下点前缀目录，官方 discovery 跳过）。
+/** 角色卡库：独立于模块根的素材+参数存储（**存储根**下点前缀目录，官方 discovery 跳过）。
+ *  注意区分两种语义：`presetRoot` 形参指的是**模块根**（`<存储根>/modules`），角色卡库
+ *  在它的上一级（`<存储根>/.characters`）——两者是兄弟，不是父子。
  *  角色卡参数（converted.yml = convertStToPreset 产物）不直接生成预设，而是
  *  由用户按需「导入到当前预设」合并进激活预设 preset.yml（promptConfigs 带
  *  chara-<cardId>- 前缀防冲突，params 合并，meta.importedCharacters 记录来源），
@@ -249,9 +251,17 @@ export function syncImportedCharacterMemory(
   }
 }
 
-/** 角色卡库根：预设根下的点前缀目录（官方 roster 扫描跳过，与 .engine 同机制）。 */
+/**
+ * 角色卡库根：**存储根**下的点前缀目录（`<存储根>/.characters`）。
+ *
+ * 本模块形参 `presetRoot` 的语义是**模块根**（`<存储根>/modules`），角色卡库与模块目录
+ * 是兄弟：从模块根上溯一级即存储根。**必须由参数推导、不读模块级常量**——常量在
+ * import 时按 `DSH_HOME` 冻结，测试内改 `DSH_HOME` 对它无效，会直接写进真实
+ * `DSH_HOME`（2026-10-02 实测踩过：5 个用例把夹具角色卡写进了活的数据目录）。
+ * 官方 roster 不扫描它（点前缀，与 `.engine` 同机制）。
+ */
 export function charactersDir(presetRoot: string): string {
-  return join(presetRoot, '.characters')
+  return join(dirname(presetRoot), '.characters')
 }
 
 function cardDir(presetRoot: string, id: string): string {

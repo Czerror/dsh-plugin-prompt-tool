@@ -35,7 +35,8 @@ export function isolatedHome(prefix) {
     else process.env.DSH_HOME = previous
     rmSync(home, { recursive: true, force: true })
   })
-  return { home, presetRoot: join(home, '.prompt-tool'), skillsRoot: join(home, 'skills') }
+  // 与 paths.ts#DEFAULT_PRESET_DIR 同源：预设根是存储根下的 `modules/`（不是存储根本身）。
+  return { home, presetRoot: join(home, '.prompt-tool', 'modules'), skillsRoot: join(home, 'skills') }
 }
 
 /** 临时目录：登记 after() 清理，返回绝对路径（不触碰 DSH_HOME）。 */

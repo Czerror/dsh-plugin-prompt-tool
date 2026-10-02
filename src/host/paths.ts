@@ -25,11 +25,20 @@ export const DSH_HOME = resolveDshHome()
  *  插件不再内置任何技能：包内没有 skills 目录，也不再有安装副本与内容账本。 */
 export const USER_SKILLS_DIR = join(DSH_HOME, 'skills')
 /**
- * 插件自有存储根（DSH_HOME/.prompt-tool）。
- * 每份定义保存模块声明与物化产物，由插件自己解析并装配（不再依赖宿主扫描此目录）。
+ * 插件自有**存储根**（DSH_HOME/.prompt-tool）。
+ *
+ * 根下按物分目录：`modules/` 放模块定义与物化产物，`.characters/` 放角色卡库。
+ * 与模块**同级的兄弟物**从模块路径上溯一级定位（`charactersDir(presetRoot)` 就是这么做），
+ * 不从这里读——模块级常量在 import 时按 `DSH_HOME` 冻结，测试内改环境变量对它无效。
  * 旧根 `.agent-presets/` 只读不删，本插件不再读写它。
  */
-export const DEFAULT_PRESET_DIR = join(DSH_HOME, '.prompt-tool')
-/** 历史共享引擎目录：阶段 2 起不再物化，保留常量仅供引用/清理判定，勿据此写盘。 */
-export const SHARED_ENGINE_DIR = join(DEFAULT_PRESET_DIR, '.engine')
+const STORAGE_ROOT = join(DSH_HOME, '.prompt-tool')
+/**
+ * 模块根：一个模块一个目录（`modules/<id>/`），定义与物化产物都在其内。
+ *
+ * 这是 `resolvePresetDir` / `assertPresetDirectory` / `listPresets` 的扫描根，
+ * 也是「本插件管理的预设」身份判定的基准。模块目录必须是它的**直接子目录**
+ * （`assertPresetDirectory` 的一层深度契约由此成立）。
+ */
+export const DEFAULT_PRESET_DIR = join(STORAGE_ROOT, 'modules')
 export const DEFAULT_PRESET_ORDER = 5

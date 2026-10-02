@@ -41,7 +41,7 @@ function skillsStateStub(overrides = {}) {
 }
 
 const PREFIX = '/api/prompt-tool/settings'
-const userPresetRoot = join(bridgeHome, '.prompt-tool')
+const userPresetRoot = join(bridgeHome, '.prompt-tool', 'modules')
 
 let presetSequence = 0
 function makeUserPresetDir(prefix) {
