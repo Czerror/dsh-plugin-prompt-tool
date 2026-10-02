@@ -557,6 +557,106 @@ test('settings bridge /persona 读写顶层 persona 段（官方 dsh-persona con
   }
 })
 
+test('/persona：已有启用「独占」的提示词配置时拒绝顶层人设独占（禁用/无配置不算冲突）', async () => {
+  const { ctx, handlers } = makeHarness()
+  const dir = makeUserPresetDir('pt-persona-complete-')
+  let rebuilds = 0
+  const writeModule = (configs) => writeFileSync(
+    join(dir, 'module.yml'),
+    `id: ${basename(dir)}\nname: complete\npromptConfigs: ${JSON.stringify(configs)}\n`,
+    'utf8',
+  )
+  const exclusive = (enabled) => [{
+    id: 'exclusive-section',
+    enabled,
+    layer: 'system-section',
+    strategy: 'static',
+    text: '独占段',
+    params: { complete: true },
+  }]
+  try {
+    registerSettingsBridge(ctx, 'prompt-tool',
+      () => ({ available: true, providers: [] }),
+      () => skillsStateStub(),
+      () => '',
+      undefined,
+      () => dir,
+      undefined,
+      () => { rebuilds += 1 },
+    )
+    const handler = handlers.get(PREFIX + BRIDGE_ENDPOINTS.persona)
+
+    // 关键拒绝：磁盘上已有启用的「独占」段 → 顶层人设不得再开独占（否则宿主装配抛错）。
+    writeModule(exclusive(true))
+    const before = readFileSync(join(dir, 'module.yml'), 'utf8')
+    const rejected = fakeRes()
+    await handler(fakeReq({ [Symbol.asyncIterator]: async function* () {
+      yield Buffer.from(JSON.stringify({ persona: { prefix: 'PREFIX', complete: true } }))
+    } }), rejected)
+    assert.equal(rejected.status, 400)
+    assert.equal(JSON.parse(rejected.body).code, 'preset-persona-complete-conflict')
+    assert.equal(readFileSync(join(dir, 'module.yml'), 'utf8'), before, '被拒时不落盘')
+    assert.equal(rebuilds, 0, '被拒时不重建')
+
+    // 边界：同一条配置被禁用 → 不构成冲突，写入成功。
+    writeModule(exclusive(false))
+    const allowed = fakeRes()
+    await handler(fakeReq({ [Symbol.asyncIterator]: async function* () {
+      yield Buffer.from(JSON.stringify({ persona: { prefix: 'PREFIX', complete: true } }))
+    } }), allowed)
+    assert.equal(allowed.status, 200, '禁用的「独占」段不算冲突')
+    assert.equal(parseYaml(readFileSync(join(dir, 'module.yml'), 'utf8')).persona.complete, true)
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('/param-overrides：顶层人设已开「独占」时拒绝启用提示词配置独占（未声明/禁用不算冲突）', async () => {
+  const { ctx, handlers } = makeHarness()
+  const dir = makeUserPresetDir('pt-overrides-complete-')
+  const base = `id: ${basename(dir)}\nname: complete\npersona:\n  prefix: PREFIX\n`
+  const exclusiveConfig = (enabled) => [{
+    id: 'exclusive-section',
+    enabled,
+    layer: 'system-section',
+    strategy: 'static',
+    text: '独占段',
+    params: { complete: true },
+  }]
+  const post = async (payload) => {
+    const res = fakeRes()
+    await handlers.get(PREFIX + BRIDGE_ENDPOINTS.paramOverrides)(fakeReq({
+      [Symbol.asyncIterator]: async function* () { yield Buffer.from(JSON.stringify(payload)) },
+    }), res)
+    return res
+  }
+  try {
+    registerSettingsBridge(ctx, 'prompt-tool',
+      () => ({ available: true, providers: [] }),
+      () => skillsStateStub(),
+      () => '',
+      undefined,
+      () => dir,
+    )
+    // 前置：人设未开独占 → 启用提示词配置独占允许。
+    writeFileSync(join(dir, 'module.yml'), base, 'utf8')
+    assert.equal((await post({ promptConfigs: exclusiveConfig(true) })).status, 200)
+
+    // 磁盘人设开独占 → 再启用提示词配置独占必须被拒。
+    writeFileSync(join(dir, 'module.yml'), `${base}  complete: true\n`, 'utf8')
+    const before = readFileSync(join(dir, 'module.yml'), 'utf8')
+    const rejected = await post({ promptConfigs: exclusiveConfig(true) })
+    assert.equal(rejected.status, 400)
+    assert.equal(JSON.parse(rejected.body).code, 'overrides-invalid-value')
+    assert.equal(readFileSync(join(dir, 'module.yml'), 'utf8'), before, '被拒时不落盘')
+
+    // 边界：同步提交的配置是禁用的 → 不算冲突。
+    assert.equal((await post({ promptConfigs: exclusiveConfig(false) })).status, 200, '禁用的「独占」段不算冲突')
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
 /** 用户技能根（技能实体的落点）：创建、复制导入与回收站都落在这里。 */
 function makeSkillsRoot() {
   return mkdtempSync(join(tmpdir(), `pt-skills-root-${process.pid}-`))
