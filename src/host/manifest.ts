@@ -255,8 +255,6 @@ export function listBuiltinTemplates(): Array<{ id: string; name: string }> {
   try {
     return readdirSync(packagePresetDir(), { withFileTypes: true })
       .filter((entry) => entry.isDirectory())
-      // 自定义预设走「新建」顶部专用入口（autoSuffix），不重复出现在普通模板列表。
-      .filter((entry) => entry.name !== 'pt-custom')
       .flatMap((entry) => {
         try {
           const spec = loadPresetSpec(join(packagePresetDir(), entry.name))
@@ -630,7 +628,9 @@ export function buildModuleConfigsFromParams(params: Record<string, unknown>, op
 /**
  * 组合模块目录分工：
  * - source/local：本项目自有模块的唯一源文件；
- * - library：由 rebuild-composition 原样生成的官方切块与官方预设变体，不含本地补丁。
+ * - library：随包分发的官方切块与官方预设变体快照（版本化产物，不手工编辑）；
+ *   生成它的 `rebuild-composition` 脚本随内置预设目录 `preset/` 一并退场——输入源已不存在，
+ *   快照本体保留为既成事实，不再重建。
  * 同名文件禁止同时存在，避免 source 与产物漂移。
  */
 function compositionModuleDirs(): string[] {

@@ -268,8 +268,9 @@ settings 载荷键 `promptConfigs`；读回、序列化、脏检测、保存快�
 ## 7. 合并优先级（组合行 config）
 
 组合模块目录分工：`engine/compositions/source/local/` 是本项目自有模块的唯一源，
-`engine/compositions/library/` 只保存 `pnpm rebuild:composition` 从官方预设切出的行与
-确有语义差异的变体；`renderComposition` 跨目录发现同名模块时直接失败，避免源文件与
+`engine/compositions/library/` 只保存从官方预设切出的行与确有语义差异的变体——随包分发的
+版本化快照，生成它的 `rebuild:composition` 已随内置预设目录退场，快照不再重建；
+`renderComposition` 跨目录发现同名模块时直接失败，避免源文件与
 生成产物漂移。
 
 

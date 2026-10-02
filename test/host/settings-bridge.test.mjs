@@ -369,7 +369,7 @@ test('预设列表、导出、复制、删除、新建与导入都作用于官�
   assert.deepEqual(parseYaml(readFileSync(join(userPresetRoot, copied.id, 'module.yml'), 'utf8')), { ...parseYaml(exported.content), id: copied.id })
   await call('moduleDelete', { id: copied.id })
   assert.equal(existsSync(join(userPresetRoot, copied.id)), false)
-  const cloned = await call('moduleClone', { id: 'pt-custom' })
+  const cloned = await call('moduleClone', { id: 'ponytail' })
   assert.ok(existsSync(join(userPresetRoot, cloned.id, 'module.yml')))
   const files = [{ path: 'module.yml', content: 'id: root-import\nname: Root Import\nmodules: []\n' }]
   const preview = await call('importPresetPackage', { files, preview: true })

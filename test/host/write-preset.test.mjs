@@ -39,15 +39,6 @@ function makeOptions(presetDir) {
   }
 }
 
-/** 读取生成组合里的官方 persona 行（module.yml 顶层 persona 段的渲染产物）。 */
-function readPersonaRow(presetDir, template) {
-  const agent = readFileSync(join(presetDir, template, 'agent.cordis.yml'), 'utf8')
-  const row = parseYaml(agent).find((item) => item?.id === 'persona')
-  assert.ok(row, `${template}: 应生成 persona 行`)
-  assert.equal(row.name, '@deepseek-ai/dsh-persona', `${template}: persona 行应对齐官方包名`)
-  return row
-}
-
 test('writePreset 共享引擎：预设根不物化 .engine，组合引用插件包说明符', () => {
   const dir = join(tmpdir(), `prompt-tool-wp-${process.pid}-${Date.now()}`)
   const presetDir = join(dir, 'preset')
@@ -169,81 +160,6 @@ test('writePreset 内容资产单一事实源：settings 覆盖层带 text 也�
     assert.ok(injector.includes('text: |-') && injector.includes('FILE CONTENT'), injector)
     assert.ok(!injector.includes('SETTINGS TEXT'), injector)
     assert.ok(!injector.includes('texts:'), injector)
-  } finally {
-    rmSync(dir, { recursive: true, force: true })
-  }
-})
-
-test('writePreset 四个官方基型以顶层 persona 段渲染官方 dsh-persona 行', () => {
-  for (const template of ['pt-standard', 'pt-minimal', 'pt-ptc', 'pt-cordis']) {
-    const dir = join(tmpdir(), `prompt-tool-${template}-${process.pid}-${Date.now()}`)
-    const presetDir = join(dir, 'preset')
-    try {
-      writePreset('PROMPT', {
-        ...makeOptions(presetDir),
-        presetTemplate: template,
-        injectPrompt: true,
-        firstTurnAnchor: false,
-        firstTurnText: '',
-        firstTurnCustom: false,
-        guideText: '',
-        guideCustom: false,
-        modelProvider: '', subagentModelProvider: '', subagentModelName: '',
-        modelName: '',
-        bootstrapMaxTokens: 0,
-        usePtcMode: true,
-      })
-      const agent = readFileSync(join(presetDir, template, 'agent.cordis.yml'), 'utf8')
-      const rows = parseYaml(agent)
-      assert.equal(rows.filter((row) => row?.id === 'prompt-config-engine').length, 1, `${template}: persona 配置执行器应且仅应装配一次`)
-      assert.ok(!/__[A-Za-z0-9_]+__/.test(agent), `${template}: 不应残留未解析 token`)
-      assert.match(agent, /^# prompt-tool:render v\d+$/m, `${template}: 组合应带渲染契约版本标记`)
-      assert.ok(rows.length >= 2, `${template}: 组合行数异常（${rows.length}）`)
-      if (template === 'pt-cordis') {
-        const persona = readPersonaRow(presetDir, template)
-        assert.ok(persona.config.prefix.includes('{{model}}'), 'cordis 人设应保留 {{model}} 变量')
-        const officialPatch = parseYaml(readFileSync(new URL('../fixtures/dsh/current/packages/bundle/web-app/presets/cordis.patch.yml', import.meta.url), 'utf8'), { logLevel: 'silent' })
-        const officialPersona = officialPatch[0].insert[0].config.plugins.find((row) => row.id === 'persona').config
-        assert.equal(persona.config.prefix.trim(), officialPersona.prefix.trim(), 'cordis 人设应对齐本次核验的官方声明')
-        assert.equal(persona.config.suffix, 'Your working directory is {{cwd}}.', 'cordis 人设 suffix 应对齐官方原文')
-        assert.ok(existsSync(join(presetDir, template, 'skills', 'editing-cordis-compositions', 'SKILL.md')), 'editing-cordis-compositions skill 应随预设复制')
-        assert.ok(existsSync(join(presetDir, template, 'skills', 'cordis-plugin-development', 'SKILL.md')), 'cordis-plugin-development skill 应随预设复制')
-      } else if (template === 'pt-standard' || template === 'pt-ptc') {
-        const persona = readPersonaRow(presetDir, template)
-        assert.equal(persona.config.prefix, 'You are a coding agent powered by the {{model}} model.', `${template}: prefix 应对齐官方原文`)
-        assert.equal(persona.config.suffix, 'Your working directory is {{cwd}}.', `${template}: suffix 应对齐官方原文`)
-        assert.equal(persona.config.complete, undefined, `${template}: 非独占（无 complete）`)
-      } else if (template === 'pt-minimal') {
-        const persona = readPersonaRow(presetDir, template)
-        assert.equal(persona.config.prefix, 'You are a helpful software engineer assistant.', 'minimal: 人设应对齐官方原文')
-        assert.equal(persona.config.complete, true, 'minimal: 人设独占（complete）')
-        assert.equal(persona.config.includeRuntimeContext, false, 'minimal: 抑制 runtime context')
-      }
-    } finally {
-      rmSync(dir, { recursive: true, force: true })
-    }
-  }
-})
-
-test('writePreset 自定义预设（custom）保持显式空组合', () => {
-  const dir = join(tmpdir(), `prompt-tool-custom-${process.pid}-${Date.now()}`)
-  const presetDir = join(dir, 'preset')
-  try {
-    writePreset('', {
-      ...makeOptions(presetDir),
-      presetTemplate: 'pt-custom',
-      injectPrompt: false,
-      firstTurnAnchor: false,
-      bootstrapMaxTokens: 0,
-      usePtcMode: true,
-    })
-    const agent = readFileSync(join(presetDir, 'pt-custom', 'agent.cordis.yml'), 'utf8')
-    const rows = parseYaml(agent)
-    assert.deepEqual(rows, [], '空白预设不应隐式装配引擎能力')
-    assert.ok(!/__[A-Za-z0-9_]+__/.test(agent), '不应残留未解析 token')
-    const promptConfigs = readdirSync(join(presetDir, 'pt-custom', 'configs'))
-    assert.equal(promptConfigs.length, 0, '自定义预设 promptConfigs 应为空')
-    assert.equal(existsSync(join(presetDir, 'pt-custom', 'engine')), false, '子预设不复制 engine（共享于容器根）')
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }

@@ -14,6 +14,7 @@ const {
   loadPresetSpec,
   renderComposition,
   writePreset,
+  DEFAULT_PRESET_ID,
 } = await import('../../lib/index.mjs')
 const { mergePromptConfigs } = await import('../../src/host/prompt-configs.ts')
 
@@ -142,10 +143,12 @@ test('writePreset：13+ 配置生成 4 位零填充文件名，字典序稳定',
       text: `内容 ${index}`,
     }))
     writePreset('PROMPT', { presetDir, presetOrder: 5, promptConfigs: many })
-    // 缺省 presetTemplate = standard；standard 基型无自带 promptConfigs。
-    const files = readdirSync(join(presetDir, 'pt-standard', 'configs'))
-      .filter((name) => name !== 'variables.yml' && name.endsWith('.yml'))
+    // 缺省 presetTemplate = 包内默认模块（现为 `ponytail`）。它自带几条配置，所以这里
+    // 只看本次写入的 `cfg-*`：零填充与字典序是 writePreset 的契约，与模板自带内容无关。
+    const files = readdirSync(join(presetDir, DEFAULT_PRESET_ID, 'configs'))
+      .filter((name) => name.endsWith('.yml') && name.includes('-cfg-'))
       .sort()
+    assert.equal(files.length, many.length, '本次写入的 13 条都落了盘')
     // 全部 4 位前缀且字典序 = 数值序（00 与 100+ 不串位）。
     for (const name of files) {
       assert.match(name, /^\d{4}-/, `4 位零填充前缀: ${name}`)

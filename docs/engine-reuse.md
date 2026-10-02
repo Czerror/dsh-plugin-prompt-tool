@@ -512,20 +512,15 @@ triggers:
 
 ## 重建与验证
 
-- 官方 0.1.7 的来源是 `packages/bundle/web-app/presets/*.patch.yml` 中 `config.plugins`，配套技能来自 `packages/preset/agent-preset/skills`。`pnpm rebuild:composition --sync-source` 核验当前官方提交后，同步包内模板的人设/模块和技能、记录原始来源快照与 SHA-256，再生成分发库；普通重建只校验并生成组合库。
+- 官方组合模块快照（`engine/compositions/library/`）随包分发，**不再从官方预设同步**：原先的
+  `rebuild:composition` 生成器随内置预设目录 `preset/` 一并退场（输入源已不存在）。快照保留为
+  既成事实，不手工编辑；`test/fixtures/dsh/current` 与 `PROVENANCE.md` 仍是来源记录。
+- 已发布依赖的实际版本以 package.json 为准，验证脚本不再另行硬编码 rc.2；更新前同时核实
+  npm 的版本列表与 dist-tags，不能把名字为 latest 的旧标签误当成更新版本。
+- 本地新增模块放 `engine/compositions/source/local/<name>.yml`，直接装配，不复制到 `library/`；
+  两处同名会 fail loud；
 - 声明的 `channel` 和 `phase` 必须与动作的真实通道及执行阶段一致，不支持的组合在编译期拒绝；省略 `channelOrder` 按 0 排序。同次 waterfall 内下游压缩成功后，after-next 条件读取复位后的 epoch。
 - 动作先经 `prepareAction` 做纯参数校验，再绑定宿主；声明编译与运行时注册复用同一入口。非法动作与不支持的 when/prepend/maxPerTurn 在物化前拒绝，不改写现有组合、正文或共享引擎。
 - 工具名单的 `allow` 与 `deny` 互斥。仅主会话的 guard 不安装会传播到子代理的 restrict；受众仍在执行 guard 内校验。动作次数预算只在目标匹配并产生效果前消费，非目标工具和被阻止的结果不消耗额度。
-
-- 更新官方模块：`pnpm rebuild:composition`。默认读取同级 `deepseek-harness`（可用
-  `DSH_HARNESS_REPO` 指定源码目录），先向官方远端核验 master HEAD；本地落后、预设文件
-  有未提交改动或网络核验失败时拒绝生成，不回退旧版本，也不自动修改宿主源码仓库。
-- 每次同步记录真实分支/commit，更新 `test/fixtures/dsh/current/PROVENANCE.md` 与当前快照。
-  离线复验：`pnpm rebuild:composition test/fixtures/dsh/current`；这是重放已记录提交，
-  不是声明该快照永远为最新。完整测试校验模块来源与快照一致，且无需网络。
-- 已发布依赖的实际版本以 package.json 为准，验证脚本不再另行硬编码 rc.2；更新前同时核实
-  npm 的版本列表与 dist-tags，不能把名字为 latest 的旧标签误当成更新版本。
-- 本地新增模块放 `engine/compositions/source/local/<name>.yml`，重建脚本校验后直接装配；
-  官方预设行变体在 `OFFICIAL_MODULES` 显式登记并生成到 `library/`；本地改写不得加入生成器补丁表，两处同名会 fail loud；
 - 用户目录刷新：`pnpm rematerialize:presets` 按各预设 `module.yml` 重新物化组合（引擎由插件包提供，不再物化共享引擎）。预设内嵌 `skills/` 不由 `writePreset` 管理，脚本默认只报告漂移；`--refresh-skills` 暂存包内文件与用户独有文件的合并树，再备份旧树并切换，失败恢复原目录。同名文件按模板更新，独有文件仍在有效目录，仅独有文件不触发重复备份；不沿符号链接外写。
 - 验证三连：`pnpm typecheck` + `pnpm lint` + `pnpm test`。

@@ -10,7 +10,7 @@
 |---|---|
 | 修改 src/client、SlotRegistry、SettingsScope、工作台、客户端 bridge、状态、共享 UI、CSS 或 UI 测试 | [docs/ui-architecture.md](docs/ui-architecture.md) |
 | 修改 params、module.yml、预设存储、writePreset、迁移、空值或参数生成链路 | [docs/architecture-params.md](docs/architecture-params.md) |
-| 修改 engine、晋升门控、PTC、插入点、组合来源或重建 | [docs/engine-reuse.md](docs/engine-reuse.md)；组合编辑同时读 [preset/pt-cordis/skills/editing-cordis-compositions/SKILL.md](preset/pt-cordis/skills/editing-cordis-compositions/SKILL.md) |
+| 修改 engine、晋升门控、PTC、插入点、组合来源或重建 | [docs/engine-reuse.md](docs/engine-reuse.md)；组合编辑同时读 [skills/dsh-prompt-card/SKILL.md](skills/dsh-prompt-card/SKILL.md) |
 | 修改 SillyTavern、角色卡或世界书转换 | [docs/SillyTavern.md](docs/SillyTavern.md) |
 | 涉及宿主 API、Cordis 生命周期、Settings、Slot 或官方预设契约 | 先在 `D:\AI\GitHub\deepseek-harness\docs` 搜索对应服务或 API；本地文档缺失或与已安装包版本不符时，再查 [在线镜像](https://github.com/deepseek-ai/deepseek-harness/tree/master/docs) |
 
@@ -60,7 +60,7 @@
 - 仅依赖已发布的官方包和 node_modules 类型；相对 TypeScript import 保留显式扩展名，纯类型依赖使用 import type。
 - Skills、SillyTavern、角色卡、世界书和自定义工具复用既有 provider、host 工厂和 rebuildPreset()，不在 UI 复制转换或热装配通道。
 - 修改源文件后通过 package scripts 重新生成 `lib/`、`engine/compositions/library/` 和 `engine/vendor/yaml/`。`lib/` 是构建产物，已被忽略，不手工编辑也不提交。
-- `engine/compositions/library/`（`rebuild:composition`）与 `engine/vendor/yaml/`（`sync:yaml`）是版本化分发快照：不手工编辑，由脚本按固定输入生成并验证，按任务范围提交；不得 git rm，也不得加入忽略。
+- `engine/compositions/library/` 与 `engine/vendor/yaml/`（`sync:yaml`）是版本化分发快照：不手工编辑，按任务范围提交；不得 git rm，也不得加入忽略。`library/` 的生成器 `rebuild:composition` 已随内置预设目录 `preset/` 退场（输入源不存在），该快照保留为既成事实、不再重建。
 
 ### 配置、写盘与安全
 

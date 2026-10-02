@@ -149,13 +149,6 @@ export const PresetSwitcher = memo(function PresetSwitcher(props: { store: Promp
       {pickerOpen && (
         <DialogSurface title={t('presetSwitcher.dialog.title')} closeLabel={t('presetSwitcher.dialog.close')} anchorRef={pickerAnchorRef} onClose={() => setPickerOpen(false)}>
           {templates.length === 0 && <p className={styles.configFieldHint}>{t('presetSwitcher.dialog.noTemplates')}</p>}
-          <HintTooltip label={t('presetSwitcher.custom.hint')}>
-            <button type="button" className={styles.templateModalItem} data-custom
-              onClick={() => void clonePreset('pt-custom', true)}>
-              <strong>{t('presetSwitcher.custom.title')}</strong>
-              <small>{t('presetSwitcher.custom.detail')}</small>
-            </button>
-          </HintTooltip>
           {templates.map((template) => (
             <HintTooltip key={template.id} label={t('presetSwitcher.template.hint', { id: template.id })}>
               <button type="button" className={styles.templateModalItem} onClick={() => void clonePreset(template.id)}>

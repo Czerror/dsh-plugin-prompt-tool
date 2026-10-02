@@ -34,7 +34,7 @@ dsh --profile prompt-tool
 
 旧的 base-only profile（只有 `dsh-base`）首次启动时，插件会把 `@deepseek-ai/dsh-web-app` 补进该 profile 的 `dsh.profile.bundles`（写前留 `.bak`，幂等），并提示重启；需要重启 DSH 服务后生效，插件不会替你重启运行中的服务。
 
-需要 DSH `0.2.0-rc.1+`（Cordis `4.0.4`）：设置接入 ConfigForms，预设定义与物化文件保存在插件自己的存储根 `$DSH_HOME/.prompt-tool/`（宿主从不扫描该目录），运行时装配由插件的配装通道在每个 Agent 的 scope 里完成。官方组合模块跟随核验过的最新 master（`pnpm rebuild:composition`），记录实际提交并以当前快照离线复验。Node 需要 `^22.19.0 || >=24.0.0`，与官方宿主一致。升级后需要用户重启 DSH 服务。
+需要 DSH `0.2.0-rc.1+`（Cordis `4.0.4`）：设置接入 ConfigForms，模块定义与物化文件保存在插件自己的存储根 `$DSH_HOME/.prompt-tool/`（宿主从不扫描该目录），运行时装配由插件的配装通道在每个 Agent 的 scope 里完成，**按存储根 `config.yml` 的启用表逐模块装配**。官方组合模块快照随包分发（`engine/compositions/library/`），不再从官方预设同步——那套生成器已随内置预设目录退场。Node 需要 `^22.19.0 || >=24.0.0`，与官方宿主一致。升级后需要用户重启 DSH 服务。
 
 `peerDependencies` 里的 `@deepseek-ai/dsh-*` 声明为 `>=0.2.0-rc.1`（无上界）：宿主在加载插件时会逐条校验这些 peer，范围写死到某个次版本会让每次宿主升版都判为不兼容；这个范围覆盖 0.2.0 及以上，同时把已知不兼容的更早版本挡在外面。实际锁定的版本以 `pnpm-lock.yaml` 为准。`minimumReleaseAgeExclude` 由 pnpm 维护——安装时 pnpm 会把 lockfile 拿去比对供应链策略，因此升级 DSH 后跑一次 `pnpm install` 即可，不要手工逐条增删。
 
@@ -251,7 +251,6 @@ pnpm test          # 全量契约与行为测试（隔离 cwd 运行）：参数
 pnpm typecheck && pnpm lint
 pnpm verify:host         # 官方包范围、安装版本、解析目标、类型/运行时依赖与 Client 模块边界
 pnpm sync:yaml           # 刷新 engine/vendor/yaml（生成目录运行时 YAML 解析器）
-pnpm rebuild:composition # 只生成官方切块/变体；source/local 本地源不复制（失败安全）
 ```
 
 测试由 `scripts/run-tests.mjs` 启动：先跑 build，再以独立临时 cwd 与 TEMP/TMP 启动 Node 内置 test runner，用例路径为绝对路径，避免相对 cwd 的测试污染仓库。
