@@ -14,7 +14,7 @@ import { existsSync, readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { isMap, parseDocument } from 'yaml'
 import { atomicWriteTextFile } from './text-file.ts'
-import { moduleDirExists } from './module-registry.ts'
+import { moduleDirExists } from './manifest.ts'
 
 /** 启用表 schema：3 = `config.yml` 只有 `schemaVersion` 与 `enabled`。 */
 export const ENABLE_TABLE_SCHEMA = 3

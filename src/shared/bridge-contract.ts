@@ -100,7 +100,7 @@ export function readEditTarget(value: unknown): string | undefined {
   return id.length > 0 && id.length <= 64 && MODULE_ID_PATTERN.test(id) ? id : undefined
 }
 
-/** 插件可编辑定义与官方注册诊断；失败项保留身份供用户修复。 */
+/** 插件可编辑模块的身份与展示元数据；不可渲染的项保留身份供用户修复。 */
 export interface PresetSummary {
   id: string
   name: string

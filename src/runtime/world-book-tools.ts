@@ -9,7 +9,7 @@ import { join } from 'node:path'
 import { appendMemoryFile, charactersDir, syncImportedCharacterMemory } from '../host/characters.ts'
 import { buildWorldBookEntry, deleteWorldBookEntry, listWorldBookEntries, upsertWorldBookEntry } from '../host/worldbook.ts'
 import { rebuildSavedPreset } from '../host/module-tool-target.ts'
-import type { PresetToolHost, PresetToolTarget } from '../host/module-tool-target.ts'
+import type { ModuleToolHost, ModuleToolTarget } from '../host/module-tool-target.ts'
 
 const text = (text: string): Array<{ type: 'text'; text: string }> => [{ type: 'text', text }]
 
@@ -35,11 +35,11 @@ function sourceCardId(moduleRoot: string, entryId: string): string | undefined {
 }
 
 /** 注册世界书条目级模型工具；返回 disposer，随 world-book-tools 模块生命周期清理。 */
-export function registerWorldBookTools(ctx: Context, host: PresetToolHost): () => void {
+export function registerWorldBookTools(ctx: Context, host: ModuleToolHost): () => void {
   const fiber = ctx.inject(['tools'], (toolsCtx) => {
     const disposers: Array<() => void> = []
     /** note 归属写入：角色卡条目 → 卡记忆；其他 → 模块记忆。 */
-    const writeNote = (target: PresetToolTarget, entryId: string | undefined, note: string): void => {
+    const writeNote = (target: ModuleToolTarget, entryId: string | undefined, note: string): void => {
       if (note === undefined || note.trim().length === 0) return
       const cardId = entryId !== undefined ? sourceCardId(target.root, entryId) : undefined
       if (cardId !== undefined) {

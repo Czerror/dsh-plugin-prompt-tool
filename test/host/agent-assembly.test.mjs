@@ -71,7 +71,7 @@ test('装配切片逐条来自预设目录的字面量：层/位置/时机/次�
   writePreset('literal-slices', { modules: ['prompt-config-engine'], promptConfigs: LITERAL_SLICES })
   const prepared = await prepareAssembly(moduleRoot, 'literal-slices', hasEveryService)
 
-  assert.equal(prepared.presetId, 'literal-slices')
+  assert.equal(prepared.moduleId, 'literal-slices')
   assert.equal(prepared.configs.length, LITERAL_SLICES.length, '切片条数与字面量一致')
   for (const [index, expected] of LITERAL_SLICES.entries()) {
     const actual = prepared.configs[index]
@@ -398,4 +398,40 @@ test('启用即配装：启用表里的每个模块各贡献一份，清单为�
   await host0.mounts[0].definition.apply(host0.ctx)
   assert.equal(host0.counts.get('agent/pre-step') ?? 0, 0, '空启用表零贡献')
   await runtime0.dispose()
+})
+
+/**
+ * 配装记录是「这个 Agent 到底装了哪几层提示词」的唯一运行时答案。
+ * 真值源是**启用表的字面量顺序**，不是实现自己算出的另一份结果。
+ */
+test('配装记录报告本 Agent 的提示词层：顺序即启用表，装配前与释放后为空', async () => {
+  writePreset('layer-a', {
+    modules: ['prompt-config-engine'],
+    promptConfigs: [{ id: 'from-a', strategy: 'static', text: 'A', position: 'after-user' }],
+  })
+  writePreset('layer-b', {
+    modules: ['prompt-config-engine'],
+    promptConfigs: [{ id: 'from-b', strategy: 'static', text: 'B', position: 'after-user' }],
+  })
+
+  const host = stubHostContext({ services: ['systemPrompt', 'tools', 'llm'] })
+  const runtime = createAgentAssembly(host.ctx, {
+    moduleRoot,
+    enabledModules: () => ['layer-a', 'layer-b'],
+    warn: (message) => { host.warnings.push(message) },
+  })
+  const agent = host.makeAgent('session-layers')
+
+  assert.deepEqual(runtime.moduleIds(agent.id), [], '装配前没有提示词层')
+  assert.deepEqual(runtime.moduleIds('session-unknown'), [], '从未装过的会话为空')
+
+  await host.fire('agent/created', { agent, source: 'startup' })
+  await runtime.settled()
+  assert.deepEqual(runtime.moduleIds(agent.id), ['layer-a', 'layer-b'], '顺序与启用表一致')
+
+  await host.fire('agent/disposed', { agent })
+  await runtime.settled()
+  assert.deepEqual(runtime.moduleIds(agent.id), [], '释放后不再声明提示词层')
+
+  await runtime.dispose()
 })

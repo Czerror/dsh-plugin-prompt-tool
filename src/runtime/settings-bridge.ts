@@ -15,7 +15,7 @@ import { invalidateModelCatalog, listAdvertisedModels, peekModelCatalog, refresh
 import type { SkillCatalogEntry, SkillPolicyChange, SkillPolicyScope, SkillsCatalogSnapshot } from '../shared/skills.ts'
 import { listPromptConfigSpecs } from '../host/prompt-configs.ts'
 import { enabledModuleIds, setModuleEnabled } from '../host/config-store.ts'
-import { moduleDirExists } from '../host/module-registry.ts'
+import { moduleDirExists } from '../host/manifest.ts'
 import { readConfigFieldSources, stripConfigFieldSources } from '../shared/managed-config-fields.ts'
 import { readOfficialOrderSegments, type OfficialOrderLookup } from '../shared/official-orders.ts'
 import { validatePromptConfigs } from './configs-validate.ts'
@@ -535,12 +535,12 @@ export function registerSettingsBridge(
   afterPresetPackageImport?: (id: string) => void | Promise<void>,
   /** 能力/recipe 原子创建后重建回调；抛错时调用方恢复 preset.yml。 */
   afterCapabilityChange?: () => void | Promise<void>,
-  /** 新建、复制或删除模块后刷新官方注册。 */
+  /** 新建、复制或删除模块后重建当前模块。 */
   afterPresetListChange?: (id: string) => void | Promise<void>,
 ): { invalidateDescriptor: () => void } {
   let invalidateCachedDescriptor: () => void = () => {}
   let capabilityQueue: Promise<void> = Promise.resolve()
-  /** 写盘已完成：等待宿主注册，失败立即返回统一错误，不覆盖持久化结果。 */
+  /** 写盘已完成：等待重建，失败立即返回统一错误，不覆盖持久化结果。 */
   const finishPresetChange = async (res: ServerResponse, activate: () => void | Promise<void>): Promise<boolean> => {
     try {
       await activate()
@@ -1944,7 +1944,7 @@ export function registerSettingsBridge(
               return
             }
             // 删除插件自有模块存储中的用户副本，包内模板保留。
-            // 新版宿主不扫描目录，删除后显式撤销插件拥有的注册。
+            // 模块不在宿主预设注册表里，删除后无需撤销任何官方登记。
             const result = removeUserPreset(id)
             if (!result.ok) {
               writeBridgeJson(res, 400, { ok: false, code: 'preset-delete-rejected', message: result.message })

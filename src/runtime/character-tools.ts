@@ -3,7 +3,7 @@
 import type { Context } from '@deepseek-ai/cordis'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import { rebuildSavedPreset } from '../host/module-tool-target.ts'
-import type { PresetToolHost } from '../host/module-tool-target.ts'
+import type { ModuleToolHost } from '../host/module-tool-target.ts'
 import {
   applyCharacterToPreset,
   deleteCharacterCard,
@@ -15,7 +15,7 @@ import {
 const text = (text: string): Array<{ type: 'text'; text: string }> => [{ type: 'text', text }]
 
 /** 注册角色卡库模型工具；返回 disposer，随 character-tools 模块生命周期清理。 */
-export function registerCharacterTools(ctx: Context, host: PresetToolHost): () => void {
+export function registerCharacterTools(ctx: Context, host: ModuleToolHost): () => void {
   const fiber = ctx.inject(['tools'], (toolsCtx) => {
     const disposers: Array<() => void> = []
     disposers.push(toolsCtx.tools.register(defineTool({

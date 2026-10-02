@@ -27,6 +27,16 @@ import { atomicWriteTextFile } from './text-file.ts'
 export { atomicWriteTextFile } from './text-file.ts'
 export { PresetLayerSettingsError } from './module-layer-settings.ts'
 
+/**
+ * 模块目录确实存在于本插件存储根（身份判定与官方登记状态无关）。
+ *
+ * 启用表过滤、工具写入目标、TUI 目标共用这一条判据：本插件管理的模块 = 存储根里含
+ * `module.yml` 的目录，与「宿主有没有把它登记成官方预设」是两回事。
+ */
+export function moduleDirExists(root: string, id: string): boolean {
+  return statSync(join(root, id, MODULE_DEFINITION_FILE), { throwIfNoEntry: false }) !== undefined
+}
+
 export interface ModuleSpec {
   id: string
   name: string
@@ -526,7 +536,7 @@ export function appendPresetModules(
 
 /** 删除具有合法身份的模块目录（模块根/<id>）；隐藏备份不经公共接口删除。
  *  仅作用于插件自有模块根，包内置模板不受影响；路径越界与非法 id 拒绝。
- *  调用方在删除后刷新注册，撤销本插件拥有的官方定义。 */
+ *  模块不在宿主预设注册表里，删除后无需撤销官方登记；调用方按需重建当前模块。 */
 export function removeUserPreset(id: string, moduleRoot = userModulesDir()): { ok: true } | { ok: false; message: string } {
   try {
     const target = assertModuleDirectory(moduleRoot, id)

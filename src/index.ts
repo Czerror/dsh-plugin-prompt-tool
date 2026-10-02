@@ -28,6 +28,7 @@ import { ENGINE_PARAM_KEYS } from './shared/engine-params.ts'
 import {
   ensurePresetSeed,
   listModules,
+  moduleDirExists,
 } from './host/manifest.ts'
 import {
   Config,
@@ -38,10 +39,10 @@ import { MODULES_DIR, MODULE_CONFIGS_DIR } from './host/paths.ts'
 import { enabledModuleIds, resolveEditDir } from './host/config-store.ts'
 import { DEFAULT_MODULE_ID } from './shared/preset-ids.ts'
 import { createSkillsRuntime } from './host/skills-runtime.ts'
-import { createModuleRegistrySync, moduleDirExists } from './host/module-registry.ts'
 import { createAgentAssembly } from './runtime/agent-assembly.ts'
+import type { AgentAssemblyRuntime } from './runtime/agent-assembly.ts'
 import { resolveModuleToolTarget } from './host/module-tool-target.ts'
-import type { PresetToolHost } from './host/module-tool-target.ts'
+import type { ModuleToolHost } from './host/module-tool-target.ts'
 
 export const name = 'prompt-tool'
 // 内容走 user 层（AGENTS.md 常驻层 + skill 按需层），
@@ -88,9 +89,8 @@ export function apply(ctx: Context, configIn: Config): void {
     fallbackText: configIn.fallbackText.get(),
   })
   const config = readConfig()
-  let registrySync: ReturnType<typeof createModuleRegistrySync> | undefined
-  const refreshPresets = (forceIds?: readonly string[]): Promise<void> =>
-    registrySync?.refresh(forceIds) ?? Promise.reject(new Error('agentPresets 服务尚未就绪，模块已保存但尚未注册'))
+  /** 运行时配装通道的运行态：工具写入目标按它报告的「本 Agent 装了哪几层提示词」解析。 */
+  let assembly: AgentAssemblyRuntime | undefined
   const modelsState = (): ModelDetection => detectModels(ctx)
   const getModelsState = (): ModelDetection => modelsState()
   // 内容资产优先读生成目录文件（writePreset 落盘），模板 content 作回退；
@@ -147,7 +147,7 @@ export function apply(ctx: Context, configIn: Config): void {
       : []
   }
 
-  /** 重建生成目录并刷新官方注册；writePreset 关闭时保留空组合。 */
+  /** 重建生成目录；writePreset 关闭时保留空组合。 */
   const rebuildPreset = async (initial = false, id = runtime.presetTemplate): Promise<void> => {
     // 旧会话可继续编辑自身模块；不能借用工作台当前草稿或改动其 runtime。
     if (id !== runtime.presetTemplate && runtime.writePreset) {
@@ -164,12 +164,10 @@ export function apply(ctx: Context, configIn: Config): void {
         agentsInstructionText: readGeneratedContent(dir, 'agents.md') || readAgents(id),
         warn: (message) => warn(ctx, message),
       })
-      await refreshPresets([id])
       return
     }
     // 先重读激活模块参数（/param-overrides 保存、TUI 开关、模块切换后生效）。
     reloadPresetParams()
-    const rebuiltIds = new Set([id])
     if (runtime.writePreset) {
       const presetPrompt = runtime.injectPrompt && current.length > 0 ? current : ''
       const options: WritePresetOptions = {
@@ -231,7 +229,6 @@ export function apply(ctx: Context, configIn: Config): void {
             promptConfigs: [],
             agentsInstructionText: '',
           })
-          rebuiltIds.add(preset.id)
         } catch (error) {
           warn(ctx, `prompt-tool: 补建模块 ${preset.id} 失败（切换时可重试）：${error instanceof Error ? error.message : String(error)}`)
         }
@@ -243,8 +240,8 @@ export function apply(ctx: Context, configIn: Config): void {
       seededPresets.clear()
     } else {
       // writePreset 关闭时清空各模块目录的生成物，保留 preset.yml 参数源与模块根本身。
-      // 保留空组合供注册层读取：缺少组合会使刷新失败并继续保留旧 revision；
-      // 空组合可正常注册，后续会话停止注入，重新开启后由重建恢复。
+      // 保留空组合供装配期读取：缺少组合会让模块声明解析失败；
+      // 空组合可正常装配（零贡献），后续会话停止注入，重新开启后由重建恢复。
       // 绝不删除整个用户模块目录（旧版误删模块根：用户全部模块、
       // 种子标记 .pt-seeded、共享 .engine 一并清空）。
       let cleaned = 0
@@ -265,10 +262,6 @@ export function apply(ctx: Context, configIn: Config): void {
         cleaned += 1
       }
       warn(ctx, `prompt-tool: writePreset 已关闭，清空 ${cleaned} 个模块目录的组合（preset.yml 参数保留）`)
-    }
-    // 首次物化发生在服务注入前；稍后的 agentPresets 回调负责注册，用户保存则必须等待。
-    if (!initial || registrySync !== undefined) {
-      await refreshPresets(runtime.writePreset ? [...rebuiltIds] : listModules().map((preset) => preset.id))
     }
   }
 
@@ -320,10 +313,9 @@ export function apply(ctx: Context, configIn: Config): void {
         reloadPresetParams()
       }
       skillsRuntime.invalidate()
-      await refreshPresets([id])
     },
     () => rebuildPreset(),
-    (id) => refreshPresets([id]),
+    () => rebuildPreset(),
   )
 
   // 装配结束后只读诊断 Web 能力；插件卸载时取消任务，不编辑 profile。
@@ -437,7 +429,7 @@ registerTuiCommand(
   // 运行时配装通道：每个 Agent 在自己的 scope 里得到一份装配（切片 + 引擎能力）。
   // 官方工具行由会话原有预设提供，本通道不装第二棵官方插件树；两者并存不重复。
   ctx.inject(['agents'], (actx: Context) => {
-    const assembly = createAgentAssembly(actx, {
+    const mounted = createAgentAssembly(actx, {
       moduleRoot: MODULES_DIR,
       // 启用即配装：只认存储根 `config.yml` 的启用表，且只装磁盘上真实存在的模块
       // （`moduleDirExists` 判的就是 `<模块根>/<id>/module.yml`，不走包内回退）。
@@ -447,7 +439,11 @@ registerTuiCommand(
         : [],
       warn: (message) => warn(ctx, message),
     })
-    actx.effect(() => () => assembly.dispose(), 'prompt-tool assembly')
+    assembly = mounted
+    actx.effect(() => () => {
+      if (assembly === mounted) assembly = undefined
+      return mounted.dispose()
+    }, 'prompt-tool assembly')
   })
 
   let needsInitialApply = true
@@ -492,15 +488,17 @@ registerTuiCommand(
   }
 
   // 内置模型工具由三个独立模块按需挂载；宿主只提供对应注册服务。
-  const presetToolHost: PresetToolHost = {
-    target: (exec) => resolveModuleToolTarget(ctx, exec, MODULES_DIR, (id) => moduleDirExists(MODULES_DIR, id)),
+  const moduleToolHost: ModuleToolHost = {
+    // 写入目标按该 Agent 的运行时配装记录解析（启用表 ∩ 磁盘，多个时取第一个），
+    // 不再查询官方 `agentPresets` 的会话绑定。
+    target: (exec) => resolveModuleToolTarget(exec, MODULES_DIR, (sessionId) => assembly?.moduleIds(sessionId) ?? []),
     rebuild: (id) => rebuildPreset(false, id),
   }
   ctx.provide('pt-character-tools', {
-    mount: (scopeCtx: Context): (() => void) => registerCharacterTools(scopeCtx, presetToolHost),
+    mount: (scopeCtx: Context): (() => void) => registerCharacterTools(scopeCtx, moduleToolHost),
   })
   ctx.provide('pt-world-book-tools', {
-    mount: (scopeCtx: Context): (() => void) => registerWorldBookTools(scopeCtx, presetToolHost),
+    mount: (scopeCtx: Context): (() => void) => registerWorldBookTools(scopeCtx, moduleToolHost),
   })
   ctx.provide('pt-session-var-tools', {
     mount: (scopeCtx: Context): (() => void) => registerSessionVarTools(scopeCtx),
@@ -518,18 +516,12 @@ registerTuiCommand(
   applyConfig()
   ctx.effect(() => ctx.on('loader/volatile-update', applyConfig))
 
+  // 模块不再登记为官方预设：这里只读宿主的当前默认预设，用于跟随模板。
   ctx.inject(['agentPresets'], (apctx: Context) => {
     agentPresetsService = apctx.agentPresets
-    const sync = createModuleRegistrySync(apctx, MODULES_DIR)
-    registrySync = sync
-    apctx.effect(() => async () => {
-      if (registrySync === sync) {
-        registrySync = undefined
-        agentPresetsService = undefined
-      }
-      await sync.dispose()
+    apctx.effect(() => () => {
+      if (agentPresetsService === apctx.agentPresets) agentPresetsService = undefined
     })
-    void sync.refresh().catch((error) => warn(ctx, `prompt-tool: 初始模块登记失败：${String(error)}`))
     syncTemplateFromHostDefault()
   })
   ctx.inject(['settings'], (sctx: Context) => {
@@ -580,6 +572,7 @@ export {
   ensurePresetSeed,
   listBuiltinTemplates,
   listModules,
+  moduleDirExists,
   removeUserPreset,
   resolveModuleDir,
   userModulesDir,
@@ -593,7 +586,6 @@ export { detectModels, invalidateModelCatalog, listAdvertisedModels, peekModelCa
 export type { PluginSubagentSeam } from './runtime/models.ts'
 export type { WritePresetOptions } from './host/write-preset.ts'
 export { validatePromptConfigs } from './runtime/configs-validate.ts'
-export { createModuleRegistrySync, moduleDirExists } from './host/module-registry.ts'
 export { registerSettingsBridge } from './runtime/settings-bridge.ts'
 export { registerCharacterTools } from './runtime/character-tools.ts'
 export { registerWorldBookTools } from './runtime/world-book-tools.ts'

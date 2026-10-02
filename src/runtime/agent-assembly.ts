@@ -44,6 +44,13 @@ export interface AgentAssemblyRuntime {
   settled(): Promise<void>
   /** 某个 Agent 当前是否装上了配装（装配失败的 Agent 不在其中）。 */
   hasMounted(sessionId: string): boolean
+  /**
+   * 这个 Agent 当前装着哪几层提示词，按**启用表顺序**给出（装配失败的为空数组）。
+   *
+   * 这是「运行时配装」对外唯一的身份答案：工具写入目标等按 Agent 定位的判据都取它，
+   * 因此不必再去问宿主「这个会话绑定了哪个官方预设」——模块早已与官方预设解耦。
+   */
+  moduleIds(sessionId: string): readonly string[]
   dispose(): Promise<void>
 }
 
@@ -94,7 +101,7 @@ export interface PreparedAssembly {
   configs: unknown[]
   modules: Array<{ id: string; apply: (ctx: Context, config: Record<string, unknown>) => unknown; config: Record<string, unknown> }>
   services: Set<string>
-  presetId: string
+  moduleId: string
 }
 
 /**
@@ -103,13 +110,13 @@ export interface PreparedAssembly {
  * 纯读缝（只依赖包内引擎与模块目录），供挂载与回归测试共用；`hasService` 是宿主能力探针。
  */
 export async function prepareAssembly(
-  moduleRoot: string, presetId: string, hasService: (name: string) => boolean,
+  moduleRoot: string, moduleId: string, hasService: (name: string) => boolean,
 ): Promise<PreparedAssembly> {
-  assertPresetId(presetId)
-  const moduleDir = resolveModuleDir(presetId, moduleRoot)
+  assertPresetId(moduleId)
+  const moduleDir = resolveModuleDir(moduleId, moduleRoot)
   const spec = loadModuleSpec(moduleDir) as ModuleSpec
   const facts = resolveModuleFacts(spec, moduleDir)
-  if (facts.effectiveModules === null) throw new Error(`模块 ${presetId} 的模块声明无效，无法配装`)
+  if (facts.effectiveModules === null) throw new Error(`模块 ${moduleId} 的模块声明无效，无法配装`)
   const configsByModule = facts.effectiveConfigs ?? {}
   const promptDir = join(moduleDir, MODULE_CONFIGS_DIR)
   const configs = existsSync(promptDir)
@@ -128,7 +135,7 @@ export async function prepareAssembly(
   const personaComplete = spec.persona?.complete === true
   if (exclusiveConfigs.length > 1 || (personaComplete && exclusiveConfigs.length > 0)) {
     throw new Error(
-      `模块 ${presetId} 有多个生效的「独占」段（顶层人设${personaComplete ? '已' : '未'}开启），`
+      `模块 ${moduleId} 有多个生效的「独占」段（顶层人设${personaComplete ? '已' : '未'}开启），`
       + '同一模块只能有一个：请先关闭其一',
     )
   }
@@ -166,11 +173,11 @@ export async function prepareAssembly(
   for (const name of services) {
     if (!hasService(name)) throw new Error(`配装所需宿主能力不可用：${name}`)
   }
-  return { configs, modules, services, presetId }
+  return { configs, modules, services, moduleId }
 }
 
 export function createAgentAssembly(ctx: Context, options: AgentAssemblyOptions): AgentAssemblyRuntime {
-  const mounts = new Map<string, { agent: Agent; fiber: { dispose(): Promise<void> | void } }>()
+  const mounts = new Map<string, { agent: Agent; fiber: { dispose(): Promise<void> | void }; moduleIds: readonly string[] }>()
   /** 准备期就失败的 Agent：不反复重试同一份坏定义。 */
   const failed = new Set<string>()
   const queues = new Map<string, Promise<void>>()
@@ -219,7 +226,7 @@ export function createAgentAssembly(ctx: Context, options: AgentAssemblyOptions)
         for (const item of prepared) {
           if (item.configs.length > 0) {
             applyPromptConfigs(scopeCtx, item.configs, {
-              sourceId: `module:${item.presetId}`,
+              sourceId: `module:${item.moduleId}`,
               prepend: true,
               officialInstructions: false,
             })
@@ -243,7 +250,11 @@ export function createAgentAssembly(ctx: Context, options: AgentAssemblyOptions)
       throw error
     }
     if (!active) { await disposeFiber(); return }
-    mounts.set(agent.id, { agent, fiber: { dispose: async () => { await disposeFiber() } } })
+    mounts.set(agent.id, {
+      agent,
+      fiber: { dispose: async () => { await disposeFiber() } },
+      moduleIds: prepared.map((item) => item.moduleId),
+    })
   }
 
     const listeners = [
@@ -284,6 +295,7 @@ export function createAgentAssembly(ctx: Context, options: AgentAssemblyOptions)
   return {
     settled: () => Promise.all(queues.values()).then(() => undefined),
     hasMounted: (sessionId) => mounts.has(sessionId),
+    moduleIds: (sessionId) => mounts.get(sessionId)?.moduleIds ?? [],
     dispose: async () => {
       active = false
       await Promise.all(queues.values())

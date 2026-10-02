@@ -81,7 +81,7 @@ src/client/
 
 依赖方向固定为 `app → features → data/ui → shared contract`：跨领域组合只在 `app/workspace/pages/`，feature 不导入其他 feature 内部实现。控件由插件持有，不运行时加载 Harness Client 包；官方能力通过 Cordis 服务与 slot 接入，类型依赖保留。Client bridge 使用 `src/shared/bridge-contract.ts` 的 endpoint key 与 request/value map。样式按 owner 拆分，只共享 `--dsw-alias-*` 主题颜色，安装和释放随插件生命周期。
 
-角色卡与世界书模型工具操作执行会话绑定的预设，工作台的编辑选择不会改变工具目标。保存等待物化与官方注册完成；已保存但未生效会明确返回失败，旧会话仍保留官方绑定的 revision。失败预设保留诊断，方便修复。
+角色卡与世界书模型工具写入**该执行 Agent 实际配装的提示词层**（启用表 ∩ 磁盘，多个时取启用表第一个），不查询会话绑定的官方预设。保存等待物化完成；已保存但未生效会明确返回失败。失败定义保留诊断，方便修复。
 完整的当前目录、slot 生命周期、状态边界、可访问性和维护约束见 [Web 客户端 UI 结构框架](docs/ui-architecture.md)。
 
 ### 配置卡与工具预览
