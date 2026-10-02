@@ -114,19 +114,19 @@
     ├─ features/
     │  ├─ characters/
     │  │  ├─ character-card.ts
-    │  │  ├─ characters.module.css
     │  │  └─ CharactersPage.tsx
     │  ├─ models/
     │  │  ├─ model-options.ts
     │  │  └─ ModelRouteCard.tsx
     │  ├─ modules/
     │  │  ├─ EngineModuleList.tsx
-    │  │  └─ EngineParamFields.tsx
+    │  │  ├─ EngineParamFields.tsx
+    │  │  └─ ModulesPage.tsx
     │  ├─ persona/
     │  │  └─ PresetPersonaCard.tsx
     │  ├─ presets/
     │  │  ├─ presets.module.css
-    │  │  ├─ PresetsPage.tsx
+    │  │  ├─ PresetExportDialog.tsx
     │  │  └─ PresetSwitcher.tsx
     │  ├─ prompts/
     │  │  ├─ prompt-config-order.ts
@@ -234,7 +234,7 @@ CSS 构建模块只收集样式数据；`styles.ts` 在入口 `ctx.effect` 中�
 - 组件树很深，不逐层重建 i18n 上下文：入口组件用注入的 `t`，`PromptToolWorkbenchFace.t` 作为同一 bind 结果的稳定引用向下传递（页面与卡片按需加 `t` prop）。
 - 渲染时才求值（`t('key', params)`），不做模块级缓存；语言切换由 renderer 订阅 locale revision 后整体重渲染跟进。
 - 不进字典的内容：provider/model id、文件路径、用户内容、协议 code 与 bridge 错误码；动态拼接用 `{name}` 占位参数。
-- 已迁移：工作台外壳与悬浮入口、设置页、六页外壳、引擎参数卡与模块列表（标签按 shared 键推导成 `param.<键>` 词条）、提示词配置与人设区、角色库页、子代理「工具与深度」模块卡与实例级工具策略、自定义工具卡、导入预览卡。子代理策略的档位显示名（首次启用写入 module.yml 的 seed 值）属于用户可改内容，保持原值不入字典。
+- 已迁移：工作台外壳与悬浮入口、设置页、五页外壳、引擎参数卡与模块列表（标签按 shared 键推导成 `param.<键>` 词条）、提示词配置与人设区、模块页的角色卡素材区、子代理「工具与深度」模块卡与实例级工具策略、自定义工具卡、导入预览卡。子代理策略的档位显示名（首次启用写入 module.yml 的 seed 值）属于用户可改内容，保持原值不入字典。
 - 仍未迁移：`ui/` 控件的回退文案（`MenuSelect` / `TagInput` / `DialogSurface`），以及 `features/models/**` 与 `data/**` 的状态提示（这两个目录属模型路由任务的文件边界）。
 
 ### 4.3 悬浮入口与关闭行为
@@ -265,8 +265,7 @@ CSS 构建模块只收集样式数据；`styles.ts` 在入口 `ctx.effect` 中�
           ├─ 子代理
           ├─ 工具预览
           ├─ 技能设置
-          ├─ 预设配置
-          └─ 角色管理
+          └─ 模块
 
 settings tab 不复制工作台内容。完整工作台由 PromptWorkspace 创建 store、保存当前页，并在打开时触发一次 load；WorkspaceFrame 负责公共 header、导航、canvas、loading 和 notice。
 
@@ -282,8 +281,9 @@ workspace-pages.ts 是页面元数据的唯一来源。默认页为 features，�
 | subagent | 子代理 | 同一 `engineLayerSlots(audience: 'subagent')`、顶部九层模板菜单与各层内创建入口、ConfigListWithTemplates（scope=subagent）；引擎设置同样嵌在该层实例卡内 |
 | tools | 工具预览 | 顶置统一搜索；当前会话／所选预设两个可折叠分组，预设选择位于分组标题右侧；双列展开详情卡，680px 以下单列 |
 | skills | 技能设置 | 技能根与资产卡（用户技能根、创建、复制导入、技能文件夹引用）、状态与来源筛选、按来源分组的 SkillRow（三行摘要、文件编辑、调用策略开关、删除） |
-| presets | 预设配置 | 全局生成开关、AGENTS 路径与生成顺序设置、PresetSwitcher 与预设 CRUD |
-| characters | 角色管理 | PNG/JSON/YAML 预览导入、角色卡库、应用/移除/删除与目录打开 |
+| modules | 模块 | 模块列表（启用、新建、复制、导出、删除、打开目录、导入）、全局生成开关与 AGENTS 路径／生成顺序，以及角色卡素材区（导入、并入当前模块、移除、删除） |
+
+模块页由原「预设配置」页与「角色管理」页合并而成（页 id 从 `presets`/`characters` 收敛为 `modules`）：模块既是载体也是库成员，列表、导入、并入、移除、删除与新建/复制/导出属于同一件事。**卡片形态只有一种**——卡体（`.moduleCardBody`）只承载名称、描述、id 与状态徽章，没有点击语义；动作全部在卡脚（`.presetCardFooter`）的胶囊与图标按钮上，启用是其中一枚胶囊。删除守卫按「是否仍在别处生效」判定：当前模块的删除按钮禁用（先切换），已并入当前模块的角色卡删除按钮同样禁用（先从模块移除），两处禁用都带原因提示。数据源不强行统一：模块列表读工作台 store 的 `meta.presets`，角色卡读 `charactersList` 端点 + 页内状态，为「看起来一致」把角色卡搬进 store 不换算。
 
 预设人设卡（`features/persona/PresetPersonaCard.tsx`）编辑 module.yml 顶层 `persona` 段的四个可编辑项：`prefix`、`suffix`，以及 `complete`（独占）与 `includeRuntimeContext`（动态运行时上下文）两个开关（后者默认开启）。读写都走 `/persona`，写由 host 校验并原子写盘；`complete` 与提示词配置的「独占」互斥，由 bridge 在写盘前 fail loud。卡头 meta 区分「存在 persona 段」与「继承预设」——空对象 `{}` 也算存在，不等于有实际内容。四项均未改动时保存落成删除语义（不带 persona 写盘）；二次确认的移除入口只在 persona 段已存在时渲染。它只在主会话页出现，不在子代理页渲染。
 
@@ -336,7 +336,7 @@ workspace-pages.ts 是页面元数据的唯一来源。默认页为 features，�
 
 不新增 React Context 来广播整个 store。页面通过 usePromptToolFields selector 订阅窄切片，叶子组件接收显式值与 callback。
 
-业务草稿不写 localStorage，不靠常驻六页保留。工具、人设与策略只确认提交快照，保存途中继续编辑仍待存；同预设重挂共享在途状态，策略卸载清除未发送队列。干净重挂重新读取远端事实，脏草稿优先保留。技能批量作用于当前结果中合法已选项，固定目标快照，完成后刷新磁盘事实并保留失败选择。
+业务草稿不写 localStorage，不靠常驻五页保留。工具、人设与策略只确认提交快照，保存途中继续编辑仍待存；同预设重挂共享在途状态，策略卸载清除未发送队列。干净重挂重新读取远端事实，脏草稿优先保留。技能批量作用于当前结果中合法已选项，固定目标快照，完成后刷新磁盘事实并保留失败选择。
 
 ### 6.2 首屏读取与更新
 
@@ -461,8 +461,8 @@ feature 只拥有自己的视图、瞬时状态、领域纯 helper 和 CSS：
 | subagents | 委派工具、实例级工具策略草稿及策略解析预览；不重复嵌入工具面 |
 | tools | 自定义工具编辑/保存、参数模板；独立工具预览页与只读工具面 |
 | skills | 按官方六类技能根分组展示清单、来源与遮蔽判定、调用策略开关、宿主目录选择导入与引用、创建、回收站删除；契约见 [skills-management.md](skills-management.md) |
-| presets | 预设生成开关、路径、切换、导入导出、复制/删除/打开 |
-| characters | SillyTavern PNG/JSON 导入、角色卡库存、应用/移除/删除 |
+| presets | 模块页的模块列表：生成开关与路径、切换、新建/克隆、导入导出、复制/删除/打开（页面壳在 `features/modules/ModulesPage.tsx`） |
+| characters | 模块页的角色卡素材区：SillyTavern PNG/JSON 导入、角色卡库存、并入当前模块/移除/删除 |
 
 业务 feature 直接使用 data/bridge-client.ts 的 endpoint key；共享控件从 ui/导入。跨 feature 组合由 app/workspace/pages/完成，不在 feature 内建立第二个工作台。
 
@@ -479,8 +479,9 @@ ui/ 只接收 props/callback，当前真实共享 seam 包括：
 - MenuSelect：封装自有 Menu 的单选胶囊；支持连续选项的 `group` 分组标题。标准设置使用 36px，模块卡内使用 28px 紧凑形态，浮层统一 portal。
 - CollapsibleCard、EngineModuleCard：具体可复用的折叠/模块卡形态，不是万能 Card。
 - StatusDot：6px实心状态点与3px柔和静态光晕，含success/neutral/danger/warning，语义由相邻文字表达，不使用循环动画。
-- StatusBadge：StatusDot 与自有胶囊；tone 同时驱动两者颜色，技能卡、工具预览、预设「使用中」与角色卡「已导入当前预设」共用。
-- 状态徽章与内部Tag均不参与flex收缩，短状态文字保持单行；预设/角色标题承担剩余宽度并允许换行，长名称不把「使用中」挤成竖排胶囊。
+- StatusBadge：StatusDot 与自有胶囊；tone 同时驱动两者颜色，技能卡、工具预览、模块「使用中」与角色卡「已导入当前模块」共用。
+- 状态徽章与内部Tag均不参与flex收缩，短状态文字保持单行；模块/角色标题承担剩余宽度并允许换行，长名称不把「使用中」挤成竖排胶囊。
+- 卡体（`.moduleCardBody`，位于 `ui/controls.module.css`）只承载内容，没有点击语义；模块卡与角色卡共用同一形态，动作一律放卡脚（`.presetCardFooter`）。需要整块可点的控件不要复用卡体。
 - ImportFileButton：隐藏原生 file input 的导入入口。
 - TemplatePicker、DialogSurface：模板和预设操作的 portal 浮层；ConfirmDialog 复用 DialogSurface 的警告对话、初始焦点与还焦能力。确认按钮沿用 `.pillButton[data-danger]`，取消按钮的 ref 承载初始焦点与 busy 还焦。
 - anchored-popover.ts / anchored-popover-fit.ts：锚点位置和窄视口适配。
@@ -504,7 +505,7 @@ fieldset 禁用时 MenuSelect 同时拒绝 portal 中的选择。Tooltip 的键�
 
 九层表单直接从基础字段开始，不在字段上方重复展示层名、通用作用说明和层的内部技术详情；实际字段的帮助说明及错误提示保持就地可用。
 
-工作台六页以顶部 Tab 标识当前页面，内容区不再重复页名、页面概述或附加摘要。跨页导航聚焦活动 tabpanel，Tab 键导航仍聚焦页签；页面命名由 `aria-labelledby` 关联页签提供。配置卡和能力卡展开后直接显示编辑内容，不额外重复卡名或 ID；基础信息控件保留完整名称与 ID 的编辑能力。
+工作台五页以顶部 Tab 标识当前页面，内容区不再重复页名、页面概述或附加摘要。跨页导航聚焦活动 tabpanel，Tab 键导航仍聚焦页签；页面命名由 `aria-labelledby` 关联页签提供。配置卡和能力卡展开后直接显示编辑内容，不额外重复卡名或 ID；基础信息控件保留完整名称与 ID 的编辑能力。
 
 代理请求卡直接编辑官方六个调用字段，正文不属于该层；模型流和工具链仅在替换/拦截行为下显示相关文本；子代理结束卡选择仅记录或向主会话注入文本。正文与未知字段不因隐藏而删除。身份新值只允许引擎支持的 plugin。切层依据完整矩阵清理不适用的通用字段与匹配对象，并将不支持的策略回落为固定文本。
 
@@ -587,7 +588,6 @@ world-book 视图只隐藏工具栏之外的列表主体之外的附加提示，
     ui/HintTooltip.module.css
     ui/StatusBadge.module.css
     ui/StatusDot.module.css
-    features/characters/characters.module.css
     features/presets/presets.module.css
     features/prompts/prompts.module.css
     features/skills/skills.module.css

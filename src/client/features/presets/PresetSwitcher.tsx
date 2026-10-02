@@ -123,7 +123,7 @@ export const PresetSwitcher = memo(function PresetSwitcher(props: { store: Promp
         onRepreview={() => { void flow.repreview() }} onRefresh={() => { void flow.retryRefresh() }}
         onUse={flow.resultLabel === undefined ? undefined : () => { store.setPresetTemplate(flow.resultLabel!); flow.cancel(); setImportOpen(false) }} />}
       {exportTarget && <PresetExportDialog t={t} preset={exportTarget} onClose={() => setExportTarget(undefined)} />}
-      <div className={styles.presetGrid}>
+      <div>
         {presets.length === 0 ? (
           <p className={styles.readOnly} role="status">{t('presetSwitcher.empty')}</p>
         ) : presets.map((preset) => renderCard(preset))}
@@ -160,23 +160,24 @@ export const PresetSwitcher = memo(function PresetSwitcher(props: { store: Promp
     return (
       <article key={preset.id} className={clsx(styles.presetCard, blocked && styles.presetCardBlocked)}
         data-active={active ? '' : undefined}>
-        <HintTooltip label={blocked
+        <div className={styles.moduleCardBody}>
+          <span className={styles.presetCardHead}>
+            <strong className={styles.presetCardName}>{preset.name}</strong>
+            {active && <StatusBadge className={styles.presetHeadBadge} tone="success" label={t('presetSwitcher.badge.active')} />}
+            {blocked && <span className={styles.presetBlocked}>{t('presetSwitcher.blocked')}</span>}
+          </span>
+          {preset.description !== undefined && preset.description.length > 0
+            && <p className={styles.presetCardDesc}>{preset.description}</p>}
+          {preset.broken !== undefined && <p className={styles.presetBlocked} role="alert">{preset.broken}</p>}
+          <code className={styles.presetCardId}>{preset.id}</code>
+        </div>
+        <span className={styles.presetCardFooter}>
+          <HintTooltip label={blocked
             ? preset.broken ?? t('presetSwitcher.card.blocked.hint')
             : active ? t('presetSwitcher.card.active.hint') : t('presetSwitcher.card.switch.hint', { name: preset.name })}>
-          <button type="button" className={styles.presetCardMain} disabled={blocked}
-            onClick={() => store.setPresetTemplate(preset.id)}>
-            <span className={styles.presetCardHead}>
-              <strong className={styles.presetCardName}>{preset.name}</strong>
-              {active && <StatusBadge className={styles.presetHeadBadge} tone="success" label={t('presetSwitcher.badge.active')} />}
-              {blocked && <span className={styles.presetBlocked}>{t('presetSwitcher.blocked')}</span>}
-            </span>
-            {preset.description !== undefined && preset.description.length > 0
-              && <p className={styles.presetCardDesc}>{preset.description}</p>}
-            {preset.broken !== undefined && <p className={styles.presetBlocked} role="alert">{preset.broken}</p>}
-            <code className={styles.presetCardId}>{preset.id}</code>
-          </button>
-        </HintTooltip>
-        <span className={styles.presetCardFooter}>
+            <button type="button" className={styles.pillButton} disabled={blocked || active}
+              onClick={() => store.setPresetTemplate(preset.id)}>{t('presetSwitcher.activate')}</button>
+          </HintTooltip>
           <button type="button" className={styles.pillButton} onClick={() => setExportTarget({ id: preset.id, name: preset.name })}>{t('presetSwitcher.export')}…</button>
           <HintTooltip label={t('presetSwitcher.duplicate.label')}>
             <button type="button" className={styles.presetIconButton}

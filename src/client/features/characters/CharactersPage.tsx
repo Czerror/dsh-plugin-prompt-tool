@@ -14,9 +14,8 @@ import { StatusBadge } from '../../ui/StatusBadge.tsx'
 import type { PromptToolStore } from '../../data/use-prompt-tool-store.ts'
 import type { PromptToolTranslate } from '../../locales.ts'
 import sharedCss from '../../ui/controls.module.css'
-import featureCss from './characters.module.css'
 
-const ui = { ...sharedCss, ...featureCss }
+const ui = sharedCss
 
 interface CharacterCardItem {
   id: string
@@ -155,7 +154,7 @@ export const CharactersPage = memo(function CharactersPage(props: { store: Promp
             const confirming = confirmingDelete === card.id
             return (
               <article key={card.id} className={ui.presetCard}>
-                <div className={ui.presetCardBody}>
+                <div className={ui.moduleCardBody}>
                   <span className={ui.presetCardHead}>
                     <strong className={ui.presetCardName}>{card.name}</strong>
                     {card.imported && <StatusBadge className={ui.presetHeadBadge} tone="success" label={t('characters.badge.imported')} />}
@@ -190,9 +189,10 @@ export const CharactersPage = memo(function CharactersPage(props: { store: Promp
                       onConfirm={() => deleteCard(card.id)} onCancel={() => setConfirmingDelete((current) => current === card.id ? undefined : current)} />
                   )}
                   {(
-                    <HintTooltip label={t('characters.delete.label')}>
+                    <HintTooltip label={card.imported ? t('characters.delete.hintImported') : t('characters.delete.label')}>
                       <button type="button" className={ui.presetIconButton}
                         aria-label={t('characters.delete.aria', { name: card.name })}
+                        disabled={card.imported}
                         onClick={() => setConfirmingDelete(card.id)}>
                         <IconTrashOutlineRegular />
                       </button>

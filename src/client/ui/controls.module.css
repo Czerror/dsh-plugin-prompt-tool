@@ -375,6 +375,16 @@
   align-items: flex-start;
   gap: 8px;
 }
+/* 卡体：只承载内容，没有点击语义；模块卡与角色卡共用（动作全在卡脚上）。 */
+.moduleCardBody {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px 16px 12px;
+  border-radius: 14px 14px 0 0;
+}
 .presetCardName {
   flex: 1 1 auto;
   color: var(--dsw-alias-label-primary);
