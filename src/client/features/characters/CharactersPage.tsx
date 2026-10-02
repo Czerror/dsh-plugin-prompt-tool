@@ -5,10 +5,7 @@
 import { memo, useEffect, useRef, useState, type ReactNode } from 'react'
 import { IconFolderOpenOutlineRegular, IconTrashOutlineRegular } from '../../ui/icons.tsx'
 import { bridgeCall } from '../../data/bridge-client.ts'
-import { previewAsset, commitAsset } from '../../data/asset-import.ts'
-import { useImportPreviewFlow } from '../../data/use-import-preview-flow.ts'
 import { ConfirmDialog } from '../../ui/ConfirmDialog.tsx'
-import { ImportDialog } from '../../ui/ImportDialog.tsx'
 import { HintTooltip } from '../../ui/HintTooltip.tsx'
 import { StatusBadge } from '../../ui/StatusBadge.tsx'
 import type { PromptToolStore } from '../../data/use-prompt-tool-store.ts'
@@ -29,12 +26,10 @@ export const CharactersPage = memo(function CharactersPage(props: { store: Promp
   const { store, t } = props
   const [confirmingDelete, setConfirmingDelete] = useState<string | undefined>(undefined)
   const [busy, setBusy] = useState<string | undefined>(undefined)
-  const [importOpen, setImportOpen] = useState(false)
   const [characters, setCharacters] = useState<CharacterCardItem[]>([])
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState('')
   const loadSequence = useRef(0)
-  const importArea = useRef<HTMLDivElement>(null)
 
   const loadCharacters = async (throwOnError = false): Promise<void> => {
     const sequence = ++loadSequence.current
@@ -52,20 +47,6 @@ export const CharactersPage = memo(function CharactersPage(props: { store: Promp
     return () => { loadSequence.current += 1 }
   }, [])
   useEffect(() => { if (!loading) props.onReady?.() }, [loading, props.onReady])
-
-  // 角色 JSON 导入复用与预设包相同的预览流程：等待确认时按钮可用，只有提交阶段禁用。
-  const flow = useImportPreviewFlow({
-    directoryTooLarge: t('assetImport.directoryTooLarge'),
-    preview: (request) => previewAsset('charactersImport', request),
-    commit: (preview) => commitAsset('charactersImport', preview),
-    onCommitted: async (label) => {
-      store.showNotice('ok', t('characters.notice.stored', { name: label ?? '' }))
-      await loadCharacters(true)
-    },
-    onError: (message, stale) => {
-      store.showNotice('error', t('characters.notice.submitFailed', { reason: stale ? t('importPreview.stale') : message }))
-    },
-  })
 
   /** 角色卡参数导入当前预设（合并 promptConfigs + params，重建后生效）。 */
   const applyCard = async (id: string): Promise<void> => {
@@ -120,35 +101,9 @@ export const CharactersPage = memo(function CharactersPage(props: { store: Promp
 
   return (
     <section className={ui.section} aria-label={t('characters.aria')}>
-      {importOpen && <ImportDialog t={t} destination="character" {...flow} targets={characters}
-        onFiles={(files, directory) => { void flow.run(files, directory ? 'package' : 'files') }} onChoices={flow.updateChoices}
-        onConfirm={() => { void flow.confirm() }} onClose={() => { flow.cancel(); setImportOpen(false) }} onReset={flow.cancel}
-        onSkip={flow.skip} onEnd={flow.end} onRepreview={() => { void flow.repreview() }} onRefresh={() => { void flow.retryRefresh() }}
-        onUse={flow.resultLabel === undefined ? undefined : () => { void applyCard(flow.resultLabel!); flow.cancel(); setImportOpen(false) }} />}
-      <div ref={importArea} className={ui.rowGroup}>
-        <div className={ui.settingRowStack}>
-          <span className={ui.settingCopy}>
-            <strong>{t('characters.library.title')}</strong>
-            <small>{t('characters.library.hint')}</small>
-          </span>
-          <span className={ui.inlineControls}>
-            <button type="button" className={ui.primaryPill} onClick={() => setImportOpen(true)}>{t('assetImport.characterTitle')}…</button>
-          </span>
-        </div>
-      </div>
-
       {loadError && <p className={ui.noticeError} role="alert">{loadError} <button type="button" className={ui.pillButton} onClick={() => void loadCharacters()}>{t('workspace.retry')}</button></p>}
       {loading && <p role="status">{t('app.loading')}</p>}
-      {!loading && !loadError && characters.length === 0 ? (
-        <div className={ui.emptyState}>
-          <span className={ui.emptyGlyph} aria-hidden="true">⌁</span>
-          <div>
-            <h3>{t('characters.empty.title')}</h3>
-            <p>{t('characters.empty.hint')}</p>
-            <button type="button" className={ui.pillButton} onClick={() => setImportOpen(true)}>{t('assetImport.characterTitle')}…</button>
-          </div>
-        </div>
-      ) : (
+      {characters.length > 0 && (
         <div className={ui.presetGrid}>
           {characters.map((card) => {
             const confirming = confirmingDelete === card.id
