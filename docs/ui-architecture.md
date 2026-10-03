@@ -12,7 +12,7 @@
 
 结构重构遵循以下原则：
 
-- 控件由插件持有：以官方控件的结构和交互为参考，仅共享主题 alias token；不运行时加载 Harness Client 包。
+- 控件由插件的 `ui/` 统一持有：遵循官方 `docs/ui-radius.zh.md` 与 `packages/client/ui-primitives/README.zh.md` 的用途、尺寸和共享原则，消费主题 alias 与 radius token；不运行时加载 Harness Client 包。业务页面不得复制控件外观，有意差异通过共享组件的 prop 表达。
 - 现有 seam 深化：继续使用 SlotRegistry、ConfigForms、official remote/sessions 和 loopback bridge。
 - 领域文件归位：工作台壳、数据层、业务 feature、共享 UI 各自拥有清晰的变化原因。
 - 最小抽象：只维护实际使用的控件与交互，不复制完整组件库或新增路由、状态框架。
@@ -490,7 +490,7 @@ feature 只拥有自己的视图、瞬时状态、领域纯 helper 和 CSS：
 
 ui/ 只接收 props/callback，当前真实共享 seam 包括：
 
-- FormField：label/id、说明与错误关联；MenuSelect转发id到真实触发器，hint可内联或使用HintTooltip。
+- FormField：以非交互的字段名称和 `aria-labelledby` 关联控件，维护说明与错误关联；MenuSelect 转发 id 与 ARIA 到真实触发器，hint 可内联或使用 HintTooltip。名称及名称旁的空白不会聚焦编辑框或打开下拉，控件内部点击和键盘操作保持有效。
 - SettingInputRow、ToggleRow、TagInput：设置和字段编辑形态；ToggleRow 使用自有 Switch，保留 role、aria-checked 与键盘行为。
 - ImportPreviewCard：导入预览卡，展示服务端同源转换报告与有损信息（warning/info/被排除条目各自滚动容器）；预设包与角色卡 JSON 两处入口共用。
 - reveal-card.ts：创建后的滚动定位与重试，层设置区与配置卡共用。
@@ -508,7 +508,9 @@ ui/ 只接收 props/callback，当前真实共享 seam 包括：
 - Menu 在定位完成的可见帧聚焦首个可用项，统一处理上下键、Home/End、Escape/Tab、禁用项及焦点恢复。
 - tab-key.ts、dialog-focus.ts：纯键盘索引及弹窗焦点行为。
 
-单行 input 与 textarea 默认使用插件自有尺寸样式；设置行可通过 `TextInput` 复用同一原生属性接口，复杂编辑器仍可直接使用原生元素。下拉单选经 MenuSelect 保持触发器、浮层和 ARIA 一致。Button、Switch、Menu 和五个 SVG 图标只实现当前消费面，Tag 的外观直接归 StatusBadge。
+普通单行输入统一使用 `TextInput`，操作按钮统一使用 `Button`，下拉单选统一使用 `MenuSelect`，二态开关统一使用 `Switch`。组件只接收原生属性、props 与 callback；尺寸、圆角、禁用、焦点与危险态归共享层，feature CSS 仅持有业务排列与图标留位，不再把输入样式类传给下拉。正文与 JSON 使用全宽共享 textarea 样式；TagInput 的内嵌输入、文件选择、radio，以及折叠和导航控件保留各自语义。Tag 的外观直接归 StatusBadge。
+
+官方共享库是宿主功能包的控件通道；本插件保留既有独立打包边界，在自身 `ui/` 提供唯一共享入口，不从宿主源码路径导入或复制到各业务页。
 
 fieldset 禁用时 MenuSelect 同时拒绝 portal 中的选择。Tooltip 的键盘说明绑定实际聚焦目标，Escape 关闭说明。
 
@@ -526,7 +528,17 @@ fieldset 禁用时 MenuSelect 同时拒绝 portal 中的选择。Tooltip 的键�
 
 身份与动作字段按内容宽度排列并自然换行，不设固定 200–240px 列。互斥组输入和开关作为一个相邻单元，均属于规则顶层。启用同组卡时发送 `activateRuleId`，服务端原子关闭同模块同组的其它规则；客户端接受整份响应快照，同时保留请求期间的新编辑，不按排序选择赢家。
 
-单行 input、操作按钮和 compact MenuSelect 为 28px、12px/18px，按钮与下拉半径 14px。`FormField` 按值估算短文本输入宽度（6–28ch 加内边距）；共享 MenuSelect 的 compact 默认按最长选项估算（4–26ch 加箭头与内边距），中文等宽字符按双宽计，不靠调用方逐个指定宽度。OptionField、当前会话模型与共享设置沿用同一规则；长值可完整编辑，不使用 maxLength，触发器省略的选项在菜单中提供全文。普通配置输入最大 15rem（240px），设置路径输入最大 460px 且可在窄容器收缩，筛选输入最小 12rem 并随行宽换行；下拉 owner 最大 18rem，窄容器统一不超过父级宽度。数字字段仍由业务层限制为 96px；正文与 JSON 保持全宽。粗指针实际命中边框为 44px，开关可见轨道保持 20px；菜单原始 pointer 落点在边框外时不打开。
+共享控件的尺寸按用途明确选择：
+
+| 控件 | 紧凑 | 标准 | 宽度与形状 |
+|---|---|---|---|
+| `TextInput` | H28 / R8，12px/18px | H32 / R12，14px/22px | `config` 默认紧凑；原生 `field-sizing: content` 按实际内容收紧，最小 6ch 加内边距、最大 15rem；数字由共享层统一 96px |
+| `TextInput` 路径／筛选 | `compact` 显式选择 | 默认 H32 / R12 | `directory` 最大 460px；`listFilter` 随行宽伸缩并换行；均可收缩到父级宽度 |
+| `Button` | `size="sm"` H28 / R8 | `size="md"` H36 / R12 | `shape="pill"` 显式保留胶囊；`icon` 提供方形命中范围，危险态不改变几何 |
+| `MenuSelect` | `compact` H28，8px 文字箭头间距 | H36，12px 文字箭头间距 | 按当前选中文本的真实排版宽度贴合，仅预留内边距、箭头和固定间距；最大 18rem，窄容器可收缩 |
+| `Switch` | 可见轨道 36×20、滑块 16×16 | 同一外观 | 轨道与点击区域分离，页面行高不能拉高轨道；开启/关闭配色遵循官方主题 token |
+
+普通圆角使用 `--dsw-radius-sm/md`，兼容未定义 token 的宿主时回退 8/12px；明确的胶囊使用 `999px` 并配 `corner-shape: round`。下拉切换选项时宽度随当前文字改变，不使用最长选项或字符数量估宽；展开菜单独立容纳完整选项。输入不设置 `maxLength`，超长值仍可完整编辑。字段名称不参与控件宽度与点击范围。粗指针输入、按钮和选择器的实际边框至少 H44，开关命中区域至少 44×44 且可见轨道仍为 36×20；菜单原始 pointer 落点在边框外时不打开。
 
 工作台五页以顶部 Tab 标识当前页面，内容区不再重复页名、页面概述或附加摘要。跨页导航聚焦活动 tabpanel，Tab 键导航仍聚焦页签；页面命名由 `aria-labelledby` 关联页签提供。配置卡和能力卡展开后直接显示编辑内容，不额外重复卡名或 ID；基础信息控件保留完整名称与 ID 的编辑能力。
 
@@ -624,7 +636,7 @@ world-book 视图只隐藏工具栏之外的列表主体之外的附加提示，
 约束：
 
 - 组件移动时同步移动其独占 selector；共享 selector 必须对应稳定的真实共享形态。
-- 主题颜色只使用 `--dsw-alias-*`；字体、间距和动效由插件持有，不复制宿主静态色板，不写 :root 主题。窗口 chrome 避让继续消费官方布局公开的 `--dsh-*` 几何变量，不读取宿主 DOM。
+- 主题颜色只使用 `--dsw-alias-*`；普通控件圆角复用官方 `--dsw-radius-*`，字体、间距和动效由插件共享层持有，不复制宿主静态色板，不写 :root 主题。窗口 chrome 避让继续消费官方布局公开的 `--dsh-*` 几何变量，不读取宿主 DOM。
 - 整条窗口标题栏由宿主持有：抽屉层与模态遮罩通过 `--dsh-frame-chrome-top` 从标题栏下沿开始绘制，抽屉阴影裁剪在该层内；内容不再重复累加标题栏高度。全屏时该值归零，Web 未定义时回退 0，安全区和 macOS 行内避让保留。
 - feature CSS 不选择宿主 class、id 或页面结构。
 - 中性平面边框使用 0.5px；高层浮层用 alias 颜色组合自有阴影。悬浮入口抽屉/触发器使用 body portal 的 1000 / 1100 层级，不叠加无意义的中性 border。

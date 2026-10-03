@@ -2,7 +2,6 @@ import { useEffect, useRef, useState, type ReactNode } from 'react'
 import clsx from 'clsx'
 import { IconChevronDownOutlineRegular } from './icons.tsx'
 import { Menu, type MenuEntry } from './Menu.tsx'
-import { controlWidth } from './control-width.ts'
 import styles from './controls.module.css'
 
 export interface MenuSelectOption {
@@ -27,6 +26,7 @@ export function MenuSelect(props: {
   align?: 'start' | 'end'
   compact?: boolean
   id?: string
+  'aria-labelledby'?: string
   'aria-invalid'?: boolean
   'aria-describedby'?: string
 }): ReactNode {
@@ -57,7 +57,7 @@ export function MenuSelect(props: {
   }, [disabled])
 
   return (
-    <span className={styles.menuSelectOwner} style={compact ? { width: controlWidth([selected?.label ?? (props.value || props.placeholder || '（未选择）'), ...props.options.map(option => option.label)], 48, 4, 26), flex: '0 1 auto', minWidth: 0, maxWidth: '100%', font: '12px/18px system-ui, sans-serif' } : undefined} onBlur={(event) => {
+    <span className={styles.menuSelectOwner} onBlur={(event) => {
       const next = event.relatedTarget
       if (next instanceof Node && event.currentTarget.contains(next)) return
       ownsFocus.current = false
@@ -85,6 +85,7 @@ export function MenuSelect(props: {
           type="button"
           className={clsx(styles.menuSelectTrigger, compact ? styles.menuSelectTriggerCompact : styles.menuSelectTriggerStandard)}
           aria-label={props.ariaLabel}
+          aria-labelledby={props['aria-labelledby']}
           aria-haspopup="menu"
           aria-expanded={open && !disabled}
           aria-invalid={props['aria-invalid']}

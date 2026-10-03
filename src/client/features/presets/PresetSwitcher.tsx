@@ -17,6 +17,7 @@ import { ImportDialog } from '../../ui/ImportDialog.tsx'
 import { PresetExportDialog } from './PresetExportDialog.tsx'
 import { useImportPreviewFlow } from '../../data/use-import-preview-flow.ts'
 import { Switch } from '../../ui/Switch.tsx'
+import { Button } from '../../ui/Button.tsx'
 import sharedCss from '../../ui/controls.module.css'
 import featureCss from './presets.module.css'
 
@@ -124,8 +125,8 @@ export const PresetSwitcher = memo(function PresetSwitcher(props: { store: Promp
           <small>{t('presetSwitcher.hint')}</small>
         </span>
         <span className={styles.inlineControls}>
-          <button ref={pickerAnchorRef} type="button" className={styles.primaryPill} onClick={() => setPickerOpen(true)}>{t('presetSwitcher.new')}</button>
-          <button type="button" className={styles.pillButton} onClick={() => setImportOpen(true)}>{t('assetImport.presetTitle')}…</button>
+          <Button ref={pickerAnchorRef} shape="pill" variant="primary" size="md" onClick={() => setPickerOpen(true)}>{t('presetSwitcher.new')}</Button>
+          <Button shape="pill" variant="outline" size="md" onClick={() => setImportOpen(true)}>{t('assetImport.presetTitle')}…</Button>
         </span>
       </div>
       {importOpen && <ImportDialog t={t} destination="preset" {...flow} targets={presets}

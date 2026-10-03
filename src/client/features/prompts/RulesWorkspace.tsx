@@ -11,7 +11,7 @@ import { instructionFileIdOf } from '../../data/prompt-config-content.ts'
 import type { PromptConfigDraft } from '../../prompt-tool-types.ts'
 import type { PromptToolTranslate } from '../../locales.ts'
 import { MenuSelect } from '../../ui/MenuSelect.tsx'
-import { controlWidth } from '../../ui/control-width.ts'
+import { TextInput } from '../../ui/TextInput.tsx'
 import { Button } from '../../ui/Button.tsx'
 import { ConfirmDialog } from '../../ui/ConfirmDialog.tsx'
 import { PromptConfigCard } from './PromptConfigCard.tsx'
@@ -108,7 +108,7 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
   const moveButtons = (entry: ModuleConfigOrderEntry): ReactNode => {
     const peers = orderPeers(entry), index = peers.findIndex(item => configIdentityKey(item) === configIdentityKey(entry))
     return <span className={css.row}>
-      {[-1, 1].map(delta => <Button key={delta} variant="outline" className={css.button + ' ' + css.iconButton} aria-label={t(delta < 0 ? 'rules.moveUp' : 'rules.moveDown', { id: entry.configId })}
+      {[-1, 1].map(delta => <Button key={delta} variant="outline" shape="pill" icon aria-label={t(delta < 0 ? 'rules.moveUp' : 'rules.moveDown', { id: entry.configId })}
         disabled={sorting || !!query || rulesDirty(draft) || peers[index + delta] === undefined}
         onClick={() => { const target = peers[index + delta]; if (target) void saveOrder(configIdentityKey(entry), configIdentityKey(target)) }}>{delta < 0 ? '↑' : '↓'}</Button>)}
     </span>
@@ -134,23 +134,23 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
     onPatchInstructionPolicy={store.instructionPolicy.error === undefined ? (id, override) => { void store.updateInstructionPolicy(id, override) } : undefined} />)
   return <section className={css.workspace} aria-label={t('rules.list')}>
     <div className={css.toolbar} data-module-toolbar>
-      <input className={ui.configInput + ' ' + css.control} style={{ width: controlWidth(props.keyword ?? filter, 18, 16) }} aria-label={t('rules.search')} placeholder={t('rules.search')} value={props.keyword ?? filter} onChange={event => changeFilter(event.target.value)} />
+      <TextInput aria-label={t('rules.search')} placeholder={t('rules.search')} value={props.keyword ?? filter} onChange={event => changeFilter(event.target.value)} />
       <MenuSelect compact className={css.control} ariaLabel={t('rules.layer')} value={view} options={[{ value: 'all', label: t('rules.all') }, { value: 'world-book', label: t('rules.worldBook') }, ...store.meta.layers.map(layer => ({ value: layer, label: translateLabel(t, LAYER_LABEL_KEYS, layer) }))]} onChange={value => props.onViewFilterChange?.(value)} />
-      <Button variant="outline" className={css.button} disabled={readOnly || !draft.loaded || across} onClick={create}>{t('rules.new')}</Button>
-      <Button variant="outline" className={css.button} disabled={sorting || draft.busy !== undefined} onClick={() => { void changeRange() }}>{t(across ? 'rules.back' : 'rules.order')}</Button>
+      <Button variant="outline" shape="pill" disabled={readOnly || !draft.loaded || across} onClick={create}>{t('rules.new')}</Button>
+      <Button variant="outline" shape="pill" disabled={sorting || draft.busy !== undefined} onClick={() => { void changeRange() }}>{t(across ? 'rules.back' : 'rules.order')}</Button>
       {props.toolbarActions}
     </div>
     <div className={css.row}>
-      <Button variant="outline" className={css.button} disabled={draft.busy !== undefined} onClick={() => { void editor.load(true) }}>{t('triggers.reload')}</Button>
-      <Button variant="outline" className={css.button} disabled={readOnly || !draft.loaded || draft.busy !== undefined || hasRuleFields(draft) || !!draft.remote} onClick={() => { void editor.submit({ validateOnly: true }) }}>{t('triggers.validate')}</Button>
-      <Button variant="outline" className={css.button} disabled={readOnly || !rulesDirty(draft) || draft.busy !== undefined || hasRuleFields(draft) || !!draft.remote} onClick={() => { void editor.submit() }}>{t('rules.save')}</Button>
-      {(rulesDirty(draft) || draft.remote) && <Button variant="outline" className={css.button} disabled={draft.busy !== undefined} onClick={() => setDiscard(true)}>{t('triggers.discard')}</Button>}
+      <Button variant="outline" shape="pill" disabled={draft.busy !== undefined} onClick={() => { void editor.load(true) }}>{t('triggers.reload')}</Button>
+      <Button variant="outline" shape="pill" disabled={readOnly || !draft.loaded || draft.busy !== undefined || hasRuleFields(draft) || !!draft.remote} onClick={() => { void editor.submit({ validateOnly: true }) }}>{t('triggers.validate')}</Button>
+      <Button variant="outline" shape="pill" disabled={readOnly || !rulesDirty(draft) || draft.busy !== undefined || hasRuleFields(draft) || !!draft.remote} onClick={() => { void editor.submit() }}>{t('rules.save')}</Button>
+      {(rulesDirty(draft) || draft.remote) && <Button variant="outline" shape="pill" disabled={draft.busy !== undefined} onClick={() => setDiscard(true)}>{t('triggers.discard')}</Button>}
       <span role="status" className={css.status}>{t(!draft.loaded ? 'rules.loading' : rulesDirty(draft) ? 'rules.dirty' : 'rules.clean')}</span>
     </div>
     {draft.error && <p role="alert" className={css.error}>{draft.remote ? t('rules.conflict') : draft.error}</p>}
     {hasRuleFields(draft) && <p role="alert" className={css.error}>{t('rules.fieldsPending')}</p>}
     {orderError && <p role="alert" className={css.error}>{orderError}</p>}
-    {props.createdHidden && <Button variant="outline" className={css.button} onClick={props.onShowCreated}>{t('rules.showCreated')}</Button>}
+    {props.createdHidden && <Button variant="outline" shape="pill" onClick={props.onShowCreated}>{t('rules.showCreated')}</Button>}
     {!across && props.scope !== 'subagent' && instructionCards}
     {props.beforeCards}
     {across ? ordered.map(entry => <article key={configIdentityKey(entry)} className={ui.configCard} draggable={!sorting && !query} onDragStart={() => { dragId.current = configIdentityKey(entry) }} onDragOver={event => event.preventDefault()} onDrop={event => { event.preventDefault(); if (dragId.current) void saveOrder(dragId.current, configIdentityKey(entry)); dragId.current = undefined }}><header className={ui.configHeader}><span className={ui.configTitle}><span className={ui.configName}>{entry.name}</span><span className={ui.configMeta}>{entry.moduleId} / {entry.configId}</span></span><span className={ui.configHeaderActions}>{moveButtons(entry)}</span></header></article>)

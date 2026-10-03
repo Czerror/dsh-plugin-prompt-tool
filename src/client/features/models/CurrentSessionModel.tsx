@@ -25,9 +25,9 @@ export function CurrentSessionModel(props: { store: PromptToolStore; t: PromptTo
   }
   return <EngineModuleCard name={t('rules.sessionModel')} embedded>
     <div className={styles.sessionModelRow}>
-      <MenuSelect compact className={styles.configInput} ariaLabel={t('rules.sessionModel')} placeholder={t('field.default')} value={provider && model ? modelChoiceValue(provider, model) : ''} options={options} disabled={!view.selectable || busy}
+      <MenuSelect compact ariaLabel={t('rules.sessionModel')} placeholder={t('field.default')} value={provider && model ? modelChoiceValue(provider, model) : ''} options={options} disabled={!view.selectable || busy}
         onChange={value => { const next = parseModelChoice(value); if (next) select(next) }} />
-      <MenuSelect compact className={styles.configInput} ariaLabel={t('rules.reasoningEffort')} placeholder={t('field.default')} value={reasoningEffort} options={efforts} disabled={!view.selectable || busy} onChange={reasoningEffort => select({ reasoningEffort })} />
+      <MenuSelect compact ariaLabel={t('rules.reasoningEffort')} placeholder={t('field.default')} value={reasoningEffort} options={efforts} disabled={!view.selectable || busy} onChange={reasoningEffort => select({ reasoningEffort })} />
     </div>
   </EngineModuleCard>
 }

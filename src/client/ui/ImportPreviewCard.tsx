@@ -6,6 +6,7 @@ import { memo, type ReactNode } from 'react'
 import type { PromptToolTranslate } from '../locales.ts'
 import type { ImportOrderCandidates, ImportPreviewState } from '../prompt-tool-types.ts'
 import { MenuSelect } from './MenuSelect.tsx'
+import { Button } from './Button.tsx'
 import sharedCss from './controls.module.css'
 
 export type { ImportPreviewState } from '../prompt-tool-types.ts'
@@ -138,12 +139,12 @@ export const ImportPreviewCard = memo(function ImportPreviewCard(props: {
         </p>
       )}
       {!props.hideActions && <div>
-        <button type="button" className={sharedCss.primaryPill} disabled={confirmDisabled} onClick={props.onConfirm}>
+        <Button shape="pill" variant="primary" size="md" disabled={confirmDisabled} onClick={props.onConfirm}>
           {t('importPreview.confirm')}
-        </button>
-        <button type="button" className={sharedCss.pillButton} disabled={busy} onClick={props.onCancel}>
+        </Button>
+        <Button shape="pill" variant="outline" size="md" disabled={busy} onClick={props.onCancel}>
           {t('importPreview.cancel')}
-        </button>
+        </Button>
       </div>}
     </div>
   )

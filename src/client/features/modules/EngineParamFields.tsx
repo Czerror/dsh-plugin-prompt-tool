@@ -1,6 +1,6 @@
 import { useSyncExternalStore, type ReactNode } from 'react'
-import clsx from 'clsx'
 import { Switch } from '../../ui/Switch.tsx'
+import { TextInput } from '../../ui/TextInput.tsx'
 import { ENGINE_PARAM_DEFINITIONS } from '../../../shared/engine-params.ts'
 import { SHARED_PARAM_KEYS, type SharedParamKey } from '../../data/prompt-tool-fields.ts'
 import { engineGroupParamKeys } from '../../../shared/engine-capabilities.ts'
@@ -103,7 +103,7 @@ export function EngineParamField({ store, param, t, instanceId }: { store: Promp
     control = <Switch className={styles.configEnable} checked={value === true} disabled={disabled} label={label}
       onChange={(next) => { patch(next); save() }} />
   } else if (definition.kind === 'number') {
-    control = <input id={id} className={clsx(styles.configInput, styles.configNumberInput)} inputMode="decimal" aria-label={label}
+    control = <TextInput id={id} inputMode="decimal" aria-label={label}
       aria-invalid={error !== undefined} aria-describedby={error === undefined ? undefined : `${id}-error`}
       value={draftText ?? String(value ?? '')} readOnly={disabled}
       onChange={(event) => writeDraft({ source: String(value ?? ''), text: event.target.value, error: '' })}
@@ -126,7 +126,7 @@ export function EngineParamField({ store, param, t, instanceId }: { store: Promp
   return <div className={styles.settingRowStack} data-param-key={param} data-param-kind={definition.kind}
     data-control={menuField ? 'select' : definition.kind === 'boolean' ? 'switch' : definition.kind === 'number' ? 'number' : 'text'}>
     <HintTooltip label={hint}><span className={styles.settingCopy}>
-      {menuField || definition.kind === 'boolean' ? <span>{label}</span> : <label htmlFor={id}>{label}</label>}
+      <span>{label}</span>
     </span></HintTooltip>
     {control}
     {error !== undefined && <small id={`${id}-error`} role="alert">{error}</small>}

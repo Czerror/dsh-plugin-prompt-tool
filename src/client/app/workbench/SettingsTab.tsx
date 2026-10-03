@@ -60,7 +60,7 @@ export function SettingsTab(props: TabProps): ReactNode {
       <div className={ui.rowGroup}>
         <div className={ui.settingRowStack}>
           <span className={ui.settingCopy}><strong>{t('settings.presetTemplate.title')}</strong><small>{t('settings.presetTemplate.hint')}</small></span>
-          <MenuSelect className={ui.directoryInput} ariaLabel={t('settings.presetTemplate.title')}
+          <MenuSelect ariaLabel={t('settings.presetTemplate.title')}
             value={typeof value.presetTemplate === 'string' ? value.presetTemplate : ''}
             disabled={!snapshot.writable || switchingPreset}
             compact={false}

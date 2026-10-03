@@ -4,6 +4,7 @@ import { Button } from '../../ui/Button.tsx'
 import { IconChevronDownOutlineRegular } from '../../ui/icons.tsx'
 import { Menu } from '../../ui/Menu.tsx'
 import { Switch } from '../../ui/Switch.tsx'
+import { TextInput } from '../../ui/TextInput.tsx'
 import type { FieldDraft } from '../../data/workspace-drafts.ts'
 import { ConfirmDialog } from '../../ui/ConfirmDialog.tsx'
 import { FormField } from '../../ui/FormField.tsx'
@@ -64,25 +65,25 @@ function ParameterRowsEditor(props: { t: PromptToolTranslate; value: ToolDraft |
         const record = asRecord(spec)
         const type = typeof record.type === 'string' ? record.type : Array.isArray(record.oneOf) ? 'oneOf' : 'json'
         return <span key={index} className={styles.variableRow}>
-          <input className={styles.configInput} aria-label={t('toolEditor.params.nameAria')} value={key} spellCheck={false} placeholder={t('toolEditor.params.namePlaceholder')}
+          <TextInput aria-label={t('toolEditor.params.nameAria')} value={key} spellCheck={false} placeholder={t('toolEditor.params.namePlaceholder')}
             onChange={(e) => setRow(index, { key: e.target.value })} />
-          <MenuSelect className={styles.configInput} compact ariaLabel={t('toolEditor.params.typeAria')} value={type}
+          <MenuSelect compact ariaLabel={t('toolEditor.params.typeAria')} value={type}
             options={SCHEMA_TYPES.map((type) => ({ value: type, label: type }))}
             onChange={(type) => setRow(index, { type })} />
           <HintTooltip label={t('toolEditor.params.requiredHint')}>
             <Switch label={t('toolEditor.params.requiredAria')} checked={record.required === true}
               onChange={(checked) => setRow(index, { required: checked })} />
           </HintTooltip>
-          <input className={styles.configInput} aria-label={t('toolEditor.params.descriptionAria')} value={typeof record.description === 'string' ? record.description : ''} spellCheck={false} placeholder={t('toolEditor.params.descriptionPlaceholder')}
+          <TextInput aria-label={t('toolEditor.params.descriptionAria')} value={typeof record.description === 'string' ? record.description : ''} spellCheck={false} placeholder={t('toolEditor.params.descriptionPlaceholder')}
             onChange={(e) => setRow(index, { description: e.target.value })} />
-          <button type="button" className={styles.pillButton} data-danger aria-label={t('toolEditor.params.removeAria', { key: key || index })}
-            onClick={() => commit(rows.filter((_, at) => at !== index))}>{t('toolEditor.params.remove')}</button>
+          <Button shape="pill" size="sm" variant="outline" type="button" data-danger aria-label={t('toolEditor.params.removeAria', { key: key || index })}
+            onClick={() => commit(rows.filter((_, at) => at !== index))}>{t('toolEditor.params.remove')}</Button>
         </span>
       })}
       <span>
-        <button type="button" className={styles.pillButton} onClick={() => commit([...rows, ['', { type: 'string' }]])}>
+        <Button shape="pill" size="sm" variant="outline" type="button" onClick={() => commit([...rows, ['', { type: 'string' }]])}>
           {t('toolEditor.params.add')}
-        </button>
+        </Button>
       </span>
     </span>
   )
@@ -216,11 +217,11 @@ export function CustomToolCard(props: {
         <fieldset className={styles.configForm} disabled={props.disabled === true}>
           <span className={styles.variableRow}>
             <FormField label={t('toolEditor.field.id')}>
-              <input className={styles.configInput} aria-label={t('toolEditor.field.idAria')} value={id} spellCheck={false}
+              <TextInput aria-label={t('toolEditor.field.idAria')} value={id} spellCheck={false}
                 onChange={(e) => props.onPatch({ id: e.target.value })} />
             </FormField>
             <FormField label={t('toolEditor.field.name')}>
-              <input className={styles.configInput} aria-label={t('toolEditor.field.nameAria')} value={name} spellCheck={false} placeholder="my_tool"
+              <TextInput aria-label={t('toolEditor.field.nameAria')} value={name} spellCheck={false} placeholder="my_tool"
                 onChange={(e) => props.onPatch({ name: e.target.value })} />
             </FormField>
           </span>
@@ -230,7 +231,7 @@ export function CustomToolCard(props: {
               onChange={(e) => props.onPatch({ description: e.target.value })} />
           </FormField>
           <FormField label={t('toolEditor.field.kind')} hint={t('toolEditor.field.kind.hint')}>
-            <MenuSelect className={styles.configInput} compact ariaLabel={t('toolEditor.field.kindAria')} value={kind}
+            <MenuSelect compact ariaLabel={t('toolEditor.field.kindAria')} value={kind}
               options={KIND_OPTIONS.map((option) => ({ value: option, label: option }))}
               onChange={(value) => patchExecute({ kind: value, ...(value === 'fs' && execute.action === undefined ? { action: 'read' } : {}) })} />
           </FormField>
@@ -242,7 +243,7 @@ export function CustomToolCard(props: {
                   onChange={(e) => patchExecute({ command: e.target.value })} />
               </FormField>
               <FormField label="shell" hint={t('toolEditor.field.shell.hint')}>
-                <MenuSelect className={styles.configInput} compact ariaLabel="shell"
+                <MenuSelect compact ariaLabel="shell"
                   value={typeof execute.shell === 'string' ? execute.shell : 'pwsh'}
                   options={SHELLS.map((shell) => ({ value: shell, label: shell }))}
                   onChange={(value) => patchExecute({ shell: value })} />
@@ -252,12 +253,12 @@ export function CustomToolCard(props: {
           {kind === 'http' && (
             <>
               <FormField label="url" hint={t('toolEditor.field.url.hint')}>
-                <input className={styles.configInput} aria-label={t('toolEditor.field.urlAria')} spellCheck={false}
+                <TextInput aria-label={t('toolEditor.field.urlAria')} spellCheck={false}
                   value={typeof execute.url === 'string' ? execute.url : ''} placeholder="https://…/{{args.q}}"
                   onChange={(e) => patchExecute({ url: e.target.value })} />
               </FormField>
               <FormField label="method">
-                <MenuSelect className={styles.configInput} compact ariaLabel={t('toolEditor.field.methodAria')}
+                <MenuSelect compact ariaLabel={t('toolEditor.field.methodAria')}
                   value={typeof execute.method === 'string' ? execute.method : 'GET'}
                   options={HTTP_METHODS.map((method) => ({ value: method, label: method }))}
                   onChange={(value) => patchExecute({ method: value })} />
@@ -266,7 +267,7 @@ export function CustomToolCard(props: {
           )}
           {kind === 'delegate' && (
             <FormField label={t('toolEditor.field.delegate')} hint={t('toolEditor.field.delegate.hint', { names: BUILTIN_TOOL_NAMES.join(' / ') })}>
-              <input className={styles.configInput} aria-label={t('toolEditor.field.delegateAria')} spellCheck={false}
+              <TextInput aria-label={t('toolEditor.field.delegateAria')} spellCheck={false}
                 value={typeof execute.tool === 'string' ? execute.tool : ''} placeholder="world_book_upsert"
                 onChange={(e) => patchExecute({ tool: e.target.value })} />
             </FormField>
@@ -274,13 +275,13 @@ export function CustomToolCard(props: {
           {kind === 'fs' && (
             <>
               <FormField label="action">
-                <MenuSelect className={styles.configInput} compact ariaLabel={t('toolEditor.field.fsActionAria')}
+                <MenuSelect compact ariaLabel={t('toolEditor.field.fsActionAria')}
                   value={typeof execute.action === 'string' && (FS_ACTIONS as readonly string[]).includes(execute.action) ? execute.action : 'read'}
                   options={FS_ACTIONS.map((action) => ({ value: action, label: action }))}
                   onChange={(value) => patchExecute({ action: value })} />
               </FormField>
               <FormField label="path" hint={t('toolEditor.field.path.hint')}>
-                <input className={styles.configInput} aria-label={t('toolEditor.field.pathAria')} spellCheck={false}
+                <TextInput variant="directory" compact aria-label={t('toolEditor.field.pathAria')} spellCheck={false}
                   value={typeof execute.path === 'string' ? execute.path : ''} placeholder="data/{{args.name}}.json"
                   onChange={(e) => patchExecute({ path: e.target.value })} />
               </FormField>
@@ -295,7 +296,7 @@ export function CustomToolCard(props: {
           )}
           {kind === 'ask-user' && (
             <FormField label={t('toolEditor.field.question')}>
-              <input className={styles.configInput} aria-label={t('toolEditor.field.questionAria')} spellCheck={false}
+              <TextInput aria-label={t('toolEditor.field.questionAria')} spellCheck={false}
                 value={typeof execute.question === 'string' ? execute.question : ''} placeholder={t('toolEditor.field.questionPlaceholder')}
                 onChange={(e) => patchExecute({ question: e.target.value })} />
             </FormField>
@@ -310,7 +311,7 @@ export function CustomToolCard(props: {
             output: Object.keys(output).length > 0 ? output : { schema: { type: 'object', additionalProperties: true } },
           })} />
           <FormField label="timeoutMs" hint={t('toolEditor.timeout.hint')}>
-            <input className={styles.configInput} type="text" inputMode="decimal" aria-label={t('toolEditor.timeoutAria')}
+            <TextInput type="text" inputMode="decimal" aria-label={t('toolEditor.timeoutAria')}
               aria-invalid={timeoutError.length > 0} aria-describedby={timeoutError ? timeoutErrorId : undefined} value={timeoutDraft ?? String(tool.timeoutMs ?? '')}
               onChange={(event) => { setTimeoutDraft(event.target.value); setTimeoutError(''); props.fieldDrafts?.set(timeoutKey, { source: String(tool.timeoutMs ?? ''), text: event.target.value, error: '' }) }}
               onBlur={() => {

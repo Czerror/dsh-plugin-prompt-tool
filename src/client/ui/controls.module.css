@@ -103,7 +103,6 @@
 }
 .templateModalWide { width: min(760px, 100%); }
 .dialogFooter { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; padding: 12px 16px; border-top: 0.5px solid var(--dsw-alias-border-l1); }
-.dialogFooter button { min-height: 44px; }
 .templateModalWide .dialogClose { min-height: 44px; min-width: 44px; }
 .templateModalHead > strong { flex: 1 1 0; min-width: 0; font: 500 13px/20px system-ui, sans-serif; overflow-wrap: anywhere; }
 
@@ -165,7 +164,7 @@
   justify-content: center;
   gap: 4px;
   border: 0.5px solid var(--dsw-alias-border-l2);
-  border-radius: 18px;
+  border-radius: 999px;
   corner-shape: round;
   padding: 0 14px;
   color: var(--dsw-alias-label-primary);
@@ -175,6 +174,9 @@
   overflow-wrap: anywhere;
   transition: background-color 150ms ease-in-out, border-color 150ms ease-in-out;
 }
+
+.pillCompact { min-height: 28px; padding: 0 10px; font: 12px/18px system-ui, sans-serif; }
+.iconButton { flex: 0 0 auto; width: 28px; min-width: 28px; padding: 0; }
 
 .pillButton:hover:not(:disabled) { background: var(--dsw-alias-interactive-bg-hover-solid); }
 .pillButton:disabled,
@@ -226,7 +228,7 @@
   flex: 1 1 auto;
 }
 
-/* 模型选择合并行（当前会话 / 模块模型 / 采样参数）：控件横排，窄面板允许换行，均分不挤压文字。 */
+/* 模型与采样参数按控件内容横排，窄面板自然换行。 */
 .sessionModelRow {
   display: flex;
   min-width: 0;
@@ -234,25 +236,11 @@
   flex-wrap: wrap;
 }
 
-.sessionModelRow > .menuSelect,
-.sessionModelRow > .menuSelectOwner,
-.sessionModelRow > input {
-  flex: 1 1 120px;
-  min-width: 0;
-}
-
 /* 合并行里需要更宽的长文本输入（指令/描述/模板）。 */
 .sessionModelRow > .sessionModelRowWide { flex: 3 1 220px; }
 
 /* 密集行内联字段项：标签固定宽度，控件吃剩余空间（与菜单/input 直挂同行兼容）。 */
 .sessionModelRow > .switchGridField { flex: 1 1 150px; }
-
-.switchGridItem > .menuSelect,
-.switchGridItem > .menuSelectOwner,
-.switchGridItem > input {
-  flex: 1 1 72px;
-  min-width: 0;
-}
 
 /* 开关栅格：同卡多个布尔开关合并为一行（可换行），逐项说明收敛到 title 悬浮提示。 */
 .switchGrid {
@@ -293,16 +281,6 @@
 
 .directoryInput {
   width: min(100%, 460px);
-  min-width: min(100%, 12rem);
-  max-width: 100%;
-  box-sizing: border-box;
-  min-height: 32px;
-  border: 0.5px solid var(--dsw-alias-label-tertiary);
-  border-radius: 8px;
-  padding: 4px 8px;
-  color: var(--dsw-alias-label-primary);
-  background: var(--dsw-alias-bg-layer-1);
-  font: 14px/22px system-ui, sans-serif;
 }
 .directoryInput::placeholder { color: var(--dsw-alias-label-caption); }
 .directoryInput:disabled { cursor: default; opacity: .46; }
@@ -419,13 +397,6 @@
 }
 /* 卡片标题行右侧状态徽章槽位（胶囊外观由 StatusBadge 提供）。 */
 .presetHeadBadge { flex: none; margin-left: auto; }
-.presetCardFooter .pillButton {
-  min-height: 28px;
-  padding: 0 10px;
-  border-radius: 14px;
-  font-size: 12px;
-  line-height: 18px;
-}
 .presetIconButton {
   position: relative;
   appearance: none;
@@ -449,7 +420,6 @@
   outline-offset: 2px;
 }
 .dirCardActions { display: flex; flex: 0 0 auto; align-items: center; gap: 6px; flex-wrap: wrap; }
-.dirCardActions .pillButton { min-height: 28px; padding: 0 10px; font: 12px/18px system-ui, sans-serif; }
 
 .skillCardBody {
   display: flex;
@@ -626,7 +596,6 @@
 .chevronOpen { transform: rotate(180deg); }
 
 .configActions { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-left: auto; }
-.configActions .pillButton { min-height: 28px; padding: 0 10px; font: 12px/18px system-ui, sans-serif; border-radius: 14px; corner-shape: round; }
 
 .configForm {
   display: flex;
@@ -662,38 +631,33 @@
   font: 500 13px/20px system-ui, sans-serif;
   overflow-wrap: anywhere;
 }
-.moduleEmbeddedBody .configInput { min-height: 28px; padding: 4px 8px; font: 12px/18px system-ui, sans-serif; }
-.moduleEmbeddedBody .sessionModelRow > .menuSelectOwner { flex: 0 1 240px; }
-.moduleEmbeddedBody .sessionModelRow > .menuSelectOwner:first-child { flex-basis: 320px; }
-.moduleEmbeddedBody .sessionModelRow > input { flex: 0 1 96px; }
 .moduleEmbeddedBody .switchGridField { width: min(100%, 240px); }
-.moduleEmbeddedBody .variableRow .configInput { flex: 0 1 240px; max-width: 100%; }
 .configField { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
 .configFieldLabel { font: 500 12px/18px system-ui, sans-serif; color: var(--dsw-alias-label-primary); }
 .configFieldHint { margin: 0; font: 12px/18px system-ui, sans-serif; color: var(--dsw-alias-label-secondary); overflow-wrap: anywhere; }
 .configFieldControlAnchor { min-width: 0; }
 .configFieldStack { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
 .configFieldStack > textarea { margin-top: 2px; }
-.configInput {
-  width: min(100%, 15rem);
+.configInput,
+.directoryInput,
+.listFilter {
   min-width: 0;
-  max-width: min(100%, 15rem);
+  max-width: 100%;
   box-sizing: border-box;
   border: 0.5px solid var(--dsw-alias-label-tertiary);
   background: var(--dsw-alias-bg-layer-1);
+  height: 32px;
   min-height: 32px;
   font: 14px/22px system-ui, sans-serif;
   color: var(--dsw-alias-label-primary);
-  border-radius: 8px;
+  border-radius: var(--dsw-radius-md, 12px);
   padding: 4px 8px;
 }
+.configInput { width: min(100%, 15rem); max-width: min(100%, 15rem); }
+.inputCompact { height: 28px; min-height: 28px; border-radius: var(--dsw-radius-sm, 8px); font: 12px/18px system-ui, sans-serif; }
+.contentInput { field-sizing: content; width: auto; min-width: calc(6ch + 18px); align-self: flex-start; }
 .configInput:disabled { color: var(--dsw-alias-label-tertiary); cursor: default; }
-.moduleCard .configInput,
-.toolCard .configInput,
-.configForm .configInput { min-height: 28px; padding: 4px 8px; font: 12px/18px system-ui, sans-serif; }
-.configNumberInput { width: 12ch; max-width: 100%; }
-.settingRowStack > .menuSelect,
-.settingRowStack > .menuSelectOwner { width: min(100%, 280px); }
+.configNumberInput { width: 96px; max-width: 100%; font-variant-numeric: tabular-nums; }
 .configTextarea {
   width: 100%;
   min-width: 0;
@@ -759,21 +723,9 @@
 }
 .listFilter {
   width: 100%;
-  min-width: min(100%, 12rem);
-  max-width: 100%;
   flex: 1 1 200px;
-  box-sizing: border-box;
-  min-height: 32px;
-  border: 0.5px solid var(--dsw-alias-label-tertiary);
-  border-radius: 8px;
-  padding: 4px 8px;
-  color: var(--dsw-alias-label-primary);
-  background: var(--dsw-alias-bg-layer-1);
-  font: 14px/22px system-ui, sans-serif;
 }
 .listFilter::placeholder { color: var(--dsw-alias-label-caption); }
-.listFilterRow .menuSelect.listFilter,
-.listFilterRow .menuSelectOwner.listFilter { flex: 0 1 auto; width: auto; max-width: 100%; }
 
 /* 紧凑触发器留在卡片内，菜单由插件自己的 body portal 渲染。 */
 .menuSelect,
@@ -782,55 +734,42 @@
   min-width: 0;
   max-width: 100%;
 }
-.menuSelectOwner { width: min(100%, 18rem); }
-.menuSelectOwner > .menuSelect { width: 100%; }
-.configFieldControlAnchor > .menuSelectOwner { width: 100%; }
-.listFilterRow > .menuSelectOwner { flex: 0 1 auto; }
+.menuSelectOwner { width: max-content; max-width: min(100%, 18rem); flex: 0 1 auto; align-self: flex-start; }
+.menuSelectOwner > .menuSelect { width: 100%; min-width: 0; max-width: 100%; flex: 0 1 auto; }
 
 .menuSelectCompact { min-height: 28px; }
 .menuSelectStandard { min-height: 36px; }
 
-.menuSelect.configInput,
-.menuSelect.directoryInput,
-.menuSelect.listFilter,
-.menuSelectOwner.configInput,
-.menuSelectOwner.directoryInput,
-.menuSelectOwner.listFilter {
-  border: 0;
-  border-radius: 0;
-  padding: 0;
-  background: transparent;
-}
-
 .menuSelectTrigger {
+  box-sizing: border-box;
   display: inline-flex;
   width: 100%;
   min-width: 0;
   max-width: 100%;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-start;
   border: 0.5px solid var(--dsw-alias-label-tertiary);
   background: transparent;
   color: var(--dsw-alias-label-primary);
   cursor: pointer;
   font: inherit;
+  border-radius: 999px;
+  corner-shape: round;
 }
 
 .menuSelectTriggerCompact {
+  height: 28px;
   min-height: 28px;
   gap: 8px;
   padding: 4px 10px;
-  border-radius: 14px;
-  corner-shape: round;
   font: 12px/18px system-ui, sans-serif;
 }
 
 .menuSelectTriggerStandard {
+  height: 36px;
   min-height: 36px;
   gap: 12px;
   padding: 6px 14px;
-  border-radius: 18px;
-  corner-shape: round;
   font: 14px/22px system-ui, sans-serif;
 }
 
@@ -857,13 +796,6 @@
   gap: 6px;
   flex-wrap: wrap;
   margin-left: auto;
-}
-.batchControls .pillButton {
-  min-height: 28px;
-  padding: 0 10px;
-  border-radius: 14px;
-  corner-shape: round;
-  font: 12px/18px system-ui, sans-serif;
 }
 
 /* 加载骨架保留布局占位，不使用循环装饰动画。 */
@@ -927,7 +859,7 @@
 
 /* 模板变量键值对行：两输入 + 删除按钮水平排列。 */
 .variableRow { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.variableRow .configInput { min-width: 0; flex: 1 1 100px; }
+.variableRow .configInput { flex: 0 1 auto; }
 .variableRow .pillButton { flex: 0 0 auto; }
 
 /* 模板选择弹窗按层分组。 */
@@ -967,15 +899,10 @@
 
 @media (pointer: coarse) {
   .configInput,
-  .moduleCard .configInput,
-  .toolCard .configInput,
-  .configForm .configInput { min-width: 44px; min-height: 44px; }
+  .directoryInput,
+  .listFilter { min-width: 44px; height: 44px; min-height: 44px; }
   .pillButton,
   .primaryPill,
-  .configActions .pillButton,
-  .batchControls .pillButton,
-  .presetCardFooter .pillButton,
-  .dirCardActions .pillButton,
   .presetIconButton,
   .tagChipRemove,
   .dragHandle,
@@ -983,6 +910,7 @@
   .configEnable,
   .skillSwitch,
   .menuSelectTrigger { min-width: 44px; min-height: 44px; }
+  .iconButton { width: 44px; }
   .dragHandle { width: 44px; height: 44px; }
   .configHeaderActions { flex-wrap: wrap; }
 }

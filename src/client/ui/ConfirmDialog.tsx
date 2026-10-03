@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode, type RefObject } from 'react'
 import { DialogSurface } from './DialogSurface.tsx'
+import { Button } from './Button.tsx'
 import styles from './controls.module.css'
 
 /** 危险操作确认：取消先聚焦；请求中拒绝重复提交，失败保留当前确认面。
@@ -41,8 +42,8 @@ export function ConfirmDialog(props: {
     initialFocusRef={cancelRef} returnFocusRef={props.returnFocusRef} closeLabel={props.cancelLabel} onClose={cancel}>
     {error !== undefined && <p className={styles.confirmError} role="alert">{error}</p>}
     <div className={styles.confirmActions} aria-busy={busy}>
-      <button ref={cancelRef} type="button" className={styles.pillButton} aria-disabled={busy} onClick={cancel}>{props.cancelLabel}</button>
-      <button type="button" className={styles.pillButton} data-danger disabled={busy} onClick={() => { void confirm() }}>{props.confirmLabel}</button>
+      <Button ref={cancelRef} shape="pill" variant="outline" size="md" aria-disabled={busy} onClick={cancel}>{props.cancelLabel}</Button>
+      <Button shape="pill" variant="outline" size="md" data-danger disabled={busy} onClick={() => { void confirm() }}>{props.confirmLabel}</Button>
     </div>
   </DialogSurface>
 }

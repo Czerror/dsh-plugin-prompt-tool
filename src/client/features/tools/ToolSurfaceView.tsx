@@ -1,4 +1,5 @@
 import { useEffect, useId, useState, type ReactNode } from 'react'
+import { Button } from '../../ui/Button.tsx'
 import { IconChevronDownOutlineRegular } from '../../ui/icons.tsx'
 import { StatusBadge } from '../../ui/StatusBadge.tsx'
 import type { PromptToolTranslate } from '../../locales.ts'
@@ -83,7 +84,7 @@ function ToolSurfaceContent(props: ToolSurfaceProps): ReactNode {
       {sourceId.length === 0 ? <p className={css.toolSurfaceHint}>{sessionId !== undefined ? t('tools.surface.noSession') : t('tools.surface.noPreset')}</p> : <>
         <div className={css.toolSurfaceControls}>
           <p className={css.toolSurfaceHint}>{t('tools.surface.origin')}<code>{sourceId}</code></p>
-          <button type="button" className={css.toolRefresh} disabled={loading} onClick={() => { setResult(null); setRevision((value) => value + 1) }}>{t('tools.surface.refresh')}</button>
+          <Button shape="pill" size="sm" variant="outline" type="button" disabled={loading} onClick={() => { setResult(null); setRevision((value) => value + 1) }}>{t('tools.surface.refresh')}</Button>
         </div>
         {loading && <p className={css.toolSurfaceHint} role="status">{t('tools.surface.loading')}</p>}
         {result !== null && (result.ok

@@ -6,7 +6,9 @@
  *  既有子代理不变，策略只影响后续新实例。 */
 import { useCallback, useEffect, useId, useMemo, useRef, useState, type FocusEvent, type ReactNode } from 'react'
 import clsx from 'clsx'
+import { Button } from '../../ui/Button.tsx'
 import { Switch } from '../../ui/Switch.tsx'
+import { TextInput } from '../../ui/TextInput.tsx'
 import type { FieldDraft, PolicyEditorDraft, WorkspaceDrafts } from '../../data/workspace-drafts.ts'
 import { bridgeCall } from '../../data/bridge-client.ts'
 import { deepEqual } from '../../data/dirty-state.ts'
@@ -34,7 +36,7 @@ function PolicyNumberInput(props: { value: number; label: string; draftKey: stri
     setDraft((current) => current.error || current.text !== current.source ? current : { source: String(props.value), text: String(props.value), error: '' })
   }, [props.value])
   return <span className={styles.configFieldStack}>
-    <input className={styles.configInput} inputMode="numeric" aria-label={props.label} value={draft.text}
+    <TextInput inputMode="numeric" aria-label={props.label} value={draft.text}
       aria-invalid={!!draft.error} aria-describedby={draft.error ? errorId : undefined}
       onChange={(event) => update({ ...draft, text: event.target.value, error: '' })}
       onBlur={() => {
@@ -263,7 +265,7 @@ export function SubagentToolPolicyCard(props: {
       {loaded && loadError.length > 0 && (
         <p className={styles.noticeError} role="alert">
           {t('policy.loadFailed')}
-          <button type="button" className={styles.pillButton} onClick={() => { setLoaded(false); load() }}>{t('policy.retry')}</button>
+          <Button shape="pill" size="md" variant="outline" type="button" onClick={() => { setLoaded(false); load() }}>{t('policy.retry')}</Button>
         </p>
       )}
       {loaded && loadError.length === 0 && locked && (
@@ -278,7 +280,7 @@ export function SubagentToolPolicyCard(props: {
           <div className={styles.settingRowStack}>
             <div className={styles.sessionModelRow}>
               {inlineField(t('policy.defaultProfile.label'), t('policy.defaultProfile.hint'), (
-                  <MenuSelect className={styles.configInput} compact ariaLabel={t('policy.defaultProfile.label')} placeholder={t('policy.menu.empty')} value={policy.defaultProfile ?? ''}
+                  <MenuSelect compact ariaLabel={t('policy.defaultProfile.label')} placeholder={t('policy.menu.empty')} value={policy.defaultProfile ?? ''}
                   options={profileIds.map((id) => ({ value: id, label: id }))}
                   onChange={(value) => patch({ ...policy, defaultProfile: value })} />
               ))}
@@ -298,20 +300,20 @@ export function SubagentToolPolicyCard(props: {
             <div key={`${profile.id}-${index}`} className={styles.policyGroup}>
               <div className={styles.sessionModelRow}>
                 {inlineField('id', t('policy.profile.id.hint'), (
-                  <input className={styles.configInput} aria-label="profile id" value={profile.id} placeholder="id" spellCheck={false}
+                  <TextInput aria-label="profile id" value={profile.id} placeholder="id" spellCheck={false}
                     onChange={(event) => patch({ ...policy, profiles: profiles.map((item, at) => at === index ? { ...item, id: event.target.value } : item) })} />
                 ))}
                 {inlineField(t('policy.profile.name'), t('policy.profile.name.hint'), (
-                  <input className={styles.configInput} aria-label="profile name" value={profile.name ?? ''} placeholder={t('policy.profile.namePlaceholder')} spellCheck={false}
+                  <TextInput aria-label="profile name" value={profile.name ?? ''} placeholder={t('policy.profile.namePlaceholder')} spellCheck={false}
                     onChange={(event) => patch({ ...policy, profiles: profiles.map((item, at) => at === index ? { ...item, name: event.target.value } : item) })} />
                 ))}
                 {policyChip(t('policy.profile.modelSelectable'), t('policy.profile.modelSelectable.hint'), asBool(profile.modelSelectable), (next) => patch({ ...policy, profiles: profiles.map((item, at) => at === index ? { ...item, modelSelectable: next } : item) }))}
                 <span className={styles.configActions}>
-                  <HintTooltip label={t('policy.moveUp')}><button type="button" className={styles.pillButton} aria-label={t('policy.moveUp')} disabled={index === 0} onClick={() => moveProfile(index, -1)}>↑</button></HintTooltip>
-                  <HintTooltip label={t('policy.moveDown')}><button type="button" className={styles.pillButton} aria-label={t('policy.moveDown')} disabled={index === profiles.length - 1} onClick={() => moveProfile(index, 1)}>↓</button></HintTooltip>
-                  <HintTooltip label={t('policy.duplicate')}><button type="button" className={styles.pillButton} aria-label={t('policy.duplicate')} onClick={() => patch({ ...policy, profiles: [...profiles, { ...structuredClone(profile), id: `${profile.id}-copy`, name: t('policy.profile.copySuffix', { name: profile.name ?? profile.id }) }] })}>⧉</button></HintTooltip>
-                  <HintTooltip label={t('policy.remove')}><button type="button" className={styles.pillButton} data-danger aria-label={t('policy.profile.removeAria', { id: profile.id || index })}
-                    onClick={() => removeProfile(profile.id)}>×</button></HintTooltip>
+                  <HintTooltip label={t('policy.moveUp')}><Button shape="pill" size="sm" variant="outline" icon type="button" aria-label={t('policy.moveUp')} disabled={index === 0} onClick={() => moveProfile(index, -1)}>↑</Button></HintTooltip>
+                  <HintTooltip label={t('policy.moveDown')}><Button shape="pill" size="sm" variant="outline" icon type="button" aria-label={t('policy.moveDown')} disabled={index === profiles.length - 1} onClick={() => moveProfile(index, 1)}>↓</Button></HintTooltip>
+                  <HintTooltip label={t('policy.duplicate')}><Button shape="pill" size="sm" variant="outline" icon type="button" aria-label={t('policy.duplicate')} onClick={() => patch({ ...policy, profiles: [...profiles, { ...structuredClone(profile), id: `${profile.id}-copy`, name: t('policy.profile.copySuffix', { name: profile.name ?? profile.id }) }] })}>⧉</Button></HintTooltip>
+                  <HintTooltip label={t('policy.remove')}><Button shape="pill" size="sm" variant="outline" icon type="button" data-danger aria-label={t('policy.profile.removeAria', { id: profile.id || index })}
+                    onClick={() => removeProfile(profile.id)}>×</Button></HintTooltip>
                 </span>
               </div>
               <TagInput id={`pt-sp-allow-${index}`} label="allow" hint="" value={asList(profile.allow).join(', ')} placeholder={ceilingAllow.join(', ') || t('policy.tagPlaceholder')}
@@ -323,7 +325,7 @@ export function SubagentToolPolicyCard(props: {
             </div>
           ))}
           <span className={styles.configActions}>
-            <button type="button" className={styles.pillButton} onClick={() => patch({ ...policy, profiles: [...profiles, { id: `profile-${profiles.length + 1}`, name: '', allow: [], deny: [], modelSelectable: true }] })}>{t('policy.addProfile')}</button>
+            <Button shape="pill" size="sm" variant="outline" type="button" onClick={() => patch({ ...policy, profiles: [...profiles, { id: `profile-${profiles.length + 1}`, name: '', allow: [], deny: [], modelSelectable: true }] })}>{t('policy.addProfile')}</Button>
           </span>
           {/* 角色卡绑定 */}
           <p className={styles.configFieldHint}>{t('policy.bindings.hint')}</p>
@@ -331,7 +333,7 @@ export function SubagentToolPolicyCard(props: {
             <div key={`${binding.characterId}-${index}`} className={styles.policyGroup}>
               <div className={styles.sessionModelRow}>
                 {inlineField(t('policy.binding.character'), t('policy.binding.character.hint'), (
-                  <MenuSelect className={styles.configInput} compact ariaLabel={t('policy.binding.characterAria')} placeholder={t('policy.menu.empty')} value={binding.characterId}
+                  <MenuSelect compact ariaLabel={t('policy.binding.characterAria')} placeholder={t('policy.menu.empty')} value={binding.characterId}
                     options={[
                       { value: '', label: t('policy.binding.empty') },
                       ...(!characters.some((item) => item.id === binding.characterId) && binding.characterId.length > 0
@@ -342,19 +344,19 @@ export function SubagentToolPolicyCard(props: {
                     onChange={(value) => patch({ ...policy, characterBindings: (policy.characterBindings ?? []).map((item, at) => at === index ? { ...item, characterId: value } : item) })} />
                 ), true)}
                 {inlineField(t('policy.binding.profile'), t('policy.binding.profile.hint'), (
-                  <MenuSelect className={styles.configInput} compact ariaLabel={t('policy.binding.profileAria')} placeholder={t('policy.menu.empty')} value={binding.profile}
+                  <MenuSelect compact ariaLabel={t('policy.binding.profileAria')} placeholder={t('policy.menu.empty')} value={binding.profile}
                     options={profileIds.map((id) => ({ value: id, label: id }))}
                     onChange={(value) => patch({ ...policy, characterBindings: (policy.characterBindings ?? []).map((item, at) => at === index ? { ...item, profile: value } : item) })} />
                 ))}
                 {policyChip(t('policy.profile.modelSelectable'), t('policy.binding.modelSelectable.hint'), asBool(binding.modelSelectable), (next) => patch({ ...policy, characterBindings: (policy.characterBindings ?? []).map((item, at) => at === index ? { ...item, modelSelectable: next } : item) }), t('policy.binding.modelSelectableAria'))}
-                <HintTooltip label={t('policy.remove')}><button type="button" className={styles.pillButton} data-danger aria-label={t('policy.binding.removeAria')}
-                  onClick={() => patch({ ...policy, characterBindings: (policy.characterBindings ?? []).filter((_, at) => at !== index) })}>×</button></HintTooltip>
+                <HintTooltip label={t('policy.remove')}><Button shape="pill" size="sm" variant="outline" icon type="button" data-danger aria-label={t('policy.binding.removeAria')}
+                  onClick={() => patch({ ...policy, characterBindings: (policy.characterBindings ?? []).filter((_, at) => at !== index) })}>×</Button></HintTooltip>
               </div>
             </div>
           ))}
           <span className={styles.configActions}>
-            <button type="button" className={styles.pillButton}
-              onClick={() => patch({ ...policy, characterBindings: [...(policy.characterBindings ?? []), { characterId: '', profile: policy.defaultProfile ?? '', modelSelectable: true }] })}>{t('policy.addBinding')}</button>
+            <Button shape="pill" size="sm" variant="outline" type="button"
+              onClick={() => patch({ ...policy, characterBindings: [...(policy.characterBindings ?? []), { characterId: '', profile: policy.defaultProfile ?? '', modelSelectable: true }] })}>{t('policy.addBinding')}</Button>
           </span>
           {/* 任务规则 */}
           <p className={styles.configFieldHint}>{t('policy.rules.hint')}</p>
@@ -362,7 +364,7 @@ export function SubagentToolPolicyCard(props: {
             <div key={`${rule.id}-${index}`} className={styles.policyGroup}>
               <div className={styles.sessionModelRow}>
                 {inlineField('id', t('policy.rule.id.hint'), (
-                  <input className={styles.configInput} aria-label={t('policy.rule.idAria')} value={rule.id} placeholder="id" spellCheck={false}
+                  <TextInput aria-label={t('policy.rule.idAria')} value={rule.id} placeholder="id" spellCheck={false}
                     onChange={(event) => {
                       const oldKey = `${props.presetId ?? ''}:policy:rule:${rule.id}:order`
                       const retained = props.drafts?.fields.get(oldKey)
@@ -374,11 +376,11 @@ export function SubagentToolPolicyCard(props: {
                     }} />
                 ))}
                 {inlineField(t('policy.rule.name'), t('policy.rule.name.hint'), (
-                  <input className={styles.configInput} aria-label={t('policy.rule.nameAria')} value={rule.name ?? ''} placeholder={t('policy.rule.name')} spellCheck={false}
+                  <TextInput aria-label={t('policy.rule.nameAria')} value={rule.name ?? ''} placeholder={t('policy.rule.name')} spellCheck={false}
                     onChange={(event) => patch({ ...policy, taskRules: (policy.taskRules ?? []).map((item, at) => at === index ? { ...item, name: event.target.value } : item) })} />
                 ))}
                 {inlineField(t('policy.rule.pattern'), t('policy.rule.pattern.hint'), (
-                  <input className={styles.configInput} aria-label={t('policy.rule.patternAria')} value={rule.pattern} placeholder={t('policy.rule.patternPlaceholder')} spellCheck={false}
+                  <TextInput aria-label={t('policy.rule.patternAria')} value={rule.pattern} placeholder={t('policy.rule.patternPlaceholder')} spellCheck={false}
                     onChange={(event) => patch({ ...policy, taskRules: (policy.taskRules ?? []).map((item, at) => at === index ? { ...item, pattern: event.target.value } : item) })} />
                 ))}
                 {inlineField('order', t('policy.rule.order.hint'), (
@@ -387,23 +389,23 @@ export function SubagentToolPolicyCard(props: {
                     onChange={(value) => patch({ ...policy, taskRules: (policy.taskRules ?? []).map((item, at) => at === index ? { ...item, order: value } : item) })} />
                 ))}
                 {inlineField(t('policy.rule.profile'), t('policy.rule.profile.hint'), (
-                  <MenuSelect className={styles.configInput} compact ariaLabel={t('policy.rule.profileAria')} placeholder={t('policy.menu.empty')} value={rule.profile}
+                  <MenuSelect compact ariaLabel={t('policy.rule.profileAria')} placeholder={t('policy.menu.empty')} value={rule.profile}
                     options={profileIds.map((id) => ({ value: id, label: id }))}
                     onChange={(value) => patch({ ...policy, taskRules: (policy.taskRules ?? []).map((item, at) => at === index ? { ...item, profile: value } : item) })} />
                 ))}
                 {policyChip(t('policy.profile.modelSelectable'), t('policy.rule.modelSelectable.hint'), asBool(rule.modelSelectable), (next) => patch({ ...policy, taskRules: (policy.taskRules ?? []).map((item, at) => at === index ? { ...item, modelSelectable: next } : item) }), t('policy.rule.modelSelectableAria'))}
                 {rule.pattern.length > 0 && (() => { try { new RegExp(rule.pattern); return null } catch { return <small className={styles.noticeError}>{t('policy.rule.invalidPattern')}</small> } })()}
-                <HintTooltip label={t('policy.remove')}><button type="button" className={styles.pillButton} data-danger aria-label={t('policy.rule.removeAria')}
+                <HintTooltip label={t('policy.remove')}><Button shape="pill" size="sm" variant="outline" icon type="button" data-danger aria-label={t('policy.rule.removeAria')}
                   onClick={() => {
                     props.drafts?.fields.delete(`${props.presetId ?? ''}:policy:rule:${rule.id}:order`)
                     patch({ ...policy, taskRules: (policy.taskRules ?? []).filter((_, at) => at !== index) })
-                  }}>×</button></HintTooltip>
+                  }}>×</Button></HintTooltip>
               </div>
             </div>
           ))}
           <span className={styles.configActions}>
-            <button type="button" className={styles.pillButton}
-              onClick={() => patch({ ...policy, taskRules: [...(policy.taskRules ?? []), { id: `rule-${(policy.taskRules ?? []).length + 1}`, name: '', pattern: '', profile: policy.defaultProfile ?? '', order: 100, modelSelectable: true }] })}>{t('policy.addRule')}</button>
+            <Button shape="pill" size="sm" variant="outline" type="button"
+              onClick={() => patch({ ...policy, taskRules: [...(policy.taskRules ?? []), { id: `rule-${(policy.taskRules ?? []).length + 1}`, name: '', pattern: '', profile: policy.defaultProfile ?? '', order: 100, modelSelectable: true }] })}>{t('policy.addRule')}</Button>
           </span>
           {/* 模型扩权 */}
           <div className={styles.settingRowStack}>
@@ -425,29 +427,29 @@ export function SubagentToolPolicyCard(props: {
           <div className={styles.policyGroup}>
             <span className={styles.settingCopy}><strong>{t('policy.preview.title')}</strong><small>{t('policy.preview.hint')}</small></span>
             <div className={styles.sessionModelRow}>
-              <MenuSelect className={styles.configInput} compact ariaLabel={t('policy.preview.toolAria')} value={String(previewInput.tool ?? 'subagent')}
+              <MenuSelect compact ariaLabel={t('policy.preview.toolAria')} value={String(previewInput.tool ?? 'subagent')}
                 options={[
                   { value: 'subagent', label: 'subagent' },
                   { value: 'subagent_fork', label: 'subagent_fork' },
                 ]}
                 onChange={(value) => setPreviewInput({ ...previewInput, tool: value })} />
-              <input className={styles.configInput} aria-label={t('policy.preview.descriptionAria')} placeholder="description" value={String(previewInput.description ?? '')} spellCheck={false}
+              <TextInput aria-label={t('policy.preview.descriptionAria')} placeholder="description" value={String(previewInput.description ?? '')} spellCheck={false}
                 onChange={(event) => setPreviewInput({ ...previewInput, description: event.target.value })} />
-              <input className={styles.configInput} aria-label={t('policy.preview.promptAria')} placeholder="prompt" value={String(previewInput.prompt ?? '')} spellCheck={false}
+              <TextInput aria-label={t('policy.preview.promptAria')} placeholder="prompt" value={String(previewInput.prompt ?? '')} spellCheck={false}
                 onChange={(event) => setPreviewInput({ ...previewInput, prompt: event.target.value })} />
-              <MenuSelect className={styles.configInput} compact ariaLabel={t('policy.preview.profileAria')} value={String(previewInput.tool_profile ?? '')}
+              <MenuSelect compact ariaLabel={t('policy.preview.profileAria')} value={String(previewInput.tool_profile ?? '')}
                 options={[
                   { value: '', label: t('policy.preview.profileEmpty') },
                   ...profiles.filter((profile) => asBool(profile.modelSelectable)).map((profile) => ({ value: profile.id, label: profile.id })),
                 ]}
                 onChange={(value) => setPreviewInput({ ...previewInput, tool_profile: value })} />
-              <MenuSelect className={styles.configInput} compact ariaLabel={t('policy.preview.characterAria')} value={String(previewInput.character_id ?? '')}
+              <MenuSelect compact ariaLabel={t('policy.preview.characterAria')} value={String(previewInput.character_id ?? '')}
                 options={[
                   { value: '', label: t('policy.preview.characterEmpty') },
                   ...(policy.characterBindings ?? []).filter((item) => asBool(item.modelSelectable)).map((item) => ({ value: item.characterId, label: item.characterId })),
                 ]}
                 onChange={(value) => setPreviewInput({ ...previewInput, character_id: value })} />
-              <MenuSelect className={styles.configInput} compact ariaLabel={t('policy.preview.taskAria')} value={String(previewInput.task_type ?? '')}
+              <MenuSelect compact ariaLabel={t('policy.preview.taskAria')} value={String(previewInput.task_type ?? '')}
                 options={[
                   { value: '', label: t('policy.preview.taskEmpty') },
                   ...(policy.taskRules ?? []).filter((item) => asBool(item.modelSelectable)).map((item) => ({ value: item.id, label: item.id })),
@@ -459,7 +461,7 @@ export function SubagentToolPolicyCard(props: {
               <TagInput id="pt-sp-preview-restrict" label="restrict_tools" hint="" placeholder={t('policy.tagPlaceholder')} value={Array.isArray(previewInput.restrict_tools) ? previewInput.restrict_tools.join(', ') : ''}
                 onChange={(value) => setPreviewInput({ ...previewInput, restrict_tools: splitList(value) })}
                 onCommit={() => {}} />
-              <button type="button" className={styles.primaryPill} onClick={runPreview}>{t('policy.preview.run')}</button>
+              <Button shape="pill" size="sm" variant="primary" type="button" onClick={runPreview}>{t('policy.preview.run')}</Button>
             </div>
             {preview !== null && (
               <pre className={styles.configFieldHint} style={{ whiteSpace: 'pre-wrap' }}>{JSON.stringify(preview, null, 2)}</pre>

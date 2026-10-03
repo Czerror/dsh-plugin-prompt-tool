@@ -142,13 +142,6 @@
   flex: 0 0 auto;
   align-items: center;
 }
-.skillFilterActions button {
-  min-height: 28px;
-  padding: 0 12px;
-  border-radius: 14px;
-  corner-shape: round;
-  font: 12px/18px system-ui, sans-serif;
-}
 
 /* 卡片内部分隔（configForm 内的次级设置分区）。 */
 .cardDivider {

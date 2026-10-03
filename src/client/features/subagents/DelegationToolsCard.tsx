@@ -32,7 +32,6 @@ export function DelegationToolsModuleCard(props: {
             <span className={clsx(styles.switchGridItem, styles.switchGridField)}>
               <span className={styles.switchGridLabel}>{t('param.maxDepth')}</span>
               <MenuSelect
-                className={styles.configInput}
                 compact
                 ariaLabel={t('param.maxDepth')}
                 value={fields.maxDepth}

@@ -177,7 +177,7 @@ export function PresetPersonaCard(props: { t: PromptToolTranslate; presetId?: st
       <div className={styles.configActions}>
         <Button size="sm" disabled={busy || !dirty} onClick={save}>{saving ? t('persona.saving') : t('persona.save')}</Button>
         {declared && (
-          <button type="button" className={styles.pillButton} data-danger disabled={busy} onClick={() => setConfirmingRemove(true)}>{t('persona.remove')}</button>
+          <Button shape="pill" variant="outline" data-danger disabled={busy} onClick={() => setConfirmingRemove(true)}>{t('persona.remove')}</Button>
         )}
       </div>
     </EngineModuleCard>

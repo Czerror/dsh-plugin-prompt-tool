@@ -1,6 +1,7 @@
 /* 插件持有几何与交互；颜色只依赖公开语义别名。 */
 .button { box-sizing: border-box; display: inline-flex; align-items: center; justify-content: center; gap: 4px; border: 0; cursor: pointer; color: var(--dsw-alias-label-primary); background: transparent; }
-.sm { height: 28px; border-radius: 8px; padding: 0 10px; font: 12px/18px system-ui, sans-serif; }
+.sm { height: 28px; border-radius: var(--dsw-radius-sm, 8px); padding: 0 10px; font: 12px/18px system-ui, sans-serif; }
+.md { height: 36px; border-radius: var(--dsw-radius-md, 12px); padding: 0 14px; font: 14px/22px system-ui, sans-serif; }
 .button:disabled { cursor: not-allowed; opacity: .4; }
 .primary { background: var(--dsw-alias-button-primary-fill); color: var(--dsw-alias-label-primary-foreground); }
 .primary:hover:not(:disabled) { background: var(--dsw-alias-button-primary-hover); }
@@ -8,10 +9,13 @@
 .ghost:active:not(:disabled) { background: var(--dsw-alias-interactive-bg-active); }
 .outline { border: .5px solid var(--dsw-alias-border-l3); }
 .button:focus-visible, .switch:focus-visible { outline: 2px solid var(--dsw-alias-state-business-primary); outline-offset: 2px; }
-.switch { box-sizing: border-box; position: relative; display: inline-flex; align-items: center; flex: 0 0 auto; width: 36px; height: 20px; padding: 2px; border: 0; border-radius: 999px; corner-shape: round; background: var(--dsw-alias-border-l3); cursor: pointer; }
-.switch[aria-checked='true'] { background: var(--dsw-alias-brand-primary); }
+.switch { box-sizing: border-box; position: relative; display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto; width: 36px; height: 20px; padding: 0; border: 0; border-radius: 999px; corner-shape: round; background: transparent; cursor: pointer; }
+/* 点击区域可扩展，轨道始终遵循官方 36×20 / 滑块 16×16 几何。 */
+.switchTrack { box-sizing: border-box; display: block; flex: none; width: 36px; height: 20px; padding: 2px; border-radius: 999px; corner-shape: round; background: var(--dsw-alias-border-l3); }
+.switch[aria-checked='true'] .switchTrack { background: var(--dsw-alias-brand-primary); }
 .switch:disabled { cursor: default; opacity: .5; }
 .thumb { display: block; width: 16px; height: 16px; border-radius: 50%; corner-shape: round; background: var(--dsw-alias-switch-thumb); transition: transform 120ms ease; }
 .switch[aria-checked='true'] .thumb { background: var(--dsw-alias-label-primary-foreground); transform: translateX(16px); }
 @media (prefers-reduced-motion: reduce) { .thumb { transition: none; } }
-@media (forced-colors: active) { .switch { border: 1px solid ButtonText; } .switch[aria-checked='true'] { background: Highlight; } .thumb { background: ButtonText; } }
+@media (pointer: coarse) { .button, .switch { min-width: 44px; min-height: 44px; } }
+@media (forced-colors: active) { .switchTrack { outline: 1px solid ButtonText; } .switch[aria-checked='true'] .switchTrack { background: Highlight; } .thumb, .switch[aria-checked='true'] .thumb { background: ButtonText; } }

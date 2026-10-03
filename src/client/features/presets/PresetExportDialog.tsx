@@ -3,6 +3,7 @@ import type { PresetExportResult } from '../../../shared/asset-transfer.ts'
 import type { PromptToolTranslate } from '../../locales.ts'
 import { bridgeCall, errorMessage } from '../../data/bridge-client.ts'
 import { DialogSurface } from '../../ui/DialogSurface.tsx'
+import { Button } from '../../ui/Button.tsx'
 import shared from '../../ui/controls.module.css'
 import css from './presets.module.css'
 
@@ -68,9 +69,9 @@ export function PresetExportDialog(props: { preset: { id: string; name: string }
   const close = (): void => { if (!pending.current) props.onClose() }
   return <DialogSurface title={t('assetExport.title', { name: preset.name })} closeLabel={t('assetImport.close')} onClose={close}
     footer={<>
-      <button type="button" className={shared.pillButton} disabled={phase === 'downloading'} onClick={close}>{t(phase === 'done' ? 'assetImport.done' : 'assetImport.cancel')}</button>
-      {phase === 'error' ? <button type="button" className={shared.primaryPill} onClick={() => setRetry((value) => value + 1)}>{t('assetExport.preview')}</button>
-        : phase !== 'done' && <button type="button" className={shared.primaryPill} disabled={!canDownload} onClick={() => { void download() }}>{t(mode === 'zip' ? 'assetExport.downloadZip' : 'assetExport.downloadYaml')}</button>}
+      <Button shape="pill" variant="outline" size="md" disabled={phase === 'downloading'} onClick={close}>{t(phase === 'done' ? 'assetImport.done' : 'assetImport.cancel')}</Button>
+      {phase === 'error' ? <Button shape="pill" variant="primary" size="md" onClick={() => setRetry((value) => value + 1)}>{t('assetExport.preview')}</Button>
+        : phase !== 'done' && <Button shape="pill" variant="primary" size="md" disabled={!canDownload} onClick={() => { void download() }}>{t(mode === 'zip' ? 'assetExport.downloadZip' : 'assetExport.downloadYaml')}</Button>}
     </>}>
     <div className={css.exportContent}>
       <p><code>{preset.id}</code></p>

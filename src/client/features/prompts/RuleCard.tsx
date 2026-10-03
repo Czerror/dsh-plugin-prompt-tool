@@ -5,6 +5,7 @@ import { hasRuleFields, rulesDirty } from '../../data/rule-drafts.ts'
 import type { EngineMeta } from '../../prompt-tool-types.ts'
 import type { PromptToolTranslate } from '../../locales.ts'
 import { FormField } from '../../ui/FormField.tsx'
+import { TextInput } from '../../ui/TextInput.tsx'
 import { Switch } from '../../ui/Switch.tsx'
 import { Button } from '../../ui/Button.tsx'
 import { MenuSelect } from '../../ui/MenuSelect.tsx'
@@ -14,7 +15,6 @@ import { PromptConfigNavigation } from './PromptConfigNavigation.tsx'
 import { LAYER_LABEL_KEYS, translateLabel } from './prompt-config-policy.ts'
 import { TriggerJsonField, asTriggerRecord } from './RuleJsonField.tsx'
 import { RuleActionsFields, RuleConditionFields } from './RuleFields.tsx'
-import ui from '../../ui/controls.module.css'
 import css from './rules.module.css'
 
 export function RuleCard(props: {
@@ -36,20 +36,20 @@ export function RuleCard(props: {
     data-rule-id={rule.id} data-rule-key={entry.key}
     onFocus={() => { ownsFocus.current = true }} onBlur={() => { ownsFocus.current = false; requestAnimationFrame(() => { if (!ownsFocus.current) save() }) }}
     actions={<span className={css.headerActions} data-rule-header-actions>{props.headerActions}<span className={css.switchLine}>
-      <Switch className={css.switchTarget} label={t('rules.enable', { name: rule.name || rule.id })} checked={rule.enabled !== false} disabled={disabled || draft.busy !== undefined || hasRuleFields(draft)} onChange={enabled => {
+      <Switch label={t('rules.enable', { name: rule.name || rule.id })} checked={rule.enabled !== false} disabled={disabled || draft.busy !== undefined || hasRuleFields(draft)} onChange={enabled => {
         patch({ enabled }); void editor.submit(enabled ? { activateRuleId: rule.id } : {})
       }} />
       </span></span>}>
     <div className={css.body} data-rule-editor>
       <div className={css.fields}>
-        <FormField label={t('rules.rename')}><input className={ui.configInput + ' ' + css.control} value={rule.id} spellCheck={false} readOnly={disabled} onChange={event => patch({ id: event.target.value })} /></FormField>
-        <FormField label={t('rules.name')}><input className={ui.configInput + ' ' + css.control} value={rule.name ?? ''} readOnly={disabled} onChange={event => patch({ name: event.target.value || undefined })} /></FormField>
+        <FormField label={t('rules.rename')}><TextInput value={rule.id} spellCheck={false} readOnly={disabled} onChange={event => patch({ id: event.target.value })} /></FormField>
+        <FormField label={t('rules.name')}><TextInput value={rule.name ?? ''} readOnly={disabled} onChange={event => patch({ name: event.target.value || undefined })} /></FormField>
         <FormField label={t('rules.layer')}><MenuSelect compact className={css.control} ariaLabel={t('rules.layer')} value={rule.layer ?? ''} disabled={disabled}
           options={[{ value: '', label: t('rules.module') }, ...props.meta.layers.map(layer => ({ value: layer, label: translateLabel(t, LAYER_LABEL_KEYS, layer) }))]}
           onChange={layer => patch({ layer: layer === '' ? undefined : layer as RuleDefinition['layer'] })} /></FormField>
         <div className={css.exclusiveGroup}>
-          <FormField label={t('rules.group')} hint={t('rules.scopeHint')} hintMode="tooltip"><input className={ui.configInput + ' ' + css.control} readOnly={disabled} value={rule.group ?? ''} onChange={event => patch({ group: event.target.value || undefined })} /></FormField>
-          <div className={css.toggle}><span>{t('rules.exclusive')}</span><span className={css.switchLine}><Switch className={css.switchTarget} label={t('rules.exclusive')} checked={rule.exclusive === true} disabled={disabled} onChange={exclusive => patch({ exclusive })} /></span></div>
+          <FormField label={t('rules.group')} hint={t('rules.scopeHint')} hintMode="tooltip"><TextInput readOnly={disabled} value={rule.group ?? ''} onChange={event => patch({ group: event.target.value || undefined })} /></FormField>
+          <div className={css.toggle}><span>{t('rules.exclusive')}</span><span className={css.switchLine}><Switch label={t('rules.exclusive')} checked={rule.exclusive === true} disabled={disabled} onChange={exclusive => patch({ exclusive })} /></span></div>
         </div>
       </div>
       {unsupported && <p role="alert" className={css.error}>{t('rules.unsupported')}</p>}
@@ -67,9 +67,9 @@ export function RuleCard(props: {
       }} /></section>
       </PromptConfigNavigation>
       <div className={css.row}>
-        <Button variant="outline" className={css.button} disabled={disabled || draft.busy !== undefined || hasRuleFields(draft) || unsupported} onClick={save}>{t('rules.save')}</Button>
-        <Button variant="outline" className={css.button} disabled={disabled || draft.busy !== undefined || hasRuleFields(draft)} onClick={props.onDuplicate}>{t('rules.duplicate')}</Button>
-        <Button variant="outline" className={css.button} data-danger disabled={disabled || draft.busy !== undefined} onClick={() => setConfirming(true)}>{t('rules.delete')}</Button>
+        <Button variant="outline" shape="pill" disabled={disabled || draft.busy !== undefined || hasRuleFields(draft) || unsupported} onClick={save}>{t('rules.save')}</Button>
+        <Button variant="outline" shape="pill" disabled={disabled || draft.busy !== undefined || hasRuleFields(draft)} onClick={props.onDuplicate}>{t('rules.duplicate')}</Button>
+        <Button variant="outline" shape="pill" data-danger disabled={disabled || draft.busy !== undefined} onClick={() => setConfirming(true)}>{t('rules.delete')}</Button>
       </div>
     </div>
     {confirming && <ConfirmDialog title={t('rules.delete')} description={t('rules.deleteHint', { id: rule.id })} confirmLabel={t('rules.delete')} cancelLabel={t('triggers.cancel')}

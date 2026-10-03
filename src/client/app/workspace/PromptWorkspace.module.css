@@ -22,9 +22,6 @@
   outline: 2px solid var(--dsw-alias-state-business-primary);
   outline-offset: 2px;
 }
-.shell button { min-height: max(28px, 1lh); }
-.shell [role='switch'] { min-width: 28px; min-height: 28px; }
-.shell [role='switch'][aria-checked='false'] { background: var(--dsw-alias-label-tertiary); }
 .shell button:not([role='switch']) { overflow-wrap: anywhere; }
 
 .masthead {
@@ -52,22 +49,9 @@
 .statusCluster > span:last-child { overflow-wrap: anywhere; }
 
 .backButton {
-  display: inline-flex;
-  min-height: 28px;
   flex: none;
-  align-items: center;
-  justify-content: center;
   margin-left: auto;
-  padding: 4px 10px;
-  border: 0.5px solid var(--dsw-alias-border-l3);
-  border-radius: 14px;
-  corner-shape: round;
-  color: var(--dsw-alias-label-primary);
-  background: transparent;
-  cursor: pointer;
-  font: 12px/18px system-ui, sans-serif;
 }
-.backButton:hover { background: var(--dsw-alias-interactive-bg-hover); }
 
 .topNavigation { display: flex; min-width: 0; flex: 0 0 auto; padding: 0 16px; background: var(--dsw-alias-bg-base); }
 .nav { display: flex; min-width: 0; flex: 1; align-items: stretch; gap: 4px; overflow-x: auto; overscroll-behavior-inline: contain; border-bottom: 0.5px solid var(--dsw-alias-border-l2); padding: 4px 2px; }
@@ -89,18 +73,10 @@
 }
 
 @media (pointer: coarse) {
-  .shell button,
-  .shell [role='switch'],
-  .nav button,
-  .backButton { min-width: 44px; min-height: 44px; }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .shell [role='switch'] > * { transition: none; }
+  .nav button { min-width: 44px; min-height: 44px; }
 }
 
 @media (forced-colors: active) {
-  .shell [role='switch'] { outline: 1px solid ButtonText; }
   .nav button[data-active] { border-bottom-color: Highlight; }
   .shell :is(button, input, select, textarea, summary):focus-visible { outline-color: Highlight; }
 }

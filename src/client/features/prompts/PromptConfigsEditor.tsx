@@ -2,6 +2,7 @@ import { useId, useRef, useState, type FocusEvent, type ReactNode } from 'react'
 import clsx from 'clsx'
 import { IconChevronDownOutlineRegular } from '../../ui/icons.tsx'
 import { Switch } from '../../ui/Switch.tsx'
+import { Button } from '../../ui/Button.tsx'
 import type { PromptToolTranslate } from '../../locales.ts'
 import { HintTooltip } from '../../ui/HintTooltip.tsx'
 import { ConfirmDialog } from '../../ui/ConfirmDialog.tsx'
@@ -75,13 +76,13 @@ export function TemplateVariablesModuleCard(props: {
             }} />
           </HintTooltip>
           <span className={styles.configActions}>
-            {count === 0 && <button ref={addRef} type="button" disabled={props.disabled} className={styles.pillButton} onClick={() => {
+            {count === 0 && <Button ref={addRef} shape="pill" variant="outline" disabled={props.disabled} onClick={() => {
               if (props.disabled) return
               props.setTemplateVariables({ '': '' })
               if (!expanded) props.onToggleExpanded?.()
               requestAnimationFrame(() => cardRef.current?.querySelector<HTMLInputElement>('input')?.focus())
-            }}>{t('variables.add')}</button>}
-            {count > 0 && <button ref={deleteRef} type="button" disabled={props.disabled} className={styles.pillButton} data-danger onClick={() => setConfirmingDelete(true)}>{t('variables.delete')}</button>}
+            }}>{t('variables.add')}</Button>}
+            {count > 0 && <Button ref={deleteRef} shape="pill" variant="outline" disabled={props.disabled} data-danger onClick={() => setConfirmingDelete(true)}>{t('variables.delete')}</Button>}
           </span>
         </span>
       </header>

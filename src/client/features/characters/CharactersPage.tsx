@@ -6,6 +6,7 @@ import { memo, useEffect, useRef, useState, type ReactNode } from 'react'
 import { IconFolderOpenOutlineRegular, IconTrashOutlineRegular } from '../../ui/icons.tsx'
 import { bridgeCall } from '../../data/bridge-client.ts'
 import { ConfirmDialog } from '../../ui/ConfirmDialog.tsx'
+import { Button } from '../../ui/Button.tsx'
 import { HintTooltip } from '../../ui/HintTooltip.tsx'
 import { StatusBadge } from '../../ui/StatusBadge.tsx'
 import type { PromptToolStore } from '../../data/use-prompt-tool-store.ts'
@@ -101,7 +102,7 @@ export const CharactersPage = memo(function CharactersPage(props: { store: Promp
 
   return (
     <section className={ui.section} aria-label={t('characters.aria')}>
-      {loadError && <p className={ui.noticeError} role="alert">{loadError} <button type="button" className={ui.pillButton} onClick={() => void loadCharacters()}>{t('workspace.retry')}</button></p>}
+      {loadError && <p className={ui.noticeError} role="alert">{loadError} <Button shape="pill" variant="outline" size="md" onClick={() => void loadCharacters()}>{t('workspace.retry')}</Button></p>}
       {loading && <p role="status">{t('app.loading')}</p>}
       {characters.length > 0 && (
         <div className={ui.presetGrid}>
@@ -120,15 +121,15 @@ export const CharactersPage = memo(function CharactersPage(props: { store: Promp
                 </div>
                 <span className={ui.presetCardFooter}>
                   {card.imported ? (
-                    <button type="button" className={ui.pillButton} data-variant="secondary" disabled={busy === card.id}
+                    <Button shape="pill" variant="outline" data-variant="secondary" disabled={busy === card.id}
                       onClick={() => void removeCard(card.id)}>
                       {busy === card.id ? t('characters.removing') : t('characters.remove')}
-                    </button>
+                    </Button>
                   ) : (
-                    <button type="button" className={ui.primaryPill} disabled={busy === card.id}
+                    <Button shape="pill" variant="primary" disabled={busy === card.id}
                       onClick={() => void applyCard(card.id)}>
                       {busy === card.id ? t('characters.importing') : t('characters.apply')}
-                    </button>
+                    </Button>
                   )}
                   <HintTooltip label={t('characters.openDir.label')}>
                     <button type="button" className={ui.presetIconButton}

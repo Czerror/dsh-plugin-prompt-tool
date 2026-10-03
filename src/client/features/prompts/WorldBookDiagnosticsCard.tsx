@@ -6,6 +6,7 @@ import type { PromptToolStore } from '../../data/use-prompt-tool-store.ts'
 import type { PromptToolTranslate } from '../../locales.ts'
 import type { WorldBookDiagnosticRecord } from '../../../shared/bridge-contract.ts'
 import ui from '../../ui/controls.module.css'
+import { Button } from '../../ui/Button.tsx'
 
 export const WorldBookDiagnosticsCard = memo(function WorldBookDiagnosticsCard(props: {
   store: PromptToolStore
@@ -44,9 +45,9 @@ export const WorldBookDiagnosticsCard = memo(function WorldBookDiagnosticsCard(p
           <h2>{t('worldBookDiag.title')}</h2>
           <p>{t('worldBookDiag.hint')}</p>
         </div>
-        <button type="button" className={ui.pillButton} disabled={loading} onClick={() => void refresh()}>
+        <Button shape="pill" variant="outline" size="md" disabled={loading} onClick={() => void refresh()}>
           {t('worldBookDiag.refresh')}
-        </button>
+        </Button>
       </div>
       {error !== undefined && <p>{t('worldBookDiag.failed', { reason: error })}</p>}
       {error === undefined && records.length === 0 && <p>{t('worldBookDiag.empty')}</p>}

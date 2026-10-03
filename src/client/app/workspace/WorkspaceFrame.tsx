@@ -6,6 +6,7 @@ import { WorkspaceNavigation } from './WorkspaceNavigation.tsx'
 import { WORKSPACE_PAGES, type WorkspacePage } from './workspace-pages.ts'
 import { StatusBadge } from '../../ui/StatusBadge.tsx'
 import { StatusDot } from '../../ui/StatusDot.tsx'
+import { Button } from '../../ui/Button.tsx'
 import ui from '../../ui/controls.module.css'
 import css from './PromptWorkspace.module.css'
 
@@ -88,7 +89,7 @@ export function WorkspaceFrame(props: {
             ? t('app.loading')
             : t('app.statusSummary', { configs: rules.length, enabled: enabledCount })}</span>
         </div>
-        <button type="button" className={css.backButton} onClick={props.onClose}>{t('app.backToChat')}</button>
+        <Button shape="pill" variant="outline" className={css.backButton} onClick={props.onClose}>{t('app.backToChat')}</Button>
       </header>
 
       <WorkspaceNavigation page={props.page} onChange={(page) => {
@@ -114,7 +115,7 @@ export function WorkspaceFrame(props: {
                 <>
                   {loadFailed ? <div className={ui.actionFeedback}>
                     <p className={ui.noticeError} role="status">{store.notice}</p>
-                    <button type="button" className={ui.pillButton} onClick={() => void store.load()}>{t('workspace.retry')}</button>
+                    <Button shape="pill" variant="outline" size="md" onClick={() => void store.load()}>{t('workspace.retry')}</Button>
                   </div> : loadingInitial ? (
                     <div aria-busy="true" aria-label={t('app.loading')}>
                       <div className={props.page === 'modules' ? ui.presetGrid : ui.skeletonStack} aria-hidden="true">

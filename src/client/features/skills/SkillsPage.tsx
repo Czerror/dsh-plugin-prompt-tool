@@ -7,10 +7,13 @@ import type { PromptToolHostApi } from '../../data/host-api.ts'
 import type { PromptToolLocaleKey, PromptToolTranslate } from '../../locales.ts'
 import type { SkillPolicyChange } from '../../../shared/skills.ts'
 import { usePromptToolFields } from '../../data/use-prompt-tool-fields.ts'
+import { Button } from '../../ui/Button.tsx'
 import { CollapsibleCard } from '../../ui/CollapsibleCard.tsx'
 import { ConfirmDialog } from '../../ui/ConfirmDialog.tsx'
+import { FormField } from '../../ui/FormField.tsx'
 import { HintTooltip } from '../../ui/HintTooltip.tsx'
 import { MenuSelect } from '../../ui/MenuSelect.tsx'
+import { TextInput } from '../../ui/TextInput.tsx'
 import { SkillRow } from './SkillRow.tsx'
 import sharedCss from '../../ui/controls.module.css'
 import featureCss from './skills.module.css'
@@ -169,45 +172,42 @@ export const SkillsPage = memo(function SkillsPage(props: { store: PromptToolSto
             <span className={ui.dirCardMeta}>{t('skills.library.hint')}</span>
           </div>
           <div className={ui.dirCardActions}>
-            <button type="button" className={ui.pillButton} disabled={fields.skillsRoot.length === 0}
-              onClick={() => void store.openSkillsDir()}>{t('skills.library.open')}</button>
-            <button type="button" className={ui.pillButton} disabled={store.skillsBusy} onClick={() => void store.refreshSkills()}>{t('skills.dir.rescan')}</button>
+            <Button shape="pill" size="sm" variant="outline" type="button" disabled={fields.skillsRoot.length === 0}
+              onClick={() => void store.openSkillsDir()}>{t('skills.library.open')}</Button>
+            <Button shape="pill" size="sm" variant="outline" type="button" disabled={store.skillsBusy} onClick={() => void store.refreshSkills()}>{t('skills.dir.rescan')}</Button>
           </div>
         </div>
         <div className={ui.dirAddBar} data-skill-directory-actions="">
           <HintTooltip label={t('skills.import.pick.hint')}>
-            <button
+            <Button shape="pill" size="md" variant="primary"
               type="button"
-              className={ui.primaryPill}
               disabled={picking !== undefined || store.skillsBusy}
               onClick={() => void pickDirectory('import')}
             >
               {picking === 'import' && <span className={ui.spinner} aria-hidden="true" />}
               {t('skills.import.pick')}
-            </button>
+            </Button>
           </HintTooltip>
           <HintTooltip label={t('skills.folders.hint')}>
-            <button type="button" className={ui.pillButton} disabled={picking !== undefined || store.skillsBusy}
+            <Button shape="pill" size="md" variant="outline" type="button" disabled={picking !== undefined || store.skillsBusy}
               onClick={() => void pickDirectory('reference')}>
               {picking === 'reference' && <span className={ui.spinner} aria-hidden="true" />}
               {t('skills.folders.pick')}
-            </button>
+            </Button>
           </HintTooltip>
         </div>
         <p className={ui.readOnly}>{t('skills.library.footnote')}</p>
         <div className={ui.cardDivider} />
         <div className={ui.dirAddBar}>
-          <button type="button" className={ui.pillButton} aria-expanded={creating}
+          <Button shape="pill" size="md" variant="outline" type="button" aria-expanded={creating}
             onClick={() => setCreating((value) => !value)}>
             {creating ? t('skills.create.close') : t('skills.create.open')}
-          </button>
+          </Button>
         </div>
         {creating && (
           <div className={ui.skillCreateForm}>
-            <label className={ui.skillCreateField}>
-              <span>{t('skills.create.name')}</span>
-              <input
-                className={ui.configInput}
+            <FormField className={ui.skillCreateField} label={t('skills.create.name')}>
+              <TextInput
                 value={createDraft.name}
                 aria-label={t('skills.create.name')}
                 aria-invalid={createDraft.name.length > 0 && !SKILL_NAME_RE.test(createDraft.name.trim())}
@@ -215,21 +215,18 @@ export const SkillsPage = memo(function SkillsPage(props: { store: PromptToolSto
                 spellCheck={false}
                 onChange={(event) => setCreateDraft((draft) => ({ ...draft, name: event.target.value }))}
               />
-            </label>
-            <label className={ui.skillCreateField}>
-              <span>{t('skills.create.description')}</span>
-              <input
-                className={ui.configInput}
+            </FormField>
+            <FormField className={ui.skillCreateField} label={t('skills.create.description')}>
+              <TextInput
                 value={createDraft.description}
                 aria-label={t('skills.create.description')}
                 placeholder={t('skills.create.descriptionPlaceholder')}
                 onChange={(event) => setCreateDraft((draft) => ({ ...draft, description: event.target.value }))}
               />
-            </label>
-            <label className={ui.skillCreateField}>
-              <span>{t('skills.create.content')}</span>
+            </FormField>
+            <FormField className={ui.skillCreateField} label={t('skills.create.content')}>
               <textarea
-                className={ui.configInput}
+                className={ui.configTextarea}
                 rows={6}
                 value={createDraft.content}
                 aria-label={t('skills.create.content')}
@@ -237,15 +234,15 @@ export const SkillsPage = memo(function SkillsPage(props: { store: PromptToolSto
                 spellCheck={false}
                 onChange={(event) => setCreateDraft((draft) => ({ ...draft, content: event.target.value }))}
               />
-            </label>
+            </FormField>
             <div className={ui.dirCardActions}>
-              <button type="button" className={ui.primaryPill} disabled={store.skillsBusy} onClick={() => void submitCreate()}>
+              <Button shape="pill" size="sm" variant="primary" type="button" disabled={store.skillsBusy} onClick={() => void submitCreate()}>
                 {store.skillsBusy && <span className={ui.spinner} aria-hidden="true" />}
                 {t('skills.create.submit')}
-              </button>
-              <button type="button" className={ui.pillButton} onClick={() => { setCreating(false); setCreateDraft({ name: '', description: '', content: '' }) }}>
+              </Button>
+              <Button shape="pill" size="sm" variant="outline" type="button" onClick={() => { setCreating(false); setCreateDraft({ name: '', description: '', content: '' }) }}>
                 {t('skills.dir.cancel')}
-              </button>
+              </Button>
             </div>
             <p className={ui.configFieldHint}>{t('skills.create.hint')}</p>
           </div>
@@ -259,10 +256,10 @@ export const SkillsPage = memo(function SkillsPage(props: { store: PromptToolSto
                 <div key={path} className={ui.dirCard}>
                   <div className={ui.dirCardBody}><code className={ui.dirPath}>{path}</code></div>
                   <div className={ui.dirCardActions}>
-                    <button type="button" className={ui.pillButton} disabled={store.skillsBusy}
+                    <Button shape="pill" size="sm" variant="outline" type="button" disabled={store.skillsBusy}
                       onClick={() => void store.patchSkillFolders(fields.skillFolders.filter((item) => item !== path))}>
                       {t('skills.folders.remove')}
-                    </button>
+                    </Button>
                   </div>
                 </div>
               ))}
@@ -272,9 +269,8 @@ export const SkillsPage = memo(function SkillsPage(props: { store: PromptToolSto
 
       {fields.skillCatalog.length > 0 && (
         <div className={ui.listFilterRow}>
-          <input
+          <TextInput variant="listFilter"
             type="search"
-            className={ui.listFilter}
             value={skillFilter}
             aria-label={t('skills.filter.aria')}
             placeholder={t('skills.filter.placeholder')}
@@ -287,11 +283,10 @@ export const SkillsPage = memo(function SkillsPage(props: { store: PromptToolSto
             onChange={setSourceFilter}
             ariaLabel={t('skills.source.aria')}
             placeholder={t('skills.source.all')}
-            className={ui.listFilter}
             compact
           />
           <span className={ui.skillFilterActions}>
-            <button type="button" className={ui.pillButton} disabled={store.skillsBusy} onClick={() => void store.refreshSkills()}>{t('skills.refresh')}</button>
+            <Button shape="pill" size="sm" variant="outline" type="button" disabled={store.skillsBusy} onClick={() => void store.refreshSkills()}>{t('skills.refresh')}</Button>
           </span>
         </div>
       )}
@@ -302,13 +297,13 @@ export const SkillsPage = memo(function SkillsPage(props: { store: PromptToolSto
           <div>
             <h3>{t('skills.empty.title')}</h3>
             <p>{t('skills.empty.hint')}</p>
-            <button type="button" className={ui.pillButton} disabled={picking !== undefined || store.skillsBusy} onClick={() => void pickDirectory('import')}>{t('skills.import.pick')}</button>
+            <Button shape="pill" size="md" variant="outline" type="button" disabled={picking !== undefined || store.skillsBusy} onClick={() => void pickDirectory('import')}>{t('skills.import.pick')}</Button>
           </div>
         </div>
       ) : visible.length === 0 ? (
         <p className={ui.readOnly} role="status">
           {t('skills.noMatch')}
-          <button type="button" className={ui.pillButton} onClick={() => { setSkillFilter(''); setStatusTab('all'); setSourceFilter('') }}>{t('configs.clearFilters')}</button>
+          <Button shape="pill" size="md" variant="outline" type="button" onClick={() => { setSkillFilter(''); setStatusTab('all'); setSourceFilter('') }}>{t('configs.clearFilters')}</Button>
         </p>
       ) : (
         groups.map((group) => (

@@ -185,12 +185,12 @@ export function useCustomToolsEditor(props: {
       <p className={styles.configFieldHint}>{t('customTools.hint')}</p>
       {props.disabled && <p className={styles.configFieldHint} role="status">{t('customTools.readonly')}</p>}
       {loading && <p className={styles.configFieldHint} role="status">{t('customTools.loading')}</p>}
-      {loadError && <p role="alert">{loadError} <button type="button" className={styles.pillButton} onClick={() => setRevision((value) => value + 1)}>{t('customTools.retry')}</button></p>}
+      {loadError && <p role="alert">{loadError} <Button shape="pill" size="md" variant="outline" type="button" onClick={() => setRevision((value) => value + 1)}>{t('customTools.retry')}</Button></p>}
       <fieldset className={styles.customToolsFields} aria-label={t('customTools.fieldsAria')}>
         <div className={styles.configActions}>
-          <button type="button" className={styles.pillButton} disabled={disabled} onClick={() => createTool({ kind: 'blank', presetId: props.presetId })}>{t('main.newBlankTool')}</button>
-          {props.onChooseTemplate !== undefined && <button type="button" className={styles.pillButton} disabled={disabled}
-            onClick={(event) => { if (!disabled) props.onChooseTemplate?.(event.currentTarget) }}>{t('main.addToolTemplate')}</button>}
+          <Button shape="pill" size="sm" variant="outline" type="button" disabled={disabled} onClick={() => createTool({ kind: 'blank', presetId: props.presetId })}>{t('main.newBlankTool')}</Button>
+          {props.onChooseTemplate !== undefined && <Button shape="pill" size="sm" variant="outline" type="button" disabled={disabled}
+            onClick={(event) => { if (!disabled) props.onChooseTemplate?.(event.currentTarget) }}>{t('main.addToolTemplate')}</Button>}
           {(tools.length > 0 || hasPersistedTools) && (
             <Button type="button" variant="primary" size="sm" disabled={disabled || saving} onClick={save}>
               {saving ? t('customTools.saving') : t('customTools.save')}

@@ -1,13 +1,16 @@
 import { memo, useEffect, useId, useMemo, useReducer, useState, type ReactNode } from 'react'
 import clsx from 'clsx'
+import { Button } from '../../ui/Button.tsx'
 import { IconChevronDownOutlineRegular } from '../../ui/icons.tsx'
 import { Switch } from '../../ui/Switch.tsx'
+import { TextInput } from '../../ui/TextInput.tsx'
 import type { SkillCatalogEntry } from '../../data/prompt-tool-fields.ts'
 import type { SkillPolicyChange } from '../../../shared/skills.ts'
 import type { SkillEditorDraft } from '../../data/workspace-drafts.ts'
 import type { PromptToolStore } from '../../data/use-prompt-tool-store.ts'
 import { HintTooltip } from '../../ui/HintTooltip.tsx'
 import { ConfirmDialog } from '../../ui/ConfirmDialog.tsx'
+import { FormField } from '../../ui/FormField.tsx'
 import { StatusBadge } from '../../ui/StatusBadge.tsx'
 import type { PromptToolTranslate } from '../../locales.ts'
 import sharedCss from '../../ui/controls.module.css'
@@ -135,36 +138,34 @@ export const SkillRow = memo(function SkillRow(props: SkillRowProps): ReactNode 
             </span>
           </div>
           {editable && <>
-            <label className={ui.skillCreateField}>
-              <span>{t('skills.edit.description')}</span>
-              <input className={ui.configInput} data-skill-description-editor="" aria-label={t('skills.edit.description')}
+            <FormField className={ui.skillCreateField} label={t('skills.edit.description')}>
+              <TextInput data-skill-description-editor="" aria-label={t('skills.edit.description')}
                 value={editor.description} disabled={!editor.saved || editor.loading}
                 onChange={(event) => { editor.description = event.target.value; editor.refresh?.() }} />
-            </label>
-            <label className={ui.skillCreateField}>
-              <span>{t('skills.edit.content')}</span>
-              <textarea className={clsx(ui.configInput, ui.skillEditor)} data-skill-editor="" aria-label={t('skills.edit.content')}
+            </FormField>
+            <FormField className={ui.skillCreateField} label={t('skills.edit.content')}>
+              <textarea className={clsx(ui.configTextarea, ui.skillEditor)} data-skill-editor="" aria-label={t('skills.edit.content')}
                 spellCheck={false} rows={14} value={editor.text} disabled={!editor.saved || editor.loading}
                 onChange={(event) => { editor.text = event.target.value; editor.refresh?.() }} />
-            </label>
+            </FormField>
             <p className={ui.configFieldHint}>{t('skills.edit.hint')}</p>
             {editor.error && <p className={ui.skillIssue} role="alert">{editor.error}</p>}
           </>}
           <div className={clsx(ui.skillRowActions, ui.skillFooter)} data-skill-actions="">
             {editable && <>
-              <button type="button" className={ui.pillButton} data-skill-save="" disabled={!dirty || busy || editor.loading || editor.saving} onClick={() => { void save() }}>
+              <Button shape="pill" size="sm" variant="outline" type="button" data-skill-save="" disabled={!dirty || busy || editor.loading || editor.saving} onClick={() => { void save() }}>
                 {t(editor.saving ? 'skills.edit.saving' : 'skills.edit.save')}
-              </button>
-              <button type="button" className={ui.pillButton} data-skill-reload="" disabled={busy || editor.loading || editor.saving}
-                onClick={() => { if (dirty) setConfirmReload(true); else void load() }}>{t('skills.edit.reload')}</button>
+              </Button>
+              <Button shape="pill" size="sm" variant="outline" type="button" data-skill-reload="" disabled={busy || editor.loading || editor.saving}
+                onClick={() => { if (dirty) setConfirmReload(true); else void load() }}>{t('skills.edit.reload')}</Button>
             </>}
             {editable && <span className={ui.configFieldHint} role="status">{t(editor.loading ? 'skills.edit.loading' : dirty ? 'skills.edit.dirty' : editor.saved ? 'skills.edit.saved' : 'skills.edit.unloaded')}</span>}
             {skill.canDelete === true && skill.path !== undefined && (
               <HintTooltip label={t('skills.row.delete.hint')}>
-                <button type="button" className={clsx(ui.pillButton, ui.skillDelete)} data-danger data-skill-delete={skill.folder}
+                <Button shape="pill" size="sm" variant="outline" type="button" className={ui.skillDelete} data-danger data-skill-delete={skill.folder}
                   data-skill-path={skill.path} disabled={busy || editor.saving} onClick={() => props.onDelete(skill)}>
                   {t('skills.row.delete')}
-                </button>
+                </Button>
               </HintTooltip>
             )}
           </div>

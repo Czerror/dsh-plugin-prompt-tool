@@ -11,6 +11,6 @@ export function Switch({ checked, onChange, label, disabled, className }: {
 }) {
   return <button type="button" role="switch" aria-checked={checked} aria-label={label}
     disabled={disabled} className={clsx(css.switch, className)} onClick={() => onChange(!checked)}>
-    <span className={css.thumb} />
+    <span className={css.switchTrack} aria-hidden="true"><span className={css.thumb} /></span>
   </button>
 }

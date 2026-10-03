@@ -3,6 +3,7 @@ import clsx from 'clsx'
 import { Switch } from '../../ui/Switch.tsx'
 import type { FieldDraft } from '../../data/workspace-drafts.ts'
 import { FormField } from '../../ui/FormField.tsx'
+import { TextInput } from '../../ui/TextInput.tsx'
 import { HintTooltip } from '../../ui/HintTooltip.tsx'
 import type { PromptToolLocaleKey, PromptToolTranslate } from '../../locales.ts'
 import type { EngineMeta, PromptConfigDraft } from '../../prompt-tool-types.ts'
@@ -40,7 +41,6 @@ import sharedCss from '../../ui/controls.module.css'
 import featureCss from './prompts.module.css'
 
 const styles = { ...sharedCss, ...featureCss }
-const inputClass = clsx(styles.configInput, styles.fieldControl)
 /** identity 结构化编辑（替代 JSON）：field 下拉 + value 输入；value 留空 = 使用默认（等于配置 id）。 */
 function IdentityFields(props: { t: PromptToolTranslate; identity: { field: string; value: string } | undefined; disabled?: boolean; onPatch: (identity: { field: 'plugin'; value: string } | undefined) => void }): ReactNode {
   const t = props.t
@@ -51,7 +51,7 @@ function IdentityFields(props: { t: PromptToolTranslate; identity: { field: stri
       <OptionField t={t} className={styles.fieldSpan3} label={t('form.identity.scope.label')} hint={t('form.identity.scope.hint')}
         value={field} options={['plugin']} fallback="plugin" labelKeys={IDENTITY_FIELD_LABEL_KEYS} disabled={props.disabled} onChange={() => props.onPatch({ field: 'plugin', value })} />
       <FormField className={styles.fieldSpan9} label={t('form.identity.value.label')} hint={t('form.identity.value.hint')} hintMode="tooltip">
-        <input className={inputClass} value={value} spellCheck={false} readOnly={props.disabled}
+        <TextInput value={value} spellCheck={false} readOnly={props.disabled}
           onChange={(e) => props.onPatch(e.target.value.length > 0 ? { field: 'plugin', value: e.target.value } : undefined)} />
       </FormField>
     </>
@@ -133,10 +133,10 @@ export function PromptConfigForm(props: {
       {!locked && <section className={styles.configIdentity} aria-label={t('form.section.basic')}>
       <div className={styles.configGrid}>
         <FormField className={styles.fieldSpan4} label={t('form.id.label')} hint={t('form.id.hint')} hintMode="tooltip">
-          <input className={inputClass} value={config.id} spellCheck={false} readOnly={disabled} onChange={(e) => onPatch({ id: e.target.value })} />
+          <TextInput value={config.id} spellCheck={false} readOnly={disabled} onChange={(e) => onPatch({ id: e.target.value })} />
         </FormField>
         <FormField className={styles.fieldSpan4} label={t('form.name.label')} hint={t('form.name.hint')} hintMode="tooltip">
-          <input className={inputClass} value={config.name ?? ''} spellCheck={false} readOnly={disabled} onChange={(e) => onPatch({ name: e.target.value })} />
+          <TextInput value={config.name ?? ''} spellCheck={false} readOnly={disabled} onChange={(e) => onPatch({ name: e.target.value })} />
         </FormField>
         <OptionField t={t} className={styles.fieldSpan4} label={t('form.layer.label')} hint={t('form.layer.hint')} value={config.layer} options={meta.layers} fallback="pre-step" labelKeys={LAYER_LABEL_KEYS} disabled={disabled} onChange={(value) => onPatch(layerChangePatch(meta, config, value))} />
       </div>
@@ -175,7 +175,7 @@ export function PromptConfigForm(props: {
           quickOptions={officialOrderOptions} quickLabel={t('form.order.insert')}
           fieldDrafts={props.fieldDrafts} draftKey={`${props.draftScope}:order`} onChange={(value) => { if (typeof value === 'number') onPatch({ order: value }) }} />}
         <div className={clsx(styles.exclusiveFields, styles.fieldSpan6)}>
-          <FormField label={t('form.group.label')} hint={t('form.group.hint')} hintMode="tooltip"><input className={inputClass} value={config.group ?? ''} spellCheck={false} readOnly={locked || disabled} onChange={(e) => onPatch({ group: e.target.value })} /></FormField>
+          <FormField label={t('form.group.label')} hint={t('form.group.hint')} hintMode="tooltip"><TextInput value={config.group ?? ''} spellCheck={false} readOnly={locked || disabled} onChange={(e) => onPatch({ group: e.target.value })} /></FormField>
           <div className={styles.configToggleField}>
             <span className={styles.configFieldLabel}>{t('form.exclusive.label')}</span>
             <HintTooltip label={t('form.exclusive.hint')}>
@@ -232,10 +232,10 @@ export function PromptConfigForm(props: {
           {!locked && (
             <>
               {showMetadata && <FormField className={styles.fieldSpan3} label={t('form.summary.label')} hint={t('form.summary.hint')} hintMode="tooltip">
-                <input className={inputClass} value={config.summary ?? ''} spellCheck={false} readOnly={disabled} onChange={(e) => onPatch({ summary: e.target.value })} />
+                <TextInput value={config.summary ?? ''} spellCheck={false} readOnly={disabled} onChange={(e) => onPatch({ summary: e.target.value })} />
               </FormField>}
               {showContent && <FormField className={styles.fieldSpan6} label={t('form.templateFile.label')} hint={t('form.templateFile.hint')} hintMode="tooltip">
-                <input className={inputClass} value={config.templateFile ?? ''} spellCheck={false} readOnly={disabled} onChange={(e) => onPatch({ templateFile: e.target.value })} />
+                <TextInput value={config.templateFile ?? ''} spellCheck={false} readOnly={disabled} onChange={(e) => onPatch({ templateFile: e.target.value })} />
               </FormField>}
               {showMetadata && <IdentityFields t={t} identity={config.identity} disabled={disabled} onPatch={(value) => onPatch({ identity: value })} />}
             </>

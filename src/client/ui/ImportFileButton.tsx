@@ -1,6 +1,7 @@
 /** 可复用导入按钮：隐藏原生 file input，统一触发、目录模式与重复选择重置。 */
 import { useRef, type ReactNode } from 'react'
 import { HintTooltip } from './HintTooltip.tsx'
+import { Button } from './Button.tsx'
 import ui from './controls.module.css'
 
 export function ImportFileButton(props: {
@@ -22,15 +23,15 @@ export function ImportFileButton(props: {
     : undefined
   const busy = props.busy === true
   const button = (
-    <button
-      type="button"
-      className={props.className ?? ui.pillButton}
+    <Button
+      shape="pill" variant="outline" size="md"
+      className={props.className}
       disabled={props.disabled === true || busy}
       onClick={() => inputRef.current?.click()}
     >
       {busy && <span className={ui.spinner} aria-hidden="true" />}
       {busy ? props.busyLabel ?? props.label : props.label}
-    </button>
+    </Button>
   )
   return (
     <>

@@ -3,6 +3,8 @@ import clsx from 'clsx'
 import { Switch } from '../../ui/Switch.tsx'
 import type { FieldDraft } from '../../data/workspace-drafts.ts'
 import { FormField } from '../../ui/FormField.tsx'
+import { TextInput } from '../../ui/TextInput.tsx'
+import { Button } from '../../ui/Button.tsx'
 import { HintTooltip } from '../../ui/HintTooltip.tsx'
 import { MenuSelect, type MenuSelectOption } from '../../ui/MenuSelect.tsx'
 import { TagInput } from '../../ui/TagInput.tsx'
@@ -79,7 +81,6 @@ export function OptionField(props: { t: PromptToolTranslate; label: string; hint
     <FormField label={props.label} hint={props.hint} hintMode="tooltip" className={props.className}>
       <MenuSelect
         compact
-        className={clsx(styles.configInput, styles.fieldControl)}
         ariaLabel={props.label}
         disabled={props.disabled}
         value={props.value ?? props.fallback}
@@ -149,7 +150,7 @@ export function NumberField(props: { t: PromptToolTranslate; label: string; hint
   }
   const quickOptions = props.quickOptions
   const field = <FormField label={props.label} hint={props.hint} hintMode="tooltip" className={quickOptions === undefined ? props.className : undefined} error={draft.error}>
-    <input className={clsx(styles.configInput, styles.fieldControl, styles.configNumberInput)} inputMode={props.integer ? 'numeric' : 'decimal'}
+    <TextInput inputMode={props.integer ? 'numeric' : 'decimal'}
       value={draft.text} readOnly={props.disabled} onChange={(event) => update({ ...draft, text: event.target.value, error: '' })}
       onBlur={() => accept(draft.text.trim() === '' ? props.fallback : Number(draft.text))} />
   </FormField>
@@ -158,7 +159,7 @@ export function NumberField(props: { t: PromptToolTranslate; label: string; hint
   return <div className={clsx(styles.orderField, props.className)}>
     {field}
     <FormField label={label}>
-      <MenuSelect compact ariaLabel={label} placeholder={label} className={styles.fieldControl} disabled={props.disabled}
+      <MenuSelect compact ariaLabel={label} placeholder={label} disabled={props.disabled}
         value={draft.error === '' && quickOptions.some((option) => option.value === draft.text) ? draft.text : ''}
         options={quickOptions} onChange={(value) => accept(Number(value))} />
     </FormField>
@@ -240,7 +241,7 @@ function ParamTextarea(props: { label: string; hint?: string; className?: string
 function ParamInput(props: { label: string; hint?: string; className?: string; value: string; onChange: (value: string) => void }): ReactNode {
   return (
     <FormField label={props.label} hint={props.hint} hintMode="tooltip" className={props.className}>
-      <input className={clsx(styles.configInput, styles.fieldControl)} value={props.value} spellCheck={false} onChange={(e) => props.onChange(e.target.value)} />
+      <TextInput value={props.value} spellCheck={false} onChange={(e) => props.onChange(e.target.value)} />
     </FormField>
   )
 }
@@ -534,16 +535,16 @@ export function VariablesEditor(props: { t: PromptToolTranslate; value: Record<s
           {!props.hideHeading && <span className={styles.configFieldLabel}>{t('variables.title')}</span>}
           {entries.length === 0 && <span className={styles.configFieldHint}>{t('variables.empty')}</span>}
         </span>}
-        <button type="button" className={styles.pillButton} disabled={props.disabled} onClick={() => commit([...entries, ['', '']])}>{t('variables.add')}</button>
+        <Button shape="pill" variant="outline" size="md" disabled={props.disabled} onClick={() => commit([...entries, ['', '']])}>{t('variables.add')}</Button>
       </span>
       {entries.map(([key, value], index) => (
         <span key={`${key}-${index}`} className={styles.variableRow}>
-          <input className={styles.configInput} aria-label={t('variables.nameAria')} value={key} spellCheck={false} placeholder={t('variables.namePlaceholder')} readOnly={props.disabled}
+          <TextInput aria-label={t('variables.nameAria')} value={key} spellCheck={false} placeholder={t('variables.namePlaceholder')} readOnly={props.disabled}
             onChange={(e) => setEntry(index, e.target.value, value)} />
-          <input className={styles.configInput} aria-label={t('variables.valueAria')} value={value} spellCheck={false} placeholder={t('variables.valuePlaceholder')} readOnly={props.disabled}
+          <TextInput aria-label={t('variables.valueAria')} value={value} spellCheck={false} placeholder={t('variables.valuePlaceholder')} readOnly={props.disabled}
             onChange={(e) => setEntry(index, key, e.target.value)} />
-          <button type="button" className={styles.pillButton} data-danger aria-label={t('variables.removeAria', { name: key || index })} disabled={props.disabled}
-            onClick={() => commit(entries.filter((_, at) => at !== index))}>{t('variables.delete')}</button>
+          <Button shape="pill" variant="outline" size="md" data-danger aria-label={t('variables.removeAria', { name: key || index })} disabled={props.disabled}
+            onClick={() => commit(entries.filter((_, at) => at !== index))}>{t('variables.delete')}</Button>
         </span>
       ))}
     </span>

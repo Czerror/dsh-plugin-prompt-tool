@@ -1,6 +1,7 @@
 import { useRef, useState, type ReactNode, type RefObject } from 'react'
 import { IconChevronDownOutlineRegular } from '../../ui/icons.tsx'
 import { Menu } from '../../ui/Menu.tsx'
+import { Button } from '../../ui/Button.tsx'
 import type { PromptToolStore } from '../../data/use-prompt-tool-store.ts'
 import type { PromptToolTranslate } from '../../locales.ts'
 import { ENGINE_CAPABILITIES, ENGINE_RECIPES, engineRecipe, isEngineCapabilityPresent } from '../../../shared/engine-capabilities.ts'
@@ -60,9 +61,9 @@ export function EngineCapabilityCreateMenu(props: {
         })
       } else onExtraSelect?.(id)
     }}
-    anchor={<button ref={trigger} type="button" className={styles.pillButton} disabled={!editable} aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen(!open)}>
+    anchor={<Button ref={trigger} shape="pill" variant="outline" disabled={!editable} aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen(!open)}>
       {t(props.templatesOnly ? 'modules.addTemplates' : 'modules.addCapability')}<IconChevronDownOutlineRegular />
-    </button>} /></span>
+    </Button>} /></span>
 }
 
 export function EngineModuleActions(props: {

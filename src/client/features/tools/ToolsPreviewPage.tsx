@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useState, useSyncExternalStore, type ReactNode } from 'react'
+import { Button } from '../../ui/Button.tsx'
 import { IconSearchOutlineRegular } from '../../ui/icons.tsx'
 import type { PromptToolHostApi } from '../../data/host-api.ts'
 import type { PromptToolTranslate } from '../../locales.ts'
 import { MenuSelect } from '../../ui/MenuSelect.tsx'
+import { TextInput } from '../../ui/TextInput.tsx'
 import { ToolSurfaceView } from './ToolSurfaceView.tsx'
 import { officialPresetSources } from './preset-sources.ts'
 import css from './tools.module.css'
@@ -47,11 +49,11 @@ export function ToolsPreviewPage({ api, presetId, t, browse, onNavigate, onReady
   }, [api.listAgentPresets, presetId, revision, t])
 
   return <section className={css.toolsPreviewPage} aria-label={t('tools.aria')}>
-    <label className={css.toolSearch}>
+    <div className={css.toolSearch}>
       <IconSearchOutlineRegular aria-hidden="true" />
-      <input type="search" aria-label={t('tools.search.aria')} placeholder={t('tools.search.placeholder')} value={query}
+      <TextInput variant="listFilter" type="search" aria-label={t('tools.search.aria')} placeholder={t('tools.search.placeholder')} value={query}
         onChange={(event) => setQuery(event.target.value)} />
-    </label>
+    </div>
     <ToolSurfaceView sessionId={sessionId ?? ''} onReady={sessionReady} expandedState={browse?.expanded} label={t('tools.surface.session')} t={t} query={query} />
     <ToolSurfaceView presetId={selectedId} onReady={presetReady} expandedState={browse?.expanded} label={t('tools.surface.preset')} t={t} query={query} headerAction={
       // 模块来源控制区住在标题行：分组默认折叠，来源选择、加载/错误与空态引导不能跟着藏进内容区。
@@ -64,7 +66,7 @@ export function ToolsPreviewPage({ api, presetId, t, browse, onNavigate, onReady
             label: `${preset.name ?? preset.id}${preset.broken === undefined ? '' : ` · ${preset.broken}`}` }))} />
         {loading && <span className={css.toolSurfaceHint} role="status">{t('tools.loadingPresets')}</span>}
         {error && <span className={css.toolSurfaceError} role="alert">{error}</span>}
-        {!loading && !error && presets.length === 0 && <span className={css.toolSurfaceHint}>{t('tools.noPresets')} {onNavigate && <button type="button" className={css.toolRefresh} onClick={() => onNavigate('modules')}>{t('configs.chooseEditable')}</button>}</span>}
+        {!loading && !error && presets.length === 0 && <span className={css.toolSurfaceHint}>{t('tools.noPresets')} {onNavigate && <Button shape="pill" size="sm" variant="outline" type="button" onClick={() => onNavigate('modules')}>{t('configs.chooseEditable')}</Button>}</span>}
       </div>
     } />
   </section>

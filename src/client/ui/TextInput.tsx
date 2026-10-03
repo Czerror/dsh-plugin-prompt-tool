@@ -12,6 +12,9 @@ const variantClass: Record<TextInputVariant, string | undefined> = {
 
 export const TextInput = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputElement> & {
   variant?: TextInputVariant
-}>(function TextInput({ variant, className, ...props }, ref) {
-  return <input ref={ref} className={clsx(variant === undefined ? undefined : variantClass[variant], className)} {...props} />
+  compact?: boolean
+}>(function TextInput({ variant = 'config', compact = variant === 'config', className, ...props }, ref) {
+  const numeric = props.type === 'number' || props.inputMode === 'numeric' || props.inputMode === 'decimal'
+  return <input ref={ref} className={clsx(variantClass[variant], compact && styles.inputCompact,
+    variant === 'config' && (numeric ? styles.configNumberInput : styles.contentInput), className)} {...props} />
 })

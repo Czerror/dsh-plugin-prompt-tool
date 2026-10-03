@@ -4,6 +4,7 @@ import type { FieldDraft } from '../../data/workspace-drafts.ts'
 import type { PromptToolLocaleKey, PromptToolTranslate } from '../../locales.ts'
 import type { EngineMeta } from '../../prompt-tool-types.ts'
 import { FormField } from '../../ui/FormField.tsx'
+import { TextInput } from '../../ui/TextInput.tsx'
 import { MenuSelect } from '../../ui/MenuSelect.tsx'
 import { Switch } from '../../ui/Switch.tsx'
 import { Button } from '../../ui/Button.tsx'
@@ -57,12 +58,12 @@ export function RuleParameterFields(props: FieldContext & { value: Record<string
       ? <div key={key} className={css.parameterGroup}>{key !== 'config' && <h5>{label}</h5>}<div className={css.fields}><RuleParameterFields {...props} depth={(props.depth ?? 0) + 1} omit={key === 'config' ? props.configOmit : undefined} fieldKey={fieldKey} value={asTriggerRecord(value)} example={asTriggerRecord(props.example?.[key])} onChange={patch} /></div></div>
       : <div key={key} className={css.full}><TriggerJsonField {...props} value={value} shape="object" fieldKey={fieldKey} label={label} onChange={patch} /></div>
     if (Array.isArray(value) && !value.every(item => typeof item === 'string')) return <div key={key} className={css.full}><TriggerJsonField {...props} value={value} shape="array" fieldKey={fieldKey} label={label} onChange={patch} /></div>
-    if (typeof value === 'boolean') return <div key={key} className={css.toggle}><span>{label}</span><span className={css.switchLine}><Switch className={css.switchTarget} label={label} checked={value} disabled={props.disabled} onChange={patch} /></span></div>
+    if (typeof value === 'boolean') return <div key={key} className={css.toggle}><span>{label}</span><span className={css.switchLine}><Switch label={label} checked={value} disabled={props.disabled} onChange={patch} /></span></div>
     const optionalNumber = requestField && ['temperature', 'maxTokens'].includes(key)
     if (typeof value === 'number' || optionalNumber) {
       const retained = props.fields.get(fieldKey)
       const draft = retained && (retained.error || retained.text !== retained.source || retained.text === String(value ?? '') || typeof value === 'number' && Number(retained.text) === value) ? retained : undefined
-      return <FormField key={key} label={label} error={draft?.error}><input className={ui.configInput + ' ' + css.number} aria-label={label} inputMode="decimal" readOnly={props.disabled} value={draft?.text ?? String(value ?? '')}
+      return <FormField key={key} label={label} error={draft?.error}><TextInput aria-label={label} inputMode="decimal" readOnly={props.disabled} value={draft?.text ?? String(value ?? '')}
         onChange={event => { const text = event.target.value, empty = text.trim() === '', valid = optionalNumber && empty || !empty && Number.isFinite(Number(text)); props.fields.set(fieldKey, { source: valid ? text : String(value ?? ''), text, error: valid ? '' : t('triggers.number') }); if (valid) patch(empty ? undefined : Number(text)); props.onDraft() }} /></FormField>
     }
     const multiline = Array.isArray(value) || ['text', 'prompt', 'prefix', 'suffix', 'template', 'description'].includes(key)
@@ -70,7 +71,7 @@ export function RuleParameterFields(props: FieldContext & { value: Record<string
     const edit = (next: string): void => patch(Array.isArray(value) ? next === '' ? [] : next.split('\n') : requestField && ['provider', 'model', 'reasoningEffort'].includes(key) && next === '' ? undefined : next)
     return <FormField key={key} className={multiline && !Array.isArray(value) ? css.full : undefined} label={label}>
       {multiline ? <textarea className={ui.configTextarea + (Array.isArray(value) ? ' ' + css.listControl : '')} aria-label={label} rows={Array.isArray(value) ? 2 : 3} readOnly={props.disabled} value={text} onChange={event => edit(event.target.value)} />
-        : <input className={ui.configInput + ' ' + css.control} aria-label={label} readOnly={props.disabled} value={text} onChange={event => edit(event.target.value)} />}
+        : <TextInput aria-label={label} readOnly={props.disabled} value={text} onChange={event => edit(event.target.value)} />}
     </FormField>
   })
 }
@@ -78,8 +79,8 @@ export function RuleConditionFields(props: FieldContext & { value: RuleCondition
   const { t, value, meta } = props
   const keys = Object.keys(value ?? {}), kind = keys[0] ?? '', entry = meta.predicates.find(item => item.kind === kind)
   const invalid = value !== undefined && (keys.length !== 1 || entry === undefined)
-  const remove = props.onRemove ? <Button variant="outline" className={css.button} data-danger disabled={props.disabled} onClick={props.onRemove}>{t('rules.removeCondition')}</Button>
-    : value !== undefined && <Button variant="outline" className={css.button} disabled={props.disabled} onClick={() => { cleared(props.fields, props.fieldKey); props.onChange(undefined) }}>{t('rules.clearCondition')}</Button>
+  const remove = props.onRemove ? <Button variant="outline" shape="pill" data-danger disabled={props.disabled} onClick={props.onRemove}>{t('rules.removeCondition')}</Button>
+    : value !== undefined && <Button variant="outline" shape="pill" disabled={props.disabled} onClick={() => { cleared(props.fields, props.fieldKey); props.onChange(undefined) }}>{t('rules.clearCondition')}</Button>
   if (invalid) return <div className={css.full}><div className={css.conditionHead}>{props.heading && <span className={css.conditionOrdinal}>{props.heading}</span>}{remove}</div><p role="note">{t('rules.unknown')}</p><TriggerJsonField {...props} value={value} shape="object" label={t('triggers.conditionJson')} onChange={next => props.onChange(asTriggerRecord(next))} /></div>
   const children = kind === 'not' ? [asTriggerRecord(value?.not)] : Array.isArray(value?.[kind]) ? value[kind] as RuleCondition[] : []
   const composite = meta.composites.includes(kind)
@@ -115,9 +116,9 @@ export function RuleConditionFields(props: FieldContext & { value: RuleCondition
     {composite ? <div className={css.conditions}>
       {children.map((child, index) => <div key={index} className={css.conditionChild} role="group" aria-label={t('rules.condition', { index: index + 1 })}>
         <RuleConditionFields {...props} value={child} nested heading={t('rules.condition', { index: index + 1 })} onRemove={() => updateChild(index, undefined)} fieldKey={props.fieldKey + ':' + kind + ':' + index} onChange={next => updateChild(index, next)} /></div>)}
-      {kind !== 'not' && <Button variant="outline" className={css.button} disabled={props.disabled || first === undefined} onClick={() => { if (first) props.onChange({ [kind]: [...children, structuredClone(first.example)] }) }}>{t('rules.addCondition')}</Button>}
+      {kind !== 'not' && <Button variant="outline" shape="pill" disabled={props.disabled || first === undefined} onClick={() => { if (first) props.onChange({ [kind]: [...children, structuredClone(first.example)] }) }}>{t('rules.addCondition')}</Button>}
     </div> : entry && <div className={css.fields}><RuleParameterFields {...props} value={asTriggerRecord(value?.[kind])} example={asTriggerRecord(entry.example[kind])} fieldKey={props.fieldKey + ':' + kind} onChange={next => props.onChange({ ...value, [kind]: next })} /></div>}
-    {!props.nested && !composite && value !== undefined && first && <Button variant="outline" className={css.button} disabled={props.disabled} onClick={() => {
+    {!props.nested && !composite && value !== undefined && first && <Button variant="outline" shape="pill" disabled={props.disabled} onClick={() => {
       moveConditionDrafts(props.fields, props.fieldKey, props.fieldKey + ':all:0')
       props.onChange({ all: [value, structuredClone(first.example)] })
     }}>{t('rules.addCondition')}</Button>}
@@ -143,9 +144,9 @@ export function RuleActionsFields(props: FieldContext & { value: RuleAction[]; m
         <div className={css.actionHead}><h4>{t('rules.action', { index: index + 1 })}</h4><MenuSelect compact className={css.control} ariaLabel={t('triggers.actionType')} value={action.kind} disabled={props.disabled}
           options={[...new Set([...selectable.map(item => item.kind), action.kind])].map(kind => ({ value: kind, label: triggerLabel(t, kind) }))}
           onChange={kind => { const next = meta.actions.find(item => item.kind === kind); if (next) { cleared(props.fields, fieldKey); patch({ ...structuredClone(next.example), id: action.id, kind }) } }} />
-          <Button variant="outline" className={css.button + ' ' + css.iconButton} aria-label={t('rules.moveUp', { id: action.id })} disabled={props.disabled || index === 0} onClick={() => swap(index, -1)}>↑</Button>
-          <Button variant="outline" className={css.button + ' ' + css.iconButton} aria-label={t('rules.moveDown', { id: action.id })} disabled={props.disabled || index === props.value.length - 1} onClick={() => swap(index, 1)}>↓</Button>
-          <Button variant="outline" className={css.button} data-danger aria-label={t('rules.removeAction', { id: action.id })} disabled={props.disabled} onClick={() => { cleared(props.fields, fieldKey); props.onChange(props.value.filter((_, at) => at !== index)) }}>{t('rules.removeActionShort')}</Button>
+          <Button variant="outline" shape="pill" icon aria-label={t('rules.moveUp', { id: action.id })} disabled={props.disabled || index === 0} onClick={() => swap(index, -1)}>↑</Button>
+          <Button variant="outline" shape="pill" icon aria-label={t('rules.moveDown', { id: action.id })} disabled={props.disabled || index === props.value.length - 1} onClick={() => swap(index, 1)}>↓</Button>
+          <Button variant="outline" shape="pill" data-danger aria-label={t('rules.removeAction', { id: action.id })} disabled={props.disabled} onClick={() => { cleared(props.fields, fieldKey); props.onChange(props.value.filter((_, at) => at !== index)) }}>{t('rules.removeActionShort')}</Button>
         </div>
         {entry === undefined ? <><p role="note">{t('rules.unknown')}</p><TriggerJsonField {...props} fieldKey={fieldKey} label={t('rules.rawAction')} shape="object" value={action} onChange={next => patch(asTriggerRecord(next))} /></>
           : <div className={css.fields}><RuleParameterFields {...props} fieldKey={fieldKey} value={action} requestPatch={action.kind === 'request-params'}
@@ -155,7 +156,7 @@ export function RuleActionsFields(props: FieldContext & { value: RuleAction[]; m
       </section>
     })}
     <div className={css.row}><MenuSelect compact className={css.control} ariaLabel={t('rules.addAction')} value={selected?.kind ?? ''} disabled={props.disabled || selectable.length === 0} options={selectable.map(action => ({ value: action.kind, label: triggerLabel(t, action.kind) }))} onChange={setAddKind} />
-      <Button variant="outline" className={css.button} disabled={props.disabled || selected === undefined} onClick={() => { if (!selected) return; let number = 1; while (props.value.some(action => action.id === 'action-' + number)) number++; props.onChange([...props.value, { ...structuredClone(selected.example), id: 'action-' + number, kind: selected.kind }]) }}>{t('rules.addAction')}</Button>
+      <Button variant="outline" shape="pill" disabled={props.disabled || selected === undefined} onClick={() => { if (!selected) return; let number = 1; while (props.value.some(action => action.id === 'action-' + number)) number++; props.onChange([...props.value, { ...structuredClone(selected.example), id: 'action-' + number, kind: selected.kind }]) }}>{t('rules.addAction')}</Button>
     </div>
   </div>
 }

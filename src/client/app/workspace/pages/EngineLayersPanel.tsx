@@ -13,6 +13,7 @@ import type { PromptConfigDraft } from '../../../prompt-tool-types.ts'
 import type { PromptToolStore } from '../../../data/use-prompt-tool-store.ts'
 import type { PromptToolLocaleKey, PromptToolTranslate } from '../../../locales.ts'
 import { ConfirmDialog } from '../../../ui/ConfirmDialog.tsx'
+import { Button } from '../../../ui/Button.tsx'
 import { EngineParamFields, matchesEditorGroup } from '../../../features/modules/EngineParamFields.tsx'
 import { EngineCapabilityCreateMenu } from '../../../features/modules/EngineModuleList.tsx'
 import { CurrentSessionModel } from '../../../features/models/CurrentSessionModel.tsx'
@@ -23,7 +24,6 @@ import { WorldBookDiagnosticsCard } from '../../../features/prompts/WorldBookDia
 import { TemplateVariablesModuleCard } from '../../../features/prompts/PromptConfigsEditor.tsx'
 import { CustomToolsCard } from '../../../features/tools/CustomToolsCard.tsx'
 import { cssEscapeId, scrollToCreatedCard } from '../../../ui/reveal-card.ts'
-import ui from '../../../ui/controls.module.css'
 import css from './layer-settings.module.css'
 
 export { isEditorGroupVisible }
@@ -82,9 +82,9 @@ function LayerCapabilityRow(props: { store: PromptToolStore; t: PromptToolTransl
     <li className={css.capabilityRow} data-layer-capability={capabilityId}>
       <span>{t('modules.layer.capability', { id: capabilityId })}</span>
       {editable && (
-        <button ref={buttonRef} type="button" className={ui.pillButton} data-danger aria-label={t('modules.layer.removeTitle', { id: capabilityId })} onClick={() => setConfirming(true)}>
+        <Button ref={buttonRef} shape="pill" variant="outline" size="md" data-danger aria-label={t('modules.layer.removeTitle', { id: capabilityId })} onClick={() => setConfirming(true)}>
           {t('modules.layer.remove')}
-        </button>
+        </Button>
       )}
       {confirming && (
         <ConfirmDialog

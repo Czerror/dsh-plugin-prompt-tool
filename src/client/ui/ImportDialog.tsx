@@ -3,6 +3,9 @@ import type { ImportChoices, ImportKind } from '../../shared/asset-transfer.ts'
 import type { ImportOrderCandidates, ImportPreviewState } from '../prompt-tool-types.ts'
 import type { PromptToolTranslate } from '../locales.ts'
 import { DialogSurface } from './DialogSurface.tsx'
+import { Button } from './Button.tsx'
+import { TextInput } from './TextInput.tsx'
+import { FormField } from './FormField.tsx'
 import { MenuSelect } from './MenuSelect.tsx'
 import { ConfirmDialog } from './ConfirmDialog.tsx'
 import { ImportFileButton } from './ImportFileButton.tsx'
@@ -60,15 +63,15 @@ export function ImportDialog(props: {
     closeLabel={t('assetImport.close')} onClose={close} size="wide" initialFocusRef={headingRef}
     footer={<>
       {complete ? <>
-        <button type="button" className={sharedCss.pillButton} onClick={close}>{t('assetImport.done')}</button>
-        {props.refreshError ? <button type="button" className={sharedCss.primaryPill} onClick={props.onRefresh}>{t('assetImport.refresh')}</button>
-          : props.onUse && progress.imported > 0 ? <button type="button" className={sharedCss.primaryPill} onClick={props.onUse}>{t(props.destination === 'preset' ? 'assetImport.switch' : 'assetImport.apply')}</button> : null}
+        <Button shape="pill" variant="outline" size="md" onClick={close}>{t('assetImport.done')}</Button>
+        {props.refreshError ? <Button shape="pill" variant="primary" size="md" onClick={props.onRefresh}>{t('assetImport.refresh')}</Button>
+          : props.onUse && progress.imported > 0 ? <Button shape="pill" variant="primary" size="md" onClick={props.onUse}>{t(props.destination === 'preset' ? 'assetImport.switch' : 'assetImport.apply')}</Button> : null}
       </> : <>
-        {phase !== 'idle' && progress.total <= 1 && <button type="button" className={sharedCss.pillButton} disabled={busy} onClick={props.onReset}>{t('assetImport.reselect')}</button>}
-        {progress.total > 1 && <button type="button" className={sharedCss.pillButton} disabled={busy} onClick={props.onSkip}>{t('assetImport.skip')}</button>}
-        <button type="button" className={sharedCss.pillButton} disabled={busy} onClick={progress.total > 1 ? props.onEnd : close}>{t(progress.total > 1 ? 'assetImport.end' : 'assetImport.cancel')}</button>
-        {(phase === 'error' || phase === 'stale') ? <button type="button" className={sharedCss.primaryPill} onClick={props.onRepreview}>{t('assetImport.repreview')}</button>
-          : phase !== 'idle' && <button type="button" className={sharedCss.primaryPill} disabled={!ready} onClick={() => choices.overwrite ? setConfirming(true) : props.onConfirm()}>{confirmLabel}</button>}
+        {phase !== 'idle' && progress.total <= 1 && <Button shape="pill" variant="outline" size="md" disabled={busy} onClick={props.onReset}>{t('assetImport.reselect')}</Button>}
+        {progress.total > 1 && <Button shape="pill" variant="outline" size="md" disabled={busy} onClick={props.onSkip}>{t('assetImport.skip')}</Button>}
+        <Button shape="pill" variant="outline" size="md" disabled={busy} onClick={progress.total > 1 ? props.onEnd : close}>{t(progress.total > 1 ? 'assetImport.end' : 'assetImport.cancel')}</Button>
+        {(phase === 'error' || phase === 'stale') ? <Button shape="pill" variant="primary" size="md" onClick={props.onRepreview}>{t('assetImport.repreview')}</Button>
+          : phase !== 'idle' && <Button shape="pill" variant="primary" size="md" disabled={!ready} onClick={() => choices.overwrite ? setConfirming(true) : props.onConfirm()}>{confirmLabel}</Button>}
       </>}
     </>}>
     <div className={css.content} aria-busy={phase === 'reading' || busy}>
@@ -97,8 +100,8 @@ export function ImportDialog(props: {
           <p>{t(`assetImport.kind.${summary.kind}`)} · {t('assetImport.summary', { files: summary.files.length, bytes: summary.files.reduce((total, file) => total + file.bytes, 0), configs: summary.configCount })}</p>
           <fieldset disabled={busy} className={css.fields}>
             <legend>{t('assetImport.target')}</legend>
-            <label>{t('assetImport.name')}<input value={choices.targetName ?? summary.targetName} onChange={(event) => props.onChoices({ targetName: event.target.value })} aria-invalid={choices.targetName?.trim() === ''} /></label>
-            <label>{t('assetImport.id')}<input value={choices.targetId ?? summary.targetId} onChange={(event) => props.onChoices({ targetId: event.target.value })} aria-invalid={!validId} aria-describedby={!validId ? `${id}-invalid` : undefined} /></label>
+            <FormField label={t('assetImport.name')}><TextInput compact={false} value={choices.targetName ?? summary.targetName} onChange={(event) => props.onChoices({ targetName: event.target.value })} aria-invalid={choices.targetName?.trim() === ''} /></FormField>
+            <FormField label={t('assetImport.id')}><TextInput compact={false} value={choices.targetId ?? summary.targetId} onChange={(event) => props.onChoices({ targetId: event.target.value })} aria-invalid={!validId} aria-describedby={!validId ? `${id}-invalid` : undefined} /></FormField>
             {!validId && <p id={`${id}-invalid`} role="alert">{t('assetImport.invalidId')}</p>}
             <label className={css.option}><input type="radio" name={`${id}-target`} checked={!choices.overwrite} onChange={() => props.onChoices({ overwrite: false, targetId: undefined })} />{t('assetImport.new')}</label>
             <label className={css.option}><input type="radio" name={`${id}-target`} checked={choices.overwrite === true} disabled={props.targets.length === 0} onChange={() => props.onChoices({ overwrite: true, targetId: props.targets[0]?.id })} />{t('assetImport.existing')}</label>

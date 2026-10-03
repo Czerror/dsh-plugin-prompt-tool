@@ -70,8 +70,6 @@
 .fieldSpan6 { grid-column: span 6; }
 .fieldSpan8 { grid-column: span 8; }
 .fieldSpan9 { grid-column: span 9; }
-.fieldControl { width: 100%; max-width: 240px; }
-.configNumberInput { max-width: 96px; }
 .orderField { display: grid; grid-template-columns: minmax(0, 96px) minmax(0, 240px); gap: 12px; min-width: 0; }
 .orderField > * { min-width: 0; }
 .orderField input { font-variant-numeric: tabular-nums; }
