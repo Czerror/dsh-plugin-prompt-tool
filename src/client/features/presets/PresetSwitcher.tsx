@@ -18,6 +18,7 @@ import { PresetExportDialog } from './PresetExportDialog.tsx'
 import { useImportPreviewFlow } from '../../data/use-import-preview-flow.ts'
 import { Switch } from '../../ui/Switch.tsx'
 import { Button } from '../../ui/Button.tsx'
+import { StatusBadge } from '../../ui/StatusBadge.tsx'
 import sharedCss from '../../ui/controls.module.css'
 import featureCss from './presets.module.css'
 
@@ -168,6 +169,7 @@ export const PresetSwitcher = memo(function PresetSwitcher(props: { store: Promp
         <div className={styles.moduleCardBody}>
           <span className={styles.presetCardHead}>
             <strong className={styles.presetCardName}>{preset.name}</strong>
+            {preset.enabled === true && !blocked && <StatusBadge className={styles.presetHeadBadge} tone="success" label={t('presetSwitcher.enabled')} />}
             {blocked && <span className={styles.presetBlocked}>{t('presetSwitcher.blocked')}</span>}
           </span>
           {preset.description !== undefined && preset.description.length > 0
@@ -176,8 +178,7 @@ export const PresetSwitcher = memo(function PresetSwitcher(props: { store: Promp
           <code className={styles.presetCardId}>{preset.id}</code>
         </div>
         <span className={styles.presetCardFooter}>
-          {/* 滑动开关 = 启用表成员：开即参与运行时装配（N 个模块各贡献一份，互不合并）。
-              卡头不再放「使用中」徽章；编辑目标只由卡片边框高亮（data-active）表达。 */}
+          {/* 开关与卡头徽章都表达启用状态；编辑目标独立由边框高亮（data-active）表达。 */}
           <Switch className={styles.presetActivate}
             checked={preset.enabled === true}
             disabled={blocked}

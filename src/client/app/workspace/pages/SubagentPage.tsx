@@ -86,8 +86,6 @@ export const SubagentPage = memo(function SubagentPage(props: { store: PromptToo
           t={t}
           scope="subagent"
           browse={props.browse}
-          onChoosePreset={() => props.onNavigate?.('modules')}
-          onCreate={() => picker.openPicker(INSERTION_LAYERS.find((layer) => layer === viewFilter) ?? 'pre-step')}
           createdHidden={createdHidden}
           onShowCreated={() => { changeViewFilter('all'); setCreatedHidden(false) }}
           createdConfigId={picker.createdConfigId}

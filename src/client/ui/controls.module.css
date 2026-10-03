@@ -639,8 +639,7 @@
 .configFieldStack { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
 .configFieldStack > textarea { margin-top: 2px; }
 .configInput,
-.directoryInput,
-.listFilter {
+.directoryInput {
   min-width: 0;
   max-width: 100%;
   box-sizing: border-box;
@@ -721,11 +720,6 @@
   border-radius: 12px;
   background: var(--dsw-alias-bg-layer-3);
 }
-.listFilter {
-  width: 100%;
-  flex: 1 1 200px;
-}
-.listFilter::placeholder { color: var(--dsw-alias-label-caption); }
 
 /* 紧凑触发器留在卡片内，菜单由插件自己的 body portal 渲染。 */
 .menuSelect,
@@ -735,49 +729,14 @@
   max-width: 100%;
 }
 .menuSelectOwner { width: max-content; max-width: min(100%, 18rem); flex: 0 1 auto; align-self: flex-start; }
+.listFilterRow > .menuSelectOwner { align-self: center; }
 .menuSelectOwner > .menuSelect { width: 100%; min-width: 0; max-width: 100%; flex: 0 1 auto; }
 
-.menuSelectCompact { min-height: 28px; }
-.menuSelectStandard { min-height: 36px; }
-
 .menuSelectTrigger {
-  box-sizing: border-box;
-  display: inline-flex;
   width: 100%;
   min-width: 0;
   max-width: 100%;
-  align-items: center;
   justify-content: flex-start;
-  border: 0.5px solid var(--dsw-alias-label-tertiary);
-  background: transparent;
-  color: var(--dsw-alias-label-primary);
-  cursor: pointer;
-  font: inherit;
-  border-radius: 999px;
-  corner-shape: round;
-}
-
-.menuSelectTriggerCompact {
-  height: 28px;
-  min-height: 28px;
-  gap: 8px;
-  padding: 4px 10px;
-  font: 12px/18px system-ui, sans-serif;
-}
-
-.menuSelectTriggerStandard {
-  height: 36px;
-  min-height: 36px;
-  gap: 12px;
-  padding: 6px 14px;
-  font: 14px/22px system-ui, sans-serif;
-}
-
-.menuSelectTrigger:hover:not(:disabled) { background: var(--dsw-alias-interactive-bg-hover); }
-.menuSelectTrigger:disabled { cursor: default; opacity: .46; }
-.menuSelectTrigger:focus-visible {
-  outline: 2px solid var(--dsw-alias-state-business-primary);
-  outline-offset: 2px;
 }
 
 .menuSelectLabel {
@@ -789,9 +748,10 @@
 }
 
 .menuSelectChevron { flex: none; }
-/* 批量启用/禁用按钮组：过滤行右侧，按过滤后可见配置一次性开关。 */
+/* 批量启用/禁用按钮组：过滤行最右侧，仅作用于过滤后可见规则。 */
 .batchControls {
   display: flex;
+  flex: none;
   align-items: center;
   gap: 6px;
   flex-wrap: wrap;
@@ -831,7 +791,6 @@
 .directoryInput:focus-visible,
 .configInput:focus-visible,
 .configTextarea:focus-visible,
-.listFilter:focus-visible,
 .tagChipRemove:focus-visible,
 .tagInputField:focus-visible,
 .dragHandle:focus-visible {
@@ -899,8 +858,7 @@
 
 @media (pointer: coarse) {
   .configInput,
-  .directoryInput,
-  .listFilter { min-width: 44px; height: 44px; min-height: 44px; }
+  .directoryInput { min-width: 44px; height: 44px; min-height: 44px; }
   .pillButton,
   .primaryPill,
   .presetIconButton,

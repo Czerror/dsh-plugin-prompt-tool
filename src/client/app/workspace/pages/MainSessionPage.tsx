@@ -76,8 +76,6 @@ export const MainSessionPage = memo(function MainSessionPage(props: { store: Pro
         store={store}
         t={t}
         browse={props.browse}
-        onChoosePreset={() => props.onNavigate?.('modules')}
-        onCreate={() => picker.openPicker(INSERTION_LAYERS.find((layer) => layer === viewFilter) ?? 'pre-step')}
         createdHidden={createdHidden}
         onShowCreated={() => { changeViewFilter('all'); setCreatedHidden(false) }}
         createdConfigId={picker.createdConfigId}

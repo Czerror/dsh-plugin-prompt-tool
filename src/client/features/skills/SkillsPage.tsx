@@ -14,6 +14,7 @@ import { FormField } from '../../ui/FormField.tsx'
 import { HintTooltip } from '../../ui/HintTooltip.tsx'
 import { MenuSelect } from '../../ui/MenuSelect.tsx'
 import { TextInput } from '../../ui/TextInput.tsx'
+import { SearchInput } from '../../ui/SearchInput.tsx'
 import { SkillRow } from './SkillRow.tsx'
 import sharedCss from '../../ui/controls.module.css'
 import featureCss from './skills.module.css'
@@ -269,8 +270,7 @@ export const SkillsPage = memo(function SkillsPage(props: { store: PromptToolSto
 
       {fields.skillCatalog.length > 0 && (
         <div className={ui.listFilterRow}>
-          <TextInput variant="listFilter"
-            type="search"
+          <SearchInput inline
             value={skillFilter}
             aria-label={t('skills.filter.aria')}
             placeholder={t('skills.filter.placeholder')}

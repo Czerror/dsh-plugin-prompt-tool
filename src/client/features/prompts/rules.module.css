@@ -1,7 +1,6 @@
 /* 统一规则卡、条件树和动作列表的私有样式。 */
 .workspace { display: flex; flex-direction: column; gap: 12px; min-width: 0; color: var(--dsw-alias-label-primary); font: 12px/18px system-ui, sans-serif; font-feature-settings: "cv01", "ss03"; }
-.toolbar, .row, .actionHead { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; min-width: 0; }
-.toolbar { padding: 8px 0; }
+.row, .actionHead { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; min-width: 0; }
 .cardPanel { min-width: 0; }
 .headerActions { display: inline-flex; flex: 0 0 auto; align-items: center; gap: 6px; max-width: 100%; }
 .headerActions .row { flex-wrap: nowrap; gap: 4px; }

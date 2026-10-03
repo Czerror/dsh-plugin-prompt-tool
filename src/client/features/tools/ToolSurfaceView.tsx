@@ -1,4 +1,4 @@
-import { useEffect, useId, useState, type ReactNode } from 'react'
+import { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { Button } from '../../ui/Button.tsx'
 import { IconChevronDownOutlineRegular } from '../../ui/icons.tsx'
 import { StatusBadge } from '../../ui/StatusBadge.tsx'
@@ -49,30 +49,32 @@ export function ToolSurfaceList({ tools, filter, t, sourceLabel, sourceId = '', 
 }
 
 export function ToolSurfaceView(props: ToolSurfaceProps): ReactNode {
-  const key = props.sessionId !== undefined ? `session:${props.sessionId}` : `preset:${props.presetId}`
-  return <ToolSurfaceContent key={key} {...props} />
-}
-
-function ToolSurfaceContent(props: ToolSurfaceProps): ReactNode {
   const { t } = props
   const { sessionId, presetId, query = '' } = props
-  const [result, setResult] = useState<ToolSurfaceResult | null>(null)
-  const [revision, setRevision] = useState(0)
   const groupKey = sessionId !== undefined ? `session:${sessionId}` : `preset:${presetId}`
+  // 来源变化只重置详情数据；标题内的来源菜单必须保持挂载。
+  const [snapshot, setSnapshot] = useState<{ key: string; result: ToolSurfaceResult } | null>(null)
+  const result = snapshot?.key === groupKey ? snapshot.result : null
+  const [revision, setRevision] = useState(0)
   // 默认折叠：进页面只看分组标题与计数胶囊；展开与否由用户点击决定并按分组记忆。
-  const [expanded, setExpanded] = useState(props.expandedState?.[groupKey] ?? false)
+  const [expansion, setExpansion] = useState<{ key: string; expanded: boolean }>()
+  const expanded = expansion?.key === groupKey ? expansion.expanded : props.expandedState?.[groupKey] ?? false
   const contentId = useId()
   const sourceId = sessionId ?? presetId ?? ''
   const loading = sourceId.length > 0 && result === null
   const open = expanded || query.trim().length > 0
+  const bodyRef = useRef<HTMLDivElement>(null), settledHeight = useRef(0)
+  useLayoutEffect(() => {
+    if (!loading) settledHeight.current = bodyRef.current?.getBoundingClientRect().height ?? 0
+  })
   useEffect(() => { if (!loading) props.onReady?.() }, [loading, props.onReady])
-  useEffect(() => loadToolSurface(sessionId !== undefined ? { sessionId } : { presetId: presetId! }, setResult), [sessionId, presetId, revision])
+  useEffect(() => loadToolSurface(sessionId !== undefined ? { sessionId } : { presetId: presetId! }, result => setSnapshot({ key: groupKey, result })), [sessionId, presetId, groupKey, revision])
   const count = result?.ok ? result.value.tools.filter((entry) => matches(entry, query.trim().toLowerCase())).length : undefined
 
   return <section className={css.toolGroup} aria-label={props.label} aria-busy={loading}>
     <div className={css.toolGroupHeading}>
       <button type="button" className={css.toolGroupToggle} aria-expanded={open} aria-controls={contentId} onClick={() => {
-        setExpanded(!open)
+        setExpansion({ key: groupKey, expanded: !open })
         if (props.expandedState) props.expandedState[groupKey] = !open
       }}>
         <IconChevronDownOutlineRegular className={css.toolChevron} aria-hidden="true" /><span>{props.label}</span>
@@ -80,15 +82,15 @@ function ToolSurfaceContent(props: ToolSurfaceProps): ReactNode {
       {count !== undefined && <StatusBadge tone="success" label={t('tools.surface.sub.count', { count })} />}
       <div className={css.toolHeaderAction}>{props.headerAction}</div>
     </div>
-    {open && <div className={css.toolGroupBody} id={contentId}>
+    {open && <div ref={bodyRef} className={css.toolGroupBody} id={contentId} style={loading ? { minHeight: settledHeight.current } : undefined}>
       {sourceId.length === 0 ? <p className={css.toolSurfaceHint}>{sessionId !== undefined ? t('tools.surface.noSession') : t('tools.surface.noPreset')}</p> : <>
         <div className={css.toolSurfaceControls}>
           <p className={css.toolSurfaceHint}>{t('tools.surface.origin')}<code>{sourceId}</code></p>
-          <Button shape="pill" size="sm" variant="outline" type="button" disabled={loading} onClick={() => { setResult(null); setRevision((value) => value + 1) }}>{t('tools.surface.refresh')}</Button>
+          <Button shape="pill" size="sm" variant="outline" type="button" disabled={loading} onClick={() => { setSnapshot(null); setRevision((value) => value + 1) }}>{t('tools.surface.refresh')}</Button>
         </div>
         {loading && <p className={css.toolSurfaceHint} role="status">{t('tools.surface.loading')}</p>}
         {result !== null && (result.ok
-          ? <ToolSurfaceList tools={result.value.tools} filter={query} t={t} sourceLabel={props.label} sourceId={sourceId} />
+          ? <ToolSurfaceList key={groupKey} tools={result.value.tools} filter={query} t={t} sourceLabel={props.label} sourceId={sourceId} />
           : <p className={css.toolSurfaceError} role="alert">{result.message || t('tools.surface.readFailed')}{t('tools.surface.retrySuffix')}</p>)}
       </>}
       <p className={css.toolSurfaceHint}>{sessionId !== undefined

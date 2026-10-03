@@ -34,7 +34,12 @@ export function RuleCard(props: {
   return <CollapsibleCard id={panelId} title={rule.name || rule.id} meta={(rule.layer === undefined ? t('rules.module') : translateLabel(t, LAYER_LABEL_KEYS, rule.layer)) + ' · ' + rule.do.length + ' ' + t('triggers.action')}
     expanded={props.expanded} onToggle={() => { if (props.expanded) save(); props.onToggle() }} bodyClassName={css.cardPanel}
     data-rule-id={rule.id} data-rule-key={entry.key}
-    onFocus={() => { ownsFocus.current = true }} onBlur={() => { ownsFocus.current = false; requestAnimationFrame(() => { if (!ownsFocus.current) save() }) }}
+    onFocus={() => { ownsFocus.current = true }} onBlur={(event) => {
+      ownsFocus.current = false
+      // 批量开关自行提交，避免离卡自动保存抢先发出旧状态。
+      if (event.relatedTarget instanceof Element && event.relatedTarget.closest('[data-batch]')) return
+      requestAnimationFrame(() => { if (!ownsFocus.current) save() })
+    }}
     actions={<span className={css.headerActions} data-rule-header-actions>{props.headerActions}<span className={css.switchLine}>
       <Switch label={t('rules.enable', { name: rule.name || rule.id })} checked={rule.enabled !== false} disabled={disabled || draft.busy !== undefined || hasRuleFields(draft)} onChange={enabled => {
         patch({ enabled }); void editor.submit(enabled ? { activateRuleId: rule.id } : {})

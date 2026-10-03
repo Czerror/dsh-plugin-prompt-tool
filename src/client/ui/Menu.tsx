@@ -1,4 +1,4 @@
-import { useEffect, useRef, type KeyboardEvent, type ReactNode } from 'react'
+import { useEffect, useLayoutEffect, useRef, type KeyboardEvent, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import clsx from 'clsx'
 import { useAnchoredPopoverStyle } from './anchored-popover.ts'
@@ -22,9 +22,22 @@ export function Menu({ open, anchor, items, selectedId, onSelect, onClose, align
 }): ReactNode {
   const rootRef = useRef<HTMLSpanElement>(null)
   const listRef = useRef<HTMLDivElement>(null)
+  const focusedItem = useRef<HTMLButtonElement | null>(null)
   const position = useAnchoredPopoverStyle({ open, anchorRef: rootRef, panelRef: listRef, gap: 4, align, maxViewportRatio: 1 })
   useDismissOnOutsidePointer(rootRef, open, () => onClose(), listRef)
   const focusTrigger = (): void => { rootRef.current?.querySelector<HTMLButtonElement>('button:not(:disabled)')?.focus() }
+
+  useLayoutEffect(() => {
+    if (!open) { focusedItem.current = null; return }
+    const previous = focusedItem.current
+    if (previous === null || listRef.current?.contains(previous) && !previous.disabled) return
+    // 异步刷新删掉聚焦项时接续焦点；用户主动移到外部则不抢回。
+    if (document.activeElement !== document.body && document.activeElement !== previous) return
+    const next = listRef.current?.querySelector<HTMLButtonElement>('[aria-checked="true"]:not(:disabled)')
+      ?? listRef.current?.querySelector<HTMLButtonElement>('button:not(:disabled)')
+    if (next) next.focus({ preventScroll: true })
+    else focusTrigger()
+  }, [open, items])
 
   useEffect(() => {
     if (!open) return
@@ -65,6 +78,7 @@ export function Menu({ open, anchor, items, selectedId, onSelect, onClose, align
     {anchor}
     {open && typeof document !== 'undefined' && createPortal(
       <div ref={listRef} className={clsx(css.list, compact && css.compact)} role="menu"
+        onFocusCapture={(event) => { if (event.target instanceof HTMLButtonElement) focusedItem.current = event.target }}
         style={position ?? { visibility: 'hidden', left: 0, top: 0 }} onClick={(event) => event.stopPropagation()}>
         {items.map((item) => 'type' in item
           ? <div key={item.id} className={css.label} role="presentation">{item.text}</div>

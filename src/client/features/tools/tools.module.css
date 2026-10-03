@@ -6,9 +6,6 @@
 /* 只读边界：卡头操作区可被 fieldset 禁用，而卡片折叠按钮留在边界之外保持可点。 */
 .cardScopeActions { display: flex; align-items: center; gap: 8px; min-width: 0; border: 0; margin: 0; padding: 0; }
 .toolsPreviewPage { container: tool-preview / inline-size; display: flex; flex-direction: column; gap: 12px; width: 100%; min-width: 0; color: var(--dsw-alias-label-primary); }
-.toolSearch { position: relative; display: flex; align-items: center; width: 100%; color: var(--dsw-alias-label-tertiary); }
-.toolSearch > svg { position: absolute; left: 12px; pointer-events: none; }
-.toolSearch input { width: 100%; min-width: 0; padding-inline: 36px 34px; }
 .toolGroup { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
 .toolGroup + .toolGroup { border-top: .5px solid var(--dsw-alias-border-l2); padding-top: 14px; }
 .toolGroupHeading { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; min-height: 36px; }

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react'
 import clsx from 'clsx'
 import { IconChevronDownOutlineRegular } from './icons.tsx'
 import { Menu, type MenuEntry } from './Menu.tsx'
+import { Button } from './Button.tsx'
 import styles from './controls.module.css'
 
 export interface MenuSelectOption {
@@ -68,7 +69,7 @@ export function MenuSelect(props: {
       open={open && !disabled}
       compact={compact}
       align={props.align ?? 'end'}
-      className={clsx(styles.menuSelect, compact ? styles.menuSelectCompact : styles.menuSelectStandard, props.className)}
+      className={clsx(styles.menuSelect, props.className)}
       items={items}
       selectedId={props.value}
       onClose={() => setOpen(false)}
@@ -79,11 +80,13 @@ export function MenuSelect(props: {
         if (value !== props.value) props.onChange(value)
       }}
       anchor={(
-        <button
+        <Button
           ref={triggerRef}
           id={props.id}
-          type="button"
-          className={clsx(styles.menuSelectTrigger, compact ? styles.menuSelectTriggerCompact : styles.menuSelectTriggerStandard)}
+          shape="pill"
+          variant="outline"
+          size={compact ? 'sm' : 'md'}
+          className={styles.menuSelectTrigger}
           aria-label={props.ariaLabel}
           aria-labelledby={props['aria-labelledby']}
           aria-haspopup="menu"
@@ -112,7 +115,7 @@ export function MenuSelect(props: {
             {selected?.label ?? (props.value.length > 0 ? props.value : props.placeholder ?? '（未选择）')}
           </span>
           <IconChevronDownOutlineRegular className={styles.menuSelectChevron} />
-        </button>
+        </Button>
       )}
     />
     </span>
