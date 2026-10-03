@@ -4,10 +4,16 @@
 #   支持 placeholder 的层级）。
 id: example-runtime-context
 layer: runtime-context
-strategy: static
-order: 5
-mergeMode: merged
-text: |-
-  
-params:
-  contextName: ''
+do:
+  - id: inject
+    kind: inject-text
+    config:
+      id: example-runtime-context
+      layer: runtime-context
+      strategy: static
+      order: 5
+      mergeMode: merged
+      text: |
+
+      params:
+        contextName: ''

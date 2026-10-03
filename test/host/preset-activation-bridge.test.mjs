@@ -12,6 +12,13 @@ mkdirSync(dir, { recursive: true })
 const file = join(dir, 'module.yml')
 writeFileSync(file, 'id: editable\nmodules: []\n')
 
+async function bounded(promise, label) {
+  let timer
+  try {
+    return await Promise.race([promise, new Promise((_, reject) => { timer = setTimeout(() => reject(new Error(`等待超时：${label}`)), 1500) })])
+  } finally { clearTimeout(timer) }
+}
+
 test('预设保存等待宿主采用；异步拒绝保留定义并可重试；只保存不触发注册', async () => {
   const handlers = new Map()
   const disposers = []
@@ -28,7 +35,7 @@ test('预设保存等待宿主采用；异步拒绝保留定义并可重试；�
   const handler = handlers.get('/api/prompt-tool/settings/param-overrides')
   const save = async (overrides, extra = {}) => {
     const res = fakeRes()
-    await handler(fakeReq({ body: { expectedPresetId: 'editable', overrides, ...extra } }), res)
+    await bounded(handler(fakeReq({ body: { expectedPresetId: 'editable', overrides, ...extra } }), res), '参数写入完成')
     return readBridge(res)
   }
   try {
@@ -41,25 +48,25 @@ test('预设保存等待宿主采用；异步拒绝保留定义并可重试；�
     const pending = new Promise(resolve => { release = resolve })
     rebuild = async () => { entered(); await pending }
     let settled = false
-    const saving = save({ injectPrompt: false }).then(value => { settled = true; return value })
-    await started
+    const saving = save({ maxDepth: 0 }).then(value => { settled = true; return value })
+    await bounded(started, '重建开始')
     await new Promise(resolve => setImmediate(resolve))
     assert.equal(settled, false, '注册尚未完成不能发送成功响应')
     release()
     assert.equal((await saving).ok, true)
 
     rebuild = async () => { await Promise.resolve(); throw new Error('REGISTRATION_FAILED') }
-    const failed = await save({ injectPrompt: true })
+    const failed = await save({ maxDepth: 2 })
     assert.equal(failed.status, 500)
     assert.equal(failed.ok, false)
     assert.equal(failed.code, 'preset-activation-failed')
     assert.match(failed.message, /已保存.*REGISTRATION_FAILED/)
-    assert.equal(parse(readFileSync(file, 'utf8')).layerSettings['pre-step'].injectPrompt, true)
+    assert.equal(parse(readFileSync(file, 'utf8')).layerSettings['subagent-start'].maxDepth, 2)
 
     rebuild = async () => {}
-    assert.equal((await save({ injectPrompt: true })).ok, true)
+    assert.equal((await save({ maxDepth: 2 })).ok, true)
     const before = calls
-    assert.equal((await save({ injectPrompt: false }, { rebuild: false })).ok, true)
+    assert.equal((await save({ maxDepth: 0 }, { rebuild: false })).ok, true)
     assert.equal(calls, before)
   } finally { for (const dispose of disposers) dispose() }
 })

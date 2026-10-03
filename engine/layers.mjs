@@ -19,6 +19,7 @@ import { interpolateVariables, stripUnresolvedRefs, RUNTIME_FACTS, runtimeFactVa
 import { getSessionVar, sessionVarsSnapshot } from './session-vars.mjs'
 import { conditionHit, lastAssistantText, subagentTextOf, toolArgsText } from './condition.mjs'
 import { compareConfigSequence, compareTextPlacement } from './order.mjs'
+import { ruleFrame, ruleMatches } from './conditions/evaluation.mjs'
 
 const name = 'prompt-config-engine'
 // 同一宿主会话共享投递账本，避免预设作用域重挂后重投同一次结束通知。
@@ -67,7 +68,7 @@ function officialAliasOf(name) {
  * 非法官方名（中文/大写/连字符）改写成确定性别名并改写文本引用；注册失败的名字退回静态解析。
  * @returns 各配置独立的引用白名单与别名；同一作用域内等价绑定只注册一次。
  */
-function registerOfficialVariables(ctx, configs, warnOnce) {
+function registerOfficialVariables(ctx, configs, warnOnce, keep) {
   const registries = new Map(configs.map((config) => [config, { protect: new Set(), alias: new Map(), registered: new Set() }]))
   const systemPrompt = getService(ctx, 'systemPrompt')
   if (systemPrompt === undefined || typeof systemPrompt.variable !== 'function') return registries
@@ -110,7 +111,7 @@ function registerOfficialVariables(ctx, configs, warnOnce) {
           usedNames.add(official)
           const source = isFact ? name.toLowerCase() : name
           const declaredValue = declared ? String(config.variables[name] ?? '') : undefined
-          keepDisposer(ctx, systemPrompt.variable(official, (context) => {
+          keep(systemPrompt.variable(official, (context) => {
             const session = context?.agent?.session
             const override = getSessionVar(session, source)
             const value = override !== undefined ? String(override) : declaredValue ?? runtimeFactValue(source, session) ?? ''
@@ -187,7 +188,7 @@ function textRegistrationName(config, field) {
 }
 
 /** system-section:注册静态 system prompt 段(支持官方 {{variable}} 渲染与 merged 拼接)。 */
-function wireSystemSections(ctx, configs, registry, warnOnce) {
+function wireSystemSections(ctx, configs, registry, warnOnce, keep) {
   const disposers = []
   const systemPrompt = getService(ctx, 'systemPrompt')
   if (systemPrompt === undefined || typeof systemPrompt.section !== 'function') {
@@ -210,7 +211,7 @@ function wireSystemSections(ctx, configs, registry, warnOnce) {
               .filter((item) => item.length > 0)
               .join('\n\n')
         : groupText
-      keepDisposer(ctx, systemPrompt.section({
+      keep(systemPrompt.section({
         name: textRegistrationName(base, 'sectionName'),
         order: base.order,
         text,
@@ -218,7 +219,7 @@ function wireSystemSections(ctx, configs, registry, warnOnce) {
       }), `${name}: section ${base.id}`)
       // suppressRuntimeContext 抑制该 scope 的动态 runtime-context 快照（多段重复调用幂等）。
       if (base.params?.suppressRuntimeContext === true) {
-        keepDisposer(ctx, systemPrompt.suppressRuntimeContext(), `${name}: suppressRuntimeContext ${base.id}`)
+        keep(systemPrompt.suppressRuntimeContext(), `${name}: suppressRuntimeContext ${base.id}`)
       }
     } catch (error) {
       warnOnce(`${name}: system-section config ${base.id} failed: ${String(error?.message ?? error)}`)
@@ -227,8 +228,60 @@ function wireSystemSections(ctx, configs, registry, warnOnce) {
   return disposers
 }
 
+async function resolvedContextText(ctx, config, context, registry, warnOnce) {
+  const agent = context.agent
+  const session = agent?.session
+  const resolved = await config.resolve({ ctx, agent, session, signal: context.signal, decision: { kind: 'ok', messages: [] }, messages: [] })
+  if (context.signal?.aborted || resolved == null) return ''
+  const variables = { ...config.variables, ...(resolved.variables !== null && typeof resolved.variables === 'object' ? resolved.variables : {}) }
+  const rendered = config.texts.length > 0 ? interpolateVariables(config.texts.join('\n\n'), variables, session)
+    : typeof resolved.text === 'string' ? interpolateVariables(resolved.text, variables, session) : ''
+  return officialChannelText(rendered, `runtime-context ${config.id}`, registry, warnOnce)
+}
+
+/** 条件化文本保留官方排序占位；仅在本次真实 assembly 填充，不缓存 context 身份。 */
+function wireRuleTextContributions(ctx, configs, registry, warnOnce, keep, on) {
+  if (!configs.length) return []
+  const systemPrompt = getService(ctx, 'systemPrompt')
+  if (systemPrompt === undefined) { warnOnce(`${name}: systemPrompt unavailable`); return [] }
+  const variable = `pt_rule_${newMessageId('text').replace(/[^a-z0-9_]/gi, '_').toLowerCase()}`
+  const marker = `{{${variable}}}`
+  keep(systemPrompt.variable(variable, () => ''), `${name}: conditional text marker`)
+  const bindings = []
+  for (const layer of ['system-section', 'runtime-context']) for (const group of textLayerGroups(configs.filter(config => config.layer === layer))) {
+    const section = layer === 'system-section'
+    const base = group[0]
+    const entryName = textRegistrationName(base, section ? 'sectionName' : 'contextName')
+    keep(systemPrompt[section ? 'section' : 'context']({ name: entryName, order: base.order, text: marker }), `${name}: conditional ${entryName}`)
+    bindings.push({ group, name: entryName, collection: section ? 'sections' : 'contexts' })
+  }
+  let active = true
+  keep(() => { active = false }, `${name}: conditional text lifecycle`)
+  return [on('system-prompt/assemble', async (assembly, context, next, invocation) => {
+    const frame = invocation ?? ruleFrame('system-prompt/assemble', [assembly, context], warnOnce)
+    for (const binding of bindings) {
+      const entry = assembly[binding.collection].find(item => item.name === binding.name && item.text === marker)
+      if (entry === undefined) continue
+      entry.text = ''
+      const blocks = []
+      for (const config of binding.group) {
+        if (!active || context.signal?.aborted || !ruleMatches(config.rule, frame) || !matchesAgentScope(config, context.agent)) continue
+        try {
+          const text = config.layer === 'runtime-context' && (config.strategy === 'placeholder' || !KNOWN_STRATEGIES.has(config.strategy))
+            ? await resolvedContextText(ctx, config, context, registry.get(config), warnOnce)
+            : configText(config, registry, warnOnce, context)
+          if (text.length) blocks.push(text)
+        } catch (error) { warnOnce(`${name}: rule text ${config.id} failed: ${String(error?.message ?? error)}`) }
+      }
+      if (active && !context.signal?.aborted) entry.text = blocks.join('\n\n')
+    }
+    return next()
+  })]
+
+}
+
 /** runtime-context:注册运行时上下文；静态文本支持 merged，动态策略在官方 assembly waterfall 中填充。 */
-function wireRuntimeContexts(ctx, configs, registry, warnOnce) {
+function wireRuntimeContexts(ctx, configs, registry, warnOnce, keep, on) {
   const disposers = []
   const systemPrompt = getService(ctx, 'systemPrompt')
   if (systemPrompt === undefined || typeof systemPrompt.context !== 'function') {
@@ -247,7 +300,7 @@ function wireRuntimeContexts(ctx, configs, registry, warnOnce) {
       const render = context => group.map(config => configText(config, registry, warnOnce, context)).filter(item => item.length > 0).join('\n\n')
       const text = dynamic ? render : render()
       if (!dynamic && text.length === 0) continue
-      keepDisposer(ctx, systemPrompt.context({
+      keep(systemPrompt.context({
         name: textRegistrationName(base, 'contextName'),
         order: base.order,
         text,
@@ -265,12 +318,12 @@ function wireRuntimeContexts(ctx, configs, registry, warnOnce) {
   const slotText = `{{${slotVariable}}}`
   const registered = new Map()
   let active = true
-  keepDisposer(ctx, () => { active = false }, `${name}: runtime-context lifecycle`)
-  keepDisposer(ctx, systemPrompt.variable(slotVariable, () => ''), `${name}: runtime-context placeholder`)
+  keep(() => { active = false }, `${name}: runtime-context lifecycle`)
+  keep(systemPrompt.variable(slotVariable, () => ''), `${name}: runtime-context placeholder`)
   for (const config of placeholders) {
     try {
       const contextName = textRegistrationName(config, 'contextName')
-      keepDisposer(ctx, systemPrompt.context({
+      keep(systemPrompt.context({
         name: contextName,
         order: config.order,
         text: slotText,
@@ -280,22 +333,15 @@ function wireRuntimeContexts(ctx, configs, registry, warnOnce) {
       warnOnce(`${name}: runtime-context placeholder ${config.id} failed: ${String(error?.message ?? error)}`)
     }
   }
-  disposers.push(ctx.on('system-prompt/assemble', async (assembly, context, next) => {
+  disposers.push(on('system-prompt/assemble', async (assembly, context, next) => {
     const entries = assembly.contexts.filter(entry => registered.has(entry.name) && entry.text === slotText)
     for (const entry of entries) {
       const config = registered.get(entry.name)
       entry.text = ''
       if (!active || context.signal?.aborted) continue
       try {
-        const agent = context.agent
-        const session = agent?.session
-        const resolved = await config.resolve({ ctx, agent, session, signal: context.signal, decision: { kind: 'ok', messages: [] }, messages: [] })
-        if (!active || context.signal?.aborted || resolved === null || resolved === undefined) continue
-        const variables = { ...config.variables, ...(resolved.variables !== null && typeof resolved.variables === 'object' ? resolved.variables : {}) }
-        const rendered = config.texts.length > 0
-          ? interpolateVariables(config.texts.join('\n\n'), variables, session)
-          : typeof resolved.text === 'string' ? interpolateVariables(resolved.text, variables, session) : ''
-        entry.text = officialChannelText(rendered, `runtime-context ${config.id}`, registry.get(config), warnOnce)
+        const text = await resolvedContextText(ctx, config, context, registry.get(config), warnOnce)
+        if (active && !context.signal?.aborted) entry.text = text
       } catch (error) {
         warnOnce(`${name}: runtime-context ${config.id} resolve failed: ${String(error?.message ?? error)}`)
       }
@@ -340,15 +386,16 @@ export function applyAgentRequestParams(params, base) {
 }
 
 /** agent-request:对冻结的 LlmCallConfig 做浅合并 / 整体替换 / 按值条件删键。 */
-function wireAgentRequests(ctx, configs, warnOnce) {
+function wireAgentRequests(ctx, configs, warnOnce, on) {
   if (configs.length === 0) return []
   const ordered = configs.some(config => config.sequence !== undefined) ? configs : [...configs].reverse()
-  return [ctx.on('agent/request', async (payload, next) => {
+  return [on('agent/request', async (payload, next, invocation) => {
     let result = await next()
+    const frame = invocation ?? ruleFrame('agent/request', [payload], warnOnce)
     // 模块请求在 next 返回后按序合并；无文件来源的独立调用保持原回栈顺序。
     for (const config of ordered) {
       try {
-        if (matchesAgentScope(config, payload?.agent)) result = applyAgentRequestParams(config.params, result)
+        if (ruleMatches(config.rule, frame) && matchesAgentScope(config, payload?.agent)) result = applyAgentRequestParams(config.params, result)
       } catch (error) {
         warnOnce(`${name}: agent-request config ${config.id} failed: ${String(error?.message ?? error)}`)
       }
@@ -365,11 +412,15 @@ async function* replacedStream(text) {
 }
 
 /** llm-stream:pass 透传;replace 用提示词配置文本替代整个模型流。 */
-function wireLlmStreams(ctx, configs, warnOnce) {
+function wireLlmStreams(ctx, configs, warnOnce, on) {
   const disposers = []
   for (const config of configs) {
-    disposers.push(ctx.on('llm/stream', (options, next) => {
+    disposers.push(on('llm/stream', (options, next, invocation) => {
       try {
+        const frame = invocation ?? ruleFrame('llm/stream', [options], warnOnce)
+        const agent = options?.sessionId === undefined ? undefined : getService(ctx, 'agents')?.get?.(options.sessionId)
+        frame.subject.agent = agent
+        if (!ruleMatches(config.rule, frame)) return next()
         const mode = config.params?.mode ?? 'pass'
         if (mode === 'replace' && config.texts.length > 0 && matchesModel(config.modelScope, options?.model)) {
           return replacedStream(config.texts.join('\n\n'))
@@ -410,13 +461,14 @@ function layerText(config, agent, warnOnce) {
 }
 
 /** tool-pipeline:pre-execute 判定、execute 包装、post-execute 结果替换/阻断。 */
-function wireToolPipelines(ctx, configs, warnOnce) {
+function wireToolPipelines(ctx, configs, warnOnce, on) {
   const disposers = []
   for (const config of configs) {
     const names = parseToolNames(config.params?.toolNames)
     const matchesTool = (exec) => names.length === 0 || names.includes(exec?.name)
-    disposers.push(ctx.on('tools/pre-execute', async (exec, next) => {
+    disposers.push(on('tools/pre-execute', async (exec, next, invocation) => {
       try {
+        if (!ruleMatches(config.rule, invocation ?? ruleFrame('tools/pre-execute', [exec], warnOnce))) return next()
         if (!matchesTool(exec) || !matchesAgentScope(config, exec?.agent)) return next()
         if (!conditionHit(config, { argsText: toolArgsText(exec?.arguments) })) return next()
         const decision = config.params?.preDecision ?? 'allow'
@@ -431,8 +483,9 @@ function wireToolPipelines(ctx, configs, warnOnce) {
         return next()
       }
     }))
-    disposers.push(ctx.on('tools/post-execute', async (exec, result, next) => {
+    disposers.push(on('tools/post-execute', async (exec, result, next, invocation) => {
       try {
+        if (!ruleMatches(config.rule, invocation ?? ruleFrame('tools/post-execute', [exec, result], warnOnce))) return next()
         if (!matchesTool(exec) || !matchesAgentScope(config, exec?.agent)) return next()
         if (!conditionHit(config, { argsText: toolArgsText(exec?.arguments), resultText: extractText(result) })) return next()
         const action = config.params?.postAction ?? 'accept'
@@ -519,7 +572,7 @@ export function createTurnStopBudget() {
 }
 
 /** turn-stop：命中条件时阻止本轮停止并强制续跑一步，上限在引擎内。 */
-function wireTurnStops(ctx, configs, warnOnce) {
+function wireTurnStops(ctx, configs, warnOnce, on) {
   const disposers = []
   if (configs.length === 0) return disposers
   const budgets = new Map()
@@ -528,8 +581,10 @@ function wireTurnStops(ctx, configs, warnOnce) {
     const source = config.sourceModuleId ?? ''
     if (!budgets.has(source)) budgets.set(source, createTurnStopBudget())
     const budget = budgets.get(source)
-    disposers.push(ctx.on('agent/turn-stopping', ({ agent, turn } = {}) => {
+    disposers.push(on('agent/turn-stopping', (payload = {}, _next, invocation) => {
+      const { agent, turn } = payload
       try {
+        if (!ruleMatches(config.rule, invocation ?? ruleFrame('agent/turn-stopping', [payload], warnOnce))) return
         const session = agent?.session
         if (session?.id === undefined || typeof agent.steer !== 'function') return
         if (!matchesAgentScope(config, agent)) return
@@ -567,33 +622,39 @@ function mainSessionForChild(ctx, id) {
 }
 
 /** 子代理生命周期：启动注入子代理；结束默认观察，可显式给所属主会话投递上下文。 */
-function wireSubagentEvents(ctx, configs, warnOnce) {
+function wireSubagentEvents(ctx, configs, warnOnce, on) {
   const disposers = []
   const startConfigs = configs.filter((config) => config.layer === 'subagent-start')
   const endConfigs = configs.filter((config) => config.layer === 'subagent-end')
-  const injectMain = endConfigs.some((config) => config.params?.action === 'inject-main')
   // B4 保留原状（不迁 `sessionState`）：键是 `runId`（运行标识）而不是 session，不属于
   // 「按会话索引」的会话态，套统一接口会把语义挪到错误的键上；它的 `delete(最旧)` 也是与
   // `clear()` 不同的另一档淘汰策略，无等价证明前保留。
   const runs = new Map()
-  if (injectMain) {
+  if (endConfigs.length > 0) {
     disposers.push(ctx.on('subagent/start', (info) => {
       if (typeof info?.runId !== 'string' || typeof info?.id !== 'string') return
+      const child = getService(ctx, 'agents')?.get?.(info.id)
+      const session = child?.session ?? getService(ctx, 'sessions')?.get?.(info.id)
+      if (session === undefined) return
       const mainId = mainSessionForChild(ctx, info.id)
-      if (mainId === undefined) return
       // ponytail: 有界运行记录；极端并发超过上限时，结束事件仍可通过存活会话血缘定位。
       if (runs.size >= MAX_TRACKED_SESSIONS) runs.delete(runs.keys().next().value)
-      runs.set(info.runId, { id: info.id, mainId, model: getService(ctx, 'agents')?.get?.(info.id)?.options?.model })
+      runs.set(info.runId, { id: info.id, mainId, agent: child, session, model: child?.options?.model })
     }))
-    ctx.effect?.(() => () => runs.clear())
+    const clearRuns = () => runs.clear()
+    disposers.push(clearRuns)
+    ctx.effect?.(() => clearRuns)
   }
   if (startConfigs.length > 0) {
-    disposers.push(ctx.on('subagent/start', (info) => {
+    disposers.push(on('subagent/start', (info, _next, invocation) => {
       try {
         const child = getService(ctx, 'agents')?.get?.(info?.id)
         if (child === undefined) return
+        const frame = invocation ?? ruleFrame('subagent/start', [info], warnOnce)
+        frame.subject.agent = child
         const subagentText = subagentTextOf(info)
         for (const config of startConfigs) {
+          if (!ruleMatches(config.rule, frame)) continue
           if (!matchesAgentScope(config, child)) continue
           if (!conditionHit(config, { subagentText })) continue
           if (typeof child.inject !== 'function') continue
@@ -607,14 +668,19 @@ function wireSubagentEvents(ctx, configs, warnOnce) {
     }))
   }
   if (endConfigs.length > 0) {
-    disposers.push(ctx.on('subagent/end', (info) => {
+    disposers.push(on('subagent/end', (info, _next, invocation) => {
       try {
         const child = getService(ctx, 'agents')?.get?.(info?.id)
         const recorded = runs.get(info?.runId)
         runs.delete(info?.runId)
         if (recorded !== undefined && recorded.id !== info?.id) return
         const subagentText = subagentTextOf(info)
+        const frame = invocation ?? ruleFrame('subagent/end', [info], warnOnce)
+        frame.subject.agent = child ?? recorded?.agent
+        frame.subject.session = child?.session ?? recorded?.session ?? getService(ctx, 'sessions')?.get?.(info?.id)
+        frame.subject.model = child?.options?.model ?? recorded?.model
         for (const config of endConfigs) {
+          if (!ruleMatches(config.rule, frame)) continue
           if (!matchesModel(config.modelScope, child?.options?.model ?? recorded?.model)) continue
           if (!conditionHit(config, { subagentText })) continue
           if (config.params?.action !== 'inject-main') {
@@ -652,18 +718,30 @@ function wireSubagentEvents(ctx, configs, warnOnce) {
  * @returns 聚合 disposer：回收本次接线显式创建的 waterfall 监听器；段/上下文/
  *   变量注册走 keepDisposer（随 ctx fiber 释放），不在本函数的回收面内。
  */
-export function wireLayers(ctx, configs, warnOnce) {
+export function wireLayers(ctx, configs, warnOnce, options = {}) {
   configs = [...configs].sort(compareConfigSequence)
+  const owned = []
+  const keep = (dispose, label) => {
+    if (typeof dispose !== 'function') return
+    let active = true
+    const release = () => { if (active) { active = false; dispose() } }
+    owned.push(release); keepDisposer(ctx, release, label)
+  }
+  const on = options.on ?? ((...args) => ctx.on(...args))
   // 官方插值两层共享一份变量注册：运行时事实按 assembly 求值，非法名走别名改写。
-  const registry = registerOfficialVariables(ctx, configs.filter((config) => config.layer === 'system-section' || config.layer === 'runtime-context'), warnOnce)
+  const registry = registerOfficialVariables(ctx, configs.filter((config) => config.layer === 'system-section' || config.layer === 'runtime-context'), warnOnce, keep)
+  const conditional = configs.filter(config => typeof config.rule?.when === 'function' && ['system-section', 'runtime-context'].includes(config.layer))
+  const regular = configs.filter(config => !conditional.includes(config))
   const registered = [
-    wireSystemSections(ctx, configs.filter((config) => config.layer === 'system-section'), registry, warnOnce),
-    wireRuntimeContexts(ctx, configs.filter((config) => config.layer === 'runtime-context'), registry, warnOnce),
-    wireAgentRequests(ctx, configs.filter((config) => config.layer === 'agent-request'), warnOnce),
-    wireLlmStreams(ctx, configs.filter((config) => config.layer === 'llm-stream'), warnOnce),
-    wireToolPipelines(ctx, configs.filter((config) => config.layer === 'tool-pipeline'), warnOnce),
-    wireTurnStops(ctx, configs.filter((config) => config.layer === 'turn-stop'), warnOnce),
-    wireSubagentEvents(ctx, configs.filter((config) => config.layer === 'subagent-start' || config.layer === 'subagent-end'), warnOnce),
+    wireSystemSections(ctx, regular.filter((config) => config.layer === 'system-section'), registry, warnOnce, keep),
+    wireRuntimeContexts(ctx, regular.filter((config) => config.layer === 'runtime-context'), registry, warnOnce, keep, on),
+    wireRuleTextContributions(ctx, conditional, registry, warnOnce, keep, on),
+    wireAgentRequests(ctx, configs.filter((config) => config.layer === 'agent-request'), warnOnce, on),
+    wireLlmStreams(ctx, configs.filter((config) => config.layer === 'llm-stream'), warnOnce, on),
+    wireToolPipelines(ctx, configs.filter((config) => config.layer === 'tool-pipeline'), warnOnce, on),
+    wireTurnStops(ctx, configs.filter((config) => config.layer === 'turn-stop'), warnOnce, on),
+    wireSubagentEvents(ctx, configs.filter((config) => config.layer === 'subagent-start' || config.layer === 'subagent-end'), warnOnce, on),
+    owned,
   ].flat().filter((disposer) => typeof disposer === 'function')
   return () => {
     for (const dispose of registered.splice(0)) {

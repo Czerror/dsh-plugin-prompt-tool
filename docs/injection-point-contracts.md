@@ -4,16 +4,16 @@
 
 ## 配置卡的共同结构
 
-列表只显示真实 `promptConfigs` 实例，不生成空层卡。卡内按「基础信息 → 注入规则 → 作用范围 → 本条规则的行为 → 条件需要的内容 → 本层共享设置 → 可用的高级元数据」组织。
+列表只显示真实 `rules` 实例，不生成空层卡。每卡在同一表面编辑「条件触发 → 执行动作」，支持条件树与多动作；正文是注入动作的字段，共享设置使用平级入口。卡头总开关旁放置上下移动和拖拽控件。
 
 - `layerFieldPolicies` 控制通用字段；`layerContracts` 控制合法策略、匹配对象、内容类型、局部参数类型与枚举。两者都由 `engine/schema.mjs` 下发到 `/meta` 和 `/bootstrap`，保存端调用同一校验。
-- 规则参数属于该实例；共享参数属于当前模块的固定存储层。共享设置放在真实卡内的原生折叠区，同层多卡共用同一份值与草稿；展示分组不改写磁盘归属。
+- 规则参数属于相应条件或动作；共享参数属于当前模块的固定存储层，同层多卡共用一份值与草稿；展示分组不改写磁盘归属。
 - 换层只在用户操作时清除新层拒绝的通用字段，并把不适用策略改为固定文本。正文、变量、未知局部参数不因隐藏而删除。
-- UI 使用现有 DSH primitive、CSS Modules 和主题 token。分区间距 24px、字段间距 16/24px；窄卡自动单列；错误紧邻控件，键盘焦点可见。未引入新的组件库。
+- UI 复用现有控件、CSS Modules 和主题 token，按 Linear 紧凑对齐：桌面控件高28px，单行输入按字符宽度收紧，紧凑下拉按最长选项限宽，数字96px；粗指针目标扩大控件本体。窄卡自动换行，正文与 JSON 保持完整编辑宽度，错误紧邻控件，键盘焦点可见。
 
 ## 官方支持与插件映射
 
-共同实例字段 `id/name/enabled/configKind/order/group/exclusive` 是插件配置与排序规则，不是各官方事件的 payload。`audience/modelScope/promotion/match/dedupe/mergeMode` 同样是插件自己的筛选或注入语义。下表分别列出官方接口与插件实际开放的映射。
+`id/name/enabled/group/exclusive` 属于规则，`when` 统一判断，`do` 持有动作。`configKind/order/dedupe/mergeMode` 属于注入动作配置，不是各官方事件的 payload；下表描述注入动作复用的层适配能力，通用判断与其他动作见 [引擎指南](engine-reuse.md#声明的条件与动作边界)。组内显式启用目标卡会关闭其余卡，不按排序选择赢家。
 
 | 层 | 官方入口及真实参数 | 当前配置卡 | 约束 |
 |---|---|---|---|
@@ -30,14 +30,19 @@
 子代理结束行为示例：
 
 ```yaml
-promptConfigs:
+rules:
   - id: subagent-completed
     name: 子代理完成后检查结果
     layer: subagent-end
-    strategy: static
-    params:
-      action: inject-main
-    text: 子代理已结束。请检查其结果，完成验证后再回复用户。
+    do:
+      - id: notify-main
+        kind: inject-text
+        config:
+          layer: subagent-end
+          strategy: static
+          params:
+            action: inject-main
+          text: 子代理已结束。请检查其结果，完成验证后再回复用户。
 ```
 
 ## order 的作用面与刻度来源
@@ -56,22 +61,32 @@ promptConfigs:
 
 ```yaml
 layerSettings:
-  agent-request:
-    modelTemperature: 0.7
   subagent-start:
-    subagentTemperature: 0.9
     maxDepth: 2
   tool-pipeline:
     customToolRequireApproval: [shell]
-promptConfigs:
+rules:
+  - id: subagent-temperature
+    layer: agent-request
+    when:
+      scope: { audience: subagent }
+    do:
+      - id: temperature
+        kind: request-params
+        patch: { temperature: 0.9 }
   - id: example-subagent-start
     name: 子代理通用守则
     layer: subagent-start
-    strategy: static
-    text: 先核实调用链，再开始修改。
+    do:
+      - id: inject
+        kind: inject-text
+        config:
+          layer: subagent-start
+          strategy: static
+          text: 先核实调用链，再开始修改。
 ```
 
-共享参数位置由参数目录的 `storageLayer` 固定，`card` 与编辑组 `displayLayer` 只决定 UI 展示。内部运行时与 bridge 仍使用平铺 EngineParams；14 个公开键与 15 个旧规则快捷键分别管理。`maxDepth` 只在插件子代理工具策略启用时生效；子模型 provider/name 作用于本地子代理的实际请求，不改普通官方 spawn 预检。persona、variables、customTools、subagentToolPolicy、moduleConfigs 保留独立所有者，不复制到每条规则。详情见 [参数框架](architecture-params.md)。
+共享参数位置由参数目录的 `storageLayer` 固定，`card` 与编辑组 `displayLayer` 只决定 UI 展示；当前公开共享键为4个。旧模型键与15个规则快捷键只进入离线迁移。`maxDepth` 只在插件子代理工具策略启用时生效；子模型路由通过 `request-params` 动作和受众条件作用于实际请求，不改普通官方 spawn 预检。persona、variables、customTools、subagentToolPolicy、moduleConfigs 保留独立所有者，不复制到每条规则。详情见 [参数框架](architecture-params.md)。
 
 ## 官方依据
 

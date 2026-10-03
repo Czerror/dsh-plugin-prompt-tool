@@ -1,0 +1,110 @@
+import { prepareAction } from './actions/index.mjs'
+import { applyPromptConfigSources } from './executor.mjs'
+import { wireLayers } from './layers.mjs'
+import { wireTriggerObservers } from './trigger.mjs'
+import { ruleFrame, ruleMatches } from './conditions/evaluation.mjs'
+import { createWarnOnce } from './shared.mjs'
+
+const noNext = new Set(['agent/inbox/inserted', 'agent/turn-stopping', 'subagent/start', 'subagent/end'])
+const compare = (a, b) => a.action.channelOrder - b.action.channelOrder
+  || a.moduleId.localeCompare(b.moduleId) || a.ruleIndex - b.ruleIndex || a.action.actionIndex - b.action.actionIndex
+
+/** 所有来源只进入这个装配入口；注入保留原有批处理和协调器所有权。 */
+export function mountRuleSources(ctx, sources, options = {}) {
+  const warnOnce = options.warnOnce ?? createWarnOnce(ctx, options.plugin ?? 'rule-engine')
+  const releases = []
+  const points = new Map()
+  const injections = new Map(sources.map(source => [source.moduleId, { sourceId: `module:${source.moduleId}`, configs: [], ruleActions: [], officialInstructions: source.officialInstructions === true }]))
+  const rules = sources.flatMap(source => source.rules.filter(rule => rule.enabled !== false))
+  const observer = wireTriggerObservers(ctx, rules, { plugin: options.plugin ?? 'rule-engine', warnOnce })
+  if (observer) releases.push(observer)
+  let active = true
+  const bind = (item, on) => prepareAction(item.action, { plugin: options.plugin, warnOnce, promptConfigOptions: item.rule.promptConfigOptions, on })(ctx)
+  try {
+    for (const source of sources) for (const [ruleIndex, rule] of source.rules.entries()) {
+      if (rule.enabled === false) continue
+      for (const action of rule.actions) {
+        const item = { moduleId: source.moduleId, ruleIndex, rule, action }
+        if (action.execution.lifecycle === 'registration' && action.kind === 'guard') { releases.push(bind(item)); continue }
+        const point = action.execution
+        const key = `${point.channel}:${point.phase}:${action.waterfallPosition}`
+        const bucket = points.get(key) ?? { ...point, waterfallPosition: action.waterfallPosition, items: [] }
+        bucket.items.push(item); points.set(key, bucket)
+      }
+    }
+    for (const point of points.values()) {
+      point.items.sort(compare)
+      const handlers = []
+      let textConfigs = []
+      const flushLayers = () => {
+        if (!textConfigs.length) return
+        releases.push(wireLayers(ctx, textConfigs, warnOnce, {
+          on: (channel, handler) => {
+            if (channel !== point.channel) throw new TypeError(`rule action registered outside ${point.channel}: ${channel}`)
+            handlers.push({ handler }); return () => {}
+          },
+        }))
+        textConfigs = []
+      }
+      for (const item of point.items) {
+        const { action, rule, moduleId } = item
+        if (action.kind === 'inject-text') {
+          const config = { ...action.compiledConfig, rule, sourceModuleId: moduleId, group: undefined, exclusive: false, enabled: true }
+          if (config.layer === 'pre-step') injections.get(moduleId).configs.push(config)
+          else textConfigs.push(config)
+          continue
+        }
+        flushLayers()
+        const on = (channel, handler) => {
+          if (channel !== point.channel) throw new TypeError(`rule action registered outside ${point.channel}: ${channel}`)
+          const entry = { rule, handler, sequence: action.channelOrder, sourceModuleId: moduleId, ruleId: rule.id, ruleActionIndex: action.actionIndex, id: action.id }
+          if (channel === 'agent/pre-step' && point.waterfallPosition === 'default') injections.get(moduleId).ruleActions.push(entry)
+          else handlers.push(entry)
+          return () => {}
+        }
+        releases.push(bind(item, on))
+      }
+      flushLayers()
+      if (!handlers.length) continue
+      releases.push(ctx.on(point.channel, (...args) => {
+        const free = noNext.has(point.channel)
+        const payload = free ? args : args.slice(0, -1)
+        const next = free ? () => undefined : args[args.length - 1]
+        if (!active) return next()
+        const frame = ruleFrame(point.channel, payload, warnOnce)
+        if (free) {
+          let pending
+          for (const entry of handlers) {
+            const invoke = () => active && ruleMatches(entry.rule, frame) ? entry.handler(...payload, undefined, frame) : undefined
+            pending = pending?.then ? pending.then(invoke) : invoke()
+          }
+          return pending
+        }
+        if (point.phase === 'after-next') return Promise.resolve(next()).then(async initial => {
+          let result = initial
+          for (const entry of handlers) {
+            if (!active || !ruleMatches(entry.rule, frame)) continue
+            result = await entry.handler(...payload, () => result, frame)
+          }
+          return result
+        })
+        const invoke = index => {
+          if (!active || index === handlers.length) return next()
+          const entry = handlers[index]
+          return ruleMatches(entry.rule, frame) ? entry.handler(...payload, () => invoke(index + 1), frame) : invoke(index + 1)
+        }
+        return invoke(0)
+      }, point.waterfallPosition === 'outermost' ? { prepend: true } : undefined))
+    }
+    const preStep = [...injections.values()].filter(source => source.configs.length || source.ruleActions.length)
+    if (preStep.length) releases.push(applyPromptConfigSources(ctx, preStep, { layers: false }))
+  } catch (error) {
+    active = false
+    for (const dispose of releases.reverse()) { try { dispose?.() } catch {} }
+    throw error
+  }
+  return () => {
+    active = false
+    for (const dispose of releases.splice(0).reverse()) { try { dispose?.() } catch {} }
+  }
+}

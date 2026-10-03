@@ -5,10 +5,15 @@
 id: example-subagent-start
 name: 子代理通用守则
 layer: subagent-start
-strategy: static
-order: 0
-modelScope: all
-text: |-
-  开始编辑之前，先确认你改的这条路径在运行时会真的被执行：查调用链，
-  或用探针跑一次看它动。找不到证据就继续查，不要凭「看起来像」就动手。
-params: {}
+do:
+  - id: inject
+    kind: inject-text
+    config:
+      id: example-subagent-start
+      layer: subagent-start
+      strategy: static
+      order: 0
+      text: |-
+        开始编辑之前，先确认你改的这条路径在运行时会真的被执行：查调用链，
+        或用探针跑一次看它动。找不到证据就继续查，不要凭「看起来像」就动手。
+      params: {}

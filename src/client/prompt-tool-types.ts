@@ -2,6 +2,7 @@
 import type { EngineMetaLayerContract, PresetSummary, PromptConfigSourceView, StConversionReport, StOrderGroupCandidate } from '../shared/bridge-contract.ts'
 import type { OfficialOrdersView } from '../shared/official-orders.ts'
 import type { AssetImportRequest, AssetSummary } from '../shared/asset-transfer.ts'
+import type { RuleDefinition } from '../shared/rules.ts'
 
 /**
  * 导入预览态（模块包与角色卡 JSON 共用）：文件与凭据在确认时原样回传。
@@ -99,7 +100,7 @@ export interface PromptConfigDraft extends PromptConfigSourceView {
 export interface PromptConfigTemplateEntry {
   file: string
   content: string
-  spec: PromptConfigDraft
+  spec: RuleDefinition
 }
 
 /**

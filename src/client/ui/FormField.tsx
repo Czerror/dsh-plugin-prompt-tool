@@ -1,5 +1,6 @@
-import { cloneElement, isValidElement, useId, type ReactElement, type ReactNode } from 'react'
+import { cloneElement, isValidElement, useId, type CSSProperties, type ReactElement, type ReactNode } from 'react'
 import { HintTooltip } from './HintTooltip.tsx'
+import { controlWidth } from './control-width.ts'
 import styles from './controls.module.css'
 
 /** 共享表单字段：生成 label/id 关联并渲染可选说明。 */
@@ -8,8 +9,10 @@ export function FormField(props: { label: string; hint?: string; error?: string;
   const errorId = `${id}-error`
   const hintId = `${id}-hint`
   const control = isValidElement(props.children)
-    ? cloneElement(props.children as ReactElement<{ id?: string; 'aria-invalid'?: boolean; 'aria-describedby'?: string }>, {
+    ? cloneElement(props.children as ReactElement<{ id?: string; style?: CSSProperties; 'aria-invalid'?: boolean; 'aria-describedby'?: string }>, {
       id,
+      ...(props.children.type === 'input' && !props.children.props.inputMode && [undefined, 'text', 'search', 'url', 'email'].includes(props.children.props.type)
+        ? { style: { width: controlWidth(String(props.children.props.value ?? '')), ...props.children.props.style } } : {}),
       ...(props.error ? { 'aria-invalid': true } : {}),
       'aria-describedby': [props.children.props['aria-describedby'], props.error ? errorId : undefined, props.hintMode !== 'tooltip' && props.hint ? hintId : undefined].filter(Boolean).join(' ') || undefined,
     })

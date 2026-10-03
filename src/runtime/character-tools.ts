@@ -66,7 +66,7 @@ export function registerCharacterTools(ctx: Context, host: ModuleToolHost): () =
         content: {
           type: 'string',
           required: true,
-          description: '角色卡 JSON / YAML 文本：SillyTavern chara_card_v2/v3，或含 id/name/promptConfigs 的原生片段。原生片段只支持内嵌 text/texts 和控制配置，不支持外部文件。',
+          description: '角色卡 JSON / YAML 文本：SillyTavern chara_card_v2/v3，或含 id/name/rules 的原生片段。规则使用 when 条件和 do 动作数组，注入动作只支持内嵌 text/texts，不支持外部文件。',
         },
       },
       output: {
@@ -91,7 +91,7 @@ export function registerCharacterTools(ctx: Context, host: ModuleToolHost): () =
     disposers.push(toolsCtx.tools.register(defineTool({
       name: 'character_apply',
       description: '把角色卡库中一张角色卡的参数（角色设定 / 系统提示 / 开场白 / 世界书 / 提示词配置）'
-        + '合并进当前会话绑定的模块（promptConfigs 带 chara-<id>- 前缀防冲突，params 合并，meta.importedCharacters 记录），'
+        + '合并进当前会话装配的模块（rules 带 chara-<id>- 前缀防冲突，保留条件和动作，meta.importedCharacters 记录），'
         + '并立即重建生成目录。重复应用幂等。',
       parameters: {
         id: {

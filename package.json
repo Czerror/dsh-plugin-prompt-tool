@@ -10,6 +10,9 @@
   "type": "module",
   "main": "lib/index.mjs",
   "types": "lib/index.d.mts",
+  "bin": {
+    "prompt-tool-migrate-rules": "lib/migrate-rules.mjs"
+  },
   "exports": {
     ".": {
       "types": "./lib/index.d.mts",
@@ -118,6 +121,7 @@
     "sync:yaml": "node scripts/sync-yaml-vendor.mjs",
     "rebuild:preset-template": "node scripts/rebuild-preset-template.mjs",
     "rematerialize:presets": "node scripts/rematerialize-presets.mjs",
+    "migrate:rules": "node lib/migrate-rules.mjs",
     "repair:profile": "node scripts/repair-profile.mjs",
     "verify:host": "node scripts/verify-host-contracts.mjs"
   },

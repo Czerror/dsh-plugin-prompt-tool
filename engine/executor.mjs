@@ -29,6 +29,7 @@ import { wireLayers } from './layers.mjs'
 import { sessionVarsSnapshot } from './session-vars.mjs'
 import { selectStWorldBook } from './st-world-book.mjs'
 import { compareConfigSequence } from './order.mjs'
+import { ruleFrame, ruleMatches } from './conditions/evaluation.mjs'
 
 const name = 'prompt-config-engine'
 
@@ -178,6 +179,27 @@ function buildMessage(config, resolved, warnOnce) {
  * @returns 注入后的 decision；reject、缺 agent/session、全部跳过或异常时原样返回。
  */
 export async function runPreStepBatch(options) {
+  const initialFrame = options.ruleFrame ?? ruleFrame('agent/pre-step', [{ agent: options.agent, messages: options.decision?.messages ?? [] }], options.warnOnce)
+  if (!options.ruleActions?.length) return runPromptConfigBatch({ ...options, ruleFrame: initialFrame })
+  const entries = [...options.configs.map(config => ({ ...config, config })), ...options.ruleActions].sort(compareConfigSequence)
+  let decision = options.decision
+  if (decision?.kind === 'reject') return decision
+  let pending = []
+  const placement = { beforeAll: new Set(), afterUser: new Set() }
+  const flush = async () => {
+    if (pending.length) decision = await runPromptConfigBatch({ ...options, decision, configs: pending, ruleFrame: initialFrame, placement })
+    pending = []
+  }
+  for (const entry of entries) {
+    if (entry.config) { pending.push(entry.config); continue }
+    await flush()
+    if (ruleMatches(entry.rule, initialFrame)) decision = await entry.handler(options.payload ?? initialFrame.args[0], () => decision, initialFrame)
+  }
+  await flush()
+  return decision
+}
+
+async function runPromptConfigBatch(options) {
   const { ctx, agent, decision, configs, promotion, memo, warnOnce } = options
   if (decision === null || typeof decision !== 'object') return decision
   if (decision.kind === 'reject') return decision
@@ -204,6 +226,7 @@ export async function runPreStepBatch(options) {
       && (config.promotion !== 'main' || main.status(agent).promoted)
       && (config.promotion !== 'include-subagents' || withSubagents.status(agent).promoted)
       && conditionHit(config, { userText })
+      && ruleMatches(config.rule, options.ruleFrame)
     const qualifiedConfigs = configs.filter(qualified)
     // 协调器为绑定来源 ctx 会复制 config；renderSt 函数身份在副本间保持不变。
     const eligible = new Set(qualifiedConfigs.map(config => config.renderSt))
@@ -310,13 +333,18 @@ export async function runPreStepBatch(options) {
     const afterUser = planned.filter((item) => item.position !== 'before-all' && item.position !== 'after-all')
     const afterAll = planned.filter((item) => item.position === 'after-all')
     if (beforeAll.length > 0) {
-      messages.unshift(...beforeAll.map((item) => item.message))
+      // 混合动作把注入切成多批；继续排在此前仍存活的同位置消息之后。
+      const index = options.placement === undefined ? 0 : messages.findLastIndex(message => options.placement.beforeAll.has(message)) + 1
+      messages.splice(index, 0, ...beforeAll.map((item) => item.message))
+      for (const item of beforeAll) options.placement?.beforeAll.add(item.message)
       for (const item of beforeAll) markGroup(item.group)
       changed = true
     }
     const userIndex = messages.findIndex((item) => item?.source?.kind === 'user')
     if (afterUser.length > 0 && userIndex >= 0) {
-      messages.splice(userIndex + 1, 0, ...afterUser.map((item) => item.message))
+      const last = options.placement === undefined ? -1 : messages.findLastIndex(message => options.placement.afterUser.has(message))
+      messages.splice(Math.max(userIndex, last) + 1, 0, ...afterUser.map((item) => item.message))
+      for (const item of afterUser) options.placement?.afterUser.add(item.message)
       for (const item of afterUser) markGroup(item.group)
       changed = true
     }
@@ -358,7 +386,7 @@ function effectivePromptConfigs(configs) {
 export function applyPromptConfigSources(ctx, sources, options = {}) {
   const selected = sources.map(source => ({ ...source, configs: effectivePromptConfigs(source.configs) }))
   const releases = selected.map(source => applyPromptConfigs(ctx, source.configs, { ...options, ...source, layers: false }))
-  const releaseLayers = wireLayers(ctx, selected.flatMap(source => source.configs)
+  const releaseLayers = options.layers === false ? () => {} : wireLayers(ctx, selected.flatMap(source => source.configs)
     .filter(config => config.layer !== 'pre-step'), createWarnOnce(ctx, name))
   return () => {
     for (const release of releases) release()
@@ -388,6 +416,7 @@ export function applyPromptConfigs(ctx, configs, options = {}) {
   const promotion = { main, withSubagents }
   const source = {
     configs: effectiveList,
+    ruleActions: options.ruleActions ?? [],
     officialInstructions: options.officialInstructions === true,
   }
   /** 已交给协调器的注册(仅管理路径非空)。 */
@@ -444,9 +473,11 @@ export function applyPromptConfigs(ctx, configs, options = {}) {
     if (!active) return decision
     return runPreStepBatch({
       ctx,
+      payload,
       agent: payload?.agent,
       decision,
       configs: effectiveList,
+      ruleActions: source.ruleActions,
       promotion,
       memo: injectedMemo,
       warnOnce,

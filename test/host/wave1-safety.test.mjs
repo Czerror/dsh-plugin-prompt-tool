@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { existsSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -113,20 +113,25 @@ test('renderComposition：命名组合只允许 source/local 或 library 的裸�
   )
 })
 
-test('writePreset：恶意 promptConfigs id 物化前 fail loud，不留半成品目录', () => {
+test('writePreset：恶意规则身份经统一编译器拒绝，不留半成品目录', () => {
   const dir = mkdtempSync(join(tmpdir(), 'pt-w1-malid-'))
   try {
     const moduleDir = join(dir, 'preset')
+    const sourceDir = join(moduleDir, DEFAULT_MODULE_ID)
+    mkdirSync(sourceDir, { recursive: true })
+    writeFileSync(join(sourceDir, 'module.yml'), JSON.stringify({ id: DEFAULT_MODULE_ID, modules: [], rules: [{ id: '../../evil', do: [{ id: 'inject', kind: 'inject-text', config: { text: 'x' } }] }] }))
     assert.throws(
       () => writePreset('PROMPT', {
         moduleDir,
         presetOrder: 5,
-        promptConfigs: [{ id: '../../evil', strategy: 'static', text: 'x' }],
+        outputId: 'safe-output',
       }),
-      /config id/,
+      /rule id/,
     )
     // 原子物化失败：目标目录不存在（tmp 已清理）。缺省 presetTemplate = standard。
-    assert.equal(existsSync(join(moduleDir, 'standard')), false)
+    assert.equal(existsSync(join(moduleDir, 'safe-output')), false)
+    assert.equal(existsSync(join(dir, 'evil')), false)
+    assert.deepEqual(readdirSync(moduleDir), [DEFAULT_MODULE_ID], '源保留且无临时半成品')
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }
@@ -142,7 +147,9 @@ test('writePreset：13+ 配置生成 4 位零填充文件名，字典序稳定',
       layer: 'system-section',
       text: `内容 ${index}`,
     }))
-    writePreset('PROMPT', { moduleDir, presetOrder: 5, promptConfigs: many })
+    mkdirSync(join(moduleDir, DEFAULT_MODULE_ID), { recursive: true })
+    writeFileSync(join(moduleDir, DEFAULT_MODULE_ID, 'module.yml'), JSON.stringify({ id: DEFAULT_MODULE_ID, modules: [], rules: many.map(config => ({ id: config.id, layer: config.layer, do: [{ id: 'inject', kind: 'inject-text', config }] })) }))
+    writePreset('PROMPT', { moduleDir, presetOrder: 5 })
     // 缺省 presetTemplate = 包内默认模块（现为 `ponytail`）。它自带几条配置，所以这里
     // 只看本次写入的 `cfg-*`：零填充与字典序是 writePreset 的契约，与模板自带内容无关。
     const files = readdirSync(join(moduleDir, DEFAULT_MODULE_ID, 'configs'))
@@ -156,13 +163,13 @@ test('writePreset：13+ 配置生成 4 位零填充文件名，字典序稳定',
     const sorted = [...files].sort()
     assert.deepEqual(files, sorted, '字典序读取与写入序一致')
     const last = files[files.length - 1]
-    assert.match(last, /-cfg-12\.yml$/, '第 13 条配置（cfg-12）落在最后')
+    assert.match(last, /-cfg-12--inject\.yml$/, '第 13 条配置（cfg-12）落在最后')
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }
 })
 
-rmSync(home, { recursive: true, force: true })
+test.after(() => rmSync(home, { recursive: true, force: true }))
 
 
 

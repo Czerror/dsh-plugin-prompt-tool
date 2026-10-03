@@ -1,16 +1,15 @@
 /** 客户端脏检测、保存快照与保存后重载判定（纯逻辑）。 */
 import type { PromptConfigDraft } from '../prompt-tool-types.ts'
-import { ENGINE_PARAM_KEYS, type EngineParamKey } from '../../shared/engine-params.ts'
-import { EMPTY_FIELDS, type Fields } from './prompt-tool-fields.ts'
+import { EMPTY_FIELDS, SHARED_PARAM_KEYS, type Fields, type SharedParamKey } from './prompt-tool-fields.ts'
 
 const SETTINGS_SNAPSHOT_KEYS = [
   'writePreset',
 ] as const
-export type SwitchSnapshot = Pick<Fields, EngineParamKey | typeof SETTINGS_SNAPSHOT_KEYS[number]>
+export type SwitchSnapshot = Pick<Fields, SharedParamKey | typeof SETTINGS_SNAPSHOT_KEYS[number]>
 
-/** 全量参数自动进入快照；结构化复制隔离保存期间继续编辑的数组和对象。 */
+/** 公共参数进入快照；规则模型参数不参与公共通道脏检测。 */
 export function snapshotSwitches(fields: Fields): SwitchSnapshot {
-  return structuredClone(Object.fromEntries([...ENGINE_PARAM_KEYS, ...SETTINGS_SNAPSHOT_KEYS]
+  return structuredClone(Object.fromEntries([...SHARED_PARAM_KEYS, ...SETTINGS_SNAPSHOT_KEYS]
     .map((key) => [key, fields[key]]))) as SwitchSnapshot
 }
 

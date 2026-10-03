@@ -46,6 +46,8 @@ export interface PreStepPromptConfig {
 
 export interface PreStepSource {
   configs: readonly PreStepPromptConfig[]
+  /** 已编译的本地点规则动作；执行与配置叶子共享同一批次资格帧。 */
+  ruleActions?: readonly unknown[]
   officialInstructions?: boolean
 }
 
@@ -159,14 +161,15 @@ export function installPreStepCoordinator(ctx: Context, options: PreStepCoordina
       const configs = sources.flatMap(source => source.configs).filter(config =>
         !config.id.startsWith('agents-file-') && config.sourceKind !== 'instruction-file')
         .sort(compareConfigSequence)
+      const ruleActions = sources.flatMap(source => source.ruleActions ?? [])
       const sessionId = isRecord(session) && typeof session.id === 'string' ? session.id : undefined
       if (sessionId !== undefined) {
         if (officialOwner.size >= MAX_TRACKED_OWNER_SESSIONS) officialOwner.clear()
         if (sources.length > 0) officialOwner.set(sessionId, sources.some(source => source.officialInstructions === true))
         else officialOwner.delete(sessionId)
       }
-      return configs.length === 0 ? decision
-        : await runPreStepBatch({ ctx, agent, decision, configs, promotion, memo, warnOnce })
+      return configs.length === 0 && ruleActions.length === 0 ? decision
+        : await runPreStepBatch({ ctx, agent, payload, decision, configs, ruleActions, promotion, memo, warnOnce })
     } catch (error) {
       warnOnce(`${WARN_LABEL}: coordination failed, keeping decision: ${String((error as Error | undefined)?.message ?? error)}`)
       return decision

@@ -16,6 +16,9 @@
  */
 import { createHash } from 'node:crypto'
 import type { ModuleSpec } from './manifest.ts'
+import type { RuleDefinition } from '../shared/rules.ts'
+import { convertLegacyModuleRules } from './rules-migration.ts'
+import { mapRuleInjections, ruleInjections } from './rule-content.ts'
 import { readPresetLayerSettings } from './module-layer-settings.ts'
 import type { PersonaSpec } from '../shared/persona-section.ts'
 import type {
@@ -29,7 +32,7 @@ import { prepareStText, renderStText } from '../../engine/st-macros.mjs'
 /** 转换器版本：报告用它解释本次生成使用了哪一版语义（语义调整时同步递增）。
  *  v2：pre-step 角色统一降级为 user（原角色只作来源元数据）+ 选组优先级修正常量事实。
  *  v3：世界书触发键（keys/secondaryKeys）的未定义宏登记为空占位并产出可见诊断。 */
-export const ST_CONVERTER_VERSION = 'st-to-preset/3'
+export const ST_CONVERTER_VERSION = 'st-to-rules/4'
 
 /** 报告的展示上限：只截断观测数据，不改变转换结果。 */
 const REPORT_ENTRY_LIMIT = 500
@@ -69,14 +72,14 @@ export type MergeIdMap = Map<number, Map<number, string>>
  * 报告必须消费这份映射，而不是按后缀规则另行推测：后缀分配只发生在这里一次。
  */
 export function mergeStPresetsWithReport(specs: ModuleSpec[]): { spec: ModuleSpec; idMap: MergeIdMap } {
-  const promptConfigs: Array<Record<string, unknown>> = []
+  const rules: RuleDefinition[] = []
   const seen = new Set<string>()
   const idMap: MergeIdMap = new Map()
   for (const [sourceIndex, spec] of specs.entries()) {
     const perSource = new Map<number, string>()
-    for (const [entryIndex, config] of (spec.promptConfigs ?? []).entries()) {
+    for (const [entryIndex, config] of (spec.rules ?? []).entries()) {
       if (config === null || typeof config !== 'object' || Array.isArray(config)) continue
-      const entry = config as Record<string, unknown>
+      const entry = config as RuleDefinition
       const base = String(entry.id ?? '')
       // 防御：无 id 配置（异常输入）跳过，避免合并出空 id / -2 后缀的垃圾条目。
       if (base.length === 0) continue
@@ -84,7 +87,11 @@ export function mergeStPresetsWithReport(specs: ModuleSpec[]): { spec: ModuleSpe
       for (let suffix = 2; seen.has(id); suffix++) id = `${base}-${suffix}`
       seen.add(id)
       perSource.set(entryIndex, id)
-      promptConfigs.push({ ...entry, id, variables: { ...(spec.variablesEnabled === false ? {} : spec.variables), ...entry.variables as Record<string, string> | undefined } })
+      rules.push(mapRuleInjections({ ...entry, id }, payload => {
+        const next = { ...payload, variables: { ...(spec.variablesEnabled === false ? {} : spec.variables), ...payload.variables } }
+        if (id !== base) next.id = id
+        return next
+      }))
     }
     idMap.set(sourceIndex, perSource)
   }
@@ -105,7 +112,7 @@ export function mergeStPresetsWithReport(specs: ModuleSpec[]): { spec: ModuleSpe
   }
   const managementModules = [
     'character-tools',
-    ...(promptConfigs.some((config) => config.strategy === 'world-book') ? ['world-book-tools'] : []),
+    ...(ruleInjections(rules).some(({ config }) => config.strategy === 'world-book') ? ['world-book-tools'] : []),
     'session-var-tools',
     'tool-config-engine',
   ]
@@ -119,18 +126,6 @@ export function mergeStPresetsWithReport(specs: ModuleSpec[]): { spec: ModuleSpe
   // 顶层 persona 段（ST 转换只在含 system-section 时声明）合并保留：丢失会让
   // 合并预设回落宿主部署人设，导入的 system-section 被 complete 人设抑制。
   const persona = specs.find((spec) => spec.persona !== undefined)?.persona
-  // 触发器声明按 id 去重合并：多源合并不丢「任一来声明过」的 web 拒绝名单（与 persona 同理）。
-  // 同名 id 保留首个来源的载荷——同一 id 在两份来源里必然表达同一意图，不叠加两份 mask。
-  const triggerDeclarations: unknown[] = []
-  const triggerIds = new Set<string>()
-  for (const source of specs) {
-    for (const declaration of source.triggers ?? []) {
-      const id = declaration !== null && typeof declaration === 'object' ? (declaration as { id?: unknown }).id : undefined
-      if (typeof id === 'string' && triggerIds.has(id)) continue
-      if (typeof id === 'string') triggerIds.add(id)
-      triggerDeclarations.push(declaration)
-    }
-  }
   const stripSuffix = (name: string): string => name.replace(/（SillyTavern 转换）$/, '')
   const spec: ModuleSpec = {
     // 多源合并：id 拼接（2 + beta-2-42 → 2-beta-2-42），避免与任一源预设冲突。
@@ -143,10 +138,9 @@ export function mergeStPresetsWithReport(specs: ModuleSpec[]): { spec: ModuleSpe
     ...(Object.keys(layerSettings).length > 0 ? { layerSettings } : {}),
     ...(Object.keys(variables).length > 0 ? { variables } : {}),
     ...(persona === undefined ? {} : { persona }),
-    ...(triggerDeclarations.length > 0 ? { triggers: triggerDeclarations } : {}),
     modules,
     moduleConfigs,
-    promptConfigs,
+    rules,
   }
   return { spec, idMap }
 }
@@ -868,11 +862,9 @@ export function convertStToPresetWithReport(
     },
     ...(Object.keys(variables).length > 0 ? { variables } : {}),
     ...(persona === undefined ? {} : { persona }),
-    // 声明式触发器：物化为 triggers.yml，并由 loadCompositionText 自动补 declared-triggers 行。
-    ...(triggers.length > 0 ? { triggers } : {}),
-    modules,
+    modules: [...new Set(modules.map(name => name === 'prompt-config-engine' || name === 'declared-triggers' ? 'rule-engine' : name))],
     moduleConfigs,
-    promptConfigs: configs,
+    rules: convertLegacyModuleRules({ promptConfigs: configs, triggers }).rules,
   }
   return { spec, report }
 }

@@ -26,7 +26,7 @@ function fixture(rebuild = async () => {}) {
   const root = mkdtempSync(join(sandbox, 'layers-'))
   for (const id of ['layer-a', 'layer-b']) {
     mkdirSync(join(root, id))
-    writeFileSync(join(root, id, 'module.yml'), `id: ${id}\nmodules: []\npromptConfigs: []\n`)
+    writeFileSync(join(root, id, 'module.yml'), `id: ${id}\nmodules: []\nrules: []\n`)
   }
   const tools = new Map()
   /** 配装记录桩：sessionId → 该 Agent 实际装上的提示词层，顺序即启用表顺序。 */
@@ -61,9 +61,9 @@ test('模型工具写入该 Agent 配装的提示词层；装了多层时取启�
     await f.execute('world_book_upsert', { id: 'b', name: 'B', content: 'B' }, ['layer-b'])
     // 同一个 Agent 装了两层：写进启用表里的第一层，第二层不受影响。
     await f.execute('world_book_upsert', { id: 'multi', name: 'M', content: 'M' }, ['layer-a', 'layer-b'])
-    const card = await f.execute('character_import', { name: 'alice', content: JSON.stringify({ id: 'alice', name: 'Alice', promptConfigs: [{ id: 'intro', text: 'Alice intro' }] }) }, ['layer-a'])
+    const card = await f.execute('character_import', { name: 'alice', content: JSON.stringify({ id: 'alice', name: 'Alice', rules: [{ id: 'intro', do: [{ id: 'inject', kind: 'inject-text', config: { id: 'intro', text: 'Alice intro' } }] }] }) }, ['layer-a'])
     await f.execute('character_apply', { id: card.id }, ['layer-a'])
-    const read = (id) => parse(readFileSync(join(f.root, id, 'module.yml'), 'utf8')).promptConfigs.map((row) => row.id).sort()
+    const read = (id) => parse(readFileSync(join(f.root, id, 'module.yml'), 'utf8')).rules.map((row) => row.id).sort()
     assert.deepEqual(read('layer-a'), ['a', 'child', 'module-alice-intro', 'multi'])
     assert.deepEqual(read('layer-b'), ['b'])
     assert.deepEqual(rebuilt, ['layer-a', 'layer-a', 'layer-b', 'layer-a', 'layer-a'])
@@ -99,6 +99,6 @@ test('模型工具等待重建；重建失败保留已保存定义并向调用�
     assert.equal(settled, false)
     release(new Error('重建失败'))
     await assert.rejects(pending, /已保存.*重建失败/)
-    assert.equal(parse(readFileSync(join(f.root, 'layer-a', 'module.yml'), 'utf8')).promptConfigs[0].id, 'saved')
+    assert.equal(parse(readFileSync(join(f.root, 'layer-a', 'module.yml'), 'utf8')).rules[0].id, 'saved')
   } finally { f.dispose() }
 })

@@ -1,5 +1,14 @@
 /** 判断与执行声明编辑文案；引擎标识仍按协议原文显示。 */
 export const TRIGGERS_ZH = {
+  'triggers.label.scope': '作用范围', 'triggers.label.audience': '消息受众',
+  'triggers.label.anchor': '锚定确认', 'triggers.label.fallbackAfter': '回退轮次',
+  'triggers.label.complexMinChars': '复杂任务字符阈值',
+  'triggers.label.projectTemplate': '项目文件提示模板', 'triggers.label.globalTemplate': '全局文件提示模板',
+  'triggers.label.suffixTemplate': '附加提示模板', 'triggers.label.messageTemplate': '消息提示模板',
+  'triggers.label.reasoningPattern': '晋升匹配表达式', 'triggers.label.reasoningNegativePattern': '晋升排除表达式',
+  'triggers.label.reasoningFlags': '正则标记',
+  'triggers.label.provider': '服务商', 'triggers.label.model': '模型',
+  'triggers.label.reasoningEffort': '思维程度', 'triggers.label.temperature': '采样温度',
   'triggers.selectedRule': '当前规则',
   'triggers.structured': '可视编辑',
   'triggers.open': '编辑行为规则',
@@ -102,6 +111,15 @@ export const TRIGGERS_ZH = {
 } as const
 
 export const TRIGGERS_EN: Record<keyof typeof TRIGGERS_ZH, string> = {
+  'triggers.label.scope': 'Scope', 'triggers.label.audience': 'Audience',
+  'triggers.label.anchor': 'Anchor acknowledgement', 'triggers.label.fallbackAfter': 'Fallback after turns',
+  'triggers.label.complexMinChars': 'Complex task character threshold',
+  'triggers.label.projectTemplate': 'Project file hint template', 'triggers.label.globalTemplate': 'Global file hint template',
+  'triggers.label.suffixTemplate': 'Appended hint template', 'triggers.label.messageTemplate': 'Message hint template',
+  'triggers.label.reasoningPattern': 'Promotion match pattern', 'triggers.label.reasoningNegativePattern': 'Promotion exclusion pattern',
+  'triggers.label.reasoningFlags': 'Pattern flags',
+  'triggers.label.provider': 'Provider', 'triggers.label.model': 'Model',
+  'triggers.label.reasoningEffort': 'Reasoning effort', 'triggers.label.temperature': 'Temperature',
   'triggers.selectedRule': 'Selected rule',
   'triggers.structured': 'Visual editor',
   'triggers.open': 'Edit behavior rules',

@@ -3,27 +3,8 @@ import { ACTION_KINDS, actionExecutionPoint, actionSupportsWhen } from './action
 import { COMPOSITE_OPERATORS, PREDICATE_FACTORIES, compileDeclaration, compileWhen } from './trigger-spec.mjs'
 import { WATERFALL_POSITIONS } from './trigger.mjs'
 
-const PREDICATE_EXAMPLES = {
-  text: { subject: 'userMessage', keys: ['keyword'] },
-  phase: { promoted: false },
-  source: { kind: 'user' },
-  count: { of: 'tool-call', per: 'turn', min: 1 },
-  names: { allow: ['bash'] },
-  session: { type: 'user/message', present: false },
-  preset: { presetId: 'preset-id' },
-}
-
-const ACTION_EXAMPLES = {
-  'inject-text': { config: { id: 'notice', layer: 'pre-step', text: 'Context', modelScope: 'all' } },
-  assembly: { target: { sections: { add: [{ name: 'custom-context', text: 'Context' }] } } },
-  decision: { phase: 'pre', decision: 'ask' },
-  'append-context': { mode: 'context', text: 'Context' },
-  guard: { mask: { deny: ['bash'] }, reason: 'Tool disabled by this preset' },
-  'sdk-strip': { mask: { deny: ['bash'] } },
-  'request-params': { patch: { maxTokens: 4096 }, modelScope: 'all' },
-  'inbox-prepend': { target: 'next-turn', text: 'Context' },
-  'pre-step-filter': { blockPlugins: ['plugin-id'] },
-}
+import { PREDICATE_EXAMPLES } from './conditions/examples.mjs'
+import { ACTION_EXAMPLES } from './actions/examples.mjs'
 
 /** 每次返回独立的纯数据；调用方编辑草稿不会污染后续请求或引擎目录。 */
 export function getTriggerEditorMeta() {

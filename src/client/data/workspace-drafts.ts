@@ -1,5 +1,5 @@
 /** 工作台实例期的业务草稿。每类数据有明确 owner，切页只卸载视图，不丢原始输入。 */
-import { triggerDraftDirty, type TriggerEditorDraft } from './trigger-drafts.ts'
+import { rulesDirty, type RulesDraft } from './rule-drafts.ts'
 import type { SkillContentSnapshot } from '../../shared/skills.ts'
 
 export interface SkillEditorDraft {
@@ -65,8 +65,8 @@ export interface PolicyEditorDraft {
 }
 
 export interface WorkspaceDrafts {
+  rules: Map<string, RulesDraft>
   skills: Map<string, SkillEditorDraft>
-  triggers: Map<string, TriggerEditorDraft>
   tools: Map<string, ToolsEditorDraft>
   persona: Map<string, PersonaEditorDraft>
   policies: Map<string, PolicyEditorDraft>
@@ -75,16 +75,16 @@ export interface WorkspaceDrafts {
 }
 
 export function createWorkspaceDrafts(): WorkspaceDrafts {
-  return { skills: new Map(), triggers: new Map(), tools: new Map(), persona: new Map(), policies: new Map(), fields: new Map(), expanded: new Map() }
+  return { rules: new Map(), skills: new Map(), tools: new Map(), persona: new Map(), policies: new Map(), fields: new Map(), expanded: new Map() }
 }
 
 /** 切换模块前阻止无声丢弃局部草稿；用户回对应页面处理，不替其隐式落盘。 */
 export function hasWorkspaceDrafts(drafts: WorkspaceDrafts, moduleId: string): boolean {
-  const triggers = drafts.triggers.get(moduleId)
+  const rules = drafts.rules.get(moduleId)
   const tools = drafts.tools.get(moduleId)
   const persona = drafts.persona.get(moduleId)
   const policy = drafts.policies.get(moduleId)
-  return (triggers !== undefined && (triggers.busy === 'save' || triggerDraftDirty(triggers)))
+  return (rules !== undefined && (rules.busy === 'save' || rulesDirty(rules)))
     || (tools !== undefined && (tools.saving || JSON.stringify(tools.tools) !== JSON.stringify(tools.saved)
     || [...tools.fields.values()].some((field) => field.text !== field.source || field.error.length > 0)))
     || (persona !== undefined && (persona.saving || JSON.stringify(persona.value) !== JSON.stringify(persona.saved)))

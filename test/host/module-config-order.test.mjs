@@ -11,13 +11,14 @@ const { moduleRoot } = isolatedHome('pt-config-order-')
 const { appendModuleConfigOrder, readModuleConfigOrder, saveModuleConfigOrder } = await import('../../src/host/module-config-order.ts')
 const { setModuleEnabled } = await import('../../src/host/config-store.ts')
 const { materializeModule } = await import('../../src/host/write-preset.ts')
+const { promptConfigToRule } = await import('../../src/host/rules-migration.ts')
 
 function fixture(name, cards) {
   const root = join(moduleRoot, name, 'modules')
   for (const [moduleId, configs] of Object.entries(cards)) {
     const dir = join(root, moduleId)
     mkdirSync(dir, { recursive: true })
-    writeFileSync(join(dir, 'module.yml'), '# keep comment\n' + JSON.stringify({ id: moduleId, modules: ['prompt-config-engine'], custom: 'keep', promptConfigs: configs }))
+    writeFileSync(join(dir, 'module.yml'), '# keep comment\n' + JSON.stringify({ id: moduleId, modules: ['rule-engine'], custom: 'keep', rules: configs.map(promptConfigToRule) }))
   }
   return root
 }
@@ -35,7 +36,7 @@ test('配置排序：跨模块同名卡保留受众与策略，身份排序写�
   const initial = readModuleConfigOrder(root)
   assert.deepEqual(initial.entries.map(x => [x.moduleId, x.configId, x.sequence, x.audience, x.strategy]), [
     ['a', 'same', 0, 'main', 'static'], ['a', 'last', 10, 'subagent', 'world-book'],
-    ['b', 'same', 20, undefined, 'static'], ['b', 'shared', 30, null, 'static'],
+    ['b', 'same', 20, undefined, 'static'], ['b', 'shared', 30, undefined, 'static'],
   ])
   assert.ok(initial.entries.every(entry => !('text' in entry) && !('templateFile' in entry)))
   const drafts = moduleOrderConfigs(initial.entries)
@@ -59,8 +60,8 @@ test('配置排序：跨模块同名卡保留受众与策略，身份排序写�
   saveModuleConfigOrder(root, afterMain.revision, identities({ entries: reordered }))
   assert.deepEqual(readModuleConfigOrder(root).entries.map(entry => [entry.moduleId, entry.configId]), [['b', 'same'], ['b', 'shared'], ['a', 'same'], ['a', 'last']], '子代理移动保留不可见主会话卡的槽位')
   for (const id of ['a', 'b']) materializeModule(id, { moduleDir: root })
-  assert.deepEqual(readdirSync(join(root, 'a', 'configs')), ['0020-same.yml', '0030-last.yml'])
-  assert.deepEqual(readdirSync(join(root, 'b', 'configs')), ['0000-same.yml', '0010-shared.yml'])
+  assert.deepEqual(readdirSync(join(root, 'a', 'configs')), ['0020-same--inject.yml', '0030-last--inject.yml'])
+  assert.deepEqual(readdirSync(join(root, 'b', 'configs')), ['0000-same--inject.yml', '0010-shared--inject.yml'])
   for (const id of ['b', 'a']) materializeModule(id, { moduleDir: root })
   assert.deepEqual(identities(readModuleConfigOrder(root)), identities({ entries: reordered }), '重建不会按模块数组重新编号')
   for (const [id, texts] of [['a', ['A1', 'A2']], ['b', ['B1', 'B2']]]) {
@@ -68,7 +69,7 @@ test('配置排序：跨模块同名卡保留受众与策略，身份排序写�
     assert.match(raw, /# keep comment/)
     const spec = parse(raw)
     assert.equal(spec.custom, 'keep')
-    assert.deepEqual(spec.promptConfigs.map(card => card.text), texts)
+    assert.deepEqual(spec.rules.map(card => card.do[0].config.text), texts)
   }
 })
 
@@ -90,7 +91,7 @@ test('配置排序：重复启用幂等；新增卡追加，停用模块重排�
   assert.deepEqual(appendModuleConfigOrder(root, 'a'), [])
   assert.equal(readFileSync(join(root, 'a', 'module.yml'), 'utf8'), before)
   const spec = parse(before)
-  spec.promptConfigs.push({ id: 'new', text: 'NEW' })
+  spec.rules.push(promptConfigToRule({ id: 'new', text: 'NEW' }))
   writeFileSync(join(root, 'a', 'module.yml'), JSON.stringify(spec))
   appendModuleConfigOrder(root, 'a')
   const ordered = readModuleConfigOrder(root)

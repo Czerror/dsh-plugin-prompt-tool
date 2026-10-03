@@ -12,6 +12,8 @@ process.env.DSH_HOME = home
 const { MAX_BRIDGE_BODY_BYTES } = await import('../../src/shared/bridge-contract.ts')
 const { registerSettingsBridge } = await import('../../src/runtime/settings-bridge.ts')
 const { stPresetId } = await import('../../src/host/sillytavern.ts')
+const { ruleInjections } = await import('../../src/host/rule-content.ts')
+const contentEntries = spec => ruleInjections(spec.rules).map(({ rule, config }) => ({ ...config, enabled: rule.enabled !== false }))
 const bridgeDisposers = []
 
 const PREFIX = '/api/prompt-tool/settings'
@@ -221,34 +223,42 @@ test('importPresetPackage：SillyTavern JSON 单文件经转换引擎导入（�
   const converted = parseYaml(readFileSync(presetFile, 'utf8'))
   assert.equal(converted.name, '我的角色（SillyTavern 转换）', '预设名取卡片 name 字段')
   assert.deepEqual(converted.modules, [
-    'prompt-config-engine', 'character-tools',
+    'rule-engine', 'character-tools',
     'session-var-tools', 'tool-config-engine',
   ], 'ST 管理工具按固定集合装配；persona 行由顶层 persona 段渲染时自动前插')
   assert.deepEqual(converted.persona, { prefix: '', complete: false }, 'system-section 注入需要顶层 persona（complete: false 允许其生效）')
   assert.equal(converted.modules.includes('tool-web'), false, 'enable_web_search: false 不组装 tool-web')
   // B7 T3「3+1 结合」：`enable_web_search: false` 由三条声明式触发器
   // （呈现裁剪 / SDK 正文裁剪 / 执行 guard）共用同一份 deny 名单表达。
-  assert.deepEqual(converted.triggers.map((trigger) => [trigger.id, trigger.do.kind]), [
+  assert.equal(converted.promptConfigs, undefined, '新模块不再保留旧内容定义段')
+  assert.equal(converted.triggers, undefined, '新模块不再保留独立行为定义段')
+  const webRules = converted.rules.filter(rule => rule.id.startsWith('st-web-'))
+  assert.deepEqual(webRules.map((rule) => [rule.id, rule.do[0].kind]), [
     ['st-web-assembly', 'assembly'],
     ['st-web-sdk-strip', 'sdk-strip'],
     ['st-web-guard', 'guard'],
   ])
-  for (const trigger of converted.triggers) {
-    const mask = trigger.do.target?.tools ?? trigger.do.mask
+  for (const rule of webRules) {
+    assert.equal(rule.do.length, 1)
+    const mask = rule.do[0].target?.tools ?? rule.do[0].mask
     assert.deepEqual(mask, { deny: ['web_search', 'web_fetch'] }, '三条声明共用同一份 deny 名单')
   }
-  const configs = converted.promptConfigs
+  const configs = contentEntries(converted)
   assert.equal(configs.length, 2)
-  const main = configs.find((config) => config.id === 'main')
+  assert.equal(converted.rules.length, 5, '只生成两条内容规则和三条 Web 防护规则')
+  const main = converted.rules.find((rule) => rule.id === 'main')
   assert.deepEqual(main, {
     // RELATIVE 注入顺序 = prompt_order / 数组顺序（ST 忽略 injection_order）。
-    id: 'main', name: '主提示', enabled: true, strategy: 'static', order: 0,
-    text: '你是助手。', layer: 'system-section', mergeMode: 'merged',
+    id: 'main', name: '主提示', enabled: true, layer: 'system-section',
+    do: [{ id: 'inject', kind: 'inject-text', config: {
+      id: 'main', strategy: 'static', order: 0,
+      text: '你是助手。', layer: 'system-section', mergeMode: 'merged',
     // system_prompt 只是 ST 的管理位（不改变发送角色）：保留为来源事实，层归属仍按 role。
     params: {
       stSource: { position: 0, depth: 4, order: 100, role: 'system', systemPrompt: true },
       stMacros: true,
     },
+    } }],
   })
   const nsfw = configs.find((config) => config.id === 'nsfw')
   assert.equal(nsfw.enabled, false, 'ST OFF 备用提示词保留 enabled: false')
@@ -261,7 +271,7 @@ test('importPresetPackage：SillyTavern JSON 单文件经转换引擎导入（�
   for (const key of ['modelTemperature', 'modelMaxTokens', 'modelReasoningEffort']) {
     assert.equal(converted.params?.[key], undefined, `采样参数剥离：params.${key} 不得出现`)
   }
-  assert.equal(configs.find((config) => config.id === 'st-sampling'), undefined, '不再生成 st-sampling agent-request 配置')
+  assert.equal(converted.rules.find((rule) => rule.id === 'st-sampling'), undefined, '不再生成 st-sampling 请求参数规则')
 })
 
 test('importPresetPackage：SillyTavern UUID identifier 的 prompt_order 禁用与排序生效（P1 回归）', async () => {
@@ -286,7 +296,7 @@ test('importPresetPackage：SillyTavern UUID identifier 的 prompt_order 禁用�
   })
   assert.equal(status, 200)
   const converted = parseYaml(readFileSync(join(PRESETS, 'uuid-card', 'module.yml'), 'utf8'))
-  const configs = converted.promptConfigs
+  const configs = contentEntries(converted)
   const system = configs.find((config) => config.id === 'st-prompt-1')
   const disabled = configs.find((config) => config.id === 'st-prompt-2')
   // UUID identifier 回退 st-prompt-N 作 id，但禁用/排序必须按原始 identifier 查 prompt_order。
@@ -351,7 +361,7 @@ test('importPresetPackage：角色卡世界书 add_always（CCv2/CCv3 常驻标�
   assert.equal(status, 200)
   assert.equal(payload.value?.id, 'ccv3-card')
   const converted = parseYaml(readFileSync(join(PRESETS, 'ccv3-card', 'module.yml'), 'utf8'))
-  const configs = converted.promptConfigs.filter((config) => config.strategy === 'world-book')
+  const configs = contentEntries(converted).filter((config) => config.strategy === 'world-book')
   assert.equal(configs.length, 3, '三条世界书条目全部转换')
   assert.equal(configs.find((config) => config.id === 'lore-1').params.constant, true, 'add_always: true 应常驻')
   assert.equal(configs.find((config) => config.id === 'lore-2').params.constant, false, 'add_always: false 不常驻')
@@ -379,7 +389,7 @@ test('importPresetPackage：世界书 ST 编辑器内部格式（key/keysecondar
   })
   assert.equal(status, 200)
   const converted = parseYaml(readFileSync(join(PRESETS, 'editor-format', 'module.yml'), 'utf8'))
-  const configs = converted.promptConfigs.filter((config) => config.strategy === 'world-book')
+  const configs = contentEntries(converted).filter((config) => config.strategy === 'world-book')
   assert.equal(configs.length, 3)
   const bar = configs.find((config) => config.id === 'lore-10')
   assert.deepEqual(bar.params.keys, ['酒吧'], 'key 单数应收敛为 keys')

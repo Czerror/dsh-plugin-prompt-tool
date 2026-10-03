@@ -2,8 +2,8 @@
  * write-preset — 单一参数 YAML 驱动的模块目录物化器。
  *
  * 用户只需编写 modules/<template>/module.yml(纯参数):
- *   meta + content + modules(模块清单)+ params(直读参数)+ 可选 promptConfigs 覆盖。
- * 默认提示词配置与组合 token 都由引擎按 params 生成,参数文件不含任何模板语法。
+ *   meta + content + modules(模块清单) + layerSettings + rules。
+ * rules 经唯一编译器校验；分发包与注入叶子快照只是可重建产物。
  * 输出 = 官方对齐布局：moduleDir/<template>/（模块目录，agent.cordis.yml 组合本体
  * 直接可挂载）。共享引擎自阶段 2 起由插件包提供（组合行引用包内说明符），不再物化。
  */
@@ -15,21 +15,18 @@ import { parseDocument, stringify as stringifyYaml } from 'yaml'
 // @ts-expect-error 仓库根 ESM 引擎文件由 tsdown 作为源码依赖打包，无独立声明文件。
 import { validateSubagentToolPolicy } from '../../engine/subagent-tool-policy-core.mjs'
 // @ts-expect-error 仓库根 ESM 引擎文件由 tsdown 作为源码依赖打包，无独立声明文件。
-import { compileDeclarations } from '../../engine/trigger-spec.mjs'
+import { compileRules, injectionConfigSpec } from '../../engine/rule-spec.mjs'
 import { MODULES_DIR, MODULE_CONFIGS_DIR, MODULE_DEFINITION_FILE } from './paths.ts'
 import { DEFAULT_MODULE_ID } from '../shared/preset-ids.ts'
-import { triggerPromptConfigOptions } from './module-triggers.ts'
+import { rulePromptConfigOptions } from './module-rules.ts'
 import { appendModuleConfigOrder, readConfigOrder } from './module-config-order.ts'
 import { enabledModuleIds } from './config-store.ts'
 import { assertModuleDirectory, assertPresetId, assertPresetTree, engineModuleFileNames, rewritePresetEngineReferences } from './module-install.ts'
 import { compileCustomTool } from './custom-tools.ts'
 import { validateCustomToolIdentities } from '../shared/engine-capabilities.ts'
 import { WRITER_PARAM_KEYS, type PresetWriterParams } from '../shared/engine-params.ts'
-import { resolveLegacyPromptConfigs } from './legacy-prompt-params.ts'
 import {
   configFileName,
-  mergePromptConfigs,
-  modelRequestConfigs,
   renderPromptConfigYaml,
 } from './prompt-configs.ts'
 import type { PromptConfigSpec } from './prompt-configs.ts'
@@ -39,7 +36,6 @@ import {
   loadModuleSpec,
   packageEngineDir,
   renderComposition,
-  resolvePresetParams,
   resolveModuleDir,
 } from './manifest.ts'
 
@@ -50,14 +46,8 @@ const ENGINE_DIR = packageEngineDir()
  * dsh-persona 行 config 字段等）时 +1。启动重建据此重刷用户目录旧产物——
  * 否则旧产物只会在用户手动切换该模块时才会重新渲染。
  */
-export const RENDER_VERSION = 5
+export const RENDER_VERSION = 6
 export const RENDER_STAMP = `# prompt-tool:render v${RENDER_VERSION}`
-
-/** 剥离文本中的模块级变量引用（{{key}} → 空串）；内置变量（{{DSH_HOME}} 等）保留。
- *  模板变量插值停用时由 writePreset 调用，避免 {{key}} 残留导致官方渲染 unknown variable。 */
-function stripVariableRefs(text: string, keys: ReadonlySet<string>): string {
-  return text.replace(/\{\{([A-Za-z0-9_.\u4e00-\u9fff-]+)\}\}/g, (whole, key: string) => keys.has(key) ? '' : whole)
-}
 
 /** 禁用条目物化瘦身阈值（字符数）：超过则渲染产物只保留元数据不落正文。
  *  ST 导入的设置 dump（SPresetSettings 等）动辄数百 KB 且 enabled=false——
@@ -75,8 +65,8 @@ export interface WritePresetOptions extends PresetWriterParams {
   moduleDir: string
   /** @deprecated 模块排序归模块定义；该旧输入已不再覆盖顶层 order。 */
   presetOrder?: number
-  /** settings 层用户自定义提示词配置(优先级最高)。 */
-  promptConfigs: PromptConfigSpec[]
+  /** 旧调用参数仅允许空值；规则先经版本事务写入 module.yml.rules。 */
+  promptConfigs?: PromptConfigSpec[]
   /** 当前模块目录名；默认 pt-standard。 */
   presetTemplate?: string
   /** 输出目录/模块 id 覆盖；缺省 = presetTemplate 同名输出。 */
@@ -237,7 +227,8 @@ export function writePreset(prompt: string, options: WritePresetOptions): string
   assertPresetId(outputId)
   const templateDir = options.sourceDir ?? resolveModuleDir(templateName, moduleDir)
   assertPresetTree(templateDir)
-  const spec = loadModuleSpec(templateDir, { legacyParams: false })
+  const spec = loadModuleSpec(templateDir)
+  if ((options.promptConfigs?.length ?? 0) > 0) throw new Error('旧 promptConfigs 物化覆盖已退出，请先离线迁移为 rules')
   if (Array.isArray(spec.meta?.stWarnings)) {
     for (const warning of spec.meta.stWarnings) if (typeof warning === 'string') options.warn?.(`prompt-tool: ST 导入兼容提示：${warning}`)
   }
@@ -247,24 +238,10 @@ export function writePreset(prompt: string, options: WritePresetOptions): string
       throw new Error(`invalid subagentToolPolicy: ${policyErrors.join('; ')}`)
     }
   }
-  // 触发器声明在**保存期**就用引擎的声明编译器校验（与运行时同一份实现）：写错的声明
-  // 会在保存时被拒，而不是等到装配才炸。编译器只做数据校验（不需要 ctx）。
-  if (spec.triggers !== undefined && spec.triggers !== null) {
-    if (!Array.isArray(spec.triggers)) {
-      throw new Error('invalid triggers: 必须是触发器声明数组')
-    }
-    try {
-      compileDeclarations(spec.triggers, { promptConfigOptions: triggerPromptConfigOptions(templateDir, spec.moduleConfigs?.['declared-triggers']?.strategyDir) })
-    } catch (error) {
-      throw new Error(`invalid triggers: ${String((error as Error)?.message ?? error)}`)
-    }
-  }
+  compileRules(spec.rules ?? [], { moduleId: spec.id, configOrder: spec.configOrder, variables: spec.variables, variablesEnabled: spec.variablesEnabled,
+    personaComplete: spec.persona?.complete === true,
+    promptConfigOptions: rulePromptConfigOptions(templateDir, spec.moduleConfigs?.['rule-engine']?.strategyDir) })
   const runtime = runtimeOf(options, prompt)
-  const params = resolvePresetParams(spec, runtime)
-  const legacy = resolveLegacyPromptConfigs(spec, {
-    moduleDir: templateDir, prompt, overrides: runtime, promptConfigs: options.promptConfigs,
-  })
-  for (const warning of legacy.warnings) (options.warn ?? console.warn)(`prompt-tool: ${warning}`)
 
   // 官方对齐布局：moduleDir 是模块根（官方 USER_PRESET_DIR），每个模块一个
   // 官方模块目录 moduleDir/<template>/（agent.cordis.yml 组合本体直接可挂载），
@@ -275,7 +252,7 @@ export function writePreset(prompt: string, options: WritePresetOptions): string
   const outDir = tmpDir
   try {
   // 1) 组合文件:modules 模块库装配 + 参数桥行级合并 + YAML 校验。
-  const composition = renderComposition({ ...spec, promptConfigs: legacy.configs }, runtime, templateDir)
+  const composition = renderComposition(spec, runtime, templateDir)
   assertCompositionArray(composition, spec)
   // 引擎引用重写：组合源的 ./engine/ 与旧预设的 ../.engine/ 一律写成包名说明符
   // dsh-plugin-prompt-tool/engine/<module>.mjs（引擎不再物化）；受管配置字段保持
@@ -287,7 +264,7 @@ export function writePreset(prompt: string, options: WritePresetOptions): string
 
   // 2) 宿主模块元数据：新布局 module.yml = 参数 + 元数据一体。
   //    已存在参数文件（种子化/新建复制）时只合并元数据键（name/description/order/meta），
-  //    保留 params/modules/promptConfigs/content——不得整体覆盖（会摧毁参数源）。
+  //    保留 layerSettings/modules/rules/content——不得整体覆盖定义。
   const meta = spec.meta !== null && typeof spec.meta === 'object' ? spec.meta as Record<string, unknown> : {}
   const sourceYamlPath = options.sourceDir !== undefined || !existsSync(join(targetDir, MODULE_DEFINITION_FILE))
     ? join(templateDir, MODULE_DEFINITION_FILE) : join(targetDir, MODULE_DEFINITION_FILE)
@@ -341,14 +318,16 @@ export function writePreset(prompt: string, options: WritePresetOptions): string
     else cpSync(source, target, { force: true })
   }
 
-  // 4) 提示词配置:引擎默认(按 params)< 模板覆盖 < settings。
+  // 4) 仅从 rules 投影注入叶子，供只读查看；装配不从本目录读取规则。
   const promptConfigsDir = join(outDir, MODULE_CONFIGS_DIR)
   rmSync(promptConfigsDir, { recursive: true, force: true })
   mkdirSync(promptConfigsDir, { recursive: true })
   // 模型参数（agent-request）作为引擎默认级注入，优先级低于模板与 settings。
   // 指令文件卡不再物化：正文与行为由独立指令来源（pre-step 协调器 + 独立策略）按会话
   // 现场解析，生成目录里不再出现 agents-file-*，preset.yml#agentsHints 也不再是开关。
-  const merged = mergePromptConfigs(modelRequestConfigs(params), legacy.configs)
+  const merged = (spec.rules ?? []).flatMap(rule => rule.do.filter(action => action.kind === 'inject-text').map(action => ({
+    ruleId: rule.id, actionId: action.id, config: { ...injectionConfigSpec(rule, action, spec), enabled: rule.enabled !== false } as PromptConfigSpec,
+  })))
   // 模块级模板变量 → prompt-configs/variables.yml（单一文件）：引擎加载时合并进
   // 每条配置 variables（配置自身优先）。唯一来源 = preset.yml 顶层 variables；
   // params 与 runtime 参数不进入变量文件。variablesEnabled=false（卡片
@@ -366,23 +345,14 @@ export function writePreset(prompt: string, options: WritePresetOptions): string
     writeFileSync(join(promptConfigsDir, 'variables.yml'), stringifyYaml(presetVariables), 'utf8')
   }
   const configOrder = readConfigOrder(spec.configOrder)
-  for (const [index, source] of merged.entries()) {
+  for (const [index, entry] of merged.entries()) {
+    const source = entry.config
     // 浅克隆：merged 元素可能是 settings 层/模板 spec 的引用（mergePromptConfigs
     // 不拷贝），循环内的变异（prompt-injector 参数桥/变量剥离/瘦身）不得污染
     // 参数源与 presetSpecCache 缓存。
     const config: PromptConfigSpec = {
       ...source,
       params: source.params !== undefined && source.params !== null ? { ...source.params } : source.params,
-    }
-    // 停用模板变量插值：剥离配置文本（texts/text/params.text）中的模块变量引用，
-    // 内置变量（{{DSH_HOME}}/{{WORKSPACE}}/{{CWD}}）保留。
-    if (!variablesEnabled && presetVariableKeys.size > 0) {
-      const strip = (item: string): string => stripVariableRefs(item, presetVariableKeys)
-      config.texts = (config.texts ?? []).map(strip)
-      if (typeof config.text === 'string') config.text = strip(config.text)
-      if (typeof config.params?.text === 'string') {
-        config.params = { ...config.params, text: strip(config.params.text as string) }
-      }
     }
     // 禁用大条目瘦身：enabled=false 且正文超阈值时产物不落正文（参数源 preset.yml
     // 原文保留，重新启用后下次物化恢复全文）——只省 IO 与解析，不动注入语义。
@@ -394,8 +364,8 @@ export function writePreset(prompt: string, options: WritePresetOptions): string
       delete config.text
       config.texts = []
     }
-    const sequence = configOrder[config.id] ?? index * 10
-    writeFileSync(join(promptConfigsDir, configFileName(sequence, config.id)), renderPromptConfigYaml(config), 'utf8')
+    const sequence = configOrder[entry.ruleId] ?? index * 10
+    writeFileSync(join(promptConfigsDir, configFileName(sequence, `${encodeURIComponent(entry.ruleId)}--${encodeURIComponent(entry.actionId)}`)), renderPromptConfigYaml(config), 'utf8')
   }
 
   // 4.5) 自定义工具（preset.yml 顶层 customTools 段）→ custom-tools/<n>-<id>.yml：
@@ -429,14 +399,10 @@ export function writePreset(prompt: string, options: WritePresetOptions): string
     writeFileSync(join(subagentToolsDir, 'policy.yml'), stringifyYaml(spec.subagentToolPolicy, { lineWidth: 0 }), 'utf8')
   }
 
-  // 4.7) 触发器声明（preset.yml 顶层 triggers 段）→ triggers.yml：
-  //      声明以**裸数组**落盘（与 preset.yml 里的段同形，读回不需要再拆一层包装）；
-  //      本次没有声明时删掉旧文件——否则上一版的声明会残留并继续生效。
+  // 4.7) 单一规则分发包，同时清理本模块自己的旧声明产物。
   const triggersFile = join(outDir, 'triggers.yml')
   rmSync(triggersFile, { force: true })
-  if (Array.isArray(spec.triggers) && spec.triggers.length > 0) {
-    writeFileSync(triggersFile, stringifyYaml(spec.triggers, { lineWidth: 0 }), 'utf8')
-  }
+  writeFileSync(join(outDir, 'rules.yml'), stringifyYaml({ rules: spec.rules ?? [], configOrder: spec.configOrder ?? {}, variables: spec.variables ?? {}, variablesEnabled: spec.variablesEnabled !== false }, { lineWidth: 0 }), 'utf8')
 
   // 候选模式在此结束，安装事务由调用方单独执行，绝不进入原地覆盖回退。
   if (options.materializeOnly) return outDir

@@ -1,25 +1,40 @@
+# 复杂任务判定 fallback 复用锚定卡的 complexPattern；长度判定仅使用显式 complexMinChars；未设置时不按长度分类
+# 简单任务自动引导句（留空 = 不注入该类别引导）
+# 复杂任务自动引导句（留空 = 不注入该类别引导）
+
 # 模板：每轮引导（strategy=guide-auto）
 # 晋升后每轮用户消息后按复杂度注入弱/深度引导；modelScope=flash 表示仅 flash 模型会话注入。
-# 纯净模板：参数全部留空，由用户自定义；默认引导句文本见引擎内置策略默认值。
-# 提示：把本文件放入 promptConfigsDir 目录，或把对象写入 settings.promptConfigs 数组。
+# 纯净模板：参数全部留空，由用户自定义；引导句由模板或用户配置提供，留空不注入。
+# 提示：把本文件放入 模块规则模板目录，或把对象写入 module.yml.rules 数组。
 id: example-guide-auto
 name: 示例：每轮引导
 enabled: false
 layer: pre-step
-strategy: guide-auto
-position: after-user
-dedupe: batch
-promotion: main
-modelScope: flash
-configKind: ordered
-order: 10
-role: user
-mergeMode: separate
-sourceKind: ''
-form: notice
-params:
-  useCustom: false
-  text: ""
-  # 复杂任务判定 fallback 复用锚定卡的 complexPattern；留空 = 仅按文本长度 120 判定深/弱
-  guideWeak: ""             # 简单任务自动引导句（留空 = 引擎内置默认引导句）
-  guideDeep: ""             # 复杂任务自动引导句（留空 = 引擎内置默认引导句）
+when:
+  all:
+    - scope:
+        modelScope: flash
+    - phase:
+        promoted: true
+        includeSubagents: false
+do:
+  - id: inject
+    kind: inject-text
+    config:
+      id: example-guide-auto
+      layer: pre-step
+      strategy: guide-auto
+      position: after-user
+      dedupe: batch
+      configKind: ordered
+      order: 10
+      role: user
+      mergeMode: separate
+      sourceKind: ''
+      form: notice
+      params:
+        useCustom: false
+        text: ""
+        guideWeak: ""
+        guideDeep: ""
+        complexMinChars: 120

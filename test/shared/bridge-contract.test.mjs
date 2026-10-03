@@ -113,7 +113,7 @@ test('契约：所有端点路径全部注册且无多余', () => {
   const handlers = register()
   const expected = Object.values(BRIDGE_ENDPOINTS)
   // 文件层调用策略与全文读写；旧技能注册层屏蔽端点保持移除。
-  assert.equal(expected.length, 48, 'BRIDGE_ENDPOINTS 应包含当前登记的 48 个端点（含模块启用与配置排序）')
+  assert.equal(expected.length, 49, 'BRIDGE_ENDPOINTS 应包含当前登记的 49 个端点（含统一规则事务）')
   for (const removed of ['skillFix', 'skillToggle', 'skillsConfig', 'skillBlock']) {
     assert.equal(Object.hasOwn(BRIDGE_ENDPOINTS, removed), false, `${removed} 已随旧技能模型移除`)
   }

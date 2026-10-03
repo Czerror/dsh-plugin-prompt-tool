@@ -7,7 +7,6 @@ import { IconCopyOutlineRegular, IconDownloadOutlineRegular, IconFolderOpenOutli
 import { bridgeCall } from '../../data/bridge-client.ts'
 import { previewAsset, commitAsset } from '../../data/asset-import.ts'
 import { hasWorkspaceDrafts } from '../../data/workspace-drafts.ts'
-import { deepEqual } from '../../data/dirty-state.ts'
 import type { PromptToolStore } from '../../data/use-prompt-tool-store.ts'
 import type { PromptToolTranslate } from '../../locales.ts'
 import type { PresetSummary } from '../../../shared/bridge-contract.ts'
@@ -41,12 +40,6 @@ export const PresetSwitcher = memo(function PresetSwitcher(props: { store: Promp
     commit: async (preview) => {
       if (preview.overwrite && preview.summary?.targetId === store.fields.presetTemplate) {
         if (hasWorkspaceDrafts(store.editorDrafts, store.fields.presetTemplate)) return { ok: false, message: t('assetImport.draftBlocked') }
-        const presetConfigs = store.fields.promptConfigs.filter((config) => config.origin?.kind !== 'instruction-file')
-        const savedConfigs = store.savedConfigs.filter((config) => config.origin?.kind !== 'instruction-file')
-        if (!deepEqual(presetConfigs, savedConfigs)) {
-          if (!await store.persistConfigs(store.fields.promptConfigs, { includeInstructions: false, reload: false, rebuild: false })) return { ok: false, message: t('assetImport.draftBlocked') }
-          return { ok: false, stale: true, message: t('importPreview.stale') }
-        }
         if (store.dirtySwitches) return { ok: false, message: t('assetImport.draftBlocked') }
       }
       return commitAsset('importPresetPackage', preview)

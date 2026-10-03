@@ -115,7 +115,7 @@ export function isFlashModel(modelId) {
 
 /** 模型范围过滤:flash=仅 Flash 家族模型;pro=仅非 Flash;all=全部。 */
 export function matchesModel(scope, model) {
-  if (scope === 'all') return true
+  if (scope == null || scope === 'all') return true
   const isFlash = isFlashModel(model)
   return scope === 'flash' ? isFlash : !isFlash
 }

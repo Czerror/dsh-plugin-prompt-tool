@@ -1,0 +1,53 @@
+/* 统一规则卡、条件树和动作列表的私有样式。 */
+.workspace { display: flex; flex-direction: column; gap: 12px; min-width: 0; color: var(--dsw-alias-label-primary); font: 12px/18px system-ui, sans-serif; font-feature-settings: "cv01", "ss03"; }
+.toolbar, .row, .actionHead { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; min-width: 0; }
+.toolbar { padding: 8px 0; }
+.cardPanel { min-width: 0; }
+.headerActions { display: inline-flex; flex: 0 0 auto; align-items: center; gap: 6px; max-width: 100%; }
+.headerActions .row { flex-wrap: nowrap; gap: 4px; }
+.body { container: rule-editor / inline-size; display: flex; flex-direction: column; gap: 16px; padding: 16px; min-width: 0; border-top: .5px solid var(--dsw-alias-border-l2); }
+.fields { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 8px 12px; min-width: 0; }
+.fields > * { flex: 0 1 auto; min-width: 0; max-width: 100%; }
+.fields > .full, .fields > .parameterGroup { flex-basis: 100%; }
+.fields > .exclusiveGroup { display: inline-flex; align-items: flex-start; gap: 12px; }
+.exclusiveGroup > :first-child { min-width: 0; }
+.full, .parameterGroup { min-width: 0; width: 100%; }
+.parameterGroup { display: flex; flex-direction: column; gap: 8px; }
+.parameterGroup h5, .actionHead h4, .section h3 { margin: 0; font: 500 13px/20px system-ui,sans-serif; color: var(--dsw-alias-label-primary); }
+.control { max-width: 100%; min-width: 0; }
+.number { width: 96px; max-width: 100%; font-variant-numeric: tabular-nums; }
+.workspace input:not([type='checkbox']) { box-sizing: border-box; height: 28px; min-height: 28px; border-radius: 7px; padding: 4px 8px; font: 12px/18px system-ui,sans-serif; }
+.workspace button[aria-haspopup='menu'] > span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.button { box-sizing: border-box; height: 28px; min-height: 28px; border-radius: 14px; corner-shape: round; border-color: var(--dsw-alias-border-l2); padding: 0 10px; font: 12px/18px system-ui,sans-serif; white-space: nowrap; }
+.button[aria-pressed='true'] { background: var(--dsw-alias-bg-layer-3); border-color: var(--dsw-alias-state-business-primary); }
+.button[data-danger] { color: color-mix(in srgb, var(--dsw-alias-state-error-primary) 80%, var(--dsw-alias-label-primary)); border-color: color-mix(in srgb, var(--dsw-alias-state-error-primary) 34%, var(--dsw-alias-border-l2)); }
+.iconButton { width: 28px; min-width: 28px; padding: 0; flex: 0 0 auto; }
+.body textarea { width: 100%; min-width: 0; resize: vertical; font: 12px/18px system-ui,sans-serif; }
+.body .listControl { width: 24ch; max-width: 100%; min-height: 46px; }
+.section { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.section + .section { padding-top: 16px; border-top: .5px solid var(--dsw-alias-border-l2); }
+.toggle { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; min-width: 0; font: 12px/18px system-ui,sans-serif; }
+.switchLine { display: inline-flex; flex: 0 0 auto; align-items: center; min-height: 28px; height: 28px; }
+.switchTarget { flex: 0 0 auto; }
+.actions, .condition, .conditions { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.conditionHead { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px; min-width: 0; }
+.conditionHead > div { min-width: 0; max-width: 100%; }
+.conditionOrdinal { display: inline-flex; align-items: center; height: 28px; color: var(--dsw-alias-label-secondary); }
+.conditions > button, .condition > button { align-self: flex-start; }
+.action { display: flex; flex-direction: column; gap: 8px; min-width: 0; padding: 12px 0; border-bottom: .5px solid var(--dsw-alias-border-l2); }
+.conditionChild { display: flex; flex-direction: column; gap: 8px; padding-inline-start: 12px; border-inline-start: 2px solid var(--dsw-alias-border-l2); min-width: 0; }
+.status { margin: 0; color: var(--dsw-alias-label-secondary); font: 12px/18px system-ui,sans-serif; overflow-wrap: anywhere; }
+.error { color: var(--dsw-alias-state-error-primary); overflow-wrap: anywhere; }
+.body [hidden] { display: none !important; }
+@container rule-editor (max-width: 480px) {
+  .conditionChild { padding-inline-start: 8px; }
+  .actionHead { gap: 8px; }
+}
+@media (pointer: coarse) {
+  .workspace input:not([type='checkbox']), .button { height: 44px; min-height: 44px; min-width: 44px; }
+  .button, .workspace button[aria-haspopup='menu'] { border-radius: 22px; }
+  .iconButton { width: 44px; }
+  .switchLine, .conditionOrdinal { height: 44px; min-height: 44px; }
+  .switchTarget { box-sizing: border-box; width: 60px; height: 44px; border: 12px solid transparent; background-clip: padding-box; }
+  .switchTarget[aria-checked] { background-clip: padding-box; }
+}

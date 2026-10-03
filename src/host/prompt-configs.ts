@@ -16,6 +16,8 @@ import { parse as parseYaml, stringify as stringifyYamlValue } from 'yaml'
 // @ts-expect-error 引擎 ESM 是权威实现，由构建器同源打包，无独立声明文件
 // （与 module-package / instructions-policy / import-source 的既有做法一致）。
 import { promptConfigFileNames } from '../../engine/schema.mjs'
+// @ts-expect-error 规则和文件身份使用引擎同一个边界校验。
+import { assertRuleId } from '../../engine/rule-spec.mjs'
 
 /**
  * `PromptConfigSpec` 各枚举字段的**运行期值清单**。
@@ -86,23 +88,7 @@ export interface PromptConfigSpec {
  * 仅拒绝分隔符、控制字符、点目录与 Windows 保留字符。
  */
 export function assertSafeConfigId(id: string): void {
-  if (typeof id !== 'string' || id.length === 0) {
-    throw new TypeError('config id must be a non-empty string')
-  }
-  if (id === '.' || id === '..') {
-    throw new TypeError(`config id ${JSON.stringify(id)} must not be a dot directory`)
-  }
-  const reserved = '/\\\0:*?"<>|'
-  for (const char of reserved) {
-    if (id.includes(char)) {
-      throw new TypeError(`config id ${JSON.stringify(id)} contains path separators or reserved filename characters`)
-    }
-  }
-  for (let index = 0; index < id.length; index += 1) {
-    if (id.charCodeAt(index) < 0x20) {
-      throw new TypeError(`config id ${JSON.stringify(id)} contains control characters`)
-    }
-  }
+  assertRuleId(id)
 }
 
 /** 生成文件名统一 4 位零填充前缀（0000-…），超过 10 条后字典序仍稳定。 */

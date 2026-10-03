@@ -132,7 +132,7 @@ test('PNG 原始上传只暂存；角色确认后字节一致，释放和卸载�
 
 test('角色预览绑定 owner、目标和覆盖选择；重导入保留记忆', async (t) => {
   const h = harness(t)
-  const files = [{ path: 'role.yml', content: 'id: native-role\nname: Native\npromptConfigs:\n  - id: text\n    text: HELLO\n' }]
+  const files = [{ path: 'role.yml', content: 'id: native-role\nname: Native\nrules:\n  - id: text\n    do:\n      - id: inject\n        kind: inject-text\n        config:\n          id: text\n          layer: pre-step\n          text: HELLO\n' }]
   const first = await call(h, 'charactersImport', { files, preview: true })
   assert.equal(first.status, 200, JSON.stringify(first.payload))
   writeFileSync(join(root, 'owner/change.txt'), 'OWNER CHANGED')

@@ -1,38 +1,28 @@
-# engine 复用指南（晋升门控 / PTC 通用模块）
+# 统一规则引擎复用指南
 
-本仓库的引擎（`engine/`）是**自包含**的通用模块库：提示词注入引擎、触发器引擎
-（声明编译器 + 动作库 + 条件谓词）、指令文件提示与各提供者模块全部以
-共享 ESM 实现 + cordis 插件行提供，任何 dsh 预设可自由装配。晋升门控、上下文门控、
-工具目录相位、首轮锚句、深思门、进度节拍与工具名单**不再是内置能力模块**：
-它们改由预设顶层 `triggers` 段的声明表达（见下「模块清单」，净损失与迁移项同样列在那里）。
+`module.yml.rules` 是规则的唯一来源，一张卡对应一条具有稳定 `id` 的规则：
+`when` 判断树决定是否执行，`do` 数组承载具有各自稳定 `id` 的动作。保存、导入与物化
+共用 `engine/rule-spec.mjs#compileRules()`；宿主管理路径和独立路径共用
+`engine/rule-runtime.mjs#mountRuleSources()`，独立插件入口是 `engine/rule-engine.mjs`。
 
-装配遵循按需语义：空模块、无规则且无请求参数时生成合法空组合；显式参数补齐对应能力，
-真实提示词规则或模型请求参数补齐必要的 `prompt-config-engine`，不创建额外 UI 配置卡。
-四个官方基型保留上游工具能力，人设统一由 module.yml 顶层 `persona` 段（官方
-`@deepseek-ai/dsh-persona` 行 config 同构）驱动——`renderComposition` 在 `modules` 清单预设中
-直接从字段生成该行，不读取任何 persona 模块。模块库不提供 `persona`，不得把人设
-重新拆回模块清单；ST/角色卡转换也遵循顶层字段契约。
+`writePreset` 将规则和必要变量物化为 `rules.yml` 包；运行时不双读旧 `promptConfigs`、
+`triggers` 或快捷模型参数。旧定义只能先通过显式离线迁移转换；旧 `/triggers` 以及
+提示词、模型参数写入口返回退役错误，编辑走带模块身份与版本的 `/rules` 事务。
+空模块和空规则仍生成合法空组合，不暗自增加正文或请求参数。
 
-`filesystem-editor` 是**本地模块**
-（`engine/compositions/source/local/filesystem-editor.yml`）：DSH `0.1.5-rc.2` 官方 minimal 已删除
-`filesystem` 行，只剩当前 OS 的持久 shell，因此内置 `preset/pt-minimal` 同步为单 shell 工具基型；
-带隔离文件系统的 `fs-local` + `str-replace-editor`（同属一个 `fs` 隔离域）只由显式声明
-`filesystem-editor` 的预设装配。官方 `agent.cordis.yml` 中同名 row 不作为
-可编辑插件能力；同一预设内仍禁止重复 row。
+引擎是可复制的 ESM 模块库。晋升门控、首轮锚定、目录过滤、预算和节拍由模板或规则
+显式选择。模型配置与采样属于 `request-params` 动作；顶层 `persona` 仍由官方
+`@deepseek-ai/dsh-persona` 行承接，不拆回规则或自建人设模块。ST/角色卡遵循同一边界。
 
 ### 官方与本地分类
 
-- `engine/compositions/library/`：跟随核验过的官方最新 master，当前原样切出 24 个模块。官方预设本身的
-  `delegation-ptc`、`skill-filesystem-cordis` 差异可保留，但不允许注入本地补丁。
-- `engine/compositions/source/local/`：14 个本地自有或本地改写模块的唯一源码。
-  `tool-bash-disabled` 与 `persistent-shell-posix` 是本地适配，不因使用官方包就归为官方模块。
-- 模块文件名是 `modules` 的直接标识；官方原始 row id 保持不变，必要的模块名只描述职责
-  或预设变体，例如 `tool-present` 对应官方 `present` 行。官方模块不使用额外 `official-` 前缀。
-- 本地明确职责：`tool-git-bash` 提供 Windows Git Bash，`declared-triggers` 读入预设的
-  `triggers.yml` 声明并注册触发器。其他已经清楚的名称保持不变。
-- **不提供旧名别名、兼容导出、双读或自动迁移。** 已撤销的模块名直接拒绝；`tool-bash`
-  和 `persistent-shell` 只表示原样官方模块。本地适配须使用明确的新名。嵌套官方编辑器的
-  row/tool 名 `str-replace-editor` 保持，但它不是可独立引用的组合模块。
+- `engine/compositions/library/` 是已经核验的官方分发快照，不手工编辑或添加本地补丁。
+- `engine/compositions/source/local/` 是本地模块源码；`rule-engine` 负责统一规则入口。
+  `filesystem-editor` 显式装配隔离文件系统及编辑器，`tool-git-bash` 提供 Windows Git Bash。
+- 官方 row id 保持原样；同一组合不允许重复 row。模块文件名是 `modules` 中的引用标识。
+- 新模块不得恢复 `prompt-config-engine` / `declared-triggers` 的并行运行入口。底层兼容
+  导出只为既有内部调用和离线读取服务，不表示旧声明还能进入新模块运行链。
+- 组合与业务模板参数拥有默认值，引擎负责校验和执行；缺少业务正文或判据时不私自补齐。
 
 ## 模型工具的宿主约束（exec 字段与 SDK 段变量校验）
 
@@ -70,7 +60,7 @@
 
    | 类别 | 模块 | 复制后的运行条件 |
    |---|---|---|
-   | 核心可复制 | 触发器引擎（声明编译器 / 动作库 / 条件谓词）、提示词注入引擎、条件判定、ST 渲染、世界书选择、`compaction-epoch`、`subagent-tool-policy-core`、`classify-task` | 无额外依赖：隔离复制后即可挂载并完成注入 |
+   | 核心可复制 | 统一规则引擎（规则编译器 / 动作库 / 条件谓词）、提示词批执行器、条件判定、ST 渲染、世界书选择、`compaction-epoch`、`subagent-tool-policy-core`、`classify-task` | 无额外依赖：隔离复制后即可挂载并完成注入 |
    | 需官方 DSH 包 | 依赖宿主服务（`tools` / `systemPrompt` / `llm` / `agents` / `scope`）的模块行 | 目标项目需装配同名宿主服务；缺服务时按各自契约报错或跳过（`inject` 声明的行保持 pending） |
    | 需 Prompt Tool 私有服务 | `character-tools.mjs`、`world-book-tools.mjs`、`session-var-tools.mjs` | 经 `ctx.inject` 等待各自 `pt-*` 服务；服务迟到后挂载，服务移除或组合卸载时释放 |
 
@@ -80,78 +70,75 @@
 2. 组合文件（agent.cordis.yml）以相对路径引用引擎插件行：
 
    ```yaml
-   - id: prompt-config-engine
-     name: ./engine/prompt-config-engine.mjs
+   - id: rule-engine
+     name: ./engine/rule-engine.mjs
+     config:
+       rulesFile: ../rules.yml
    ```
 
 3. 需要按预设参数化时，参考本仓库 `manifest.ts` 的
    `buildModuleConfigsFromParams`（params 扁平键 → 模块行 config 对象合并，
    取代旧 `__TOKEN__` 文本占位符）与 `applyModuleConfigs`（行级/嵌套合并）。
 
-## 模块清单（触发器引擎、声明与提供者）
+## 统一入口与模块职责
 
-七个专用能力模块（`context-gate`、`tool-bootstrap`、`tool-filter`、`anchor-turn`、
-`deliberation-gate`、`progress-reminder`、`promoted-code-mode`）已删除，其行为改由预设
-顶层 `triggers` 段的**声明**表达：`writePreset` 把该段物化为 `<预设目录>/triggers.yml`，
-`declared-triggers` 行在运行时读入、编译并注册。声明由预设提供，引擎不带默认
-（`triggers.yml` 缺失 = 没有声明，不注册任何触发器，也不让预设挂载失败）。
+| 入口或目录 | 职责 |
+|---|---|
+| `engine/rule-engine.mjs` | 独立规则入口：读取 `rules.yml` 包，调用同一编译与挂载接口 |
+| `engine/rule-spec.mjs` | 规则、动作身份与选项校验；`assertRuleId` 是保存、导入、直接编译共用的安全身份边界 |
+| `engine/rule-runtime.mjs` | 将动作按真实官方执行点接线；同点共享判定，跨点独立求值 |
+| `engine/conditions/` | `text`、`phase`、`source`、`count`、`names`、`session`、`preset`、`scope`、`anchor` 及组合的真实实现 |
+| `engine/actions/` | 九类动作的真实实现；`content.mjs` 只负责显式正文选择与生成 |
+| `engine/executor.mjs` / `engine/layers.mjs` | 复用批次注入、变量、去重、官方文本注册与各层执行机制 |
+| `engine/instruction-hint.mjs` | 独立指令提示协议；显式模板生成提示，文件正文仍从声明的文件路径读取 |
+| `engine/tool-config-engine.mjs` | 自定义工具资产到官方工具注册；执行器保留完整官方工具管线与批准边界 |
+| `engine/subagent-tool-policy.mjs` / `subagent-tool-policy-core.mjs` | 子代理实例策略、真实 provider 绑定及共享校验，贡献随 scope 释放 |
+| `engine/character-tools.mjs` / `world-book-tools.mjs` / `session-var-tools.mjs` | 等待宿主对应服务，按预设 scope 贡献工具并释放 |
+| `engine/compaction-epoch.mjs` | 可重建晋升状态机；不是插件行，不内建业务锚词 |
 
-**净损失只有两项**（其余是机制统一，不是能力删除）：
+`actions.mjs`、`predicates.mjs`、`strategies.mjs` 仅保留重导出；不能把实现重新堆回这些入口。
+`trigger-spec.mjs` 用于旧声明的离线校验，新运行链只编译 `rules`。原专用能力模块
+`context-gate`、`tool-bootstrap`、`tool-filter`、`anchor-turn`、`deliberation-gate`、
+`progress-reminder` 与 `promoted-code-mode` 不再内置；需要时由明确规则组合表达。
+渐进阶段推进工具和按晋升时机切换 PTC 呈现没有恢复；需要 PTC 时显式装配官方呈现行。
+`workspaceLine` 与 `phase1FirstCallInstruction` 的既有段正文改写仍无通用动作，
+不要把 `assembly.sections.add/remove/keep` 宣称为等价实现。
 
-- `stages` 渐进披露（多级阶段窄化、`phase_advance` 推进工具与阶段状态段）**按拍板放弃**：
-  它只是触发器机制的一个应用，需要时可用「多条件 + 多触发 + 多动作」自行声明；
-  引擎不再提供该内置能力，也不注册推进工具。
-- `promoted-code-mode` 的**「晋升后才呈现 PTC」时机特性**：PTC 呈现不再由晋升相位触发，
-  需要 PTC 的预设直接在 `modules` 里装配官方 `tool-presentation` 行。
+## 规则、条件与动作边界
 
-`bootstrapMaxTokens`（首轮输出封顶）与 `personaSectionsOnly`（首轮 sections 白名单）
-**不是放弃**：两者已作为声明迁移，分别为 `request-params` 动作的 `patch` / `unset`
-与 `assembly` 动作的 `target.sections.keep`。
+- `rule.id` 是稳定且安全的模块内身份，禁用规则也必须通过校验；拒绝点目录、路径分隔、
+  控制字符和 Windows 保留字符。`action.id` 只承担动作身份，不能套用文件名限制。
+- `do` 必须是非空数组。规则可以跨多个官方执行点；`channel`、执行阶段由动作能力
+  决定，不能在规则顶层另填通道。规则的 `layer` 仅用于展示，真正注入层取动作 `config.layer`。
+- 同规则、同一真实执行点严格按 `do` 数组顺序执行，条件只求值一次；跨执行点、下一次
+  调用及新 epoch 重新求值。不按 session、turn 或同一 context 对象缓存规则结果。
+- `channelOrder` 位于动作中，只控制同执行点跨规则定位；同卡同点存在冲突值时编译拒绝，
+  不替作者任选一个。`waterfallPosition` 也位于动作中，缺省 `default`，适用的原生动作
+  可显式使用 `outermost`；它表达官方 waterfall 位置，不创建跨层全局顺序。
+- `when` 缺省表示没有附加门；组合采用 `all/any/not/notAny` 显式树形结构。缺少真实
+  agent/session/model 等必要事实时，条件内部返回 `UNAVAILABLE`，`not` 不会把未知变真；
+  `any` 中已知 true 仍可决断，`all` 中已知 false 仍可决断。只有结果严格为 true 才执行。
+  不从 UI 当前会话或挂载 scope 猜测缺失的事件身份。
+- 事件型文本注入支持顶层 `when`，包括 system-section 与 runtime-context：官方同步
+  provider 注册占位，真实 assembly 中按本次判定填充；取消、卸载和失败不留下过期正文。
+- `guard`、`complete` 和 `suppressRuntimeContext` 是固定注册效果，拒绝动态 `when` 与
+  waterfall 定位，不能用空文本模拟撤销注册。多个启用 complete，或与顶层 persona.complete
+  冲突，在候选编译时拒绝。`inject-text` / `guard` 不支持 `maxPerTurn`，错误选项不能静默忽略。
+- 通用动态判断只归 `when`：注入动作不再声明受众、模型、晋升或文本匹配门；请求参数动作的受众和模型范围也用 `when.scope`。未声明模型范围等价于 `all`。固定 system-section 独占／抑制的 `audience` 仅表示静态注册目标，仍不接受动态条件。
+- 旧单动作声明的判断在离线迁移时提升为 `when`；只作用于某个动作的多动作条件不能提升后影响兄弟动作，须先明确拆分。
+- 同模块非空组中任一规则声明 `exclusive: true`，整组最多一条启用规则。编译器拒绝
+  多启用冲突，不按排序选赢家；Host 显式激活一条卡时在一次原子事务中关闭同组其他卡。
 
-### 未迁移项（待产品/引擎侧决定）
+`inject-text.config` 复用整批 `createPromptConfigs()`，保留 ST 共享变量帧。缺少显式
+`config.id` 时，投递身份由稳定 rule/action id 编码派生；重排不改身份，复制产生新身份。
+迁移保留原有显式投递身份。`templateFile` 相对该模块的 `rules.yml` 解析，只允许读取模块根内
+资产；保存、物化与运行使用同一边界。`strategyDir` 也相对规则包解析，不能从包内引擎目录
+反推数据目录。正文模板、策略目录和身份校验在所有入口同源。
 
-以下两项**既不是「已迁移」，也不是拍板放弃的净损失**（净损失只有上面两项），而是
-**尚未处理**的未迁移项：它们都要**改写已有段的正文**，而 `assembly` 动作只能
-`sections.add` / `remove` / `keep` 整段（`engine/actions.mjs:386-391`，没有正文改写形态），
-因此**未写声明**。
-
-- `workspaceLine`（`engine/tool-bootstrap.mjs:323-339`，调用点 `:415`）：晋升后给 persona 段
-  追加一行工作目录（段正文已含该行则原样返回，幂等）。
-- `phase1FirstCallInstruction`（`engine/tool-bootstrap.mjs:439-444`）：受控相位里给保留下来的
-  段追加首调指令（段正文已含该文本则跳过，幂等）。
-
-两项当前都没有等价声明，需要产品/引擎侧决定补哪种原语（例如 `sections` 的正文改写）。
-
-### 已知边界
-
-- `request-params` 动作无条件走 `matchesAgentScope`（`engine/actions.mjs:691`）；未声明
-  `modelScope` 时 `matchesModel` 按「非 Flash」过滤（`engine/shared.mjs:117-120`：`scope`
-  非 `flash` 即「非 Flash」），而原 `tool-bootstrap` 的预算监听没有模型过滤
-  （`engine/tool-bootstrap.mjs:466-483`）⇒ **Flash 模型下 `bootstrapMaxTokens` 不等价**。
-  对拍用例使用非 Flash 模型，这一支未覆盖。
-
-| 模块行 | 引擎文件 | 职责 |
-|---|---|---|
-| `instruction-hint` | engine/instruction-hint.mjs | 通用指令文件解析：`params.text` 自定义提示 → `params.file` 运行时读该文件正文（`Instructions from:` 头）→ `params.scope`（all / global / project）只发文件存在提示。**自带 plugin 形态**：挂本行并 `enabled: true`，即在晋升后把 agent-instructions 全文换成一次性 hint（原 `context-gate.instructionHint` 的归属；参数桥 `params.instructionHint` → 本行 `enabled`）；prompt-config 的 resolver 与本行共用同一实现 |
-| `declared-triggers` | engine/declared-triggers.mjs | 触发器声明入口：读 `triggers.yml`（module.yml 顶层 `triggers` 段的物化产物）→ 编译 → 注册；有声明时由 `writePreset` 自动装配 |
-| （纯模块） | engine/trigger-spec.mjs / engine/actions.mjs / engine/predicates.mjs | 触发器引擎：声明编译器（校验 / 稳定排序 / 挂载）、九类动作（`inject-text` / `assembly` / `decision` / `append-context` / `guard` / `sdk-strip` / `request-params` / `inbox-prepend` / `pre-step-filter`）、条件谓词（`text` / `phase` / `source` / `count` / `names` / `session` / `preset` + `any` / `all` / `not` / `notAny`） |
-| `prompt-config-engine` | engine/prompt-config-engine.mjs | 提示词配置执行器（per-config `promotion: main / include-subagents` 门控） |
-| `tool-config-engine` | engine/tool-config-engine.mjs | 自定义工具引擎：module.yml `customTools` 段 → 官方转换器物化标准 JSON Schema（`custom-tools/*.yml`）→ 运行时 `ctx.tools.register`（执行器 shell/http/delegate/fs/ask-user；行 `requireApproval` 门；delegate 经 `ctx.tools.execute` 嵌套调度走完整官方工具管线） |
-| `subagent-tool-policy` | engine/subagent-tool-policy.mjs | generation-scoped subagent/subagent_fork shadow：只安装到当前预设后代；spawn/fork 分别绑定官方 provider，foreground 读取 `SubagentRun.result`，continuable 读取 `childId` 并传顶层 signal；实例参数在 body 前校验，扩权经 approval 门，provider 能力不足 fail loud |
-| （纯模块） | engine/subagent-tool-policy-core.mjs | 策略 validate/compile/resolve/buildParameters 单一 seam（纯模块：不 import dsh-tools、不写文件，包内引擎与 host 两侧共用；bridge 预览与运行时同一 resolver） |
-| （纯模块） | engine/classify-task.mjs | `createOrderedTaskClassifier`：有序正则任务规则确定性分类（taskRules order 升序，首个命中生效） |
-| character-tools / world-book-tools / session-var-tools | engine/character-tools.mjs / engine/world-book-tools.mjs / engine/session-var-tools.mjs | 按预设 scope 贡献角色卡、世界书、会话变量工具；宿主提供注册服务，贡献随组合 disposer 清理。角色卡/世界书写入目标取执行 Agent 的官方预设绑定，并等待该目标的重建与注册 |
-| `compaction-epoch` | engine/compaction-epoch.mjs | 晋升状态机（`phase` 谓词与既有注入路径共用；非插件行） |
-
-## 声明的条件与动作边界
-
-`when` 是判断树，`do` 接受单个动作或同一执行点上的动作数组。`channel`、`phase` 必须与动作真实执行点一致，`channelOrder` 只比较同一通道内的声明，不建立跨插入点顺序。
-
-`inject-text` 与 `guard` 不接受顶层 `when`、`waterfallPosition: outermost` 或 `maxPerTurn`；编译器明确拒绝这些组合。文本注入仍可使用提示词配置自身的条件、晋升、受众和模型范围。其他七类动作支持通用判断。未声明 `modelScope` 的请求参数动作沿用非 Flash 范围，需要所有模型时显式写 `all`。
-
-纯数据 `inject-text.config` 在动作准备阶段复用 `createPromptConfigs()`，保存期与运行期均校验；已有预编译配置的编程调用仍保留 resolver。引擎代码始终从已安装插件包解析；声明中的 `templateFile` 相对实际 `triggers.yml` 解析（例如 `./assets/notice.txt`），读取边界由注册层显式注入的 `presetRoot` 提供。独立使用未提供根时，边界仅为声明文件所在目录。自定义策略目录由该预设 `declared-triggers` 行的 `strategyDir` 提供，也相对声明文件解析；保存期通过 `promptConfigOptions` 传递同一基准。该链路不依赖物化的 `.engine/` 目录，也不从包内引擎位置反推数据目录。
-
-`trigger-editor-meta.mjs#getTriggerEditorMeta()` 从实际判断与动作目录派生可序列化编辑选项和示例，示例通过声明编译器验证；它不启用任何规则，也不提供运行时命中预览。当前可配置面不包含任意自定义判断算法，历史未迁移项仍以上文清单为准。
+`getRuleEditorMeta()` 从实际条件、动作目录派生可序列化选项；`getEngineMeta()` 提供有效
+层和内容策略目录。新动作种子是可编译的中性空内容、空 patch 或空名单，不替用户选业务值。
+`custom-fallback` 不再发布，也没有可执行兼容分支，必须离线转为显式 `anchor` 条件和
+`anchor-notice` 内容；条件未声明 `fallbackAfter` 时不启用轮数兜底。
 
 ## pre-step 消息角色出口（2026-09-17）
 
@@ -168,7 +155,7 @@
 
 ## pre-step 协调器与官方指令过滤
 
-`prompt-config-engine` 行不再无条件自建 pre-step 监听器：
+`rule-runtime` 的注入来源通过共享批执行器接入 pre-step：
 
 - 宿主插件提供 `promptToolPreStep` 协调服务时，引擎行把本 mount 的提示词配置注册给协调器
   （`registerPreset`），由协调器用**同一个** `engine/executor.mjs#runPreStepBatch` 统一执行
@@ -178,7 +165,7 @@
   预设配置；引擎不 import `src/host`，也不强制协调服务存在。
 - 协调服务迟到时，引擎行先停止本地注入再启用管理路径；服务消失时反向恢复独立执行。
   注册句柄同时绑定服务实例，HMR 在相邻两步之间替换服务时也会撤销旧登记、向新实例重登；
-  空预设与非空预设使用同一接管路径，任一时刻只选择一个批执行器。来源随 ctx disposer
+  同一来源在接管期间只选择一个批执行器；无 pre-step 贡献时无需注册该来源。来源随 ctx disposer
   标记为失效，已被 waterfall 捕获的旧回调也不得在服务重挂后恢复登记。
 - 来源作用域来自注册 ctx（`@deepseek-ai/dsh-scope`）：同一 scope 内**同名来源以最新一次登记
   为准**——宿主重挂同一个 preset（同一 scope 上旧 mount 的 fiber 尚未释放）时后来者接管，
@@ -212,7 +199,7 @@
   子代理及压缩恢复使用同一过滤规则，不新增文件级位置、晋升、受众或模型控制。
 - 官方已经完成预算裁剪，插件不补回被省略的其他内容，不重复读取文件来生成注入正文。
   文件卡为了编辑原文仍可读取文件；关闭不是文件访问控制，也不阻止官方读取。
-- `instructionHint` 默认关闭。显式开启后先调用同一过滤入口，再转换剩余符合条件的官方
+- `instructionHint` 默认关闭。显式开启且提供有效 messageTemplate 后先调用同一过滤入口，再转换剩余符合条件的官方
   消息；转换与过滤都不改写历史。未装配官方指令时，插件不补建文件注入。
 - 旧版生成目录里的 `agents-file-*` 卡（或 `sourceKind: instruction-file`）继续跳过，
   避免旧产物恢复插件自注入。`instructions.owner.officialInstructions` 只报告官方装配
@@ -227,7 +214,8 @@
 - `order` 只在同一插入点内生效。
 - UI / 写盘展示顺序固定为 `pre-step → system-section → runtime-context → agent-request → llm-stream → tool-pipeline → turn-stop → subagent-start → subagent-end`；这是展示与写盘顺序，不是运行时优先级。
 - 模型实际收到的提示词文本顺序更接近 `system-section → runtime-context → pre-step`；`agent-request` / `llm-stream` / `tool-pipeline` / `turn-stop` / `subagent-start` / `subagent-end` 是控制通道，不构成提示词文本优先级。
-- 生成文件名使用 4 位零填充前缀（`0000-`），避免大角色卡 / 大预设超过 10 条后字典序错乱。
+- 规则定义保存在一个 `rules.yml` 包中；`configOrder` 按规则身份持久化展示/执行定位，不再用旧配置文件名猜顺序。
+- pre-step 中注入与原生过滤动作按声明顺序交错，分批插入继续排在先前仍存活的同位置消息之后；过滤器的 claimed 基线使用真实事件 payload，不把下游增量当成原始消息。
 
 ### 同 scope 内的注册顺序（2026-09-22）
 
@@ -235,23 +223,22 @@
 
 - waterfall **由外向内**执行，最外层监听器的返回值即最终结果（`@deepseek-ai/cordis` 的 `events.ts`：`cbs.shift()` 取数组头部先跑，`waterfall()` 返回最外层监听器的返回值）。
 - 普通注册（`push`）**先注册者在外**；`prepend: true` 等价 `unshift`，插到链首 = 最外层，且**同为 prepend 时后注册者更外层**。
-- 因此**否决型**动作（清空 `contexts`、窄化 `tools`、按名单掩码、剥离请求参数）必须 prepend 才能落在普通注册之外；**协作式填充**（`runtime-context` 的同步占位与填充）与**纯副作用**监听器保持普通注册，不去抢外层。
-- 本引擎把这条位置表达在声明里：`triggers` 声明的 `waterfallPosition: outermost` 映射为 `prepend: true`（`engine/trigger.mjs` 的 `registrationOptions`），**缺省 `default` 即普通注册**。它表达的是**位置**，不承担同一通道内声明之间的排序——后者归 `channelOrder`。
+- 因此需要落在普通注册之外的**否决型**动作（清空 `contexts`、窄化 `tools`、按名单掩码、剥离请求参数）应显式选择 outermost；**协作式填充**（`runtime-context` 的同步占位与填充）与**纯副作用**监听器保持普通注册，不去抢外层。
+- 本引擎把这条位置表达在规则动作里：`do[]` 的 `waterfallPosition: outermost` 映射为 `prepend: true`（`engine/rule-runtime.mjs`），**缺省 `default` 即普通注册**。它表达的是**位置**，不承担同一通道内声明之间的排序——后者归 `channelOrder`。
 - 顺序语义只能用真实 cordis 用例证明；手写的 mock `ctx.on` 只记录选项、**不实现顺序**，不能用作顺序证据。
 - **已知边界**：`prepend` 只保证「比**已存在**的普通注册更外层」。若第三方插件同样 `prepend` 且注册更晚，它仍处于更外层、可以翻越门控；`global: true` 的注册也不受本 scope 约束。这正是「不再依赖组合行序」的确切含义——位置改由注册选项保证，而该保证有明确上界，不等价于「与顺序无关」。
 
-### 条件判定与事件层（2026-09-19）
+### 条件判定与事件载荷
 
-`pre-step`、`tool-pipeline` 与三个事件层支持声明式条件：`subject` 决定匹配对象，`match`
-复用 `engine/anchor-match.mjs` 的匹配语义（主键 / 副键 / `any|all|not|notAny` / 大小写 /
-整词 / 正则）；未声明 `match` 即保持无条件行为。键按**字面文本**匹配，正则元字符会被
-自动转义，要写正则必须用 `/pattern/flags` 形态或 `useRegex: true`。非法 `logic`、空键集合
-与非法正则在挂载期 fail loud（`engine/schema.mjs#normalizeMatch`），不在运行时静默不命中。
+规则条件在 `when` 中显式选择，文本条件使用 `when.text.subject` 与匹配参数；主子会话和
+模型范围使用 `when.scope`。条件真实实现位于 `engine/conditions/`，匹配器复用
+`engine/anchor-match.mjs`；非法组合、空文本键集合与非法正则在编译期拒绝。旧配置中的
+subject/match/promotion 只能经离线转换显式进入规则条件，不能把旧配置层当成第二规则来源。
 
-| 层 | 扩展点 | 缺省 subject | 命中后的行为 |
+| 动作或展示层 | 真实扩展点 | 可选文本 subject | 命中后的行为 |
 |---|---|---|---|
 | `pre-step` | `agent/pre-step` | `userMessage` | 与本层其余配置一致的消息批注入 |
-| `tool-pipeline` | `tools/pre-execute` / `tools/post-execute` | `toolArgs` | `preDecision` / `postAction` 按条件裁决 |
+| `decision` | `tools/pre-execute` / `tools/post-execute` | `toolArgs` / `toolResult` | 分别声明 phase 为 pre / post 的裁决动作 |
 | `turn-stop` | `agent/turn-stopping` | `assistantText` | 阻止本轮停止并强制续跑一步 |
 | `subagent-start` | `subagent/start` | `subagentInfo` | 向该子代理注入一条上下文 |
 | `subagent-end` | `subagent/end` | `subagentInfo` | 默认记录；`params.action: inject-main` 时通过独立 Agent.inject 调用向所属主会话投递文本，不改写子代理结果、不唤醒空闲主会话 |
@@ -259,9 +246,8 @@
 - `turn-stop` 的续跑上限固定在引擎内（每轮 1 次、每会话 3 次：`engine/layers.mjs` 的
   `TURN_STOP_MAX_PER_TURN` / `TURN_STOP_MAX_PER_SESSION`），**不暴露为配置**——强制续跑
   失控会把会话卡在停不下来的循环里，官方 hook 桥在同等位置也只留了 `TODO(stop-loop-guard)`。
-- `tool-pipeline` 的 `params.toolNames` 是逗号分隔字符串；写数组会在挂载期归一化为逗号串，
-  避免被解析成空列表（= 匹配所有工具），把一条定向门扩大成全工具门。
-- 条件层以外的层声明 `subject` / `match` 会在挂载期报错，不会静默忽略。
+- 原生 `decision.toolNames` 支持明确的工具名单；名单类型错误必须拒绝，不能因解析失败
+  把定向门扩大成全工具门。工具前、后阶段是不同执行点，各自重新判定。
 - **策略只在消费它的层生效**：`config.resolve` 只由 pre-step（`executor.mjs`）与 runtime-context
   的 `system-prompt/assemble` waterfall（`layers.mjs`）调用，其余层声明非 `static` 策略会在挂载期报错
   （`schema.mjs#STRATEGY_LAYER_SUPPORT`）。模板专属策略（`strategyDir` 懒加载）同样只允许
@@ -270,10 +256,9 @@
   在 `next()` 前填充本次装配中的对应项。官方排序、作用域遮蔽及下游门控保持生效；不缓存
   会话正文，复用同一 AssembleContext 的并发请求也各自求值。空值或异常只让该条为空并告警，
   取消或卸载会丢弃本次待填充结果。`strategyDir` 在引擎入口统一解析为绝对 URL（相对写法按
-  `prompt-config-engine.mjs` 解析），相对目录不再让整行挂载抛 `ERR_INVALID_URL`。
-- 条件判定的共享实现是 `engine/condition.mjs`：pre-step 缺省匹配本批用户消息，其余层按各自
-  `subject` 取文本；`match` 的匹配器在 `schema.mjs` 挂载期预编译一次（`config.matchScan`），
-  校验与执行同源。未命中的配置**不写入 session 去重**，条件恢复后仍能注入。
+  当前模块的 `rules.yml` 解析），相对目录不再让整行挂载抛 `ERR_INVALID_URL`。
+- `conditions/subject.mjs` 按真实事件参数归一载荷；共享文本提取由 `engine/condition.mjs`
+  提供，条件在规则编译期准备。未命中的规则**不写入 session 去重**，条件恢复后仍能注入。
 - ST 宏模板（`params.stMacros`）的跨配置变量帧只求值**当前入口获准的配置**：
   `executor.mjs#runPreStepBatch` 传入本批的层、受众、模型、晋升与条件资格集合，去重受限的
   模板在通过去重后才由执行器触发。官方组装只求值其拥有的 system-section / runtime-context
@@ -305,15 +290,16 @@
 
 ## 晋升语义（epoch-aware）
 
-- 晋升信号：`tool/call` 和/或 `assistant/message`（`promoteOn`，默认 either）；
-- 成功 `compaction/end` 为晋升边界：压缩后回到受控相位，重新晋升再恢复；失败压缩保持原相位；
-- `instruction-hint`（原 `context-gate.instructionHint`）以 `session.deriveMessages()` 的模型可见 surface 去重：hint 仍可见时不重复，被压缩遮蔽后才重新提示；
-- 子代理：默认视为已晋升（继承完整上下文/目录）；声明里 `includeSubagents: true` 时跟随主会话相位；
-- 严格门控（通用 opt-in 扩展）：由声明的 `phase` 谓词表达——`promoteGate: true` 要求首段 reasoning
-  minimal-like（`we` 无 `let me`）+ 工具调用才晋升，`maxPromoteSteps`（步数兜底，开启门控时必填）
-  兜底，`promoteAfterFirstResponse: true` 无工具首响应/首轮结束即晋升。
-
-## 配置参考（params 扁平键 ↔ 模块行 config）
+- `phase` 根据显式事件集合或 `promoteOn` 观察真实 durable 事件；默认事件类别 `either`
+  是状态机协议，不会生成业务正文。成功 compaction/end 开启新 epoch，失败压缩保持原相位。
+- 默认子代理被视为已晋升；需要对子代理施加同一相位时显式写 `includeSubagents: true`。
+- `promoteGate: true` 的锚定识别只使用调用方的 `reasoningPattern`、
+  `reasoningNegativePattern` 和 `reasoningFlags`；未提供正则时不内置 we/let me。
+  `maxPromoteSteps` 只有显式配置时才启用步数兜底。
+- `promoteAfterFirstResponse: true` 显式选择首响应或首轮结束释放。所有模式仍用同一
+  observe / 冷扫 / epoch 状态机，不另建第二套计数状态。
+- instruction-hint 的去重依据仍为 `session.deriveMessages()` 的可见 surface；但只有显式
+  messageTemplate 能开启转换，模板为空时不替换或丢弃官方正文。
 
 ## 世界书入选/落选诊断（2026-09-16）
 
@@ -380,135 +366,112 @@ ST 的两个条目级开关在引擎里按 `params.stWorldBook` 消费；未开�
 `data.extensions.depth_prompt.prompt`，`script.js:4626-4634`）。两个变量由 ST 导入期登记，
 缺省不存在时开关自动失效（零噪音）。
 
-字段映射集中在 `src/shared/engine-params.ts#ENGINE_PARAM_DEFINITIONS`；host 装配、bridge 回显与配置卡共享该目录。能力各自的 `includeSubagents`、`promoteOn`、启停和提示文本都在所属卡片或声明里设置，依旧没有跨模块全局顺序；内部服务路径由生成器管理。子代理工具面只能由 `subagentToolPolicy` 实例策略授权：`toolFilterAllow/Deny` 与「主过滤下发 delegation」的兼容通道已删除，策略未启用时按官方委派行为（不写 `toolFilter`），详见 [参数架构](architecture-params.md#9-子代理工具策略subagenttoolpolicy2026-09-02)。
+## 业务参数与空值
 
-自定义模型工具保持 `customTools` 资产及 `tool-config-engine` 模块链路。保存方与运行时复用 `engine/tool-definition.mjs`，保存前编译官方参数 DSL 并完整验证；`customToolRequireApproval` 控制需用户批准的执行器种类。工具预览只是有效工具面的只读视图，不承担安装、连接或注册职责。
+规则行为属于 `rules`；其余已知模块部署参数仍由 `ENGINE_PARAM_DEFINITIONS` 映射到
+对应 `moduleConfigs`。子代理工具面只由 `subagentToolPolicy` 实例策略授权，未启用时遵循
+官方委派行为，不恢复旧 toolFilter 下发通道。自定义工具仍由 `customTools` 资产及
+`tool-config-engine` 管理，保存和运行复用 `engine/tool-definition.mjs` 的官方 DSL 校验。
 
-优先级：参数桥（params / UI）> `moduleConfigs`（模板/ST 行级直写）> 行默认。
-moduleConfigs 只补充参数桥未覆盖的键，不再锁定覆盖 UI 可管理参数。
-
-行默认 = `engine/compositions/source/local/*.yml` 各行 `config`，是可配置默认值的唯一归属地。
-引擎不内置可配置默认值：未声明 `enabled` 视为关闭，缺必填键在装配时
-响亮失败（`requiredText` / `requiredInt`），显式空文本表示该能力不注册。
-
-| params 键 | 落点（config 键） | 行默认（组合源） |
-|---|---|---|
-| `instructionHint` | instruction-hint.enabled（挂 `instruction-hint` 行并 `enabled: true`） | false |
-
-被删除能力（`context-gate` / `tool-bootstrap` / `tool-filter` / `anchor-turn` /
-`deliberation-gate` / `progress-reminder` / `promoted-code-mode`）的专属参数键已全部删除
-（含首轮工具/封顶、门控与相位、来源名单、节拍与深思、`stages` 与 `stage*`、`toolFilter*`
-与 `contextGate*` 等）。这些行为改由预设顶层 `triggers` 段声明，见下「组合示例」。
+- 引擎不生成业务默认正文、长度阈值或模型偏好。`first-turn-anchor` 和 `guide-auto` 的
+  正则与文本来自显式参数；`complexMinChars` 缺省、null、空字符串不启用长度判据，
+  明确数值按严格大于比较。
+- env-facts / skill-catalog 仅在存在 `config.texts`、`config.text` 或 `params.text` 的
+  显式正文模板时输出，事实变量包括 `ENV_FACTS`、`SKILL_COUNT`、`SKILL_NAMES`、
+  `SKILLS_TEXT`。目录 `fields` 缺省为空，`limit` 缺省不截断；业务字段和条数由模板选择。
+- instruction-hint 的 projectTemplate / globalTemplate / suffixTemplate / messageTemplate
+  均默认空。前两者支持 FILES、ROOT 插值，消息模板支持 FILES、SUFFIX；
+  空模板或渲染为空时不替换、不丢弃官方指令。显式 `params.file` 仍实时读文件，
+  `Instructions from:` 是来源协议标记，不是引擎自带的引导性文案。
+- `templates/policies/legacy-defaults.yml` 只保存旧业务参数的精确快照，供模板生成与
+  显式离线迁移读取。引擎运行时不得暗读该文件；迁移只补缺失键，保留显式空值。
+- 诊断文本、数据结构和布尔组合真值、宿主协议、guard、续跑次数与资源预算是机制边界，
+  不因移除业务默认而停用。ST/worldbook 的格式语义仍与转换和生命周期测试对拍。
 
 ## 组合示例
 
-只要 PTC（不窄化目录）：装配官方 `tool-presentation` 行（`mode: ptc`），
-或直接使用基型 `pt-ptc`；PTC 呈现不再由晋升相位触发。
+以下数值、正文和工具名单都是示例作者显式选择的业务配置，不是引擎默认。
+PTC 呈现由官方工具呈现行装配，不随规则相位隐式切换。
 
-首轮窄化 + 输出封顶 + 严格门控（等价于原 `tool-bootstrap` 的两相窄化与请求预算，
-`triggers` 段由 `writePreset` 物化为 `<预设目录>/triggers.yml`）：
-
-```yaml
-triggers:
-  - id: bootstrap-catalog                  # 受控相位：目录窄化 + sections 白名单
-    channel: system-prompt/assemble
-    when:
-      phase: { promoteGate: true, maxPromoteSteps: 4, compacted: false, promoted: false }
-    do:
-      kind: assembly
-      id: bootstrap-catalog
-      target:
-        tools: { allow: [bash, str_replace_editor], requireMatch: true }
-        sections: { keep: ['deployment:persona-prefix', 'deployment:persona-suffix'] }
-  - id: bootstrap-catalog-compacted        # 已压缩的受控相位：补回压缩工具集
-    channel: system-prompt/assemble
-    when:
-      phase: { promoteGate: true, maxPromoteSteps: 4, compacted: true, promoted: false }
-    do:
-      kind: assembly
-      id: bootstrap-compacted
-      target:
-        tools:
-          allow: [bash, str_replace_editor, read, write, edit, glob, grep, todo_write, ask_user_question]
-          requireMatch: true
-  - id: bootstrap-budget                   # 未晋升：把首请求 maxTokens 钉到 1024
-    channel: agent/request
-    when:
-      not:
-        phase: { promoteGate: true, maxPromoteSteps: 4 }
-    do:
-      kind: request-params
-      id: bootstrap-budget
-      patch: { maxTokens: 1024 }
-    waterfallPosition: outermost
-  - id: bootstrap-budget-release           # 晋升后按值释放该封顶
-    channel: agent/request
-    when:
-      phase: { promoteGate: true, maxPromoteSteps: 4 }
-    do:
-      kind: request-params
-      id: bootstrap-budget-release
-      unset: { maxTokens: 1024 }
-    waterfallPosition: outermost
-```
-
-未晋升时清空运行时上下文并过滤 pre-step 来源（原 `context-gate` 等价形态）：
+同一卡在 assembly 同点执行两个动作，再在 request 点独立判定；动作 id 在重排时保持不变：
 
 ```yaml
-triggers:
-  - id: gate-runtime-contexts
-    channel: system-prompt/assemble
+rules:
+  - id: controlled-tools-and-budget
     when:
-      not:
-        phase: { promoteOn: either, includeSubagents: false }
+      all:
+        - scope: { audience: main }
+        - phase: { promoted: false, promoteOn: either }
     do:
-      kind: assembly
-      id: gate-runtime-contexts
-      target:
-        contexts: { clear: true }
-  - id: gate-pre-step-sources
-    channel: agent/pre-step
-    waterfallPosition: outermost
-    when:
-      not:
-        phase: { promoteOn: either, includeSubagents: false }
-    do:
-      kind: pre-step-filter
-      id: gate-pre-step-sources
-      sources: [user, goal]                # 原 messageSources 的取值
+      - id: restrict-presentation
+        kind: assembly
+        target:
+          tools: { deny: [web_search, web_fetch] }
+      - id: restrict-sdk
+        kind: sdk-strip
+        mask: { deny: [web_search, web_fetch] }
+      - id: request-budget
+        kind: request-params
+        patch: { maxTokens: 1024 }
+        waterfallPosition: outermost
 ```
 
-工具名单（原 `tool-filter` 等价形态，三条声明共用同一份名单：呈现 + SDK 正文裁剪 +
-执行层 guard；只裁文本不拦执行不算生效）：
+动态文本规则在一次真实 assembly 中共用条件结果；固定执行 guard 单独声明且没有 when：
 
 ```yaml
-triggers:
-  - id: tool-filter-presentation
-    channel: system-prompt/assemble
+rules:
+  - id: main-context
+    layer: system-section
+    when:
+      scope: { audience: main }
     do:
-      kind: assembly
-      id: tool-filter-presentation
-      target:
-        tools: { deny: [web_search, web_fetch] }
-  - id: tool-filter-sdk
-    channel: system-prompt/assemble
+      - id: main-section
+        kind: inject-text
+        config: { layer: system-section, text: '当前为主会话。' }
+      - id: main-runtime
+        kind: inject-text
+        config: { layer: runtime-context, text: '按当前工作区事实执行。' }
+  - id: fixed-tool-guard
     do:
-      kind: sdk-strip
-      id: tool-filter-sdk
-      mask: { deny: [web_search, web_fetch] }
-  - id: tool-filter-guard
-    channel: system-prompt/assemble
-    do:
-      kind: guard
-      id: tool-filter-guard
-      mask: { deny: [web_search, web_fetch] }
-      includeSubagents: false
-      reason: blocked by tool-filter declaration
+      - id: deny-network-tools
+        kind: guard
+        mask: { deny: [web_search, web_fetch] }
+        includeSubagents: false
+        reason: '此规则禁止调用该工具'
 ```
 
-严格两阶段门控（原 `tool-bootstrap` + `context-gate` 的 `moduleConfigs` 写法）等价于上方的
-`triggers` 声明：目录窄化与 sections 白名单走 `assembly`，首轮封顶走 `request-params`，
-未晋升时的上下文清空与来源过滤走 `assembly.target.contexts.clear` 与 `pre-step-filter`。
+外层 pre-step 来源过滤的位置写在动作中，缺少 when 才表示无附加门：
+
+```yaml
+rules:
+  - id: controlled-inputs
+    when:
+      phase: { promoted: false, includeSubagents: false }
+    do:
+      - id: keep-user-and-goal
+        kind: pre-step-filter
+        sources: [user, goal]
+        waterfallPosition: outermost
+```
+
+自定义锚词和可选轮数兜底分属条件，正文属于注入动作；不再声明 custom-fallback：
+
+```yaml
+rules:
+  - id: confirmed-notice
+    when:
+      anchor: { keys: [READY], fallbackAfter: 1 }
+    do:
+      - id: notice
+        kind: inject-text
+        config:
+          layer: pre-step
+          strategy: anchor-notice
+          text: '按已确认的任务约束继续执行。'
+          params: { firstTurnWord: READY }
+```
+
+示例中 fallbackAfter: 1 是明确选择超过一条 assistant 消息后的兜底；删掉该字段只按锚词确认。
 
 ## 重建与验证
 
@@ -519,8 +482,8 @@ triggers:
   npm 的版本列表与 dist-tags，不能把名字为 latest 的旧标签误当成更新版本。
 - 本地新增模块放 `engine/compositions/source/local/<name>.yml`，直接装配，不复制到 `library/`；
   两处同名会 fail loud；
-- 声明的 `channel` 和 `phase` 必须与动作的真实通道及执行阶段一致，不支持的组合在编译期拒绝；省略 `channelOrder` 按 0 排序。同次 waterfall 内下游压缩成功后，after-next 条件读取复位后的 epoch。
-- 动作先经 `prepareAction` 做纯参数校验，再绑定宿主；声明编译与运行时注册复用同一入口。非法动作与不支持的 when/prepend/maxPerTurn 在物化前拒绝，不改写现有组合、正文或共享引擎。
+- 规则通过 `compileRules` 校验；真实 channel/phase 从动作能力派生。`channelOrder` 缺省来自规则 configOrder（无配置时按规则序号定位）；同卡同点冲突值拒绝。after-next 先调用一次宿主 next，再按该时刻状态判断，压缩后读取新 epoch。
+- 原生动作经 `prepareAction` 校验；注入整批编译共用动作选项验证，避免破坏 ST 变量帧。固定注册效果、非法身份、互斥冲突和不支持的选项在保存/物化前拒绝。
 - 工具名单的 `allow` 与 `deny` 互斥。仅主会话的 guard 不安装会传播到子代理的 restrict；受众仍在执行 guard 内校验。动作次数预算只在目标匹配并产生效果前消费，非目标工具和被阻止的结果不消耗额度。
 - 用户目录刷新：`pnpm rematerialize:presets` 按各预设 `module.yml` 重新物化组合（引擎由插件包提供，不再物化共享引擎）。预设内嵌 `skills/` 不由 `writePreset` 管理，脚本默认只报告漂移；`--refresh-skills` 暂存包内文件与用户独有文件的合并树，再备份旧树并切换，失败恢复原目录。同名文件按模板更新，独有文件仍在有效目录，仅独有文件不触发重复备份；不沿符号链接外写。
-- 验证三连：`pnpm typecheck` + `pnpm lint` + `pnpm test`。
+- 交付验证：从隔离临时 cwd 执行 `pnpm --dir $Repo typecheck`、`lint`、`test`、`build`，最后 `git -C $Repo diff --check`。重点证据包括 rules、business-defaults、真实 agent-assembly 与 rules-bridge-safety 测试；文档 YAML 示例也应通过 compileRules。

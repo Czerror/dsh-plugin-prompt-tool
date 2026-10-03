@@ -4,15 +4,22 @@
 id: example-turn-stop
 name: 未完成时强制续跑
 layer: turn-stop
-strategy: static
-order: 0
-modelScope: all
-text: |-
-  上一轮还没有给出完整交付。请继续把当前任务做完：不要停在中途，
-  也不要用「接下来我会…」的计划代替实际执行。
-match:
-  keys:
-    - 接下来我会
-    - 稍后继续
-    - 待办如下
-params: {}
+when:
+  text:
+    keys:
+      - 接下来我会
+      - 稍后继续
+      - 待办如下
+    subject: assistantText
+do:
+  - id: inject
+    kind: inject-text
+    config:
+      id: example-turn-stop
+      layer: turn-stop
+      strategy: static
+      order: 0
+      text: |-
+        上一轮还没有给出完整交付。请继续把当前任务做完：不要停在中途，
+        也不要用「接下来我会…」的计划代替实际执行。
+      params: {}

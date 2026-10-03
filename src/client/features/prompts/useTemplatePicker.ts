@@ -2,7 +2,8 @@
 import { useRef, useState, type RefObject } from 'react'
 import { bridgeCall, errorMessage } from '../../data/bridge-client.ts'
 import type { PromptToolTranslate } from '../../locales.ts'
-import type { PromptConfigDraft, PromptConfigTemplateEntry } from '../../prompt-tool-types.ts'
+import type { PromptConfigTemplateEntry } from '../../prompt-tool-types.ts'
+import type { RuleDefinition } from '../../../shared/rules.ts'
 
 /** 自定义工具模板条目：与提示词模板同一次 /templates 返回。 */
 export type ToolTemplateEntry = { file: string; spec: Record<string, unknown> }
@@ -25,21 +26,25 @@ export type TemplatePickerScope = 'main' | 'subagent'
  */
 export function createConfigFromTemplate(
   entry: PromptConfigTemplateEntry,
-  configs: readonly PromptConfigDraft[],
+  configs: readonly RuleDefinition[],
   scope?: TemplatePickerScope,
-): PromptConfigDraft {
-  const clone = JSON.parse(JSON.stringify(entry.spec)) as PromptConfigDraft
+): RuleDefinition {
+  const clone = structuredClone(entry.spec)
   let suffix = 2
   while (configs.some((config) => config.id === clone.id)) clone.id = `${entry.spec.id}-${suffix++}`
-  if (clone.identity?.value === entry.spec.id) clone.identity = { ...clone.identity, value: clone.id }
-  if (scope === 'subagent') clone.audience = 'subagent'
-  else if (scope === 'main' && clone.audience === 'subagent') clone.audience = null
+  clone.enabled = false
+  clone.do = clone.do.map(action => {
+    if (action.kind !== 'inject-text') return action
+    const config = action.config !== null && typeof action.config === 'object' && !Array.isArray(action.config) ? action.config as Record<string, unknown> : {}
+    const { id: _sourceId, ...content } = config
+    return { ...action, config: { ...content, ...(scope === 'subagent' ? { audience: 'subagent' } : scope === 'main' && config.audience === 'subagent' ? { audience: null } : {}) } }
+  })
   return clone
 }
 
 export function useTemplatePicker(
-  configs: PromptConfigDraft[],
-  onPickConfig: (config: PromptConfigDraft) => void,
+  configs: RuleDefinition[],
+  onPickConfig: (config: RuleDefinition) => void,
   onNotice: (kind: 'ok' | 'error', message: string) => void,
   t: PromptToolTranslate,
   /** 传入列表作用域时，新建配置代入该受众，保证"新建即可见"；不传 = 不改动模板受众。 */

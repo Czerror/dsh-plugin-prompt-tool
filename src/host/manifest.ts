@@ -3,7 +3,7 @@
  *
  * 一个模块 = 一个 module.yml:
  *   - modules/layerSettings/content/meta 全部是直读参数,无模板语法;
- *   - layerSettings 展平为内部 params，供引擎生成默认提示词配置，promptConfigs 仅为可选覆盖;
+ *   - rules 是唯一条件→动作来源；layerSettings 只展平仍属能力的共享参数;
  *   - 组合模块的行级 config 由参数桥 buildModuleConfigsFromParams 按 params
  *     构造对象合并（取代旧 __TOKEN__ 文本渲染，无占位符、无文本往返），
  *     params（UI/基础层）优先于 moduleConfigs 行级直写（旧作者锁定语义已移除）。
@@ -22,9 +22,9 @@ import { personaRowConfig, readPersonaSpec, type PersonaSpec } from '../shared/p
 import { DEFAULT_MODULE_ID } from '../shared/preset-ids.ts'
 import { assertModuleDirectory, assertPresetId, assertPresetTree, engineModuleFileNames, presetPathExists, rewritePresetEngineReferences, setPresetDefinitionId } from './module-install.ts'
 import { engineParamPath, readPresetLayerSettings, PresetLayerSettingsError } from './module-layer-settings.ts'
-import { modelRequestConfigs } from './prompt-configs.ts'
-import { readLegacyPromptParams, resolveLegacyPromptConfigs } from './legacy-prompt-params.ts'
-import { isLegacyPromptParam, legacyPromptParamPath } from '../shared/legacy-prompt-params.ts'
+import { isLegacyPromptParam } from '../shared/legacy-prompt-params.ts'
+import type { RuleDefinition } from '../shared/rules.ts'
+import { assertCanonicalRuleSource } from './module-rules.ts'
 import { atomicWriteTextFile } from './text-file.ts'
 export { atomicWriteTextFile } from './text-file.ts'
 export { PresetLayerSettingsError } from './module-layer-settings.ts'
@@ -58,8 +58,6 @@ export interface ModuleSpec {
   params?: Record<string, unknown>
   /** 共享引擎参数按编辑组的主归属插入点存储；规则实例仍拥有各自 params。 */
   layerSettings?: Record<string, Record<string, unknown>>
-  /** 兼容读取诊断，不写回模块定义。 */
-  legacyParamWarnings?: string[]
   /** 顶层人设段（官方 @deepseek-ai/dsh-persona 行同构）：prefix/suffix/complete/includeRuntimeContext。 */
   persona?: PersonaSpec
   /** 模块级模板变量（{{key}} 插值源；与 layerSettings 分离，顶层 variables 段）。 */
@@ -68,18 +66,16 @@ export interface ModuleSpec {
   customTools?: unknown[]
   /** 子代理实例级工具策略（subagentToolPolicy 顶层领域段；缺省 = 官方 delegation 行为）。 */
   subagentToolPolicy?: Record<string, unknown>
-  /**
-   * 触发器声明（`triggers` 顶层段）：`{ id, channel, when?, do, … }` 的数组。
-   * 声明**由模块提供**（引擎不带默认），物化为 `triggers.yml` 后由 `declared-triggers`
-   * 运行时模块读入并注册；形状与校验归 `engine/trigger-spec.mjs` 的声明编译器。
-   */
+  /** @deprecated 仅标记旧导入形状；loadModuleSpec 拒绝，须先离线迁移。 */
   triggers?: unknown[]
   /** 模板变量插值开关（缺省 true = 启用；false = 停用，writePreset 不生成变量文件）。 */
   variablesEnabled?: boolean
-  /** 可选:模板自定义提示词配置覆盖(纯数据,不使用模板语法)。 */
+  /** @deprecated 仅标记旧导入形状；loadModuleSpec 拒绝，须先离线迁移。 */
   promptConfigs?: unknown[]
   /** 配置卡的持久文件序号；跨模块UI排序只改此轻量元数据。 */
   configOrder?: Record<string, number>
+  /** 模块唯一的条件→动作定义；旧源只供离线迁移器读取。 */
+  rules?: RuleDefinition[]
   /** 可选:引擎组合模块行参数直写(行级 map config 浅合并;参数桥未覆盖的键生效,参数桥优先)。 */
   moduleConfigs?: Record<string, Record<string, unknown>>
   upstream?: Record<string, unknown>
@@ -149,13 +145,7 @@ export function removePresetModule(dir: string, moduleId: string): boolean {
 }
 
 /** 加载某个模块模板的单一参数文件 modules/<name>/module.yml。 */
-export function loadModuleSpec(dir: string, options: { legacyParams?: boolean } = {}): ModuleSpec {
-  const project = (spec: ModuleSpec): ModuleSpec => {
-    // writer 延后到合并显式兼容输入后再投影，其余读取直接得到可执行规则。
-    if (options.legacyParams === false) return spec
-    const legacy = resolveLegacyPromptConfigs(spec, { moduleDir: dir })
-    return legacy.active ? { ...spec, ...(Array.isArray(spec.promptConfigs) ? { promptConfigs: legacy.configs } : {}), legacyParamWarnings: legacy.warnings } : spec
-  }
+export function loadModuleSpec(dir: string): ModuleSpec {
   const file = join(dir, MODULE_DEFINITION_FILE)
   let stat: ReturnType<typeof statSync>
   try {
@@ -166,7 +156,7 @@ export function loadModuleSpec(dir: string, options: { legacyParams?: boolean } 
     throw new Error(`preset.yml not found in ${dir}（预设模板不存在或目录不完整）`)
   }
   const cached = presetSpecCache.get(file)
-  if (cached !== undefined && cached.mtimeMs === stat.mtimeMs && cached.size === stat.size) return project(cached.spec)
+  if (cached !== undefined && cached.mtimeMs === stat.mtimeMs && cached.size === stat.size) return cached.spec
   const raw = readFileSync(file, 'utf8')
   let parsed: Partial<ModuleSpec> | null
   try {
@@ -181,11 +171,11 @@ export function loadModuleSpec(dir: string, options: { legacyParams?: boolean } 
   if (typeof parsed.id !== 'string' || parsed.id.length === 0) {
     parsed.id = basename(dir)
   }
+  assertCanonicalRuleSource(parsed)
   const params = readPresetLayerSettings(parsed)
-  readLegacyPromptParams(parsed)
   if (parsed.layerSettings !== undefined || parsed.params !== undefined) parsed.params = params
   presetSpecCache.set(file, { mtimeMs: stat.mtimeMs, size: stat.size, spec: parsed as ModuleSpec })
-  return project(parsed as ModuleSpec)
+  return parsed as ModuleSpec
 }
 
 /** 读取模块模板内容资产(presetText / agentsText);模板缺失时静默降级。
@@ -433,7 +423,7 @@ function deleteYamlPath(doc: ReturnType<typeof parseDocument>, path: string[]): 
 }
 
 /**
- * 保存模块参数：写 layerSettings（merge）/ promptConfigs（整体替换）。
+ * 保存部署能力参数与模板变量；规则写入只走 module-rules 的版本事务。
  * parseDocument 保留注释与未知键（preset.yml 模板含大量注释）；空值键删除（'' / []，
  * 回落模板/引擎默认；0 与 false 照常写入——语义与函数内注释、docs §3 一致）。
  */
@@ -449,8 +439,8 @@ export function saveModuleParams(
   if (!existsSync(file)) throw new Error(`preset ${templateName} 无 preset.yml`)
   const doc = parseDocument(readFileSync(file, 'utf8'), { logLevel: 'silent' })
   readPresetLayerSettings(doc.toJS())
-  const previousLegacy = readLegacyPromptParams(doc.toJS() as ModuleSpec)
-  const legacyOverrides: Record<string, unknown> = {}
+  assertCanonicalRuleSource(doc.toJS())
+  if (promptConfigs !== undefined) throw new Error('promptConfigs 写入已退出；请使用 rules 局部事务')
   // 空值 = 删除键（回落模板/引擎默认）：''（字符串清空）、[]（列表清空）。
   // 其余 0/false 照常写入——0 是合法档位（如 maxDepth 0 = 禁止委派），不能当空值吞掉。
   if (params !== undefined) {
@@ -459,44 +449,11 @@ export function saveModuleParams(
       // 「从有值改回留空」依赖空值清掉旧键（渲染层空值跳过 = 继承模板/宿主默认）。
       if (value === undefined || value === null || key.trim().length === 0) continue
       const isEmpty = value === '' || (Array.isArray(value) && value.length === 0)
-      if (isLegacyPromptParam(key)) legacyOverrides[key] = value
-      const path = isLegacyPromptParam(key) ? legacyPromptParamPath(key) : engineParamPath(key)
+      if (isLegacyPromptParam(key)) throw new Error(`旧规则参数 ${key} 已退出；请先离线迁移为 rules`)
+      const path = engineParamPath(key)
       if (isEmpty) deleteYamlPath(doc, path)
       else doc.setIn(path, value)
     }
-  }
-  const source = doc.toJS() as ModuleSpec
-  const legacy = resolveLegacyPromptConfigs(source, {
-    moduleDir: join(moduleRoot, templateName), overrides: legacyOverrides, partial: Object.keys(previousLegacy).length === 0,
-  })
-  const legacyWrite = Object.keys(legacyOverrides).length > 0 && legacy.consumedKeys.length > 0
-  if (promptConfigs !== undefined || legacyWrite) {
-    const rules = promptConfigs === undefined ? legacy.configs
-      : Object.keys(legacyOverrides).length === 0 ? promptConfigs
-        : resolveLegacyPromptConfigs({ ...source, promptConfigs }, {
-          moduleDir: join(moduleRoot, templateName), overrides: legacyOverrides, partial: Object.keys(previousLegacy).length === 0,
-        }).configs
-    // 逐条清理 variables 空 key（待编辑行），避免脏数据落盘。
-    const cleaned = (rules as Array<Record<string, unknown>>).map((config) => {
-      if (config === null || typeof config !== 'object' || Array.isArray(config)) return config
-      const vars = config.variables
-      if (vars === null || typeof vars !== 'object' || Array.isArray(vars)) return config
-      const kept = Object.fromEntries(
-        Object.entries(vars as Record<string, string>).filter(([key]) => key.trim().length > 0),
-      )
-      const next = { ...config }
-      if (Object.keys(kept).length > 0) next.variables = kept
-      else delete next.variables
-      return next
-    })
-    doc.setIn(['promptConfigs'], cleaned)
-    const accepted = resolveLegacyPromptConfigs({ ...source, promptConfigs: cleaned }, {
-      moduleDir: join(moduleRoot, templateName), overrides: legacyOverrides,
-    })
-    for (const key of accepted.consumedKeys) deleteYamlPath(doc, legacyPromptParamPath(key))
-    for (const warning of accepted.warnings) console.warn(`prompt-tool: ${warning}`)
-  } else {
-    for (const warning of legacy.warnings) console.warn(`prompt-tool: ${warning}`)
   }
   if (variables !== undefined) {
     // 模板变量只写顶层 variables 段，不修改 layerSettings 中的同名引擎参数。
@@ -544,8 +501,10 @@ export function withPresetDoc(moduleDir: string, mutate: (doc: ReturnType<typeof
   if (!existsSync(file)) throw new Error(`${moduleDir} 无 preset.yml`)
   const doc = parseDocument(readFileSync(file, 'utf8'), { logLevel: 'silent' })
   readPresetLayerSettings(doc.toJS())
+  assertCanonicalRuleSource(doc.toJS())
   mutate(doc)
   readPresetLayerSettings(doc.toJS())
+  assertCanonicalRuleSource(doc.toJS())
   atomicWriteTextFile(file, doc.toString())
   invalidateModuleSpec(moduleDir)
 }
@@ -786,19 +745,16 @@ export function applyModuleConfigs(raw: string, configs: Record<string, Record<s
  *  - `composition: ./xxx.yml` → 模块模板目录内组合文件(官方预设直用);
  *  - `composition:` 内联文本或组合清单名。
  */
-export function loadCompositionText(spec: ModuleSpec, templateDir?: string, runtime: Record<string, unknown> = {}): string {
+export function loadCompositionText(spec: ModuleSpec, templateDir?: string, _runtime: Record<string, unknown> = {}): string {
   let raw: string
   let modules = spec.modules
   if (Array.isArray(modules)) {
     const declared: string[] = modules
     // 参数在 ⇒ 装配在：显式 params/moduleConfigs 隐含的能力模块自动补齐，与顶层策略段同一规则。
-    const params = resolvePresetParams(spec, runtime)
     const extra = [
       ...(spec.subagentToolPolicy !== undefined && spec.subagentToolPolicy !== null ? ['subagent-tool-policy'] : []),
-      // 有触发器声明 ⇒ 装配声明运行时（与 subagentToolPolicy 同一规则：顶层数据段隐含其消费者）。
-      ...(Array.isArray(spec.triggers) && spec.triggers.length > 0 ? ['declared-triggers'] : []),
       ...impliedModulesForParams(resolvePresetParams(spec, {}), spec.moduleConfigs),
-      ...(Array.isArray(spec.promptConfigs) && spec.promptConfigs.length > 0 || modelRequestConfigs(params).length > 0 ? ['prompt-config-engine'] : []),
+      ...((spec.rules?.length ?? 0) > 0 ? ['rule-engine'] : []),
     ].filter((module) => !declared.includes(module))
     if (extra.length > 0) modules = [...declared, ...extra]
   }
@@ -915,8 +871,8 @@ export function resolveModuleFacts(
     if (rowIds.includes('subagent-tool-policy') && !effectiveModules.includes('subagent-tool-policy')) {
       effectiveModules.push('subagent-tool-policy')
     }
-    if (rowIds.includes('prompt-config-engine') && !effectiveModules.includes('prompt-config-engine')) {
-      effectiveModules.push('prompt-config-engine')
+    if (rowIds.includes('rule-engine') && !effectiveModules.includes('rule-engine')) {
+      effectiveModules.push('rule-engine')
     }
   }
   const effectiveConfigs: Record<string, Record<string, unknown>> = {}

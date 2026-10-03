@@ -5,6 +5,7 @@ import { syncBuiltinESMExports } from 'node:module'
 import { join } from 'node:path'
 import { parseDocument } from 'yaml'
 import * as characters from '../../src/host/characters.ts'
+import { ruleInjections } from '../../src/host/rule-content.ts'
 
 /** 每例独立存储根。两种语义：`storageRoot` 是存储根，角色卡库落在 `<storageRoot>/.characters`；
  *  characters API 的 `moduleRoot` 形参是**模块根** `<storageRoot>/modules`——角色卡库是它的兄弟，
@@ -19,6 +20,7 @@ function setup(t) {
   return { storageRoot, moduleRoot }
 }
 const source = [{ path: 'alice.json', content: JSON.stringify({ data: { name: 'Alice', description: 'hello' } }) }]
+const textRule = (id, config) => ({ id, layer: 'pre-step', do: [{ id: 'inject', kind: 'inject-text', config: { id, layer: 'pre-step', ...config } }] })
 
 test('角色重导入保留记忆、未知文件和未提供的头像，读取失败不覆盖旧数据', t => {
   const { storageRoot, moduleRoot } = setup(t)
@@ -40,7 +42,7 @@ test('角色重导入保留记忆、未知文件和未提供的头像，读取�
 
 test('原生角色应用计数包含 texts 和控制配置，记忆同名普通配置不被覆盖或导出误删', t => {
   const { moduleRoot } = setup(t)
-  const spec = { id: 'alice', name: 'Alice', promptConfigs: [{ id: 'memory', text: 'ordinary text' }, { id: 'multi', texts: ['A', 'B'] }, { id: 'control', layer: 'agent-request', strategy: 'static', params: { patch: { temperature: 0.5 } } }] }
+  const spec = { id: 'alice', name: 'Alice', rules: [textRule('memory', { text: 'ordinary text' }), textRule('multi', { texts: ['A', 'B'] }), { id: 'control', layer: 'agent-request', do: [{ id: 'request', kind: 'request-params', patch: { temperature: 0.5 }, modelScope: 'all' }] }] }
   const imported = characters.importCharacterCard(moduleRoot, [{ path: 'converted.yml', content: JSON.stringify(spec) }])
   assert.equal(imported.ok, true, imported.message)
   mkdirSync(join(moduleRoot, 'target'), { recursive: true })
@@ -52,10 +54,12 @@ test('原生角色应用计数包含 texts 和控制配置，记忆同名普通�
   const file = join(moduleRoot, 'target', 'module.yml')
   const before = readFileSync(file, 'utf8')
   const doc = parseDocument(before)
-  const configs = doc.toJS().promptConfigs
+  const rules = doc.toJS().rules
+  const configs = ruleInjections(rules).map(({ config }) => config)
   assert.equal(configs.find(c => c.id === 'module-alice-memory').text, 'ordinary text')
   assert.deepEqual(configs.find(c => c.id === 'module-alice-multi').texts, ['A', 'B'])
-  assert.equal(new Set(configs.map(c => c.id)).size, 4)
+  assert.equal(new Set(rules.map(rule => rule.id)).size, 4)
+  assert.deepEqual(rules.find(rule => rule.id === 'module-alice-control').do, [{ id: 'request', kind: 'request-params', patch: { temperature: 0.5 }, modelScope: 'all' }])
   const projected = characters.projectCharacterMemories(doc, {}, moduleRoot)
   assert.equal(projected.excludedMemoryCount, 1)
   assert.deepEqual(projected.memoryConflicts, [])
@@ -64,8 +68,8 @@ test('原生角色应用计数包含 texts 和控制配置，记忆同名普通�
   assert.equal(readFileSync(file, 'utf8'), before)
   characters.appendCharacterMemory(moduleRoot, 'alice', 'SECOND MEMORY')
   assert.equal(characters.syncImportedCharacterMemory(moduleRoot, 'target', 'alice').ok, true)
-  const next = parseDocument(readFileSync(file, 'utf8')).toJS().promptConfigs
-  assert.equal(next.find(c => c.id === 'module-alice-memory').text, 'ordinary text')
+  const next = parseDocument(readFileSync(file, 'utf8')).toJS().rules
+  assert.equal(ruleInjections(next).find(({ config }) => config.id === 'module-alice-memory').config.text, 'ordinary text')
   assert.equal(next.length, 4)
 })
 
@@ -133,10 +137,10 @@ test('改过的记忆生成项需要显式选择；投影不修改源定义', t 
   characters.appendCharacterMemory(moduleRoot, 'alice', 'PRIVATE')
   characters.applyCharacterToPreset(moduleRoot, 'target', 'alice')
   const doc = parseDocument(readFileSync(join(moduleRoot, 'target', 'module.yml'), 'utf8'))
-  const configs = doc.toJS().promptConfigs
-  const memory = configs.find(config => config.id === 'module-alice-memory')
-  memory.text += '\nEDITED'
-  doc.set('promptConfigs', configs)
+  const rules = doc.toJS().rules
+  const memory = rules.find(rule => rule.id === 'module-alice-memory')
+  memory.do.find(action => action.kind === 'inject-text').config.text += '\nEDITED'
+  doc.set('rules', rules)
   const original = doc.toString()
   const result = characters.projectCharacterMemories(doc, {}, moduleRoot)
   assert.deepEqual(result.memoryConflicts.map(item => item.id), ['module-alice-memory'])
@@ -164,7 +168,7 @@ test('安装成功但备份清理失败仍报告已安装并给出备份位置',
 
 test('并入前缀统一为 module-，历史的 chara- 条目仍按前缀撤销（不迁移、不留孤儿）', t => {
   const { moduleRoot } = setup(t)
-  const spec = { id: 'alice', name: 'Alice', promptConfigs: [{ id: 'intro', text: 'HELLO' }] }
+  const spec = { id: 'alice', name: 'Alice', rules: [textRule('intro', { text: 'HELLO' })] }
   assert.equal(characters.importCharacterCard(moduleRoot, [{ path: 'converted.yml', content: JSON.stringify(spec) }]).ok, true)
   mkdirSync(join(moduleRoot, 'target'), { recursive: true })
   const file = join(moduleRoot, 'target', 'module.yml')

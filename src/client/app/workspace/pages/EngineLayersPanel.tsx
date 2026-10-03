@@ -15,14 +15,13 @@ import type { PromptToolLocaleKey, PromptToolTranslate } from '../../../locales.
 import { ConfirmDialog } from '../../../ui/ConfirmDialog.tsx'
 import { EngineParamFields, matchesEditorGroup } from '../../../features/modules/EngineParamFields.tsx'
 import { EngineCapabilityCreateMenu } from '../../../features/modules/EngineModuleList.tsx'
-import { ModelRouteModuleCard } from '../../../features/models/ModelRouteCard.tsx'
+import { CurrentSessionModel } from '../../../features/models/CurrentSessionModel.tsx'
 import { PresetPersonaCard } from '../../../features/persona/PresetPersonaCard.tsx'
 import { DelegationToolsModuleCard } from '../../../features/subagents/DelegationToolsCard.tsx'
 import { SubagentToolPolicyCard } from '../../../features/subagents/SubagentToolPolicyCard.tsx'
 import { WorldBookDiagnosticsCard } from '../../../features/prompts/WorldBookDiagnosticsCard.tsx'
 import { TemplateVariablesModuleCard } from '../../../features/prompts/PromptConfigsEditor.tsx'
 import { CustomToolsCard } from '../../../features/tools/CustomToolsCard.tsx'
-import { TriggerRulesEditor } from '../../../features/triggers/TriggerRulesEditor.tsx'
 import { cssEscapeId, scrollToCreatedCard } from '../../../ui/reveal-card.ts'
 import ui from '../../../ui/controls.module.css'
 import css from './layer-settings.module.css'
@@ -116,6 +115,7 @@ function isLayerAsset(id: string): boolean {
 
 function layerAssets(layer: string, excluded: readonly string[]): string[] {
   return ENGINE_EDITOR_GROUP_MAP.filter((group) => group.displayLayer === layer
+    && group.id !== 'subagent-model'
     && !excluded.includes(group.id) && (LAYER_ASSET_IDS as readonly string[]).includes(group.id)).map((group) => group.id)
 }
 
@@ -150,17 +150,11 @@ export function LayerSettingsContent(props: {
   const assets = layerAssets(layer, excluded)
   const keyword = (props.keyword ?? '').trim().toLowerCase()
   const matches = (id: string): boolean => matchesLayerGroup(id, keyword, t)
-  const [editingRules, setEditingRules] = useState(false)
-  if (editingRules) return <div className={css.settings} data-layer-settings-content={layer}>
-    <button type="button" className={ui.pillButton} onClick={() => setEditingRules(false)}>{t('triggers.backToSettings')}</button>
-    <TriggerRulesEditor store={store} t={t} />
-  </div>
   if (cards.length === 0 && capabilities.length === 0 && assets.length === 0) return null
   return (
     <div className={css.settings} data-layer-settings-content={layer}>
       <div className={css.actions}>
         <EngineCapabilityCreateMenu store={store} t={t} layer={layer} excludeCapabilities={excluded} onCreated={props.onCreated} />
-        <button type="button" className={ui.pillButton} onClick={() => setEditingRules(true)}>{t('triggers.open')}</button>
       </div>
       {cards.map((card) => (
         <section key={card} hidden={!matches(card)} className={css.group} data-layer-param-group={card}
@@ -192,8 +186,7 @@ export function LayerSettingsContent(props: {
               disabled={!canEditPreset}
             />
           )}
-          {id === 'main-model' && <ModelRouteModuleCard store={store} t={t} scope="main" embedded />}
-          {id === 'subagent-model' && <ModelRouteModuleCard store={store} t={t} scope="subagent" embedded />}
+          {id === 'main-model' && <CurrentSessionModel store={store} t={t} />}
           {id === 'subagent-tools' && <DelegationToolsModuleCard store={store} t={t} embedded />}
           {(id === 'custom-tools' || id === 'subagent-tool-policy') && <h4 className={css.groupTitle}>{t(CARD_LABEL_KEYS[id] ?? 'modules.layer.asset')}</h4>}
           {id === 'custom-tools' && (props.toolEditor ?? (

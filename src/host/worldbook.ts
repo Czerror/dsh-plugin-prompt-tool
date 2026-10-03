@@ -2,7 +2,10 @@
  *  与角色卡导入（characters.applyCharacterToPreset）共用同一存储（preset.yml
  *  promptConfigs），模型工具（world_book_*）与未来 bridge 端点同源，
  *  不各自实现 parseDocument 往返。 */
-import { loadModuleSpec, withPresetDoc } from './manifest.ts'
+import { loadModuleSpec } from './manifest.ts'
+import { editModuleRules, readModuleRules } from './module-rules.ts'
+import { promptConfigToRule } from './rules-migration.ts'
+import { ruleInjections } from './rule-content.ts'
 
 export type WorldBookEntry = Record<string, unknown>
 
@@ -59,7 +62,8 @@ const isWorldBook = (config: unknown): config is WorldBookEntry =>
 /** 当前模块全部世界书条目（保持文件顺序）。 */
 export function listWorldBookEntries(moduleDir: string): WorldBookEntry[] {
   const spec = loadModuleSpec(moduleDir)
-  return Array.isArray(spec.promptConfigs) ? spec.promptConfigs.filter(isWorldBook) : []
+  return ruleInjections(spec.rules).flatMap(({ rule, config }) => isWorldBook(config)
+    ? [{ ...config, enabled: rule.enabled !== false && config.enabled !== false }] : [])
 }
 
 /** 新增或更新一条世界书条目（按 id 定位；不存在则追加）。返回写入后条目总数。 */
@@ -67,31 +71,25 @@ export function upsertWorldBookEntry(moduleDir: string, entry: WorldBookEntry): 
   if (entry === null || typeof entry !== 'object' || typeof entry.id !== 'string' || entry.id.length === 0) {
     throw new TypeError('世界书条目必须含非空字符串 id')
   }
-  let count = 0
-  withPresetDoc(moduleDir, (doc) => {
-    const current = doc.toJS() as { promptConfigs?: unknown[] }
-    const configs = Array.isArray(current.promptConfigs) ? current.promptConfigs as WorldBookEntry[] : []
-    const existing = configs.findIndex((config) => String(config.id ?? '') === entry.id)
-    if (existing >= 0) configs[existing] = entry
-    else configs.push(entry)
-    doc.setIn(['promptConfigs'], configs)
-    count = configs.filter(isWorldBook).length
-  })
-  return count
+  const snapshot = readModuleRules(moduleDir)
+  const matches = ruleInjections(snapshot.rules).filter(({ config }) => isWorldBook(config) && config.id === entry.id)
+  if (matches.length > 1) throw new Error(`世界书条目 ${entry.id} 的动作身份重复，无法安全更新`)
+  const existing = matches[0]
+  const rule = existing === undefined ? promptConfigToRule({ ...entry, id: entry.id }) : {
+    ...existing.rule, do: existing.rule.do.map(action => action.id === existing.action.id ? { ...action, config: entry } : action),
+  }
+  const result = editModuleRules(moduleDir, { expectedRevision: snapshot.revision, edits: [{ previousId: existing?.rule.id ?? null, rule }] })
+  return ruleInjections(result.rules).filter(({ config }) => isWorldBook(config)).length
 }
 
 /** 删除一条世界书条目；不存在抛错。返回删除后条目总数。 */
 export function deleteWorldBookEntry(moduleDir: string, id: string): number {
-  let count = 0
-  let removed = false
-  withPresetDoc(moduleDir, (doc) => {
-    const current = doc.toJS() as { promptConfigs?: unknown[] }
-    const configs = Array.isArray(current.promptConfigs) ? current.promptConfigs as WorldBookEntry[] : []
-    const kept = configs.filter((config) => !(isWorldBook(config) && String(config.id ?? '') === id))
-    removed = kept.length !== configs.length
-    doc.setIn(['promptConfigs'], kept)
-    count = kept.filter(isWorldBook).length
-  })
-  if (!removed) throw new Error(`世界书条目 ${id} 不存在`)
-  return count
+  const snapshot = readModuleRules(moduleDir)
+  const matches = ruleInjections(snapshot.rules).filter(({ config }) => isWorldBook(config) && config.id === id)
+  if (matches.length === 0) throw new Error(`世界书条目 ${id} 不存在`)
+  if (matches.length > 1) throw new Error(`世界书条目 ${id} 的动作身份重复，无法安全删除`)
+  const { rule, action } = matches[0]!
+  const actions = rule.do.filter(item => item.id !== action.id)
+  const result = editModuleRules(moduleDir, { expectedRevision: snapshot.revision, edits: [{ previousId: rule.id, rule: actions.length > 0 ? { ...rule, do: actions } : null }] })
+  return ruleInjections(result.rules).filter(({ config }) => isWorldBook(config)).length
 }

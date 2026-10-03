@@ -146,7 +146,7 @@ export function loadPromptConfigFiles(dirUrl) {
   return specs
 }
 
-export const KNOWN_STRATEGIES = new Set(['static', 'placeholder', 'first-turn-anchor', 'guide-auto', 'custom-fallback', 'world-book'])
+export const KNOWN_STRATEGIES = new Set(['static', 'placeholder', 'first-turn-anchor', 'guide-auto', 'anchor-notice', 'world-book'])
 /**
  * 策略 × 层支持矩阵：`config.resolve` 只在 pre-step（executor）与 runtime-context 的
  * placeholder（layers）被消费，其他层声明非 static 策略会绑定 resolver 却无人调用，
@@ -158,7 +158,7 @@ export const STRATEGY_LAYER_SUPPORT = {
   placeholder: ['pre-step', 'runtime-context'],
   'first-turn-anchor': ['pre-step'],
   'guide-auto': ['pre-step'],
-  'custom-fallback': ['pre-step'],
+  'anchor-notice': ['pre-step'],
   'world-book': ['pre-step'],
 }
 /** 模板专属策略允许的层：resolver 同样只在 pre-step / runtime-context 被调用。 */
@@ -550,6 +550,7 @@ export function createPromptConfigs(specs, options = {}) {
     }
     const rawStrategy = spec.strategy ?? 'static'
     const strategy = rawStrategy
+    if (strategy === 'custom-fallback') throw new TypeError(`${name}: migrate custom-fallback to an anchor condition and anchor-notice content`)
     if (!KNOWN_STRATEGIES.has(strategy)) {
       // 模板专属策略:声明了 strategyDir 时由 strategies.bindResolver 懒加载,
       // 否则视为未知策略 fail loud。

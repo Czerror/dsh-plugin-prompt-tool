@@ -51,7 +51,13 @@ function makeUserPresetDir(prefix) {
   return dir
 }
 
-function makeHarness(services = {}, value = { promptText: 'P' }) {
+const textRule = (id, text, options = {}) => {
+  const { enabled, ...config } = options
+  return { id, layer: config.layer ?? 'pre-step', ...(enabled === undefined ? {} : { enabled }), do: [{ id: 'inject', kind: 'inject-text', config: { id, layer: 'pre-step', text, ...config } }] }
+}
+const requestRule = (id, patch) => ({ id, layer: 'agent-request', do: [{ id: 'request', kind: 'request-params', patch }] })
+
+function makeHarness(services = {}, value = {}) {
   const handlers = new Map()
   const sctx = {
     get: (name) => services[name],
@@ -132,7 +138,8 @@ test('settings bridge /meta 返回引擎能力矩阵', async () => {
   const payload = JSON.parse(res.body)
   assert.equal(payload.ok, true)
   assert.ok(payload.value.meta.layers.includes('pre-step'))
-  assert.ok(payload.value.meta.strategies.includes('custom-fallback'))
+  assert.ok(payload.value.meta.strategies.includes('anchor-notice'))
+  assert.equal(payload.value.meta.strategies.includes('custom-fallback'), false)
 })
 
 test('settings bridge 拒绝非 loopback 请求', async () => {
@@ -338,25 +345,12 @@ test('模板变量与参数独立保存，读取与 bootstrap 不回退旧 param
   assert.equal(readFileSync(file, 'utf8'), before)
 })
 
-test('请求模块身份统一 bootstrap 快照与参数写入；错误身份和途中换目标零写盘', async (t) => {
-  const dirA = makeUserPresetDir('target-a-')
-  const dirB = makeUserPresetDir('target-b-')
-  const idA = basename(dirA)
-  const idB = basename(dirB)
-  const fileA = join(dirA, 'module.yml')
-  const fileB = join(dirB, 'module.yml')
-  const cardA = { id: 'module-a-card', layer: 'pre-step', text: 'A' }
-  writeFileSync(fileA, JSON.stringify({
-    id: idA, modules: ['prompt-config-engine'],
-    layerSettings: { 'agent-request': { modelTemperature: '0.2' } },
-    variables: { owner: 'A' }, promptConfigs: [cardA],
-  }))
-  writeFileSync(fileB, JSON.stringify({
-    id: idB, modules: [], layerSettings: { 'agent-request': { modelMaxTokens: '888' } },
-    variables: { owner: 'B' }, promptConfigs: [],
-  }))
-  mkdirSync(join(dirA, 'configs'))
-  writeFileSync(join(dirA, 'configs', '00-module-a-card.yml'), JSON.stringify(cardA))
+test('请求模块身份统一 bootstrap 快照与规则写入；错误身份和途中换目标零写盘', async (t) => {
+  const dirA = makeUserPresetDir('target-a-'), dirB = makeUserPresetDir('target-b-')
+  const idA = basename(dirA), idB = basename(dirB)
+  const fileA = join(dirA, 'module.yml'), fileB = join(dirB, 'module.yml')
+  writeFileSync(fileA, JSON.stringify({ id: idA, modules: ['rule-engine'], variables: { owner: 'A' }, rules: [textRule('module-a-card', 'A'), requestRule('model', { temperature: 0.2 })] }))
+  writeFileSync(fileB, JSON.stringify({ id: idB, modules: ['rule-engine'], variables: { owner: 'B' }, rules: [requestRule('model', { maxTokens: 888 })] }))
   const descriptorValue = {}
   const { ctx, handlers } = makeHarness({}, descriptorValue)
   let requestedDir = dirA
@@ -364,66 +358,70 @@ test('请求模块身份统一 bootstrap 快照与参数写入；错误身份和
   registerSettingsBridge(ctx, 'prompt-tool', () => ({ available: true, providers: [] }),
     () => skillsStateStub(), () => '', undefined,
     (id) => id === idA ? requestedDir : dirB, undefined, (id) => { rebuilt.push(id) })
-  const call = async (endpoint, body = {}, { target = idA, onRead } = {}) => {
+  const call = async (endpoint, body = {}, options = {}) => {
+    const target = Object.hasOwn(options, 'target') ? options.target : idA
     const res = fakeRes()
     await handlers.get(PREFIX + BRIDGE_ENDPOINTS[endpoint])(fakeReq({
       headers: { host: 'localhost', ...(target === undefined ? {} : { 'x-module-id': target }) },
       async *[Symbol.asyncIterator]() {
-        onRead?.()
-        yield Buffer.from(JSON.stringify(body))
+        options.onRead?.()
+        yield Buffer.from(JSON.stringify({ ...(endpoint === 'rules' ? { expectedPresetId: target } : {}), ...body }))
       },
     }), res)
     return { status: res.status, payload: JSON.parse(res.body) }
   }
-
-  await t.test('显式 A 的 descriptor、共享参数、配置卡、变量和能力事实均来自 A', async () => {
+  await t.test('显式 A 的 descriptor、规则、变量和能力事实均来自 A', async () => {
     for (const endpoint of ['bootstrap', 'describe']) {
       const { status, payload } = await call(endpoint)
       assert.equal(status, 200)
       assert.equal(payload.value.value.presetTemplate, idA)
-      assert.equal(payload.presetParams.modelTemperature, '0.2')
-      assert.equal(payload.presetParams.modelMaxTokens, undefined)
-      assert.deepEqual(payload.moduleFacts.declaredModules, ['prompt-config-engine'])
+      assert.equal(payload.presetParams.modelTemperature, undefined, '模型参数不再混入退役参数源')
+      assert.deepEqual(payload.moduleFacts.declaredModules, ['rule-engine'])
       assert.equal(payload.templatePreStepCount, 1)
       if (endpoint === 'bootstrap') {
-        assert.deepEqual(payload.overrides.overrides, { modelTemperature: '0.2' })
+        assert.deepEqual(payload.overrides.overrides, {})
         assert.deepEqual(payload.variables, { variables: { owner: 'A' }, enabled: true })
-        assert.deepEqual(payload.promptConfigs.promptConfigs.map((card) => card.id), ['module-a-card'])
+        assert.deepEqual(payload.promptConfigs.promptConfigs, [], '旧配置卡入口只承载独立文件卡')
       }
     }
+    const current = await call('rules')
+    assert.equal(current.status, 200)
+    assert.deepEqual(current.payload.value.rules.map(rule => rule.id), ['module-a-card', 'model'])
+    assert.equal(current.payload.value.rules[1].do[0].patch.temperature, 0.2)
     assert.deepEqual(descriptorValue, {}, '响应投影不修改全局设置')
-    const noHeader = fakeRes()
-    await handlers.get(PREFIX + BRIDGE_ENDPOINTS.bootstrap)(fakeReq(), noHeader)
+    const noHeader = await call('bootstrap', {}, { target: undefined })
     assert.equal(noHeader.status, 200)
-    assert.equal(JSON.parse(noHeader.body).value.value.presetTemplate, idB, '未声明目标时描述身份也来自实际回退目录')
-    assert.equal(JSON.parse(noHeader.body).presetParams.modelMaxTokens, '888', '未声明目标仍使用原回退')
+    assert.equal(noHeader.payload.value.value.presetTemplate, idB, '无目标时描述身份来自实际回退目录')
+    const fallback = await call('rules', { expectedPresetId: idB }, { target: undefined })
+    assert.equal(fallback.status, 200)
+    assert.equal(fallback.payload.value.rules[0].do[0].patch.maxTokens, 888)
   })
-
   await t.test('A 请求可以保存 A，expected B 被拒且不改任一模块', async () => {
     const beforeB = readFileSync(fileB, 'utf8')
-    const saved = await call('paramOverrides', { expectedPresetId: idA, overrides: { modelTemperature: '0.4' } })
+    const revision = (await call('rules')).payload.value.revision
+    const edits = [{ previousId: 'model', rule: requestRule('model', { temperature: 0.4 }) }]
+    const saved = await call('rules', { expectedRevision: revision, edits })
     assert.equal(saved.status, 200, JSON.stringify(saved.payload))
-    assert.equal(parseYaml(readFileSync(fileA, 'utf8')).layerSettings['agent-request'].modelTemperature, '0.4')
+    assert.equal(parseYaml(readFileSync(fileA, 'utf8')).rules[1].do[0].patch.temperature, 0.4)
     assert.equal(readFileSync(fileB, 'utf8'), beforeB)
     assert.deepEqual(rebuilt, [idA])
     const beforeA = readFileSync(fileA, 'utf8')
     const deleting = await call('moduleDelete', { id: idA })
     assert.equal(deleting.status, 400)
     assert.equal(deleting.payload.code, 'preset-in-use')
-    assert.equal(readFileSync(fileA, 'utf8'), beforeA, '当前编辑目标不因全局设置移除而变得可删')
-    const rejected = await call('paramOverrides', { expectedPresetId: idB, overrides: { modelTemperature: '0.8' } })
+    assert.equal(readFileSync(fileA, 'utf8'), beforeA)
+    const rejected = await call('rules', { expectedPresetId: idB, expectedRevision: saved.payload.value.revision, edits })
     assert.equal(rejected.status, 409)
     assert.equal(rejected.payload.code, 'preset-changed')
     assert.equal(readFileSync(fileA, 'utf8'), beforeA)
     assert.equal(readFileSync(fileB, 'utf8'), beforeB)
     assert.deepEqual(rebuilt, [idA])
   })
-
   await t.test('读取载荷期间同一请求目标变化时拒绝写入', async () => {
-    const beforeA = readFileSync(fileA, 'utf8')
-    const beforeB = readFileSync(fileB, 'utf8')
+    const beforeA = readFileSync(fileA, 'utf8'), beforeB = readFileSync(fileB, 'utf8')
     const beforeRebuilds = rebuilt.length
-    const rejected = await call('paramOverrides', { expectedPresetId: idA, overrides: { modelTemperature: '0.9' } },
+    const revision = (await call('rules')).payload.value.revision
+    const rejected = await call('rules', { expectedRevision: revision, edits: [{ previousId: 'model', rule: requestRule('model', { temperature: 0.9 }) }] },
       { onRead: () => { requestedDir = dirB } })
     assert.equal(rejected.status, 409)
     assert.equal(rejected.payload.code, 'preset-changed')
@@ -439,8 +437,8 @@ test('模块配置排序端点：启用尾部追加、跨模块保存、冲突�
   const ids = dirs.map((dir) => basename(dir))
   for (const [index, dir] of dirs.entries()) {
     writeFileSync(join(dir, 'module.yml'), JSON.stringify({
-      id: ids[index], modules: ['prompt-config-engine'],
-      promptConfigs: [{ id: 'card', text: `BODY ${index}` }, ...(index === 3 ? [{ id: 'second', text: 'SECOND' }] : [])],
+      id: ids[index], modules: ['rule-engine'],
+      rules: [textRule('card', `BODY ${index}`), ...(index === 3 ? [textRule('second', 'SECOND')] : [])],
       ...(index === 2 ? { configOrder: { card: -1 } } : {}),
     }))
   }
@@ -490,7 +488,7 @@ test('模块配置排序端点：启用尾部追加、跨模块保存、冲突�
     assert.deepEqual(snapshot.entries.map((entry) => entry.moduleId), [ids[1], ids[0]])
     assert.deepEqual(rebuilt.slice(-2).sort(), ids.slice(0, 2).sort())
     for (const [index, dir] of dirs.entries()) {
-      assert.equal(parseYaml(readFileSync(join(dir, 'module.yml'), 'utf8')).promptConfigs[0].text, `BODY ${index}`)
+      assert.equal(parseYaml(readFileSync(join(dir, 'module.yml'), 'utf8')).rules[0].do[0].config.text, `BODY ${index}`)
     }
     beforeRebuild = async () => {}
     const enabledBefore = dirs.slice(0, 2).map((dir) => readFileSync(join(dir, 'module.yml'), 'utf8'))
@@ -615,9 +613,11 @@ test('预设列表、导出、复制、删除、新建与导入都作用于官�
 })
 
 test('settings bridge：system 预设拒绝全部当前预设写入', async () => {
-  const dir = mkdtempSync(join(tmpdir(), 'pt-system-readonly-'))
+  const container = mkdtempSync(join(tmpdir(), 'pt-system-readonly-'))
+  const dir = join(container, 'system')
+  mkdirSync(dir)
   const presetFile = join(dir, 'module.yml')
-  const original = 'id: system\nmodules: []\n'
+  const original = 'id: system\nmodules: []\nrules: []\n'
   writeFileSync(presetFile, original, 'utf8')
   try {
     const { ctx, handlers } = makeHarness()
@@ -625,9 +625,12 @@ test('settings bridge：system 预设拒绝全部当前预设写入', async () =
       () => ({ available: true, providers: [] }),
       () => skillsStateStub(),
       () => '', undefined, () => dir)
+    const rulesRead = fakeRes()
+    await handlers.get(PREFIX + BRIDGE_ENDPOINTS.rules)(fakeReq({ async *[Symbol.asyncIterator]() { yield Buffer.from(JSON.stringify({ expectedPresetId: basename(dir) })) } }), rulesRead)
+    assert.equal(rulesRead.status, 200, rulesRead.body)
+    const revision = JSON.parse(rulesRead.body).value.revision
     const cases = [
-      [BRIDGE_ENDPOINTS.paramOverrides, { overrides: { firstTurnAnchor: true } }],
-      [BRIDGE_ENDPOINTS.paramOverrides, { promptConfigs: [] }],
+      [BRIDGE_ENDPOINTS.rules, { expectedPresetId: basename(dir), expectedRevision: revision, edits: [{ previousId: null, rule: textRule('readonly', 'FORBIDDEN') }] }],
       [BRIDGE_ENDPOINTS.presetVariables, { variables: { empty: '' }, enabled: true }],
       [BRIDGE_ENDPOINTS.importPreset, { contents: [{ scope: 'preset', content: 'changed' }] }],
       [BRIDGE_ENDPOINTS.customTools, { customTools: [] }],
@@ -650,8 +653,16 @@ test('settings bridge：system 预设拒绝全部当前预设写入', async () =
       assert.equal(readFileSync(presetFile, 'utf8'), original, `${endpoint} 不得修改 system 预设`)
       assert.deepEqual(readdirSync(dir), ['module.yml'], `${endpoint} 不得创建 system 预设文件`)
     }
+    for (const [body, status, code] of [[{ promptConfigs: [] }, 410, 'rules-route-retired'], [{ overrides: { modelTemperature: '0.2' } }, 403, 'preset-readonly']]) {
+      const retired = fakeRes()
+      await handlers.get(PREFIX + BRIDGE_ENDPOINTS.paramOverrides)(fakeReq({ async *[Symbol.asyncIterator]() { yield Buffer.from(JSON.stringify(body)) } }), retired)
+      assert.equal(retired.status, status)
+      assert.equal(JSON.parse(retired.body).code, code)
+      assert.equal(readFileSync(presetFile, 'utf8'), original)
+      assert.deepEqual(readdirSync(dir), ['module.yml'])
+    }
   } finally {
-    rmSync(dir, { recursive: true, force: true })
+    rmSync(container, { recursive: true, force: true })
   }
 })
 
@@ -791,110 +802,61 @@ test('settings bridge /persona 读写顶层 persona 段并按实际模块身份�
   }
 })
 
-test('/persona：已有启用「独占」的提示词配置时拒绝顶层人设独占（禁用/无配置不算冲突）', async () => {
+test('/persona：已有启用独占规则时拒绝顶层人设独占，禁用规则不构成冲突', async () => {
   const { ctx, handlers } = makeHarness()
   const dir = makeUserPresetDir('pt-persona-complete-')
   let rebuilds = 0
-  const writeModule = (configs) => writeFileSync(
-    join(dir, 'module.yml'),
-    `id: ${basename(dir)}\nname: complete\npromptConfigs: ${JSON.stringify(configs)}\n`,
-    'utf8',
-  )
-  const exclusive = (enabled) => [{
-    id: 'exclusive-section',
-    enabled,
-    layer: 'system-section',
-    strategy: 'static',
-    text: '独占段',
-    params: { complete: true },
-  }]
+  const file = join(dir, 'module.yml')
+  const writeModule = enabled => writeFileSync(file, JSON.stringify({ id: basename(dir), modules: ['rule-engine'], rules: [textRule('exclusive-section', '独占段', { enabled, layer: 'system-section', params: { complete: true } })] }))
   try {
-    registerSettingsBridge(ctx, 'prompt-tool',
-      () => ({ available: true, providers: [] }),
-      () => skillsStateStub(),
-      () => '',
-      undefined,
-      () => dir,
-      undefined,
-      () => { rebuilds += 1 },
-    )
+    registerSettingsBridge(ctx, 'prompt-tool', () => ({ available: true, providers: [] }), () => skillsStateStub(), () => '', undefined, () => dir, undefined, () => { rebuilds++ })
     const handler = handlers.get(PREFIX + BRIDGE_ENDPOINTS.persona)
-
-    // 关键拒绝：磁盘上已有启用的「独占」段 → 顶层人设不得再开独占（否则宿主装配抛错）。
-    writeModule(exclusive(true))
-    const before = readFileSync(join(dir, 'module.yml'), 'utf8')
-    const rejected = fakeRes()
-    await handler(fakeReq({ [Symbol.asyncIterator]: async function* () {
-      yield Buffer.from(JSON.stringify({ persona: { prefix: 'PREFIX', complete: true } }))
-    } }), rejected)
+    const post = async () => {
+      const res = fakeRes()
+      await handler(fakeReq({ async *[Symbol.asyncIterator]() { yield Buffer.from(JSON.stringify({ persona: { prefix: 'PREFIX', complete: true } })) } }), res)
+      return res
+    }
+    writeModule(true)
+    const before = readFileSync(file, 'utf8')
+    const rejected = await post()
     assert.equal(rejected.status, 400)
     assert.equal(JSON.parse(rejected.body).code, 'preset-persona-complete-conflict')
-    assert.equal(readFileSync(join(dir, 'module.yml'), 'utf8'), before, '被拒时不落盘')
-    assert.equal(rebuilds, 0, '被拒时不重建')
-
-    // 边界：同一条配置被禁用 → 不构成冲突，写入成功。
-    writeModule(exclusive(false))
-    const allowed = fakeRes()
-    await handler(fakeReq({ [Symbol.asyncIterator]: async function* () {
-      yield Buffer.from(JSON.stringify({ persona: { prefix: 'PREFIX', complete: true } }))
-    } }), allowed)
-    assert.equal(allowed.status, 200, '禁用的「独占」段不算冲突')
-    assert.equal(parseYaml(readFileSync(join(dir, 'module.yml'), 'utf8')).persona.complete, true)
-  } finally {
-    rmSync(dir, { recursive: true, force: true })
-  }
+    assert.equal(readFileSync(file, 'utf8'), before)
+    assert.equal(rebuilds, 0)
+    writeModule(false)
+    assert.equal((await post()).status, 200)
+    assert.equal(parseYaml(readFileSync(file, 'utf8')).persona.complete, true)
+  } finally { rmSync(dir, { recursive: true, force: true }) }
 })
 
-test('/param-overrides：顶层人设已开「独占」时拒绝启用提示词配置独占（未声明/禁用不算冲突）', async () => {
+test('/rules：顶层人设独占时拒绝启用独占规则，保留禁用边界和零写入', async () => {
   const { ctx, handlers } = makeHarness()
-  const dir = makeUserPresetDir('pt-overrides-complete-')
-  const rebuilds = []
-  const base = `id: ${basename(dir)}\nname: complete\npersona:\n  prefix: PREFIX\n`
-  const exclusiveConfig = (enabled) => [{
-    id: 'exclusive-section',
-    enabled,
-    layer: 'system-section',
-    strategy: 'static',
-    text: '独占段',
-    params: { complete: true },
-  }]
-  const post = async (payload) => {
+  const dir = makeUserPresetDir('pt-rules-complete-'), file = join(dir, 'module.yml')
+  const id = basename(dir), rebuilds = []
+  const definition = complete => ({ id, modules: ['rule-engine'], persona: { prefix: 'PREFIX', ...(complete ? { complete: true } : {}) }, rules: [] })
+  const completeRule = enabled => textRule('exclusive-section', '独占段', { enabled, layer: 'system-section', params: { complete: true } })
+  const call = async (body = {}) => {
     const res = fakeRes()
-    await handlers.get(PREFIX + BRIDGE_ENDPOINTS.paramOverrides)(fakeReq({
-      [Symbol.asyncIterator]: async function* () { yield Buffer.from(JSON.stringify(payload)) },
-    }), res)
-    return res
+    await handlers.get(PREFIX + BRIDGE_ENDPOINTS.rules)(fakeReq({ async *[Symbol.asyncIterator]() { yield Buffer.from(JSON.stringify({ expectedPresetId: id, ...body })) } }), res)
+    return { status: res.status, ...JSON.parse(res.body) }
   }
+  const save = async enabled => call({ expectedRevision: (await call()).value.revision, edits: [{ previousId: null, rule: completeRule(enabled) }] })
   try {
-    registerSettingsBridge(ctx, 'prompt-tool',
-      () => ({ available: true, providers: [] }),
-      () => skillsStateStub(),
-      () => '',
-      undefined,
-      () => dir,
-      undefined,
-      (id) => { rebuilds.push(id) },
-    )
-    // 前置：人设未开独占 → 启用提示词配置独占允许。
-    writeFileSync(join(dir, 'module.yml'), base, 'utf8')
-    assert.equal((await post({ promptConfigs: exclusiveConfig(true) })).status, 200)
-    assert.deepEqual(rebuilds, [basename(dir)], '提示词配置保存后按实际模块身份装配')
-
-    // 磁盘人设开独占 → 再启用提示词配置独占必须被拒。
-    writeFileSync(join(dir, 'module.yml'), `${base}  complete: true\n`, 'utf8')
-    const before = readFileSync(join(dir, 'module.yml'), 'utf8')
-    const rejected = await post({ promptConfigs: exclusiveConfig(true) })
+    registerSettingsBridge(ctx, 'prompt-tool', () => ({ available: true, providers: [] }), () => skillsStateStub(), () => '', undefined, () => dir, undefined, target => { rebuilds.push(target) })
+    writeFileSync(file, JSON.stringify(definition(false)))
+    assert.equal((await save(true)).status, 200)
+    assert.deepEqual(rebuilds, [id])
+    writeFileSync(file, JSON.stringify(definition(true)))
+    const before = readFileSync(file, 'utf8')
+    const rejected = await save(true)
     assert.equal(rejected.status, 400)
-    assert.equal(JSON.parse(rejected.body).code, 'overrides-invalid-value')
-    assert.equal(readFileSync(join(dir, 'module.yml'), 'utf8'), before, '被拒时不落盘')
-    assert.deepEqual(rebuilds, [basename(dir)], '被拒时不触发运行时装配')
-
-    // 边界：同步提交的配置是禁用的 → 不算冲突。
-    assert.equal((await post({ promptConfigs: exclusiveConfig(false) })).status, 200, '禁用的「独占」段不算冲突')
-    assert.deepEqual(rebuilds, [basename(dir), basename(dir)])
-  } finally {
-    rmSync(dir, { recursive: true, force: true })
-  }
+    assert.equal(rejected.code, 'rules-invalid')
+    assert.match(rejected.message, /complete|独占/)
+    assert.equal(readFileSync(file, 'utf8'), before)
+    assert.deepEqual(rebuilds, [id])
+    assert.equal((await save(false)).status, 200)
+    assert.deepEqual(rebuilds, [id, id])
+  } finally { rmSync(dir, { recursive: true, force: true }) }
 })
 
 /** 用户技能根（技能实体的落点）：创建、复制导入与回收站都落在这里。 */

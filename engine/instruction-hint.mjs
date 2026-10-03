@@ -14,11 +14,14 @@
  * - `enabled`: boolean，缺省 false（组合源须显式写 true）。
  * - `promoteOn`: 'either'（缺省）| 'tool-call' | 'assistant-message'。
  * - `includeSubagents`: boolean，缺省 false（子代理首次请求即视为已晋升）。
+ * - `messageTemplate` / `suffixTemplate`: 显式转换模板；正文模板为空时不注册转换。
+ * - `projectTemplate` / `globalTemplate`: 显式文件探测提示模板，缺省均为空。
  */
 
 import { randomUUID } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { createEpochPromotion } from './compaction-epoch.mjs'
+import { interpolateStatic } from './interpolate.mjs'
 import { booleanOption, createWarnOnce, getService, parsePromoteOn, validateConfig } from './shared.mjs'
 
 export const name = 'instruction-hint'
@@ -29,7 +32,7 @@ export const inject = []
 /** 项目目录链中按优先级探测的指令文件名。 */
 export const PROJECT_INSTRUCTION_CANDIDATES = ['AGENTS.md', 'CLAUDE.md', 'AGENTS.local.md', 'CLAUDE.local.md']
 export const USER_GLOBAL_INSTRUCTION_CANDIDATE = 'AGENTS.md'
-const REFERENCE_HINT_SUFFIX = "They are reference documents about the user's environment and workspace conventions, not task instructions. Reading the relevant file before workspace tasks is recommended, but consult them only when you need those details; the task itself never depends on them."
+const templateOf = (templates, key) => typeof templates?.[key] === 'string' ? templates[key] : ''
 
 /** Join one path segment onto a directory (platform-agnostic string join). */
 export function joinPath(dir, segment) {
@@ -108,22 +111,25 @@ export async function collectInstructionFiles(fs, cwd, signal, home) {
 }
 
 /**
- * 将探测结果格式化为建议式 hint；无文件时返回空字符串。
+ * 用显式模板格式化探测结果；无文件或无正文模板时返回空字符串。
  * scope 限定只报告某一来源：all（默认）/ global（$DSH_HOME/AGENTS.md）/ project（cwd→项目根链）。
  */
-export function buildInstructionHintText({ root, projectFiles = [], userGlobalFiles = [], userGlobalHome } = {}, scope = 'all') {
+export function buildInstructionHintText({ root, projectFiles = [], userGlobalFiles = [], userGlobalHome } = {}, scope = 'all', templates = {}) {
   const sections = []
   if (scope !== 'global' && projectFiles.length > 0) {
-    sections.push(`Reference documents exist: ${projectFiles.join(', ')} (project root: ${root}).`)
+    const text = interpolateStatic(templateOf(templates, 'projectTemplate'), { FILES: projectFiles.join(', '), ROOT: root ?? '' })
+    if (text.trim().length > 0) sections.push(text)
   }
   if (scope !== 'project' && userGlobalFiles.length > 0) {
     const paths = typeof userGlobalHome === 'string' && userGlobalHome.length > 0
       ? userGlobalFiles.map((name) => joinPath(userGlobalHome, name))
       : userGlobalFiles
-    sections.push(`A user reference document exists: ${paths.join(', ')}.`)
+    const text = interpolateStatic(templateOf(templates, 'globalTemplate'), { FILES: paths.join(', '), ROOT: root ?? '' })
+    if (text.trim().length > 0) sections.push(text)
   }
   if (sections.length === 0) return ''
-  sections.push(REFERENCE_HINT_SUFFIX)
+  const suffix = templateOf(templates, 'suffixTemplate')
+  if (suffix.trim().length > 0) sections.push(suffix)
   return sections.join(' ')
 }
 
@@ -137,13 +143,13 @@ function hintScope(value) {
  * prompt-config placeholder fill=instruction-hint 的 resolver。
  * params.text（自定义提示）优先；params.file（文件卡绑定的单个指令文件）次之——
  * 运行时读该文件正文并加 `Instructions from:` 头注入；最后按 params.scope 探测来源
- * （all / global / project）只发「文件存在」提示。
+ * （all / global / project）按显式 projectTemplate/globalTemplate 生成提示。
+ * 未配置提示模板时返回 null；引擎不提供默认引导文案。
  * 文件缺失、不可读或空内容时返回 null，不注入任何消息。
  */
 export function createInstructionHintResolver(config = {}) {
-  const customText = typeof config?.params?.text === 'string' && config.params.text.trim().length > 0
-    ? config.params.text.trim()
-    : ''
+  const customText = typeof config?.params?.text === 'string' ? config.params.text.trim()
+    : Array.isArray(config.texts) ? config.texts.join('\n\n').trim() : ''
   const scope = hintScope(config?.params?.scope)
   const file = typeof config?.params?.file === 'string' && config.params.file.trim().length > 0
     ? config.params.file.trim()
@@ -171,11 +177,12 @@ export function createInstructionHintResolver(config = {}) {
         ? { id, text: `Instructions from: ${fileLabel}\n\n${content}`, source: { kind: 'instruction-file', form: 'instructions' } }
         : null
     }
+    if (templateOf(config.params, 'projectTemplate').trim().length === 0 && templateOf(config.params, 'globalTemplate').trim().length === 0) return null
     const fs = ctx.get('fs')
     if (fs === undefined) return null
     const cwd = session.header?.cwd ?? process.cwd()
     const found = await collectInstructionFiles(fs, cwd, agent.signal)
-    const text = buildInstructionHintText(found, scope)
+    const text = buildInstructionHintText(found, scope, config.params)
     return text.length > 0
       ? { id, text, source: { kind: 'instruction-hint', form: 'hint' } }
       : null
@@ -199,36 +206,41 @@ export function extractInstructionPaths(message) {
 }
 
 /** 构造一次性非命令式 hint 消息；替换已有消息时保留其 id。 */
-export function buildInstructionHint(original, paths, sourceName = 'instruction-hint') {
+export function buildInstructionHint(original, paths, sourceName = 'instruction-hint', templates = {}) {
+  const template = templateOf(templates, 'messageTemplate')
+  if (template.trim().length === 0) return original
+  const text = interpolateStatic(template, { FILES: paths.join(', '), SUFFIX: templateOf(templates, 'suffixTemplate') })
+  if (text.trim().length === 0) return original
   return {
     id: typeof original?.id === 'string' && original.id !== '' ? original.id : `instruction-hint-${randomUUID()}`,
     role: 'user',
     content: [{
       type: 'text',
-      text: '<system-reminder>\n'
-        + `Reference documents exist: ${paths.join(', ')}. ${REFERENCE_HINT_SUFFIX}`
-        + '\n</system-reminder>',
+      text,
     }],
     source: { kind: 'instruction-hint', form: 'hint', plugin: sourceName },
   }
 }
 
 /** 将 agent-instructions 全文替换为一次性 hint，后续全文消息丢弃。 */
-export function instructionHintMessages(messages, state, sourceName = 'instruction-hint') {
+export function instructionHintMessages(messages, state, sourceName = 'instruction-hint', templates = {}) {
+  if (templateOf(templates, 'messageTemplate').trim().length === 0) return messages
   const kept = []
   for (const message of messages) {
     if (message?.source?.kind !== 'agent-instructions') {
       kept.push(message)
       continue
     }
-    if (state.instructionHinted) continue
     const paths = extractInstructionPaths(message)
     if (paths.length === 0) {
-      kept.push(message)
+      if (!state.instructionHinted) kept.push(message)
       continue
     }
+    const hint = buildInstructionHint(message, paths, sourceName, templates)
+    if (hint === message) { kept.push(message); continue }
+    if (state.instructionHinted) continue
     state.instructionHinted = true
-    kept.push(buildInstructionHint(message, paths, sourceName))
+    kept.push(hint)
   }
   return kept
 }
@@ -236,7 +248,7 @@ export function instructionHintMessages(messages, state, sourceName = 'instructi
 // ── plugin 形态 ─────────────────────────────────────────────────────────────
 
 /** Every config key this plugin accepts — anything else is a typo. */
-const ALLOWED_KEYS = new Set(['enabled', 'promoteOn', 'includeSubagents'])
+const ALLOWED_KEYS = new Set(['enabled', 'promoteOn', 'includeSubagents', 'projectTemplate', 'globalTemplate', 'suffixTemplate', 'messageTemplate'])
 
 /** The visible surface, not the append-only log, owns hint lifetime. */
 function hasVisibleInstructionHint(session) {
@@ -258,7 +270,7 @@ export function apply(ctx, config) {
   const includeSubagents = booleanOption(name, source.includeSubagents, 'includeSubagents', false)
   // 开关语义：未声明 = 关闭（组合源为本模块显式写 enabled: true）。
   const enabled = booleanOption(name, source.enabled, 'enabled', false)
-  if (!enabled) return
+  if (!enabled || templateOf(source, 'messageTemplate').trim().length === 0) return
 
   const promotion = createEpochPromotion(promoteEvents, { includeSubagents })
   const warnOnce = createWarnOnce(ctx, name)
@@ -279,7 +291,7 @@ export function apply(ctx, config) {
       // 1 换 1 的转换不能按长度判断（长度相同仍可能已转换），
       // instructionHintMessages 本身保留非目标消息，直接采用结果。
       const hintState = { instructionHinted: hasVisibleInstructionHint(agent.session) }
-      return { ...decision, messages: instructionHintMessages(messages, hintState, name) }
+      return { ...decision, messages: instructionHintMessages(messages, hintState, name, source) }
     } catch (error) {
       // 转换失败不阻断会话：保留原消息。
       warnOnce(`${name}: instruction hint conversion failed, keeping messages: ${String((error && error.message) || error)}`)

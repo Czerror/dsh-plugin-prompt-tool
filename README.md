@@ -2,7 +2,7 @@
 
 > 一切皆可注入：把 DSH 官方开放的全部注入层级收敛为一个可配置提示词注入引擎——注入什么、注入到哪一层、何时注入，全由提示词配置决定。
 
-DSH 生态的提示词注入层：`prompt-config-engine.mjs` 对接九个官方插入点，把可叠加的注入方案保存在各自模块中。包内模块库提供复制起点；模块不注册为官方会话预设。
+DSH 生态的提示词注入层：`rule-engine.mjs` 按「条件触发 → 执行动作」对接九个官方插入点。每张配置卡对应一条独立规则，可组合多条件与多动作；提示词注入也是动作。包内模块库提供复制起点；模块不注册为官方会话预设。
 
 > 能力来源：工具目录锚定与晋升门控移植自 [dsh-anchored-standard](https://github.com/xiaobright/dsh-anchored-standard)（MIT，上游已于 2026-09-10 冻结），近距离引导参考 [dsh-router-standard](https://github.com/yjh051108/dsh-router-standard)，缓存铁律参考 [dsh-super-injector](https://github.com/yjh051108/dsh-super-injector)。**本项目只移植引擎能力，不再分发上游预设**：锚定/深思链路由模块与规则按需声明。
 
@@ -28,7 +28,18 @@ dsh --profile prompt-tool
 
 ### 当前格式与宿主要求
 
-模块行为存于 `module.yml`。当前公开共享参数与旧规则快捷参数分开管理：旧快捷参数只经统一适配器投影到规则，保存规则时清理已有承接的旧键；无承接的值保留并告警。
+模块行为以 `module.yml.rules` 为唯一规则来源。旧 `promptConfigs`、`triggers`、模型路由与锚定快捷参数必须先离线迁移；运行时遇到旧来源会明确拒绝，不自动转换或双读。共享能力参数仍由 `layerSettings` 持有，指令文件保持独立权限与正文通道。
+
+升级旧模块前，由用户停止相关 DSH 服务，再使用安装包提供的 `prompt-tool-migrate-rules`，或在已构建仓库中执行：
+
+```powershell
+$Repo = 'D:/AI/GitHub/dsh-plugin-prompt-tool'
+pnpm --dir $Repo migrate:rules -- --root '<DSH_HOME>/.prompt-tool/modules' --characters-root '<DSH_HOME>/.prompt-tool/.characters' --check
+pnpm --dir $Repo migrate:rules -- --root '<DSH_HOME>/.prompt-tool/modules' --characters-root '<DSH_HOME>/.prompt-tool/.characters' --apply
+# 需要恢复时，保持服务停止，并用相同目录执行 --rollback
+```
+
+目录必须显式指定为存在的绝对路径；没有角色库时省略 `--characters-root`。先全量预检，再生成完整候选、校验来源版本并原子替换；原文件保留在各根的 `.rules-migration-backup`。重复应用无改动，回滚只覆盖仍与迁移产物一致的目录。无法证明等价的手写组合、互斥多启用冲突、失效旧参数或自定义策略目录会拒绝迁移，要求先整理。迁移完成后由用户重新启动 DSH。
 
 技能调用策略只接受官方 frontmatter 键，状态文件只接受 v4；不提供旧布局迁移、回滚或备份脚本。
 
@@ -43,10 +54,10 @@ dsh --profile prompt-tool
 - 🔌 **九个官方插入点按需接线**：一个引擎接入声明所需的插入点，共享同一套过滤与降级语义
 - ✍️ **一切皆可配置**：`layer / strategy / position / promotion / audience / modelScope / mergeMode / order / text / texts / fill / variables / params` 全开放
 - 🧑‍🤝‍🧑 **消息受众三态**：`audience: main / subagent`，省略 `audience` 表示公用；身份类提示词可只注入子代理
-- 🗂️ **内容与执行分离**：每条提示词配置物化为 `~/.dsh/.prompt-tool/modules/<模块>/configs/` 下的 yml；`module.yml.configOrder` 保存轻量序号，文件名前缀由它生成
-- 🧩 **三层合并**：引擎默认（按 params 生成）< 模板默认 promptConfigs < 预设 promptConfigs，同名 `id` 覆盖
+- 🗂️ **唯一行为定义**：`module.yml.rules` 物化为 `rules.yml`；`configs/` 只保留注入动作的查看快照。`configOrder` 按规则身份保存顺序。
+- 🧩 **显式互斥**：同模块同组中任一卡声明互斥时，启用目标卡会原子关闭同组其他卡的总开关；重排不改变启用状态。
 - 🖥️ **可拖动悬浮工作台入口**：工作台经官方 `shell.overlay` 渲染悬浮触发器与 body portal 抽屉；按钮可拖动、位置存插件自己的 localStorage、窗口变化自动夹回可见区（不读宿主布局树，已移除 `sidebar.footer.action` 几何探针）；五页（主会话/子代理/工具预览/技能设置/模块）在抽屉内渲染，抽屉用 fixed + z-index 置顶，不被宿主导航栏遮挡
-- 🧪 **六种内容策略**：`static / first-turn-anchor / guide-auto / custom-fallback / placeholder / world-book`（world-book 支持 ST selectiveLogic 选择性触发：任一/副键全中/排除）
+- 🧪 **条件与内容分离**：`when` 支持组合判断；注入动作支持 `static / first-turn-anchor / guide-auto / anchor-notice / placeholder / world-book`。旧 `custom-fallback` 拆为锚点条件与通知内容。
 - 🛡️ **失败不伤会话**：单条失败跳过 + `warnOnce`；配置错误挂载时 fail loud；`dedupe: session` 持久幂等
 - 🧭 **通用 instruction-hint 引擎**：模块可通过 `strategy: placeholder` 与 `fill: instruction-hint` 提示指令文件存在；实现位于 `engine/instruction-hint.mjs`。`layerSettings.pre-step.instructionHint` 可启用该能力，按模型可见 surface 去重，重挂不重复，被压缩遮蔽后才再次提示
 - 📦 **Bridge 载荷**：JSON 请求统一 32 MiB 硬上限并明确返回 413；角色卡原始图片走 64 MiB 流式通道，按 PNG 魔数识别。
@@ -58,16 +69,16 @@ dsh --profile prompt-tool
 - 🛠️ **自定义工具**：module.yml `customTools` 段声明式定义模型工具（执行器 shell/http/delegate/fs/ask-user，`{{args.x}}` 参数插值）；参数与输出经官方 `dsh-tools` 转换器物化为标准 JSON Schema，非法参数产生标准工具错误，delegate 经 `ctx.tools.execute` 嵌套调度走完整官方工具管线；`customTools.scope` 暂不支持（显式拒绝）
 - 🛡️ **子代理工具策略**：module.yml 顶层 `subagentToolPolicy` 段（opt-in）声明 ceiling、profiles、角色卡绑定、有序任务规则与受控模型扩权；`subagent` 固定走 spawn、`subagent_fork` 固定走 fork，按官方 `SubagentRun`/continuable 契约创建并在窗口内冻结 toolFilter；模型选择器和扩权参数在工具 body 前校验，模型路由经过 LLM preflight；UI 从官方 sessions snapshot 读取当前会话，并可编辑、停用、预览策略及查询存活 Agent 工具面
 - ♻️ **Session 日志读取**：引擎冷启动与幂等扫描统一走官方 `session.snapshotEvents()`（DSH `0.1.2-alpha.4+`），不再读取已移除的 `session.events` 数组。
-- 🧩 **模板变量**：仅从预设顶层 `variables` 段提供 `{{key}}` 插值默认值，单条提示词配置的 `variables` 可局部覆盖——模块列表顶部「模板变量」卡片统一编辑（可折叠/清空/停用/失焦自动保存）。`params` 中的旧内容变量及 `params.variables` 不再读取，也不自动迁移；旧预设需自行整理到顶层后重新物化。锚定匹配引擎（anchor-match）统一 custom-fallback 与 world-book 的匹配语义
+- 🧩 **模板变量**：顶层 `variables` 提供 `{{key}}` 插值，注入动作的 `config.variables` 可局部覆盖。正文、匹配词、分类阈值与模型偏好由规则或模板显式提供；业务配置为空就不生成对应内容，引擎不内藏默认锚句。
 - 💬 **会话变量工具**：`session_var`（list/get/set/clear）——模型维护角色状态（`{{心情}}` 等），会话级覆盖预设默认；ST 运行时宏（`{{lastusermessage}}` / `{{lastcharmessage}}`）从会话事件提取
 - 🧩 **工具按模块装配**：角色卡、世界书、会话变量、自定义工具分别由 `character-tools` / `world-book-tools` / `session-var-tools` / `tool-config-engine` 模块提供；不再维护重复的顶层工具开关
-- 📐 **显式按需装配**：空模块不自动附加增强能力；模块人设来自顶层 `persona`，官方工具与普通委派仍由会话原有预设提供。首轮门控、来源过滤、工具名单、深思门与进度节拍可由模块顶层 `triggers` 按需声明，物化为 `triggers.yml` 后由 `declared-triggers` 读入；声明错误在保存或挂载期明确报告。
+- 📐 **显式按需装配**：空模块不自动附加增强能力；模块人设来自顶层 `persona`，官方工具与普通委派仍由会话原有预设提供。首轮门控、来源过滤、工具名单、深思门与进度节拍统一由 `rules` 声明；总入口负责编译调度，`engine/conditions/` 判断，`engine/actions/` 执行。
 
 ## Web 客户端结构
 
-九层提示词配置卡展开后，使用“条件 / 执行 / 内容 / 设置”分栏编辑，窄屏自动改为标签页。页面切换保留未保存草稿；设置视图修改同层共享配置，不复制为每条提示词的局部参数。
+每条配置保留一张卡，复用原卡壳、折叠箭头和拖拽样式，指令文件卡置顶。卡内通过“条件 / 动作 / JSON / 设置”平级侧边导航编辑，窄屏改为横向页签，正文归对应注入动作。上移、下移与拖拽按钮位于卡头总开关旁。Linear 风格统一桌面控件为 28px、按钮与下拉为胶囊；短输入按字符宽度收紧，下拉按最长选项文案限宽，数字 96px，正文与 JSON 保留完整编辑宽度。粗指针的 44px 触控目标扩大控件本体，不覆盖外部空白。
 
-声明规则编辑器读写预设顶层 `triggers`，提供条件和动作编辑、完整声明、校验与版本冲突保护。支持七类判断原语、四种组合与九类动作；`inject-text`、`guard` 不接受通用顶层 `when`，界面会提示限制。具体支持范围见 [引擎复用指南](docs/engine-reuse.md#声明的条件与动作边界)。
+规则编辑器通过 `/rules` 保存局部修改与完整文件版本，保留在途新输入、未知字段和未完成 JSON 草稿。动态注入支持 `when`；固定注册的独占、抑制及安全守卫拒绝不支持的动态条件。具体支持范围见 [引擎复用指南](docs/engine-reuse.md#声明的条件与动作边界)。
 
 Web 客户端按四层组织：
 
@@ -89,7 +100,7 @@ src/client/
 - 五页工作台保留搜索、展开和滚动位置；工具、人设、策略以及非法 JSON/数字输入可跨页继续编辑。存在未保存草稿时，模块切换会提示先处理，不会无声覆盖。
 - 配置保存与校验位于长列表操作区，失败就近显示；低频卡片操作收进菜单，删除和丢弃文件草稿需明确确认。窄容器自动换行，键盘操作、明暗主题和减弱动效均沿用宿主规范。
 
-- 参数在模块列表的配置卡内编辑。引擎能力按实际 `modules` 装配显示，一项已装配能力一张卡，直接编辑自身参数；删除只移除该能力的模块声明。共享参数定义继续拥有字段、校验、默认草稿、保存快照和组合行映射。主／子代理模型保留专用配置卡。
+- 参数在所属规则的动作中编辑，主／子代理模型参数使用 `request-params` 动作与受众条件。共享能力仍按实际 `modules` 装配显示，当前会话模型继续使用官方选择控件。
 - 「指令提示」统一通过「前置步骤 → 内容策略：动态填充 → 填充来源：指令提示」编辑，不再作为独立策略入口。指令文件正文和授权保存仍归独立文件通道，不复制进预设。
 - AGENTS.md / CLAUDE.md 这类指令文件复用普通配置卡组件，保留名称、路径、正文和后续官方注入的启停；位置、顺序、晋升、受众与模型范围由官方负责，不提供文件卡控制项。名称和启停落独立指令策略，正文就地编辑、**焦点离开卡片时自动写回原文件**（版本冲突保留草稿并提供「重新读取」，没有单独的保存按钮）。
 - 创建菜单始终提供全部层级模板、工具和可添加能力，不受当前列表筛选限制。创建后只展开目标卡片（当它落在当前筛选视野内），不改动层级筛选与搜索词；同一提示词模板可重复创建，自动分配不重复标识。空内容不等于删除，保存和后台刷新保留未完成草稿；工具草稿在层级／世界书筛选往返时不丢失。
@@ -120,22 +131,20 @@ src/client/
 |---|---|
 | `layerSettings.<层名>` | 模块共享参数；磁盘归属由参数目录的 `storageLayer` 固定，不随 UI 分组改变 |
 | `moduleConfigs` | 行级 config 直写通道（参数桥未覆盖的键：超时/环境白名单/ST 导入等），不锁定覆盖 UI 可管理参数 |
-| `promptConfigs` | 独立命名的注入规则，`params` 仅属于该规则；与预设默认及生成配置按 id 合并 |
+| `rules` | 独立身份、条件树 `when` 与动作数组 `do`；注入正文与参数归相应动作 |
 | `configOrder` | 配置 ID 到序号的轻量映射；正文仍属于各自配置，文件名前缀由此物化 |
 
 ### 共享参数一览（全部可选，缺省按对应模块解释）
 
 | 分类 | 键 |
 |---|---|
-| 主模型 | `modelProvider` `modelName` `modelReasoningEffort` `modelTemperature` `modelMaxTokens` |
-| 子模型 | `subagentModelProvider` `subagentModelName` `subagentReasoningEffort` `subagentTemperature` `subagentMaxTokens` |
 | 策略深度 | `maxDepth`，只约束已启用的插件子代理工具策略；普通官方委派由宿主管理 |
 | 指令提示 | `instructionHint`，默认关闭 |
 | 工具 | `toolGitBashEnabled` `customToolRequireApproval` |
 
-以上共 14 个公开共享参数。锚定、引导及正文注入的 15 个旧快捷键由 `host/legacy-prompt-params.ts` 读取兼容，投影到 `near-anchor`、`router-guide`、`prompt-injector` 规则；新编辑器直接编辑规则。成功保存规则时清理已有承接的旧键，无承接的旧值保留并告警，旧 `fieldSources` 不再锁住这些规则字段。编辑器输出上限 `strReplaceEditorMaxOutputChars` 已退出插件参数面，由宿主工具配置负责。
+以上共 4 个公开共享参数。模型参数属于 `request-params` 动作，主／子代理由条件区分；旧模型键与 15 个锚定／引导快捷键只供离线迁移读取，不再提供在线保存入口。无法等价承接的旧值明确拒迁，不丢弃也不静默激活。编辑器输出上限 `strReplaceEditorMaxOutputChars` 由宿主工具配置负责。
 
-> 首轮工具面与输出封顶、`stages` 式阶段窄化、pre-step 来源名单、常驻工具白/黑名单、锚句、深思门与进度节拍都没有共享参数键：它们改由预设顶层 `triggers` 段声明（示例见 [engine 复用指南](docs/engine-reuse.md)）。其中 `stages` 阶段窄化与「晋升后才切 PTC 呈现」是本轮的两项净损失；子代理工具面只能由 `subagentToolPolicy` 实例策略授权。
+> 首轮工具面与输出封顶、pre-step 来源名单、常驻工具白/黑名单、锚句、深思门与进度节拍通过 `rules` 声明（示例见 [engine 复用指南](docs/engine-reuse.md)）；子代理工具面仍由 `subagentToolPolicy` 实例策略授权。
 
 AGENTS.md 走「文件即真相」：文件集合、正文与版本不物化进生成目录，而是由宿主按本会话工作区现场解析（`$DSH_HOME/AGENTS.md` + 工作区 cwd→项目根链的 AGENTS.md/CLAUDE.md/AGENTS.local.md/CLAUDE.local.md）；工作台中的文件卡指向原文件，卡片定义与正文都不进 `module.yml`。插件不写常驻受管块。
 
@@ -176,7 +185,7 @@ persona:
 
 模块编辑选择与官方会话预设独立。切换编辑模块只改变请求目标；未指定目标时由服务端解析默认目录，bootstrap 的模块身份、参数、变量与配置卡来自同一目录。启用哪些模块由 `config.yml.enabled` 决定。
 
-> 根目录 [module.yml](module.yml) 覆盖 14 个公开共享参数与九层规则。`pnpm rebuild:preset-template` 从权威契约重建；规则默认关闭，共享参数按需取消注释。
+> 根目录 [module.yml](module.yml) 覆盖 4 个公开共享参数与九层规则。`pnpm rebuild:preset-template` 从权威契约重建；规则默认关闭，共享参数按需取消注释。
 
 ## 提示词配置（九个官方插入点）
 
@@ -207,16 +216,16 @@ UI / 写盘按上表分组；这是展示顺序，不是模型提示词优先级
 
 工作台「模块」页按内容识别原生模块与 SillyTavern 来源；ST JSON/YAML 预设卡片经预览确认后，按注入层级映射为本地模块：
 
-- `prompts[]` → `promptConfigs`：system 角色进入 `system-section`，其余进入 `pre-step`；官方 `prompt_order[].order[]` 决定启停与相对顺序，深度位置保留来源并报告降级
+- `prompts[]` → `rules[].do` 中的注入动作：system 角色进入 `system-section`，其余进入 `pre-step`；官方 `prompt_order[].order[]` 决定启停与相对顺序，深度位置保留来源并报告降级
 - 采样参数（`temperature` / `openai_max_tokens` / `reasoning_effort`）**剥离**——模型参数统一由「模型设置」UI / 宿主默认管理
 - ST 变量：保留可启停的赋值模板，在运行时顺序求值；声明变量在合并和角色卡应用时保持局部绑定
 - ST 管理工具：始终装配 `character-tools`、`session-var-tools` 与 `tool-config-engine`
-- `enable_web_search`：`true` → 额外组装 `tool-web`（fetch 启用）；`false` → 产出三条 `triggers` 声明（`assembly` 呈现剔除 + `sdk-strip` 裁 `tools:sdk` 正文 + `guard` 执行层拒绝，共用同一份 `deny: [web_search, web_fetch]`），PTC 下同样生效
+- `enable_web_search`：`true` → 额外组装 `tool-web`（fetch 启用）；`false` → 产出三条规则（`assembly` 呈现剔除 + `sdk-strip` 裁 `tools:sdk` 正文 + `guard` 执行层拒绝，共用同一份 `deny: [web_search, web_fetch]`），PTC 下同样生效
 - 含有效 `character_book` 条目时自动追加 `world-book-tools` 模块，使导入预设可直接调用世界书管理工具
 - 世界书条目级条件：`delayUntilRecursion`（延迟到递归扫描的层级池）、`useGroupScoring`（组内评分淘汰）、`matchCreatorNotes` / `matchCharacterDepthPrompt`（按需扫描卡片备注与深度提示词）按 ST 语义求值；`characterFilter`（角色/标签过滤）、`automationId`（STscript 自动化）、`outletName` 与向量检索**不实现**，只保留来源事实并在预览卡里逐条告警
 - 触发键里的 ST 宏（例如只存在于 ST 全局 persona 的 `{{user}}`）登记为「模板变量」空占位并产出诊断：未赋值时该键不参与匹配（不会退化成字面量误判），在模板变量里赋值后按既有匹配路径生效
 - 角色卡 `extensions.depth_prompt` 保留为一条**默认禁用**的 pre-step 配置（ST 只在群聊自动注入），可在工作台手动启用
-- `modules` 按需装配：`prompt-config-engine` 与上述 ST 管理工具始终存在；含 system-section 时补 `persona`（`complete: false` 允许 system 段生效）；含有效世界书条目时补 `world-book-tools`
+- `modules` 按需装配：`rule-engine` 与上述 ST 管理工具承接转换产物；含 system-section 时补 `persona`（`complete: false` 允许 system 段生效）；含有效世界书条目时补 `world-book-tools`
 
 转换结果是一个普通模块（id 由文件名生成），可在工作台「模块」页的模块列表中直接启用。字段级参数对照与完整示例见 [SillyTavern.md](docs/SillyTavern.md)。
 
@@ -228,7 +237,7 @@ UI / 写盘按上表分组；这是展示顺序，不是模型提示词优先级
 - **JSON／YAML**：支持 ST 角色数据和自包含原生角色片段。批次逐张预览，不把多份来源合并成一张角色卡；所有大小的文件都先预览再提交。
 - 正文映射：`first_mes` → 开场白（`dedupe: session`）、`alternate_greetings` → 备用开场白、
   `description/personality/scenario` → 角色设定；采样参数剥离（模型设置 UI 管理）
-- **导入到当前预设**：参数合并进当前预设 promptConfigs（`chara-<卡>-` 前缀、幂等）；可一键移除
+- **导入到当前模块**：合并为 `rules`（`chara-<卡>-` 前缀、幂等），保留条件及兄弟动作；可一键移除
 - **角色记忆**：`memory.md` 跟随角色卡跨预设，应用时合并为 world-book constant 配置注入
 
 ### 世界书（world-book 策略）

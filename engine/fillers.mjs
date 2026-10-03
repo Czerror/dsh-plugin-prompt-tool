@@ -8,13 +8,20 @@ import { createInstructionHintResolver } from './instruction-hint.mjs'
 
 const name = 'prompt-config-engine'
 
+function explicitTemplate(config) {
+  const texts = Array.isArray(config.texts) ? config.texts : typeof config.text === 'string' ? [config.text] : []
+  return texts.length > 0 ? texts.join('\n\n') : typeof config.params?.text === 'string' ? config.params.text : ''
+}
+
 /**
  * env-facts:机器事实动态填充器。
  * params.envKeys 逗号分隔环境变量白名单：取值归模板/预设，留空 = 不附加宿主环境
  * 变量（CWD/WORKSPACE 仍由会话事实提供）。
- * 返回 facts 变量表与默认文本;用户可用 text 模板 + {{变量}} 完全自定义输出。
+ * 只提供 facts 变量；正文必须由 text/params.text 显式模板声明。
  */
 function createEnvFactsResolver(config) {
+  const template = explicitTemplate(config)
+  if (template.trim().length === 0) return () => null
   const keys = parseToolNames(typeof config.params?.envKeys === 'string' ? config.params.envKeys : '')
   return ({ agent }) => {
     const session = agent?.session
@@ -30,8 +37,8 @@ function createEnvFactsResolver(config) {
     }
     facts.WORKSPACE = process.env.DSH_WORKSPACE ?? cwd
     facts.CWD = cwd
-    const defaultText = ['Environment facts:', ...Object.entries(facts).map(([key, value]) => `- ${key}=${value}`)].join('\n')
-    return { text: defaultText, variables: facts }
+    const envFacts = Object.entries(facts).map(([key, value]) => `- ${key}=${value}`).join('\n')
+    return { text: template, variables: { ...facts, ENV_FACTS: envFacts } }
   }
 }
 
@@ -42,21 +49,21 @@ function createEnvFactsResolver(config) {
  * 跳过本配置并告警一次,绝不伤及会话。
  */
 function createSkillCatalogResolver(config) {
-  const limit = Number.isSafeInteger(config.params?.limit) && config.params.limit >= 0
-    ? config.params.limit
-    : 20
-  const fields = parseToolNames(typeof config.params?.fields === 'string' ? config.params.fields : 'name,description')
+  const template = explicitTemplate(config)
+  if (template.trim().length === 0) return () => null
+  const rawLimit = config.params?.limit
+  const limit = rawLimit == null || rawLimit === '' ? undefined : rawLimit
+  if (limit !== undefined && (!Number.isSafeInteger(limit) || limit < 0)) throw new TypeError(`${name}: skill-catalog limit must be a non-negative integer`)
+  const fields = parseToolNames(typeof config.params?.fields === 'string' ? config.params.fields : '')
     .filter((field) => ['name', 'description', 'whenToUse'].includes(field))
+  const whenToUseLabel = typeof config.params?.whenToUseLabel === 'string' ? config.params.whenToUseLabel : ''
+  const unnamedLabel = typeof config.params?.unnamedLabel === 'string' ? config.params.unnamedLabel : ''
   const providers = parseToolNames(config.params?.providers)
   const emptyBehavior = config.params?.emptyBehavior === 'text' ? 'text' : 'skip'
   // 空结果提示文案归模板/预设：留空且 emptyBehavior=text 时按 skip 处理（不注入空消息）。
   const emptyText = typeof config.params?.emptyText === 'string' ? config.params.emptyText : ''
   let warned = false
-  // 保留本地 warnOnce：本工厂只拿得到 config，ctx 要到每次 resolve 调用时才由
-  // 参数传入；换成 shared 的 createWarnOnce(ctx, name) 必须改工厂签名，而唯一
-  // 调用点 engine/strategies.mjs 的 createPlaceholderResolver(config) 不在本支
-  // 写区。为替换而扩大改动面违反 PLAN，故此处按原语义手写（一次性 + logger
-  // 不可用时不抛）。
+  // ctx 直到 resolve 时才可用；每个填充器实例只告警一次，不让日志失败伤及会话。
   const warnOnceLocal = (ctx, message) => {
     if (warned) return
     warned = true
@@ -93,10 +100,10 @@ function createSkillCatalogResolver(config) {
         const value = skill?.name
         if (typeof value === 'string' && value.length > 0) return value
         if (typeof skill?.locator === 'string' && skill.locator.length > 0) return skill.locator
-        return String(skill?.id ?? '(unnamed)')
+        return String(skill?.id ?? unnamedLabel)
       }
       const firstLine = (value) => typeof value === 'string' ? value.split('\n')[0].trim() : ''
-      const rows = (limit === 0 ? scoped : scoped.slice(0, limit)).map((skill) => {
+      const rows = (limit === undefined || limit === 0 ? scoped : scoped.slice(0, limit)).map((skill) => {
         const parts = []
         if (fields.includes('name')) parts.push(nameOf(skill))
         if (fields.includes('description')) {
@@ -105,14 +112,14 @@ function createSkillCatalogResolver(config) {
         }
         if (fields.includes('whenToUse')) {
           const whenToUse = firstLine(skill?.whenToUse)
-          if (whenToUse.length > 0) parts.push(`适用：${whenToUse}`)
+          if (whenToUse.length > 0) parts.push(`${whenToUseLabel}${whenToUse}`)
         }
         return parts.length === 0 ? '' : `- ${parts.join(': ')}`
       }).filter((line) => line.length > 0)
       const skillsText = rows.join('\n')
       const skillsNames = scoped.map((skill) => nameOf(skill)).join(', ')
       return {
-        text: `Available skills (${total}):\n${skillsText}`,
+        text: template,
         variables: {
           SKILL_COUNT: String(total),
           SKILL_NAMES: skillsNames,

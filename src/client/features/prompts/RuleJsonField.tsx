@@ -7,7 +7,7 @@ import ui from '../../ui/controls.module.css'
 
 export const asTriggerRecord = (value: unknown): Record<string, unknown> => value !== null && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {}
 
-/** 干净字段随外部快照更新；未完成输入仍归用户所有。 */
+/** 规则字段随外部快照更新；未完成输入仍归用户所有。 */
 export function triggerJsonText(fields: Map<string, FieldDraft>, key: string, value: unknown): FieldDraft {
   const existing = fields.get(key)
   if (existing !== undefined) {

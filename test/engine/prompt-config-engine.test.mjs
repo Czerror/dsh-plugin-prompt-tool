@@ -376,3 +376,18 @@ test('wireLayers 只装配实际声明的插入点：未声明 seam 无监听器
     assert.equal(declared.has(seam), false, `${seam} 未声明时不应有监听器`)
   }
 })
+
+test('guide-auto：缺省不启用长度业务阈值，显式 complexMinChars 按严格大于判定', async () => {
+  const run = async (params, text) => {
+    const { step } = makeHarness(createPromptConfigs([{ id: 'guide', strategy: 'guide-auto', params }]))
+    return (await step(agent(), [{ ...userTask, content: [{ type: 'text', text }] }])).messages.slice(1).flatMap(message => message.content.map(block => block.text))
+  }
+  assert.deepEqual(await run({}, 'long task '.repeat(30)), [])
+  const texts = { guideWeak: 'WEAK', guideDeep: 'DEEP' }
+  assert.deepEqual(await run(texts, 'long task '.repeat(30)), ['WEAK'])
+  assert.deepEqual(await run({ ...texts, complexMinChars: '' }, 'long task '.repeat(30)), ['WEAK'])
+  assert.deepEqual(await run({ ...texts, complexMinChars: 3 }, 'abc'), ['WEAK'])
+  assert.deepEqual(await run({ ...texts, complexMinChars: 3 }, 'abcd'), ['DEEP'])
+  assert.deepEqual(await run({ ...texts, complexPattern: 'complex' }, 'complex'), ['DEEP'])
+  assert.throws(() => createPromptConfigs([{ id: 'bad-guide', strategy: 'guide-auto', params: { complexMinChars: -1 } }]), /complexMinChars/)
+})

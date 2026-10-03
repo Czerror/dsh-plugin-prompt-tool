@@ -9,7 +9,7 @@
  */
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdirSync, writeFileSync } from 'node:fs'
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { Context } from '@deepseek-ai/cordis'
@@ -21,6 +21,8 @@ import { isolatedHome } from '../fixtures/host-harness.mjs'
 const { moduleRoot } = isolatedHome('pt-assembly-')
 const { prepareAssembly, createAgentAssembly } = await import('../../src/runtime/agent-assembly.ts')
 const { installPreStepCoordinator } = await import('../../src/runtime/pre-step-coordinator.ts')
+const { promptConfigToRule, convertLegacyModuleRules } = await import('../../src/host/rules-migration.ts')
+const { mountRuleSources } = await import('../../engine/rule-runtime.mjs')
 
 /** 装配能力探针：装配只问「宿主是否提供该服务」，这里全部视为提供。 */
 const hasEveryService = () => true
@@ -86,12 +88,86 @@ test('真实注入：启用配置进入主/子会话正确位置，关闭项不�
   assert.deepEqual(texts(await h.inject(main)), ['MAIN', 'USER'])
   record('assistant/message')
   assert.deepEqual(texts(await h.inject(main)), ['MAIN', 'USER', 'PROMOTED'])
+  const chainDir = join(moduleRoot, 'managed-chain')
+  mkdirSync(chainDir)
+  writeFileSync(join(chainDir, 'module.yml'), JSON.stringify({ id: 'managed-chain', modules: ['rule-engine'], configOrder: { chain: 1000 }, rules: [{
+    id: 'chain', layer: 'pre-step', when: { all: [{ scope: { audience: 'main' } }, { phase: { promoted: true } }] },
+    do: [
+      { id: 'a', kind: 'inject-text', config: { id: 'chain-a', layer: 'pre-step', sourceKind: 'plugin', text: 'CHAIN-A', position: 'after-user' } },
+      { id: 'filter', kind: 'pre-step-filter', blockPlugins: ['chain-a'] },
+      { id: 'b', kind: 'inject-text', config: { id: 'chain-b', layer: 'pre-step', sourceKind: 'plugin', text: 'CHAIN-B', position: 'after-user' } },
+    ],
+  }] }))
+  const checks = { main: 0, child: 0 }
+  const releases = []
+  for (const [key, agent] of [['main', main], ['child', child]]) {
+    const prepared = await prepareAssembly(moduleRoot, 'managed-chain', hasEveryService)
+    const evaluate = prepared.rules[0].when
+    prepared.rules[0].when = Object.assign(subject => { checks[key]++; return evaluate(subject) }, evaluate)
+    releases.push(mountRuleSources(agent.ctx, [{ moduleId: 'managed-chain', rules: prepared.rules }]))
+  }
+  assert.deepEqual(texts(await h.inject(main)), ['MAIN', 'USER', 'PROMOTED', 'CHAIN-B'], '受管批次逐动作执行 A→过滤A→B')
+  assert.deepEqual(texts(await h.inject(child)), ['USER', 'CHILD'])
+  assert.deepEqual(checks, { main: 1, child: 1 }, '同一执行帧每规则只判断一次')
+  record('compaction/end')
+  assert.deepEqual(texts(await h.inject(main)), ['MAIN', 'USER'])
+  record('assistant/message')
+  assert.deepEqual(texts(await h.inject(main)), ['MAIN', 'USER', 'PROMOTED', 'CHAIN-B'])
+  assert.equal(checks.main, 3, '压缩后同一规则重判、重晋升，仍每批一次')
+  for (const release of releases) release()
   assert.deepEqual(h.warnings, [])
   await h.runtime.dispose()
   assert.deepEqual(texts(await h.inject(main)), ['USER'])
   const after = await h.root.systemPrompt.assemble({ agent: main, scope: main })
   assert.equal(after.sections.some((section) => ['SYSTEM', 'PERSONA', 'SUFFIX'].includes(section.text)), false)
   assert.ok(after.contexts.some((context) => context.text === 'CONTEXT'))
+})
+
+test('预设条件在真实挂载scope绑定：正反判断隔离、缺事实不放行、失败刷新保旧贡献', async (t) => {
+  const dir = join(moduleRoot, 'preset-conditions')
+  mkdirSync(dir, { recursive: true })
+  const file = join(dir, 'module.yml')
+  const definition = { id: 'preset-conditions', modules: ['rule-engine'], rules: [
+    { id: 'matching', layer: 'agent-request', when: { preset: { presetId: 'target' } }, do: [{ id: 'request', kind: 'request-params', modelScope: 'all', patch: { maxTokens: 111 } }] },
+    { id: 'different', layer: 'agent-request', when: { not: { preset: { presetId: 'target' } } }, do: [{ id: 'request', kind: 'request-params', modelScope: 'all', patch: { maxTokens: 222 } }] },
+  ] }
+  writeFileSync(file, JSON.stringify(definition))
+  const h = await liveAssembly(t, () => ['preset-conditions'])
+  const selections = new WeakMap()
+  let lookups = 0
+  const provider = h.root.plugin({ name: 'fixture-preset-registry', apply(ctx) {
+    ctx.provide('agentPresets', {
+      defaultId: 'target',
+      composedPreset(agentCtx) { lookups++; return selections.get(agentCtx) },
+    })
+  } })
+  await provider
+  const main = await h.makeAgent('preset-main')
+  const child = await h.makeAgent('preset-child', 1)
+  selections.set(main.ctx, 'target')
+  selections.set(child.ctx, 'other')
+  const request = agent => h.root.waterfall(scopeTarget(agent, agent), 'agent/request', { agent }, async () => ({ maxTokens: 999 }))
+  assert.equal((await request(main)).maxTokens, 111, '当前预设命中时执行正向动作')
+  assert.equal((await request(child)).maxTokens, 222, '已知其他预设才执行否定动作')
+  const queries = lookups
+  await request(main)
+  assert.equal(lookups - queries, 2, '每条条件只读取一次该Agent的真实预设')
+  writeFileSync(file, JSON.stringify({ ...definition, rules: [{ id: 'broken', do: [{ id: 'broken', kind: 'unknown' }] }] }))
+  await assert.rejects(h.runtime.refresh('preset-conditions'), /运行时配装更新失败/)
+  assert.equal((await request(main)).maxTokens, 111, 'prepare失败没有撤销旧scope条件与动作')
+  writeFileSync(file, JSON.stringify(definition))
+  await h.runtime.refresh('preset-conditions')
+  await h.runtime.refresh('preset-conditions')
+  const reloadedQueries = lookups
+  assert.equal((await request(child)).maxTokens, 222)
+  assert.equal(lookups - reloadedQueries, 2, '重挂不复用旧scope闭包或叠加监听器')
+  selections.delete(main.ctx)
+  main.session.header.agentPreset = 'target'
+  assert.equal((await request(main)).maxTokens, 999, '未知当前预设不取header/default，not也不放行')
+  await provider.dispose()
+  assert.equal((await request(child)).maxTokens, 999, '服务缺失且无挂载事实时否定条件仍不放行')
+  await h.runtime.dispose()
+  assert.equal((await request(main)).maxTokens, 999, '释放后没有规则贡献')
 })
 
 test('创建边界：agent/created 返回时首条请求已经能注入，无需额外等待队列', async (t) => {
@@ -120,7 +196,7 @@ test('跨模块配置按文件序号交错执行，后序请求覆盖且不受�
       [60, { id: 'request', layer: 'agent-request', order: 900, params: { patch: { temperature: 0.6, maxTokens: 512 } } }],
     ]],
   ]) {
-    const dir = writePreset(moduleId, { modules: ['prompt-config-engine'] })
+    const dir = writePreset(moduleId, { modules: ['prompt-config-engine'], promptConfigs: entries.map(([, config]) => config), configOrder: Object.fromEntries(entries.map(([sequence, config]) => [config.id, sequence])) })
     mkdirSync(join(dir, 'configs'), { recursive: true })
     for (const [sequence, config] of entries) {
       writeFileSync(join(dir, 'configs', `${String(sequence).padStart(4, '0')}-${config.id}.yml`), JSON.stringify(config), 'utf8')
@@ -156,7 +232,7 @@ test('持久序号覆盖文件旧前缀，ST 宏按全局调度求值并保留�
     ], { b20: 20 }],
   ]) {
     const dir = writePreset(id, { modules: ['prompt-config-engine'], promptConfigs })
-    writeFileSync(join(dir, 'module.yml'), JSON.stringify({ id, modules: ['prompt-config-engine'], configOrder }), 'utf8')
+    updateConfigOrder(dir, configOrder)
   }
   const h = await liveAssembly(t, () => ['sequence-macro-b', 'sequence-macro-a'])
   const agent = await h.makeAgent('sequence-macro-agent')
@@ -180,10 +256,7 @@ test('交错来源只合并连续段，保留 merged 身份与独立续跑预算
         { id: 'stop', layer: 'turn-stop', text: `${id}-stop` },
       ],
     })
-    writeFileSync(join(dir, 'module.yml'), JSON.stringify({
-      id, modules: ['prompt-config-engine'],
-      configOrder: { 'same-system-id': first, second, 'pre-one': first + 100, 'pre-two': second + 100, stop: first + 200 },
-    }), 'utf8')
+    updateConfigOrder(dir, { 'same-system-id': first, second, 'pre-one': first + 100, 'pre-two': second + 100, stop: first + 200 })
   }
   const h = await liveAssembly(t, () => ['source-b', 'source-a'])
   const agent = await h.makeAgent('source-budget-agent')
@@ -219,10 +292,7 @@ test('官方文本层同 order 的默认段按 sequence 排列，显式注册名
         { id: 'explicit-context', layer: 'runtime-context', text: `EXPLICIT-${id}`, order: 60, params: { contextName: explicitName } },
       ],
     })
-    writeFileSync(join(dir, 'module.yml'), JSON.stringify({
-      id, modules: ['prompt-config-engine'],
-      configOrder: { system: sequence, context: sequence + 1, 'explicit-system': sequence + 2, 'explicit-context': sequence + 3 },
-    }), 'utf8')
+    updateConfigOrder(dir, { system: sequence, context: sequence + 1, 'explicit-system': sequence + 2, 'explicit-context': sequence + 3 })
   }
   const h = await liveAssembly(t, () => ['text-order-a', 'text-order-z'])
   const agent = await h.makeAgent('text-order-agent')
@@ -292,6 +362,11 @@ test('能力注册：私有工具服务与物化工具接入官方注册表，�
       id: 'trigger-text', layer: 'pre-step', text: 'TRIGGER', position: 'after-user',
     } } }],
   }), 'utf8')
+  const oldSource = JSON.parse(readFileSync(join(dir, 'module.yml'), 'utf8'))
+  const migrated = convertLegacyModuleRules(oldSource, { directory: dir })
+  delete oldSource.triggers
+  delete oldSource.layerSettings
+  writeFileSync(join(dir, 'module.yml'), JSON.stringify({ ...oldSource, rules: migrated.rules, configOrder: migrated.configOrder }))
   materialize('', { moduleDir: moduleRoot, presetTemplate: 'live-tools', presetOrder: 0, agentsInstructionText: '' })
   const h = await liveAssembly(t, () => ['live-tools'])
   const tool = {
@@ -348,11 +423,13 @@ const LITERAL_SLICES = [
   },
 ]
 
-function writePreset(id, { modules, promptConfigs = [], moduleConfigs, persona }) {
+function writePreset(id, { modules, promptConfigs = [], moduleConfigs, persona, configOrder }) {
   const dir = join(moduleRoot, id)
   mkdirSync(dir, { recursive: true })
   writeFileSync(join(dir, 'module.yml'), `${JSON.stringify({
-    id, name: id, modules, ...(moduleConfigs === undefined ? {} : { moduleConfigs }), ...(persona === undefined ? {} : { persona }),
+    id, name: id, modules: [...new Set(modules.map(name => ['prompt-config-engine', 'declared-triggers'].includes(name) ? 'rule-engine' : name))],
+    rules: promptConfigs.map(promptConfigToRule), ...(configOrder === undefined ? {} : { configOrder }),
+    ...(moduleConfigs === undefined ? {} : { moduleConfigs }), ...(persona === undefined ? {} : { persona }),
   }, null, 2)}\n`, 'utf8')
   if (promptConfigs.length > 0) {
     const configsDir = join(dir, 'configs')
@@ -364,22 +441,25 @@ function writePreset(id, { modules, promptConfigs = [], moduleConfigs, persona }
   return dir
 }
 
+function updateConfigOrder(dir, configOrder) {
+  const file = join(dir, 'module.yml')
+  writeFileSync(file, JSON.stringify({ ...JSON.parse(readFileSync(file, 'utf8')), configOrder }))
+}
+
 test('装配切片逐条来自预设目录的字面量：层/位置/时机/次数/受众一项不改', async () => {
   writePreset('literal-slices', { modules: ['prompt-config-engine'], promptConfigs: LITERAL_SLICES })
   const prepared = await prepareAssembly(moduleRoot, 'literal-slices', hasEveryService)
 
   assert.equal(prepared.moduleId, 'literal-slices')
-  assert.equal(prepared.configs.length, LITERAL_SLICES.length, '切片条数与字面量一致')
+  assert.equal(prepared.rules.length, LITERAL_SLICES.length, '规则条数与字面量一致')
   for (const [index, expected] of LITERAL_SLICES.entries()) {
-    const actual = prepared.configs[index]
+    const actual = prepared.rules[index].actions[0].compiledConfig
     assert.equal(actual.id, expected.id)
     assert.equal(actual.layer, expected.layer, '注入层')
     assert.equal(actual.position, expected.position, '位置')
-    assert.equal(actual.promotion, expected.promotion, '时机/晋升')
     assert.equal(actual.dedupe, expected.dedupe, '次数/去重')
-    assert.equal(actual.audience, expected.audience, '受众')
     assert.equal(actual.order, expected.order)
-    assert.equal(actual.modelScope, expected.modelScope ?? 'all')
+    assert.equal(typeof prepared.rules[index].when, 'function', '旧受众/晋升归一为已编译条件')
   }
   // 有切片就有注入执行器：三个宿主能力进装配依赖。
   for (const name of ['systemPrompt', 'tools', 'llm']) {
@@ -410,7 +490,6 @@ test('受管字段一律解析到当前预设目录内：新写法 `./` 与历�
 
   const cases = [
     ['tool-config-engine', 'configsDir', join(dir, 'custom-tools')],
-    ['declared-triggers', 'triggersFile', join(dir, 'triggers.yml')],
     ['subagent-tool-policy', 'policyFile', join(dir, 'subagent-tools', 'policy.yml')],
   ]
   for (const [moduleId, field, expectedPath] of cases) {
@@ -418,6 +497,7 @@ test('受管字段一律解析到当前预设目录内：新写法 `./` 与历�
     assert.equal(typeof value, 'string', `${moduleId}.${field} 已换算`)
     assert.equal(fileURLToPath(value), expectedPath, `${moduleId}.${field} 的落点`)
   }
+  assert.equal(prepared.modules.some(module => ['rule-engine', 'declared-triggers'].includes(module.id)), false, '规则只经统一入口挂载，不重复装配旧声明')
 })
 
 test('模块清单：引擎能力装载，官方组合行与能力 recipe 留给会话原有预设', async () => {
@@ -475,7 +555,7 @@ test('「独占」段唯一性：装配前拒绝两个生效 complete（含人�
   })
   await assert.rejects(
     prepareAssembly(moduleRoot, 'double-complete', hasEveryService),
-    /多个生效的「独占」段/,
+    /多个生效的「独占」段|multiple complete system sections/,
     '两个启用 complete 必须被拒',
   )
 
@@ -497,7 +577,7 @@ test('「独占」段唯一性：装配前拒绝两个生效 complete（含人�
     promptConfigs: [exclusive('excl-a'), exclusive('excl-b', false)],
   })
   const allowed = await prepareAssembly(moduleRoot, 'one-complete-disabled', hasEveryService)
-  assert.equal(allowed.configs.length, 2, '禁用的切片仍进装配输入（由引擎过滤 enabled）')
+  assert.equal(allowed.rules.length, 2, '禁用的规则仍进装配输入（由引擎过滤 enabled）')
 
   // ④ 边界二：单独一个独占（无人设）→ 放行，且人设存在但未开独占也放行。
   writePreset('single-complete', {
@@ -506,7 +586,7 @@ test('「独占」段唯一性：装配前拒绝两个生效 complete（含人�
     persona: { prefix: 'PREFIX' },
   })
   const single = await prepareAssembly(moduleRoot, 'single-complete', hasEveryService)
-  assert.equal(single.configs.length, 1, '单个独占段正常装配')
+  assert.equal(single.rules.length, 1, '单个独占段正常装配')
 })
 
 test('官方挂载行与本通道不重复装载：引擎能力只出现一次', async () => {
@@ -532,30 +612,28 @@ test('与官方物化路径同源：writePreset 落盘的切片 = 配装读出�
   const sourceDir = join(moduleRoot, '.source-materialized')
   mkdirSync(sourceDir, { recursive: true })
   writeFileSync(join(sourceDir, 'module.yml'), `${JSON.stringify({
-    id, name: id, modules: ['prompt-config-engine'],
+    id, name: id, modules: ['rule-engine'], rules: LITERAL_SLICES.map(promptConfigToRule),
   }, null, 2)}\n`, 'utf8')
   // 官方路径：把同一份切片交给 writePreset 物化到 <预设根>/<id>/configs。
   writePreset('materialized prompt', {
     moduleDir: moduleRoot,
     presetOrder: 5,
-    promptConfigs: LITERAL_SLICES,
     presetTemplate: id,
     outputId: id,
     sourceDir,
     agentsInstructionText: '',
   })
   const prepared = await prepareAssembly(moduleRoot, id, hasEveryService)
-  assert.equal(prepared.configs.length, LITERAL_SLICES.length, '条数与落盘一致')
+  assert.equal(prepared.rules.length, LITERAL_SLICES.length, '规则条数与定义一致')
   for (const [index, expected] of LITERAL_SLICES.entries()) {
-    const actual = prepared.configs[index]
+    const actual = prepared.rules[index].actions[0].compiledConfig
     // 五个维度逐条对拍：写的层/位置/时机/次数/受众，读回来一项不改。
     assert.equal(actual.id, expected.id)
     assert.equal(actual.strategy, expected.strategy)
     assert.equal(actual.layer, expected.layer)
     assert.equal(actual.position, expected.position)
-    assert.equal(actual.promotion, expected.promotion)
     assert.equal(actual.dedupe, expected.dedupe)
-    assert.equal(actual.audience, expected.audience)
+    assert.equal(typeof prepared.rules[index].when, 'function', '受众和晋升均在规则条件中编译')
   }
 })
 

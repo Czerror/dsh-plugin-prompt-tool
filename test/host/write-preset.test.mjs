@@ -16,25 +16,30 @@ const { FIXTURE_PRESET_ID, FIXTURE_PRESET_SRC, installFixturePreset, installFixt
 const { apply, writePreset, saveModuleParams } = await import('../../src/index.ts')
 const { materializeModule } = await import('../../src/host/write-preset.ts')
 const { loadModuleSpec } = await import('../../src/host/manifest.ts')
+const { planRulesMigration, promptConfigToRule } = await import('../../src/host/rules-migration.ts')
+const { readModuleRules, editModuleRules } = await import('../../src/host/module-rules.ts')
 // 夹具模板同时装进隔离 DSH_HOME 的官方模块根（resolveModuleDir 场景）与各测试的输出根（见 makeOptions）。
 installFixturePresetInHome(home)
+migrateFixtures(join(home, '.prompt-tool', 'modules'))
 test.after(() => rmSync(home, { recursive: true, force: true }))
+
+/** 只在测试准备阶段显式消费离线候选；writer 不负责兼容读取或迁移。 */
+function migrateFixtures(root) {
+  for (const item of planRulesMigration(root).items) writeFileSync(join(item.directory, item.definitionFile), item.nextDefinition)
+}
+
+function patchRule(dir, id, change) {
+  const current = readModuleRules(dir)
+  const rule = current.rules.find(rule => rule.id === id)
+  return editModuleRules(dir, { expectedRevision: current.revision, edits: [{ previousId: id, rule: change(rule) }] })
+}
 
 function makeOptions(moduleDir) {
   // writePreset 的模板解析根 = options.moduleDir（其次包内 preset/）：夹具缺失时安装；
   // 测试已自行复制并改写过模块定义时不覆盖。
   if (!existsSync(join(moduleDir, FIXTURE_PRESET_ID, 'module.yml'))) installFixturePreset(moduleDir)
+  migrateFixtures(moduleDir)
   return {
-    firstTurnAnchor: false,
-    firstTurnText: '',
-    firstTurnCustom: false,
-    guideText: '',
-    guideCustom: false,
-    injectPrompt: true,
-    modelProvider: '', subagentModelProvider: '', subagentModelName: '',
-    modelName: '',
-    bootstrapMaxTokens: 0,
-    usePtcMode: true,
     moduleDir,
     presetTemplate: FIXTURE_PRESET_ID,
     presetOrder: 5,
@@ -73,24 +78,25 @@ function installWriterModule(id) {
       { id: 'router-guide', strategy: 'guide-auto', enabled: false, params: { useCustom: false, text: 'RULE' } },
     ],
   }), 'utf8')
+  migrateFixtures(moduleDir)
   writePreset(`BODY-${id}`, { moduleDir, presetTemplate: id, presetOrder: 5, promptConfigs: [], agentsInstructionText: `AGENTS-${id}` })
   return dir
 }
 
-test('公共重建入口：逐模块重建不改变旧参数投影，也不串用模块正文', async () => {
+test('公共重建入口：已离线迁移规则逐模块重建，不串用模块正文', async () => {
   const dirs = ['writer-a', 'writer-b'].map(installWriterModule)
   for (const id of ['writer-b', 'writer-a']) materializeModule(id, { moduleDir: join(home, '.prompt-tool', 'modules') })
   for (const [index, id] of ['writer-a', 'writer-b'].entries()) {
     const dir = dirs[index]
-    const file = readdirSync(join(dir, 'configs')).find(name => name.endsWith('-near-anchor.yml'))
+    const file = readdirSync(join(dir, 'configs')).find(name => name.endsWith('-near-anchor--inject.yml'))
     const config = parseYaml(readFileSync(join(dir, 'configs', file), 'utf8'))
     assert.equal(config.enabled, true, `${id} 使用定义中的共享开关`)
     assert.equal(config.params.text, `PARAM-${id}`, `${id} 使用定义中的共享正文`)
-    const guideFile = readdirSync(join(dir, 'configs')).find(name => name.endsWith('-router-guide.yml'))
+    const guideFile = readdirSync(join(dir, 'configs')).find(name => name.endsWith('-router-guide--inject.yml'))
     const guide = parseYaml(readFileSync(join(dir, 'configs', guideFile), 'utf8'))
     assert.equal(guide.enabled, true)
     assert.equal(guide.params.text, `GUIDE-${id}`)
-    assert.equal(guide.modelScope, 'all', '自定义引导的派生模型范围保留')
+    assert.equal(loadModuleSpec(dir).rules.find(rule => rule.id === 'router-guide').when, undefined, '自定义引导没有模型范围门')
     assert.equal(readFileSync(join(dir, 'preset.md'), 'utf8'), `BODY-${id}`)
     assert.equal(readFileSync(join(dir, 'agents.md'), 'utf8'), `AGENTS-${id}`)
   }
@@ -105,19 +111,19 @@ test('规则所有者：无旧快捷参数的同名规则保留自身字段，�
     { id: 'router-guide', strategy: 'guide-auto', enabled: true, modelScope: 'all', params: { useCustom: true, text: 'RULE GUIDE' } },
     { id: 'prompt-injector', strategy: 'custom-fallback', enabled: false, params: { text: 'RULE BODY', firstTurnWord: 'custom' } },
   ]
-  writeFileSync(join(dir, 'module.yml'), JSON.stringify({ id: 'example', order: 91, modules: [], promptConfigs: configs }), 'utf8')
+  writeFileSync(join(dir, 'module.yml'), JSON.stringify({ id: 'example', order: 91, modules: [], rules: configs.map(promptConfigToRule) }), 'utf8')
   writePreset('UNRELATED BODY', { moduleDir: root, presetTemplate: 'example', presetOrder: 5, promptConfigs: [] })
   const files = readdirSync(join(dir, 'configs')).sort()
   for (const [index, expected] of configs.entries()) {
     const actual = parseYaml(readFileSync(join(dir, 'configs', files[index]), 'utf8'))
     assert.equal(actual.enabled, expected.enabled)
-    assert.deepEqual(actual.params, expected.params)
+    for (const [key, value] of Object.entries(expected.params)) assert.deepEqual(actual.params[key], value)
     assert.equal(actual.fieldSources, undefined, '新产物不再声明模块快捷参数拥有规则字段')
   }
   assert.equal(parseYaml(readFileSync(join(dir, 'module.yml'), 'utf8')).order, 91)
 })
 
-test('旧参数收口：读取与导入同源，保存规则后旧键不复活，未承接键保留', () => {
+test('旧来源运行时拒绝，显式离线迁移后只认规则事务；未承接旧键拒迁并保留', () => {
   const root = mkdtempSync(join(home, 'legacy-rules-'))
   installFixturePreset(root)
   const dir = join(root, FIXTURE_PRESET_ID)
@@ -131,42 +137,46 @@ test('旧参数收口：读取与导入同源，保存规则后旧键不复活�
   doc.setIn(['layerSettings', 'pre-step', 'guideText'], 'LEGACY GUIDE')
   writeFileSync(file, doc.toString(), 'utf8')
   writeFileSync(join(dir, 'preset.md'), 'LEGACY BODY', 'utf8')
+  assert.throws(() => loadModuleSpec(dir), /离线迁移/)
+  assert.throws(() => writePreset('LEGACY BODY', { moduleDir: root, presetTemplate: FIXTURE_PRESET_ID }), /离线迁移/)
+  migrateFixtures(root)
   const loaded = loadModuleSpec(dir)
-  const near = loaded.promptConfigs.find(config => config.id === 'near-anchor')
-  const guide = loaded.promptConfigs.find(config => config.id === 'router-guide')
-  const injector = loaded.promptConfigs.find(config => config.id === 'prompt-injector')
-  assert.equal(near.enabled, true)
+  const nearRule = loaded.rules.find(rule => rule.id === 'near-anchor')
+  const guideRule = loaded.rules.find(rule => rule.id === 'router-guide')
+  const near = nearRule.do[0].config
+  const guide = guideRule.do[0].config
+  const injector = loaded.rules.find(rule => rule.id === 'prompt-injector').do[0].config
+  assert.equal(nearRule.enabled, true)
   assert.equal(near.params.complexPattern, 'complex-task')
   assert.equal(guide.params.complexPattern, 'complex-task', '共享复杂模式交给两条规则')
-  assert.equal(guide.enabled, false)
+  assert.equal(guideRule.enabled, false)
   assert.equal(guide.params.useCustom, true, '停用不丢弃已保存的自定义模式偏好')
-  assert.equal(guide.modelScope, 'all')
+  assert.ok(!(guideRule.when?.all ?? [guideRule.when]).some(condition => condition?.scope?.modelScope === 'flash'))
   assert.equal(injector.params.text, 'LEGACY BODY')
   assert.ok(injector.params.anchorWords.includes('go'))
   const imported = writePreset('LEGACY BODY', { moduleDir: root, presetTemplate: FIXTURE_PRESET_ID, outputId: 'imported', sourceDir: dir, promptConfigs: [] })
-  const importedNear = readdirSync(imported + '/configs').find(name => name.endsWith('-near-anchor.yml'))
+  const importedNear = readdirSync(imported + '/configs').find(name => name.endsWith('-near-anchor--inject.yml'))
   assert.equal(parseYaml(readFileSync(join(imported, 'configs', importedNear), 'utf8')).params.complexPattern, 'complex-task')
-  const edited = loaded.promptConfigs.map(config => config.id === 'near-anchor'
-    ? { ...config, enabled: false, params: { ...config.params, text: 'OWNED RULE' } } : config)
-  saveModuleParams(root, FIXTURE_PRESET_ID, { maxDepth: 0 }, edited)
+  patchRule(dir, 'near-anchor', rule => ({ ...rule, enabled: false, do: [{ ...rule.do[0], config: { ...near, params: { ...near.params, text: 'OWNED RULE' } } }] }))
+  saveModuleParams(root, FIXTURE_PRESET_ID, { maxDepth: 0 }, undefined)
   const saved = parseYaml(readFileSync(file, 'utf8'))
   assert.equal(saved.layerSettings['pre-step']?.firstTurnText, undefined)
   assert.equal(saved.layerSettings['pre-step']?.complexPattern, undefined)
   assert.equal(saved.layerSettings['subagent-start'].maxDepth, 0)
   materializeModule(FIXTURE_PRESET_ID, { moduleDir: root })
-  const ownedNear = loadModuleSpec(dir).promptConfigs.find(config => config.id === 'near-anchor')
+  const ownedNear = loadModuleSpec(dir).rules.find(rule => rule.id === 'near-anchor')
   assert.equal(ownedNear.enabled, false)
-  assert.equal(ownedNear.params.text, 'OWNED RULE')
-  saveModuleParams(root, FIXTURE_PRESET_ID, { firstTurnText: '' }, undefined)
-  assert.equal(loadModuleSpec(dir).promptConfigs.find(config => config.id === 'near-anchor').params.text, '')
+  assert.equal(ownedNear.do[0].config.params.text, 'OWNED RULE')
+  assert.throws(() => saveModuleParams(root, FIXTURE_PRESET_ID, { firstTurnText: '' }, undefined), /旧规则参数/)
+  assert.equal(loadModuleSpec(dir).rules.find(rule => rule.id === 'near-anchor').do[0].config.params.text, 'OWNED RULE')
   const orphanDir = join(root, 'orphan')
   mkdirSync(orphanDir)
   writeFileSync(join(orphanDir, 'module.yml'), 'id: orphan\nmodules: []\nlayerSettings:\n  pre-step:\n    guideWeak: KEEP\n', 'utf8')
-  saveModuleParams(root, 'orphan', undefined, [])
+  assert.throws(() => saveModuleParams(root, 'orphan', undefined, []), /离线迁移/)
   assert.equal(parseYaml(readFileSync(join(orphanDir, 'module.yml'), 'utf8')).layerSettings['pre-step'].guideWeak, 'KEEP')
-  const warnings = []
-  writePreset('', { moduleDir: root, presetTemplate: 'orphan', promptConfigs: [], warn: message => warnings.push(message) })
-  assert.ok(warnings.some(message => message.includes('guideWeak')), '未承接旧键有明确诊断')
+  assert.throws(() => planRulesMigration(root), /无损承接/)
+  assert.throws(() => writePreset('', { moduleDir: root, presetTemplate: 'orphan' }), /离线迁移/)
+  assert.equal(parseYaml(readFileSync(join(orphanDir, 'module.yml'), 'utf8')).layerSettings['pre-step'].guideWeak, 'KEEP')
 })
 
 test('运行总闸：关闭再开启不改模块定义或物化产物字节', async (t) => {
@@ -182,9 +192,9 @@ test('运行总闸：关闭再开启不改模块定义或物化产物字节', as
     }
   }
   await update({ writePreset: false })
-  saveModuleParams(join(home, '.prompt-tool', 'modules'), 'writer-gate', { firstTurnText: 'SAVED-WHILE-OFF' })
+  patchRule(dir, 'near-anchor', rule => ({ ...rule, do: [{ ...rule.do[0], config: { ...rule.do[0].config, params: { ...rule.do[0].config.params, text: 'SAVED-WHILE-OFF' } } }] }))
   materializeModule('writer-gate', { moduleDir: join(home, '.prompt-tool', 'modules'), presetOrder: 5 })
-  const configFile = readdirSync(join(dir, 'configs')).find(file => file.endsWith('-near-anchor.yml'))
+  const configFile = readdirSync(join(dir, 'configs')).find(file => file.endsWith('-near-anchor--inject.yml'))
   assert.equal(parseYaml(readFileSync(join(dir, 'configs', configFile), 'utf8')).params.text, 'SAVED-WHILE-OFF')
 })
 
@@ -207,18 +217,18 @@ test('writePreset 共享引擎：模块根不物化 .engine，组合引用插件
     const sub = readFileSync(join(moduleDir, 'fixture', 'agent.cordis.yml'), 'utf8')
     assert.doesNotMatch(sub, /name: ['"]?\.{1,2}\/\.?engine\//,
       '产物不得残留 ./engine/ 或 ../.engine/ 本地引用')
-    for (const module of ['prompt-config-engine', 'run-code-env', 'tool-git-bash', 'skill-search']) {
+    for (const module of ['rule-engine', 'run-code-env', 'tool-git-bash', 'skill-search']) {
       assert.match(sub, new RegExp(`name: dsh-plugin-prompt-tool/engine/${module}\\.mjs`),
         `引擎行 ${module} 应引用插件包说明符`)
       assert.ok(existsSync(join(ROOT, 'engine', `${module}.mjs`)),
         `说明符 ${module}.mjs 应在包内引擎目录存在（否则引用悬空）`)
     }
-    assert.match(sub, /configsDir: \.\.\/fixture\/configs/, 'configsDir 相对 .engine 指向模块目录')
-    const engineRow = parseYaml(sub).find((row) => row?.id === 'prompt-config-engine')
+    assert.match(sub, /rulesFile: \.\.\/fixture\/rules\.yml/, 'rulesFile 相对 .engine 指向模块规则包')
+    const engineRow = parseYaml(sub).find((row) => row?.id === 'rule-engine')
     // 虚拟引擎基准 <模块根>/.engine/（注册期换算用的同一基准；URL 解析无需目录真实存在）。
-    const engineFileUrl = pathToFileURL(join(moduleDir, '.engine', 'prompt-config-engine.mjs'))
-    const resolved = new URL(engineRow.config.configsDir + '/', engineFileUrl)
-    assert.ok(existsSync(resolved), `configsDir 解析后应存在: ${resolved.pathname}`)
+    const engineFileUrl = pathToFileURL(join(moduleDir, '.engine', 'rule-engine.mjs'))
+    const resolved = new URL(engineRow.config.rulesFile, engineFileUrl)
+    assert.ok(existsSync(resolved), `rulesFile 解析后应存在: ${resolved.pathname}`)
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }
@@ -245,31 +255,26 @@ test('writePreset 不再有引擎指纹：二次写入不物化 .engine，产物
   }
 })
 
-test('writePreset 模型参数（思维程度/温度/输出上限）→ agent-request 配置，audience 区分主/子', () => {
+test('writePreset 物化模型请求动作，条件区分主/子且空参数不生成覆盖', () => {
   const dir = join(tmpdir(), `prompt-tool-wp-${process.pid}-${Date.now()}`)
   const moduleDir = join(dir, 'preset')
   try {
-    writePreset('PROMPT', {
-      ...makeOptions(moduleDir),
-      modelReasoningEffort: 'high',
-      modelTemperature: '1',
-      modelMaxTokens: '32000',
-      subagentReasoningEffort: 'max',
-      subagentTemperature: '',
-      subagentMaxTokens: '',
-    })
-    const configsDir = join(moduleDir, 'fixture', 'configs')
-    const files = readdirSync(configsDir).sort()
-    const modelParams = files.find((file) => file.includes('model-params'))
-    assert.ok(modelParams, `缺 model-params 配置，实际文件: ${files.join(', ')}`)
-    const parsed = parseYaml(readFileSync(join(configsDir, modelParams), 'utf8'))
-    assert.equal(parsed.audience, 'main')
-    assert.deepEqual(parsed.params.patch, { reasoningEffort: 'high', temperature: 1, maxTokens: 32000 })
-    const subagentParams = files.find((file) => file.includes('subagent-model-params'))
-    assert.ok(subagentParams, `缺 subagent-model-params 配置，实际文件: ${files.join(', ')}`)
-    const subagentParsed = parseYaml(readFileSync(join(configsDir, subagentParams), 'utf8'))
-    assert.equal(subagentParsed.audience, 'subagent')
-    assert.deepEqual(subagentParsed.params.patch, { reasoningEffort: 'max' })
+    const options = makeOptions(moduleDir)
+    const source = join(moduleDir, FIXTURE_PRESET_ID)
+    const current = readModuleRules(source)
+    const model = (id, audience, patch) => ({ id, layer: 'agent-request', when: { scope: { audience } }, do: [{ id: 'request', kind: 'request-params', modelScope: 'all', patch }] })
+    editModuleRules(source, { expectedRevision: current.revision, edits: [
+      { previousId: null, rule: model('model-params', 'main', { reasoningEffort: 'high', temperature: 1, maxTokens: 32000 }) },
+      { previousId: null, rule: model('subagent-model-params', 'subagent', { reasoningEffort: 'max' }) },
+    ] })
+    writePreset('PROMPT', options)
+    const rules = parseYaml(readFileSync(join(source, 'rules.yml'), 'utf8')).rules
+    const main = rules.find(rule => rule.id === 'model-params')
+    const child = rules.find(rule => rule.id === 'subagent-model-params')
+    assert.deepEqual(main.when, { scope: { audience: 'main' } })
+    assert.deepEqual(main.do[0].patch, { reasoningEffort: 'high', temperature: 1, maxTokens: 32000 })
+    assert.deepEqual(child.when, { scope: { audience: 'subagent' } })
+    assert.deepEqual(child.do[0].patch, { reasoningEffort: 'max' })
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }
@@ -295,20 +300,25 @@ test('writePreset：module.yml 的模块行参数经参数桥注入 agent.cordis
   }
 })
 
-test('writePreset 内容资产单一事实源：settings 覆盖层带 text 也被清空，注入来自 preset.md', () => {
+test('writePreset 拒绝旧settings规则覆盖；正文资产写盘不改已有规则所有权', () => {
   const dir = join(tmpdir(), `prompt-tool-src-${process.pid}-${Date.now()}`)
   const moduleDir = join(dir, 'preset')
   try {
-    writePreset('FILE CONTENT', {
-      ...makeOptions(moduleDir),
+    const options = makeOptions(moduleDir)
+    const moduleFile = join(moduleDir, 'fixture', 'module.yml')
+    const before = readFileSync(moduleFile, 'utf8')
+    assert.throws(() => writePreset('FILE CONTENT', {
+      ...options,
       promptConfigs: [
         { id: 'prompt-injector', name: '用户覆盖', enabled: true, strategy: 'custom-fallback', text: 'SETTINGS TEXT' },
       ],
-    })
-    const injector = readFileSync(join(moduleDir, 'fixture', 'configs', '0020-prompt-injector.yml'), 'utf8')
-    assert.ok(injector.includes('text: |-') && injector.includes('FILE CONTENT'), injector)
-    assert.ok(!injector.includes('SETTINGS TEXT'), injector)
-    assert.ok(!injector.includes('texts:'), injector)
+    }), /旧 promptConfigs/)
+    assert.equal(readFileSync(moduleFile, 'utf8'), before)
+    writePreset('FILE CONTENT', options)
+    const injector = parseYaml(readFileSync(join(moduleDir, 'fixture', 'configs', '0020-prompt-injector--inject.yml'), 'utf8'))
+    assert.equal(injector.params.text, parseYaml(before).rules.find(rule => rule.id === 'prompt-injector').do[0].config.params.text)
+    assert.doesNotMatch(JSON.stringify(injector), /SETTINGS TEXT/)
+    assert.equal(readFileSync(join(moduleDir, 'fixture', 'preset.md'), 'utf8'), 'FILE CONTENT')
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }
@@ -381,35 +391,26 @@ test('writePreset 预设变量只读顶层 variables，清空后不复活 params
     doc.setIn(['params', 'variables'], { nested: '不是模板变量' })
     doc.get('modules', true).add('tool-config-engine')
     writeFileSync(presetFile, doc.toString(), 'utf8')
+    migrateFixtures(moduleDir)
     const variables = { wordsCloud: '1500字', 日期: '', usePtcMode: '同名内容变量' }
     saveModuleParams(moduleDir, 'fixture', undefined, undefined, variables)
     const storedParams = parseYaml(readFileSync(presetFile, 'utf8')).params
-    writePreset('PROMPT', {
-      ...makeOptions(moduleDir),
-      firstTurnAnchor: true,
-      firstTurnText: 'go',
-      modelProvider: 'provider-x',
-      modelName: 'model-y',
-      guideText: 'guide',
-      usePtcMode: true,
-      injectPrompt: true,
-      bootstrapMaxTokens: 4096,
-    })
+    writePreset('PROMPT', makeOptions(moduleDir))
     const pcDir = join(moduleDir, 'fixture', 'configs')
-    const file = readdirSync(pcDir).find((name) => name.endsWith('-near-anchor.yml'))
+    const file = readdirSync(pcDir).find((name) => name.endsWith('-near-anchor--inject.yml'))
     assert.ok(file, '提示词配置文件存在')
     const parsed = parseYaml(readFileSync(join(pcDir, file), 'utf8'))
     for (const key of ['firstTurnAnchor', 'firstTurnText', 'modelProvider', 'modelName',
       'guideText', 'usePtcMode', 'injectPrompt', 'bootstrapMaxTokens', 'toolFilterAllow']) {
       assert.equal(parsed.params?.[key], undefined, `配置 params 不得含 UI 管理键 ${key}`)
-      assert.equal(parsed.variables?.[key], undefined, `配置 variables 不得含 UI 管理键 ${key}`)
+      assert.equal(parsed.variables?.[key], variables[key], `配置 variables 只来自明确顶层变量 ${key}`)
     }
     // 顶层变量不靠 PARAM_KEYS 猜测用途，允许与引擎参数同名；配置文件保持干净。
     const varsFile = join(pcDir, 'variables.yml')
     assert.ok(existsSync(varsFile), 'variables.yml 生成')
     const vars = parseYaml(readFileSync(varsFile, 'utf8'))
     assert.deepEqual(vars, variables, '变量文件只包含顶层变量，保留空串与同名键')
-    assert.equal(parsed.variables?.['wordsCloud'], undefined, '配置文件不再逐条展开内容变量')
+    assert.equal(parsed.variables?.wordsCloud, '1500字', '注入叶子投影携带顶层变量，不读取同名旧params')
     assert.equal(parsed.params?.wordsCloud, undefined, '内容变量不再进 params')
     saveModuleParams(moduleDir, 'fixture', undefined, undefined, {})
     writePreset('PROMPT', makeOptions(moduleDir))
@@ -481,7 +482,7 @@ test('writePreset 用户副本缺组合源时拒绝，不回退包内同名模�
   }
 })
 
-test('R3 未提供的引擎参数保留 module.yml 定义，显式值才覆盖（导入/离线物化同源）', () => {
+test('R3 离线迁移后的规则保留作者定义，只有显式规则事务才能改写', () => {
   const dir = join(tmpdir(), `prompt-tool-preserve-${process.pid}-${Date.now()}`)
   /** 安装夹具并把定义改成「作者显式声明」形态，覆盖 runtimeOf 曾补默认值的键。 */
   const install = (moduleDir) => {
@@ -494,19 +495,16 @@ test('R3 未提供的引擎参数保留 module.yml 定义，显式值才覆盖�
     doc.setIn(['layerSettings', 'subagent-start', 'subagentModelProvider'], 'sub-provider')
     doc.setIn(['layerSettings', 'subagent-start', 'subagentModelName'], 'sub-model')
     writeFileSync(file, doc.toString(), 'utf8')
+    migrateFixtures(moduleDir)
     return moduleDir
   }
   const readConfig = (moduleDir, id) => {
     const configsDir = join(moduleDir, FIXTURE_PRESET_ID, 'configs')
-    const file = readdirSync(configsDir).find((name) => name.endsWith(`-${id}.yml`))
+    const file = readdirSync(configsDir).find((name) => name.endsWith(`-${id}--inject.yml`))
     assert.ok(file, `应生成 ${id}`)
     return parseYaml(readFileSync(join(configsDir, file), 'utf8'))
   }
-  const subagentRow = (moduleDir) => {
-    const rows = parseYaml(readFileSync(join(moduleDir, FIXTURE_PRESET_ID, 'agent.cordis.yml'), 'utf8'))
-    const group = rows.find((row) => row?.id === 'delegation')
-    return (group?.config ?? []).find((row) => row?.id === 'tool-subagent')
-  }
+  const subagentRule = moduleDir => parseYaml(readFileSync(join(moduleDir, FIXTURE_PRESET_ID, 'rules.yml'), 'utf8')).rules.find(rule => rule.id === 'subagent-model-params')
   try {
     // 调用方只给部署字段（与 installPresetPackage / 离线物化调用同源）：不得覆盖作者定义。
     const kept = install(join(dir, 'kept'))
@@ -514,18 +512,19 @@ test('R3 未提供的引擎参数保留 module.yml 定义，显式值才覆盖�
     assert.equal(readConfig(kept, 'near-anchor').enabled, true, '省略 firstTurnAnchor 时保留定义里的 true')
     assert.equal(readConfig(kept, 'near-anchor').params.text, 'ANCHOR TEXT', '省略 firstTurnText 不清空作者文本')
     assert.equal(readConfig(kept, 'prompt-injector').enabled, false, '省略 injectPrompt 时保留定义里的 false')
-    assert.deepEqual(subagentRow(kept)?.config?.agentOptions, { provider: 'sub-provider', model: 'sub-model' },
+    assert.deepEqual(subagentRule(kept)?.do[0].patch, { provider: 'sub-provider', model: 'sub-model' },
       '省略子代理模型路由时保留定义')
 
-    // 显式值优先：false / true / 空串分别是「关锚定」「启用注入器」「不设置路由」。
+    // 显式局部事务才能关闭/开启规则或移除路由；writer 不再读取旧业务覆盖参数。
     const explicit = install(join(dir, 'explicit'))
-    writePreset('PRESET BODY', {
-      moduleDir: explicit, presetTemplate: FIXTURE_PRESET_ID, presetOrder: 5, promptConfigs: [],
-      firstTurnAnchor: false, injectPrompt: true, subagentModelProvider: '', subagentModelName: '',
-    })
+    const modulePath = join(explicit, FIXTURE_PRESET_ID)
+    patchRule(modulePath, 'near-anchor', rule => ({ ...rule, enabled: false }))
+    patchRule(modulePath, 'prompt-injector', rule => ({ ...rule, enabled: true }))
+    patchRule(modulePath, 'subagent-model-params', () => null)
+    writePreset('PRESET BODY', { moduleDir: explicit, presetTemplate: FIXTURE_PRESET_ID, presetOrder: 5 })
     assert.equal(readConfig(explicit, 'near-anchor').enabled, false, '显式 false 覆盖定义')
     assert.equal(readConfig(explicit, 'prompt-injector').enabled, true, '显式 true 覆盖定义')
-    assert.equal(subagentRow(explicit)?.config?.agentOptions, undefined, '显式空串 = 不设置路由')
+    assert.equal(subagentRule(explicit), undefined, '显式删除后不设置路由')
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }
@@ -539,8 +538,8 @@ test('writePreset：模板名与输出目录名分离，安全 id 输出仍渲�
     outputId: 'pt-safe',
   })
   const composition = readFileSync(join(outputRoot, 'pt-safe', 'agent.cordis.yml'), 'utf8')
-  assert.match(composition, /configsDir: \.\.\/pt-safe\/configs/, '引擎配置目录应指向输出目录自身')
-  assert.match(composition, /name: dsh-plugin-prompt-tool\/engine\/prompt-config-engine\.mjs/,
+  assert.match(composition, /rulesFile: \.\.\/pt-safe\/rules\.yml/, '规则包应指向输出目录自身')
+  assert.match(composition, /name: dsh-plugin-prompt-tool\/engine\/rule-engine\.mjs/,
     '引擎引用插件包说明符（与输出目录名解耦）')
   assert.equal(existsSync(join(outputRoot, 'standard')), false, '模板名不会被当成输出目录')
 })

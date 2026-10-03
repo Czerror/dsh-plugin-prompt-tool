@@ -7,7 +7,7 @@ import assert from 'node:assert/strict'
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { parse } from 'yaml'
+import { parse, parseDocument } from 'yaml'
 
 // 隔离 DSH_HOME：writePreset 的模板解析（resolveModuleDir）用户预设优先——
 // 真实用户环境 .prompt-tool/<id> 会遮蔽包内模板，测试必须隔离。
@@ -35,34 +35,24 @@ const {
 } = await import('../../src/index.ts')
 // 模板定位契约以打包目录 lib/ 为锚；其余行为直接覆盖当前源码。
 const { loadPromptTemplates } = await import('../../lib/index.mjs')
+const { planRulesMigration } = await import('../../src/host/rules-migration.ts')
 
-/** writePreset 生成夹具模板的提示词配置（生产路径：module.yml 数据 + 顶层 params 动态字段）。 */
+/** 旧参数夹具先显式离线转换，writer 只消费 canonical rules。 */
 function generatedConfigs(options = {}, prompt = 'PROMPT') {
   const dir = mkdtempSync(join(tmpdir(), 'pt-wp-configs-'))
   try {
     // writePreset 的模板解析根 = moduleDir：先把夹具模板装到输出根。
     installFixturePreset(dir)
-    writePreset(prompt, {
-      moduleDir: dir,
-      presetTemplate: FIXTURE_PRESET_ID,
-      presetOrder: 5,
-      firstTurnAnchor: options.firstTurnAnchor === true,
-      firstTurnText: options.firstTurnText ?? '',
-      firstTurnCustom: options.firstTurnCustom === true,
-      firstTurnWord: typeof options.firstTurnWord === 'string' ? options.firstTurnWord : undefined,
-      guideText: options.guideText ?? '',
-      guideCustom: options.guideCustom === true,
-      guideEnabled: typeof options.guideEnabled === 'boolean' ? options.guideEnabled : undefined,
-      injectPrompt: options.injectPrompt !== false,
-      modelProvider: '', subagentModelProvider: '', subagentModelName: '',
-      modelName: '',
-      bootstrapMaxTokens: 0,
-      usePtcMode: true,
-      promptConfigs: [],
-    })
+    const file = join(dir, FIXTURE_PRESET_ID, 'module.yml')
+    const doc = parseDocument(readFileSync(file, 'utf8'))
+    for (const [key, value] of Object.entries({ firstTurnAnchor: false, firstTurnCustom: false, guideCustom: false, injectPrompt: true, ...options })) doc.setIn(['layerSettings', 'pre-step', key], value)
+    writeFileSync(file, doc.toString())
+    writeFileSync(join(dir, FIXTURE_PRESET_ID, 'preset.md'), prompt)
+    for (const item of planRulesMigration(dir).items) writeFileSync(join(item.directory, item.definitionFile), item.nextDefinition)
+    writePreset(prompt, { moduleDir: dir, presetTemplate: FIXTURE_PRESET_ID, presetOrder: 5 })
     const specs = listPromptConfigSpecs(join(dir, FIXTURE_PRESET_ID, 'configs'))
     const byId = Object.fromEntries(specs.map((spec) => [spec.id, spec]))
-    return { specs, byId }
+    return { specs, byId, rules: Object.fromEntries(parse(readFileSync(file, 'utf8')).rules.map(rule => [rule.id, rule])) }
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }
@@ -218,7 +208,7 @@ test('writePreset 生成夹具模板的提示词配置模块（人设走顶层 p
 test('writePreset 处理空提示词时 prompt-injector 结构完整', () => {
   const { byId } = generatedConfigs({}, '')
   assert.equal(byId['prompt-injector'].enabled, false, '空提示词无内容可注入，应禁用')
-  assert.equal(byId['prompt-injector'].strategy, 'custom-fallback')
+  assert.equal(byId['prompt-injector'].strategy, 'anchor-notice')
   assert.equal(byId['prompt-injector'].params.text, '')
   assert.equal(byId['prompt-injector'].params.firstTurnWord, '', '确认词无内置默认（默认值归模板/预设）')
   assert.ok(byId['prompt-injector'].params.anchorWords.length > 0, '确认集合仍来自模板锚句派生')
@@ -233,10 +223,10 @@ test('writePreset 开启 firstTurnAnchor 时 near-anchor 启用并携带自定�
   assert.equal(byId['near-anchor'].params.text, 'ANCHOR SENTENCE', '自定义锚文本统一写 text 契约键')
 })
 
-test('writePreset 默认 router-guide 关闭（firstTurnAnchor=false），自动引导', () => {
-  const { byId } = generatedConfigs()
+test('旧模板离线迁移后 router-guide 关闭且模型范围归规则条件', () => {
+  const { byId, rules } = generatedConfigs()
   assert.equal(byId['router-guide'].enabled, false)
-  assert.equal(byId['router-guide'].modelScope, 'flash')
+  assert.ok((rules['router-guide'].when.all ?? [rules['router-guide'].when]).some(condition => condition.scope?.modelScope === 'flash'))
   assert.equal(byId['router-guide'].params.useCustom, false)
   assert.equal(byId['router-guide'].params.text, '')
 })

@@ -2,7 +2,9 @@ import { createHash } from 'node:crypto'
 import { posix } from 'node:path'
 import { parseDocument, stringify, YAMLMap } from 'yaml'
 // @ts-expect-error 引擎 ESM 是权威校验实现，由构建器同源打包。
-import { createPromptConfigs } from '../../engine/schema.mjs'
+import { compileRules } from '../../engine/rule-spec.mjs'
+import { assertCanonicalRuleSource } from './module-rules.ts'
+import { ruleInjections } from './rule-content.ts'
 import { MODULE_DEFINITION_FILE } from './paths.ts'
 import type { AssetFile, ImportChoices, ImportKind } from '../shared/asset-transfer.ts'
 import { MAX_ASSET_BYTES, MAX_ASSET_FILES } from '../shared/asset-transfer.ts'
@@ -71,6 +73,7 @@ export function assetSourceDigest(files: AssetFile[]): string {
 
 /** 角色片段只接受自包含配置，验证时不得读取上传来源以外的磁盘文件。 */
 export function validateCharacterSpec(spec: ModuleSpec): void {
+  assertCanonicalRuleSource(spec)
   readPresetLayerSettings(spec)
   for (const field of ['composition', 'customTools', 'content', 'subagentToolPolicy', 'moduleConfigs'] as const) {
     const value = spec[field]
@@ -78,16 +81,14 @@ export function validateCharacterSpec(spec: ModuleSpec): void {
       throw new Error(`角色片段不支持 ${field}；请从预设页导入完整预设`)
     }
   }
-  if (spec.persona !== undefined && (spec.persona.prefix || spec.persona.suffix || spec.persona.complete === true)) throw new Error('角色片段的 persona 正文请改为内嵌 promptConfigs，或从预设页导入完整预设')
-  const configs = spec.promptConfigs ?? []
-  for (const config of configs) {
-    if (!isRecord(config)) throw new Error('角色 promptConfigs 必须是对象数组')
-    assertSafeConfigId(config.id as string)
+  if (spec.persona !== undefined && (spec.persona.prefix || spec.persona.suffix || spec.persona.complete === true)) throw new Error('角色片段的 persona 正文请改为 rules 中的注入动作，或从模块页导入完整模块')
+  for (const rule of spec.rules ?? []) assertSafeConfigId(rule.id)
+  for (const { config } of ruleInjections(spec.rules)) {
     if (config.templateFile !== undefined) throw new Error(`角色配置 ${String(config.id)} 的 templateFile 外部文件不受支持`)
     if (isRecord(config.params) && config.params.file !== undefined) throw new Error(`角色配置 ${String(config.id)} 的 params.file 外部文件不受支持`)
     if (config.text !== undefined && typeof config.text !== 'string') throw new Error(`角色配置 ${String(config.id)} 的 text 必须是字符串`)
   }
-  createPromptConfigs(configs)
+  compileRules(spec.rules ?? [])
 }
 
 export type PreparedImport = {
@@ -98,7 +99,7 @@ export type PreparedImport = {
 
 function classify(raw: unknown, target: 'preset' | 'character'): ImportKind {
   if (!isRecord(raw)) throw new Error('内容必须是已知格式的对象，不能是 null 或数组')
-  const native = ['modules', 'promptConfigs', 'layerSettings', 'params', 'engineCompat', 'composition', 'content'].some(key => key in raw)
+  const native = ['modules', 'rules', 'promptConfigs', 'layerSettings', 'params', 'engineCompat', 'composition', 'content'].some(key => key in raw)
     || (typeof raw.id === 'string' && typeof raw.name === 'string')
   const prompts = 'prompts' in raw
   const data = isRecord(raw.data) ? raw.data : raw
@@ -109,7 +110,8 @@ function classify(raw: unknown, target: 'preset' | 'character'): ImportKind {
   if ([native, prompts, character, worldBook].filter(Boolean).length !== 1) throw new Error('无法识别内容，或包含互相矛盾的原生／SillyTavern 结构')
   if (/^chara_card_v[23]$/.test(String(raw.spec)) && !isRecord(raw.data)) throw new Error('chara_card_v2/v3 的 data 必须是对象')
   if (native) {
-    for (const field of ['promptConfigs', 'modules', 'customTools']) if (raw[field] !== undefined && !Array.isArray(raw[field])) throw new Error(`${field} 必须是数组`)
+    assertCanonicalRuleSource(raw)
+    for (const field of ['rules', 'modules', 'customTools']) if (raw[field] !== undefined && !Array.isArray(raw[field])) throw new Error(`${field} 必须是数组`)
     for (const field of ['layerSettings', 'params', 'meta', 'variables', 'moduleConfigs', 'content']) if (raw[field] !== undefined && !isRecord(raw[field])) throw new Error(`${field} 必须是对象`)
     readPresetLayerSettings(raw)
     if (raw.modules !== undefined && (raw.modules as unknown[]).some(value => typeof value !== 'string')) throw new Error('modules 必须是字符串数组')
@@ -152,7 +154,7 @@ export function prepareImport(input: AssetFile[], target: 'preset' | 'character'
       const raw: unknown = doc.toJS({ maxAliasCount: 100 })
       let kind = classify(raw, target)
       if (kind === 'native-preset' && isRecord(raw)) {
-        const fragment = Array.isArray(raw.promptConfigs) && !['version', 'engineCompat', 'modules', 'composition', 'customTools', 'persona', 'content'].some(key => key in raw)
+        const fragment = Array.isArray(raw.rules) && !['version', 'engineCompat', 'modules', 'composition', 'customTools', 'persona', 'content'].some(key => key in raw)
         let selfContained = false
         try { validateCharacterSpec(raw as unknown as ModuleSpec); selfContained = true } catch { /* 完整预设仍可由候选物化校验其附件与模块。 */ }
         if (selfContained && fragment && !/^(?:module|preset)\.ya?ml$/i.test(file.path) && !/^converted\.ya?ml$/i.test(file.path) && choices.sourceKind === undefined) {

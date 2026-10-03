@@ -1,7 +1,8 @@
 import { useSyncExternalStore, type ReactNode } from 'react'
 import clsx from 'clsx'
 import { Switch } from '../../ui/Switch.tsx'
-import { ENGINE_PARAM_DEFINITIONS, ENGINE_PARAM_KEYS, type EngineParamKey } from '../../../shared/engine-params.ts'
+import { ENGINE_PARAM_DEFINITIONS } from '../../../shared/engine-params.ts'
+import { SHARED_PARAM_KEYS, type SharedParamKey } from '../../data/prompt-tool-fields.ts'
 import { engineGroupParamKeys } from '../../../shared/engine-capabilities.ts'
 import type { PromptToolStore } from '../../data/use-prompt-tool-store.ts'
 import type { FieldDraft } from '../../data/workspace-drafts.ts'
@@ -37,11 +38,11 @@ export function matchesEditorGroup(id: string, keyword: string, t: PromptToolTra
  * （键类型由 ENGINE_PARAM_KEY 的模板字面量约束，新增参数缺词条即编译失败）。
  */
 export function EngineParamFields({ store, card, t, instanceId }: { store: PromptToolStore; card: string; t: PromptToolTranslate; instanceId?: string }): ReactNode {
-  const keys = ENGINE_PARAM_KEYS.filter((key) => ENGINE_PARAM_DEFINITIONS[key].card === card)
+  const keys = SHARED_PARAM_KEYS.filter((key) => ENGINE_PARAM_DEFINITIONS[key].card === card)
   const primary = keys.find((key) => ENGINE_PARAM_DEFINITIONS[key].module?.key === 'enabled')
   const subagents = keys.find((key) => ENGINE_PARAM_DEFINITIONS[key].module?.key === 'includeSubagents')
   const paired = primary !== undefined && subagents !== undefined ? [primary, subagents] : []
-  const renderField = (key: EngineParamKey): ReactNode => (
+  const renderField = (key: SharedParamKey): ReactNode => (
     <EngineParamField key={`${store.fields.presetTemplate}:${key}`} store={store} param={key} t={t} instanceId={instanceId} />
   )
   return <>
@@ -59,7 +60,7 @@ export function EngineParamFields({ store, card, t, instanceId }: { store: Promp
  * 未完成的数字输入与字段错误也属于这份共享草稿：渲染点订阅同一草稿修订号后一起重渲染，
  * 因此一个渲染点里的半成品输入或错误提示会立即出现在其他渲染点，且不各留一份本地 state。
  */
-export function EngineParamField({ store, param, t, instanceId }: { store: PromptToolStore; param: EngineParamKey; t: PromptToolTranslate; instanceId?: string }): ReactNode {
+export function EngineParamField({ store, param, t, instanceId }: { store: PromptToolStore; param: SharedParamKey; t: PromptToolTranslate; instanceId?: string }): ReactNode {
   const definition = ENGINE_PARAM_DEFINITIONS[param]
   const value = store.fields[param]
   const disabled = !store.fields.writePreset || store.moduleFacts?.editable !== true

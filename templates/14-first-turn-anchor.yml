@@ -1,27 +1,31 @@
 # 模板：首句锚点（strategy=first-turn-anchor）
 # 首条真实用户消息后按任务类型（build / inspect / deep）注入锚句，每会话一次。
-# 纯净模板：参数全部留空，由用户自定义；默认锚句与正则见引擎内置策略默认值。
-# 提示：把本文件放入 promptConfigsDir 目录，或把对象写入 settings.promptConfigs 数组。
+# 纯净模板：参数全部留空，由用户自定义；锚句与分类正则由模板或用户配置提供，引擎不提供默认正文。
+# 提示：把本文件放入 模块规则模板目录，或把对象写入 module.yml.rules 数组。
 id: example-first-turn-anchor
 name: 示例：首句锚点
 enabled: false
 layer: pre-step
-strategy: first-turn-anchor
-position: after-user
-dedupe: session
-promotion: none
-modelScope: all
-configKind: ordered
-order: 0
-role: user
-mergeMode: separate
-sourceKind: ''
-form: notice
-params:
-  useCustom: false
-  text: ""                  # 自定义锚文本（useCustom=true 时固定注入）
-  buildPattern: ""      # 构建任务正则；留空 = 该分类不生效
-  complexPattern: ""    # 复杂任务正则；留空 = 该分类不生效
-  firstTurnBuild: ""    # 构建任务锚句（留空 = 引擎内置默认锚句）
-  firstTurnInspect: ""  # 排查任务锚句（留空 = 引擎内置默认锚句）
-  firstTurnDeep: ""     # 复杂设计锚句（留空 = 引擎内置默认锚句）
+do:
+  - id: inject
+    kind: inject-text
+    config:
+      id: example-first-turn-anchor
+      layer: pre-step
+      strategy: first-turn-anchor
+      position: after-user
+      dedupe: session
+      configKind: ordered
+      order: 0
+      role: user
+      mergeMode: separate
+      sourceKind: ''
+      form: notice
+      params:
+        useCustom: false
+        text: "" # 自定义锚文本（useCustom=true 时固定注入）
+        buildPattern: "" # 构建任务正则；留空 = 该分类不生效
+        complexPattern: "" # 复杂任务正则；留空 = 该分类不生效
+        firstTurnBuild: "" # 构建任务锚句（留空 = 不注入该类别锚句）
+        firstTurnInspect: "" # 排查任务锚句（留空 = 不注入该类别锚句）
+        firstTurnDeep: "" # 复杂设计锚句（留空 = 不注入该类别锚句）

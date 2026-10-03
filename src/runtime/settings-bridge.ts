@@ -13,16 +13,16 @@ import type { SettingsDescriptor, SettingsPathOp } from '@deepseek-ai/dsh-settin
 import { PARAM_KEYS } from '../config.ts'
 import { invalidateModelCatalog, listAdvertisedModels, peekModelCatalog, refreshModelReasoning, type ModelDetection } from './models.ts'
 import type { SkillCatalogEntry, SkillPolicyChange, SkillPolicyScope, SkillsCatalogSnapshot } from '../shared/skills.ts'
-import { listPromptConfigSpecs } from '../host/prompt-configs.ts'
 import { enabledModuleIds, setModuleEnabled } from '../host/config-store.ts'
 import { appendModuleConfigOrder, ModuleConfigOrderError, readModuleConfigOrder, saveModuleConfigOrder } from '../host/module-config-order.ts'
 import type { ModuleConfigIdentity } from '../shared/module-config-order.ts'
 import { moduleDirExists } from '../host/manifest.ts'
-import { readConfigFieldSources, stripConfigFieldSources } from '../shared/managed-config-fields.ts'
+import { ruleInjections } from '../host/rule-content.ts'
 import { readOfficialOrderSegments, type OfficialOrderLookup } from '../shared/official-orders.ts'
 import { validatePromptConfigs } from './configs-validate.ts'
 import { PresetLayerSettingsError } from '../host/module-layer-settings.ts'
-import { readModuleTriggers, saveModuleTriggers, triggerPromptConfigOptions } from '../host/module-triggers.ts'
+import { readModuleRules, editModuleRules, ModuleRulesError } from '../host/module-rules.ts'
+import { RULE_OWNED_MODEL_PARAMS, type RuleEdit, type RuleEditorMeta } from '../shared/rules.ts'
 import { loadPromptTemplates, loadToolTemplates } from '../host/templates.ts'
 import { assertImportableSource, importSkillsDirectory, importSkillsPackage } from '../host/skills-import.ts'
 import { createSkill, type SkillActionResult } from '../host/skills-actions.ts'
@@ -65,10 +65,10 @@ import { createAssetSources } from '../host/asset-sources.ts'
 import { expandPresetSource, exportPresetPackage, installPresetPackage, presetImportPreview } from '../host/module-package.ts'
 import { decodeAssetFile, prepareImport } from '../host/import-source.ts'
 import { assertModuleDirectory, assertPresetId, canonicalPresetRoot, presetPathExists } from '../host/module-install.ts'
-import { DSH_HOME, MODULE_CONFIGS_DIR, MODULE_DEFINITION_FILE } from '../host/paths.ts'
+import { DSH_HOME, MODULE_DEFINITION_FILE } from '../host/paths.ts'
 import type { AssetFile, AssetImportRequest, ImportKind, PresetExportRequest } from '../shared/asset-transfer.ts'
 import { lastWorldBookDiagnostics } from '../../engine/st-world-book.mjs'
-import { BRIDGE_ENDPOINTS, EDIT_TARGET_HEADER, MAX_BRIDGE_BODY_BYTES, PRESET_ACTIVATION_FAILED, SETTINGS_BRIDGE_PREFIX, readEditTarget, type TriggerEditorMeta } from '../shared/bridge-contract.ts'
+import { BRIDGE_ENDPOINTS, EDIT_TARGET_HEADER, MAX_BRIDGE_BODY_BYTES, PRESET_ACTIVATION_FAILED, SETTINGS_BRIDGE_PREFIX, readEditTarget } from '../shared/bridge-contract.ts'
 import { moduleParamFallbacks, validateEngineParamValues } from '../shared/engine-params.ts'
 import { readPersonaSpec } from '../shared/persona-section.ts'
 import { SKILL_NAME_PATTERN, type SkillsStateRead } from '../host/skills-config.ts'
@@ -152,6 +152,10 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 
 /** 当前层参数格式错误统一反馈，不能在读回时伪装成空配置。 */
 function writeLayerSettingsError(res: ServerResponse, error: unknown): boolean {
+  if (error instanceof ModuleRulesError) {
+    writeBridgeJson(res, error.status, { ok: false, code: error.code, message: error.message })
+    return true
+  }
   if (!(error instanceof PresetLayerSettingsError)) return false
   writeBridgeJson(res, 400, { ok: false, code: error.code, message: error.message })
   return true
@@ -751,15 +755,9 @@ export function registerSettingsBridge(
             editable: resolvedFacts.editable,
             subagentToolPolicyEnabled: resolvedFacts.subagentToolPolicyEnabled === true,
           }
-          if (Array.isArray(spec.promptConfigs)) {
-            presetParams.promptConfigs = spec.promptConfigs
-          }
-          templatePreStepCount = (spec.promptConfigs ?? []).filter((config) => {
-            const layer = (config as { layer?: string }).layer
-            return layer === undefined || layer === 'pre-step'
-          }).length
+          templatePreStepCount = (spec.rules ?? []).filter(rule => rule.layer === 'pre-step').length
         } catch (error) {
-          if (error instanceof PresetLayerSettingsError) throw error
+          if (error instanceof PresetLayerSettingsError || error instanceof ModuleRulesError) throw error
           templatePreStepCount = 0
         }
         return {
@@ -793,7 +791,7 @@ export function registerSettingsBridge(
           }
           return params
         } catch (error) {
-          if (error instanceof PresetLayerSettingsError) throw error
+          if (error instanceof PresetLayerSettingsError || error instanceof ModuleRulesError) throw error
           return {}
         }
       }
@@ -808,24 +806,8 @@ export function registerSettingsBridge(
           }
           return { variables, enabled: spec.variablesEnabled !== false }
         } catch (error) {
-          if (error instanceof PresetLayerSettingsError) throw error
+          if (error instanceof PresetLayerSettingsError || error instanceof ModuleRulesError) throw error
           return { variables: {}, enabled: true }
-        }
-      }
-
-      /** 生成目录实际生效配置（/prompt-configs 读取）。 */
-      const readPromptConfigs = (dir: string): unknown[] => {
-        try {
-          const order = loadModuleSpec(dir).configOrder ?? {}
-          return dir.length > 0 ? listPromptConfigSpecs(join(dir, MODULE_CONFIGS_DIR)).map((config) => {
-            const raw = config as typeof config & { fieldSources?: unknown }
-            const definition = stripConfigFieldSources(raw)
-            const fieldSources = readConfigFieldSources(config.id, raw.fieldSources)
-            return { ...definition, ...(fieldSources === undefined ? {} : { fieldSources }),
-              ...(Object.hasOwn(order, config.id) ? { sequence: order[config.id] } : {}) }
-          }) : []
-        } catch {
-          return []
         }
       }
 
@@ -863,7 +845,7 @@ export function registerSettingsBridge(
                 meta: { meta },
                 overrides: { overrides: dir.length > 0 ? readParamOverrides(dir) : {} },
                 variables: dir.length > 0 ? readPresetVariables(dir) : { variables: {}, enabled: true },
-                promptConfigs: { promptConfigs: mergeInstructionCards(readPromptConfigs(dir), scope.files) },
+                promptConfigs: { promptConfigs: mergeInstructionCards([], scope.files) },
                 instructions: { context: scope.context, files: scope.files, owner: instructionOwner(sctx, session.sessionId) },
                 ...extras,
               })
@@ -1274,7 +1256,7 @@ export function registerSettingsBridge(
             writeBridgeJson(res, 200, {
               ok: true,
               value: {
-                promptConfigs: mergeInstructionCards(readPromptConfigs(dir), scope.files),
+                promptConfigs: mergeInstructionCards([], scope.files),
                 instructions: { context: scope.context, files: scope.files, owner: instructionOwner(sctx, session.sessionId) },
               },
             })
@@ -1470,6 +1452,14 @@ export function registerSettingsBridge(
           path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.triggers,
           handler: async (req, res) => {
             if (!guard(req, res)) return
+            writeBridgeJson(res, 410, { ok: false, code: 'rules-route-retired', message: '声明规则已统一为 rules；请离线迁移旧模块并刷新客户端，使用 /rules 编辑。' })
+          },
+        }),
+        sctx.webServer.register({
+          kind: 'exact',
+          path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.rules,
+          handler: async (req, res) => {
+            if (!guard(req, res)) return
             const dir = editDir(req) ?? ''
             if (dir.length === 0) {
               writeBridgeJson(res, 400, { ok: false, code: 'preset-dir-unavailable', message: '当前模块目录不可用' })
@@ -1477,62 +1467,54 @@ export function registerSettingsBridge(
             }
             const parsed = await readBridgeBodyForHandler(req, res)
             if (parsed === undefined) return
-            const record = (parsed.body ?? {}) as Record<string, unknown>
-            if (typeof record.expectedPresetId !== 'string' || record.expectedPresetId.length === 0
-              || Object.keys(record).some(key => !['expectedPresetId', 'triggers', 'expectedRevision', 'validateOnly'].includes(key))
-              || (record.validateOnly !== undefined && typeof record.validateOnly !== 'boolean')
-              || (record.triggers !== undefined && !Array.isArray(record.triggers))
-              || (record.expectedRevision !== undefined && (typeof record.expectedRevision !== 'string' || !SHA256_HEX_RE.test(record.expectedRevision)))) {
-              writeBridgeJson(res, 400, { ok: false, code: 'triggers-invalid', message: '声明请求字段、模块身份或版本格式不合法' })
+            const record = parsed.body ?? {}
+            if (!isRecord(record)
+              || Object.keys(record).some(key => !['expectedPresetId', 'expectedRevision', 'edits', 'activateRuleId', 'validateOnly'].includes(key))
+              || typeof record.expectedPresetId !== 'string' || record.expectedPresetId.length === 0
+              || (record.expectedRevision !== undefined && (typeof record.expectedRevision !== 'string' || !SHA256_HEX_RE.test(record.expectedRevision)))
+              || (record.edits !== undefined && !Array.isArray(record.edits))
+              || (record.activateRuleId !== undefined && (typeof record.activateRuleId !== 'string' || record.activateRuleId.length === 0))
+              || (record.validateOnly !== undefined && typeof record.validateOnly !== 'boolean')) {
+              writeBridgeJson(res, 400, { ok: false, code: 'rules-invalid', message: '规则请求字段、模块身份或版本格式不合法' })
               return
             }
             if (!guardPresetIdentity(req, record, dir, res)) return
-            const writing = record.triggers !== undefined && record.validateOnly !== true
-            if (writing && typeof record.expectedRevision !== 'string') {
-              writeBridgeJson(res, 400, { ok: false, code: 'triggers-invalid', message: '保存声明必须提供读取时的 expectedRevision' })
+            const editing = record.edits !== undefined || record.activateRuleId !== undefined
+            const writing = editing && record.validateOnly !== true
+            if (editing && typeof record.expectedRevision !== 'string') {
+              writeBridgeJson(res, 400, { ok: false, code: 'rules-invalid', message: '修改规则必须提供读取时的 expectedRevision' })
               return
             }
             if (writing && !guardPresetWrite(dir, res)) return
             try {
-              const { compileDeclarations } = await import(pathToFileURL(join(packageEngineDir(), 'trigger-spec.mjs')).href) as { compileDeclarations: (value: unknown[], context?: { promptConfigOptions: ReturnType<typeof triggerPromptConfigOptions> }) => unknown }
-              const { getTriggerEditorMeta } = await import(pathToFileURL(join(packageEngineDir(), 'trigger-editor-meta.mjs')).href) as { getTriggerEditorMeta: () => TriggerEditorMeta }
+              const { getRuleEditorMeta } = await import(pathToFileURL(join(packageEngineDir(), 'rule-spec.mjs')).href) as { getRuleEditorMeta: () => RuleEditorMeta }
               if (!guardPresetIdentity(req, record, dir, res)) return
-              const snapshot = readModuleTriggers(dir)
-              if (record.triggers !== undefined) {
-                try {
-                  const strategy = loadModuleSpec(dir).moduleConfigs?.['declared-triggers']?.strategyDir
-                  compileDeclarations(record.triggers as unknown[], { promptConfigOptions: triggerPromptConfigOptions(dir, strategy) })
-                }
-                catch (error) {
-                  writeBridgeJson(res, 400, { ok: false, code: 'triggers-invalid', message: String((error as Error).message ?? error) })
-                  return
-                }
-              }
+              const candidate = editing ? editModuleRules(dir, {
+                expectedRevision: record.expectedRevision as string,
+                ...(record.edits === undefined ? {} : { edits: record.edits as RuleEdit[] }),
+                ...(record.activateRuleId === undefined ? {} : { activateRuleId: record.activateRuleId as string }),
+                ...(record.validateOnly === undefined ? {} : { validateOnly: record.validateOnly as boolean }),
+              }) : readModuleRules(dir)
               if (writing) {
-                if (!Array.isArray(loadModuleSpec(dir).modules)) {
-                  writeBridgeJson(res, 400, { ok: false, code: 'triggers-composition-readonly', message: '当前组合没有可编辑的 modules 清单，无法自动装配声明引擎' })
-                  return
-                }
-                if (!saveModuleTriggers(dir, record.triggers as unknown[], record.expectedRevision as string)) {
-                  writeBridgeJson(res, 409, { ok: false, code: 'triggers-conflict', message: '模块文件已变化；草稿未写入，请重新读取后保存' })
-                  return
-                }
                 try { await afterOverridesChange?.(basename(dir)) }
                 catch (error) {
-                  writeBridgeJson(res, 500, { ok: false, code: 'triggers-rebuild-failed', message: `声明已保存，但模块重建失败；请重新读取后重试：${String(error)}` })
+                  writeBridgeJson(res, 500, { ok: false, code: 'rules-rebuild-failed', message: `规则已保存，但模块重建失败；请重新读取后重试：${String(error)}` })
                   return
                 }
               }
-              const result = writing ? readModuleTriggers(dir) : snapshot
-              // 重建期间其他请求或外部编辑可能更新规则；不能把新版本签给本次旧草稿。
-              if (writing && !isDeepStrictEqual(result.triggers, record.triggers)) {
-                writeBridgeJson(res, 409, { ok: false, code: 'triggers-conflict', message: '重建期间规则已再次变化；请重新读取，当前草稿仍保留' })
+              const result = writing ? readModuleRules(dir) : candidate
+              if (writing && !isDeepStrictEqual(result.rules, candidate.rules)) {
+                writeBridgeJson(res, 409, { ok: false, code: 'rules-conflict', message: '重建期间规则再次变化；请重新读取，当前草稿仍保留' })
                 return
               }
-              writeBridgeJson(res, 200, { ok: true, value: { ...result, meta: getTriggerEditorMeta() } })
+              writeBridgeJson(res, 200, { ok: true, value: { ...result, meta: getRuleEditorMeta() } })
             } catch (error) {
+              if (error instanceof ModuleRulesError) {
+                writeBridgeJson(res, error.status, { ok: false, code: error.code, message: error.message })
+                return
+              }
               if (writeLayerSettingsError(res, error)) return
-              writeBridgeJson(res, 500, { ok: false, code: 'triggers-failed', message: String((error as Error).message ?? error) })
+              writeBridgeJson(res, 500, { ok: false, code: 'rules-failed', message: String((error as Error).message ?? error) })
             }
           },
         }),
@@ -1561,7 +1543,11 @@ export function registerSettingsBridge(
               return
             }
             // 无载荷 = 读取当前 layerSettings 展平后的参数子集。
-            if (record.overrides === undefined && record.promptConfigs === undefined) {
+            if (record.promptConfigs !== undefined) {
+              writeBridgeJson(res, 410, { ok: false, code: 'rules-route-retired', message: '提示词配置已统一为 rules，请使用带版本的 /rules 事务编辑。' })
+              return
+            }
+            if (record.overrides === undefined) {
               if (record.rebuild !== undefined) {
                 writeBridgeJson(res, 400, { ok: false, code: 'overrides-invalid-shape', message: 'rebuild requires overrides or promptConfigs' })
                 return
@@ -1573,15 +1559,12 @@ export function registerSettingsBridge(
               writeBridgeJson(res, 400, { ok: false, code: 'overrides-invalid-shape', message: 'overrides must be an object' })
               return
             }
-            if (record.promptConfigs !== undefined && !Array.isArray(record.promptConfigs)) {
-              writeBridgeJson(res, 400, { ok: false, code: 'prompt-configs-invalid', message: 'promptConfigs must be an array' })
+            if (!guardPresetWrite(dir, res)) return
+            const rawOverrides = record.overrides as Record<string, unknown> | undefined
+            if (rawOverrides !== undefined && RULE_OWNED_MODEL_PARAMS.some(key => Object.hasOwn(rawOverrides, key))) {
+              writeBridgeJson(res, 410, { ok: false, code: 'rules-route-retired', message: '模型路由和采样参数已归入 request-params 规则动作，请通过 /rules 编辑。' })
               return
             }
-            if (!guardPresetWrite(dir, res)) return
-            if (Array.isArray(record.promptConfigs)) {
-              record.promptConfigs = record.promptConfigs.map((config) => isRecord(config) ? stripConfigFieldSources(config) : config)
-            }
-            const rawOverrides = record.overrides as Record<string, unknown> | undefined
             // 参数键白名单：未知键 fail loud，避免写入「读回/参数桥都不消费」的死键。
             if (rawOverrides !== undefined) {
               const unknownKeys = Object.keys(rawOverrides).filter((key) => key === 'promptConfigs' || !PARAM_KEYS.has(key))
@@ -1606,49 +1589,19 @@ export function registerSettingsBridge(
               return
             }
             try {
-              // 顶层人设「独占」与提示词配置「独占」互斥（官方 complete 段一个 scope
-              // 只能有一个）；promptConfigs 单独保存也走这里，故放在参数块之外。
-              if (Array.isArray(record.promptConfigs)) {
-                const validation = await validatePromptConfigs(record.promptConfigs, { strategyDir: getEngineStrategyDir(), moduleDir: dir })
-                if (!validation.valid) {
-                  writeBridgeJson(res, 400, {
-                    ok: false,
-                    code: 'prompt-configs-invalid',
-                    message: validation.errors.map(({ index, id, message }) => `[${index}] ${id}: ${message}`).join('; '),
-                  })
-                  return
-                }
-                const spec = loadModuleSpec(dir)
-                const conflicting = record.promptConfigs.some((config) => {
-                  if (config === null || typeof config !== 'object' || Array.isArray(config)) return false
-                  const entry = config as Record<string, unknown>
-                  return entry.enabled !== false && (entry.params as Record<string, unknown> | undefined)?.complete === true
-                })
-                if (spec.persona?.complete === true && conflicting) {
-                  writeBridgeJson(res, 400, {
-                    ok: false,
-                    code: 'overrides-invalid-value',
-                    message: '顶层人设已开启「独占」；提示词配置的「独占」与之互斥，请先关闭其一',
-                  })
-                  return
-                }
-              }
               if (!guardPresetIdentity(req, record, dir, res)) return
               saveModuleParams(
                 moduleRoot,
                 templateName,
                 rawOverrides,
-                record.promptConfigs as unknown[] | undefined,
+                undefined,
               )
               // 模块切换前保存当前配置卡时只需落盘，不立即重建；
               // 后续 settings presetTemplate 变更会让目标模块完成唯一一次重建。
               if (record.rebuild !== false && !await runOverridesChange(res, basename(dir))) return
               writeBridgeJson(res, 200, {
                 ok: true,
-                value: {
-                  ...(record.overrides !== undefined ? { overrides: record.overrides } : {}),
-                  ...(record.promptConfigs !== undefined ? { promptConfigs: record.promptConfigs } : {}),
-                },
+                value: { overrides: record.overrides },
               })
             } catch (error) {
               if (writeLayerSettingsError(res, error)) return
@@ -1806,12 +1759,8 @@ export function registerSettingsBridge(
               // 「独占」同时启用时装配会失败，写盘前 fail loud（与 paramOverrides 的
               // 晋升信号一致性检查同模式）。
               if (persona?.complete === true) {
-                const configs = loadModuleSpec(dir).promptConfigs ?? []
-                const conflicting = configs.some((config) => {
-                  if (config === null || typeof config !== 'object' || Array.isArray(config)) return false
-                  const entry = config as Record<string, unknown>
-                  return entry.enabled !== false && (entry.params as Record<string, unknown> | undefined)?.complete === true
-                })
+                const conflicting = ruleInjections(loadModuleSpec(dir).rules).some(({ rule, config }) =>
+                  rule.enabled !== false && config.enabled !== false && config.params?.complete === true)
                 if (conflicting) {
                   writeBridgeJson(res, 400, {
                     ok: false,
@@ -2175,7 +2124,7 @@ export function registerSettingsBridge(
               })
               if (request.params.preview) {
                 const summary = { sourceName: converted.sourceName, kind: converted.kind, targetId, targetName: converted.name, exists: version !== null,
-                  files: files.map((file) => ({ path: file.path, bytes: decodeAssetFile(file).length })), configCount: prepared.spec.promptConfigs?.length ?? 0, warnings: [] }
+                  files: files.map((file) => ({ path: file.path, bytes: decodeAssetFile(file).length })), configCount: prepared.spec.rules?.length ?? 0, warnings: [] }
                 writeBridgeJson(res, 200, { ok: true, value: { preview: true, state: 'ready', name: converted.name, summary, sourceDigest: converted.sourceDigest, previewRevision, ...(converted.report === undefined ? {} : { report: converted.report }) } })
                 return
               }

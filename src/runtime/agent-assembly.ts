@@ -9,8 +9,8 @@
  *     不再声明 `agent.cordis.yml` 这类「给宿主 Loader 用的组合本体」；
  *   - 官方工具行（`dsh-tool-*` 等）由宿主提供；模块人设通过 systemPrompt 注册，
  *     本通道**不**装第二棵官方插件树——那些包也不在插件包的解析面内；
- *   - 物化目录优先：`configs/`（原 `prompt-configs/`）、`custom-tools/` 存在就按它装配，
- *     缺失时回退 `module.yml` 内嵌，两条路径的切片同源（`resolveModuleFacts`）。
+ *   - 规则只从 `module.yml.rules` 编译；`configs/` 的投影不参与装配。
+ *     自定义工具仍由其独立物化目录与能力模块装配。
  *
  * 与官方挂载并存时不会重复：官方树里没有引擎行，引擎贡献只由本通道提供。
  */
@@ -22,16 +22,18 @@ import type { Agent } from '@deepseek-ai/dsh-agent'
 import { packageEngineDir, resolveModuleFacts, resolveModuleDir, loadModuleSpec } from '../host/manifest.ts'
 import type { ModuleSpec } from '../host/manifest.ts'
 import { assertPresetId } from '../host/module-install.ts'
-import { MODULE_CONFIGS_DIR } from '../host/paths.ts'
 import { readConfigOrder } from '../host/module-config-order.ts'
+import { rulePromptConfigOptions } from '../host/module-rules.ts'
 
 // @ts-expect-error ESM 引擎源码随插件提供。
-import { createPromptConfigs, loadPromptConfigFiles } from '../../engine/schema.mjs'
+import { compileRules } from '../../engine/rule-spec.mjs'
 // @ts-expect-error ESM 引擎源码随插件提供。
-import { applyPromptConfigSources } from '../../engine/executor.mjs'
+import { mountRuleSources } from '../../engine/rule-runtime.mjs'
+// @ts-expect-error 条件在真实挂载 scope 绑定；准备期只保留经过预检的定义快照。
+import { compileWhen, loadStandingMountFor } from '../../engine/conditions/index.mjs'
 
 /** 引擎模块的受管配置字段：值按历史语义相对模块根书写（如 `../<id>/custom-tools`）。 */
-const MANAGED_FIELDS = ['configsDir', 'strategyDir', 'policyFile', 'triggersFile'] as const
+const MANAGED_FIELDS = ['configsDir', 'strategyDir', 'policyFile', 'rulesFile'] as const
 
 /** 私有工具适配器依赖的服务；适配器仍复用包内引擎入口。 */
 const PRIVATE_SERVICES: Record<string, string> = {
@@ -72,7 +74,7 @@ export interface AgentAssemblyOptions {
 }
 
 /**
- * 受管字段的路径换算：`configsDir` / `strategyDir` / `policyFile` / `triggersFile`
+ * 受管字段的路径换算：`configsDir` / `strategyDir` / `policyFile` / `rulesFile`
  * 一律解析到**当前模块目录内的真实位置**——声明怎么写都按模块目录作基准，三种形态同结果：
  *   - `./configs`（新形态）→ `<模块目录>/configs`；
  *   - `../<id>/triggers.yml`（历史形态：`ENGINE_MANAGED_PATHS` 的改写成这样，语义是
@@ -104,7 +106,8 @@ function engineModuleFile(engineDir: string, id: string): string | undefined {
 }
 
 export interface PreparedAssembly {
-  configs: unknown[]
+  rules: unknown[]
+  ruleConditions: ReadonlyMap<string, unknown>
   modules: Array<{ id: string; apply: (ctx: Context, config: Record<string, unknown>) => unknown; config: Record<string, unknown> }>
   services: Set<string>
   moduleId: string
@@ -125,29 +128,23 @@ export async function prepareAssembly(
   const facts = resolveModuleFacts(spec, moduleDir)
   if (facts.effectiveModules === null) throw new Error(`模块 ${moduleId} 的模块声明无效，无法配装`)
   const configsByModule = facts.effectiveConfigs ?? {}
-  const promptDir = join(moduleDir, MODULE_CONFIGS_DIR)
-  const specs = existsSync(promptDir)
-    ? loadPromptConfigFiles(pathToFileURL(promptDir + sep))
-    : (spec.promptConfigs ?? [])
-  const promptConfig = absolutizeManagedFields(configsByModule['prompt-config-engine'] ?? {}, moduleDir)
-  const configs = createPromptConfigs(specs, {
-    sourceModuleId: moduleId,
+  const ruleConfig = absolutizeManagedFields(configsByModule['rule-engine'] ?? {}, moduleDir)
+  const rules = compileRules(spec.rules ?? [], {
+    moduleId,
     configOrder: readConfigOrder(spec.configOrder),
-    templateBaseUrl: pathToFileURL(join(moduleRoot, '.engine', 'prompt-config-engine.mjs')),
-    templatePresetRoot: pathToFileURL(moduleRoot + sep),
-    strategyDir: typeof promptConfig.strategyDir === 'string'
-      ? promptConfig.strategyDir.replace(/\/?$/, '/') : undefined,
+    variables: spec.variables, variablesEnabled: spec.variablesEnabled,
+    promptConfigOptions: rulePromptConfigOptions(moduleDir, ruleConfig.strategyDir),
   })
+  const ruleConditions = new Map((spec.rules ?? []).map(rule => [rule.id, structuredClone(rule.when)]))
   // 「独占」（`complete`）组装期兜底：宿主 system-prompt 对「多于一个生效 complete 段」
   // 直接抛错（packages/core/system-prompt/src/index.ts:597-600），而写盘前的互斥门控只
   // 覆盖两个 bridge 端点——手改 module.yml、还原 ZIP/备份、导入包都能绕过。这里在装配前
   // 查一次，把「system 提示被清到只剩一段 / 组装失败」挡在 Agent 创建之前。
   // 判据与写门控同源：`enabled !== false` 才参与，「独占」是 system-section 的 params.complete。
-  const exclusiveConfigs = configs.filter((config: unknown) => {
-    if (config === null || typeof config !== 'object') return false
-    const entry = config as { enabled?: unknown; params?: { complete?: unknown } }
-    return entry.enabled !== false && entry.params?.complete === true
-  })
+  const exclusiveConfigs = (spec.rules ?? []).filter(rule => rule.enabled !== false).flatMap(rule => rule.do.filter(action => {
+    const config = action.config as { params?: { complete?: unknown } } | undefined
+    return action.kind === 'inject-text' && config?.params?.complete === true
+  }))
   const personaComplete = spec.persona?.complete === true
   if (exclusiveConfigs.length > 1 || (personaComplete && exclusiveConfigs.length > 0)) {
     throw new Error(
@@ -159,7 +156,8 @@ export async function prepareAssembly(
   const services = new Set<string>()
   const modules: PreparedAssembly['modules'] = []
   for (const id of new Set([...facts.effectiveModules, ...facts.rowIds])) {
-    if (id === 'prompt-config-engine') continue
+    if (id === 'rule-engine') continue
+    if (id === 'prompt-config-engine' || id === 'declared-triggers') throw new Error(`模块 ${moduleId} 仍声明旧规则引擎 ${id}，请先离线迁移`)
     const privateService = PRIVATE_SERVICES[id]
     if (privateService !== undefined) {
       if (!hasService(privateService)) throw new Error(`配装所需能力不可用：${privateService}`)
@@ -175,7 +173,7 @@ export async function prepareAssembly(
     if (typeof module.apply !== 'function') throw new Error(`引擎能力缺少 apply：${id}`)
     for (const dependency of module.inject ?? []) services.add(dependency)
     const config = absolutizeManagedFields(configsByModule[id] ?? {}, moduleDir)
-    if (id === 'tool-config-engine' || id === 'declared-triggers') {
+    if (id === 'tool-config-engine') {
       config.presetRoot = pathToFileURL(moduleRoot + sep).href
     }
     // 引擎自带的声明就绪校验（未知键 fail loud）在装配期先跑一次，避免挂载到一半才炸。
@@ -183,7 +181,7 @@ export async function prepareAssembly(
     contract?.parse?.(config, id)
     modules.push({ id, apply: module.apply, config })
   }
-  if (configs.length > 0) {
+  if (rules.length > 0) {
     services.add('systemPrompt')
     services.add('tools')
     services.add('llm')
@@ -192,7 +190,7 @@ export async function prepareAssembly(
   for (const name of services) {
     if (!hasService(name)) throw new Error(`配装所需宿主能力不可用：${name}`)
   }
-  return { configs, modules, services, moduleId, persona: spec.persona }
+  return { rules, ruleConditions, modules, services, moduleId, persona: spec.persona }
 }
 
 export function createAgentAssembly(ctx: Context, options: AgentAssemblyOptions): AgentAssemblyRuntime {
@@ -228,6 +226,15 @@ export function createAgentAssembly(ctx: Context, options: AgentAssemblyOptions)
       name: 'prompt-tool-assembly',
       inject: [...services],
       apply: async (scopeCtx: Context) => {
+        const standingMountFor = await loadStandingMountFor()
+        // 只重绑纯条件，不重读定义、模板或动作。每次挂载/失败恢复都获得自己的闭包与观察状态。
+        const ruleSources = prepared.filter(item => item.rules.length > 0).map(item => ({
+          moduleId: item.moduleId,
+          rules: item.rules.map(value => {
+            const rule = value as { id: string } & Record<string, unknown>
+            return { ...rule, when: compileWhen(item.ruleConditions.get(rule.id), { ctx: scopeCtx, standingMountFor }) }
+          }),
+        }))
         for (const item of prepared) {
           if (item.persona !== undefined) {
             const persona = item.persona
@@ -245,12 +252,10 @@ export function createAgentAssembly(ctx: Context, options: AgentAssemblyOptions)
             if (persona.includeRuntimeContext === false) scopeCtx.systemPrompt.suppressRuntimeContext()
           }
         }
-        scopeCtx.effect(() => applyPromptConfigSources(scopeCtx, prepared
-          .filter(item => item.configs.length > 0)
-          .map(item => ({ sourceId: `module:${item.moduleId}`, configs: item.configs })), { prepend: true }))
+        scopeCtx.effect(() => mountRuleSources(scopeCtx, ruleSources, { prepend: true }))
         for (const item of prepared) {
           for (const module of item.modules) {
-            // 引擎入口既有同步也有 async（`declared-triggers.apply` 是 async）：先 await 再判
+            // 引擎入口既有同步也有 async：先 await 再判
             // disposer，否则 Promise 会被当成清理函数存下来，永不被调用。
             const result: unknown = await module.apply(scopeCtx, module.config)
             if (typeof result === 'function') scopeCtx.effect(() => result as () => void, module.id)

@@ -49,7 +49,7 @@ export function PromptConfigNavigation(props: {
     if (key === 'settings') setVisitedSettings(props.layer)
     setSelected(key)
   }
-  return <div ref={root} className={props.flat === true ? `${styles.configNavigation} ${styles.configNavigationFlat}` : styles.configNavigation}>
+  return <div ref={root} data-horizontal={horizontal || undefined} className={props.flat === true ? `${styles.configNavigation} ${styles.configNavigationFlat}` : styles.configNavigation}>
     <div role="tablist" aria-label={props.t('form.navigation.label')} aria-orientation={horizontal ? 'horizontal' : 'vertical'} className={styles.configTabs}>
       {panels.map((panel, index) => <button key={panel.key} type="button" role="tab" id={`${id}-tab-${panel.key}`}
         data-config-tab={panel.key} aria-controls={`${id}-panel-${panel.key}`} aria-selected={active === panel.key}

@@ -9,7 +9,9 @@ import { readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { parse as parseYaml } from 'yaml'
-import type { PromptConfigSpec } from './prompt-configs.ts'
+import type { RuleDefinition } from '../shared/rules.ts'
+// @ts-expect-error 模板和运行时使用同一个规则校验目录。
+import { compileRules } from '../../engine/rule-spec.mjs'
 
 export interface PromptConfigTemplate {
   /** 模板文件名（数字前缀决定展示顺序）。 */
@@ -17,7 +19,7 @@ export interface PromptConfigTemplate {
   /** 模板原文（编辑器源码模式可直接展示）。 */
   content: string
   /** 解析后的单条提示词配置。 */
-  spec: PromptConfigSpec
+  spec: RuleDefinition
 }
 
 /** 自定义工具模板（templates/tools/*.yml；tool-config-engine 定义形态）。 */
@@ -45,7 +47,8 @@ export function loadPromptTemplates(): PromptConfigTemplate[] {
         || (parsed as { id: string }).id.length === 0) {
         throw new Error(`prompt config template ${entry.name} must contain a single config object with a non-empty string id`)
       }
-      return { file: entry.name, content, spec: parsed as PromptConfigSpec }
+      compileRules([parsed])
+      return { file: entry.name, content, spec: parsed as RuleDefinition }
     })
 }
 

@@ -15,7 +15,9 @@ import { projectCharacterMemories } from './characters.ts'
 import { writePreset, RENDER_VERSION } from './write-preset.ts'
 import { assertPresetId, assertModuleDirectory, canonicalPresetRoot, setPresetDefinitionId } from './module-install.ts'
 // @ts-expect-error 引擎 ESM 是权威校验实现，由构建器同源打包。
-import { createPromptConfigs } from '../../engine/schema.mjs'
+import { compileRules } from '../../engine/rule-spec.mjs'
+import { ruleInjections } from './rule-content.ts'
+import { assertCanonicalRuleSource } from './module-rules.ts'
 
 const MANIFEST = 'prompt-tool-package.json'
 const PACKAGE_VERSION = 1
@@ -89,7 +91,7 @@ export async function expandPresetSource(input: AssetFile[]): Promise<AssetFile[
     const doc = parseDocument(decodeAssetFile(definition).toString('utf8'), { logLevel: 'silent' })
     const value: unknown = doc.errors.length === 0 ? doc.toJS({ maxAliasCount: 100 }) : undefined
     if (isRecord(value) && value.id === undefined && !('prompts' in value) && !('spec' in value)
-      && (['modules', 'composition', 'promptConfigs', 'params', 'content'].some((key) => key in value)
+      && (['modules', 'composition', 'rules', 'params', 'content'].some((key) => key in value)
         || (typeof value.name === 'string' && files.some((file) => file.path === 'agent.cordis.yml')))) {
       doc.set('id', sourceFolder ?? 'imported-preset')
       definition.content = doc.toString()
@@ -131,7 +133,7 @@ export function presetImportPreview(root: string, files: AssetFile[], request: A
     prepared, sourceDigest, previewRevision,
     summary: { sourceName: prepared.sourceName, kind: prepared.kind, targetId: id, targetName: request.targetName ?? prepared.spec.name,
       exists: version !== null, files: files.map((file) => ({ path: file.path, bytes: decodeAssetFile(file).length })),
-      configCount: prepared.spec.promptConfigs?.length ?? 0, warnings: [] },
+      configCount: prepared.spec.rules?.length ?? 0, warnings: [] },
   }
 }
 
@@ -140,7 +142,7 @@ function candidateTemplate(source: string, root: string, id: string, file: unkno
   if (file === undefined || file === '') return undefined
   if (typeof file !== 'string' || file.includes('\\') || file.includes(':')) throw new Error('非法 templateFile')
   const finalTarget = resolve(root, id)
-  const finalFile = resolve(root, '.engine', file)
+  const finalFile = resolve(finalTarget, file)
   if (!finalFile.startsWith(finalTarget + sep)) throw new Error(`templateFile 不属于目标预设：${file}`)
   const relative = finalFile.slice(finalTarget.length + 1)
   const raw = readFileSync(join(source, relative), 'utf8')
@@ -150,12 +152,13 @@ function candidateTemplate(source: string, root: string, id: string, file: unkno
 }
 
 function checkCandidate(spec: ModuleSpec, source: string, root: string, id: string): void {
+  assertCanonicalRuleSource(spec)
   if (spec.customTools !== undefined) {
     if (!Array.isArray(spec.customTools)) throw new Error('customTools 必须是数组')
     const errors = validateCustomTools(spec.customTools)
     if (errors.length > 0) throw new Error(errors.join('\n'))
   }
-  createPromptConfigs(spec.promptConfigs ?? [], { loadTemplate: (file: unknown) => candidateTemplate(source, root, id, file) })
+  compileRules(spec.rules ?? [], { promptConfigOptions: { loadTemplate: (file: unknown) => candidateTemplate(source, root, id, file) } })
 }
 
 /** 同一进程的同目标安装串行；磁盘版本复检保护其他写入者。 */
@@ -256,12 +259,9 @@ function dependencyErrors(files: Array<{ path: string; bytes: Buffer }>, spec: M
     if (rel.startsWith('../') || posix.isAbsolute(rel) || ref.includes(':')) errors.add(`外部资源：${ref}`)
     else if (!paths.has(rel)) errors.add(`缺失资源：${rel}`)
   }
-  for (const config of spec.promptConfigs ?? []) {
-    if (!isRecord(config)) continue
+  for (const { config } of ruleInjections(spec.rules)) {
     if (typeof config.templateFile === 'string') {
-      const prefix = `../${spec.id}/`
-      if (!config.templateFile.startsWith(prefix)) errors.add(`外部模板：${config.templateFile}`)
-      else check('./' + config.templateFile.slice(prefix.length), MODULE_DEFINITION_FILE)
+      check(config.templateFile, MODULE_DEFINITION_FILE)
     }
   }
   for (const file of files) {

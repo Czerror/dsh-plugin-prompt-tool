@@ -1,0 +1,6 @@
+# module: rule-engine
+# 单一规则分发入口；插件配装通道直接挂载同一编译器时跳过此行。
+- id: rule-engine
+  name: ./engine/rule-engine.mjs
+  config:
+    rulesFile: ../rules.yml

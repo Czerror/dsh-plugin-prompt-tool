@@ -38,19 +38,19 @@
 }
 
 .paramFields {
-  display: grid;
+  display: flex;
+  flex-wrap: wrap;
   min-width: 0;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 16px 24px;
-  align-items: start;
+  gap: 12px;
+  align-items: flex-start;
 }
 
 .paramFields > [data-param-pair] {
-  display: grid;
-  grid-column: 1 / -1;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  align-items: end;
-  gap: 16px 24px;
+  display: flex;
+  flex-basis: 100%;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 12px;
   min-width: 0;
   margin: 0;
   padding: 0;
@@ -60,14 +60,14 @@
 .paramFields > [data-param-key],
 .paramFields > [data-param-pair] > [data-param-key] {
   min-width: 0;
+  max-width: 100%;
   padding: 0;
 }
 
 .paramFields > [data-control='text'],
-.paramFields > [data-control='list'] { grid-column: 1 / -1; }
+.paramFields > [data-control='list'] { flex-basis: 100%; }
 
 .paramFields > [data-control='number'] > input { width: min(100%, 96px); }
-.paramFields > [data-control='select'] > span { width: min(100%, 240px); }
 
 .paramFields [data-control='number'] input { font-variant-numeric: tabular-nums; }
 .paramFields [role='alert'] { color: var(--dsw-alias-state-error-primary); }
@@ -97,7 +97,3 @@
 .capabilityRow > span { min-width: 0; overflow-wrap: anywhere; text-wrap: pretty; }
 .capabilityRow > button { justify-self: end; }
 .asset { min-width: 0; }
-
-@container layer-settings (max-width: 640px) {
-  .paramFields { grid-template-columns: minmax(0, 1fr); }
-}

@@ -152,10 +152,11 @@ test('导出：不存在的模块被拒，不回传任何定义内容', async ()
 
 test('并入的源模块优先：同名模块与角色卡并存时取模块定义', async () => {
   const characters = await import('../../src/host/characters.ts')
+  const { convertLegacyModuleRules, promptConfigToRule } = await import('../../src/host/rules-migration.ts')
   const id = 'dual-source'
   // 模块源：modules/<id>/module.yml
   mkdirSync(join(moduleRoot, id), { recursive: true })
-  writeFileSync(join(moduleRoot, id, 'module.yml'), JSON.stringify({
+  const legacySource = {
     id, name: '模块源', modules: [],
     layerSettings: { 'pre-step': { firstTurnAnchor: true, firstTurnCustom: true, firstTurnText: 'LEGACY ANCHOR' } },
     promptConfigs: [
@@ -163,14 +164,16 @@ test('并入的源模块优先：同名模块与角色卡并存时取模块定�
       { id: 'near-anchor', strategy: 'first-turn-anchor', enabled: false },
       { id: 'prompt-injector', strategy: 'custom-fallback' },
     ],
-  }), 'utf8')
+  }
   writeFileSync(join(moduleRoot, id, 'preset.md'), 'LEGACY BODY', 'utf8')
+  const converted = convertLegacyModuleRules(legacySource, { directory: join(moduleRoot, id) })
+  writeFileSync(join(moduleRoot, id, 'module.yml'), JSON.stringify({ id, name: '模块源', modules: [], rules: converted.rules, configOrder: converted.configOrder }), 'utf8')
   // 同名角色卡源：存储根下的 .characters/<id>/converted.yml（与模块根同级）
   const legacyDir = join(dirname(moduleRoot), '.characters', id)
   mkdirSync(legacyDir, { recursive: true })
   writeFileSync(join(legacyDir, 'converted.yml'), JSON.stringify({
     id, name: '卡片源',
-    promptConfigs: [{ id: 'intro', strategy: 'static', layer: 'system-section', text: 'FROM-CARD' }],
+    rules: [promptConfigToRule({ id: 'intro', strategy: 'static', layer: 'system-section', text: 'FROM-CARD' })],
   }), 'utf8')
   // 目标模块
   mkdirSync(join(moduleRoot, 'target'), { recursive: true })
@@ -182,26 +185,27 @@ test('并入的源模块优先：同名模块与角色卡并存时取模块定�
   assert.match(written, /FROM-MODULE/, '并入必须取模块定义（模块优先）')
   assert.doesNotMatch(written, /FROM-CARD/, '不得取同名的角色卡定义')
   assert.match(written, new RegExp(`module-${id}-intro`), '条目 id 用统一前缀')
-  const configs = parse(written).promptConfigs
+  const configs = parse(written).rules
   const anchor = configs.find(config => config.id === `module-${id}-near-anchor`)
   assert.equal(anchor.enabled, true, '并入前先把旧开关交给规则实例')
-  assert.equal(anchor.params.text, 'LEGACY ANCHOR')
-  assert.equal(configs.find(config => config.id === `module-${id}-prompt-injector`).params.text, 'LEGACY BODY')
+  assert.equal(anchor.do[0].config.params.text, 'LEGACY ANCHOR')
+  assert.equal(configs.find(config => config.id === `module-${id}-prompt-injector`).do[0].config.params.text, 'LEGACY BODY')
 })
 
 test('普通模块之间的并入是往返且幂等的：重复并入不翻倍，移除后自有内容原样保留', async () => {
   const characters = await import('../../src/host/characters.ts')
+  const rule = (id, text) => ({ id, layer: 'system-section', do: [{ id: 'inject', kind: 'inject-text', config: { id, layer: 'system-section', text } }] })
   const src = 'roundtrip-src'
   mkdirSync(join(moduleRoot, src), { recursive: true })
-  writeFileSync(join(moduleRoot, src, 'module.yml'), `id: ${src}\nname: 源\nmodules: []\npromptConfigs:\n  - id: a\n    strategy: static\n    layer: system-section\n    text: A\n  - id: b\n    strategy: static\n    layer: system-section\n    text: B\n`, 'utf8')
+  writeFileSync(join(moduleRoot, src, 'module.yml'), JSON.stringify({ id: src, name: '源', modules: [], rules: [rule('a', 'A'), rule('b', 'B')] }), 'utf8')
   const target = 'roundtrip-target'
   mkdirSync(join(moduleRoot, target), { recursive: true })
   const targetFile = join(moduleRoot, target, 'module.yml')
-  writeFileSync(targetFile, 'id: roundtrip-target\nname: 目标\nmodules: []\npromptConfigs:\n  - id: own\n    strategy: static\n    layer: system-section\n    text: OWN\n', 'utf8')
+  writeFileSync(targetFile, JSON.stringify({ id: target, name: '目标', modules: [], rules: [rule('own', 'OWN')] }), 'utf8')
 
   // 幂等判据用「条目 id 出现的次数」，不做字节级对齐：并入会按需补 variables 等字段，
   // 字节相等不是这层语义的契约；PLAN 要的是不翻倍、撤得干净、自有内容不动。
-  const count = (text, token) => text.split(token).length - 1
+  const count = (text, token) => parse(text).rules.filter(rule => rule.id === token).length
 
   assert.equal(characters.applyCharacterToPreset(moduleRoot, target, src).ok, true)
   const afterApply = readFileSync(targetFile, 'utf8')

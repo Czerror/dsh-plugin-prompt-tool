@@ -8,8 +8,13 @@ id: example-subagent-end
 name: 子代理结束记录（只观察）
 enabled: false
 layer: subagent-end
-strategy: static
-order: 0
-modelScope: all
-params:
-  action: observe
+do:
+  - id: inject
+    kind: inject-text
+    config:
+      id: example-subagent-end
+      layer: subagent-end
+      strategy: static
+      order: 0
+      params:
+        action: observe

@@ -28,7 +28,7 @@ const CSS_RUNTIME = '\0prompt-tool-styles'
 
 const lib: UserConfig = {
   name: PLUGIN_ID,
-  entry: ['src/index.ts', 'src/preset-transfer.ts'],
+  entry: ['src/index.ts', 'src/preset-transfer.ts', 'src/migrate-rules.ts'],
   outDir: 'lib',
   format: ['esm'],
   platform: 'node',

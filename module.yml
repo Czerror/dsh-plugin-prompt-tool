@@ -2,7 +2,7 @@
 # 生成来源：scripts/rebuild-preset-template.mjs + ENGINE_PARAM_DEFINITIONS + engine/schema.mjs + templates/
 # 重建：pnpm rebuild:preset-template；检查：pnpm rebuild:preset-template -- --check
 # 复制到 DSH_HOME/.prompt-tool/modules/<id>/module.yml，id 与目录名保持一致。
-# 真实提示词规则与共享参数分属两个所有者：promptConfigs[].params / layerSettings.<层名>.<键>。
+# rules 是唯一行为定义：when 判断树 → do 动作数组；提示词正文属于 inject-text 动作。
 # 共享设置只内嵌真实配置卡；空层不自动创建 UI 卡或提示词规则。
 # 九层是独立官方扩展点，没有插件定义的跨层执行顺序。详见 docs/injection-point-contracts.md。
 # 默认不启用锚定或模型增强；下方参考参数全部为注释，按需启用。
@@ -15,9 +15,9 @@ version: 1.0.0
 engineCompat: ">=0.7.2"
 modules:
   # 仅启用提示词引擎。其他能力保持 opt-in；写入其已登记参数后会自动补齐装配。
-  # 官方与本地可用模块：agent-instructions, command-goal, compaction, delegation-ptc, delegation, persistent-shell, planning, skill-filesystem-cordis, skill-filesystem, tool-ask-user, tool-bash, tool-cordis, tool-fs-search, tool-fs, tool-goal, tool-jobs, tool-plugin-manager-disabled, tool-plugin-manager, tool-present, tool-presentation, tool-pwsh, tool-skill, tool-todo, tool-web, character-tools, declared-triggers, filesystem-editor, instruction-hint, persistent-shell-posix, prompt-config-engine, run-code-env, session-var-tools, skill-search, subagent-tool-policy, tool-bash-disabled, tool-config-engine, tool-git-bash, world-book-tools
+  # 官方与本地可用模块：agent-instructions, command-goal, compaction, delegation-ptc, delegation, persistent-shell, planning, skill-filesystem-cordis, skill-filesystem, tool-ask-user, tool-bash, tool-cordis, tool-fs-search, tool-fs, tool-goal, tool-jobs, tool-plugin-manager-disabled, tool-plugin-manager, tool-present, tool-presentation, tool-pwsh, tool-skill, tool-todo, tool-web, character-tools, declared-triggers, filesystem-editor, instruction-hint, persistent-shell-posix, prompt-config-engine, rule-engine, run-code-env, session-var-tools, skill-search, subagent-tool-policy, tool-bash-disabled, tool-config-engine, tool-git-bash, world-book-tools
   # 人设使用顶层 persona；不存在 persona、code-presentation、cot-drip 等已撤销模块别名。
-  - prompt-config-engine
+  - rule-engine
 layerSettings:
   # 唯一共享参数磁盘位置。按下方参考取消所需注释，不要复制旧 params/model/subagentModel 段。
   {}
@@ -27,316 +27,396 @@ variables:
 customTools:
   # 自定义模型工具列表；结构示例见 templates/tools。工具权限和执行器通过既有专用编辑器配置。
   []
-promptConfigs:
-  # 每条都是真实规则示例，默认 enabled:false。启用前填写正文/行为；未填写内容的文本层不注入。
-  # id 必填且唯一；name 可选；configKind: ordered | anchor；order 只在同一入口比较。
-  # group + exclusive 控制互斥；text 与 texts 为正文来源；策略专属 params 只属于本条。
-  # pre-step 可声明 position/dedupe/promotion/audience/modelScope/mergeMode/role(user)/sourceKind/form/summary/identity。
-  # identity 只允许 {field: plugin, value: 唯一值}；templateFile 可选，须在模块目录内，内嵌正文优先。
-  # match: {keys:[关键字], secondaryKeys:[], logic:any|all|not|notAny, caseSensitive:false, wholeWords:false, useRegex:false}。
-  # useRegex 缺省自动识别 /pattern/flags，true 强制正则，false 强制字面；subject 必须是本层支持的对象。
-  # 工具参数不可改写；toolResult 条件只作用于后置阶段。结束层 inject-main 不改写子代理结果、不唤醒空闲主会话。
+rules:
+  # 每条规则默认 enabled:false；规则与动作的 id 必填、各自唯一。
+  # when 可组合 all/any/not/notAny；do 中动作在实际执行点按数组相对顺序执行。
+  # 同模块非空 group 中存在 exclusive:true 时，启用某卡会原子关闭同组其他卡；排序不选赢家。
+  # 注入正文、变量、内容策略、合并和去重均属于 inject-text.config。
+  # config.identity 只允许 {field: plugin, value: 唯一值}；templateFile 相对模块 rules.yml 且须在模块目录内。
+  # 不支持动态判断的固定注册动作必须无 when，编译器明确拒绝非法组合。
   # 10-pre-step.yml — 官方默认层：agent/pre-step 消息批。支持 position / dedupe / promotion / audience / mergeMode 与文本插值。
-  # 本层通用字段：position, dedupe, promotion, audience, modelScope, mergeMode, order, role, subject, match；未列字段不可从其他层直接照搬。
-  # 本层支持策略：static, placeholder, first-turn-anchor, guide-auto, custom-fallback, world-book；匹配对象：userMessage。
-  # 无额外层专属 params；策略字段仍按所选策略解释。
+  # 规则条件放 when，动作放 do；动作执行点由引擎目录验证，不建立跨层全局顺序。
+  # 注入动作内容策略：static, placeholder, first-turn-anchor, guide-auto, anchor-notice, world-book。
   - id: example-pre-step
     name: 示例：消息批注入
     enabled: false
     layer: pre-step
-    strategy: static
-    position: after-user
-    dedupe: session
-    promotion: none
-    modelScope: all
-    configKind: ordered
-    order: 0
-    role: user
-    mergeMode: separate
-    sourceKind: ""
-    form: notice
-    summary: ""
-    identity:
-      field: plugin
-      value: example-pre-step
-    text: ""
-    variables:
-      WHO: ""
-    params: {}
+    do:
+      - id: inject
+        kind: inject-text
+        config:
+          id: example-pre-step
+          layer: pre-step
+          strategy: static
+          position: after-user
+          dedupe: session
+          configKind: ordered
+          order: 0
+          role: user
+          mergeMode: separate
+          sourceKind: ""
+          form: notice
+          summary: ""
+          identity:
+            field: plugin
+            value: example-pre-step
+          text: ""
+          variables:
+            WHO: ""
+          params: {}
   # 14-first-turn-anchor.yml — 官方默认层：agent/pre-step 消息批。支持 position / dedupe / promotion / audience / mergeMode 与文本插值。
-  # 本层通用字段：position, dedupe, promotion, audience, modelScope, mergeMode, order, role, subject, match；未列字段不可从其他层直接照搬。
-  # 本层支持策略：static, placeholder, first-turn-anchor, guide-auto, custom-fallback, world-book；匹配对象：userMessage。
-  # 无额外层专属 params；策略字段仍按所选策略解释。
+  # 规则条件放 when，动作放 do；动作执行点由引擎目录验证，不建立跨层全局顺序。
+  # 注入动作内容策略：static, placeholder, first-turn-anchor, guide-auto, anchor-notice, world-book。
   - id: example-first-turn-anchor
     name: 示例：首句锚点
     enabled: false
     layer: pre-step
-    strategy: first-turn-anchor
-    position: after-user
-    dedupe: session
-    promotion: none
-    modelScope: all
-    configKind: ordered
-    order: 0
-    role: user
-    mergeMode: separate
-    sourceKind: ""
-    form: notice
-    params:
-      useCustom: false
-      text: ""
-      buildPattern: ""
-      complexPattern: ""
-      firstTurnBuild: ""
-      firstTurnInspect: ""
-      firstTurnDeep: ""
+    do:
+      - id: inject
+        kind: inject-text
+        config:
+          id: example-first-turn-anchor
+          layer: pre-step
+          strategy: first-turn-anchor
+          position: after-user
+          dedupe: session
+          configKind: ordered
+          order: 0
+          role: user
+          mergeMode: separate
+          sourceKind: ""
+          form: notice
+          params:
+            useCustom: false
+            text: ""
+            buildPattern: ""
+            complexPattern: ""
+            firstTurnBuild: ""
+            firstTurnInspect: ""
+            firstTurnDeep: ""
   # 15-guide-auto.yml — 官方默认层：agent/pre-step 消息批。支持 position / dedupe / promotion / audience / mergeMode 与文本插值。
-  # 本层通用字段：position, dedupe, promotion, audience, modelScope, mergeMode, order, role, subject, match；未列字段不可从其他层直接照搬。
-  # 本层支持策略：static, placeholder, first-turn-anchor, guide-auto, custom-fallback, world-book；匹配对象：userMessage。
-  # 无额外层专属 params；策略字段仍按所选策略解释。
+  # 规则条件放 when，动作放 do；动作执行点由引擎目录验证，不建立跨层全局顺序。
+  # 注入动作内容策略：static, placeholder, first-turn-anchor, guide-auto, anchor-notice, world-book。
   - id: example-guide-auto
     name: 示例：每轮引导
     enabled: false
     layer: pre-step
-    strategy: guide-auto
-    position: after-user
-    dedupe: batch
-    promotion: main
-    modelScope: flash
-    configKind: ordered
-    order: 10
-    role: user
-    mergeMode: separate
-    sourceKind: ""
-    form: notice
-    params:
-      useCustom: false
-      text: ""
-      guideWeak: ""
-      guideDeep: ""
+    when:
+      all:
+        - scope:
+            modelScope: flash
+        - phase:
+            promoted: true
+            includeSubagents: false
+    do:
+      - id: inject
+        kind: inject-text
+        config:
+          id: example-guide-auto
+          layer: pre-step
+          strategy: guide-auto
+          position: after-user
+          dedupe: batch
+          configKind: ordered
+          order: 10
+          role: user
+          mergeMode: separate
+          sourceKind: ""
+          form: notice
+          params:
+            useCustom: false
+            text: ""
+            guideWeak: ""
+            guideDeep: ""
+            complexMinChars: 120
   # 16-custom-fallback.yml — 官方默认层：agent/pre-step 消息批。支持 position / dedupe / promotion / audience / mergeMode 与文本插值。
-  # 本层通用字段：position, dedupe, promotion, audience, modelScope, mergeMode, order, role, subject, match；未列字段不可从其他层直接照搬。
-  # 本层支持策略：static, placeholder, first-turn-anchor, guide-auto, custom-fallback, world-book；匹配对象：userMessage。
-  # 无额外层专属 params；策略字段仍按所选策略解释。
+  # 规则条件放 when，动作放 do；动作执行点由引擎目录验证，不建立跨层全局顺序。
+  # 注入动作内容策略：static, placeholder, first-turn-anchor, guide-auto, anchor-notice, world-book。
   - id: example-custom-fallback
     name: 示例：自定义锚词兜底注入
     enabled: false
     layer: pre-step
-    strategy: custom-fallback
-    position: before-all
-    dedupe: session
-    promotion: main
-    modelScope: all
-    configKind: ordered
-    order: 20
-    role: user
-    mergeMode: separate
-    sourceKind: plugin
-    form: notice
-    params:
-      text: ""
-      firstTurnWord: ""
+    when:
+      all:
+        - phase:
+            promoted: true
+            includeSubagents: false
+        - anchor:
+            keys: []
+            fallbackAfter: 1
+    do:
+      - id: inject
+        kind: inject-text
+        config:
+          id: example-custom-fallback
+          layer: pre-step
+          strategy: anchor-notice
+          position: before-all
+          dedupe: session
+          configKind: ordered
+          order: 20
+          role: user
+          mergeMode: separate
+          sourceKind: plugin
+          form: notice
+          params:
+            text: ""
+            firstTurnWord: ""
   # 18-placeholder-env-facts.yml — 官方默认层：agent/pre-step 消息批。支持 position / dedupe / promotion / audience / mergeMode 与文本插值。
-  # 本层通用字段：position, dedupe, promotion, audience, modelScope, mergeMode, order, role, subject, match；未列字段不可从其他层直接照搬。
-  # 本层支持策略：static, placeholder, first-turn-anchor, guide-auto, custom-fallback, world-book；匹配对象：userMessage。
-  # 无额外层专属 params；策略字段仍按所选策略解释。
+  # 规则条件放 when，动作放 do；动作执行点由引擎目录验证，不建立跨层全局顺序。
+  # 注入动作内容策略：static, placeholder, first-turn-anchor, guide-auto, anchor-notice, world-book。
   - id: example-placeholder
     layer: pre-step
-    strategy: placeholder
-    fill: env-facts
-    position: after-all
-    dedupe: session
-    promotion: include-subagents
-    text: ""
-    params:
-      envKeys: DSH_HOME,DSH_WORKSPACE
-      limit: 20
-      fields: name,description
-      providers: ""
-      emptyBehavior: skip
-      emptyText: 当前没有可用技能。
+    when:
+      phase:
+        promoted: true
+        includeSubagents: true
+    do:
+      - id: inject
+        kind: inject-text
+        config:
+          id: example-placeholder
+          layer: pre-step
+          strategy: placeholder
+          fill: env-facts
+          position: after-all
+          dedupe: session
+          text: ""
+          params:
+            envKeys: DSH_HOME,DSH_WORKSPACE
+            limit: 20
+            fields: name,description
+            providers: ""
+            emptyBehavior: skip
+            emptyText: 当前没有可用技能。
     enabled: false
   # 20-system-section.yml — system-section 静态层：注册即全局，由 order 与 params.complete / sectionName 控制。
-  # 本层通用字段：audience, mergeMode, order；未列字段不可从其他层直接照搬。
-  # 本层支持策略：static；匹配对象：不支持。
-  # params.sectionName: string；params.complete: boolean；params.suppressRuntimeContext: boolean
+  # 规则条件放 when，动作放 do；动作执行点由引擎目录验证，不建立跨层全局顺序。
+  # 注入动作内容策略：static。
   - id: example-system-section
     name: 示例：system 静态段
     layer: system-section
-    strategy: static
-    order: -50
-    mergeMode: merged
-    text: ""
-    variables: {}
-    params:
-      complete: false
-      suppressRuntimeContext: false
-      sectionName: ""
+    do:
+      - id: inject
+        kind: inject-text
+        config:
+          id: example-system-section
+          layer: system-section
+          strategy: static
+          order: -50
+          mergeMode: merged
+          text: ""
+          variables: {}
+          params:
+            complete: false
+            suppressRuntimeContext: false
+            sectionName: ""
     enabled: false
   # 30-runtime-context.yml — runtime-context 层：static 按 order 注册，placeholder 单条生效，由 params.contextName 控制。
-  # 本层通用字段：mergeMode, order；未列字段不可从其他层直接照搬。
-  # 本层支持策略：static, placeholder；匹配对象：不支持。
-  # params.contextName: string
+  # 规则条件放 when，动作放 do；动作执行点由引擎目录验证，不建立跨层全局顺序。
+  # 注入动作内容策略：static, placeholder。
   - id: example-runtime-context
     layer: runtime-context
-    strategy: static
-    order: 5
-    mergeMode: merged
-    text: ""
-    params:
-      contextName: ""
+    do:
+      - id: inject
+        kind: inject-text
+        config:
+          id: example-runtime-context
+          layer: runtime-context
+          strategy: static
+          order: 5
+          mergeMode: merged
+          text: ""
+          params:
+            contextName: ""
     enabled: false
   # 40-agent-request.yml — agent-request 层：按 order 注册，params.patch 改写请求配置。
-  # 本层通用字段：audience, modelScope, order；未列字段不可从其他层直接照搬。
-  # 本层支持策略：static；匹配对象：不支持。
-  # params.patch: object；params.replace: boolean
+  # 规则条件放 when，动作放 do；动作执行点由引擎目录验证，不建立跨层全局顺序。
+  # 注入动作内容策略：static。
   - id: example-agent-request
     layer: agent-request
-    strategy: static
-    modelScope: flash
-    order: 0
-    params:
-      patch:
-        provider: provider-id
-        model: model-id
-        reasoningEffort: high
-        temperature: 0.3
-        maxTokens: 4096
-        stop:
-          - END
-      replace: false
+    when:
+      scope:
+        modelScope: flash
+    do:
+      - id: request
+        kind: request-params
+        patch:
+          provider: provider-id
+          model: model-id
+          reasoningEffort: high
+          temperature: 0.3
+          maxTokens: 4096
+          stop:
+            - END
+        replace: false
+        modelScope: all
     enabled: false
   # 50-llm-stream.yml — llm/stream 层：按 order 注册，params.mode = pass | replace。
-  # 本层通用字段：modelScope, order；未列字段不可从其他层直接照搬。
-  # 本层支持策略：static；匹配对象：不支持。
-  # params.mode: pass | replace
+  # 规则条件放 when，动作放 do；动作执行点由引擎目录验证，不建立跨层全局顺序。
+  # 注入动作内容策略：static。
   - id: example-llm-stream
     layer: llm-stream
-    strategy: static
-    modelScope: flash
-    order: 0
-    text: ""
-    params:
-      mode: pass
+    when:
+      scope:
+        modelScope: flash
+    do:
+      - id: inject
+        kind: inject-text
+        config:
+          id: example-llm-stream
+          layer: llm-stream
+          strategy: static
+          order: 0
+          text: ""
+          params:
+            mode: pass
     enabled: false
   # 60-tool-pipeline.yml — tools/* 层：按 order 注册，params.toolNames 与 preDecision / postAction 控制；subject / match 可选，命中才裁决。
-  # 本层通用字段：audience, modelScope, order, subject, match；未列字段不可从其他层直接照搬。
-  # 本层支持策略：static；匹配对象：toolArgs, toolResult。
-  # params.toolNames: string；params.preDecision: allow | deny | ask；params.denyReason: string；params.postAction: accept | replace | block
+  # 规则条件放 when，动作放 do；动作执行点由引擎目录验证，不建立跨层全局顺序。
+  # 注入动作内容策略：static。
   - id: example-tool-pipeline
     layer: tool-pipeline
-    strategy: static
-    order: 0
-    modelScope: all
-    text: ""
-    params:
-      toolNames: bash,run_code
-      preDecision: allow
-      denyReason: 该工具被提示词配置禁用
-      postAction: accept
+    do:
+      - id: before
+        kind: decision
+        phase: pre
+        decision: allow
+        toolNames: bash,run_code
+        reason: 该工具被提示词配置禁用
+      - id: after
+        kind: decision
+        phase: post
+        action: accept
+        toolNames: bash,run_code
+        text: ""
     enabled: false
   # 65-turn-stop.yml — agent/turn-stopping 层：命中条件时强制续跑一步；引擎内置续跑上限，不可用配置关闭。
-  # 本层通用字段：modelScope, order, subject, match；未列字段不可从其他层直接照搬。
-  # 本层支持策略：static；匹配对象：assistantText。
-  # 无额外层专属 params；策略字段仍按所选策略解释。
+  # 规则条件放 when，动作放 do；动作执行点由引擎目录验证，不建立跨层全局顺序。
+  # 注入动作内容策略：static。
   - id: example-turn-stop
     name: 未完成时强制续跑
     layer: turn-stop
-    strategy: static
-    order: 0
-    modelScope: all
-    text: |-
-      上一轮还没有给出完整交付。请继续把当前任务做完：不要停在中途，
-      也不要用「接下来我会…」的计划代替实际执行。
-    match:
-      keys:
-        - 接下来我会
-        - 稍后继续
-        - 待办如下
-    params: {}
+    when:
+      text:
+        keys:
+          - 接下来我会
+          - 稍后继续
+          - 待办如下
+        subject: assistantText
+    do:
+      - id: inject
+        kind: inject-text
+        config:
+          id: example-turn-stop
+          layer: turn-stop
+          strategy: static
+          order: 0
+          text: |-
+            上一轮还没有给出完整交付。请继续把当前任务做完：不要停在中途，
+            也不要用「接下来我会…」的计划代替实际执行。
+          params: {}
     enabled: false
   # 66-subagent-start.yml — subagent/start 层：命中条件时向该子代理注入上下文。
-  # 本层通用字段：modelScope, order, subject, match；未列字段不可从其他层直接照搬。
-  # 本层支持策略：static；匹配对象：subagentInfo。
-  # 无额外层专属 params；策略字段仍按所选策略解释。
+  # 规则条件放 when，动作放 do；动作执行点由引擎目录验证，不建立跨层全局顺序。
+  # 注入动作内容策略：static。
   - id: example-subagent-start
     name: 子代理通用守则
     layer: subagent-start
-    strategy: static
-    order: 0
-    modelScope: all
-    text: |-
-      开始编辑之前，先确认你改的这条路径在运行时会真的被执行：查调用链，
-      或用探针跑一次看它动。找不到证据就继续查，不要凭「看起来像」就动手。
-    params: {}
+    do:
+      - id: inject
+        kind: inject-text
+        config:
+          id: example-subagent-start
+          layer: subagent-start
+          strategy: static
+          order: 0
+          text: |-
+            开始编辑之前，先确认你改的这条路径在运行时会真的被执行：查调用链，
+            或用探针跑一次看它动。找不到证据就继续查，不要凭「看起来像」就动手。
+          params: {}
     enabled: false
   # 70-subagent-maintenance.yml — 官方默认层：agent/pre-step 消息批。支持 position / dedupe / promotion / audience / mergeMode 与文本插值。
-  # 本层通用字段：position, dedupe, promotion, audience, modelScope, mergeMode, order, role, subject, match；未列字段不可从其他层直接照搬。
-  # 本层支持策略：static, placeholder, first-turn-anchor, guide-auto, custom-fallback, world-book；匹配对象：userMessage。
-  # 无额外层专属 params；策略字段仍按所选策略解释。
+  # 规则条件放 when，动作放 do；动作执行点由引擎目录验证，不建立跨层全局顺序。
+  # 注入动作内容策略：static, placeholder, first-turn-anchor, guide-auto, anchor-notice, world-book。
   - id: subagent-maintenance
     name: 子代理状态/记忆维护
     enabled: false
     layer: pre-step
-    strategy: static
-    position: after-user
-    dedupe: none
-    promotion: none
-    audience: subagent
-    modelScope: all
-    configKind: ordered
-    order: 2000
-    role: user
-    mergeMode: merged
-    sourceKind: ""
-    form: hint
-    summary: ""
-    identity:
-      field: plugin
-      value: subagent-maintenance
-    text: |-
-      你是本会话的「状态与记忆维护者」，与创作类子代理职责互补：
-      - 状态（本会话临时，模板变量注入用）：观察互动中明确的角色状态变化
-        （心情、态度、接受度等），用 session_var 工具 set 更新——变量名见下方
-        「状态变量」清单；状态未变化时不要重复写入。
-      - 记忆（跨会话持久）：有人际关系进展或重要事实时，用 world_book_upsert
-        的 note 参数写入来源角色卡记忆（条目 id 带 chara- 前缀 → 角色卡
-        memory.md，跨会话跟随角色卡）；无归属条目写入模块记忆。
-      - 克制：仅在状态确实变化时更新；不确定时保留原值；不编造未发生的内容。
-      状态变量清单：{{stateKeys}}
-    variables:
-      stateKeys: 心情, 接受值, 关系进度
-    params: {}
+    when:
+      scope:
+        audience: subagent
+    do:
+      - id: inject
+        kind: inject-text
+        config:
+          id: subagent-maintenance
+          layer: pre-step
+          strategy: static
+          position: after-user
+          dedupe: none
+          configKind: ordered
+          order: 2000
+          role: user
+          mergeMode: merged
+          sourceKind: ""
+          form: hint
+          summary: ""
+          identity:
+            field: plugin
+            value: subagent-maintenance
+          text: |-
+            你是本会话的「状态与记忆维护者」，与创作类子代理职责互补：
+            - 状态（本会话临时，模板变量注入用）：观察互动中明确的角色状态变化
+              （心情、态度、接受度等），用 session_var 工具 set 更新——变量名见下方
+              「状态变量」清单；状态未变化时不要重复写入。
+            - 记忆（跨会话持久）：有人际关系进展或重要事实时，用 world_book_upsert
+              的 note 参数写入来源角色卡记忆（条目 id 带 chara- 前缀 → 角色卡
+              memory.md，跨会话跟随角色卡）；无归属条目写入模块记忆。
+            - 克制：仅在状态确实变化时更新；不确定时保留原值；不编造未发生的内容。
+            状态变量清单：{{stateKeys}}
+          variables:
+            stateKeys: 心情, 接受值, 关系进度
+          params: {}
   # 75-subagent-end.yml — subagent/end 层：默认记录；action=inject-main 时向所属主会话注入配置文本，不改写子代理返回结果。
-  # 本层通用字段：modelScope, order, subject, match；未列字段不可从其他层直接照搬。
-  # 本层支持策略：static；匹配对象：subagentInfo。
-  # params.action: observe | inject-main
+  # 规则条件放 when，动作放 do；动作执行点由引擎目录验证，不建立跨层全局顺序。
+  # 注入动作内容策略：static。
   - id: example-subagent-end
     name: 子代理结束记录（只观察）
     enabled: false
     layer: subagent-end
-    strategy: static
-    order: 0
-    modelScope: all
-    params:
-      action: observe
-    text: 子代理已结束。请检查其结果，验证后再回复用户。
+    do:
+      - id: inject
+        kind: inject-text
+        config:
+          id: example-subagent-end
+          layer: subagent-end
+          strategy: static
+          order: 0
+          params:
+            action: observe
+          text: 子代理已结束。请检查其结果，验证后再回复用户。
   - id: example-world-book
     name: 世界书条件条目
     enabled: false
     layer: pre-step
-    strategy: world-book
-    text: 这里是触发后注入的背景知识。
-    params:
-      constant: false
-      keys:
-        - 项目
-      secondaryKeys:
-        - 规范
-      selectiveLogic: 0
-      caseSensitive: false
-      wholeWords: false
-      useRegex: false
+    do:
+      - id: inject
+        kind: inject-text
+        config:
+          layer: pre-step
+          strategy: world-book
+          text: 这里是触发后注入的背景知识。
+          params:
+            constant: false
+            keys:
+              - 项目
+            secondaryKeys:
+              - 规范
+            selectiveLogic: 0
+            caseSensitive: false
+            wholeWords: false
+            useRegex: false
 
 # BEGIN SHARED PARAMETER REFERENCE
 # 以下穷举全部登记键；值是编辑器示例，不承诺等于模块运行时默认值。
@@ -353,11 +433,7 @@ promptConfigs:
 #     {}
 #   agent-request:
 #     # 调用配置层：共享参数，不属于该层某一条提示词规则。
-#     modelProvider: "" # 模型服务商；string
-#     modelName: "" # 模型；string
-#     modelReasoningEffort: "" # 思维程度；string
-#     modelTemperature: "" # 采样温度；number；有限数；空继承宿主，不写入请求 patch
-#     modelMaxTokens: "" # 输出上限；number；正整数；空继承宿主
+#     {}
 #   llm-stream:
 #     # 模型流层：共享参数，不属于该层某一条提示词规则。
 #     {}
@@ -370,11 +446,6 @@ promptConfigs:
 #     {}
 #   subagent-start:
 #     # 子代理启动层：共享参数，不属于该层某一条提示词规则。
-#     subagentModelProvider: "" # 本地子代理请求服务商；string
-#     subagentModelName: "" # 本地子代理请求模型；string
-#     subagentReasoningEffort: "" # 子代理思维程度；string
-#     subagentTemperature: "" # 子代理采样温度；number；子代理采样最终通过 agent-request 生效
-#     subagentMaxTokens: "" # 子代理输出上限；number；正整数；空继承宿主
 #     maxDepth: "" # 策略委派深度；max-depth；0 禁止委派；provider-managed 交给 provider；正整数限制深度；空继承
 #   subagent-end:
 #     # 子代理结束层：共享参数，不属于该层某一条提示词规则。

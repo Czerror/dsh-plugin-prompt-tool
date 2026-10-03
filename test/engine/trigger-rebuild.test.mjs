@@ -78,14 +78,14 @@ const namesOf = (tools) => tools.map((item) => item.name).join(',')
 
 // ───────────────────────── 一、tool-filter 的声明重建 ─────────────────────────
 
-/** 一条声明即整套过滤：谓词决定「谁留下」，动作按同一名单改写装配。 */
+/** 装配本身没有单个工具名；名单谓词只在动作内部逐工具判定。 */
 const maskDeclaration = (mask) => ({
   id: 'tool-mask',
   channel: 'system-prompt/assemble',
-  when: createNameListPredicate(mask),
+  when: () => true,
   do: (assembled) => ({
     ...assembled,
-    tools: (Array.isArray(assembled.tools) ? assembled.tools : []).filter((item) => createNameListPredicate(mask)(item)),
+    tools: (Array.isArray(assembled.tools) ? assembled.tools : []).filter((item) => createNameListPredicate(mask)(item) === true),
   }),
 })
 

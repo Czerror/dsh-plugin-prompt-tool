@@ -11,11 +11,11 @@ import { requestSkillImport, type ConfirmSkillOverwrite } from './skill-import.t
 import {
   EMPTY_FIELDS,
   EMPTY_META,
+  SHARED_PARAM_KEYS,
   type Fields,
   type HostDefaultModel,
 } from './prompt-tool-fields.ts'
 import { bridgeViewFromBoot, fieldsFromView, mergePresetParams, skillFieldsFromSnapshot, withConfigFieldSources } from './prompt-tool-view.ts'
-import { stripConfigFieldSources } from '../../shared/managed-config-fields.ts'
 import {
   EMPTY_SWITCHES,
   deepEqual,
@@ -53,6 +53,7 @@ import type { InstructionPolicyFileOverride, InstructionPolicyPatch, Instruction
 import { buildParamOverrides, isCurrentPresetDraft, readParamOverridesPatch, updateLoadedParamKeys } from './param-overrides.ts'
 import { createSerialTaskQueue } from './save-queue.ts'
 import { createWorkspaceDrafts, hasWorkspaceDrafts, type WorkspaceDrafts } from './workspace-drafts.ts'
+import { rulesDirty } from './rule-drafts.ts'
 import { modelChoiceValue } from '../features/models/model-options.ts'
 import type { ModelReasoningView } from '../../shared/bridge-contract.ts'
 
@@ -131,7 +132,6 @@ export interface PromptToolStore {
   persistSwitches: (onSaved?: () => void) => Promise<boolean>
   persistParamOverrides: () => Promise<void>
   /** 保存提示词配置；返回 false 表示未写入（模块切换中、跨模块旧草稿或失败）。 */
-  persistConfigs: (configs: PromptConfigDraft[], options?: { reload?: boolean; rebuild?: boolean; includeInstructions?: boolean }) => Promise<boolean>
   /** 规则声明复用模块队列；实际执行时复核目标模块与已加载身份。 */
   enqueuePresetTask: <T>(moduleId: string, task: () => Promise<T>) => Promise<T>
   /** 模块级模板变量（module.yml 内容变量；writePreset 展开进 variables.yml，引擎合并进每条配置）。 */
@@ -345,9 +345,6 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
     if (fieldsRef.current.presetTemplate !== moduleId || loadedModuleRef.current !== moduleId) throw new Error(PRESET_PENDING_MESSAGE)
     return task()
   }), [])
-  /** applyView 自动预选的 provider：无模型名时不作为用户显式参数落盘。 */
-  const autoModelProviderRef = useRef<string | undefined>(undefined)
-  const autoSubagentModelProviderRef = useRef<string | undefined>(undefined)
   /** 最近一次 load 时 preset.yml params 现有键集：persist 只发送「已有键或已改动」，
    *  未动过的键不写——避免 UI 默认值固化覆盖模板 moduleConfigs 默认。 */
   const loadedKeysRef = useRef<Set<string>>(new Set())
@@ -396,20 +393,6 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
     if (skillsSeq !== skillsSeqRef.current) {
       const current = fieldsRef.current
       Object.assign(next, { skillCatalog: current.skillCatalog, skillsComplete: current.skillsComplete, skillFolders: current.skillFolders, skillsRoot: current.skillsRoot })
-    }
-    // 检测到 DeepSeek 路由且用户未设置服务商时，直接预选第一个检测到的 provider
-    // （模型名为空则路由不激活，继承主会话语义不变；用户后续选择模型名即生效）。
-    // 自动预选值记录到 ref：它只是显示兜底，不作为用户显式参数写进 preset.yml。
-    autoModelProviderRef.current = undefined
-    if (res.ok && next.modelProvider === '' && (res.providers?.length ?? 0) > 0) {
-      autoModelProviderRef.current = res.providers![0]!
-      next.modelProvider = autoModelProviderRef.current
-    }
-    // 子代理服务商同样预选：模型名为空则固定路由不激活（继承主会话），仅让模型名下拉有候选。
-    autoSubagentModelProviderRef.current = undefined
-    if (res.ok && next.subagentModelProvider === '' && (res.providers?.length ?? 0) > 0) {
-      autoSubagentModelProviderRef.current = res.providers![0]!
-      next.subagentModelProvider = autoSubagentModelProviderRef.current
     }
     publishFields(next)
     setSavedSwitches(snapshotSwitches(next))
@@ -468,7 +451,7 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
       // 用户参数覆盖（激活模块 module.yml params；settings 不再承载参数）。
       if (boot.ok && boot.overrides !== undefined) {
         const o = boot.overrides.overrides
-        loadedKeysRef.current = new Set(Object.keys(o))
+        loadedKeysRef.current = new Set(SHARED_PARAM_KEYS.filter(key => Object.hasOwn(o, key)))
         const paramPatch = readParamOverridesPatch(o)
         if (Object.keys(paramPatch).length > 0) {
           const next = { ...fieldsRef.current, ...paramPatch }
@@ -513,7 +496,7 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
         // 引擎自动生成的模型参数配置（model-params / subagent-model-params）由
         // 「模型设置」卡片管理，不进入模块列表（避免重复编辑入口）。
         const engineGenerated = new Set(['model-params', 'subagent-model-params'])
-        const userConfigs = boot.promptConfigs.promptConfigs.filter((config) => !engineGenerated.has(config.id))
+        const userConfigs = boot.promptConfigs.promptConfigs.filter((config) => !engineGenerated.has(config.id) && instructionFileIdOf(config) !== undefined)
         // 内容资产条目（prompt-injector / instruction-hint）：params.text（生成目录文件渲染产物）
         // 提升到 text 框显示，编辑入口统一为模块卡片。
         const actual = withInstructionState(userConfigs.map(withConfigFieldSources).map(liftContentText), instructionPoolRef.current, instructionPolicyRef.current)
@@ -531,6 +514,9 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
       // 快照已完整应用：该模块自此可写（切换/首次加载期间由 loadedModuleRef 拦截写盘）。
       loadedModuleRef.current = fieldsRef.current.presetTemplate
       paramBaselineRef.current = snapshotSwitches(fieldsRef.current)
+      // 共享设置写入同一模块文件；规则重新取版本，原始字段与未保存编辑由规则 owner 保留。
+      const rulesDraft = editorDrafts.rules.get(fieldsRef.current.presetTemplate)
+      if (rulesDraft?.loaded && rulesDraft.busy === undefined) { rulesDraft.loaded = false; publishDrafts() }
       clearNotice()
       return fieldsRef.current
     } catch (error) {
@@ -552,17 +538,14 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
   // 直到用户关掉工作台重开。
   useEffect(() => api.subscribeSessionChange(() => { void load() }), [api, load])
 
-  // 目录就绪后补查当前可见路由的推理档位（会话选择 / 模块主模型 / 子代理模型 / 宿主默认）。
+  // 目录就绪后补查当前会话与宿主默认路由的推理档位。
   // 只查这几条可见路由：不遍历整个目录，也不把目录当授权白名单。
   useEffect(() => {
     reasoningRequestedRef.current.clear()
-    const current = fieldsRef.current
     const face = api.sessionModel.snapshot()
     const sessionSelection = face.selection
     const routes: Array<{ provider?: string; model?: string }> = [
       { provider: sessionSelection?.provider, model: sessionSelection?.model },
-      { provider: current.modelProvider, model: current.modelName },
-      { provider: current.subagentModelProvider, model: current.subagentModelName },
       { provider: hostDefaultModel?.provider, model: hostDefaultModel?.model },
     ]
     for (const route of routes) {
@@ -681,8 +664,6 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
     // 待编辑变量行（空 key）不落盘；此时不重载，避免服务端状态覆盖草稿使编辑行消失。
     const configsWereClean = !promptConfigsDirty(f.promptConfigs, savedConfigs)
       && !hasPendingVariableRows(f.promptConfigs)
-    const autoModelProvider = autoModelProviderRef.current
-    const autoSubagentModelProvider = autoSubagentModelProviderRef.current
     await presetSaveQueueRef.current.enqueue(async () => {
       // 切换进行中（目标模块数据未应用）：参数仍是旧模块值，拒绝写入 presetTemplate。
       if (loadedModuleRef.current !== undefined && loadedModuleRef.current !== fieldsRef.current.presetTemplate) {
@@ -696,8 +677,6 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
       const overrides = buildParamOverrides(f, {
         loadedKeys: loadedKeysRef.current,
         baseline: paramBaselineRef.current,
-        autoModelProvider,
-        autoSubagentModelProvider,
       })
       const res = await bridgeCall('paramOverrides', { overrides, expectedPresetId: f.presetTemplate })
       if (!isCurrentPresetDraft(f, fieldsRef.current)) return
@@ -713,7 +692,7 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
           draftVersionRef.current,
           configsWereClean && shouldReloadAfterParamSave(currentSnapshot, savedSnapshot),
         )) {
-          // 参数已写激活模块 module.yml：服务端重建后刷新（模型参数配置等随模块变化）。
+          // 公共参数已写激活模块 module.yml：服务端重建后刷新。
           await load({ silent: true })
         }
       } else {
@@ -844,82 +823,6 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
     showNotice('ok', `已重新读取指令文件：${file.displayPath}`)
   }, [api, publishInstructions, showNotice, syncInstructionCards])
 
-  /** 保存后是否静默重载。切换模块时传 false（随后的 settings.mutate 回调会统一 load，
-   *  避免一次切换触发两次全量读取）。返回 false = 未写入（切换中/跨模块旧草稿/失败），
-   *  调用方（如开关模块）据此中止后续流程。 */
-  const persistConfigs = useCallback((configs: PromptConfigDraft[], options?: { reload?: boolean; rebuild?: boolean; includeInstructions?: boolean }): Promise<boolean> => {
-    const expectedPresetId = fieldsRef.current.presetTemplate
-    const draftVersion = draftVersionRef.current
-    const switchesWereClean = switchesEqual(snapshotSwitches(fieldsRef.current), savedSwitches)
-    // 待编辑变量行（空 key）不落盘（服务端 saveModuleParams 清理）；此时跳过保存后静默重载，
-    // 否则服务端状态覆盖草稿，刚点开的变量编辑行立即消失。
-    const pendingVariableRows = hasPendingVariableRows(configs)
-    return presetSaveQueueRef.current.enqueue(async () => {
-      // 切换进行中（目标模块数据未应用）：fields 仍是旧模块字段，拒绝写入 presetTemplate。
-      if (loadedModuleRef.current !== undefined && loadedModuleRef.current !== fieldsRef.current.presetTemplate) {
-        showNotice('error', PRESET_PENDING_MESSAGE)
-        return false
-      }
-      if (expectedPresetId !== fieldsRef.current.presetTemplate) {
-        showNotice('error', '模块已切换，旧提示词草稿未写入')
-        return false
-      }
-      // 普通模块卡拖拽复用同一个跨模块排序端点，只交换本模块已有槽位。
-      const desiredIds = configs.filter(isPresetCard).map(config => config.id)
-      const savedIds = savedConfigsRef.current.filter(isPresetCard).map(config => config.id)
-      const savedIdSet = new Set(savedIds)
-      const common = new Set(desiredIds.filter(id => savedIdSet.has(id)))
-      const desired = desiredIds.filter(id => common.has(id))
-      const previous = savedIds.filter(id => common.has(id))
-      if (desired.some((id, index) => id !== previous[index])) {
-        const snapshot = await bridgeCall('moduleConfigOrder', { moduleId: expectedPresetId })
-        if (!snapshot.ok) { showNotice('error', snapshot.message ?? '读取排序失败'); return false }
-        const own = new Map(snapshot.value.entries.filter(entry => entry.moduleId === expectedPresetId && common.has(entry.configId))
-          .map(entry => [entry.configId, entry]))
-        const reordered = desired.flatMap(id => { const entry = own.get(id); return entry === undefined ? [] : [entry] })
-        if (reordered.length > 1) {
-          let cursor = 0
-          const entries = snapshot.value.entries.map(entry => entry.moduleId === expectedPresetId && own.has(entry.configId) ? reordered[cursor++]! : entry)
-          const result = await bridgeCall('moduleConfigOrder', {
-            moduleId: expectedPresetId,
-            expectedRevision: snapshot.value.revision,
-            entries: entries.map(({ moduleId, configId }) => ({ moduleId, configId })),
-          })
-          if (!result.ok) { showNotice('error', result.message ?? '排序保存失败'); return false }
-        }
-      }
-      // 指令文件与模块是两类资产：只提交已改动且可写的文件（逐文件版本校验），
-      // 未修改的文件不写盘；文件失败不回滚模块写盘，也不假装整体成功。
-      const instructionsSaved = options?.includeInstructions === false || await persistInstructionFiles()
-      if (expectedPresetId !== fieldsRef.current.presetTemplate) return false
-      // promptConfigs 按模块存储：写激活模块 module.yml（settings 不再承载）。
-      // 防御：初始化期空数组自动保存不得覆盖服务端已有配置（历史教训：beta-2-42
-      // 的 129 张配置卡被一次清空）；用户主动清空（此前已加载非空配置）允许落盘空数组。
-      if (configs.length === 0 && savedConfigs.length === 0) return instructionsSaved
-      const res = await bridgeCall('paramOverrides', {
-        expectedPresetId,
-        // 引擎探测生成的文件卡不进模块（文件即真相）：只持久化用户自己的卡片。
-        promptConfigs: configs.filter(isPresetCard).map(stripConfigFieldSources),
-        ...(options?.rebuild === false ? { rebuild: false } : {}),
-      })
-      if (expectedPresetId !== fieldsRef.current.presetTemplate) return false
-      if (res.ok) {
-        setSavedConfigs(configs)
-        if (instructionsSaved && options?.reload !== false && !pendingVariableRows && shouldReloadAfterPresetSave(
-          draftVersion,
-          draftVersionRef.current,
-          switchesWereClean && !promptConfigsDirty(fieldsRef.current.promptConfigs, configs),
-        )) {
-          await load({ silent: true, presetConfigs: configs.filter(isPresetCard) })
-        }
-        return instructionsSaved
-      } else {
-        showNotice('error', '提示词配置保存失败：' + (res.message ?? 'settings bridge unavailable'))
-        return false
-      }
-    })
-  }, [api, load, persistInstructionFiles, savedConfigs, savedSwitches, showNotice])
-
   /** 模板变量：写激活模块 module.yml 内容变量（后端 saveModuleParams + afterOverridesChange 触发重建）。 */
   const saveTemplateVariables = useCallback(async (next?: Record<string, string>, enabledOverride?: boolean): Promise<boolean> => {
     // 切换进行中（目标模块数据未应用）：变量仍是旧模块值，拒绝写入 presetTemplate。
@@ -961,21 +864,8 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
       return false
     }
     await presetSaveQueueRef.current.enqueue(async () => {})
-    // 切换即保存：模块列表有未保存的提示词配置修改时先提交（写当前激活模块），
-    // 避免切换后 load() 重置 fields 丢失修改。已保存/无修改则直接切换；
-    // 保存未成功（失败/被拒）时不切换，把草稿完整留在当前模块。
-    const dirtyConfigs = promptConfigsDirty(fieldsRef.current.promptConfigs, savedConfigsRef.current)
-    if (dirtyConfigs) {
-      // 原模块可能仍在运行；切换编辑目标前保存必须完成它自己的重建。
-      // 指令文件草稿与模块无关：切换不隐式保存、不清空它们（独立显式保存）。
-      const savedDraft = await persistConfigs(fieldsRef.current.promptConfigs, { reload: false, includeInstructions: false })
-      if (!savedDraft) {
-        showNotice('error', '当前模块的提示词配置未保存成功，已取消切换')
-        return false
-      }
-    }
     return true
-  }, [editorDrafts, persistConfigs, showNotice])
+  }, [editorDrafts, showNotice])
 
   /** 切换编辑目标：先保存原模块，再按请求头读取新模块；不改变会话预设或启用集合。 */
   const setPresetTemplate = useCallback(async (id: string): Promise<void> => {
@@ -1123,24 +1013,13 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
 
   const currentSwitches = snapshotSwitches(fields)
   const dirtySwitches = !switchesEqual(currentSwitches, savedSwitches)
-  // 预设卡与文件卡分开算脏：文件正文只走显式保存，不进入模块的 debounce 自动保存。
-  const presetCards = fields.promptConfigs.filter(isPresetCard)
-  const savedPresetCards = savedConfigs.filter(isPresetCard)
-  const dirtyPresetConfigs = presetCards.length !== savedPresetCards.length
-    || presetCards.some((config, index) => config !== savedPresetCards[index])
   const dirtyInstructions = unsavedInstructionDrafts(instructionPool).length > 0
-  const dirtyConfigs = dirtyPresetConfigs || dirtyInstructions
-  const dirty = dirtySwitches || dirtyConfigs
+  // 规则草稿由订阅式 owner 更新；读取时计算，避免退出/切换守卫读到旧的脏状态。
+  const configsAreDirty = (): boolean => {
+    const ruleDraft = editorDrafts.rules.get(fieldsRef.current.presetTemplate)
+    return unsavedInstructionDrafts(instructionPoolRef.current).length > 0 || ruleDraft !== undefined && rulesDirty(ruleDraft)
+  }
 
-  // 任意 UI 修改自动保存：模块列表的提示词配置修改（顶端总开关/卡片字段/增删/排序，
-  // 全部经 patch({ promptConfigs }) 落 fields）debounce 后统一走 persistConfigs——
-  // 与手动「保存」共用同一写盘逻辑（跳过校验：编辑中间态直存，后端容错；
-  // 手动保存按钮仍保留校验路径）。保存成功 load() 更新 savedConfigs → dirty 消失自愈。
-  useEffect(() => {
-    if (!dirtyPresetConfigs) return
-    const timer = setTimeout(() => { void persistConfigs(fields.promptConfigs, { includeInstructions: false }) }, 800)
-    return () => clearTimeout(timer)
-  }, [dirtyPresetConfigs, fields.promptConfigs, persistConfigs])
 
   // 返回引用稳定化：memo 子组件以 props.store 同一性跳过父级重渲染（订阅式 selector
   // 化依赖稳定 store 引用）；每次渲染重建内容对象但复用 ref 外壳。
@@ -1181,7 +1060,6 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
     patch,
     persistSwitches,
     persistParamOverrides,
-    persistConfigs,
     enqueuePresetTask,
     templateVariables,
     setTemplateVariables,
@@ -1203,8 +1081,8 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
     patchSkillFolders,
     openSkillsDir,
     dirtySwitches,
-    dirtyConfigs,
-    dirty,
+    get dirtyConfigs() { return configsAreDirty() },
+    get dirty() { return dirtySwitches || configsAreDirty() },
   }
   return storeRef.current
 }

@@ -14,7 +14,7 @@
 import { extractText, sessionEvents } from './shared.mjs'
 
 /** subject → 载荷字段名。改这里等于改所有层的匹配对象。 */
-const SUBJECT_FIELDS = {
+export const SUBJECT_FIELDS = {
   toolArgs: 'argsText',
   toolResult: 'resultText',
   userMessage: 'userText',

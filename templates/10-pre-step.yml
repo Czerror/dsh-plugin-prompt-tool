@@ -2,30 +2,34 @@
 # 本模板覆盖三种字段变体，插入后改字段即可：
 #   - mergeMode=merged + texts 多块 → 同 position 配置拼接为一条消息（原 11-merged-a）
 #   - configKind=anchor → 固定锚点序，按模块文件相对顺序排所有 ordered 之前（原 13-anchor）
-# 接入：复制本文件到 promptConfigsDir 目录，或把对象写入 settings.promptConfigs 数组。
-# 保存前可 POST /api/prompt-tool/settings/configs-validate 做权威校验。
+# 接入：复制本文件到 模块规则模板目录，或把对象写入 module.yml.rules 数组。
+# 保存前可 POST /api/prompt-tool/settings/rules 做权威校验。
 # audience 为配置项（缺省=公用；main=仅主会话；subagent=仅子代理），模板不锁定。
 id: example-pre-step
 name: 示例：消息批注入
 enabled: false
 layer: pre-step
-strategy: static
-position: after-user
-dedupe: session
-promotion: none
-modelScope: all
-configKind: ordered
-order: 0
-role: user
-mergeMode: separate
-sourceKind: ''
-form: notice
-summary: ''
-identity:
-  field: plugin
-  value: example-pre-step
-text: |-
-  
-variables:
-  WHO: ''
-params: {}
+do:
+  - id: inject
+    kind: inject-text
+    config:
+      id: example-pre-step
+      layer: pre-step
+      strategy: static
+      position: after-user
+      dedupe: session
+      configKind: ordered
+      order: 0
+      role: user
+      mergeMode: separate
+      sourceKind: ''
+      form: notice
+      summary: ''
+      identity:
+        field: plugin
+        value: example-pre-step
+      text: |
+
+      variables:
+        WHO: ''
+      params: {}

@@ -14,29 +14,20 @@ import { prepareImport, assetSourceDigest, normalizeAssetFiles, validateCharacte
 import { assertPresetId, assertPresetTree, presetPathExists } from './module-install.ts'
 import { MODULE_DEFINITION_FILE } from './paths.ts'
 import { appendPresetModules, withPresetDoc } from './manifest.ts'
+import { assertCanonicalRuleSource, rulePromptConfigOptions } from './module-rules.ts'
+import { promptConfigToRule } from './rules-migration.ts'
+import { mapRuleInjections, ruleInjections } from './rule-content.ts'
+import type { RuleDefinition } from '../shared/rules.ts'
+// @ts-expect-error 共享规则编译器同时校验导入与资产工具的写入候选。
+import { compileRules } from '../../engine/rule-spec.mjs'
 import { engineParamPath, readPresetLayerSettings } from './module-layer-settings.ts'
-import { resolveLegacyPromptConfigs } from './legacy-prompt-params.ts'
 import { buildWorldBookEntry } from './worldbook.ts'
 import type { ModuleSpec } from './manifest.ts'
-import { ENGINE_LAYER_ORDER } from '../shared/engine-capabilities.ts'
 import type { StConversionReport } from '../shared/bridge-contract.ts'
 import type { AssetFile, ImportChoices, ImportKind } from '../shared/asset-transfer.ts'
 
-/** 合并写盘时按九层顺序排序（数组序 = 引擎序）：层序只由共享契约提供，这里不再维护第二份。 */
-function sortConfigs(configs: Array<Record<string, unknown>>): Array<Record<string, unknown>> {
-  return [...configs].sort((a, b) => {
-    const rank = (config: Record<string, unknown>): number => {
-      const index = ENGINE_LAYER_ORDER.indexOf(String(config.layer ?? 'pre-step') as typeof ENGINE_LAYER_ORDER[number])
-      return index < 0 ? ENGINE_LAYER_ORDER.length : index
-    }
-    const byLayer = rank(a) - rank(b)
-    if (byLayer !== 0) return byLayer
-    return (Number(a.order) || 0) - (Number(b.order) || 0)
-  })
-}
-
 /** 角色卡记忆条目字段（不含 id；id 由调用方加 chara-<卡>- 前缀）。 */
-function buildCharacterMemoryEntry(spec: ModuleSpec, memory: string): Record<string, unknown> | undefined {
+function buildCharacterMemoryEntry(spec: ModuleSpec, memory: string): ReturnType<typeof buildWorldBookEntry> | undefined {
   if (memory.trim().length === 0) return undefined
   // 结构经世界书条目工厂（与 ST 导入/模型工具同源，strategy/layer/position 单一权威）。
   return buildWorldBookEntry({
@@ -64,7 +55,7 @@ function memoryRecords(meta: unknown): Record<string, CharacterMemoryRecord> {
     && record.characterId === id && typeof record.configId === 'string' && typeof record.contentHash === 'string')) as Record<string, CharacterMemoryRecord>
 }
 
-function recordMemory(doc: ReturnType<typeof parseDocument>, cardId: string, config: Record<string, unknown>): void {
+function recordMemory(doc: ReturnType<typeof parseDocument>, cardId: string, config: { id: string }): void {
   doc.setIn(['meta', CHARACTER_MEMORIES_KEY, cardId], { characterId: cardId, configId: String(config.id), contentHash: contentHash(config) })
 }
 
@@ -78,7 +69,7 @@ function importPrefixes(id: string): readonly string[] {
   return [`module-${id}-`, `chara-${id}-`]
 }
 
-function availableMemoryId(configs: readonly Record<string, unknown>[], cardId: string): string {
+function availableMemoryId(configs: readonly { id?: unknown }[], cardId: string): string {
   const base = `module-${cardId}-memory`
   const used = new Set(configs.map(config => config.id))
   let id = base
@@ -98,7 +89,8 @@ export function projectCharacterMemories(
   const imported = Array.isArray(spec.meta?.importedCharacters) ? spec.meta.importedCharacters.filter((id): id is string => typeof id === 'string') : []
   const conflicts: Array<{ id: string; name: string }> = []
   const excluded = new Set<number>()
-  for (const [index, config] of (spec.promptConfigs ?? []).entries()) {
+  assertCanonicalRuleSource(spec)
+  for (const [index, config] of (spec.rules ?? []).entries()) {
     if (!isRecord(config) || typeof config.id !== 'string') continue
     const id = config.id
     const proof = Object.values(records).find(record => record.configId === id)
@@ -108,16 +100,16 @@ export function projectCharacterMemories(
     // 原生卡定义的同名普通配置是独立内容，不按 ID 猜作记忆。
     if (moduleRoot !== undefined && validCardId(cardId)) {
       const original = loadImportSource(moduleRoot, cardId)
-      if (original?.promptConfigs?.some(entry => isRecord(entry) && importPrefixes(cardId).some(base => `${base}${String(entry.id)}` === id))) continue
+      if (original?.rules?.some(entry => importPrefixes(cardId).some(base => `${base}${entry.id}` === id))) continue
       const memory = original === undefined ? undefined : buildCharacterMemoryEntry(original, readCharacterMemory(moduleRoot, cardId))
-      if (memory !== undefined && contentHash({ ...memory, id }) === contentHash(config)) { excluded.add(index); continue }
+      if (memory !== undefined && contentHash(promptConfigToRule({ ...memory, id })) === contentHash(config)) { excluded.add(index); continue }
     }
     if (choices[id] === 'exclude') excluded.add(index)
     else if (choices[id] !== 'include') conflicts.push({ id, name: String(config.name ?? id) })
   }
-  const configs = doc.get('promptConfigs', true)
+  const configs = doc.get('rules', true)
   if (configs instanceof YAMLSeq) for (const index of [...excluded].sort((a, b) => b - a)) configs.delete(index)
-  else if (excluded.size > 0) doc.set('promptConfigs', (spec.promptConfigs ?? []).filter((_, index) => !excluded.has(index)))
+  else if (excluded.size > 0) doc.set('rules', (spec.rules ?? []).filter((_, index) => !excluded.has(index)))
   if (doc.hasIn(['meta', CHARACTER_MEMORIES_KEY])) doc.deleteIn(['meta', CHARACTER_MEMORIES_KEY])
   return { doc, excludedMemoryCount: excluded.size, memoryConflicts: conflicts }
 }
@@ -152,14 +144,15 @@ export function declaredCharacterModules(spec: ModuleSpec): string[] {
 
 /** 必需模块：`prompt-config-engine` 缺失会让 promptConfigs 静默失效，因此始终补齐；
  *  卡内含 world-book 策略配置时另需 `world-book-tools`（与旧实现同判据）。 */
-export function requiredCharacterModules(configs: readonly unknown[]): string[] {
-  const required = ['prompt-config-engine']
-  if (configs.some((config) => isRecord(config) && config.strategy === 'world-book')) required.push('world-book-tools')
+export function requiredCharacterModules(rules: readonly RuleDefinition[]): string[] {
+  const required = ['rule-engine']
+  if (ruleInjections(rules).some(({ config }) => config.strategy === 'world-book')) required.push('world-book-tools')
   return required
 }
 
 /** 移除一张卡之后，某个模块是否仍被模块内容或其他卡需要（需要则不回退）。 */
 export interface CharacterModuleContext {
+  rules: readonly RuleDefinition[]
   /** 移除本卡前缀配置之后的提示词配置。 */
   configs: readonly Record<string, unknown>[]
   /** 移除本卡声明的 params 键之后的模块参数。 */
@@ -173,6 +166,8 @@ export interface CharacterModuleContext {
 /** 模块的消费者判据。未知模块保守保留：宁可留一个无消费者的模块，也不误删用户或引擎要用的装配。 */
 export function characterModuleStillNeeded(module: string, context: CharacterModuleContext): boolean {
   switch (module) {
+    case 'rule-engine':
+      return context.rules.length > 0
     case 'prompt-config-engine':
       return context.configs.length > 0
     case 'world-book-tools':
@@ -233,32 +228,35 @@ export function syncImportedCharacterMemory(
     const spec = loadImportSource(moduleRoot, cardId)
     if (spec === undefined) return { ok: false, message: `角色卡 ${cardId} 不存在或参数损坏` }
     const memory = readCharacterMemory(moduleRoot, cardId)
-    withPresetDoc(join(moduleRoot, templateName), (doc) => {
-      const current = doc.toJS() as { promptConfigs?: unknown[]; meta?: { importedCharacters?: unknown[] } }
+    const moduleDir = join(moduleRoot, templateName)
+    withPresetDoc(moduleDir, (doc) => {
+      const current = doc.toJS() as ModuleSpec
+      assertCanonicalRuleSource(current)
       const imported = Array.isArray(current.meta?.importedCharacters)
         ? current.meta.importedCharacters.map(String)
         : []
       if (!imported.includes(cardId)) return // 卡未导入当前模块，无需同步
-      const configs = Array.isArray(current.promptConfigs)
-        ? current.promptConfigs as Array<Record<string, unknown>>
-        : []
+      const rules = [...(current.rules ?? [])]
       const entry = buildCharacterMemoryEntry(spec, memory)
       const proof = memoryRecords(current.meta)[cardId]
-      const at = configs.findIndex(config => proof !== undefined && config.id === proof.configId && contentHash(config) === proof.contentHash)
+      const at = rules.findIndex(rule => proof !== undefined && rule.id === proof.configId && contentHash(rule) === proof.contentHash)
       if (entry === undefined) {
         if (at >= 0) {
-          configs.splice(at, 1)
+          rules.splice(at, 1)
           doc.deleteIn(['meta', CHARACTER_MEMORIES_KEY, cardId])
           synced = true
         }
       } else {
-        const config = { ...entry, id: at >= 0 ? configs[at]!.id : availableMemoryId(configs, cardId) }
-        if (at >= 0) configs[at] = config
-        else configs.push(config)
-        recordMemory(doc, cardId, config)
+        const rule = promptConfigToRule({ ...entry, id: at >= 0 ? rules[at]!.id : availableMemoryId(rules, cardId) })
+        if (at >= 0) rules[at] = rule
+        else rules.push(rule)
+        recordMemory(doc, cardId, rule)
         synced = true
       }
-      if (synced) doc.setIn(['promptConfigs'], sortConfigs(configs))
+      if (synced) {
+        compileRules(rules, { promptConfigOptions: rulePromptConfigOptions(moduleDir) })
+        doc.set('rules', rules)
+      }
     })
     return { ok: true, synced }
   } catch (error) {
@@ -289,9 +287,8 @@ function loadSpecFile(file: string): ModuleSpec | undefined {
   if (!presetPathExists(file)) return undefined
   const parsed = parseYaml(readFileSync(file, 'utf8'), { logLevel: 'silent' })
   if (!isRecord(parsed)) throw new Error(`角色定义不是对象：${file}`)
-  const spec = parsed as unknown as ModuleSpec
-  const legacy = resolveLegacyPromptConfigs(spec, { moduleDir: dirname(file) })
-  return legacy.active ? { ...spec, promptConfigs: legacy.configs, legacyParamWarnings: legacy.warnings } : spec
+  assertCanonicalRuleSource(parsed)
+  return parsed as unknown as ModuleSpec
 }
 
 function loadConverted(dir: string): ModuleSpec | undefined {
@@ -567,47 +564,39 @@ export function applyCharacterToPreset(
     const spec = loadImportSource(moduleRoot, cardId)
     if (spec === undefined) return { ok: false, message: `角色卡 ${cardId} 不存在或参数损坏` }
     validateCharacterSpec(spec)
-    const hasSystemSections = (spec.promptConfigs ?? []).some(config => isRecord(config) && config.layer === 'system-section')
+    const hasSystemSections = ruleInjections(spec.rules).some(({ config }) => config.layer === 'system-section')
     let count = 0
     withPresetDoc(join(moduleRoot, templateName), (doc) => {
-      const current = doc.toJS() as { persona?: unknown; promptConfigs?: unknown[]; meta?: { importedCharacters?: unknown[]; stWarnings?: unknown[] } }
+      const current = doc.toJS() as ModuleSpec
+      assertCanonicalRuleSource(current)
       if (hasSystemSections) {
         const persona = current.persona
         if (persona !== null && typeof persona === 'object' && !Array.isArray(persona)
-          && (persona as Record<string, unknown>).complete === true) {
+          && persona.complete === true) {
           doc.setIn(['persona', 'complete'], false)
           personaOpened = true
         }
       }
-      const existing = Array.isArray(current.promptConfigs)
-        ? (current.promptConfigs as Array<Record<string, unknown>>).filter((config) => {
-          return config !== null && typeof config === 'object' && !String(config.id ?? '').startsWith(prefix)
-        })
-        : []
-      const added = (spec.promptConfigs ?? []).flatMap((config) => {
-        if (config === null || typeof config !== 'object' || Array.isArray(config)) return []
-        const entry = config as Record<string, unknown>
-        // 已经权威校验的内嵌 text/texts 与控制配置全部保留。
-        return [{ ...entry, id: `${prefix}${String(entry.id ?? '')}`, variables: {
-          ...(spec.variablesEnabled === false ? {} : spec.variables),
-          ...entry.variables as Record<string, string> | undefined,
-        } }]
-      })
+      const existing = (current.rules ?? []).filter(rule => !rule.id.startsWith(prefix))
+      const added = (spec.rules ?? []).map(rule => mapRuleInjections({ ...rule, id: `${prefix}${rule.id}` }, config => ({
+        ...config, id: `${prefix}${config.id}`, variables: { ...(spec.variablesEnabled === false ? {} : spec.variables), ...config.variables },
+      })))
       for (const [key, value] of Object.entries(readPresetLayerSettings(spec))) {
         doc.setIn(engineParamPath(key), value)
       }
       // 角色卡本地记忆（memory.md）合并为 world-book constant 配置（chara-<卡>-memory）。
       const memory = readCharacterMemory(moduleRoot, cardId)
       const memoryEntry = buildCharacterMemoryEntry(spec, memory)
-      const memoryConfig = memoryEntry === undefined ? undefined : { ...memoryEntry, id: availableMemoryId([...existing, ...added], cardId) }
+      const memoryConfig = memoryEntry === undefined ? undefined : promptConfigToRule({ ...memoryEntry, id: availableMemoryId([...existing, ...added], cardId) })
       if (memoryConfig !== undefined) recordMemory(doc, cardId, memoryConfig)
       else if (doc.hasIn(['meta', CHARACTER_MEMORIES_KEY, cardId])) doc.deleteIn(['meta', CHARACTER_MEMORIES_KEY, cardId])
       // 合并后按（层序, order）排序写盘：UI 列表与引擎注入顺序一致。
-      const merged = sortConfigs([
+      const merged = [
         ...existing,
         ...added,
         ...(memoryConfig === undefined ? [] : [memoryConfig]),
-      ])
+      ]
+      compileRules(merged, { promptConfigOptions: rulePromptConfigOptions(join(moduleRoot, templateName)) })
       count = added.length + (memoryConfig === undefined ? 0 : 1)
       // 模块按卡的实际需要装配：卡声明优先（ST 产物自带六件套声明，行为不变），必需项兜底
       // （prompt-config-engine 缺失会让 promptConfigs 静默失效）。只把「追加前没有、追加后
@@ -622,7 +611,7 @@ export function applyCharacterToPreset(
         const recorded = recordedCharacterModules(current.meta)[cardId] ?? []
         doc.setIn(['meta', CHARACTER_MODULES_KEY, cardId], [...new Set([...recorded, ...addedModules])])
       }
-      doc.setIn(['promptConfigs'], merged)
+      doc.set('rules', merged)
       if (Array.isArray(spec.meta?.stWarnings) && spec.meta.stWarnings.length > 0) {
         const warnings = Array.isArray(current.meta?.stWarnings) ? current.meta.stWarnings : []
         doc.setIn(['meta', 'stWarnings'], [...new Set([...warnings, ...spec.meta.stWarnings].filter(value => typeof value === 'string'))])
@@ -650,15 +639,18 @@ export function removeCharacterFromPreset(
     const spec = loadImportSource(moduleRoot, cardId)
     let removed = 0
     withPresetDoc(join(moduleRoot, templateName), (doc) => {
-      const current = doc.toJS() as { promptConfigs?: unknown[]; meta?: { importedCharacters?: unknown[] } }
-      const kept = (Array.isArray(current.promptConfigs) ? current.promptConfigs as Array<Record<string, unknown>> : []).filter((config) => {
+      const current = doc.toJS() as ModuleSpec
+      assertCanonicalRuleSource(current)
+      const kept = (current.rules ?? []).filter((config) => {
         // 两种前缀都要撤：老条目是 `chara-`，新写入是 `module-`；只认一种会留下孤儿条目。
         const isCard = config !== null && typeof config === 'object'
           && prefixes.some((base) => String(config.id ?? '').startsWith(base))
         if (isCard) removed += 1
         return !isCard
       })
-      doc.setIn(['promptConfigs'], kept)
+      compileRules(kept, { promptConfigOptions: rulePromptConfigOptions(join(moduleRoot, templateName)) })
+      doc.set('rules', kept)
+      for (const rule of current.rules ?? []) if (!kept.some(item => item.id === rule.id) && doc.hasIn(['configOrder', rule.id])) doc.deleteIn(['configOrder', rule.id])
       if (doc.hasIn(['meta', CHARACTER_MEMORIES_KEY, cardId])) doc.deleteIn(['meta', CHARACTER_MEMORIES_KEY, cardId])
       // 删除该卡声明的 params 键（若曾覆盖模块原值无法恢复——文档说明）。
       // 现值判断：仅当当前值仍等于卡声明值才删——用户手改过或他卡同键覆盖过的值不误删。
@@ -677,7 +669,8 @@ export function removeCharacterFromPreset(
         const others = modulesClaimedByOtherCards(moduleRoot, remainingCards, current.meta, cardId)
         const after = doc.toJS() as { params?: unknown; customTools?: unknown }
         const context: CharacterModuleContext = {
-          configs: kept.filter(isRecord),
+          rules: kept,
+          configs: ruleInjections(kept).map(({ config }) => ({ ...config })),
           params: readPresetLayerSettings(after),
           customTools: Array.isArray(after.customTools) && after.customTools.length > 0,
           importedCharacters: remainingCards,

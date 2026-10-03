@@ -4,11 +4,12 @@ import type { PromptToolTranslate } from '../../../locales.ts'
 import { EngineModuleActions } from '../../../features/modules/EngineModuleList.tsx'
 import { INSERTION_LAYERS, LAYER_LABEL_KEYS, translateLabel } from '../../../features/prompts/prompt-config-policy.ts'
 import { useTemplatePicker } from '../../../features/prompts/useTemplatePicker.ts'
+import { useRuleEditor } from '../../../data/use-rule-editor.ts'
 import { useCustomToolsEditor } from '../../../features/tools/CustomToolsCard.tsx'
 import { TemplatePicker } from '../../../ui/TemplatePicker.tsx'
 import { engineCapability } from '../../../../shared/engine-capabilities.ts'
 import { engineLayerSlots } from './EngineLayersPanel.tsx'
-import { ConfigListWithTemplates } from './ConfigListWithTemplates.tsx'
+import { RulesWorkspace } from '../../../features/prompts/RulesWorkspace.tsx'
 import ui from '../../../ui/controls.module.css'
 import type { ConfigPageBrowse } from '../workspace-browse-state.ts'
 import type { WorkspacePage } from '../workspace-pages.ts'
@@ -26,6 +27,7 @@ import type { WorkspacePage } from '../workspace-pages.ts'
  *  纪律：过滤抽屉与搜索词只由用户手动改变；新建只做「展开新卡 + 滚动定位」两件事。 */
 export const SubagentPage = memo(function SubagentPage(props: { store: PromptToolStore; t: PromptToolTranslate; browse?: ConfigPageBrowse; onNavigate?: (page: WorkspacePage) => void }): ReactNode {
   const { store, t } = props
+  const { draft, editor } = useRuleEditor(store)
   const [viewFilter, setViewFilter] = useState(props.browse?.viewFilter ?? 'all')
   const changeViewFilter = (value: string): void => {
     if (props.browse !== undefined) props.browse.viewFilter = value
@@ -38,11 +40,11 @@ export const SubagentPage = memo(function SubagentPage(props: { store: PromptToo
   const [keyword, setKeyword] = useState(props.browse?.filter ?? '')
   const canEditPreset = store.fields.writePreset && store.moduleFacts?.editable === true
   /** 仅主对话生效的能力：本页既不提供创建，也不渲染卡片。B7 T3 后暂无此类能力，清单留待重构。 */
-  const mainSessionOnly: readonly string[] = []
+  const mainSessionOnly: readonly string[] = ['main-model']
   // 合并创建菜单：按插入点层级平铺「添加模板 · 层级」入口，浮层只列该层模板。
   const picker = useTemplatePicker(
-    store.fields.promptConfigs,
-    (config) => { if (canEditPreset) store.patch({ promptConfigs: [...store.getFields().promptConfigs, config] }) },
+    draft.entries.filter(entry => !entry.deleted).map(entry => entry.value),
+    (rule) => { if (canEditPreset && draft.loaded) editor.add(rule) },
     store.showNotice,
     t,
     'subagent',
@@ -79,7 +81,7 @@ export const SubagentPage = memo(function SubagentPage(props: { store: PromptToo
   return (
     <>
       <section className={ui.section} aria-label={t('subagent.aria')}>
-        <ConfigListWithTemplates
+        <RulesWorkspace
           store={store}
           t={t}
           scope="subagent"

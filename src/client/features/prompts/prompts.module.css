@@ -37,6 +37,10 @@
 .configTab[aria-selected="true"] { background: var(--dsw-alias-bg-layer-3); color: var(--dsw-alias-label-primary); box-shadow: inset 3px 0 var(--dsw-alias-state-business-primary); }
 .configTab:focus-visible, .configPanel:focus-visible { outline: 2px solid var(--dsw-alias-state-business-primary); outline-offset: 2px; }
 .configTabError { color: var(--dsw-alias-state-error-primary); font-weight: 700; }
+.configNavigation[data-horizontal] { grid-template-columns: minmax(0, 1fr); }
+.configNavigation[data-horizontal] .configTabs { flex-direction: row; flex-wrap: wrap; align-items: stretch; }
+.configNavigation[data-horizontal] .configTab { flex: 1 1 auto; justify-content: center; padding-inline: 8px; }
+.configNavigation[data-horizontal] .configTab[aria-selected="true"] { box-shadow: inset 0 -3px var(--dsw-alias-state-business-primary); }
 .configPanels { min-width: 0; container: config-panel / inline-size; }
 .configPanel { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
 .configPanel[hidden] { display: none !important; }
@@ -96,10 +100,6 @@
 }
 
 @container prompt-form (max-width: 620px) {
-  .configNavigation { grid-template-columns: minmax(0, 1fr); gap: 24px; }
-  .configTabs { flex-direction: row; flex-wrap: wrap; align-items: stretch; }
-  .configTab { flex: 1 1 auto; justify-content: center; padding-inline: 8px; }
-  .configTab[aria-selected="true"] { box-shadow: inset 0 -3px var(--dsw-alias-state-business-primary); }
   .configGrid { grid-template-columns: minmax(0, 1fr); }
   .orderField { grid-template-columns: minmax(0, 1fr); }
   .fieldSpan2,
@@ -132,9 +132,6 @@
     .fieldSpan6, .fieldSpan8, .fieldSpan9 { grid-column: span 6; }
   }
   @media (max-width: 620px) {
-    .configNavigation { grid-template-columns: minmax(0, 1fr); }
-    .configTabs { flex-direction: row; flex-wrap: wrap; align-items: stretch; }
-    .configTab { flex: 1 1 auto; justify-content: center; }
     .configGrid { grid-template-columns: minmax(0, 1fr); }
     .orderField { grid-template-columns: minmax(0, 1fr); }
     .fieldSpan2, .fieldSpan3, .fieldSpan4, .fieldSpan5, .fieldSpan6, .fieldSpan8, .fieldSpan9 { grid-column: 1 / -1; }

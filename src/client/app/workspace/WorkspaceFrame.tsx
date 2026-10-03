@@ -1,5 +1,5 @@
 import clsx from 'clsx'
-import { useLayoutEffect, useRef, type ReactNode } from 'react'
+import { useLayoutEffect, useRef, useSyncExternalStore, type ReactNode } from 'react'
 import type { PromptToolStore } from '../../data/use-prompt-tool-store.ts'
 import type { PromptToolTranslate } from '../../locales.ts'
 import { WorkspaceNavigation } from './WorkspaceNavigation.tsx'
@@ -22,11 +22,13 @@ export function WorkspaceFrame(props: {
   children: ReactNode
 }): ReactNode {
   const { store, t } = props
+  useSyncExternalStore(store.subscribeDrafts, store.getDraftRevision, store.getDraftRevision)
   const canvasRef = useRef<HTMLElement>(null)
   const restoredKey = useRef<string>()
   const lastFocusPage = useRef(props.focusPage)
   const scrollKey = props.scrollKey ?? props.page
-  const enabledCount = store.fields.promptConfigs.filter((config) => config.enabled !== false).length
+  const rules = store.editorDrafts.rules.get(store.fields.presetTemplate)?.entries.filter(entry => !entry.deleted) ?? []
+  const enabledCount = rules.filter(entry => entry.value.enabled !== false).length
   // 角色库与工具面拥有独立请求，不能以全局配置数量判定它们的加载/空态。
   const usesBootstrap = props.page !== 'modules' && props.page !== 'tools'
   const loadingInitial = usesBootstrap && store.loading && store.meta.layers.length === 0
@@ -84,7 +86,7 @@ export function WorkspaceFrame(props: {
           <StatusDot tone={store.loading ? 'neutral' : 'success'} />
           <span>{store.loading
             ? t('app.loading')
-            : t('app.statusSummary', { configs: store.fields.promptConfigs.length, enabled: enabledCount })}</span>
+            : t('app.statusSummary', { configs: rules.length, enabled: enabledCount })}</span>
         </div>
         <button type="button" className={css.backButton} onClick={props.onClose}>{t('app.backToChat')}</button>
       </header>

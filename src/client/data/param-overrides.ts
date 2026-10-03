@@ -1,11 +1,11 @@
 /** preset.yml params 与客户端字段之间的纯转换；字段清单/类型/默认值来自共享契约。 */
-import { ENGINE_PARAM_DEFINITIONS, ENGINE_PARAM_KEYS, engineParamList, type EngineParamKey } from '../../shared/engine-params.ts'
-import type { Fields } from './prompt-tool-fields.ts'
+import { ENGINE_PARAM_DEFINITIONS, engineParamList } from '../../shared/engine-params.ts'
+import { SHARED_PARAM_KEYS, type Fields, type SharedParamKey } from './prompt-tool-fields.ts'
 import { deepEqual } from './dirty-state.ts'
 
 export function readParamOverridesPatch(source: Record<string, unknown>): Partial<Fields> {
   const patch: Record<string, unknown> = {}
-  for (const key of ENGINE_PARAM_KEYS) {
+  for (const key of SHARED_PARAM_KEYS) {
     const value = source[key]
     const definition = ENGINE_PARAM_DEFINITIONS[key]
     if (value === undefined || value === null) continue
@@ -42,19 +42,18 @@ export interface ParamOverrideBuildOptions {
   loadedKeys: ReadonlySet<string>
   /** 最近读回/保存的有效草稿；未编辑的行默认值不固化进 params。 */
   baseline?: Partial<Fields>
-  autoModelProvider?: string
-  autoSubagentModelProvider?: string
 }
 
 /** 将一次成功写入折叠到已存键集合，供后续请求正确发送删键值。 */
 export function updateLoadedParamKeys(loadedKeys: Set<string>, overrides: Readonly<Record<string, unknown>>): void {
-  for (const [key, value] of Object.entries(overrides)) {
+  for (const key of SHARED_PARAM_KEYS) {
+    const value = overrides[key]
     if (value === '' || (Array.isArray(value) && value.length === 0)) loadedKeys.delete(key)
     else if (value !== undefined && value !== null) loadedKeys.add(key)
   }
 }
 
-function serializedParam(key: EngineParamKey, value: unknown): unknown {
+function serializedParam(key: SharedParamKey, value: unknown): unknown {
   switch (ENGINE_PARAM_DEFINITIONS[key].kind) {
     case 'string-list': return engineParamList(value)
     case 'max-depth': return value === '' || value === 'provider-managed' ? value : Number(value)
@@ -65,21 +64,12 @@ function serializedParam(key: EngineParamKey, value: unknown): unknown {
 /** 只发送已存键或偏离默认的草稿；未操作字段不覆盖组合默认值。 */
 export function buildParamOverrides(fields: Fields, options: ParamOverrideBuildOptions): Record<string, unknown> {
   const overrides: Record<string, unknown> = {}
-  for (const key of ENGINE_PARAM_KEYS) {
+  for (const key of SHARED_PARAM_KEYS) {
     const value = serializedParam(key, fields[key])
     const empty = serializedParam(key, options.baseline !== undefined && Object.hasOwn(options.baseline, key)
       ? options.baseline[key] : ENGINE_PARAM_DEFINITIONS[key].defaultValue)
     if (options.loadedKeys.has(key) || !deepEqual(value, empty)) overrides[key] = value ?? ''
   }
-  const modelProviderIsDisplayOnly = !options.loadedKeys.has('modelProvider')
-    && fields.modelName.length === 0 && fields.modelProvider === options.autoModelProvider
-  const subagentProviderIsDisplayOnly = !options.loadedKeys.has('subagentModelProvider')
-    && fields.subagentModelName.length === 0 && fields.subagentModelProvider === options.autoSubagentModelProvider
-  if (modelProviderIsDisplayOnly) delete overrides.modelProvider
-  if (subagentProviderIsDisplayOnly) delete overrides.subagentModelProvider
-  // 选择了模型时同时提交自动显示的 provider，不能只落 modelName 形成无效半路由。
-  if (Object.hasOwn(overrides, 'modelName') && fields.modelName !== '' && fields.modelProvider !== '') overrides.modelProvider = fields.modelProvider
-  if (Object.hasOwn(overrides, 'subagentModelName') && fields.subagentModelName !== '' && fields.subagentModelProvider !== '') overrides.subagentModelProvider = fields.subagentModelProvider
   return overrides
 }
 

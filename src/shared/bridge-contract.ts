@@ -5,6 +5,7 @@
  * 改路径或载荷形状必须同步更新 test/shared/bridge-contract.test.mjs。
  */
 import type { PersonaSpec } from './persona-section.ts'
+import type { RulesRequest, RulesSnapshot } from './rules.ts'
 import type { ModuleConfigIdentity, ModuleConfigOrderSnapshot } from './module-config-order.ts'
 import type { AssetImportRequest, AssetSummary, ImportKind, PresetExportRequest, PresetExportResult } from './asset-transfer.ts'
 import type { EngineEditorGroup, EngineLayer } from './engine-capabilities.ts'
@@ -51,6 +52,7 @@ export const BRIDGE_ENDPOINTS = {
   importPreset: '/import-preset',
   paramOverrides: '/param-overrides',
   triggers: '/triggers',
+  rules: '/rules',
   persona: '/persona',
   presetVariables: '/preset-variables',
   customTools: '/custom-tools',
@@ -170,6 +172,7 @@ export interface BridgeRequestMap {
   importPreset: { contents: Array<{ scope: 'preset' | 'agents'; content: string }>; expectedPresetId?: string }
   paramOverrides: { overrides?: Record<string, unknown>; promptConfigs?: unknown[]; rebuild?: boolean; expectedPresetId?: string }
   triggers: { expectedPresetId: string; triggers?: unknown[]; expectedRevision?: string; validateOnly?: boolean }
+  rules: RulesRequest
   /** 顶层 persona 段读写（官方 @deepseek-ai/dsh-persona 行 config 同构）；省略 persona 键 = 读取。 */
   persona: { persona?: PersonaSpec | null; expectedPresetId?: string } | undefined
   presetVariables: { variables?: Record<string, string>; enabled?: boolean; expectedPresetId?: string }
@@ -393,6 +396,7 @@ export interface BridgeValueMap {
   /** 参数/提示词配置只保存当前模块，不同步宿主全局默认模型。 */
   paramOverrides: { overrides?: Record<string, unknown>; promptConfigs?: unknown[] }
   triggers: { triggers: unknown[]; revision: string; meta: TriggerEditorMeta }
+  rules: RulesSnapshot
   persona: { persona: PersonaSpec | null }
   presetVariables: { variables: Record<string, string>; enabled: boolean }
   customTools: { customTools?: unknown[] }

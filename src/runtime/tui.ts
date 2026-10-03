@@ -1,13 +1,12 @@
-/** /prompt-tool TUI 命令：查看或切换开关（UI 编辑器最后做，命令只读提示词配置数据入口）。 */
+/** /prompt-tool 命令：读取规则定义，通过统一事务切换总开关与互斥组。 */
 import type { Context } from '@deepseek-ai/cordis'
 import type { CommandResult } from '@deepseek-ai/dsh-commands'
-import { join } from 'node:path'
+import { basename } from 'node:path'
 import type { ModelDetection } from './models.ts'
 import type { PromptSettings } from '../config.ts'
 import type { SkillCatalogEntry } from '../shared/skills.ts'
-import type { PromptConfigSpec } from '../host/prompt-configs.ts'
-import { listPromptConfigSpecs } from '../host/prompt-configs.ts'
-import { MODULE_CONFIGS_DIR } from '../host/paths.ts'
+import type { RuleDefinition } from '../shared/rules.ts'
+import { readModuleRules, editModuleRules } from '../host/module-rules.ts'
 import { loadModuleSpec, resolvePresetParams } from '../host/manifest.ts'
 import { ENGINE_PARAM_DEFINITIONS, type EngineParamKey } from '../shared/engine-params.ts'
 
@@ -20,40 +19,12 @@ const TUI_GLOBAL_SWITCHES: ReadonlyArray<readonly [key: string, label: string]> 
 const TUI_PARAM_SWITCHES = Object.entries(ENGINE_PARAM_DEFINITIONS)
   .filter(([, definition]) => definition.kind === 'boolean').map(([key]) => [key, key] as const)
 
-/** 参数显示行（从激活模块 preset.yml params 读）。 */
-const TUI_PARAM_TEXT_LINES: ReadonlyArray<readonly [key: string, label: string, emptyText: string]> = [
-  ['modelProvider', 'modelProvider', '（空 = 不设置）'],
-  ['modelName', 'modelName', '（空 = 不设置）'],
-  ['subagentModelProvider', 'subagentModelProvider', '（空 = 不设置）'],
-  ['subagentModelName', 'subagentModelName', '（空 = 不设置）'],
-  ['modelReasoningEffort', 'modelReasoningEffort', '（空 = 不设置）'],
-  ['modelTemperature', 'modelTemperature', '（空 = 不设置）'],
-  ['modelMaxTokens', 'modelMaxTokens', '（空 = 不设置）'],
-  ['subagentReasoningEffort', 'subagentReasoningEffort', '（空 = 不设置）'],
-  ['subagentTemperature', 'subagentTemperature', '（空 = 不设置）'],
-  ['subagentMaxTokens', 'subagentMaxTokens', '（空 = 不设置）'],
-]
-
-/** 把布尔开关渲染成 dsh-tui 命令输出。 */
-/** 实际生效配置：生成目录优先（引擎加载源），settings 覆盖层作回退。 */
-function resolvePromptConfigs(moduleDir: string | undefined, fallback: PromptConfigSpec[]): PromptConfigSpec[] {
-  if (moduleDir === undefined || moduleDir.length === 0) return fallback
-  try {
-    const actual = listPromptConfigSpecs(join(moduleDir, MODULE_CONFIGS_DIR))
-    return actual.length > 0 ? actual : fallback
-  } catch {
-    return fallback
-  }
-}
-
 /** 激活模块参数（status 显示与参数开关来源；settings 不再承载引擎参数）。 */
 function readPresetParams(moduleDir: string | undefined): Record<string, unknown> {
   if (moduleDir === undefined || moduleDir.length === 0) return {}
   try {
     const spec = loadModuleSpec(moduleDir)
-    const params = resolvePresetParams(spec, {})
-    if (Array.isArray(spec.promptConfigs)) params.promptConfigs = spec.promptConfigs
-    return params
+    return resolvePresetParams(spec, {})
   } catch {
     return {}
   }
@@ -61,13 +32,9 @@ function readPresetParams(moduleDir: string | undefined): Record<string, unknown
 
 type TuiSource = PromptSettings & { skillCatalog: SkillCatalogEntry[]; activeSkillsDirs: string[] }
 
-function renderTuiStatus(source: TuiSource, params: Record<string, unknown>, promptConfigs: PromptConfigSpec[]): string {
+function renderTuiStatus(source: TuiSource, params: Record<string, unknown>, rules: RuleDefinition[]): string {
   const onOff = (value: boolean): string => value ? '开' : '关'
   const paramBoolean = (key: string): boolean => (params[key] ?? ENGINE_PARAM_DEFINITIONS[key as EngineParamKey]?.defaultValue) === true
-  const paramText = (key: string): string => {
-    const value = params[key]
-    return typeof value === 'string' && value.length > 0 ? value : ''
-  }
   const lines = [
     '提示词工具开关',
     ...TUI_GLOBAL_SWITCHES.map(([key, label]) => {
@@ -77,17 +44,12 @@ function renderTuiStatus(source: TuiSource, params: Record<string, unknown>, pro
     ...TUI_PARAM_SWITCHES.map(([key, label]) => {
       return `${key.padEnd(22)}${onOff(paramBoolean(key))}  ${label}（模块）`
     }),
-    '模型请求参数:',
-    ...TUI_PARAM_TEXT_LINES.map(([key, label, emptyText]) => {
-      const text = paramText(key)
-      return `  ${label.padEnd(26)}${text.length > 0 ? text : emptyText}`
-    }),
     `  modelsAvailable         ${source.modelsAvailable ? '是' : '否（未检测到模型服务商）'}`,
     `  activeSkillsDirs        ${source.activeSkillsDirs.length > 0 ? source.activeSkillsDirs.join(' → ') : '（未解析到技能目录）'}`,
-    '提示词配置:',
+    '行为规则（条件 → 动作）:',
   ]
-  for (const config of promptConfigs) {
-    lines.push(`${('config ' + config.id).padEnd(22)}${onOff(config.enabled !== false)}  layer=${config.layer ?? 'pre-step'} strategy=${config.strategy ?? 'static'}`)
+  for (const rule of rules) {
+    lines.push(`${('config ' + rule.id).padEnd(22)}${onOff(rule.enabled !== false)}  ${rule.do.map(action => action.kind).join(' → ')}`)
   }
   lines.push('技能开关:')
   for (const skill of source.skillCatalog) {
@@ -101,49 +63,10 @@ function renderTuiStatus(source: TuiSource, params: Record<string, unknown>, pro
   return lines.join('\n')
 }
 
-/** 渲染单条提示词配置详情（params 以 JSON 摘要输出）。 */
-function renderConfigDetail(source: PromptSettings, id: string, promptConfigs: PromptConfigSpec[]): string {
-  const config = promptConfigs.find((item) => item.id === id)
-  if (config === undefined) return `未找到提示词配置 ${id}`
-  const lines = [`提示词配置 ${config.id}`, '']
-  const fields: Array<[string, unknown]> = [
-    ['name', config.name],
-    ['enabled', config.enabled !== false],
-    ['layer', config.layer],
-    ['strategy', config.strategy],
-    ['position', config.position],
-    ['dedupe', config.dedupe],
-    ['promotion', config.promotion],
-    ['audience', config.audience ?? undefined],
-    ['modelScope', config.modelScope],
-    ['configKind', config.configKind],
-    ['order', config.order],
-    ['role', config.role],
-    ['mergeMode', config.mergeMode],
-    ['sourceKind', config.sourceKind],
-    ['form', config.form],
-    ['fill', config.fill],
-    ['templateFile', config.templateFile],
-    ['variables', config.variables],
-    ['params', config.params],
-  ]
-  for (const [key, value] of fields) {
-    if (value === undefined || value === '' || (Array.isArray(value) && value.length === 0)) continue
-    if (key === 'variables' || key === 'params') {
-      lines.push(`${key.padEnd(14)}${JSON.stringify(value)}`)
-      continue
-    }
-    lines.push(`${key.padEnd(14)}${String(value)}`)
-  }
-  if (typeof config.text === 'string' && config.text.length > 0) {
-    lines.push('text:')
-    lines.push(config.text)
-  }
-  if (Array.isArray(config.texts) && config.texts.length > 0) {
-    lines.push('texts:')
-    for (const item of config.texts) lines.push(`  - ${item}`)
-  }
-  return lines.join('\n')
+/** 详情呈现唯一声明，不把动作投影误当可独立启停的配置。 */
+function renderConfigDetail(id: string, rules: RuleDefinition[]): string {
+  const rule = rules.find(item => item.id === id)
+  return rule === undefined ? `未找到规则 ${id}` : JSON.stringify(rule, null, 2)
 }
 
 /** 解析 on/off/toggle 三种输入。 */
@@ -197,6 +120,7 @@ export function registerTuiCommand(
   getPresetConfigsDir?: () => string,
   savePresetParam?: SavePresetParam,
   toggleSkillState?: ToggleSkillState,
+  refreshModule?: (id: string) => Promise<void>,
 ): void {
   ctx.inject(['settings'], (sctx: Context) => {
     return sctx.commands.register({
@@ -227,7 +151,13 @@ export function registerTuiCommand(
         const source = getSource()
         const moduleDir = getPresetConfigsDir?.()
         const params = readPresetParams(moduleDir)
-        const promptConfigs = resolvePromptConfigs(moduleDir, Array.isArray(params.promptConfigs) ? params.promptConfigs as PromptConfigSpec[] : [])
+        let snapshot: ReturnType<typeof readModuleRules> | undefined
+        try {
+          if (moduleDir) snapshot = readModuleRules(moduleDir)
+        } catch (error) {
+          return { kind: 'error', text: `读取规则失败：${error instanceof Error ? error.message : String(error)}` }
+        }
+        const rules = snapshot?.rules ?? []
         if (tokens.length === 0 || tokens[0] === 'status') {
           const detection = getModelsState()
           const catalog = await getModelCatalog()
@@ -238,7 +168,7 @@ export function registerTuiCommand(
           const modelsLine = catalogEntries.length > 0
             ? `检测到的模型名: ${catalogEntries.map(([provider, models]) => `${provider} → ${models.join(', ')}`).join('；')}`
             : '未检测到模型名（adapter 未公布或查询失败）'
-          return { kind: 'success', text: renderTuiStatus(source, params, promptConfigs) + '\n' + providersLine + '\n' + modelsLine }
+          return { kind: 'success', text: renderTuiStatus(source, params, rules) + '\n' + providersLine + '\n' + modelsLine }
         }
         if (tokens[0] === 'skill') {
           const { id, action } = parseIdentifierAndAction(tokens.slice(1), () => true)
@@ -261,28 +191,34 @@ export function registerTuiCommand(
           }
           return { kind: 'success', text: `已把技能 ${id} 设为 ${next ? '开' : '关'}
 
-${renderTuiStatus(getSource(), readPresetParams(getPresetConfigsDir?.()), resolvePromptConfigs(getPresetConfigsDir?.(), []))}` }
+${renderTuiStatus(getSource(), readPresetParams(moduleDir), rules)}` }
         }
         if (tokens[0] === 'config') {
           const { id, action } = parseIdentifierAndAction(
             tokens.slice(1),
-            (candidate) => promptConfigs.some((config) => config.id === candidate),
+            (candidate) => rules.some(rule => rule.id === candidate),
           )
           if (id.length === 0) return usage()
-          const current = promptConfigs.find((config) => config.id === id)
+          const current = rules.find(rule => rule.id === id)
           if (current === undefined) {
-            return { kind: 'error', text: `未找到提示词配置 ${id}；用 /prompt-tool status 查看全部 id。` }
+            return { kind: 'error', text: `未找到规则 ${id}；用 /prompt-tool status 查看全部 id。` }
           }
-          if (action === undefined) return { kind: 'success', text: renderConfigDetail(source, id, promptConfigs) }
+          if (action === undefined) return { kind: 'success', text: renderConfigDetail(id, rules) }
           const next = parseTuiBoolean(action, current.enabled !== false)
           if (next === undefined) return usage()
-          const nextConfigs = promptConfigs.map((config) => config.id === id ? { ...config, enabled: next } : config)
-          // promptConfigs 按模块存储：写激活模块 preset.yml；失败时不再报告成功。
-          const failure = await persistPresetParam('promptConfigs', nextConfigs)
-          if (failure !== undefined) return failure
-          return { kind: 'success', text: `已把提示词配置 ${id} 设为 ${next ? '开' : '关'}
-
-${renderConfigDetail(getSource(), id, resolvePromptConfigs(getPresetConfigsDir?.(), []))}` }
+          if (!moduleDir || !snapshot || !refreshModule) return { kind: 'error', text: '规则保存通道不可用' }
+          try {
+            editModuleRules(moduleDir, {
+              expectedRevision: snapshot.revision,
+              ...(next ? { activateRuleId: id } : { edits: [{ previousId: id, rule: { ...current, enabled: false } }] }),
+            })
+          } catch (error) {
+            return { kind: 'error', text: `保存规则失败：${error instanceof Error ? error.message : String(error)}` }
+          }
+          try { await refreshModule(basename(moduleDir)) } catch (error) {
+            return { kind: 'error', text: `规则已保存，但重新装配失败：${error instanceof Error ? error.message : String(error)}` }
+          }
+          return { kind: 'success', text: `已把规则 ${id} 设为 ${next ? '开' : '关'}\n\n${renderConfigDetail(id, readModuleRules(moduleDir).rules)}` }
         }
         const action = tokens[0]
         const key = tokens[1]
@@ -308,7 +244,7 @@ ${renderConfigDetail(getSource(), id, resolvePromptConfigs(getPresetConfigsDir?.
         }
         return { kind: 'success', text: `已把 ${key} 设为 ${next ? '开' : '关'}
 
-${renderTuiStatus(getSource(), readPresetParams(getPresetConfigsDir?.()), resolvePromptConfigs(getPresetConfigsDir?.(), []))}` }
+${renderTuiStatus(getSource(), readPresetParams(moduleDir), moduleDir ? readModuleRules(moduleDir).rules : [])}` }
       },
     })
   })

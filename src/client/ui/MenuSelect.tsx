@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react'
 import clsx from 'clsx'
 import { IconChevronDownOutlineRegular } from './icons.tsx'
 import { Menu, type MenuEntry } from './Menu.tsx'
+import { controlWidth } from './control-width.ts'
 import styles from './controls.module.css'
 
 export interface MenuSelectOption {
@@ -31,6 +32,7 @@ export function MenuSelect(props: {
 }): ReactNode {
   const [open, setOpen] = useState(false)
   const triggerRef = useRef<HTMLButtonElement>(null)
+  const pointerBeganInside = useRef(true)
   const ownsFocus = useRef(false)
   const disabled = props.disabled === true
   const compact = props.compact === true
@@ -55,7 +57,7 @@ export function MenuSelect(props: {
   }, [disabled])
 
   return (
-    <span className={styles.menuSelectOwner} onBlur={(event) => {
+    <span className={styles.menuSelectOwner} style={compact ? { width: controlWidth([selected?.label ?? (props.value || props.placeholder || '（未选择）'), ...props.options.map(option => option.label)], 48, 4, 26), flex: '0 1 auto', font: '12px/18px system-ui, sans-serif' } : undefined} onBlur={(event) => {
       const next = event.relatedTarget
       if (next instanceof Node && event.currentTarget.contains(next)) return
       ownsFocus.current = false
@@ -88,7 +90,18 @@ export function MenuSelect(props: {
           aria-invalid={props['aria-invalid']}
           aria-describedby={props['aria-describedby']}
           disabled={disabled}
-          onClick={() => {
+          onPointerDown={(event) => {
+            // 触屏会把邻近点击重定向到按钮；以原始落点保证可点击区域不越过可见边框。
+            const rect = event.currentTarget.getBoundingClientRect()
+            pointerBeganInside.current = event.clientX >= rect.left && event.clientX <= rect.right
+              && event.clientY >= rect.top && event.clientY <= rect.bottom
+            if (!pointerBeganInside.current) event.preventDefault()
+          }}
+          onPointerCancel={() => { pointerBeganInside.current = true }}
+          onClick={(event) => {
+            const inside = pointerBeganInside.current
+            pointerBeganInside.current = true
+            if (event.detail !== 0 && !inside) return
             // 副作用留在事件处理器里，不进 setState 的 updater（StrictMode 会双调用 updater）。
             if (!open) props.onOpen?.()
             setOpen(!open)

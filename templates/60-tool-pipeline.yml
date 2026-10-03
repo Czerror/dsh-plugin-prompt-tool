@@ -1,13 +1,19 @@
+# postAction=replace/block 时使用的文本
+
 # 模板：tool-pipeline 工具行为策略（对已注册工具的 pre/post 改写；
 # 自定义工具定义见工具管理区块——tool-pipeline 层筛选可见）。
 id: example-tool-pipeline
 layer: tool-pipeline
-strategy: static
-order: 0
-modelScope: all
-text: ""            # postAction=replace/block 时使用的文本
-params:
-  toolNames: bash,run_code
-  preDecision: allow
-  denyReason: 该工具被提示词配置禁用
-  postAction: accept
+do:
+  - id: before
+    kind: decision
+    phase: pre
+    decision: allow
+    toolNames: bash,run_code
+    reason: 该工具被提示词配置禁用
+  - id: after
+    kind: decision
+    phase: post
+    action: accept
+    toolNames: bash,run_code
+    text: ""

@@ -835,7 +835,9 @@
 .menuSelectLabel {
   min-width: 0;
   text-align: left;
-  overflow-wrap: anywhere;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .menuSelectChevron { flex: none; }

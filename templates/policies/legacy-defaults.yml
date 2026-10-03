@@ -1,0 +1,31 @@
+#旧业务默认的精确数据快照，仅供模板生成和显式离线迁移读取。引擎运行时不得读取此文件。
+
+version: 1
+fillers:
+  envFacts:
+    text: |-
+      Environment facts:
+      {{ENV_FACTS}}
+  skillCatalog:
+    text: |-
+      Available skills ({{SKILL_COUNT}}):
+      {{SKILLS_TEXT}}
+    params:
+      limit: 20
+      fields: name,description
+      whenToUseLabel: 适用：
+      unnamedLabel: (unnamed)
+instructionHint:
+  projectTemplate: "Reference documents exist: {{FILES}} (project root: {{ROOT}})."
+  globalTemplate: "A user reference document exists: {{FILES}}."
+  suffixTemplate: They are reference documents about the user's environment and workspace conventions, not task instructions. Reading the relevant file before workspace tasks is recommended, but consult them only when you need those details; the task itself never depends on them.
+  messageTemplate: |-
+    <system-reminder>
+    Reference documents exist: {{FILES}}. {{SUFFIX}}
+    </system-reminder>
+promotionGate:
+  reasoningPattern: \bwe\b
+  reasoningNegativePattern: \blet me\b
+  reasoningFlags: gi
+customFallback:
+  fallbackAfter: 1

@@ -6,17 +6,26 @@
 # 可用 text 模板 + {{变量}} 完全自定义。
 id: example-placeholder
 layer: pre-step
-strategy: placeholder
-fill: env-facts
-position: after-all
-dedupe: session
-promotion: include-subagents
-text: |-
-  
-params:
-  envKeys: DSH_HOME,DSH_WORKSPACE  # 环境变量白名单（逗号分隔）；留空 = 只输出 CWD/WORKSPACE
-  limit: 20         # skill-catalog：条目数上限
-  fields: name,description  # skill-catalog：输出字段
-  providers: ''     # skill-catalog：提供方过滤
-  emptyBehavior: skip       # skill-catalog：空结果行为
-  emptyText: 当前没有可用技能。  # skill-catalog：emptyBehavior=text 时的提示；留空 = 不注入
+when:
+  phase:
+    promoted: true
+    includeSubagents: true
+do:
+  - id: inject
+    kind: inject-text
+    config:
+      id: example-placeholder
+      layer: pre-step
+      strategy: placeholder
+      fill: env-facts
+      position: after-all
+      dedupe: session
+      text: |
+
+      params:
+        envKeys: DSH_HOME,DSH_WORKSPACE # 环境变量白名单（逗号分隔）；留空 = 只输出 CWD/WORKSPACE
+        limit: 20 # skill-catalog：条目数上限
+        fields: name,description # skill-catalog：输出字段
+        providers: '' # skill-catalog：提供方过滤
+        emptyBehavior: skip # skill-catalog：空结果行为
+        emptyText: 当前没有可用技能。 # skill-catalog：emptyBehavior=text 时的提示；留空 = 不注入

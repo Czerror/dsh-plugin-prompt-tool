@@ -11,13 +11,19 @@
 id: example-system-section
 name: 示例：system 静态段
 layer: system-section
-strategy: static
-order: -50
-mergeMode: merged
-text: |-
-  
-variables: {}
-params:
-  complete: false
-  suppressRuntimeContext: false
-  sectionName: ''
+do:
+  - id: inject
+    kind: inject-text
+    config:
+      id: example-system-section
+      layer: system-section
+      strategy: static
+      order: -50
+      mergeMode: merged
+      text: |
+
+      variables: {}
+      params:
+        complete: false
+        suppressRuntimeContext: false
+        sectionName: ''

@@ -4,6 +4,7 @@ import { Context } from '@deepseek-ai/cordis'
 import { createScope, scopeOf, scopeParentOf } from '@deepseek-ai/dsh-scope'
 
 import { MATCH_LOGIC } from '../../engine/anchor-match.mjs'
+import { UNAVAILABLE } from '../../engine/conditions/availability.mjs'
 import {
   agentPresetId,
   composite,
@@ -103,8 +104,9 @@ test('文本类：主键/副键/整词/大小写/正则/前缀/模式的命中�
   // subject 载荷：按 condition.mjs 的 subject 词汇取文本；未声明 subject 不猜字段
   assert.equal(createTextPredicate({ keys: ['hello'], subject: 'userMessage' })({ userText: 'hello there' }), true)
   assert.equal(createTextPredicate({ keys: ['hello'], subject: 'userMessage' })({ userText: 'nope' }), false)
-  assert.equal(createTextPredicate({ keys: ['hello'] })({ userText: 'hello' }), false)
-  assert.equal(createTextPredicate({ keys: ['hello'] })(undefined), false)
+  assert.equal(createTextPredicate({ keys: ['hello'], subject: 'userMessage' })({ userText: '' }), false, '已知空文本仍可判定为不匹配')
+  assert.equal(createTextPredicate({ keys: ['hello'] })({ userText: 'hello' }), UNAVAILABLE)
+  assert.equal(createTextPredicate({ keys: ['hello'] })(undefined), UNAVAILABLE)
 })
 
 // ── 2. 相位（epoch）─────────────────────────────────────────────────────────
@@ -160,10 +162,10 @@ test('来源类：精确/前缀、大小写与多通道合取', () => {
   // 数组形态与边界输入
   assert.equal(createSourcePredicate({ kind: ['user', 'goal'] })({ source: { kind: 'goal' } }), true)
   assert.equal(createSourcePredicate({ kind: ['user', 'goal'] })({ source: { kind: 'skill' } }), false)
-  assert.equal(kindExact({}), false, '无 source 即不命中')
+  assert.equal(kindExact({}), UNAVAILABLE, '无 source 是缺事实，不能被not翻成命中')
   assert.equal(kindExact({ source: {} }), false)
   assert.equal(kindExact({ source: { kind: '' } }), false)
-  assert.equal(kindExact(undefined), false)
+  assert.equal(kindExact(undefined), UNAVAILABLE)
 })
 
 // ── 4. 计数 ──────────────────────────────────────────────────────────────────
@@ -200,8 +202,8 @@ test('名单类：大小写、空名与未声明的边界', () => {
   assert.equal(createNameListPredicate({ deny: [] })('read'), true, '显式空黑名单 = 一个都不拦')
   assert.equal(createNameListPredicate({ allow: ['Read'] })('read'), false, '缺省大小写敏感')
   assert.equal(createNameListPredicate({ allow: ['Read'], caseSensitive: false })('read'), true)
-  assert.equal(createNameListPredicate({ allow: ['read'] })(''), true, '无名项沿用动作侧策略：不拦')
-  assert.equal(createNameListPredicate({ allow: ['read'] })({ name: undefined }), true)
+  assert.equal(createNameListPredicate({ allow: ['read'] })(''), UNAVAILABLE, '无工具名不能判定名单命中')
+  assert.equal(createNameListPredicate({ allow: ['read'] })({ name: undefined }), UNAVAILABLE)
   assert.equal(createNameListPredicate({ deny: ['read'] })('read'), false)
   assert.throws(() => createNameListPredicate({ allow: [''] }), /non-empty strings/)
   assert.throws(() => createNameListPredicate({ deny: [1] }), /non-empty strings/)
@@ -312,7 +314,7 @@ test('预设类：无 standing scope / 无挂载＝undefined，调用方不命�
   for (const presetId of ['custom-standard', 'dsh-studio-lab', 'agent-presets.default']) {
     assert.equal(
       createPresetPredicate({ ctx: decoyCtx, presetId, standingMountFor: empty.standingMountFor })(decoyAgent),
-      false,
+      UNAVAILABLE,
       `不得命中 ${presetId}`,
     )
   }

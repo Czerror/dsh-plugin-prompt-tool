@@ -23,7 +23,7 @@
  *
  * GATE MODE (strict two-phase stabilization extension, source: xiaobright/dsh-anchored-standard
  * MIT + phase-1 quarantine): `promoteGate: true` gates the promotion on the
- * first reasoning block classifying minimal-like (`we` present, no `let me`),
+ * first reasoning block matching the caller's positive and negative patterns,
  * with a `maxPromoteSteps` fallback supplied by the caller's config; `promoteAfterFirstResponse:
  * true` promotes a tool-less first response once it has responded, and also
  * releases an anchor-gated session when its first turn ends. Gate mode uses
@@ -34,23 +34,40 @@
 
 import { sessionEvents, sessionState } from './shared.mjs'
 
-/** 首段 reasoning 块分类（严格门控扩展）：we 且无 let me = minimal-like。 */
-export function classifyReasoning(text) {
-  const trimmed = String(text ?? '').trim()
-  const we = [...trimmed.matchAll(/\bwe\b/gi)].length
-  const letMe = [...trimmed.matchAll(/\blet me\b/gi)].length
-  const metrics = { we, letMe }
-  if (we > 0 && letMe === 0) return { label: 'minimal-like', score: 4, metrics }
-  if (letMe > 0) return { label: 'standard-like', score: -4, metrics }
-  return { label: 'ambiguous', score: 0, metrics }
+/** 匹配内容与大小写均由调用方显式声明；空 pattern 不承担任何业务识别。 */
+function reasoningClassifier(options = {}) {
+  const flags = options.reasoningFlags ?? ''
+  if (typeof flags !== 'string') throw new TypeError('reasoningFlags must be a string')
+  const compile = (key) => {
+    const pattern = options[key]
+    if (pattern == null || pattern === '') return undefined
+    if (typeof pattern !== 'string') throw new TypeError(`${key} must be a string`)
+    return new RegExp(pattern, flags.includes('g') ? flags : `${flags}g`)
+  }
+  const positive = compile('reasoningPattern')
+  const negative = compile('reasoningNegativePattern')
+  return text => {
+    const trimmed = String(text ?? '').trim()
+    // 旧诊断返回字段保留；两项现在分别计数调用方的正、负模式。分数不参与晋升。
+    const we = positive === undefined ? 0 : [...trimmed.matchAll(positive)].length
+    const letMe = negative === undefined ? 0 : [...trimmed.matchAll(negative)].length
+    const metrics = { we, letMe }
+    if (we > 0 && letMe === 0) return { label: 'minimal-like', score: 4, metrics }
+    if (letMe > 0) return { label: 'standard-like', score: -4, metrics }
+    return { label: 'ambiguous', score: 0, metrics }
+  }
 }
 
+export function classifyReasoning(text, options = {}) { return reasoningClassifier(options)(text) }
+
 /** 首段 reasoning 块是否为 minimal-like（后续块不覆盖首个标准样块）。 */
-export function hasAnchoredReasoning(content) {
+function firstReasoningMatches(content, classify) {
   if (!Array.isArray(content)) return false
   const first = content.find((block) => block?.type === 'reasoning')
-  return first !== undefined && classifyReasoning(first.text).label === 'minimal-like'
+  return first !== undefined && classify(first.text).label === 'minimal-like'
 }
+
+export function hasAnchoredReasoning(content, options = {}) { return firstReasoningMatches(content, reasoningClassifier(options)) }
 
 /** True only when compaction completed and changed the model-visible surface. */
 export function isSuccessfulCompactionEnd(event) {
@@ -62,6 +79,7 @@ export function createEpochPromotion(promoteEvents, options = {}) {
   const includeSubagents = options.includeSubagents === true
   const promoteGate = options.promoteGate === true
   const promoteAfterFirstResponse = options.promoteAfterFirstResponse === true
+  const classify = reasoningClassifier(options)
   // 门控回退步数由调用方配置提供（tool-bootstrap 在开启门控时做必填校验）：
   // 引擎不内置默认；未提供时步数兜底不生效，只按 anchored 判定。
   const maxPromoteSteps = options.maxPromoteSteps
@@ -115,7 +133,7 @@ export function createEpochPromotion(promoteEvents, options = {}) {
       else if (event.type === 'turn/end') entry.turnEnded = true
       else if (event.type === 'assistant/message') {
         entry.responded = true
-        if (!entry.anchored) entry.anchored = hasAnchoredReasoning(event.data?.message?.content)
+        if (!entry.anchored) entry.anchored = firstReasoningMatches(event.data?.message?.content, classify)
       }
       if (decideGate(entry)) entry.promoted = true
       return entry

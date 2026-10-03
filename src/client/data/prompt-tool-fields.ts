@@ -1,5 +1,6 @@
 /** 提示词工具客户端状态模型与稳定默认值（无网络、无 React）。 */
 import { ENGINE_PARAM_DEFINITIONS, ENGINE_PARAM_KEYS, type EngineParamKey, type EngineParams } from '../../shared/engine-params.ts'
+import { RULE_OWNED_MODEL_PARAMS } from '../../shared/rules.ts'
 import { ENGINE_LAYER_ORDER } from '../../shared/engine-capabilities.ts'
 import { DEFAULT_MODULE_ID } from '../../shared/preset-ids.ts'
 import type { SkillCatalogEntry } from '../../shared/skills.ts'
@@ -15,9 +16,14 @@ export interface HostDefaultModel {
 /** 技能目录条目：与服务端共用同一契约（来源、优先级、两端调用策略、同名遮蔽）。 */
 export type { SkillCatalogEntry } from '../../shared/skills.ts'
 
+/** 模型路由只由规则动作拥有；公共参数入口不读写这些旧键。 */
+export type SharedParamKey = Exclude<EngineParamKey, typeof RULE_OWNED_MODEL_PARAMS[number]>
+const ruleOwnedModelParams: ReadonlySet<string> = new Set(RULE_OWNED_MODEL_PARAMS)
+export const SHARED_PARAM_KEYS = ENGINE_PARAM_KEYS.filter((key): key is SharedParamKey => !ruleOwnedModelParams.has(key))
+
 /** 参数草稿类型从宿主契约派生，只转换 UI 的列表/深度形态。 */
 type EngineParamDrafts = {
-  [K in EngineParamKey]-?: K extends 'maxDepth' ? string
+  [K in SharedParamKey]-?: K extends 'maxDepth' ? string
     : NonNullable<EngineParams[K]> extends string | string[] ? string : NonNullable<EngineParams[K]>
 }
 
@@ -71,7 +77,7 @@ export const EMPTY_META: EngineMeta = {
   layerLabels: {},
 }
 export const EMPTY_FIELDS: Fields = {
-  ...Object.fromEntries(ENGINE_PARAM_KEYS.map((key) => [key, ENGINE_PARAM_DEFINITIONS[key].defaultValue])) as Pick<Fields, EngineParamKey>,
+  ...Object.fromEntries(SHARED_PARAM_KEYS.map((key) => [key, ENGINE_PARAM_DEFINITIONS[key].defaultValue])) as Pick<Fields, SharedParamKey>,
   promptText: '',
   promptPath: '',
   agentsText: '',
@@ -84,6 +90,6 @@ export const EMPTY_FIELDS: Fields = {
   presetTemplate: DEFAULT_MODULE_ID,
   promptConfigs: [],
 }
-/** 编译期契约：所有引擎参数键都必须进入 Fields，防止 host 新增参数后 client 静默丢弃。 */
-type MissingEngineParamKeys = Exclude<EngineParamKey, keyof Fields>
+/** 编译期契约：公共参数必须进入 Fields；规则所有的模型参数不得混入。 */
+type MissingEngineParamKeys = Exclude<SharedParamKey, keyof Fields>
 const _assertEngineParamsInFields: MissingEngineParamKeys extends never ? true : false = true

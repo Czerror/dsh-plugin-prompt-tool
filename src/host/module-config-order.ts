@@ -1,19 +1,16 @@
 /** 已启用配置卡的排序：轻量序号归各自 module.yml，文件是可重建投影。 */
 import { createHash } from 'node:crypto'
-import { existsSync, readFileSync, readdirSync } from 'node:fs'
+import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { parseDocument } from 'yaml'
 import { enabledModuleIds } from './config-store.ts'
-import { assertModuleDirectory, assertPresetTree } from './module-install.ts'
-import { invalidateModuleSpec, loadModuleSpec, resolvePresetParams } from './manifest.ts'
-import { assertSafeConfigId, mergePromptConfigs, modelRequestConfigs } from './prompt-configs.ts'
-import type { PromptConfigSpec } from './prompt-configs.ts'
-import { MODULE_CONFIGS_DIR, MODULE_DEFINITION_FILE } from './paths.ts'
+import { assertModuleDirectory } from './module-install.ts'
+import { invalidateModuleSpec, loadModuleSpec } from './manifest.ts'
+import { assertSafeConfigId } from './prompt-configs.ts'
+import { MODULE_DEFINITION_FILE } from './paths.ts'
 import { atomicWriteTextFile } from './text-file.ts'
 import { compareModuleConfigOrder, configIdentityKey } from '../shared/module-config-order.ts'
 import type { ModuleConfigIdentity, ModuleConfigOrderEntry, ModuleConfigOrderSnapshot } from '../shared/module-config-order.ts'
-// @ts-expect-error 自包含引擎提供同一份物化文件枚举规则。
-import { parsePromptConfigYaml, promptConfigFileNames } from '../../engine/schema.mjs'
 
 interface ModuleOrderInput {
   moduleId: string
@@ -50,32 +47,20 @@ function readInput(root: string, moduleId: string): ModuleOrderInput {
   const doc = parseDocument(raw, { logLevel: 'silent' })
   const saved = readConfigOrder(doc.toJS()?.configOrder)
   const spec = loadModuleSpec(dir)
-  const directory = join(dir, MODULE_CONFIGS_DIR)
-  const files = new Map<string, { config: PromptConfigSpec; sequence: number }>()
-  if (existsSync(directory)) {
-    assertPresetTree(directory)
-    for (const [index, file] of (promptConfigFileNames(readdirSync(directory, { withFileTypes: true })) as string[]).entries()) {
-      const source = readFileSync(join(directory, file), 'utf8')
-      const config = (/\.json$/i.test(file) ? JSON.parse(source) : parsePromptConfigYaml(source)) as PromptConfigSpec
-      assertSafeConfigId(config.id)
-      if (files.has(config.id)) throw new Error(`模块 ${moduleId} 存在重复配置卡：${config.id}`)
-      const prefix = /^(\d+)-/.exec(file)
-      files.set(config.id, { config, sequence: prefix === null ? index * 10 : Number(prefix[1]) })
-    }
-  }
-  const cards = Array.isArray(spec.promptConfigs)
-    ? mergePromptConfigs(modelRequestConfigs(resolvePresetParams(spec, {})), spec.promptConfigs as PromptConfigSpec[])
-    : [...files.values()].map(entry => entry.config)
+  const cards = spec.rules ?? []
   const seen = new Set<string>()
   const entries = cards.map((card, index): ModuleConfigOrderEntry => {
     assertSafeConfigId(card.id)
     if (seen.has(card.id)) throw new Error(`模块 ${moduleId} 存在重复配置卡：${card.id}`)
     seen.add(card.id)
-    const sequence = saved[card.id] ?? files.get(card.id)?.sequence ?? index * 10
+    const sequence = saved[card.id] ?? index * 10
     if (!Number.isSafeInteger(sequence) || sequence < 0) throw new Error(`配置卡 ${card.id} 的文件序号无效`)
-    return { moduleId, configId: card.id, name: card.name ?? card.id, layer: card.layer ?? 'pre-step', position: card.position ?? 'after-user', sequence, enabled: card.enabled !== false,
-      strategy: card.strategy ?? 'static', ...(card.audience === undefined ? {} : { audience: card.audience }),
-      ...(card.layer === 'system-section' || card.layer === 'runtime-context' ? { order: card.order ?? 0 } : {}) }
+    const config = card.do.find(action => action.kind === 'inject-text')?.config as Record<string, unknown> | undefined
+    const layer = card.layer ?? (typeof config?.layer === 'string' ? config.layer : 'pre-step')
+    const scope = card.when?.scope as { audience?: 'main' | 'subagent' } | undefined
+    return { moduleId, configId: card.id, name: card.name ?? card.id, layer, position: typeof config?.position === 'string' ? config.position : 'after-user', sequence, enabled: card.enabled !== false,
+      strategy: typeof config?.strategy === 'string' ? config.strategy : 'static', ...(scope?.audience === undefined ? {} : { audience: scope.audience }),
+      ...(layer === 'system-section' || layer === 'runtime-context' ? { order: typeof config?.order === 'number' ? config.order : 0 } : {}) }
   })
   return { moduleId, dir, raw, doc, saved, entries }
 }

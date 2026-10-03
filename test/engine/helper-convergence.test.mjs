@@ -9,7 +9,8 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { MAX_TRACKED_SESSIONS, sessionMapGet } from '../../engine/shared.mjs'
 import { createEpochPromotion } from '../../engine/compaction-epoch.mjs'
-import { bindResolver } from '../../engine/strategies.mjs'
+import { compileRules } from '../../engine/rule-spec.mjs'
+import { mountRuleSources } from '../../engine/rule-runtime.mjs'
 
 // ── ① sessionMapGet 对拍 ────────────────────────────────────────────────────
 
@@ -124,19 +125,22 @@ test('序列断言(a)：compaction-epoch 成功压缩后 epoch 状态被覆盖�
   assert.notEqual(after, before, '压缩后取到的是新 entry 对象')
 })
 
-test('序列断言(c)：strategies 首个 assistant 消息延迟到达时不缓存 false（条件缓存）', () => {
-  const resolve = bindResolver({
-    id: 'seq-custom-fallback',
-    strategy: 'custom-fallback',
-    texts: ['FALLBACK'],
-    params: { firstTurnWord: 'We' },
-  })
+test('序列断言(c)：规则锚定条件在首个 assistant 消息延迟到达时不缓存 false', async (t) => {
+  const rules = compileRules([{ id: 'anchor', when: { anchor: { keys: ['We'] } }, do: [{ id: 'notice', kind: 'inject-text', config: { id: 'seq-custom-fallback', strategy: 'anchor-notice', text: 'FALLBACK', params: { firstTurnWord: 'We' } } }] }])
+  const handlers = new Map()
+  const ctx = { get() {}, on(key, callback) { handlers.set(key, callback); return () => handlers.delete(key) }, logger: { warn() {} } }
+  t.after(mountRuleSources(ctx, [{ moduleId: 'module', rules }]))
   const events = []
   const session = { id: 'fallback-deferred', header: { delegationDepth: 0 }, snapshotEvents: () => events }
   const agent = { session }
+  const resolve = async () => {
+    const messages = [{ role: 'user', source: { kind: 'user' }, content: [{ type: 'text', text: 'USER' }] }]
+    const result = await handlers.get('agent/pre-step')({ agent, messages }, () => ({ kind: 'enter', messages }))
+    return result.messages.find(message => message.source?.plugin === 'seq-custom-fallback')
+  }
 
   // 尚无首条 assistant 消息：返回 null，且不得把 false 缓存下来。
-  assert.equal(resolve({ agent }), null, '无 assistant 消息 → 不注入')
+  assert.equal(await resolve(), undefined, '无 assistant 消息 → 不注入')
   const counterfactual = onlyCreateKeepsStale({ cached: false }, { cached: true })
   assert.equal(counterfactual.stored.cached, false, '反事实：只建不改会把 false 永久钉住')
 
@@ -146,8 +150,8 @@ test('序列断言(c)：strategies 首个 assistant 消息延迟到达时不缓�
     seq: 1,
     data: { message: { content: [{ type: 'reasoning', text: 'We start.' }] } },
   })
-  const resolved = resolve({ agent })
-  assert.equal(resolved?.text, 'FALLBACK', '延迟到达的首个 assistant 消息使确认生效并注入')
+  const resolved = await resolve()
+  assert.equal(resolved?.content[0].text, 'FALLBACK', '延迟到达的首个 assistant 消息使确认生效并注入')
   assert.equal(resolved?.source?.plugin, 'seq-custom-fallback', '注入来源为配置 id')
-  assert.equal(resolve({ agent })?.text, 'FALLBACK', '首次判定未留下错误缓存（第二次判定仍为已确认）')
+  assert.equal((await resolve())?.content[0].text, 'FALLBACK', '首次判定未留下错误缓存（第二次判定仍为已确认）')
 })

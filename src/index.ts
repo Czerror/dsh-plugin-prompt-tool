@@ -136,11 +136,7 @@ registerTuiCommand(
   // TUI 参数开关：写激活模块 preset.yml（settings 不再承载引擎参数）。
   // 保存/重建失败直接抛给命令层，由 CommandResult:error 呈现给用户。
   async (key, value) => {
-    if (key === 'promptConfigs') {
-      saveModuleParams(MODULES_DIR, basename(activeModuleDir()), undefined, Array.isArray(value) ? value as unknown[] : undefined)
-    } else {
-      saveModuleParams(MODULES_DIR, basename(activeModuleDir()), { [key]: value }, undefined)
-    }
+    saveModuleParams(MODULES_DIR, basename(activeModuleDir()), { [key]: value }, undefined)
     await rebuildPreset()
   },
   // 技能启停：改写技能文件的调用策略键（正文不动），失败原因回给命令层。
@@ -152,6 +148,7 @@ registerTuiCommand(
     const result = skillsRuntime.setPolicy(name, entry.path, { scope: enabled ? 'none' : 'all' })
     return result.ok ? { ok: true } : { ok: false, message: result.message }
   },
+  (id) => rebuildPreset(id),
 )
 
   let needsInitialApply = true

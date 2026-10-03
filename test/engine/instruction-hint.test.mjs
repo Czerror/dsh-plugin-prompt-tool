@@ -1,13 +1,21 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
+import { parse } from 'yaml'
 
 import {
-  buildInstructionHint,
+  buildInstructionHint as rawBuildInstructionHint,
   collectInstructionFiles,
-  createInstructionHintResolver,
-  instructionHintMessages,
+  createInstructionHintResolver as rawCreateInstructionHintResolver,
+  instructionHintMessages as rawInstructionHintMessages,
 } from '../../engine/instruction-hint.mjs'
 import { createPromptConfigs } from '../../engine/prompt-config-engine.mjs'
+
+// 旧措辞现在属于显式模板，断言仍使用独立的已知良好文本。
+const templates = parse(readFileSync(new URL('../../templates/policies/legacy-defaults.yml', import.meta.url), 'utf8')).instructionHint
+const buildInstructionHint = (original, paths, sourceName) => rawBuildInstructionHint(original, paths, sourceName, templates)
+const instructionHintMessages = (messages, state, sourceName) => rawInstructionHintMessages(messages, state, sourceName, templates)
+const createInstructionHintResolver = (config = {}) => rawCreateInstructionHintResolver({ ...config, params: { ...templates, ...config.params } })
 
 function makeFs(files) {
   return {

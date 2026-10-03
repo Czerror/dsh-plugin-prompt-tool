@@ -9,18 +9,11 @@ export function assertPresetId(id: unknown): asserts id is string {
   }
 }
 
-/** 修改目录身份时，只改指向该预设自身的结构化文件引用，正文不替换。 */
+/** 规则模板路径相对模块根，复制目录无需重写路径或用户正文。 */
 export function setPresetDefinitionId(doc: ReturnType<typeof parseDocument>, id: string): void {
   assertPresetId(id)
   const previous = doc.get('id')
   if (previous === id) return
-  const configs = doc.get('promptConfigs', true)
-  if (typeof previous === 'string' && configs instanceof YAMLSeq) for (const config of configs.items) {
-    if (!(config instanceof YAMLMap)) continue
-    const path = config.get('templateFile')
-    const prefix = `../${previous}/`
-    if (typeof path === 'string' && path.startsWith(prefix)) config.set('templateFile', `../${id}/${path.slice(prefix.length)}`)
-  }
   doc.set('id', id)
 }
 
@@ -101,6 +94,7 @@ export function engineModuleFileNames(dir: string): Set<string> {
  * 是**用户预设**里可能已过时的值，靠读它无法判断该改成什么。
  */
 export const ENGINE_MANAGED_PATHS = {
+  'rule-engine.mjs': { field: 'rulesFile', directory: 'rules.yml' },
   'prompt-config-engine.mjs': { field: 'configsDir', directory: MODULE_CONFIGS_DIR },
   'tool-config-engine.mjs': { field: 'configsDir', directory: 'custom-tools' },
   'subagent-tool-policy.mjs': { field: 'policyFile', directory: 'subagent-tools/policy.yml' },
