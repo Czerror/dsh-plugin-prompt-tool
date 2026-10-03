@@ -1,8 +1,10 @@
-id: "ponytail-rules"
-layer: system-section
-order: 190
+id: ponytail-subagent-rules
+layer: pre-step
+order: 210
 enabled: true
 strategy: static
+position: before-all
+dedupe: session
 text: |-
   # Ponytail
 
@@ -91,10 +93,7 @@ text: |-
   Ponytail governs what you build, not how you talk (pair with Caveman for
   terse prose).
 
-  To deactivate, disable all Ponytail prompt configurations in the DSH
-  workbench or remove this card from the preset. This card does not
-  register /ponytail commands. Change levels through the preset configuration.
-  These DSH controls also apply when a Ponytail skill describes upstream
-  mode commands. Off: "stop ponytail" / "normal mode".
+  You are a delegated agent: the same rules cover your work. Off: "stop
+  ponytail" / "normal mode".
 
   The shortest path to done is the right path.
