@@ -96,6 +96,13 @@ test('ponytail 模块：注入点映射与上游 hook 一致', () => {
     assert.equal(config.dedupe, 'session', '每个子代理只付一次')
     assert.equal(typeof config.text, 'string')
   }
+  // 首轮守卫不可省：`agent/pre-step` 的 `messages` 是「本批被领取的消息」，任务文本只在
+  // 首轮那批里。第二轮起 userText 为空 → 写档的 notAny 翻真、只读档的 text 判假，同一
+  // 子代理会先拿只读档再拿完整规则（真机踩过两档并注）。判据必须钉在任务文本还在的那一刻。
+  for (const [label, rule] of [['写档', write], ['只读档', readonly]]) {
+    const guard = rule.when.all.find((node) => node.session !== undefined)
+    assert.deepEqual(guard?.session, { type: 'user/message', present: false }, `${label}缺首轮守卫`)
+  }
   // 两档互斥且完备：写档排除只读词、只读档命中只读词，关键词表必须逐字一致，
   // 否则两边都不命中（子代理白拿不到规则）或都命中（重复注入）。
   const onlyReadKeys = readonly.when.all.flatMap((node) => node.text?.keys ?? [])

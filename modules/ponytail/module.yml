@@ -201,6 +201,12 @@ rules:
   # `position: before-all` 保住原语义（规则排在任务文本之前），`dedupe: session` 保证每
   # 个子代理只付一次。想再细化就改这一条的 when：按形态筛用 `names: { allow: [fork] }`
   # （name = SubagentRunInfo.provider），按模型筛用 `scope: { modelScope: pro }`。
+  #
+  # **首轮守卫（`session.present: false`）不可省**：`agent/pre-step` 的 `messages` 是「本批
+  # 被领取的消息」，任务文本只在**首轮**那一批里（真机会话实测：任务 `user/message` 只出现
+  # 一次）。第二轮起 `userText` 为空 → 本卡的 `notAny` 翻成真、只读档的 `text` 判假，同一
+  # 子代理于是先拿只读档、再拿完整规则（两档并注，真机踩过）。判据必须钉在任务文本还在的
+  # 那一刻，所以两档都只判首轮。
   - id: ponytail-subagent-rules
     name: Ponytail 规则（子代理·写档，对齐上游 SubagentStart）
     enabled: true
@@ -208,6 +214,7 @@ rules:
     when:
       all:
         - scope: { audience: subagent }
+        - session: { type: 'user/message', present: false }
         - notAny:
             - text: { keys: ['PONYTAIL:readonly', 'only read', '只读'], subject: userMessage }
     do:
@@ -337,6 +344,8 @@ rules:
   # 会让写任务里的一句从句——「重构这个函数，不要修改测试文件」——把整个任务判成只读，
   # 而误判的两个方向代价不对称：写档多给 4844 字符只是浪费，写任务漏给规则会让代码质量
   # 悄悄变差且不会被发现。关键词表同样只收「只读」「only read」这类形容**整个任务**的词。
+  # 首轮守卫同写档（`session.present: false`）：任务文本只在首轮那批 `messages` 里，
+  # 不守首轮的话本卡从第二轮起判假、写档的 notAny 却翻真，两档会并注。
   - id: ponytail-subagent-readonly
     name: Ponytail 规则（子代理·只读档）
     enabled: true
@@ -344,6 +353,7 @@ rules:
     when:
       all:
         - scope: { audience: subagent }
+        - session: { type: 'user/message', present: false }
         - text: { keys: ['PONYTAIL:readonly', 'only read', '只读'], subject: userMessage }
     do:
       - id: inject
