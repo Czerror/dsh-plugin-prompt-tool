@@ -143,9 +143,8 @@ export function PromptConfigForm(props: {
       </section>}
 
       <PromptConfigNavigation t={t} layer={config.layer ?? 'pre-step'} flat={locked} renderLayerSettings={locked || props.renderLayerSettings === undefined ? undefined : () => <>
-        <h4 className={styles.configSectionTitle}>{t('form.layerSettings.label', { layer: translateLabel(t, LAYER_LABEL_KEYS, config.layer ?? 'pre-step') })}</h4>
         <p className={styles.configFieldHint}>{t('form.layerSettings.hint', { layer: translateLabel(t, LAYER_LABEL_KEYS, config.layer ?? 'pre-step') })}</p>
-        <div className={styles.configGrid}>{props.renderLayerSettings?.(config.layer ?? 'pre-step', config)}</div>
+        {props.renderLayerSettings?.(config.layer ?? 'pre-step', config)}
       </>}>
       {!locked && (conditional || policy.promotion || policy.audience || policy.modelScope) && <section className={styles.configSection} data-config-panel="conditions" aria-label={t('form.navigation.conditions')}>
         <div className={styles.configGrid}>
@@ -163,26 +162,32 @@ export function PromptConfigForm(props: {
         </div>
       </section>}
       {!locked && <section className={styles.configSection} data-config-panel="execution" aria-label={t('form.navigation.execution')}>
+      <div className={styles.executionFields}>
       <div className={styles.configGrid}>
-        <OptionField t={t} className={styles.fieldSpan6} label={t('form.strategy.label')} hint={t('form.strategy.hint')} value={strategy} options={strategies} fallback="static" labelKeys={STRATEGY_LABEL_KEYS} disabled={locked || disabled} onChange={(value) => onPatch({ strategy: value, fill: value === 'placeholder' ? (config.fill ?? 'env-facts') : undefined })} />
-        <OptionField t={t} className={styles.fieldSpan3} label={t('form.kind.label')} hint={t('form.kind.hint')} value={config.configKind} options={meta.slotKinds} fallback="ordered" labelKeys={SLOT_KIND_LABEL_KEYS} disabled={locked || disabled} onChange={(value) => onPatch({ configKind: value })} />
-        {policy.position && <OptionField t={t} className={styles.fieldSpan3} label={t('form.position.label')} hint={t('form.position.hint')} value={config.position} options={meta.positions} fallback="after-user" labelKeys={POSITION_LABEL_KEYS} disabled={disabled} onChange={(value) => onPatch({ position: value })} />}
-        {policy.merge && <OptionField t={t} className={styles.fieldSpan2} label={t('form.merge.label')} hint={t('form.merge.hint')} value={config.mergeMode} options={meta.mergeModes} fallback="separate" labelKeys={MERGE_MODE_LABEL_KEYS} disabled={locked || disabled} onChange={(value) => onPatch({ mergeMode: value })} />}
-        {policy.order && (layerShowsOfficialOrder || worldBookPriority) && <NumberField t={t} className={officialOrderOptions === undefined ? styles.fieldSpan2 : styles.fieldSpan6} label={t(worldBookPriority ? 'form.order.worldBookPriority' : 'form.order.label')} hint={t(worldBookPriority ? 'form.order.worldBookHint' : 'form.order.hint')}
+        <OptionField t={t} className={styles.fieldSpan4} label={t('form.strategy.label')} hint={t('form.strategy.hint')} value={strategy} options={strategies} fallback="static" labelKeys={STRATEGY_LABEL_KEYS} disabled={locked || disabled} onChange={(value) => onPatch({ strategy: value, fill: value === 'placeholder' ? (config.fill ?? 'env-facts') : undefined })} />
+        <OptionField t={t} className={styles.fieldSpan4} label={t('form.kind.label')} hint={t('form.kind.hint')} value={config.configKind} options={meta.slotKinds} fallback="ordered" labelKeys={SLOT_KIND_LABEL_KEYS} disabled={locked || disabled} onChange={(value) => onPatch({ configKind: value })} />
+        {policy.merge && <OptionField t={t} className={styles.fieldSpan4} label={t('form.merge.label')} hint={t('form.merge.hint')} value={config.mergeMode} options={meta.mergeModes} fallback="separate" labelKeys={MERGE_MODE_LABEL_KEYS} disabled={locked || disabled} onChange={(value) => onPatch({ mergeMode: value })} />}
+      </div>
+      <div className={styles.configGrid}>
+        {policy.position && <OptionField t={t} className={styles.fieldSpan6} label={t('form.position.label')} hint={t('form.position.hint')} value={config.position} options={meta.positions} fallback="after-user" labelKeys={POSITION_LABEL_KEYS} disabled={disabled} onChange={(value) => onPatch({ position: value })} />}
+        {policy.order && (layerShowsOfficialOrder || worldBookPriority) && <NumberField t={t} className={styles.fieldSpan6} label={t(worldBookPriority ? 'form.order.worldBookPriority' : 'form.order.label')} hint={t(worldBookPriority ? 'form.order.worldBookHint' : 'form.order.hint')}
           value={config.order} fallback={locked ? 30 : 0} integer min={locked ? 0 : undefined} disabled={disabled}
           quickOptions={officialOrderOptions} quickLabel={t('form.order.insert')}
           fieldDrafts={props.fieldDrafts} draftKey={`${props.draftScope}:order`} onChange={(value) => { if (typeof value === 'number') onPatch({ order: value }) }} />}
-        {policy.order && !layerShowsOfficialOrder && (
-          <p className={clsx(styles.configFieldHint, styles.fieldSpan9)}>{t('form.order.layerOnly')}</p>
-        )}
-        <FormField className={styles.fieldSpan4} label={t('form.group.label')} hint={t('form.group.hint')} hintMode="tooltip"><input className={inputClass} value={config.group ?? ''} spellCheck={false} readOnly={locked || disabled} onChange={(e) => onPatch({ group: e.target.value })} /></FormField>
-        <div className={clsx(styles.configToggleField, styles.fieldSpan3)}>
-          <span className={styles.configFieldLabel}>{t('form.exclusive.label')}</span>
-          <HintTooltip label={t('form.exclusive.hint')}>
-            <span className={styles.configEnable}><Switch label={t('form.exclusive.label')} checked={config.exclusive === true} disabled={locked || disabled} onChange={(next) => onPatch({ exclusive: next })} /></span>
-          </HintTooltip>
+        <div className={clsx(styles.exclusiveFields, styles.fieldSpan6)}>
+          <FormField label={t('form.group.label')} hint={t('form.group.hint')} hintMode="tooltip"><input className={inputClass} value={config.group ?? ''} spellCheck={false} readOnly={locked || disabled} onChange={(e) => onPatch({ group: e.target.value })} /></FormField>
+          <div className={styles.configToggleField}>
+            <span className={styles.configFieldLabel}>{t('form.exclusive.label')}</span>
+            <HintTooltip label={t('form.exclusive.hint')}>
+              <span className={styles.configEnable}><Switch label={t('form.exclusive.label')} checked={config.exclusive === true} disabled={locked || disabled} onChange={(next) => onPatch({ exclusive: next })} /></span>
+            </HintTooltip>
+          </div>
         </div>
-        {policy.dedupe && <OptionField t={t} className={styles.fieldSpan4} label={t('form.dedupe.label')} hint={t('form.dedupe.hint')} value={config.dedupe} options={meta.dedupes} fallback="none" labelKeys={DEDUPE_LABEL_KEYS} disabled={locked || disabled} onChange={(value) => onPatch({ dedupe: value })} />}
+        {policy.dedupe && <OptionField t={t} className={styles.fieldSpan6} label={t('form.dedupe.label')} hint={t('form.dedupe.hint')} value={config.dedupe} options={meta.dedupes} fallback="none" labelKeys={DEDUPE_LABEL_KEYS} disabled={locked || disabled} onChange={(value) => onPatch({ dedupe: value })} />}
+        {policy.order && !layerShowsOfficialOrder && (
+          <p className={clsx(styles.configFieldHint, styles.fieldFull)}>{t('form.order.layerOnly')}</p>
+        )}
+      </div>
       </div>
       <h4 className={styles.configSectionTitle}>{t('form.section.strategy')}</h4>
       <fieldset disabled={disabled} className={clsx(styles.configGrid, styles.strategyGrid, styles.configFieldset)}>

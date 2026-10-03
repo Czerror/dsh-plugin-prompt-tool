@@ -2,17 +2,27 @@ import { useId, useState, type ReactNode } from 'react'
 import clsx from 'clsx'
 import { IconChevronDownOutlineRegular } from './icons.tsx'
 import styles from './controls.module.css'
-/** 模型路由、人设和子代理参数共用的可折叠卡片。 */
+/** 独立展示使用折叠卡；层设置内直接展示具名字段区。 */
 export function EngineModuleCard(props: {
   name: string
   meta: string
   layer?: string
+  embedded?: boolean
   children?: ReactNode
   defaultExpanded?: boolean
   onExpandedChange?: (expanded: boolean) => void
 }): ReactNode {
   const [expanded, setExpanded] = useState(props.defaultExpanded ?? false)
   const panelId = useId()
+  if (props.embedded) return (
+    <section className={styles.moduleEmbedded} aria-labelledby={`${panelId}-title`}>
+      <header className={styles.moduleEmbeddedHeader}>
+        <h4 id={`${panelId}-title`} className={styles.moduleEmbeddedTitle}>{props.name}</h4>
+        <span className={styles.configMeta}>{props.meta}</span>
+      </header>
+      <div className={styles.moduleEmbeddedBody}>{props.children}</div>
+    </section>
+  )
   const title = <span className={styles.configTitle}>
     <span className={styles.configTitleRow}>
       <span className={styles.configName}>{props.name}</span>

@@ -3,15 +3,26 @@
   display: flex;
   min-width: 0;
   flex-direction: column;
-  gap: 16px;
+  gap: 20px;
   container: layer-settings / inline-size;
 }
 
 .group {
   min-width: 0;
-  padding: 16px;
-  border: 0.5px solid var(--dsw-alias-border-l2);
-  border-radius: 8px;
+}
+
+.group,
+.asset {
+  padding-top: 16px;
+  border-top: 0.5px solid var(--dsw-alias-border-l2);
+}
+
+.actions {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 
 /* 搜索仅隐藏分组；作者布局不得覆盖原生 hidden。 */
@@ -19,9 +30,9 @@
 .asset[hidden] { display: none; }
 
 .groupTitle {
-  margin: 0 0 16px;
+  margin: 0 0 12px;
   color: var(--dsw-alias-label-primary);
-  font: 600 13px/20px system-ui, sans-serif;
+  font: 500 13px/20px system-ui, sans-serif;
   text-wrap: balance;
   overflow-wrap: anywhere;
 }
@@ -55,8 +66,8 @@
 .paramFields > [data-control='text'],
 .paramFields > [data-control='list'] { grid-column: 1 / -1; }
 
-.paramFields > [data-control='number'] > input,
-.paramFields > [data-control='select'] > span { width: 100%; }
+.paramFields > [data-control='number'] > input { width: min(100%, 96px); }
+.paramFields > [data-control='select'] > span { width: min(100%, 240px); }
 
 .paramFields [data-control='number'] input { font-variant-numeric: tabular-nums; }
 .paramFields [role='alert'] { color: var(--dsw-alias-state-error-primary); }
@@ -88,6 +99,5 @@
 .asset { min-width: 0; }
 
 @container layer-settings (max-width: 640px) {
-  .group { padding: 12px; }
   .paramFields { grid-template-columns: minmax(0, 1fr); }
 }

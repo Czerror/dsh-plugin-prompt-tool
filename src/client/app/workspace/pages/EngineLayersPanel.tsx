@@ -150,9 +150,6 @@ export function LayerSettingsContent(props: {
   const assets = layerAssets(layer, excluded)
   const keyword = (props.keyword ?? '').trim().toLowerCase()
   const matches = (id: string): boolean => matchesLayerGroup(id, keyword, t)
-  // 变量折叠保留到草稿池，并由当前设置实例触发渲染。
-  const variablesExpandedKey = `${presetId}:layer-variables-${props.configId ?? 'standalone'}`
-  const [variablesExpanded, setVariablesExpanded] = useState(() => store.editorDrafts?.expanded.get(variablesExpandedKey) ?? true)
   const [editingRules, setEditingRules] = useState(false)
   if (editingRules) return <div className={css.settings} data-layer-settings-content={layer}>
     <button type="button" className={ui.pillButton} onClick={() => setEditingRules(false)}>{t('triggers.backToSettings')}</button>
@@ -161,8 +158,10 @@ export function LayerSettingsContent(props: {
   if (cards.length === 0 && capabilities.length === 0 && assets.length === 0) return null
   return (
     <div className={css.settings} data-layer-settings-content={layer}>
-      <EngineCapabilityCreateMenu store={store} t={t} layer={layer} excludeCapabilities={excluded} onCreated={props.onCreated} />
-      <button type="button" className={ui.pillButton} onClick={() => setEditingRules(true)}>{t('triggers.open')}</button>
+      <div className={css.actions}>
+        <EngineCapabilityCreateMenu store={store} t={t} layer={layer} excludeCapabilities={excluded} onCreated={props.onCreated} />
+        <button type="button" className={ui.pillButton} onClick={() => setEditingRules(true)}>{t('triggers.open')}</button>
+      </div>
       {cards.map((card) => (
         <section key={card} hidden={!matches(card)} className={css.group} data-layer-param-group={card}
           aria-label={t(CARD_LABEL_KEYS[card] ?? 'modules.group.other')}>
@@ -180,7 +179,7 @@ export function LayerSettingsContent(props: {
       )}
       {assets.map((id) => (
         <section key={id} hidden={!matches(id)} className={css.asset} data-layer-asset={id} aria-label={t(CARD_LABEL_KEYS[id] ?? 'modules.layer.asset')}>
-          {id === 'persona' && <PresetPersonaCard t={t} presetId={presetId} disabled={!canEditPreset} onNotice={store.showNotice} drafts={store.editorDrafts} />}
+          {id === 'persona' && <PresetPersonaCard t={t} presetId={presetId} disabled={!canEditPreset} onNotice={store.showNotice} drafts={store.editorDrafts} embedded />}
           {id === 'variables' && (
             <TemplateVariablesModuleCard
               t={t}
@@ -189,17 +188,14 @@ export function LayerSettingsContent(props: {
               templateVariablesEnabled={store.templateVariablesEnabled}
               setTemplateVariablesEnabled={store.setTemplateVariablesEnabled}
               saveTemplateVariables={store.saveTemplateVariables}
-              expanded={variablesExpanded}
+              embedded
               disabled={!canEditPreset}
-              onToggleExpanded={() => {
-                store.editorDrafts?.expanded.set(variablesExpandedKey, !variablesExpanded)
-                setVariablesExpanded(!variablesExpanded)
-              }}
             />
           )}
-          {id === 'main-model' && <ModelRouteModuleCard store={store} scope="main" />}
-          {id === 'subagent-model' && <ModelRouteModuleCard store={store} scope="subagent" />}
-          {id === 'subagent-tools' && <DelegationToolsModuleCard store={store} t={t} />}
+          {id === 'main-model' && <ModelRouteModuleCard store={store} t={t} scope="main" embedded />}
+          {id === 'subagent-model' && <ModelRouteModuleCard store={store} t={t} scope="subagent" embedded />}
+          {id === 'subagent-tools' && <DelegationToolsModuleCard store={store} t={t} embedded />}
+          {(id === 'custom-tools' || id === 'subagent-tool-policy') && <h4 className={css.groupTitle}>{t(CARD_LABEL_KEYS[id] ?? 'modules.layer.asset')}</h4>}
           {id === 'custom-tools' && (props.toolEditor ?? (
             <CustomToolsCard key={presetId} presetId={presetId} t={t} onNotice={store.showNotice}
               drafts={store.editorDrafts} disabled={!canEditPreset} />

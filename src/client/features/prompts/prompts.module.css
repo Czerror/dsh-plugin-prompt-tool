@@ -44,6 +44,8 @@
 .configFieldset { min-width: 0; padding: 0; margin: 0; border: 0; }
 .configGrid {
   display: grid;
+  width: 100%;
+  max-width: 768px;
   grid-template-columns: repeat(12, minmax(0, 1fr));
   gap: 16px 24px;
   align-items: start;
@@ -64,12 +66,15 @@
 .fieldSpan6 { grid-column: span 6; }
 .fieldSpan8 { grid-column: span 8; }
 .fieldSpan9 { grid-column: span 9; }
-.fieldControl { width: 100%; }
-.orderField { display: grid; grid-template-columns: minmax(64px, 1fr) minmax(0, 2fr); gap: 12px; min-width: 0; }
+.fieldControl { width: 100%; max-width: 240px; }
+.configNumberInput { max-width: 96px; }
+.orderField { display: grid; grid-template-columns: minmax(0, 96px) minmax(0, 240px); gap: 12px; min-width: 0; }
 .orderField > * { min-width: 0; }
 .orderField input { font-variant-numeric: tabular-nums; }
 .fieldFull { min-width: 0; grid-column: 1 / -1; }
 .configToggleField { display: flex; min-width: 0; flex-direction: column; align-items: flex-start; gap: 4px; }
+.executionFields { display: grid; gap: 16px; min-width: 0; }
+.exclusiveFields { display: grid; grid-template-columns: minmax(0, 240px) max-content; justify-content: start; align-items: start; gap: 16px; }
 .variableHeader {
   display: flex;
   min-width: 0;

@@ -9,6 +9,9 @@
  * 的解析错误不直接面向用户（PNG 走 host 上传），不进字典。
  */
 export const CARDS_ZH = {
+  'modelRoute.idle.main': '未设置：选择模型（留空 = 继承当前会话）',
+  'modelRoute.idle.subagent': '未设置：选择模型（留空 = 继承子代理当前请求）',
+  'modelRoute.idle.host': '未设置：选择模型（当前继承宿主默认 {model}）',
   // 子代理「工具与深度」模块卡（DelegationToolsCard；深度标签复用 param.maxDepth）。
   'policy.delegation.name': '工具与深度',
   'policy.delegation.meta': '委派递归深度（工具授权已归「subagent-tool-policy」能力卡）',
@@ -287,6 +290,9 @@ export const CARDS_ZH = {
 }
 
 export const CARDS_EN: Record<keyof typeof CARDS_ZH, string> = {
+  'modelRoute.idle.main': 'Not set: choose a model (blank inherits the current session)',
+  'modelRoute.idle.subagent': 'Not set: choose a model (blank inherits the current subagent request)',
+  'modelRoute.idle.host': 'Not set: choose a model (currently inheriting host default {model})',
   'policy.delegation.name': 'Tools & depth',
   'policy.delegation.meta': 'Delegation recursion depth (tool grants live in the "subagent-tool-policy" card)',
   'policy.delegation.hint': 'Tool grants are maintained by the "subagent-tool-policy" capability card (ceiling, profiles and model expansion); only subagent recursion depth lives here.',

@@ -17,7 +17,7 @@ type Notice = (kind: 'ok' | 'error', message: string) => void
 
 const EMPTY_PERSONA: PersonaDraft = { prefix: '', suffix: '', complete: false, includeRuntimeContext: true }
 
-export function PresetPersonaCard(props: { t: PromptToolTranslate; presetId?: string; disabled?: boolean; drafts?: WorkspaceDrafts; onNotice: Notice }): ReactNode {
+export function PresetPersonaCard(props: { t: PromptToolTranslate; presetId?: string; disabled?: boolean; drafts?: WorkspaceDrafts; embedded?: boolean; onNotice: Notice }): ReactNode {
   const { t, onNotice } = props
   const editor = useMemo((): PersonaEditorDraft => {
     const key = props.presetId ?? ''
@@ -125,6 +125,7 @@ export function PresetPersonaCard(props: { t: PromptToolTranslate; presetId?: st
       name={t('persona.name')}
       meta={declared ? t('persona.meta.declared') : t('persona.meta.inherited')}
       layer="system-section"
+      embedded={props.embedded}
       defaultExpanded={props.drafts?.expanded.get(`${props.presetId ?? ''}:persona`)}
       onExpandedChange={(value) => props.drafts?.expanded.set(`${props.presetId ?? ''}:persona`, value)}
     >

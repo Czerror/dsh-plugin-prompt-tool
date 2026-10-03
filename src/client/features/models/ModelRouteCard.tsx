@@ -1,5 +1,6 @@
 import { useState, useSyncExternalStore, type ReactNode } from 'react'
 import type { PromptToolStore } from '../../data/use-prompt-tool-store.ts'
+import type { PromptToolTranslate } from '../../locales.ts'
 import { EngineModuleCard } from '../../ui/EngineModuleCard.tsx'
 import { MenuSelect } from '../../ui/MenuSelect.tsx'
 import styles from '../../ui/controls.module.css'
@@ -7,8 +8,8 @@ import { buildEffortOptions, buildModelOptions, modelChoiceValue, parseModelChoi
 /** 模型路由模块卡（主会话与本地子代理分别走当前模块请求覆盖）：
  *  主对话/子代理共用同一配置源（缺省继承宿主默认）；模型路由与人设按作用域完全分离
  *  （main=主对话模型、subagent=子代理模型，参数各自独立）。 */
-export function ModelRouteModuleCard(props: { store: PromptToolStore; scope: 'main' | 'subagent' }): ReactNode {
-  const { store } = props
+export function ModelRouteModuleCard(props: { store: PromptToolStore; t: PromptToolTranslate; scope: 'main' | 'subagent'; embedded?: boolean }): ReactNode {
+  const { store, t } = props
   const fields = store.fields
   const disabled = !fields.writePreset || store.moduleFacts?.editable !== true
   const host = store.hostDefaultModel
@@ -79,14 +80,15 @@ export function ModelRouteModuleCard(props: { store: PromptToolStore; scope: 'ma
       .finally(() => setSelecting(false))
   }
   const scopeMeta = props.scope === 'main'
-    ? { title: '模型路由', idle: '未设置：展开选择模型（留空 = 继承当前会话）', active: '固定模型路由已设置（仅当前模块请求）' }
-    : { title: '子代理请求模型', idle: '未设置：展开选择模型（留空 = 继承子代理当前请求）', active: '本地子代理请求路由已设置' }
+    ? { title: '模型路由', idle: t('modelRoute.idle.main'), active: '固定模型路由已设置（仅当前模块请求）' }
+    : { title: '子代理请求模型', idle: t('modelRoute.idle.subagent'), active: '本地子代理请求路由已设置' }
   // 主对话卡片：宿主默认模型名回显（子代理默认继承主会话，不回显宿主）。
   const idleMeta = props.scope === 'main' && host?.model !== undefined && host.model.length > 0
-    ? `未设置：展开选择模型（当前继承宿主默认 ${host.model}）`
+    ? t('modelRoute.idle.host', { model: host.model })
     : scopeMeta.idle
   return (
     <EngineModuleCard name={scopeMeta.title} meta={active ? scopeMeta.active : idleMeta}
+      embedded={props.embedded}
       defaultExpanded={store.editorDrafts?.expanded.get(`${fields.presetTemplate}:model:${props.scope}`)}
       onExpandedChange={(value) => store.editorDrafts?.expanded.set(`${fields.presetTemplate}:model:${props.scope}`, value)}>
       {props.scope === 'main' && (

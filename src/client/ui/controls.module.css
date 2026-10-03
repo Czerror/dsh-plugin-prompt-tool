@@ -638,6 +638,33 @@
   background: var(--dsw-alias-bg-layer-2);
 }
 .configForm[hidden] { display: none; }
+/* 层设置中的共享编辑器使用平面小节，独立卡片保持原有折叠形态。 */
+.moduleEmbedded,
+.moduleEmbeddedBody {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 12px;
+}
+.moduleEmbeddedHeader {
+  display: flex;
+  min-width: 0;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+}
+.moduleEmbeddedTitle {
+  margin: 0;
+  color: var(--dsw-alias-label-primary);
+  font: 500 13px/20px system-ui, sans-serif;
+  overflow-wrap: anywhere;
+}
+.moduleEmbeddedBody .configInput { min-height: 28px; padding: 4px 8px; font: 12px/18px system-ui, sans-serif; }
+.moduleEmbeddedBody .sessionModelRow > .menuSelectOwner { flex: 0 1 240px; }
+.moduleEmbeddedBody .sessionModelRow > .menuSelectOwner:first-child { flex-basis: 320px; }
+.moduleEmbeddedBody .sessionModelRow > input { flex: 0 1 96px; }
+.moduleEmbeddedBody .switchGridField { width: min(100%, 240px); }
+.moduleEmbeddedBody .variableRow .configInput { flex: 0 1 240px; max-width: 100%; }
 .configField { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
 .configFieldLabel { font: 500 12px/18px system-ui, sans-serif; color: var(--dsw-alias-label-primary); }
 .configFieldHint { margin: 0; font: 12px/18px system-ui, sans-serif; color: var(--dsw-alias-label-secondary); overflow-wrap: anywhere; }

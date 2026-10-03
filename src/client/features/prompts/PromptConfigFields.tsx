@@ -78,6 +78,7 @@ export function OptionField(props: { t: PromptToolTranslate; label: string; hint
   return (
     <FormField label={props.label} hint={props.hint} hintMode="tooltip" className={props.className}>
       <MenuSelect
+        compact
         className={clsx(styles.configInput, styles.fieldControl)}
         ariaLabel={props.label}
         disabled={props.disabled}
@@ -157,7 +158,7 @@ export function NumberField(props: { t: PromptToolTranslate; label: string; hint
   return <div className={clsx(styles.orderField, props.className)}>
     {field}
     <FormField label={label}>
-      <MenuSelect ariaLabel={label} placeholder={label} className={styles.fieldControl} disabled={props.disabled}
+      <MenuSelect compact ariaLabel={label} placeholder={label} className={styles.fieldControl} disabled={props.disabled}
         value={draft.error === '' && quickOptions.some((option) => option.value === draft.text) ? draft.text : ''}
         options={quickOptions} onChange={(value) => accept(Number(value))} />
     </FormField>
@@ -515,7 +516,7 @@ export function StrategyParamsFields(props: { t: PromptToolTranslate; strategy: 
 }
 
 /** 模板变量键值对编辑器（替代 JSON）：每行 key + value，可增删。工作台「模板变量」卡片复用。 */
-export function VariablesEditor(props: { t: PromptToolTranslate; value: Record<string, string> | undefined; disabled?: boolean; onChange: (value: Record<string, string> | undefined) => void }): ReactNode {
+export function VariablesEditor(props: { t: PromptToolTranslate; value: Record<string, string> | undefined; disabled?: boolean; hideHeading?: boolean; onChange: (value: Record<string, string> | undefined) => void }): ReactNode {
   const t = props.t
   const entries = Object.entries(props.value ?? {})
   const commit = (next: Array<[string, string]>) => {
@@ -529,10 +530,10 @@ export function VariablesEditor(props: { t: PromptToolTranslate; value: Record<s
   return (
     <span className={styles.configFieldStack}>
       <span className={styles.variableHeader}>
-        <span className={styles.variableHeaderCopy}>
-          <span className={styles.configFieldLabel}>{t('variables.title')}</span>
+        {(!props.hideHeading || entries.length === 0) && <span className={styles.variableHeaderCopy}>
+          {!props.hideHeading && <span className={styles.configFieldLabel}>{t('variables.title')}</span>}
           {entries.length === 0 && <span className={styles.configFieldHint}>{t('variables.empty')}</span>}
-        </span>
+        </span>}
         <button type="button" className={styles.pillButton} disabled={props.disabled} onClick={() => commit([...entries, ['', '']])}>{t('variables.add')}</button>
       </span>
       {entries.map(([key, value], index) => (
