@@ -7,14 +7,13 @@
 - **动机**：此前每个子代理都无条件收到完整规则（实测 5044 字符），而只读任务（列目录、数文件、只读分析）的 prompt 本身往往只有 100 多字符——规则里「最短 diff、删除优先、留下可运行检查、标记 `ponytail:` 债务」这些执行层条目对它完全无关。
 - **两档**：判别只落在 `pre-step` 层，因为只有它能看到任务文本（`subagent-start` 的载荷仅 `runId/provider/id/local`）。
   - **只读档**（`ponytail-subagent-readonly`，144 字符）：只保留不变量（不得改文件）与观察面（把发现当交付物）。
-  - **写档**（`ponytail-subagent-rules`，完整 4849 字符）：`notAny` 只读词，其余一律给完整规则——宁可多给，不能让要改代码的子代理漏掉规则。
-  - 两档关键词表逐字一致（`PONYTAIL:readonly` 显式标记 + `只读`/`不要读取`/`不改动`/`不要修改` 语义词），互斥且完备；都是 `position: before-all`（规则排在任务文本之前）+ `dedupe: session`（每个子代理只付一次）。
+  - **写档**（`ponytail-subagent-rules`，完整 4849 字符）：`notAny` 只读词，其余一律给完整规则。
+  - 两档共用同一张关键词表、算子相反，因此**互补且完备**（不存在两档都不命中）：只认 `PONYTAIL:readonly`、`only read`、`只读` 这类**明确表示整个任务只读**的信号，**不含** `不要修改`/`不要读取` 这类从句级表述——写任务里出现得比只读任务还频繁（`重构这个函数，不要修改测试文件`）。取不到明确信号就按写档，因为误判代价不对称：写任务漏给规则会让代码质量悄悄变差且不会被发现，写档多给 4844 字符只是浪费。
+  - 两档都是 `position: before-all`（规则排在任务文本之前）+ `dedupe: session`（每个子代理只付一次）。
 - **档位标记**留在 `subagent-start`（195 字符，无条件）：子代理拿不到 `system-section` 的档位卡，这一行仍是它唯一的档位来源。
 - **净效果**：只读子代理的规则开销从 5044 → 339 字符（约 −93%），写档行为不变。
 - **投影命名统一到产物形态**：`configs/` 文件名回归 `writePreset` 的固有命名 `<seq>-<ruleId>--<actionId>.yml`（此前被手工去掉 `--inject` 后缀）。六份既有投影正文逐字未变，已用 git HEAD 版本对比验证。
 - **回归**：`test/host/ponytail-module.test.mjs` 的注入点断言改为守住分档设计（两档的层/位置/去重/关键词表一致性与互斥完备性、只读档保持轻量、档位卡无条件）。
-
-## [Unreleased]
 
 ### 修复：注入消息的 source 改用会话格式 v4 的生产者身份
 
@@ -22,8 +21,6 @@
 - **根因**：注入消息的 `source` 写成 `{ kind: 'plugin', plugin: <owner> }`。会话格式 v4 把这种形态列为**退役包装**并直接拒绝（`dsh-session-format-v3-to-v4` 的 `assertV4MessageSources` / `assertV4SourceRowAdmission`），迁移只在读旧日志时把 `plugin` 折进 kind。受影响的是全部插件注入路径：`pluginMessage`（`subagent-start` / `subagent-end` / `turn-stop` / `append-context`）、pre-step 的 `buildMessage`、`inbox-prepend`、`anchor-notice`。
 - **修复**：写入一律用生产者身份 `kind: 'plugin:<owner>'`（保留 `plugin` 字段供旧日志与 `blockPlugins` 读取）；读取侧两形态都认——`pluginIdentityOf` 统一取去重身份、`confirmDelivered` 补记、`inbox-prepend` 的防自触发、`pre-step-filter` 的 `blockPlugins`、`userMessagesText` 的注入过滤。
 - **回归**：`test/engine/actions.test.mjs` 与 `test/engine/prompt-config-engine.test.mjs` 断言注入消息的 `source.kind` 必须是生产者名，锁死这条格式契约。
-
-## [Unreleased]
 
 ### 内置 ponytail 模块重建：对齐上游 4.10.3，并接通子代理注入
 

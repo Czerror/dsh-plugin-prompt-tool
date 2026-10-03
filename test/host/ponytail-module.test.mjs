@@ -80,7 +80,10 @@ test('ponytail 模块：注入点映射与上游 hook 一致', () => {
   // 子代理分两档：写档（完整规则）与只读档（轻量）。**必须在 pre-step 层**——
   // 判别「只读 / 写」要看任务文本，而 subagent-start 层的载荷只有
   // runId/provider/id/local，拿不到任务文本（见 docs/injection-point-contracts.md）。
-  const RULE_KEYS = ['PONYTAIL:readonly', '只读', '不要读取', '不改动', '不要修改']
+  // 判别只认**明确表示整个任务只读**的信号；取不到就是写档。关键词表只收形容整个任务
+  // 的词——「不要修改」这类从句级表述不得入表：写任务里出现得比只读任务还频繁，
+  // 会让「重构这个函数，不要修改测试文件」整条被判成只读档。
+  const RULE_KEYS = ['PONYTAIL:readonly', 'only read', '只读']
   const write = rulesById.get('ponytail-subagent-rules')
   const readonly = rulesById.get('ponytail-subagent-readonly')
   for (const [label, rule] of [['写档', write], ['只读档', readonly]]) {
