@@ -197,6 +197,26 @@ test('计数类：冷启动冷扫重建与上下限边界', () => {
   assert.throws(() => createCountPredicate({ of: 'tool-call', min: -1 }), /min must be an integer >= 0/)
 })
 
+test('计数类与会话态：`delegated` 双向往返且不抛（曾因漏 import 静默永不命中）', () => {
+  // 回归：count.mjs 用过未导入的 `isDelegated`，判定期抛 ReferenceError 被 ruleMatches
+  // 吞成 false → `when: { count: { ..., delegated } }` 静默永不命中。这条用例钉住两侧语义。
+  const mainSession = { id: 's-main', header: { cwd: '/workspace', delegationDepth: 0 }, snapshotEvents: () => [toolCall(1)] }
+  const childSession = { id: 's-child', header: { cwd: '/workspace', delegationDepth: 1 }, snapshotEvents: () => [toolCall(1)] }
+  const main = makeAgent(mainSession)
+  const child = makeAgent(childSession)
+
+  for (const [oracle, session, agent] of [['主会话', mainSession, main], ['子代理', childSession, child]]) {
+    assert.equal(createCountPredicate({ of: 'tool-call', min: 1, delegated: false })(agent), oracle === '主会话', `count.delegated=false 只认主会话（${oracle}）`)
+    assert.equal(createCountPredicate({ of: 'tool-call', min: 1, delegated: true })(agent), oracle === '子代理', `count.delegated=true 只认子代理（${oracle}）`)
+    assert.equal(createSessionStatePredicate({ type: 'tool/call', present: true, delegated: false })(agent), oracle === '主会话', `session.delegated=false 只认主会话（${oracle}）`)
+    assert.equal(createSessionStatePredicate({ type: 'tool/call', present: true, delegated: true })(agent), oracle === '子代理', `session.delegated=true 只认子代理（${oracle}）`)
+    // 不声明的形态与旧行为一致：两侧都命中。
+    assert.equal(createCountPredicate({ of: 'tool-call', min: 1 })(agent), true, `缺省不判受众（${oracle}）`)
+    assert.equal(createSessionStatePredicate({ type: 'tool/call', present: true })(agent), true, `缺省不判受众（${oracle}）`)
+    void session
+  }
+})
+
 // ── 5. 名单 ──────────────────────────────────────────────────────────────────
 
 test('名单类：大小写、空名与未声明的边界', () => {

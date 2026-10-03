@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+### 修复：`count` 谓词的 `delegated` 选项静默永不命中
+
+- **缺陷**：`engine/conditions/count.mjs` 在第 129 行使用 `isDelegated`，但该文件只从 `../shared.mjs` 导入了 `MAX_TRACKED_SESSIONS, extractText, sessionEvents`——**漏了 `isDelegated`**。于是 `when: { count: { …, delegated: true|false } }` 在判定期抛 `ReferenceError`，被 `ruleMatches` 的 try/catch 吞成 `false` 并只告警一次，表现为该选项**配置合法、永不命中、零显式报错**。同语义的 `session.mjs`、`scope.mjs` 都正确导入了，只有 count 漏了。
+- **修复**：补上 import。
+- **回归**：`test/engine/predicates.test.mjs` 新增「计数类与会话态：`delegated` 双向往返且不抛」——在主会话与子代理两种 `delegationDepth` 上各跑 `delegated: true/false` 与不声明的形态，断言 `count` 与 `session` 两个谓词的受众语义一致（此前 `delegated` 在测试里零覆盖，所以一直没被发现）。
+
 ### 修复：注入来源统一为 v4 生产者身份，注入正文不再回到判定输入
 
 - **真机故障**：一次明确只读的子代理派发里**两档并注**——seq=11 注入只读档（144 字符），做完两个工具调用后 seq=28 又注入完整规则（4849 字符）。

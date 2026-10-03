@@ -1,4 +1,4 @@
-import { MAX_TRACKED_SESSIONS, extractText, sessionEvents } from '../shared.mjs'
+import { MAX_TRACKED_SESSIONS, extractText, isDelegated, sessionEvents } from '../shared.mjs'
 import { sessionOf } from './subject.mjs'
 import { boundOf, optionalBoolean } from './values.mjs'
 
