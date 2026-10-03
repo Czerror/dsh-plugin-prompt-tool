@@ -1,6 +1,7 @@
 /** 设置输入行：编辑框失焦即保存（与 anchor 文本一致）。 */
 import type { ReactNode } from 'react'
 import ui from './controls.module.css'
+import { TextInput } from './TextInput.tsx'
 
 export function SettingInputRow(props: {
   id: string
@@ -18,9 +19,9 @@ export function SettingInputRow(props: {
       <div className={ui.settingRowStack}>
         <span className={ui.settingCopy}><strong>{props.label}</strong><small>{props.hint}</small></span>
         <div className={ui.directoryControl}>
-          <input
+          <TextInput
+            variant="directory"
             id={props.id}
-            className={ui.directoryInput}
             type={props.type ?? 'text'}
             value={props.value}
             aria-label={props.label}

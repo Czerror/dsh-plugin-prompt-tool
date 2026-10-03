@@ -57,7 +57,7 @@ export function MenuSelect(props: {
   }, [disabled])
 
   return (
-    <span className={styles.menuSelectOwner} style={compact ? { width: controlWidth([selected?.label ?? (props.value || props.placeholder || '（未选择）'), ...props.options.map(option => option.label)], 48, 4, 26), flex: '0 1 auto', font: '12px/18px system-ui, sans-serif' } : undefined} onBlur={(event) => {
+    <span className={styles.menuSelectOwner} style={compact ? { width: controlWidth([selected?.label ?? (props.value || props.placeholder || '（未选择）'), ...props.options.map(option => option.label)], 48, 4, 26), flex: '0 1 auto', minWidth: 0, maxWidth: '100%', font: '12px/18px system-ui, sans-serif' } : undefined} onBlur={(event) => {
       const next = event.relatedTarget
       if (next instanceof Node && event.currentTarget.contains(next)) return
       ownsFocus.current = false

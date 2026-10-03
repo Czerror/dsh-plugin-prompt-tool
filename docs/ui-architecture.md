@@ -508,7 +508,7 @@ ui/ 只接收 props/callback，当前真实共享 seam 包括：
 - Menu 在定位完成的可见帧聚焦首个可用项，统一处理上下键、Home/End、Escape/Tab、禁用项及焦点恢复。
 - tab-key.ts、dialog-focus.ts：纯键盘索引及弹窗焦点行为。
 
-单行 input 与 textarea 使用原生元素；下拉单选经 MenuSelect 保持触发器、浮层和 ARIA 一致。Button、Switch、Menu 和五个 SVG 图标只实现当前消费面，Tag 的外观直接归 StatusBadge。
+单行 input 与 textarea 默认使用插件自有尺寸样式；设置行可通过 `TextInput` 复用同一原生属性接口，复杂编辑器仍可直接使用原生元素。下拉单选经 MenuSelect 保持触发器、浮层和 ARIA 一致。Button、Switch、Menu 和五个 SVG 图标只实现当前消费面，Tag 的外观直接归 StatusBadge。
 
 fieldset 禁用时 MenuSelect 同时拒绝 portal 中的选择。Tooltip 的键盘说明绑定实际聚焦目标，Escape 关闭说明。
 
@@ -526,7 +526,7 @@ fieldset 禁用时 MenuSelect 同时拒绝 portal 中的选择。Tooltip 的键�
 
 身份与动作字段按内容宽度排列并自然换行，不设固定 200–240px 列。互斥组输入和开关作为一个相邻单元，均属于规则顶层。启用同组卡时发送 `activateRuleId`，服务端原子关闭同模块同组的其它规则；客户端接受整份响应快照，同时保留请求期间的新编辑，不按排序选择赢家。
 
-单行 input、操作按钮和 compact MenuSelect 为 28px、12px/18px，按钮与下拉半径 14px。`FormField` 按值估算短文本输入宽度（6–28ch 加内边距）；共享 MenuSelect 的 compact 默认按最长选项估算（4–26ch 加箭头与内边距），中文等宽字符按双宽计，不靠调用方逐个指定宽度。OptionField、当前会话模型与共享设置沿用同一规则；长值可完整编辑，不使用 maxLength，触发器省略的选项在菜单中提供全文。控件 max-width 保持 100%，数字 96px；正文与 JSON 保持全宽。粗指针实际命中边框为 44px，开关可见轨道保持 20px；菜单原始 pointer 落点在边框外时不打开。
+单行 input、操作按钮和 compact MenuSelect 为 28px、12px/18px，按钮与下拉半径 14px。`FormField` 按值估算短文本输入宽度（6–28ch 加内边距）；共享 MenuSelect 的 compact 默认按最长选项估算（4–26ch 加箭头与内边距），中文等宽字符按双宽计，不靠调用方逐个指定宽度。OptionField、当前会话模型与共享设置沿用同一规则；长值可完整编辑，不使用 maxLength，触发器省略的选项在菜单中提供全文。普通配置输入最大 15rem（240px），设置路径输入最大 460px 且可在窄容器收缩，筛选输入最小 12rem 并随行宽换行；下拉 owner 最大 18rem，窄容器统一不超过父级宽度。数字字段仍由业务层限制为 96px；正文与 JSON 保持全宽。粗指针实际命中边框为 44px，开关可见轨道保持 20px；菜单原始 pointer 落点在边框外时不打开。
 
 工作台五页以顶部 Tab 标识当前页面，内容区不再重复页名、页面概述或附加摘要。跨页导航聚焦活动 tabpanel，Tab 键导航仍聚焦页签；页面命名由 `aria-labelledby` 关联页签提供。配置卡和能力卡展开后直接显示编辑内容，不额外重复卡名或 ID；基础信息控件保留完整名称与 ID 的编辑能力。
 

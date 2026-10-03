@@ -285,14 +285,17 @@
   display: flex;
   min-width: 0;
   flex: 0 1 460px;
+  width: min(100%, 460px);
   max-width: 62%;
   align-items: center;
   gap: 8px;
 }
 
 .directoryInput {
-  width: 100%;
-  min-width: 0;
+  width: min(100%, 460px);
+  min-width: min(100%, 12rem);
+  max-width: 100%;
+  box-sizing: border-box;
   min-height: 32px;
   border: 0.5px solid var(--dsw-alias-label-tertiary);
   border-radius: 8px;
@@ -672,8 +675,9 @@
 .configFieldStack { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
 .configFieldStack > textarea { margin-top: 2px; }
 .configInput {
+  width: min(100%, 15rem);
   min-width: 0;
-  max-width: 100%;
+  max-width: min(100%, 15rem);
   box-sizing: border-box;
   border: 0.5px solid var(--dsw-alias-label-tertiary);
   background: var(--dsw-alias-bg-layer-1);
@@ -692,6 +696,8 @@
 .settingRowStack > .menuSelectOwner { width: min(100%, 280px); }
 .configTextarea {
   width: 100%;
+  min-width: 0;
+  max-width: 100%;
   min-height: 72px;
   /* 随内容自适应拉高（长文本不再挤在小编辑框）；resize: vertical 仍可手动覆盖。 */
   field-sizing: content;
@@ -753,7 +759,8 @@
 }
 .listFilter {
   width: 100%;
-  min-width: 0;
+  min-width: min(100%, 12rem);
+  max-width: 100%;
   flex: 1 1 200px;
   box-sizing: border-box;
   min-height: 32px;
@@ -775,6 +782,7 @@
   min-width: 0;
   max-width: 100%;
 }
+.menuSelectOwner { width: min(100%, 18rem); }
 .menuSelectOwner > .menuSelect { width: 100%; }
 .configFieldControlAnchor > .menuSelectOwner { width: 100%; }
 .listFilterRow > .menuSelectOwner { flex: 0 1 auto; }
@@ -798,6 +806,7 @@
   display: inline-flex;
   width: 100%;
   min-width: 0;
+  max-width: 100%;
   align-items: center;
   justify-content: space-between;
   border: 0.5px solid var(--dsw-alias-label-tertiary);
