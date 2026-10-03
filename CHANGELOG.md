@@ -1,5 +1,13 @@
 # Changelog
 
+## [Unreleased]
+
+### 内置 ponytail 模块重建：对齐上游 4.10.3，并接通子代理注入
+
+- **规则正文按上游 `skills/ponytail/SKILL.md` 重新抽取**：消掉 vendor 旧版的语义漂移（根因修复改为「先 grep 该函数所有 caller，再在共享函数上修一次」、`## Rules` 合并为上游的紧凑段并补回「无可避免的新依赖」、不懒惰清单补回「显式要求」、测试条目补回「no fixtures」），并补上上游的停用语义 `Off: "stop ponytail" / "normal mode"`。DSH 本地适配保留：档位由互斥配置卡持有、不注册 `/ponytail` 命令。
+- **接通上游 `SubagentStart` 通道**：新增 `ponytail-subagent-rules` / `ponytail-subagent-level` 两张 `subagent-start` 层配置卡。此前四张卡全在 `system-section`，只在主会话 system prompt 里生效，子代理拿不到规则；现在子代理启动时按上游语义注入同一份规则副本（不声明 `when` = 注入每个子代理，对应上游 matcher 缺省与解析失败时的 fail open）。
+- **新增回归 `test/host/ponytail-module.test.mjs`**：守住①`configs/` 投影与 `module.yml` 定义逐字一致且文件名符合 `configOrder` 序号契约，②规则正文含上游关键句且不内联档位表，③注入点映射（常驻 `system-section`、档位互斥组默认 full、子代理走 `subagent-start`）。
+
 ## [1.0.0] - 2026-10-02
 
 ### 模块化重构：预设 → 模块，启用即配装

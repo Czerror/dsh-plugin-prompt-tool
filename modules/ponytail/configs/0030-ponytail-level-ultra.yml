@@ -1,11 +1,8 @@
-id: ponytail-level-ultra
-name: Ponytail 档位：ultra（极端档）
+id: "ponytail-level-ultra"
 layer: system-section
 order: 202
 enabled: false
 strategy: static
-group: ponytail-level
-exclusive: true
 text: |-
   PONYTAIL MODE ACTIVE — level: ultra
 
