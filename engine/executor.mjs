@@ -67,13 +67,25 @@ function identityOf(config) {
   return config.mergeMode === 'merged' ? mergedIdentity(config) : config.identity.value
 }
 
+/**
+ * 消息来源的插件身份（去重身份）。v4 起 `source.kind` 是生产者名（`plugin:<name>`），
+ * `source.plugin` 只作为旧日志字段保留——两条通道都要认，否则去重记账会在格式换代后静默失效。
+ */
+function pluginIdentityOf(source) {
+  if (source === null || typeof source !== 'object') return undefined
+  if (typeof source.plugin === 'string' && source.plugin.length > 0) return source.plugin
+  return typeof source.kind === 'string' && source.kind.startsWith('plugin:')
+    ? source.kind.slice('plugin:'.length)
+    : undefined
+}
+
 function hasInjected(config, session) {
   const value = identityOf(config)
   return sessionEvents(session).some((event) => {
     const message = eventMessage(event)
     // 双通道去重：kind（外来/第三方消息，如 context-gate 的 instruction-hint）或
     // plugin（本引擎注入的命名空间，merged 组用 merged:<position>）。
-    return message?.source?.kind === config.sourceKind || message?.source?.plugin === value
+    return message?.source?.kind === config.sourceKind || pluginIdentityOf(message?.source) === value
   })
 }
 
@@ -81,7 +93,7 @@ function hasInjected(config, session) {
 function hasInBatch(config, messages) {
   const value = identityOf(config)
   return messages.some((message) =>
-    message?.source?.kind === config.sourceKind || message?.source?.plugin === value)
+    message?.source?.kind === config.sourceKind || pluginIdentityOf(message?.source) === value)
 }
 
 /**
@@ -114,6 +126,10 @@ export function confirmDelivered(memo, session, event) {
     if (typeof value !== 'string' || value.length === 0) continue
     deliveredSessions(memo, `${field}:${value}`).add(session.id)
   }
+  // v4 起生产者身份挂在 kind（`plugin:<name>`），旧日志才有 plugin 字段；
+  // 两种形态都补记到 plugin: 账本，alreadyDelivered 的 `confirmed('plugin', …)` 才不会漏。
+  const plugin = pluginIdentityOf(source)
+  if (plugin !== undefined && source.plugin === undefined) deliveredSessions(memo, `plugin:${plugin}`).add(session.id)
 }
 
 /** dedupe=session：本会话是否已有该身份的已确认投递（快路径 + 持久事件真相）。 */
@@ -152,7 +168,9 @@ function buildMessage(config, resolved, warnOnce) {
   const base = resolved.source !== null && typeof resolved.source === 'object'
     ? resolved.source
     : {
-        kind: config.sourceKind,
+        // v4 要求 kind 是**生产者名**：声明了 sourceKind 就用它，否则用与 pluginMessage 同一形状的
+        // `plugin:<身份>`。裸 kind（undefined / 'plugin'）都会被 codec 拒绝，历史走的是同一个坑。
+        kind: typeof config.sourceKind === 'string' && config.sourceKind.length > 0 ? config.sourceKind : `plugin:${sourceValue}`,
         plugin: sourceValue,
         ...(typeof config.form === 'string' ? { form: config.form } : {}),
         ...(typeof config.summary === 'string' && config.summary.length > 0 ? { summary: config.summary } : {}),

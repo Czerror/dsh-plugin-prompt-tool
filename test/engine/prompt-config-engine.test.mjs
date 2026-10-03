@@ -276,6 +276,10 @@ test('subagent-start：命中条件时向子代理注入，未命中零注入', 
   listener({ id: 'child-1', runId: 'r1' })
   assert.equal(injected.length, 1)
   assert.equal(injected[0].content[0].text, '先取证再动手')
+  // source.kind 必须是**生产者名**：会话格式 v4 把裸 `plugin` 列为退役包装，
+  // 写了它整条 `agent/inbox/spliced` 会被 codec 拒绝，子代理启动直接失败（真机踩过）。
+  assert.match(injected[0].source.kind, /^plugin:/, '注入消息的 kind 必须是生产者名而不是裸 plugin')
+  assert.notEqual(injected[0].source.kind, 'plugin')
 
   listener({ id: 'child-2', runId: 'r2' })
   assert.equal(injected.length, 1, '未命中条件不注入')

@@ -437,13 +437,21 @@ function wireLlmStreams(ctx, configs, warnOnce, on) {
 
 /** 条件判定的匹配器与取文本逻辑由 condition.mjs 承载（pre-step 与其他层共用）。 */
 
-/** 插件来源的 user 消息：与 anchor-turn / progress-reminder 同一形状。 */
+/**
+ * 插件来源的 user 消息：与 anchor-turn / progress-reminder 同一形状。
+ *
+ * `kind` 必须是**生产者名**而不是裸 `plugin`：会话格式 v4 把 `{ kind: 'plugin', plugin }`
+ * 列为退役包装并直接拒绝（`dsh-session-format-v3-to-v4` 的 `assertV4MessageSources` /
+ * `assertV4SourceRowAdmission` 一律抛 `format v4 message requires a producer-owned source kind`），
+ * 迁移只在读旧日志时把 `plugin` 折进 kind。写 `kind: 'plugin'` 会让本次 splice 被 codec
+ * 拒绝、连 `agent/inbox/spliced` 都落不了盘——子代理启动因此整段失败。
+ */
 export function pluginMessage(prefix, text, summary) {
   return {
     id: newMessageId(prefix),
     role: 'user',
     content: [{ type: 'text', text }],
-    source: { kind: 'plugin', plugin: name, form: 'notice', summary },
+    source: { kind: `plugin:${name}`, plugin: name, form: 'notice', summary },
   }
 }
 

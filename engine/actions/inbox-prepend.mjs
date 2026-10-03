@@ -18,6 +18,9 @@ export function prepareInboxPrepend(action, plugin) {
       // （对拍实测：声明路径多插 2 条）。
       if (agent?.session === undefined) return
       if (typeof agent?.inbox?.prepend !== 'function') return
+      // v4 起插件来源的 kind 是生产者名（`plugin:<name>`）；两种形态一起认，否则换代后
+      // 「插件来源消息永不再次前置」这道防自触发的闸会静默失效。
+      if (typeof message?.source?.kind === 'string' && message.source.kind.startsWith('plugin:')) return
       if (message?.source?.kind === 'plugin') return
       if (typeof action.match === 'function' && action.match(agent, message) !== true) return
       if (!take({ agent })) return
@@ -25,7 +28,7 @@ export function prepareInboxPrepend(action, plugin) {
         id: newMessageId(`action-${label}`),
         role: 'user',
         content: [{ type: 'text', text }],
-        source: { kind: 'plugin', plugin: label, form: 'notice', summary: `${label} ${target}` },
+        source: { kind: `plugin:${label}`, plugin: label, form: 'notice', summary: `${label} ${target}` },
       })
     } catch (error) {
       warnOnce(`${plugin}: inbox-prepend action ${label} failed: ${String(error?.message ?? error)}`)

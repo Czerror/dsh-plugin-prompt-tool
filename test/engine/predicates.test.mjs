@@ -277,10 +277,13 @@ test('子代理事件：判定前按 id 反查 agent，作用域谓词才真正�
 
 test('userText：只扫真实对话，注入过的正文不得回来匹配自己', () => {
   const real = { role: 'user', source: { kind: 'user' }, content: [{ type: 'text', text: '帮我重构这个模块' }] }
-  // 引擎自己注入的那条：user-role，但 source 是 plugin（executor.mjs 的 pluginMessage 形状）。
-  const injected = { role: 'user', source: { kind: 'plugin', plugin: 'injected-rules' }, content: [{ type: 'text', text: '重构、实现、新建时按 ponytail 规则' }] }
-  assert.equal(userMessagesText([real, injected]), '帮我重构这个模块', '注入正文不得进入判定输入')
+  // 引擎自己注入的那条：user-role，但 source 是插件生产者身份（`plugin:<name>`）。
+  const injected = { role: 'user', source: { kind: 'plugin:injected-rules', plugin: 'injected-rules' }, content: [{ type: 'text', text: '重构、实现、新建时按 ponytail 规则' }] }
+  // 旧形态（裸 kind）同样不得进入判定输入——历史日志与迁移前写入都长这样。
+  const legacyInjected = { role: 'user', source: { kind: 'plugin', plugin: 'injected-rules' }, content: [{ type: 'text', text: '重构' }] }
+  assert.equal(userMessagesText([real, injected, legacyInjected]), '帮我重构这个模块', '注入正文不得进入判定输入')
   assert.equal(userMessagesText([injected]), '')
+  assert.equal(userMessagesText([legacyInjected]), '')
   // 无 source 字段的消息（测试与旧形态）继续计入；assistant 永不计入。
   assert.equal(userMessagesText([{ role: 'user', content: [{ type: 'text', text: '裸消息' }] }]), '裸消息')
   assert.equal(userMessagesText([{ role: 'assistant', content: [{ type: 'text', text: '回复' }] }]), '')

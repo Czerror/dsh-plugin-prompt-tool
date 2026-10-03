@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+### 修复：注入消息的 source 改用会话格式 v4 的生产者身份
+
+- **真机故障**：启用含 `subagent-start` 卡的模块后，任何子代理启动都失败——`SessionFormatError: format v4 message requires a producer-owned source kind`，子代理会话只写了 header 与权限事件，连 `agent/inbox/spliced` 都落不了盘。
+- **根因**：注入消息的 `source` 写成 `{ kind: 'plugin', plugin: <owner> }`。会话格式 v4 把这种形态列为**退役包装**并直接拒绝（`dsh-session-format-v3-to-v4` 的 `assertV4MessageSources` / `assertV4SourceRowAdmission`），迁移只在读旧日志时把 `plugin` 折进 kind。受影响的是全部插件注入路径：`pluginMessage`（`subagent-start` / `subagent-end` / `turn-stop` / `append-context`）、pre-step 的 `buildMessage`、`inbox-prepend`、`anchor-notice`。
+- **修复**：写入一律用生产者身份 `kind: 'plugin:<owner>'`（保留 `plugin` 字段供旧日志与 `blockPlugins` 读取）；读取侧两形态都认——`pluginIdentityOf` 统一取去重身份、`confirmDelivered` 补记、`inbox-prepend` 的防自触发、`pre-step-filter` 的 `blockPlugins`、`userMessagesText` 的注入过滤。
+- **回归**：`test/engine/actions.test.mjs` 与 `test/engine/prompt-config-engine.test.mjs` 断言注入消息的 `source.kind` 必须是生产者名，锁死这条格式契约。
+
+## [Unreleased]
+
 ### 内置 ponytail 模块重建：对齐上游 4.10.3，并接通子代理注入
 
 - **规则正文按上游 `skills/ponytail/SKILL.md` 重新抽取**：消掉 vendor 旧版的语义漂移（根因修复改为「先 grep 该函数所有 caller，再在共享函数上修一次」、`## Rules` 合并为上游的紧凑段并补回「无可避免的新依赖」、不懒惰清单补回「显式要求」、测试条目补回「no fixtures」），并补上上游的停用语义 `Off: "stop ponytail" / "normal mode"`。DSH 本地适配保留：档位由互斥配置卡持有、不注册 `/ponytail` 命令。

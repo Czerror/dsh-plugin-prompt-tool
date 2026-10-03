@@ -33,9 +33,11 @@ export function prepareAppendContext(action, plugin) {
     try {
       if (typeof action.match === 'function' && action.match(exec, result, decision) !== true) return decision
       if (decision?.kind !== 'accept') return decision
+      // source 形状与 pluginMessage 同源：v4 要求 kind 是生产者名（`plugin:<name>`），
+      // 裸 `plugin` 会被会话格式校验拒绝，这条 durable user 通知就落不了盘。
       const notice = {
         ...pluginMessage(`action-${label}`, text, `${label} context`),
-        source: { kind: 'plugin', plugin: label, form: 'notice', summary: `${label} context` },
+        source: { kind: `plugin:${label}`, plugin: label, form: 'notice', summary: `${label} context` },
       }
       const updated = { ...decision, additionalContexts: [...(decision.additionalContexts ?? []), notice] }
       return take(exec) ? updated : decision

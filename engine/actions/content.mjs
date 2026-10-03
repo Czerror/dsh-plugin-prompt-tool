@@ -97,7 +97,8 @@ function createAnchorNoticeResolver(config) {
     return {
       text: promptText,
       source: {
-        kind: 'plugin',
+        // v4 要求 kind 是生产者名：裸 `plugin` 是退役包装，会被会话格式校验拒绝。
+        kind: `plugin:${config.id}`,
         plugin: config.id,
         form: 'notice',
         summary: confirmed

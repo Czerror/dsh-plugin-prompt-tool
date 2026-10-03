@@ -232,7 +232,7 @@ test('(4) 追加上下文：additionalContexts 形状（user 角色、plugin 来
   assert.equal(actual.additionalContexts.length, 1)
   assert.deepEqual(actual.additionalContexts[0].content, [{ type: 'text', text: 'BEAT' }])
   assert.equal(actual.additionalContexts[0].role, 'user')
-  assert.equal(actual.additionalContexts[0].source.kind, 'plugin')
+  assert.equal(actual.additionalContexts[0].source.kind, 'plugin:beat')
   assert.equal(actual.additionalContexts[0].source.plugin, 'beat')
   // 非 accept 裁决不追加（原模块同样只在 accept 上追加）
   const denied = await only(viaAction.events, 'tools/post-execute')(exec, decision, async () => ({ kind: 'block', feedback: [] }))
@@ -449,11 +449,14 @@ test('(8) 前置收件箱消息：命中即插到真实消息之前，插件来�
   assert.equal(prepended[0].target, 'next-turn', '缺省插到下一轮队列')
   assert.equal(prepended[0].message.content[0].text, 'ANCHOR')
   assert.equal(prepended[0].message.role, 'user', '绝不伪造 assistant 角色')
-  assert.equal(prepended[0].message.source.kind, 'plugin', '来源标记为插件，供防自触发')
+  assert.equal(prepended[0].message.source.kind, 'plugin:anchor', '来源标记为生产者身份，供防自触发')
 
   // 防自触发：插件来源消息（含本动作自己插入的那条）永不再次前置，否则一条消息引出无限插队。
-  handler({ agent, message: { source: { kind: 'plugin' } } })
+  // 两种形态都要拦：v4 新写入用 `plugin:<name>`，旧日志才是裸 `plugin`。
+  handler({ agent, message: { source: { kind: 'plugin:anchor' } } })
   assert.equal(prepended.length, 1, '插件来源消息不得再次触发前置')
+  handler({ agent, message: { source: { kind: 'plugin' } } })
+  assert.equal(prepended.length, 1, '旧形态的插件来源同样不得再次触发前置')
 
   // 缺 inbox 服务（最小组合 / 测试桩）：静默跳过，不抛。
   assert.doesNotThrow(() => handler({ agent: { session: { id: 'x' } }, message: {} }))
