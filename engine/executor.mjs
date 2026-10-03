@@ -179,7 +179,7 @@ function buildMessage(config, resolved, warnOnce) {
  * @returns 注入后的 decision；reject、缺 agent/session、全部跳过或异常时原样返回。
  */
 export async function runPreStepBatch(options) {
-  const initialFrame = options.ruleFrame ?? ruleFrame('agent/pre-step', [{ agent: options.agent, messages: options.decision?.messages ?? [] }], options.warnOnce)
+  const initialFrame = options.ruleFrame ?? ruleFrame('agent/pre-step', [{ agent: options.agent, messages: options.decision?.messages ?? [] }], options.warnOnce, options.ctx)
   if (!options.ruleActions?.length) return runPromptConfigBatch({ ...options, ruleFrame: initialFrame })
   const entries = [...options.configs.map(config => ({ ...config, config })), ...options.ruleActions].sort(compareConfigSequence)
   let decision = options.decision

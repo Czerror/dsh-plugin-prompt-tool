@@ -5,8 +5,11 @@ import { createScope, scopeOf, scopeParentOf } from '@deepseek-ai/dsh-scope'
 
 import { MATCH_LOGIC } from '../../engine/anchor-match.mjs'
 import { UNAVAILABLE } from '../../engine/conditions/availability.mjs'
+import { subjectOf } from '../../engine/conditions/subject.mjs'
+import { userMessagesText } from '../../engine/condition.mjs'
 import {
   agentPresetId,
+  compileWhen,
   composite,
   createCountPredicate,
   createNameListPredicate,
@@ -208,6 +211,86 @@ test('名单类：大小写、空名与未声明的边界', () => {
   assert.throws(() => createNameListPredicate({ allow: [''] }), /non-empty strings/)
   assert.throws(() => createNameListPredicate({ deny: [1] }), /non-empty strings/)
   assert.throws(() => createNameListPredicate({ allow: 'read' }), /non-empty strings/)
+})
+
+// ── 5b. 子代理事件的结构化事实 ───────────────────────────────────────────────
+// 上游 matcher 按 agent 类型筛选子代理；DSH 的 `SubagentRunInfo` 只有
+// runId/provider/id/local，provider 是唯一稳定的分类事实（spawn / fork / acp / …）。
+
+test('子代理事件：provider 投影为 name，接通名单谓词', () => {
+  const byProvider = (provider) => subjectOf('subagent/start', [{ runId: 'r-1', provider, id: 's-2', local: true }])
+  assert.equal(byProvider('fork').name, 'fork')
+  // 判定链：subjectOf 的 name → 名单谓词（这正是 subagent-start 层此前缺的那一环）。
+  assert.equal(createNameListPredicate({ allow: ['fork'] })(byProvider('fork')), true)
+  assert.equal(createNameListPredicate({ allow: ['fork'] })(byProvider('spawn')), false)
+  assert.equal(createNameListPredicate({ allow: ['fork'], caseSensitive: false })(byProvider('Fork')), true)
+  // 缺 provider（官方注释：提供方未必仍注册）不得被当成「已知为空」——走 UNAVAILABLE，
+  // 于是 `not` 也不能把它反转成放行。
+  const absent = subjectOf('subagent/start', [{ runId: 'r-1', id: 's-2', local: true }])
+  assert.equal(Object.hasOwn(absent, 'name'), false, '缺 provider 时不写 name 键')
+  assert.equal(createNameListPredicate({ allow: ['fork'] })(absent), UNAVAILABLE)
+  assert.equal(createNameListPredicate({ deny: ['fork'] })(absent), UNAVAILABLE)
+  // 既有事实不得被改写：subagentText 仍是完整载荷序列化，JSON 片段匹配照旧可用。
+  assert.equal(byProvider('fork').subagentText, JSON.stringify({ runId: 'r-1', provider: 'fork', id: 's-2', local: true }))
+  assert.equal(createTextPredicate({ keys: ['"provider":"fork"'], subject: 'subagentInfo' })(byProvider('fork')), true)
+  assert.equal(createTextPredicate({ keys: ['"provider":"spawn"'], subject: 'subagentInfo' })(byProvider('fork')), false)
+  // 谓词既要看 subagentText 又要看 name：JSON 片段（无 name）在名单谓词下必须 UNAVAILABLE。
+  assert.equal(createNameListPredicate({ allow: ['fork'] })({ subagentText: byProvider('fork').subagentText }), UNAVAILABLE)
+  assert.equal(createNameListPredicate({ allow: ['fork'] })(subjectOf('subagent/end', [{ runId: 'r-1', provider: 'fork', id: 's-2', local: true }])), true)
+})
+
+test('子代理事件：判定前按 id 反查 agent，作用域谓词才真正生效', () => {
+  // 生产顺序：ruleFrame 造帧 → ruleMatches 判定 → handler 执行。判定时 agent 只能靠
+  // 事件里的 id 反查补齐；取不到就是 UNAVAILABLE，不得乐观放行。
+  // 判定必须经 compileWhen（它才加 withAvailableInput 包装）——裸谓词没有可用性层。
+  const childSession = { id: 's-2', header: { id: 's-2', delegationDepth: 1 } }
+  const child = { session: childSession, options: { model: 'deepseek-pro' } }
+  const ctx = { agents: { get: (id) => (id === 's-2' ? child : undefined) } }
+  const info = { runId: 'r-1', provider: 'fork', id: 's-2', local: true }
+  const hit = (when, payload) => compileWhen(when)(payload) === true
+
+  const subject = subjectOf('subagent/start', [info], () => {}, ctx)
+  assert.equal(subject.agent, child)
+  assert.equal(subject.session, childSession)
+  assert.equal(subject.model, 'deepseek-pro', 'modelScope 需要非空 model 才算得出事实')
+  assert.equal(hit({ scope: { modelScope: 'pro' } }, subject), true)
+  assert.equal(hit({ scope: { modelScope: 'flash' } }, subject), false)
+  // 受众：子代理 session 的 delegationDepth > 0，主会话的为 0，同一谓词两侧都可判。
+  assert.equal(hit({ scope: { audience: 'subagent' } }, subject), true)
+  assert.equal(hit({ scope: { audience: 'main' } }, subject), false)
+  const mainSubject = subjectOf('subagent/start', [info], () => {}, {
+    agents: { get: () => ({ session: { id: 'm', header: { delegationDepth: 0 } }, options: { model: 'deepseek-pro' } }) },
+  })
+  assert.equal(hit({ scope: { audience: 'main' } }, mainSubject), true)
+
+  // 取不到 agent（已结算 / 未注册 / 无 ctx）：两个选项都退回 UNAVAILABLE。
+  // 它们各自的 availability 判据不同，必须分别断言——audience 看 session，modelScope 看 model。
+  for (const [label, payload] of [
+    ['已结算', subjectOf('subagent/start', [{ runId: 'r-9', provider: 'fork', id: 'gone', local: false }], () => {}, ctx)],
+    ['无 ctx', subjectOf('subagent/start', [info], () => {})],
+  ]) {
+    assert.equal(compileWhen({ scope: { modelScope: 'pro' } })(payload), UNAVAILABLE, `${label}：modelScope 取不到 model 不得命中`)
+    assert.equal(compileWhen({ scope: { audience: 'subagent' } })(payload), UNAVAILABLE, `${label}：audience 取不到 session 不得命中`)
+    assert.equal(compileWhen({ scope: { audience: 'main' } })(payload), UNAVAILABLE, `${label}：反向受众同样不得命中`)
+  }
+})
+
+test('userText：只扫真实对话，注入过的正文不得回来匹配自己', () => {
+  const real = { role: 'user', source: { kind: 'user' }, content: [{ type: 'text', text: '帮我重构这个模块' }] }
+  // 引擎自己注入的那条：user-role，但 source 是 plugin（executor.mjs 的 pluginMessage 形状）。
+  const injected = { role: 'user', source: { kind: 'plugin', plugin: 'injected-rules' }, content: [{ type: 'text', text: '重构、实现、新建时按 ponytail 规则' }] }
+  assert.equal(userMessagesText([real, injected]), '帮我重构这个模块', '注入正文不得进入判定输入')
+  assert.equal(userMessagesText([injected]), '')
+  // 无 source 字段的消息（测试与旧形态）继续计入；assistant 永不计入。
+  assert.equal(userMessagesText([{ role: 'user', content: [{ type: 'text', text: '裸消息' }] }]), '裸消息')
+  assert.equal(userMessagesText([{ role: 'assistant', content: [{ type: 'text', text: '回复' }] }]), '')
+  assert.equal(userMessagesText(undefined), '')
+
+  // 端到端：规则正文含「重构」，第二次进批时不得再命中它自己注入的那条。
+  // subject 在真实链路由 schema.mjs 按层补缺省（pre-step → userMessage），这里显式给出。
+  const keys = { text: { keys: ['重构'], subject: 'userMessage' } }
+  assert.equal(compileWhen(keys)({ userText: userMessagesText([real, injected]) }), true, '任务文本仍命中')
+  assert.equal(compileWhen(keys)({ userText: userMessagesText([injected]) }), false, '只剩注入正文时不得命中')
 })
 
 // ── 6. 会话状态 ──────────────────────────────────────────────────────────────

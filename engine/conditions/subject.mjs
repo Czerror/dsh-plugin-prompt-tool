@@ -26,6 +26,31 @@ const warnedChannels = new Set()
 const SUBJECT_MARK = Symbol('predicate-subject')
 
 /**
+ * 子代理事件判定期可见的 agent 事实。
+ *
+ * 官方 `subagent/start`、`subagent/end` 的载荷只有 `runId/provider/id/local`；
+ * `wireSubagentEvents` 是在 handler 里才把 child 挂上 frame 的，而 `ruleMatches`
+ * 在 handler **之前**执行。结果是 `scope.modelScope`（availability 要求 model 为非空
+ * 字符串）与 `scope.audience`（要求 session 可达）在子代理两层恒判 UNAVAILABLE——UI 上
+ * 配了却永远不命中，正是 schema 注释要避免的「配了没效果也不报错」。
+ *
+ * 这里在**判定前**用事件里的 `id` 反查 agent 补齐同样的事实。取不到时不写键：判定
+ * 退回 UNAVAILABLE（fail-closed），不得乐观放行。
+ */
+function subagentFacts(info, ctx) {
+  const facts = {}
+  const id = info?.id
+  if (typeof id !== 'string' || id.length === 0) return facts
+  const agent = ctx?.agents?.get?.(id)
+  if (agent === undefined || agent === null) return facts
+  facts.agent = agent
+  if (agent.session !== undefined) facts.session = agent.session
+  const model = agent.options?.model
+  if (typeof model === 'string' && model.length > 0) facts.model = model
+  return facts
+}
+
+/**
  * 把事件参数表归一为谓词载荷。
  *
  * `args` 传的是**去掉 `next` 之后的参数表**（无 `next` 的 emit/serial 通道原样传）。
@@ -35,9 +60,10 @@ const SUBJECT_MARK = Symbol('predicate-subject')
  * @param {string} channel 事件名
  * @param {unknown[]} args 去掉 next 的参数表
  * @param {Function} [warn] 告警回调（缺省静默）
+ * @param {unknown} [ctx] 判定期服务入口（目前只被子代理事件的 agent 反查使用）
  * @returns {unknown} 谓词载荷
  */
-export function subjectOf(channel, args, warn) {
+export function subjectOf(channel, args, warn, ctx) {
   // 第一个实参的字段**原样保留**在载荷顶层：旧形态（如 `agent/turn-stopping` 的
   // `{ agent, turn }`）因此继续可见，既有断言不会因归一化而失效。
   const first = args[0]
@@ -50,8 +76,17 @@ export function subjectOf(channel, args, warn) {
       case 'agent/pre-step': return { userText: userMessagesText(args[0]?.messages) }
       case 'agent/inbox/inserted': return { userText: userMessagesText([args[0]?.message]) }
       case 'agent/turn-stopping': return { assistantText: lastAssistantText(args[0]?.agent?.session) }
+      // 子代理事件的 `name` = provider（`SubagentRunInfo` 里唯一稳定的分类事实：
+      // spawn / fork / acp / codex / claude-code / dsh-sdk）。`names` 谓词读的就是
+      // `payload.name`，因此 `when: { names: { allow: ['fork'] } }` 在此可用。
+      // provider 可能缺席（官方注释：已接受的 one-shot 变 ready 或持久 Activation 冷恢复时
+      // 提供方未必仍注册）——那时不写键，让 `names` 走 UNAVAILABLE，而不是塞空串当「已知为空」。
       case 'subagent/start':
-      case 'subagent/end': return { subagentText: subagentTextOf(args[0]) }
+      case 'subagent/end': return {
+        subagentText: subagentTextOf(args[0]),
+        ...(typeof args[0]?.provider === 'string' && args[0].provider.length > 0 ? { name: args[0].provider } : {}),
+        ...subagentFacts(args[0], ctx),
+      }
       default: return {}
     }
   })()

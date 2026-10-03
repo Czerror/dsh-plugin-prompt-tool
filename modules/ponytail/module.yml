@@ -192,6 +192,13 @@ rules:
 
             Example: "Add a cache for these API responses."
             - ultra: "No cache until a profiler says so. When it does: `@lru_cache`. A hand-rolled TTL cache class is a bug farm with a hit rate."
+  # 上游 SubagentStart hook 的 DSH 落点：subagent/start 时向该子代理 inject 一份规则副本。
+  # 缺省**无条件注入**（对齐上游 matcher 缺省与解析失败时的 fail open）。
+  # 想细化就改这一条的 when，两条已生效的路径：
+  #   - 按子代理提供方筛：`when: { names: { allow: [fork] } }`（name = SubagentRunInfo.provider）；
+  #   - 按模型 / 受众筛：`when: { scope: { modelScope: pro } }` 或 `{ scope: { audience: subagent } }`。
+  # 按**任务类型**分类注入别写在这里：本层载荷只有 runId/provider/id/local，拿不到任务文本；
+  # 那种需求改用 pre-step 层 + `scope.audience: subagent` + `dedupe: session` + `text.match`。
   - id: ponytail-subagent-rules
     name: Ponytail 规则（子代理，对齐上游 SubagentStart）
     enabled: true

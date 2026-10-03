@@ -8,6 +8,15 @@
 - **接通上游 `SubagentStart` 通道**：新增 `ponytail-subagent-rules` / `ponytail-subagent-level` 两张 `subagent-start` 层配置卡。此前四张卡全在 `system-section`，只在主会话 system prompt 里生效，子代理拿不到规则；现在子代理启动时按上游语义注入同一份规则副本（不声明 `when` = 注入每个子代理，对应上游 matcher 缺省与解析失败时的 fail open）。
 - **新增回归 `test/host/ponytail-module.test.mjs`**：守住①`configs/` 投影与 `module.yml` 定义逐字一致且文件名符合 `configOrder` 序号契约，②规则正文含上游关键句且不内联档位表，③注入点映射（常驻 `system-section`、档位互斥组默认 full、子代理走 `subagent-start`）。
 
+### 子代理注入细化：provider / 模型范围 / 任务分类
+
+- **子代理事件暴露 provider**：`subjectOf` 把 `SubagentRunInfo.provider` 投影为 `name`，`names` 谓词因此在 `subagent-start`/`subagent-end` 可用（`when: { names: { allow: [fork] } }`）。缺 provider 时不写该键，判定退回 `UNAVAILABLE`，`not` 不得把它反转成放行。
+- **判定前预取子代理 agent**：子代理两层此前在判定阶段拿不到 agent（`wireSubagentEvents` 是在 handler 里才挂上 frame 的），导致 `scope.modelScope`（`pro`/`flash`）与 `scope.audience` **恒不可用、永不命中**——UI 上配了却没效果。现在 `ruleFrame` 接收判定期 `ctx`，按事件 `id` 反查 agent 补齐 `agent`/`session`/`model`；取不到即 `UNAVAILABLE`（fail-closed）。
+- **`userMessagesText` 对齐「只扫真实对话」**：它此前只看 `role === 'user'`，而引擎自己注入的消息同样是 user-role（`source: { kind: 'plugin' }`），于是 `text.match` 会匹配到自己注入过的正文（命中判定在去重之前，`dedupe` 挡不住）。现按同项目 `st-world-book.mjs#stChatMessages` 的既有判据排除 `source.plugin` 与非 `user` 的 kind，两处语义对齐。
+- **按任务给子代理分类注入的落法**：`pre-step` 层 + `scope.audience: subagent` + `dedupe: session` + `text.match`（或 `first-turn-anchor`）。子代理初始 prompt 以 `source: { kind: 'user' }` 投递（官方 `subagent-in-process-driver`），因此 pre-step 的 `messages` 天然含任务文本；`subagent-start` 层载荷只有 `runId/provider/id/local`，**做不了内容分类**，故保持无条件注入与上游 matcher 缺省一致。
+- **文档与模块同步**：`docs/injection-point-contracts.md` 的 `pre-step` 与 `subagent-start` 两行补齐可用事实、落法与边界；内置 ponytail 子代理卡在注释里写明两条细化路径，默认粒度不变并有回归守着。
+- **回归**：`test/engine/predicates.test.mjs` 新增 3 条（provider 投影、判定前 agent 反查、`userText` 只扫真实对话）。
+
 ## [1.0.0] - 2026-10-02
 
 ### 模块化重构：预设 → 模块，启用即配装

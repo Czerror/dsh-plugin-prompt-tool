@@ -71,7 +71,7 @@ export function mountRuleSources(ctx, sources, options = {}) {
         const payload = free ? args : args.slice(0, -1)
         const next = free ? () => undefined : args[args.length - 1]
         if (!active) return next()
-        const frame = ruleFrame(point.channel, payload, warnOnce)
+        const frame = ruleFrame(point.channel, payload, warnOnce, ctx)
         if (free) {
           let pending
           for (const entry of handlers) {

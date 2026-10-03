@@ -84,6 +84,11 @@ test('ponytail 模块：注入点映射与上游 hook 一致', () => {
     assert.equal(rule.enabled, true)
     assert.equal(rule.when, undefined, '缺省 = 注入每个子代理，与上游 matcher 缺省一致')
   }
+  // 该层已能按 provider 细化（name = SubagentRunInfo.provider），但默认粒度是上游语义：
+  // 要筛的人自己往 when 里加 names/scope，不是把默认改成条件注入。
+  const rulesCard = rulesById.get('ponytail-subagent-rules')
+  assert.equal(rulesCard.do[0].config.strategy, 'static')
+  assert.equal(typeof rulesCard.do[0].config.text, 'string')
   const subagentText = ruleText('ponytail-subagent-rules')
   for (const section of ['## The ladder', '**Bug fix = root cause, not symptom.**', '## When NOT to be lazy', 'The shortest path to done is the right path.']) {
     assert.ok(subagentText.includes(section), `子代理副本缺段落：${section}`)

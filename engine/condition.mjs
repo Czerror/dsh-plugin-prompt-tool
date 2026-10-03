@@ -54,11 +54,22 @@ export function toolArgsText(args) {
   }
 }
 
-/** pre-step 的缺省匹配对象：本批用户消息的文本。 */
+/**
+ * pre-step 的缺省匹配对象：本批**真实对话**的用户消息文本。
+ *
+ * 只收真人输入：引擎自己注入的消息同样是 user-role（`executor.mjs` 的
+ * `role: PRE_STEP_ROLE`、`pluginMessage` 的 `source: { kind: 'plugin' }`），
+ * 把它们算进来会让 `text.match` 匹配到自己注入过的正文——规则正文里出现「重构」
+ * 「实现」这类词就会自我命中，且命中判定在去重之前，`dedupe` 挡不住。
+ * 过滤判据与 `st-world-book.mjs#stChatMessages` 的同名约定一致（那是最早做对的一处），
+ * 两处必须保持同语义。
+ */
 export function userMessagesText(messages) {
   if (!Array.isArray(messages)) return ''
   return messages
-    .filter((message) => message?.role === 'user')
+    .filter((message) => message?.role === 'user'
+      && message.source?.plugin === undefined
+      && (message.source?.kind === undefined || message.source.kind === 'user'))
     .map((message) => extractText(message))
     .filter((text) => text.length > 0)
     .join('\n')
