@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+### 修复：注入来源统一为 v4 生产者身份，注入正文不再回到判定输入
+
+- **真机故障**：一次明确只读的子代理派发里**两档并注**——seq=11 注入只读档（144 字符），做完两个工具调用后 seq=28 又注入完整规则（4849 字符）。
+- **根因（两个缺口叠加）**：`schema.mjs` 的 `sourceKind` 默认取**裸规则 id**，于是注入消息的 `source.kind` 没有 `plugin:` 前缀。这同时造成两件事：
+  1. `pluginIdentityOf(source)` 对裸 kind 返回 `undefined`，`dedupe: session` 的真相源去重只剩「`sourceKind` 恰好相等」一条，两档各自的账互不可见；
+  2. 更关键：`userMessagesText` 的注入过滤只认 `source.plugin` 与 `plugin:` 前缀，漏掉裸 kind 的注入消息——**本引擎注入过的规则正文因此会回来参与下一轮 `when` 判定**。只读档正文含「只读」二字，把写档的 `notAny` 在第二轮翻成了真。
+- **修复**：`sourceKind` 一律归一为 `plugin:<owner>`（声明的值没有前缀时补上）。一处改动同时让 v4 生产者身份统一、`pluginIdentityOf` 能解析出去重身份、`userMessagesText` 能正确排除注入消息。
+- **回归**：`test/engine/prompt-config-engine.test.mjs` 新增「注入来源统一为生产者身份：注入过的正文不得回到下一轮判定输入」——两轮判定，断言注入消息带 `plugin:` 前缀、注入正文不进 `userText`、真实任务文本仍计入。
+
 ### ponytail 子代理规则分档：只读 / 写
 
 - **动机**：此前每个子代理都无条件收到完整规则（实测 5044 字符），而只读任务（列目录、数文件、只读分析）的 prompt 本身往往只有 100 多字符——规则里「最短 diff、删除优先、留下可运行检查、标记 `ponytail:` 债务」这些执行层条目对它完全无关。

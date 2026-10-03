@@ -619,7 +619,14 @@ export function createPromptConfigs(specs, options = {}) {
       modelScope: fields.modelScope,
       subject: fields.subject,
       match,
-      sourceKind: typeof spec.sourceKind === 'string' && spec.sourceKind.length > 0 ? spec.sourceKind : spec.id,
+      // sourceKind 进的是消息 source.kind，必须是 **v4 的生产者身份**（`plugin:<owner>`）：
+      // 裸规则 id 会被 `userMessagesText` 的注入过滤漏掉（它只认 `source.plugin` 与
+      // `plugin:` 前缀），于是本引擎注入过的规则正文会回来参与下一轮 when 判定——实测
+      // 后果是只读档正文里的「只读」二字让写档的 notAny 在第二轮翻转，同一子代理两档并注。
+      sourceKind: (() => {
+        const declared = typeof spec.sourceKind === 'string' && spec.sourceKind.length > 0 ? spec.sourceKind : spec.id
+        return declared.startsWith('plugin:') ? declared : `plugin:${declared}`
+      })(),
       form: typeof spec.form === 'string' ? spec.form : 'notice',
       summary: typeof spec.summary === 'string' ? spec.summary : '',
       identity: fields.identity,

@@ -1,6 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { applyPromptConfigs, createPromptConfigs as createPromptConfigsCore } from '../../engine/prompt-config-engine.mjs'
+import { userMessagesText } from '../../engine/condition.mjs'
 
 /** 引擎测试夹具使用包内 engine 目录作为自定义策略探测目录;内置策略不依赖 strategyDir。 */
 const STRATEGY_DIR = new URL('../../engine/', import.meta.url).href
@@ -283,6 +284,28 @@ test('subagent-start：命中条件时向子代理注入，未命中零注入', 
 
   listener({ id: 'child-2', runId: 'r2' })
   assert.equal(injected.length, 1, '未命中条件不注入')
+})
+
+test('注入来源统一为生产者身份：注入过的正文不得回到下一轮判定输入', async () => {
+  // 真机踩过：sourceKind 默认取裸规则 id，注入消息的 kind 因此没有 `plugin:` 前缀，
+  // `userMessagesText` 的注入过滤漏掉它 → 本引擎注入的规则正文回来参与下一轮 when 判定。
+  // 后果是一次只读派发里两档并注：只读档正文含「只读」二字，把写档的 notAny 判成了真。
+  const harness = makeHarness(createPromptConfigs([{
+    id: 'readonly-probe', layer: 'pre-step', strategy: 'static', audience: 'subagent',
+    text: '只读档：你在做只读任务', dedupe: 'session',
+  }]))
+  const probe = agent({ session: { id: 's-src', header: { delegationDepth: 1 }, snapshotEvents: () => [] } })
+  const task = [{ id: 'u1', role: 'user', content: [{ type: 'text', text: '只读分析一下这个目录' }], source: { kind: 'user' } }]
+
+  const first = await harness.step(probe, task)
+  const injected = first.messages.find((m) => m.source?.kind !== 'user' && m.source?.kind !== 'agent-instructions')
+  assert.ok(injected !== undefined, '条件命中应注入')
+  assert.match(injected.source.kind, /^plugin:/, '注入消息必须携带生产者身份前缀')
+  // 第二轮：注入过的正文不得进入 userText，否则 notAny 型判据会被自己的正文翻转。
+  const second = await harness.step(probe, [...first.messages])
+  const text = userMessagesText(second.messages)
+  assert.ok(!text.includes('只读任务'), `注入正文不得回到判定输入，实际：${JSON.stringify(text)}`)
+  assert.ok(text.includes('只读分析一下这个目录'), '真实任务文本仍须计入')
 })
 
 test('pre-step 条件判定：用户消息命中才注入，未命中不占用 session 去重', async () => {
