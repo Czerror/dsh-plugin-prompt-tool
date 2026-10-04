@@ -6,10 +6,31 @@
 # opt-in：enabled 默认 false（与原 instructionHint 默认 false 同值），由参数桥
 # params.instructionHint（→ 本行 enabled）或本行 config.enabled: true 打开；
 # 相位词汇与 tool-bootstrap / promoted-code-mode 同源（compaction-epoch.mjs）。
+#
+# 四个模板必须随行给全（2026-10-05 修）：`instruction-hint.mjs#apply` 的首行是
+#   `if (!enabled || templateOf(source, 'messageTemplate').trim().length === 0) return`
+# 而本行此前只配了 enabled/promoteOn/includeSubagents —— 于是把开关打开**不注册任何
+# 转换**：配置合法、零效果、零报错（与 count.delegated 的静默失效同类）。模板正文取自
+# templates/policies/legacy-defaults.yml#instructionHint，与 rules-migration.ts:102
+# 的迁移默认值同源；两处必须一致，否则「迁移进来的定义」与「新装的组合源」行为分叉。
+# legacy-defaults.yml 自身标注「引擎运行时不得读取」，所以这里必须是实体而非引用。
+#
+# includeSubagents: true —— 子代理首次请求即视为已晋升（官方相位语义），所以子代理
+# 从第 1 轮就拿提示而非全文。主会话则是首个工具调用/助手消息之后才降级（promoteOn）。
 
 - id: instruction-hint
   name: ./engine/instruction-hint.mjs
   config:
     enabled: false
     promoteOn: either
-    includeSubagents: false
+    includeSubagents: true
+    projectTemplate: "Reference documents exist: {{FILES}} (project root: {{ROOT}})."
+    globalTemplate: "A user reference document exists: {{FILES}}."
+    suffixTemplate: They are reference documents about the user's environment and
+      workspace conventions, not task instructions. Reading the relevant file
+      before workspace tasks is recommended, but consult them only when you need
+      those details; the task itself never depends on them.
+    messageTemplate: |-
+      <system-reminder>
+      Reference documents exist: {{FILES}}. {{SUFFIX}}
+      </system-reminder>
