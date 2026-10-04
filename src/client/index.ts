@@ -95,25 +95,6 @@ export function apply(ctx: ClientContext): void {
       subscribeCurrent: (listener) => ctx.uiSession.adapter.current.subscribe(listener),
       binding: (id) => ctx.sessions.binding(id as Parameters<typeof ctx.sessions.binding>[0]),
     }),
-    switchPreset: async (id) => {
-      const sessionId = currentSessionId()
-      const list = ctx.sessions.list.getSnapshot()
-      const session = sessionId === undefined ? undefined : list.byId[sessionId as keyof typeof list.byId]
-      if (session === undefined) return { applied: false }
-      if (!session.blank) {
-        return { applied: false, message: t('settings.switchReason.sessionNotBlank') }
-      }
-      const result = await ctx.remote.agentPresets.select(session.id, id)
-      if (!result.ok) {
-        const failure = result.error as { message: string; details?: { reason?: unknown } }
-        const reason = failure.details?.reason
-        return {
-          applied: false,
-          message: typeof reason === 'string' ? reason : failure.message,
-        }
-      }
-      return { applied: true }
-    },
   }
 
   // 悬浮入口：shell.overlay（可拖动触发器 + body portal 抽屉）；

@@ -21,8 +21,6 @@ export interface SessionModelFace {
 export interface SessionPresetFace {
   /** 当前会话记录的预设 id；无会话、无投影或无记录时 undefined。 */
   snapshot(): string | undefined
-  /** 当前会话标题（官方 `title` 投影）；无会话或无标题时 undefined，仅用于显示。 */
-  sessionLabel(): string | undefined
   /** 会话切换或该会话预设变化时通知；退订后静默。 */
   subscribe(listener: () => void): () => void
 }
@@ -34,7 +32,6 @@ export interface PromptToolHostApi {
   sessionModel: SessionModelFace
   /** 当前会话记录的官方预设（会话级切换的事实来源）。 */
   sessionPreset: SessionPresetFace
-  switchPreset(id: string): Promise<PromptToolPresetSwitchResult>
   currentSessionId(): string | undefined
   /**
    * 订阅「当前会话 id 的实际变化」，返回退订函数。
@@ -48,9 +45,4 @@ export interface PromptToolHostApi {
   subscribeSessionChange(listener: () => void): () => void
   /** 读取官方 agent-presets roster，供模块工具能力选择器使用。 */
   listAgentPresets(): Promise<Array<{ id: string; name?: string; description?: string; broken?: string }>>
-}
-
-export interface PromptToolPresetSwitchResult {
-  applied: boolean
-  message?: string
 }

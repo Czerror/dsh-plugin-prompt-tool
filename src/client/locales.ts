@@ -32,14 +32,6 @@ const ZH_CORE = {
   'settings.saveRejected': '设置未保存，请检查当前权限或重新读取后重试。',
   'settings.modulesEnabled.label': '启用提示词模块',
   'settings.modulesEnabled.hint': '关闭后停止模块注入并撤回工具贡献，模块定义与生成文件保留。',
-  'settings.moduleId.title': '模块模板',
-  'settings.moduleId.hint': '新会话默认挂载的模块；在官方界面给空白会话切换模块时，工作台会自动跟随该模块。完整模块管理与提示词配置请点左上角的悬浮按钮（可拖动）打开「提示词工具」工作台。',
-  'settings.switched': '已切换到 {id}，当前空会话已重组。',
-  'settings.switchDefaultOnly': '默认模块已更新为 {id}；当前会话未切换：{reason}',
-  'settings.switchPending': '默认模块已更新为 {id}；当前没有可重组的空会话。',
-  'settings.switchFailed': '切换模块失败：{reason}',
-  'settings.switchReason.sessionNotBlank': '当前会话已有内容，官方只允许空会话切换；本次只更新后续会话默认模块',
-
 
   'page.features.label': '主会话',
   'page.subagent.label': '子代理',
@@ -302,14 +294,6 @@ const EN_CORE: Record<keyof typeof ZH_CORE, string> = {
   'settings.saveRejected': 'Settings were not saved. Check your permissions or reload and retry.',
   'settings.modulesEnabled.label': 'Enable prompt modules',
   'settings.modulesEnabled.hint': 'Turning this off stops module injection and removes tool contributions. Definitions and generated files stay intact.',
-  'settings.moduleId.title': 'Default module',
-  'settings.moduleId.hint': 'Module mounted by default for new sessions; when the host switches a blank session to another module, the workbench follows it. Open the draggable floating button at the top-left for full module management and prompt configs.',
-  'settings.switched': 'Switched to {id}; the current blank session was recomposed.',
-  'settings.switchDefaultOnly': 'Default module updated to {id}; current session not switched: {reason}',
-  'settings.switchPending': 'Default module updated to {id}; there is no blank session to recompose.',
-  'settings.switchFailed': 'Failed to switch module: {reason}',
-  'settings.switchReason.sessionNotBlank': 'The current session already has content and the host only switches modules on a blank session, so only the default for later sessions was updated',
-
 
   'page.features.label': 'Main session',
   'page.subagent.label': 'Subagent',

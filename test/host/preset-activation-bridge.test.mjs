@@ -27,7 +27,6 @@ test('预设保存等待宿主采用；异步拒绝保留定义并可重试；�
   const sctx = {
     settings: { describe: () => [] },
     webServer: { register: ({ path, handler }) => { handlers.set(path, handler); return () => {} } },
-    get: name => name === 'agentPresets' ? { list: async () => [{ id: 'editable', broken: 'MISSING_SERVICE' }] } : undefined,
     effect: fn => { const dispose = fn(); if (dispose) disposers.push(dispose) },
   }
   registerSettingsBridge({ inject: (_deps, cb) => cb(sctx) }, 'prompt-tool', () => ({}), () => ({}), () => '', undefined,
@@ -39,9 +38,6 @@ test('预设保存等待宿主采用；异步拒绝保留定义并可重试；�
     return readBridge(res)
   }
   try {
-    const metaRes = fakeRes()
-    await handlers.get('/api/prompt-tool/settings/meta')(fakeReq(), metaRes)
-    assert.equal(readBridge(metaRes).value.meta.modules.find(module => module.id === 'editable').broken, 'MISSING_SERVICE')
     let entered
     const started = new Promise(resolve => { entered = resolve })
     let release
