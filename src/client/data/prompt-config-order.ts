@@ -18,37 +18,64 @@ export interface MergedModuleCard {
   current: boolean
 }
 
+/** 一个模块在统一视图里的声明位置，用于同层同 order 时打破平局。 */
+export interface ModuleCardSource {
+  moduleId: string
+  name?: string
+  index: number
+}
+
 /**
  * 按**显示顺序**把所有已启用模块的卡合并成一个列表，供主会话/子代理页一次性平铺。
  *
- * 排序复用 `viewOrderedIds`——那是本仓既有的显示顺序实现（层序 → 官方 order →
- * sequence → 输入序），不再另写一套。`readInputs` 本就按模块 id 排序遍历，因此输入序
- * 已隐含模块顺序，跨模块平局不需要额外的「模块声明序」。
+ * 排序与单模块视图同一口径（见 `viewOrderedIds`）：层序 → 官方 `order` → 模块内
+ * `sequence` → 模块声明序 → 输入序。跨模块时 `sequence` 只在模块内有意义，所以
+ * 模块声明序参与平局裁决，保证渲染稳定（同一份输入永远产出同一顺序）。
  *
  * `editableModuleId` 决定哪一项可编辑：只有当前编辑模块的卡走可编辑路径，
- * 其余只读——跨模块写没有通道（bridge-transport 的 editTarget 是单模块）。
+ * 其余只读——跨模块写没有通道（见 PLAN 的「明确不做」）。
  */
 export function mergeModuleCardList(
-  entries: readonly ModuleConfigOrderEntry[] | undefined,
-  layerOrder: readonly string[],
+  currentEntries: readonly ModuleConfigOrderEntry[] | undefined,
+  otherEntries: readonly ModuleConfigOrderEntry[] | undefined,
+  sources: readonly ModuleCardSource[],
   editableModuleId: string,
-  nameOf: (moduleId: string) => string | undefined,
+  layers: readonly string[],
 ): MergedModuleCard[] {
-  if (!Array.isArray(entries) || entries.length === 0) return []
-  const byKey = new Map(entries.map((entry) => [configIdentityKey(entry), entry]))
-  const ordered = viewOrderedIds(
-    entries.map((entry) => ({ id: configIdentityKey(entry), layer: entry.layer, order: entry.order ?? 0, sequence: entry.sequence })),
-    undefined,
-    layerOrder,
-  )
-  return ordered.map((key) => {
-    const entry = byKey.get(key)!
-    return {
-      entry,
-      moduleName: nameOf(entry.moduleId) ?? entry.moduleId,
-      current: entry.moduleId === editableModuleId,
-    }
-  })
+  const currentIds = new Set((currentEntries ?? []).map((entry) => configIdentityKey(entry)))
+  const sourceOf = new Map(sources.map((source) => [source.moduleId, source]))
+  const all: Array<{ entry: ModuleConfigOrderEntry; key: string }> = []
+  // 当前模块的卡优先入列：与其它模块同层同 order 时，编辑中的模块排在前面更符合预期。
+  for (const entry of currentEntries ?? []) all.push({ entry, key: configIdentityKey(entry) })
+  for (const entry of otherEntries ?? []) {
+    if (entry.moduleId === editableModuleId) continue
+    const key = configIdentityKey(entry)
+    if (currentIds.has(key)) continue
+    all.push({ entry, key })
+  }
+  const layerRank = (layer: string): number => {
+    const index = layers.indexOf(layer)
+    return index < 0 ? layers.length : index
+  }
+  return all
+    .map((item, index) => ({ ...item, index }))
+    .sort((a, b) => {
+      const byLayer = layerRank(a.entry.layer) - layerRank(b.entry.layer)
+      if (byLayer !== 0) return byLayer
+      const byOrder = (a.entry.order ?? 0) - (b.entry.order ?? 0)
+      if (byOrder !== 0) return byOrder
+      const bySequence = a.entry.sequence - b.entry.sequence
+      if (bySequence !== 0) return bySequence
+      const byModule = (sourceOf.get(a.entry.moduleId)?.index ?? Number.MAX_SAFE_INTEGER)
+        - (sourceOf.get(b.entry.moduleId)?.index ?? Number.MAX_SAFE_INTEGER)
+      if (byModule !== 0) return byModule
+      return a.index - b.index
+    })
+    .map((item) => ({
+      entry: item.entry,
+      moduleName: sourceOf.get(item.entry.moduleId)?.name ?? item.entry.moduleId,
+      current: item.entry.moduleId === editableModuleId,
+    }))
 }
 
 /** 跨模块只交换同插入点、位置与官方档位中的可见槽位。 */export function sameConfigPosition(left: PromptConfigDraft, right: PromptConfigDraft): boolean {
