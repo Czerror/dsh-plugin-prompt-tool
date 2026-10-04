@@ -5,8 +5,10 @@ import { createPromptConfigs, KNOWN_LAYERS } from './schema.mjs'
 import { WATERFALL_POSITIONS } from './trigger.mjs'
 import { ACTION_EXAMPLES } from './actions/examples.mjs'
 import { PREDICATE_EXAMPLES } from './conditions/examples.mjs'
+import { conjunction, expandActions, pickAlias } from './branch.mjs'
 
-const RULE_FIELDS = new Set(['id', 'name', 'enabled', 'layer', 'group', 'exclusive', 'when', 'do'])
+/** 规则字段：`if`/`then`/`else` 是当前名，`when`/`do` 保留为兼容输入（见 pickAlias）。 */
+const RULE_FIELDS = new Set(['id', 'name', 'enabled', 'layer', 'group', 'exclusive', 'if', 'then', 'else', 'when', 'do'])
 const record = value => value !== null && typeof value === 'object' && !Array.isArray(value)
 const nonempty = value => typeof value === 'string' && value.trim().length > 0
 
@@ -68,10 +70,13 @@ function normalizeActionGates(action, execution) {
     const value = target[field]
     if (inject && field === 'audience' && target.layer === 'system-section' && execution.lifecycle === 'registration' && ['main', 'subagent'].includes(value)) continue
     const neutral = value == null || value === '' || (field === 'modelScope' && value === 'all') || (field === 'promotion' && value === 'none')
-    if (!neutral) throw new TypeError(`action ${action.id}: ${inject ? 'config.' : ''}${field} is a legacy gate; move it to rule.when`)
+    if (!neutral) throw new TypeError(`action ${action.id}: ${inject ? 'config.' : ''}${field} is a legacy gate; move it to rule.if`)
     delete target[field]
   }
 }
+
+/** 注册制层：内容在 agent 装配时注册一次，没有逐轮求值时机，因此不接受分支条件。 */
+const REGISTRATION_LAYERS = new Set(['system-section', 'runtime-context'])
 
 /** options.promptConfigOptions 拥有模板/策略路径；configOrder 使用规则 id，moduleId 只标记来源。 */
 export function compileRules(specs, options = {}) {
@@ -89,12 +94,23 @@ export function compileRules(specs, options = {}) {
     for (const key of ['enabled', 'exclusive']) if (spec[key] !== undefined && typeof spec[key] !== 'boolean') throw new TypeError(`rule ${spec.id}.${key} must be boolean`)
     for (const key of ['name', 'group']) if (spec[key] !== undefined && typeof spec[key] !== 'string') throw new TypeError(`rule ${spec.id}.${key} must be string`)
     if (spec.layer !== undefined && !KNOWN_LAYERS.has(spec.layer)) throw new TypeError(`rule ${spec.id}: unknown layer ${spec.layer}`)
-    if (!Array.isArray(spec.do) || spec.do.length === 0) throw new TypeError(`rule ${spec.id}.do must be a non-empty array`)
+    const ruleIf = pickAlias(spec, 'if', 'when', `rule ${spec.id}`)
+    const ruleThen = pickAlias(spec, 'then', 'do', `rule ${spec.id}`)
+    if (!Array.isArray(ruleThen) || ruleThen.length === 0) throw new TypeError(`rule ${spec.id}.then must be a non-empty array`)
     const sequence = options.configOrder?.[spec.id] ?? index * 10
     if (!Number.isSafeInteger(sequence) || sequence < 0) throw new TypeError(`rule ${spec.id}: invalid configOrder`)
-    const when = compileWhen(spec.when, options)
+    const when = compileWhen(ruleIf, options)
+    // 规则级 `if` 由 `rule.when` 判定，then 分支的动作不再重复叠加它；规则级 `else` 的动作
+    // 自带 `not(if)` 并标记跳过规则级判定——否则两者自相矛盾，else 分支永远不会执行。
+    const expanded = [
+      ...expandActions(ruleThen, {}, `rule ${spec.id}.then`),
+      ...(spec.else === undefined ? [] : expandActions(spec.else, {
+        outer: ruleIf === undefined ? [] : [{ not: ruleIf }],
+        bypass: true,
+      }, `rule ${spec.id}.else`)),
+    ]
     const actionIds = new Set()
-    const actions = spec.do.map((source, actionIndex) => {
+    const actions = expanded.map(({ node: source, conditions, bypass }, actionIndex) => {
       if (!record(source) || !nonempty(source.id)) throw new TypeError(`rule ${spec.id}: action id must be non-empty`)
       if (actionIds.has(source.id)) throw new TypeError(`rule ${spec.id}: duplicate action id ${source.id}`)
       actionIds.add(source.id)
@@ -118,7 +134,13 @@ export function compileRules(specs, options = {}) {
         // 原始声明保持不变；稳定动作身份只在未提供正文身份时补入运行时编译输入。
         pendingConfigs.push({ action, source: { ...action.config, id: action.config.id ?? `${spec.id}:${action.id}` }, sequence: channelOrder, ruleId: spec.id, actionIndex })
       } else prepareAction(action, { promptConfigOptions: options.promptConfigOptions })
-      return Object.assign(action, { execution, channelOrder, waterfallPosition, actionIndex })
+      // 空条件数组经 conjunction → undefined → compileWhen 直接返回 undefined（无条件动作）。
+      const actionWhen = compileWhen(conjunction(conditions), options)
+      const branchLayer = action.kind === 'inject-text' ? action.config.layer : spec.layer ?? 'pre-step'
+      if (actionWhen !== undefined && (REGISTRATION_LAYERS.has(branchLayer) || execution.lifecycle === 'registration')) {
+        throw new TypeError(`action ${action.id}: layer ${branchLayer} has no per-turn evaluation point — move the branch to pre-step / subagent-* / tool-pipeline / turn-stop`)
+      }
+      return Object.assign(action, { execution, channelOrder, waterfallPosition, actionIndex, actionWhen, bypassRuleWhen: bypass })
     })
     const pointOrders = new Map()
     for (const action of actions) {

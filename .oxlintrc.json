@@ -1,0 +1,10 @@
+{
+  "overrides": [
+    {
+      "files": ["test/**/*.mjs", "engine/**/*.mjs"],
+      "rules": {
+        "unicorn/no-thenable": "off"
+      }
+    }
+  ]
+}

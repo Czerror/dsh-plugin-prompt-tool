@@ -2,7 +2,7 @@ import { prepareAction } from './actions/index.mjs'
 import { applyPromptConfigSources } from './executor.mjs'
 import { wireLayers } from './layers.mjs'
 import { wireTriggerObservers } from './trigger.mjs'
-import { ruleFrame, ruleMatches } from './conditions/evaluation.mjs'
+import { ruleFrame, actionMatches } from './conditions/evaluation.mjs'
 import { createWarnOnce } from './shared.mjs'
 
 const noNext = new Set(['agent/inbox/inserted', 'agent/turn-stopping', 'subagent/start', 'subagent/end'])
@@ -49,7 +49,7 @@ export function mountRuleSources(ctx, sources, options = {}) {
       for (const item of point.items) {
         const { action, rule, moduleId } = item
         if (action.kind === 'inject-text') {
-          const config = { ...action.compiledConfig, rule, sourceModuleId: moduleId, group: undefined, exclusive: false, enabled: true }
+          const config = { ...action.compiledConfig, rule, sourceModuleId: moduleId, group: undefined, exclusive: false, enabled: true, actionWhen: action.actionWhen, bypassRuleWhen: action.bypassRuleWhen }
           if (config.layer === 'pre-step') injections.get(moduleId).configs.push(config)
           else textConfigs.push(config)
           continue
@@ -57,7 +57,7 @@ export function mountRuleSources(ctx, sources, options = {}) {
         flushLayers()
         const on = (channel, handler) => {
           if (channel !== point.channel) throw new TypeError(`rule action registered outside ${point.channel}: ${channel}`)
-          const entry = { rule, handler, sequence: action.channelOrder, sourceModuleId: moduleId, ruleId: rule.id, ruleActionIndex: action.actionIndex, id: action.id }
+          const entry = { rule, handler, sequence: action.channelOrder, sourceModuleId: moduleId, ruleId: rule.id, ruleActionIndex: action.actionIndex, id: action.id, actionWhen: action.actionWhen, bypassRuleWhen: action.bypassRuleWhen }
           if (channel === 'agent/pre-step' && point.waterfallPosition === 'default') injections.get(moduleId).ruleActions.push(entry)
           else handlers.push(entry)
           return () => {}
@@ -75,7 +75,7 @@ export function mountRuleSources(ctx, sources, options = {}) {
         if (free) {
           let pending
           for (const entry of handlers) {
-            const invoke = () => active && ruleMatches(entry.rule, frame) ? entry.handler(...payload, undefined, frame) : undefined
+            const invoke = () => active && actionMatches(entry, frame) ? entry.handler(...payload, undefined, frame) : undefined
             pending = pending?.then ? pending.then(invoke) : invoke()
           }
           return pending
@@ -83,7 +83,7 @@ export function mountRuleSources(ctx, sources, options = {}) {
         if (point.phase === 'after-next') return Promise.resolve(next()).then(async initial => {
           let result = initial
           for (const entry of handlers) {
-            if (!active || !ruleMatches(entry.rule, frame)) continue
+            if (!active || !actionMatches(entry, frame)) continue
             result = await entry.handler(...payload, () => result, frame)
           }
           return result
@@ -91,7 +91,7 @@ export function mountRuleSources(ctx, sources, options = {}) {
         const invoke = index => {
           if (!active || index === handlers.length) return next()
           const entry = handlers[index]
-          return ruleMatches(entry.rule, frame) ? entry.handler(...payload, () => invoke(index + 1), frame) : invoke(index + 1)
+          return actionMatches(entry, frame) ? entry.handler(...payload, () => invoke(index + 1), frame) : invoke(index + 1)
         }
         return invoke(0)
       }, point.waterfallPosition === 'outermost' ? { prepend: true } : undefined))

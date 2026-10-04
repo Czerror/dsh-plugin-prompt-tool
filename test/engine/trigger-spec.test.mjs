@@ -67,7 +67,7 @@ test('compileDeclaration：未知字段 / 缺必填 / 非法枚举一律抛错',
   assert.throws(() => compileDeclaration({ ...base, nope: 1 }), /unknown trigger field\(s\) nope/)
   assert.throws(() => compileDeclaration({ ...base, id: '' }), /id must be a non-empty string/)
   assert.throws(() => compileDeclaration({ ...base, channel: '' }), /channel must be a non-empty event name/)
-  assert.throws(() => compileDeclaration({ ...base, do: undefined }), /do is required/)
+  assert.throws(() => compileDeclaration({ ...base, do: undefined, then: undefined }), /then is required/)
   assert.throws(() => compileDeclaration({ ...base, channelOrder: -1 }), /channelOrder must be a non-negative safe integer/)
   assert.throws(() => compileDeclaration({ ...base, waterfallPosition: 'top' }), /waterfallPosition must be one of/)
   assert.throws(() => compileDeclaration({ ...base, phase: 'during' }), /phase must be one of/)
@@ -76,9 +76,9 @@ test('compileDeclaration：未知字段 / 缺必填 / 非法枚举一律抛错',
 
 test('compileDeclaration：do 必须是已知动作，可给多个（数组）', () => {
   const base = { id: 't', channel: 'system-prompt/assemble' }
-  assert.throws(() => compileDeclaration({ ...base, do: { kind: 'nope' } }), /do\[0\]\.kind must be one of/)
+  assert.throws(() => compileDeclaration({ ...base, do: { kind: 'nope' } }), /action\[0\]\.kind must be one of/)
   assert.throws(() => compileDeclaration({ ...base, do: [] }), /non-empty array/)
-  assert.throws(() => compileDeclaration({ ...base, do: [42] }), /do\[0\] must be an action declaration object/)
+  assert.throws(() => compileDeclaration({ ...base, do: [42] }), /action\[0\] must be an action declaration object/)
 
   const one = compileDeclaration({ ...base, do: { kind: 'assembly', target: { tools: { deny: ['bash'] } } } })
   assert.equal(one.actions.length, 1)

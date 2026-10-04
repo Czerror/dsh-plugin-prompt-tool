@@ -2,25 +2,41 @@
 import { ACTION_KINDS, actionExecutionPoint, prepareAction, registerAction } from './actions.mjs'
 import { WATERFALL_POSITIONS, orderTriggers, registrationOptions, wireTriggerObservers } from './trigger.mjs'
 import { compileWhen } from './conditions/index.mjs'
+import { conjunction, expandActions, pickAlias } from './branch.mjs'
 export { compileWhen, COMPOSITE_OPERATORS, PREDICATE_FACTORIES } from './conditions/index.mjs'
-const DECLARATION_FIELDS = Object.freeze(['id', 'channel', 'channelOrder', 'waterfallPosition', 'phase', 'when', 'do'])
+const DECLARATION_FIELDS = Object.freeze(['id', 'channel', 'channelOrder', 'waterfallPosition', 'phase', 'if', 'then', 'else', 'when', 'do'])
 const ACTION_PHASES = Object.freeze(['before-next', 'after-next'])
 
-/** `do` 归一化为动作声明数组；每个元素的 `kind` 必须是已知动作。 */
-function compileActions(value) {
+/** `then`/`do` 归一化为动作声明数组；分支节点留到 `expandActions` 展开。 */
+function actionList(value, label) {
   const list = Array.isArray(value) ? value : [value]
-  if (list.length === 0) throw new TypeError('trigger-spec: do must be an action declaration or a non-empty array of them')
-  return list.map((action, index) => {
-    if (action === null || typeof action !== 'object' || Array.isArray(action)) {
-      throw new TypeError(`trigger-spec: do[${index}] must be an action declaration object`)
-    }
-    if (typeof action.kind !== 'string' || !Object.hasOwn(ACTION_KINDS, action.kind)) {
-      throw new TypeError(
-        `trigger-spec: do[${index}].kind must be one of ${Object.keys(ACTION_KINDS).join(', ')} — got ${JSON.stringify(action.kind)}`,
-      )
-    }
-    return action
-  })
+  if (list.length === 0) throw new TypeError(`${label} must be an action declaration or a non-empty array of them`)
+  return list
+}
+
+/** 展开后的叶子必须是已知动作。 */
+function assertActionKind(action, at) {
+  if (action === null || typeof action !== 'object' || Array.isArray(action)) {
+    throw new TypeError(`trigger-spec: ${at} must be an action declaration object`)
+  }
+  if (typeof action.kind !== 'string' || !Object.hasOwn(ACTION_KINDS, action.kind)) {
+    throw new TypeError(
+      `trigger-spec: ${at}.kind must be one of ${Object.keys(ACTION_KINDS).join(', ')} — got ${JSON.stringify(action.kind)}`,
+    )
+  }
+  return action
+}
+
+/**
+ * 声明级 `if` 与动作自身分支条件的合取；来自**声明级** `else` 的动作跳过声明级判定
+ * （它的条件里已含 `not(if)`）。两个条件缺省都表示无条件。
+ */
+function actionGate(declarationWhen, action) {
+  const own = action.actionWhen
+  const base = action.bypassRuleWhen === true ? undefined : declarationWhen
+  if (base === undefined) return own
+  if (own === undefined) return base
+  return subject => base(subject) === true && own(subject) === true
 }
 
 /**
@@ -46,9 +62,10 @@ export function compileDeclaration(spec, context = {}) {
   if (typeof spec.channel !== 'string' || spec.channel.length === 0) {
     throw new TypeError(`trigger-spec: trigger ${spec.id}: channel must be a non-empty event name`)
   }
-  if (spec.do === undefined) {
-    throw new TypeError(`trigger-spec: trigger ${spec.id}: do is required`)
-  }
+  const label = `trigger-spec: trigger ${spec.id}`
+  const triggerIf = pickAlias(spec, 'if', 'when', label)
+  const triggerThen = pickAlias(spec, 'then', 'do', label)
+  if (triggerThen === undefined) throw new TypeError(`${label}: then is required`)
   const channelOrder = spec.channelOrder ?? 0
   if (!Number.isSafeInteger(channelOrder) || channelOrder < 0) {
     throw new TypeError(`trigger-spec: trigger ${spec.id}: channelOrder must be a non-negative safe integer`)
@@ -57,11 +74,22 @@ export function compileDeclaration(spec, context = {}) {
   if (!WATERFALL_POSITIONS.has(waterfallPosition)) {
     throw new TypeError(`trigger-spec: trigger ${spec.id}: waterfallPosition must be one of ${[...WATERFALL_POSITIONS].join(', ')}`)
   }
-  const actions = compileActions(spec.do)
-  const when = compileWhen(spec.when, context)
+  // 声明级 `if` 由注册侧判定；声明级 `else` 的动作自带 `not(if)` 并跳过它，否则自相矛盾。
+  const expanded = [
+    ...expandActions(actionList(triggerThen, `${label}.then`), {}, `${label}.then`),
+    ...(spec.else === undefined ? [] : expandActions(actionList(spec.else, `${label}.else`), {
+      outer: triggerIf === undefined ? [] : [{ not: triggerIf }],
+      bypass: true,
+    }, `${label}.else`)),
+  ]
+  const when = compileWhen(triggerIf, context)
+  const actions = expanded.map(({ node, conditions, bypass }, index) => Object.assign(
+    { ...assertActionKind(node, `action[${index}]`) },
+    { actionWhen: compileWhen(conjunction(conditions), context), bypassRuleWhen: bypass },
+  ))
   // 保存期复用注册入口的纯准备阶段；不绑定 ctx，不创建预算或监听器。
   for (const action of actions) prepareAction(action, {
-    when, promptConfigOptions: context.promptConfigOptions, ...registrationOptions({ waterfallPosition }),
+    when: action.actionWhen ?? when, promptConfigOptions: context.promptConfigOptions, ...registrationOptions({ waterfallPosition }),
   })
   const phase = spec.phase ?? actionExecutionPoint(actions[0]).phase
   if (!ACTION_PHASES.includes(phase)) {
@@ -125,7 +153,7 @@ export function mountDeclarations(ctx, compiled, { plugin, warnOnce } = {}) {
         plugin,
         warnOnce,
         promptConfigOptions: trigger.promptConfigOptions,
-        when: trigger.when,
+        when: actionGate(trigger.when, action),
         prepend: trigger.waterfallPosition === 'outermost',
       }))
     }

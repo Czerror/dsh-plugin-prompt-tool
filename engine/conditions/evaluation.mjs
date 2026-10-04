@@ -20,3 +20,22 @@ export function ruleMatches(rule, frame) {
   frame.decisions.set(rule, hit)
   return hit
 }
+
+/**
+ * 动作级判定：规则条件与动作自身的分支条件都要过。
+ *
+ * `bypassRuleWhen` 的动作来自规则级 `else`——它的条件里已经含 `not(if)`，再叠加
+ * `rule.when` 会自相矛盾、令该分支永不执行。动作条件缺省 = 恒真；非 `true`
+ * （含 UNAVAILABLE 三值语义）一律不命中，与 `ruleMatches` 同一纪律。
+ */
+export function actionMatches(entry, frame) {
+  if (entry.bypassRuleWhen !== true && !ruleMatches(entry.rule, frame)) return false
+  const when = entry.actionWhen
+  if (when === undefined) return true
+  try {
+    return when(frame.subject) === true
+  } catch (error) {
+    frame.warnOnce(`action ${entry.id} condition failed: ${String(error?.message ?? error)}`)
+    return false
+  }
+}

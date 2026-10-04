@@ -29,7 +29,7 @@ import { wireLayers } from './layers.mjs'
 import { sessionVarsSnapshot } from './session-vars.mjs'
 import { selectStWorldBook } from './st-world-book.mjs'
 import { compareConfigSequence } from './order.mjs'
-import { ruleFrame, ruleMatches } from './conditions/evaluation.mjs'
+import { ruleFrame, ruleMatches, actionMatches } from './conditions/evaluation.mjs'
 
 const name = 'prompt-config-engine'
 
@@ -244,7 +244,7 @@ async function runPromptConfigBatch(options) {
       && (config.promotion !== 'main' || main.status(agent).promoted)
       && (config.promotion !== 'include-subagents' || withSubagents.status(agent).promoted)
       && conditionHit(config, { userText })
-      && ruleMatches(config.rule, options.ruleFrame)
+      && actionMatches(config, options.ruleFrame)
     const qualifiedConfigs = configs.filter(qualified)
     // 协调器为绑定来源 ctx 会复制 config；renderSt 函数身份在副本间保持不变。
     const eligible = new Set(qualifiedConfigs.map(config => config.renderSt))

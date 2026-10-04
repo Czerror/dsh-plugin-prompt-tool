@@ -57,10 +57,10 @@ test('统一规则：通用条件只允许规则 when，中性旧字段不再参
   assert.throws(() => compileRules([{ id: 'disabled-action', do: [textAction('text', 'BODY', { enabled: false })] }]), /rule.enabled/, '内层停用不得被运行时静默重启')
   const when = { scope: { audience: 'subagent' } }
   for (const [key, value] of [['audience', 'main'], ['audience', 'subagent'], ['modelScope', 'pro'], ['modelScope', 'flash'], ['promotion', 'main'], ['promotion', 'include-subagents'], ['subject', 'userMessage'], ['match', { keys: ['USER'] }], ['match', {}]]) {
-    for (const enabled of [true, false]) assert.throws(() => compileRules([{ id: 'legacy-inject', enabled, when, do: [textAction('text', 'BODY', { [key]: value })] }]), /rule.when/)
+    for (const enabled of [true, false]) assert.throws(() => compileRules([{ id: 'legacy-inject', enabled, when, do: [textAction('text', 'BODY', { [key]: value })] }]), /rule\.if/)
   }
   for (const [key, value] of [['audience', 'main'], ['audience', 'subagent'], ['modelScope', 'pro'], ['modelScope', 'flash']]) {
-    assert.throws(() => compileRules([{ id: 'legacy-request', when, do: [{ id: 'request', kind: 'request-params', patch: { maxTokens: 64 }, [key]: value }] }]), /rule.when/)
+    assert.throws(() => compileRules([{ id: 'legacy-request', when, do: [{ id: 'request', kind: 'request-params', patch: { maxTokens: 64 }, [key]: value }] }]), /rule\.if/)
   }
   const source = [{ id: 'canonical', when, do: [
     textAction('text', 'BODY', { audience: null, modelScope: 'all', promotion: 'none', subject: '', match: null }),
@@ -94,7 +94,7 @@ test('统一规则：通用条件只允许规则 when，中性旧字段不再参
     const action = { id: 'fixed', kind: 'inject-text', config: { layer: 'system-section', audience: 'main', text: 'FIXED', params: { [flag]: true } } }
     assert.equal(compileRules([{ id: 'fixed', do: [action] }])[0].actions[0].config.audience, 'main')
     assert.throws(() => compileRules([{ id: 'fixed', when, do: [action] }]), /registration/)
-    assert.throws(() => compileRules([{ id: 'spoofed', do: [{ ...action, config: { ...action.config, layer: 'pre-step' } }] }]), /rule.when/)
+    assert.throws(() => compileRules([{ id: 'spoofed', do: [{ ...action, config: { ...action.config, layer: 'pre-step' } }] }]), /rule\.if/)
   }
   for (const { example } of getRuleEditorMeta().actions) {
     const target = example.kind === 'inject-text' ? example.config : example.kind === 'request-params' ? example : undefined
@@ -336,4 +336,74 @@ test('统一规则：新动作空种子不生成业务效果，未设模型条�
     assert.deepEqual(await h.run('agent/request', [{ agent }], () => request), { maxTokens: 64 })
   }
   release()
+})
+
+// —— if/then/else 语法（2026-10-05 重构：外层与 do 层统一为分支结构）——
+
+test('if/then/else：规则级分支展开为结构互斥的动作序列，then 在前 else 在后', () => {
+  const rules = compileRules([{
+    id: 'branch',
+    if: { phase: { promoted: false } },
+    then: [textAction('then-act', 'THEN')],
+    else: [textAction('else-act', 'ELSE')],
+  }])
+  assert.deepEqual(rules[0].actions.map(action => action.id), ['then-act', 'else-act'], '展开顺序保持声明序：then 在前')
+  assert.equal(rules[0].actions.length, 2, '两个分支各贡献自己的动作')
+  assert.equal(typeof rules[0].when, 'function', '规则级 if 仍编译成规则条件')
+})
+
+test('if/then/else：无 if 即无条件；动作级分支与外层条件合取且可嵌套', () => {
+  const plain = compileRules([{ id: 'plain', then: [textAction('t', 'T')] }])
+  assert.equal(plain[0].when, undefined, '无 if 的规则不设条件')
+  assert.deepEqual(plain[0].actions.map(action => action.id), ['t'])
+
+  const nested = compileRules([{
+    id: 'nested',
+    if: { phase: { promoted: false } },
+    then: [{
+      if: { scope: { audience: 'subagent' } },
+      then: [{ if: { session: { type: 'user/message', present: false } }, then: [textAction('deep', 'D')], else: [textAction('deep-else', 'DE')] }],
+      else: [textAction('sub-else', 'SE')],
+    }],
+  }])
+  assert.deepEqual(nested[0].actions.map(action => action.id), ['deep', 'deep-else', 'sub-else'], '两层分支按声明序深度优先展开')
+})
+
+test('if/then/else：条件命中执行 then、不命中执行 else', async () => {
+  const rules = compileRules([{
+    id: 'branch',
+    if: { scope: { audience: 'subagent' } },
+    then: [{ id: 'sub', kind: 'request-params', patch: { maxTokens: 11 } }],
+    else: [{ id: 'main', kind: 'request-params', patch: { maxTokens: 22 } }],
+  }])
+  const h = harness()
+  const dispose = mountRuleSources(h.ctx, [{ moduleId: 'branch-module', rules }])
+  const agentAt = depth => ({ session: { id: 's', header: depth === 0 ? {} : { delegationDepth: depth }, snapshotEvents: () => [] }, options: { model: 'deepseek-chat' } })
+  const call = agent => h.run('agent/request', [{ agent }], () => ({ maxTokens: 5 }))
+  assert.deepEqual(await call(agentAt(1)), { maxTokens: 11 }, '子代理命中 then')
+  assert.deepEqual(await call(agentAt(0)), { maxTokens: 22 }, '主会话走 else')
+  dispose()
+})
+
+test('if/then/else：旧 when/do 归一为新名；新旧同现且不一致时拒绝', () => {
+  const legacy = compileRules([{ id: 'r', when: { phase: { promoted: false } }, do: [textAction('t', 'T')] }])
+  const modern = compileRules([{ id: 'r', if: { phase: { promoted: false } }, then: [textAction('t', 'T')] }])
+  assert.deepEqual(modern[0].actions.map(action => action.id), legacy[0].actions.map(action => action.id))
+  assert.equal(typeof legacy[0].when, 'function', '旧 when 仍编译成条件')
+
+  assert.throws(() => compileRules([{ id: 'r', when: { phase: { promoted: false } }, if: { phase: { promoted: true } }, then: [textAction('t', 'T')] }]), /if.*when|when.*if/i, 'if 与 when 同现且不一致必须拒绝')
+  assert.throws(() => compileRules([{ id: 'r', then: [textAction('t', 'T')], do: [textAction('u', 'U')] }]), /then.*do|do.*then/i, 'then 与 do 同现且不一致必须拒绝')
+})
+
+test('if/then/else：注册制层不接受动作级分支（该层没有逐轮求值时机）', () => {
+  assert.throws(() => compileRules([{
+    id: 'reg',
+    then: [{
+      if: { phase: { promoted: false } },
+      then: [{ id: 's', kind: 'inject-text', config: { id: 's', layer: 'system-section', text: 'X' } }],
+    }],
+  }]), /system-section/)
+  // 拒绝的是分支，不是这一层本身：同层不带分支照旧可用。
+  const ok = compileRules([{ id: 'reg-ok', then: [{ id: 's', kind: 'inject-text', config: { id: 's', layer: 'system-section', text: 'X' } }] }])
+  assert.equal(ok[0].actions.length, 1)
 })
