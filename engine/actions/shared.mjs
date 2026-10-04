@@ -7,14 +7,23 @@ export const NAME_LIST = stringList({ as: 'set', dedupe: true, allowEmpty: true 
 /** 动作标签（错误消息与 source.plugin 命名空间）。 */
 export const labelOf = (action) => (typeof action?.id === 'string' && action.id.length > 0 ? action.id : String(action?.kind ?? 'action'))
 
-/** 名单判据的唯一实现：presentation 过滤与执行 guard 共用（呈现与执行不得两套口径）。 */
-export function createMask(source, label, plugin) {
+/**
+ * 名单判据的唯一实现：presentation 过滤与执行 guard 共用（呈现与执行不得两套口径）。
+ *
+ * 第四个参数 `allowExtra` 是**可选的活集合**（`assembly.tools.allowFrom` 的动态白名单）：
+ * 调用方持有它，在每个请求解析完历史工具调用后 `clear()` + 填充。它**只做加法**——多一个
+ * 名字就多一个工具通过，永远不能剔除任何工具。这不是巧合，而是判据方向决定的：`blocks()`
+ * 的语义是「**在** allow 里就放行」，所以任何动态集合都只可能解锁。
+ *
+ * 未声明静态 `allow`、只声明 `allowFrom` 时，allow 视为空集（`blocks` 仍会裁掉没被解锁的）。
+ */
+export function createMask(source, label, plugin, allowExtra) {
   const allow = NAME_LIST.parse(source?.allow, plugin, `${label}.allow`)
   const deny = NAME_LIST.parse(source?.deny, plugin, `${label}.deny`)
   if (allow !== undefined && deny !== undefined) {
     throw new TypeError(`${plugin}: ${label} cannot combine allow with deny`)
   }
-  if (allow === undefined && deny === undefined) {
+  if (allow === undefined && deny === undefined && allowExtra === undefined) {
     throw new TypeError(`${plugin}: ${label} needs allow and/or deny — 空名单无法表达「剔哪些工具」`)
   }
   // `run_code` 是 PTC 呈现**唯一**的可调用入口（见本文件顶部）。把它写进 **deny** 名单会让
@@ -25,8 +34,11 @@ export function createMask(source, label, plugin) {
     throw new TypeError(`${plugin}: ${label}.deny must not name the reserved ${RUN_CODE} transport — it is the only callable entry of the PTC presentation`)
   }
   return {
+    /** 静态 allow（原样保留；动态项不并入，免得调用方误以为它是静态声明）。 */
     allow,
     deny,
+    /** 动态白名单的落点（活集合，由调用方每轮重填）；未声明 allowFrom 时不存在。 */
+    allowExtra,
     /**
      * fail-open 兜底开关（**可选**，缺省 false）：原 `tool-bootstrap` 的语义是
      * 「keep 名单里的工具在本次装配目录里一个都不存在 → 放弃裁剪、暴露完整目录」（声明侧见
@@ -40,7 +52,9 @@ export function createMask(source, label, plugin) {
     blocks: (toolName) => {
       if (typeof toolName !== 'string' || toolName.length === 0) return false
       if (deny !== undefined && deny.has(toolName)) return true
-      return allow !== undefined && !allow.has(toolName)
+      if (allowExtra?.has(toolName) === true) return false
+      // 声明了 allow、或声明了 allowFrom（= 白名单模式，静态名单视为空集），未点名即裁掉。
+      return (allow !== undefined || allowExtra !== undefined) && allow?.has(toolName) !== true
     },
   }
 }
