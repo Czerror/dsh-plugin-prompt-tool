@@ -10,42 +10,8 @@ export function moduleOrderConfigs(entries: readonly ModuleConfigOrderEntry[]): 
   }))
 }
 
-/** 跨模块只读视图：按模块分组其它模块的配置卡（当前模块的卡不在此列）。 */
-export interface OtherModuleGroup {
-  moduleId: string
-  name: string
-  entries: ModuleConfigOrderEntry[]
-}
-
-/**
- * 过滤出**非当前模块**的卡并按模块分组，供主会话/子代理页的只读区块渲染。
- *
- * 身份判据是 `entry.moduleId` 本身，不解析 `configIdentityKey` 的 JSON 字符串——
- * 解析字符串容易在模块 id 含 `,`/`"` 时出错，而 entries 上本来就有模块身份。
- * `nameOf` 提供模块显示名（`store.meta.modules` 按 id 反查），取不到时回落模块 id。
- * 空分组被丢弃：只声明了引擎行、没有规则的模块不该在 UI 里占一个空块。
- */
-export function groupOtherModuleCards(
-  entries: readonly ModuleConfigOrderEntry[] | undefined,
-  currentModuleId: string,
-  nameOf: (moduleId: string) => string | undefined,
-): OtherModuleGroup[] {
-  if (!Array.isArray(entries)) return []
-  const groups = new Map<string, ModuleConfigOrderEntry[]>()
-  for (const entry of entries) {
-    if (entry.moduleId === currentModuleId) continue
-    const list = groups.get(entry.moduleId)
-    if (list === undefined) groups.set(entry.moduleId, [entry])
-    else list.push(entry)
-  }
-  return [...groups.entries()].map(([moduleId, grouped]) => ({
-    moduleId,
-    name: nameOf(moduleId) ?? moduleId,
-    entries: grouped,
-  }))
-}
-
-/** 跨模块只交换同插入点、位置与官方档位中的可见槽位。 */export function sameConfigPosition(left: PromptConfigDraft, right: PromptConfigDraft): boolean {
+/** 跨模块只交换同插入点、位置与官方档位中的可见槽位。 */
+export function sameConfigPosition(left: PromptConfigDraft, right: PromptConfigDraft): boolean {
   return promptConfigLayer(left) === promptConfigLayer(right)
     && (left.position ?? 'after-user') === (right.position ?? 'after-user')
     && (!(left.layer === 'system-section' || left.layer === 'runtime-context') || (left.order ?? 0) === (right.order ?? 0))
