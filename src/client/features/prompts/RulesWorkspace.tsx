@@ -101,13 +101,12 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
     .sort((a, b) => (rank.get(a.previousId ?? a.value.id) ?? Number.MAX_SAFE_INTEGER) - (rank.get(b.previousId ?? b.value.id) ?? Number.MAX_SAFE_INTEGER))
   const batchDisabled = readOnly || !draft.loaded || draft.busy !== undefined || hasRuleFields(draft) || draft.remote !== undefined || entries.length === 0
   // 统一视图：所有已启用模块的卡一次平铺（当前模块可编辑、其余只读）。
-  // 数据源就是上面无参读取的全局 order.entries，不再另挂第二个 hook。
+  // 数据源就是上面读到的全局 order.entries，排序复用既有的 viewOrderedIds。
   const cards = useMemo(() => mergeModuleCardList(
-    order?.entries.filter((item) => item.moduleId === moduleId),
     order?.entries,
-    store.meta.modules?.map((item, index) => ({ moduleId: item.id, name: item.name, index })) ?? [],
-    moduleId,
     store.meta.layers,
+    moduleId,
+    (id) => store.meta.modules?.find((item) => item.id === id)?.name,
   ), [order, moduleId, store.meta.modules, store.meta.layers])
   const retrySave = draft.loaded && rulesDirty(draft) && draft.remote === undefined
   const batchSetEnabled = (enabled: boolean): void => {
