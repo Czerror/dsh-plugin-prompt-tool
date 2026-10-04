@@ -118,13 +118,14 @@ test('ponytail 模块：注入点映射与上游 hook 一致', () => {
 
   // 档位卡同时服务主会话与子代理：`system-section` 只进主会话——子代理有自己的 system
   // prompt，官方按「global + 确切作用域」合并、不含祖先链；`subagent-start` 才是子代理
-  // 读得到的通道。两处文本逐字相同：切档只靠互斥组启用哪张卡，子代理因此天然跟随，
-  // 不需要第二套开关。
+  // 读得到的通道。子代理侧只报档位标记，不搬 Intensity 表：正文已由 pre-step 副本给出，
+  // 同一张表写两份只会各自漂移。切档只靠互斥组启用哪张卡，子代理因此天然跟随。
   for (const level of levels) {
+    const name = level.id.replace('ponytail-level-', '')
     assert.deepEqual(level.do.map((action) => action.id), ['inject', 'inject-subagent'], `${level.id}: 档位卡持有两个动作`)
     assert.deepEqual(level.do.map((action) => action.config.layer), ['system-section', 'subagent-start'], `${level.id}: 主会话与子代理各一个动作`)
-    assert.equal(level.do[0].config.text, level.do[1].config.text, `${level.id}: 两个受众的档位文本必须逐字相同`)
-    assert.match(level.do[1].config.text, /PONYTAIL MODE ACTIVE/)
+    assert.match(level.do[1].config.text, new RegExp(`^PONYTAIL MODE ACTIVE — level: ${name}`), `${level.id}: 子代理动作只报本档`)
+    assert.ok(!level.do[1].config.text.includes('## Intensity'), `${level.id}: 子代理动作不搬 Intensity 表`)
     assert.equal(level.when, undefined, '档位无条件注入，与上游 matcher 缺省一致')
   }
 

@@ -119,9 +119,10 @@ rules:
             The shortest path to done is the right path.
   # 档位卡同时服务两个受众：`system-section` 只进主会话——子代理有自己的 system prompt，
   # 官方按「global + 确切作用域」合并、不合并祖先链，父会话注册的段进不了子代理；
-  # `subagent-start` 才是子代理读得到的通道。两处文本逐字相同：切档只靠互斥组启用哪张卡，
-  # 子代理因此天然跟随，不需要第二套开关。（原单独的 `ponytail-subagent-level` 写死
-  # `Default: full`，切到 lite/ultra 后与主会话的档位卡互相矛盾，已并入本卡。）
+  # `subagent-start` 才是子代理读得到的通道。子代理侧只写档位标记与消歧句，不搬 Intensity
+  # 表（规则正文已由 pre-step 副本给出，同一张表写两份只会各自漂移）。切档只靠互斥组启用
+  # 哪张卡，子代理因此天然跟随，不需要第二套开关。（原单独的 `ponytail-subagent-level`
+  # 写死 `Default: full`，切到 lite/ultra 后与主会话的档位卡互相矛盾，已并入本卡。）
   - id: ponytail-level-full
     name: Ponytail 档位：full（标准档，默认）
     enabled: true
@@ -157,14 +158,8 @@ rules:
           text: |-
             PONYTAIL MODE ACTIVE — level: full
 
-            ## Intensity
-
-            | Level | What change |
-            |-------|------------|
-            | **full** | The ladder enforced. Stdlib and native first. Shortest diff, shortest explanation. Default. |
-
-            Example: "Add a cache for these API responses."
-            - full: "`@lru_cache(maxsize=1000)` on the fetch function. Skipped custom cache class, add when lru_cache measurably falls short."
+            The delegated rule body's "Default: full" is a generic fallback; this
+            marker is authoritative for this run.
   - id: ponytail-level-lite
     name: Ponytail 档位：lite（轻量档）
     enabled: false
@@ -200,14 +195,8 @@ rules:
           text: |-
             PONYTAIL MODE ACTIVE — level: lite
 
-            ## Intensity
-
-            | Level | What change |
-            |-------|------------|
-            | **lite** | Build what's asked, but name the lazier alternative in one line. User picks. |
-
-            Example: "Add a cache for these API responses."
-            - lite: "Done, cache added. FYI: `functools.lru_cache` covers this in one line if you'd rather not own a cache class."
+            The delegated rule body's "Default: full" is a generic fallback; this
+            marker is authoritative for this run.
   - id: ponytail-level-ultra
     name: Ponytail 档位：ultra（极端档）
     enabled: false
@@ -243,14 +232,8 @@ rules:
           text: |-
             PONYTAIL MODE ACTIVE — level: ultra
 
-            ## Intensity
-
-            | Level | What change |
-            |-------|------------|
-            | **ultra** | YAGNI extremist. Deletion before addition. Ship the one-liner and challenge the rest of the requirement in the same breath. |
-
-            Example: "Add a cache for these API responses."
-            - ultra: "No cache until a profiler says so. When it does: `@lru_cache`. A hand-rolled TTL cache class is a bug farm with a hit rate."
+            The delegated rule body's "Default: full" is a generic fallback; this
+            marker is authoritative for this run.
   # 上游 SubagentStart hook 的 DSH 落点：给子代理注入规则副本。
   # **必须落在 pre-step 层**：判别「只读 / 写」要看任务文本，而 subagent-start 层的载荷
   # 只有 runId/provider/id/local，拿不到任务文本（详见 docs/injection-point-contracts.md）。
