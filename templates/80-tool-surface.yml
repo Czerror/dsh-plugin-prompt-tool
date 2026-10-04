@@ -1,0 +1,66 @@
+# 模板：工具面收窄（核心文件与任务集）+ 按需解锁
+#
+# 为什么：工具面实测 **156 个工具、描述合计 46894 字符（≈12K token）**，每个请求都付。
+# 收窄到核心集后只剩约 10 个工具，其余按需解锁。
+#
+# 与 test/engine/declarations/tool-bootstrap.yml 的关键差别：那份原型**只在受控相位收窄**
+# （`promoted: false`），晋升后原样放开；本模板**覆盖全部相位**——晋升后放开等于白省，
+# 而工具描述是每请求的固定开销。若要旧语义，给 `phase` 加 `promoted: false` 并把
+# `compacted` 拆成两条即可。
+#
+# 配套两件（缺一不可）：
+#   1. `dev_tool_search` 工具（组合源 engine/compositions/source/local/dev-tool-search.yml）
+#      ——唯一发现入口，模型靠它搜索并解锁。
+#   2. `allowFrom`（engine/actions/assembly.mjs）——从历史 `tool/call` 参数回收解锁名单。
+#      只挂插件不配 allowFrom 的话，解锁是**一次性的**（当次请求用完即被裁）。
+#
+# 工具名必须与**实际装配名**一致。本项目 harness 是 `pwsh`（不是 `bash`）、
+# `edit` + `write`（不是 `str_replace_editor`）。写错名字有两个后果，都很隐蔽：
+#   - 写进 allow 的名字不存在 → `requireMatch` 触发 fail-open，**静默暴露完整目录**；
+#   - 该在的没写进去 → 该工具被裁掉，模型只能用别的方式硬凑。
+#
+# `requireMatch: true` 是刻意的：任一 allow 工具缺失（或模型解锁了一个不存在的名字）
+# 就放弃裁剪、暴露完整目录。宁可多给上下文，也不静默裁成空目录——收窄错了会让当前
+# 工作流调不到工具，那是比多花 token 严重得多的故障。
+#
+# **本模板走规则路径，不能声明 `waterfallPosition`**（那是声明 `triggers` 路径的字段，
+# `compileRules` 会以 unknown fields 拒绝）。`assembly` 的改写发生在通道下游结算之后，
+# 与相邻动作的先后由规则顺序与模块顺序决定。若确实需要 `outermost`（`prepend: true`，
+# 保证本动作在普通注册之外先看到装配），改用声明路径（同 test/engine/declarations/
+# tool-bootstrap.yml 的格式）而不是本模板。
+id: tool-surface-resident
+name: 工具面收窄（核心文件与任务集）
+enabled: true
+if:
+  # 覆盖全部相位。为什么不能只写 `phase: { promoteOn, includeSubagents }`：
+  # `promoted` 的缺省是 **true**（= 只匹配已晋升），不是「任意」；而 `compacted` 未声明才是
+  # 「不判该维度」（engine/conditions/phase.mjs:27-48）。更麻烦的是 `promoted: 'ignore'`
+  # 要求同时声明 `compacted`，而 `compacted` 只接受布尔值——**没有任何单节点组合能表达
+  # 「两个相位都命中」**，必须用 `any` 拼两支（phase.mjs:30-35 的注释正是在讲这个表达力边界）。
+  #   支 1 `promoted: true`          → 已晋升（不论压缩与否）
+  #   支 2 `{compacted: true, promoted: false}` → 压缩后未晋升（受控相位的压缩回退）
+  # 未晋升且未压缩的**首轮不收窄**：与「首轮保全文」同一取舍——先让模型看到完整目录，
+  # 再随相位推进收窄。收窄的价值在于工具描述是**每请求固定开销**（实测 46894 字符），
+  # 而长会话必然进入上面两支，所以省下的正是大头。
+  any:
+    - phase: { promoteOn: either, includeSubagents: true, promoted: true }
+    - phase: { promoteOn: either, includeSubagents: true, compacted: true, promoted: false }
+then:
+  - id: narrow-tools
+    kind: assembly
+    target:
+      tools:
+        allow:
+          - pwsh
+          - read
+          - write
+          - edit
+          - glob
+          - grep
+          - todo_write
+          - skill_search
+          - skill_load
+          - dev_tool_search
+        # 解锁项从 dev_tool_search 的持久调用参数回收（{ tool, key } 精确匹配）。
+        allowFrom: { tool: dev_tool_search, key: toolNames }
+        requireMatch: true

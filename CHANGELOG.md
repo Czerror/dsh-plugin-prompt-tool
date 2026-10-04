@@ -2,6 +2,31 @@
 
 ## [Unreleased]
 
+### 工具面收窄：`allowFrom` 动态白名单 + `dev_tool_search` 发现入口 + 收窄模板
+
+- **动机**：工具面实测 **156 个工具、描述合计 46894 字符（≈12K token）**，每个请求都付，而多数请求只用到其中几个。构成：MCP 84（GitHub 46 / chart 27 / heroui 6 / context7 2 / ui-skills 2 / sequential-thinking 1）、mnemon 17、task_board 15、ssh 6、核心 34。
+- **T2 `allowFrom`**（`engine/actions/assembly.mjs`、`engine/actions/shared.mjs`）：`assembly.target.tools` 新增 `allowFrom: { tool, key }`，运行时从本会话持久事件里筛 `type === 'tool/call'` 且 `data.name` 精确等于 `tool` 的事件，`try/catch` 解析 `data.arguments`，只取 `key` 指向的字符串数组里的字符串项。**这一步是收窄能成立的前提**——没有它，解锁是一次性的（当次请求用完即被裁掉）。
+  - **方向性约束**：动态项**只做加法**。`createMask.blocks()` 的语义是「**在** allow 里就放行」，所以动态集合只能解锁、永远不能裁掉任何工具；`allowFrom` 未声明时行为与改动前逐字一致。
+  - **坏数据不上抛**：非法 JSON、`key` 非数组、`tool` 不匹配、缺 `arguments`、数组混入非字符串——逐条忽略，其余照常累积。取不到 session 时退回静态名单。`deny` 与 `allowFrom` 同声明在挂载期 fail loud（黑名单与「只做加法」语义冲突）。
+  - **隔离**：`tool` / `key` 按参数传进闭包内的解析函数，**不用模块级可变状态**——同一 `prepareAssembly` 会被多个 assembly 动作各挂一次，模块级变量会让它们互相覆盖。
+- **T3 `dev_tool_search`**（`engine/dev-tool-search.mjs` + 组合源）：注册一个发现工具，`query` 搜索完整装配目录、`toolNames` 按精确名解锁（解锁名写入持久 `tool/call` 参数，由 `allowFrom` 读回）。照搬上游两处修正：匹配是**打分**而非 AND 过滤（长自然语言查询在 AND 口径下命中零个），描述里显式教解锁路径（模型只会搜、不会传 `toolNames`）。
+  - **能力摘要来自运行时截获，不手工维护**：空查询时按前缀把 `ctx.tools.schemas()` 折成分组计数（`mcp__github__*(46) mnemon_*(17) …`，实测 433 字符覆盖全部 156 个工具，相对 46894 字符约 108 倍压缩）。官方注册表只投影 name/description（无分组字段），所以分组在本地折叠。此前那份写死的 `UNLOCKABLE_INDEX` 已删除——工具增删就要改代码，名字写错还会让模型照着错名字解锁。
+- **T4 收窄模板**（`templates/80-tool-surface.yml`）：常驻核心集 `pwsh / read / write / edit / glob / grep / todo_write / skill_search / skill_load / dev_tool_search`，并把 `allowFrom` 接到 `dev_tool_search.toolNames`。
+  - **相位用 `any` 两支表达**：单个 `phase` 节点**无法**表达「两个相位都命中」——`promoted` 缺省是 `true`（= 只匹配已晋升，不是「任意」），而 `promoted: 'ignore'` 要求同时声明只接受布尔值的 `compacted`。故用 `any: [phase{promoted:true}, phase{compacted:true, promoted:false}]`。实测四态：首轮不收窄、已晋升收窄、压缩后未晋升收窄、压缩后已晋升收窄；差分断言证明两支都不可省（第二支唯一负责「压缩后未晋升」）。
+  - **首轮刻意不收窄**：与「首轮保全文」同一取舍——先让模型看到完整目录，再随相位推进收窄；长会话必然进入上面两支，省下的仍是大头。
+  - **`requireMatch: true`**：任一 allow 工具缺失（或模型解锁了不存在的名字）就放弃裁剪、暴露完整目录。宁可多给上下文，也不静默裁成空目录。
+  - **本模板走规则路径，不能声明 `waterfallPosition`**（那是声明 `triggers` 路径的字段，`compileRules` 会以 unknown fields 拒绝）；需要 `outermost` 时改用声明路径。
+- **回归**：`test/engine/actions.test.mjs`（`allowFrom` 主路径 / 坏数据逐条忽略 / 无 session 降级 / 挂载期 fail loud / 多动作不串味）、`test/engine/dev-tool-search.test.mjs`（打分排序 / 分组摘要 / 解锁回报 / 目录抛错降级 / 描述不内联会腐化的清单）、`test/engine/tool-surface-template.test.mjs`（引擎权威校验 + `allowFrom` 与插件写入端的**跨模块契约** + 相位实测覆盖）。
+- **验证**：typecheck、lint（0 warn / 253 文件）、test **430 passed（+17）**、build、`git diff --check` 全绿。
+
+### 修复：`instruction-hint` 的组合源缺模板，开关静默失效
+
+- **缺陷**：参数桥的 `params.instructionHint`（UI「指令路径提示」）会把 `instruction-hint` 行的 `enabled` 置 `true`，但组合源 `engine/compositions/source/local/instruction-hint.yml` 只配了 `enabled` / `promoteOn` / `includeSubagents`。而 `instruction-hint.mjs#apply` 的第一行是 `if (!enabled || templateOf(source, 'messageTemplate').trim().length === 0) return`——于是**把开关打开不注册任何转换**：配置合法、零效果、零报错（与 `count.delegated` 的静默失效同类）。迁移路径 `rules-migration.ts:102` 会 `fillMissing` 补模板，所以只有新装的模块走组合源时暴露，表现就是「这个开关没有用」。
+- **修复**：四个模板（`projectTemplate` / `globalTemplate` / `suffixTemplate` / `messageTemplate`）随行声明，正文**逐字取自** `templates/policies/legacy-defaults.yml#instructionHint`——与迁移默认值同源，否则「迁移进来的定义」与「新装的组合源」行为分叉。`legacy-defaults.yml` 自身标注「引擎运行时不得读取此文件」，所以必须是实体而非引用。
+- **行为**：`enabled` 仍缺省 `false`（opt-in，须在 UI 勾选或直写行配置）；`promoteOn: either` 不动，**首轮仍注入全文**（硬约束保证先入眼），首个工具调用/助手消息之后才换成「路径提示」，后续全文 dump 丢弃；`includeSubagents` 由 `false` 改为 `true`，让子代理同样只拿提示。装配无需手工挂行——`manifest.ts:728`「参数在 ⇒ 装配在」按 `params.module.row` 自动补齐，且 `applyModuleConfigs` 是浅合并，只覆盖 `enabled`，不会冲掉模板。
+- **回归**：`test/engine/instruction-hint.test.mjs` 新增一条，直读**线上组合源**并断言四个模板非空、且与 `legacy-defaults.yml` 逐字一致。此前测不出来是因为该文件其余用例都从 `legacy-defaults` 注入模板（文件头 helper），`apply()` 的前置条件在那些用例里**恒被满足**。
+- **验证**：typecheck、lint（0 warn / 251 文件）、test **414 passed（+1）**、build、`git diff --check` 全绿；一次性端到端探针（驱动 `buildModuleConfigsFromParams` + `applyModuleConfigs`，走 lib 生产路径）显示合并后 `apply()` 会注册 = `true`，改动前对照 = `false`。
+
 ### 技能面收窄：宿主侧提供 `skill_search` / `skill_load`
 
 - **动机**：官方 `dsh-tool-skill` 把全量 `<available_skills>`（`source.kind === 'skill-catalog'`）注入首步，并在每次晋升/压缩后**再次注入**。实测（2026-10-05，三个主会话）6 次注入共 **78792 字符**，即每会话约两块 13KB——而它只是索引，模型能按需搜索就不需要它。
