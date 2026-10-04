@@ -24,8 +24,6 @@ export const RULES_ZH = {
   'rules.clearCondition': '改为无条件', 'rules.condition': '条件 {index}',
   'rules.rawAction': '动作 JSON', 'rules.settings': '本层共享设置',
   'rules.expand': '展开 {name}', 'rules.collapse': '收起 {name}',
-  // 尾部追加的其它模块卡片：与当前模块的卡同构，可直接编辑。
-  'rules.appendedModule': '── 模块 {name}（已启用，尾部追加）──',
 } as const
 export const RULES_EN: Record<keyof typeof RULES_ZH, string> = {
   'rules.title': 'Rules', 'rules.module': 'Module level',
@@ -53,6 +51,4 @@ export const RULES_EN: Record<keyof typeof RULES_ZH, string> = {
   'rules.clearCondition': 'Make unconditional', 'rules.condition': 'Condition {index}',
   'rules.rawAction': 'Action JSON', 'rules.settings': 'Shared layer settings',
   'rules.expand': 'Expand {name}', 'rules.collapse': 'Collapse {name}',
-  // Cards of other enabled modules appended at the tail — same editable card as the current module's.
-  'rules.appendedModule': '── module {name} (enabled, appended) ──',
 }

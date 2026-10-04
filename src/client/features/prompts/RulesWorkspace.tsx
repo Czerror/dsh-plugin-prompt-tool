@@ -1,10 +1,10 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import type { RuleDefinition } from '../../../shared/rules.ts'
 import type { ModuleConfigOrderEntry, ModuleConfigOrderSnapshot } from '../../../shared/module-config-order.ts'
 import { configIdentityKey } from '../../../shared/module-config-order.ts'
 import type { PromptToolStore } from '../../data/use-prompt-tool-store.ts'
 import { usePromptToolFields } from '../../data/use-prompt-tool-fields.ts'
-import { useRuleEditor, useLoadModuleRules, useModuleRuleEditors } from '../../data/use-rule-editor.ts'
+import { useRuleEditor } from '../../data/use-rule-editor.ts'
 import { hasRuleFields, rulesDirty } from '../../data/rule-drafts.ts'
 import { bridgeCall } from '../../data/bridge-client.ts'
 import { instructionFileIdOf } from '../../data/prompt-config-content.ts'
@@ -56,14 +56,6 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
   const [expanded, setExpanded] = useState<string | undefined>(props.browse?.expanded)
   const [filter, setFilter] = useState(props.browse?.filter ?? '')
   const [order, setOrder] = useState<ModuleConfigOrderSnapshot>()
-  // 所有已启用模块各一份编辑器：各模块的卡绑它**自己**的 draft/editor，因此同样可编辑。
-  // 清单从全局 order 的条目派生并用 useMemo 稳定——每帧新建数组会让 editor 反复重建。
-  const orderModuleIds = useMemo(
-    () => [...new Set([...(order?.entries ?? []).map(item => item.moduleId), ...(moduleId === undefined ? [] : [moduleId])])],
-    [order, moduleId],
-  )
-  const moduleEditors = useModuleRuleEditors(store, orderModuleIds)
-  useLoadModuleRules(moduleEditors)
   const [sorting, setSorting] = useState(false), [orderError, setOrderError] = useState(''), [discard, setDiscard] = useState(false)
   const dragId = useRef<string>(), epoch = useRef(0), sortBusy = useRef(false), lastCreated = useRef<string>()
   const readOnly = !fields.modulesEnabled || store.moduleFacts?.editable !== true
@@ -72,14 +64,11 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
   const toggle = (key: string): void => { const next = expanded === key ? undefined : key; setExpanded(next); if (props.browse) props.browse.expanded = next }
   const readOrder = useCallback(async (): Promise<void> => {
     const generation = epoch.current
-    // **不带模块**：一次取回所有已启用模块的配置卡（服务端 readInputs 默认
-    // ids = enabledModuleIds()，即 config.yml 的 enabled = 运行时装配的卡）。
-    // 带 moduleId 只回当前模块，尾部就追加不出其它模块的卡了。
-    const result = await bridgeCall('moduleConfigOrder')
+    const result = await bridgeCall('moduleConfigOrder', { moduleId })
     if (generation !== epoch.current) return
     if (result.ok) { setOrder(result.value); setOrderError('') }
     else setOrderError(result.message ?? t('moduleOrder.unavailable'))
-  }, [t])
+  }, [moduleId, t])
   useEffect(() => { epoch.current++; setOrder(undefined); setExpanded(props.browse?.expanded); return () => { epoch.current++ } }, [moduleId])
   useEffect(() => { if (draft.loaded) void readOrder() }, [draft.loaded, draft.revisions?.settings, readOrder])
   useEffect(() => {
@@ -107,32 +96,6 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
     .filter(entry => (view === 'all' || view === 'world-book' && entry.value.then.some(action => asTriggerRecord(action.config).strategy === 'world-book') || entry.value.layer === view)
       && (!query || JSON.stringify(entry.value).toLowerCase().includes(query) || entry.value.layer !== undefined && props.matchesLayerSettings?.(entry.value.layer, query)))
     .sort((a, b) => (rank.get(a.previousId ?? a.value.id) ?? Number.MAX_SAFE_INTEGER) - (rank.get(b.previousId ?? b.value.id) ?? Number.MAX_SAFE_INTEGER))
-  // 其它已启用模块的卡：绑它们**自己**模块的 draft/editor，因此同样可编辑。
-  // 顺序按**统一序号**（无参 /module-config-order 的 sequence）与当前模块的卡可直比——
-  // 序号冲突早已在写入侧由 appendModuleConfigOrder 消除（碰号的卡接尾部），
-  // 所以这里不需要再分区或追加，一张表混排即可。
-  const appended = useMemo(() => {
-    const rankOf = new Map((order?.entries ?? []).map(row => [`${row.moduleId}\u0000${row.configId}`, row.sequence]))
-    const sequenceOf = (module: string, entry: { previousId: string | null; value: { id: string } }): number =>
-      rankOf.get(`${module}\u0000${entry.previousId ?? entry.value.id}`) ?? Number.MAX_SAFE_INTEGER
-    const inCurrent = new Set(entries.map(entry => entry.previousId ?? entry.value.id))
-    return [...moduleEditors.values()]
-      .filter(item => item.moduleId !== moduleId && item.draft.loaded)
-      .flatMap(item => item.draft.entries
-        .filter(entry => !entry.deleted && scopeVisible(entry.value, props.scope ?? 'main'))
-        .filter(entry => (view === 'all' || entry.value.layer === view)
-          && (!query || JSON.stringify(entry.value).toLowerCase().includes(query)))
-        .filter(entry => !inCurrent.has(entry.previousId ?? entry.value.id))
-        .map(entry => ({
-          key: `${item.moduleId}:${entry.key}`,
-          moduleId: item.moduleId,
-          entry,
-          draft: item.draft,
-          editor: item.editor,
-          sequence: sequenceOf(item.moduleId, entry),
-        })))
-      .sort((a, b) => a.sequence - b.sequence)
-  }, [entries, moduleEditors, moduleId, order, props.scope, query, view])
   const batchDisabled = readOnly || !draft.loaded || draft.busy !== undefined || hasRuleFields(draft) || draft.remote !== undefined || entries.length === 0
   const retrySave = draft.loaded && rulesDirty(draft) && draft.remote === undefined
   const batchSetEnabled = (enabled: boolean): void => {
@@ -196,17 +159,7 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
             renderSettings={entry.value.layer !== undefined && props.hasLayerSettings?.(entry.value.layer) && props.renderLayerSettings ? rule => props.renderLayerSettings!(rule.layer!, { id: rule.id, layer: rule.layer }) : undefined} />
         </div>
       })}
-    {entries.length === 0 && draft.loaded && appended.length === 0 && <p>{t(query || view !== 'all' ? 'rules.noMatch' : 'rules.empty')}</p>}
-    {/* 其它已启用模块的卡：同一张表按统一序号混排，同一套可编辑 RuleCard，只标注来源模块。
-        不做分区、不做只读——启用一个模块就该多出它那些可编辑的卡。 */}
-    {appended.map(item => {
-      const source = store.meta.modules?.find(module => module.id === item.moduleId)?.name ?? item.moduleId
-      return <div key={item.key}>
-        <p className={ui.configFieldHint}>{t('rules.appendedModule', { name: source })}</p>
-        <RuleCard t={t} entry={item.entry} draft={item.draft} editor={item.editor} meta={store.meta} disabled={readOnly}
-          expanded={expanded === item.key} onToggle={() => toggle(item.key)} onDuplicate={() => {}} headerActions={<span />} />
-      </div>
-    })}
+    {entries.length === 0 && draft.loaded && <p>{t(query || view !== 'all' ? 'rules.noMatch' : 'rules.empty')}</p>}
     {discard && <ConfirmDialog title={t('triggers.discard')} description={t('triggers.discardHint')} confirmLabel={t('triggers.discard')} cancelLabel={t('triggers.cancel')} onCancel={() => setDiscard(false)} onConfirm={editor.discard} />}
   </section>
 }

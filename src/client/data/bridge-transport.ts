@@ -79,23 +79,15 @@ export function setEditTarget(moduleId: string | undefined): void {
   editTarget = moduleId !== undefined && moduleId.length > 0 ? moduleId : undefined
 }
 
-/** 全局编辑目标（当前激活模块）；跨模块视图需要在单次请求上覆盖它时读这里。 */
-export function currentEditTarget(): string | undefined {
-  return editTarget
+function editTargetHeader(): Record<string, string> {
+  return editTarget === undefined ? {} : { [EDIT_TARGET_HEADER]: editTarget }
 }
 
-function editTargetHeader(moduleId?: string): Record<string, string> {
-  // 单次请求的覆盖优先：跨模块视图让每张卡带**自己**的模块身份去读写，
-  // 而不改动全局 editTarget——否则平铺视图会污染其它页面的单模块路径。
-  const target = moduleId !== undefined && moduleId.length > 0 ? moduleId : editTarget
-  return target === undefined ? {} : { [EDIT_TARGET_HEADER]: target }
-}
-
-export async function postBridge<T>(path: string, body: unknown, moduleId?: string): Promise<BridgeResult<T>> {
+export async function postBridge<T>(path: string, body: unknown): Promise<BridgeResult<T>> {
   try {
     const response = await fetch(SETTINGS_BRIDGE_PREFIX + path, {
       method: 'POST',
-      headers: { 'content-type': 'application/json', ...editTargetHeader(moduleId) },
+      headers: { 'content-type': 'application/json', ...editTargetHeader() },
       body: JSON.stringify(body ?? {}),
     })
     return await readBridgeResponse<T>(response)
