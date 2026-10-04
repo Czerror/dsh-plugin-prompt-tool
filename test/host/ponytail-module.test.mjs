@@ -116,12 +116,17 @@ test('ponytail 模块：注入点映射与上游 hook 一致', () => {
   assert.ok(ruleText('ponytail-subagent-readonly').length < 400, '只读档应保持轻量')
   assert.ok(!ruleText('ponytail-subagent-readonly').includes('## The ladder'), '只读档不搬执行层清单')
 
-  // 档位标记仍在 subagent-start：子代理拿不到 system-section 的档位卡，副本得自己说明。
-  const levelCard = rulesById.get('ponytail-subagent-level')
-  assert.equal(levelCard.layer, 'subagent-start')
-  assert.equal(levelCard.when, undefined, '档位标记无条件注入，与上游 matcher 缺省一致')
-  assert.match(ruleText('ponytail-subagent-level'), /PONYTAIL MODE ACTIVE/)
-  assert.match(ruleText('ponytail-subagent-level'), /Default: \*\*full\*\*/)
+  // 档位卡同时服务主会话与子代理：`system-section` 只进主会话——子代理有自己的 system
+  // prompt，官方按「global + 确切作用域」合并、不含祖先链；`subagent-start` 才是子代理
+  // 读得到的通道。两处文本逐字相同：切档只靠互斥组启用哪张卡，子代理因此天然跟随，
+  // 不需要第二套开关。
+  for (const level of levels) {
+    assert.deepEqual(level.do.map((action) => action.id), ['inject', 'inject-subagent'], `${level.id}: 档位卡持有两个动作`)
+    assert.deepEqual(level.do.map((action) => action.config.layer), ['system-section', 'subagent-start'], `${level.id}: 主会话与子代理各一个动作`)
+    assert.equal(level.do[0].config.text, level.do[1].config.text, `${level.id}: 两个受众的档位文本必须逐字相同`)
+    assert.match(level.do[1].config.text, /PONYTAIL MODE ACTIVE/)
+    assert.equal(level.when, undefined, '档位无条件注入，与上游 matcher 缺省一致')
+  }
 
   // 写档保留上游全文的关键段落；只读档不搬这些执行层清单（上面已断言）。
   const subagentText = ruleText('ponytail-subagent-rules')
