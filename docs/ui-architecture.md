@@ -108,6 +108,7 @@
     │  ├─ session-model-face.ts
     │  ├─ session-preset-face.ts
     │  ├─ use-import-preview-flow.ts
+    │  ├─ use-module-config-order.ts
     │  ├─ use-prompt-tool-fields.ts
     │  ├─ use-prompt-tool-store.ts
     │  ├─ use-rule-editor.ts
@@ -383,7 +384,8 @@ use-prompt-tool-store.ts 是唯一工作台 facade，负责把 ConfigForms mirro
 | param-overrides.ts | params 的列表拆分、条件发送和读回 patch |
 | rule-drafts.ts / use-rule-editor.ts | 规则单源、稳定身份、原始字段草稿、CAS、模块队列与互斥响应快照合并 |
 | prompt-config-content.ts | preset.md 内容资产的提升与剥离；AGENTS 文件卡（`params.file`）的正文提升与文件写回分流 |
-| prompt-config-order.ts | 配置视图内的显示顺序与移动算法：`viewOrderedIds` 是排序的唯一判据，普通列表、跨模块排序与全量平铺（`mergeModuleCardList`）共同复用 |
+| prompt-config-order.ts | 配置视图内的移动算法；普通列表与跨模块排序共同复用 |
+| use-module-config-order.ts | 跨模块排序摘要、版本读写与请求生命周期；只由现有配置列表消费 |
 | save-queue.ts | 串行保存任务的最小队列 |
 | import-files.ts | 浏览器文件导入的纯读取辅助 |
 | use-import-preview-flow.ts | 导入的预览→确认→提交流程状态机（预设包与角色卡共用） |
