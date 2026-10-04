@@ -15,9 +15,11 @@ export type BridgeKey = keyof typeof BRIDGE_ENDPOINTS
 export function bridgeCall<K extends BridgeKey>(
   endpoint: K,
   // 契约里 body 可省略（`models: { refresh?: boolean } | undefined`）时，调用方无需显式传 undefined。
-  ...args: undefined extends BridgeRequestMap[K] ? [body?: BridgeRequestMap[K]] : [body: BridgeRequestMap[K]]
+  ...args: undefined extends BridgeRequestMap[K] ? [body?: BridgeRequestMap[K], moduleId?: string] : [body: BridgeRequestMap[K], moduleId?: string]
 ): Promise<BridgeResult<BridgeValueMap[K]>> {
-  return postBridge<BridgeValueMap[K]>(BRIDGE_ENDPOINTS[endpoint], args[0])
+  // moduleId 只在**单次请求**上覆盖编辑目标头：平铺视图里每张卡带自己的模块身份读写，
+  // 不改全局值，免得污染其它页面的单模块路径。
+  return postBridge<BridgeValueMap[K]>(BRIDGE_ENDPOINTS[endpoint], args[0], args[1])
 }
 
 export function bridgeUpload(file: Blob, fileName: string): Promise<BridgeResult<BridgeValueMap['assetUpload']>> {
