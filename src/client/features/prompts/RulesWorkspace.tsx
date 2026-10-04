@@ -5,7 +5,8 @@ import { configIdentityKey } from '../../../shared/module-config-order.ts'
 import type { PromptToolStore } from '../../data/use-prompt-tool-store.ts'
 import { usePromptToolFields } from '../../data/use-prompt-tool-fields.ts'
 import { useRuleEditor } from '../../data/use-rule-editor.ts'
-import { mergeModuleCardList } from '../../data/prompt-config-order.ts'
+import { useModuleConfigOrder } from '../../data/use-module-config-order.ts'
+import { groupOtherModuleCards } from '../../data/prompt-config-order.ts'
 import { hasRuleFields, rulesDirty } from '../../data/rule-drafts.ts'
 import { bridgeCall } from '../../data/bridge-client.ts'
 import { instructionFileIdOf } from '../../data/prompt-config-content.ts'
@@ -54,6 +55,14 @@ const samePosition = (a: ModuleConfigOrderEntry, b: ModuleConfigOrderEntry): boo
 export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
   const { store, t } = props, fields = usePromptToolFields(store, value => value)
   const { moduleId, draft, editor } = useRuleEditor(store)
+  // 跨模块只读视图：无参 /module-config-order 读的是**运行时装配的**配置卡
+  // （服务端 readInputs 默认 ids = enabledModuleIds()，即 config.yml 的 enabled）。
+  // 这里只用来展示其它模块的卡并提供切换入口，正文与编辑永远留在当前模块的 draft。
+  const others = useModuleConfigOrder(t)
+  useEffect(() => {
+    if (draft.loaded) void others.load()
+    // others.load 是稳定 useCallback；此处只随当前模块与草稿就绪变化重读。
+  }, [draft.loaded, moduleId, others.load]) // eslint-disable-line react-hooks/exhaustive-deps
   const [expanded, setExpanded] = useState<string | undefined>(props.browse?.expanded)
   const [filter, setFilter] = useState(props.browse?.filter ?? '')
   const [order, setOrder] = useState<ModuleConfigOrderSnapshot>()
@@ -65,13 +74,11 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
   const toggle = (key: string): void => { const next = expanded === key ? undefined : key; setExpanded(next); if (props.browse) props.browse.expanded = next }
   const readOrder = useCallback(async (): Promise<void> => {
     const generation = epoch.current
-    // **不传 body** = 读全局：服务端 readInputs 默认 ids = enabledModuleIds()（config.yml 的
-    // enabled），返回所有已启用模块的配置卡；传 moduleId 只会回当前模块，那样就没法一次平铺了。
-    const result = await bridgeCall('moduleConfigOrder')
+    const result = await bridgeCall('moduleConfigOrder', { moduleId })
     if (generation !== epoch.current) return
     if (result.ok) { setOrder(result.value); setOrderError('') }
     else setOrderError(result.message ?? t('moduleOrder.unavailable'))
-  }, [t])
+  }, [moduleId, t])
   useEffect(() => { epoch.current++; setOrder(undefined); setExpanded(props.browse?.expanded); return () => { epoch.current++ } }, [moduleId])
   useEffect(() => { if (draft.loaded) void readOrder() }, [draft.loaded, draft.revisions?.settings, readOrder])
   useEffect(() => {
@@ -100,15 +107,16 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
       && (!query || JSON.stringify(entry.value).toLowerCase().includes(query) || entry.value.layer !== undefined && props.matchesLayerSettings?.(entry.value.layer, query)))
     .sort((a, b) => (rank.get(a.previousId ?? a.value.id) ?? Number.MAX_SAFE_INTEGER) - (rank.get(b.previousId ?? b.value.id) ?? Number.MAX_SAFE_INTEGER))
   const batchDisabled = readOnly || !draft.loaded || draft.busy !== undefined || hasRuleFields(draft) || draft.remote !== undefined || entries.length === 0
-  // 统一视图：所有已启用模块的卡一次平铺（当前模块可编辑、其余只读）。
-  // 数据源就是上面无参读取的全局 order.entries，不再另挂第二个 hook。
-  const cards = useMemo(() => mergeModuleCardList(
-    order?.entries.filter((item) => item.moduleId === moduleId),
-    order?.entries,
-    store.meta.modules?.map((item, index) => ({ moduleId: item.id, name: item.name, index })) ?? [],
-    moduleId,
-    store.meta.layers,
-  ), [order, moduleId, store.meta.modules, store.meta.layers])
+  // 其它已启用模块的卡：按模块分组，只读展示 + 点击切换编辑目标。
+  // 分组判据是 entry.moduleId（分组函数里做），排序/批量启用都不涉及它们。
+  const otherModuleCards = useMemo(
+    () => groupOtherModuleCards(
+      others.snapshot?.entries,
+      moduleId,
+      (id) => store.meta.modules?.find((item) => item.id === id)?.name,
+    ),
+    [others.snapshot, moduleId, store.meta.modules],
+  )
   const retrySave = draft.loaded && rulesDirty(draft) && draft.remote === undefined
   const batchSetEnabled = (enabled: boolean): void => {
     if (batchDisabled) return
@@ -172,19 +180,27 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
         </div>
       })}
     {entries.length === 0 && draft.loaded && <p>{t(query || view !== 'all' ? 'rules.noMatch' : 'rules.empty')}</p>}
-    {/* 其它已启用模块的卡：与当前模块同层同序平铺，只读呈现并标注模块归属。
-        刻意不渲染 RuleCard 与任何编辑控件——跨模块写没有通道，「看着能改、点了没反应」更糟。 */}
-    {cards.filter((card) => !card.current).map((card) => <div key={configIdentityKey(card.entry)} className={css.workspace}>
-      <div className={ui.listFilterRow}>
-        <strong>{card.entry.name}</strong>
-        <code>{card.moduleName}</code>
-      </div>
-      <p className={ui.configFieldHint}>
-        {translateLabel(t, LAYER_LABEL_KEYS, card.entry.layer)}
-        {card.entry.enabled !== true && ` · ${t('rules.disabled')}`}
-        {' · '}{t('rules.otherModuleCard')}
-      </p>
-    </div>)}
+    {/* 其它已启用模块：只读展示 + 一键切过去编辑。刻意不渲染 RuleCard 与任何编辑控件——
+        「看着能改、点了没反应」比不显示更糟；编辑入口就是右上那个切换。 */}
+    {otherModuleCards.length > 0 && <section className={css.workspace} aria-label={t('rules.otherModules')}>
+      <h3 className={ui.sectionTitle}>{t('rules.otherModules')}</h3>
+      <p className={ui.configFieldHint}>{t('rules.otherModules.hint')}</p>
+      {otherModuleCards.map((group) => <div key={group.moduleId}>
+        <div className={ui.listFilterRow}>
+          <strong>{group.name}</strong>
+          <code>{group.moduleId}</code>
+          <Button variant="outline" shape="pill" onClick={() => store.setModuleId(group.moduleId)}>{t('rules.switchToModule', { id: group.moduleId })}</Button>
+        </div>
+        <ul>
+          {group.entries.map((item) => <li key={configIdentityKey(item)}>
+            <span data-enabled={item.enabled === true ? '' : undefined}>{item.name}</span>
+            {' · '}{translateLabel(t, LAYER_LABEL_KEYS, item.layer)}
+            {item.enabled !== true && ` · ${t('rules.disabled')}`}
+          </li>)}
+        </ul>
+      </div>)}
+    </section>}
+    {others.error !== '' && <p role="alert" className={css.error}>{others.error}</p>}
     {discard && <ConfirmDialog title={t('triggers.discard')} description={t('triggers.discardHint')} confirmLabel={t('triggers.discard')} cancelLabel={t('triggers.cancel')} onCancel={() => setDiscard(false)} onConfirm={editor.discard} />}
   </section>
 }

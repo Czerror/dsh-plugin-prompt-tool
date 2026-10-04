@@ -24,8 +24,10 @@ export const RULES_ZH = {
   'rules.clearCondition': '改为无条件', 'rules.condition': '条件 {index}',
   'rules.rawAction': '动作 JSON', 'rules.settings': '本层共享设置',
   'rules.expand': '展开 {name}', 'rules.collapse': '收起 {name}',
-  // 其它已启用模块的只读卡片（来源：无参 /module-config-order，即运行时装配的配置卡）。
-  'rules.otherModuleCard': '其它模块（只读）',
+  // 其它已启用模块的只读卡片区（来源：无参 /module-config-order，即运行时装配的配置卡）。
+  'rules.otherModules': '其它已启用模块',
+  'rules.otherModules.hint': '这些模块也在运行时装配（来源：启用表）。卡片在此只读——点击「切换编辑目标」切到该模块即可编辑其规则。',
+  'rules.switchToModule': '切换编辑目标到 {id}',
   'rules.disabled': '已停用',
 } as const
 export const RULES_EN: Record<keyof typeof RULES_ZH, string> = {
@@ -55,6 +57,8 @@ export const RULES_EN: Record<keyof typeof RULES_ZH, string> = {
   'rules.rawAction': 'Action JSON', 'rules.settings': 'Shared layer settings',
   'rules.expand': 'Expand {name}', 'rules.collapse': 'Collapse {name}',
   // Read-only cards of other enabled modules (source: no-arg /module-config-order, i.e. what is actually assembled).
-  'rules.otherModuleCard': 'other module (read-only)',
+  'rules.otherModules': 'Other enabled modules',
+  'rules.otherModules.hint': 'These modules are also assembled at runtime (source: the enabled table). Their cards are read-only here — use "Switch edit target" to edit that module\'s rules.',
+  'rules.switchToModule': 'Switch edit target to {id}',
   'rules.disabled': 'Disabled',
 }
