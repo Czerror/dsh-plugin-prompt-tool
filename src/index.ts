@@ -189,6 +189,23 @@ registerTuiCommand(
     mount: (scopeCtx: Context): (() => void) => registerSessionVarTools(scopeCtx),
   })
 
+  // 技能按需发现：`skill_search` / `skill_load` 注册到宿主侧（不是模块路径），
+  // 因此对所有 Agent 生效、不依赖任何预设。与 `skill-surface` 模块配对——
+  // 删掉全量技能目录 + 给出搜索，缺一不可。
+  //
+  // 动态导入而非静态：`engine/skill-search.mjs` 顶层经 `importHostPackage` 解析
+  // `@deepseek-ai/dsh-skill`（从宿主入口 realpath 解析），解析不到时静态导入会
+  // 让**整个 prompt-tool 插件挂载失败**。这里失败只记一条告警、不挂这两个工具，
+  // 其余能力照常——符合「任何一步停下插件都完整可用」。
+  void import(new URL('../engine/skill-search.mjs', import.meta.url).href)
+    .then((mod: { apply?: (ctx: Context) => unknown, inject?: readonly string[] }) => {
+      if (typeof mod.apply !== 'function') return
+      ctx.inject(mod.inject ?? ['tools'], (skillCtx: Context) => { void mod.apply?.(skillCtx) })
+    })
+    .catch((error: unknown) => {
+      warn(ctx, `prompt-tool: skill-search 未挂载（skill_search/skill_load 不可用）：${error instanceof Error ? error.message : String(error)}`)
+    })
+
   // 独立指令文件来源：宿主侧按本次 Agent 实时编译文件卡，引擎在每次 pre-step
   // 查询本服务（ctx.get('promptToolPreStep')），不注册第二个 pre-step 监听器。
   // 策略缺省 enabled=false；服务缺失时引擎只执行模块卡（独立引擎复制场景）。

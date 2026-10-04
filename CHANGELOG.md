@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### 技能面收窄：宿主侧提供 `skill_search` / `skill_load`
+
+- **动机**：官方 `dsh-tool-skill` 把全量 `<available_skills>`（`source.kind === 'skill-catalog'`）注入首步，并在每次晋升/压缩后**再次注入**。实测（2026-10-05，三个主会话）6 次注入共 **78792 字符**，即每会话约两块 13KB——而它只是索引，模型能按需搜索就不需要它。
+- **实现**：`src/index.ts` 在宿主侧挂载 `engine/skill-search.mjs`，把 `skill_search` / `skill_load` 两个工具注册给所有 Agent（不依赖预设，与 ponytail 走同一条 `agent/created` → 模块装配通路）。
+- **降级**：改为**动态导入**而非静态导入。该引擎顶层经 `importHostPackage` 从宿主入口 realpath 解析 `@deepseek-ai/dsh-skill`，静态导入一旦解析失败会让**整个 prompt-tool 插件挂载失败**；现在失败只记一条告警、不挂这两个工具，其余能力照常。
+- **配对模块**：`skill-surface`（`$DSH_HOME/.prompt-tool/modules/`）用 `pre-step-filter` 的 `sources` 白名单拦掉 `skill-catalog`。保留清单来自 12 个真实会话的 kind 实测枚举（13 项），其中三个 `plugin:ponytail-*` kind **只出现在子代理**——漏掉会静默废掉子代理的 ponytail 策略。
+- **实测纠正**：`keepKinds` 模式在本地确定性探针下**什么都不删**（claimed 基线的对象身份保留规则把所有消息都保住了），`sources` 枚举才是可行写法。
+
 ### 修复：`count` 谓词的 `delegated` 选项静默永不命中
 
 - **缺陷**：`engine/conditions/count.mjs` 在第 129 行使用 `isDelegated`，但该文件只从 `../shared.mjs` 导入了 `MAX_TRACKED_SESSIONS, extractText, sessionEvents`——**漏了 `isDelegated`**。于是 `when: { count: { …, delegated: true|false } }` 在判定期抛 `ReferenceError`，被 `ruleMatches` 的 try/catch 吞成 `false` 并只告警一次，表现为该选项**配置合法、永不命中、零显式报错**。同语义的 `session.mjs`、`scope.mjs` 都正确导入了，只有 count 漏了。
