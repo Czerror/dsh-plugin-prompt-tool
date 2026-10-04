@@ -113,7 +113,9 @@ test('契约：所有端点路径全部注册且无多余', () => {
   const handlers = register()
   const expected = Object.values(BRIDGE_ENDPOINTS)
   // 文件层调用策略与全文读写；旧技能注册层屏蔽端点保持移除。
-  assert.equal(expected.length, 49, 'BRIDGE_ENDPOINTS 应包含当前登记的 49 个端点（含统一规则事务）')
+  assert.equal(expected.length, 46, 'BRIDGE_ENDPOINTS 应包含当前登记的 46 个端点（角色库及旧配置校验已退役）')
+  for (const removed of ['charactersList', 'charactersDelete', 'charactersApply', 'charactersRemove']) assert.equal(Object.hasOwn(BRIDGE_ENDPOINTS, removed), false)
+  for (const name of ['moduleVariables', 'moduleContent', 'moduleMerge', 'moduleUnmerge', 'importModulePackage', 'exportModule', 'moduleCapability']) assert.equal(typeof BRIDGE_ENDPOINTS[name], 'string')
   for (const removed of ['skillFix', 'skillToggle', 'skillsConfig', 'skillBlock']) {
     assert.equal(Object.hasOwn(BRIDGE_ENDPOINTS, removed), false, `${removed} 已随旧技能模型移除`)
   }
@@ -123,6 +125,49 @@ test('契约：所有端点路径全部注册且无多余', () => {
   const registered = [...handlers.keys()].sort()
   const wanted = expected.map((p) => SETTINGS_BRIDGE_PREFIX + p).sort()
   assert.deepEqual(registered, wanted)
+})
+
+test('部署总闸保留旧false，显式保存规范新键并拒绝同批新旧冲突', async () => {
+  const handlers = new Map()
+  let value = { writePreset: false }
+  const writes = []
+  const scope = {
+    settings: {
+      describe: () => [{ ns: 'prompt-tool', value, base: {}, revision: 1 }],
+      mutate: async (_ns, ops) => {
+        writes.push(ops)
+        for (const op of ops) {
+          if (op.op === 'unset') delete value[op.path[0]]
+          else value[op.path[0]] = op.value
+        }
+      },
+    },
+    get: () => undefined,
+    webServer: { register: ({ path, handler }) => { handlers.set(path, handler); return () => {} } },
+    effect: fn => { const dispose = fn(); if (dispose) bridgeDisposers.push(dispose) },
+  }
+  registerSettingsBridge({ inject: (_deps, callback) => callback(scope) }, 'prompt-tool', () => ({}), () => makeSkillsState(), () => '')
+  const read = fakeRes()
+  await handlers.get(SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.describe)(fakeReq(), read)
+  assert.equal(JSON.parse(read.body).value.value.modulesEnabled, false)
+  assert.equal(Object.hasOwn(JSON.parse(read.body).value.value, 'writePreset'), false)
+  const save = async ops => {
+    const res = fakeRes()
+    await handlers.get(SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.mutate)(fakeReq({ body: JSON.stringify({ ops }) }), res)
+    return res
+  }
+  const conflict = await save([{ op: 'set', path: ['modulesEnabled'], value: true }, { op: 'set', path: ['writePreset'], value: false }])
+  assert.equal(conflict.status, 409)
+  assert.deepEqual(value, { writePreset: false })
+  assert.equal(writes.length, 0)
+  const changed = await save([{ op: 'set', path: ['modulesEnabled'], value: true }])
+  assert.equal(changed.status, 200, changed.body)
+  assert.deepEqual(value, { modulesEnabled: true })
+  assert.deepEqual(writes[0].at(-1), { op: 'unset', path: ['writePreset'] })
+  value = { writePreset: true }
+  const legacy = await save([{ op: 'set', path: ['writePreset'], value: false }])
+  assert.equal(legacy.status, 200, legacy.body)
+  assert.deepEqual(value, { modulesEnabled: false })
 })
 
 test('契约：/bootstrap 聚合 meta + overrides + variables + promptConfigs 供客户端单请求消费', async () => {
@@ -330,7 +375,7 @@ test('契约：/persona 未配置 moduleDir 时稳定拒绝', async () => {
   assert.equal(res.status, 400)
   const payload = JSON.parse(res.body)
   assert.equal(payload.ok, false)
-  assert.equal(payload.code, 'preset-dir-unavailable')
+  assert.equal(payload.code, 'module-dir-unavailable')
 })
 
 test('契约：工具预览在 schema 成功或抛错时均释放 revision lease', async () => {

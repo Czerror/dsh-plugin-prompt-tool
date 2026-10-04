@@ -1,6 +1,6 @@
 # SillyTavern 导入与兼容边界
 
-转换器为 `src/host/sillytavern.ts`。目标是把 ST 的声明式内容映射到本项目预设，
+转换器为 `src/host/sillytavern.ts`。目标是把 ST 的声明式内容映射到普通模块，
 不执行 ST 扩展脚本，也不声称复刻 ST 的完整会话运行时。导入成功、YAML 可解析或零告警
 只代表结构可用；行为需按启停、顺序、变量、触发条件、角色和位置验证。
 
@@ -8,7 +8,7 @@
 
 - 「模块」页的模块导入：没有 YAML 模块定义时，JSON 可为含 `prompts[]` 的预设、角色卡，
   或顶层 `entries` 的独立世界书；多个 JSON 合并后沿同一模块物化通道写盘。
-- 「模块」页的角色卡素材区导入：PNG/JSON 先进入 `.prompt-tool/.characters/<id>/`，再由用户并入当前模块。
+- 角色卡 PNG/JSON 与其他来源共用模块导入，直接建立 `.prompt-tool/modules/<id>/`；来源类型不成为存储身份。
 - PNG 按魔数判断而非扩展名，读取 `tEXt` 的 `ccv3`，缺失时回退 `chara`；保留原图和原始 JSON。
 - id 从文件名生成合法英文 slug；纯中文文件名回退 `st-<短哈希>`，显示名仍保留中文。
 - 兼容提示存放于 `meta.stWarnings`；物化时通过现有 warn 通道报告。原始文件不修改。
@@ -37,11 +37,11 @@
 生成 `persona: { prefix: '', complete: false }`。`enable_web_search=true` 加 `tool-web`；
 显式 false 时产出三条 `rules` 声明（`assembly` 呈现剔除 + `sdk-strip` 裁 `tools:sdk`
 正文 + `guard` 执行层拒绝，共用同一份 `deny: [web_search, web_fetch]`），
-`writePreset` 把该段物化为 `rules.yml`，`rule-engine` 行自动补装配；所有动作都有稳定 id，`do` 始终为数组。
+完整规则保存于 module.yml，初始化分解 rules/，运行时内存编译；所有动作都有稳定 id，do 始终为数组。
 
-## 角色卡（PNG / JSON）与角色卡库
+## 角色卡（PNG / JSON）导入
 
-库存储原图 `avatar.png`、源数据 `card.json`、转换定义 `converted.yml` 和角色记忆 `memory.md`。
+角色来源转换为普通模块，完整定义写 module.yml，原图和源数据作为模块资产保留。没有独立 converted.yml 身份或 .characters 写入通道；同目标更新保留本地 memory.md、未知资产与未替换头像。
 
 | 字段 | 落点 |
 |---|---|
@@ -55,32 +55,23 @@
 | `character_book.entries` | ST world-book 配置 |
 | `extensions` 的 regex/TavernHelper/JS | 不执行、不放入提示正文，报告兼容提示 |
 
-「应用到当前预设」复用既有工厂和重建通道。配置 id 加 `chara-<id>-` 前缀；角色卡的
-声明变量合并到所属配置的 `variables`，不覆盖预设自身变量。重复应用幂等；移除卡片不删除
-预设原有变量。多个 JSON 合并时也保留每个来源的局部变量绑定。
+导入后通过普通模块启停与编辑流程使用。导入不添加角色专属规则前缀，不写 importedCharacters／characterModules 两套登记。若用户随后选择模块并入，使用普通模块来源记录与移除逻辑，保留来源局部变量绑定。
 
-`world_book_*` 工具的 note 写入角色 `memory.md`；应用时作为常驻条目注入。
+`world_book_upsert/delete` 的 note 写入当前模块 memory.md；world_book_read_memory 按需读取最新文件。记忆缺失返回空文本，读取失败报错，记忆从不自动注入。
 这是 DSH 的附加管理能力，不等同于 ST 扩展脚本或 MVU 状态更新。
 
-### 应用与移除的模块语义（2026-09-18）
+### 模块能力与移除边界
 
-「应用到当前预设」按卡的实际需要装配模块，不再固定追加四件套；移除时对称回退：
+角色来源转换后的能力按 modules 声明和实际内容装配：
 
 - **声明优先**：卡顶层 `modules` 存在时按声明追加。ST 转换产物自带 `rule-engine`、`character-tools`、
   `world-book-tools`（有世界书时）、`session-var-tools`、`tool-config-engine` 的声明，
   所以 ST 卡的应用行为与改造前一致。
 - **必需项兜底**：有规则时补齐 `rule-engine`，避免定义存在但没有执行入口；
   卡含 `world-book` 策略配置时补 `world-book-tools`。因此未声明 `modules` 的手写卡只会得到必需项。
-- **来源记录**：应用时把「追加前没有、追加后有」的差集写入 `module.yml` 的 `meta.characterModules[<卡 id>]`；
-  预设原本就有的模块不会被记成这张卡引入的。来源记录保留到模块完成回退；首次引入它的卡先被移除时，
-  记录仍保留给后续消费者，因此两张卡按任意顺序全部移除都能回退共享模块。
-- **移除回退**：按记录删除模块，删除前检查消费者——其他已导入卡仍引用（各自的记录或 `converted.yml` 里的声明）、
-  或模块内容仍需要它（还有 `rules` / `world-book` 注入动作 / `params.stMacros` / 顶层 `customTools`）时保留。
-  **改造前应用过的卡没有记录，移除时不会回退模块**：
-  无从判断归属，宁可留下模块也不误删用户或引擎要用的装配。
+- **来源记录**：普通模块并入记录自己的新增内容和能力；没有新角色专属登记。移除只撤回能证明属于该来源且没有其他消费者的贡献，保留目标原有内容。历史记录只在兼容路径识别。
 - **手写卡的档位**：用规则的 `group` + `exclusive` 表达档位三选一；在工作台或 `/prompt-tool config <id> on` 显式启用目标规则，即关闭同组其他规则的总开关，排序不决定赢家。
-- 两条路径的取舍：ST 导入路径保持原有模块清单不变（ST 的宏与状态变量确实需要 `session-var-tools`），
-  角色卡应用路径按声明与必需项装配。二者共用同一份移除回退逻辑。
+- ST 的宏与状态变量仍需要 session-var-tools；角色作为来源不会另建装配或热更新通道。
 
 ## ST 宏与变量
 
@@ -156,7 +147,7 @@ position=4 降级为当前消息批末尾；其他世界书位置落在消息批
 粘滞/冷却恢复等能力。角色卡中的源选项不会授权执行任意脚本。
 
 键宏的恢复路径不新增通道：诊断只说明哪条条目的触发键需要赋值，赋值仍在工作台
-「模板变量」里完成，写入 `variables.yml` 后按既有重建流程生效。本项目不猜测 `{{user}}`
+「模板变量」里完成，完整回写 `module.yml` 并更新 `rules/variables.yml` 后刷新运行贡献。本项目不猜测 `{{user}}`
 的值（它来自 ST 全局设置与 persona，卡内不存在，用同义词反推属猜测），也不在导入期执行宏。
 
 ## 未复刻的 ST 能力与降级对照
@@ -231,7 +222,7 @@ tokenizer 与上下文预算通道，超出本插件的宿主边界；`forbid_ov
   预览协议版本、转换器版本、规范化文件有序数组、实际选组与目标身份（导入类型、目标 id、
   目标**当前**内容版本、目标归属）计算。提交携带 `expectedPreviewRevision`，服务端重算：
   文件、选组、转换器版本或目标（含预览期间被用户改动的目标）任一不符即 409
-  （`preset-preview-stale` / `characters-preview-stale`）且零写盘。目标"不存在"与"已存在"
+  （`module-preview-stale` / `characters-preview-stale`）且零写盘。目标"不存在"与"已存在"
   必须可区分。旧调用只带 `expectedSourceDigest` 时仍按文件校验，但若要新的选组覆盖则必须重新预览。
 - 客户端不计算版本：换文件、换组、目标变化都让旧 ready 失效并重新预览；迟到的预览响应按
   请求序号丢弃，重预览期间卡片保留但确认禁用（可继续换组）。
@@ -249,7 +240,7 @@ tokenizer 与上下文预算通道，超出本插件的宿主边界；`forbid_ov
 `convertStToPreset()` 仍是唯一转换实现；`convertStToPresetWithReport()` 在同一路径上额外
 返回结构化报告。报告是派生元数据：不写入 `module.yml`、不进入模型上下文、也不是写入凭证。
 
-- 预览与提交同源：`/import-preset-package`、`/characters-import` 带 `preview: true` 时
+- 预览与提交同源：模块导入端点带 `preview: true` 时
   只做转换并返回 `report` + `sourceDigest`，不落盘、不重建、不执行宏。
 - 入口参数严格区分缺省与非法类型：`preview` 只接受布尔（省略或 `false` = 显式提交，
   `true` = 只读预览）；字符串 `"true"`、数值、`null`、数组、对象返回 400。
@@ -257,7 +248,7 @@ tokenizer 与上下文预算通道，超出本插件的宿主边界；`forbid_ov
   必须是有界非空字符串；`files` 容器与条目（path/content）类型错误一律 fail closed。
   校验全部发生在创建目录、备份、写盘与重建之前，错误请求对目录树与重建回调零副作用。
 - 过期校验：提交带 `expectedSourceDigest` 时服务端按本次上传文件重算摘要，不一致返回
-  409（`preset-preview-stale` / `characters-preview-stale`）且不写盘。
+  409（`module-preview-stale` / `characters-preview-stale`）且不写盘。
 - 报告内容：来源身份（文件显示名、原 identifier/uid、序号、顺序组）、目标身份（生成的
   配置 id、层、顺序、角色、位置）、分类（等价/降级/不支持/被排除，禁用与失败区分）、
   结构化诊断（稳定 code + severity + 定位）、摘要计数、转换器版本。

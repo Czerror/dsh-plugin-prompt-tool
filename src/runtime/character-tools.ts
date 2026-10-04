@@ -1,184 +1,35 @@
-/** 角色卡库模型工具：模型可导入角色卡、应用/移除到执行会话绑定的模块。
- *  与 UI 角色管理页共用 host/characters.ts 同一套库与合并逻辑。 */
+/** 角色卡导入工具：角色内容直接安装为普通模块，由统一模块入口管理。 */
 import type { Context } from '@deepseek-ai/cordis'
 import { defineTool } from '@deepseek-ai/dsh-tools'
-import { rebuildSavedPreset } from '../host/module-tool-target.ts'
 import type { ModuleToolHost } from '../host/module-tool-target.ts'
-import {
-  applyCharacterToPreset,
-  deleteCharacterCard,
-  importCharacterCard,
-  listCharacterCards,
-  removeCharacterFromPreset,
-} from '../host/characters.ts'
+import { importCharacterCard } from '../host/characters.ts'
 
-const text = (text: string): Array<{ type: 'text'; text: string }> => [{ type: 'text', text }]
-
-/** 注册角色卡库模型工具；返回 disposer，随 character-tools 模块生命周期清理。 */
 export function registerCharacterTools(ctx: Context, host: ModuleToolHost): () => void {
-  const fiber = ctx.inject(['tools'], (toolsCtx) => {
-    const disposers: Array<() => void> = []
-    disposers.push(toolsCtx.tools.register(defineTool({
-      name: 'character_list',
-      description: '列出角色卡库：每张卡（id / 名称 / 描述 / 是否已导入当前模块）。'
-        + '导入角色卡、应用到当前模块或移除前先调用本工具获取 id。',
-      parameters: {},
-      output: {
-        schema: {
-          type: 'object',
-          additionalProperties: false,
-          properties: {
-            characters: {
-              type: 'array',
-              required: true,
-              items: {
-                type: 'object',
-                additionalProperties: false,
-                properties: {
-                  id: { type: 'string', required: true },
-                  name: { type: 'string', required: true },
-                  description: { type: 'string' },
-                  hasAvatar: { type: 'boolean', required: true },
-                  imported: { type: 'boolean', required: true },
-                },
-              },
-            },
-          },
-        },
-        render: (_args, value) => text(JSON.stringify(value.characters)),
-      },
-      execute: async (_args, exec) => {
-        const target = host.target(exec)
-        return { characters: listCharacterCards(target.root, target.id) }
-      },
-    })))
-
-    disposers.push(toolsCtx.tools.register(defineTool({
-      name: 'character_import',
-      description: '导入一张 SillyTavern 角色卡或自包含原生角色片段到角色卡库：接收 JSON / YAML 文本内容'
-        + '（可先读取文件）。PNG 角色卡请让用户从 UI 角色管理页导入。导入后需调用 character_apply 应用到当前模块。',
-      parameters: {
-        name: {
-          type: 'string',
-          required: true,
-          description: '角色卡文件名（不含 .json 扩展名），将作为模块/角色卡 id 基础。',
-        },
-        content: {
-          type: 'string',
-          required: true,
-          description: '角色卡 JSON / YAML 文本：SillyTavern chara_card_v2/v3，或含 id/name/rules 的原生片段。规则使用 when 条件和 do 动作数组，注入动作只支持内嵌 text/texts，不支持外部文件。',
+  const fiber = ctx.inject(['tools'], toolsCtx => toolsCtx.tools.register(defineTool({
+    name: 'character_import',
+    description: '把一张 SillyTavern 角色卡或自包含原生角色片段直接导入为普通模块，接收 JSON / YAML 文本。'
+      + 'PNG 从模块页导入。默认同名另存，不自动启用；导入后通过模块管理选择启用，不再使用角色卡库或应用步骤。',
+    parameters: {
+      name: { type: 'string', required: true, description: '来源文件名（不含扩展名），作为普通模块 id 的基础。' },
+      content: { type: 'string', required: true, description: '角色卡 JSON / YAML 文本；原生片段含 id/name/rules，规则注入动作使用内嵌 text/texts，不支持外部文件。' },
+    },
+    output: {
+      schema: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          id: { type: 'string', required: true },
+          name: { type: 'string', required: true },
         },
       },
-      output: {
-        schema: {
-          type: 'object',
-          additionalProperties: false,
-          properties: {
-            id: { type: 'string', required: true },
-            name: { type: 'string', required: true },
-          },
-        },
-        render: (_args, value) => text(`角色卡已入库：${value.name}（id=${value.id}）。调用 character_apply 可应用到当前模块。`),
-      },
-      execute: async (args, exec) => {
-        const target = host.target(exec)
-        const result = importCharacterCard(target.root, [{ path: `${args.name}.json`, content: args.content }])
-        if (!result.ok) throw new Error(result.message)
-        return { id: result.id, name: result.name }
-      },
-    })))
-
-    disposers.push(toolsCtx.tools.register(defineTool({
-      name: 'character_apply',
-      description: '把角色卡库中一张角色卡的参数（角色设定 / 系统提示 / 开场白 / 世界书 / 提示词配置）'
-        + '合并进当前会话装配的模块（rules 带 chara-<id>- 前缀防冲突，保留条件和动作，meta.importedCharacters 记录），'
-        + '并立即重建生成目录。重复应用幂等。',
-      parameters: {
-        id: {
-          type: 'string',
-          required: true,
-          description: '角色卡 id（character_list 返回）。',
-        },
-      },
-      output: {
-        schema: {
-          type: 'object',
-          additionalProperties: false,
-          properties: {
-            id: { type: 'string', required: true },
-            count: { type: 'integer', required: true },
-          },
-        },
-        render: (_args, value) => text(`已导入到当前模块（${value.count} 条配置），生成目录已重建。`),
-      },
-      execute: async (args, exec) => {
-        const target = host.target(exec)
-        const result = applyCharacterToPreset(target.root, target.id, args.id)
-        if (!result.ok) throw new Error(result.message)
-        await rebuildSavedPreset(host, target.id)
-        return { id: args.id, count: result.count }
-      },
-    })))
-
-    disposers.push(toolsCtx.tools.register(defineTool({
-      name: 'character_remove',
-      description: '从当前会话绑定的模块移除一张已导入角色卡的参数（删 chara-<id>- 前缀配置、该卡声明的 params 键、'
-        + 'meta.importedCharacters 除名），并立即重建生成目录。角色卡库条目不受影响。',
-      parameters: {
-        id: {
-          type: 'string',
-          required: true,
-          description: '角色卡 id（character_list 返回，imported=true 的卡）。',
-        },
-      },
-      output: {
-        schema: {
-          type: 'object',
-          additionalProperties: false,
-          properties: {
-            id: { type: 'string', required: true },
-            count: { type: 'integer', required: true },
-          },
-        },
-        render: (_args, value) => text(`已从当前模块移除（${value.count} 条配置），生成目录已重建。`),
-      },
-      execute: async (args, exec) => {
-        const target = host.target(exec)
-        const result = removeCharacterFromPreset(target.root, target.id, args.id)
-        if (!result.ok) throw new Error(result.message)
-        await rebuildSavedPreset(host, target.id)
-        return { id: args.id, count: result.count }
-      },
-    })))
-
-    disposers.push(toolsCtx.tools.register(defineTool({
-      name: 'character_delete',
-      description: '从角色卡库删除一张角色卡（含其转换参数与头像）。已导入当前模块的参数不受影响'
-        + '（如需清理请先调用 character_remove）。',
-      parameters: {
-        id: {
-          type: 'string',
-          required: true,
-          description: '角色卡 id（character_list 返回）。',
-        },
-      },
-      output: {
-        schema: {
-          type: 'object',
-          additionalProperties: false,
-          properties: {
-            id: { type: 'string', required: true },
-          },
-        },
-        render: (_args, value) => text(`角色卡 ${value.id} 已从库中删除。`),
-      },
-      execute: async (args, exec) => {
-        const result = deleteCharacterCard(host.target(exec).root, args.id)
-        if (!result.ok) throw new Error(result.message)
-        return { id: args.id }
-      },
-    })))
-    return () => { for (const dispose of disposers) dispose() }
-  })
+      render: (_args, value) => [{ type: 'text', text: `已导入普通模块：${value.name}（id=${value.id}）。在模块管理中启用后参与装配。` }],
+    },
+    execute: async (args, exec) => {
+      const target = host.target(exec)
+      const result = await importCharacterCard(target.root, [{ path: `${args.name}.json`, content: args.content }])
+      if (!result.ok) throw new Error(result.message)
+      return { id: result.id, name: result.name }
+    },
+  })))
   return () => { void fiber.dispose() }
 }

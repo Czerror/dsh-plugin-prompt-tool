@@ -11,14 +11,15 @@ import { registerWorldBookTools } from './runtime/world-book-tools.ts'
 import { registerSessionVarTools } from './runtime/session-var-tools.ts'
 import { installPreStepCoordinator } from './runtime/pre-step-coordinator.ts'
 import { registerTuiCommand } from './runtime/tui.ts'
-import { materializeModule } from './host/write-preset.ts'
+import { ensureModuleReady } from './host/write-preset.ts'
 import {
-  ensurePresetSeed,
+  ensureModuleSeed,
   moduleDirExists,
 } from './host/manifest.ts'
 import {
   Config,
   NS,
+  readModulesEnabled,
 } from './config.ts'
 import type { PromptSettings, RuntimeOptions } from './config.ts'
 import { MODULES_DIR } from './host/paths.ts'
@@ -49,9 +50,9 @@ function warn(ctx: Context, message: string): void {
 
 export function apply(ctx: Context, configIn: Config): void {
   // 包内目录与输出目录同名；启动只复制缺失项，现有用户定义不被重新铺写。
-  const seededPresets = new Set(ensurePresetSeed(MODULES_DIR).created)
+  const seededModules = new Set(ensureModuleSeed(MODULES_DIR).created)
   const readConfig = () => ({
-    writePreset: configIn.writePreset.get(),
+    modulesEnabled: readModulesEnabled({ modulesEnabled: configIn.modulesEnabled?.get(), writePreset: configIn.writePreset?.get() }),
   })
   const config = readConfig()
   /** 运行时配装通道的运行态：工具写入目标按它报告的「本 Agent 装了哪几层提示词」解析。 */
@@ -62,14 +63,14 @@ export function apply(ctx: Context, configIn: Config): void {
   const runtime: RuntimeOptions = {
     ...config,
   }
-  const materialize = (id: string): void => {
-    materializeModule(id, {
-      moduleDir: MODULES_DIR,
+  const refreshModuleSlices = (id: string): void => {
+    ensureModuleReady(id, {
+      modulesRoot: MODULES_DIR,
       warn: (message) => warn(ctx, message),
     })
   }
-  const rebuildPreset = async (id = basename(activeModuleDir())): Promise<void> => {
-    materialize(id)
+  const refreshModuleRuntime = async (id = basename(activeModuleDir())): Promise<void> => {
+    refreshModuleSlices(id)
     await assembly?.refresh(id)
   }
 
@@ -102,14 +103,14 @@ export function apply(ctx: Context, configIn: Config): void {
     skillsRuntime.invalidate,
     // 显式目标不存在就拒绝，不能落到另一个模块；编辑选择不进入部署设置。
     (moduleId) => moduleId === undefined ? activeModuleDir() : resolveEditDir(MODULES_DIR, moduleId),
-    (_scopes, id) => rebuildPreset(id),
-    (id) => id === undefined ? assembly?.refresh() : rebuildPreset(id),
+    (_scopes, id) => refreshModuleRuntime(id),
+    (id) => id === undefined ? assembly?.refresh() : refreshModuleRuntime(id),
     // host 已安装完整候选；不能二次物化覆盖导入资产。
     async (id) => {
       skillsRuntime.invalidate()
       await assembly?.refresh(id)
     },
-    (id) => rebuildPreset(id),
+    (id) => refreshModuleRuntime(id),
     () => assembly?.refresh(),
   )
 
@@ -137,7 +138,7 @@ registerTuiCommand(
   // 保存/重建失败直接抛给命令层，由 CommandResult:error 呈现给用户。
   async (key, value) => {
     saveModuleParams(MODULES_DIR, basename(activeModuleDir()), { [key]: value }, undefined)
-    await rebuildPreset()
+    await refreshModuleRuntime()
   },
   // 技能启停：改写技能文件的调用策略键（正文不动），失败原因回给命令层。
   (name, enabled) => {
@@ -148,24 +149,24 @@ registerTuiCommand(
     const result = skillsRuntime.setPolicy(name, entry.path, { scope: enabled ? 'none' : 'all' })
     return result.ok ? { ok: true } : { ok: false, message: result.message }
   },
-  (id) => rebuildPreset(id),
+  (id) => refreshModuleRuntime(id),
 )
 
   let needsInitialApply = true
   const applyState = async (): Promise<void> => {
     const next = currentSource()
     const nextRuntime: RuntimeOptions = {
-      writePreset: typeof next.writePreset === 'boolean' ? next.writePreset : config.writePreset,
+      modulesEnabled: next.modulesEnabled,
     }
-    const writePresetChanged = runtime.writePreset !== nextRuntime.writePreset
-    if (!needsInitialApply && !writePresetChanged) return
+    const modulesEnabledChanged = runtime.modulesEnabled !== nextRuntime.modulesEnabled
+    if (!needsInitialApply && !modulesEnabledChanged) return
     const initial = needsInitialApply
     needsInitialApply = false
 
     Object.assign(runtime, nextRuntime)
     if (initial) {
-      for (const id of seededPresets) materialize(id)
-      seededPresets.clear()
+      for (const id of seededModules) refreshModuleSlices(id)
+      seededModules.clear()
     }
     // 总闸只撤回/恢复运行时贡献，物化文件保留；关闭期间保存仍可重建。
     await assembly?.refresh()
@@ -176,7 +177,7 @@ registerTuiCommand(
     // 写入目标按该 Agent 的运行时配装记录解析（启用表 ∩ 磁盘，多个时取第一个），
     // 不再查询官方 `agentPresets` 的会话绑定。
     target: (exec) => resolveModuleToolTarget(exec, MODULES_DIR, (sessionId) => assembly?.moduleIds(sessionId) ?? []),
-    rebuild: (id) => rebuildPreset(id),
+    rebuild: (id) => refreshModuleRuntime(id),
   }
   ctx.provide('pt-character-tools', {
     mount: (scopeCtx: Context): (() => void) => registerCharacterTools(scopeCtx, moduleToolHost),
@@ -197,7 +198,7 @@ registerTuiCommand(
   ctx.inject(['agents'], (actx: Context) => {
     const mounted = createAgentAssembly(actx, {
       moduleRoot: MODULES_DIR,
-      enabledModules: () => runtime.writePreset
+      enabledModules: () => runtime.modulesEnabled
         ? enabledModuleIds(MODULES_DIR).filter((id) => moduleDirExists(MODULES_DIR, id))
         : [],
       warn: (message) => warn(ctx, message),
@@ -228,6 +229,8 @@ registerTuiCommand(
 // 公共 API：宿主与测试复用 settings schema 与提示词配置权威校验。
 export { Config } from './config.ts'
 export { writePreset } from './host/write-preset.ts'
+export { ensureModuleReady, writeModule } from './host/write-preset.ts'
+export type { WriteModuleOptions } from './host/write-preset.ts'
 // AGENTS 文件卡：探测 → 卡片合成与文件写盘（bridge 端点与回归测试共用）。
 export {
   agentsFileCardSpecs,
@@ -248,54 +251,42 @@ export type {
   PreStepSource,
 } from './runtime/pre-step-coordinator.ts'
 export { mergeInstructionCards } from './runtime/settings-bridge.ts'
-export { convertStToPreset, mergeStPresets, processStText, stPresetId } from './host/sillytavern.ts'
-export { applyModuleConfigs, buildModuleConfigsFromParams, removePresetModule, saveModuleParams, savePresetPersona } from './host/manifest.ts'
-export { createEngineCapabilityInPreset, loadModuleSpec, removeEngineCapabilityFromPreset, renderComposition, resolveModuleFacts, resolvePresetParams } from './host/manifest.ts'
+export { convertStToModule, convertStToModuleWithReport, mergeStModules, mergeStModulesWithReport, processStText, stModuleId } from './host/sillytavern.ts'
+export { applyModuleConfigs, appendModuleCapabilities, buildModuleConfigsFromParams, removeModuleCapabilityDeclaration, saveModuleParams, saveModulePersona, withModuleDefinition } from './host/manifest.ts'
+export { createModuleCapability, loadModuleSpec, removeModuleCapability, renderComposition, resolveModuleFacts, resolveModuleParams } from './host/manifest.ts'
 export { ENGINE_PARAM_KEYS, WRITER_PARAM_KEYS, validateEngineParamValues } from './shared/engine-params.ts'
 export { assertSafeConfigId, configFileName } from './host/prompt-configs.ts'
-export type { EngineCapabilityCreateRequest, EngineCapabilityCreateResult, EngineCapabilityRemoveResult, ModuleSpec } from './host/manifest.ts'
+export type { ModuleCapabilityCreateRequest, ModuleCapabilityCreateResult, ModuleCapabilityRemoveResult, ModuleSpec } from './host/manifest.ts'
 export {
-  cloneBuiltinPreset,
-  ensurePresetSeed,
+  cloneBuiltinModule,
+  ensureModuleSeed,
   listBuiltinTemplates,
   listModules,
   moduleDirExists,
-  removeUserPreset,
+  removeUserModule,
   resolveModuleDir,
   userModulesDir,
 } from './host/manifest.ts'
 export { buildWorldBookEntry } from './host/worldbook.ts'
-export { expandPresetSource, exportPresetPackage, presetImportPreview, installPresetPackage } from './host/module-package.ts'
+export { expandModuleSource, exportModulePackage, moduleImportPreview, installModulePackage } from './host/module-package.ts'
 export { ensureWebSurface, resolveProfileDir, scheduleWebSurfaceRepair } from './web-surface.ts'
 export { USER_SKILLS_DIR } from './host/paths.ts'
 export { importSkillsPackage } from './host/skills-import.ts'
 export { detectModels, invalidateModelCatalog, listAdvertisedModels, peekModelCatalog, resolveSubagentStartOptions } from './runtime/models.ts'
 export type { PluginSubagentSeam } from './runtime/models.ts'
 export type { WritePresetOptions } from './host/write-preset.ts'
-export { validatePromptConfigs } from './runtime/configs-validate.ts'
 export { registerSettingsBridge } from './runtime/settings-bridge.ts'
 export { registerCharacterTools } from './runtime/character-tools.ts'
 export { registerWorldBookTools } from './runtime/world-book-tools.ts'
 export {
-  appendCharacterMemory,
-  appendMemoryFile,
-  applyCharacterToPreset,
-  CHARACTER_MODULES_KEY,
-  characterModuleStillNeeded,
-  declaredCharacterModules,
-  deleteCharacterCard,
+  appendModuleMemory,
+  readModuleMemory,
+  mergeModuleIntoModule,
+  removeMergedModule,
   importCharacterCard,
   importCharacterCardFile,
-  listCharacterCards,
-  readCharacterMemory,
-  recordedCharacterModules,
-  removeCharacterFromPreset,
-  requiredCharacterModules,
-  syncImportedCharacterMemory,
 } from './host/characters.ts'
-export type { CharacterModuleContext } from './host/characters.ts'
 export { deleteWorldBookEntry, listWorldBookEntries, upsertWorldBookEntry } from './host/worldbook.ts'
-export type { PromptConfigValidationError, PromptConfigValidationResult } from './runtime/configs-validate.ts'
 export { loadPromptTemplates, loadToolTemplates } from './host/templates.ts'
 export type { PromptConfigTemplate, ToolTemplate } from './host/templates.ts'
 export { registerTuiCommand } from './runtime/tui.ts'
@@ -311,8 +302,20 @@ export { catalogFromScan, resolveProjectRoot, scanRoot, scanRoots, skillRoots } 
 export { PARAM_KEYS } from './config.ts'
 export { BRIDGE_ENDPOINTS, MAX_BRIDGE_BODY_BYTES, MAX_CHARACTER_CARD_STREAM_BYTES, SETTINGS_BRIDGE_PREFIX } from './shared/bridge-contract.ts'
 export type { BridgeEndpoint, BridgeErrorPayload, BridgeRequestMap, BridgeValueMap } from './shared/bridge-contract.ts'
-export { ENGINE_CAPABILITIES, ENGINE_RECIPES, engineCapability, engineRecipe, isEngineCapabilityPresent, validateCustomToolIdentities } from './shared/engine-capabilities.ts'
-export type { EngineCapability, ModuleSourceMode, ModuleFacts } from './shared/engine-capabilities.ts'
+export { MODULE_CAPABILITIES, INJECTION_POINT_ORDER, ENGINE_RECIPES, moduleCapability, engineRecipe, isModuleCapabilityPresent, validateCustomToolIdentities } from './shared/engine-capabilities.ts'
+export type { InjectionPoint, ModuleCapability, ModuleSourceMode, ModuleFacts } from './shared/engine-capabilities.ts'
+export { assertModuleId, assertModuleDirectory, assertModuleTree, canonicalModulesRoot, modulePathExists } from './host/module-install.ts'
+export { ModuleLayerSettingsError, readModuleLayerSettings } from './host/module-layer-settings.ts'
+export type { ModuleWriterParams } from './shared/engine-params.ts'
+export type { ModuleSummary } from './shared/bridge-contract.ts'
+export type { ModuleExportRequest, ModuleExportResult } from './shared/asset-transfer.ts'
+// 已发布的旧公共 API 仅在导出边界保留；内部调用统一使用模块名称。
+export { convertStToModule as convertStToPreset, mergeStModules as mergeStPresets, stModuleId as stPresetId } from './host/sillytavern.ts'
+export { removeModuleCapabilityDeclaration as removePresetModule, saveModulePersona as savePresetPersona, createModuleCapability as createEngineCapabilityInPreset, removeModuleCapability as removeEngineCapabilityFromPreset, resolveModuleParams as resolvePresetParams, cloneBuiltinModule as cloneBuiltinPreset, ensureModuleSeed as ensurePresetSeed, removeUserModule as removeUserPreset } from './host/manifest.ts'
+export type { ModuleCapabilityCreateRequest as EngineCapabilityCreateRequest, ModuleCapabilityCreateResult as EngineCapabilityCreateResult, ModuleCapabilityRemoveResult as EngineCapabilityRemoveResult } from './host/manifest.ts'
+export { expandModuleSource as expandPresetSource, exportModulePackage as exportPresetPackage, moduleImportPreview as presetImportPreview, installModulePackage as installPresetPackage } from './host/module-package.ts'
+export { MODULE_CAPABILITIES as ENGINE_CAPABILITIES, moduleCapability as engineCapability, isModuleCapabilityPresent as isEngineCapabilityPresent } from './shared/engine-capabilities.ts'
+export type { ModuleCapability as EngineCapability } from './shared/engine-capabilities.ts'
 export { parseFrontmatter } from './runtime/skills-parse.ts'
 export type { SkillFrontmatter } from './runtime/skills-parse.ts'
 export { DEFAULT_MODULE_ID } from './shared/preset-ids.ts'

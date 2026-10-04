@@ -1,12 +1,12 @@
 /**
  * tool-config-engine — 自定义工具引擎（配置驱动 → ctx.tools.register）。
  *
- * 工具定义从 configsDir 目录加载（writePreset 渲染 custom-tools/*.yml，
- * 源 = preset.yml 顶层 customTools 段），每份一个工具定义：
+ * 工具定义优先从 tools 内联读取，缺字段时兼容 configsDir 目录。
+ * 源 = module.yml 顶层 customTools 段，每份一个工具定义：
  *   id / name / description / timeoutMs / parameters（标准 JSON Schema
- *   object，writePreset 已用官方 @deepseek-ai/dsh-tools 的
+ *   object，装配方已用官方 @deepseek-ai/dsh-tools 的
  *   parameterSchemaSpecToJsonSchema / valueSchemaSpecToJsonSchema 把
- *   preset.yml 的 dsh-tools DSL 转换）/ output.schema / execute.{kind, ...}
+ *   module.yml 的 dsh-tools DSL 转换）/ output.schema / execute.{kind, ...}
  *
  * 执行器（kind）：
  *   shell    — 命令执行（execFile 无 shell 解析，env 白名单，cwd=会话工作区）
@@ -18,7 +18,7 @@
  *   ask-user — approval 通道询问用户（结果文本化）
  *
  * 安全：行 config.requireApproval = [kind...] 时该执行器先过 approval 门
- * （无 approval 服务则拒绝）；单条定义非法 warnOnce 跳过（不挂整行）。
+ * （无 approval 服务则拒绝）；内联定义整批校验，旧路径模式保留逐条告警跳过。
  * 工具注册经 disposer 契约（keepDisposer），插件卸载自动撤销。
  *
  * ── 能力提供者边界（T4）────────────────────────────────────────────────────
@@ -27,7 +27,7 @@
  *   - 会给模型提供可调用能力（注册工具 / 域 / 服务）的 → 能力提供者；
  *   - 干预流程（改提示词、改装配、裁决、追加）的 → 声明式触发器。
  * 因此本模块**不接入** engine/trigger.mjs：它不订阅装配 waterfall，也没有
- * when/do 声明，只在装配期把 preset.yml 的 customTools 段物化出的工具注册进官方
+ * when/do 声明，只在装配期把 module.yml 的 customTools 段编译出的工具注册进官方
  * registry。强行并进触发器会让引擎同时承担「提供能力」与「干预流程」两种职责。
  *
  * 样板收敛：
@@ -347,8 +347,8 @@ function sanitizeDescription(text) {
   return text.replace(/\{\{([^{}]*)\}\}/g, '{$1}')
 }
 
-/** 单份工具定义文件 → 编译为完整官方 ToolDefinition（不含 id）。
- *  parameters/output.schema 已是 writePreset 物化的标准 JSON Schema；无参数
+/** 单份工具定义 → 编译为完整官方 ToolDefinition（不含 id）。
+ *  parameters/output.schema 已是装配方编译的标准 JSON Schema；无参数
  *  工具补空 object Schema（真实 ctx.tools.schemas() 需要 parameters 存在）。 */
 function compileTool(ctx, def, requireApproval) {
   return {
@@ -364,20 +364,20 @@ function compileTool(ctx, def, requireApproval) {
   }
 }
 
-/** 工具定义文件加载（*.yml / *.json；与 prompt-config-engine configsDir 同构）。 */
-function loadToolFiles(dirUrl, presetRootUrl) {
+/** 兼容独立入口的工具定义文件加载（*.yml / *.json）。 */
+function loadToolFiles(dirUrl, resourceRootUrl) {
   const resolved = isAbsolute(dirUrl)
     ? pathToFileURL(dirUrl).href
     : dirUrl
   const dir = new URL(resolved.endsWith('/') ? resolved : `${resolved}/`, import.meta.url)
   const localDir = fileURLToPath(dir)
-  // 相对 configsDir 只允许解析到预设根内：防组合行声明越界目录；绝对路径（显式配置/
-  // 测试桩）保持允许。预设根基准显式注入优先（引擎由插件包提供时必需），缺省沿用
+  // 相对 configsDir 只允许解析到资源允许根内；绝对路径（显式配置/测试桩）保持允许。
+  // 允许根显式注入优先（引擎由插件包提供时必需），缺省沿用
   // 「引擎上一级目录」这一历史布局推导。
   if (!isAbsolute(dirUrl)) {
-    const presetRoot = fileURLToPath(presetRootUrl ?? new URL('../..', import.meta.url)).replace(/[\\\\/]$/, '')
-    if (localDir !== presetRoot && !localDir.startsWith(presetRoot + sep)) {
-      throw new Error(`${name}: configsDir ${JSON.stringify(dirUrl)} escapes preset root`)
+    const resourceRoot = fileURLToPath(resourceRootUrl ?? new URL('../..', import.meta.url)).replace(/[\\\\/]$/, '')
+    if (localDir !== resourceRoot && !localDir.startsWith(resourceRoot + sep)) {
+      throw new Error(`${name}: configsDir ${JSON.stringify(dirUrl)} escapes resource root`)
     }
   }
   const files = readdirSync(localDir, { withFileTypes: true })
@@ -396,40 +396,61 @@ function loadToolFiles(dirUrl, presetRootUrl) {
  * 配置契约：白名单由字段声明派生（此前没有白名单，未知键被静默忽略）。
  * requireApproval 迁移前对**非数组取 `[]`**、对数组**过滤掉非字符串项**（宽容而非报错），
  * configsDir 对非字符串/空串取默认值——两者都用 passthrough 保住该语义。
- * 本任务只新增「未知键报错」，缺键与错类型的既有行为逐字段不变。
+ * tools 是显式内联输入，缺字段与空数组分开处理；旧字段保留原来的宽容语义。
  */
-export const configContract = defineConfig({
+const configFields = defineConfig({
   configsDir: passthrough((value) => (typeof value === 'string' && value.length > 0 ? value : './custom-tools')),
+  tools: passthrough(value => value),
   requireApproval: passthrough((value) => (Array.isArray(value) ? value.filter((kind) => typeof kind === 'string') : [])),
-  // 预设根基准（绝对 file URL）：引擎由插件包提供时由装配期注入，替代引擎位置推导。
+  // 资源允许根（绝对 file URL），保留旧名输入；两者都不改变历史路径授权边界。
+  resourceRoot: passthrough((value) => (typeof value === 'string' && value.length > 0 ? value : undefined)),
   presetRoot: passthrough((value) => (typeof value === 'string' && value.length > 0 ? value : undefined)),
 })
+export const configContract = {
+  ...configFields,
+  parse(config, plugin) {
+    const source = configFields.parse(config, plugin)
+    if (source.resourceRoot !== undefined && source.presetRoot !== undefined && source.resourceRoot !== source.presetRoot) {
+      throw new TypeError(`${plugin}: resourceRoot and presetRoot conflict`)
+    }
+    source.resourceRoot ??= source.presetRoot
+    if (Object.hasOwn(config ?? {}, 'tools')) {
+      if (!Array.isArray(source.tools)) throw new TypeError(`${plugin}: tools must be an array of tool definitions`)
+      // 在任何注册前完整校验，坏内联不得回落旧目录或留下半份工具。
+      for (const definition of source.tools) validateDefinition(definition)
+    } else delete source.tools
+    return source
+  },
+}
 
 /**
  * 能力提供者登记（T4 边界守卫的数据源）。
- * `provides.kind === 'dynamic'`：模型可见的工具名由 preset.yml 的 customTools 段在
- * 装配期决定（物化为 custom-tools/*.yml），引擎侧无法静态枚举——守卫只断言登记形状、
+ * `provides.kind === 'dynamic'`：模型可见的工具名由 module.yml 的 customTools 段在
+ * 装配期决定，引擎侧无法静态枚举——守卫只断言登记形状、
  * 注册通道，以及「提供者不导出触发器声明」这条互斥。
  */
 export const engineProvider = {
   kind: 'provider',
   moduleId: name,
   registers: 'tools',
-  provides: { kind: 'dynamic', source: 'preset.yml#customTools → custom-tools/*.yml' },
+  provides: { kind: 'dynamic', source: 'module.yml#customTools → tools' },
 }
 
-/** 插件入口：扫描 configsDir 注册全部自定义工具。 */
+/** 插件入口：优先注册内联 tools，缺字段时兼容 configsDir。 */
 export function apply(ctx, config) {
-  const { configsDir: dirName, requireApproval, presetRoot: rawPresetRoot } = configContract.parse(config, name)
-  const presetRootUrl = rawPresetRoot === undefined
-    ? undefined
-    : new URL(rawPresetRoot.endsWith('/') ? rawPresetRoot : `${rawPresetRoot}/`)
-  let definitions = []
-  try {
-    definitions = loadToolFiles(dirName, presetRootUrl)
-  } catch (error) {
-    ctx.logger?.warn(`${name}: cannot load ${dirName}: ${error?.message ?? error}`)
-    return
+  const source = configContract.parse(config, name)
+  const { configsDir: dirName, requireApproval, resourceRoot: rawResourceRoot } = source
+  let definitions = source.tools
+  if (!Object.hasOwn(source, 'tools')) {
+    const resourceRootUrl = rawResourceRoot === undefined
+      ? undefined
+      : new URL(rawResourceRoot.endsWith('/') ? rawResourceRoot : `${rawResourceRoot}/`)
+    try {
+      definitions = loadToolFiles(dirName, resourceRootUrl)
+    } catch (error) {
+      ctx.logger?.warn(`${name}: cannot load ${dirName}: ${error?.message ?? error}`)
+      return
+    }
   }
   for (const def of definitions) {
     try {

@@ -8,20 +8,24 @@ export const NS = 'prompt-tool' as const
 export { PARAM_KEYS } from './shared/param-keys.ts'
 
 export interface Config {
-  /** 模块运行总闸；保留既有持久键，关闭只撤回运行贡献。 */
-  writePreset: Volatile<boolean>
+  modulesEnabled: Volatile<boolean | undefined>
+  /** 已部署配置的输入兼容；只在读取与显式保存边界归一。 */
+  writePreset?: Volatile<boolean | undefined>
 }
 
 // 官方插件配置范式：同名 interface Config 与 Schemastery schema 成对导出，
 // 框架在插件加载时校验并填充默认值。
 export const Config = z.object({
-  writePreset: z.boolean().default(true).volatile(),
+  modulesEnabled: z.boolean().volatile(),
+  writePreset: z.boolean().volatile(),
 })
+
+export { readModulesEnabled } from './shared/module-settings.ts'
 
 export interface PromptSettings {
   /** 运行时检测：是否检测到任何模型服务商（不写入 settings）。 */
   modelsAvailable: boolean
-  writePreset: boolean
+  modulesEnabled: boolean
 }
 
 /** 运行时只缓存部署设置；模块行为与正文始终从目标定义读取。 */

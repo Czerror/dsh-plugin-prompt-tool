@@ -1,19 +1,9 @@
 #!/usr/bin/env node
 /**
- * rematerialize-presets.mjs — 离线重新物化 <DSH_HOME>/.prompt-tool 下的预设与共享引擎。
+ * rematerialize-presets.mjs — 从完整 module.yml 恢复 rules/，清理已退役产物。
+ * 已有模块原地校验，不交换目录，不重写用户正文、记忆或其他资产。
  *
- * 背景：插件只在启动/切换预设时按需重建生成产物；仓库引擎契约、组合库或
- * RENDER_VERSION 升级后，用户目录里已存在的产物不会自动刷新。本脚本以各预设
- * preset.yml 为单一来源重跑 writePreset（等价于把「切换一次预设」对每个预设
- * 各做一遍），产物：
- *   - <preset>/agent.cordis.yml（组合，带 render 版本戳）
- *   - <preset>/prompt-configs/*.yml、custom-tools/*.yml、subagent-tools/policy.yml
- *   - <preset>/preset.md、agents.md、agents-instruction.md
- * 共享引擎不再物化：引擎由插件包提供，组合行引用包名说明符
- * `dsh-plugin-prompt-tool/engine/<module>.mjs`（预设根下不再产生 `.engine/`）。
- *
- * 手写/官方格式预设（preset.yml 无 modules/params，如 liangshen）整体跳过，
- * 不覆盖用户手写组合。本项目不含旧参数/旧内容迁移代码：物化只按当前契约重跑。
+ * 缺少 modules/composition 的定义跳过；旧规则格式需要显式离线迁移。
  *
  * 用法：
  *   node scripts/rematerialize-presets.mjs [--dsh-home <dir>] [--dry-run] [--refresh-skills]
@@ -27,9 +17,9 @@
 import { cpSync, existsSync, lstatSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync } from 'node:fs'
 import { join, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { parseDocument } from 'yaml'
 
 const LIB_ENTRY = new URL('../lib/index.mjs', import.meta.url)
-const RENDER_STAMP_PREFIX = '# prompt-tool:render v'
 const root = fileURLToPath(new URL('..', import.meta.url))
 const SKILLS_DIR = 'skills'
 const SKILLS_BACKUP_PREFIX = 'skills.bak-'
@@ -49,12 +39,6 @@ function parseArgs(argv) {
     else throw new Error(`未知参数 ${arg}（支持 --dsh-home <dir> / --dry-run / --refresh-skills）`)
   }
   return out
-}
-
-/** 读生成目录内容资产；文件不存在返回 undefined（调用方回退模板内容）。 */
-function readGenerated(dir, name) {
-  const file = join(dir, name)
-  return existsSync(file) ? readFileSync(file, 'utf8') : undefined
 }
 
 /** 递归读文件树为「相对路径 → 字节」；目录不存在返回 undefined。 */
@@ -96,51 +80,42 @@ if (!existsSync(fileURLToPath(LIB_ENTRY))) {
   console.error(`rematerialize-presets: 缺少构建产物 ${fileURLToPath(LIB_ENTRY)}，请先运行 pnpm build`)
   process.exit(1)
 }
-const { writePreset, listModules, loadModuleSpec, resolvePresetParams, userModulesDir } = await import(LIB_ENTRY.href)
+const { writeModule, userModulesDir } = await import(LIB_ENTRY.href)
 
 // 逐模块重新物化：插件格式（modules/params）走 writePreset；手写/官方格式跳过。
 const presetRoot = userModulesDir()
 const materializedIds = []
 const failures = []
 let skipped = 0
-const presets = listModules()
-for (const [index, preset] of presets.entries()) {
+// 不经过会 ensure 切片的列表/加载入口，保证 --dry-run 完全只读。
+const presets = existsSync(presetRoot) ? readdirSync(presetRoot, { withFileTypes: true })
+  .filter(entry => entry.isDirectory() && /^[a-z0-9][a-z0-9-]*$/.test(entry.name))
+  .map(entry => ({ id: entry.name })) : []
+for (const preset of presets) {
   const dir = join(presetRoot, preset.id)
   let spec
   try {
-    spec = loadModuleSpec(dir)
+    const doc = parseDocument(readFileSync(join(dir, 'module.yml'), 'utf8'), { logLevel: 'silent' })
+    if (doc.errors.length > 0) throw doc.errors[0]
+    spec = doc.toJS()
   } catch (error) {
-    failures.push(`${preset.id}: 读取 preset.yml 失败：${error instanceof Error ? error.message : String(error)}`)
+    failures.push(`${preset.id}: 读取 module.yml 失败：${error instanceof Error ? error.message : String(error)}`)
     continue
   }
-  const pluginFormat = Array.isArray(spec.modules) || (spec.params !== null && typeof spec.params === 'object')
+  const pluginFormat = spec !== null && typeof spec === 'object' && (Array.isArray(spec.modules) || typeof spec.composition === 'string')
   if (!pluginFormat) {
     skipped += 1
-    console.log(`skip ${preset.id}: 手写/官方格式预设（无 modules/params），不覆盖其组合`)
+    console.log(`skip ${preset.id}: 定义缺少 modules/composition`)
     continue
   }
-  // 内容资产优先取生成目录文件（用户编辑产物），回退 preset.yml content 段（模板默认）。
-  const prompt = readGenerated(dir, 'preset.md')
-    ?? (typeof spec.content?.presetText === 'string' ? spec.content.presetText : '')
-  const agentsText = readGenerated(dir, 'agents.md')
-    ?? (typeof spec.content?.agentsText === 'string' ? spec.content.agentsText : '')
-  const order = Number.isFinite(spec.order) ? spec.order : index
-  // 引擎参数按 preset.yml 单一来源解析后再传入：不传会让 writePreset 的 runtimeOf
-  // 默认值（firstTurnAnchor=false / injectPrompt=true / 模型键空串）覆盖 preset.yml，
-  // 渲染出与在线 rebuildPreset（runtime 先 reloadPresetParams）不一致的组合。
-  const params = resolvePresetParams(spec, {})
   if (args.dryRun) {
     console.log(`[dry-run] would materialize ${preset.id}`)
     continue
   }
   try {
-    writePreset(prompt, {
-      ...params,
-      moduleDir: presetRoot,
-      presetTemplate: preset.id,
-      presetOrder: order,
-      promptConfigs: [],
-      agentsInstructionText: agentsText,
+    writeModule('', {
+      modulesRoot: presetRoot,
+      moduleId: preset.id,
       warn: (message) => console.warn(message),
     })
     materializedIds.push(preset.id)
@@ -226,19 +201,13 @@ for (const drift of staleSkills) {
   }
 }
 
-// 4) 物化后校验：组合版本戳存在，且不再引用旧布局引擎目录（失败计入退出码）。
+// 4) 恢复后校验：切片存在且旧宿主装配产物已退役。
 if (!args.dryRun && materializedIds.length > 0) {
   for (const id of materializedIds) {
-    const composition = join(presetRoot, id, 'agent.cordis.yml')
-    let raw = ''
-    try {
-      raw = readFileSync(composition, 'utf8')
-    } catch {
-      failures.push(`${id}: 缺少 agent.cordis.yml`)
-      continue
+    if (!existsSync(join(presetRoot, id, 'rules', '_settings.yml'))) failures.push(`${id}: 缺少 rules/_settings.yml`)
+    for (const name of ['configs', 'rules.yml', 'agent.cordis.yml', 'custom-tools', 'subagent-tools']) {
+      if (existsSync(join(presetRoot, id, name))) failures.push(`${id}: 旧产物 ${name} 未清理`)
     }
-    if (!raw.includes(RENDER_STAMP_PREFIX)) failures.push(`${id}: agent.cordis.yml 缺少 render 版本戳`)
-    if (['../engine/', './engine/', '../.engine/'].some((legacy) => raw.includes(legacy))) failures.push(`${id}: agent.cordis.yml 仍引用旧布局 engine/ 目录`)
   }
 }
 

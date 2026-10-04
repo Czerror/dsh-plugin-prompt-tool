@@ -1,7 +1,8 @@
-import { test } from 'node:test'
+import { test, mock } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
+import fs, { mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
+import { syncBuiltinESMExports } from 'node:module'
+import { basename, dirname, join } from 'node:path'
 import { parse } from 'yaml'
 import { isolatedHome } from '../fixtures/host-harness.mjs'
 import { moduleOrderConfigs, moveToView, sameConfigPosition } from '../../src/client/data/prompt-config-order.ts'
@@ -12,6 +13,7 @@ const { appendModuleConfigOrder, readModuleConfigOrder, saveModuleConfigOrder } 
 const { setModuleEnabled } = await import('../../src/host/config-store.ts')
 const { materializeModule } = await import('../../src/host/write-preset.ts')
 const { promptConfigToRule } = await import('../../src/host/rules-migration.ts')
+const { readRulesDir } = await import('../../src/host/module-storage.ts')
 
 function fixture(name, cards) {
   const root = join(moduleRoot, name, 'modules')
@@ -60,8 +62,9 @@ test('配置排序：跨模块同名卡保留受众与策略，身份排序写�
   saveModuleConfigOrder(root, afterMain.revision, identities({ entries: reordered }))
   assert.deepEqual(readModuleConfigOrder(root).entries.map(entry => [entry.moduleId, entry.configId]), [['b', 'same'], ['b', 'shared'], ['a', 'same'], ['a', 'last']], '子代理移动保留不可见主会话卡的槽位')
   for (const id of ['a', 'b']) materializeModule(id, { moduleDir: root })
-  assert.deepEqual(readdirSync(join(root, 'a', 'configs')), ['0020-same--inject.yml', '0030-last--inject.yml'])
-  assert.deepEqual(readdirSync(join(root, 'b', 'configs')), ['0000-same--inject.yml', '0010-shared--inject.yml'])
+  assert.deepEqual(readdirSync(join(root, 'a', 'rules')).sort(), ['_settings.yml', 'last.yml', 'same.yml', 'variables.yml'])
+  assert.deepEqual(readdirSync(join(root, 'b', 'rules')).sort(), ['_settings.yml', 'same.yml', 'shared.yml', 'variables.yml'])
+  assert.deepEqual(Object.fromEntries(Object.entries(parse(readFileSync(join(root, 'a', 'rules', '_settings.yml'), 'utf8')).rules).map(([id, value]) => [id, value.order])), { same: 20, last: 30 })
   for (const id of ['b', 'a']) materializeModule(id, { moduleDir: root })
   assert.deepEqual(identities(readModuleConfigOrder(root)), identities({ entries: reordered }), '重建不会按模块数组重新编号')
   for (const [id, texts] of [['a', ['A1', 'A2']], ['b', ['B1', 'B2']]]) {
@@ -82,6 +85,34 @@ test('配置排序：过期版本、未知卡、重复卡拒绝且所有模块�
   assert.throws(() => saveModuleConfigOrder(root, snapshot.revision, [{ moduleId: 'a', configId: 'missing' }, identities(snapshot)[1]]), /配置卡|集合/)
   assert.throws(() => saveModuleConfigOrder(root, snapshot.revision, [identities(snapshot)[0], identities(snapshot)[0]]), /重复|集合/)
   assert.deepEqual(['a', 'b'].map(id => readFileSync(join(root, id, 'module.yml'), 'utf8')), before)
+  const rename = fs.renameSync
+  for (const external of [false, true]) {
+    let failures = 0
+    mock.method(fs, 'renameSync', (from, to) => {
+      if (basename(to) === '_settings.yml' && basename(dirname(dirname(to))) === 'b' && failures < 2) {
+        failures++
+        if (external && failures === 2) {
+          const file = join(root, 'a', 'module.yml')
+          const source = parse(readFileSync(file, 'utf8'))
+          source.custom = 'EXTERNAL DURING FAILURE'
+          writeFileSync(file, JSON.stringify(source))
+        }
+        throw new Error('publication failure after module b commit')
+      }
+      return rename(from, to)
+    })
+    syncBuiltinESMExports()
+    try { assert.throws(() => saveModuleConfigOrder(root, snapshot.revision, identities(snapshot).reverse())) }
+    finally { mock.restoreAll(); syncBuiltinESMExports() }
+    assert.equal(failures, 2, '后模块提交后发布与恢复都失败，进入跨模块回滚')
+    assert.equal(readFileSync(join(root, 'b', 'module.yml'), 'utf8'), before[1], 'persisted失败模块也回滚')
+    assert.equal(readRulesDir(join(root, 'b')).settings.b.order, 10)
+    if (external) assert.equal(parse(readFileSync(join(root, 'a', 'module.yml'), 'utf8')).custom, 'EXTERNAL DURING FAILURE', '外部新改动不被盲回滚覆盖')
+    else {
+      assert.equal(readFileSync(join(root, 'a', 'module.yml'), 'utf8'), before[0], '先成功模块恢复原定义')
+      assert.equal(readRulesDir(join(root, 'a')).settings.a.order, 0)
+    }
+  }
 })
 
 test('配置排序：重复启用幂等；新增卡追加，停用模块重排后重建与再次启用保序', () => {

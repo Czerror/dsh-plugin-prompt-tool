@@ -43,7 +43,7 @@ export function EngineParamFields({ store, card, t, instanceId }: { store: Promp
   const subagents = keys.find((key) => ENGINE_PARAM_DEFINITIONS[key].module?.key === 'includeSubagents')
   const paired = primary !== undefined && subagents !== undefined ? [primary, subagents] : []
   const renderField = (key: SharedParamKey): ReactNode => (
-    <EngineParamField key={`${store.fields.presetTemplate}:${key}`} store={store} param={key} t={t} instanceId={instanceId} />
+    <EngineParamField key={`${store.fields.moduleId}:${key}`} store={store} param={key} t={t} instanceId={instanceId} />
   )
   return <>
     {paired.length > 0 && <fieldset data-param-pair={primary} aria-label={t(`param.${primary!}`)}>{paired.map(renderField)}</fieldset>}
@@ -63,9 +63,9 @@ export function EngineParamFields({ store, card, t, instanceId }: { store: Promp
 export function EngineParamField({ store, param, t, instanceId }: { store: PromptToolStore; param: SharedParamKey; t: PromptToolTranslate; instanceId?: string }): ReactNode {
   const definition = ENGINE_PARAM_DEFINITIONS[param]
   const value = store.fields[param]
-  const disabled = !store.fields.writePreset || store.moduleFacts?.editable !== true
+  const disabled = !store.fields.modulesEnabled || store.moduleFacts?.editable !== true
     || (param === 'maxDepth' && store.moduleFacts?.subagentToolPolicyEnabled !== true)
-  const draftKey = `${store.fields.presetTemplate}:param:${param}`
+  const draftKey = `${store.fields.moduleId}:param:${param}`
   const getDraftRevision = store.getDraftRevision ?? getZero
   useSyncExternalStore(store.subscribeDrafts ?? subscribeNothing, getDraftRevision, getDraftRevision)
   const draft = store.editorDrafts?.fields.get(draftKey)

@@ -38,8 +38,8 @@ export function PromptWorkspace(props: PromptWorkspaceProps): ReactNode {
     changePage(target)
     setFocusPage((value) => value + 1)
   }
-  const presetId = store.fields.presetTemplate
-  const scrollKey = page === 'features' || page === 'subagent' ? `${page}:${presetId}` : page
+  const moduleId = store.fields.moduleId
+  const scrollKey = page === 'features' || page === 'subagent' ? `${page}:${moduleId}` : page
   const open = useSyncExternalStore(
     props.controller.subscribe,
     props.controller.getSnapshot,
@@ -51,11 +51,11 @@ export function PromptWorkspace(props: PromptWorkspaceProps): ReactNode {
   }, [open, store.load])
 
   const content = page === 'features'
-    ? <MainSessionPage key={presetId} store={store} t={t} browse={configPageBrowse(browse, scrollKey)} onNavigate={navigate} />
+    ? <MainSessionPage key={moduleId} store={store} t={t} browse={configPageBrowse(browse, scrollKey)} onNavigate={navigate} />
     : page === 'subagent'
-      ? <SubagentPage key={presetId} store={store} t={t} browse={configPageBrowse(browse, scrollKey)} onNavigate={navigate} />
+      ? <SubagentPage key={moduleId} store={store} t={t} browse={configPageBrowse(browse, scrollKey)} onNavigate={navigate} />
       : page === 'tools'
-        ? <ToolsPreviewPage api={props.api} presetId={presetId} t={t} browse={browse.tools} onNavigate={navigate} onReady={markReady} />
+        ? <ToolsPreviewPage api={props.api} presetId={props.api.sessionPreset.snapshot()} t={t} browse={browse.tools} onNavigate={navigate} onReady={markReady} />
         : page === 'skills'
           ? <SkillsPage store={store} api={props.api} t={t} browse={browse.skills} />
           : <ModulesPage store={store} t={t} onReady={markReady} />

@@ -4,8 +4,7 @@
  * 为什么需要它：官方「新建会话」旁的预设选择器走会话级切换
  * （`agentPresets/select`），只作用于那个空白会话，记录成 `agent-preset/selected`
  * 事件并推进 `agentPreset` 投影；宿主默认预设（`agent-presets.default`）保持不变。
- * 插件的 `presetTemplate` 镜像的是宿主默认（官方设置页改默认那条路已由宿主侧双向
- * 同步覆盖），因此不订阅这个投影就看不到官方侧的选择。
+ * 模块编辑目标独立；官方工具预览和会话标题从此投影读取。
  *
  * 读取路径与官方 ui-agent-preset 的 chip 同源：会话投影值。宿主未装 agent-presets
  * 时投影不存在，按「无记录」处理，不让工作台因此报错。

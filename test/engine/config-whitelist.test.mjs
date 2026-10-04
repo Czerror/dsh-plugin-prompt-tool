@@ -1,24 +1,23 @@
 /**
  * B2 T4 验收：四个此前「没有白名单」的插件行，现在有了字段声明与校验。
  *
- * 本任务**只允许新增一种行为**：未知键在挂载期报错。缺键与错类型的既有语义
- * 必须逐字段不变——这三个模块迁移前对非法值都是**静默取默认/忽略**的
+ * 旧字段的缺键与错类型语义必须逐字段不变——这三个模块对旧字段非法值
+ * 都是**静默取默认/忽略**的
  *（`typeof x === 'string' && x.length > 0 ? x : 默认`、非数组取 `[]`、数组过滤非字符串项），
- * 所以声明里一律用 `passthrough` 保住该语义。下面的断言就是这条边界的证据。
+ * 所以声明里保留 `passthrough`。新增内联字段的严格语义由 inline-capabilities
+ * 与 subagent-tool-policy 行为测试覆盖。
  */
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 
-const { configContract: promptConfig } = await import('../../engine/prompt-config-engine.mjs')
 const { configContract: toolConfig } = await import('../../engine/tool-config-engine.mjs')
 const { configContract: subagentPolicy } = await import('../../engine/subagent-tool-policy.mjs')
 
 const PLUGIN = 'probe'
 
 const MODULES = [
-  ['prompt-config-engine', promptConfig, ['configsDir', 'strategyDir', 'presetRoot']],
-  ['tool-config-engine', toolConfig, ['configsDir', 'requireApproval', 'presetRoot']],
-  ['subagent-tool-policy', subagentPolicy, ['policyFile', 'spawnProvider', 'forkProvider', 'maxDepth', 'agentOptions']],
+  ['tool-config-engine', toolConfig, ['configsDir', 'tools', 'requireApproval', 'resourceRoot', 'presetRoot']],
+  ['subagent-tool-policy', subagentPolicy, ['policyFile', 'policy', 'spawnProvider', 'forkProvider', 'maxDepth', 'agentOptions']],
 ]
 
 test('白名单由字段声明派生，键集与 PLAN 列出的键一致', () => {
@@ -27,7 +26,7 @@ test('白名单由字段声明派生，键集与 PLAN 列出的键一致', () =>
   }
 })
 
-test('未知键在挂载期报错（本任务唯一新增的行为）', () => {
+test('未知键在挂载期报错', () => {
   for (const [name, contract] of MODULES) {
     assert.throws(() => contract.parse({ nope: 1 }, name), /unknown config key\(s\) nope/, `${name}: 未知键必须抛`)
     assert.match(
@@ -36,18 +35,6 @@ test('未知键在挂载期报错（本任务唯一新增的行为）', () => {
       `${name}: 消息含允许键清单`,
     )
   }
-})
-
-test('prompt-config-engine：非字符串/空串仍静默取默认（迁移前的宽容语义）', () => {
-  assert.equal(promptConfig.parse({}, PLUGIN).configsDir, './prompt-configs', '缺键取默认')
-  assert.equal(promptConfig.parse({ configsDir: 123 }, PLUGIN).configsDir, './prompt-configs', '非字符串静默取默认')
-  assert.equal(promptConfig.parse({ configsDir: '' }, PLUGIN).configsDir, './prompt-configs', '空串取默认')
-  assert.equal(promptConfig.parse({ configsDir: './x' }, PLUGIN).configsDir, './x', '合法值原样透传')
-  assert.equal(promptConfig.parse({}, PLUGIN).strategyDir, undefined, 'strategyDir 缺键为 undefined')
-  assert.equal(promptConfig.parse({ strategyDir: 5 }, PLUGIN).strategyDir, undefined, 'strategyDir 非字符串为 undefined')
-  assert.equal(promptConfig.parse({}, PLUGIN).presetRoot, undefined, 'presetRoot 缺键为 undefined')
-  assert.equal(promptConfig.parse({ presetRoot: 7 }, PLUGIN).presetRoot, undefined, 'presetRoot 非字符串为 undefined')
-  assert.equal(promptConfig.parse({ presetRoot: 'file:///p/' }, PLUGIN).presetRoot, 'file:///p/', '合法 file URL 原样透传')
 })
 
 test('tool-config-engine：requireApproval 的宽容语义（非数组取空、过滤非字符串项）', () => {

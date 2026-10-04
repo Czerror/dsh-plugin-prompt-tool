@@ -17,16 +17,16 @@ type Notice = (kind: 'ok' | 'error', message: string) => void
 
 const EMPTY_PERSONA: PersonaDraft = { prefix: '', suffix: '', complete: false, includeRuntimeContext: true }
 
-export function PresetPersonaCard(props: { t: PromptToolTranslate; presetId?: string; disabled?: boolean; drafts?: WorkspaceDrafts; embedded?: boolean; onNotice: Notice }): ReactNode {
+export function ModulePersonaCard(props: { t: PromptToolTranslate; moduleId?: string; disabled?: boolean; drafts?: WorkspaceDrafts; embedded?: boolean; onNotice: Notice }): ReactNode {
   const { t, onNotice } = props
   const editor = useMemo((): PersonaEditorDraft => {
-    const key = props.presetId ?? ''
+    const key = props.moduleId ?? ''
     const retained = props.drafts?.persona.get(key)
     if (retained) return retained
     const next = { value: EMPTY_PERSONA, saved: EMPTY_PERSONA, declared: false, loaded: false, error: '', saving: false }
     props.drafts?.persona.set(key, next)
     return next
-  }, [props.drafts, props.presetId])
+  }, [props.drafts, props.moduleId])
   const [draft, setDraft] = useState<PersonaDraft>(editor.value)
   const [declared, setDeclared] = useState(editor.declared)
   const [loaded, setLoaded] = useState(editor.loaded)
@@ -39,7 +39,7 @@ export function PresetPersonaCard(props: { t: PromptToolTranslate; presetId?: st
   const load = useCallback(() => {
     setLoadError('')
     const readingDraft = editor.value
-    void bridgeCall('persona', { expectedPresetId: props.presetId }).then((result) => {
+    void bridgeCall('persona', { expectedModuleId: props.moduleId }).then((result) => {
       if (active.current !== editor) return
       if (editor.value !== readingDraft) return
       if (result.ok) {
@@ -65,7 +65,7 @@ export function PresetPersonaCard(props: { t: PromptToolTranslate; presetId?: st
       }
       setLoaded(true)
     })
-  }, [editor, props.presetId, onNotice, t])
+  }, [editor, props.moduleId, onNotice, t])
   useEffect(() => {
     active.current = editor
     const refresh = (): void => {
@@ -88,7 +88,7 @@ export function PresetPersonaCard(props: { t: PromptToolTranslate; presetId?: st
     const submitted = persona === null ? EMPTY_PERSONA : editor.value
     editor.saving = true
     setSaving(true)
-    await bridgeCall('persona', { persona, expectedPresetId: props.presetId }).then((result) => {
+    await bridgeCall('persona', { persona, expectedModuleId: props.moduleId }).then((result) => {
       editor.saving = false
       if (result.ok) {
         editor.saved = submitted
@@ -126,8 +126,8 @@ export function PresetPersonaCard(props: { t: PromptToolTranslate; presetId?: st
       meta={declared ? t('persona.meta.declared') : t('persona.meta.inherited')}
       layer="system-section"
       embedded={props.embedded}
-      defaultExpanded={props.drafts?.expanded.get(`${props.presetId ?? ''}:persona`)}
-      onExpandedChange={(value) => props.drafts?.expanded.set(`${props.presetId ?? ''}:persona`, value)}
+      defaultExpanded={props.drafts?.expanded.get(`${props.moduleId ?? ''}:persona`)}
+      onExpandedChange={(value) => props.drafts?.expanded.set(`${props.moduleId ?? ''}:persona`, value)}
     >
       {loadError && <p className={styles.noticeError} role="alert">{loadError} <Button size="sm" onClick={load}>{t('workspace.retry')}</Button></p>}
       {dirty && <p className={styles.configFieldHint} role="status">{t('card.unsaved')}</p>}

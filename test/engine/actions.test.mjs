@@ -15,7 +15,7 @@ import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import { ACTION_KINDS, registerAction } from '../../engine/actions.mjs'
 import { SDK_SECTION_NAME, sdkToolNames } from '../../engine/sdk-strip.mjs'
 import { applyAgentRequestParams, wireLayers } from '../../engine/layers.mjs'
-import { createPromptConfigs } from '../../engine/prompt-config-engine.mjs'
+import { createPromptConfigs } from '../../engine/schema.mjs'
 import { compileDeclarations, mountDeclarations } from '../../engine/trigger-spec.mjs'
 
 /** 记录型 ctx 桩：记录 ctx.on 的通道、注册的服务调用与 effect 释放。 */

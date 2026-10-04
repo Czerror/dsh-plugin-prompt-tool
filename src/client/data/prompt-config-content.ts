@@ -18,7 +18,7 @@ export const instructionFileIdOf = (config: PromptConfigDraft): string | undefin
 export const isAgentsFileCard = (config: PromptConfigDraft): boolean => instructionFileIdOf(config) !== undefined
 
 /** 模块卡（不含指令文件来源）。 */
-export const isPresetCard = (config: PromptConfigDraft): boolean => !isAgentsFileCard(config)
+export const isModuleCard = (config: PromptConfigDraft): boolean => !isAgentsFileCard(config)
 
 /** 旧正文注入规则转为自身的可编辑正文，不再按固定ID走独立文件保存。 */
 export const liftContentText = (config: PromptConfigDraft): PromptConfigDraft => {

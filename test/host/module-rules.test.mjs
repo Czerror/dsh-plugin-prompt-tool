@@ -59,7 +59,7 @@ test('规则拒绝：版本过期、重复身份、坏动作与未显式解决�
   assert.throws(() => readModuleRules(dir), error => error.status === 400 && error.code === 'rules-invalid', '坏结构在读取面明确拒绝')
   const future = { id: 'future', when: { futurePredicate: { custom: true } }, do: [{ id: 'future-action', kind: 'future-kind', opaque: { custom: true } }] }
   writeFileSync(file, JSON.stringify({ id: 'reject', modules: [], rules: [future] }))
-  assert.deepEqual(readModuleRules(dir).rules, [future], '未知语义保持原样，供JSON修复而非静默删掉')
+  assert.throws(() => readModuleRules(dir), /future-kind|futurePredicate/, '无效源语义拒绝加载，不能发布切片')
   const aliased = 'id: reject\nmodules: []\nrules:\n  - id: a\n    name: &shared Before\n    do:\n      - { id: request, kind: request-params, patch: { maxTokens: 512 } }\nunknown: *shared\n'
   writeFileSync(file, aliased)
   const aliasSnapshot = readModuleRules(dir)

@@ -1,6 +1,6 @@
 /** 旧规则只在显式离线迁移或外部导入时转换；运行时不调用此模块。 */
 import { createHash } from 'node:crypto'
-import { cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync } from 'node:fs'
+import { cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync } from 'node:fs'
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import type { RuleAction, RuleCondition, RuleDefinition } from '../shared/rules.ts'
@@ -8,11 +8,11 @@ import { RULE_OWNED_MODEL_PARAMS } from '../shared/rules.ts'
 import type { PromptConfigSpec } from './prompt-configs.ts'
 import { mergePromptConfigs, modelRequestConfigs } from './prompt-configs.ts'
 import { readLegacyPromptParams, resolveLegacyPromptConfigs } from './legacy-prompt-params.ts'
-import { readPresetLayerSettings } from './module-layer-settings.ts'
+import { readModuleLayerSettings } from './module-layer-settings.ts'
 import { readConfigOrder } from './module-config-order.ts'
 import { rulePromptConfigOptions } from './module-rules.ts'
-import { assertCanonicalRuleSource } from './module-rules.ts'
-import { assertModuleDirectory, assertPresetTree, canonicalPresetRoot } from './module-install.ts'
+import { decomposeModule, validateModuleDefinitionText, withModuleLock } from './module-storage.ts'
+import { assertModuleDirectory, assertModuleTree, canonicalModulesRoot } from './module-install.ts'
 import { atomicWriteTextFile } from './text-file.ts'
 import { MODULE_DEFINITION_FILE } from './paths.ts'
 import { invalidateModuleSpec, packageEngineDir } from './manifest.ts'
@@ -93,7 +93,7 @@ function migrateConditionDefaults(value: unknown): unknown {
 
 /** 参数桥优先于行配置；仅旧定义里确已打开的指令提示才携入旧非空模板。 */
 function instructionHintPolicyPatch(source: Record<string, unknown>): Record<string, unknown> | undefined {
-  const params = readPresetLayerSettings(source)
+  const params = readModuleLayerSettings(source)
   const modules = record(source.moduleConfigs) ? source.moduleConfigs : {}
   const current = record(modules['instruction-hint']) ? modules['instruction-hint'] : {}
   const enabled = Object.hasOwn(params, 'instructionHint') ? params.instructionHint === true : current.enabled === true
@@ -165,7 +165,7 @@ export function convertLegacyModuleRules(source: Record<string, unknown>, option
   if (source.triggers !== undefined && !Array.isArray(source.triggers)) throw new Error('triggers 必须是数组')
   if (source.rules !== undefined && !Array.isArray(source.rules)) throw new Error('rules 必须是数组')
   const root = directory === undefined ? undefined : dirname(directory)
-  let configs = mergePromptConfigs(modelRequestConfigs(readPresetLayerSettings(source)), legacy.configs)
+  let configs = mergePromptConfigs(modelRequestConfigs(readModuleLayerSettings(source)), legacy.configs)
   const rules: RuleDefinition[] = structuredClone((source.rules ?? []) as RuleDefinition[])
   const configOrder = readConfigOrder(source.configOrder)
   if (directory !== undefined && existsSync(join(directory, 'configs'))) {
@@ -173,7 +173,7 @@ export function convertLegacyModuleRules(source: Record<string, unknown>, option
     for (const [index, config] of actual.entries()) if (configOrder[config.id] === undefined) configOrder[config.id] = config[FILE_SEQUENCE] ?? index * 10
     if (!Object.hasOwn(source, 'promptConfigs') && configs.length === 0) configs = actual
     else {
-      const options = { sourceModuleId: source.id, configOrder, templateBaseUrl: pathToFileURL(join(root!, '.engine', 'prompt-config-engine.mjs')), templatePresetRoot: pathToFileURL(root! + sep) }
+      const options = { sourceModuleId: source.id, configOrder, templateBaseUrl: pathToFileURL(join(root!, '.engine', 'prompt-config-engine.mjs')), templateModuleRoot: pathToFileURL(root! + sep) }
       const prepared = configs.map(config => injectionConfigSpec({ id: config.id }, { id: 'inject', kind: 'inject-text', config }, source))
       // 只对比结构，不恢复已退出的旧资格执行器；两侧同时替换策略名后参数/身份仍逐项比较。
       const comparable = (config: PromptConfigSpec): PromptConfigSpec => config.strategy === 'custom-fallback' ? { ...config, strategy: 'anchor-notice' } : config
@@ -286,25 +286,18 @@ function setMigratedRules(doc: ReturnType<typeof parseDocument>, rules: RuleDefi
   doc.set('rules', nodes)
 }
 
-type DefinitionFile = 'module.yml' | 'converted.yml'
+type DefinitionFile = typeof MODULE_DEFINITION_FILE
 export interface RulesMigrationItem { moduleId: string; directory: string; definitionFile: DefinitionFile; originalHash: string; sourceHash: string; nextDefinition: string }
-export interface RulesMigrationPlan { root: string; kind: 'modules' | 'characters'; items: RulesMigrationItem[] }
+export interface RulesMigrationPlan { root: string; kind: 'modules'; items: RulesMigrationItem[] }
 
 function assertAssetDirectory(root: string, id: string, definitionFile: DefinitionFile): string {
-  if (definitionFile === MODULE_DEFINITION_FILE) return assertModuleDirectory(root, id)
-  if (typeof id !== 'string' || id.length === 0 || id === '.' || id === '..' || /[\\/]/.test(id)) throw new Error('非法角色目录身份')
-  const canonical = canonicalPresetRoot(root)
-  const dir = join(canonical, id)
-  const stat = lstatSync(dir)
-  if (stat.isSymbolicLink() || !stat.isDirectory() || dirname(realpathSync(dir)) !== canonical) throw new Error(`角色库路径越界：${id}`)
-  const file = lstatSync(join(dir, definitionFile))
-  if (file.isSymbolicLink() || !file.isFile()) throw new Error(`角色定义不是普通文件：${id}`)
-  return dir
+  if (definitionFile !== MODULE_DEFINITION_FILE) throw new Error('迁移只接受模块定义')
+  return assertModuleDirectory(root, id)
 }
 
 /** 包括资产和生成物的整个模块指纹；回滚不覆盖迁移后出现的任意用户改动。 */
 function treeHash(directory: string): string {
-  assertPresetTree(directory)
+  assertModuleTree(directory)
   const hash = createHash('sha256')
   const visit = (dir: string): void => {
     for (const entry of readdirSync(dir, { withFileTypes: true }).sort((a, b) => a.name < b.name ? -1 : a.name > b.name ? 1 : 0)) {
@@ -320,19 +313,10 @@ function treeHash(directory: string): string {
 }
 
 /** 全量只读预检。root 必须显式提供，不从真实 DSH_HOME 推断。 */
-export function planRulesMigration(root: string): RulesMigrationPlan {
-  return planMigrationRoot(root, 'modules')
-}
-
-/** 角色库入口必须由调用者明确指定，绝不从模块根或 DSH_HOME 推断。 */
-export function planCharacterRulesMigration(root: string): RulesMigrationPlan {
-  return planMigrationRoot(root, 'characters')
-}
-
-function planMigrationRoot(root: string, kind: RulesMigrationPlan['kind']): RulesMigrationPlan {
+export function planRulesMigration(root: string, options: { decompose?: boolean } = {}): RulesMigrationPlan {
   if (typeof root !== 'string' || root.trim().length === 0 || !isAbsolute(root)) throw new Error('迁移必须显式指定绝对 --root（模块根目录）')
-  const canonical = canonicalPresetRoot(root)
-  const definitionFile: DefinitionFile = kind === 'characters' ? 'converted.yml' : MODULE_DEFINITION_FILE
+  const canonical = canonicalModulesRoot(root)
+  const definitionFile = MODULE_DEFINITION_FILE
   const items: RulesMigrationItem[] = []
   for (const entry of readdirSync(canonical, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
     if (entry.name.startsWith('.')) continue
@@ -340,24 +324,24 @@ function planMigrationRoot(root: string, kind: RulesMigrationPlan['kind']): Rule
     if (!entry.isDirectory()) continue
     if (!existsSync(join(canonical, entry.name, definitionFile))) continue
     const directory = assertAssetDirectory(canonical, entry.name, definitionFile)
-    assertPresetTree(directory)
+    assertModuleTree(directory)
     const bytes = readFileSync(join(directory, definitionFile))
     const doc = parseDocument(new TextDecoder('utf-8', { fatal: true }).decode(bytes), { logLevel: 'silent' })
     if (doc.errors.length > 0) throw new Error(`模块 ${entry.name} YAML 无效：${doc.errors[0]!.message}`)
     const source: unknown = doc.toJS()
     if (!record(source)) throw new Error(`模块 ${entry.name} 定义必须是对象`)
-    const layerParams = readPresetLayerSettings(source)
+    const layerParams = readModuleLayerSettings(source)
     const oldModules = Array.isArray(source.modules) && source.modules.some(id => OLD_ENGINES.has(String(id)))
     const oldRules = Object.hasOwn(source, 'promptConfigs') || Object.hasOwn(source, 'triggers') || Object.keys(readLegacyPromptParams(source)).length > 0 || MODEL_KEYS.some(key => Object.hasOwn(layerParams, key)) || oldModules
     const hintPatch = oldRules || !Object.hasOwn(source, 'rules') ? instructionHintPolicyPatch(source) : undefined
     const needs = oldRules || hintPatch !== undefined
     if (!needs) {
-      assertCanonicalRuleSource(source)
-      compileRules(source.rules ?? [], { configOrder: source.configOrder, promptConfigOptions: rulePromptConfigOptions(directory) })
+      validateModuleDefinitionText(directory, doc.toString())
+      if (options.decompose) items.push({ moduleId: entry.name, directory, definitionFile, originalHash: treeHash(directory), sourceHash: digest(bytes), nextDefinition: new TextDecoder('utf-8', { fatal: true }).decode(bytes) })
       continue
     }
-    if (kind === 'modules' && !Array.isArray(source.modules)) throw new Error(`模块 ${entry.name} 使用手写组合，无法证明旧引擎装配替换；请先显式整理 modules`)
-    if (kind === 'characters' && Array.isArray(source.promptConfigs) && source.promptConfigs.some(config => record(config) && config.templateFile !== undefined)) throw new Error(`角色 ${entry.name} 的模板在并入目标后解析，无法猜测目标模块；请先显式展开正文`)
+    if (options.decompose) throw new Error(`模块 ${entry.name} 仍含旧规则来源，请先运行 --apply 迁移再分解`)
+    if (!Array.isArray(source.modules)) throw new Error(`模块 ${entry.name} 使用手写组合，无法证明旧引擎装配替换；请先显式整理 modules`)
     if (record(source.params) && LEGACY_PROMPT_PARAM_KEYS.some(key => Object.hasOwn(source.params!, key))) throw new Error(`模块 ${entry.name} 含曾被运行时忽略的顶层旧参数，无法推测激活语义`)
     const converted = convertLegacyModuleRules(source, { directory })
     if (hintPatch !== undefined) for (const [key, value] of Object.entries(hintPatch)) {
@@ -376,10 +360,10 @@ function planMigrationRoot(root: string, kind: RulesMigrationPlan['kind']): Rule
       if (strategies.length > 0) throw new Error(`模块 ${entry.name} 使用自定义策略目录，需先确认统一基准后迁移`)
       for (const id of OLD_ENGINES) doc.deleteIn(['moduleConfigs', id])
     }
-    assertCanonicalRuleSource(doc.toJS())
+    validateModuleDefinitionText(directory, doc.toString())
     items.push({ moduleId: entry.name, directory, definitionFile, originalHash: treeHash(directory), sourceHash: digest(bytes), nextDefinition: doc.toString() })
   }
-  return { root: canonical, kind, items }
+  return { root: canonical, kind: 'modules', items }
 }
 
 interface BackupEntry { moduleId: string; definitionFile: DefinitionFile; before: string; after: string; written: boolean }
@@ -388,7 +372,7 @@ const BACKUP_DIR = '.rules-migration-backup'
 
 /** 先完整生成所有候选，再复核全根；每个模块以目录 rename 原子交换并保留原树备份。 */
 export async function applyRulesMigration(plan: RulesMigrationPlan): Promise<{ changed: string[]; backup?: string }> {
-  if (canonicalPresetRoot(plan.root) !== plan.root) throw new Error('迁移根目录身份已变化')
+  if (canonicalModulesRoot(plan.root) !== plan.root) throw new Error('迁移根目录身份已变化')
   if (plan.items.length === 0) return { changed: [] }
   const backup = join(plan.root, BACKUP_DIR)
   if (existsSync(backup)) throw new Error(`已存在迁移备份，请先处理：${backup}`)
@@ -401,13 +385,14 @@ export async function applyRulesMigration(plan: RulesMigrationPlan): Promise<{ c
       || digest(readFileSync(join(item.directory, item.definitionFile))) !== item.sourceHash) throw new Error(`来源 ${item.moduleId} 在预检后已变化，未覆盖`)
   }
   try {
-    const { writePreset } = await import('./write-preset.ts')
     for (const item of plan.items) {
       verify(item)
       const source = join(workspace, item.moduleId)
       cpSync(item.directory, source, { recursive: true, errorOnExist: true, force: false })
       atomicWriteTextFile(join(source, item.definitionFile), item.nextDefinition)
-      const generated = plan.kind === 'characters' ? source : writePreset(existsSync(join(source, 'preset.md')) ? readFileSync(join(source, 'preset.md'), 'utf8') : '', { moduleDir: workspace, presetTemplate: item.moduleId, outputId: item.moduleId, sourceDir: source, materializeOnly: true })
+      decomposeModule(source)
+      for (const path of ['rules.yml', 'configs', 'agent.cordis.yml', 'custom-tools', 'subagent-tools']) rmSync(join(source, path), { recursive: true, force: true })
+      const generated = source
       staged.set(item.moduleId, generated)
       manifest.entries.push({ moduleId: item.moduleId, definitionFile: item.definitionFile, before: item.originalHash, after: treeHash(generated), written: false })
     }
@@ -415,14 +400,16 @@ export async function applyRulesMigration(plan: RulesMigrationPlan): Promise<{ c
     mkdirSync(backup)
     atomicWriteTextFile(manifestFile, JSON.stringify(manifest, null, 2) + '\n')
     for (const item of plan.items) {
-      verify(item)
-      const old = join(backup, item.moduleId)
-      renameSync(item.directory, old)
-      try { renameSync(staged.get(item.moduleId)!, item.directory) }
-      catch (error) { if (!existsSync(item.directory)) renameSync(old, item.directory); throw error }
-      manifest.entries.find(entry => entry.moduleId === item.moduleId)!.written = true
-      invalidateModuleSpec(item.directory)
-      atomicWriteTextFile(manifestFile, JSON.stringify(manifest, null, 2) + '\n')
+      withModuleLock(plan.root, item.moduleId, () => {
+        verify(item)
+        const old = join(backup, item.moduleId)
+        renameSync(item.directory, old)
+        try { renameSync(staged.get(item.moduleId)!, item.directory) }
+        catch (error) { if (!existsSync(item.directory)) renameSync(old, item.directory); throw error }
+        manifest.entries.find(entry => entry.moduleId === item.moduleId)!.written = true
+        invalidateModuleSpec(item.directory)
+        atomicWriteTextFile(manifestFile, JSON.stringify(manifest, null, 2) + '\n')
+      })
     }
     manifest.status = 'applied'
     atomicWriteTextFile(manifestFile, JSON.stringify(manifest, null, 2) + '\n')
@@ -432,11 +419,13 @@ export async function applyRulesMigration(plan: RulesMigrationPlan): Promise<{ c
     for (const entry of [...manifest.entries].reverse()) if (entry.written) {
       const current = join(plan.root, entry.moduleId)
       const original = join(backup, entry.moduleId)
-      if (existsSync(current) && treeHash(current) === entry.after && existsSync(original)) {
-        const retired = join(workspace, `failed-${entry.moduleId}`)
-        renameSync(current, retired); renameSync(original, current); entry.written = false
-        invalidateModuleSpec(current)
-      }
+      withModuleLock(plan.root, entry.moduleId, () => {
+        if (existsSync(current) && treeHash(current) === entry.after && existsSync(original)) {
+          const retired = join(workspace, `failed-${entry.moduleId}`)
+          renameSync(current, retired); renameSync(original, current); entry.written = false
+          invalidateModuleSpec(current)
+        }
+      })
     }
     if (existsSync(manifestFile)) atomicWriteTextFile(manifestFile, JSON.stringify(manifest, null, 2) + '\n')
     throw error
@@ -447,7 +436,7 @@ export async function applyRulesMigration(plan: RulesMigrationPlan): Promise<{ c
 
 export function rollbackRulesMigration(root: string, options: { checkOnly?: boolean } = {}): { restored: string[] } {
   if (typeof root !== 'string' || !isAbsolute(root)) throw new Error('回滚必须显式指定绝对 --root')
-  const canonical = canonicalPresetRoot(root)
+  const canonical = canonicalModulesRoot(root)
   const backup = join(canonical, BACKUP_DIR)
   if (lstatSync(backup).isSymbolicLink()) throw new Error('迁移备份不能是链接')
   const file = join(backup, 'manifest.json')
@@ -457,7 +446,7 @@ export function rollbackRulesMigration(root: string, options: { checkOnly?: bool
   const targets = manifest.entries.filter(entry => entry.written)
   // 回滚前先校验所有目标及备份，任一外部改动都不启动交换。
   for (const entry of targets) {
-    if (entry.definitionFile !== 'converted.yml' && entry.definitionFile !== MODULE_DEFINITION_FILE) throw new Error('迁移备份定义类型无效')
+    if (entry.definitionFile !== MODULE_DEFINITION_FILE) throw new Error('迁移备份定义类型无效')
     const current = assertAssetDirectory(canonical, entry.moduleId, entry.definitionFile)
     const original = assertAssetDirectory(backup, entry.moduleId, entry.definitionFile)
     if (treeHash(current) !== entry.after || treeHash(original) !== entry.before) throw new Error(`模块 ${entry.moduleId} 或备份已变化，拒绝回滚覆盖`)
@@ -467,13 +456,15 @@ export function rollbackRulesMigration(root: string, options: { checkOnly?: bool
   for (const entry of targets) {
     const current = join(canonical, entry.moduleId)
     const retired = join(backup, `${entry.moduleId}.migrated`)
-    if (treeHash(current) !== entry.after || treeHash(join(backup, entry.moduleId)) !== entry.before) throw new Error(`模块 ${entry.moduleId} 在回滚期间变化，未覆盖`)
-    renameSync(current, retired)
-    try { renameSync(join(backup, entry.moduleId), current) }
-    catch (error) { if (!existsSync(current)) renameSync(retired, current); throw error }
-    entry.written = false
-    invalidateModuleSpec(current)
-    atomicWriteTextFile(file, JSON.stringify(manifest, null, 2) + '\n')
+    withModuleLock(canonical, entry.moduleId, () => {
+      if (treeHash(current) !== entry.after || treeHash(join(backup, entry.moduleId)) !== entry.before) throw new Error(`模块 ${entry.moduleId} 在回滚期间变化，未覆盖`)
+      renameSync(current, retired)
+      try { renameSync(join(backup, entry.moduleId), current) }
+      catch (error) { if (!existsSync(current)) renameSync(retired, current); throw error }
+      entry.written = false
+      invalidateModuleSpec(current)
+      atomicWriteTextFile(file, JSON.stringify(manifest, null, 2) + '\n')
+    })
   }
   manifest.status = 'rolled-back'
   atomicWriteTextFile(file, JSON.stringify(manifest, null, 2) + '\n')

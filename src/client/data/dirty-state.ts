@@ -3,7 +3,7 @@ import type { PromptConfigDraft } from '../prompt-tool-types.ts'
 import { EMPTY_FIELDS, SHARED_PARAM_KEYS, type Fields, type SharedParamKey } from './prompt-tool-fields.ts'
 
 const SETTINGS_SNAPSHOT_KEYS = [
-  'writePreset',
+  'modulesEnabled',
 ] as const
 export type SwitchSnapshot = Pick<Fields, SharedParamKey | typeof SETTINGS_SNAPSHOT_KEYS[number]>
 
@@ -50,7 +50,7 @@ export const shouldReloadAfterParamSave = (current: SwitchSnapshot, saved: Switc
   switchesEqual(current, saved)
 
 /** 任一通道出现新草稿时，旧保存响应不得触发全量重载。 */
-export const shouldReloadAfterPresetSave = (
+export const shouldReloadAfterModuleSave = (
   savedDraftVersion: number,
   currentDraftVersion: number,
   otherDraftsClean: boolean,

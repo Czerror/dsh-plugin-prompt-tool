@@ -12,7 +12,7 @@ import { attachStRenderers } from './st-render.mjs'
 import { FILE_SEQUENCE, compareConfigSequence } from './order.mjs'
 import { MATCH_LOGIC, createAnchorMatcher } from './anchor-match.mjs'
 
-const name = 'prompt-config-engine'
+const name = 'rule-engine'
 
 /**
  * 内容模板加载:提示词配置可声明 templateFile,由外部 yml / json / 纯文本模板提供内容,
@@ -528,6 +528,9 @@ function resolveConfigFields(spec, label, layer) {
 
 /** 从 YAML 提示词配置描述构造运行时提示词配置。配置错误必须在挂载时暴露(fail loud)。 */
 export function createPromptConfigs(specs, options = {}) {
+  if (options.templateModuleRoot !== undefined && options.templatePresetRoot !== undefined
+    && String(options.templateModuleRoot) !== String(options.templatePresetRoot)) throw new TypeError('templateModuleRoot and templatePresetRoot conflict')
+  const templateModuleRoot = options.templateModuleRoot ?? options.templatePresetRoot
   if (specs === undefined) return []
   if (!Array.isArray(specs)) throw new TypeError(`${name}: config.configs must be an array`)
   // 重复 ID 拒绝：后者覆盖前者会静默丢卡，挂载前 fail loud。
@@ -592,7 +595,7 @@ export function createPromptConfigs(specs, options = {}) {
       }
     }
     // 安装预检可把文件读取定向到尚未提交的候选目录，默认运行期仍走原解析器。
-    const template = (options.loadTemplate ?? loadTemplate)(spec.templateFile, options.templateBaseUrl, options.templatePresetRoot)
+    const template = (options.loadTemplate ?? loadTemplate)(spec.templateFile, options.templateBaseUrl, templateModuleRoot)
     const templatePatch = template !== null && typeof template === 'object'
       ? { id: template.id, role: template.role, content: template.content, source: template.source }
       : undefined

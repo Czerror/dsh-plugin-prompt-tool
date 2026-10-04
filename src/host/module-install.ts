@@ -1,33 +1,33 @@
 import { lstatSync, readdirSync, readFileSync, realpathSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
-import { parseDocument, YAMLMap, YAMLSeq } from 'yaml'
-import { MODULE_CONFIGS_DIR, MODULE_DEFINITION_FILE } from './paths.ts'
+import { parseDocument, YAMLMap } from 'yaml'
+import { MODULE_DEFINITION_FILE } from './paths.ts'
 
-export function assertPresetId(id: unknown): asserts id is string {
+export function assertModuleId(id: unknown): asserts id is string {
   if (typeof id !== 'string' || !/^[a-z0-9][a-z0-9-]*$/.test(id)) {
-    throw new Error(`非法预设 id：${String(id)}；必须为小写字母、数字和连字符`)
+    throw new Error(`非法模块 id：${String(id)}；必须为小写字母、数字和连字符`)
   }
 }
 
 /** 规则模板路径相对模块根，复制目录无需重写路径或用户正文。 */
-export function setPresetDefinitionId(doc: ReturnType<typeof parseDocument>, id: string): void {
-  assertPresetId(id)
+export function setModuleDefinitionId(doc: ReturnType<typeof parseDocument>, id: string): void {
+  assertModuleId(id)
   const previous = doc.get('id')
   if (previous === id) return
   doc.set('id', id)
 }
 
 /** ENOENT 才表示不存在；权限、占用与读取失败继续传播。 */
-export function presetPathExists(path: string): boolean {
+export function modulePathExists(path: string): boolean {
   try { lstatSync(path); return true } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return false
     throw error
   }
 }
 
-export function canonicalPresetRoot(root: string, allowMissing = false): string {
+export function canonicalModulesRoot(root: string, allowMissing = false): string {
   const absoluteRoot = resolve(root)
-  if (!presetPathExists(absoluteRoot)) {
+  if (!modulePathExists(absoluteRoot)) {
     if (allowMissing) return absoluteRoot
     throw new Error(`预设根不存在：${absoluteRoot}`)
   }
@@ -38,10 +38,10 @@ export function canonicalPresetRoot(root: string, allowMissing = false): string 
 
 /** 根与目标先解析真实路径，拒绝链接目录及定义身份不一致。 */
 export function assertModuleDirectory(root: string, id: string, allowMissing = false): string {
-  assertPresetId(id)
-  const canonicalRoot = canonicalPresetRoot(root, allowMissing)
+  assertModuleId(id)
+  const canonicalRoot = canonicalModulesRoot(root, allowMissing)
   const target = join(canonicalRoot, id)
-  if (!presetPathExists(target)) {
+  if (!modulePathExists(target)) {
     if (allowMissing) return target
     throw new Error(`预设 ${id} 不存在`)
   }
@@ -62,101 +62,14 @@ export function assertModuleDirectory(root: string, id: string, allowMissing = f
 }
 
 /** 复制和物化只接受自有普通文件；不跟随任意层级链接读取根外数据。 */
-export function assertPresetTree(dir: string): void {
+export function assertModuleTree(dir: string): void {
   const stat = lstatSync(dir)
   if (stat.isSymbolicLink()) throw new Error(`预设包含链接：${dir}`)
   if (stat.isDirectory()) {
-    for (const entry of readdirSync(dir)) assertPresetTree(join(dir, entry))
+    for (const entry of readdirSync(dir)) assertModuleTree(join(dir, entry))
   } else if (!stat.isFile()) throw new Error(`预设包含特殊文件：${dir}`)
 }
 
-/**
- * 引擎分发目录下的 `.mjs` 文件名集合 —— `rewritePresetEngineReferences` 的判定输入。
- *
- * 两处调用（`manifest.ts` 的预设 id 迁移、`write-preset.ts` 的写盘物化）共用这一份，
- * 所以「哪些文件算引擎模块」只有一条规则；将来引擎增删扩展名时只改这里。
- * 不设 `dir` 默认值：`packageEngineDir()` 在 `manifest.ts`，而 `manifest.ts` 已经 import
- * 本文件——在这里反向 import 会成环。
- */
-export function engineModuleFileNames(dir: string): Set<string> {
-  return new Set(readdirSync(dir).filter((name) => name.endsWith('.mjs')))
-}
 
-/**
- * 引擎模块 → 它自己的**受管配置位置**（预设 id 迁移时的重写目标）。
- *
- * `field` 是该模块声明配置位置的键（`configsDir` / `policyFile`），`directory` 是重写后的
- * 目标（相对预设目录）。三个值必须与组合源 `engine/compositions/source/local/*.yml` 里
- * 对应模块的声明一致——守卫见 `test/host/preset-engine-managed-paths.test.mjs`。
- *
- * 与 yml 的分工：yml 声明**装配时的配置值**，本表声明**迁移时的改写规则**。两者共享
- * 「哪个模块用哪个目录」这一事实，所以要有守卫；但规则本身不能反过来读 yml——重写面对的
- * 是**用户预设**里可能已过时的值，靠读它无法判断该改成什么。
- */
-export const ENGINE_MANAGED_PATHS = {
-  'rule-engine.mjs': { field: 'rulesFile', directory: 'rules.yml' },
-  'prompt-config-engine.mjs': { field: 'configsDir', directory: MODULE_CONFIGS_DIR },
-  'tool-config-engine.mjs': { field: 'configsDir', directory: 'custom-tools' },
-  'subagent-tool-policy.mjs': { field: 'policyFile', directory: 'subagent-tools/policy.yml' },
-  'declared-triggers.mjs': { field: 'triggersFile', directory: 'triggers.yml' },
-} as const
-
-/** 插件包内引擎模块的说明符前缀（引擎由插件提供，预设包不再携带引擎）。 */
-export const PRESET_ENGINE_PREFIX = 'dsh-plugin-prompt-tool/engine/'
-
-/**
- * 行名引用的共享引擎模块名。
- *
- * 必须同时识别两种形态：组合源的本地写法（`./engine/x.mjs`，以及旧预设的
- * `../.engine/x.mjs`）与**产物的包名说明符**（`dsh-plugin-prompt-tool/engine/x.mjs`）。
- * 复制/导入预设时源文件已是产物形态——只认前者会让受管字段重写静默失效（副本的
- * `configsDir` 会继续指向原预设）。
- */
-function engineModuleNameOf(name: string): string | undefined {
-  if (name.startsWith(PRESET_ENGINE_PREFIX)) {
-    const rest = name.slice(PRESET_ENGINE_PREFIX.length)
-    return rest.length > 0 && !rest.includes('/') ? rest : undefined
-  }
-  return /^(?:\.\/engine\/|\.\.\/\.engine\/)([^/]+\.mjs)$/.exec(name)?.[1]
-}
-
-/**
- * 仅处理 Cordis 行的已知共享引擎引用和受管配置位置，正文与自有引擎保持不变。
- *
- * 阶段 2 起引擎由插件包提供：`./engine/x.mjs` 与旧预设的 `../.engine/x.mjs` 一律改写为包名
- * 说明符 `dsh-plugin-prompt-tool/engine/x.mjs`；源包自带的 `engine/` 目录不再被采纳。
- */
-export function rewritePresetEngineReferences(raw: string, outputId: string, engineFiles: ReadonlySet<string>): string {
-  const doc = parseDocument(raw, { logLevel: 'silent' })
-  if (doc.errors.length > 0 || !(doc.contents instanceof YAMLSeq)) throw new Error('组合必须是合法 YAML 数组')
-  let changed = false
-  const visitRows = (rows: YAMLSeq): void => {
-    for (const row of rows.items) {
-      if (!(row instanceof YAMLMap)) continue
-      const name = row.get('name')
-      const engineModule = typeof name === 'string' ? engineModuleNameOf(name) : undefined
-      if (engineModule !== undefined && engineFiles.has(engineModule)) {
-        const specifier = `${PRESET_ENGINE_PREFIX}${engineModule}`
-        if (name !== specifier) { row.set('name', specifier); changed = true }
-        const config = row.get('config', true)
-        if (config instanceof YAMLMap) {
-          // 受管位置查表（与组合源 yml 的一致性由守卫保证）；表外的引擎模块不改写。
-          const managed = ENGINE_MANAGED_PATHS[engineModule as keyof typeof ENGINE_MANAGED_PATHS] as
-            { field: string; directory: string } | undefined
-          const field = managed?.field ?? 'configsDir'
-          const directory = managed?.directory
-          const value = config.get(field)
-          if (directory !== undefined && typeof value === 'string'
-            && (value === `../${directory}` || new RegExp(`^\\.\\./[a-z0-9][a-z0-9-]*/${directory.replaceAll('.', '\\.')}\\/?$`).test(value))) {
-            const next = `../${outputId}/${directory}`
-            if (value !== next) { config.set(field, next); changed = true }
-          }
-        }
-      }
-      const children = row.get('config', true)
-      if (row.get('name') === 'cordis:group' && children instanceof YAMLSeq) visitRows(children)
-    }
-  }
-  visitRows(doc.contents)
-  return changed ? doc.toString() : raw
-}
+/** 已发布的旧入口只在此处适配。 */
+export { assertModuleId as assertPresetId, setModuleDefinitionId as setPresetDefinitionId, modulePathExists as presetPathExists, canonicalModulesRoot as canonicalPresetRoot, assertModuleTree as assertPresetTree }

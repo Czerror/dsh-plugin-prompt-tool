@@ -27,9 +27,8 @@ export const USER_SKILLS_DIR = join(DSH_HOME, 'skills')
 /**
  * 插件自有**存储根**（DSH_HOME/.prompt-tool）。
  *
- * 根下按物分目录：`modules/` 放模块定义与物化产物，`.characters/` 放角色卡库。
- * 与模块**同级的兄弟物**从模块路径上溯一级定位（`charactersDir(moduleRoot)` 就是这么做），
- * 不从这里读——模块级常量在 import 时按 `DSH_HOME` 冻结，测试内改环境变量对它无效。
+ * `modules/` 放完整定义、经校验规则切片和用户素材；角色卡导入后也是普通模块。
+ * 路径在 import 时按 `DSH_HOME` 冻结，测试必须在导入前隔离环境。
  * 旧根 `.agent-presets/` 只读不删，本插件不再读写它。
  */
 const STORAGE_ROOT = join(DSH_HOME, '.prompt-tool')
@@ -44,13 +43,15 @@ export const MODULES_DIR = join(STORAGE_ROOT, 'modules')
 /**
  * 模块定义文件名：`<模块根>/<id>/module.yml`。
  *
- * 与物化产物（`configs/`、`custom-tools/`、`triggers.yml`、`subagent-tools/`）同目录。
+ * 与 `rules/` 运行切片和 `memory.md` 等用户资产同目录。
  * 旧形态的 `preset.yml` **不做兼容读取**：实测真实数据（beta 形态遗留）已经是本名，
  * 且仓库从 `02754cc` 起就没有 `preset.yml` 形态的用户数据；读到旧名目录时由
  * `listModules` 给出明确诊断，而不是静默跳过。
  */
 export const MODULE_DEFINITION_FILE = 'module.yml'
-/** 模块物化目录名：提示词配置切片的落点（原 `prompt-configs/`）。 */
-export const MODULE_CONFIGS_DIR = 'configs'
+/** 完整模块定义的确定性运行切片；仅 module.yml 接受人工编辑。 */
+export const RULES_DIR = 'rules'
+export const RULES_SETTINGS_FILE = '_settings.yml'
+export const RULES_VARIABLES_FILE = 'variables.yml'
 /** 模块在列表里的默认排序权重。 */
 export const DEFAULT_MODULE_ORDER = 5

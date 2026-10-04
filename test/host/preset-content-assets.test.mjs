@@ -5,7 +5,7 @@
 // 原 worldbook 缺 after 清理，这里统一登记还原与清理（不改变任何断言）。
 import { after, test } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { parse as parseYaml, parseDocument } from 'yaml'
@@ -244,7 +244,7 @@ test('compileCustomTool：五种现有执行器和 fs 动态 action 保持可用
   }
 })
 
-test('writePreset：完整编译同源、坏手写定义 warn-and-skip、原始 DSL 保留并可运行', () => {
+test('writePreset：坏工具完整拒绝无写，合法 DSL 保留并由内联入口执行和释放', async () => {
   const moduleDir = join(home, '.prompt-tool', 'modules')
   const dir = join(moduleDir, 'custom-tools-test')
   mkdirSync(dir, { recursive: true })
@@ -260,20 +260,18 @@ test('writePreset：完整编译同源、坏手写定义 warn-and-skip、原始 
   const doc = parseDocument('# 保留手写预设\nname: 测试工具\nmodules: []\n')
   doc.setIn(['customTools'], tools)
   writeFileSync(file, doc.toString(), 'utf8')
-  const warns = []
-  writePreset('', { moduleDir, presetTemplate: 'custom-tools-test', presetOrder: 5, promptConfigs: [], warn: (message) => warns.push(message) })
-  assert.equal(warns.length, 2)
-  assert.match(warns[0], /bad_shell.*execute\.command.*skipped/)
-  assert.match(warns[1], /bad_schema.*output\.schema.*skipped/)
+  const before = readFileSync(file, 'utf8')
+  assert.throws(() => writePreset('', { moduleDir, presetTemplate: 'custom-tools-test' }), /invalid customTools/)
+  assert.equal(readFileSync(file, 'utf8'), before)
+  assert.equal(existsSync(join(dir, 'rules')), false)
+  doc.setIn(['customTools'], tools.slice(0, 4))
+  writeFileSync(file, doc.toString(), 'utf8')
+  writePreset('', { moduleDir, presetTemplate: 'custom-tools-test' })
   const source = readFileSync(file, 'utf8')
   assert.match(source, /# 保留手写预设/)
-  assert.deepEqual(parseYaml(source).customTools, tools)
+  assert.deepEqual(parseYaml(source).customTools, tools.slice(0, 4))
   const generatedDir = join(dir, 'custom-tools')
-  const files = readdirSync(generatedDir).sort()
-  assert.deepEqual(files, ['0001-fallback_tool.yml', '0002-empty_name.yml', '0003-explicit_name.yml', '0004-disabled_tool.yml'])
-  for (const [index, file] of files.entries()) {
-    assert.deepEqual(parseYaml(readFileSync(join(generatedDir, file), 'utf8')), compileCustomTool(tools[index]))
-  }
+  assert.equal(existsSync(generatedDir), false)
   const registered = []
   const disposed = []
   const effects = []
@@ -282,9 +280,11 @@ test('writePreset：完整编译同源、坏手写定义 warn-and-skip、原始 
     tools: { register: (tool) => { registered.push(tool); return () => disposed.push(tool.name) } },
     effect: (fn) => effects.push(fn()),
     logger: { info: () => {}, warn: (message) => runtimeWarns.push(message) },
-  }, { configsDir: generatedDir })
+    get: name => name === 'approval' ? { request: async () => 'allowed-once' } : undefined,
+  }, { tools: tools.slice(0, 4).map(compileCustomTool), configsDir: generatedDir })
   assert.deepEqual(runtimeWarns, [])
   assert.deepEqual(registered.map((tool) => tool.name), ['fallback_tool', 'empty_name', 'named_tool'])
+  assert.deepEqual(await registered[0].execute({}, { agent: { id: 'test' }, signal: new AbortController().signal }), { ok: true, answer: 'allowed-once' })
   for (const dispose of effects) dispose()
   assert.deepEqual(disposed, registered.map((tool) => tool.name))
 })

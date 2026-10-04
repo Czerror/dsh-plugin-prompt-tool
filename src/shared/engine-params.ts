@@ -2,7 +2,7 @@
  * 引擎行为参数契约（单一来源）。
  *
  * 这是「可配置引擎参数」的类型唯一权威：所有消费引擎参数的接口（RuntimeOptions /
- * WritePresetOptions）从这里派生，不再各自手写一遍字段
+ * WriteModuleOptions）从这里派生，不再各自手写一遍字段
  * （此前多处重复声明导致同字段签名漂移，如 maxDepth / modelTemperature）。
  *
  * 分层约定：
@@ -11,9 +11,9 @@
  *    Record<keyof EngineParams, ...> 强制完整覆盖，ENGINE_PARAM_KEYS 与 PARAM_KEYS 从其派生；
  *  - layerSettings ↔ 运行时平铺键：loadModuleSpec 展平 / saveModuleParams 按层写入。
  *
- * 全部字段可选：缺省 = 模板 preset.yml layerSettings / 引擎默认，符合「一切皆可自定义」。
+ * 全部字段可选：缺省 = 模板 module.yml layerSettings / 引擎默认，符合「一切皆可自定义」。
  */
-import type { EngineLayer } from './engine-capabilities.ts'
+import type { InjectionPoint } from './engine-capabilities.ts'
 import { LEGACY_PROMPT_PARAM_DEFINITIONS, LEGACY_PROMPT_PARAM_KEYS, isLegacyPromptParam, type LegacyPromptParams } from './legacy-prompt-params.ts'
 
 export interface EngineParams {
@@ -56,11 +56,12 @@ type AssertKeysEqual<A extends string, B extends string> =
     : false
 
 /**
- * writePreset.runtimeOf 实际透传进运行时 params 的引擎参数子集。
- * RuntimeOptions（装配态）与 WritePresetOptions（写入态）都从这里派生，
- * 防止「加参数只改一处、writePreset 忘透传」的静默漂移（如 stageAdvanceDescription 历史事故）。
+ * writeModule 实际透传进运行时 params 的引擎参数子集。
+ * RuntimeOptions（装配态）与 WriteModuleOptions（写入态）都从这里派生，
+ * 防止「加参数只改一处、模块写者忘透传」的静默漂移（如 stageAdvanceDescription 历史事故）。
  */
-export type PresetWriterParams = Partial<EngineParams & LegacyPromptParams>
+export type ModuleWriterParams = Partial<EngineParams & LegacyPromptParams>
+export type PresetWriterParams = ModuleWriterParams
 
 /**
  * 数值型引擎参数保存前校验（与 write-preset.modelRequestConfigs 消费规则同源）。
@@ -97,7 +98,7 @@ const POSITIVE_INTEGER: (value: number) => string | undefined = (value) =>
 export type EngineParamDefinition = ParamRule & {
   card: string
   /** 稳定磁盘归属，不随编辑卡的显示位置改变。 */
-  storageLayer: EngineLayer
+  storageLayer: InjectionPoint
   /**
    * 显示标签不进 shared：UI 侧按 `param.<键>` 查 prompt-tool 字典（见
    * src/client/locales-params.ts）。shared 不 import client 字典，也不持有任何文案。
@@ -129,7 +130,7 @@ export const ENGINE_PARAM_DEFINITIONS: Record<EngineParamKey, EngineParamDefinit
 
 export const ENGINE_PARAM_KEYS = Object.keys(ENGINE_PARAM_DEFINITIONS) as EngineParamKey[]
 
-/** writePreset.runtimeOf 实际透传键：全部引擎参数可直接进入 writer。 */
+/** writeModule 实际透传键：全部引擎参数可直接进入 writer。 */
 export const WRITER_PARAM_KEYS = [...ENGINE_PARAM_KEYS, ...LEGACY_PROMPT_PARAM_KEYS]
 
 /** 编译期断言：WRITER_PARAM_KEYS 与 PresetWriterParams 键必须一致。 */

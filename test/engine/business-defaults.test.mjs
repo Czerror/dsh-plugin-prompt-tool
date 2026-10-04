@@ -1,6 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { applyPromptConfigs, createPromptConfigs } from '../../engine/prompt-config-engine.mjs'
+import { applyPromptConfigs } from '../../engine/executor.mjs'
+import { createPromptConfigs } from '../../engine/schema.mjs'
 import { instructionHintMessages, buildInstructionHintText } from '../../engine/instruction-hint.mjs'
 import { createEpochPromotion } from '../../engine/compaction-epoch.mjs'
 import { compileWhen } from '../../engine/conditions/index.mjs'

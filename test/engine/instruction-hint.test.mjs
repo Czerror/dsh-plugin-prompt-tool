@@ -9,7 +9,7 @@ import {
   createInstructionHintResolver as rawCreateInstructionHintResolver,
   instructionHintMessages as rawInstructionHintMessages,
 } from '../../engine/instruction-hint.mjs'
-import { createPromptConfigs } from '../../engine/prompt-config-engine.mjs'
+import { createPromptConfigs } from '../../engine/schema.mjs'
 
 // 旧措辞现在属于显式模板，断言仍使用独立的已知良好文本。
 const templates = parse(readFileSync(new URL('../../templates/policies/legacy-defaults.yml', import.meta.url), 'utf8')).instructionHint

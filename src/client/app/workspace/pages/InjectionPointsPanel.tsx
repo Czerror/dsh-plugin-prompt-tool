@@ -8,16 +8,16 @@
  * 展示归属只是导航：这里不新增第二份映射，也不改变任何运行时 hook、注册顺序或保存通道。
  */
 import { useEffect, useRef, useState, type ReactNode } from 'react'
-import { ENGINE_CAPABILITIES, ENGINE_EDITOR_GROUP_MAP, engineCapability, engineGroupParamKeys, isEditorGroupVisible, isEngineCapabilityPresent } from '../../../../shared/engine-capabilities.ts'
+import { MODULE_CAPABILITIES, ENGINE_EDITOR_GROUP_MAP, moduleCapability, engineGroupParamKeys, isEditorGroupVisible, isModuleCapabilityPresent } from '../../../../shared/engine-capabilities.ts'
 import type { PromptConfigDraft } from '../../../prompt-tool-types.ts'
 import type { PromptToolStore } from '../../../data/use-prompt-tool-store.ts'
 import type { PromptToolLocaleKey, PromptToolTranslate } from '../../../locales.ts'
 import { ConfirmDialog } from '../../../ui/ConfirmDialog.tsx'
 import { Button } from '../../../ui/Button.tsx'
 import { EngineParamFields, matchesEditorGroup } from '../../../features/modules/EngineParamFields.tsx'
-import { EngineCapabilityCreateMenu } from '../../../features/modules/EngineModuleList.tsx'
+import { ModuleCapabilityCreateMenu } from '../../../features/modules/EngineModuleList.tsx'
 import { CurrentSessionModel } from '../../../features/models/CurrentSessionModel.tsx'
-import { PresetPersonaCard } from '../../../features/persona/PresetPersonaCard.tsx'
+import { ModulePersonaCard } from '../../../features/persona/ModulePersonaCard.tsx'
 import { DelegationToolsModuleCard } from '../../../features/subagents/DelegationToolsCard.tsx'
 import { SubagentToolPolicyCard } from '../../../features/subagents/SubagentToolPolicyCard.tsx'
 import { WorldBookDiagnosticsCard } from '../../../features/prompts/WorldBookDiagnosticsCard.tsx'
@@ -56,14 +56,14 @@ export function layerParamCards(store: PromptToolStore, layer: string, exclude: 
       // 已有专属编辑器的组（模型路由卡、资产卡）不再进通用分组：同一批字段只留一个编辑入口。
       && !isLayerAsset(group.id)
       && engineGroupParamKeys(group.id).length > 0
-      && (engineCapability(group.id) === undefined || isEngineCapabilityPresent(group.id, store.moduleFacts)))
+      && (moduleCapability(group.id) === undefined || isModuleCapabilityPresent(group.id, store.moduleFacts)))
     .map((group) => group.id)
 }
 
 /** 该层已装配的能力（装配事实来自 `store.moduleFacts`，不是前端开关）。 */
 export function layerAssembledCapabilities(store: PromptToolStore, layer: string): readonly string[] {
-  return ENGINE_CAPABILITIES
-    .filter(({ id, displayLayer }) => displayLayer === layer && isEngineCapabilityPresent(id, store.moduleFacts))
+  return MODULE_CAPABILITIES
+    .filter(({ id, displayLayer }) => displayLayer === layer && isModuleCapabilityPresent(id, store.moduleFacts))
     .map(({ id }) => id)
 }
 
@@ -77,7 +77,7 @@ function LayerCapabilityRow(props: { store: PromptToolStore; t: PromptToolTransl
   const { store, t, capabilityId } = props
   const [confirming, setConfirming] = useState(false)
   const buttonRef = useRef<HTMLButtonElement>(null)
-  const editable = store.fields.writePreset && store.moduleFacts?.editable === true
+  const editable = store.fields.modulesEnabled && store.moduleFacts?.editable === true
   return (
     <li className={css.capabilityRow} data-layer-capability={capabilityId}>
       <span>{t('modules.layer.capability', { id: capabilityId })}</span>
@@ -94,7 +94,7 @@ function LayerCapabilityRow(props: { store: PromptToolStore; t: PromptToolTransl
           cancelLabel={t('toolEditor.cancel')}
           failureMessage={t('card.operationFailed')}
           returnFocusRef={buttonRef}
-          onConfirm={async () => { if (!await store.removeEngineCapability(capabilityId)) throw new Error(t('card.operationFailed')) }}
+          onConfirm={async () => { if (!await store.removeModuleCapability(capabilityId)) throw new Error(t('card.operationFailed')) }}
           onCancel={() => setConfirming(false)}
         />
       )}
@@ -126,7 +126,7 @@ function matchesLayerGroup(id: string, keyword: string, t: PromptToolTranslate):
 
 /**
  * 本层引擎设置内容：参数分组（按共享契约派生）+ 已装配能力的装配状态与移除入口 +
- * 该层归属的结构化资产编辑器。由 `engineLayerSlots` 注入到每张本层实例卡的折叠区
+ * 该层归属的结构化资产编辑器。由 `injectionPointSlots` 注入到每张本层实例卡的折叠区
  * 中；无实例时不生成独立卡，同层多处渲染共用同一 `store.fields` 与同一草稿键。
  */
 export function LayerSettingsContent(props: {
@@ -145,8 +145,8 @@ export function LayerSettingsContent(props: {
   const capabilities = layerAssembledCapabilities(store, layer).filter((id) => !excluded.includes(id))
   // 同层每张实例卡各渲染一份设置内容：instanceId 带上卡身份，DOM id 才不会互相冲突。
   const instanceId = `layer-${layer}-${props.configId ?? 'standalone'}`
-  const canEditPreset = store.fields.writePreset && store.moduleFacts?.editable === true
-  const presetId = store.fields.presetTemplate
+  const canEditModule = store.fields.modulesEnabled && store.moduleFacts?.editable === true
+  const moduleId = store.fields.moduleId
   const assets = layerAssets(layer, excluded)
   const keyword = (props.keyword ?? '').trim().toLowerCase()
   const matches = (id: string): boolean => matchesLayerGroup(id, keyword, t)
@@ -154,7 +154,7 @@ export function LayerSettingsContent(props: {
   return (
     <div className={css.settings} data-layer-settings-content={layer}>
       <div className={css.actions}>
-        <EngineCapabilityCreateMenu store={store} t={t} layer={layer} excludeCapabilities={excluded} onCreated={props.onCreated} />
+        <ModuleCapabilityCreateMenu store={store} t={t} layer={layer} excludeCapabilities={excluded} onCreated={props.onCreated} />
       </div>
       {cards.map((card) => (
         <section key={card} hidden={!matches(card)} className={css.group} data-layer-param-group={card}
@@ -173,7 +173,7 @@ export function LayerSettingsContent(props: {
       )}
       {assets.map((id) => (
         <section key={id} hidden={!matches(id)} className={css.asset} data-layer-asset={id} aria-label={t(CARD_LABEL_KEYS[id] ?? 'modules.layer.asset')}>
-          {id === 'persona' && <PresetPersonaCard t={t} presetId={presetId} disabled={!canEditPreset} onNotice={store.showNotice} drafts={store.editorDrafts} embedded />}
+          {id === 'persona' && <ModulePersonaCard t={t} moduleId={moduleId} disabled={!canEditModule} onNotice={store.showNotice} drafts={store.editorDrafts} embedded />}
           {id === 'variables' && (
             <TemplateVariablesModuleCard
               t={t}
@@ -182,19 +182,21 @@ export function LayerSettingsContent(props: {
               templateVariablesEnabled={store.templateVariablesEnabled}
               setTemplateVariablesEnabled={store.setTemplateVariablesEnabled}
               saveTemplateVariables={store.saveTemplateVariables}
+              publicationPending={store.variablesPublicationPending}
+              retryPublication={store.retryVariablesPublication}
               embedded
-              disabled={!canEditPreset}
+              disabled={!canEditModule}
             />
           )}
           {id === 'main-model' && <CurrentSessionModel store={store} t={t} />}
           {id === 'subagent-tools' && <DelegationToolsModuleCard store={store} t={t} embedded />}
           {(id === 'custom-tools' || id === 'subagent-tool-policy') && <h4 className={css.groupTitle}>{t(CARD_LABEL_KEYS[id] ?? 'modules.layer.asset')}</h4>}
           {id === 'custom-tools' && (props.toolEditor ?? (
-            <CustomToolsCard key={presetId} presetId={presetId} t={t} onNotice={store.showNotice}
-              drafts={store.editorDrafts} disabled={!canEditPreset} />
+            <CustomToolsCard key={moduleId} moduleId={moduleId} t={t} onNotice={store.showNotice}
+              drafts={store.editorDrafts} disabled={!canEditModule} />
           ))}
           {id === 'subagent-tool-policy' && (
-            <SubagentToolPolicyCard key={presetId} presetId={presetId} disabled={!canEditPreset} t={t} onNotice={store.showNotice} drafts={store.editorDrafts} />
+            <SubagentToolPolicyCard key={moduleId} moduleId={moduleId} modules={store.meta.modules ?? []} disabled={!canEditModule} t={t} onNotice={store.showNotice} drafts={store.editorDrafts} />
           )}
         </section>
       ))}
@@ -212,7 +214,7 @@ function LayerSettingsFocus(props: { layer?: string; token: number }): ReactNode
   return null
 }
 
-export interface EngineLayerSlots {
+export interface InjectionPointSlots {
   beforeCards: ReactNode
   /** 本层引擎设置内容，仅由真实实例卡内的设置区承载。 */
   renderLayerSettings: (layer: string, config: PromptConfigDraft) => ReactNode
@@ -221,7 +223,7 @@ export interface EngineLayerSlots {
   matchesLayerSettings: (layer: string, keyword: string) => boolean
 }
 
-export interface EngineLayerSlotsInput {
+export interface InjectionPointSlotsInput {
   store: PromptToolStore
   t: PromptToolTranslate
   /** 当前层筛选（`all` / `world-book` / 九层之一）；过滤只影响展示，不改变保存语义。 */
@@ -240,7 +242,7 @@ export interface EngineLayerSlotsInput {
 }
 
 /** 按受众视图装配层内设置；页面级只保留诊断卡与不占布局的定位 effect。 */
-export function engineLayerSlots(input: EngineLayerSlotsInput): EngineLayerSlots {
+export function injectionPointSlots(input: InjectionPointSlotsInput): InjectionPointSlots {
   const { store, t, viewFilter, audience } = input
   // 主会话页保留世界书只读诊断卡（策略视图）；其余单例卡与资产编辑器都进本层设置区。
   const beforeCards = (
@@ -253,7 +255,7 @@ export function engineLayerSlots(input: EngineLayerSlotsInput): EngineLayerSlots
     beforeCards,
     renderLayerSettings: (layer: string, config: PromptConfigDraft) => (
       <LayerSettingsContent
-        key={`${store.fields.presetTemplate}:${config.id}`}
+        key={`${store.fields.moduleId}:${config.id}`}
         store={store}
         t={t}
         layer={layer}

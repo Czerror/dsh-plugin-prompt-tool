@@ -2,7 +2,7 @@
  * subagent-tool-policy — agent-scoped subagent/subagent_fork shadow 工具。
  *
  * 本模块通过运行中 DSH 入口解析同一份 dsh-tools / dsh-scope，避免生成目录
- * 加载第二份 registry 类型。每个 shadow 只安装到当前 preset generation 的
+ * 加载第二份 registry 类型。每个 shadow 只安装到当前 assembly generation 的
  * descendant Agent；实例权限在 SubagentStartRequest 创建窗口冻结。
  *
  * ── 能力提供者边界（T4）────────────────────────────────────────────────────
@@ -23,7 +23,7 @@
  * 安全边界（T4 明令不得触碰，改动本模块时同样不得放宽）：
  *   - 扩权审批门 expansionApproval：requested additional_tools 必须先拿到
  *     `allowed-once`，无 approval 通道时 fail loud（不静默放行）；
- *   - fail loud 语义：策略文件存在但内容非法一律抛错；只有 ENOENT（用户关掉能力卡）
+ *   - fail loud 语义：显式内联或策略文件内容非法一律抛错；只有路径入口的 ENOENT
  *     才降级为官方委派行为。
  *
  * 登记入口：`engineProvider`（数据导出），供边界守卫消费。提供者登记与声明式触发器
@@ -64,19 +64,28 @@ const SHADOW_TOOL_NAMES = { spawn: 'subagent', fork: 'subagent_fork' }
 
 /**
  * 配置契约：白名单由字段声明派生（此前没有白名单，未知键被静默忽略）。
- * 五个键**全部**用 passthrough：迁移前它们对非字符串/非对象值都是静默取默认或忽略
+ * 五个旧键保留 passthrough：它们对非字符串/非对象值都是静默取默认或忽略
  *（policyFile / spawnProvider / forkProvider 取默认名，agentOptions 非对象则 undefined，
  * maxDepth 原样透传、由下游按 `'provider-managed'` 或数字自行判定），
- * 换成严格字段类型会引入 B2 未授权的行为变更。归一化结果与迁移前逐字段等价，
- * 唯一新增的是「未知键报错」。
+ * 内联 policy 单独完整校验；缺字段才启用路径模式，显式非法值不得降级。
  */
-export const configContract = defineConfig({
+const configFields = defineConfig({
   policyFile: passthrough((value) => (typeof value === 'string' && value.length > 0 ? value : '../subagent-tools/policy.yml')),
+  policy: passthrough(value => value),
   spawnProvider: passthrough((value) => (typeof value === 'string' && value.length > 0 ? value : 'spawn')),
   forkProvider: passthrough((value) => (typeof value === 'string' && value.length > 0 ? value : 'fork')),
   maxDepth: passthrough((value) => value),
   agentOptions: passthrough((value) => value),
 })
+export const configContract = {
+  ...configFields,
+  parse(config, plugin) {
+    const source = configFields.parse(config, plugin)
+    if (Object.hasOwn(config ?? {}, 'policy')) compileSubagentToolPolicy(source.policy)
+    else delete source.policy
+    return source
+  },
+}
 
 /**
  * 能力提供者登记（T4 边界守卫的数据源）。
@@ -98,6 +107,7 @@ function resolvePolicyFile(config) {
 }
 
 function loadCompiledPolicy(config) {
+  if (Object.hasOwn(config, 'policy')) return compileSubagentToolPolicy(config.policy)
   const raw = readFileSync(resolvePolicyFile(config), 'utf8')
   const parsed = parseYaml(raw, { logLevel: 'silent' })
   if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
@@ -210,7 +220,7 @@ async function settleForeground(run) {
   return { kind: 'foreground', runId: run.id, output: result.output }
 }
 
-function availablePresetTools(tools, compositionScope) {
+function availableAssemblyTools(tools, compositionScope) {
   return tools.schemas(compositionScope).map((schema) => schema.name)
 }
 
@@ -226,7 +236,7 @@ function createShadowTool(ctx, tools, compositionScope, compiled, kind, config) 
     execute: async (args, run) => {
       validateShadowArgs(args, compiled, kind)
       if (run.agent === undefined) throw new Error('no active agent for subagent start')
-      const resolved = resolveSubagentToolPolicy(compiled, args, availablePresetTools(tools, compositionScope))
+      const resolved = resolveSubagentToolPolicy(compiled, args, availableAssemblyTools(tools, compositionScope))
       if (resolved.requiresApproval) await expansionApproval(ctx, run, toolName, resolved)
       const childProvider = ctx.subagents.getProvider(provider)
       if (childProvider === undefined) throw new Error(`subagent provider ${provider} is not registered`)
@@ -274,7 +284,7 @@ function createShadowTool(ctx, tools, compositionScope, compiled, kind, config) 
 }
 
 export function apply(ctx, config) {
-  // 校验入口：未知键在挂载期报错；五个键的归一化结果与迁移前逐字段一致（见 configContract）。
+  // 内联 policy 在准备期即可校验；旧配置字段仍保留历史归一化结果。
   const source = configContract.parse(config, name)
   let compiled
   try {
@@ -290,7 +300,7 @@ export function apply(ctx, config) {
     throw new Error(`${name}: cannot load policy: ${message}`)
   }
   const compositionScope = scopeOf(ctx)
-  if (compositionScope === undefined) throw new Error(`${name}: requires a preset scope`)
+  if (compositionScope === undefined) throw new Error(`${name}: requires an assembly scope`)
   const installs = new Map()
   const installing = new WeakSet()
   let active = true

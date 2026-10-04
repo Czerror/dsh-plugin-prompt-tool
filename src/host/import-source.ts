@@ -10,11 +10,11 @@ import type { AssetFile, ImportChoices, ImportKind } from '../shared/asset-trans
 import { MAX_ASSET_BYTES, MAX_ASSET_FILES } from '../shared/asset-transfer.ts'
 import type { StConversionReport } from '../shared/bridge-contract.ts'
 import type { ModuleSpec } from './manifest.ts'
-import { readPresetLayerSettings } from './module-layer-settings.ts'
-import { assertPresetId } from './module-install.ts'
+import { readModuleLayerSettings } from './module-layer-settings.ts'
+import { assertModuleId } from './module-install.ts'
 import { assertSafeConfigId } from './prompt-configs.ts'
 import { decodePngCharacterCard, isPngBuffer } from './character-png.ts'
-import { convertStToPresetWithReport, mergeStConversionReports, mergeStPresetsWithReport, stOrderSelectionState, stPresetId } from './sillytavern.ts'
+import { convertStToModuleWithReport, mergeStConversionReports, mergeStModulesWithReport, stOrderSelectionState, stModuleId } from './sillytavern.ts'
 import type { StOrderGroupSummary } from './sillytavern.ts'
 
 export const MAX_ASSET_FILE_BYTES = MAX_ASSET_BYTES
@@ -74,7 +74,7 @@ export function assetSourceDigest(files: AssetFile[]): string {
 /** 角色片段只接受自包含配置，验证时不得读取上传来源以外的磁盘文件。 */
 export function validateCharacterSpec(spec: ModuleSpec): void {
   assertCanonicalRuleSource(spec)
-  readPresetLayerSettings(spec)
+  readModuleLayerSettings(spec)
   for (const field of ['composition', 'customTools', 'content', 'subagentToolPolicy', 'moduleConfigs'] as const) {
     const value = spec[field]
     if (value !== undefined && !(Array.isArray(value) && value.length === 0) && !(isRecord(value) && Object.keys(value).length === 0)) {
@@ -113,7 +113,7 @@ function classify(raw: unknown, target: 'preset' | 'character'): ImportKind {
     assertCanonicalRuleSource(raw)
     for (const field of ['rules', 'modules', 'customTools']) if (raw[field] !== undefined && !Array.isArray(raw[field])) throw new Error(`${field} 必须是数组`)
     for (const field of ['layerSettings', 'params', 'meta', 'variables', 'moduleConfigs', 'content']) if (raw[field] !== undefined && !isRecord(raw[field])) throw new Error(`${field} 必须是对象`)
-    readPresetLayerSettings(raw)
+    readModuleLayerSettings(raw)
     if (raw.modules !== undefined && (raw.modules as unknown[]).some(value => typeof value !== 'string')) throw new Error('modules 必须是字符串数组')
     return target === 'character' ? 'native-character' : 'native-preset'
   }
@@ -177,13 +177,22 @@ export function prepareImport(input: AssetFile[], target: 'preset' | 'character'
       let report: StConversionReport | undefined
       if (kind.startsWith('native-')) {
         spec = raw as ModuleSpec
-        if (spec.id === undefined) doc.set('id', stPresetId(posix.basename(file.path).replace(/\.[^.]+$/, '')))
+        if (spec.id === undefined) doc.set('id', stModuleId(posix.basename(file.path).replace(/\.[^.]+$/, '')))
         if (spec.name === undefined) doc.set('name', String(doc.get('id')))
+        if (spec.modules === undefined && spec.composition === undefined) {
+          const legacyComposition = files.find(item => item.path === 'agent.cordis.yml')
+          if (legacyComposition) doc.set('composition', decodeAssetFile(legacyComposition).toString('utf8'))
+        }
+        if (kind === 'native-character' && spec.modules === undefined && spec.composition === undefined) {
+          const hasWorldBook = (spec.rules ?? []).some(rule => rule.do.some(action => action.kind === 'inject-text'
+            && (action.config as Record<string, unknown> | undefined)?.strategy === 'world-book'))
+          doc.set('modules', hasWorldBook ? ['world-book-tools'] : [])
+        }
         // 来源中的生成项证明不可信。分享出口必须经本机重新核验。
         if (doc.hasIn(['meta', 'characterMemories'])) doc.deleteIn(['meta', 'characterMemories'])
         spec = doc.toJS() as ModuleSpec
       } else {
-        const converted = convertStToPresetWithReport(raw, posix.basename(file.path).replace(/\.[^.]+$/, ''), options)
+        const converted = convertStToModuleWithReport(raw, posix.basename(file.path).replace(/\.[^.]+$/, ''), options)
         spec = converted.spec
         report = converted.report
       }
@@ -196,7 +205,7 @@ export function prepareImport(input: AssetFile[], target: 'preset' | 'character'
   let yaml = first.yaml
   let report = first.report
   if (parts.length > 1) {
-    const merged = mergeStPresetsWithReport(parts.map(part => part.spec))
+    const merged = mergeStModulesWithReport(parts.map(part => part.spec))
     yaml = stringify(merged.spec, { lineWidth: 0 })
     report = mergeStConversionReports(parts.map(part => part.report!), parts.map((part, index) => ({ sourceName: part.file.path, idMap: merged.idMap.get(index) })))
   }
@@ -204,7 +213,7 @@ export function prepareImport(input: AssetFile[], target: 'preset' | 'character'
   if (choices.targetId !== undefined) doc.set('id', choices.targetId)
   if (choices.targetName !== undefined) doc.set('name', choices.targetName)
   const spec = doc.toJS() as ModuleSpec
-  try { assertPresetId(spec.id) } catch (error) { throw new Error(`${first.file.path}: ${String(error)}`) }
+  try { assertModuleId(spec.id) } catch (error) { throw new Error(`${first.file.path}: ${String(error)}`) }
   if (typeof spec.name !== 'string' || spec.name.trim().length === 0) throw new Error(`${first.file.path}: 名称必须为非空字符串`)
   yaml = doc.toString()
   const resources = files.filter(file => !candidates.includes(file))
@@ -213,6 +222,9 @@ export function prepareImport(input: AssetFile[], target: 'preset' | 'character'
   const avatar = first.avatar ?? (avatarFile === undefined ? undefined : decodeAssetFile(avatarFile))
   if (avatar !== undefined && !isPngBuffer(avatar)) throw new Error('avatar.png 必须提供显式编码的 PNG 原始字节')
   const preparedFiles: AssetFile[] = [{ path: MODULE_DEFINITION_FILE, content: yaml, encoding: 'utf8' }, ...resources]
+  if ((first.kind === 'st-character' || first.kind === 'native-character') && !resources.some(file => file.path === 'card.json')) {
+    preparedFiles.push({ path: 'card.json', content: first.sourceText, encoding: 'utf8' })
+  }
   if (first.avatar !== undefined && !resources.some(file => file.path.toLowerCase() === 'avatar.png')) preparedFiles.push({ path: 'avatar.png', content: first.avatar.toString('base64'), encoding: 'base64' })
   return { state: 'ready', kind: first.kind, spec, yaml, files: preparedFiles, sourceName: candidates.map(file => file.path).join('、'), sourceDigest,
     ...(report === undefined ? {} : { report }), ...(avatar === undefined ? {} : { avatar }), sourceText: first.sourceText }

@@ -11,26 +11,26 @@ import featureCss from './tools.module.css'
 const styles = { ...sharedCss, ...featureCss }
 
 /** 所属层按钮直接提交的创建请求；草稿由常驻页面立即建立。 */
-export type ToolCreateIntent = { kind: 'blank' | 'template'; spec?: ToolDraft; presetId?: string }
+export type ToolCreateIntent = { kind: 'blank' | 'template'; spec?: ToolDraft; moduleId?: string }
 
 /** 工具草稿与保存由常驻页面持有；设置区只渲染同一份编辑内容。 */
 export function useCustomToolsEditor(props: {
   t: PromptToolTranslate
   onNotice: (kind: 'ok' | 'error', message: string) => void
   disabled?: boolean
-  presetId?: string
+  moduleId?: string
   drafts?: WorkspaceDrafts
   onChooseTemplate?: (anchor: HTMLButtonElement) => void
 }): { createTool: (intent: ToolCreateIntent) => void; content: ReactNode } {
   const { t } = props
   const editor = useMemo((): ToolsEditorDraft => {
-    const key = props.presetId ?? ''
+    const key = props.moduleId ?? ''
     const retained = props.drafts?.tools.get(key)
     if (retained !== undefined) return retained
     const next: ToolsEditorDraft = { tools: [], saved: [], expanded: new Set(), fields: new Map(), loaded: false, error: '', saving: false }
     props.drafts?.tools.set(key, next)
     return next
-  }, [props.drafts, props.presetId])
+  }, [props.drafts, props.moduleId])
   const [tools, renderTools] = useState<ToolDraft[]>(editor.tools)
   const setTools = (next: ToolDraft[]): void => { editor.tools = next; renderTools(next) }
   const [expandedCards, renderExpanded] = useState(editor.expanded)
@@ -69,7 +69,7 @@ export function useCustomToolsEditor(props: {
     setLoadError('')
     const readingTools = editor.tools
     void (async () => {
-      const customResult = await bridgeCall('customTools', { expectedPresetId: props.presetId })
+      const customResult = await bridgeCall('customTools', { expectedModuleId: props.moduleId })
       if (!active) return
       if (!customResult.ok) {
         editor.error = customResult.message ?? t('customTools.loadFailed')
@@ -102,7 +102,7 @@ export function useCustomToolsEditor(props: {
       props.onNotice('error', t('customTools.invalidDraft'))
       return
     }
-    // 保存前清理：工具 parameters 的空 key 待编辑行（与 presetVariables 保存端清理对齐）。
+    // 保存前清理：工具 parameters 的空 key 待编辑行（与 moduleVariables 保存端清理对齐）。
     const cleanTools = tools.map((tool) => {
       const params = asRecord(tool.parameters)
       const clean: ToolDraft = {}
@@ -117,7 +117,7 @@ export function useCustomToolsEditor(props: {
     })
     setSaving(true)
     editor.saving = true
-    void bridgeCall('customTools', { customTools: cleanTools, expectedPresetId: props.presetId }).then((customResult) => {
+    void bridgeCall('customTools', { customTools: cleanTools, expectedModuleId: props.moduleId }).then((customResult) => {
       editor.saving = false
       if (customResult.ok) editor.saved = tools
       editor.refresh?.()
@@ -151,7 +151,7 @@ export function useCustomToolsEditor(props: {
   }
   /** 创建使用草稿当前值，连续点击即使尚未重渲染也不会相互覆盖。 */
   const createTool = (intent: ToolCreateIntent): void => {
-    if (intent.presetId !== undefined && intent.presetId !== props.presetId) return
+    if (intent.moduleId !== undefined && intent.moduleId !== props.moduleId) return
     if (disabled || !editor.loaded) {
       props.onNotice('error', t(props.disabled ? 'customTools.readonly' : editor.error ? 'customTools.loadFailed' : 'customTools.loading'))
       return
@@ -188,7 +188,7 @@ export function useCustomToolsEditor(props: {
       {loadError && <p role="alert">{loadError} <Button shape="pill" size="md" variant="outline" type="button" onClick={() => setRevision((value) => value + 1)}>{t('customTools.retry')}</Button></p>}
       <fieldset className={styles.customToolsFields} aria-label={t('customTools.fieldsAria')}>
         <div className={styles.configActions}>
-          <Button shape="pill" size="sm" variant="outline" type="button" disabled={disabled} onClick={() => createTool({ kind: 'blank', presetId: props.presetId })}>{t('main.newBlankTool')}</Button>
+          <Button shape="pill" size="sm" variant="outline" type="button" disabled={disabled} onClick={() => createTool({ kind: 'blank', moduleId: props.moduleId })}>{t('main.newBlankTool')}</Button>
           {props.onChooseTemplate !== undefined && <Button shape="pill" size="sm" variant="outline" type="button" disabled={disabled}
             onClick={(event) => { if (!disabled) props.onChooseTemplate?.(event.currentTarget) }}>{t('main.addToolTemplate')}</Button>}
           {(tools.length > 0 || hasPersistedTools) && (

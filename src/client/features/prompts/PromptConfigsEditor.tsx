@@ -23,6 +23,8 @@ export function TemplateVariablesModuleCard(props: {
   templateVariablesEnabled: boolean
   setTemplateVariablesEnabled: (value: boolean) => void
   saveTemplateVariables: (next?: Record<string, string>, enabled?: boolean) => Promise<boolean | void>
+  publicationPending?: boolean
+  retryPublication?: () => Promise<boolean>
   expanded?: boolean
   embedded?: boolean
   disabled?: boolean
@@ -48,7 +50,7 @@ export function TemplateVariablesModuleCard(props: {
   }
   /** 失焦自动保存：焦点离开卡片容器（含收起/切换开关/点击删除）即持久化。 */
   const autoSaveOnBlur = (event: FocusEvent<HTMLElement>): void => {
-    if (confirmingDelete || props.disabled) return
+    if (confirmingDelete || props.disabled || props.publicationPending) return
     const next = event.relatedTarget
     if (next === null || !cardRef.current?.contains(next as Node)) {
       void props.saveTemplateVariables()
@@ -86,6 +88,7 @@ export function TemplateVariablesModuleCard(props: {
           </span>
         </span>
       </header>
+      {props.publicationPending && props.retryPublication && <Button variant="outline" shape="pill" disabled={props.disabled} onClick={() => { void props.retryPublication?.() }}>{t('workspace.retry')}</Button>}
       {expanded && (
         <div id={panelId} className={props.embedded ? styles.moduleEmbeddedBody : styles.configForm}>
           {!enabled && <p className={styles.configFieldHint}>{t('variables.disabledHint')}</p>}

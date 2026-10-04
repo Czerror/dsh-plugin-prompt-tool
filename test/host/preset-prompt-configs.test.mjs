@@ -23,19 +23,18 @@ after(() => {
 })
 const { FIXTURE_PRESET_ID, installFixturePreset } = await import('../fixtures/preset-template.mjs')
 const {
-  listPromptConfigSpecs,
   mergePromptConfigs,
   modelRequestConfigs,
   renderPromptConfigYaml,
 } = await import('../../src/host/prompt-configs.ts')
-const {
-  Config,
-  validatePromptConfigs,
-  writePreset,
-} = await import('../../src/index.ts')
+const { Config, readModulesEnabled } = await import('../../src/config.ts')
+const { createPromptConfigs } = await import('../../engine/schema.mjs')
+const { writePreset } = await import('../../src/host/write-preset.ts')
 // 模板定位契约以打包目录 lib/ 为锚；其余行为直接覆盖当前源码。
 const { loadPromptTemplates } = await import('../../lib/index.mjs')
 const { planRulesMigration } = await import('../../src/host/rules-migration.ts')
+const { loadModuleSpec } = await import('../../src/host/manifest.ts')
+const { injectionConfigSpec } = await import('../../engine/rule-spec.mjs')
 
 /** 旧参数夹具先显式离线转换，writer 只消费 canonical rules。 */
 function generatedConfigs(options = {}, prompt = 'PROMPT') {
@@ -50,7 +49,10 @@ function generatedConfigs(options = {}, prompt = 'PROMPT') {
     writeFileSync(join(dir, FIXTURE_PRESET_ID, 'preset.md'), prompt)
     for (const item of planRulesMigration(dir).items) writeFileSync(join(item.directory, item.definitionFile), item.nextDefinition)
     writePreset(prompt, { moduleDir: dir, presetTemplate: FIXTURE_PRESET_ID, presetOrder: 5 })
-    const specs = listPromptConfigSpecs(join(dir, FIXTURE_PRESET_ID, 'configs'))
+    const source = loadModuleSpec(join(dir, FIXTURE_PRESET_ID))
+    const specs = source.rules.flatMap(rule => rule.do.filter(action => action.kind === 'inject-text').map(action => ({
+      ...injectionConfigSpec(rule, action, source), enabled: rule.enabled !== false,
+    })))
     const byId = Object.fromEntries(specs.map((spec) => [spec.id, spec]))
     return { specs, byId, rules: Object.fromEntries(parse(readFileSync(file, 'utf8')).rules.map(rule => [rule.id, rule])) }
   } finally {
@@ -114,21 +116,6 @@ test('mergePromptConfigs：同名 id 后者覆盖且保留位置，新 id 追加
   assert.equal(merged[0].enabled, false)
   assert.equal(merged[0].text, '覆盖后的锚点')
   assert.equal(merged[3].layer, 'system-section')
-})
-
-test('listPromptConfigSpecs 扫描 yml 与 json，非法文件 fail loud', () => {
-  const dir = mkdtempSync(join(tmpdir(), 'prompt-tool-user-configs-'))
-  try {
-    writeFileSync(join(dir, '10-a.yml'), 'id: a\nstrategy: static\ntext: A\n')
-    writeFileSync(join(dir, '20-b.json'), JSON.stringify({ id: 'b', layer: 'agent-request', params: { patch: { maxTokens: 1 } } }))
-    writeFileSync(join(dir, 'ignore.txt'), 'x')
-    const specs = listPromptConfigSpecs(dir)
-    assert.deepEqual(specs.map((spec) => spec.id), ['a', 'b'])
-    assert.equal(specs[1].layer, 'agent-request')
-    assert.throws(() => listPromptConfigSpecs(join(dir, 'missing')), /不可读/)
-  } finally {
-    rmSync(dir, { recursive: true, force: true })
-  }
 })
 
 test('renderPromptConfigYaml：YAML 特殊起始字符的名称/路径往返无损（否则整首预设解析失败）', () => {
@@ -231,50 +218,18 @@ test('旧模板离线迁移后 router-guide 关闭且模型范围归规则条件
   assert.equal(byId['router-guide'].params.text, '')
 })
 
-// —— 提示词配置校验（原 configs-validate.test.mjs） ——
-
-const validSpecs = [
-  { id: 'sys', name: '系统段', layer: 'system-section', strategy: 'static', order: -50, text: '你是助手', params: { complete: false } },
-  { id: 'extra', layer: 'pre-step', strategy: 'static', text: '额外注入', position: 'after-all', dedupe: 'session' },
-]
-
-test('validatePromptConfigs：合法数组返回 valid=true、回显输入并渲染逐条 yml 预览', async () => {
-  const result = await validatePromptConfigs(validSpecs)
-  assert.equal(result.valid, true)
-  assert.deepEqual(result.errors, [])
-  assert.equal(result.configs.length, 2)
-  assert.equal(result.files.length, 2)
-  assert.equal(result.files[0].file, '0000-sys.yml')
-  const doc = parse(result.files[1].content)
-  assert.equal(doc.id, 'extra')
-  assert.equal(doc.layer, 'pre-step')
-  assert.equal(doc.dedupe, 'session')
-})
-
-test('validatePromptConfigs：未知 layer / strategy / fill 由引擎权威校验并保留 index', async () => {
-  const result = await validatePromptConfigs([
-    { id: 'bad-layer', layer: 'nope', text: 'A' },
-    { id: 'bad-strategy', strategy: 'nope', text: 'B' },
-    { id: 'bad-fill', strategy: 'placeholder', fill: 'nope', layer: 'pre-step' },
-  ])
-  assert.equal(result.valid, false)
-  assert.equal(result.errors.length, 3)
-  assert.deepEqual(result.errors.map((error) => error.id), ['bad-layer', 'bad-strategy', 'bad-fill'])
-  assert.match(result.errors[0].message, /unknown layer "nope"/)
-  assert.match(result.errors[1].message, /unknown strategy "nope"/)
-  assert.match(result.errors[2].message, /requires fill/)
-})
-
 test('Config：部署设置仅保留模块运行总闸', () => {
   const config = Config({})
-  assert.deepEqual(Object.keys(config), ['writePreset'])
+  assert.deepEqual(Object.keys(config).sort(), ['modulesEnabled', 'writePreset'])
+  assert.equal(readModulesEnabled({}), true)
+  assert.equal(readModulesEnabled({ writePreset: false }), false, '旧键只作输入兼容')
+  assert.throws(() => readModulesEnabled({ modulesEnabled: true, writePreset: false }), /冲突/)
 })
 
 // —— 模板库（原 templates.test.mjs） ——
 
 test('模板库全部条目通过引擎权威校验（模板即合法配置）', async () => {
   for (const template of loadPromptTemplates()) {
-    const result = await validatePromptConfigs([template.spec])
-    assert.equal(result.valid, true, `${template.file}: ${JSON.stringify(result.errors)}`)
+    assert.doesNotThrow(() => createPromptConfigs([template.spec]), template.file)
   }
 })

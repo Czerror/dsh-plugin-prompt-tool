@@ -33,15 +33,30 @@ export interface RuleDefinition {
 export interface RuleEdit {
   previousId: string | null
   rule: RuleDefinition | null
+  /** 正文编辑不拥有启停与互斥状态；修改状态须显式声明并校验 settings 版本。 */
+  settingsChanged?: boolean
 }
 
+export interface RuleRevisions {
+  rules: Record<string, string>
+  settings: string
+  variables: string
+}
+export type RuleContent = Omit<RuleDefinition, 'enabled' | 'group' | 'exclusive'>
+export interface RuleSettings { order: number; enabled?: boolean; group?: string; exclusive?: boolean }
+
 export interface RulesRequest {
-  expectedPresetId: string
+  expectedModuleId?: string
+  /** 旧公开输入仅在边界归一。 */
+  expectedPresetId?: string
   expectedRevision?: string
+  expectedRevisions?: Partial<RuleRevisions>
   edits?: RuleEdit[]
   /** 显式启用目标；保存端同时停用同模块互斥组的其他卡。 */
   activateRuleId?: string
   validateOnly?: boolean
+  /** 只重新发布已提交定义，不能与规则修改或候选校验混用。 */
+  refreshOnly?: boolean
 }
 
 export interface RuleEditorMeta {
@@ -60,6 +75,11 @@ export interface RuleEditorMeta {
 
 export interface RulesSnapshot {
   rules: RuleDefinition[]
-  revision: string
+  revisions: RuleRevisions
+  /** 仅旧客户端兼容输入，不是规范响应的版本来源。 */
+  revision?: string
   meta: RuleEditorMeta
+  persisted?: boolean
+  publicationPending?: boolean
+  publicationError?: string
 }

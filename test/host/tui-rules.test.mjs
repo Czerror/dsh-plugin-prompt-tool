@@ -7,6 +7,7 @@ import { isolatedHome } from '../fixtures/host-harness.mjs'
 
 const { moduleRoot } = isolatedHome('pt-tui-rules-')
 const { registerTuiCommand } = await import('../../src/runtime/tui.ts')
+const { readModulesEnabled } = await import('../../src/shared/module-settings.ts')
 
 test('TUI 规则开关使用定义与显式互斥；未知身份不写，重建失败不假报成功', async () => {
   const dir = join(moduleRoot, 'tui-rules')
@@ -44,4 +45,29 @@ test('TUI 规则开关使用定义与显式互斥；未知身份不写，重建�
   assert.equal(failed.kind, 'error')
   assert.match(failed.text, /已保存.*重新装配失败/)
   assert.equal(parse(readFileSync(file, 'utf8')).rules[1].enabled, false)
+})
+
+test('TUI直接官方settings事务切换总闸并原子移除旧键', async () => {
+  for (const old of [true, false]) {
+    const value = { writePreset: old }
+    const calls = []
+    let handler
+    const ctx = { inject: (_deps, callback) => callback({
+      commands: { register: command => { handler = command.handler } },
+      settings: { mutate: async (ns, ops) => {
+        assert.equal(ns, 'prompt-tool')
+        calls.push(ops)
+        for (const op of ops) {
+          if (op.op === 'unset') delete value[op.path[0]]
+          else value[op.path[0]] = op.value
+        }
+      } },
+    }) }
+    registerTuiCommand(ctx, 'prompt-tool', () => ({ modulesEnabled: readModulesEnabled(value), skillCatalog: [], activeSkillsDirs: [] }),
+      () => ({ available: true, providers: [] }), async () => ({}))
+    const result = await handler({ rawInput: 'toggle modulesEnabled' })
+    assert.equal(result.kind, 'success', result.text)
+    assert.deepEqual(calls, [[{ op: 'set', path: ['modulesEnabled'], value: !old }, { op: 'unset', path: ['writePreset'] }]])
+    assert.deepEqual(value, { modulesEnabled: !old })
+  }
 })

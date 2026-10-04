@@ -1,6 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { applyPromptConfigs, createPromptConfigs as createPromptConfigsCore } from '../../engine/prompt-config-engine.mjs'
+import { applyPromptConfigs } from '../../engine/executor.mjs'
+import { createPromptConfigs as createPromptConfigsCore } from '../../engine/schema.mjs'
 import { userMessagesText } from '../../engine/condition.mjs'
 
 /** 引擎测试夹具使用包内 engine 目录作为自定义策略探测目录;内置策略不依赖 strategyDir。 */

@@ -2,13 +2,13 @@
 import { createHash } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { parseDocument } from 'yaml'
 import { enabledModuleIds } from './config-store.ts'
 import { assertModuleDirectory } from './module-install.ts'
-import { invalidateModuleSpec, loadModuleSpec } from './manifest.ts'
+import { invalidateModuleSpec } from './manifest.ts'
+import { commitModuleDefinition, ensureModuleSlices, loadModuleDefinition, ModuleRulesError } from './module-storage.ts'
+import type { ModuleDefinitionSnapshot } from './module-storage.ts'
 import { assertSafeConfigId } from './prompt-configs.ts'
 import { MODULE_DEFINITION_FILE } from './paths.ts'
-import { atomicWriteTextFile } from './text-file.ts'
 import { compareModuleConfigOrder, configIdentityKey } from '../shared/module-config-order.ts'
 import type { ModuleConfigIdentity, ModuleConfigOrderEntry, ModuleConfigOrderSnapshot } from '../shared/module-config-order.ts'
 
@@ -16,7 +16,7 @@ interface ModuleOrderInput {
   moduleId: string
   dir: string
   raw: string
-  doc: ReturnType<typeof parseDocument>
+  snapshot: ModuleDefinitionSnapshot
   saved: Record<string, number>
   entries: ModuleConfigOrderEntry[]
 }
@@ -43,17 +43,16 @@ export function readConfigOrder(value: unknown): Record<string, number> {
 
 function readInput(root: string, moduleId: string): ModuleOrderInput {
   const dir = assertModuleDirectory(root, moduleId)
-  const raw = readFileSync(join(dir, MODULE_DEFINITION_FILE), 'utf8')
-  const doc = parseDocument(raw, { logLevel: 'silent' })
-  const saved = readConfigOrder(doc.toJS()?.configOrder)
-  const spec = loadModuleSpec(dir)
-  const cards = spec.rules ?? []
+  const snapshot = ensureModuleSlices(dir)
+  const raw = snapshot.text
+  const saved = readConfigOrder(snapshot.source.configOrder)
+  const cards = snapshot.rules
   const seen = new Set<string>()
   const entries = cards.map((card, index): ModuleConfigOrderEntry => {
     assertSafeConfigId(card.id)
     if (seen.has(card.id)) throw new Error(`模块 ${moduleId} 存在重复配置卡：${card.id}`)
     seen.add(card.id)
-    const sequence = saved[card.id] ?? index * 10
+    const sequence = snapshot.configOrder[card.id] ?? index * 10
     if (!Number.isSafeInteger(sequence) || sequence < 0) throw new Error(`配置卡 ${card.id} 的文件序号无效`)
     const config = card.do.find(action => action.kind === 'inject-text')?.config as Record<string, unknown> | undefined
     const layer = card.layer ?? (typeof config?.layer === 'string' ? config.layer : 'pre-step')
@@ -62,7 +61,7 @@ function readInput(root: string, moduleId: string): ModuleOrderInput {
       strategy: typeof config?.strategy === 'string' ? config.strategy : 'static', ...(scope?.audience === undefined ? {} : { audience: scope.audience }),
       ...(layer === 'system-section' || layer === 'runtime-context' ? { order: typeof config?.order === 'number' ? config.order : 0 } : {}) }
   })
-  return { moduleId, dir, raw, doc, saved, entries }
+  return { moduleId, dir, raw, snapshot, saved, entries }
 }
 
 function readInputs(root: string, ids = enabledModuleIds(root)): ModuleOrderInput[] {
@@ -71,7 +70,7 @@ function readInputs(root: string, ids = enabledModuleIds(root)): ModuleOrderInpu
 
 function snapshotOf(inputs: ModuleOrderInput[]): ModuleConfigOrderSnapshot {
   return {
-    revision: createHash('sha256').update(JSON.stringify(inputs.map(input => [input.moduleId, input.raw, input.entries]))).digest('hex'),
+    revision: createHash('sha256').update(JSON.stringify(inputs.map(input => [input.moduleId, input.snapshot.revisions.settings, input.entries]))).digest('hex'),
     entries: inputs.flatMap(input => input.entries).sort(compareModuleConfigOrder),
   }
 }
@@ -84,8 +83,8 @@ function writeOrders(root: string, inputs: ModuleOrderInput[], orders: Map<strin
   const changes = inputs.flatMap(input => {
     const next = orders.get(input.moduleId)
     if (next === undefined || Object.entries(next).every(([id, value]) => input.saved[id] === value)) return []
-    for (const [id, sequence] of Object.entries(next)) input.doc.setIn(['configOrder', id], sequence)
-    return [{ ...input, next: input.doc.toString() }]
+    for (const [id, sequence] of Object.entries(next)) input.snapshot.doc.setIn(['configOrder', id], sequence)
+    return [{ ...input, next: input.snapshot.doc.toString() }]
   })
   // 全部目标在首次写入前校验；同进程请求串行，外部编辑在每次原子替换前再次校验。
   const verify = (change: ModuleOrderInput) => {
@@ -96,22 +95,26 @@ function writeOrders(root: string, inputs: ModuleOrderInput[], orders: Map<strin
   const written: typeof changes = []
   try {
     for (const change of changes) {
-      atomicWriteTextFile(join(change.dir, MODULE_DEFINITION_FILE), change.next, { beforeReplace: () => verify(change) })
+      try { commitModuleDefinition(change.snapshot, change.next) }
+      catch (error) {
+        if (error instanceof ModuleRulesError && error.persisted) written.push(change)
+        throw error
+      }
       invalidateModuleSpec(change.dir)
       written.push(change)
     }
   } catch (error) {
     // 只恢复仍是本次写入字节的文件，不覆盖失败期间出现的外部新改动。
+    const failures: unknown[] = []
     for (const change of written.reverse()) {
-      const file = join(change.dir, MODULE_DEFINITION_FILE)
-      if (readFileSync(file, 'utf8') === change.next) {
-        atomicWriteTextFile(file, change.raw, { beforeReplace: () => {
-          assertModuleDirectory(root, change.moduleId)
-          if (readFileSync(file, 'utf8') !== change.next) throw new Error('排序恢复时模块再次变化')
-        } })
+      try {
+        const current = loadModuleDefinition(change.dir)
+        if (current.text !== change.next) throw new Error('排序恢复时模块再次变化')
+        commitModuleDefinition(current, change.raw)
         invalidateModuleSpec(change.dir)
-      }
+      } catch (restoreError) { failures.push(restoreError) }
     }
+    if (failures.length > 0) throw new AggregateError([error, ...failures], '排序失败，部分模块无法安全恢复；未覆盖外部修改')
     throw error
   }
   return changes.map(change => change.moduleId)

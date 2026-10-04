@@ -1,17 +1,7 @@
-/** 「模块」页：模块的列表与管理（切换 / 新建 / 复制 / 导出 / 删除 / 打开目录 / 导入）+
- *  运行总闸 + 角色卡素材（并入当前模块 / 移除）。
- *
- *  这一页由原来的「模块配置」页与「角色管理」页合并而成：模块统一了载体与库成员两种身份，
- *  所以列表、导入、并入、移除、删除与新建/复制/导出属于同一件事，不再分成两页两套列表。
- *  页 id 用 `modules`（已进 DOM 契约，见 WorkspaceNavigation/WorkspaceFrame）。
- *
- *  两页原有差异里只有卡体语义被收敛：模块卡的整块点击取消，激活改为底部按钮，
- *  与角色卡同形（卡体只是内容，动作全在卡脚）。数据源、状态维度与各自的端点仍然分开，
- *  不为了「看起来统一」把角色卡的 `charactersList` 端点搬进 store。 */
-import { memo, type ReactNode } from 'react'
+/** 模块列表统一管理所有导入来源；编辑目标与模块启用集合独立。 */
+import { memo, useEffect, type ReactNode } from 'react'
 import { usePromptToolFields } from '../../data/use-prompt-tool-fields.ts'
-import { PresetSwitcher } from '../presets/PresetSwitcher.tsx'
-import { CharactersPage } from '../characters/CharactersPage.tsx'
+import { ModuleSwitcher } from '../presets/ModuleSwitcher.tsx'
 import { ToggleRow } from '../../ui/ToggleRow.tsx'
 import sharedCss from '../../ui/controls.module.css'
 import featureCss from '../presets/presets.module.css'
@@ -24,18 +14,19 @@ export const ModulesPage = memo(function ModulesPage(
   props: { store: PromptToolStore; t: PromptToolTranslate; onReady?: () => void },
 ): ReactNode {
   const { store, t } = props
+  useEffect(() => { props.onReady?.() }, [props.onReady])
   const fields = usePromptToolFields(store, (value) => value)
   return (
     <>
-      {!fields.writePreset && <p className={ui.configFieldHint}>{t('configs.readOnly.disabled')}</p>}
-      <PresetSwitcher store={store} t={t} />
+      {!fields.modulesEnabled && <p className={ui.configFieldHint}>{t('configs.readOnly.disabled')}</p>}
+      {store.meta.moduleWarnings?.map(message => <p key={message} role="alert" className={ui.configFieldHint}>{message}</p>)}
+      <ModuleSwitcher store={store} t={t} />
       <section className={ui.section} aria-label={t('presets.aria')}>
         <div className={ui.rowGroup}>
-          <ToggleRow id="pt-write-preset" label={t('presets.writePreset.label')} hint={t('presets.writePreset.hint')}
-            checked={fields.writePreset} onChange={() => store.toggle('writePreset')} />
+          <ToggleRow id="pt-modules-enabled" label={t('presets.modulesEnabled.label')} hint={t('presets.modulesEnabled.hint')}
+            checked={fields.modulesEnabled} onChange={() => store.toggle('modulesEnabled')} />
         </div>
       </section>
-      <CharactersPage store={store} t={t} onReady={props.onReady} />
     </>
   )
 })

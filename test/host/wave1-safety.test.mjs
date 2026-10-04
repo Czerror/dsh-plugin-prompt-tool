@@ -1,8 +1,9 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { parse } from 'yaml'
 
 // 隔离 DSH_HOME：writePreset 模板解析用户预设优先，测试必须隔离。
 const home = mkdtempSync(join(tmpdir(), 'pt-w1-home-'))
@@ -13,9 +14,9 @@ const {
   configFileName,
   loadModuleSpec,
   renderComposition,
-  writePreset,
   DEFAULT_MODULE_ID,
 } = await import('../../lib/index.mjs')
+const { writePreset } = await import('../../src/host/write-preset.ts')
 const { mergePromptConfigs } = await import('../../src/host/prompt-configs.ts')
 
 test('validateEngineParamValues：全量类型校验（布尔/数值/字符串/列表/枚举）', () => {
@@ -83,8 +84,13 @@ test('mergePromptConfigs：单源数组内重复 ID 合并前拒绝；跨源覆�
 test('loadModuleSpec：坏 YAML fail loud 且带文件上下文', () => {
   const dir = mkdtempSync(join(tmpdir(), 'pt-w1-badyaml-'))
   try {
-    writeFileSync(join(dir, 'module.yml'), 'a: &x 1\nb: *y\n', 'utf8')
-    assert.throws(() => loadModuleSpec(dir), /YAML 解析失败/)
+    const moduleDir = join(dir, 'broken')
+    mkdirSync(moduleDir)
+    const source = 'id: broken\nmodules: []\na: &x 1\nb: *y\n'
+    writeFileSync(join(moduleDir, 'module.yml'), source, 'utf8')
+    assert.throws(() => loadModuleSpec(moduleDir), /YAML|alias|定义无效/)
+    assert.equal(readFileSync(join(moduleDir, 'module.yml'), 'utf8'), source)
+    assert.equal(existsSync(join(moduleDir, 'rules')), false)
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }
@@ -137,7 +143,7 @@ test('writePreset：恶意规则身份经统一编译器拒绝，不留半成品
   }
 })
 
-test('writePreset：13+ 配置生成 4 位零填充文件名，字典序稳定', () => {
+test('writePreset：规则裸文件名与状态清单序号独立，重复恢复顺序稳定', () => {
   const dir = mkdtempSync(join(tmpdir(), 'pt-w1-many-'))
   try {
     const moduleDir = join(dir, 'preset')
@@ -150,20 +156,16 @@ test('writePreset：13+ 配置生成 4 位零填充文件名，字典序稳定',
     mkdirSync(join(moduleDir, DEFAULT_MODULE_ID), { recursive: true })
     writeFileSync(join(moduleDir, DEFAULT_MODULE_ID, 'module.yml'), JSON.stringify({ id: DEFAULT_MODULE_ID, modules: [], rules: many.map(config => ({ id: config.id, layer: config.layer, do: [{ id: 'inject', kind: 'inject-text', config }] })) }))
     writePreset('PROMPT', { moduleDir, presetOrder: 5 })
-    // 缺省 presetTemplate = 包内默认模块（现为 `ponytail`）。它自带几条配置，所以这里
-    // 只看本次写入的 `cfg-*`：零填充与字典序是 writePreset 的契约，与模板自带内容无关。
-    const files = readdirSync(join(moduleDir, DEFAULT_MODULE_ID, 'configs'))
-      .filter((name) => name.endsWith('.yml') && name.includes('-cfg-'))
-      .sort()
-    assert.equal(files.length, many.length, '本次写入的 13 条都落了盘')
-    // 全部 4 位前缀且字典序 = 数值序（00 与 100+ 不串位）。
-    for (const name of files) {
-      assert.match(name, /^\d{4}-/, `4 位零填充前缀: ${name}`)
-    }
-    const sorted = [...files].sort()
-    assert.deepEqual(files, sorted, '字典序读取与写入序一致')
-    const last = files[files.length - 1]
-    assert.match(last, /-cfg-12--inject\.yml$/, '第 13 条配置（cfg-12）落在最后')
+    const rulesDir = join(moduleDir, DEFAULT_MODULE_ID, 'rules')
+    const files = readdirSync(rulesDir).filter(name => name.startsWith('cfg-')).sort()
+    assert.deepEqual(files, many.map(config => `${config.id}.yml`))
+    const settingsFile = join(rulesDir, '_settings.yml')
+    const before = readFileSync(settingsFile, 'utf8')
+    const settings = parse(before)
+    assert.deepEqual(Object.entries(settings.rules).map(([id, state]) => [id, state.order]), many.map((config, index) => [config.id, index * 10]))
+    writePreset('PROMPT', { moduleDir, presetOrder: 5 })
+    assert.equal(readFileSync(settingsFile, 'utf8'), before)
+    assert.equal(existsSync(join(moduleDir, DEFAULT_MODULE_ID, 'configs')), false)
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }

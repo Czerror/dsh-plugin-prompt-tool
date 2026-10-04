@@ -7,24 +7,25 @@ import type { PromptSettings } from '../config.ts'
 import type { SkillCatalogEntry } from '../shared/skills.ts'
 import type { RuleDefinition } from '../shared/rules.ts'
 import { readModuleRules, editModuleRules } from '../host/module-rules.ts'
-import { loadModuleSpec, resolvePresetParams } from '../host/manifest.ts'
+import { loadModuleSpec, resolveModuleParams } from '../host/manifest.ts'
 import { ENGINE_PARAM_DEFINITIONS, type EngineParamKey } from '../shared/engine-params.ts'
+import { modulesEnabledOps } from '../shared/module-settings.ts'
 
 /** dsh-tui 全局开关：键名与 settings 路径一致（settings mutate）。 */
 const TUI_GLOBAL_SWITCHES: ReadonlyArray<readonly [key: string, label: string]> = [
-  ['writePreset', '模块运行总开关'],
+  ['modulesEnabled', '模块运行总开关'],
 ]
 
-/** dsh-tui 参数开关：写激活模块 preset.yml（settings 不再承载引擎参数）。 */
+/** dsh-tui 参数开关：写激活模块 module.yml（settings 不再承载引擎参数）。 */
 const TUI_PARAM_SWITCHES = Object.entries(ENGINE_PARAM_DEFINITIONS)
   .filter(([, definition]) => definition.kind === 'boolean').map(([key]) => [key, key] as const)
 
 /** 激活模块参数（status 显示与参数开关来源；settings 不再承载引擎参数）。 */
-function readPresetParams(moduleDir: string | undefined): Record<string, unknown> {
+function readModuleParams(moduleDir: string | undefined): Record<string, unknown> {
   if (moduleDir === undefined || moduleDir.length === 0) return {}
   try {
     const spec = loadModuleSpec(moduleDir)
-    return resolvePresetParams(spec, {})
+    return resolveModuleParams(spec, {})
   } catch {
     return {}
   }
@@ -104,8 +105,8 @@ function parseIdentifierAndAction(
   return { id: tokens.join(' ') }
 }
 
-/** 参数保存回调：写激活模块 preset.yml；失败必须抛给命令层渲染为错误。 */
-export type SavePresetParam = (key: string, value: unknown) => void | Promise<void>
+/** 参数保存回调：写激活模块 module.yml；失败必须抛给命令层渲染为错误。 */
+export type SaveModuleParam = (key: string, value: unknown) => void | Promise<void>
 
 /** 技能启停回调：切换受管实体的根链接。 */
 export type ToggleSkillState = (folder: string, enabled: boolean) => { ok: boolean; message?: string }
@@ -117,8 +118,8 @@ export function registerTuiCommand(
   getSource: () => TuiSource,
   getModelsState: () => ModelDetection,
   getModelCatalog: () => Promise<Record<string, string[]>>,
-  getPresetConfigsDir?: () => string,
-  savePresetParam?: SavePresetParam,
+  getModuleDirectory?: () => string,
+  saveModuleParam?: SaveModuleParam,
   toggleSkillState?: ToggleSkillState,
   refreshModule?: (id: string) => Promise<void>,
 ): void {
@@ -136,12 +137,12 @@ export function registerTuiCommand(
             '      /prompt-tool config <id>（id 可含空格）\n' +
             '      /prompt-tool config <id> on|off|toggle',
         })
-        const persistPresetParam = async (key: string, value: unknown): Promise<CommandResult | undefined> => {
-          if (savePresetParam === undefined) {
+        const persistModuleParam = async (key: string, value: unknown): Promise<CommandResult | undefined> => {
+          if (saveModuleParam === undefined) {
             return { kind: 'error', text: `无法保存 ${key}：模块参数保存回调不可用` }
           }
           try {
-            await savePresetParam(key, value)
+            await saveModuleParam(key, value)
             return undefined
           } catch (error) {
             return { kind: 'error', text: `保存 ${key} 失败：${error instanceof Error ? error.message : String(error)}` }
@@ -149,8 +150,8 @@ export function registerTuiCommand(
         }
         const tokens = invocation.rawInput.trim().split(/\s+/).filter((token) => token.length > 0)
         const source = getSource()
-        const moduleDir = getPresetConfigsDir?.()
-        const params = readPresetParams(moduleDir)
+        const moduleDir = getModuleDirectory?.()
+        const params = readModuleParams(moduleDir)
         let snapshot: ReturnType<typeof readModuleRules> | undefined
         try {
           if (moduleDir) snapshot = readModuleRules(moduleDir)
@@ -191,7 +192,7 @@ export function registerTuiCommand(
           }
           return { kind: 'success', text: `已把技能 ${id} 设为 ${next ? '开' : '关'}
 
-${renderTuiStatus(getSource(), readPresetParams(moduleDir), rules)}` }
+${renderTuiStatus(getSource(), readModuleParams(moduleDir), rules)}` }
         }
         if (tokens[0] === 'config') {
           const { id, action } = parseIdentifierAndAction(
@@ -236,16 +237,19 @@ ${renderTuiStatus(getSource(), readPresetParams(moduleDir), rules)}` }
         const next = parseTuiBoolean(action, currentValue)
         if (next === undefined) return usage()
         if (globalSwitch) {
-          await sctx.settings.mutate(ns, [{ op: 'set', path: [key], value: next }])
+          await sctx.settings.mutate(ns, modulesEnabledOps(next))
         } else {
-          // 参数开关：写激活模块 preset.yml（settings 不再承载引擎参数）。
-          const failure = await persistPresetParam(key, next)
+          // 参数开关：写激活模块 module.yml（settings 不再承载引擎参数）。
+          const failure = await persistModuleParam(key, next)
           if (failure !== undefined) return failure
         }
         return { kind: 'success', text: `已把 ${key} 设为 ${next ? '开' : '关'}
 
-${renderTuiStatus(getSource(), readPresetParams(moduleDir), moduleDir ? readModuleRules(moduleDir).rules : [])}` }
+${renderTuiStatus(getSource(), readModuleParams(moduleDir), moduleDir ? readModuleRules(moduleDir).rules : [])}` }
       },
     })
   })
 }
+
+/** 已发布的旧类型名。 */
+export type SavePresetParam = SaveModuleParam

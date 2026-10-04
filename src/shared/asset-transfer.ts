@@ -37,7 +37,7 @@ export interface AssetImportRequest extends ImportChoices {
   expectedPreviewRevision?: string
 }
 
-export interface PresetExportRequest {
+export interface ModuleExportRequest {
   id: string
   mode?: 'definition' | 'zip'
   preview?: boolean
@@ -45,7 +45,7 @@ export interface PresetExportRequest {
   memoryChoices?: Record<string, 'include' | 'exclude'>
 }
 
-export interface PresetExportResult {
+export interface ModuleExportResult {
   id: string
   name: string
   content: string
@@ -58,3 +58,7 @@ export interface PresetExportResult {
   memoryConflicts?: Array<{ id: string; name: string }>
   excludedMemoryCount?: number
 }
+
+/** 已发布类型的边界兼容别名。 */
+export type PresetExportRequest = ModuleExportRequest
+export type PresetExportResult = ModuleExportResult

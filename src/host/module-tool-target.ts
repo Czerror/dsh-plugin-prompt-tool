@@ -32,7 +32,8 @@ export function resolveModuleToolTarget(
 }
 
 /** 定义已经保存时，不把重建失败伪装成整个写入未发生。 */
-export async function rebuildSavedPreset(host: ModuleToolHost, id: string): Promise<void> {
+export async function refreshModuleAfterSave(host: ModuleToolHost, id: string): Promise<void> {
   try { await host.rebuild(id) }
   catch (error) { throw new Error(`模块 ${id} 已保存，但重建失败：${String(error)}`, { cause: error }) }
 }
+export { refreshModuleAfterSave as rebuildSavedPreset }

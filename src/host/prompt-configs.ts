@@ -8,14 +8,7 @@
  * 三者按此优先级合并，同名 id 后者覆盖，新 id 追加在默认提示词配置之后。
  * 引擎（engine/prompt-config-engine.mjs）在运行时对生成 yml 做权威校验。
  */
-import { readFileSync, readdirSync } from 'node:fs'
-import { join } from 'node:path'
-import { parse as parseYaml, stringify as stringifyYamlValue } from 'yaml'
-// 枚举规则（扩展名 / 排序 / 跳过 variables.yml）与引擎共用同一份实现：两侧看到同一批文件，
-// 否则「host 让人编辑的文件」与「引擎实际加载的文件」会漂移。
-// @ts-expect-error 引擎 ESM 是权威实现，由构建器同源打包，无独立声明文件
-// （与 module-package / instructions-policy / import-source 的既有做法一致）。
-import { promptConfigFileNames } from '../../engine/schema.mjs'
+import { stringify as stringifyYamlValue } from 'yaml'
 // @ts-expect-error 规则和文件身份使用引擎同一个边界校验。
 import { assertRuleId } from '../../engine/rule-spec.mjs'
 
@@ -89,6 +82,7 @@ export interface PromptConfigSpec {
  */
 export function assertSafeConfigId(id: string): void {
   assertRuleId(id)
+  if (id.startsWith('_')) throw new Error('规则 id 不得以下划线开头（保留命名空间）')
 }
 
 /** 生成文件名统一 4 位零填充前缀（0000-…），超过 10 条后字典序仍稳定。 */
@@ -279,37 +273,4 @@ export function mergePromptConfigs(...sources: Array<PromptConfigSpec[] | undefi
     }
   }
   return ordered
-}
-
-/**
- * 从用户提示词配置目录加载 yml/json 提示词配置（文件名排序；内容必须能解析）。
- *
- * 与引擎的 `engine/schema.mjs loadPromptConfigFiles` **不是同一契约**：
- *   - 本函数供**编辑/列举**使用（TUI `/prompt-tool config`、bridge `/prompt-configs`、bootstrap 聚合）；
- *   - 引擎那个供**注入**使用，会额外把 `variables.yml` 合并进每条配置的 `variables`。
- * 两者只共享**枚举规则**（`promptConfigFileNames`）与读取；解析、校验与错误包装各留边界
- * ——本函数还会校验「单对象 + 字符串 id」并给出带文件名的错误，引擎侧不做这两项。
- * 让本函数去合并变量会改变编辑器看到的内容、并可能把预设级变量写回配置文件，**不要合并**。
- */
-export function listPromptConfigSpecs(dir: string): PromptConfigSpec[] {
-  if (dir.length === 0) return []
-  let entries
-  try {
-    entries = readdirSync(dir, { withFileTypes: true })
-  } catch (error) {
-    throw new Error(`提示词配置目录 ${JSON.stringify(dir)} 不可读: ${String((error as Error).message ?? error)}`)
-  }
-  const specs: PromptConfigSpec[] = []
-  for (const fileName of promptConfigFileNames(entries)) {
-    const raw = readFileSync(join(dir, fileName), 'utf8')
-    const parsed = /\.json$/i.test(fileName) ? JSON.parse(raw) : parseYaml(raw, { logLevel: 'silent' })
-    if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
-      throw new Error(`prompt config file ${fileName} must contain a single config object`)
-    }
-    if (typeof (parsed as { id?: unknown }).id !== 'string') {
-      throw new Error(`prompt config file ${fileName} must declare a string id`)
-    }
-    specs.push(parsed as PromptConfigSpec)
-  }
-  return specs
 }

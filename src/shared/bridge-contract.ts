@@ -5,9 +5,9 @@
  * 改路径或载荷形状必须同步更新 test/shared/bridge-contract.test.mjs。
  */
 import type { PersonaSpec } from './persona-section.ts'
-import type { RulesRequest, RulesSnapshot } from './rules.ts'
+import type { RuleRevisions, RulesRequest, RulesSnapshot } from './rules.ts'
 import type { ModuleConfigIdentity, ModuleConfigOrderSnapshot } from './module-config-order.ts'
-import type { AssetImportRequest, AssetSummary, ImportKind, PresetExportRequest, PresetExportResult } from './asset-transfer.ts'
+import type { AssetImportRequest, AssetSummary, ImportKind, ModuleExportRequest, ModuleExportResult } from './asset-transfer.ts'
 import type { EngineEditorGroup, EngineLayer } from './engine-capabilities.ts'
 import type { ConfigFieldSources } from './managed-config-fields.ts'
 import type { OfficialOrdersView } from './official-orders.ts'
@@ -34,7 +34,6 @@ export const BRIDGE_ENDPOINTS = {
   models: '/models',
   modelReasoning: '/model-reasoning',
   mutate: '/mutate',
-  configsValidate: '/configs-validate',
   skillsList: '/skills-list',
   skillPolicy: '/skill-policy',
   skillRead: '/skill-read',
@@ -48,18 +47,18 @@ export const BRIDGE_ENDPOINTS = {
   promptConfigs: '/prompt-configs',
   agentsFile: '/agents-file',
   instructionsPolicy: '/instructions-policy',
-  presetContent: '/preset-content',
+  moduleContent: '/module-content',
   importPreset: '/import-preset',
   paramOverrides: '/param-overrides',
   triggers: '/triggers',
   rules: '/rules',
   persona: '/persona',
-  presetVariables: '/preset-variables',
+  moduleVariables: '/module-variables',
   customTools: '/custom-tools',
-  importPresetPackage: '/import-preset-package',
+  importModulePackage: '/import-module-package',
   assetUpload: '/asset-upload',
   assetRelease: '/asset-release',
-  exportPreset: '/export-preset',
+  exportModule: '/export-module',
   moduleDelete: '/module-delete',
   moduleClone: '/module-clone',
   moduleDuplicate: '/module-duplicate',
@@ -68,14 +67,12 @@ export const BRIDGE_ENDPOINTS = {
   moduleConfigOrder: '/module-config-order',
   charactersImport: '/characters-import',
   charactersImportStream: '/characters-import-stream',
-  charactersList: '/characters-list',
-  charactersDelete: '/characters-delete',
-  charactersApply: '/characters-apply',
-  charactersRemove: '/characters-remove',
+  moduleMerge: '/module-merge',
+  moduleUnmerge: '/module-unmerge',
   subagentToolPolicy: '/subagent-tool-policy',
   subagentToolPolicyPreview: '/subagent-tool-policy-preview',
   toolSurface: '/tool-surface',
-  engineCapability: '/engine-capability',
+  moduleCapability: '/module-capability',
   worldBookDiagnostics: '/world-book-diagnostics',
 } as const
 
@@ -85,7 +82,7 @@ export type BridgeEndpoint = (typeof BRIDGE_ENDPOINTS)[keyof typeof BRIDGE_ENDPO
 export type BridgeErrorPayload = { ok: false; code?: string; message?: string; conflicts?: string[] }
 
 /** 文件已保存，但宿主未采用新定义；调用方保留草稿并显示失败，不宣称已生效。 */
-export const PRESET_ACTIVATION_FAILED = 'preset-activation-failed'
+export const MODULE_ACTIVATION_FAILED = 'module-activation-failed'
 
 /**
  * **编辑目标**只在请求头里声明：body 是各端点自己的载荷形状，不掺公共键。
@@ -105,7 +102,7 @@ export function readEditTarget(value: unknown): string | undefined {
 }
 
 /** 插件可编辑模块的身份与展示元数据；不可渲染的项保留身份供用户修复。 */
-export interface PresetSummary {
+export interface ModuleSummary {
   id: string
   name: string
   user?: boolean
@@ -131,7 +128,6 @@ export interface BridgeRequestMap {
   models: { refresh?: boolean } | undefined
   modelReasoning: { provider: string; model: string }
   mutate: { ops: unknown[]; expectedRevision?: number }
-  configsValidate: { promptConfigs: unknown[]; strategyDir?: string }
   /** 技能清单：按会话工作区扫描官方六类技能根，调用策略取自各技能文件的 frontmatter。 */
   skillsList: { sessionId?: string } | undefined
   /** 调用策略开关：改写该技能 SKILL.md frontmatter 的官方两个键（正文不动）；
@@ -168,15 +164,15 @@ export interface BridgeRequestMap {
    */
   /** 逐文件启停/名称；无 policy 时读取，写入仍校验原始字节版本。 */
   instructionsPolicy: { policy?: InstructionPolicyPatch; expectedRevision?: string | null } | undefined
-  presetContent: undefined
-  importPreset: { contents: Array<{ scope: 'preset' | 'agents'; content: string }>; expectedPresetId?: string }
-  paramOverrides: { overrides?: Record<string, unknown>; promptConfigs?: unknown[]; rebuild?: boolean; expectedPresetId?: string }
-  triggers: { expectedPresetId: string; triggers?: unknown[]; expectedRevision?: string; validateOnly?: boolean }
+  moduleContent: undefined
+  importPreset: { contents: Array<{ scope: 'preset' | 'agents'; content: string }>; expectedModuleId?: string }
+  paramOverrides: { overrides?: Record<string, unknown>; promptConfigs?: unknown[]; rebuild?: boolean; expectedModuleId?: string }
+  triggers: { expectedModuleId: string; triggers?: unknown[]; expectedRevision?: string; validateOnly?: boolean }
   rules: RulesRequest
   /** 顶层 persona 段读写（官方 @deepseek-ai/dsh-persona 行 config 同构）；省略 persona 键 = 读取。 */
-  persona: { persona?: PersonaSpec | null; expectedPresetId?: string } | undefined
-  presetVariables: { variables?: Record<string, string>; enabled?: boolean; expectedPresetId?: string }
-  customTools: { customTools?: unknown[]; expectedPresetId?: string } | undefined
+  persona: { persona?: PersonaSpec | null; expectedModuleId?: string } | undefined
+  moduleVariables: { variables?: Record<string, string>; enabled?: boolean; expectedModuleId?: string; expectedRevisions?: Partial<RuleRevisions>; refreshOnly?: boolean }
+  customTools: { customTools?: unknown[]; expectedModuleId?: string } | undefined
   /**
    * 模块包导入（原生/ST/PNG/ZIP）。`preview: true` 只转换并返回报告，不写目标；
    * 提交必须携带 expectedSourceDigest 和 expectedPreviewRevision，服务端重算并拒绝过期预览。
@@ -186,27 +182,25 @@ export interface BridgeRequestMap {
    * （`state: 'needs-order-selection'`），提交时仍无法明确对应则拒绝。
    * 上述参数只接受声明的类型，其它类型一律 400（见 docs/SillyTavern.md）。
    */
-  importPresetPackage: AssetImportRequest
+  importModulePackage: AssetImportRequest
   assetUpload: undefined
   assetRelease: { sourceId: string }
-  exportPreset: PresetExportRequest
+  exportModule: ModuleExportRequest
   moduleDelete: { id: string }
   moduleClone: { id: string; autoSuffix?: boolean }
   moduleDuplicate: { id: string }
   moduleOpen: { id: string }
   moduleEnable: { id: string; enabled: boolean }
   moduleConfigOrder: { moduleId: string } | { moduleId?: string; entries: ModuleConfigIdentity[]; expectedRevision: string } | undefined
-  /** 角色卡 PNG/JSON/YAML 导入；预览不写角色库，提交必验版本，目标和选组均绑定预览。 */
+  /** 角色卡来源导入为普通模块；预览只读，提交与模块安装共用版本边界。 */
   charactersImport: AssetImportRequest
   charactersImportStream: undefined
-  charactersList: undefined
-  charactersDelete: { id: string }
-  charactersApply: { id: string }
-  charactersRemove: { id: string }
-  subagentToolPolicy: { policy?: unknown; expectedPresetId?: string } | undefined
+  moduleMerge: { id: string }
+  moduleUnmerge: { id: string }
+  subagentToolPolicy: { policy?: unknown; expectedModuleId?: string } | undefined
   subagentToolPolicyPreview: { tool?: string; description?: string; prompt?: string; tool_profile?: string; character_id?: string; task_type?: string; additional_tools?: string[]; restrict_tools?: string[] }
   toolSurface: { sessionId: string; presetId?: never } | { presetId: string; sessionId?: never }
-  engineCapability: ({ action: 'create' | 'remove'; capabilityId: string } | { action: 'create-recipe'; recipeId: string }) & { expectedPresetId?: string }
+  moduleCapability: ({ action: 'create' | 'remove'; capabilityId: string } | { action: 'create-recipe'; recipeId: string }) & { expectedModuleId?: string }
   /** 只读世界书诊断：只回当前授权会话最近一次选择的观测记录。 */
   worldBookDiagnostics: { sessionId?: string } | undefined
 }
@@ -376,7 +370,6 @@ export interface BridgeValueMap {
   models: { modelCatalog: Record<string, string[]> }
   modelReasoning: { reasoning: ModelReasoningView }
   mutate: BridgeSettingsView
-  configsValidate: { valid: boolean; errors: Array<{ index: number; id: string; message: string }>; configs?: unknown[]; files?: unknown[] }
   /** 技能清单 + 引用目录 + 技能根（客户端据此渲染来源分组与调用策略）。 */
   skillsList: SkillsCatalogSnapshot & { folders: string[]; roots: string[] }
   skillPolicy: SkillsCatalogSnapshot
@@ -391,16 +384,16 @@ export interface BridgeValueMap {
   promptConfigs: { promptConfigs: Array<Record<string, unknown> & PromptConfigSourceView>; instructions?: InstructionsSnapshot }
   agentsFile: InstructionFileWriteResult
   instructionsPolicy: { policy: InstructionPolicy; revision: string | null; exists: boolean; error?: string }
-  presetContent: Record<string, unknown>
+  moduleContent: Record<string, unknown>
   importPreset: { scopes: Array<'preset' | 'agents'> }
   /** 参数/提示词配置只保存当前模块，不同步宿主全局默认模型。 */
   paramOverrides: { overrides?: Record<string, unknown>; promptConfigs?: unknown[] }
   triggers: { triggers: unknown[]; revision: string; meta: TriggerEditorMeta }
   rules: RulesSnapshot
   persona: { persona: PersonaSpec | null }
-  presetVariables: { variables: Record<string, string>; enabled: boolean }
+  moduleVariables: { variables: Record<string, string>; enabled: boolean; revisions: RuleRevisions; persisted?: boolean; publicationPending?: boolean; publicationError?: string }
   customTools: { customTools?: unknown[] }
-  importPresetPackage: {
+  importModulePackage: {
     id?: string
     backupPath?: string
     preview?: boolean
@@ -416,7 +409,7 @@ export interface BridgeValueMap {
   }
   assetUpload: { sourceId: string; name: string; bytes: number }
   assetRelease: { released: boolean }
-  exportPreset: PresetExportResult
+  exportModule: ModuleExportResult
   moduleDelete: { id: string }
   moduleClone: { id: string }
   moduleDuplicate: { id: string }
@@ -436,10 +429,8 @@ export interface BridgeValueMap {
     kinds?: ImportKind[]
   }
   charactersImportStream: { id: string; name: string }
-  charactersList: { characters: Array<{ id: string; name: string; description?: string; hasAvatar: boolean; imported: boolean }> }
-  charactersDelete: { id: string }
-  charactersApply: { id: string; count: number }
-  charactersRemove: { id: string; count: number }
+  moduleMerge: { id: string; count: number }
+  moduleUnmerge: { id: string; count: number }
   subagentToolPolicy: { policy: unknown; defaultProfile?: string; errors?: string[] }
   subagentToolPolicyPreview: { result: unknown; errors?: string[] }
   toolSurface: {
@@ -448,7 +439,7 @@ export interface BridgeValueMap {
     presetId?: string
     tools: Array<{ name: string; description: string }>
   }
-  engineCapability: { changed: boolean; addedModules?: string[]; removedModules?: string[]; capabilityIds: string[] }
+  moduleCapability: { changed: boolean; addedModules?: string[]; removedModules?: string[]; capabilityIds: string[] }
   /** 只读世界书诊断：只回当前授权会话最近一次选择的观测记录（读取不重新求值）。 */
   worldBookDiagnostics: { records: WorldBookDiagnosticRecord[]; truncated: boolean; step: number; evaluated: boolean }
 }

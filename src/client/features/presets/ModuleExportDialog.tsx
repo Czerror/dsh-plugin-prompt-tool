@@ -1,5 +1,5 @@
 import { useEffect, useId, useRef, useState, type ReactNode } from 'react'
-import type { PresetExportResult } from '../../../shared/asset-transfer.ts'
+import type { ModuleExportResult } from '../../../shared/asset-transfer.ts'
 import type { PromptToolTranslate } from '../../locales.ts'
 import { bridgeCall, errorMessage } from '../../data/bridge-client.ts'
 import { DialogSurface } from '../../ui/DialogSurface.tsx'
@@ -7,12 +7,12 @@ import { Button } from '../../ui/Button.tsx'
 import shared from '../../ui/controls.module.css'
 import css from './presets.module.css'
 
-export function PresetExportDialog(props: { preset: { id: string; name: string }; t: PromptToolTranslate; onClose: () => void }): ReactNode {
+export function ModuleExportDialog(props: { preset: { id: string; name: string }; t: PromptToolTranslate; onClose: () => void }): ReactNode {
   const { t, preset } = props
   const id = useId()
   const [mode, setMode] = useState<'zip' | 'definition'>('zip')
   const [memoryChoices, setMemoryChoices] = useState<Record<string, 'include' | 'exclude'>>({})
-  const [preview, setPreview] = useState<PresetExportResult>()
+  const [preview, setPreview] = useState<ModuleExportResult>()
   const [phase, setPhase] = useState<'reading' | 'ready' | 'downloading' | 'done' | 'error'>('reading')
   const [error, setError] = useState('')
   const [retry, setRetry] = useState(0)
@@ -26,7 +26,7 @@ export function PresetExportDialog(props: { preset: { id: string; name: string }
     ready.current = false
     setPhase('reading')
     setError('')
-    void bridgeCall('exportPreset', { id: preset.id, mode, memoryChoices, preview: true }).then((response) => {
+    void bridgeCall('exportModule', { id: preset.id, mode, memoryChoices, preview: true }).then((response) => {
       if (sequence !== version.current) return
       if (!response.ok) { setError(response.message ?? t('card.operationFailed')); setPhase('error'); return }
       setPreview(response.value)
@@ -46,7 +46,7 @@ export function PresetExportDialog(props: { preset: { id: string; name: string }
     const sequence = version.current
     setPhase('downloading')
     try {
-      const response = await bridgeCall('exportPreset', { id: preset.id, mode, memoryChoices, expectedRevision: preview.revision })
+      const response = await bridgeCall('exportModule', { id: preset.id, mode, memoryChoices, expectedRevision: preview.revision })
       if (sequence !== version.current) return
       if (!response.ok) throw new Error(response.message ?? t('card.operationFailed'))
       const exported = response.value

@@ -1,7 +1,0 @@
-# module: prompt-config-engine
-# source: engine/compositions/source/local/prompt-config-engine.yml (本地附加,非官方模块)
-
-- id: prompt-config-engine
-  name: ./engine/prompt-config-engine.mjs
-  config:
-    configsDir: ../configs

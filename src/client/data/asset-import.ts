@@ -3,7 +3,7 @@ import type { ImportPreviewState } from '../prompt-tool-types.ts'
 import type { ImportCommitResult, ImportPreviewOutcome } from './use-import-preview-flow.ts'
 import { bridgeCall } from './bridge-client.ts'
 
-type ImportEndpoint = 'importPresetPackage' | 'charactersImport'
+type ImportEndpoint = 'importModulePackage' | 'charactersImport'
 export async function previewAsset(endpoint: ImportEndpoint, request: AssetImportRequest): Promise<ImportPreviewOutcome> {
   const response = await bridgeCall(endpoint, { ...request, preview: true })
   if (!response.ok) return { kind: 'error', message: response.message ?? 'settings bridge unavailable' }

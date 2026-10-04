@@ -228,7 +228,7 @@ CSS 构建模块只收集样式数据；`styles.ts` 在入口 `ctx.effect` 中�
 
 | 官方注册面 | id / key | 位置 | owner | 作用 |
 |---|---|---|---|---|
-| settings.plugins.tab | prompt-tool | order 40 | SettingsTab | 模块运行总闸（兼容持久键 `writePreset`） |
+| settings.plugins.tab | prompt-tool | order 40 | SettingsTab | 模块运行总闸 modulesEnabled（旧 writePreset 仅输入兼容） |
 | shell.overlay | prompt-tool-workbench | order 50 | WorkbenchOverlay | 可拖动悬浮触发器 + body portal 抽屉 |
 
 两处 slot 都使用 ctx.slots.inject() 等待官方槽位声明，再调用 ctx.slots.register()。返回的 disposer 在 register-workbench.tsx 中统一释放。不要添加第二个注册入口，也不要改变 id 或 inject face 的形状。
@@ -288,9 +288,9 @@ workspace-pages.ts 是页面元数据的唯一来源。默认页为 features，�
 | subagent | 子代理 | 同一 `RulesWorkspace` 和 `engineLayerSlots(audience: 'subagent')`，共用模块规则草稿与模板入口；不重复显示指令文件卡 |
 | tools | 工具预览 | 顶置统一搜索；当前会话／所选预设两个可折叠分组，预设选择位于分组标题右侧；双列展开详情卡，680px 以下单列 |
 | skills | 技能设置 | 技能根与资产卡（用户技能根、创建、复制导入、技能文件夹引用）、状态与来源筛选、按来源分组的 SkillRow（三行摘要、文件编辑、调用策略开关、删除） |
-| modules | 模块 | 模块列表（启用、新建、复制、导出、删除、打开目录、导入）、运行总闸，以及角色卡素材区（导入、并入当前模块、移除、删除） |
+| modules | 模块 | 统一模块列表（启用、新建、复制、导出、删除、打开目录、导入、并入与移除）及运行总闸；角色卡是导入来源 |
 
-模块页由原「预设配置」页与「角色管理」页合并而成（页 id 从 `presets`/`characters` 收敛为 `modules`）：模块既是载体也是库成员，列表、导入、并入、移除、删除与新建/复制/导出属于同一件事。**卡片形态只有一种**——卡体（`.moduleCardBody`）只承载名称、描述、id 与状态徽章，没有点击语义；动作全部在卡脚（`.presetCardFooter`）的胶囊与图标按钮上，启用是其中一枚胶囊。删除守卫按「是否仍在别处生效」判定：当前模块的删除按钮禁用（先切换），已并入当前模块的角色卡删除按钮同样禁用（先从模块移除），两处禁用都带原因提示。数据源不强行统一：模块列表读工作台 store 的 `meta.presets`，角色卡读 `charactersList` 端点 + 页内状态，为「看起来一致」把角色卡搬进 store 不换算。
+模块页 id 为 modules，所有来源导入后都成为普通模块，统一读取模块列表。卡体只承载名称、描述、id 与状态徽章，动作放卡脚；当前编辑模块及仍有依赖的模块由同一删除守卫保护。角色来源不维护第二份 charactersList 库存，不创建角色专属状态登记。
 
 排序只在主会话与子代理的 `RulesWorkspace` 当前模块规则卡中呈现，模块页不另设排序区。卡内上下移动与拖拽只交换同插入点、位置与官方 order 档位中的可见规则，隐藏条目的槽位不变；身份由模块 ID＋规则 ID 组成。工具栏不再提供“跨模块排序”切换。
 
@@ -339,7 +339,7 @@ workspace-pages.ts 是页面元数据的唯一来源。默认页为 features，�
 | 工作台抽屉开关 | workspace-controller | 工作台实例内存态；刷新回落 |
 | 当前顶层页 | PromptWorkspace | 工作台挂载期；不写 URL 或 localStorage |
 | fields、meta、catalog | usePromptToolStore | 工作台挂载期；打开时重新同步 |
-| 模块运行总闸 | 官方 ConfigForms | 仅持久键 `writePreset`；关闭卸载贡献，不清盘 |
+| 模块运行总闸 | 官方 ConfigForms | 规范键 modulesEnabled；关闭卸载贡献，不清盘 |
 | 当前会话模型 | session-model-face | 官方 sessions projection 生命周期 |
 | 模块编辑目标 | store + bridge 请求头 | 客户端编辑状态；通过 `x-module-id` 指定，不写部署设置，不决定启用集合 |
 | filter、search、列表展开、页滚动 | workspace-browse-state | 工作台实例期，配置视图按页面/预设区分；异步资源就绪后一次恢复滚动 |
@@ -361,8 +361,8 @@ workspace-pages.ts 是页面元数据的唯一来源。默认页为 features，�
     打开悬浮工作台抽屉
       -> PromptWorkspace.store.load()
       -> bridgeCall("bootstrap") 聚合 descriptor、meta、变量和 promptConfigs
-      -> fieldsFromView() 合并 value/base 与 presetParams
-      -> useRuleEditor() 去重读取 /rules，建立定义与 revision 基线
+      -> fieldsFromView() 合并 value/base 与 moduleParams
+      -> useRuleEditor() 去重读取 /rules，建立正文、settings、variables 的 revisions 基线
       -> /models 按需加载并缓存模型目录
       -> page selector 订阅 fields 引用
 
@@ -432,9 +432,9 @@ JSON bridge 的统一上限为 32 MiB；角色卡原始文件流独立限制为 
 2. 请求使用保存时的 snapshot；成功后只更新该 snapshot 的 saved 基线。
 3. 请求期间继续编辑时，当前 fields 与 saved snapshot 不同，dirty 保持为真。
 4. 成功后的静默 load 留在预设队列内，且只在全局草稿版本未变化、其他通道无待存草稿、对应草稿仍等于请求快照时执行。
-5. 普通规则通过 `/rules` 显式保存、离卡或折叠前提交，不再使用 promptConfigs 写入和定时 debounce。载荷携带 `expectedPresetId`、`expectedRevision` 与 `edits[{previousId, rule}]`；非法 JSON/数字原文阻止提交，失败保留输入。
+5. 普通规则通过 /rules 自动保存及显式提交，载荷携带 expectedModuleId、expectedRevisions 与 edits[{previousId, rule, settingsChanged?}]。正文编辑只拥有正文，状态改动显式校验 settings；新增、删除、改名也使用 settings 版本。非法 JSON／数字阻止提交，失败保留输入。
 6. 参数空字符串/空数组沿用删除键语义；variables 的空字符串仍是合法占位值。详细参数规则见 [architecture-params.md](architecture-params.md)。
-7. 预设写入携带 `expectedPresetId`，读回失败的自定义工具不降级为空列表供覆盖；跨预设旧草稿被拒绝，切换等待参数保存队列。
+7. 模块写入携带 expectedModuleId，旧身份键只在输入边界兼容，双键冲突拒绝。读回失败的工具不降级为空列表供覆盖；跨模块旧草稿拒绝，切换等待保存队列。
 8. 切换编辑模块先保存当前草稿，失败即取消切换并保留输入；成功后更新请求头目标并等待重读，不写 settings、不切换官方会话预设。首次加载或切换完成前，`loadedModuleRef` 拒绝公共参数、规则与模板变量写盘。
 9. 技能清单和策略均不进 settings：单端调用策略走 `/skill-policy`（`name/path/side/enabled/sessionId?`，服务器在同工作区重新校验身份；显式两端操作可用 `scope`），引用走 `/skills-folders`，清单走 `/skills-list`。快照保留 `complete`，空数组是权威空结果；调用声明和当前会话注册状态分别呈现。创建/导入走既有端点；删除提交 `name/path/sessionId?`，确认框与请求使用同一条目，用户根及显式引用根按服务器能力开放回收站删除。契约见 [skills-management.md](skills-management.md)。
 10. 指令文件正文走独立草稿池（`data/instruction-drafts.ts`），模块保存与模块切换不带文件正文。焦点离开文件卡或折叠前提交 dirty 文件，成功只确认请求时快照，冲突/失败保留草稿并显示「重新读取」。会话或工作区切换建立新的指令上下文：旧上下文的迟到响应不覆盖当前视图，旧 `contextId` 保存由服务端 409 拒绝。
@@ -443,6 +443,7 @@ JSON bridge 的统一上限为 32 MiB；角色卡原始文件流独立限制为 
 13. bootstrap 与策略快照均读取完成后再应用，异步边界复核请求序号、会话与草稿状态。暂时离开工作区只暂停文件写资格，保留草稿与版本基线；返回并读取时，版本未变可继续保存，版本变化仍须解决冲突。
 14. 列表保存按钮等待真实 `Promise<boolean>` 结果；文件或预设部分失败时不显示整体成功、不以静默重载清除错误。已经成功保存的文件立即更新其基线，不因后续失败回滚或丢失确认。
 15. 配置排序走 typed `moduleConfigOrder` 端点，服务端校验身份集合与 revision，拒绝未知、重复身份及过期版本。顺序写回 `module.yml.configOrder`，客户端不提交正文、文件路径或序号；模块启用或停用均可保存自身排序，总闸关闭仍可改排序定义。
+16. 模板变量内容与开关分别校验 variables／settings 版本。保存已提交但切片发布持续失败时，服务端 persisted 响应必须显示“已保存但未发布”，不能当成未写盘或直接清空草稿。存储完整性与恢复规则以 [后端框架](architecture-params.md) 为准。
 
 ### 7.4 导入预览与提交
 
@@ -486,7 +487,7 @@ feature 只拥有自己的视图、瞬时状态、领域纯 helper 和 CSS：
 | tools | 自定义工具编辑/保存、参数模板；独立工具预览页与只读工具面 |
 | skills | 按官方六类技能根分组展示清单、来源与遮蔽判定、调用策略开关、宿主目录选择导入与引用、创建、回收站删除；契约见 [skills-management.md](skills-management.md) |
 | presets | 模块页的模块列表：启停、编辑选择、新建/克隆、导入导出、复制/删除/打开（页面壳在 `features/modules/ModulesPage.tsx`） |
-| characters | 模块页的角色卡素材区：SillyTavern PNG/JSON 导入、角色卡库存、并入当前模块/移除/删除 |
+| characters | 角色来源解析／展示兼容；安装、库存、并入与删除统一归模块流程 |
 
 业务 feature 直接使用 data/bridge-client.ts 的 endpoint key；共享控件从 ui/导入。跨 feature 组合由 app/workspace/pages/完成，不在 feature 内建立第二个工作台。
 
@@ -568,7 +569,7 @@ fieldset 禁用时 MenuSelect 同时拒绝 portal 中的选择。Tooltip 的键�
 
 同名引擎参数允许多处渲染（同层每张实例卡内各有一份本层设置区）：它们绑定同一 `store.fields[键]` 与同一草稿键，一次修改只提交一次保存；`EngineParamField` 的 `instanceId` 带上「层 + 卡身份」，同层多卡的 DOM id、aria 关联互不冲突，不引入第二份状态、同步服务或事件总线。未完成的数字输入与字段错误也属于这份共享草稿：`store.getDraftRevision` / `subscribeDrafts` / `publishDrafts` 是既有 `subscribeFields` 同一模式的窄广播，参数控件订阅它后，一个渲染点里的半成品输入或错误提示立即出现在其他渲染点（含跨层的相关设置），真实重渲染同步由 `module-policy-smoke` 用真实 Edge 覆盖（同层两张实例卡之间切换编辑、错误态同步、一次失焦只保存一次）。工具栏提供插入点层级与策略筛选、九层模板菜单和提示词配置操作；列表筛选只影响展示，不按插入点分区块。能力与提示词配置保留各自保存、排序和删除语义。
 
-world-book 视图只隐藏工具栏之外的列表主体之外的附加提示，不再有独立的模块卡容器需要隐藏；能力参数与资产编辑器都在实例卡的设置区里，随卡一起折叠，折叠时不渲染内容（同层120张卡不会因此多出成百上千控件）。能力与工具在本层设置内创建，模板从工具栏入口插入；创建不改动层级筛选与搜索词。只读预设（system或关闭writePreset）下创建和资产编辑禁用，移除入口不渲染，折叠按钮仍可使用。
+world-book 视图只隐藏工具栏之外的列表主体之外的附加提示，不再有独立的模块卡容器需要隐藏；能力参数与资产编辑器都在实例卡的设置区里，随卡一起折叠，折叠时不渲染内容（同层120张卡不会因此多出成百上千控件）。能力与工具在本层设置内创建，模板从工具栏入口插入；创建不改动层级筛选与搜索词。只读预设（system 或关闭 modulesEnabled）下创建和资产编辑禁用，移除入口不渲染，折叠按钮仍可使用。
 
 工具栏提供九层模板创建，其他创建操作内置对应层设置；过滤与受众规则见 §5.2.1。指令文件卡属于主会话概念，只在 `scope=main`（或缺省）时下发，子代理页不渲染，避免同一指令文件出现两个编辑入口。
 

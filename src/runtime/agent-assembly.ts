@@ -9,8 +9,7 @@
  *     不再声明 `agent.cordis.yml` 这类「给宿主 Loader 用的组合本体」；
  *   - 官方工具行（`dsh-tool-*` 等）由宿主提供；模块人设通过 systemPrompt 注册，
  *     本通道**不**装第二棵官方插件树——那些包也不在插件包的解析面内；
- *   - 规则只从 `module.yml.rules` 编译；`configs/` 的投影不参与装配。
- *     自定义工具仍由其独立物化目录与能力模块装配。
+ *   - 规则从校验发布的 rules/ 快照编译；工具与子代理策略从模块定义内联装配。
  *
  * 与官方挂载并存时不会重复：官方树里没有引擎行，引擎贡献只由本通道提供。
  */
@@ -21,9 +20,10 @@ import type { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import { packageEngineDir, resolveModuleFacts, resolveModuleDir, loadModuleSpec } from '../host/manifest.ts'
 import type { ModuleSpec } from '../host/manifest.ts'
-import { assertPresetId } from '../host/module-install.ts'
+import { assertModuleId } from '../host/module-install.ts'
 import { readConfigOrder } from '../host/module-config-order.ts'
 import { rulePromptConfigOptions } from '../host/module-rules.ts'
+import { compileCustomTool, validateCustomTools } from '../host/custom-tools.ts'
 
 // @ts-expect-error ESM 引擎源码随插件提供。
 import { compileRules } from '../../engine/rule-spec.mjs'
@@ -122,9 +122,12 @@ export interface PreparedAssembly {
 export async function prepareAssembly(
   moduleRoot: string, moduleId: string, hasService: (name: string) => boolean,
 ): Promise<PreparedAssembly> {
-  assertPresetId(moduleId)
+  assertModuleId(moduleId)
   const moduleDir = resolveModuleDir(moduleId, moduleRoot)
   const spec = loadModuleSpec(moduleDir) as ModuleSpec
+  if (spec.customTools !== undefined && !Array.isArray(spec.customTools)) throw new TypeError('customTools must be an array')
+  const toolErrors = validateCustomTools(spec.customTools ?? [])
+  if (toolErrors.length > 0) throw new Error(`invalid customTools: ${toolErrors.join('; ')}`)
   const facts = resolveModuleFacts(spec, moduleDir)
   if (facts.effectiveModules === null) throw new Error(`模块 ${moduleId} 的模块声明无效，无法配装`)
   const configsByModule = facts.effectiveConfigs ?? {}
@@ -157,6 +160,7 @@ export async function prepareAssembly(
   const modules: PreparedAssembly['modules'] = []
   for (const id of new Set([...facts.effectiveModules, ...facts.rowIds])) {
     if (id === 'rule-engine') continue
+    if (id === 'subagent-tool-policy' && (spec.subagentToolPolicy === undefined || spec.subagentToolPolicy === null)) continue
     if (id === 'prompt-config-engine' || id === 'declared-triggers') throw new Error(`模块 ${moduleId} 仍声明旧规则引擎 ${id}，请先离线迁移`)
     const privateService = PRIVATE_SERVICES[id]
     if (privateService !== undefined) {
@@ -174,8 +178,11 @@ export async function prepareAssembly(
     for (const dependency of module.inject ?? []) services.add(dependency)
     const config = absolutizeManagedFields(configsByModule[id] ?? {}, moduleDir)
     if (id === 'tool-config-engine') {
-      config.presetRoot = pathToFileURL(moduleRoot + sep).href
+      config.tools = (spec.customTools ?? []).map(tool => compileCustomTool(tool as Record<string, unknown>))
+      config.resourceRoot = pathToFileURL(moduleRoot + sep).href
+      delete config.presetRoot
     }
+    if (id === 'subagent-tool-policy') config.policy = structuredClone(spec.subagentToolPolicy)
     // 引擎自带的声明就绪校验（未知键 fail loud）在装配期先跑一次，避免挂载到一半才炸。
     const contract = (module as { configContract?: { parse?: (value: unknown, name: string) => unknown } }).configContract
     contract?.parse?.(config, id)

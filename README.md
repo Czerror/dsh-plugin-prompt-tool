@@ -28,7 +28,7 @@ dsh --profile prompt-tool
 
 ### 当前格式与宿主要求
 
-模块行为以 `module.yml.rules` 为唯一规则来源。旧 `promptConfigs`、`triggers`、模型路由与锚定快捷参数必须先离线迁移；运行时遇到旧来源会明确拒绝，不自动转换或双读。共享能力参数仍由 `layerSettings` 持有，指令文件保持独立权限与正文通道。
+module.yml 保存模块完整定义，支持 UI 自动保存和直接手改完整文件；rules/ 是校验后供 UI 与运行时使用的切片，手改切片或校验失配会从完整定义恢复。旧 promptConfigs、triggers、模型路由与锚定快捷参数须先离线迁移；运行时不自动双读。共享能力参数归 layerSettings，指令正文保持独立权限通道。
 
 升级旧模块前，由用户停止相关 DSH 服务，再使用安装包提供的 `prompt-tool-migrate-rules`，或在已构建仓库中执行：
 
@@ -54,7 +54,7 @@ pnpm --dir $Repo migrate:rules -- --root '<DSH_HOME>/.prompt-tool/modules' --cha
 - 🔌 **九个官方插入点按需接线**：一个引擎接入声明所需的插入点，共享同一套过滤与降级语义
 - ✍️ **一切皆可配置**：`layer / strategy / position / promotion / audience / modelScope / mergeMode / order / text / texts / fill / variables / params` 全开放
 - 🧑‍🤝‍🧑 **消息受众三态**：`audience: main / subagent`，省略 `audience` 表示公用；身份类提示词可只注入子代理
-- 🗂️ **唯一行为定义**：`module.yml.rules` 物化为 `rules.yml`；`configs/` 只保留注入动作的查看快照。`configOrder` 按规则身份保存顺序。
+- 🗂️ **完整定义与校验切片**：module.yml 保存完整行为，rules/<id>.yml 保存正文，_settings.yml 保存顺序和启停，variables.yml 保存模板变量；失配单向恢复，不生成旧宿主装配产物。
 - 🧩 **显式互斥**：同模块同组中任一卡声明互斥时，启用目标卡会原子关闭同组其他卡的总开关；重排不改变启用状态。
 - 🖥️ **可拖动悬浮工作台入口**：工作台经官方 `shell.overlay` 渲染悬浮触发器与 body portal 抽屉；按钮可拖动、位置存插件自己的 localStorage、窗口变化自动夹回可见区（不读宿主布局树，已移除 `sidebar.footer.action` 几何探针）；五页（主会话/子代理/工具预览/技能设置/模块）在抽屉内渲染，抽屉用 fixed + z-index 置顶，不被宿主导航栏遮挡
 - 🧪 **条件与内容分离**：`when` 支持组合判断；注入动作支持 `static / first-turn-anchor / guide-auto / anchor-notice / placeholder / world-book`。旧 `custom-fallback` 拆为锚点条件与通知内容。
@@ -63,7 +63,7 @@ pnpm --dir $Repo migrate:rules -- --root '<DSH_HOME>/.prompt-tool/modules' --cha
 - 📦 **Bridge 载荷**：JSON 请求统一 32 MiB 硬上限并明确返回 413；角色卡原始图片走 64 MiB 流式通道，按 PNG 魔数识别。
 - 📂 **技能管理**：官方发现与会话快照统一技能来源、生效和遮蔽状态；单端开关写回技能文件。支持目录包与直属 Markdown 技能、创建、两种复制导入，以及用户根和引用根的可恢复删除；技能局部刷新保留其他页面草稿。
 - 🎭 **SillyTavern 导入**：JSON 预设、角色卡和独立世界书转换为本地预设——按官方顺序表保留启停，赋值模板运行时求值；不等价能力明确报告，采样参数由宿主管理
-- 🎴 **角色卡库**：PNG／JSON／YAML 角色卡与原生角色片段经统一预览后逐张入库；PNG 保留原图，更新保留角色记忆，按需应用到当前预设。
+- 🎴 **角色卡导入**：PNG／JSON／YAML 角色来源经统一预览后成为普通模块；PNG 保留原图，更新保留模块记忆与用户资产。
 - 📦 **预设交换**：文件夹、ZIP、原生 JSON/YAML 与 ST 来源共用识别、预览和完整候选安装；导出可选完整 ZIP 或仅定义 YAML。资源、覆盖及分享边界见 [资产交换文档](docs/asset-transfer.md)。
 - 📚 **世界书**：`character_book` 转 world-book 策略配置（`keys` 命中触发 / `constant` 常驻 / 正则键自动检测 / `selectiveLogic` 组合逻辑），与模块卡片同一存储与编辑（模块列表「世界书」过滤 + 批量启用/禁用）
 - 🛠️ **自定义工具**：module.yml `customTools` 段声明式定义模型工具（执行器 shell/http/delegate/fs/ask-user，`{{args.x}}` 参数插值）；参数与输出经官方 `dsh-tools` 转换器物化为标准 JSON Schema，非法参数产生标准工具错误，delegate 经 `ctx.tools.execute` 嵌套调度走完整官方工具管线；`customTools.scope` 暂不支持（显式拒绝）
@@ -121,9 +121,9 @@ src/client/
 
 ## 模块参数体系
 
-初始化从包内 `modules/` 补建缺失的同名模块，已有目录不覆盖。保存与重建统一通过 `materializeModule` 读取目标模块自己的定义和正文，不借用工作台另一个模块的运行时副本。
+初始化从包内 modules/ 补建缺失模块，已有目录不覆盖。materializeModule 原地校验恢复 rules/，只清理已知旧产物，保留记忆、技能、正文与用户资产。工具和子代理策略从完整定义内联装配。
 
-部署 Config 只保留 `writePreset`，含义是模块运行总闸：关闭仅撤回运行贡献，不清空文件。`presetOrder`、`fallbackText` 和 `presetTemplate` 不再是部署设置；编辑目标通过请求头 `x-module-id` 传递，不切换或跟随官方会话预设。
+部署 Config 使用 modulesEnabled 作为模块运行总闸：关闭仅撤回贡献，不清空文件。旧 writePreset 仅作输入兼容，双键冲突拒绝。编辑目标通过 x-module-id 传递，不切换或跟随官方会话预设。
 
 模块行为由一份 `module.yml` 下发，参数所有者各自独立：
 
@@ -132,7 +132,7 @@ src/client/
 | `layerSettings.<层名>` | 模块共享参数；磁盘归属由参数目录的 `storageLayer` 固定，不随 UI 分组改变 |
 | `moduleConfigs` | 行级 config 直写通道（参数桥未覆盖的键：超时/环境白名单/ST 导入等），不锁定覆盖 UI 可管理参数 |
 | `rules` | 独立身份、条件树 `when` 与动作数组 `do`；注入正文与参数归相应动作 |
-| `configOrder` | 配置 ID 到序号的轻量映射；正文仍属于各自配置，文件名前缀由此物化 |
+| `configOrder` | 规则 ID 到序号的完整定义映射；运行切片中为 _settings.yml.rules[id].order，文件名不带序号 |
 
 ### 共享参数一览（全部可选，缺省按对应模块解释）
 
@@ -229,16 +229,16 @@ UI / 写盘按上表分组；这是展示顺序，不是模型提示词优先级
 
 转换结果是一个普通模块（id 由文件名生成），可在工作台「模块」页的模块列表中直接启用。字段级参数对照与完整示例见 [SillyTavern.md](docs/SillyTavern.md)。
 
-### 角色卡（PNG / JSON）与角色卡库
+### 角色卡（PNG / JSON）导入
 
-工作台「模块」页的角色卡素材区把角色卡导入**角色卡库**（`~/.dsh/.prompt-tool/.characters/<id>/`）：
+工作台「模块」页将角色卡作为来源导入普通 `.prompt-tool/modules/<id>/`：
 
 - **PNG**：`ccv3` 优先 / `chara` 兜底；按魔数识别并受限解码，原始文件先暂存、预览确认后入库，保留原图。
 - **JSON／YAML**：支持 ST 角色数据和自包含原生角色片段。批次逐张预览，不把多份来源合并成一张角色卡；所有大小的文件都先预览再提交。
 - 正文映射：`first_mes` → 开场白（`dedupe: session`）、`alternate_greetings` → 备用开场白、
   `description/personality/scenario` → 角色设定；采样参数剥离（模型设置 UI 管理）
-- **导入到当前模块**：合并为 `rules`（`chara-<卡>-` 前缀、幂等），保留条件及兄弟动作；可一键移除
-- **角色记忆**：`memory.md` 跟随角色卡跨预设，应用时合并为 world-book constant 配置注入
+- **统一模块身份**：人设、开场白和世界书写完整 module.yml，规则切片与其他模块一致；没有角色专属目录、前缀或登记
+- **模块记忆**：memory.md 属于模块，更新保留本地记忆和用户资产；world_book_read_memory 按需读取，不自动注入
 
 ### 世界书（world-book 策略）
 
@@ -247,11 +247,11 @@ UI / 写盘按上表分组；这是展示顺序，不是模型提示词优先级
 - **ST 注入语义**：常驻候选或主键命中，再按副键逻辑、概率、分组与时序筛选；非常驻无主键不注入；原生手写 world-book 约定保持不变
 - **匹配选项**：`caseSensitive` / `wholeWords`；只有 `/pattern/flags` 形式识别为正则，其余为字面键
 - **管理**：模块列表顶部下拉选「世界书」过滤（完整模块卡片编辑 + 批量启用/禁用）；
-  模型工具 `world_book_list/upsert/delete`（`note` 写入角色卡记忆）
+  模型工具 world_book_list/upsert/delete（note 追加模块记忆）与 world_book_read_memory（按需读取）
 - **ST 变量**：赋值不在导入时执行；local/global 分表但只在会话内有效，嵌套宏有循环与大小保护。
   深度历史位置、system 角色、token 预算和 ST 扩展脚本不具备完整等价性，详见兼容边界
 - **会话变量**：`session_var` 工具（list/get/set/clear）维护角色状态（会话级覆盖预设默认，
-  结束即失）；跨会话长期记忆用 `world_book` note（持久 memory.md 跟随角色卡）
+  结束即失）；跨会话文本通过 note 保存在模块 memory.md，读取失败会明确报错
 
 详细转换规则见 [SillyTavern.md](docs/SillyTavern.md)。
 

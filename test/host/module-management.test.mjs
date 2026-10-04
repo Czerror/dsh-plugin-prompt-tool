@@ -100,7 +100,7 @@ test('使用中禁删：激活模块的删除被拒，目录与定义保持原�
 
   const result = await call(handlers, 'moduleDelete', { id })
   assert.equal(result.status, 400, result.message)
-  assert.equal(result.code, 'preset-in-use')
+  assert.equal(result.code, 'module-in-use')
   assert.equal(existsSync(dir), true, '被拒的删除不得移除目录')
   assert.equal(readFileSync(join(dir, 'module.yml'), 'utf8'), before, '被拒的删除不得改动定义')
 })
@@ -112,7 +112,7 @@ test('打开目录：越界与非法 id 一律被拒，不进入打开动作', a
   for (const bad of ['../outside', '/absolute/path', 'a/b', '.hidden', '']) {
     const result = await call(handlers, 'moduleOpen', { id: bad })
     assert.equal(result.status, 400, `${JSON.stringify(bad)} 应被拒：${result.message}`)
-    assert.equal(result.code, 'preset-open-rejected', `${JSON.stringify(bad)} 的错误码`)
+    assert.equal(result.code, 'module-open-rejected', `${JSON.stringify(bad)} 的错误码`)
   }
 })
 
@@ -125,7 +125,7 @@ test('新建：同名且未要求递增时被拒，既有模块不被覆盖', as
 
   const result = await call(handlers, 'moduleClone', { id })
   assert.equal(result.status, 400, result.message)
-  assert.equal(result.code, 'preset-clone-rejected')
+  assert.equal(result.code, 'module-clone-rejected')
   assert.equal(readFileSync(join(dir, 'module.yml'), 'utf8'), before, '被拒的克隆不得覆盖既有定义')
 })
 
@@ -136,7 +136,7 @@ test('复制：源不存在时被拒，模块根不留残留目录', async () =>
 
   const result = await call(handlers, 'moduleDuplicate', { id: 'no-such-module' })
   assert.equal(result.status, 400, result.message)
-  assert.equal(result.code, 'preset-duplicate-rejected')
+  assert.equal(result.code, 'module-duplicate-rejected')
   assert.deepEqual(readdirSync(moduleRoot).sort(), before, '被拒的复制不得留下候选目录')
 })
 
@@ -144,7 +144,7 @@ test('导出：不存在的模块被拒，不回传任何定义内容', async ()
   const { ctx, handlers } = makeHarness(undefined)
   register(ctx, undefined)
 
-  const result = await call(handlers, 'exportPreset', { id: 'no-such-module', mode: 'definition' })
+  const result = await call(handlers, 'exportModule', { id: 'no-such-module', mode: 'definition' })
   assert.equal(result.status, 400, result.message)
   assert.equal(result.ok, false)
   assert.equal(result.value, undefined, '失败载荷不得携带定义内容')
@@ -179,7 +179,7 @@ test('并入的源模块优先：同名模块与角色卡并存时取模块定�
   mkdirSync(join(moduleRoot, 'target'), { recursive: true })
   writeFileSync(join(moduleRoot, 'target', 'module.yml'), 'id: target\nname: Target\nmodules: []\n', 'utf8')
 
-  const applied = characters.applyCharacterToPreset(moduleRoot, 'target', id)
+  const applied = characters.mergeModuleIntoModule(moduleRoot, 'target', id)
   assert.equal(applied.ok, true, applied.message)
   const written = readFileSync(join(moduleRoot, 'target', 'module.yml'), 'utf8')
   assert.match(written, /FROM-MODULE/, '并入必须取模块定义（模块优先）')
@@ -207,17 +207,17 @@ test('普通模块之间的并入是往返且幂等的：重复并入不翻倍�
   // 字节相等不是这层语义的契约；PLAN 要的是不翻倍、撤得干净、自有内容不动。
   const count = (text, token) => parse(text).rules.filter(rule => rule.id === token).length
 
-  assert.equal(characters.applyCharacterToPreset(moduleRoot, target, src).ok, true)
+  assert.equal(characters.mergeModuleIntoModule(moduleRoot, target, src).ok, true)
   const afterApply = readFileSync(targetFile, 'utf8')
   assert.equal(count(afterApply, `module-${src}-a`), 1)
   assert.equal(count(afterApply, `module-${src}-b`), 1)
 
-  assert.equal(characters.applyCharacterToPreset(moduleRoot, target, src).ok, true, '重复并入应成功')
+  assert.equal(characters.mergeModuleIntoModule(moduleRoot, target, src).ok, true, '重复并入应成功')
   const afterTwice = readFileSync(targetFile, 'utf8')
   assert.equal(count(afterTwice, `module-${src}-a`), 1, '重复并入不得产生重复条目')
   assert.equal(count(afterTwice, `module-${src}-b`), 1)
 
-  assert.equal(characters.removeCharacterFromPreset(moduleRoot, target, src).ok, true)
+  assert.equal(characters.removeMergedModule(moduleRoot, target, src).ok, true)
   const afterRemove = readFileSync(targetFile, 'utf8')
   assert.equal(count(afterRemove, `module-${src}-a`), 0, '移除必须按前缀撤销干净')
   assert.equal(count(afterRemove, `module-${src}-b`), 0)
@@ -279,18 +279,18 @@ test('module-enable：写启用表后等待装配，失败如实返回，非法�
   // 拒绝路径一：缺 id。
   const noId = await call(handlers, 'moduleEnable', { enabled: true })
   assert.equal(noId.status, 400)
-  assert.equal(noId.code, 'preset-enable-rejected')
+  assert.equal(noId.code, 'module-enable-rejected')
 
   // 拒绝路径二：enabled 不是布尔值。
   const badFlag = await call(handlers, 'moduleEnable', { id, enabled: 'yes' })
   assert.equal(badFlag.status, 400)
-  assert.equal(badFlag.code, 'preset-enable-rejected')
+  assert.equal(badFlag.code, 'module-enable-rejected')
 
   // 拒绝路径三：启用一个磁盘上不存在的模块——写进表会让装配静默少装一个。
   const before = readEnabled()
   const missing = await call(handlers, 'moduleEnable', { id: 'no-such-module', enabled: true })
   assert.equal(missing.status, 400)
-  assert.equal(missing.code, 'preset-enable-rejected')
+  assert.equal(missing.code, 'module-enable-rejected')
   assert.equal(readEnabled(), before, '被拒的启用不得改动启用表')
   assert.deepEqual((await call(handlers, 'moduleEnable', { id, enabled: false })).value.enabled.includes('no-such-module'), false)
   assert.equal(refreshed.length, 5, '非法请求不得触发装配')
@@ -298,7 +298,7 @@ test('module-enable：写启用表后等待装配，失败如实返回，非法�
   failRefresh = true
   const failed = await call(handlers, 'moduleEnable', { id, enabled: true })
   assert.equal(failed.status, 500)
-  assert.equal(failed.code, 'preset-activation-failed')
+  assert.equal(failed.code, 'module-activation-failed')
   assert.match(failed.message, /更改已保存，但模块未生效/)
   assert.match(readEnabled(), /- enable-target/, '装配失败保留已保存的启用表，便于重试')
   failRefresh = false

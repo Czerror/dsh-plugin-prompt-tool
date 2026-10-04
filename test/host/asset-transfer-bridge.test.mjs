@@ -50,20 +50,20 @@ const credentials = (preview) => ({ expectedSourceDigest: preview.payload.value.
 
 test('预设真实安装保留自有资源；刷新报错明确返回已保存但未生效', async (t) => {
   let refreshed = 0
-  const h = harness(t, (id) => { refreshed++; assert.ok(existsSync(join(root, id, 'agent.cordis.yml'))); throw new Error('refresh failed') })
+  const h = harness(t, (id) => { refreshed++; assert.ok(existsSync(join(root, id, 'rules/_settings.yml'))); throw new Error('refresh failed') })
   const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0xff, 0])
   const files = filesFor('roundtrip', [
     { path: 'preset.md', content: 'BODY\r\n' },
     { path: 'cover.png', content: png.toString('base64'), encoding: 'base64' },
     { path: 'engine/private.mjs', content: 'export default {}' },
   ])
-  const preview = await call(h, 'importPresetPackage', { files, preview: true })
+  const preview = await call(h, 'importModulePackage', { files, preview: true })
   assert.equal(preview.status, 200, JSON.stringify(preview.payload))
   assert.equal(preview.payload.value.summary.targetId, 'roundtrip')
   assert.equal(existsSync(join(root, 'roundtrip')), false)
-  const result = await call(h, 'importPresetPackage', { files, ...credentials(preview) })
+  const result = await call(h, 'importModulePackage', { files, ...credentials(preview) })
   assert.equal(result.status, 500, JSON.stringify(result.payload))
-  assert.equal(result.payload.code, 'preset-activation-failed')
+  assert.equal(result.payload.code, 'module-activation-failed')
   assert.match(result.payload.message, /已保存.*refresh failed/)
   assert.equal(refreshed, 1)
   assert.equal(readFileSync(join(root, 'roundtrip/preset.md'), 'utf8'), 'BODY\r\n')
@@ -75,20 +75,20 @@ test('预设真实安装保留自有资源；刷新报错明确返回已保存�
 test('提交必须匹配预览；默认重名另存、明确更新及目标版本复检', async (t) => {
   const h = harness(t)
   const files = filesFor('versioned')
-  assert.equal((await call(h, 'importPresetPackage', { files })).status, 409)
+  assert.equal((await call(h, 'importModulePackage', { files })).status, 409)
   assert.equal(existsSync(join(root, 'versioned')), false)
-  const preview = await call(h, 'importPresetPackage', { files, preview: true })
-  assert.equal((await call(h, 'importPresetPackage', { files: filesFor('changed'), ...credentials(preview) })).status, 409)
-  assert.equal((await call(h, 'importPresetPackage', { files, ...credentials(preview) })).status, 200)
-  const copy = await call(h, 'importPresetPackage', { files, preview: true })
+  const preview = await call(h, 'importModulePackage', { files, preview: true })
+  assert.equal((await call(h, 'importModulePackage', { files: filesFor('changed'), ...credentials(preview) })).status, 409)
+  assert.equal((await call(h, 'importModulePackage', { files, ...credentials(preview) })).status, 200)
+  const copy = await call(h, 'importModulePackage', { files, preview: true })
   assert.equal(copy.payload.value.summary.targetId, 'versioned-copy')
   const update = { files, targetId: 'versioned', overwrite: true }
-  const updatePreview = await call(h, 'importPresetPackage', { ...update, preview: true })
+  const updatePreview = await call(h, 'importModulePackage', { ...update, preview: true })
   writeFileSync(join(root, 'versioned/changed.txt'), 'EXTERNAL')
-  assert.equal((await call(h, 'importPresetPackage', { ...update, ...credentials(updatePreview) })).status, 409)
+  assert.equal((await call(h, 'importModulePackage', { ...update, ...credentials(updatePreview) })).status, 409)
   assert.equal(readFileSync(join(root, 'versioned/changed.txt'), 'utf8'), 'EXTERNAL')
-  const fresh = await call(h, 'importPresetPackage', { ...update, preview: true })
-  assert.equal((await call(h, 'importPresetPackage', { ...update, ...credentials(fresh) })).status, 200)
+  const fresh = await call(h, 'importModulePackage', { ...update, preview: true })
+  assert.equal((await call(h, 'importModulePackage', { ...update, ...credentials(fresh) })).status, 200)
   assert.equal(existsSync(join(root, 'versioned/changed.txt')), false)
 })
 
@@ -122,7 +122,7 @@ test('PNG 原始上传只暂存；角色确认后字节一致，释放和卸载�
   assert.equal(existsSync(join(storageRoot, '.characters')), false)
   const result = await call(h, 'charactersImport', { sourceId, targetId: 'png-card', ...credentials(preview) })
   assert.equal(result.status, 200, JSON.stringify(result.payload))
-  assert.deepEqual(readFileSync(join(storageRoot, '.characters/png-card/avatar.png')), png)
+  assert.deepEqual(readFileSync(join(root, 'png-card/avatar.png')), png)
   assert.equal((await call(h, 'assetRelease', { sourceId })).payload.value.released, true)
   assert.equal((await call(h, 'charactersImport', { sourceId, preview: true })).status, 400)
   await upload(h, png)
@@ -130,35 +130,33 @@ test('PNG 原始上传只暂存；角色确认后字节一致，释放和卸载�
   assert.deepEqual(readdirSync(join(home, '.prompt-tool-uploads')), [])
 })
 
-test('角色预览绑定 owner、目标和覆盖选择；重导入保留记忆', async (t) => {
+test('角色预览绑定普通模块目标和覆盖选择；重导入保留记忆', async (t) => {
   const h = harness(t)
-  const files = [{ path: 'role.yml', content: 'id: native-role\nname: Native\nrules:\n  - id: text\n    do:\n      - id: inject\n        kind: inject-text\n        config:\n          id: text\n          layer: pre-step\n          text: HELLO\n' }]
+  const files = [{ path: 'converted.yml', content: 'id: native-role\nname: Native\nrules:\n  - id: text\n    do:\n      - id: inject\n        kind: inject-text\n        config:\n          id: text\n          layer: pre-step\n          text: HELLO\n' }]
   const first = await call(h, 'charactersImport', { files, preview: true })
   assert.equal(first.status, 200, JSON.stringify(first.payload))
   writeFileSync(join(root, 'owner/change.txt'), 'OWNER CHANGED')
-  assert.equal((await call(h, 'charactersImport', { files, ...credentials(first) })).status, 409)
-  const fresh = await call(h, 'charactersImport', { files, preview: true })
-  assert.equal((await call(h, 'charactersImport', { files, ...credentials(fresh) })).status, 200)
+  assert.equal((await call(h, 'charactersImport', { files, ...credentials(first) })).status, 200)
   assert.equal((await call(h, 'charactersImport', { files, preview: true })).payload.value.summary.targetId, 'native-role-copy')
-  writeFileSync(join(storageRoot, '.characters/native-role/memory.md'), 'KEEP MEMORY')
+  writeFileSync(join(root, 'native-role/memory.md'), 'KEEP MEMORY')
   const update = { files, targetId: 'native-role', overwrite: true }
   const preview = await call(h, 'charactersImport', { ...update, preview: true })
   assert.equal((await call(h, 'charactersImport', { ...update, overwrite: false, ...credentials(preview) })).status, 409)
   assert.equal((await call(h, 'charactersImport', { ...update, ...credentials(preview) })).status, 200)
-  assert.equal(readFileSync(join(storageRoot, '.characters/native-role/memory.md'), 'utf8'), 'KEEP MEMORY')
+  assert.equal(readFileSync(join(root, 'native-role/memory.md'), 'utf8'), 'KEEP MEMORY')
 })
 
 test('新参数、来源、载荷上限和回环边界均在写盘前拒绝；旧流接口仅提示升级', async (t) => {
   const h = harness(t)
   const files = filesFor('invalid-new')
   for (const extra of [{ preview: 'true' }, { overwrite: 1 }, { targetId: 'UPPER' }, { targetName: [] }, { sourceKind: 'unknown' }, { expectedSourceDigest: 'bad' }, { sourceId: 'wrong' }, { unknown: true }]) {
-    assert.equal((await call(h, 'importPresetPackage', { files, ...extra })).status, 400, JSON.stringify(extra))
+    assert.equal((await call(h, 'importModulePackage', { files, ...extra })).status, 400, JSON.stringify(extra))
   }
-  assert.equal((await call(h, 'importPresetPackage', { files: [{ path: 'module.yml', content: 'x', encoding: 'binary' }], preview: true })).status, 400)
-  assert.equal((await call(h, 'importPresetPackage', { files, preview: true }, { socket: { remoteAddress: '192.0.2.1' } })).status, 403)
-  assert.equal((await call(h, 'importPresetPackage', { files, preview: true }, { headers: { host: 'localhost', origin: 'https://evil.invalid' } })).status, 403)
-  assert.equal((await call(h, 'importPresetPackage', { files, preview: true }, { method: 'GET' })).status, 405)
-  assert.equal((await call(h, 'importPresetPackage', { files: [{ path: 'module.yml', content: 'x'.repeat(MAX_BRIDGE_BODY_BYTES) }] })).status, 413)
+  assert.equal((await call(h, 'importModulePackage', { files: [{ path: 'module.yml', content: 'x', encoding: 'binary' }], preview: true })).status, 400)
+  assert.equal((await call(h, 'importModulePackage', { files, preview: true }, { socket: { remoteAddress: '192.0.2.1' } })).status, 403)
+  assert.equal((await call(h, 'importModulePackage', { files, preview: true }, { headers: { host: 'localhost', origin: 'https://evil.invalid' } })).status, 403)
+  assert.equal((await call(h, 'importModulePackage', { files, preview: true }, { method: 'GET' })).status, 405)
+  assert.equal((await call(h, 'importModulePackage', { files: [{ path: 'module.yml', content: 'x'.repeat(MAX_BRIDGE_BODY_BYTES) }] })).status, 413)
   assert.equal((await call(h, 'charactersImportStream', {})).status, 410)
   assert.equal(existsSync(join(root, 'invalid-new')), false)
 })
@@ -166,14 +164,30 @@ test('新参数、来源、载荷上限和回环边界均在写盘前拒绝；�
 test('ZIP 与定义出口共用预览，来源改变使下载过期', async (t) => {
   const h = harness(t)
   const request = { id: 'roundtrip', mode: 'zip', preview: true }
-  const preview = await call(h, 'exportPreset', request)
+  const preview = await call(h, 'exportModule', request)
   assert.equal(preview.status, 200, JSON.stringify(preview.payload))
-  const zip = await call(h, 'exportPreset', { ...request, preview: false, expectedRevision: preview.payload.value.revision })
+  const zip = await call(h, 'exportModule', { ...request, preview: false, expectedRevision: preview.payload.value.revision })
   assert.equal(zip.status, 200, JSON.stringify(zip.payload))
   assert.equal(Buffer.from(zip.payload.value.content, 'base64').subarray(0, 2).toString(), 'PK')
-  const definition = await call(h, 'exportPreset', { id: 'roundtrip', mode: 'definition' })
+  const definition = await call(h, 'exportModule', { id: 'roundtrip', mode: 'definition' })
   assert.equal(parse(definition.payload.value.content).id, 'roundtrip')
   writeFileSync(join(root, 'roundtrip/extra.txt'), 'changed')
-  assert.equal((await call(h, 'exportPreset', { ...request, preview: false, expectedRevision: preview.payload.value.revision })).status, 409)
-  assert.equal((await call(h, 'exportPreset', { id: 'roundtrip', mode: 'invalid' })).status, 400)
+  assert.equal((await call(h, 'exportModule', { ...request, preview: false, expectedRevision: preview.payload.value.revision })).status, 409)
+  assert.equal((await call(h, 'exportModule', { id: 'roundtrip', mode: 'invalid' })).status, 400)
+})
+
+test('旧角色库只报告迁移提示，不列库、读取正文或迁移文件', async t => {
+  const legacy = join(storageRoot, '.characters', 'old')
+  mkdirSync(legacy, { recursive: true })
+  writeFileSync(join(legacy, 'memory.md'), 'LEGACY PRIVATE')
+  const h = harness(t)
+  const result = await call(h, 'meta', {})
+  assert.equal(result.status, 200, JSON.stringify(result.payload))
+  assert.match(result.payload.value.meta.moduleWarnings.join(' '), /旧.*角色库.*不会自动迁移/)
+  assert.doesNotMatch(JSON.stringify(result.payload), /LEGACY PRIVATE/)
+  assert.equal(readFileSync(join(legacy, 'memory.md'), 'utf8'), 'LEGACY PRIVATE')
+  assert.equal(existsSync(join(root, 'old')), false)
+  for (const endpoint of ['characters-list', 'characters-delete', 'characters-apply', 'characters-remove']) {
+    assert.equal(h.handlers.has(SETTINGS_BRIDGE_PREFIX + '/' + endpoint), false)
+  }
 })

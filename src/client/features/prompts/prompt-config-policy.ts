@@ -1,5 +1,5 @@
 import type { PromptToolLocaleKey, PromptToolTranslate } from '../../locales.ts'
-import { ENGINE_LAYER_ORDER, engineGroupParamKeys, type EngineLayer } from '../../../shared/engine-capabilities.ts'
+import { INJECTION_POINT_ORDER, engineGroupParamKeys, type InjectionPoint } from '../../../shared/engine-capabilities.ts'
 import { LAYER_FIELD_POLICY_KEYS, type EngineMeta, type LayerFieldPolicy, type LayerFieldPolicyKey, type MatchLogic, type PromptConfigDraft, type PromptConfigMatch } from '../../prompt-tool-types.ts'
 import type { LayerContract } from '../../../shared/bridge-contract.ts'
 /**
@@ -14,7 +14,7 @@ export const SOURCE_FORMS = ['notice', 'hint', 'instructions', ''] as const
  * 层序的唯一来源是宿主 meta.layerOrder（运行时由引擎 schema 下发）。
  * 共享契约里的九层用于加载快照与模板菜单。
  */
-export const INSERTION_LAYERS = ENGINE_LAYER_ORDER
+export const INSERTION_LAYERS = INJECTION_POINT_ORDER
 
 /**
  * 宿主层序在前，配置中的其他层追加在末尾，便于展示校验错误。
@@ -39,11 +39,11 @@ export function translateLabel(
 /** audience：空值=公用（缺省，通用参数默认）；main=仅主会话；subagent=仅子代理。 */
 export const AUDIENCE_LABEL_KEYS: Record<string, PromptToolLocaleKey> = { '': 'audience.none', main: 'audience.main', subagent: 'audience.subagent' }
 /**
- * 层显示标签的字典键：键集由共享契约的 {@link EngineLayer} 联合在编译期约束（九层穷尽、禁多余键），
+ * 层显示标签的字典键：键集由共享契约的 {@link InjectionPoint} 联合在编译期约束（九层穷尽、禁多余键），
  * 与引擎下发的 layerLabels 的键集对拍见 test/client/mirror-guards.test.mjs。
  * 文案仍归 `prompt-tool` 字典（zh/en 双份），不消费 /meta 的 layerLabels.title（引擎只下发中文单份）。
  */
-export const LAYER_LABEL_KEYS: Record<EngineLayer, PromptToolLocaleKey> = {
+export const LAYER_LABEL_KEYS: Record<InjectionPoint, PromptToolLocaleKey> = {
   'pre-step': 'layer.pre-step',
   'system-section': 'layer.system-section',
   'runtime-context': 'layer.runtime-context',
@@ -80,7 +80,7 @@ export const OFFICIAL_ORDER_GROUP_LABEL_KEYS: Record<string, PromptToolLocaleKey
   'runtime-policy': 'orderGroup.runtimePolicy',
 }
 /** 只有把 order 原样交给官方 `section()` / `context()` 的两层才展示官方刻度。 */
-export const OFFICIAL_ORDER_LAYERS: readonly EngineLayer[] = ['system-section', 'runtime-context']
+export const OFFICIAL_ORDER_LAYERS: readonly InjectionPoint[] = ['system-section', 'runtime-context']
 export const FILL_LABEL_KEYS: Record<string, PromptToolLocaleKey> = { '': 'fill.none', 'instruction-hint': 'fill.instructionHint', 'env-facts': 'fill.envFacts', 'skill-catalog': 'fill.skillCatalog' }
 /** 上述两个 UI 专有取值集的标签键：没有引擎值可对拍，只给本地下拉用。 */
 export const SOURCE_KIND_LABEL_KEYS: Record<string, PromptToolLocaleKey> = { '': 'sourceKind.default', plugin: 'sourceKind.plugin', 'instruction-hint': 'sourceKind.instructionHint', 'instruction-file': 'sourceKind.instructionFile', 'skill-catalog': 'sourceKind.skillCatalog', 'env-facts': 'sourceKind.envFacts' }

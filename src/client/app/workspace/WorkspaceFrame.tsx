@@ -28,7 +28,7 @@ export function WorkspaceFrame(props: {
   const restoredKey = useRef<string>()
   const lastFocusPage = useRef(props.focusPage)
   const scrollKey = props.scrollKey ?? props.page
-  const rules = store.editorDrafts.rules.get(store.fields.presetTemplate)?.entries.filter(entry => !entry.deleted) ?? []
+  const rules = store.editorDrafts.rules.get(store.fields.moduleId)?.entries.filter(entry => !entry.deleted) ?? []
   const enabledCount = rules.filter(entry => entry.value.enabled !== false).length
   // 角色库与工具面拥有独立请求，不能以全局配置数量判定它们的加载/空态。
   const usesBootstrap = props.page !== 'modules' && props.page !== 'tools'

@@ -35,13 +35,13 @@ test('预设保存等待宿主采用；异步拒绝保留定义并可重试；�
   const handler = handlers.get('/api/prompt-tool/settings/param-overrides')
   const save = async (overrides, extra = {}) => {
     const res = fakeRes()
-    await bounded(handler(fakeReq({ body: { expectedPresetId: 'editable', overrides, ...extra } }), res), '参数写入完成')
+    await bounded(handler(fakeReq({ body: { expectedModuleId: 'editable', overrides, ...extra } }), res), '参数写入完成')
     return readBridge(res)
   }
   try {
     const metaRes = fakeRes()
     await handlers.get('/api/prompt-tool/settings/meta')(fakeReq(), metaRes)
-    assert.equal(readBridge(metaRes).value.meta.presets.find(preset => preset.id === 'editable').broken, 'MISSING_SERVICE')
+    assert.equal(readBridge(metaRes).value.meta.modules.find(module => module.id === 'editable').broken, 'MISSING_SERVICE')
     let entered
     const started = new Promise(resolve => { entered = resolve })
     let release
@@ -59,7 +59,7 @@ test('预设保存等待宿主采用；异步拒绝保留定义并可重试；�
     const failed = await save({ maxDepth: 2 })
     assert.equal(failed.status, 500)
     assert.equal(failed.ok, false)
-    assert.equal(failed.code, 'preset-activation-failed')
+    assert.equal(failed.code, 'module-activation-failed')
     assert.match(failed.message, /已保存.*REGISTRATION_FAILED/)
     assert.equal(parse(readFileSync(file, 'utf8')).layerSettings['subagent-start'].maxDepth, 2)
 

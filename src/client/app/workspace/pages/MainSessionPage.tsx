@@ -7,8 +7,8 @@ import { RulesWorkspace } from '../../../features/prompts/RulesWorkspace.tsx'
 import { useTemplatePicker } from '../../../features/prompts/useTemplatePicker.ts'
 import { INSERTION_LAYERS, LAYER_LABEL_KEYS, translateLabel } from '../../../features/prompts/prompt-config-policy.ts'
 import { EngineModuleActions } from '../../../features/modules/EngineModuleList.tsx'
-import { engineCapability } from '../../../../shared/engine-capabilities.ts'
-import { engineLayerSlots } from './EngineLayersPanel.tsx'
+import { moduleCapability } from '../../../../shared/engine-capabilities.ts'
+import { injectionPointSlots } from './InjectionPointsPanel.tsx'
 import { TemplatePicker } from '../../../ui/TemplatePicker.tsx'
 import { useCustomToolsEditor } from '../../../features/tools/CustomToolsCard.tsx'
 import ui from '../../../ui/controls.module.css'
@@ -34,33 +34,33 @@ export const MainSessionPage = memo(function MainSessionPage(props: { store: Pro
   const revealCapability = useCallback((id: string) => {
     setCreatedHidden(viewFilter !== 'all')
     // 能力卡已退场：定位锚改到该层实例卡内的设置区（层从共享契约派生）。
-    const layer = engineCapability(id)?.displayLayer
+    const layer = moduleCapability(id)?.displayLayer
     setFocusCapability((current) => ({ id, layer, token: (current?.token ?? 0) + 1 }))
   }, [viewFilter])
   // 稳定回调：卡片 memo 的生效前提（store 引用已稳定）。
-  const canEditPreset = store.fields.writePreset && store.moduleFacts?.editable === true
+  const canEditModule = store.fields.modulesEnabled && store.moduleFacts?.editable === true
   // 顶部只提供九层注入模板；其它创建由所属层设置承载。
   // 作用域 = 主会话：新建配置清除模板自带的「仅子代理」限制（缺省 = 公用，两侧都可见）。
   const picker = useTemplatePicker(
     draft.entries.filter(entry => !entry.deleted).map(entry => entry.value),
-    (rule) => { if (canEditPreset && draft.loaded) editor.add(rule) },
+    (rule) => { if (canEditModule && draft.loaded) editor.add(rule) },
     store.showNotice,
     t,
     'main',
   )
-  const toolEditor = useCustomToolsEditor({ t, presetId: fields.presetTemplate, disabled: !canEditPreset, drafts: store.editorDrafts, onNotice: store.showNotice, onChooseTemplate: picker.openTools })
+  const toolEditor = useCustomToolsEditor({ t, moduleId: fields.moduleId, disabled: !canEditModule, drafts: store.editorDrafts, onNotice: store.showNotice, onChooseTemplate: picker.openTools })
   const createItems = INSERTION_LAYERS.map((layer) => ({ id: `tpl:${layer}`, label: t('main.addTemplate', { layer: translateLabel(t, LAYER_LABEL_KEYS, layer) }) }))
   const onCreateSelect = useCallback((id: string) => {
-    if (canEditPreset && id.startsWith('tpl:')) picker.openPicker(id.slice(4))
-  }, [canEditPreset, picker])
+    if (canEditModule && id.startsWith('tpl:')) picker.openPicker(id.slice(4))
+  }, [canEditModule, picker])
   const insertToolTemplate = useCallback((spec: Record<string, unknown>) => {
     setCreatedHidden(viewFilter !== 'all' && viewFilter !== 'tool-pipeline')
-    toolEditor.createTool({ kind: 'template', spec, presetId: fields.presetTemplate })
+    toolEditor.createTool({ kind: 'template', spec, moduleId: fields.moduleId })
     picker.closePicker()
-  }, [fields.presetTemplate, picker, viewFilter, toolEditor.createTool])
-  // 九层归位、层内设置与资产编辑器统一由 EngineLayersPanel 提供：本页只声明受众视图与
+  }, [fields.moduleId, picker, viewFilter, toolEditor.createTool])
+  // 九层归位、层内设置与资产编辑器统一由 InjectionPointsPanel 提供：本页只声明受众视图与
   // 页面编排（创建菜单、模板浮层、指令回调），不再自己手写层名判断或注入单例卡。
-  const layers = engineLayerSlots({
+  const layers = injectionPointSlots({
     store,
     t,
     viewFilter,

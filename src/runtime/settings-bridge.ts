@@ -8,9 +8,9 @@ import { createHash } from 'node:crypto'
 import { basename, dirname, join, resolve, sep } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { isDeepStrictEqual } from 'node:util'
-import { mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs'
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import type { SettingsDescriptor, SettingsPathOp } from '@deepseek-ai/dsh-settings'
-import { PARAM_KEYS } from '../config.ts'
+import { PARAM_KEYS, readModulesEnabled } from '../config.ts'
 import { invalidateModelCatalog, listAdvertisedModels, peekModelCatalog, refreshModelReasoning, type ModelDetection } from './models.ts'
 import type { SkillCatalogEntry, SkillPolicyChange, SkillPolicyScope, SkillsCatalogSnapshot } from '../shared/skills.ts'
 import { enabledModuleIds, setModuleEnabled } from '../host/config-store.ts'
@@ -19,10 +19,9 @@ import type { ModuleConfigIdentity } from '../shared/module-config-order.ts'
 import { moduleDirExists } from '../host/manifest.ts'
 import { ruleInjections } from '../host/rule-content.ts'
 import { readOfficialOrderSegments, type OfficialOrderLookup } from '../shared/official-orders.ts'
-import { validatePromptConfigs } from './configs-validate.ts'
-import { PresetLayerSettingsError } from '../host/module-layer-settings.ts'
+import { ModuleLayerSettingsError, readModuleLayerSettings } from '../host/module-layer-settings.ts'
 import { readModuleRules, editModuleRules, ModuleRulesError } from '../host/module-rules.ts'
-import { RULE_OWNED_MODEL_PARAMS, type RuleEdit, type RuleEditorMeta } from '../shared/rules.ts'
+import { RULE_OWNED_MODEL_PARAMS, type RuleEdit, type RuleEditorMeta, type RuleRevisions } from '../shared/rules.ts'
 import { loadPromptTemplates, loadToolTemplates } from '../host/templates.ts'
 import { assertImportableSource, importSkillsDirectory, importSkillsPackage } from '../host/skills-import.ts'
 import { createSkill, type SkillActionResult } from '../host/skills-actions.ts'
@@ -30,45 +29,35 @@ import type { SkillPolicyWrite } from '../host/skills-policy.ts'
 import type { SkillContentResult } from '../host/skills-content.ts'
 import { MAX_SKILL_CONTENT_BYTES } from '../shared/skills.ts'
 import {
-  appendPresetModules,
-  atomicWriteTextFile,
-  cloneBuiltinPreset,
-  createEngineCapabilityInPreset,
+  appendModuleCapabilities,
+  cloneBuiltinModule,
+  createModuleCapability,
   duplicateUserModule,
   listBuiltinTemplates,
   listModules,
   loadModuleSpec,
-  invalidateModuleSpec,
   openModuleLocation,
   packageEngineDir,
-  removeEngineCapabilityFromPreset,
-  removeUserPreset,
-  resolvePresetParams,
+  removeModuleCapability,
+  removeUserModule,
+  resolveModuleParams,
   resolveModuleFacts,
   resolveModuleDir,
   saveModuleParams,
-  savePresetPersona,
+  saveModulePersona,
   userModulesDir,
-  withPresetDoc,
+  withModuleDefinition,
 } from '../host/manifest.ts'
-import {
-  applyCharacterToPreset,
-  charactersDir,
-  deleteCharacterCard,
-  importCharacterCard,
-  listCharacterCards,
-  removeCharacterFromPreset,
-} from '../host/characters.ts'
-import { previewCharacterCard } from '../host/characters.ts'
-import { computePreviewRevision, directoryVersionOf } from '../host/preview-revision.ts'
+import { mergeModuleIntoModule, removeMergedModule } from '../host/characters.ts'
+import { ensureModuleSlices, loadModuleDefinition } from '../host/module-storage.ts'
 import { createAssetSources } from '../host/asset-sources.ts'
-import { expandPresetSource, exportPresetPackage, installPresetPackage, presetImportPreview } from '../host/module-package.ts'
-import { decodeAssetFile, prepareImport } from '../host/import-source.ts'
-import { assertModuleDirectory, assertPresetId, canonicalPresetRoot, presetPathExists } from '../host/module-install.ts'
-import { DSH_HOME, MODULE_DEFINITION_FILE } from '../host/paths.ts'
-import type { AssetFile, AssetImportRequest, ImportKind, PresetExportRequest } from '../shared/asset-transfer.ts'
+import { expandModuleSource, exportModulePackage, installModulePackage, moduleImportPreview } from '../host/module-package.ts'
+import { prepareImport } from '../host/import-source.ts'
+import { assertModuleId, modulePathExists } from '../host/module-install.ts'
+import { DSH_HOME } from '../host/paths.ts'
+import type { AssetFile, AssetImportRequest, ImportKind, ModuleExportRequest } from '../shared/asset-transfer.ts'
 import { lastWorldBookDiagnostics } from '../../engine/st-world-book.mjs'
-import { BRIDGE_ENDPOINTS, EDIT_TARGET_HEADER, MAX_BRIDGE_BODY_BYTES, PRESET_ACTIVATION_FAILED, SETTINGS_BRIDGE_PREFIX, readEditTarget } from '../shared/bridge-contract.ts'
+import { BRIDGE_ENDPOINTS, EDIT_TARGET_HEADER, MAX_BRIDGE_BODY_BYTES, MODULE_ACTIVATION_FAILED, SETTINGS_BRIDGE_PREFIX, readEditTarget } from '../shared/bridge-contract.ts'
 import { moduleParamFallbacks, validateEngineParamValues } from '../shared/engine-params.ts'
 import { readPersonaSpec } from '../shared/persona-section.ts'
 import { SKILL_NAME_PATTERN, type SkillsStateRead } from '../host/skills-config.ts'
@@ -156,7 +145,7 @@ function writeLayerSettingsError(res: ServerResponse, error: unknown): boolean {
     writeBridgeJson(res, error.status, { ok: false, code: error.code, message: error.message })
     return true
   }
-  if (!(error instanceof PresetLayerSettingsError)) return false
+  if (!(error instanceof ModuleLayerSettingsError)) return false
   writeBridgeJson(res, 400, { ok: false, code: error.code, message: error.message })
   return true
 }
@@ -334,12 +323,12 @@ function withSnapshot(
  * 当前工作区里没有对应生成卡的文件按默认文件卡补齐。
  */
 export function mergeInstructionCards(
-  presetCards: readonly unknown[],
+  moduleCards: readonly unknown[],
   files: readonly InstructionFileSnapshot[],
 ): unknown[] {
   const byId = new Map(files.map((file) => [file.fileId, file]))
   const kept: unknown[] = []
-  for (const card of presetCards) {
+  for (const card of moduleCards) {
     if (!isFileCardSpec(card)) {
       kept.push(card)
       continue
@@ -413,15 +402,15 @@ function projectToolSchemas(schemas: readonly ToolSchemaLike[]): Array<{ name: s
   return [...unique.values()].sort((a, b) => a.name < b.name ? -1 : a.name > b.name ? 1 : 0)
 }
 
-function isEditablePresetDir(dir: string, moduleRoot = userModulesDir()): boolean {
+function isEditableModuleDir(dir: string, moduleRoot = userModulesDir()): boolean {
   const root = resolve(moduleRoot)
   const target = resolve(dir)
   return target !== root && target.startsWith(root + sep)
 }
 
-function guardEditablePresetDir(dir: string, res: ServerResponse): boolean {
-  if (isEditablePresetDir(dir)) return true
-  writeBridgeJson(res, 403, { ok: false, code: 'preset-readonly', message: 'system preset 只读，请先复制为用户模块' })
+function guardEditableModuleDir(dir: string, res: ServerResponse): boolean {
+  if (isEditableModuleDir(dir)) return true
+  writeBridgeJson(res, 403, { ok: false, code: 'module-readonly', message: 'system preset 只读，请先复制为用户模块' })
   return false
 }
 
@@ -523,7 +512,7 @@ export function registerSettingsBridge(
   ns: string,
   getModelsState: () => ModelDetection,
   getSkillsState: () => SkillsBridgeState,
-  getEngineStrategyDir: () => string,
+  _getEngineStrategyDir: () => string,
   afterSkillsChange?: () => void,
   /**
    * 生成目录（模块目录）：读取/写入哪一份提示词配置。
@@ -532,38 +521,38 @@ export function registerSettingsBridge(
    * 没给则由 host 回退启用表首项。编辑器因此不必依赖某个全局单选——配置卡自己的
    * 模块身份决定写哪里。
    */
-  getPresetConfigsDir?: (moduleId?: string) => string,
+  getModuleDirectory?: (moduleId?: string) => string,
   /** 内容导入完成回调：批量 scope 只触发一次重建（更新运行时文本并重建模块）。 */
-  afterPresetImport?: (scopes: Array<'preset' | 'agents'>, moduleId?: string) => void | Promise<void>,
+  afterModuleContentImport?: (scopes: Array<'preset' | 'agents'>, moduleId?: string) => void | Promise<void>,
   /** 参数写入后重建指定模块；省略身份表示启用表变化，刷新全部运行实例。 */
   afterOverridesChange?: (moduleId?: string) => void | Promise<void>,
   /** 模块已完整安装后的刷新回调；失败返回未生效诊断，不再物化或撤销安装。 */
-  afterPresetPackageImport?: (id: string) => void | Promise<void>,
-  /** 能力/recipe 原子创建后重建回调；抛错时调用方恢复 preset.yml。 */
+  afterModulePackageImport?: (id: string) => void | Promise<void>,
+  /** 能力/recipe 提交后刷新回调；失败保留已提交定义并明确报告。 */
   afterCapabilityChange?: (moduleId?: string) => void | Promise<void>,
   /** 新建、复制或删除模块后重建当前模块。 */
-  afterPresetListChange?: (id: string) => void | Promise<void>,
+  afterModuleListChange?: (id: string) => void | Promise<void>,
 ): { invalidateDescriptor: () => void } {
   let invalidateCachedDescriptor: () => void = () => {}
   let capabilityQueue: Promise<void> = Promise.resolve()
   let moduleOrderQueue: Promise<void> = Promise.resolve()
   /** 写盘已完成：等待重建，失败立即返回统一错误，不覆盖持久化结果。 */
-  const finishPresetChange = async (res: ServerResponse, activate: () => void | Promise<void>): Promise<boolean> => {
+  const finishModuleChange = async (res: ServerResponse, activate: () => void | Promise<void>): Promise<boolean> => {
     try {
       await activate()
       return true
     } catch (error) {
-      writeBridgeJson(res, 500, { ok: false, code: PRESET_ACTIVATION_FAILED, message: `更改已保存，但模块未生效；请重试：${String(error)}` })
+      writeBridgeJson(res, 500, { ok: false, code: MODULE_ACTIVATION_FAILED, message: `更改已保存，但模块未生效；请重试：${String(error)}` })
       return false
     }
   }
-  const runOverridesChange = (res: ServerResponse, moduleId?: string): Promise<boolean> => finishPresetChange(res, () => afterOverridesChange?.(moduleId))
+  const runOverridesChange = (res: ServerResponse, moduleId?: string): Promise<boolean> => finishModuleChange(res, () => afterOverridesChange?.(moduleId))
   /**
    * 本次请求的编辑目标目录：读 `x-module-id` 头（形状不合法当未声明），交给注入的实现定位。
    * 所有「读/写哪个模块的配置」都走这里，端点不再各自记一个全局目标。
    */
-  const editDir = (req: IncomingMessage): string => getPresetConfigsDir?.(readEditTarget(req.headers[EDIT_TARGET_HEADER])) ?? ''
-  const refreshPresetList = (res: ServerResponse, id: string): Promise<boolean> => finishPresetChange(res, () => afterPresetListChange?.(id))
+  const editDir = (req: IncomingMessage): string => getModuleDirectory?.(readEditTarget(req.headers[EDIT_TARGET_HEADER])) ?? ''
+  const refreshModuleList = (res: ServerResponse, id: string): Promise<boolean> => finishModuleChange(res, () => afterModuleListChange?.(id))
   // 动态等待 webServer：webServer 由 @deepseek-ai/dsh-web-app 提供。
   // profile 首次缺少该 bundle 时，本子插件先 pending 但不阻塞启动审计；
   // ensureWebSurface 仅报告缺失能力，profile 装配交给官方插件管理流程。
@@ -586,10 +575,14 @@ export function registerSettingsBridge(
         return cachedDescriptor
       }
       /** 已解析的编辑目标只投影到本次响应，不改宿主设置或缓存描述符。 */
-      const descriptorForTarget = (descriptor: SettingsDescriptor, dir: string): SettingsDescriptor =>
-        dir.length === 0
-          ? descriptor
-          : { ...descriptor, value: { ...asRecord(descriptor.value), presetTemplate: basename(dir) } }
+      const descriptorForTarget = (descriptor: SettingsDescriptor, dir: string): SettingsDescriptor => {
+        const value = { ...asRecord(descriptor.value) }
+        value.modulesEnabled = readModulesEnabled(value)
+        delete value.writePreset
+        delete value.presetTemplate
+        if (dir.length > 0) value.moduleId = basename(dir)
+        return { ...descriptor, value }
+      }
       /** mutate 成功后强制失效，下次 findDescriptor 重查宿主（响应必须带新 view）。 */
       const invalidateDescriptor = (): void => {
         cachedDescriptor = undefined
@@ -606,32 +599,36 @@ export function registerSettingsBridge(
         }
         return true
       }
-      const guardPresetFormat = (dir: string, res: ServerResponse): boolean => {
+      const guardModuleFormat = (dir: string, res: ServerResponse): boolean => {
         if (dir.length === 0) return true
-        try { loadModuleSpec(dir) } catch (error) {
+        try { readModuleLayerSettings(loadModuleDefinition(dir).source) } catch (error) {
           if (writeLayerSettingsError(res, error)) return false
         }
         return true
       }
-      const guardPresetWrite = (dir: string, res: ServerResponse): boolean =>
-        guardEditablePresetDir(dir, res) && guardPresetFormat(dir, res)
+      const guardModuleWrite = (dir: string, res: ServerResponse): boolean =>
+        guardEditableModuleDir(dir, res) && guardModuleFormat(dir, res)
       const writeModuleOrderError = (res: ServerResponse, error: unknown): void => {
         const status = error instanceof ModuleConfigOrderError ? error.status : 500
         const code = error instanceof ModuleConfigOrderError ? error.code : 'module-config-order-failed'
         writeBridgeJson(res, status, { ok: false, code, message: String((error as Error)?.message ?? error) })
       }
       /** 模块身份只作一致性检查，绝不用客户端 ID 构造写入路径。 */
-      const guardPresetIdentity = (req: IncomingMessage, record: Record<string, unknown>, dir: string, res: ServerResponse): boolean => {
-        const expected = record.expectedPresetId
+      const guardModuleIdentity = (req: IncomingMessage, record: Record<string, unknown>, dir: string, res: ServerResponse): boolean => {
+        if (record.expectedModuleId !== undefined && record.expectedPresetId !== undefined && record.expectedModuleId !== record.expectedPresetId) {
+          writeBridgeJson(res, 400, { ok: false, code: 'module-identity-invalid', message: '新旧模块身份字段冲突' })
+          return false
+        }
+        const expected = record.expectedModuleId ?? record.expectedPresetId
         if (expected !== undefined && (typeof expected !== 'string' || expected.length === 0 || expected.length > 256)) {
-          writeBridgeJson(res, 400, { ok: false, code: 'preset-identity-invalid', message: 'expectedPresetId 必须是非空模块 ID' })
+          writeBridgeJson(res, 400, { ok: false, code: 'module-identity-invalid', message: 'expectedModuleId 必须是非空模块 ID' })
           return false
         }
         if (editDir(req) !== dir || (expected !== undefined && expected !== basename(dir))) {
-          writeBridgeJson(res, 409, { ok: false, code: 'preset-changed', message: '当前模块已切换；旧草稿未写入，请重新读取后保存' })
+          writeBridgeJson(res, 409, { ok: false, code: 'module-changed', message: '当前模块已切换；旧草稿未写入，请重新读取后保存' })
           return false
         }
-        return guardPresetFormat(dir, res)
+        return guardModuleFormat(dir, res)
       }
       /** 官方刻度取值失败只告警一次：本函数被 /meta 与 /bootstrap 共用，不能每次调用都刷屏。 */
       let warnedOfficialOrders = false
@@ -647,12 +644,15 @@ export function registerSettingsBridge(
         const diagnostics = new Map(roster.map(({ id, broken }) => [id, broken]))
         // 启用表是「参与运行时装配」的唯一事实来源；随每个模块下发，UI 的开关据此显示。
         const enabledSet = new Set(enabledModuleIds(userModulesDir()))
-        meta.presets = listModules().map((preset) => ({
+        meta.modules = listModules().map((preset) => ({
           ...preset,
           enabled: enabledSet.has(preset.id),
           ...(diagnostics.get(preset.id) === undefined ? {} : { broken: diagnostics.get(preset.id) }),
         }))
         meta.builtinTemplates = listBuiltinTemplates()
+        if (modulePathExists(join(dirname(userModulesDir()), '.characters'))) {
+          meta.moduleWarnings = ['检测到旧 .characters 角色库；其内容尚未作为模块导入。请通过模块导入入口显式导入，旧目录不会自动迁移或删除。']
+        }
         // 编辑组主归属与引擎 meta 同源组合下发：layerOrder 由引擎 schema 提供（不另写层序清单），
         // editorGroups 来自共享契约。逐条挑白名单字段，避免将来给契约加字段就顺带泄漏到浏览器。
         meta.editorGroups = ENGINE_EDITOR_GROUP_MAP.map(({ id, displayLayer, relatedLayers, hook }) => ({
@@ -729,7 +729,7 @@ export function registerSettingsBridge(
         const modelCatalog = peekModelCatalog(sctx)
         // 引擎参数按模块存储：/describe 附带激活模块参数（settings 已不承载；
         // 客户端 fields 参数键由此合并，promptConfigs 仍以 /prompt-configs 实际配置为准）。
-        let presetParams: Record<string, unknown> = {}
+        let moduleParams: Record<string, unknown> = {}
         let moduleFacts: ModuleFacts | undefined
         // 当前模块模板消息批层（pre-step）配置数：UI 消息批层入口开关联动——
         // 模板无 pre-step 配置（layer 缺省即 pre-step）时开关关闭且禁编辑。
@@ -738,13 +738,13 @@ export function registerSettingsBridge(
           // 聚合响应复用端点已解析的请求目录，与 overrides、配置卡和变量同源。
           const templateName = activeDir.length > 0 ? basename(activeDir) : DEFAULT_MODULE_ID
           const spec = loadModuleSpec(activeDir.length > 0 ? activeDir : resolveModuleDir(templateName))
-          presetParams = resolvePresetParams(spec, {})
+          moduleParams = resolveModuleParams(spec, {})
           const resolvedFacts = resolveModuleFacts(
             spec,
             activeDir.length > 0 ? activeDir : undefined,
-            isEditablePresetDir(activeDir.length > 0 ? activeDir : resolveModuleDir(templateName)),
+            isEditableModuleDir(activeDir.length > 0 ? activeDir : resolveModuleDir(templateName)),
           )
-          mergeModuleConfigFallbacks(presetParams, resolvedFacts)
+          mergeModuleConfigFallbacks(moduleParams, resolvedFacts)
           // effectiveConfigs 只用于服务端把已存在的 moduleConfigs 回显到已知字段；
           // 不把整份行级配置（可能含路径/未知字段）发送到浏览器。
           moduleFacts = {
@@ -757,11 +757,11 @@ export function registerSettingsBridge(
           }
           templatePreStepCount = (spec.rules ?? []).filter(rule => rule.layer === 'pre-step').length
         } catch (error) {
-          if (error instanceof PresetLayerSettingsError || error instanceof ModuleRulesError) throw error
+          if (error instanceof ModuleLayerSettingsError || error instanceof ModuleRulesError) throw error
           templatePreStepCount = 0
         }
         return {
-          presetParams,
+          moduleParams,
           moduleFacts,
           hostDefaultModel,
           templatePreStepCount,
@@ -778,7 +778,7 @@ export function registerSettingsBridge(
         }
       }
 
-      /** 激活模块的引擎参数子集（/param-overrides 读取；preset.yml 按 mtime 缓存）。 */
+      /** 激活模块的引擎参数子集（/param-overrides 读取；module.yml 按 mtime 缓存）。 */
       const readParamOverrides = (dir: string): Record<string, unknown> => {
         try {
           const spec = loadModuleSpec(dir)
@@ -791,24 +791,15 @@ export function registerSettingsBridge(
           }
           return params
         } catch (error) {
-          if (error instanceof PresetLayerSettingsError || error instanceof ModuleRulesError) throw error
+          if (error instanceof ModuleLayerSettingsError || error instanceof ModuleRulesError) throw error
           return {}
         }
       }
 
-      /** 模块级模板变量（/preset-variables 读取）。 */
-      const readPresetVariables = (dir: string): { variables: Record<string, string>; enabled: boolean } => {
-        try {
-          const spec = loadModuleSpec(dir)
-          const variables: Record<string, string> = {}
-          for (const [key, value] of Object.entries(spec.variables ?? {})) {
-            if (typeof value === 'string') variables[key] = value
-          }
-          return { variables, enabled: spec.variablesEnabled !== false }
-        } catch (error) {
-          if (error instanceof PresetLayerSettingsError || error instanceof ModuleRulesError) throw error
-          return { variables: {}, enabled: true }
-        }
+      /** 完整已提交定义的只读变量快照，不因发布失败而再次触发切片恢复。 */
+      const readModuleVariables = (dir: string): { variables: Record<string, string>; enabled: boolean; revisions: RuleRevisions } => {
+        const snapshot = loadModuleDefinition(dir)
+        return { variables: snapshot.variables, enabled: snapshot.variablesEnabled, revisions: snapshot.revisions }
       }
 
       const disposers = [
@@ -833,18 +824,20 @@ export function registerSettingsBridge(
             }
             // 工作台首屏/保存后刷新的聚合读取：meta + describe 事实 + 参数覆盖 +
             // 模板变量 + 实际生效配置 + 指令文件快照。此前客户端串行 5 个端点
-            // （每端点独立读盘 parse preset.yml）；聚合后单请求、preset.yml 命中
+            // （每端点独立读盘 parse module.yml）；聚合后单请求、module.yml 命中
             // mtime 缓存仅解析一次。文件卡正文与 /prompt-configs 走同一读取入口。
             try {
               const meta = await loadEngineMeta()
               const extras = await collectDescribeExtras(dir, session.sessionId)
               const scope = resolveInstructionScope(sctx, session.sessionId)
+              const variables = dir.length > 0 ? readModuleVariables(dir) : { variables: {}, enabled: true }
               writeBridgeJson(res, 200, {
                 ok: true,
                 value: descriptorForTarget(descriptor, dir),
                 meta: { meta },
                 overrides: { overrides: dir.length > 0 ? readParamOverrides(dir) : {} },
-                variables: dir.length > 0 ? readPresetVariables(dir) : { variables: {}, enabled: true },
+                variables,
+                ...('revisions' in variables ? { variablesRevisions: variables.revisions } : {}),
                 promptConfigs: { promptConfigs: mergeInstructionCards([], scope.files) },
                 instructions: { context: scope.context, files: scope.files, owner: instructionOwner(sctx, session.sessionId) },
                 ...extras,
@@ -941,7 +934,7 @@ export function registerSettingsBridge(
               writeBridgeJson(res, 400, { ok: false, code: 'settings-rejected', message: 'malformed bridge settings request' })
               return
             }
-            // 引擎参数按模块存储（激活模块 preset.yml）：settings mutate 只接受全局键。
+            // 引擎参数按模块存储（激活模块 module.yml）：settings mutate 只接受全局键。
             const paramOp = record.ops.find((op) => {
               const path = (op as { path?: unknown })?.path
               return Array.isArray(path) && path.length > 0 && typeof path[0] === 'string' && PARAM_KEYS.has(path[0])
@@ -952,7 +945,15 @@ export function registerSettingsBridge(
             }
             const expectedRevision = typeof record.expectedRevision === 'number' ? record.expectedRevision : undefined
             try {
-              await sctx.settings.mutate(ns, record.ops as SettingsPathOp[], expectedRevision)
+              const ops = record.ops as SettingsPathOp[]
+              const toggles = ops.filter(op => op.path.length === 1 && ['modulesEnabled', 'writePreset'].includes(String(op.path[0])))
+              const values = Object.fromEntries(toggles.filter(op => op.op === 'set').map(op => [op.path[0], (op as { value: unknown }).value]))
+              if (toggles.length > 0) {
+                readModulesEnabled(values)
+                const normalized = ops.map(op => op.path.length === 1 && op.path[0] === 'writePreset' ? { ...op, path: ['modulesEnabled'] } : op)
+                normalized.push({ op: 'unset', path: ['writePreset'] })
+                await sctx.settings.mutate(ns, normalized as SettingsPathOp[], expectedRevision)
+              } else await sctx.settings.mutate(ns, ops, expectedRevision)
             } catch (error) {
               const message = error instanceof Error ? error.message : String(error)
               writeBridgeJson(res, 409, { ok: false, code: 'settings-rejected', message })
@@ -965,30 +966,7 @@ export function registerSettingsBridge(
               writeBridgeJson(res, 500, { ok: false, code: 'settings-rejected', message: 'prompt-tool settings namespace was disposed after mutate' })
               return
             }
-            writeBridgeJson(res, 200, { ok: true, value: descriptor })
-          },
-        }),
-        sctx.webServer.register({
-          kind: 'exact',
-          path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.configsValidate,
-          handler: async (req, res) => {
-            if (!guard(req, res)) return
-            // 校验载荷承载全量 promptConfigs（实测 129 卡 70KB），使用统一 32 MiB JSON 上限，
-            // 超限由共享读取器明确返回 413，避免保存按钮收到误导性的 unreadable JSON body。
-            const parsedBody = await readBridgeBodyForHandler(req, res)
-            if (parsedBody === undefined) return
-            const { body } = parsedBody
-            if (body === null || body === undefined || typeof body !== 'object') {
-              writeBridgeJson(res, 400, { ok: false, code: 'settings-rejected', message: 'unreadable JSON body' })
-              return
-            }
-            const record = body as Record<string, unknown>
-            if (!Array.isArray(record.promptConfigs)) {
-              writeBridgeJson(res, 400, { ok: false, code: 'prompt-configs-invalid', message: 'promptConfigs must be an array' })
-              return
-            }
-            const result = await validatePromptConfigs(record.promptConfigs, { strategyDir: getEngineStrategyDir(), moduleDir: editDir(req) })
-            writeBridgeJson(res, 200, { ok: true, value: result })
+            writeBridgeJson(res, 200, { ok: true, value: descriptorForTarget(descriptor, editDir(req)) })
           },
         }),
         sctx.webServer.register({
@@ -1250,7 +1228,7 @@ export function registerSettingsBridge(
             // 实际生效配置 = 生成目录 prompt-configs/（引擎加载源）；
             // settings.promptConfigs 仅是用户覆盖层，默认为空不代表无配置。
             const dir = editDir(req) ?? ''
-            if (!guardPresetFormat(dir, res)) return
+            if (!guardModuleFormat(dir, res)) return
             // 独立文件来源：与 /bootstrap 共用同一读取入口，附正文、字节版本与读取状态。
             const scope = resolveInstructionScope(sctx, session.sessionId)
             writeBridgeJson(res, 200, {
@@ -1376,7 +1354,7 @@ export function registerSettingsBridge(
         }),
         sctx.webServer.register({
           kind: 'exact',
-          path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.presetContent,
+          path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.moduleContent,
           handler: async (req, res) => {
             if (!guard(req, res)) return
             const parsedBody = await readBridgeBodyForHandler(req, res)
@@ -1429,21 +1407,21 @@ export function registerSettingsBridge(
             }
             const dir = editDir(req) ?? ''
             if (dir.length === 0) {
-              writeBridgeJson(res, 400, { ok: false, code: 'preset-dir-unavailable', message: '模块目录未配置' })
+              writeBridgeJson(res, 400, { ok: false, code: 'module-dir-unavailable', message: '模块目录未配置' })
               return
             }
-            if (!guardPresetWrite(dir, res)) return
+            if (!guardModuleWrite(dir, res)) return
             try {
-              if (!guardPresetIdentity(req, record, dir, res)) return
+              if (!guardModuleIdentity(req, record, dir, res)) return
               mkdirSync(dir, { recursive: true })
               for (const entry of contents) {
                 writeFileSync(join(dir, entry.scope === 'preset' ? 'preset.md' : 'agents.md'), entry.content, 'utf8')
               }
-              if (!await finishPresetChange(res, () => afterPresetImport?.(contents.map((entry) => entry.scope), basename(dir)))) return
+              if (!await finishModuleChange(res, () => afterModuleContentImport?.(contents.map((entry) => entry.scope), basename(dir)))) return
               writeBridgeJson(res, 200, { ok: true, value: { scopes: contents.map((entry) => entry.scope) } })
             } catch (error) {
               const message = error instanceof Error ? error.message : String(error)
-              writeBridgeJson(res, 500, { ok: false, code: 'preset-import-failed', message })
+              writeBridgeJson(res, 500, { ok: false, code: 'module-import-failed', message })
             }
           },
         }),
@@ -1462,43 +1440,59 @@ export function registerSettingsBridge(
             if (!guard(req, res)) return
             const dir = editDir(req) ?? ''
             if (dir.length === 0) {
-              writeBridgeJson(res, 400, { ok: false, code: 'preset-dir-unavailable', message: '当前模块目录不可用' })
+              writeBridgeJson(res, 400, { ok: false, code: 'module-dir-unavailable', message: '当前模块目录不可用' })
               return
             }
             const parsed = await readBridgeBodyForHandler(req, res)
             if (parsed === undefined) return
             const record = parsed.body ?? {}
             if (!isRecord(record)
-              || Object.keys(record).some(key => !['expectedPresetId', 'expectedRevision', 'edits', 'activateRuleId', 'validateOnly'].includes(key))
-              || typeof record.expectedPresetId !== 'string' || record.expectedPresetId.length === 0
+              || Object.keys(record).some(key => !['expectedModuleId', 'expectedPresetId', 'expectedRevision', 'expectedRevisions', 'edits', 'activateRuleId', 'validateOnly', 'refreshOnly'].includes(key))
+              || typeof (record.expectedModuleId ?? record.expectedPresetId) !== 'string' || (record.expectedModuleId ?? record.expectedPresetId) === ''
               || (record.expectedRevision !== undefined && (typeof record.expectedRevision !== 'string' || !SHA256_HEX_RE.test(record.expectedRevision)))
               || (record.edits !== undefined && !Array.isArray(record.edits))
               || (record.activateRuleId !== undefined && (typeof record.activateRuleId !== 'string' || record.activateRuleId.length === 0))
-              || (record.validateOnly !== undefined && typeof record.validateOnly !== 'boolean')) {
+              || (record.validateOnly !== undefined && typeof record.validateOnly !== 'boolean')
+              || (record.refreshOnly !== undefined && typeof record.refreshOnly !== 'boolean')
+              || (record.refreshOnly === true && (record.edits !== undefined || record.activateRuleId !== undefined || record.validateOnly !== undefined))) {
               writeBridgeJson(res, 400, { ok: false, code: 'rules-invalid', message: '规则请求字段、模块身份或版本格式不合法' })
               return
             }
-            if (!guardPresetIdentity(req, record, dir, res)) return
-            const editing = record.edits !== undefined || record.activateRuleId !== undefined
-            const writing = editing && record.validateOnly !== true
-            if (editing && typeof record.expectedRevision !== 'string') {
-              writeBridgeJson(res, 400, { ok: false, code: 'rules-invalid', message: '修改规则必须提供读取时的 expectedRevision' })
+            if (!guardModuleIdentity(req, record, dir, res)) return
+            if (record.refreshOnly === true) {
+              if (!guardModuleWrite(dir, res)) return
+              const { getRuleEditorMeta } = await import(pathToFileURL(join(packageEngineDir(), 'rule-spec.mjs')).href) as { getRuleEditorMeta: () => RuleEditorMeta }
+              try { await afterOverridesChange?.(basename(dir)) }
+              catch (error) {
+                const committed = loadModuleDefinition(dir)
+                writeBridgeJson(res, 200, { ok: true, value: { rules: committed.rules, revisions: committed.revisions, meta: getRuleEditorMeta(), persisted: true, publicationPending: true, publicationError: `运行刷新失败：${String(error)}` } })
+                return
+              }
+              const committed = loadModuleDefinition(dir)
+              writeBridgeJson(res, 200, { ok: true, value: { rules: committed.rules, revisions: committed.revisions, meta: getRuleEditorMeta(), publicationPending: false } })
               return
             }
-            if (writing && !guardPresetWrite(dir, res)) return
+            const editing = record.edits !== undefined || record.activateRuleId !== undefined
+            const writing = editing && record.validateOnly !== true
+            if (editing && record.expectedRevisions === undefined && typeof record.expectedRevision !== 'string') {
+              writeBridgeJson(res, 400, { ok: false, code: 'rules-invalid', message: '修改规则必须提供读取时的 expectedRevisions' })
+              return
+            }
+            if (writing && !guardModuleWrite(dir, res)) return
             try {
               const { getRuleEditorMeta } = await import(pathToFileURL(join(packageEngineDir(), 'rule-spec.mjs')).href) as { getRuleEditorMeta: () => RuleEditorMeta }
-              if (!guardPresetIdentity(req, record, dir, res)) return
+              if (!guardModuleIdentity(req, record, dir, res)) return
               const candidate = editing ? editModuleRules(dir, {
-                expectedRevision: record.expectedRevision as string,
+                ...(record.expectedRevision === undefined ? {} : { expectedRevision: record.expectedRevision as string }),
+                ...(record.expectedRevisions === undefined ? {} : { expectedRevisions: record.expectedRevisions as Partial<import('../shared/rules.ts').RuleRevisions> }),
                 ...(record.edits === undefined ? {} : { edits: record.edits as RuleEdit[] }),
                 ...(record.activateRuleId === undefined ? {} : { activateRuleId: record.activateRuleId as string }),
                 ...(record.validateOnly === undefined ? {} : { validateOnly: record.validateOnly as boolean }),
-              }) : readModuleRules(dir)
+              }) : isEditableModuleDir(dir) ? readModuleRules(dir) : ensureModuleSlices(dir, { writable: false })
               if (writing) {
                 try { await afterOverridesChange?.(basename(dir)) }
                 catch (error) {
-                  writeBridgeJson(res, 500, { ok: false, code: 'rules-rebuild-failed', message: `规则已保存，但模块重建失败；请重新读取后重试：${String(error)}` })
+                  writeBridgeJson(res, 200, { ok: true, value: { rules: candidate.rules, revisions: candidate.revisions, meta: getRuleEditorMeta(), persisted: true, publicationPending: true, publicationError: `规则已保存，但运行刷新失败：${String(error)}` } })
                   return
                 }
               }
@@ -1507,9 +1501,15 @@ export function registerSettingsBridge(
                 writeBridgeJson(res, 409, { ok: false, code: 'rules-conflict', message: '重建期间规则再次变化；请重新读取，当前草稿仍保留' })
                 return
               }
-              writeBridgeJson(res, 200, { ok: true, value: { ...result, meta: getRuleEditorMeta() } })
+              writeBridgeJson(res, 200, { ok: true, value: { rules: result.rules, revisions: result.revisions, meta: getRuleEditorMeta() } })
             } catch (error) {
               if (error instanceof ModuleRulesError) {
+                if (error.persisted) {
+                  const committed = loadModuleDefinition(dir)
+                  const { getRuleEditorMeta } = await import(pathToFileURL(join(packageEngineDir(), 'rule-spec.mjs')).href) as { getRuleEditorMeta: () => RuleEditorMeta }
+                  writeBridgeJson(res, 200, { ok: true, value: { rules: committed.rules, revisions: committed.revisions, meta: getRuleEditorMeta(), persisted: true, publicationPending: true, publicationError: error.message } })
+                  return
+                }
                 writeBridgeJson(res, error.status, { ok: false, code: error.code, message: error.message })
                 return
               }
@@ -1525,10 +1525,10 @@ export function registerSettingsBridge(
             if (!guard(req, res)) return
             const dir = editDir(req) ?? ''
             if (dir.length === 0) {
-              writeBridgeJson(res, 400, { ok: false, code: 'preset-dir-unavailable', message: '模块目录未配置' })
+              writeBridgeJson(res, 400, { ok: false, code: 'module-dir-unavailable', message: '模块目录未配置' })
               return
             }
-            // 阶段 2：参数按模块存储——读写激活模块 preset.yml 的 params（+ promptConfigs）。
+            // 阶段 2：参数按模块存储——读写激活模块 module.yml 的 params（+ promptConfigs）。
             const moduleRoot = dirname(dir)
             const templateName = basename(dir)
             // promptConfigs 全量数组随配置卡数量增长；所有 JSON bridge 端点统一使用 32 MiB
@@ -1537,7 +1537,7 @@ export function registerSettingsBridge(
             if (parsedBody === undefined) return
             const { body } = parsedBody
             const record = (body ?? {}) as Record<string, unknown>
-            if (!guardPresetIdentity(req, record, dir, res)) return
+            if (!guardModuleIdentity(req, record, dir, res)) return
             if (record.rebuild !== undefined && typeof record.rebuild !== 'boolean') {
               writeBridgeJson(res, 400, { ok: false, code: 'overrides-invalid-shape', message: 'rebuild must be a boolean' })
               return
@@ -1559,7 +1559,7 @@ export function registerSettingsBridge(
               writeBridgeJson(res, 400, { ok: false, code: 'overrides-invalid-shape', message: 'overrides must be an object' })
               return
             }
-            if (!guardPresetWrite(dir, res)) return
+            if (!guardModuleWrite(dir, res)) return
             const rawOverrides = record.overrides as Record<string, unknown> | undefined
             if (rawOverrides !== undefined && RULE_OWNED_MODEL_PARAMS.some(key => Object.hasOwn(rawOverrides, key))) {
               writeBridgeJson(res, 410, { ok: false, code: 'rules-route-retired', message: '模型路由和采样参数已归入 request-params 规则动作，请通过 /rules 编辑。' })
@@ -1589,7 +1589,7 @@ export function registerSettingsBridge(
               return
             }
             try {
-              if (!guardPresetIdentity(req, record, dir, res)) return
+              if (!guardModuleIdentity(req, record, dir, res)) return
               saveModuleParams(
                 moduleRoot,
                 templateName,
@@ -1597,7 +1597,7 @@ export function registerSettingsBridge(
                 undefined,
               )
               // 模块切换前保存当前配置卡时只需落盘，不立即重建；
-              // 后续 settings presetTemplate 变更会让目标模块完成唯一一次重建。
+              // 后续运行刷新按目标模块执行。
               if (record.rebuild !== false && !await runOverridesChange(res, basename(dir))) return
               writeBridgeJson(res, 200, {
                 ok: true,
@@ -1612,16 +1612,16 @@ export function registerSettingsBridge(
         }),
         sctx.webServer.register({
           kind: 'exact',
-          path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.presetVariables,
+          path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.moduleVariables,
           handler: async (req, res) => {
             if (!guard(req, res)) return
             const dir = editDir(req) ?? ''
             if (dir.length === 0) {
-              writeBridgeJson(res, 400, { ok: false, code: 'preset-dir-unavailable', message: '模块目录未配置' })
+              writeBridgeJson(res, 400, { ok: false, code: 'module-dir-unavailable', message: '模块目录未配置' })
               return
             }
-            // 模块级模板变量：只读写激活模块 preset.yml
-            // 顶层 variables 段；writePreset 渲染时展开进 prompt-configs/variables.yml，
+            // 模块级模板变量：只读写激活模块 module.yml
+            // 完整定义的 variables 段同步到 rules/variables.yml，
             // 引擎加载合并进每条配置 variables（官方插值源）。配置卡片 variables
             // 只显示配置自身，模板变量统一在本卡片编辑。
             const moduleRoot = dirname(dir)
@@ -1630,24 +1630,46 @@ export function registerSettingsBridge(
             if (parsedBody === undefined) return
             const { body } = parsedBody
             const record = (body ?? {}) as Record<string, unknown>
-            if (!guardPresetIdentity(req, record, dir, res)) return
-            // 无载荷 = 读取（preset.yml 顶层 variables + 插值开关，不回退 params）。
+            if (!guardModuleIdentity(req, record, dir, res)) return
+            // 无载荷 = 读取（module.yml 顶层 variables + 插值开关，不回退 params）。
+            if (record.refreshOnly !== undefined && (typeof record.refreshOnly !== 'boolean'
+              || (record.refreshOnly === true && (record.variables !== undefined || record.enabled !== undefined)))) {
+              writeBridgeJson(res, 400, { ok: false, code: 'module-variables-invalid', message: 'refreshOnly 不能与变量写入混用' })
+              return
+            }
+            if (record.refreshOnly === true) {
+              if (!guardModuleWrite(dir, res)) return
+              try { await afterOverridesChange?.(basename(dir)) }
+              catch (error) {
+                writeBridgeJson(res, 200, { ok: true, value: { ...readModuleVariables(dir), persisted: true, publicationPending: true, publicationError: `运行刷新失败：${String(error)}` } })
+                return
+              }
+              writeBridgeJson(res, 200, { ok: true, value: { ...readModuleVariables(dir), publicationPending: false } })
+              return
+            }
             if (record.variables === undefined && record.enabled === undefined) {
-              writeBridgeJson(res, 200, { ok: true, value: readPresetVariables(dir) })
+              writeBridgeJson(res, 200, { ok: true, value: readModuleVariables(dir) })
               return
             }
             if (record.variables !== undefined
               && (!isRecord(record.variables) || Object.values(record.variables).some((value) => typeof value !== 'string'))) {
-              writeBridgeJson(res, 400, { ok: false, code: 'preset-variables-invalid', message: 'variables must be an object with string values' })
+              writeBridgeJson(res, 400, { ok: false, code: 'module-variables-invalid', message: 'variables must be an object with string values' })
               return
             }
             if (record.enabled !== undefined && typeof record.enabled !== 'boolean') {
-              writeBridgeJson(res, 400, { ok: false, code: 'preset-variables-invalid', message: 'enabled must be a boolean' })
+              writeBridgeJson(res, 400, { ok: false, code: 'module-variables-invalid', message: 'enabled must be a boolean' })
               return
             }
-            if (!guardPresetWrite(dir, res)) return
+            if (!isRecord(record.expectedRevisions)
+              || Object.keys(record.expectedRevisions).some(key => !['rules', 'settings', 'variables'].includes(key))
+              || (record.variables !== undefined && (typeof record.expectedRevisions.variables !== 'string' || !SHA256_HEX_RE.test(record.expectedRevisions.variables)))
+              || (record.enabled !== undefined && (typeof record.expectedRevisions.settings !== 'string' || !SHA256_HEX_RE.test(record.expectedRevisions.settings)))) {
+              writeBridgeJson(res, 400, { ok: false, code: 'module-variables-invalid', message: '保存变量或开关必须提供对应 expectedRevisions' })
+              return
+            }
+            if (!guardModuleWrite(dir, res)) return
             try {
-              if (!guardPresetIdentity(req, record, dir, res)) return
+              if (!guardModuleIdentity(req, record, dir, res)) return
               saveModuleParams(
                 moduleRoot,
                 templateName,
@@ -1655,12 +1677,22 @@ export function registerSettingsBridge(
                 undefined,
                 record.variables as Record<string, string> | undefined,
                 record.enabled as boolean | undefined,
+                record.expectedRevisions as Partial<RuleRevisions>,
               )
-              if (!await runOverridesChange(res, basename(dir))) return
-              writeBridgeJson(res, 200, { ok: true, value: { variables: record.variables } })
+              const committed = readModuleVariables(dir)
+              try { await afterOverridesChange?.(basename(dir)) }
+              catch (error) {
+                writeBridgeJson(res, 200, { ok: true, value: { ...committed, persisted: true, publicationPending: true, publicationError: `变量已保存，但运行刷新失败：${String(error)}` } })
+                return
+              }
+              writeBridgeJson(res, 200, { ok: true, value: committed })
             } catch (error) {
+              if (error instanceof ModuleRulesError && error.persisted) {
+                writeBridgeJson(res, 200, { ok: true, value: { ...readModuleVariables(dir), persisted: true, publicationPending: true, publicationError: error.message } })
+                return
+              }
               const message = error instanceof Error ? error.message : String(error)
-              writeBridgeJson(res, 409, { ok: false, code: 'preset-variables-rejected', message: `模板变量保存失败：${message}` })
+              writeBridgeJson(res, error instanceof ModuleRulesError ? error.status : 409, { ok: false, code: error instanceof ModuleRulesError ? error.code : 'module-variables-rejected', message: `模板变量保存失败：${message}` })
             }
           },
         }),
@@ -1671,15 +1703,15 @@ export function registerSettingsBridge(
             if (!guard(req, res)) return
             const dir = editDir(req) ?? ''
             if (dir.length === 0) {
-              writeBridgeJson(res, 400, { ok: false, code: 'preset-dir-unavailable', message: '模块目录未配置' })
+              writeBridgeJson(res, 400, { ok: false, code: 'module-dir-unavailable', message: '模块目录未配置' })
               return
             }
             const parsedBody = await readBridgeBodyForHandler(req, res)
             if (parsedBody === undefined) return
             const { body } = parsedBody
             const record = (body ?? {}) as Record<string, unknown>
-            if (!guardPresetIdentity(req, record, dir, res)) return
-            // 无载荷 = 读取（preset.yml 顶层 customTools 段）。
+            if (!guardModuleIdentity(req, record, dir, res)) return
+            // 无载荷 = 读取（module.yml 顶层 customTools 段）。
             if (record.customTools === undefined) {
               try {
                 const spec = loadModuleSpec(dir)
@@ -1702,13 +1734,13 @@ export function registerSettingsBridge(
                 writeBridgeJson(res, 400, { ok: false, code: 'custom-tools-invalid', message: errors.join('; ') })
                 return
               }
-              if (!guardPresetWrite(dir, res)) return
-              if (!guardPresetIdentity(req, record, dir, res)) return
-              withPresetDoc(dir, (doc) => {
+              if (!guardModuleWrite(dir, res)) return
+              if (!guardModuleIdentity(req, record, dir, res)) return
+              withModuleDefinition(dir, (doc) => {
                 if (customTools.length === 0) doc.deleteIn(['customTools'])
                 else {
                   doc.setIn(['customTools'], customTools)
-                  appendPresetModules(doc, customToolModules(customTools))
+                  appendModuleCapabilities(doc, customToolModules(customTools))
                 }
               })
               if (!await runOverridesChange(res, basename(dir))) return
@@ -1726,14 +1758,14 @@ export function registerSettingsBridge(
             if (!guard(req, res)) return
             const dir = editDir(req) ?? ''
             if (dir.length === 0) {
-              writeBridgeJson(res, 400, { ok: false, code: 'preset-dir-unavailable', message: '模块目录未配置' })
+              writeBridgeJson(res, 400, { ok: false, code: 'module-dir-unavailable', message: '模块目录未配置' })
               return
             }
             const parsedBody = await readBridgeBodyForHandler(req, res)
             if (parsedBody === undefined) return
             const record = (parsedBody.body ?? {}) as Record<string, unknown>
-            if (!guardPresetIdentity(req, record, dir, res)) return
-            // 无 persona 载荷 = 读取（preset.yml 顶层 persona 段）。
+            if (!guardModuleIdentity(req, record, dir, res)) return
+            // 无 persona 载荷 = 读取（module.yml 顶层 persona 段）。
             if (record.persona === undefined) {
               try {
                 writeBridgeJson(res, 200, { ok: true, value: { persona: readPersonaSpec(loadModuleSpec(dir).persona) ?? null } })
@@ -1743,14 +1775,14 @@ export function registerSettingsBridge(
               }
               return
             }
-            if (!guardPresetWrite(dir, res)) return
+            if (!guardModuleWrite(dir, res)) return
             try {
               const raw = record.persona
               const persona = raw === null ? null : readPersonaSpec(raw)
               if (persona === undefined) {
                 writeBridgeJson(res, 400, {
                   ok: false,
-                  code: 'preset-persona-invalid',
+                  code: 'module-persona-invalid',
                   message: 'persona 必须包含字符串 prefix（可选 suffix / complete / includeRuntimeContext）',
                 })
                 return
@@ -1764,18 +1796,18 @@ export function registerSettingsBridge(
                 if (conflicting) {
                   writeBridgeJson(res, 400, {
                     ok: false,
-                    code: 'preset-persona-complete-conflict',
+                    code: 'module-persona-complete-conflict',
                     message: '提示词配置已有「独占」段；顶层人设的「独占」与之互斥，请先关闭其一',
                   })
                   return
                 }
               }
-              savePresetPersona(dirname(dir), basename(dir), persona)
+              saveModulePersona(dirname(dir), basename(dir), persona)
               if (!await runOverridesChange(res, basename(dir))) return
               writeBridgeJson(res, 200, { ok: true, value: { persona } })
             } catch (error) {
               const message = error instanceof Error ? error.message : String(error)
-              writeBridgeJson(res, 409, { ok: false, code: 'preset-persona-rejected', message: `人设保存失败：${message}` })
+              writeBridgeJson(res, 409, { ok: false, code: 'module-persona-rejected', message: `人设保存失败：${message}` })
             }
           },
         }),
@@ -1811,7 +1843,7 @@ export function registerSettingsBridge(
         }),
         sctx.webServer.register({
           kind: 'exact',
-          path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.importPresetPackage,
+          path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.importModulePackage,
           handler: async (req, res) => {
             if (!guard(req, res)) return
             const parsedBody = await readBridgeBodyForHandler(req, res)
@@ -1826,12 +1858,12 @@ export function registerSettingsBridge(
             // 不静默回落到"直接写入"，也不在拒绝前创建目录或备份。
             const request = readImportRequestParams(record)
             if (!request.ok) {
-              writeBridgeJson(res, 400, { ok: false, code: 'preset-package-invalid', message: request.message })
+              writeBridgeJson(res, 400, { ok: false, code: 'module-package-invalid', message: request.message })
               return
             }
             try {
-              const files = await expandPresetSource(request.params.sourceId === undefined ? readBridgeFiles(record.files) : assetSources.read(request.params.sourceId))
-              const preview = presetImportPreview(userModulesDir(), files, request.params)
+              const files = await expandModuleSource(request.params.sourceId === undefined ? readBridgeFiles(record.files) : assetSources.read(request.params.sourceId))
+              const preview = moduleImportPreview(userModulesDir(), files, request.params)
               if (!('prepared' in preview)) {
                 if (!request.params.preview) throw new Error('请先选择内容类型或提示顺序组并重新预览')
                 writeBridgeJson(res, 200, { ok: true, value: { preview: true, ...preview } })
@@ -1842,19 +1874,19 @@ export function registerSettingsBridge(
                 writeBridgeJson(res, 200, { ok: true, value: { preview: true, state: 'ready', summary, sourceDigest, previewRevision, ...(prepared.report === undefined ? {} : { report: prepared.report }) } })
                 return
               }
-              const installed = await installPresetPackage(userModulesDir(), files, request.params)
+              const installed = await installModulePackage(userModulesDir(), files, request.params)
               invalidateDescriptor()
-              if (!await finishPresetChange(res, () => afterPresetPackageImport?.(installed.id))) return
+              if (!await finishModuleChange(res, () => afterModulePackageImport?.(installed.id))) return
               writeBridgeJson(res, 200, { ok: true, value: { ...installed, sourceDigest, ...(prepared.report === undefined ? {} : { report: prepared.report }) } })
             } catch (error) {
-              const code = typeof (error as { code?: unknown }).code === 'string' ? String((error as { code: string }).code) : 'preset-package-invalid'
-              writeBridgeJson(res, code === 'preset-preview-stale' ? 409 : 400, { ok: false, code, message: error instanceof Error ? error.message : String(error) })
+              const code = typeof (error as { code?: unknown }).code === 'string' ? String((error as { code: string }).code) : 'module-package-invalid'
+              writeBridgeJson(res, code === 'module-preview-stale' ? 409 : 400, { ok: false, code, message: error instanceof Error ? error.message : String(error) })
             }
           },
         }),
         sctx.webServer.register({
           kind: 'exact',
-          path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.exportPreset,
+          path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.exportModule,
           handler: async (req, res) => {
             if (!guard(req, res)) return
             const parsedBody = await readBridgeBodyForHandler(req, res)
@@ -1864,18 +1896,18 @@ export function registerSettingsBridge(
             try {
               const allowed = new Set(['id', 'mode', 'preview', 'expectedRevision', 'memoryChoices'])
               if (Object.keys(record).some((key) => !allowed.has(key))) throw new Error('导出请求包含未知字段')
-              assertPresetId(record.id)
+              assertModuleId(record.id)
               if (record.id.length > 128) throw new Error('模块 ID 过长')
               if (record.mode !== undefined && record.mode !== 'definition' && record.mode !== 'zip') throw new Error('mode 必须是 definition 或 zip')
               if (record.preview !== undefined && typeof record.preview !== 'boolean') throw new Error('preview 必须是布尔值')
               if (record.expectedRevision !== undefined && (typeof record.expectedRevision !== 'string' || !SHA256_HEX_RE.test(record.expectedRevision))) throw new Error('expectedRevision 必须是 SHA-256 摘要')
               if (record.memoryChoices !== undefined && (!isRecord(record.memoryChoices) || Object.keys(record.memoryChoices).length > 2048
                 || Object.entries(record.memoryChoices).some(([key, value]) => key.length === 0 || key.length > 256 || (value !== 'include' && value !== 'exclude')))) throw new Error('memoryChoices 必须包含合法条目 ID 和 include/exclude 选择')
-              const value = await exportPresetPackage(userModulesDir(), record as unknown as PresetExportRequest)
+              const value = await exportModulePackage(userModulesDir(), record as unknown as ModuleExportRequest)
               writeBridgeJson(res, 200, { ok: true, value })
             } catch (error) {
               const message = error instanceof Error ? error.message : String(error)
-              const code = typeof (error as { code?: unknown }).code === 'string' ? String((error as { code: string }).code) : 'preset-export-failed'
+              const code = typeof (error as { code?: unknown }).code === 'string' ? String((error as { code: string }).code) : 'module-export-failed'
               writeBridgeJson(res, code.includes('stale') ? 409 : 400, { ok: false, code, message })
             }
           },
@@ -1891,23 +1923,23 @@ export function registerSettingsBridge(
             const record = (body ?? {}) as Record<string, unknown>
             const id = typeof record.id === 'string' ? record.id.trim() : ''
             if (id.length === 0) {
-              writeBridgeJson(res, 400, { ok: false, code: 'preset-delete-rejected', message: '缺少模块 id' })
+              writeBridgeJson(res, 400, { ok: false, code: 'module-delete-rejected', message: '缺少模块 id' })
               return
             }
             // 当前使用中的模块不可删除（先切换再删）。
             const activeDir = editDir(req)
             if (activeDir.length > 0 && basename(activeDir) === id) {
-              writeBridgeJson(res, 400, { ok: false, code: 'preset-in-use', message: `模块「${id}」正在使用中，请先切换其他模块再删除` })
+              writeBridgeJson(res, 400, { ok: false, code: 'module-in-use', message: `模块「${id}」正在使用中，请先切换其他模块再删除` })
               return
             }
             // 删除插件自有模块存储中的用户副本，包内模板保留。
             // 模块不在宿主预设注册表里，删除后无需撤销任何官方登记。
-            const result = removeUserPreset(id)
+            const result = removeUserModule(id)
             if (!result.ok) {
-              writeBridgeJson(res, 400, { ok: false, code: 'preset-delete-rejected', message: result.message })
+              writeBridgeJson(res, 400, { ok: false, code: 'module-delete-rejected', message: result.message })
               return
             }
-            if (!await refreshPresetList(res, id)) return
+            if (!await refreshModuleList(res, id)) return
             writeBridgeJson(res, 200, { ok: true, value: { id } })
           },
         }),
@@ -1922,15 +1954,15 @@ export function registerSettingsBridge(
             const record = (body ?? {}) as Record<string, unknown>
             const id = typeof record.id === 'string' ? record.id.trim() : ''
             if (id.length === 0) {
-              writeBridgeJson(res, 400, { ok: false, code: 'preset-clone-rejected', message: '缺少模块 id' })
+              writeBridgeJson(res, 400, { ok: false, code: 'module-clone-rejected', message: '缺少模块 id' })
               return
             }
-            const result = cloneBuiltinPreset(id, record.autoSuffix === true)
+            const result = cloneBuiltinModule(id, record.autoSuffix === true)
             if (!result.ok) {
-              writeBridgeJson(res, 400, { ok: false, code: 'preset-clone-rejected', message: result.message })
+              writeBridgeJson(res, 400, { ok: false, code: 'module-clone-rejected', message: result.message })
               return
             }
-            if (!await refreshPresetList(res, result.id)) return
+            if (!await refreshModuleList(res, result.id)) return
             writeBridgeJson(res, 200, { ok: true, value: { id: result.id } })
           },
         }),
@@ -1945,15 +1977,15 @@ export function registerSettingsBridge(
             const record = (body ?? {}) as Record<string, unknown>
             const id = typeof record.id === 'string' ? record.id.trim() : ''
             if (id.length === 0) {
-              writeBridgeJson(res, 400, { ok: false, code: 'preset-duplicate-rejected', message: '缺少模块 id' })
+              writeBridgeJson(res, 400, { ok: false, code: 'module-duplicate-rejected', message: '缺少模块 id' })
               return
             }
             const result = duplicateUserModule(id)
             if (!result.ok) {
-              writeBridgeJson(res, 400, { ok: false, code: 'preset-duplicate-rejected', message: result.message })
+              writeBridgeJson(res, 400, { ok: false, code: 'module-duplicate-rejected', message: result.message })
               return
             }
-            if (!await refreshPresetList(res, result.id)) return
+            if (!await refreshModuleList(res, result.id)) return
             writeBridgeJson(res, 200, { ok: true, value: { id: result.id } })
           },
         }),
@@ -1968,12 +2000,12 @@ export function registerSettingsBridge(
             const record = (body ?? {}) as Record<string, unknown>
             const id = typeof record.id === 'string' ? record.id.trim() : ''
             if (id.length === 0) {
-              writeBridgeJson(res, 400, { ok: false, code: 'preset-open-rejected', message: '缺少模块 id' })
+              writeBridgeJson(res, 400, { ok: false, code: 'module-open-rejected', message: '缺少模块 id' })
               return
             }
             const result = openModuleLocation(id)
             if (!result.ok) {
-              writeBridgeJson(res, 400, { ok: false, code: 'preset-open-rejected', message: `${result.message}（${result.path}）` })
+              writeBridgeJson(res, 400, { ok: false, code: 'module-open-rejected', message: `${result.message}（${result.path}）` })
               return
             }
             writeBridgeJson(res, 200, { ok: true, value: { path: result.path } })
@@ -1990,16 +2022,16 @@ export function registerSettingsBridge(
             const record = (body ?? {}) as Record<string, unknown>
             const id = typeof record.id === 'string' ? record.id.trim() : ''
             if (id.length === 0) {
-              writeBridgeJson(res, 400, { ok: false, code: 'preset-enable-rejected', message: '缺少模块 id' })
+              writeBridgeJson(res, 400, { ok: false, code: 'module-enable-rejected', message: '缺少模块 id' })
               return
             }
             if (typeof record.enabled !== 'boolean') {
-              writeBridgeJson(res, 400, { ok: false, code: 'preset-enable-rejected', message: 'enabled 必须是布尔值' })
+              writeBridgeJson(res, 400, { ok: false, code: 'module-enable-rejected', message: 'enabled 必须是布尔值' })
               return
             }
             // 只允许启用磁盘上真实存在的模块：启用表写进一个不存在的 id 会让装配静默少装一个。
             if (record.enabled && !moduleDirExists(userModulesDir(), id)) {
-              writeBridgeJson(res, 400, { ok: false, code: 'preset-enable-rejected', message: `模块 ${id} 不存在` })
+              writeBridgeJson(res, 400, { ok: false, code: 'module-enable-rejected', message: `模块 ${id} 不存在` })
               return
             }
             const enabled = record.enabled
@@ -2065,7 +2097,7 @@ export function registerSettingsBridge(
             await run
           },
         }),
-        // ---- 角色卡库：素材+参数独立存储，按需导入/移除当前模块 ----
+        // 角色来源沿同一模块安装事务；不再维护独立角色库。
         sctx.webServer.register({
           kind: 'exact',
           path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.charactersImport,
@@ -2073,7 +2105,7 @@ export function registerSettingsBridge(
             if (!guard(req, res)) return
             const dir = editDir(req) ?? ''
             if (dir.length === 0) {
-              writeBridgeJson(res, 400, { ok: false, code: 'preset-dir-unavailable', message: '模块目录未配置' })
+              writeBridgeJson(res, 400, { ok: false, code: 'module-dir-unavailable', message: '模块目录未配置' })
               return
             }
             const parsedBody = await readBridgeBodyForHandler(req, res)
@@ -2090,9 +2122,9 @@ export function registerSettingsBridge(
               writeBridgeJson(res, 400, { ok: false, code: 'characters-rejected', message: request.message })
               return
             }
-            if (!guardPresetWrite(dir, res)) return
+            if (!guardModuleWrite(dir, res)) return
             try {
-              const files = await expandPresetSource(request.params.sourceId === undefined ? readBridgeFiles(record.files) : assetSources.read(request.params.sourceId))
+              const files = await expandModuleSource(request.params.sourceId === undefined ? readBridgeFiles(record.files) : assetSources.read(request.params.sourceId))
               if (editDir(req) !== dir) {
                 writeBridgeJson(res, 409, { ok: false, code: 'characters-preview-stale', message: '当前模块已切换，请重新预览' })
                 return
@@ -2103,41 +2135,21 @@ export function registerSettingsBridge(
                 writeBridgeJson(res, 200, { ok: true, value: { preview: true, ...prepared } })
                 return
               }
-              const root = canonicalPresetRoot(userModulesDir())
-              if (assertModuleDirectory(root, basename(dir)) !== realpathSync(dir)) throw new Error('当前模块不属于可写的官方模块根')
-              const cards = canonicalPresetRoot(charactersDir(root), true)
-              let targetId = request.params.targetId ?? prepared.spec.id
-              if (request.params.targetId === undefined && request.params.overwrite !== true) {
-                const wanted = targetId
-                for (let n = 1; presetPathExists(join(cards, targetId)); n++) targetId = `${wanted}-copy${n === 1 ? '' : '-' + n}`
-              }
-              assertPresetId(targetId)
-              const options = { ...request.params, targetId }
-              const converted = previewCharacterCard(files, options)
-              if (!converted.ok) throw new Error(converted.message)
-              const version = directoryVersionOf(join(cards, targetId))
-              const previewRevision = computePreviewRevision({
-                files: [{ path: 'source', content: converted.sourceDigest }, { path: 'choices', content: JSON.stringify([targetId, request.params.targetName ?? '', request.params.overwrite === true, request.params.sourceKind ?? null]) }],
-                ...(request.params.promptOrderCharacterId === undefined ? {} : { orderCharacterId: request.params.promptOrderCharacterId }),
-                converter: 'asset-character/1',
-                target: { kind: 'character-card', targetId, targetVersion: version, ownerPreset: JSON.stringify([root, basename(dir), directoryVersionOf(dir)]) },
-              })
+              const root = userModulesDir()
+              const preview = moduleImportPreview(root, files, request.params)
+              if (!('prepared' in preview)) throw new Error('角色来源未形成有效模块候选')
+              const { summary, sourceDigest, previewRevision } = preview
               if (request.params.preview) {
-                const summary = { sourceName: converted.sourceName, kind: converted.kind, targetId, targetName: converted.name, exists: version !== null,
-                  files: files.map((file) => ({ path: file.path, bytes: decodeAssetFile(file).length })), configCount: prepared.spec.rules?.length ?? 0, warnings: [] }
-                writeBridgeJson(res, 200, { ok: true, value: { preview: true, state: 'ready', name: converted.name, summary, sourceDigest: converted.sourceDigest, previewRevision, ...(converted.report === undefined ? {} : { report: converted.report }) } })
+                writeBridgeJson(res, 200, { ok: true, value: { preview: true, state: 'ready', name: summary.targetName, summary, sourceDigest, previewRevision, ...(prepared.report === undefined ? {} : { report: prepared.report }) } })
                 return
               }
-              if (request.params.expectedPreviewRevision !== previewRevision || request.params.expectedSourceDigest !== converted.sourceDigest) {
-                writeBridgeJson(res, 409, { ok: false, code: 'characters-preview-stale', message: '预览已过期：来源、选择或目标版本已变化，请重新预览' })
-                return
-              }
-              if (version !== null && request.params.overwrite !== true) throw new Error('角色已存在，请明确选择更新或另存')
-              const result = importCharacterCard(root, files, options)
-              if (!result.ok) throw new Error(result.message)
-              writeBridgeJson(res, 200, { ok: true, value: { id: result.id, name: result.name } })
+              const result = await installModulePackage(root, files, request.params, { preserveAssets: true })
+              invalidateDescriptor()
+              if (!await finishModuleChange(res, () => afterModulePackageImport?.(result.id))) return
+              writeBridgeJson(res, 200, { ok: true, value: { id: result.id, name: summary.targetName } })
             } catch (error) {
-              writeBridgeJson(res, 400, { ok: false, code: 'characters-rejected', message: error instanceof Error ? error.message : String(error) })
+              const code = typeof (error as { code?: unknown }).code === 'string' ? String((error as { code: string }).code) : 'characters-rejected'
+              writeBridgeJson(res, code.includes('stale') ? 409 : 400, { ok: false, code, message: error instanceof Error ? error.message : String(error) })
             }
           },
         }),
@@ -2151,26 +2163,12 @@ export function registerSettingsBridge(
         }),
         sctx.webServer.register({
           kind: 'exact',
-          path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.charactersList,
+          path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.moduleMerge,
           handler: async (req, res) => {
             if (!guard(req, res)) return
             const dir = editDir(req) ?? ''
             if (dir.length === 0) {
-              writeBridgeJson(res, 400, { ok: false, code: 'preset-dir-unavailable', message: '模块目录未配置' })
-              return
-            }
-            const characters = listCharacterCards(dirname(dir), basename(dir))
-            writeBridgeJson(res, 200, { ok: true, value: { characters } })
-          },
-        }),
-        sctx.webServer.register({
-          kind: 'exact',
-          path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.charactersDelete,
-          handler: async (req, res) => {
-            if (!guard(req, res)) return
-            const dir = editDir(req) ?? ''
-            if (dir.length === 0) {
-              writeBridgeJson(res, 400, { ok: false, code: 'preset-dir-unavailable', message: '模块目录未配置' })
+              writeBridgeJson(res, 400, { ok: false, code: 'module-dir-unavailable', message: '模块目录未配置' })
               return
             }
             const parsedBody = await readBridgeBodyForHandler(req, res)
@@ -2182,36 +2180,8 @@ export function registerSettingsBridge(
               writeBridgeJson(res, 400, { ok: false, code: 'characters-rejected', message: '缺少角色卡 id' })
               return
             }
-            if (!guardPresetWrite(dir, res)) return
-            const result = deleteCharacterCard(dirname(dir), id)
-            if (!result.ok) {
-              writeBridgeJson(res, 400, { ok: false, code: 'characters-rejected', message: result.message })
-              return
-            }
-            writeBridgeJson(res, 200, { ok: true, value: { id } })
-          },
-        }),
-        sctx.webServer.register({
-          kind: 'exact',
-          path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.charactersApply,
-          handler: async (req, res) => {
-            if (!guard(req, res)) return
-            const dir = editDir(req) ?? ''
-            if (dir.length === 0) {
-              writeBridgeJson(res, 400, { ok: false, code: 'preset-dir-unavailable', message: '模块目录未配置' })
-              return
-            }
-            const parsedBody = await readBridgeBodyForHandler(req, res)
-            if (parsedBody === undefined) return
-            const { body } = parsedBody
-            const record = (body ?? {}) as Record<string, unknown>
-            const id = typeof record.id === 'string' ? record.id.trim() : ''
-            if (id.length === 0) {
-              writeBridgeJson(res, 400, { ok: false, code: 'characters-rejected', message: '缺少角色卡 id' })
-              return
-            }
-            if (!guardPresetWrite(dir, res)) return
-            const result = applyCharacterToPreset(dirname(dir), basename(dir), id)
+            if (!guardModuleWrite(dir, res)) return
+            const result = mergeModuleIntoModule(dirname(dir), basename(dir), id)
             if (!result.ok) {
               writeBridgeJson(res, 400, { ok: false, code: 'characters-rejected', message: result.message })
               return
@@ -2222,12 +2192,12 @@ export function registerSettingsBridge(
         }),
         sctx.webServer.register({
           kind: 'exact',
-          path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.charactersRemove,
+          path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.moduleUnmerge,
           handler: async (req, res) => {
             if (!guard(req, res)) return
             const dir = editDir(req) ?? ''
             if (dir.length === 0) {
-              writeBridgeJson(res, 400, { ok: false, code: 'preset-dir-unavailable', message: '模块目录未配置' })
+              writeBridgeJson(res, 400, { ok: false, code: 'module-dir-unavailable', message: '模块目录未配置' })
               return
             }
             const parsedBody = await readBridgeBodyForHandler(req, res)
@@ -2239,8 +2209,8 @@ export function registerSettingsBridge(
               writeBridgeJson(res, 400, { ok: false, code: 'characters-rejected', message: '缺少角色卡 id' })
               return
             }
-            if (!guardPresetWrite(dir, res)) return
-            const result = removeCharacterFromPreset(dirname(dir), basename(dir), id)
+            if (!guardModuleWrite(dir, res)) return
+            const result = removeMergedModule(dirname(dir), basename(dir), id)
             if (!result.ok) {
               writeBridgeJson(res, 400, { ok: false, code: 'characters-rejected', message: result.message })
               return
@@ -2256,15 +2226,15 @@ export function registerSettingsBridge(
             if (!guard(req, res)) return
             const dir = editDir(req) ?? ''
             if (dir.length === 0) {
-              writeBridgeJson(res, 400, { ok: false, code: 'preset-dir-unavailable', message: '模块目录未配置' })
+              writeBridgeJson(res, 400, { ok: false, code: 'module-dir-unavailable', message: '模块目录未配置' })
               return
             }
             const parsedBody = await readBridgeBodyForHandler(req, res)
             if (parsedBody === undefined) return
             const { body } = parsedBody
             const record = (body ?? {}) as Record<string, unknown>
-            if (!guardPresetIdentity(req, record, dir, res)) return
-            // 无 policy 载荷 = 读取（preset.yml 顶层 subagentToolPolicy 段）。
+            if (!guardModuleIdentity(req, record, dir, res)) return
+            // 无 policy 载荷 = 读取（module.yml 顶层 subagentToolPolicy 段）。
             if (record.policy === undefined) {
               try {
                 const spec = loadModuleSpec(dir)
@@ -2276,7 +2246,7 @@ export function registerSettingsBridge(
               }
               return
             }
-            if (!guardPresetWrite(dir, res)) return
+            if (!guardModuleWrite(dir, res)) return
             try {
               const policy = record.policy
               const policyUrl = pathToFileURL(join(packageEngineDir(), 'subagent-tool-policy-core.mjs'))
@@ -2289,15 +2259,15 @@ export function registerSettingsBridge(
                 writeBridgeJson(res, 409, { ok: false, code: 'subagent-tool-policy-rejected', message: '策略校验失败：' + errors.join('; '), value: { errors } })
                 return
               }
-              if (!guardPresetIdentity(req, record, dir, res)) return
-              withPresetDoc(dir, (doc) => {
+              if (!guardModuleIdentity(req, record, dir, res)) return
+              withModuleDefinition(dir, (doc) => {
                 if (isEmpty) {
                   // 关闭开关：只删除策略段，**保留模块声明**——能力卡仍在，用户可再次打开；
                   // 引擎在策略文件缺失时降级为官方委派行为（见 engine/subagent-tool-policy.mjs）。
                   doc.deleteIn(['subagentToolPolicy'])
                 } else {
                   doc.setIn(['subagentToolPolicy'], policy)
-                  appendPresetModules(doc, ['subagent-tool-policy'])
+                  appendModuleCapabilities(doc, ['subagent-tool-policy'])
                 }
               })
               if (!await runOverridesChange(res, basename(dir))) return
@@ -2315,7 +2285,7 @@ export function registerSettingsBridge(
             if (!guard(req, res)) return
             const dir = editDir(req) ?? ''
             if (dir.length === 0) {
-              writeBridgeJson(res, 400, { ok: false, code: 'preset-dir-unavailable', message: '模块目录未配置' })
+              writeBridgeJson(res, 400, { ok: false, code: 'module-dir-unavailable', message: '模块目录未配置' })
               return
             }
             const parsedBody = await readBridgeBodyForHandler(req, res)
@@ -2350,45 +2320,39 @@ export function registerSettingsBridge(
         }),
         sctx.webServer.register({
           kind: 'exact',
-          path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.engineCapability,
+          path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.moduleCapability,
           handler: async (req, res) => {
             if (!guard(req, res)) return
             const dir = editDir(req) ?? ''
             if (dir.length === 0) {
-              writeBridgeJson(res, 400, { ok: false, code: 'preset-dir-unavailable', message: '模块目录未配置' })
+              writeBridgeJson(res, 400, { ok: false, code: 'module-dir-unavailable', message: '模块目录未配置' })
               return
             }
             const parsedBody = await readBridgeBodyForHandler(req, res)
             if (parsedBody === undefined) return
             const body = asRecord(parsedBody.body)
-            if (!guardPresetIdentity(req, body, dir, res)) return
+            if (!guardModuleIdentity(req, body, dir, res)) return
             const action = body.action
             const id = action === 'create' || action === 'remove' ? body.capabilityId : action === 'create-recipe' ? body.recipeId : undefined
             if ((action !== 'create' && action !== 'remove' && action !== 'create-recipe') || typeof id !== 'string' || id.trim().length === 0 || id.length > 128) {
               writeBridgeJson(res, 400, { ok: false, code: 'engine-capability-invalid', message: '能力或 recipe 请求格式无效' })
               return
             }
-            if (!guardPresetWrite(dir, res)) return
+            if (!guardModuleWrite(dir, res)) return
             const run = capabilityQueue.then(async () => {
-              if (!guardPresetIdentity(req, body, dir, res)) return
-              const file = join(dir, MODULE_DEFINITION_FILE)
-              let original: string | undefined
+              if (!guardModuleIdentity(req, body, dir, res)) return
               try {
-                original = readFileSync(file, 'utf8')
                 const result = action === 'remove'
-                  ? removeEngineCapabilityFromPreset(dir, id.trim())
-                  : createEngineCapabilityInPreset(dir, action === 'create'
+                  ? removeModuleCapability(dir, id.trim())
+                  : createModuleCapability(dir, action === 'create'
                     ? { action: 'create', capabilityId: id.trim() }
                     : { action: 'create-recipe', recipeId: id.trim() })
-                if (result.changed && !await finishPresetChange(res, () => afterCapabilityChange?.(basename(dir)))) return
+                if (result.changed && !await finishModuleChange(res, () => afterCapabilityChange?.(basename(dir)))) return
                 writeBridgeJson(res, 200, { ok: true, value: result })
               } catch (error) {
-                // 候选校验或重建失败：恢复原 preset.yml；生成目录由 writePreset 自身保留旧版。
-                if (original !== undefined) {
-                  try {
-                    atomicWriteTextFile(file, original)
-                    invalidateModuleSpec(dir)
-                  } catch { /* 保留错误响应，备份由上层写盘策略处理 */ }
+                if (error instanceof ModuleRulesError && error.persisted) {
+                  writeBridgeJson(res, 500, { ok: false, code: MODULE_ACTIVATION_FAILED, message: `能力变更已保存，但切片未发布；请重试刷新：${error.message}` })
+                  return
                 }
                 const message = error instanceof Error ? error.message : String(error)
                 writeBridgeJson(res, 409, { ok: false, code: 'engine-capability-rejected', message: `引擎能力变更失败：${message}` })

@@ -58,7 +58,7 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
   const [order, setOrder] = useState<ModuleConfigOrderSnapshot>()
   const [sorting, setSorting] = useState(false), [orderError, setOrderError] = useState(''), [discard, setDiscard] = useState(false)
   const dragId = useRef<string>(), epoch = useRef(0), sortBusy = useRef(false), lastCreated = useRef<string>()
-  const readOnly = !fields.writePreset || store.moduleFacts?.editable !== true
+  const readOnly = !fields.modulesEnabled || store.moduleFacts?.editable !== true
   const query = (props.keyword ?? filter).trim().toLowerCase(), view = props.viewFilter ?? 'all'
   const changeFilter = (value: string): void => { setFilter(value); props.onKeywordChange?.(value); if (props.browse) props.browse.filter = value }
   const toggle = (key: string): void => { const next = expanded === key ? undefined : key; setExpanded(next); if (props.browse) props.browse.expanded = next }
@@ -70,7 +70,7 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
     else setOrderError(result.message ?? t('moduleOrder.unavailable'))
   }, [moduleId, t])
   useEffect(() => { epoch.current++; setOrder(undefined); setExpanded(props.browse?.expanded); return () => { epoch.current++ } }, [moduleId])
-  useEffect(() => { if (draft.loaded) void readOrder() }, [draft.loaded, draft.revision, readOrder])
+  useEffect(() => { if (draft.loaded) void readOrder() }, [draft.loaded, draft.revisions?.settings, readOrder])
   useEffect(() => {
     if (props.createdConfigId === lastCreated.current) return
     const created = draft.entries.find(entry => entry.value.id === props.createdConfigId && !entry.deleted)
@@ -141,7 +141,7 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
     </div>
     {draft.error && <div className={css.row}>
       <p role="alert" className={css.error}>{draft.remote ? t('rules.conflict') : draft.error}</p>
-      <Button variant="outline" shape="pill" disabled={draft.busy !== undefined} onClick={() => { void (retrySave ? editor.submit() : editor.load(true)) }}>{t(retrySave ? 'rules.retrySave' : 'workspace.retry')}</Button>
+      <Button variant="outline" shape="pill" disabled={draft.busy !== undefined} onClick={() => { void (draft.publicationPending ? editor.retryPublication() : retrySave ? editor.submit() : editor.load(true)) }}>{t(!draft.publicationPending && retrySave ? 'rules.retrySave' : 'workspace.retry')}</Button>
       {(rulesDirty(draft) || draft.remote) && <Button variant="outline" shape="pill" disabled={draft.busy !== undefined} onClick={() => setDiscard(true)}>{t('triggers.discard')}</Button>}
     </div>}
     {hasRuleFields(draft) && <p role="alert" className={css.error}>{t('rules.fieldsPending')}</p>}

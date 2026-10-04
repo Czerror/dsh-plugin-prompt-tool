@@ -351,7 +351,7 @@ test('热更新：空启用表到多模块、配置启停与拒绝后重试都�
   assert.deepEqual(h.runtime.moduleIds(agent.id), [])
 })
 
-test('能力注册：私有工具服务与物化工具接入官方注册表，禁用后释放', async (t) => {
+test('能力注册：私有工具服务与内联工具接入官方注册表，禁用后释放', async (t) => {
   const dir = writePreset('live-tools', { modules: ['character-tools', 'tool-config-engine'] })
   const { writePreset: materialize } = await import('../../src/host/write-preset.ts')
   writeFileSync(join(dir, 'module.yml'), JSON.stringify({
@@ -490,7 +490,6 @@ test('受管字段一律解析到当前预设目录内：新写法 `./` 与历�
 
   const cases = [
     ['tool-config-engine', 'configsDir', join(dir, 'custom-tools')],
-    ['subagent-tool-policy', 'policyFile', join(dir, 'subagent-tools', 'policy.yml')],
   ]
   for (const [moduleId, field, expectedPath] of cases) {
     const value = configOf(moduleId)[field]
@@ -498,6 +497,7 @@ test('受管字段一律解析到当前预设目录内：新写法 `./` 与历�
     assert.equal(fileURLToPath(value), expectedPath, `${moduleId}.${field} 的落点`)
   }
   assert.equal(prepared.modules.some(module => ['rule-engine', 'declared-triggers'].includes(module.id)), false, '规则只经统一入口挂载，不重复装配旧声明')
+  assert.equal(prepared.modules.some(module => module.id === 'subagent-tool-policy'), false, '策略段缺失时不回落旧产物')
 })
 
 test('模块清单：引擎能力装载，官方组合行与能力 recipe 留给会话原有预设', async () => {
@@ -520,7 +520,7 @@ test('模块清单：引擎能力装载，官方组合行与能力 recipe 留给
 test('拒绝路径：非法 id、无效模块声明、缺失宿主能力都在装配前 fail loud', async () => {
   await assert.rejects(
     prepareAssembly(moduleRoot, 'Not_An_Id', hasEveryService),
-    /非法预设 id/,
+    /非法模块 id/,
   )
   writePreset('unknown-capability', { modules: ['no-such-capability-anywhere'] })
   await assert.rejects(
@@ -567,7 +567,7 @@ test('「独占」段唯一性：装配前拒绝两个生效 complete（含人�
   })
   await assert.rejects(
     prepareAssembly(moduleRoot, 'persona-complete', hasEveryService),
-    /人设已开启/,
+    /人设已开启|multiple complete system sections/,
     '人设与配置同时独占必须被拒',
   )
 
@@ -605,11 +605,11 @@ test('官方挂载行与本通道不重复装载：引擎能力只出现一次',
   assert.equal(ids.includes('prompt-config-engine'), false)
 })
 
-test('与官方物化路径同源：writePreset 落盘的切片 = 配装读出的切片', async () => {
+test('导入候选与运行配装同源：完整定义经过 rules 切片后保持所有执行维度', async () => {
   const { writePreset } = await import('../../src/host/write-preset.ts')
   const id = 'materialized-slices'
   // 定义来源目录（writePreset 的模板解析基准：sourceDir 优先于同名已安装预设）。
-  const sourceDir = join(moduleRoot, '.source-materialized')
+  const sourceDir = join(moduleRoot, '.source-materialized', id)
   mkdirSync(sourceDir, { recursive: true })
   writeFileSync(join(sourceDir, 'module.yml'), `${JSON.stringify({
     id, name: id, modules: ['rule-engine'], rules: LITERAL_SLICES.map(promptConfigToRule),

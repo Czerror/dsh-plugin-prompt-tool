@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { fileURLToPath, pathToFileURL } from 'node:url'
+import { fileURLToPath } from 'node:url'
 import { parse as parseYaml, parseDocument } from 'yaml'
 import { Context } from '@deepseek-ai/cordis'
 
@@ -13,9 +13,9 @@ const home = mkdtempSync(join(tmpdir(), 'pt-wp-home-'))
 process.env.DSH_HOME = home
 const ROOT = fileURLToPath(new URL('../..', import.meta.url))
 const { FIXTURE_PRESET_ID, FIXTURE_PRESET_SRC, installFixturePreset, installFixturePresetInHome } = await import('../fixtures/preset-template.mjs')
-const { apply, writePreset, saveModuleParams } = await import('../../src/index.ts')
-const { materializeModule } = await import('../../src/host/write-preset.ts')
-const { loadModuleSpec } = await import('../../src/host/manifest.ts')
+const { materializeModule, writePreset } = await import('../../src/host/write-preset.ts')
+const { prepareAssembly } = await import('../../src/runtime/agent-assembly.ts')
+const { loadModuleSpec, saveModuleParams } = await import('../../src/host/manifest.ts')
 const { planRulesMigration, promptConfigToRule } = await import('../../src/host/rules-migration.ts')
 const { readModuleRules, editModuleRules } = await import('../../src/host/module-rules.ts')
 // 夹具模板同时装进隔离 DSH_HOME 的官方模块根（resolveModuleDir 场景）与各测试的输出根（见 makeOptions）。
@@ -31,7 +31,15 @@ function migrateFixtures(root) {
 function patchRule(dir, id, change) {
   const current = readModuleRules(dir)
   const rule = current.rules.find(rule => rule.id === id)
-  return editModuleRules(dir, { expectedRevision: current.revision, edits: [{ previousId: id, rule: change(rule) }] })
+  const next = change(rule)
+  const settingsChanged = next !== null && ['enabled', 'group', 'exclusive'].some(key => next[key] !== rule[key])
+  return editModuleRules(dir, { expectedRevisions: current.revisions, edits: [{ previousId: id, rule: next, settingsChanged }] })
+}
+
+function projectedConfig(directory, id) {
+  const rule = readModuleRules(directory).rules.find(rule => rule.id === id)
+  const config = rule?.do.find(action => action.kind === 'inject-text')?.config
+  return config === undefined ? undefined : { ...config, enabled: rule.enabled !== false }
 }
 
 function makeOptions(moduleDir) {
@@ -48,6 +56,7 @@ function makeOptions(moduleDir) {
 }
 
 async function liveWriter(t, initial) {
+  const { apply } = await import('../../src/index.ts')
   const ctx = new Context()
   t.after(() => ctx.fiber.dispose())
   ctx.provide('skills', { registerProvider: (factory) => { factory({ invalidate() {}, signal: new AbortController().signal }); return () => {} } })
@@ -88,12 +97,10 @@ test('公共重建入口：已离线迁移规则逐模块重建，不串用模�
   for (const id of ['writer-b', 'writer-a']) materializeModule(id, { moduleDir: join(home, '.prompt-tool', 'modules') })
   for (const [index, id] of ['writer-a', 'writer-b'].entries()) {
     const dir = dirs[index]
-    const file = readdirSync(join(dir, 'configs')).find(name => name.endsWith('-near-anchor--inject.yml'))
-    const config = parseYaml(readFileSync(join(dir, 'configs', file), 'utf8'))
+    const config = projectedConfig(dir, 'near-anchor')
     assert.equal(config.enabled, true, `${id} 使用定义中的共享开关`)
     assert.equal(config.params.text, `PARAM-${id}`, `${id} 使用定义中的共享正文`)
-    const guideFile = readdirSync(join(dir, 'configs')).find(name => name.endsWith('-router-guide--inject.yml'))
-    const guide = parseYaml(readFileSync(join(dir, 'configs', guideFile), 'utf8'))
+    const guide = projectedConfig(dir, 'router-guide')
     assert.equal(guide.enabled, true)
     assert.equal(guide.params.text, `GUIDE-${id}`)
     assert.equal(loadModuleSpec(dir).rules.find(rule => rule.id === 'router-guide').when, undefined, '自定义引导没有模型范围门')
@@ -113,9 +120,8 @@ test('规则所有者：无旧快捷参数的同名规则保留自身字段，�
   ]
   writeFileSync(join(dir, 'module.yml'), JSON.stringify({ id: 'example', order: 91, modules: [], rules: configs.map(promptConfigToRule) }), 'utf8')
   writePreset('UNRELATED BODY', { moduleDir: root, presetTemplate: 'example', presetOrder: 5, promptConfigs: [] })
-  const files = readdirSync(join(dir, 'configs')).sort()
-  for (const [index, expected] of configs.entries()) {
-    const actual = parseYaml(readFileSync(join(dir, 'configs', files[index]), 'utf8'))
+  for (const expected of configs) {
+    const actual = projectedConfig(dir, expected.id)
     assert.equal(actual.enabled, expected.enabled)
     for (const [key, value] of Object.entries(expected.params)) assert.deepEqual(actual.params[key], value)
     assert.equal(actual.fieldSources, undefined, '新产物不再声明模块快捷参数拥有规则字段')
@@ -155,8 +161,7 @@ test('旧来源运行时拒绝，显式离线迁移后只认规则事务；未�
   assert.equal(injector.params.text, 'LEGACY BODY')
   assert.ok(injector.params.anchorWords.includes('go'))
   const imported = writePreset('LEGACY BODY', { moduleDir: root, presetTemplate: FIXTURE_PRESET_ID, outputId: 'imported', sourceDir: dir, promptConfigs: [] })
-  const importedNear = readdirSync(imported + '/configs').find(name => name.endsWith('-near-anchor--inject.yml'))
-  assert.equal(parseYaml(readFileSync(join(imported, 'configs', importedNear), 'utf8')).params.complexPattern, 'complex-task')
+  assert.equal(projectedConfig(imported, 'near-anchor').params.complexPattern, 'complex-task')
   patchRule(dir, 'near-anchor', rule => ({ ...rule, enabled: false, do: [{ ...rule.do[0], config: { ...near, params: { ...near.params, text: 'OWNED RULE' } } }] }))
   saveModuleParams(root, FIXTURE_PRESET_ID, { maxDepth: 0 }, undefined)
   const saved = parseYaml(readFileSync(file, 'utf8'))
@@ -181,7 +186,7 @@ test('旧来源运行时拒绝，显式离线迁移后只认规则事务；未�
 
 test('运行总闸：关闭再开启不改模块定义或物化产物字节', async (t) => {
   const dir = installWriterModule('writer-gate')
-  const files = ['module.yml', 'agent.cordis.yml', 'preset.md', 'agents.md', ...readdirSync(join(dir, 'configs')).map(file => join('configs', file))]
+  const files = ['module.yml', 'preset.md', 'agents.md', ...readdirSync(join(dir, 'rules')).map(file => join('rules', file))]
   const before = files.map(file => readFileSync(join(dir, file)))
   const update = await liveWriter(t, { presetTemplate: 'writer-gate' })
   for (const writePreset of [false, true]) {
@@ -194,11 +199,10 @@ test('运行总闸：关闭再开启不改模块定义或物化产物字节', as
   await update({ writePreset: false })
   patchRule(dir, 'near-anchor', rule => ({ ...rule, do: [{ ...rule.do[0], config: { ...rule.do[0].config, params: { ...rule.do[0].config.params, text: 'SAVED-WHILE-OFF' } } }] }))
   materializeModule('writer-gate', { moduleDir: join(home, '.prompt-tool', 'modules'), presetOrder: 5 })
-  const configFile = readdirSync(join(dir, 'configs')).find(file => file.endsWith('-near-anchor--inject.yml'))
-  assert.equal(parseYaml(readFileSync(join(dir, 'configs', configFile), 'utf8')).params.text, 'SAVED-WHILE-OFF')
+  assert.equal(projectedConfig(dir, 'near-anchor').params.text, 'SAVED-WHILE-OFF')
 })
 
-test('writePreset 共享引擎：模块根不物化 .engine，组合引用插件包说明符', () => {
+test('writePreset 不生成共享引擎或宿主组合，规则切片保持可装配', async () => {
   const dir = join(tmpdir(), `prompt-tool-wp-${process.pid}-${Date.now()}`)
   const moduleDir = join(dir, 'preset')
   try {
@@ -211,24 +215,14 @@ test('writePreset 共享引擎：模块根不物化 .engine，组合引用插件
       '模块根不残留 .engine/.pt-engine-fingerprint/临时目录')
     assert.equal(existsSync(join(moduleDir, 'fixture', 'engine')), false, '子模块不复制 engine')
     assert.equal(existsSync(join(moduleDir, 'agent.cordis.yml')), false, '模块根不再写容器根转发')
-    // 组合路径重写：引擎行改引用包名说明符（模块包不再携带 engine/，旧 ./engine/ 与
-    // ../.engine/ 都不再被识别）；configsDir 保持历史语义 `../<id>/...`
-    //（相对 <模块根>/.engine/ 解析 = 模块目录/configs），由配装通道在挂载期换算。
-    const sub = readFileSync(join(moduleDir, 'fixture', 'agent.cordis.yml'), 'utf8')
-    assert.doesNotMatch(sub, /name: ['"]?\.{1,2}\/\.?engine\//,
-      '产物不得残留 ./engine/ 或 ../.engine/ 本地引用')
+    assert.equal(existsSync(join(moduleDir, 'fixture', 'agent.cordis.yml')), false)
+    const prepared = await prepareAssembly(moduleDir, 'fixture', () => true)
     for (const module of ['rule-engine', 'run-code-env', 'tool-git-bash', 'skill-search']) {
-      assert.match(sub, new RegExp(`name: dsh-plugin-prompt-tool/engine/${module}\\.mjs`),
-        `引擎行 ${module} 应引用插件包说明符`)
       assert.ok(existsSync(join(ROOT, 'engine', `${module}.mjs`)),
         `说明符 ${module}.mjs 应在包内引擎目录存在（否则引用悬空）`)
     }
-    assert.match(sub, /rulesFile: \.\.\/fixture\/rules\.yml/, 'rulesFile 相对 .engine 指向模块规则包')
-    const engineRow = parseYaml(sub).find((row) => row?.id === 'rule-engine')
-    // 虚拟引擎基准 <模块根>/.engine/（注册期换算用的同一基准；URL 解析无需目录真实存在）。
-    const engineFileUrl = pathToFileURL(join(moduleDir, '.engine', 'rule-engine.mjs'))
-    const resolved = new URL(engineRow.config.rulesFile, engineFileUrl)
-    assert.ok(existsSync(resolved), `rulesFile 解析后应存在: ${resolved.pathname}`)
+    assert.ok(prepared.rules.length > 0)
+    assert.equal(existsSync(join(moduleDir, 'fixture', 'rules', '_settings.yml')), true)
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }
@@ -242,9 +236,9 @@ test('writePreset 不再有引擎指纹：二次写入不物化 .engine，产物
     // 引擎指纹（.engine/.pt-engine-fingerprint + 内容摘要比对、未变则不重刷）已随共享引擎
     // 归位插件包整体删除：二次写入不再有「是否重刷共享引擎」这一步，只需保证产物本身幂等
     // 且不产生引擎目录/指纹文件。
-    const stable = readFileSync(join(moduleDir, 'fixture', 'agent.cordis.yml'), 'utf8')
+    const stable = readFileSync(join(moduleDir, 'fixture', 'rules', '_settings.yml'), 'utf8')
     writePreset('PROMPT', makeOptions(moduleDir))
-    assert.equal(readFileSync(join(moduleDir, 'fixture', 'agent.cordis.yml'), 'utf8'), stable,
+    assert.equal(readFileSync(join(moduleDir, 'fixture', 'rules', '_settings.yml'), 'utf8'), stable,
       '二次写入产物逐字节稳定（引擎说明符不来回改写）')
     assert.equal(existsSync(join(moduleDir, '.engine')), false, '二次写入仍不物化 .engine')
     assert.equal(existsSync(join(moduleDir, '.pt-engine-fingerprint')), false, '不再写引擎指纹文件')
@@ -263,12 +257,12 @@ test('writePreset 物化模型请求动作，条件区分主/子且空参数不�
     const source = join(moduleDir, FIXTURE_PRESET_ID)
     const current = readModuleRules(source)
     const model = (id, audience, patch) => ({ id, layer: 'agent-request', when: { scope: { audience } }, do: [{ id: 'request', kind: 'request-params', modelScope: 'all', patch }] })
-    editModuleRules(source, { expectedRevision: current.revision, edits: [
+    editModuleRules(source, { expectedRevisions: current.revisions, edits: [
       { previousId: null, rule: model('model-params', 'main', { reasoningEffort: 'high', temperature: 1, maxTokens: 32000 }) },
       { previousId: null, rule: model('subagent-model-params', 'subagent', { reasoningEffort: 'max' }) },
     ] })
     writePreset('PROMPT', options)
-    const rules = parseYaml(readFileSync(join(source, 'rules.yml'), 'utf8')).rules
+    const rules = readModuleRules(source).rules
     const main = rules.find(rule => rule.id === 'model-params')
     const child = rules.find(rule => rule.id === 'subagent-model-params')
     assert.deepEqual(main.when, { scope: { audience: 'main' } })
@@ -280,7 +274,7 @@ test('writePreset 物化模型请求动作，条件区分主/子且空参数不�
   }
 })
 
-test('writePreset：module.yml 的模块行参数经参数桥注入 agent.cordis.yml', () => {
+test('writePreset：module.yml 的模块行参数经参数桥进入内存配装', async () => {
   const dir = join(tmpdir(), `prompt-tool-wp-${process.pid}-${Date.now()}`)
   const moduleDir = join(dir, 'preset')
   try {
@@ -291,9 +285,9 @@ test('writePreset：module.yml 的模块行参数经参数桥注入 agent.cordis
       'id: fixture\nname: fixture\nversion: "1"\nengineCompat: ">=0.4.2"\n'
       + 'modules: [tool-git-bash]\nlayerSettings:\n  tool-pipeline:\n    toolGitBashEnabled: false\n', 'utf8')
     writePreset('PROMPT', makeOptions(moduleDir))
-    const rows = parseYaml(readFileSync(join(moduleDir, FIXTURE_PRESET_ID, 'agent.cordis.yml'), 'utf8'))
+    const rows = (await prepareAssembly(moduleDir, FIXTURE_PRESET_ID, () => true)).modules
     const toolGitBash = rows.find((row) => row?.id === 'tool-git-bash')
-    assert.ok(toolGitBash, 'agent.cordis.yml 应含 tool-git-bash 行')
+    assert.ok(toolGitBash, '内存配装应含 tool-git-bash 行')
     assert.equal(toolGitBash.config.enabled, false, '参数桥把 layerSettings 参数写进该行的 config')
   } finally {
     rmSync(dir, { recursive: true, force: true })
@@ -315,7 +309,7 @@ test('writePreset 拒绝旧settings规则覆盖；正文资产写盘不改已有
     }), /旧 promptConfigs/)
     assert.equal(readFileSync(moduleFile, 'utf8'), before)
     writePreset('FILE CONTENT', options)
-    const injector = parseYaml(readFileSync(join(moduleDir, 'fixture', 'configs', '0020-prompt-injector--inject.yml'), 'utf8'))
+    const injector = projectedConfig(join(moduleDir, 'fixture'), 'prompt-injector')
     assert.equal(injector.params.text, parseYaml(before).rules.find(rule => rule.id === 'prompt-injector').do[0].config.params.text)
     assert.doesNotMatch(JSON.stringify(injector), /SETTINGS TEXT/)
     assert.equal(readFileSync(join(moduleDir, 'fixture', 'preset.md'), 'utf8'), 'FILE CONTENT')
@@ -396,32 +390,28 @@ test('writePreset 预设变量只读顶层 variables，清空后不复活 params
     saveModuleParams(moduleDir, 'fixture', undefined, undefined, variables)
     const storedParams = parseYaml(readFileSync(presetFile, 'utf8')).params
     writePreset('PROMPT', makeOptions(moduleDir))
-    const pcDir = join(moduleDir, 'fixture', 'configs')
-    const file = readdirSync(pcDir).find((name) => name.endsWith('-near-anchor--inject.yml'))
-    assert.ok(file, '提示词配置文件存在')
-    const parsed = parseYaml(readFileSync(join(pcDir, file), 'utf8'))
+    const pcDir = join(moduleDir, 'fixture', 'rules')
+    const parsed = projectedConfig(join(moduleDir, 'fixture'), 'near-anchor')
     for (const key of ['firstTurnAnchor', 'firstTurnText', 'modelProvider', 'modelName',
       'guideText', 'usePtcMode', 'injectPrompt', 'bootstrapMaxTokens', 'toolFilterAllow']) {
       assert.equal(parsed.params?.[key], undefined, `配置 params 不得含 UI 管理键 ${key}`)
-      assert.equal(parsed.variables?.[key], variables[key], `配置 variables 只来自明确顶层变量 ${key}`)
     }
     // 顶层变量不靠 PARAM_KEYS 猜测用途，允许与引擎参数同名；配置文件保持干净。
     const varsFile = join(pcDir, 'variables.yml')
     assert.ok(existsSync(varsFile), 'variables.yml 生成')
     const vars = parseYaml(readFileSync(varsFile, 'utf8'))
     assert.deepEqual(vars, variables, '变量文件只包含顶层变量，保留空串与同名键')
-    assert.equal(parsed.variables?.wordsCloud, '1500字', '注入叶子投影携带顶层变量，不读取同名旧params')
     assert.equal(parsed.params?.wordsCloud, undefined, '内容变量不再进 params')
     saveModuleParams(moduleDir, 'fixture', undefined, undefined, {})
     writePreset('PROMPT', makeOptions(moduleDir))
-    assert.equal(existsSync(varsFile), false, '清空顶层变量后移除旧生成文件，params 内容键不复活')
+    assert.deepEqual(parseYaml(readFileSync(varsFile, 'utf8')), {}, '清空顶层变量后切片为空映射，params 内容键不复活')
     assert.deepEqual(parseYaml(readFileSync(presetFile, 'utf8')).params, storedParams, '不迁移或清理原 params')
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }
 })
 
-test('writePreset 自定义工具渲染 custom-tools/<n>-<id>.yml（源 = module.yml 顶层 customTools 段）', () => {
+test('writePreset 自定义工具拒绝坏定义，合法 DSL 在配装期编译且不写旧产物', async () => {
   const dir = join(tmpdir(), `prompt-tool-ctools-${process.pid}-${Date.now()}`)
   const moduleDir = join(dir, 'preset')
   try {
@@ -441,21 +431,20 @@ test('writePreset 自定义工具渲染 custom-tools/<n>-<id>.yml（源 = module
     ])
     doc.get('modules', true).add('tool-config-engine')
     writeFileSync(presetFile, doc.toString(), 'utf8')
-    writePreset('PROMPT', makeOptions(moduleDir))
-    const customToolsDir = join(moduleDir, 'fixture', 'custom-tools')
-    assert.ok(existsSync(customToolsDir), 'custom-tools 目录生成')
-    const files = readdirSync(customToolsDir).sort()
-    assert.deepEqual(files, ['0001-greet.yml'], '合法条目落盘；缺 output.schema 的坏条目在物化阶段跳过')
-    const parsed = parseYaml(readFileSync(join(customToolsDir, '0001-greet.yml'), 'utf8'))
+    const options = makeOptions(moduleDir)
+    assert.throws(() => writePreset('PROMPT', options), /customTools/)
+    const fixed = parseDocument(readFileSync(presetFile, 'utf8'))
+    fixed.deleteIn(['customTools', 1])
+    writeFileSync(presetFile, fixed.toString())
+    writePreset('PROMPT', options)
+    const prepared = await prepareAssembly(moduleDir, 'fixture', () => true)
+    const toolRow = prepared.modules.find(row => row.id === 'tool-config-engine')
+    const parsed = toolRow.config.tools[0]
+    assert.equal(existsSync(join(moduleDir, 'fixture', 'custom-tools')), false)
     assert.equal(parsed.name, 'my_greet')
     assert.equal(parsed.execute.kind, 'shell')
     assert.deepEqual(parsed.parameters, { type: 'object', properties: { who: { type: 'string', description: '对象' } }, required: ['who'] }, '参数 DSL 经官方转换器物化为标准 JSON Schema')
-    const composition = parseYaml(readFileSync(join(moduleDir, 'fixture', 'agent.cordis.yml'), 'utf8'))
-    const toolRow = composition.find((row) => row?.id === 'tool-config-engine')
-    assert.equal(toolRow.name, 'dsh-plugin-prompt-tool/engine/tool-config-engine.mjs',
-      'tool-config-engine 行引用插件包说明符')
-    assert.equal(toolRow.config.configsDir, '../fixture/custom-tools',
-      'custom-tools 路径应重写为相对虚拟引擎基准 <模块根>/.engine/ 的 ../<id>/custom-tools')
+    assert.equal(typeof toolRow.config.resourceRoot, 'string')
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }
@@ -470,7 +459,7 @@ test('writePreset 用户副本缺组合源时拒绝，不回退包内同名模�
     // 纯元数据副本：无 modules/params/promptConfigs，目录也无 agent.cordis.yml。
     writeFileSync(join(userMinimal, 'module.yml'), 'name: 极简模式（旧）\ndescription: 旧版种子副本\norder: 3\n', 'utf8')
     const before = readFileSync(join(userMinimal, 'module.yml'), 'utf8')
-    assert.throws(() => writePreset('PROMPT', { ...makeOptions(moduleDir), presetTemplate: 'pt-minimal' }), /no modules\/composition/)
+    assert.throws(() => writePreset('PROMPT', { ...makeOptions(moduleDir), presetTemplate: 'pt-minimal' }), /no modules.*composition/)
     assert.equal(existsSync(join(userMinimal, 'agent.cordis.yml')), false)
     assert.equal(readFileSync(join(userMinimal, 'module.yml'), 'utf8'), before)
     const spec = parseYaml(readFileSync(join(userMinimal, 'module.yml'), 'utf8'))
@@ -498,13 +487,8 @@ test('R3 离线迁移后的规则保留作者定义，只有显式规则事务�
     migrateFixtures(moduleDir)
     return moduleDir
   }
-  const readConfig = (moduleDir, id) => {
-    const configsDir = join(moduleDir, FIXTURE_PRESET_ID, 'configs')
-    const file = readdirSync(configsDir).find((name) => name.endsWith(`-${id}--inject.yml`))
-    assert.ok(file, `应生成 ${id}`)
-    return parseYaml(readFileSync(join(configsDir, file), 'utf8'))
-  }
-  const subagentRule = moduleDir => parseYaml(readFileSync(join(moduleDir, FIXTURE_PRESET_ID, 'rules.yml'), 'utf8')).rules.find(rule => rule.id === 'subagent-model-params')
+  const readConfig = (moduleDir, id) => projectedConfig(join(moduleDir, FIXTURE_PRESET_ID), id)
+  const subagentRule = moduleDir => readModuleRules(join(moduleDir, FIXTURE_PRESET_ID)).rules.find(rule => rule.id === 'subagent-model-params')
   try {
     // 调用方只给部署字段（与 installPresetPackage / 离线物化调用同源）：不得覆盖作者定义。
     const kept = install(join(dir, 'kept'))
@@ -537,9 +521,8 @@ test('writePreset：模板名与输出目录名分离，安全 id 输出仍渲�
     presetTemplate: FIXTURE_PRESET_ID,
     outputId: 'pt-safe',
   })
-  const composition = readFileSync(join(outputRoot, 'pt-safe', 'agent.cordis.yml'), 'utf8')
-  assert.match(composition, /rulesFile: \.\.\/pt-safe\/rules\.yml/, '规则包应指向输出目录自身')
-  assert.match(composition, /name: dsh-plugin-prompt-tool\/engine\/rule-engine\.mjs/,
-    '引擎引用插件包说明符（与输出目录名解耦）')
+  assert.equal(parseYaml(readFileSync(join(outputRoot, 'pt-safe', 'module.yml'), 'utf8')).id, 'pt-safe')
+  assert.equal(existsSync(join(outputRoot, 'pt-safe', 'rules', '_settings.yml')), true)
+  assert.equal(existsSync(join(outputRoot, 'pt-safe', 'agent.cordis.yml')), false)
   assert.equal(existsSync(join(outputRoot, 'standard')), false, '模板名不会被当成输出目录')
 })

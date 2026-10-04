@@ -2,8 +2,7 @@
 // 测试通过 window.previewPlan / window.submitPlan 控制每次端点应答，用真实 File 输入驱动。
 import React from 'react'
 import { createRoot } from 'react-dom/client'
-import { CharactersPage } from '../../src/client/features/characters/CharactersPage.tsx'
-import { PresetSwitcher } from '../../src/client/features/presets/PresetSwitcher.tsx'
+import { ModuleSwitcher } from '../../src/client/features/presets/ModuleSwitcher.tsx'
 import { PROMPT_TOOL_DICTS } from '../../src/client/locales.ts'
 
 const t = (key, params = {}) => Object.entries(params)
@@ -40,7 +39,7 @@ window.fetch = async (url, init) => {
   const body = JSON.parse(init?.body ?? '{}')
   window.requests.push({ endpoint, body })
   if (endpoint === 'characters-list') return json({ ok: true, value: { characters: window.characters } })
-  if (endpoint === 'characters-import' || endpoint === 'import-preset-package') {
+  if (endpoint === 'characters-import' || endpoint === 'import-module-package') {
     if (body.preview === true) {
       window.previewCounter += 1
       const revision = `rev-${window.previewCounter}`
@@ -65,10 +64,10 @@ window.fetch = async (url, init) => {
 }
 
 // fields 快照必须引用稳定（useSyncExternalStore 契约），只有目标预设变化时才换引用。
-let fieldsCache = { presetTemplate: window.targetPreset, promptConfigs: [] }
+let fieldsCache = { moduleId: window.targetPreset, promptConfigs: [] }
 const getFields = () => {
-  if (fieldsCache.presetTemplate !== window.targetPreset) {
-    fieldsCache = { ...fieldsCache, presetTemplate: window.targetPreset }
+  if (fieldsCache.moduleId !== window.targetPreset) {
+    fieldsCache = { ...fieldsCache, moduleId: window.targetPreset }
   }
   return fieldsCache
 }
@@ -76,9 +75,9 @@ const getFields = () => {
 const store = {
   getFields,
   subscribeFields: () => () => {},
-  meta: { presets: [], builtinTemplates: [] },
+  meta: { modules: [], builtinTemplates: [] },
   load: async () => {},
-  setPresetTemplate: (id) => { window.targetPreset = id },
+  setModuleId: (id) => { window.targetPreset = id },
   showNotice: (kind, message) => {
     window.notices.push({ kind, message })
     document.getElementById('notice').textContent = `${kind}:${message}`
@@ -87,8 +86,7 @@ const store = {
 
 function App() {
   return React.createElement(React.Fragment, null,
-    React.createElement(PresetSwitcher, { store, t }),
-    React.createElement(CharactersPage, { store, t }),
+    React.createElement(ModuleSwitcher, { store, t }),
     React.createElement('p', { id: 'notice' }))
 }
 

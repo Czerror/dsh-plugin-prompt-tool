@@ -78,7 +78,7 @@ export function upsertWorldBookEntry(moduleDir: string, entry: WorldBookEntry): 
   const rule = existing === undefined ? promptConfigToRule({ ...entry, id: entry.id }) : {
     ...existing.rule, do: existing.rule.do.map(action => action.id === existing.action.id ? { ...action, config: entry } : action),
   }
-  const result = editModuleRules(moduleDir, { expectedRevision: snapshot.revision, edits: [{ previousId: existing?.rule.id ?? null, rule }] })
+  const result = editModuleRules(moduleDir, { expectedRevisions: snapshot.revisions, edits: [{ previousId: existing?.rule.id ?? null, rule, settingsChanged: existing === undefined }] })
   return ruleInjections(result.rules).filter(({ config }) => isWorldBook(config)).length
 }
 
@@ -90,6 +90,6 @@ export function deleteWorldBookEntry(moduleDir: string, id: string): number {
   if (matches.length > 1) throw new Error(`世界书条目 ${id} 的动作身份重复，无法安全删除`)
   const { rule, action } = matches[0]!
   const actions = rule.do.filter(item => item.id !== action.id)
-  const result = editModuleRules(moduleDir, { expectedRevision: snapshot.revision, edits: [{ previousId: rule.id, rule: actions.length > 0 ? { ...rule, do: actions } : null }] })
+  const result = editModuleRules(moduleDir, { expectedRevisions: snapshot.revisions, edits: [{ previousId: rule.id, rule: actions.length > 0 ? { ...rule, do: actions } : null, settingsChanged: false }] })
   return ruleInjections(result.rules).filter(({ config }) => isWorldBook(config)).length
 }

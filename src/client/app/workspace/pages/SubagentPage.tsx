@@ -7,8 +7,8 @@ import { useTemplatePicker } from '../../../features/prompts/useTemplatePicker.t
 import { useRuleEditor } from '../../../data/use-rule-editor.ts'
 import { useCustomToolsEditor } from '../../../features/tools/CustomToolsCard.tsx'
 import { TemplatePicker } from '../../../ui/TemplatePicker.tsx'
-import { engineCapability } from '../../../../shared/engine-capabilities.ts'
-import { engineLayerSlots } from './EngineLayersPanel.tsx'
+import { moduleCapability } from '../../../../shared/engine-capabilities.ts'
+import { injectionPointSlots } from './InjectionPointsPanel.tsx'
 import { RulesWorkspace } from '../../../features/prompts/RulesWorkspace.tsx'
 import ui from '../../../ui/controls.module.css'
 import type { ConfigPageBrowse } from '../workspace-browse-state.ts'
@@ -38,36 +38,36 @@ export const SubagentPage = memo(function SubagentPage(props: { store: PromptToo
   const [createdHidden, setCreatedHidden] = useState(false)
   // 搜索词由页面持有：同一搜索词同时过滤配置实例、能力卡、共享设置区与单例卡。
   const [keyword, setKeyword] = useState(props.browse?.filter ?? '')
-  const canEditPreset = store.fields.writePreset && store.moduleFacts?.editable === true
+  const canEditModule = store.fields.modulesEnabled && store.moduleFacts?.editable === true
   /** 仅主对话生效的能力：本页既不提供创建，也不渲染卡片。B7 T3 后暂无此类能力，清单留待重构。 */
   const mainSessionOnly: readonly string[] = ['main-model']
   // 合并创建菜单：按插入点层级平铺「添加模板 · 层级」入口，浮层只列该层模板。
   const picker = useTemplatePicker(
     draft.entries.filter(entry => !entry.deleted).map(entry => entry.value),
-    (rule) => { if (canEditPreset && draft.loaded) editor.add(rule) },
+    (rule) => { if (canEditModule && draft.loaded) editor.add(rule) },
     store.showNotice,
     t,
     'subagent',
   )
-  const toolEditor = useCustomToolsEditor({ t, presetId: store.fields.presetTemplate, disabled: !canEditPreset, drafts: store.editorDrafts, onNotice: store.showNotice, onChooseTemplate: picker.openTools })
+  const toolEditor = useCustomToolsEditor({ t, moduleId: store.fields.moduleId, disabled: !canEditModule, drafts: store.editorDrafts, onNotice: store.showNotice, onChooseTemplate: picker.openTools })
   const createItems = INSERTION_LAYERS.map((layer) => ({ id: `tpl:${layer}`, label: t('main.addTemplate', { layer: translateLabel(t, LAYER_LABEL_KEYS, layer) }) }))
   const onCreateSelect = useCallback((id: string) => {
-    if (canEditPreset && id.startsWith('tpl:')) picker.openPicker(id.slice(4))
-  }, [canEditPreset, picker])
+    if (canEditModule && id.startsWith('tpl:')) picker.openPicker(id.slice(4))
+  }, [canEditModule, picker])
   const insertToolTemplate = useCallback((spec: Record<string, unknown>) => {
     setCreatedHidden(viewFilter !== 'all' && viewFilter !== 'tool-pipeline')
-    toolEditor.createTool({ kind: 'template', spec, presetId: store.fields.presetTemplate })
+    toolEditor.createTool({ kind: 'template', spec, moduleId: store.fields.moduleId })
     picker.closePicker()
   }, [picker, store, viewFilter, toolEditor.createTool])
   // 能力创建成功后只定位并展开新卡；不改动用户选定的视图过滤。
   const revealCapability = useCallback((id: string) => {
     setCreatedHidden(viewFilter !== 'all')
     // 能力卡已退场：定位锚改到该层实例卡内的设置区（层从共享契约派生）。
-    const layer = engineCapability(id)?.displayLayer
+    const layer = moduleCapability(id)?.displayLayer
     setFocusCapability((current) => ({ id, layer, token: (current?.token ?? 0) + 1 }))
   }, [viewFilter])
   // 与主会话同源的层内装配：本页只声明受众视图与子代理专属编排。
-  const layers = engineLayerSlots({
+  const layers = injectionPointSlots({
     store,
     t,
     viewFilter,

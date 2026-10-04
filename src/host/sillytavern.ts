@@ -19,7 +19,7 @@ import type { ModuleSpec } from './manifest.ts'
 import type { RuleDefinition } from '../shared/rules.ts'
 import { convertLegacyModuleRules } from './rules-migration.ts'
 import { mapRuleInjections, ruleInjections } from './rule-content.ts'
-import { readPresetLayerSettings } from './module-layer-settings.ts'
+import { readModuleLayerSettings } from './module-layer-settings.ts'
 import type { PersonaSpec } from '../shared/persona-section.ts'
 import type {
   StConversionDiagnostic,
@@ -71,7 +71,7 @@ export type MergeIdMap = Map<number, Map<number, string>>
  *
  * 报告必须消费这份映射，而不是按后缀规则另行推测：后缀分配只发生在这里一次。
  */
-export function mergeStPresetsWithReport(specs: ModuleSpec[]): { spec: ModuleSpec; idMap: MergeIdMap } {
+export function mergeStModulesWithReport(specs: ModuleSpec[]): { spec: ModuleSpec; idMap: MergeIdMap } {
   const rules: RuleDefinition[] = []
   const seen = new Set<string>()
   const idMap: MergeIdMap = new Map()
@@ -98,7 +98,7 @@ export function mergeStPresetsWithReport(specs: ModuleSpec[]): { spec: ModuleSpe
   const params: Record<string, unknown> = {}
   const layerSettings: NonNullable<ModuleSpec['layerSettings']> = {}
   for (const spec of specs) {
-    readPresetLayerSettings(spec)
+    readModuleLayerSettings(spec)
     Object.assign(params, spec.params ?? {})
     for (const [layer, fields] of Object.entries(spec.layerSettings ?? {})) layerSettings[layer] = { ...layerSettings[layer], ...fields }
   }
@@ -146,8 +146,8 @@ export function mergeStPresetsWithReport(specs: ModuleSpec[]): { spec: ModuleSpe
 }
 
 /** 合并多个转换结果为一个预设（角色卡 × 响应预设 → 单预设）。 */
-export function mergeStPresets(specs: ModuleSpec[]): ModuleSpec {
-  return mergeStPresetsWithReport(specs).spec
+export function mergeStModules(specs: ModuleSpec[]): ModuleSpec {
+  return mergeStModulesWithReport(specs).spec
 }
 
 /** 转换选项：多 prompt_order 分组时显式选择来源角色，避免照搬「默认任取首组」。 */
@@ -225,15 +225,15 @@ export function stOrderSelectionState(card: unknown, options: StConversionOption
 }
 
 /** SillyTavern JSON 预设卡片 → 本项目 ModuleSpec（导入端点直接消费）。 */
-export function convertStToPreset(card: unknown, baseName: string, options: StConversionOptions = {}): ModuleSpec {
-  return convertStToPresetWithReport(card, baseName, options).spec
+export function convertStToModule(card: unknown, baseName: string, options: StConversionOptions = {}): ModuleSpec {
+  return convertStToModuleWithReport(card, baseName, options).spec
 }
 
 /**
  * 同源转换 + 结构化报告：预览与实际提交共用这一个纯函数实现，
- * 报告只是派生元数据（不进 preset.yml、不作写入凭证）。
+ * 报告只是派生元数据（不进 module.yml、不作写入凭证）。
  */
-export function convertStToPresetWithReport(
+export function convertStToModuleWithReport(
   card: unknown,
   baseName: string,
   options: StConversionOptions = {},
@@ -273,7 +273,7 @@ export function convertStToPresetWithReport(
     }
   }
   const configs: Array<Record<string, unknown>> = []
-  /** preset.yml 顶层触发器声明（`enable_web_search: false` 的 web 拒绝名单在此登记）。 */
+  /** module.yml 顶层触发器声明（`enable_web_search: false` 的 web 拒绝名单在此登记）。 */
   const triggers: unknown[] = []
   // 世界书配置 id → 来源条目 id：键宏诊断必须定位到源条目，不按 id 前缀反推。
   const worldBookSources = new Map<string, string>()
@@ -773,9 +773,9 @@ export function convertStToPresetWithReport(
     )
   }
 
-  const presetId = stPresetId(baseName)
+  const moduleId = stModuleId(baseName)
   // 出口不变量：pre-step 只发出 user。各来源路径已在生成时逐条降级（原角色进
-  // stSource / stWorldBook）；这里兜住任何遗漏，保证写进 preset.yml 的角色可注入。
+  // stSource / stWorldBook）；这里兜住任何遗漏，保证写进 module.yml 的角色可注入。
   for (const config of configs) {
     if (config.layer !== 'pre-step' || config.role === ST_PRE_STEP_ROLE) continue
     const requested = config.role
@@ -849,7 +849,7 @@ export function convertStToPresetWithReport(
   }
   // 预设名优先取卡片 name 字段；缺失/空白时回退文件名（去 .json 的 baseName）。
   const spec: ModuleSpec = {
-    id: presetId,
+    id: moduleId,
     name: `${cardName || baseName}（SillyTavern 转换）`,
     version: '1.0.0',
     engineCompat: '>=0.4.2',
@@ -869,7 +869,7 @@ export function convertStToPresetWithReport(
   return { spec, report }
 }
 
-/** 合并报告的一个来源：显示名 + 该来源的最终 id 映射（来自 {@link mergeStPresetsWithReport}）。 */
+/** 合并报告的一个来源：显示名 + 该来源的最终 id 映射（来自 {@link mergeStModulesWithReport}）。 */
 export interface MergeReportSource {
   /** 来源显示名（上传文件显示名，不含绝对路径）。 */
   sourceName: string
@@ -881,7 +881,7 @@ export interface MergeReportSource {
  * 多文件导入合并各自报告：条目/诊断有界截断、计数求和。
  *
  * 传入 `sources` 时，条目的 `targetId` 被重写为**合并后的最终 id**（消费
- * `mergeStPresetsWithReport` 的同一份映射），并补上来源显示名与来源序号；
+ * `mergeStModulesWithReport` 的同一份映射），并补上来源显示名与来源序号；
  * 诊断的 `targetId` 同样按映射定位。不传时保持旧行为（不重写）。
  */
 export function mergeStConversionReports(
@@ -934,7 +934,10 @@ export function mergeStConversionReports(
  *  /^[a-z0-9][a-z0-9-]*$/——含中文的目录会被宿主 discovery 静默跳过，会话
  *  resume 报 preset not found）。文件名 slug 化（去中文）；纯中文名退化为
  *  st-<文件名短哈希>（唯一且合法）；显示名 name 仍保留中文原名。 */
-export function stPresetId(baseName: string): string {
+export function stModuleId(baseName: string): string {
   const slug = baseName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')
   return slug || `st-${createHash('sha1').update(baseName).digest('hex').slice(0, 6)}`
 }
+
+/** 旧转换 API 名称仅作调用兼容；外部 SillyTavern 预设格式仍保持原语义。 */
+export { convertStToModule as convertStToPreset, convertStToModuleWithReport as convertStToPresetWithReport, mergeStModules as mergeStPresets, mergeStModulesWithReport as mergeStPresetsWithReport, stModuleId as stPresetId }

@@ -16,18 +16,18 @@ import { basename, join, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { Pair, Scalar, parse as parseYaml, parseDocument, YAMLMap, YAMLSeq } from 'yaml'
 import { MODULES_DIR, MODULE_DEFINITION_FILE } from './paths.ts'
-import { engineCapability, engineRecipe, impliedModulesForParams, isEngineCapabilityPresent, type ModuleSourceMode, type ModuleFacts } from '../shared/engine-capabilities.ts'
+import { moduleCapability, engineRecipe, impliedModulesForParams, isModuleCapabilityPresent, type ModuleSourceMode, type ModuleFacts } from '../shared/engine-capabilities.ts'
 import { ENGINE_PARAM_DEFINITIONS, ENGINE_PARAM_KEYS, buildEngineModuleParams, normalizeMaxDepth } from '../shared/engine-params.ts'
 import { personaRowConfig, readPersonaSpec, type PersonaSpec } from '../shared/persona-section.ts'
 import { DEFAULT_MODULE_ID } from '../shared/preset-ids.ts'
-import { assertModuleDirectory, assertPresetId, assertPresetTree, engineModuleFileNames, presetPathExists, rewritePresetEngineReferences, setPresetDefinitionId } from './module-install.ts'
-import { engineParamPath, readPresetLayerSettings, PresetLayerSettingsError } from './module-layer-settings.ts'
+import { assertModuleDirectory, assertModuleId, assertModuleTree, modulePathExists, setModuleDefinitionId } from './module-install.ts'
+import { engineParamPath, readModuleLayerSettings, ModuleLayerSettingsError } from './module-layer-settings.ts'
 import { isLegacyPromptParam } from '../shared/legacy-prompt-params.ts'
-import type { RuleDefinition } from '../shared/rules.ts'
+import type { RuleDefinition, RuleRevisions } from '../shared/rules.ts'
 import { assertCanonicalRuleSource } from './module-rules.ts'
-import { atomicWriteTextFile } from './text-file.ts'
+import { ensureModuleSlices, loadModuleDefinition, commitModuleDefinition, withModuleDefinition as commitDefinitionEdit, withModuleLock, ModuleRulesError } from './module-storage.ts'
 export { atomicWriteTextFile } from './text-file.ts'
-export { PresetLayerSettingsError } from './module-layer-settings.ts'
+export { ModuleLayerSettingsError } from './module-layer-settings.ts'
 
 /**
  * 模块目录确实存在于本插件存储根（身份判定与官方登记状态无关）。
@@ -107,75 +107,55 @@ export function packageEngineDir(): string {
   ]
   for (const candidate of candidates) {
     const dir = fileURLToPath(candidate)
-    if (existsSync(join(dir, 'prompt-config-engine.mjs'))) return dir
+    if (existsSync(join(dir, 'rule-engine.mjs'))) return dir
   }
   throw new Error('prompt-tool: cannot locate package engine/ directory')
 }
 
 /**
- * preset.yml 读缓存：按 mtime+size 签名失效。load()/describe/param-overrides 等
+ * module.yml 读缓存：按 mtime+size 签名失效。load()/describe/param-overrides 等
  * 每次请求读盘解析，加缓存后同一文件只解析一次；写盘路径（saveModuleParams /
- * withPresetDoc）与外部编辑（stat 签名变化）都会正确失效。
+ * withModuleDefinition）与外部编辑（stat 签名变化）都会正确失效。
  */
-const presetSpecCache = new Map<string, { mtimeMs: number; size: number; spec: ModuleSpec }>()
+const moduleSpecCache = new Map<string, { revision: string; spec: ModuleSpec }>()
 
-/** 写盘后失效缓存（调用方在写完 preset.yml 后调用；不调用也安全——stat 签名兜底）。 */
+/** 写盘后失效缓存（调用方在写完 module.yml 后调用；不调用也安全——stat 签名兜底）。 */
 export function invalidateModuleSpec(dir: string): void {
-  presetSpecCache.delete(join(dir, MODULE_DEFINITION_FILE))
+  moduleSpecCache.delete(join(dir, MODULE_DEFINITION_FILE))
 }
 
 /**
  * 从模块 module.yml 的 modules 清单移除一个模块 id（YAML Document 保留注释
  * 与其余字段）。返回是否发生修改；文件缺失或没有该模块时返回 false。
  */
-export function removePresetModule(dir: string, moduleId: string): boolean {
+export function removeModuleCapabilityDeclaration(dir: string, moduleId: string): boolean {
   const file = join(dir, MODULE_DEFINITION_FILE)
   if (!existsSync(file)) return false
-  const doc = parseDocument(readFileSync(file, 'utf8'), { logLevel: 'silent' })
-  if (doc.errors.length > 0) return false
-  readPresetLayerSettings(doc.toJS())
+  const snapshot = loadModuleDefinition(dir)
+  const doc = snapshot.doc
+  readModuleLayerSettings(doc.toJS())
   const modules = doc.getIn(['modules'])
   if (!(modules instanceof YAMLSeq)) return false
   const kept = modules.items.filter((item) => !(item instanceof Scalar) || item.value !== moduleId)
   if (kept.length === modules.items.length) return false
   modules.items = kept
-  atomicWriteTextFile(file, doc.toString())
+  commitModuleDefinition(snapshot, doc)
   invalidateModuleSpec(dir)
   return true
 }
 
 /** 加载某个模块模板的单一参数文件 modules/<name>/module.yml。 */
 export function loadModuleSpec(dir: string): ModuleSpec {
-  const file = join(dir, MODULE_DEFINITION_FILE)
-  let stat: ReturnType<typeof statSync>
-  try {
-    stat = statSync(file)
-  } catch {
-    // 兜底路径（resolveModuleDir 未命中时 join(packageModulesDir, template) 可能不存在）
-    // 不让裸 ENOENT 冒给调用方；findPresetDir 等扫描方 catch 任意错误不受影响。
-    throw new Error(`preset.yml not found in ${dir}（预设模板不存在或目录不完整）`)
-  }
-  const cached = presetSpecCache.get(file)
-  if (cached !== undefined && cached.mtimeMs === stat.mtimeMs && cached.size === stat.size) return cached.spec
-  const raw = readFileSync(file, 'utf8')
-  let parsed: Partial<ModuleSpec> | null
-  try {
-    parsed = parseYaml(raw, { logLevel: 'silent' }) as Partial<ModuleSpec> | null
-  } catch (error) {
-    throw new Error(`preset ${file} YAML 解析失败: ${String((error as Error).message ?? error)}`)
-  }
-  if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
-    throw new Error(`preset ${join(dir, MODULE_DEFINITION_FILE)} is not a YAML map`)
-  }
-  // 官方用户预设格式：preset.yml 仅元数据（name/description/order），id 回退目录名。
-  if (typeof parsed.id !== 'string' || parsed.id.length === 0) {
-    parsed.id = basename(dir)
-  }
-  assertCanonicalRuleSource(parsed)
-  const params = readPresetLayerSettings(parsed)
+  // 完整性检查先于缓存；mtime/size 不能掩盖手改切片或伪造清单。
+  const snapshot = ensureModuleSlices(dir, { writable: !resolve(dir).startsWith(resolve(packageModulesDir()) + sep) })
+  const cached = moduleSpecCache.get(snapshot.file)
+  if (cached?.revision === snapshot.revision) return structuredClone(cached.spec)
+  const parsed = { ...snapshot.source, id: snapshot.source.id ?? basename(dir), rules: snapshot.rules,
+    configOrder: snapshot.configOrder, variables: snapshot.variables, variablesEnabled: snapshot.variablesEnabled } as unknown as ModuleSpec
+  const params = readModuleLayerSettings(parsed)
   if (parsed.layerSettings !== undefined || parsed.params !== undefined) parsed.params = params
-  presetSpecCache.set(file, { mtimeMs: stat.mtimeMs, size: stat.size, spec: parsed as ModuleSpec })
-  return parsed as ModuleSpec
+  moduleSpecCache.set(snapshot.file, { revision: snapshot.revision, spec: structuredClone(parsed) })
+  return parsed
 }
 
 /** 读取模块模板内容资产(presetText / agentsText);模板缺失时静默降级。
@@ -204,31 +184,31 @@ export function userModulesDir(): string {
 }
 
 /** 只按合法目录身份定位；现存坏身份必须报错，不能绕到同名模板。 */
-function findPresetDir(scanDir: string, template: string): string | undefined {
+function findModuleDir(scanDir: string, template: string): string | undefined {
   const exact = assertModuleDirectory(scanDir, template, true)
-  return presetPathExists(exact) ? exact : undefined
+  return modulePathExists(exact) ? exact : undefined
 }
 
 /**
  * 解析模块模板目录：当前模块根优先，包内模板回退；不读取其他部署根的同名模块。
- * 目录名与声明的 preset.yml id 一致；不扫描其他目录的 id 别名。
+ * 目录名与声明的 module.yml id 一致；不扫描其他目录的 id 别名。
  */
 export function resolveModuleDir(template: string, moduleRoot = userModulesDir()): string {
-  const found = findPresetDir(moduleRoot, template) ?? findPresetDir(packageModulesDir(), template)
+  const found = findModuleDir(moduleRoot, template) ?? findModuleDir(packageModulesDir(), template)
   return found ?? join(packageModulesDir(), template)
 }
 
 /** 模块目录是否含组合源：modules、composition 或官方 agent.cordis.yml。 */
-export function isRenderablePresetDir(dir: string): boolean {
+export function isRenderableModuleDir(dir: string): boolean {
   try {
     const spec = loadModuleSpec(dir)
     if (Array.isArray(spec.modules)) return true
     if (typeof spec.composition === 'string' && spec.composition.length > 0) return true
   } catch (error) {
-    if (error instanceof PresetLayerSettingsError) throw error
+    if (error instanceof ModuleLayerSettingsError || error instanceof ModuleRulesError) throw error
     return false
   }
-  return existsSync(join(dir, 'agent.cordis.yml'))
+  return false
 }
 
 /** 本插件模块清单；所有目录按同一身份与组合源规则列举。 */
@@ -246,12 +226,12 @@ export function listModules(moduleRoot = userModulesDir()): Array<{ id: string; 
               id: entry.name,
               name: spec.name,
               user: true,
-              renderable: isRenderablePresetDir(join(dir, entry.name)),
+              renderable: isRenderableModuleDir(join(dir, entry.name)),
               ...(typeof spec.description === 'string' && spec.description.length > 0 ? { description: spec.description } : {}),
               ...(spec.meta !== undefined && spec.meta !== null ? { meta: spec.meta } : {}),
             }]
-          } catch {
-            return []
+          } catch (error) {
+            return [{ id: entry.name, name: entry.name, user: true, renderable: false, broken: String((error as Error).message ?? error) }]
           }
         })
     } catch {
@@ -283,7 +263,7 @@ export function listBuiltinTemplates(): Array<{ id: string; name: string }> {
 }
 
 /** 按包内同名目录补建缺失的内置模块；已有目录的定义、生成物和资源保持原样。 */
-export function ensurePresetSeed(root = userModulesDir()): { created: string[] } {
+export function ensureModuleSeed(root = userModulesDir()): { created: string[] } {
   const created: string[] = []
   try {
     mkdirSync(root, { recursive: true })
@@ -301,13 +281,14 @@ export function ensurePresetSeed(root = userModulesDir()): { created: string[] }
 }
 
 /** 完整复制到隐藏候选；只更新定义 ID 和已知共享引擎配置位置。 */
-function copyPresetDirectory(source: string, root: string, targetId: string): void {
-  assertPresetTree(source)
+function copyModuleDirectory(source: string, root: string, targetId: string): void {
+  assertModuleTree(source)
   loadModuleSpec(source)
   const target = assertModuleDirectory(root, targetId, true)
-  if (presetPathExists(target)) throw new Error(`目标预设已存在：${targetId}`)
+  if (modulePathExists(target)) throw new Error(`目标预设已存在：${targetId}`)
   mkdirSync(root, { recursive: true })
-  const candidate = mkdtempSync(join(root, `.${targetId}.copy-`))
+  const stage = mkdtempSync(join(root, `.${targetId}.copy-`))
+  const candidate = join(stage, targetId)
   try {
     cpSync(source, candidate, { recursive: true })
     const definition = join(candidate, MODULE_DEFINITION_FILE)
@@ -315,53 +296,43 @@ function copyPresetDirectory(source: string, root: string, targetId: string): vo
     if (doc.errors.length > 0 || !(doc.contents instanceof YAMLMap)) throw new Error('预设定义必须是合法 YAML 对象')
     const oldId = doc.get('id')
     if (oldId !== targetId) {
-      setPresetDefinitionId(doc, targetId)
+      setModuleDefinitionId(doc, targetId)
       writeFileSync(definition, doc.toString(), 'utf8')
     }
-    const files = engineModuleFileNames(packageEngineDir())
-    for (const relative of ['agent.cordis.yml', typeof doc.get('composition') === 'string' && String(doc.get('composition')).startsWith('./') ? String(doc.get('composition')) : '']) {
-      if (!relative) continue
-      const file = resolve(candidate, relative)
-      if (!file.startsWith(resolve(candidate) + sep)) throw new Error('组合文件路径越界')
-      if (presetPathExists(file)) {
-        const before = readFileSync(file, 'utf8')
-        const after = rewritePresetEngineReferences(before, targetId, files)
-        if (after !== before) writeFileSync(file, after, 'utf8')
-      }
+    ensureModuleSlices(candidate)
+    for (const legacy of ['configs', 'rules.yml', 'agent.cordis.yml', 'custom-tools', 'subagent-tools']) {
+      rmSync(join(candidate, legacy), { recursive: true, force: true })
     }
-    const composition = doc.get('composition')
-    if (typeof composition === 'string' && composition.includes('\n')) {
-      const rewritten = rewritePresetEngineReferences(composition, targetId, files)
-      if (rewritten !== composition) { doc.set('composition', rewritten); writeFileSync(definition, doc.toString(), 'utf8') }
-    }
-    if (presetPathExists(target)) throw new Error(`目标预设已存在：${targetId}`)
-    renameSync(candidate, target)
+    withModuleLock(root, targetId, () => {
+      if (modulePathExists(target)) throw new Error(`目标模块已存在：${targetId}`)
+      renameSync(candidate, target)
+    })
   } finally {
-    rmSync(candidate, { recursive: true, force: true })
+    rmSync(stage, { recursive: true, force: true })
   }
 }
 
 /** 从包内同名目录复制模块；autoSuffix=true 时递增目录名并同步定义身份。 */
-export function cloneBuiltinPreset(id: string, autoSuffix = false, moduleRoot = userModulesDir()): { ok: true; id: string } | { ok: false; message: string } {
+export function cloneBuiltinModule(id: string, autoSuffix = false, moduleRoot = userModulesDir()): { ok: true; id: string } | { ok: false; message: string } {
   try {
-    assertPresetId(id)
-    const builtin = findPresetDir(packageModulesDir(), id)
+    assertModuleId(id)
+    const builtin = findModuleDir(packageModulesDir(), id)
     if (builtin === undefined) {
       return { ok: false, message: `预设 ${id} 不是包内置预设` }
     }
     let targetId = id
     let target = join(moduleRoot, targetId)
-    if (presetPathExists(target)) {
+    if (modulePathExists(target)) {
       if (!autoSuffix) {
         return { ok: false, message: `用户目录已存在同名预设 ${targetId}，请先删除再新建` }
       }
       for (let suffix = 2; ; suffix++) {
         targetId = `${id}-${suffix}`
         target = join(moduleRoot, targetId)
-        if (!presetPathExists(target)) break
+        if (!modulePathExists(target)) break
       }
     }
-    copyPresetDirectory(builtin, moduleRoot, targetId)
+    copyModuleDirectory(builtin, moduleRoot, targetId)
     return { ok: true, id: targetId }
   } catch (error) {
     return { ok: false, message: `新建预设失败：${error instanceof Error ? error.message : String(error)}` }
@@ -369,20 +340,20 @@ export function cloneBuiltinPreset(id: string, autoSuffix = false, moduleRoot = 
 }
 
 /** 复制用户模块目录为新模块（id 自动递增：<id>-copy / <id>-copy-2 / …）。
- *  复制的是用户目录完整副本（preset.yml / agent.cordis.yml / prompt-configs /
+ *  复制的是用户目录完整副本（module.yml / agent.cordis.yml / prompt-configs /
  *  内容资产 / 覆盖文件），与「从内置模板新建」互补：后者还原模板，前者备份现状。 */
 export function duplicateUserModule(id: string, moduleRoot = userModulesDir()): { ok: true; id: string } | { ok: false; message: string } {
   try {
-    assertPresetId(id)
+    assertModuleId(id)
     const root = resolve(moduleRoot)
     const source = assertModuleDirectory(root, id)
     let targetId = `${id}-copy`
     let target = join(root, targetId)
-    for (let suffix = 2; presetPathExists(target); suffix++) {
+    for (let suffix = 2; modulePathExists(target); suffix++) {
       targetId = `${id}-copy${suffix}`
       target = join(root, targetId)
     }
-    copyPresetDirectory(source, root, targetId)
+    copyModuleDirectory(source, root, targetId)
     return { ok: true, id: targetId }
   } catch (error) {
     return { ok: false, message: `复制预设失败：${error instanceof Error ? error.message : String(error)}` }
@@ -424,7 +395,7 @@ function deleteYamlPath(doc: ReturnType<typeof parseDocument>, path: string[]): 
 
 /**
  * 保存部署能力参数与模板变量；规则写入只走 module-rules 的版本事务。
- * parseDocument 保留注释与未知键（preset.yml 模板含大量注释）；空值键删除（'' / []，
+ * parseDocument 保留注释与未知键（module.yml 模板含大量注释）；空值键删除（'' / []，
  * 回落模板/引擎默认；0 与 false 照常写入——语义与函数内注释、docs §3 一致）。
  */
 export function saveModuleParams(
@@ -434,11 +405,15 @@ export function saveModuleParams(
   promptConfigs: unknown[] | undefined,
   variables?: Record<string, string>,
   variablesEnabled?: boolean,
+  expectedRevisions?: Partial<RuleRevisions>,
 ): void {
-  const file = join(assertModuleDirectory(moduleRoot, templateName), MODULE_DEFINITION_FILE)
-  if (!existsSync(file)) throw new Error(`preset ${templateName} 无 preset.yml`)
-  const doc = parseDocument(readFileSync(file, 'utf8'), { logLevel: 'silent' })
-  readPresetLayerSettings(doc.toJS())
+  const snapshot = loadModuleDefinition(assertModuleDirectory(moduleRoot, templateName))
+  if (expectedRevisions !== undefined && ((variables !== undefined && expectedRevisions.variables !== snapshot.revisions.variables)
+    || (variablesEnabled !== undefined && expectedRevisions.settings !== snapshot.revisions.settings))) {
+    throw new ModuleRulesError('模块变量或状态已变化，请重新读取', 409, 'rules-conflict')
+  }
+  const doc = snapshot.doc
+  readModuleLayerSettings(doc.toJS())
   assertCanonicalRuleSource(doc.toJS())
   if (promptConfigs !== undefined) throw new Error('promptConfigs 写入已退出；请使用 rules 局部事务')
   // 空值 = 删除键（回落模板/引擎默认）：''（字符串清空）、[]（列表清空）。
@@ -474,7 +449,7 @@ export function saveModuleParams(
       doc.setIn(['variablesEnabled'], false)
     }
   }
-  atomicWriteTextFile(file, doc.toString())
+  commitModuleDefinition(snapshot, doc)
   invalidateModuleSpec(join(moduleRoot, templateName))
 }
 
@@ -482,35 +457,33 @@ export function saveModuleParams(
  * 保存激活模块的顶层 persona 段（官方 `@deepseek-ai/dsh-persona` 行 config 同构）。
  * null = 删除该段（回落宿主部署人设）；默认值不落键（见 personaRowConfig）。
  */
-export function savePresetPersona(moduleRoot: string, templateName: string, persona: PersonaSpec | null): void {
-  const file = join(assertModuleDirectory(moduleRoot, templateName), MODULE_DEFINITION_FILE)
-  if (!existsSync(file)) throw new Error(`preset ${templateName} 无 preset.yml`)
-  const doc = parseDocument(readFileSync(file, 'utf8'), { logLevel: 'silent' })
-  readPresetLayerSettings(doc.toJS())
+export function saveModulePersona(moduleRoot: string, templateName: string, persona: PersonaSpec | null): void {
+  const snapshot = loadModuleDefinition(assertModuleDirectory(moduleRoot, templateName))
+  const doc = snapshot.doc
+  readModuleLayerSettings(doc.toJS())
   if (persona === null) doc.deleteIn(['persona'])
   else doc.setIn(['persona'], personaRowConfig(persona))
-  atomicWriteTextFile(file, doc.toString())
+  commitModuleDefinition(snapshot, doc)
   invalidateModuleSpec(join(moduleRoot, templateName))
 }
 
 /** 模块文件读-改-写（parseDocument 保留注释与未知键；mutate 内 setIn/deleteIn）。
  *  角色卡库（characters）与世界书工具（world-book-tools）共用此入口，避免
  *  各自实现 parseDocument 往返。写盘走原子替换，失败保留旧文件。 */
-export function withPresetDoc(moduleDir: string, mutate: (doc: ReturnType<typeof parseDocument>) => void): void {
-  const file = join(moduleDir, MODULE_DEFINITION_FILE)
-  if (!existsSync(file)) throw new Error(`${moduleDir} 无 preset.yml`)
-  const doc = parseDocument(readFileSync(file, 'utf8'), { logLevel: 'silent' })
-  readPresetLayerSettings(doc.toJS())
-  assertCanonicalRuleSource(doc.toJS())
-  mutate(doc)
-  readPresetLayerSettings(doc.toJS())
-  assertCanonicalRuleSource(doc.toJS())
-  atomicWriteTextFile(file, doc.toString())
+export function withModuleDefinition(moduleDir: string, mutate: (doc: ReturnType<typeof parseDocument>, source: Record<string, unknown>) => void): ReturnType<typeof commitDefinitionEdit> {
+  const committed = commitDefinitionEdit(moduleDir, (doc, source) => {
+    readModuleLayerSettings(doc.toJS())
+    mutate(doc, source)
+    readModuleLayerSettings(doc.toJS())
+  })
   invalidateModuleSpec(moduleDir)
+  return committed
 }
 
-/** 向 preset.yml 的 modules 追加功能模块；空数组保持按需装配语义。 */
-export function appendPresetModules(
+export { saveModulePersona as savePresetPersona, withModuleDefinition as withPresetDoc }
+
+/** 向 module.yml 的 modules 追加功能模块；空数组保持按需装配语义。 */
+export function appendModuleCapabilities(
   doc: ReturnType<typeof parseDocument>,
   additions: readonly string[],
 ): void {
@@ -529,26 +502,28 @@ export function appendPresetModules(
 /** 删除具有合法身份的模块目录（模块根/<id>）；隐藏备份不经公共接口删除。
  *  仅作用于插件自有模块根，包内置模板不受影响；路径越界与非法 id 拒绝。
  *  模块不在宿主预设注册表里，删除后无需撤销官方登记；调用方按需重建当前模块。 */
-export function removeUserPreset(id: string, moduleRoot = userModulesDir()): { ok: true } | { ok: false; message: string } {
+export function removeUserModule(id: string, moduleRoot = userModulesDir()): { ok: true } | { ok: false; message: string } {
   try {
-    const target = assertModuleDirectory(moduleRoot, id)
-    assertPresetTree(target)
-    rmSync(target, { recursive: true, force: true })
-    invalidateModuleSpec(target)
+    withModuleLock(moduleRoot, id, () => {
+      const target = assertModuleDirectory(moduleRoot, id)
+      assertModuleTree(target)
+      rmSync(target, { recursive: true, force: true })
+      invalidateModuleSpec(target)
+    })
     return { ok: true }
   } catch (error) {
     return { ok: false, message: `删除失败：${error instanceof Error ? error.message : String(error)}` }
   }
 }
 
-/** 从导入的 preset.yml 读取合法 ID；仅缺失时使用同样合法的目录名。 */
-export function parseImportedPresetId(presetYaml: string, fallback: string): string {
-  const doc = parseDocument(presetYaml, { logLevel: 'silent' })
+/** 从导入的 module.yml 读取合法 ID；仅缺失时使用同样合法的目录名。 */
+export function parseImportedModuleId(moduleYaml: string, fallback: string): string {
+  const doc = parseDocument(moduleYaml, { logLevel: 'silent' })
   if (doc.errors.length > 0 || !(doc.contents instanceof YAMLMap)) throw new Error('预设定义必须是合法 YAML 对象')
-  readPresetLayerSettings(doc.toJS())
+  readModuleLayerSettings(doc.toJS())
   const declared = doc.get('id')
   const id = declared === undefined ? fallback : declared
-  assertPresetId(id)
+  assertModuleId(id)
   return id
 }
 
@@ -560,9 +535,9 @@ export function normalizeParam(value: unknown): unknown {
 }
 
 /** 当前 layerSettings 与显式运行参数合并；不从旧磁盘 params 段回退取值。 */
-export function resolvePresetParams(spec: ModuleSpec, runtime: Record<string, unknown>): Record<string, unknown> {
+export function resolveModuleParams(spec: ModuleSpec, runtime: Record<string, unknown>): Record<string, unknown> {
   const params: Record<string, unknown> = {}
-  for (const [key, value] of Object.entries(readPresetLayerSettings(spec))) {
+  for (const [key, value] of Object.entries(readModuleLayerSettings(spec))) {
     params[key] = normalizeParam(value)
   }
   for (const [key, value] of Object.entries(runtime)) {
@@ -664,17 +639,17 @@ function assembleModules(spec: ModuleSpec): string {
   const seen = new Set<string>()
   for (const name of spec.modules ?? []) {
     if (typeof name !== 'string' || name.length === 0) {
-      throw new Error(`preset ${spec.id}: modules must be non-empty strings`)
+      throw new Error(`module ${spec.id}: modules must be non-empty strings`)
     }
     if (seen.has(name)) {
-      throw new Error(`preset ${spec.id}: duplicate composition module ${JSON.stringify(name)}`)
+      throw new Error(`module ${spec.id}: duplicate composition module ${JSON.stringify(name)}`)
     }
     seen.add(name)
     // 模块名 containment：只允许裸库名（禁路径分隔符 / .. / 点目录）。
     try {
       parts.push(readFileSync(moduleFile(name), 'utf8'))
     } catch (error) {
-      throw new Error(`preset ${spec.id}: ${String((error as Error).message ?? error)}`)
+      throw new Error(`module ${spec.id}: ${String((error as Error).message ?? error)}`)
     }
   }
   return parts.length > 0 ? parts.join('\n') : '[]\n'
@@ -753,7 +728,7 @@ export function loadCompositionText(spec: ModuleSpec, templateDir?: string, _run
     // 参数在 ⇒ 装配在：显式 params/moduleConfigs 隐含的能力模块自动补齐，与顶层策略段同一规则。
     const extra = [
       ...(spec.subagentToolPolicy !== undefined && spec.subagentToolPolicy !== null ? ['subagent-tool-policy'] : []),
-      ...impliedModulesForParams(resolvePresetParams(spec, {}), spec.moduleConfigs),
+      ...impliedModulesForParams(resolveModuleParams(spec, {}), spec.moduleConfigs),
       ...((spec.rules?.length ?? 0) > 0 ? ['rule-engine'] : []),
     ].filter((module) => !declared.includes(module))
     if (extra.length > 0) modules = [...declared, ...extra]
@@ -764,36 +739,29 @@ export function loadCompositionText(spec: ModuleSpec, templateDir?: string, _run
     if (name.includes('\n')) raw = name
     else if (name.startsWith('./')) {
       if (templateDir === undefined) {
-        throw new Error(`preset ${spec.id}: composition relative path needs a templateDir (${JSON.stringify(name)})`)
+        throw new Error(`module ${spec.id}: composition relative path needs a templateDir (${JSON.stringify(name)})`)
       }
       // containment：解析后的组合文件必须仍位于模板目录内（防 ../../ 越界读取）。
       const file = join(templateDir, name.slice(2))
       const rootResolved = resolve(templateDir)
       const fileResolved = resolve(file)
       if (fileResolved !== rootResolved && !fileResolved.startsWith(rootResolved + sep)) {
-        throw new Error(`preset ${spec.id}: composition path escapes template dir (${JSON.stringify(name)})`)
+        throw new Error(`module ${spec.id}: composition path escapes template dir (${JSON.stringify(name)})`)
       }
       try {
         raw = readFileSync(file, 'utf8')
       } catch (error) {
-        throw new Error(`preset ${spec.id}: composition file not found (${file}): ${String((error as Error).message ?? error)}`)
+        throw new Error(`module ${spec.id}: composition file not found (${file}): ${String((error as Error).message ?? error)}`)
       }
     }
     else if (name.length > 0) {
       try {
         raw = readFileSync(moduleFile(name), 'utf8')
       } catch (error) {
-        throw new Error(`preset ${spec.id}: ${String((error as Error).message ?? error)}`)
-      }
-    } else if (templateDir !== undefined) {
-      // 官方用户预设约定：preset.yml 仅元数据时，组合文件为同目录 agent.cordis.yml。
-      try {
-        raw = readFileSync(join(templateDir, 'agent.cordis.yml'), 'utf8')
-      } catch (error) {
-        throw new Error(`preset ${spec.id}: no modules/composition and no agent.cordis.yml in template dir (${templateDir}): ${String((error as Error).message ?? error)}`)
+        throw new Error(`module ${spec.id}: ${String((error as Error).message ?? error)}`)
       }
     } else {
-      throw new Error(`preset ${spec.id}: no modules list and no composition declared`)
+      throw new Error(`module ${spec.id}: no modules list and no composition declared`)
     }
   }
   return raw
@@ -815,9 +783,7 @@ export function resolveModuleFacts(
     ? 'explicit'
     : typeof spec.composition === 'string' && spec.composition.trim().length > 0
       ? 'composition'
-      : templateDir !== undefined && existsSync(join(templateDir, 'agent.cordis.yml'))
-        ? 'official'
-        : 'unknown'
+      : 'unknown'
   const effectiveModules = sourceMode === 'explicit'
     ? [...(declaredModules ?? [])]
     : null
@@ -865,7 +831,7 @@ export function resolveModuleFacts(
   // 隐式装配如实进入 effectiveModules（declaredModules 保持磁盘事实）：参数在 ⇒ 装配在；
   // 顶层策略段同理——两者都让编辑卡与「本层已装配的能力」展示真实运行状态。
   if (effectiveModules !== null) {
-    for (const module of impliedModulesForParams(resolvePresetParams(spec, {}), spec.moduleConfigs)) {
+    for (const module of impliedModulesForParams(resolveModuleParams(spec, {}), spec.moduleConfigs)) {
       if (!effectiveModules.includes(module)) effectiveModules.push(module)
     }
     if (rowIds.includes('subagent-tool-policy') && !effectiveModules.includes('subagent-tool-policy')) {
@@ -880,7 +846,7 @@ export function resolveModuleFacts(
   for (const [id, config] of Object.entries(spec.moduleConfigs ?? {})) {
     effectiveConfigs[id] = { ...effectiveConfigs[id], ...config }
   }
-  const generated = buildModuleConfigsFromParams(resolvePresetParams(spec, {}), {
+  const generated = buildModuleConfigsFromParams(resolveModuleParams(spec, {}), {
     subagentPolicyEnabled: spec.subagentToolPolicy !== undefined && spec.subagentToolPolicy !== null,
   })
   for (const [id, config] of Object.entries(generated)) {
@@ -890,46 +856,46 @@ export function resolveModuleFacts(
     subagentToolPolicyEnabled: spec.subagentToolPolicy !== undefined && spec.subagentToolPolicy !== null }
 }
 
-export type EngineCapabilityCreateRequest =
+export type ModuleCapabilityCreateRequest =
   | { action: 'create'; capabilityId: string }
   | { action: 'create-recipe'; recipeId: string }
 
-export interface EngineCapabilityCreateResult {
+export interface ModuleCapabilityCreateResult {
   changed: boolean
   addedModules: string[]
   capabilityIds: string[]
 }
 
-export interface EngineCapabilityRemoveResult {
+export interface ModuleCapabilityRemoveResult {
   changed: boolean
   removedModules: string[]
   capabilityIds: string[]
 }
 
 /** 在内存候选文档中展开能力/recipe，校验成功后一次原子替换 module.yml。 */
-export function createEngineCapabilityInPreset(
+export function createModuleCapability(
   moduleDir: string,
-  request: EngineCapabilityCreateRequest,
-): EngineCapabilityCreateResult {
+  request: ModuleCapabilityCreateRequest,
+): ModuleCapabilityCreateResult {
   const file = join(moduleDir, MODULE_DEFINITION_FILE)
-  if (!existsSync(file)) throw new Error(`模块目录缺少 preset.yml：${moduleDir}`)
-  const original = readFileSync(file, 'utf8')
-  const doc = parseDocument(original, { logLevel: 'silent' })
+  if (!existsSync(file)) throw new Error(`模块目录缺少 module.yml：${moduleDir}`)
+  const snapshot = loadModuleDefinition(moduleDir)
+  const doc = snapshot.doc
   const source = doc.toJS() as ModuleSpec
-  const sourceParams = readPresetLayerSettings(source)
+  const sourceParams = readModuleLayerSettings(source)
   if (!Array.isArray(source.modules)) throw new Error('当前预设没有可编辑的 modules 数组；请先复制为插件用户预设')
   const capabilityIds = request.action === 'create'
     ? [request.capabilityId]
     : (engineRecipe(request.recipeId)?.capabilities ? [...engineRecipe(request.recipeId)!.capabilities] : [])
-  if (capabilityIds.length === 0 || capabilityIds.some((id) => engineCapability(id) === undefined)) {
+  if (capabilityIds.length === 0 || capabilityIds.some((id) => moduleCapability(id) === undefined)) {
     throw new Error(`未知引擎能力或 recipe：${request.action === 'create' ? request.capabilityId : request.recipeId}`)
   }
   const currentFacts = resolveModuleFacts(source, moduleDir, true)
   // 创建检查磁盘声明，而不是实际装配：历史策略虽然已经运行，仍需允许补齐 modules。
   const declaredFacts = { ...currentFacts, effectiveModules: currentFacts.declaredModules }
   const additions = capabilityIds
-    .filter((id) => !isEngineCapabilityPresent(id, declaredFacts))
-    .flatMap((id) => engineCapability(id)?.moduleKeys.slice(0, 1) ?? [])
+    .filter((id) => !isModuleCapabilityPresent(id, declaredFacts))
+    .flatMap((id) => moduleCapability(id)?.moduleKeys.slice(0, 1) ?? [])
   const modules = source.modules.filter((item): item is string => typeof item === 'string' && item.length > 0)
   const addedModules: string[] = []
   for (const module of additions) {
@@ -947,7 +913,7 @@ export function createEngineCapabilityInPreset(
   // 保证"模块在 ⇒ 数据在"（否则 shadow 行会读不到物化后的 policy.yml）。
   let sectionWritten = false
   for (const id of capabilityIds) {
-    const section = engineCapability(id)?.ownSection
+    const section = moduleCapability(id)?.ownSection
     if (section === undefined) continue
     const existing = (source as unknown as Record<string, unknown>)[section.key]
     if (existing !== undefined && existing !== null) continue
@@ -976,14 +942,14 @@ export function createEngineCapabilityInPreset(
   }
   visit(rows, 'rows')
   for (const id of capabilityIds) {
-    const capability = engineCapability(id)!
+    const capability = moduleCapability(id)!
     if (!capability.rowIds.some((rowId) => rowPaths.has(rowId))) throw new Error(`能力 ${id} 的组合缺少预期 row`)
   }
   if (addedModules.length === 0 && recipe === undefined && !sectionWritten) return { changed: false, addedModules, capabilityIds }
   if (addedModules.length === 0 && recipe !== undefined && Object.entries(recipe.initialParams ?? {}).every(([key]) => Object.prototype.hasOwnProperty.call(sourceParams, key))) {
     return { changed: false, addedModules, capabilityIds }
   }
-  atomicWriteTextFile(file, doc.toString())
+  commitModuleDefinition(snapshot, doc)
   invalidateModuleSpec(moduleDir)
   return { changed: true, addedModules, capabilityIds }
 }
@@ -991,17 +957,18 @@ export function createEngineCapabilityInPreset(
 /** 删除能力：模块声明、顶层数据段，以及该能力的**显式参数与行配置**一起移除。
  *  参数在 ⇒ 装配在（见 impliedModulesFromParams）：留下参数会让移除立刻被隐含装配拉回来，
  *  所以"移除能力"必须是完整移除。未登记参数、其他能力的数据与未知字段一律不动。 */
-export function removeEngineCapabilityFromPreset(
+export function removeModuleCapability(
   moduleDir: string,
   capabilityId: string,
-): EngineCapabilityRemoveResult {
+): ModuleCapabilityRemoveResult {
   const file = join(moduleDir, MODULE_DEFINITION_FILE)
-  if (!existsSync(file)) throw new Error(`模块目录缺少 preset.yml：${moduleDir}`)
-  const doc = parseDocument(readFileSync(file, 'utf8'), { logLevel: 'silent' })
+  if (!existsSync(file)) throw new Error(`模块目录缺少 module.yml：${moduleDir}`)
+  const snapshot = loadModuleDefinition(moduleDir)
+  const doc = snapshot.doc
   const source = doc.toJS() as unknown as ModuleSpec & Record<string, unknown>
-  const params = readPresetLayerSettings(source)
+  const params = readModuleLayerSettings(source)
   if (!Array.isArray(source.modules)) throw new Error('当前预设没有可编辑的 modules 数组；官方组合不支持删除插件能力')
-  const capability = engineCapability(capabilityId)
+  const capability = moduleCapability(capabilityId)
   if (capability === undefined) throw new Error(`未知引擎能力：${capabilityId}`)
   const modules = source.modules.filter((item): item is string => typeof item === 'string' && item.length > 0)
   const removedModules = modules.filter((module) => capability.moduleKeys.includes(module))
@@ -1022,7 +989,7 @@ export function removeEngineCapabilityFromPreset(
   for (const rowId of configRows) doc.deleteIn(['moduleConfigs', rowId])
   const candidate = doc.toJS() as ModuleSpec
   assertCompositionArray(renderComposition(candidate, {}, moduleDir), candidate)
-  atomicWriteTextFile(file, doc.toString())
+  commitModuleDefinition(snapshot, doc)
   invalidateModuleSpec(moduleDir)
   return { changed: true, removedModules, capabilityIds: [capabilityId] }
 }
@@ -1034,7 +1001,7 @@ export function removeEngineCapabilityFromPreset(
  * 不再锁定覆盖 UI 可管理参数(旧作者锁定语义已移除)。
  */
 export function renderComposition(spec: ModuleSpec, runtime: Record<string, unknown>, templateDir?: string): string {
-  const params = resolvePresetParams(spec, runtime)
+  const params = resolveModuleParams(spec, runtime)
   const merged: Record<string, Record<string, unknown>> = buildModuleConfigsFromParams(params, {
     subagentPolicyEnabled: spec.subagentToolPolicy !== undefined && spec.subagentToolPolicy !== null,
   })
@@ -1048,7 +1015,7 @@ export function renderComposition(spec: ModuleSpec, runtime: Record<string, unkn
   const persona = readPersonaSpec(spec.persona)
   if (persona !== undefined && Array.isArray(spec.modules)) {
     const doc = parseDocument(raw, { logLevel: 'silent' })
-    if (!(doc.contents instanceof YAMLSeq)) throw new Error(`preset ${spec.id}: composition must be a YAML array`)
+    if (!(doc.contents instanceof YAMLSeq)) throw new Error(`module ${spec.id}: composition must be a YAML array`)
     merged.persona = personaRowConfig(persona)
     const rows: YAMLSeq = doc.contents
     rows.items.unshift(doc.createNode({ id: 'persona', name: '@deepseek-ai/dsh-persona', config: merged.persona }))
@@ -1070,6 +1037,10 @@ export function assertCompositionArray(raw: string, spec: ModuleSpec): unknown[]
   const unresolved = raw.match(/__[A-Za-z0-9_]+__/g)
   if (unresolved !== null) throw new Error(`generated agent.cordis.yml has unresolved variables: ${unresolved.join(', ')}`)
   const parsed = parseYaml(raw, { logLevel: 'silent' })
-  if (!Array.isArray(parsed)) throw new Error(`generated agent.cordis.yml is not a YAML array (preset ${spec.id})`)
+  if (!Array.isArray(parsed)) throw new Error(`generated agent.cordis.yml is not a YAML array (module ${spec.id})`)
   return parsed
 }
+
+/** 已发布的 host API 输入兼容；内部只使用 module 词义。 */
+export { ModuleLayerSettingsError as PresetLayerSettingsError, isRenderableModuleDir as isRenderablePresetDir, ensureModuleSeed as ensurePresetSeed, cloneBuiltinModule as cloneBuiltinPreset, removeUserModule as removeUserPreset, parseImportedModuleId as parseImportedPresetId, resolveModuleParams as resolvePresetParams, appendModuleCapabilities as appendPresetModules, removeModuleCapabilityDeclaration as removePresetModule, createModuleCapability as createEngineCapabilityInPreset, removeModuleCapability as removeEngineCapabilityFromPreset }
+export type { ModuleCapabilityCreateRequest as EngineCapabilityCreateRequest, ModuleCapabilityCreateResult as EngineCapabilityCreateResult, ModuleCapabilityRemoveResult as EngineCapabilityRemoveResult }

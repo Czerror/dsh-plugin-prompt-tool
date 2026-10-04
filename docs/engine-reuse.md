@@ -1,18 +1,24 @@
 # 统一规则引擎复用指南
 
-`module.yml.rules` 是规则的唯一来源，一张卡对应一条具有稳定 `id` 的规则：
+`module.yml` 保存完整定义与恢复依据，运行时消费校验通过的 rules/ 快照。一张卡对应一条具有稳定 `id` 的规则：
 `when` 判断树决定是否执行，`do` 数组承载具有各自稳定 `id` 的动作。保存、导入与物化
 共用 `engine/rule-spec.mjs#compileRules()`；宿主管理路径和独立路径共用
 `engine/rule-runtime.mjs#mountRuleSources()`，独立插件入口是 `engine/rule-engine.mjs`。
 
-`writePreset` 将规则和必要变量物化为 `rules.yml` 包；运行时不双读旧 `promptConfigs`、
+`ensureModuleSlices` 从完整定义分解规则正文、状态清单和模板变量；切片失配单向重切。`writeModule` 不生成宿主组合或旧目录，运行时不双读旧 `promptConfigs`、
 `triggers` 或快捷模型参数。旧定义只能先通过显式离线迁移转换；旧 `/triggers` 以及
 提示词、模型参数写入口返回退役错误，编辑走带模块身份与版本的 `/rules` 事务。
-空模块和空规则仍生成合法空组合，不暗自增加正文或请求参数。
+空模块不暗自增加正文、规则或请求参数。持久化、版本与恢复边界见 [后端框架](architecture-params.md#磁盘格式规则与共享参数各有所有者)。
 
 引擎是可复制的 ESM 模块库。晋升门控、首轮锚定、目录过滤、预算和节拍由模板或规则
-显式选择。模型配置与采样属于 `request-params` 动作；顶层 `persona` 仍由官方
-`@deepseek-ai/dsh-persona` 行承接，不拆回规则或自建人设模块。ST/角色卡遵循同一边界。
+显式选择。模型配置与采样属于 `request-params` 动作；顶层 `persona` 在 Agent scope 中通过官方 systemPrompt 服务注册。ST/角色卡遵循同一边界。模块 memory.md 只由模型工具按需读取，不自动注入。
+
+### 能力内联与兼容入口
+
+- 自定义工具在保存和装配前完整校验，官方 DSL 编译后的定义数组通过 `tools` 传给 `tool-config-engine`。空数组代表无工具；字段缺失才读取 configsDir；显式非法值在注册前拒绝。
+- 子代理策略通过 `policy` 内联，沿用同一 compile／resolve seam、扩权审批与 ceiling 裁决。模块策略段缺失或 null 时不安装 shadow；独立入口缺 policy 才读取 policyFile，只有文件不存在可降级。
+- `resourceRoot` 是工具资源允许根，宿主仍传 modules 集合根；旧 presetRoot 是兼容别名，冲突拒绝。规则模板允许根使用 templateModuleRoot，独立规则入口使用 moduleRoot。更名不改变资源权限。
+- configsDir／policyFile 和独立规则文件入口供包使用者兼容，插件管理路径不生成旧文件。工具身份、注册 scope、disposer 和主／子代理授权边界保持。
 
 ### 官方与本地分类
 
@@ -131,7 +137,7 @@
 
 `inject-text.config` 复用整批 `createPromptConfigs()`，保留 ST 共享变量帧。缺少显式
 `config.id` 时，投递身份由稳定 rule/action id 编码派生；重排不改身份，复制产生新身份。
-迁移保留原有显式投递身份。`templateFile` 相对该模块的 `rules.yml` 解析，只允许读取模块根内
+迁移保留原有显式投递身份。`templateFile` 相对该模块的 `module.yml` 解析，只允许读取模块根内
 资产；保存、物化与运行使用同一边界。`strategyDir` 也相对规则包解析，不能从包内引擎目录
 反推数据目录。正文模板、策略目录和身份校验在所有入口同源。
 
@@ -214,7 +220,7 @@
 - `order` 只在同一插入点内生效。
 - UI / 写盘展示顺序固定为 `pre-step → system-section → runtime-context → agent-request → llm-stream → tool-pipeline → turn-stop → subagent-start → subagent-end`；这是展示与写盘顺序，不是运行时优先级。
 - 模型实际收到的提示词文本顺序更接近 `system-section → runtime-context → pre-step`；`agent-request` / `llm-stream` / `tool-pipeline` / `turn-stop` / `subagent-start` / `subagent-end` 是控制通道，不构成提示词文本优先级。
-- 规则定义保存在一个 `rules.yml` 包中；`configOrder` 按规则身份持久化展示/执行定位，不再用旧配置文件名猜顺序。
+- 规则完整保存在 module.yml，规则正文切片使用裸 id 文件名；顺序由 _settings.yml.rules[id].order 承载，完整定义保留 configOrder。引擎仍接收独立顺序映射。
 - pre-step 中注入与原生过滤动作按声明顺序交错，分批插入继续排在先前仍存活的同位置消息之后；过滤器的 claimed 基线使用真实事件 payload，不把下游增量当成原始消息。
 
 ### 同 scope 内的注册顺序（2026-09-22）
@@ -256,7 +262,7 @@ subject/match/promotion 只能经离线转换显式进入规则条件，不能�
   在 `next()` 前填充本次装配中的对应项。官方排序、作用域遮蔽及下游门控保持生效；不缓存
   会话正文，复用同一 AssembleContext 的并发请求也各自求值。空值或异常只让该条为空并告警，
   取消或卸载会丢弃本次待填充结果。`strategyDir` 在引擎入口统一解析为绝对 URL（相对写法按
-  当前模块的 `rules.yml` 解析），相对目录不再让整行挂载抛 `ERR_INVALID_URL`。
+  当前模块的 `module.yml` 解析），相对目录不再让整行挂载抛 `ERR_INVALID_URL`。
 - `conditions/subject.mjs` 按真实事件参数归一载荷；共享文本提取由 `engine/condition.mjs`
   提供，条件在规则编译期准备。未命中的规则**不写入 session 去重**，条件恢复后仍能注入。
 - ST 宏模板（`params.stMacros`）的跨配置变量帧只求值**当前入口获准的配置**：
@@ -485,5 +491,5 @@ rules:
 - 规则通过 `compileRules` 校验；真实 channel/phase 从动作能力派生。`channelOrder` 缺省来自规则 configOrder（无配置时按规则序号定位）；同卡同点冲突值拒绝。after-next 先调用一次宿主 next，再按该时刻状态判断，压缩后读取新 epoch。
 - 原生动作经 `prepareAction` 校验；注入整批编译共用动作选项验证，避免破坏 ST 变量帧。固定注册效果、非法身份、互斥冲突和不支持的选项在保存/物化前拒绝。
 - 工具名单的 `allow` 与 `deny` 互斥。仅主会话的 guard 不安装会传播到子代理的 restrict；受众仍在执行 guard 内校验。动作次数预算只在目标匹配并产生效果前消费，非目标工具和被阻止的结果不消耗额度。
-- 用户目录刷新：`pnpm rematerialize:presets` 按各预设 `module.yml` 重新物化组合（引擎由插件包提供，不再物化共享引擎）。预设内嵌 `skills/` 不由 `writePreset` 管理，脚本默认只报告漂移；`--refresh-skills` 暂存包内文件与用户独有文件的合并树，再备份旧树并切换，失败恢复原目录。同名文件按模板更新，独有文件仍在有效目录，仅独有文件不触发重复备份；不沿符号链接外写。
+- 用户目录刷新：`pnpm rematerialize:presets` 按完整 module.yml 恢复 rules/ 并清理已退役产物，保留用户资产，`--dry-run` 只读。内嵌 skills 默认只报告漂移；`--refresh-skills` 保留既有暂存、备份及失败恢复边界。
 - 交付验证：从隔离临时 cwd 执行 `pnpm --dir $Repo typecheck`、`lint`、`test`、`build`，最后 `git -C $Repo diff --check`。重点证据包括 rules、business-defaults、真实 agent-assembly 与 rules-bridge-safety 测试；文档 YAML 示例也应通过 compileRules。

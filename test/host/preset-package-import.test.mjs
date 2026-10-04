@@ -71,8 +71,8 @@ function fakeRes() {
 }
 
 async function importPackage(body) {
-  const handler = register().get(`${PREFIX}/import-preset-package`)
-  assert.ok(handler, '/import-preset-package 端点应注册')
+  const handler = register().get(`${PREFIX}/import-module-package`)
+  assert.ok(handler, '/import-module-package 端点应注册')
   const res = fakeRes()
   // 本文件覆盖转换与资源回归；覆盖场景显式授权，并经实际预览取得本次提交凭据。
   const request = { ...body, overwrite: true }
@@ -104,7 +104,8 @@ test('importPresetPackage：文件夹导入保留子目录（服务端为唯一�
   const engineFile = join(PRESETS, 'demo', 'engine', 'foo.mjs')
   assert.ok(existsSync(engineFile), '子目录文件应保留为 engine/foo.mjs')
   assert.equal(readFileSync(engineFile, 'utf8'), 'export const x = 1\n')
-  assert.ok(existsSync(join(PRESETS, 'demo', 'agent.cordis.yml')), '顶层组合文件应落在预设根目录')
+  assert.equal(existsSync(join(PRESETS, 'demo', 'agent.cordis.yml')), false, '旧组合不再落独立产物')
+  assert.match(parseYaml(readFileSync(join(PRESETS, 'demo', 'module.yml'), 'utf8')).composition, /demo-row/, '旧包组合完整收进定义')
 })
 
 test('importPresetPackage：超过 32MB 上限返回 413 明确错误', async () => {
@@ -117,8 +118,8 @@ test('importPresetPackage：超过 32MB 上限返回 413 明确错误', async ()
 })
 
 test('准备期被改动即拒写：预览后源内容变化，旧凭据提交不得落盘', async () => {
-  const handler = register().get(`${PREFIX}/import-preset-package`)
-  assert.ok(handler, '/import-preset-package 端点应注册')
+  const handler = register().get(`${PREFIX}/import-module-package`)
+  assert.ok(handler, '/import-module-package 端点应注册')
   const target = join(PRESETS, 'demo')
 
   // 1) 用原始包预览并取得本次提交凭据（sourceDigest + previewRevision）。
@@ -155,7 +156,7 @@ test('importPresetPackage：路径穿越条目被明确拒绝，不落盘', asyn
   ]) {
     const { status, payload } = await importPackage(presetPackage({ files }))
     assert.equal(status, 400, `非法路径必须 fail closed：${files[0].path}`)
-    assert.equal(payload.code, 'preset-package-invalid')
+    assert.equal(payload.code, 'module-package-invalid')
     assert.match(payload.message, /非法|路径/)
   }
   assert.ok(!existsSync(join(PRESETS, 'evil.yml')), '穿越条目不得写到预设目录之外')
@@ -170,7 +171,7 @@ test('importPresetPackage：组合无法解析（modules 引用缺失）→ 400 
     files: [{ path: 'bad-module/noop.yml', content: 'x' }],
   }))
   assert.equal(status, 400)
-  assert.equal(payload.code, 'preset-package-invalid')
+  assert.equal(payload.code, 'module-package-invalid')
   assert.equal(payload.value?.backupPath, undefined, '失败响应不含 backupPath')
   assert.ok(!existsSync(join(PRESETS, 'bad-module')), '校验失败后目标目录应回滚删除')
 })
@@ -311,7 +312,7 @@ test('importPresetPackage：SillyTavern JSON 非法内容返回 400 且不落盘
     files: [{ path: 'broken.json', content: '{not-json' }],
   })
   assert.equal(status, 400)
-  assert.equal(payload.code, 'preset-package-invalid')
+  assert.equal(payload.code, 'module-package-invalid')
   assert.match(payload.message, /broken\.json/)
   assert.ok(!existsSync(join(PRESETS, 'broken')), '转换失败不得写入')
 })

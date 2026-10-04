@@ -9,7 +9,7 @@ export function engineGroupParamKeys(id: string): readonly EngineParamKey[] {
 export type ModuleSourceMode = 'explicit' | 'composition' | 'official' | 'unknown'
 
 /** 官方九个注入层：与 engine/schema.mjs 的 LAYER_ORDER 同源，改一处必须同步另一处。 */
-export type EngineLayer =
+export type InjectionPoint =
   | 'pre-step'
   | 'system-section'
   | 'runtime-context'
@@ -20,11 +20,13 @@ export type EngineLayer =
   | 'subagent-start'
   | 'subagent-end'
 
+/** 旧公开类型名只作输入兼容。 */
+
 /**
  * 九层顺序的共享副本：宿主是旧版本（不下发 meta.layerOrder）时前端退化用它，
  * 而不是各自再写一份层序清单。
  */
-export const ENGINE_LAYER_ORDER: readonly EngineLayer[] = [
+export const INJECTION_POINT_ORDER: readonly InjectionPoint[] = [
   'pre-step',
   'system-section',
   'runtime-context',
@@ -47,13 +49,13 @@ export interface ModuleFacts {
   subagentToolPolicyEnabled?: boolean
 }
 
-export interface EngineCapability {
+export interface ModuleCapability {
   id: string
   moduleKeys: readonly string[]
   rowIds: readonly string[]
-  displayLayer: EngineLayer
+  displayLayer: InjectionPoint
   /** 真实跨层影响的相关层（只在确有第二通道时登记，避免把归属铺满九层）。 */
-  relatedLayers?: readonly EngineLayer[]
+  relatedLayers?: readonly InjectionPoint[]
   /**
    * 该能力拥有的 preset 顶层数据段（不是行级 config）。
    * 创建时若段缺失则写入 `skeleton`（保证"模块在 ⇒ 数据在"）；删除时一并移除该段。
@@ -89,7 +91,7 @@ export const SUBAGENT_TOOL_POLICY_SKELETON: Readonly<Record<string, unknown>> = 
 }
 
 /** 首期只登记已有 typed editor 的能力，避免万能 key/value 表单。 */
-export const ENGINE_CAPABILITIES: readonly EngineCapability[] = [
+export const MODULE_CAPABILITIES: readonly ModuleCapability[] = [
   // B7 T3：tool-bootstrap / context-gate / anchor-turn / promoted-code-mode / tool-filter /
   // deliberation-gate / progress-reminder 七张专用能力卡随对应引擎模块退场，不再登记。
   // 子代理工具面：模块 + 顶层策略段（段是结构化数据，物化为 subagent-tools/policy.yml）。
@@ -112,9 +114,9 @@ export const ENGINE_CAPABILITIES: readonly EngineCapability[] = [
  */
 export interface EngineEditorGroup {
   id: string
-  displayLayer: EngineLayer
+  displayLayer: InjectionPoint
   /** 真实跨层影响的相关层（只有确有第二通道时才写）。 */
-  relatedLayers?: readonly EngineLayer[]
+  relatedLayers?: readonly InjectionPoint[]
   /** 真实生效通道的只读说明键（如 'agent-request' / 'system-section'）：供 UI 显示「实际生效通道」，
    *  只写代码里可核对的事实，不承诺未验证的通道。 */
   hook: string
@@ -146,7 +148,7 @@ export const ENGINE_EDITOR_GROUPS: readonly EngineEditorGroup[] = [
  * host 的 /meta 下发与前端九层组织共用这一份派生，参数不再各自复制归属。
  */
 export const ENGINE_EDITOR_GROUP_MAP: readonly EngineEditorGroup[] = [
-  ...ENGINE_CAPABILITIES.map(({ id, displayLayer, relatedLayers }) => ({ id, displayLayer, relatedLayers, hook: displayLayer })),
+  ...MODULE_CAPABILITIES.map(({ id, displayLayer, relatedLayers }) => ({ id, displayLayer, relatedLayers, hook: displayLayer })),
   ...ENGINE_EDITOR_GROUPS,
 ]
 
@@ -159,7 +161,7 @@ export function isEditorGroupVisible(id: string, viewFilter: string): boolean {
   if (viewFilter === 'all' || viewFilter === 'world-book') return true
   const group = ENGINE_EDITOR_GROUP_MAP.find((item) => item.id === id)
   if (group === undefined) return true
-  return group.displayLayer === viewFilter || (group.relatedLayers ?? []).includes(viewFilter as EngineLayer)
+  return group.displayLayer === viewFilter || (group.relatedLayers ?? []).includes(viewFilter as InjectionPoint)
 }
 
 export interface EngineRecipe {
@@ -178,9 +180,10 @@ export interface EngineRecipe {
  */
 export const ENGINE_RECIPES: readonly EngineRecipe[] = []
 
-export function engineCapability(id: string): EngineCapability | undefined {
-  return ENGINE_CAPABILITIES.find((capability) => capability.id === id)
+export function moduleCapability(id: string): ModuleCapability | undefined {
+  return MODULE_CAPABILITIES.find((capability) => capability.id === id)
 }
+
 
 export function engineRecipe(id: string): EngineRecipe | undefined {
   return ENGINE_RECIPES.find((recipe) => recipe.id === id)
@@ -198,12 +201,12 @@ export function impliedModulesForParams(
   moduleConfigs: Readonly<Record<string, unknown>> | undefined | null,
 ): string[] {
   const implied = new Set<string>()
-  const add = (capability: EngineCapability | undefined): void => {
+  const add = (capability: ModuleCapability | undefined): void => {
     if (capability === undefined) return
     for (const module of capability.moduleKeys) implied.add(module)
   }
   const addRow = (rowId: string): void => {
-    const capability = ENGINE_CAPABILITIES.find((item) => item.rowIds.includes(rowId) || item.moduleKeys.includes(rowId))
+    const capability = MODULE_CAPABILITIES.find((item) => item.rowIds.includes(rowId) || item.moduleKeys.includes(rowId))
     if (capability !== undefined) add(capability)
     else if (ENGINE_PARAM_KEYS.some((key) => ENGINE_PARAM_DEFINITIONS[key].module?.row === rowId)) implied.add(rowId)
   }
@@ -212,7 +215,7 @@ export function impliedModulesForParams(
       if (!Object.prototype.hasOwnProperty.call(params, key)) continue
       const definition = ENGINE_PARAM_DEFINITIONS[key]
       if (definition.module !== undefined) addRow(definition.module.row)
-      else add(engineCapability(definition.card))
+      else add(moduleCapability(definition.card))
     }
   }
   if (moduleConfigs !== undefined && moduleConfigs !== null) {
@@ -225,9 +228,9 @@ export function impliedModulesForParams(
 
 /** 显式模块声明中的实际能力；包含当前参数与顶层策略所需的装配。
  *  创建补声明由 host 单独检查 declaredModules；官方组合行不伪装成可编辑能力。 */
-export function isEngineCapabilityPresent(id: string, facts: ModuleFacts | undefined): boolean {
+export function isModuleCapabilityPresent(id: string, facts: ModuleFacts | undefined): boolean {
   if (facts === undefined || facts.sourceMode !== 'explicit') return false
-  const capability = engineCapability(id)
+  const capability = moduleCapability(id)
   if (capability === undefined) return false
   const modules = facts.effectiveModules ?? facts.declaredModules
   if (modules === null) return false
@@ -266,3 +269,8 @@ export function validateCustomToolIdentities(tools: readonly unknown[]): string[
   }
   return errors
 }
+
+/** 已发布名称只在此边界保留，内部使用模块能力与插入点命名。 */
+export type EngineLayer = InjectionPoint
+export type EngineCapability = ModuleCapability
+export { MODULE_CAPABILITIES as ENGINE_CAPABILITIES, INJECTION_POINT_ORDER as ENGINE_LAYER_ORDER, moduleCapability as engineCapability, isModuleCapabilityPresent as isEngineCapabilityPresent }

@@ -2,28 +2,32 @@
 
 > 适用范围：模块规则、独立共享参数、版本事务、离线迁移与配置排序。
 > 规则契约：`src/shared/rules.ts`、`engine/rule-spec.mjs`、`engine/rule-runtime.mjs`。
-> 存储与迁移：`src/host/module-rules.ts`、`src/host/rules-migration.ts`、`src/host/manifest.ts`。
+> 存储与迁移：`src/host/module-storage.ts`、`src/host/module-rules.ts`、`src/host/rules-migration.ts`。
 > 接线与物化：`src/runtime/settings-bridge.ts`、`src/host/write-preset.ts`、`src/runtime/agent-assembly.ts`。
 
 ## 部署设置与编辑目标
 
-Config 只保留持久兼容键 `writePreset`，表示模块运行总闸。关闭只卸载模块注入与工具贡献，不删除模块定义或物化产物；总闸关闭时仍可调整配置排序。`presetOrder`、`fallbackText`、`presetTemplate` 均已退出部署设置。
+Config 的规范键是 `modulesEnabled`，表示模块运行总闸。旧 `writePreset` 仅在输入边界兼容；同时提供且值不同时拒绝。关闭只卸载模块贡献，不删除定义、规则切片或用户资产；总闸关闭时仍可调整排序。
 
-编辑选择由请求头 `x-module-id` 声明，不改写 settings，也不切换或跟随官方会话预设。未声明目标时由宿主适配器解析默认目录；聚合读取把该目录传给身份投影、共享参数、变量、配置卡与模块事实。写请求的 `expectedPresetId` 只作一致性检查，等待期间仍按同一请求复核目标，错误身份或目标变化返回 `409 preset-changed`。
+编辑选择由请求头 `x-module-id` 声明，不改写 settings，也不切换或跟随官方会话预设。写请求使用 `expectedModuleId` 检查目标一致性；兼容入口归一旧身份键，冲突值拒绝。宿主官方预设的 `presetId` 仍表达其真实身份，例如官方工具预览。
 
 ## 磁盘格式：规则与共享参数各有所有者
 
 共享引擎参数唯一存于 `layerSettings.<层名>.<参数键>`，例如 `layerSettings.subagent-start.maxDepth: 2`。归属由 `ENGINE_PARAM_DEFINITIONS.storageLayer` 固定；`card` 与编辑组 `displayLayer` 只管理展示，不改变磁盘路径。该段不创建提示词实例，也不生成空 UI 卡。
 
-`module.yml.rules` 是行为规则的唯一来源。一条规则保留 `id/name/enabled/layer/group/exclusive`，用 `when` 组合条件、用 `do[]` 声明多个有稳定 `id` 的动作；注入提示词是 `inject-text` 动作，正文、内容策略、模板和局部变量位于该动作的 `config`。`layer` 只标记呈现归属，动作执行点由目录推导，不形成跨插入点的全局顺序。
+`module.yml` 保存完整定义，是唯一持久化提交点和恢复依据，支持直接手工修改完整文件。初始化或发现有效定义变化时，将规则分解为 `rules/<ruleId>.yml`，状态放 `rules/_settings.yml` 的 `rules` 映射，模板变量放 `rules/variables.yml`。UI 和运行时使用校验通过的切片快照；切片不接受直接手改，缺件、集合或摘要失配均从完整定义单向重切。完整定义无效则报错，不以切片反向修复。
+
+每条规则正文只有 `id/name/layer/when/do[]`；`enabled/group/exclusive/order` 由状态清单拥有，模块级 `variablesEnabled` 与校验元数据也在清单中。完整定义仍包含合并后的规则与 `configOrder`。传给引擎时 `order` 拆为独立映射，不向规则对象添加未知字段。规则 id 使用可读名字和后缀去重，拒绝下划线前缀、保留名 `variables`、大小写冲突及 Windows 设备名。
+
+`when` 组合条件，`do[]` 声明有稳定 id 的动作；注入正文、策略、模板和局部变量属于 `inject-text.config`。`layer` 只标记展示归属，不建立跨插入点的全局运行顺序。
 
 共享只限于同一模块内的配置卡。`persona`、`variables`、`customTools`、`subagentToolPolicy` 和能力行的 `moduleConfigs` 保留独立所有者。`loadModuleSpec().params` 是 `layerSettings` 的内部平铺适配面，不是第二个磁盘参数源，也不承载规则正文。
 
 模型路由与采样参数写入 `request-params` 动作；主会话、子代理和模型范围统一由 `when.scope` 约束，不再在动作中另放动态门。模型未配置时继承宿主会话，不调用 `agentDefaultModel.saveSelection` 改写全局默认。十个旧 `model*` / `subagentModel*` 键由 `RULE_OWNED_MODEL_PARAMS` 标记为迁移输入，不再从 `layerSettings` 隐式生成请求规则。
 
-有规则的模块按需补齐 `rule-engine` 组合行；插件管理路径直接使用 `compileRules → mountRuleSources`，跳过同名独立入口，避免双注册。`rules.yml` 是包含规则、配置序号和变量的只读分发包；`configs/` 是注入叶子的查看投影，运行时不从它回退读取规则。空模块不自动创建规则。
+插件管理路径直接使用 `compileRules → mountRuleSources`，工具和策略走内联输入。模块不再生成 `rules.yml`、`configs/`、`agent.cordis.yml`、`custom-tools/` 或 `subagent-tools/`；普通重建只恢复切片并清理已知旧产物，不交换整个用户目录。空模块不自动增加规则。
 
-运行时、正常保存与物化拒绝 `promptConfigs`、`triggers`、旧规则引擎声明、旧快捷参数及旧模型键，返回迁移诊断，不双读、不自动改盘。其他未知字段及不参与执行的旧内容元数据保留。已登记共享键放错层、层名或形态错误仍返回 `preset-layer-settings-invalid`。旧格式只经本文的显式离线迁移入口转换。
+运行时、正常保存与物化拒绝 `promptConfigs`、`triggers`、旧规则引擎声明、旧快捷参数及旧模型键，返回迁移诊断，不双读、不自动改盘。其他未知字段及不参与执行的旧内容元数据保留。已登记共享键放错层、层名或形态错误仍返回 `module-layer-settings-invalid`。旧格式只经本文的显式离线迁移入口转换。
 
 九层 UI、官方参数与插件参数的对照见 [九层契约](injection-point-contracts.md)。
 
@@ -44,10 +48,10 @@ Config 只保留持久兼容键 `writePreset`，表示模块运行总闸。关�
 | 规则契约 | `shared/rules.ts`、`engine/rule-spec.mjs` | 规则、动作、条件树、身份及互斥校验；宿主与客户端不各写一套语义 |
 | 共享参数 | `shared/engine-params.ts` | 四个公开共享键的校验、storageLayer、UI 归属与能力行映射；旧类型只供迁移识别 |
 | 离线转换 | `host/rules-migration.ts`、`host/legacy-prompt-params.ts` | 明确转换旧来源；无法无损转换时拒绝，不作为运行时适配器 |
-| 规则事务 | `host/module-rules.ts` | 全模块版本 CAS、局部 edits、显式启用互斥、改名与删除同步 configOrder |
+| 规则事务 | `host/module-rules.ts` | 按操作校验正文／状态版本、局部 edits、显式启用互斥、改名与删除同步 configOrder |
 | 参数守卫 | `shared/param-keys.ts`、`shared/rules.ts`、bridge | 先拒绝已归规则的旧键，再校验共享参数；不靠键名推断模板变量 |
 | 存储层 | `host/manifest.ts`、`host/module-layer-settings.ts` | `loadModuleSpec`（layerSettings → 内部平铺值）、`saveModuleParams`（平铺值 → 所属层；空值删键）、`buildModuleConfigsFromParams`（参数桥）、`renderComposition`（参数桥 > moduleConfigs > 行默认） |
-| 物化层 | `host/write-preset.ts` | `materializeModule` 统一读取目标模块定义与正文，再由 `writePreset` 生成组合和资产；不使用全局行为参数镜像 |
+| 切片与候选 | `host/module-storage.ts`、`host/write-preset.ts` | `ensureModuleSlices` 校验恢复；`commitModuleDefinition` 提交完整定义；`writeModule` 为导入建立隔离候选，普通重建原地保留资产 |
 | 排序层 | `host/module-config-order.ts` | 读配置身份和版本、启用时尾部追加、按身份重排并写回各模块 `configOrder` |
 | 装配层 | `index.ts`、`runtime/agent-assembly.ts` | 运行总闸、按启用集合挂载贡献、按配置序号排序与释放 |
 | 接线层 | `runtime/settings-bridge.ts` | `/rules` 规则事务、`/param-overrides` 共享参数与独立变量、`/module-config-order` 身份顺序 |
@@ -64,17 +68,16 @@ UI fields
   → persistParamOverrides（只发送已存键或用户已改动键；含需清除的 '' / [] 与合法的 false / 0）
     → /param-overrides POST（settings-bridge）
       → saveModuleParams（写 module.yml：layerSettings 的所属层；空值删键）
-        → materializeModule（按模块 ID 读取自身定义、正文与 rules）
-          → writePreset（规则包、能力行和独立资产物化）
-            → assembly.refresh（刷新受影响 Agent 的运行贡献）
+        → commitModuleDefinition（完整定义原子提交并校验发布切片）
+          → materializeModule → assembly.refresh（刷新受影响 Agent 的贡献）
 ```
 
 规则卡另走同一模块保存队列中的局部事务：
 
 ```
-当前规则草稿快照 + expectedRevision
+当前规则草稿快照 + expectedRevisions
   → /rules（edits / activateRuleId）
-    → editModuleRules（全量候选 compileRules → CAS → 原子写盘）
+    → editModuleRules（全量候选 compileRules → 按操作 CAS → 完整定义提交）
       → materializeModule → assembly.refresh
         → 重读规则并复核版本，再确认请求快照
 ```
@@ -95,23 +98,19 @@ UI fields
 
 模块不经 `agentPresets.register()` 发布，路径换算由运行时配装通道 `runtime/agent-assembly.ts` 承担，不改写宿主 `baseUrl`。
 
-本地引用在**装配期**统一换算——只改装配输入，正本 `agent.cordis.yml` 一字不改，因此用户改
-`DSH_HOME` 或复制整个模块根后按新位置重新换算：
+本地引用在装配期按实际模块目录换算，复制模块或改变 `DSH_HOME` 后使用新位置：
 
-- **共享引擎行**由生成侧写**包名说明符** `dsh-plugin-prompt-tool/engine/<module>.mjs`：引擎是
-  插件包资产，不再物化到 `<预设根>/.engine/`，预设根只承载用户数据。
-- **其它本地模块说明符**（`name` 以 `.` 开头）按预设目录换算为绝对 `file://`。
+- **共享引擎**直接从插件包加载，模块目录只承载用户定义和资产。
 - **受管配置字段**（`configsDir` / `strategyDir` / `policyFile` / `rulesFile`）按历史语义相对
   `<预设根>/.engine/` 解析为绝对 `file://`。引擎由包内加载后其 `import.meta.url` 不再位于该目录，
   而实测只有 `file://` 形态对全部受管字段一致有效（写成 Windows 盘符路径会被 `new URL()` 当成
   URL scheme，报 `is not readable: The URL must be of scheme file`）。
 - 规则注入动作的 `templateFile` 与策略基准由 `rulePromptConfigOptions` 明确提供：以本模块
-  `rules.yml` 为相对基准、以本模块目录为允许根。离线迁移负责把已知旧基准改成等价相对路径，
+  `module.yml` 为相对基准、以本模块目录为允许根。离线迁移负责把已知旧基准改成等价相对路径，
   无法证明来源或越界时拒绝；运行时不猜旧路径，也不读取兄弟模块的资产。
-- `tool-config-engine` 仍按独立工具契约获得 `presetRoot`。独立 `rule-engine` 入口只消费
-  `rules.yml` 规则包，与插件管理路径共用编译及装配接口。
+- `tool-config-engine` 的 `resourceRoot` 仍是模块集合允许根，旧 `presetRoot` 只作输入别名；冲突拒绝，路径权限不因更名改变。独立引擎的文件入口继续可用，不要求插件生成对应文件。
 
-**旧布局不再兼容**：仍写 `./engine/`、`../.engine/` 的预设不再被特殊处理，需重建后重新物化。
+规则的模板基准使用 `templateModuleRoot`，独立规则入口使用 `moduleRoot`；旧参数名仅在兼容边界归一。
 
 该取向与官方一致：`editing-cordis-compositions` 技能要求「Resolve assets from installed
 packages rather than a preset directory」，并把 `!!js` 限制在插件配置与 `disabled` 上（行 `name`
@@ -122,7 +121,7 @@ packages rather than a preset directory」，并把 `!!js` 限制在插件配置
 包内 `modules/` 是复制与补建来源，不注册到官方预设目录，不探测或重命名用户已有模块。
 
 - **初始化**：`ensurePresetSeed` 按包内同名目录检查，缺哪个只复制哪个；已有目录的定义、组合与资源保持原样。
-  初次复制的定义由统一物化入口生成产物，不覆盖其他模块。
+  初次复制后由统一入口分解 rules/，不覆盖其他模块。
 - **保存**：当前预设以自身目录为唯一来源生成，模块、人设、变量、工具和子代理策略都从该目录读取。
   保存只重建目标模块；关闭运行总闸不清空组合、正文或配置切片。
 - **新建**：直接复制包内同名目录；显式要求递增副本时仍沿用现有目录后缀规则。
@@ -135,8 +134,9 @@ packages rather than a preset directory」，并把 `!!js` 限制在插件配置
 保存按实际模块 ID 读取其自身定义并完成物化，再更新当前运行时贡献。启用表改变时，
 刷新官方 `agents.list()` 中全部存活 Agent，包括此前没有启用模块的 Agent；配置保存则
 刷新受影响的运行实例。bridge、TUI 和模型工具等待刷新完成后才报告成功。定义已保存
-而物化或挂载失败时，共享参数端点返回 `preset-activation-failed`，规则端点返回
-`rules-rebuild-failed`；已保存定义保留，准备失败不撤旧贡献，挂载失败尝试恢复旧贡献。
+而切片或运行发布失败时，共享参数端点返回 `module-activation-failed`；规则与变量端点明确返回
+`persisted` 和 `publicationError`，客户端只确认已提交快照，保留在途输入。重试只刷新运行贡献，
+不重放新增、改名或删除。准备失败不撤旧贡献，挂载失败尝试恢复旧贡献。
 
 ### 官方运行时接线
 
@@ -167,7 +167,7 @@ packages rather than a preset directory」，并把 `!!js` 限制在插件配置
 
 `module.yml.configOrder` 保存 `{ 规则ID: 非负安全整数 }`，完整身份仍是模块 ID＋规则 ID，正文留在原动作。导入保留来源局部顺序；启用时，未编号规则按步长 10 接在尾部；若已有序号与其他启用模块碰号，按已保存的相对顺序将该模块整体接到尾部。重复启用不改无冲突顺序。动作的显式 `channelOrder` 独立声明通道内顺序，未指定时使用规则序号；排序不替互斥组选赢家。
 
-物化文件名前缀来自已存序号，至少补齐四位，不截断大号。文件名前缀和 bridge 读回的 `sequence` 都是投影；排序写入不接受任意序号、正文或路径。
+规则文件名固定为 `<ruleId>.yml`，顺序由 `_settings.yml.rules[ruleId].order` 承载并回写完整定义 `configOrder`。排序写入不接受任意序号、正文或路径。
 
 全局排序读取已启用配置的身份列表、受众、策略与 `revision`；`/module-config-order` 的空请求体或空对象 `{}` 均表示全局读取，仅带 `moduleId` 时读取指定模块，读取不写定义或触发物化。写入提交完整身份列表和读取时的版本。服务端拒绝未知／重复身份及过期集合，按身份写回各模块，等待受影响模块物化与刷新后才返回成功。主会话与子代理在同一个配置列表切换“当前模块”和“跨模块排序”范围：前者只交换自己的原有槽位，模块启用或停用均可保存自身顺序；后者按受众和策略过滤，在同一插入点、位置和官方档位内跨模块移动，仍提交包含隐藏条目的完整身份列表，不发送摘要元数据或正文。
 
@@ -175,15 +175,15 @@ packages rather than a preset directory」，并把 `!!js` 限制在插件配置
 
 ## 规则事务与互斥
 
-`/rules` 读取返回 `{ rules, revision, meta }`，`revision` 是完整 `module.yml` 原始字节的 SHA-256，`meta` 来自同一引擎动作／条件目录。读取不写盘：身份、`do` 数组或动作基础结构损坏返回 `400 rules-invalid`；未知动作或条件语义保留，供 JSON 修复，不静默删成空列表。
+`/rules` 返回规则及 `revisions: { rules: { [ruleId]: hash }, settings: hash, variables: hash }`，`meta` 来自同一动作／条件目录。纯源读取只读；UI／运行入口的协调读取可从有效完整定义恢复切片。只读包目录仅作内存投影。无效完整定义明确报错，不静默删成空规则。
 
-修改载荷必须有 `expectedPresetId`、读取时的 `expectedRevision`，以及 `edits: [{ previousId, rule }]` 或 `activateRuleId`。新增用 `previousId: null`，删除用 `rule: null`；改名和删除在同一文档事务中迁移或删除 `configOrder` 键。不是整表最后写入者覆盖。
+修改携带 `expectedModuleId`、`expectedRevisions` 与 `edits: [{ previousId, rule, settingsChanged? }]` 或 `activateRuleId`。正文编辑校验目标正文版本且保留最新启停／互斥状态；状态编辑须显式标记 `settingsChanged` 并校验 settings。新增、删除、改名和互斥启用也校验 settings。变量内容校验 variables，变量开关校验 settings。新增用 `previousId: null`，删除用 `rule: null`；改名、删除同步 configOrder。旧整文档 revision 只供已有 API 调用兼容。
 
 `validateOnly: true` 编译完整候选但不写盘。保存先校验候选规则、动作、互斥及独占约束，再使用 YAML Document 保留其他字段与注释，写临时文件并在替换前复核版本及目录身份。只有当前允许写入且具有可编辑 `modules` 清单的模块可保存。版本冲突返回 `409 rules-conflict`，不覆盖本地或磁盘未知修改。
 
 同模块完全同名的非空 `group` 中，只要任一成员 `exclusive: true`，该组便互斥。显式 `activateRuleId` 先启用目标卡，再原子写入同组其他卡的 `enabled: false`；不会保留多个亮起开关再由排序决定生效项。没有显式激活目标时，多启用候选由编译器拒绝，运行时和离线迁移均不默选赢家。
 
-模块切换、目录链接、只读来源及非法请求均拒绝。重建失败明确报告“规则已保存，但模块重建失败”；重建期间规则再次变化也返回冲突，不能把新版本签给旧草稿。客户端复用模块保存队列，只确认请求快照，期间新编辑继续保持 dirty；重新读取不会丢弃未保存输入。
+同模块保存与恢复串行，先校验完整候选，再写正文／变量切片、原子替换 module.yml、更新清单并校验发布。完整定义替换是提交点，不宣称多文件同时原子替换。提交前失败从旧完整定义恢复；提交后发布持续失败响应带 `persisted: true` 和版本信息，明确告知定义已保存，保留最后已验证的运行贡献。手改完整定义使旧草稿 CAS 冲突；切片手改或伪造摘要只会触发单向重切。客户端保留未确认草稿。
 
 ### 旧格式的唯一离线入口
 
@@ -230,7 +230,7 @@ UI 侧 `persistParamOverrides` **条件发送**：
 
 ### 业务参数默认空，不由引擎补写
 
-`writePreset` 读取已经持久化的 rules，不再接受旧业务开关或整表覆盖来重解释规则。未提交的共享值不覆盖作者定义，显式规则编辑只改变对应字段；清空正文、目录字段或业务模式，不触发隐藏文案、长度阈值或模型偏好。
+`writeModule` 读取已经持久化的 rules，不再接受旧业务开关或整表覆盖来重解释规则。未提交的共享值不覆盖作者定义，显式规则编辑只改变对应字段；清空正文、目录字段或业务模式，不触发隐藏文案、长度阈值或模型偏好。
 
 - `inject-text` 的正文、环境事实模板、技能目录模板、目录字段与可选数量限制由动作或模块模板声明；缺少正文时不生成消息。
 - `guide-auto` 只有显式 `params.complexMinChars` 才启用长度判据，空值不启用；没有内置 120 字业务阈值。
@@ -244,7 +244,7 @@ UI 侧 `persistParamOverrides` **条件发送**：
 ## 4. variables 双通道（两套体系，不互串）
 
 1. **共享能力参数**：可写键与其存储层由参数目录及规则所有权守卫确定；旧键只在离线输入侧识别，`params` 整段不参与模块模板变量的读取与生成。
-2. **内容占位变量**：`spec.variables` 段（module.yml 顶层 variables）→ `variables.yml`——空值占位键也写入：
+2. **内容占位变量**：完整定义顶层 `variables` ↔ 经校验的 `rules/variables.yml`；UI 保存通过完整定义事务回写，空值占位键也保留：
    - 引擎插值（`engine/interpolate.mjs`）`hasOwnProperty` 命中 → 替换（空串不留字面）；
    - 用途：模型经 `world_book_upsert` 写世界书条目，内容引用 `{{key}}` 占位；ST 未定义宏登记；
    - UI 模板变量卡（VariablesEditor）可编辑默认值覆盖。
@@ -302,7 +302,7 @@ ST 导入配置显式带 `params.stMacros: true`，赋值模板保留到运行�
 4. 只有全局草稿版本未变化、其他保存通道无待存草稿，且对应草稿与请求快照一致时，才在队列内执行静默 `load()`；
 5. 下拉展示及动作示例不固化业务默认；未显式填写的模型、正文或条件不额外写入覆盖。
 
-规则请求必须携带 `expectedPresetId`；其他资产沿用自身端点的身份字段。目录由同一请求头解析，该字段只校验已解析目标；旧草稿或等待期间目标改变返回 `409 preset-changed`，不写盘。客户端切换先处理未保存草稿并等待保存队列，再更新编辑目标请求头并重读，不修改部署设置或官方会话预设。
+规则请求必须携带 `expectedModuleId`；其他资产沿用自身端点的身份字段。目录由同一请求头解析，该字段只校验已解析目标；旧草稿或等待期间目标改变返回 `409 module-changed`，不写盘。客户端切换先处理未保存草稿并等待保存队列，再更新编辑目标请求头并重读，不修改部署设置或官方会话预设。
 
 `SwitchSnapshot` 的参数键从目录派生，使用结构化克隆隔离数组和对象；全部参数自动参与脏检测。客户端 `Fields` 从 `EngineParams` 派生草稿类型；bridge transport 保留响应 shape guard。
 
@@ -310,11 +310,11 @@ ST 导入配置显式带 `params.stMacros: true`，赋值模板保留到运行�
 
 `customTools` 仍是预设顶层资产，不进入扁平参数。`host/custom-tools.ts` 的 `compileCustomTool()` 使用官方 DSL 转换函数，随后调用与运行时共用的 `engine/tool-definition.mjs` 校验。`validateCustomTools()` 先检查 ID／工具名称冲突，再完整编译每条定义；失败在 bridge 返回 `400 custom-tools-invalid`，不写盘、不重建。
 
-合法保存保留原始 DSL，通过 `withPresetDoc`、依赖补齐和 `materializeModule()` 物化；运行时仍由 `ctx.effect` 注册和清理。手写／导入模块中的单条坏定义仍告警跳过。自定义工具支持 shell、HTTP、已有工具委托、文件操作和用户询问；本功能不管理外部 MCP 或插件安装。
+合法保存保留原始 DSL；保存和装配都完整校验身份及定义，非法工具拒绝整次操作。装配将 `compileCustomTool()` 的 JSON Schema 结果放入 `config.tools`，不写 custom-tools/。内联空数组明确代表无工具，缺字段才启用独立引擎旧目录模式；内联非法值不能回落。工具注册仍受 disposer 管理，支持 shell、HTTP、已有工具委托、文件操作和用户询问。
 
 工具卡同时提供参数行编辑与高级 JSON，修改名称／描述／必填不丢弃嵌套 `properties/items/oneOf/enum`。文件写入／追加显式编辑内容；超时为 `1–2147483647` 毫秒，单工具定义上限 1 MiB，执行器字段在保存前按类型校验。
 
-`customToolRequireApproval` 映射到 `tool-config-engine.requireApproval`，仅允许现有五种执行器名称；内部 `configsDir` 仍由生成器管理，不向配置卡开放。
+`customToolRequireApproval` 映射到 `tool-config-engine.requireApproval`，仅允许现有五种执行器名称；`configsDir` 仅保留给独立文件入口，不向配置卡开放。
 
 ## 7. 合并优先级（组合行 config）
 
@@ -372,8 +372,7 @@ wholeWords/selectiveLogic）单一权威。以下写入端共用：
   disable/enabled、insertion_order/order、case_sensitive/caseSensitive 等）保留在转换层，结构构造下沉工厂；
 - **模型工具**（`world-book-tools.ts` world_book_upsert）：模型参数直接经工厂构造——工具后续暴露
   wholeWords 等字段时两通道自动一致。
-- **角色卡记忆**（`characters.ts` buildCharacterMemoryEntry）：角色卡导入/记忆同步的 world-book 记忆
-  条目同源构造（id 由调用方加 chara-<卡>- 前缀，工厂 id 缺省不写）。
+- 模块记忆独立存于 `<模块根>/memory.md`。`world_book_upsert/delete` 的 note 追加记忆，`world_book_read_memory` 每次读取最新文件；缺失返回空文本，读取失败报错。记忆不自动转换为规则或注入。
 
 各写入端把条目包装为 `inject-text` 规则动作，最终只修改 `rules`；世界书条件、扫描
 和预算语义仍由该内容领域处理，不恢复 `promptConfigs` 存储所有者。
@@ -413,7 +412,7 @@ wholeWords/selectiveLogic）单一权威。以下写入端共用：
 
 - 策略未启用（段缺失）：子代理工具面按官方委派行为，不写 `toolFilter`；原先「参数桥把 `toolFilterAllow/Deny` 写入主代理 `tool-filter` 并下发子代理 `delegation.toolFilter`」的通道已随该能力一并删除。
 - 策略启用（段非空）：子代理由 `subagent-tool-policy` 模块的 agent-local shadow 在创建窗口解析并冻结 toolFilter（不再热更新；需要更高权限时创建新实例）。
-- `subagent-tools/policy.yml` 是生成物（writePreset 从 module.yml 顶层段物化）；module.yml 仍是单一来源。
+- 装配把完整定义的 `subagentToolPolicy` 放入 `config.policy`。段缺失或 null 时跳过该能力；独立引擎仅在 policy 字段缺失时读取 policyFile，显式非法内联一律拒绝。
 - 保存链路：`/subagent-tool-policy` POST → `validateSubagentToolPolicy()` 校验 → 原子写盘并补齐模块声明；关闭开关只删策略段并保留模块声明，删除能力才同时移除两者。
 - writer 读取手写/导入的策略段时同样先校验。历史“有段无模块”的定义保留策略装配，`effectiveModules` 反映有效能力，`declaredModules` 保持磁盘事实。已登记参数和行配置的依赖仍由 `impliedModulesForParams` 派生；移除能力同时清理其参数与行配置。官方组合行出现在物化产物中，不等于插件接管该官方工具的配置。
 - `maxDepth` 仅在插件策略启用时约束其委派；普通官方委派深度归宿主。子模型 provider/name 与采样参数另经本地子代理请求规则生效，不改写普通官方 spawn 预检。策略文件确实不存在时回落官方委派；现存文件解析或校验失败必须报错，错误文案不能作为缺文件依据。
@@ -425,7 +424,7 @@ wholeWords/selectiveLogic）单一权威。以下写入端共用：
 指令文件（AGENTS.md / CLAUDE.md 等）不属于预设生命周期：正文在用户自己的文件里，显示名
 与逐文件开关在独立策略文件里，两者都不写进 `module.yml`。官方负责注入，插件只过滤未来消息。
 
-- **不再物化生成卡**：`writePreset` 不再探测指令文件、不再把 `agents-file-*` 卡写进生成
+- **不再物化生成卡**：`writeModule` 不再探测指令文件、不再把 `agents-file-*` 卡写进生成
   目录；`module.yml#agentsHints` 已不是运行时开关（字段仅为兼容既有用户预设保留解析，不再
   生效）。文件集合、正文、版本与读取状态由 `/bootstrap`、`/prompt-configs` 按**本会话工作区**
   现场解析（优先 `agent.session.header.cwd`；无本地会话时回退部署进程 cwd，并以
@@ -487,7 +486,7 @@ buildSubagentToolParameters(c)     → 模型可见扩展参数 Schema
 
 ## 10. 契约测试
 
-完整预设导入复用 writer 的 `sourceDir` 与 `materializeOnly` 模式：从隔离来源物化到独立候选目录，最终 ID 与暂存位置分离，不写目标，也不再同步共享引擎（引擎由插件包提供）。安装方先完成工具／配置／附件校验，再版本复检和 rename 交换；普通保存与重建继续复用 writer。预设自有正文及本地 engine 保留，禁止遍历清理兄弟预设。详见 [资产交换](asset-transfer.md)。
+完整模块导入使用 `writeModule` 的 `sourceDir + stageOnly`：隔离暂存根下使用合法目标 id，完成定义、工具和附件校验，再复检目标版本并 rename 交换。普通 `materializeModule` 原地恢复切片，不重建整个用户目录；记忆、未知资产、技能及正文保留。详见 [资产交换](asset-transfer.md) 与 [ADR-0008](adr/0008-module-slices-memory-assembly.md)。
 
 - `test/host/write-preset.test.mjs`：规则物化与模型请求动作保持；旧源拒绝与显式离线转换；变量只读顶层 variables，保留空串与同名键，清空后不回退旧 params。
 - `test/host/module-rules.test.mjs` 与 `rules-migration.test.mjs`：局部事务、改名／删除保序、显式互斥、CAS、坏结构、离线原字节回滚及业务空值行为。

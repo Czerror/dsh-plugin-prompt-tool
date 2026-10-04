@@ -130,7 +130,7 @@ export function CustomToolCard(props: {
   fieldDrafts?: Map<string, FieldDraft>
   index: number
   expanded: boolean
-  /** 只读（system 模块或关闭 writePreset）：禁掉写操作，但保留卡片展开/折叠。 */
+  /** 只读（system 模块或关闭 modulesEnabled）：禁掉写操作，但保留卡片展开/折叠。 */
   disabled?: boolean
   onToggleExpanded: () => void
   onPatch: (patch: Partial<ToolDraft>) => void

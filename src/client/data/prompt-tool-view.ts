@@ -117,8 +117,8 @@ export function fieldsFromView(res: BridgeResult<BridgeSettingsView>): Fields {
       folders: res.ok ? res.skillFolders ?? [] : [],
       roots: res.ok ? res.activeSkillsDirs ?? [] : [],
     }),
-    writePreset: readBoolean(value, 'writePreset', readBoolean(base, 'writePreset', true)),
-    presetTemplate: readString(value, 'presetTemplate') ?? readString(base, 'presetTemplate') ?? DEFAULT_MODULE_ID,
+    modulesEnabled: readBoolean(value, 'modulesEnabled', readBoolean(base, 'modulesEnabled', true)),
+    moduleId: readString(value, 'moduleId') ?? readString(base, 'moduleId') ?? DEFAULT_MODULE_ID,
     promptConfigs: value.promptConfigs !== undefined
       ? readPromptConfigs(value, 'promptConfigs')
       : readPromptConfigs(base, 'promptConfigs'),
@@ -143,13 +143,13 @@ export function bridgeViewFromBoot(boot: BridgeResult<BridgeSettingsView>): Brid
     skillsComplete: boot.skillsComplete,
     skillFolders: boot.skillFolders,
     templatePreStepCount: boot.templatePreStepCount,
-    presetParams: boot.presetParams,
+    moduleParams: boot.moduleParams,
     hostDefaultModel: boot.hostDefaultModel,
     moduleFacts: boot.moduleFacts,
   }
 }
 
 /** 只从模块投影行为参数；不把 settings 重新引入模块优先级链。 */
-export function mergePresetParams(fields: Fields, params: Record<string, unknown> | undefined): Fields {
+export function mergeModuleParams(fields: Fields, params: Record<string, unknown> | undefined): Fields {
   return params === undefined ? fields : { ...fields, ...readParamOverridesPatch(params) }
 }

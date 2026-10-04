@@ -10,7 +10,7 @@
  *
  * 不变量：
  *   - ceiling.deny 永远优先，任何 selector / additional_tools 都不能恢复；
- *   - 有效工具集 = (profile.allow ∪ 已验证扩权) ∩ ceiling.allow ∩ presetAvailable
+ *   - 有效工具集 = (profile.allow ∪ 已验证扩权) ∩ ceiling.allow ∩ availableToolNames
  *                 − profile.deny − restrict_tools − ceiling.deny；
  *   - selector 优先级 tool_profile > character_id > task_type > 自动分类 > default；
  *   - 纯模块：不 import dsh-tools、不写文件，可在 .engine 与 host 两侧加载。
@@ -226,11 +226,11 @@ export function compileSubagentToolPolicy(raw) {
  * 解析一次实例的工具集。request 字段：
  *   tool_profile / character_id / task_type / additional_tools / restrict_tools /
  *   description / prompt（自动分类输入 = description + "\n" + prompt）。
- * availableTools：当前 preset scope 可解析的继承工具名集合。
+ * availableTools：当前 assembly scope 可解析的继承工具名集合；公开位置参数保持不变。
  */
 export function resolveSubagentToolPolicy(compiled, request, availableTools) {
   const requestRecord = request ?? {}
-  const presetAvailable = new Set(Array.isArray(availableTools) ? availableTools : [])
+  const availableToolNames = new Set(Array.isArray(availableTools) ? availableTools : [])
   const adopted = []
   const ignored = []
 
@@ -297,7 +297,7 @@ export function resolveSubagentToolPolicy(compiled, request, availableTools) {
   const profile = compiled.profileMap.get(selectedProfileId) ?? compiled.profileMap.get(compiled.defaultProfileId)
   const baseAllow = profile?.allow ?? []
 
-  // 扩权校验：requestedAdd ∩ modelExpansion.allow ∩ ceiling.allow ∩ presetAvailable。
+  // 扩权校验：requestedAdd ∩ modelExpansion.allow ∩ ceiling.allow ∩ availableToolNames。
   if (requestRecord.additional_tools !== undefined && !Array.isArray(requestRecord.additional_tools)) {
     throw new Error('additional_tools must be an array of tool names')
   }
@@ -320,7 +320,7 @@ export function resolveSubagentToolPolicy(compiled, request, availableTools) {
     for (const tool of uniqueRequestedAdd) {
       if (!compiled.expansion.allow.includes(tool)) throw new Error(`additional tool ${JSON.stringify(tool)} is not expansion-authorized`)
       if (!compiled.ceiling.allow.includes(tool)) throw new Error(`additional tool ${JSON.stringify(tool)} exceeds ceiling.allow`)
-      if (!presetAvailable.has(tool)) throw new Error(`additional tool ${JSON.stringify(tool)} is not available in this preset`)
+      if (!availableToolNames.has(tool)) throw new Error(`additional tool ${JSON.stringify(tool)} is not available in this assembly`)
       validatedAdd.push(tool)
     }
   }
@@ -332,13 +332,13 @@ export function resolveSubagentToolPolicy(compiled, request, availableTools) {
     throw new Error('restrict_tools must contain only non-empty tool names')
   }
 
-  // 有效工具集 = (baseAllow ∪ validatedAdd) ∩ ceiling.allow ∩ presetAvailable − deny 三件套。
+  // 有效工具集 = (baseAllow ∪ validatedAdd) ∩ ceiling.allow ∩ availableToolNames − deny 三件套。
   const effective = new Set([...baseAllow, ...validatedAdd])
   const ceilingAllowSet = new Set(compiled.ceiling.allow)
   const denySet = new Set([...(profile?.deny ?? []), ...requestedDeny, ...compiled.ceiling.deny])
   for (const tool of [...effective]) {
     if (!ceilingAllowSet.has(tool)) effective.delete(tool)
-    if (!presetAvailable.has(tool)) effective.delete(tool)
+    if (!availableToolNames.has(tool)) effective.delete(tool)
     if (denySet.has(tool)) effective.delete(tool)
   }
   return {

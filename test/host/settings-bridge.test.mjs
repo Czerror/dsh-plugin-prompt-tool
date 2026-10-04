@@ -238,11 +238,12 @@ test('两个技能导入端点先报告冲突，确认名单才能覆盖，非�
   }
 })
 
-test('settings bridge /import-preset 只接受 contents，批量写入后触发一次回调；/preset-content 读回', async () => {
+test('settings bridge /import-preset 只接受 contents，批量写入后触发一次回调；/module-content 读回', async () => {
   const { ctx, handlers } = makeHarness()
   let importedScopes
   let imports = 0
   const dir = makeUserPresetDir('pt-content-')
+  writeFileSync(join(dir, 'module.yml'), `id: ${basename(dir)}\nmodules: []\n`)
   try {
     registerSettingsBridge(
       ctx,
@@ -255,8 +256,8 @@ test('settings bridge /import-preset 只接受 contents，批量写入后触发�
       (scopes) => { importedScopes = scopes; imports += 1 },
     )
     const write = handlers.get(`${PREFIX}/import-preset`)
-    const read = handlers.get(`${PREFIX}/preset-content`)
-    assert.ok(write && read, '/import-preset 与 /preset-content 应注册')
+    const read = handlers.get(`${PREFIX}/module-content`)
+    assert.ok(write && read, '/import-preset 与 /module-content 应注册')
     writeFileSync(join(dir, 'preset.md'), 'ORIGINAL PRESET', 'utf8')
     writeFileSync(join(dir, 'agents.md'), 'ORIGINAL AGENTS', 'utf8')
     for (const body of [
@@ -287,7 +288,7 @@ test('settings bridge /import-preset 只接受 contents，批量写入后触发�
         { scope: 'agents', content: '' },
       ] }))
     } }), wres)
-    assert.equal(wres.status, 200)
+    assert.equal(wres.status, 200, wres.body)
     assert.deepEqual(importedScopes, ['preset', 'agents'])
     assert.equal(imports, 1)
     assert.equal(readFileSync(join(dir, 'agents.md'), 'utf8'), '')
@@ -314,11 +315,14 @@ test('模板变量与参数独立保存，读取与 bootstrap 不回退旧 param
   writeFileSync(file, `# keep comment\nid: ${basename(dir)}\nparams: ${JSON.stringify(params)}\nlayerSettings: ${JSON.stringify(layerSettings)}\n`, 'utf8')
   registerSettingsBridge(ctx, 'prompt-tool', () => ({ available: true, providers: [] }),
     () => skillsStateStub(), () => '', undefined, () => dir)
-  const write = handlers.get(PREFIX + BRIDGE_ENDPOINTS.presetVariables)
+  const write = handlers.get(PREFIX + BRIDGE_ENDPOINTS.moduleVariables)
   for (const variables of [{ toolGitBashEnabled: 'text', strReplaceEditorMaxOutputChars: '' }, {}]) {
+    const initial = fakeRes()
+    await write(fakeReq(), initial)
+    const expectedRevisions = JSON.parse(initial.body).value.revisions
     const res = fakeRes()
     await write(fakeReq({ [Symbol.asyncIterator]: async function* () {
-      yield Buffer.from(JSON.stringify({ variables }))
+      yield Buffer.from(JSON.stringify({ variables, expectedRevisions }))
     } }), res)
     assert.equal(res.status, 200)
     const saved = parseYaml(readFileSync(file, 'utf8'))
@@ -329,11 +333,15 @@ test('模板变量与参数独立保存，读取与 bootstrap 不回退旧 param
     const read = fakeRes()
     await write(fakeReq(), read)
     assert.equal(read.status, 200)
-    assert.deepEqual(JSON.parse(read.body).value, { variables, enabled: true })
+    assert.deepEqual(JSON.parse(read.body).value.variables, variables)
+    assert.equal(JSON.parse(read.body).value.enabled, true)
+    assert.match(JSON.parse(read.body).value.revisions.variables, /^[a-f0-9]{64}$/)
     const bootstrap = fakeRes()
     await handlers.get(PREFIX + BRIDGE_ENDPOINTS.bootstrap)(fakeReq(), bootstrap)
     assert.equal(bootstrap.status, 200)
-    assert.deepEqual(JSON.parse(bootstrap.body).variables, { variables, enabled: true })
+    assert.deepEqual(JSON.parse(bootstrap.body).variables.variables, variables)
+    assert.equal(JSON.parse(bootstrap.body).variables.enabled, true)
+    assert.deepEqual(JSON.parse(bootstrap.body).variablesRevisions, JSON.parse(read.body).value.revisions)
   }
   const before = readFileSync(file, 'utf8')
   const rejected = fakeRes()
@@ -365,7 +373,7 @@ test('请求模块身份统一 bootstrap 快照与规则写入；错误身份和
       headers: { host: 'localhost', ...(target === undefined ? {} : { 'x-module-id': target }) },
       async *[Symbol.asyncIterator]() {
         options.onRead?.()
-        yield Buffer.from(JSON.stringify({ ...(endpoint === 'rules' ? { expectedPresetId: target } : {}), ...body }))
+        yield Buffer.from(JSON.stringify({ ...(endpoint === 'rules' ? { expectedModuleId: target } : {}), ...body }))
       },
     }), res)
     return { status: res.status, payload: JSON.parse(res.body) }
@@ -374,13 +382,14 @@ test('请求模块身份统一 bootstrap 快照与规则写入；错误身份和
     for (const endpoint of ['bootstrap', 'describe']) {
       const { status, payload } = await call(endpoint)
       assert.equal(status, 200)
-      assert.equal(payload.value.value.presetTemplate, idA)
-      assert.equal(payload.presetParams.modelTemperature, undefined, '模型参数不再混入退役参数源')
+      assert.equal(payload.value.value.moduleId, idA)
+      assert.equal(payload.moduleParams.modelTemperature, undefined, '模型参数不再混入退役参数源')
       assert.deepEqual(payload.moduleFacts.declaredModules, ['rule-engine'])
       assert.equal(payload.templatePreStepCount, 1)
       if (endpoint === 'bootstrap') {
         assert.deepEqual(payload.overrides.overrides, {})
-        assert.deepEqual(payload.variables, { variables: { owner: 'A' }, enabled: true })
+        assert.deepEqual(payload.variables.variables, { owner: 'A' })
+        assert.equal(payload.variables.enabled, true)
         assert.deepEqual(payload.promptConfigs.promptConfigs, [], '旧配置卡入口只承载独立文件卡')
       }
     }
@@ -391,16 +400,16 @@ test('请求模块身份统一 bootstrap 快照与规则写入；错误身份和
     assert.deepEqual(descriptorValue, {}, '响应投影不修改全局设置')
     const noHeader = await call('bootstrap', {}, { target: undefined })
     assert.equal(noHeader.status, 200)
-    assert.equal(noHeader.payload.value.value.presetTemplate, idB, '无目标时描述身份来自实际回退目录')
-    const fallback = await call('rules', { expectedPresetId: idB }, { target: undefined })
+    assert.equal(noHeader.payload.value.value.moduleId, idB, '无目标时描述身份来自实际回退目录')
+    const fallback = await call('rules', { expectedModuleId: idB }, { target: undefined })
     assert.equal(fallback.status, 200)
     assert.equal(fallback.payload.value.rules[0].do[0].patch.maxTokens, 888)
   })
   await t.test('A 请求可以保存 A，expected B 被拒且不改任一模块', async () => {
     const beforeB = readFileSync(fileB, 'utf8')
-    const revision = (await call('rules')).payload.value.revision
+    const revisions = (await call('rules')).payload.value.revisions
     const edits = [{ previousId: 'model', rule: requestRule('model', { temperature: 0.4 }) }]
-    const saved = await call('rules', { expectedRevision: revision, edits })
+    const saved = await call('rules', { expectedRevisions: revisions, edits })
     assert.equal(saved.status, 200, JSON.stringify(saved.payload))
     assert.equal(parseYaml(readFileSync(fileA, 'utf8')).rules[1].do[0].patch.temperature, 0.4)
     assert.equal(readFileSync(fileB, 'utf8'), beforeB)
@@ -408,11 +417,11 @@ test('请求模块身份统一 bootstrap 快照与规则写入；错误身份和
     const beforeA = readFileSync(fileA, 'utf8')
     const deleting = await call('moduleDelete', { id: idA })
     assert.equal(deleting.status, 400)
-    assert.equal(deleting.payload.code, 'preset-in-use')
+    assert.equal(deleting.payload.code, 'module-in-use')
     assert.equal(readFileSync(fileA, 'utf8'), beforeA)
-    const rejected = await call('rules', { expectedPresetId: idB, expectedRevision: saved.payload.value.revision, edits })
+    const rejected = await call('rules', { expectedModuleId: idB, expectedRevisions: saved.payload.value.revisions, edits })
     assert.equal(rejected.status, 409)
-    assert.equal(rejected.payload.code, 'preset-changed')
+    assert.equal(rejected.payload.code, 'module-changed')
     assert.equal(readFileSync(fileA, 'utf8'), beforeA)
     assert.equal(readFileSync(fileB, 'utf8'), beforeB)
     assert.deepEqual(rebuilt, [idA])
@@ -420,11 +429,11 @@ test('请求模块身份统一 bootstrap 快照与规则写入；错误身份和
   await t.test('读取载荷期间同一请求目标变化时拒绝写入', async () => {
     const beforeA = readFileSync(fileA, 'utf8'), beforeB = readFileSync(fileB, 'utf8')
     const beforeRebuilds = rebuilt.length
-    const revision = (await call('rules')).payload.value.revision
-    const rejected = await call('rules', { expectedRevision: revision, edits: [{ previousId: 'model', rule: requestRule('model', { temperature: 0.9 }) }] },
+    const revisions = (await call('rules')).payload.value.revisions
+    const rejected = await call('rules', { expectedRevisions: revisions, edits: [{ previousId: 'model', rule: requestRule('model', { temperature: 0.9 }) }] },
       { onRead: () => { requestedDir = dirB } })
     assert.equal(rejected.status, 409)
-    assert.equal(rejected.payload.code, 'preset-changed')
+    assert.equal(rejected.payload.code, 'module-changed')
     assert.equal(readFileSync(fileA, 'utf8'), beforeA)
     assert.equal(readFileSync(fileB, 'utf8'), beforeB)
     assert.equal(rebuilt.length, beforeRebuilds)
@@ -564,7 +573,7 @@ test('模块配置排序端点：启用尾部追加、跨模块保存、冲突�
     beforeRebuild = async () => { throw new Error('MATERIALIZE_FAILED') }
     const result = await call('moduleConfigOrder', { expectedRevision: snapshot.revision, entries: identities(snapshot).reverse() })
     assert.equal(result.status, 500)
-    assert.equal(result.code, 'preset-activation-failed')
+    assert.equal(result.code, 'module-activation-failed')
     assert.match(result.message, /已保存/)
     assert.deepEqual((await call('moduleConfigOrder')).value.entries.map((entry) => entry.moduleId), [ids[0], ids[1]])
   })
@@ -594,8 +603,8 @@ test('预设列表、导出、复制、删除、新建与导入都作用于官�
     return JSON.parse(res.body).value
   }
   const meta = await call('meta')
-  assert.ok(meta.meta.presets.some(preset => preset.id === id), '预设列表应含官方预设根下的预设')
-  const exported = await call('exportPreset', { id, mode: 'definition' })
+  assert.ok(meta.meta.modules.some(preset => preset.id === id), '预设列表应含官方预设根下的预设')
+  const exported = await call('exportModule', { id, mode: 'definition' })
   assert.equal(exported.content, readFileSync(join(activeDir, 'module.yml'), 'utf8'))
   const copied = await call('moduleDuplicate', { id })
   assert.deepEqual(parseYaml(readFileSync(join(userPresetRoot, copied.id, 'module.yml'), 'utf8')), { ...parseYaml(exported.content), id: copied.id })
@@ -604,8 +613,8 @@ test('预设列表、导出、复制、删除、新建与导入都作用于官�
   const cloned = await call('moduleClone', { id: 'ponytail' })
   assert.ok(existsSync(join(userPresetRoot, cloned.id, 'module.yml')))
   const files = [{ path: 'module.yml', content: 'id: root-import\nname: Root Import\nmodules: []\n' }]
-  const preview = await call('importPresetPackage', { files, preview: true })
-  const imported = await call('importPresetPackage', { files, expectedSourceDigest: preview.sourceDigest, expectedPreviewRevision: preview.previewRevision })
+  const preview = await call('importModulePackage', { files, preview: true })
+  const imported = await call('importModulePackage', { files, expectedSourceDigest: preview.sourceDigest, expectedPreviewRevision: preview.previewRevision })
   assert.ok(existsSync(join(userPresetRoot, imported.id, 'module.yml')))
   assert.equal(registryRefreshes, 3, '复制、删除、新建分别刷新官方注册')
   assert.deepEqual(importedIds, [imported.id], '完整导入刷新最终 ID，预览不注册')
@@ -626,20 +635,19 @@ test('settings bridge：system 预设拒绝全部当前预设写入', async () =
       () => skillsStateStub(),
       () => '', undefined, () => dir)
     const rulesRead = fakeRes()
-    await handlers.get(PREFIX + BRIDGE_ENDPOINTS.rules)(fakeReq({ async *[Symbol.asyncIterator]() { yield Buffer.from(JSON.stringify({ expectedPresetId: basename(dir) })) } }), rulesRead)
+    await handlers.get(PREFIX + BRIDGE_ENDPOINTS.rules)(fakeReq({ async *[Symbol.asyncIterator]() { yield Buffer.from(JSON.stringify({ expectedModuleId: basename(dir) })) } }), rulesRead)
     assert.equal(rulesRead.status, 200, rulesRead.body)
-    const revision = JSON.parse(rulesRead.body).value.revision
+    const revisions = JSON.parse(rulesRead.body).value.revisions
     const cases = [
-      [BRIDGE_ENDPOINTS.rules, { expectedPresetId: basename(dir), expectedRevision: revision, edits: [{ previousId: null, rule: textRule('readonly', 'FORBIDDEN') }] }],
-      [BRIDGE_ENDPOINTS.presetVariables, { variables: { empty: '' }, enabled: true }],
+      [BRIDGE_ENDPOINTS.rules, { expectedModuleId: basename(dir), expectedRevisions: revisions, edits: [{ previousId: null, rule: textRule('readonly', 'FORBIDDEN') }] }],
+      [BRIDGE_ENDPOINTS.moduleVariables, { variables: { empty: '' }, enabled: true, expectedRevisions: revisions }],
       [BRIDGE_ENDPOINTS.importPreset, { contents: [{ scope: 'preset', content: 'changed' }] }],
       [BRIDGE_ENDPOINTS.customTools, { customTools: [] }],
       [BRIDGE_ENDPOINTS.charactersImport, { files: [{ path: 'card.json', content: '{}' }] }],
-      [BRIDGE_ENDPOINTS.charactersDelete, { id: 'card' }],
-      [BRIDGE_ENDPOINTS.charactersApply, { id: 'card' }],
-      [BRIDGE_ENDPOINTS.charactersRemove, { id: 'card' }],
+      [BRIDGE_ENDPOINTS.moduleMerge, { id: 'card' }],
+      [BRIDGE_ENDPOINTS.moduleUnmerge, { id: 'card' }],
       [BRIDGE_ENDPOINTS.subagentToolPolicy, { policy: null }],
-      [BRIDGE_ENDPOINTS.engineCapability, { action: 'create', capabilityId: 'context-gate' }],
+      [BRIDGE_ENDPOINTS.moduleCapability, { action: 'create', capabilityId: 'context-gate' }],
     ]
     for (const [endpoint, body] of cases) {
       const handler = handlers.get(PREFIX + endpoint)
@@ -649,11 +657,11 @@ test('settings bridge：system 预设拒绝全部当前预设写入', async () =
         yield Buffer.from(typeof body === 'string' ? body : JSON.stringify(body))
       } }), res)
       assert.equal(res.status, 403, endpoint)
-      assert.equal(JSON.parse(res.body).code, 'preset-readonly', endpoint)
+      assert.equal(JSON.parse(res.body).code, 'module-readonly', endpoint)
       assert.equal(readFileSync(presetFile, 'utf8'), original, `${endpoint} 不得修改 system 预设`)
       assert.deepEqual(readdirSync(dir), ['module.yml'], `${endpoint} 不得创建 system 预设文件`)
     }
-    for (const [body, status, code] of [[{ promptConfigs: [] }, 410, 'rules-route-retired'], [{ overrides: { modelTemperature: '0.2' } }, 403, 'preset-readonly']]) {
+    for (const [body, status, code] of [[{ promptConfigs: [] }, 410, 'rules-route-retired'], [{ overrides: { modelTemperature: '0.2' } }, 403, 'module-readonly']]) {
       const retired = fakeRes()
       await handlers.get(PREFIX + BRIDGE_ENDPOINTS.paramOverrides)(fakeReq({ async *[Symbol.asyncIterator]() { yield Buffer.from(JSON.stringify(body)) } }), retired)
       assert.equal(retired.status, status)
@@ -820,7 +828,7 @@ test('/persona：已有启用独占规则时拒绝顶层人设独占，禁用规
     const before = readFileSync(file, 'utf8')
     const rejected = await post()
     assert.equal(rejected.status, 400)
-    assert.equal(JSON.parse(rejected.body).code, 'preset-persona-complete-conflict')
+    assert.equal(JSON.parse(rejected.body).code, 'module-persona-complete-conflict')
     assert.equal(readFileSync(file, 'utf8'), before)
     assert.equal(rebuilds, 0)
     writeModule(false)
@@ -837,10 +845,10 @@ test('/rules：顶层人设独占时拒绝启用独占规则，保留禁用边�
   const completeRule = enabled => textRule('exclusive-section', '独占段', { enabled, layer: 'system-section', params: { complete: true } })
   const call = async (body = {}) => {
     const res = fakeRes()
-    await handlers.get(PREFIX + BRIDGE_ENDPOINTS.rules)(fakeReq({ async *[Symbol.asyncIterator]() { yield Buffer.from(JSON.stringify({ expectedPresetId: id, ...body })) } }), res)
+    await handlers.get(PREFIX + BRIDGE_ENDPOINTS.rules)(fakeReq({ async *[Symbol.asyncIterator]() { yield Buffer.from(JSON.stringify({ expectedModuleId: id, ...body })) } }), res)
     return { status: res.status, ...JSON.parse(res.body) }
   }
-  const save = async enabled => call({ expectedRevision: (await call()).value.revision, edits: [{ previousId: null, rule: completeRule(enabled) }] })
+  const save = async enabled => call({ expectedRevisions: (await call()).value.revisions, edits: [{ previousId: null, rule: completeRule(enabled) }] })
   try {
     registerSettingsBridge(ctx, 'prompt-tool', () => ({ available: true, providers: [] }), () => skillsStateStub(), () => '', undefined, () => dir, undefined, target => { rebuilds.push(target) })
     writeFileSync(file, JSON.stringify(definition(false)))

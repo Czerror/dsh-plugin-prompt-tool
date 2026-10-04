@@ -1,16 +1,16 @@
 /** 模块磁盘参数：按稳定存储层归属，运行时仍使用 EngineParams 平铺接口。 */
-import { ENGINE_LAYER_ORDER } from '../shared/engine-capabilities.ts'
+import { INJECTION_POINT_ORDER } from '../shared/engine-capabilities.ts'
 import { ENGINE_PARAM_DEFINITIONS, ENGINE_PARAM_KEYS, type EngineParamKey } from '../shared/engine-params.ts'
 
 export const ENGINE_PARAM_LAYERS = Object.fromEntries(ENGINE_PARAM_KEYS.map((key) => {
   return [key, ENGINE_PARAM_DEFINITIONS[key].storageLayer]
 })) as Record<EngineParamKey, string>
 
-export class PresetLayerSettingsError extends Error {
-  readonly code = 'preset-layer-settings-invalid'
+export class ModuleLayerSettingsError extends Error {
+  readonly code = 'module-layer-settings-invalid'
   constructor(message: string) {
-    super(`preset-layer-settings-invalid: ${message}`)
-    this.name = 'PresetLayerSettingsError'
+    super(`module-layer-settings-invalid: ${message}`)
+    this.name = 'ModuleLayerSettingsError'
   }
 }
 
@@ -23,12 +23,12 @@ export function engineParamPath(key: string): [string, string, string] {
 
 /** 未登记扩展字段留在原文档，不投影为运行时引擎参数。 */
 export function readLayerSettings(value: unknown): Record<string, unknown> {
-  const invalid = (message: string): never => { throw new PresetLayerSettingsError(message) }
+  const invalid = (message: string): never => { throw new ModuleLayerSettingsError(message) }
   if (value === undefined) return {}
   if (!isRecord(value)) return invalid('layerSettings 必须是对象')
   const params: Record<string, unknown> = {}
   for (const [layer, settings] of Object.entries(value)) {
-    if (!(ENGINE_LAYER_ORDER as readonly string[]).includes(layer)) invalid(`未知插入点：layerSettings.${layer}`)
+    if (!(INJECTION_POINT_ORDER as readonly string[]).includes(layer)) invalid(`未知插入点：layerSettings.${layer}`)
     if (!isRecord(settings)) return invalid(`layerSettings.${layer} 必须是对象`)
     for (const [key, entry] of Object.entries(settings)) {
       if (!Object.prototype.hasOwnProperty.call(ENGINE_PARAM_LAYERS, key)) continue
@@ -41,7 +41,8 @@ export function readLayerSettings(value: unknown): Record<string, unknown> {
 }
 
 /** 仅消费当前 layerSettings；其余段作为未知字段留存，不投影为运行时参数。 */
-export function readPresetLayerSettings(source: unknown): Record<string, unknown> {
-  if (!isRecord(source)) throw new PresetLayerSettingsError('preset.yml 必须是对象')
+export function readModuleLayerSettings(source: unknown): Record<string, unknown> {
+  if (!isRecord(source)) throw new ModuleLayerSettingsError('module.yml 必须是对象')
   return readLayerSettings(source.layerSettings)
 }
+export { ModuleLayerSettingsError as PresetLayerSettingsError, readModuleLayerSettings as readPresetLayerSettings }

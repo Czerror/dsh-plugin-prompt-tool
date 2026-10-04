@@ -9,12 +9,12 @@ import { previewAsset, commitAsset } from '../../data/asset-import.ts'
 import { hasWorkspaceDrafts } from '../../data/workspace-drafts.ts'
 import type { PromptToolStore } from '../../data/use-prompt-tool-store.ts'
 import type { PromptToolTranslate } from '../../locales.ts'
-import type { PresetSummary } from '../../../shared/bridge-contract.ts'
+import type { ModuleSummary } from '../../../shared/bridge-contract.ts'
 import { DialogSurface } from '../../ui/DialogSurface.tsx'
 import { ConfirmDialog } from '../../ui/ConfirmDialog.tsx'
 import { HintTooltip } from '../../ui/HintTooltip.tsx'
 import { ImportDialog } from '../../ui/ImportDialog.tsx'
-import { PresetExportDialog } from './PresetExportDialog.tsx'
+import { ModuleExportDialog } from './ModuleExportDialog.tsx'
 import { useImportPreviewFlow } from '../../data/use-import-preview-flow.ts'
 import { Switch } from '../../ui/Switch.tsx'
 import { Button } from '../../ui/Button.tsx'
@@ -24,10 +24,10 @@ import featureCss from './presets.module.css'
 
 const styles = { ...sharedCss, ...featureCss }
 
-export const PresetSwitcher = memo(function PresetSwitcher(props: { store: PromptToolStore; t: PromptToolTranslate }): ReactNode {
+export const ModuleSwitcher = memo(function ModuleSwitcher(props: { store: PromptToolStore; t: PromptToolTranslate }): ReactNode {
   const { store, t } = props
   const fields = usePromptToolFields(store, (value) => value)
-  const presets = store.meta.presets ?? []
+  const presets = store.meta.modules ?? []
   const templates = store.meta.builtinTemplates ?? []
   const [confirmingDelete, setConfirmingDelete] = useState<string | undefined>(undefined)
   const [pickerOpen, setPickerOpen] = useState(false)
@@ -38,13 +38,13 @@ export const PresetSwitcher = memo(function PresetSwitcher(props: { store: Promp
   // 预览流程（与角色卡 JSON 导入共用同一状态机）：确认回传来源摘要 + 预览版本。
   const flow = useImportPreviewFlow({
     directoryTooLarge: t('assetImport.directoryTooLarge'),
-    preview: (request) => previewAsset('importPresetPackage', request),
+    preview: (request) => previewAsset('importModulePackage', request),
     commit: async (preview) => {
-      if (preview.overwrite && preview.summary?.targetId === store.fields.presetTemplate) {
-        if (hasWorkspaceDrafts(store.editorDrafts, store.fields.presetTemplate)) return { ok: false, message: t('assetImport.draftBlocked') }
+      if (preview.overwrite && preview.summary?.targetId === store.fields.moduleId) {
+        if (hasWorkspaceDrafts(store.editorDrafts, store.fields.moduleId)) return { ok: false, message: t('assetImport.draftBlocked') }
         if (store.dirtySwitches) return { ok: false, message: t('assetImport.draftBlocked') }
       }
-      return commitAsset('importPresetPackage', preview)
+      return commitAsset('importModulePackage', preview)
     },
     onCommitted: async (label) => {
       store.showNotice('ok', t('presetSwitcher.notice.imported', { id: label ?? '' }))
@@ -56,7 +56,7 @@ export const PresetSwitcher = memo(function PresetSwitcher(props: { store: Promp
   })
 
   /** 删除模块（物理删除用户目录副本；插件目录模板保留，可经「新建模块」还原）。 */
-  const deletePreset = async (id: string): Promise<void> => {
+  const deleteModule = async (id: string): Promise<void> => {
     const res = await bridgeCall('moduleDelete', { id })
     if (res.ok) {
       store.showNotice('ok', t('presetSwitcher.notice.deleted', { id }))
@@ -68,7 +68,7 @@ export const PresetSwitcher = memo(function PresetSwitcher(props: { store: Promp
   }
 
   /** 复制模块：用户目录完整副本，id 自动递增（<id>-copy / <id>-copy-2 / …）。 */
-  const duplicatePreset = async (id: string): Promise<void> => {
+  const duplicateModule = async (id: string): Promise<void> => {
     const res = await bridgeCall('moduleDuplicate', { id })
     if (res.ok) {
       store.showNotice('ok', t('presetSwitcher.notice.duplicated', { id: res.value.id }))
@@ -89,7 +89,7 @@ export const PresetSwitcher = memo(function PresetSwitcher(props: { store: Promp
   }
 
   /** 新建：从插件目录模板复制到用户目录（还原/自定义起点）；自定义入口重名自动递增。 */
-  const clonePreset = async (id: string, autoSuffix = false): Promise<void> => {
+  const cloneModule = async (id: string, autoSuffix = false): Promise<void> => {
     const res = await bridgeCall('moduleClone', { id, autoSuffix })
     if (res.ok) {
       setPickerOpen(false)
@@ -134,8 +134,8 @@ export const PresetSwitcher = memo(function PresetSwitcher(props: { store: Promp
         onFiles={(files) => { void flow.run(files) }} onChoices={flow.updateChoices} onConfirm={() => { void flow.confirm() }}
         onClose={() => { flow.cancel(); setImportOpen(false) }} onReset={flow.cancel} onSkip={flow.skip} onEnd={flow.end}
         onRepreview={() => { void flow.repreview() }} onRefresh={() => { void flow.retryRefresh() }}
-        onUse={flow.resultLabel === undefined ? undefined : () => { store.setPresetTemplate(flow.resultLabel!); flow.cancel(); setImportOpen(false) }} />}
-      {exportTarget && <PresetExportDialog t={t} preset={exportTarget} onClose={() => setExportTarget(undefined)} />}
+        onUse={flow.resultLabel === undefined ? undefined : () => { store.setModuleId(flow.resultLabel!); flow.cancel(); setImportOpen(false) }} />}
+      {exportTarget && <ModuleExportDialog t={t} preset={exportTarget} onClose={() => setExportTarget(undefined)} />}
       <div className={styles.presetGrid}>
         {presets.length === 0 ? (
           <p className={styles.readOnly} role="status">{t('presetSwitcher.empty')}</p>
@@ -146,7 +146,7 @@ export const PresetSwitcher = memo(function PresetSwitcher(props: { store: Promp
           {templates.length === 0 && <p className={styles.configFieldHint}>{t('presetSwitcher.dialog.noTemplates')}</p>}
           {templates.map((template) => (
             <HintTooltip key={template.id} label={t('presetSwitcher.template.hint', { id: template.id })}>
-              <button type="button" className={styles.templateModalItem} onClick={() => void clonePreset(template.id)}>
+              <button type="button" className={styles.templateModalItem} onClick={() => void cloneModule(template.id)}>
                 <strong>{template.name}</strong>
                 <small>{template.id}</small>
               </button>
@@ -157,8 +157,8 @@ export const PresetSwitcher = memo(function PresetSwitcher(props: { store: Promp
     </div>
   )
 
-  function renderCard(preset: PresetSummary): ReactNode {
-    const active = fields.presetTemplate === preset.id
+  function renderCard(preset: ModuleSummary): ReactNode {
+    const active = fields.moduleId === preset.id
     const confirming = confirmingDelete === preset.id
     // 不可渲染（缺 modules/组合文件，包内也无同名模板可回退）：灰显禁切换，
     // 提示还原路径——避免点击后宿主挂载失败的哑弹。
@@ -198,7 +198,7 @@ export const PresetSwitcher = memo(function PresetSwitcher(props: { store: Promp
           <HintTooltip label={t('presetSwitcher.duplicate.label')}>
             <button type="button" className={styles.presetIconButton}
               aria-label={t('presetSwitcher.duplicate.aria', { name: preset.name })}
-              onClick={() => void duplicatePreset(preset.id)}>
+              onClick={() => void duplicateModule(preset.id)}>
               <IconCopyOutlineRegular />
             </button>
           </HintTooltip>
@@ -213,7 +213,7 @@ export const PresetSwitcher = memo(function PresetSwitcher(props: { store: Promp
             <ConfirmDialog title={t('card.deleteTitle', { name: preset.name })}
               description={t('presetSwitcher.delete.description', { name: preset.name })}
               confirmLabel={t('presetSwitcher.delete.confirm')} cancelLabel={t('presetSwitcher.delete.cancel')}
-              onConfirm={() => deletePreset(preset.id)} onCancel={() => setConfirmingDelete((current) => current === preset.id ? undefined : current)} />
+              onConfirm={() => deleteModule(preset.id)} onCancel={() => setConfirmingDelete((current) => current === preset.id ? undefined : current)} />
           )}
           {(
             <HintTooltip label={active ? t('presetSwitcher.delete.hintActive') : t('presetSwitcher.delete.hint')}>
