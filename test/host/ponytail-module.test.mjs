@@ -1,23 +1,28 @@
 // 内置 ponytail 模块：内容对齐上游 + 注入点映射。
 //
 // 两个断言面各自有独立真值源：
-//   1. configs/ 投影与 module.yml 定义逐字一致（投影不得成为第二真相）；
-//   2. 规则文本含上游 skills/ponytail/SKILL.md 的关键句（字面量摘录于 4.10.3），
-//      且注入点落位与上游 hook 一致：常驻规则走 system-section、子代理注入走
-//      subagent-start（上游 SubagentStart hook）、档位走互斥组。
+//   1. 规则文本含上游 skills/ponytail/SKILL.md 的关键句（字面量摘录于 4.10.3）；
+//   2. 注入点落位与上游 hook 一致：常驻规则走 system-section、子代理档位标记走
+//      subagent-start（上游 SubagentStart hook）、档位切换走互斥组、子代理正文分档
+//      走 pre-step 上的动作级 if/then/else。
+//
+// 定义只有一份真值源：`module.yml`。`rules/` 切片由 `ensureModuleSlices` 在运行时生成，
+// 不随包分发；旧的 `configs/` 投影已列入 write-preset 的 `LEGACY_ARTIFACTS`（只删不生成），
+// 因此这里不再有「投影不得成为第二真相」的断言面。
 //
 // 修规则文本时，只有「上游改了措辞」才动 UPSTREAM_ANCHORS；本地 DSH 适配
 // （档位走配置卡、不注册 /ponytail 命令）不属于上游锚点，不要写进来。
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { readFileSync, readdirSync } from 'node:fs'
+import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { parse as parseYaml } from 'yaml'
+// @ts-expect-error 定义合法性归唯一引擎编译器，测试直接调它而不是复刻规则。
+import { compileRules } from '../../engine/rule-spec.mjs'
 
 const moduleDir = fileURLToPath(new URL('../../modules/ponytail/', import.meta.url))
 const spec = parseYaml(readFileSync(join(moduleDir, 'module.yml'), 'utf8'))
-const configsDir = join(moduleDir, 'configs')
 
 /** 上游 skills/ponytail/SKILL.md（4.10.3）关键句；旧版模块缺的正是这几处。 */
 const UPSTREAM_ANCHORS = [
@@ -34,25 +39,12 @@ const UPSTREAM_ANCHORS = [
 
 const rulesById = new Map(spec.rules.map((rule) => [rule.id, rule]))
 const ruleText = (id) => rulesById.get(id).then[0].config.text
-// configs/ 是 writePreset 的物化投影，文件名形态即它的固有命名 `<seq>-<ruleId>--<actionId>.yml`。
-const ACTION_IDS = Object.fromEntries(spec.rules.map((rule) => [rule.id, rule.then.map((action) => action.id)]))
-const projectionName = (rule) => `${String(spec.configOrder[rule.id] ?? 0).padStart(4, '0')}-${rule.id}--${ACTION_IDS[rule.id][0]}.yml`
 
-test('ponytail 模块：rules 内容与 configs/ 投影逐字一致且文件名符合序号契约', () => {
-  assert.ok(Array.isArray(spec.rules) && spec.rules.length > 0, 'module.yml 必须有 rules')
-  const onDisk = readdirSync(configsDir).sort()
-  const expected = spec.rules.map(projectionName).sort()
-  // 只比精确文件名的集合：Windows 下 existsSync 大小写不敏感，会漏掉大小写漂移。
-  assert.deepEqual(onDisk, expected, 'configs/ 只放本模块 rules 的投影，命名与 configOrder 一致')
-
-  for (const rule of spec.rules) {
-    const action = rule.then[0]
-    const projected = parseYaml(readFileSync(join(configsDir, projectionName(rule)), 'utf8'))
-    assert.equal(projected.id, action.config.id, `${rule.id}: 投影 id`)
-    assert.equal(projected.layer, rule.layer, `${rule.id}: 投影 layer 跟随规则`)
-    assert.equal(projected.enabled, rule.enabled !== false, `${rule.id}: 投影 enabled 跟随规则`)
-    assert.equal(projected.text, action.config.text, `${rule.id}: 投影正文与定义逐字一致`)
-  }
+test('ponytail 模块：定义通过引擎权威校验', () => {
+  // 只 parseYaml 读 YAML 会漏掉引擎侧的不变量（真踩过：同一规则内两个分支的动作都叫
+  // `inject`，YAML 完全合法、引擎拒绝 duplicate action id）。校验归唯一编译器，不复刻。
+  assert.doesNotThrow(() => compileRules(spec.rules, { configOrder: spec.configOrder ?? {} }),
+    'module.yml 的 rules 必须被引擎接受')
 })
 
 test('ponytail 模块：规则正文与上游 SKILL.md 对齐', () => {
@@ -77,44 +69,45 @@ test('ponytail 模块：注入点映射与上游 hook 一致', () => {
   assert.equal(levels.find((rule) => rule.enabled !== false).id, 'ponytail-level-full', '默认档 full')
   for (const level of levels) assert.equal(level.layer, 'system-section')
 
-  // 子代理分两档：写档（完整规则）与只读档（轻量）。**必须在 pre-step 层**——
-  // 判别「只读 / 写」要看任务文本，而 subagent-start 层的载荷只有
-  // runId/provider/id/local，拿不到任务文本（见 docs/injection-point-contracts.md）。
-  // 判别只认**明确表示整个任务只读**的信号；取不到就是写档。关键词表只收形容整个任务
-  // 的词——「不要修改」这类从句级表述不得入表：写任务里出现得比只读任务还频繁，
+  // 子代理两档合并为**一张卡 + 动作级 if/then/else**：`else` 结构上保证必有一档注入，
+  // 关键词表也只有一份，因此不存在「两处分叉 → 两档并注 / 两档都不注」。**必须在 pre-step
+  // 层**——判别「只读 / 写」要看任务文本，而 subagent-start 层的载荷只有
+  // runId/provider/id/local（见 docs/injection-point-contracts.md）。
+  // 判别只认**明确表示整个任务只读**的信号，取不到就按写档（走 else）：关键词表只收形容
+  // 整个任务的词——「不要修改」这类从句级表述不得入表，写任务里出现得比只读任务还频繁，
   // 会让「重构这个函数，不要修改测试文件」整条被判成只读档。
   const RULE_KEYS = ['PONYTAIL:readonly', 'only read', '只读']
-  const write = rulesById.get('ponytail-subagent-rules')
-  const readonly = rulesById.get('ponytail-subagent-readonly')
-  for (const [label, rule] of [['写档', write], ['只读档', readonly]]) {
-    assert.ok(rule !== undefined, `${label}卡必须存在`)
-    assert.equal(rule.layer, 'pre-step', `${label}必须在 pre-step 层才能读任务文本`)
-    assert.equal(rule.enabled, true)
-    const config = rule.then[0].config
-    assert.equal(config.strategy, 'static')
-    assert.equal(config.position, 'before-all', '规则排在任务文本之前')
-    assert.equal(config.dedupe, 'session', '每个子代理只付一次')
-    assert.equal(typeof config.text, 'string')
-  }
+  const card = rulesById.get('ponytail-subagent')
+  assert.ok(card !== undefined, '子代理分档卡必须存在')
+  assert.equal(card.layer, 'pre-step', '必须在 pre-step 层才能读任务文本')
+  assert.equal(card.enabled, true)
+  assert.deepEqual(card.if.all.find((node) => node.scope !== undefined).scope, { audience: 'subagent' }, '只作用于子代理')
   // 首轮守卫不可省：`agent/pre-step` 的 `messages` 是「本批被领取的消息」，任务文本只在
-  // 首轮那批里。第二轮起 userText 为空 → 写档的 notAny 翻真、只读档的 text 判假，同一
-  // 子代理会先拿只读档再拿完整规则（真机踩过两档并注）。判据必须钉在任务文本还在的那一刻。
-  for (const [label, rule] of [['写档', write], ['只读档', readonly]]) {
-    const guard = rule.if.all.find((node) => node.session !== undefined)
-    assert.deepEqual(guard?.session, { type: 'user/message', present: false }, `${label}缺首轮守卫`)
-  }
-  // 两档互斥且完备：写档排除只读词、只读档命中只读词，关键词表必须逐字一致，
-  // 否则两边都不命中（子代理白拿不到规则）或都命中（重复注入）。
-  const onlyReadKeys = readonly.if.all.flatMap((node) => node.text?.keys ?? [])
-  assert.deepEqual(onlyReadKeys, RULE_KEYS, '只读档关键词表')
-  const writeNodes = write.if.all
-  assert.deepEqual(writeNodes.find((node) => node.notAny !== undefined).notAny.flatMap((node) => node.text.keys), RULE_KEYS, '写档排除词必须与只读档同表')
-  for (const rule of [write, readonly]) {
-    assert.deepEqual(rule.if.all.find((node) => node.scope !== undefined).scope, { audience: 'subagent' }, '两档都只作用于子代理')
+  // 首轮那批里。第二轮起 userText 为空 → 分档的 text 判假、恒走 else 的写档。判据必须钉在
+  // 任务文本还在的那一刻。
+  assert.deepEqual(card.if.all.find((node) => node.session !== undefined).session, { type: 'user/message', present: false }, '缺首轮守卫')
+
+  assert.equal(card.then.length, 1, '外层只放一个分档节点')
+  const branch = card.then[0]
+  assert.deepEqual(branch.if, { text: { keys: RULE_KEYS, subject: 'userMessage' } }, '分档判据只认整个任务只读的信号')
+  const readonlyAction = branch.then?.[0]
+  const writeAction = branch.else?.[0]
+  assert.ok(readonlyAction !== undefined, 'then 分支必须有只读档动作')
+  assert.ok(writeAction !== undefined, 'else 分支必须有写档动作（否则漏档）')
+  for (const [label, action] of [['只读档', readonlyAction], ['写档', writeAction]]) {
+    assert.equal(action.kind, 'inject-text', `${label}: 动作种类`)
+    assert.equal(action.config.strategy, 'static', `${label}: 内容策略`)
+    assert.equal(action.config.position, 'before-all', `${label}: 规则排在任务文本之前`)
+    assert.equal(action.config.dedupe, 'session', `${label}: 每个子代理只付一次`)
+    assert.equal(typeof action.config.text, 'string', `${label}: 正文`)
   }
   // 只读档必须是轻量版：完整规则集的执行层条目对只读子代理无关。
-  assert.ok(ruleText('ponytail-subagent-readonly').length < 400, '只读档应保持轻量')
-  assert.ok(!ruleText('ponytail-subagent-readonly').includes('## The ladder'), '只读档不搬执行层清单')
+  assert.ok(readonlyAction.config.text.length < 400, '只读档应保持轻量')
+  assert.ok(!readonlyAction.config.text.includes('## The ladder'), '只读档不搬执行层清单')
+  // 写档保留上游全文的关键段落。
+  for (const section of ['## The ladder', '**Bug fix = root cause, not symptom.**', '## When NOT to be lazy', 'The shortest path to done is the right path.']) {
+    assert.ok(writeAction.config.text.includes(section), `写档缺段落：${section}`)
+  }
 
   // 档位卡同时服务主会话与子代理：`system-section` 只进主会话——子代理有自己的 system
   // prompt，官方按「global + 确切作用域」合并、不含祖先链；`subagent-start` 才是子代理
@@ -126,12 +119,6 @@ test('ponytail 模块：注入点映射与上游 hook 一致', () => {
     assert.deepEqual(level.then.map((action) => action.config.layer), ['system-section', 'subagent-start'], `${level.id}: 主会话与子代理各一个动作`)
     assert.match(level.then[1].config.text, new RegExp(`^PONYTAIL MODE ACTIVE — level: ${name}`), `${level.id}: 子代理动作只报本档`)
     assert.ok(!level.then[1].config.text.includes('## Intensity'), `${level.id}: 子代理动作不搬 Intensity 表`)
-    assert.equal(level.when, undefined, '档位无条件注入，与上游 matcher 缺省一致')
-  }
-
-  // 写档保留上游全文的关键段落；只读档不搬这些执行层清单（上面已断言）。
-  const subagentText = ruleText('ponytail-subagent-rules')
-  for (const section of ['## The ladder', '**Bug fix = root cause, not symptom.**', '## When NOT to be lazy', 'The shortest path to done is the right path.']) {
-    assert.ok(subagentText.includes(section), `子代理副本缺段落：${section}`)
+    assert.equal(level.if, undefined, '档位无条件注入，与上游 matcher 缺省一致')
   }
 })
