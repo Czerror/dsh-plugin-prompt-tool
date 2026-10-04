@@ -9,6 +9,8 @@
 - **降级**：改为**动态导入**而非静态导入。该引擎顶层经 `importHostPackage` 从宿主入口 realpath 解析 `@deepseek-ai/dsh-skill`，静态导入一旦解析失败会让**整个 prompt-tool 插件挂载失败**；现在失败只记一条告警、不挂这两个工具，其余能力照常。
 - **配对模块**：`skill-surface`（`$DSH_HOME/.prompt-tool/modules/`）用 `pre-step-filter` 的 `sources` 白名单拦掉 `skill-catalog`。保留清单来自 12 个真实会话的 kind 实测枚举（13 项），其中三个 `plugin:ponytail-*` kind **只出现在子代理**——漏掉会静默废掉子代理的 ponytail 策略。
 - **实测纠正**：`keepKinds` 模式在本地确定性探针下**什么都不删**（claimed 基线的对象身份保留规则把所有消息都保住了），`sources` 枚举才是可行写法。
+- **真机验收（重启后，四项全部通过）**：①主会话相邻 `request/header` 对比，工具数 **154 → 156**（唯一变量是重启），新增的正是 `skill_search` / `skill_load`；②本轮 `agent/inbox/spliced` 注入链为 `user → agent-instructions → runtime-context → dsh-mnemon`，**无 `skill-catalog`**（重启前同类时机必有，12892–13372 字符）；③重启前后的只读子代理对比，`plugin:ponytail-subagent-readonly` 与 `plugin:prompt-config-engine` 均在、分档判定未变，**未被白名单误伤**；④只读探针子代理实调 `skill_search({ query: "ponytail" })` 命中 6 个技能、`skill_load({ name: "ponytail" })` 注入 5679 字符正文（frontmatter 已剥离）。
+- **证据获取方式的一次修正（重要）**：早先试图用「会话日志里有没有 `skill_search` 字符串」来判断工具是否存在，结论**不可用**——该字符串从 2026-09-23 起的旧会话里就出现过（来自技能清单正文，而非工具注册）。可用的证据只有两处：`request/header.tools` 的名字列表（工具面）与 `agent/inbox/spliced.inserted[].source.kind`（注入面）。`request/header` 载荷只含 `config` / `adapterDefaults` / `tools`，**不含消息**，消息一律走 spliced。
 
 ### 修复：`count` 谓词的 `delegated` 选项静默永不命中
 
