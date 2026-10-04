@@ -8,7 +8,7 @@ id: example-subagent-end
 name: 子代理结束记录（只观察）
 enabled: false
 layer: subagent-end
-do:
+then:
   - id: inject
     kind: inject-text
     config:

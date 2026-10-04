@@ -6,7 +6,7 @@ id: example-first-turn-anchor
 name: 示例：首句锚点
 enabled: false
 layer: pre-step
-do:
+then:
   - id: inject
     kind: inject-text
     config:

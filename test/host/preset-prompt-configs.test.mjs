@@ -50,7 +50,7 @@ function generatedConfigs(options = {}, prompt = 'PROMPT') {
     for (const item of planRulesMigration(dir).items) writeFileSync(join(item.directory, item.definitionFile), item.nextDefinition)
     writePreset(prompt, { moduleDir: dir, presetTemplate: FIXTURE_PRESET_ID, presetOrder: 5 })
     const source = loadModuleSpec(join(dir, FIXTURE_PRESET_ID))
-    const specs = source.rules.flatMap(rule => rule.do.filter(action => action.kind === 'inject-text').map(action => ({
+    const specs = source.rules.flatMap(rule => rule.then.filter(action => action.kind === 'inject-text').map(action => ({
       ...injectionConfigSpec(rule, action, source), enabled: rule.enabled !== false,
     })))
     const byId = Object.fromEntries(specs.map((spec) => [spec.id, spec]))
@@ -213,7 +213,7 @@ test('writePreset 开启 firstTurnAnchor 时 near-anchor 启用并携带自定�
 test('旧模板离线迁移后 router-guide 关闭且模型范围归规则条件', () => {
   const { byId, rules } = generatedConfigs()
   assert.equal(byId['router-guide'].enabled, false)
-  assert.ok((rules['router-guide'].when.all ?? [rules['router-guide'].when]).some(condition => condition.scope?.modelScope === 'flash'))
+  assert.ok((rules['router-guide'].if.all ?? [rules['router-guide'].if]).some(condition => condition.scope?.modelScope === 'flash'))
   assert.equal(byId['router-guide'].params.useCustom, false)
   assert.equal(byId['router-guide'].params.text, '')
 })

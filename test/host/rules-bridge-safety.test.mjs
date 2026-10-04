@@ -55,7 +55,7 @@ function harness({ readonly = false, rebuildFails = false, afterRebuild } = {}) 
   }
 }
 
-const rules = [{ id: 'budget', when: { phase: { promoted: false } }, do: [{ id: 'request', kind: 'request-params', patch: { maxTokens: 64 }, modelScope: 'all' }] }]
+const rules = [{ id: 'budget', if: { phase: { promoted: false } }, then: [{ id: 'request', kind: 'request-params', patch: { maxTokens: 64 }, modelScope: 'all' }] }]
 const createEdits = items => items.map(rule => ({ previousId: null, rule }))
 
 test('声明读取、只校验、写盘、物化和清空往返；注释与未知字段保留', async () => {
@@ -97,7 +97,7 @@ test('坏声明、错误类型、未知载荷与缺少写入版本均不改盘',
   const { revisions } = (await h.call()).value
   for (const payload of [
     { edits: {} },
-    { edits: createEdits([{ ...rules[0], do: [{ id: 'bad', kind: 'missing' }] }]) },
+    { edits: createEdits([{ ...rules[0], then: [{ id: 'bad', kind: 'missing' }] }]) },
     { edits: createEdits([{ ...rules[0], unexpected: true }]) },
     { edits: createEdits(rules), validateOnly: 'true' },
     { edits: createEdits(rules), unknown: true },
@@ -179,13 +179,13 @@ test('文本声明的模板校验与物化均使用当前预设根；越界失�
   mkdirSync(join(h.directory, 'assets'))
   writeFileSync(join(h.directory, 'assets', 'notice.txt'), 'TEMPLATE')
   const config = { id: 'notice', layer: 'pre-step', templateFile: './assets/notice.txt' }
-  const declarations = [{ id: 'template', do: [{ id: 'inject', kind: 'inject-text', config }] }]
+  const declarations = [{ id: 'template', then: [{ id: 'inject', kind: 'inject-text', config }] }]
   const { revisions } = (await h.call()).value
   const saved = await h.call({ edits: createEdits(declarations), expectedRevisions: revisions })
   assert.equal(saved.ok, true, saved.message)
   assert.deepEqual(parse(readFileSync(join(h.directory, 'rules/template.yml'), 'utf8')), declarations[0])
   const before = readFileSync(h.file, 'utf8')
-  const invalid = [{ ...declarations[0], do: [{ id: 'inject', kind: 'inject-text', config: { ...config, templateFile: '../../outside.txt' } }] }]
+  const invalid = [{ ...declarations[0], then: [{ id: 'inject', kind: 'inject-text', config: { ...config, templateFile: '../../outside.txt' } }] }]
   const rejected = await h.call({ edits: invalid.map(rule => ({ previousId: rule.id, rule })), expectedRevisions: saved.value.revisions })
   assert.equal(rejected.status, 400)
   assert.match(rejected.message, /escapes preset root/)
@@ -201,7 +201,7 @@ test('重建期间规则被另一写者更改时，不把新版本确认为旧�
   const result = await h.call({ edits: createEdits(rules), expectedRevisions: revisions })
   assert.equal(result.status, 409)
   assert.equal(result.code, 'rules-conflict')
-  assert.equal(parse(readFileSync(h.file, 'utf8')).rules[0].do[0].patch.maxTokens, 128)
+  assert.equal(parse(readFileSync(h.file, 'utf8')).rules[0].then[0].patch.maxTokens, 128)
 })
 
 test('变量值与开关各自校验版本，不覆盖陈旧字段，发布失败返回已提交快照', async () => {

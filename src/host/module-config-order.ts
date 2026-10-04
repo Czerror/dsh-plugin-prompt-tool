@@ -54,9 +54,9 @@ function readInput(root: string, moduleId: string): ModuleOrderInput {
     seen.add(card.id)
     const sequence = snapshot.configOrder[card.id] ?? index * 10
     if (!Number.isSafeInteger(sequence) || sequence < 0) throw new Error(`配置卡 ${card.id} 的文件序号无效`)
-    const config = card.do.find(action => action.kind === 'inject-text')?.config as Record<string, unknown> | undefined
+    const config = card.then.find(action => action.kind === 'inject-text')?.config as Record<string, unknown> | undefined
     const layer = card.layer ?? (typeof config?.layer === 'string' ? config.layer : 'pre-step')
-    const scope = card.when?.scope as { audience?: 'main' | 'subagent' } | undefined
+    const scope = card.if?.scope as { audience?: 'main' | 'subagent' } | undefined
     return { moduleId, configId: card.id, name: card.name ?? card.id, layer, position: typeof config?.position === 'string' ? config.position : 'after-user', sequence, enabled: card.enabled !== false,
       strategy: typeof config?.strategy === 'string' ? config.strategy : 'static', ...(scope?.audience === undefined ? {} : { audience: scope.audience }),
       ...(layer === 'system-section' || layer === 'runtime-context' ? { order: typeof config?.order === 'number' ? config.order : 0 } : {}) }

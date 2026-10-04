@@ -17,7 +17,7 @@ function setup(t) {
   return { storageRoot, moduleRoot }
 }
 const source = [{ path: 'alice.json', content: JSON.stringify({ data: { name: 'Alice', description: 'hello' } }) }]
-const textRule = (id, text) => ({ id, layer: 'pre-step', do: [{ id: 'inject', kind: 'inject-text', config: { id, layer: 'pre-step', text } }] })
+const textRule = (id, text) => ({ id, layer: 'pre-step', then: [{ id: 'inject', kind: 'inject-text', config: { id, layer: 'pre-step', text } }] })
 const overwrite = { targetId: 'alice', overwrite: true }
 
 test('角色导入直接生成普通模块；重导入默认另存，显式覆盖保留记忆、未知资产和头像', async t => {
@@ -125,7 +125,7 @@ test('历史记忆证明过滤仍生效，普通同名规则保留，已编辑�
   assert.match(projected.doc.toString(), /ORDINARY/)
   assert.doesNotMatch(projected.doc.toString(), /PRIVATE/)
   assert.equal(doc.toString(), before)
-  doc.setIn(['rules', 1, 'do', 0, 'config', 'text'], 'EDITED PRIVATE')
+  doc.setIn(['rules', 1, 'then', 0, 'config', 'text'], 'EDITED PRIVATE')
   assert.deepEqual(characters.projectCharacterMemories(doc, {}, moduleRoot).memoryConflicts.map(item => item.id), [privateRule.id])
   assert.match(characters.projectCharacterMemories(doc, { [privateRule.id]: 'include' }, moduleRoot).doc.toString(), /EDITED PRIVATE/)
   assert.doesNotMatch(characters.projectCharacterMemories(doc, { [privateRule.id]: 'exclude' }, moduleRoot).doc.toString(), /EDITED PRIVATE/)

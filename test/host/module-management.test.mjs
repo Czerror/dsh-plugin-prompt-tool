@@ -188,13 +188,13 @@ test('并入的源模块优先：同名模块与角色卡并存时取模块定�
   const configs = parse(written).rules
   const anchor = configs.find(config => config.id === `module-${id}-near-anchor`)
   assert.equal(anchor.enabled, true, '并入前先把旧开关交给规则实例')
-  assert.equal(anchor.do[0].config.params.text, 'LEGACY ANCHOR')
-  assert.equal(configs.find(config => config.id === `module-${id}-prompt-injector`).do[0].config.params.text, 'LEGACY BODY')
+  assert.equal(anchor.then[0].config.params.text, 'LEGACY ANCHOR')
+  assert.equal(configs.find(config => config.id === `module-${id}-prompt-injector`).then[0].config.params.text, 'LEGACY BODY')
 })
 
 test('普通模块之间的并入是往返且幂等的：重复并入不翻倍，移除后自有内容原样保留', async () => {
   const characters = await import('../../src/host/characters.ts')
-  const rule = (id, text) => ({ id, layer: 'system-section', do: [{ id: 'inject', kind: 'inject-text', config: { id, layer: 'system-section', text } }] })
+  const rule = (id, text) => ({ id, layer: 'system-section', then: [{ id: 'inject', kind: 'inject-text', config: { id, layer: 'system-section', text } }] })
   const src = 'roundtrip-src'
   mkdirSync(join(moduleRoot, src), { recursive: true })
   writeFileSync(join(moduleRoot, src, 'module.yml'), JSON.stringify({ id: src, name: '源', modules: [], rules: [rule('a', 'A'), rule('b', 'B')] }), 'utf8')

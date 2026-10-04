@@ -10,14 +10,14 @@ id: example-guide-auto
 name: 示例：每轮引导
 enabled: false
 layer: pre-step
-when:
+if:
   all:
     - scope:
         modelScope: flash
     - phase:
         promoted: true
         includeSubagents: false
-do:
+then:
   - id: inject
     kind: inject-text
     config:

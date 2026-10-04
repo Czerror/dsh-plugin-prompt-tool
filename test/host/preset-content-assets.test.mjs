@@ -30,8 +30,8 @@ const { apply } = await import('../../engine/tool-config-engine.mjs')
 const dir = join(home, 'modules', 'wb-test')
 mkdirSync(dir, { recursive: true })
 writeFileSync(join(dir, 'module.yml'), JSON.stringify({ id: 'wb-test', name: '世界书测试', modules: [], rules: [
-  { id: 'static-one', name: '普通配置', do: [{ id: 'inject', kind: 'inject-text', config: { id: 'static-one', strategy: 'static', order: 1, text: '普通' } }] },
-  { id: 'lore-1', name: '已有条目', do: [{ id: 'inject', kind: 'inject-text', config: { id: 'lore-1', strategy: 'world-book', order: -100, text: '旧内容', params: { constant: true } } }] },
+  { id: 'static-one', name: '普通配置', then: [{ id: 'inject', kind: 'inject-text', config: { id: 'static-one', strategy: 'static', order: 1, text: '普通' } }] },
+  { id: 'lore-1', name: '已有条目', then: [{ id: 'inject', kind: 'inject-text', config: { id: 'lore-1', strategy: 'world-book', order: -100, text: '旧内容', params: { constant: true } } }] },
 ] }), 'utf8')
 
 test('worldbook list：只返回 world-book 策略配置', () => {
@@ -94,7 +94,7 @@ test('worldbook upsert：新增与更新（按 id），count 只统计世界书�
   assert.equal(updated, 2, '更新不新增')
 
   const preset = parseYaml(readFileSync(join(dir, 'module.yml'), 'utf8'))
-  const lore1 = preset.rules.find((rule) => rule.id === 'lore-1').do[0].config
+  const lore1 = preset.rules.find((rule) => rule.id === 'lore-1').then[0].config
   assert.equal(lore1.text, '更新内容')
   assert.equal(lore1.order, -200)
   assert.equal(preset.rules.length, 3, '普通配置保留')

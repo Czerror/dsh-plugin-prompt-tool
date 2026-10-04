@@ -7,10 +7,10 @@ id: subagent-maintenance
 name: 子代理状态/记忆维护
 enabled: false
 layer: pre-step
-when:
+if:
   scope:
     audience: subagent
-do:
+then:
   - id: inject
     kind: inject-text
     config:

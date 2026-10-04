@@ -4,8 +4,8 @@ import { createWorkspaceDrafts } from '../../src/client/data/workspace-drafts.ts
 import { createRuleEditor, getRulesDraft, ruleEdits, rulesDirty } from '../../src/client/data/rule-drafts.ts'
 
 const meta = { predicates: [], composites: ['all', 'any', 'not', 'notAny'], actions: [], waterfallPositions: ['default'] }
-const alpha = { id: 'alpha', enabled: true, group: 'mode', exclusive: true, do: [{ id: 'alpha-text', kind: 'inject-text', config: { id: 'text', text: 'Alpha', layer: 'pre-step', future: { keep: 42 } } }] }
-const beta = { id: 'beta', enabled: false, group: 'mode', do: [{ id: 'beta-text', kind: 'inject-text', config: { id: 'other', text: 'Beta', layer: 'pre-step' } }] }
+const alpha = { id: 'alpha', enabled: true, group: 'mode', exclusive: true, then: [{ id: 'alpha-text', kind: 'inject-text', config: { id: 'text', text: 'Alpha', layer: 'pre-step', future: { keep: 42 } } }] }
+const beta = { id: 'beta', enabled: false, group: 'mode', then: [{ id: 'beta-text', kind: 'inject-text', config: { id: 'other', text: 'Beta', layer: 'pre-step' } }] }
 const snapshot = (rules = [alpha, beta], revision = 'baseline') => ({ rules: structuredClone(rules), revisions: { rules: Object.fromEntries(rules.map(rule => [rule.id, revision])), settings: revision, variables: revision }, meta })
 function harness(request) {
   const draft = getRulesDraft(createWorkspaceDrafts(), 'module-a'), calls = []
@@ -33,7 +33,7 @@ test('rules bridge: rename/delete use previous identity and CAS; unknown payload
   ] })
   assert.equal(h.draft.entries[0].key, key)
   assert.equal(h.draft.entries[0].previousId, 'renamed-alpha')
-  assert.deepEqual(h.draft.entries[0].value.do[0].config.future, { keep: 42 })
+  assert.deepEqual(h.draft.entries[0].value.then[0].config.future, { keep: 42 })
   assert.equal(rulesDirty(h.draft), false)
   await h.editor.submit()
   assert.equal(h.calls.length, 2, 'unchanged submit does not write')
@@ -83,7 +83,7 @@ test('rules bridge: activation accepts full mutex snapshot while preserving edit
   ])
   assert.equal(h.draft.revisions.settings, 'activated')
   let published = false
-  const persisted = snapshot([alpha, beta, { id: 'new', do: [] }], 'persisted')
+  const persisted = snapshot([alpha, beta, { id: 'new', then: [] }], 'persisted')
   const failed = harness(async body => {
     if (body.refreshOnly) { published = true; return { ok: true, value: persisted } }
     return { ok: true, value: body.edits
@@ -91,7 +91,7 @@ test('rules bridge: activation accepts full mutex snapshot while preserving edit
       : failed.calls.length > 2 ? persisted : snapshot() }
   })
   await failed.editor.load()
-  failed.editor.add({ id: 'new', do: [] })
+  failed.editor.add({ id: 'new', then: [] })
   assert.equal(await failed.editor.submit(), false)
   assert.equal(failed.draft.error, 'activation failed')
   assert.equal(failed.draft.publicationPending, true)

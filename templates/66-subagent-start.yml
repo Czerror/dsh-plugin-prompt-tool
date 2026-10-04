@@ -5,7 +5,7 @@
 id: example-subagent-start
 name: 子代理通用守则
 layer: subagent-start
-do:
+then:
   - id: inject
     kind: inject-text
     config:

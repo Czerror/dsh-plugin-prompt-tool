@@ -1,10 +1,10 @@
 # 模板：llm-stream 模型流包装（pass 透传 / replace 用 text 替代整个流）
 id: example-llm-stream
 layer: llm-stream
-when:
+if:
   scope:
     modelScope: flash
-do:
+then:
   - id: inject
     kind: inject-text
     config:

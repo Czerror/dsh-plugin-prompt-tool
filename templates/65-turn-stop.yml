@@ -4,14 +4,14 @@
 id: example-turn-stop
 name: 未完成时强制续跑
 layer: turn-stop
-when:
+if:
   text:
     keys:
       - 接下来我会
       - 稍后继续
       - 待办如下
     subject: assistantText
-do:
+then:
   - id: inject
     kind: inject-text
     config:

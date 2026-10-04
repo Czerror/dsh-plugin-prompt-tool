@@ -51,22 +51,22 @@
   channel: system-prompt/assemble
   channelOrder: 0
   waterfallPosition: outermost
-  do:
+  then:
     kind: assembly
     id: tool-filter-presentation
     target:
       tools:
-        deny: [web_search, web_fetch] # ← 名单：模式互斥，allow 模式写成 { allow: [...] }
+        deny: [ web_search, web_fetch ] # ← 名单：模式互斥，allow 模式写成 { allow: [...] }
 
 - id: tool-filter-sdk
   channel: system-prompt/assemble
   channelOrder: 1
   waterfallPosition: default
-  do:
+  then:
     kind: sdk-strip
     id: tool-filter-sdk
     mask:
-      deny: [web_search, web_fetch]
+      deny: [ web_search, web_fetch ]
 
 - id: tool-filter-guard
   channel: system-prompt/assemble
@@ -74,10 +74,10 @@
   waterfallPosition: default
   # guard **不支持** when/prepend（actions.mjs:823-826 挂载期报错），受众由动作自身
   # 的 includeSubagents 表达（actions.mjs:450、:471），故本声明不带 when。
-  do:
+  then:
     kind: guard
     id: tool-filter-guard
     mask:
-      deny: [web_search, web_fetch]
+      deny: [ web_search, web_fetch ]
     includeSubagents: false # 与原模块受众一致（tool-filter.mjs:74）
     reason: 'blocked by tool-filter declaration'

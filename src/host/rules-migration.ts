@@ -144,7 +144,7 @@ export function promptConfigToRule(config: PromptConfigSpec): RuleDefinition {
     : [{ id: 'inject', kind: 'inject-text', config: payload }]
   return { id: config.id, ...(config.name === undefined ? {} : { name: config.name }), ...(config.enabled === undefined ? {} : { enabled: config.enabled }), layer: layer as RuleDefinition['layer'],
     ...(config.group === undefined ? {} : { group: config.group }), ...(config.exclusive === undefined ? {} : { exclusive: config.exclusive }),
-    ...(condition(gates) === undefined ? {} : { when: condition(gates) }), do: actions }
+    ...(condition(gates) === undefined ? {} : { if: condition(gates) }), then: actions }
 }
 
 function rebaseTemplate(config: PromptConfigSpec, directory: string, previousBase: URL): PromptConfigSpec {
@@ -216,8 +216,8 @@ export function convertLegacyModuleRules(source: Record<string, unknown>, option
         const converted = promptConfigToRule(next.config as unknown as PromptConfigSpec)
         if (converted.enabled === false && rawActions.length !== 1) throw new Error(`声明 ${raw.id} 的动作局部停用不能无损提升为整卡开关；请先拆分声明`)
         if (rawActions.length === 1) enabled = converted.enabled
-        liftCondition(converted.when)
-        const payload = converted.do[0]?.config
+        liftCondition(converted.if)
+        const payload = converted.then[0]?.config
         const config = { ...next.config, ...(record(payload) ? payload : {}) }
         delete config.enabled
         const params = record(config.params) ? config.params : {}
@@ -238,7 +238,7 @@ export function convertLegacyModuleRules(source: Record<string, unknown>, option
     // 旧声明逐动作注册，after-next 的执行次序受宿主 listener 次序影响；不能静默假定数组顺序等价。
     if (actions.length > 1 && actions.some(action => actionExecutionPoint(action).phase === 'after-next')) throw new Error(`声明 ${raw.id} 含多个 after-next 动作，须先核对实际执行顺序再迁移`)
     const layer = actions.find(action => action.kind === 'inject-text' && record(action.config))?.config as PromptConfigSpec | undefined
-    append({ id: raw.id, ...(enabled === undefined ? {} : { enabled }), ...(layer?.layer === undefined ? {} : { layer: layer.layer as RuleDefinition['layer'] }), ...(condition(gates) === undefined ? {} : { when: condition(gates) }), do: actions }, (configs.length + index) * 10)
+    append({ id: raw.id, ...(enabled === undefined ? {} : { enabled }), ...(layer?.layer === undefined ? {} : { layer: layer.layer as RuleDefinition['layer'] }), ...(condition(gates) === undefined ? {} : { if: condition(gates) }), then: actions }, (configs.length + index) * 10)
   }
   // 所有规则预检，互斥多启用不能由迁移命令擅自选择赢家。
   compileRules(rules, { configOrder, ...(directory === undefined ? {} : { moduleId: source.id, promptConfigOptions: rulePromptConfigOptions(directory) }) })

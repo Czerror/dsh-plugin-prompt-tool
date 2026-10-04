@@ -18,19 +18,6 @@ export function conjunction(conditions) {
 }
 
 /**
- * 同义名归一：两个名字都写且不等价即拒绝——同一语义不允许留下两份真相。
- * @param label 报错前缀，如 `rule r1` / `trigger t1`。
- */
-export function pickAlias(spec, primary, alias, label) {
-  const first = spec[primary]
-  const second = spec[alias]
-  if (first !== undefined && second !== undefined && JSON.stringify(first) !== JSON.stringify(second)) {
-    throw new TypeError(`${label}: ${primary} and ${alias} disagree — keep ${primary} (the current name)`)
-  }
-  return first ?? second
-}
-
-/**
  * 把一份动作声明展开为扁平的「动作 + 自身分支条件」列表。
  *
  * - 普通动作原样带出，分支条件 = `outer` 的合取（空 = 无条件）；

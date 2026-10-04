@@ -30,9 +30,9 @@ function fixture(name, definitions) {
 async function policyMigrationChecks() {
   const oldFallback = { kind: 'inject-text', config: { id: 'fallback', layer: 'pre-step', strategy: 'custom-fallback', params: { text: 'BODY', firstTurnWord: 'ok' } } }
   const fallback = convertLegacyModuleRules({ id: 'fallback', modules: [], triggers: [{ id: 'fallback', channel: 'agent/pre-step', do: oldFallback }] }).rules[0]
-  assert.deepEqual(fallback.when, { anchor: { keys: ['ok'], fallbackAfter: 1 } })
-  assert.equal(fallback.do[0].config.strategy, 'anchor-notice')
-  assert.equal(fallback.do[0].config.params.text, 'BODY')
+  assert.deepEqual(fallback.if, { anchor: { keys: ['ok'], fallbackAfter: 1 } })
+  assert.equal(fallback.then[0].config.strategy, 'anchor-notice')
+  assert.equal(fallback.then[0].config.params.text, 'BODY')
   assert.throws(() => convertLegacyModuleRules({ modules: [], triggers: [{ id: 'mixed', channel: 'agent/pre-step', do: [oldFallback, { kind: 'pre-step-filter', blockPlugins: [] }] }] }), /不能无损提升/, '动作局部条件不能错误提升而影响同卡其他动作')
   const cwd = join(moduleRoot, 'workspace')
   const render = async (rule, skills = [], model = 'deepseek-pro', input = 'TASK') => {
@@ -49,13 +49,13 @@ async function policyMigrationChecks() {
   const disabledAction = { kind: 'inject-text', config: { id: 'hidden', layer: 'pre-step', enabled: false, text: 'MUST_NOT_RUN' } }
   const migratedDisabled = convertLegacyModuleRules({ modules: [], triggers: [{ id: 'hidden', channel: 'agent/pre-step', do: disabledAction }] }).rules[0]
   assert.equal(migratedDisabled.enabled, false, '旧动作停用状态提升到唯一规则总开关')
-  assert.equal(Object.hasOwn(migratedDisabled.do[0].config, 'enabled'), false)
+  assert.equal(Object.hasOwn(migratedDisabled.then[0].config, 'enabled'), false)
   assert.deepEqual(await render(migratedDisabled), [], '迁移不得激活原本禁用的正文')
   assert.throws(() => convertLegacyModuleRules({ modules: [], triggers: [{ id: 'mixed-enabled', channel: 'agent/pre-step', do: [disabledAction, { kind: 'inject-text', config: { id: 'visible', layer: 'pre-step', text: 'VISIBLE' } }] }] }), /不能无损提升/, '动作局部停用不能变成兄弟动作停用或重新启用')
   const legacyInjection = { kind: 'inject-text', config: { id: 'conditional', layer: 'pre-step', audience: 'main', modelScope: 'pro', match: { keys: ['TASK'] }, text: 'MATCHED' } }
   const migratedInjection = convertLegacyModuleRules({ modules: [], triggers: [{ id: 'conditional', channel: 'agent/pre-step', do: legacyInjection }] }).rules[0]
-  assert.deepEqual(migratedInjection.when, { all: [{ scope: { audience: 'main', modelScope: 'pro' } }, { text: { keys: ['TASK'], subject: 'userMessage' } }] })
-  for (const key of ['audience', 'modelScope', 'promotion', 'subject', 'match']) assert.equal(Object.hasOwn(migratedInjection.do[0].config, key), false)
+  assert.deepEqual(migratedInjection.if, { all: [{ scope: { audience: 'main', modelScope: 'pro' } }, { text: { keys: ['TASK'], subject: 'userMessage' } }] })
+  for (const key of ['audience', 'modelScope', 'promotion', 'subject', 'match']) assert.equal(Object.hasOwn(migratedInjection.then[0].config, key), false)
   assert.deepEqual(await render(migratedInjection), ['MATCHED'])
   assert.deepEqual(await render(migratedInjection, [], 'deepseek-flash'), [])
   assert.deepEqual(await render(migratedInjection, [], 'deepseek-pro', 'different'), [])
@@ -63,17 +63,17 @@ async function policyMigrationChecks() {
   const env = { id: 'facts', strategy: 'placeholder', fill: 'env-facts' }
   assert.deepEqual(await render(promptConfigToRule(env)), [`Environment facts:\n- WORKSPACE=${process.env.DSH_WORKSPACE ?? cwd}\n- CWD=${cwd}`], '旧非空机器事实正文由迁移模板恢复')
   assert.deepEqual(await render(promptConfigToRule({ ...env, text: '' })), [], '显式空正文不被旧默认模板覆盖')
-  assert.deepEqual(await render({ id: 'new-empty', do: [{ id: 'facts', kind: 'inject-text', config: env }] }), [], '新运行时缺正文时跳过，不读取旧策略模板')
+  assert.deepEqual(await render({ id: 'new-empty', then: [{ id: 'facts', kind: 'inject-text', config: env }] }), [], '新运行时缺正文时跳过，不读取旧策略模板')
   const catalog = { id: 'skills', strategy: 'placeholder', fill: 'skill-catalog' }
   const skills = Array.from({ length: 21 }, (_, index) => ({ name: `skill${index + 1}`, description: `description${index + 1}\nsecond line` }))
   const oldCatalog = promptConfigToRule(catalog)
-  assert.equal(oldCatalog.do[0].config.params.limit, 20)
-  assert.equal(oldCatalog.do[0].config.params.fields, 'name,description')
+  assert.equal(oldCatalog.then[0].config.params.limit, 20)
+  assert.equal(oldCatalog.then[0].config.params.fields, 'name,description')
   assert.deepEqual(await render(oldCatalog, skills), ['Available skills (21):\n' + Array.from({ length: 20 }, (_, index) => `- skill${index + 1}: description${index + 1}`).join('\n')])
   const explicit = promptConfigToRule({ ...catalog, text: '{{SKILLS_TEXT}}', params: { limit: 0, fields: '', whenToUseLabel: '' } })
-  assert.equal(explicit.do[0].config.params.limit, 0)
-  assert.equal(explicit.do[0].config.params.fields, '')
-  assert.equal(explicit.do[0].config.params.whenToUseLabel, '')
+  assert.equal(explicit.then[0].config.params.limit, 0)
+  assert.equal(explicit.then[0].config.params.fields, '')
+  assert.equal(explicit.then[0].config.params.whenToUseLabel, '')
   assert.deepEqual(await render(explicit, skills), [])
   assert.throws(() => promptConfigToRule({ ...env, templateFile: './external.yml' }), /显式展开/, '不猜测外部模板的旧默认')
 
@@ -93,12 +93,12 @@ async function policyMigrationChecks() {
   }
   assert.equal(buildInstructionHintText({ root: '/workspace', projectFiles: ['AGENTS.md'], userGlobalFiles: ['AGENTS.md'] }, 'all', emptyTemplates), '')
   const bound = promptConfigToRule({ id: 'bound', strategy: 'placeholder', fill: 'instruction-hint', params: { file: '/workspace/AGENTS.md' } })
-  assert.equal(bound.do[0].config.params.projectTemplate, undefined, '真实文件绑定不变成目录探测提示')
+  assert.equal(bound.then[0].config.params.projectTemplate, undefined, '真实文件绑定不变成目录探测提示')
 
   const gated = convertLegacyModuleRules({ id: 'gate', modules: [], triggers: [{ id: 'gate', channel: 'agent/request', when: { all: [{ phase: { promoteGate: true, promoted: true } }, { not: { phase: { promoteGate: false, promoted: false } } }] }, do: { kind: 'request-params', patch: { maxTokens: 512, note: 'promoteGate: true' } } }] }).rules[0]
-  assert.deepEqual(gated.when.all[0].all[0].phase, { promoteGate: true, promoted: true, reasoningPattern: '\\bwe\\b', reasoningNegativePattern: '\\blet me\\b', reasoningFlags: 'gi' })
-  assert.equal(gated.when.all[0].all[1].not.phase.reasoningPattern, undefined, '未启用promoteGate不携入业务正则')
-  assert.equal(gated.do[0].patch.note, 'promoteGate: true', '不对正文字符串做全文替换')
+  assert.deepEqual(gated.if.all[0].all[0].phase, { promoteGate: true, promoted: true, reasoningPattern: '\\bwe\\b', reasoningNegativePattern: '\\blet me\\b', reasoningFlags: 'gi' })
+  assert.equal(gated.if.all[0].all[1].not.phase.reasoningPattern, undefined, '未启用promoteGate不携入业务正则')
+  assert.equal(gated.then[0].patch.note, 'promoteGate: true', '不对正文字符串做全文替换')
   const events = []
   const session = { id: 'gated', header: {}, snapshotEvents: () => events }
   const agent = { session, options: { model: 'deepseek-pro' } }
@@ -115,7 +115,7 @@ async function policyMigrationChecks() {
     assert.equal((await request()).maxTokens, 512, '旧gated phase事件/大小写实际动作输出保持')
   } finally { releaseGate(); await gateCtx.fiber.dispose() }
   const emptyCtx = new Context()
-  const releaseEmpty = mountRuleSources(emptyCtx, [{ moduleId: 'empty-gate', rules: compileRules([{ id: 'empty-gate', when: { phase: { promoteGate: true } }, do: gated.do }]) }])
+  const releaseEmpty = mountRuleSources(emptyCtx, [{ moduleId: 'empty-gate', rules: compileRules([{ id: 'empty-gate', if: { phase: { promoteGate: true } }, then: gated.then }]) }])
   try {
     assert.equal((await emptyCtx.waterfall('agent/request', { agent }, async () => ({ maxTokens: 1024 }))).maxTokens, 1024, '新缺省pattern不内建we/let me偏好')
   } finally { releaseEmpty(); await emptyCtx.fiber.dispose() }
@@ -124,16 +124,16 @@ async function policyMigrationChecks() {
 test('离线规则迁移：同卡前后动作与原投递身份保留，完整物化、幂等及原字节回滚', async () => {
   await policyMigrationChecks()
   const guide = promptConfigToRule({ id: 'guide', strategy: 'guide-auto', params: { guideWeak: 'WEAK', guideDeep: 'DEEP' } })
-  assert.equal(guide.do[0].config.params.complexMinChars, 120, '只在旧格式迁移中显式记录原业务阈值')
-  assert.equal(promptConfigToRule({ id: 'empty-guide', strategy: 'guide-auto', params: { complexMinChars: '' } }).do[0].config.params.complexMinChars, '', '显式空阈值不被迁移默认覆盖')
+  assert.equal(guide.then[0].config.params.complexMinChars, 120, '只在旧格式迁移中显式记录原业务阈值')
+  assert.equal(promptConfigToRule({ id: 'empty-guide', strategy: 'guide-auto', params: { complexMinChars: '' } }).then[0].config.params.complexMinChars, '', '显式空阈值不被迁移默认覆盖')
   const guideConfig = compileRules([guide])[0].actions[0].compiledConfig
   for (const [length, expected] of [[120, 'WEAK'], [121, 'DEEP']]) {
     const result = await guideConfig.resolve({ messages: [{ source: { kind: 'user' }, content: [{ type: 'text', text: 'x'.repeat(length) }] }] })
     assert.equal(result.text, expected, '保留原严格大于120的实际正文选择')
   }
   const legacyTrigger = convertLegacyModuleRules({ id: 'native', modules: ['declared-triggers'], triggers: [{ id: 'native', channel: 'agent/request', do: { kind: 'request-params', patch: { maxTokens: 512 } } }] })
-  assert.deepEqual(legacyTrigger.rules[0].when, { scope: { modelScope: 'pro' } }, '单动作的旧模型范围统一提升为条件')
-  assert.equal(legacyTrigger.rules[0].do[0].modelScope, undefined)
+  assert.deepEqual(legacyTrigger.rules[0].if, { scope: { modelScope: 'pro' } }, '单动作的旧模型范围统一提升为条件')
+  assert.equal(legacyTrigger.rules[0].then[0].modelScope, undefined)
   const nativeCtx = new Context()
   const releaseNative = mountRuleSources(nativeCtx, [{ moduleId: 'native', rules: compileRules(legacyTrigger.rules) }])
   try {
@@ -161,8 +161,8 @@ test('离线规则迁移：同卡前后动作与原投递身份保留，完整�
   }
   const old = { id: 'tools', layer: 'tool-pipeline', audience: 'main', params: { toolNames: 'bash', preDecision: 'ask', postAction: 'replace' }, text: 'replacement' }
   const converted = promptConfigToRule(old)
-  assert.deepEqual(converted.when, { scope: { audience: 'main' } })
-  assert.deepEqual(converted.do, [
+  assert.deepEqual(converted.if, { scope: { audience: 'main' } })
+  assert.deepEqual(converted.then, [
     { id: 'before', kind: 'decision', phase: 'pre', decision: 'ask', toolNames: 'bash' },
     { id: 'after', kind: 'decision', phase: 'post', action: 'replace', toolNames: 'bash', text: 'replacement' },
   ])
@@ -181,9 +181,9 @@ test('离线规则迁移：同卡前后动作与原投递身份保留，完整�
   const spec = parse(readFileSync(file, 'utf8'))
   assert.deepEqual(spec.configOrder, { hello: 40, tools: 70, template: 90 })
   assert.deepEqual(spec.modules, ['rule-engine'])
-  assert.equal(spec.rules[0].do[0].config.id, 'hello')
-  assert.equal(spec.rules[2].do[0].config.templateFile, './assets/notice.yml')
-  assert.equal(spec.meta.characterMemories.generated.contentHash, hash('{"do":[{"config":{"id":"hello","layer":"pre-step","text":"Hello"},"id":"inject","kind":"inject-text"}],"id":"hello","layer":"pre-step"}'))
+  assert.equal(spec.rules[0].then[0].config.id, 'hello')
+  assert.equal(spec.rules[2].then[0].config.templateFile, './assets/notice.yml')
+  assert.equal(spec.meta.characterMemories.generated.contentHash, hash('{"id":"hello","layer":"pre-step","then":[{"config":{"id":"hello","layer":"pre-step","text":"Hello"},"id":"inject","kind":"inject-text"}]}'))
   assert.equal(spec.meta.characterMemories.edited.contentHash, 'unmatched-user-content')
   assert.equal(Object.hasOwn(spec, 'promptConfigs'), false)
   assert.equal(Object.hasOwn(spec, 'triggers'), false)
@@ -202,8 +202,8 @@ test('离线规则迁移：同卡前后动作与原投递身份保留，完整�
   writeFileSync(join(materialized, 'a', 'configs', '0040-only.yml'), 'id: only\ntext: ONLY\n')
   const restored = parse(planRulesMigration(materialized).items[0].nextDefinition)
   assert.equal(restored.configOrder.only, 40)
-  assert.equal(restored.rules[0].do[0].config.text, 'ONLY')
-  const current = fixture('decompose', { a: { modules: [], rules: [{ id: 'content', do: [{ id: 'inject', kind: 'inject-text', config: { text: 'SOURCE' } }] }] } })
+  assert.equal(restored.rules[0].then[0].config.text, 'ONLY')
+  const current = fixture('decompose', { a: { modules: [], rules: [{ id: 'content', then: [{ id: 'inject', kind: 'inject-text', config: { text: 'SOURCE' } }] }] } })
   const currentDir = join(current, 'a')
   ensureModuleSlices(currentDir)
   writeFileSync(join(currentDir, 'rules', 'content.yml'), 'id: forged\n')
@@ -211,7 +211,7 @@ test('离线规则迁移：同卡前后动作与原投递身份保留，完整�
   const repair = planRulesMigration(current, { decompose: true })
   assert.equal(readFileSync(join(currentDir, 'rules', 'content.yml'), 'utf8'), 'id: forged\n', '预检保持只读')
   await applyRulesMigration(repair)
-  assert.equal(readRulesDir(currentDir).contents[0].do[0].config.text, 'SOURCE')
+  assert.equal(readRulesDir(currentDir).contents[0].then[0].config.text, 'SOURCE')
   assert.deepEqual(readFileSync(join(currentDir, 'module.yml')), currentSource, '强制分解保持完整定义原字节')
 })
 

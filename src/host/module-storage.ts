@@ -305,7 +305,7 @@ function staleRuleSlice(directory: string, filename: string): boolean {
     assertRuleFileId(id)
     const doc = parseDocument(readFileSync(join(directory, filename), 'utf8'), { logLevel: 'silent' })
     const source: unknown = doc.toJS()
-    if (doc.errors.length > 0 || !record(source) || source.id !== id || !Array.isArray(source.do)) return false
+    if (doc.errors.length > 0 || !record(source) || source.id !== id || !Array.isArray(source.then)) return false
     return true
   } catch { return false }
 }

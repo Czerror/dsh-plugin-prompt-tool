@@ -54,36 +54,59 @@
 #    需产品/引擎侧决定是否补能力。
 - id: tool-bootstrap-catalog
   channel: system-prompt/assemble
-  when:
-    phase: { promoteOn: either, includeSubagents: false, compacted: false, promoted: false }
-  do:
+  if:
+    phase:
+      {
+        promoteOn: either,
+        includeSubagents: false,
+        compacted: false,
+        promoted: false
+      }
+  then:
     kind: assembly
     id: tool-bootstrap
     target:
-      tools: { allow: [bash, str_replace_editor], requireMatch: true }
-      sections: { keep: ['deployment:persona-prefix', 'deployment:persona-suffix'] }
+      tools: { allow: [ bash, str_replace_editor ], requireMatch: true }
+      sections: { keep: [ 'deployment:persona-prefix', 'deployment:persona-suffix' ] }
   waterfallPosition: outermost
 
 - id: tool-bootstrap-catalog-compacted
   channel: system-prompt/assemble
-  when:
-    phase: { promoteOn: either, includeSubagents: false, compacted: true, promoted: false }
-  do:
+  if:
+    phase:
+      {
+        promoteOn: either,
+        includeSubagents: false,
+        compacted: true,
+        promoted: false
+      }
+  then:
     kind: assembly
     id: tool-bootstrap-compacted
     target:
       tools:
-        allow: [bash, str_replace_editor, read, write, edit, glob, grep, todo_write, ask_user_question]
+        allow:
+          [
+            bash,
+            str_replace_editor,
+            read,
+            write,
+            edit,
+            glob,
+            grep,
+            todo_write,
+            ask_user_question
+          ]
         requireMatch: true
-      sections: { keep: ['deployment:persona-prefix', 'deployment:persona-suffix'] }
+      sections: { keep: [ 'deployment:persona-prefix', 'deployment:persona-suffix' ] }
   waterfallPosition: outermost
 
 - id: tool-bootstrap-budget
   channel: agent/request
-  when:
+  if:
     not:
       phase: { promoteOn: either, includeSubagents: false }
-  do:
+  then:
     kind: request-params
     id: tool-bootstrap-budget
     patch: { maxTokens: 1024 }
@@ -91,9 +114,9 @@
 
 - id: tool-bootstrap-budget-release
   channel: agent/request
-  when:
+  if:
     phase: { promoteOn: either, includeSubagents: false }
-  do:
+  then:
     kind: request-params
     id: tool-bootstrap-budget-release
     unset: { maxTokens: 1024 }

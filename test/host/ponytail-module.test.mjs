@@ -33,9 +33,9 @@ const UPSTREAM_ANCHORS = [
 ]
 
 const rulesById = new Map(spec.rules.map((rule) => [rule.id, rule]))
-const ruleText = (id) => rulesById.get(id).do[0].config.text
+const ruleText = (id) => rulesById.get(id).then[0].config.text
 // configs/ 是 writePreset 的物化投影，文件名形态即它的固有命名 `<seq>-<ruleId>--<actionId>.yml`。
-const ACTION_IDS = Object.fromEntries(spec.rules.map((rule) => [rule.id, rule.do.map((action) => action.id)]))
+const ACTION_IDS = Object.fromEntries(spec.rules.map((rule) => [rule.id, rule.then.map((action) => action.id)]))
 const projectionName = (rule) => `${String(spec.configOrder[rule.id] ?? 0).padStart(4, '0')}-${rule.id}--${ACTION_IDS[rule.id][0]}.yml`
 
 test('ponytail 模块：rules 内容与 configs/ 投影逐字一致且文件名符合序号契约', () => {
@@ -46,7 +46,7 @@ test('ponytail 模块：rules 内容与 configs/ 投影逐字一致且文件名�
   assert.deepEqual(onDisk, expected, 'configs/ 只放本模块 rules 的投影，命名与 configOrder 一致')
 
   for (const rule of spec.rules) {
-    const action = rule.do[0]
+    const action = rule.then[0]
     const projected = parseYaml(readFileSync(join(configsDir, projectionName(rule)), 'utf8'))
     assert.equal(projected.id, action.config.id, `${rule.id}: 投影 id`)
     assert.equal(projected.layer, rule.layer, `${rule.id}: 投影 layer 跟随规则`)
@@ -90,7 +90,7 @@ test('ponytail 模块：注入点映射与上游 hook 一致', () => {
     assert.ok(rule !== undefined, `${label}卡必须存在`)
     assert.equal(rule.layer, 'pre-step', `${label}必须在 pre-step 层才能读任务文本`)
     assert.equal(rule.enabled, true)
-    const config = rule.do[0].config
+    const config = rule.then[0].config
     assert.equal(config.strategy, 'static')
     assert.equal(config.position, 'before-all', '规则排在任务文本之前')
     assert.equal(config.dedupe, 'session', '每个子代理只付一次')
@@ -100,17 +100,17 @@ test('ponytail 模块：注入点映射与上游 hook 一致', () => {
   // 首轮那批里。第二轮起 userText 为空 → 写档的 notAny 翻真、只读档的 text 判假，同一
   // 子代理会先拿只读档再拿完整规则（真机踩过两档并注）。判据必须钉在任务文本还在的那一刻。
   for (const [label, rule] of [['写档', write], ['只读档', readonly]]) {
-    const guard = rule.when.all.find((node) => node.session !== undefined)
+    const guard = rule.if.all.find((node) => node.session !== undefined)
     assert.deepEqual(guard?.session, { type: 'user/message', present: false }, `${label}缺首轮守卫`)
   }
   // 两档互斥且完备：写档排除只读词、只读档命中只读词，关键词表必须逐字一致，
   // 否则两边都不命中（子代理白拿不到规则）或都命中（重复注入）。
-  const onlyReadKeys = readonly.when.all.flatMap((node) => node.text?.keys ?? [])
+  const onlyReadKeys = readonly.if.all.flatMap((node) => node.text?.keys ?? [])
   assert.deepEqual(onlyReadKeys, RULE_KEYS, '只读档关键词表')
-  const writeNodes = write.when.all
+  const writeNodes = write.if.all
   assert.deepEqual(writeNodes.find((node) => node.notAny !== undefined).notAny.flatMap((node) => node.text.keys), RULE_KEYS, '写档排除词必须与只读档同表')
   for (const rule of [write, readonly]) {
-    assert.deepEqual(rule.when.all.find((node) => node.scope !== undefined).scope, { audience: 'subagent' }, '两档都只作用于子代理')
+    assert.deepEqual(rule.if.all.find((node) => node.scope !== undefined).scope, { audience: 'subagent' }, '两档都只作用于子代理')
   }
   // 只读档必须是轻量版：完整规则集的执行层条目对只读子代理无关。
   assert.ok(ruleText('ponytail-subagent-readonly').length < 400, '只读档应保持轻量')
@@ -122,10 +122,10 @@ test('ponytail 模块：注入点映射与上游 hook 一致', () => {
   // 同一张表写两份只会各自漂移。切档只靠互斥组启用哪张卡，子代理因此天然跟随。
   for (const level of levels) {
     const name = level.id.replace('ponytail-level-', '')
-    assert.deepEqual(level.do.map((action) => action.id), ['inject', 'inject-subagent'], `${level.id}: 档位卡持有两个动作`)
-    assert.deepEqual(level.do.map((action) => action.config.layer), ['system-section', 'subagent-start'], `${level.id}: 主会话与子代理各一个动作`)
-    assert.match(level.do[1].config.text, new RegExp(`^PONYTAIL MODE ACTIVE — level: ${name}`), `${level.id}: 子代理动作只报本档`)
-    assert.ok(!level.do[1].config.text.includes('## Intensity'), `${level.id}: 子代理动作不搬 Intensity 表`)
+    assert.deepEqual(level.then.map((action) => action.id), ['inject', 'inject-subagent'], `${level.id}: 档位卡持有两个动作`)
+    assert.deepEqual(level.then.map((action) => action.config.layer), ['system-section', 'subagent-start'], `${level.id}: 主会话与子代理各一个动作`)
+    assert.match(level.then[1].config.text, new RegExp(`^PONYTAIL MODE ACTIVE — level: ${name}`), `${level.id}: 子代理动作只报本档`)
+    assert.ok(!level.then[1].config.text.includes('## Intensity'), `${level.id}: 子代理动作不搬 Intensity 表`)
     assert.equal(level.when, undefined, '档位无条件注入，与上游 matcher 缺省一致')
   }
 

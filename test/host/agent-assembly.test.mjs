@@ -91,8 +91,8 @@ test('真实注入：启用配置进入主/子会话正确位置，关闭项不�
   const chainDir = join(moduleRoot, 'managed-chain')
   mkdirSync(chainDir)
   writeFileSync(join(chainDir, 'module.yml'), JSON.stringify({ id: 'managed-chain', modules: ['rule-engine'], configOrder: { chain: 1000 }, rules: [{
-    id: 'chain', layer: 'pre-step', when: { all: [{ scope: { audience: 'main' } }, { phase: { promoted: true } }] },
-    do: [
+    id: 'chain', layer: 'pre-step', if: { all: [{ scope: { audience: 'main' } }, { phase: { promoted: true } }] },
+    then: [
       { id: 'a', kind: 'inject-text', config: { id: 'chain-a', layer: 'pre-step', sourceKind: 'plugin', text: 'CHAIN-A', position: 'after-user' } },
       { id: 'filter', kind: 'pre-step-filter', blockPlugins: ['chain-a'] },
       { id: 'b', kind: 'inject-text', config: { id: 'chain-b', layer: 'pre-step', sourceKind: 'plugin', text: 'CHAIN-B', position: 'after-user' } },
@@ -128,8 +128,8 @@ test('预设条件在真实挂载scope绑定：正反判断隔离、缺事实不
   mkdirSync(dir, { recursive: true })
   const file = join(dir, 'module.yml')
   const definition = { id: 'preset-conditions', modules: ['rule-engine'], rules: [
-    { id: 'matching', layer: 'agent-request', when: { preset: { presetId: 'target' } }, do: [{ id: 'request', kind: 'request-params', modelScope: 'all', patch: { maxTokens: 111 } }] },
-    { id: 'different', layer: 'agent-request', when: { not: { preset: { presetId: 'target' } } }, do: [{ id: 'request', kind: 'request-params', modelScope: 'all', patch: { maxTokens: 222 } }] },
+    { id: 'matching', layer: 'agent-request', if: { preset: { presetId: 'target' } }, then: [{ id: 'request', kind: 'request-params', modelScope: 'all', patch: { maxTokens: 111 } }] },
+    { id: 'different', layer: 'agent-request', if: { not: { preset: { presetId: 'target' } } }, then: [{ id: 'request', kind: 'request-params', modelScope: 'all', patch: { maxTokens: 222 } }] },
   ] }
   writeFileSync(file, JSON.stringify(definition))
   const h = await liveAssembly(t, () => ['preset-conditions'])
@@ -152,7 +152,7 @@ test('预设条件在真实挂载scope绑定：正反判断隔离、缺事实不
   const queries = lookups
   await request(main)
   assert.equal(lookups - queries, 2, '每条条件只读取一次该Agent的真实预设')
-  writeFileSync(file, JSON.stringify({ ...definition, rules: [{ id: 'broken', do: [{ id: 'broken', kind: 'unknown' }] }] }))
+  writeFileSync(file, JSON.stringify({ ...definition, rules: [{ id: 'broken', then: [{ id: 'broken', kind: 'unknown' }] }] }))
   await assert.rejects(h.runtime.refresh('preset-conditions'), /运行时配装更新失败/)
   assert.equal((await request(main)).maxTokens, 111, 'prepare失败没有撤销旧scope条件与动作')
   writeFileSync(file, JSON.stringify(definition))

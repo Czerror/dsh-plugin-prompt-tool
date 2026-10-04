@@ -184,7 +184,7 @@ export function prepareImport(input: AssetFile[], target: 'preset' | 'character'
           if (legacyComposition) doc.set('composition', decodeAssetFile(legacyComposition).toString('utf8'))
         }
         if (kind === 'native-character' && spec.modules === undefined && spec.composition === undefined) {
-          const hasWorldBook = (spec.rules ?? []).some(rule => rule.do.some(action => action.kind === 'inject-text'
+          const hasWorldBook = (spec.rules ?? []).some(rule => rule.then.some(action => action.kind === 'inject-text'
             && (action.config as Record<string, unknown> | undefined)?.strategy === 'world-book'))
           doc.set('modules', hasWorldBook ? ['world-book-tools'] : [])
         }

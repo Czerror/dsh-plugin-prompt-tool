@@ -15,7 +15,7 @@ test('世界书更新与删除只修改目标注入动作，保留同卡条件�
   const content = { id: 'lore', name: 'Castle', layer: 'pre-step', strategy: 'world-book', position: 'before-all', order: 100, text: 'OLD LORE', params: { constant: true } }
   const sibling = { id: 'request', kind: 'request-params', patch: { maxTokens: 512 }, modelScope: 'all' }
   const when = { text: { subject: 'userMessage', keys: ['castle'] } }
-  const definition = { id: 'target', name: 'Target', modules: [], rules: [{ id: 'lore-and-request', name: 'Mixed actions', layer: 'pre-step', enabled: true, when, do: [{ id: 'book', kind: 'inject-text', config: content }, sibling] }], configOrder: { 'lore-and-request': 40 }, customFuture: { keep: 'module-owned' } }
+  const definition = { id: 'target', name: 'Target', modules: [], rules: [{ id: 'lore-and-request', name: 'Mixed actions', layer: 'pre-step', enabled: true, if: when, then: [{ id: 'book', kind: 'inject-text', config: content }, sibling] }], configOrder: { 'lore-and-request': 40 }, customFuture: { keep: 'module-owned' } }
   writeFileSync(file, '# KEEP MODULE COMMENT\n' + stringify(definition))
   assert.deepEqual(listWorldBookEntries(directory).map(entry => [entry.id, entry.text, entry.enabled]), [['lore', 'OLD LORE', true]])
 
@@ -23,9 +23,9 @@ test('世界书更新与删除只修改目标注入动作，保留同卡条件�
   const updated = parse(readFileSync(file, 'utf8'))
   assert.equal(updated.rules.length, 1)
   assert.equal(updated.rules[0].id, 'lore-and-request')
-  assert.deepEqual(updated.rules[0].when, when)
-  assert.deepEqual(updated.rules[0].do[1], sibling)
-  assert.deepEqual(updated.rules[0].do[0], { id: 'book', kind: 'inject-text', config: { ...content, text: 'UPDATED LORE' } })
+  assert.deepEqual(updated.rules[0].if, when)
+  assert.deepEqual(updated.rules[0].then[1], sibling)
+  assert.deepEqual(updated.rules[0].then[0], { id: 'book', kind: 'inject-text', config: { ...content, text: 'UPDATED LORE' } })
   assert.deepEqual(updated.configOrder, { 'lore-and-request': 40 })
   assert.deepEqual(updated.customFuture, { keep: 'module-owned' })
   assert.match(readFileSync(file, 'utf8'), /KEEP MODULE COMMENT/)
@@ -34,7 +34,7 @@ test('世界书更新与删除只修改目标注入动作，保留同卡条件�
 
   assert.equal(deleteWorldBookEntry(directory, 'lore'), 0)
   const remaining = parse(readFileSync(file, 'utf8'))
-  assert.deepEqual(remaining.rules, [{ ...definition.rules[0], do: [sibling] }])
+  assert.deepEqual(remaining.rules, [{ ...definition.rules[0], then: [sibling] }])
   assert.deepEqual(remaining.configOrder, { 'lore-and-request': 40 })
   assert.deepEqual(listWorldBookEntries(directory), [])
   const beforeRejectedDelete = readFileSync(file, 'utf8')

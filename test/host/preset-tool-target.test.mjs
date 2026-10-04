@@ -61,7 +61,7 @@ test('模型工具写入该 Agent 配装的提示词层；装了多层时取启�
     await f.execute('world_book_upsert', { id: 'b', name: 'B', content: 'B' }, ['layer-b'])
     // 同一个 Agent 装了两层：写进启用表里的第一层，第二层不受影响。
     await f.execute('world_book_upsert', { id: 'multi', name: 'M', content: 'M' }, ['layer-a', 'layer-b'])
-    const card = await f.execute('character_import', { name: 'alice', content: JSON.stringify({ id: 'alice', name: 'Alice', rules: [{ id: 'intro', do: [{ id: 'inject', kind: 'inject-text', config: { id: 'intro', text: 'Alice intro' } }] }] }) }, ['layer-a'])
+    const card = await f.execute('character_import', { name: 'alice', content: JSON.stringify({ id: 'alice', name: 'Alice', rules: [{ id: 'intro', then: [{ id: 'inject', kind: 'inject-text', config: { id: 'intro', text: 'Alice intro' } }] }] }) }, ['layer-a'])
     assert.equal(card.id, 'alice')
     assert.equal(f.tools.has('character_apply'), false)
     assert.equal(f.tools.has('character_list'), false)

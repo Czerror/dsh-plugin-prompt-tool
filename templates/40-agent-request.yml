@@ -1,10 +1,10 @@
 # 模板：agent-request 调用配置修改（LlmCallConfig 浅合并 / 整体替换）
 id: example-agent-request
 layer: agent-request
-when:
+if:
   scope:
     modelScope: flash
-do:
+then:
   - id: request
     kind: request-params
     patch:

@@ -14,7 +14,7 @@ rules:
     name: Ponytail 规则（公共部分，常驻）
     enabled: true
     layer: system-section
-    do:
+    then:
       - id: inject
         kind: inject-text
         config:
@@ -129,7 +129,7 @@ rules:
     layer: system-section
     group: ponytail-level
     exclusive: true
-    do:
+    then:
       - id: inject
         kind: inject-text
         config:
@@ -166,7 +166,7 @@ rules:
     layer: system-section
     group: ponytail-level
     exclusive: true
-    do:
+    then:
       - id: inject
         kind: inject-text
         config:
@@ -203,7 +203,7 @@ rules:
     layer: system-section
     group: ponytail-level
     exclusive: true
-    do:
+    then:
       - id: inject
         kind: inject-text
         config:
@@ -255,13 +255,13 @@ rules:
     name: Ponytail 规则（子代理·写档，对齐上游 SubagentStart）
     enabled: true
     layer: pre-step
-    when:
+    if:
       all:
         - scope: { audience: subagent }
         - session: { type: 'user/message', present: false }
         - notAny:
-            - text: { keys: ['PONYTAIL:readonly', 'only read', '只读'], subject: userMessage }
-    do:
+            - text: { keys: [ 'PONYTAIL:readonly', 'only read', '只读' ], subject: userMessage }
+    then:
       - id: inject
         kind: inject-text
         config:
@@ -378,12 +378,12 @@ rules:
     name: Ponytail 规则（子代理·只读档）
     enabled: true
     layer: pre-step
-    when:
+    if:
       all:
         - scope: { audience: subagent }
         - session: { type: 'user/message', present: false }
-        - text: { keys: ['PONYTAIL:readonly', 'only read', '只读'], subject: userMessage }
-    do:
+        - text: { keys: [ 'PONYTAIL:readonly', 'only read', '只读' ], subject: userMessage }
+    then:
       - id: inject
         kind: inject-text
         config:

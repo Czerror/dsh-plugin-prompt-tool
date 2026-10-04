@@ -4,7 +4,7 @@
 #   支持 placeholder 的层级）。
 id: example-runtime-context
 layer: runtime-context
-do:
+then:
   - id: inject
     kind: inject-text
     config:

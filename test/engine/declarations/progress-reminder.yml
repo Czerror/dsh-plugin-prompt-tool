@@ -56,13 +56,20 @@
 # （形状 / 第 every 次 / 每轮上限 / 轮边界 / 子代理受众），1 条按已知差异标注。
 - id: progress-reminder
   channel: tools/post-execute
-  when:
-    count: { of: tool-result, per: turn, every: 4, includeCurrent: true, delegated: false }
-  do:
+  if:
+    count:
+      {
+        of: tool-result,
+        per: turn,
+        every: 4,
+        includeCurrent: true,
+        delegated: false
+      }
+  then:
     kind: append-context
     id: progress-reminder
     mode: context
     maxPerTurn: 1
     text: >-
-      Progress check: before the next action, restate in one "We …" sentence what
-      remains of the goal and why the next step is the right one.
+      Progress check: before the next action, restate in one "We …" sentence
+      what remains of the goal and why the next step is the right one.

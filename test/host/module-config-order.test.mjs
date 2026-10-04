@@ -72,7 +72,7 @@ test('配置排序：跨模块同名卡保留受众与策略，身份排序写�
     assert.match(raw, /# keep comment/)
     const spec = parse(raw)
     assert.equal(spec.custom, 'keep')
-    assert.deepEqual(spec.rules.map(card => card.do[0].config.text), texts)
+    assert.deepEqual(spec.rules.map(card => card.then[0].config.text), texts)
   }
 })
 

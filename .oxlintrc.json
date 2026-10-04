@@ -1,7 +1,7 @@
 {
   "overrides": [
     {
-      "files": ["test/**/*.mjs", "engine/**/*.mjs"],
+      "files": ["test/**/*.mjs", "engine/**/*.mjs", "src/**/*.ts", "src/**/*.tsx"],
       "rules": {
         "unicorn/no-thenable": "off"
       }

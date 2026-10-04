@@ -12,7 +12,7 @@ const storage = new URL('../../src/host/module-storage.ts', import.meta.url).hre
 const writer = new URL('../../src/host/write-preset.ts', import.meta.url).href
 const packageApi = new URL('../../src/host/module-package.ts', import.meta.url).href
 const { ensureModuleSlices, readRulesDir, withModuleLock } = await import('../../src/host/module-storage.ts')
-const definition = (id, text) => ({ id, name: id, modules: [], rules: [{ id: 'body', do: [{ id: 'inject', kind: 'inject-text', config: { text } }] }] })
+const definition = (id, text) => ({ id, name: id, modules: [], rules: [{ id: 'body', then: [{ id: 'inject', kind: 'inject-text', config: { text } }] }] })
 function fixture(id, text) {
   const dir = join(moduleRoot, id)
   mkdirSync(dir, { recursive: true })
@@ -62,7 +62,7 @@ test('安装最终目录交换与保存共享锁；独立进程不能跨过目�
     try {
       const [signal] = await once(child.stdout, 'data')
       assert.equal(signal.toString(), 'swap-ready\n')
-      assert.equal(ensureModuleSlices(target).rules[0].do[0].config.text, 'OLD', '交换持锁期间读取旧已验证快照')
+      assert.equal(ensureModuleSlices(target).rules[0].then[0].config.text, 'OLD', '交换持锁期间读取旧已验证快照')
       const contender = spawn(process.execPath, ['--input-type=module', '--eval', `
         import fs from 'node:fs';
         import { join } from 'node:path';
@@ -89,12 +89,12 @@ test('安装最终目录交换与保存共享锁；独立进程不能跨过目�
       child.stdin.write('x')
       assert.equal((await missing)[0].toString(), 'target-missing\n')
       assert.equal(existsSync(target), false)
-      assert.equal(ensureModuleSlices(target).rules[0].do[0].config.text, 'OLD', '目录已移入备份的窗口仍可读取已验证旧快照')
+      assert.equal(ensureModuleSlices(target).rules[0].then[0].config.text, 'OLD', '目录已移入备份的窗口仍可读取已验证旧快照')
       child.stdin.end('x')
       assert.equal((await exit)[0], 0, stderr)
     } finally { child.stdin.destroy(); if (child.exitCode === null) { child.kill(); await exit } }
-    assert.equal(ensureModuleSlices(target).rules[0].do[0].config.text, 'INSTALLED')
-    assert.equal(readRulesDir(target).contents[0].do[0].config.text, 'INSTALLED')
+    assert.equal(ensureModuleSlices(target).rules[0].then[0].config.text, 'INSTALLED')
+    assert.equal(readRulesDir(target).contents[0].then[0].config.text, 'INSTALLED')
     assert.equal(readdirSync(moduleRoot).some(file => file.startsWith('.')), false, '临时根与锁目录成功后不残留')
   }
   withModuleLock(moduleRoot, 'new-target', () => {

@@ -42,10 +42,10 @@
   channel: system-prompt/assemble
   channelOrder: 0
   waterfallPosition: outermost
-  when:
+  if:
     not:
       phase: { promoteOn: either, includeSubagents: false }
-  do:
+  then:
     kind: assembly
     id: context-gate-runtime-contexts
     target:
@@ -69,13 +69,13 @@
   channel: agent/pre-step
   channelOrder: 0
   waterfallPosition: outermost
-  when:
+  if:
     not:
       phase: { promoteOn: either, includeSubagents: false }
-  do:
+  then:
     kind: pre-step-filter
     id: context-gate-pre-step-sources
-    sources: [user, goal]          # ← messageSources 的取值
+    sources: [ user, goal ] # ← messageSources 的取值
 
 # 变体 2 —— 预设改配 `allowKinds` 时用这一条**替换**上面那条：保留 claimed 基线
 #   （对象身份或 id）+ 声明的 kind（context-gate.mjs:209-218）→ `pre-step-filter.keepKinds`

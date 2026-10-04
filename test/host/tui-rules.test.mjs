@@ -12,7 +12,7 @@ const { readModulesEnabled } = await import('../../src/shared/module-settings.ts
 test('TUI 规则开关使用定义与显式互斥；未知身份不写，重建失败不假报成功', async () => {
   const dir = join(moduleRoot, 'tui-rules')
   mkdirSync(dir, { recursive: true })
-  const body = id => ({ id, name: id, group: 'mode', exclusive: true, enabled: id === 'first', do: [{ id: 'body', kind: 'inject-text', config: { layer: 'pre-step', text: id } }] })
+  const body = id => ({ id, name: id, group: 'mode', exclusive: true, enabled: id === 'first', then: [{ id: 'body', kind: 'inject-text', config: { layer: 'pre-step', text: id } }] })
   const file = join(dir, 'module.yml')
   writeFileSync(file, JSON.stringify({ id: 'tui-rules', modules: [], configOrder: { first: 0, second: 100 }, rules: [body('first'), body('second')] }))
   let handler

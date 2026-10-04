@@ -7,7 +7,7 @@ id: example-custom-fallback
 name: 示例：自定义锚词兜底注入
 enabled: false
 layer: pre-step
-when:
+if:
   all:
     - phase:
         promoted: true
@@ -15,7 +15,7 @@ when:
     - anchor:
         keys: []
         fallbackAfter: 1
-do:
+then:
   - id: inject
     kind: inject-text
     config:

@@ -48,16 +48,17 @@
 # 无。本能力 5 条对拍用例（放行 / deny / 哨兵轮 / 每轮上限 / 子代理受众）全部绿。
 - id: deliberation-gate
   channel: tools/pre-execute
-  when:
+  if:
     count: { of: assistant-chars, per: turn, max: 399, delegated: false }
-  do:
+  then:
     kind: decision
     id: deliberation-gate
     phase: pre
     decision: deny
     maxPerTurn: 1
     reason: >-
-      Deliberation gate: this turn has not shown its reasoning yet. Before retrying this tool
-      call, write out your full reasoning in your reply — start with "We", restate the goal,
-      weigh the approaches, and lay out the concrete steps and risks — then issue the tool
-      call again. This message is a planning prompt, not a tool failure.
+      Deliberation gate: this turn has not shown its reasoning yet. Before
+      retrying this tool call, write out your full reasoning in your reply —
+      start with "We", restate the goal, weigh the approaches, and lay out the
+      concrete steps and risks — then issue the tool call again. This message is
+      a planning prompt, not a tool failure.

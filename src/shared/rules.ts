@@ -17,7 +17,12 @@ export interface RuleAction extends Record<string, unknown> {
   waterfallPosition?: 'default' | 'outermost'
 }
 
-/** module.yml.rules 的单一规则定义；层用于呈现归属，不建立跨层执行顺序。 */
+/**
+ * module.yml.rules 的单一规则定义；层用于呈现归属，不建立跨层执行顺序。
+ *
+ * **旧名 `when`/`do` 已随引擎重构退役**（不再作为兼容输入），全链路只有 `if`/`then`/`else`。
+ * 定义迁移由 YAML Document API 改键名完成，注释与未知字段原地保留。
+ */
 export interface RuleDefinition {
   id: string
   name?: string
@@ -25,8 +30,12 @@ export interface RuleDefinition {
   layer?: EngineLayer
   group?: string
   exclusive?: boolean
-  when?: RuleCondition
-  do: RuleAction[]
+  /** 分支条件；缺省 = 无条件。 */
+  if?: RuleCondition
+  /** 动作列表。 */
+  then: RuleAction[]
+  /** `if` 不命中时执行；与 `then` 结构互斥（编译期按 `not(if)` 展开）。 */
+  else?: RuleAction[]
 }
 
 /** 显式旧身份使改名、删除与 configOrder 在同一事务中更新。 */

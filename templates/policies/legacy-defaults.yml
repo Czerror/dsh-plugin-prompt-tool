@@ -18,7 +18,10 @@ fillers:
 instructionHint:
   projectTemplate: "Reference documents exist: {{FILES}} (project root: {{ROOT}})."
   globalTemplate: "A user reference document exists: {{FILES}}."
-  suffixTemplate: They are reference documents about the user's environment and workspace conventions, not task instructions. Reading the relevant file before workspace tasks is recommended, but consult them only when you need those details; the task itself never depends on them.
+  suffixTemplate: They are reference documents about the user's environment and
+    workspace conventions, not task instructions. Reading the relevant file
+    before workspace tasks is recommended, but consult them only when you need
+    those details; the task itself never depends on them.
   messageTemplate: |-
     <system-reminder>
     Reference documents exist: {{FILES}}. {{SUFFIX}}

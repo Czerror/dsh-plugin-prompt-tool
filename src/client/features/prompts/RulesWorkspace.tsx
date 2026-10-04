@@ -40,8 +40,8 @@ function scopeVisible(rule: RuleDefinition, scope: 'main' | 'subagent'): boolean
     if (Array.isArray(condition.any)) return condition.any.some(possible)
     return true
   }
-  if (!possible(rule.when)) return false
-  return rule.do.length === 0 || rule.do.some(action => {
+  if (!possible(rule.if)) return false
+  return rule.then.length === 0 || rule.then.some(action => {
     const audience = action.kind === 'inject-text' ? asTriggerRecord(action.config).audience : action.audience
     return audience == null || audience === 'all' || audience === scope
   })
@@ -93,7 +93,7 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
   }
   const rank = new Map(order?.entries.filter(entry => entry.moduleId === moduleId).map(entry => [entry.configId, entry.sequence]) ?? [])
   const entries = draft.entries.filter(entry => !entry.deleted && scopeVisible(entry.value, props.scope ?? 'main'))
-    .filter(entry => (view === 'all' || view === 'world-book' && entry.value.do.some(action => asTriggerRecord(action.config).strategy === 'world-book') || entry.value.layer === view)
+    .filter(entry => (view === 'all' || view === 'world-book' && entry.value.then.some(action => asTriggerRecord(action.config).strategy === 'world-book') || entry.value.layer === view)
       && (!query || JSON.stringify(entry.value).toLowerCase().includes(query) || entry.value.layer !== undefined && props.matchesLayerSettings?.(entry.value.layer, query)))
     .sort((a, b) => (rank.get(a.previousId ?? a.value.id) ?? Number.MAX_SAFE_INTEGER) - (rank.get(b.previousId ?? b.value.id) ?? Number.MAX_SAFE_INTEGER))
   const batchDisabled = readOnly || !draft.loaded || draft.busy !== undefined || hasRuleFields(draft) || draft.remote !== undefined || entries.length === 0
@@ -121,7 +121,7 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
     let id = rule.id + '-copy', suffix = 2
     while (draft.entries.some(entry => !entry.deleted && entry.value.id === id)) id = rule.id + '-copy-' + suffix++
     const clone = structuredClone(rule)
-    clone.do = clone.do.map(action => { if (action.kind !== 'inject-text') return action; const { id: _sourceId, ...config } = asTriggerRecord(action.config); return { ...action, config } })
+    clone.then = clone.then.map(action => { if (action.kind !== 'inject-text') return action; const { id: _sourceId, ...config } = asTriggerRecord(action.config); return { ...action, config } })
     setExpanded(editor.add({ ...clone, id, enabled: false }))
   }
   const instructionCards = fields.promptConfigs.filter(config => instructionFileIdOf(config) !== undefined).map(config => <PromptConfigCard key={config.id} t={t} meta={store.meta} config={config} expanded={expanded === config.id} canMoveUp={false} canMoveDown={false}

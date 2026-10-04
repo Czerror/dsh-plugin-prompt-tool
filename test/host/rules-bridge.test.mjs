@@ -8,7 +8,7 @@ import { isolatedHome, fakeReq, fakeRes, readBridge } from '../fixtures/host-har
 const { home, moduleRoot } = isolatedHome('pt-rules-bridge-')
 const { registerSettingsBridge } = await import('../../src/runtime/settings-bridge.ts')
 let sequence = 0
-const textRule = (id, enabled = false) => ({ id, layer: 'pre-step', enabled, group: 'mode', exclusive: true, do: [{ id: 'text', kind: 'inject-text', config: { id, layer: 'pre-step', text: id } }] })
+const textRule = (id, enabled = false) => ({ id, layer: 'pre-step', enabled, group: 'mode', exclusive: true, then: [{ id: 'text', kind: 'inject-text', config: { id, layer: 'pre-step', text: id } }] })
 
 function harness({ readonly = false, afterRebuild } = {}) {
   const id = `rules-${++sequence}`

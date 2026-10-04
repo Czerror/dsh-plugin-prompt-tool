@@ -8,7 +8,7 @@ import { isolatedHome } from '../fixtures/host-harness.mjs'
 const { moduleRoot } = isolatedHome('pt-module-rules-')
 const { readModuleRules, editModuleRules } = await import('../../src/host/module-rules.ts')
 const { loadModuleSpec, resolveModuleFacts } = await import('../../src/host/manifest.ts')
-const rule = (id, extra = {}) => ({ id, layer: 'agent-request', do: [{ id: 'request', kind: 'request-params', patch: { maxTokens: 512 } }], ...extra })
+const rule = (id, extra = {}) => ({ id, layer: 'agent-request', then: [{ id: 'request', kind: 'request-params', patch: { maxTokens: 512 } }], ...extra })
 function fixture(id, rules) {
   const dir = join(moduleRoot, id)
   mkdirSync(dir, { recursive: true })
@@ -21,11 +21,11 @@ test('规则局部事务：改名和删除同步序号，显式启用原子关�
   writeFileSync(join(dir, 'module.yml'), [
     '# user comment', 'id: edit', 'modules: []', 'unknown: { keep: true }',
     'rules:',
-    '  - id: a', '    group: g', '    exclusive: true', '    do:',
+    '  - id: a', '    group: g', '    exclusive: true', '    then:',
     '      - { id: request, kind: request-params, patch: { maxTokens: 512 } }',
     '  - id: b # identity comment', '    name: Before # name comment', '    group: g', '    enabled: false',
-    '    do:', '      - id: request # action comment', '        kind: request-params', '        patch:', '          maxTokens: 512 # value comment',
-    '  - id: c', '    do:', '      - { id: request, kind: request-params, patch: { maxTokens: 512 } }',
+    '    then:', '      - id: request # action comment', '        kind: request-params', '        patch:', '          maxTokens: 512 # value comment',
+    '  - id: c', '    then:', '      - { id: request, kind: request-params, patch: { maxTokens: 512 } }',
     'configOrder:', '  a: 0', '  b: 10 # order comment', '  c: 20', '',
   ].join('\n'))
   const initial = readModuleRules(dir)
@@ -49,7 +49,7 @@ test('规则拒绝：版本过期、重复身份、坏动作与未显式解决�
   for (const request of [
     { expectedRevision: '0'.repeat(64), edits: [] },
     { edits: [{ previousId: null, rule: rule('a') }] },
-    { edits: [{ previousId: 'a', rule: { ...rule('a'), do: [{ id: 'broken', kind: 'missing' }] } }] },
+    { edits: [{ previousId: 'a', rule: { ...rule('a'), then: [{ id: 'broken', kind: 'missing' }] } }] },
     { edits: [{ previousId: 'b', rule: rule('b', { group: 'g', enabled: true }) }] },
     { edits: [{ previousId: 'missing', rule: null }] },
   ]) assert.throws(() => editModuleRules(dir, { expectedRevision: initial.revision, ...request }))
@@ -57,10 +57,10 @@ test('规则拒绝：版本过期、重复身份、坏动作与未显式解决�
   const file = join(dir, 'module.yml')
   writeFileSync(file, JSON.stringify({ id: 'reject', modules: [], rules: [null] }))
   assert.throws(() => readModuleRules(dir), error => error.status === 400 && error.code === 'rules-invalid', '坏结构在读取面明确拒绝')
-  const future = { id: 'future', when: { futurePredicate: { custom: true } }, do: [{ id: 'future-action', kind: 'future-kind', opaque: { custom: true } }] }
+  const future = { id: 'future', if: { futurePredicate: { custom: true } }, then: [{ id: 'future-action', kind: 'future-kind', opaque: { custom: true } }] }
   writeFileSync(file, JSON.stringify({ id: 'reject', modules: [], rules: [future] }))
   assert.throws(() => readModuleRules(dir), /future-kind|futurePredicate/, '无效源语义拒绝加载，不能发布切片')
-  const aliased = 'id: reject\nmodules: []\nrules:\n  - id: a\n    name: &shared Before\n    do:\n      - { id: request, kind: request-params, patch: { maxTokens: 512 } }\nunknown: *shared\n'
+  const aliased = 'id: reject\nmodules: []\nrules:\n  - id: a\n    name: &shared Before\n    then:\n      - { id: request, kind: request-params, patch: { maxTokens: 512 } }\nunknown: *shared\n'
   writeFileSync(file, aliased)
   const aliasSnapshot = readModuleRules(dir)
   for (const validateOnly of [true, false]) assert.throws(() => editModuleRules(dir, { expectedRevision: aliasSnapshot.revision, validateOnly, edits: [{ previousId: 'a', rule: { ...aliasSnapshot.rules[0], name: 'After' } }] }), /YAML.*引用/, '共享别名不允许局部编辑改变其他定义')

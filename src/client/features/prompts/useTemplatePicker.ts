@@ -33,7 +33,7 @@ export function createConfigFromTemplate(
   let suffix = 2
   while (configs.some((config) => config.id === clone.id)) clone.id = `${entry.spec.id}-${suffix++}`
   clone.enabled = false
-  clone.do = clone.do.map(action => {
+  clone.then = clone.then.map(action => {
     if (action.kind !== 'inject-text') return action
     const config = action.config !== null && typeof action.config === 'object' && !Array.isArray(action.config) ? action.config as Record<string, unknown> : {}
     const { id: _sourceId, ...content } = config

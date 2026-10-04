@@ -11,7 +11,7 @@ const { moduleRoot } = isolatedHome('pt-package-roundtrip-')
 const { moduleImportPreview, installModulePackage, exportModulePackage, expandModuleSource } = await import('../../src/host/module-package.ts')
 const { ensureModuleSlices, readRulesDir } = await import('../../src/host/module-storage.ts')
 const { decodeAssetFile } = await import('../../src/host/import-source.ts')
-const rule = (id, text, extra = {}) => ({ id, enabled: false, do: [{ id: 'inject', kind: 'inject-text', config: { text, ...extra } }] })
+const rule = (id, text, extra = {}) => ({ id, enabled: false, then: [{ id: 'inject', kind: 'inject-text', config: { text, ...extra } }] })
 const source = (id, extra = {}) => ({ id, name: id, modules: [], rules: [rule('hello', 'SOURCE')], variables: { owner: 'Mia' }, variablesEnabled: false, configOrder: { hello: 40 }, ...extra })
 function fixture(id, value = source(id)) {
   const dir = join(moduleRoot, id)
@@ -57,7 +57,7 @@ test('模块包往返以完整定义为准，漂移切片只在候选重建，�
     const copied = join(moduleRoot, id)
     const restored = readRulesDir(copied)
     assert.equal(restored.contents[0].id, 'hello')
-    assert.equal(restored.contents[0].do[0].config.templateFile, './assets/notice.txt')
+    assert.equal(restored.contents[0].then[0].config.templateFile, './assets/notice.txt')
     assert.equal(restored.settings.hello.enabled, false)
     assert.equal(restored.settings.hello.order, 40)
     assert.deepEqual(restored.variables, { owner: 'Mia' })
@@ -77,7 +77,7 @@ test('模块包往返以完整定义为准，漂移切片只在候选重建，�
 test('语义无效源在预览、安装、导出共同拒绝，模板预览只读取上传文件', async () => {
   mkdirSync(moduleRoot, { recursive: true })
   const invalid = [
-    { rules: [{ id: 'hello', do: [{ id: 'x', kind: 'not-an-action' }] }] },
+    { rules: [{ id: 'hello', then: [{ id: 'x', kind: 'not-an-action' }] }] },
     { rules: [rule('variables', 'RESERVED')] },
     { configOrder: { hello: -1 } },
     { variables: { owner: 1 } },
@@ -107,7 +107,7 @@ test('语义无效源在预览、安装、导出共同拒绝，模板预览只�
   finally { mock.restoreAll(); syncBuiltinESMExports() }
   assert.deepEqual(writes, [])
   assert.deepEqual(state(dir), before)
-  candidate.rules[0].do[0].config.templateFile = '../outside.txt'
+  candidate.rules[0].then[0].config.templateFile = '../outside.txt'
   assert.throws(() => moduleImportPreview(moduleRoot, [{ path: 'module.yml', content: JSON.stringify(candidate) }], { targetId: id }), /外部|越界|资源/)
 })
 
@@ -133,7 +133,7 @@ test('不分享的切片和记忆不读、不影响导出版本；定义模式�
   const missing = 'missing-template'
   fixture(missing, source(missing, { rules: [rule('hello', undefined, { templateFile: './absent.txt' })] }))
   const definition = await exportModulePackage(moduleRoot, { id: missing, mode: 'definition' })
-  assert.equal(parse(definition.content).rules[0].do[0].config.templateFile, './absent.txt')
+  assert.equal(parse(definition.content).rules[0].then[0].config.templateFile, './absent.txt')
   assert.ok(definition.warnings.some(warning => warning.includes('absent.txt')))
   const blocked = await exportModulePackage(moduleRoot, { id: missing, mode: 'zip', preview: true })
   assert.ok(blocked.blockers.some(warning => warning.includes('absent.txt')))

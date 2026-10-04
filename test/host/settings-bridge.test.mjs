@@ -53,9 +53,9 @@ function makeUserPresetDir(prefix) {
 
 const textRule = (id, text, options = {}) => {
   const { enabled, ...config } = options
-  return { id, layer: config.layer ?? 'pre-step', ...(enabled === undefined ? {} : { enabled }), do: [{ id: 'inject', kind: 'inject-text', config: { id, layer: 'pre-step', text, ...config } }] }
+  return { id, layer: config.layer ?? 'pre-step', ...(enabled === undefined ? {} : { enabled }), then: [{ id: 'inject', kind: 'inject-text', config: { id, layer: 'pre-step', text, ...config } }] }
 }
-const requestRule = (id, patch) => ({ id, layer: 'agent-request', do: [{ id: 'request', kind: 'request-params', patch }] })
+const requestRule = (id, patch) => ({ id, layer: 'agent-request', then: [{ id: 'request', kind: 'request-params', patch }] })
 
 function makeHarness(services = {}, value = {}) {
   const handlers = new Map()
@@ -396,14 +396,14 @@ test('请求模块身份统一 bootstrap 快照与规则写入；错误身份和
     const current = await call('rules')
     assert.equal(current.status, 200)
     assert.deepEqual(current.payload.value.rules.map(rule => rule.id), ['module-a-card', 'model'])
-    assert.equal(current.payload.value.rules[1].do[0].patch.temperature, 0.2)
+    assert.equal(current.payload.value.rules[1].then[0].patch.temperature, 0.2)
     assert.deepEqual(descriptorValue, {}, '响应投影不修改全局设置')
     const noHeader = await call('bootstrap', {}, { target: undefined })
     assert.equal(noHeader.status, 200)
     assert.equal(noHeader.payload.value.value.moduleId, idB, '无目标时描述身份来自实际回退目录')
     const fallback = await call('rules', { expectedModuleId: idB }, { target: undefined })
     assert.equal(fallback.status, 200)
-    assert.equal(fallback.payload.value.rules[0].do[0].patch.maxTokens, 888)
+    assert.equal(fallback.payload.value.rules[0].then[0].patch.maxTokens, 888)
   })
   await t.test('A 请求可以保存 A，expected B 被拒且不改任一模块', async () => {
     const beforeB = readFileSync(fileB, 'utf8')
@@ -411,7 +411,7 @@ test('请求模块身份统一 bootstrap 快照与规则写入；错误身份和
     const edits = [{ previousId: 'model', rule: requestRule('model', { temperature: 0.4 }) }]
     const saved = await call('rules', { expectedRevisions: revisions, edits })
     assert.equal(saved.status, 200, JSON.stringify(saved.payload))
-    assert.equal(parseYaml(readFileSync(fileA, 'utf8')).rules[1].do[0].patch.temperature, 0.4)
+    assert.equal(parseYaml(readFileSync(fileA, 'utf8')).rules[1].then[0].patch.temperature, 0.4)
     assert.equal(readFileSync(fileB, 'utf8'), beforeB)
     assert.deepEqual(rebuilt, [idA])
     const beforeA = readFileSync(fileA, 'utf8')
@@ -497,7 +497,7 @@ test('模块配置排序端点：启用尾部追加、跨模块保存、冲突�
     assert.deepEqual(snapshot.entries.map((entry) => entry.moduleId), [ids[1], ids[0]])
     assert.deepEqual(rebuilt.slice(-2).sort(), ids.slice(0, 2).sort())
     for (const [index, dir] of dirs.entries()) {
-      assert.equal(parseYaml(readFileSync(join(dir, 'module.yml'), 'utf8')).rules[0].do[0].config.text, `BODY ${index}`)
+      assert.equal(parseYaml(readFileSync(join(dir, 'module.yml'), 'utf8')).rules[0].then[0].config.text, `BODY ${index}`)
     }
     beforeRebuild = async () => {}
     const enabledBefore = dirs.slice(0, 2).map((dir) => readFileSync(join(dir, 'module.yml'), 'utf8'))

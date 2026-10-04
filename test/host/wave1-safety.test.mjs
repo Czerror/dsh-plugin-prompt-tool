@@ -125,7 +125,7 @@ test('writePreset：恶意规则身份经统一编译器拒绝，不留半成品
     const moduleDir = join(dir, 'preset')
     const sourceDir = join(moduleDir, DEFAULT_MODULE_ID)
     mkdirSync(sourceDir, { recursive: true })
-    writeFileSync(join(sourceDir, 'module.yml'), JSON.stringify({ id: DEFAULT_MODULE_ID, modules: [], rules: [{ id: '../../evil', do: [{ id: 'inject', kind: 'inject-text', config: { text: 'x' } }] }] }))
+    writeFileSync(join(sourceDir, 'module.yml'), JSON.stringify({ id: DEFAULT_MODULE_ID, modules: [], rules: [{ id: '../../evil', then: [{ id: 'inject', kind: 'inject-text', config: { text: 'x' } }] }] }))
     assert.throws(
       () => writePreset('PROMPT', {
         moduleDir,
@@ -154,7 +154,7 @@ test('writePreset：规则裸文件名与状态清单序号独立，重复恢复
       text: `内容 ${index}`,
     }))
     mkdirSync(join(moduleDir, DEFAULT_MODULE_ID), { recursive: true })
-    writeFileSync(join(moduleDir, DEFAULT_MODULE_ID, 'module.yml'), JSON.stringify({ id: DEFAULT_MODULE_ID, modules: [], rules: many.map(config => ({ id: config.id, layer: config.layer, do: [{ id: 'inject', kind: 'inject-text', config }] })) }))
+    writeFileSync(join(moduleDir, DEFAULT_MODULE_ID, 'module.yml'), JSON.stringify({ id: DEFAULT_MODULE_ID, modules: [], rules: many.map(config => ({ id: config.id, layer: config.layer, then: [{ id: 'inject', kind: 'inject-text', config }] })) }))
     writePreset('PROMPT', { moduleDir, presetOrder: 5 })
     const rulesDir = join(moduleDir, DEFAULT_MODULE_ID, 'rules')
     const files = readdirSync(rulesDir).filter(name => name.startsWith('cfg-')).sort()

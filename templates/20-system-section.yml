@@ -11,7 +11,7 @@
 id: example-system-section
 name: 示例：system 静态段
 layer: system-section
-do:
+then:
   - id: inject
     kind: inject-text
     config:

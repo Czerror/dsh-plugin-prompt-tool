@@ -50,12 +50,13 @@
 # 在 `includeSubagents: false`（组合源默认，声明写 `delegated: false`）下全部绿。
 - id: anchor-turn
   channel: agent/inbox/inserted
-  when:
+  if:
     session: { type: user/message, present: false, delegated: false }
-  do:
+  then:
     kind: inbox-prepend
     id: anchor-turn
     target: next-turn
     text: >-
-      This round is a test. Tools are not open yet; all tools will open next round.
+      This round is a test. Tools are not open yet; all tools will open next
+      round.
   waterfallPosition: default

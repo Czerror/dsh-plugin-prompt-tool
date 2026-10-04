@@ -2,7 +2,7 @@
 import { ACTION_KINDS, actionExecutionPoint, prepareAction, registerAction } from './actions.mjs'
 import { WATERFALL_POSITIONS, orderTriggers, registrationOptions, wireTriggerObservers } from './trigger.mjs'
 import { compileWhen } from './conditions/index.mjs'
-import { conjunction, expandActions, pickAlias } from './branch.mjs'
+import { conjunction, expandActions } from './branch.mjs'
 export { compileWhen, COMPOSITE_OPERATORS, PREDICATE_FACTORIES } from './conditions/index.mjs'
 const DECLARATION_FIELDS = Object.freeze(['id', 'channel', 'channelOrder', 'waterfallPosition', 'phase', 'if', 'then', 'else', 'when', 'do'])
 const ACTION_PHASES = Object.freeze(['before-next', 'after-next'])
@@ -63,8 +63,11 @@ export function compileDeclaration(spec, context = {}) {
     throw new TypeError(`trigger-spec: trigger ${spec.id}: channel must be a non-empty event name`)
   }
   const label = `trigger-spec: trigger ${spec.id}`
-  const triggerIf = pickAlias(spec, 'if', 'when', label)
-  const triggerThen = pickAlias(spec, 'then', 'do', label)
+  // 旧名已按引擎重构退役：显式拒绝并给出新名。
+  if (spec.when !== undefined) throw new TypeError(`${label}: "when" 已退役，改用 "if"`)
+  if (spec.do !== undefined) throw new TypeError(`${label}: "do" 已退役，改用 "then"`)
+  const triggerIf = spec.if
+  const triggerThen = spec.then
   if (triggerThen === undefined) throw new TypeError(`${label}: then is required`)
   const channelOrder = spec.channelOrder ?? 0
   if (!Number.isSafeInteger(channelOrder) || channelOrder < 0) {

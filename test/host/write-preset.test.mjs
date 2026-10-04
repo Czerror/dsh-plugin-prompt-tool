@@ -38,7 +38,7 @@ function patchRule(dir, id, change) {
 
 function projectedConfig(directory, id) {
   const rule = readModuleRules(directory).rules.find(rule => rule.id === id)
-  const config = rule?.do.find(action => action.kind === 'inject-text')?.config
+  const config = rule?.then.find(action => action.kind === 'inject-text')?.config
   return config === undefined ? undefined : { ...config, enabled: rule.enabled !== false }
 }
 
@@ -103,7 +103,7 @@ test('公共重建入口：已离线迁移规则逐模块重建，不串用模�
     const guide = projectedConfig(dir, 'router-guide')
     assert.equal(guide.enabled, true)
     assert.equal(guide.params.text, `GUIDE-${id}`)
-    assert.equal(loadModuleSpec(dir).rules.find(rule => rule.id === 'router-guide').when, undefined, '自定义引导没有模型范围门')
+    assert.equal(loadModuleSpec(dir).rules.find(rule => rule.id === 'router-guide').if, undefined, '自定义引导没有模型范围门')
     assert.equal(readFileSync(join(dir, 'preset.md'), 'utf8'), `BODY-${id}`)
     assert.equal(readFileSync(join(dir, 'agents.md'), 'utf8'), `AGENTS-${id}`)
   }
@@ -149,20 +149,20 @@ test('旧来源运行时拒绝，显式离线迁移后只认规则事务；未�
   const loaded = loadModuleSpec(dir)
   const nearRule = loaded.rules.find(rule => rule.id === 'near-anchor')
   const guideRule = loaded.rules.find(rule => rule.id === 'router-guide')
-  const near = nearRule.do[0].config
-  const guide = guideRule.do[0].config
-  const injector = loaded.rules.find(rule => rule.id === 'prompt-injector').do[0].config
+  const near = nearRule.then[0].config
+  const guide = guideRule.then[0].config
+  const injector = loaded.rules.find(rule => rule.id === 'prompt-injector').then[0].config
   assert.equal(nearRule.enabled, true)
   assert.equal(near.params.complexPattern, 'complex-task')
   assert.equal(guide.params.complexPattern, 'complex-task', '共享复杂模式交给两条规则')
   assert.equal(guideRule.enabled, false)
   assert.equal(guide.params.useCustom, true, '停用不丢弃已保存的自定义模式偏好')
-  assert.ok(!(guideRule.when?.all ?? [guideRule.when]).some(condition => condition?.scope?.modelScope === 'flash'))
+  assert.ok(!(guideRule.if?.all ?? [guideRule.if]).some(condition => condition?.scope?.modelScope === 'flash'))
   assert.equal(injector.params.text, 'LEGACY BODY')
   assert.ok(injector.params.anchorWords.includes('go'))
   const imported = writePreset('LEGACY BODY', { moduleDir: root, presetTemplate: FIXTURE_PRESET_ID, outputId: 'imported', sourceDir: dir, promptConfigs: [] })
   assert.equal(projectedConfig(imported, 'near-anchor').params.complexPattern, 'complex-task')
-  patchRule(dir, 'near-anchor', rule => ({ ...rule, enabled: false, do: [{ ...rule.do[0], config: { ...near, params: { ...near.params, text: 'OWNED RULE' } } }] }))
+  patchRule(dir, 'near-anchor', rule => ({ ...rule, enabled: false, then: [{ ...rule.then[0], config: { ...near, params: { ...near.params, text: 'OWNED RULE' } } }] }))
   saveModuleParams(root, FIXTURE_PRESET_ID, { maxDepth: 0 }, undefined)
   const saved = parseYaml(readFileSync(file, 'utf8'))
   assert.equal(saved.layerSettings['pre-step']?.firstTurnText, undefined)
@@ -171,9 +171,9 @@ test('旧来源运行时拒绝，显式离线迁移后只认规则事务；未�
   materializeModule(FIXTURE_PRESET_ID, { moduleDir: root })
   const ownedNear = loadModuleSpec(dir).rules.find(rule => rule.id === 'near-anchor')
   assert.equal(ownedNear.enabled, false)
-  assert.equal(ownedNear.do[0].config.params.text, 'OWNED RULE')
+  assert.equal(ownedNear.then[0].config.params.text, 'OWNED RULE')
   assert.throws(() => saveModuleParams(root, FIXTURE_PRESET_ID, { firstTurnText: '' }, undefined), /旧规则参数/)
-  assert.equal(loadModuleSpec(dir).rules.find(rule => rule.id === 'near-anchor').do[0].config.params.text, 'OWNED RULE')
+  assert.equal(loadModuleSpec(dir).rules.find(rule => rule.id === 'near-anchor').then[0].config.params.text, 'OWNED RULE')
   const orphanDir = join(root, 'orphan')
   mkdirSync(orphanDir)
   writeFileSync(join(orphanDir, 'module.yml'), 'id: orphan\nmodules: []\nlayerSettings:\n  pre-step:\n    guideWeak: KEEP\n', 'utf8')
@@ -197,7 +197,7 @@ test('运行总闸：关闭再开启不改模块定义或物化产物字节', as
     }
   }
   await update({ writePreset: false })
-  patchRule(dir, 'near-anchor', rule => ({ ...rule, do: [{ ...rule.do[0], config: { ...rule.do[0].config, params: { ...rule.do[0].config.params, text: 'SAVED-WHILE-OFF' } } }] }))
+  patchRule(dir, 'near-anchor', rule => ({ ...rule, then: [{ ...rule.then[0], config: { ...rule.then[0].config, params: { ...rule.then[0].config.params, text: 'SAVED-WHILE-OFF' } } }] }))
   materializeModule('writer-gate', { moduleDir: join(home, '.prompt-tool', 'modules'), presetOrder: 5 })
   assert.equal(projectedConfig(dir, 'near-anchor').params.text, 'SAVED-WHILE-OFF')
 })
@@ -256,7 +256,7 @@ test('writePreset 物化模型请求动作，条件区分主/子且空参数不�
     const options = makeOptions(moduleDir)
     const source = join(moduleDir, FIXTURE_PRESET_ID)
     const current = readModuleRules(source)
-    const model = (id, audience, patch) => ({ id, layer: 'agent-request', when: { scope: { audience } }, do: [{ id: 'request', kind: 'request-params', modelScope: 'all', patch }] })
+    const model = (id, audience, patch) => ({ id, layer: 'agent-request', if: { scope: { audience } }, then: [{ id: 'request', kind: 'request-params', modelScope: 'all', patch }] })
     editModuleRules(source, { expectedRevisions: current.revisions, edits: [
       { previousId: null, rule: model('model-params', 'main', { reasoningEffort: 'high', temperature: 1, maxTokens: 32000 }) },
       { previousId: null, rule: model('subagent-model-params', 'subagent', { reasoningEffort: 'max' }) },
@@ -265,10 +265,10 @@ test('writePreset 物化模型请求动作，条件区分主/子且空参数不�
     const rules = readModuleRules(source).rules
     const main = rules.find(rule => rule.id === 'model-params')
     const child = rules.find(rule => rule.id === 'subagent-model-params')
-    assert.deepEqual(main.when, { scope: { audience: 'main' } })
-    assert.deepEqual(main.do[0].patch, { reasoningEffort: 'high', temperature: 1, maxTokens: 32000 })
-    assert.deepEqual(child.when, { scope: { audience: 'subagent' } })
-    assert.deepEqual(child.do[0].patch, { reasoningEffort: 'max' })
+    assert.deepEqual(main.if, { scope: { audience: 'main' } })
+    assert.deepEqual(main.then[0].patch, { reasoningEffort: 'high', temperature: 1, maxTokens: 32000 })
+    assert.deepEqual(child.if, { scope: { audience: 'subagent' } })
+    assert.deepEqual(child.then[0].patch, { reasoningEffort: 'max' })
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }
@@ -310,7 +310,7 @@ test('writePreset 拒绝旧settings规则覆盖；正文资产写盘不改已有
     assert.equal(readFileSync(moduleFile, 'utf8'), before)
     writePreset('FILE CONTENT', options)
     const injector = projectedConfig(join(moduleDir, 'fixture'), 'prompt-injector')
-    assert.equal(injector.params.text, parseYaml(before).rules.find(rule => rule.id === 'prompt-injector').do[0].config.params.text)
+    assert.equal(injector.params.text, parseYaml(before).rules.find(rule => rule.id === 'prompt-injector').then[0].config.params.text)
     assert.doesNotMatch(JSON.stringify(injector), /SETTINGS TEXT/)
     assert.equal(readFileSync(join(moduleDir, 'fixture', 'preset.md'), 'utf8'), 'FILE CONTENT')
   } finally {
@@ -496,7 +496,7 @@ test('R3 离线迁移后的规则保留作者定义，只有显式规则事务�
     assert.equal(readConfig(kept, 'near-anchor').enabled, true, '省略 firstTurnAnchor 时保留定义里的 true')
     assert.equal(readConfig(kept, 'near-anchor').params.text, 'ANCHOR TEXT', '省略 firstTurnText 不清空作者文本')
     assert.equal(readConfig(kept, 'prompt-injector').enabled, false, '省略 injectPrompt 时保留定义里的 false')
-    assert.deepEqual(subagentRule(kept)?.do[0].patch, { provider: 'sub-provider', model: 'sub-model' },
+    assert.deepEqual(subagentRule(kept)?.then[0].patch, { provider: 'sub-provider', model: 'sub-model' },
       '省略子代理模型路由时保留定义')
 
     // 显式局部事务才能关闭/开启规则或移除路由；writer 不再读取旧业务覆盖参数。

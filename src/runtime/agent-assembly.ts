@@ -138,13 +138,13 @@ export async function prepareAssembly(
     variables: spec.variables, variablesEnabled: spec.variablesEnabled,
     promptConfigOptions: rulePromptConfigOptions(moduleDir, ruleConfig.strategyDir),
   })
-  const ruleConditions = new Map((spec.rules ?? []).map(rule => [rule.id, structuredClone(rule.when)]))
+  const ruleConditions = new Map((spec.rules ?? []).map(rule => [rule.id, structuredClone(rule.if)]))
   // 「独占」（`complete`）组装期兜底：宿主 system-prompt 对「多于一个生效 complete 段」
   // 直接抛错（packages/core/system-prompt/src/index.ts:597-600），而写盘前的互斥门控只
   // 覆盖两个 bridge 端点——手改 module.yml、还原 ZIP/备份、导入包都能绕过。这里在装配前
   // 查一次，把「system 提示被清到只剩一段 / 组装失败」挡在 Agent 创建之前。
   // 判据与写门控同源：`enabled !== false` 才参与，「独占」是 system-section 的 params.complete。
-  const exclusiveConfigs = (spec.rules ?? []).filter(rule => rule.enabled !== false).flatMap(rule => rule.do.filter(action => {
+  const exclusiveConfigs = (spec.rules ?? []).filter(rule => rule.enabled !== false).flatMap(rule => rule.then.filter(action => {
     const config = action.config as { params?: { complete?: unknown } } | undefined
     return action.kind === 'inject-text' && config?.params?.complete === true
   }))

@@ -41,7 +41,7 @@ rules:
     name: 示例：消息批注入
     enabled: false
     layer: pre-step
-    do:
+    then:
       - id: inject
         kind: inject-text
         config:
@@ -71,7 +71,7 @@ rules:
     name: 示例：首句锚点
     enabled: false
     layer: pre-step
-    do:
+    then:
       - id: inject
         kind: inject-text
         config:
@@ -101,14 +101,14 @@ rules:
     name: 示例：每轮引导
     enabled: false
     layer: pre-step
-    when:
+    if:
       all:
         - scope:
             modelScope: flash
         - phase:
             promoted: true
             includeSubagents: false
-    do:
+    then:
       - id: inject
         kind: inject-text
         config:
@@ -136,7 +136,7 @@ rules:
     name: 示例：自定义锚词兜底注入
     enabled: false
     layer: pre-step
-    when:
+    if:
       all:
         - phase:
             promoted: true
@@ -144,7 +144,7 @@ rules:
         - anchor:
             keys: []
             fallbackAfter: 1
-    do:
+    then:
       - id: inject
         kind: inject-text
         config:
@@ -167,11 +167,11 @@ rules:
   # 注入动作内容策略：static, placeholder, first-turn-anchor, guide-auto, anchor-notice, world-book。
   - id: example-placeholder
     layer: pre-step
-    when:
+    if:
       phase:
         promoted: true
         includeSubagents: true
-    do:
+    then:
       - id: inject
         kind: inject-text
         config:
@@ -196,7 +196,7 @@ rules:
   - id: example-system-section
     name: 示例：system 静态段
     layer: system-section
-    do:
+    then:
       - id: inject
         kind: inject-text
         config:
@@ -217,7 +217,7 @@ rules:
   # 注入动作内容策略：static, placeholder。
   - id: example-runtime-context
     layer: runtime-context
-    do:
+    then:
       - id: inject
         kind: inject-text
         config:
@@ -235,10 +235,10 @@ rules:
   # 注入动作内容策略：static。
   - id: example-agent-request
     layer: agent-request
-    when:
+    if:
       scope:
         modelScope: flash
-    do:
+    then:
       - id: request
         kind: request-params
         patch:
@@ -257,10 +257,10 @@ rules:
   # 注入动作内容策略：static。
   - id: example-llm-stream
     layer: llm-stream
-    when:
+    if:
       scope:
         modelScope: flash
-    do:
+    then:
       - id: inject
         kind: inject-text
         config:
@@ -277,7 +277,7 @@ rules:
   # 注入动作内容策略：static。
   - id: example-tool-pipeline
     layer: tool-pipeline
-    do:
+    then:
       - id: before
         kind: decision
         phase: pre
@@ -297,14 +297,14 @@ rules:
   - id: example-turn-stop
     name: 未完成时强制续跑
     layer: turn-stop
-    when:
+    if:
       text:
         keys:
           - 接下来我会
           - 稍后继续
           - 待办如下
         subject: assistantText
-    do:
+    then:
       - id: inject
         kind: inject-text
         config:
@@ -323,7 +323,7 @@ rules:
   - id: example-subagent-start
     name: 子代理通用守则
     layer: subagent-start
-    do:
+    then:
       - id: inject
         kind: inject-text
         config:
@@ -343,10 +343,10 @@ rules:
     name: 子代理状态/记忆维护
     enabled: false
     layer: pre-step
-    when:
+    if:
       scope:
         audience: subagent
-    do:
+    then:
       - id: inject
         kind: inject-text
         config:
@@ -385,7 +385,7 @@ rules:
     name: 子代理结束记录（只观察）
     enabled: false
     layer: subagent-end
-    do:
+    then:
       - id: inject
         kind: inject-text
         config:
@@ -400,7 +400,7 @@ rules:
     name: 世界书条件条目
     enabled: false
     layer: pre-step
-    do:
+    then:
       - id: inject
         kind: inject-text
         config:

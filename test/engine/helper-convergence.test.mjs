@@ -126,7 +126,7 @@ test('序列断言(a)：compaction-epoch 成功压缩后 epoch 状态被覆盖�
 })
 
 test('序列断言(c)：规则锚定条件在首个 assistant 消息延迟到达时不缓存 false', async (t) => {
-  const rules = compileRules([{ id: 'anchor', when: { anchor: { keys: ['We'] } }, do: [{ id: 'notice', kind: 'inject-text', config: { id: 'seq-custom-fallback', strategy: 'anchor-notice', text: 'FALLBACK', params: { firstTurnWord: 'We' } } }] }])
+  const rules = compileRules([{ id: 'anchor', if: { anchor: { keys: ['We'] } }, then: [{ id: 'notice', kind: 'inject-text', config: { id: 'seq-custom-fallback', strategy: 'anchor-notice', text: 'FALLBACK', params: { firstTurnWord: 'We' } } }] }])
   const handlers = new Map()
   const ctx = { get() {}, on(key, callback) { handlers.set(key, callback); return () => handlers.delete(key) }, logger: { warn() {} } }
   t.after(mountRuleSources(ctx, [{ moduleId: 'module', rules }]))

@@ -234,14 +234,14 @@ test('importPresetPackage：SillyTavern JSON 单文件经转换引擎导入（�
   assert.equal(converted.promptConfigs, undefined, '新模块不再保留旧内容定义段')
   assert.equal(converted.triggers, undefined, '新模块不再保留独立行为定义段')
   const webRules = converted.rules.filter(rule => rule.id.startsWith('st-web-'))
-  assert.deepEqual(webRules.map((rule) => [rule.id, rule.do[0].kind]), [
+  assert.deepEqual(webRules.map((rule) => [rule.id, rule.then[0].kind]), [
     ['st-web-assembly', 'assembly'],
     ['st-web-sdk-strip', 'sdk-strip'],
     ['st-web-guard', 'guard'],
   ])
   for (const rule of webRules) {
-    assert.equal(rule.do.length, 1)
-    const mask = rule.do[0].target?.tools ?? rule.do[0].mask
+    assert.equal(rule.then.length, 1)
+    const mask = rule.then[0].target?.tools ?? rule.then[0].mask
     assert.deepEqual(mask, { deny: ['web_search', 'web_fetch'] }, '三条声明共用同一份 deny 名单')
   }
   const configs = contentEntries(converted)
@@ -251,7 +251,7 @@ test('importPresetPackage：SillyTavern JSON 单文件经转换引擎导入（�
   assert.deepEqual(main, {
     // RELATIVE 注入顺序 = prompt_order / 数组顺序（ST 忽略 injection_order）。
     id: 'main', name: '主提示', enabled: true, layer: 'system-section',
-    do: [{ id: 'inject', kind: 'inject-text', config: {
+    then: [{ id: 'inject', kind: 'inject-text', config: {
       id: 'main', strategy: 'static', order: 0,
       text: '你是助手。', layer: 'system-section', mergeMode: 'merged',
     // system_prompt 只是 ST 的管理位（不改变发送角色）：保留为来源事实，层归属仍按 role。

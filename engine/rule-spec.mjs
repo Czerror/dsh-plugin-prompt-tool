@@ -5,7 +5,7 @@ import { createPromptConfigs, KNOWN_LAYERS } from './schema.mjs'
 import { WATERFALL_POSITIONS } from './trigger.mjs'
 import { ACTION_EXAMPLES } from './actions/examples.mjs'
 import { PREDICATE_EXAMPLES } from './conditions/examples.mjs'
-import { conjunction, expandActions, pickAlias } from './branch.mjs'
+import { conjunction, expandActions } from './branch.mjs'
 
 /** 规则字段：`if`/`then`/`else` 是当前名，`when`/`do` 保留为兼容输入（见 pickAlias）。 */
 const RULE_FIELDS = new Set(['id', 'name', 'enabled', 'layer', 'group', 'exclusive', 'if', 'then', 'else', 'when', 'do'])
@@ -94,8 +94,11 @@ export function compileRules(specs, options = {}) {
     for (const key of ['enabled', 'exclusive']) if (spec[key] !== undefined && typeof spec[key] !== 'boolean') throw new TypeError(`rule ${spec.id}.${key} must be boolean`)
     for (const key of ['name', 'group']) if (spec[key] !== undefined && typeof spec[key] !== 'string') throw new TypeError(`rule ${spec.id}.${key} must be string`)
     if (spec.layer !== undefined && !KNOWN_LAYERS.has(spec.layer)) throw new TypeError(`rule ${spec.id}: unknown layer ${spec.layer}`)
-    const ruleIf = pickAlias(spec, 'if', 'when', `rule ${spec.id}`)
-    const ruleThen = pickAlias(spec, 'then', 'do', `rule ${spec.id}`)
+    // 旧名已按引擎重构退役：显式拒绝并给出新名，比 "unknown fields" 更可直接照做。
+    if (spec.when !== undefined) throw new TypeError(`rule ${spec.id}: "when" 已退役，改用 "if"`)
+    if (spec.do !== undefined) throw new TypeError(`rule ${spec.id}: "do" 已退役，改用 "then"`)
+    const ruleIf = spec.if
+    const ruleThen = spec.then
     if (!Array.isArray(ruleThen) || ruleThen.length === 0) throw new TypeError(`rule ${spec.id}.then must be a non-empty array`)
     const sequence = options.configOrder?.[spec.id] ?? index * 10
     if (!Number.isSafeInteger(sequence) || sequence < 0) throw new TypeError(`rule ${spec.id}: invalid configOrder`)
@@ -177,7 +180,7 @@ export function getRuleEditorMeta() {
     const example = { kind, ...structuredClone(ACTION_EXAMPLES[kind]) }
     // 新规则的投递身份由稳定 rule/action id 派生；迁移的显式 config.id 仍保留。
     if (kind === 'inject-text') delete example.config.id
-    const action = compileRules([{ id: kind, do: [{ ...example, id: 'example' }] }])[0].actions[0]
+    const action = compileRules([{ id: kind, then: [{ ...example, id: 'example' }] }])[0].actions[0]
     return { kind, example, channel: action.execution.channel, phase: action.execution.phase, lifecycle: action.execution.lifecycle, supportsWhen: action.execution.lifecycle === 'event' }
   })
   return { predicates, actions, composites: [...COMPOSITE_OPERATORS], waterfallPositions: [...WATERFALL_POSITIONS] }

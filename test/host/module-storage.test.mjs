@@ -12,7 +12,7 @@ import { isolatedHome } from '../fixtures/host-harness.mjs'
 const { moduleRoot } = isolatedHome('pt-module-storage-')
 const { loadModuleDefinition, ensureModuleSlices, readRulesDir, commitModuleDefinition } = await import('../../src/host/module-storage.ts')
 const { readModuleRules, editModuleRules } = await import('../../src/host/module-rules.ts')
-const rule = (id, text = id, state = {}) => ({ id, ...state, do: [{ id: 'inject', kind: 'inject-text', config: { text } }] })
+const rule = (id, text = id, state = {}) => ({ id, ...state, then: [{ id: 'inject', kind: 'inject-text', config: { text } }] })
 function fixture(id, source = {}) {
   const dir = join(moduleRoot, id)
   mkdirSync(dir, { recursive: true })
@@ -60,16 +60,16 @@ test('运行切片按完整定义确定性恢复；纯读、合法源修改与�
   }
   assert.equal(readFileSync(join(dir, 'module.yml'), 'utf8'), definition)
   const changed = parse(definition)
-  changed.rules[0].do[0].config.text = 'LEGAL SOURCE'
+  changed.rules[0].then[0].config.text = 'LEGAL SOURCE'
   changed.unknown = { keep: true }
   writeFileSync(join(dir, 'module.yml'), JSON.stringify(changed))
-  assert.equal(ensureModuleSlices(dir).rules[0].do[0].config.text, 'LEGAL SOURCE')
+  assert.equal(ensureModuleSlices(dir).rules[0].then[0].config.text, 'LEGAL SOURCE')
   const validSlices = bytes(dir)
-  changed.rules[0].do[0].kind = 'not-an-action'
+  changed.rules[0].then[0].kind = 'not-an-action'
   writeFileSync(join(dir, 'module.yml'), JSON.stringify(changed))
   assert.throws(() => ensureModuleSlices(dir), /not-an-action/)
   assert.deepEqual(bytes(dir), validSlices, '源语义无效不覆盖任何切片')
-  changed.rules[0].do[0].kind = 'inject-text'
+  changed.rules[0].then[0].kind = 'inject-text'
   changed.layerSettings = { 'unknown-injection-point': { maxDepth: 1 } }
   writeFileSync(join(dir, 'module.yml'), JSON.stringify(changed))
   assert.throws(() => ensureModuleSlices(dir), /module-layer-settings-invalid/)
@@ -131,48 +131,48 @@ test('提交点前后故障恢复旧或新定义；发布前只读者看不到�
     const dir = fixture('fault-' + index)
     const baseline = ensureModuleSlices(dir)
     const candidate = loadModuleDefinition(dir)
-    candidate.doc.setIn(['rules', 0, 'do', 0, 'config', 'text'], 'COMMITTED BODY')
+    candidate.doc.setIn(['rules', 0, 'then', 0, 'config', 'text'], 'COMMITTED BODY')
     candidate.doc.setIn(['variables', 'owner'], 'UPDATED VARIABLE')
     let failed = false
     mock.method(fs, 'renameSync', (from, to) => {
       if (!failed && basename(to) === failedFile) {
         failed = true
-        assert.equal(ensureModuleSlices(dir).rules[0].do[0].config.text, 'first', '中途读取沿用最后有效快照')
+        assert.equal(ensureModuleSlices(dir).rules[0].then[0].config.text, 'first', '中途读取沿用最后有效快照')
         throw new Error('injected rename failure')
       }
       return rename(from, to)
     })
     syncBuiltinESMExports()
     try {
-      if (failedFile === '_settings.yml') assert.equal(commitModuleDefinition(candidate, candidate.doc).rules[0].do[0].config.text, 'COMMITTED BODY', '提交后恢复成功报告保存成功')
+      if (failedFile === '_settings.yml') assert.equal(commitModuleDefinition(candidate, candidate.doc).rules[0].then[0].config.text, 'COMMITTED BODY', '提交后恢复成功报告保存成功')
       else assert.throws(() => commitModuleDefinition(candidate, candidate.doc), error => { assert.equal(error.persisted, false); assert.ok(error.revisions); return true })
     } finally { mock.restoreAll(); syncBuiltinESMExports() }
     assert.equal(failed, true)
     const after = ensureModuleSlices(dir)
-    assert.equal(after.rules[0].do[0].config.text, failedFile === '_settings.yml' ? 'COMMITTED BODY' : 'first')
+    assert.equal(after.rules[0].then[0].config.text, failedFile === '_settings.yml' ? 'COMMITTED BODY' : 'first')
     assert.equal(after.variables.owner, failedFile === '_settings.yml' ? 'UPDATED VARIABLE' : 'Mia')
     assert.deepEqual(readRulesDir(dir).revisions, after.revisions)
     if (failedFile !== '_settings.yml') assert.equal(after.text, baseline.text)
   }
   const persistentDir = fixture('persistent-publication-failure')
   const persistent = ensureModuleSlices(persistentDir)
-  persistent.doc.setIn(['rules', 0, 'do', 0, 'config', 'text'], 'SAVED')
+  persistent.doc.setIn(['rules', 0, 'then', 0, 'config', 'text'], 'SAVED')
   mock.method(fs, 'renameSync', (from, to) => { if (basename(to) === '_settings.yml') throw new Error('persistent failure'); return rename(from, to) })
   syncBuiltinESMExports()
   try { assert.throws(() => commitModuleDefinition(persistent, persistent.doc), error => error.persisted === true && error.revisions !== undefined) }
   finally { mock.restoreAll(); syncBuiltinESMExports() }
-  assert.equal(ensureModuleSlices(persistentDir).rules[0].do[0].config.text, 'SAVED', '持续发布故障结束后从已提交定义恢复')
+  assert.equal(ensureModuleSlices(persistentDir).rules[0].then[0].config.text, 'SAVED', '持续发布故障结束后从已提交定义恢复')
   const dir = fixture('external-source-change')
   ensureModuleSlices(dir)
   const candidate = loadModuleDefinition(dir)
-  candidate.doc.setIn(['rules', 0, 'do', 0, 'config', 'text'], 'STALE CANDIDATE')
+  candidate.doc.setIn(['rules', 0, 'then', 0, 'config', 'text'], 'STALE CANDIDATE')
   let altered = false
   mock.method(fs, 'renameSync', (from, to) => {
     const result = rename(from, to)
     if (!altered && basename(to) === 'first.yml') {
       altered = true
       const external = parse(candidate.text)
-      external.rules[0].do[0].config.text = 'EXTERNAL SOURCE'
+      external.rules[0].then[0].config.text = 'EXTERNAL SOURCE'
       writeFileSync(join(dir, 'module.yml'), JSON.stringify(external))
     }
     return result
@@ -180,7 +180,7 @@ test('提交点前后故障恢复旧或新定义；发布前只读者看不到�
   syncBuiltinESMExports()
   try { assert.throws(() => commitModuleDefinition(candidate, candidate.doc), error => error.code === 'rules-conflict' && error.persisted === false) }
   finally { mock.restoreAll(); syncBuiltinESMExports() }
-  assert.equal(ensureModuleSlices(dir).rules[0].do[0].config.text, 'EXTERNAL SOURCE', '源 CAS 失败后从最新合法定义恢复')
+  assert.equal(ensureModuleSlices(dir).rules[0].then[0].config.text, 'EXTERNAL SOURCE', '源 CAS 失败后从最新合法定义恢复')
 })
 
 test('不同进程互斥、异常退出死锁恢复与路径归一不发布混合快照', async () => {
@@ -192,7 +192,7 @@ test('不同进程互斥、异常退出死锁恢复与路径归一不发布混�
     import { loadModuleDefinition, commitModuleDefinition } from ${JSON.stringify(storage)};
     const [dir, crash] = process.argv.slice(1);
     const snapshot = loadModuleDefinition(dir);
-    snapshot.doc.setIn(['rules', 0, 'do', 0, 'config', 'text'], 'CHILD COMMIT');
+    snapshot.doc.setIn(['rules', 0, 'then', 0, 'config', 'text'], 'CHILD COMMIT');
     const rename = fs.renameSync;
     let held = false;
     const hold = () => {
@@ -215,9 +215,9 @@ test('不同进程互斥、异常退出死锁恢复与路径归一不发布混�
   for (const mode of ['finish', 'crash', 'before-first', 'before-module', 'before-settings']) {
     const dir = fixture('process-' + mode)
     const baseline = ensureModuleSlices(dir)
-    baseline.rules[0].do[0].config.text = 'CALLER MUTATION'
-    baseline.source.rules[0].do[0].config.text = 'CALLER MUTATION'
-    baseline.doc.setIn(['rules', 0, 'do', 0, 'config', 'text'], 'CALLER MUTATION')
+    baseline.rules[0].then[0].config.text = 'CALLER MUTATION'
+    baseline.source.rules[0].then[0].config.text = 'CALLER MUTATION'
+    baseline.doc.setIn(['rules', 0, 'then', 0, 'config', 'text'], 'CALLER MUTATION')
     const child = spawn(process.execPath, ['--input-type=module', '--eval', childCode, dir, mode], { cwd: tmpdir(), stdio: ['pipe', 'pipe', 'pipe'] })
     const exit = once(child, 'exit')
     let stderr = ''
@@ -226,7 +226,7 @@ test('不同进程互斥、异常退出死锁恢复与路径归一不发布混�
       const [signal] = await once(child.stdout, 'data')
       assert.equal(signal.toString(), 'locked\n')
       const alternate = process.platform === 'win32' ? dir.toUpperCase().replaceAll('\\', '/') : dir + '/.'
-      assert.equal(ensureModuleSlices(alternate).rules[0].do[0].config.text, 'first', '活动期间只读已发布原文，调用方变异不泄露')
+      assert.equal(ensureModuleSlices(alternate).rules[0].then[0].config.text, 'first', '活动期间只读已发布原文，调用方变异不泄露')
       const contender = spawn(process.execPath, ['--input-type=module', '--eval', `
         import { ensureModuleSlices, loadModuleDefinition, commitModuleDefinition } from ${JSON.stringify(storage)};
         let denied = 0;
@@ -241,7 +241,7 @@ test('不同进程互斥、异常退出死锁恢复与路径归一不发布混�
       assert.equal((await exit)[0], mode === 'finish' ? 0 : 23, stderr)
     } finally { child.stdin.destroy(); if (child.exitCode === null) { child.kill(); await exit } }
     const restored = ensureModuleSlices(dir)
-    assert.equal(restored.rules[0].do[0].config.text, ['finish', 'before-settings'].includes(mode) ? 'CHILD COMMIT' : 'first')
+    assert.equal(restored.rules[0].then[0].config.text, ['finish', 'before-settings'].includes(mode) ? 'CHILD COMMIT' : 'first')
     assert.deepEqual(readRulesDir(dir).revisions, restored.revisions)
     assert.equal(existsSync(join(dirname(dir), '.' + basename(dir) + '.rules-locks')), false, '死PID锁回收，空锁目录原子移除')
     assert.equal(readdirSync(dir).some(file => file.startsWith('.module.yml.tmp-')), false)

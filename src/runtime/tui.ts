@@ -50,7 +50,7 @@ function renderTuiStatus(source: TuiSource, params: Record<string, unknown>, rul
     '行为规则（条件 → 动作）:',
   ]
   for (const rule of rules) {
-    lines.push(`${('config ' + rule.id).padEnd(22)}${onOff(rule.enabled !== false)}  ${rule.do.map(action => action.kind).join(' → ')}`)
+    lines.push(`${('config ' + rule.id).padEnd(22)}${onOff(rule.enabled !== false)}  ${rule.then.map(action => action.kind).join(' → ')}`)
   }
   lines.push('技能开关:')
   for (const skill of source.skillCatalog) {

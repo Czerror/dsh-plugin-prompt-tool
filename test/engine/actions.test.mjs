@@ -112,7 +112,7 @@ test('(1) 纯数据声明：编译、挂载后实际注入正文，并遵守条�
   const recorder = recordingCtx()
   const declaration = {
     id: 'declared-text', channel: 'agent/pre-step',
-    do: { kind: 'inject-text', config: {
+    then: { kind: 'inject-text', config: {
       id: 'notice', layer: 'pre-step', text: 'HELLO {{who}}', variables: { who: 'WORLD' },
       audience: 'main', dedupe: 'batch', match: { keys: ['RUN'] },
     } },
@@ -131,7 +131,7 @@ test('(1) 纯数据声明：编译、挂载后实际注入正文，并遵守条�
   const repeated = await handler({ agent: agent(), messages: result.messages }, () => result)
   assert.equal(repeated.messages.length, 2, '已含本配置的批次不重复注入')
   assert.deepEqual(recorder.warnings, [])
-  assert.equal(Object.hasOwn(declaration.do.config, 'resolve'), false, '编译不得把运行时函数写回声明')
+  assert.equal(Object.hasOwn(declaration.then.config, 'resolve'), false, '编译不得把运行时函数写回声明')
   dispose()
   assert.deepEqual(recorder.events, [])
 })
@@ -441,7 +441,7 @@ test('(8) 前置收件箱消息：命中即插到真实消息之前，插件来�
   const recorder = recordingCtx()
   const prepended = []
   const agent = { session: { id: 's-1' }, inbox: { prepend: (target, message) => prepended.push({ target, message }) } }
-  registerAction(recorder.ctx, { kind: 'inbox-prepend', id: 'anchor', text: 'ANCHOR' }, { when: () => true })
+  registerAction(recorder.ctx, { kind: 'inbox-prepend', id: 'anchor', text: 'ANCHOR' }, { if: () => true })
   const handler = only(recorder.events, 'agent/inbox/inserted')
 
   handler({ agent, message: { id: 'real', role: 'user' } })

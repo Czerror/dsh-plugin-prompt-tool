@@ -6,11 +6,11 @@
 # 可用 text 模板 + {{变量}} 完全自定义。
 id: example-placeholder
 layer: pre-step
-when:
+if:
   phase:
     promoted: true
     includeSubagents: true
-do:
+then:
   - id: inject
     kind: inject-text
     config:

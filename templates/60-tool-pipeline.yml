@@ -4,7 +4,7 @@
 # 自定义工具定义见工具管理区块——tool-pipeline 层筛选可见）。
 id: example-tool-pipeline
 layer: tool-pipeline
-do:
+then:
   - id: before
     kind: decision
     phase: pre

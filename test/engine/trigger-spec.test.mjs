@@ -63,11 +63,11 @@ test('compileWhen：未知类别 / 混合键 / 空节点 / 空数组一律编译
 })
 
 test('compileDeclaration：未知字段 / 缺必填 / 非法枚举一律抛错', () => {
-  const base = { id: 't', channel: 'system-prompt/assemble', do: { kind: 'assembly', target: { tools: { deny: ['bash'] } } } }
+  const base = { id: 't', channel: 'system-prompt/assemble', then: { kind: 'assembly', target: { tools: { deny: ['bash'] } } } }
   assert.throws(() => compileDeclaration({ ...base, nope: 1 }), /unknown trigger field\(s\) nope/)
   assert.throws(() => compileDeclaration({ ...base, id: '' }), /id must be a non-empty string/)
   assert.throws(() => compileDeclaration({ ...base, channel: '' }), /channel must be a non-empty event name/)
-  assert.throws(() => compileDeclaration({ ...base, do: undefined, then: undefined }), /then is required/)
+  assert.throws(() => compileDeclaration({ ...base, then: undefined }), /then is required/)
   assert.throws(() => compileDeclaration({ ...base, channelOrder: -1 }), /channelOrder must be a non-negative safe integer/)
   assert.throws(() => compileDeclaration({ ...base, waterfallPosition: 'top' }), /waterfallPosition must be one of/)
   assert.throws(() => compileDeclaration({ ...base, phase: 'during' }), /phase must be one of/)
@@ -76,15 +76,15 @@ test('compileDeclaration：未知字段 / 缺必填 / 非法枚举一律抛错',
 
 test('compileDeclaration：do 必须是已知动作，可给多个（数组）', () => {
   const base = { id: 't', channel: 'system-prompt/assemble' }
-  assert.throws(() => compileDeclaration({ ...base, do: { kind: 'nope' } }), /action\[0\]\.kind must be one of/)
-  assert.throws(() => compileDeclaration({ ...base, do: [] }), /non-empty array/)
-  assert.throws(() => compileDeclaration({ ...base, do: [42] }), /action\[0\] must be an action declaration object/)
+  assert.throws(() => compileDeclaration({ ...base, then: { kind: 'nope' } }), /action\[0\]\.kind must be one of/)
+  assert.throws(() => compileDeclaration({ ...base, then: [] }), /non-empty array/)
+  assert.throws(() => compileDeclaration({ ...base, then: [42] }), /action\[0\] must be an action declaration object/)
 
-  const one = compileDeclaration({ ...base, do: { kind: 'assembly', target: { tools: { deny: ['bash'] } } } })
+  const one = compileDeclaration({ ...base, then: { kind: 'assembly', target: { tools: { deny: ['bash'] } } } })
   assert.equal(one.actions.length, 1)
   const two = compileDeclaration({
     ...base,
-    do: [
+    then: [
       { kind: 'assembly', target: { tools: { deny: ['bash'] } } },
       { kind: 'sdk-strip', mask: { deny: ['bash'] } },
     ],
@@ -97,8 +97,8 @@ test('compileDeclaration：do 必须是已知动作，可给多个（数组）',
 test('compileDeclaration：缺省逐项填充，when 编译为函数', () => {
   const compiled = compileDeclaration({
     id: 't', channel: 'system-prompt/assemble',
-    when: { names: { deny: ['bash'] } },
-    do: { kind: 'assembly', target: { tools: { deny: ['bash'] } } },
+    if: { names: { deny: ['bash'] } },
+    then: { kind: 'assembly', target: { tools: { deny: ['bash'] } } },
   })
   assert.equal(compiled.channelOrder, 0)
   assert.equal(compiled.waterfallPosition, 'default')
@@ -110,30 +110,30 @@ test('compileDeclaration：缺省逐项填充，when 编译为函数', () => {
 test('compileDeclarations：按 channelOrder 稳定排序，同值保持声明序', () => {
   const action = { kind: 'assembly', target: { tools: { deny: ['bash'] } } }
   const compiled = compileDeclarations([
-    { id: 'c', channel: 'system-prompt/assemble', channelOrder: 2, do: action },
-    { id: 'a', channel: 'system-prompt/assemble', channelOrder: 1, do: action },
-    { id: 'b', channel: 'system-prompt/assemble', channelOrder: 1, do: action },
+    { id: 'c', channel: 'system-prompt/assemble', channelOrder: 2, then: action },
+    { id: 'a', channel: 'system-prompt/assemble', channelOrder: 1, then: action },
+    { id: 'b', channel: 'system-prompt/assemble', channelOrder: 1, then: action },
   ])
   assert.deepEqual(compiled.map((item) => item.id), ['a', 'b', 'c'], '升序 + 同值保持声明序')
   assert.throws(() => compileDeclarations('nope'), /triggers must be an array/)
 })
 
 test('声明通道与阶段必须匹配动作真实执行点，错误组合编译期拒绝', () => {
-  const base = { id: 'invalid', channel: 'agent/pre-step', do: { kind: 'request-params', patch: { maxTokens: 8 } } }
+  const base = { id: 'invalid', channel: 'agent/pre-step', then: { kind: 'request-params', patch: { maxTokens: 8 } } }
   assert.throws(() => compileDeclaration(base), /channel.*agent\/request/)
   assert.throws(() => compileDeclaration({ ...base, channel: 'agent/request', phase: 'before-next' }), /phase.*after-next/)
-  assert.throws(() => compileDeclaration({ id: 'post', channel: 'tools/pre-execute', do: { kind: 'decision', phase: 'post', action: 'block' } }), /channel.*tools\/post-execute/)
-  const decision = compileDeclaration({ id: 'pre', channel: 'tools/pre-execute', do: { kind: 'decision', decision: 'deny' } })
+  assert.throws(() => compileDeclaration({ id: 'post', channel: 'tools/pre-execute', then: { kind: 'decision', phase: 'post', action: 'block' } }), /channel.*tools\/post-execute/)
+  const decision = compileDeclaration({ id: 'pre', channel: 'tools/pre-execute', then: { kind: 'decision', decision: 'deny' } })
   assert.equal(decision.phase, 'before-next')
   assert.throws(() => compileDeclaration({
     id: 'mixed', channel: 'tools/post-execute',
-    do: [{ kind: 'decision', phase: 'post', action: 'block' }, { kind: 'append-context', text: 'NOTICE' }],
+    then: [{ kind: 'decision', phase: 'post', action: 'block' }, { kind: 'append-context', text: 'NOTICE' }],
   }), /phase.*after-next/)
   assert.throws(() => compileDeclaration({
-    id: 'inject', channel: 'agent/pre-step', do: { kind: 'inject-text', config: { id: 'inject', layer: 'system-section' } },
+    id: 'inject', channel: 'agent/pre-step', then: { kind: 'inject-text', config: { id: 'inject', layer: 'system-section' } },
   }), /channel.*system-prompt\/assemble/)
   assert.throws(() => compileDeclaration({
-    id: 'pipeline', channel: 'tools/pre-execute', do: { kind: 'inject-text', config: { id: 'pipeline', layer: 'tool-pipeline' } },
+    id: 'pipeline', channel: 'tools/pre-execute', then: { kind: 'inject-text', config: { id: 'pipeline', layer: 'tool-pipeline' } },
   }), /no single trigger channel/)
   for (const [channel, phase, action] of [
     ['tools/post-execute', 'before-next', { kind: 'decision', phase: 'post', action: 'block' }],
@@ -142,7 +142,7 @@ test('声明通道与阶段必须匹配动作真实执行点，错误组合编�
     ['agent/inbox/inserted', 'before-next', { kind: 'inbox-prepend', text: 'ANCHOR' }],
     ['system-prompt/assemble', 'after-next', { kind: 'guard', mask: { deny: ['bash'] } }],
   ]) {
-    const compiled = compileDeclaration({ id: action.kind, channel, do: action })
+    const compiled = compileDeclaration({ id: action.kind, channel, then: action })
     assert.equal(compiled.phase, phase)
     const recorder = recordingCtx()
     const dispose = mountDeclarations(recorder.ctx, [compiled])
@@ -178,8 +178,8 @@ function recordingCtx() {
 const denyBashDeclaration = (over = {}) => ({
   id: 'deny-bash',
   channel: 'tools/pre-execute',
-  when: { names: { allow: ['bash'] } },
-  do: { kind: 'decision', phase: 'pre', decision: 'deny', reason: 'blocked' },
+  if: { names: { allow: ['bash'] } },
+  then: { kind: 'decision', phase: 'pre', decision: 'deny', reason: 'blocked' },
   ...over,
 })
 
@@ -202,8 +202,8 @@ test('mountDeclarations：带 observe 的谓词共用一条 session/event；没�
   mountDeclarations(withObserver.ctx, compileDeclarations([{
     id: 'gate',
     channel: 'tools/pre-execute',
-    when: { count: { of: 'tool-call', per: 'session', min: 2 } },
-    do: { kind: 'decision', phase: 'pre', decision: 'deny' },
+    if: { count: { of: 'tool-call', per: 'session', min: 2 } },
+    then: { kind: 'decision', phase: 'pre', decision: 'deny' },
   }]), { plugin: 'demo' })
   assert.equal(withObserver.events.filter((item) => item.event === 'session/event').length, 1,
     '相位 / 计数谓词需要一个事件源，且同组共用一条')

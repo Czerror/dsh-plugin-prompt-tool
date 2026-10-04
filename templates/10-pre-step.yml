@@ -9,7 +9,7 @@ id: example-pre-step
 name: 示例：消息批注入
 enabled: false
 layer: pre-step
-do:
+then:
   - id: inject
     kind: inject-text
     config:
