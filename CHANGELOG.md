@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+### 文档同步：工具面收窄写入权威文档，并清掉重构遗留的旧字段名
+
+- **新增权威章节**（`docs/engine-reuse.md` 的「工具面收窄与按需解锁」）：把三件互相依赖的东西（常驻白名单 + `allowFrom`、发现工具、解锁回收）、`allowFrom` 的判据与「只做加法」的方向性约束、坏数据降级语义、`deny` 与 `allowFrom` 的挂载期互斥、解锁为何能跨压缩保留、模板为何不能声明 `waterfallPosition`、`any` 两支的相位表达、`requireMatch` 的 fail-open，以及**与 `tool-bootstrap` 的分工**（等价声明在受控相位收窄且无解锁通道；相邻 `assembly` 动作各裁一次，A 裁掉的 B 不会加回）一次写清。模块清单补登 `engine/skill-search.mjs` 与 `engine/dev-tool-search.mjs`。
+- **修正旧字段名**（`engine-reuse.md`、`injection-point-contracts.md`、`architecture-params.md`、`ui-architecture.md`、`adr/0007`）：规则级 `when` → `if`、`do` → `then`，含 6 个 YAML 示例。**刻意不动**两处：`request-params` 动作内部的 `when` 选项（与规则字段不是同一个东西，已在文档里写明区别）、ADR-0007 的决策正文（改加状态注记，标注字段名已更新）。旧名在声明路径本来就会被显式拒绝（`rule-spec.mjs` 报「`when` 已退役，改用 `if`」），文档滞后会让读者照抄出错的写法。
+- **修正过时文件名引用**（`ui-architecture.md`）：项目树与正文里的 `PresetPersonaCard.tsx` / `PresetExportDialog.tsx` / `PresetSwitcher.tsx` 早已改名为 `ModulePersonaCard.tsx` / `ModuleExportDialog.tsx` / `ModuleSwitcher.tsx`；测试表引用的 `test/host/rematerialize-presets.test.mjs` 已不存在，改指 `module-storage.test.mjs` 与 `preset-engine-managed-paths.test.mjs`。
+- **验证**：6 个含 `rules` 的文档 YAML 示例**逐个通过 `compileRules`**（这也是改名的决定性证据——保留 `when:`/`do:` 会全部编译失败）；文档路径引用逐条核对，剩余未命中项均为「文档惯用的相对片段」（如 `conditions/subject.mjs` 实指 `engine/conditions/subject.mjs`）或指向官方 DSH 仓库的路径。
+
 ### 工具面收窄：`allowFrom` 动态白名单 + `dev_tool_search` 发现入口 + 收窄模板
 
 - **动机**：工具面实测 **156 个工具、描述合计 46894 字符（≈12K token）**，每个请求都付，而多数请求只用到其中几个。构成：MCP 84（GitHub 46 / chart 27 / heroui 6 / context7 2 / ui-skills 2 / sequential-thinking 1）、mnemon 17、task_board 15、ssh 6、核心 34。

@@ -13,7 +13,7 @@
 
 ## 官方支持与插件映射
 
-`id/name/enabled/group/exclusive` 属于规则，`when` 统一判断，`do` 持有动作。`configKind/order/dedupe/mergeMode` 属于注入动作配置，不是各官方事件的 payload；下表描述注入动作复用的层适配能力，通用判断与其他动作见 [引擎指南](engine-reuse.md#声明的条件与动作边界)。组内显式启用目标卡会关闭其余卡，不按排序选择赢家。
+`id/name/enabled/group/exclusive` 属于规则，`if` 统一判断，`then` 持有动作。`configKind/order/dedupe/mergeMode` 属于注入动作配置，不是各官方事件的 payload；下表描述注入动作复用的层适配能力，通用判断与其他动作见 [引擎指南](engine-reuse.md#声明的条件与动作边界)。组内显式启用目标卡会关闭其余卡，不按排序选择赢家。
 
 | 层 | 官方入口及真实参数 | 当前配置卡 | 约束 |
 |---|---|---|---|
@@ -34,7 +34,7 @@ rules:
   - id: subagent-completed
     name: 子代理完成后检查结果
     layer: subagent-end
-    do:
+    then:
       - id: notify-main
         kind: inject-text
         config:
@@ -68,16 +68,16 @@ layerSettings:
 rules:
   - id: subagent-temperature
     layer: agent-request
-    when:
+    if:
       scope: { audience: subagent }
-    do:
+    then:
       - id: temperature
         kind: request-params
         patch: { temperature: 0.9 }
   - id: example-subagent-start
     name: 子代理通用守则
     layer: subagent-start
-    do:
+    then:
       - id: inject
         kind: inject-text
         config:

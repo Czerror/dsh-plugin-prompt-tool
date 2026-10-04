@@ -17,13 +17,13 @@ Config 的规范键是 `modulesEnabled`，表示模块运行总闸。旧 `writeP
 
 `module.yml` 保存完整定义，是唯一持久化提交点和恢复依据，支持直接手工修改完整文件。初始化或发现有效定义变化时，将规则分解为 `rules/<ruleId>.yml`，状态放 `rules/_settings.yml` 的 `rules` 映射，模板变量放 `rules/variables.yml`。UI 和运行时使用校验通过的切片快照；切片不接受直接手改，缺件、集合或摘要失配均从完整定义单向重切。完整定义无效则报错，不以切片反向修复。
 
-每条规则正文只有 `id/name/layer/when/do[]`；`enabled/group/exclusive/order` 由状态清单拥有，模块级 `variablesEnabled` 与校验元数据也在清单中。完整定义仍包含合并后的规则与 `configOrder`。传给引擎时 `order` 拆为独立映射，不向规则对象添加未知字段。规则 id 使用可读名字和后缀去重，拒绝下划线前缀、保留名 `variables`、大小写冲突及 Windows 设备名。
+每条规则正文只有 `id/name/layer/if/then[]`；`enabled/group/exclusive/order` 由状态清单拥有，模块级 `variablesEnabled` 与校验元数据也在清单中。完整定义仍包含合并后的规则与 `configOrder`。传给引擎时 `order` 拆为独立映射，不向规则对象添加未知字段。规则 id 使用可读名字和后缀去重，拒绝下划线前缀、保留名 `variables`、大小写冲突及 Windows 设备名。
 
-`when` 组合条件，`do[]` 声明有稳定 id 的动作；注入正文、策略、模板和局部变量属于 `inject-text.config`。`layer` 只标记展示归属，不建立跨插入点的全局运行顺序。
+`if` 组合条件，`then[]` 声明有稳定 id 的动作；注入正文、策略、模板和局部变量属于 `inject-text.config`。`layer` 只标记展示归属，不建立跨插入点的全局运行顺序。
 
 共享只限于同一模块内的配置卡。`persona`、`variables`、`customTools`、`subagentToolPolicy` 和能力行的 `moduleConfigs` 保留独立所有者。`loadModuleSpec().params` 是 `layerSettings` 的内部平铺适配面，不是第二个磁盘参数源，也不承载规则正文。
 
-模型路由与采样参数写入 `request-params` 动作；主会话、子代理和模型范围统一由 `when.scope` 约束，不再在动作中另放动态门。模型未配置时继承宿主会话，不调用 `agentDefaultModel.saveSelection` 改写全局默认。十个旧 `model*` / `subagentModel*` 键由 `RULE_OWNED_MODEL_PARAMS` 标记为迁移输入，不再从 `layerSettings` 隐式生成请求规则。
+模型路由与采样参数写入 `request-params` 动作；主会话、子代理和模型范围统一由规则级 `if.scope` 约束，不再在动作中另放动态门。模型未配置时继承宿主会话，不调用 `agentDefaultModel.saveSelection` 改写全局默认。十个旧 `model*` / `subagentModel*` 键由 `RULE_OWNED_MODEL_PARAMS` 标记为迁移输入，不再从 `layerSettings` 隐式生成请求规则。
 
 插件管理路径直接使用 `compileRules → mountRuleSources`，工具和策略走内联输入。模块不再生成 `rules.yml`、`configs/`、`agent.cordis.yml`、`custom-tools/` 或 `subagent-tools/`；普通重建只恢复切片并清理已知旧产物，不交换整个用户目录。空模块不自动增加规则。
 
@@ -257,7 +257,7 @@ UI 侧 `persistParamOverrides` **条件发送**：
 预设级变量的唯一来源是顶层 `variables`。`params` 中的旧内容键和嵌套
 `params.variables` 不再作为变量读取、回显或生成，也不会自动迁移或删除；旧预设
 需自行把所需内容变量改到顶层 `variables` 后重新物化。清空顶层变量后，旧键不再复活。
-单条注入动作的 `rules[].do[].config.variables` 是局部覆盖，优先于同名模块级变量。编译与物化共用 `injectionConfigSpec` 合并及空值处理，生成叶子的展开不成为可编辑的第二来源。
+单条注入动作的 `rules[].then[].config.variables` 是局部覆盖，优先于同名模块级变量。编译与物化共用 `injectionConfigSpec` 合并及空值处理，生成叶子的展开不成为可编辑的第二来源。
 
 内容变量进入官方插值两层（`system-section` / `runtime-context`）时按每次 assembly 求值：
 被引用且已声明的名字注册为官方 `systemPrompt.variable()`，取值优先级＝会话变量覆盖 >
@@ -337,13 +337,13 @@ moduleConfigs 仅补充参数桥未覆盖的键（如 ST 导入 tool-web.fetch�
 不替换历史，也不因模板为空丢弃官方正文。
 
 内容策略实现在 `engine/actions/content.mjs`；`engine/strategies.mjs` 只保留导出入口。
-条件树属于 `when`，动作正文策略属于 `do[].config`，两者不互相复制：
+条件树属于 `if`，动作正文策略属于 `then[].config`，两者不互相复制：
 
 | 策略 | 内容功能 | 显式参数 | 资格与投递 |
 |---|---|---|---|
 | `first-turn-anchor` | 按任务分类选择作者锚句，或直接使用作者文本 | 动作 `params.useCustom/text/buildPattern/complexPattern/firstTurnBuild/firstTurnInspect/firstTurnDeep` | 条件与去重由规则／投递配置声明，正文为空不生成 |
-| `guide-auto` | 选择作者的弱／深度引导文本 | 动作 `params.useCustom/text/guideWeak/guideDeep/complexPattern/complexMinChars` | 晋升等资格由规则 `when` 声明，长度门没有隐式阈值 |
-| `anchor-notice` | 生成作者正文和确认／兜底来源说明 | 动作 `params.firstTurnWord/anchorWords/text` | `when.anchor` 负责确认条件及显式 `fallbackAfter`；内容策略不再藏第二套资格状态 |
+| `guide-auto` | 选择作者的弱／深度引导文本 | 动作 `params.useCustom/text/guideWeak/guideDeep/complexPattern/complexMinChars` | 晋升等资格由规则 `if` 声明，长度门没有隐式阈值 |
+| `anchor-notice` | 生成作者正文和确认／兜底来源说明 | 动作 `params.firstTurnWord/anchorWords/text` | `if.anchor` 负责确认条件及显式 `fallbackAfter`；内容策略不再藏第二套资格状态 |
 
 `custom-fallback` 已退出运行时可执行策略与编辑目录；旧数据只能在离线阶段拆为
 `when.anchor + anchor-notice`。确认词、兜底次数与正文都成为显式定义，没有内置两轮业务值。
@@ -391,7 +391,7 @@ wholeWords/selectiveLogic）单一权威。以下写入端共用：
 
 人设独立保存在 `module.yml.persona`：`prefix`、`suffix`、`complete`、`includeRuntimeContext`。模块配装通道在该 Agent 的 scope 注册独立命名的前后缀；`complete` 的唯一性与运行上下文抑制仍由官方接口裁决，不覆盖宿主原有的同名段。
 
-`/persona` 与 `/rules` 在写入前拒绝顶层独占与启用规则的独占注入并存；装配准备期再检查，覆盖手改定义和导入来源。`complete` 与 `suppressRuntimeContext` 属注册期能力，不能用动态 `when` 假装成每轮开关；字段的宿主语义和 disposer 保持。普通官方委派的 per-child persona 归宿主配置，插件模块的行参数不会因此改写它。
+`/persona` 与 `/rules` 在写入前拒绝顶层独占与启用规则的独占注入并存；装配准备期再检查，覆盖手改定义和导入来源。`complete` 与 `suppressRuntimeContext` 属注册期能力，不能用动态 `if` 假装成每轮开关；字段的宿主语义和 disposer 保持。普通官方委派的 per-child persona 归宿主配置，插件模块的行参数不会因此改写它。
 
 注入动作的 `config.text` 表示单段正文，`config.texts` 表示多段正文，引擎统一为内部文本数组。SillyTavern 导入与角色卡并入沿用各自领域转换，正文不进入部署设置。重物化由 `materializeModule` 读取模块自身定义和内容文件后交给 writer，生成目录仍不是可编辑事实源。
 

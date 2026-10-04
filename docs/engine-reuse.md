@@ -1,7 +1,7 @@
 # 统一规则引擎复用指南
 
 `module.yml` 保存完整定义与恢复依据，运行时消费校验通过的 rules/ 快照。一张卡对应一条具有稳定 `id` 的规则：
-`when` 判断树决定是否执行，`do` 数组承载具有各自稳定 `id` 的动作。保存、导入与物化
+`if` 判断树决定是否执行，`then` 数组承载具有各自稳定 `id` 的动作（`else` 承接动作级分支）。保存、导入与物化
 共用 `engine/rule-spec.mjs#compileRules()`；宿主管理路径和独立路径共用
 `engine/rule-runtime.mjs#mountRuleSources()`，独立插件入口是 `engine/rule-engine.mjs`。
 
@@ -96,7 +96,9 @@
 | `engine/conditions/` | `text`、`phase`、`source`、`count`、`names`、`session`、`preset`、`scope`、`anchor` 及组合的真实实现 |
 | `engine/actions/` | 九类动作的真实实现；`content.mjs` 只负责显式正文选择与生成 |
 | `engine/executor.mjs` / `engine/layers.mjs` | 复用批次注入、变量、去重、官方文本注册与各层执行机制 |
-| `engine/instruction-hint.mjs` | 独立指令提示协议；显式模板生成提示，文件正文仍从声明的文件路径读取 |
+| `engine/instruction-hint.mjs` | 独立指令提示协议；显式模板生成提示，文件正文仍从声明的文件路径读取。**组合源行必须自带 `messageTemplate` 等模板**——`apply()` 在模板为空时不注册任何转换（开关打开也零效果） |
+| `engine/skill-search.mjs` | 技能面的按需发现与加载（`skill_search` / `skill_load`），替代官方全量技能目录注入 |
+| `engine/dev-tool-search.mjs` | 工具面的按需发现与解锁（`dev_tool_search`）；能力摘要从 `ctx.tools.schemas()` 运行时折叠分组，不手工维护索引 |
 | `engine/tool-config-engine.mjs` | 自定义工具资产到官方工具注册；执行器保留完整官方工具管线与批准边界 |
 | `engine/subagent-tool-policy.mjs` / `subagent-tool-policy-core.mjs` | 子代理实例策略、真实 provider 绑定及共享校验，贡献随 scope 释放 |
 | `engine/character-tools.mjs` / `world-book-tools.mjs` / `session-var-tools.mjs` | 等待宿主对应服务，按预设 scope 贡献工具并释放 |
@@ -110,28 +112,67 @@
 `workspaceLine` 与 `phase1FirstCallInstruction` 的既有段正文改写仍无通用动作，
 不要把 `assembly.sections.add/remove/keep` 宣称为等价实现。
 
+## 工具面收窄与按需解锁
+
+工具面是每请求的固定开销：实测 156 个工具、描述合计 46894 字符（约 12K token）。把它
+收窄到常驻核心集、其余按需解锁，由三件**互相依赖**的东西组成，缺一件就退化：
+
+| 件 | 落点 | 缺了它会怎样 |
+| --- | --- | --- |
+| 常驻白名单 + 动态白名单 | `assembly.target.tools.allow` / `allowFrom` | 目录不收窄，省不下 token |
+| 发现工具 | `engine/dev-tool-search.mjs`（组合源 `source/local/dev-tool-search.yml`） | 模型无法知道有什么可解锁，只能用别的方式硬凑 |
+| 解锁名单的回收 | `assembly` 的 `allowFrom` | 解锁是**一次性的**：当次请求用完即被裁掉 |
+
+- `allowFrom: { tool, key }` 读**本会话已持久化**的 `tool/call` 事件：筛 `type` 精确等于
+  `tool/call` 且 `data.name` 精确等于 `tool` 的事件，`try/catch` 解析 `data.arguments`，
+  只取 `key` 指向的字符串数组里的字符串项。**它只做加法**——`createMask.blocks()` 的语义
+  是「在 allow 里就放行」，所以动态集合只能解锁，永远不能裁掉任何工具。
+- 坏数据**逐条忽略、绝不上抛**：非法 JSON、`key` 非数组、`tool` 不匹配、缺 `arguments`、
+  数组混入非字符串，都只跳过那一条。取不到 session（无 `snapshotEvents`）或读事件抛错时，
+  退回静态 `allow`，并**不**影响其余工具。
+- `deny` 与 `allowFrom` 同声明在**挂载期 fail loud**：黑名单与「只做加法」的语义不可解释，
+  不留给运行期猜。
+- 解锁跨请求保留的原理是「持久事件 + 每轮重算」，因此**压缩后仍然保留**（成功压缩会清零
+  晋升相位，但不会删掉历史 `tool/call` 事件）。
+- **收窄模板**：`templates/80-tool-surface.yml`，常驻集
+  `pwsh / read / write / edit / glob / grep / todo_write / skill_search / skill_load / dev_tool_search`。
+  它是**规则**（走 `compileRules`），不是 `triggers` 声明——因此**不能**声明
+  `waterfallPosition`（那是声明路径的字段，规则路径会以 unknown fields 拒绝）。需要
+  `outermost`（`prepend: true`）时改用声明路径，格式见 `test/engine/declarations/tool-bootstrap.yml`。
+- 相位用 `any` 两支表达，因为单个 `phase` 节点**无法**表达「两个相位都命中」：`promoted`
+  的缺省是 `true`（= 只匹配已晋升，不是「任意」），而 `promoted: 'ignore'` 又要求同时声明
+  只接受布尔值的 `compacted`。故写作
+  `any: [phase{promoted:true}, phase{compacted:true, promoted:false}]`。**首轮（未晋升且未压缩）
+  刻意不收窄**——先让模型看到完整目录，再随相位推进收窄。
+- `requireMatch: true` 是必配：任一 `allow` 工具缺失（含模型解锁了一个不存在的名字）就放弃
+  裁剪、暴露完整目录。宁可多给上下文，也不静默裁成空目录。
+- **与 `tool-bootstrap` 的分工**：那份原型（见 `test/engine/declarations/tool-bootstrap.yml`）
+  只**在受控相位**收窄、晋升后放开，且没有解锁通道；本模板覆盖晋升后与压缩后，靠
+  `allowFrom` 提供解锁。两者不叠加——同一通道上相邻的 `assembly` 动作各做一次白名单裁剪，
+  **A 裁掉的工具 B 不会加回**，所以每个动作的 `allow` 都要点名它需要的全部工具。
+
 ## 规则、条件与动作边界
 
 - `rule.id` 是稳定且安全的模块内身份，禁用规则也必须通过校验；拒绝点目录、路径分隔、
   控制字符和 Windows 保留字符。`action.id` 只承担动作身份，不能套用文件名限制。
-- `do` 必须是非空数组。规则可以跨多个官方执行点；`channel`、执行阶段由动作能力
+- `then` 必须是非空数组（动作级分支写 `else`）。规则可以跨多个官方执行点；`channel`、执行阶段由动作能力
   决定，不能在规则顶层另填通道。规则的 `layer` 仅用于展示，真正注入层取动作 `config.layer`。
-- 同规则、同一真实执行点严格按 `do` 数组顺序执行，条件只求值一次；跨执行点、下一次
+- 同规则、同一真实执行点严格按 `then` 数组顺序执行，条件只求值一次；跨执行点、下一次
   调用及新 epoch 重新求值。不按 session、turn 或同一 context 对象缓存规则结果。
 - `channelOrder` 位于动作中，只控制同执行点跨规则定位；同卡同点存在冲突值时编译拒绝，
   不替作者任选一个。`waterfallPosition` 也位于动作中，缺省 `default`，适用的原生动作
   可显式使用 `outermost`；它表达官方 waterfall 位置，不创建跨层全局顺序。
-- `when` 缺省表示没有附加门；组合采用 `all/any/not/notAny` 显式树形结构。缺少真实
+- `if` 缺省表示没有附加门；组合采用 `all/any/not/notAny` 显式树形结构。缺少真实
   agent/session/model 等必要事实时，条件内部返回 `UNAVAILABLE`，`not` 不会把未知变真；
   `any` 中已知 true 仍可决断，`all` 中已知 false 仍可决断。只有结果严格为 true 才执行。
   不从 UI 当前会话或挂载 scope 猜测缺失的事件身份。
-- 事件型文本注入支持顶层 `when`，包括 system-section 与 runtime-context：官方同步
+- 事件型文本注入支持顶层 `if`，包括 system-section 与 runtime-context：官方同步
   provider 注册占位，真实 assembly 中按本次判定填充；取消、卸载和失败不留下过期正文。
-- `guard`、`complete` 和 `suppressRuntimeContext` 是固定注册效果，拒绝动态 `when` 与
+- `guard`、`complete` 和 `suppressRuntimeContext` 是固定注册效果，拒绝动态 `if` 与
   waterfall 定位，不能用空文本模拟撤销注册。多个启用 complete，或与顶层 persona.complete
   冲突，在候选编译时拒绝。`inject-text` / `guard` 不支持 `maxPerTurn`，错误选项不能静默忽略。
-- 通用动态判断只归 `when`：注入动作不再声明受众、模型、晋升或文本匹配门；请求参数动作的受众和模型范围也用 `when.scope`。未声明模型范围等价于 `all`。固定 system-section 独占／抑制的 `audience` 仅表示静态注册目标，仍不接受动态条件。
-- 旧单动作声明的判断在离线迁移时提升为 `when`；只作用于某个动作的多动作条件不能提升后影响兄弟动作，须先明确拆分。
+- 通用动态判断只归规则级 `if`：注入动作不再声明受众、模型、晋升或文本匹配门；请求参数动作的受众和模型范围用该动作自己的 `when` 选项（`when.scope`）——那是**动作内部**字段，与规则字段 `if` 不是同一个东西。未声明模型范围等价于 `all`。固定 system-section 独占／抑制的 `audience` 仅表示静态注册目标，仍不接受动态条件。
+- 旧单动作声明的判断在离线迁移时提升为规则级 `if`；只作用于某个动作的多动作条件不能提升后影响兄弟动作，须先明确拆分。
 - 同模块非空组中任一规则声明 `exclusive: true`，整组最多一条启用规则。编译器拒绝
   多启用冲突，不按排序选赢家；Host 显式激活一条卡时在一次原子事务中关闭同组其他卡。
 
@@ -230,14 +271,14 @@
 - waterfall **由外向内**执行，最外层监听器的返回值即最终结果（`@deepseek-ai/cordis` 的 `events.ts`：`cbs.shift()` 取数组头部先跑，`waterfall()` 返回最外层监听器的返回值）。
 - 普通注册（`push`）**先注册者在外**；`prepend: true` 等价 `unshift`，插到链首 = 最外层，且**同为 prepend 时后注册者更外层**。
 - 因此需要落在普通注册之外的**否决型**动作（清空 `contexts`、窄化 `tools`、按名单掩码、剥离请求参数）应显式选择 outermost；**协作式填充**（`runtime-context` 的同步占位与填充）与**纯副作用**监听器保持普通注册，不去抢外层。
-- 本引擎把这条位置表达在规则动作里：`do[]` 的 `waterfallPosition: outermost` 映射为 `prepend: true`（`engine/rule-runtime.mjs`），**缺省 `default` 即普通注册**。它表达的是**位置**，不承担同一通道内声明之间的排序——后者归 `channelOrder`。
+- 本引擎把这条位置表达在规则动作里：`then[]` 的 `waterfallPosition: outermost` 映射为 `prepend: true`（`engine/rule-runtime.mjs`），**缺省 `default` 即普通注册**。它表达的是**位置**，不承担同一通道内声明之间的排序——后者归 `channelOrder`。
 - 顺序语义只能用真实 cordis 用例证明；手写的 mock `ctx.on` 只记录选项、**不实现顺序**，不能用作顺序证据。
 - **已知边界**：`prepend` 只保证「比**已存在**的普通注册更外层」。若第三方插件同样 `prepend` 且注册更晚，它仍处于更外层、可以翻越门控；`global: true` 的注册也不受本 scope 约束。这正是「不再依赖组合行序」的确切含义——位置改由注册选项保证，而该保证有明确上界，不等价于「与顺序无关」。
 
 ### 条件判定与事件载荷
 
-规则条件在 `when` 中显式选择，文本条件使用 `when.text.subject` 与匹配参数；主子会话和
-模型范围使用 `when.scope`。条件真实实现位于 `engine/conditions/`，匹配器复用
+规则条件在 `if` 中显式选择，文本条件使用 `if.text.subject` 与匹配参数；主子会话和
+模型范围使用 `if.scope`。条件真实实现位于 `engine/conditions/`，匹配器复用
 `engine/anchor-match.mjs`；非法组合、空文本键集合与非法正则在编译期拒绝。旧配置中的
 subject/match/promotion 只能经离线转换显式进入规则条件，不能把旧配置层当成第二规则来源。
 
@@ -404,11 +445,11 @@ PTC 呈现由官方工具呈现行装配，不随规则相位隐式切换。
 ```yaml
 rules:
   - id: controlled-tools-and-budget
-    when:
+    if:
       all:
         - scope: { audience: main }
         - phase: { promoted: false, promoteOn: either }
-    do:
+    then:
       - id: restrict-presentation
         kind: assembly
         target:
@@ -422,15 +463,15 @@ rules:
         waterfallPosition: outermost
 ```
 
-动态文本规则在一次真实 assembly 中共用条件结果；固定执行 guard 单独声明且没有 when：
+动态文本规则在一次真实 assembly 中共用条件结果；固定执行 guard 单独声明且没有 `if`：
 
 ```yaml
 rules:
   - id: main-context
     layer: system-section
-    when:
+    if:
       scope: { audience: main }
-    do:
+    then:
       - id: main-section
         kind: inject-text
         config: { layer: system-section, text: '当前为主会话。' }
@@ -438,7 +479,7 @@ rules:
         kind: inject-text
         config: { layer: runtime-context, text: '按当前工作区事实执行。' }
   - id: fixed-tool-guard
-    do:
+    then:
       - id: deny-network-tools
         kind: guard
         mask: { deny: [web_search, web_fetch] }
@@ -446,14 +487,14 @@ rules:
         reason: '此规则禁止调用该工具'
 ```
 
-外层 pre-step 来源过滤的位置写在动作中，缺少 when 才表示无附加门：
+外层 pre-step 来源过滤的位置写在动作中，缺少 `if` 才表示无附加门：
 
 ```yaml
 rules:
   - id: controlled-inputs
-    when:
+    if:
       phase: { promoted: false, includeSubagents: false }
-    do:
+    then:
       - id: keep-user-and-goal
         kind: pre-step-filter
         sources: [user, goal]
@@ -465,9 +506,9 @@ rules:
 ```yaml
 rules:
   - id: confirmed-notice
-    when:
+    if:
       anchor: { keys: [READY], fallbackAfter: 1 }
-    do:
+    then:
       - id: notice
         kind: inject-text
         config:

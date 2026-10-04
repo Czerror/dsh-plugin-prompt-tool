@@ -125,11 +125,11 @@
     │  │  ├─ EngineParamFields.tsx
     │  │  └─ ModulesPage.tsx
     │  ├─ persona/
-    │  │  └─ PresetPersonaCard.tsx
+    │  │  └─ ModulePersonaCard.tsx
     │  ├─ presets/
     │  │  ├─ presets.module.css
-    │  │  ├─ PresetExportDialog.tsx
-    │  │  └─ PresetSwitcher.tsx
+    │  │  ├─ ModuleExportDialog.tsx
+    │  │  └─ ModuleSwitcher.tsx
     │  ├─ prompts/
     │  │  ├─ prompt-config-policy.ts
     │  │  ├─ prompts.module.css
@@ -300,7 +300,7 @@ workspace-pages.ts 是页面元数据的唯一来源。默认页为 features，�
 
 页面不再常驻“重新读取／校验规则／保存规则／已与模块同步”一行；卡内保存与失焦自动保存继续沿用规则事务，保存包含校验。失败保留草稿并显示就地错误，只在错误时提供重试与必要的丢弃确认；保存失败重试提交，读取失败或远端冲突重试读取。
 
-预设人设卡（`features/persona/PresetPersonaCard.tsx`）编辑 module.yml 顶层 `persona` 段的四个可编辑项：`prefix`、`suffix`，以及 `complete`（独占）与 `includeRuntimeContext`（动态运行时上下文）两个开关（后者默认开启）。读写都走 `/persona`，写由 host 校验并原子写盘；`complete` 与提示词配置的「独占」互斥，由 bridge 在写盘前 fail loud。卡头 meta 区分「存在 persona 段」与「继承预设」——空对象 `{}` 也算存在，不等于有实际内容。四项均未改动时保存落成删除语义（不带 persona 写盘）；二次确认的移除入口只在 persona 段已存在时渲染。它只在主会话页出现，不在子代理页渲染。
+预设人设卡（`features/persona/ModulePersonaCard.tsx`）编辑 module.yml 顶层 `persona` 段的四个可编辑项：`prefix`、`suffix`，以及 `complete`（独占）与 `includeRuntimeContext`（动态运行时上下文）两个开关（后者默认开启）。读写都走 `/persona`，写由 host 校验并原子写盘；`complete` 与提示词配置的「独占」互斥，由 bridge 在写盘前 fail loud。卡头 meta 区分「存在 persona 段」与「继承预设」——空对象 `{}` 也算存在，不等于有实际内容。四项均未改动时保存落成删除语义（不带 persona 写盘）；二次确认的移除入口只在 persona 段已存在时渲染。它只在主会话页出现，不在子代理页渲染。
 
 ### 5.2.1 创建入口与过滤的分工
 
@@ -530,7 +530,7 @@ fieldset 禁用时 MenuSelect 同时拒绝 portal 中的选择。Tooltip 的键�
 
 模块卡内的选择器、开关及小型文本/数字输入使用紧凑尺寸；大文本和 JSON 编辑器保留 `field-sizing: content`、手动纵向缩放与现有自动测高，不随紧凑控件一起压缩。
 
-规则卡复用原 `PromptConfigNavigation`，基础身份常驻，“条件 / 动作 / JSON / 设置”同级。宽屏左侧导航，容器宽度不超过 620px 时变为上方 tabs；组件自身 ResizeObserver 同时驱动视觉布局与 ARIA 方向，避免跨 CSS Modules 的命名容器失配。条件编辑 `when` 可视树；动作编辑带稳定 ID 的 `do` 列表，正文属于注入动作；JSON 编辑完整规则。普通面板保持挂载，非活动面板使用 hidden 排除键盘焦点，设置首次进入才挂载。面板 `aria-label` 是页签文字的唯一来源，不在面板内重复标题。说明使用 HintTooltip，错误保留就地提示。
+规则卡复用原 `PromptConfigNavigation`，基础身份常驻，“条件 / 动作 / JSON / 设置”同级。宽屏左侧导航，容器宽度不超过 620px 时变为上方 tabs；组件自身 ResizeObserver 同时驱动视觉布局与 ARIA 方向，避免跨 CSS Modules 的命名容器失配。条件编辑 `if` 可视树；动作编辑带稳定 ID 的 `then` 列表，正文属于注入动作；JSON 编辑完整规则。普通面板保持挂载，非活动面板使用 hidden 排除键盘焦点，设置首次进入才挂载。面板 `aria-label` 是页签文字的唯一来源，不在面板内重复标题。说明使用 HintTooltip，错误保留就地提示。
 
 九层表单直接从基础字段开始，不在字段上方重复展示层名、通用作用说明和层的内部技术详情；实际字段的帮助说明及错误提示保持就地可用。
 
@@ -553,7 +553,7 @@ fieldset 禁用时 MenuSelect 同时拒绝 portal 中的选择。Tooltip 的键�
 
 `request-params` 编辑调用字段，字符串清空删除 patch 键，数字清空删除键而 0 保留。未知动作或嵌套扩展可在 JSON 中编辑，服务端编译失败保留完整输入；切换显示归属不改运行通道或清除动作数据。
 
-动态判断只在 `rule.when` 编辑；条件树支持 all、any、not、notAny，转换组合保留叶子与未完成字段。普通注入动作不显示旧 audience/modelScope/promotion/subject/match，request-params 不显示旧 audience/modelScope。存量字段仍留在完整 JSON，客户端不静默删键或把条件提升到同卡其它动作；非中性旧 gate 由引擎拒绝。唯一例外是固定 system-section 的 complete/suppressRuntimeContext 注册，其 audience 是静态目标而非动态条件。
+动态判断只在 `rule.if` 编辑；条件树支持 all、any、not、notAny，转换组合保留叶子与未完成字段。普通注入动作不显示旧 audience/modelScope/promotion/subject/match，request-params 不显示旧 audience/modelScope。存量字段仍留在完整 JSON，客户端不静默删键或把条件提升到同卡其它动作；非中性旧 gate 由引擎拒绝。唯一例外是固定 system-section 的 complete/suppressRuntimeContext 注册，其 audience 是静态目标而非动态条件。
 
 主会话与子代理共用 `RuleCard`，每卡就是一条真实规则，不再存在模块级“编辑行为规则”二级编辑器。最外层折叠保留，收起只显示卡头，展开才挂载导航和表单；折叠前提交可保存草稿，非法输入保留供重开继续编辑。设置只承载共享参数与资产。原 `PromptConfigCard` 继续拥有指令文件编辑，主会话中置顶，子代理不显示重复文件卡。页面顺序不建立跨插入点的全局执行顺序。
 
@@ -675,7 +675,7 @@ world-book 视图只隐藏工具栏之外的列表主体之外的附加提示，
 | seam | 覆盖位置 |
 |---|---|
 | 引擎注入行为（插入点 / 时机 / 次数 / 受众） | `test/engine/*.test.mjs` |
-| 写盘产物语义 | `test/host/write-preset.test.mjs`、`test/host/preset-*.test.mjs`、`test/host/rematerialize-presets.test.mjs` |
+| 写盘产物语义 | `test/host/write-preset.test.mjs`、`test/host/preset-*.test.mjs`、`test/host/module-storage.test.mjs`、`test/host/preset-engine-managed-paths.test.mjs` |
 | bridge 端点载荷 | `test/shared/bridge-contract.test.mjs`、`test/client/bridge-client.test.mjs`、`test/host/settings-bridge.test.mjs`、`test/host/*-bridge.test.mjs` |
 | 安全与拒绝路径 | `test/host/instructions-policy.test.mjs`、`test/host/instruction-scope-guard.test.mjs`、`test/host/skill-policy.test.mjs`、`test/host/preset-package-import.test.mjs`、`test/host/characters-protection.test.mjs`、`test/host/wave1-safety.test.mjs`、`test/host/text-file.test.mjs`、`test/engine/config-whitelist.test.mjs` |
 
