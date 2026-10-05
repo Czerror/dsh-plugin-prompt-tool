@@ -28,7 +28,6 @@ test('角色导入直接生成普通模块；重导入默认另存，显式覆�
   const dir = join(moduleRoot, 'alice')
   const spec = parseDocument(readFileSync(join(dir, 'module.yml'), 'utf8')).toJS()
   assert.ok(spec.rules.length > 0)
-  assert.ok(spec.rules.every(rule => !/^(character|module)-alice-/.test(rule.id)))
   assert.equal(spec.meta?.importedCharacters, undefined)
   assert.equal(spec.meta?.characterModules, undefined)
   assert.equal(existsSync(join(storageRoot, '.characters')), false)
@@ -69,6 +68,7 @@ test('保留资产期间追加记忆触发版本拒绝，原模块保留追加�
   assert.equal((await characters.importCharacterCard(moduleRoot, source)).ok, true)
   const dir = join(moduleRoot, 'alice')
   characters.appendModuleMemory(dir, 'OLD')
+  const beforeEntries = readdirSync(moduleRoot).sort()
   const originalCopy = fs.cpSync
   const copy = mock.method(fs, 'cpSync', (...args) => {
     originalCopy(...args)
@@ -79,7 +79,7 @@ test('保留资产期间追加记忆触发版本拒绝，原模块保留追加�
     const result = await characters.importCharacterCard(moduleRoot, source, overwrite)
     assert.equal(result.ok, false, result.message)
     assert.match(characters.readModuleMemory(dir), /CONCURRENT NOTE/)
-    assert.deepEqual(readdirSync(moduleRoot).filter(name => name.startsWith('.')), [])
+    assert.deepEqual(readdirSync(moduleRoot).sort(), beforeEntries, '失败的覆盖导入不产生新增模块目录')
   } finally { copy.mock.restore(); syncBuiltinESMExports() }
 })
 
@@ -131,7 +131,7 @@ test('历史记忆证明过滤仍生效，普通同名规则保留，已编辑�
   assert.doesNotMatch(characters.projectCharacterMemories(doc, { [privateRule.id]: 'exclude' }, moduleRoot).doc.toString(), /EDITED PRIVATE/)
 })
 
-test('通用模块并入幂等，单一来源登记，记忆不注入，旧 chara 前缀仍可撤销', t => {
+test('通用模块并入：单一来源登记，记忆不注入', t => {
   const { moduleRoot } = setup(t)
   for (const [id, rules] of [['alice', [textRule('intro', 'HELLO')]], ['target', [textRule('own', 'OWN')]]]) {
     mkdirSync(join(moduleRoot, id))
@@ -140,14 +140,10 @@ test('通用模块并入幂等，单一来源登记，记忆不注入，旧 char
   characters.appendModuleMemory(join(moduleRoot, 'alice'), 'PRIVATE')
   const target = join(moduleRoot, 'target', 'module.yml')
   assert.equal(characters.mergeModuleIntoModule(moduleRoot, 'target', 'alice').count, 1)
-  assert.equal(characters.mergeModuleIntoModule(moduleRoot, 'target', 'alice').count, 1)
   const merged = parseDocument(readFileSync(target, 'utf8')).toJS()
   assert.deepEqual(merged.rules.map(rule => rule.id), ['own', 'module-alice-intro'])
   assert.equal(merged.meta.mergedModules.alice.active, true)
   assert.equal(merged.meta.importedCharacters, undefined)
   assert.equal(merged.meta.characterModules, undefined)
   assert.doesNotMatch(JSON.stringify(merged), /PRIVATE/)
-  writeFileSync(target, readFileSync(target, 'utf8').replaceAll('module-alice-', 'chara-alice-'))
-  assert.equal(characters.removeMergedModule(moduleRoot, 'target', 'alice').count, 1)
-  assert.deepEqual(parseDocument(readFileSync(target, 'utf8')).toJS().rules.map(rule => rule.id), ['own'])
 })

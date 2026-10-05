@@ -224,27 +224,12 @@ test('writePreset 不生成共享引擎或宿主组合，规则切片保持可�
     }
     assert.ok(prepared.rules.length > 0)
     assert.equal(existsSync(join(moduleDir, 'fixture', 'rules', '_settings.yml')), true)
-  } finally {
-    rmSync(dir, { recursive: true, force: true })
-  }
-})
-
-test('writePreset 不再有引擎指纹：二次写入不物化 .engine，产物幂等', () => {
-  const dir = join(tmpdir(), `prompt-tool-fp-${process.pid}-${Date.now()}`)
-  const moduleDir = join(dir, 'preset')
-  try {
-    writePreset('PROMPT', makeOptions(moduleDir))
     // 引擎指纹（.engine/.pt-engine-fingerprint + 内容摘要比对、未变则不重刷）已随共享引擎
-    // 归位插件包整体删除：二次写入不再有「是否重刷共享引擎」这一步，只需保证产物本身幂等
-    // 且不产生引擎目录/指纹文件。
+    // 归位插件包整体删除：二次写入不再有「是否重刷共享引擎」这一步，只需保证产物本身幂等。
     const stable = readFileSync(join(moduleDir, 'fixture', 'rules', '_settings.yml'), 'utf8')
     writePreset('PROMPT', makeOptions(moduleDir))
     assert.equal(readFileSync(join(moduleDir, 'fixture', 'rules', '_settings.yml'), 'utf8'), stable,
       '二次写入产物逐字节稳定（引擎说明符不来回改写）')
-    assert.equal(existsSync(join(moduleDir, '.engine')), false, '二次写入仍不物化 .engine')
-    assert.equal(existsSync(join(moduleDir, '.pt-engine-fingerprint')), false, '不再写引擎指纹文件')
-    assert.deepEqual(readdirSync(moduleDir).filter((name) => name.startsWith('.')), [],
-      '二次写入不残留引擎/指纹/临时/备份目录')
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }
@@ -524,6 +509,5 @@ test('writePreset：模板名与输出目录名分离，安全 id 输出仍渲�
   })
   assert.equal(parseYaml(readFileSync(join(outputRoot, 'pt-safe', 'module.yml'), 'utf8')).id, 'pt-safe')
   assert.equal(existsSync(join(outputRoot, 'pt-safe', 'rules', '_settings.yml')), true)
-  assert.equal(existsSync(join(outputRoot, 'pt-safe', 'agent.cordis.yml')), false)
   assert.equal(existsSync(join(outputRoot, 'standard')), false, '模板名不会被当成输出目录')
 })

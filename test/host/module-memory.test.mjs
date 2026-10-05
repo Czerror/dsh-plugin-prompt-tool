@@ -36,7 +36,6 @@ test('世界书工具按需读取模块记忆，note 同址保存且不生成自
   assert.deepEqual(await read.execute({}, {}), { memory: 'UPDATED MEMORY' })
   const spec = parse(readFileSync(join(f.dir, 'module.yml'), 'utf8'))
   assert.deepEqual(spec.rules.map(rule => rule.id), ['module-old-lore'])
-  assert.doesNotMatch(JSON.stringify(spec), /PRIVATE NOTE|UPDATED MEMORY|characterMemories/)
   assert.equal(f.rebuilds(), 1, '显式读取不触发重新装配')
 })
 

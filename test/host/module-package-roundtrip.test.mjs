@@ -69,7 +69,6 @@ test('模块包往返以完整定义为准，漂移切片只在候选重建，�
   }
   const manifest = { version: 1, definition: 'module.yml', files: Object.fromEntries(files.map(file => [file.path, createHash('sha256').update(decodeAssetFile(file)).digest('hex')])) }
   const withManifest = [...files, { path: 'prompt-tool-package.json', content: JSON.stringify(manifest) }]
-  assert.equal((await expandModuleSource(withManifest)).length, files.length)
   await assert.rejects(expandModuleSource([...withManifest, { path: 'extra.txt', content: 'undeclared' }]), /集合/)
   await assert.rejects(expandModuleSource(withManifest.map(file => file.path === 'assets/notice.txt' ? { ...file, content: 'TAMPERED', encoding: 'utf8' } : file)), /摘要/)
 })

@@ -150,7 +150,6 @@ test('请求白名单：未知或退役字段与非法逐文件开关、显示�
     [{ revision: 'r1' }, /未知字段/],
     [{ defaults: { order: 30 } }, /未知字段/],
     [{ enabled: true }, /未知字段/],
-    ...['order', 'position', 'promotion', 'audience', 'modelScope', 'path', 'text', 'revision'].map((key) => [{ files: { f1: { [key]: 'retired-or-unknown' } } }, /未知字段/]),
     [{ files: { f1: { enabled: 1 } } }, /enabled/],
     [{ files: { f1: { name: '' } } }, /name/],
     [{ files: { f1: { name: ' ' } } }, /name/],

@@ -37,7 +37,6 @@ test('规则局部事务：改名和删除同步序号，显式启用原子关�
   assert.deepEqual(data.unknown, { keep: true })
   assert.match(text, /# user comment/)
   for (const comment of ['identity comment', 'name comment', 'action comment', 'value comment', 'order comment']) assert.ok(text.includes('# ' + comment), `改名保留 ${comment}`)
-  assert.equal(Object.hasOwn(data, 'promptConfigs'), false)
   assert.ok(resolveModuleFacts(loadModuleSpec(dir), dir).effectiveModules.includes('rule-engine'), '模块事实如实报告规则的隐式执行入口')
   assert.notEqual(updated.revision, initial.revision)
 })

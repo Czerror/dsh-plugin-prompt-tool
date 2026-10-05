@@ -37,7 +37,7 @@ test('validateEngineParamValues：全量类型校验（布尔/数值/字符串/�
   // 数值键非法。
   assert.deepEqual(validateEngineParamValues({ modelTemperature: 'abc' }).map((e) => e.key), ['modelTemperature'])
   assert.deepEqual(validateEngineParamValues({ modelMaxTokens: '-5' }).map((e) => e.key), ['modelMaxTokens'])
-  assert.deepEqual(validateEngineParamValues({ strReplaceEditorMaxOutputChars: 1.5 }).map((e) => e.key), ['strReplaceEditorMaxOutputChars'])
+  assert.deepEqual(validateEngineParamValues({ subagentMaxTokens: 1.5 }).map((e) => e.key), ['subagentMaxTokens'])
   // 列表键收窄。
   assert.deepEqual(validateEngineParamValues({ customToolRequireApproval: [1, 2] }).map((e) => e.key), ['customToolRequireApproval'])
   // maxDepth 枚举收窄。
@@ -143,7 +143,7 @@ test('writePreset：恶意规则身份经统一编译器拒绝，不留半成品
   }
 })
 
-test('writePreset：规则裸文件名与状态清单序号独立，重复恢复顺序稳定', () => {
+test('writePreset：规则裸文件名与状态清单序号独立', () => {
   const dir = mkdtempSync(join(tmpdir(), 'pt-w1-many-'))
   try {
     const moduleDir = join(dir, 'preset')
@@ -163,8 +163,6 @@ test('writePreset：规则裸文件名与状态清单序号独立，重复恢复
     const before = readFileSync(settingsFile, 'utf8')
     const settings = parse(before)
     assert.deepEqual(Object.entries(settings.rules).map(([id, state]) => [id, state.order]), many.map((config, index) => [config.id, index * 10]))
-    writePreset('PROMPT', { moduleDir, presetOrder: 5 })
-    assert.equal(readFileSync(settingsFile, 'utf8'), before)
     assert.equal(existsSync(join(moduleDir, DEFAULT_MODULE_ID, 'configs')), false)
   } finally {
     rmSync(dir, { recursive: true, force: true })

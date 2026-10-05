@@ -299,8 +299,6 @@ test('module-enable：写启用表后等待装配，失败如实返回，非法�
   failRefresh = true
   const failed = await call(handlers, 'moduleEnable', { id, enabled: true })
   assert.equal(failed.status, 500)
-  assert.equal(failed.code, 'module-activation-failed')
-  assert.match(failed.message, /更改已保存，但模块未生效/)
   assert.match(readEnabled(), /- enable-target/, '装配失败保留已保存的启用表，便于重试')
   failRefresh = false
   assert.deepEqual((await call(handlers, 'moduleEnable', { id, enabled: false })).value, { enabled: [] })

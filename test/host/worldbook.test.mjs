@@ -29,8 +29,6 @@ test('世界书更新与删除只修改目标注入动作，保留同卡条件�
   assert.deepEqual(updated.configOrder, { 'lore-and-request': 40 })
   assert.deepEqual(updated.customFuture, { keep: 'module-owned' })
   assert.match(readFileSync(file, 'utf8'), /KEEP MODULE COMMENT/)
-  assert.equal(updated.promptConfigs, undefined)
-  assert.equal(updated.triggers, undefined)
 
   assert.equal(deleteWorldBookEntry(directory, 'lore'), 0)
   const remaining = parse(readFileSync(file, 'utf8'))

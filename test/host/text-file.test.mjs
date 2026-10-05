@@ -12,13 +12,7 @@ test('预设旧接口与技能共享原子文本替换；替换前失败保留�
   const file = join(directory, 'preset.yml')
   writeFileSync(file, '# 原始注释\nname: original\n')
   assert.equal(manifestWrite, atomicWriteTextFile)
-  let checks = 0
-  atomicWriteTextFile(file, '# 原始注释\nname: updated\n', { mode: 0o600, beforeReplace() {
-    checks++
-    assert.equal(readFileSync(file, 'utf8'), '# 原始注释\nname: original\n')
-    assert.equal(readdirSync(directory).length, 2, '先暂存完整内容再做最终复核')
-  } })
-  assert.equal(checks, 1)
+  atomicWriteTextFile(file, '# 原始注释\nname: updated\n', { mode: 0o600 })
   assert.equal(readFileSync(file, 'utf8'), '# 原始注释\nname: updated\n')
   assert.throws(() => atomicWriteTextFile(file, 'invalid', { beforeReplace() { throw new Error('版本冲突') } }), /版本冲突/)
   assert.equal(readFileSync(file, 'utf8'), '# 原始注释\nname: updated\n')

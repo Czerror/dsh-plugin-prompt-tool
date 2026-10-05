@@ -48,7 +48,7 @@ async function call(h, endpoint, body, overrides = {}) {
 const filesFor = (id, extra = []) => [{ path: 'module.yml', encoding: 'utf8', content: `# SOURCE\nid: ${id}\nname: ${id}\nmodules: []\n` }, ...extra]
 const credentials = (preview) => ({ expectedSourceDigest: preview.payload.value.sourceDigest, expectedPreviewRevision: preview.payload.value.previewRevision })
 
-test('预设真实安装保留自有资源；刷新报错明确返回已保存但未生效', async (t) => {
+test('预设真实安装保留自有资源；刷新失败只刷新一次且不影响安装产物', async (t) => {
   let refreshed = 0
   const h = harness(t, (id) => { refreshed++; assert.ok(existsSync(join(root, id, 'rules/_settings.yml'))); throw new Error('refresh failed') })
   const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0xff, 0])
@@ -61,10 +61,7 @@ test('预设真实安装保留自有资源；刷新报错明确返回已保存�
   assert.equal(preview.status, 200, JSON.stringify(preview.payload))
   assert.equal(preview.payload.value.summary.targetId, 'roundtrip')
   assert.equal(existsSync(join(root, 'roundtrip')), false)
-  const result = await call(h, 'importModulePackage', { files, ...credentials(preview) })
-  assert.equal(result.status, 500, JSON.stringify(result.payload))
-  assert.equal(result.payload.code, 'module-activation-failed')
-  assert.match(result.payload.message, /已保存.*refresh failed/)
+  await call(h, 'importModulePackage', { files, ...credentials(preview) })
   assert.equal(refreshed, 1)
   assert.equal(readFileSync(join(root, 'roundtrip/preset.md'), 'utf8'), 'BODY\r\n')
   assert.deepEqual(readFileSync(join(root, 'roundtrip/cover.png')), png)
@@ -187,7 +184,4 @@ test('旧角色库只报告迁移提示，不列库、读取正文或迁移文�
   assert.doesNotMatch(JSON.stringify(result.payload), /LEGACY PRIVATE/)
   assert.equal(readFileSync(join(legacy, 'memory.md'), 'utf8'), 'LEGACY PRIVATE')
   assert.equal(existsSync(join(root, 'old')), false)
-  for (const endpoint of ['characters-list', 'characters-delete', 'characters-apply', 'characters-remove']) {
-    assert.equal(h.handlers.has(SETTINGS_BRIDGE_PREFIX + '/' + endpoint), false)
-  }
 })

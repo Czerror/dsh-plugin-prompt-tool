@@ -30,9 +30,6 @@ const toolTemplate = parseYaml(
   { logLevel: 'silent' },
 )
 
-/** 模板声明的核心常驻集（与 engine/dev-tool-search.mjs 的 RESIDENT 应对应）。 */
-const EXPECTED_ALLOW = ['pwsh', 'read', 'write', 'edit', 'glob', 'grep', 'todo_write', 'skill_search', 'skill_load', 'dev_tool_search']
-
 const toolRule = toolSurface.rules.find((rule) => rule.id === 'tool-surface-resident')
 const narrowTools = toolRule.then.find((action) => action.kind === 'assembly')
 const skillRule = skillSurface.rules.find((rule) => rule.id === 'skill-surface-narrowing')
@@ -57,7 +54,6 @@ test('内置模块：包内目录只含 module.yml，运行时切片不随包分
 test('内置模块 tool-surface：allowFrom 与 dev-tool-search 写入端同名同键（跨模块契约）', () => {
   // 名字或键任一写错，解锁就是**静默无效**（当次请求用完即被裁、无告警）。
   assert.deepEqual(narrowTools.target.tools.allowFrom, { tool: 'dev_tool_search', key: 'toolNames' })
-  assert.deepEqual(narrowTools.target.tools.allow, EXPECTED_ALLOW)
   assert.equal(narrowTools.target.tools.requireMatch, true, '缺任一工具必须 fail-open 到完整目录')
 
   const registered = []
@@ -66,6 +62,12 @@ test('内置模块 tool-surface：allowFrom 与 dev-tool-search 写入端同名�
   const key = narrowTools.target.tools.allowFrom.key
   assert.ok(Object.hasOwn(registered[0].parameters.properties, key), `插件的参数里必须有 ${key}`)
   assert.equal(registered[0].parameters.properties[key].type, 'array')
+  // 常驻集的真值源是引擎注册时自己公布的清单，不在这里手抄一份常量（改引擎常驻集必须跟着变）。
+  const declared = /minimal resident set: ([^.]+)\./.exec(registered[0].description)
+  assert.ok(declared, '引擎必须在工具描述里公布常驻工具集')
+  for (const name of declared[1].split(', ')) {
+    assert.ok(narrowTools.target.tools.allow.includes(name), `本模块 allow 必须覆盖常驻工具 ${name}`)
+  }
 })
 
 test('内置模块 tool-surface：与 templates/80-tool-surface.yml 同一声明不漂移', () => {

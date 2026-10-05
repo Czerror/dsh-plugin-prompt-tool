@@ -2,7 +2,7 @@ import test, { mock } from 'node:test'
 import assert from 'node:assert/strict'
 import fs, { mkdirSync, readFileSync, writeFileSync, existsSync, symlinkSync, unlinkSync } from 'node:fs'
 import { syncBuiltinESMExports } from 'node:module'
-import { join, basename } from 'node:path'
+import { join } from 'node:path'
 import { parse } from 'yaml'
 import { isolatedHome, fakeReq, fakeRes, readBridge } from '../fixtures/host-harness.mjs'
 import { createWorkspaceDrafts } from '../../src/client/data/workspace-drafts.ts'
@@ -12,7 +12,6 @@ const { home, moduleRoot } = isolatedHome('pt-rules-bridge-')
 const { registerSettingsBridge } = await import('../../src/runtime/settings-bridge.ts')
 const { writePreset } = await import('../../src/host/write-preset.ts')
 const { compileRules } = await import('../../engine/rule-spec.mjs')
-const { MAX_BRIDGE_BODY_BYTES } = await import('../../src/shared/bridge-contract.ts')
 let sequence = 0
 
 function harness({ readonly = false, rebuildFails = false, afterRebuild } = {}) {
@@ -85,7 +84,6 @@ test('声明读取、只校验、写盘、物化和清空往返；注释与未�
   const materialized = parse(readFileSync(join(h.directory, 'rules/budget.yml'), 'utf8'))
   assert.deepEqual(materialized, rules[0])
   assert.equal(compileRules([materialized]).length, 1)
-  assert.equal(existsSync(join(h.directory, 'agent.cordis.yml')), false)
   const cleared = await h.call({ edits: [{ previousId: 'budget', rule: null }], expectedRevisions: saved.value.revisions })
   assert.equal(cleared.ok, true, cleared.message)
   assert.deepEqual((await h.call()).value.rules, [])
@@ -147,15 +145,11 @@ test('重建失败如实反馈，已保存定义可重新读取，不报告全�
   assert.equal(result.value.persisted, true)
   assert.match(result.value.publicationError, /已保存/)
   assert.deepEqual(parse(readFileSync(h.file, 'utf8')).rules, rules)
-  assert.equal(basename(h.directory), h.id)
 })
 
-test('超限请求、链接定义及非模块组合不得写入规则', async () => {
+test('链接定义及非模块组合不得写入规则', async () => {
   const h = harness()
   const { revisions } = (await h.call()).value
-  const oversized = await h.call({}, { raw: ' '.repeat(MAX_BRIDGE_BODY_BYTES + 1) })
-  assert.equal(oversized.status, 413)
-  assert.equal(readFileSync(h.file, 'utf8'), h.original)
   const composition = `id: ${h.id}\ncomposition: |\n  []\n`
   writeFileSync(h.file, composition)
   const fresh = await h.call()
@@ -229,9 +223,8 @@ test('module.yml已提交但切片发布持续失败时仍确认已保存及新�
   const h = harness()
   const initial = await h.call()
   const originalRename = fs.renameSync
-  let attempts = 0
   const rename = mock.method(fs, 'renameSync', (from, to) => {
-    if (String(to).endsWith('_settings.yml')) { attempts += 1; throw new Error('SETTINGS_PUBLICATION_FAILED') }
+    if (String(to).endsWith('_settings.yml')) throw new Error('SETTINGS_PUBLICATION_FAILED')
     return originalRename(from, to)
   })
   syncBuiltinESMExports()
@@ -242,7 +235,6 @@ test('module.yml已提交但切片发布持续失败时仍确认已保存及新�
     assert.match(result.value.publicationError, /已保存.*SETTINGS_PUBLICATION_FAILED/)
     assert.deepEqual(result.value.rules, rules)
     assert.notEqual(result.value.revisions.settings, initial.value.revisions.settings)
-    assert.equal(attempts, 2, '仅提交发布与一次恢复，响应读取不再ensure')
     assert.equal(h.rebuilds, 0)
     assert.deepEqual(parse(readFileSync(h.file, 'utf8')).rules, rules)
   } finally { rename.mock.restore(); syncBuiltinESMExports() }

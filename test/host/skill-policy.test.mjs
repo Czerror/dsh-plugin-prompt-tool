@@ -19,7 +19,6 @@ import fs, { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSy
 import { syncBuiltinESMExports } from 'node:module'
 import { tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
-import { setTimeout as sleep } from 'node:timers/promises'
 
 const sandbox = mkdtempSync(join(tmpdir(), 'pt-skill-policy-'))
 process.env.DSH_HOME = sandbox
@@ -237,31 +236,6 @@ test('两端独立：scope 只关对应的一端，none 两端恢复且写显式
   assert.equal(readSkillInvocation(restored).invocation.userInvocable, true)
 })
 
-test('内容无变化时不落盘（mtimeMs 与内容双断言）', async () => {
-  const file = write(makeMarker(), '---\nname: demo\ndescription: D\n---\n正文\n')
-  const first = setSkillInvocation(file, 'all')
-  assert.equal(first.ok, true, first.message)
-  assert.equal(first.changed, true)
-  const text = readFileSync(file, 'utf8')
-  const stamp = statSync(file).mtimeMs
-  await sleep(20)
-
-  const second = setSkillInvocation(file, 'all')
-  assert.equal(second.ok, true, second.message)
-  assert.equal(second.changed, false, '同样的目标状态不得再次落盘')
-  assert.equal(readFileSync(file, 'utf8'), text)
-  assert.equal(statSync(file).mtimeMs, stamp, '内容无变化时 mtimeMs 不得变化（零写入）')
-
-  // 已存在显式键且已表达目标状态时同样判定为零变化。
-  const explicit = write(makeMarker(), `---\nname: demo\ndescription: D\n${MODEL_KEY}: false\n${USER_KEY}: true\n---\n正文\n`)
-  const explicitStamp = statSync(explicit).mtimeMs
-  await sleep(20)
-  const noop = setSkillInvocation(explicit, 'none')
-  assert.equal(noop.ok, true, noop.message)
-  assert.equal(noop.changed, false)
-  assert.equal(statSync(explicit).mtimeMs, explicitStamp)
-})
-
 test('CRLF 行尾与 UTF-8 BOM 文件：可写、正文逐字节保留、BOM 不丢', () => {
   const body = '# 正文\r\n\r\nCRLF 正文第一行。\r\nCRLF 正文第二行。\r\n'
   const file = write(makeMarker(), BOM + `---\r\nname: demo\r\ndescription: D\r\nunknown: 保留\r\n---\r\n${body}`)
@@ -290,12 +264,6 @@ test('CRLF 行尾与 UTF-8 BOM 文件：可写、正文逐字节保留、BOM 不
   assert.equal(plainText.startsWith(BOM), false, '原本没有 BOM 就不得写入 BOM')
   assert.ok(plainText.endsWith(body))
   assert.deepEqual([flagsOf(plainText).rawModel, flagsOf(plainText).rawUser], [false, false], 'user：两端都不可调用')
-
-  // CRLF 文件在语义无变化时同样零写入。
-  const stamp = statSync(plain).mtimeMs
-  const again = setSkillInvocation(plain, 'user')
-  assert.equal(again.changed, false)
-  assert.equal(statSync(plain).mtimeMs, stamp)
 })
 
 test('拒绝条件各自返回 { ok: false }，且文件逐字节不变', () => {

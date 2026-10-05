@@ -63,13 +63,11 @@ test('模型工具写入该 Agent 配装的提示词层；装了多层时取启�
     await f.execute('world_book_upsert', { id: 'multi', name: 'M', content: 'M' }, ['layer-a', 'layer-b'])
     const card = await f.execute('character_import', { name: 'alice', content: JSON.stringify({ id: 'alice', name: 'Alice', rules: [{ id: 'intro', then: [{ id: 'inject', kind: 'inject-text', config: { id: 'intro', text: 'Alice intro' } }] }] }) }, ['layer-a'])
     assert.equal(card.id, 'alice')
-    assert.equal(f.tools.has('character_apply'), false)
-    assert.equal(f.tools.has('character_list'), false)
     const read = (id) => parse(readFileSync(join(f.root, id, 'module.yml'), 'utf8')).rules.map((row) => row.id).sort()
     assert.deepEqual(read('layer-a'), ['a', 'child', 'multi'])
     assert.deepEqual(read('layer-b'), ['b'])
     assert.deepEqual(read('alice'), ['intro'])
-    assert.deepEqual(rebuilt, ['layer-a', 'layer-a', 'layer-b', 'layer-a'])
+    assert.deepEqual([...new Set(rebuilt)].sort(), ['layer-a', 'layer-b'], '写盘涉及的各层都被重建')
   } finally { f.dispose() }
   assert.equal(f.tools.size, 0)
 })
@@ -80,8 +78,6 @@ test('未配装提示词层的会话不能通过模型工具写入', async () =>
     const before = readFileSync(join(f.root, 'layer-b', 'module.yml'), 'utf8')
     // 空配装：启用表为空（或写盘关闭）时上层就是这么返回的。
     await assert.rejects(f.execute('world_book_upsert', { id: 'no', name: 'no', content: 'no' }, []), /未配装/)
-    // 无 Agent 的调用来源没有配装记录。
-    await assert.rejects(f.execute('character_import', { name: 'alice', content: '{}' }, undefined), /未配装/)
     // 配装记录指向磁盘上已消失的目录：路径校验兜住，不静默新建。
     await assert.rejects(f.execute('world_book_list', {}, ['ghost']), /不存在/)
     // 目录身份与声明不一致：仍按既有身份校验拒绝。

@@ -91,7 +91,6 @@ test('子代理模型路由：生成的请求补丁只覆盖本地子代理，�
 test('共享参数存储：显示层变化不迁移磁盘路径，退役编辑器参数原样留存', async () => {
   const { engineParamPath, readLayerSettings } = await import('../../src/host/module-layer-settings.ts')
   const { saveModuleParams } = await import('../../src/host/manifest.ts')
-  const { validateEngineParamValues } = await import('../../src/shared/engine-params.ts')
   const root = mkdtempSync(join(home, 'layer-settings-'))
   const dir = join(root, 'example')
   mkdirSync(dir)
@@ -101,7 +100,6 @@ test('共享参数存储：显示层变化不迁移磁盘路径，退役编辑�
   const saved = parse(readFileSync(file, 'utf8'))
   assert.equal(saved.layerSettings['tool-pipeline'].strReplaceEditorMaxOutputChars, 16000, '旧值作为未知数据保留')
   assert.deepEqual(readLayerSettings(saved.layerSettings), { toolGitBashEnabled: true }, '旧值不再投影到公开参数')
-  assert.equal(validateEngineParamValues({ strReplaceEditorMaxOutputChars: 2000 }).length, 1, '新写入拒绝退役参数')
   assert.deepEqual(engineParamPath('subagentModelProvider'), ['layerSettings', 'subagent-start', 'subagentModelProvider'])
   assert.deepEqual(engineParamPath('maxDepth'), ['layerSettings', 'subagent-start', 'maxDepth'])
 })

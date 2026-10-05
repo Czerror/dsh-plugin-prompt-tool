@@ -6,8 +6,6 @@ import { join } from 'node:path'
 import { parse } from 'yaml'
 import { isolatedHome } from '../fixtures/host-harness.mjs'
 import { Context } from '@deepseek-ai/cordis'
-import { createPromptConfigs } from '../../engine/schema.mjs'
-import { wireLayers } from '../../engine/layers.mjs'
 import { compileRules } from '../../engine/rule-spec.mjs'
 import { mountRuleSources } from '../../engine/rule-runtime.mjs'
 import { buildInstructionHintText, instructionHintMessages } from '../../engine/instruction-hint.mjs'
@@ -145,20 +143,16 @@ test('离线规则迁移：同卡前后动作与原投递身份保留，完整�
   } finally { releaseNative(); await nativeCtx.fiber.dispose() }
   for (const modelScope of [undefined, 'pro', 'flash']) {
     const legacy = { id: 'model', layer: 'agent-request', ...(modelScope === undefined ? {} : { modelScope }), params: { patch: { maxTokens: 512 } } }
-    const oldCtx = new Context()
     const newCtx = new Context()
-    const releaseOld = wireLayers(oldCtx, createPromptConfigs([legacy]), () => {})
     const releaseNew = mountRuleSources(newCtx, [{ moduleId: 'model', rules: compileRules([promptConfigToRule(legacy)]) }])
     try {
       for (const model of ['deepseek-pro', 'deepseek-flash']) {
         const agent = { options: { model }, session: { id: model, header: {}, snapshotEvents: () => [] } }
-        const before = await oldCtx.waterfall('agent/request', { agent }, async () => ({ maxTokens: 1024 }))
-        const after = await newCtx.waterfall('agent/request', { agent }, async () => ({ maxTokens: 1024 }))
+        const actual = await newCtx.waterfall('agent/request', { agent }, async () => ({ maxTokens: 1024 }))
         const expected = modelScope === undefined || (modelScope === 'flash') === model.includes('flash') ? 512 : 1024
-        assert.equal(before.maxTokens, expected, '旧实际请求结果符合字面真值')
-        assert.deepEqual(after, before, `${modelScope ?? 'all'} 的 ${model} 迁移前后请求一致`)
+        assert.equal(actual.maxTokens, expected, `${modelScope ?? 'all'} 的 ${model} 迁移结果符合字面真值`)
       }
-    } finally { releaseOld(); releaseNew(); await oldCtx.fiber.dispose(); await newCtx.fiber.dispose() }
+    } finally { releaseNew(); await newCtx.fiber.dispose() }
   }
   const old = { id: 'tools', layer: 'tool-pipeline', audience: 'main', params: { toolNames: 'bash', preDecision: 'ask', postAction: 'replace' }, text: 'replacement' }
   const converted = promptConfigToRule(old)

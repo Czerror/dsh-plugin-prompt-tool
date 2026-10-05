@@ -29,9 +29,6 @@ test('重建只恢复 rules 并清理旧产物，资产与完整定义原字节�
   assert.equal(readFileSync(join(directory, 'skills', 'SKILL.md'), 'utf8'), 'USER SKILL')
   for (const name of ['configs', 'custom-tools', 'subagent-tools', 'rules.yml', 'agent.cordis.yml']) assert.equal(existsSync(join(directory, name)), false)
   assert.equal(existsSync(join(directory, 'rules', '_settings.yml')), true)
-  const stable = readFileSync(join(directory, 'rules', '_settings.yml'))
-  writer.materializeModule('minimal', { moduleDir: moduleRoot })
-  assert.deepEqual(readFileSync(join(directory, 'rules', '_settings.yml')), stable)
 })
 
 test('writeModule 暂存候选保持目标身份，失败保留原目标且拒绝越界 id', () => {

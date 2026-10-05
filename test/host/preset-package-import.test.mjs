@@ -231,8 +231,6 @@ test('importPresetPackage：SillyTavern JSON 单文件经转换引擎导入（�
   assert.equal(converted.modules.includes('tool-web'), false, 'enable_web_search: false 不组装 tool-web')
   // B7 T3「3+1 结合」：`enable_web_search: false` 由三条声明式触发器
   // （呈现裁剪 / SDK 正文裁剪 / 执行 guard）共用同一份 deny 名单表达。
-  assert.equal(converted.promptConfigs, undefined, '新模块不再保留旧内容定义段')
-  assert.equal(converted.triggers, undefined, '新模块不再保留独立行为定义段')
   const webRules = converted.rules.filter(rule => rule.id.startsWith('st-web-'))
   assert.deepEqual(webRules.map((rule) => [rule.id, rule.then[0].kind]), [
     ['st-web-assembly', 'assembly'],
@@ -274,7 +272,6 @@ test('importPresetPackage：SillyTavern JSON 单文件经转换引擎导入（�
   for (const key of ['modelTemperature', 'modelMaxTokens', 'modelReasoningEffort']) {
     assert.equal(converted.params?.[key], undefined, `采样参数剥离：params.${key} 不得出现`)
   }
-  assert.equal(converted.rules.find((rule) => rule.id === 'st-sampling'), undefined, '不再生成 st-sampling 请求参数规则')
 })
 
 test('importPresetPackage：SillyTavern UUID identifier 的 prompt_order 禁用与排序生效（P1 回归）', async () => {

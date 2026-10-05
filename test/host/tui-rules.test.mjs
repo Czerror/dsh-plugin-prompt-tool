@@ -21,7 +21,7 @@ test('TUI 规则开关使用定义与显式互斥；未知身份不写，重建�
   const ctx = { inject: (_deps, callback) => callback({ commands: { register: command => { handler = command.handler } } }) }
   registerTuiCommand(ctx, 'prompt-tool', () => ({ writePreset: true, skillCatalog: [], activeSkillsDirs: [] }),
     () => ({ available: true, providers: [] }), async () => ({}), () => dir,
-    () => assert.fail('规则不能写入旧参数通道'), undefined, async id => {
+    undefined, undefined, async id => {
       assert.equal(id, 'tui-rules'); refreshes++
       if (rejectRefresh) throw new Error('assembly unavailable')
     })
@@ -35,7 +35,6 @@ test('TUI 规则开关使用定义与显式互斥；未知身份不写，重建�
   assert.deepEqual(saved.rules.map(rule => [rule.id, rule.enabled]), [['first', false], ['second', true]], '启用序号在后的卡也关闭同组前卡')
   assert.deepEqual(saved.configOrder, { first: 0, second: 100 }, '启用互斥不重排')
   assert.deepEqual(saved.rules[1].then, body('second').then, '不覆盖动作数组')
-  assert.equal(saved.promptConfigs, undefined)
   assert.equal(refreshes, 1)
   const status = await handler({ rawInput: 'status' })
   assert.match(status.text, /config second.*开/)

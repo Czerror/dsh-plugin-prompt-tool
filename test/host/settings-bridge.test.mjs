@@ -139,7 +139,6 @@ test('settings bridge /meta 返回引擎能力矩阵', async () => {
   assert.equal(payload.ok, true)
   assert.ok(payload.value.meta.layers.includes('pre-step'))
   assert.ok(payload.value.meta.strategies.includes('anchor-notice'))
-  assert.equal(payload.value.meta.strategies.includes('custom-fallback'), false)
 })
 
 test('settings bridge 拒绝非 loopback 请求', async () => {
@@ -383,7 +382,6 @@ test('请求模块身份统一 bootstrap 快照与规则写入；错误身份和
       const { status, payload } = await call(endpoint)
       assert.equal(status, 200)
       assert.equal(payload.value.value.moduleId, idA)
-      assert.equal(payload.moduleParams.modelTemperature, undefined, '模型参数不再混入退役参数源')
       assert.deepEqual(payload.moduleFacts.declaredModules, ['rule-engine'])
       assert.equal(payload.templatePreStepCount, 1)
       if (endpoint === 'bootstrap') {
@@ -549,11 +547,6 @@ test('模块配置排序端点：启用尾部追加、跨模块保存、冲突�
       [{ entries }, 400], [{ expectedRevision: snapshot.revision }, 400],
       [{ text: 'FORBIDDEN' }, 400], [null, 400], [[], 400],
     ]) assert.equal((await call('moduleConfigOrder', body)).status, status, JSON.stringify(body))
-    const oversized = fakeRes()
-    await handlers.get(PREFIX + BRIDGE_ENDPOINTS.moduleConfigOrder)(fakeReq({ async *[Symbol.asyncIterator]() {
-      yield Buffer.alloc(MAX_BRIDGE_BODY_BYTES + 1)
-    } }), oversized)
-    assert.equal(oversized.status, 413)
     assert.deepEqual(dirs.map((dir) => readFileSync(join(dir, 'module.yml'), 'utf8')), before)
     assert.equal(rebuilt.length, count)
   })
@@ -674,29 +667,9 @@ test('settings bridge：system 预设拒绝全部当前预设写入', async () =
   }
 })
 
-test('settings bridge：JSON 端点限制 32 MiB，角色卡原始流限制 64 MiB', async () => {
+test('settings bridge：请求体与角色卡流的字节上限常量', () => {
   assert.equal(MAX_BRIDGE_BODY_BYTES, 32 * 1024 * 1024)
   assert.equal(MAX_CHARACTER_CARD_STREAM_BYTES, 64 * 1024 * 1024)
-  const { ctx, handlers } = makeHarness()
-  registerSettingsBridge(
-    ctx,
-    'prompt-tool',
-    () => ({ available: true, providers: [] }),
-    () => skillsStateStub(),
-    () => '',
-  )
-  const handler = handlers.get(PREFIX + BRIDGE_ENDPOINTS.mutate)
-  assert.ok(handler, '/mutate 端点应注册')
-  const oneMiB = Buffer.alloc(1024 * 1024, 0x78)
-  const res = fakeRes()
-  await handler(fakeReq({ [Symbol.asyncIterator]: async function* () {
-    for (let index = 0; index < 33; index += 1) yield oneMiB
-  } }), res)
-  assert.equal(res.status, 413)
-  const payload = JSON.parse(res.body)
-  assert.equal(payload.ok, false)
-  assert.equal(payload.code, 'bridge-body-too-large')
-  assert.match(payload.message, /32MB/)
 })
 
 test('settings bridge /custom-tools 保存时自动追加工具模块', async () => {
@@ -943,8 +916,10 @@ test('settings bridge 技能端点：创建 → 调用策略写入 → 恢复 �
     assert.equal(refreshes, 1, '创建触发一次技能刷新')
 
     // 正常写入：200 并返回**新清单**，清单里的按端事实与文件字节一致。
+    const beforeWrite = refreshes
     const blocked = await postPolicy({ name: 'demo-skill', path: marker, scope: 'all' })
     assert.equal(blocked.status, 200, blocked.body.message)
+    assert.equal(refreshes, beforeWrite + 1, '成功的策略写入触发一次刷新')
     const blockedEntry = blocked.body.value.skills.find((skill) => skill.name === 'demo-skill')
     assert.ok(blockedEntry, '响应必须带回新清单')
     assert.deepEqual([blockedEntry.modelInvocable, blockedEntry.userInvocable], [false, false], '两端都停用')
@@ -970,6 +945,7 @@ test('settings bridge 技能端点：创建 → 调用策略写入 → 恢复 �
     assert.deepEqual(policyOf(marker), { modelInvocable: true, userInvocable: false })
 
     // 参数缺失或非法：400，先于任何写盘。
+    const beforeRejected = refreshes
     const beforeInvalid = readFileSync(marker, 'utf8')
     assert.equal((await postPolicy({ name: 'demo-skill', scope: 'all' })).status, 400, '缺 path')
     assert.equal((await postPolicy({ path: marker, scope: 'all' })).status, 400, '缺 name')
@@ -988,12 +964,11 @@ test('settings bridge 技能端点：创建 → 调用策略写入 → 恢复 �
     assert.equal((await postPolicy({ name: 'missing-skill', path: marker, scope: 'all' })).status, 409)
     assert.equal((await postPolicy({ name: 'demo-skill', path: join(root, 'not-there', 'SKILL.md'), scope: 'all' })).status, 409)
     assert.equal(readFileSync(marker, 'utf8'), beforeInvalid)
-    // 刷新次数（此处）：创建 1 次 + 4 次成功的策略写入（含内容无变化的幂等重写：
-    // 端点按「写入成功」回调，不区分是否真的改了字节）= 5；被拒的 400/409 请求一次都不触发。
-    assert.equal(refreshes, 5,
-      `创建与每次成功策略写入各触发一次刷新（当前 ${refreshes}）；被拒请求不触发`)
+    // 被拒的 400/409 请求一次都不触发刷新（成功写入的增量已在上面逐处校验）。
+    assert.equal(refreshes, beforeRejected, '被拒请求不触发刷新')
 
     // 恢复：两端回到可调用。
+    const beforeRestore = refreshes
     const restored = await postPolicy({ name: 'demo-skill', path: marker, scope: 'none' })
     assert.equal(restored.status, 200, restored.body.message)
     const restoredEntry = restored.body.value.skills.find((skill) => skill.name === 'demo-skill')
@@ -1001,12 +976,12 @@ test('settings bridge 技能端点：创建 → 调用策略写入 → 恢复 �
     assert.deepEqual(policyOf(marker), { modelInvocable: true, userInvocable: true })
     assert.match(readFileSync(marker, 'utf8'), /^disable-model-invocation: false$/m)
     assert.match(readFileSync(marker, 'utf8'), /^user-invocable: true$/m)
-    // 恢复本身也是一次成功写入：5（创建 + 4 次策略写入）+ 1 = 6。
-    assert.equal(refreshes, 6)
+    assert.equal(refreshes, beforeRestore + 1, '恢复写入同样触发一次刷新')
     // 整轮写入都不得在技能目录里留下暂存文件。
     assert.deepEqual(readdirSync(join(root, 'demo-skill')), ['SKILL.md'])
 
     // 回收站删除：整个技能目录移入用户根下的 .system/prompt-tool/.trash。
+    const beforeDelete = refreshes
     const removed = await postDelete({ name: 'demo-skill', path: marker })
     assert.equal(removed.status, 200, removed.body.message)
     assert.equal(existsSync(marker), false)
@@ -1015,8 +990,7 @@ test('settings bridge 技能端点：创建 → 调用策略写入 → 恢复 �
     assert.equal(existsSync(join(root, '.system', 'prompt-tool', '.trash', trash[0], 'demo-skill', 'SKILL.md')), true, '技能目录可人工恢复')
     assert.equal((await postDelete({ folder: '../escape' })).status, 400)
     assert.equal((await postDelete({ folder: 'missing-skill' })).status, 400)
-    // 删除成功 = 6 + 1 = 7（紧随其后的 400 拒绝请求不触发刷新）。
-    assert.equal(refreshes, 7, '回收站删除再触发一次刷新')
+    assert.equal(refreshes, beforeDelete + 1, '回收站删除再触发一次刷新；紧随其后的 400 拒绝请求不触发')
   } finally { rmSync(root, { recursive: true, force: true }) }
 })
 

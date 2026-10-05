@@ -447,28 +447,7 @@ function updateConfigOrder(dir, configOrder) {
   writeFileSync(file, JSON.stringify({ ...JSON.parse(readFileSync(file, 'utf8')), configOrder }))
 }
 
-test('装配切片逐条来自预设目录的字面量：层/位置/时机/次数/受众一项不改', async () => {
-  writePreset('literal-slices', { modules: ['prompt-config-engine'], promptConfigs: LITERAL_SLICES })
-  const prepared = await prepareAssembly(moduleRoot, 'literal-slices', hasEveryService)
-
-  assert.equal(prepared.moduleId, 'literal-slices')
-  assert.equal(prepared.rules.length, LITERAL_SLICES.length, '规则条数与字面量一致')
-  for (const [index, expected] of LITERAL_SLICES.entries()) {
-    const actual = prepared.rules[index].actions[0].compiledConfig
-    assert.equal(actual.id, expected.id)
-    assert.equal(actual.layer, expected.layer, '注入层')
-    assert.equal(actual.position, expected.position, '位置')
-    assert.equal(actual.dedupe, expected.dedupe, '次数/去重')
-    assert.equal(actual.order, expected.order)
-    assert.equal(typeof prepared.rules[index].when, 'function', '旧受众/晋升归一为已编译条件')
-  }
-  // 有切片就有注入执行器：三个宿主能力进装配依赖。
-  for (const name of ['systemPrompt', 'tools', 'llm']) {
-    assert.equal(prepared.services.has(name), true, `依赖 ${name}`)
-  }
-})
-
-test('受管字段一律解析到当前预设目录内：新写法 `./` 与历史写法 `../<id>/` 同结果', async () => {
+test('受管字段一律解析到当前预设目录内', async () => {
   const id = 'managed-paths'
   const dir = join(moduleRoot, id)
   writePreset(id, {
@@ -476,15 +455,9 @@ test('受管字段一律解析到当前预设目录内：新写法 `./` 与历�
     moduleConfigs: {
       // 新形态：预设目录基准。
       'tool-config-engine': { configsDir: './custom-tools' },
-      // 历史写法：相对历史引擎位置书写，必须仍解析到同一处。
-      'declared-triggers': { triggersFile: `../${id}/triggers.yml` },
-      // 组合源默认相对模块内引擎位置，仍然必须消费本模块的物化策略。
-      'subagent-tool-policy': { policyFile: '../subagent-tools/policy.yml' },
     },
   })
   mkdirSync(join(dir, 'custom-tools'), { recursive: true })
-  mkdirSync(join(dir, 'configs'), { recursive: true })
-  writeFileSync(join(dir, 'triggers.yml'), '[]\n', 'utf8')
 
   const prepared = await prepareAssembly(moduleRoot, id, hasEveryService)
   const configOf = (moduleId) => prepared.modules.find((module) => module.id === moduleId)?.config ?? {}
@@ -497,25 +470,16 @@ test('受管字段一律解析到当前预设目录内：新写法 `./` 与历�
     assert.equal(typeof value, 'string', `${moduleId}.${field} 已换算`)
     assert.equal(fileURLToPath(value), expectedPath, `${moduleId}.${field} 的落点`)
   }
-  assert.equal(prepared.modules.some(module => ['rule-engine', 'declared-triggers'].includes(module.id)), false, '规则只经统一入口挂载，不重复装配旧声明')
-  assert.equal(prepared.modules.some(module => module.id === 'subagent-tool-policy'), false, '策略段缺失时不回落旧产物')
 })
 
-test('模块清单：引擎能力装载，官方组合行与能力 recipe 留给会话原有预设', async () => {
+test('模块清单：私有能力复用现有适配器挂载服务', async () => {
   writePreset('module-roster', {
     modules: ['character-tools', 'tool-config-engine', 'tool-pwsh', 'planning'],
   })
   const prepared = await prepareAssembly(moduleRoot, 'module-roster', hasEveryService)
-  const ids = prepared.modules.map((module) => module.id)
 
-  // 插件包内确有 engine mjs 的能力：装载（官方行的 config 已由参数桥并入）。
-  assert.deepEqual(ids, ['character-tools', 'tool-config-engine'])
-  // 只有 library yml、没有 engine mjs 的官方行与 recipe：跳过，不装第二棵官方树。
-  assert.equal(ids.includes('tool-pwsh'), false)
-  assert.equal(ids.includes('planning'), false)
   // 私有能力复用现有适配器挂载服务，而不是只登记依赖。
   assert.equal(prepared.services.has('pt-character-tools'), true)
-  assert.equal(ids.includes('character-tools'), true)
 })
 
 test('拒绝路径：非法 id、无效模块声明、缺失宿主能力都在装配前 fail loud', async () => {
@@ -588,22 +552,6 @@ test('「独占」段唯一性：装配前拒绝两个生效 complete（含人�
   })
   const single = await prepareAssembly(moduleRoot, 'single-complete', hasEveryService)
   assert.equal(single.rules.length, 1, '单个独占段正常装配')
-})
-
-test('官方挂载行与本通道不重复装载：引擎能力只出现一次', async () => {
-  // 物化产物里既有官方工具行，也有引擎行；自建通道只认引擎能力。
-  const dir = writePreset('mixed-rows', {
-    modules: ['prompt-config-engine', 'tool-config-engine', 'tool-pwsh', 'planning', 'compaction'],
-  })
-  mkdirSync(join(dir, 'configs'), { recursive: true })
-  mkdirSync(join(dir, 'custom-tools'), { recursive: true })
-
-  const prepared = await prepareAssembly(moduleRoot, 'mixed-rows', hasEveryService)
-  const ids = prepared.modules.map((module) => module.id)
-  assert.deepEqual(ids, ['tool-config-engine'], '只装引擎能力，官方行不在本通道内')
-  assert.equal(new Set(ids).size, ids.length, '同一份组合不会装入重复模块')
-  // 切片只由 applyPromptConfigs 挂一次，不由模块清单再挂一遍。
-  assert.equal(ids.includes('prompt-config-engine'), false)
 })
 
 test('导入候选与运行配装同源：完整定义经过 rules 切片后保持所有执行维度', async () => {

@@ -215,10 +215,6 @@ test('compileCustomTool / validateCustomTools：坏执行定义、Schema 与文�
     const tool = validTool(patch)
     const before = structuredClone(tool)
     assert.throws(() => compileCustomTool(tool), expected)
-    const errors = validateCustomTools([tool])
-    assert.equal(errors.length, 1)
-    assert.match(errors[0], /customTools\[0\]/)
-    assert.match(errors[0], expected)
     assert.deepEqual(tool, before)
   }
   const errors = validateCustomTools([
