@@ -1,0 +1,22 @@
+# 模板：首轮向收件箱前置一条消息。
+#
+# `inbox-prepend` 走 `agent/inbox/inserted`（emit 通道，没有 next）：命中即前置，
+# 不命中什么都不做。缺省 `target: next-turn`，也可写 `next-step`。
+# 插件来源的消息（含本动作自己插入的那条）永不再次前置，防自触发插队。
+#
+# 判「首轮」用 `session: { type: user/message, present: false }`——还没有任何
+# user/message 事件。注意 `agent/inbox/inserted` 拿不到任务文本本身，所以别在这里
+# 用 `text` 谓词筛任务内容（那是 `pre-step` 层的事，见 70-subagent-maintenance.yml）。
+id: example-inbox-prepend
+name: 首轮前置一条消息
+enabled: false
+layer: pre-step
+if:
+  session:
+    type: user/message
+    present: false
+then:
+  - id: prepend-first-turn
+    kind: inbox-prepend
+    target: next-turn
+    text: 动手之前先读工作区的 AGENTS.md，再决定改哪里。

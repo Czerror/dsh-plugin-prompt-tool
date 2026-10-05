@@ -2,7 +2,7 @@
 # 生成来源：scripts/rebuild-preset-template.mjs + ENGINE_PARAM_DEFINITIONS + engine/schema.mjs + templates/
 # 重建：pnpm rebuild:preset-template；检查：pnpm rebuild:preset-template -- --check
 # 复制到 DSH_HOME/.prompt-tool/modules/<id>/module.yml，id 与目录名保持一致。
-# rules 是唯一行为定义：when 判断树 → do 动作数组；提示词正文属于 inject-text 动作。
+# rules 是唯一行为定义：if 判断树 → then 动作数组（另有 else）；提示词正文属于 inject-text 动作。
 # 共享设置只内嵌真实配置卡；空层不自动创建 UI 卡或提示词规则。
 # 九层是独立官方扩展点，没有插件定义的跨层执行顺序。详见 docs/injection-point-contracts.md。
 # 默认不启用锚定或模型增强；下方参考参数全部为注释，按需启用。
@@ -14,8 +14,9 @@ description: 九层配置与全部共享参数参考；所有示例规则默认�
 version: 1.0.0
 engineCompat: ">=0.7.2"
 modules:
-  # 仅启用提示词引擎。其他能力保持 opt-in；写入其已登记参数后会自动补齐装配。
-  # 官方与本地可用模块：agent-instructions, command-goal, compaction, delegation-ptc, delegation, persistent-shell, planning, skill-filesystem-cordis, skill-filesystem, tool-ask-user, tool-bash, tool-cordis, tool-fs-search, tool-fs, tool-goal, tool-jobs, tool-plugin-manager-disabled, tool-plugin-manager, tool-present, tool-presentation, tool-pwsh, tool-skill, tool-todo, tool-web, character-tools, declared-triggers, filesystem-editor, instruction-hint, persistent-shell-posix, prompt-config-engine, rule-engine, run-code-env, session-var-tools, skill-search, subagent-tool-policy, tool-bash-disabled, tool-config-engine, tool-git-bash, world-book-tools
+  # 仅启用规则引擎。其他能力保持 opt-in；写入其已登记参数后会自动补齐装配。
+  # 可用模块（engine/compositions 下的文件名）：agent-instructions, command-goal, compaction, delegation-ptc, delegation, persistent-shell, planning, skill-filesystem-cordis, skill-filesystem, tool-ask-user, tool-bash, tool-cordis, tool-fs-search, tool-fs, tool-goal, tool-jobs, tool-plugin-manager-disabled, tool-plugin-manager, tool-present, tool-presentation, tool-pwsh, tool-skill, tool-todo, tool-web, character-tools, dev-tool-search, filesystem-editor, instruction-hint, persistent-shell-posix, rule-engine, run-code-env, session-var-tools, skill-search, subagent-tool-policy, tool-bash-disabled, tool-config-engine, tool-git-bash, world-book-tools
+  # 不可写入 modules 的退役名：prompt-config-engine, declared-triggers（写进即 409 rules-migration-required）。
   # 人设使用顶层 persona；不存在 persona、code-presentation、cot-drip 等已撤销模块别名。
   - rule-engine
 layerSettings:
@@ -29,13 +30,14 @@ customTools:
   []
 rules:
   # 每条规则默认 enabled:false；规则与动作的 id 必填、各自唯一。
-  # when 可组合 all/any/not/notAny；do 中动作在实际执行点按数组相对顺序执行。
-  # 同模块非空 group 中存在 exclusive:true 时，启用某卡会原子关闭同组其他卡；排序不选赢家。
+  # if 可组合 all/any/not/notAny；then 中动作在同一执行点按数组相对顺序执行，条件只求值一次。
+  # 动作级分支写成 { if, then, else } 节点嵌在 then / else 里，可继续嵌套；else 结构上保证必有一支命中。
+  # 同模块非空 group 中存在 exclusive:true 时，整组最多一条启用；多启用是编译期拒绝，不按排序选赢家。
   # 注入正文、变量、内容策略、合并和去重均属于 inject-text.config。
-  # config.identity 只允许 {field: plugin, value: 唯一值}；templateFile 相对模块 rules.yml 且须在模块目录内。
-  # 不支持动态判断的固定注册动作必须无 when，编译器明确拒绝非法组合。
+  # config.identity 只允许 {field: plugin, value: 唯一值}；templateFile 相对模块 module.yml 且须在模块目录内。
+  # guard、complete、suppressRuntimeContext 是固定注册效果：不接受规则级 if，编译器明确拒绝非法组合。
   # 10-pre-step.yml — 官方默认层：agent/pre-step 消息批。支持 position / dedupe / promotion / audience / mergeMode 与文本插值。
-  # 规则条件放 when，动作放 do；动作执行点由引擎目录验证，不建立跨层全局顺序。
+  # 规则条件放 if，动作放 then；动作执行点由引擎目录验证，不建立跨层全局顺序。
   # 注入动作内容策略：static, placeholder, first-turn-anchor, guide-auto, anchor-notice, world-book。
   - id: example-pre-step
     name: 示例：消息批注入
@@ -65,7 +67,7 @@ rules:
             WHO: ""
           params: {}
   # 14-first-turn-anchor.yml — 官方默认层：agent/pre-step 消息批。支持 position / dedupe / promotion / audience / mergeMode 与文本插值。
-  # 规则条件放 when，动作放 do；动作执行点由引擎目录验证，不建立跨层全局顺序。
+  # 规则条件放 if，动作放 then；动作执行点由引擎目录验证，不建立跨层全局顺序。
   # 注入动作内容策略：static, placeholder, first-turn-anchor, guide-auto, anchor-notice, world-book。
   - id: example-first-turn-anchor
     name: 示例：首句锚点
@@ -95,7 +97,7 @@ rules:
             firstTurnInspect: ""
             firstTurnDeep: ""
   # 15-guide-auto.yml — 官方默认层：agent/pre-step 消息批。支持 position / dedupe / promotion / audience / mergeMode 与文本插值。
-  # 规则条件放 when，动作放 do；动作执行点由引擎目录验证，不建立跨层全局顺序。
+  # 规则条件放 if，动作放 then；动作执行点由引擎目录验证，不建立跨层全局顺序。
   # 注入动作内容策略：static, placeholder, first-turn-anchor, guide-auto, anchor-notice, world-book。
   - id: example-guide-auto
     name: 示例：每轮引导
@@ -130,7 +132,7 @@ rules:
             guideDeep: ""
             complexMinChars: 120
   # 16-custom-fallback.yml — 官方默认层：agent/pre-step 消息批。支持 position / dedupe / promotion / audience / mergeMode 与文本插值。
-  # 规则条件放 when，动作放 do；动作执行点由引擎目录验证，不建立跨层全局顺序。
+  # 规则条件放 if，动作放 then；动作执行点由引擎目录验证，不建立跨层全局顺序。
   # 注入动作内容策略：static, placeholder, first-turn-anchor, guide-auto, anchor-notice, world-book。
   - id: example-custom-fallback
     name: 示例：自定义锚词兜底注入
@@ -163,7 +165,7 @@ rules:
             text: ""
             firstTurnWord: ""
   # 18-placeholder-env-facts.yml — 官方默认层：agent/pre-step 消息批。支持 position / dedupe / promotion / audience / mergeMode 与文本插值。
-  # 规则条件放 when，动作放 do；动作执行点由引擎目录验证，不建立跨层全局顺序。
+  # 规则条件放 if，动作放 then；动作执行点由引擎目录验证，不建立跨层全局顺序。
   # 注入动作内容策略：static, placeholder, first-turn-anchor, guide-auto, anchor-notice, world-book。
   - id: example-placeholder
     layer: pre-step
@@ -191,7 +193,7 @@ rules:
             emptyText: 当前没有可用技能。
     enabled: false
   # 20-system-section.yml — system-section 静态层：注册即全局，由 order 与 params.complete / sectionName 控制。
-  # 规则条件放 when，动作放 do；动作执行点由引擎目录验证，不建立跨层全局顺序。
+  # 规则条件放 if，动作放 then；动作执行点由引擎目录验证，不建立跨层全局顺序。
   # 注入动作内容策略：static。
   - id: example-system-section
     name: 示例：system 静态段
@@ -213,7 +215,7 @@ rules:
             sectionName: ""
     enabled: false
   # 30-runtime-context.yml — runtime-context 层：static 按 order 注册，placeholder 单条生效，由 params.contextName 控制。
-  # 规则条件放 when，动作放 do；动作执行点由引擎目录验证，不建立跨层全局顺序。
+  # 规则条件放 if，动作放 then；动作执行点由引擎目录验证，不建立跨层全局顺序。
   # 注入动作内容策略：static, placeholder。
   - id: example-runtime-context
     layer: runtime-context
@@ -231,7 +233,7 @@ rules:
             contextName: ""
     enabled: false
   # 40-agent-request.yml — agent-request 层：按 order 注册，params.patch 改写请求配置。
-  # 规则条件放 when，动作放 do；动作执行点由引擎目录验证，不建立跨层全局顺序。
+  # 规则条件放 if，动作放 then；动作执行点由引擎目录验证，不建立跨层全局顺序。
   # 注入动作内容策略：static。
   - id: example-agent-request
     layer: agent-request
@@ -253,7 +255,7 @@ rules:
         modelScope: all
     enabled: false
   # 50-llm-stream.yml — llm/stream 层：按 order 注册，params.mode = pass | replace。
-  # 规则条件放 when，动作放 do；动作执行点由引擎目录验证，不建立跨层全局顺序。
+  # 规则条件放 if，动作放 then；动作执行点由引擎目录验证，不建立跨层全局顺序。
   # 注入动作内容策略：static。
   - id: example-llm-stream
     layer: llm-stream
@@ -273,7 +275,7 @@ rules:
             mode: pass
     enabled: false
   # 60-tool-pipeline.yml — tools/* 层：按 order 注册，params.toolNames 与 preDecision / postAction 控制；subject / match 可选，命中才裁决。
-  # 规则条件放 when，动作放 do；动作执行点由引擎目录验证，不建立跨层全局顺序。
+  # 规则条件放 if，动作放 then；动作执行点由引擎目录验证，不建立跨层全局顺序。
   # 注入动作内容策略：static。
   - id: example-tool-pipeline
     layer: tool-pipeline
@@ -291,8 +293,70 @@ rules:
         toolNames: bash,run_code
         text: ""
     enabled: false
+  # 61-deny-tools-presentation.yml — 动作自带执行点，顶层 layer 只是展示归属
+  # 规则条件放 if，动作放 then；动作执行点由引擎目录验证，不建立跨层全局顺序。
+  # 注入动作内容策略：按动作自身能力。
+  - id: example-deny-tools
+    name: 工具下架（呈现面）
+    enabled: false
+    then:
+      - id: drop-from-assembly
+        kind: assembly
+        target:
+          tools:
+            deny:
+              - web_search
+              - web_fetch
+      - id: strip-sdk-text
+        kind: sdk-strip
+        mask:
+          deny:
+            - web_search
+            - web_fetch
+  # 62-guard-deny-tools.yml — 动作自带执行点，顶层 layer 只是展示归属
+  # 规则条件放 if，动作放 then；动作执行点由引擎目录验证，不建立跨层全局顺序。
+  # 注入动作内容策略：按动作自身能力。
+  - id: example-deny-tools-guard
+    name: 工具下架（执行层）
+    enabled: false
+    then:
+      - id: deny-at-execution
+        kind: guard
+        mask:
+          deny:
+            - web_search
+            - web_fetch
+        reason: 当前模块不开放联网工具
+  # 63-append-context.yml — tools/* 层：按 order 注册，params.toolNames 与 preDecision / postAction 控制；subject / match 可选，命中才裁决。
+  # 规则条件放 if，动作放 then；动作执行点由引擎目录验证，不建立跨层全局顺序。
+  # 注入动作内容策略：static。
+  - id: example-append-context
+    name: 工具结果后追加上下文
+    enabled: false
+    layer: tool-pipeline
+    if:
+      names:
+        allow:
+          - web_fetch
+    then:
+      - id: note-after-tool
+        kind: append-context
+        mode: context
+        text: 网络结果可能已过期；引用它时说明来源与抓取时间。
+  # 64-pre-step-filter.yml — 官方默认层：agent/pre-step 消息批。支持 position / dedupe / promotion / audience / mergeMode 与文本插值。
+  # 规则条件放 if，动作放 then；动作执行点由引擎目录验证，不建立跨层全局顺序。
+  # 注入动作内容策略：static, placeholder, first-turn-anchor, guide-auto, anchor-notice, world-book。
+  - id: example-pre-step-filter
+    name: 前置步骤过滤（按插件屏蔽）
+    enabled: false
+    layer: pre-step
+    then:
+      - id: block-one-plugin
+        kind: pre-step-filter
+        blockPlugins:
+          - example-plugin
   # 65-turn-stop.yml — agent/turn-stopping 层：命中条件时强制续跑一步；引擎内置续跑上限，不可用配置关闭。
-  # 规则条件放 when，动作放 do；动作执行点由引擎目录验证，不建立跨层全局顺序。
+  # 规则条件放 if，动作放 then；动作执行点由引擎目录验证，不建立跨层全局顺序。
   # 注入动作内容策略：static。
   - id: example-turn-stop
     name: 未完成时强制续跑
@@ -318,7 +382,7 @@ rules:
           params: {}
     enabled: false
   # 66-subagent-start.yml — subagent/start 层：命中条件时向该子代理注入上下文。
-  # 规则条件放 when，动作放 do；动作执行点由引擎目录验证，不建立跨层全局顺序。
+  # 规则条件放 if，动作放 then；动作执行点由引擎目录验证，不建立跨层全局顺序。
   # 注入动作内容策略：static。
   - id: example-subagent-start
     name: 子代理通用守则
@@ -336,8 +400,24 @@ rules:
             或用探针跑一次看它动。找不到证据就继续查，不要凭「看起来像」就动手。
           params: {}
     enabled: false
+  # 67-inbox-prepend.yml — 官方默认层：agent/pre-step 消息批。支持 position / dedupe / promotion / audience / mergeMode 与文本插值。
+  # 规则条件放 if，动作放 then；动作执行点由引擎目录验证，不建立跨层全局顺序。
+  # 注入动作内容策略：static, placeholder, first-turn-anchor, guide-auto, anchor-notice, world-book。
+  - id: example-inbox-prepend
+    name: 首轮前置一条消息
+    enabled: false
+    layer: pre-step
+    if:
+      session:
+        type: user/message
+        present: false
+    then:
+      - id: prepend-first-turn
+        kind: inbox-prepend
+        target: next-turn
+        text: 动手之前先读工作区的 AGENTS.md，再决定改哪里。
   # 70-subagent-maintenance.yml — 官方默认层：agent/pre-step 消息批。支持 position / dedupe / promotion / audience / mergeMode 与文本插值。
-  # 规则条件放 when，动作放 do；动作执行点由引擎目录验证，不建立跨层全局顺序。
+  # 规则条件放 if，动作放 then；动作执行点由引擎目录验证，不建立跨层全局顺序。
   # 注入动作内容策略：static, placeholder, first-turn-anchor, guide-auto, anchor-notice, world-book。
   - id: subagent-maintenance
     name: 子代理状态/记忆维护
@@ -379,7 +459,7 @@ rules:
             stateKeys: 心情, 接受值, 关系进度
           params: {}
   # 75-subagent-end.yml — subagent/end 层：默认记录；action=inject-main 时向所属主会话注入配置文本，不改写子代理返回结果。
-  # 规则条件放 when，动作放 do；动作执行点由引擎目录验证，不建立跨层全局顺序。
+  # 规则条件放 if，动作放 then；动作执行点由引擎目录验证，不建立跨层全局顺序。
   # 注入动作内容策略：static。
   - id: example-subagent-end
     name: 子代理结束记录（只观察）
@@ -396,6 +476,43 @@ rules:
           params:
             action: observe
           text: 子代理已结束。请检查其结果，验证后再回复用户。
+  # 80-tool-surface.yml — 动作自带执行点，顶层 layer 只是展示归属
+  # 规则条件放 if，动作放 then；动作执行点由引擎目录验证，不建立跨层全局顺序。
+  # 注入动作内容策略：按动作自身能力。
+  - id: tool-surface-resident
+    name: 工具面收窄（核心文件与任务集）
+    enabled: false
+    if:
+      any:
+        - phase:
+            promoteOn: either
+            includeSubagents: true
+            promoted: true
+        - phase:
+            promoteOn: either
+            includeSubagents: true
+            compacted: true
+            promoted: false
+    then:
+      - id: narrow-tools
+        kind: assembly
+        target:
+          tools:
+            allow:
+              - pwsh
+              - read
+              - write
+              - edit
+              - glob
+              - grep
+              - todo_write
+              - skill_search
+              - skill_load
+              - dev_tool_search
+            allowFrom:
+              tool: dev_tool_search
+              key: toolNames
+            requireMatch: true
   - id: example-world-book
     name: 世界书条件条目
     enabled: false

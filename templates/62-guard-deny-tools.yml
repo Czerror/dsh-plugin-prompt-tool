@@ -1,0 +1,20 @@
+# 模板：工具下架（执行层最终拒绝）。
+#
+# `guard` 注册在 agent scope 上，是工具真正执行前的最后一道闸：本层与晚到的工具也归它裁决。
+# 它属于**固定注册效果**——不接受规则级 `if`，也不接受 `waterfallPosition`；要按条件开关，
+# 改同名单的呈现面（61-deny-tools-presentation.yml），或另立一条带 `if` 的规则控制别的动作。
+#
+# `deny` 里不能写 `run_code`：它是 PTC 呈现唯一可调用的入口，写进去会在挂载期被拒绝。
+# `includeSubagents` 缺省 false：本 guard 只作用于主会话；要让子代理一并受限，
+# 显式写 `includeSubagents: true`（会沿 scope 链 restrict，同样名单）。
+id: example-deny-tools-guard
+name: 工具下架（执行层）
+enabled: false
+then:
+  - id: deny-at-execution
+    kind: guard
+    mask:
+      deny:
+        - web_search
+        - web_fetch
+    reason: 当前模块不开放联网工具

@@ -23,11 +23,11 @@
 # 就放弃裁剪、暴露完整目录。宁可多给上下文，也不静默裁成空目录——收窄错了会让当前
 # 工作流调不到工具，那是比多花 token 严重得多的故障。
 #
-# **本模板走规则路径，不能声明 `waterfallPosition`**（那是声明 `triggers` 路径的字段，
-# `compileRules` 会以 unknown fields 拒绝）。`assembly` 的改写发生在通道下游结算之后，
-# 与相邻动作的先后由规则顺序与模块顺序决定。若确实需要 `outermost`（`prepend: true`，
-# 保证本动作在普通注册之外先看到装配），改用声明路径（同 test/engine/declarations/
-# tool-bootstrap.yml 的格式）而不是本模板。
+# **本模板走规则路径，不能声明 `waterfallPosition`**（那是声明式路径的字段，规则路径会以
+# unknown fields 拒绝）。`assembly` 的改写发生在通道下游结算之后，与相邻动作的先后由规则
+# 顺序与模块顺序决定。需要 `outermost`（`prepend: true`：保证本动作落在普通注册之外、
+# 先看到装配）时，模块层没有出口——`declared-triggers` 与顶层 `triggers` 都已退役
+# （写进 `modules` 或定义顶层即 409），只能回到插件侧声明。
 id: tool-surface-resident
 name: 工具面收窄（核心文件与任务集）
 enabled: true

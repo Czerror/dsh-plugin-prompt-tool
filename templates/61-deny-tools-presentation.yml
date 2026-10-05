@@ -1,0 +1,27 @@
+# 模板：工具下架（呈现面）—— assembly 剔除工具条目 + sdk-strip 裁掉 tools:sdk 段正文。
+#
+# 工具的可见面有两处，只删一处会留痕：
+#   - `tools:sdk` 段的声明正文（模型读到的工具说明）→ `sdk-strip` 删文本；
+#   - assembly 的 tools 列表（本次请求实际发出去的目录）→ `assembly` 删条目。
+# 执行层的最终拒绝是**第三件**，见 62-guard-deny-tools.yml：`guard` 是固定注册效果、
+# 不接受规则级 `if`，因此必须自成一条没有 `if` 的规则。
+#
+# 三处名单要逐字一致（assembly.tools.deny / sdk-strip.mask.deny / guard.mask.deny）。
+# 分叉的后果不对称：呈现层漏了只是模型看不见，执行层漏了才是真能调得到。
+id: example-deny-tools
+name: 工具下架（呈现面）
+enabled: false
+then:
+  - id: drop-from-assembly
+    kind: assembly
+    target:
+      tools:
+        deny:
+          - web_search
+          - web_fetch
+  - id: strip-sdk-text
+    kind: sdk-strip
+    mask:
+      deny:
+        - web_search
+        - web_fetch

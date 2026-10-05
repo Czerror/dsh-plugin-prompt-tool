@@ -1,0 +1,23 @@
+# 模板：前置步骤（agent/pre-step）注入过滤。
+#
+# 两种白名单模式**互斥**：
+#   - `sources`：严格白名单，只放行列表里的 `source.kind`，**同时作用于本批已领取的消息**。
+#     漏一个 kind 就是静默删掉一段上下文（无告警、无计数），所以它只适合你**枚举过真实 kind**
+#     的场合——`modules/skill-surface/module.yml` 就是这种用法（14 种 kind 的实测枚举）。
+#   - `keepKinds`：保留已领取基线的对象身份 + 这些 kind。实测它什么都不删（claimed 基线
+#     的身份保留规则把所有消息都保住了），所以本模板不推荐它。
+# 未声明任一模式 = 不注册、零开销。
+#
+# `blockPlugins` 是与两者**正交**的另一维度，可共存：仅当 `source.kind` 是插件来源时，
+# 按 `source.plugin` 做大小写不敏感的**精确等值**匹配（不做子串 / 正则 / glob——要覆盖某个
+# 插件就得写全名）。空名单 = 关闭，这与白名单「空 = 全拦」正好相反。
+id: example-pre-step-filter
+name: 前置步骤过滤（按插件屏蔽）
+enabled: false
+layer: pre-step
+then:
+  - id: block-one-plugin
+    kind: pre-step-filter
+    blockPlugins:
+      - example-plugin
+    # sources: ['user', 'agent-instructions']

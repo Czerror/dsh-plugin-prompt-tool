@@ -12,6 +12,11 @@ import { RULE_OWNED_MODEL_PARAMS } from '../src/shared/rules.ts'
 
 const root = new URL('../', import.meta.url)
 const output = new URL('module.yml', root)
+/** 组合行文件仍在（旧数据校验与离线迁移要读），但写进 modules 会被 409 rules-migration-required 拒绝。 */
+const RETIRED_MODULE_NAMES = new Set(['prompt-config-engine', 'declared-triggers'])
+const moduleNames = ['engine/compositions/library/', 'engine/compositions/source/local/']
+  .flatMap(dir => readdirSync(new URL(dir, root)).filter(name => name.endsWith('.yml')).map(name => name.slice(0, -4)))
+  .filter(name => !RETIRED_MODULE_NAMES.has(name))
 const doc = new Document({
   id: 'my-module', name: '我的模块', description: '九层配置与全部共享参数参考；所有示例规则默认关闭。',
   version: '1.0.0', engineCompat: '>=0.7.2', modules: ['rule-engine'], layerSettings: {},
@@ -21,13 +26,14 @@ doc.commentBefore = ` dsh-plugin-prompt-tool — 全参数 module.yml 模板（�
  生成来源：scripts/rebuild-preset-template.mjs + ENGINE_PARAM_DEFINITIONS + engine/schema.mjs + templates/
  重建：pnpm rebuild:preset-template；检查：pnpm rebuild:preset-template -- --check
  复制到 DSH_HOME/.prompt-tool/modules/<id>/module.yml，id 与目录名保持一致。
- rules 是唯一行为定义：when 判断树 → do 动作数组；提示词正文属于 inject-text 动作。
+ rules 是唯一行为定义：if 判断树 → then 动作数组（另有 else）；提示词正文属于 inject-text 动作。
  共享设置只内嵌真实配置卡；空层不自动创建 UI 卡或提示词规则。
  九层是独立官方扩展点，没有插件定义的跨层执行顺序。详见 docs/injection-point-contracts.md。
  默认不启用锚定或模型增强；下方参考参数全部为注释，按需启用。
  指令文件正文和指令策略不放在本文件；不得将用户 AGENTS.md/CLAUDE.md 正文复制进来。`
-doc.get('modules', true).commentBefore = ` 仅启用提示词引擎。其他能力保持 opt-in；写入其已登记参数后会自动补齐装配。
- 官方与本地可用模块：${['engine/compositions/library/', 'engine/compositions/source/local/'].flatMap(dir => readdirSync(new URL(dir, root)).filter(name => name.endsWith('.yml')).map(name => name.slice(0, -4))).join(', ')}
+doc.get('modules', true).commentBefore = ` 仅启用规则引擎。其他能力保持 opt-in；写入其已登记参数后会自动补齐装配。
+ 可用模块（engine/compositions 下的文件名）：${moduleNames.join(', ')}
+ 不可写入 modules 的退役名：${[...RETIRED_MODULE_NAMES].join(', ')}（写进即 409 rules-migration-required）。
  人设使用顶层 persona；不存在 persona、code-presentation、cot-drip 等已撤销模块别名。`
 doc.get('layerSettings', true).commentBefore = ' 唯一共享参数磁盘位置。按下方参考取消所需注释，不要复制旧 params/model/subagentModel 段。'
 doc.get('variables', true).commentBefore = ' 模块内容变量；与共享参数、每条规则的 variables 都是独立命名空间。空字符串是合法占位值。'
@@ -37,34 +43,37 @@ const specs = readdirSync(new URL('templates/', root)).filter(name => name.endsW
   if (template.errors.length) throw template.errors[0]
   const spec = template.toJS()
   spec.enabled = false
-  const contract = LAYER_CONTRACTS[spec.layer]
-  for (const action of spec.do) {
+  // 规则顶层 layer 只用于展示、可以缺省（非注入动作尤其如此）；取不到时回落到注入动作自己的层。
+  const layer = spec.layer ?? spec.then.find(action => action.kind === 'inject-text')?.config?.layer
+  const contract = LAYER_CONTRACTS[layer]
+  for (const action of spec.then) {
     if (action.kind === 'inject-text') {
       action.config.params ??= {}
       for (const [key, rule] of Object.entries(contract.params)) {
         if (action.config.params[key] !== undefined) continue
         action.config.params[key] = rule.type === 'boolean' ? false : rule.type === 'object' ? {} : rule.values?.[0] ?? ''
       }
-      if (spec.layer === 'subagent-end') action.config.text = '子代理已结束。请检查其结果，验证后再回复用户。'
+      if (layer === 'subagent-end') action.config.text = '子代理已结束。请检查其结果，验证后再回复用户。'
     }
     if (action.kind === 'request-params') action.patch = { provider: 'provider-id', model: 'model-id', reasoningEffort: 'high', temperature: 0.3, maxTokens: 4096, stop: ['END'] }
   }
   const node = doc.createNode(spec)
-  node.commentBefore = ` ${file} — ${LAYER_LABELS[spec.layer].detail}
- 规则条件放 when，动作放 do；动作执行点由引擎目录验证，不建立跨层全局顺序。
- 注入动作内容策略：${contract.strategies.join(', ')}。`
+  node.commentBefore = ` ${file} — ${LAYER_LABELS[layer]?.detail ?? '动作自带执行点，顶层 layer 只是展示归属'}
+ 规则条件放 if，动作放 then；动作执行点由引擎目录验证，不建立跨层全局顺序。
+ 注入动作内容策略：${contract?.strategies.join(', ') ?? '按动作自身能力'}。`
   return node
 })
 specs.push(doc.createNode({ id: 'example-world-book', name: '世界书条件条目', enabled: false, layer: 'pre-step',
-  do: [{ id: 'inject', kind: 'inject-text', config: { layer: 'pre-step', strategy: 'world-book', text: '这里是触发后注入的背景知识。',
+  then: [{ id: 'inject', kind: 'inject-text', config: { layer: 'pre-step', strategy: 'world-book', text: '这里是触发后注入的背景知识。',
     params: { constant: false, keys: ['项目'], secondaryKeys: ['规范'], selectiveLogic: 0, caseSensitive: false, wholeWords: false, useRegex: false } } }] }))
 doc.set('rules', doc.createNode(specs))
 doc.get('rules', true).commentBefore = ` 每条规则默认 enabled:false；规则与动作的 id 必填、各自唯一。
- when 可组合 all/any/not/notAny；do 中动作在实际执行点按数组相对顺序执行。
- 同模块非空 group 中存在 exclusive:true 时，启用某卡会原子关闭同组其他卡；排序不选赢家。
+ if 可组合 all/any/not/notAny；then 中动作在同一执行点按数组相对顺序执行，条件只求值一次。
+ 动作级分支写成 { if, then, else } 节点嵌在 then / else 里，可继续嵌套；else 结构上保证必有一支命中。
+ 同模块非空 group 中存在 exclusive:true 时，整组最多一条启用；多启用是编译期拒绝，不按排序选赢家。
  注入正文、变量、内容策略、合并和去重均属于 inject-text.config。
- config.identity 只允许 {field: plugin, value: 唯一值}；templateFile 相对模块 rules.yml 且须在模块目录内。
- 不支持动态判断的固定注册动作必须无 when，编译器明确拒绝非法组合。`
+ config.identity 只允许 {field: plugin, value: 唯一值}；templateFile 相对模块 module.yml 且须在模块目录内。
+ guard、complete、suppressRuntimeContext 是固定注册效果：不接受规则级 if，编译器明确拒绝非法组合。`
 
 const reference = new Document({ layerSettings: Object.fromEntries(LAYER_ORDER.map(layer => [layer, {}])) })
 const notes = {
