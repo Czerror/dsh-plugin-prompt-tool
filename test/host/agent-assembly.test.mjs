@@ -21,7 +21,8 @@ import { isolatedHome } from '../fixtures/host-harness.mjs'
 const { moduleRoot } = isolatedHome('pt-assembly-')
 const { prepareAssembly, createAgentAssembly } = await import('../../src/runtime/agent-assembly.ts')
 const { installPreStepCoordinator } = await import('../../src/runtime/pre-step-coordinator.ts')
-const { promptConfigToRule, convertLegacyModuleRules } = await import('../../src/host/rules-migration.ts')
+const { promptConfigToRule } = await import('../../src/host/rule-builder.ts')
+const { convertLegacyModuleRules } = await import('../../src/host/rules-migration.ts')
 const { mountRuleSources } = await import('../../engine/rule-runtime.mjs')
 
 /** 装配能力探针：装配只问「宿主是否提供该服务」，这里全部视为提供。 */

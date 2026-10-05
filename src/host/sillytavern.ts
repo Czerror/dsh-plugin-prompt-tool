@@ -11,13 +11,16 @@
  *   - 采样参数（temperature/openai_max_tokens/reasoning_effort）**不转译**：
  *     模型参数由「模型设置」UI 统一管理（预设级 params.model*，writePreset 渲染
  *     agent-request patch），ST 卡固化值会覆盖用户在模型设置里的设置，故剥离；
- *   - modules 按需组装：prompt-config-engine 始终，system-section 注入需要
+ *   - modules 按需组装：rule-engine 始终，system-section 注入需要
  *     persona（complete: false 允许 system-section 生效），世界书条目需要 world-book-tools。
  */
 import { createHash } from 'node:crypto'
 import type { ModuleSpec } from './manifest.ts'
 import type { RuleDefinition } from '../shared/rules.ts'
-import { convertLegacyModuleRules } from './rules-migration.ts'
+import type { PromptConfigSpec } from './prompt-configs.ts'
+import { promptConfigToRule } from './rule-builder.ts'
+// @ts-expect-error 与写盘链路共用同一道规则校验。
+import { compileRules } from '../../engine/rule-spec.mjs'
 import { mapRuleInjections, ruleInjections } from './rule-content.ts'
 import { readModuleLayerSettings } from './module-layer-settings.ts'
 import type { PersonaSpec } from '../shared/persona-section.ts'
@@ -273,8 +276,8 @@ export function convertStToModuleWithReport(
     }
   }
   const configs: Array<Record<string, unknown>> = []
-  /** module.yml 顶层触发器声明（`enable_web_search: false` 的 web 拒绝名单在此登记）。 */
-  const triggers: unknown[] = []
+  /** `enable_web_search: false` 的三条 Web 防护规则（呈现裁剪 / SDK 正文裁剪 / 执行 guard）。 */
+  const webRules: RuleDefinition[] = []
   // 世界书配置 id → 来源条目 id：键宏诊断必须定位到源条目，不按 id 前缀反推。
   const worldBookSources = new Map<string, string>()
   const droppedMarkers: string[] = []
@@ -766,10 +769,10 @@ export function convertStToModuleWithReport(
     modules.push('tool-web')
     moduleConfigs['tool-web'] = { fetch: true }
   } else if (record.enable_web_search === false) {
-    triggers.push(
-      { id: 'st-web-assembly', channel: 'system-prompt/assemble', do: { kind: 'assembly', target: { tools: { deny: [...ST_WEB_TOOLS] } } } },
-      { id: 'st-web-sdk-strip', channel: 'system-prompt/assemble', do: { kind: 'sdk-strip', mask: { deny: [...ST_WEB_TOOLS] } } },
-      { id: 'st-web-guard', channel: 'system-prompt/assemble', do: { kind: 'guard', mask: { deny: [...ST_WEB_TOOLS] } } },
+    webRules.push(
+      { id: 'st-web-assembly', then: [{ id: 'st-web-assembly', kind: 'assembly', target: { tools: { deny: [...ST_WEB_TOOLS] } } }] },
+      { id: 'st-web-sdk-strip', then: [{ id: 'st-web-sdk-strip', kind: 'sdk-strip', mask: { deny: [...ST_WEB_TOOLS] } }] },
+      { id: 'st-web-guard', then: [{ id: 'st-web-guard', kind: 'guard', mask: { deny: [...ST_WEB_TOOLS] } }] },
     )
   }
 
@@ -847,6 +850,10 @@ export function convertStToModuleWithReport(
     },
     ...(reportTruncated ? { truncated: true } : {}),
   }
+  // 规则在出口一次成型：每条内容的注入动作 payload + 三条 Web 防护规则，直接就是 rules[]。
+  const rules = [...configs.map(config => promptConfigToRule(config as unknown as PromptConfigSpec)), ...webRules]
+  // 与写盘链路同一道校验：不合法在这里失败，不留给物化阶段。
+  compileRules(rules)
   // 预设名优先取卡片 name 字段；缺失/空白时回退文件名（去 .json 的 baseName）。
   const spec: ModuleSpec = {
     id: moduleId,
@@ -864,7 +871,7 @@ export function convertStToModuleWithReport(
     ...(persona === undefined ? {} : { persona }),
     modules: [...new Set(modules.map(name => name === 'prompt-config-engine' || name === 'declared-triggers' ? 'rule-engine' : name))],
     moduleConfigs,
-    rules: convertLegacyModuleRules({ promptConfigs: configs, triggers }).rules,
+    rules,
   }
   return { spec, report }
 }

@@ -4,7 +4,7 @@
  *  不各自实现 parseDocument 往返。 */
 import { loadModuleSpec } from './manifest.ts'
 import { editModuleRules, readModuleRules } from './module-rules.ts'
-import { promptConfigToRule } from './rules-migration.ts'
+import { promptConfigToRule } from './rule-builder.ts'
 import { ruleInjections } from './rule-content.ts'
 
 export type WorldBookEntry = Record<string, unknown>

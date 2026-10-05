@@ -9,7 +9,7 @@ import { assertModuleDirectory, assertModuleId, modulePathExists } from './modul
 import { MODULE_DEFINITION_FILE } from './paths.ts'
 import { appendModuleCapabilities, withModuleDefinition } from './manifest.ts'
 import { assertCanonicalRuleSource, rulePromptConfigOptions } from './module-rules.ts'
-import { promptConfigToRule } from './rules-migration.ts'
+import { promptConfigToRule } from './rule-builder.ts'
 import { mapRuleInjections, ruleInjections } from './rule-content.ts'
 // @ts-expect-error 共享规则编译器校验模块并入候选。
 import { compileRules } from '../../engine/rule-spec.mjs'

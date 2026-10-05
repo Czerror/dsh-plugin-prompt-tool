@@ -152,7 +152,8 @@ test('导出：不存在的模块被拒，不回传任何定义内容', async ()
 
 test('并入的源模块优先：同名模块与角色卡并存时取模块定义', async () => {
   const characters = await import('../../src/host/characters.ts')
-  const { convertLegacyModuleRules, promptConfigToRule } = await import('../../src/host/rules-migration.ts')
+  const { convertLegacyModuleRules } = await import('../../src/host/rules-migration.ts')
+  const { promptConfigToRule } = await import('../../src/host/rule-builder.ts')
   const id = 'dual-source'
   // 模块源：modules/<id>/module.yml
   mkdirSync(join(moduleRoot, id), { recursive: true })

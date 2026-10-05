@@ -16,7 +16,8 @@ const { FIXTURE_PRESET_ID, FIXTURE_PRESET_SRC, installFixturePreset, installFixt
 const { materializeModule, writePreset } = await import('../../src/host/write-preset.ts')
 const { prepareAssembly } = await import('../../src/runtime/agent-assembly.ts')
 const { loadModuleSpec, saveModuleParams } = await import('../../src/host/manifest.ts')
-const { planRulesMigration, promptConfigToRule } = await import('../../src/host/rules-migration.ts')
+const { planRulesMigration } = await import('../../src/host/rules-migration.ts')
+const { promptConfigToRule } = await import('../../src/host/rule-builder.ts')
 const { readModuleRules, editModuleRules } = await import('../../src/host/module-rules.ts')
 // 夹具模板同时装进隔离 DSH_HOME 的官方模块根（resolveModuleDir 场景）与各测试的输出根（见 makeOptions）。
 installFixturePresetInHome(home)

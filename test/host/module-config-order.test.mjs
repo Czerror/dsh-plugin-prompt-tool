@@ -12,7 +12,7 @@ const { moduleRoot } = isolatedHome('pt-config-order-')
 const { appendModuleConfigOrder, readModuleConfigOrder, saveModuleConfigOrder } = await import('../../src/host/module-config-order.ts')
 const { setModuleEnabled } = await import('../../src/host/config-store.ts')
 const { materializeModule } = await import('../../src/host/write-preset.ts')
-const { promptConfigToRule } = await import('../../src/host/rules-migration.ts')
+const { promptConfigToRule } = await import('../../src/host/rule-builder.ts')
 const { readRulesDir } = await import('../../src/host/module-storage.ts')
 
 function fixture(name, cards) {

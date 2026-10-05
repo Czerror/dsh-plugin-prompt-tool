@@ -13,7 +13,8 @@ import { mountRuleSources } from '../../engine/rule-runtime.mjs'
 import { buildInstructionHintText, instructionHintMessages } from '../../engine/instruction-hint.mjs'
 
 const { moduleRoot } = isolatedHome('pt-rules-migration-')
-const { promptConfigToRule, convertLegacyModuleRules, planRulesMigration, applyRulesMigration, rollbackRulesMigration } = await import('../../src/host/rules-migration.ts')
+const { promptConfigToRule } = await import('../../src/host/rule-builder.ts')
+const { convertLegacyModuleRules, planRulesMigration, applyRulesMigration, rollbackRulesMigration } = await import('../../src/host/rules-migration.ts')
 const { readRulesDir, ensureModuleSlices } = await import('../../src/host/module-storage.ts')
 function fixture(name, definitions) {
   const root = join(moduleRoot, name)

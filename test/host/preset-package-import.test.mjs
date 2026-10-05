@@ -239,6 +239,8 @@ test('importPresetPackage：SillyTavern JSON 单文件经转换引擎导入（�
     ['st-web-sdk-strip', 'sdk-strip'],
     ['st-web-guard', 'guard'],
   ])
+  assert.deepEqual(webRules.map(rule => rule.then[0].id), ['st-web-assembly', 'st-web-sdk-strip', 'st-web-guard'],
+    '动作自带稳定 id：不再经旧声明路径被补成占位符 action-N')
   for (const rule of webRules) {
     assert.equal(rule.then.length, 1)
     const mask = rule.then[0].target?.tools ?? rule.then[0].mask
