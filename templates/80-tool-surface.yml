@@ -3,7 +3,7 @@
 # 为什么：工具面实测 **156 个工具、描述合计 46894 字符（≈12K token）**，每个请求都付。
 # 收窄到核心集后只剩约 10 个工具，其余按需解锁。
 #
-# 与 test/engine/declarations/tool-bootstrap.yml 的关键差别：那份原型**只在受控相位收窄**
+# 与已退场的 `tool-bootstrap` 原型的关键差别：那份**只在受控相位收窄**
 # （`promoted: false`），晋升后原样放开；本模板**覆盖全部相位**——晋升后放开等于白省，
 # 而工具描述是每请求的固定开销。若要旧语义，给 `phase` 加 `promoted: false` 并把
 # `compacted` 拆成两条即可。

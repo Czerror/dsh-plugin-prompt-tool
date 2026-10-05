@@ -30,8 +30,7 @@ export function createPhasePredicate(options = {}) {
   // 为什么需要它（对拍实测）：原实现把 `compacted` 与 `promoted` 写成**合取**，于是可表达的
   // 原子只有 `P`、`C∧P`、`¬C∧P`——三者在 **¬P 的会话上全为 false**，用 `any`/`all`/`not`/
   // `notAny` 的任何组合都表达不出原 `tool-bootstrap` compaction 回退要的 **`C ∧ ¬P`**
-  // （受控相位 + 已压缩：压缩后回到受控工具集；声明侧见
-  // `test/engine/declarations/tool-bootstrap.yml` 声明 2）。解耦后
+  // （受控相位 + 已压缩：压缩后回到受控工具集）。解耦后
   // `{ compacted: true, promoted: false }` 就是 `C ∧ ¬P`。
   const promotedOption = options.promoted
   if (promotedOption !== undefined && promotedOption !== true && promotedOption !== false && promotedOption !== 'ignore') {

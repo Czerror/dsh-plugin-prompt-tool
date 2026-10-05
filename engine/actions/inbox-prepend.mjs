@@ -12,8 +12,7 @@ export function prepareInboxPrepend(action, plugin) {
   if (text.length === 0) return
   return (_ctx, { warnOnce, on, collect, take }) => collect(on('agent/inbox/inserted', ({ agent, message } = {}) => {
     try {
-      // 无 session 的 agent 不锚定（与原 `anchor-turn` 的守卫逐条对齐；声明侧见
-      // `test/engine/declarations/anchor-turn.yml` 的 session 谓词）：锚定是**会话**
+      // 无 session 的 agent 不锚定（与原 `anchor-turn` 的守卫逐条对齐）：锚定是**会话**
       // 首轮语义，没有会话就没有「首轮」；缺这条会让匿名/临时 agent 也被插一条合成消息
       // （对拍实测：声明路径多插 2 条）。
       if (agent?.session === undefined) return

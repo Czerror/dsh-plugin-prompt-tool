@@ -50,8 +50,7 @@ export function createCountPredicate(options = {}) {
   const min = boundOf(options.min, 'min')
   const max = boundOf(options.max, 'max')
   // 节奏判据（2026-09-22 用户拍板⑤「改用可重建计数」的核心语义）：`every: N` = 每 N 次命中一次。
-  // 原 `progress-reminder` 的 `results % every === 0` 配的是**自增后**的计数
-  // （声明侧见 `test/engine/declarations/progress-reminder.yml` 的 `count.every`），
+  // 原 `progress-reminder` 的 `results % every === 0` 配的是**自增后**的计数，
   // 所以这里必须要求 `count > 0`——否则 `0 % N === 0` 会让第 0 次就命中。
   const every = options.every === undefined
     ? undefined

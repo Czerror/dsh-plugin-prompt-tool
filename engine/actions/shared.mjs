@@ -41,8 +41,7 @@ export function createMask(source, label, plugin, allowExtra) {
     allowExtra,
     /**
      * fail-open 兜底开关（**可选**，缺省 false）：原 `tool-bootstrap` 的语义是
-     * 「keep 名单里的工具在本次装配目录里一个都不存在 → 放弃裁剪、暴露完整目录」（声明侧见
-     * `test/engine/declarations/tool-bootstrap.yml` 的 `requireMatch: true`），而原
+     * 「keep 名单里的工具在本次装配目录里一个都不存在 → 放弃裁剪、暴露完整目录」，而原
      * `tool-filter` 的同名场景是**照名单裁成空目录**。两种语义都真实存在，所以这里
      * **不设默认**——要兜底的声明自己写 `requireMatch: true`。把某一个模块的特有语义当成
      * 通用默认，会让另一个声明路径的行为被悄悄改掉（这正是对拍抓出来的）。
