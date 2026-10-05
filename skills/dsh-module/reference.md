@@ -51,6 +51,36 @@
   与 `count` 谓词（数持久事件）是两回事。
 - `guard`、`complete`、`suppressRuntimeContext` 是**固定注册效果**：所在规则不带 `if`（注册期即生效）。
 
+### 禁用或收窄某个工具
+
+工具的装配面由**会话原有预设**与各模块共同决定，所以「禁用」要在三层同时下手，只做一层会留下可见痕迹：
+
+| 层次 | 动作 | 效果 |
+|---|---|---|
+| 呈现 | `assembly` + `target.tools.deny` | 本次请求的工具目录里没有它 |
+| 文本 | `sdk-strip` + `mask.deny` | `tools:sdk` 段里的声明正文消失 |
+| 执行 | `guard` + `mask.deny` | 真正调不动——经 `run_code` 的子调用同样被拒 |
+
+```yaml
+rules:
+  - id: no-web-presentation
+    then:
+      - id: drop-from-assembly
+        kind: assembly
+        target: { tools: { deny: [web_search, web_fetch] } }
+      - id: strip-sdk-text
+        kind: sdk-strip
+        mask: { deny: [web_search, web_fetch] }
+  - id: no-web-execution   # 固定注册效果：自成一条不带 if 的规则
+    then:
+      - id: deny-at-execution
+        kind: guard
+        mask: { deny: [web_search, web_fetch] }
+        reason: 本模块不开放联网工具
+```
+
+`guard` 注册在 **agent scope** 上，会话原有预设装的行也归它裁决——这是模块禁用官方工具的硬手段。要**收窄**而非禁用，用 `assembly.tools.allow` 白名单（范例见 `modules/tool-surface/module.yml`）；要让禁用传播到子代理，加 `guard.includeSubagents: true`。
+
 ## 三、九层与字段
 
 层是官方扩展点，彼此独立，没有跨层运行顺序。规则顶层的 `layer` 只用于展示、可省略；

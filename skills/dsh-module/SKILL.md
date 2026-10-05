@@ -106,6 +106,7 @@ node --input-type=module -e "import {compileRules} from './engine/rule-spec.mjs'
 - 工具面收窄用 `assembly.target.tools`：`allow` 是**白名单**（没点名即裁掉），`deny` 是黑名单，二者取一。配 `requireMatch: true` 让名单里任一工具缺失时整体放弃裁剪、暴露完整目录——宁可多给上下文，也不静默裁成空目录。
 - 把解锁做到跨请求，靠 `allowFrom: { tool, key }`：从本会话已持久化的 `tool/call` 参数里回收名单。**只能做加法**，永远解不开黑名单；它必须与发现工具成对出现，否则解锁是一次性的。
 - `guard` 是最终拒绝层（`assembly` 只管呈现）：被它点名的工具，即使经 `run_code` 子调用也会在实际执行点被拒。它按**工具名**裁决，`run_code` 作为 PTC 的唯一入口始终可用。
+- 禁用或收窄某个工具要三层同做：呈现裁目录（`assembly.target.tools.deny`）、文本裁声明（`sdk-strip.mask.deny`）、执行层拒绝（`guard.mask.deny`）。`guard` 注册在 agent scope，**会话原有预设装的行也归它裁决**——这是模块禁用官方工具的硬手段；完整写法与最小 YAML 见 `reference.md` 第二节。
 - `pre-step-filter` 的 `sources` 是严格白名单，且同时作用于被领取的消息批：名单要**枚举全部真实 kind**——没写进去的 kind 会连同它的消息一起消失。`modules/skill-surface/module.yml` 里的 14 种 kind 就是一次实测枚举。
 
 **完成判据**：每个动作的字段都落在该层白名单内；条件与通用门都写在规则级 `if`。
