@@ -25,6 +25,7 @@ import type { PromptSettings, RuntimeOptions } from './config.ts'
 import { MODULES_DIR } from './host/paths.ts'
 import { enabledModuleIds, resolveEditDir } from './host/config-store.ts'
 import { DEFAULT_MODULE_ID } from './shared/preset-ids.ts'
+import { ensureSkillSeed } from './host/skills-actions.ts'
 import { createSkillsRuntime } from './host/skills-runtime.ts'
 import { createAgentAssembly } from './runtime/agent-assembly.ts'
 import type { AgentAssemblyRuntime } from './runtime/agent-assembly.ts'
@@ -51,6 +52,8 @@ function warn(ctx: Context, message: string): void {
 export function apply(ctx: Context, configIn: Config): void {
   // 包内目录与输出目录同名；启动只复制缺失项，现有用户定义不被重新铺写。
   const seededModules = new Set(ensureModuleSeed(MODULES_DIR).created)
+  // 内置技能同一纪律：只补缺失项，用户改过或删过的技能保持原样。
+  ensureSkillSeed()
   const readConfig = () => ({
     modulesEnabled: readModulesEnabled({ modulesEnabled: configIn.modulesEnabled?.get(), writePreset: configIn.writePreset?.get() }),
   })

@@ -22,7 +22,7 @@ dsh --profile prompt-tool
 
 从 web 模板初始化会让 profile 自带 `@deepseek-ai/dsh-base` 与 `@deepseek-ai/dsh-web-app` 两层，无需额外的 Web 自愈步骤。`--from-default-profile` 只在 profile 不存在时创建，不要对既有 profile 反复执行；已初始化的 profile 不会被改写。
 
-技能**留在各自的来源目录里**（项目 `.dsh/skills`、项目 `.agents/skills`、你添加的技能文件夹、`$DSH_HOME/skills`、`~/.agents/skills`、官方内置）。引用目录复用官方 filesystem provider 发现与监听；管理页按当前会话快照标注生效、同名遮蔽和未确认状态。用户根与显式引用目录中的普通技能均可开关、删除；删除移入对应来源根的回收站，保留资源和恢复记录。插件不分发顶层 `skills/`，新增技能可创建或复制导入；同名导入先确认，成功后不保存技能历史版本。
+技能**留在各自的来源目录里**（项目 `.dsh/skills`、项目 `.agents/skills`、你添加的技能文件夹、`$DSH_HOME/skills`、`~/.agents/skills`、官方内置）。引用目录复用官方 filesystem provider 发现与监听；管理页按当前会话快照标注生效、同名遮蔽和未确认状态。用户根与显式引用目录中的普通技能均可开关、删除；删除移入对应来源根的回收站，保留资源和恢复记录。插件随包分发内置技能（`skills/dsh-module`），安装与每次启动按「只补缺失」补建到 `$DSH_HOME/skills`——已有同名目录保持原样，用户改过或删过的不会被铺回来；新增技能可创建或复制导入，同名导入先确认，成功后不保存技能历史版本。
 
 **停用 = 改写技能文件的调用策略**：模型端写 `disable-model-invocation`、用户端写 `user-invocable`。单端开关只修改该端，保留另一端的最新状态；正文、注释和未知字段保留，提交前校验原文并原子替换。官方工具与可选 `skill_search/skill_load` 都执行调用策略。状态文件 `$DSH_HOME/skills/.system/prompt-tool/skills.yml` 只保存引用目录 `folders`（v4）；技能清单与调用策略均不进入 settings。详见 [docs/skills-management.md](docs/skills-management.md)。
 

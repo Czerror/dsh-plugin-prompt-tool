@@ -1,8 +1,10 @@
 /** 技能资产操作：创建落在用户根；删除只处理宿主确认的用户根与引用根中的直属技能。 */
-import { accessSync, constants, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs'
+import { accessSync, constants, cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { basename, dirname, isAbsolute, join, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { Document } from 'yaml'
 import { SKILL_NAME_PATTERN } from './skills-config.ts'
+import { USER_SKILLS_DIR } from './paths.ts'
 import { parseFrontmatter } from '../runtime/skills-parse.ts'
 
 export type SkillActionResult = { ok: true; id: string; path: string } | { ok: false; message: string }
@@ -141,4 +143,40 @@ export function deleteSkillTarget(allowedRoots: readonly string[], path: string)
 /** 读取技能标记文件（供预览与测试使用）。 */
 export function readSkillMarker(path: string): string {
   return readFileSync(join(path, 'SKILL.md'), 'utf8')
+}
+
+/** 包根 `skills/` 目录：随包分发的**内置技能库**（目录形态与用户技能根同构）。兼容源码与打包运行。 */
+export function packageSkillsDir(): string {
+  const candidates = [
+    new URL('../skills/', import.meta.url),
+    new URL('../../skills/', import.meta.url),
+  ]
+  for (const candidate of candidates) {
+    const dir = fileURLToPath(candidate)
+    if (existsSync(dir)) return dir
+  }
+  throw new Error('prompt-tool: cannot locate package skills/ directory')
+}
+
+/**
+ * 按包内同名目录补建缺失的内置技能；已有目录的正文、资源与调用策略保持原样。
+ *
+ * 与内置模块的种子化同一纪律：只补缺失项，用户改过或删过的技能不会被重新铺写；
+ * 失败（包内无 `skills/`、目标不可写等）不阻断启动，用户仍可经 UI 创建或导入。
+ */
+export function ensureSkillSeed(root = USER_SKILLS_DIR): { created: string[] } {
+  const created: string[] = []
+  try {
+    mkdirSync(root, { recursive: true })
+    for (const entry of readdirSync(packageSkillsDir(), { withFileTypes: true })) {
+      if (!entry.isDirectory() || entry.name.startsWith('.')) continue
+      const target = join(root, entry.name)
+      if (existsSync(target)) continue
+      cpSync(join(packageSkillsDir(), entry.name), target, { recursive: true })
+      created.push(entry.name)
+    }
+  } catch {
+    // 种子化失败保持静默：技能是可选资产，缺它不影响插件主路径。
+  }
+  return { created }
 }

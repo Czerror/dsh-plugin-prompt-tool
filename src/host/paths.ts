@@ -21,8 +21,8 @@ function resolveDshHome(): string {
 }
 
 export const DSH_HOME = resolveDshHome()
-/** 用户技能根：官方 `user-dsh` 技能根，也是本插件创建、复制导入与回收站的落点。
- *  插件不再内置任何技能：包内没有 skills 目录，也不再有安装副本与内容账本。 */
+/** 用户技能根：官方 `user-dsh` 技能根，也是本插件创建、复制导入、回收站与内置技能种子化的落点。
+ *  内置技能按「只补缺失」补建（见 `ensureSkillSeed`）：已有目录的正文、资源与调用策略保持原样。 */
 export const USER_SKILLS_DIR = join(DSH_HOME, 'skills')
 /**
  * 插件自有**存储根**（DSH_HOME/.prompt-tool）。
