@@ -319,10 +319,8 @@ ST 导入配置显式带 `params.stMacros: true`，赋值模板保留到运行�
 ## 7. 合并优先级（组合行 config）
 
 组合模块目录分工：`engine/compositions/source/local/` 是本项目自有模块的唯一源，
-`engine/compositions/library/` 只保存从官方预设切出的行与确有语义差异的变体——随包分发的
-版本化快照，生成它的 `rebuild:composition` 已随内置预设目录退场，快照不再重建；
-`renderComposition` 跨目录发现同名模块时直接失败，避免源文件与
-生成产物漂移。
+`engine/compositions/library/` 只剩装配必需的官方行（`tool-web`：ST 导入按名产出它），其余官方
+切块已随「与预设彻底解耦」清理；`renderComposition` 跨目录发现同名模块时直接失败，避免两处漂移。
 
 
 `renderComposition`：**参数桥（params/UI）> moduleConfigs（模板/ST 行级直写）> 行默认**。

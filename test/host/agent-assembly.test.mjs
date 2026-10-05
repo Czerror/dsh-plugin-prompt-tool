@@ -474,7 +474,7 @@ test('受管字段一律解析到当前预设目录内', async () => {
 
 test('模块清单：私有能力复用现有适配器挂载服务', async () => {
   writePreset('module-roster', {
-    modules: ['character-tools', 'tool-config-engine', 'tool-pwsh', 'planning'],
+    modules: ['character-tools', 'tool-config-engine'],
   })
   const prepared = await prepareAssembly(moduleRoot, 'module-roster', hasEveryService)
 

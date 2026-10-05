@@ -1,8 +1,0 @@
-# module: tool-pwsh
-# source: master/packages/bundle/web-app/presets/standard.patch.yml
-# commit: 4878cdabd87d4041bdaff61d04c966883b9fd07a
-# local patches: 0
-
-- id: tool-pwsh
-  name: '@deepseek-ai/dsh-tool-pwsh'
-  disabled: !!js process.platform !== 'win32'

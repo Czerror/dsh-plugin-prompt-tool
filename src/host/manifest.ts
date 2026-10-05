@@ -605,10 +605,9 @@ export function buildModuleConfigsFromParams(params: Record<string, unknown>, op
 /**
  * 组合模块目录分工：
  * - source/local：本项目自有模块的唯一源文件；
- * - library：随包分发的官方切块与官方预设变体快照（版本化产物，不手工编辑）；
- *   生成它的 `rebuild-composition` 脚本随内置模块目录 `modules/` 一并退场——输入源已不存在，
- *   快照本体保留为既成事实，不再重建。
- * 同名文件禁止同时存在，避免 source 与产物漂移。
+ * - library：只剩装配必需的官方行（`tool-web`——ST 导入在 `enable_web_search: true` 时按名
+ *   产出它）；其余官方切块已随「与预设彻底解耦」清理，官方工具由会话原有预设提供。
+ * 同名文件禁止同时存在，避免两处漂移。
  */
 function compositionModuleDirs(): string[] {
   const root = join(packageEngineDir(), 'compositions')

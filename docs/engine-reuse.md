@@ -22,7 +22,9 @@
 
 ### 官方与本地分类
 
-- `engine/compositions/library/` 是已经核验的官方分发快照，不手工编辑或添加本地补丁。
+- `engine/compositions/library/` 现在只保留装配必需的官方行（`tool-web`：ST 导入在
+  `enable_web_search: true` 时按名产出它）。其余官方切块已随「与预设彻底解耦」清理——插件不再
+  分发预设，官方工具由会话原有预设提供，模块不需要重新声明。
 - `engine/compositions/source/local/` 是本地模块源码；`rule-engine` 负责统一规则入口。
   `filesystem-editor` 显式装配隔离文件系统及编辑器，`tool-git-bash` 提供 Windows Git Bash。
 - 官方 row id 保持原样；同一组合不允许重复 row。模块文件名是 `modules` 中的引用标识。
@@ -522,10 +524,10 @@ rules:
 
 ## 重建与验证
 
-- 官方组合模块快照（`engine/compositions/library/`）随包分发，**不再从官方预设同步**：原先的
-  `rebuild:composition` 生成器随内置预设目录 `preset/` 一并退场（输入源已不存在）。快照保留为
-  既成事实，不手工编辑。原先喂给它的 `test/fixtures/dsh/current` 离线快照已随本轮清理删除——
-  那份快照的唯一用途就是给已退场的生成器做输入校验。
+- `engine/compositions/library/` 只剩 `tool-web.yml` 一个装配必需的官方行：ST 导入在
+  `enable_web_search: true` 时按名产出 `tool-web`，没有它那条导入路径会装配失败。其余官方切块
+  已随「与预设彻底解耦」清理删除——生成器 `rebuild:composition` 与它的输入快照（内置预设目录
+  `preset/`、`test/fixtures/dsh/current`）都已退场。
 - 已发布依赖的实际版本以 package.json 为准，验证脚本不再另行硬编码 rc.2；更新前同时核实
   npm 的版本列表与 dist-tags，不能把名字为 latest 的旧标签误当成更新版本。
 - 本地新增模块放 `engine/compositions/source/local/<name>.yml`，直接装配，不复制到 `library/`；

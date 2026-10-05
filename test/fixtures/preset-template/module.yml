@@ -58,22 +58,10 @@ modules:
   - prompt-config-engine
   - run-code-env
   - tool-bash-disabled
-  - tool-pwsh
   - persistent-shell-posix
   - tool-git-bash
-  - tool-fs
-  - tool-fs-search
   - filesystem-editor
-  - tool-jobs
-  - skill-filesystem
   - skill-search
-  - command-goal
-  - tool-goal
-  - planning
-  - compaction
-  - delegation
-  - tool-ask-user
-  - tool-todo
   - tool-web
 layerSettings:
   pre-step:

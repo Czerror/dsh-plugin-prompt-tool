@@ -94,18 +94,18 @@
 **可写进 `modules` 的名字**（＝ `engine/compositions/source/local/` 与 `library/` 下的文件名）：
 
 ```
-agent-instructions, character-tools, command-goal, compaction, delegation, delegation-ptc,
-dev-tool-search, filesystem-editor, instruction-hint, persistent-shell, persistent-shell-posix,
-planning, rule-engine, run-code-env, session-var-tools, skill-filesystem, skill-filesystem-cordis,
-skill-search, subagent-tool-policy, tool-ask-user, tool-bash, tool-bash-disabled, tool-config-engine,
-tool-cordis, tool-fs, tool-fs-search, tool-git-bash, tool-goal, tool-jobs, tool-plugin-manager,
-tool-plugin-manager-disabled, tool-present, tool-presentation, tool-pwsh, tool-skill, tool-todo,
-tool-web, world-book-tools
+character-tools, dev-tool-search, filesystem-editor, instruction-hint, persistent-shell-posix,
+rule-engine, run-code-env, session-var-tools, skill-search, subagent-tool-policy,
+tool-bash-disabled, tool-config-engine, tool-git-bash, tool-web, world-book-tools
 ```
 
-两个**不可写**的退役名：`prompt-config-engine`、`declared-triggers`（文件还在，写进 `modules`
-会返回 409 `rules-migration-required`）。声明了 `rules` 就写 `rule-engine`；同名模块在两处目录
-同时存在、或名字找不到，装配期直接报错。
+官方工具行（`tool-pwsh`、`tool-fs`、`delegation`、`planning`、`compaction`、`tool-todo` 等）已随
+「与预设彻底解耦」从模块库移除：那些能力由**会话原有的官方预设**提供，模块不需要也不应该重新
+声明它们。`library/` 现在只剩 `tool-web`——ST 导入在 `enable_web_search: true` 时按名产出它。
+
+两个**退役名**：`prompt-config-engine`、`declared-triggers`。写进 `modules` 返回 409
+`rules-migration-required`，它们的组合行也已删除。声明了 `rules` 就写 `rule-engine`；名字找不到
+时装配期直接报错。
 
 **共享参数**只有四个键，写在 `layerSettings.<层名>.<键>`；层由参数自己的 `storageLayer` 固定，
 放错层报 `module-layer-settings-invalid`：

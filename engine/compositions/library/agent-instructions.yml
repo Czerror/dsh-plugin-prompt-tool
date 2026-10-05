@@ -1,9 +1,0 @@
-# module: agent-instructions
-# source: master/packages/bundle/web-app/presets/standard.patch.yml
-# commit: 4878cdabd87d4041bdaff61d04c966883b9fd07a
-# local patches: 0
-
-- id: agent-instructions
-  name: '@deepseek-ai/dsh-agent-instructions'
-  config:
-    maxBytes: 65536

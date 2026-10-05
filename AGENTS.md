@@ -59,8 +59,9 @@
 - 监听器、工具、watcher 和动态服务挂在 ctx.effect 或 disposer 上；重挂前释放旧实例。
 - 仅依赖已发布的官方包和 node_modules 类型；相对 TypeScript import 保留显式扩展名，纯类型依赖使用 import type。
 - Skills、SillyTavern、角色卡、世界书和自定义工具复用既有 provider、host 工厂和 rebuildPreset()，不在 UI 复制转换或热装配通道。
-- 修改源文件后通过 package scripts 重新生成 `lib/`、`engine/compositions/library/` 和 `engine/vendor/yaml/`。`lib/` 是构建产物，已被忽略，不手工编辑也不提交。
-- `engine/compositions/library/` 与 `engine/vendor/yaml/`（`sync:yaml`）是版本化分发快照：不手工编辑，按任务范围提交；不得 git rm，也不得加入忽略。`library/` 的生成器 `rebuild:composition` 已随内置预设目录 `preset/` 退场（输入源不存在），该快照保留为既成事实、不再重建。
+- 修改源文件后通过 package scripts 重新生成 `lib/` 与 `engine/vendor/yaml/`。`lib/` 是构建产物，已被忽略，不手工编辑也不提交。
+- `engine/vendor/yaml/`（`sync:yaml`）是版本化分发快照：不手工编辑，按任务范围提交；不得 git rm，也不得加入忽略。
+- `engine/compositions/library/` 现在只剩装配必需的官方行（`tool-web`：ST 导入在 `enable_web_search: true` 时按名产出它，缺了那条导入路径会装配失败）。其余官方切块已随「与预设彻底解耦」清理删除——插件不再分发任何预设，官方工具由会话原有预设提供，模块不需要重新声明。
 
 ### 配置、写盘与安全
 
