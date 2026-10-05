@@ -110,7 +110,6 @@
     "LICENSE",
     "modules",
     "skills",
-    "!skills/*/evals/**",
     "templates",
     "README.md"
   ],
