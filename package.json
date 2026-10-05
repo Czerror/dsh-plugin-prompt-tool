@@ -124,7 +124,8 @@
     "rematerialize:presets": "node scripts/rematerialize-presets.mjs",
     "migrate:rules": "node lib/migrate-rules.mjs",
     "repair:profile": "node scripts/repair-profile.mjs",
-    "verify:host": "node scripts/verify-host-contracts.mjs"
+    "verify:host": "node scripts/verify-host-contracts.mjs",
+    "verify:pack": "node scripts/verify-package.mjs"
   },
   "dependencies": {
     "@deepseek-ai/schemastery": "^3.18.4",
