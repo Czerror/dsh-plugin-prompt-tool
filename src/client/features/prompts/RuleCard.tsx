@@ -21,6 +21,7 @@ export function RuleCard(props: {
   t: PromptToolTranslate; entry: RuleEntry; draft: RulesDraft; editor: RuleEditor; meta: EngineMeta
   expanded: boolean; onToggle: () => void; disabled?: boolean; onDuplicate: () => void
   headerActions?: ReactNode
+  source?: string
   renderSettings?: (rule: RuleDefinition) => ReactNode
 }): ReactNode {
   const { t, entry, editor, draft } = props, rule = entry.value
@@ -31,7 +32,7 @@ export function RuleCard(props: {
   const patch = (next: Partial<RuleDefinition>): void => { if (!disabled) editor.patch(entry.key, { ...entry.value, ...next }) }
   const save = (): void => { if (!disabled && !unsupported && rulesDirty(draft) && !hasRuleFields(draft)) void editor.submit() }
   const fieldContext = { t, fields: draft.fields, disabled, engineMeta: props.meta, onDraft: editor.changed }
-  return <CollapsibleCard id={panelId} title={rule.name || rule.id} meta={(rule.layer === undefined ? t('rules.module') : translateLabel(t, LAYER_LABEL_KEYS, rule.layer)) + ' · ' + rule.then.length + ' ' + t('triggers.action')}
+  return <CollapsibleCard id={panelId} title={rule.name || rule.id} meta={(props.source ? t('rules.source', { module: props.source }) + ' · ' : '') + (rule.layer === undefined ? t('rules.module') : translateLabel(t, LAYER_LABEL_KEYS, rule.layer)) + ' · ' + rule.then.length + ' ' + t('triggers.action')}
     expanded={props.expanded} onToggle={() => { if (props.expanded) save(); props.onToggle() }} bodyClassName={css.cardPanel}
     data-rule-id={rule.id} data-rule-key={entry.key}
     onFocus={() => { ownsFocus.current = true }} onBlur={(event) => {

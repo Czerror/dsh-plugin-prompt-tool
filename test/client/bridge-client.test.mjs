@@ -1,6 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { bridgeCall } from '../../src/client/data/bridge-client.ts'
+import { setEditTarget } from '../../src/client/data/bridge-transport.ts'
 import { BRIDGE_ENDPOINTS, SETTINGS_BRIDGE_PREFIX } from '../../src/shared/bridge-contract.ts'
 import { ENGINE_EDITOR_GROUP_MAP } from '../../src/shared/engine-capabilities.ts'
 import { getEngineMeta } from '../../engine/schema.mjs'
@@ -36,6 +37,33 @@ test('typed bridge client：无请求体 endpoint 发送空对象', async () => 
     assert.deepEqual(JSON.parse(body), {})
   } finally {
     globalThis.fetch = originalFetch
+  }
+})
+
+test('typed bridge client：逐卡请求绑定所属模块，交错读写不改变全局编辑目标', async () => {
+  const originalFetch = globalThis.fetch, calls = [], pending = []
+  globalThis.fetch = (url, init) => {
+    calls.push({ url, moduleId: init.headers['x-module-id'], body: JSON.parse(init.body) })
+    return new Promise(resolve => pending.push(() => resolve(new Response(JSON.stringify({ ok: true, value: {} })))))
+  }
+  setEditTarget('module-a')
+  try {
+    const read = bridgeCall('rules', { expectedModuleId: 'module-b' }, 'module-b')
+    const write = bridgeCall('rules', { expectedModuleId: 'module-b', expectedRevisions: { rules: { shared: 'b-v1' } }, edits: [
+      { previousId: 'shared', rule: { id: 'shared', name: 'B edited', then: [] }, settingsChanged: false },
+    ] }, 'module-b')
+    const current = bridgeCall('rules', { expectedModuleId: 'module-a' })
+    const order = bridgeCall('moduleConfigOrder')
+    assert.deepEqual(calls.map(call => call.moduleId), ['module-b', 'module-b', 'module-a', 'module-a'])
+    assert.equal(calls[1].body.expectedModuleId, 'module-b')
+    assert.deepEqual(calls[1].body.expectedRevisions, { rules: { shared: 'b-v1' } })
+    assert.deepEqual(calls[3].body, {}, '排序读取不限制到当前模块')
+    pending.reverse().forEach(resolve => resolve())
+    assert.ok((await Promise.all([read, write, current, order])).every(result => result.ok))
+  } finally {
+    pending.forEach(resolve => resolve())
+    globalThis.fetch = originalFetch
+    setEditTarget(undefined)
   }
 })
 

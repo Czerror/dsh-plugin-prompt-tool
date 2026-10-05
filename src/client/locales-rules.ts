@@ -1,5 +1,6 @@
 export const RULES_ZH = {
   'rules.title': '规则', 'rules.module': '模块级',
+  'rules.source': '模块：{module}',
   'rules.actionsTab': '动作', 'rules.jsonTab': 'JSON',
   'rules.worldBook': '世界书', 'rules.showCreated': '显示新建规则',
   'rules.sessionModel': '当前会话模型', 'rules.reasoningEffort': '思维程度',
@@ -27,6 +28,7 @@ export const RULES_ZH = {
 } as const
 export const RULES_EN: Record<keyof typeof RULES_ZH, string> = {
   'rules.title': 'Rules', 'rules.module': 'Module level',
+  'rules.source': 'Module: {module}',
   'rules.actionsTab': 'Actions', 'rules.jsonTab': 'JSON',
   'rules.worldBook': 'World book', 'rules.showCreated': 'Show created rule',
   'rules.sessionModel': 'Current session model', 'rules.reasoningEffort': 'Reasoning effort',

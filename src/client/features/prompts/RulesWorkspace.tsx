@@ -4,7 +4,7 @@ import type { ModuleConfigOrderEntry, ModuleConfigOrderSnapshot } from '../../..
 import { configIdentityKey } from '../../../shared/module-config-order.ts'
 import type { PromptToolStore } from '../../data/use-prompt-tool-store.ts'
 import { usePromptToolFields } from '../../data/use-prompt-tool-fields.ts'
-import { useRuleEditor } from '../../data/use-rule-editor.ts'
+import { useModuleRuleEditors, useRuleEditor, type ModuleRuleEditor } from '../../data/use-rule-editor.ts'
 import { hasRuleFields, rulesDirty } from '../../data/rule-drafts.ts'
 import { bridgeCall } from '../../data/bridge-client.ts'
 import { instructionFileIdOf } from '../../data/prompt-config-content.ts'
@@ -49,35 +49,38 @@ function scopeVisible(rule: RuleDefinition, scope: 'main' | 'subagent'): boolean
 const samePosition = (a: ModuleConfigOrderEntry, b: ModuleConfigOrderEntry): boolean => a.layer === b.layer && a.position === b.position
   && (!(a.layer === 'system-section' || a.layer === 'runtime-context') || a.order === b.order)
 
-/** 两个受众页共用同一规则草稿；排序只写身份，指令文件只走原文件通道。 */
+/** 两个受众页共用各模块规则草稿；排序只写身份，指令文件只走原文件通道。 */
 export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
   const { store, t } = props, fields = usePromptToolFields(store, value => value)
-  const { moduleId, draft, editor } = useRuleEditor(store)
+  const { moduleId, draft } = useRuleEditor(store)
   const [expanded, setExpanded] = useState<string | undefined>(props.browse?.expanded)
   const [filter, setFilter] = useState(props.browse?.filter ?? '')
   const [order, setOrder] = useState<ModuleConfigOrderSnapshot>()
-  const [sorting, setSorting] = useState(false), [orderError, setOrderError] = useState(''), [discard, setDiscard] = useState(false)
+  const owners = useModuleRuleEditors(store, [moduleId, ...order?.entries.map(entry => entry.moduleId) ?? []])
+  const revisions = JSON.stringify(owners.map(owner => [owner.moduleId, owner.draft.revisions?.settings]))
+  const [sorting, setSorting] = useState(false), [orderError, setOrderError] = useState(''), [discard, setDiscard] = useState<string>()
   const dragId = useRef<string>(), epoch = useRef(0), sortBusy = useRef(false), lastCreated = useRef<string>()
-  const readOnly = !fields.modulesEnabled || store.moduleFacts?.editable !== true
+  const readOnly = (id: string): boolean => !fields.modulesEnabled || id === moduleId && store.moduleFacts?.editable !== true
+  const sortDisabled = sorting || owners.some(owner => owner.draft.busy !== undefined || rulesDirty(owner.draft) || owner.draft.remote !== undefined)
   const query = (props.keyword ?? filter).trim().toLowerCase(), view = props.viewFilter ?? 'all'
   const changeFilter = (value: string): void => { setFilter(value); props.onKeywordChange?.(value); if (props.browse) props.browse.filter = value }
   const toggle = (key: string): void => { const next = expanded === key ? undefined : key; setExpanded(next); if (props.browse) props.browse.expanded = next }
   const readOrder = useCallback(async (): Promise<void> => {
     const generation = epoch.current
-    const result = await bridgeCall('moduleConfigOrder', { moduleId })
+    const result = await bridgeCall('moduleConfigOrder')
     if (generation !== epoch.current) return
     if (result.ok) { setOrder(result.value); setOrderError('') }
     else setOrderError(result.message ?? t('moduleOrder.unavailable'))
   }, [moduleId, t])
   useEffect(() => { epoch.current++; setOrder(undefined); setExpanded(props.browse?.expanded); return () => { epoch.current++ } }, [moduleId])
-  useEffect(() => { if (draft.loaded) void readOrder() }, [draft.loaded, draft.revisions?.settings, readOrder])
+  useEffect(() => { void readOrder() }, [revisions, store.meta.modules, readOrder])
   useEffect(() => {
     if (props.createdConfigId === lastCreated.current) return
     const created = draft.entries.find(entry => entry.value.id === props.createdConfigId && !entry.deleted)
-    if (created) { lastCreated.current = props.createdConfigId; setExpanded(created.key) }
+    if (created) { lastCreated.current = props.createdConfigId; setExpanded(configIdentityKey({ moduleId, configId: created.key })) }
   }, [props.createdConfigId, draft.entries])
   const saveOrder = async (sourceId: string, targetId: string): Promise<void> => {
-    if (sortBusy.current || order === undefined || rulesDirty(draft) || sourceId === targetId) return
+    if (sortBusy.current || sortDisabled || order === undefined || sourceId === targetId) return
     const from = order.entries.findIndex(item => configIdentityKey(item) === sourceId), to = order.entries.findIndex(item => configIdentityKey(item) === targetId)
     if (from < 0 || to < 0 || !samePosition(order.entries[from]!, order.entries[to]!)) return
     const entries = [...order.entries]
@@ -85,44 +88,46 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
     const generation = epoch.current
     sortBusy.current = true; setSorting(true)
     try {
-      const result = await bridgeCall('moduleConfigOrder', { moduleId, expectedRevision: order.revision, entries: entries.map(({ moduleId, configId }) => ({ moduleId, configId })) })
+      const result = await bridgeCall('moduleConfigOrder', { expectedRevision: order.revision, entries: entries.map(({ moduleId, configId }) => ({ moduleId, configId })) })
       if (generation !== epoch.current) return
       if (!result.ok) { setOrderError(result.message ?? t('moduleOrder.unavailable')); return }
-      setOrder(result.value); setOrderError(''); await editor.load(true)
+      setOrder(result.value); setOrderError(''); await Promise.all(owners.map(owner => owner.editor.load(true)))
     } finally { sortBusy.current = false; if (generation === epoch.current) setSorting(false) }
   }
-  const rank = new Map(order?.entries.filter(entry => entry.moduleId === moduleId).map(entry => [entry.configId, entry.sequence]) ?? [])
-  const entries = draft.entries.filter(entry => !entry.deleted && scopeVisible(entry.value, props.scope ?? 'main'))
-    .filter(entry => (view === 'all' || view === 'world-book' && entry.value.then.some(action => asTriggerRecord(action.config).strategy === 'world-book') || entry.value.layer === view)
-      && (!query || JSON.stringify(entry.value).toLowerCase().includes(query) || entry.value.layer !== undefined && props.matchesLayerSettings?.(entry.value.layer, query)))
-    .sort((a, b) => (rank.get(a.previousId ?? a.value.id) ?? Number.MAX_SAFE_INTEGER) - (rank.get(b.previousId ?? b.value.id) ?? Number.MAX_SAFE_INTEGER))
-  const batchDisabled = readOnly || !draft.loaded || draft.busy !== undefined || hasRuleFields(draft) || draft.remote !== undefined || entries.length === 0
-  const retrySave = draft.loaded && rulesDirty(draft) && draft.remote === undefined
+  const rank = new Map(order?.entries.map(entry => [configIdentityKey(entry), entry.sequence]) ?? [])
+  const entries = owners.flatMap(owner => owner.draft.entries.map(entry => ({ ...owner, entry,
+    key: configIdentityKey({ moduleId: owner.moduleId, configId: entry.key }),
+    identity: configIdentityKey({ moduleId: owner.moduleId, configId: entry.previousId ?? entry.value.id }),
+  }))).filter(({ entry }) => !entry.deleted && scopeVisible(entry.value, props.scope ?? 'main'))
+    .filter(({ entry, moduleId: id }) => (view === 'all' || view === 'world-book' && entry.value.then.some(action => asTriggerRecord(action.config).strategy === 'world-book') || entry.value.layer === view)
+      && (!query || JSON.stringify(entry.value).toLowerCase().includes(query) || id === moduleId && entry.value.layer !== undefined && props.matchesLayerSettings?.(entry.value.layer, query)))
+    .sort((a, b) => (rank.get(a.identity) ?? Number.MAX_SAFE_INTEGER) - (rank.get(b.identity) ?? Number.MAX_SAFE_INTEGER))
+  const batchDisabled = entries.length === 0 || entries.some(({ moduleId: id, draft }) => readOnly(id) || !draft.loaded || draft.busy !== undefined || hasRuleFields(draft) || draft.remote !== undefined)
   const batchSetEnabled = (enabled: boolean): void => {
     if (batchDisabled) return
-    for (const entry of entries) {
+    for (const { entry, editor } of entries) {
       if ((entry.value.enabled !== false) !== enabled) editor.patch(entry.key, { ...entry.value, enabled })
     }
-    void editor.submit()
+    for (const editor of new Set(entries.map(row => row.editor))) void editor.submit()
   }
   const orderPeers = (entry: ModuleConfigOrderEntry): ModuleConfigOrderEntry[] => {
-    const visible = order?.entries.filter(item => item.moduleId === moduleId && entries.some(row => (row.previousId ?? row.value.id) === item.configId)) ?? []
+    const visible = order?.entries.filter(item => entries.some(row => row.identity === configIdentityKey(item))) ?? []
     return visible.filter(item => samePosition(entry, item))
   }
   const moveButtons = (entry: ModuleConfigOrderEntry): ReactNode => {
     const peers = orderPeers(entry), index = peers.findIndex(item => configIdentityKey(item) === configIdentityKey(entry))
     return <span className={css.row}>
       {[-1, 1].map(delta => <Button key={delta} variant="outline" shape="pill" icon aria-label={t(delta < 0 ? 'rules.moveUp' : 'rules.moveDown', { id: entry.configId })}
-        disabled={sorting || !!query || rulesDirty(draft) || peers[index + delta] === undefined}
+        disabled={sortDisabled || !!query || peers[index + delta] === undefined}
         onClick={() => { const target = peers[index + delta]; if (target) void saveOrder(configIdentityKey(entry), configIdentityKey(target)) }}>{delta < 0 ? '↑' : '↓'}</Button>)}
     </span>
   }
-  const duplicate = (rule: RuleDefinition): void => {
+  const duplicate = ({ moduleId, draft, editor }: ModuleRuleEditor, rule: RuleDefinition): void => {
     let id = rule.id + '-copy', suffix = 2
     while (draft.entries.some(entry => !entry.deleted && entry.value.id === id)) id = rule.id + '-copy-' + suffix++
     const clone = structuredClone(rule)
     clone.then = clone.then.map(action => { if (action.kind !== 'inject-text') return action; const { id: _sourceId, ...config } = asTriggerRecord(action.config); return { ...action, config } })
-    setExpanded(editor.add({ ...clone, id, enabled: false }))
+    setExpanded(configIdentityKey({ moduleId, configId: editor.add({ ...clone, id, enabled: false }) }))
   }
   const instructionCards = fields.promptConfigs.filter(config => instructionFileIdOf(config) !== undefined).map(config => <PromptConfigCard key={config.id} t={t} meta={store.meta} config={config} expanded={expanded === config.id} canMoveUp={false} canMoveDown={false}
     onToggleExpanded={() => toggle(config.id)} onToggleEnabled={() => {}} onPatch={(id, patch) => store.patch({ promptConfigs: store.getFields().promptConfigs.map(item => item.id === id ? { ...item, ...patch } : item) })}
@@ -139,27 +144,34 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
         <Button shape="pill" variant="outline" data-danger data-batch="disable" disabled={batchDisabled} onClick={() => batchSetEnabled(false)}>{t('configs.batch.disableVisible')}</Button>
       </span>
     </div>
-    {draft.error && <div className={css.row}>
-      <p role="alert" className={css.error}>{draft.remote ? t('rules.conflict') : draft.error}</p>
-      <Button variant="outline" shape="pill" disabled={draft.busy !== undefined} onClick={() => { void (draft.publicationPending ? editor.retryPublication() : retrySave ? editor.submit() : editor.load(true)) }}>{t(!draft.publicationPending && retrySave ? 'rules.retrySave' : 'workspace.retry')}</Button>
-      {(rulesDirty(draft) || draft.remote) && <Button variant="outline" shape="pill" disabled={draft.busy !== undefined} onClick={() => setDiscard(true)}>{t('triggers.discard')}</Button>}
-    </div>}
-    {hasRuleFields(draft) && <p role="alert" className={css.error}>{t('rules.fieldsPending')}</p>}
+    {owners.map(({ moduleId: id, draft, editor }) => {
+      const retrySave = draft.loaded && rulesDirty(draft) && draft.remote === undefined
+      return (draft.error || hasRuleFields(draft)) && <div key={id}>
+        {draft.error && <div className={css.row}>
+          <span>{t('rules.source', { module: id })}</span>
+          <p role="alert" className={css.error}>{draft.remote ? t('rules.conflict') : draft.error}</p>
+          <Button variant="outline" shape="pill" disabled={draft.busy !== undefined} onClick={() => { void (draft.publicationPending ? editor.retryPublication() : retrySave ? editor.submit() : editor.load(true)) }}>{t(!draft.publicationPending && retrySave ? 'rules.retrySave' : 'workspace.retry')}</Button>
+          {(rulesDirty(draft) || draft.remote) && <Button variant="outline" shape="pill" disabled={draft.busy !== undefined} onClick={() => setDiscard(id)}>{t('triggers.discard')}</Button>}
+        </div>}
+        {hasRuleFields(draft) && <p role="alert" className={css.error}>{t('rules.source', { module: id })} · {t('rules.fieldsPending')}</p>}
+      </div>
+    })}
     {orderError && <p role="alert" className={css.error}>{orderError}</p>}
     {props.createdHidden && <Button variant="outline" shape="pill" onClick={props.onShowCreated}>{t('rules.showCreated')}</Button>}
     {props.scope !== 'subagent' && instructionCards}
     {props.beforeCards}
-    {entries.map(entry => {
-        const orderEntry = order?.entries.find(item => item.moduleId === moduleId && item.configId === (entry.previousId ?? entry.value.id))
-        return <div key={entry.key} onDragOver={event => event.preventDefault()} onDrop={event => { event.preventDefault(); if (orderEntry && dragId.current) void saveOrder(dragId.current, configIdentityKey(orderEntry)); dragId.current = undefined }}>
-          <RuleCard t={t} entry={entry} draft={draft} editor={editor} meta={store.meta} disabled={readOnly} expanded={expanded === entry.key} onToggle={() => toggle(entry.key)} onDuplicate={() => duplicate(entry.value)}
-            headerActions={orderEntry && <><button type="button" className={ui.dragHandle} disabled={sorting || !!query || rulesDirty(draft)} draggable={!sorting && !query && !rulesDirty(draft)} aria-label={t('card.dragHint')} aria-keyshortcuts="ArrowUp ArrowDown"
+    {entries.map(row => {
+        const { entry, draft, editor, moduleId: id, key } = row
+        const orderEntry = order?.entries.find(item => configIdentityKey(item) === row.identity)
+        return <div key={key} data-module-id={id} onDragOver={event => event.preventDefault()} onDrop={event => { event.preventDefault(); if (orderEntry && dragId.current) void saveOrder(dragId.current, configIdentityKey(orderEntry)); dragId.current = undefined }}>
+          <RuleCard t={t} entry={entry} draft={draft} editor={editor} meta={store.meta} source={id} disabled={readOnly(id)} expanded={expanded === key} onToggle={() => toggle(key)} onDuplicate={() => duplicate(row, entry.value)}
+            headerActions={orderEntry && <><button type="button" className={ui.dragHandle} disabled={sortDisabled || !!query} draggable={!sortDisabled && !query} aria-label={t('card.dragHint')} aria-keyshortcuts="ArrowUp ArrowDown"
               onDragStart={event => { dragId.current = configIdentityKey(orderEntry); event.dataTransfer.effectAllowed = 'move'; event.dataTransfer.setData('text/plain', dragId.current) }} onDragEnd={() => { dragId.current = undefined }}
               onKeyDown={event => { if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return; event.preventDefault(); const peers = orderPeers(orderEntry), index = peers.findIndex(item => configIdentityKey(item) === configIdentityKey(orderEntry)); const target = peers[index + (event.key === 'ArrowUp' ? -1 : 1)]; if (target) void saveOrder(configIdentityKey(orderEntry), configIdentityKey(target)) }}>⋮⋮</button>{moveButtons(orderEntry)}</>}
-            renderSettings={entry.value.layer !== undefined && props.hasLayerSettings?.(entry.value.layer) && props.renderLayerSettings ? rule => props.renderLayerSettings!(rule.layer!, { id: rule.id, layer: rule.layer }) : undefined} />
+            renderSettings={id === moduleId && entry.value.layer !== undefined && props.hasLayerSettings?.(entry.value.layer) && props.renderLayerSettings ? rule => props.renderLayerSettings!(rule.layer!, { id: rule.id, layer: rule.layer }) : undefined} />
         </div>
       })}
-    {entries.length === 0 && draft.loaded && <p>{t(query || view !== 'all' ? 'rules.noMatch' : 'rules.empty')}</p>}
-    {discard && <ConfirmDialog title={t('triggers.discard')} description={t('triggers.discardHint')} confirmLabel={t('triggers.discard')} cancelLabel={t('triggers.cancel')} onCancel={() => setDiscard(false)} onConfirm={editor.discard} />}
+    {entries.length === 0 && owners.every(owner => owner.draft.loaded) && <p>{t(query || view !== 'all' ? 'rules.noMatch' : 'rules.empty')}</p>}
+    {discard && <ConfirmDialog title={t('triggers.discard')} description={t('triggers.discardHint')} confirmLabel={t('triggers.discard')} cancelLabel={t('triggers.cancel')} onCancel={() => setDiscard(undefined)} onConfirm={() => { owners.find(owner => owner.moduleId === discard)?.editor.discard(); setDiscard(undefined) }} />}
   </section>
 }

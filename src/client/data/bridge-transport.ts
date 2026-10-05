@@ -79,15 +79,16 @@ export function setEditTarget(moduleId: string | undefined): void {
   editTarget = moduleId !== undefined && moduleId.length > 0 ? moduleId : undefined
 }
 
-function editTargetHeader(): Record<string, string> {
-  return editTarget === undefined ? {} : { [EDIT_TARGET_HEADER]: editTarget }
+function editTargetHeader(moduleId = editTarget): Record<string, string> {
+  return moduleId === undefined ? {} : { [EDIT_TARGET_HEADER]: moduleId }
 }
 
-export async function postBridge<T>(path: string, body: unknown): Promise<BridgeResult<T>> {
+/** 单次请求可绑定卡片所属模块，不改变工作台的全局编辑目标。 */
+export async function postBridge<T>(path: string, body: unknown, moduleId?: string): Promise<BridgeResult<T>> {
   try {
     const response = await fetch(SETTINGS_BRIDGE_PREFIX + path, {
       method: 'POST',
-      headers: { 'content-type': 'application/json', ...editTargetHeader() },
+      headers: { 'content-type': 'application/json', ...editTargetHeader(moduleId) },
       body: JSON.stringify(body ?? {}),
     })
     return await readBridgeResponse<T>(response)

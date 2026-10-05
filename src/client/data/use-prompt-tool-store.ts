@@ -137,6 +137,8 @@ export interface PromptToolStore {
   /** 保存提示词配置；返回 false 表示未写入（模块切换中、跨模块旧草稿或失败）。 */
   /** 规则声明复用模块队列；实际执行时复核目标模块与已加载身份。 */
   enqueueModuleTask: <T>(moduleId: string, task: () => Promise<T>) => Promise<T>
+  /** 已绑定模块身份与独立草稿的规则事务，共用保存队列但不依赖当前 Fields。 */
+  enqueueRuleTask: <T>(task: () => Promise<T>) => Promise<T>
   /** 模块级模板变量（module.yml 内容变量；modulesEnabled 展开进 variables.yml，引擎合并进每条配置）。 */
   templateVariables: Record<string, string>
   setTemplateVariables: (value: Record<string, string>) => void
@@ -359,6 +361,7 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
     if (fieldsRef.current.moduleId !== moduleId || loadedModuleRef.current !== moduleId) throw new Error(MODULE_PENDING_MESSAGE)
     return task()
   }), [])
+  const enqueueRuleTask = useCallback(<T,>(task: () => Promise<T>): Promise<T> => moduleSaveQueueRef.current.enqueue(task), [])
   /** 最近一次 load 时 preset.yml params 现有键集：persist 只发送「已有键或已改动」，
    *  未动过的键不写——避免 UI 默认值固化覆盖模板 moduleConfigs 默认。 */
   const loadedKeysRef = useRef<Set<string>>(new Set())
@@ -1062,8 +1065,7 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
   const dirtyInstructions = unsavedInstructionDrafts(instructionPool).length > 0
   // 规则草稿由订阅式 owner 更新；读取时计算，避免退出/切换守卫读到旧的脏状态。
   const configsAreDirty = (): boolean => {
-    const ruleDraft = editorDrafts.rules.get(fieldsRef.current.moduleId)
-    return unsavedInstructionDrafts(instructionPoolRef.current).length > 0 || ruleDraft !== undefined && rulesDirty(ruleDraft)
+    return unsavedInstructionDrafts(instructionPoolRef.current).length > 0 || [...editorDrafts.rules.values()].some(rulesDirty)
   }
 
 
@@ -1107,6 +1109,7 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
     persistSwitches,
     persistParamOverrides,
     enqueueModuleTask,
+    enqueueRuleTask,
     templateVariables,
     setTemplateVariables,
     templateVariablesEnabled,
