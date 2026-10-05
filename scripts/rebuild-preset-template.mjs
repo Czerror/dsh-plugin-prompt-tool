@@ -14,8 +14,10 @@ const root = new URL('../', import.meta.url)
 const output = new URL('module.yml', root)
 /** 组合行文件仍在（旧数据校验与离线迁移要读），但写进 modules 会被 409 rules-migration-required 拒绝。 */
 const RETIRED_MODULE_NAMES = new Set(['prompt-config-engine', 'declared-triggers'])
-const moduleNames = ['engine/compositions/library/', 'engine/compositions/source/local/']
-  .flatMap(dir => readdirSync(new URL(dir, root)).filter(name => name.endsWith('.yml')).map(name => name.slice(0, -4)))
+/** 只有本地源目录：官方切块已随「与预设彻底解耦」清理，`library/` 不再存在。 */
+const moduleNames = readdirSync(new URL('engine/compositions/source/local/', root))
+  .filter(name => name.endsWith('.yml'))
+  .map(name => name.slice(0, -4))
   .filter(name => !RETIRED_MODULE_NAMES.has(name))
 const doc = new Document({
   id: 'my-module', name: '我的模块', description: '九层配置与全部共享参数参考；所有示例规则默认关闭。',
@@ -95,7 +97,7 @@ for (const key of sharedParamKeys) {
 const assets = new Document({
   persona: { prefix: 'You are a helpful assistant.', suffix: 'Working directory: {{cwd}}.', complete: false, includeRuntimeContext: true },
   content: { presetText: '填写预设内容资产；由显式启用的规则消费。' },
-  moduleConfigs: { 'tool-web': { fetch: true } },
+  moduleConfigs: { 'instruction-hint': { messageTemplate: 'Instructions from: {{FILES}}' } },
   subagentToolPolicy: { defaultProfile: 'default', ceiling: { allow: ['read'], deny: [] }, profiles: [{ id: 'default', name: '只读', allow: ['read'], deny: [], modelSelectable: true }], modelExpansion: { enabled: false, allow: [], maxAdditionalTools: 0, requireApproval: true } },
 })
 const commented = value => value.toString().trimEnd().split('\n').map(line => `# ${line}`).join('\n')

@@ -759,15 +759,14 @@ export function convertStToModuleWithReport(
   // shadow（不注入标准编码 Agent 人设），complete: false 允许导入的 system-section
   // 生效（宿主部署人设 complete: true 会抑制它们）。
   const persona: PersonaSpec | undefined = systemSectionCount > 0 ? { prefix: '', complete: false } : undefined
-  // enable_web_search 的两手（B7 T3「3+1 结合」，取代已删除的 tool-filter 专用模块）：
-  //   true  → 组装 tool-web（fetch: true 启用），web 工具行进 modules；
-  //   false → ① **web 相关行根本不进 modules**（不组装 tool-web，也不再写 tool-filter 行配置）；
-  //           ② 同时产出三条声明式触发器（共用同一份 deny 名单）兜住「宿主/其他模块
-  //              仍装配了 tool-web」的情形：assembly 裁呈现、sdk-strip 裁 tools:sdk 正文、
-  //              guard 落到 agent scope 的执行边界（旧 tool-filter 只有呈现这一层）。
+  // enable_web_search 的落点（B7 T3「3+1 结合」，取代已删除的 tool-filter 专用模块）：
+  //   true  → **本插件不再组装任何 web 工具行**：`tool-web` 已随「与预设彻底解耦」从模块库
+  //           退役，联网能力由会话原有的官方预设提供。这里只如实报告，不静默当作已启用。
+  //   false → 产出三条声明式触发器（共用同一份 deny 名单）兜住「宿主 / 其他模块仍装配了
+  //           web 工具」的情形：assembly 裁呈现、sdk-strip 裁 tools:sdk 正文、guard 落到
+  //           agent scope 的执行边界（旧 tool-filter 只有呈现这一层）。
   if (record.enable_web_search === true) {
-    modules.push('tool-web')
-    moduleConfigs['tool-web'] = { fetch: true }
+    noteInfo('st-web-search-preset-provided', 'enable_web_search: true —— web 工具行已从模块库退役，本插件不再组装；请确认会话预设装配了 web 工具', { field: 'enable_web_search' })
   } else if (record.enable_web_search === false) {
     webRules.push(
       { id: 'st-web-assembly', then: [{ id: 'st-web-assembly', kind: 'assembly', target: { tools: { deny: [...ST_WEB_TOOLS] } } }] },

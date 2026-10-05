@@ -603,15 +603,11 @@ export function buildModuleConfigsFromParams(params: Record<string, unknown>, op
 }
 
 /**
- * 组合模块目录分工：
- * - source/local：本项目自有模块的唯一源文件；
- * - library：只剩装配必需的官方行（`tool-web`——ST 导入在 `enable_web_search: true` 时按名
- *   产出它）；其余官方切块已随「与预设彻底解耦」清理，官方工具由会话原有预设提供。
- * 同名文件禁止同时存在，避免两处漂移。
+ * 组合模块目录：本项目自有模块的唯一源是 `source/local/`。官方切块已随「与预设彻底解耦」
+ * 全部清理——官方工具由会话原有预设提供，模块不需要也不应该重新声明它们。
  */
 function compositionModuleDirs(): string[] {
-  const root = join(packageEngineDir(), 'compositions')
-  return [join(root, 'source', 'local'), join(root, 'library')]
+  return [join(packageEngineDir(), 'compositions', 'source', 'local')]
 }
 
 function assertBareModuleName(name: string): void {
@@ -622,15 +618,9 @@ function assertBareModuleName(name: string): void {
 
 function moduleFile(name: string): string {
   assertBareModuleName(name)
-  const candidates = compositionModuleDirs().map((dir) => join(dir, `${name}.yml`))
-  const existing = candidates.filter((file) => existsSync(file))
-  if (existing.length > 1) {
-    throw new Error(`composition module ${name} is duplicated across source/local and library: ${existing.join(', ')}`)
-  }
-  if (existing.length === 0) {
-    throw new Error(`composition module ${name} not found in source/local or library`)
-  }
-  return existing[0]!
+  const file = join(compositionModuleDirs()[0]!, `${name}.yml`)
+  if (!existsSync(file)) throw new Error(`composition module ${name} not found in source/local`)
+  return file
 }
 
 function assembleModules(spec: ModuleSpec): string {

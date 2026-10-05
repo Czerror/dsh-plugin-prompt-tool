@@ -22,9 +22,8 @@
 
 ### 官方与本地分类
 
-- `engine/compositions/library/` 现在只保留装配必需的官方行（`tool-web`：ST 导入在
-  `enable_web_search: true` 时按名产出它）。其余官方切块已随「与预设彻底解耦」清理——插件不再
-  分发预设，官方工具由会话原有预设提供，模块不需要重新声明。
+- `engine/compositions/` 现在只有 `source/local/`：官方切块已全部随「与预设彻底解耦」清理——
+  插件不再分发预设，官方工具由会话原有预设提供，模块不需要重新声明它们。
 - `engine/compositions/source/local/` 是本地模块源码；`rule-engine` 负责统一规则入口。
   `filesystem-editor` 显式装配隔离文件系统及编辑器，`tool-git-bash` 提供 Windows Git Bash。
 - 官方 row id 保持原样；同一组合不允许重复 row。模块文件名是 `modules` 中的引用标识。
@@ -524,14 +523,12 @@ rules:
 
 ## 重建与验证
 
-- `engine/compositions/library/` 只剩 `tool-web.yml` 一个装配必需的官方行：ST 导入在
-  `enable_web_search: true` 时按名产出 `tool-web`，没有它那条导入路径会装配失败。其余官方切块
-  已随「与预设彻底解耦」清理删除——生成器 `rebuild:composition` 与它的输入快照（内置预设目录
-  `preset/`、`test/fixtures/dsh/current`）都已退场。
+- 官方组合块已全部随「与预设彻底解耦」清理删除（`engine/compositions/` 只剩 `source/local/`）：
+  生成器 `rebuild:composition` 与它的输入快照（内置预设目录 `preset/`、`test/fixtures/dsh/current`）
+  都已退场；ST 导入的 `enable_web_search: true` 不再组装 web 工具行，改为在转换报告里提示。
 - 已发布依赖的实际版本以 package.json 为准，验证脚本不再另行硬编码 rc.2；更新前同时核实
   npm 的版本列表与 dist-tags，不能把名字为 latest 的旧标签误当成更新版本。
-- 本地新增模块放 `engine/compositions/source/local/<name>.yml`，直接装配，不复制到 `library/`；
-  两处同名会 fail loud；
+- 本地新增模块放 `engine/compositions/source/local/<name>.yml`，直接装配；
 - 规则通过 `compileRules` 校验；真实 channel/phase 从动作能力派生。`channelOrder` 缺省来自规则 configOrder（无配置时按规则序号定位）；同卡同点冲突值拒绝。after-next 先调用一次宿主 next，再按该时刻状态判断，压缩后读取新 epoch。
 - 原生动作经 `prepareAction` 校验；注入整批编译共用动作选项验证，避免破坏 ST 变量帧。固定注册效果、非法身份、互斥冲突和不支持的选项在保存/物化前拒绝。
 - 工具名单的 `allow` 与 `deny` 互斥。仅主会话的 guard 不安装会传播到子代理的 restrict；受众仍在执行 guard 内校验。动作次数预算只在目标匹配并产生效果前消费，非目标工具和被阻止的结果不消耗额度。

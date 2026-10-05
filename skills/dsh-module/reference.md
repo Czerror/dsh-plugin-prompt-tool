@@ -91,17 +91,16 @@
 
 ## 四、模块名与参数
 
-**可写进 `modules` 的名字**（＝ `engine/compositions/source/local/` 与 `library/` 下的文件名）：
+**可写进 `modules` 的名字**（＝ `engine/compositions/source/local/` 下的文件名）：
 
 ```
 character-tools, dev-tool-search, filesystem-editor, instruction-hint, persistent-shell-posix,
 rule-engine, run-code-env, session-var-tools, skill-search, subagent-tool-policy,
-tool-bash-disabled, tool-config-engine, tool-git-bash, tool-web, world-book-tools
+tool-bash-disabled, tool-config-engine, tool-git-bash, world-book-tools
 ```
 
-官方工具行（`tool-pwsh`、`tool-fs`、`delegation`、`planning`、`compaction`、`tool-todo` 等）已随
-「与预设彻底解耦」从模块库移除：那些能力由**会话原有的官方预设**提供，模块不需要也不应该重新
-声明它们。`library/` 现在只剩 `tool-web`——ST 导入在 `enable_web_search: true` 时按名产出它。
+官方组合块已全部随「与预设彻底解耦」清理：`tool-pwsh`、`tool-fs`、`delegation`、`planning`、
+`compaction`、`tool-web` 这些能力由**会话原有的官方预设**提供，模块不需要也不应该重新声明它们。
 
 两个**退役名**：`prompt-config-engine`、`declared-triggers`。写进 `modules` 返回 409
 `rules-migration-required`，它们的组合行也已删除。声明了 `rules` 就写 `rule-engine`；名字找不到

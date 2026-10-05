@@ -34,7 +34,8 @@
 
 生成模块按需装配 `rule-engine`、`character-tools`、`session-var-tools`、
 `tool-config-engine`；有世界书则加 `world-book-tools`。含 system-section 时
-生成 `persona: { prefix: '', complete: false }`。`enable_web_search=true` 加 `tool-web`；
+生成 `persona: { prefix: '', complete: false }`。`enable_web_search=true` **不再组装 web 工具行**
+（`tool-web` 已随预设解耦从模块库退役，联网能力由会话原有预设提供），只在转换报告里提示；
 显式 false 时产出三条 `rules` 声明（`assembly` 呈现剔除 + `sdk-strip` 裁 `tools:sdk`
 正文 + `guard` 执行层拒绝，共用同一份 `deny: [web_search, web_fetch]`），
 完整规则保存于 module.yml，初始化分解 rules/，运行时内存编译；所有动作都有稳定 id，do 始终为数组。

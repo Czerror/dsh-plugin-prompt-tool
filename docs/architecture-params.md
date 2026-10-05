@@ -318,13 +318,12 @@ ST 导入配置显式带 `params.stMacros: true`，赋值模板保留到运行�
 
 ## 7. 合并优先级（组合行 config）
 
-组合模块目录分工：`engine/compositions/source/local/` 是本项目自有模块的唯一源，
-`engine/compositions/library/` 只剩装配必需的官方行（`tool-web`：ST 导入按名产出它），其余官方
-切块已随「与预设彻底解耦」清理；`renderComposition` 跨目录发现同名模块时直接失败，避免两处漂移。
+组合模块目录：`engine/compositions/source/local/` 是本项目自有模块的唯一源；官方切块已随
+「与预设彻底解耦」全部清理。`renderComposition` 按裸库名解析，找不到时装配期直接报错。
 
 
 `renderComposition`：**参数桥（params/UI）> moduleConfigs（模板/ST 行级直写）> 行默认**。
-moduleConfigs 仅补充参数桥未覆盖的键（如 ST 导入 tool-web.fetch），不再锁定覆盖 UI 可管理参数（2026-08-25 翻转）。
+moduleConfigs 仅补充参数桥未覆盖的键，不再锁定覆盖 UI 可管理参数（2026-08-25 翻转）。
 
 ## 8. 条件与内容策略的归属
 
