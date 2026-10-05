@@ -1,6 +1,6 @@
-/* 统一规则卡、条件树和动作列表的私有样式。 */
+/* 统一规则卡、条件树和条件卡/动作卡的私有样式。 */
 .workspace { display: flex; flex-direction: column; gap: 12px; min-width: 0; color: var(--dsw-alias-label-primary); font: 12px/18px system-ui, sans-serif; font-feature-settings: "cv01", "ss03"; }
-.row, .actionHead { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; min-width: 0; }
+.row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; min-width: 0; }
 .cardPanel { min-width: 0; }
 .headerActions { display: inline-flex; flex: 0 0 auto; align-items: center; gap: 6px; max-width: 100%; }
 .headerActions .row { flex-wrap: nowrap; gap: 4px; }
@@ -12,7 +12,7 @@
 .exclusiveGroup > :first-child { min-width: 0; }
 .full, .parameterGroup { min-width: 0; width: 100%; }
 .parameterGroup { display: flex; flex-direction: column; gap: 8px; }
-.parameterGroup h5, .actionHead h4, .section h3 { margin: 0; font: 500 13px/20px system-ui,sans-serif; color: var(--dsw-alias-label-primary); }
+.parameterGroup h5, .section h3 { margin: 0; font: 500 13px/20px system-ui,sans-serif; color: var(--dsw-alias-label-primary); }
 .control { max-width: 100%; min-width: 0; }
 .body textarea { width: 100%; min-width: 0; resize: vertical; font: 12px/18px system-ui,sans-serif; }
 .body .listControl { width: 24ch; max-width: 100%; min-height: 46px; }
@@ -20,20 +20,75 @@
 .section + .section { padding-top: 16px; border-top: .5px solid var(--dsw-alias-border-l2); }
 .toggle { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; min-width: 0; font: 12px/18px system-ui,sans-serif; }
 .switchLine { display: inline-flex; flex: 0 0 auto; align-items: center; min-height: 28px; height: 28px; }
-.actions, .condition, .conditions { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.condition, .conditions { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
 .conditionHead { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px; min-width: 0; }
 .conditionHead > div { min-width: 0; max-width: 100%; }
 .conditionOrdinal { display: inline-flex; align-items: center; height: 28px; color: var(--dsw-alias-label-secondary); }
 .conditions > button, .condition > button { align-self: flex-start; }
-.action { display: flex; flex-direction: column; gap: 8px; min-width: 0; padding: 12px 0; border-bottom: .5px solid var(--dsw-alias-border-l2); }
 .conditionChild { display: flex; flex-direction: column; gap: 8px; padding-inline-start: 12px; border-inline-start: 2px solid var(--dsw-alias-border-l2); min-width: 0; }
 .status { margin: 0; color: var(--dsw-alias-label-secondary); font: 12px/18px system-ui,sans-serif; overflow-wrap: anywhere; }
 .error { color: var(--dsw-alias-state-error-primary); overflow-wrap: anywhere; }
 .body [hidden] { display: none !important; }
+
+/* 条件卡 / 动作卡：一个条件作用域一张小卡，卡头单行摘要，展开才编辑。 */
+.steps { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.stepCard {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  border: .5px solid var(--dsw-alias-border-l2);
+  border-radius: 10px;
+  background: var(--dsw-alias-bg-layer-2);
+}
+.stepCard:hover { border-color: var(--dsw-alias-border-l3); }
+.stepCardOpen { border-color: var(--dsw-alias-border-l3); }
+.stepHead { display: flex; min-width: 0; align-items: center; gap: 6px; padding: 2px 6px 2px 8px; }
+.stepToggle {
+  flex: 1 1 auto;
+  display: flex;
+  min-width: 0;
+  min-height: 28px;
+  align-items: center;
+  gap: 8px;
+  appearance: none;
+  border: 0;
+  border-radius: 6px;
+  padding: 2px 0;
+  color: inherit;
+  background: none;
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+.stepToggle:focus-visible { outline: 2px solid var(--dsw-alias-state-business-primary); outline-offset: 2px; }
+.stepKind {
+  flex: none;
+  padding: 1px 8px;
+  border: .5px solid var(--dsw-alias-border-l2);
+  border-radius: 999px;
+  corner-shape: round;
+  color: var(--dsw-alias-label-secondary);
+  font: 11px/16px system-ui, sans-serif;
+  white-space: nowrap;
+}
+/* 摘要永远单行省略：完整内容由卡头提示与展开区给出。 */
+.stepSummary { flex: 1 1 auto; min-width: 0; overflow: hidden; color: var(--dsw-alias-label-primary); font: 12px/18px system-ui, sans-serif; text-overflow: ellipsis; white-space: nowrap; }
+.stepActions { display: inline-flex; flex: 0 0 auto; align-items: center; gap: 4px; }
+.stepClose { color: var(--dsw-alias-label-tertiary); }
+.stepClose:disabled { cursor: default; opacity: .4; }
+.stepBody { display: flex; min-width: 0; flex-direction: column; gap: 8px; padding: 8px 8px 10px 12px; border-top: .5px solid var(--dsw-alias-border-l2); }
+/* 一个条件作用域 = 一条竖线 + 它管住的节点卡（动作卡或分支卡）。 */
+.stepScope { display: flex; min-width: 0; flex-direction: column; gap: 8px; padding-inline-start: 10px; border-inline-start: 2px solid var(--dsw-alias-border-l2); }
+.scopeHead { display: flex; min-width: 0; align-items: center; gap: 8px; }
+.stepSlot { margin: 0; color: var(--dsw-alias-label-secondary); font: 11px/16px system-ui, sans-serif; }
+.stepAdd { display: flex; min-width: 0; flex-wrap: wrap; align-items: center; gap: 6px; }
+.stepHint { color: var(--dsw-alias-label-tertiary); font: 12px/18px system-ui, sans-serif; }
+
 @container rule-editor (max-width: 480px) {
   .conditionChild { padding-inline-start: 8px; }
-  .actionHead { gap: 8px; }
+  .stepBody { padding-inline-start: 8px; }
+  .stepScope { padding-inline-start: 6px; }
 }
 @media (pointer: coarse) {
-  .switchLine, .conditionOrdinal { height: 44px; min-height: 44px; }
+  .switchLine, .conditionOrdinal, .stepToggle { height: 44px; min-height: 44px; }
 }

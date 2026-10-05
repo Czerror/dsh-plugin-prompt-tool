@@ -1,5 +1,5 @@
-import { useState, type ReactNode } from 'react'
-import type { RuleAction, RuleCondition, RuleEditorMeta } from '../../../shared/rules.ts'
+import type { ReactNode } from 'react'
+import type { RuleCondition, RuleEditorMeta } from '../../../shared/rules.ts'
 import type { FieldDraft } from '../../data/workspace-drafts.ts'
 import type { PromptToolLocaleKey, PromptToolTranslate } from '../../locales.ts'
 import type { EngineMeta } from '../../prompt-tool-types.ts'
@@ -16,7 +16,8 @@ import css from './rules.module.css'
 
 interface FieldContext { t: PromptToolTranslate; fields: Map<string, FieldDraft>; fieldKey: string; disabled?: boolean; engineMeta?: EngineMeta; onDraft: () => void }
 const FIELD_LABELS: Record<string, PromptToolLocaleKey> = { layer: 'form.layer.label', strategy: 'form.strategy.label', position: 'form.position.label', audience: 'form.audience.label', modelScope: 'form.modelScope.label', subject: 'form.subject.label', mergeMode: 'form.merge.label', dedupe: 'form.dedupe.label', promotion: 'form.promotion.label', configKind: 'form.kind.label', role: 'form.role.label', fill: 'form.fill.label', order: 'form.order.label' }
-const cleared = (fields: Map<string, FieldDraft>, prefix: string): void => { for (const key of fields.keys()) if (key === prefix || key.startsWith(prefix + ':')) fields.delete(key) }
+/** 清掉某个字段前缀下的原始草稿（含嵌套键）。 */
+export const cleared = (fields: Map<string, FieldDraft>, prefix: string): void => { for (const key of fields.keys()) if (key === prefix || key.startsWith(prefix + ':')) fields.delete(key) }
 function moveConditionDrafts(fields: Map<string, FieldDraft>, from: string, to: string): void {
   const values = [...fields].filter(([key]) => key === from || key.startsWith(from + ':'))
   cleared(fields, from)
@@ -122,41 +123,5 @@ export function RuleConditionFields(props: FieldContext & { value: RuleCondition
       moveConditionDrafts(props.fields, props.fieldKey, props.fieldKey + ':all:0')
       props.onChange({ all: [value, structuredClone(first.example)] })
     }}>{t('rules.addCondition')}</Button>}
-  </div>
-}
-export function RuleActionsFields(props: FieldContext & { value: RuleAction[]; meta: RuleEditorMeta; engineMeta: EngineMeta; conditional: boolean; onChange: (value: RuleAction[]) => void }): ReactNode {
-  const { t, meta } = props
-  const [addKind, setAddKind] = useState('inject-text')
-  const selectable = meta.actions.filter(action => !props.conditional || action.supportsWhen)
-  const selected = selectable.find(action => action.kind === addKind) ?? selectable[0]
-  const swap = (index: number, offset: number): void => { const next = [...props.value]; [next[index], next[index + offset]] = [next[index + offset]!, next[index]!]; props.onChange(next) }
-  return <div className={css.actions}>
-    {props.value.map((action, index) => {
-      const entry = meta.actions.find(item => item.kind === action.kind), fieldKey = props.fieldKey + ':' + action.id
-      const config = asTriggerRecord(action.config), params = asTriggerRecord(config.params)
-      const layer = String(config.layer ?? 'pre-step'), policy = props.engineMeta.layerFieldPolicies[layer]
-      const staticAudience = layer === 'system-section' && (params.complete === true || params.suppressRuntimeContext === true)
-      const example = action.kind === 'request-params' ? { ...entry?.example, patch: { provider: '', model: '', reasoningEffort: '', temperature: undefined, maxTokens: undefined } }
-        : action.kind === 'inject-text' ? { ...entry?.example, config: { strategy: 'static', configKind: 'ordered', ...(policy?.merge ? { mergeMode: 'separate' } : {}), ...(policy?.position ? { position: 'after-user' } : {}), ...(staticAudience ? { audience: '' } : {}), ...asTriggerRecord(entry?.example.config) } }
-          : entry?.example
-      const patch = (next: Record<string, unknown>): void => props.onChange(props.value.map((item, at) => at === index ? { ...next, id: action.id, kind: String(next.kind ?? action.kind) } : item))
-      return <section key={action.id || index} className={css.action} data-rule-action={action.id}>
-        <div className={css.actionHead}><h4>{t('rules.action', { index: index + 1 })}</h4><MenuSelect compact className={css.control} ariaLabel={t('triggers.actionType')} value={action.kind} disabled={props.disabled}
-          options={[...new Set([...selectable.map(item => item.kind), action.kind])].map(kind => ({ value: kind, label: triggerLabel(t, kind) }))}
-          onChange={kind => { const next = meta.actions.find(item => item.kind === kind); if (next) { cleared(props.fields, fieldKey); patch({ ...structuredClone(next.example), id: action.id, kind }) } }} />
-          <Button variant="outline" shape="pill" icon aria-label={t('rules.moveUp', { id: action.id })} disabled={props.disabled || index === 0} onClick={() => swap(index, -1)}>↑</Button>
-          <Button variant="outline" shape="pill" icon aria-label={t('rules.moveDown', { id: action.id })} disabled={props.disabled || index === props.value.length - 1} onClick={() => swap(index, 1)}>↓</Button>
-          <Button variant="outline" shape="pill" data-danger aria-label={t('rules.removeAction', { id: action.id })} disabled={props.disabled} onClick={() => { cleared(props.fields, fieldKey); props.onChange(props.value.filter((_, at) => at !== index)) }}>{t('rules.removeActionShort')}</Button>
-        </div>
-        {entry === undefined ? <><p role="note">{t('rules.unknown')}</p><TriggerJsonField {...props} fieldKey={fieldKey} label={t('rules.rawAction')} shape="object" value={action} onChange={next => patch(asTriggerRecord(next))} /></>
-          : <div className={css.fields}><RuleParameterFields {...props} fieldKey={fieldKey} value={action} requestPatch={action.kind === 'request-params'}
-            example={example}
-            omit={['id', 'kind', ...(action.kind === 'request-params' ? ['audience', 'modelScope'] : [])]}
-            configOmit={action.kind === 'inject-text' ? ['modelScope', 'promotion', 'subject', 'match', ...staticAudience ? [] : ['audience']] : undefined} onChange={patch} /></div>}
-      </section>
-    })}
-    <div className={css.row}><MenuSelect compact className={css.control} ariaLabel={t('rules.addAction')} value={selected?.kind ?? ''} disabled={props.disabled || selectable.length === 0} options={selectable.map(action => ({ value: action.kind, label: triggerLabel(t, action.kind) }))} onChange={setAddKind} />
-      <Button variant="outline" shape="pill" disabled={props.disabled || selected === undefined} onClick={() => { if (!selected) return; let number = 1; while (props.value.some(action => action.id === 'action-' + number)) number++; props.onChange([...props.value, { ...structuredClone(selected.example), id: 'action-' + number, kind: selected.kind }]) }}>{t('rules.addAction')}</Button>
-    </div>
   </div>
 }

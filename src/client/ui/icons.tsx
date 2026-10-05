@@ -25,6 +25,11 @@ type IconProps = SVGProps<SVGSVGElement>
 export const IconChevronDownOutlineRegular = (props: IconProps) => <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true" {...props}>
   <path d="M4 6L7.29289 9.29289C7.68342 9.68342 8.31658 9.68342 8.70711 9.29289L12 6" stroke="currentColor" />
 </svg>
+/** 关闭/移除：官方 IconCloseFill 的复制件（同一 artwork，14px，1px 描边）。 */
+export const IconCloseFillRegular = (props: IconProps) => <svg width="14" height="14" viewBox="0 0 16 16" fill="none" strokeWidth={1} aria-hidden="true" {...props}>
+  <path d="M3.5 3.5L12.5 12.5" stroke="currentColor" />
+  <path d="M12.5 3.5L3.5 12.5" stroke="currentColor" />
+</svg>
 export const IconSearchOutlineRegular = (props: IconProps) => <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true" {...props}>
   <path d="M6.58727 11.8586C9.55061 11.8586 11.9529 9.45637 11.9529 6.49304C11.9529 3.5297 9.55061 1.12744 6.58727 1.12744C3.62394 1.12744 1.22168 3.5297 1.22168 6.49304C1.22168 9.45637 3.62394 11.8586 6.58727 11.8586Z M10.2991 10.3933L14.7783 14.8725" stroke="currentColor" />
 </svg>

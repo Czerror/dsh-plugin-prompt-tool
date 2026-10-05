@@ -14,12 +14,15 @@ import { CollapsibleCard } from '../../ui/CollapsibleCard.tsx'
 import { PromptConfigNavigation } from './PromptConfigNavigation.tsx'
 import { LAYER_LABEL_KEYS, translateLabel } from './prompt-config-policy.ts'
 import { TriggerJsonField, asTriggerRecord } from './RuleJsonField.tsx'
-import { RuleActionsFields, RuleConditionFields } from './RuleFields.tsx'
+import { RuleStepsPanel } from './RuleSteps.tsx'
+import { conditionalActions, countConditions, countNodes, isValidNode, nodeList } from './rule-steps.ts'
 import css from './rules.module.css'
 
 export function RuleCard(props: {
   t: PromptToolTranslate; entry: RuleEntry; draft: RulesDraft; editor: RuleEditor; meta: EngineMeta
   expanded: boolean; onToggle: () => void; disabled?: boolean; onDuplicate: () => void
+  /** 折叠卡状态池（工作台草稿池，跨折叠与切页保留）。 */
+  expandedRows: Map<string, boolean>
   headerActions?: ReactNode
   source?: string
   renderSettings?: (rule: RuleDefinition) => ReactNode
@@ -28,11 +31,18 @@ export function RuleCard(props: {
   const panelId = useId(), ownsFocus = useRef(false)
   const [confirming, setConfirming] = useState(false)
   const disabled = props.disabled === true || draft.busy === 'save'
-  const unsupported = rule.if !== undefined && rule.then.some(action => draft.meta?.actions.find(item => item.kind === action.kind)?.supportsWhen === false)
+  const nodes = [...nodeList(rule.then), ...nodeList(rule.else)]
+  // 路径上带条件的动作必须支持条件（event 生命周期）；引擎在编译期拒绝其余组合。
+  const unsupported = conditionalActions(nodes, rule.if !== undefined)
+    .some(action => draft.meta?.actions.find(item => item.kind === action.kind)?.supportsWhen === false)
+  const totals = countNodes(nodes)
+  const summary = totals.branches === 0
+    ? t('rules.summary', { conditions: countConditions(rule.if), actions: totals.actions })
+    : t('rules.summary.branches', { conditions: countConditions(rule.if), actions: totals.actions, branches: totals.branches })
   const patch = (next: Partial<RuleDefinition>): void => { if (!disabled) editor.patch(entry.key, { ...entry.value, ...next }) }
   const save = (): void => { if (!disabled && !unsupported && rulesDirty(draft) && !hasRuleFields(draft)) void editor.submit() }
   const fieldContext = { t, fields: draft.fields, disabled, engineMeta: props.meta, onDraft: editor.changed }
-  return <CollapsibleCard id={panelId} title={rule.name || rule.id} meta={(props.source ? t('rules.source', { module: props.source }) + ' · ' : '') + (rule.layer === undefined ? t('rules.module') : translateLabel(t, LAYER_LABEL_KEYS, rule.layer)) + ' · ' + rule.then.length + ' ' + t('triggers.action')}
+  return <CollapsibleCard id={panelId} title={rule.name || rule.id} meta={(props.source ? t('rules.source', { module: props.source }) + ' · ' : '') + (rule.layer === undefined ? t('rules.module') : translateLabel(t, LAYER_LABEL_KEYS, rule.layer)) + ' · ' + summary}
     expanded={props.expanded} onToggle={() => { if (props.expanded) save(); props.onToggle() }} bodyClassName={css.cardPanel}
     data-rule-id={rule.id} data-rule-key={entry.key}
     onFocus={() => { ownsFocus.current = true }} onBlur={(event) => {
@@ -60,12 +70,14 @@ export function RuleCard(props: {
       </div>
       {unsupported && <p role="alert" className={css.error}>{t('rules.unsupported')}</p>}
       <PromptConfigNavigation t={t} layer={rule.layer ?? 'module'} renderLayerSettings={props.renderSettings ? () => <section className={css.section} aria-label={t('rules.settings')}>{props.renderSettings?.(rule)}</section> : undefined}>
-        <section data-config-panel="conditions" aria-label={t('form.navigation.conditions')} className={css.section}>{draft.meta && <RuleConditionFields {...fieldContext} fieldKey={entry.key + ':if'} meta={draft.meta} value={rule.if}
-          onChange={condition => patch({ if: condition })} />}</section>
-        <section data-config-panel="execution" aria-label={t('rules.actionsTab')} className={css.section}>{draft.meta && <RuleActionsFields {...fieldContext} fieldKey={entry.key + ':then'} meta={draft.meta} engineMeta={props.meta} conditional={rule.if !== undefined} value={rule.then} onChange={actions => patch({ then: actions })} />}</section>
+        <section data-config-panel="rule" aria-label={t('rules.stepsTab')} className={css.section}>{draft.meta && <RuleStepsPanel
+          t={t} rule={rule} meta={draft.meta} engineMeta={props.meta} fields={draft.fields} expanded={props.expandedRows}
+          prefix={props.source ?? rule.id} fieldKey={entry.key} disabled={disabled} onDraft={editor.changed}
+          onChange={next => patch(next)} />}</section>
       <section data-config-panel="definition" aria-label={t('rules.jsonTab')} className={css.section}><TriggerJsonField {...fieldContext} fieldKey={entry.key + ':full'} label={t('triggers.advanced')} shape="object" value={rule} onChange={value => {
         const candidate = asTriggerRecord(value)
-        if (typeof candidate.id !== 'string' || !Array.isArray(candidate.then) || candidate.then.some(action => typeof asTriggerRecord(action).id !== 'string' || typeof asTriggerRecord(action).kind !== 'string')) {
+        if (typeof candidate.id !== 'string' || !Array.isArray(candidate.then) || !candidate.then.every(isValidNode)
+          || (candidate.else !== undefined && !nodeList(candidate.else).every(isValidNode))) {
           const raw = draft.fields.get(entry.key + ':full'); if (raw) raw.error = t('triggers.invalidJson'); return
         }
         for (const key of draft.fields.keys()) if (key.startsWith(entry.key + ':') && key !== entry.key + ':full') draft.fields.delete(key)

@@ -1,6 +1,7 @@
 /** 标签输入：chip 增删 + 回车/逗号添加；底层仍为逗号分隔字符串，零数据层改动。 */
 import { useState, type ReactNode } from 'react'
 import { HintTooltip } from './HintTooltip.tsx'
+import { IconCloseFillRegular } from './icons.tsx'
 import styles from './controls.module.css'
 
 export function TagInput(props: {
@@ -37,7 +38,7 @@ export function TagInput(props: {
           <span key={tag} className={styles.tagChip}>
             {tag}
             {!disabled && (
-              <button type="button" className={styles.tagChipRemove} aria-label={`移除 ${tag}`} onClick={() => remove(tag)}>×</button>
+              <button type="button" className={styles.tagChipRemove} aria-label={`移除 ${tag}`} onClick={() => remove(tag)}><IconCloseFillRegular /></button>
             )}
           </span>
         ))}
