@@ -1,5 +1,25 @@
 # Changelog
 
+## [2.1.0] - 2026-10-06
+
+### 主要变化
+
+- **内置技能随包分发**：`skills/dsh-module` 随包发布，插件安装与每次启动按「只补缺失」补建到 `$DSH_HOME/skills`——已有同名目录的正文、资源与调用策略保持原样，改过或删过的技能不会被铺回来；补建失败静默跳过，不阻断启动。
+- **两个技能合并为 `dsh-module` 一个**：覆盖模块定义（`if → then` 规则、九层注入、条件动作）、模块名与共享参数、外部资源移植与审查。正文改为正向陈述只讲支持项，并写明技能引用的包内文件（`engine/`、`modules/`、`templates/`）的路径基准与定位方式（`$DSH_PROFILE_DIR`；Desktop 部署下需用文件读取工具）；新增「禁用或收窄某个工具」配方（`assembly` + `sdk-strip` + `guard` 三件套）。
+- **新增发版前打包完整性门槛 `pnpm verify:pack`**：`npm pack` 出真实 tarball 后与仓库逐文件 SHA256 比对，再装进临时项目跑引擎 smoke（主入口导出、包内 `compileRules`、组合模块库、随包技能），任一失败退出码 1。
+- 根 `module.yml` 适配 `if`/`then` 引擎并补全九类动作示例；规则字段旧名 `when`/`do` 的残留说明一并清理。
+- 测试套件按 seam 纪律清理：删掉墓碑、自证对拍、实现耦合与超额变体，从 441 条收敛到 418 条（真契约保留，另补角色卡 PNG 解码与技能种子化两类新覆盖）。
+
+### 破坏性变更（升级前必读）
+
+- **`engine/compositions/library/` 整体退场**：官方组合块（`tool-pwsh`、`tool-fs`、`delegation`、`planning`、`compaction`、`tool-web` 等 24 个）已随「与预设彻底解耦」全部删除，模块库现在只有 `source/local/`。模块若还在 `modules:` 里引用这些名字，装配期会直接报 `composition module <名称> not found in source/local`——这些能力由**会话原有的官方预设**提供，模块不需要也不应该重新声明它们；要禁用或收窄某个工具，改用 `assembly` + `sdk-strip` + `guard` 三件套。
+- **ST 导入 `enable_web_search: true` 不再组装 web 工具行**：原先 `modules.push('tool-web')` 并写 `moduleConfigs['tool-web'] = { fetch: true }`，现在只在转换报告里提示「联网能力由会话原有预设提供」。`enable_web_search: false` 的三条拒绝规则不变。
+- 退役声明式触发器的组合行 `declared-triggers.yml` 删除（该名字写进 `modules` 本就会返回 409 `rules-migration-required`）。
+
+### 验证
+
+typecheck、lint（0 warning，252 文件）、test **418 passed**（0 失败 0 跳过）、build、`pnpm verify:pack`（打包完整性 0 失败）、`git diff --check` 全绿。
+
 ## [2.0.1] - 2026-10-05
 
 ### 修复
