@@ -142,8 +142,8 @@ export function PromptConfigForm(props: {
       </div>
       </section>}
 
-      <PromptConfigNavigation t={t} layer={config.layer ?? 'pre-step'} flat={locked} renderLayerSettings={locked || props.renderLayerSettings === undefined ? undefined : () => <>
-        <p className={styles.configFieldHint}>{t('form.layerSettings.hint', { layer: translateLabel(t, LAYER_LABEL_KEYS, config.layer ?? 'pre-step') })}</p>
+      <PromptConfigNavigation t={t} layer={config.layer ?? 'pre-step'} flat={locked} renderLayerSettings={props.renderLayerSettings === undefined ? undefined : () => <>
+        {!locked && <p className={styles.configFieldHint}>{t('form.layerSettings.hint', { layer: translateLabel(t, LAYER_LABEL_KEYS, config.layer ?? 'pre-step') })}</p>}
         {props.renderLayerSettings?.(config.layer ?? 'pre-step', config)}
       </>}>
       {!locked && (conditional || policy.promotion || policy.audience || policy.modelScope) && <section className={styles.configSection} data-config-panel="conditions" aria-label={t('form.navigation.conditions')}>

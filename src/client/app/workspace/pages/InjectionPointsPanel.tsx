@@ -14,7 +14,7 @@ import type { PromptToolStore } from '../../../data/use-prompt-tool-store.ts'
 import type { PromptToolLocaleKey, PromptToolTranslate } from '../../../locales.ts'
 import { ConfirmDialog } from '../../../ui/ConfirmDialog.tsx'
 import { Button } from '../../../ui/Button.tsx'
-import { EngineParamFields, matchesEditorGroup } from '../../../features/modules/EngineParamFields.tsx'
+import { EngineParamField, EngineParamFields, matchesEditorGroup } from '../../../features/modules/EngineParamFields.tsx'
 import { ModuleCapabilityCreateMenu } from '../../../features/modules/EngineModuleList.tsx'
 import { CurrentSessionModel } from '../../../features/models/CurrentSessionModel.tsx'
 import { ModulePersonaCard } from '../../../features/persona/ModulePersonaCard.tsx'
@@ -216,6 +216,8 @@ function LayerSettingsFocus(props: { layer?: string; token: number }): ReactNode
 
 export interface InjectionPointSlots {
   beforeCards: ReactNode
+  /** 指令文件卡中的模块级转换设置，不依赖普通规则实例。 */
+  renderInstructionSettings: (config: PromptConfigDraft) => ReactNode
   /** 本层引擎设置内容，仅由真实实例卡内的设置区承载。 */
   renderLayerSettings: (layer: string, config: PromptConfigDraft) => ReactNode
   /** 该层是否有可编辑设置，控制真实实例卡内的设置区。 */
@@ -253,6 +255,10 @@ export function injectionPointSlots(input: InjectionPointSlotsInput): InjectionP
   )
   return {
     beforeCards,
+    renderInstructionSettings: config => <div className={css.settings}>
+      <p>{t('param.instructionHint.scope', { module: store.fields.moduleId })}</p>
+      <EngineParamField store={store} param="instructionHint" t={t} instanceId={`instruction-${audience}-${config.id}`} />
+    </div>,
     renderLayerSettings: (layer: string, config: PromptConfigDraft) => (
       <LayerSettingsContent
         key={`${store.fields.moduleId}:${config.id}`}

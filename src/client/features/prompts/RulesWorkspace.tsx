@@ -29,6 +29,7 @@ export interface RulesWorkspaceProps {
   viewFilter?: string; onViewFilterChange?: (value: string) => void
   keyword?: string; onKeywordChange?: (value: string) => void
   renderLayerSettings?: (layer: string, config: PromptConfigDraft) => ReactNode
+  renderInstructionSettings?: (config: PromptConfigDraft) => ReactNode
   hasLayerSettings?: (layer: string) => boolean
   matchesLayerSettings?: (layer: string, keyword: string) => boolean
 }
@@ -130,6 +131,7 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
     setExpanded(configIdentityKey({ moduleId, configId: editor.add({ ...clone, id, enabled: false }) }))
   }
   const instructionCards = fields.promptConfigs.filter(config => instructionFileIdOf(config) !== undefined).map(config => <PromptConfigCard key={config.id} t={t} meta={store.meta} config={config} expanded={expanded === config.id} canMoveUp={false} canMoveDown={false}
+    renderLayerSettings={props.renderInstructionSettings === undefined ? undefined : (_layer, config) => props.renderInstructionSettings!(config)}
     onToggleExpanded={() => toggle(config.id)} onToggleEnabled={() => {}} onPatch={(id, patch) => store.patch({ promptConfigs: store.getFields().promptConfigs.map(item => item.id === id ? { ...item, ...patch } : item) })}
     onMoveUp={() => {}} onMoveDown={() => {}} onDuplicate={() => {}} onDelete={() => {}}
     onSaveInstructionFile={id => { void store.persistInstructionFiles([id]) }} onReloadInstructionFile={id => store.reloadInstructionFile(id).then(() => {})}
@@ -158,7 +160,7 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
     })}
     {orderError && <p role="alert" className={css.error}>{orderError}</p>}
     {props.createdHidden && <Button variant="outline" shape="pill" onClick={props.onShowCreated}>{t('rules.showCreated')}</Button>}
-    {props.scope !== 'subagent' && instructionCards}
+    {instructionCards}
     {props.beforeCards}
     {entries.map(row => {
         const { entry, draft, editor, moduleId: id, key } = row

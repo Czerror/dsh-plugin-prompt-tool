@@ -1,9 +1,11 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
+import { Context } from '@deepseek-ai/cordis'
 import { parse } from 'yaml'
 
 import {
+  apply,
   buildInstructionHint as rawBuildInstructionHint,
   collectInstructionFiles,
   createInstructionHintResolver as rawCreateInstructionHintResolver,
@@ -125,31 +127,57 @@ test('buildInstructionHint 兼容无 id 的输入并生成随机 id', () => {
   assert.equal(hint.source.form, 'hint')
 })
 
-// 本文件其余用例都从 legacy-defaults.yml 注入模板（见文件头 helper），所以
-// `apply()` 的注册前置条件在那些用例里**恒被满足**——组合源本身缺模板这件事测不出来。
-// 下面这条改读**线上真实组合源**，并复刻 apply():273 的判据。
-// 背景：组合源一度只配 enabled/promoteOn/includeSubagents，于是把参数桥开关打开后
-// apply() 在第一行就 return —— 配置合法、零效果、零报错（与 count.delegated 同类）。
-test('组合源指令提示行自带必需模板，apply 前置条件可满足（缺模板=静默失效）', () => {
+test('真实组合指令提示：主会话和子代理晋升后转换，压缩重置且卸载释放', async (t) => {
   const rows = parse(readFileSync(new URL('../../engine/compositions/source/local/instruction-hint.yml', import.meta.url), 'utf8'))
   const row = rows.find((entry) => entry?.id === 'instruction-hint')
   assert.ok(row !== undefined, '组合源必须有 instruction-hint 行')
-  const cfg = row.config ?? {}
-  assert.equal(cfg.enabled, false, '缺省关闭，由参数桥 params.instructionHint 打开')
-  assert.equal(cfg.promoteOn, 'either', '晋升词表与 tool-bootstrap 同源')
-  assert.equal(cfg.includeSubagents, true, '子代理首次请求即视为已晋升，故需显式纳入')
-  for (const key of ['projectTemplate', 'globalTemplate', 'suffixTemplate', 'messageTemplate']) {
-    assert.equal(typeof cfg[key], 'string', `${key} 必须随行声明（运行时不得读 legacy-defaults.yml）`)
-    assert.ok(cfg[key].trim().length > 0, `${key} 不得为空`)
+  assert.equal(row.config.enabled, false, '默认关闭，由模块参数显式开启')
+  apply({ on: () => assert.fail('关闭时不应注册任何监听器') }, row.config)
+  const root = new Context()
+  t.after(() => root.fiber.dispose())
+  const original = {
+    id: 'official-instructions', role: 'user',
+    content: [{ type: 'text', text: 'Instructions from: /repo/AGENTS.md\nFULL BODY' }],
+    source: { kind: 'agent-instructions' },
   }
-  // 与迁移路径（rules-migration.ts 的 legacyPolicyDefaults().instructionHint）同源，
-  // 否则「迁移进来的定义」与「新装的组合源」行为分叉。
-  for (const key of ['projectTemplate', 'globalTemplate', 'suffixTemplate', 'messageTemplate']) {
-    assert.equal(cfg[key], templates[key], `${key} 必须与 legacy-defaults.yml 逐字一致`)
+  for (const [delegationDepth, promoteEvent] of [[0, 'tool/call'], [1, 'assistant/message']]) {
+    const events = [], visible = []
+    const session = {
+      id: `instruction-hint-depth-${delegationDepth}`, header: { delegationDepth },
+      snapshotEvents: () => events, deriveMessages: () => visible,
+    }
+    const mounted = await root.plugin({ apply }, { ...row.config, enabled: true })
+    const step = () => root.waterfall('agent/pre-step', { agent: { session } }, async () => ({ kind: 'enter', messages: [original] }))
+    const record = (type, data = {}) => {
+      const event = { type, seq: events.length + 1, data }
+      events.push(event)
+      root.emit('session/event', session, event)
+    }
+    const assertHint = decision => {
+      assert.equal(decision.messages.length, 1)
+      assert.equal(decision.messages[0].id, original.id)
+      assert.equal(decision.messages[0].source.kind, 'instruction-hint')
+      assert.match(decision.messages[0].content[0].text, /Reference documents exist: \/repo\/AGENTS\.md/)
+      assert.doesNotMatch(decision.messages[0].content[0].text, /FULL BODY/)
+    }
+    assert.deepEqual((await step()).messages, [original], '主会话与子代理首请求均保留全文')
+    visible.push(original)
+    record(promoteEvent)
+    const promoted = await step()
+    assertHint(promoted)
+    assert.deepEqual(visible, [original], '转换不得改写已进入历史的全文')
+    visible.push(...promoted.messages)
+    assert.deepEqual((await step()).messages, [], '可见面已有路径提示时不重复投递')
+    record('compaction/end', { error: 'compaction failed' })
+    assert.deepEqual((await step()).messages, [], '失败压缩不重置晋升或去重')
+    record('compaction/end')
+    visible.length = 0
+    assert.deepEqual((await step()).messages, [original], '成功压缩后的首请求重新保留全文')
+    record(promoteEvent === 'tool/call' ? 'assistant/message' : 'tool/call')
+    const promotedAgain = await step()
+    assertHint(promotedAgain)
+    visible.push(...promotedAgain.messages)
+    await mounted.dispose()
+    assert.deepEqual((await step()).messages, [original], '卸载后不再转换或丢弃官方消息')
   }
-  // 逐字复刻 instruction-hint.mjs#apply 第一行：
-  //   if (!enabled || templateOf(source,'messageTemplate').trim().length === 0) return
-  // 组合源缺省 enabled=false，所以这里固定把 enabled 当 true 来单独检验模板那一半——
-  // 缺模板才是「开关打开也无效」的静默失效，正是本条要锁住的。
-  assert.equal(cfg.messageTemplate.trim().length > 0, true, '开关打开后必须能注册（缺模板会静默失效）')
 })

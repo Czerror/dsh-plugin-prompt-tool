@@ -81,7 +81,7 @@ export function EngineParamField({ store, param, t, instanceId }: { store: Promp
   // 默认渲染点沿用 `pt-param-<键>`（层卡内唯一）；镜像渲染点带实例前缀，DOM id 不重复。
   const id = instanceId === undefined ? `pt-param-${param}` : `pt-param-${instanceId}-${param}`
   const label = t(`param.${param}`)
-  const hint = param === 'maxDepth' ? t('param.maxDepth.hint') : t('param.hint', { param, label })
+  const hint = param === 'maxDepth' ? t('param.maxDepth.hint') : param === 'instructionHint' ? t('param.instructionHint.hint') : t('param.hint', { param, label })
   const optionLabels: Record<string, string> = {
     either: t('param.option.either'),
     'tool-call': t('param.option.tool-call'),

@@ -84,6 +84,7 @@ export const MainSessionPage = memo(function MainSessionPage(props: { store: Pro
         keyword={keyword}
         onKeywordChange={setKeyword}
         renderLayerSettings={layers.renderLayerSettings}
+        renderInstructionSettings={layers.renderInstructionSettings}
         hasLayerSettings={layers.hasLayerSettings}
         matchesLayerSettings={layers.matchesLayerSettings}
         beforeCards={layers.beforeCards}

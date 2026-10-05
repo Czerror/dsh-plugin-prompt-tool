@@ -106,6 +106,7 @@ export const SubagentPage = memo(function SubagentPage(props: { store: PromptToo
           keyword={keyword}
           onKeywordChange={setKeyword}
           renderLayerSettings={layers.renderLayerSettings}
+          renderInstructionSettings={layers.renderInstructionSettings}
           hasLayerSettings={layers.hasLayerSettings}
           matchesLayerSettings={layers.matchesLayerSettings}
         />
