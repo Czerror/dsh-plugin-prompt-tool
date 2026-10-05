@@ -57,7 +57,7 @@ pnpm --dir $Repo migrate:rules -- --root '<DSH_HOME>/.prompt-tool/modules' --cha
 - 🗂️ **完整定义与校验切片**：module.yml 保存完整行为，rules/<id>.yml 保存正文，_settings.yml 保存顺序和启停，variables.yml 保存模板变量；失配单向恢复，不生成旧宿主装配产物。
 - 🧩 **显式互斥**：同模块同组中任一卡声明互斥时，启用目标卡会原子关闭同组其他卡的总开关；重排不改变启用状态。
 - 🖥️ **可拖动悬浮工作台入口**：工作台经官方 `shell.overlay` 渲染悬浮触发器与 body portal 抽屉；按钮可拖动、位置存插件自己的 localStorage、窗口变化自动夹回可见区（不读宿主布局树，已移除 `sidebar.footer.action` 几何探针）；五页（主会话/子代理/工具预览/技能设置/模块）在抽屉内渲染，抽屉用 fixed + z-index 置顶，不被宿主导航栏遮挡
-- 🧪 **条件与内容分离**：`when` 支持组合判断；注入动作支持 `static / first-turn-anchor / guide-auto / anchor-notice / placeholder / world-book`。旧 `custom-fallback` 拆为锚点条件与通知内容。
+- 🧪 **条件与内容分离**：`if` 支持组合判断（另有 `else` 分支）；注入动作支持 `static / first-turn-anchor / guide-auto / anchor-notice / placeholder / world-book`。旧 `custom-fallback` 拆为锚点条件与通知内容。
 - 🛡️ **失败不伤会话**：单条失败跳过 + `warnOnce`；配置错误挂载时 fail loud；`dedupe: session` 持久幂等
 - 🧭 **通用 instruction-hint 引擎**：模块可通过 `strategy: placeholder` 与 `fill: instruction-hint` 提示指令文件存在；实现位于 `engine/instruction-hint.mjs`。`layerSettings.pre-step.instructionHint` 可启用该能力，按模型可见 surface 去重，重挂不重复，被压缩遮蔽后才再次提示
 - 📦 **Bridge 载荷**：JSON 请求统一 32 MiB 硬上限并明确返回 413；角色卡原始图片走 64 MiB 流式通道，按 PNG 魔数识别。
@@ -76,9 +76,9 @@ pnpm --dir $Repo migrate:rules -- --root '<DSH_HOME>/.prompt-tool/modules' --cha
 
 ## Web 客户端结构
 
-每条配置保留一张卡，复用原卡壳、折叠箭头和拖拽样式，指令文件卡置顶。卡内通过“条件 / 动作 / JSON / 设置”平级侧边导航编辑，窄屏改为横向页签，正文归对应注入动作。上移、下移与拖拽按钮位于卡头总开关旁。Linear 风格统一桌面控件为 28px、按钮与下拉为胶囊；短输入按字符宽度收紧，下拉按最长选项文案限宽，数字 96px，正文与 JSON 保留完整编辑宽度。粗指针的 44px 触控目标扩大控件本体，不覆盖外部空白。
+每条配置保留一张卡，复用原卡壳、折叠箭头和拖拽样式，指令文件卡置顶。卡内通过“规则 / JSON / 设置”平级侧边导航编辑，窄屏改为横向页签。**规则面板按条件作用域组织**：规则级 `if` 是一张条件卡，它管住的 `then` 节点在一段竖线作用域里各自成卡——动作卡与分支卡（卡头即「当 ⟨条件⟩ → ⟨动作⟩」）；每张卡默认收起、卡头单行省略给出「条件 → 动作」一览，展开才编辑，`×` 删除整张卡，`then`/`else` 里的分支节点 `{if, then, else}` 可展开编辑、可继续嵌套。上移、下移与拖拽按钮位于卡头总开关旁。Linear 风格统一桌面控件为 28px、按钮与下拉为胶囊；短输入按字符宽度收紧，下拉按最长选项文案限宽，数字 96px，正文与 JSON 保留完整编辑宽度。粗指针的 44px 触控目标扩大控件本体，不覆盖外部空白。
 
-规则编辑器通过 `/rules` 保存局部修改与完整文件版本，保留在途新输入、未知字段和未完成 JSON 草稿。动态注入支持 `when`；固定注册的独占、抑制及安全守卫拒绝不支持的动态条件。具体支持范围见 [引擎复用指南](docs/engine-reuse.md#声明的条件与动作边界)。
+规则编辑器通过 `/rules` 保存局部修改与完整文件版本，保留在途新输入、未知字段和未完成 JSON 草稿。动态注入支持 `if` / `then` / `else`（旧名 `when` / `do` 已退役，撞上会显式报错）；固定注册的独占、抑制及安全守卫拒绝不支持的动态条件。具体支持范围见 [引擎复用指南](docs/engine-reuse.md#声明的条件与动作边界)。
 
 Web 客户端按四层组织：
 
@@ -131,7 +131,7 @@ src/client/
 |---|---|
 | `layerSettings.<层名>` | 模块共享参数；磁盘归属由参数目录的 `storageLayer` 固定，不随 UI 分组改变 |
 | `moduleConfigs` | 行级 config 直写通道（参数桥未覆盖的键：超时/环境白名单/ST 导入等），不锁定覆盖 UI 可管理参数 |
-| `rules` | 独立身份、条件树 `when` 与动作数组 `do`；注入正文与参数归相应动作 |
+| `rules` | 独立身份、条件树 `if` 与动作数组 `then` / `else`；注入正文与参数归相应动作 |
 | `configOrder` | 规则 ID 到序号的完整定义映射；运行切片中为 _settings.yml.rules[id].order，文件名不带序号 |
 
 ### 共享参数一览（全部可选，缺省按对应模块解释）
