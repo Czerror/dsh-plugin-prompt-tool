@@ -7,9 +7,10 @@
 装态对应 `lib/` 的编译产物）。本文件是摘要，**冲突时以源码为准**。
 
 **这些路径相对插件包根，不在本技能目录下。** 技能随包分发、装在 `$DSH_HOME/skills/dsh-module/`，
-而 `engine/`、`modules/`、`templates/` 在插件包里——包名 `dsh-plugin-prompt-tool`，实机位于
-`<DSH_HOME>/profiles/<profile>/node_modules/dsh-plugin-prompt-tool/`。找不到包时以本文件为准：
-它是源码摘要，只有存疑才需要回源。
+而 `engine/`、`modules/`、`templates/` 在插件包里。包名 `dsh-plugin-prompt-tool`，定位用环境变量
+`$env:DSH_PROFILE_DIR`（bash 里读 `$DSH_PROFILE_DIR`）——包就在它的 `node_modules/` 下。读包内文件用
+**文件读取工具**：Desktop 部署下包可能落在 `app.asar` 里，shell、glob、grep、node 都打不开它。
+找不到包时以本文件为准，它是源码摘要，只有存疑才需要回源。
 
 ## 一、条件谓词（`if` 里能写什么）
 
@@ -121,7 +122,7 @@ rules:
 
 ## 四、模块名与参数
 
-**可写进 `modules` 的名字**（＝ `engine/compositions/source/local/` 下的文件名）：
+**可写进 `modules` 的名字**（＝ `engine/compositions/source/local/` 下的文件名；下面这份就是完整清单，不必去枚举目录）：
 
 ```
 character-tools, dev-tool-search, filesystem-editor, instruction-hint, persistent-shell-posix,
