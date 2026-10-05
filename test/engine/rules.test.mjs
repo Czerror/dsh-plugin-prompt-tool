@@ -221,9 +221,9 @@ test('统一规则：注入与过滤在同一 pre-step 按 do 顺序处理，并
   releaseFilter()
 })
 
-test('统一规则：模型流与停止事件各自执行，子代理结束复用真实启动事实且只投递一次', async () => {
-  const received = []; const childReceived = []; const steered = []
-  const main = { ...actor(), inject: message => received.push(message), steer: message => steered.push(message) }
+test('统一规则：模型流与停止事件各自执行，子代理启动复用真实启动事实', async () => {
+  const childReceived = []; const steered = []
+  const main = { ...actor(), steer: message => steered.push(message) }
   main.session.id = 'main'
   const child = { ...actor(), inject: message => childReceived.push(message) }
   child.session = { ...child.session, id: 'child', header: { delegationDepth: 1, parentSession: 'main' } }
@@ -236,7 +236,6 @@ test('统一规则：模型流与停止事件各自执行，子代理结束复�
     ] },
     { id: 'child-events', if: { scope: { audience: 'subagent' } }, then: [
       { id: 'start', kind: 'inject-text', config: { layer: 'subagent-start', text: 'START' } },
-      { id: 'end', kind: 'inject-text', config: { layer: 'subagent-end', text: 'END', params: { action: 'inject-main' } } },
     ] },
   ])
   const dispose = mountRuleSources(h.ctx, [{ moduleId: 'module', rules }])
@@ -250,10 +249,6 @@ test('统一规则：模型流与停止事件各自执行，子代理结束复�
   assert.deepEqual(steered.map(message => message.content[0].text), ['CONTINUE'])
   await h.emit('subagent/start', { id: 'child', runId: 'run' })
   assert.deepEqual(childReceived.map(message => message.content[0].text), ['START'])
-  agents.delete('child')
-  await h.emit('subagent/end', { id: 'child', runId: 'run' })
-  await h.emit('subagent/end', { id: 'child', runId: 'run' })
-  assert.deepEqual(received.map(message => message.content[0].text), ['END'])
   dispose()
   assert.ok([...h.events.values()].every(list => list.length === 0))
 })

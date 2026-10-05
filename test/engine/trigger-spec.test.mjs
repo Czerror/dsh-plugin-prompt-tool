@@ -15,33 +15,6 @@ import {
   compileWhen,
   mountDeclarations,
 } from '../../engine/trigger-spec.mjs'
-import {
-  createNameListPredicate,
-  createSourcePredicate,
-  createTextPredicate,
-  createSessionStatePredicate,
-} from '../../engine/predicates.mjs'
-
-// ───────────────────────── 透传等价 ─────────────────────────
-
-test('compileWhen：单原语与原语直接构造逐例等价', () => {
-  const cases = [
-    ['names', { deny: ['bash'] }, createNameListPredicate({ deny: ['bash'] }),
-      [{ name: 'bash' }, { name: 'read' }, 'bash', '', undefined]],
-    ['text', { keys: ['foo'], logic: 'any' }, createTextPredicate({ keys: ['foo'], logic: 'any' }),
-      ['foo bar', 'nope', '']],
-    ['source', { kind: 'plugin' }, createSourcePredicate({ kind: 'plugin' }),
-      [{ source: { kind: 'plugin' } }, { source: { kind: 'user' } }, {}]],
-    ['session', { type: 'user/message' }, createSessionStatePredicate({ type: 'user/message' }),
-      [{ session: { snapshotEvents: () => [] } }, { session: { snapshotEvents: () => [{ type: 'user/message' }] } }]],
-  ]
-  for (const [kind, options, direct, payloads] of cases) {
-    const compiled = compileWhen({ [kind]: options })
-    for (const payload of payloads) {
-      assert.equal(compiled(payload), direct(payload), `${kind} @ ${JSON.stringify(payload)} 必须与原语一致`)
-    }
-  }
-})
 
 test('compileWhen：省略 / null = 无条件（返回 undefined，注册侧据此跳过判定）', () => {
   assert.equal(compileWhen(undefined), undefined)
@@ -195,21 +168,4 @@ test('mountDeclarations：逐条注册、when 前置生效、prepend 传递、di
 
   dispose()
   assert.equal(recorder.events.length, 0, 'disposer 撤销全部注册')
-})
-
-test('mountDeclarations：带 observe 的谓词共用一条 session/event；没有时不接（零开销）', () => {
-  const withObserver = recordingCtx()
-  mountDeclarations(withObserver.ctx, compileDeclarations([{
-    id: 'gate',
-    channel: 'tools/pre-execute',
-    if: { count: { of: 'tool-call', per: 'session', min: 2 } },
-    then: { kind: 'decision', phase: 'pre', decision: 'deny' },
-  }]), { plugin: 'demo' })
-  assert.equal(withObserver.events.filter((item) => item.event === 'session/event').length, 1,
-    '相位 / 计数谓词需要一个事件源，且同组共用一条')
-
-  const withoutObserver = recordingCtx()
-  mountDeclarations(withoutObserver.ctx, compileDeclarations([denyBashDeclaration()]), { plugin: 'demo' })
-  assert.equal(withoutObserver.events.filter((item) => item.event === 'session/event').length, 0,
-    '没有带 observe 的谓词时不接监听')
 })

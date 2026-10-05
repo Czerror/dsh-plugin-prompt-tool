@@ -151,24 +151,12 @@ export function keepDisposer(ctx, disposer, label) {
  *  （进程内快路径，真相在 durable 事件流，清空仅触发一次冷扫重建）。 */
 export const MAX_TRACKED_SESSIONS = 4096
 
-/** 按会话 key 取 Map 条目；超限时清空后重建（防 session 数无界增长）。 */
-export function sessionMapGet(map, key, create) {
-  let entry = map.get(key)
-  if (entry === undefined) {
-    if (map.size >= MAX_TRACKED_SESSIONS) map.clear()
-    entry = create()
-    map.set(key, entry)
-  }
-  return entry
-}
-
 /**
  * 会话态声明的统一访问接口（B4 T1 步骤一）。
  *
  * 收敛「每个模块自己维护会话态 Map、自己决定上限与清空策略、自己决定复位时机」，
  * 但**不改变任何既有策略**：键类型、淘汰策略、复位语义逐项由调用方按现状声明，
- * 本函数只把它们收进同一套读写入口。它**不替代** `sessionMapGet`（后者仍是
- * 「按 id + 超限全清」这一档的实现，本函数在 `evict` 缺省且按 id 索引时逐字复用它）。
+ * 本函数只把它们收进同一套读写入口。
  *
  * ## 三个必答项（正好对应现状的三处差异）
  *

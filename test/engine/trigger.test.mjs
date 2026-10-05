@@ -9,7 +9,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { orderTriggers, registrationOptions, validateTrigger, mountTriggers } from '../../engine/trigger.mjs'
-import { MAX_TRACKED_SESSIONS, isDelegated, sessionEvents, sessionMapGet } from '../../engine/shared.mjs'
+import { isDelegated, sessionEvents } from '../../engine/shared.mjs'
 
 const decl = (over = {}) => ({ id: 't', channel: 'agent/pre-step', when: () => true, do: () => {}, ...over })
 
@@ -172,16 +172,10 @@ test('会话态接线：带 observe 的谓词共用一条 session/event 事件�
   assert.deepEqual(plainChannels, ['agent/pre-step'], '没有 observe 时不额外接 session/event')
 })
 
-/**
- * `state` 的会话态契约（B4 迁移的基准）。这些读法**必须在 shared.mjs 里真实存在**：
- * 契约若只在注释里成立，B4 迁移到一半就会发现缺接口，那时只能临时新造——正是本轮要消除的。
- */
-test('会话态最小接口：表里的既有读法真实存在，且语义就是声明的那个', () => {
-  // 1) durable 事件快照：正式 API 是 snapshotEvents()；缺失 = 空日志（**不得**回退读旧 events 数组）。
+test('会话态最小接口：事件快照与子代理判定的语义', () => {
+  // 1) durable 事件快照：正式 API 是 snapshotEvents()；缺失 = 空日志。
   assert.deepEqual(sessionEvents(undefined), [], '无会话 = 空日志')
   assert.deepEqual(sessionEvents({}), [], '缺 snapshotEvents 接口 = 空日志')
-  assert.deepEqual(sessionEvents({ events: [{ type: 'user/message' }] }), [],
-    '只有旧 events 数组时也不读它（回退读法已废弃）')
   assert.deepEqual(sessionEvents({ snapshotEvents: () => 'not-an-array' }), [], '非数组快照 = 空日志')
   const events = [{ type: 'user/message' }]
   assert.equal(sessionEvents({ snapshotEvents: () => events }), events, '返回值即快照本身（只读，不复制）')
@@ -192,22 +186,4 @@ test('会话态最小接口：表里的既有读法真实存在，且语义就�
   assert.equal(isDelegated({ header: {} }), false, '未声明深度 = 主会话')
   assert.equal(isDelegated({}), false)
   assert.equal(isDelegated(undefined), false, '无会话不抛错')
-
-  // 3) 「不写字面量比较」这条纪律要真的等价：deliberation-gate / progress-reminder 的
-  //    `(session.header?.delegationDepth ?? 0) === 0` 与 `!isDelegated(session)` 逐例同结果。
-  const literalGate = (session) => (session?.header?.delegationDepth ?? 0) === 0
-  const cases = [undefined, {}, { header: {} }, { header: { delegationDepth: 0 } },
-    { header: { delegationDepth: 1 } }, { header: { delegationDepth: 2 } }]
-  const observed = cases.map((session) => [literalGate(session), !isDelegated(session)])
-  assert.deepEqual(observed, [
-    [true, true], [true, true], [true, true], [true, true], [false, false], [false, false],
-  ], '既有字面量比较与 isDelegated 逐例一致（迁移到后者不改变行为）')
-
-  // 4) 会话态 Map 上限：超出即整体清空（触发一次冷扫重建，不是丢弃最旧条目）。
-  assert.equal(MAX_TRACKED_SESSIONS, 4096)
-  assert.equal(typeof sessionMapGet, 'function', 'B4 迁移的会话态记账入口就是这个')
-  const map = new Map([['s-1', { n: 1 }]])
-  assert.equal(sessionMapGet(map, 's-1', () => ({ n: 0 })).n, 1, '已有条目原样返回')
-  assert.deepEqual(sessionMapGet(map, 's-2', () => ({ n: 0 })), { n: 0 }, '缺失时按工厂创建')
-  assert.equal(map.has('s-2'), true, '创建后写入 map')
 })

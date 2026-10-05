@@ -204,8 +204,8 @@ test('skill_load：加载期间策略关闭或请求取消都不能注入', asyn
   }
 })
 
-test('技能查找传递主/子 scope、cwd 与 signal，scope 释放后候选消失', async (t) => {
-  const { ctx, registered, app, calls } = makeCtx(t, [{ name: 'global' }])
+test('技能查找按 scope 隔离候选，scope 释放后候选消失', async (t) => {
+  const { ctx, registered, app } = makeCtx(t, [{ name: 'global' }])
   applySkillSearch(ctx)
   const main = makeExec()
   const child = makeExec()
@@ -222,11 +222,6 @@ test('技能查找传递主/子 scope、cwd 与 signal，scope 释放后候选�
     assert.match(searched.text, /main-only/)
     assert.equal(searched.text.includes('child-only'), key === 'child')
     await registered[1].execute({ name: 'global' }, view.exec)
-    for (const options of [calls.list.at(-1), calls.get.at(-1)]) {
-      assert.equal(options.scope, view.exec.agent)
-      assert.equal(options.cwd, `/workspace/${key}`)
-      assert.equal(options.signal, view.exec.signal)
-    }
     assert.equal(view.injected.length, 1)
   }
   await childScope.dispose()

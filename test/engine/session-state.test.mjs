@@ -1,16 +1,13 @@
 /**
- * B4 T1 —— `shared.sessionState()` 会话态统一访问接口（**步骤一：零行为变更**）。
+ * B4 T1 —— `shared.sessionState()` 会话态统一访问接口。
  *
- * 本文件只钉住一件事：**把某个模块现有的会话态容器换成 `sessionState` 之后，读写结果与
- * 被清空的时机逐例不变**。因此每条用例都拿「既有写法」当 oracle 对拍，而不是断言
- * 我期望的语义——后者会把接口的错误一起固化成"预期"。
- *
- * 覆盖 PLAN 里逐条列出的三处现状差异：键类型（id / 对象身份）、淘汰策略
+ * 本文件钉住接口自身的可见语义：键类型（id / 对象身份）、淘汰策略
  * （`clear()` 全清 / `delete(最旧)` / 无上限）、复位语义（显式订阅 / 不订阅）。
+ * 期望值一律是独立真值源（上限字面量 `4096`、手算的重建结果）。
  */
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { MAX_TRACKED_SESSIONS, sessionMapGet, sessionState } from '../../engine/shared.mjs'
+import { sessionState } from '../../engine/shared.mjs'
 
 const session = (id) => ({ id, header: { delegationDepth: 0 } })
 const fresh = () => ({ n: 0 })
@@ -36,26 +33,16 @@ function recordingCtx() {
   }
 }
 
-test('按 id 索引 + 超限全清：与 sessionMapGet 的既有写法逐例一致', () => {
-  // oracle：B1 收敛后的既有实现（模块里现在就是这么写的）。
-  const legacyMap = new Map()
-  const legacyOf = (s) => sessionMapGet(legacyMap, s.id, fresh)
-
+test('按 id 索引：同会话同条目、不同会话不同条目，工厂只在首次取条目时执行', () => {
   const state = sessionState(undefined, fresh)
-  const migratedOf = (s) => state.get(s)
-
   const a = session('a')
   const b = session('b')
-  for (const s of [a, b, a, b]) {
-    assert.deepEqual(migratedOf(s), legacyOf(s), `读写结果须一致（${s.id}）`)
-  }
-  // 同一会话必须拿到同一对象（缓存的全部意义）。
-  assert.equal(migratedOf(a), migratedOf(a), '同会话同条目')
-  assert.notEqual(migratedOf(a), migratedOf(b), '不同会话不同条目')
 
-  migratedOf(a).n = 7
-  assert.equal(legacyOf(a).n, 0, '两条路径互不共享底层容器（各自独立实例）')
-  assert.equal(migratedOf(a).n, 7)
+  // 同一会话必须拿到同一对象（缓存的全部意义）。
+  assert.equal(state.get(a), state.get(a), '同会话同条目')
+  assert.notEqual(state.get(a), state.get(b), '不同会话不同条目')
+  state.get(a).n = 7
+  assert.equal(state.get(a).n, 7, '写入的条目可读回')
 
   // 工厂只在首次取条目时执行。
   let created = 0
@@ -66,24 +53,20 @@ test('按 id 索引 + 超限全清：与 sessionMapGet 的既有写法逐例一�
   assert.equal(created, 2, 'create 只在新会话首次取条目时执行')
 })
 
-test('按 id 索引：第 MAX_TRACKED_SESSIONS 个会话触发全清（与既有上限语义一致）', () => {
-  for (const make of [
-    () => { const map = new Map(); return { map, get: (s) => sessionMapGet(map, s.id, fresh) } },
-    () => { const state = sessionState(undefined, fresh); return { map: state, get: (s) => state.get(s) } },
-  ]) {
-    const { get } = make()
-    const first = session('first')
-    get(first).n = 42
-    // 填到上限：最后一条写入前 size 已达上限 → 全清后重建。
-    for (let index = 0; index < MAX_TRACKED_SESSIONS; index += 1) {
-      get(session(`s-${index}`)).n = index
-    }
-    // 第 limit+1 个会话：写入前 size === limit → 全清（`first` 的 42 也没了）。
-    const overflow = session('overflow')
-    const entry = get(overflow)
-    assert.equal(entry.n, 0, '新条目是全新的')
-    assert.equal(get(first).n, 0, '全清后旧会话的条目被重建（不再保留 42）')
+test('按 id 索引：第 4096 个会话触发全清', () => {
+  const state = sessionState(undefined, fresh)
+  const get = (s) => state.get(s)
+  const first = session('first')
+  get(first).n = 42
+  // 填到上限：最后一条写入前 size 已达上限 → 全清后重建。
+  for (let index = 0; index < 4096; index += 1) {
+    get(session(`s-${index}`)).n = index
   }
+  // 第 limit+1 个会话：写入前 size === limit → 全清（`first` 的 42 也没了）。
+  const overflow = session('overflow')
+  const entry = get(overflow)
+  assert.equal(entry.n, 0, '新条目是全新的')
+  assert.equal(get(first).n, 0, '全清后旧会话的条目被重建（不再保留 42）')
 })
 
 test('无上限档：weak / limit:null / evict:null 三档都不淘汰，且互不串味', () => {

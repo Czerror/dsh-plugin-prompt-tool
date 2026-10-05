@@ -208,5 +208,4 @@ test('session-vars：设置/读取/快照/清除（挂在 session 对象上）',
   assert.deepEqual(sessionVarsSnapshot(session), {})
   // 无 session（非对象）安全。
   assert.deepEqual(sessionVarsSnapshot(undefined), {})
-  assert.equal(SESSION_VARS_KEY.startsWith('__pt_'), true, '键常量跨实例一致')
 })

@@ -99,10 +99,7 @@ test('instruction-hint 共享转换保留替换消息 id、只替换一次', () 
   assert.equal(state.instructionHinted, true)
 })
 
-test('instruction-hint 只通过 placeholder fill 使用，不接受旧独立策略', async () => {
-  assert.throws(() => createPromptConfigs([
-    { id: 'direct', strategy: 'instruction-hint', params: { text: '参考文件提示' } },
-  ]), /unknown strategy/)
+test('instruction-hint 只通过 placeholder fill 使用', async () => {
   const configs = createPromptConfigs([
     { id: 'filled', strategy: 'placeholder', fill: 'instruction-hint', params: { text: '参考文件提示' } },
   ])

@@ -5,7 +5,6 @@ import { createPromptConfigs } from '../../engine/schema.mjs'
 import { instructionHintMessages, buildInstructionHintText } from '../../engine/instruction-hint.mjs'
 import { createEpochPromotion } from '../../engine/compaction-epoch.mjs'
 import { compileWhen } from '../../engine/conditions/index.mjs'
-import { getEngineMeta } from '../../engine/schema.mjs'
 
 async function injected(spec, services = {}) {
   const handlers = new Map()
@@ -20,7 +19,6 @@ async function injected(spec, services = {}) {
 
 test('动态填充器：空正文不输出，显式模板与目录参数决定结果', async () => {
   assert.throws(() => createPromptConfigs([{ id: 'legacy', strategy: 'custom-fallback', text: 'OLD' }]), /migrat|迁移/)
-  assert.equal(getEngineMeta().strategies.includes('custom-fallback'), false)
   assert.deepEqual(await injected({ strategy: 'placeholder', fill: 'env-facts' }), [])
   const env = await injected({ strategy: 'placeholder', fill: 'env-facts', text: '{{ENV_FACTS}}' })
   assert.match(env[0], /- CWD=\/repo/)

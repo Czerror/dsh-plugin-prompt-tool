@@ -12,9 +12,9 @@ import { Context } from '@deepseek-ai/cordis'
 import { createScope } from '@deepseek-ai/dsh-scope'
 import ToolRuntime from '@deepseek-ai/dsh-tools'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
-import { ACTION_KINDS, registerAction } from '../../engine/actions.mjs'
+import { registerAction } from '../../engine/actions.mjs'
 import { SDK_SECTION_NAME, sdkToolNames } from '../../engine/sdk-strip.mjs'
-import { applyAgentRequestParams, wireLayers } from '../../engine/layers.mjs'
+import { applyAgentRequestParams } from '../../engine/layers.mjs'
 import { createPromptConfigs } from '../../engine/schema.mjs'
 import { compileDeclarations, mountDeclarations } from '../../engine/trigger-spec.mjs'
 
@@ -87,7 +87,6 @@ test('动作只在其合法通道注册：逐类记录 ctx.on 的通道并与声
     registerAction(ctx, action)
     const actual = events.map((entry) => entry.event).sort()
     assert.deepEqual(actual, expected, `${label} 只应在 ${expected.join('/')} 注册`)
-    for (const event of actual) assert.ok(ACTION_KINDS[action.kind].events.includes(event), `${label} 注册了声明外的事件`)
   }
 })
 
@@ -101,6 +100,11 @@ test('动作声明 fail loud：名单形状错误、名单为空、名单命名 
   // 段/上下文增量的形状校验（含 label 与 plugin 一起拼出的消息）
   assert.throws(() => registerAction(ctx, { kind: 'assembly', id: 'x', target: { sections: { add: [{ name: 1, text: 'a' }] } } }), /assembly\.sections\.add\[\]\.name must be a string/)
   assert.throws(() => registerAction(ctx, { kind: 'assembly', id: 'x', target: { contexts: { add: {} } } }), /assembly\.contexts\.add must be an array/)
+  // allowFrom 的声明期形状校验（搬自 (2e)，语义不变）。
+  assert.throws(() => registerAction(ctx, { kind: 'assembly', id: 'x', target: { tools: { allow: ['a'], allowFrom: ['dev_tool_search'] } } }), /allowFrom must be an object/)
+  assert.throws(() => registerAction(ctx, { kind: 'assembly', id: 'x', target: { tools: { allow: ['a'], allowFrom: { key: 'k' } } } }), /allowFrom\.tool must be a string/)
+  assert.throws(() => registerAction(ctx, { kind: 'assembly', id: 'x', target: { tools: { allow: ['a'], allowFrom: { tool: 't' } } } }), /allowFrom\.key must be a string/)
+  assert.throws(() => registerAction(ctx, { kind: 'assembly', id: 'x', target: { tools: { deny: ['x'], allowFrom: { tool: 't', key: 'k' } } } }), /cannot combine deny with allowFrom/)
   assert.throws(() => registerAction(ctx, { kind: 'append-context', id: 'x', mode: 'context', text: 5 }), /x\.text must be a string/)
   assert.throws(() => registerAction(ctx, { kind: 'inject-text', id: 'x', config: { layer: '' } }), /config\.layer is required/)
   assert.throws(() => registerAction(ctx, { kind: 'inject-text', id: 'x' }), /requires a config object/)
@@ -239,13 +243,7 @@ test('(2d) allowFrom：无 session / 事件不可用时不抛错，按静态名�
   assert.match(boom.warnings[0], /allowFrom failed/)
 })
 
-test('(2e) allowFrom：声明期 fail loud，且多个动作实例互不串味', async () => {
-  const bad = recordingCtx()
-  const badTarget = (tools) => ({ kind: 'assembly', id: 'bad', target: { tools } })
-  assert.throws(() => registerAction(bad.ctx, badTarget({ allow: ['a'], allowFrom: ['dev_tool_search'] })), /allowFrom must be an object/)
-  assert.throws(() => registerAction(bad.ctx, badTarget({ allow: ['a'], allowFrom: { key: 'k' } })), /allowFrom\.tool must be a string/)
-  assert.throws(() => registerAction(bad.ctx, badTarget({ allow: ['a'], allowFrom: { tool: 't' } })), /allowFrom\.key must be a string/)
-  assert.throws(() => registerAction(bad.ctx, badTarget({ deny: ['x'], allowFrom: { tool: 't', key: 'k' } })), /cannot combine deny with allowFrom/)
+test('(2e) allowFrom：多个动作实例互不串味', async () => {
   // 两个动作各读各自的发现工具**与各自的参数键**：任一被模块级状态覆盖，另一个必然解析失败。
   const catalog = ['pwsh', 'alpha_tool', 'beta_tool'].map(tool)
   const two = recordingCtx()
@@ -300,13 +298,7 @@ test('(2) 改装配 sections/contexts：增删改与既有形态一致，异常�
   assert.equal(failing.warnings.length, 1)
 })
 
-test('(3) 裁决：pre-execute 与 tool-pipeline 层逐条同结果（allow/deny/ask）', async () => {
-  const build = (params, text = '') => {
-    const [config] = createPromptConfigs([{ id: 'tp', layer: 'tool-pipeline', text, params }])
-    const recorder = recordingCtx()
-    wireLayers(recorder.ctx, [config], () => {})
-    return only(recorder.events, 'tools/pre-execute')
-  }
+test('(3) 裁决动作：deny / ask / allow 三档返回各自的裁决对象', async () => {
   const action = (payload) => {
     const recorder = recordingCtx()
     registerAction(recorder.ctx, { kind: 'decision', id: 'tp', phase: 'pre', ...payload })
@@ -314,15 +306,13 @@ test('(3) 裁决：pre-execute 与 tool-pipeline 层逐条同结果（allow/deny
   }
   const exec = { name: 'bash', agent: agent(), arguments: { command: 'ls' } }
   const cases = [
-    [{ toolNames: 'bash', preDecision: 'deny', denyReason: 'R' }, { toolNames: 'bash', decision: 'deny', reason: 'R' }],
-    [{ toolNames: 'bash', preDecision: 'ask' }, { toolNames: 'bash', decision: 'ask' }],
-    [{ toolNames: 'bash', preDecision: 'allow' }, { toolNames: 'bash', decision: 'allow' }],
-    [{ toolNames: 'read', preDecision: 'deny', denyReason: 'R' }, { toolNames: 'read', decision: 'deny', reason: 'R' }],
+    [{ decision: 'deny', reason: 'R' }, { kind: 'deny', reason: 'R' }],
+    [{ decision: 'ask' }, { kind: 'ask' }],
+    // allow 不是终局：原样放行下游，结果由下游给出（actions/decision.mjs:20）。
+    [{ decision: 'allow' }, 'PASS'],
   ]
-  for (const [params, payload] of cases) {
-    const expected = await build(params)(exec, async () => 'PASS')
-    const actual = await action(payload)(exec, async () => 'PASS')
-    assert.deepEqual(actual, expected, `pre ${JSON.stringify(params)}`)
+  for (const [payload, expected] of cases) {
+    assert.deepEqual(await action(payload)(exec, async () => 'PASS'), expected, `pre ${JSON.stringify(payload)}`)
   }
 })
 

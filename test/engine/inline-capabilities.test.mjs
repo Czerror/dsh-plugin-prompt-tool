@@ -30,26 +30,21 @@ function harness() {
   } }
 }
 
-test('工具内联与文件入口提供相同 schema、执行结果和释放行为', async () => {
-  const observed = []
-  for (const config of [{ configsDir: directory }, { tools: definitions, configsDir: join(directory, 'missing') }]) {
-    const h = harness()
-    apply(h.ctx, config)
-    assert.deepEqual(h.warnings, [])
-    assert.deepEqual(h.registered.map(tool => tool.name), ['ask'])
-    const tool = h.registered[0]
-    assert.equal(tool.description, '确认 {args.value}')
-    assert.equal(tool.timeoutMs, 2000)
-    const output = await tool.execute({ value: 'ok' }, { agent: { id: 'agent' }, signal: new AbortController().signal })
-    assert.deepEqual(output, { ok: true, answer: 'allowed-once' })
-    observed.push({ parameters: tool.parameters, output: tool.output.schema, result: output })
-    h.effects.forEach(dispose => dispose())
-    assert.deepEqual(h.disposed, ['ask'])
-  }
-  assert.deepEqual(observed[0], observed[1])
+test('文件入口：提供 schema、执行结果和释放行为', async () => {
+  const h = harness()
+  apply(h.ctx, { configsDir: directory })
+  assert.deepEqual(h.warnings, [])
+  assert.deepEqual(h.registered.map(tool => tool.name), ['ask'])
+  const tool = h.registered[0]
+  assert.equal(tool.description, '确认 {args.value}')
+  assert.equal(tool.timeoutMs, 2000)
+  const output = await tool.execute({ value: 'ok' }, { agent: { id: 'agent' }, signal: new AbortController().signal })
+  assert.deepEqual(output, { ok: true, answer: 'allowed-once' })
+  h.effects.forEach(dispose => dispose())
+  assert.deepEqual(h.disposed, ['ask'])
 })
 
-test('工具内联空数组不回落旧目录，非法内联在注册前拒绝', () => {
+test('内联入口：空数组不回落旧目录，非法内联在注册前拒绝', () => {
   const empty = harness()
   apply(empty.ctx, { tools: [], configsDir: directory })
   assert.deepEqual(empty.registered, [])

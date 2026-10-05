@@ -536,7 +536,7 @@ export function createTurnStopBudget() {
   /**
    * 会话预算条目（`sessionState`：统一访问接口，策略逐条声明）。
    *
-   * 键类型 `session.id`；淘汰策略超限 `clear()` 全清（与迁移前的 `sessionMapGet` 同档：
+   * 键类型 `session.id`；淘汰策略超限 `clear()` 全清（与迁移前的会话态记账同档：
    * 第 `MAX_TRACKED_SESSIONS` 个会话仍会清空整个容器）；**不声明复位**——预算是纯增量、
    * 不可从事件流重建的计数（与 `progress-reminder` 同档），丢失时机必须与迁移前逐字一致，
    * compaction 也不重置它。
@@ -550,7 +550,7 @@ export function createTurnStopBudget() {
 
   const stateOf = (sessionId, turn) => {
     // 对外仍是 `(sessionId, turn)`：按 id 造一次性键宿主，`keyOf` 取的就是 `.id`，与旧的
-    // `sessionMapGet(state, sessionId, …)` 写进同一个槽位、同一个 clear 时机。
+    // 记账写法写进同一个槽位、同一个 clear 时机。
     // 唯一差异在**无 id 的会话**（`sessionId === undefined`）：`sessionState` 刻意不记账
     // （见 shared.mjs），旧写法把 `undefined` 当一个共享槽位。两个调用点（actions.mjs 的
     // append-context 与下方 turn-stop 层）都在 `entry()` 之前守卫 `session?.id === undefined`，
