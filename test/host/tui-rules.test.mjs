@@ -34,7 +34,7 @@ test('TUI 规则开关使用定义与显式互斥；未知身份不写，重建�
   const saved = parse(readFileSync(file, 'utf8'))
   assert.deepEqual(saved.rules.map(rule => [rule.id, rule.enabled]), [['first', false], ['second', true]], '启用序号在后的卡也关闭同组前卡')
   assert.deepEqual(saved.configOrder, { first: 0, second: 100 }, '启用互斥不重排')
-  assert.deepEqual(saved.rules[1].do, body('second').do, '不覆盖动作数组')
+  assert.deepEqual(saved.rules[1].then, body('second').then, '不覆盖动作数组')
   assert.equal(saved.promptConfigs, undefined)
   assert.equal(refreshes, 1)
   const status = await handler({ rawInput: 'status' })

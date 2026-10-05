@@ -18,7 +18,7 @@
 # | 当前轮深度 `< minChars` → `{ kind: 'deny', reason: gateText }`      | :131, :133    | `count.max = minChars - 1` + `decision: deny` + `reason: gateText` |
 # | 每轮最多 deny `maxGatesPerTurn` 次（`:130-132` 的 `gates` 自增）      | :130-132      | 动作 `maxPerTurn: maxGatesPerTurn`（actions.mjs:249-296, 333：命中后**同步**消耗，超出即等同不命中放行下游；轮边界由 durable `data.turn` 重置，见 :836 的 observe 接线） |
 # | 子代理默认不门控（`includeSubagents: false`）                       | :126          | `count.delegated: false`（predicates.mjs:432-436, 489；与 `session` 谓词同语义同实现 `isDelegated`） |
-# | deny 前无 await（同步裁决，并行调用无法竞态越过预算）                | :122-133      | 声明的 when 由 `withWhen` 同步求值、预算 `take()` 也在同步路径上（actions.mjs:244-253, 333；同步谓词不插 microtask） |
+# | deny 前无 await（同步裁决，并行调用无法竞态越过预算）                | :122-133      | 声明的 `if` 判定由 `withWhen` 同步求值、预算 `take()` 也在同步路径上（actions.mjs:244-253, 333；同步谓词不插 microtask） |
 #
 # ## 谓词载荷（2026-09-22 已由主线程修复，保留记载以便追溯）
 #

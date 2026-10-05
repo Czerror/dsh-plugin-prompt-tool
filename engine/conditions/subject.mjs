@@ -78,7 +78,7 @@ export function subjectOf(channel, args, warn, ctx) {
       case 'agent/turn-stopping': return { assistantText: lastAssistantText(args[0]?.agent?.session) }
       // 子代理事件的 `name` = provider（`SubagentRunInfo` 里唯一稳定的分类事实：
       // spawn / fork / acp / codex / claude-code / dsh-sdk）。`names` 谓词读的就是
-      // `payload.name`，因此 `when: { names: { allow: ['fork'] } }` 在此可用。
+      // `payload.name`，因此 `if: { names: { allow: ['fork'] } }` 在此可用。
       // provider 可能缺席（官方注释：已接受的 one-shot 变 ready 或持久 Activation 冷恢复时
       // 提供方未必仍注册）——那时不写键，让 `names` 走 UNAVAILABLE，而不是塞空串当「已知为空」。
       case 'subagent/start':

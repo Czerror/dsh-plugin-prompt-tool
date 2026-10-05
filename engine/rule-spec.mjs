@@ -7,7 +7,7 @@ import { ACTION_EXAMPLES } from './actions/examples.mjs'
 import { PREDICATE_EXAMPLES } from './conditions/examples.mjs'
 import { conjunction, expandActions } from './branch.mjs'
 
-/** 规则字段：`if`/`then`/`else` 是当前名，`when`/`do` 保留为兼容输入（见 pickAlias）。 */
+/** 规则字段：只有 `if`/`then`/`else`；旧名 `when`/`do` 留在名单里，只为把 unknown fields 换成一句「已退役，改用 X」。 */
 const RULE_FIELDS = new Set(['id', 'name', 'enabled', 'layer', 'group', 'exclusive', 'if', 'then', 'else', 'when', 'do'])
 const record = value => value !== null && typeof value === 'object' && !Array.isArray(value)
 const nonempty = value => typeof value === 'string' && value.trim().length > 0

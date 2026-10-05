@@ -2,8 +2,8 @@
  * trigger — 触发器引擎（B3）：把「声明」变成「注册」。
  *
  * 本文件负责调度层，**不含**判断原语与动作实现：
- *   - `when` 由 `engine/predicates.mjs` 提供（七类判断的组合）；
- *   - `do`   由 `engine/actions.mjs` 提供（七类动作）；
+ *   - `when` 判定由 `engine/conditions/` 提供（九个判断原语 + all/any/not/notAny 组合）；
+ *   - `do`   动作由 `engine/actions/` 提供（九类动作）；`predicates.mjs` / `actions.mjs` 只留重导出入口。
  *   - 本文件只做：声明校验（复用 B2 的 fields.mjs）、同通道内的稳定排序、
  *     宿主 waterfall 位置映射、注册与 disposer、降级与统一告警、会话态生命周期。
  *

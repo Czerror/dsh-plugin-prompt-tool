@@ -30,8 +30,8 @@
 #
 # ── 已知差异（**未声明**，见报告缺口清单）────────────────────────────────────
 #   tool-filter.mjs:72-74 的 `includeSubagents:false → 子代理整个跳过本过滤`
-#   无法声明：`assembly` / `sdk-strip` 只吃 `when` 判定，而七类判断原语
-#   （trigger-spec.mjs:41-49 的工厂表）里没有一类读
+#   无法声明：`assembly` / `sdk-strip` 只吃规则级 `if` 判定，而九个判断原语
+#   （engine/conditions/index.mjs 的 PREDICATE_FACTORIES）里没有一类读
 #   `agent.session.header.delegationDepth`，按通道归一后的载荷也只挑
 #   agent / name / source 三个域（predicates.mjs:68-108 的 CHANNEL_SUBJECTS，
 #   `names` 读 `payload.name`：predicates.mjs:469-486）；`includeSubagents` 只在
@@ -72,8 +72,8 @@
   channel: system-prompt/assemble
   channelOrder: 2
   waterfallPosition: default
-  # guard **不支持** when/prepend（actions.mjs:823-826 挂载期报错），受众由动作自身
-  # 的 includeSubagents 表达（actions.mjs:450、:471），故本声明不带 when。
+  # guard **不支持**规则级判定与 prepend（挂载期报错），受众由动作自身
+  # 的 includeSubagents 表达，故本声明不带 if。
   then:
     kind: guard
     id: tool-filter-guard

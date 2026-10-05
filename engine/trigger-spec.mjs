@@ -7,7 +7,7 @@ export { compileWhen, COMPOSITE_OPERATORS, PREDICATE_FACTORIES } from './conditi
 const DECLARATION_FIELDS = Object.freeze(['id', 'channel', 'channelOrder', 'waterfallPosition', 'phase', 'if', 'then', 'else', 'when', 'do'])
 const ACTION_PHASES = Object.freeze(['before-next', 'after-next'])
 
-/** `then`/`do` 归一化为动作声明数组；分支节点留到 `expandActions` 展开。 */
+/** `then`（单个动作或数组）归一化为动作声明数组；分支节点留到 `expandActions` 展开。 */
 function actionList(value, label) {
   const list = Array.isArray(value) ? value : [value]
   if (list.length === 0) throw new TypeError(`${label} must be an action declaration or a non-empty array of them`)
@@ -40,9 +40,9 @@ function actionGate(declarationWhen, action) {
 }
 
 /**
- * 编译一条声明：校验字段 + 编译 `when` + 归一化 `do`。
+ * 编译一条声明：校验字段 + 编译 `if` 判定 + 归一化 `then` 动作。
  *
- * @param {object} spec 声明（`{ id, channel, when?, do, channelOrder?, waterfallPosition?, phase? }`）
+ * @param {object} spec 声明（`{ id, channel, if?, then, else?, channelOrder?, waterfallPosition?, phase? }`）
  * @param {object} [context] 同 {@link compileWhen}，另可提供 promptConfigOptions（createPromptConfigs 的模板/策略编译选项）。
  * @returns {{id: string, channel: string, channelOrder: number, waterfallPosition: string, phase: string, when: Function|undefined, actions: object[], promptConfigOptions?: object}}
  */

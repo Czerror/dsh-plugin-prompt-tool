@@ -10,8 +10,8 @@
  * tool-config-engine.yml 及 test/engine/provider-boundary.test.mjs 同一份措辞）：
  *   - 会给模型提供可调用能力（注册工具 / 域 / 服务）的 → 能力提供者；
  *   - 干预流程（改提示词、改装配、裁决、追加）的 → 声明式触发器。
- * 因此本模块**不接入** engine/trigger.mjs：它不订阅装配 waterfall，也没有 when/do
- * 声明，只在 agent 创建时向该 agent 的 scope 注册两个可调用工具。影子工具解决的是
+ * 因此本模块**不接入** engine/trigger.mjs：它不订阅装配 waterfall，也没有声明式
+ * 触发器（`if`/`then` 声明），只在 agent 创建时向该 agent 的 scope 注册两个可调用工具。影子工具解决的是
  * 「子代理能用什么工具」，属于能力面，不是流程干预面。
  *
  * 样板收敛：

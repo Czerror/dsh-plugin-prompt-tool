@@ -23,6 +23,6 @@ module.yml 保存一个模块的完整规则、参数与能力定义，是唯一
 - 承接 [ADR-0001](0001-preset-definition-is-authoritative.md) 的完整定义所有权，替代其宿主可发现预设物化方式。
 - 承接 [ADR-0005](0005-preset-to-module.md) 的 Agent scope 装配与模块身份，替代角色库并存、configs 回退和角色记忆自动同步。
 - 保留 [ADR-0006](0006-module-config-order.md) 的模块＋规则身份与 configOrder 语义，文件序号前缀由 settings.order 替代。
-- 保留 [ADR-0007](0007-unified-condition-action-rules.md) 的 when/do[]、动作身份、互斥与执行算法；磁盘分解不放宽引擎规则字段。
+- 保留 [ADR-0007](0007-unified-condition-action-rules.md) 的条件树与动作数组、动作身份、互斥与执行算法（字段名此后更新为 `if`/`then`/`else`，见该 ADR 的状态注记）；磁盘分解不放宽引擎规则字段。
 
 格式、恢复及版本协议见 [后端框架](../architecture-params.md)，导入资产与分享边界见 [资产交换](../asset-transfer.md)。

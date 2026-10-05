@@ -13,7 +13,7 @@
 # | `text` 必填字符串、显式空串 = 不锚定                     | :45-47              | `inbox-prepend` 的空正文不注册（actions.mjs:597-599） |
 # | 监听 `agent/inbox/inserted`（emit 通道，无 next）         | :50                 | `channel` + `inbox-prepend` 动作（actions.mjs:591-615） |
 # | `agent.session` / `agent.inbox.prepend` 缺失 → 静默跳过   | :51                 | 动作自带两道守卫（actions.mjs:638 起） |
-# | 全新会话（日志内无 `user/message`）才锚定                 | :35-38, :52         | `when.session: { type: user/message, present: false, delegated: false }` |
+# | 全新会话（日志内无 `user/message`）才锚定                 | :35-38, :52         | `if.session: { type: user/message, present: false, delegated: false }` |
 # | 子代理默认不锚定（`includeSubagents: false`）             | :36                 | 同上的 `delegated: false`（只在主会话命中；配 `includeSubagents: true` 时改 `delegated: true` 或省略） |
 # | 插件来源消息（含自身锚定）永不再次锚定                     | :54                 | 动作自带同一守卫（actions.mjs:603） |
 # | prepend 到 `next-turn`，role=user，content=[text]，source.kind=plugin | :55-65 | 动作构造同一形状（actions.mjs:605-610） |

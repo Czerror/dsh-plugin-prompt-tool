@@ -199,7 +199,7 @@ test('计数类：冷启动冷扫重建与上下限边界', () => {
 
 test('计数类与会话态：`delegated` 双向往返且不抛（曾因漏 import 静默永不命中）', () => {
   // 回归：count.mjs 用过未导入的 `isDelegated`，判定期抛 ReferenceError 被 ruleMatches
-  // 吞成 false → `when: { count: { ..., delegated } }` 静默永不命中。这条用例钉住两侧语义。
+  // 吞成 false → `if: { count: { ..., delegated } }` 静默永不命中。这条用例钉住两侧语义。
   const mainSession = { id: 's-main', header: { cwd: '/workspace', delegationDepth: 0 }, snapshotEvents: () => [toolCall(1)] }
   const childSession = { id: 's-child', header: { cwd: '/workspace', delegationDepth: 1 }, snapshotEvents: () => [toolCall(1)] }
   const main = makeAgent(mainSession)
