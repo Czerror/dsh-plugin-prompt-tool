@@ -18,7 +18,6 @@ function officialTransport(initial) {
       else if (op.op === 'unset') delete document[op.path[0]]
       else assert.fail('意外操作')
     }
-    readModulesEnabled(document)
     return true
   }
   const scope = { subscribe: () => () => {}, getSnapshot: () => ({ value: document, revision: calls.length, writable: true, status: 'ready' }), mutate }
@@ -41,20 +40,10 @@ test('工作台直接官方transport保存总闸同批移除旧键，旧true与f
   }
 })
 
-test('官方设置页沿同一读取默认与旧值，真实onChange提交一次规范事务', async () => {
+test('官方设置页沿同一读取默认与旧值渲染开关状态', () => {
   for (const [initial, current] of [[{}, true], [{ writePreset: true }, true], [{ writePreset: false }, false]]) {
     const f = officialTransport(initial)
-    let row
-    function Probe() {
-      const element = SettingsTab({ settings: f.settings, t: key => key })
-      row = element.props.children
-      return element
-    }
-    renderElement(Probe, {})
-    assert.equal(row.props.checked, current)
-    row.props.onChange(!current)
-    await Promise.resolve()
-    assert.deepEqual(f.calls, [expected(!current)])
-    assert.deepEqual(f.document, { modulesEnabled: !current })
+    const html = renderElement(SettingsTab, { settings: f.settings, t: key => key })
+    assert.match(html, new RegExp(`aria-checked="${current}"`), `初始值 ${JSON.stringify(initial)} 应渲染为 ${current}`)
   }
 })

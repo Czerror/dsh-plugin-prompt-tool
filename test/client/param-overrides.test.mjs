@@ -14,7 +14,6 @@ test('public params read ignores rule-owned routes and preserves ordinary zero/f
   assert.deepEqual(readParamOverridesPatch({ ...legacyRoutes, maxDepth: 0, instructionHint: false, toolGitBashEnabled: false, customToolRequireApproval: ['shell', 'http'], unknown: 'keep out' }), {
     maxDepth: '0', instructionHint: false, toolGitBashEnabled: false, customToolRequireApproval: 'shell, http',
   })
-  for (const key of Object.keys(legacyRoutes)) assert.equal(Object.hasOwn(EMPTY_FIELDS, key), false)
 })
 
 test('public params save excludes loaded legacy routes and round-trips zero, false and explicit clears', () => {

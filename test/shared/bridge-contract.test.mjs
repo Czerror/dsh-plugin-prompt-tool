@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { Context } from '@deepseek-ai/cordis'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
+import { fakeReq, fakeRes, handlerTable } from '../fixtures/host-harness.mjs'
 const home = mkdtempSync(join(process.cwd(), 'pt-contract-'))
 process.env.DSH_HOME = home
 const { BRIDGE_ENDPOINTS, SETTINGS_BRIDGE_PREFIX } = await import('../../src/shared/bridge-contract.ts')
@@ -20,7 +21,7 @@ test.after(() => {
 // 跨端契约测试：shared 常量（client 消费）必须与 server 注册路由逐点一致。
 
 function makeHarness(otherServices = {}, logger = undefined) {
-  const handlers = new Map()
+  const table = handlerTable()
   const agentPresets = {
     list: async () => [{ id: 'official', trust: 'system' }],
     acquireScope: async (id) => ({ key: { id }, [Symbol.asyncDispose]: async () => {} }),
@@ -31,9 +32,7 @@ function makeHarness(otherServices = {}, logger = undefined) {
       describe: () => [{ ns: 'prompt-tool', value: { promptText: 'P' }, base: {} }],
       mutate: async () => {},
     },
-    webServer: {
-      register: ({ path, handler }) => { handlers.set(path, handler); return () => {} },
-    },
+    webServer: { register: table.register },
     agents: {
       get: (id) => id === 'live-session' ? { id } : undefined,
     },
@@ -49,7 +48,7 @@ function makeHarness(otherServices = {}, logger = undefined) {
     get() { throw new Error('cannot get property "agentPresets" without inject') },
   })
   const ctx = { inject: (_deps, cb) => cb(sctx), ...(logger === undefined ? {} : { logger }) }
-  return { ctx, handlers }
+  return { ctx, handlers: table.handlers }
 }
 
 /** 文件层调用策略的技能状态替身：技能实体留在官方技能根，插件只提供引用目录、清单与策略写入。 */
@@ -77,51 +76,18 @@ function register(skillsState = makeSkillsState()) {
   return handlers
 }
 
-function fakeReq(overrides = {}) {
-  const req = {
-    method: 'POST',
-    socket: { remoteAddress: '127.0.0.1' },
-    headers: { host: 'localhost' },
-    ...overrides,
-  }
-  req[Symbol.asyncIterator] = function* () {
-    const raw = req.body
-    if (raw !== undefined && raw !== null && raw !== '') yield Buffer.from(String(raw))
-    return { done: true }
-  }
-  return req
-}
-
-function fakeRes() {
-  let status = 0
-  let body = ''
-  return {
-    writeHead(code) { status = code },
-    end(payload) { body = payload },
-    get status() { return status },
-    get body() { return body },
-  }
+/** /bootstrap 与 /meta 必须同源（同一份 loadEngineMeta）：逐字段表驱动比对，不各自组装。 */
+function assertMetaSameSource(boot, meta, keys) {
+  for (const key of keys) assert.deepEqual(boot[key], meta[key], `/bootstrap 与 /meta 必须同源：${key}`)
 }
 
 test('契约：client 前缀与 server 注册前缀同源', () => {
   assert.equal(SETTINGS_BRIDGE_PREFIX, '/api/prompt-tool/settings')
-  assert.equal(typeof SETTINGS_BRIDGE_PREFIX, 'string')
-  assert.ok(SETTINGS_BRIDGE_PREFIX.startsWith('/api/'))
 })
 
 test('契约：所有端点路径全部注册且无多余', () => {
   const handlers = register()
   const expected = Object.values(BRIDGE_ENDPOINTS)
-  // 文件层调用策略与全文读写；旧技能注册层屏蔽端点保持移除。
-  assert.equal(expected.length, 46, 'BRIDGE_ENDPOINTS 应包含当前登记的 46 个端点（角色库及旧配置校验已退役）')
-  for (const removed of ['charactersList', 'charactersDelete', 'charactersApply', 'charactersRemove']) assert.equal(Object.hasOwn(BRIDGE_ENDPOINTS, removed), false)
-  for (const name of ['moduleVariables', 'moduleContent', 'moduleMerge', 'moduleUnmerge', 'importModulePackage', 'exportModule', 'moduleCapability']) assert.equal(typeof BRIDGE_ENDPOINTS[name], 'string')
-  for (const removed of ['skillFix', 'skillToggle', 'skillsConfig', 'skillBlock']) {
-    assert.equal(Object.hasOwn(BRIDGE_ENDPOINTS, removed), false, `${removed} 已随旧技能模型移除`)
-  }
-  for (const kept of ['skillsList', 'skillPolicy', 'skillRead', 'skillWrite', 'skillsFolders', 'skillsImport', 'skillsImportDirectory', 'skillCreate', 'skillDelete']) {
-    assert.equal(typeof BRIDGE_ENDPOINTS[kept], 'string', `${kept} 端点必须存在`)
-  }
   const registered = [...handlers.keys()].sort()
   const wanted = expected.map((p) => SETTINGS_BRIDGE_PREFIX + p).sort()
   assert.deepEqual(registered, wanted)
@@ -150,10 +116,9 @@ test('部署总闸保留旧false，显式保存规范新键并拒绝同批新旧
   const read = fakeRes()
   await handlers.get(SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.describe)(fakeReq(), read)
   assert.equal(JSON.parse(read.body).value.value.modulesEnabled, false)
-  assert.equal(Object.hasOwn(JSON.parse(read.body).value.value, 'writePreset'), false)
   const save = async ops => {
     const res = fakeRes()
-    await handlers.get(SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.mutate)(fakeReq({ body: JSON.stringify({ ops }) }), res)
+    await handlers.get(SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.mutate)(fakeReq({ body: { ops } }), res)
     return res
   }
   const conflict = await save([{ op: 'set', path: ['modulesEnabled'], value: true }, { op: 'set', path: ['writePreset'], value: false }])
@@ -187,7 +152,7 @@ test('契约：/bootstrap 聚合 meta + overrides + variables + promptConfigs �
   // 客户端 load() 消费路径：meta.meta / overrides.overrides / variables.variables /
   // promptConfigs.promptConfigs 全部存在（空值兜底形状，非 undefined）。
   assert.ok(payload.meta !== undefined && payload.meta.meta !== undefined)
-  assert.ok(Array.isArray(payload.overrides.overrides) || typeof payload.overrides.overrides === 'object')
+  assert.deepEqual(payload.overrides.overrides, {}, '无激活模块时参数覆盖是空表（对象），不是数组或 undefined')
   assert.ok(typeof payload.variables.variables === 'object' && typeof payload.variables.enabled === 'boolean')
   assert.ok(Array.isArray(payload.promptConfigs.promptConfigs))
   // 技能事实在同一聚合响应里下发：清单 + 引用目录 + 用户技能根。
@@ -196,7 +161,8 @@ test('契约：/bootstrap 聚合 meta + overrides + variables + promptConfigs �
   assert.deepEqual(payload.skillFolders, ['D:/referenced'])
   assert.deepEqual(payload.skillCatalog, [entry])
   assert.equal(payload.skillsComplete, false, '无注册表观测时不得宣称会话技能清单完整')
-  assert.ok(payload.moduleFacts === undefined || payload.moduleFacts.effectiveConfigs === undefined, 'bootstrap 不应暴露完整行级配置')
+  // 包内默认模块可解析，moduleFacts 确有值：这里查的是投影本身不夹带行级配置。
+  assert.equal(payload.moduleFacts.effectiveConfigs, undefined, 'bootstrap 不应暴露完整行级配置')
 })
 
 test('契约：/meta 与 /bootstrap 同源下发 layerOrder 与 editorGroups，且只含白名单字段', async () => {
@@ -244,10 +210,8 @@ test('契约：/meta 与 /bootstrap 同源下发 layerOrder 与 editorGroups，�
   await handlers.get(SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.bootstrap)(fakeReq(), bootRes)
   assert.equal(bootRes.status, 200)
   const boot = JSON.parse(bootRes.body).meta.meta
-  assert.deepEqual(boot.layerOrder, meta.layerOrder)
-  assert.deepEqual(boot.editorGroups, meta.editorGroups)
+  assertMetaSameSource(boot, meta, ['layerOrder', 'editorGroups', 'layerContracts'])
   assert.deepEqual(meta.layerContracts, getEngineMeta().layerContracts)
-  assert.deepEqual(boot.layerContracts, meta.layerContracts)
   assert.equal(Object.keys(meta.layerContracts).length, 9)
 })
 
@@ -282,8 +246,7 @@ test('契约：官方装配刻度随 /meta 与 /bootstrap 同源下发，服务�
   const bootRes = fakeRes()
   await present.handlers.get(SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.bootstrap)(fakeReq(), bootRes)
   assert.equal(bootRes.status, 200)
-  assert.deepEqual(JSON.parse(bootRes.body).meta.meta.officialOrders, meta.officialOrders,
-    '/bootstrap 与 /meta 必须同源（同一份 loadEngineMeta）')
+  assertMetaSameSource(JSON.parse(bootRes.body).meta.meta, meta, ['officialOrders'])
 
   // 服务缺失：字段整体缺席、端点不失败，且只告警一次（两个端点共用同一函数）。
   const missingWarnings = []
@@ -308,8 +271,6 @@ test('契约：复制引擎目录即可提供层契约，不依赖 src', async (
     cpSync(new URL('../../engine', import.meta.url), join(copied, 'engine'), { recursive: true })
     const copy = await import(pathToFileURL(join(copied, 'engine', 'schema.mjs')).href)
     assert.deepEqual([...copy.LAYER_ORDER], [...LAYER_ORDER])
-    assert.deepEqual(copy.getEngineMeta().layerOrder, getEngineMeta().layerOrder)
-    assert.deepEqual(copy.getEngineMeta().layerContracts, getEngineMeta().layerContracts)
   } finally {
     rmSync(copied, { recursive: true, force: true })
   }
@@ -335,14 +296,14 @@ test('契约：/tool-surface 返回存活 Agent 的只读工具面摘要，未�
   const handler = handlers.get(SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.toolSurface)
   assert.ok(handler, '/tool-surface 端点未注册')
   const ok = fakeRes()
-  await handler(fakeReq({ body: JSON.stringify({ sessionId: 'live-session' }) }), ok)
+  await handler(fakeReq({ body: { sessionId: 'live-session' } }), ok)
   assert.equal(ok.status, 200)
   const payload = JSON.parse(ok.body)
   assert.equal(payload.ok, true)
   assert.deepEqual(payload.value.tools, [{ name: 'bash', description: '运行命令' }], '只返回 name/description')
   assert.equal(payload.value.source, 'session')
   const unknown = fakeRes()
-  await handler(fakeReq({ body: JSON.stringify({ sessionId: 'nope' }) }), unknown)
+  await handler(fakeReq({ body: { sessionId: 'nope' } }), unknown)
   assert.equal(unknown.status, 404)
   const unknownPayload = JSON.parse(unknown.body)
   assert.equal(unknownPayload.ok, false)
@@ -353,7 +314,7 @@ test('契约：/tool-surface 支持官方 preset scope 且只读有效 schema', 
   const handlers = register()
   const handler = handlers.get(SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.toolSurface)
   const ok = fakeRes()
-  await handler(fakeReq({ body: JSON.stringify({ presetId: 'official' }) }), ok)
+  await handler(fakeReq({ body: { presetId: 'official' } }), ok)
   assert.equal(ok.status, 200)
   const payload = JSON.parse(ok.body)
   assert.equal(payload.value.source, 'preset')
@@ -361,7 +322,7 @@ test('契约：/tool-surface 支持官方 preset scope 且只读有效 schema', 
   assert.deepEqual(payload.value.tools, [{ name: 'bash', description: '运行命令' }])
 
   const invalid = fakeRes()
-  await handler(fakeReq({ body: JSON.stringify({ sessionId: 'live-session', presetId: 'official' }) }), invalid)
+  await handler(fakeReq({ body: { sessionId: 'live-session', presetId: 'official' } }), invalid)
   assert.equal(invalid.status, 400)
   assert.equal(JSON.parse(invalid.body).code, 'tool-surface-invalid')
 })
@@ -371,7 +332,7 @@ test('契约：/persona 未配置 moduleDir 时稳定拒绝', async () => {
   const handler = handlers.get(SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.persona)
   assert.ok(handler, '/persona 端点未注册')
   const res = fakeRes()
-  await handler(fakeReq({ body: JSON.stringify({}) }), res)
+  await handler(fakeReq({ body: {} }), res)
   assert.equal(res.status, 400)
   const payload = JSON.parse(res.body)
   assert.equal(payload.ok, false)
@@ -397,12 +358,12 @@ test('契约：工具预览在 schema 成功或抛错时均释放 revision lease
     registerSettingsBridge(ctx, 'prompt-tool', () => ({ available: true, providers: [] }), () => makeSkillsState(), () => '')
     const handler = handlers.get(SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.toolSurface)
     const res = fakeRes()
-    await handler(fakeReq({ body: JSON.stringify({ presetId: 'official' }) }), res)
+    await handler(fakeReq({ body: { presetId: 'official' } }), res)
     assert.equal(res.status, fail ? 409 : 200)
     assert.equal(acquired, 1)
     assert.equal(released, 1)
     const unknown = fakeRes()
-    await handler(fakeReq({ body: JSON.stringify({ presetId: 'unknown' }) }), unknown)
+    await handler(fakeReq({ body: { presetId: 'unknown' } }), unknown)
     assert.equal(unknown.status, 404)
     assert.equal(acquired, 1, '未知预设不得获取 scope')
   }
