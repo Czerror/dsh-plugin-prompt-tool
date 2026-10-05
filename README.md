@@ -263,11 +263,15 @@ pnpm test          # 全量契约与行为测试（隔离 cwd 运行）：参数
 pnpm typecheck && pnpm lint
 pnpm verify:host         # 官方包范围、安装版本、解析目标、类型/运行时依赖与 Client 模块边界
 pnpm sync:yaml           # 刷新 engine/vendor/yaml（生成目录运行时 YAML 解析器）
+pnpm verify:harness      # 官方开发依赖是否落后于当前发布通道（落后退出 1，registry 不可达退出 2）
+pnpm sync:harness        # 跟进：按 dist-tags 改写 devDependencies 并 pnpm install
 ```
 
 测试由 `scripts/run-tests.mjs` 启动：先跑 build，再以独立临时 cwd 与 TEMP/TMP 启动 Node 内置 test runner，用例路径为绝对路径，避免相对 cwd 的测试污染仓库。
 
 依赖升级后的验证顺序：`pnpm install` → `pnpm verify:host` → `pnpm typecheck && pnpm lint` → `pnpm test`。官方源码联调请使用不入库的显式本地 override，不要恢复 `pnpm-workspace.yaml` 里的 `link:` 默认配置。
+
+官方按通道发布预发布版（`alpha` tag，vendor 包用 `dsh-<版本>` tag），而 semver 的普通范围语法匹配不到预发布版——实测 `>=0.2.0-rc.1` 覆盖 0.2.0-rc.1/rc.2 却不覆盖 0.2.1-alpha.1，也没有任何范围写法能同时覆盖 rc 线与 alpha 线，所以 `devDependencies` 会静默停在旧世代、typecheck 一直对着旧类型面跑。`pnpm verify:harness` 检测这种漂移，`pnpm sync:harness` 从 registry 的 dist-tags 解析目标版本并写成确切版本号。`peerDependencies` 的 `>=` 下限保持不动：宿主用 `includePrerelease` 判定，该下限本就覆盖后续所有版本（含 0.3/1.0 的预发布）。
 
 发布类型声明通过 `deps.dts.neverBundle` 引用官方 SDK，不内联其品牌类型与相对模块扩充；公开类型引用的包须声明为生产或 peer 依赖，不能仅存在于 devDependencies。`deps.onlyBundle` 显式约束内联依赖（服务端为空，客户端仅 `clsx`），新增依赖需重新核对打包边界。客户端仍保留宿主 loader 要求的 CJS 协议，不为消除通用 ESM 建议而切换格式。
 
