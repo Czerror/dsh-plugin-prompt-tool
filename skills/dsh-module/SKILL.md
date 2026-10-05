@@ -7,6 +7,8 @@ description: 给 DSH 写一个 prompt-tool 模块：一份 $DSH_HOME/.prompt-too
 
 最短路径：写 `$DSH_HOME/.prompt-tool/modules/<id>/module.yml` → 把 `<id>` 加进 `$DSH_HOME/.prompt-tool/config.yml` 的 `enabled` → 重启 DSH 服务。
 
+**本技能里的路径相对插件包根**，不在本技能目录下：`engine/`、`modules/`、`templates/` 都在插件包里（包名 `dsh-plugin-prompt-tool`，实机位于 `<DSH_HOME>/profiles/<profile>/node_modules/dsh-plugin-prompt-tool/`）。找不到包时以 `reference.md` 为准，它是那些源码的摘要。
+
 行为写在 `module.yml` 的 `rules` 里，参数写在 `layerSettings` 里，能力段写在顶层（`persona` / `variables` / `customTools` / `subagentToolPolicy`）——`module.yml` 是唯一要编辑的文件，旁边的 `rules/` 切片由插件从它物化。
 
 一个模块 = 一个目录 `$DSH_HOME/.prompt-tool/modules/<id>/`，`module.yml` 是**唯一完整定义**与恢复依据。`rules/<规则id>.yml`、`rules/_settings.yml`、`rules/variables.yml` 是插件从它物化出的切片，只读；改了会被单向重切回来。

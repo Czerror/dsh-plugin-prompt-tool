@@ -1,8 +1,15 @@
 # 模块参考
 
 由 `SKILL.md` 的指针进入：挑条件、挑动作、查层字段、查模块名与参数时读它。
-权威来源是源码——`engine/rule-spec.mjs`、`engine/conditions/`、`engine/actions/catalog.mjs`、
-`engine/schema.mjs`、`src/shared/engine-params.ts`；本文件是摘要，**冲突时以源码为准**。
+
+权威来源是源码：`engine/rule-spec.mjs`、`engine/conditions/`、`engine/actions/catalog.mjs`、
+`engine/schema.mjs` 都在**插件包内**；参数表的源头是 `src/shared/engine-params.ts`（只有源码仓库里有，
+装态对应 `lib/` 的编译产物）。本文件是摘要，**冲突时以源码为准**。
+
+**这些路径相对插件包根，不在本技能目录下。** 技能随包分发、装在 `$DSH_HOME/skills/dsh-module/`，
+而 `engine/`、`modules/`、`templates/` 在插件包里——包名 `dsh-plugin-prompt-tool`，实机位于
+`<DSH_HOME>/profiles/<profile>/node_modules/dsh-plugin-prompt-tool/`。找不到包时以本文件为准：
+它是源码摘要，只有存疑才需要回源。
 
 ## 一、条件谓词（`if` 里能写什么）
 
