@@ -1,0 +1,74 @@
+# 技能面收窄 —— 拦掉 dsh-tool-skill 的全量技能目录注入。
+#
+# 为什么：官方 dsh-tool-skill 把 `<available_skills>`（source.kind = skill-catalog）
+# 注入第一步，并在每次晋升/压缩后**再次注入**。实测（2026-10-05，三个主会话）
+# 6 次注入共 78792 字符 ≈ 每会话两块 13KB。它只是索引——模型能按需搜索就不需要它。
+#
+# 怎么做：`pre-step-filter` 的 `sources` 是**严格白名单**（`sources.has(source.kind)`，
+# 精确匹配，无前缀/正则/glob），且**同时作用于 claimed 批**——所以漏一个 kind 就是
+# 静默删掉一段上下文。
+#
+# 保留清单是**实测枚举**，不是猜的（12 个真实会话的 user/message 统计，main/sub 分列）：
+#   kind                                 n   main  sub   说明
+#   user                                57     48    9   真实对话
+#   skill-catalog                       15      6    9   ← 唯一要删的
+#   tool-jobs                           15     15    0   后台任务通知
+#   agent-instructions                  14      5    9   AGENTS.md / 工作区指令
+#   runtime-context                     14      5    9   沙箱、审批、委派事实
+#   skill-invocation                    10     10    0   skill_load 加载的**真实技能正文**（必须留）
+#   agent-message                       10     10    0   其他 agent 的消息
+#   subagent-settled                    10     10    0   子代理完成通知
+#   plugin:prompt-config-engine          9      0    9   ← ponytail 的档位标记（仅子代理）
+#   plugin:ponytail-subagent-readonly    6      0    6   ← ponytail 只读档（仅子代理）
+#   dsh-mnemon                           5      5    0   mnemon 记忆注入
+#   plugin:ponytail-subagent-rules       3      0    3   ← ponytail 写档（仅子代理）
+#   compact-checkpoint                   2      2    0   压缩检查点
+#   goal                                 2      2    0   目标状态
+#
+# 三个 `plugin:ponytail-*` kind **只出现在子代理会话**。漏掉它们会静默废掉整套
+# ponytail 子代理策略，而主会话看起来一切正常——正是本模块最不能引入的故障模式。
+#
+# 本地确定性验证（不必靠重启试错）：`test/engine/actions.test.mjs` 之外的一次性探针
+# 直接驱动 `preparePreStepFilter`，用上述 14 种 kind 构造消息批——
+#   sources 白名单 → 只删 skill-catalog，其余 13 种全留（PASS）
+#   keepKinds      → **什么都没删**（claimed 基线的对象身份保留规则把所有消息都保住了）
+# 所以这里用 sources 枚举，不用 keepKinds。
+#
+# 维护：新增注入源时必须回来补。被误删的未知 kind 是**静默的**（无告警、无计数）。
+#
+# 配套：按需发现由宿主侧 `skill_search` / `skill_load` 提供（见 engine/skill-search.mjs）。
+# 两者都没有的部署不要启用本模块——删了目录又没搜索能力，模型将找不到任何技能。
+
+id: skill-surface
+name: 技能面收窄（拦截全量技能目录）
+version: 1.0.0
+engineCompat: ">=0.4.2"
+description: 拦掉 dsh-tool-skill 注入的全量技能目录（source.kind = skill-catalog），改由 skill_search / skill_load 按需发现与加载。实测三个主会话共 6 次注入、78792 字符（每会话约两块 13KB），子代理同样命中（15 条里 9 条在子代理）。
+meta:
+  source: manual
+modules:
+  - rule-engine
+order: 6
+rules:
+  # 启用前置条件已满足：`skill_search` / `skill_load` 由本插件的宿主侧挂载
+  # （src/index.ts 动态导入 engine/skill-search.mjs，失败只告警降级）。
+  - id: skill-surface-narrowing
+    name: 技能面收窄（拦截全量技能目录）
+    enabled: true
+    then:
+      - id: drop-skill-catalog
+        kind: pre-step-filter
+        sources:
+          - user
+          - tool-jobs
+          - agent-instructions
+          - runtime-context
+          - skill-invocation
+          - agent-message
+          - subagent-settled
+          - 'plugin:prompt-config-engine'
+          - 'plugin:ponytail-subagent-readonly'
+          - 'plugin:ponytail-subagent-rules'
+          - dsh-mnemon
+          - compact-checkpoint
+          - goal

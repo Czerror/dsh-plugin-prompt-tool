@@ -1,6 +1,26 @@
 # Changelog
 
-## [Unreleased]
+## [2.0.0] - 2026-10-05
+
+### 破坏性变更（升级前必读）
+
+- **规则与触发器的声明字段改名**：`when` → `if`、`do` → `then`，并新增 `else`。旧名不再被输入边界归一，撞上就显式报错（`when 已退役，改用 if`）——含旧字段名的模块定义、导入包与手写 YAML 必须先改名。**内联函数路径不受影响**（`registerAction` 的 options、`validateTrigger` 与迁移器输入仍用 `when`/`do`，那里是函数参数而非声明字段）。
+- **规则条件动作模型统一**：条件动作收敛为一套模型，卡内布局随之精简（提交 `b1e42cf`）。
+- **ponytail 子代理分档改为一张卡**：档位判定用动作级 `if`/`then`/`else`，原先按规则拆分的两张子代理卡片不再存在。
+
+### 主要变化
+
+- **新增两个内置模块**（随包分发，见下方明细）：`tool-surface` 把工具面收窄到常驻核心集、其余由 `dev_tool_search` 按需解锁；`skill-surface` 拦掉官方 `dsh-tool-skill` 注入的全量技能目录，改由宿主侧 `skill_search` / `skill_load` 按需发现。两者默认**不启用**。
+- 宿主侧挂载 `skill_search` / `skill_load`，替代 `skill-catalog` 的全量目录注入（实测三个主会话 6 次注入共 78792 字符）。
+- `assembly` 动作新增 `allowFrom` 动态白名单，工具收窄因此能跨请求与压缩保留。
+- 修复三处**静默失效**：`count` 的 `delegated` 漏导入、`instruction-hint` 组合源缺模板、注入来源未归一为 v4 生产者身份（注入正文会回到下一轮判定输入）。
+- ponytail 子代理规则按只读 / 写分档，只读任务不再付完整规则。
+
+### 升级注意
+
+- 内置模块只补建**缺失**的同名目录，已有用户模块不被覆盖；两个新模块需在「模块」页手动启用并重启 DSH。
+- `skill-surface` 必须与按需发现配套：删掉技能目录却没有 `skill_search` / `skill_load` 的部署不要启用（模型将找不到任何技能）。
+- 模块定义里的旧字段名是本版唯一的强制迁移点，其余行为向后兼容。
 
 ### 文档同步：工具面收窄写入权威文档，并清掉重构遗留的旧字段名
 
@@ -94,6 +114,14 @@
 - **按任务给子代理分类注入的落法**：`pre-step` 层 + `scope.audience: subagent` + `dedupe: session` + `text.match`（或 `first-turn-anchor`）。子代理初始 prompt 以 `source: { kind: 'user' }` 投递（官方 `subagent-in-process-driver`），因此 pre-step 的 `messages` 天然含任务文本；`subagent-start` 层载荷只有 `runId/provider/id/local`，**做不了内容分类**，故保持无条件注入与上游 matcher 缺省一致。
 - **文档与模块同步**：`docs/injection-point-contracts.md` 的 `pre-step` 与 `subagent-start` 两行补齐可用事实、落法与边界；内置 ponytail 子代理卡在注释里写明两条细化路径，默认粒度不变并有回归守着。
 - **回归**：`test/engine/predicates.test.mjs` 新增 3 条（provider 投影、判定前 agent 反查、`userText` 只扫真实对话）。
+
+### 内置模块：`skill-surface` 与 `tool-surface` 随包分发
+
+- **落点**：包内 `modules/<id>/module.yml`，与内置 `ponytail` 同形——**只放定义**，`rules/` 切片由 `ensureModuleSlices` 运行时生成（带 `_integrity` 指纹）。`npm pack` 打的是**工作区**文件而不是 git 跟踪文件，切片留在工作区就会被打进 tgz；`test/host/surface-modules.test.mjs` 直接锁目录内容。
+- **交付形态**：启动时 `ensureModuleSeed` 从包内补建缺失模块，**已有同名目录不覆盖**；两个模块出现在「新建」选择器里，**默认不启用**——装配仍只由 `config.yml` 的启用表决定。
+- **`tool-surface`**：组合源 `rule-engine` + `dev-tool-search`，常驻集 `pwsh/read/write/edit/glob/grep/todo_write/skill_search/skill_load/dev_tool_search`，`allowFrom: { tool: dev_tool_search, key: toolNames }` 从持久 `tool/call` 参数回收解锁名，`requireMatch: true`（缺任一工具即 fail-open 到完整目录，宁可多给上下文也不静默裁空）。相位用 `any` 两支表达「已晋升」与「压缩后未晋升」，**首轮刻意不收窄**。
+- **`skill-surface`**：`pre-step-filter` 的 `sources` 是严格白名单，14 种实测 kind 里只删 `skill-catalog`。其中三个 `plugin:ponytail-*` kind **只在子代理出现**——漏掉会静默废掉整套 ponytail 子代理策略而主会话看起来正常，回归逐条钉住保留项（含 `skill-invocation`：删了它，按需加载的技能正文也没了）。
+- **两个模块是同一行为的两份声明**：同一逻辑另有 `templates/80-tool-surface.yml`（模板路径）。回归断言两者的 `tools` 与相位两支逐字一致——改一边忘另一边只会表现为「某个部署收窄没生效」。
 
 ## [1.0.0] - 2026-10-02
 

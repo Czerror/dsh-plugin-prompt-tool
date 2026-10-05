@@ -1,0 +1,67 @@
+# 工具面收窄 —— 常驻核心集 + dev_tool_search 按需解锁。
+#
+# 为什么：工具面实测 **156 个工具、描述合计 46894 字符（≈12K token）**，每个请求都付，
+# 而多数请求只用到其中几个。收窄到核心集后只剩 10 个左右。
+#
+# 三件东西互相依赖，缺一件就退化（详见 docs/engine-reuse.md 的「工具面收窄与按需解锁」）：
+#   1. 本模块的 `narrow-tools` 规则 —— 常驻白名单 `allow` + 动态白名单 `allowFrom`
+#   2. `dev-tool-search` 组合源行 —— 唯一发现入口，模型靠它搜索并解锁
+#   3. `allowFrom` 读回 —— 解锁名写进持久 `tool/call` 参数，下次请求起生效
+# 只挂插件不配 allowFrom 的话，解锁是**一次性的**（当次请求用完即被裁）。
+#
+# 相位用 any 两支表达（单个 phase 节点无法表达「两个相位都命中」）：
+#   `promoted` 的缺省是 **true**（= 只匹配已晋升，不是「任意」）；而 `promoted: 'ignore'`
+#   要求同时声明只接受布尔值的 `compacted`。所以：
+#     支 1 `promoted: true`                     → 已晋升（不论压缩与否）
+#     支 2 `{compacted: true, promoted: false}`  → 压缩后未晋升
+#   **首轮（未晋升且未压缩）刻意不收窄**——先让模型看到完整目录，再随相位推进收窄；
+#   长会话必然进入上面两支，省下的正是大头。
+#
+# `requireMatch: true` 是刻意的：任一 allow 工具缺失（或模型解锁了一个不存在的名字）
+# 就放弃裁剪、暴露完整目录。宁可多给上下文，也不静默裁成空目录——收窄错了会让当前
+# 工作流调不到工具，那是比多花 token 严重得多的故障。
+#
+# 工具名必须与**实际装配名**一致：本项目 harness 是 `pwsh`（不是 `bash`）、
+# `edit` + `write`（不是 `str_replace_editor`）。写错名字的后果很隐蔽——写进 allow 的
+# 名字不存在会触发 requireMatch 的 fail-open，表现为「收窄没生效」而不是报错。
+#
+# 停用即回滚：本模块在 config.yml 的 enabled 里删掉即可，重启后工具面完全恢复。
+
+id: tool-surface
+name: 工具面收窄（核心文件与任务集）
+version: 1.0.0
+engineCompat: ">=0.4.2"
+description: 把工具面收窄到常驻核心集（pwsh/read/write/edit/glob/grep/todo_write/skill_search/skill_load/dev_tool_search），其余由 dev_tool_search 按需解锁；解锁名经 allowFrom 从持久 tool/call 参数回收，跨请求与压缩保留。实测工具描述合计 46894 字符。
+meta:
+  source: manual
+modules:
+  - rule-engine
+  - dev-tool-search
+order: 7
+rules:
+  - id: tool-surface-resident
+    name: 工具面收窄（核心文件与任务集）
+    enabled: true
+    if:
+      any:
+        - phase: { promoteOn: either, includeSubagents: true, promoted: true }
+        - phase: { promoteOn: either, includeSubagents: true, compacted: true, promoted: false }
+    then:
+      - id: narrow-tools
+        kind: assembly
+        target:
+          tools:
+            allow:
+              - pwsh
+              - read
+              - write
+              - edit
+              - glob
+              - grep
+              - todo_write
+              - skill_search
+              - skill_load
+              - dev_tool_search
+            # 解锁项从 dev_tool_search 的持久调用参数回收（{ tool, key } 精确匹配）。
+            allowFrom: { tool: dev_tool_search, key: toolNames }
+            requireMatch: true
