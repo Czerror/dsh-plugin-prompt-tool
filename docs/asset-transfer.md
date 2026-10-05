@@ -40,15 +40,9 @@
 
 模块复制保留本地行为与素材，不套用分享时的记忆过滤；新目录与完整定义同步新身份，规则切片重新生成。Web 和 CLI 共用当前 `.prompt-tool` 定位规则，不优先读取旧 `presets` 根。
 
-CLI 在构建后使用：
-
-```powershell
-node scripts/export-preset.mjs pt-standard output.zip
-node scripts/export-preset.mjs pt-standard output.yml
-node scripts/export-preset.mjs pt-standard new-output-directory
-```
-
-目标省略时下载为 `<id>.zip`；已存在目标拒绝覆盖。文件夹出口沿用同一资源清单和分享规则。
+导出走工作台与插件公开 API（`exportPresetPackage` / `expandPresetSource`；模块命名的
+`exportModulePackage` / `expandModuleSource` 是同一实现）：ZIP、仅定义 YAML 与文件夹三种出口
+共用同一资源清单和分享规则，目标省略时下载为 `<id>.zip`，已存在目标拒绝覆盖。
 
 ## 模块归属
 

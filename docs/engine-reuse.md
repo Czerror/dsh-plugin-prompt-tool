@@ -524,7 +524,8 @@ rules:
 
 - 官方组合模块快照（`engine/compositions/library/`）随包分发，**不再从官方预设同步**：原先的
   `rebuild:composition` 生成器随内置预设目录 `preset/` 一并退场（输入源已不存在）。快照保留为
-  既成事实，不手工编辑；`test/fixtures/dsh/current` 与 `PROVENANCE.md` 仍是来源记录。
+  既成事实，不手工编辑。原先喂给它的 `test/fixtures/dsh/current` 离线快照已随本轮清理删除——
+  那份快照的唯一用途就是给已退场的生成器做输入校验。
 - 已发布依赖的实际版本以 package.json 为准，验证脚本不再另行硬编码 rc.2；更新前同时核实
   npm 的版本列表与 dist-tags，不能把名字为 latest 的旧标签误当成更新版本。
 - 本地新增模块放 `engine/compositions/source/local/<name>.yml`，直接装配，不复制到 `library/`；
@@ -532,5 +533,5 @@ rules:
 - 规则通过 `compileRules` 校验；真实 channel/phase 从动作能力派生。`channelOrder` 缺省来自规则 configOrder（无配置时按规则序号定位）；同卡同点冲突值拒绝。after-next 先调用一次宿主 next，再按该时刻状态判断，压缩后读取新 epoch。
 - 原生动作经 `prepareAction` 校验；注入整批编译共用动作选项验证，避免破坏 ST 变量帧。固定注册效果、非法身份、互斥冲突和不支持的选项在保存/物化前拒绝。
 - 工具名单的 `allow` 与 `deny` 互斥。仅主会话的 guard 不安装会传播到子代理的 restrict；受众仍在执行 guard 内校验。动作次数预算只在目标匹配并产生效果前消费，非目标工具和被阻止的结果不消耗额度。
-- 用户目录刷新：`pnpm rematerialize:presets` 按完整 module.yml 恢复 rules/ 并清理已退役产物，保留用户资产，`--dry-run` 只读。内嵌 skills 默认只报告漂移；`--refresh-skills` 保留既有暂存、备份及失败恢复边界。
+- 用户目录刷新：`pnpm rematerialize:presets` 按完整 module.yml 恢复 rules/ 并清理已退役产物，保留用户资产，`--dry-run` 只读。原「预设内嵌 skills 漂移比对 / `--refresh-skills`」已随该机制退场删除。
 - 交付验证：从隔离临时 cwd 执行 `pnpm --dir $Repo typecheck`、`lint`、`test`、`build`，最后 `git -C $Repo diff --check`。重点证据包括 rules、business-defaults、真实 agent-assembly 与 rules-bridge-safety 测试；文档 YAML 示例也应通过 compileRules。
