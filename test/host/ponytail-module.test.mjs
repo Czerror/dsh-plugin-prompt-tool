@@ -1,7 +1,7 @@
 // 内置 ponytail 模块：内容对齐上游 + 注入点映射。
 //
 // 两个断言面各自有独立真值源：
-//   1. 规则文本含上游 skills/ponytail/SKILL.md 的关键句（字面量摘录于 4.10.3）；
+//   1. 规则文本含上游 skills/ponytail/SKILL.md 的关键句（字面量摘录于 v5.0.0）；
 //   2. 注入点落位与上游 hook 一致：常驻规则走 system-section、子代理档位标记走
 //      subagent-start（上游 SubagentStart hook）、档位切换走互斥组、子代理正文分档
 //      走 pre-step 上的动作级 if/then/else。
@@ -24,18 +24,26 @@ import { compileRules } from '../../engine/rule-spec.mjs'
 const moduleDir = fileURLToPath(new URL('../../modules/ponytail/', import.meta.url))
 const spec = parseYaml(readFileSync(join(moduleDir, 'module.yml'), 'utf8'))
 
-/** 上游 skills/ponytail/SKILL.md（4.10.3）关键句；旧版模块缺的正是这几处。 */
+/** 上游 skills/ponytail/SKILL.md（v5.0.0）关键句；4.10.3 → 5.0 整段重建后逐条重抽。 */
 const UPSTREAM_ANCHORS = [
-  'take the higher one and move on. The lazy solution that works is the right',
-  'edit, grep every caller of the function you\'re about to touch, then fix the',
-  'shared function once. The lazy fix IS the root-cause fix: one guard there is a',
-  'No abstractions that were not requested: no interface with one implementation, no factory for one product, no config for a value that never changes. No avoidable dependency. No boilerplate nobody asked for.',
-  'in the same response, "Did X; Y covers it. Need full X? Say so." Never stall',
-  'Never simplify away: input validation at trust boundaries, error handling',
-  'that prevents data loss, security measures, accessibility basics, anything',
-  'fixtures, no per-function suites unless asked. Trivial one-liners need no',
-  'mode commands. Off: "stop ponytail" / "normal mode".',
+  'You solve the whole problem with the least new code.',
+  'Read the task and the code it touches. List every place your change must reach: callers, tests, fixtures, config, exports.',
+  'Already in this codebase (a helper, component, service, pattern)? Use it the way the surrounding code does.',
+  'Standard library or a platform feature? Use it, unless the project has its own. A house component beats a native widget.',
+  'Be lazy about the solution, never about the change itself',
+  'grep every caller of the function you touch, then fix the root cause once in the shared code.',
+  'Between options of equal size, take the one that is correct on edge cases.',
+  'Lazy code without its check is unfinished',
+  'A shortcut with a known limit gets a `ponytail:` comment that names the limit and when to upgrade.',
+  'Never cut: validation at trust boundaries, error handling that prevents data loss, security, accessibility',
 ]
+
+/** 上游 v5.0.0 `## Levels` 表的逐档文案；档位卡各持本档一行，规则卡不得内联整表。 */
+const UPSTREAM_LEVELS = {
+  lite: 'Build what was asked. Name the smaller option in one line and let the user pick.',
+  full: 'The rules above. Default.',
+  ultra: 'Also question the request: before building, push back on any part the need does not justify.',
+}
 
 const rulesById = new Map(spec.rules.map((rule) => [rule.id, rule]))
 const ruleText = (id) => rulesById.get(id).then[0].config.text
@@ -56,6 +64,9 @@ test('ponytail 模块：规则正文与上游 SKILL.md 对齐', () => {
   for (const level of ['lite', 'full', 'ultra']) {
     assert.ok(!text.includes(`| **${level}** |`), `规则卡不得内联 ${level} 档位表`)
   }
+  // 停用语义与「档位由配置卡持有、不注册命令」是 DSH 本地适配，不属于上游锚点。
+  assert.ok(text.includes('stop ponytail') && text.includes('normal mode'), '规则卡必须保留停用语义')
+  assert.ok(text.includes('no `/ponytail` command'), '档位归配置卡，规则卡不注册 /ponytail 命令')
 })
 
 test('ponytail 模块：注入点映射与上游 hook 一致', () => {
@@ -104,21 +115,23 @@ test('ponytail 模块：注入点映射与上游 hook 一致', () => {
   // 只读档必须是轻量版：完整规则集的执行层条目对只读子代理无关。
   assert.ok(readonlyAction.config.text.length < 400, '只读档应保持轻量')
   assert.ok(!readonlyAction.config.text.includes('## The ladder'), '只读档不搬执行层清单')
-  // 写档保留上游全文的关键段落。
-  for (const section of ['## The ladder', '**Bug fix = root cause, not symptom.**', '## When NOT to be lazy', 'The shortest path to done is the right path.']) {
+  // 写档保留上游全文的关键段落，并声明自己是委派代理。
+  for (const section of ['## Before you write', '## The smallest complete change', 'grep every caller', 'Never cut:']) {
     assert.ok(writeAction.config.text.includes(section), `写档缺段落：${section}`)
   }
+  assert.ok(writeAction.config.text.includes('You are a delegated agent'), '写档必须说明子代理身份')
 
   // 档位卡同时服务主会话与子代理：`system-section` 只进主会话——子代理有自己的 system
   // prompt，官方按「global + 确切作用域」合并、不含祖先链；`subagent-start` 才是子代理
-  // 读得到的通道。子代理侧只报档位标记，不搬 Intensity 表：正文已由 pre-step 副本给出，
+  // 读得到的通道。子代理侧只报档位标记，不搬 Levels 表：正文已由 pre-step 副本给出，
   // 同一张表写两份只会各自漂移。切档只靠互斥组启用哪张卡，子代理因此天然跟随。
   for (const level of levels) {
     const name = level.id.replace('ponytail-level-', '')
     assert.deepEqual(level.then.map((action) => action.id), ['inject', 'inject-subagent'], `${level.id}: 档位卡持有两个动作`)
     assert.deepEqual(level.then.map((action) => action.config.layer), ['system-section', 'subagent-start'], `${level.id}: 主会话与子代理各一个动作`)
+    assert.ok(level.then[0].config.text.includes(`| **${name}** | ${UPSTREAM_LEVELS[name]} |`), `${level.id}: 主会话动作逐字给出上游本档文案`)
     assert.match(level.then[1].config.text, new RegExp(`^PONYTAIL MODE ACTIVE — level: ${name}`), `${level.id}: 子代理动作只报本档`)
-    assert.ok(!level.then[1].config.text.includes('## Intensity'), `${level.id}: 子代理动作不搬 Intensity 表`)
+    assert.ok(!level.then[1].config.text.includes('## Levels'), `${level.id}: 子代理动作不搬 Levels 表`)
     assert.equal(level.if, undefined, '档位无条件注入，与上游 matcher 缺省一致')
   }
 })

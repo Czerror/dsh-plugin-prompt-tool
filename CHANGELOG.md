@@ -1,5 +1,13 @@
 # Changelog
 
+## [Unreleased]
+
+### 内置 ponytail 模块对齐上游 v5.0.0
+
+- **规则正文按上游 `skills/ponytail/SKILL.md`（v5.0.0）重建**：5.0 把规则整段重写——`## The ladder` 变 `## The smallest complete change`（六级、平台自带组件优先于原生控件、明确「删功能要一句话点名」），新增 `## Before you write` 的改动面清单（callers / tests / fixtures / config / exports，以及会不会毁数据、会不会让调用方失效），`## Rules` 的散条合并为 bullet 清单，原 `## Output` 与 `## When NOT to be lazy` 收进开头一句与末尾 `Never cut:` 一行；`ponytail:` 债务注释与「同尺寸取边界正确的那版」两条保留。档位表随上游改名 `## Levels` 并逐档重写文案，上游已删的 worked examples 同步删除。
+- **DSH 本地适配不变**：档位仍由互斥配置卡持有、不注册 `/ponytail` 命令，停用语义 `Off: "stop ponytail" / "normal mode"` 保留；`version` 跟到 5.0.0，便于与现场副本对照。
+- **回归更新**：`test/host/ponytail-module.test.mjs` 的上游锚点按 5.0 重抽（含 `Never cut:` 的完整不懒惰清单），并逐档钉住上游 `## Levels` 文案；子代理只读档仍保持 144 字符的轻量版。
+
 ## [2.1.0] - 2026-10-06
 
 ### 主要变化
