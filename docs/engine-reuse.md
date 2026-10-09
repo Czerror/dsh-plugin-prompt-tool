@@ -598,6 +598,7 @@ ST 的两个条目级开关在引擎里按 `params.stWorldBook` 消费；未开�
   `SKILLS_TEXT`。目录 `fields` 缺省为空，`limit` 缺省不截断；业务字段和条数由模板选择。
 - instruction-hint 的 projectTemplate / globalTemplate / suffixTemplate / messageTemplate
   均默认空。前两者支持 FILES、ROOT 插值，消息模板支持 FILES、SUFFIX；
+  模板名是各自 `{{pick}}` 的 seed 来源（同一会话下各模板位置不共用取值）。
   空模板或渲染为空时不替换、不丢弃官方指令。显式 `params.file` 仍实时读文件，
   `Instructions from:` 是来源协议标记，不是引擎自带的引导性文案。
 - `templates/policies/legacy-defaults.yml` 只保存旧业务参数的精确快照，供模板生成与

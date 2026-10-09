@@ -7,6 +7,7 @@ import { parse } from 'yaml'
 import {
   apply,
   buildInstructionHint as rawBuildInstructionHint,
+  buildInstructionHintText,
   collectInstructionFiles,
   createInstructionHintResolver as rawCreateInstructionHintResolver,
   instructionHintMessages as rawInstructionHintMessages,
@@ -80,6 +81,17 @@ test('instruction-hint scope：project 只报项目链，global 只报 $DSH_HOME
     if (previousHome === undefined) delete process.env.DSH_HOME
     else process.env.DSH_HOME = previousHome
   }
+})
+
+test('instruction-hint：projectTemplate 与 globalTemplate 的 {{pick}} 各用自己的模板名作 seed', () => {
+  // 判别力：两个调用点都省略 sourceId 时共享 sha256([undefined,'',0])，两段等价模板必然逐字相同。
+  // 取值是 sha256 的，故只断言「不同」——16 处全撞概率 (1/5)¹⁶（同 interpolate.test.mjs 的理由）。
+  const template = Array.from({ length: 16 }, () => '{{pick::a::b::c::d::e}}').join('|')
+  const both = { projectTemplate: template, globalTemplate: template }
+  const found = { root: '/repo', projectFiles: ['AGENTS.md'], userGlobalFiles: ['AGENTS.md'], userGlobalHome: '/home/.dsh' }
+  const project = buildInstructionHintText(found, 'project', both)
+  assert.notEqual(buildInstructionHintText(found, 'global', both), project, '两个模板位置不共用 seed')
+  assert.equal(buildInstructionHintText(found, 'project', both), project, '同一模板位置取值稳定')
 })
 
 test('instruction-hint 共享转换保留替换消息 id、只替换一次', () => {

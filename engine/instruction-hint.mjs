@@ -117,14 +117,14 @@ export async function collectInstructionFiles(fs, cwd, signal, home) {
 export function buildInstructionHintText({ root, projectFiles = [], userGlobalFiles = [], userGlobalHome } = {}, scope = 'all', templates = {}) {
   const sections = []
   if (scope !== 'global' && projectFiles.length > 0) {
-    const text = interpolateStatic(templateOf(templates, 'projectTemplate'), { FILES: projectFiles.join(', '), ROOT: root ?? '' })
+    const text = interpolateStatic(templateOf(templates, 'projectTemplate'), { FILES: projectFiles.join(', '), ROOT: root ?? '' }, undefined, 'projectTemplate')
     if (text.trim().length > 0) sections.push(text)
   }
   if (scope !== 'project' && userGlobalFiles.length > 0) {
     const paths = typeof userGlobalHome === 'string' && userGlobalHome.length > 0
       ? userGlobalFiles.map((name) => joinPath(userGlobalHome, name))
       : userGlobalFiles
-    const text = interpolateStatic(templateOf(templates, 'globalTemplate'), { FILES: paths.join(', '), ROOT: root ?? '' })
+    const text = interpolateStatic(templateOf(templates, 'globalTemplate'), { FILES: paths.join(', '), ROOT: root ?? '' }, undefined, 'globalTemplate')
     if (text.trim().length > 0) sections.push(text)
   }
   if (sections.length === 0) return ''
@@ -209,7 +209,7 @@ export function extractInstructionPaths(message) {
 export function buildInstructionHint(original, paths, sourceName = 'instruction-hint', templates = {}) {
   const template = templateOf(templates, 'messageTemplate')
   if (template.trim().length === 0) return original
-  const text = interpolateStatic(template, { FILES: paths.join(', '), SUFFIX: templateOf(templates, 'suffixTemplate') })
+  const text = interpolateStatic(template, { FILES: paths.join(', '), SUFFIX: templateOf(templates, 'suffixTemplate') }, undefined, 'messageTemplate')
   if (text.trim().length === 0) return original
   return {
     id: typeof original?.id === 'string' && original.id !== '' ? original.id : `instruction-hint-${randomUUID()}`,

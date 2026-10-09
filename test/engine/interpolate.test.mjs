@@ -187,6 +187,17 @@ for (const [name, run] of [
     )
     assert.equal(interpolateVariables('{{roll::6}}', {}), '6')
   }],
+  ['interpolateStatic：sourceId 区分位置——两处同一引用取值不同且各自稳定', () => {
+    // 16 处引用在两次调用里位置一一对应：sourceId 不进 seed 时两个字符串必然全等（改前即红）。
+    // 取值是 sha256 的，故与上面同法只断言「不全等」——16 处全撞概率 (1/5)¹⁶。
+    const template = Array.from({ length: 16 }, () => '{{pick::a::b::c::d::e}}').join('|')
+    const project = interpolateStatic(template, {}, undefined, 'projectTemplate')
+    assert.notEqual(interpolateStatic(template, {}, undefined, 'globalTemplate'), project, '不同 sourceId 不共用 seed')
+    assert.equal(interpolateStatic(template, {}, undefined, 'projectTemplate'), project, '同一 sourceId 取值稳定')
+    // 同一位置不随无关正文长度漂移（T28 的不变式在静态通道同样成立）。
+    assert.equal(interpolateStatic(`前缀变长 ${template}`, {}, undefined, 'projectTemplate'), `前缀变长 ${project}`, '同一位置不随正文长度漂移')
+    assert.equal(interpolateStatic('{{pick::a::b}}', {}), interpolateStatic('{{pick::a::b}}', {}, undefined, ''), '省略 sourceId 与显式空串同义（既有调用方行为不变）')
+  }],
 ]) test(`interpolate：${name}`, run)
 
 // 递归预算、循环预算、原型安全与会话变量：保持独立 test()。

@@ -150,6 +150,30 @@ test('st-world-book：扫描范围 = 模型可见的真实对话——被压缩�
     '无 surface 的会话仍扫完整历史')
 })
 
+test('st-world-book：{{pick}} 的 seed 含条目身份——同键条目不共用取值且各自稳定', () => {
+  // 判别力：省略 sourceId 时 16 条同键条目共享 sha256([会话,'',0])，取值必然全同 → 入选 0 或 16 条。
+  // 取值是 sha256 的，故只断言「不是全同」——五选一全撞概率 5·5⁻¹⁶（同 interpolate.test.mjs 的理由）。
+  const key = '{{pick::a::b::c::d::e}}'
+  const entry = (id) => ({
+    id, name: id, strategy: 'world-book', order: 100, text: 'LORE', layer: 'pre-step',
+    position: 'before-all', enabled: true, variables: {},
+    params: { constant: false, keys: [key], stWorldBook: { keys: [key], scanDepth: 2 } },
+  })
+  // 正文只含候选取值之一：条目入选与否直接反映自己那一处 pick 的取值。
+  const session = (text = 'a') => ({
+    id: 'stwb-pick', header: {},
+    snapshotEvents: () => [{ type: 'user/message', seq: 0, data: { message: { id: 'u0', role: 'user', content: [{ type: 'text', text }], source: { kind: 'user' } } } }],
+  })
+  const entries = Array.from({ length: 16 }, (_, index) => entry(`wb-${index}`))
+  const scan = (text) => [...selectStWorldBook(entries, session(text), [])].map(config => config.id).sort()
+  const selected = scan()
+  assert.ok(selected.length > 0 && selected.length < entries.length,
+    '不同条目各自的 seed 决定取值（共用 seed 时必然是 0 或 16 条）')
+  assert.deepEqual(scan(), selected, '同一会话与条目下取值稳定')
+  // T28 回归保持：seed 不含扫描正文，正文变长（仍含 'a'、不含其余候选取值）不改变任何键的取值。
+  assert.deepEqual(scan('a 龙现身了并说了很长的一段话'), selected, '扫描正文变长不改变键的取值')
+})
+
 test('st-world-book：递归只由 module.yml 顶层 stWorldBookRecursive 决定，条目级 recursive 有/无同结果', async () => {
   const dir = join(moduleRoot, 'stwb')
   mkdirSync(dir, { recursive: true })

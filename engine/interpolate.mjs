@@ -127,6 +127,7 @@ export function interpolateVariables(text, variables, session, keep, sourceId = 
   const active = new Set()
   // pick 只为「同会话、同模板、同一次出现」稳定：整段正文 input 不进 seed，
   // 否则无关正文长度一变取值就漂移；出现序号让同一正文里的多处 pick 各自取值。
+  // sourceId 必须只依赖标识（模板名、条目 id/键位）：省略时所有调用位置共用同一个 seed。
   let pickCount = 0
   // 限制展开增加的字符数、递归深度与工作量；原始正文不截断，失败引用留给出口清洗。
   let remainingChars = 1024 * 1024
@@ -162,9 +163,11 @@ export function interpolateVariables(text, variables, session, keep, sourceId = 
  * 静态层插值：配置 variables 优先，ST 运行时宏取空串，内置路径变量按无会话语义解析。
  * @param keep 需要交给官方变量通道按 assembly 求值的名字（运行时事实与已注册变量）——
  *   命中即原样保留引用，不做静态替换。
+ * @param sourceId 调用点的稳定身份（模板名等只依赖标识的串），只影响 {{pick}} 的 seed；
+ *   缺省时与传 `''` 等价（所有位置共用 seed）。
  */
-export function interpolateStatic(text, variables, keep) {
-  return interpolateVariables(text, variables, undefined, keep)
+export function interpolateStatic(text, variables, keep, sourceId) {
+  return interpolateVariables(text, variables, undefined, keep, sourceId)
 }
 
 /**

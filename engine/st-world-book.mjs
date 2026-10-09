@@ -115,9 +115,9 @@ export function selectStWorldBook(configs, session, messages, warn = () => {}) {
       }
       if (pass > 0 && depth > 0) parts.push(...recursiveText)
       const p = config.params
-      const keys = (Array.isArray(p.keys) ? p.keys : []).map(key => interpolateVariables(String(key), config.variables, session)).filter(Boolean)
+      const keys = (Array.isArray(p.keys) ? p.keys : []).map((key, index) => interpolateVariables(String(key), config.variables, session, undefined, `${config.id}#keys${index}`)).filter(Boolean)
       // 空宏仍是一项未命中的副键：匹配器忽略空值，但 AND_ALL/NOT_ALL 的总数不能缩水。
-      const secondaryKeys = (Array.isArray(p.secondaryKeys) ? p.secondaryKeys : []).map(key => interpolateVariables(String(key), config.variables, session))
+      const secondaryKeys = (Array.isArray(p.secondaryKeys) ? p.secondaryKeys : []).map((key, index) => interpolateVariables(String(key), config.variables, session, undefined, `${config.id}#secondaryKeys${index}`))
       material = { depth, keys, secondaryKeys, text: parts.length ? '\x01' + parts.join('\n\x01') : '' }
       scanCache.set(config, material)
       return material
