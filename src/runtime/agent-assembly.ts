@@ -31,7 +31,7 @@ import { compileRules, isFixedRegistration } from '../../engine/rule-spec.mjs'
 // @ts-expect-error ESM 引擎源码随插件提供。
 import { mountRuleSources } from '../../engine/rule-runtime.mjs'
 // @ts-expect-error ESM 引擎源码随插件提供（去重身份判据的唯一来源）。
-import { identityOf, identityStampOf } from '../../engine/executor.mjs'
+import { identityOf } from '../../engine/executor.mjs'
 // @ts-expect-error 条件在真实挂载 scope 绑定；准备期只保留经过预检的定义快照。
 import { compileWhen, loadStandingMountFor } from '../../engine/conditions/index.mjs'
 
@@ -255,10 +255,11 @@ function duplicateDedupeIdentities(prepared: PreparedAssembly[]): DuplicateIdent
   // 每个配置贡献两条通道：plugin 身份（引擎 identityOf：`identity.value`，schema 保证非空）与显式 sourceKind。
   const declarations = dedupeConfigsOf(prepared).flatMap(({ moduleId, config }) => {
     const pluginIdentity = identityOf(config)
-    // 缺省 sourceKind 编成 `plugin:<身份>` 的规则只有一份实现（引擎 identityStampOf）：传一份
-    // 「未声明 kind」的配置问它缺省长什么样，本侧不重写这条推导。而「缺省不算一笔账」是本侧
-    // 语义（只可见化显式声明），故拿声明值与缺省值比对后再决定要不要报 kind 通道。
-    const declaredKind = config.sourceKind !== identityStampOf({ ...config, sourceKind: undefined }).kind ? config.sourceKind : undefined
+    // 缺省 sourceKind 由**配置 id** 编成 `plugin:<id>`（schema.mjs 的归一，已落在 compiledConfig 里），
+    // 只有显式声明的才与它不同。identityStampOf 的回退按去重身份编，真实链路不达（schema 总会填
+    // kind），拿它当基线会把按 id 编出的缺省误判成显式声明（显式 identity / merged 组时）。
+    // 「缺省不算一笔账」是本侧语义：只可见化显式声明，故与缺省比对后再决定要不要报 kind 通道。
+    const declaredKind = config.sourceKind !== `plugin:${String(config.id)}` ? config.sourceKind : undefined
     return [
       { key: `plugin:${pluginIdentity}`, channel: 'plugin' as const, identity: pluginIdentity, copyKey: ruleKeyOf(config), moduleId },
       ...(typeof declaredKind === 'string' && declaredKind.length > 0 ? [{ key: `kind:${declaredKind}`, channel: 'kind' as const, identity: declaredKind, copyKey: ruleKeyOf(config), moduleId }] : []),

@@ -471,6 +471,39 @@ test('重复模块身份：跨模块同 rule id 且 dedupe=session 只告警一�
   assert.deepEqual(h.warnings, reported, `重装不新增告警：${JSON.stringify(h.warnings)}`)
 })
 
+test('kind 通道只报显式 sourceKind：缺省按配置 id 编，不按去重身份编', async (t) => {
+  // ① 同一 config id、两个模块各写**不同显式 identity**，两侧都没写过 sourceKind：schema 按 **id**
+  //    把缺省 kind 编成同一个 `plugin:shared-gap`。基线取去重身份的那版会把它当成显式声明 →
+  //    在这一对上假警报（kind 与身份只在 identity 保持缺省时才同值）。
+  for (const id of ['kind-id-a', 'kind-id-b']) {
+    writePreset(id, {
+      modules: ['prompt-config-engine'],
+      promptConfigs: [{ id: 'shared-gap', text: `${id}-GAP`, dedupe: 'session', position: 'after-user',
+        identity: { field: 'plugin', value: `${id}-identity` } }],
+    })
+  }
+  // ② 显式声明的 sourceKind 正好等于自己的去重身份：kind 与身份逐字相同，按身份当基线的判据会把它
+  //    当缺省 → 漏报。这份身份被两个模块共用，于是两个通道各一笔账。
+  for (const id of ['kind-explicit-a', 'kind-explicit-b']) {
+    writePreset(id, {
+      modules: ['prompt-config-engine'],
+      promptConfigs: [{ id: `${id}-hint`, text: `${id}-KIND`, dedupe: 'session', position: 'after-user',
+        identity: { field: 'plugin', value: 'shared-explicit-identity' }, sourceKind: 'plugin:shared-explicit-identity' }],
+    })
+  }
+  const enabled = ['kind-id-a', 'kind-id-b', 'kind-explicit-a', 'kind-explicit-b']
+  const h = await liveAssembly(t, () => enabled)
+  const agent = await h.makeAgent('kind-baseline-agent')
+  assert.deepEqual(h.runtime.moduleIds(agent.id), enabled, '四张卡都装上：下面的告警不是装配失败')
+  const kindWarnings = h.warnings.filter(message => message.includes('显式 sourceKind'))
+  assert.equal(kindWarnings.length, 1, `只有真声明过的那一对报 kind 通道：${JSON.stringify(h.warnings)}`)
+  assert.match(kindWarnings[0], /模块 kind-explicit-a、kind-explicit-b/)
+  assert.match(kindWarnings[0], /显式 sourceKind "plugin:shared-explicit-identity"/)
+  assert.match(kindWarnings[0], /声明了同一个/)
+  assert.equal(h.warnings.length, 2, `①那对一无告警，②那对身份通道另有一笔：${JSON.stringify(h.warnings)}`)
+  assert.match(h.warnings.find(message => !message.includes('显式 sourceKind')), /模块 kind-explicit-a、kind-explicit-b 声明了同一个去重身份 "shared-explicit-identity"/)
+})
+
 test('kind 通道的压制行为：同模块同身份算已投递，无模块维的外来消息按保守命中', async (t) => {
   // 上一轮把判据改成「模块 + 通道 + 身份」后，跨模块同身份不再互相压制（见上一条用例：T5
   // 起两副本各自注入）。「压制」只剩两种形态，各用一个 Agent 钉一条：
