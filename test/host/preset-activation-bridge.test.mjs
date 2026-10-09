@@ -30,7 +30,7 @@ test('预设保存等待宿主采用；异步拒绝保留定义并可重试；�
     effect: fn => { const dispose = fn(); if (dispose) disposers.push(dispose) },
   }
   registerSettingsBridge({ inject: (_deps, cb) => cb(sctx) }, 'prompt-tool', () => ({}), () => ({}), () => '', undefined,
-    () => dir, undefined, async () => { calls++; await rebuild() })
+    () => dir, async () => { calls++; await rebuild() })
   const handler = handlers.get('/api/prompt-tool/settings/param-overrides')
   const save = async (overrides, extra = {}) => {
     const res = fakeRes()

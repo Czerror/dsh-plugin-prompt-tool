@@ -237,72 +237,6 @@ test('两个技能导入端点先报告冲突，确认名单才能覆盖，非�
   }
 })
 
-test('settings bridge /import-preset 只接受 contents，批量写入后触发一次回调；/module-content 读回', async () => {
-  const { ctx, handlers } = makeHarness()
-  let importedScopes
-  let imports = 0
-  const dir = makeUserPresetDir('pt-content-')
-  writeFileSync(join(dir, 'module.yml'), `id: ${basename(dir)}\nmodules: []\n`)
-  try {
-    registerSettingsBridge(
-      ctx,
-      'prompt-tool',
-      () => ({ available: true, providers: [] }),
-      () => skillsStateStub(),
-      () => '',
-        undefined,
-      () => dir,
-      (scopes) => { importedScopes = scopes; imports += 1 },
-    )
-    const write = handlers.get(`${PREFIX}/import-preset`)
-    const read = handlers.get(`${PREFIX}/module-content`)
-    assert.ok(write && read, '/import-preset 与 /module-content 应注册')
-    writeFileSync(join(dir, 'preset.md'), 'ORIGINAL PRESET', 'utf8')
-    writeFileSync(join(dir, 'agents.md'), 'ORIGINAL AGENTS', 'utf8')
-    for (const body of [
-      { scope: 'preset', content: 'OLD SHAPE' },
-      { contents: null },
-      { contents: [] },
-      { contents: [null] },
-      { contents: [[]] },
-      { contents: [{ scope: 'preset', content: 'PARTIAL WRITE' }, { scope: 'unknown', content: 'INVALID' }] },
-      { contents: [{ scope: 'preset', content: 123 }] },
-      { contents: [{ scope: 'preset' }] },
-    ]) {
-      const rejected = fakeRes()
-      await write(fakeReq({ [Symbol.asyncIterator]: async function* () {
-        yield Buffer.from(JSON.stringify(body))
-      } }), rejected)
-      assert.equal(rejected.status, 400, JSON.stringify(body))
-      assert.equal(JSON.parse(rejected.body).code, 'settings-rejected')
-      assert.equal(readFileSync(join(dir, 'preset.md'), 'utf8'), 'ORIGINAL PRESET')
-      assert.equal(readFileSync(join(dir, 'agents.md'), 'utf8'), 'ORIGINAL AGENTS')
-      assert.equal(imports, 0)
-    }
-    // 一次请求写入全部内容；空文本仍可显式清空。
-    const wres = fakeRes()
-    await write(fakeReq({ body: undefined, [Symbol.asyncIterator]: async function* () {
-      yield Buffer.from(JSON.stringify({ contents: [
-        { scope: 'preset', content: 'HELLO PRESET' },
-        { scope: 'agents', content: '' },
-      ] }))
-    } }), wres)
-    assert.equal(wres.status, 200, wres.body)
-    assert.deepEqual(importedScopes, ['preset', 'agents'])
-    assert.equal(imports, 1)
-    assert.equal(readFileSync(join(dir, 'agents.md'), 'utf8'), '')
-    // 读回
-    const rres = fakeRes()
-    await read(fakeReq({ body: undefined, [Symbol.asyncIterator]: async function* () {
-      yield Buffer.from(JSON.stringify({ scope: 'preset' }))
-    } }), rres)
-    assert.equal(rres.status, 200)
-    assert.equal(JSON.parse(rres.body).value.content, 'HELLO PRESET')
-  } finally {
-    rmSync(dir, { recursive: true, force: true })
-  }
-})
-
 test('模板变量与参数独立保存，读取与 bootstrap 不回退旧 params 内容键', async () => {
   const { ctx, handlers } = makeHarness()
   const dir = makeUserPresetDir('pt-variable-isolation-')
@@ -364,7 +298,7 @@ test('请求模块身份统一 bootstrap 快照与规则写入；错误身份和
   const rebuilt = []
   registerSettingsBridge(ctx, 'prompt-tool', () => ({ available: true, providers: [] }),
     () => skillsStateStub(), () => '', undefined,
-    (id) => id === idA ? requestedDir : dirB, undefined, (id) => { rebuilt.push(id) })
+    (id) => id === idA ? requestedDir : dirB, (id) => { rebuilt.push(id) }, undefined)
   const call = async (endpoint, body = {}, options = {}) => {
     const target = Object.hasOwn(options, 'target') ? options.target : idA
     const res = fakeRes()
@@ -634,7 +568,6 @@ test('settings bridge：system 预设拒绝全部当前预设写入', async () =
     const cases = [
       [BRIDGE_ENDPOINTS.rules, { expectedModuleId: basename(dir), expectedRevisions: revisions, edits: [{ previousId: null, rule: textRule('readonly', 'FORBIDDEN') }] }],
       [BRIDGE_ENDPOINTS.moduleVariables, { variables: { empty: '' }, enabled: true, expectedRevisions: revisions }],
-      [BRIDGE_ENDPOINTS.importPreset, { contents: [{ scope: 'preset', content: 'changed' }] }],
       [BRIDGE_ENDPOINTS.customTools, { customTools: [] }],
       [BRIDGE_ENDPOINTS.charactersImport, { files: [{ path: 'card.json', content: '{}' }] }],
       [BRIDGE_ENDPOINTS.moduleMerge, { id: 'card' }],
@@ -681,7 +614,6 @@ test('settings bridge /custom-tools 保存时自动追加工具模块', async ()
       () => ({ available: true, providers: [] }),
       () => skillsStateStub(),
       () => '',
-      undefined,
       () => dir,
       undefined,
       undefined,
@@ -749,7 +681,6 @@ test('settings bridge /persona 读写顶层 persona 段并按实际模块身份�
       () => ({ available: true, providers: [] }),
       () => skillsStateStub(),
       () => '',
-      undefined,
       () => dir,
       undefined,
       (id) => { rebuilds.push(id) },

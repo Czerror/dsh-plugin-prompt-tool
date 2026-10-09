@@ -25,7 +25,7 @@ function harness(t, refresh = () => {}) {
     effect: (fn) => { const dispose = fn(); if (dispose) disposers.push(dispose) },
   }
   const ctx = { inject: (deps, fn) => { if (deps.includes('settings')) fn(sctx) } }
-  registerSettingsBridge(ctx, 'prompt-tool', () => ({}), () => ({}), () => '', undefined, () => active, undefined, undefined, refresh)
+  registerSettingsBridge(ctx, 'prompt-tool', () => ({}), () => ({}), () => '', undefined, () => active, undefined, async (id) => { await refresh(id) })
   const dispose = () => { for (const fn of disposers.splice(0)) fn() }
   t.after(dispose)
   return { handlers, dispose, setActive: (dir) => { active = dir } }

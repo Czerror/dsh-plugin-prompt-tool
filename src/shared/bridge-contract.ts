@@ -47,8 +47,6 @@ export const BRIDGE_ENDPOINTS = {
   promptConfigs: '/prompt-configs',
   agentsFile: '/agents-file',
   instructionsPolicy: '/instructions-policy',
-  moduleContent: '/module-content',
-  importPreset: '/import-preset',
   paramOverrides: '/param-overrides',
   triggers: '/triggers',
   rules: '/rules',
@@ -165,8 +163,6 @@ export interface BridgeRequestMap {
    */
   /** 逐文件启停/名称；无 policy 时读取，写入仍校验原始字节版本。 */
   instructionsPolicy: { policy?: InstructionPolicyPatch; expectedRevision?: string | null } | undefined
-  moduleContent: undefined
-  importPreset: { contents: Array<{ scope: 'preset' | 'agents'; content: string }>; expectedModuleId?: string }
   paramOverrides: { overrides?: Record<string, unknown>; promptConfigs?: unknown[]; rebuild?: boolean; expectedModuleId?: string }
   triggers: { expectedModuleId: string; triggers?: unknown[]; expectedRevision?: string; validateOnly?: boolean }
   rules: RulesRequest
@@ -407,8 +403,6 @@ export interface BridgeValueMap {
   promptConfigs: { promptConfigs: Array<Record<string, unknown> & PromptConfigSourceView>; instructions?: InstructionsSnapshot }
   agentsFile: InstructionFileWriteResult
   instructionsPolicy: { policy: InstructionPolicy; revision: string | null; exists: boolean; error?: string }
-  moduleContent: Record<string, unknown>
-  importPreset: { scopes: Array<'preset' | 'agents'> }
   /** 参数/提示词配置只保存当前模块，不同步宿主全局默认模型。 */
   paramOverrides: { overrides?: Record<string, unknown>; promptConfigs?: unknown[] }
   triggers: { triggers: unknown[]; revision: string; meta: TriggerEditorMeta }

@@ -67,19 +67,12 @@ function removeLegacyArtifacts(directory: string): void {
   for (const name of LEGACY_ARTIFACTS) rmSync(join(directory, name), { recursive: true, force: true })
 }
 
-/**
- * 只有明确传入的非空内容才更新旧内容资产；空值保留原文件。
- *
- * `preset.md` 是改名前的正文资产名，**当前已无生产者**：唯一调用方导入路径
- * （module-package）传的是空串，正文早已归 module.yml；真实模块目录里只有 module.yml。
- * 保留这个写入能力只为不改变旧 API 的对外形状，不要据此以为它还在被生成。
- */
-function writeContentAssets(directory: string, prompt: string, agentsText?: string): void {
-  for (const [file, content] of [['preset.md', prompt], ['agents.md', agentsText]] as const) {
-    if (typeof content !== 'string' || content.trim().length === 0) continue
-    const path = join(directory, file)
-    if (!existsSync(path) || readFileSync(path, 'utf8') !== content) atomicWriteTextFile(path, content)
-  }
+/** 只有明确传入的非空内容才更新内容资产；空值保留原文件。正文归 module.yml，这里只剩 agents.md。 */
+function writeContentAssets(directory: string, agentsText?: string): void {
+  const path = join(directory, 'agents.md')
+  if (typeof agentsText !== 'string' || agentsText.trim().length === 0) return
+  if (existsSync(path) && readFileSync(path, 'utf8') === agentsText) return
+  atomicWriteTextFile(path, agentsText)
 }
 
 /** 按模块身份原地恢复切片；用户资产、正文与完整定义均不重写。 */
@@ -113,7 +106,7 @@ export function writeModule(prompt: string, options: WriteModuleOptions): string
     ensureModuleSlices(target)
     withModuleLock(root, targetId, () => {
       assertModuleDirectory(root, targetId)
-      writeContentAssets(target, prompt, options.agentsInstructionText)
+      writeContentAssets(target, options.agentsInstructionText)
       removeLegacyArtifacts(target)
     })
     return target
@@ -135,7 +128,7 @@ export function writeModule(prompt: string, options: WriteModuleOptions): string
       validateModuleDefinitionText(candidate, doc.toString())
       atomicWriteTextFile(file, doc.toString())
     }
-    writeContentAssets(candidate, prompt, options.agentsInstructionText)
+    writeContentAssets(candidate, options.agentsInstructionText)
     validateModule(candidate)
     ensureModuleSlices(candidate)
     if (options.stageOnly) return candidate

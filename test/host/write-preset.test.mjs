@@ -105,7 +105,6 @@ test('公共重建入口：已离线迁移规则逐模块重建，不串用模�
     assert.equal(guide.enabled, true)
     assert.equal(guide.params.text, `GUIDE-${id}`)
     assert.equal(loadModuleSpec(dir).rules.find(rule => rule.id === 'router-guide').if, undefined, '自定义引导没有模型范围门')
-    assert.equal(readFileSync(join(dir, 'preset.md'), 'utf8'), `BODY-${id}`)
     assert.equal(readFileSync(join(dir, 'agents.md'), 'utf8'), `AGENTS-${id}`)
   }
 })
@@ -187,7 +186,7 @@ test('旧来源运行时拒绝，显式离线迁移后只认规则事务；未�
 
 test('运行总闸：关闭再开启不改模块定义或物化产物字节', async (t) => {
   const dir = installWriterModule('writer-gate')
-  const files = ['module.yml', 'preset.md', 'agents.md', ...readdirSync(join(dir, 'rules')).map(file => join('rules', file))]
+  const files = ['module.yml', 'agents.md', ...readdirSync(join(dir, 'rules')).map(file => join('rules', file))]
   const before = files.map(file => readFileSync(join(dir, file)))
   const update = await liveWriter(t, { presetTemplate: 'writer-gate' })
   for (const writePreset of [false, true]) {
@@ -298,18 +297,16 @@ test('writePreset 拒绝旧settings规则覆盖；正文资产写盘不改已有
     const injector = projectedConfig(join(moduleDir, 'fixture'), 'prompt-injector')
     assert.equal(injector.params.text, parseYaml(before).rules.find(rule => rule.id === 'prompt-injector').then[0].config.params.text)
     assert.doesNotMatch(JSON.stringify(injector), /SETTINGS TEXT/)
-    assert.equal(readFileSync(join(moduleDir, 'fixture', 'preset.md'), 'utf8'), 'FILE CONTENT')
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }
 })
 
-test('writePreset 生成内容资产文件 preset.md / agents.md', () => {
+test('writePreset 生成 agents.md 内容资产', () => {
   const dir = join(tmpdir(), `prompt-tool-md-${process.pid}-${Date.now()}`)
   const moduleDir = join(dir, 'preset')
   try {
     writePreset('PRESET CONTENT', { ...makeOptions(moduleDir), agentsInstructionText: 'AGENTS CONTENT' })
-    assert.equal(readFileSync(join(moduleDir, 'fixture', 'preset.md'), 'utf8'), 'PRESET CONTENT')
     assert.equal(readFileSync(join(moduleDir, 'fixture', 'agents.md'), 'utf8'), 'AGENTS CONTENT')
   } finally {
     rmSync(dir, { recursive: true, force: true })

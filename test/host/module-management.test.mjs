@@ -51,13 +51,13 @@ function register(ctx, activeTemplate, afterOverridesChange) {
       patchSkillFolders: () => ({ ok: true, state: { version: 4, folders: [] }, exists: true }),
     }),
     () => '',
-    undefined,
+    undefined, // [6] afterSkillsChange
     (requested) => {
       const id = requested ?? activeTemplate
       return id === undefined ? '' : join(moduleRoot, id)
     },
+    afterOverridesChange, // [8] 写盘后重建（module-enable 等端点等它完成才回响应）
     undefined,
-    afterOverridesChange,
     undefined,
     undefined,
     () => {},

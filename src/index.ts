@@ -106,7 +106,6 @@ export function apply(ctx: Context, configIn: Config): void {
     skillsRuntime.invalidate,
     // 显式目标不存在就拒绝，不能落到另一个模块；编辑选择不进入部署设置。
     (moduleId) => moduleId === undefined ? activeModuleDir() : resolveEditDir(MODULES_DIR, moduleId),
-    (_scopes, id) => refreshModuleRuntime(id),
     (id) => id === undefined ? assembly?.refresh() : refreshModuleRuntime(id),
     // host 已安装完整候选；不能二次物化覆盖导入资产。
     async (id) => {

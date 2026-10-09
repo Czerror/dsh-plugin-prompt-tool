@@ -33,7 +33,7 @@ function harness({ readonly = false, rebuildFails = false, afterRebuild } = {}) 
   }
   const ctx = { inject: (_deps, cb) => cb(sctx) }
   registerSettingsBridge(ctx, 'prompt-tool', () => ({}), () => ({}), () => '', undefined,
-    () => activeDirectory, undefined, async () => {
+    () => activeDirectory, async () => {
       rebuilds++
       if (typeof rebuildFails === 'function' ? rebuildFails() : rebuildFails) throw new Error('REBUILD_FAILED')
       writePreset('', { moduleDir: moduleRoot, presetTemplate: id, outputId: id, presetOrder: 0, rules: [] })

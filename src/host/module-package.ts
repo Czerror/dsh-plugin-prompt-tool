@@ -229,7 +229,8 @@ export async function installModulePackage(root: string, files: AssetFile[], req
       setModuleDefinitionId(doc, preview.summary.targetId)
       doc.set('name', preview.summary.targetName)
       writeFileSync(join(source, MODULE_DEFINITION_FILE), doc.toString(), 'utf8')
-      generated = writeModule(existsSync(join(source, 'preset.md')) ? readFileSync(join(source, 'preset.md'), 'utf8') : '', {
+      // 正文归 module.yml；preset.md 已废弃，导入它也不再回写。
+      generated = writeModule('', {
         modulesRoot: root, moduleId: preview.summary.targetId, targetModuleId: preview.summary.targetId,
         sourceDir: source, stageOnly: true,
       })

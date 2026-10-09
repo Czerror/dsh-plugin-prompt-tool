@@ -8,7 +8,6 @@ import { createHash } from 'node:crypto'
 import { basename, dirname, join, resolve, sep } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { isDeepStrictEqual } from 'node:util'
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import type { SettingsDescriptor, SettingsPathOp } from '@deepseek-ai/dsh-settings'
 import { PARAM_KEYS, readModulesEnabled } from '../config.ts'
 import { invalidateModelCatalog, listAdvertisedModels, peekModelCatalog, refreshModelReasoning, type ModelDetection } from './models.ts'
@@ -519,8 +518,6 @@ export function registerSettingsBridge(
    * 模块身份决定写哪里。
    */
   getModuleDirectory?: (moduleId?: string) => string,
-  /** 内容导入完成回调：批量 scope 只触发一次重建（更新运行时文本并重建模块）。 */
-  afterModuleContentImport?: (scopes: Array<'preset' | 'agents'>, moduleId?: string) => void | Promise<void>,
   /** 参数写入后重建指定模块；省略身份表示启用表变化，刷新全部运行实例。 */
   afterOverridesChange?: (moduleId?: string) => void | Promise<void>,
   /** 模块已完整安装后的刷新回调；失败返回未生效诊断，不再物化或撤销安装。 */
@@ -1347,79 +1344,6 @@ export function registerSettingsBridge(
               return
             }
             writeBridgeJson(res, 200, { ok: true, value: { policy: outcome.policy, revision: outcome.revision, exists: true } })
-          },
-        }),
-        sctx.webServer.register({
-          kind: 'exact',
-          path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.moduleContent,
-          handler: async (req, res) => {
-            if (!guard(req, res)) return
-            const parsedBody = await readBridgeBodyForHandler(req, res)
-            if (parsedBody === undefined) return
-            const { body } = parsedBody
-            const record = (body ?? {}) as Record<string, unknown>
-            const scope = record.scope === 'agents' ? 'agents' : 'preset'
-            try {
-              // 内容资产在生成目录 preset.md / agents.md（settings 不承载大文本）。
-              const dir = editDir(req) ?? ''
-              const content = dir.length > 0
-                ? readFileSync(join(dir, scope === 'preset' ? 'preset.md' : 'agents.md'), 'utf8')
-                : ''
-              writeBridgeJson(res, 200, { ok: true, value: { content } })
-            } catch {
-              writeBridgeJson(res, 200, { ok: true, value: { content: '' } })
-            }
-          },
-        }),
-        sctx.webServer.register({
-          kind: 'exact',
-          path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.importPreset,
-          handler: async (req, res) => {
-            if (!guard(req, res)) return
-            const parsedBody = await readBridgeBodyForHandler(req, res)
-            if (parsedBody === undefined) return
-            const { body } = parsedBody
-            if (body === null || body === undefined || typeof body !== 'object') {
-              writeBridgeJson(res, 400, { ok: false, code: 'settings-rejected', message: 'unreadable JSON body' })
-              return
-            }
-            const record = body as Record<string, unknown>
-            // 先校验整批 contents，再写入内容资产并触发一次重建。
-            if (!Array.isArray(record.contents) || record.contents.length === 0) {
-              writeBridgeJson(res, 400, { ok: false, code: 'settings-rejected', message: 'contents 必须是非空数组' })
-              return
-            }
-            const contents: Array<{ scope: 'preset' | 'agents'; content: string }> = []
-            for (const entry of record.contents) {
-              if (entry === null || typeof entry !== 'object' || Array.isArray(entry)) {
-                writeBridgeJson(res, 400, { ok: false, code: 'settings-rejected', message: 'contents 条目必须是对象' })
-                return
-              }
-              const item = entry as Record<string, unknown>
-              if ((item.scope !== 'preset' && item.scope !== 'agents') || typeof item.content !== 'string') {
-                writeBridgeJson(res, 400, { ok: false, code: 'settings-rejected', message: 'contents 条目必须提供合法 scope 和字符串 content' })
-                return
-              }
-              contents.push({ scope: item.scope, content: item.content })
-            }
-            const dir = editDir(req) ?? ''
-            if (dir.length === 0) {
-              writeBridgeJson(res, 400, { ok: false, code: 'module-dir-unavailable', message: '模块目录未配置' })
-              return
-            }
-            if (!guardModuleWrite(dir, res)) return
-            try {
-              if (!guardModuleIdentity(req, record, dir, res)) return
-              mkdirSync(dir, { recursive: true })
-              for (const entry of contents) {
-                writeFileSync(join(dir, entry.scope === 'preset' ? 'preset.md' : 'agents.md'), entry.content, 'utf8')
-              }
-              if (!await finishModuleChange(res, () => afterModuleContentImport?.(contents.map((entry) => entry.scope), basename(dir)))) return
-              writeBridgeJson(res, 200, { ok: true, value: { scopes: contents.map((entry) => entry.scope) } })
-            } catch (error) {
-              const message = error instanceof Error ? error.message : String(error)
-              writeBridgeJson(res, 500, { ok: false, code: 'module-import-failed', message })
-            }
           },
         }),
         sctx.webServer.register({
