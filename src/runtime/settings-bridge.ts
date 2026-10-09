@@ -2502,7 +2502,10 @@ export function registerSettingsBridge(
         if (parsedBody === undefined) return
         // 超限丢弃只在真的丢弃过时进载荷：未超限的响应与既有契约逐字不变。
         const dropped = ruleDiagnosticsDropped()
-        writeBridgeJson(res, 200, { ok: true, value: { records: ruleDiagnosticsSnapshot(), ...(dropped > 0 ? { dropped } : {}) } })
+        // 状态栏的「X/Y 规则」顺路带回全仓配置卡；配置读取失败只影响这一段，诊断照旧下发。
+        let configs: ReturnType<typeof readModuleConfigOrder> | undefined
+        try { configs = readModuleConfigOrder(userModulesDir()) } catch { configs = undefined }
+        writeBridgeJson(res, 200, { ok: true, value: { records: ruleDiagnosticsSnapshot(), ...(dropped > 0 ? { dropped } : {}), ...(configs === undefined ? {} : { configs }) } })
       })
       return () => {
         for (const dispose of disposers) dispose()

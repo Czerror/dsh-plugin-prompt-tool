@@ -465,8 +465,8 @@ export interface BridgeValueMap {
   moduleCapability: { changed: boolean; addedModules?: string[]; removedModules?: string[]; capabilityIds: string[] }
   /** 只读世界书诊断：只回当前授权会话最近一次选择的观测记录（读取不重新求值）。 */
   worldBookDiagnostics: { records: WorldBookDiagnosticRecord[]; truncated: boolean; step: number; evaluated: boolean }
-  /** 只读规则判定计数：按「模块 + 规则 + 通道」聚合，读取不重新求值；`dropped` 仅在超出 512 身份上限时出现，该字段保留给外部消费者与后续 UI，当前工作台不渲染。 */
-  ruleDiagnostics: { records: RuleDiagnosticRecord[]; dropped?: number }
+  /** 只读规则判定计数：按「模块 + 规则 + 通道」聚合，读取不重新求值；`dropped` 仅在超出 512 身份上限时出现，该字段保留给外部消费者与后续 UI，当前工作台不渲染。状态栏另用 `configs` 报全仓启用/总配置卡数，配置读取失败时该字段缺席。 */
+  ruleDiagnostics: { records: RuleDiagnosticRecord[]; dropped?: number; configs?: ModuleConfigOrderSnapshot }
 }
 /** 编译期断言：请求/响应映射与 BRIDGE_ENDPOINTS 键集合完全一致（漏改任一侧 typecheck 失败）。 */
 type AssertCoverage<K extends string, M extends object> =

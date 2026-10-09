@@ -28,3 +28,8 @@ export function compareModuleConfigOrder(a: ModuleConfigOrderEntry, b: ModuleCon
   const compare = (left: string, right: string): number => left < right ? -1 : left > right ? 1 : 0
   return a.sequence - b.sequence || compare(a.moduleId, b.moduleId) || compare(a.configId, b.configId)
 }
+
+/** 已启用模块的全部配置卡里，启用与总条数：状态栏的「X/Y 规则」直接用它。 */
+export function countEnabledConfigs(entries: readonly ModuleConfigOrderEntry[]): { enabled: number; total: number } {
+  return { enabled: entries.filter(entry => entry.enabled).length, total: entries.length }
+}

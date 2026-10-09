@@ -323,16 +323,19 @@ test('契约：/rule-diagnostics 只回判定计数，未启用不入账且读�
   const empty = fakeRes()
   await handler(fakeReq({ body: {} }), empty)
   assert.equal(empty.status, 200)
-  assert.deepEqual(JSON.parse(empty.body), { ok: true, value: { records: [] } }, '未产生判定时回空数组，不伪报')
+  const emptyPayload = JSON.parse(empty.body).value
+  assert.deepEqual(emptyPayload.records, [], '未产生判定时回空数组，不伪报')
+  // 状态栏的「X/Y 规则」顺路带回全仓配置卡；本用例隔离 DSH_HOME，没有启用模块即为空清单。
+  assert.deepEqual(emptyPayload.configs?.entries ?? [], [], '无启用模块时配置清单为空')
+  assert.equal('dropped' in emptyPayload, false, '未超限不带 dropped')
   recordRuleOutcome({ moduleId: 'm', ruleId: 'r', channel: 'agent/pre-step', outcome: 'unavailable' })
   recordRuleOutcome({ moduleId: 'm', ruleId: 'r', channel: 'agent/pre-step', outcome: 'unavailable' })
   recordRuleOutcome({ moduleId: 'm', ruleId: 'r', channel: 'agent/pre-step', outcome: 'disabled' })
   const filled = fakeRes()
   await handler(fakeReq({ body: {} }), filled)
-  assert.deepEqual(JSON.parse(filled.body), {
-    ok: true,
-    value: { records: [{ moduleId: 'm', ruleId: 'r', channel: 'agent/pre-step', hit: 0, miss: 0, unavailable: 2, error: 0 }] },
-  })
+  assert.deepEqual(JSON.parse(filled.body).value.records, [
+    { moduleId: 'm', ruleId: 'r', channel: 'agent/pre-step', hit: 0, miss: 0, unavailable: 2, error: 0 },
+  ])
   resetRuleDiagnostics()
 })
 
@@ -354,7 +357,9 @@ test('契约：/rule-diagnostics 身份上限溢出可见——512 条封顶并�
   resetRuleDiagnostics()
   const clean = fakeRes()
   await handler(fakeReq({ body: {} }), clean)
-  assert.deepEqual(JSON.parse(clean.body), { ok: true, value: { records: [] } }, '未超限的响应不带 dropped')
+  const cleanPayload = JSON.parse(clean.body).value
+  assert.deepEqual(cleanPayload.records, [])
+  assert.equal('dropped' in cleanPayload, false, '未超限的响应不带 dropped')
 })
 
 test('契约：负责人事实按当前语义恒为 null——没有 true 生产者，也不捏造 false', async () => {

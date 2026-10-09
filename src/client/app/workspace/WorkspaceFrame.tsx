@@ -1,7 +1,7 @@
 import clsx from 'clsx'
 import { useLayoutEffect, useRef, useSyncExternalStore, type ReactNode } from 'react'
 import type { PromptToolStore } from '../../data/use-prompt-tool-store.ts'
-import { useUnavailableRuleCount } from '../../data/use-rule-diagnostics.ts'
+import { useRuleDiagnostics } from '../../data/use-rule-diagnostics.ts'
 import type { PromptToolTranslate } from '../../locales.ts'
 import { WorkspaceNavigation } from './WorkspaceNavigation.tsx'
 import { WORKSPACE_PAGES, type WorkspacePage } from './workspace-pages.ts'
@@ -29,10 +29,12 @@ export function WorkspaceFrame(props: {
   const restoredKey = useRef<string>()
   const lastFocusPage = useRef(props.focusPage)
   const scrollKey = props.scrollKey ?? props.page
-  const rules = store.editorDrafts.rules.get(store.fields.moduleId)?.entries.filter(entry => !entry.deleted) ?? []
-  const enabledCount = rules.filter(entry => entry.value.enabled !== false).length
+  // 状态栏报全仓口径：已启用模块里的配置启用/总条数（服务端统计），模块启用/总数（模块列表）。
+  const summary = useRuleDiagnostics(!store.loading && store.meta.layers.length > 0)
+  const modules = store.meta.modules ?? []
+  const modulesEnabled = modules.filter(module => module.enabled === true).length
   // 条件因缺事实无法判定的规则数；>0 才在状态栏出现，空态不占位。
-  const unavailableCount = useUnavailableRuleCount(!store.loading && store.meta.layers.length > 0)
+  const unavailableCount = summary.unavailableCount
   // 角色库与工具面拥有独立请求，不能以全局配置数量判定它们的加载/空态。
   const usesBootstrap = props.page !== 'modules' && props.page !== 'tools'
   const loadingInitial = usesBootstrap && store.loading && store.meta.layers.length === 0
@@ -88,9 +90,12 @@ export function WorkspaceFrame(props: {
         )}
         <div className={css.statusCluster}>
           <StatusDot tone={store.loading ? 'neutral' : 'success'} />
+          {/* 两个计数都是全仓口径：规则 = 已启用模块里的配置卡（X 启用 / Y 总数），模块 = 启用 / 全部。 */}
           <span>{store.loading
             ? t('app.loading')
-            : t('app.statusSummary', { configs: rules.length, enabled: enabledCount })}
+            : summary.configs.total > 0
+              ? `${t('app.statusRules', summary.configs)} · ${t('app.statusModules', { enabled: modulesEnabled, total: modules.length })}`
+              : t('app.statusModules', { enabled: modulesEnabled, total: modules.length })}
             {unavailableCount > 0 ? ` · ${t('app.statusUnavailable', { count: unavailableCount })}` : ''}</span>
         </div>
         <Button shape="pill" variant="outline" className={css.backButton} onClick={props.onClose}>{t('app.backToChat')}</Button>
