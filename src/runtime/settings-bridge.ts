@@ -555,7 +555,8 @@ export function registerSettingsBridge(
   // ensureWebSurface 仅报告缺失能力，profile 装配交给官方插件管理流程。
   ctx.inject(['settings', 'webServer'], (sctx: Context) => {
     sctx.effect(() => {
-      const assetSources = createAssetSources(join(DSH_HOME, '.prompt-tool-uploads'))
+      // 上传暂存根归插件自己的状态目录（与 modules / config.yml 同级），不再平级散落在 DSH_HOME 下。
+      const assetSources = createAssetSources(join(DSH_HOME, '.prompt-tool', 'uploads'))
       // descriptor 缓存（30s TTL）：宿主 settings.describe 是同步全量遍历——
       // 遍历所有注册 namespace + section 读取 + structuredClone 深度克隆 + schema
       // 序列化；插件越多越慢且阻塞事件循环。每个桥端点（meta/describe/delete/export…）

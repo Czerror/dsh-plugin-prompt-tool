@@ -124,7 +124,7 @@ test('PNG 原始上传只暂存；角色确认后字节一致，释放和卸载�
   assert.equal((await call(h, 'charactersImport', { sourceId, preview: true })).status, 400)
   await upload(h, png)
   h.dispose()
-  assert.deepEqual(readdirSync(join(home, '.prompt-tool-uploads')), [])
+  assert.deepEqual(readdirSync(join(home, '.prompt-tool', 'uploads')), [])
 })
 
 test('角色预览绑定普通模块目标和覆盖选择；重导入保留记忆', async (t) => {
