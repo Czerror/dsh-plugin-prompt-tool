@@ -58,7 +58,8 @@ export interface InstructionsSnapshot {
 
 /**
  * 指令负责人事实：本会话实际装配里是否仍挂着官方指令加载行。
- * `true` 表示官方负责注入；`false` 表示模块未装配官方来源；`null` 表示尚未观察到。
+ * 只有观察到才出现：`true` 表示观察到官方装配（当前没有生产者），`null` 表示尚未观察到。
+ * 没有 `false`——「官方未装配」是插件观察不到的否定事实（见 ADR-0009）。
  */
 export interface InstructionsOwnerView {
   officialInstructions: boolean | null

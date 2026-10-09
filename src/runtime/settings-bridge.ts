@@ -78,7 +78,6 @@ import {
 } from '../host/agents-cards.ts'
 import type { InstructionContextView, InstructionFileSnapshot, InstructionsOwnerView } from '../shared/instructions.ts'
 import { instructionPolicyPath, readInstructionPolicy, writeInstructionPolicy } from '../host/instructions-policy.ts'
-import { PRE_STEP_COORDINATOR_SERVICE } from './pre-step-coordinator.ts'
 
 
 export interface SkillsBridgeState {
@@ -357,16 +356,11 @@ interface ResolvedInstructionScope {
 }
 
 /**
- * 负责人事实：pre-step 协调器观察到该会话实际装配仍挂着官方指令行时返回 true。
- * 没有协调服务或还没观察过（例如会话尚未跑过 pre-step）时返回 null——不猜。
+ * 负责人事实：全仓没有写 `true` 的生产者，载荷恒为 null——「官方未装配」是插件观察不到的
+ * 否定事实，不猜也不捏造 false（见 ADR-0009）。
  */
-function instructionOwner(ctx: Context, sessionId: string | undefined): InstructionsOwnerView {
-  if (sessionId === undefined) return { officialInstructions: null }
-  const service = (ctx as Context & { get?: (name: string) => unknown }).get?.(PRE_STEP_COORDINATOR_SERVICE) as
-    | { officialOwnerOf?: (id: string) => boolean | undefined }
-    | undefined
-  const observed = service?.officialOwnerOf?.(sessionId)
-  return { officialInstructions: observed ?? null }
+function instructionOwner(): InstructionsOwnerView {
+  return { officialInstructions: null }
 }
 
 function resolveInstructionScope(ctx: Context, sessionId: string | undefined): ResolvedInstructionScope {
@@ -841,7 +835,7 @@ export function registerSettingsBridge(
                 variables,
                 ...('revisions' in variables ? { variablesRevisions: variables.revisions } : {}),
                 promptConfigs: { promptConfigs: mergeInstructionCards([], scope.files) },
-                instructions: { context: scope.context, files: scope.files, owner: instructionOwner(sctx, session.sessionId) },
+                instructions: { context: scope.context, files: scope.files, owner: instructionOwner() },
                 ...extras,
               })
             } catch (error) {
@@ -1237,7 +1231,7 @@ export function registerSettingsBridge(
               ok: true,
               value: {
                 promptConfigs: mergeInstructionCards([], scope.files),
-                instructions: { context: scope.context, files: scope.files, owner: instructionOwner(sctx, session.sessionId) },
+                instructions: { context: scope.context, files: scope.files, owner: instructionOwner() },
               },
             })
           },

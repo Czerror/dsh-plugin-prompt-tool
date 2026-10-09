@@ -44,7 +44,7 @@ export interface InstructionDraftPool {
   /** 上下文序号：迟到响应按序号丢弃，不写入新上下文。 */
   seq: number
   drafts: InstructionDraft[]
-  /** 负责人事实（服务端观察）：true 时独立来源本次不注入正文，UI 只做提示。 */
+  /** 负责人事实（服务端观察，当前无 `true` 生产者）：只随快照携带，UI 不据此改行为。 */
   owner: InstructionsOwnerView
 }
 

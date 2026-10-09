@@ -357,14 +357,13 @@ test('契约：/rule-diagnostics 身份上限溢出可见——512 条封顶并�
   assert.deepEqual(JSON.parse(clean.body), { ok: true, value: { records: [] } }, '未超限的响应不带 dropped')
 })
 
-test('契约：协调器未观察到官方装配时负责人事实是 null，不捏造 false', async () => {
-  const { PRE_STEP_COORDINATOR_SERVICE } = await import('../../src/runtime/pre-step-coordinator.ts')
-  const { ctx, handlers } = makeHarness({ [PRE_STEP_COORDINATOR_SERVICE]: { officialOwnerOf: () => undefined } })
-  registerSettingsBridge(ctx, 'prompt-tool', () => ({ available: true, providers: ['deepseek-official'] }), () => makeSkillsState(), () => '')
+test('契约：负责人事实按当前语义恒为 null——没有 true 生产者，也不捏造 false', async () => {
+  const handlers = register()
   const res = fakeRes()
   await handlers.get(SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.bootstrap)(fakeReq({ body: { sessionId: 'live-session' } }), res)
   assert.equal(res.status, 200, res.body)
-  assert.equal(JSON.parse(res.body).instructions.owner.officialInstructions, null, 'undefined → null：三态收敛后不再报 false')
+  // 字段仍在载荷里（老客户端契约），值只可能是 null：undefined 会让 strict equal 失败。
+  assert.equal(JSON.parse(res.body).instructions.owner.officialInstructions, null, '未观察到即 null')
 })
 
 test('契约：/tool-surface 支持官方 preset scope 且只读有效 schema', async () => {
