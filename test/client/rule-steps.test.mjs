@@ -5,12 +5,14 @@
  * `MenuSelect` 收到 `value === undefined` 后在 `props.value.length` 抛 TypeError，
  * 整棵插件树卸载 —— 子代理页那张 ponytail 卡一点开就崩。
  * 这里同时锁住「不抛错」与「结构正确」两件事，数据取真实模块与真实编辑器目录。
+ * 末尾另含一条工作台层筛选器的可访问名守卫（筛选器自己不渲染卡片，故与条件卡共用本 harness）。
  */
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { parse } from 'yaml'
 import { withSsr, renderElement, makeTranslate } from './support/ssr-render.mjs'
+import { createWorkspaceDrafts } from '../../src/client/data/workspace-drafts.ts'
 import { getRuleEditorMeta } from '../../engine/rule-spec.mjs'
 import {
   actionSummary, branchSummary, collectActionIds, conditionChain, conditionSummary,
@@ -79,4 +81,18 @@ test('rule-steps: 含分支的真实规则渲染不抛错，卡默认收起且�
   assert.match(html, /PONYTAIL:readonly/)
   const unsupported = render({ ...ponytailRule, layer: 'system-section' })
   assert.match(unsupported, /不能使用条件分支/, '注册制层禁用条件分支并说明原因')
+})
+
+test('rules workspace: 层筛选器用自己的可访问名，不借用「缺省层」字段标签', async () => {
+  const { RulesWorkspace } = await withSsr([new URL('../../src/client/features/prompts/RulesWorkspace.tsx', import.meta.url).href])
+  const fields = { moduleId: 'module-a', modulesEnabled: true, promptConfigs: [] }
+  const store = {
+    editorDrafts: createWorkspaceDrafts(), getFields: () => fields, subscribeFields: () => () => {},
+    getDraftRevision: () => 0, subscribeDrafts: () => () => {}, publishDrafts: () => {},
+    enqueueModuleTask: (_moduleId, task) => task(), enqueueRuleTask: task => task(),
+    meta: { layers: ['pre-step'], modules: [] },
+  }
+  const labels = [...renderElement(RulesWorkspace, { store, t }).matchAll(/aria-label="([^"]*)"/g)].map(match => match[1])
+  assert.ok(labels.includes(t('rules.layerFilter')), '筛选器渲染出自己的可访问名')
+  assert.ok(!labels.includes(t('rules.layer')), '「缺省层」是字段标签，不再复用为筛选器名称')
 })

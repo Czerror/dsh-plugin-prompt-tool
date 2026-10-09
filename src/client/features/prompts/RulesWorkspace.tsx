@@ -91,8 +91,8 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
     try {
       const result = await bridgeCall('moduleConfigOrder', { expectedRevision: order.revision, entries: entries.map(({ moduleId, configId }) => ({ moduleId, configId })) })
       if (generation !== epoch.current) return
-      // 失败后重读：拖拽用的 revision 已过期，不重读会反复 409、要手动刷页（重读成功会清掉这条告警）。
-      if (!result.ok) { setOrderError(result.message ?? t('moduleOrder.unavailable')); await readOrder(); return }
+      // 失败后重读：拖拽用的 revision 已过期，不重读会反复 409、要手动刷页；提示文案以重读结果为准。
+      if (!result.ok) { await readOrder(); return }
       setOrder(result.value); setOrderError(''); await Promise.all(owners.map(owner => owner.editor.load(true)))
     } finally { sortBusy.current = false; if (generation === epoch.current) setSorting(false) }
   }
@@ -140,7 +140,7 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
   return <section className={css.workspace} aria-label={t('rules.list')}>
     <div className={ui.listFilterRow} data-module-toolbar>
       <SearchInput inline aria-label={t('rules.search')} placeholder={t('rules.search')} value={props.keyword ?? filter} onChange={event => changeFilter(event.target.value)} />
-      <MenuSelect compact className={css.control} ariaLabel={t('rules.layer')} value={view} options={[{ value: 'all', label: t('rules.all') }, { value: 'world-book', label: t('rules.worldBook') }, ...store.meta.layers.map(layer => ({ value: layer, label: translateLabel(t, LAYER_LABEL_KEYS, layer) }))]} onChange={value => props.onViewFilterChange?.(value)} />
+      <MenuSelect compact className={css.control} ariaLabel={t('rules.layerFilter')} value={view} options={[{ value: 'all', label: t('rules.all') }, { value: 'world-book', label: t('rules.worldBook') }, ...store.meta.layers.map(layer => ({ value: layer, label: translateLabel(t, LAYER_LABEL_KEYS, layer) }))]} onChange={value => props.onViewFilterChange?.(value)} />
       {props.toolbarActions}
       <span className={ui.batchControls}>
         <Button shape="pill" variant="outline" data-batch="enable" disabled={batchDisabled} onClick={() => batchSetEnabled(true)}>{t('configs.batch.enableVisible')}</Button>
