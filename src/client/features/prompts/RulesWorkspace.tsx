@@ -178,7 +178,7 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
             renderSettings={id === moduleId && entry.value.layer !== undefined && props.hasLayerSettings?.(entry.value.layer) && props.renderLayerSettings ? rule => props.renderLayerSettings!(rule.layer!, { id: rule.id, layer: rule.layer }) : undefined} />
         </div>
       })}
-    {entries.length === 0 && owners.every(owner => owner.draft.loaded) && <p>{t(query || view !== 'all' ? 'rules.noMatch' : 'rules.empty')}</p>}
+    {entries.length === 0 && (query !== '' || view !== 'all') && owners.every(owner => owner.draft.loaded) && <p>{t('rules.noMatch')}</p>}
     {discard && <ConfirmDialog title={t('triggers.discard')} description={t('triggers.discardHint')} confirmLabel={t('triggers.discard')} cancelLabel={t('triggers.cancel')} onCancel={() => setDiscard(undefined)} onConfirm={() => { owners.find(owner => owner.moduleId === discard)?.editor.discard(); setDiscard(undefined) }} />}
   </section>
 }
