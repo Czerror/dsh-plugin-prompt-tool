@@ -240,7 +240,16 @@ function batchScope(options, frame) {
  */
 export async function runPreStepBatch(options) {
   const initialFrame = options.ruleFrame ?? ruleFrame('agent/pre-step', [{ agent: options.agent, messages: options.decision?.messages ?? [] }], options.warnOnce, options.ctx, options.onOutcome)
-  const scope = batchScope(options, initialFrame)
+  // 批级快照与单配置失败同款 fail-safe：资格判定或 ST 世界书选择抛错时只告警一次并跳过本步
+  // 注入（scope 留空 → runPromptConfigBatch 原样返回 decision），绝不把异常抛进
+  // agent/pre-step waterfall。世界书键的 `interpolateVariables` 在 selectStWorldBook 的
+  // per-config try 之外，配置错误不得卡死会话。
+  let scope
+  try {
+    scope = batchScope(options, initialFrame)
+  } catch (error) {
+    options.warnOnce?.(`${name}: prompt config failed, skipping: ${String((error && error.message) || error)}`)
+  }
   if (!options.ruleActions?.length) return runPromptConfigBatch({ ...options, ruleFrame: initialFrame, scope })
   const entries = [...options.configs.map(config => ({ ...config, config })), ...options.ruleActions].sort(compareConfigSequence)
   let decision = options.decision

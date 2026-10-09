@@ -105,11 +105,12 @@ test('动作声明 fail loud：名单形状错误、名单为空、名单命名 
   assert.throws(() => registerAction(ctx, { kind: 'assembly', id: 'x', target: { sections: { add: [{ name: 1, text: 'a' }] } } }), /assembly\.sections\.add\[\]\.name must be a string/)
   assert.throws(() => registerAction(ctx, { kind: 'assembly', id: 'x', target: { contexts: { add: {} } } }), /assembly\.contexts\.add must be an array/)
   // clear 与 add/remove 并存不可解释（旧实现静默丢弃 add/remove），非布尔 clear 也静默失效：
-  // 两者都在挂载期拒绝，与 sections 的 keep+remove 同一纪律。
+  // 两者都在挂载期拒绝，与 sections 的 keep+remove 同一纪律。形状校验先于互斥判定。
   for (const target of [
     { contexts: { clear: true, add: [{ name: 'a', text: 't' }] } },
     { contexts: { clear: true, remove: ['a'] } },
-  ]) assert.throws(() => registerAction(ctx, { kind: 'assembly', id: 'x', target }), /cannot combine clear with add or remove/)
+  ]) assert.throws(() => registerAction(ctx, { kind: 'assembly', id: 'x', target }), /assembly\.contexts\.clear cannot combine with add or remove/)
+  assert.throws(() => registerAction(ctx, { kind: 'assembly', id: 'x', target: { contexts: { clear: true, add: {} } } }), /assembly\.contexts\.add must be an array/)
   assert.throws(() => registerAction(ctx, { kind: 'assembly', id: 'x', target: { contexts: { clear: 'true' } } }), /assembly\.contexts\.clear must be boolean/)
   // allowFrom 的声明期形状校验（搬自 (2e)，语义不变）。
   assert.throws(() => registerAction(ctx, { kind: 'assembly', id: 'x', target: { tools: { allow: ['a'], allowFrom: ['dev_tool_search'] } } }), /allowFrom must be an object/)

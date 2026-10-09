@@ -709,6 +709,23 @@ test('ST 世界书组互斥在整步成立：默认位置 filter 切开批次时
   assert.ok(split.records.some(record => record.stage === 'committed'), 'commit 事实写回同一份快照')
 })
 
+test('世界书选择抛错按「本步跳过注入」降级：只告警一次、不抛进 waterfall', async () => {
+  const rules = compileRules([{ id: 'lore', then: [
+    textAction('plain', 'PLAIN', { position: 'after-all' }),
+    { id: 'wb', kind: 'inject-text', config: { id: 'wb', layer: 'pre-step', strategy: 'world-book', position: 'after-all', text: 'LORE', params: { keys: ['KEY'], stWorldBook: { group: 'lore' } } } },
+  ] }])
+  // 键的宏求值在 selectStWorldBook 的 per-config try 之外：坏键只能降级本步，不能逸出。
+  rules[0].actions.find(action => action.id === 'wb').compiledConfig.params.keys[0] = { toString() { throw new Error('key exploded') } }
+  const h = harness()
+  const dispose = mountRuleSources(h.ctx, [{ moduleId: 'module', rules }])
+  const agent = actor()
+  const messages = [{ id: 'u', role: 'user', source: { kind: 'user' }, content: [{ type: 'text', text: 'KEY 提示' }] }]
+  const result = await h.run('agent/pre-step', [{ agent, messages }], () => ({ kind: 'enter', messages }))
+  assert.deepEqual(result.messages, messages, '批级判定失败 → 本步不注入，decision 原样返回')
+  assert.equal(h.warnings.filter(message => String(message).includes('prompt config failed, skipping')).length, 1, '失败恰好告警一次')
+  dispose()
+})
+
 test('pre-step 动作级分支：每步 actionWhen 恰好求值一次，命中分支注入一次', async () => {
   const rules = compileRules([{ id: 'branch', then: [
     { if: { scope: { modelScope: 'flash' } }, then: [textAction('flash-inject', 'FLASH', { position: 'after-user' })], else: [textAction('other-inject', 'OTHER', { position: 'after-user' })] },
