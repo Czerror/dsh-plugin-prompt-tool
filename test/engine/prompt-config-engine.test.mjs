@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { fileURLToPath } from 'node:url'
-import { applyPromptConfigs, confirmDelivered, runPreStepBatch } from '../../engine/executor.mjs'
+import { applyPromptConfigs, confirmDelivered, identityHit, identityOf, identityStampOf, runPreStepBatch } from '../../engine/executor.mjs'
 import { wireLayers } from '../../engine/layers.mjs'
 import { createPromptConfigs as createPromptConfigsCore } from '../../engine/schema.mjs'
 import { registerAction } from '../../engine/actions.mjs'
@@ -383,6 +383,59 @@ test('解析器自带 source 的候选按身份盖章：dedupe=session 下多步
     }
     assert.equal(injected, 1, `声明解析器 source 的候选每会话只投递一次（${JSON.stringify(params)}）`)
   }
+})
+
+/**
+ * 互逆性契约：`identityStampOf` 盖出的 source 必须被 `identityHit` 认下，否则实际注入的
+ * 消息与去重判定各说各话（静默重复注入 / 静默不去重）。五条各锁一种形态；新增通道或改
+ * 缺省推导时这里先红。
+ */
+test('身份契约互逆：identityStampOf 盖出的 source 一律被 identityHit 认下', () => {
+  const plain = (spec, options) => createPromptConfigs([{ strategy: 'static', dedupe: 'session', text: 'HINT', position: 'after-user', ...spec }], options)[0]
+  const cases = [
+    // 缺省 kind 由 schema 按配置 id 编成 `plugin:<id>`（不是 merged 身份）；merged 组只改写
+    // plugin 通道，kind 保持 id 形态——这一条是既有格式契约，照实锁定。
+    { shape: '缺省 kind（plugin:<id>）', config: plain({ id: 'hint' }), kind: 'plugin:hint', moduleId: undefined, target: plain({ id: 'hint' }) },
+    { shape: '显式 sourceKind', config: plain({ id: 'hint', sourceKind: 'shared-kind-channel' }), kind: 'plugin:shared-kind-channel', moduleId: undefined, target: plain({ id: 'hint', sourceKind: 'shared-kind-channel' }) },
+    { shape: 'merged 组（plugin 走 merged:<position>）', config: plain({ id: 'hint-a', mergeMode: 'merged' }), kind: 'plugin:hint-a', moduleId: undefined, target: plain({ id: 'hint-a', mergeMode: 'merged' }) },
+    // 无模块维的盖章值（升级前注入的形态）要被带模块的配置按保守命中认下：新增模块维不得
+    // 让旧消息被判成「没投递过」。
+    { shape: '无模块维（保守命中也成立）', config: plain({ id: 'hint' }), kind: 'plugin:hint', moduleId: undefined, target: plain({ id: 'hint' }, { sourceModuleId: 'mod-a' }) },
+    { shape: '有模块维', config: plain({ id: 'hint' }, { sourceModuleId: 'mod-a' }), kind: 'plugin:hint', moduleId: 'mod-a', target: plain({ id: 'hint' }, { sourceModuleId: 'mod-a' }) },
+  ]
+  for (const { shape, config, kind, moduleId, target } of cases) {
+    const stamp = identityStampOf(config)
+    assert.equal(stamp.kind, kind, `${shape}：kind 形态`)
+    assert.equal(stamp.plugin, identityOf(config), `${shape}：plugin 与去重身份同源`)
+    assert.equal(stamp.moduleId, moduleId, `${shape}：模块维只在有模块时盖章`)
+    // 判定侧用同一份声明编出的**另一份**配置对象，避免「被测实现自己算出的另一份结果」。
+    assert.equal(identityHit(stamp, target, identityOf(target)), true, `${shape}：自己盖的 source 必须命中自己的判定`)
+  }
+  // 反例一：模块维确实是判据的一维，不是装饰——别的模块不认这份 source。
+  const stamped = plain({ id: 'hint' }, { sourceModuleId: 'mod-a' })
+  const target = plain({ id: 'hint' }, { sourceModuleId: 'mod-a' })
+  assert.equal(identityHit(identityStampOf(stamped), plain({ id: 'hint' }, { sourceModuleId: 'mod-b' }), 'hint'), false, '别的模块的模块维不算命中')
+  // 反例二：**任一通道命中即命中**。旧日志的注入是 `source.plugin` 单通道形态（没有 kind），
+  // 它必须仍被认下；判定若改成「两条通道都得相同」，升级前的消息就会被重复注入。
+  assert.equal(identityHit({ plugin: identityOf(target), moduleId: target.sourceModuleId }, target, identityOf(target)), true,
+    '只有 plugin 通道的旧形态消息仍算命中')
+  // 反例三：`moduleId: ''` 与缺失同等（第三方消息可以带空串），既不写进任何模块的账本，
+  // 也不在判定里被当成某个模块。关键不变量是**快路径与慢路径同结论**：memo 只省一次扫描，
+  // 不得改变判定（`moduleOf` 若把空串当真实模块，模块 A 的配置会命中这条消息而慢路径不认）。
+  const targetValue = identityOf(target)
+  assert.equal(identityStampOf(plain({ id: 'hint' }, { sourceModuleId: '' })).moduleId, undefined, '空串配置不盖模块维')
+  const emptyModuleSource = { kind: 'plugin:hint', plugin: 'hint', moduleId: '' }
+  const slowVerdict = identityHit(emptyModuleSource, target, targetValue)
+  assert.equal(slowVerdict, true, '空串模块维按无模块维保守命中')
+  const memo = new Map()
+  const session = { id: 's-empty-module' }
+  confirmDelivered(memo, session, { type: 'user/message', data: { message: { role: 'user', content: [{ type: 'text', text: 'HINT' }], source: emptyModuleSource } } })
+  const modularBucket = memo.get(`plugin\u0000mod-a\u0000-\u0000${targetValue}`)
+  assert.equal(modularBucket, undefined, '空串模块维不落进模块 A 的账本')
+  const legacyBucket = memo.get(`plugin\u0000\u0000-\u0000${targetValue}`)
+  assert.equal(legacyBucket?.has(session.id), true, '记账落在无模块维的保守桶')
+  // 快路径按同一桶查询，结论与慢路径逐字相同。
+  assert.equal(legacyBucket.has(session.id), slowVerdict, '快慢路径同结论：memo 不改变判定')
 })
 
 test('显式 identity：先到者被接纳后，晚一步的卡不再经自己的 id 重复注入', async () => {

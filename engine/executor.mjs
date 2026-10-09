@@ -78,6 +78,37 @@ export function identityOf(config) {
 }
 
 /**
+ * 模块维：**空串与缺失同等**（升级前格式 / 第三方消息可能带空串），非字符串也按缺失。
+ * 判定（identityHit）、记账（confirmDelivered）与查询（alreadyDelivered）必须同源：任一处
+ * 把空串当真实模块，快路径就会把「无模块维」的消息记成某模块的投递，判定随缓存改变。
+ */
+function moduleIdOf(value, field) {
+  const moduleId = value?.[field]
+  return typeof moduleId === 'string' && moduleId.length > 0 ? moduleId : undefined
+}
+
+/**
+ * 去重身份的**盖章**（`identityStampOf`）与**判定**（`identityHit`）是一对互逆函数：
+ * 前者把配置编译成消息 `source` 里由身份契约决定的部分，后者认这份 source。
+ * 消费方含宿主装配侧（见 agent-assembly 的跨模块重复身份诊断），故导出。
+ *
+ * 缺省 sourceKind 编成 `plugin:<身份>`：装配侧要靠这条推导判断「显式声明」与
+ * 「自身 id 的编译产物」，所以这条规则只留这一份。
+ * 新增通道/改字段名时，这两个函数紧邻，各添一行即成对（互逆性由测试锁住）。
+ */
+export function identityStampOf(config) {
+  const plugin = identityOf(config)
+  const moduleId = moduleIdOf(config, 'sourceModuleId')
+  return {
+    // v4 要求 kind 是**生产者名**：声明了 sourceKind 就用它，否则用与 pluginMessage 同一形状的
+    // `plugin:<身份>`。裸 kind（undefined / 'plugin'）都会被 codec 拒绝，历史走的是同一个坑。
+    kind: typeof config.sourceKind === 'string' && config.sourceKind.length > 0 ? config.sourceKind : `plugin:${plugin}`,
+    plugin,
+    ...(moduleId === undefined ? {} : { moduleId }),
+  }
+}
+
+/**
  * 消息来源的插件身份（去重身份）。v4 起 `source.kind` 是生产者名（`plugin:<name>`），
  * `source.plugin` 只作为旧日志字段保留——两条通道都要认，否则去重记账会在格式换代后静默失效。
  */
@@ -89,16 +120,14 @@ function pluginIdentityOf(source) {
     : undefined
 }
 
-/**
- * 消息的**模块维**：只有字符串才算，非字符串按缺失（升级前格式）处理。
- * `source.moduleId` 由本引擎盖章（见 buildMessage）；旧日志里的注入没有这个字段。
- */
+/** 消息的模块维（`source.moduleId`）；旧日志里的注入没有这个字段。 */
 function moduleOf(source) {
-  return typeof source?.moduleId === 'string' ? source.moduleId : undefined
+  return moduleIdOf(source, 'moduleId')
 }
 
 /**
  * 身份命中判据（唯一实现，注入与批内去重共用）：**模块维 + 通道 + 身份**。
+ * identityStampOf 的逆：它编译出的 source 必须被这里认下（互逆性由测试锁住）。
  *
  * - 两条通道：`kind`（外来/第三方消息，如 context-gate 的 instruction-hint）或
  *   `plugin`（本引擎注入的命名空间，merged 组用 merged:<position>）。
@@ -107,10 +136,10 @@ function moduleOf(source) {
  * - 无模块维的消息按**保守命中**：升级前注入的那条仍在当前上下文里，不该因为新增一个
  *   字段就被判成「没投递过」而重复注入。
  */
-function identityHit(source, config, value) {
+export function identityHit(source, config, value) {
   if (source?.kind !== config.sourceKind && pluginIdentityOf(source) !== value) return false
   const moduleId = moduleOf(source)
-  return moduleId === undefined || moduleId === config.sourceModuleId
+  return moduleId === undefined || moduleId === moduleIdOf(config, 'sourceModuleId')
 }
 
 /** 去重真相在**当前上下文**：回到第一条命中该身份的消息（未命中 undefined），命中即止。 */
@@ -196,7 +225,7 @@ export function confirmDelivered(memo, session, event) {
 function alreadyDelivered(config, session, memo) {
   const stamp = contextStamp(session)
   // 模块维有两种命中：本模块的键，以及升级前注入（无模块维）那份的保守键。
-  const modules = [config.sourceModuleId ?? '', '']
+  const modules = [moduleIdOf(config, 'sourceModuleId') ?? '', '']
   const confirmed = (field, value) => modules.some((moduleId) =>
     memo.get(memoKey(field, moduleId, value, stamp))?.has(session.id) === true)
   if (confirmed('plugin', identityOf(config))) return true
@@ -234,21 +263,22 @@ function buildMessage(config, resolved, warnOnce) {
   // 盖章身份与 alreadyDelivered 的查找键同源（identityOf）：显式 identity 才真正共享去重，
   // 也不会与他卡的 id 误撞；merged 组 identityOf 本就等于 mergedIdentity，存量输出不变。
   const sourceValue = identityOf(config)
-  // 模块维是身份判据的新一维，但**不并进身份字符串**：`source.plugin` 的格式是
-  // blockPlugins 的精确匹配契约，一字不改；整模块复制的区分只靠这个独立字段。
-  const module = config.sourceModuleId === undefined ? {} : { moduleId: config.sourceModuleId }
   // 策略 patch（templateFile 的 role 等）与配置声明都必须经过同一出口判定。
   const requested = downgradeRole(config, typeof resolved.role === 'string' ? resolved.role : config.role, warnOnce)
-  const base = resolved.source !== null && typeof resolved.source === 'object'
+  const source = resolved.source !== null && typeof resolved.source === 'object'
     // 解析器自带的 source 也要盖章：否则这类消息（如 fill=instruction-hint 的
     // `{ kind: 'instruction-hint' }`）只带 kind 通道，dedupe=session 每步重复注入。
-    ? { ...resolved.source, plugin: typeof resolved.source.plugin === 'string' && resolved.source.plugin.length > 0 ? resolved.source.plugin : sourceValue, ...module }
+    // 解析器自带的 kind 优先（缺省 kind 只在它缺席时补），plugin 只在其非空时覆盖身份。
+    ? {
+        ...resolved.source,
+        plugin: typeof resolved.source.plugin === 'string' && resolved.source.plugin.length > 0 ? resolved.source.plugin : sourceValue,
+        ...(resolved.source.kind === undefined ? { kind: identityStampOf({ ...config, sourceKind: undefined }).kind } : {}),
+        ...(config.sourceModuleId === undefined ? {} : { moduleId: config.sourceModuleId }),
+      }
     : {
-        // v4 要求 kind 是**生产者名**：声明了 sourceKind 就用它，否则用与 pluginMessage 同一形状的
-        // `plugin:<身份>`。裸 kind（undefined / 'plugin'）都会被 codec 拒绝，历史走的是同一个坑。
-        kind: typeof config.sourceKind === 'string' && config.sourceKind.length > 0 ? config.sourceKind : `plugin:${sourceValue}`,
-        plugin: sourceValue,
-        ...module,
+        // 模块维是身份判据的新一维，但**不并进身份字符串**：`source.plugin` 的格式是
+        // blockPlugins 的精确匹配契约，一字不改；整模块复制的区分只靠这个独立字段。
+        ...identityStampOf(config),
         ...(typeof config.form === 'string' ? { form: config.form } : {}),
         ...(typeof config.summary === 'string' && config.summary.length > 0 ? { summary: config.summary } : {}),
       }
@@ -256,7 +286,7 @@ function buildMessage(config, resolved, warnOnce) {
     id: typeof resolved.id === 'string' && resolved.id.length > 0 ? resolved.id : newMessageId(config.id),
     role: PRE_STEP_ROLE,
     content: Array.isArray(resolved.content) ? resolved.content : defaultContent,
-    source: requested === undefined ? base : { ...base, requestedRole: requested },
+    source: requested === undefined ? source : { ...source, requestedRole: requested },
   }
 }
 
