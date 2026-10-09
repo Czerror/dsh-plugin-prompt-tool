@@ -147,7 +147,7 @@ ST 导入在既有 `buildWorldBookEntry` 结构上添加 `params.stWorldBook`，
 | `group/group_override/group_weight` | 同组只选一个；override 优先选择高 order，否则按权重 |
 | `sticky/cooldown/delay` | 按真实对话消息数维护会话内窗口，实际插入后才提交激活状态 |
 | `recursive_scanning`（书级）/ 条目级 `recursive` | **只作导入记录**：ST 运行期不读书级 `recursive_scanning`（全树唯一命中 `src/types/spec-v2.d.ts:30`，`convertCharacterBook` 只把它存进 `originalData`），导入后不产生行为；旧产物里由导入写入的 `params.stWorldBook.recursive` 同样不再是门控 |
-| 扫描是否递归 | 由**模块级开关**决定：`module.yml` 顶层 `stWorldBookRecursive: true` 才把新命中正文并入递归池并重扫条目，缺省（或 `false`）= 不递归。条目级只剩 `excludeRecursion` 能拒绝单条（`world-info.js:4870`、`:5097`）；`preventRecursion` 仍决定该条正文是否进入递归池 |
+| 扫描是否递归 | 由 `module.yml` 顶层 `stWorldBookRecursive` **按模块生效**（不是同批模块的并集、也不是全局）：只有声明 `true` 的模块，其条目才在递归 pass 重扫；未声明的模块（缺省即 `false`）不被同批其他模块牵连。递归池本身是全批共享的（对齐 ST 的全局扫描缓冲：新入选正文都进同一个池；`preventRecursion` 决定该条正文是否进池），开关只管「谁参与重扫」。条目级只剩 `excludeRecursion` 能拒绝单条（`world-info.js:4870`、`:5097`）；`delayUntilRecursion` 的层级池与递归正文无关（全批时钟、层级只增不减），因此不受该开关门控 |
 | `insertion_order/order` | 选择优先级高值优先；最终正文按 ST unshift 后的低值在前 |
 
 位置与角色仍有边界：pre-step 不能无损插入历史深度，也不能创建 system 角色消息。
@@ -178,7 +178,7 @@ ST 源码路径相对 `public/scripts/`，对照基线为 SillyTavern 1.19.0 / `
 | `forbid_overrides` | 保护 `main` / `jailbreak` 不被角色卡覆盖（`openai.js:1495-1513`） | **保留事实**：DSH 没有 prompt 覆盖机制，字段不产生行为 | 无 |
 | `min_activations` / `min_activations_depth_max`（默认 0） | **全局用户设置**，不是条目字段：未达最少激活数时把全局扫描深度 +1 补扫，只影响未声明 `scan_depth` 的条目（`world-info.js:69-71`、`:920-923`、`:280`、`:5110-5126`；面板 `index.html:4758-4771`） | **未复刻**：不实现深度偏斜；插件没有世界书面板，该值也没有等价的模块级声明面 | 无 |
 | ST 全局开关 `use_group_scoring` / `case_sensitive` / `match_whole_words` | 全局默认 false（`world-info.js:69-82`），条目可继承 | **逐条目读取**：按条目字段判定，不读 ST 全局设置；缺省即按 false 语义 | 无 |
-| ST 全局开关 `recursive`（`world_info_recursive`，默认 false） | 允许递归重扫新命中的正文（`world-info.js:5097`） | **等价但落点不同**：开关在 `module.yml` 顶层 `stWorldBookRecursive`（缺省 false 与 ST 默认一致；旧导入写的条目级 `recursive` 不再参与） | 无 |
+| ST 全局开关 `recursive`（`world_info_recursive`，默认 false） | 允许递归重扫新命中的正文（`world-info.js:5097`） | **等价但粒度不同**：开关在 `module.yml` 顶层 `stWorldBookRecursive`，**每个模块各管各的**（ST 是全局）：未声明的模块不被同批其他模块牵连、其条目不重扫；递归池与 ST 一样是全批共享的。缺省 false 与 ST 默认一致；旧导入写的条目级 `recursive` 不再参与 | 无 |
 | 位置 `ANTop(2)` / `ANBottom(3)` / `EMTop(5)` / `EMBottom(6)` | Author's Note / Example Messages 插入点（`world-info.js:855-864`） | **降级**：落到当前消息批头部，原位置保留在 `stWorldBook.position` | `st-worldbook-position`（`position-downgraded`） |
 | 位置 `atDepth(4)` | 插入历史深度 | **降级**：保留 position/depth/role，落到当前消息批末尾 | `st-worldbook-depth`（`depth-collapsed`） |
 | 位置 `outlet(7)` 与 `outletName` | outlet 注入通道 | **不支持**：保留 `outletName` 事实，内容不被误注入 | `st-worldbook-controls`（`unsupported-controls`） |

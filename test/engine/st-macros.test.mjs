@@ -11,7 +11,7 @@ import { stringify } from 'yaml'
 import { renderStText } from '../../engine/st-macros.mjs'
 import { attachStRenderers } from '../../engine/st-render.mjs'
 import { compileRules } from '../../engine/rule-spec.mjs'
-import { stChatMessages, selectStWorldBook } from '../../engine/st-world-book.mjs'
+import { stChatMessages, selectStWorldBook, lastWorldBookDiagnostics } from '../../engine/st-world-book.mjs'
 import { isolatedHome } from '../fixtures/host-harness.mjs'
 
 // 模块级开关要按完整链路验证（module.yml → ModuleSpec → compileRules 顶层选项），
@@ -212,4 +212,69 @@ test('st-world-book：递归只由 module.yml 顶层 stWorldBookRecursive 决定
     /stWorldBookRecursive 必须是布尔值/)
   assert.throws(() => compileRules([{ id: 'x', then: [{ id: 'i', kind: 'inject-text', config: { id: 'c', layer: 'pre-step', text: 'x', stWorldBookRecursive: true } }] }]),
     /unknown config key/, '开关是模块级字段，写进动作配置按未知键拒绝')
+})
+
+// 多模块批次的装配夹具：模块级开关（module.yml 顶层）与 sourceModuleId 都由真实链路打标
+// （module.yml → prepareAssembly → compileRules），批次形状与协调器汇总的 pre-step 一致。
+async function compileStWorldBook(moduleId, recursive, rules) {
+  const dir = join(moduleRoot, moduleId)
+  mkdirSync(dir, { recursive: true })
+  writeFileSync(join(dir, 'module.yml'), stringify({ id: moduleId, modules: ['rule-engine'], rules, ...(recursive ? { stWorldBookRecursive: true } : {}) }))
+  return (await prepareAssembly(moduleRoot, moduleId, () => true)).rules.map(rule => rule.actions[0].compiledConfig)
+}
+const wbRule = (id, key, text, extra = {}) => ({
+  id,
+  then: [{ id: 'inject', kind: 'inject-text', config: {
+    id, layer: 'pre-step', strategy: 'world-book', text,
+    params: { keys: [key], stWorldBook: { keys: [key], scanDepth: 2, ...extra } },
+  } }],
+})
+const wbSession = (id, text) => ({
+  id, header: {},
+  snapshotEvents: () => [{ type: 'user/message', seq: 0, data: { message: { id: 'u0', role: 'user', content: [{ type: 'text', text }], source: { kind: 'user' } } } }],
+})
+const selectedIds = (configs, session) => [...selectStWorldBook(configs, session, [])].map(config => config.id).sort()
+
+test('st-world-book：递归开关按模块生效——未声明开关的模块不参与递归 pass', async () => {
+  // 真值源＝手算的入选集合；批次 = 协调器汇总的多模块 pre-step 配置（executor.mjs#batchScope 的 qualified）。
+  // B 的键只出现在 A 的正文里：改前（开关按批次取并集）会连带 B 一起重扫并入选
+  // ['iso-a1','iso-a2','iso-b2']（同夹具在改前实现上实跑过）。
+  const isolation = wbSession('stwb-iso', 'iso-a')
+  const selected = selectedIds([
+    ...await compileStWorldBook('stwb-a', true, [wbRule('iso-a1', 'iso-a', 'A 正文 iso-a2 iso-b2'), wbRule('iso-a2', 'iso-a2', 'A2 正文')]),
+    ...await compileStWorldBook('stwb-b', false, [wbRule('iso-b2', 'iso-b2', 'B2 正文')]),
+  ], isolation)
+
+  // 硬条件①：B 未声明开关 → 不被 A 的递归正文触发；A 自己的递归 pass 仍照旧生效。
+  assert.deepEqual(selected, ['iso-a1', 'iso-a2'], 'B 的条目不参与递归 pass')
+  assert.ok(lastWorldBookDiagnostics(isolation).records.some(record => record.id === 'iso-b2' && record.stage === 'excluded' && record.reason === 'recursion'),
+    'B 的条目被模块开关挡下（诊断不再是「被别的模块正文命中」）')
+})
+
+test('st-world-book：两模块都开时与改前逐字一致（含跨模块正文驱动）', async () => {
+  // 硬条件②：期望值＝改前实现在同一夹具上的输出（判别力证明里换回改前引擎跑一遍，本用例必须照样绿）。
+  // 夹具刻意含跨模块驱动：d1 的键只出现在 c1 的正文里 —— 池是全批共享的（对齐 ST 全局扫描缓冲）。
+  const equivalence = selectedIds([
+    ...await compileStWorldBook('stwb-c', true, [wbRule('eq-c1', 'eq-c', 'C 正文 eq-c2 eq-d1'), wbRule('eq-c2', 'eq-c2', 'C2 正文')]),
+    ...await compileStWorldBook('stwb-d', true, [wbRule('eq-d1', 'eq-d1', 'D1 正文 eq-d2'), wbRule('eq-d2', 'eq-d2', 'D2 正文')]),
+  ], wbSession('stwb-eq', 'eq-c eq-d'))
+  assert.deepEqual(equivalence, ['eq-c1', 'eq-c2', 'eq-d1', 'eq-d2'], '都开时每个模块的递归 pass 与入选集合不变')
+})
+
+test('st-world-book：未声明递归开关的模块里，延迟层级池的既有语义不变', async () => {
+  // 层级池是全批时钟（层级只增不减、与递归正文无关），因此不受模块开关门控：改前同结果。
+  const session = wbSession('stwb-delay', 'dl-e1 dl-e2')
+  const configs = await compileStWorldBook('stwb-e', false, [
+    wbRule('dl-e1', 'dl-e1', 'E1 正文', { delayUntilRecursion: 1 }),
+    wbRule('dl-e2', 'dl-e2', 'E2 正文', { delayUntilRecursion: 2 }),
+  ])
+  assert.deepEqual(selectedIds(configs, session), ['dl-e1', 'dl-e2'], '开关缺省不改变延迟条目的解锁')
+
+  // 缺省时批次不产生递归来源：没有新正文可递归 → 层级池不推进 → 只延迟到第 1 层的条目不被解锁（改前同结果）。
+  const noSource = wbSession('stwb-delay-nosource', 'dl-f0 dl-f1')
+  const offModule = await compileStWorldBook('stwb-f', false, [
+    wbRule('dl-f0', 'dl-f0', 'F0 正文'),
+    wbRule('dl-f1', 'dl-f1', 'F1 正文', { delayUntilRecursion: 1 }),
+  ])
+  assert.deepEqual(selectedIds(offModule, noSource), ['dl-f0'], '无递归来源时层级池不推进')
 })

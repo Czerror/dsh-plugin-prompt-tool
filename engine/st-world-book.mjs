@@ -80,9 +80,11 @@ export function selectStWorldBook(configs, session, messages, warn = () => {}) {
     .filter(Boolean)
     .map(value => value === true ? 1 : value))].sort((a, b) => a - b)
   let delayLevel = delayLevels.shift() ?? 0
-  // 扫描是否递归只由模块级全局开关决定（module.yml 顶层 stWorldBookRecursive，对齐 ST 的
-  // `world_info_recursive`）：CCv2 的书级 `recursive_scanning` 在 ST 运行期不被读取，
-  // 因此条目级不再有自己的递归门控（ST 的同名条目字段与插件自造的 `stWorldBook.recursive` 都不是判据）。
+  // 池是全批共享的（对齐 ST `world_info_recursive` 的全局扫描缓冲：新入选正文都进同一个池），
+  // 这里只决定「池是否产生内容、pass 是否由递归驱动」（层级池推进依赖后者，缺省时既有语义不变）；
+  // **谁参与重扫**按模块判，判据在下面对每个条目求值的 pass 门控。CCv2 的书级 `recursive_scanning`
+  // 在 ST 运行期不被读取，条目级也没有自己的递归门控（ST 的同名条目字段与插件自造的
+  // `stWorldBook.recursive` 都不是判据）。
   const recursive = entries.some(config => config.stWorldBookRecursive === true)
   /** 键匹配器（按 params 对象缓存；签名含插值后的键与匹配选项）。 */
   const matcherOf = (config, material) => {
@@ -113,6 +115,7 @@ export function selectStWorldBook(configs, session, messages, warn = () => {}) {
       for (const [flag, key] of [['matchCharacterDescription', 'description'], ['matchCharacterPersonality', 'personality'], ['matchScenario', 'scenario'], ['matchPersonaDescription', 'persona'], ['matchCreatorNotes', 'creator_notes'], ['matchCharacterDepthPrompt', 'depth_prompt']]) {
         if (depth > 0 && st[flag] === true && typeof config.variables[key] === 'string') parts.push(config.variables[key])
       }
+      // 池是全批共享的；开关没开的模块靠下面的 pass 门控不参与重扫（隔离不靠分池）。
       if (pass > 0 && depth > 0) parts.push(...recursiveText)
       const p = config.params
       const keys = (Array.isArray(p.keys) ? p.keys : []).map((key, index) => interpolateVariables(String(key), config.variables, session, undefined, `${config.id}#keys${index}`)).filter(Boolean)
@@ -150,9 +153,11 @@ export function selectStWorldBook(configs, session, messages, warn = () => {}) {
         note(config, 'excluded', 'delay-until-recursion', { delayUntilRecursion: delayUntil, level: delayLevel, pass })
         continue
       }
-      // 递归 pass 的参与资格只看条目自己的 excludeRecursion（ST world-info.js:4870）；
-      // 延迟条目由层级池驱动，其余条目在全局开关打开时一律参与重扫。
+      // 递归 pass 的参与资格：条目自己的 excludeRecursion（ST world-info.js:4870）与本模块开关
+      // 都要过。延迟条目由层级池驱动——层级池是全批时钟（层级只增不减），与递归正文无关，
+      // 因此不受模块开关门控，`stWorldBookRecursive` 缺省时它的既有语义不变。
       if (pass > 0 && st.excludeRecursion === true) { note(config, 'excluded', 'recursion'); continue }
+      if (pass > 0 && config.stWorldBookRecursive !== true && !delayUntil) { note(config, 'excluded', 'recursion'); continue }
       let active = sticky || p.constant === true
       let activation = sticky ? 'sticky' : p.constant === true ? 'constant' : 'key-match'
       if (!active) {
