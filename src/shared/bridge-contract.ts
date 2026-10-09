@@ -74,6 +74,7 @@ export const BRIDGE_ENDPOINTS = {
   toolSurface: '/tool-surface',
   moduleCapability: '/module-capability',
   worldBookDiagnostics: '/world-book-diagnostics',
+  ruleDiagnostics: '/rule-diagnostics',
 } as const
 
 export type BridgeEndpoint = (typeof BRIDGE_ENDPOINTS)[keyof typeof BRIDGE_ENDPOINTS]
@@ -203,6 +204,8 @@ export interface BridgeRequestMap {
   moduleCapability: ({ action: 'create' | 'remove'; capabilityId: string } | { action: 'create-recipe'; recipeId: string }) & { expectedModuleId?: string }
   /** 只读世界书诊断：只回当前授权会话最近一次选择的观测记录。 */
   worldBookDiagnostics: { sessionId?: string } | undefined
+  /** 只读规则判定计数：无请求体，读取不触发求值。 */
+  ruleDiagnostics: undefined
 }
 
 /** settings descriptor 的跨端最小结构。 */
@@ -302,6 +305,20 @@ export interface WorldBookDiagnosticRecord {
    *  ungrouped / group-winner / injected。 */
   reason: string
   [key: string]: unknown
+}
+
+/** 规则判定类别：`unavailable` = 条件因缺事实无法判定（三值语义）；`miss` = 条件按设计不满足。 */
+export type RuleOutcomeKind = 'hit' | 'miss' | 'unavailable' | 'error' | 'disabled'
+
+/** 单条规则的判定计数（只读派生数据）；只含身份与计数，不含规则正文、事件载荷或会话文本。 */
+export interface RuleDiagnosticRecord {
+  moduleId?: string
+  ruleId: string
+  channel: string
+  hit: number
+  miss: number
+  unavailable: number
+  error: number
 }
 
 /** 顺序组候选：多 prompt_order 组需要用户先选择时的有界选项（不含转换结果）。 */
@@ -442,6 +459,8 @@ export interface BridgeValueMap {
   moduleCapability: { changed: boolean; addedModules?: string[]; removedModules?: string[]; capabilityIds: string[] }
   /** 只读世界书诊断：只回当前授权会话最近一次选择的观测记录（读取不重新求值）。 */
   worldBookDiagnostics: { records: WorldBookDiagnosticRecord[]; truncated: boolean; step: number; evaluated: boolean }
+  /** 只读规则判定计数：按「模块 + 规则 + 通道」聚合，读取不重新求值。 */
+  ruleDiagnostics: { records: RuleDiagnosticRecord[] }
 }
 /** 编译期断言：请求/响应映射与 BRIDGE_ENDPOINTS 键集合完全一致（漏改任一侧 typecheck 失败）。 */
 type AssertCoverage<K extends string, M extends object> =

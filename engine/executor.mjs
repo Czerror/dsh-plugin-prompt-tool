@@ -197,7 +197,7 @@ function buildMessage(config, resolved, warnOnce) {
  * @returns 注入后的 decision；reject、缺 agent/session、全部跳过或异常时原样返回。
  */
 export async function runPreStepBatch(options) {
-  const initialFrame = options.ruleFrame ?? ruleFrame('agent/pre-step', [{ agent: options.agent, messages: options.decision?.messages ?? [] }], options.warnOnce, options.ctx)
+  const initialFrame = options.ruleFrame ?? ruleFrame('agent/pre-step', [{ agent: options.agent, messages: options.decision?.messages ?? [] }], options.warnOnce, options.ctx, options.onOutcome)
   if (!options.ruleActions?.length) return runPromptConfigBatch({ ...options, ruleFrame: initialFrame })
   const entries = [...options.configs.map(config => ({ ...config, config })), ...options.ruleActions].sort(compareConfigSequence)
   let decision = options.decision
@@ -499,6 +499,8 @@ export function applyPromptConfigs(ctx, configs, options = {}) {
       promotion,
       memo: injectedMemo,
       warnOnce,
+      // 诊断上报是只读旁路，缺省 undefined 即零开销（见 ruleFrame 的 onOutcome）。
+      onOutcome: options.onOutcome,
     })
   }, { prepend })
   // 释放边界：先摘监听器，再撤层级注册，最后丢弃去重快路径（顺序与 keepDisposer 内的 release 一致）。

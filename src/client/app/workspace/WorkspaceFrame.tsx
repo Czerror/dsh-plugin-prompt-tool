@@ -1,6 +1,7 @@
 import clsx from 'clsx'
 import { useLayoutEffect, useRef, useSyncExternalStore, type ReactNode } from 'react'
 import type { PromptToolStore } from '../../data/use-prompt-tool-store.ts'
+import { useUnavailableRuleCount } from '../../data/use-rule-diagnostics.ts'
 import type { PromptToolTranslate } from '../../locales.ts'
 import { WorkspaceNavigation } from './WorkspaceNavigation.tsx'
 import { WORKSPACE_PAGES, type WorkspacePage } from './workspace-pages.ts'
@@ -30,6 +31,8 @@ export function WorkspaceFrame(props: {
   const scrollKey = props.scrollKey ?? props.page
   const rules = store.editorDrafts.rules.get(store.fields.moduleId)?.entries.filter(entry => !entry.deleted) ?? []
   const enabledCount = rules.filter(entry => entry.value.enabled !== false).length
+  // 条件因缺事实无法判定的规则数；>0 才在状态栏出现，空态不占位。
+  const unavailableCount = useUnavailableRuleCount(!store.loading && store.meta.layers.length > 0)
   // 角色库与工具面拥有独立请求，不能以全局配置数量判定它们的加载/空态。
   const usesBootstrap = props.page !== 'modules' && props.page !== 'tools'
   const loadingInitial = usesBootstrap && store.loading && store.meta.layers.length === 0
@@ -87,7 +90,8 @@ export function WorkspaceFrame(props: {
           <StatusDot tone={store.loading ? 'neutral' : 'success'} />
           <span>{store.loading
             ? t('app.loading')
-            : t('app.statusSummary', { configs: rules.length, enabled: enabledCount })}</span>
+            : t('app.statusSummary', { configs: rules.length, enabled: enabledCount })}
+            {unavailableCount > 0 ? ` · ${t('app.statusUnavailable', { count: unavailableCount })}` : ''}</span>
         </div>
         <Button shape="pill" variant="outline" className={css.backButton} onClick={props.onClose}>{t('app.backToChat')}</Button>
       </header>

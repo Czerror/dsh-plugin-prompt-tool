@@ -15,6 +15,7 @@ import { compareConfigSequence } from '../../engine/order.mjs'
 import { instructionFileIdFromDisplayPath } from '../host/agents-cards.ts'
 import { instructionPolicyPath, readInstructionPolicy, resolveInstructionPolicy } from '../host/instructions-policy.ts'
 import { filterOfficialInstructionMessages } from './official-instruction-filter.ts'
+import { recordRuleOutcome } from './rule-diagnostics.ts'
 
 export const PRE_STEP_COORDINATOR_SERVICE = 'promptToolPreStep'
 export const PRE_STEP_COORDINATOR_VERSION = 1
@@ -169,7 +170,7 @@ export function installPreStepCoordinator(ctx: Context, options: PreStepCoordina
         else officialOwner.delete(sessionId)
       }
       return configs.length === 0 && ruleActions.length === 0 ? decision
-        : await runPreStepBatch({ ctx, agent, payload, decision, configs, ruleActions, promotion, memo, warnOnce })
+        : await runPreStepBatch({ ctx, agent, payload, decision, configs, ruleActions, promotion, memo, warnOnce, onOutcome: recordRuleOutcome })
     } catch (error) {
       warnOnce(`${WARN_LABEL}: coordination failed, keeping decision: ${String((error as Error | undefined)?.message ?? error)}`)
       return decision

@@ -310,6 +310,28 @@ test('契约：/tool-surface 返回存活 Agent 的只读工具面摘要，未�
   assert.equal(unknownPayload.code, 'tool-surface-unknown-session')
 })
 
+test('契约：/rule-diagnostics 只回判定计数，未启用不入账且读取不触发求值', async () => {
+  const { recordRuleOutcome, resetRuleDiagnostics } = await import('../../src/runtime/rule-diagnostics.ts')
+  const handlers = register()
+  const handler = handlers.get(SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.ruleDiagnostics)
+  assert.ok(handler, '/rule-diagnostics 端点未注册')
+  resetRuleDiagnostics()
+  const empty = fakeRes()
+  await handler(fakeReq({ body: {} }), empty)
+  assert.equal(empty.status, 200)
+  assert.deepEqual(JSON.parse(empty.body), { ok: true, value: { records: [] } }, '未产生判定时回空数组，不伪报')
+  recordRuleOutcome({ moduleId: 'm', ruleId: 'r', channel: 'agent/pre-step', outcome: 'unavailable' })
+  recordRuleOutcome({ moduleId: 'm', ruleId: 'r', channel: 'agent/pre-step', outcome: 'unavailable' })
+  recordRuleOutcome({ moduleId: 'm', ruleId: 'r', channel: 'agent/pre-step', outcome: 'disabled' })
+  const filled = fakeRes()
+  await handler(fakeReq({ body: {} }), filled)
+  assert.deepEqual(JSON.parse(filled.body), {
+    ok: true,
+    value: { records: [{ moduleId: 'm', ruleId: 'r', channel: 'agent/pre-step', hit: 0, miss: 0, unavailable: 2, error: 0 }] },
+  })
+  resetRuleDiagnostics()
+})
+
 test('契约：/tool-surface 支持官方 preset scope 且只读有效 schema', async () => {
   const handlers = register()
   const handler = handlers.get(SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.toolSurface)

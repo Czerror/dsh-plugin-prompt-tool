@@ -12,6 +12,12 @@ const compare = (a, b) => a.action.channelOrder - b.action.channelOrder
 /** 所有来源只进入这个装配入口；注入保留原有批处理和协调器所有权。 */
 export function mountRuleSources(ctx, sources, options = {}) {
   const warnOnce = options.warnOnce ?? createWarnOnce(ctx, options.plugin ?? 'rule-engine')
+  // 诊断上报是只读旁路：把规则对象换回来源模块，供宿主区分跨模块同名 id；缺省不传即零开销。
+  const report = options.onOutcome === undefined ? undefined : (() => {
+    const moduleOfRule = new Map()
+    for (const source of sources) for (const rule of source.rules) if (!moduleOfRule.has(rule)) moduleOfRule.set(rule, source.moduleId)
+    return (rule, channel, outcome) => options.onOutcome({ moduleId: moduleOfRule.get(rule), ruleId: rule.id, channel, outcome })
+  })()
   const releases = []
   const points = new Map()
   const injections = new Map(sources.map(source => [source.moduleId, { sourceId: `module:${source.moduleId}`, configs: [], ruleActions: [], officialInstructions: source.officialInstructions === true }]))
@@ -71,7 +77,7 @@ export function mountRuleSources(ctx, sources, options = {}) {
         const payload = free ? args : args.slice(0, -1)
         const next = free ? () => undefined : args[args.length - 1]
         if (!active) return next()
-        const frame = ruleFrame(point.channel, payload, warnOnce, ctx)
+        const frame = ruleFrame(point.channel, payload, warnOnce, ctx, report)
         if (free) {
           let pending
           for (const entry of handlers) {
@@ -97,7 +103,7 @@ export function mountRuleSources(ctx, sources, options = {}) {
       }, point.waterfallPosition === 'outermost' ? { prepend: true } : undefined))
     }
     const preStep = [...injections.values()].filter(source => source.configs.length || source.ruleActions.length)
-    if (preStep.length) releases.push(applyPromptConfigSources(ctx, preStep, { layers: false }))
+    if (preStep.length) releases.push(applyPromptConfigSources(ctx, preStep, { layers: false, onOutcome: report }))
   } catch (error) {
     active = false
     for (const dispose of releases.reverse()) { try { dispose?.() } catch {} }

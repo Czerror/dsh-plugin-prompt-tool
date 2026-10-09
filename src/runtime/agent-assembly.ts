@@ -24,6 +24,7 @@ import { assertModuleId } from '../host/module-install.ts'
 import { readConfigOrder } from '../host/module-config-order.ts'
 import { rulePromptConfigOptions } from '../host/module-rules.ts'
 import { compileCustomTool, validateCustomTools } from '../host/custom-tools.ts'
+import { recordRuleOutcome } from './rule-diagnostics.ts'
 
 // @ts-expect-error ESM 引擎源码随插件提供。
 import { compileRules } from '../../engine/rule-spec.mjs'
@@ -259,7 +260,7 @@ export function createAgentAssembly(ctx: Context, options: AgentAssemblyOptions)
             if (persona.includeRuntimeContext === false) scopeCtx.systemPrompt.suppressRuntimeContext()
           }
         }
-        scopeCtx.effect(() => mountRuleSources(scopeCtx, ruleSources, { prepend: true }))
+        scopeCtx.effect(() => mountRuleSources(scopeCtx, ruleSources, { prepend: true, onOutcome: recordRuleOutcome }))
         for (const item of prepared) {
           for (const module of item.modules) {
             // 引擎入口既有同步也有 async：先 await 再判

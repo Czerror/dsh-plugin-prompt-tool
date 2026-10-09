@@ -57,6 +57,7 @@ import { assertModuleId, modulePathExists } from '../host/module-install.ts'
 import { DSH_HOME } from '../host/paths.ts'
 import type { AssetFile, AssetImportRequest, ImportKind, ModuleExportRequest } from '../shared/asset-transfer.ts'
 import { lastWorldBookDiagnostics } from '../../engine/st-world-book.mjs'
+import { ruleDiagnosticsSnapshot } from './rule-diagnostics.ts'
 import { BRIDGE_ENDPOINTS, EDIT_TARGET_HEADER, MAX_BRIDGE_BODY_BYTES, MODULE_ACTIVATION_FAILED, SETTINGS_BRIDGE_PREFIX, readEditTarget } from '../shared/bridge-contract.ts'
 import { moduleParamFallbacks, validateEngineParamValues } from '../shared/engine-params.ts'
 import { readPersonaSpec } from '../shared/persona-section.ts'
@@ -2485,6 +2486,21 @@ export function registerSettingsBridge(
             evaluated: snapshot.evaluated === true,
           },
         })
+      })
+      // 规则判定计数（只读）：按「模块 + 规则 + 通道」聚合，供状态栏显示「配了没生效」；
+      // 读取不触发求值，也不回规则正文或事件载荷。
+      register(BRIDGE_ENDPOINTS.ruleDiagnostics, async (req, res) => {
+        if (!isLoopbackRequest(req)) {
+          writeBridgeJson(res, 403, { ok: false, code: 'settings-not-exposed', message: 'loopback requests only' })
+          return
+        }
+        if (req.method !== 'POST') {
+          writeBridgeJson(res, 405, { ok: false, code: 'settings-not-exposed', message: 'method not allowed: ' + (req.method ?? '') })
+          return
+        }
+        const parsedBody = await readBridgeBodyForHandler(req, res)
+        if (parsedBody === undefined) return
+        writeBridgeJson(res, 200, { ok: true, value: { records: ruleDiagnosticsSnapshot() } })
       })
       return () => {
         for (const dispose of disposers) dispose()

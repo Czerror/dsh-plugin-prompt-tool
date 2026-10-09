@@ -419,3 +419,24 @@ test('if/then/else：动作级 text 条件必须落在本执行点真实提供�
     then: [{ id: 'request', kind: 'request-params', modelScope: 'all', patch: {} }],
   }]).length, 1)
 })
+
+test('统一规则：判定类别按通道上报，命中、条件为假与缺事实可区分', async () => {
+  const h = harness()
+  const reported = []
+  const rules = compileRules([
+    { id: 'hit', if: { text: { keys: ['目标'], subject: 'userMessage' } }, then: [textAction('a', 'A')] },
+    { id: 'miss', if: { text: { keys: ['没有这句话'], subject: 'userMessage' } }, then: [textAction('b', 'B')] },
+    { id: 'unavailable', if: { text: { keys: ['目标'], subject: 'toolResult' } }, then: [textAction('c', 'C')] },
+  ])
+  const dispose = mountRuleSources(h.ctx, [{ moduleId: 'module', rules }], { onOutcome: item => reported.push(item) })
+  const agent = actor()
+  const messages = [{ id: 'u', role: 'user', source: { kind: 'user' }, content: [{ type: 'text', text: '目标' }] }]
+  await h.run('agent/pre-step', [{ agent, messages }], () => ({ kind: 'enter', messages }))
+  assert.deepEqual(reported.filter(item => item.ruleId === 'hit'), [
+    { moduleId: 'module', ruleId: 'hit', channel: 'agent/pre-step', outcome: 'hit' },
+  ], JSON.stringify({ warnings: h.warnings }))
+  assert.equal(reported.find(item => item.ruleId === 'miss')?.outcome, 'miss')
+  // 缺事实（pre-step 载荷没有 toolResult 文本）与「条件为假」必须分开，前者才是「为什么没触发」。
+  assert.equal(reported.find(item => item.ruleId === 'unavailable')?.outcome, 'unavailable')
+  dispose()
+})
