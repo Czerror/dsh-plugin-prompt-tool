@@ -78,6 +78,9 @@
 
 导入只做 `prepareStText`：清理注释、trim/ERA、替换默认 user/已知 char、归一宏拼写。
 赋值不在导入期执行。配置带 `params.stMacros: true`，模型实际收到的是运行时求值结果。
+来源模块的 `variablesEnabled` 在导入期只决定**字面**变量是否并入这条卡的配置；导入不写
+产物的开关，导入完成后「是否停用会话变量」由该模块自己的 `rules/_settings.yml` 决定
+（`src/host/sillytavern.ts`、`src/host/characters.ts`）——两者是两件事。
 
 | 宏 | 运行时行为 |
 |---|---|

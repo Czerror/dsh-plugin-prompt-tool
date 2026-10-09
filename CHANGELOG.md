@@ -13,6 +13,7 @@
 - **动作级 `if` / `then` / `else` 与嵌套分支在六个执行点一致按条件生效**（`system-section` / `runtime-context` 的文本贡献、`agent-request`、`llm-stream`、`turn-stop`、`subagent-start`、`subagent-end`），与 `pre-step` 行为一致：此前这些点按规则级 `if` 判定，`else` 与嵌套分支等于无条件执行；`system-section` / `runtime-context` 上只写动作级 `if` 的配置，也从无条件注入变为按条件注入。
 - **同模块多条续跑动作共享一份预算**：`append-context`（`mode: continue`）与 `turn-stop` 不再各占一份——同模块每轮合计 1 次、每会话合计 3 次；此前两条续跑动作会让同一轮连跑 2–3 次。
 - **去重身份统一到 `identity.value`**：`fill: instruction-hint` 的解析器候选此前不带 `source.plugin`，`dedupe: session` 每步重复注入；现在盖章与查找同源，显式共享身份的卡也不会因分批接纳而重复注入（`pre-step-filter` 的 `blockPlugins` 对显式写了 `identity` 的卡要写 `identity.value`，缺省仍是 `id`）。同时启用的模块声明同一个身份时装配期多一条告警，装配照常成功。
+- **会话去重（`dedupe: session`）改为「每当前上下文一次」（已拍板，随本轮落地）**：判据是模型可见的当前历史里是否已有该身份，被压缩或替换**遮蔽**的历史不再拦注入——条件仍满足时在后续步重新注入一次；此前按持久事件流的全量扫描判重，压缩后不会重新注入（`append-context` 等续跑动作的每轮／每会话预算照旧，不随压缩重置）。落地前 `docs/engine-reuse.md` 的会话去重一节写明这条口径与现存差异，断言见该节验收入口。
 - **ST 世界书入选改为批首一次**：此前每个 flush 段各求值一次，同组两条世界书会在两段里各赢一条（双注入）；现在批首取定合格集合。赢家被外层门控或过滤剥离后，同组不再从后续段补位。
 - **原生关键词世界书只扫描本批真实对话消息**：插件注入正文（`append-context`、`skill_load`、子代理注入）与指令文件正文不再触发关键词条目。依赖指令文件正文触发的配置请把关键词写进真实对话，或改用 `constant` 常驻条目。
 - **会话变量不得占用插值保留名**：`session_var` 工具与 ST `{{setvar}}` 两条写入路径都拒绝内建名（`DSH_HOME` / `WORKSPACE` / `CWD`）与动态宏名（`time` / `pick` 等）并说明原因；存量会话里已存下的脏键在读取时跳过。

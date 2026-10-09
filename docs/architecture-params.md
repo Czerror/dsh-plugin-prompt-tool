@@ -257,6 +257,11 @@ UI 侧 `persistParamOverrides` **条件发送**：
      停帧会把模板自身的宏语义一起停）。内建事实与动态宏照常，其他模块的会话变量不受影响；
      标记由 `engine/rule-spec.mjs` 在校验**之后**打上，不在 `inject-text.config` 白名单里——作者写它按未知键拒绝；
    - 用途：模型经 `world_book_upsert` 写世界书条目，内容引用 `{{key}}` 占位；ST 未定义宏登记；
+   - **导入期的开关与落盘后的开关是两件事**：导入（SillyTavern 预设／角色卡、模块并入）读到的
+     `variablesEnabled` 只决定该来源的**字面**变量是否并入产物配置；产物落地成模块后，
+     「是否停用会话变量」由该模块自己的 `rules/_settings.yml` 开关决定
+     （`src/host/sillytavern.ts`、`src/host/characters.ts` 的合并入口按此过滤；导入本身不写
+     产物的 `module.yml` / `_settings.yml` 开关，缺省仍是不停用）；
    - UI 模板变量卡（VariablesEditor）可编辑默认值覆盖。
 
 新增参数时必须明确归属：引擎行为参数 → `ENGINE_PARAM_KEYS`（自动进 PARAM_KEYS 参数集合）；内容占位 → `spec.variables` 段。二者不互串。

@@ -226,6 +226,44 @@ test('普通模块之间的并入是往返且幂等的：重复并入不翻倍�
   assert.match(afterRemove, /text: OWN/, '自带内容不得被移除波及')
 })
 
+test('SillyTavern 多源合并：导入期的 variablesEnabled 只过滤字面变量并入', async () => {
+  // 真值源是两份文档写明、用户拍板的「两件事」口径（docs/architecture-params.md §4、docs/SillyTavern.md）。
+  const { mergeStModulesWithReport } = await import('../../src/host/sillytavern.ts')
+  const stRule = text => ({ id: 'intro', then: [{ id: 'inject', kind: 'inject-text', config: { layer: 'pre-step', text } }] })
+  const { spec: merged } = mergeStModulesWithReport([
+    { id: 'st-off', name: '停用', variables: { owner: 'Mia' }, variablesEnabled: false, rules: [stRule('OFF')] },
+    { id: 'st-on', name: '启用', variables: { mood: 'calm' }, rules: [stRule('ON')] },
+  ])
+  const configs = parse(JSON.stringify(merged)).rules.flatMap(rule => rule.then).map(action => action.config)
+  assert.deepEqual(configs[0].variables, {}, '停用来源的字面变量不得并入产物配置')
+  assert.equal(configs[1].variables.mood, 'calm', '启用来源的字面变量照常并入')
+  assert.deepEqual(merged.variables, { mood: 'calm' }, '预设级 variables 按同一开关过滤')
+})
+
+test('模块并入：导入期的 variablesEnabled 只过滤字面变量，产物开关归目标模块的 rules/_settings.yml', async () => {
+  const characters = await import('../../src/host/characters.ts')
+  const { ensureModuleSlices } = await import('../../src/host/module-storage.ts')
+  // 源开关只过滤本次并入的字面变量；产物落地成模块后，是否停用会话变量由目标模块自己的开关决定。
+  const textRule = (id, text) => ({ id, then: [{ id: 'inject', kind: 'inject-text', config: { layer: 'pre-step', text } }] })
+  for (const [id, extra] of [['card-source', { variablesEnabled: false }], ['target', { variablesEnabled: true }]]) {
+    mkdirSync(join(moduleRoot, id), { recursive: true })
+    writeFileSync(join(moduleRoot, id, 'module.yml'), JSON.stringify({ id, name: id, modules: [], variables: { owner: 'Mia' }, rules: [textRule('intro', `${id.toUpperCase()} BODY`)], ...extra }), 'utf8')
+    ensureModuleSlices(join(moduleRoot, id), { force: true })
+  }
+  const sourceSettings = readFileSync(join(moduleRoot, 'card-source', 'rules', '_settings.yml'), 'utf8')
+  assert.equal(parse(sourceSettings).variablesEnabled, false)
+
+  const applied = characters.mergeModuleIntoModule(moduleRoot, 'target', 'card-source')
+  assert.equal(applied.ok, true, applied.message)
+  const merged = parse(readFileSync(join(moduleRoot, 'target', 'module.yml'), 'utf8'))
+  const configOf = id => merged.rules.find(rule => rule.id === id).then[0].config
+  assert.deepEqual(configOf('module-card-source-intro').variables, {}, '被停用的字面变量不得写进产物配置')
+  assert.equal(configOf('intro').text, 'TARGET BODY', '目标自带配置不并入来源变量')
+  assert.equal(merged.variablesEnabled, true, '导入不写目标模块的开关')
+  assert.equal(readFileSync(join(moduleRoot, 'card-source', 'rules', '_settings.yml'), 'utf8'), sourceSettings, '导入不回写源模块开关')
+  assert.equal(parse(readFileSync(join(moduleRoot, 'target', 'rules', '_settings.yml'), 'utf8')).variablesEnabled, true, '目标开关保持导入前语义')
+})
+
 test('module-enable：写启用表后等待装配，失败如实返回，非法载荷不落盘', async () => {
   // 真值源是「模块页唯一改变装配范围的动作」这一契约：启用即写启用表，停用即摘除。
   const { ctx, handlers } = makeHarness(undefined)
