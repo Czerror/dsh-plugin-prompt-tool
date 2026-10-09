@@ -1,13 +1,23 @@
+import { KNOWN_AUDIENCES } from '../schema.mjs'
 import { labelOf, createMask, RUN_CODE } from './shared.mjs'
 
-/** guard 受众的合法取值（唯一来源）：省略 / `null` / `''` = 通用，`main` = 仅主会话，`subagent` = 仅子代理。 */
-const GUARD_AUDIENCES = new Set([undefined, null, '', 'main', 'subagent'])
+/**
+ * guard 受众判据的唯一来源：省略 / `null` / `''` / `'all'` = 通用
+ * （`'all'` 是编辑器侧的通用档，运行期判据只看 `=== 'subagent'`，见 Ruling 12）；
+ * `main` / `subagent` 取自 schema 的 `KNOWN_AUDIENCES`——编辑器枚举的权威来源。
+ */
+const GUARD_AUDIENCES = new Set([undefined, null, '', 'all', ...KNOWN_AUDIENCES])
 
 export function prepareGuard(action, plugin) {
   const label = labelOf(action)
   // 保存 / 导入即拒绝（与 createMask 同处）：拼错取值今天会静默退化成「通用」。
   if (!GUARD_AUDIENCES.has(action.audience)) {
-    throw new TypeError(`${plugin}: ${label}.audience must be main or subagent (null / 省略 = 通用) — got ${JSON.stringify(action.audience)}`)
+    throw new TypeError(`${plugin}: ${label}.audience must be main or subagent (null / 省略 / 'all' = 通用) — got ${JSON.stringify(action.audience)}`)
+  }
+  // 信任边界：只接受布尔值（缺省 = false），显式 `'yes'` / `1` / `null` 等一律拒绝，
+  // 与下面 audience 的严格化对称；静默当 false 会让「写了却没生效」无法察觉。
+  if (action.includeSubagents !== undefined && typeof action.includeSubagents !== 'boolean') {
+    throw new TypeError(`${plugin}: ${label}.includeSubagents must be a boolean (省略 = false) — got ${JSON.stringify(action.includeSubagents)}`)
   }
   // `audience:'subagent'` 只在子代理分支注册，而子代理分支还要求 `includeSubagents:true`；
   // 缺它时两条分支都不注册（永不生效），所以这是矛盾组合而非缺省。
@@ -51,30 +61,38 @@ export function prepareGuard(action, plugin) {
         return
       }
       const state = { ctx: scoped, disposers: [] }
-      states.add(state)
-      appliedBySession.set(session, state)
       const denials = {
         ...(mask.allow !== undefined ? { allow: [...mask.allow] } : {}),
         ...(mask.deny !== undefined ? { deny: [...mask.deny] } : {}),
       }
-      // restrict 沿父 scope 链传播且不识别受众；只在子代理也受限时复用。
-      if (includeSubagents && typeof tools.restrict === 'function') {
-        try {
-          const dispose = tools.restrict(denials)
-          if (typeof dispose === 'function') state.disposers.push(dispose)
-        } catch (error) {
-          // restrict 只收继承面：本层/晚到工具不在它的可限制集合里，交给 guard 裁决。
-          warnOnce(`${plugin}: guard action ${label} restrict skipped (own-layer/late tools stay covered by the guard): ${String(error?.message ?? error)}`)
+      try {
+        // restrict 沿父 scope 链传播且不识别受众；只在子代理也受限时复用。
+        if (includeSubagents && typeof tools.restrict === 'function') {
+          try {
+            const dispose = tools.restrict(denials)
+            if (typeof dispose === 'function') state.disposers.push(dispose)
+          } catch (error) {
+            // restrict 只收继承面：本层/晚到工具不在它的可限制集合里，交给 guard 裁决。
+            warnOnce(`${plugin}: guard action ${label} restrict skipped (own-layer/late tools stay covered by the guard): ${String(error?.message ?? error)}`)
+          }
         }
+        state.disposers.push(tools.guard((exec) => {
+          const toolName = exec?.name
+          if (toolName === RUN_CODE || typeof toolName !== 'string' || toolName.length === 0) return undefined
+          const depth = exec?.agent?.session?.header?.delegationDepth ?? 0
+          // 主子代理隔离：scope 注册之外再按受众判定一次（子代理 scope 可能挂在父链上）。
+          if (depth > 0 ? !includeSubagents : action.audience === 'subagent') return undefined
+          return mask.blocks(toolName) ? reasonFor(toolName) : undefined
+        }))
+      } catch (error) {
+        // 注册失败不得留下半注册状态：登记过的 state 会让同一 agent.ctx 的下一次 assemble
+        // 直接 return（永不重试）。releaseState 对未登记的 state 同样安全。
+        releaseState(state)
+        throw error
       }
-      state.disposers.push(tools.guard((exec) => {
-        const toolName = exec?.name
-        if (toolName === RUN_CODE || typeof toolName !== 'string' || toolName.length === 0) return undefined
-        const depth = exec?.agent?.session?.header?.delegationDepth ?? 0
-        // 主子代理隔离：scope 注册之外再按受众判定一次（子代理 scope 可能挂在父链上）。
-        if (depth > 0 ? !includeSubagents : action.audience === 'subagent') return undefined
-        return mask.blocks(toolName) ? reasonFor(toolName) : undefined
-      }))
+      // 只在注册成功后才登记：失败时下一次装配重新走完整注册。
+      states.add(state)
+      appliedBySession.set(session, state)
     }
 
     collect(releaseAll)

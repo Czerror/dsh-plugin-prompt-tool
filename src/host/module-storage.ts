@@ -297,12 +297,7 @@ function removeInterruptedWrites(directory: string): void {
   if (existsSync(rules)) {
     assertPlain(rules, true)
     for (const file of readdirSync(rules)) {
-      const target = temporaryTarget(file)
-      if (target === undefined) continue
-      if (target !== RULES_SETTINGS_FILE && target !== RULES_VARIABLES_FILE) {
-        if (!target.endsWith('.yml')) continue
-        try { assertRuleFileId(target.slice(0, -4)) } catch { continue }
-      }
+      if (!isRulesTemporary(file)) continue
       paths.push(join(rules, file))
     }
   }

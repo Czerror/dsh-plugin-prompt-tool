@@ -99,6 +99,14 @@ test('动作声明 fail loud：名单形状错误、名单为空、名单命名 
   assert.throws(() => registerAction(ctx, { kind: 'guard', id: 'g', audience: 'subagent', mask: { deny: ['bash'] } }), /g: audience:'subagent' 需配 includeSubagents:true/)
   assert.throws(() => registerAction(ctx, { kind: 'guard', id: 'g', audience: 'subagent', includeSubagents: false, mask: { deny: ['bash'] } }), /includeSubagents:true/)
   assert.throws(() => registerAction(ctx, { kind: 'guard', id: 'g', audience: 'submagent', mask: { deny: ['bash'] } }), /g\.audience must be main or subagent/)
+  // 'all' 是编辑器侧的通用档（Ruling 12）：运行期判据只看 `=== 'subagent'`，拒绝它会让
+  // 「编辑器当通用、保存即失败」重演。矩阵用例另有一行断言它在运行期等同通用。
+  assert.doesNotThrow(() => registerAction(ctx, { kind: 'guard', id: 'g', audience: 'all', mask: { deny: ['bash'] } }))
+  // includeSubagents 是信任边界（作者可写字段）：缺省视为 false，显式非布尔值编译期拒绝。
+  for (const value of ['yes', 1, null]) {
+    assert.throws(() => registerAction(ctx, { kind: 'guard', id: 'g', includeSubagents: value, mask: { deny: ['bash'] } }), /g\.includeSubagents must be a boolean/, `includeSubagents:${JSON.stringify(value)} 必须拒绝`)
+  }
+  assert.doesNotThrow(() => registerAction(ctx, { kind: 'guard', id: 'g', includeSubagents: false, mask: { deny: ['bash'] } }))
   assert.throws(() => registerAction(ctx, { kind: 'request-params', id: 'x', replace: true, unset: { maxTokens: 1 } }), /cannot combine replace with unset/)
   assert.throws(() => registerAction(ctx, { kind: 'decision', id: 'x', phase: 'pre', decision: 'maybe' }), /must be one of allow, deny, ask/)
   // 段/上下文增量的形状校验（含 label 与 plugin 一起拼出的消息）
@@ -520,6 +528,8 @@ test('guard 受众矩阵：注册次数与 restrict 调用随 audience × includ
     ['H 子代理 · audience:main + includeSubagents:true', 1, { audience: 'main', includeSubagents: true }, 1, 1],
     ['边界 · 主会话 audience:null（中性值）', 0, { audience: null }, 1, 0],
     ['边界 · 主会话 audience:""（中性值）', 0, { audience: '' }, 1, 0],
+    ['边界 · 主会话 audience:"all"（通用档，Ruling 12）', 0, { audience: 'all' }, 1, 0],
+    ['边界 · 子代理 audience:"all" + includeSubagents:true', 1, { audience: 'all', includeSubagents: true }, 1, 1],
   ]
   for (const [label, depth, fields, guards, restricts] of rows) {
     const recorder = recordingCtx()
@@ -539,6 +549,29 @@ test('guard 受众矩阵：注册次数与 restrict 调用随 audience × includ
     // 将来改这条语义时，本行的 1/1 会红）。
     assert.deepEqual(recorder.warnings, [], `${label}：受众不适用是设计行为，不得告警`)
   }
+})
+
+test('guard 注册抛错不留下已登记状态：同一 ctx 的下一次装配重试并最终注册（F29）', async () => {
+  const recorder = recordingCtx()
+  let attempts = 0
+  registerAction(recorder.ctx, { kind: 'guard', id: 'g', mask: { deny: ['bash'] } })
+  const handler = only(recorder.events, 'system-prompt/assemble')
+  const agent = {
+    session: { id: 'guard-retry', header: { delegationDepth: 0 } },
+    ctx: { tools: {
+      guard: () => {
+        attempts += 1
+        if (attempts === 1) throw new Error('tools service down')
+        return () => {}
+      },
+    } },
+  }
+  await handler(assembled({}), { agent, scope: agent }, async () => assembled({}))
+  assert.equal(attempts, 1)
+  assert.match(recorder.warnings.join('\n'), /failed to register: tools service down/, '首次失败必须告警而不是静默')
+  // 改前：state 在 tools.guard 抛错前已登记，第二次 assemble 因 existing.ctx === scoped 直接返回 → attempts 停在 1。
+  await handler(assembled({}), { agent, scope: agent }, async () => assembled({}))
+  assert.equal(attempts, 2, '注册失败后下一次装配必须重试，不得永久放弃')
 })
 
 // ───────────────────────── 四、when 门控与每轮预算 ─────────────────────────

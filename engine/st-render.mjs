@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto'
 import { renderStText } from './st-macros.mjs'
 import { sessionVarsSnapshot } from './session-vars.mjs'
 import { sessionEvents, isDelegated, matchesModel } from './shared.mjs'
+import { isConversationMessage } from './condition.mjs'
 import { stripUnresolvedRefs } from './interpolate.mjs'
 import { isSuccessfulCompactionEnd } from './compaction-epoch.mjs'
 import { compareConfigSequence } from './order.mjs'
@@ -24,7 +25,8 @@ function generationKey(session, pending) {
   const seen = new Set()
   const hash = createHash('sha256')
   const add = (message, kind) => {
-    if (!message || message.source?.plugin || (message.source?.kind && message.source.kind !== 'user')) return
+    // 与 condition.mjs 同源：注入消息 / 空串来源 / 非对象消息都不参与帧边界。
+    if (!isConversationMessage(message)) return
     const value = JSON.stringify([kind, message.id ?? null, message.content ?? []])
     if (seen.has(value)) return
     seen.add(value)

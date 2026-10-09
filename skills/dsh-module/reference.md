@@ -44,7 +44,7 @@
 | `assembly` | `system-prompt/assemble` 下游 | `target.tools`（`allow` **或** `deny`，可加 `requireMatch`、`allowFrom`）、`target.sections`（`add`/`remove` **或** `keep`）、`target.contexts`（`add`/`remove`/`clear`） | 返回未改动的装配（对 tools 即暴露完整目录） |
 | `decision` | `tools/pre-execute` / `tools/post-execute` | `phase`（`pre`/`post`）、`decision`（`allow`/`deny`/`ask`）、`action`（`accept`/`replace`/`block`）、`toolNames`、`text`、`reason` | 一律放行／接受——裁决 bug 不卡死调用 |
 | `append-context` | `mode: context` → `tools/post-execute`；`mode: continue` → `agent/turn-stopping` | `mode`、`text` | 保持原结果 |
-| `guard` | 注册期（agent scope） | `mask.allow` **或** `mask.deny`、`includeSubagents`、`reason`、`audience`（只接受 `main`/`subagent`，省略或 `null` = 通用；`'subagent'` 必须同时写 `includeSubagents: true`，否则编译期拒绝） | 静默不注册（**不**退化成放行以外的东西） |
+| `guard` | 注册期（agent scope） | `mask.allow` **或** `mask.deny`、`includeSubagents`（布尔，缺省 `false`）、`reason`、`audience`（只接受 `main`/`subagent`/`all`；省略、`null`、`''` 与 `all` 同为通用档；`'subagent'` 必须同时写 `includeSubagents: true`，否则编译期拒绝） | 静默不注册（**不**退化成放行以外的东西） |
 | `sdk-strip` | `system-prompt/assemble` 下游 | `mask.allow` **或** `mask.deny` | 原样返回；只删不增 |
 | `request-params` | `agent/request` 下游 | `patch`（浅合并）、`unset`（`{键: 期望值}`）、`replace`（整体替换） | 保持原请求配置 |
 | `inbox-prepend` | `agent/inbox/inserted`（emit，无 next） | `target`（`next-turn` 缺省 / `next-step`）、`text` | 不命中即什么都不做 |
