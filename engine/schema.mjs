@@ -403,8 +403,13 @@ function normalizeMatch(raw, label) {
 }
 
 /**
- * 官方 0.1.6 `LlmCallConfig` 允许被改写的键：不能把消息、工具或 system 塞进请求配置。
+ * 官方 `LlmCallConfig` 允许被改写的键：不能把消息、工具或 system 塞进请求配置。
  * `agent-request` 层的 `params.patch` 与 `request-params` 动作的 `patch`/`unset` 共用这一份。
+ *
+ * 核对到 `@deepseek-ai/dsh-llm@0.2.1-alpha.2`（上游 `packages/llm/llm/src/call-config.ts`）：
+ * `provider`/`model` 属 `LlmCallConfig`，其余四个自 0.2.1 起拆在 `LlmCallControls`，字段集未变。
+ * 上游同处留了 `TODO(call-config-shape)`（讨论 epoch 级字段与 provider 专属选项的归属），
+ * 所以这张表将来可能扩——它漂了本项目不会变红，升级 `dsh-llm` 时要手动再对一次。
  */
 const LLM_CALL_FIELDS = new Set(['provider', 'model', 'reasoningEffort', 'temperature', 'maxTokens', 'stop'])
 
