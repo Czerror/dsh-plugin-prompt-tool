@@ -6,7 +6,7 @@
  * 夹具放在 test/fixtures/module-template/，由本模块复制进测试用的模块根。
  *
  * 安装目标取决于消费方（写两个入口，避免猜路径）：
- *  - writePreset(options.presetDir) 的模板解析根就是 options.presetDir → 用 installFixtureModule(presetDir)；
+ *  - writeModule(options.modulesRoot) 的模板解析根就是 options.modulesRoot → 用 installFixtureModule(moduleRoot)；
  *  - resolveModuleDir(template) 的默认根是 $DSH_HOME/.prompt-tool → 用 installFixtureModuleInHome(dshHome)。
  */
 import { cpSync, mkdirSync } from 'node:fs'

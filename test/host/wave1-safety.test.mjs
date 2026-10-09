@@ -127,7 +127,7 @@ test('writeModule：恶意规则身份经统一编译器拒绝，不留半成品
     mkdirSync(sourceDir, { recursive: true })
     writeFileSync(join(sourceDir, 'module.yml'), JSON.stringify({ id: DEFAULT_MODULE_ID, modules: [], rules: [{ id: '../../evil', then: [{ id: 'inject', kind: 'inject-text', config: { text: 'x' } }] }] }))
     assert.throws(
-      () => writeModule('PROMPT', { modulesRoot: moduleDir, targetModuleId: 'safe-output' }),
+      () => writeModule('PROMPT', { modulesRoot: moduleDir, moduleId: DEFAULT_MODULE_ID, targetModuleId: 'safe-output' }),
       /rule id/,
     )
     // 原子物化失败：目标目录不存在（tmp 已清理）。

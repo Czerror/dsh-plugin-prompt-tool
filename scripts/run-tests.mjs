@@ -21,6 +21,10 @@ const forward = process.argv.slice(2)
   .filter((arg) => arg !== '--')
   .flatMap((arg) => arg.split(/[,\s]+/))
   .filter((arg) => arg.length > 0)
+// node 自身的标志（--test-* / --experimental-*）原样透传，不能当成用例路径。
+const nodeFlags = forward.filter((arg) => arg.startsWith('-'))
+const patterns = forward
+  .filter((arg) => !arg.startsWith('-'))
   .map((arg) => (/^[A-Za-z]:/.test(arg) || arg.startsWith('.') ? arg : join(root, arg)))
 
 function run(command, args, options = {}) {
@@ -59,14 +63,18 @@ try {
   const build = buildInvocation()
   code = run(build.command, build.args, { cwd: root, shell: build.shell })
   if (code === 0) {
-    // 2. 用例在临时 cwd 中运行；默认 glob 保持与 package.json 原脚本一致。
-    const patterns = forward.length > 0
-      ? forward
+    // 并发默认 1：本仓库多个用例共享 DSH_HOME / 模块根与跨进程锁，并行会互相抢占而挂住。
+    // 需要提速时显式传 --test-concurrency=N。
+    const runPatterns = patterns.length > 0
+      ? patterns
       : [join(root, 'test', '**', '*.test.mjs').replaceAll('\\', '/')]
+    const flags = nodeFlags.some((flag) => flag.startsWith('--test-concurrency'))
+      ? nodeFlags
+      : [...nodeFlags, '--test-concurrency=1']
     // 测试进程不得写用户真实的 DSH_HOME：默认指到本次临时目录，忘记隔离的用例
     // 最多写进 runDir（用完即删），而不是 `~/.dsh`。自己隔离的用例照旧在文件顶部覆盖本值。
     // （2026-10-02 实测踩过：一个在 import 之后才设 DSH_HOME 的用例把夹具角色卡写进了真实 .dsh。）
-    code = run(process.execPath, ['--test', ...patterns], { env: { DSH_HOME: join(runDir, 'dsh-home') } })
+    code = run(process.execPath, ['--test', ...flags, ...runPatterns], { env: { DSH_HOME: join(runDir, 'dsh-home') } })
   }
 } finally {
   // 只清理本次创建、路径已确认的临时目录。

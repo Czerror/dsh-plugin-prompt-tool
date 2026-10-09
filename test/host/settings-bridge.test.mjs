@@ -388,7 +388,7 @@ test('模块配置排序端点：启用尾部追加、跨模块保存、冲突�
   const rebuilt = []
   let beforeRebuild = async () => {}
   registerSettingsBridge(ctx, 'prompt-tool', () => ({ available: true, providers: [] }),
-    () => skillsStateStub(), () => '', undefined, () => dirs[0], undefined,
+    () => skillsStateStub(), () => '', undefined, () => dirs[0],
     async (id) => { await beforeRebuild(id); rebuilt.push(id) })
   const call = async (endpoint, body) => {
     const handler = handlers.get(PREFIX + BRIDGE_ENDPOINTS[endpoint])
@@ -518,8 +518,12 @@ test('预设列表、导出、复制、删除、新建与导入都作用于官�
   registerSettingsBridge(ctx, 'prompt-tool',
     () => ({ available: true, providers: [] }),
     () => skillsStateStub(),
-    () => '', undefined, () => activeDir, undefined, undefined,
-    (id) => { importedIds.push(id) }, undefined,
+    () => '',
+    undefined,
+    () => activeDir,
+    undefined,
+    (id) => { importedIds.push(id) },
+    undefined,
     () => { registryRefreshes++ })
   const call = async (endpoint, payload = {}) => {
     const res = fakeRes()
@@ -614,8 +618,8 @@ test('settings bridge /custom-tools 保存时自动追加工具模块', async ()
       () => ({ available: true, providers: [] }),
       () => skillsStateStub(),
       () => '',
-      () => dir,
       undefined,
+      () => dir,
       undefined,
       () => {},
     )
@@ -643,7 +647,7 @@ test('settings bridge /subagent-tool-policy 保存、停用与模块装配均为
     let rebuilds = 0
     registerSettingsBridge(ctx, 'prompt-tool', () => ({ available: true, providers: [] }),
       () => skillsStateStub(), () => '', undefined, () => dir,
-      undefined, () => { rebuilds += 1 })
+      () => { rebuilds += 1 })
     const handler = handlers.get(PREFIX + BRIDGE_ENDPOINTS.subagentToolPolicy)
     const policy = {
       defaultProfile: 'base', ceiling: { allow: ['read'], deny: [] },
@@ -681,8 +685,8 @@ test('settings bridge /persona 读写顶层 persona 段并按实际模块身份�
       () => ({ available: true, providers: [] }),
       () => skillsStateStub(),
       () => '',
-      () => dir,
       undefined,
+      () => dir,
       (id) => { rebuilds.push(id) },
     )
     const handler = handlers.get(PREFIX + BRIDGE_ENDPOINTS.persona)
@@ -754,7 +758,7 @@ test('/rules：顶层人设独占时拒绝启用独占规则，保留禁用边�
   }
   const save = async enabled => call({ expectedRevisions: (await call()).value.revisions, edits: [{ previousId: null, rule: completeRule(enabled) }] })
   try {
-    registerSettingsBridge(ctx, 'prompt-tool', () => ({ available: true, providers: [] }), () => skillsStateStub(), () => '', undefined, () => dir, undefined, target => { rebuilds.push(target) })
+    registerSettingsBridge(ctx, 'prompt-tool', () => ({ available: true, providers: [] }), () => skillsStateStub(), () => '', undefined, () => dir, target => { rebuilds.push(target) }, undefined)
     writeFileSync(file, JSON.stringify(definition(false)))
     assert.equal((await save(true)).status, 200)
     assert.deepEqual(rebuilds, [id])

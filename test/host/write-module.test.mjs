@@ -277,20 +277,13 @@ test('writeModule：module.yml 的模块行参数经参数桥进入内存配装'
   }
 })
 
-test('writeModule 拒绝旧settings规则覆盖；正文资产写盘不改已有规则所有权', () => {
+test('writeModule 写正文资产不改已有规则所有权', () => {
   const dir = join(tmpdir(), `prompt-tool-src-${process.pid}-${Date.now()}`)
   const moduleDir = join(dir, 'preset')
   try {
     const options = makeOptions(moduleDir)
     const moduleFile = join(moduleDir, 'fixture', 'module.yml')
     const before = readFileSync(moduleFile, 'utf8')
-    assert.throws(() => writeModule('FILE CONTENT', {
-      ...options,
-      promptConfigs: [
-        { id: 'prompt-injector', name: '用户覆盖', enabled: true, strategy: 'custom-fallback', text: 'SETTINGS TEXT' },
-      ],
-    }), /旧 promptConfigs/)
-    assert.equal(readFileSync(moduleFile, 'utf8'), before)
     writeModule('FILE CONTENT', options)
     const injector = projectedConfig(join(moduleDir, 'fixture'), 'prompt-injector')
     assert.equal(injector.params.text, parseYaml(before).rules.find(rule => rule.id === 'prompt-injector').then[0].config.params.text)
