@@ -11,6 +11,7 @@
  * `assistant/message`, per the caller's `promoteEvents`) recorded AFTER the
  * last successful `compaction/end` boundary counts as promoted. Before any compaction
  * the boundary is -1, which preserves the original one-shot semantics.
+ * 重置判据看事件不看代次；理由与失效条件见 `isSuccessfulCompactionEnd`。
  *
  * State is memoized per session id and maintained incrementally through
  * `observe()`; a cold session scans its durable log once (so resume and
@@ -70,7 +71,21 @@ function firstReasoningMatches(content, classify) {
 
 export function hasAnchoredReasoning(content, options = {}) { return firstReasoningMatches(content, reasoningClassifier(options)) }
 
-/** True only when compaction completed and changed the model-visible surface. */
+/**
+ * True only when compaction completed and changed the model-visible surface.
+ *
+ * 判据刻意是**事件维**（成功 `compaction/end`），不是 surface 的 `replaceGeneration` 代次：
+ * 宿主对「一次已提交的位置替换」只给单调计数（`packages/core/session/src/surface.ts:569-572`），
+ * 不说是哪一种，也不给边界。于是代次判据有三处改语义：① 非压缩的 replace（区域编辑 / 手动裁剪 /
+ * 含 `surfaceOp: { op: 'replace' }` 的插件重写）同样推进代次，门控会被误重置；② 轮询只能得到
+ * 一个整数，定不出边界给 `applyEvent` 的 `seq <= boundary` 守卫，压缩替身落地**之前**的事件会被
+ * 当成新 epoch 的事件重新晋升（5b）；③ 无 surface / 无代次（恢复、重放、其它宿主、既有桩）时
+ * 代次恒 undefined，压缩重置永不触发。压缩的**权威判定**因此还得看事件：宿主只在压缩时写
+ * 无 `error` 的 `compaction/end`，而成功压缩必然伴随一次 replace。
+ * ponytail: 近似而非权威 —— 失效条件：既不写 `compaction/end`、又靠 replace 重写可见上下文，
+ * 或写了成功 `compaction/end` 却没改变可见上下文时，该重置误触发/漏触发。宿主给出「这次 replace
+ * 是否压缩 + 边界 seq」的显式信号时改用它。
+ */
 export function isSuccessfulCompactionEnd(event) {
   return event?.type === 'compaction/end' && event.data?.error === undefined
 }
