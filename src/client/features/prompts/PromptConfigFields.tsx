@@ -30,14 +30,13 @@ const SELECTIVE_LOGIC_LABEL_KEYS: Record<string, PromptToolLocaleKey> = {
 /**
  * 层专属实例字段的键清单（与 engine/layers.mjs 的真实消费一一对应）：
  * 末尾的 JSON 兜底按此剔除已结构化的键，同一取值不会同时出现两份输入。
- * turn-stop（续跑上限是引擎常量）与 subagent-end（只观察、无注入通道）没有可写
- * 实例字段，故不在此表——它们只拿到只读说明。
+ * tool-pipeline 不在此表：它已无注入通道，params 只作离线迁移输入。
+ * turn-stop（续跑上限是引擎常量）没有可写实例字段，只拿到只读说明。
  */
 const LAYER_PARAM_KEYS: Record<string, readonly string[]> = {
   'runtime-context': ['contextName'],
   'agent-request': ['patch', 'replace'],
   'llm-stream': ['mode'],
-  'tool-pipeline': ['toolNames', 'preDecision', 'denyReason', 'postAction'],
   'subagent-end': ['action'],
 }
 
@@ -51,16 +50,6 @@ const LAYER_READ_ONLY_NOTES: Record<string, PromptToolLocaleKey> = {
 const LLM_STREAM_MODE_LABEL_KEYS: Record<string, PromptToolLocaleKey> = {
   pass: 'strategyParam.mode.pass',
   replace: 'strategyParam.mode.replace',
-}
-const PRE_DECISION_LABEL_KEYS: Record<string, PromptToolLocaleKey> = {
-  allow: 'strategyParam.preDecision.allow',
-  deny: 'strategyParam.preDecision.deny',
-  ask: 'strategyParam.preDecision.ask',
-}
-const POST_ACTION_LABEL_KEYS: Record<string, PromptToolLocaleKey> = {
-  accept: 'strategyParam.postAction.accept',
-  replace: 'strategyParam.postAction.replace',
-  block: 'strategyParam.postAction.block',
 }
 const SUBAGENT_END_ACTION_LABEL_KEYS: Record<string, PromptToolLocaleKey> = {
   observe: 'strategyParam.endAction.observe',
@@ -309,7 +298,7 @@ function ManagedFieldsPanel(props: {
 /**
  * 按 layer / strategy 拆解 params 为结构化编辑框（替代裸 JSON）：
  *   层专属 → system-section（段名/独占/动态抑制）、runtime-context（注册名）、
- *   agent-request（patch/replace）、llm-stream（mode）、tool-pipeline（toolNames/裁决）；
+ *   agent-request（patch/replace）、llm-stream（mode）、subagent-end（结束动作）；
  *   first-turn-anchor → near-anchor 锚点参数（开关/锚文本/任务正则/引导句）；
  *   guide-auto → router-guide 每轮引导参数（开关/文本/复杂正则/强弱引导句）；
  *   custom-fallback → prompt-injector 锚定词（params.text 为运行时注入内容，不暴露编辑）；
@@ -371,22 +360,6 @@ export function StrategyParamsFields(props: { t: PromptToolTranslate; strategy: 
     <OptionField t={t} className={styles.fieldSpan3} label={t('strategyParam.mode.label')} hint={t('strategyParam.mode.hint')}
       value={str('mode') || 'pass'} options={options('mode', ['pass', 'replace'])} fallback="pass" labelKeys={LLM_STREAM_MODE_LABEL_KEYS}
       onChange={(next) => set('mode', next)} />
-  ) : layer === 'tool-pipeline' ? (
-    <>
-      {/* toolNames 只能按逗号串写：引擎 parseToolNames 只认字符串，数组会被解析成空
-          = 匹配所有工具，把定向门扩大成全工具门。旧数组数据按同形态回显，编辑即写成字符串。 */}
-      <ParamInput className={styles.fieldSpan6} label={t('strategyParam.toolNames.label')} hint={t('strategyParam.toolNames.hint')}
-        value={Array.isArray(value['toolNames']) ? (value['toolNames'] as unknown[]).map(String).join(', ') : str('toolNames')}
-        onChange={(next) => set('toolNames', next)} />
-      <OptionField t={t} className={styles.fieldSpan3} label={t('strategyParam.preDecision.label')} hint={t('strategyParam.preDecision.hint')}
-        value={str('preDecision') || 'allow'} options={options('preDecision', ['allow', 'deny', 'ask'])} fallback="allow" labelKeys={PRE_DECISION_LABEL_KEYS}
-        onChange={(next) => set('preDecision', next)} />
-      {str('preDecision') === 'deny' && <ParamInput className={styles.fieldSpan6} label={t('strategyParam.denyReason.label')} hint={t('strategyParam.denyReason.hint')}
-        value={str('denyReason')} onChange={(next) => set('denyReason', next)} />}
-      <OptionField t={t} className={styles.fieldSpan3} label={t('strategyParam.postAction.label')} hint={t('strategyParam.postAction.hint')}
-        value={str('postAction') || 'accept'} options={options('postAction', ['accept', 'replace', 'block'])} fallback="accept" labelKeys={POST_ACTION_LABEL_KEYS}
-        onChange={(next) => set('postAction', next)} />
-    </>
   ) : layer === 'subagent-end' ? (
     <OptionField t={t} className={styles.fieldSpan6} label={t('strategyParam.endAction.label')} hint={t('strategyParam.endAction.hint')}
       value={str('action') || 'observe'} options={options('action', ['observe', 'inject-main'])} fallback="observe" labelKeys={SUBAGENT_END_ACTION_LABEL_KEYS}
