@@ -57,7 +57,10 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
   const [expanded, setExpanded] = useState<string | undefined>(props.browse?.expanded)
   const [filter, setFilter] = useState(props.browse?.filter ?? '')
   const [order, setOrder] = useState<ModuleConfigOrderSnapshot>()
-  const owners = useModuleRuleEditors(store, [moduleId, ...order?.entries.map(entry => entry.moduleId) ?? []])
+  // 卡片准入的第一优先级是存储根 config.yml 的启用表：未启用的模块不建编辑器、不读 rules/*.yml。
+  // 排序快照与当前编辑目标只决定「已启用模块里显示哪些卡」，越过不了这道门。
+  const enabledIds = new Set((store.meta.modules ?? []).filter(module => module.enabled === true).map(module => module.id))
+  const owners = useModuleRuleEditors(store, [moduleId, ...order?.entries.map(entry => entry.moduleId) ?? []].filter(id => enabledIds.has(id)))
   const revisions = JSON.stringify(owners.map(owner => [owner.moduleId, owner.draft.revisions?.settings]))
   const [sorting, setSorting] = useState(false), [orderError, setOrderError] = useState(''), [discard, setDiscard] = useState<string>()
   const dragId = useRef<string>(), epoch = useRef(0), sortBusy = useRef(false), lastCreated = useRef<string>()

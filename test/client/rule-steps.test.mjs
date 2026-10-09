@@ -126,3 +126,27 @@ test('rules workspace: 层筛选器用自己的可访问名，不借用「缺省
   assert.ok(labels.includes(t('rules.layerFilter')), '筛选器渲染出自己的可访问名')
   assert.ok(!labels.includes(t('rules.layer')), '「缺省层」是字段标签，不再复用为筛选器名称')
 })
+
+test('rules workspace: 未启用模块不出规则卡（启用表先于 _settings.yml 与 rules/）', async () => {
+  const { RulesWorkspace } = await withSsr([new URL('../../src/client/features/prompts/RulesWorkspace.tsx', import.meta.url).href])
+  // 当前编辑目标停在一个**未启用**的模块上，且它的草稿里确实有一张卡：
+  // 卡片准入必须先问存储根 config.yml 的启用表，再谈草稿与 rules/ 正文。
+  const fields = { moduleId: 'module-off', modulesEnabled: true, promptConfigs: [] }
+  const drafts = createWorkspaceDrafts()
+  drafts.rules.set('module-off', {
+    entries: [{ key: 'off-1', previousId: null, value: { id: 'rule-from-disabled-module', name: '来自未启用模块的卡', layer: 'pre-step', then: [] } }],
+    saved: [], fields: new Map(), loaded: true, validated: false, sequence: 0, nextKey: 2,
+  })
+  const store = {
+    editorDrafts: drafts, getFields: () => fields, subscribeFields: () => () => {},
+    getDraftRevision: () => 0, subscribeDrafts: () => () => {}, publishDrafts: () => {},
+    enqueueModuleTask: (_moduleId, task) => task(), enqueueRuleTask: task => task(),
+    meta: {
+      layers: ['pre-step'],
+      modules: [{ id: 'module-off', name: 'off', enabled: false }, { id: 'module-on', name: 'on', enabled: true }],
+    },
+  }
+  const html = renderElement(RulesWorkspace, { store, t })
+  assert.ok(!html.includes('来自未启用模块的卡'), '未启用模块的规则不出卡')
+  assert.ok(!html.includes('rule-from-disabled-module'), '它的正文与 id 也不进规则区')
+})
