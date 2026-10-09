@@ -25,5 +25,5 @@
 .exportOption small { color: var(--dsw-alias-label-secondary); }
 .exportContent summary { min-height: 44px; cursor: pointer; align-content: center; }
 
-/* 模块运行总闸：与新建/导入按钮同排并贴最右。 */
-.presetGlobalSwitch { display: flex; margin-left: auto; }
+/* 模块运行总闸：按钮行占满整行，开关自身吃掉剩余空间后贴最右（父级 flex: 0 0 auto 撑不到行右端）。 */
+.presetGlobalSwitch { display: flex; flex: 1 1 auto; justify-content: flex-end; align-items: center; }
