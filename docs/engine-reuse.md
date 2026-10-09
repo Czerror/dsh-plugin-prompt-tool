@@ -286,10 +286,10 @@
 reason / text / toolNames（缺省档全取引擎既有默认），`append-context` 给 mode / text。两条都是
 **空串 / 缺省枚举**，不替用户选业务值；`toolNames` 必须是**逗号分隔字符串**——`parseToolNames`
 只认字符串，数组会被解析成空 = 匹配所有工具，把定向门悄悄扩大成全工具门。
-`match` 刻意不进种子：动作级 `match` 在声明路径上**必须是函数**（`typeof action.match === 'function'`
-才过滤，对象形态恒命中 → `rule-spec.mjs` 编译期拒绝），而种子是要写回 `module.yml` 的结构化值，
-函数既进不了 `structuredClone` 也进不了 YAML；条件是规则级 `if` / 分支节点的职责，动作级
-`match` 只留给手工 JSON 编辑。`getRuleEditorMeta()` 的每条种子都会经 `compileRules` 实测编译，
+`match` 刻意不进种子：动作级 `match` 在声明路径上**出现即拒**——函数形态过不了 `structuredClone`
+（声明要写回 `module.yml` / JSON，函数既进不了克隆也进不了 YAML；报错提示「改用函数」等于把人引向
+`DataCloneError` 这条死路），对象与字符串形态在运行期恒命中 = 配了门却没拦住；条件一律写规则级
+`if` 或分支节点的 `if`。`getRuleEditorMeta()` 的每条种子都会经 `compileRules` 实测编译，
 种子写错会当场炸掉规则编辑器，不是静默降级。
 `custom-fallback` 不再发布，也没有可执行兼容分支，必须离线转为显式 `anchor` 条件和
 `anchor-notice` 内容；条件未声明 `fallbackAfter` 时不启用轮数兜底。

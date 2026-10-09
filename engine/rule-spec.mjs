@@ -1,7 +1,7 @@
 /** module.yml.rules 的唯一运行时编译入口。旧声明仅由离线迁移器读取。 */
 import { ACTION_KINDS, actionExecutionPoint, prepareAction, validateActionOptions } from './actions/index.mjs'
 // 字段清单与动作声明同住 `actions/catalog.mjs`（`actions/index.mjs` 不再导出新面）。
-import { ACTION_FIELDS, MATCH_ACTION_KINDS } from './actions/catalog.mjs'
+import { ACTION_FIELDS } from './actions/catalog.mjs'
 import { compileWhen, PREDICATE_FACTORIES, COMPOSITE_OPERATORS, FACT_PREDICATE_SUBJECTS, channelFactSubjects, channelTextSubjects } from './conditions/index.mjs'
 import { createPromptConfigs, INJECT_CONFIG_FIELDS, KNOWN_LAYERS, SESSION_VARIABLES_DISABLED, assertLlmCallPatch } from './schema.mjs'
 import { stripDeclaredRefs } from './interpolate.mjs'
@@ -196,10 +196,11 @@ export function compileRules(specs, options = {}) {
       // 旧动作级开关已退役：显式拒绝并给出新名（比 unknown fields 更可直接照做）。
       if (source.when !== undefined) throw new TypeError(`rule ${spec.id}: action ${source.id}: "when" 已退役，改用 "if"`)
       if (source.prepend !== undefined) throw new TypeError(`rule ${spec.id}: action ${source.id}: ${PREPEND_RETIRED}`)
-      // 声明路径上的 `match` 只能是函数（`prepare*` 里 `typeof === 'function'` 才过滤）；
-      // 对象形态恒命中 = 「配了门却没拦住」，比未知键更隐蔽。
-      if (MATCH_ACTION_KINDS.has(source.kind) && source.match !== undefined && typeof source.match !== 'function') {
-        throw new TypeError(`rule ${spec.id}: action ${source.id}.match 必须是函数 — 对象形态恒命中，改用 rule.if`)
+      // 声明路径（YAML / JSON / 导入）表达不了函数，而 `structuredClone` 对函数抛
+      // DataCloneError——报错提示「改用函数」等于把人引向死路。`match` 出现即拒，
+      // 条件写在规则级 `if` 或分支节点里。
+      if (source.match !== undefined) {
+        throw new TypeError(`rule ${spec.id}: action ${source.id}.match 已取消 — 声明路径写不了函数，条件改用 rule.if`)
       }
       const action = structuredClone(source)
       if (action.kind === 'inject-text') {

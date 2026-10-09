@@ -1135,10 +1135,13 @@ test('动作声明白名单：未知键、对象形态 match 与带 kind 的分�
   ] }]), /`prepend` 已取消.*waterfallPosition: outermost/)
   assert.throws(() => compileRules([{ id: 'r', then: [textAction('a', 'A', { prepend: true })] }]),
     /`prepend` 已取消.*waterfallPosition: outermost/)
-  // 关键拒绝：对象形态 match 在声明路径上恒命中（`typeof === 'function'` 才过滤）。
-  assert.throws(() => compileRules([{ id: 'strip', then: [
-    { id: 'a', kind: 'assembly', match: { keys: ['x'] }, target: { tools: { deny: ['bash'] } } },
-  ] }]), /action a\.match 必须是函数/)
+  // 关键拒绝：动作级 match 出现即拒——函数形态过不了 structuredClone（DataCloneError），
+  // 对象/字符串形态恒命中，三种都指回规则级 `if`（声明路径写不了函数）。
+  for (const value of [() => true, 'x', { keys: ['x'] }]) {
+    assert.throws(() => compileRules([{ id: 'strip', then: [
+      { id: 'a', kind: 'assembly', match: value, target: { tools: { deny: ['bash'] } } },
+    ] }]), /action a\.match 已取消.*rule\.if/, `match=${typeof value} 也要拒绝并指回 rule.if`)
+  }
   // 关键拒绝（F24）：动作级 enabled/group/exclusive 属于规则层，运行期会被逐条覆盖。
   for (const [field, value] of [['enabled', true], ['group', 'g'], ['exclusive', true]]) {
     assert.throws(() => compileRules([{ id: 'r', then: [textAction('a', 'A', { [field]: value })] }]), new RegExp(`rule\\.${field}`))
@@ -1212,7 +1215,7 @@ test('T31：规则卡的动作种子覆盖 catalog 声明的可编辑字段，�
     assert.doesNotThrow(() => compileRules([{ id: 'seed', then: [{ ...structuredClone(ACTION_EXAMPLES[kind]), id: 'a', kind }] }]), `${kind} 的种子不可编译`)
     assert.deepEqual(Object.keys(meta.actions.find(item => item.kind === kind).example).sort(),
       ['kind', ...keys].sort(), `${kind} 的下发种子就是 ACTION_EXAMPLES`)
-    // `match` 必须是函数（rule-spec 的声明期拒绝），种子是结构化值 → 它不在这张卡的可编辑面里。
+    // `match` 三种形态都被 rule-spec 拒绝，种子是结构化值 → 它不在这张卡的可编辑面里。
     if (definition.fields.includes('match')) {
       assert.deepEqual(definition.fields.filter(field => !keys.includes(field)), ['match'], `${kind} 只允许 match 落在种子外`)
     }
