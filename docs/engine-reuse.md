@@ -294,7 +294,7 @@ id 不同、却声明同一个 sourceKind 的卡同样会经 kind 通道互相�
   文件卡为了编辑原文仍可读取文件；关闭不是文件访问控制，也不阻止官方读取。
 - `instructionHint` 默认关闭。显式开启且提供有效 messageTemplate 后先调用同一过滤入口，再转换剩余符合条件的官方
   消息；转换与过滤都不改写历史。未装配官方指令时，插件不补建文件注入。
-- 旧版生成目录里的 `agents-file-*` 卡（或 `sourceKind: instruction-file`）继续跳过，
+- 旧版生成目录里的 `agents-file-*` 卡（按配置 id 前缀判定）继续跳过，
   避免旧产物恢复插件自注入。`instructions.owner.officialInstructions` 只报告观察到的官方装配
   事实：`true` 仅在观察到官方装配时出现（当前没有生产者），`null` 表示尚未观察到；不报
   「未装配」这类插件观察不到的否定事实，也不表示某个文件已经进入模型上下文。

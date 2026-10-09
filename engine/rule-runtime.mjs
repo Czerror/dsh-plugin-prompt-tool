@@ -83,6 +83,8 @@ export function mountRuleSources(ctx, sources, options = {}) {
           const entry = { rule, handler, sequence: action.channelOrder, sourceModuleId: moduleId, ruleId: rule.id, ruleActionIndex: action.actionIndex, id: action.id, actionWhen: action.actionWhen, bypassRuleWhen: action.bypassRuleWhen }
           if (channel === 'agent/pre-step' && point.waterfallPosition === 'default') injections.get(moduleId).ruleActions.push(entry)
           else handlers.push(entry)
+          // 显式放弃：handler 的存活期由下面唯一的 `ctx.on(point.channel, …)` 统一撤销，
+          // 这里再返回一个真 disposer 会与它重复释放同一批 handler。
           return () => {}
         }
         releases.push(bind(item, on))

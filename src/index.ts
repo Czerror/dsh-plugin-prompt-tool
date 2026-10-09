@@ -209,8 +209,8 @@ registerTuiCommand(
       warn(ctx, `prompt-tool: skill-search 未挂载（skill_search/skill_load 不可用）：${error instanceof Error ? error.message : String(error)}`)
     })
 
-  // 独立指令文件来源：宿主侧按本次 Agent 实时编译文件卡，引擎在每次 pre-step
-  // 查询本服务（ctx.get('promptToolPreStep')），不注册第二个 pre-step 监听器。
+  // pre-step 协调器：引擎在每次 pre-step 查询本服务（ctx.get('promptToolPreStep')），
+  // 不注册第二个 pre-step 监听器；旧生成目录的 `agents-file-*` 卡在这里按 id 前缀跳过。
   // 策略缺省 enabled=false；服务缺失时引擎只执行模块卡（独立引擎复制场景）。
   installPreStepCoordinator(ctx)
 

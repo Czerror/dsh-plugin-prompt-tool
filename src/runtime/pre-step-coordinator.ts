@@ -162,8 +162,10 @@ export function installPreStepCoordinator(ctx: Context, options: PreStepCoordina
     try {
       const scope = isRecord(agent) && agent.ctx !== undefined ? scopeOf(agent.ctx as Context) : undefined
       const sources = [...layers.merge(scope, (layer) => layer.entries).values()]
+      // 只按旧生成卡的 id 前缀跳过；编译后的 sourceKind 恒带 `plugin:` 前缀（见 schema.mjs），
+      // 声明 `instruction-file` 的用户配置照常注入。
       const configs = sources.flatMap(source => source.configs).filter(config =>
-        !config.id.startsWith('agents-file-') && config.sourceKind !== 'instruction-file')
+        !config.id.startsWith('agents-file-'))
         .sort(compareConfigSequence)
       const ruleActions = sources.flatMap(source => source.ruleActions ?? [])
       if (configs.length === 0 && ruleActions.length === 0) return decision

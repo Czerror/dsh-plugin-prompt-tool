@@ -7,7 +7,7 @@ import { compileRules, getRuleEditorMeta, isFixedRegistration } from '../../engi
 import { mountRuleSources } from '../../engine/rule-runtime.mjs'
 import { WARN_ONCE_LIMIT, createWarnOnce } from '../../engine/shared.mjs'
 import { ruleFrame, ruleMatches, actionMatches } from '../../engine/conditions/evaluation.mjs'
-import { createNameListPredicate, subjectOf } from '../../engine/conditions/index.mjs'
+import { createNameListPredicate, subjectOf, FACT_PREDICATE_SUBJECTS } from '../../engine/conditions/index.mjs'
 import { UNAVAILABLE } from '../../engine/conditions/availability.mjs'
 import { lastWorldBookDiagnostics } from '../../engine/st-world-book.mjs'
 
@@ -429,6 +429,54 @@ test('统一规则：锚定资格由条件决定，确认与两轮兜底保留�
   dispose()
 })
 
+test('T15：dedupe=session 慢路径命中后回填快路径，下一步不再整表扫描', async () => {
+  const h = harness()
+  const rules = compileRules([{ id: 'persisted', then: [
+    textAction('persisted', 'PERSISTED', { dedupe: 'session', position: 'before-all' }),
+    textAction('sibling', 'SIBLING', { dedupe: 'session', position: 'before-all' }),
+  ] }])
+  const dispose = mountRuleSources(h.ctx, [{ moduleId: 'module', rules }])
+  const agent = actor()
+  // 冷路径：宿主已把 `persisted` 那条持久化，memo 是空的（本次装配没走过 session/event）。
+  const events = [{
+    type: 'user/message',
+    seq: 1,
+    data: { message: { id: 'm1', role: 'user', source: { kind: 'plugin:persisted' }, content: [{ type: 'text', text: 'PERSISTED' }] } },
+  }]
+  let scans = 0
+  agent.session.snapshotEvents = () => { scans += 1; return events }
+  const step = async () => {
+    const before = scans
+    const decision = await h.run('agent/pre-step', [{ agent }], () => ({
+      kind: 'enter', messages: [{ id: 'u', role: 'user', source: { kind: 'user' }, content: [{ type: 'text', text: 'USER' }] }],
+    }))
+    return { texts: decision.messages.flatMap(message => message.content.map(block => block.text)), scans: scans - before }
+  }
+  const first = await step()
+  assert.deepEqual(first.texts, ['SIBLING', 'USER'], '整表命中已投递的那条 → 不注入；同位置兄弟照常')
+  const second = await step()
+  assert.deepEqual(second.texts, first.texts, '第二步的注入层、次数与同位置兄弟都不变')
+  // 慢路径按既有入口回填 memo 之后，该配置在第二步不再读一次事件快照（兄弟仍走慢路径）。
+  assert.equal(second.scans, first.scans - 1, `回填后第二步少一次整表扫描（${first.scans} → ${second.scans}）`)
+  dispose()
+})
+
+test('T15：turn-stop 未声明 match 时不重复读事件快照', async () => {
+  const steered = []
+  let scans = 0
+  const h = harness()
+  const agent = { ...actor(), steer: message => steered.push(message.content[0].text) }
+  agent.session.snapshotEvents = () => { scans += 1; return [] }
+  const dispose = mountRuleSources(h.ctx, [{ moduleId: 'module', rules: compileRules([
+    { id: 'stop', layer: 'turn-stop', then: [{ id: 'stop', kind: 'inject-text', config: { layer: 'turn-stop', text: 'GO' } }] },
+  ]) }])
+  await h.emit('agent/turn-stopping', { agent, turn: 1 })
+  assert.deepEqual(steered, ['GO'], '主路径：命中即续跑一次')
+  // 唯一一次读是本帧的 assistantText；无 match 时 conditionHit 恒真，不再先读一次快照。
+  assert.equal(scans, 1)
+  dispose()
+})
+
 test('统一规则：新动作空种子不生成业务效果，未设模型条件的请求动作不偏好 Pro', async () => {
   const h = harness()
   const examples = getRuleEditorMeta().actions.map(({ kind, example }) => ({ ...example, id: kind }))
@@ -563,6 +611,22 @@ test('动作级 names / source 条件必须落在本执行点真实提供的事�
     then: [branchOn({ names: { allow: ['fork'] } }, { id: 's', kind: 'inject-text', config: { id: 's', layer: 'subagent-start', strategy: 'static', text: 'X' } })],
   }])[0].actions.length, 1)
   assert.equal(createNameListPredicate({ allow: ['fork'] })(subjectOf('subagent/start', [{ runId: 'r-1', id: 's-1', local: true }])), UNAVAILABLE)
+})
+
+test('事实谓词只有一处登记：rule-spec 的判据直接读谓词侧映射（漂移即红）', () => {
+  const branchOn = (condition, action) => ({ if: condition, then: [action] })
+  const preDecision = { id: 'deny', kind: 'decision', phase: 'pre', decision: 'deny', reason: 'blocked' }
+  const compileNames = () => compileRules([{ id: 'r', then: [branchOn({ names: { allow: ['bash'] } }, preDecision)] }])
+  assert.equal(compileNames()[0].actions.length, 1, '主路径：工具执行点提供 name')
+  // 改共享映射 = 改谓词侧唯一登记处，校验面必须当场跟着变。若 rule-spec 另有一张手抄表，
+  // 改映射不影响它的判据 → 下面这次拒绝不成立 → 红。
+  FACT_PREDICATE_SUBJECTS.names = 'agent'
+  try {
+    assert.throws(compileNames, /names subject "agent" is unavailable/)
+  } finally {
+    FACT_PREDICATE_SUBJECTS.names = 'name'
+  }
+  assert.equal(compileNames()[0].actions.length, 1, '还原后照旧放行')
 })
 
 test('统一规则：判定类别按通道上报，命中、条件为假与缺事实可区分', async () => {

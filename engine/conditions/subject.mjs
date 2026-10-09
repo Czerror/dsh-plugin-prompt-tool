@@ -81,8 +81,15 @@ const CHANNELS = {
 /** 字段名 → subject 反查；键名只在 SUBJECT_FIELDS 声明一次，表与名单交叉而不重复。 */
 const SUBJECT_OF_FIELD = Object.fromEntries(Object.entries(SUBJECT_FIELDS).map(([subject, field]) => [field, subject]))
 
+/**
+ * 事实谓词 → 它读取的事实 subject：校验面与运行面**唯一**的登记处。
+ * 加第三个事实谓词只改这一张表：`rule-spec.mjs#conditionSubjects` 直接消费本对象，
+ * 下面 `FACT_SUBJECTS` 的名单也由它派生，不留第二份手抄（漏抄 = 死条件静默放行）。
+ */
+export const FACT_PREDICATE_SUBJECTS = { names: 'name', source: 'source' }
+
 /** 谓词能消费的事实 subject：`names` 读 `name`、`source` 读 `source`；agent/session/model 不是谓词 subject。 */
-const FACT_SUBJECTS = ['name', 'source']
+const FACT_SUBJECTS = Object.values(FACT_PREDICATE_SUBJECTS)
 
 /**
  * 本通道可用的文本 subject。未列出的通道（`system-prompt/assemble`、`agent/request`、

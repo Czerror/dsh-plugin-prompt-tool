@@ -90,8 +90,10 @@ export function prepareGuard(action, plugin) {
         releaseState(state)
         throw error
       }
-      // 只在注册成功后才登记：失败时下一次装配重新走完整注册。
-      states.add(state)
+      // 只在注册成功后才登记，且只登记主会话：子代理的 guard 随它自己的 scope 释放，
+      // 回调内也按 exec 的 depth 重判，登记它们只会让 states 随父 mount 单调增长。
+      // 失败时 state 未登记，下一次装配重新走完整注册。
+      if (depth === 0) states.add(state)
       appliedBySession.set(session, state)
     }
 

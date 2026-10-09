@@ -190,11 +190,10 @@ function textRegistrationName(config, field) {
 
 /** system-section:注册静态 system prompt 段(支持官方 {{variable}} 渲染与 merged 拼接)。 */
 function wireSystemSections(ctx, configs, registry, warnOnce, keep) {
-  const disposers = []
   const systemPrompt = getService(ctx, 'systemPrompt')
   if (systemPrompt === undefined || typeof systemPrompt.section !== 'function') {
     if (configs.length > 0) warnOnce(`${name}: systemPrompt service unavailable — system-section configs skipped`)
-    return disposers
+    return
   }
   // 人设段（deployment:persona-prefix/suffix）由官方 @deepseek-ai/dsh-persona 行注册
   // （preset.yml 顶层 persona 段驱动）；本层只处理其余 system-section 配置。
@@ -226,7 +225,6 @@ function wireSystemSections(ctx, configs, registry, warnOnce, keep) {
       warnOnce(`${name}: system-section config ${base.id} failed: ${String(error?.message ?? error)}`)
     }
   }
-  return disposers
 }
 
 async function resolvedContextText(ctx, config, context, registry, warnOnce) {
@@ -605,7 +603,8 @@ function wireTurnStops(ctx, configs, warnOnce, on, turnStopBudgets) {
         if (!matchesAgentScope(config, agent)) return
         const entry = budget.entry(session.id, turn)
         if (!budget.available(entry, turn)) return
-        if (!conditionHit(config, { assistantText: lastAssistantText(session) })) return
+        // 未声明 match 时 conditionHit 恒真：不先读一次快照（本层每个 turn-stop 都走）。
+        if (config.match !== undefined && !conditionHit(config, { assistantText: lastAssistantText(session) })) return
         const text = layerText(config, agent, warnOnce)
         if (text.length === 0) return
         // 计数在 steer 之前落账：steer 抛错也不允许下一步重试越过预算。

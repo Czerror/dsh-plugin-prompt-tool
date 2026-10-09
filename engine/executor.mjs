@@ -82,14 +82,16 @@ function pluginIdentityOf(source) {
     : undefined
 }
 
-function hasInjected(config, session) {
+/** 去重真相在持久事件流：回到第一条命中该身份的消息（未命中 undefined），命中即止。 */
+function injectedMessage(config, session) {
   const value = identityOf(config)
-  return sessionEvents(session).some((event) => {
+  for (const event of sessionEvents(session)) {
     const message = eventMessage(event)
     // 双通道去重：kind（外来/第三方消息，如 context-gate 的 instruction-hint）或
     // plugin（本引擎注入的命名空间，merged 组用 merged:<position>）。
-    return message?.source?.kind === config.sourceKind || pluginIdentityOf(message?.source) === value
-  })
+    if (message?.source?.kind === config.sourceKind || pluginIdentityOf(message?.source) === value) return message
+  }
+  return undefined
 }
 
 /** 当前消息批内是否已有该提示词配置注入(每轮去重)。 */
@@ -118,7 +120,7 @@ function deliveredSessions(memo, key) {
 /**
  * 记录一次宿主已接纳的注入消息（由调用方在 session/event 里转发）。
  * plugin（本引擎身份，merged 组用 merged:<position>）与 kind（外来通道，如
- * context-gate 的 instruction-hint）都以会话为界记账，与 hasInjected 的双通道语义一致。
+ * context-gate 的 instruction-hint）都以会话为界记账，与 injectedMessage 的双通道语义一致。
  */
 export function confirmDelivered(memo, session, event) {
   if (memo === null || memo === undefined || session === null || session === undefined) return
@@ -140,7 +142,12 @@ function alreadyDelivered(config, session, memo) {
   const confirmed = (field, value) => memo.get(`${field}:${value}`)?.has(session.id) === true
   if (confirmed('plugin', identityOf(config))) return true
   if (typeof config.sourceKind === 'string' && confirmed('kind', config.sourceKind)) return true
-  return hasInjected(config, session)
+  const message = injectedMessage(config, session)
+  if (message === undefined) return false
+  // 慢路径命中即按既有入口回填快路径（真相仍是持久事件流，不直接写 memo）：
+  // 无 id 的会话不记账——memo 的键就是 session.id，记了会让两个无 id 会话串味。
+  if (session.id !== undefined) confirmDelivered(memo, session, { data: { message } })
+  return true
 }
 
 /**

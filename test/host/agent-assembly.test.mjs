@@ -253,6 +253,24 @@ test('官方负责人事实：规则来源不再报 false，未观察到即 unde
   assert.equal(coordinator.officialOwnerOf('owner-session') ?? null, null)
 })
 
+test('R14：旧生成卡的 agents-file-* 前缀在协调器层跳过，其余配置照常注入', async (t) => {
+  writePreset('legacy-file-cards', {
+    modules: ['prompt-config-engine'],
+    promptConfigs: [
+      { id: 'agents-file-legacy', text: 'LEGACY', position: 'after-user' },
+      { id: 'file-card', text: 'FILE', sourceKind: 'instruction-file', position: 'after-user' },
+      { id: 'keep-card', text: 'KEEP', position: 'after-user' },
+    ],
+  })
+  const h = await liveAssembly(t, () => ['legacy-file-cards'])
+  const agent = await h.makeAgent('legacy-file-agent')
+  await h.runtime.settled()
+  const texts = (result) => result.messages.flatMap(message => message.content.map(block => block.text))
+  // 判据只有 id 前缀：编译后的 sourceKind 恒是 `plugin:instruction-file`（schema.mjs），
+  // 声明它的用户配置照常注入——删掉的 `=== 'instruction-file'` 子句本来恒假。
+  assert.deepEqual(texts(await h.inject(agent)), ['USER', 'FILE', 'KEEP'])
+})
+
 test('创建边界：agent/created 返回时首条请求已经能注入，无需额外等待队列', async (t) => {
   writePreset('first-request', {
     modules: ['prompt-config-engine'],

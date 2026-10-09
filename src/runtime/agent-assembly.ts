@@ -146,7 +146,10 @@ export async function prepareAssembly(
   // 直接抛错（packages/core/system-prompt/src/index.ts:597-600），而写盘前的互斥门控只
   // 覆盖两个 bridge 端点——手改 module.yml、还原 ZIP/备份、导入包都能绕过。这里在装配前
   // 查一次，把「system 提示被清到只剩一段 / 组装失败」挡在 Agent 创建之前。
-  // 判据与写门控同源（引擎的 isFixedRegistration）：「独占」是 system-section 层的
+  // 判据与写盘门控同源（引擎的 isFixedRegistration；`module-storage.ts:112` 的
+  // `compileRules(…, { personaComplete })` 用同一判据），但本兜底**更窄**：只扫 `rule.then`、
+  // 不接收 personaComplete——正常读路径已先拒（那处扫全部展开动作，含 else 与嵌套分支），
+  // 这里只挡绕过读路径（手改 yml / 还原备份 / 导入包）的漏网。「独占」是 system-section 层的
   // params.complete，只有它会被宿主当作唯一 system 段；其他层的同名键不是独占。
   const exclusiveConfigs = (spec.rules ?? []).filter(rule => rule.enabled !== false).flatMap(rule => rule.then.filter(action => {
     const config = action.config as { params?: { complete?: unknown } } | undefined
@@ -353,7 +356,7 @@ export function createAgentAssembly(ctx: Context, options: AgentAssemblyOptions)
             if (persona.includeRuntimeContext === false) scopeCtx.systemPrompt.suppressRuntimeContext()
           }
         }
-        scopeCtx.effect(() => mountRuleSources(scopeCtx, ruleSources, { prepend: true, onOutcome: recordRuleOutcome }))
+        scopeCtx.effect(() => mountRuleSources(scopeCtx, ruleSources, { onOutcome: recordRuleOutcome }))
         for (const item of prepared) {
           for (const module of item.modules) {
             // 引擎入口既有同步也有 async：先 await 再判

@@ -11,6 +11,7 @@ import {
   agentPresetId,
   compileWhen,
   composite,
+  createAnchorPredicate,
   createCountPredicate,
   createNameListPredicate,
   createPhasePredicate,
@@ -426,4 +427,24 @@ test('预设类：无 standing scope / 无挂载＝undefined，调用方不命�
   }
 
   assert.throws(() => createPresetPredicate({}), /needs a presetId/)
+})
+
+// ── 8. 锚定谓词 ──────────────────────────────────────────────────────────────
+
+test('T15 锚定：确认入记忆后不再扫事件表，兜底计数计到 fallbackAfter + 1 即止', () => {
+  let scans = 0
+  const events = []
+  const session = { id: 'anchor-memo', header: {}, snapshotEvents: () => { scans += 1; return events } }
+  const predicate = createAnchorPredicate({ keys: ['We'], fallbackAfter: 1 })
+  events.push({ type: 'assistant/message', data: { message: { content: [{ type: 'reasoning', text: 'We start.' }] } } })
+  assert.equal(predicate({ session }), true, '首条 reasoning 命中确认词即命中')
+  const recorded = scans
+  assert.equal(predicate({ session }), true, '记忆命中仍给出同一结论')
+  assert.equal(scans, recorded, '确认已入记忆：第二次判定不再读事件快照')
+
+  // 未确认 + 兜底边界：读到第 fallbackAfter + 1 条 assistant 就够判定，第三条永不读。
+  const fallbackEvents = [assistantText('', 1), assistantText('', 2), assistantText('', 3)]
+  Object.defineProperty(fallbackEvents, '2', { get() { throw new Error('兜底计数越过了 fallbackAfter + 1') } })
+  const fallbackSession = { id: 'anchor-fallback-bound', header: {}, snapshotEvents: () => fallbackEvents }
+  assert.equal(predicate({ session: fallbackSession }), true, '两条 assistant 超过 fallbackAfter=1 → 兜底命中')
 })

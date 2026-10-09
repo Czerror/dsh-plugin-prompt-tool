@@ -2,7 +2,7 @@
 import { ACTION_KINDS, actionExecutionPoint, prepareAction, validateActionOptions } from './actions/index.mjs'
 // 字段清单与动作声明同住 `actions/catalog.mjs`（`actions/index.mjs` 不再导出新面）。
 import { ACTION_FIELDS, MATCH_ACTION_KINDS } from './actions/catalog.mjs'
-import { compileWhen, PREDICATE_FACTORIES, COMPOSITE_OPERATORS, channelFactSubjects, channelTextSubjects } from './conditions/index.mjs'
+import { compileWhen, PREDICATE_FACTORIES, COMPOSITE_OPERATORS, FACT_PREDICATE_SUBJECTS, channelFactSubjects, channelTextSubjects } from './conditions/index.mjs'
 import { createPromptConfigs, INJECT_CONFIG_FIELDS, KNOWN_LAYERS, assertLlmCallPatch } from './schema.mjs'
 import { stripDeclaredRefs } from './interpolate.mjs'
 import { validateConfig } from './shared.mjs'
@@ -22,14 +22,14 @@ const PREPEND_RETIRED = '`prepend` 已取消 — 它是未文档化的注册后�
 /**
  * 条件树引用的全部「谓词 → 通道事实」对（含组合与否定）；`subject === undefined` = 作者漏写。
  * 树是数据，只能在校验期读——`compileWhen` 的产物把 subject 关进闭包，读不回来。
- * `text` 的 subject 由作者声明；`names` / `source` 读的事实由谓词自己固定（`name` / `source`）。
+ * `text` 的 subject 由作者声明；事实谓词读的事实取自谓词侧的 `FACT_PREDICATE_SUBJECTS`
+ * （唯一登记处，见 `conditions/subject.mjs`），本函数不再逐谓词手抄。
  */
 function conditionSubjects(node, out = []) {
   if (!record(node)) return out
   for (const [key, value] of Object.entries(node)) {
     if (key === 'text' && record(value)) out.push({ predicate: 'text', subject: value.subject })
-    else if (key === 'names') out.push({ predicate: 'names', subject: 'name' })
-    else if (key === 'source') out.push({ predicate: 'source', subject: 'source' })
+    else if (Object.hasOwn(FACT_PREDICATE_SUBJECTS, key)) out.push({ predicate: key, subject: FACT_PREDICATE_SUBJECTS[key] })
     else if (key === 'not') conditionSubjects(value, out)
     else if ((key === 'all' || key === 'any' || key === 'notAny') && Array.isArray(value)) {
       for (const child of value) conditionSubjects(child, out)
@@ -242,7 +242,8 @@ export function compileRules(specs, options = {}) {
         validateActionOptions(action)
         if (!record(action.config)) throw new TypeError(`action ${action.id}: config must be an object`)
         // 原始声明保持不变；稳定动作身份只在未提供正文身份时补入运行时编译输入。
-        pendingConfigs.push({ action, source: { ...action.config, id: action.config.id ?? `${spec.id}:${action.id}` }, sequence: channelOrder, ruleId: spec.id, actionIndex })
+        // `injectionConfigSpec` 已保证 `config.id` 非空，这里不再兜第二次。
+        pendingConfigs.push({ action, source: { ...action.config, id: action.config.id }, sequence: channelOrder, ruleId: spec.id, actionIndex })
       } else prepareAction(action, { promptConfigOptions: options.promptConfigOptions })
       // 动作级条件只在本动作的执行点求值：谓词要读的事实必须由该通道真实提供，否则是死条件。
       // 规则级 `if` 自身不在这里校验（它跨执行点求值）；`else` 注入的 `not(if)` 按**对象身份**
