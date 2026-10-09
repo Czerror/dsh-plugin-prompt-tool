@@ -550,3 +550,56 @@ test('动作级分支边界：compaction/end 后分支回到初始支', async ()
   assert.equal((await call()).maxTokens, 222, '压缩后回到初始 else')
   dispose()
 })
+
+test('动作级分支：非 pre-step 层嵌套 if 恰好一支生效', async () => {
+  const h = harness()
+  const rules = compileRules([{ id: 'nested', then: [{
+    if: { scope: { modelScope: 'flash' } },
+    then: [{
+      if: { scope: { audience: 'subagent' } },
+      then: [{ id: 'deep', kind: 'request-params', modelScope: 'all', patch: { maxTokens: 111 } }],
+      else: [{ id: 'deep-else', kind: 'request-params', modelScope: 'all', patch: { maxTokens: 222 } }],
+    }],
+    else: [{ id: 'outer-else', kind: 'request-params', modelScope: 'all', patch: { maxTokens: 333 } }],
+  }] }])
+  const dispose = mountRuleSources(h.ctx, [{ moduleId: 'module', rules }])
+  const make = (id, model, depth) => {
+    const agent = actor()
+    agent.session = { ...agent.session, id, header: depth === 0 ? {} : { delegationDepth: depth } }
+    agent.options = { model }
+    return agent
+  }
+  const flashSub = make('flash-sub', 'deepseek-flash', 1)
+  const flashMain = make('flash-main', 'deepseek-flash', 0)
+  const proSub = make('pro-sub', 'deepseek-pro', 1)
+  const req = agent => h.run('agent/request', [{ agent }], () => ({ maxTokens: 5 }))
+  assert.equal((await req(flashSub)).maxTokens, 111, 'flash+subagent 走最内层 then')
+  assert.equal((await req(flashMain)).maxTokens, 222, 'flash+main 走内层 else')
+  assert.equal((await req(proSub)).maxTokens, 333, 'pro 走外层 else')
+  dispose()
+})
+
+test('挂载回滚：llm/stream 层路由与执行点不一致时错误上浮，agent/request 监听回到 0', () => {
+  const h = harness()
+  const rules = compileRules([{ id: 'p5', then: [
+    { id: 'req', kind: 'request-params', patch: { maxTokens: 1 } },
+    { id: 'stream', kind: 'inject-text', config: { layer: 'llm-stream', text: 'X', params: { mode: 'replace' } } },
+  ] }])
+  // 把 llm-stream 动作的层改成 agent-request：执行点仍是 llm/stream，但 wireLayers 按层路由到
+  // agent/request，与 flushLayers 的通道判定不一致 → 抛错并回滚已注册的 agent/request 监听。
+  rules[0].actions[1].compiledConfig.layer = 'agent-request'
+  assert.throws(() => mountRuleSources(h.ctx, [{ moduleId: 'module', rules }]), /registered outside llm\/stream/)
+  assert.equal((h.events.get('agent/request') ?? []).length, 0, '抛错后 agent/request 监听已回滚')
+})
+
+test('after-next 动作读取 next 之后的下游结果：unset 命中下游值才删键', async () => {
+  const h = harness()
+  const rules = compileRules([{ id: 'p6', then: [{ id: 'strip', kind: 'request-params', unset: { maxTokens: 64 } }] }])
+  const dispose = mountRuleSources(h.ctx, [{ moduleId: 'module', rules }])
+  const agent = actor()
+  const result = await h.run('agent/request', [{ agent }], () => ({ maxTokens: 64, temperature: 0.5 }))
+  assert.deepEqual(result, { temperature: 0.5 }, 'unset 命中下游 maxTokens=64，证明 after-next 读取的是 next() 的结果')
+  const untouched = await h.run('agent/request', [{ agent }], () => ({ maxTokens: 32 }))
+  assert.deepEqual(untouched, { maxTokens: 32 }, '下游值不等时不删键')
+  dispose()
+})

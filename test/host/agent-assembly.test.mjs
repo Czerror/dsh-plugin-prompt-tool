@@ -187,6 +187,30 @@ test('预设条件在真实挂载scope绑定：正反判断隔离、缺事实不
   assert.equal((await request(main)).maxTokens, 999, '释放后没有规则贡献')
 })
 
+test('动作级 phase 在真实挂载 scope 重绑后仍接收 session/event', async (t) => {
+  const dir = join(moduleRoot, 'action-phase')
+  mkdirSync(dir, { recursive: true })
+  writeFileSync(join(dir, 'module.yml'), JSON.stringify({
+    id: 'action-phase', modules: ['rule-engine'], rules: [{
+      id: 'phase-branch', layer: 'agent-request', then: [{
+        if: { phase: { promoted: true } },
+        then: [{ id: 'then-req', kind: 'request-params', modelScope: 'all', patch: { maxTokens: 111 } }],
+        else: [{ id: 'else-req', kind: 'request-params', modelScope: 'all', patch: { maxTokens: 222 } }],
+      }],
+    }],
+  }))
+  const h = await liveAssembly(t, () => ['action-phase'])
+  const agent = await h.makeAgent('action-phase-agent')
+  const request = () => h.root.waterfall(scopeTarget(agent, agent), 'agent/request', { agent }, async () => ({ maxTokens: 999 }))
+  assert.equal((await request()).maxTokens, 222, '初始未晋升走动作级 else')
+  const events = agent.session.snapshotEvents()
+  const event = { seq: events.length + 1, type: 'assistant/message', data: {} }
+  events.push(event)
+  h.root.emit(scopeTarget(agent.session, agent), 'session/event', agent.session, event)
+  assert.equal((await request()).maxTokens, 111, '重绑后的动作级 phase 仍收到 session/event')
+  await h.runtime.dispose()
+})
+
 test('创建边界：agent/created 返回时首条请求已经能注入，无需额外等待队列', async (t) => {
   writePreset('first-request', {
     modules: ['prompt-config-engine'],

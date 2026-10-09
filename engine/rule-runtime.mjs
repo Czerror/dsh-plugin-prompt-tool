@@ -26,7 +26,7 @@ export function mountRuleSources(ctx, sources, options = {}) {
   // 谓词永远收不到事件，状态停在冷扫那一刻（规则级 when 已由 rules 覆盖，动作级单独补齐）。
   const observer = wireTriggerObservers(ctx, [
     ...rules,
-    ...rules.flatMap(rule => rule.actions
+    ...rules.flatMap(rule => (rule.actions ?? [])
       .filter(action => typeof action.actionWhen?.observe === 'function')
       .map(action => ({ id: action.id, when: action.actionWhen }))),
   ], { plugin: options.plugin ?? 'rule-engine', warnOnce })
