@@ -18,7 +18,7 @@ import { SearchInput } from '../../ui/SearchInput.tsx'
 import { SkillRow } from './SkillRow.tsx'
 import sharedCss from '../../ui/controls.module.css'
 import featureCss from './skills.module.css'
-import { groupBySource, matchesSkillStatus, type SkillStatusTab } from './skill-status.ts'
+import { matchesSkillStatus, sortBySource, sourcesInOrder, type SkillStatusTab } from './skill-status.ts'
 
 const ui = { ...sharedCss, ...featureCss }
 
@@ -68,13 +68,12 @@ export const SkillsPage = memo(function SkillsPage(props: { store: PromptToolSto
   }
 
   const keyword = skillFilter.trim().toLowerCase()
-  const visible = useMemo(() => fields.skillCatalog.filter((skill) => {
+  const visible = useMemo(() => sortBySource(fields.skillCatalog.filter((skill) => {
     if (!matchesSkillStatus(skill, statusTab)) return false
     if (sourceFilter.length > 0 && skill.source !== sourceFilter) return false
     if (keyword.length === 0) return true
     return [skill.name, skill.folder, skill.description, skill.dir].join(' ').toLowerCase().includes(keyword)
-  }), [fields.skillCatalog, statusTab, sourceFilter, keyword])
-  const groups = useMemo(() => groupBySource(visible), [visible])
+  })), [fields.skillCatalog, statusTab, sourceFilter, keyword])
   const counts: Record<SkillStatusTab, number> = {
     all: fields.skillCatalog.length,
     model: fields.skillCatalog.filter((skill) => matchesSkillStatus(skill, 'model')).length,
@@ -82,7 +81,7 @@ export const SkillsPage = memo(function SkillsPage(props: { store: PromptToolSto
     blocked: fields.skillCatalog.filter((skill) => matchesSkillStatus(skill, 'blocked')).length,
   }
   const sourceOptions = useMemo(() => {
-    const present = groupBySource(fields.skillCatalog).map((group) => group.source)
+    const present = sourcesInOrder(fields.skillCatalog)
     return [
       { value: '', label: t('skills.source.all') },
       ...present.map((source) => ({ value: source, label: t(`skills.source.${source}` as never) })),
@@ -306,27 +305,20 @@ export const SkillsPage = memo(function SkillsPage(props: { store: PromptToolSto
           <Button shape="pill" size="md" variant="outline" type="button" onClick={() => { setSkillFilter(''); setStatusTab('all'); setSourceFilter('') }}>{t('configs.clearFilters')}</Button>
         </p>
       ) : (
-        groups.map((group) => (
-          <section key={group.source} className={ui.skillGroup} aria-label={t(`skills.source.${group.source}` as never)}>
-            <header className={ui.skillGroupHead}>
-              <strong>{t(`skills.source.${group.source}` as never)}</strong>
-            </header>
-            <div className={ui.skillCardList}>
-              {group.skills.map((skill) => (
-                <SkillRow
-                  key={JSON.stringify([api.currentSessionId(), skill.id, skill.path])}
-                  skill={skill}
-                  t={t}
-                  busy={store.skillsBusy}
-                  store={store}
-                  sessionId={api.currentSessionId()}
-                  onSetPolicy={onSetPolicy}
-                  onDelete={onDelete}
-                />
-              ))}
-            </div>
-          </section>
-        ))
+        <div className={ui.skillCardList}>
+          {visible.map((skill) => (
+            <SkillRow
+              key={JSON.stringify([api.currentSessionId(), skill.id, skill.path])}
+              skill={skill}
+              t={t}
+              busy={store.skillsBusy}
+              store={store}
+              sessionId={api.currentSessionId()}
+              onSetPolicy={onSetPolicy}
+              onDelete={onDelete}
+            />
+          ))}
+        </div>
       )}
 
       {overwriteNames !== undefined && (

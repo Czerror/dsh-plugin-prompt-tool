@@ -393,7 +393,7 @@ export interface BridgeValueMap {
   models: { modelCatalog: Record<string, string[]> }
   modelReasoning: { reasoning: ModelReasoningView }
   mutate: BridgeSettingsView
-  /** 技能清单 + 引用目录 + 技能根（客户端据此渲染来源分组与调用策略）。 */
+  /** 技能清单 + 引用目录 + 技能根（客户端据此渲染来源筛选与调用策略）。 */
   skillsList: SkillsCatalogSnapshot & { folders: string[]; roots: string[] }
   skillPolicy: SkillsCatalogSnapshot
   skillRead: SkillContentSnapshot

@@ -1,4 +1,4 @@
-// 技能清单扫描与来源分组（文件层调用策略模型）。
+// 技能清单扫描与来源排序（文件层调用策略模型）。
 // 技能实体留在官方各自技能根里；调用策略的唯一真相是各技能文件自己的 frontmatter：
 //  - catalogFromScan 只接收扫描结果一个参数（没有屏蔽表）；
 //  - 清单条目携带 modelInvocable / userInvocable 与写入目标 path，没有 blocked* 字段；
@@ -29,7 +29,7 @@ process.env.DSH_BUNDLED_SKILL_DIR = bundledDir
 
 const { catalogFromScan, resolveProjectRoot, scanRoot, scanRoots, skillRoots } = await import('../../src/host/skills-scan.ts')
 const { SKILLS_STATE_VERSION, SKILL_SOURCES } = await import('../../src/shared/skills.ts')
-const { groupBySource } = await import('../../src/client/features/skills/skill-status.ts')
+const { sortBySource, sourcesInOrder } = await import('../../src/client/features/skills/skill-status.ts')
 const { BRIDGE_ENDPOINTS, SETTINGS_BRIDGE_PREFIX } = await import('../../src/shared/bridge-contract.ts')
 const { registerSettingsBridge } = await import('../../src/runtime/settings-bridge.ts')
 
@@ -143,16 +143,22 @@ test('catalogFromScan：一层发现、来源优先级、调用策略投影与�
   assert.equal(scanRoot({ kind: 'user-dsh', path: skillsRoot }).some((entry) => entry.folder === '.system'), false)
 })
 
-test('groupBySource：分组顺序与来源优先级一致，空分组不返回', () => {
-  const groups = groupBySource(catalog)
-  assert.deepEqual(groups.map((group) => group.source), ['project-dsh', 'project-agents', 'custom', 'user-dsh', 'user-agents', 'bundled'])
-  // 分组只回传来源类型：标题由界面按 `skills.source.<kind>` 取字典。
-  // 共享常量里的中文标签不再流到 UI，否则英文界面会显示中文分组名。
-  assert.deepEqual(Object.keys(groups[0]).sort(), ['skills', 'source'])
-  assert.deepEqual(groups.find((group) => group.source === 'project-dsh').skills.map((skill) => skill.name), ['project-skill', 'shared-name'])
-  assert.equal(groups.every((group) => group.skills.length > 0), true)
-  const only = groupBySource(catalog.filter((entry) => entry.source === 'bundled'))
-  assert.deepEqual(only.map((group) => group.source), ['bundled'])
+test('sortBySource：列表按来源优先级再技能名排序，来源选项按优先级去重', () => {
+  const names = sortBySource(catalog).map((skill) => skill.name)
+  assert.deepEqual(names, [
+    'project-skill', 'shared-name', // 项目 .dsh/skills（100，同来源按技能名）
+    'agents-skill', // 项目 .agents/skills（200）
+    'ref-skill', // 技能文件夹（300）
+    'broken-skill', 'shared-name', 'user-skill', // 用户技能目录（400，无效条目照样留在列表里）
+    'user-agents-skill', // 用户 .agents/skills（500）
+    'bundled-skill', // 官方内置（600）
+  ])
+  // 边界：只给一个来源时不去别处找，排序也不丢条目。
+  assert.deepEqual(sortBySource(catalog.filter((entry) => entry.source === 'bundled')).map((skill) => skill.name), ['bundled-skill'])
+  assert.equal(sortBySource([]).length, 0)
+  // 来源选项只列清单里实际出现的来源，顺序与列表一致。
+  assert.deepEqual(sourcesInOrder(catalog), ['project-dsh', 'project-agents', 'custom', 'user-dsh', 'user-agents', 'bundled'])
+  assert.deepEqual(sourcesInOrder(catalog.filter((entry) => entry.source === 'bundled')), ['bundled'])
 })
 
 test('调用策略写入后清单随之变化：catalogFromScan 读的就是文件事实', async () => {
@@ -214,7 +220,7 @@ test('/skills-list 端点：按会话 cwd 解析项目来源，无存活会话�
   const scoped = await call(BRIDGE_ENDPOINTS.skillsList, { sessionId: 'session-1' })
   assert.equal(scoped.status, 200, JSON.stringify(scoped.body))
   const value = scoped.body.value
-  assert.deepEqual(groupBySource(value.skills).map((group) => group.source),
+  assert.deepEqual(sourcesInOrder(value.skills),
     ['project-dsh', 'project-agents', 'custom', 'user-dsh', 'user-agents', 'bundled'])
   assert.equal(value.skills.some((skill) => skill.name === 'project-skill'), true)
   assert.deepEqual(value.roots, [skillsRoot])
@@ -231,7 +237,7 @@ test('/skills-list 端点：按会话 cwd 解析项目来源，无存活会话�
   for (const body of [{}, { sessionId: 'gone' }]) {
     const global = await call(BRIDGE_ENDPOINTS.skillsList, body)
     assert.equal(global.status, 200, JSON.stringify(global.body))
-    const sources = groupBySource(global.body.value.skills).map((group) => group.source)
+    const sources = sourcesInOrder(global.body.value.skills)
     assert.deepEqual(sources, ['custom', 'user-dsh', 'user-agents', 'bundled'])
     assert.equal(global.body.value.skills.some((skill) => skill.name === 'project-skill'), false)
     assert.equal(global.body.value.skills.some((skill) => skill.name === 'ref-skill'), true, '引用目录与会话无关')

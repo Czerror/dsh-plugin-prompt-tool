@@ -35,23 +35,19 @@ export function matchesSkillStatus(skill: SkillCatalogEntry, tab: SkillStatusTab
   return true
 }
 
-export interface SkillGroup {
-  source: SkillSourceKind
-  skills: SkillCatalogEntry[]
-}
-
-/** 按来源分组，顺序与官方优先级一致（项目 > 引用目录 > 用户 > 内置）；空分组不返回。
- *  分组只回传来源类型，标题文案由界面按 `skills.source.<kind>` 取，避免把中文写进共享常量。 */
-export function groupBySource(catalog: readonly SkillCatalogEntry[]): SkillGroup[] {
+/** 按来源优先级排序（数值越小越靠前，与官方六类技能根一致），同来源内按技能名。
+ *  不再按来源分组：来源靠来源筛选与每张卡行末的路径区分。 */
+export function sortBySource(catalog: readonly SkillCatalogEntry[]): SkillCatalogEntry[] {
   const kinds = (Object.keys(SKILL_SOURCES) as SkillSourceKind[])
     .sort((left, right) => SKILL_SOURCES[left].rank - SKILL_SOURCES[right].rank)
-  return kinds.flatMap((source) => {
-    const skills = catalog
-      .filter((skill) => skill.source === source)
-      .sort((left, right) => left.name.localeCompare(right.name))
-    return skills.length === 0 ? [] : [{ source, skills }]
-  })
+  return kinds.flatMap((source) => catalog
+    .filter((skill) => skill.source === source)
+    .sort((left, right) => left.name.localeCompare(right.name)))
 }
+
+/** 清单里实际出现的来源，按优先级去重：筛选器选项用它，顺序与列表排序一致。 */
+export const sourcesInOrder = (catalog: readonly SkillCatalogEntry[]): SkillSourceKind[] =>
+  [...new Set(sortBySource(catalog).map((skill) => skill.source))]
 
 /** 先说明会话注册状态，已注册条目再显示调用策略。 */
 export function skillStatusLabel(skill: SkillCatalogEntry, t: PromptToolTranslate): string {
