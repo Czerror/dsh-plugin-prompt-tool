@@ -32,7 +32,8 @@
  * Non-gate mode keeps the original event-set semantics byte-for-byte.
  */
 
-import { sessionEvents, sessionState } from './shared.mjs'
+import { sessionState } from './shared.mjs'
+import { historyEvents } from './history.mjs'
 
 /** 匹配内容与大小写均由调用方显式声明；空 pattern 不承担任何业务识别。 */
 function reasoningClassifier(options = {}) {
@@ -142,10 +143,17 @@ export function createEpochPromotion(promoteEvents, options = {}) {
     return entry
   }
 
-  /** Scan a session's durable log from scratch (cold start / resume). */
+  /**
+   * Scan a session's durable log from scratch (cold start / resume).
+   *
+   * 判据来源**刻意是完整历史**（`historyEvents`，不是 `currentEvents`）：语义是「本会话在最后
+   * 一次成功压缩之后**曾经** tool/call 过」——状态性的历史事实。压缩前的信号在 surface 上已
+   * 不可见，按当前上下文冷启动会把 `promoted` 错判为 false，门控重回 bootstrap/锚定阶段、
+   * 工具目录被裁剪。
+   */
   const scan = (session) => {
     let entry = freshEntry(-1)
-    for (const event of sessionEvents(session)) entry = applyEvent(entry, event)
+    for (const event of historyEvents(session)) entry = applyEvent(entry, event)
     state.set(session, entry)
     return entry
   }

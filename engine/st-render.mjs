@@ -2,7 +2,8 @@
 import { createHash } from 'node:crypto'
 import { renderStText } from './st-macros.mjs'
 import { sessionVarsSnapshot } from './session-vars.mjs'
-import { sessionEvents, isDelegated, matchesModel } from './shared.mjs'
+import { isDelegated, matchesModel } from './shared.mjs'
+import { currentEvents } from './history.mjs'
 import { isConversationMessage } from './condition.mjs'
 import { stripUnresolvedRefs } from './interpolate.mjs'
 import { isSuccessfulCompactionEnd } from './compaction-epoch.mjs'
@@ -18,11 +19,13 @@ function visible(config, agent) {
 
 /** 历史与尚未入库的真实输入使用同一消息身份；插件注入消息不触发第二次赋值。 */
 function generationKey(session, pending) {
-  const events = sessionEvents(session)
+  // 帧 = 同一代**模型可见**历史：压缩遮掉旧节点后模型看到的是新的一段，边界必须跟着走。
+  const events = currentEvents(session)
   // 宿主先 assemble/pre-step，之后才 append step/start；不能用 step/start 切帧。
   const boundary = events.findLast(event => event?.type === 'turn/start' || event?.type === 'step/end' || isSuccessfulCompactionEnd(event))
   if (boundary) return JSON.stringify([boundary.type, boundary.seq, boundary.data?.turn, boundary.data?.step])
   const seen = new Set()
+  const seenSeq = new Set()
   const hash = createHash('sha256')
   const add = (message, kind) => {
     // 与 condition.mjs 同源：注入消息 / 空串来源 / 非对象消息都不参与帧边界。
@@ -35,7 +38,11 @@ function generationKey(session, pending) {
   for (const event of events) {
     if (event?.type === 'user/message' || event?.type === 'assistant/message') {
       add(event.data?.message ?? event.data, event.type)
-    } else if (event?.type === 'tool/call') hash.update(JSON.stringify([event.type, event.seq, event.data?.id]))
+    } else if (event?.type === 'tool/call' && !seenSeq.has(event.seq)) {
+      // 位置替换后同一 seq 可在 nodes 中出现多次；不去重会让同一可见历史算出两个 generation，帧被反复重建。
+      seenSeq.add(event.seq)
+      hash.update(JSON.stringify([event.type, event.seq, event.data?.id]))
+    }
   }
   for (const message of pending) add(message, `${message.role ?? 'user'}/message`)
   return hash.digest('hex')

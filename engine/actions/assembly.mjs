@@ -1,5 +1,5 @@
 import { NAME_LIST, createMask, labelOf, requireString } from './shared.mjs'
-import { sessionEvents } from '../shared.mjs'
+import { historyEvents } from '../history.mjs'
 
 /**
  * 动态白名单：从**本会话已持久化的** `tool/call` 事件里回收解锁名单，填入 `into`。
@@ -7,6 +7,10 @@ import { sessionEvents } from '../shared.mjs'
  * 语义对齐原 `tool-bootstrap.mjs` 的 `unlockedFor(session)`：某个发现工具（如
  * `dev_tool_search`）上一次调用时把要解锁的工具名写进了自己的调用参数，本函数把它读回来
  * 填入 allow，于是**解锁能跨请求保留**——没有它，解锁是一次性的（当次请求用完即被裁掉）。
+ *
+ * 判据来源**刻意是完整历史**（`historyEvents`，不是 `currentEvents`）：语义是「本会话曾经
+ * 调用过哪些发现工具」，压缩遮蔽掉那条 `tool/call` 后解锁名单仍须保留——否则已发现的工具
+ * 会在压缩后被裁掉（用户可见的工具可用性变化）。
  *
  * 判据刻意保守，坏数据只影响该条、绝不上抛：
  *  - 只认 `event.type === 'tool/call'` 且 `event.data.name` **精确等于**声明里的 `tool`；
@@ -21,7 +25,7 @@ function fillUnlocked(into, session, tool, key, warnOnce, plugin, label) {
   into.clear()
   let events
   try {
-    events = sessionEvents(session)
+    events = historyEvents(session)
   } catch (error) {
     warnOnce(`${plugin}: assembly action ${label}: reading session events for allowFrom failed: ${String(error?.message ?? error)}`)
     return

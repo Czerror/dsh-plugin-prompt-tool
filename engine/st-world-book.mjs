@@ -1,6 +1,6 @@
 /** ST 世界书选择器；只消费显式 ST 导入字段，不改变原生 world-book 约定。 */
 import { createAnchorMatcher } from './anchor-match.mjs'
-import { sessionEvents } from './shared.mjs'
+import { currentEvents } from './history.mjs'
 import { interpolateVariables } from './interpolate.mjs'
 import { isConversationMessage } from './condition.mjs'
 
@@ -14,7 +14,8 @@ export function stChatMessages(session, pending = []) {
     const text = (Array.isArray(message.content) ? message.content : []).filter(block => block.type === 'text' || block.type === undefined).map(block => block.text ?? '').join('')
     result.push({ id: message.id, role, text })
   }
-  for (const event of sessionEvents(session)) {
+  // 关键词世界书由**模型看得见的**对话触发；被压缩遮蔽的旧对话不该再持续命中条目。
+  for (const event of currentEvents(session)) {
     if (event?.type === 'user/message' || event?.type === 'assistant/message') add(event.data?.message ?? event.data, event.type.split('/')[0])
   }
   for (const message of pending) add(message, message.role ?? 'user')

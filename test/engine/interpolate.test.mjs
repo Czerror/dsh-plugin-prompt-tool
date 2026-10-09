@@ -108,6 +108,24 @@ for (const [name, run] of [
     // 配置 variables 优先于运行时宏。
     assert.equal(interpolateVariables('{{lastusermessage}}', { lastusermessage: '覆盖' }, session), '覆盖')
   }],
+  ['runtimeFactValue：lastusermessage/lastcharmessage 取**模型可见**的最后一条，不是完整日志末条', () => {
+    const log = [
+      { type: 'user/message', data: { message: { content: [{ type: 'text', text: '可见用户' }] } } },
+      { type: 'assistant/message', data: { message: { content: [{ type: 'text', text: '可见角色' }] } } },
+      // 被压缩遮蔽的两条：日志里更晚，模型已看不见。
+      { type: 'user/message', data: { message: { content: [{ type: 'text', text: '已遮蔽用户' }] } } },
+      { type: 'assistant/message', data: { message: { content: [{ type: 'text', text: '已遮蔽角色' }] } } },
+    ]
+    const session = { header: { cwd: '/cwd' }, snapshotEvents: () => log, surface: { nodes: [0, 1] } }
+    assert.equal(runtimeFactValue('lastusermessage', session), '可见用户')
+    assert.equal(runtimeFactValue('lastcharmessage', session), '可见角色')
+    // 同一判据经 pre-step 正文插值通道也是可见范围。
+    assert.equal(interpolateVariables('{{lastusermessage}}', {}, session), '可见用户')
+    // 降级：无 surface 时退回完整历史，仍是迁移前行为。
+    assert.equal(runtimeFactValue('lastusermessage', { snapshotEvents: () => log }), '已遮蔽用户')
+    // 静默通道边界：interpolateStatic 用 undefined 会话求值，运行时宏取空串。
+    assert.equal(interpolateStatic('{{lastusermessage}}', {}), '')
+  }],
 ]) test(`interpolate：${name}`, run)
 
 // 表 4：动态宏。

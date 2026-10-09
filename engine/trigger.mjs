@@ -51,10 +51,15 @@
  *   | 读取               | 既有实现                          | 最小形状                       |
  *   |--------------------|-----------------------------------|--------------------------------|
  *   | 会话标识（记账键） | `session.id`                      | `string \| undefined`          |
- *   | durable 事件快照   | `shared.sessionEvents(session)`   | `{ type, data? }[]`，缺接口=空 |
+ *   | 当前上下文事件     | `history.mjs#currentEvents`       | `{ type, data? }[]`，缺接口=空 |
+ *   | 完整历史事件       | `history.mjs#historyEvents`       | `{ type, data? }[]`，缺接口=空 |
  *   | 轮号               | 各模块内联 `event.data.turn`      | 有限 `number`，缺失=无轮号     |
  *   | 子代理判定         | `shared.isDelegated(session)`     | `header.delegationDepth > 0`   |
  *   | 会话态 Map 上限    | `shared.MAX_TRACKED_SESSIONS`     | 超出整体清空（触发冷扫重建）   |
+ *
+ * 两条事件读法**互不替代**：判「模型现在看得见什么」用 `currentEvents`（按 `surface.nodes`），
+ * 判「本会话曾经发生过什么」用 `historyEvents`（全量 durable 日志）；缺 `snapshotEvents` 时
+ * 两者同样按空日志降级。
  *
  * 三条纪律：**(1)** 没有 `session.id` 的会话一律不记账（`predicates.mjs:343` 的既有决定：
  * 共用一个 Map 键会让两个会话串味），每次冷扫而非缓存；**(2)** 子代理判定复用

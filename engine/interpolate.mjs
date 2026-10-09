@@ -13,12 +13,13 @@
  *   - 键字符集：字母数字、下划线、点、中文、连字符（与 ST setvar/getvar 一致）。
  */
 
-import { sessionEvents } from './shared.mjs'
+import { currentEvents } from './history.mjs'
 import { createHash } from 'node:crypto'
 
 /** 会话事件中最后一条指定类型消息的文本（事件倒序扫描；无则空串）。 */
 function lastMessageOf(session, type) {
-  const events = sessionEvents(session)
+  // 这两个宏是官方按**模型可见消息**求值的运行时事实，压缩遮蔽掉的旧正文不再是「最后一条」。
+  const events = currentEvents(session)
   for (let index = events.length - 1; index >= 0; index--) {
     const event = events[index]
     if (event?.type !== type) continue
