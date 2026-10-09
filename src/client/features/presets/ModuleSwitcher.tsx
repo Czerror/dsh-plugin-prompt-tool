@@ -124,8 +124,9 @@ export const ModuleSwitcher = memo(function ModuleSwitcher(props: { store: Promp
         <span className={styles.inlineControls}>
           <Button ref={pickerAnchorRef} shape="pill" variant="primary" size="md" onClick={() => setPickerOpen(true)}>{t('presetSwitcher.new')}</Button>
           <Button shape="pill" variant="outline" size="md" onClick={() => setImportOpen(true)}>{t('assetImport.presetTitle')}…</Button>
-          {/* 模块运行总闸：与新建/导入同排、靠最右，只留开关本体（说明归工作台自身的只读提示）。 */}
+          {/* 模块运行总闸：与新建/导入同排、靠最右，说明文字在开关左侧常驻。 */}
           <span className={styles.presetGlobalSwitch}>
+            <span>{t('presets.modulesEnabled.label')}</span>
             <Switch checked={fields.modulesEnabled} label={t('presets.modulesEnabled.label')}
               disabled={store.moduleFacts?.editable !== true} onChange={() => store.toggle('modulesEnabled')} />
           </span>
