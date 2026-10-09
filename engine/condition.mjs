@@ -55,23 +55,29 @@ export function toolArgsText(args) {
 }
 
 /**
- * pre-step 的缺省匹配对象：本批**真实对话**的用户消息文本。
+ * 「真实对话消息」的唯一判据（角色过滤由消费方各自保留）。
  *
- * 只收真人输入：引擎自己注入的消息同样是 user-role（`executor.mjs` 的
- * `role: PRE_STEP_ROLE`、`pluginMessage` 的 `source` 是 `plugin:<name>` 生产者身份），
- * 把它们算进来会让 `text.match` 匹配到自己注入过的正文——规则正文里出现「重构」
- * 「实现」这类词就会自我命中，且命中判定在去重之前，`dedupe` 挡不住。
- * 过滤判据与 `st-world-book.mjs#stChatMessages` 的同名约定一致（那是最早做对的一处），
- * 两处必须保持同语义。
+ * 引擎自己注入的消息同样是 user-role（`executor.mjs` 的 `role: PRE_STEP_ROLE`、
+ * `pluginMessage` 的 `source` 是 `plugin:<name>` 生产者身份），把它们算进来会让
+ * `text.match` / 关键词世界书匹配到自己注入过的正文——正文里出现「重构」「实现」
+ * 这类词就会自我命中，且命中判定在去重之前，`dedupe` 挡不住。
+ * `userMessagesText`、原生关键词世界书的扫描 haystack 与
+ * `st-world-book.mjs#stChatMessages` 三处共用这一份，不再各写各的。
+ */
+export function isConversationMessage(message) {
+  if (message === null || typeof message !== 'object') return false
+  if (message.source?.plugin !== undefined) return false
+  return message.source?.kind === undefined || message.source.kind === 'user'
+}
+
+/**
+ * pre-step 的缺省匹配对象：本批**真实对话**的用户消息文本（判据见
+ * {@link isConversationMessage}）。
  */
 export function userMessagesText(messages) {
   if (!Array.isArray(messages)) return ''
   return messages
-    .filter((message) => message?.role === 'user'
-      && message.source?.plugin === undefined
-      && message.source?.kind !== 'plugin'
-      && !(typeof message.source?.kind === 'string' && message.source.kind.startsWith('plugin:'))
-      && (message.source?.kind === undefined || message.source.kind === 'user'))
+    .filter((message) => message?.role === 'user' && isConversationMessage(message))
     .map((message) => extractText(message))
     .filter((text) => text.length > 0)
     .join('\n')

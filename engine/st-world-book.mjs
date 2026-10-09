@@ -2,13 +2,13 @@
 import { createAnchorMatcher } from './anchor-match.mjs'
 import { sessionEvents } from './shared.mjs'
 import { interpolateVariables } from './interpolate.mjs'
+import { isConversationMessage } from './condition.mjs'
 
-/** 只扫描真实对话的可见文本，排除插件注入与思维块。 */
+/** 只扫描真实对话的可见文本，排除插件注入与思维块（判据与 userText / 关键词 haystack 同源）。 */
 export function stChatMessages(session, pending = []) {
   const result = [], ids = new Set()
   const add = (message, role) => {
-    if (!message || !['user', 'assistant'].includes(role) || message.source?.plugin
-      || (message.source?.kind && message.source.kind !== 'user')) return
+    if (!message || !['user', 'assistant'].includes(role) || !isConversationMessage(message)) return
     if (message.id && ids.has(message.id)) return
     if (message.id) ids.add(message.id)
     const text = (Array.isArray(message.content) ? message.content : []).filter(block => block.type === 'text' || block.type === undefined).map(block => block.text ?? '').join('')

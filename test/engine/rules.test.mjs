@@ -8,6 +8,7 @@ import { mountRuleSources } from '../../engine/rule-runtime.mjs'
 import { ruleFrame, ruleMatches, actionMatches } from '../../engine/conditions/evaluation.mjs'
 import { createNameListPredicate, subjectOf } from '../../engine/conditions/index.mjs'
 import { UNAVAILABLE } from '../../engine/conditions/availability.mjs'
+import { lastWorldBookDiagnostics } from '../../engine/st-world-book.mjs'
 
 function harness(services = {}) {
   const events = new Map()
@@ -672,4 +673,78 @@ test('after-next 动作读取 next 之后的下游结果：unset 命中下游值
   const untouched = await h.run('agent/request', [{ agent }], () => ({ maxTokens: 32 }))
   assert.deepEqual(untouched, { maxTokens: 32 }, '下游值不等时不删键')
   dispose()
+})
+
+test('ST 世界书组互斥在整步成立：默认位置 filter 切开批次时同组两条只注入一条', async () => {
+  const lore = (id, text) => ({ id, kind: 'inject-text', config: { id, layer: 'pre-step', strategy: 'world-book', position: 'after-all', text, params: { keys: ['KEY'], stWorldBook: { group: 'lore' } } } })
+  const noopFilter = id => ({ id, kind: 'pre-step-filter', blockPlugins: ['nothing'] })
+  // 真值源：两个同组成员分别在两个 flush 里（filter 切在两条之间），末批只有非世界书配置。
+  const plan = split => compileRules([{ id: 'lore', then: split
+    ? [lore('lore-a', 'A-LORE'), noopFilter('split-1'), lore('lore-b', 'B-LORE'), noopFilter('split-2'), textAction('tail', 'TAIL', { position: 'after-all' })]
+    : [lore('lore-a', 'A-LORE'), lore('lore-b', 'B-LORE'), textAction('tail', 'TAIL', { position: 'after-all' })] }])
+  const run = async (rules) => {
+    const h = harness()
+    const dispose = mountRuleSources(h.ctx, [{ moduleId: 'module', rules }])
+    const agent = actor()
+    const messages = [{ id: 'u', role: 'user', source: { kind: 'user' }, content: [{ type: 'text', text: 'KEY 提示' }] }]
+    const original = Math.random
+    let rolls = 0
+    Math.random = () => { rolls++; return original() }
+    let result
+    try {
+      result = await h.run('agent/pre-step', [{ agent, messages }], () => ({ kind: 'enter', messages }))
+    } finally { Math.random = original }
+    const loreTexts = result.messages.flatMap(message => message.content.map(block => block.text)).filter(text => text.endsWith('-LORE'))
+    dispose()
+    return { loreTexts, rolls, records: lastWorldBookDiagnostics(agent.session).records }
+  }
+  const split = await run(plan(true))
+  const whole = await run(plan(false))
+  assert.deepEqual(split.loreTexts.length, 1, `同组两条在整步只允许一条中标，切开也不补位（实际 ${split.loreTexts.join('/')}）`)
+  assert.deepEqual(whole.loreTexts.length, 1, '同一批时同样只注入一条')
+  assert.equal(split.rolls, whole.rolls, '切开批次不改变概率掷点次数（差分）')
+  // 末批无世界书（只有 tail）时，本步赢家与 loser 的诊断必须留在同一份快照里。
+  assert.ok(split.records.some(record => record.stage === 'selected' && record.reason === 'group-winner'), '赢家 selected 记录保留')
+  assert.ok(split.records.some(record => record.stage === 'rejected' && record.reason === 'group-lost'), '同组 loser 的拒绝原因保留')
+  assert.ok(split.records.some(record => record.stage === 'committed'), 'commit 事实写回同一份快照')
+})
+
+test('pre-step 动作级分支：每步 actionWhen 恰好求值一次，命中分支注入一次', async () => {
+  const rules = compileRules([{ id: 'branch', then: [
+    { if: { scope: { modelScope: 'flash' } }, then: [textAction('flash-inject', 'FLASH', { position: 'after-user' })], else: [textAction('other-inject', 'OTHER', { position: 'after-user' })] },
+    { id: 'split', kind: 'pre-step-filter', blockPlugins: ['nothing'] },
+    textAction('tail', 'TAIL', { position: 'after-all' }),
+  ] }])
+  // 计数包装沿用 agent-assembly.test.mjs 的写法：替换判定函数并在命中路径上计数。
+  const branch = rules[0].actions.find(action => action.id === 'flash-inject')
+  const evaluate = branch.actionWhen
+  let evaluations = 0
+  branch.actionWhen = Object.assign(subject => { evaluations++; return evaluate(subject) }, evaluate)
+  const h = harness()
+  const dispose = mountRuleSources(h.ctx, [{ moduleId: 'module', rules }])
+  const agent = actor()
+  agent.options = { model: 'deepseek-flash' }
+  const messages = [{ id: 'u', role: 'user', source: { kind: 'user' }, content: [{ type: 'text', text: 'USER' }] }]
+  const injected = (await h.run('agent/pre-step', [{ agent, messages }], () => ({ kind: 'enter', messages })))
+    .messages.flatMap(message => message.content.map(block => block.text))
+  assert.deepEqual(injected, ['USER', 'FLASH', 'TAIL'], '主路径命中分支注入一次，动作级 else 不注入')
+  assert.equal(evaluations, 1, '每步只判定一次动作分支（filter 切开批次也不例外）')
+  dispose()
+})
+
+test('variablesEnabled=false：声明变量引用按插值语法剥离，未声明键与内置引用原样保留', () => {
+  const text = 'A {{foo}} B {{ foo }} C {{ bar }} D {{DSH_HOME}} E {{foo::x}}'
+  const expected = 'A  B  C {{ bar }} D {{DSH_HOME}} E '
+  const compile = variablesEnabled => compileRules([{ id: 'vars', then: [
+    { id: 'text', kind: 'inject-text', config: { id: 'v-text', layer: 'pre-step', text } },
+    { id: 'texts', kind: 'inject-text', config: { id: 'v-texts', layer: 'pre-step', texts: [text] } },
+    { id: 'params', kind: 'inject-text', config: { id: 'v-params', layer: 'pre-step', params: { text } } },
+  ] }], { variables: { foo: 'F' }, variablesEnabled })
+  const disabled = Object.fromEntries(compile(false)[0].actions.map(action => [action.id, action.compiledConfig]))
+  assert.equal(disabled.text.texts[0], expected, 'text 出口')
+  assert.equal(disabled.texts.texts[0], expected, 'texts 出口')
+  assert.equal(disabled.params.params.text, expected, 'params.text 出口')
+  const enabled = Object.fromEntries(compile(undefined)[0].actions.map(action => [action.id, action.compiledConfig]))
+  assert.equal(enabled.text.texts[0], text, '启用时正文原样保留')
+  assert.equal(enabled.text.variables.foo, 'F', '启用时声明变量挂上配置')
 })

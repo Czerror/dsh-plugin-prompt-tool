@@ -104,6 +104,13 @@ test('动作声明 fail loud：名单形状错误、名单为空、名单命名 
   // 段/上下文增量的形状校验（含 label 与 plugin 一起拼出的消息）
   assert.throws(() => registerAction(ctx, { kind: 'assembly', id: 'x', target: { sections: { add: [{ name: 1, text: 'a' }] } } }), /assembly\.sections\.add\[\]\.name must be a string/)
   assert.throws(() => registerAction(ctx, { kind: 'assembly', id: 'x', target: { contexts: { add: {} } } }), /assembly\.contexts\.add must be an array/)
+  // clear 与 add/remove 并存不可解释（旧实现静默丢弃 add/remove），非布尔 clear 也静默失效：
+  // 两者都在挂载期拒绝，与 sections 的 keep+remove 同一纪律。
+  for (const target of [
+    { contexts: { clear: true, add: [{ name: 'a', text: 't' }] } },
+    { contexts: { clear: true, remove: ['a'] } },
+  ]) assert.throws(() => registerAction(ctx, { kind: 'assembly', id: 'x', target }), /cannot combine clear with add or remove/)
+  assert.throws(() => registerAction(ctx, { kind: 'assembly', id: 'x', target: { contexts: { clear: 'true' } } }), /assembly\.contexts\.clear must be boolean/)
   // allowFrom 的声明期形状校验（搬自 (2e)，语义不变）。
   assert.throws(() => registerAction(ctx, { kind: 'assembly', id: 'x', target: { tools: { allow: ['a'], allowFrom: ['dev_tool_search'] } } }), /allowFrom must be an object/)
   assert.throws(() => registerAction(ctx, { kind: 'assembly', id: 'x', target: { tools: { allow: ['a'], allowFrom: { key: 'k' } } } }), /allowFrom\.tool must be a string/)
@@ -300,6 +307,19 @@ test('(2) 改装配 sections/contexts：增删改与既有形态一致，异常�
   const kept = await only(failing.events, 'system-prompt/assemble')(hostile, { agent: agent() }, async () => hostile)
   assert.equal(kept, hostile, '装配改写失败时返回未改装配（expose-all）')
   assert.equal(failing.warnings.length, 1)
+})
+
+test('(2f) contexts：clear 单独清空；跨动作拆分的 [clear, add] 仍是 after-next 串接', async () => {
+  const clear = recordingCtx()
+  registerAction(clear.ctx, { kind: 'assembly', id: 'clear', target: { contexts: { clear: true } } })
+  const input = assembled([], { contexts: [{ name: 'old', text: 'O' }] })
+  const cleared = await only(clear.events, 'system-prompt/assemble')(input, { agent: agent() }, async () => input)
+  assert.deepEqual(cleared.contexts, [], 'clear 单独声明时清空 contexts')
+  // 跨动作不是单动作内的 replace 语义：后续动作的 add 接在 clear 之后（after-next 顺序）。
+  const add = recordingCtx()
+  registerAction(add.ctx, { kind: 'assembly', id: 'add', target: { contexts: { add: [{ name: 'new', text: 'N' }] } } })
+  const added = await only(add.events, 'system-prompt/assemble')(cleared, { agent: agent() }, async () => cleared)
+  assert.deepEqual(added.contexts.map((entry) => entry.name), ['new'])
 })
 
 test('(3) 裁决动作：deny / ask / allow 三档返回各自的裁决对象', async () => {

@@ -6,6 +6,7 @@
  */
 
 import { extractText } from '../shared.mjs'
+import { isConversationMessage } from '../condition.mjs'
 import { MATCH_LOGIC, createAnchorMatcher } from '../anchor-match.mjs'
 import { createTaskClassifier } from '../classify-task.mjs'
 import { createPlaceholderResolver } from '../fillers.mjs'
@@ -145,7 +146,10 @@ function createWorldBookResolver(config) {
   return ({ messages }) => {
     if (promptText === undefined) return null
     if (constant || !hasAnyKey) return { text: promptText }
+    // 只扫本批**真实对话**消息（与 userText / ST 世界书同一判据）：插件注入、
+    // agent-instructions 与工具回执都不参与关键词匹配，否则世界书会被自己注入的正文触发。
     const haystack = (Array.isArray(messages) ? messages : [])
+      .filter(isConversationMessage)
       .map((message) => extractText(message))
       .filter((text) => text.length > 0)
       .join('\n')

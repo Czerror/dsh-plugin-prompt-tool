@@ -78,7 +78,16 @@ export function prepareAssembly(action, plugin) {
   }
   const contextsAdd = target.contexts?.add
   const contextsRemove = NAME_LIST.parse(target.contexts?.remove, plugin, 'assembly.contexts.remove')
+  // clear 与 add/remove 并存时旧实现静默丢掉 add/remove（零告警）；这与 sections 的
+  // keep+remove 是同一类不可解释组合，同为挂载期 fail loud。非布尔 clear 也一并拒：
+  // 旧判据 `=== true` 会把 `'true'` / `1` 静默当 false，clear 整体失效。
+  if (target.contexts?.clear !== undefined && typeof target.contexts.clear !== 'boolean') {
+    throw new TypeError(`${plugin}: assembly.contexts.clear must be boolean`)
+  }
   const contextsClear = target.contexts?.clear === true
+  if (contextsClear && (contextsAdd !== undefined || contextsRemove !== undefined)) {
+    throw new TypeError(`${plugin}: assembly target.contexts cannot combine clear with add or remove — clear 已清空全部条目，同时声明语义不明`)
+  }
   for (const [key, list] of [['sections.add', sectionsAdd], ['contexts.add', contextsAdd]]) {
     if (list === undefined) continue
     if (!Array.isArray(list)) throw new TypeError(`${plugin}: assembly.${key} must be an array of { name, text }`)

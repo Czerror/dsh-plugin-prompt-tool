@@ -111,7 +111,12 @@ local/global 走同一判据，命中不写入 + 告警、表达式求值为空�
 ## 世界书
 
 ST 导入在既有 `buildWorldBookEntry` 结构上添加 `params.stWorldBook`，与原生世界书策略区分。
-原生手写 world-book 的历史约定保持不变，不能把它当作 ST 等价模式。
+原生手写 world-book 的扫描范围是**本批真实对话消息**（判据
+`engine/condition.mjs#isConversationMessage`：角色是真实对话且 `source` 不带插件来源）：
+插件注入（`append-context` 的 steer、子代理 inject、`skill_load` 的 `skill-invocation`）、
+`agent-instructions` 正文与工具回执都不计入关键词匹配。世界书因此不会被自己注入的正文触发；
+需要常驻正文时写 `constant` 条目，或把关键词写进真实对话。它与 ST 条目（`params.stWorldBook`）
+仍不是等价模式：ST 条目另有扫描窗口、递归、分组与延迟语义。
 
 | ST 语义 | 导入后的处理 |
 |---|---|

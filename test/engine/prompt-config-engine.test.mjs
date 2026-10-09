@@ -442,6 +442,26 @@ test('wireLayers 只装配实际声明的插入点：未声明 seam 无监听器
   }
 })
 
+test('原生关键词世界书只扫描本批真实对话消息：插件注入与指令文件正文都不触发', async () => {
+  // 与 userText / ST 世界书同一判据（condition.mjs#isConversationMessage）：扫描范围
+  // = 本批真实对话消息，不含任何插件来源（append-context / 子代理 inject / skill_load）
+  // 与 agent-instructions 正文。
+  const { step } = makeHarness(createPromptConfigs([{
+    id: 'lore', strategy: 'world-book', text: 'LORE', position: 'after-all', params: { keys: ['龙'] },
+  }]))
+  const say = (id, text, source = { kind: 'user' }, role = 'user') => ({ id, role, content: [{ type: 'text', text }], source })
+  const injected = decision => decision.messages.filter((message) => message.source?.plugin === 'lore').map((message) => message.content[0].text)
+  const probe = agent({ session: { id: 's-lore', header: { delegationDepth: 0 }, snapshotEvents: () => [] } })
+  assert.deepEqual(injected(await step(probe, [
+    say('u1', '普通提问'),
+    say('p1', '龙', { kind: 'plugin:skill-load', plugin: 'skill-load' }),
+    say('p2', '龙', { kind: 'agent-instructions' }),
+    say('p3', '龙', { kind: 'plugin:append-context', plugin: 'append-context' }),
+  ])), [], '插件注入与指令文件正文不得计入关键词扫描')
+  assert.deepEqual(injected(await step(probe, [say('u2', '这里有条龙')])), ['LORE'], '真实对话含关键词才命中')
+  assert.deepEqual(injected(await step(probe, [say('u3', '普通提问'), say('a3', '龙出现了', { kind: 'user' }, 'assistant')])), ['LORE'], '真实 assistant 消息同样在扫描范围内')
+})
+
 test('guide-auto：缺省不启用长度业务阈值，显式 complexMinChars 按严格大于判定', async () => {
   const run = async (params, text) => {
     const { step } = makeHarness(createPromptConfigs([{ id: 'guide', strategy: 'guide-auto', params }]))

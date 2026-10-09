@@ -188,6 +188,44 @@ function buildMessage(config, resolved, warnOnce) {
 }
 
 /**
+ * 本步（一个 pre-step 批次，含被 `ruleActions` 切开的多次 flush）的批级快照：
+ * 合格配置集合、模板位置身份集合与 ST 世界书选择，全部在批首取定一次。
+ *
+ * 三者必须同一集合：`qualified` 每配置只判一次（R02），ST 世界书的组互斥与概率/
+ * 粘滞窗口按**步**成立——旧实现每个 flush 各选一次，同组两条会各赢一条（F06）。
+ * 返回 undefined = 本批无法执行（reject / 无 agent / 无 session），调用方原样返回。
+ */
+function batchScope(options, frame) {
+  const { agent, decision, configs, promotion, warnOnce } = options
+  const session = agent?.session
+  if (decision === null || typeof decision !== 'object' || decision.kind === 'reject'
+    || agent === undefined || session === undefined) return undefined
+  // 条件判定的匹配对象在本批进入时取定：批次内后续注入不改变本批的判定依据。
+  const messages = Array.isArray(decision.messages) ? [...decision.messages] : []
+  const userText = userMessagesText(messages)
+  const { main, withSubagents } = promotion
+  const delegated = isDelegated(session)
+  // 本批资格判定（唯一实现）：层通道、受众、模型、晋升与声明式条件。
+  // 条件判定放在去重之前：未命中的配置不算「已注入」，条件恢复后仍应能注入。
+  // ST 模板的跨配置变量帧按 order 预求值，但只有这里的获准集合才允许产生副作用
+  // （未命中的 setter 提前 setvar 会污染同批 reader）——渲染器不再复制判定。
+  const qualified = configs.filter((config) => config.layer === 'pre-step'
+    && !(config.audience === 'main' && delegated)
+    && !(config.audience === 'subagent' && !delegated)
+    && matchesModel(config.modelScope, agent.options?.model)
+    && (config.promotion !== 'main' || main.status(agent).promoted)
+    && (config.promotion !== 'include-subagents' || withSubagents.status(agent).promoted)
+    && conditionHit(config, { userText })
+    && actionMatches(config, frame))
+  return {
+    qualified: new Set(qualified),
+    // 协调器为绑定来源 ctx 会复制 config；renderSt 函数身份在副本间保持不变。
+    eligible: new Set(qualified.map(config => config.renderSt)),
+    stWorldBook: selectStWorldBook(qualified, session, messages, warnOnce),
+  }
+}
+
+/**
  * 批执行算法(单一实现):过滤(层/子代理/模型/晋升)→ resolve → 插值 →
  * 去重/合并 → 落位插入。
  *
@@ -202,14 +240,15 @@ function buildMessage(config, resolved, warnOnce) {
  */
 export async function runPreStepBatch(options) {
   const initialFrame = options.ruleFrame ?? ruleFrame('agent/pre-step', [{ agent: options.agent, messages: options.decision?.messages ?? [] }], options.warnOnce, options.ctx, options.onOutcome)
-  if (!options.ruleActions?.length) return runPromptConfigBatch({ ...options, ruleFrame: initialFrame })
+  const scope = batchScope(options, initialFrame)
+  if (!options.ruleActions?.length) return runPromptConfigBatch({ ...options, ruleFrame: initialFrame, scope })
   const entries = [...options.configs.map(config => ({ ...config, config })), ...options.ruleActions].sort(compareConfigSequence)
   let decision = options.decision
   if (decision?.kind === 'reject') return decision
   let pending = []
   const placement = { beforeAll: new Set(), afterUser: new Set() }
   const flush = async () => {
-    if (pending.length) decision = await runPromptConfigBatch({ ...options, decision, configs: pending, ruleFrame: initialFrame, placement })
+    if (pending.length) decision = await runPromptConfigBatch({ ...options, decision, configs: pending, ruleFrame: initialFrame, placement, scope })
     pending = []
   }
   for (const entry of entries) {
@@ -222,40 +261,22 @@ export async function runPreStepBatch(options) {
 }
 
 async function runPromptConfigBatch(options) {
-  const { ctx, agent, decision, configs, promotion, memo, warnOnce } = options
+  const { ctx, agent, decision, configs, memo, warnOnce, scope } = options
   if (decision === null || typeof decision !== 'object') return decision
   if (decision.kind === 'reject') return decision
   if (agent === undefined) return decision
   const session = agent.session
   if (session === undefined) return decision
-  const { main, withSubagents } = promotion
+  // 批级快照由 runPreStepBatch 在批首取定；这里只消费，不再重新判定。
+  if (scope === undefined) return decision
   try {
     const messages = Array.isArray(decision.messages) ? [...decision.messages] : []
-    // 条件判定的匹配对象在本批进入时取定：批次内后续注入不改变本批的判定依据。
-    const userText = userMessagesText(messages)
     let changed = false
 
     const due = []
-    // 本批资格判定（唯一实现）：层通道、受众、模型、晋升与声明式条件。
-    // 条件判定放在去重之前：未命中的配置不算「已注入」，条件恢复后仍应能注入。
-    // ST 模板的跨配置变量帧按 order 预求值，但只有这里的获准集合才允许产生副作用
-    // （未命中的 setter 提前 setvar 会污染同批 reader）——渲染器不再复制判定。
-    const delegated = isDelegated(session)
-    const qualified = (config) => config.layer === 'pre-step'
-      && !(config.audience === 'main' && delegated)
-      && !(config.audience === 'subagent' && !delegated)
-      && matchesModel(config.modelScope, agent.options?.model)
-      && (config.promotion !== 'main' || main.status(agent).promoted)
-      && (config.promotion !== 'include-subagents' || withSubagents.status(agent).promoted)
-      && conditionHit(config, { userText })
-      && actionMatches(config, options.ruleFrame)
-    const qualifiedConfigs = configs.filter(qualified)
-    // 协调器为绑定来源 ctx 会复制 config；renderSt 函数身份在副本间保持不变。
-    const eligible = new Set(qualifiedConfigs.map(config => config.renderSt))
-    const stWorldBook = selectStWorldBook(qualifiedConfigs, session, messages, warnOnce)
     for (const config of configs) {
       try {
-        if (!qualified(config)) continue
+        if (!scope.qualified.has(config)) continue
 
         if (config.dedupe === 'session') {
           if (alreadyDelivered(config, session, memo)) continue
@@ -263,7 +284,7 @@ async function runPromptConfigBatch(options) {
           continue
         }
 
-        const resolved = await config.resolve({ ctx, agent, session, decision, messages, stWorldBookSelected: stWorldBook.has(config) })
+        const resolved = await config.resolve({ ctx, agent, session, decision, messages, stWorldBookSelected: scope.stWorldBook.has(config) })
         if (resolved === null || resolved === undefined) continue
         const patched = { ...resolved }
         // params 并入插值变量：ST 变量（setvar/getvar 收集 + 预设参数）顶层 key 直接可插值
@@ -276,7 +297,7 @@ async function runPromptConfigBatch(options) {
           ...(resolved.variables !== null && typeof resolved.variables === 'object' ? resolved.variables : {}),
         }
         if (typeof config.renderSt === 'function') {
-          patched.text = config.renderSt(agent, messages, warnOnce, options, eligible)
+          patched.text = config.renderSt(agent, messages, warnOnce, options, scope.eligible)
           patched.content = patched.text.length > 0 ? [{ type: 'text', text: patched.text }] : []
         } else if (typeof patched.text === 'string') {
           // 提示词配置级模板变量 + filler 变量 + 内置环境变量插值。
@@ -351,7 +372,7 @@ async function runPromptConfigBatch(options) {
     // 同位置批量插入:planned 已按 order 升序,多元素 splice/unshift/push 保持该顺序。
     // 去重记账不在这里：候选被外层门控剥离时也必须保持「未投递」，由 confirmDelivered 确认。
     const markGroup = (group) => {
-      for (const entry of group) stWorldBook.commit?.(entry.config)
+      for (const entry of group) scope.stWorldBook.commit?.(entry.config)
     }
     const beforeAll = planned.filter((item) => item.position === 'before-all')
     const afterUser = planned.filter((item) => item.position !== 'before-all' && item.position !== 'after-all')

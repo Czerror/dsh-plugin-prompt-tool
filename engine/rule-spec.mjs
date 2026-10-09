@@ -2,6 +2,7 @@
 import { ACTION_KINDS, actionExecutionPoint, prepareAction, validateActionOptions } from './actions/index.mjs'
 import { compileWhen, PREDICATE_FACTORIES, COMPOSITE_OPERATORS, channelFactSubjects, channelTextSubjects } from './conditions/index.mjs'
 import { createPromptConfigs, KNOWN_LAYERS } from './schema.mjs'
+import { stripDeclaredRefs } from './interpolate.mjs'
 import { WATERFALL_POSITIONS } from './trigger.mjs'
 import { ACTION_EXAMPLES } from './actions/examples.mjs'
 import { PREDICATE_EXAMPLES } from './conditions/examples.mjs'
@@ -66,7 +67,8 @@ export function injectionConfigSpec(rule, action, options = {}) {
   const variables = record(options.variables) ? options.variables : {}
   if (options.variablesEnabled === false) {
     const keys = new Set(Object.keys(variables))
-    const strip = text => typeof text === 'string' ? text.replace(/\{\{([A-Za-z0-9_.\u4e00-\u9fff-]+)\}\}/g, (match, key) => keys.has(key) ? '' : match) : text
+    // 剥离复用插值语法（同一条 REFERENCE_RE）：花括号内空白与 `::参数` 形态也算引用。
+    const strip = text => stripDeclaredRefs(text, keys)
     if (config.text !== undefined) config.text = strip(config.text)
     if (Array.isArray(config.texts)) config.texts = config.texts.map(strip)
     if (record(config.params) && typeof config.params.text === 'string') config.params = { ...config.params, text: strip(config.params.text) }

@@ -160,6 +160,11 @@
   决定，不能在规则顶层另填通道。规则的 `layer` 仅用于展示，真正注入层取动作 `config.layer`。
 - 同规则、同一真实执行点严格按 `then` 数组顺序执行，条件只求值一次；跨执行点、下一次
   调用及新 epoch 重新求值。不按 session、turn 或同一 context 对象缓存规则结果。
+- `assembly` 动作 target 内的名单语义互斥，且都在**编译期**（`prepareAssembly` 经
+  `compileRules`）拒绝：`sections.keep` × `sections.remove`、`contexts.clear` ×
+  `contexts.add/remove`；`contexts.clear` 出现时必须是布尔（`'true'` / `1` 不再被静默当
+  false）。跨动作拆分不是同一个声明：`[clear 动作, add 动作]` 按 after-next 顺序串接，
+  后面的 `clear` 会清掉前面动作的 `add`。
 - `channelOrder` 位于动作中，只控制同执行点跨规则定位；同卡同点存在冲突值时编译拒绝，
   不替作者任选一个。`waterfallPosition` 也位于动作中，缺省 `default`，适用的原生动作
   可显式使用 `outermost`；它表达官方 waterfall 位置，不创建跨层全局顺序。
@@ -383,6 +388,11 @@ UNAVAILABLE，不是编译期拒绝。
 `selectStWorldBook()` 在既有判断分支旁记录只读诊断，执行器仍是真实注入与 commit 的最终
 权威。诊断挂在返回的入选集合上（`selection.diagnostics`），不新增后台状态服务，
 也不为解释结果重跑选择器。
+
+- 选择时机是**批首一次**：合格配置集合、ST 世界书入选与模板位置身份集合都在步进入时取定
+  （`qualified` 每配置每步只判一次），动作把批切成多次 flush 也复用同一份。同组互斥、概率
+  与粘滞窗口因此按整步成立——旧实现每个 flush 各选一次，同组两条会在两个 flush 里各赢一条。
+  快照同样在批首写入，末批没有世界书配置也不会把它覆盖成空集。
 
 - 阶段区分：`excluded`（禁用/延迟/冷却/递归边界）、`rejected`（主键未命中、副键未满足、
   概率过滤、分组落选、匹配失败）、`candidate`（进入候选及激活原因 sticky/constant/key-match）、

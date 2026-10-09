@@ -216,6 +216,18 @@ export function normalizeMacroSyntax(text) {
 }
 
 /**
+ * 按已声明键集合剥离引用（`variablesEnabled=false` 的编译期清洗）：命中声明键的
+ * `{{键}}` / `{{ 键 }}` / `{{键::参数}}` 整段移除，未声明键与内置引用原样保留。
+ * 纯函数（内部用 `replace` 调用 `REFERENCE_RE`）：不导出带 `/g` 的正则，否则
+ * 调用方的 `lastIndex` 会互相污染。
+ */
+export function stripDeclaredRefs(text, keys) {
+  return typeof text === 'string'
+    ? text.replace(REFERENCE_RE, (whole, key) => keys.has(key) ? '' : whole)
+    : text
+}
+
+/**
  * 官方插值通道（system-section / runtime-context）专用清洗。
  *
  * 官方 renderPrompt 对 section/context 文本做严格插值：畸形引用、`{{}}`、未注册名、

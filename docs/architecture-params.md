@@ -246,6 +246,9 @@ UI 侧 `persistParamOverrides` **条件发送**：
 1. **共享能力参数**：可写键与其存储层由参数目录及规则所有权守卫确定；旧键只在离线输入侧识别，`params` 整段不参与模块模板变量的读取与生成。
 2. **内容占位变量**：完整定义顶层 `variables` ↔ 经校验的 `rules/variables.yml`；UI 保存通过完整定义事务回写，空值占位键也保留：
    - 引擎插值（`engine/interpolate.mjs`）`hasOwnProperty` 命中 → 替换（空串不留字面）；
+   - 模块级停用插值（`variablesEnabled: false`）时，声明键的引用在编译期按**同一插值语法**
+     剥离：`{{键}}`、`{{ 键 }}`、`{{键::参数}}` 都清空，未声明键与内置引用（`{{DSH_HOME}}` 等）
+     原样保留（`engine/rule-spec.mjs` 经 `engine/interpolate.mjs#stripDeclaredRefs`）；
    - 用途：模型经 `world_book_upsert` 写世界书条目，内容引用 `{{key}}` 占位；ST 未定义宏登记；
    - UI 模板变量卡（VariablesEditor）可编辑默认值覆盖。
 
