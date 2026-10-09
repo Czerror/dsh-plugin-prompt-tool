@@ -390,7 +390,7 @@ test('解析器自带 source 的候选按身份盖章：dedupe=session 下多步
  * 消息与去重判定各说各话（静默重复注入 / 静默不去重）。五条各锁一种形态；新增通道或改
  * 缺省推导时这里先红。
  */
-test('身份契约互逆：identityStampOf 盖出的 source 一律被 identityHit 认下', () => {
+test('身份契约互逆：identityStampOf 盖出的 source 一律被 identityHit 认下', async () => {
   const plain = (spec, options) => createPromptConfigs([{ strategy: 'static', dedupe: 'session', text: 'HINT', position: 'after-user', ...spec }], options)[0]
   const cases = [
     // 缺省 kind 由 schema 按配置 id 编成 `plugin:<id>`（不是 merged 身份）；merged 组只改写
@@ -421,21 +421,29 @@ test('身份契约互逆：identityStampOf 盖出的 source 一律被 identityHi
     '只有 plugin 通道的旧形态消息仍算命中')
   // 反例三：`moduleId: ''` 与缺失同等（第三方消息可以带空串），既不写进任何模块的账本，
   // 也不在判定里被当成某个模块。关键不变量是**快路径与慢路径同结论**：memo 只省一次扫描，
-  // 不得改变判定（`moduleOf` 若把空串当真实模块，模块 A 的配置会命中这条消息而慢路径不认）。
+  // 不得改变判定（`moduleOf` 若把空串当真实模块，带 memo 的判定会命中保守桶，
+  // 而清掉 memo 后的当前上下文扫描不认 → 结论分叉）。
   const targetValue = identityOf(target)
   assert.equal(identityStampOf(plain({ id: 'hint' }, { sourceModuleId: '' })).moduleId, undefined, '空串配置不盖模块维')
   const emptyModuleSource = { kind: 'plugin:hint', plugin: 'hint', moduleId: '' }
-  const slowVerdict = identityHit(emptyModuleSource, target, targetValue)
-  assert.equal(slowVerdict, true, '空串模块维按无模块维保守命中')
+  assert.equal(identityHit(emptyModuleSource, target, targetValue), true, '空串模块维按无模块维保守命中')
+  const message = { id: 'm', role: 'user', content: [{ type: 'text', text: 'HINT' }], source: emptyModuleSource }
+  const store = surfaceSession('s-empty-module')
+  store.admit(message)
   const memo = new Map()
-  const session = { id: 's-empty-module' }
-  confirmDelivered(memo, session, { type: 'user/message', data: { message: { role: 'user', content: [{ type: 'text', text: 'HINT' }], source: emptyModuleSource } } })
-  const modularBucket = memo.get(`plugin\u0000mod-a\u0000-\u0000${targetValue}`)
-  assert.equal(modularBucket, undefined, '空串模块维不落进模块 A 的账本')
-  const legacyBucket = memo.get(`plugin\u0000\u0000-\u0000${targetValue}`)
-  assert.equal(legacyBucket?.has(session.id), true, '记账落在无模块维的保守桶')
-  // 快路径按同一桶查询，结论与慢路径逐字相同。
-  assert.equal(legacyBucket.has(session.id), slowVerdict, '快慢路径同结论：memo 不改变判定')
+  confirmDelivered(memo, store.session, { type: 'user/message', data: { message } })
+  assert.ok(memo.size > 0, '快路径确实记了账')
+  const run = (injectedMemo) => runPreStepBatch({
+    ctx: {},
+    agent: agent({ session: store.session }),
+    decision: { kind: 'enter', messages: [userTask] },
+    configs: [target],
+    memo: injectedMemo,
+    promotion: { main: { status: () => ({ promoted: true }) }, withSubagents: { status: () => ({ promoted: true }) } },
+    warnOnce: () => {},
+  })
+  assert.deepEqual(injectedOf(await run(memo)), [], '带 memo：空串模块维的消息算已投递，模块 A 不重复注入')
+  assert.deepEqual(injectedOf(await run(new Map())), [], 'memo 清空后按当前上下文扫描：结论与快路径逐字相同')
 })
 
 test('显式 identity：先到者被接纳后，晚一步的卡不再经自己的 id 重复注入', async () => {
@@ -495,8 +503,9 @@ function surfaceSession(id = 's-surface') {
   }
 }
 
-/** 本引擎注入的那几条（`source.moduleId` 是本轮新盖章的模块维）。 */
-const injectedOf = (decision) => decision.messages.filter((message) => message.source?.moduleId !== undefined)
+/** 本引擎注入的那几条：按引擎身份通道 `source.plugin` 筛（它每次都盖）。用只在有模块时才盖的
+ * `source.moduleId` 筛，会让「不该再注入」的否定断言在该字段停盖时空过。 */
+const injectedOf = (decision) => decision.messages.filter((message) => message.source?.plugin !== undefined)
 
 test('T5：去重身份带模块维——整模块复制的两个副本各自注入，身份字符串一字不改', async () => {
   // 整模块复制保留 rule id 与卡 id，两个模块编译出的身份逐字相同；这里把两份配置放进

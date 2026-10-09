@@ -363,7 +363,7 @@ test('契约：负责人事实按当前语义恒为 null——没有 true 生产
   await handlers.get(SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.bootstrap)(fakeReq({ body: { sessionId: 'live-session' } }), res)
   assert.equal(res.status, 200, res.body)
   // 字段仍在载荷里（老客户端契约），值只可能是 null：undefined 会让 strict equal 失败。
-  assert.equal(JSON.parse(res.body).instructions.owner.officialInstructions, null, '未观察到即 null')
+  assert.strictEqual(JSON.parse(res.body).instructions.owner.officialInstructions, null, '未观察到即 null')
 })
 
 test('契约：/tool-surface 支持官方 preset scope 且只读有效 schema', async () => {

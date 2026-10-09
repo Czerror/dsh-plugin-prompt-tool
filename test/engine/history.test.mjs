@@ -2,7 +2,7 @@
  * T4 —— `engine/history.mjs` 的两个历史视图（`historyEvents` / `currentEvents`）。
  *
  * 钉住的语义：
- *  - 视图②（完整历史）与迁移前的 `sessionEvents()` 逐例等价（同桩同输出，含缺失接口降级）；
+ *  - 视图②（完整历史）= `snapshotEvents()` 的全量快照；缺接口 / 快照非数组一律降级为空日志；
  *  - 视图①（当前上下文）按 surface `nodes` 序返回对应事件，`nodes` 空数组 = 空上下文（不降级）；
  *  - 视图①在无 surface / `nodes` 非数组 / 节点越界时退回视图②（等价旧行为）；
  *  - 两个视图都是纯函数：不缓存、不改写输入。
@@ -14,7 +14,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { historyEvents, currentEvents } from '../../engine/history.mjs'
-import { sessionEvents } from '../../engine/shared.mjs'
 
 const log = [
   { type: 'turn/start' },
@@ -24,24 +23,22 @@ const log = [
 ]
 
 /** 桩：`log[seq]` 是 seq → 事件的真值源；`surfaceNodes` 为 undefined 表示宿主无 surface。 */
-const stub = ({ log: events = log, surfaceNodes, surface } = {}) => ({
-  ...(surface === undefined ? (surfaceNodes === undefined ? {} : { surface: { nodes: surfaceNodes } }) : { surface }),
-  snapshotEvents: () => events,
-})
+const stub = ({ log: events = log, surfaceNodes, surface } = {}) => {
+  const hostSurface = surface ?? (surfaceNodes === undefined ? undefined : { nodes: surfaceNodes })
+  return { ...(hostSurface === undefined ? {} : { surface: hostSurface }), snapshotEvents: () => events }
+}
 
-test('完整历史：与迁移前的 shared.sessionEvents 逐例等价（同桩同输出）', () => {
+test('完整历史：按字面期望逐例返回（缺接口 / 非数组快照降级为空日志）', () => {
   const cases = [
-    ['无会话', undefined],
-    ['空对象', {}],
-    ['非数组快照', { snapshotEvents: () => 'not-an-array' }],
-    ['空日志', { snapshotEvents: () => [] }],
-    ['正常日志', stub()],
+    ['无会话', undefined, []],
+    ['空对象', {}, []],
+    ['非数组快照', { snapshotEvents: () => 'not-an-array' }, []],
+    ['空日志', { snapshotEvents: () => [] }, []],
+    ['正常日志', stub(), log],
   ]
-  for (const [name, session] of cases) {
-    assert.deepEqual(historyEvents(session), sessionEvents(session), name)
+  for (const [name, session, expected] of cases) {
+    assert.deepEqual(historyEvents(session), expected, name)
   }
-  assert.deepEqual(historyEvents(undefined), [], '无会话 = 空日志')
-  assert.deepEqual(historyEvents({}), [], '缺 snapshotEvents 接口 = 空日志')
   assert.equal(historyEvents(stub()), log, '返回值即快照本身（只读，不复制）')
 })
 

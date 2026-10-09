@@ -95,17 +95,22 @@ test('rule-steps: 工具链动作卡按引擎种子渲染可编辑字段，match
     t, rule, meta, engineMeta: { layerFieldPolicies: {}, layers: [] },
     fields: new Map(), expanded, prefix: 'rule-key', fieldKey: 'rule-key', onDraft: () => {}, onChange: () => {},
   })
-  const labels = new Set([...html.matchAll(/aria-label="([^"]*)"/g)].map(match => match[1]))
-  // 手写期望值：`match` 出现即拒（条件写 `rule.if`），种子给不出结构化值 → 它不在卡片的可编辑面。
+  const labels = [...html.matchAll(/aria-label="([^"]*)"/g)].map(match => match[1])
+  // 手写期望值（真值源：引擎动作声明）：`match` 已取消（条件写 `rule.if`），不在卡片的可编辑面。
   const expected = { decision: ['phase', 'decision', 'action', 'reason', 'text', 'toolNames'], 'append-context': ['mode', 'text'] }
-  const labelOf = field => (field === 'action' ? t('rules.actionField.action')
-    : field === 'decision' ? t('rules.actionField.decision')
-      : field === 'toolNames' ? t('rules.actionField.toolNames') : t(`triggers.label.${field}`))
+  const fieldLabelKeys = { action: 'rules.actionField.action', decision: 'rules.actionField.decision', toolNames: 'rules.actionField.toolNames' }
+  const labelOf = field => t(fieldLabelKeys[field] ?? `triggers.label.${field}`)
+  // 卡片操作（↑↓× 与类型选择）不是字段入口，但同在一个 aria-label 面上，按动作自己的 id 计入。
+  const chromeOf = id => [t('rules.moveUp', { id }), t('rules.moveDown', { id }), t('rules.steps.remove', { id }), t('triggers.actionType')]
   for (const [kind, fields] of Object.entries(expected)) {
     assert.deepEqual(ACTION_KINDS[kind].fields.filter(field => field !== 'match'), fields, `${kind} 可编辑字段集`)
-    for (const field of fields) assert.ok(labels.has(labelOf(field)), `${kind}.${field} 要渲染出控件（${labelOf(field)}）`)
-    assert.ok(!labels.has('match'), `${kind} 不给 match 造假入口`)
   }
+  // 渲染出的控件与期望逐项相等：多一个字段（例如将来被 locale 补上名字的 `match`）即红。
+  const expectedLabels = [
+    ...rule.then.flatMap(node => [...expected[node.kind].map(labelOf), ...chromeOf(node.id)]),
+    t('rules.steps.addConditionType'), t('rules.steps.addActionType'),
+  ]
+  assert.deepEqual([...labels].sort(), [...expectedLabels].sort(), '卡片可编辑面 = 声明字段 + 卡片操作')
   assert.match(html, /data-step="action"/)
 })
 
