@@ -162,6 +162,22 @@ test('预设条件在真实挂载scope绑定：正反判断隔离、缺事实不
   const reloadedQueries = lookups
   assert.equal((await request(child)).maxTokens, 222)
   assert.equal(lookups - reloadedQueries, 2, '重挂不复用旧scope闭包或叠加监听器')
+  // 动作级 preset 在真实挂载 scope 重绑（T3）：then 嵌套 / 规则级 else / 动作级 else 三组，
+  // 各用不同请求字段隔离，target 走 then、other 走 else、缺事实两者都不放行。
+  writeFileSync(file, JSON.stringify({ ...definition, rules: [...definition.rules,
+    { id: 'nested-then', layer: 'agent-request', then: [
+      { if: { preset: { presetId: 'target' } }, then: [{ id: 'nt-hit', kind: 'request-params', modelScope: 'all', patch: { temperature: 0.1 } }], else: [{ id: 'nt-miss', kind: 'request-params', modelScope: 'all', patch: { temperature: 0.9 } }] },
+    ] },
+    { id: 'rule-else', layer: 'agent-request', if: { preset: { presetId: 'target' } }, then: [{ id: 're-hit', kind: 'request-params', modelScope: 'all', patch: { maxTokens: 333 } }], else: [{ id: 're-miss', kind: 'request-params', modelScope: 'all', patch: { maxTokens: 444 } }] },
+    { id: 'action-else', layer: 'agent-request', then: [
+      { if: { preset: { presetId: 'target' } }, then: [{ id: 'ae-hit', kind: 'request-params', modelScope: 'all', patch: { stop: ['hit'] } }], else: [{ id: 'ae-miss', kind: 'request-params', modelScope: 'all', patch: { stop: ['miss'] } }] },
+    ] },
+  ] }))
+  await h.runtime.refresh('preset-conditions')
+  assert.deepEqual(await request(main), { maxTokens: 333, temperature: 0.1, stop: ['hit'] }, '动作级 preset：target 下三组 then 命中')
+  assert.deepEqual(await request(child), { maxTokens: 444, temperature: 0.9, stop: ['miss'] }, '动作级 preset：other 下三组 else 命中')
+  const bare = await h.makeAgent('preset-bare')
+  assert.deepEqual(await request(bare), { maxTokens: 999 }, '动作级 preset：缺事实时 then/else 都不放行')
   selections.delete(main.ctx)
   main.session.header.agentPreset = 'target'
   assert.equal((await request(main)).maxTokens, 999, '未知当前预设不取header/default，not也不放行')

@@ -22,7 +22,14 @@ export function mountRuleSources(ctx, sources, options = {}) {
   const points = new Map()
   const injections = new Map(sources.map(source => [source.moduleId, { sourceId: `module:${source.moduleId}`, configs: [], ruleActions: [], officialInstructions: source.officialInstructions === true }]))
   const rules = sources.flatMap(source => source.rules.filter(rule => rule.enabled !== false))
-  const observer = wireTriggerObservers(ctx, rules, { plugin: options.plugin ?? 'rule-engine', warnOnce })
+  // 动作级分支条件（actionWhen）也要喂 session/event：否则 else / 嵌套 if 里的 phase / count
+  // 谓词永远收不到事件，状态停在冷扫那一刻（规则级 when 已由 rules 覆盖，动作级单独补齐）。
+  const observer = wireTriggerObservers(ctx, [
+    ...rules,
+    ...rules.flatMap(rule => rule.actions
+      .filter(action => typeof action.actionWhen?.observe === 'function')
+      .map(action => ({ id: action.id, when: action.actionWhen }))),
+  ], { plugin: options.plugin ?? 'rule-engine', warnOnce })
   if (observer) releases.push(observer)
   let active = true
   const bind = (item, on) => prepareAction(item.action, { plugin: options.plugin, warnOnce, promptConfigOptions: item.rule.promptConfigOptions, on })(ctx)
@@ -77,7 +84,15 @@ export function mountRuleSources(ctx, sources, options = {}) {
         const payload = free ? args : args.slice(0, -1)
         const next = free ? () => undefined : args[args.length - 1]
         if (!active) return next()
-        const frame = ruleFrame(point.channel, payload, warnOnce, ctx, report)
+        // 帧构造失败（如宿主 snapshotEvents 抛错）只告警并按「无事实」跳过本点动作，
+        // 不得把异常抛出整条分派。
+        let frame
+        try {
+          frame = ruleFrame(point.channel, payload, warnOnce, ctx, report)
+        } catch (error) {
+          warnOnce(`rule engine: frame construction failed on ${point.channel}: ${String(error?.message ?? error)}`)
+          return next()
+        }
         if (free) {
           let pending
           for (const entry of handlers) {

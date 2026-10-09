@@ -5,7 +5,7 @@ import { createScope } from '@deepseek-ai/dsh-scope'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import { compileRules, getRuleEditorMeta } from '../../engine/rule-spec.mjs'
 import { mountRuleSources } from '../../engine/rule-runtime.mjs'
-import { ruleFrame, ruleMatches } from '../../engine/conditions/evaluation.mjs'
+import { ruleFrame, ruleMatches, actionMatches } from '../../engine/conditions/evaluation.mjs'
 
 function harness(services = {}) {
   const events = new Map()
@@ -438,5 +438,115 @@ test('统一规则：判定类别按通道上报，命中、条件为假与缺�
   assert.equal(reported.find(item => item.ruleId === 'miss')?.outcome, 'miss')
   // 缺事实（pre-step 载荷没有 toolResult 文本）与「条件为假」必须分开，前者才是「为什么没触发」。
   assert.equal(reported.find(item => item.ruleId === 'unavailable')?.outcome, 'unavailable')
+  dispose()
+})
+
+test('动作级分支：五层 inject-text 与默认位置 pre-step-filter 的 else 恰好一支生效', async () => {
+  const childReceived = []
+  const steered = []
+  const mainReceived = []
+  const main = { ...actor(), inject: message => mainReceived.push(message) }
+  main.session = { ...main.session, id: 'main-agent' }
+  const makeAgent = (id, model) => {
+    const agent = { ...actor(), inject: message => childReceived.push(message), steer: message => steered.push(message) }
+    agent.session = { ...agent.session, id, header: { delegationDepth: 1, parentSession: 'main-agent' } }
+    agent.options = { model }
+    return agent
+  }
+  const flash = makeAgent('flash-agent', 'deepseek-flash')
+  const pro = makeAgent('pro-agent', 'deepseek-pro')
+  const agents = new Map([['main-agent', main], ['flash-agent', flash], ['pro-agent', pro]])
+  const h2 = harness({ agents })
+  const branch = (id, layer, thenConfig, elseConfig) => ({
+    if: { scope: { modelScope: 'flash' } },
+    then: [{ id: `${id}-then`, kind: 'inject-text', config: { layer, ...thenConfig } }],
+    else: [{ id: `${id}-else`, kind: 'inject-text', config: { layer, ...elseConfig } }],
+  })
+  const rules = compileRules([{ id: 'action-branches', then: [
+    branch('req', 'agent-request', { params: { patch: { maxTokens: 111 } } }, { params: { patch: { maxTokens: 222 } } }),
+    branch('stream', 'llm-stream', { text: 'THEN', params: { mode: 'replace' } }, { text: 'ELSE', params: { mode: 'replace' } }),
+    branch('stop', 'turn-stop', { text: 'THEN-STOP' }, { text: 'ELSE-STOP' }),
+    branch('start', 'subagent-start', { text: 'THEN-START' }, { text: 'ELSE-START' }),
+    branch('end', 'subagent-end', { text: 'THEN-END', params: { action: 'inject-main' } }, { text: 'ELSE-END', params: { action: 'inject-main' } }),
+    { if: { scope: { modelScope: 'flash' } }, then: [
+      { id: 'filter-then', kind: 'pre-step-filter', blockPlugins: ['A'] },
+    ], else: [
+      { id: 'filter-else', kind: 'pre-step-filter', blockPlugins: ['B'] },
+    ] },
+  ] }])
+  const dispose = mountRuleSources(h2.ctx, [{ moduleId: 'module', rules }])
+  // agent-request：flash 走 then，pro 走 else。
+  const req = agent => h2.run('agent/request', [{ agent }], () => ({ maxTokens: 5 }))
+  assert.equal((await req(flash)).maxTokens, 111)
+  assert.equal((await req(pro)).maxTokens, 222)
+  // llm-stream：流替换只出现命中分支的正文。
+  const streamText = async model => {
+    const chunks = []
+    for await (const chunk of h2.run('llm/stream', [{ sessionId: 'flash-agent', model }], () => [])) chunks.push(chunk)
+    return chunks.filter(chunk => chunk.type === 'text-delta').map(chunk => chunk.text).join('')
+  }
+  assert.equal(await streamText('deepseek-flash'), 'THEN')
+  assert.equal(await streamText('deepseek-pro'), 'ELSE')
+  // turn-stop：steer 正文即方向；另用 actionMatches 直接对比判定结果。
+  await h2.emit('agent/turn-stopping', { agent: flash, turn: 1 })
+  assert.deepEqual(steered.map(message => message.content[0].text), ['THEN-STOP'])
+  steered.length = 0
+  await h2.emit('agent/turn-stopping', { agent: pro, turn: 2 })
+  assert.deepEqual(steered.map(message => message.content[0].text), ['ELSE-STOP'])
+  const stopActions = rules[0].actions.filter(action => action.execution.channel === 'agent/turn-stopping')
+  const stopFrame = ruleFrame('agent/turn-stopping', [{ agent: flash, turn: 3 }], () => {})
+  assert.equal(stopActions.filter(action => actionMatches({ rule: rules[0], actionWhen: action.actionWhen, bypassRuleWhen: action.bypassRuleWhen, id: action.id }, stopFrame)).length, 1, 'turn-stop 方向断言：恰好一支命中')
+  // subagent-start：注入只出现命中分支的正文。
+  await h2.emit('subagent/start', { id: 'flash-agent', runId: 'run-flash' })
+  assert.deepEqual(childReceived.map(message => message.content[0].text), ['THEN-START'])
+  childReceived.length = 0
+  await h2.emit('subagent/start', { id: 'pro-agent', runId: 'run-pro' })
+  assert.deepEqual(childReceived.map(message => message.content[0].text), ['ELSE-START'])
+  // subagent-end：注入主会话只出现命中分支的正文。
+  await h2.emit('subagent/end', { id: 'flash-agent', runId: 'end-flash' })
+  assert.deepEqual(mainReceived.map(message => message.content[0].text), ['THEN-END'])
+  await h2.emit('subagent/end', { id: 'pro-agent', runId: 'end-pro' })
+  assert.deepEqual(mainReceived.map(message => message.content[0].text), ['THEN-END', 'ELSE-END'])
+  // 默认位置 pre-step-filter：flash 屏蔽 A，pro 屏蔽 B。
+  const messages = [
+    { id: 'a', role: 'user', source: { kind: 'plugin', plugin: 'A' }, content: [{ type: 'text', text: 'A' }] },
+    { id: 'b', role: 'user', source: { kind: 'plugin', plugin: 'B' }, content: [{ type: 'text', text: 'B' }] },
+  ]
+  const filtered = agent => h2.run('agent/pre-step', [{ agent, messages }], () => ({ kind: 'enter', messages }))
+  assert.deepEqual((await filtered(flash)).messages.map(message => message.source.plugin), ['B'])
+  assert.deepEqual((await filtered(pro)).messages.map(message => message.source.plugin), ['A'])
+  dispose()
+})
+
+test('动作级分支关键拒绝：规则级 else 无 if 与 guard 矛盾组合编译期拒绝', () => {
+  assert.throws(() => compileRules([{ id: 'else-no-if', then: [textAction('t', 'T')], else: [textAction('e', 'E')] }]), /else requires an if/)
+  assert.throws(() => compileRules([{ id: 'else-null-if', if: null, then: [textAction('t', 'T')], else: [textAction('e', 'E')] }]), /else requires an if/)
+  // guard 是注册期动作，与动作级分支条件（逐轮求值）自相矛盾。
+  assert.throws(() => compileRules([{ id: 'guard-branch', then: [
+    { if: { scope: { modelScope: 'flash' } }, then: [{ id: 'g', kind: 'guard', mask: { deny: ['bash'] } }] },
+  ] }]), /no per-turn evaluation point/)
+})
+
+test('动作级分支边界：compaction/end 后分支回到初始支', async () => {
+  const h = harness()
+  const rules = compileRules([{ id: 'phase-branch', then: [{
+    if: { phase: { promoted: true } },
+    then: [{ id: 'then-req', kind: 'request-params', patch: { maxTokens: 111 } }],
+    else: [{ id: 'else-req', kind: 'request-params', patch: { maxTokens: 222 } }],
+  }] }])
+  const dispose = mountRuleSources(h.ctx, [{ moduleId: 'module', rules }])
+  const events = []
+  const agent = actor()
+  agent.session.snapshotEvents = () => events
+  const call = () => h.run('agent/request', [{ agent }], () => ({ maxTokens: 5 }))
+  assert.equal((await call()).maxTokens, 222, '初始未晋升走 else')
+  const promote = { type: 'assistant/message', seq: 1, data: {} }
+  events.push(promote)
+  await h.emit('session/event', agent.session, promote)
+  assert.equal((await call()).maxTokens, 111, '晋升后走 then')
+  const compact = { type: 'compaction/end', seq: 2, data: {} }
+  events.push(compact)
+  await h.emit('session/event', agent.session, compact)
+  assert.equal((await call()).maxTokens, 222, '压缩后回到初始 else')
   dispose()
 })

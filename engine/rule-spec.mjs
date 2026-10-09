@@ -141,6 +141,10 @@ export function compileRules(specs, options = {}) {
     const sequence = options.configOrder?.[spec.id] ?? index * 10
     if (!Number.isSafeInteger(sequence) || sequence < 0) throw new TypeError(`rule ${spec.id}: invalid configOrder`)
     const when = compileWhen(ruleIf, options)
+    // 规则级 else 依赖 `not(if)` 才能与 then 互斥；没有 if 时 else 会退化成无条件动作。
+    if (spec.else !== undefined && (ruleIf === undefined || ruleIf === null)) {
+      throw new TypeError(`rule ${spec.id}: else requires an if — 规则级 else 不能脱离 if 存在`)
+    }
     // 规则级 `if` 由 `rule.when` 判定，then 分支的动作不再重复叠加它；规则级 `else` 的动作
     // 自带 `not(if)` 并标记跳过规则级判定——否则两者自相矛盾，else 分支永远不会执行。
     const expanded = [
@@ -189,7 +193,7 @@ export function compileRules(specs, options = {}) {
       if (actionWhen !== undefined && (REGISTRATION_LAYERS.has(branchLayer) || execution.lifecycle === 'registration')) {
         throw new TypeError(`action ${action.id}: layer ${branchLayer} has no per-turn evaluation point — move the branch to pre-step / subagent-* / tool-pipeline / turn-stop`)
       }
-      return Object.assign(action, { execution, channelOrder, waterfallPosition, actionIndex, actionWhen, bypassRuleWhen: bypass })
+      return Object.assign(action, { execution, channelOrder, waterfallPosition, actionIndex, actionWhen, bypassRuleWhen: bypass, conditions: structuredClone(actionConditions) })
     })
     const pointOrders = new Map()
     for (const action of actions) {

@@ -29,7 +29,7 @@ import { wireLayers } from './layers.mjs'
 import { sessionVarsSnapshot } from './session-vars.mjs'
 import { selectStWorldBook } from './st-world-book.mjs'
 import { compareConfigSequence } from './order.mjs'
-import { ruleFrame, ruleMatches, actionMatches } from './conditions/evaluation.mjs'
+import { ruleFrame, actionMatches } from './conditions/evaluation.mjs'
 
 const name = 'prompt-config-engine'
 
@@ -211,7 +211,7 @@ export async function runPreStepBatch(options) {
   for (const entry of entries) {
     if (entry.config) { pending.push(entry.config); continue }
     await flush()
-    if (ruleMatches(entry.rule, initialFrame)) decision = await entry.handler(options.payload ?? initialFrame.args[0], () => decision, initialFrame)
+    if (actionMatches(entry, initialFrame)) decision = await entry.handler(options.payload ?? initialFrame.args[0], () => decision, initialFrame)
   }
   await flush()
   return decision

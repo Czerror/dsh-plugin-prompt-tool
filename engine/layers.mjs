@@ -19,7 +19,7 @@ import { interpolateVariables, stripUnresolvedRefs, RUNTIME_FACTS, runtimeFactVa
 import { getSessionVar, sessionVarsSnapshot } from './session-vars.mjs'
 import { conditionHit, lastAssistantText, subagentTextOf, toolArgsText } from './condition.mjs'
 import { compareConfigSequence, compareTextPlacement } from './order.mjs'
-import { ruleFrame, ruleMatches } from './conditions/evaluation.mjs'
+import { ruleFrame, ruleMatches, actionMatches } from './conditions/evaluation.mjs'
 
 const name = 'prompt-config-engine'
 // 同一宿主会话共享投递账本，避免预设作用域重挂后重投同一次结束通知。
@@ -265,7 +265,7 @@ function wireRuleTextContributions(ctx, configs, registry, warnOnce, keep, on) {
       entry.text = ''
       const blocks = []
       for (const config of binding.group) {
-        if (!active || context.signal?.aborted || !ruleMatches(config.rule, frame) || !matchesAgentScope(config, context.agent)) continue
+        if (!active || context.signal?.aborted || !actionMatches(config, frame) || !matchesAgentScope(config, context.agent)) continue
         try {
           const text = config.layer === 'runtime-context' && (config.strategy === 'placeholder' || !KNOWN_STRATEGIES.has(config.strategy))
             ? await resolvedContextText(ctx, config, context, registry.get(config), warnOnce)
@@ -394,7 +394,7 @@ function wireAgentRequests(ctx, configs, warnOnce, on) {
     // 模块请求在 next 返回后按序合并；无文件来源的独立调用保持原回栈顺序。
     for (const config of ordered) {
       try {
-        if (ruleMatches(config.rule, frame) && matchesAgentScope(config, payload?.agent)) result = applyAgentRequestParams(config.params, result)
+        if (actionMatches(config, frame) && matchesAgentScope(config, payload?.agent)) result = applyAgentRequestParams(config.params, result)
       } catch (error) {
         warnOnce(`${name}: agent-request config ${config.id} failed: ${String(error?.message ?? error)}`)
       }
@@ -419,7 +419,7 @@ function wireLlmStreams(ctx, configs, warnOnce, on) {
         const frame = invocation ?? ruleFrame('llm/stream', [options], warnOnce)
         const agent = options?.sessionId === undefined ? undefined : getService(ctx, 'agents')?.get?.(options.sessionId)
         frame.subject.agent = agent
-        if (!ruleMatches(config.rule, frame)) return next()
+        if (!actionMatches(config, frame)) return next()
         const mode = config.params?.mode ?? 'pass'
         if (mode === 'replace' && config.texts.length > 0 && matchesModel(config.modelScope, options?.model)) {
           return replacedStream(config.texts.join('\n\n'))
@@ -591,7 +591,7 @@ function wireTurnStops(ctx, configs, warnOnce, on) {
     disposers.push(on('agent/turn-stopping', (payload = {}, _next, invocation) => {
       const { agent, turn } = payload
       try {
-        if (!ruleMatches(config.rule, invocation ?? ruleFrame('agent/turn-stopping', [payload], warnOnce))) return
+        if (!actionMatches(config, invocation ?? ruleFrame('agent/turn-stopping', [payload], warnOnce))) return
         const session = agent?.session
         if (session?.id === undefined || typeof agent.steer !== 'function') return
         if (!matchesAgentScope(config, agent)) return
@@ -661,7 +661,7 @@ function wireSubagentEvents(ctx, configs, warnOnce, on) {
         frame.subject.agent = child
         const subagentText = subagentTextOf(info)
         for (const config of startConfigs) {
-          if (!ruleMatches(config.rule, frame)) continue
+          if (!actionMatches(config, frame)) continue
           if (!matchesAgentScope(config, child)) continue
           if (!conditionHit(config, { subagentText })) continue
           if (typeof child.inject !== 'function') continue
@@ -687,7 +687,7 @@ function wireSubagentEvents(ctx, configs, warnOnce, on) {
         frame.subject.session = child?.session ?? recorded?.session ?? getService(ctx, 'sessions')?.get?.(info?.id)
         frame.subject.model = child?.options?.model ?? recorded?.model
         for (const config of endConfigs) {
-          if (!ruleMatches(config.rule, frame)) continue
+          if (!actionMatches(config, frame)) continue
           if (!matchesModel(config.modelScope, child?.options?.model ?? recorded?.model)) continue
           if (!conditionHit(config, { subagentText })) continue
           if (config.params?.action !== 'inject-main') {
@@ -737,7 +737,10 @@ export function wireLayers(ctx, configs, warnOnce, options = {}) {
   const on = options.on ?? ((...args) => ctx.on(...args))
   // 官方插值两层共享一份变量注册：运行时事实按 assembly 求值，非法名走别名改写。
   const registry = registerOfficialVariables(ctx, configs.filter((config) => config.layer === 'system-section' || config.layer === 'runtime-context'), warnOnce, keep)
-  const conditional = configs.filter(config => typeof config.rule?.when === 'function' && ['system-section', 'runtime-context'].includes(config.layer))
+  // 有规则级 when 或动作级 actionWhen 才走条件化注册：只有动作级 if（无规则级 if）的配置
+  // 若落入 regular 的无条件注册路径，动作级分支会被整段忽略，与其余七层不一致。
+  const conditional = configs.filter(config => ['system-section', 'runtime-context'].includes(config.layer)
+    && (typeof config.rule?.when === 'function' || typeof config.actionWhen === 'function'))
   const regular = configs.filter(config => !conditional.includes(config))
   const registered = [
     wireSystemSections(ctx, regular.filter((config) => config.layer === 'system-section'), registry, warnOnce, keep),

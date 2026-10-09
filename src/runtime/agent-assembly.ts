@@ -239,8 +239,16 @@ export function createAgentAssembly(ctx: Context, options: AgentAssemblyOptions)
         const ruleSources = prepared.filter(item => item.rules.length > 0).map(item => ({
           moduleId: item.moduleId,
           rules: item.rules.map(value => {
-            const rule = value as { id: string } & Record<string, unknown>
-            return { ...rule, when: compileWhen(item.ruleConditions.get(rule.id), { ctx: scopeCtx, standingMountFor }) }
+            const rule = value as { id: string; actions?: unknown[] } & Record<string, unknown>
+            return {
+              ...rule,
+              when: compileWhen(item.ruleConditions.get(rule.id), { ctx: scopeCtx, standingMountFor }),
+              // 动作级条件同样在真实挂载 scope 重绑，否则 else / 嵌套 if 里的 preset 恒 UNAVAILABLE。
+              actions: rule.actions?.map(rawAction => {
+                const action = rawAction as { conditions?: unknown } & Record<string, unknown>
+                return { ...action, actionWhen: compileWhen(action.conditions, { ctx: scopeCtx, standingMountFor }) }
+              }),
+            }
           }),
         }))
         for (const item of prepared) {
