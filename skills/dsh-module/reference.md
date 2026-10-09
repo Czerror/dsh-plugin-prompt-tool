@@ -40,8 +40,8 @@
 
 | 动作 | 执行点 | 主要字段 | 失败时 |
 |---|---|---|---|
-| `inject-text` | 由 `config.layer` 决定（九层） | `layer`、`strategy`（`static`/`placeholder`/`first-turn-anchor`/`guide-auto`/`anchor-notice`/`world-book`）、`position`、`dedupe`、`mergeMode`、`role`、`order`、`text`/`texts`、`variables`、`params`、`templateFile`、`configKind` | 空正文＝不注册 |
-| `assembly` | `system-prompt/assemble` 下游 | `target.tools`（`allow` **或** `deny`，可加 `requireMatch`、`allowFrom`）、`target.sections`（`add`/`remove` **或** `keep`）、`target.contexts`（`add`/`remove`/`clear`） | 返回未改动的装配（对 tools 即暴露完整目录） |
+| `inject-text` | 由 `config.layer` 决定（**可注入八层**，见层表；`tool-pipeline` 无注入通道） | `layer`、`strategy`（`static`/`placeholder`/`first-turn-anchor`/`guide-auto`/`anchor-notice`/`world-book`）、`position`、`dedupe`、`mergeMode`、`role`、`order`、`text`/`texts`、`variables`、`params`、`templateFile`、`configKind` | 空正文＝不注册 |
+| `assembly` | `system-prompt/assemble` 下游 | `target.tools`（`allow` **或** `deny`，可加 `requireMatch`、`allowFrom`）、`target.sections`（`add`/`remove` **或** `keep`）、`target.contexts`（`add`/`remove` **或** `clear`，二者互斥——并存编译期拒绝） | 返回未改动的装配（对 tools 即暴露完整目录） |
 | `decision` | `tools/pre-execute` / `tools/post-execute` | `phase`（`pre`/`post`）、`decision`（`allow`/`deny`/`ask`）、`action`（`accept`/`replace`/`block`）、`toolNames`、`text`、`reason` | 一律放行／接受——裁决 bug 不卡死调用 |
 | `append-context` | `mode: context` → `tools/post-execute`；`mode: continue` → `agent/turn-stopping` | `mode`、`text` | 保持原结果 |
 | `guard` | 注册期（agent scope） | `mask.allow` **或** `mask.deny`、`includeSubagents`（布尔，缺省 `false`）、`reason`、`audience`（只接受 `main`/`subagent`/`all`；省略、`null`、`''` 与 `all` 同为通用档；`'subagent'` 必须同时写 `includeSubagents: true`，否则编译期拒绝） | 静默不注册（**不**退化成放行以外的东西） |

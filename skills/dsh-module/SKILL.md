@@ -93,7 +93,7 @@ node --input-type=module -e "import {compileRules} from './engine/rule-spec.mjs'
 | `agent-request` | `agent/request` | 改模型请求参数（provider/model/temperature/maxTokens/stop） |
 | `llm-stream` | `llm/stream` | 包装或替代模型输出流 |
 | `tool-pipeline` | `tools/*` | 工具放行/拦截/改写结果 |
-| `turn-stop` | `agent/turn-stopping` | 命中后强制续跑一步（引擎内每轮 1 次、每会话 3 次上限） |
+| `turn-stop` | `agent/turn-stopping` | 命中后强制续跑一步（上限固定在引擎内：每个来源（模块）每轮 1 次 / 每会话 3 次） |
 | `subagent-start` | `subagent/start` | 向新子代理注入上下文 |
 | `subagent-end` | `subagent/end` | 记录或向主会话投递子代理结果 |
 

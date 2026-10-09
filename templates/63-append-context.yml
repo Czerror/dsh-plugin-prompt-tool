@@ -3,7 +3,7 @@
 # 与 `decision`(post) 的分工：`decision` 改写的是**工具结果本身**（replace / block），
 # `append-context` 不动结果，只在结果之后追加一条 user 角色通知。
 # 需要模型**再做一步**时改用 `mode: continue`：它走 `agent/turn-stopping` 强制续跑一步，
-# 每轮 1 次、每会话 3 次的上限由引擎内置，不能配置关闭（失控的续跑会把会话卡住）。
+# 每个来源（模块）每轮 1 次 / 每会话 3 次的上限由引擎内置，不能配置关闭（失控的续跑会把会话卡住）。
 #
 # 条件用规则级 `if.names`（工具名，取自 exec.name）：它与 `decision.toolNames` 是两回事——
 # 后者是动作自己的名单，前者决定这条规则要不要跑。

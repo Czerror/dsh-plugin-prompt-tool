@@ -8,6 +8,33 @@
 - **DSH 本地适配不变**：档位仍由互斥配置卡持有、不注册 `/ponytail` 命令，停用语义 `Off: "stop ponytail" / "normal mode"` 保留；`version` 跟到 5.0.0，便于与现场副本对照。
 - **回归更新**：`test/host/ponytail-module.test.mjs` 的上游锚点按 5.0 重抽（含 `Never cut:` 的完整不懒惰清单），并逐档钉住上游 `## Levels` 文案；子代理只读档仍保持 144 字符的轻量版。
 
+### 主要变化
+
+- **动作级 `if` / `then` / `else` 与嵌套分支在六个执行点一致按条件生效**（`system-section` / `runtime-context` 的文本贡献、`agent-request`、`llm-stream`、`turn-stop`、`subagent-start`、`subagent-end`），与 `pre-step` 行为一致：此前这些点按规则级 `if` 判定，`else` 与嵌套分支等于无条件执行；`system-section` / `runtime-context` 上只写动作级 `if` 的配置，也从无条件注入变为按条件注入。
+- **同模块多条续跑动作共享一份预算**：`append-context`（`mode: continue`）与 `turn-stop` 不再各占一份——同模块每轮合计 1 次、每会话合计 3 次；此前两条续跑动作会让同一轮连跑 2–3 次。
+- **去重身份统一到 `identity.value`**：`fill: instruction-hint` 的解析器候选此前不带 `source.plugin`，`dedupe: session` 每步重复注入；现在盖章与查找同源，显式共享身份的卡也不会因分批接纳而重复注入（`pre-step-filter` 的 `blockPlugins` 对显式写了 `identity` 的卡要写 `identity.value`，缺省仍是 `id`）。同时启用的模块声明同一个身份时装配期多一条告警，装配照常成功。
+- **ST 世界书入选改为批首一次**：此前每个 flush 段各求值一次，同组两条世界书会在两段里各赢一条（双注入）；现在批首取定合格集合。赢家被外层门控或过滤剥离后，同组不再从后续段补位。
+- **原生关键词世界书只扫描本批真实对话消息**：插件注入正文（`append-context`、`skill_load`、子代理注入）与指令文件正文不再触发关键词条目。依赖指令文件正文触发的配置请把关键词写进真实对话，或改用 `constant` 常驻条目。
+- **会话变量不得占用插值保留名**：`session_var` 工具与 ST `{{setvar}}` 两条写入路径都拒绝内建名（`DSH_HOME` / `WORKSPACE` / `CWD`）与动态宏名（`time` / `pick` 等）并说明原因；存量会话里已存下的脏键在读取时跳过。
+- **`pick` 取值不再随无关正文长度漂移**：seed 只随会话、来源与该次插值正文里的出现序号变化——同一引用在正文长度变化后取值不变，同一正文里多处 `{{pick}}` 仍各自取值（已发布位置的取值会变，这是预期内的）。
+- **`rules/` 目录只认名单内的切片**：名单外文件（编辑器备份、同步冲突、`.bak` / `.md`）归用户，引擎不读、不校验、不写、不删——此前会让整个模块报错。删除规则仍清理它自己的切片，中断写入的 `.tmp-<uuid>` 残留仍触发恢复。
+- **规则判定计数在 pre-step 协调器路径上不再坍缩成一条**：工作台顶部「N 不可用」对 pre-step 规则真正生效，计数按「模块 + 规则 + 通道」聚合并取每个动作的最终判定；身份超过 512 后只累加已有身份，被丢弃的次数作为 `dropped` 下发（未超限的响应逐字不变）；`instructions.owner.officialInstructions` 不再捏造 `false`，未观察到即 `null`。
+- **告警去重改为「每条不同消息一次」**：同一挂载内的不同故障各自可见（上限 64 条不同告警，之后补一条抑制提示再静默）；`subagent-end` 的 observe-only 命中改走 `logger.info`；`after-user` 配置找不到真实用户消息锚点时告警一次并列出配置 id。
+- **`st-render` 的 `generationKey` 判据收紧**：空串 `source.plugin` / `source.kind` 与非对象消息不再计入（仅畸形输入有差异）。
+- **guard 的子代理侧注册随父 mount 释放一并撤销**：切预设或保存模块后不再按旧 mask 多拦一层。
+- **运行时配装切换失败时保留两个原因**：新装配失败与恢复失败同时出现在错误里，「模块已保存，但运行时配装更新失败」的报错文本带上具体原因。
+
+### 破坏性变更（升级前必读）
+
+- **`inject-text` 的 `config.prepend` 取消，暂无等价替代**：它此前让该模块的 pre-step 批注册到最外层，是未文档化的后门（`executor` 直读 `config.prepend`）；而 `inject-text` 不接受 `waterfallPosition`，动作级位置无处安放。仓库自带的 `modules/` 与 `templates/` 未使用它。
+- **`inject-text` 不再有 `tool-pipeline` 注入通道**：该层从可注入层清单移除（`getEngineMeta().injectionLayers` 为八层；`layers` / `layerOrder` 仍是九层，`tool-pipeline` 只作规则级展示归属）。经 `prepareAction` 绑定 `config.layer: tool-pipeline` 的用法在准备期显式报错，不再静默无操作：工具链的裁决改用 `decision`、追加上下文改用 `append-context`。规则编辑器的注入层下拉同步只列八层。
+- **规则级 / 声明级的 `else` 缺同一规则的 `if` 改为编译期拒绝**：`else` 靠 `not(if)` 与 `then` 互斥，没有 `if` 时两支会同时无条件生效（此前静默双执行）；`if` 省略或写 `null` 都在保存 / 导入 / 装配期报错并点名规则与动作。
+- **`guard` 的受众组合与取值改为编译期拒绝**：`audience: 'subagent'` 缺 `includeSubagents: true` 时两条受众分支都不注册（任何会话都不生效、零告警）；`audience` 只接受 `main` / `subagent`（省略、`null`、`''`、`all` = 通用），拼错不再静默退化成通用；`includeSubagents` 只接受布尔值，YAML 空值 `null` 也会被拒——写 `false` 或删掉该行。
+- **动作与注入配置的未知键、层专属参数、请求参数子键改为编译期拒绝**：动作声明的拼错键与 `inject-text.config` 的未知键报出动作 id 与允许键集合（`decision.toolNames` 拼错此前会连带拒绝全部工具）；带 `kind` 的动作对象写 `if` / `then` / `else` 报「分支必须写成无 `kind` 的节点」（此前分支被静默丢弃）；`params.complete` / `params.suppressRuntimeContext` 只属于 `system-section`，写在其他层出现即拒（`false` 除外）；`request-params` 的 `patch` / `unset` 子键按官方 `LlmCallConfig` 校验，`replace: true` 缺 `provider` / `model`、`replace` 非布尔也拒；`assembly.contexts` 的 `clear` 与 `add` / `remove` 并存被拒（`clear` 必须是布尔）。`variablesDisabled` 是引擎内部标记、不在作者可写白名单里，手写同名键按未知键拒绝。
+- **显式 `variablesEnabled: false` 的存量模块升级后不再吃会话变量**：pre-step 消息插值与注册层官方变量都不再并入会话变量——这正是该开关的字面承诺，此前只停一半（声明键引用被剥离、会话值仍注入）。要保留旧行为就把模块顶层 `variablesEnabled` 删掉或设为 `true`；**例外**是 ST 模板宏帧（`params.stMacros`）按 ST `setvar` / `getvar` 语义仍读会话变量。
+- **迁移期剔除非法 `LlmCallConfig` 键**：旧 `promptConfigs` 与动作里的 `patch` / `unset` 非成员键（如 `note`）在改写时被丢弃，合法键与值原样搬运。
+- **升级动作**：手写 `module.yml`、还原的备份或导入包命中上述拒绝时该模块装配失败——本轮只告警并保留旧装配，不会自动改盘；按错误消息删键，或把字段移到 `rule.*` 或正确的层。
+
 ## [2.1.0] - 2026-10-06
 
 ### 主要变化
