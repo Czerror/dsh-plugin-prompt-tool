@@ -358,15 +358,28 @@ test('重复模块身份：跨模块同 rule id 且 dedupe=session 只告警一�
       promptConfigs: [{ id: 'shared-hint', text: `${id}-HINT`, dedupe: 'session', position: 'after-user' }],
     })
   }
-  const h = await liveAssembly(t, () => ['dup-source-a', 'dup-source-b'])
+  // 另一对：id 不同（plugin 身份不撞）但显式声明同一个 sourceKind，经 kind 通道互相压制。
+  for (const id of ['dup-kind-a', 'dup-kind-b']) {
+    writePreset(id, {
+      modules: ['prompt-config-engine'],
+      promptConfigs: [{ id: `${id}-hint`, text: `${id}-KIND`, dedupe: 'session', sourceKind: 'shared-kind-channel', position: 'after-user' }],
+    })
+  }
+  const h = await liveAssembly(t, () => ['dup-source-a', 'dup-source-b', 'dup-kind-a', 'dup-kind-b'])
   const agent = await h.makeAgent('duplicate-identity-agent')
-  assert.deepEqual(h.runtime.moduleIds(agent.id), ['dup-source-a', 'dup-source-b'], '重复身份不影响装配成功')
-  // 同一批内的候选不算「已投递」：两张卡各自注入一次，重复体现在**后续步**不再补发。
+  assert.deepEqual(h.runtime.moduleIds(agent.id), ['dup-source-a', 'dup-source-b', 'dup-kind-a', 'dup-kind-b'],
+    '重复身份不影响装配成功')
+  // 同一批内的候选不算「已投递」：四张卡各自注入一次，重复体现在**后续步**不再补发。
+  // 同 `sequence` 时按 moduleId 字典序，故只断言集合与去重后步数，不锁跨模块顺序。
   const first = (await h.inject(agent)).messages.flatMap(message => message.content.map(block => block.text))
-  assert.deepEqual(first, ['USER', 'dup-source-a-HINT', 'dup-source-b-HINT'])
-  assert.deepEqual(h.warnings.length, 1, `跨模块重复身份恰好一条告警：${JSON.stringify(h.warnings)}`)
-  assert.match(h.warnings[0], /同一个去重身份/)
-  assert.match(h.warnings[0], /dup-source-a、dup-source-b/)
+  assert.deepEqual([...first].sort(), ['USER', 'dup-kind-a-KIND', 'dup-kind-b-KIND', 'dup-source-a-HINT', 'dup-source-b-HINT'].sort())
+  assert.deepEqual(h.warnings.length, 2, `两条通道各一条告警：${JSON.stringify(h.warnings)}`)
+  const [identityWarning, kindWarning] = h.warnings
+  assert.match(identityWarning, /疑似由复制产生同一个去重身份/)
+  assert.match(identityWarning, /dup-source-a、dup-source-b/)
+  assert.match(kindWarning, /显式 sourceKind "plugin:shared-kind-channel"/)
+  assert.match(kindWarning, /有意共享/)
+  assert.match(kindWarning, /dup-kind-a、dup-kind-b/)
 })
 
 test('热更新：空启用表到多模块、配置启停与拒绝后重试都更新同一个 Agent，重复刷新不重复注入', async (t) => {

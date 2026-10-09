@@ -1,6 +1,6 @@
 import { prepareAction } from './actions/index.mjs'
 import { applyPromptConfigSources } from './executor.mjs'
-import { createTurnStopBudget, wireLayers, TURN_STOP_BUDGET_SHARED } from './layers.mjs'
+import { createTurnStopBudget, wireLayers } from './layers.mjs'
 import { wireTriggerObservers } from './trigger.mjs'
 import { ruleFrame, actionMatches } from './conditions/evaluation.mjs'
 import { createWarnOnce } from './shared.mjs'
@@ -21,10 +21,11 @@ export function mountRuleSources(ctx, sources, options = {}) {
   const releases = []
   const points = new Map()
   // 续跑预算按来源模块一份（与文档一致）：同模块的 turn-stop 与 continue 动作共享上限，
-  // 不再按动作各建一份。每个 mount 只装一个模块，故本 mount 内的预算就是该模块那一份。
+  // 不再按动作各建一份。本 mount 可能含多个模块（agent-assembly 一次装载全部启用模块），
+  // 因此按 moduleId 分档；来源 id 缺失时落空串兜底键（与 wireTurnStops 同源）。
   const turnStopBudgets = new Map()
   const turnStopBudgetFor = (moduleId) => {
-    const key = moduleId ?? TURN_STOP_BUDGET_SHARED
+    const key = moduleId ?? ''
     if (!turnStopBudgets.has(key)) turnStopBudgets.set(key, createTurnStopBudget())
     return turnStopBudgets.get(key)
   }

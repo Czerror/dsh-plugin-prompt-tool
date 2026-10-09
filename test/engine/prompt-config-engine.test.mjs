@@ -349,7 +349,7 @@ test('解析器自带 source 的候选按身份盖章：dedupe=session 下多步
   }
 })
 
-test('显式 identity：确认过身份后同身份的两张卡都不再注入', async () => {
+test('显式 identity：先到者被接纳后，晚一步的卡不再经自己的 id 重复注入', async () => {
   const identity = { field: 'plugin', value: 'shared-identity' }
   const { step, admit } = makeHarness(createPromptConfigs([
     { id: 'card-a', strategy: 'static', dedupe: 'session', text: 'A', position: 'after-all', identity },
@@ -359,16 +359,18 @@ test('显式 identity：确认过身份后同身份的两张卡都不再注入',
   const probe = agent({ session: { id: 's-shared-identity', header: { delegationDepth: 0 }, snapshotEvents: () => events } })
   const injectedTexts = (decision) => decision.messages.filter((message) => message.source?.plugin !== undefined)
     .map((message) => message.content[0].text)
-  // 宿主接纳 = 逐条写进持久事件流：快路径查显式身份，持久扫描查消息自带身份，两条都得命中。
+  // 宿主接纳 = 逐条写进持久事件流；只接纳**先到者**：晚一步的卡必须靠共享身份去重，
+  // 而不是靠自己那份 kind 通道（后者不区分两张卡，也就测不出盖章是否与查找同源）。
   const adopt = (decision) => {
-    admit(probe, decision)
-    for (const message of decision.messages) events.push({ type: 'user/message', seq: events.length + 1, data: { message } })
+    const first = decision.messages.filter((message) => message.source?.plugin !== undefined).slice(0, 1)
+    admit(probe, { messages: first })
+    for (const message of first) events.push({ type: 'user/message', seq: events.length + 1, data: { message } })
   }
 
   const first = await step(probe)
   assert.deepEqual(injectedTexts(first), ['A', 'B'], '同一批里两张卡都算「先到」')
   adopt(first)
-  assert.deepEqual(injectedTexts(await step(probe)), [], '接纳后共享身份的两张卡都不再注入')
+  assert.deepEqual(injectedTexts(await step(probe)), [], '先到者被接纳后，同身份的晚到者不再注入')
 })
 
 test('config.variables 与内置 {{WORKSPACE}} 变量在注入前插值', async () => {

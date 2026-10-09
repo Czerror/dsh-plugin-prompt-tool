@@ -211,12 +211,30 @@ function effectiveIdentity(config: Record<string, unknown>): string {
   return typeof identity?.value === 'string' ? identity.value : String(config.id)
 }
 
-/** 同时启用的模块间重复去重身份（F16(b)）：**只可见化，不拒绝**——复制模块后两者同时启用
- * 是合法操作，整体拒绝会让该 Agent 的全部装配失败，违背「失败不伤会话」。 */
-interface DuplicateIdentity { identity: string; moduleIds: string[] }
+/**
+ * 「同一份 rule/action 身份」的指纹：两个模块带同一份指纹 = 模块被整份复制（rule id 与
+ * 动作 id 都保留），而不是两块卡有意共享一个去重身份。编译产物里
+ * `ruleId` / `ruleActionIndex` 就是这两个稳定 id（见 `engine/rule-spec.mjs`）。
+ */
+function ruleKeyOf(config: Record<string, unknown>): string {
+  return `${String(config.ruleId)}\u0000${String(config.ruleActionIndex)}`
+}
 
-function duplicateDedupeIdentities(prepared: PreparedAssembly[]): DuplicateIdentity[] {
-  const modulesOf = new Map<string, Set<string>>()
+/**
+ * 同时启用的模块间重复去重身份（F16(b)）：**只可见化，不拒绝**——复制模块后两者同时启用
+ * 是合法操作，整体拒绝会让该 Agent 的全部装配失败，违背「失败不伤会话」。
+ *
+ * 两条通道都要查：`plugin`（消息来源身份，进 `source.plugin`）与 `sourceKind`（进
+ * `source.kind`）。只查 plugin 会漏掉「两张 id 不同、却声明同一个 sourceKind」的两卡：
+ * 它们同样经 kind 通道互相压制。`suspectedCopy` 标出「同一份 rule/action 身份被两个模块
+ * 各带一份」，那才是复制模块的指纹；只有一份（或 rule/action 身份不同）时是有意共享同一
+ * 身份去重，措辞不劝改。sourceKind 未显式声明时按配置 id 编译（`plugin:<id>`），那是
+ * plugin 通道的同一笔账，不另算一条 kind 重复。
+ */
+interface DuplicateIdentity { channel: 'plugin' | 'kind'; identity: string; suspectedCopy: boolean; moduleIds: string[] }
+
+function dedupeConfigsOf(prepared: PreparedAssembly[]): Array<{ moduleId: string; config: Record<string, unknown> }> {
+  const found: Array<{ moduleId: string; config: Record<string, unknown> }> = []
   for (const item of prepared) {
     for (const rule of item.rules as Array<{ enabled?: boolean; actions?: Array<{ kind?: string; compiledConfig?: Record<string, unknown> }> }>) {
       if (rule.enabled === false) continue
@@ -224,14 +242,35 @@ function duplicateDedupeIdentities(prepared: PreparedAssembly[]): DuplicateIdent
         if (action.kind !== 'inject-text') continue
         const config = action.compiledConfig
         if (config === undefined || (config.dedupe !== 'session' && config.dedupe !== 'batch')) continue
-        const identity = effectiveIdentity(config)
-        const modules = modulesOf.get(identity) ?? new Set<string>()
-        modules.add(item.moduleId); modulesOf.set(identity, modules)
+        found.push({ moduleId: item.moduleId, config })
       }
     }
   }
-  return [...modulesOf].filter(([, modules]) => modules.size > 1)
-    .map(([identity, modules]) => ({ identity, moduleIds: [...modules].sort() }))
+  return found
+}
+
+function duplicateDedupeIdentities(prepared: PreparedAssembly[]): DuplicateIdentity[] {
+  // 每个配置贡献两条通道：plugin 身份（`identity.value`，缺省 `config.id`）与显式 sourceKind。
+  const declarations = dedupeConfigsOf(prepared).flatMap(({ moduleId, config }) => {
+    const identity = config.identity as { value?: unknown } | undefined
+    const pluginIdentity = effectiveIdentity(config)
+    const sourceKind = typeof config.sourceKind === 'string' && config.sourceKind.length > 0 ? config.sourceKind : undefined
+    // sourceKind 缺省时由配置 id 编译成 `plugin:<id>`：那与 plugin 通道同源，不另立一条 kind 重复。
+    const declaredKind = sourceKind !== undefined && sourceKind !== `plugin:${String(config.id)}` ? sourceKind : undefined
+    return [
+      { key: `plugin:${pluginIdentity}`, channel: 'plugin' as const, identity: pluginIdentity, copyKey: ruleKeyOf(config), moduleId },
+      ...(declaredKind === undefined ? [] : [{ key: `kind:${declaredKind}`, channel: 'kind' as const, identity: declaredKind, copyKey: ruleKeyOf(config), moduleId }]),
+    ]
+  })
+  const byKey = new Map<string, { channel: 'plugin' | 'kind'; identity: string; copyKeys: Set<string>; moduleIds: Set<string> }>()
+  for (const { key, channel, identity, copyKey, moduleId } of declarations) {
+    const entry = byKey.get(key) ?? { channel, identity, copyKeys: new Set<string>(), moduleIds: new Set<string>() }
+    entry.copyKeys.add(copyKey)
+    entry.moduleIds.add(moduleId)
+    byKey.set(key, entry)
+  }
+  return [...byKey.values()].filter((entry) => entry.moduleIds.size > 1)
+    .map((entry) => ({ channel: entry.channel, identity: entry.identity, suspectedCopy: entry.copyKeys.size === 1, moduleIds: [...entry.moduleIds].sort() }))
 }
 
 export function createAgentAssembly(ctx: Context, options: AgentAssemblyOptions): AgentAssemblyRuntime {
@@ -276,10 +315,14 @@ export function createAgentAssembly(ctx: Context, options: AgentAssemblyOptions)
       name: 'prompt-tool-assembly',
       inject: [...services],
       apply: async (scopeCtx: Context) => {
-        // 跨模块重复身份：装配照常成功，只把可诊断的后果（按会话去重时后到者被前者的
-        // 身份挡下）上报一次；此处才 warnOnce 是因为试装/回滚会走两次 mount。
+        // 跨模块重复身份：装配照常成功，只把可诊断的后果上报一次（此处才 warnOnce 是因为
+        // 试装/回滚会走两次 mount）。同一份 rule/action 身份被两个模块各带一份 = 疑似复制，
+        // 提示改 id；否则是有意共享同一身份去重，措辞不劝改。
         for (const item of duplicateIdentities) {
-          warnOnce(`模块 ${item.moduleIds.join('、')} 声明了同一个去重身份 ${JSON.stringify(item.identity)}（dedupe: session/batch）：按会话去重只保留先到者，请改 rule id 或显式 identity 以区分`)
+          const where = item.channel === 'kind' ? `显式 sourceKind ${JSON.stringify(item.identity)}` : `去重身份 ${JSON.stringify(item.identity)}`
+          warnOnce(item.suspectedCopy
+            ? `模块 ${item.moduleIds.join('、')} 疑似由复制产生同一个${where}（dedupe: session/batch）：按会话去重只保留先到者，请改 rule id 或显式 identity 以区分`
+            : `模块 ${item.moduleIds.join('、')} 有意共享同一个${where}（dedupe: session/batch）：两模块按会话共享这一份去重；同一批内各自仍会注入一次`)
         }
         const standingMountFor = await loadStandingMountFor()
         // 只重绑纯条件，不重读定义、模板或动作。每次挂载/失败恢复都获得自己的闭包与观察状态。

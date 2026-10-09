@@ -523,12 +523,6 @@ function wireToolPipelines(ctx, configs, warnOnce, on) {
 export const TURN_STOP_MAX_PER_TURN = 1
 export const TURN_STOP_MAX_PER_SESSION = 3
 
-/**
- * 续跑预算按来源模块分档：`turnStopBudgets` 的键就是模块 id，模块来源缺失时才落这个
- * 兜底键（与 `wireTurnStops` 的 `config.sourceModuleId ?? ''` 同源）。
- */
-export const TURN_STOP_BUDGET_SHARED = ''
-
 /** 会话内保留的轮次计数上限（与 deliberation-gate 同规模）。 */
 export const TURN_STOP_MAX_TRACKED_TURNS = 8
 
@@ -736,9 +730,8 @@ function wireSubagentEvents(ctx, configs, warnOnce, on) {
 
 /**
  * 把非 pre-step 提示词配置接入其声明的官方层级通道。
- * @param options.turnStopBudgets 可选的续跑预算映射（键 = 模块 id，缺来源用
- *   {@link TURN_STOP_BUDGET_SHARED}）；规则运行时按模块传入同一份，使同模块的
- *   turn-stop 与 continue 动作共享上限。
+ * @param options.turnStopBudgets 可选的续跑预算映射（键 = 模块 id，来源缺失用空串兜底）；
+ *   规则运行时按模块传入同一份，使同模块的 turn-stop 与 continue 动作共享上限。
  * @returns 聚合 disposer：回收本次接线显式创建的 waterfall 监听器；段/上下文/
  *   变量注册走 keepDisposer（随 ctx fiber 释放），不在本函数的回收面内。
  */

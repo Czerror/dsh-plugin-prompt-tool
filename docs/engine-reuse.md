@@ -183,24 +183,30 @@
   多启用冲突，不按排序选赢家；Host 显式激活一条卡时在一次原子事务中关闭同组其他卡。
 
 `inject-text.config` 复用整批 `createPromptConfigs()`，保留 ST 共享变量帧。缺少显式
-`config.id` 时，投递身份由稳定 rule/action id 编码派生；重排不改身份，复制产生新身份。
-迁移保留原有显式投递身份。`templateFile` 相对该模块的 `module.yml` 解析，只允许读取模块根内
+`config.id` 时，投递身份由稳定 rule/action id 编码派生；**卡内**重排不改身份，**卡内**复制
+（换 rule/action id）产生新身份。迁移保留原有显式投递身份。`templateFile` 相对该模块的
+`module.yml` 解析，只允许读取模块根内
 资产；保存、物化与运行使用同一边界。`strategyDir` 也相对规则包解析，不能从包内引擎目录
 反推数据目录。正文模板、策略目录和身份校验在所有入口同源。
 
-**dedupe 身份在同时启用的模块间须唯一**：模块复制保留 rule id，因此默认派生的身份
-（`rule:<ruleId>:<actionId>`）也跟着复制，不产生新身份；两个启用模块声明同一个
-`dedupe: session` / `batch` 身份时，装配**不拒绝**（复制模块后两者同时启用是合法操作），
-只在第一条装配时 `warnOnce` 一条诊断并照常装配。`identity` 显式声明时同样按值判重：
-`{ field: 'plugin', value }` 的值两卡相同即视为同一身份。
+**dedupe 身份在同时启用的模块间须唯一**：**整模块复制**保留 rule id，因此默认派生的身份
+（`rule:<ruleId>:<actionId>`）跟着复制，不产生新身份（与上段「卡内复制」是两回事）；两个
+启用模块声明同一个 `dedupe: session` / `batch` 身份时，装配**不拒绝**（复制模块后两者同时
+启用是合法操作），只在第一条装配时 `warnOnce` 一条诊断并照常装配。判重同时覆盖两条通道：
+`plugin`（`identity.value`，缺省 `config.id`）与显式 `sourceKind`（进 `source.kind`，两张
+id 不同、却声明同一个 sourceKind 的卡同样会经 kind 通道互相压制）。`identity` 显式声明时
+同样按值判重：`{ field: 'plugin', value }` 的值两卡相同即视为同一身份。有意让两模块共享同一
+身份是合法用法（跨模块共享一份会话去重），告警措辞因此区分「显式共享」与「疑似误复制」；
+两种情况**同一批内两张卡仍各注入一次**，共享只在后续步生效。
 
 **来源盖章与去重查找同源**：消息 `source.plugin` 写的是该配置的**去重身份**
 （`merged` 组用 `merged:<position>`，其余用 `identity.value`，默认即 `config.id`），
 与 `alreadyDelivered` 的查找键一致。解析器自带 `source` 的候选（`fill=instruction-hint`
 解析出的 `{ kind: 'instruction-hint' }` 等）也会被补盖 `source.plugin = 该身份`，否则身份
-只落在 kind 通道、`dedupe: session` 每步重复注入。副作用：`pre-step-filter` 的
-`blockPlugins` 按 `source.plugin` 匹配（见下文），显式 `identity` 的卡要屏蔽须写
-`identity.value` 而不是 `id`；旧消息的 kind 仍是 `plugin:<id>`，kind 通道继续命中。
+只落在 kind 通道、`dedupe: session` 每步重复注入。副作用：显式 `identity` 的卡要按
+`source.plugin` 屏蔽（`pre-step-filter` 的 `blockPlugins`）须写 `identity.value` 而不是
+`id`（该名单按 `source.plugin` 做精确等值匹配的完整语义见后文「会话去重以『宿主接纳』为准
+（2026-09-20）」一节）；旧消息的 kind 仍是 `plugin:<id>`，kind 通道继续命中。
 
 `getRuleEditorMeta()` 从实际条件、动作目录派生可序列化选项；`getEngineMeta()` 提供有效
 层和内容策略目录。新动作种子是可编译的中性空内容、空 patch 或空名单，不替用户选业务值。
