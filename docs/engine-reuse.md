@@ -407,6 +407,11 @@ UNAVAILABLE，不是编译期拒绝。
 是三值语义的设计意图（见 `test/engine/rules.test.mjs` 的缺事实用例）。规则级 `if` 本身不被
 校验（`else` 注入的 `not(if)` 按节点身份排除，不按 subject 名字）；但**动作级嵌套分支的 `if`
 一律按该动作的执行点校验**，与规则级 `if` 同名 subject 不会因此被跳过。
+`llm/stream` 是同一判据的另一个特例：官方载荷没有 `agent`，但 `engine/layers.mjs` 在动作级
+判定**之前**用 `sessionId` 经 `agents` 补挂 agent，`phase`/`session`/`count`/`anchor`、
+`preset` 与 `scope.audience` 因此在动作级真实可用（`agents` 查不到该会话只是**运行期**
+UNAVAILABLE），本点的编译期拒绝只有 `names` / `source` / `text.*` 三类——见
+[九层契约](injection-point-contracts.md#官方支持与插件映射)。
 
 | 动作或展示层 | 真实扩展点 | 可选文本 subject | 命中后的行为 |
 |---|---|---|---|

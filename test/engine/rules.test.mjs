@@ -630,6 +630,29 @@ test('动作级 names / source 条件必须落在本执行点真实提供的事�
   assert.equal(createNameListPredicate({ allow: ['fork'] })(subjectOf('subagent/start', [{ runId: 'r-1', id: 's-1', local: true }])), UNAVAILABLE)
 })
 
+test('动作级死条件：llm/stream 拒 names/source/text，依赖 agent 补挂的会话六族不拒', () => {
+  const streamOn = condition => ({
+    if: condition,
+    then: [{ id: 'stream', kind: 'inject-text', config: { id: 'stream', layer: 'llm-stream', text: 'X', params: { mode: 'replace' } } }],
+  })
+  // 本通道载荷只有 provider/model/sessionId 等请求字段：既没有 name/source，也没有任何文本
+  // subject（两个白名单函数对本通道都返回空），三类死条件照常拒绝。
+  assert.throws(() => compileRules([{ id: 'r', then: [streamOn({ names: { allow: ['bash'] } })] }]), /action stream: names subject "name".*可用 （无）/)
+  assert.throws(() => compileRules([{ id: 'r', then: [streamOn({ source: { kind: 'user' } })] }]), /action stream: source subject "source".*可用 （无）/)
+  assert.throws(() => compileRules([{ id: 'r', then: [streamOn({ text: { keys: ['x'], subject: 'userMessage' } })] }]), /action stream: text subject "userMessage".*可用 （无）/)
+  // 会话四族与 preset / scope.audience 的事实来自 layers.mjs 在判定**之前**用 sessionId → agents.get
+  // 补挂的 agent，今天真能命中：编译期不拒（拒绝会误伤），只按运行期 fail-closed 处理。
+  const live = compileRules([{ id: 'r', then: [streamOn({ all: [
+    { phase: { promoted: false } },
+    { session: { type: 'user/message', present: false } },
+    { count: { of: 'tool-call', per: 'turn', min: 1 } },
+    { anchor: { keys: ['We'], fallbackAfter: 1 } },
+    { preset: { presetId: 'preset-id' } },
+    { scope: { audience: 'main' } },
+  ] })] }])
+  assert.equal(typeof live[0].actions[0].actionWhen, 'function', '会话六族在 llm/stream 上不被拒绝：事实由运行期的 sessionId → agents 补挂提供')
+})
+
 test('事实谓词只有一处登记：rule-spec 的判据直接读谓词侧映射（漂移即红）', () => {
   const branchOn = (condition, action) => ({ if: condition, then: [action] })
   const preDecision = { id: 'deny', kind: 'decision', phase: 'pre', decision: 'deny', reason: 'blocked' }
