@@ -249,6 +249,11 @@ UI 侧 `persistParamOverrides` **条件发送**：
    - 模块级停用插值（`variablesEnabled: false`）时，声明键的引用在编译期按**同一插值语法**
      剥离：`{{键}}`、`{{ 键 }}`、`{{键::参数}}` 都清空，未声明键与内置引用（`{{DSH_HOME}}` 等）
      原样保留（`engine/rule-spec.mjs` 经 `engine/interpolate.mjs#stripDeclaredRefs`）；
+   - 开关的语义是**该模块这一层停用**，两个来源一起停：既不合并 `config.variables`（声明键剥离），
+     执行期也不再并入会话变量（`engine/executor.mjs` 见到编译期标记
+     `SESSION_VARIABLES_DISABLED` 即跳过 `sessionVarsSnapshot`）。内建事实与动态宏照常，
+     其他模块与同模块其他配置的会话变量不受影响——只按模块顶层开关逐配置生效；
+     键名与 `inject-text.config` 白名单同源于 `engine/schema.mjs`，作者不可写；
    - 用途：模型经 `world_book_upsert` 写世界书条目，内容引用 `{{key}}` 占位；ST 未定义宏登记；
    - UI 模板变量卡（VariablesEditor）可编辑默认值覆盖。
 

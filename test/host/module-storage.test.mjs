@@ -153,6 +153,7 @@ test('正文版本互不连坐；状态和变量独立，旧正文草稿不能�
   assert.throws(() => editModuleRules(dir, { expectedRevisions: beforeState.revisions, activateRuleId: 'first' }), error => error.status === 409)
   const variableFile = join(dir, 'rules', 'variables.yml')
   const variableTime = statSync(variableFile).mtimeMs
+  const variableBytes = readFileSync(variableFile, 'utf8')
   const bodyBefore = readFileSync(firstFile, 'utf8')
   const toggle = loadModuleDefinition(dir)
   toggle.doc.set('variablesEnabled', false)
@@ -160,6 +161,10 @@ test('正文版本互不连坐；状态和变量独立，旧正文草稿不能�
   assert.equal(toggled.revisions.variables, afterBody.revisions.variables)
   assert.equal(statSync(variableFile).mtimeMs, variableTime)
   assert.equal(readFileSync(firstFile, 'utf8'), bodyBefore)
+  // 开关的两处物化必须一致：module.yml 顶层 false ↔ 状态清单 false，变量切片一字不改。
+  assert.equal(toggled.variablesEnabled, false)
+  assert.equal(parse(readFileSync(join(dir, 'rules', '_settings.yml'), 'utf8')).variablesEnabled, false)
+  assert.equal(readFileSync(variableFile, 'utf8'), variableBytes)
   const add = readModuleRules(dir)
   assert.throws(() => editModuleRules(dir, { expectedRevisions: { rules: {} }, edits: [{ previousId: null, rule: rule('new') }] }), error => error.status === 409)
   editModuleRules(dir, { expectedRevisions: { settings: add.revisions.settings }, edits: [{ previousId: null, rule: rule('new') }] })

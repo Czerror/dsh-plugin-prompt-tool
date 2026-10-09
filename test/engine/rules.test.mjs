@@ -4,9 +4,11 @@ import { Context } from '@deepseek-ai/cordis'
 import { createScope } from '@deepseek-ai/dsh-scope'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import { compileRules, getRuleEditorMeta, isFixedRegistration } from '../../engine/rule-spec.mjs'
+import { INJECT_CONFIG_FIELDS, SESSION_VARIABLES_DISABLED } from '../../engine/schema.mjs'
 import { prepareAction } from '../../engine/actions.mjs'
 import { mountRuleSources } from '../../engine/rule-runtime.mjs'
 import { WARN_ONCE_LIMIT, createWarnOnce } from '../../engine/shared.mjs'
+import { setSessionVar } from '../../engine/session-vars.mjs'
 import { ruleFrame, ruleMatches, actionMatches } from '../../engine/conditions/evaluation.mjs'
 import { createNameListPredicate, subjectOf, FACT_PREDICATE_SUBJECTS } from '../../engine/conditions/index.mjs'
 import { UNAVAILABLE } from '../../engine/conditions/availability.mjs'
@@ -986,6 +988,38 @@ test('variablesEnabled=false：声明变量引用按插值语法剥离，未声�
   const enabled = Object.fromEntries(compile(undefined)[0].actions.map(action => [action.id, action.compiledConfig]))
   assert.equal(enabled.text.texts[0], text, '启用时正文原样保留')
   assert.equal(enabled.text.variables.foo, 'F', '启用时声明变量挂上配置')
+  // 单一事实来源：标记键名与白名单取自同一常量——两处手写字面量时，改一处即静默变回未知键。
+  assert.equal(disabled.text[SESSION_VARIABLES_DISABLED], true, '停用时编译产物带执行期标记')
+  assert.equal(INJECT_CONFIG_FIELDS.has(SESSION_VARIABLES_DISABLED), true, '标记键已登记进 inject-text 白名单')
+  assert.equal(Object.hasOwn(enabled.text, SESSION_VARIABLES_DISABLED), false, '启用时不打标记')
+})
+
+test('variablesEnabled=false 执行期连会话变量一起停：内建与未声明引用不受影响，同批其他模块照常', async () => {
+  // 真值源：同一份声明（owner=MODULE），只有顶层开关不同——两模块同批（各自来源）注入，
+  // 差异只能来自开关：停用模块的会话值不注入、声明键已剥离，启用模块两者都生效。
+  const module = variablesEnabled => compileRules([{ id: 'vars', then: [
+    textAction('vars-text', 'owner={{owner}} other={{other}} home={{DSH_HOME}}', { position: 'after-all' }),
+  ] }], { variables: { owner: 'MODULE' }, variablesEnabled })
+  const h = harness()
+  const dispose = mountRuleSources(h.ctx, [
+    { moduleId: 'off-module', rules: module(false) },
+    { moduleId: 'on-module', rules: module(true) },
+  ])
+  const agent = actor()
+  setSessionVar(agent.session, 'owner', 'SESSION')
+  setSessionVar(agent.session, 'other', 'OTHER')
+  const messages = [{ id: 'u', role: 'user', source: { kind: 'user' }, content: [{ type: 'text', text: 'USER' }] }]
+  const texts = (await h.run('agent/pre-step', [{ agent, messages }], () => ({ kind: 'enter', messages })))
+    .messages.flatMap(message => message.content.map(block => block.text))
+  dispose()
+  const home = process.env.DSH_HOME ?? ''
+  // 两个来源各自成批：不靠先后，按内容认领（同值 order 下批间顺序不是契约）。
+  assert.deepEqual(texts.slice().sort(), [
+    'USER',
+    `owner= other={{other}} home=${home}`,
+    `owner=SESSION other=OTHER home=${home}`,
+  ].sort(), '停用模块连会话变量一起停，启用模块会话覆盖声明值，内置事实两边都在')
+  assert.equal(texts.filter(text => text.startsWith('owner=')).length, 2, '同会话两个模块都注入：停用不影响其他模块')
 })
 
 test('动作声明白名单：未知键、对象形态 match 与带 kind 的分支节点编译期拒绝', () => {

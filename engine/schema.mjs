@@ -541,6 +541,13 @@ export const CONFIG_FIELDS = [
 ]
 
 /**
+ * 「本模块停用了模板变量」的编译期标记：`rule-spec.mjs#injectionConfigSpec` 打上它，
+ * 执行期据此跳过会话变量合并（见 `executor.mjs#runPromptConfigBatch`）。作者不可写，
+ * 只随编译产物出现——所以它不在 {@link CONFIG_FIELDS} 里，键名也只在这里定义一次。
+ */
+export const SESSION_VARIABLES_DISABLED = 'variablesDisabled'
+
+/**
  * `inject-text.config` 的允许键：{@link CONFIG_FIELDS} 的声明键 + {@link createPromptConfigs}
  * 直读键。规则动作的配置是同一份提示词配置，因此白名单只能从这里派生——另写一份会漂移。
  * `enabled` 不在表里（`group`/`exclusive` 由 CONFIG_FIELDS 带进来）：这三个键在
@@ -550,7 +557,7 @@ export const CONFIG_FIELDS = [
 export const INJECT_CONFIG_FIELDS = new Set([
   ...CONFIG_FIELDS.map((rule) => rule.field),
   'id', 'layer', 'strategy', 'configKind', 'text', 'templateFile', 'fill',
-  'sourceKind', 'form', 'summary', 'params',
+  'sourceKind', 'form', 'summary', 'params', SESSION_VARIABLES_DISABLED,
 ])
 
 /** 按 {@link CONFIG_FIELDS} 遍历一次，产出全部标量字段的归一值（或按表顺序 fail loud）。 */

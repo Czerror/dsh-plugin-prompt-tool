@@ -3,7 +3,7 @@ import { ACTION_KINDS, actionExecutionPoint, prepareAction, validateActionOption
 // 字段清单与动作声明同住 `actions/catalog.mjs`（`actions/index.mjs` 不再导出新面）。
 import { ACTION_FIELDS, MATCH_ACTION_KINDS } from './actions/catalog.mjs'
 import { compileWhen, PREDICATE_FACTORIES, COMPOSITE_OPERATORS, FACT_PREDICATE_SUBJECTS, channelFactSubjects, channelTextSubjects } from './conditions/index.mjs'
-import { createPromptConfigs, INJECT_CONFIG_FIELDS, KNOWN_LAYERS, assertLlmCallPatch } from './schema.mjs'
+import { createPromptConfigs, INJECT_CONFIG_FIELDS, KNOWN_LAYERS, SESSION_VARIABLES_DISABLED, assertLlmCallPatch } from './schema.mjs'
 import { stripDeclaredRefs } from './interpolate.mjs'
 import { validateConfig } from './shared.mjs'
 import { WATERFALL_POSITIONS } from './trigger.mjs'
@@ -78,6 +78,8 @@ export function injectionConfigSpec(rule, action, options = {}) {
     if (config.text !== undefined) config.text = strip(config.text)
     if (Array.isArray(config.texts)) config.texts = config.texts.map(strip)
     if (record(config.params) && typeof config.params.text === 'string') config.params = { ...config.params, text: strip(config.params.text) }
+    // 停用不是「只停声明变量」：执行期还要跳过会话变量合并，标记随编译产物传给运行时。
+    config[SESSION_VARIABLES_DISABLED] = true
   } else config.variables = { ...variables, ...(record(config.variables) ? config.variables : {}) }
   return config
 }
@@ -282,6 +284,8 @@ export function compileRules(specs, options = {}) {
     for (const item of pendingConfigs) {
       const config = byId.get(item.source.id)
       Object.assign(config, { sequence: item.sequence, ruleId: item.ruleId, ruleActionIndex: item.actionIndex })
+      // `createPromptConfigs` 重建配置对象（只取自己认得的字段），编译期标记在这里回到运行时。
+      if (item.source[SESSION_VARIABLES_DISABLED] === true) config[SESSION_VARIABLES_DISABLED] = true
       item.action.compiledConfig = config
     }
   }
