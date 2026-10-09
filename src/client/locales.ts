@@ -197,9 +197,7 @@ const ZH_CORE = {
   'skills.row.delete': '删除',
   'skills.row.delete.hint': '将此技能的源文件或目录移入回收站，确认时显示准确路径',
 
-  'presets.aria': '全局开关',
   'presets.modulesEnabled.label': '全局开关',
-  'presets.modulesEnabled.hint': '控制所有已启用模块的运行贡献。关闭后停止后续注入并撤回工具贡献，模块定义与生成文件保留。',
   'moduleOrder.current': '返回当前模块',
   'moduleOrder.all': '跨模块排序',
   'moduleOrder.hint': '排列已启用模块中当前受众可见的配置；拖拽、上下移或使用拖动按钮的上下方向键，修改后自动保存。编辑内容请切回当前模块。',
@@ -455,9 +453,7 @@ const EN_CORE: Record<keyof typeof ZH_CORE, string> = {
   'skills.row.delete': 'Delete',
   'skills.row.delete.hint': 'Move this skill’s source file or directory to the recycle bin; confirmation shows the exact path',
 
-  'presets.aria': 'Global switches',
   'presets.modulesEnabled.label': 'Global switch',
-  'presets.modulesEnabled.hint': 'Controls contributions from all enabled modules. Turning this off stops future injection and removes tool contributions while preserving definitions and generated files.',
   'moduleOrder.current': 'Back to current module',
   'moduleOrder.all': 'Order across modules',
   'moduleOrder.hint': 'Order enabled-module configurations for this audience. Drag, move up/down, or use the handle’s arrow keys; changes save automatically. Return to the current module to edit content.',

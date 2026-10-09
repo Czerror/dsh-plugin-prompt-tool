@@ -2,7 +2,6 @@
 import { memo, useEffect, type ReactNode } from 'react'
 import { usePromptToolFields } from '../../data/use-prompt-tool-fields.ts'
 import { ModuleSwitcher } from '../presets/ModuleSwitcher.tsx'
-import { ToggleRow } from '../../ui/ToggleRow.tsx'
 import sharedCss from '../../ui/controls.module.css'
 import featureCss from '../presets/presets.module.css'
 
@@ -21,12 +20,6 @@ export const ModulesPage = memo(function ModulesPage(
       {!fields.modulesEnabled && <p className={ui.configFieldHint}>{t('configs.readOnly.disabled')}</p>}
       {store.meta.moduleWarnings?.map(message => <p key={message} role="alert" className={ui.configFieldHint}>{message}</p>)}
       <ModuleSwitcher store={store} t={t} />
-      <section className={ui.section} aria-label={t('presets.aria')}>
-        <div className={ui.rowGroup}>
-          <ToggleRow id="pt-modules-enabled" label={t('presets.modulesEnabled.label')} hint={t('presets.modulesEnabled.hint')}
-            checked={fields.modulesEnabled} onChange={() => store.toggle('modulesEnabled')} />
-        </div>
-      </section>
     </>
   )
 })
