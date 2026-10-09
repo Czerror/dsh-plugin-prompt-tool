@@ -25,6 +25,8 @@ export function registerSessionVarTools(ctx: Context): () => void {
           + 'get 读取、set 设置、clear 清除。提示词/世界书文本中的模板占位符（形如 {变量名}，'
           + '即双花括号包裹变量名）会在注入时替换为会话变量值（会话级覆盖模块默认值）；'
           + '适合维护角色状态（如 {心情}、{接受度} 等）。'
+          + '变量名不得使用插值内建变量（DSH_HOME / WORKSPACE / CWD）与动态宏名（如 time / pick / roll）：'
+          + 'set 命中这些保留名会被拒绝（结果里给出原因，不写入），因为同名变量会遮蔽提示词里的内建事实与宏。'
           + '注意：会话变量仅存于当前会话（结束即失）；跨会话长期记忆请用 world_book 工具的 note 参数写入角色卡记忆（持久，跟随角色卡）。',
       parameters: {
         action: {

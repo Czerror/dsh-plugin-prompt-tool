@@ -155,6 +155,17 @@ for (const [name, run] of [
     assert.equal(interpolateStatic('{{pick::a,b,c}}', {}), interpolateStatic('{{pick::a,b,c}}', {}), '静态层仍确定')
     // 同一正文里两处引用的出现序号参与 seed，各自取值（sha256 定值）。
     assert.equal(interpolateVariables('{{pick::a::b}}|{{pick::a::b}}', {}, { id: 'stable' }), 'a|b', '两处各自取值')
+    // 模板位置身份（sourceId）参与 seed：同会话下不同模板位置不共用 seed，同一位置仍不随长度漂移。
+    // sha256 取值是概率的，故不回写字面量，只断言「不同位置不是同一个值」——16 个位置全撞的概率约 5·5⁻¹⁶。
+    const positions = new Set(Array.from({ length: 16 }, (_, index) =>
+      interpolateVariables('{{pick::a::b::c::d::e}}', {}, session, undefined, `cfg-${index}`)))
+    assert.ok(positions.size > 1, '不同模板位置的 pick 由各自 seed 决定')
+    const fixedPosition = interpolateVariables('{{pick::a::b::c::d::e}}', {}, session, undefined, 'cfg-x')
+    assert.equal(
+      interpolateVariables('前缀变长 {{pick::a::b::c::d::e}}', {}, session, undefined, 'cfg-x'),
+      `前缀变长 ${fixedPosition}`,
+      '同一模板位置不随正文长度漂移',
+    )
     assert.equal(interpolateVariables('{{roll::6}}', {}), '6')
   }],
 ]) test(`interpolate：${name}`, run)

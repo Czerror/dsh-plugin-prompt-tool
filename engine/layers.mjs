@@ -37,7 +37,7 @@ function configText(config, registries, warnOnce, context) {
     return officialChannelText(config.renderSt(context?.agent, [], warnOnce, context), `${config.layer} ${config.id}`, registry, warnOnce)
   }
   const text = config.texts
-    .map((item) => interpolateVariables(item, config.variables, context?.agent?.session, registry?.protect))
+    .map((item, index) => interpolateVariables(item, config.variables, context?.agent?.session, registry?.protect, `${config.id}#${index}`))
     .filter((item) => item.length > 0)
     .join('\n\n')
   return officialChannelText(text, `${config.layer} ${config.id}`, registry, warnOnce)
@@ -115,7 +115,8 @@ function registerOfficialVariables(ctx, configs, warnOnce, keep) {
             const session = context?.agent?.session
             const override = getSessionVar(session, source)
             const value = override !== undefined ? String(override) : declaredValue ?? runtimeFactValue(source, session) ?? ''
-            const expanded = interpolateVariables(value, { ...config.variables, ...sessionVarsSnapshot(session) }, session)
+            // 变量值内的 {{pick}} 同样要有位置身份（配置 id + 声明名），否则同会话下多个变量的首个 pick 撞值。
+            const expanded = interpolateVariables(value, { ...config.variables, ...sessionVarsSnapshot(session) }, session, undefined, `variable:${config.id}:${name}`)
             return officialChannelText(expanded, `variable ${official}`, { alias: new Map(), registered: new Set() }, warnOnce)
           }), `${name}: official prompt variable ${official}`)
           binding = official
@@ -234,8 +235,9 @@ async function resolvedContextText(ctx, config, context, registry, warnOnce) {
   const resolved = await config.resolve({ ctx, agent, session, signal: context.signal, decision: { kind: 'ok', messages: [] }, messages: [] })
   if (context.signal?.aborted || resolved == null) return ''
   const variables = { ...config.variables, ...(resolved.variables !== null && typeof resolved.variables === 'object' ? resolved.variables : {}) }
-  const rendered = config.texts.length > 0 ? interpolateVariables(config.texts.join('\n\n'), variables, session)
-    : typeof resolved.text === 'string' ? interpolateVariables(resolved.text, variables, session) : ''
+  // 模板位置身份 = 配置 id（texts 合并与 resolved.text 是同一位置的两个互斥分支）；缺省会退化成 [会话, 出现序号]。
+  const rendered = config.texts.length > 0 ? interpolateVariables(config.texts.join('\n\n'), variables, session, undefined, config.id)
+    : typeof resolved.text === 'string' ? interpolateVariables(resolved.text, variables, session, undefined, config.id) : ''
   return officialChannelText(rendered, `runtime-context ${config.id}`, registry, warnOnce)
 }
 
@@ -458,7 +460,7 @@ export function pluginMessage(prefix, text, summary) {
 function layerText(config, agent, warnOnce) {
   try {
     return config.texts
-      .map((item) => interpolateVariables(item, config.variables, agent?.session))
+      .map((item, index) => interpolateVariables(item, config.variables, agent?.session, undefined, `${config.id}#${index}`))
       .filter((item) => item.length > 0)
       .join('\n\n')
   } catch (error) {

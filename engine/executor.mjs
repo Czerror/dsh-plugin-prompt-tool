@@ -276,11 +276,13 @@ async function runPromptConfigBatch(options) {
           patched.content = patched.text.length > 0 ? [{ type: 'text', text: patched.text }] : []
         } else if (typeof patched.text === 'string') {
           // 提示词配置级模板变量 + filler 变量 + 内置环境变量插值。
-          patched.text = interpolateVariables(patched.text, mergedVars, session)
+          // 第 5 参是模板位置身份（本配置的 id）：{{pick}} 的 seed 只认「同会话 + 同模板位置 + 同一次出现」，
+          // 缺省空串会让不同配置的首个 pick 退化成同一个 seed。
+          patched.text = interpolateVariables(patched.text, mergedVars, session, undefined, config.id)
         }
         if (config.texts.length > 0 && typeof config.renderSt !== 'function') {
           const blocks = config.texts
-            .map((item) => interpolateVariables(item, mergedVars, session))
+            .map((item, index) => interpolateVariables(item, mergedVars, session, undefined, `${config.id}#${index}`))
             .filter((item) => item.length > 0)
             .map((item) => ({ type: 'text', text: item }))
           if (blocks.length > 0) patched.content = blocks
