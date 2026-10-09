@@ -3,8 +3,8 @@ import { UNAVAILABLE } from './availability.mjs'
 
 /**
  * 一次官方调用的局部判定帧；不按 session、turn 或载荷身份缓存。
- * `ctx` 是判定期服务入口：子代理事件靠它用 `id` 反查 agent（见 subject.mjs 的
- * `CHANNELS` 与 `subagentAgent`），使 `modelScope`/`audience` 在判定阶段就有事实可用。
+ * `ctx` 是判定期服务入口：子代理事件靠它用 `id` 反查 agent（见 `subject.mjs` 的通道事实表
+ * `CHANNELS`），使 `modelScope`/`audience` 在判定阶段就有事实可用。
  * `onOutcome` 是可选只读上报（规则、通道、判定类别），供宿主统计「配了没生效」；
  * 缺省不传即零开销，也不改变任何判定结果。
  */

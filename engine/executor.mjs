@@ -5,7 +5,8 @@
  *
  * 装配路径有两条，批执行算法只有一份（runPreStepBatch）：
  *   - 管理路径：宿主 prompt-tool 插件提供 `promptToolPreStep` 协调服务时，本来源
- *     （预设 mount）把配置注册给协调器，由协调器统一执行预设来源与独立指令文件来源；
+ *     （预设 mount）把配置注册给协调器，由协调器统一执行各预设来源；官方指令正文的
+ *     逐文件过滤归协调器的 prepend 监听器，旧生成卡的 `agents-file-*` 按 id 前缀跳过；
  *   - 独立路径：没有协调服务（引擎被复制到无宿主的目录复用）时，本行 ctx 注册本地
  *     pre-step 监听器，只执行自身预设配置。
  * 协调服务迟到或消失时按「先撤旧再启新」切换，任一时刻每 scope 只有一条执行路径。
@@ -465,6 +466,10 @@ export function applyPromptConfigSources(ctx, sources, options = {}) {
  *
  * @param options.prepend 是否以 prepend 注册本地 pre-step(合并行恒 true;由参数决定)。
  * @param options.sourceId 协调器里的来源 id(默认取首条配置 id 派生)。
+ * @param options.onOutcome 只读诊断回调，形状是**三参** `(rule, channel, outcome)`（协调器路径，
+ *   见 `src/runtime/pre-step-coordinator.ts`）；`rule-runtime.mjs` 的 `report` 适配器收的是**单个
+ *   report 对象**——两个同名形状不可互换，错配时记账键会静默变成 `\x00undefined\x00undefined`，
+ *   改适配器时必须同步这一处。
  */
 export function applyPromptConfigs(ctx, configs, options = {}) {
   const list = configs.filter((config) => config !== undefined && config !== null)
@@ -511,8 +516,8 @@ export function applyPromptConfigs(ctx, configs, options = {}) {
   }
   keepDisposer(ctx, release)
 
-  // 非 pre-step 提示词配置接入各自声明的官方层级通道(system-section /
-  // runtime-context / agent-request / llm-stream / tool-pipeline)。
+  // 非 pre-step 提示词配置接入各自声明的官方层级通道（可注入八层去掉 pre-step 的七层，
+  // 层表见 schema.mjs 的 LAYER_DEFINITIONS；pre-step 走上面的批执行器）。
   const releaseLayers = options.layers === false ? () => {}
     : wireLayers(ctx, effectiveList.filter((config) => config.layer !== 'pre-step'), warnOnce)
 

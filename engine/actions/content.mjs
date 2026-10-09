@@ -202,6 +202,8 @@ export function bindResolver(config, strategyDir) {
         if (typeof make !== 'function') {
           throw new TypeError(`${name}: strategy module ${moduleUrl.href} must export createResolver(config)`)
         }
+        // 每次求值重建工厂产物（不缓存 closure）：缓存会同时改变闭包状态跨调用、文件热刷新、
+        // 跨会话串扰三项可观察行为——模块本身仍按上面缓存一次，只省 import。
         return make(config)(args)
       }
     }

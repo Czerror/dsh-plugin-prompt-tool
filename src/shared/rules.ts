@@ -18,7 +18,7 @@ export interface RuleAction extends Record<string, unknown> {
 }
 
 /**
- * module.yml.rules 的单一规则定义；层用于呈现归属，不建立跨层执行顺序。
+ * module.yml.rules 的单一规则定义；层是动作未声明 `config.layer` 时的缺省注入层，其余用于展示，不建立跨层执行顺序。
  *
  * **旧名 `when`/`do` 已随引擎重构退役**（不再作为兼容输入），全链路只有 `if`/`then`/`else`。
  * 定义迁移由 YAML Document API 改键名完成，注释与未知字段原地保留。

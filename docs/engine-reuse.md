@@ -143,9 +143,11 @@
   晋升相位，但不会删掉历史 `tool/call` 事件）。
 - **收窄模板**：`templates/80-tool-surface.yml`，常驻集
   `pwsh / read / write / edit / glob / grep / todo_write / skill_search / skill_load / dev_tool_search`。
-  它是**规则**（走 `compileRules`），不是 `triggers` 声明——因此**不能**声明
-  `waterfallPosition`（那是声明路径的字段，规则路径会以 unknown fields 拒绝）。需要
-  `outermost`（`prepend: true`）时改用声明路径，格式见 `test/engine/declarations/tool-bootstrap.yml`。
+  它是**规则**（走 `compileRules`），需要 `outermost`（`prepend: true`）时在动作上声明
+  `waterfallPosition`——规则路径**接受**该字段（`engine/actions/catalog.mjs` 的通用键，
+  `rule-runtime.mjs` 映射为 prepend）；它只保证落在已存在的普通注册之外，同点内声明之间仍按
+  `channelOrder` → 模块 id → 规则声明序排。模块层的声明出口已退役（旧 `declared-triggers` /
+  顶层 `triggers` 写进 `modules` 即 409），需要本插件自己的最外层监听只能回到插件侧声明。
 - 相位用 `any` 两支表达，因为单个 `phase` 节点**无法**表达「两个相位都命中」：`promoted`
   的缺省是 `true`（= 只匹配已晋升，不是「任意」），而 `promoted: 'ignore'` 又要求同时声明
   只接受布尔值的 `compacted`。故写作
@@ -153,17 +155,19 @@
   刻意不收窄**——先让模型看到完整目录，再随相位推进收窄。
 - `requireMatch: true` 是必配：任一 `allow` 工具缺失（含模型解锁了一个不存在的名字）就放弃
   裁剪、暴露完整目录。宁可多给上下文，也不静默裁成空目录。
-- **与 `tool-bootstrap` 的分工**：那份原型（见 `test/engine/declarations/tool-bootstrap.yml`）
-  只**在受控相位**收窄、晋升后放开，且没有解锁通道；本模板覆盖晋升后与压缩后，靠
-  `allowFrom` 提供解锁。两者不叠加——同一通道上相邻的 `assembly` 动作各做一次白名单裁剪，
-  **A 裁掉的工具 B 不会加回**，所以每个动作的 `allow` 都要点名它需要的全部工具。
+- **与已退场的 `tool-bootstrap` 原型的差别**：那份只**在受控相位**收窄、晋升后放开，且没有
+  解锁通道；本模板覆盖晋升后与压缩后，靠 `allowFrom` 提供解锁。两者不叠加——同一通道上相邻的
+  `assembly` 动作各做一次白名单裁剪，**A 裁掉的工具 B 不会加回**，所以每个动作的 `allow`
+  都要点名它需要的全部工具。
 
 ## 规则、条件与动作边界
 
 - `rule.id` 是稳定且安全的模块内身份，禁用规则也必须通过校验；拒绝点目录、路径分隔、
   控制字符和 Windows 保留字符。`action.id` 只承担动作身份，不能套用文件名限制。
 - `then` 必须是非空数组（动作级分支写 `else`）。规则可以跨多个官方执行点；`channel`、执行阶段由动作能力
-  决定，不能在规则顶层另填通道。规则的 `layer` 仅用于展示，真正注入层取动作 `config.layer`。
+  决定，不能在规则顶层另填通道。规则的 `layer` 是动作未声明 `config.layer` 时的缺省注入层
+  （`config.layer ?? rule.layer ?? 'pre-step'`，见 `engine/rule-spec.mjs#injectionConfigSpec`），
+  其余用途是列表筛选与展示分组；注入动作一旦自带 `config.layer`，规则级 `layer` 不再决定它落在哪。
 - 同规则、同一真实执行点严格按 `then` 数组顺序执行，条件只求值一次；跨执行点、下一次
   调用及新 epoch 重新求值。不按 session、turn 或同一 context 对象缓存规则结果。
 - `assembly` 动作 target 内的名单语义互斥，且都在**编译期**（`prepareAssembly` 经
@@ -262,7 +266,9 @@ id 不同、却声明同一个 sourceKind 的卡同样会经 kind 通道互相�
   预设来源；任一时刻每个 scope 只有一条预设配置执行路径。文件正文由官方来源生成，插件
   在消息进入会话前执行逐文件过滤，不把文件卡编译为第二批注入配置。
 - 没有该服务（引擎被复制到无宿主的目录复用）时，引擎行仍自带 pre-step 监听器，只执行自身
-  预设配置；引擎不 import `src/host`，也不强制协调服务存在。
+  预设配置；引擎不 import `src/host`，也不强制协调服务存在。**独立路径按单一来源设计**
+  （`applyPromptConfigs` 每次只接一份配置列表；多份来源的汇总入口是
+  `applyPromptConfigSources`），多来源之间的次序只在协调器下定义。
 - 协调服务迟到时，引擎行先停止本地注入再启用管理路径；服务消失时反向恢复独立执行。
   注册句柄同时绑定服务实例，HMR 在相邻两步之间替换服务时也会撤销旧登记、向新实例重登；
   同一来源在接管期间只选择一个批执行器；无 pre-step 贡献时无需注册该来源。来源随 ctx disposer
@@ -373,6 +379,9 @@ UNAVAILABLE，不是编译期拒绝。
   会话正文，复用同一 AssembleContext 的并发请求也各自求值。空值或异常只让该条为空并告警，
   取消或卸载会丢弃本次待填充结果。`strategyDir` 在引擎入口统一解析为绝对 URL（相对写法按
   当前模块的 `module.yml` 解析），相对目录不再让整行挂载抛 `ERR_INVALID_URL`。
+- 策略解析器按配置创建一次（`createPromptConfigs` 里的 `bindResolver`）；模板专属策略的
+  **工厂产物每次求值重建、无状态**（`engine/actions/content.mjs` 只缓存模块 import）：缓存它
+  等于同时改变闭包状态跨调用、模板文件热刷新、跨会话串扰三项可观察行为。
 - `conditions/subject.mjs` 按真实事件参数归一载荷；共享文本提取由 `engine/condition.mjs`
   提供，条件在规则编译期准备。未命中的规则**不写入 session 去重**，条件恢复后仍能注入。
 - ST 宏模板（`params.stMacros`）的跨配置变量帧只求值**当前入口获准的配置**：
@@ -380,7 +389,8 @@ UNAVAILABLE，不是编译期拒绝。
   模板在通过去重后才由执行器触发。官方组装只求值其拥有的 system-section / runtime-context
   模板，不提前执行 pre-step 或其他控制、事件插入点的 setter 与 reader；这些插入点的
   条件与执行时机仍由各自入口决定。
-- 后到的获准模板按 `order` 在同一变量帧内补求值，已求值的模板不重放副作用或随机宏；
+- 后到的获准模板按**持久序号 `sequence`**（缺省回退 `order`，`engine/order.mjs#compareConfigSequence`）
+  在同一变量帧内补求值，已求值的模板不重放副作用或随机宏；
   已返回的官方文本也不因后续 pre-step 赋值而倒放重算。两种入口顺序均沿用已有变量帧，
   新步骤与成功压缩创建新帧，失败压缩不推进。该规则不增加跨插入点的全局调度顺序。
 
@@ -400,6 +410,9 @@ UNAVAILABLE，不是编译期拒绝。
   `keepKinds` 正交，可同时声明。
 - 确认缓存分别记录 `plugin:<身份>` 与 `kind:<来源>`，只比较同字段的值，与持久扫描的
   `source.plugin` / `source.kind` 两条匹配规则一致；不同字段恰好同值不会误判已投递。
+- **同位置 merged 成员共享一个投递身份**（`merged:<position>`）：该组一旦投递，后来才满足
+  会话去重条件的 merged 成员按同一身份判为已投递、**不再补注入**。这是既定边界——需要逐条
+  补发就用 `mergeMode: separate`。
 - 独立执行路径与管理路径（协调器）共用同一确认实现，两条路径的去重语义一致；重挂或
   进程恢复直接从持久记录重建，不依赖进程内已投递集合。
 - 验收入口：`test/engine/prompt-config-engine.test.mjs`。
@@ -597,8 +610,8 @@ rules:
 ## 重建与验证
 
 - 官方组合块已全部随「与预设彻底解耦」清理删除（`engine/compositions/` 只剩 `source/local/`）：
-  生成器 `rebuild:composition` 与它的输入快照（内置预设目录 `preset/`、`test/fixtures/dsh/current`）
-  都已退场；ST 导入的 `enable_web_search: true` 不再组装 web 工具行，改为在转换报告里提示。
+  生成器 `rebuild:composition` 与它的输入快照（内置预设目录等）都已退场；ST 导入的
+  `enable_web_search: true` 不再组装 web 工具行，改为在转换报告里提示。
 - 已发布依赖的实际版本以 package.json 为准，验证脚本不再另行硬编码 rc.2；更新前同时核实
   npm 的版本列表与 dist-tags，不能把名字为 latest 的旧标签误当成更新版本。
 - 本地新增模块放 `engine/compositions/source/local/<name>.yml`，直接装配；

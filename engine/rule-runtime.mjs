@@ -6,6 +6,9 @@ import { ruleFrame, actionMatches } from './conditions/evaluation.mjs'
 import { createWarnOnce } from './shared.mjs'
 
 const noNext = new Set(['agent/inbox/inserted', 'agent/turn-stopping', 'subagent/start', 'subagent/end'])
+// 判据与 `order.mjs#compareConfigSequence` 有意不同：这里在同通道同点内按 moduleId 字母序 +
+// 规则声明序（ruleIndex）定位，`compareConfigSequence` 按 `sequence`（= 编辑器顺序，缺省回退
+// `order`）+ `ruleId` 排。收敛到 `ruleId` 会打断现网依赖的「编辑器顺序 = 执行顺序」，别顺手统一。
 const compare = (a, b) => a.action.channelOrder - b.action.channelOrder
   || a.moduleId.localeCompare(b.moduleId) || a.ruleIndex - b.ruleIndex || a.action.actionIndex - b.action.actionIndex
 

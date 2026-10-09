@@ -69,10 +69,10 @@ export function composite(node) {
   predicate.kind = 'composite'
   // 组合层必须**转发子谓词的 observe**（B7 T1 的跨能力缺口修复）：两条挂载路径的观察器
   // 接线都按 `when.observe` 过滤（`trigger.mjs` 的 `wireTriggerObservers`），被组合包住的
-  // phase / count / session 谓词否则永远收不到活的 `session/event`——状态按 `session.id`
+  // phase / count 谓词否则永远收不到活的 `session/event`——状态按 `session.id`
   // 缓存后不再重扫（`shared.mjs` 的 `sessionState`），判定会停在冷扫那一刻（计数恒旧值、
   // 相位永不晋升）。`phase` 有 `subscribe: false` 可绕（代价是每次判定冷扫），
-  // `count` / `session` 没有该档，所以这条转发是它们唯一的活路。
+  // `count` 没有该档，所以这条转发是它唯一的活路。
   const observers = children.filter((child) => typeof child.observe === 'function')
   if (observers.length > 0) {
     predicate.observe = (session, event) => {

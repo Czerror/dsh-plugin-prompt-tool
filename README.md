@@ -216,9 +216,9 @@ UI / 写盘按上表分组；这是展示顺序，不是模型提示词优先级
 
 工作台「模块」页按内容识别原生模块与 SillyTavern 来源；ST JSON/YAML 预设卡片经预览确认后，按注入层级映射为本地模块：
 
-- `prompts[]` → `rules[].do` 中的注入动作：system 角色进入 `system-section`，其余进入 `pre-step`；官方 `prompt_order[].order[]` 决定启停与相对顺序，深度位置保留来源并报告降级
+- `prompts[]` → `rules[].then` 中的注入动作：system 角色进入 `system-section`，其余进入 `pre-step`；官方 `prompt_order[].order[]` 决定启停与相对顺序，深度位置保留来源并报告降级
 - 采样参数（`temperature` / `openai_max_tokens` / `reasoning_effort`）**剥离**——模型参数统一由「模型设置」UI / 宿主默认管理
-- ST 变量：保留可启停的赋值模板，在运行时顺序求值；声明变量在合并和角色卡应用时保持局部绑定
+- ST 变量：保留可启停的赋值模板，在运行时按持久序号 `configOrder`（缺省回退 `order`）顺序求值；声明变量在合并和角色卡应用时保持局部绑定
 - ST 管理工具：始终装配 `character-tools`、`session-var-tools` 与 `tool-config-engine`
 - `enable_web_search`：`true` → 本插件**不再组装 web 工具行**（`tool-web` 已随预设解耦从模块库退役，联网能力由会话原有预设提供），只在转换报告里如实提示；`false` → 产出三条规则（`assembly` 呈现剔除 + `sdk-strip` 裁 `tools:sdk` 正文 + `guard` 执行层拒绝，共用同一份 `deny: [web_search, web_fetch]`），PTC 下同样生效
 - 含有效 `character_book` 条目时自动追加 `world-book-tools` 模块，使导入预设可直接调用世界书管理工具

@@ -22,6 +22,8 @@ export function conjunction(conditions) {
  *
  * - 普通动作原样带出，分支条件 = `outer` 的合取（空 = 无条件）；
  * - 分支节点的 `then` 追加本层 `if`、`else` 追加 `not(if)`——互斥由结构保证，不由作者手写；
+ *   有状态谓词（phase / count）还须同时收到 `session/event` 观察（`trigger.mjs` 的
+ *   `wireTriggerObservers`）才成立，否则状态停在冷扫那一刻、互斥也就名存实亡；
  * - 返回顺序即声明序（then 在前、else 在后）；
  * - `bypass` 标记该动作来自**声明级** `else`：它的条件已含 `not(if)`，不能再叠加声明级判定。
  */

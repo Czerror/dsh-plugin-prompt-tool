@@ -207,7 +207,6 @@ const MACRO_SINGLE_COLON_RE = new RegExp(`\\{\\{\\s*(${MACRO_ALIASES})\\s*:(?!:)
 
 /**
  * ST 宏写法归一：{{roll 1d6}} / {{roll:1d6}} → {{roll::1d6}}。
- * 与 `src/host/sillytavern.ts` 的导入期归一同源（两处物理隔离，改动需同步）。
  */
 export function normalizeMacroSyntax(text) {
   return text

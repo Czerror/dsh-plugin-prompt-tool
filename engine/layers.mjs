@@ -700,7 +700,7 @@ export function wireLayers(ctx, configs, warnOnce, options = {}) {
   // 官方插值两层共享一份变量注册：运行时事实按 assembly 求值，非法名走别名改写。
   const registry = registerOfficialVariables(ctx, configs.filter((config) => config.layer === 'system-section' || config.layer === 'runtime-context'), warnOnce, keep)
   // 有规则级 when 或动作级 actionWhen 才走条件化注册：只有动作级 if（无规则级 if）的配置
-  // 若落入 regular 的无条件注册路径，动作级分支会被整段忽略，与其余七层不一致。
+  // 若落入 regular 的无条件注册路径，动作级分支会被整段忽略，与其余八层不一致。
   const conditional = configs.filter(config => ['system-section', 'runtime-context'].includes(config.layer)
     && (typeof config.rule?.when === 'function' || typeof config.actionWhen === 'function'))
   const regular = configs.filter(config => !conditional.includes(config))

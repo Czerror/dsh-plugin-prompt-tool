@@ -91,7 +91,8 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
     try {
       const result = await bridgeCall('moduleConfigOrder', { expectedRevision: order.revision, entries: entries.map(({ moduleId, configId }) => ({ moduleId, configId })) })
       if (generation !== epoch.current) return
-      if (!result.ok) { setOrderError(result.message ?? t('moduleOrder.unavailable')); return }
+      // 失败后重读：拖拽用的 revision 已过期，不重读会反复 409、要手动刷页（重读成功会清掉这条告警）。
+      if (!result.ok) { setOrderError(result.message ?? t('moduleOrder.unavailable')); await readOrder(); return }
       setOrder(result.value); setOrderError(''); await Promise.all(owners.map(owner => owner.editor.load(true)))
     } finally { sortBusy.current = false; if (generation === epoch.current) setSorting(false) }
   }

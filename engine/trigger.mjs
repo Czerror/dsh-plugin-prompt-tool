@@ -29,8 +29,8 @@
  * 本文件导出的是**引擎本身**（`mountTriggers` / `orderTriggers` / `validateTrigger` /
  * `registrationOptions` / `createDecisionLog` 等函数与常量），**不是**某个模块的触发器声明。
  * 声明由**消费方模块**导出，约定名为 `engineTriggers`（数组，元素交给 `validateTrigger`）；
- * 它与能力提供者的 `engineProvider` 登记**互斥**——同一模块不得同时导出两者，
- * 该互斥由 `test/engine/provider-boundary.test.mjs` 直接断言。
+ * 它与能力提供者的 `engineProvider` 登记**互斥**——同一模块不得同时导出两者。
+ * 该互斥曾由 `test/engine/provider-boundary.test.mjs` 直接断言，守卫已随测试收敛移除。
  * 因此「某个模块是触发器还是提供者」看的是它导出了哪一个，而不是它 import 了什么。
  *
  * ## 与 predicates 的接线要点（T1 交付时确认的事实）
@@ -223,15 +223,6 @@ export function createDecisionLog({ enabled = false, logger, sessionOf } = {}) {
 }
 
 /**
- * 注册一组触发器。
- *
- * 每个触发器在**自己的合法通道**上注册一次；`when` 抛错按 `degrade` 处理
- * （默认 `'skip'`：告警一次并跳过本次，**不吞掉下游异常** —— 只有本触发器自身的
- * 判定失败才降级，`next()` 之后的错误照常向上抛）。
- *
- * @returns disposer：注销本组全部监听器。
- */
-/**
  * 把 `session/event` 喂给带 `observe(session, event)` 入口的谓词（相位 / 计数两类）。
  *
  * 同一组声明**共用一条**监听（不按触发器各接一条，避免 N 倍监听）；没有这类谓词时
@@ -258,6 +249,15 @@ export function wireTriggerObservers(ctx, triggers, { plugin, warnOnce } = {}) {
   })
 }
 
+/**
+ * 注册一组触发器。
+ *
+ * 每个触发器在**自己的合法通道**上注册一次；`when` 抛错按 `degrade` 处理
+ * （默认 `'skip'`：告警一次并跳过本次，**不吞掉下游异常** —— 只有本触发器自身的
+ * 判定失败才降级，`next()` 之后的错误照常向上抛）。
+ *
+ * @returns disposer：注销本组全部监听器。
+ */
 export function mountTriggers(ctx, declarations, { plugin, warnOnce, diagnose } = {}) {
   const warn = typeof warnOnce === 'function' ? warnOnce : () => {}
   const disposers = []

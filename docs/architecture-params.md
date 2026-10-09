@@ -19,7 +19,7 @@ Config 的规范键是 `modulesEnabled`，表示模块运行总闸。旧 `writeP
 
 每条规则正文只有 `id/name/layer/if/then[]`；`enabled/group/exclusive/order` 由状态清单拥有，模块级 `variablesEnabled` 与校验元数据也在清单中。完整定义仍包含合并后的规则与 `configOrder`。传给引擎时 `order` 拆为独立映射，不向规则对象添加未知字段。规则 id 使用可读名字和后缀去重，拒绝下划线前缀、保留名 `variables`、大小写冲突及 Windows 设备名。
 
-`if` 组合条件，`then[]` 声明有稳定 id 的动作；注入正文、策略、模板和局部变量属于 `inject-text.config`。`layer` 只标记展示归属，不建立跨插入点的全局运行顺序。
+`if` 组合条件，`then[]` 声明有稳定 id 的动作；注入正文、策略、模板和局部变量属于 `inject-text.config`。规则的 `layer` 是动作未声明 `config.layer` 时的缺省注入层，其余用于展示分组；它不建立跨插入点的全局运行顺序。
 
 共享只限于同一模块内的配置卡。`persona`、`variables`、`customTools`、`subagentToolPolicy` 和能力行的 `moduleConfigs` 保留独立所有者。`loadModuleSpec().params` 是 `layerSettings` 的内部平铺适配面，不是第二个磁盘参数源，也不承载规则正文。
 
@@ -146,8 +146,9 @@ packages rather than a preset directory」，并把 `!!js` 限制在插件配置
 
 - 官方 `agent/created` 是串行初始化边界：返回装配 Promise，首条请求等待完成；首次
   失败只报告诊断，不中止宿主创建会话。恢复、清空和压缩后的新 Agent 同样走此边界。
-- 规则统一经 `compileRules → mountRuleSources`。条件编译一次，在同一执行点的同一调用帧
-  判断一次，再按动作相对顺序执行；不同执行点由宿主生命周期驱动。`inject-text` 复用文本
+- 规则统一经 `compileRules → mountRuleSources`。条件在规则级与动作级各编译一份实例，挂载期
+  重新绑定并接收观察（有状态谓词由 `wireTriggerObservers` 喂 `session/event`）；同一执行点的
+  同一调用帧判断一次，再按动作相对顺序执行；不同执行点由宿主生命周期驱动。`inject-text` 复用文本
   编译、注册及 pre-step 批处理原语，不独立重复挂载整套执行器。
 - pre-step 注入与本地点控制动作共用协调器的 `configs + ruleActions`，保留官方指令过滤、
   变量帧、合并与投递去重；条件读取下游判定，过滤器需要的原始已领取消息另从 `payload` 保留。
