@@ -3,9 +3,8 @@ import assert from 'node:assert/strict'
 import { readModulesEnabled } from '../../src/shared/module-settings.ts'
 import { renderElement, withSsr } from './support/ssr-render.mjs'
 
-const { usePromptToolStore, SettingsTab } = await withSsr([
+const { usePromptToolStore } = await withSsr([
   new URL('../../src/client/data/use-prompt-tool-store.ts', import.meta.url).href,
-  new URL('../../src/client/app/workbench/SettingsTab.tsx', import.meta.url).href,
 ])
 
 function officialTransport(initial) {
@@ -37,13 +36,5 @@ test('工作台直接官方transport保存总闸同批移除旧键，旧true与f
     assert.deepEqual(f.calls, [expected(!old)])
     assert.deepEqual(f.document, { modulesEnabled: !old })
     assert.equal(readModulesEnabled(f.document), !old)
-  }
-})
-
-test('官方设置页沿同一读取默认与旧值渲染开关状态', () => {
-  for (const [initial, current] of [[{}, true], [{ writePreset: true }, true], [{ writePreset: false }, false]]) {
-    const f = officialTransport(initial)
-    const html = renderElement(SettingsTab, { settings: f.settings, t: key => key })
-    assert.match(html, new RegExp(`aria-checked="${current}"`), `初始值 ${JSON.stringify(initial)} 应渲染为 ${current}`)
   }
 })

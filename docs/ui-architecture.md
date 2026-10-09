@@ -72,7 +72,6 @@
     │  │  ├─ FloatingTrigger.tsx
     │  │  ├─ floating-trigger-position.ts
     │  │  ├─ register-workbench.tsx
-    │  │  ├─ SettingsTab.tsx
     │  │  ├─ Workbench.module.css
     │  │  ├─ WorkbenchOverlay.tsx
     │  │  ├─ workbench-face.ts
@@ -228,10 +227,9 @@ CSS 构建模块只收集样式数据；`styles.ts` 在入口 `ctx.effect` 中�
 
 | 官方注册面 | id / key | 位置 | owner | 作用 |
 |---|---|---|---|---|
-| settings.plugins.tab | prompt-tool | order 40 | SettingsTab | 模块运行总闸 modulesEnabled（旧 writePreset 仅输入兼容） |
 | shell.overlay | prompt-tool-workbench | order 50 | WorkbenchOverlay | 可拖动悬浮触发器 + body portal 抽屉 |
 
-两处 slot 都使用 ctx.slots.inject() 等待官方槽位声明，再调用 ctx.slots.register()。返回的 disposer 在 register-workbench.tsx 中统一释放。不要添加第二个注册入口，也不要改变 id 或 inject face 的形状。
+slot 使用 ctx.slots.inject() 等待官方槽位声明，再调用 ctx.slots.register()。返回的 disposer 在 register-workbench.tsx 中释放。不要添加第二个注册入口，也不要改变 id 或 inject face 的形状。宿主设置面板的 `settings.plugins.tab` 分区已移除：模块运行总闸只在工作台模块页设置（`presets.modulesEnabled.*`）。
 
 两处注册都声明 `locale: PROMPT_TOOL_NS`：slot 组件由此拿到框架注入的 typed `t` seat，同时把「渲染需要已安装的 locale face」写成显式契约（locale face 由官方 dsh-client-locale 在 boot 期经 renderer 安装）。列表项 label（设置 tab 标题）用 `() => face.t('tab.label')` thunk，宿主重读 label 时取当前语言。
 

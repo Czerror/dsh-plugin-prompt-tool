@@ -30,10 +30,7 @@ const ZH_CORE = {
   'nav.aria': '提示词工具页面',
   'tab.label': '提示词工具',
 
-  'settings.aria': '提示词工具基础设置',
   'settings.saveRejected': '设置未保存，请检查当前权限或重新读取后重试。',
-  'settings.modulesEnabled.label': '启用提示词模块',
-  'settings.modulesEnabled.hint': '关闭后停止模块注入并撤回工具贡献，模块定义与生成文件保留。',
 
   'page.features.label': '主会话',
   'page.subagent.label': '子代理',
@@ -291,10 +288,7 @@ const EN_CORE: Record<keyof typeof ZH_CORE, string> = {
   'nav.aria': 'Prompt tool pages',
   'tab.label': 'Prompt Tool',
 
-  'settings.aria': 'Prompt tool basic settings',
   'settings.saveRejected': 'Settings were not saved. Check your permissions or reload and retry.',
-  'settings.modulesEnabled.label': 'Enable prompt modules',
-  'settings.modulesEnabled.hint': 'Turning this off stops module injection and removes tool contributions. Definitions and generated files stay intact.',
 
   'page.features.label': 'Main session',
   'page.subagent.label': 'Subagent',
