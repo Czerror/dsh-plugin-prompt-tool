@@ -185,11 +185,15 @@
   `rule-runtime.mjs` 映射为 prepend）；它只保证落在已存在的普通注册之外，同点内声明之间仍按
   `channelOrder` → 模块 id → 规则声明序排。模块层的声明出口已退役（旧 `declared-triggers` /
   顶层 `triggers` 写进 `modules` 即 409），需要本插件自己的最外层监听只能回到插件侧声明。
-- 相位用 `any` 两支表达，因为单个 `phase` 节点**无法**表达「两个相位都命中」：`promoted`
-  的缺省是 `true`（= 只匹配已晋升，不是「任意」），而 `promoted: 'ignore'` 又要求同时声明
-  只接受布尔值的 `compacted`。故写作
-  `any: [phase{promoted:true}, phase{compacted:true, promoted:false}]`。**首轮（未晋升且未压缩）
-  刻意不收窄**——先让模型看到完整目录，再随相位推进收窄。
+- 收窄**打开即生效，不按相位放行首轮**（2026-10-10 用户拍板「能否提前」）：规则省略 `if`，
+  `compileWhen(undefined)` 返回 `undefined` = 无条件执行。此前用
+  `any: [phase{promoted:true}, phase{compacted:true, promoted:false}]` 两支（单个 `phase` 节点
+  **无法**表达「两个相位都命中」：`promoted` 的缺省是 `true` 而非「任意」，`promoted: 'ignore'`
+  又要求同时声明只接受布尔值的 `compacted`），代价是首轮与晋升前那几轮多付一次完整工具面
+  （实测 46894 字符），且收窄生效的当轮会以「工具已更新 · 移除 N 个」出现在会话流里。
+  需要旧的渐进语义时把 `if` 加回来。
+- **`dev_tool_search` 在常驻集里**，所以收窄之后模型始终有发现入口；`allow` 漏掉它会让
+  解锁通道彻底断开。
 - `requireMatch: true` 是必配：任一 `allow` 工具缺失（含模型解锁了一个不存在的名字）就放弃
   裁剪、暴露完整目录。宁可多给上下文，也不静默裁成空目录。
 - **与已退场的 `tool-bootstrap` 原型的差别**：那份只**在受控相位**收窄、晋升后放开，且没有

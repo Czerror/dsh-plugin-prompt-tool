@@ -16,7 +16,6 @@ import { readFileSync } from 'node:fs'
 import { parse } from 'yaml'
 
 import { compileRules } from '../../engine/rule-spec.mjs'
-import { subjectOf } from '../../engine/conditions/subject.mjs'
 import { apply as applyDevToolSearch } from '../../engine/dev-tool-search.mjs'
 
 const raw = readFileSync(new URL('../../templates/80-tool-surface.yml', import.meta.url), 'utf8')
@@ -60,22 +59,10 @@ test('工具面模板：allowFrom 与 dev-tool-search 的写入端同名同键�
   assert.deepEqual(reparsed[allowFrom.key], ['web_search', 'task_board_list'], '写入与读取同一键')
 })
 
-test('工具面模板：any 两支实测覆盖「晋升后」与「压缩后未晋升」，首轮刻意不收窄', () => {
-  // 用引擎权威路径判定：compileRules 把 `if` 归一为产物上的 `when`；
-  // 载荷必须走 subjectOf 归一化（裸 { agent } 会被 agentOf 当成旧形态，一律 UNAVAILABLE）。
-  const when = compileRules([parsed])[0].when
-  const session = (events, depth = 0) => ({ id: `s-${Math.random()}`, header: { delegationDepth: depth }, snapshotEvents: () => events })
-  const withSeq = (list) => list.map((event, index) => ({ ...event, seq: index }))
-  const payloadFor = (events, depth = 0) => subjectOf('system-prompt/assemble', [{}, { agent: { session: session(events, depth) } }], () => {})
-  const hit = (events, depth = 0) => when(payloadFor(events, depth)) === true
-  const PROMOTE = { type: 'tool/call', data: { name: 'pwsh' } }
-  const COMPACT = { type: 'compaction/end', data: {} }
-
-  assert.equal(hit(withSeq([])), false, '首轮不收窄——与「首轮保全文」同一取舍')
-  assert.equal(hit(withSeq([PROMOTE])), true, '已晋升收窄')
-  assert.equal(hit(withSeq([PROMOTE, COMPACT])), true, '压缩后未晋升收窄（成功压缩会清零 promoted）')
-  assert.equal(hit(withSeq([PROMOTE, COMPACT, { type: 'tool/call', data: { name: 'read' } }])), true, '压缩后已晋升收窄')
-  assert.equal(hit(withSeq([COMPACT])), true, '压缩后无晋升信号同样收窄')
-  // 模板显式声明 `includeSubagents: true`：子代理也要收窄，否则它每次都付完整工具面。
-  assert.equal(hit(withSeq([PROMOTE]), 1), true, '子代理同样收窄')
+test('工具面模板：规则无条件生效——**首轮即收窄**，不再按相位放行首轮', () => {
+  // 真值源：模板文件本身。收窄从第一次装配就生效，工具面在会话中途不再变化；
+  // 期望值由「规则级 if 省略 → compileWhen 返回 undefined（无条件）」这一语义手算。
+  const compiled = compileRules([parsed])
+  assert.equal(compiled[0].when, undefined, '没有 if 的规则必须无条件执行，收窄在首轮就命中')
+  assert.equal(parsed.if, undefined, '模板不得再声明相位门控')
 })

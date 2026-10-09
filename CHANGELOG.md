@@ -10,6 +10,7 @@
 
 ### 主要变化
 
+- **内置 `tool-surface` 模块改为「打开即收窄」**：规则省略 `if`（= 无条件生效），不再等 `promoted` 才收窄——此前首轮（未晋升且未压缩）刻意放行完整目录，收窄要到模型第一次 `tool/call` 或 `assistant/message` 之后才生效，那几轮多付一次完整工具面（实测 46894 字符），且收窄生效的当轮会以「工具已更新 · 移除 N 个」出现在会话流里。代价是模型第一轮就以核心集开局，需要先调一次 `dev_tool_search` 才能解锁目标工具（解锁在**下一步模型请求**即可见，不必等一整轮）。需要旧的渐进语义时给规则加回 `if: { any: [phase{promoted: true}, phase{compacted: true, promoted: false}] }`；`templates/80-tool-surface.yml` 与 `docs/engine-reuse.md` 同步。
 - **动作级 `if` / `then` / `else` 与嵌套分支在六个执行点一致按条件生效**（`system-section` / `runtime-context` 的文本贡献、`agent-request`、`llm-stream`、`turn-stop`、`subagent-start`、`subagent-end`），与 `pre-step` 行为一致：此前这些点按规则级 `if` 判定，`else` 与嵌套分支等于无条件执行；`system-section` / `runtime-context` 上只写动作级 `if` 的配置，也从无条件注入变为按条件注入。
 - **同模块多条续跑动作共享一份预算**：`append-context`（`mode: continue`）与 `turn-stop` 不再各占一份——同模块每轮合计 1 次、每会话合计 3 次；此前两条续跑动作会让同一轮连跑 2–3 次。
 - **去重身份统一到 `identity.value`**：`fill: instruction-hint` 的解析器候选此前不带 `source.plugin`，`dedupe: session` 每步重复注入；现在盖章与查找同源，显式共享身份的卡也不会因分批接纳而重复注入（`pre-step-filter` 的 `blockPlugins` 对显式写了 `identity` 的卡要写 `identity.value`，缺省仍是 `id`）。同时启用的模块声明同一个身份时装配期多一条告警，装配照常成功。
@@ -30,6 +31,7 @@
 
 ### 破坏性变更（升级前必读）
 
+- **工具面从第一轮就收窄**：`tool-surface` 的规则不再声明 `if`，因此不再放行「首轮（未晋升且未压缩）的完整目录」——模型第一轮的工具清单就是常驻核心集加已解锁项，需要先调一次 `dev_tool_search` 才知道还有什么可用。想恢复旧行为就在规则上加回 `if: { any: [phase{promoted: true}, phase{compacted: true, promoted: false}] }`。**只改内置模板不会更新已有副本**（`ensureModuleSeed` 只补缺失目录），要用新语义需从模板重新创建模块或手工删掉那条 `if`。
 - **`dedupe: session` 的判据改为「每当前上下文一次」**：不再扫持久事件流的全量日志，而是看该身份的消息是否还在模型可见的当前上下文里——被压缩或替换**遮蔽**的历史不再拦注入，条件仍满足时在后续步重新注入一次；此前压缩后不会重新注入（`append-context` 等续跑动作的每轮／每会话预算照旧，不随压缩重置）。完整口径见 `docs/engine-reuse.md` 的会话去重一节。
 - **去重身份新增模块维，注入消息 `source` 多一个 `moduleId` 字段**：判定键是（模块，通道，身份），**整模块复制**出的两个副本因此各自注入、不再互相压制；跨模块声明同一身份时的装配期告警同步改成「去重按模块各记一份，两份正文都会注入」。身份字符串本身一字未改（`source.plugin` 仍是 `identity.value` / `merged:<position>`，`source.kind` 仍是 `plugin:<id>`），`pre-step-filter` 的 `blockPlugins` 名单也不需要改；升级前注入的旧消息没有 `moduleId`，仍按保守命中判为已投递，无需数据迁移。
 - **`inject-text` 的 `config.prepend` 取消，暂无等价替代**：它此前让该模块的 pre-step 批注册到最外层，是未文档化的后门（`executor` 直读 `config.prepend`）；而 `inject-text` 不接受 `waterfallPosition`，动作级位置无处安放。仓库自带的 `modules/` 与 `templates/` 未使用它。

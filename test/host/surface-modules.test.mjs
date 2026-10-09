@@ -74,7 +74,8 @@ test('内置模块 tool-surface：与 templates/80-tool-surface.yml 同一声明
   // 同一行为的两个分发面（内置模块 / 模板）。改一边忘另一边，只会表现为「某个部署收窄没生效」。
   const templateAction = toolTemplate.then.find((action) => action.kind === 'assembly')
   assert.deepEqual(narrowTools.target.tools, templateAction.target.tools)
-  assert.deepEqual(toolRule.if, toolTemplate.if, '相位两支必须一致')
+  // 两侧都**不声明** `if`（= 无条件生效，首轮即收窄）；一边加回相位、另一边没加也要在这里现形。
+  assert.deepEqual(toolRule.if, toolTemplate.if, '两侧的生效条件必须一致')
 })
 
 test('内置模块 skill-surface：只拦 skill-catalog，ponytail 与按需加载的 kind 必须留', () => {
