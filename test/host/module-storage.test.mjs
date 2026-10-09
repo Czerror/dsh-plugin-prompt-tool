@@ -86,11 +86,13 @@ test('运行切片按完整定义确定性恢复；纯读、合法源修改与�
   }
 })
 
-test('名单外文件不连坐读写、原地保留；名单内缺失仍从 module.yml 单向重建', async () => {
+test('名单外文件不连坐读写、原地保留；名单内缺失仍从 module.yml 单向重建', async (t) => {
   const dir = fixture('unknown-files', { configOrder: { first: 0, second: 10 } })
   fixture('unknown-files-peer', { configOrder: { first: 20, second: 30 } })
   ensureModuleSlices(dir)
   for (const id of ['unknown-files', 'unknown-files-peer']) setModuleEnabled(moduleRoot, id, true)
+  // 启用表挂在文件级共享的 moduleRoot 上：用完不还原，后续用例会读到这两个残留启用项。
+  t.after(() => { for (const id of ['unknown-files', 'unknown-files-peer']) setModuleEnabled(moduleRoot, id, false) })
   const clean = await prepareAssembly(moduleRoot, 'unknown-files', () => true)
   const firstSlice = join(dir, 'rules', 'first.yml')
   const strangers = { 'lore.yml.bak': 'BACKUP OF OLD RULE', 'notes.md': '# user note' }

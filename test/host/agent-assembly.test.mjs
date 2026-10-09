@@ -808,21 +808,30 @@ test('装配失败与恢复：准备期失败只告警，撤旧失败仍尝试�
   assert.equal(host.mounts.length, 0, '准备期失败连挂载都不尝试')
   await runtime.dispose()
 
-  // ② 撤旧失败：它和挂新在同一个 try 里，所以旧装配照样被装回去。
+  // ② 撤旧失败：它和挂新在同一个 try 里，所以旧装配照样被装回去——装回的必须是**旧准备**
+  // 而不是这次刷新准备的那份。刷新前把启用表清空，两份准备因此贡献不同，回滚装错就红。
   const disposeFail = new Error('DISPOSE-FAIL')
-  const host2 = stubHostContext({ fault: (attempt) => attempt === 1 ? { dispose: async () => { throw disposeFail } } : {} })
+  writePreset('assembly-restore', {
+    modules: ['prompt-config-engine'],
+    promptConfigs: [{ id: 'restore', text: 'RESTORE', position: 'after-user' }],
+  })
+  let enabled2 = ['assembly-restore']
+  const host2 = stubHostContext({ services: ['systemPrompt', 'tools', 'llm'], fault: (attempt) => attempt === 1 ? { dispose: async () => { throw disposeFail } } : {} })
   const runtime2 = createAgentAssembly(host2.ctx, {
-    moduleRoot, enabledModules: () => [], warn: (message) => { host2.warnings.push(message) },
+    moduleRoot, enabledModules: () => enabled2, warn: (message) => { host2.warnings.push(message) },
   })
   const agent2 = host2.makeAgent('session-release-failure')
   await host2.fire('agent/created', { agent: agent2, source: 'startup' })
   await runtime2.settled()
   assert.equal(runtime2.hasMounted(agent2.id), true, '首次装配成功')
+  enabled2 = []
   await assert.rejects(runtime2.refresh(), (error) => {
     assert.equal(error.errors[0], disposeFail, '撤旧失败的原因原样上报')
     return true
   })
   assert.equal(host2.mounts.length, 2, '撤旧失败后仍重新挂载旧装配')
+  assert.equal(await host2.mounts[1].definition.apply(host2.ctx), undefined)
+  assert.equal(host2.counts.get('agent/pre-step'), 1, '装回的是旧准备（本次刷新的准备是空装配）')
   assert.equal(runtime2.hasMounted(agent2.id), true, '恢复成功：旧贡献还在')
   await runtime2.dispose()
 
