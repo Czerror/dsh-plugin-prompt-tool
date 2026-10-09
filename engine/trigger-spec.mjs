@@ -77,6 +77,10 @@ export function compileDeclaration(spec, context = {}) {
   if (!WATERFALL_POSITIONS.has(waterfallPosition)) {
     throw new TypeError(`trigger-spec: trigger ${spec.id}: waterfallPosition must be one of ${[...WATERFALL_POSITIONS].join(', ')}`)
   }
+  // 声明级 `else` 依赖 `not(if)` 才能与 then 互斥；没有 `if` 时它退化成无条件动作（与 rule-spec 同一判据）。
+  if (spec.else !== undefined && (triggerIf === undefined || triggerIf === null)) {
+    throw new TypeError(`${label}: else requires an if — 声明级 else 不能脱离 if 存在`)
+  }
   // 声明级 `if` 由注册侧判定；声明级 `else` 的动作自带 `not(if)` 并跳过它，否则自相矛盾。
   const expanded = [
     ...expandActions(actionList(triggerThen, `${label}.then`), {}, `${label}.then`),

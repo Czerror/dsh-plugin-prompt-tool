@@ -65,6 +65,19 @@ test('compileDeclaration：do 必须是已知动作，可给多个（数组）',
   assert.deepEqual(two.actions.map((action) => action.kind), ['assembly', 'sdk-strip'], '数组按序保留')
 })
 
+test('compileDeclaration：声明级 else 缺 if（含 if: null）编译期拒绝，与 rule-spec 侧同义', () => {
+  const thenAction = { kind: 'assembly', target: { tools: { deny: ['bash'] } } }
+  const elseAction = { kind: 'sdk-strip', mask: { deny: ['bash'] } }
+  const base = { id: 't', channel: 'system-prompt/assemble', then: thenAction }
+  // `if` 是 else 的互斥依据；缺它时 then 与 else 都退化成无条件动作（旧行为是静默双注册）。
+  assert.throws(() => compileDeclaration({ ...base, else: elseAction }), /trigger-spec: trigger t: else requires an if/)
+  assert.throws(() => compileDeclaration({ ...base, if: null, else: elseAction }), /else requires an if/)
+  // 有 if 时 else 仍可编译：条件自带 not(if) 并标记跳过声明级判定。
+  const compiled = compileDeclaration({ ...base, if: { names: { allow: ['bash'] } }, else: elseAction })
+  assert.deepEqual(compiled.actions.map((action) => action.kind), ['assembly', 'sdk-strip'])
+  assert.equal(compiled.actions[1].bypassRuleWhen, true)
+})
+
 // ───────────────────────── 字段归一与调度 ─────────────────────────
 
 test('compileDeclaration：缺省逐项填充，when 编译为函数', () => {

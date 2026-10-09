@@ -95,6 +95,10 @@ test('动作声明 fail loud：名单形状错误、名单为空、名单命名 
   assert.throws(() => registerAction(ctx, { kind: 'assembly', id: 'x', target: { tools: { deny: 'bash' } } }), /deny must be an array/)
   assert.throws(() => registerAction(ctx, { kind: 'assembly', id: 'x', target: { tools: {} } }), /needs allow and\/or deny/)
   assert.throws(() => registerAction(ctx, { kind: 'guard', id: 'x', mask: { deny: ['run_code'] } }), /must not name the reserved run_code/)
+  // guard 的受众矛盾组合与非法 audience 取值在保存 / 导入即拒绝，不再静默不注册或静默退化。
+  assert.throws(() => registerAction(ctx, { kind: 'guard', id: 'g', audience: 'subagent', mask: { deny: ['bash'] } }), /g: audience:'subagent' 需配 includeSubagents:true/)
+  assert.throws(() => registerAction(ctx, { kind: 'guard', id: 'g', audience: 'subagent', includeSubagents: false, mask: { deny: ['bash'] } }), /includeSubagents:true/)
+  assert.throws(() => registerAction(ctx, { kind: 'guard', id: 'g', audience: 'submagent', mask: { deny: ['bash'] } }), /g\.audience must be main or subagent/)
   assert.throws(() => registerAction(ctx, { kind: 'request-params', id: 'x', replace: true, unset: { maxTokens: 1 } }), /cannot combine replace with unset/)
   assert.throws(() => registerAction(ctx, { kind: 'decision', id: 'x', phase: 'pre', decision: 'maybe' }), /must be one of allow, deny, ask/)
   // 段/上下文增量的形状校验（含 label 与 plugin 一起拼出的消息）
@@ -479,6 +483,41 @@ test('(6) 真实 PTC：SDK 正文里被剔工具的声明消失，且 guard 让�
   disposeStrip()
   disposeGuard()
   await h.root.fiber.dispose()
+})
+
+// ───────────────────── 三之补：guard 受众矩阵（主会话 × 子代理） ─────────────────────
+
+test('guard 受众矩阵：注册次数与 restrict 调用随 audience × includeSubagents 组合确定', async () => {
+  // 复现 F19 探针的 A–H 行（B / D 的 audience:'subagent' 缺 includeSubagents 已改为编译期拒绝，
+  // 见「动作声明 fail loud」用例：该组合在主会话与子代理两侧都不注册，与 depth 无关）。
+  const rows = [
+    ['A 主会话 · 无 audience', 0, {}, 1, 0],
+    ['C 子代理 · 无 audience（includeSubagents 缺省）', 1, {}, 0, 0],
+    ['E 子代理 · audience:subagent + includeSubagents:true', 1, { audience: 'subagent', includeSubagents: true }, 1, 1],
+    ['F 子代理 · 无 audience + includeSubagents:true', 1, { includeSubagents: true }, 1, 1],
+    ['G 主会话 · audience:main', 0, { audience: 'main' }, 1, 0],
+    ['H 子代理 · audience:main + includeSubagents:true', 1, { audience: 'main', includeSubagents: true }, 1, 1],
+    ['边界 · 主会话 audience:null（中性值）', 0, { audience: null }, 1, 0],
+    ['边界 · 主会话 audience:""（中性值）', 0, { audience: '' }, 1, 0],
+  ]
+  for (const [label, depth, fields, guards, restricts] of rows) {
+    const recorder = recordingCtx()
+    const calls = { guard: 0, restrict: 0 }
+    registerAction(recorder.ctx, { kind: 'guard', id: 'g', mask: { deny: ['bash'] }, reason: 'deny bash', ...fields })
+    const handler = only(recorder.events, 'system-prompt/assemble')
+    const agent = {
+      session: { id: `guard-${label}`, header: { delegationDepth: depth } },
+      ctx: { tools: {
+        guard: () => { calls.guard += 1; return () => {} },
+        restrict: () => { calls.restrict += 1; return () => {} },
+      } },
+    }
+    await handler(assembled({}), { agent, scope: agent }, async () => assembled({}))
+    assert.deepEqual(calls, { guard: guards, restrict: restricts }, label)
+    // H 行是相邻问题：子代理侧只看 includeSubagents，`audience:'main'` 被忽略（本轮只记录不改；
+    // 将来改这条语义时，本行的 1/1 会红）。
+    assert.deepEqual(recorder.warnings, [], `${label}：受众不适用是设计行为，不得告警`)
+  }
 })
 
 // ───────────────────────── 四、when 门控与每轮预算 ─────────────────────────

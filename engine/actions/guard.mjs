@@ -1,7 +1,19 @@
 import { labelOf, createMask, RUN_CODE } from './shared.mjs'
 
+/** guard 受众的合法取值（唯一来源）：省略 / `null` / `''` = 通用，`main` = 仅主会话，`subagent` = 仅子代理。 */
+const GUARD_AUDIENCES = new Set([undefined, null, '', 'main', 'subagent'])
+
 export function prepareGuard(action, plugin) {
   const label = labelOf(action)
+  // 保存 / 导入即拒绝（与 createMask 同处）：拼错取值今天会静默退化成「通用」。
+  if (!GUARD_AUDIENCES.has(action.audience)) {
+    throw new TypeError(`${plugin}: ${label}.audience must be main or subagent (null / 省略 = 通用) — got ${JSON.stringify(action.audience)}`)
+  }
+  // `audience:'subagent'` 只在子代理分支注册，而子代理分支还要求 `includeSubagents:true`；
+  // 缺它时两条分支都不注册（永不生效），所以这是矛盾组合而非缺省。
+  if (action.audience === 'subagent' && action.includeSubagents !== true) {
+    throw new TypeError(`${plugin}: ${label}: audience:'subagent' 需配 includeSubagents:true — 缺省时该 guard 在主会话与子代理两侧都不注册`)
+  }
   const mask = createMask(action.mask ?? action, `${label}.mask`, plugin)
   const includeSubagents = action.includeSubagents === true
   const reasonFor = (toolName) => String(action.reason ?? `${label}: tool ${JSON.stringify(toolName)} is denied by action`)
