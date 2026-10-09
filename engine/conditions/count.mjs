@@ -1,5 +1,5 @@
 import { MAX_TRACKED_SESSIONS, extractText, isDelegated } from '../shared.mjs'
-import { SURFACE_MESSAGE_TYPES, currentEvents, historyEvents } from '../history.mjs'
+import { SURFACE_MESSAGE_TYPES, currentEvents, historyEvents, viewRestricted } from '../history.mjs'
 import { isSuccessfulCompactionEnd } from '../compaction-epoch.mjs'
 import { sessionOf } from './subject.mjs'
 import { boundOf, optionalBoolean } from './values.mjs'
@@ -31,8 +31,9 @@ const TURN_EVENT = 'turn/start'
  *    `turn/start` 不是 surface 承载类型，读**完整历史**，「重启/恢复/重挂后同一结果」由此保住。
  *  - 冷启动：首次判定冷扫重建（重启/恢复/重挂后同一结果），之后 O(1)；`observe` 是增量喂入，
  *    **只喂已判定过的会话**，避免「冷扫 + 增量」重复计数。成功压缩或 surface 代次推进时条目
- *    整体作废、下次求值重建——压缩后 `every: N` 的节奏随之重置，可能立刻再命中一次（已接受的
- *    用户可见行为，见 CHANGELOG）。
+ *    整体作废、下次求值重建——这条复位只对**消息类**信号生效（它读可见上下文），log-only
+ *    信号重建读完整历史、压缩不改变它；压缩后 `every: N` 的节奏随之重置，可能立刻再命中一次
+ *    （已接受的用户可见行为，见 CHANGELOG）。
  *  - 上下限：`count >= min`（声明时）且 `count <= max`（声明时）。至少要声明一侧，
  *    否则该判定恒真——那是把配置错误伪装成命中。
  *  - 取不到会话 = 无事件 = 计数 0（与空会话同一语义，不发明数据）；无 `id` 的会话
@@ -153,12 +154,15 @@ export function createCountPredicate(options = {}) {
   predicate.kind = 'count'
   predicate.observe = (session, event) => {
     if (session?.id === undefined) return
+    // 失效条件必须与它读的视图一致：只有消息类信号按可见上下文计数，压缩复位对
+    // log-only 信号（重建读 `historyEvents`）不改变任何结果，白白触发一次重建。
+    const flagged = SURFACE_MESSAGE_TYPES.has(signal.type)
     // 成功压缩换掉了可见历史，而条目按**全部** durable 事件累加过（含被遮蔽的），无法反演
     // → 整体清条目、下次求值重建（宿主没暴露 `replaceGeneration` 时这是唯一的复位信号）。
-    if (isSuccessfulCompactionEnd(event)) { state.delete(session.id); return }
-    // 消息类信号的重建路径读 `currentEvents`，那里没有 `turn/start` 这类 log-only 事件；
+    if (flagged && isSuccessfulCompactionEnd(event)) { state.delete(session.id); return }
+    // 视图受限时重建路径读 `currentEvents`，那里没有 `turn/start` 这类 log-only 事件；
     // 增量若照单全收就会靠它推进当前轮，同一会话两种结论（「冷启动 == 增量」失效）。
-    if (SURFACE_MESSAGE_TYPES.has(signal.type) && !SURFACE_MESSAGE_TYPES.has(event?.type)) return
+    if (flagged && viewRestricted(session) && !SURFACE_MESSAGE_TYPES.has(event?.type)) return
     const entry = state.get(session.id)
     if (entry !== undefined) applyEvent(entry, event)
   }

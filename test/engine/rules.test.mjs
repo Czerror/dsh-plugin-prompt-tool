@@ -17,6 +17,7 @@ import { ruleFrame, ruleMatches, actionMatches } from '../../engine/conditions/e
 import { createNameListPredicate, subjectOf, FACT_PREDICATE_SUBJECTS, createAnchorPredicate, createCountPredicate, createSessionStatePredicate } from '../../engine/conditions/index.mjs'
 import { UNAVAILABLE } from '../../engine/conditions/availability.mjs'
 import { lastWorldBookDiagnostics, stChatMessages } from '../../engine/st-world-book.mjs'
+import { currentEvents, viewRestricted } from '../../engine/history.mjs'
 
 function harness(services = {}) {
   const events = new Map()
@@ -1481,6 +1482,103 @@ test('T36③：无 id 的消息在重复 seq 下只计一次（chat.length 不�
   }
   const session = { id: 't36-chat', header: {}, snapshotEvents: () => state.log, surface: { get nodes() { return state.nodes } } }
   assert.equal(stChatMessages(session).length, 1, '同一 seq 占两个位置只算一条：它驱动 delay / sticky 窗口与概率 generation')
+})
+
+/**
+ * A1①：锚定记忆的失效判据必须与它读的视图同源。非压缩的位置替换（区域编辑 / 手动裁剪 /
+ * 插件重写）没有 `compaction/end` 可观察，只推进 surface 的 `replaceGeneration`——记忆若只看
+ * 压缩事件，旧结论就被钉在一次已经不在眼前的上下文上。真值源：`visibleSession` 桩里
+ * `nodes` / `replaceGeneration` 与宿主 `foldSurface` 同语义（只 replace 换节点、推代次）。
+ */
+test('A1①：非压缩的位置替换推进代次后，锚定记忆随之作废（兜底轮数按新上下文重数）', () => {
+  const state = {
+    log: [
+      { type: 'assistant/message', seq: 0, data: { message: { content: [{ type: 'reasoning', text: 'We start.' }] } } },
+      { type: 'assistant/message', seq: 1, data: { message: { content: [{ type: 'text', text: 'AFTER' }] } } },
+    ],
+    nodes: [0],
+    generation: 0,
+  }
+  const session = visibleSession('a1-anchor-replace', state)
+  const predicate = createAnchorPredicate({ keys: ['We'], fallbackAfter: 1 })
+  assert.equal(predicate(session), true, '可见首条 assistant 推理带锚定词 → 确认并入记忆')
+  // 位置替换把那条推理移出可见节点，代次 +1，**没有** compaction/end 事件。替代品只有一条
+  // 可见 assistant 消息（fallbackAfter=1 → 要 2 条才兜底），所以正确结论是 false。
+  state.nodes = [1]
+  state.generation = 1
+  assert.equal(predicate(session), false, '代次推进即失效：按新可见上下文重判，不被旧确认钉住')
+  assert.equal(predicate(session), createAnchorPredicate({ keys: ['We'], fallbackAfter: 1 })(session), '与重构谓词同结果')
+})
+
+/**
+ * A1②：`observe` 的过滤条件必须与 `currentEvents` 的降级判据同源。视图**没有**受限时
+ * （缺 surface / `nodes` 非数组 / 节点越界）消息类信号读的也是完整历史，`turn/start` 看得见；
+ * 再把它滤掉，增量路径的当前轮就停在旧值（T36② 的同一处破口，只是换到降级宿主上）。
+ */
+test('A1②：视图未受限时，消息类信号的增量不滤 log-only 事件（与冷启动同结论）', () => {
+  const events = []
+  // 建条目时日志还是空的：后续只能靠增量推进，重建路径帮不上忙（条目住在状态里、真相在事件流里）。
+  // 陷阱：`observe` **只喂已建过条目的会话**，先 observe 后首次求值等于什么都没喂（首次求值冷扫重建），
+  // 断言会假绿——所以下面一律「先求值建条目，再 observe」。
+  const build = (session) => {
+    const predicate = createCountPredicate({ of: 'assistant-message', per: 'turn', min: 1 })
+    assert.equal(predicate(session), false, '建条目：当前轮还没有可见 assistant 消息')
+    return predicate
+  }
+  const turnStart = { type: 'turn/start', seq: 0, data: { turn: 1 } }
+  const previousTurn = { type: 'assistant/message', seq: 1, data: { turn: 0, message: { content: [{ type: 'text', text: 'A' }] } } }
+  // 无 surface：视图退回完整历史，`turn/start` 必须照常把增量的当前轮推到 1。
+  const noSurface = { id: 'a1-count-degraded', header: {}, snapshotEvents: () => events }
+  const incremental = build(noSurface)
+  events.push(turnStart, previousTurn)
+  for (const event of events) incremental.observe(noSurface, event)
+  assert.equal(incremental(noSurface), false, '增量拿 `turn/start` 推进到 turn 1，带 turn 0 的那条不算当前轮')
+  assert.equal(incremental(noSurface), createCountPredicate({ of: 'assistant-message', per: 'turn', min: 1 })(noSurface), '降级视图下「冷启动 == 增量」不得再被破坏')
+
+  // `nodes` 非数组同样是降级：过滤只服务于**真正受限**的视图，不是「有 surface 就滤」。
+  const shape = { nodes: 'not-an-array' }
+  const flatSession = { id: 'a1-count-flat-nodes', header: {}, snapshotEvents: () => events, surface: shape }
+  const flat = build(flatSession)
+  for (const event of events) flat.observe(flatSession, event)
+  assert.equal(flat(flatSession), false, '`nodes` 非数组 = 退回完整历史，`turn/start` 照收')
+})
+
+/**
+ * A1④：`viewRestricted` 的边界——空 `nodes` 是「当前上下文为空」，**不是**降级。`currentEvents`
+ * 与 count 的过滤读同一份判据，所以两边的答案必须都是「受限」：消息类信号计数 0、视图为空数组。
+ */
+test('A1④：空 nodes 是受限的空上下文，不是降级（count 与 currentEvents 同判据）', () => {
+  const events = [
+    { type: 'tool/result', seq: 0, data: { message: {} } },
+    { type: 'tool/result', seq: 1, data: { message: {} } },
+  ]
+  const session = { id: 'a1-count-empty-nodes', header: {}, snapshotEvents: () => events, surface: { nodes: [] } }
+  assert.equal(viewRestricted(session), true, '空 nodes：surface 在场且没有越界节点 → 受限')
+  assert.deepEqual(currentEvents(session), [], '受限的空上下文：不退回完整历史')
+  assert.equal(createCountPredicate({ of: 'tool-result', min: 1 })(session), false, '消息类信号按当前上下文计 = 0（完整历史里那 2 条不算）')
+})
+
+/**
+ * A1③：压缩复位只对**消息类**信号生效——log-only 信号的重建读 `historyEvents`，压缩不改变它，
+ * 复位只会多制造一次「结果完全相同」的重建。真值源：`snapshotEvents` 的读次数（重建的唯一入口）。
+ */
+test('A1③：压缩复位不落在 log-only 信号上（重建读完整历史，压缩不改变它）', () => {
+  let reads = 0
+  const logReads = () => { reads += 1; return log }
+  const log = [
+    { type: 'tool/call', seq: 0, data: {} },
+    { type: 'tool/call', seq: 1, data: {} },
+  ]
+  const session = { id: 'a1-count-log-only', header: {}, snapshotEvents: logReads }
+  const calls = createCountPredicate({ of: 'tool-call', min: 2 })
+  assert.equal(calls(session), true, '冷扫建条目：完整历史里 2 次 tool/call')
+  reads = 0
+  calls.observe(session, { type: 'compaction/end', seq: 2, data: {} })
+  calls.observe(session, { type: 'tool/call', seq: 3, data: {} })
+  assert.equal(calls(session), true, '计数不含压缩事件，仍按完整历史增量累积')
+  // 陷阱：复位只在**下次求值**重建，读数必须放在求值**之后**——放在 observe 之后就永远读到 0，
+  // 条目被压缩清掉也不红（这条断言初版正是这样假绿的）。
+  assert.equal(reads, 0, 'log-only 信号：压缩不复位、增量照收 → 一次快照都不读')
 })
 
 test('T36④：从种子出发把 decision 改成 deny，空串 reason 回退引擎缺省原因', async () => {

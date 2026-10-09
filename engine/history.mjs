@@ -18,6 +18,17 @@ export function historyEvents(session) {
 }
 
 /**
+ * 当前上下文是否**真的**受限：surface 在场（`nodes` 是数组）且每个节点都指向日志里的事件。
+ * 判据只有这一处 —— `currentEvents()` 的降级与消费点的视图口径都由它回答，避免两边静默分叉。
+ * 空 `nodes` 是受限（可见上下文为空），不是降级。
+ * `events` 是调用方已经取好的 `historyEvents(session)`（可选，省掉一次快照读）。
+ */
+export function viewRestricted(session, events = historyEvents(session)) {
+  const nodes = session?.surface?.nodes
+  return Array.isArray(nodes) && nodes.every(seq => events[seq] !== undefined)
+}
+
+/**
  * 当前模型可见上下文：按 surface 节点序取出对应事件。
  *
  * `surface.nodes` 存的是 log seq，而 seq 就是 log 下标（`snapshotEvents()` 返回 [0, seq) 的切片），
@@ -32,15 +43,8 @@ export function historyEvents(session) {
  */
 export function currentEvents(session) {
   const events = historyEvents(session)
-  const nodes = session?.surface?.nodes
-  if (!Array.isArray(nodes)) return events
-  const visible = []
-  for (const seq of nodes) {
-    const event = events[seq]
-    if (event === undefined) return events
-    visible.push(event)
-  }
-  return visible
+  if (!viewRestricted(session, events)) return events
+  return session.surface.nodes.map(seq => events[seq])
 }
 
 /**
