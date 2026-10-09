@@ -23,8 +23,10 @@ import { LEGACY_PROMPT_PARAM_KEYS } from '../shared/legacy-prompt-params.ts'
 import { compileRules, injectionConfigSpec } from '../../engine/rule-spec.mjs'
 // @ts-expect-error 离线转换读取旧声明的真实执行点。
 import { actionExecutionPoint } from '../../engine/actions.mjs'
-// @ts-expect-error 与旧条件层的缺省匹配对象同源。
-import { createPromptConfigs, loadPromptConfigFiles } from '../../engine/schema.mjs'
+// @ts-expect-error 与旧条件层的缺省匹配对象同源；patch / unset 的合法键集也由引擎校验器派生。
+import { createPromptConfigs, loadPromptConfigFiles, assertLlmCallPatch } from '../../engine/schema.mjs'
+// @ts-expect-error 「固定注册效果」判据只在引擎实现一份。
+import { isFixedRegistration } from '../../engine/rule-spec.mjs'
 // @ts-expect-error 旧物化文件的顺序只在离线预检时读取。
 import { FILE_SEQUENCE } from '../../engine/order.mjs'
 
@@ -66,6 +68,24 @@ function rebaseTemplate(config: PromptConfigSpec, directory: string, previousBas
   return { ...config, templateFile: `./${path.replaceAll(sep, '/')}` }
 }
 
+/** 旧 patch / unset 里不属于 LlmCallConfig 的键在迁移期剔除：新动作层白名单对这些键出现即拒，
+ *  而它们在旧运行时本就不生效。合法键集与值规则都问引擎的 assertLlmCallPatch，不另抄一份名单。 */
+function stripForeignLlmCallKeys(action: Record<string, unknown>, label: string): void {
+  for (const field of ['patch', 'unset']) {
+    if (!record(action[field])) continue
+    const kept: Record<string, unknown> = {}
+    for (const [key, value] of Object.entries(action[field] as Record<string, unknown>)) {
+      try { assertLlmCallPatch({ [key]: value }, `${label}.${field}`) } catch (error) {
+        // ponytail: 靠引擎报错文本区分「非成员键」与「非法值」；文案改了只会退化成两者一起 fail loud。
+        if (!(error instanceof Error) || !error.message.endsWith('is not a LlmCallConfig field')) throw error
+        continue
+      }
+      kept[key] = value
+    }
+    action[field] = kept
+  }
+}
+
 export function convertLegacyModuleRules(source: Record<string, unknown>, options: { directory?: string } = {}): { rules: RuleDefinition[]; configOrder: Record<string, number>; consumedLegacyKeys: string[] } {
   if (!record(source)) throw new TypeError('模块定义必须是对象')
   const directory = options.directory
@@ -105,7 +125,9 @@ export function convertLegacyModuleRules(source: Record<string, unknown>, option
   }
   for (const [index, config] of configs.entries()) {
     const rebased = directory === undefined ? config : rebaseTemplate(config, directory, pathToFileURL(join(root!, '.engine', 'prompt-config-engine.mjs')))
-    append(promptConfigToRule(rebased), index * 10)
+    const rule = promptConfigToRule(rebased)
+    for (const action of rule.then) stripForeignLlmCallKeys(action as Record<string, unknown>, `action ${String(action.id)}`)
+    append(rule, index * 10)
   }
   for (const [index, raw] of ((source.triggers ?? []) as unknown[]).entries()) {
     if (!record(raw) || typeof raw.id !== 'string' || raw.id.length === 0) throw new Error('旧声明必须有唯一 id')
@@ -122,6 +144,7 @@ export function convertLegacyModuleRules(source: Record<string, unknown>, option
       const point = actionExecutionPoint(action)
       if (raw.channel !== point.channel || (raw.phase !== undefined && raw.phase !== point.phase)) throw new Error(`旧声明 ${raw.id} 的执行点不合法`)
       const next = structuredClone(action)
+      const actionId = typeof next.id === 'string' && next.id.length > 0 ? next.id : `action-${actionIndex + 1}`
       if (next.kind === 'inject-text' && record(next.config)) {
         const converted = promptConfigToRule(next.config as unknown as PromptConfigSpec)
         if (converted.enabled === false && rawActions.length !== 1) throw new Error(`声明 ${raw.id} 的动作局部停用不能无损提升为整卡开关；请先拆分声明`)
@@ -130,20 +153,20 @@ export function convertLegacyModuleRules(source: Record<string, unknown>, option
         const payload = converted.then[0]?.config
         const config = { ...next.config, ...(record(payload) ? payload : {}) }
         delete config.enabled
-        const params = record(config.params) ? config.params : {}
-        if (params.complete !== true && params.suppressRuntimeContext !== true) {
+        if (!isFixedRegistration(config)) {
           for (const key of ['audience', 'modelScope', 'promotion', 'subject', 'match']) delete config[key]
         }
         next.config = config
       }
       if (next.kind === 'request-params') {
+        stripForeignLlmCallKeys(next, `action ${actionId}`)
         const modelScope = Object.hasOwn(next, 'modelScope') ? next.modelScope : 'pro'
         const scope = { ...(next.audience == null || next.audience === '' ? {} : { audience: next.audience }), ...(modelScope == null || modelScope === '' || modelScope === 'all' ? {} : { modelScope }) }
         if (Object.keys(scope).length > 0) liftCondition({ scope })
         delete next.audience; delete next.modelScope
       }
       if (next.kind === 'inject-text' && record(next.config) && directory !== undefined) next.config = rebaseTemplate(next.config as unknown as PromptConfigSpec, directory, pathToFileURL(join(directory, 'triggers.yml')))
-      return { ...next, id: typeof next.id === 'string' && next.id.length > 0 ? next.id : `action-${actionIndex + 1}`, kind: action.kind, channelOrder: typeof raw.channelOrder === 'number' ? raw.channelOrder : 0, ...(raw.waterfallPosition === undefined ? {} : { waterfallPosition: raw.waterfallPosition as RuleAction['waterfallPosition'] }) }
+      return { ...next, id: actionId, kind: action.kind, channelOrder: typeof raw.channelOrder === 'number' ? raw.channelOrder : 0, ...(raw.waterfallPosition === undefined ? {} : { waterfallPosition: raw.waterfallPosition as RuleAction['waterfallPosition'] }) }
     })
     // 旧声明逐动作注册，after-next 的执行次序受宿主 listener 次序影响；不能静默假定数组顺序等价。
     if (actions.length > 1 && actions.some(action => actionExecutionPoint(action).phase === 'after-next')) throw new Error(`声明 ${raw.id} 含多个 after-next 动作，须先核对实际执行顺序再迁移`)

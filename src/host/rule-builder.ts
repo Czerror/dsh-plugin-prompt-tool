@@ -7,6 +7,8 @@ import type { PromptConfigSpec } from './prompt-configs.ts'
 import { packageEngineDir } from './manifest.ts'
 // @ts-expect-error 与旧条件层的缺省匹配对象同源。
 import { LAYER_DEFAULT_SUBJECT } from '../../engine/schema.mjs'
+// @ts-expect-error 「固定注册效果」判据只在引擎实现一份。
+import { isFixedRegistration } from '../../engine/rule-spec.mjs'
 
 const record = (value: unknown): value is Record<string, unknown> => value !== null && typeof value === 'object' && !Array.isArray(value)
 const condition = (items: RuleCondition[]): RuleCondition | undefined => items.length === 0 ? undefined : items.length === 1 ? items[0] : { all: items }
@@ -64,7 +66,7 @@ export function promptConfigToRule(config: PromptConfigSpec): RuleDefinition {
   if (!record(config) || typeof config.id !== 'string' || config.id.length === 0) throw new TypeError('旧提示词配置必须有 id')
   config = migrateFillerDefaults(config)
   const layer = config.layer ?? 'pre-step'
-  const fixed = config.params?.complete === true || config.params?.suppressRuntimeContext === true
+  const fixed = isFixedRegistration(config, layer)
   const gates: RuleCondition[] = []
   const payload = structuredClone(config) as PromptConfigSpec & Record<string, unknown>
   for (const key of ['name', 'enabled', 'group', 'exclusive', 'sequence', 'fieldSources', 'origin']) delete payload[key]

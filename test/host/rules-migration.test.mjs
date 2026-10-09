@@ -97,7 +97,10 @@ async function policyMigrationChecks() {
   const gated = convertLegacyModuleRules({ id: 'gate', modules: [], triggers: [{ id: 'gate', channel: 'agent/request', when: { all: [{ phase: { promoteGate: true, promoted: true } }, { not: { phase: { promoteGate: false, promoted: false } } }] }, do: { kind: 'request-params', patch: { maxTokens: 512, note: 'promoteGate: true' } } }] }).rules[0]
   assert.deepEqual(gated.if.all[0].all[0].phase, { promoteGate: true, promoted: true, reasoningPattern: '\\bwe\\b', reasoningNegativePattern: '\\blet me\\b', reasoningFlags: 'gi' })
   assert.equal(gated.if.all[0].all[1].not.phase.reasoningPattern, undefined, '未启用promoteGate不携入业务正则')
-  assert.equal(gated.then[0].patch.note, 'promoteGate: true', '不对正文字符串做全文替换')
+  assert.deepEqual(gated.then[0].patch, { maxTokens: 512 }, '迁移按 LlmCallConfig 键集保留合法键（maxTokens）、剔除非法键（note），不做全文替换')
+  const agentRequest = convertLegacyModuleRules({ modules: [], promptConfigs: [{ id: 'request', layer: 'agent-request', params: { patch: { maxTokens: 512, note: 'promoteGate: true' }, unset: { temperature: 0.2, note: 'unused' } } }] }).rules[0]
+  assert.deepEqual(agentRequest.then[0].patch, { maxTokens: 512 }, '旧 agent-request 配置的 patch 非 LlmCallConfig 键同样在迁移期剔除')
+  assert.deepEqual(agentRequest.then[0].unset, { temperature: 0.2 }, '旧 agent-request 配置的 unset 非 LlmCallConfig 键同样在迁移期剔除')
   const events = []
   const session = { id: 'gated', header: {}, snapshotEvents: () => events }
   const agent = { session, options: { model: 'deepseek-pro' } }
