@@ -42,3 +42,19 @@ export function currentEvents(session) {
   }
   return visible
 }
+
+/**
+ * surface 只承载**消息类**事件——`system/message`、`developer/message`、`user/message`、
+ * `assistant/message`、`tool/result`（真值源：宿主 `packages/core/session/src/surface.ts` 的
+ * `SURFACE_EVENT_TYPES`）。非该集合的事件（`tool/call`、`turn/start`、`compaction/end`）永远不是
+ * surface 节点，按 `currentEvents()` 读它们只会读到空 —— 它们只能按完整历史读。
+ * ponytail: 宿主扩大 `SURFACE_EVENT_TYPES` 时这里要同步，否则新的消息类事件会被当成 log-only
+ * （count 多计、session 恒不命中）。
+ */
+export const SURFACE_MESSAGE_TYPES = new Set([
+  'system/message',
+  'developer/message',
+  'user/message',
+  'assistant/message',
+  'tool/result',
+])

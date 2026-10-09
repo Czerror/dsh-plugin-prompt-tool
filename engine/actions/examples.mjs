@@ -3,8 +3,9 @@ export const ACTION_EXAMPLES = {
   assembly: { target: {} },
   // 工具裁决的种子取引擎既有缺省（`phase: 'pre'`、`decision: 'allow'`、`action: 'accept'`）；
   // `action` / `reason` / `text` 只在对方相生效（pre 读 decision，post 读 action），
-  // 写成中性值不替用户选业务值。`toolNames` 必须是逗号分隔字符串：`parseToolNames` 只认字符串，
-  // 数组会被解析成空 = 匹配所有工具，把定向门悄悄扩大成全工具门（同 schema.mjs 的层参数归一）。
+  // 写成中性值不替用户选业务值。`toolNames` 的「匹配所有工具」是**空串或空数组**
+  // （`shared.mjs#toolNameSet` 的 `names.size === 0` → `undefined`）；种子之外的两种形态都能
+  // 解析成定向名单：字符串走 `parseToolNames`，数组直接进 `NAME_LIST.parse`（同 schema.mjs 的层参数归一）。
   decision: { phase: 'pre', decision: 'allow', action: 'accept', reason: '', text: '', toolNames: '' },
   'append-context': { mode: 'context', text: '' },
   guard: { mask: { deny: [] } },

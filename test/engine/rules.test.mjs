@@ -1223,8 +1223,11 @@ test('T31：规则卡的动作种子覆盖 catalog 声明的可编辑字段，�
   // 用户追加面：decision / append-context 的工具链参数在卡里结构化可编辑。
   assert.deepEqual(ACTION_EXAMPLES.decision, { phase: 'pre', decision: 'allow', action: 'accept', reason: '', text: '', toolNames: '' })
   assert.deepEqual(ACTION_EXAMPLES['append-context'], { mode: 'context', text: '' })
-  // 空 toolNames 是「匹配所有工具」而不是「不匹配任何工具」——定向门必须自己列名单。
+  // 「匹配所有工具」的真实条件是**空串或空数组**（`names.size === 0` → `undefined`）——不是
+  // 「数组会被解析成空」：`toolNameSet` 对数组直接交 `NAME_LIST.parse`，定向名单照样成立。
   assert.equal(toolNameSet('', 'probe', 'probe.toolNames'), undefined)
+  assert.equal(toolNameSet([], 'probe', 'probe.toolNames'), undefined)
+  assert.deepEqual(toolNameSet(['bash', 'run_code', 'bash'], 'probe', 'probe.toolNames'), new Set(['bash', 'run_code']))
 })
 
 /**
@@ -1278,6 +1281,7 @@ test('T6a：session 谓词的 present 镜像是当前上下文，不是「本会
       { type: 'compaction/end', seq: 2, data: {} },
       // 宿主的压缩替身本身就是一条 user/message（`compaction-basic/src/region.ts:506`，带 replace surfaceOp）。
       { type: 'user/message', seq: 3, data: { message: {} } },
+      { type: 'tool/call', seq: 4, data: {} },
     ],
     nodes: [0, 1],
     generation: 0,
@@ -1294,6 +1298,10 @@ test('T6a：session 谓词的 present 镜像是当前上下文，不是「本会
   // 存量首轮守卫 `templates/67-inbox-prepend.yml` 的 `{type: user/message, present: false}` 不受影响：
   // 压缩替身是 user/message，可见上下文里仍然有该类型 → 压缩后**不**重放首轮。
   assert.equal(createSessionStatePredicate({ type: 'user/message', present: false })(session), false)
+  // 非 surface 承载的类型永远不是 surface 节点：按当前上下文判会恒 false（present:true）/ 恒 true
+  // （present:false），配置能编译能挂载却永不按意图命中 —— 这类类型按完整历史判。
+  assert.equal(createSessionStatePredicate({ type: 'tool/call', present: true })(session), true, 'tool/call 不是 surface 节点，但本会话发生过 → 命中')
+  assert.equal(createSessionStatePredicate({ type: 'tool/call', present: false })(session), false)
 })
 
 test('T6a：turn-stop 只匹配当前可见的最后一条 assistant 正文', async () => {
@@ -1385,6 +1393,21 @@ test('T6a：count 消息类信号按当前上下文，log-only 信号按完整�
   replaced.nodes = [1]
   replaced.generation = 1
   assert.equal(results(replacedSession), false, '代次推进后按当前上下文重算（1 < 2，全量日志里仍有 2 条）')
+
+  // 位置替换后同一事件可在 `nodes` 里占多个位置：计数必须按 seq 去重，否则消息类信号虚高
+  // （`every: N` 提前触发、`count <= max` 永不触发）；log-only 信号读完整历史，nodes 与它无关。
+  const dup = {
+    log: [
+      { type: 'tool/result', seq: 0, data: { message: {} } },
+      { type: 'tool/call', seq: 1, data: {} },
+      { type: 'tool/call', seq: 2, data: {} },
+    ],
+    nodes: [0, 0],
+    generation: 0,
+  }
+  const dupSession = visibleSession('t6a-count-dup', dup)
+  assert.equal(createCountPredicate({ of: 'tool-result', min: 2 })(dupSession), false, '同一 seq 占两个位置也只算一条 tool/result')
+  assert.equal(createCountPredicate({ of: 'tool-call', min: 2 })(dupSession), true, 'log-only 读完整历史：nodes 重复不改变 tool/call 计数')
 
   // 代次不可见（surface 只给 nodes）时，成功压缩那条 durable 事件是**唯一**复位信号：
   // 条目按即将被遮蔽的消息累加过，必须在它到达时作废、下次求值重建。

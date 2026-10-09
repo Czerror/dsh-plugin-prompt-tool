@@ -1,5 +1,5 @@
 import { MAX_TRACKED_SESSIONS, extractText, isDelegated } from '../shared.mjs'
-import { currentEvents, historyEvents } from '../history.mjs'
+import { SURFACE_MESSAGE_TYPES, currentEvents, historyEvents } from '../history.mjs'
 import { isSuccessfulCompactionEnd } from '../compaction-epoch.mjs'
 import { sessionOf } from './subject.mjs'
 import { boundOf, optionalBoolean } from './values.mjs'
@@ -18,21 +18,6 @@ const MAX_TRACKED_TURNS = 8
 
 /** 轮边界事件：`per: 'turn'` 的当前轮由它与计数信号自身的轮号共同推进。 */
 const TURN_EVENT = 'turn/start'
-
-/**
- * surface 只承载**消息类**事件——`system/message`、`developer/message`、`user/message`、
- * `assistant/message`、`tool/result`（真值源：宿主 `packages/core/session/src/surface.ts` 的
- * `SURFACE_EVENT_TYPES`）。非该集合的事件（`tool/call`、`turn/start`）永远不是 surface 节点，
- * 迁到当前上下文只会数到 0 —— 它们只能按完整历史计。
- * ponytail: 宿主扩大 `SURFACE_EVENT_TYPES` 时这里要同步，否则新的消息类事件会被当成 log-only 多计。
- */
-const SURFACE_MESSAGE_TYPES = new Set([
-  'system/message',
-  'developer/message',
-  'user/message',
-  'assistant/message',
-  'tool/result',
-])
 
 /**
  * 计数判断：次数 / 字符数 / 轮次，带上下限与**冷启动重建**。
@@ -137,7 +122,16 @@ export function createCountPredicate(options = {}) {
     : (entry.lastTurn === undefined ? 0 : entry.turns.get(entry.lastTurn) ?? 0))
   const rebuild = (session) => {
     const entry = fresh(generationOf(session))
-    for (const event of view(session)) applyEvent(entry, event)
+    // 位置替换后同一事件可在 `surface.nodes` 里占多个位置（`history.mjs` 头部）：按条数直数会虚高，
+    // `every: N` 提前触发。增量 `observe` 一次只收一条新事件，无需去重。
+    const seen = new Set()
+    for (const event of view(session)) {
+      if (event?.seq !== undefined) {
+        if (seen.has(event.seq)) continue
+        seen.add(event.seq)
+      }
+      applyEvent(entry, event)
+    }
     return entry
   }
   const entryOf = (session) => {
