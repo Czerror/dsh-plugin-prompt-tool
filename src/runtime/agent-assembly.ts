@@ -284,7 +284,8 @@ export function createAgentAssembly(ctx: Context, options: AgentAssemblyOptions)
     else ctx.logger?.warn?.(message)
   }
   // 跨模块重复身份按「身份 → 模块集」只报一次：反复重装（每次保存、每个新 Agent）不刷屏；
-  // 装上第二处（新模块）时再加报一次。
+  // 装上第二处（新模块）时再加报一次。集合建在 mount 工厂级，故跨 refresh()（切预设、重装）
+  // 存活——同一重复不再告警是刻意的，要重新看到需重载插件。
   const reportedDuplicates = new Set<string>()
   const warnOnce = (message: string): void => {
     if (reportedDuplicates.has(message)) return
