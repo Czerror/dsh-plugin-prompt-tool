@@ -349,6 +349,7 @@ workspace-pages.ts 是页面元数据的唯一来源。默认页为 features，�
 | 导入预览与提交阶段 | use-import-preview-flow | 每次 `run()` 独立生命周期；卸载结束等待、不悬挂 Promise |
 | 创建意图、菜单、删除/导入确认、拖拽 | 对应 feature | 仍随页面卸载失效；不恢复或重放危险操作 |
 | 保存队列、revision、草稿版本 | save-queue + store | 工作台挂载期 |
+| 规则判定计数（状态栏「N 不可用」） | `/rule-diagnostics` 只读端点 + 局部 hook | 工作台数据就绪后读一次；不进 store、不轮询，读取失败按 0 处理（不显示该段） |
 | 大文本和角色卡原文件 | 文件通道/bridge | 不进入 settings descriptor |
 | 技能调用策略 / 技能文件夹引用 | 技能文件（`SKILL.md` 的两个官方键）+ 插件状态文件（`$DSH_HOME/skills/.system/prompt-tool/skills.yml`，只存 `folders`） | 停用 = 改写该技能 frontmatter 的 `disable-model-invocation` / `user-invocable`（正文与其余字段逐字保留）；引用只登记路径。技能实体归官方各技能根所有，插件不搬迁。契约见 [skills-management.md](skills-management.md) |
 
