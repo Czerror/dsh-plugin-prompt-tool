@@ -76,6 +76,7 @@ test('st-render：generationKey 与 condition 同源——空串来源不参与�
 /**
  * 桩：`log` 是真值源，`surface.nodes` 按宿主 `foldSurface` 语义维护——只有 replace 会移除节点。
  * 与 `prompt-config-engine.test.mjs` 的同名桩同义，这里只保留本文件用到的动作。
+ * 本桩对每类事件都记节点（宿主只对消息类记），现在只有世界书用例的遮蔽场景依赖节点。
  */
 function visibleSession(id) {
   const log = []
@@ -92,7 +93,7 @@ function visibleSession(id) {
   }
 }
 
-test('st-render：generationKey 只看模型可见历史——重复 seq 折叠成一代，压缩遮蔽后换帧', () => {
+test('st-render：log-only 事件推进帧键——tool/call 与成功压缩都换帧，重复节点不换帧', () => {
   // {{incvar}} 只在模板真正求值时递增，是「帧被复用还是被重建」的可观察接缝。
   const configs = attachStRenderers([{
     id: 'frame-surface', layer: 'system-section', promotion: 'none', strategy: 'static',
@@ -106,26 +107,76 @@ test('st-render：generationKey 只看模型可见历史——重复 seq 折叠�
 
   store.push({ type: 'user/message', seq: 0, data: { message: message('u0', '第一句') } })
   assert.equal(frameOf(), '1', '首帧求值一次')
+  // `tool/call` 是 log-only 事件（宿主 `SURFACE_EVENT_TYPES` 不含它）：只进日志，但参与帧键。
   store.push({ type: 'tool/call', seq: 1, data: { id: 'call-1' } })
   const withTool = frameOf()
+  assert.notEqual(withTool, '1', 'log-only 的 tool/call 推进帧')
 
-  // 位置替换：同一 seq 在 nodes 里占两个位置。tool/call 分支按条数累加会让同一可见历史算出
-  // 第二个 generation，帧被无谓重建（连续两次求值会给出不同值）。
+  // 位置替换：同一 seq 在 nodes 里占两个位置。帧只读日志，节点重复不再可能扰动 generation
+  // （改前靠 `seenSeq` 折叠，现在日志本身唯一）。
   store.session.surface.nodes.push(1)
   const duplicateFrame = frameOf()
   const duplicateFrameAgain = frameOf()
-  assert.equal(duplicateFrameAgain, duplicateFrame, '重复 seq 折叠：同一可见历史的 generation 不变，帧必须复用')
-  assert.equal(duplicateFrame, withTool, '同一可见历史（含那次 tool/call）仍是同一代')
+  assert.equal(duplicateFrameAgain, duplicateFrame, '重复节点不换帧：同一日志仍是同一代')
+  assert.equal(duplicateFrame, withTool, '同一日志（含那次 tool/call）仍是同一代')
 
   store.push({ type: 'user/message', seq: 2, data: { message: message('u1', '第二句') } })
   const changedFrame = frameOf()
-  assert.notEqual(changedFrame, duplicateFrameAgain, '可见历史真的变化时必须换帧（对照：换帧语义仍在）')
+  assert.notEqual(changedFrame, duplicateFrameAgain, '历史真的变化时必须换帧（对照：换帧语义仍在）')
 
-  // 成功压缩：可见节点塌缩成 `compaction/end` + 摘要 → 模型看到的是新的一段。
+  // 成功压缩：`compaction/end` 是 log-only 的帧边界，推进代次（surface 只剩摘要节点）。
   // 换帧的可观察证据是这一步重新求值了模板（generation 变才丢掉 frame.text；不变则沿用缓存值）。
   store.compact(message('summary', '摘要'))
   const compactedFrame = frameOf()
-  assert.notEqual(compactedFrame, changedFrame, '压缩遮蔽旧历史后 generation 变、模板重新求值')
+  assert.notEqual(compactedFrame, changedFrame, '成功压缩推进边界后 generation 变、模板重新求值')
+})
+
+test('st-render：正常路径与降级路径对同一历史给出同一 generation（surface 在场不改变帧）', () => {
+  const configs = attachStRenderers([{
+    id: 'frame-parity', layer: 'system-section', promotion: 'none', strategy: 'static',
+    dedupe: 'none', enabled: true, texts: ['{{incvar::n}}'], params: { stMacros: true },
+  }])
+  const log = [{ type: 'user/message', seq: 0, data: { message: { id: 'u0', role: 'user', content: [{ type: 'text', text: '第一句' }], source: { kind: 'user' } } } }]
+  const nodes = [0]
+  const session = { id: 'st-frame-parity', header: {}, snapshotEvents: () => log, surface: { nodes } }
+  const agent = { session, options: { model: 'deepseek-chat' } }
+  const frameOf = () => configs[0].renderSt(agent, [])
+
+  assert.equal(frameOf(), '1', '首帧求值一次')
+  // `tool/call` 是 log-only 事件，不会成为 surface 节点：改前正常路径按 currentEvents 读不到它，
+  // 只有降级路径（返回完整历史）读得到 → 同一历史在两条路径上算出两代，帧被无谓重建。
+  log.push({ type: 'tool/call', seq: 1, data: { id: 'call-1' } })
+  const withSurface = frameOf()
+  delete session.surface
+  const degraded = frameOf()
+  assert.deepEqual({ withSurface, degraded }, { withSurface: '2', degraded: '2' },
+    '同一历史两路径同代：log-only 事件都进帧键，且 surface 在场与否不改 generation')
+})
+
+test('st-render：成功压缩的 compaction/end 推进帧边界——摘要正文与压缩前逐字相同也换帧', () => {
+  const configs = attachStRenderers([{
+    id: 'frame-compact', layer: 'system-section', promotion: 'none', strategy: 'static',
+    dedupe: 'none', enabled: true, texts: ['{{incvar::n}}'], params: { stMacros: true },
+  }])
+  const log = []
+  const nodes = []
+  const session = { id: 'st-frame-compact', header: {}, snapshotEvents: () => log, surface: { nodes } }
+  const agent = { session, options: { model: 'deepseek-chat' } }
+  const message = (id, text) => ({ id, role: 'user', content: [{ type: 'text', text }], source: { kind: 'user' } })
+  // `compaction/end` 不是 surface 承载类型，只进日志（同宿主 `foldSurface`）。
+  const record = (type, data) => { log.push({ type, seq: log.length, data }); if (type !== 'compaction/end') nodes.push(log.length - 1) }
+  const frameOf = () => configs[0].renderSt(agent, [])
+
+  record('user/message', { message: message('u0', '同一句') })
+  assert.equal(frameOf(), '1', '首帧求值一次')
+
+  // 摘要正文刻意与压缩前那条逐字相同：帧键里唯一能变的就是 `compaction/end` 边界本身
+  // （真值源＝边界分支给 `JSON.stringify(['compaction/end', 1])`，与消息内容哈希不同）。
+  nodes.length = 0
+  record('compaction/end', {})
+  record('user/message', { message: message('u0', '同一句') })
+  assert.equal(frameOf(), '2', 'compaction/end 推进边界：正文哈希不变也必须换帧')
+  assert.equal(frameOf(), '2', '同一日志复用帧（对照：不是每步都重建）')
 })
 
 test('st-world-book：扫描范围 = 模型可见的真实对话——被压缩遮蔽的关键词不再命中', () => {
