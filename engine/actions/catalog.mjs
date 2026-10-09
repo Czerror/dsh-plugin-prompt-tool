@@ -9,7 +9,8 @@ export const ACTION_DEGRADE = Object.freeze({
  * 九类动作的声明：**合法事件通道** + **降级语义** + 触发时机 + **声明字段**。
  * `events` 是动作允许注册的官方事件：经 `on(...)` 注册的动作（`channelBinder`）注册到声明外的
  * 事件在挂载期 fail loud；`inject-text` 不经 `channelBinder`，它的真实通道由
- * `actionExecutionPoint`（派生自 `schema.mjs` 每层的 `channel`）决定，这里只是同源的声明面；
+ * `actionExecutionPoint`（派生自 `schema.mjs` 每层的 `channel`）决定——下面那行 `events`
+ * 对它只是**文档面**（零校验、零消费），判断层是否可注入不要以它为准；
  * `services` 是它允许触碰的宿主服务方法（同一纪律的文档面）；
  * `fields` 是该类动作自己的声明键（白名单写在这里**一份**，`rule-spec.mjs` 的未知键
  * 检查从这里派生）。通用键 `id/kind/channelOrder/waterfallPosition/maxPerTurn` 由

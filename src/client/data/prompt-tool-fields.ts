@@ -69,6 +69,8 @@ const emptyLists = <K extends MetaListKey>(keys: readonly K[]): Record<K, string
 export const EMPTY_META: EngineMeta = {
   // bootstrap 返回前的加载快照；收到响应后整体替换。
   layerOrder: INJECTION_POINT_ORDER,
+  // 与 layers 同步为空：缺这个键会让 RuleFields 落到自由文本输入而不是空下拉（版本错配时可手打任意层名）。
+  injectionLayers: [],
   ...emptyLists(META_LIST_KEYS),
   editorGroups: [],
   layerDefaultSubjects: {},

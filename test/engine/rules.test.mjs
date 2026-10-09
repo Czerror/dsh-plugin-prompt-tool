@@ -1012,14 +1012,16 @@ test('variablesEnabled=false 执行期连会话变量一起停：内建与未声
   const texts = (await h.run('agent/pre-step', [{ agent, messages }], () => ({ kind: 'enter', messages })))
     .messages.flatMap(message => message.content.map(block => block.text))
   dispose()
-  const home = process.env.DSH_HOME ?? ''
   // 两个来源各自成批：不靠先后，按内容认领（同值 order 下批间顺序不是契约）。
-  assert.deepEqual(texts.slice().sort(), [
-    'USER',
-    `owner= other={{other}} home=${home}`,
-    `owner=SESSION other=OTHER home=${home}`,
-  ].sort(), '停用模块连会话变量一起停，启用模块会话覆盖声明值，内置事实两边都在')
-  assert.equal(texts.filter(text => text.startsWith('owner=')).length, 2, '同会话两个模块都注入：停用不影响其他模块')
+  const ownerLines = texts.filter(text => text.startsWith('owner=')).sort()
+  assert.equal(texts.includes('USER'), true, '用户消息原样保留')
+  assert.equal(ownerLines.length, 2, '同会话两个模块都注入：停用不影响其他模块')
+  assert.equal(texts.filter(text => text.includes('{{DSH_HOME}}')).length, 0, '内置事实两边都真的解析（不残留字面）')
+  // 不写死 DSH_HOME 的真值：runner 注入的与宿主回退值都成立。
+  assert.deepEqual(ownerLines.map(line => line.replace(/home=\S+/, 'home=<resolved>')), [
+    'owner= other={{other}} home=<resolved>',
+    'owner=SESSION other=OTHER home=<resolved>',
+  ], '停用模块连会话变量一起停，启用模块会话覆盖声明值')
 })
 
 test('动作声明白名单：未知键、对象形态 match 与带 kind 的分支节点编译期拒绝', () => {

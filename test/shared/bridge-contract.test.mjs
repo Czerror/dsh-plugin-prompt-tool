@@ -176,7 +176,6 @@ test('契约：/meta 与 /bootstrap 同源下发 layerOrder 与 editorGroups，�
   assert.deepEqual([...engineMeta.layers], [...LAYER_ORDER].sort(), 'layers 仍是排序后的合法集合（旧消费方不变）')
   // 两份层清单：九层给视图筛选与规则级 layer，八层（去 tool-pipeline）才可注入。
   assert.deepEqual([...engineMeta.injectionLayers], [...LAYER_ORDER].filter((layer) => layer !== 'tool-pipeline'))
-  assert.equal(engineMeta.injectionLayers.includes('tool-pipeline'), false, '工具链层没有 inject-text 通道')
   assert.deepEqual([...engineMeta.layers].filter((layer) => !engineMeta.injectionLayers.includes(layer)), ['tool-pipeline'], '两份清单的差集只有工具链层')
 
   const handlers = register()
