@@ -382,7 +382,7 @@ use-prompt-tool-store.ts 是唯一工作台 facade，负责把 ConfigForms mirro
 | dirty-state.ts | snapshot、深比较和 reload 判定 |
 | param-overrides.ts | params 的列表拆分、条件发送和读回 patch |
 | rule-drafts.ts / use-rule-editor.ts | 规则单源、稳定身份、原始字段草稿、CAS、模块队列与互斥响应快照合并 |
-| prompt-config-content.ts | preset.md 内容资产的提升与剥离；AGENTS 文件卡（`params.file`）的正文提升与文件写回分流 |
+| prompt-config-content.ts | AGENTS 文件卡（`params.file`）的正文提升与文件写回分流（`preset.md` 内容资产已随 `/module-content`、`/import-preset` 下线） |
 | prompt-config-order.ts | 配置视图内的移动算法；普通列表与跨模块排序共同复用 |
 | use-module-config-order.ts | 跨模块排序摘要、版本读写与请求生命周期；只由现有配置列表消费 |
 | save-queue.ts | 串行保存任务的最小队列 |
