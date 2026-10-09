@@ -7,6 +7,7 @@ import { compileRules, getRuleEditorMeta, isFixedRegistration } from '../../engi
 import { INJECT_CONFIG_FIELDS, SESSION_VARIABLES_DISABLED } from '../../engine/schema.mjs'
 import { prepareAction } from '../../engine/actions.mjs'
 import { mountRuleSources } from '../../engine/rule-runtime.mjs'
+import { wireLayers } from '../../engine/layers.mjs'
 import { WARN_ONCE_LIMIT, createWarnOnce } from '../../engine/shared.mjs'
 import { setSessionVar } from '../../engine/session-vars.mjs'
 import { ruleFrame, ruleMatches, actionMatches } from '../../engine/conditions/evaluation.mjs'
@@ -1020,10 +1021,35 @@ test('variablesEnabled=false 执行期连会话变量一起停：内建与未声
   assert.equal(ownerLines.length, 2, '同会话两个模块都注入：停用不影响其他模块')
   assert.equal(texts.filter(text => text.includes('{{DSH_HOME}}')).length, 0, '内置事实两边都真的解析（不残留字面）')
   // 不写死 DSH_HOME 的真值：runner 注入的与宿主回退值都成立。
-  assert.deepEqual(ownerLines.map(line => line.replace(/home=\S+/, 'home=<resolved>')), [
+  assert.deepEqual(ownerLines.map(line => line.replace(/home=.*/, 'home=<resolved>')), [
     'owner= other={{other}} home=<resolved>',
     'owner=SESSION other=OTHER home=<resolved>',
   ], '停用模块连会话变量一起停，启用模块会话覆盖声明值')
+})
+
+test('variablesEnabled=false 在注册层同样停会话变量：官方变量不吃会话覆盖与并入', () => {
+  const session = { id: 'vars-off-layer', header: {}, snapshotEvents: () => [] }
+  setSessionVar(session, 'owner', 'SESSION')
+  const registered = []
+  const systemPrompt = {
+    section: () => () => {},
+    context: () => () => {},
+    variable(name, read) { registered.push({ name, read }); return () => {} },
+  }
+  const ctx = { on: () => () => {}, get: (name) => (name === 'systemPrompt' ? systemPrompt : undefined), logger: { warn() {} } }
+  const render = (variablesEnabled) => {
+    registered.length = 0
+    // 动作级 config.variables 在停用时仍保留（停的只是模块级合并），所以该名字照常注册。
+    const rule = compileRules([{ id: 'sec', then: [{
+      id: 'sec-text', kind: 'inject-text',
+      config: { id: 'sec-text', layer: 'system-section', strategy: 'static', params: { sectionName: 'S' }, text: 'owner={{owner}}', variables: { owner: 'MODULE' } },
+    }] }], { variablesEnabled })[0]
+    wireLayers(ctx, [rule.actions[0].compiledConfig], () => {})
+    return registered.map(item => item.read({ agent: { session } })).join('|')
+  }
+  // 注册出去的是该变量的值（文本插值由 section/context 那条路径做）。
+  assert.equal(render(false), 'MODULE', '停用后官方变量不吃会话覆盖')
+  assert.equal(render(true), 'SESSION', '启用时会话覆盖声明值')
 })
 
 test('动作声明白名单：未知键、对象形态 match 与带 kind 的分支节点编译期拒绝', () => {
@@ -1071,9 +1097,9 @@ test('动作声明白名单：未知键、对象形态 match 与带 kind 的分�
   // 关键拒绝：prepend 是未文档化的注册后门，动作层与 config 层都取消且无等价替代。
   assert.throws(() => compileRules([{ id: 'r', then: [
     { id: 'a', kind: 'assembly', prepend: true, target: { tools: { deny: ['bash'] } } },
-  ] }]), /`prepend` 已取消.*暂无等价替代/)
+  ] }]), /`prepend` 已取消.*waterfallPosition: outermost/)
   assert.throws(() => compileRules([{ id: 'r', then: [textAction('a', 'A', { prepend: true })] }]),
-    /`prepend` 已取消.*暂无等价替代/)
+    /`prepend` 已取消.*waterfallPosition: outermost/)
   // 关键拒绝：对象形态 match 在声明路径上恒命中（`typeof === 'function'` 才过滤）。
   assert.throws(() => compileRules([{ id: 'strip', then: [
     { id: 'a', kind: 'assembly', match: { keys: ['x'] }, target: { tools: { deny: ['bash'] } } },

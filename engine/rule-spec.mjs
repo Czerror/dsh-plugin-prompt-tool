@@ -16,8 +16,8 @@ const RULE_FIELDS = new Set(['id', 'name', 'enabled', 'layer', 'group', 'exclusi
 const record = value => value !== null && typeof value === 'object' && !Array.isArray(value)
 const nonempty = value => typeof value === 'string' && value.trim().length > 0
 
-/** `prepend` 退役文案（动作层与 `inject-text.config` 共用）：`inject-text` 不接受 `waterfallPosition`，无法像其他动作那样指一个新名。 */
-const PREPEND_RETIRED = '`prepend` 已取消 — 它是未文档化的注册后门（executor 直读 config.prepend），暂无等价替代；动作级位置请用 `waterfallPosition`（仅适用于非 inject-text 动作）'
+/** `prepend` 退役文案（动作层与 `inject-text.config` 共用）：等价档只有「注册到最外层」一档，而 `inject-text` 连它也不接受。 */
+const PREPEND_RETIRED = '`prepend` 已取消 — 它是未文档化的注册后门（executor 直读 config.prepend），作用只有「注册到最外层」一档：非 inject-text 动作改用 `waterfallPosition: outermost`；`inject-text` 不接受该字段，没有等价写法'
 
 /**
  * 条件树引用的全部「谓词 → 通道事实」对（含组合与否定）；`subject === undefined` = 作者漏写。

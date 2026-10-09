@@ -2,6 +2,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { fileURLToPath } from 'node:url'
 import { applyPromptConfigs } from '../../engine/executor.mjs'
+import { wireLayers } from '../../engine/layers.mjs'
 import { createPromptConfigs as createPromptConfigsCore } from '../../engine/schema.mjs'
 import { registerAction } from '../../engine/actions.mjs'
 
@@ -478,6 +479,17 @@ test('wireLayers 只装配实际声明的插入点：未声明 seam 无监听器
   for (const seam of ['agent/request', 'llm/stream', 'tools/pre-execute', 'tools/post-execute', 'system-prompt/assemble']) {
     assert.equal(declared.has(seam), false, `${seam} 未声明时不应有监听器`)
   }
+})
+
+test('wireLayers 对没有注入通道的层告警一次：直供 tool-pipeline 配置不再静默丢弃', () => {
+  // 规则路径与公开动作路径都在上游拒绝 tool-pipeline（见 test/engine/rules.test.mjs），
+  // 这里覆盖的是 config 级公开入口直供该层配置的兜底：必须可见，不得静默。
+  const warnings = []
+  const config = createPromptConfigs([{ id: 'tp-direct', layer: 'tool-pipeline', strategy: 'static', text: 'X' }])[0]
+  const ctx = { on: () => () => {}, get() { return undefined }, logger: { warn: (message) => warnings.push(message) } }
+  wireLayers(ctx, [config], (message) => warnings.push(message))
+  assert.equal(warnings.length, 1, '每个无通道配置告警一次')
+  assert.match(warnings[0], /tool-pipeline 没有注入通道/)
 })
 
 test('原生关键词世界书只扫描本批真实对话消息：插件注入与指令文件正文都不触发', async () => {
