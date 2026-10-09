@@ -380,6 +380,29 @@ function normalizeMatch(raw, label) {
   return match
 }
 
+/**
+ * 官方 0.1.6 `LlmCallConfig` 允许被改写的键：不能把消息、工具或 system 塞进请求配置。
+ * `agent-request` 层的 `params.patch` 与 `request-params` 动作的 `patch`/`unset` 共用这一份。
+ */
+const LLM_CALL_FIELDS = new Set(['provider', 'model', 'reasoningEffort', 'temperature', 'maxTokens', 'stop'])
+
+/**
+ * 校验一份请求配置补丁的子键与值（`agent-request` 层 `params.patch`、`request-params` 动作的
+ * `patch`/`unset` 三处共用）：拼错的键与非法值都 fail loud——运行时静默忽略等于「配了没效果」。
+ * @param label 已拼好的报错前缀（`<config label>.params.patch` 或 `action <id>.patch`）
+ */
+export function assertLlmCallPatch(patch, label) {
+  if (patch === null || typeof patch !== 'object' || Array.isArray(patch)) throw new TypeError(`${label} must be an object`)
+  for (const [key, value] of Object.entries(patch)) {
+    if (!LLM_CALL_FIELDS.has(key)) throw new TypeError(`${label}.${key} is not a LlmCallConfig field`)
+    const valid = key === 'temperature' ? typeof value === 'number' && Number.isFinite(value)
+      : key === 'maxTokens' ? Number.isSafeInteger(value) && value > 0
+        : key === 'stop' ? Array.isArray(value) && value.every(item => typeof item === 'string')
+          : typeof value === 'string' && value.trim().length > 0
+    if (!valid) throw new TypeError(`${label}.${key} has an invalid value`)
+  }
+}
+
 function normalizeLayerParams(raw, layer, label) {
   if (raw === undefined || raw === null) return {}
   if (typeof raw !== 'object' || Array.isArray(raw)) throw new TypeError(`${label}.params must be an object`)
@@ -398,16 +421,7 @@ function normalizeLayerParams(raw, layer, label) {
   }
   if (layer === 'agent-request') {
     const patch = params.patch ?? {}
-    // 官方 0.1.6 LlmCallConfig；不能把消息、工具或 system 塞进请求配置。
-    const keys = new Set(['provider', 'model', 'reasoningEffort', 'temperature', 'maxTokens', 'stop'])
-    for (const [key, value] of Object.entries(patch)) {
-      if (!keys.has(key)) throw new TypeError(`${label}.params.patch.${key} is not a LlmCallConfig field`)
-      const valid = key === 'temperature' ? typeof value === 'number' && Number.isFinite(value)
-        : key === 'maxTokens' ? Number.isSafeInteger(value) && value > 0
-          : key === 'stop' ? Array.isArray(value) && value.every(item => typeof item === 'string')
-            : typeof value === 'string' && value.trim().length > 0
-      if (!valid) throw new TypeError(`${label}.params.patch.${key} has an invalid value`)
-    }
+    assertLlmCallPatch(patch, `${label}.params.patch`)
     if (params.replace === true && (!patch.provider || !patch.model)) {
       throw new TypeError(`${label}.params.patch requires provider and model when replace=true`)
     }

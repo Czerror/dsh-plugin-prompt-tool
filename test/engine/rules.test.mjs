@@ -812,11 +812,30 @@ test('动作声明白名单：未知键、对象形态 match 与带 kind 的分�
   // 关键拒绝（fail-closed 反向）：decision 的 toolNames 拼错今天会静默变成「对所有工具生效」。
   assert.throws(() => compileRules([{ id: 'gate', then: [
     { id: 'deny', kind: 'decision', phase: 'pre', decision: 'deny', toolName: 'read' },
-  ] }]), /action deny unknown fields: toolName — allowed: .*toolNames/)
+  ] }]), /action deny: unknown config key\(s\) toolName — allowed keys: .*toolNames/)
   // 关键拒绝：request-params 的动作级 when 今天被静默忽略（补丁无条件生效）。
   assert.throws(() => compileRules([{ id: 'req', then: [
     { id: 'patch', kind: 'request-params', patch: { maxTokens: 10 }, when: { scope: { modelScope: 'pro' } } },
   ] }]), /action patch: "when" 已退役，改用 "if"/)
+  // 关键拒绝：request-params 的 patch / unset 子键拼错或值非法时补丁静默不生效（LlmCallConfig 键集）。
+  assert.throws(() => compileRules([{ id: 'req', then: [
+    { id: 'p', kind: 'request-params', patch: { maxToken: 10 } },
+  ] }]), /action p\.patch\.maxToken is not a LlmCallConfig field/)
+  assert.throws(() => compileRules([{ id: 'req', then: [
+    { id: 'u', kind: 'request-params', unset: { temperture: 0.5 } },
+  ] }]), /action u\.unset\.temperture is not a LlmCallConfig field/)
+  assert.throws(() => compileRules([{ id: 'req', then: [
+    { id: 'v', kind: 'request-params', patch: { maxTokens: 'ten' } },
+  ] }]), /action v\.patch\.maxTokens has an invalid value/)
+  // 关键拒绝：inject-text.config 的未知键（同一份提示词配置白名单）。
+  assert.throws(() => compileRules([{ id: 'r', then: [textAction('a', 'A', { typoKey: 1 })] }]),
+    /action a config: unknown config key\(s\) typoKey — allowed keys: .*text/)
+  // 关键拒绝：prepend 是未文档化的注册后门，动作层与 config 层都取消且无等价替代。
+  assert.throws(() => compileRules([{ id: 'r', then: [
+    { id: 'a', kind: 'assembly', prepend: true, target: { tools: { deny: ['bash'] } } },
+  ] }]), /`prepend` 已取消.*暂无等价替代/)
+  assert.throws(() => compileRules([{ id: 'r', then: [textAction('a', 'A', { prepend: true })] }]),
+    /`prepend` 已取消.*暂无等价替代/)
   // 关键拒绝：对象形态 match 在声明路径上恒命中（`typeof === 'function'` 才过滤）。
   assert.throws(() => compileRules([{ id: 'strip', then: [
     { id: 'a', kind: 'assembly', match: { keys: ['x'] }, target: { tools: { deny: ['bash'] } } },
@@ -835,11 +854,14 @@ test('动作声明白名单：未知键、对象形态 match 与带 kind 的分�
 })
 
 test('F27：complete / suppressRuntimeContext 只属于 system-section 层', () => {
-  // 关键拒绝：其他层写这两个键既不注册成独占段，还会被独占计数误算——点名层。
+  // 关键拒绝：其他层写这两个键既不注册成独占段，还会被独占计数误算——点名层（出现即拒，
+  // 非布尔真值同样拒：`'yes'` / `1` 落不到任何注册期效果上）。
   for (const flag of ['complete', 'suppressRuntimeContext']) {
-    assert.throws(() => compileRules([{ id: 'r', then: [
-      { id: 'a', kind: 'inject-text', config: { id: 'a', layer: 'pre-step', text: 'X', params: { [flag]: true } } },
-    ] }]), new RegExp(`action a: config\\.params\\.${flag} 只属于 layer system-section — 当前 layer 是 "pre-step"`))
+    for (const value of [true, 'yes', 1]) {
+      assert.throws(() => compileRules([{ id: 'r', then: [
+        { id: 'a', kind: 'inject-text', config: { id: 'a', layer: 'pre-step', text: 'X', params: { [flag]: value } } },
+      ] }]), new RegExp(`action a: config\\.params\\.${flag} 只属于 layer system-section — 当前 layer 是 "pre-step"`))
+    }
     assert.throws(() => compileRules([{ id: 'r', then: [
       { id: 'a', kind: 'inject-text', config: { id: 'a', layer: 'subagent-start', text: 'X', params: { [flag]: true } } },
     ] }]), /system-section — 当前 layer 是 "subagent-start"/)

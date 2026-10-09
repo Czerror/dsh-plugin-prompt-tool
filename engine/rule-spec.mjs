@@ -3,8 +3,9 @@ import { ACTION_KINDS, actionExecutionPoint, prepareAction, validateActionOption
 // 字段清单与动作声明同住 `actions/catalog.mjs`（`actions/index.mjs` 不再导出新面）。
 import { ACTION_FIELDS, MATCH_ACTION_KINDS } from './actions/catalog.mjs'
 import { compileWhen, PREDICATE_FACTORIES, COMPOSITE_OPERATORS, channelFactSubjects, channelTextSubjects } from './conditions/index.mjs'
-import { createPromptConfigs, INJECT_CONFIG_FIELDS, KNOWN_LAYERS } from './schema.mjs'
+import { createPromptConfigs, INJECT_CONFIG_FIELDS, KNOWN_LAYERS, assertLlmCallPatch } from './schema.mjs'
 import { stripDeclaredRefs } from './interpolate.mjs'
+import { validateConfig } from './shared.mjs'
 import { WATERFALL_POSITIONS } from './trigger.mjs'
 import { ACTION_EXAMPLES } from './actions/examples.mjs'
 import { PREDICATE_EXAMPLES } from './conditions/examples.mjs'
@@ -14,6 +15,13 @@ import { conjunction, expandActions } from './branch.mjs'
 const RULE_FIELDS = new Set(['id', 'name', 'enabled', 'layer', 'group', 'exclusive', 'if', 'then', 'else', 'when', 'do'])
 const record = value => value !== null && typeof value === 'object' && !Array.isArray(value)
 const nonempty = value => typeof value === 'string' && value.trim().length > 0
+
+/**
+ * `prepend` 的退役文案（动作层与 `inject-text.config` 层共用）：它是未文档化的注册后门
+ * （`executor.mjs` 直读 `config.prepend`），已取消且**暂无等价替代**——`inject-text` 不接受
+ * `waterfallPosition`，所以不能像其他动作那样指一个新名。
+ */
+const PREPEND_RETIRED = '`prepend` 已取消 — 它是未文档化的注册后门（executor 直读 config.prepend），暂无等价替代；动作级位置请用 `waterfallPosition`（仅适用于非 inject-text 动作）'
 
 /**
  * 条件树引用的全部「谓词 → 通道事实」对（含组合与否定）；`subject === undefined` = 作者漏写。
@@ -191,7 +199,7 @@ export function compileRules(specs, options = {}) {
       if (branchKeys.length > 0) throw new TypeError(`rule ${spec.id}: action ${source.id} 写了 ${branchKeys.join(', ')} — 分支必须写成无 \`kind\` 的节点`)
       // 旧动作级开关已退役：显式拒绝并给出新名（比 unknown fields 更可直接照做）。
       if (source.when !== undefined) throw new TypeError(`rule ${spec.id}: action ${source.id}: "when" 已退役，改用 "if"`)
-      if (source.prepend !== undefined) throw new TypeError(`rule ${spec.id}: action ${source.id}: "prepend" 已退役，改用 "waterfallPosition"`)
+      if (source.prepend !== undefined) throw new TypeError(`rule ${spec.id}: action ${source.id}: ${PREPEND_RETIRED}`)
       // 声明路径上的 `match` 只能是函数（`prepare*` 里 `typeof === 'function'` 才过滤）；
       // 对象形态恒命中 = 「配了门却没拦住」，比未知键更隐蔽。
       if (MATCH_ACTION_KINDS.has(source.kind) && source.match !== undefined && typeof source.match !== 'function') {
@@ -206,21 +214,23 @@ export function compileRules(specs, options = {}) {
       // 未知键检查必须在 normalizeActionGates **之后**：中性旧门由它删除、非中性旧门由它报
       // 「move it to rule.if」，那些键因此既不会落在未知键名单里，也不会被静默丢弃。
       normalizeActionGates(action, execution)
-      const allowed = ACTION_FIELDS[action.kind]
-      const unknown = Object.keys(action).filter(key => !allowed.has(key))
-      if (unknown.length > 0) {
-        throw new TypeError(`rule ${spec.id}: action ${action.id} unknown fields: ${unknown.join(', ')} — allowed: ${[...allowed].join(', ')}`)
+      validateConfig(`rule ${spec.id}: action ${action.id}`, action, ACTION_FIELDS[action.kind])
+      if (action.kind === 'request-params') {
+        // patch / unset 的子键同属 LlmCallConfig（键集与值规则复用 schema 的 assertLlmCallPatch）：
+        // 拼错的键与非法值今天会被静默忽略（补丁不生效），与动作级未知键是同一类失效。
+        for (const field of ['patch', 'unset']) {
+          if (record(action[field])) assertLlmCallPatch(action[field], `action ${action.id}.${field}`)
+        }
       }
       if (action.kind === 'inject-text') {
-        const unknownConfig = Object.keys(action.config).filter(key => !INJECT_CONFIG_FIELDS.has(key))
-        if (unknownConfig.length > 0) {
-          throw new TypeError(`rule ${spec.id}: action ${action.id} config unknown fields: ${unknownConfig.join(', ')} — allowed: ${[...INJECT_CONFIG_FIELDS].join(', ')}`)
-        }
+        if (action.config.prepend !== undefined) throw new TypeError(`rule ${spec.id}: action ${action.id}: ${PREPEND_RETIRED}`)
+        validateConfig(`rule ${spec.id}: action ${action.id} config`, action.config, INJECT_CONFIG_FIELDS)
         // F27：complete / suppressRuntimeContext 是 system-section 的注册期效果。写在别的层上
         // 既不注册成独占段、又会被独占计数误算，逐动作点名拒绝（params 子键不做白名单）。
-        if (action.config.layer !== 'system-section') {
+        // 出现即拒（`false` 除外）：`'yes'` / `1` 这类值同样落不到任何注册期效果上。
+        if (action.config.layer !== 'system-section' && record(action.config.params)) {
           for (const flag of ['complete', 'suppressRuntimeContext']) {
-            if (action.config.params?.[flag] === true) {
+            if (action.config.params[flag] !== undefined && action.config.params[flag] !== false) {
               throw new TypeError(`rule ${spec.id}: action ${action.id}: config.params.${flag} 只属于 layer system-section — 当前 layer 是 ${JSON.stringify(action.config.layer)}`)
             }
           }
@@ -266,9 +276,9 @@ export function compileRules(specs, options = {}) {
     return { id: spec.id, name: spec.name, layer: spec.layer, group: spec.group, exclusive: spec.exclusive === true, enabled: spec.enabled !== false, sequence, when, actions, promptConfigOptions: options.promptConfigOptions }
   })
   validateRuleGroups(rules)
-  // 独占只数 system-section 的 complete（isFixedRegistration 排除其他层的同名键）。
-  const complete = rules.filter(rule => rule.enabled).flatMap(rule => rule.actions)
-    .filter(action => action.config?.params?.complete === true && isFixedRegistration(action.config))
+  // 独占只可能是 system-section 的 complete：其他层的同名键在逐动作校验处已被拒绝，
+  // 所以这里不再重复层判定（`isFixedRegistration` 只服务 lifecycle 与两处运行期消费方）。
+  const complete = rules.filter(rule => rule.enabled).flatMap(rule => rule.actions).filter(action => action.config?.params?.complete === true)
   if (complete.length > 1 || (complete.length > 0 && options.personaComplete === true)) throw new TypeError('rules: multiple complete system sections are active')
   if (pendingConfigs.length) {
     const compiled = createPromptConfigs(pendingConfigs.map(item => item.source), { ...options.promptConfigOptions, ...(moduleId === undefined ? {} : { sourceModuleId: moduleId }) })
