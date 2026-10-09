@@ -97,6 +97,10 @@ export function attachStRenderers(configs) {
       }
       // 模块 pre-step 已跨来源按序调度，不能预跑本模块后面的卡而越过另一模块。
       // 其它入口沿用原预求值语义；同帧已求值模板不重放副作用或随机宏。
+      // `sequence === undefined` 不可达：仓库内每个真实入口都给 `createPromptConfigs` 带上
+      // 来源（`rule-spec.mjs` 恒填 `sequence`，见 schema.mjs:716-718）。
+      // ponytail: 若将来真配置走到这里，`eligible` 是**步级超集**（executor.mjs#batchScope）——
+      // 它会预求值后续 flush 的 static 模板，把那些 setvar 提前写进同一帧。
       if (target.sequence === undefined || eligible === undefined) {
         for (const config of templates.filter(config => approved(config)
           && config.strategy === 'static' && config.dedupe === 'none' && !frame.text.has(config))
