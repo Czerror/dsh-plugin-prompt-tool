@@ -1,8 +1,9 @@
 /** ST 世界书选择器；只消费显式 ST 导入字段，不改变原生 world-book 约定。 */
 import { createAnchorMatcher } from './anchor-match.mjs'
-import { currentEvents } from './history.mjs'
+import { currentEvents, historyEvents } from './history.mjs'
 import { interpolateVariables } from './interpolate.mjs'
 import { isConversationMessage } from './condition.mjs'
+import { isSuccessfulCompactionEnd } from './compaction-epoch.mjs'
 
 /** 只扫描真实对话的可见文本，排除插件注入与思维块（判据与 userText / 关键词 haystack 同源）。 */
 export function stChatMessages(session, pending = []) {
@@ -30,6 +31,8 @@ export function stChatMessages(session, pending = []) {
 }
 
 const sessions = new WeakMap()
+/** 每个会话最近一次成功压缩在日志里的位置；前推即窗口状态的重基准点（见 selectStWorldBook）。 */
+const boundaries = new WeakMap()
 const matchers = new WeakMap()
 /** 每个会话只保留最近一次选择的诊断快照（随会话对象 GC 释放）。 */
 const lastRuns = new WeakMap()
@@ -42,6 +45,21 @@ const DIAGNOSTIC_LIMIT = 200
  *  `evaluated: false` 表示该会话还没求值过，与"已求值但本次为空"区分开。 */
 export function lastWorldBookDiagnostics(session) {
   return lastRuns.get(session) ?? { records: [], truncated: false, step: 0, evaluated: false }
+}
+
+/**
+ * 最近一次成功压缩在日志里的位置（-1 = 从未压缩）。
+ *
+ * 窗口状态（`last` 与 delay / sticky / cooldown 的基准）记的是当时的**绝对可见计数**，
+ * 而 `chat` 现在来自 `currentEvents`（可缩小的视图）：成功压缩把可见面塌成一条摘要后计数骤降，
+ * 旧基准不重则 sticky 恒真（命中早已不可见的条目）、cooldown 被静默跳过。判据与 count / anchor
+ * 的失效点同源（`isSuccessfulCompactionEnd`）；本模块的选择由批首直接调用、没有 observe 接线，
+ * 所以在批首比边界。倒序查最近一次，压缩之后的日志长度即扫描代价。
+ */
+function lastCompactionBoundary(session) {
+  const events = historyEvents(session)
+  for (let index = events.length - 1; index >= 0; index--) if (isSuccessfulCompactionEnd(events[index])) return index
+  return -1
 }
 
 export function selectStWorldBook(configs, session, messages, warn = () => {}) {
@@ -67,8 +85,14 @@ export function selectStWorldBook(configs, session, messages, warn = () => {}) {
   if (!entries.length) return finish(new Set())
   const chat = stChatMessages(session, messages)
   snapshot.step = chat.length
+  const boundary = lastCompactionBoundary(session)
   let state = sessions.get(session)
-  if (!state) { state = new WeakMap(); sessions.set(session, state) }
+  // 边界前推说明可见视图被重写过（成功压缩）→ 丢弃本会话全部窗口，让每条条目按当前可见面重判。
+  if (boundaries.get(session) !== boundary) {
+    state = new WeakMap()
+    sessions.set(session, state)
+    boundaries.set(session, boundary)
+  }
   const generation = JSON.stringify([chat.length, chat.at(-1)])
   const selected = new Set(), failed = new Set(), occupied = new Set(), stickyEntries = new Set(), candidates = []
   const updates = new Map()

@@ -169,14 +169,25 @@ function hasInBatch(config, messages) {
  * 快路径会多拦一次重新注入，届时改用宿主给出的权威信号。
  */
 function memoKey(field, moduleId, value, stamp) {
-  return `${field}\u0000${moduleId ?? ''}\u0000${stamp ?? '-'}\u0000${value}`
+  // 戳不可用（null）时调用方不查也不记（见 contextStamp），故这里必定是数字或 `-`。
+  return `${field}\u0000${moduleId ?? ''}\u0000${stamp}\u0000${value}`
 }
 
-/** 本会话当前可见上下文的代次戳（无 surface / 非数字时 undefined）。 */
-// ponytail: 「有 `surface.nodes` 却无数字 `replaceGeneration`」的宿主形态不存在（两者同属一个 `SessionSurface` 接口），不写兜底。
+/**
+ * 本会话当前可见上下文的代次戳，也是 memo 键的失效维。
+ *
+ * - 数字：surface 的 `replaceGeneration`；
+ * - `'-'`：无 surface（降级到完整历史），事件不会消失，条目一直有效；
+ * - `null`：**有 `surface.nodes` 却没有数字代次** —— memo 此时不可用：代次是它唯一的失效
+ *   信号，而真相（`currentEvents`）仍跟着 `nodes` 走，快路径会把被压缩移走的注入永久记成
+ *   「已投递」。这种宿主形态是真实情形（恢复、重放、其它宿主、既有桩；见
+ *   `compaction-epoch.mjs` 的失效条件③），调用方据此跳过 memo、退回当前上下文扫描
+ *   —— memo 只是省一次扫描的缓存，跳过不改变任何判定结果。
+ */
 function contextStamp(session) {
   const generation = session?.surface?.replaceGeneration
-  return typeof generation === 'number' ? generation : undefined
+  if (typeof generation === 'number') return generation
+  return Array.isArray(session?.surface?.nodes) ? null : '-'
 }
 
 /**
@@ -209,6 +220,8 @@ export function confirmDelivered(memo, session, event) {
   if (source === null || typeof source !== 'object') return
   const moduleId = moduleOf(source)
   const stamp = contextStamp(session)
+  // 戳不可用 → 不记账：这条快路径无法在视图变化时失效，判定改由当前上下文扫描给出。
+  if (stamp === null) return
   for (const field of ['plugin', 'kind']) {
     const value = source[field]
     if (typeof value !== 'string' || value.length === 0) continue
@@ -227,7 +240,8 @@ function alreadyDelivered(config, session, memo) {
   const stamp = contextStamp(session)
   // 模块维有两种命中：本模块的键，以及升级前注入（无模块维）那份的保守键。
   const modules = [moduleIdOf(config, 'sourceModuleId') ?? '', '']
-  const confirmed = (field, value) => modules.some((moduleId) =>
+  // 戳不可用（有 surface 却无代次）→ 不查 memo：那里记的「已投递」可能已被视图改写。
+  const confirmed = (field, value) => stamp !== null && modules.some((moduleId) =>
     memo.get(memoKey(field, moduleId, value, stamp))?.has(session.id) === true)
   if (confirmed('plugin', identityOf(config))) return true
   if (typeof config.sourceKind === 'string' && confirmed('kind', config.sourceKind)) return true
@@ -266,6 +280,9 @@ function buildMessage(config, resolved, warnOnce) {
   const sourceValue = identityOf(config)
   // 策略 patch（templateFile 的 role 等）与配置声明都必须经过同一出口判定。
   const requested = downgradeRole(config, typeof resolved.role === 'string' ? resolved.role : config.role, warnOnce)
+  // 模块维与 `identityStampOf` 同源（`moduleIdOf`：空串与缺失同等）：两条分支必须盖同一份章，
+  // 否则解析器自带 source 的消息比合成分支多带一个空模块维，memo 与判定就会分叉。
+  const moduleId = moduleIdOf(config, 'sourceModuleId')
   const source = resolved.source !== null && typeof resolved.source === 'object'
     // 解析器自带的 source 也要盖章：否则这类消息（如 fill=instruction-hint 的
     // `{ kind: 'instruction-hint' }`）只带 kind 通道，dedupe=session 每步重复注入。
@@ -274,7 +291,7 @@ function buildMessage(config, resolved, warnOnce) {
         ...resolved.source,
         plugin: typeof resolved.source.plugin === 'string' && resolved.source.plugin.length > 0 ? resolved.source.plugin : sourceValue,
         ...(resolved.source.kind === undefined ? { kind: identityStampOf({ ...config, sourceKind: undefined }).kind } : {}),
-        ...(config.sourceModuleId === undefined ? {} : { moduleId: config.sourceModuleId }),
+        ...(moduleId === undefined ? {} : { moduleId }),
       }
     : {
         // 模块维是身份判据的新一维，但**不并进身份字符串**：`source.plugin` 的格式是

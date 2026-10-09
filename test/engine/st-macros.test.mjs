@@ -12,6 +12,9 @@ import { renderStText } from '../../engine/st-macros.mjs'
 import { attachStRenderers } from '../../engine/st-render.mjs'
 import { compileRules } from '../../engine/rule-spec.mjs'
 import { stChatMessages, selectStWorldBook, lastWorldBookDiagnostics } from '../../engine/st-world-book.mjs'
+import { SURFACE_MESSAGE_TYPES } from '../../engine/history.mjs'
+import { identityStampOf, runPreStepBatch } from '../../engine/executor.mjs'
+import { createPromptConfigs as createPromptConfigsCore } from '../../engine/schema.mjs'
 import { isolatedHome } from '../fixtures/host-harness.mjs'
 
 // 模块级开关要按完整链路验证（module.yml → ModuleSpec → compileRules 顶层选项），
@@ -74,16 +77,18 @@ test('st-render：generationKey 与 condition 同源——空串来源不参与�
 })
 
 /**
- * 桩：`log` 是真值源，`surface.nodes` 按宿主 `foldSurface` 语义维护——只有 replace 会移除节点。
+ * 桩：`log` 是真值源，`surface.nodes` 按宿主 `foldSurface` 语义维护——只有 replace 会移除节点，
+ * 且只有 surface 承载类型（`SURFACE_MESSAGE_TYPES`）才成为节点。log-only 事件（`tool/call`、
+ * `compaction/end`）只进日志：它们若也占一个节点，"log-only 事件推进帧键"这类断言就会因为
+ * 假节点而失去判别力（把 generationKey 改回 `currentEvents` 也照样绿）。
  * 与 `prompt-config-engine.test.mjs` 的同名桩同义，这里只保留本文件用到的动作。
- * 本桩对每类事件都记节点（宿主只对消息类记），现在只有世界书用例的遮蔽场景依赖节点。
  */
 function visibleSession(id) {
   const log = []
   const nodes = []
   return {
     session: { id, header: {}, snapshotEvents: () => log, surface: { nodes } },
-    push(event) { log.push(event); nodes.push(log.length - 1) },
+    push(event) { log.push(event); if (SURFACE_MESSAGE_TYPES.has(event.type)) nodes.push(log.length - 1) },
     compact(summary) {
       nodes.length = 0
       log.push({ type: 'compaction/end', seq: log.length, data: {} })
@@ -199,6 +204,29 @@ test('st-world-book：扫描范围 = 模型可见的真实对话——被压缩�
   // 降级对照：无 surface 时退回完整历史，命中行为与迁移前一致。
   assert.equal(selectStWorldBook([entry('lore-degraded')], { snapshotEvents: store.session.snapshotEvents }, []).size, 1,
     '无 surface 的会话仍扫完整历史')
+})
+
+test('st-world-book：成功压缩重基准窗口状态——sticky 不得让键已不在可见面上的条目继续入选', () => {
+  // 真值源＝ST 的 sticky 窗口语义（「自上次入选起的 N 条可见消息」）：`last` 记的是**绝对可见计数**，
+  // 而 `chat` 现在来自 `currentEvents`（可缩小的视图）。压缩把可见面塌成一条不含键的摘要后，
+  // 压缩前的基准必须作废（判据与 count / anchor 的失效点同源：成功 `compaction/end`），
+  // 否则 `chat.length < last + sticky` 恒真，条目会在键早已不可见时一直重注。
+  const entry = {
+    id: 'lore', name: 'lore', strategy: 'world-book', order: 100, text: 'LORE', layer: 'pre-step',
+    position: 'before-all', enabled: true,
+    params: { constant: false, keys: ['龙'], stWorldBook: { keys: ['龙'], scanDepth: 2, sticky: 3 } },
+  }
+  const say = (id, text) => ({ id, role: 'user', content: [{ type: 'text', text }], source: { kind: 'user' } })
+  const store = visibleSession('stwb-window')
+  store.push({ type: 'user/message', seq: 0, data: { message: say('u0', '龙现身了') } })
+  const before = selectStWorldBook([entry], store.session, [])
+  assert.deepEqual([...before].map(config => config.id), ['lore'], '压缩前命中')
+  // 窗口状态在 commit 时写回（`last` 是「这条消息真的落位了」才记的账）。
+  before.commit(entry)
+
+  store.compact(say('summary', '摘要'))
+  assert.deepEqual([...selectStWorldBook([entry], store.session, [])].map(config => config.id), [],
+    '压缩重置窗口：sticky 不得让键已不在可见面上的条目继续入选')
 })
 
 test('st-world-book：{{pick}} 的 seed 含条目身份——同键条目不共用取值且各自稳定', () => {
@@ -328,4 +356,58 @@ test('st-world-book：未声明递归开关的模块里，延迟层级池的既�
     wbRule('dl-f1', 'dl-f1', 'F1 正文', { delayUntilRecursion: 1 }),
   ])
   assert.deepEqual(selectedIds(offModule, noSource), ['dl-f0'], '无递归来源时层级池不推进')
+})
+
+// executor 的 pre-step 注入面（source 盖章与去重快路径）：夹具与 `prompt-config-engine.test.mjs`
+// 的同名 seam 同源，只保留本分片要钉的两条判据。
+const createPromptConfigs = (specs, options = {}) =>
+  createPromptConfigsCore(specs, { strategyDir: new URL('../../engine/', import.meta.url).href, ...options })
+const plainSession = id => ({ id, header: { delegationDepth: 0 }, snapshotEvents: () => [] })
+const USER_TASK = { id: 'task-1', role: 'user', content: [{ type: 'text', text: '写一个工具' }], source: { kind: 'user' } }
+// 晋升门控与本分片无关：批执行器只消费 status()。
+const PROMOTION = { main: { status: () => ({ promoted: true }) }, withSubagents: { status: () => ({ promoted: true }) } }
+const runBatch = (configs, session, memo = new Map()) => runPreStepBatch({
+  ctx: {},
+  agent: { session, options: { model: 'deepseek-chat' } },
+  decision: { kind: 'enter', messages: [USER_TASK] },
+  configs,
+  memo,
+  promotion: PROMOTION,
+  warnOnce: () => {},
+})
+
+test('executor：resolved.source 分支与 identityStampOf 盖同一份模块维（空串 sourceModuleId 不写 moduleId）', async () => {
+  // 真值源＝T33 的不变量「空串与缺失同等」（`prompt-config-engine.test.mjs` 钉了 identityStampOf 一侧）。
+  // 解析器自带 source 的消息走另一条分支（如 fill=instruction-hint 返回 `{ kind: ... }`），
+  // 两条分支必须产出同一份盖章，否则 memo 的键与判定会按不同的模块维分叉。
+  const [config] = createPromptConfigs(
+    [{ id: 'hint', layer: 'pre-step', strategy: 'static', dedupe: 'session', text: 'HINT', position: 'after-all' }],
+    { sourceModuleId: '' },
+  )
+  config.resolve = async () => ({ text: 'HINT', source: { kind: 'instruction-hint' } })
+  const decision = await runBatch([config], plainSession('s-empty-module'))
+  const message = decision.messages.find(item => item.source?.kind === 'instruction-hint')
+  assert.ok(message !== undefined, 'resolved.source 分支确实注入')
+  assert.equal(Object.hasOwn(message.source, 'moduleId'), Object.hasOwn(identityStampOf(config), 'moduleId'),
+    '两条分支同一份盖章：空串模块维不得被写成 moduleId: ""')
+})
+
+test('executor：有 surface 却无代次戳时跳过 memo——被移走的注入重新注入', async () => {
+  // 可达性：`compaction-epoch.mjs` 把「无代次（恢复、重放、其它宿主、既有桩）」列为真实情形，
+  // 本文件的 `visibleSession` 桩就是其中之一（只有 `surface.nodes`，没有 `replaceGeneration`）。
+  // 判据：memo 只是省一次扫描的缓存，丢了不得改变判定 —— 视图改写后必须重新注入。
+  const [config] = createPromptConfigs([{ id: 'notice', layer: 'pre-step', strategy: 'static', dedupe: 'session', text: 'NOTICE', position: 'after-all' }])
+  const store = visibleSession('s-no-generation')
+  const memo = new Map()
+  const run = () => runBatch([config], store.session, memo)
+  const notices = decision => decision.messages.filter(message => message.source?.plugin === 'notice')
+
+  const first = notices(await run())
+  assert.equal(first.length, 1, '首次注入')
+  store.push({ type: 'user/message', seq: 0, data: { message: first[0] } })
+  assert.deepEqual(notices(await run()), [], '仍在可见上下文里 → 不重复注入（对照：去重本身仍在）')
+
+  // 视图改写（节点被移走）但没有代次信号：memo 里那条「已投递」已不在当前上下文里。
+  store.session.surface.nodes.length = 0
+  assert.equal(notices(await run()).length, 1, '无代次戳时不查 memo，按当前上下文重新注入')
 })
