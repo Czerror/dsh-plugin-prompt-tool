@@ -156,6 +156,9 @@ export function createCountPredicate(options = {}) {
     // 成功压缩换掉了可见历史，而条目按**全部** durable 事件累加过（含被遮蔽的），无法反演
     // → 整体清条目、下次求值重建（宿主没暴露 `replaceGeneration` 时这是唯一的复位信号）。
     if (isSuccessfulCompactionEnd(event)) { state.delete(session.id); return }
+    // 消息类信号的重建路径读 `currentEvents`，那里没有 `turn/start` 这类 log-only 事件；
+    // 增量若照单全收就会靠它推进当前轮，同一会话两种结论（「冷启动 == 增量」失效）。
+    if (SURFACE_MESSAGE_TYPES.has(signal.type) && !SURFACE_MESSAGE_TYPES.has(event?.type)) return
     const entry = state.get(session.id)
     if (entry !== undefined) applyEvent(entry, event)
   }

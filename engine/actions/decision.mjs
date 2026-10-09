@@ -18,8 +18,9 @@ export function prepareDecision(action, plugin) {
       try {
         if (!matchesTool(exec) || !hit(exec)) return next()
         if (decision === 'allow') return next()
+        // `||` 而非 `??`：种子里的 `reason: ''` 是「取引擎缺省」的中性值，不是「无解释的拒绝」。
         const outcome = decision === 'deny'
-          ? { kind: 'deny', reason: String(action.reason ?? `${label}: denied by action`) }
+          ? { kind: 'deny', reason: String(action.reason || `${label}: denied by action`) }
           : { kind: 'ask' }
         return take(exec) ? outcome : next()
       } catch (error) {

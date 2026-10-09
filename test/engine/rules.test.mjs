@@ -16,7 +16,7 @@ import { setSessionVar } from '../../engine/session-vars.mjs'
 import { ruleFrame, ruleMatches, actionMatches } from '../../engine/conditions/evaluation.mjs'
 import { createNameListPredicate, subjectOf, FACT_PREDICATE_SUBJECTS, createAnchorPredicate, createCountPredicate, createSessionStatePredicate } from '../../engine/conditions/index.mjs'
 import { UNAVAILABLE } from '../../engine/conditions/availability.mjs'
-import { lastWorldBookDiagnostics } from '../../engine/st-world-book.mjs'
+import { lastWorldBookDiagnostics, stChatMessages } from '../../engine/st-world-book.mjs'
 
 function harness(services = {}) {
   const events = new Map()
@@ -1434,4 +1434,63 @@ test('T6a：count 消息类信号按当前上下文，log-only 信号按完整�
   bareState.nodes = [3]
   for (const event of bareState.log.slice(2)) bareUsers.observe(bareSession, event)
   assert.equal(bareUsers(bareSession), false, '压缩事件清条目后重建：可见的只剩替身那 1 条')
+})
+
+test('T36①：压缩遮蔽原首条推理后，锚定记忆随之作废（同一会话改判，不再被旧值钉住）', () => {
+  const state = {
+    log: [
+      { type: 'assistant/message', seq: 0, data: { message: { content: [{ type: 'reasoning', text: 'We start.' }] } } },
+      { type: 'compaction/end', seq: 1, data: {} },
+      { type: 'assistant/message', seq: 2, data: { message: { content: [{ type: 'text', text: 'AFTER' }] } } },
+    ],
+    nodes: [0],
+  }
+  // 会话对象只造一次：判定读的是它的 `surface.nodes` 现场快照，换对象就变成另一个会话、测不到缓存。
+  const session = { id: 't36-anchor', header: {}, snapshotEvents: () => state.log, surface: { get nodes() { return state.nodes } } }
+  const predicate = createAnchorPredicate({ keys: ['We'] })
+  assert.equal(predicate(session), true, '可见首条 assistant 推理带锚定词 → 确认并入记忆')
+  assert.equal(predicate(session), true, '记忆命中给出同一结论')
+  // 成功压缩遮蔽那条推理：可见首条换成 seq 2 的正文，宿主在 session/event 上通知压缩结束。
+  state.nodes = [2]
+  predicate.observe(session, { type: 'compaction/end', seq: 3, data: {} })
+  assert.equal(predicate(session), false, '压缩后记忆作废，按新的可见首条重判（全量日志仍能数到那条推理）')
+})
+
+test('T36②：消息类信号 + per:turn —— 增量 observe 与冷启动重建同结论', () => {
+  const state = {
+    log: [
+      { type: 'assistant/message', seq: 0, data: { turn: 0, message: { content: [{ type: 'text', text: 'A' }] } } },
+      { type: 'turn/start', seq: 1, data: { turn: 1 } },
+    ],
+    nodes: [0],
+  }
+  const cold = createCountPredicate({ of: 'assistant-message', per: 'turn', min: 1 })
+  assert.equal(cold(visibleSession('t36-count-cold', state)), true, '冷启动重建：可见的当前轮只有 seq 0 那条')
+  const incremental = createCountPredicate({ of: 'assistant-message', per: 'turn', min: 1 })
+  const session = { id: 't36-count-incremental', header: {}, snapshotEvents: () => state.log, surface: { get nodes() { return state.nodes } } }
+  assert.equal(incremental(session), true, '先冷启动建条目')
+  incremental.observe(session, state.log[1])
+  assert.equal(incremental(session), true, '`turn/start` 不是 surface 承载类型：增量不拿它推进当前轮，与重建同结论')
+})
+
+test('T36③：无 id 的消息在重复 seq 下只计一次（chat.length 不虚高）', () => {
+  // 位置替换后同一事件占 `nodes` 里两个位置，又因为消息没有 `id` 而躲过既有的按 id 去重。
+  const state = {
+    log: [{ type: 'user/message', seq: 0, data: { message: { role: 'user', content: [{ type: 'text', text: 'HI' }] } } }],
+    nodes: [0, 0],
+  }
+  const session = { id: 't36-chat', header: {}, snapshotEvents: () => state.log, surface: { get nodes() { return state.nodes } } }
+  assert.equal(stChatMessages(session).length, 1, '同一 seq 占两个位置只算一条：它驱动 delay / sticky 窗口与概率 generation')
+})
+
+test('T36④：从种子出发把 decision 改成 deny，空串 reason 回退引擎缺省原因', async () => {
+  const h = harness()
+  const seed = structuredClone(ACTION_EXAMPLES.decision)
+  assert.equal(seed.reason, '', '种子里的中性值就是空串（T31 的「不替用户选业务值」）')
+  const rules = compileRules([{ id: 'deny', then: [{ ...seed, id: 'denied', kind: 'decision', decision: 'deny' }] }])
+  const dispose = mountRuleSources(h.ctx, [{ moduleId: 'module', rules }])
+  const outcome = await h.run('tools/pre-execute', [{ agent: actor(), name: 'bash' }], () => ({ kind: 'allow' }))
+  assert.equal(outcome.kind, 'deny')
+  assert.equal(outcome.reason, 'denied: denied by action', '空串是「取引擎缺省」，不是「抑制默认原因」')
+  dispose()
 })

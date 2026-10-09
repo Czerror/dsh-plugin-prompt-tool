@@ -173,6 +173,7 @@ function memoKey(field, moduleId, value, stamp) {
 }
 
 /** 本会话当前可见上下文的代次戳（无 surface / 非数字时 undefined）。 */
+// ponytail: 「有 `surface.nodes` 却无数字 `replaceGeneration`」的宿主形态不存在（两者同属一个 `SessionSurface` 接口），不写兜底。
 function contextStamp(session) {
   const generation = session?.surface?.replaceGeneration
   return typeof generation === 'number' ? generation : undefined

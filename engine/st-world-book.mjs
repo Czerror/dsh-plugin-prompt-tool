@@ -15,7 +15,14 @@ export function stChatMessages(session, pending = []) {
     result.push({ id: message.id, role, text })
   }
   // 关键词世界书由**模型看得见的**对话触发；被压缩遮蔽的旧对话不该再持续命中条目。
+  // 位置替换后同一 seq 可在 `surface.nodes` 里占多个位置（`history.mjs` 头部）：无 id 的消息
+  // 按 id 去不掉，会重复计数并抬高 `chat.length`（它驱动 delay / sticky 窗口与概率 generation）。
+  const seenSeq = new Set()
   for (const event of currentEvents(session)) {
+    if (event?.seq !== undefined) {
+      if (seenSeq.has(event.seq)) continue
+      seenSeq.add(event.seq)
+    }
     if (event?.type === 'user/message' || event?.type === 'assistant/message') add(event.data?.message ?? event.data, event.type.split('/')[0])
   }
   for (const message of pending) add(message, message.role ?? 'user')
