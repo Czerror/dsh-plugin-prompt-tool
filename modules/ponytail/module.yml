@@ -200,12 +200,21 @@ rules:
         - session: { type: 'user/message', present: false }
     then:
       - if:
-          text:
-            keys:
-              - PONYTAIL:readonly
-              - only read
-              - 只读
-            subject: userMessage
+          # 「只读」类关键词本身有假阳性：子代理分派里常见「git 只读」这类描述，会把整个
+          # 任务误判成只读档。只读档的正文是为**审查 / 分析**场景写的（结论优先、把发现当
+          # 交付物），所以再加一条「审查」条件把这类误触过滤掉——两个信号各自独立
+          # （`all` 是 AND），不合并进同一张关键词表。
+          all:
+            - text:
+                keys:
+                  - PONYTAIL:readonly
+                  - only read
+                  - 只读
+                subject: userMessage
+            - text:
+                subject: userMessage
+                keys:
+                  - 审查
         then:
           - id: inject-readonly
             kind: inject-text

@@ -100,7 +100,14 @@ test('ponytail 模块：注入点映射与上游 hook 一致', () => {
 
   assert.equal(card.then.length, 1, '外层只放一个分档节点')
   const branch = card.then[0]
-  assert.deepEqual(branch.if, { text: { keys: RULE_KEYS, subject: 'userMessage' } }, '分档判据只认整个任务只读的信号')
+  // 只读档收窄为**双条件**（`all` 是 AND）：只读信号 + 审查。「只读」类关键词本身有假阳性
+  // （子代理分派里的「git 只读」），而只读档的正文是为审查/分析写的（结论优先、把发现当
+  // 交付物），因此用第二条独立信号过滤误触，两张关键词表不合并。
+  const REVIEW_KEYS = ['审查']
+  assert.deepEqual(branch.if, { all: [
+    { text: { keys: RULE_KEYS, subject: 'userMessage' } },
+    { text: { subject: 'userMessage', keys: REVIEW_KEYS } },
+  ] }, '分档判据＝只读信号 AND 审查（后者过滤「git 只读」类假阳性）')
   const readonlyAction = branch.then?.[0]
   const writeAction = branch.else?.[0]
   assert.ok(readonlyAction !== undefined, 'then 分支必须有只读档动作')
