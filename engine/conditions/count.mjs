@@ -1,4 +1,6 @@
-import { MAX_TRACKED_SESSIONS, extractText, isDelegated, sessionEvents } from '../shared.mjs'
+import { MAX_TRACKED_SESSIONS, extractText, isDelegated } from '../shared.mjs'
+import { currentEvents, historyEvents } from '../history.mjs'
+import { isSuccessfulCompactionEnd } from '../compaction-epoch.mjs'
 import { sessionOf } from './subject.mjs'
 import { boundOf, optionalBoolean } from './values.mjs'
 
@@ -18,14 +20,34 @@ const MAX_TRACKED_TURNS = 8
 const TURN_EVENT = 'turn/start'
 
 /**
+ * surface 只承载**消息类**事件——`system/message`、`developer/message`、`user/message`、
+ * `assistant/message`、`tool/result`（真值源：宿主 `packages/core/session/src/surface.ts` 的
+ * `SURFACE_EVENT_TYPES`）。非该集合的事件（`tool/call`、`turn/start`）永远不是 surface 节点，
+ * 迁到当前上下文只会数到 0 —— 它们只能按完整历史计。
+ * ponytail: 宿主扩大 `SURFACE_EVENT_TYPES` 时这里要同步，否则新的消息类事件会被当成 log-only 多计。
+ */
+const SURFACE_MESSAGE_TYPES = new Set([
+  'system/message',
+  'developer/message',
+  'user/message',
+  'assistant/message',
+  'tool/result',
+])
+
+/**
  * 计数判断：次数 / 字符数 / 轮次，带上下限与**冷启动重建**。
  *
- *  - `per: 'session'` 计整个 durable log；`per: 'turn'` 只计**最新轮**，当前轮由
+ *  - `per: 'session'` 计本会话全部（视图口径见下条）；`per: 'turn'` 只计**最新轮**，当前轮由
  *    `turn/start` 与计数信号自身带轮号的事件共同推进（与 deliberation-gate 的
  *    `turnOf` 同规则），轮号取自 `event.data.turn`；无轮号的事件不参与轮内计数
- *    （宁可少计，也不把跨轮数据算进当前轮）。
- *  - 冷启动：首次判定冷扫 `sessionEvents(session)` 重建（重启/恢复/重挂后同一结果），
- *    之后 O(1)；`observe` 是增量喂入，**只喂已判定过的会话**，避免「冷扫 + 增量」重复计数。
+ *    （宁可少计，也不把跨轮数据算进当前轮）。消息类信号读当前上下文时看不到 `turn/start`，
+ *    当前轮只由带轮号的可见信号推进。
+ *  - 视图：消息类信号读**当前上下文**——被压缩 / 位置替换遮蔽的消息不再计入；`tool/call` 与
+ *    `turn/start` 不是 surface 承载类型，读**完整历史**，「重启/恢复/重挂后同一结果」由此保住。
+ *  - 冷启动：首次判定冷扫重建（重启/恢复/重挂后同一结果），之后 O(1)；`observe` 是增量喂入，
+ *    **只喂已判定过的会话**，避免「冷扫 + 增量」重复计数。成功压缩或 surface 代次推进时条目
+ *    整体作废、下次求值重建——压缩后 `every: N` 的节奏随之重置，可能立刻再命中一次（已接受的
+ *    用户可见行为，见 CHANGELOG）。
  *  - 上下限：`count >= min`（声明时）且 `count <= max`（声明时）。至少要声明一侧，
  *    否则该判定恒真——那是把配置错误伪装成命中。
  *  - 取不到会话 = 无事件 = 计数 0（与空会话同一语义，不发明数据）；无 `id` 的会话
@@ -73,9 +95,12 @@ export function createCountPredicate(options = {}) {
   // **主判据就是 count**，受众不能只挂在 `session` 谓词上——那会迫使声明额外耦合一个
   // durable 事件类型（还要回答「哪种 type 恒真」，而哨兵轮表明甚至可能没有轮事件）。
   const delegated = optionalBoolean(options.delegated, 'delegated', undefined)
-  /** sessionId -> { total, turns, lastTurn }（进程内快路径，真相在 durable 事件流）。 */
+  /** sessionId -> { total, turns, lastTurn, generation }（进程内快路径，真相在 durable 事件流）。 */
   const state = new Map()
-  const fresh = () => ({ total: 0, turns: new Map(), lastTurn: undefined })
+  const fresh = (generation) => ({ total: 0, turns: new Map(), lastTurn: undefined, generation })
+  const generationOf = (session) => session?.surface?.replaceGeneration
+  /** 消息类信号按当前上下文计，log-only 信号按完整历史计（判据见 `SURFACE_MESSAGE_TYPES`）。 */
+  const view = SURFACE_MESSAGE_TYPES.has(signal.type) ? currentEvents : historyEvents
   const measure = (event) => (signal.measure === 'chars' ? extractText(event.data).length : 1)
   /** 轮号推进：与 deliberation-gate 的 turnOf/turnEntryOf 同规则——`turn/start` 与
    *  计数信号自身带轮号的事件都推进当前轮，且取最大值；新轮先落 0，再累加。 */
@@ -111,14 +136,15 @@ export function createCountPredicate(options = {}) {
     ? entry.total
     : (entry.lastTurn === undefined ? 0 : entry.turns.get(entry.lastTurn) ?? 0))
   const rebuild = (session) => {
-    const entry = fresh()
-    for (const event of sessionEvents(session)) applyEvent(entry, event)
+    const entry = fresh(generationOf(session))
+    for (const event of view(session)) applyEvent(entry, event)
     return entry
   }
   const entryOf = (session) => {
     if (session?.id === undefined) return rebuild(session)
     const known = state.get(session.id)
-    if (known !== undefined) return known
+    // 位置替换没有对应的 durable 事件可观察，只在 surface 代次上前进：代次变了就按当前上下文重建。
+    if (known !== undefined && known.generation === generationOf(session)) return known
     const entry = rebuild(session)
     if (state.size >= MAX_TRACKED_SESSIONS) state.clear()
     state.set(session.id, entry)
@@ -132,7 +158,11 @@ export function createCountPredicate(options = {}) {
   }
   predicate.kind = 'count'
   predicate.observe = (session, event) => {
-    const entry = session?.id === undefined ? undefined : state.get(session.id)
+    if (session?.id === undefined) return
+    // 成功压缩换掉了可见历史，而条目按**全部** durable 事件累加过（含被遮蔽的），无法反演
+    // → 整体清条目、下次求值重建（宿主没暴露 `replaceGeneration` 时这是唯一的复位信号）。
+    if (isSuccessfulCompactionEnd(event)) { state.delete(session.id); return }
+    const entry = state.get(session.id)
     if (entry !== undefined) applyEvent(entry, event)
   }
   return predicate

@@ -11,7 +11,8 @@
  *   - 判定异常不抛出：门配错不应该阻断正常链路。
  */
 
-import { extractText, sessionEvents } from './shared.mjs'
+import { currentEvents } from './history.mjs'
+import { extractText } from './shared.mjs'
 
 /** subject → 载荷字段名。改这里等于改所有层的匹配对象。 */
 export const SUBJECT_FIELDS = {
@@ -83,9 +84,9 @@ export function userMessagesText(messages) {
     .join('\n')
 }
 
-/** 最后一条 assistant 消息的文本（turn-stop 的缺省匹配对象）。 */
+/** 最后一条 assistant 消息的文本（turn-stop 的缺省匹配对象）；取**当前上下文**里可见的那条。 */
 export function lastAssistantText(session) {
-  const events = sessionEvents(session)
+  const events = currentEvents(session)
   for (let index = events.length - 1; index >= 0; index -= 1) {
     if (events[index]?.type === 'assistant/message') return extractText(events[index].data)
   }

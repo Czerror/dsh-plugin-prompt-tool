@@ -1,4 +1,5 @@
-import { isDelegated, sessionEvents } from '../shared.mjs'
+import { currentEvents } from '../history.mjs'
+import { isDelegated } from '../shared.mjs'
 import { sessionOf } from './subject.mjs'
 import { optionalBoolean } from './values.mjs'
 
@@ -14,7 +15,8 @@ export function createSessionStatePredicate(options = {}) {
   const delegated = optionalBoolean(options.delegated, 'delegated', undefined)
   const predicate = (payload) => {
     if (delegated !== undefined && isDelegated(sessionOf(payload)) !== delegated) return false
-    return sessionEvents(sessionOf(payload))
+    // `present` 镜像的是**当前上下文**，不是「本会话发生过」：被压缩遮蔽的事件模型已经看不到。
+    return currentEvents(sessionOf(payload))
       .some((event) => event?.type === type) === present
   }
   predicate.kind = 'session'

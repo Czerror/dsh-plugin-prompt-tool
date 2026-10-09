@@ -14,7 +14,7 @@ import { wireLayers } from '../../engine/layers.mjs'
 import { WARN_ONCE_LIMIT, createWarnOnce } from '../../engine/shared.mjs'
 import { setSessionVar } from '../../engine/session-vars.mjs'
 import { ruleFrame, ruleMatches, actionMatches } from '../../engine/conditions/evaluation.mjs'
-import { createNameListPredicate, subjectOf, FACT_PREDICATE_SUBJECTS } from '../../engine/conditions/index.mjs'
+import { createNameListPredicate, subjectOf, FACT_PREDICATE_SUBJECTS, createAnchorPredicate, createCountPredicate, createSessionStatePredicate } from '../../engine/conditions/index.mjs'
 import { UNAVAILABLE } from '../../engine/conditions/availability.mjs'
 import { lastWorldBookDiagnostics } from '../../engine/st-world-book.mjs'
 
@@ -1199,4 +1199,190 @@ test('T31：规则卡的动作种子覆盖 catalog 声明的可编辑字段，�
   assert.deepEqual(ACTION_EXAMPLES['append-context'], { mode: 'context', text: '' })
   // 空 toolNames 是「匹配所有工具」而不是「不匹配任何工具」——定向门必须自己列名单。
   assert.equal(toolNameSet('', 'probe', 'probe.toolNames'), undefined)
+})
+
+/**
+ * 会话桩：`log` 是 durable 真值源，`nodes` 是**模型可见**节点。
+ * 两条与宿主同构的事实（真值源 `packages/core/session/src/surface.ts:50-56`）：只有消息类事件
+ * 进得了 surface，非消息事件（`tool/call`、`turn/start`、`compaction/end`）永远不是节点；
+ * 只有 replace 推进 `replaceGeneration`（`surface.ts:569-572`）。
+ */
+const visibleSession = (id, state) => ({
+  id,
+  header: {},
+  snapshotEvents: () => state.log,
+  surface: { get nodes() { return state.nodes }, get replaceGeneration() { return state.generation } },
+})
+
+test('T6a：anchor 只认当前可见的首条 assistant 推理，兜底轮数按 seq 去重', () => {
+  const state = {
+    log: [
+      { type: 'assistant/message', seq: 0, data: { message: { content: [{ type: 'reasoning', text: 'We start.' }] } } },
+      { type: 'compaction/end', seq: 1, data: {} },
+      { type: 'assistant/message', seq: 2, data: { message: { content: [{ type: 'text', text: 'AFTER' }] } } },
+    ],
+    nodes: [0],
+    generation: 0,
+  }
+  const predicate = createAnchorPredicate({ keys: ['We'], fallbackAfter: 1 })
+  assert.equal(predicate(visibleSession('t6a-anchor-visible', state)), true, '可见的首条 assistant 推理带锚定词 → 确认')
+  // 压缩把那条推理遮蔽掉：冷启动重建时可见首条 assistant 换成别的 → 不确认，兜底也只剩 1 轮。
+  state.nodes = [2]
+  assert.equal(predicate(visibleSession('t6a-anchor-compacted', state)), false, '锚定推理不在可见上下文里就不再确认（全量日志仍能数到它）')
+
+  // 位置替换后同一 seq 可在 nodes 里占多个位置：按条数直数会把一轮算成两轮。
+  const plain = {
+    log: [
+      { type: 'assistant/message', seq: 0, data: { message: { content: [] } } },
+      { type: 'assistant/message', seq: 1, data: { message: { content: [] } } },
+    ],
+    nodes: [0, 0],
+    generation: 1,
+  }
+  assert.equal(predicate(visibleSession('t6a-anchor-dup', plain)), false, '同一 seq 重复出现只算一轮（fallbackAfter=1 未满）')
+  plain.nodes = [0, 1]
+  assert.equal(predicate(visibleSession('t6a-anchor-two', plain)), true, '两条不同 seq 的可见 assistant 才凑满两轮')
+})
+
+test('T6a：session 谓词的 present 镜像是当前上下文，不是「本会话曾发生过」', () => {
+  const state = {
+    log: [
+      { type: 'user/message', seq: 0, data: { message: {} } },
+      { type: 'assistant/message', seq: 1, data: { message: {} } },
+      { type: 'compaction/end', seq: 2, data: {} },
+      // 宿主的压缩替身本身就是一条 user/message（`compaction-basic/src/region.ts:506`，带 replace surfaceOp）。
+      { type: 'user/message', seq: 3, data: { message: {} } },
+    ],
+    nodes: [0, 1],
+    generation: 0,
+  }
+  const session = visibleSession('t6a-present', state)
+  const present = createSessionStatePredicate({ type: 'assistant/message', present: true })
+  const absent = createSessionStatePredicate({ type: 'assistant/message', present: false })
+  assert.equal(present(session), true, '可见上下文里有 assistant 消息')
+  assert.equal(absent(session), false)
+  state.nodes = [2, 3]
+  state.generation = 1
+  assert.equal(present(session), false, '压缩遮蔽后 present:true 不再命中（全量日志仍看得到那条）')
+  assert.equal(absent(session), true, 'present:false 镜像随之翻转')
+  // 存量首轮守卫 `templates/67-inbox-prepend.yml` 的 `{type: user/message, present: false}` 不受影响：
+  // 压缩替身是 user/message，可见上下文里仍然有该类型 → 压缩后**不**重放首轮。
+  assert.equal(createSessionStatePredicate({ type: 'user/message', present: false })(session), false)
+})
+
+test('T6a：turn-stop 只匹配当前可见的最后一条 assistant 正文', async () => {
+  const steered = []
+  const h = harness()
+  const agent = { ...actor(), steer: message => steered.push(message.content[0].text) }
+  const state = {
+    log: [
+      { type: 'assistant/message', seq: 0, data: { message: { content: [{ type: 'text', text: 'EARLY' }] } } },
+      { type: 'assistant/message', seq: 1, data: { message: { content: [{ type: 'text', text: 'LATE' }] } } },
+    ],
+    nodes: [0],
+    generation: 1,
+  }
+  agent.session = visibleSession('t6a-turn-stop', state)
+  const dispose = mountRuleSources(h.ctx, [{ moduleId: 'module', rules: compileRules([{
+    id: 'stop',
+    layer: 'turn-stop',
+    if: { text: { subject: 'assistantText', keys: ['LATE'] } },
+    then: [{ id: 'stop', kind: 'append-context', mode: 'continue', text: 'GO' }],
+  }]) }])
+  await h.emit('agent/turn-stopping', { agent, turn: 1 })
+  assert.deepEqual(steered, [], '被移出可见节点的末条正文不再匹配')
+  state.nodes = [0, 1]
+  await h.emit('agent/turn-stopping', { agent, turn: 2 })
+  assert.deepEqual(steered, ['GO'], '可见末条恢复后照常续跑')
+  dispose()
+})
+
+test('T6a：count 消息类信号按当前上下文，log-only 信号按完整历史且两路径同结果', () => {
+  const state = {
+    log: [
+      { type: 'user/message', seq: 0, data: { message: {} } },
+      { type: 'tool/call', seq: 1, data: {} },
+      { type: 'tool/result', seq: 2, data: { message: {} } },
+      { type: 'tool/call', seq: 3, data: {} },
+      { type: 'turn/start', seq: 4, data: { turn: 1 } },
+      { type: 'user/message', seq: 5, data: { message: {} } },
+      { type: 'tool/call', seq: 6, data: {} },
+      { type: 'turn/start', seq: 7, data: { turn: 2 } },
+    ],
+    nodes: [0, 2, 5],
+    generation: 0,
+  }
+  const session = visibleSession('t6a-count', state)
+  const users = createCountPredicate({ of: 'user-message', min: 1 })
+  const usersTwo = createCountPredicate({ of: 'user-message', min: 2 })
+  const calls = createCountPredicate({ of: 'tool-call', min: 3 })
+  const turns = createCountPredicate({ of: 'turn', min: 2 })
+  assert.equal(users(session), true, '消息类：可见上下文里 2 条 user/message')
+  assert.equal(usersTwo(session), true)
+  assert.equal(calls(session), true, 'log-only：完整历史里 3 次 tool/call')
+  assert.equal(turns(session), true, 'log-only：完整历史里 2 次 turn/start')
+
+  // 成功压缩：替身 user/message 接替可见历史（宿主顺序：summary → 替身 append 成 replace → compaction/end）。
+  state.log.push(
+    { type: 'compaction/summary', seq: 8, data: {} },
+    { type: 'user/message', seq: 9, data: { message: {} } },
+    { type: 'compaction/end', seq: 10, data: {} },
+  )
+  state.nodes = [9]
+  state.generation = 1
+  for (const event of state.log.slice(8)) {
+    for (const predicate of [users, usersTwo, calls, turns]) predicate.observe(session, event)
+  }
+
+  // 消息类：清条目后必须**走重建**（按当前上下文），不是「清空后从 0 继续累加」——
+  // 替身那条 user/message 是清条目之前就喂进来的，从 0 起会漏掉它。
+  assert.equal(users(session), true, '压缩清条目后重建：压缩后仍在可见上下文里的那条 user/message 计入')
+  assert.equal(users(session), createCountPredicate({ of: 'user-message', min: 1 })(session), '与重启后重建同结果')
+  assert.equal(usersTwo(session), false, '消息类按当前上下文：压缩遮蔽的 2 条不再计入（全量日志里仍有 3 条）')
+  assert.equal(calls(session), true, 'log-only 不归零：清条目后按完整历史重建仍是 3 次 tool/call')
+  assert.equal(turns(session), true, 'log-only 不归零：turn/start 仍数到 2 轮')
+  assert.equal(createCountPredicate({ of: 'tool-call', min: 3 })(session), calls(session), '冷启动重建 == 增量累积')
+  assert.equal(createCountPredicate({ of: 'turn', min: 2 })(session), turns(session), '冷启动重建 == 增量累积')
+
+  // 位置替换（非压缩）只推进 surface 代次，没有 durable 事件可观察：代次变了同样按当前上下文重建。
+  const replaced = {
+    log: [
+      { type: 'tool/result', seq: 0, data: { message: {} } },
+      { type: 'tool/result', seq: 1, data: { message: {} } },
+    ],
+    nodes: [0, 1],
+    generation: 0,
+  }
+  const replacedSession = visibleSession('t6a-count-replace', replaced)
+  const results = createCountPredicate({ of: 'tool-result', min: 2 })
+  assert.equal(results(replacedSession), true, '消息类：可见上下文里 2 条 tool/result')
+  replaced.nodes = [1]
+  replaced.generation = 1
+  assert.equal(results(replacedSession), false, '代次推进后按当前上下文重算（1 < 2，全量日志里仍有 2 条）')
+
+  // 代次不可见（surface 只给 nodes）时，成功压缩那条 durable 事件是**唯一**复位信号：
+  // 条目按即将被遮蔽的消息累加过，必须在它到达时作废、下次求值重建。
+  const bareState = {
+    log: [
+      { type: 'user/message', seq: 0, data: { message: {} } },
+      { type: 'user/message', seq: 1, data: { message: {} } },
+    ],
+    nodes: [0, 1],
+  }
+  const bareSession = {
+    id: 't6a-count-bare',
+    header: {},
+    snapshotEvents: () => bareState.log,
+    surface: { get nodes() { return bareState.nodes } },
+  }
+  const bareUsers = createCountPredicate({ of: 'user-message', min: 2 })
+  assert.equal(bareUsers(bareSession), true, '建条目：可见 2 条 user/message')
+  bareState.log.push(
+    { type: 'compaction/summary', seq: 2, data: {} },
+    { type: 'user/message', seq: 3, data: { message: {} } },
+    { type: 'compaction/end', seq: 4, data: {} },
+  )
+  bareState.nodes = [3]
+  for (const event of bareState.log.slice(2)) bareUsers.observe(bareSession, event)
+  assert.equal(bareUsers(bareSession), false, '压缩事件清条目后重建：可见的只剩替身那 1 条')
 })

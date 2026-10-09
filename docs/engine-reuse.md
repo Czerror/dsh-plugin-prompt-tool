@@ -131,6 +131,22 @@
   （如 instruction-hint 的去重）另行按需取消息视图。
 - 验收入口：`test/engine/history.test.mjs`。
 
+**消费点 → 视图归属**（PLAN 的 T6 逐点判定结果；上一条里「除已迁的会话去重判据外，其余消费点仍读完整历史视图」
+是迁移期间的临时说明，已被本表取代）：
+
+| 消费点 | 视图 | 为什么 |
+|---|---|---|
+| `engine/executor.mjs` 会话去重判据 | 当前上下文 | 「模型看得见的才算投递过」；压缩后同一身份可以再次注入 |
+| `engine/conditions/anchor.mjs` 首条推理确认与 `fallbackAfter` 轮数 | 当前上下文 | 首轮条件按模型眼前的**第一条**推理判；轮数按 `seq` 去重（位置替换后同一节点可重复出现） |
+| `engine/conditions/session.mjs` 的 `present` 镜像 | 当前上下文 | `present` 问「此刻可见上下文里有没有这类事件」，不是「本会话曾经发生过」 |
+| `engine/condition.mjs` 的 `lastAssistantText`（turn-stop 匹配对象） | 当前上下文 | 「刚刚这条回复」指模型看得见的那条 |
+| `engine/interpolate.mjs` 的 `lastusermessage` / `lastcharmessage` | 当前上下文 | 官方运行时事实按模型可见消息求值，读全量日志天然对不齐 |
+| `engine/st-render.mjs` 的 `generationKey`（ST 变量帧边界） | 当前上下文 | 「帧 = 同一代可见历史」，压缩遮蔽旧节点后帧边界必须跟着可见历史走 |
+| `engine/st-world-book.mjs` 的 `stChatMessages`（关键词扫描 haystack） | 当前上下文 | 关键词世界书只该由模型看得见的真实对话触发 |
+| `engine/compaction-epoch.mjs` 门控 / 晋升的冷启动重建 | 完整历史 | 「最后一次成功压缩之后是否曾经 `tool/call` / `assistant/message` 过」，`boundary` 本身是 log `seq` |
+| `engine/actions/assembly.mjs` 的 `fillUnlocked` 解锁名单 | 完整历史 | 跨请求、跨压缩保留「曾经发现过哪些工具」；压缩后丢名单会裁掉已解锁的工具 |
+| `engine/conditions/count.mjs` 的冷启动重建 | 按信号分视图 | 消息类信号（`user/message`、`assistant/message`、`tool/result`）读当前上下文，被压缩 / 位置替换遮蔽的不再计入；`tool/call` 与 `turn/start` 不在 `SURFACE_EVENT_TYPES` 里、永远不是节点，读完整历史——一律迁会让它们的冷启动重建恒为 0 |
+
 `actions.mjs`、`predicates.mjs`、`strategies.mjs` 仅保留重导出；不能把实现重新堆回这些入口。
 `trigger-spec.mjs` 用于旧声明的离线校验，新运行链只编译 `rules`。原专用能力模块
 `context-gate`、`tool-bootstrap`、`tool-filter`、`anchor-turn`、`deliberation-gate`、
