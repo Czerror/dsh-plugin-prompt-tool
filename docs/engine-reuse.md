@@ -262,6 +262,17 @@
 `getRuleEditorMeta()` 从实际条件、动作目录派生可序列化选项；`getEngineMeta()` 提供有效
 层和内容策略目录，其中 `injectionLayers` 是 `inject-text` 真正可绑定的八层（`layers` /
 `layerOrder` 仍是九层：`tool-pipeline` 只作规则级展示归属，没有注入通道）。新动作种子是可编译的中性空内容、空 patch 或空名单，不替用户选业务值。
+动作种子（`engine/actions/examples.mjs`）是规则卡动作字段的**唯一驱动源**：`rule-spec.mjs` 把
+`{ kind, ...种子 }` 作为 `meta.actions[].example` 下发，`RuleParameterFields` 按它的键逐个渲染控件。
+因此除 `match` 外，种子覆盖 `catalog.mjs` 声明的全部字段：`decision` 给 phase / decision / action /
+reason / text / toolNames（缺省档全取引擎既有默认），`append-context` 给 mode / text。两条都是
+**空串 / 缺省枚举**，不替用户选业务值；`toolNames` 必须是**逗号分隔字符串**——`parseToolNames`
+只认字符串，数组会被解析成空 = 匹配所有工具，把定向门悄悄扩大成全工具门。
+`match` 刻意不进种子：动作级 `match` 在声明路径上**必须是函数**（`typeof action.match === 'function'`
+才过滤，对象形态恒命中 → `rule-spec.mjs` 编译期拒绝），而种子是要写回 `module.yml` 的结构化值，
+函数既进不了 `structuredClone` 也进不了 YAML；条件是规则级 `if` / 分支节点的职责，动作级
+`match` 只留给手工 JSON 编辑。`getRuleEditorMeta()` 的每条种子都会经 `compileRules` 实测编译，
+种子写错会当场炸掉规则编辑器，不是静默降级。
 `custom-fallback` 不再发布，也没有可执行兼容分支，必须离线转为显式 `anchor` 条件和
 `anchor-notice` 内容；条件未声明 `fallbackAfter` 时不启用轮数兜底。
 

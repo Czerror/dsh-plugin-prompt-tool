@@ -196,7 +196,7 @@ persona:
 | `runtime-context` | `ctx.systemPrompt.context` 动态快照 | `order / text / variables / params.contextName` |
 | `agent-request` | `agent/request`（LlmCallConfig） | `params.patch`（浅合并）/ `params.replace`（整体替换） |
 | `llm-stream` | `llm/stream`（流包装） | `params.mode=pass\|replace` |
-| `tool-pipeline` | `tools/*`（pre/post）——**无注入通道** | 只作规则级展示归属：工具链的裁决用 `decision`、追加上下文用 `append-context` 动作 |
+| `tool-pipeline` | `tools/*`（pre/post）——**无注入通道** | 只作规则级展示归属：工具链的裁决用 `decision`（`phase / decision / action / reason / text / toolNames`）、追加上下文用 `append-context`（`mode / text`）动作 |
 | `turn-stop` | `agent/turn-stopping` | 条件命中后通过 steer 继续；每个来源（模块）每轮1次、每会话3次上限 |
 | `subagent-start` | `subagent/start` + `Agent.inject` | 子代理事件匹配与注入文本；模型/深度在卡内共享设置 |
 | `subagent-end` | `subagent/end` + 可选 `Agent.inject` | `params.action=observe\|inject-main`，后者投递到所属主会话 |

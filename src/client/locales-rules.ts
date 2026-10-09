@@ -43,6 +43,8 @@ export const RULES_ZH = {
   'rules.steps.yes': '是', 'rules.steps.no': '否',
   'rules.steps.chain': '生效条件：{chain}',
   'rules.steps.branchUnsupported': '该层是注册制层（装配时注册一次），没有逐轮求值时机，不能使用条件分支；请改用 pre-step、subagent、tool-pipeline 或 turn-stop 层。',
+  // 动作卡里与动作类型名同名、但含义不同的字段（裁决档 / 事后判决）。
+  'rules.actionField.action': '事后判决', 'rules.actionField.decision': '裁决', 'rules.actionField.toolNames': '生效工具',
 } as const
 export const RULES_EN: Record<keyof typeof RULES_ZH, string> = {
   'rules.title': 'Rules', 'rules.module': 'Module level',
@@ -88,4 +90,5 @@ export const RULES_EN: Record<keyof typeof RULES_ZH, string> = {
   'rules.steps.yes': 'yes', 'rules.steps.no': 'no',
   'rules.steps.chain': 'Effective condition: {chain}',
   'rules.steps.branchUnsupported': 'This layer registers once at assembly time and has no per-turn evaluation point, so conditional branches are unavailable here. Use pre-step, subagent, tool-pipeline, or turn-stop instead.',
+  'rules.actionField.action': 'Post-execute verdict', 'rules.actionField.decision': 'Decision', 'rules.actionField.toolNames': 'Target tools',
 }

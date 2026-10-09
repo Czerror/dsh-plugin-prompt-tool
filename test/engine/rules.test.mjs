@@ -6,6 +6,9 @@ import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import { compileRules, getRuleEditorMeta, isFixedRegistration } from '../../engine/rule-spec.mjs'
 import { INJECT_CONFIG_FIELDS, SESSION_VARIABLES_DISABLED } from '../../engine/schema.mjs'
 import { prepareAction } from '../../engine/actions.mjs'
+import { toolNameSet } from '../../engine/actions/shared.mjs'
+import { ACTION_EXAMPLES } from '../../engine/actions/examples.mjs'
+import { ACTION_KINDS } from '../../engine/actions/catalog.mjs'
 import { mountRuleSources } from '../../engine/rule-runtime.mjs'
 import { wireLayers } from '../../engine/layers.mjs'
 import { WARN_ONCE_LIMIT, createWarnOnce } from '../../engine/shared.mjs'
@@ -1175,4 +1178,25 @@ test('F27：complete / suppressRuntimeContext 只属于 system-section 层', () 
     { id: 's1', then: [{ id: 'a', kind: 'inject-text', config: { id: 'a', layer: 'system-section', text: 'X', params: { complete: true } } }] },
     { id: 's2', then: [{ id: 'b', kind: 'inject-text', config: { id: 'b', layer: 'system-section', text: 'Y', params: { complete: true } } }] },
   ]), /multiple complete system sections/)
+})
+
+test('T31：规则卡的动作种子覆盖 catalog 声明的可编辑字段，且不替用户选业务值', () => {
+  const meta = getRuleEditorMeta()
+  for (const [kind, definition] of Object.entries(ACTION_KINDS)) {
+    const keys = Object.keys(ACTION_EXAMPLES[kind])
+    assert.deepEqual(keys.filter(key => !definition.fields.includes(key)), [], `${kind} 的种子不能有 catalog 未声明的键`)
+    // 每条种子都能编译（工具裁决要求 phase/decision/action 落在引擎既有枚举里）。
+    assert.doesNotThrow(() => compileRules([{ id: 'seed', then: [{ ...structuredClone(ACTION_EXAMPLES[kind]), id: 'a', kind }] }]), `${kind} 的种子不可编译`)
+    assert.deepEqual(Object.keys(meta.actions.find(item => item.kind === kind).example).sort(),
+      ['kind', ...keys].sort(), `${kind} 的下发种子就是 ACTION_EXAMPLES`)
+    // `match` 必须是函数（rule-spec 的声明期拒绝），种子是结构化值 → 它不在这张卡的可编辑面里。
+    if (definition.fields.includes('match')) {
+      assert.deepEqual(definition.fields.filter(field => !keys.includes(field)), ['match'], `${kind} 只允许 match 落在种子外`)
+    }
+  }
+  // 用户追加面：decision / append-context 的工具链参数在卡里结构化可编辑。
+  assert.deepEqual(ACTION_EXAMPLES.decision, { phase: 'pre', decision: 'allow', action: 'accept', reason: '', text: '', toolNames: '' })
+  assert.deepEqual(ACTION_EXAMPLES['append-context'], { mode: 'context', text: '' })
+  // 空 toolNames 是「匹配所有工具」而不是「不匹配任何工具」——定向门必须自己列名单。
+  assert.equal(toolNameSet('', 'probe', 'probe.toolNames'), undefined)
 })

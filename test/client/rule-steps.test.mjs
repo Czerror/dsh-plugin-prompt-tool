@@ -14,6 +14,7 @@ import { parse } from 'yaml'
 import { withSsr, renderElement, makeTranslate } from './support/ssr-render.mjs'
 import { createWorkspaceDrafts } from '../../src/client/data/workspace-drafts.ts'
 import { getRuleEditorMeta } from '../../engine/rule-spec.mjs'
+import { ACTION_KINDS } from '../../engine/actions/catalog.mjs'
 import {
   actionSummary, branchSummary, collectActionIds, conditionChain, conditionSummary,
   conditionalActions, countNodes, isActionNode, isBranchNode, isValidNode, nodeList,
@@ -83,8 +84,32 @@ test('rule-steps: 含分支的真实规则渲染不抛错，卡默认收起且�
   assert.match(unsupported, /不能使用条件分支/, '注册制层禁用条件分支并说明原因')
 })
 
-test('rules workspace: 层筛选器用自己的可访问名，不借用「缺省层」字段标签', async () => {
-  const { RulesWorkspace } = await withSsr([new URL('../../src/client/features/prompts/RulesWorkspace.tsx', import.meta.url).href])
+test('rule-steps: 工具链动作卡按引擎种子渲染可编辑字段，match 不造假入口', async () => {
+  const { RuleStepsPanel } = await withSsr([new URL('../../src/client/features/prompts/RuleSteps.tsx', import.meta.url).href])
+  const meta = getRuleEditorMeta()
+  const action = (kind, id) => ({ id, kind, ...structuredClone(meta.actions.find(item => item.kind === kind).example) })
+  const rule = { id: 'tool-chain', layer: 'tool-pipeline', then: [action('decision', 'd1'), action('append-context', 'c1')] }
+  // 卡片默认收起（展开状态是独立 Map）；这里展开两张卡，读真实渲染出的控件标签。
+  const expanded = new Map(['rule-key:rule-key:then:0', 'rule-key:rule-key:then:1'].map(key => [key, true]))
+  const html = renderElement(RuleStepsPanel, {
+    t, rule, meta, engineMeta: { layerFieldPolicies: {}, layers: [] },
+    fields: new Map(), expanded, prefix: 'rule-key', fieldKey: 'rule-key', onDraft: () => {}, onChange: () => {},
+  })
+  const labels = new Set([...html.matchAll(/aria-label="([^"]*)"/g)].map(match => match[1]))
+  // 手写期望值：`match` 必须是函数（rule-spec 的声明期拒绝），种子给不出结构化值 → 它不在卡片的可编辑面。
+  const expected = { decision: ['phase', 'decision', 'action', 'reason', 'text', 'toolNames'], 'append-context': ['mode', 'text'] }
+  const labelOf = field => (field === 'action' ? t('rules.actionField.action')
+    : field === 'decision' ? t('rules.actionField.decision')
+      : field === 'toolNames' ? t('rules.actionField.toolNames') : t(`triggers.label.${field}`))
+  for (const [kind, fields] of Object.entries(expected)) {
+    assert.deepEqual(ACTION_KINDS[kind].fields.filter(field => field !== 'match'), fields, `${kind} 可编辑字段集`)
+    for (const field of fields) assert.ok(labels.has(labelOf(field)), `${kind}.${field} 要渲染出控件（${labelOf(field)}）`)
+    assert.ok(!labels.has('match'), `${kind} 不给 match 造假入口`)
+  }
+  assert.match(html, /data-step="action"/)
+})
+
+test('rules workspace: 层筛选器用自己的可访问名，不借用「缺省层」字段标签', async () => {  const { RulesWorkspace } = await withSsr([new URL('../../src/client/features/prompts/RulesWorkspace.tsx', import.meta.url).href])
   const fields = { moduleId: 'module-a', modulesEnabled: true, promptConfigs: [] }
   const store = {
     editorDrafts: createWorkspaceDrafts(), getFields: () => fields, subscribeFields: () => () => {},
