@@ -9,7 +9,12 @@ import { UNAVAILABLE } from './availability.mjs'
  * 缺省不传即零开销，也不改变任何判定结果。
  */
 export function ruleFrame(channel, args, warnOnce = () => {}, ctx, onOutcome) {
-  return { channel, args, subject: subjectOf(channel, args, warnOnce, ctx), decisions: new Map(), actionDecisions: new Map(), warnOnce, onOutcome }
+  return { channel, args, subject: subjectOf(channel, args, warnOnce, ctx), decisions: new Map(), actionDecisions: new Set(), warnOnce, onOutcome }
+}
+
+/** 条件返回值的三值归一：词表与 bridge 的 `RuleOutcomeKind` 共享，故只此一处定义。 */
+function classifyOutcome(decided) {
+  return decided === true ? 'hit' : decided === UNAVAILABLE ? 'unavailable' : 'miss'
 }
 
 /** 只读上报：诊断抛错不得反过来打断判定（调用方可能在记账里访问规则身份）。 */
@@ -30,7 +35,7 @@ function decideRule(rule, frame) {
       hit = decided === true
       // 三值语义：缺事实（UNAVAILABLE）与「条件为假」在诊断里必须分开——前者是
       // 「为什么没触发」的答案，后者是条件按设计不满足。
-      outcome = hit ? 'hit' : decided === UNAVAILABLE ? 'unavailable' : 'miss'
+      outcome = classifyOutcome(decided)
     } catch (error) {
       hit = false
       outcome = 'error'
@@ -75,7 +80,7 @@ export function actionMatches(entry, frame) {
     try {
       const decided = entry.actionWhen === undefined ? true : entry.actionWhen(frame.subject)
       hit = decided === true
-      outcome = hit ? 'hit' : decided === UNAVAILABLE ? 'unavailable' : 'miss'
+      outcome = classifyOutcome(decided)
     } catch (error) {
       hit = false
       outcome = 'error'
@@ -84,7 +89,7 @@ export function actionMatches(entry, frame) {
   }
   // 只去重上报，不缓存判定结果：同帧内重复求值仍按当次事实判定。
   if (!frame.actionDecisions.has(entry)) {
-    frame.actionDecisions.set(entry, hit)
+    frame.actionDecisions.add(entry)
     report(frame, entry.rule, outcome)
   }
   return hit
