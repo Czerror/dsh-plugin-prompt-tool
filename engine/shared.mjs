@@ -80,7 +80,6 @@ export function createWarnOnce(ctx, pluginName) {
   return (message, key = message) => {
     if (seen.has(key)) return
     const suppressed = seen.size >= WARN_ONCE_LIMIT
-    if (suppressed && key === WARN_ONCE_SUPPRESSED) return
     if (suppressed) {
       if (seen.has(WARN_ONCE_SUPPRESSED)) return
       message = `${pluginName}: 后续告警已抑制（已达 ${WARN_ONCE_LIMIT} 条不同告警上限）`
