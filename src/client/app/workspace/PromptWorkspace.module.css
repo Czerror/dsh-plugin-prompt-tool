@@ -39,13 +39,14 @@
 }
 
 /* 标题行的状态反馈：单行截断——长文本若换行会把 masthead 撑高，破坏与官方会话头的对齐。 */
-.mastheadNotice { min-width: 0; max-width: 42%; flex: 0 1 auto; margin: 0; color: var(--dsw-alias-label-secondary); font: 12px/18px system-ui, sans-serif; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mastheadNotice { min-width: 0; flex: 1 1 auto; margin: 0; color: var(--dsw-alias-label-secondary); font: 12px/18px system-ui, sans-serif; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mastheadNoticeError { color: var(--dsw-alias-state-error-primary); }
 
 .brand { display: flex; min-width: 0; flex: 1 1 160px; align-items: center; flex-wrap: wrap; gap: 8px; }
 .brandLogo { display: grid; width: 28px; height: 28px; flex: none; place-items: center; color: var(--dsw-alias-label-secondary); font: 600 16px/24px system-ui, sans-serif; }
 .brand h1 { margin: 0; font: 600 16px/24px system-ui, sans-serif; overflow-wrap: anywhere; }
-.statusCluster { display: flex; min-width: 0; align-items: center; gap: 8px; color: var(--dsw-alias-label-secondary); font: 12px/18px system-ui, sans-serif; font-variant-numeric: tabular-nums; }
+/* 计数块与通知各自独立：既不被通知挤压，也不参与伸缩（加载点变灰单独表达加载中）。 */
+.statusCluster { display: flex; min-width: 0; flex: none; align-items: center; gap: 8px; color: var(--dsw-alias-label-secondary); font: 12px/18px system-ui, sans-serif; font-variant-numeric: tabular-nums; }
 .statusCluster > span:last-child { overflow-wrap: anywhere; }
 
 .backButton {
