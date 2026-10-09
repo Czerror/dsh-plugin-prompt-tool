@@ -31,6 +31,8 @@ import type {
 } from '../shared/bridge-contract.ts'
 import { buildWorldBookEntry } from './worldbook.ts'
 import { prepareStText, renderStText } from '../../engine/st-macros.mjs'
+// @ts-expect-error 保留名判据（内置变量 + 运行时宏）与插值引擎同源，不再手抄一份表。
+import { isReservedInterpolationName } from '../../engine/interpolate.mjs'
 
 /** 转换器版本：报告用它解释本次生成使用了哪一版语义（语义调整时同步递增）。
  *  v2：pre-step 角色统一降级为 user（原角色只作来源元数据）+ 选组优先级修正常量事实。
@@ -787,15 +789,13 @@ export function convertStToModuleWithReport(
   // 未定义自定义宏登记：卡内文本引用了但无变量源的 {{key}}（非内置 / 非运行时宏）
   // → 预设 variables 空值占位——插值替换为空不留字面；模板变量卡片可编辑默认值；
   // 会话变量工具（session_var）可运行时覆盖（对应 ST 正则/STscript 更新语义）。
-  const RUNTIME_MACROS = new Set(['lastusermessage', 'lastcharmessage', 'charifnotgroup', 'time', 'date', 'weekday', 'isotime', 'isodate', 'random', 'pick', 'roll', 'chance', 'newline', 'pipe'])
-  const BUILTIN_KEYS = new Set(['DSH_HOME', 'WORKSPACE', 'CWD'])
   const MACRO_RE = /\{\{([A-Za-z0-9_.\u4e00-\u9fff-]+)\}\}/g
   // 判定基准是「登记开始时的变量表」：同一宏在后续条目里仍算未解析，诊断才能定位到
   // 每一条受影响的条目；登记动作本身幂等。
   const declaredKeys = new Set(Object.keys(variables).map((key) => key.toLowerCase()))
   const knownKeys = new Set(declaredKeys)
   const hasMacroSource = (key: string): boolean =>
-    declaredKeys.has(key.toLowerCase()) || RUNTIME_MACROS.has(key.toLowerCase()) || BUILTIN_KEYS.has(key)
+    declaredKeys.has(key.toLowerCase()) || isReservedInterpolationName(key)
   /** 登记未定义宏为空占位；返回识别到的未解析宏名（空数组表示全部已有来源）。 */
   const registerMacros = (raw: unknown): string[] => {
     const missing: string[] = []

@@ -30,6 +30,8 @@ import { recordRuleOutcome } from './rule-diagnostics.ts'
 import { compileRules, isFixedRegistration } from '../../engine/rule-spec.mjs'
 // @ts-expect-error ESM 引擎源码随插件提供。
 import { mountRuleSources } from '../../engine/rule-runtime.mjs'
+// @ts-expect-error ESM 引擎源码随插件提供（去重身份判据的唯一来源）。
+import { identityOf } from '../../engine/executor.mjs'
 // @ts-expect-error 条件在真实挂载 scope 绑定；准备期只保留经过预检的定义快照。
 import { compileWhen, loadStandingMountFor } from '../../engine/conditions/index.mjs'
 
@@ -205,13 +207,6 @@ export async function prepareAssembly(
 /** 上报点只读 message（本文件的 `warn`、settings-bridge 的 `String(error)`）：原因写进文本。 */
 const failureReason = (error: unknown): string => error instanceof Error ? error.message : String(error)
 
-/** 投递身份：merged 组按位置命名空间，独立配置用自身身份；与引擎 `identityOf` 同源。 */
-function effectiveIdentity(config: Record<string, unknown>): string {
-  if (config.mergeMode === 'merged') return `merged:${String(config.position)}`
-  const identity = config.identity as { value?: unknown } | undefined
-  return typeof identity?.value === 'string' ? identity.value : String(config.id)
-}
-
 /**
  * 「同一份 rule/action 身份」的指纹：两个模块带同一份指纹 = 模块被整份复制（rule id 与
  * 动作 id 都保留），而不是两块卡有意共享一个去重身份。编译产物里
@@ -251,10 +246,9 @@ function dedupeConfigsOf(prepared: PreparedAssembly[]): Array<{ moduleId: string
 }
 
 function duplicateDedupeIdentities(prepared: PreparedAssembly[]): DuplicateIdentity[] {
-  // 每个配置贡献两条通道：plugin 身份（`identity.value`，缺省 `config.id`）与显式 sourceKind。
+  // 每个配置贡献两条通道：plugin 身份（引擎 identityOf：`identity.value`，schema 保证非空）与显式 sourceKind。
   const declarations = dedupeConfigsOf(prepared).flatMap(({ moduleId, config }) => {
-    const identity = config.identity as { value?: unknown } | undefined
-    const pluginIdentity = effectiveIdentity(config)
+    const pluginIdentity = identityOf(config)
     const sourceKind = typeof config.sourceKind === 'string' && config.sourceKind.length > 0 ? config.sourceKind : undefined
     // sourceKind 缺省时由配置 id 编译成 `plugin:<id>`：那与 plugin 通道同源，不另立一条 kind 重复。
     const declaredKind = sourceKind !== undefined && sourceKind !== `plugin:${String(config.id)}` ? sourceKind : undefined

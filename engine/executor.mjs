@@ -62,8 +62,11 @@ function mergedIdentity(config) {
   return `merged:${config.position}`
 }
 
-/** 去重身份:merged 组用位置命名空间,独立配置用自身身份。 */
-function identityOf(config) {
+/**
+ * 去重身份:merged 组用位置命名空间,独立配置用自身身份。
+ * 消费方含宿主装配侧（跨模块重复身份诊断），故导出——同一事实只留这一份判据。
+ */
+export function identityOf(config) {
   return config.mergeMode === 'merged' ? mergedIdentity(config) : config.identity.value
 }
 

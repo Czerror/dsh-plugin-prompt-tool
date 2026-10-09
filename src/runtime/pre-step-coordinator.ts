@@ -105,9 +105,8 @@ export function installPreStepCoordinator(ctx: Context, options: PreStepCoordina
   }
   const memo = new Map<string, Set<string>>()
   // 负责人事实：全仓没有生产者写 `officialInstructions: true`，协调器不再把「有规则来源」
-  // 当成「官方未装配」上报（那是插件观察不到的否定事实）。无人写入 → `officialOwnerOf`
-  // 返回 undefined → bridge 的 `observed ?? null` 上报 null；管线的整体去留见 ADR-0003。
-  const officialOwner = new Map<string, boolean>()
+  // 当成「官方未装配」上报（那是插件观察不到的否定事实）→ `officialOwnerOf` 恒为 undefined
+  // → bridge 的 `observed ?? null` 上报 null；管线的整体去留见 ADR-0003。
   const warnOnce = createWarnOnce(ctx, WARN_LABEL)
   const readPolicy = createPolicyReader(options.policyFile)
   let active = true
@@ -200,7 +199,6 @@ export function installPreStepCoordinator(ctx: Context, options: PreStepCoordina
 
   ctx.effect(() => () => {
     active = false
-    officialOwner.clear()
     memo.clear()
   })
   const service: PreStepCoordinatorService = {
@@ -226,7 +224,7 @@ export function installPreStepCoordinator(ctx: Context, options: PreStepCoordina
         }
       }, { label: `prompt-tool: pre-step source ${sourceId}` })
     },
-    officialOwnerOf: sessionId => officialOwner.get(sessionId),
+    officialOwnerOf: () => undefined,
   }
   ctx.provide(PRE_STEP_COORDINATOR_SERVICE, service)
   return service
