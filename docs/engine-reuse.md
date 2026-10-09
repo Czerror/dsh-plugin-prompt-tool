@@ -123,8 +123,8 @@
   「宁可多看见，不少看见」，且等价于迁移前的旧行为。空 `nodes` 是合法状态（新会话尚无消息），
   按「当前上下文为空」返回空数组，**不**降级。
 - **两个视图并存，不互相替代**：`shared.mjs` 的 `sessionEvents` 是迁移过渡别名（指向
-  `historyEvents`），消费点逐个判定归属由 PLAN 的 T6 收口 —— 在此之前不得把某个消费点
-  顺手改成当前上下文视图。
+  `historyEvents`），消费点逐个判定归属由 PLAN 的 T6 收口 —— 除**已迁的会话去重判据**
+  （`engine/executor.mjs`，见后文「会话去重判据」一节）外，其余消费点仍读完整历史视图。
 - **纯函数、零跨会话缓存**：每次都读当场快照；不引入「本会话曾投递 / 曾发生」的账本式真相。
 - 快照口径是 `snapshotEvents()`（`engine/history.mjs` 是唯一封装处）；不用已 deprecated 的
   `eventAt()`，也**不在**读取层用 `deriveMessages()` —— 判据读事件而非正文，需要正文的消费点
@@ -233,15 +233,18 @@
 资产；保存、物化与运行使用同一边界。`strategyDir` 也相对规则包解析，不能从包内引擎目录
 反推数据目录。正文模板、策略目录和身份校验在所有入口同源。
 
-**dedupe 身份在同时启用的模块间须唯一**：**整模块复制**保留 rule id，因此默认派生的身份
-（`rule:<ruleId>:<actionId>`）跟着复制，不产生新身份（与上段「卡内复制」是两回事）；两个
-启用模块声明同一个 `dedupe: session` / `batch` 身份时，装配**不拒绝**（复制模块后两者同时
-启用是合法操作），只在第一条装配时 `warnOnce` 一条诊断并照常装配。判重同时覆盖两条通道：
-`plugin`（`identity.value`，缺省 `config.id`）与显式 `sourceKind`（进 `source.kind`，两张
-id 不同、却声明同一个 sourceKind 的卡同样会经 kind 通道互相压制）。`identity` 显式声明时
-同样按值判重：`{ field: 'plugin', value }` 的值两卡相同即视为同一身份。有意让两模块共享同一
-身份是合法用法（跨模块共享一份会话去重），告警措辞因此区分「显式共享」与「疑似误复制」；
-两种情况**同一批内两张卡仍各注入一次**，共享只在后续步生效。
+**跨模块同身份不再互相压制（模块维，2026-10-10 落地）**：**整模块复制**保留 rule id，因此
+默认派生的身份（`rule:<ruleId>:<actionId>`）跟着复制，不产生新身份（与上段「卡内复制」是两回事）。
+去重身份自 T5 起是 **(模块, 通道, 身份)** 三元组（`engine/executor.mjs#identityHit`），
+所以两个启用模块声明同一个 `dedupe: session` / `batch` 身份时是**两份各自注入**，
+不再「先到者压制后到者」——这正是「不再有旧档限制」的落点。装配**不拒绝**这种组合
+（复制模块后两者同时启用是合法操作），只在第一条装配时 `warnOnce` 一条诊断并照常装配，
+措辞说明「去重按模块各记一份，两份正文都会注入」。判重同时覆盖两条通道：`plugin`
+（`identity.value`，缺省 `config.id`）与显式 `sourceKind`（进 `source.kind`）——两条通道
+各按同一份模块维判定，因此 id 不同、却声明同一个 sourceKind 的两卡同样在装配期可见。
+`identity` 显式声明时同样按值判重：`{ field: 'plugin', value }` 的值两卡相同即视为同一身份
+（同模块内才共享这份去重）。旧日志里没有模块维的注入按**保守命中**处理：升级前注入、
+尚未被压缩掉的那条仍算已投递，不因新增字段而重复注入。
 
 **来源盖章与去重查找同源**：消息 `source.plugin` 写的是该配置的**去重身份**
 （`merged` 组用 `merged:<position>`，其余用 `identity.value`，默认即 `config.id`），
@@ -249,8 +252,10 @@ id 不同、却声明同一个 sourceKind 的卡同样会经 kind 通道互相�
 解析出的 `{ kind: 'instruction-hint' }` 等）也会被补盖 `source.plugin = 该身份`，否则身份
 只落在 kind 通道、`dedupe: session` 每步重复注入。副作用：显式 `identity` 的卡要按
 `source.plugin` 屏蔽（`pre-step-filter` 的 `blockPlugins`）须写 `identity.value` 而不是
-`id`（该名单按 `source.plugin` 做精确等值匹配的完整语义见后文「会话去重以『宿主接纳』为准
-（2026-09-20）」一节）；旧消息的 kind 仍是 `plugin:<id>`，kind 通道继续命中。
+`id`（该名单按 `source.plugin` 做精确等值匹配的完整语义见后文「会话去重判据」一节）；
+旧消息的 kind 仍是 `plugin:<id>`，kind 通道继续命中。**模块维不并进身份字符串**：它单列在
+`source.moduleId`（取配置编译期的 `sourceModuleId`，由模块 id 传入），`source.plugin` /
+`source.kind` 的格式与匹配契约一字未改，`blockPlugins` 名单不需要跟着改。
 
 `getRuleEditorMeta()` 从实际条件、动作目录派生可序列化选项；`getEngineMeta()` 提供有效
 层和内容策略目录，其中 `injectionLayers` 是 `inject-text` 真正可绑定的八层（`layers` /
@@ -414,35 +419,50 @@ UNAVAILABLE，不是编译期拒绝。
   已返回的官方文本也不因后续 pre-step 赋值而倒放重算。两种入口顺序均沿用已有变量帧，
   新步骤与成功压缩创建新帧，失败压缩不推进。该规则不增加跨插入点的全局调度顺序。
 
-## 会话去重以「宿主接纳」为准（2026-09-20）
+## 会话去重判据：当前上下文 + 模块维（2026-10-10 落地）
 
 `dedupe: session` 的判据是**每当前上下文一次**（用户 2026-10-10 拍板）：只要该身份的
-消息还留在模型可见的当前上下文里就不重复注入；被压缩或替换**遮蔽**的历史不再拦注入，
-条件仍满足时在后续步重新注入一次。这不新增「本会话曾投递」的跨压缩记忆——同一正文随
-上下文重建是预期行为。注：当前实现仍以持久事件流的全量扫描为准（遮蔽的历史还算已投递）；
-「当前模型可见上下文」视图已在 `engine/history.mjs#currentEvents()` 就位，判据迁移由本 PLAN 的
-T5（`engine/executor.mjs`）收口，`CHANGELOG.md`「破坏性变更」同址记录。
+消息还留在模型可见的**当前上下文**（`engine/history.mjs#currentEvents()`，即 surface 有序
+节点）里就不重复注入；被压缩或替换**遮蔽**的历史不再拦注入，条件仍满足时在后续步重新
+注入一次。这不新增「本会话曾投递」的跨压缩记忆——同一正文随上下文重建是预期行为
+（`append-context` 等续跑动作的每轮／每会话预算照旧，不随压缩重置）。
 
-`dedupe: session` 的候选生成与投递确认分开记账（`engine/executor.mjs`）：
+身份比较是 **(模块, 通道, 身份)** 三元组（`engine/executor.mjs#identityHit`，唯一实现，
+注入与批内去重共用）：
+
+- 两条通道的规则与迁移前逐字相同：`plugin`（本引擎身份，merged 组用 `merged:<position>`）
+  与 `kind`（显式 `sourceKind`，外来/第三方消息如 context-gate 的 instruction-hint）。
+- 模块维取自注入消息的 `source.moduleId`（见上节）；**升级前注入的消息没有这一维**，
+  按保守命中处理——任何模块都认这条旧消息，避免格式换代把仍在上下文里的正文重复注入。
+- 判据的两处可见后果：**整模块复制**的两个副本各自注入（复制不再等于压制）；压缩遮蔽后重新注入。
+
+候选生成与投递确认仍然分开记账：
 
 - 候选只决定这一步注入什么；只有宿主把消息真正写进会话事件流（`session/event`）之后，
-  该身份才记入本会话的去重快路径（`confirmDelivered`）。持久事件流仍是唯一真相
-  （`snapshotEvents()`），快路径只省去每步全量扫描。
+  该身份才记入本会话的快路径（`confirmDelivered`）。
+- 快路径是**纯性能缓存**：真相永远是当场扫描当前上下文，条目可随时丢弃（上限、`release()`、
+  `clear()`），丢了只是多扫一次，不改变任何判定结果。条目键带**有效期戳** = surface 的
+  `replaceGeneration`：宿主只在 replace（成功压缩即一次 replace）时从可见视图移除/替换节点，
+  代次一变，此前记下的「已投递」就可能已不在当前上下文里，键随之失效并退回扫描；无 surface
+  （降级到完整历史）时戳恒定，条目一直有效（完整历史不会丢事件）。
 - 被最外层 pre-step 门（声明式 `pre-step-filter` 的 `sources` / `keepKinds` / `blockPlugins`）在**本步剥离**的候选
   不算已注入：晋升或门控放行后仍会补发，不会出现「日志里从来没有这条正文，去重却认为
   已注入」的永久缺失；`reject` 步同样不记账。
   `blockPlugins` 是**按 `source.plugin` 的显式屏蔽**（可选逃生阀）：仅当来源 `kind` 为 `plugin`
   时做大小写不敏感的**精确等值**比较，不做子串、正则或 glob，因此要覆盖某个插件须写全名；
   默认不启用，未声明或空名单等于关闭（注意与白名单「空 = 全拦」相反）；它与 `sources` /
-  `keepKinds` 正交，可同时声明。
-- 确认缓存分别记录 `plugin:<身份>` 与 `kind:<来源>`，只比较同字段的值，与持久扫描的
-  `source.plugin` / `source.kind` 两条匹配规则一致；不同字段恰好同值不会误判已投递。
+  `keepKinds` 正交，可同时声明。模块维不在 `source.plugin` 里，该名单的写法不受影响。
+- 确认缓存分别记录 `plugin` / `kind` 两个字段（连同模块维与戳），只比较同字段的值，与扫描的
+  两条匹配规则一致；不同字段恰好同值不会误判已投递。
 - **同位置 merged 成员共享一个投递身份**（`merged:<position>`）：该组一旦投递，后来才满足
   会话去重条件的 merged 成员按同一身份判为已投递、**不再补注入**。这是既定边界——需要逐条
   补发就用 `mergeMode: separate`。
-- 独立执行路径与管理路径（协调器）共用同一确认实现，两条路径的去重语义一致；重挂或
-  进程恢复直接从持久记录重建，不依赖进程内已投递集合。
-- 验收入口：`test/engine/prompt-config-engine.test.mjs`。
+- 独立执行路径与管理路径（协调器）共用同一确认实现与同一份判据，两条路径的去重语义一致；
+  重挂或进程恢复从当前上下文重建（快路径为空时多扫一次），不依赖进程内已投递集合。
+- **降级**：`session.surface` 缺失 / `nodes` 非数组 / 节点越界时 `currentEvents()` 退回完整
+  历史，判据因此等价于迁移前的行为（除新增的模块维与旧消息保守命中外逐例相同）。
+- 验收入口：`test/engine/prompt-config-engine.test.mjs`（模块维各自注入 / 旧格式保守命中 /
+  压缩后重新注入 / 无 surface 降级 / memo 清空后判定不变）、`test/host/agent-assembly.test.mjs`。
 
 ## 晋升语义（epoch-aware）
 

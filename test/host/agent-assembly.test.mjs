@@ -429,16 +429,22 @@ test('重复模块身份：跨模块同 rule id 且 dedupe=session 只告警一�
   const agent = await h.makeAgent('duplicate-identity-agent')
   assert.deepEqual(h.runtime.moduleIds(agent.id), ['dup-source-a', 'dup-source-b', 'dup-kind-a', 'dup-kind-b'],
     '重复身份不影响装配成功')
-  // 同一批内的候选不算「已投递」：四张卡各自注入一次，重复体现在**后续步**不再补发。
-  // 同 `sequence` 时按 moduleId 字典序，故只断言集合与去重后步数，不锁跨模块顺序。
-  const first = (await h.inject(agent)).messages.flatMap(message => message.content.map(block => block.text))
-  assert.deepEqual([...first].sort(), ['USER', 'dup-kind-a-KIND', 'dup-kind-b-KIND', 'dup-source-a-HINT', 'dup-source-b-HINT'].sort())
+  // 同一批内的候选不算「已投递」：四张卡各自注入一次。去重判据自 T5 起带模块维，
+  // 复制出的两个副本因此**各自注入**——身份字符串仍逐字相同，模块维落在独立的 source.moduleId。
+  const first = (await h.inject(agent)).messages
+  assert.deepEqual(first.flatMap(message => message.content.map(block => block.text)).sort(),
+    ['USER', 'dup-kind-a-KIND', 'dup-kind-b-KIND', 'dup-source-a-HINT', 'dup-source-b-HINT'].sort())
+  const hints = first.filter(message => message.content[0].text.endsWith('-HINT'))
+  assert.deepEqual(hints.map(message => message.source.moduleId).sort(), ['dup-source-a', 'dup-source-b'],
+    '真实装配路径把模块维盖进注入消息的 source')
+  assert.equal(new Set(hints.map(message => message.source.plugin)).size, 1, '同一份复制的身份字符串仍逐字相同')
   assert.deepEqual(h.warnings.length, 2, `两条通道各一条告警：${JSON.stringify(h.warnings)}`)
   const [identityWarning, kindWarning] = h.warnings
   assert.match(identityWarning, /疑似由复制产生同一个去重身份/)
   assert.match(identityWarning, /dup-source-a、dup-source-b/)
+  assert.match(identityWarning, /去重按模块各记一份/)
   assert.match(kindWarning, /显式 sourceKind "plugin:shared-kind-channel"/)
-  assert.match(kindWarning, /有意共享/)
+  assert.match(kindWarning, /声明了同一个/)
   assert.match(kindWarning, /dup-kind-a、dup-kind-b/)
 })
 

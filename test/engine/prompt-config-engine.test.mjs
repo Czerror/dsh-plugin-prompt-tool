@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { fileURLToPath } from 'node:url'
-import { applyPromptConfigs } from '../../engine/executor.mjs'
+import { applyPromptConfigs, confirmDelivered, runPreStepBatch } from '../../engine/executor.mjs'
 import { wireLayers } from '../../engine/layers.mjs'
 import { createPromptConfigs as createPromptConfigsCore } from '../../engine/schema.mjs'
 import { registerAction } from '../../engine/actions.mjs'
@@ -407,6 +407,162 @@ test('显式 identity：先到者被接纳后，晚一步的卡不再经自己�
   assert.deepEqual(injectedTexts(first), ['A', 'B'], '同一批里两张卡都算「先到」')
   adopt(first)
   assert.deepEqual(injectedTexts(await step(probe)), [], '先到者被接纳后，同身份的晚到者不再注入')
+})
+
+/**
+ * 会话桩：`log` 是真值源，`surface.nodes` 按宿主 `foldSurface` 的语义维护
+ * （`packages/core/session/src/surface.ts:563-585`）——append 只追加节点，**只有 replace**
+ * 会移除/替换节点并推进 `replaceGeneration`，而成功压缩就是一次 replace。
+ */
+function surfaceSession(id = 's-surface') {
+  const log = []
+  const nodes = []
+  let replaceGeneration = 0
+  const session = {
+    id,
+    header: { delegationDepth: 0 },
+    snapshotEvents: () => log,
+    surface: { get nodes() { return nodes }, get replaceGeneration() { return replaceGeneration } },
+  }
+  return {
+    session,
+    /** 宿主接纳：消息写进 durable 日志并 append 到可见视图。 */
+    admit(message) {
+      log.push({ type: 'user/message', seq: log.length, data: { message } })
+      nodes.push(log.length - 1)
+    },
+    /** 成功压缩：可见节点塌缩成一条摘要，代次 +1（`nodes` 里被遮蔽的 seq 不再可见）。 */
+    compact(summary) {
+      nodes.splice(0, nodes.length)
+      log.push({ type: 'compaction/end', seq: log.length, data: {} })
+      log.push({ type: 'user/message', seq: log.length, data: { message: summary } })
+      nodes.push(log.length - 1)
+      replaceGeneration += 1
+    },
+  }
+}
+
+/** 本引擎注入的那几条（`source.moduleId` 是本轮新盖章的模块维）。 */
+const injectedOf = (decision) => decision.messages.filter((message) => message.source?.moduleId !== undefined)
+
+test('T5：去重身份带模块维——整模块复制的两个副本各自注入，身份字符串一字不改', async () => {
+  // 整模块复制保留 rule id 与卡 id，两个模块编译出的身份逐字相同；这里把两份配置放进
+  // 同一个挂载 = 协调器路径的合并批（共用一份 memo），跨模块串味只可能发生在这里。
+  const configs = ['copy-a', 'copy-b'].flatMap((moduleId) => createPromptConfigs(
+    [{ id: 'shared-hint', layer: 'pre-step', strategy: 'static', dedupe: 'session', text: `${moduleId}-HINT`, position: 'after-all' }],
+    { sourceModuleId: moduleId },
+  ))
+  const harness = makeHarness(configs)
+  const store = surfaceSession()
+  const probe = agent({ session: store.session })
+  const deliver = (decision) => {
+    for (const message of injectedOf(decision)) {
+      store.admit(message)
+      harness.admit(probe, { messages: [message] })
+    }
+  }
+
+  const first = await harness.step(probe)
+  assert.deepEqual(injectedOf(first).map((message) => message.content[0].text).sort(),
+    ['copy-a-HINT', 'copy-b-HINT'], '新会话里两个副本各自注入')
+  assert.deepEqual(injectedOf(first).map((message) => message.source.moduleId), ['copy-a', 'copy-b'],
+    '模块维是新盖的 source 字段')
+  for (const message of injectedOf(first)) {
+    assert.equal(message.source.plugin, 'shared-hint', '身份字符串（blockPlugins 的匹配键）一字不改')
+    assert.equal(message.source.kind, 'plugin:shared-hint', 'kind 通道格式同样不变')
+  }
+
+  // 只接纳 copy-a 的那条：复制出来的 copy-b 候选可能被外层门控剥离，或后加进启用表。
+  const [copyA] = injectedOf(first)
+  store.admit(copyA)
+  harness.admit(probe, { messages: [copyA] })
+  const second = await harness.step(probe)
+  assert.deepEqual(injectedOf(second).map((message) => message.source.moduleId), ['copy-b'],
+    'copy-a 已有本模块命中；copy-b 不因身份相同被它挡住')
+
+  deliver(second)
+  assert.deepEqual(injectedOf(await harness.step(probe)), [], '两个副本各与自己模块的那条配对后都不再注入')
+})
+
+test('T5：当前上下文里的旧格式消息（无模块维）仍被识别、不重复注入', async () => {
+  const harness = makeHarness(createPromptConfigs(
+    [{ id: 'notice', layer: 'pre-step', strategy: 'static', dedupe: 'session', text: 'NOTICE', position: 'after-all' }],
+    { sourceModuleId: 'mod-a' },
+  ))
+  const store = surfaceSession()
+  const probe = agent({ session: store.session })
+  // 升级前注入的样子：只有 plugin 字段、没有 moduleId（v4 之前写下的旧日志）。
+  store.admit({ id: 'legacy', role: 'user', content: [{ type: 'text', text: 'NOTICE' }], source: { plugin: 'notice' } })
+  assert.deepEqual(injectedOf(await harness.step(probe)), [], '无模块维的旧消息按保守命中算已投递')
+})
+
+test('T5：跨压缩语义 = 每当前上下文一次——被遮蔽的注入重新注入', async () => {
+  const harness = makeHarness(createPromptConfigs(
+    [{ id: 'notice', layer: 'pre-step', strategy: 'static', dedupe: 'session', text: 'NOTICE', position: 'after-all' }],
+    { sourceModuleId: 'mod-a' },
+  ))
+  const store = surfaceSession()
+  const probe = agent({ session: store.session })
+
+  const first = await harness.step(probe)
+  assert.equal(injectedOf(first).length, 1, '新会话注入一次')
+  for (const message of injectedOf(first)) {
+    store.admit(message)
+    harness.admit(probe, { messages: [message] })
+  }
+  assert.deepEqual(injectedOf(await harness.step(probe)), [], '还在当前上下文里 → 不重复注入')
+
+  store.compact({ id: 'summary', role: 'user', content: [{ type: 'text', text: '摘要' }], source: { kind: 'agent-summary' } })
+  assert.equal(injectedOf(await harness.step(probe)).length, 1,
+    '被压缩遮蔽后按当前上下文重新注入（旧判据扫全量日志 → 仍判已投递）')
+})
+
+test('T5：无 surface 的桩退化为完整历史扫描（等价迁移前行为）', async () => {
+  const harness = makeHarness(createPromptConfigs(
+    [{ id: 'notice', layer: 'pre-step', strategy: 'static', dedupe: 'session', text: 'NOTICE', position: 'after-all' }],
+    { sourceModuleId: 'mod-a' },
+  ))
+  const events = []
+  const probe = agent({ session: { id: 's-degraded', header: { delegationDepth: 0 }, snapshotEvents: () => events } })
+  const first = await harness.step(probe)
+  assert.equal(injectedOf(first).length, 1)
+  // 只写日志、不通知 session/event：命中的只能是扫描（不是 memo 记账）。
+  for (const message of injectedOf(first)) events.push({ type: 'user/message', seq: events.length, data: { message } })
+  assert.deepEqual(injectedOf(await harness.step(probe)), [], '无 surface 时可见上下文 = 完整历史')
+})
+
+test('T5：memo 是纯性能缓存——清空后再判一次，两个方向的结论都不变', async () => {
+  const configs = createPromptConfigs(
+    [{ id: 'notice', layer: 'pre-step', strategy: 'static', dedupe: 'session', text: 'NOTICE', position: 'after-all' }],
+    { sourceModuleId: 'mod-a' },
+  )
+  const store = surfaceSession()
+  const probe = agent({ session: store.session })
+  const memo = new Map()
+  const run = () => runPreStepBatch({
+    ctx: {},
+    agent: probe,
+    decision: { kind: 'enter', messages: [userTask] },
+    configs,
+    memo,
+    promotion: { main: { status: () => ({ promoted: true }) }, withSubagents: { status: () => ({ promoted: true }) } },
+    warnOnce: () => {},
+  })
+
+  const first = await run()
+  assert.equal(injectedOf(first).length, 1)
+  for (const message of injectedOf(first)) {
+    store.admit(message)
+    confirmDelivered(memo, store.session, { type: 'user/message', data: { message } })
+  }
+  assert.ok(memo.size > 0, '快路径确实记了账')
+
+  memo.clear()
+  assert.deepEqual(injectedOf(await run()), [], 'memo 清空后仍按当前上下文判定：不重复注入')
+
+  store.compact({ id: 'summary', role: 'user', content: [{ type: 'text', text: '摘要' }], source: { kind: 'agent-summary' } })
+  memo.clear()
+  assert.equal(injectedOf(await run()).length, 1, 'memo 清空 + 上下文遮蔽后照常重新注入')
 })
 
 test('config.variables 与内置 {{WORKSPACE}} 变量在注入前插值', async () => {

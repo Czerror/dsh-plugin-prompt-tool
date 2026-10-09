@@ -21,8 +21,9 @@ import {
   keepDisposer,
   matchesModel,
   newMessageId,
-  sessionEvents,
 } from './shared.mjs'
+// 去重判据读**当前模型可见上下文**（视图①），不读完整历史：被压缩遮蔽的注入要重新注入。
+import { currentEvents } from './history.mjs'
 import { interpolateVariables } from './interpolate.mjs'
 import { conditionHit, userMessagesText } from './condition.mjs'
 import { createEpochPromotion } from './compaction-epoch.mjs'
@@ -36,8 +37,11 @@ import { SESSION_VARIABLES_DISABLED } from './schema.mjs'
 
 const name = 'prompt-config-engine'
 
-/** 已确认投递身份的进程内快路径上限;真相在持久事件流。 */
-// ponytail: 身份条数上限防无界增长（Map 按投递身份累积）；若需精确淘汰改 LRU。
+/**
+ * 「已确认投递」快路径的条目上限。真相是**当前上下文扫描**（见 injectedMessage）：
+ * 这份 memo 只省一次扫描，丢了只是多扫一次，清空不改变任何判定结果，也不再需要淘汰策略。
+ */
+// ponytail: 上限防无界增长（Map 按「身份 × 代次」累积）；若需精确淘汰改 LRU。
 const MAX_MEMO_CONFIGS = 4096
 
 /**
@@ -85,14 +89,36 @@ function pluginIdentityOf(source) {
     : undefined
 }
 
-/** 去重真相在持久事件流：回到第一条命中该身份的消息（未命中 undefined），命中即止。 */
+/**
+ * 消息的**模块维**：只有字符串才算，非字符串按缺失（升级前格式）处理。
+ * `source.moduleId` 由本引擎盖章（见 buildMessage）；旧日志里的注入没有这个字段。
+ */
+function moduleOf(source) {
+  return typeof source?.moduleId === 'string' ? source.moduleId : undefined
+}
+
+/**
+ * 身份命中判据（唯一实现，注入与批内去重共用）：**模块维 + 通道 + 身份**。
+ *
+ * - 两条通道：`kind`（外来/第三方消息，如 context-gate 的 instruction-hint）或
+ *   `plugin`（本引擎注入的命名空间，merged 组用 merged:<position>）。
+ * - 模块维：**整模块复制**的两个副本身份字符串逐字相同（rule id 与动作 id 都保留），
+ *   只有模块能分开它们，所以身份键是 (模块, 通道, 身份) 三元组。
+ * - 无模块维的消息按**保守命中**：升级前注入的那条仍在当前上下文里，不该因为新增一个
+ *   字段就被判成「没投递过」而重复注入。
+ */
+function identityHit(source, config, value) {
+  if (source?.kind !== config.sourceKind && pluginIdentityOf(source) !== value) return false
+  const moduleId = moduleOf(source)
+  return moduleId === undefined || moduleId === config.sourceModuleId
+}
+
+/** 去重真相在**当前上下文**：回到第一条命中该身份的消息（未命中 undefined），命中即止。 */
 function injectedMessage(config, session) {
   const value = identityOf(config)
-  for (const event of sessionEvents(session)) {
+  for (const event of currentEvents(session)) {
     const message = eventMessage(event)
-    // 双通道去重：kind（外来/第三方消息，如 context-gate 的 instruction-hint）或
-    // plugin（本引擎注入的命名空间，merged 组用 merged:<position>）。
-    if (message?.source?.kind === config.sourceKind || pluginIdentityOf(message?.source) === value) return message
+    if (message !== undefined && identityHit(message.source, config, value)) return message
   }
   return undefined
 }
@@ -100,14 +126,35 @@ function injectedMessage(config, session) {
 /** 当前消息批内是否已有该提示词配置注入(每轮去重)。 */
 function hasInBatch(config, messages) {
   const value = identityOf(config)
-  return messages.some((message) =>
-    message?.source?.kind === config.sourceKind || pluginIdentityOf(message?.source) === value)
+  return messages.some((message) => identityHit(message?.source, config, value))
 }
 
 /**
- * 按投递身份取「已确认投递」的会话集合。记账只发生在宿主真正接纳并持久化该消息之后
- * （见 confirmDelivered）：候选在瀑布外层被门控/策略剥离时不算已投递，否则晋升后
- * （门控放行时）正文会永久缺失。集合上限按会话数截断，真相仍在持久事件流。
+ * 快路径条目键：通道 + 模块维 + 有效期戳 + 值。分隔符用 NUL（身份值里可能带 `:`）。
+ *
+ * 戳是 surface 的 `replaceGeneration`：宿主只在 replace（压缩即一次 replace）时从可见
+ * 视图里移除/替换节点（`packages/core/session/src/surface.ts:563-585`），代次一变，此前
+ * 记下的「已投递」就可能已不在当前上下文里 —— 键随之失效，判定退回当前上下文扫描。
+ * 无 surface（降级到完整历史）时戳恒为 `-`：完整历史不会丢事件，条目一直有效。
+ * ponytail: 只按 replace 代次失效；若将来出现**不推进代次**却让节点消失的 surface 变更，
+ * 快路径会多拦一次重新注入，届时改用宿主给出的权威信号。
+ */
+function memoKey(field, moduleId, value, stamp) {
+  return `${field}\u0000${moduleId ?? ''}\u0000${stamp ?? '-'}\u0000${value}`
+}
+
+/** 本会话当前可见上下文的代次戳（无 surface / 非数字时 undefined）。 */
+function contextStamp(session) {
+  const generation = session?.surface?.replaceGeneration
+  return typeof generation === 'number' ? generation : undefined
+}
+
+/**
+ * 按投递身份取「已确认投递」的会话集合 —— 纯性能缓存（省一次当前上下文扫描），
+ * **不是**真相：条目可随时丢弃（上限、`release()`、`clear()`），丢了只多扫一次。
+ *
+ * 记账只发生在宿主真正接纳并持久化该消息之后（见 confirmDelivered）：候选在瀑布外层被
+ * 门控/策略剥离时不算已投递，否则晋升后（门控放行时）正文会永久缺失。
  */
 function deliveredSessions(memo, key) {
   let set = memo.get(key)
@@ -122,32 +169,41 @@ function deliveredSessions(memo, key) {
 
 /**
  * 记录一次宿主已接纳的注入消息（由调用方在 session/event 里转发）。
- * plugin（本引擎身份，merged 组用 merged:<position>）与 kind（外来通道，如
- * context-gate 的 instruction-hint）都以会话为界记账，与 injectedMessage 的双通道语义一致。
+ * plugin（本引擎身份，merged 组用 merged:<position>）、kind（外来通道，如
+ * context-gate 的 instruction-hint）与消息的模块维都以会话为界记账，
+ * 与 identityHit 的三元组判据一致。
  */
 export function confirmDelivered(memo, session, event) {
   if (memo === null || memo === undefined || session === null || session === undefined) return
   const source = eventMessage(event)?.source
   if (source === null || typeof source !== 'object') return
+  const moduleId = moduleOf(source)
+  const stamp = contextStamp(session)
   for (const field of ['plugin', 'kind']) {
     const value = source[field]
     if (typeof value !== 'string' || value.length === 0) continue
-    deliveredSessions(memo, `${field}:${value}`).add(session.id)
+    deliveredSessions(memo, memoKey(field, moduleId, value, stamp)).add(session.id)
   }
   // v4 起生产者身份挂在 kind（`plugin:<name>`），旧日志才有 plugin 字段；
   // 两种形态都补记到 plugin: 账本，alreadyDelivered 的 `confirmed('plugin', …)` 才不会漏。
   const plugin = pluginIdentityOf(source)
-  if (plugin !== undefined && source.plugin === undefined) deliveredSessions(memo, `plugin:${plugin}`).add(session.id)
+  if (plugin !== undefined && source.plugin === undefined) {
+    deliveredSessions(memo, memoKey('plugin', moduleId, plugin, stamp)).add(session.id)
+  }
 }
 
-/** dedupe=session：本会话是否已有该身份的已确认投递（快路径 + 持久事件真相）。 */
+/** dedupe=session：本会话**当前上下文**里是否已有该身份的已确认投递（快路径 + 当前上下文真相）。 */
 function alreadyDelivered(config, session, memo) {
-  const confirmed = (field, value) => memo.get(`${field}:${value}`)?.has(session.id) === true
+  const stamp = contextStamp(session)
+  // 模块维有两种命中：本模块的键，以及升级前注入（无模块维）那份的保守键。
+  const modules = [config.sourceModuleId ?? '', '']
+  const confirmed = (field, value) => modules.some((moduleId) =>
+    memo.get(memoKey(field, moduleId, value, stamp))?.has(session.id) === true)
   if (confirmed('plugin', identityOf(config))) return true
   if (typeof config.sourceKind === 'string' && confirmed('kind', config.sourceKind)) return true
   const message = injectedMessage(config, session)
   if (message === undefined) return false
-  // 慢路径命中即按既有入口回填快路径（真相仍是持久事件流，不直接写 memo）：
+  // 慢路径命中即按既有入口回填快路径（真相仍是当前上下文，不直接写 memo）：
   // 无 id 的会话不记账——memo 的键就是 session.id，记了会让两个无 id 会话串味。
   if (session.id !== undefined) confirmDelivered(memo, session, { data: { message } })
   return true
@@ -178,17 +234,21 @@ function buildMessage(config, resolved, warnOnce) {
   // 盖章身份与 alreadyDelivered 的查找键同源（identityOf）：显式 identity 才真正共享去重，
   // 也不会与他卡的 id 误撞；merged 组 identityOf 本就等于 mergedIdentity，存量输出不变。
   const sourceValue = identityOf(config)
+  // 模块维是身份判据的新一维，但**不并进身份字符串**：`source.plugin` 的格式是
+  // blockPlugins 的精确匹配契约，一字不改；整模块复制的区分只靠这个独立字段。
+  const module = config.sourceModuleId === undefined ? {} : { moduleId: config.sourceModuleId }
   // 策略 patch（templateFile 的 role 等）与配置声明都必须经过同一出口判定。
   const requested = downgradeRole(config, typeof resolved.role === 'string' ? resolved.role : config.role, warnOnce)
   const base = resolved.source !== null && typeof resolved.source === 'object'
     // 解析器自带的 source 也要盖章：否则这类消息（如 fill=instruction-hint 的
     // `{ kind: 'instruction-hint' }`）只带 kind 通道，dedupe=session 每步重复注入。
-    ? { ...resolved.source, plugin: typeof resolved.source.plugin === 'string' && resolved.source.plugin.length > 0 ? resolved.source.plugin : sourceValue }
+    ? { ...resolved.source, plugin: typeof resolved.source.plugin === 'string' && resolved.source.plugin.length > 0 ? resolved.source.plugin : sourceValue, ...module }
     : {
         // v4 要求 kind 是**生产者名**：声明了 sourceKind 就用它，否则用与 pluginMessage 同一形状的
         // `plugin:<身份>`。裸 kind（undefined / 'plugin'）都会被 codec 拒绝，历史走的是同一个坑。
         kind: typeof config.sourceKind === 'string' && config.sourceKind.length > 0 ? config.sourceKind : `plugin:${sourceValue}`,
         plugin: sourceValue,
+        ...module,
         ...(typeof config.form === 'string' ? { form: config.form } : {}),
         ...(typeof config.summary === 'string' && config.summary.length > 0 ? { summary: config.summary } : {}),
       }
@@ -248,7 +308,8 @@ function batchScope(options, frame) {
  *
  * @param options.configs 已过滤 enabled 与互斥组的最终提示词配置列表。
  * @param options.promotion { main, withSubagents } 晋升追踪器(真相在持久事件流)。
- * @param options.memo 已确认投递身份的进程内 session 去重快路径（见 confirmDelivered）。
+ * @param options.memo 已确认投递身份的进程内 session 去重快路径（纯缓存，丢了只多一次
+ *   当前上下文扫描；见 confirmDelivered）。
  * @returns 注入后的 decision；reject、缺 agent/session、全部跳过或异常时原样返回。
  */
 export async function runPreStepBatch(options) {
@@ -484,7 +545,8 @@ export function applyPromptConfigs(ctx, configs, options = {}) {
   const observerDisposer = ctx.on('session/event', (session, event) => {
     main.observe(session, event)
     withSubagents.observe(session, event)
-    // 独立路径的去重记账：只有宿主真正持久化的注入消息才确认投递（门控剥离的候选不算）。
+    // 独立路径的去重记账：只有宿主真正持久化的注入消息才确认投递（门控剥离的候选不算）；
+    // 只写快路径缓存，判定真相仍是当前上下文扫描。
     confirmDelivered(injectedMemo, session, event)
   })
 

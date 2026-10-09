@@ -223,12 +223,14 @@ function ruleKeyOf(config: Record<string, unknown>): string {
  * 同时启用的模块间重复去重身份（F16(b)）：**只可见化，不拒绝**——复制模块后两者同时启用
  * 是合法操作，整体拒绝会让该 Agent 的全部装配失败，违背「失败不伤会话」。
  *
+ * 去重判据带**模块维**（`engine/executor.mjs#identityHit`：模块 + 通道 + 身份），因此同身份
+ * 的两个模块**各自注入**、不再互相压制；告警说的是「两份正文都会留在上下文里」这件事。
  * 两条通道都要查：`plugin`（消息来源身份，进 `source.plugin`）与 `sourceKind`（进
- * `source.kind`）。只查 plugin 会漏掉「两张 id 不同、却声明同一个 sourceKind」的两卡：
- * 它们同样经 kind 通道互相压制。`suspectedCopy` 标出「同一份 rule/action 身份被两个模块
- * 各带一份」，那才是复制模块的指纹；只有一份（或 rule/action 身份不同）时是有意共享同一
- * 身份去重，措辞不劝改。sourceKind 未显式声明时按配置 id 编译（`plugin:<id>`），那是
- * plugin 通道的同一笔账，不另算一条 kind 重复。
+ * `source.kind`）——它们各是一份独立的判据，漏查任一条就让「两模块带同一身份」不可见。
+ * `suspectedCopy` 标出「同一份 rule/action 身份被两个模块各带一份」，那才是复制模块的指纹；
+ * 只有一份（或 rule/action 身份不同）时是两个模块各自声明了同一个身份，措辞不劝改。
+ * sourceKind 未显式声明时按配置 id 编译（`plugin:<id>`），那是 plugin 通道的同一笔账，
+ * 不另算一条 kind 重复。
  */
 interface DuplicateIdentity { channel: 'plugin' | 'kind'; identity: string; suspectedCopy: boolean; moduleIds: string[] }
 
@@ -319,8 +321,8 @@ export function createAgentAssembly(ctx: Context, options: AgentAssemblyOptions)
         for (const item of duplicateIdentities) {
           const where = item.channel === 'kind' ? `显式 sourceKind ${JSON.stringify(item.identity)}` : `去重身份 ${JSON.stringify(item.identity)}`
           warnOnce(item.suspectedCopy
-            ? `模块 ${item.moduleIds.join('、')} 疑似由复制产生同一个${where}（dedupe: session/batch）：按会话去重只保留先到者，请改 rule id 或显式 identity 以区分`
-            : `模块 ${item.moduleIds.join('、')} 有意共享同一个${where}（dedupe: session/batch）：两模块按会话共享这一份去重；同一批内各自仍会注入一次`)
+            ? `模块 ${item.moduleIds.join('、')} 疑似由复制产生同一个${where}（dedupe: session/batch）：去重按模块各记一份，两份正文都会注入，请改 rule id 或显式 identity 以区分`
+            : `模块 ${item.moduleIds.join('、')} 声明了同一个${where}（dedupe: session/batch）：去重按模块各记一份，两模块各自注入；同一模块内才共享这份去重`)
         }
         const standingMountFor = await loadStandingMountFor()
         // 只重绑纯条件，不重读定义、模板或动作。每次挂载/失败恢复都获得自己的闭包与观察状态。
