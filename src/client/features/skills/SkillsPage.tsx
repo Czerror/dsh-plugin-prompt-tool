@@ -310,7 +310,6 @@ export const SkillsPage = memo(function SkillsPage(props: { store: PromptToolSto
           <section key={group.source} className={ui.skillGroup} aria-label={t(`skills.source.${group.source}` as never)}>
             <header className={ui.skillGroupHead}>
               <strong>{t(`skills.source.${group.source}` as never)}</strong>
-              <span className={ui.configFieldHint}>{t('skills.group.meta', { count: group.skills.length, rank: group.rank })}</span>
             </header>
             <div className={ui.skillCardList}>
               {group.skills.map((skill) => (

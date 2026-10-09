@@ -37,7 +37,6 @@ export function matchesSkillStatus(skill: SkillCatalogEntry, tab: SkillStatusTab
 
 export interface SkillGroup {
   source: SkillSourceKind
-  rank: number
   skills: SkillCatalogEntry[]
 }
 
@@ -50,7 +49,7 @@ export function groupBySource(catalog: readonly SkillCatalogEntry[]): SkillGroup
     const skills = catalog
       .filter((skill) => skill.source === source)
       .sort((left, right) => left.name.localeCompare(right.name))
-    return skills.length === 0 ? [] : [{ source, rank: SKILL_SOURCES[source].rank, skills }]
+    return skills.length === 0 ? [] : [{ source, skills }]
   })
 }
 

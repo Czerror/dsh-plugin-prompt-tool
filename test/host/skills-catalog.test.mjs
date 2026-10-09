@@ -146,10 +146,9 @@ test('catalogFromScan：一层发现、来源优先级、调用策略投影与�
 test('groupBySource：分组顺序与来源优先级一致，空分组不返回', () => {
   const groups = groupBySource(catalog)
   assert.deepEqual(groups.map((group) => group.source), ['project-dsh', 'project-agents', 'custom', 'user-dsh', 'user-agents', 'bundled'])
-  assert.deepEqual(groups.map((group) => group.rank), [100, 200, 300, 400, 500, 600])
-  // 分组只回传来源类型与优先级：标题由界面按 `skills.source.<kind>` 取字典。
+  // 分组只回传来源类型：标题由界面按 `skills.source.<kind>` 取字典。
   // 共享常量里的中文标签不再流到 UI，否则英文界面会显示中文分组名。
-  assert.deepEqual(Object.keys(groups[0]).sort(), ['rank', 'skills', 'source'])
+  assert.deepEqual(Object.keys(groups[0]).sort(), ['skills', 'source'])
   assert.deepEqual(groups.find((group) => group.source === 'project-dsh').skills.map((skill) => skill.name), ['project-skill', 'shared-name'])
   assert.equal(groups.every((group) => group.skills.length > 0), true)
   const only = groupBySource(catalog.filter((entry) => entry.source === 'bundled'))

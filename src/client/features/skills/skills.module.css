@@ -225,20 +225,13 @@
 .skillFooter > button { flex: none; white-space: nowrap; }
 .skillFooter .skillDelete { margin-left: auto; }
 
-/* 来源分组：标题给出优先级，列表沿用共享技能卡。 */
+/* 来源分组：来源类别由标题承载，列表沿用共享技能卡。 */
 .skillGroup {
   display: flex;
   min-width: 0;
   flex-direction: column;
   gap: 8px;
   margin-bottom: 18px;
-}
-.skillGroupHead {
-  display: flex;
-  min-width: 0;
-  align-items: baseline;
-  gap: 10px;
-  flex-wrap: wrap;
 }
 .skillGroupHead strong {
   color: var(--dsw-alias-label-primary);
