@@ -110,6 +110,26 @@
 | `engine/subagent-tool-policy.mjs` / `subagent-tool-policy-core.mjs` | 子代理实例策略、真实 provider 绑定及共享校验，贡献随 scope 释放 |
 | `engine/character-tools.mjs` / `world-book-tools.mjs` / `session-var-tools.mjs` | 等待宿主对应服务，按预设 scope 贡献工具并释放 |
 | `engine/compaction-epoch.mjs` | 可重建晋升状态机；不是插件行，不内建业务锚词 |
+| `engine/history.mjs` | 会话历史的**唯一**读取入口：两个视图（当前模型可见上下文 / 完整历史） |
+
+### 历史读取：两个视图（`engine/history.mjs`）
+
+| 视图 | 入口 | 语义 |
+|---|---|---|
+| 当前模型可见上下文 | `currentEvents(session)` | 按 surface 有序节点取事件：被压缩或位置替换**遮蔽**的节点不在其中 |
+| 完整历史 | `historyEvents(session)` | 本会话全部 durable 事件，按 log 序；供「必须看全量」的消费点 |
+
+- **降级**：surface 缺失、`nodes` 非数组或任一节点越界时，`currentEvents()` 退回完整历史 ——
+  「宁可多看见，不少看见」，且等价于迁移前的旧行为。空 `nodes` 是合法状态（新会话尚无消息），
+  按「当前上下文为空」返回空数组，**不**降级。
+- **两个视图并存，不互相替代**：`shared.mjs` 的 `sessionEvents` 是迁移过渡别名（指向
+  `historyEvents`），消费点逐个判定归属由 PLAN 的 T6 收口 —— 在此之前不得把某个消费点
+  顺手改成当前上下文视图。
+- **纯函数、零跨会话缓存**：每次都读当场快照；不引入「本会话曾投递 / 曾发生」的账本式真相。
+- 快照口径是 `snapshotEvents()`（`engine/history.mjs` 是唯一封装处）；不用已 deprecated 的
+  `eventAt()`，也**不在**读取层用 `deriveMessages()` —— 判据读事件而非正文，需要正文的消费点
+  （如 instruction-hint 的去重）另行按需取消息视图。
+- 验收入口：`test/engine/history.test.mjs`。
 
 `actions.mjs`、`predicates.mjs`、`strategies.mjs` 仅保留重导出；不能把实现重新堆回这些入口。
 `trigger-spec.mjs` 用于旧声明的离线校验，新运行链只编译 `rules`。原专用能力模块
@@ -399,9 +419,9 @@ UNAVAILABLE，不是编译期拒绝。
 `dedupe: session` 的判据是**每当前上下文一次**（用户 2026-10-10 拍板）：只要该身份的
 消息还留在模型可见的当前上下文里就不重复注入；被压缩或替换**遮蔽**的历史不再拦注入，
 条件仍满足时在后续步重新注入一次。这不新增「本会话曾投递」的跨压缩记忆——同一正文随
-上下文重建是预期行为。注：当前实现仍以持久事件流的全量扫描为准（遮蔽的历史还算已投递），
-迁到当前上下文视图由本 PLAN 的 T5（`engine/executor.mjs`）收口，`CHANGELOG.md`
-「破坏性变更」同址记录。
+上下文重建是预期行为。注：当前实现仍以持久事件流的全量扫描为准（遮蔽的历史还算已投递）；
+「当前模型可见上下文」视图已在 `engine/history.mjs#currentEvents()` 就位，判据迁移由本 PLAN 的
+T5（`engine/executor.mjs`）收口，`CHANGELOG.md`「破坏性变更」同址记录。
 
 `dedupe: session` 的候选生成与投递确认分开记账（`engine/executor.mjs`）：
 

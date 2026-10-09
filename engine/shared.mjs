@@ -116,14 +116,8 @@ export function isDelegated(session) {
   return (session?.header?.delegationDepth ?? 0) > 0
 }
 
-/**
- * 读取当前 Session 的不可变事件快照。
- * 正式 API 是 snapshotEvents()（DSH 0.1.2-alpha.4+）；宿主缺失该接口时按空日志处理，不再读取旧 events 数组。
- */
-export function sessionEvents(session) {
-  const snapshot = session?.snapshotEvents?.()
-  return Array.isArray(snapshot) ? snapshot : []
-}
+// 迁移过渡别名：实现已搬入 engine/history.mjs（完整历史视图 historyEvents），消费点改名归 T6。
+export { historyEvents as sessionEvents } from './history.mjs'
 
 /** True when a model id looks like a Flash-family model. */
 export function isFlashModel(modelId) {
