@@ -250,11 +250,12 @@ UI 侧 `persistParamOverrides` **条件发送**：
    - 模块级停用插值（`variablesEnabled: false`）时，声明键的引用在编译期按**同一插值语法**
      剥离：`{{键}}`、`{{ 键 }}`、`{{键::参数}}` 都清空，未声明键与内置引用（`{{DSH_HOME}}` 等）
      原样保留（`engine/rule-spec.mjs` 经 `engine/interpolate.mjs#stripDeclaredRefs`）；
-   - 开关的语义是**该模块这一层停用**，两个来源一起停：既不合并 `config.variables`（声明键剥离），
-     执行期也不再并入会话变量（`engine/executor.mjs` 见到编译期标记
-     `SESSION_VARIABLES_DISABLED` 即跳过 `sessionVarsSnapshot`）。内建事实与动态宏照常，
-     其他模块与同模块其他配置的会话变量不受影响——只按模块顶层开关逐配置生效；
-     键名与 `inject-text.config` 白名单同源于 `engine/schema.mjs`，作者不可写；
+   - 开关的语义是**该模块这一层停用**：既不合并 `config.variables`（声明键剥离），执行期也不再并入
+     会话变量——`engine/executor.mjs` 的 pre-step 消息插值与 `engine/layers.mjs` 的注册层官方变量
+     都按编译期标记 `SESSION_VARIABLES_DISABLED` 跳过 `sessionVarsSnapshot`。**例外**：ST 模板
+     （`params.stMacros`）的宏帧按 ST 语义仍读会话变量（会话变量即 ST `setvar`/`getvar` 的运行时语义，
+     停帧会把模板自身的宏语义一起停）。内建事实与动态宏照常，其他模块的会话变量不受影响；
+     标记由 `engine/rule-spec.mjs` 在校验**之后**打上，不在 `inject-text.config` 白名单里——作者写它按未知键拒绝；
    - 用途：模型经 `world_book_upsert` 写世界书条目，内容引用 `{{key}}` 占位；ST 未定义宏登记；
    - UI 模板变量卡（VariablesEditor）可编辑默认值覆盖。
 

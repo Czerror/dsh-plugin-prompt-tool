@@ -1,5 +1,5 @@
 /**
- * condition — 声明式条件判定的共享实现（pre-step / tool-pipeline / 事件层共用）。
+ * condition — 声明式条件判定的共享实现（pre-step 与其余注入层共用）。
  *
  * 匹配语义来自 anchor-match.mjs：键集合由 schema.mjs 在挂载期归一化并预编译为
  * `config.matchScan`（非法 logic / 空键集合 / 非法正则在挂载期 fail loud）。

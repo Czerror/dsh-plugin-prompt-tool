@@ -78,8 +78,6 @@ export function injectionConfigSpec(rule, action, options = {}) {
     if (config.text !== undefined) config.text = strip(config.text)
     if (Array.isArray(config.texts)) config.texts = config.texts.map(strip)
     if (record(config.params) && typeof config.params.text === 'string') config.params = { ...config.params, text: strip(config.params.text) }
-    // 停用不是「只停声明变量」：执行期还要跳过会话变量合并，标记随编译产物传给运行时。
-    config[SESSION_VARIABLES_DISABLED] = true
   } else config.variables = { ...variables, ...(record(config.variables) ? config.variables : {}) }
   return config
 }
@@ -284,8 +282,9 @@ export function compileRules(specs, options = {}) {
     for (const item of pendingConfigs) {
       const config = byId.get(item.source.id)
       Object.assign(config, { sequence: item.sequence, ruleId: item.ruleId, ruleActionIndex: item.actionIndex })
-      // `createPromptConfigs` 重建配置对象（只取自己认得的字段），编译期标记在这里回到运行时。
-      if (item.source[SESSION_VARIABLES_DISABLED] === true) config[SESSION_VARIABLES_DISABLED] = true
+      // 停用标记在这里打，不在 `injectionConfigSpec`：那是校验**之前**，标记会变成作者可写的字段。
+      // 校验之后打标，作者手写同名键按未知键 fail loud；执行期据此跳过会话变量合并。
+      if (options.variablesEnabled === false) config[SESSION_VARIABLES_DISABLED] = true
       item.action.compiledConfig = config
     }
   }

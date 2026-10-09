@@ -541,9 +541,9 @@ export const CONFIG_FIELDS = [
 ]
 
 /**
- * 「本模块停用了模板变量」的编译期标记：`rule-spec.mjs#injectionConfigSpec` 打上它，
- * 执行期据此跳过会话变量合并（见 `executor.mjs#runPromptConfigBatch`）。作者不可写，
- * 只随编译产物出现——所以它不在 {@link CONFIG_FIELDS} 里，键名也只在这里定义一次。
+ * 「本模块停用了模板变量」的引擎内部标记：`rule-spec.mjs#compileRules` 在配置**通过校验之后**打上它，
+ * 执行期据此跳过会话变量合并（见 `executor.mjs#runPromptConfigBatch`）。它**不在**
+ * {@link INJECT_CONFIG_FIELDS} 里——作者写同名键会按未知键 fail loud，键名只在这里定义一次。
  */
 export const SESSION_VARIABLES_DISABLED = 'variablesDisabled'
 
@@ -557,7 +557,7 @@ export const SESSION_VARIABLES_DISABLED = 'variablesDisabled'
 export const INJECT_CONFIG_FIELDS = new Set([
   ...CONFIG_FIELDS.map((rule) => rule.field),
   'id', 'layer', 'strategy', 'configKind', 'text', 'templateFile', 'fill',
-  'sourceKind', 'form', 'summary', 'params', SESSION_VARIABLES_DISABLED,
+  'sourceKind', 'form', 'summary', 'params',
 ])
 
 /** 按 {@link CONFIG_FIELDS} 遍历一次，产出全部标量字段的归一值（或按表顺序 fail loud）。 */

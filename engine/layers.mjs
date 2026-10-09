@@ -12,7 +12,7 @@ import {
   newMessageId,
   sessionState,
 } from './shared.mjs'
-import { KNOWN_STRATEGIES } from './schema.mjs'
+import { INJECTION_LAYERS, KNOWN_STRATEGIES, SESSION_VARIABLES_DISABLED } from './schema.mjs'
 import { interpolateVariables, stripUnresolvedRefs, RUNTIME_FACTS, runtimeFactValue } from './interpolate.mjs'
 import { getSessionVar, sessionVarsSnapshot } from './session-vars.mjs'
 import { conditionHit, lastAssistantText, subagentTextOf } from './condition.mjs'
@@ -109,12 +109,14 @@ function registerOfficialVariables(ctx, configs, warnOnce, keep) {
           usedNames.add(official)
           const source = isFact ? name.toLowerCase() : name
           const declaredValue = declared ? String(config.variables[name] ?? '') : undefined
+          const variablesDisabled = config[SESSION_VARIABLES_DISABLED] === true
           keep(systemPrompt.variable(official, (context) => {
             const session = context?.agent?.session
-            const override = getSessionVar(session, source)
+            // 停用模板变量的模块连会话变量一起停（与 pre-step 通道同判据）；ST 模板宏帧不在此列。
+            const override = variablesDisabled ? undefined : getSessionVar(session, source)
             const value = override !== undefined ? String(override) : declaredValue ?? runtimeFactValue(source, session) ?? ''
             // 变量值内的 {{pick}} 同样要有位置身份（配置 id + 声明名），否则同会话下多个变量的首个 pick 撞值。
-            const expanded = interpolateVariables(value, { ...config.variables, ...sessionVarsSnapshot(session) }, session, undefined, `variable:${config.id}:${name}`)
+            const expanded = interpolateVariables(value, { ...config.variables, ...(variablesDisabled ? {} : sessionVarsSnapshot(session)) }, session, undefined, `variable:${config.id}:${name}`)
             return officialChannelText(expanded, `variable ${official}`, { alias: new Map(), registered: new Set() }, warnOnce)
           }), `${name}: official prompt variable ${official}`)
           binding = official
@@ -689,6 +691,10 @@ function wireSubagentEvents(ctx, configs, warnOnce, on) {
  */
 export function wireLayers(ctx, configs, warnOnce, options = {}) {
   configs = [...configs].sort(compareConfigSequence)
+  // 没有注入通道的层（`tool-pipeline`）在这里没有分派：显式告警一次，别让 config 级入口静默丢弃。
+  for (const config of configs) {
+    if (!INJECTION_LAYERS.includes(config.layer)) warnOnce(`${name}: ${config.id}: layer ${String(config.layer)} 没有注入通道，已跳过（工具链的裁决请用 decision / append-context）`)
+  }
   const owned = []
   const keep = (dispose, label) => {
     if (typeof dispose !== 'function') return

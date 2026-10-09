@@ -101,7 +101,7 @@ rules:
 | `runtime-context` | `ctx.systemPrompt.context` | `mergeMode` `order` | `static` `placeholder` | `contextName` |
 | `agent-request` | `agent/request` | `audience` `modelScope` `order` | `static` | `patch` `replace` |
 | `llm-stream` | `llm/stream` | `modelScope` `order` | `static` | `mode`（`pass`/`replace`） |
-| `tool-pipeline` | `tools/pre-execute` `tools/post-execute` | `audience` `modelScope` `order` `subject` `match` | `static` | `toolNames` `preDecision` `denyReason` `postAction` |
+| `tool-pipeline` | 仅展示归属（**无注入通道**） | `audience` `modelScope` `order` `subject` `match` | — | 工具链的裁决 / 追加上下文改用 `decision` / `append-context` 动作 |
 | `turn-stop` | `agent/turn-stopping` | `modelScope` `order` `subject` `match` | `static` | — |
 | `subagent-start` | `subagent/start` | `modelScope` `order` `subject` `match` | `static` | — |
 | `subagent-end` | `subagent/end` | `modelScope` `order` `subject` `match` | `static` | `action`（`observe`/`inject-main`） |
@@ -109,7 +109,7 @@ rules:
 三条边界：
 
 1. 层字段按上表用：`position`/`dedupe`/`role`/`promotion` 在 `pre-step`；`subject`/`match` 在
-   `pre-step`、`tool-pipeline`、`turn-stop`、`subagent-start`、`subagent-end`。
+   `pre-step`、`turn-stop`、`subagent-start`、`subagent-end`——`tool-pipeline` 无注入通道，写上不生效。
 2. 各层缺省的匹配对象：`pre-step` → `userMessage`、`tool-pipeline` → `toolArgs`、`turn-stop` →
    `assistantText`、`subagent-*` → `subagentInfo`。按任务内容分档放在 `pre-step`——`subagent/start`
    的事件里只有 provider 与 id，没有任务文本。

@@ -36,8 +36,8 @@ export function translateLabel(
   return key === undefined ? value : t(key)
 }
 
-/** audience：空值=公用（缺省，通用参数默认）；main=仅主会话；subagent=仅子代理。 */
-export const AUDIENCE_LABEL_KEYS: Record<string, PromptToolLocaleKey> = { '': 'audience.none', main: 'audience.main', subagent: 'audience.subagent' }
+/** audience：空值 / `all` = 公用（缺省，通用参数默认）；main=仅主会话；subagent=仅子代理。 */
+export const AUDIENCE_LABEL_KEYS: Record<string, PromptToolLocaleKey> = { '': 'audience.none', all: 'audience.none', main: 'audience.main', subagent: 'audience.subagent' }
 /**
  * 层显示标签的字典键：键集由共享契约的 {@link InjectionPoint} 联合在编译期约束（九层穷尽、禁多余键），
  * 与引擎下发的 layerLabels 的键集对拍见 test/client/mirror-guards.test.mjs。

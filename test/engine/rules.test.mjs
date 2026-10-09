@@ -990,7 +990,9 @@ test('variablesEnabled=false：声明变量引用按插值语法剥离，未声�
   assert.equal(enabled.text.variables.foo, 'F', '启用时声明变量挂上配置')
   // 单一事实来源：标记键名与白名单取自同一常量——两处手写字面量时，改一处即静默变回未知键。
   assert.equal(disabled.text[SESSION_VARIABLES_DISABLED], true, '停用时编译产物带执行期标记')
-  assert.equal(INJECT_CONFIG_FIELDS.has(SESSION_VARIABLES_DISABLED), true, '标记键已登记进 inject-text 白名单')
+  assert.equal(INJECT_CONFIG_FIELDS.has(SESSION_VARIABLES_DISABLED), false, '标记键不在作者可写的白名单里')
+  assert.throws(() => compileRules([{ id: 'vars', then: [textAction('vars-text', 'X', { [SESSION_VARIABLES_DISABLED]: true })] }]),
+    /unknown config key\(s\).*variablesDisabled/, '作者手写标记键按未知键拒绝（引擎内部字段不可写）')
   assert.equal(Object.hasOwn(enabled.text, SESSION_VARIABLES_DISABLED), false, '启用时不打标记')
 })
 
