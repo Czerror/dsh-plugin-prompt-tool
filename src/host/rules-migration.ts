@@ -76,7 +76,8 @@ function stripForeignLlmCallKeys(action: Record<string, unknown>, label: string)
     const kept: Record<string, unknown> = {}
     for (const [key, value] of Object.entries(action[field] as Record<string, unknown>)) {
       try { assertLlmCallPatch({ [key]: value }, `${label}.${field}`) } catch (error) {
-        // ponytail: 靠引擎报错文本区分「非成员键」与「非法值」；文案改了只会退化成两者一起 fail loud。
+        // ponytail: 靠引擎报错文本区分「非成员键」与「非法值」（文案改了只会退化成两者一起 fail loud）；
+        // 引擎导出 LlmCallConfig 键集后改用 has 检查。这里不另抄名单——两份会漂移成误剔/漏剔。
         if (!(error instanceof Error) || !error.message.endsWith('is not a LlmCallConfig field')) throw error
         continue
       }

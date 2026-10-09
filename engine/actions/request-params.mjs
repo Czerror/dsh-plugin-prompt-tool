@@ -14,6 +14,9 @@ export function prepareRequestParams(action, plugin) {
   if (action.replace === true && unset !== undefined) {
     throw new TypeError(`${plugin}: ${label} cannot combine replace with unset — 整体替换没有可比较的下游值`)
   }
+  if (action.replace === true && (!patch?.provider || !patch?.model)) {
+    throw new TypeError(`${plugin}: ${label}.patch requires provider and model when replace=true`)
+  }
   const params = { ...(patch !== undefined ? { patch } : {}), ...(unset !== undefined ? { unset } : {}), ...(action.replace === true ? { replace: true } : {}) }
   return (_ctx, { warnOnce, on, collect, take }) => collect(on('agent/request', async (payload, next) => {
     const base = await next()

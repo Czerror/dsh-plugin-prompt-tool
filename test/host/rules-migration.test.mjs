@@ -94,10 +94,11 @@ async function policyMigrationChecks() {
   const bound = promptConfigToRule({ id: 'bound', strategy: 'placeholder', fill: 'instruction-hint', params: { file: '/workspace/AGENTS.md' } })
   assert.equal(bound.then[0].config.params.projectTemplate, undefined, '真实文件绑定不变成目录探测提示')
 
-  const gated = convertLegacyModuleRules({ id: 'gate', modules: [], triggers: [{ id: 'gate', channel: 'agent/request', when: { all: [{ phase: { promoteGate: true, promoted: true } }, { not: { phase: { promoteGate: false, promoted: false } } }] }, do: { kind: 'request-params', patch: { maxTokens: 512, note: 'promoteGate: true' } } }] }).rules[0]
+  // 同一字面量既出现在旧条件里、又出现在普通字符串值里：迁移必须逐键搬运，不能做全文替换。
+  const gated = convertLegacyModuleRules({ id: 'gate', modules: [], triggers: [{ id: 'gate', channel: 'agent/request', when: { all: [{ phase: { promoteGate: true, promoted: true } }, { not: { phase: { promoteGate: false, promoted: false } } }] }, do: { kind: 'request-params', patch: { maxTokens: 512, reasoningEffort: 'promoteGate: true' } } }] }).rules[0]
   assert.deepEqual(gated.if.all[0].all[0].phase, { promoteGate: true, promoted: true, reasoningPattern: '\\bwe\\b', reasoningNegativePattern: '\\blet me\\b', reasoningFlags: 'gi' })
   assert.equal(gated.if.all[0].all[1].not.phase.reasoningPattern, undefined, '未启用promoteGate不携入业务正则')
-  assert.deepEqual(gated.then[0].patch, { maxTokens: 512 }, '迁移按 LlmCallConfig 键集保留合法键（maxTokens）、剔除非法键（note），不做全文替换')
+  assert.deepEqual(gated.then[0].patch, { maxTokens: 512, reasoningEffort: 'promoteGate: true' }, 'phase 条件提升为 if，patch 里的合法键与值原样搬运，不做全文替换')
   const agentRequest = convertLegacyModuleRules({ modules: [], promptConfigs: [{ id: 'request', layer: 'agent-request', params: { patch: { maxTokens: 512, note: 'promoteGate: true' }, unset: { temperature: 0.2, note: 'unused' } } }] }).rules[0]
   assert.deepEqual(agentRequest.then[0].patch, { maxTokens: 512 }, '旧 agent-request 配置的 patch 非 LlmCallConfig 键同样在迁移期剔除')
   assert.deepEqual(agentRequest.then[0].unset, { temperature: 0.2 }, '旧 agent-request 配置的 unset 非 LlmCallConfig 键同样在迁移期剔除')

@@ -16,11 +16,7 @@ const RULE_FIELDS = new Set(['id', 'name', 'enabled', 'layer', 'group', 'exclusi
 const record = value => value !== null && typeof value === 'object' && !Array.isArray(value)
 const nonempty = value => typeof value === 'string' && value.trim().length > 0
 
-/**
- * `prepend` 的退役文案（动作层与 `inject-text.config` 层共用）：它是未文档化的注册后门
- * （`executor.mjs` 直读 `config.prepend`），已取消且**暂无等价替代**——`inject-text` 不接受
- * `waterfallPosition`，所以不能像其他动作那样指一个新名。
- */
+/** `prepend` 退役文案（动作层与 `inject-text.config` 共用）：`inject-text` 不接受 `waterfallPosition`，无法像其他动作那样指一个新名。 */
 const PREPEND_RETIRED = '`prepend` 已取消 — 它是未文档化的注册后门（executor 直读 config.prepend），暂无等价替代；动作级位置请用 `waterfallPosition`（仅适用于非 inject-text 动作）'
 
 /**

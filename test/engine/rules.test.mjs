@@ -868,6 +868,16 @@ test('动作声明白名单：未知键、对象形态 match 与带 kind 的分�
   assert.throws(() => compileRules([{ id: 'req', then: [
     { id: 'v', kind: 'request-params', patch: { maxTokens: 'ten' } },
   ] }]), /action v\.patch\.maxTokens has an invalid value/)
+  // 关键拒绝：replace=true 会整体丢掉下游 provider/model，缺一即不可用（与 config 层同判据）。
+  for (const patch of [{}, { model: 'deepseek-pro' }, { provider: 'deepseek' }]) {
+    assert.throws(() => compileRules([{ id: 'req', then: [
+      { id: 'r', kind: 'request-params', replace: true, patch },
+    ] }]), /r\.patch requires provider and model when replace=true/)
+  }
+  // 边界：replace=true 且两者齐全时照常编译。
+  assert.equal(compileRules([{ id: 'req', then: [
+    { id: 'r', kind: 'request-params', replace: true, patch: { provider: 'deepseek', model: 'deepseek-pro' } },
+  ] }]).length, 1)
   // 关键拒绝：inject-text.config 的未知键（同一份提示词配置白名单）。
   assert.throws(() => compileRules([{ id: 'r', then: [textAction('a', 'A', { typoKey: 1 })] }]),
     /action a config: unknown config key\(s\) typoKey — allowed keys: .*text/)
