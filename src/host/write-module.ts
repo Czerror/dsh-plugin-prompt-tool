@@ -59,8 +59,16 @@ function writeContentAssets(directory: string, agentsText?: string): void {
   atomicWriteTextFile(path, agentsText)
 }
 
+/** 未知选项即抛：删掉旧选项（moduleDir / presetOrder）后，写错的名字不能再被静默忽略。
+ *  形状沿用既有的未知键守卫（engine/shared.mjs#validateConfig、settings-bridge 的参数键白名单）。 */
+function assertKnownOptions(label: string, options: object, allowed: readonly string[]): void {
+  const unknown = Object.keys(options).filter((key) => !allowed.includes(key))
+  if (unknown.length > 0) throw new TypeError(`${label} 收到未知选项：${unknown.join('、')}；只接受 ${allowed.join('、')}`)
+}
+
 /** 按模块身份原地恢复切片；用户资产、正文与完整定义均不重写。 */
 export function ensureModuleReady(id: string, options: { modulesRoot?: string; warn?: (message: string) => void }): string {
+  assertKnownOptions('ensureModuleReady', options, ['modulesRoot', 'warn'])
   const root = options.modulesRoot ?? MODULES_DIR
   const directory = assertModuleDirectory(root, id)
   validateModule(directory, options.warn)
@@ -75,6 +83,7 @@ export function ensureModuleReady(id: string, options: { modulesRoot?: string; w
 
 /** 已有同一模块只恢复切片；导入/复制先完整生成合法身份候选，再交换目标。 */
 export function writeModule(options: WriteModuleOptions): string {
+  assertKnownOptions('writeModule', options, ['modulesRoot', 'moduleId', 'targetModuleId', 'sourceDir', 'stageOnly', 'agentsInstructionText', 'warn'])
   const root = options.modulesRoot.trim().length > 0 ? options.modulesRoot : MODULES_DIR
   assertModuleId(options.moduleId)
   const targetId = options.targetModuleId ?? options.moduleId

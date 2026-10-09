@@ -499,3 +499,31 @@ test('writeModule：模板名与输出目录名分离，安全 id 输出仍渲�
   assert.equal(existsSync(join(outputRoot, 'pt-safe', 'rules', '_settings.yml')), true)
   assert.equal(existsSync(join(outputRoot, 'standard')), false, '模板名不会被当成输出目录')
 })
+
+test('未知选项即抛：删掉旧选项后，写错的名字不能再被静默忽略', () => {
+  const outputRoot = mkdtempSync(join(home, 'unknown-'))
+  try {
+    // 旧选项名（moduleDir / presetOrder）与拼错的键都必须响亮失败：此前它们被静默忽略，
+    // 于是「以为指定了根」的调用会回落到默认根，操作到另一个身份的同 id 模块。
+    assert.throws(
+      () => ensureModuleReady(FIXTURE_MODULE_ID, { modulesRoot: outputRoot, moduleDir: outputRoot }),
+      /未知选项：moduleDir/,
+    )
+    assert.throws(
+      () => writeModule({ ...makeOptions(outputRoot), moduleId: FIXTURE_MODULE_ID, stageonly: true }),
+      /未知选项：stageonly/,
+    )
+    // 守卫必须挡在任何写盘之前：用一个**干净**根验证（makeOptions 会预装夹具，判断不了这一点）。
+    const guardRoot = mkdtempSync(join(home, 'guard-'))
+    assert.throws(
+      () => ensureModuleReady(FIXTURE_MODULE_ID, { modulesRoot: guardRoot, presetOrder: 1 }),
+      /未知选项：presetOrder/,
+    )
+    assert.equal(existsSync(join(guardRoot, FIXTURE_MODULE_ID)), false, '守卫先于任何写盘')
+    // 合法选项不受影响。
+    const dir = ensureModuleReady(FIXTURE_MODULE_ID, { modulesRoot: outputRoot, warn: () => {} })
+    assert.equal(existsSync(join(dir, 'module.yml')), true, '合法调用照常恢复切片')
+  } finally {
+    rmSync(outputRoot, { recursive: true, force: true })
+  }
+})
