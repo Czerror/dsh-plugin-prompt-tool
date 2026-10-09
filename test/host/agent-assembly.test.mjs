@@ -982,6 +982,8 @@ test('装配失败与恢复：准备期失败只告警，撤旧失败仍尝试�
     assert.match(inner.message, /RESTORE-FAIL/, 'AggregateError 的 message 自带恢复原因')
     // settings-bridge 的上报只把 error 交给 String()：包装层的 message 也得带出两段原因。
     assert.match(String(error), /运行时配装更新失败.*MOUNT-FAIL.*RESTORE-FAIL/s, '只读 message 的上报点读到两段原因')
+    // 「已保存」由写盘的那一层声明：本层再声明一次，同一条用户消息就会说两遍同一件事。
+    assert.doesNotMatch(String(error), /已保存/, '本层不抢写盘层的「已保存」')
     return true
   })
   assert.equal(runtime3.hasMounted(agent3.id), false, '恢复失败不留半挂状态')

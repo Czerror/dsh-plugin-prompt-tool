@@ -96,7 +96,7 @@ test('rule-steps: 工具链动作卡按引擎种子渲染可编辑字段，match
     fields: new Map(), expanded, prefix: 'rule-key', fieldKey: 'rule-key', onDraft: () => {}, onChange: () => {},
   })
   const labels = new Set([...html.matchAll(/aria-label="([^"]*)"/g)].map(match => match[1]))
-  // 手写期望值：`match` 必须是函数（rule-spec 的声明期拒绝），种子给不出结构化值 → 它不在卡片的可编辑面。
+  // 手写期望值：`match` 出现即拒（条件写 `rule.if`），种子给不出结构化值 → 它不在卡片的可编辑面。
   const expected = { decision: ['phase', 'decision', 'action', 'reason', 'text', 'toolNames'], 'append-context': ['mode', 'text'] }
   const labelOf = field => (field === 'action' ? t('rules.actionField.action')
     : field === 'decision' ? t('rules.actionField.decision')

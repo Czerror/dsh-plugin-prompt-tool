@@ -23,7 +23,8 @@ test('TUI 规则开关使用定义与显式互斥；未知身份不写，重建�
     () => ({ available: true, providers: [] }), async () => ({}), () => dir,
     undefined, undefined, async id => {
       assert.equal(id, 'tui-rules'); refreshes++
-      if (rejectRefresh) throw new Error('assembly unavailable')
+      // 复刻下游真实措辞（agent-assembly 的刷新失败句）：它只说装配，不再自称「已保存」。
+      if (rejectRefresh) throw new Error('运行时配装更新失败：模块 tui-rules 装配失败')
     })
   const initial = readFileSync(file, 'utf8')
   assert.equal((await handler({ rawInput: 'config missing on' })).kind, 'error')
@@ -42,7 +43,8 @@ test('TUI 规则开关使用定义与显式互斥；未知身份不写，重建�
   rejectRefresh = true
   const failed = await handler({ rawInput: 'config second off' })
   assert.equal(failed.kind, 'error')
-  assert.match(failed.text, /已保存.*重新装配失败/)
+  // 真值源：用户看到的那一整句——「已保存」由 TUI 说一次，下游只说装配失败。
+  assert.equal(failed.text, '规则已保存，但重新装配失败：运行时配装更新失败：模块 tui-rules 装配失败')
   assert.equal(parse(readFileSync(file, 'utf8')).rules[1].enabled, false)
 })
 

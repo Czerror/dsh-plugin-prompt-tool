@@ -468,8 +468,9 @@ export function createAgentAssembly(ctx: Context, options: AgentAssemblyOptions)
       const errors = results.filter((result): result is PromiseRejectedResult => result.status === 'rejected')
       if (errors.length > 0) {
         // 本层是唯一到达 bridge / TUI 的出口，而它们只读 message：原因必须带出来。
+        // 「已保存」由写盘的那一层（bridge / TUI / 模型工具）各自声明，本层只说装配这件事。
         throw new AggregateError(errors.map((result) => result.reason),
-          `模块已保存，但运行时配装更新失败：${errors.map((result) => failureReason(result.reason)).join('；')}`)
+          `运行时配装更新失败：${errors.map((result) => failureReason(result.reason)).join('；')}`)
       }
     },
     dispose: async () => {

@@ -183,8 +183,8 @@ export function agentOf(payload) {
 
 /**
  * 从载荷取 session：归一化载荷走 `session` → `agent.session`；旧形态走
- * `session` → 载荷自身。取不到时返回原载荷——`sessionEvents` 对无 `snapshotEvents`
- * 的对象返回空，语义是「无事件」，与归一化之前逐例一致。
+ * `session` → 载荷自身。取不到时返回原载荷——`history.mjs#historyEvents` / `#currentEvents`
+ * 对无 `snapshotEvents` 的对象返回空，语义是「无事件」，与归一化之前逐例一致。
  */
 export function sessionOf(payload) {
   if (payload === null || typeof payload !== 'object') return payload

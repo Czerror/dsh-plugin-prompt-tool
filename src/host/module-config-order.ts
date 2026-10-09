@@ -114,7 +114,7 @@ function writeOrders(root: string, inputs: ModuleOrderInput[], orders: Map<strin
         invalidateModuleSpec(change.dir)
       } catch (restoreError) { failures.push(restoreError) }
     }
-    if (failures.length > 0) throw new AggregateError([error, ...failures], '排序失败，部分模块无法安全恢复；未覆盖外部修改')
+    if (failures.length > 0) throw new AggregateError([error, ...failures], '排序失败，部分模块无法安全恢复；未覆盖外部修改', { cause: error })
     throw error
   }
   return changes.map(change => change.moduleId)

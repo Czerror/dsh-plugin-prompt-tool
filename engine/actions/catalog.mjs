@@ -114,11 +114,3 @@ const COMMON_ACTION_FIELDS = ['id', 'kind', 'channelOrder', 'waterfallPosition',
 export const ACTION_FIELDS = Object.freeze(Object.fromEntries(
   Object.entries(ACTION_KINDS).map(([kind, meta]) => [kind, new Set([...COMMON_ACTION_FIELDS, ...meta.fields])]),
 ))
-
-/**
- * 允许声明 `match` 判据的动作：它必须是**函数**（`prepare*` 里 `typeof action.match === 'function'`
- * 才过滤）。对象形态在声明路径上恒命中——即「配了门却没拦住」，编译期拒绝。
- */
-export const MATCH_ACTION_KINDS = new Set(
-  Object.entries(ACTION_KINDS).filter(([, meta]) => meta.fields.includes('match')).map(([kind]) => kind),
-)
