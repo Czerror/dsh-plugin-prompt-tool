@@ -123,7 +123,6 @@ export const ModuleSwitcher = memo(function ModuleSwitcher(props: { store: Promp
       <div className={styles.settingRowStack}>
         <span className={styles.settingCopy}>
           <strong>{t('presetSwitcher.title')}</strong>
-          <small>{t('presetSwitcher.hint')}</small>
         </span>
         <span className={styles.inlineControls}>
           <Button ref={pickerAnchorRef} shape="pill" variant="primary" size="md" onClick={() => setPickerOpen(true)}>{t('presetSwitcher.new')}</Button>

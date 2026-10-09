@@ -216,7 +216,6 @@ const ZH_CORE = {
   'moduleOrder.refreshFailed': '排序已保存，但当前模块读取失败，请刷新后再编辑。',
 
   'presetSwitcher.title': '模块模板',
-  'presetSwitcher.hint': '管理模块及其自有资源。导入支持 ZIP、JSON、PNG、YAML 和文件夹，确认后创建或更新；每个模块可导出完整 ZIP 或仅定义 YAML。',
   'presetSwitcher.new': '新建模块',
   'presetSwitcher.import': '导入模块',
   'presetSwitcher.importing': '导入中…',
@@ -479,7 +478,6 @@ const EN_CORE: Record<keyof typeof ZH_CORE, string> = {
   'moduleOrder.refreshFailed': 'Order saved, but the current module could not be reloaded. Refresh before editing.',
 
   'presetSwitcher.title': 'Module templates',
-  'presetSwitcher.hint': 'Manage modules and their owned resources. Import ZIP, JSON, PNG, YAML or folders, then confirm creation or update. Export each module as a complete ZIP or definition YAML.',
   'presetSwitcher.new': 'New module',
   'presetSwitcher.import': 'Import module',
   'presetSwitcher.importing': 'Importing…',
