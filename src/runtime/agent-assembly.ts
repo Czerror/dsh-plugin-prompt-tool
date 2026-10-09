@@ -201,13 +201,16 @@ export async function prepareAssembly(
   return { rules, ruleConditions, modules, services, moduleId, persona: spec.persona }
 }
 
+/** 上报点只读 message（本文件的 `warn`、settings-bridge 的 `String(error)`）：原因写进文本。 */
+const failureReason = (error: unknown): string => error instanceof Error ? error.message : String(error)
+
 export function createAgentAssembly(ctx: Context, options: AgentAssemblyOptions): AgentAssemblyRuntime {
   const mounts = new Map<string, { agent: Agent; fiber: { dispose(): Promise<void> | void }; prepared: PreparedAssembly[]; moduleIds: readonly string[] }>()
   const disposed = new WeakSet<Agent>()
   const queues = new Map<string, Promise<void>>()
   let active = true
   const warn = (error: unknown): void => {
-    const message = `prompt-tool: 运行时配装失败：${error instanceof Error ? error.message : String(error)}`
+    const message = `prompt-tool: 运行时配装失败：${failureReason(error)}`
     if (options.warn !== undefined) options.warn(message)
     else ctx.logger?.warn?.(message)
   }
@@ -305,12 +308,20 @@ export function createAgentAssembly(ctx: Context, options: AgentAssemblyOptions)
       prepared.push(await prepareAssembly(options.moduleRoot, id, (name) => agent.ctx.get(name) !== undefined))
     }
     if (!active || disposed.has(agent)) return
-    await release(agent.id)
     try {
+      // 撤旧也在 try 里：撤旧失败同样要尽力把旧装配装回去，否则旧贡献凭空消失。
+      await release(agent.id)
       await mount(agent, prepared)
     } catch (error) {
       if (previous?.agent === agent && active && !disposed.has(agent)) {
-        await mount(agent, previous.prepared)
+        // ponytail: 撤旧只失败在 dispose 上时旧 fiber 可能半撤且已出账；出现重复贡献再改成「撤旧成功才记账」。
+        try {
+          await mount(agent, previous.prepared)
+        } catch (restoreError) {
+          // 两个原因都得留下：只读 message 的上报点看不到 errors。
+          throw new AggregateError([error, restoreError],
+            `切换装配失败（${failureReason(error)}），且恢复原有装配也失败（${failureReason(restoreError)}）`)
+        }
       }
       throw error
     }
@@ -366,7 +377,11 @@ export function createAgentAssembly(ctx: Context, options: AgentAssemblyOptions)
         await install(agent, true)
       })))
       const errors = results.filter((result): result is PromiseRejectedResult => result.status === 'rejected')
-      if (errors.length > 0) throw new AggregateError(errors.map((result) => result.reason), '模块已保存，但运行时配装更新失败')
+      if (errors.length > 0) {
+        // 本层是唯一到达 bridge / TUI 的出口，而它们只读 message：原因必须带出来。
+        throw new AggregateError(errors.map((result) => result.reason),
+          `模块已保存，但运行时配装更新失败：${errors.map((result) => failureReason(result.reason)).join('；')}`)
+      }
     },
     dispose: async () => {
       active = false

@@ -636,24 +636,36 @@ function stubHostContext(options = {}) {
   const mounts = []
   const warnings = []
   const disposers = []
-  // 宿主能力探针：默认全不可用（与「装配失败降级为告警」那条用例的前提一致）；
+  const agents = []
+  // 宿主能力探针：默认全不可用（与「装配失败与恢复」那条用例的前提一致）；
   // 传 `services` 时才视为可用——带切片的模块要求 systemPrompt/tools/llm。
   const services = new Set(options.services ?? [])
   return {
     warnings,
     counts,
     mounts,
-    /** 假 Agent：真实 Agent 的 ctx 是可安装插件的 scope 上下文；这里只记下安装请求。 */
-    makeAgent: (id) => ({
-      id,
-      ctx: {
-        get: (name) => services.has(name) ? {} : undefined,
-        plugin: (definition) => {
-          mounts.push({ id, definition })
-          return Promise.resolve({ dispose: async () => {} })
+    agents,
+    /**
+     * 假 Agent：真实 Agent 的 ctx 是可安装插件的 scope 上下文；这里只记下安装请求。
+     * `options.fault(第几次挂载)` 注入故障：`mount` 让这次挂载失败，`dispose` 让这次撤销失败。
+     */
+    makeAgent: (id) => {
+      const agent = {
+        id,
+        ctx: {
+          get: (name) => services.has(name) ? {} : undefined,
+          plugin: (definition) => {
+            mounts.push({ id, definition })
+            const fault = options.fault?.(mounts.length) ?? {}
+            // 真实 ctx.plugin 的返回值既能 await 也能 dispose（挂载失败时要撤），桩必须同形。
+            const fiber = fault.mount === undefined ? Promise.resolve() : Promise.reject(fault.mount)
+            return Object.assign(fiber, { dispose: async () => { await fault.dispose?.() } })
+          },
         },
-      },
-    }),
+      }
+      agents.push(agent)
+      return agent
+    },
     fire: async (name, payload) => {
       const handler = listeners.get(name)
       if (handler === undefined) throw new Error(`no listener for ${name}`)
@@ -666,17 +678,18 @@ function stubHostContext(options = {}) {
         counts.set(name, (counts.get(name) ?? 0) + 1)
         return () => { listeners.delete(name); counts.set(name, (counts.get(name) ?? 1) - 1) }
       },
-      effect: (register) => { const remove = register(); disposers.push(remove); return () => {} },
+      // 真实 effect 返回它的 disposer：装配失败时要靠它撤掉半挂的 fiber。
+      effect: (register) => { const remove = register(); disposers.push(remove); return async () => { await remove?.() } },
       get: (name) => services.has(name) ? {} : undefined,
       // 构造期会枚举存量 Agent；由 index.ts 的 ctx.inject(['agents']) 保证真实可用。
-      agents: { list: () => [] },
+      agents: { list: () => agents },
       logger: { warn: (message) => { warnings.push(message) } },
     },
   }
 }
 
-test('装配失败降级为告警：不抛出、不阻塞会话创建、不留半挂状态', async () => {
-  // 启用表里有一项非法 id ⇒ prepareAssembly 在准备期就抛（与真实坏定义同一条路径）。
+test('装配失败与恢复：准备期失败只告警，撤旧失败仍尝试恢复，恢复也失败保留两层原因', async () => {
+  // ① 准备期失败：启用表里有一项非法 id ⇒ prepareAssembly 在准备期就抛（与真实坏定义同一条路径）。
   writePreset('assembly-target', { modules: ['tool-config-engine'] })
   const host = stubHostContext()
   const runtime = createAgentAssembly(host.ctx, {
@@ -692,7 +705,68 @@ test('装配失败降级为告警：不抛出、不阻塞会话创建、不留�
 
   assert.equal(runtime.hasMounted(agent.id), false, '失败的装配不留下已挂载状态')
   assert.equal(host.warnings.some((line) => line.includes('运行时配装失败')), true, '失败被降级为告警')
+  assert.equal(host.mounts.length, 0, '准备期失败连挂载都不尝试')
   await runtime.dispose()
+
+  // ② 撤旧失败：它和挂新在同一个 try 里，所以旧装配照样被装回去。
+  const disposeFail = new Error('DISPOSE-FAIL')
+  const host2 = stubHostContext({ fault: (attempt) => attempt === 1 ? { dispose: async () => { throw disposeFail } } : {} })
+  const runtime2 = createAgentAssembly(host2.ctx, {
+    moduleRoot, enabledModules: () => [], warn: (message) => { host2.warnings.push(message) },
+  })
+  const agent2 = host2.makeAgent('session-release-failure')
+  await host2.fire('agent/created', { agent: agent2, source: 'startup' })
+  await runtime2.settled()
+  assert.equal(runtime2.hasMounted(agent2.id), true, '首次装配成功')
+  await assert.rejects(runtime2.refresh(), (error) => {
+    assert.equal(error.errors[0], disposeFail, '撤旧失败的原因原样上报')
+    return true
+  })
+  assert.equal(host2.mounts.length, 2, '撤旧失败后仍重新挂载旧装配')
+  assert.equal(runtime2.hasMounted(agent2.id), true, '恢复成功：旧贡献还在')
+  await runtime2.dispose()
+
+  // ③ 恢复也失败：两个原因都要留下，且 message 自带两段——上报点只读 message。
+  const mountFail = new Error('MOUNT-FAIL')
+  const restoreFail = new Error('RESTORE-FAIL')
+  const faults = new Map([[2, mountFail], [3, restoreFail]])
+  const host3 = stubHostContext({ fault: (attempt) => faults.has(attempt) ? { mount: faults.get(attempt) } : {} })
+  const runtime3 = createAgentAssembly(host3.ctx, {
+    moduleRoot, enabledModules: () => [], warn: (message) => { host3.warnings.push(message) },
+  })
+  const agent3 = host3.makeAgent('session-double-failure')
+  await host3.fire('agent/created', { agent: agent3, source: 'startup' })
+  await runtime3.settled()
+  assert.equal(runtime3.hasMounted(agent3.id), true, '首次装配成功')
+  await assert.rejects(runtime3.refresh(), (error) => {
+    const inner = error.errors[0]
+    assert.ok(inner instanceof AggregateError, '两层原因合成一个 AggregateError')
+    assert.equal(inner.errors[0], mountFail, 'errors 保留新挂载失败的原因')
+    assert.equal(inner.errors[1], restoreFail, 'errors 保留恢复失败的原因')
+    assert.match(inner.message, /MOUNT-FAIL/, 'AggregateError 的 message 自带新挂载原因')
+    assert.match(inner.message, /RESTORE-FAIL/, 'AggregateError 的 message 自带恢复原因')
+    // settings-bridge 的上报只把 error 交给 String()：包装层的 message 也得带出两段原因。
+    assert.match(String(error), /运行时配装更新失败.*MOUNT-FAIL.*RESTORE-FAIL/s, '只读 message 的上报点读到两段原因')
+    return true
+  })
+  assert.equal(runtime3.hasMounted(agent3.id), false, '恢复失败不留半挂状态')
+  await runtime3.dispose()
+
+  // ④ 边界：挂新失败但恢复成功 ⇒ 与改动前一致：原错误直传、不新增包装、旧贡献复原。
+  const mountFailOnly = new Error('MOUNT-FAIL-ONLY')
+  const host4 = stubHostContext({ fault: (attempt) => attempt === 2 ? { mount: mountFailOnly } : {} })
+  const runtime4 = createAgentAssembly(host4.ctx, {
+    moduleRoot, enabledModules: () => [], warn: (message) => { host4.warnings.push(message) },
+  })
+  const agent4 = host4.makeAgent('session-restore-success')
+  await host4.fire('agent/created', { agent: agent4, source: 'startup' })
+  await runtime4.settled()
+  await assert.rejects(runtime4.refresh(), (error) => {
+    assert.equal(error.errors[0], mountFailOnly, '单次失败不新增包装，原错误直传')
+    return true
+  })
+  assert.equal(runtime4.hasMounted(agent4.id), true, '恢复成功：旧贡献复原')
+  await runtime4.dispose()
 })
 
 test('启用即配装：启用表里的每个模块各贡献一份，清单为空则不装配', async () => {
