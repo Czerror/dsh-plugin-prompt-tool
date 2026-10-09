@@ -664,6 +664,47 @@ test('动作级分支边界：compaction/end 后分支回到初始支', async ()
   dispose()
 })
 
+test('动作级观察接线：规则级 phase + else 在 tool/call 事件后恰好一支执行', async () => {
+  const h = harness()
+  const rules = compileRules([{
+    id: 'phase-rule',
+    if: { phase: { promoted: true } },
+    then: [textAction('phase-then', 'THEN', { position: 'after-user' })],
+    else: [textAction('phase-else', 'ELSE', { position: 'after-user' })],
+  }])
+  const dispose = mountRuleSources(h.ctx, [{ moduleId: 'module', rules }])
+  const agent = actor()
+  // durable 日志全空：翻转只能来自 session/event 的增量喂入，冷扫不会替这条链路作答。
+  agent.session.snapshotEvents = () => []
+  const messages = [{ id: 'u', role: 'user', source: { kind: 'user' }, content: [{ type: 'text', text: 'USER' }] }]
+  const step = async () => (await h.run('agent/pre-step', [{ agent, messages }], () => ({ kind: 'enter', messages })))
+    .messages.flatMap(message => message.content.map(block => block.text))
+  // 首次判定建立会话态条目：observe 只喂已判定过的会话（phase / count 同一纪律）。
+  assert.deepEqual(await step(), ['USER', 'ELSE'], '未晋升走规则级 else')
+  await h.emit('session/event', agent.session, { type: 'tool/call', seq: 1, data: {} })
+  assert.deepEqual(await step(), ['USER', 'THEN'], 'tool/call 晋升后 then 与 else 恰好一支')
+  dispose()
+})
+
+test('动作级观察接线：嵌套 count{min:1} 分支在 tool/call 事件后翻转', async () => {
+  const h = harness()
+  const rules = compileRules([{ id: 'count-rule', then: [{
+    if: { count: { of: 'tool-call', min: 1 } },
+    then: [textAction('count-then', 'THEN', { position: 'after-user' })],
+    else: [textAction('count-else', 'ELSE', { position: 'after-user' })],
+  }] }])
+  const dispose = mountRuleSources(h.ctx, [{ moduleId: 'module', rules }])
+  const agent = actor()
+  agent.session.snapshotEvents = () => []
+  const messages = [{ id: 'u', role: 'user', source: { kind: 'user' }, content: [{ type: 'text', text: 'USER' }] }]
+  const step = async () => (await h.run('agent/pre-step', [{ agent, messages }], () => ({ kind: 'enter', messages })))
+    .messages.flatMap(message => message.content.map(block => block.text))
+  assert.deepEqual(await step(), ['USER', 'ELSE'], '计数 0 走 else')
+  await h.emit('session/event', agent.session, { type: 'tool/call', seq: 1, data: {} })
+  assert.deepEqual(await step(), ['USER', 'THEN'], '计数 1 后翻转，then 与 else 恰好一支')
+  dispose()
+})
+
 test('动作级分支：非 pre-step 层嵌套 if 恰好一支生效', async () => {
   const h = harness()
   const rules = compileRules([{ id: 'nested', then: [{

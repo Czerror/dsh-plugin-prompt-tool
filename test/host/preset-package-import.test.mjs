@@ -11,7 +11,7 @@ const home = mkdtempSync(join(tmpdir(), 'pt-package-import-'))
 process.env.DSH_HOME = home
 const { MAX_BRIDGE_BODY_BYTES } = await import('../../src/shared/bridge-contract.ts')
 const { registerSettingsBridge } = await import('../../src/runtime/settings-bridge.ts')
-const { stPresetId } = await import('../../src/host/sillytavern.ts')
+const { stPresetId, convertStToModuleWithReport } = await import('../../src/host/sillytavern.ts')
 const { ruleInjections } = await import('../../src/host/rule-content.ts')
 const contentEntries = spec => ruleInjections(spec.rules).map(({ rule, config }) => ({ ...config, enabled: rule.enabled !== false }))
 const bridgeDisposers = []
@@ -404,6 +404,27 @@ test('importPresetPackage：世界书 ST 编辑器内部格式（key/keysecondar
   assert.equal(castle.params.wholeWords, true)
   assert.deepEqual(castle.params.keys, ['/城堡\\d+/'], '正则形态键原样保留')
   assert.equal('useRegex' in castle.params, false, '不写幽灵字段 useRegex（正则键由 anchor-match 自动检测）')
+})
+
+test('convertStToModule：未定义宏登记为空占位；内建名与运行时宏名不登记也不诊断', () => {
+  const { spec, report } = convertStToModuleWithReport({
+    name: '宏卡',
+    character_book: { entries: [
+      // 无来源（含中文名）→ 登记空占位并产出可定位诊断，插值不留字面。
+      { id: 1, key: ['{{未知宏}}', '{{时间}}', '{{dsh_home}}'], content: 'A', enabled: true, insertion_order: 100 },
+      // 运行时宏名大小写不敏感；内建名大小写敏感（只有精确的 DSH_HOME 是保留名）。
+      { id: 2, key: ['{{time}}', '{{TIME}}'], content: 'B', enabled: true, insertion_order: 200 },
+      { id: 3, key: ['{{DSH_HOME}}'], content: 'C', enabled: true, insertion_order: 300 },
+      // 卡名已声明 char：由 declaredKeys 一侧跳过，不得被当成未定义宏。
+      { id: 4, key: ['{{char}}'], content: 'D', enabled: true, insertion_order: 400 },
+    ] },
+  }, 'macro-card')
+  for (const key of ['未知宏', '时间', 'dsh_home']) assert.equal(spec.variables[key], '', `${key} 无来源 → 空占位`)
+  for (const key of ['time', 'TIME', 'DSH_HOME']) assert.equal(Object.hasOwn(spec.variables, key), false, `${key} 已有来源，不得登记为空占位`)
+  assert.equal(spec.variables.char, '宏卡', 'declaredKeys 只跳过登记，不改写声明值')
+  const diagnosed = id => report.diagnostics.some(item => item.code === 'st-key-macro' && item.entryId === id)
+  assert.equal(diagnosed('1'), true, '无来源的键宏必须留诊断')
+  for (const id of ['2', '3', '4']) assert.equal(diagnosed(id), false, `已有来源的键宏不报告（entry ${id}）`)
 })
 
 test.after(() => {
