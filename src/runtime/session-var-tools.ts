@@ -64,7 +64,7 @@ export function registerSessionVarTools(ctx: Context): () => void {
         const { sessionVarsSnapshot, getSessionVar, setSessionVar, clearSessionVars } = await import(varsUrl.href) as {
           sessionVarsSnapshot: (session: object) => Record<string, string>
           getSessionVar: (session: object, key: string) => string | undefined
-          setSessionVar: (session: object, key: string, value: string) => void
+          setSessionVar: (session: object, key: string, value: string) => string | undefined
           clearSessionVars: (session: object, key?: string) => void
         }
         const record = (args ?? {}) as { action?: string; key?: string; value?: string }
@@ -83,7 +83,9 @@ export function registerSessionVarTools(ctx: Context): () => void {
           if (value.length === 0) {
             clearSessionVars(session, key)
           } else {
-            setSessionVar(session, key, value)
+            // 保留名（插值内建 / 动态宏）拒绝写入；清空不受限，便于清理历史脏键。
+            const rejected = setSessionVar(session, key, value)
+            if (rejected !== undefined) return { ok: false, error: rejected }
           }
           return { ok: true, key, value }
         }

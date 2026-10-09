@@ -3,7 +3,7 @@
 // 断言逐条保留，未做语义改写。
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { interpolateStatic, interpolateVariables, normalizeMacroSyntax, runtimeFactValue, stripUnresolvedRefs } from '../../engine/interpolate.mjs'
+import { interpolateStatic, interpolateVariables, isReservedInterpolationName, normalizeMacroSyntax, runtimeFactValue, stripUnresolvedRefs } from '../../engine/interpolate.mjs'
 import { SESSION_VARS_KEY, getSessionVar, setSessionVar, sessionVarsSnapshot, clearSessionVars } from '../../engine/session-vars.mjs'
 
 // 表 1：静态替换与语法归一（无会话上下文）。
@@ -148,6 +148,13 @@ for (const [name, run] of [
     const first = interpolateVariables('{{pick::a::b}}', {}, session)
     next = 0.99
     assert.equal(interpolateVariables('{{pick::a::b}}', {}, session), first)
+    // seed 不含整段正文：同一引用不随无关正文长度漂移（前缀/后缀都算）。
+    const stable = interpolateVariables('{{pick::a::b::c::d::e}}', {}, { id: 'stable' })
+    assert.equal(interpolateVariables('无关前缀变长 {{pick::a::b::c::d::e}}', {}, { id: 'stable' }), `无关前缀变长 ${stable}`, '前缀长度不影响')
+    assert.equal(interpolateVariables('{{pick::a::b::c::d::e}} 无关后缀变长', {}, { id: 'stable' }), `${stable} 无关后缀变长`, '后缀长度不影响')
+    assert.equal(interpolateStatic('{{pick::a,b,c}}', {}), interpolateStatic('{{pick::a,b,c}}', {}), '静态层仍确定')
+    // 同一正文里两处引用的出现序号参与 seed，各自取值（sha256 定值）。
+    assert.equal(interpolateVariables('{{pick::a::b}}|{{pick::a::b}}', {}, { id: 'stable' }), 'a|b', '两处各自取值')
     assert.equal(interpolateVariables('{{roll::6}}', {}), '6')
   }],
 ]) test(`interpolate：${name}`, run)
@@ -186,6 +193,34 @@ test('interpolate：会话变量只读取自有键，原型名字可作为内容
   clearSessionVars(session)
   assert.deepEqual(sessionVarsSnapshot(session), {})
   assert.equal(interpolateVariables('{{constructor}}', {}), '{{constructor}}', '动态宏也不得读取原型成员')
+})
+
+test('session-vars：保留名不得占用（写入拒绝、读取过滤、历史脏键失效）', () => {
+  // 判据与真实插值出口同源：内建名大小写敏感，动态宏名大小写不敏感。
+  assert.equal(isReservedInterpolationName('DSH_HOME'), true)
+  assert.equal(isReservedInterpolationName('CWD'), true)
+  assert.equal(isReservedInterpolationName('dsh_home'), false, '内建名大小写敏感')
+  assert.equal(isReservedInterpolationName('time'), true)
+  assert.equal(isReservedInterpolationName('TIME'), true, '宏名大小写不敏感')
+  assert.equal(isReservedInterpolationName('owner'), false)
+
+  const session = { id: 'reserved', header: { cwd: 'C:/host-cwd' } }
+  // 主路径：普通名字正常写入并可插值。
+  assert.equal(setSessionVar(session, 'owner', 'Mia'), undefined)
+  assert.equal(interpolateVariables('{{owner}}', sessionVarsSnapshot(session), session), 'Mia')
+  // 关键拒绝：内建名与宏名（含大小写变体）拒绝写入，插值仍取宿主事实与宏值。
+  assert.match(String(setSessionVar(session, 'CWD', 'C:/fake')), /保留名 CWD/)
+  assert.match(String(setSessionVar(session, 'TIME', 'FAKE-TIME')), /保留名 TIME/)
+  assert.equal(getSessionVar(session, 'CWD'), undefined)
+  const merged = { ...sessionVarsSnapshot(session) }
+  assert.equal(interpolateVariables('{{CWD}}', merged, session), 'C:/host-cwd')
+  assert.match(interpolateVariables('{{time}}', merged, session), /^\d{2}:\d{2}$/)
+  // 边界：存量脏键（绕过 setter 直接落表）在读取路径被跳过，不再生效。
+  session[SESSION_VARS_KEY].CWD = 'C:/dirty'
+  session[SESSION_VARS_KEY].time = 'FAKE-DIRTY'
+  assert.deepEqual(sessionVarsSnapshot(session), { owner: 'Mia' })
+  assert.equal(getSessionVar(session, 'CWD'), undefined)
+  assert.equal(interpolateVariables('{{CWD}}', sessionVarsSnapshot(session), session), 'C:/host-cwd')
 })
 
 test('session-vars：设置/读取/快照/清除（挂在 session 对象上）', () => {

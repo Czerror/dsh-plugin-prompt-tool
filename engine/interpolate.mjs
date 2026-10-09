@@ -104,20 +104,39 @@ function builtinVariables(session) {
   }
 }
 
+/** 内置变量名的单一来源：从 builtinVariables 的键派生（惰性，不在 import 期取 cwd）。 */
+let builtinNames
+function builtinNameSet() {
+  return (builtinNames ??= new Set(Object.keys(builtinVariables())))
+}
+
+/**
+ * 保留名判定（保留名的唯一判据，写入与读取共用）：内建名大小写敏感（`dsh_home`
+ * 不是内建），动态宏名大小写不敏感（`TIME` 即 `time`）。会话变量不得占用这些名字，
+ * 否则字面值会遮蔽内建事实与动态宏。
+ */
+export function isReservedInterpolationName(key) {
+  const name = String(key ?? '')
+  return builtinNameSet().has(name) || Object.hasOwn(DYNAMIC_MACROS, name.toLowerCase())
+}
+
 /** 模板变量插值：配置 variables 优先，ST 运行时宏次之，内置 {{DSH_HOME}} / {{WORKSPACE}} / {{CWD}} 兜底。 */
 export function interpolateVariables(text, variables, session, keep, sourceId = '') {
   const builtins = builtinVariables(session)
   const active = new Set()
+  // pick 只为「同会话、同模板、同一次出现」稳定：整段正文 input 不进 seed，
+  // 否则无关正文长度一变取值就漂移；出现序号让同一正文里的多处 pick 各自取值。
+  let pickCount = 0
   // 限制展开增加的字符数、递归深度与工作量；原始正文不截断，失败引用留给出口清洗。
   let remainingChars = 1024 * 1024
   let remainingExpansions = 4096
   function render(input, depth = 0) {
-    return normalizeMacroSyntax(input).replace(REFERENCE_RE, (whole, key, arg, offset) => {
+    return normalizeMacroSyntax(input).replace(REFERENCE_RE, (whole, key, arg) => {
       if (arg === undefined && keep?.has(key)) return `{{${key}}}`
       if (active.has(key)) return whole
       let value
       if (Object.hasOwn(variables, key)) value = String(variables[key] ?? '')
-      else if (key.toLowerCase() === 'pick') value = pickRandom(arg, JSON.stringify([session?.id ?? '', sourceId, input, offset]))
+      else if (key.toLowerCase() === 'pick') value = pickRandom(arg, JSON.stringify([session?.id ?? '', sourceId, pickCount++]))
       else if (Object.hasOwn(DYNAMIC_MACROS, key.toLowerCase())) value = DYNAMIC_MACROS[key.toLowerCase()](arg, session)
       else if (Object.hasOwn(builtins, key)) value = builtins[key]
       else return whole

@@ -1,7 +1,7 @@
 /** ST 文本预处理与顺序求值；状态只归调用方传入的 local/global 所有。 */
 import { Buffer } from 'node:buffer'
 import { createHash } from 'node:crypto'
-import { interpolateVariables, normalizeMacroSyntax } from './interpolate.mjs'
+import { interpolateVariables, isReservedInterpolationName, normalizeMacroSyntax } from './interpolate.mjs'
 
 const MAX_BYTES = 1024 * 1024
 const MAX_DEPTH = 32
@@ -170,6 +170,12 @@ export function renderStText(text, { variables = {}, local = {}, global = {}, se
       const [rawKey, rawValue] = splitArgument(args)
       const key = expand(rawKey).trim()
       if (!allowed(key)) return ''
+      // 插值内建与动态宏名是保留名：变量宏一族不得占用（写入不落表、读取不回退，
+      // 否则 local/global 里的字面值会遮蔽 {{CWD}} / {{time}} 这类引用）。
+      if (isReservedInterpolationName(key)) {
+        warn(`ST variable reserved name blocked: ${key}`)
+        return ''
+      }
       const action = operation[1].toLowerCase()
       const scope = operation[2] ? 'global' : 'local'
       const table = tables[scope]

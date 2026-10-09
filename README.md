@@ -70,7 +70,7 @@ pnpm --dir $Repo migrate:rules -- --root '<DSH_HOME>/.prompt-tool/modules' --cha
 - 🛡️ **子代理工具策略**：module.yml 顶层 `subagentToolPolicy` 段（opt-in）声明 ceiling、profiles、角色卡绑定、有序任务规则与受控模型扩权；`subagent` 固定走 spawn、`subagent_fork` 固定走 fork，按官方 `SubagentRun`/continuable 契约创建并在窗口内冻结 toolFilter；模型选择器和扩权参数在工具 body 前校验，模型路由经过 LLM preflight；UI 从官方 sessions snapshot 读取当前会话，并可编辑、停用、预览策略及查询存活 Agent 工具面
 - ♻️ **Session 日志读取**：引擎冷启动与幂等扫描统一走官方 `session.snapshotEvents()`（DSH `0.1.2-alpha.4+`），不再读取已移除的 `session.events` 数组。
 - 🧩 **模板变量**：顶层 `variables` 提供 `{{key}}` 插值，注入动作的 `config.variables` 可局部覆盖。正文、匹配词、分类阈值与模型偏好由规则或模板显式提供；业务配置为空就不生成对应内容，引擎不内藏默认锚句。
-- 💬 **会话变量工具**：`session_var`（list/get/set/clear）——模型维护角色状态（`{{心情}}` 等），会话级覆盖预设默认；ST 运行时宏（`{{lastusermessage}}` / `{{lastcharmessage}}`）从会话事件提取
+- 💬 **会话变量工具**：`session_var`（list/get/set/clear）——模型维护角色状态（`{{心情}}` 等），会话级覆盖预设默认；不得占用插值保留名（内建 `DSH_HOME`/`WORKSPACE`/`CWD` 与动态宏名 `time`/`pick` 等，命中即拒绝写入并说明原因），ST 运行时宏（`{{lastusermessage}}` / `{{lastcharmessage}}`）从会话事件提取
 - 🧩 **工具按模块装配**：角色卡、世界书、会话变量、自定义工具分别由 `character-tools` / `world-book-tools` / `session-var-tools` / `tool-config-engine` 模块提供；不再维护重复的顶层工具开关
 - 📐 **显式按需装配**：空模块不自动附加增强能力；模块人设来自顶层 `persona`，官方工具与普通委派仍由会话原有预设提供。首轮门控、来源过滤、工具名单、深思门与进度节拍统一由 `rules` 声明；总入口负责编译调度，`engine/conditions/` 判断，`engine/actions/` 执行。
 
@@ -251,7 +251,8 @@ UI / 写盘按上表分组；这是展示顺序，不是模型提示词优先级
 - **ST 变量**：赋值不在导入时执行；local/global 分表但只在会话内有效，嵌套宏有循环与大小保护。
   深度历史位置、system 角色、token 预算和 ST 扩展脚本不具备完整等价性，详见兼容边界
 - **会话变量**：`session_var` 工具（list/get/set/clear）维护角色状态（会话级覆盖预设默认，
-  结束即失）；跨会话文本通过 note 保存在模块 memory.md，读取失败会明确报错
+  结束即失）；保留名（插值内建与动态宏名）拒绝写入、读取跳过历史脏键；跨会话文本通过 note
+  保存在模块 memory.md，读取失败会明确报错
 
 详细转换规则见 [SillyTavern.md](docs/SillyTavern.md)。
 

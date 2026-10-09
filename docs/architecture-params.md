@@ -264,9 +264,19 @@ UI 侧 `persistParamOverrides` **条件发送**：
 声明值 > 运行时事实（`lastusermessage`/`time` 等）。非法官方名（中文/大写/连字符）改写为
 `sv_<slug>_<hash>` 别名并同步改写引用；未声明的引用在出口剥离（`warnOnce` 记录样本）。
 同名但不同配置默认值分别绑定，运行时事实大小写变体只注册一次；变量值有界展开后也经过出口清洗。
-`random`/`roll`/`chance` 内联求值，动态文本每次 assembly 重算；`pick` 按会话与模板位置稳定选择。
+`random`/`roll`/`chance` 内联求值，动态文本每次 assembly 重算；`pick` 的 seed 只含会话、
+来源与该次插值正文里的出现序号（不含整段正文）——同一引用不随无关正文长度漂移，静态层按
+位点仍确定。
 ST 导入配置显式带 `params.stMacros: true`，赋值模板保留到运行期；变量帧只服务宏求值，不建立
 跨插入点的全局注入顺序。local/global 分表但均不跨会话持久化，详见 [SillyTavern.md](SillyTavern.md)。
+
+会话变量（`session_var` 工具）不得占用插值保留名：内建变量
+（`DSH_HOME`/`WORKSPACE`/`CWD`，大小写敏感）与动态宏名（`time`/`pick` 等，大小写不敏感）。
+判据只有一份——`engine/interpolate.mjs` 的 `isReservedInterpolationName`，从内建表与宏表
+派生。命中的写入被拒并在工具结果里给出可读原因（不静默改名）；`sessionVarsSnapshot` 与
+`getSessionVar` 同样跳过保留名，历史脏键自动失效。ST 变量宏（`setvar`/`addvar`/`getvar`/
+`incvar`/`decvar` 及其 global 形式）写 local/global 时走同一判据：命中不写入 + 告警，表达式
+求值为空，`{{CWD}}`/`{{time}}` 仍由内建与宏解析。
 
 未填写变量名的空键行属于客户端草稿：保存载荷不携带空键，但保存成功不清理本地编辑行，同一预设的后台刷新也不覆盖该草稿。变量值为空字符串与变量名为空不是同一语义；具名空值仍正常持久化。
 
