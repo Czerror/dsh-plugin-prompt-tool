@@ -67,7 +67,13 @@ function removeLegacyArtifacts(directory: string): void {
   for (const name of LEGACY_ARTIFACTS) rmSync(join(directory, name), { recursive: true, force: true })
 }
 
-/** 只有明确传入的非空内容才更新旧内容资产；空值保留原文件。 */
+/**
+ * 只有明确传入的非空内容才更新旧内容资产；空值保留原文件。
+ *
+ * `preset.md` 是改名前的正文资产名，**当前已无生产者**：唯一调用方导入路径
+ * （module-package）传的是空串，正文早已归 module.yml；真实模块目录里只有 module.yml。
+ * 保留这个写入能力只为不改变旧 API 的对外形状，不要据此以为它还在被生成。
+ */
 function writeContentAssets(directory: string, prompt: string, agentsText?: string): void {
   for (const [file, content] of [['preset.md', prompt], ['agents.md', agentsText]] as const) {
     if (typeof content !== 'string' || content.trim().length === 0) continue

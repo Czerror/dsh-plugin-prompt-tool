@@ -231,7 +231,7 @@ export interface ModelReasoningView {
 
 /**
  * SillyTavern 转换报告（ST-03）：host 在真实转换路径上生成的**只读派生元数据**。
- * 不落盘进 preset.yml、不进入模型上下文，也不是写入凭证——提交仍以本次上传文件重算的
+ * 不落盘进 module.yml、不进入模型上下文，也不是写入凭证——提交仍以本次上传文件重算的
  * `sourceDigest` 为准；预览返回的摘要不能替代后端对目标/类型/大小的既有校验。
  */
 export type StConversionClass = 'equivalent' | 'degraded' | 'unsupported' | 'excluded'

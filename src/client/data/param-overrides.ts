@@ -1,4 +1,4 @@
-/** preset.yml params 与客户端字段之间的纯转换；字段清单/类型/默认值来自共享契约。 */
+/** module.yml params 与客户端字段之间的纯转换；字段清单/类型/默认值来自共享契约。 */
 import { ENGINE_PARAM_DEFINITIONS, engineParamList } from '../../shared/engine-params.ts'
 import { SHARED_PARAM_KEYS, type Fields, type SharedParamKey } from './prompt-tool-fields.ts'
 import { deepEqual } from './dirty-state.ts'

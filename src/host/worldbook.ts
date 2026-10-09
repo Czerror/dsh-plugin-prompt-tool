@@ -1,7 +1,7 @@
 /** 世界书条目 CRUD 服务：promptConfigs world-book 策略配置的增删改查。
- *  与角色卡导入（characters.applyCharacterToPreset）共用同一存储（preset.yml
- *  promptConfigs），模型工具（world_book_*）与未来 bridge 端点同源，
- *  不各自实现 parseDocument 往返。 */
+ *  与角色卡导入共用同一存储：导入侧用 characters.buildWorldBookEntry 造条目，
+ *  两者都经 editModuleRules 落进 module.yml 的规则切片，模型工具（world_book_*）
+ *  与未来 bridge 端点同源，不各自实现 parseDocument 往返。 */
 import { loadModuleSpec } from './manifest.ts'
 import { editModuleRules, readModuleRules } from './module-rules.ts'
 import { promptConfigToRule } from './rule-builder.ts'

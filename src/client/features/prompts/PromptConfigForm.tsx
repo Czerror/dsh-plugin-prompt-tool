@@ -82,8 +82,8 @@ export function PromptConfigForm(props: {
   const disabled = props.disabled === true
   const textReadOnly = isInstructionFile
     && ((config.contentStatus !== undefined && config.contentStatus !== 'ready') || config.contentConflict === true)
-  /** 普通卡写 preset 卡字段；指令文件卡的绑定由文件来源固定，表单只提交正文，
-   *  启停写独立策略存储（不写 preset.yml，由卡头开关承载）。 */
+  /** 普通卡写模块定义字段；指令文件卡的绑定由文件来源固定，表单只提交正文，
+   *  启停写独立策略存储（不写 module.yml，由卡头开关承载）。 */
   const onPatch = (patch: Partial<PromptConfigDraft>): void => {
     if (disabled) return
     if (!locked) {

@@ -202,7 +202,7 @@ function waitForScope(scope: ConfigForm<Record<string, unknown>>): Promise<Confi
 }
 
 /**
- * 把文件草稿状态贴到指令文件卡上（视图元数据，不写进 preset.yml）。
+ * 把文件草稿状态贴到指令文件卡上（视图元数据，不写进 module.yml）。
  * 卡片正文以草稿池为准：服务端附带的 params.text 不再是文件正文的来源。
  */
 function withInstructionState(
@@ -241,7 +241,7 @@ function withInstructionState(
   })
 }
 
-/** 策略值 → 卡片行为字段（文件卡的行为不来自 preset.yml）。 */
+/** 策略值 → 卡片行为字段（文件卡的行为不来自 module.yml）。 */
 function policyFields(
   resolved: { enabled: boolean; name?: string },
 ): Partial<PromptConfigDraft> {
@@ -362,7 +362,7 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
     return task()
   }), [])
   const enqueueRuleTask = useCallback(<T,>(task: () => Promise<T>): Promise<T> => moduleSaveQueueRef.current.enqueue(task), [])
-  /** 最近一次 load 时 preset.yml params 现有键集：persist 只发送「已有键或已改动」，
+  /** 最近一次 load 时 module.yml params 现有键集：persist 只发送「已有键或已改动」，
    *  未动过的键不写——避免 UI 默认值固化覆盖模板 moduleConfigs 默认。 */
   const loadedKeysRef = useRef<Set<string>>(new Set())
   const paramBaselineRef = useRef<SwitchSnapshot>(EMPTY_SWITCHES)
@@ -436,7 +436,7 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
     if (!options?.silent) setLoading(true)
     try {
       // /bootstrap 聚合读取：meta + describe runtime facts + 参数覆盖 + 模板变量 +
-      // 实际生效配置一次取回（此前 5 端点串行，preset.yml 每端点读盘解析）。
+      // 实际生效配置一次取回（此前 5 端点串行，module.yml 每端点读盘解析）。
       // 带当前会话 id：服务端据此解析该本地 Agent 的工作区，返回对应指令文件快照。
       // 会话/工作区切换：建立新的指令上下文。草稿保留但旧上下文不可写，未保存的文件
       // 与版本在切换到新工作区后必须重新读取校验，防止把 A 的正文写进 B 的文件集。

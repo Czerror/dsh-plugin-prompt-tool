@@ -1,6 +1,6 @@
-/** preset.yml 顶层 persona 段编辑卡（官方 @deepseek-ai/dsh-persona 行 config 同构）。
+/** module.yml 顶层 persona 段编辑卡（官方 @deepseek-ai/dsh-persona 行 config 同构）。
  *  数据源 = /persona：无载荷读、带 persona 写，host 侧走 readPersonaSpec 校验 +
- *  savePresetPersona 原子写盘并重建。prefix/suffix 取代旧 promptConfigs
+ *  saveModulePersona 原子写盘并重建。prefix/suffix 取代旧 promptConfigs
  *  params.sectionName + text 的人设承载方式；complete 与提示词配置的「独占」互斥，
  *  由 bridge 写盘前 fail loud。 */
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'

@@ -1,5 +1,5 @@
 /** 子代理实例级工具策略（subagentToolPolicy）编辑区。
- *  数据源 = preset.yml 顶层 subagentToolPolicy 段（/subagent-tool-policy）。
+ *  数据源 = module.yml 顶层 subagentToolPolicy 段（/subagent-tool-policy）。
  *  交互：**只有一个启用开关**——打开即写入可用骨架并逐次自动保存；关闭即删除策略段
  *  （模块声明保留，引擎在策略文件缺失时降级为官方委派行为），卡内所有内容只读。
  *  实例解析预览走 /subagent-tool-policy-preview seam（不复制解析算法）。

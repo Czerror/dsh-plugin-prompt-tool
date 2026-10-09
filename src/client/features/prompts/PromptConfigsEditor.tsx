@@ -14,7 +14,7 @@ const styles = { ...sharedCss, ...featureCss }
 
 
 /** 层设置区的模板变量卡片：{{key}} 插值源，非 promptConfig——
- *  不进配置保存路径，保存走 /preset-variables 写 preset.yml 顶层 variables 段。
+ *  不进配置保存路径，保存走 /module-variables 写 module.yml 顶层 variables 段。
  *  可折叠（chevron）/ 可删除（清空全部变量，两段式确认）/ 可新建（VariablesEditor 添加变量）。 */
 export function TemplateVariablesModuleCard(props: {
   t: PromptToolTranslate

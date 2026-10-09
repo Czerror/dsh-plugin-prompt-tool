@@ -1,6 +1,6 @@
 /**
  * AGENTS 指令文件探测与文件卡合成。
- * 文件卡只作编辑视图，不写进 preset.yml 或生成目录；正文经 bridge 写回原文件。
+ * 文件卡只作编辑视图，不写进 module.yml 或生成目录；正文经 bridge 写回原文件。
  * 官方负责注入，运行时只复用本模块的文件身份映射应用逐文件开关。
  *
  * 本模块拥有本地卡片的文件身份、读取快照与读写校验；读取失败与空文件严格区分。
@@ -161,7 +161,7 @@ export function detectAgentsFiles(options: { cwd?: string; home?: string; projec
 }
 
 /**
- * 探测结果 → pre-step 提示卡（每个文件一张，不落 preset.yml）。
+ * 探测结果 → pre-step 提示卡（每个文件一张，不落 module.yml）。
  * 插入点对齐官方 `@deepseek-ai/dsh-agent-instructions`：pre-step 层、紧随真实用户消息；
  * 注入内容 = 该文件当前正文（`fill=instruction-file` 运行时读取，params.file 精确到单个文件）。
  */

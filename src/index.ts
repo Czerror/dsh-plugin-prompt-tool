@@ -137,7 +137,7 @@ registerTuiCommand(
   getModelsState,
   () => listAdvertisedModels(ctx),
   () => activeModuleDir(),
-  // TUI 参数开关：写激活模块 preset.yml（settings 不再承载引擎参数）。
+  // TUI 参数开关：写激活模块 module.yml（settings 不再承载引擎参数）。
   // 保存/重建失败直接抛给命令层，由 CommandResult:error 呈现给用户。
   async (key, value) => {
     saveModuleParams(MODULES_DIR, basename(activeModuleDir()), { [key]: value }, undefined)

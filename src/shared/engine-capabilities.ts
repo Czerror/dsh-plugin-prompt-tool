@@ -61,7 +61,7 @@ export interface ModuleCapability {
    * 创建时若段缺失则写入 `skeleton`（保证"模块在 ⇒ 数据在"）；删除时一并移除该段。
    */
   ownSection?: {
-    /** preset.yml 顶层键名。 */
+    /** module.yml 顶层键名。 */
     key: string
     /** 启用时写入的可用骨架（必须能通过该段的校验）。 */
     skeleton: Readonly<Record<string, unknown>>
@@ -171,7 +171,7 @@ export interface EngineRecipe {
 }
 
 /**
- * 只保留已有真实工作流的一键组合；recipe 本身不写入 preset.yml。
+ * 只保留已有真实工作流的一键组合；recipe 本身不写入 module.yml。
  *
  * B7 T3 清空：三条 recipe 的成员都是随本轮退场的专用能力（phase-control /
  * phase-control-ptc / deliberation），没有任何一条还能组成合法能力集合。
