@@ -215,7 +215,6 @@ const ZH_CORE = {
   'moduleOrder.saveFailed': '排序保存失败，调整已保留：{reason}',
   'moduleOrder.refreshFailed': '排序已保存，但当前模块读取失败，请刷新后再编辑。',
 
-  'presetSwitcher.title': '模块模板',
   'presetSwitcher.new': '新建模块',
   'presetSwitcher.import': '导入模块',
   'presetSwitcher.importing': '导入中…',
@@ -477,7 +476,6 @@ const EN_CORE: Record<keyof typeof ZH_CORE, string> = {
   'moduleOrder.saveFailed': 'Unable to save order. Your changes are retained: {reason}',
   'moduleOrder.refreshFailed': 'Order saved, but the current module could not be reloaded. Refresh before editing.',
 
-  'presetSwitcher.title': 'Module templates',
   'presetSwitcher.new': 'New module',
   'presetSwitcher.import': 'Import module',
   'presetSwitcher.importing': 'Importing…',

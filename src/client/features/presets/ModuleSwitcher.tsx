@@ -121,9 +121,6 @@ export const ModuleSwitcher = memo(function ModuleSwitcher(props: { store: Promp
   return (
     <div className={styles.rowGroup}>
       <div className={styles.settingRowStack}>
-        <span className={styles.settingCopy}>
-          <strong>{t('presetSwitcher.title')}</strong>
-        </span>
         <span className={styles.inlineControls}>
           <Button ref={pickerAnchorRef} shape="pill" variant="primary" size="md" onClick={() => setPickerOpen(true)}>{t('presetSwitcher.new')}</Button>
           <Button shape="pill" variant="outline" size="md" onClick={() => setImportOpen(true)}>{t('assetImport.presetTitle')}…</Button>
