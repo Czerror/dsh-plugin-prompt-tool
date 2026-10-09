@@ -4,8 +4,8 @@
 # 不命中什么都不做。缺省 `target: next-turn`，也可写 `next-step`。
 # 插件来源的消息（含本动作自己插入的那条）永不再次前置，防自触发插队。
 #
-# 判「首轮」用 `session: { type: user/message, present: false }`——还没有任何
-# user/message 事件。注意 `agent/inbox/inserted` 拿不到任务文本本身，所以别在这里
+# 判「首轮」用 `session: { type: user/message, present: false }`——模型**当前可见**
+# 的上下文里还没有 user/message 事件（判据按可见上下文，压缩遮蔽的历史不算数）。注意 `agent/inbox/inserted` 拿不到任务文本本身，所以别在这里
 # 用 `text` 谓词筛任务内容（那是 `pre-step` 层的事，见 70-subagent-maintenance.yml）。
 id: example-inbox-prepend
 name: 首轮前置一条消息

@@ -22,7 +22,11 @@
 - **告警去重改为「每条不同消息一次」**：同一挂载内的不同故障各自可见（上限 64 条不同告警，之后补一条抑制提示再静默）；`subagent-end` 的 observe-only 命中改走 `logger.info`；`after-user` 配置找不到真实用户消息锚点时告警一次并列出配置 id。
 - **`st-render` 的 `generationKey` 判据收紧**：空串 `source.plugin` / `source.kind` 与非对象消息不再计入（仅畸形输入有差异）。
 - **guard 的子代理侧注册随父 mount 释放一并撤销**：切预设或保存模块后不再按旧 mask 多拦一层。
-- **运行时配装切换失败时保留两个原因**：新装配失败与恢复失败同时出现在错误里，「模块已保存，但运行时配装更新失败」的报错文本带上具体原因。
+- **运行时配装切换失败时保留两个原因**：新装配失败与恢复失败同时出现在错误里，「运行时配装更新失败」的报错文本带上具体原因（装配层只说装配这件事，「已保存」由写盘层各自声明）。
+- **规则动作卡的参数改为全字段可编辑**：`decision`（工具链裁决）的 `phase` / `decision` / `action` / `reason` / `text` / `toolNames` 由引擎的「动作种子」下发给客户端，规则卡据此逐个渲染出可编辑控件——此前只有 `phase` 与 `decision` 两项，其余只能写 JSON。`match` 刻意不进种子：它只接受函数，而种子要过 `compileRules` 与 `structuredClone`，放进去会让整块规则面板读不出、存不了（该排除由断言锁死）。
+- **`officialInstructions` 三态收敛为「观察到才出现」**：当前没有 `true` 生产者，读取口已删除（恒为 `null`，不再捏造 `false`）；bridge 载荷字段本轮保留，删除条件见 `docs/adr/0009-instruction-owner-observed-only.md`。
+- **判据与缓存的四处修复**（同一根因：压缩后可见历史变了，而缓存或增量路径还按旧视图算）：`count` 的重建按 `seq` 去重（位置替换后计数不再虚高）、`session` 谓词对非消息类型恢复可用（此前恒真或恒假）、世界书扫描按 `seq` 去重（没有 `id` 的消息不再被重复计数）、锚定确认的缓存随成功压缩失效。
+- **`{{pick}}` 的调用点补上稳定来源**：世界书主/副键与 instruction-hint 的三个模板此前省略来源标识，seed 恒为 `sha256([会话, '', 0])`、序号与文本无关；现在同一引用在正文长度变化后取值不变，不同位置各自取值。
 
 ### 破坏性变更（升级前必读）
 
@@ -35,6 +39,9 @@
 - **动作与注入配置的未知键、层专属参数、请求参数子键改为编译期拒绝**：动作声明的拼错键与 `inject-text.config` 的未知键报出动作 id 与允许键集合（`decision.toolNames` 拼错此前会连带拒绝全部工具）；带 `kind` 的动作对象写 `if` / `then` / `else` 报「分支必须写成无 `kind` 的节点」（此前分支被静默丢弃）；`params.complete` / `params.suppressRuntimeContext` 只属于 `system-section`，写在其他层出现即拒（`false` 除外）；`request-params` 的 `patch` / `unset` 子键按官方 `LlmCallConfig` 校验，`replace: true` 缺 `provider` / `model`、`replace` 非布尔也拒；`assembly.contexts` 的 `clear` 与 `add` / `remove` 并存被拒（`clear` 必须是布尔）。`variablesDisabled` 是引擎内部标记、不在作者可写白名单里，手写同名键按未知键拒绝。
 - **显式 `variablesEnabled: false` 的存量模块升级后不再吃会话变量**：pre-step 消息插值与注册层官方变量都不再并入会话变量——这正是该开关的字面承诺，此前只停一半（声明键引用被剥离、会话值仍注入）。要保留旧行为就把模块顶层 `variablesEnabled` 删掉或设为 `true`；**例外**是 ST 模板宏帧（`params.stMacros`）按 ST `setvar` / `getvar` 语义仍读会话变量。
 - **迁移期剔除非法 `LlmCallConfig` 键**：旧 `promptConfigs` 与动作里的 `patch` / `unset` 非成员键（如 `note`）在改写时被丢弃，合法键与值原样搬运。
+- **多个判据改为「模型当前可见的上下文」**：锚定确认（`anchor` 谓词）、`session` 谓词的 `present` 镜像、`turn-stop` 的缺省匹配对象、ST 宏 `{{lastusermessage}}` / `{{lastcharmessage}}`、世界书关键词扫描都只认模型可见的历史——被压缩或位置替换**遮蔽**的事实不再算数；按完整历史读的仍是三处（晋升门控的冷启动、`assembly` 的解锁名单、`count` 的 `tool-call` / `turn` 信号）。`count` 谓词因此按信号分视图：消息类信号（`user-message` / `assistant-message` / `assistant-chars` / `tool-result`）按可见上下文计，压缩后重算、`every: N` 的节奏随之重置（可能立刻再命中一次）；`tool-call` / `turn` 仍按完整历史计，重启 / 恢复 / 重挂后的结论不变。宿主没有 surface 时全部退回完整历史（= 旧行为）。归属表与理由见 `docs/adr/0010-two-history-views.md`。
+- **世界书递归改为模块级开关，条目级 `recursive` 不再参与判定**：CCv2 的书级 `recursive_scanning` 在 ST 运行期本就不被读取，插件此前却拿它逐条目门控。现在由 `module.yml` 顶层 `stWorldBookRecursive`（布尔，**缺省关闭**）决定本模块的条目是否参与递归重扫；开关按模块生效，递归池与 ST 一样是**全批共享**的。靠导入值递归的模块升级后需显式声明该开关。`min_activations` 经核实是 ST 的全局用户设置、不是条目字段，本插件不复刻。
+- **`match` 出现即编译期拒绝**：它只接受函数，而声明路径（YAML / JSON / 导入）写不出函数——此前的报错文案「必须是函数」会把人引向 `structuredClone` 的 `DataCloneError`。分支条件写 `rule.if`。
 - **升级动作**：手写 `module.yml`、还原的备份或导入包命中上述拒绝时该模块装配失败——本轮只告警并保留旧装配，不会自动改盘；按错误消息删键，或把字段移到 `rule.*` 或正确的层。
 
 ## [2.1.0] - 2026-10-06
