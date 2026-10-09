@@ -699,7 +699,8 @@ function wireSubagentEvents(ctx, configs, warnOnce, on) {
           if (!matchesModel(config.modelScope, child?.options?.model ?? recorded?.model)) continue
           if (!conditionHit(config, { subagentText })) continue
           if (config.params?.action !== 'inject-main') {
-            warnOnce(`${name}: subagent-end ${config.id} matched (observe only)`)
+            // 模板本意是逐次记录；命中本身已由 recordRuleOutcome 记 hit，这里不占告警名额。
+            ctx.logger?.info?.(`${name}: subagent-end ${config.id} matched (observe only)`)
             continue
           }
           if (typeof info?.runId !== 'string' || info.runId.length === 0) continue

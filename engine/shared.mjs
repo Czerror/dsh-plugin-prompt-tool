@@ -63,17 +63,35 @@ export function validateConfig(pluginName, source, allowedKeys) {
   return config
 }
 
-/** One-shot logger guard shared by filters that degrade instead of throwing. */
+/** 同一句告警只记一次的 key 上限（进程内、按 mount 一份），防不同故障刷屏。 */
+export const WARN_ONCE_LIMIT = 64
+/** 抑制提示的固定键（提示本身不占新故障的名额）。 */
+const WARN_ONCE_SUPPRESSED = Symbol('warnOnceSuppressed')
+
+/**
+ * 按消息去重的有界 logger 守卫：同一条消息只记一次，不同故障各记一次。
+ *
+ * `key` 缺省取整条消息（内嵌错误文本，因此不同故障不同 key、重复故障同 key）。
+ * 只有 logger 调用**成功之后**才登记，失败的告警不占名额；到上限时补一条抑制提示，此后静默。
+ * ponytail: 消息全文当键 → 同一故障的变体文本（id/数值不同）各占一个 key；等出现这种刷屏源再抽结构化键。
+ */
 export function createWarnOnce(ctx, pluginName) {
-  let warned = false
-  return (message) => {
-    if (warned) return
-    warned = true
+  const seen = new Set()
+  return (message, key = message) => {
+    if (seen.has(key)) return
+    const suppressed = seen.size >= WARN_ONCE_LIMIT
+    if (suppressed && key === WARN_ONCE_SUPPRESSED) return
+    if (suppressed) {
+      if (seen.has(WARN_ONCE_SUPPRESSED)) return
+      message = `${pluginName}: 后续告警已抑制（已达 ${WARN_ONCE_LIMIT} 条不同告警上限）`
+    }
     try {
       ctx.logger.warn(message)
     } catch {
       // Logger unavailable — the guard exists only to avoid spamming.
+      return
     }
+    seen.add(suppressed ? WARN_ONCE_SUPPRESSED : key)
   }
 }
 

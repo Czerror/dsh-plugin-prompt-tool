@@ -90,6 +90,31 @@ test('同位置多配置默认按声明顺序插入：near-anchor 与 router-gui
   assert.equal(decision.messages[2].source.plugin, 'router-guide')
 })
 
+test('F30：批内无 user 消息时 after-user 跳过并告警一次，同批其余位置照注入，下一含 user 的批仍注入', async () => {
+  const configs = [
+    { id: 'head', layer: 'pre-step', strategy: 'static', position: 'before-all', text: 'HEAD' },
+    { id: 'tail', layer: 'pre-step', strategy: 'static', position: 'after-all', text: 'TAIL' },
+    { id: 'anchor', layer: 'pre-step', strategy: 'static', text: 'ANCHOR' },
+  ]
+  const harness = makeHarness(createPromptConfigs(configs))
+  const probe = agent({ session: { id: 's-anchor', header: { delegationDepth: 0 }, snapshotEvents: () => [] } })
+  const say = (id) => [{ id, role: 'user', content: [{ type: 'text', text: '用户消息' }], source: { kind: 'user' } }]
+  const texts = (decision) => decision.messages.flatMap(message => message.content.map(block => block.text))
+
+  // 无锚点批（宿主内部消息，如压缩摘要）：after-user 跳过不注入，其余位置照常。
+  const noUser = [{ id: 'u0', role: 'user', content: [{ type: 'text', text: '摘要' }], source: { kind: 'agent-summary' } }]
+  const skipped = await harness.step(probe, noUser)
+  assert.deepEqual(texts(skipped), ['HEAD', '摘要', 'TAIL'], '缺锚点只影响 after-user')
+  assert.deepEqual(harness.warnings.filter(message => message.includes('after-user')), [
+    'prompt-config-engine: after-user config(s) anchor skipped this batch — no user message anchor',
+  ], '恰一条告警且含配置 id')
+
+  // 下一批有真实用户消息：同样的 after-user 配置仍注入（逐批跳过，不是永久丢失）。
+  const anchored = await harness.step(probe, say('u1'))
+  assert.deepEqual(texts(anchored), ['HEAD', '用户消息', 'ANCHOR', 'TAIL'], '含 user 的批恢复注入且紧跟锚点')
+  assert.equal(harness.warnings.filter(message => message.includes('after-user')).length, 1, '恢复注入不再重复告警')
+})
+
 test('order 决定同位置插入顺序与 merged 拼接顺序', async () => {
   const { step } = makeHarness(createPromptConfigs([
   { id: 'p-later', strategy: 'static', text: 'LATER', position: 'after-user', order: 1 },

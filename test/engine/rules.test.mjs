@@ -5,6 +5,7 @@ import { createScope } from '@deepseek-ai/dsh-scope'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import { compileRules, getRuleEditorMeta, isFixedRegistration } from '../../engine/rule-spec.mjs'
 import { mountRuleSources } from '../../engine/rule-runtime.mjs'
+import { WARN_ONCE_LIMIT, createWarnOnce } from '../../engine/shared.mjs'
 import { ruleFrame, ruleMatches, actionMatches } from '../../engine/conditions/evaluation.mjs'
 import { createNameListPredicate, subjectOf } from '../../engine/conditions/index.mjs'
 import { UNAVAILABLE } from '../../engine/conditions/availability.mjs'
@@ -14,9 +15,13 @@ function harness(services = {}) {
   const events = new Map()
   const effects = []
   const warnings = []
+  const infos = []
   const ctx = {
     get: name => services[name],
-    logger: { warn(message) { warnings.push(message) } },
+    logger: {
+      warn(message) { warnings.push(message) },
+      info(message) { infos.push(message) },
+    },
     on(name, handler, options) {
       const list = events.get(name) ?? []; events.set(name, list)
       if (options?.prepend) list.unshift(handler); else list.push(handler)
@@ -24,7 +29,7 @@ function harness(services = {}) {
     },
     effect(callback) { const dispose = callback(); if (typeof dispose === 'function') effects.push(dispose); return dispose },
   }
-  return { ctx, events, effects, warnings, async emit(name, ...args) {
+  return { ctx, events, effects, warnings, infos, async emit(name, ...args) {
     for (const handler of (events.get(name) ?? []).slice()) await handler(...args)
   }, run(name, args, terminal) {
     const list = (events.get(name) ?? []).slice()
@@ -103,6 +108,73 @@ test('统一规则：通用条件只允许规则 when，中性旧字段不再参
     const target = example.kind === 'inject-text' ? example.config : example.kind === 'request-params' ? example : undefined
     if (target !== undefined) for (const field of ['audience', 'modelScope', 'promotion', 'subject', 'match']) assert.equal(Object.hasOwn(target, field), false)
   }
+})
+
+test('T13：去重集合按消息累计且严格有界，到上限补一条抑制提示后静默', () => {
+  const h = harness()
+  const warnOnce = createWarnOnce(h.ctx, 'probe')
+  // 64 条不同消息：全部记账。
+  for (let index = 0; index < 64; index += 1) warnOnce(`probe: distinct ${index}`)
+  assert.equal(h.warnings.length, WARN_ONCE_LIMIT, '上限内的 64 条不同消息都要记')
+  // 第 65 条不同消息被抑制，且恰好补一条提示。
+  warnOnce('probe: distinct 64')
+  assert.equal(h.warnings.length, WARN_ONCE_LIMIT + 1, '不得超过 64 + 1 条')
+  assert.match(h.warnings.at(-1), /后续告警已抑制/)
+  // 上限之后：旧消息与新的不同消息都不再输出（提示只写一次）。
+  warnOnce('probe: distinct 0')
+  warnOnce('probe: distinct 65')
+  warnOnce('probe: distinct 66')
+  assert.equal(h.warnings.length, WARN_ONCE_LIMIT + 1, '抑制提示只写一次，此后静默')
+  // logger 抛错不占名额：同一条消息在 logger 恢复后仍能记上。
+  const failing = harness()
+  const originalWarn = failing.ctx.logger.warn
+  let broken = true
+  failing.ctx.logger.warn = (message) => { if (broken) throw new Error('logger unavailable'); originalWarn(message) }
+  const retry = createWarnOnce(failing.ctx, 'probe')
+  retry('probe: transient')
+  assert.equal(failing.warnings.length, 0)
+  broken = false
+  retry('probe: transient')
+  assert.equal(failing.warnings.length, 1, '失败的告警不占名额')
+})
+
+test('T13：两个不同 when 异常各记一次，同一异常重复只记一次', async () => {
+  const h = harness()
+  const boom = (id, text) => {
+    const rule = compileRules([{ id, then: [textAction(`${id}-text`, 'X')] }])[0]
+    rule.when = () => { throw new Error(text) }
+    return rule
+  }
+  const dispose = mountRuleSources(h.ctx, [{ moduleId: 'module', rules: [boom('a', 'first failure'), boom('b', 'second failure')] }])
+  const agent = actor()
+  const messages = [{ id: 'u', role: 'user', source: { kind: 'user' }, content: [{ type: 'text', text: 'USER' }] }]
+  const step = () => h.run('agent/pre-step', [{ agent, messages }], () => ({ kind: 'enter', messages }))
+  await step()
+  await step()
+  assert.deepEqual(h.warnings.map(message => message.match(/condition failed: (.*)$/)?.[1]), ['first failure', 'second failure'],
+    '两个不同异常各记一次，同一异常重复不再记')
+  dispose()
+})
+
+test('T13：observe 命中之后 inject-main 失败仍记录（信息性提示不占告警名额）', async () => {
+  const h = harness()
+  // 只挂 observe：命中走 info，一条告警都不产生。
+  const observeOnly = mountRuleSources(h.ctx, [{ moduleId: 'module', rules: compileRules([
+    { id: 'observe-only', then: [{ id: 'observe', kind: 'inject-text', config: { id: 'observe', layer: 'subagent-end', text: 'OBSERVED' } }] },
+  ]) }])
+  await h.emit('subagent/end', { id: 'child', runId: 'run-1' })
+  await h.emit('subagent/end', { id: 'child', runId: 'run-3' })
+  assert.equal(h.infos.filter(message => message.includes('observe only')).length, 2, 'observe-only 逐次走 info 通道')
+  assert.deepEqual(h.warnings, [], 'observe-only 不占用告警名额')
+  observeOnly()
+  // 同一挂载的后续故障（inject-main 无活跃主会话）照常告警。
+  const dispose = mountRuleSources(h.ctx, [{ moduleId: 'module', rules: compileRules([
+    { id: 'notify-main', then: [{ id: 'notify', kind: 'inject-text', config: { id: 'notify', layer: 'subagent-end', text: 'MAIN', params: { action: 'inject-main' } } }] },
+  ]) }])
+  await h.emit('subagent/end', { id: 'child', runId: 'run-2' })
+  assert.equal(h.warnings.length, 1, '后续 inject-main 失败仍记录')
+  assert.match(h.warnings[0], /no live main session/)
+  dispose()
 })
 
 test('统一规则：条件注入复用批处理，未命中不占去重，多个动作合并且只判定一次', async () => {
@@ -313,7 +385,9 @@ test('统一规则：缺失真实会话的 not 保持未知，any 中已知 true
     assert.equal(nextCalls, knownTrue ? 0 : 1)
     assert.equal(chunks.some(chunk => chunk.text === 'REPLACED'), knownTrue)
     await h.emit('subagent/end', { id: 'absent-child', runId: 'unknown-run' })
-    assert.equal(h.warnings.some(message => message.includes('observe only')), knownTrue)
+    // observe-only 命中走 info 通道（逐次记录），不再占用按消息去重的告警名额。
+    assert.equal(h.infos.some(message => message.includes('observe only')), knownTrue)
+    assert.equal(h.warnings.some(message => message.includes('observe only')), false)
     dispose()
   }
   const missingFacts = [

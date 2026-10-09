@@ -151,7 +151,7 @@ const PRE_STEP_ROLE = 'user'
 
 /**
  * 记录一次角色降级：保留原角色、明确告警、不改正文，也不把非法值传给宿主。
- * 同一配置只告警一次（warnOnce），且不记录正文或用户内容。
+ * 同一句告警只记一次（warnOnce 按消息去重），且不记录正文或用户内容。
  */
 function downgradeRole(config, requested, warnOnce) {
   if (typeof requested !== 'string' || requested === PRE_STEP_ROLE) return undefined
@@ -398,6 +398,12 @@ async function runPromptConfigBatch(options) {
       changed = true
     }
     const userIndex = messages.findIndex((item) => item?.source?.kind === 'user')
+    if (afterUser.length > 0 && userIndex < 0) {
+      // 本批没有真实用户消息可锚定：本步跳过（不记账，next 含 user 的批仍会注入）。不兜底到
+      // before-all / after-all —— 「锚点是真实用户消息、不挂到插件消息之后」是插入点契约。
+      // 按消息去重后，不同配置组合各记一次，不再互相占名额。
+      warnOnce(`${name}: after-user config(s) ${afterUser.map((item) => item.group[0].config.id).join(', ')} skipped this batch — no user message anchor`)
+    }
     if (afterUser.length > 0 && userIndex >= 0) {
       const last = options.placement === undefined ? -1 : messages.findLastIndex(message => options.placement.afterUser.has(message))
       messages.splice(Math.max(userIndex, last) + 1, 0, ...afterUser.map((item) => item.message))

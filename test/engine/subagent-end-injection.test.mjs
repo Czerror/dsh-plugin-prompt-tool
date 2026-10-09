@@ -64,6 +64,8 @@ test('默认观察、未命中、空文本、缺少主会话、错误血缘与�
     const h = harness(); mutate(h)
     h.end()
     assert.equal(h.injected.length, 0)
+    // 缺活跃主会话是故障而非信息性提示：仍走 warn 通道（observe-only 已改走 info）。
+    assert.equal(h.warnings.filter(message => message.includes('no live main session')).length, 1, '缺主会话恰告警一次')
   }
   const mismatch = harness()
   mismatch.emit('subagent/start', { id: 'child', runId: 'run-1' })

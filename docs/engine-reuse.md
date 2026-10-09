@@ -233,12 +233,18 @@ id 不同、却声明同一个 sourceKind 的卡同样会经 kind 通道互相�
 （assistant 只能由模型侧 `assistant/message` 事件产生）。引擎因此只有一个出口角色：
 
 - `executor.mjs#buildMessage` 统一发出 `user`；配置声明或策略 patch（含 `templateFile` 的 role）
-  给出的其它值在出口降级，只 `warnOnce` 一次，原角色写入 `source.requestedRole`，正文、位置、
+  给出的其它值在出口降级，同一句告警只 `warnOnce` 一次，原角色写入 `source.requestedRole`，正文、位置、
   次数、dedupe、order 与变量副作用都不变。合并组按首条配置的角色发出，其余成员声明的非法角色
   同样告警并留痕。
 - 配置的 `role` 只接受 `user`，`getEngineMeta().roles` 与表单同源；策略或模板 patch 的角色仍经出口守卫校验。
 - 想让消息以 assistant 出现在模型面前，只能走宿主 assistant 侧通道，不要在 pre-step 里伪造
   assistant 历史：那会写出宿主无法重新加载的会话日志。
+
+**降级告警的去重语义**（`engine/shared.mjs#createWarnOnce`）：守卫按**消息**去重——同一条消息只记一次，
+内嵌错误文本的告警因此「不同故障各记一次、重复故障仍只记一次」，不再是一个 mount 只放行第一条。
+登记发生在 logger 调用**成功之后**（失败的告警不占名额），key 数上限 64，到上限时补一条
+「后续告警已抑制」提示后即静默；`message` 全文即 key，同一故障的变体文本各占一个 key。
+信息性提示不走这条通道：`subagent-end` 的 `action=observe` 命中按模板本意逐次走 `logger.info`。
 
 ## pre-step 协调器与官方指令过滤
 
