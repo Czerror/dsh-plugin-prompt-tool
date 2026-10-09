@@ -30,7 +30,7 @@ export function createAnchorPredicate(options = {}) {
     const session = sessionOf(payload)
     if (inspect(session).confirmed) return true
     if (fallbackAfter === undefined) return false
-    // 兜底只看轮数：计到 fallbackAfter + 1 就够判定，不整表扫描。
+    // 兜底只看轮数，计到 fallbackAfter + 1 即提前退出（开场尚无 assistant 消息时这一步会再读一次快照）。
     let rounds = 0
     for (const event of sessionEvents(session)) {
       if (event.type === 'assistant/message' && ++rounds > fallbackAfter) return true

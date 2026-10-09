@@ -574,6 +574,30 @@ test('guard 注册抛错不留下已登记状态：同一 ctx 的下一次装配
   assert.equal(attempts, 2, '注册失败后下一次装配必须重试，不得永久放弃')
 })
 
+test('guard 登记的撤销范围：父 mount 释放撤销子代理侧注册，scope 释放只移出自身（R06 收口）', async () => {
+  for (const [depth, label] of [[0, '主会话'], [1, '子代理']]) {
+    const recorder = recordingCtx()
+    const scopeEffects = []
+    let revoked = 0
+    const dispose = registerAction(recorder.ctx, { kind: 'guard', id: 'g', includeSubagents: true, mask: { deny: ['bash'] } })
+    const handler = only(recorder.events, 'system-prompt/assemble')
+    const agent = {
+      session: { id: `guard-revoke-${depth}`, header: { delegationDepth: depth } },
+      ctx: {
+        tools: { guard: () => () => { revoked += 1 } },
+        effect: (fn) => { scopeEffects.push(fn); return () => {} },
+      },
+    }
+    await handler(assembled({}), { agent, scope: agent }, async () => assembled({}))
+    assert.equal(revoked, 0, `${label}：装配后注册仍在`)
+    assert.equal(scopeEffects.length, 1, `${label}：登记了 scope 清理，scope 释放时把 state 移出 states`)
+    dispose()
+    // 改前（states 只登记 depth === 0）：子代理这一行是 0 —— 父 mount 释放不再撤销它的注册，
+    // 子代理余下生命周期会按旧 mask 继续拦截。
+    assert.equal(revoked, 1, `${label}：父 mount 释放必须撤销该注册`)
+  }
+})
+
 // ───────────────────────── 四、when 门控与每轮预算 ─────────────────────────
 
 test('when：命中才执行动作，不命中放行下游', async () => {

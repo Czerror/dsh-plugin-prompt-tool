@@ -82,9 +82,10 @@ const CHANNELS = {
 const SUBJECT_OF_FIELD = Object.fromEntries(Object.entries(SUBJECT_FIELDS).map(([subject, field]) => [field, subject]))
 
 /**
- * 事实谓词 → 它读取的事实 subject：校验面与运行面**唯一**的登记处。
- * 加第三个事实谓词只改这一张表：`rule-spec.mjs#conditionSubjects` 直接消费本对象，
- * 下面 `FACT_SUBJECTS` 的名单也由它派生，不留第二份手抄（漏抄 = 死条件静默放行）。
+ * 事实谓词 → 它读取的事实 subject：校验面与运行面的**唯一**登记处——新谓词还要在
+ * `PREDICATE_FACTORIES` 与通道可用性表登记，但「谓词 → subject」只此一处，
+ * `rule-spec.mjs#conditionSubjects` 直接消费本对象、`FACT_SUBJECTS` 也由它派生。
+ * ponytail: 漂移断言靠运行时改写本对象；将来若 `Object.freeze`，需把判据换成「同一引用」。
  */
 export const FACT_PREDICATE_SUBJECTS = { names: 'name', source: 'source' }
 

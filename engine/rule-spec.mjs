@@ -241,9 +241,8 @@ export function compileRules(specs, options = {}) {
       if (action.kind === 'inject-text') {
         validateActionOptions(action)
         if (!record(action.config)) throw new TypeError(`action ${action.id}: config must be an object`)
-        // 原始声明保持不变；稳定动作身份只在未提供正文身份时补入运行时编译输入。
-        // `injectionConfigSpec` 已保证 `config.id` 非空，这里不再兜第二次。
-        pendingConfigs.push({ action, source: { ...action.config, id: action.config.id }, sequence: channelOrder, ruleId: spec.id, actionIndex })
+        // 原始声明保持不变；正文身份由 `injectionConfigSpec` 保证（`config.id` 非空，不再兜第二次）。
+        pendingConfigs.push({ action, source: { ...action.config }, sequence: channelOrder, ruleId: spec.id, actionIndex })
       } else prepareAction(action, { promptConfigOptions: options.promptConfigOptions })
       // 动作级条件只在本动作的执行点求值：谓词要读的事实必须由该通道真实提供，否则是死条件。
       // 规则级 `if` 自身不在这里校验（它跨执行点求值）；`else` 注入的 `not(if)` 按**对象身份**
