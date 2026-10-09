@@ -418,22 +418,39 @@ test('重复模块身份：跨模块同 rule id 且 dedupe=session 只告警一�
       promptConfigs: [{ id: 'shared-hint', text: `${id}-HINT`, dedupe: 'session', position: 'after-user' }],
     })
   }
-  // 另一对：id 不同（plugin 身份不撞）但显式声明同一个 sourceKind，经 kind 通道互相压制。
+  // 另一对：id 不同（plugin 身份不撞）但显式声明同一个 sourceKind，是 kind 通道那一笔账。
   for (const id of ['dup-kind-a', 'dup-kind-b']) {
     writePreset(id, {
       modules: ['prompt-config-engine'],
       promptConfigs: [{ id: `${id}-hint`, text: `${id}-KIND`, dedupe: 'session', sourceKind: 'shared-kind-channel', position: 'after-user' }],
     })
   }
-  const h = await liveAssembly(t, () => ['dup-source-a', 'dup-source-b', 'dup-kind-a', 'dup-kind-b'])
+  // 第三对是原 B2 的缺口形态：`config.id` 相同、其中一方显式 `identity` 取值不同。缺省
+  // sourceKind 由 id 编成同一个 `plugin:gap-hint`，判据若不带模块维就跨模块互相压制。
+  for (const [index, id] of ['dup-gap-a', 'dup-gap-b'].entries()) {
+    writePreset(id, {
+      modules: ['prompt-config-engine'],
+      promptConfigs: [{ id: 'gap-hint', text: `${id}-GAP`, dedupe: 'session', position: 'after-user',
+        ...(index === 0 ? {} : { identity: { field: 'plugin', value: 'dup-gap-b-identity' } }) }],
+    })
+  }
+  const enabled = ['dup-source-a', 'dup-source-b', 'dup-kind-a', 'dup-kind-b', 'dup-gap-a', 'dup-gap-b']
+  const h = await liveAssembly(t, () => enabled)
   const agent = await h.makeAgent('duplicate-identity-agent')
-  assert.deepEqual(h.runtime.moduleIds(agent.id), ['dup-source-a', 'dup-source-b', 'dup-kind-a', 'dup-kind-b'],
-    '重复身份不影响装配成功')
-  // 同一批内的候选不算「已投递」：四张卡各自注入一次。去重判据自 T5 起带模块维，
+  assert.deepEqual(h.runtime.moduleIds(agent.id), enabled, '重复身份不影响装配成功')
+  // 同一批内的候选不算「已投递」：六张卡各自注入一次。去重判据自 T5 起带模块维，
   // 复制出的两个副本因此**各自注入**——身份字符串仍逐字相同，模块维落在独立的 source.moduleId。
   const first = (await h.inject(agent)).messages
   assert.deepEqual(first.flatMap(message => message.content.map(block => block.text)).sort(),
-    ['USER', 'dup-kind-a-KIND', 'dup-kind-b-KIND', 'dup-source-a-HINT', 'dup-source-b-HINT'].sort())
+    ['USER', 'dup-kind-a-KIND', 'dup-kind-b-KIND', 'dup-source-a-HINT', 'dup-source-b-HINT',
+      'dup-gap-a-GAP', 'dup-gap-b-GAP'].sort())
+  // 缺口形态的观察面：注入条数与正文。同一条 kind（`plugin:gap-hint`）下两份正文都在，
+  // 说明 kind 通道不再跨模块压制；告警数不变则说明「不压制就不报警」——报它才是假警报。
+  const gap = first.filter(message => message.content[0].text.endsWith('-GAP'))
+  assert.deepEqual(gap.map(message => message.content[0].text).sort(), ['dup-gap-a-GAP', 'dup-gap-b-GAP'],
+    '同 config.id 的两份正文都注入')
+  assert.equal(new Set(gap.map(message => message.source.kind)).size, 1, '两份走的是同一条 kind（缺口形态成立）')
+  assert.deepEqual(gap.map(message => message.source.moduleId).sort(), ['dup-gap-a', 'dup-gap-b'])
   const hints = first.filter(message => message.content[0].text.endsWith('-HINT'))
   assert.deepEqual(hints.map(message => message.source.moduleId).sort(), ['dup-source-a', 'dup-source-b'],
     '真实装配路径把模块维盖进注入消息的 source')
@@ -446,6 +463,12 @@ test('重复模块身份：跨模块同 rule id 且 dedupe=session 只告警一�
   assert.match(kindWarning, /显式 sourceKind "plugin:shared-kind-channel"/)
   assert.match(kindWarning, /声明了同一个/)
   assert.match(kindWarning, /dup-kind-a、dup-kind-b/)
+  // T19：同一重复身份跨 refresh() 不再重报（reportedDuplicates 是 mount 工厂级集合，刻意不
+  // 刷屏；缺口形态那两组同样不因重装冒出新告警）。观察面只有告警次数与内容。
+  const reported = [...h.warnings]
+  await h.runtime.refresh()
+  await h.runtime.refresh()
+  assert.deepEqual(h.warnings, reported, `重装不新增告警：${JSON.stringify(h.warnings)}`)
 })
 
 test('热更新：空启用表到多模块、配置启停与拒绝后重试都更新同一个 Agent，重复刷新不重复注入', async (t) => {

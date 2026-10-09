@@ -229,8 +229,8 @@ function ruleKeyOf(config: Record<string, unknown>): string {
  * `source.kind`）——它们各是一份独立的判据，漏查任一条就让「两模块带同一身份」不可见。
  * `suspectedCopy` 标出「同一份 rule/action 身份被两个模块各带一份」，那才是复制模块的指纹；
  * 只有一份（或 rule/action 身份不同）时是两个模块各自声明了同一个身份，措辞不劝改。
- * sourceKind 未显式声明时按配置 id 编译（`plugin:<id>`），那是 plugin 通道的同一笔账，
- * 不另算一条 kind 重复。
+ * sourceKind 未显式声明时按配置 id 编译成 `plugin:<id>`：那只是自身 id 的编译产物，同 id 的
+ * 两个模块也各按模块维记一份、不再互相压制，所以它不是一笔去重账——照它告警是假警报。
  */
 interface DuplicateIdentity { channel: 'plugin' | 'kind'; identity: string; suspectedCopy: boolean; moduleIds: string[] }
 
@@ -255,7 +255,7 @@ function duplicateDedupeIdentities(prepared: PreparedAssembly[]): DuplicateIdent
   const declarations = dedupeConfigsOf(prepared).flatMap(({ moduleId, config }) => {
     const pluginIdentity = identityOf(config)
     const sourceKind = typeof config.sourceKind === 'string' && config.sourceKind.length > 0 ? config.sourceKind : undefined
-    // sourceKind 缺省时由配置 id 编译成 `plugin:<id>`：那与 plugin 通道同源，不另立一条 kind 重复。
+    // 缺省 sourceKind 由配置 id 编译成 `plugin:<id>`：那只是自身 id 的产物，不另立一条 kind 重复。
     const declaredKind = sourceKind !== undefined && sourceKind !== `plugin:${String(config.id)}` ? sourceKind : undefined
     return [
       { key: `plugin:${pluginIdentity}`, channel: 'plugin' as const, identity: pluginIdentity, copyKey: ruleKeyOf(config), moduleId },
