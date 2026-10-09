@@ -85,7 +85,7 @@ export function compileDeclaration(spec, context = {}) {
   const expanded = [
     ...expandActions(actionList(triggerThen, `${label}.then`), {}, `${label}.then`),
     ...(spec.else === undefined ? [] : expandActions(actionList(spec.else, `${label}.else`), {
-      outer: triggerIf === undefined ? [] : [{ not: triggerIf }],
+      outer: [{ not: triggerIf }],
       bypass: true,
     }, `${label}.else`)),
   ]

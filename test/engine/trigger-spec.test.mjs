@@ -76,6 +76,12 @@ test('compileDeclaration：声明级 else 缺 if（含 if: null）编译期拒�
   const compiled = compileDeclaration({ ...base, if: { names: { allow: ['bash'] } }, else: elseAction })
   assert.deepEqual(compiled.actions.map((action) => action.kind), ['assembly', 'sdk-strip'])
   assert.equal(compiled.actions[1].bypassRuleWhen, true)
+  // 互斥是 else 存在的全部意义：`not(if)` 必须真的编译进该动作，否则 else 与 then 会在同一次调用里同时生效。
+  // （这条此前零判别力：删掉 trigger-spec.mjs 的 `outer: [{ not: triggerIf }]` 后全部既有用例仍绿。）
+  assert.equal(compiled.when({ name: 'bash' }), true)
+  assert.equal(compiled.actions[1].actionWhen({ name: 'bash' }), false, 'if 命中时 else 不动')
+  assert.equal(compiled.when({ name: 'ls' }), false)
+  assert.equal(compiled.actions[1].actionWhen({ name: 'ls' }), true, 'if 不命中时 else 生效')
 })
 
 // ───────────────────────── 字段归一与调度 ─────────────────────────

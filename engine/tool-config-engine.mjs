@@ -34,10 +34,10 @@
  *   - 配置声明走 fields.mjs 的 `defineConfig`（未知键在挂载期 fail loud）；
  *   - 注册走 disposer 契约：单次注册用 shared.keepDisposer（register() 返回的正是
  *     它自己的 effect disposer）；需要整组原子回滚或定向撤销句柄时才用 ctx.effect；
- *   - 降级告警统一 `${name}: <what>; <fallback>` 一个前缀格式（见 provider-boundary 用例）。
+ *   - 降级告警统一 `${name}: <what>; <fallback>` 一个前缀格式。
  *
- * 登记入口：`engineProvider`（数据导出），供边界守卫消费。提供者登记与声明式触发器
- * 声明（约定为 `engineTriggers`）**互斥**，同一模块不得同时导出两者。
+ * 登记入口：`engineProvider`（数据导出）；守卫已随测试收敛移除，导出仅为兼容面保留。
+ * 提供者登记与声明式触发器声明（约定为 `engineTriggers`）**互斥**，同一模块不得同时导出两者。
  *
  * 文件归属校正（PLAN T4）：第三个指定提供者 str-replace-editor 由
  * engine/compositions/source/local/filesystem-editor.yml:20 引用**官方**包
@@ -424,10 +424,9 @@ export const configContract = {
 }
 
 /**
- * 能力提供者登记（T4 边界守卫的数据源）。
+ * 能力提供者登记（守卫已随测试收敛移除，导出仅为兼容面保留）。
  * `provides.kind === 'dynamic'`：模型可见的工具名由 module.yml 的 customTools 段在
- * 装配期决定，引擎侧无法静态枚举——守卫只断言登记形状、
- * 注册通道，以及「提供者不导出触发器声明」这条互斥。
+ * 装配期决定，引擎侧无法静态枚举。
  */
 export const engineProvider = {
   kind: 'provider',

@@ -26,8 +26,8 @@
  *   - fail loud 语义：显式内联或策略文件内容非法一律抛错；只有路径入口的 ENOENT
  *     才降级为官方委派行为。
  *
- * 登记入口：`engineProvider`（数据导出），供边界守卫消费。提供者登记与声明式触发器
- * 声明（约定为 `engineTriggers`）**互斥**，同一模块不得同时导出两者。
+ * 登记入口：`engineProvider`（数据导出）；守卫已随测试收敛移除，导出仅为兼容面保留。
+ * 提供者登记与声明式触发器声明（约定为 `engineTriggers`）**互斥**，同一模块不得同时导出两者。
  */
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
@@ -88,9 +88,8 @@ export const configContract = {
 }
 
 /**
- * 能力提供者登记（T4 边界守卫的数据源）。
- * `provides.kind === 'fixed'`：工具名在装配期就是确定的（两种委派入口各一个 shadow），
- * 守卫据此断言「提供者登记的工具名 = 实际注册的工具名」，并断言它们不出现在触发器声明里。
+ * 能力提供者登记（守卫已随测试收敛移除，导出仅为兼容面保留）。
+ * `provides.kind === 'fixed'`：工具名在装配期就是确定的（两种委派入口各一个 shadow）。
  */
 export const engineProvider = {
   kind: 'provider',
