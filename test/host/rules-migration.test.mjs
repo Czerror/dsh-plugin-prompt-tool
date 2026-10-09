@@ -165,6 +165,14 @@ test('离线规则迁移：同卡前后动作与原投递身份保留，完整�
     { id: 'before', kind: 'decision', phase: 'pre', decision: 'ask', toolNames: 'bash' },
     { id: 'after', kind: 'decision', phase: 'post', action: 'replace', toolNames: 'bash', text: 'replacement' },
   ])
+  // tool-pipeline 卡没有 inject-text 通道，旧门提升为 rule.if 是唯一去处。真值源＝手算字面量：
+  // scope 收 audience+modelScope、phase 收 promotion、text 收 match 且缺省对象取本层 tool-pipeline 的 toolArgs。
+  const gatedTool = promptConfigToRule({ ...old, modelScope: 'pro', promotion: 'main', match: { keys: ['TASK'] } })
+  assert.deepEqual(gatedTool.if, { all: [
+    { scope: { audience: 'main', modelScope: 'pro' } },
+    { phase: { promoted: true, includeSubagents: false } },
+    { text: { keys: ['TASK'], subject: 'toolArgs' } },
+  ] })
   const hash = text => createHash('sha256').update(text).digest('hex')
   const root = fixture('roundtrip', { a: { promptConfigs: [{ id: 'hello', text: 'Hello' }, old, { id: 'template', templateFile: '../a/assets/notice.yml' }], configOrder: { hello: 40, tools: 70, template: 90 },
     meta: { characterMemories: { generated: { characterId: 'generated', configId: 'hello', contentHash: hash('{"id":"hello","text":"Hello"}') }, edited: { characterId: 'edited', configId: 'tools', contentHash: 'unmatched-user-content' } } } } })
