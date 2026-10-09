@@ -596,6 +596,16 @@ test('if/then/else：动作级 text 条件必须落在本执行点真实提供�
     if: { text: { keys: ['x'], subject: 'toolResult' } },
     then: [{ id: 'request', kind: 'request-params', modelScope: 'all', patch: {} }],
   }]).length, 1)
+  // 规则级 else 的动作自带 not(if)、按**对象身份**剔除（`branch.mjs#expandActions` 保留 outer
+  // 元素引用）：request-params 落在 agent/request，那里没有任何文本 subject——剔除一旦失效
+  // （如 outer 元素被复制），这条合法声明就会被误判成死条件、在编译期抛错。
+  const elsewhere = compileRules([{
+    id: 'r',
+    if: { text: { keys: ['x'], subject: 'userMessage' } },
+    then: [{ id: 'then-req', kind: 'request-params', modelScope: 'all', patch: { maxTokens: 111 } }],
+    else: [{ id: 'else-req', kind: 'request-params', modelScope: 'all', patch: { maxTokens: 222 } }],
+  }])
+  assert.deepEqual(elsewhere[0].actions.map(action => action.id), ['then-req', 'else-req'], '规则级 else 的 not(if) 不是动作级死条件')
 })
 
 test('动作级 names / source 条件必须落在本执行点真实提供的事实上', () => {
@@ -913,21 +923,20 @@ test('ST 世界书组互斥在整步成立：默认位置 filter 切开批次时
     const agent = actor()
     const messages = [{ id: 'u', role: 'user', source: { kind: 'user' }, content: [{ type: 'text', text: 'KEY 提示' }] }]
     const original = Math.random
-    let rolls = 0
-    Math.random = () => { rolls++; return original() }
+    // 真值源（手算）：两条目 order 同为 0（排序稳定）且组内权重相等（各 100），掷点固定 0 → 声明序首位中标。
+    Math.random = () => 0
     let result
     try {
       result = await h.run('agent/pre-step', [{ agent, messages }], () => ({ kind: 'enter', messages }))
     } finally { Math.random = original }
     const loreTexts = result.messages.flatMap(message => message.content.map(block => block.text)).filter(text => text.endsWith('-LORE'))
     dispose()
-    return { loreTexts, rolls, records: lastWorldBookDiagnostics(agent.session).records }
+    return { loreTexts, records: lastWorldBookDiagnostics(agent.session).records }
   }
   const split = await run(plan(true))
   const whole = await run(plan(false))
-  assert.deepEqual(split.loreTexts.length, 1, `同组两条在整步只允许一条中标，切开也不补位（实际 ${split.loreTexts.join('/')}）`)
-  assert.deepEqual(whole.loreTexts.length, 1, '同一批时同样只注入一条')
-  assert.equal(split.rolls, whole.rolls, '切开批次不改变概率掷点次数（差分）')
+  assert.deepEqual(split.loreTexts, ['A-LORE'], `同组两条在整步只允许声明序首位中标，切开也不换人（实际 ${split.loreTexts.join('/')}）`)
+  assert.deepEqual(whole.loreTexts, ['A-LORE'], '同一批时同样只注入一条')
   // 末批无世界书（只有 tail）时，本步赢家与 loser 的诊断必须留在同一份快照里。
   assert.ok(split.records.some(record => record.stage === 'selected' && record.reason === 'group-winner'), '赢家 selected 记录保留')
   assert.ok(split.records.some(record => record.stage === 'rejected' && record.reason === 'group-lost'), '同组 loser 的拒绝原因保留')

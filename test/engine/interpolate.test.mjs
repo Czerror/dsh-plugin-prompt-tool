@@ -147,14 +147,15 @@ for (const [name, run] of [
     const session = { id: 'stable' }
     const first = interpolateVariables('{{pick::a::b}}', {}, session)
     next = 0.99
-    assert.equal(interpolateVariables('{{pick::a::b}}', {}, session), first)
+    assert.equal(interpolateVariables('{{pick::a::b}}', {}, session), first, '换掉随机源后同一次求值仍取同值（seed 说了算）')
     // seed 不含整段正文：同一引用不随无关正文长度漂移（前缀/后缀都算）。
     const stable = interpolateVariables('{{pick::a::b::c::d::e}}', {}, { id: 'stable' })
     assert.equal(interpolateVariables('无关前缀变长 {{pick::a::b::c::d::e}}', {}, { id: 'stable' }), `无关前缀变长 ${stable}`, '前缀长度不影响')
     assert.equal(interpolateVariables('{{pick::a::b::c::d::e}} 无关后缀变长', {}, { id: 'stable' }), `${stable} 无关后缀变长`, '后缀长度不影响')
-    assert.equal(interpolateStatic('{{pick::a,b,c}}', {}), interpolateStatic('{{pick::a,b,c}}', {}), '静态层仍确定')
-    // 同一正文里两处引用的出现序号参与 seed，各自取值（sha256 定值）。
-    assert.equal(interpolateVariables('{{pick::a::b}}|{{pick::a::b}}', {}, { id: 'stable' }), 'a|b', '两处各自取值')
+    // 同一正文里多处引用的出现序号参与 seed：序号不进 seed 时 16 处必然全同（必红）。
+    // 取值本身是 sha256 的，不是手算样例，故与下面模板位置同法只断言「不是同一个值」——全撞概率约 5⁻¹⁵。
+    const repeated = interpolateVariables(Array.from({ length: 16 }, () => '{{pick::a::b::c::d::e}}').join('|'), {}, session)
+    assert.ok(new Set(repeated.split('|')).size > 1, '同一正文里各处引用的出现序号参与 seed')
     // 模板位置身份（sourceId）参与 seed：同会话下不同模板位置不共用 seed，同一位置仍不随长度漂移。
     // sha256 取值是概率的，故不回写字面量，只断言「不同位置不是同一个值」——16 个位置全撞的概率约 5·5⁻¹⁶。
     const positions = new Set(Array.from({ length: 16 }, (_, index) =>
