@@ -7,7 +7,9 @@ export const ACTION_DEGRADE = Object.freeze({
 
 /**
  * 九类动作的声明：**合法事件通道** + **降级语义** + 触发时机 + **声明字段**。
- * `events` 是动作允许注册的官方事件（注册到声明外的事件在挂载期 fail loud）；
+ * `events` 是动作允许注册的官方事件：经 `on(...)` 注册的动作（`channelBinder`）注册到声明外的
+ * 事件在挂载期 fail loud；`inject-text` 不经 `channelBinder`，它的真实通道由
+ * `actionExecutionPoint`（派生自 `schema.mjs` 每层的 `channel`）决定，这里只是同源的声明面；
  * `services` 是它允许触碰的宿主服务方法（同一纪律的文档面）；
  * `fields` 是该类动作自己的声明键（白名单写在这里**一份**，`rule-spec.mjs` 的未知键
  * 检查从这里派生）。通用键 `id/kind/channelOrder/waterfallPosition/maxPerTurn` 由
@@ -18,11 +20,11 @@ export const ACTION_KINDS = Object.freeze({
   'inject-text': {
     title: '注入文本',
     fields: ['config', 'options'],
-    events: ['agent/pre-step', 'session/event', 'system-prompt/assemble', 'agent/request', 'llm/stream', 'tools/pre-execute', 'tools/post-execute', 'agent/turn-stopping', 'subagent/start', 'subagent/end'],
+    events: ['agent/pre-step', 'session/event', 'system-prompt/assemble', 'agent/request', 'llm/stream', 'agent/turn-stopping', 'subagent/start', 'subagent/end'],
     services: ['systemPrompt.section', 'systemPrompt.context', 'systemPrompt.variable'],
     degrade: ACTION_DEGRADE.keep,
     timing: '按配置声明的 layer 落到该层官方通道；pre-step 在 agent/pre-step，system-section/runtime-context 在注册期 + 官方 assembly。',
-    note: '复用九层注册通道，不新开通道；显式空正文 = 不注册（empty 情形）。`options` 原样交给该层的既有接线（pre-step 执行器的 `prepend` = 声明的位置策略）；`session/event` 是 pre-step 执行器自带的会话态旁听，不是第二条注入通道。',
+    note: '复用既有注入通道（八层，见 schema 的 `injectionLayers`），不新开通道；`tool-pipeline` 没有注入通道——工具链的裁决与追加上下文走 `decision` / `append-context` 动作。显式空正文 = 不注册（empty 情形）。`options` 原样交给该层的既有接线（pre-step 执行器的 `prepend` = 声明的位置策略）；`session/event` 是 pre-step 执行器自带的会话态旁听，不是第二条注入通道。',
   },
   assembly: {
     title: '改装配',

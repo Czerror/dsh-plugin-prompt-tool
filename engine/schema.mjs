@@ -170,6 +170,8 @@ export const KNOWN_SLOT_KINDS = new Set(['ordered', 'anchor'])
  *
  * 新增或改一层只动这里一处：
  *   - 数组顺序即 `layerOrder`（**产品定义**，改顺序等于改 UI 组织，不要只为排序调整）；
+ *   - `channel` / `phase` 是该层 `inject-text` 的**唯一注册点**（缺 `channel` 的层不可注入：
+ *     `tool-pipeline` 的工具链裁决改用 `decision` / `append-context` 动作）；
  *   - `fields` 是层能力矩阵（11 项，客户端表单据此动态渲染）；
  *   - `editing` 是字段能力表（subjects / content / variables / messageMetadata / params）；
  *   - `label` 是由引擎统一下发给客户端的显示名与说明；
@@ -182,6 +184,7 @@ export const KNOWN_SLOT_KINDS = new Set(['ordered', 'anchor'])
 const LAYER_DEFINITIONS = [
   {
     layer: 'pre-step',
+    channel: 'agent/pre-step', phase: 'after-next',
     fields: { position: true, dedupe: true, promotion: true, audience: true, modelScope: true, merge: true, order: true, role: true, placeholder: true, subject: true, match: true },
     editing: { subjects: ['userMessage'], content: 'text', variables: true, messageMetadata: true, params: {} },
     label: { title: '消息批层', detail: '官方默认层：agent/pre-step 消息批。支持 position / dedupe / promotion / audience / mergeMode 与文本插值。' },
@@ -189,6 +192,7 @@ const LAYER_DEFINITIONS = [
   },
   {
     layer: 'system-section',
+    channel: 'system-prompt/assemble', phase: 'before-next',
     fields: { position: false, dedupe: false, promotion: false, audience: true, modelScope: false, merge: true, order: true, role: false, placeholder: false, subject: false, match: false },
     editing: { subjects: [], content: 'text', variables: true, messageMetadata: false,
       params: { sectionName: { type: 'string' }, complete: { type: 'boolean' }, suppressRuntimeContext: { type: 'boolean' } } },
@@ -196,12 +200,14 @@ const LAYER_DEFINITIONS = [
   },
   {
     layer: 'runtime-context',
+    channel: 'system-prompt/assemble', phase: 'before-next',
     fields: { position: false, dedupe: false, promotion: false, audience: false, modelScope: false, merge: true, order: true, role: false, placeholder: true, subject: false, match: false },
     editing: { subjects: [], content: 'text', variables: true, messageMetadata: false, params: { contextName: { type: 'string' } } },
     label: { title: '运行上下文', detail: 'runtime-context 层：static 按 order 注册，placeholder 单条生效，由 params.contextName 控制。' },
   },
   {
     layer: 'agent-request',
+    channel: 'agent/request', phase: 'after-next',
     fields: { position: false, dedupe: false, promotion: false, audience: true, modelScope: true, merge: false, order: true, role: false, placeholder: false, subject: false, match: false },
     editing: { subjects: [], content: 'request', variables: false, messageMetadata: false,
       params: { patch: { type: 'object' }, replace: { type: 'boolean' } } },
@@ -209,6 +215,7 @@ const LAYER_DEFINITIONS = [
   },
   {
     layer: 'llm-stream',
+    channel: 'llm/stream', phase: 'before-next',
     fields: { position: false, dedupe: false, promotion: false, audience: false, modelScope: true, merge: false, order: true, role: false, placeholder: false, subject: false, match: false },
     editing: { subjects: [], content: 'stream', variables: false, messageMetadata: false,
       params: { mode: { type: 'enum', values: ['pass', 'replace'] } } },
@@ -220,11 +227,12 @@ const LAYER_DEFINITIONS = [
     editing: { subjects: ['toolArgs', 'toolResult'], content: 'tool-result', variables: false, messageMetadata: false,
       params: { toolNames: { type: 'string' }, preDecision: { type: 'enum', values: ['allow', 'deny', 'ask'] },
         denyReason: { type: 'string' }, postAction: { type: 'enum', values: ['accept', 'replace', 'block'] } } },
-    label: { title: '工具管线层', detail: 'tools/* 层：按 order 注册，params.toolNames 与 preDecision / postAction 控制；subject / match 可选，命中才裁决。' },
+    label: { title: '工具管线层', detail: '工具链层：只作规则级展示归属（无 inject-text 通道）——工具链的裁决与追加上下文由 decision / append-context 动作承担；subject / match 可选，命中才裁决。' },
     defaultSubject: 'toolArgs',
   },
   {
     layer: 'turn-stop',
+    channel: 'agent/turn-stopping', phase: 'before-next',
     fields: { position: false, dedupe: false, promotion: false, audience: false, modelScope: true, merge: false, order: true, role: false, placeholder: false, subject: true, match: true },
     editing: { subjects: ['assistantText'], content: 'text', variables: true, messageMetadata: false, params: {} },
     label: { title: '轮次停止层', detail: 'agent/turn-stopping 层：命中条件时强制续跑一步；引擎内置续跑上限，不可用配置关闭。' },
@@ -232,6 +240,7 @@ const LAYER_DEFINITIONS = [
   },
   {
     layer: 'subagent-start',
+    channel: 'subagent/start', phase: 'before-next',
     fields: { position: false, dedupe: false, promotion: false, audience: false, modelScope: true, merge: false, order: true, role: false, placeholder: false, subject: true, match: true },
     editing: { subjects: ['subagentInfo'], content: 'text', variables: true, messageMetadata: false, params: {} },
     label: { title: '子代理启动层', detail: 'subagent/start 层：命中条件时向该子代理注入上下文。' },
@@ -239,6 +248,7 @@ const LAYER_DEFINITIONS = [
   },
   {
     layer: 'subagent-end',
+    channel: 'subagent/end', phase: 'before-next',
     fields: { position: false, dedupe: false, promotion: false, audience: false, modelScope: true, merge: false, order: true, role: false, placeholder: false, subject: true, match: true },
     editing: { subjects: ['subagentInfo'], content: 'subagent-result', variables: true, messageMetadata: false,
       params: { action: { type: 'enum', values: ['observe', 'inject-main'] } } },
@@ -260,6 +270,16 @@ for (const definition of LAYER_DEFINITIONS) {
 /** 九个官方注入层的固定顺序：/meta 的 layerOrder、UI 层序与模板菜单共用这一份。 */
 export const LAYER_ORDER = LAYER_DEFINITIONS.map((definition) => definition.layer)
 export const KNOWN_LAYERS = new Set(LAYER_ORDER)
+/**
+ * `inject-text` 可绑定的层与注册点（由 {@link LAYER_DEFINITIONS} 的 `channel` 派生，不另写层表）：
+ * 没有通道的 `tool-pipeline` 不可注入——工具链的裁决与追加上下文走 `decision` / `append-context` 动作。
+ * 层清单因此有两份：`LAYER_ORDER` 九层供视图筛选、展示分组与规则级 `layer`；这里八层只给动作的 `config.layer`。
+ */
+const INJECTION_DEFINITIONS = LAYER_DEFINITIONS.filter((definition) => definition.channel !== undefined)
+export const INJECTION_LAYERS = INJECTION_DEFINITIONS.map((definition) => definition.layer)
+export const INJECTION_CHANNELS = Object.fromEntries(
+  INJECTION_DEFINITIONS.map((definition) => [definition.layer, { channel: definition.channel, phase: definition.phase }]),
+)
 /**
  * 条件判定的匹配对象：决定把哪段文本交给 anchor-match 匹配器。
  * 取值与 DSH 扩展点一一对应，各层缺省值见 LAYER_DEFAULT_SUBJECT。
@@ -310,9 +330,11 @@ export const LAYER_LABELS = Object.fromEntries(
 /** 引擎能力矩阵：作为 /meta 的唯一数据源，客户端表单据此动态渲染。 */
 export function getEngineMeta() {
   return {
-    // layerOrder = 固定九层顺序（UI 组织用）；layers = 合法层集合（校验与旧消费方用）。
+    // layerOrder = 固定九层顺序（UI 组织用）；layers = 合法层集合（校验与旧消费方用）；
+    // injectionLayers = 其中 inject-text 真正可注入的八层（tool-pipeline 只作规则级展示归属）。
     layerOrder: [...LAYER_ORDER],
     layers: [...KNOWN_LAYERS].sort(),
+    injectionLayers: [...INJECTION_LAYERS],
     strategies: [...KNOWN_STRATEGIES].sort(),
     slotKinds: [...KNOWN_SLOT_KINDS].sort(),
     positions: [...KNOWN_POSITIONS].sort(),
@@ -403,6 +425,18 @@ export function assertLlmCallPatch(patch, label) {
   }
 }
 
+/**
+ * `replace=true` 的不变量：整体替换会丢掉下游 provider/model，缺一即不可用。
+ * **两个入口共用这一份**——`agent-request` 层的 `params`（{@link normalizeLayerParams}）与
+ * `request-params` 动作（`actions/request-params.mjs`）；报错前缀由 `label` 承载。
+ * @param label 已拼好的报错前缀（`<config label>.params.patch` 或 `action <id>.patch`）
+ */
+export function assertReplacePatch(patch, replace, label) {
+  if (replace === true && (!patch?.provider || !patch?.model)) {
+    throw new TypeError(`${label} requires provider and model when replace=true`)
+  }
+}
+
 function normalizeLayerParams(raw, layer, label) {
   if (raw === undefined || raw === null) return {}
   if (typeof raw !== 'object' || Array.isArray(raw)) throw new TypeError(`${label}.params must be an object`)
@@ -422,9 +456,7 @@ function normalizeLayerParams(raw, layer, label) {
   if (layer === 'agent-request') {
     const patch = params.patch ?? {}
     assertLlmCallPatch(patch, `${label}.params.patch`)
-    if (params.replace === true && (!patch.provider || !patch.model)) {
-      throw new TypeError(`${label}.params.patch requires provider and model when replace=true`)
-    }
+    assertReplacePatch(patch, params.replace, `${label}.params.patch`)
   }
   return params
 }

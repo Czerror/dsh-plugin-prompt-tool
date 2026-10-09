@@ -1,5 +1,6 @@
 import { MAX_TRACKED_SESSIONS } from '../shared.mjs'
 import { subjectOf } from '../conditions/subject.mjs'
+import { INJECTION_CHANNELS } from '../schema.mjs'
 import { ACTION_KINDS } from './catalog.mjs'
 
 export function channelBinder(ctx, kind, plugin, prepend) {
@@ -47,21 +48,13 @@ export function actionExecutionPoint(action) {
       : { channel: 'tools/post-execute', phase: 'after-next' }
   }
   if (action.kind === 'inject-text') {
+    // 层→注册点由 schema 的 LAYER_DEFINITIONS 派生（`INJECTION_CHANNELS`），不在此另写层表。
     const layer = action.config?.layer
-    const channel = {
-      'pre-step': 'agent/pre-step',
-      'system-section': 'system-prompt/assemble',
-      'runtime-context': 'system-prompt/assemble',
-      'agent-request': 'agent/request',
-      'llm-stream': 'llm/stream',
-      'turn-stop': 'agent/turn-stopping',
-      'subagent-start': 'subagent/start',
-      'subagent-end': 'subagent/end',
-    }[layer]
-    if (channel === undefined) {
-      throw new TypeError(`inject-text layer ${JSON.stringify(layer)} has no single trigger channel; tool-pipeline uses separate decision actions`)
+    const point = INJECTION_CHANNELS[layer]
+    if (point === undefined) {
+      throw new TypeError(`inject-text layer ${JSON.stringify(layer)} has no single trigger channel — 该层在工具链上不可注入，请改用 decision / append-context 动作`)
     }
-    return { channel, phase: ['pre-step', 'agent-request'].includes(layer) ? 'after-next' : 'before-next' }
+    return point
   }
   const channel = ACTION_KINDS[action.kind].events[0]
   return { channel, phase: NEXT_FREE_CHANNELS.has(channel) ? 'before-next' : 'after-next' }

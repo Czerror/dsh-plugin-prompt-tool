@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import { fileURLToPath } from 'node:url'
 import { applyPromptConfigs } from '../../engine/executor.mjs'
 import { createPromptConfigs as createPromptConfigsCore } from '../../engine/schema.mjs'
+import { registerAction } from '../../engine/actions.mjs'
 
 /** 引擎测试夹具使用包内 engine 目录作为自定义策略探测目录;内置策略不依赖 strategyDir。 */
 const STRATEGY_DIR = new URL('../../engine/', import.meta.url).href
@@ -252,12 +253,14 @@ test('llm-stream 提示词配置 replace 模式用提示词配置文本替代模
   assert.deepEqual(passed, ['PASSED'])
 })
 
-test('tool-pipeline 提示词配置接入 pre/post 官方事件（execute 为透传包装点，未注册空壳）', async () => {
-  const { listeners } = makeWiredHarness([{
-    id: 'tp', layer: 'tool-pipeline', strategy: 'static', text: 'REPLACED',
-    params: { toolNames: 'bash', preDecision: 'deny', denyReason: 'no bash', postAction: 'replace' },
-  }])
-  const exec = { name: 'bash', agent: { session: { header: { delegationDepth: 0 } }, options: { model: 'deepseek-v4-pro-8013' } } }
+test('decision 动作承担工具链：pre 定向裁决 allow/deny、post 定向替换结果', async () => {
+  // 原用例走 inject-text 的 tool-pipeline 配置；该层已无注入通道（规则路径与公开动作路径
+  // 一致拒绝，见 test/engine/rules.test.mjs），工具链行为由 decision 动作承担同一组通道与定向。
+  const listeners = new Map()
+  const ctx = { on(name, handler) { listeners.set(name, handler); return () => listeners.delete(name) }, get() {}, logger: { warn() {} } }
+  registerAction(ctx, { id: 'tp', kind: 'decision', phase: 'pre', decision: 'deny', reason: 'no bash', toolNames: 'bash' })
+  registerAction(ctx, { id: 'tp-post', kind: 'decision', phase: 'post', action: 'replace', text: 'REPLACED', toolNames: 'bash' })
+  const exec = { name: 'bash', agent: { session: { header: { delegationDepth: 0 } }, options: { model: 'deepseek-v4-pro-8013' } }, arguments: { command: 'ls' } }
   const other = { name: 'read', agent: exec.agent }
 
   const pre = listeners.get('tools/pre-execute')
@@ -459,7 +462,8 @@ test('createPromptConfigs：templateFile 越出预设根 fail loud（防任意�
 
 test('wireLayers 只装配实际声明的插入点：未声明 seam 无监听器', () => {
   // 只声明 pre-step：applyPromptConfigs 应只注册 pre-step 相关监听，
-  // 其余五个非 pre-step 层级（agent/request / llm/stream / tools/* / system-prompt）无监听器。
+  // 其余非 pre-step 层级（agent/request / llm/stream / tools/* / system-prompt）无监听器。
+  // tools/* 的监听只可能来自 decision / append-context 动作，不由注入配置产生。
   const listeners = []
   const ctx = {
     on(name) { listeners.push(name) },

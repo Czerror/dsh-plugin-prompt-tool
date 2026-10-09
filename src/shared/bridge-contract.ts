@@ -362,6 +362,12 @@ export interface LayerContract {
 export interface EngineMetaLayerContract {
   /** 九层固定顺序（引擎 LAYER_ORDER，host 不另写一份）。 */
   layerOrder: readonly EngineLayer[]
+  /**
+   * `inject-text` 真正可绑定的八层（引擎 `injectionLayers`，九层去掉无注入通道的 `tool-pipeline`）：
+   * 动作的 `config.layer` 下拉用它；`layerOrder` / `layers` 保持九层，供视图筛选与规则级 `layer`。
+   * bootstrap 之前的空加载快照不含本键，与同为空的 `layers` 是同一档退化。
+   */
+  injectionLayers?: readonly EngineLayer[]
   /** 编辑组主归属总表（能力组 id = 能力 id）；前端据此组织九层卡片。 */
   editorGroups: readonly EngineEditorGroup[]
   /** 每层真实可编辑的行为契约，来自独立可分发的 engine/schema.mjs。 */

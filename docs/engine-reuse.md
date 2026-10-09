@@ -86,6 +86,12 @@
 3. 需要按预设参数化时，参考本仓库 `manifest.ts` 的
    `buildModuleConfigsFromParams`（params 扁平键 → 模块行 config 对象合并，
    取代旧 `__TOKEN__` 文本占位符）与 `applyModuleConfigs`（行级/嵌套合并）。
+4. 破坏性变化：`inject-text` 不再有 `tool-pipeline` 通道（`schema.mjs` 的 `LAYER_DEFINITIONS`
+   里该层没有 `channel`）。经 `prepareAction` / `registerAction` 绑定 `config.layer: tool-pipeline`
+   的用法在**准备期显式报错**（与规则路径 `compileRules` 同一句，均由 `actionExecutionPoint` 抛出），
+   不再静默无操作；工具链的裁决与结果改写改用 `decision`、追加上下文改用 `append-context` 动作。
+   可注入层清单看 `getEngineMeta().injectionLayers`（八层）；`layerOrder` / `layers` 仍是九层，
+   供视图筛选与规则级 `layer` 使用。
 
 ## 统一入口与模块职责
 
@@ -223,7 +229,8 @@ id 不同、却声明同一个 sourceKind 的卡同样会经 kind 通道互相�
 （2026-09-20）」一节）；旧消息的 kind 仍是 `plugin:<id>`，kind 通道继续命中。
 
 `getRuleEditorMeta()` 从实际条件、动作目录派生可序列化选项；`getEngineMeta()` 提供有效
-层和内容策略目录。新动作种子是可编译的中性空内容、空 patch 或空名单，不替用户选业务值。
+层和内容策略目录，其中 `injectionLayers` 是 `inject-text` 真正可绑定的八层（`layers` /
+`layerOrder` 仍是九层：`tool-pipeline` 只作规则级展示归属，没有注入通道）。新动作种子是可编译的中性空内容、空 patch 或空名单，不替用户选业务值。
 `custom-fallback` 不再发布，也没有可执行兼容分支，必须离线转为显式 `anchor` 条件和
 `anchor-notice` 内容；条件未声明 `fallbackAfter` 时不启用轮数兜底。
 
@@ -596,7 +603,7 @@ rules:
   npm 的版本列表与 dist-tags，不能把名字为 latest 的旧标签误当成更新版本。
 - 本地新增模块放 `engine/compositions/source/local/<name>.yml`，直接装配；
 - 规则通过 `compileRules` 校验；真实 channel/phase 从动作能力派生。`channelOrder` 缺省来自规则 configOrder（无配置时按规则序号定位）；同卡同点冲突值拒绝。after-next 先调用一次宿主 next，再按该时刻状态判断，压缩后读取新 epoch。
-- 原生动作经 `prepareAction` 校验；注入整批编译共用动作选项验证，避免破坏 ST 变量帧。固定注册效果、非法身份、互斥冲突和不支持的选项在保存/物化前拒绝。
+- 原生动作经 `prepareAction` 校验；注入整批编译共用动作选项验证，避免破坏 ST 变量帧。固定注册效果、非法身份、互斥冲突和不支持的选项在保存/物化前拒绝。`inject-text` 的准备期同时校验层通道：没有通道的层（`tool-pipeline`）当场报错，不再静默不注册。
 - 工具名单的 `allow` 与 `deny` 互斥。仅主会话的 guard 不安装会传播到子代理的 restrict；受众仍在执行 guard 内校验。动作次数预算只在目标匹配并产生效果前消费，非目标工具和被阻止的结果不消耗额度。
 - 用户目录刷新：`pnpm rematerialize:presets` 按完整 module.yml 恢复 rules/ 并清理已退役产物，保留用户资产，`--dry-run` 只读。原「预设内嵌 skills 漂移比对 / `--refresh-skills`」已随该机制退场删除。
 - 交付验证：从隔离临时 cwd 执行 `pnpm --dir $Repo typecheck`、`lint`、`test`、`build`，最后 `git -C $Repo diff --check`。重点证据包括 rules、business-defaults、真实 agent-assembly 与 rules-bridge-safety 测试；文档 YAML 示例也应通过 compileRules。

@@ -4,6 +4,7 @@ import { Context } from '@deepseek-ai/cordis'
 import { createScope } from '@deepseek-ai/dsh-scope'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import { compileRules, getRuleEditorMeta, isFixedRegistration } from '../../engine/rule-spec.mjs'
+import { prepareAction } from '../../engine/actions.mjs'
 import { mountRuleSources } from '../../engine/rule-runtime.mjs'
 import { WARN_ONCE_LIMIT, createWarnOnce } from '../../engine/shared.mjs'
 import { ruleFrame, ruleMatches, actionMatches } from '../../engine/conditions/evaluation.mjs'
@@ -1016,6 +1017,16 @@ test('动作声明白名单：未知键、对象形态 match 与带 kind 的分�
   assert.equal(compileRules([{ id: 'req', then: [
     { id: 'r', kind: 'request-params', replace: true, patch: { provider: 'deepseek', model: 'deepseek-pro' } },
   ] }]).length, 1)
+  // 关键拒绝：replace 非布尔今天静默退化成「只合并 patch」（`=== true` 才整体替换，与 config 层对称）。
+  for (const value of ['yes', 1, null]) {
+    assert.throws(() => compileRules([{ id: 'req', then: [
+      { id: 'r', kind: 'request-params', replace: value, patch: { maxTokens: 10 } },
+    ] }]), /r\.replace must be a boolean \(省略 = false\)/)
+  }
+  // 同一份 `assertReplacePatch` 也服务 config 层：inject-text 的 agent-request 配置文案逐字不变。
+  assert.throws(() => compileRules([{ id: 'cfg', then: [
+    { id: 'a', kind: 'inject-text', config: { id: 'a', layer: 'agent-request', strategy: 'static', params: { replace: true, patch: {} } } },
+  ] }]), /configs\[0\]\.params\.patch requires provider and model when replace=true/)
   // 关键拒绝：inject-text.config 的未知键（同一份提示词配置白名单）。
   assert.throws(() => compileRules([{ id: 'r', then: [textAction('a', 'A', { typoKey: 1 })] }]),
     /action a config: unknown config key\(s\) typoKey — allowed keys: .*text/)
@@ -1040,6 +1051,24 @@ test('动作声明白名单：未知键、对象形态 match 与带 kind 的分�
     const node = { id: 'a', kind: 'decision', phase: 'pre', decision: 'deny', [key]: key === 'if' ? { scope: { audience: 'main' } } : [] }
     assert.throws(() => compileRules([{ id: 'g', then: [node] }]), /action a 写了 .*分支必须写成无 `kind` 的节点/)
   }
+})
+
+test('T16：inject-text 在 tool-pipeline 层不可注入——规则路径与公开动作路径同一句拒绝', () => {
+  const messageOf = (fn) => {
+    try {
+      fn()
+      return undefined
+    } catch (error) {
+      return String(error?.message ?? error)
+    }
+  }
+  const action = { id: 'tp', kind: 'inject-text', config: { id: 'tp', layer: 'tool-pipeline', strategy: 'static', text: 'X' } }
+  // 规则路径此前只有声明路径（trigger-spec）的断言；这里同时锁住两条公开路径的文案同源：
+  // 判据只有 `actionExecutionPoint` 一处（层清单派生自 schema 的 LAYER_DEFINITIONS）。
+  const viaRules = messageOf(() => compileRules([{ id: 'rules-path', then: [action] }]))
+  const viaAction = messageOf(() => prepareAction(action))
+  assert.match(viaRules ?? '', /inject-text layer "tool-pipeline" has no single trigger channel — 该层在工具链上不可注入，请改用 decision \/ append-context 动作/)
+  assert.equal(viaAction, viaRules, '两条公开路径共用 actionExecutionPoint 的同一句拒绝')
 })
 
 test('F27：complete / suppressRuntimeContext 只属于 system-section 层', () => {

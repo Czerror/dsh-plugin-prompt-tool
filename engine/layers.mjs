@@ -1,25 +1,23 @@
 /**
- * layers — 非 pre-step 的五个官方层级接线。
+ * layers — 非 pre-step 的官方层级接线。
  * 所有注册都只作用于本插件提示词配置;单条失败 warnOnce 后继续。
  */
 
 import {
   MAX_TRACKED_SESSIONS,
-  extractText,
   getService,
   isDelegated,
   keepDisposer,
   matchesModel,
   newMessageId,
-  parseToolNames,
   sessionState,
 } from './shared.mjs'
 import { KNOWN_STRATEGIES } from './schema.mjs'
 import { interpolateVariables, stripUnresolvedRefs, RUNTIME_FACTS, runtimeFactValue } from './interpolate.mjs'
 import { getSessionVar, sessionVarsSnapshot } from './session-vars.mjs'
-import { conditionHit, lastAssistantText, subagentTextOf, toolArgsText } from './condition.mjs'
+import { conditionHit, lastAssistantText, subagentTextOf } from './condition.mjs'
 import { compareConfigSequence, compareTextPlacement } from './order.mjs'
-import { ruleFrame, ruleMatches, actionMatches } from './conditions/evaluation.mjs'
+import { ruleFrame, actionMatches } from './conditions/evaluation.mjs'
 
 const name = 'prompt-config-engine'
 // 同一宿主会话共享投递账本，避免预设作用域重挂后重投同一次结束通知。
@@ -151,7 +149,7 @@ export function matchesAgentScope(config, agent) {
 /**
  * 官方插值通道（system-section / runtime-context）出口清洗：本项目解析后仍残留的
  * 引用一律剥离，官方严格插值因此看不到未注册引用（既不抛错也不留字面）。
- * 只在本项目的宽容解析之后调用；其他层（pre-step / agent-request / tool-pipeline）
+ * 只在本项目的宽容解析之后调用；其他层（pre-step / agent-request）
  * 不经官方插值，保持原有宽容语义。
  */
 function officialChannelText(text, label, registry, warnOnce) {
@@ -467,52 +465,6 @@ function layerText(config, agent, warnOnce) {
   }
 }
 
-/** tool-pipeline:pre-execute 判定、execute 包装、post-execute 结果替换/阻断。 */
-function wireToolPipelines(ctx, configs, warnOnce, on) {
-  const disposers = []
-  for (const config of configs) {
-    const names = parseToolNames(config.params?.toolNames)
-    const matchesTool = (exec) => names.length === 0 || names.includes(exec?.name)
-    disposers.push(on('tools/pre-execute', async (exec, next, invocation) => {
-      try {
-        if (!ruleMatches(config.rule, invocation ?? ruleFrame('tools/pre-execute', [exec], warnOnce))) return next()
-        if (!matchesTool(exec) || !matchesAgentScope(config, exec?.agent)) return next()
-        if (!conditionHit(config, { argsText: toolArgsText(exec?.arguments) })) return next()
-        const decision = config.params?.preDecision ?? 'allow'
-        if (decision === 'allow') return next()
-        if (decision === 'deny') {
-          return { kind: 'deny', reason: String(config.params?.denyReason ?? `${config.name}: denied by prompt config`) }
-        }
-        if (decision === 'ask') return { kind: 'ask' }
-        return next()
-      } catch (error) {
-        warnOnce(`${name}: tool-pipeline(pre) config ${config.id} failed: ${String(error?.message ?? error)}`)
-        return next()
-      }
-    }))
-    disposers.push(on('tools/post-execute', async (exec, result, next, invocation) => {
-      try {
-        if (!ruleMatches(config.rule, invocation ?? ruleFrame('tools/post-execute', [exec, result], warnOnce))) return next()
-        if (!matchesTool(exec) || !matchesAgentScope(config, exec?.agent)) return next()
-        if (!conditionHit(config, { argsText: toolArgsText(exec?.arguments), resultText: extractText(result) })) return next()
-        const action = config.params?.postAction ?? 'accept'
-        if (action === 'accept') return next()
-        if (action === 'replace' && config.texts.length > 0) {
-          return { kind: 'accept', content: [{ type: 'text', text: config.texts.join('\n\n') }] }
-        }
-        if (action === 'block') {
-          return { kind: 'block', feedback: [{ type: 'text', text: config.texts.length > 0 ? config.texts.join('\n\n') : `${config.name}: blocked by prompt config` }] }
-        }
-        return next()
-      } catch (error) {
-        warnOnce(`${name}: tool-pipeline(post) config ${config.id} failed: ${String(error?.message ?? error)}`)
-        return next()
-      }
-    }))
-  }
-  return disposers
-}
-
 /**
  * 轮次停止层（`turn-stop` 与续跑动作）的续跑上限：**每个来源（模块）**每轮 1 次、
  * 每会话 3 次，均为引擎常量。不暴露为配置——强制续跑失控会把会话卡在停不下来的
@@ -758,7 +710,6 @@ export function wireLayers(ctx, configs, warnOnce, options = {}) {
     wireRuleTextContributions(ctx, conditional, registry, warnOnce, keep, on),
     wireAgentRequests(ctx, configs.filter((config) => config.layer === 'agent-request'), warnOnce, on),
     wireLlmStreams(ctx, configs.filter((config) => config.layer === 'llm-stream'), warnOnce, on),
-    wireToolPipelines(ctx, configs.filter((config) => config.layer === 'tool-pipeline'), warnOnce, on),
     wireTurnStops(ctx, configs.filter((config) => config.layer === 'turn-stop'), warnOnce, on, options.turnStopBudgets),
     wireSubagentEvents(ctx, configs.filter((config) => config.layer === 'subagent-start' || config.layer === 'subagent-end'), warnOnce, on),
     owned,

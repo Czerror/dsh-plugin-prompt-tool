@@ -174,6 +174,10 @@ test('契约：/meta 与 /bootstrap 同源下发 layerOrder 与 editorGroups，�
   assert.deepEqual([...LAYER_ORDER], engineMeta.layerOrder, 'LAYER_ORDER 必须是九层固定顺序')
   assert.deepEqual([...ENGINE_LAYER_ORDER], engineMeta.layerOrder, '前端退化默认必须与引擎层序同源')
   assert.deepEqual([...engineMeta.layers], [...LAYER_ORDER].sort(), 'layers 仍是排序后的合法集合（旧消费方不变）')
+  // 两份层清单：九层给视图筛选与规则级 layer，八层（去 tool-pipeline）才可注入。
+  assert.deepEqual([...engineMeta.injectionLayers], [...LAYER_ORDER].filter((layer) => layer !== 'tool-pipeline'))
+  assert.equal(engineMeta.injectionLayers.includes('tool-pipeline'), false, '工具链层没有 inject-text 通道')
+  assert.deepEqual([...engineMeta.layers].filter((layer) => !engineMeta.injectionLayers.includes(layer)), ['tool-pipeline'], '两份清单的差集只有工具链层')
 
   const handlers = register()
   const metaRes = fakeRes()
@@ -181,6 +185,7 @@ test('契约：/meta 与 /bootstrap 同源下发 layerOrder 与 editorGroups，�
   assert.equal(metaRes.status, 200)
   const meta = JSON.parse(metaRes.body).value.meta
   assert.deepEqual(meta.layerOrder, engineMeta.layerOrder)
+  assert.deepEqual(meta.injectionLayers, engineMeta.injectionLayers, '/meta 下发的可注入层与 schema 同源')
   assert.ok(Array.isArray(meta.editorGroups) && meta.editorGroups.length > 0)
   // 同源：host 下发的编辑组与共享契约逐条一致（含能力组）。
   assert.deepEqual(meta.editorGroups.map(({ id }) => id), ENGINE_EDITOR_GROUP_MAP.map(({ id }) => id))
@@ -210,7 +215,7 @@ test('契约：/meta 与 /bootstrap 同源下发 layerOrder 与 editorGroups，�
   await handlers.get(SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.bootstrap)(fakeReq(), bootRes)
   assert.equal(bootRes.status, 200)
   const boot = JSON.parse(bootRes.body).meta.meta
-  assertMetaSameSource(boot, meta, ['layerOrder', 'editorGroups', 'layerContracts'])
+  assertMetaSameSource(boot, meta, ['layerOrder', 'injectionLayers', 'editorGroups', 'layerContracts'])
   assert.deepEqual(meta.layerContracts, getEngineMeta().layerContracts)
   assert.equal(Object.keys(meta.layerContracts).length, 9)
 })

@@ -187,7 +187,7 @@ persona:
 
 > 根目录 [module.yml](module.yml) 覆盖 4 个公开共享参数与九层规则。`pnpm rebuild:preset-template` 从权威契约重建；规则默认关闭，共享参数按需取消注释。
 
-## 提示词配置（九个官方插入点）
+## 提示词配置（八个可注入层）
 
 | `layer` | 官方通道 | 关键参数 |
 |---|---|---|
@@ -196,12 +196,12 @@ persona:
 | `runtime-context` | `ctx.systemPrompt.context` 动态快照 | `order / text / variables / params.contextName` |
 | `agent-request` | `agent/request`（LlmCallConfig） | `params.patch`（浅合并）/ `params.replace`（整体替换） |
 | `llm-stream` | `llm/stream`（流包装） | `params.mode=pass\|replace` |
-| `tool-pipeline` | `tools/*`（pre/execute/post） | `params.toolNames`、`preDecision=allow\|deny\|ask`、`postAction=accept\|replace\|block` |
+| `tool-pipeline` | `tools/*`（pre/post）——**无注入通道** | 只作规则级展示归属：工具链的裁决用 `decision`、追加上下文用 `append-context` 动作 |
 | `turn-stop` | `agent/turn-stopping` | 条件命中后通过 steer 继续；每个来源（模块）每轮1次、每会话3次上限 |
 | `subagent-start` | `subagent/start` + `Agent.inject` | 子代理事件匹配与注入文本；模型/深度在卡内共享设置 |
 | `subagent-end` | `subagent/end` + 可选 `Agent.inject` | `params.action=observe\|inject-main`，后者投递到所属主会话 |
 
-九个插入点彼此独立，没有跨层全局运行顺序。模块配置在同一插入点、位置内按 `configOrder` 序号排列；`system-section` 与 `runtime-context` 的 `order` 保留官方定位语义。
+九个插入点彼此独立，没有跨层全局运行顺序；其中可注入的是八个层——`tool-pipeline` 没有 `inject-text` 通道，工具链行为由 `decision` / `append-context` 动作承担，写错层会在保存与装配前报错。模块配置在同一插入点、位置内按 `configOrder` 序号排列；`system-section` 与 `runtime-context` 的 `order` 保留官方定位语义。
 UI / 写盘按上表分组；这是展示顺序，不是模型提示词优先级。详细支持字段、限制与官方依据见[九层对照](docs/injection-point-contracts.md)。
 模型实际收到的提示词文本顺序更接近 `system-section → runtime-context → pre-step`；`agent-request` / `llm-stream` / `tool-pipeline` 是控制通道。
 

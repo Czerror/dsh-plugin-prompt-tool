@@ -43,7 +43,10 @@ export function RuleParameterFields(props: FieldContext & { value: Record<string
     const fieldKey = props.fieldKey + ':' + key, label = FIELD_LABELS[key] === undefined ? triggerLabel(t, key) : t(FIELD_LABELS[key])
     const patch = (next: unknown): void => { const value = { ...props.value }; if (next === undefined) delete value[key]; else value[key] = next; props.onChange(value) }
     const requestField = props.requestPatch && props.fieldKey.endsWith(':patch')
-    const enums = key === 'layer' ? props.engineMeta?.layers : key === 'strategy' ? props.engineMeta?.strategies
+    // 动作的 config.layer 只能选引擎真正可注入的八层（tool-pipeline 只作规则级展示归属）；
+    // 其余 layer 下拉（视图筛选等）仍是九层。`:config` 前缀只有 inject-text 会产生。
+    const layerOptions = props.fieldKey.endsWith(':config') ? props.engineMeta?.injectionLayers : props.engineMeta?.layers
+    const enums = key === 'layer' ? layerOptions : key === 'strategy' ? props.engineMeta?.strategies
       : key === 'position' ? props.engineMeta?.positions : key === 'audience' ? ['', ...(props.engineMeta?.audienceModes ?? [])]
         : key === 'modelScope' ? props.engineMeta?.modelScopes : key === 'subject' ? props.engineMeta?.subjects
           : key === 'mergeMode' ? props.engineMeta?.mergeModes : key === 'dedupe' ? props.engineMeta?.dedupes

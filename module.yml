@@ -274,7 +274,7 @@ rules:
           params:
             mode: pass
     enabled: false
-  # 60-tool-pipeline.yml — tools/* 层：按 order 注册，params.toolNames 与 preDecision / postAction 控制；subject / match 可选，命中才裁决。
+  # 60-tool-pipeline.yml — 工具链层：只作规则级展示归属（无 inject-text 通道）——工具链的裁决与追加上下文由 decision / append-context 动作承担；subject / match 可选，命中才裁决。
   # 规则条件放 if，动作放 then；动作执行点由引擎目录验证，不建立跨层全局顺序。
   # 注入动作内容策略：static。
   - id: example-tool-pipeline
@@ -327,7 +327,7 @@ rules:
             - web_search
             - web_fetch
         reason: 当前模块不开放联网工具
-  # 63-append-context.yml — tools/* 层：按 order 注册，params.toolNames 与 preDecision / postAction 控制；subject / match 可选，命中才裁决。
+  # 63-append-context.yml — 工具链层：只作规则级展示归属（无 inject-text 通道）——工具链的裁决与追加上下文由 decision / append-context 动作承担；subject / match 可选，命中才裁决。
   # 规则条件放 if，动作放 then；动作执行点由引擎目录验证，不建立跨层全局顺序。
   # 注入动作内容策略：static。
   - id: example-append-context
