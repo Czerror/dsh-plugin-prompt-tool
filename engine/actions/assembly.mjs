@@ -73,9 +73,6 @@ export function prepareAssembly(action, plugin) {
   // `filter(白名单)`，而 remove 是黑名单——未列名的第三方/晚到段不会被它删掉。
   // 两种语义**互斥**：同时声明即挂载期 fail loud，而不是静默二选一。
   const sectionsKeep = NAME_LIST.parse(target.sections?.keep, plugin, 'assembly.sections.keep')
-  if (sectionsKeep !== undefined && sectionsRemove !== undefined) {
-    throw new TypeError(`${plugin}: assembly target.sections cannot combine keep with remove — 一种是白名单、一种是黑名单，同时声明语义不明`)
-  }
   const contextsAdd = target.contexts?.add
   const contextsRemove = NAME_LIST.parse(target.contexts?.remove, plugin, 'assembly.contexts.remove')
   // 非布尔 clear 也一并拒：旧判据 `=== true` 会把 `'true'` / `1` 静默当 false，clear 整体失效。
@@ -93,9 +90,13 @@ export function prepareAssembly(action, plugin) {
     }
   }
   // clear 与 add/remove 并存时旧实现静默丢掉 add/remove（零告警）；与 sections 的 keep+remove
-  // 是同一类不可解释组合，同为挂载期 fail loud。放在形状校验之后：`add: {}` 报形状错而不是互斥错。
+  // 是同一类不可解释组合，同为挂载期 fail loud。**两处判定都在形状校验之后**：`add: {}` /
+  // `add: null` 报形状错而不是互斥错。
   if (contextsClear && (contextsAdd !== undefined || contextsRemove !== undefined)) {
     throw new TypeError(`${plugin}: assembly.contexts.clear cannot combine with add or remove — clear 已清空全部条目，同时声明语义不明`)
+  }
+  if (sectionsKeep !== undefined && sectionsRemove !== undefined) {
+    throw new TypeError(`${plugin}: assembly.sections cannot combine keep with remove — 一种是白名单、一种是黑名单，同时声明语义不明`)
   }
   return (_ctx, { warnOnce, on, collect, take }) => collect(on('system-prompt/assemble', async (assembly, context, next) => {
     // Downstream errors propagate untouched; only this action's own logic is guarded.

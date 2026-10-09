@@ -120,6 +120,11 @@ test('动作声明 fail loud：名单形状错误、名单为空、名单命名 
   ]) assert.throws(() => registerAction(ctx, { kind: 'assembly', id: 'x', target }), /assembly\.contexts\.clear cannot combine with add or remove/)
   assert.throws(() => registerAction(ctx, { kind: 'assembly', id: 'x', target: { contexts: { clear: true, add: {} } } }), /assembly\.contexts\.add must be an array/)
   assert.throws(() => registerAction(ctx, { kind: 'assembly', id: 'x', target: { contexts: { clear: 'true' } } }), /assembly\.contexts\.clear must be boolean/)
+  // sections 同纪律（前缀也不再用 `assembly target.sections`）：互斥判定排在形状校验之后，
+  // 所以 `add: {}` / `add: null` 报形状错而不是互斥错。
+  assert.throws(() => registerAction(ctx, { kind: 'assembly', id: 'x', target: { sections: { keep: ['a'], remove: ['b'] } } }), /assembly\.sections cannot combine keep with remove/)
+  assert.throws(() => registerAction(ctx, { kind: 'assembly', id: 'x', target: { sections: { keep: ['a'], remove: ['b'], add: {} } } }), /assembly\.sections\.add must be an array/)
+  assert.throws(() => registerAction(ctx, { kind: 'assembly', id: 'x', target: { sections: { keep: ['a'], remove: ['b'], add: null } } }), /assembly\.sections\.add must be an array/)
   // allowFrom 的声明期形状校验（搬自 (2e)，语义不变）。
   assert.throws(() => registerAction(ctx, { kind: 'assembly', id: 'x', target: { tools: { allow: ['a'], allowFrom: ['dev_tool_search'] } } }), /allowFrom must be an object/)
   assert.throws(() => registerAction(ctx, { kind: 'assembly', id: 'x', target: { tools: { allow: ['a'], allowFrom: { key: 'k' } } } }), /allowFrom\.tool must be a string/)
