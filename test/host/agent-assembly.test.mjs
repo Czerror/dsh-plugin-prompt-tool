@@ -41,9 +41,9 @@ async function liveAssembly(t, enabledModules) {
   const warnings = []
   const runtime = createAgentAssembly(root, { moduleRoot, enabledModules, warn: (message) => warnings.push(message) })
   t.after(async () => { await runtime.dispose(); await root.fiber.dispose() })
-  const makeAgent = async (id, depth = 0) => {
+  const makeAgent = async (id, depth = 0, surface) => {
     const events = []
-    const agent = { id, options: {}, session: { id, header: { delegationDepth: depth }, snapshotEvents: () => events } }
+    const agent = { id, options: {}, session: { id, header: { delegationDepth: depth }, snapshotEvents: () => events, ...(surface === undefined ? {} : { surface }) } }
     agent.ctx = createScope(root, agent).ctx
     agents.push(agent)
     await root.serial(scopeTarget(agent, agent), 'agent/created', { agent, source: 'startup' })
@@ -526,6 +526,52 @@ test('kind 通道的压制行为：同模块同身份算已投递，无模块维
   assert.deepEqual(texts(others), ['USER', 'SAME-A', 'SAME-B', 'LEGACY'], '别的模块的同 kind 消息不压制本模块')
   await h.runtime.dispose()
   assert.deepEqual(h.warnings, [], '单模块内撞身份不告警：告警只报跨模块那一笔账')
+})
+
+test('端到端：真实装配下「注入 → 压缩 → 再判」按当前上下文重新注入', async (t) => {
+  // 单点判据（`engine/executor.mjs` 的 `currentEvents` / `contextStamp`）已由
+  // `test/engine/prompt-config-engine.test.mjs` 的 T5 三条锁定；这里补的是**整条链路**：
+  // 模块目录 → `compileRules` → 真实挂载 → pre-step 协调器 → 注入。压缩用宿主 surface 的
+  // 真实形状（`packages/core/session/src/surface.ts:563-585`）：只有 replace 会移除节点，
+  // 而成功压缩就是一次 replace（摘要替身是一条 `user/message`），append 只追加。
+  writePreset('e2e-compact', {
+    modules: ['prompt-config-engine'],
+    promptConfigs: [{ id: 'e2e-notice', text: 'E2E-NOTICE', dedupe: 'session', position: 'after-user' }],
+  })
+  const h = await liveAssembly(t, () => ['e2e-compact'])
+  const nodes = []
+  let replaceGeneration = 0
+  const agent = await h.makeAgent('e2e-compact-agent', 0, { get nodes() { return nodes }, get replaceGeneration() { return replaceGeneration } })
+  await h.runtime.settled()
+  const texts = (result) => result.messages.flatMap(message => message.content.map(block => block.text))
+  const owned = (result) => result.messages.filter(message => message.source?.moduleId === 'e2e-compact')
+  const record = (event) => {
+    const events = agent.session.snapshotEvents()
+    events.push(event)
+    nodes.push(events.length - 1)
+    h.root.emit(scopeTarget(agent.session, agent), 'session/event', agent.session, event)
+  }
+  const admit = (message) => record({ type: 'user/message', seq: agent.session.snapshotEvents().length, data: { message } })
+  const compact = (summary) => {
+    nodes.length = 0
+    // 摘要替身是一条 `user/message`（宿主压缩的落盘形状），`compaction/end` 是 log-only 的复位信号。
+    record({ type: 'compaction/end', seq: agent.session.snapshotEvents().length, data: {} })
+    record({ type: 'user/message', seq: agent.session.snapshotEvents().length, data: { message: summary } })
+    replaceGeneration += 1
+  }
+
+  const first = await h.inject(agent)
+  assert.deepEqual(texts(first), ['USER', 'E2E-NOTICE'], '首轮按真实装配注入一次')
+  assert.deepEqual(owned(first).map(message => message.source.moduleId), ['e2e-compact'],
+    '模块维由 compileRules 的 moduleId 一路盖到注入消息')
+  for (const message of owned(first)) admit(message)
+  assert.deepEqual(texts(await h.inject(agent)), ['USER'], '还在当前可见上下文里 → 不再注入')
+
+  compact({ id: 'summary', role: 'user', content: [{ type: 'text', text: '摘要' }], source: { kind: 'agent-summary' } })
+  const after = await h.inject(agent)
+  assert.deepEqual(owned(after).map(message => message.content[0].text), ['E2E-NOTICE'],
+    '被压缩遮蔽后按当前上下文重新注入（旧判据扫全量日志 → 仍判已投递，这条会红）')
+  assert.deepEqual(texts(after), ['USER', 'E2E-NOTICE'])
 })
 
 test('热更新：空启用表到多模块、配置启停与拒绝后重试都更新同一个 Agent，重复刷新不重复注入', async (t) => {
