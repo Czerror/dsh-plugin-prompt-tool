@@ -6,13 +6,18 @@ export const ACTION_DEGRADE = Object.freeze({
 })
 
 /**
- * 九类动作的声明：**合法事件通道** + **降级语义** + 触发时机。
+ * 九类动作的声明：**合法事件通道** + **降级语义** + 触发时机 + **声明字段**。
  * `events` 是动作允许注册的官方事件（注册到声明外的事件在挂载期 fail loud）；
- * `services` 是它允许触碰的宿主服务方法（同一纪律的文档面）。
+ * `services` 是它允许触碰的宿主服务方法（同一纪律的文档面）；
+ * `fields` 是该类动作自己的声明键（白名单写在这里**一份**，`rule-spec.mjs` 的未知键
+ * 检查从这里派生）。通用键 `id/kind/channelOrder/waterfallPosition/maxPerTurn` 由
+ * {@link ACTION_FIELDS} 统一补上；`if`/`then`/`else` 刻意不在名单里——带 `kind`
+ * 的动作写分支键会被编译期点名拒绝（`expandActions` 只认无 `kind` 的分支节点）。
  */
 export const ACTION_KINDS = Object.freeze({
   'inject-text': {
     title: '注入文本',
+    fields: ['config', 'options'],
     events: ['agent/pre-step', 'session/event', 'system-prompt/assemble', 'agent/request', 'llm/stream', 'tools/pre-execute', 'tools/post-execute', 'agent/turn-stopping', 'subagent/start', 'subagent/end'],
     services: ['systemPrompt.section', 'systemPrompt.context', 'systemPrompt.variable'],
     degrade: ACTION_DEGRADE.keep,
@@ -21,6 +26,7 @@ export const ACTION_KINDS = Object.freeze({
   },
   assembly: {
     title: '改装配',
+    fields: ['target', 'match'],
     events: ['system-prompt/assemble'],
     services: [],
     degrade: ACTION_DEGRADE.exposeAll,
@@ -29,6 +35,7 @@ export const ACTION_KINDS = Object.freeze({
   },
   decision: {
     title: '裁决',
+    fields: ['phase', 'decision', 'action', 'reason', 'text', 'toolNames', 'match'],
     events: ['tools/pre-execute', 'tools/post-execute'],
     services: [],
     degrade: ACTION_DEGRADE.keep,
@@ -37,6 +44,7 @@ export const ACTION_KINDS = Object.freeze({
   },
   'append-context': {
     title: '追加上下文与续跑',
+    fields: ['mode', 'text', 'match'],
     events: ['tools/post-execute', 'agent/turn-stopping'],
     services: [],
     degrade: ACTION_DEGRADE.keep,
@@ -45,6 +53,7 @@ export const ACTION_KINDS = Object.freeze({
   },
   guard: {
     title: '执行层 guard',
+    fields: ['mask', 'allow', 'deny', 'requireMatch', 'audience', 'includeSubagents', 'reason'],
     events: ['system-prompt/assemble'],
     services: ['tools.guard', 'tools.restrict'],
     degrade: ACTION_DEGRADE.silent,
@@ -53,6 +62,7 @@ export const ACTION_KINDS = Object.freeze({
   },
   'sdk-strip': {
     title: '裁 SDK 声明文本',
+    fields: ['mask', 'allow', 'deny', 'requireMatch'],
     events: ['system-prompt/assemble'],
     services: [],
     degrade: ACTION_DEGRADE.keep,
@@ -61,6 +71,7 @@ export const ACTION_KINDS = Object.freeze({
   },
   'request-params': {
     title: '改模型请求参数',
+    fields: ['patch', 'unset', 'replace'],
     events: ['agent/request'],
     services: [],
     degrade: ACTION_DEGRADE.keep,
@@ -69,6 +80,7 @@ export const ACTION_KINDS = Object.freeze({
   },
   'inbox-prepend': {
     title: '前置收件箱消息',
+    fields: ['target', 'text', 'match'],
     events: ['agent/inbox/inserted'],
     services: ['agent.inbox.prepend'],
     degrade: ACTION_DEGRADE.silent,
@@ -78,6 +90,7 @@ export const ACTION_KINDS = Object.freeze({
   },
   'pre-step-filter': {
     title: '过滤 pre-step 注入消息',
+    fields: ['sources', 'keepKinds', 'blockPlugins'],
     events: ['agent/pre-step'],
     services: [],
     degrade: ACTION_DEGRADE.exposeAll,
@@ -90,3 +103,19 @@ export const ACTION_KINDS = Object.freeze({
       + '**永不吞上下文**：异常一律返回未过滤的 decision（`expose-all`）。',
   },
 })
+
+/** 九类动作共用键：身份、同点定位与每轮预算。 */
+const COMMON_ACTION_FIELDS = ['id', 'kind', 'channelOrder', 'waterfallPosition', 'maxPerTurn']
+
+/** 每类动作的允许键集合（通用键 + `ACTION_KINDS[kind].fields`）。 */
+export const ACTION_FIELDS = Object.freeze(Object.fromEntries(
+  Object.entries(ACTION_KINDS).map(([kind, meta]) => [kind, new Set([...COMMON_ACTION_FIELDS, ...meta.fields])]),
+))
+
+/**
+ * 允许声明 `match` 判据的动作：它必须是**函数**（`prepare*` 里 `typeof action.match === 'function'`
+ * 才过滤）。对象形态在声明路径上恒命中——即「配了门却没拦住」，编译期拒绝。
+ */
+export const MATCH_ACTION_KINDS = new Set(
+  Object.entries(ACTION_KINDS).filter(([, meta]) => meta.fields.includes('match')).map(([kind]) => kind),
+)

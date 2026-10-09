@@ -401,7 +401,7 @@ wholeWords/selectiveLogic）单一权威。以下写入端共用：
 
 人设独立保存在 `module.yml.persona`：`prefix`、`suffix`、`complete`、`includeRuntimeContext`。模块配装通道在该 Agent 的 scope 注册独立命名的前后缀；`complete` 的唯一性与运行上下文抑制仍由官方接口裁决，不覆盖宿主原有的同名段。
 
-`/persona` 与 `/rules` 在写入前拒绝顶层独占与启用规则的独占注入并存；装配准备期再检查，覆盖手改定义和导入来源。`complete` 与 `suppressRuntimeContext` 属注册期能力，不能用动态 `if` 假装成每轮开关；字段的宿主语义和 disposer 保持。普通官方委派的 per-child persona 归宿主配置，插件模块的行参数不会因此改写它。
+`/persona` 与 `/rules` 在写入前拒绝顶层独占与启用规则的独占注入并存；装配准备期再检查，覆盖手改定义和导入来源。`system-section` 层的 `complete` 与 `suppressRuntimeContext` 属注册期能力，不能用动态 `if` 假装成每轮开关；其他层写同名键在编译期被拒绝（动作与配置的键白名单见 [engine-reuse.md](engine-reuse.md)）；字段的宿主语义和 disposer 保持。普通官方委派的 per-child persona 归宿主配置，插件模块的行参数不会因此改写它。
 
 注入动作的 `config.text` 表示单段正文，`config.texts` 表示多段正文，引擎统一为内部文本数组。SillyTavern 导入与角色卡并入沿用各自领域转换，正文不进入部署设置。重物化由 `materializeModule` 读取模块自身定义和内容文件后交给 writer，生成目录仍不是可编辑事实源。
 

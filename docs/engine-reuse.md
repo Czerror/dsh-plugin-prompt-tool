@@ -175,9 +175,18 @@
 - 事件型文本注入支持顶层 `if`，包括 system-section 与 runtime-context：官方同步
   provider 注册占位，真实 assembly 中按本次判定填充；取消、卸载和失败不留下过期正文。
 - `guard`、`complete` 和 `suppressRuntimeContext` 是固定注册效果，拒绝动态 `if` 与
-  waterfall 定位，不能用空文本模拟撤销注册。多个启用 complete，或与顶层 persona.complete
+  waterfall 定位，不能用空文本模拟撤销注册。其中 `complete` / `suppressRuntimeContext`
+  **只属于 `system-section` 层**：其他层写同名键既不注册成独占段、又会被独占计数误算，
+  编译期逐动作拒绝并点名层。多个启用 complete，或与顶层 persona.complete
   冲突，在候选编译时拒绝。`inject-text` / `guard` 不支持 `maxPerTurn`，错误选项不能静默忽略。
-- 通用动态判断只归规则级 `if`：注入动作不再声明受众、模型、晋升或文本匹配门；请求参数动作的受众和模型范围用该动作自己的 `when` 选项（`when.scope`）——那是**动作内部**字段，与规则字段 `if` 不是同一个东西。未声明模型范围等价于 `all`。固定 system-section 独占／抑制的 `audience` 仅表示静态注册目标，仍不接受动态条件。
+- 动作声明按**字段白名单**校验：九类动作各自的合法键见 `engine/actions/catalog.mjs`
+  的 `ACTION_KINDS[].fields`（通用键 `id`/`kind`/`channelOrder`/`waterfallPosition`/
+  `maxPerTurn` 另计），`inject-text.config` 的键由 `engine/schema.mjs` 的
+  `INJECT_CONFIG_FIELDS` 派生；拼错的键在保存与装配期报出动作 id 与允许键集合，
+  不再静默失效。动作级 `enabled`/`group`/`exclusive` 属于规则层，写了即报错（运行期
+  `rule-runtime.mjs` 会覆盖它们）。带 `kind` 的动作对象写 `if`/`then`/`else` 同样拒绝：
+  分支必须写成无 `kind` 的节点，否则 `expandActions` 会静默丢掉分支。
+- 通用动态判断只归规则级 `if`：注入动作不再声明受众、模型、晋升或文本匹配门；请求参数动作的受众与模型范围也用规则级 `if.scope`（动作级 `audience`/`modelScope` 只保留给旧声明迁移，非中性值一律报「move it to rule.if」）。未声明模型范围等价于 `all`。固定 system-section 独占／抑制的 `audience` 仅表示静态注册目标，仍不接受动态条件。
 - 旧单动作声明的判断在离线迁移时提升为规则级 `if`；只作用于某个动作的多动作条件不能提升后影响兄弟动作，须先明确拆分。
 - 同模块非空组中任一规则声明 `exclusive: true`，整组最多一条启用规则。编译器拒绝
   多启用冲突，不按排序选赢家；Host 显式激活一条卡时在一次原子事务中关闭同组其他卡。

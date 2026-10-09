@@ -27,7 +27,7 @@ import { compileCustomTool, validateCustomTools } from '../host/custom-tools.ts'
 import { recordRuleOutcome } from './rule-diagnostics.ts'
 
 // @ts-expect-error ESM 引擎源码随插件提供。
-import { compileRules } from '../../engine/rule-spec.mjs'
+import { compileRules, isFixedRegistration } from '../../engine/rule-spec.mjs'
 // @ts-expect-error ESM 引擎源码随插件提供。
 import { mountRuleSources } from '../../engine/rule-runtime.mjs'
 // @ts-expect-error 条件在真实挂载 scope 绑定；准备期只保留经过预检的定义快照。
@@ -144,10 +144,11 @@ export async function prepareAssembly(
   // 直接抛错（packages/core/system-prompt/src/index.ts:597-600），而写盘前的互斥门控只
   // 覆盖两个 bridge 端点——手改 module.yml、还原 ZIP/备份、导入包都能绕过。这里在装配前
   // 查一次，把「system 提示被清到只剩一段 / 组装失败」挡在 Agent 创建之前。
-  // 判据与写门控同源：`enabled !== false` 才参与，「独占」是 system-section 的 params.complete。
+  // 判据与写门控同源（引擎的 isFixedRegistration）：「独占」是 system-section 层的
+  // params.complete，只有它会被宿主当作唯一 system 段；其他层的同名键不是独占。
   const exclusiveConfigs = (spec.rules ?? []).filter(rule => rule.enabled !== false).flatMap(rule => rule.then.filter(action => {
     const config = action.config as { params?: { complete?: unknown } } | undefined
-    return action.kind === 'inject-text' && config?.params?.complete === true
+    return action.kind === 'inject-text' && config?.params?.complete === true && isFixedRegistration(config, rule.layer)
   }))
   const personaComplete = spec.persona?.complete === true
   if (exclusiveConfigs.length > 1 || (personaComplete && exclusiveConfigs.length > 0)) {

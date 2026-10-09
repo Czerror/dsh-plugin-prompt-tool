@@ -132,6 +132,13 @@ test('createPromptConfigs 默认 layer=pre-step；未知 layer fail loud', () =>
   assert.throws(() => createPromptConfigs([{ id: 'x', layer: 'nope' }]), /unknown layer/)
 })
 
+test('配置层直读不受规则动作白名单影响：group/exclusive 与 params.complete 仍合法', () => {
+  // F24/F27 的拒绝只落在 rule-spec 的动作侧（normalizeActionGates / 逐动作校验），
+  // 不能搬进这里：配置层 group 是合法字段，prompt-configs 直读路径不看层语义。
+  assert.equal(createPromptConfigs([{ id: 'cfg-group', strategy: 'static', text: 'G', position: 'after-user', group: 'g1', exclusive: true }]).length, 1)
+  assert.equal(createPromptConfigs([{ id: 'cfg-complete', strategy: 'static', layer: 'pre-step', text: 'C', params: { complete: true } }]).length, 1)
+})
+
 /** 带服务桩的 harness：验证非 pre-step 层级的官方通道接线。 */
 function makeWiredHarness(configSpecs, services = {}, options = {}) {
   const listeners = new Map()

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { Context } from '@deepseek-ai/cordis'
 import { createScope } from '@deepseek-ai/dsh-scope'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
-import { compileRules, getRuleEditorMeta } from '../../engine/rule-spec.mjs'
+import { compileRules, getRuleEditorMeta, isFixedRegistration } from '../../engine/rule-spec.mjs'
 import { mountRuleSources } from '../../engine/rule-runtime.mjs'
 import { ruleFrame, ruleMatches, actionMatches } from '../../engine/conditions/evaluation.mjs'
 import { createNameListPredicate, subjectOf } from '../../engine/conditions/index.mjs'
@@ -806,4 +806,60 @@ test('variablesEnabled=false：声明变量引用按插值语法剥离，未声�
   const enabled = Object.fromEntries(compile(undefined)[0].actions.map(action => [action.id, action.compiledConfig]))
   assert.equal(enabled.text.texts[0], text, '启用时正文原样保留')
   assert.equal(enabled.text.variables.foo, 'F', '启用时声明变量挂上配置')
+})
+
+test('动作声明白名单：未知键、对象形态 match 与带 kind 的分支节点编译期拒绝', () => {
+  // 关键拒绝（fail-closed 反向）：decision 的 toolNames 拼错今天会静默变成「对所有工具生效」。
+  assert.throws(() => compileRules([{ id: 'gate', then: [
+    { id: 'deny', kind: 'decision', phase: 'pre', decision: 'deny', toolName: 'read' },
+  ] }]), /action deny unknown fields: toolName — allowed: .*toolNames/)
+  // 关键拒绝：request-params 的动作级 when 今天被静默忽略（补丁无条件生效）。
+  assert.throws(() => compileRules([{ id: 'req', then: [
+    { id: 'patch', kind: 'request-params', patch: { maxTokens: 10 }, when: { scope: { modelScope: 'pro' } } },
+  ] }]), /action patch: "when" 已退役，改用 "if"/)
+  // 关键拒绝：对象形态 match 在声明路径上恒命中（`typeof === 'function'` 才过滤）。
+  assert.throws(() => compileRules([{ id: 'strip', then: [
+    { id: 'a', kind: 'assembly', match: { keys: ['x'] }, target: { tools: { deny: ['bash'] } } },
+  ] }]), /action a\.match 必须是函数/)
+  // 关键拒绝（F24）：动作级 enabled/group/exclusive 属于规则层，运行期会被逐条覆盖。
+  for (const [field, value] of [['enabled', true], ['group', 'g'], ['exclusive', true]]) {
+    assert.throws(() => compileRules([{ id: 'r', then: [textAction('a', 'A', { [field]: value })] }]), new RegExp(`rule\\.${field}`))
+  }
+  // 边界：互斥判据只在规则层——规则级 group/exclusive 照常编译。
+  assert.equal(compileRules([{ id: 'r', group: 'g', exclusive: true, then: [textAction('a', 'A')] }]).length, 1)
+  // G07：带 kind 的动作写分支键时 expandActions 只认无 kind 的分支节点，分支被静默丢掉。
+  for (const key of ['if', 'then', 'else']) {
+    const node = { id: 'a', kind: 'decision', phase: 'pre', decision: 'deny', [key]: key === 'if' ? { scope: { audience: 'main' } } : [] }
+    assert.throws(() => compileRules([{ id: 'g', then: [node] }]), /action a 写了 .*分支必须写成无 `kind` 的节点/)
+  }
+})
+
+test('F27：complete / suppressRuntimeContext 只属于 system-section 层', () => {
+  // 关键拒绝：其他层写这两个键既不注册成独占段，还会被独占计数误算——点名层。
+  for (const flag of ['complete', 'suppressRuntimeContext']) {
+    assert.throws(() => compileRules([{ id: 'r', then: [
+      { id: 'a', kind: 'inject-text', config: { id: 'a', layer: 'pre-step', text: 'X', params: { [flag]: true } } },
+    ] }]), new RegExp(`action a: config\\.params\\.${flag} 只属于 layer system-section — 当前 layer 是 "pre-step"`))
+    assert.throws(() => compileRules([{ id: 'r', then: [
+      { id: 'a', kind: 'inject-text', config: { id: 'a', layer: 'subagent-start', text: 'X', params: { [flag]: true } } },
+    ] }]), /system-section — 当前 layer 是 "subagent-start"/)
+  }
+  // 判据是单一谓词：非 system-section 的同名键一律不是固定注册效果。
+  assert.equal(isFixedRegistration({ layer: 'pre-step', params: { complete: true } }), false)
+  assert.equal(isFixedRegistration({ layer: 'system-section', params: { complete: true } }), true)
+  // 边界：system-section 的 complete 不受影响，仍是注册期效果。
+  const fixed = compileRules([{ id: 'r', then: [
+    { id: 'a', kind: 'inject-text', config: { id: 'a', layer: 'system-section', text: 'X', params: { complete: true } } },
+  ] }])
+  assert.equal(fixed[0].actions[0].execution.lifecycle, 'registration')
+  // 边界：pre-step 的同名键（false）不计入独占计数，与合法独占卡并存不报冲突。
+  assert.equal(compileRules([
+    { id: 'pre', then: [{ id: 'a', kind: 'inject-text', config: { id: 'a', layer: 'pre-step', text: 'X', params: { complete: false } } }] },
+    { id: 'sys', then: [{ id: 'b', kind: 'inject-text', config: { id: 'b', layer: 'system-section', text: 'Y', params: { complete: true } } }] },
+  ]).length, 2)
+  // 主路径不变：两个 system-section complete 仍然拒绝。
+  assert.throws(() => compileRules([
+    { id: 's1', then: [{ id: 'a', kind: 'inject-text', config: { id: 'a', layer: 'system-section', text: 'X', params: { complete: true } } }] },
+    { id: 's2', then: [{ id: 'b', kind: 'inject-text', config: { id: 'b', layer: 'system-section', text: 'Y', params: { complete: true } } }] },
+  ]), /multiple complete system sections/)
 })

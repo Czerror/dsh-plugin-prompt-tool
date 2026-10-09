@@ -1,7 +1,9 @@
 /** module.yml.rules 的唯一运行时编译入口。旧声明仅由离线迁移器读取。 */
 import { ACTION_KINDS, actionExecutionPoint, prepareAction, validateActionOptions } from './actions/index.mjs'
+// 字段清单与动作声明同住 `actions/catalog.mjs`（`actions/index.mjs` 不再导出新面）。
+import { ACTION_FIELDS, MATCH_ACTION_KINDS } from './actions/catalog.mjs'
 import { compileWhen, PREDICATE_FACTORIES, COMPOSITE_OPERATORS, channelFactSubjects, channelTextSubjects } from './conditions/index.mjs'
-import { createPromptConfigs, KNOWN_LAYERS } from './schema.mjs'
+import { createPromptConfigs, INJECT_CONFIG_FIELDS, KNOWN_LAYERS } from './schema.mjs'
 import { stripDeclaredRefs } from './interpolate.mjs'
 import { WATERFALL_POSITIONS } from './trigger.mjs'
 import { ACTION_EXAMPLES } from './actions/examples.mjs'
@@ -90,9 +92,23 @@ export function validateRuleGroups(rules) {
   }
 }
 
+/**
+ * 「固定注册效果」判据的**唯一实现**：只有 `system-section` 层的 `complete` /
+ * `suppressRuntimeContext` 是注册期效果（无逐轮求值时机）。其他层写同名键是死配置
+ * ——`params` 不做键白名单（pre-step 的 params 承载策略参数），所以在 `compileRules`
+ * 的逐动作校验里点名拒绝；装配兜底（agent-assembly）与写盘门控（settings-bridge）复用
+ * 本谓词，避免各自再写一份「system-section 才算独占」。
+ * 独占计数只认 `complete`：`suppressRuntimeContext` 不产生「多个 complete 段」冲突。
+ * `layer` 是声明缺省层——装配兜底读的是原始声明，config 可能省略 layer，回退规则与
+ * `injectionConfigSpec` 的 `config.layer ?? rule.layer ?? 'pre-step'` 一致。
+ */
+export function isFixedRegistration(config, layer) {
+  return record(config) && (config.layer ?? layer) === 'system-section'
+    && (config.params?.complete === true || config.params?.suppressRuntimeContext === true)
+}
+
 export function ruleActionExecution(action) {
-  const fixed = action.kind === 'guard' || (action.kind === 'inject-text'
-    && (action.config?.params?.complete === true || action.config?.params?.suppressRuntimeContext === true))
+  const fixed = action.kind === 'guard' || (action.kind === 'inject-text' && isFixedRegistration(action.config))
   return { ...actionExecutionPoint(action), lifecycle: fixed ? 'registration' : 'event' }
 }
 
@@ -102,8 +118,11 @@ function normalizeActionGates(action, execution) {
   if (!inject && action.kind !== 'request-params') return
   const target = inject ? action.config : action
   if (inject) {
-    if (target.enabled !== undefined && target.enabled !== true) throw new TypeError(`action ${action.id}: move config.enabled to rule.enabled`)
-    delete target.enabled
+    // 这三个键在 `rule-runtime.mjs` 组装注入配置时被逐条覆盖（group/exclusive/enabled），
+    // 写在动作上既不生效、又会被 st-render 的互斥认领按声明序消费后清空。
+    for (const field of ['enabled', 'group', 'exclusive']) {
+      if (target[field] !== undefined) throw new TypeError(`action ${action.id}: config.${field} 属于规则层，移到 rule.${field}`)
+    }
   }
   const fields = inject ? ['audience', 'modelScope', 'promotion', 'subject', 'match'] : ['audience', 'modelScope']
   for (const field of fields) {
@@ -166,13 +185,47 @@ export function compileRules(specs, options = {}) {
       if (actionIds.has(source.id)) throw new TypeError(`rule ${spec.id}: duplicate action id ${source.id}`)
       actionIds.add(source.id)
       if (!Object.hasOwn(ACTION_KINDS, source.kind)) throw new TypeError(`rule ${spec.id}: unknown action ${source.kind}`)
+      // 带 `kind` 的节点同时写分支键时，`expandActions` 只认无 `kind` 的分支节点——分支会被
+      // 静默丢掉（条件不生效、动作照旧执行），因此点名拒绝而不是当未知键。
+      const branchKeys = ['if', 'then', 'else'].filter(key => source[key] !== undefined)
+      if (branchKeys.length > 0) throw new TypeError(`rule ${spec.id}: action ${source.id} 写了 ${branchKeys.join(', ')} — 分支必须写成无 \`kind\` 的节点`)
+      // 旧动作级开关已退役：显式拒绝并给出新名（比 unknown fields 更可直接照做）。
+      if (source.when !== undefined) throw new TypeError(`rule ${spec.id}: action ${source.id}: "when" 已退役，改用 "if"`)
+      if (source.prepend !== undefined) throw new TypeError(`rule ${spec.id}: action ${source.id}: "prepend" 已退役，改用 "waterfallPosition"`)
+      // 声明路径上的 `match` 只能是函数（`prepare*` 里 `typeof === 'function'` 才过滤）；
+      // 对象形态恒命中 = 「配了门却没拦住」，比未知键更隐蔽。
+      if (MATCH_ACTION_KINDS.has(source.kind) && source.match !== undefined && typeof source.match !== 'function') {
+        throw new TypeError(`rule ${spec.id}: action ${source.id}.match 必须是函数 — 对象形态恒命中，改用 rule.if`)
+      }
       const action = structuredClone(source)
       if (action.kind === 'inject-text') {
         action.config = injectionConfigSpec(spec, action, options)
         if (action.config.strategy === 'custom-fallback') throw new TypeError(`action ${action.id}: migrate custom-fallback to an anchor condition and anchor-notice content`)
       }
       const execution = ruleActionExecution(action)
+      // 未知键检查必须在 normalizeActionGates **之后**：中性旧门由它删除、非中性旧门由它报
+      // 「move it to rule.if」，那些键因此既不会落在未知键名单里，也不会被静默丢弃。
       normalizeActionGates(action, execution)
+      const allowed = ACTION_FIELDS[action.kind]
+      const unknown = Object.keys(action).filter(key => !allowed.has(key))
+      if (unknown.length > 0) {
+        throw new TypeError(`rule ${spec.id}: action ${action.id} unknown fields: ${unknown.join(', ')} — allowed: ${[...allowed].join(', ')}`)
+      }
+      if (action.kind === 'inject-text') {
+        const unknownConfig = Object.keys(action.config).filter(key => !INJECT_CONFIG_FIELDS.has(key))
+        if (unknownConfig.length > 0) {
+          throw new TypeError(`rule ${spec.id}: action ${action.id} config unknown fields: ${unknownConfig.join(', ')} — allowed: ${[...INJECT_CONFIG_FIELDS].join(', ')}`)
+        }
+        // F27：complete / suppressRuntimeContext 是 system-section 的注册期效果。写在别的层上
+        // 既不注册成独占段、又会被独占计数误算，逐动作点名拒绝（params 子键不做白名单）。
+        if (action.config.layer !== 'system-section') {
+          for (const flag of ['complete', 'suppressRuntimeContext']) {
+            if (action.config.params?.[flag] === true) {
+              throw new TypeError(`rule ${spec.id}: action ${action.id}: config.params.${flag} 只属于 layer system-section — 当前 layer 是 ${JSON.stringify(action.config.layer)}`)
+            }
+          }
+        }
+      }
       const channelOrder = action.channelOrder ?? sequence
       if (!Number.isSafeInteger(channelOrder) || channelOrder < 0) throw new TypeError(`action ${action.id}: channelOrder must be a non-negative safe integer`)
       const waterfallPosition = action.waterfallPosition ?? 'default'
@@ -213,7 +266,9 @@ export function compileRules(specs, options = {}) {
     return { id: spec.id, name: spec.name, layer: spec.layer, group: spec.group, exclusive: spec.exclusive === true, enabled: spec.enabled !== false, sequence, when, actions, promptConfigOptions: options.promptConfigOptions }
   })
   validateRuleGroups(rules)
-  const complete = rules.filter(rule => rule.enabled).flatMap(rule => rule.actions).filter(action => action.config?.params?.complete === true)
+  // 独占只数 system-section 的 complete（isFixedRegistration 排除其他层的同名键）。
+  const complete = rules.filter(rule => rule.enabled).flatMap(rule => rule.actions)
+    .filter(action => action.config?.params?.complete === true && isFixedRegistration(action.config))
   if (complete.length > 1 || (complete.length > 0 && options.personaComplete === true)) throw new TypeError('rules: multiple complete system sections are active')
   if (pendingConfigs.length) {
     const compiled = createPromptConfigs(pendingConfigs.map(item => item.source), { ...options.promptConfigOptions, ...(moduleId === undefined ? {} : { sourceModuleId: moduleId }) })

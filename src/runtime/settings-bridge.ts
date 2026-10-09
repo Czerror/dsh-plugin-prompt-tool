@@ -57,6 +57,8 @@ import { assertModuleId, modulePathExists } from '../host/module-install.ts'
 import { DSH_HOME } from '../host/paths.ts'
 import type { AssetFile, AssetImportRequest, ImportKind, ModuleExportRequest } from '../shared/asset-transfer.ts'
 import { lastWorldBookDiagnostics } from '../../engine/st-world-book.mjs'
+// @ts-expect-error ESM 引擎源码随插件提供。
+import { isFixedRegistration } from '../../engine/rule-spec.mjs'
 import { ruleDiagnosticsDropped, ruleDiagnosticsSnapshot } from './rule-diagnostics.ts'
 import { BRIDGE_ENDPOINTS, EDIT_TARGET_HEADER, MAX_BRIDGE_BODY_BYTES, MODULE_ACTIVATION_FAILED, SETTINGS_BRIDGE_PREFIX, readEditTarget } from '../shared/bridge-contract.ts'
 import { moduleParamFallbacks, validateEngineParamValues } from '../shared/engine-params.ts'
@@ -1791,8 +1793,11 @@ export function registerSettingsBridge(
               // 「独占」同时启用时装配会失败，写盘前 fail loud（与 paramOverrides 的
               // 晋升信号一致性检查同模式）。
               if (persona?.complete === true) {
+                // 判据与装配兜底同源（引擎的 isFixedRegistration）：只有 system-section 的
+                // params.complete 会成为「独占」段；其他层的同名键不是独占。
                 const conflicting = ruleInjections(loadModuleSpec(dir).rules).some(({ rule, config }) =>
-                  rule.enabled !== false && config.enabled !== false && config.params?.complete === true)
+                  rule.enabled !== false && config.enabled !== false
+                  && config.params?.complete === true && isFixedRegistration(config))
                 if (conflicting) {
                   writeBridgeJson(res, 400, {
                     ok: false,
