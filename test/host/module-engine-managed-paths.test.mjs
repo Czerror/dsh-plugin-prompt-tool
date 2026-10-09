@@ -23,7 +23,7 @@ test('重建只恢复 rules 并清理旧产物，资产与完整定义原字节�
   writeFileSync(join(directory, 'skills', 'SKILL.md'), 'USER SKILL')
   for (const name of ['configs', 'custom-tools', 'subagent-tools']) mkdirSync(join(directory, name))
   for (const name of ['rules.yml', 'agent.cordis.yml']) writeFileSync(join(directory, name), 'OLD')
-  writer.materializeModule('minimal', { moduleDir: moduleRoot })
+  writer.ensureModuleReady('minimal', { modulesRoot: moduleRoot })
   assert.deepEqual(readFileSync(join(directory, 'module.yml')), definition)
   for (const file of ['memory.md', 'notes.txt', 'preset.md', 'agents.md']) assert.equal(readFileSync(join(directory, file), 'utf8'), `USER ${file}`)
   assert.equal(readFileSync(join(directory, 'skills', 'SKILL.md'), 'utf8'), 'USER SKILL')

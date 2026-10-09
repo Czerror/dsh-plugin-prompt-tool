@@ -255,7 +255,7 @@ ST 源码路径相对 `public/scripts/`，对照基线为 SillyTavern 1.19.0 / `
 
 ### 导入预览与转换报告（2026-09-16）
 
-`convertStToPreset()` 仍是唯一转换实现；`convertStToPresetWithReport()` 在同一路径上额外
+`convertStToModule()` 仍是唯一转换实现；`convertStToModuleWithReport()` 在同一路径上额外
 返回结构化报告。报告是派生元数据：不写入 `module.yml`、不进入模型上下文、也不是写入凭证。
 
 - 预览与提交同源：模块导入端点带 `preview: true` 时
@@ -284,7 +284,7 @@ ST 源码路径相对 `public/scripts/`，对照基线为 SillyTavern 1.19.0 / `
 ### 工作台入口（2026-09-18）
 
 - 模块导入与角色卡 PNG/JSON/YAML 导入（同在「模块」页）都走「预览 → 确认 → 提交」：
-  预览来自同一个 `convertStToPresetWithReport()`，确认时回传 `expectedSourceDigest`。
+  预览来自同一个 `convertStToModuleWithReport()`，确认时回传 `expectedSourceDigest`。
   取消预览不写目标；来源或目标版本变化时返回 409，保留来源并要求重新预览。
 - 预设目录中的定义、正文和自有附件共同预览；技能库与指令文件不属于预设交换包。
   无原生定义的多个 ST 来源按输入顺序合并为预设。角色卡按文件逐张确认，“跳过这张”和“结束本次导入”分别控制当前项与剩余批次。

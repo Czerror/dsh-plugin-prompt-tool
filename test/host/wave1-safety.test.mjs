@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { parse } from 'yaml'
 
-// 隔离 DSH_HOME：writePreset 模板解析用户预设优先，测试必须隔离。
+// 隔离 DSH_HOME：writeModule 模板解析用户模块优先，测试必须隔离。
 const home = mkdtempSync(join(tmpdir(), 'pt-w1-home-'))
 process.env.DSH_HOME = home
 const {
@@ -16,7 +16,7 @@ const {
   renderComposition,
   DEFAULT_MODULE_ID,
 } = await import('../../lib/index.mjs')
-const { writePreset } = await import('../../src/host/write-module.ts')
+const { writeModule } = await import('../../src/host/write-module.ts')
 const { mergePromptConfigs } = await import('../../src/host/prompt-configs.ts')
 
 test('validateEngineParamValues：全量类型校验（布尔/数值/字符串/列表/枚举）', () => {
@@ -119,7 +119,7 @@ test('renderComposition：命名组合只允许 source/local 或 library 的裸�
   )
 })
 
-test('writePreset：恶意规则身份经统一编译器拒绝，不留半成品目录', () => {
+test('writeModule：恶意规则身份经统一编译器拒绝，不留半成品目录', () => {
   const dir = mkdtempSync(join(tmpdir(), 'pt-w1-malid-'))
   try {
     const moduleDir = join(dir, 'preset')
@@ -127,14 +127,10 @@ test('writePreset：恶意规则身份经统一编译器拒绝，不留半成品
     mkdirSync(sourceDir, { recursive: true })
     writeFileSync(join(sourceDir, 'module.yml'), JSON.stringify({ id: DEFAULT_MODULE_ID, modules: [], rules: [{ id: '../../evil', then: [{ id: 'inject', kind: 'inject-text', config: { text: 'x' } }] }] }))
     assert.throws(
-      () => writePreset('PROMPT', {
-        moduleDir,
-        presetOrder: 5,
-        outputId: 'safe-output',
-      }),
+      () => writeModule('PROMPT', { modulesRoot: moduleDir, targetModuleId: 'safe-output' }),
       /rule id/,
     )
-    // 原子物化失败：目标目录不存在（tmp 已清理）。缺省 presetTemplate = standard。
+    // 原子物化失败：目标目录不存在（tmp 已清理）。
     assert.equal(existsSync(join(moduleDir, 'safe-output')), false)
     assert.equal(existsSync(join(dir, 'evil')), false)
     assert.deepEqual(readdirSync(moduleDir), [DEFAULT_MODULE_ID], '源保留且无临时半成品')
@@ -143,7 +139,7 @@ test('writePreset：恶意规则身份经统一编译器拒绝，不留半成品
   }
 })
 
-test('writePreset：规则裸文件名与状态清单序号独立', () => {
+test('writeModule：规则裸文件名与状态清单序号独立', () => {
   const dir = mkdtempSync(join(tmpdir(), 'pt-w1-many-'))
   try {
     const moduleDir = join(dir, 'preset')
@@ -155,7 +151,7 @@ test('writePreset：规则裸文件名与状态清单序号独立', () => {
     }))
     mkdirSync(join(moduleDir, DEFAULT_MODULE_ID), { recursive: true })
     writeFileSync(join(moduleDir, DEFAULT_MODULE_ID, 'module.yml'), JSON.stringify({ id: DEFAULT_MODULE_ID, modules: [], rules: many.map(config => ({ id: config.id, layer: config.layer, then: [{ id: 'inject', kind: 'inject-text', config }] })) }))
-    writePreset('PROMPT', { moduleDir, presetOrder: 5 })
+    writeModule('PROMPT', { modulesRoot: moduleDir, moduleId: DEFAULT_MODULE_ID })
     const rulesDir = join(moduleDir, DEFAULT_MODULE_ID, 'rules')
     const files = readdirSync(rulesDir).filter(name => name.startsWith('cfg-')).sort()
     assert.deepEqual(files, many.map(config => `${config.id}.yml`))

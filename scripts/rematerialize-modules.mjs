@@ -1,17 +1,13 @@
 #!/usr/bin/env node
 /**
- * rematerialize-presets.mjs — 从完整 module.yml 原地恢复 rules/ 切片，清理已退役产物。
+ * rematerialize-modules.mjs — 从完整 module.yml 原地恢复 rules/ 切片，清理已退役产物。
  * 已有模块原地校验，不交换目录，不重写用户正文、记忆或其他资产。
  *
  * 缺少 modules/composition 的定义跳过；旧规则格式需要显式离线迁移。
  *
  * 用法：
- *   node scripts/rematerialize-presets.mjs [--dsh-home <dir>] [--dry-run]
+ *   node scripts/rematerialize-modules.mjs [--dsh-home <dir>] [--dry-run]
  * 退出码：任一模块物化失败或校验不通过 = 1（其余模块继续处理）。
- *
- * 文件名与 npm script 名（`rematerialize:presets`）沿用历史命名；它服务的是本插件的
- * 模块根 `<DSH_HOME>/.prompt-tool/modules`。原先的「预设内嵌 skills 比对 / --refresh-skills」
- * 一段已随该机制退场删除——插件不再分发预设或内嵌技能。
  */
 import { existsSync, readFileSync, readdirSync } from 'node:fs'
 import { join, resolve } from 'node:path'
@@ -40,7 +36,7 @@ const args = parseArgs(process.argv.slice(2))
 // DSH_HOME 必须在 import lib 之前设置：paths.ts 在模块加载时计算模块根。
 if (args.dshHome !== undefined && args.dshHome.trim().length > 0) process.env.DSH_HOME = resolve(args.dshHome)
 if (!existsSync(fileURLToPath(LIB_ENTRY))) {
-  console.error(`rematerialize-presets: 缺少构建产物 ${fileURLToPath(LIB_ENTRY)}，请先运行 pnpm build`)
+  console.error(`rematerialize-modules: 缺少构建产物 ${fileURLToPath(LIB_ENTRY)}，请先运行 pnpm build`)
   process.exit(1)
 }
 const { writeModule, userModulesDir } = await import(LIB_ENTRY.href)
@@ -103,7 +99,7 @@ if (!args.dryRun && materializedIds.length > 0) {
 
 for (const failure of failures) console.error(`FAIL ${failure}`)
 console.log(
-  `rematerialize-presets: ${modules.length} module(s) scanned, `
+  `rematerialize-modules: ${modules.length} module(s) scanned, `
   + `${args.dryRun ? 0 : materializedIds.length} materialized, ${skipped} skipped, ${failures.length} failed`
   + `${args.dryRun ? ' (dry-run)' : ''}`,
 )

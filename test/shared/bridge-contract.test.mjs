@@ -93,9 +93,9 @@ test('契约：所有端点路径全部注册且无多余', () => {
   assert.deepEqual(registered, wanted)
 })
 
-test('部署总闸保留旧false，显式保存规范新键并拒绝同批新旧冲突', async () => {
+test('部署总闸经桥读写 modulesEnabled', async () => {
   const handlers = new Map()
-  let value = { writePreset: false }
+  let value = { modulesEnabled: false }
   const writes = []
   const scope = {
     settings: {
@@ -121,18 +121,13 @@ test('部署总闸保留旧false，显式保存规范新键并拒绝同批新旧
     await handlers.get(SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.mutate)(fakeReq({ body: { ops } }), res)
     return res
   }
-  const conflict = await save([{ op: 'set', path: ['modulesEnabled'], value: true }, { op: 'set', path: ['writePreset'], value: false }])
-  assert.equal(conflict.status, 409)
-  assert.deepEqual(value, { writePreset: false })
-  assert.equal(writes.length, 0)
   const changed = await save([{ op: 'set', path: ['modulesEnabled'], value: true }])
   assert.equal(changed.status, 200, changed.body)
   assert.deepEqual(value, { modulesEnabled: true })
-  assert.deepEqual(writes[0].at(-1), { op: 'unset', path: ['writePreset'] })
-  value = { writePreset: true }
-  const legacy = await save([{ op: 'set', path: ['writePreset'], value: false }])
-  assert.equal(legacy.status, 200, legacy.body)
-  assert.deepEqual(value, { modulesEnabled: false })
+  assert.deepEqual(writes[0].at(-1), { op: 'set', path: ['modulesEnabled'], value: true })
+  const rejected = await save([{ op: 'set', path: ['modulesEnabled'], value: 1 }])
+  assert.equal(rejected.status, 409)
+  assert.deepEqual(value, { modulesEnabled: true }, '非法取值不落盘')
 })
 
 test('契约：/bootstrap 聚合 meta + overrides + variables + promptConfigs 供客户端单请求消费', async () => {

@@ -2,7 +2,7 @@
 import { lstatSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { LEGACY_PROMPT_PARAM_DEFINITIONS, LEGACY_PROMPT_PARAM_KEYS, isLegacyPromptParam, type LegacyPromptParamKey } from '../shared/legacy-prompt-params.ts'
-import { PresetLayerSettingsError } from './module-layer-settings.ts'
+import { ModuleLayerSettingsError } from './module-layer-settings.ts'
 import { mergePromptConfigs, type PromptConfigSpec } from './prompt-configs.ts'
 
 interface LegacyPromptSource {
@@ -20,7 +20,7 @@ export function readLegacyPromptParams(source: LegacyPromptSource): Record<strin
     if (!isRecord(settings)) continue
     for (const [key, value] of Object.entries(settings)) {
       if (!isLegacyPromptParam(key)) continue
-      if (layer !== 'pre-step') throw new PresetLayerSettingsError(`${key} 必须位于 layerSettings.pre-step`)
+      if (layer !== 'pre-step') throw new ModuleLayerSettingsError(`${key} 必须位于 layerSettings.pre-step`)
       params[key] = value === 'on' ? true : value === 'off' ? false : value
     }
   }

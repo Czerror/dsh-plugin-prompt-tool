@@ -573,8 +573,6 @@ export function registerSettingsBridge(
       const descriptorForTarget = (descriptor: SettingsDescriptor, dir: string): SettingsDescriptor => {
         const value = { ...asRecord(descriptor.value) }
         value.modulesEnabled = readModulesEnabled(value)
-        delete value.writePreset
-        delete value.presetTemplate
         if (dir.length > 0) value.moduleId = basename(dir)
         return { ...descriptor, value }
       }
@@ -610,11 +608,7 @@ export function registerSettingsBridge(
       }
       /** 模块身份只作一致性检查，绝不用客户端 ID 构造写入路径。 */
       const guardModuleIdentity = (req: IncomingMessage, record: Record<string, unknown>, dir: string, res: ServerResponse): boolean => {
-        if (record.expectedModuleId !== undefined && record.expectedPresetId !== undefined && record.expectedModuleId !== record.expectedPresetId) {
-          writeBridgeJson(res, 400, { ok: false, code: 'module-identity-invalid', message: '新旧模块身份字段冲突' })
-          return false
-        }
-        const expected = record.expectedModuleId ?? record.expectedPresetId
+        const expected = record.expectedModuleId
         if (expected !== undefined && (typeof expected !== 'string' || expected.length === 0 || expected.length > 256)) {
           writeBridgeJson(res, 400, { ok: false, code: 'module-identity-invalid', message: 'expectedModuleId 必须是非空模块 ID' })
           return false
@@ -940,14 +934,10 @@ export function registerSettingsBridge(
             const expectedRevision = typeof record.expectedRevision === 'number' ? record.expectedRevision : undefined
             try {
               const ops = record.ops as SettingsPathOp[]
-              const toggles = ops.filter(op => op.path.length === 1 && ['modulesEnabled', 'writePreset'].includes(String(op.path[0])))
+              const toggles = ops.filter(op => op.path.length === 1 && op.path[0] === 'modulesEnabled')
               const values = Object.fromEntries(toggles.filter(op => op.op === 'set').map(op => [op.path[0], (op as { value: unknown }).value]))
-              if (toggles.length > 0) {
-                readModulesEnabled(values)
-                const normalized = ops.map(op => op.path.length === 1 && op.path[0] === 'writePreset' ? { ...op, path: ['modulesEnabled'] } : op)
-                normalized.push({ op: 'unset', path: ['writePreset'] })
-                await sctx.settings.mutate(ns, normalized as SettingsPathOp[], expectedRevision)
-              } else await sctx.settings.mutate(ns, ops, expectedRevision)
+              if (toggles.length > 0) readModulesEnabled(values)
+              await sctx.settings.mutate(ns, ops, expectedRevision)
             } catch (error) {
               const message = error instanceof Error ? error.message : String(error)
               writeBridgeJson(res, 409, { ok: false, code: 'settings-rejected', message })
@@ -1368,8 +1358,8 @@ export function registerSettingsBridge(
             if (parsed === undefined) return
             const record = parsed.body ?? {}
             if (!isRecord(record)
-              || Object.keys(record).some(key => !['expectedModuleId', 'expectedPresetId', 'expectedRevision', 'expectedRevisions', 'edits', 'activateRuleId', 'validateOnly', 'refreshOnly'].includes(key))
-              || typeof (record.expectedModuleId ?? record.expectedPresetId) !== 'string' || (record.expectedModuleId ?? record.expectedPresetId) === ''
+              || Object.keys(record).some(key => !['expectedModuleId', 'expectedRevision', 'expectedRevisions', 'edits', 'activateRuleId', 'validateOnly', 'refreshOnly'].includes(key))
+              || typeof record.expectedModuleId !== 'string' || record.expectedModuleId === ''
               || (record.expectedRevision !== undefined && (typeof record.expectedRevision !== 'string' || !SHA256_HEX_RE.test(record.expectedRevision)))
               || (record.edits !== undefined && !Array.isArray(record.edits))
               || (record.activateRuleId !== undefined && (typeof record.activateRuleId !== 'string' || record.activateRuleId.length === 0))

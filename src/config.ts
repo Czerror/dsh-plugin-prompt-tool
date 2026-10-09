@@ -9,15 +9,12 @@ export { PARAM_KEYS } from './shared/param-keys.ts'
 
 export interface Config {
   modulesEnabled: Volatile<boolean | undefined>
-  /** 已部署配置的输入兼容；只在读取与显式保存边界归一。 */
-  writePreset?: Volatile<boolean | undefined>
 }
 
 // 官方插件配置范式：同名 interface Config 与 Schemastery schema 成对导出，
 // 框架在插件加载时校验并填充默认值。
 export const Config = z.object({
   modulesEnabled: z.boolean().volatile(),
-  writePreset: z.boolean().volatile(),
 })
 
 export { readModulesEnabled } from './shared/module-settings.ts'

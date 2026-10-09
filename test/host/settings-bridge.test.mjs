@@ -384,7 +384,7 @@ test('模块配置排序端点：启用尾部追加、跨模块保存、冲突�
     }))
   }
   t.after(() => ids.forEach((id) => setModuleEnabled(userPresetRoot, id, false)))
-  const { ctx, handlers } = makeHarness({}, { writePreset: false })
+  const { ctx, handlers } = makeHarness({}, { modulesEnabled: false })
   const rebuilt = []
   let beforeRebuild = async () => {}
   registerSettingsBridge(ctx, 'prompt-tool', () => ({ available: true, providers: [] }),

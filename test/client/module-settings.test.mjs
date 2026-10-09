@@ -23,11 +23,11 @@ function officialTransport(initial) {
   return { document, calls, scope, settings: { scope, ensure: async () => {}, mutate } }
 }
 
-const expected = value => [{ op: 'set', path: ['modulesEnabled'], value }, { op: 'unset', path: ['writePreset'] }]
+const expected = value => [{ op: 'set', path: ['modulesEnabled'], value }]
 
-test('工作台直接官方transport保存总闸同批移除旧键，旧true与false都可切换', async () => {
+test('工作台直接官方transport保存总闸，两个方向都可切换', async () => {
   for (const old of [true, false]) {
-    const f = officialTransport({ writePreset: old })
+    const f = officialTransport({ modulesEnabled: old })
     let store
     function Probe() { store = usePromptToolStore({}, f.settings); return null }
     renderElement(Probe, {})

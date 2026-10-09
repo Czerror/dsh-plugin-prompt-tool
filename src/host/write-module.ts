@@ -5,9 +5,6 @@ import { parseDocument } from 'yaml'
 // @ts-expect-error 纯引擎校验与运行时共用。
 import { validateSubagentToolPolicy } from '../../engine/subagent-tool-policy-core.mjs'
 import { MODULES_DIR, MODULE_DEFINITION_FILE } from './paths.ts'
-import { DEFAULT_MODULE_ID } from '../shared/module-ids.ts'
-import type { ModuleWriterParams } from '../shared/engine-params.ts'
-import type { PromptConfigSpec } from './prompt-configs.ts'
 import { appendModuleConfigOrder } from './module-config-order.ts'
 import { enabledModuleIds } from './config-store.ts'
 import { assertModuleDirectory, assertModuleId, assertModuleTree } from './module-install.ts'
@@ -29,19 +26,6 @@ export interface WriteModuleOptions {
   /** 返回独立暂存根下的合法模块目录；安装方负责交换与清理暂存根。 */
   stageOnly?: boolean
   agentsInstructionText?: string
-  warn?: (message: string) => void
-}
-
-/** 旧入口只做名称适配；行为规则和参数必须已写入完整定义。 */
-export interface WritePresetOptions extends ModuleWriterParams {
-  moduleDir: string
-  presetTemplate?: string
-  outputId?: string
-  sourceDir?: string
-  materializeOnly?: boolean
-  agentsInstructionText?: string
-  presetOrder?: number
-  promptConfigs?: PromptConfigSpec[]
   warn?: (message: string) => void
 }
 
@@ -76,8 +60,8 @@ function writeContentAssets(directory: string, agentsText?: string): void {
 }
 
 /** 按模块身份原地恢复切片；用户资产、正文与完整定义均不重写。 */
-export function ensureModuleReady(id: string, options: { modulesRoot?: string; moduleDir?: string; presetOrder?: number; warn?: (message: string) => void }): string {
-  const root = options.modulesRoot ?? options.moduleDir ?? MODULES_DIR
+export function ensureModuleReady(id: string, options: { modulesRoot?: string; warn?: (message: string) => void }): string {
+  const root = options.modulesRoot ?? MODULES_DIR
   const directory = assertModuleDirectory(root, id)
   validateModule(directory, options.warn)
   if (enabledModuleIds(root).includes(id)) appendModuleConfigOrder(root, id)
@@ -88,9 +72,6 @@ export function ensureModuleReady(id: string, options: { modulesRoot?: string; m
   })
   return directory
 }
-
-/** 已发布旧入口只保留名称适配。 */
-export { ensureModuleReady as materializeModule }
 
 /** 已有同一模块只恢复切片；导入/复制先完整生成合法身份候选，再交换目标。 */
 export function writeModule(prompt: string, options: WriteModuleOptions): string {
@@ -154,13 +135,4 @@ export function writeModule(prompt: string, options: WriteModuleOptions): string
     if (!existsSync(join(stageRoot, 'previous'))) rmSync(stageRoot, { recursive: true, force: true })
     throw error
   }
-}
-
-/** @deprecated 使用 writeModule；旧字段仅在此边界适配。 */
-export function writePreset(prompt: string, options: WritePresetOptions): string {
-  if ((options.promptConfigs?.length ?? 0) > 0) throw new Error('旧 promptConfigs 物化覆盖已退出，请先离线迁移为 rules')
-  const moduleId = options.presetTemplate?.trim() || DEFAULT_MODULE_ID
-  if (!/^[a-z0-9][a-z0-9-]*$/.test(moduleId)) throw new Error(`invalid presetTemplate ${JSON.stringify(moduleId)}`)
-  return writeModule(prompt, { modulesRoot: options.moduleDir, moduleId, targetModuleId: options.outputId,
-    sourceDir: options.sourceDir, stageOnly: options.materializeOnly, agentsInstructionText: options.agentsInstructionText, warn: options.warn })
 }

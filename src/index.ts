@@ -55,7 +55,7 @@ export function apply(ctx: Context, configIn: Config): void {
   // 内置技能同一纪律：只补缺失项，用户改过或删过的技能保持原样。
   ensureSkillSeed()
   const readConfig = () => ({
-    modulesEnabled: readModulesEnabled({ modulesEnabled: configIn.modulesEnabled?.get(), writePreset: configIn.writePreset?.get() }),
+    modulesEnabled: readModulesEnabled({ modulesEnabled: configIn.modulesEnabled?.get() }),
   })
   const config = readConfig()
   /** 运行时配装通道的运行态：工具写入目标按它报告的「本 Agent 装了哪几层提示词」解析。 */
@@ -247,7 +247,6 @@ registerTuiCommand(
 
 // 公共 API：宿主与测试复用 settings schema 与提示词配置权威校验。
 export { Config } from './config.ts'
-export { writePreset } from './host/write-module.ts'
 export { ensureModuleReady, writeModule } from './host/write-module.ts'
 export type { WriteModuleOptions } from './host/write-module.ts'
 // AGENTS 文件卡：探测 → 卡片合成与文件写盘（bridge 端点与回归测试共用）。
@@ -293,7 +292,6 @@ export { USER_SKILLS_DIR } from './host/paths.ts'
 export { importSkillsPackage } from './host/skills-import.ts'
 export { detectModels, invalidateModelCatalog, listAdvertisedModels, peekModelCatalog, resolveSubagentStartOptions } from './runtime/models.ts'
 export type { PluginSubagentSeam } from './runtime/models.ts'
-export type { WritePresetOptions } from './host/write-module.ts'
 export { registerSettingsBridge } from './runtime/settings-bridge.ts'
 export { registerCharacterTools } from './runtime/character-tools.ts'
 export { registerWorldBookTools } from './runtime/world-book-tools.ts'
@@ -328,11 +326,6 @@ export { ModuleLayerSettingsError, readModuleLayerSettings } from './host/module
 export type { ModuleWriterParams } from './shared/engine-params.ts'
 export type { ModuleSummary } from './shared/bridge-contract.ts'
 export type { ModuleExportRequest, ModuleExportResult } from './shared/asset-transfer.ts'
-// 已发布的旧公共 API 仅在导出边界保留；内部调用统一使用模块名称。
-export { convertStToModule as convertStToPreset, mergeStModules as mergeStPresets, stModuleId as stPresetId } from './host/sillytavern.ts'
-export { removeModuleCapabilityDeclaration as removePresetModule, saveModulePersona as savePresetPersona, createModuleCapability as createEngineCapabilityInPreset, removeModuleCapability as removeEngineCapabilityFromPreset, resolveModuleParams as resolvePresetParams, cloneBuiltinModule as cloneBuiltinPreset, ensureModuleSeed as ensurePresetSeed, removeUserModule as removeUserPreset } from './host/manifest.ts'
-export type { ModuleCapabilityCreateRequest as EngineCapabilityCreateRequest, ModuleCapabilityCreateResult as EngineCapabilityCreateResult, ModuleCapabilityRemoveResult as EngineCapabilityRemoveResult } from './host/manifest.ts'
-export { expandModuleSource as expandPresetSource, exportModulePackage as exportPresetPackage, moduleImportPreview as presetImportPreview, installModulePackage as installPresetPackage } from './host/module-package.ts'
 export { MODULE_CAPABILITIES as ENGINE_CAPABILITIES, moduleCapability as engineCapability, isModuleCapabilityPresent as isEngineCapabilityPresent } from './shared/engine-capabilities.ts'
 export type { ModuleCapability as EngineCapability } from './shared/engine-capabilities.ts'
 export { parseFrontmatter } from './runtime/skills-parse.ts'

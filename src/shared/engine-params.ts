@@ -61,7 +61,6 @@ type AssertKeysEqual<A extends string, B extends string> =
  * 防止「加参数只改一处、模块写者忘透传」的静默漂移（如 stageAdvanceDescription 历史事故）。
  */
 export type ModuleWriterParams = Partial<EngineParams & LegacyPromptParams>
-export type PresetWriterParams = ModuleWriterParams
 
 /**
  * 数值型引擎参数保存前校验（与 write-module.modelRequestConfigs 消费规则同源）。
@@ -133,8 +132,8 @@ export const ENGINE_PARAM_KEYS = Object.keys(ENGINE_PARAM_DEFINITIONS) as Engine
 /** writeModule 实际透传键：全部引擎参数可直接进入 writer。 */
 export const WRITER_PARAM_KEYS = [...ENGINE_PARAM_KEYS, ...LEGACY_PROMPT_PARAM_KEYS]
 
-/** 编译期断言：WRITER_PARAM_KEYS 与 PresetWriterParams 键必须一致。 */
-const _assertWriterParamsKeys: AssertKeysEqual<typeof WRITER_PARAM_KEYS[number], keyof PresetWriterParams> = true
+/** 编译期断言：WRITER_PARAM_KEYS 与 ModuleWriterParams 键必须一致。 */
+const _assertWriterParamsKeys: AssertKeysEqual<typeof WRITER_PARAM_KEYS[number], keyof ModuleWriterParams> = true
 
 /** 已有逗号分隔/flow-array 语义，client 与生成器共享。 */
 export function engineParamList(value: unknown): string[] {

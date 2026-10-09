@@ -11,7 +11,7 @@ import { configIdentityKey } from '../../src/shared/module-config-order.ts'
 const { moduleRoot } = isolatedHome('pt-config-order-')
 const { appendModuleConfigOrder, readModuleConfigOrder, saveModuleConfigOrder } = await import('../../src/host/module-config-order.ts')
 const { setModuleEnabled } = await import('../../src/host/config-store.ts')
-const { materializeModule } = await import('../../src/host/write-module.ts')
+const { ensureModuleReady } = await import('../../src/host/write-module.ts')
 const { promptConfigToRule } = await import('../../src/host/rule-builder.ts')
 
 function fixture(name, cards) {
@@ -57,8 +57,8 @@ test('配置排序：跨模块同名卡保留受众与策略，身份排序写�
   const reordered = movedSub.map(card => entryByKey.get(card.id))
   saveModuleConfigOrder(root, afterMain.revision, identities({ entries: reordered }))
   assert.deepEqual(readModuleConfigOrder(root).entries.map(entry => [entry.moduleId, entry.configId]), [['b', 'same'], ['b', 'shared'], ['a', 'same'], ['a', 'last']], '子代理移动保留不可见主会话卡的槽位')
-  for (const id of ['a', 'b']) materializeModule(id, { moduleDir: root })
-  for (const id of ['b', 'a']) materializeModule(id, { moduleDir: root })
+  for (const id of ['a', 'b']) ensureModuleReady(id, { modulesRoot: root })
+  for (const id of ['b', 'a']) ensureModuleReady(id, { modulesRoot: root })
   assert.deepEqual(identities(readModuleConfigOrder(root)), identities({ entries: reordered }), '重建不会按模块数组重新编号')
   for (const [id, texts] of [['a', ['A1', 'A2']], ['b', ['B1', 'B2']]]) {
     const raw = readFileSync(join(root, id, 'module.yml'), 'utf8')
@@ -122,7 +122,7 @@ test('配置排序：重复启用幂等；新增卡追加，停用模块重排�
   const disabled = readModuleConfigOrder(root, 'a')
   assert.deepEqual(disabled.entries.map(x => [x.moduleId, x.configId, x.sequence]), [['a', 'a', 0], ['a', 'new', 20]])
   saveModuleConfigOrder(root, disabled.revision, identities(disabled).reverse(), 'a')
-  materializeModule('a', { moduleDir: root })
+  ensureModuleReady('a', { modulesRoot: root })
   assert.deepEqual(readModuleConfigOrder(root, 'a').entries.map(x => [x.configId, x.sequence]), [['new', 0], ['a', 20]])
   assert.equal(readFileSync(join(root, 'b', 'module.yml'), 'utf8'), other, '单模块重排不改其他模块槽位')
   appendModuleConfigOrder(root, 'a')
@@ -137,6 +137,6 @@ test('配置排序：重复启用幂等；新增卡追加，停用模块重排�
   const freshRoot = fixture('disabled-unassigned', { fresh: [{ id: 'x', text: 'X' }, { id: 'y', text: 'Y' }] })
   const fresh = readModuleConfigOrder(freshRoot, 'fresh')
   saveModuleConfigOrder(freshRoot, fresh.revision, identities(fresh).reverse(), 'fresh')
-  materializeModule('fresh', { moduleDir: freshRoot })
+  ensureModuleReady('fresh', { modulesRoot: freshRoot })
   assert.deepEqual(readModuleConfigOrder(freshRoot, 'fresh').entries.map(x => [x.configId, x.sequence]), [['y', 0], ['x', 10]], '未启用且未分配序号的模块同样可排序')
 })

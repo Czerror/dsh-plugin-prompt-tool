@@ -86,7 +86,7 @@ Web 客户端按四层组织：
 src/client/
 ├─ app/       # SlotRegistry owner、工作台壳与五页组合
 ├─ data/      # typed bridge、Fields、状态 facade、保存与脏检测纯逻辑
-├─ features/  # prompts / tools / subagents / skills / presets / characters
+├─ features/  # prompts / tools / subagents / skills / modules / characters
 └─ ui/        # 仅 props/callback 的共享交互与 CSS Modules
 ```
 
@@ -121,9 +121,9 @@ src/client/
 
 ## 模块参数体系
 
-初始化从包内 modules/ 补建缺失模块，已有目录不覆盖。包内内置模块三个：`ponytail`（懒惰资深工程师行为规则）、`tool-surface`（工具面收窄到常驻核心集，其余按需解锁）、`skill-surface`（拦掉全量技能目录注入，改按需发现）——后两个默认不启用，需在「模块」页启用并重启。materializeModule 原地校验恢复 rules/，只清理已知旧产物，保留记忆、技能、正文与用户资产。工具和子代理策略从完整定义内联装配。
+初始化从包内 modules/ 补建缺失模块，已有目录不覆盖。包内内置模块三个：`ponytail`（懒惰资深工程师行为规则）、`tool-surface`（工具面收窄到常驻核心集，其余按需解锁）、`skill-surface`（拦掉全量技能目录注入，改按需发现）——后两个默认不启用，需在「模块」页启用并重启。ensureModuleReady 原地校验恢复 rules/，只清理已知旧产物，保留记忆、技能、正文与用户资产。工具和子代理策略从完整定义内联装配。
 
-部署 Config 使用 modulesEnabled 作为模块运行总闸：关闭仅撤回贡献，不清空文件。旧 writePreset 仅作输入兼容，双键冲突拒绝。编辑目标通过 x-module-id 传递，不切换或跟随官方会话预设。
+部署 Config 使用 modulesEnabled 作为模块运行总闸：关闭仅撤回贡献，不清空文件。编辑目标通过 x-module-id 传递，不切换或跟随官方会话预设。
 
 模块行为由一份 `module.yml` 下发，参数所有者各自独立：
 
@@ -185,7 +185,7 @@ persona:
 
 模块编辑选择与官方会话预设独立。切换编辑模块只改变请求目标；未指定目标时由服务端解析默认目录，bootstrap 的模块身份、参数、变量与配置卡来自同一目录。启用哪些模块由 `config.yml.enabled` 决定。
 
-> 根目录 [module.yml](module.yml) 覆盖 4 个公开共享参数与九层规则。`pnpm rebuild:preset-template` 从权威契约重建；规则默认关闭，共享参数按需取消注释。
+> 根目录 [module.yml](module.yml) 覆盖 4 个公开共享参数与九层规则。`pnpm rebuild:module-template` 从权威契约重建；规则默认关闭，共享参数按需取消注释。
 
 ## 提示词配置（八个可注入层）
 
@@ -298,4 +298,4 @@ pnpm sync:harness        # 跟进：按 dist-tags 改写 devDependencies 并 pnp
 
 ## 许可
 
-插件本体 MIT（Czerror）。`engine/` 中移植自 [dsh-anchored-standard](https://github.com/xiaobright/dsh-anchored-standard) 的模块，其上游版权与 MIT 许可保存在 [engine/THIRD_PARTY_LICENSES](engine/THIRD_PARTY_LICENSES)，随包发布并由组合行的包名说明符直接引用（不再物化到预设根）；`preset/` 下 cordis 模板与脚本基于 DeepSeek Harness 官方 Standard 等预设修改。上游预设本体不再随本包分发。
+插件本体 MIT（Czerror）。`engine/` 中移植自 [dsh-anchored-standard](https://github.com/xiaobright/dsh-anchored-standard) 的模块，其上游版权与 MIT 许可保存在 [engine/THIRD_PARTY_LICENSES](engine/THIRD_PARTY_LICENSES)，随包发布并由组合行的包名说明符直接引用（不再物化到模块根）；`module.yml` 参考定义基于 DeepSeek Harness 官方 Standard 等预设修改。上游预设本体不再随本包分发。

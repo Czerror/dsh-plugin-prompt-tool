@@ -54,7 +54,7 @@ export const MANAGED_CONFIG_FIELDS: readonly ManagedConfigSpec[] = [
 
 export interface ConfigFieldSources {
   configId: string
-  fields: Array<{ path: string; source: 'preset-param' | 'prompt-config' }>
+  fields: Array<{ path: string; source: 'module-param' | 'prompt-config' }>
 }
 
 /** 严格投影白名单；未知路径、参数键和附加属性都不进入客户端。 */
@@ -67,7 +67,7 @@ export function readConfigFieldSources(configId: string, raw: unknown): ConfigFi
     const entry = (record.fields as unknown[]).find((item) => item !== null && typeof item === 'object'
       && (item as Record<string, unknown>).path === path) as Record<string, unknown> | undefined
     const source = entry?.source
-    return source === 'preset-param' || source === 'prompt-config' ? [{ path, source } satisfies ConfigFieldSources['fields'][number]] : []
+    return source === 'module-param' || source === 'prompt-config' ? [{ path, source } satisfies ConfigFieldSources['fields'][number]] : []
   })
   return { configId, fields }
 }
@@ -77,7 +77,7 @@ export function managedConfigSpec(configId: string | undefined, sources?: Config
   if (configId === undefined || sources?.configId !== configId) return undefined
   const spec = MANAGED_CONFIG_FIELDS.find((entry) => entry.configId === configId)
   const fields = spec?.fields.filter((field) => Object.hasOwn(ENGINE_PARAM_DEFINITIONS, field.sourceParam)
-    && sources.fields.some((entry) => entry.path === field.path && entry.source === 'preset-param')) ?? []
+    && sources.fields.some((entry) => entry.path === field.path && entry.source === 'module-param')) ?? []
   return fields.length > 0 ? { configId, fields } : undefined
 }
 

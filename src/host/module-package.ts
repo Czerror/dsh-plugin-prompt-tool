@@ -178,7 +178,7 @@ export function moduleImportPreview(root: string, files: AssetFile[], request: A
     files: [{ path: 'source', content: sourceDigest }, { path: 'choices', content: JSON.stringify([id, request.targetName ?? '', request.overwrite === true, request.sourceKind ?? null]) }],
     ...(request.promptOrderCharacterId === undefined ? {} : { orderCharacterId: request.promptOrderCharacterId }),
     converter: 'asset-import/1',
-    target: { kind: 'preset-package', targetId: id, targetVersion: version, ownerPreset: root },
+    target: { kind: 'module-package', targetId: id, targetVersion: version, ownerModule: root },
   })
   return {
     prepared, sourceDigest, previewRevision,
@@ -390,4 +390,3 @@ export async function exportModulePackage(root: string, request: ModuleExportReq
 }
 
 /** 已发布的 API 别名只保留在交换边界。 */
-export { expandModuleSource as expandPresetSource, moduleImportPreview as presetImportPreview, installModulePackage as installPresetPackage, exportModulePackage as exportPresetPackage }

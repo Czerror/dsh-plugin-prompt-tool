@@ -9,7 +9,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { parse, parseDocument } from 'yaml'
 
-// 隔离 DSH_HOME：writePreset 的模板解析（resolveModuleDir）用户预设优先——
+// 隔离 DSH_HOME：writeModule 的模板解析（resolveModuleDir）用户模块优先——
 // 真实用户环境 .prompt-tool/<id> 会遮蔽包内模板，测试必须隔离。
 // 注意：paths 模块顶层缓存 MODULES_DIR（join(DSH_HOME, ...)），
 // host/index 必须全部在 env 设置后动态 import，否则读到真实用户根。
@@ -21,7 +21,7 @@ after(() => {
   else process.env.DSH_HOME = previousHome
   rmSync(home, { recursive: true, force: true })
 })
-const { FIXTURE_PRESET_ID, installFixturePreset } = await import('../fixtures/preset-template.mjs')
+const { FIXTURE_MODULE_ID, installFixtureModule } = await import('../fixtures/module-template.mjs')
 const {
   mergePromptConfigs,
   modelRequestConfigs,
@@ -29,7 +29,7 @@ const {
 } = await import('../../src/host/prompt-configs.ts')
 const { Config, readModulesEnabled } = await import('../../src/config.ts')
 const { createPromptConfigs } = await import('../../engine/schema.mjs')
-const { writePreset } = await import('../../src/host/write-module.ts')
+const { writeModule } = await import('../../src/host/write-module.ts')
 // 模板定位契约以打包目录 lib/ 为锚；其余行为直接覆盖当前源码。
 const { loadPromptTemplates } = await import('../../lib/index.mjs')
 const { planRulesMigration } = await import('../../src/host/rules-migration.ts')
@@ -40,16 +40,16 @@ const { injectionConfigSpec } = await import('../../engine/rule-spec.mjs')
 function generatedConfigs(options = {}, prompt = 'PROMPT') {
   const dir = mkdtempSync(join(tmpdir(), 'pt-wp-configs-'))
   try {
-    // writePreset 的模板解析根 = moduleDir：先把夹具模板装到输出根。
-    installFixturePreset(dir)
-    const file = join(dir, FIXTURE_PRESET_ID, 'module.yml')
+    // 模板解析根 = modulesRoot：先把夹具模板装到输出根。
+    installFixtureModule(dir)
+    const file = join(dir, FIXTURE_MODULE_ID, 'module.yml')
     const doc = parseDocument(readFileSync(file, 'utf8'))
     for (const [key, value] of Object.entries({ firstTurnAnchor: false, firstTurnCustom: false, guideCustom: false, injectPrompt: true, ...options })) doc.setIn(['layerSettings', 'pre-step', key], value)
     writeFileSync(file, doc.toString())
-    writeFileSync(join(dir, FIXTURE_PRESET_ID, 'preset.md'), prompt)
+    writeFileSync(join(dir, FIXTURE_MODULE_ID, 'preset.md'), prompt)
     for (const item of planRulesMigration(dir).items) writeFileSync(join(item.directory, item.definitionFile), item.nextDefinition)
-    writePreset(prompt, { moduleDir: dir, presetTemplate: FIXTURE_PRESET_ID, presetOrder: 5 })
-    const source = loadModuleSpec(join(dir, FIXTURE_PRESET_ID))
+    writeModule(prompt, { modulesRoot: dir, moduleId: FIXTURE_MODULE_ID })
+    const source = loadModuleSpec(join(dir, FIXTURE_MODULE_ID))
     const specs = source.rules.flatMap(rule => rule.then.filter(action => action.kind === 'inject-text').map(action => ({
       ...injectionConfigSpec(rule, action, source), enabled: rule.enabled !== false,
     })))
@@ -60,7 +60,7 @@ function generatedConfigs(options = {}, prompt = 'PROMPT') {
   }
 }
 
-// —— 提示词配置的合并、读写与 writePreset 生成（原 prompt-configs.test.mjs） ——
+// —— 提示词配置的合并、读写与 writeModule 生成（原 prompt-configs.test.mjs） ——
 
 test('子代理模型路由：生成的请求补丁只覆盖本地子代理，缺少完整路由时继承', async () => {
   const { createPromptConfigs } = await import('../../engine/schema.mjs')
@@ -179,7 +179,7 @@ test('renderPromptConfigYaml 全字段开放：variables/identity/params 嵌套�
   assert.deepEqual(doc.params.patch, { maxTokens: 2048 })
 })
 
-test('writePreset 生成夹具模板的提示词配置模块（人设走顶层 persona 段，不再生成 persona 配置卡），数字前缀决定执行顺序', () => {
+test('writeModule 生成夹具模板的提示词配置模块（人设走顶层 persona 段，不再生成 persona 配置卡），数字前缀决定执行顺序', () => {
   const { specs } = generatedConfigs()
   assert.deepEqual(specs.map((spec) => spec.id), ['near-anchor', 'router-guide', 'prompt-injector'])
   for (const spec of specs) {
@@ -190,7 +190,7 @@ test('writePreset 生成夹具模板的提示词配置模块（人设走顶层 p
   }
 })
 
-test('writePreset 处理空提示词时 prompt-injector 结构完整', () => {
+test('writeModule 处理空提示词时 prompt-injector 结构完整', () => {
   const { byId } = generatedConfigs({}, '')
   assert.equal(byId['prompt-injector'].enabled, false, '空提示词无内容可注入，应禁用')
   assert.equal(byId['prompt-injector'].strategy, 'anchor-notice')
@@ -199,7 +199,7 @@ test('writePreset 处理空提示词时 prompt-injector 结构完整', () => {
   assert.ok(byId['prompt-injector'].params.anchorWords.length > 0, '确认集合仍来自模板锚句派生')
 })
 
-test('writePreset 开启 firstTurnAnchor 时 near-anchor 启用并携带自定义锚定句', () => {
+test('writeModule 开启 firstTurnAnchor 时 near-anchor 启用并携带自定义锚定句', () => {
   const { byId } = generatedConfigs({ firstTurnAnchor: true, firstTurnText: 'ANCHOR SENTENCE' })
   assert.equal(byId['near-anchor'].enabled, true)
   assert.equal(byId['near-anchor'].strategy, 'first-turn-anchor')
@@ -218,10 +218,10 @@ test('旧模板离线迁移后 router-guide 关闭且模型范围归规则条件
 
 test('Config：部署设置仅保留模块运行总闸', () => {
   const config = Config({})
-  assert.deepEqual(Object.keys(config).sort(), ['modulesEnabled', 'writePreset'])
+  assert.deepEqual(Object.keys(config), ['modulesEnabled'])
   assert.equal(readModulesEnabled({}), true)
-  assert.equal(readModulesEnabled({ writePreset: false }), false, '旧键只作输入兼容')
-  assert.throws(() => readModulesEnabled({ modulesEnabled: true, writePreset: false }), /冲突/)
+  assert.equal(readModulesEnabled({ modulesEnabled: false }), false)
+  assert.throws(() => readModulesEnabled({ modulesEnabled: 1 }), /必须是布尔值/)
 })
 
 // —— 模板库（原 templates.test.mjs） ——

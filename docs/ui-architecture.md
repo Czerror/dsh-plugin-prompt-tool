@@ -506,7 +506,7 @@ ui/ 只接收 props/callback，当前真实共享 seam 包括：
 - StatusDot：6px实心状态点与3px柔和静态光晕，含success/neutral/danger/warning，语义由相邻文字表达，不使用循环动画。
 - StatusBadge：StatusDot 与自有胶囊；tone 同时驱动两者颜色，技能卡、工具预览、模块「已启用」与角色卡「已导入当前模块」共用。模块徽章由实际 `enabled` 且可用驱动，与卡脚开关同步；当前编辑目标仍由边框标记，不冒充启用状态。
 - 状态徽章与内部Tag均不参与flex收缩，短状态文字保持单行；模块/角色标题承担剩余宽度并允许换行，长名称不把「使用中」挤成竖排胶囊。
-- 卡体（`.moduleCardBody`，位于 `ui/controls.module.css`）只承载内容，没有点击语义；模块卡与角色卡共用同一形态，动作一律放卡脚（`.presetCardFooter`）。需要整块可点的控件不要复用卡体。
+- 卡体（`.moduleCardBody`，位于 `ui/controls.module.css`）只承载内容，没有点击语义；模块卡与角色卡共用同一形态，动作一律放卡脚（`.moduleCardFooter`）。需要整块可点的控件不要复用卡体。
 - ImportFileButton：隐藏原生 file input 的导入入口。
 - TemplatePicker、DialogSurface：模板和预设操作的 portal 浮层；ConfirmDialog 复用 DialogSurface 的警告对话、初始焦点与还焦能力。确认按钮沿用 `.pillButton[data-danger]`，取消按钮的 ref 承载初始焦点与 busy 还焦。
 - anchored-popover.ts / anchored-popover-fit.ts：锚点位置和窄视口适配。
@@ -679,9 +679,9 @@ world-book 视图只隐藏工具栏之外的列表主体之外的附加提示，
 | seam | 覆盖位置 |
 |---|---|
 | 引擎注入行为（插入点 / 时机 / 次数 / 受众） | `test/engine/*.test.mjs` |
-| 写盘产物语义 | `test/host/write-module.test.mjs`、`test/host/preset-*.test.mjs`、`test/host/module-storage.test.mjs`、`test/host/preset-engine-managed-paths.test.mjs` |
+| 写盘产物语义 | `test/host/write-module.test.mjs`、`test/host/module-*.test.mjs`、`test/host/module-storage.test.mjs` |
 | bridge 端点载荷 | `test/shared/bridge-contract.test.mjs`、`test/client/bridge-client.test.mjs`、`test/host/settings-bridge.test.mjs`、`test/host/*-bridge.test.mjs` |
-| 安全与拒绝路径 | `test/host/instructions-policy.test.mjs`、`test/host/instruction-scope-guard.test.mjs`、`test/host/skill-policy.test.mjs`、`test/host/preset-package-import.test.mjs`、`test/host/characters-protection.test.mjs`、`test/host/wave1-safety.test.mjs`、`test/host/text-file.test.mjs`、`test/engine/config-whitelist.test.mjs` |
+| 安全与拒绝路径 | `test/host/instructions-policy.test.mjs`、`test/host/instruction-scope-guard.test.mjs`、`test/host/skill-policy.test.mjs`、`test/host/module-package-import.test.mjs`、`test/host/characters-protection.test.mjs`、`test/host/wave1-safety.test.mjs`、`test/host/text-file.test.mjs`、`test/engine/config-whitelist.test.mjs` |
 
 **安全边界的守护位置**：指令文件读写（授权、上下文白名单、内容版本冲突、读取失败）、导入回滚、路径穿越、大小上限、桥端点安全面、晋升门控与 epoch 这些不变量，由上面「安全与拒绝路径」一栏的文件覆盖；改动它们需要独立授权，不得顺带删减。
 

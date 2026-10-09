@@ -7,20 +7,20 @@ import { join } from 'node:path'
 // 种子化只发生在预设根内：独立进程 + 临时 DSH_HOME 验证补建、幂等与安全边界。
 const home = mkdtempSync(join(tmpdir(), 'pt-seed-'))
 process.env.DSH_HOME = home
-const { ensurePresetSeed } = await import('../../lib/index.mjs')
+const { ensureModuleSeed } = await import('../../lib/index.mjs')
 
 const PRESETS_DIR = join(home, '.prompt-tool', 'modules')
 
-test('ensurePresetSeed：首次复制内置模板，二次幂等，删除后自动补建', () => {
-  const first = ensurePresetSeed()
+test('ensureModuleSeed：首次复制内置模板，二次幂等，删除后自动补建', () => {
+  const first = ensureModuleSeed()
   assert.ok(first.created.length > 0, '首次应复制内置模板')
   // 二次调用幂等：全部存在时不重复复制。
-  assert.deepEqual(ensurePresetSeed().created, [])
+  assert.deepEqual(ensureModuleSeed().created, [])
   // 删除某个内置预设后，种子化自动补建（无「永不恢复」闸门）。
   const id = first.created[0]
   assert.ok(typeof id === 'string' && id.length > 0)
   rmSync(join(PRESETS_DIR, id), { recursive: true, force: true })
-  assert.ok(ensurePresetSeed().created.includes(id), '删除的内置预设应被补建恢复')
+  assert.ok(ensureModuleSeed().created.includes(id), '删除的内置预设应被补建恢复')
 })
 
 test('种子化不写状态文件，也不改动 DSH_HOME 根下其他文件', () => {
@@ -41,7 +41,7 @@ test('种子化不写状态文件，也不改动 DSH_HOME 根下其他文件', (
   })
   const before = snapshot()
 
-  ensurePresetSeed()
+  ensureModuleSeed()
 
   assert.deepEqual(snapshot(), before, 'DSH_HOME 根下其他文件必须逐字节不变、无新增/删除')
 })

@@ -19,7 +19,7 @@ test('TUI 规则开关使用定义与显式互斥；未知身份不写，重建�
   let refreshes = 0
   let rejectRefresh = false
   const ctx = { inject: (_deps, callback) => callback({ commands: { register: command => { handler = command.handler } } }) }
-  registerTuiCommand(ctx, 'prompt-tool', () => ({ writePreset: true, skillCatalog: [], activeSkillsDirs: [] }),
+  registerTuiCommand(ctx, 'prompt-tool', () => ({ modulesEnabled: true, skillCatalog: [], activeSkillsDirs: [] }),
     () => ({ available: true, providers: [] }), async () => ({}), () => dir,
     undefined, undefined, async id => {
       assert.equal(id, 'tui-rules'); refreshes++
@@ -48,9 +48,9 @@ test('TUI 规则开关使用定义与显式互斥；未知身份不写，重建�
   assert.equal(parse(readFileSync(file, 'utf8')).rules[1].enabled, false)
 })
 
-test('TUI直接官方settings事务切换总闸并原子移除旧键', async () => {
+test('TUI直接官方settings事务切换总闸', async () => {
   for (const old of [true, false]) {
-    const value = { writePreset: old }
+    const value = { modulesEnabled: old }
     const calls = []
     let handler
     const ctx = { inject: (_deps, callback) => callback({
@@ -68,7 +68,7 @@ test('TUI直接官方settings事务切换总闸并原子移除旧键', async () 
       () => ({ available: true, providers: [] }), async () => ({}))
     const result = await handler({ rawInput: 'toggle modulesEnabled' })
     assert.equal(result.kind, 'success', result.text)
-    assert.deepEqual(calls, [[{ op: 'set', path: ['modulesEnabled'], value: !old }, { op: 'unset', path: ['writePreset'] }]])
+    assert.deepEqual(calls, [[{ op: 'set', path: ['modulesEnabled'], value: !old }]])
     assert.deepEqual(value, { modulesEnabled: !old })
   }
 })

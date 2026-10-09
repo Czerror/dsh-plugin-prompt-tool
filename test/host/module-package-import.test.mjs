@@ -11,7 +11,7 @@ const home = mkdtempSync(join(tmpdir(), 'pt-package-import-'))
 process.env.DSH_HOME = home
 const { MAX_BRIDGE_BODY_BYTES } = await import('../../src/shared/bridge-contract.ts')
 const { registerSettingsBridge } = await import('../../src/runtime/settings-bridge.ts')
-const { stPresetId, convertStToModuleWithReport } = await import('../../src/host/sillytavern.ts')
+const { stModuleId, convertStToModuleWithReport } = await import('../../src/host/sillytavern.ts')
 const { ruleInjections } = await import('../../src/host/rule-content.ts')
 const contentEntries = spec => ruleInjections(spec.rules).map(({ rule, config }) => ({ ...config, enabled: rule.enabled !== false }))
 const bridgeDisposers = []
@@ -332,7 +332,7 @@ test('importPresetPackage：TavernHelper 扩展注入物剥离（JS 脚本不进
   })
   assert.equal(status, 200)
   // 纯中文文件名 → id 退化为 st-<hash>（官方 agent-presets 不接受中文目录名）。
-  const presetId = stPresetId('带扩展角色')
+  const presetId = stModuleId('带扩展角色')
   assert.match(presetId, /^st-[0-9a-f]{6}$/)
   const presetFile = join(PRESETS, presetId, 'module.yml')
   const content = readFileSync(presetFile, 'utf8')

@@ -56,7 +56,7 @@ async function liveAssembly(t, enabledModules) {
 }
 
 test('真实注入：启用配置进入主/子会话正确位置，关闭项不注入，释放后不再贡献', async (t) => {
-  writePreset('live-injection', {
+  writeModuleFixture('live-injection', {
     modules: ['prompt-config-engine'],
     persona: { prefix: 'PERSONA', suffix: 'SUFFIX', includeRuntimeContext: false },
     promptConfigs: [
@@ -242,7 +242,7 @@ test('规则诊断：协调器路径按模块/规则/通道分类入账，三类
 })
 
 test('官方负责人事实：规则来源不再报 false，未观察到即 undefined', async (t) => {
-  writePreset('owner-none', { modules: ['prompt-config-engine'], promptConfigs: [{ id: 'owner-x', text: 'X', position: 'after-user' }] })
+  writeModuleFixture('owner-none', { modules: ['prompt-config-engine'], promptConfigs: [{ id: 'owner-x', text: 'X', position: 'after-user' }] })
   const h = await liveAssembly(t, () => ['owner-none'])
   const agent = await h.makeAgent('owner-session')
   await h.runtime.settled()
@@ -254,7 +254,7 @@ test('官方负责人事实：规则来源不再报 false，未观察到即 unde
 })
 
 test('R14：旧生成卡的 agents-file-* 前缀在协调器层跳过，其余配置照常注入', async (t) => {
-  writePreset('legacy-file-cards', {
+  writeModuleFixture('legacy-file-cards', {
     modules: ['prompt-config-engine'],
     promptConfigs: [
       { id: 'agents-file-legacy', text: 'LEGACY', position: 'after-user' },
@@ -272,7 +272,7 @@ test('R14：旧生成卡的 agents-file-* 前缀在协调器层跳过，其余�
 })
 
 test('创建边界：agent/created 返回时首条请求已经能注入，无需额外等待队列', async (t) => {
-  writePreset('first-request', {
+  writeModuleFixture('first-request', {
     modules: ['prompt-config-engine'],
     promptConfigs: [{ id: 'first', text: 'FIRST', position: 'after-user' }],
   })
@@ -297,7 +297,7 @@ test('跨模块配置按文件序号交错执行，后序请求覆盖且不受�
       [60, { id: 'request', layer: 'agent-request', order: 900, params: { patch: { temperature: 0.6, maxTokens: 512 } } }],
     ]],
   ]) {
-    const dir = writePreset(moduleId, { modules: ['prompt-config-engine'], promptConfigs: entries.map(([, config]) => config), configOrder: Object.fromEntries(entries.map(([sequence, config]) => [config.id, sequence])) })
+    const dir = writeModuleFixture(moduleId, { modules: ['prompt-config-engine'], promptConfigs: entries.map(([, config]) => config), configOrder: Object.fromEntries(entries.map(([sequence, config]) => [config.id, sequence])) })
     mkdirSync(join(dir, 'configs'), { recursive: true })
     for (const [sequence, config] of entries) {
       writeFileSync(join(dir, 'configs', `${String(sequence).padStart(4, '0')}-${config.id}.yml`), JSON.stringify(config), 'utf8')
@@ -332,7 +332,7 @@ test('持久序号覆盖文件旧前缀，ST 宏按全局调度求值并保留�
       { id: 'b20', text: 'B20 {{setvar::scope::B}}{{roll::100}}', params: { stMacros: true } },
     ], { b20: 20 }],
   ]) {
-    const dir = writePreset(id, { modules: ['prompt-config-engine'], promptConfigs })
+    const dir = writeModuleFixture(id, { modules: ['prompt-config-engine'], promptConfigs })
     updateConfigOrder(dir, configOrder)
   }
   const h = await liveAssembly(t, () => ['sequence-macro-b', 'sequence-macro-a'])
@@ -347,7 +347,7 @@ test('持久序号覆盖文件旧前缀，ST 宏按全局调度求值并保留�
 
 test('交错来源只合并连续段，保留 merged 身份与独立续跑预算', async (t) => {
   for (const [id, first, second] of [['source-a', 10, 30], ['source-b', 20, 21]]) {
-    const dir = writePreset(id, {
+    const dir = writeModuleFixture(id, {
       modules: ['prompt-config-engine'],
       promptConfigs: [
         { id: 'same-system-id', layer: 'system-section', text: `${id}-one`, mergeMode: 'merged', order: 5 },
@@ -384,7 +384,7 @@ test('交错来源只合并连续段，保留 merged 身份与独立续跑预算
 
 test('官方文本层同 order 的默认段按 sequence 排列，显式注册名保留官方语义', async (t) => {
   for (const [id, sequence, explicitName] of [['text-order-a', 10000, 'explicit-a'], ['text-order-z', 9990, 'explicit-z']]) {
-    const dir = writePreset(id, {
+    const dir = writeModuleFixture(id, {
       modules: ['prompt-config-engine'],
       promptConfigs: [
         { id: 'system', layer: 'system-section', text: `SYSTEM-${id}`, order: 50 },
@@ -413,14 +413,14 @@ test('重复模块身份：跨模块同 rule id 且 dedupe=session 只告警一�
   // 只可见化（warnOnce + 诊断），绝不整体拒绝——整体拒绝会让该 Agent 的全部装配失败，
   // 违背「失败不伤会话」。
   for (const id of ['dup-source-a', 'dup-source-b']) {
-    writePreset(id, {
+    writeModuleFixture(id, {
       modules: ['prompt-config-engine'],
       promptConfigs: [{ id: 'shared-hint', text: `${id}-HINT`, dedupe: 'session', position: 'after-user' }],
     })
   }
   // 另一对：id 不同（plugin 身份不撞）但显式声明同一个 sourceKind，是 kind 通道那一笔账。
   for (const id of ['dup-kind-a', 'dup-kind-b']) {
-    writePreset(id, {
+    writeModuleFixture(id, {
       modules: ['prompt-config-engine'],
       promptConfigs: [{ id: `${id}-hint`, text: `${id}-KIND`, dedupe: 'session', sourceKind: 'shared-kind-channel', position: 'after-user' }],
     })
@@ -428,7 +428,7 @@ test('重复模块身份：跨模块同 rule id 且 dedupe=session 只告警一�
   // 第三对是原 B2 的缺口形态：`config.id` 相同、其中一方显式 `identity` 取值不同。缺省
   // sourceKind 由 id 编成同一个 `plugin:gap-hint`，判据若不带模块维就跨模块互相压制。
   for (const [index, id] of ['dup-gap-a', 'dup-gap-b'].entries()) {
-    writePreset(id, {
+    writeModuleFixture(id, {
       modules: ['prompt-config-engine'],
       promptConfigs: [{ id: 'gap-hint', text: `${id}-GAP`, dedupe: 'session', position: 'after-user',
         ...(index === 0 ? {} : { identity: { field: 'plugin', value: 'dup-gap-b-identity' } }) }],
@@ -476,7 +476,7 @@ test('kind 通道只报显式 sourceKind：缺省按配置 id 编，不按去重
   //    把缺省 kind 编成同一个 `plugin:shared-gap`。基线取去重身份的那版会把它当成显式声明 →
   //    在这一对上假警报（kind 与身份只在 identity 保持缺省时才同值）。
   for (const id of ['kind-id-a', 'kind-id-b']) {
-    writePreset(id, {
+    writeModuleFixture(id, {
       modules: ['prompt-config-engine'],
       promptConfigs: [{ id: 'shared-gap', text: `${id}-GAP`, dedupe: 'session', position: 'after-user',
         identity: { field: 'plugin', value: `${id}-identity` } }],
@@ -485,7 +485,7 @@ test('kind 通道只报显式 sourceKind：缺省按配置 id 编，不按去重
   // ② 显式声明的 sourceKind 正好等于自己的去重身份：kind 与身份逐字相同，按身份当基线的判据会把它
   //    当缺省 → 漏报。这份身份被两个模块共用，于是两个通道各一笔账。
   for (const id of ['kind-explicit-a', 'kind-explicit-b']) {
-    writePreset(id, {
+    writeModuleFixture(id, {
       modules: ['prompt-config-engine'],
       promptConfigs: [{ id: `${id}-hint`, text: `${id}-KIND`, dedupe: 'session', position: 'after-user',
         identity: { field: 'plugin', value: 'shared-explicit-identity' }, sourceKind: 'plugin:shared-explicit-identity' }],
@@ -519,7 +519,7 @@ test('kind 通道的压制行为：同模块同身份算已投递，无模块维
     source: { kind: 'plugin:shared-legacy-kind', plugin: 'foreign-producer', ...(moduleId === undefined ? {} : { moduleId }) },
   })
   const event = (message, seq) => ({ type: 'user/message', seq, data: { message } })
-  writePreset('kind-suppression', {
+  writeModuleFixture('kind-suppression', {
     modules: ['prompt-config-engine'],
     promptConfigs: [
       { id: 'same-kind-a', text: 'SAME-A', dedupe: 'session', sourceKind: 'shared-same-kind', position: 'after-user' },
@@ -567,7 +567,7 @@ test('端到端：真实装配下「注入 → 压缩 → 再判」按当前上�
   // 模块目录 → `compileRules` → 真实挂载 → pre-step 协调器 → 注入。压缩用宿主 surface 的
   // 真实形状（`packages/core/session/src/surface.ts:563-585`）：只有 replace 会移除节点，
   // 而成功压缩就是一次 replace（摘要替身是一条 `user/message`），append 只追加。
-  writePreset('e2e-compact', {
+  writeModuleFixture('e2e-compact', {
     modules: ['prompt-config-engine'],
     promptConfigs: [{ id: 'e2e-notice', text: 'E2E-NOTICE', dedupe: 'session', position: 'after-user' }],
   })
@@ -609,7 +609,7 @@ test('端到端：真实装配下「注入 → 压缩 → 再判」按当前上�
 
 test('热更新：空启用表到多模块、配置启停与拒绝后重试都更新同一个 Agent，重复刷新不重复注入', async (t) => {
   const { setModuleEnabled, enabledModuleIds } = await import('../../src/host/config-store.ts')
-  for (const id of ['hot-a', 'hot-b']) writePreset(id, {
+  for (const id of ['hot-a', 'hot-b']) writeModuleFixture(id, {
     modules: ['prompt-config-engine'],
     promptConfigs: [{ id, text: id, position: 'after-user' }],
   })
@@ -624,19 +624,19 @@ test('热更新：空启用表到多模块、配置启停与拒绝后重试都�
   await h.runtime.refresh()
   await h.runtime.refresh()
   assert.deepEqual(await injected(), ['USER', 'hot-a', 'hot-b'])
-  writePreset('hot-a', {
+  writeModuleFixture('hot-a', {
     modules: ['prompt-config-engine'],
     promptConfigs: [{ id: 'hot-a', text: 'CHANGED', enabled: false, position: 'after-user' }],
   })
   await h.runtime.refresh('hot-a')
   assert.deepEqual(await injected(), ['USER', 'hot-b'])
-  writePreset('hot-a', {
+  writeModuleFixture('hot-a', {
     modules: ['prompt-config-engine'],
     promptConfigs: [{ id: 'hot-a', text: 'CHANGED', position: 'after-user' }],
   })
   await h.runtime.refresh('hot-a')
   assert.deepEqual(await injected(), ['USER', 'CHANGED', 'hot-b'])
-  writePreset('hot-b', {
+  writeModuleFixture('hot-b', {
     modules: ['prompt-config-engine'],
     promptConfigs: [{ id: 'hot-b', strategy: 'invalid', text: 'BROKEN' }],
   })
@@ -652,8 +652,8 @@ test('热更新：空启用表到多模块、配置启停与拒绝后重试都�
 })
 
 test('能力注册：私有工具服务与内联工具接入官方注册表，禁用后释放', async (t) => {
-  const dir = writePreset('live-tools', { modules: ['character-tools', 'tool-config-engine'] })
-  const { writePreset: materialize } = await import('../../src/host/write-module.ts')
+  const dir = writeModuleFixture('live-tools', { modules: ['character-tools', 'tool-config-engine'] })
+  const { writeModule: materialize } = await import('../../src/host/write-module.ts')
   writeFileSync(join(dir, 'module.yml'), JSON.stringify({
     id: 'live-tools', name: 'live-tools', modules: ['character-tools', 'tool-config-engine'],
     layerSettings: { 'agent-request': { modelTemperature: '0.25' } },
@@ -667,7 +667,7 @@ test('能力注册：私有工具服务与内联工具接入官方注册表，�
   delete oldSource.triggers
   delete oldSource.layerSettings
   writeFileSync(join(dir, 'module.yml'), JSON.stringify({ ...oldSource, rules: migrated.rules, configOrder: migrated.configOrder }))
-  materialize('', { moduleDir: moduleRoot, presetTemplate: 'live-tools', presetOrder: 0, agentsInstructionText: '' })
+  materialize('', { modulesRoot: moduleRoot, moduleId: 'live-tools', agentsInstructionText: '' })
   const h = await liveAssembly(t, () => ['live-tools'])
   const tool = {
     name: 'assembly_tool', description: 'assembly tool',
@@ -723,7 +723,7 @@ const LITERAL_SLICES = [
   },
 ]
 
-function writePreset(id, { modules, promptConfigs = [], moduleConfigs, persona, configOrder }) {
+function writeModuleFixture(id, { modules, promptConfigs = [], moduleConfigs, persona, configOrder }) {
   const dir = join(moduleRoot, id)
   mkdirSync(dir, { recursive: true })
   writeFileSync(join(dir, 'module.yml'), `${JSON.stringify({
@@ -749,7 +749,7 @@ function updateConfigOrder(dir, configOrder) {
 test('受管字段一律解析到当前预设目录内', async () => {
   const id = 'managed-paths'
   const dir = join(moduleRoot, id)
-  writePreset(id, {
+  writeModuleFixture(id, {
     modules: ['prompt-config-engine', 'tool-config-engine', 'declared-triggers', 'subagent-tool-policy'],
     moduleConfigs: {
       // 新形态：预设目录基准。
@@ -772,7 +772,7 @@ test('受管字段一律解析到当前预设目录内', async () => {
 })
 
 test('模块清单：私有能力复用现有适配器挂载服务', async () => {
-  writePreset('module-roster', {
+  writeModuleFixture('module-roster', {
     modules: ['character-tools', 'tool-config-engine'],
   })
   const prepared = await prepareAssembly(moduleRoot, 'module-roster', hasEveryService)
@@ -786,12 +786,12 @@ test('拒绝路径：非法 id、无效模块声明、缺失宿主能力都在�
     prepareAssembly(moduleRoot, 'Not_An_Id', hasEveryService),
     /非法模块 id/,
   )
-  writePreset('unknown-capability', { modules: ['no-such-capability-anywhere'] })
+  writeModuleFixture('unknown-capability', { modules: ['no-such-capability-anywhere'] })
   await assert.rejects(
     prepareAssembly(moduleRoot, 'unknown-capability', hasEveryService),
     /模块声明无效/,
   )
-  writePreset('requires-missing-service', { modules: ['prompt-config-engine'], promptConfigs: LITERAL_SLICES })
+  writeModuleFixture('requires-missing-service', { modules: ['prompt-config-engine'], promptConfigs: LITERAL_SLICES })
   await assert.rejects(
     prepareAssembly(moduleRoot, 'requires-missing-service', () => false),
     /配装所需宿主能力不可用/,
@@ -813,7 +813,7 @@ test('「独占」段唯一性：装配前拒绝两个生效 complete（含人�
   })
 
   // ① 两个启用的独占配置 → 装配前 fail loud。
-  writePreset('double-complete', {
+  writeModuleFixture('double-complete', {
     modules: ['prompt-config-engine'],
     promptConfigs: [exclusive('excl-a'), exclusive('excl-b')],
   })
@@ -824,7 +824,7 @@ test('「独占」段唯一性：装配前拒绝两个生效 complete（含人�
   )
 
   // ② 顶层人设独占 × 配置独占 → 同样被拒。
-  writePreset('persona-complete', {
+  writeModuleFixture('persona-complete', {
     modules: ['prompt-config-engine'],
     promptConfigs: [exclusive('excl-a')],
     persona: { prefix: 'PREFIX', complete: true },
@@ -836,7 +836,7 @@ test('「独占」段唯一性：装配前拒绝两个生效 complete（含人�
   )
 
   // ③ 边界一：第二个独占被 `enabled: false` 关掉 → 不算冲突。
-  writePreset('one-complete-disabled', {
+  writeModuleFixture('one-complete-disabled', {
     modules: ['prompt-config-engine'],
     promptConfigs: [exclusive('excl-a'), exclusive('excl-b', false)],
   })
@@ -844,7 +844,7 @@ test('「独占」段唯一性：装配前拒绝两个生效 complete（含人�
   assert.equal(allowed.rules.length, 2, '禁用的规则仍进装配输入（由引擎过滤 enabled）')
 
   // ④ 边界二：单独一个独占（无人设）→ 放行，且人设存在但未开独占也放行。
-  writePreset('single-complete', {
+  writeModuleFixture('single-complete', {
     modules: ['prompt-config-engine'],
     promptConfigs: [exclusive('excl-a')],
     persona: { prefix: 'PREFIX' },
@@ -854,20 +854,19 @@ test('「独占」段唯一性：装配前拒绝两个生效 complete（含人�
 })
 
 test('导入候选与运行配装同源：完整定义经过 rules 切片后保持所有执行维度', async () => {
-  const { writePreset } = await import('../../src/host/write-module.ts')
+  const { writeModule } = await import('../../src/host/write-module.ts')
   const id = 'materialized-slices'
-  // 定义来源目录（writePreset 的模板解析基准：sourceDir 优先于同名已安装预设）。
+  // 定义来源目录（writeModule 的模板解析基准：sourceDir 优先于已安装模块）。
   const sourceDir = join(moduleRoot, '.source-materialized', id)
   mkdirSync(sourceDir, { recursive: true })
   writeFileSync(join(sourceDir, 'module.yml'), `${JSON.stringify({
     id, name: id, modules: ['rule-engine'], rules: LITERAL_SLICES.map(promptConfigToRule),
   }, null, 2)}\n`, 'utf8')
-  // 官方路径：把同一份切片交给 writePreset 物化到 <预设根>/<id>/configs。
-  writePreset('materialized prompt', {
-    moduleDir: moduleRoot,
-    presetOrder: 5,
-    presetTemplate: id,
-    outputId: id,
+  // 官方路径：把同一份切片交给 writeModule 物化到 <模块根>/<id>/configs。
+  writeModule('materialized prompt', {
+    modulesRoot: moduleRoot,
+    moduleId: id,
+    targetModuleId: id,
     sourceDir,
     agentsInstructionText: '',
   })
@@ -949,7 +948,7 @@ function stubHostContext(options = {}) {
 
 test('装配失败与恢复：准备期失败只告警，撤旧失败仍尝试恢复，恢复也失败保留两层原因', async () => {
   // ① 准备期失败：启用表里有一项非法 id ⇒ prepareAssembly 在准备期就抛（与真实坏定义同一条路径）。
-  writePreset('assembly-target', { modules: ['tool-config-engine'] })
+  writeModuleFixture('assembly-target', { modules: ['tool-config-engine'] })
   const host = stubHostContext()
   const runtime = createAgentAssembly(host.ctx, {
     moduleRoot,
@@ -970,7 +969,7 @@ test('装配失败与恢复：准备期失败只告警，撤旧失败仍尝试�
   // ② 撤旧失败：它和挂新在同一个 try 里，所以旧装配照样被装回去——装回的必须是**旧准备**
   // 而不是这次刷新准备的那份。刷新前把启用表清空，两份准备因此贡献不同，回滚装错就红。
   const disposeFail = new Error('DISPOSE-FAIL')
-  writePreset('assembly-restore', {
+  writeModuleFixture('assembly-restore', {
     modules: ['prompt-config-engine'],
     promptConfigs: [{ id: 'restore', text: 'RESTORE', position: 'after-user' }],
   })
@@ -1041,11 +1040,11 @@ test('装配失败与恢复：准备期失败只告警，撤旧失败仍尝试�
 
 test('启用即配装：启用表里的每个模块各贡献一份，清单为空则不装配', async () => {
   // 两个模块各有自己的提示词配置与引擎模块声明：合起来应当两份都进装配输入。
-  writePreset('enabled-a', {
+  writeModuleFixture('enabled-a', {
     modules: ['prompt-config-engine'],
     promptConfigs: [{ id: 'from-a', strategy: 'static', text: 'A', position: 'after-user' }],
   })
-  writePreset('enabled-b', {
+  writeModuleFixture('enabled-b', {
     modules: ['prompt-config-engine'],
     promptConfigs: [{ id: 'from-b', strategy: 'static', text: 'B', position: 'after-user' }],
   })
@@ -1068,7 +1067,7 @@ test('启用即配装：启用表里的每个模块各贡献一份，清单为�
   await runtime.dispose()
 
   // 追加 C：装配范围随之变成三项（启用即配装，无需别的指针）。
-  writePreset('enabled-c', {
+  writeModuleFixture('enabled-c', {
     modules: ['prompt-config-engine'],
     promptConfigs: [{ id: 'from-c', strategy: 'static', text: 'C', position: 'after-user' }],
   })
@@ -1111,11 +1110,11 @@ test('启用即配装：启用表里的每个模块各贡献一份，清单为�
  * 真值源是**启用表的字面量顺序**，不是实现自己算出的另一份结果。
  */
 test('配装记录报告本 Agent 的提示词层：顺序即启用表，装配前与释放后为空', async () => {
-  writePreset('layer-a', {
+  writeModuleFixture('layer-a', {
     modules: ['prompt-config-engine'],
     promptConfigs: [{ id: 'from-a', strategy: 'static', text: 'A', position: 'after-user' }],
   })
-  writePreset('layer-b', {
+  writeModuleFixture('layer-b', {
     modules: ['prompt-config-engine'],
     promptConfigs: [{ id: 'from-b', strategy: 'static', text: 'B', position: 'after-user' }],
   })

@@ -9,7 +9,7 @@
  *     system_prompt / post_history_instructions → system-section，
  *     first_mes → pre-step 开场白（dedupe=session 每会话一次）；
  *   - 采样参数（temperature/openai_max_tokens/reasoning_effort）**不转译**：
- *     模型参数由「模型设置」UI 统一管理（预设级 params.model*，writePreset 渲染
+ *     模型参数由「模型设置」UI 统一管理（模块级 params.model*，writeModule 渲染
  *     agent-request patch），ST 卡固化值会覆盖用户在模型设置里的设置，故剥离；
  *   - modules 按需组装：rule-engine 始终，system-section 注入需要
  *     persona（complete: false 允许 system-section 生效），世界书条目需要 world-book-tools。
@@ -946,4 +946,3 @@ export function stModuleId(baseName: string): string {
 }
 
 /** 旧转换 API 名称仅作调用兼容；外部 SillyTavern 预设格式仍保持原语义。 */
-export { convertStToModule as convertStToPreset, convertStToModuleWithReport as convertStToPresetWithReport, mergeStModules as mergeStPresets, mergeStModulesWithReport as mergeStPresetsWithReport, stModuleId as stPresetId }

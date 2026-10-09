@@ -56,8 +56,6 @@ export interface RuleSettings { order: number; enabled?: boolean; group?: string
 
 export interface RulesRequest {
   expectedModuleId?: string
-  /** 旧公开输入仅在边界归一。 */
-  expectedPresetId?: string
   expectedRevision?: string
   expectedRevisions?: Partial<RuleRevisions>
   edits?: RuleEdit[]

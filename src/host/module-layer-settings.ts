@@ -45,4 +45,3 @@ export function readModuleLayerSettings(source: unknown): Record<string, unknown
   if (!isRecord(source)) throw new ModuleLayerSettingsError('module.yml 必须是对象')
   return readLayerSettings(source.layerSettings)
 }
-export { ModuleLayerSettingsError as PresetLayerSettingsError, readModuleLayerSettings as readPresetLayerSettings }

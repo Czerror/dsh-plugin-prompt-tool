@@ -85,7 +85,7 @@ function createAnchorNoticeResolver(config) {
     : (typeof config.params?.text === 'string' && config.params.text.length > 0 ? config.params.text : undefined)
   // 确认词无内置默认（默认值归模板/预设）：空 = 不做词确认，只走未命中兜底注入。
   const firstTurnWord = typeof config.params?.firstTurnWord === 'string' ? config.params.firstTurnWord : ''
-  // 确认词集合：writePreset 派生的 anchorWords 优先（锚句信号词多词 prefix，任一命中即
+  // 确认词集合：writeModule 派生的 anchorWords 优先（锚句信号词多词 prefix，任一命中即
   // 确认——deep 档 Let…/自定义锚句首词都覆盖）；无 anchorWords 时用显式确认词。
   const anchorWords = Array.isArray(config.params?.anchorWords) && config.params.anchorWords.length > 0
     ? config.params.anchorWords.map(String).filter((word) => word.length > 0)

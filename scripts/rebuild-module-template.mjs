@@ -25,8 +25,8 @@ const doc = new Document({
   variables: {}, customTools: [], rules: [],
 })
 doc.commentBefore = ` dsh-plugin-prompt-tool — 全参数 module.yml 模板（自动生成）
- 生成来源：scripts/rebuild-preset-template.mjs + ENGINE_PARAM_DEFINITIONS + engine/schema.mjs + templates/
- 重建：pnpm rebuild:preset-template；检查：pnpm rebuild:preset-template -- --check
+ 生成来源：scripts/rebuild-module-template.mjs + ENGINE_PARAM_DEFINITIONS + engine/schema.mjs + templates/
+ 重建：pnpm rebuild:module-template；检查：pnpm rebuild:module-template -- --check
  复制到 DSH_HOME/.prompt-tool/modules/<id>/module.yml，id 与目录名保持一致。
  rules 是唯一行为定义：if 判断树 → then 动作数组（另有 else）；提示词正文属于 inject-text 动作。
  共享设置只内嵌真实配置卡；空层不自动创建 UI 卡或提示词规则。
@@ -104,7 +104,7 @@ const commented = value => value.toString().trimEnd().split('\n').map(line => `#
 const text = doc.toString() + `\n# BEGIN SHARED PARAMETER REFERENCE\n# 以下穷举全部登记键；值是编辑器示例，不承诺等于模块运行时默认值。\n# '' / [] 保存时删键；false / 0 保留。按需合并到上方 layerSettings，勿保留重复顶层键。\n${commented(reference)}\n# END SHARED PARAMETER REFERENCE\n\n# 其他领域资产参考（按需合并；moduleConfigs 低于已声明共享参数，不能绕过权限）\n${commented(assets)}\n`
 compileRules(parseDocument(text).toJS().rules)
 if (process.argv.includes('--check')) {
-  if (readFileSync(output, 'utf8') !== text) throw new Error('根 preset.yml 已偏离参数契约，请运行 pnpm rebuild:preset-template')
+  if (readFileSync(output, 'utf8') !== text) throw new Error('根 module.yml 已偏离参数契约，请运行 pnpm rebuild:module-template')
 } else {
   const temporary = fileURLToPath(output) + '.tmp'
   const fd = openSync(temporary, 'wx')

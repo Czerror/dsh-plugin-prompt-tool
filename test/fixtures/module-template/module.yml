@@ -2,7 +2,7 @@
 #
 # 来源：原内置 anchored 预设的「模块装配 + params + 三条提示词配置」结构。该预设随上游
 # dsh-anchored-standard 冻结一并下线；测试仍需要一份「声明锚定/门控链路」的模板来验证
-# writePreset / rematerialize / 参数桥的生成契约，因此把结构固化为测试夹具。
+# writeModule / ensureModuleReady / 参数桥的生成契约，因此把结构固化为测试夹具。
 # 夹具不含任何提示词正文（content 段），也不含越狱/角色扮演文本。
 id: fixture
 name: Fixture Template

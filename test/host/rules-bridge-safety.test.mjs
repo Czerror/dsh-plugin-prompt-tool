@@ -10,7 +10,7 @@ import { createRuleEditor, getRulesDraft, rulesDirty } from '../../src/client/da
 
 const { home, moduleRoot } = isolatedHome('pt-rules-bridge-')
 const { registerSettingsBridge } = await import('../../src/runtime/settings-bridge.ts')
-const { writePreset } = await import('../../src/host/write-module.ts')
+const { writeModule } = await import('../../src/host/write-module.ts')
 const { compileRules } = await import('../../engine/rule-spec.mjs')
 let sequence = 0
 
@@ -36,7 +36,7 @@ function harness({ readonly = false, rebuildFails = false, afterRebuild } = {}) 
     () => activeDirectory, async () => {
       rebuilds++
       if (typeof rebuildFails === 'function' ? rebuildFails() : rebuildFails) throw new Error('REBUILD_FAILED')
-      writePreset('', { moduleDir: moduleRoot, presetTemplate: id, outputId: id, presetOrder: 0, rules: [] })
+      writeModule('', { modulesRoot: moduleRoot, moduleId: id, targetModuleId: id, rules: [] })
       await afterRebuild?.(file)
     })
   test.after(() => disposers.forEach(dispose => dispose()))

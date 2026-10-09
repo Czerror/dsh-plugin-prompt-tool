@@ -68,7 +68,7 @@ export interface ModuleSpec {
   subagentToolPolicy?: Record<string, unknown>
   /** @deprecated 仅标记旧导入形状；loadModuleSpec 拒绝，须先离线迁移。 */
   triggers?: unknown[]
-  /** 模板变量插值开关（缺省 true = 启用；false = 停用，writePreset 不生成变量文件）。 */
+  /** 模板变量插值开关（缺省 true = 启用；false = 停用，writeModule 不生成变量文件）。 */
   variablesEnabled?: boolean
   /** ST 世界书递归总开关（缺省 false = 不递归，对齐 ST `world_info_recursive`）：装配期传给 `compileRules`。 */
   stWorldBookRecursive?: boolean
@@ -481,8 +481,6 @@ export function withModuleDefinition(moduleDir: string, mutate: (doc: ReturnType
   invalidateModuleSpec(moduleDir)
   return committed
 }
-
-export { saveModulePersona as savePresetPersona, withModuleDefinition as withPresetDoc }
 
 /** 向 module.yml 的 modules 追加功能模块；空数组保持按需装配语义。 */
 export function appendModuleCapabilities(
@@ -1031,7 +1029,3 @@ export function assertCompositionArray(raw: string, spec: ModuleSpec): unknown[]
   if (!Array.isArray(parsed)) throw new Error(`generated agent.cordis.yml is not a YAML array (module ${spec.id})`)
   return parsed
 }
-
-/** 已发布的 host API 输入兼容；内部只使用 module 词义。 */
-export { ModuleLayerSettingsError as PresetLayerSettingsError, isRenderableModuleDir as isRenderablePresetDir, ensureModuleSeed as ensurePresetSeed, cloneBuiltinModule as cloneBuiltinPreset, removeUserModule as removeUserPreset, parseImportedModuleId as parseImportedPresetId, resolveModuleParams as resolvePresetParams, appendModuleCapabilities as appendPresetModules, removeModuleCapabilityDeclaration as removePresetModule, createModuleCapability as createEngineCapabilityInPreset, removeModuleCapability as removeEngineCapabilityFromPreset }
-export type { ModuleCapabilityCreateRequest as EngineCapabilityCreateRequest, ModuleCapabilityCreateResult as EngineCapabilityCreateResult, ModuleCapabilityRemoveResult as EngineCapabilityRemoveResult }

@@ -10,7 +10,7 @@
  *   node scripts/extract-st-character.mjs <card.png> [out.json]   # 提取角色卡 JSON
  *
  * 提取出的角色卡 JSON 直接在工作台「模块」页导入——单 JSON 导入自动走
- * convertStToPreset 完整转换链路（角色设定/系统提示/开场白/备用开场白/世界书/
+ * convertStToModule 完整转换链路（角色设定/系统提示/开场白/备用开场白/世界书/
  * setvar-getvar 变量/模块装配），无需脚本侧二次转换。
  * （旧 --preset 简化映射会丢失世界书/变量，已移除。）
  *

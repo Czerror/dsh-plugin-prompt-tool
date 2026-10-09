@@ -25,7 +25,7 @@ export interface ImportOrderCandidates {
 
 /** 卡片来源：模块卡，或指向用户磁盘指令文件的文件卡（服务端生成，客户端只读）。 */
 export type CardOrigin =
-  | { kind: 'preset'; presetId: string }
+  | { kind: 'module'; moduleId: string }
   | { kind: 'instruction-file'; fileId: string; contextId: string | null }
 
 /**

@@ -72,4 +72,3 @@ export function assertModuleTree(dir: string): void {
 
 
 /** 已发布的旧入口只在此处适配。 */
-export { assertModuleId as assertPresetId, setModuleDefinitionId as setPresetDefinitionId, modulePathExists as presetPathExists, canonicalModulesRoot as canonicalPresetRoot, assertModuleTree as assertPresetTree }

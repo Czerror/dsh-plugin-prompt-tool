@@ -114,7 +114,7 @@ export function loadPromptConfigFiles(dirUrl) {
   } catch (error) {
     throw new TypeError(`${name}: configsDir ${String(dirUrl)} is not readable: ${String(error?.message ?? error)}`)
   }
-  // 预设级模板变量（writePreset 生成 variables.yml）：读入后合并进每条配置
+  // 模块级模板变量（writeModule 生成 variables.yml）：读入后合并进每条配置
   // variables（配置自身优先）；variables.yml 本身不当作配置解析。缺失或损坏
   // 时为空变量源，不阻断加载。
   let presetVariables = {}

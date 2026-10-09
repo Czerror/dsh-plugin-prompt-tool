@@ -22,7 +22,7 @@ after(() => {
   rmSync(home, { recursive: true, force: true })
 })
 const { buildWorldBookEntry, deleteWorldBookEntry, listWorldBookEntries, upsertWorldBookEntry } = await import('../../lib/index.mjs')
-const { writePreset } = await import('../../src/host/write-module.ts')
+const { writeModule } = await import('../../src/host/write-module.ts')
 const { apply } = await import('../../engine/tool-config-engine.mjs')
 
 // —— 世界书条目（原 worldbook.test.mjs） ——
@@ -240,7 +240,7 @@ test('compileCustomTool：五种现有执行器和 fs 动态 action 保持可用
   }
 })
 
-test('writePreset：坏工具完整拒绝无写，合法 DSL 保留并由内联入口执行和释放', async () => {
+test('writeModule：坏工具完整拒绝无写，合法 DSL 保留并由内联入口执行和释放', async () => {
   const moduleDir = join(home, '.prompt-tool', 'modules')
   const dir = join(moduleDir, 'custom-tools-test')
   mkdirSync(dir, { recursive: true })
@@ -257,12 +257,12 @@ test('writePreset：坏工具完整拒绝无写，合法 DSL 保留并由内联�
   doc.setIn(['customTools'], tools)
   writeFileSync(file, doc.toString(), 'utf8')
   const before = readFileSync(file, 'utf8')
-  assert.throws(() => writePreset('', { moduleDir, presetTemplate: 'custom-tools-test' }), /invalid customTools/)
+  assert.throws(() => writeModule('', { modulesRoot: moduleDir, moduleId: 'custom-tools-test' }), /invalid customTools/)
   assert.equal(readFileSync(file, 'utf8'), before)
   assert.equal(existsSync(join(dir, 'rules')), false)
   doc.setIn(['customTools'], tools.slice(0, 4))
   writeFileSync(file, doc.toString(), 'utf8')
-  writePreset('', { moduleDir, presetTemplate: 'custom-tools-test' })
+  writeModule('', { modulesRoot: moduleDir, moduleId: 'custom-tools-test' })
   const source = readFileSync(file, 'utf8')
   assert.match(source, /# 保留手写预设/)
   assert.deepEqual(parseYaml(source).customTools, tools.slice(0, 4))

@@ -7,9 +7,9 @@
 
 ## 部署设置与编辑目标
 
-Config 的规范键是 `modulesEnabled`，表示模块运行总闸。旧 `writePreset` 仅在输入边界兼容；同时提供且值不同时拒绝。关闭只卸载模块贡献，不删除定义、规则切片或用户资产；总闸关闭时仍可调整排序。
+Config 的唯一键是 `modulesEnabled`，表示模块运行总闸。关闭只卸载模块贡献，不删除定义、规则切片或用户资产；总闸关闭时仍可调整排序。
 
-编辑选择由请求头 `x-module-id` 声明，不改写 settings，也不切换或跟随官方会话预设。写请求使用 `expectedModuleId` 检查目标一致性；兼容入口归一旧身份键，冲突值拒绝。宿主官方预设的 `presetId` 仍表达其真实身份，例如官方工具预览。
+编辑选择由请求头 `x-module-id` 声明，不改写 settings，也不切换或跟随官方会话预设。写请求使用 `expectedModuleId` 检查目标一致性，不一致即拒绝。宿主官方预设的 `presetId` 仍表达其真实身份，例如官方工具预览。
 
 ## 磁盘格式：规则与共享参数各有所有者
 
@@ -31,7 +31,7 @@ Config 的规范键是 `modulesEnabled`，表示模块运行总闸。旧 `writeP
 
 九层 UI、官方参数与插件参数的对照见 [九层契约](injection-point-contracts.md)。
 
-根目录 [module.yml](../module.yml) 是可复制的参考：九层规则示例默认关闭，只列四个公开共享参数。`pnpm --dir $Repo rebuild:preset-template` 使用 YAML Document 从权威目录重建，追加 `-- --check` 检查漂移；`$Repo` 为仓库绝对路径。
+根目录 [module.yml](../module.yml) 是可复制的参考：九层规则示例默认关闭，只列四个公开共享参数。`pnpm --dir $Repo rebuild:module-template` 使用 YAML Document 从权威目录重建，追加 `-- --check` 检查漂移；`$Repo` 为仓库绝对路径。
 
 | 公开参数组 | 字段 | 实际作用面 |
 |---|---|---|
@@ -69,7 +69,7 @@ UI fields
     → /param-overrides POST（settings-bridge）
       → saveModuleParams（写 module.yml：layerSettings 的所属层；空值删键）
         → commitModuleDefinition（完整定义原子提交并校验发布切片）
-          → materializeModule → assembly.refresh（刷新受影响 Agent 的贡献）
+          → ensureModuleReady → assembly.refresh（刷新受影响 Agent 的贡献）
 ```
 
 规则卡另走同一模块保存队列中的局部事务：
@@ -78,7 +78,7 @@ UI fields
 当前规则草稿快照 + expectedRevisions
   → /rules（edits / activateRuleId）
     → editModuleRules（全量候选 compileRules → 按操作 CAS → 完整定义提交）
-      → materializeModule → assembly.refresh
+      → ensureModuleReady → assembly.refresh
         → 重读规则并复核版本，再确认请求快照
 ```
 
@@ -120,7 +120,7 @@ packages rather than a preset directory」，并把 `!!js` 限制在插件配置
 
 包内 `modules/` 是复制与补建来源，不注册到官方预设目录，不探测或重命名用户已有模块。
 
-- **初始化**：`ensurePresetSeed` 按包内同名目录检查，缺哪个只复制哪个；已有目录的定义、组合与资源保持原样。
+- **初始化**：`ensureModuleSeed` 按包内同名目录检查，缺哪个只复制哪个；已有目录的定义、组合与资源保持原样。
   初次复制后由统一入口分解 rules/，不覆盖其他模块。
 - **保存**：当前预设以自身目录为唯一来源生成，模块、人设、变量、工具和子代理策略都从该目录读取。
   保存只重建目标模块；关闭运行总闸不清空组合、正文或配置切片。
@@ -390,7 +390,7 @@ moduleConfigs 仅补充参数桥未覆盖的键，不再锁定覆盖 UI 可管�
 `host/worldbook.ts` 的 `buildWorldBookEntry(input)` 是世界书条目结构工厂（能力归一）：
 `strategy/layer/position` 固定值与 params 键集（constant/keys/secondaryKeys/caseSensitive/
 wholeWords/selectiveLogic）单一权威。以下写入端共用：
-- **ST 导入**（`sillytavern.ts` convertStToPreset）：ST 字段别名收敛（keys/key、constant/add_always、
+- **ST 导入**（`sillytavern.ts` convertStToModule）：ST 字段别名收敛（keys/key、constant/add_always、
   disable/enabled、insertion_order/order、case_sensitive/caseSensitive 等）保留在转换层，结构构造下沉工厂；
 - **模型工具**（`world-book-tools.ts` world_book_upsert）：模型参数直接经工厂构造——工具后续暴露
   wholeWords 等字段时两通道自动一致。
@@ -415,7 +415,7 @@ wholeWords/selectiveLogic）单一权威。以下写入端共用：
 
 `/persona` 与 `/rules` 在写入前拒绝顶层独占与启用规则的独占注入并存；装配准备期再检查，覆盖手改定义和导入来源。`system-section` 层的 `complete` 与 `suppressRuntimeContext` 属注册期能力，不能用动态 `if` 假装成每轮开关；其他层写同名键在编译期被拒绝（动作与配置的键白名单见 [engine-reuse.md](engine-reuse.md)）；字段的宿主语义和 disposer 保持。普通官方委派的 per-child persona 归宿主配置，插件模块的行参数不会因此改写它。
 
-注入动作的 `config.text` 表示单段正文，`config.texts` 表示多段正文，引擎统一为内部文本数组。SillyTavern 导入与角色卡并入沿用各自领域转换，正文不进入部署设置。重物化由 `materializeModule` 读取模块自身定义和内容文件后交给 writer，生成目录仍不是可编辑事实源。
+注入动作的 `config.text` 表示单段正文，`config.texts` 表示多段正文，引擎统一为内部文本数组。SillyTavern 导入与角色卡并入沿用各自领域转换，正文不进入部署设置。重物化由 `ensureModuleReady` 读取模块自身定义和内容文件后交给 writer，生成目录仍不是可编辑事实源。
 
 ## 9. 子代理工具策略（subagentToolPolicy，2026-09-02）
 
@@ -509,7 +509,7 @@ buildSubagentToolParameters(c)     → 模型可见扩展参数 Schema
 
 ## 10. 契约测试
 
-完整模块导入使用 `writeModule` 的 `sourceDir + stageOnly`：隔离暂存根下使用合法目标 id，完成定义、工具和附件校验，再复检目标版本并 rename 交换。普通 `materializeModule` 原地恢复切片，不重建整个用户目录；记忆、未知资产、技能及正文保留。详见 [资产交换](asset-transfer.md) 与 [ADR-0008](adr/0008-module-slices-memory-assembly.md)。
+完整模块导入使用 `writeModule` 的 `sourceDir + stageOnly`：隔离暂存根下使用合法目标 id，完成定义、工具和附件校验，再复检目标版本并 rename 交换。普通 `ensureModuleReady` 原地恢复切片，不重建整个用户目录；记忆、未知资产、技能及正文保留。详见 [资产交换](asset-transfer.md) 与 [ADR-0008](adr/0008-module-slices-memory-assembly.md)。
 
 - `test/host/write-module.test.mjs`：规则物化与模型请求动作保持；旧源拒绝与显式离线转换；变量只读顶层 variables，保留空串与同名键，清空后不回退旧 params。
 - `test/host/module-rules.test.mjs` 与 `rules-migration.test.mjs`：局部事务、改名／删除保序、显式互斥、CAS、坏结构、离线原字节回滚及业务空值行为。
