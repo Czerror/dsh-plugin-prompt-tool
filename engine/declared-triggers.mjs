@@ -1,8 +1,9 @@
 /**
  * declared-triggers — 声明式触发器的运行时（B7）。
  *
- * 链路：`preset.yml` 顶层 `triggers` 段 →（`writePreset` 保存期校验 + 物化）→ 预设根
- * `triggers.yml` → 本模块读入、编译、注册。
+ * 链路（历史形态）：`preset.yml` 顶层 `triggers` 段 →（旧 `writePreset` 保存期校验 + 物化）→ 模块根
+ * `triggers.yml` → 本模块读入、编译、注册。模块 id `declared-triggers` 已退役（不得写进
+ * `modules`），本文件只服务旧数据的校验与离线迁移。
  *
  * ## 声明由预设提供，引擎不带默认（2026-09-22 拍板）
  *

@@ -48,7 +48,7 @@ test('安装最终目录交换与保存共享锁；独立进程不能跨过目�
         return rename(from, to);
       };
       syncBuiltinESMExports();
-      if (method === 'writer') writeModule('', { modulesRoot: root, moduleId: id, targetModuleId: id, sourceDir: source });
+      if (method === 'writer') writeModule({ modulesRoot: root, moduleId: id, targetModuleId: id, sourceDir: source });
       else {
         const files = [{ path: 'module.yml', content: fs.readFileSync(join(source, 'module.yml'), 'utf8') }];
         const request = { targetId: id, overwrite: true };
@@ -73,13 +73,13 @@ test('安装最终目录交换与保存共享锁；独立进程不能跨过目�
         const snapshot = loadModuleDefinition(join(root, id));
         snapshot.doc.set('unknown', 'CONTENDER');
         try { commitModuleDefinition(snapshot, snapshot.doc); } catch (error) { if (error.status === 409) rejected++; }
-        try { writeModule('', { modulesRoot: root, moduleId: id, targetModuleId: id, sourceDir: source }); } catch (error) { if (error.status === 409) rejected++; }
+        try { writeModule({ modulesRoot: root, moduleId: id, targetModuleId: id, sourceDir: source }); } catch (error) { if (error.status === 409) rejected++; }
         const files = [{ path: 'module.yml', content: fs.readFileSync(join(source, 'module.yml'), 'utf8') }];
         const request = { targetId: id, overwrite: true };
         const preview = moduleImportPreview(root, files, request);
         try { await installModulePackage(root, files, { ...request, expectedSourceDigest: preview.sourceDigest, expectedPreviewRevision: preview.previewRevision }); }
         catch (error) { if (error.status === 409) rejected++; }
-        try { writeModule('STALE ASSET', { modulesRoot: root, moduleId: id }); } catch (error) { if (error.status === 409) rejected++; }
+        try { writeModule({ modulesRoot: root, moduleId: id }); } catch (error) { if (error.status === 409) rejected++; }
         process.exit(rejected === 4 ? 0 : 1);
       `, moduleRoot, id, source], { cwd: tmpdir(), stdio: 'ignore' })
       assert.equal((await once(contender, 'exit'))[0], 0, '保存、直接安装、包安装和同目录资产写入都拒绝目标活锁')

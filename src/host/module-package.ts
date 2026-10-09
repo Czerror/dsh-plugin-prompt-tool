@@ -229,8 +229,8 @@ export async function installModulePackage(root: string, files: AssetFile[], req
       setModuleDefinitionId(doc, preview.summary.targetId)
       doc.set('name', preview.summary.targetName)
       writeFileSync(join(source, MODULE_DEFINITION_FILE), doc.toString(), 'utf8')
-      // 正文归 module.yml；preset.md 已废弃，导入它也不再回写。
-      generated = writeModule('', {
+      // 正文归 module.yml；preset.md 随包作资源落盘，供离线迁移读取。
+      generated = writeModule({
         modulesRoot: root, moduleId: preview.summary.targetId, targetModuleId: preview.summary.targetId,
         sourceDir: source, stageOnly: true,
       })
@@ -388,5 +388,3 @@ export async function exportModulePackage(root: string, request: ModuleExportReq
   verify()
   return { ...result, encoding: 'base64', content: Buffer.from(archive).toString('base64') }
 }
-
-/** 已发布的 API 别名只保留在交换边界。 */

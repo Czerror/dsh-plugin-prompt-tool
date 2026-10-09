@@ -74,7 +74,7 @@ export function ensureModuleReady(id: string, options: { modulesRoot?: string; w
 }
 
 /** 已有同一模块只恢复切片；导入/复制先完整生成合法身份候选，再交换目标。 */
-export function writeModule(prompt: string, options: WriteModuleOptions): string {
+export function writeModule(options: WriteModuleOptions): string {
   const root = options.modulesRoot.trim().length > 0 ? options.modulesRoot : MODULES_DIR
   assertModuleId(options.moduleId)
   const targetId = options.targetModuleId ?? options.moduleId

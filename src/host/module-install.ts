@@ -69,6 +69,3 @@ export function assertModuleTree(dir: string): void {
     for (const entry of readdirSync(dir)) assertModuleTree(join(dir, entry))
   } else if (!stat.isFile()) throw new Error(`预设包含特殊文件：${dir}`)
 }
-
-
-/** 已发布的旧入口只在此处适配。 */

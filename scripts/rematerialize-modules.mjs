@@ -72,7 +72,7 @@ for (const module of modules) {
     continue
   }
   try {
-    writeModule('', {
+    writeModule({
       modulesRoot: moduleRoot,
       moduleId: module.id,
       warn: (message) => console.warn(message),

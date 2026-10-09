@@ -36,7 +36,7 @@ function harness({ readonly = false, rebuildFails = false, afterRebuild } = {}) 
     () => activeDirectory, async () => {
       rebuilds++
       if (typeof rebuildFails === 'function' ? rebuildFails() : rebuildFails) throw new Error('REBUILD_FAILED')
-      writeModule('', { modulesRoot: moduleRoot, moduleId: id, targetModuleId: id, rules: [] })
+      writeModule({ modulesRoot: moduleRoot, moduleId: id, targetModuleId: id })
       await afterRebuild?.(file)
     })
   test.after(() => disposers.forEach(dispose => dispose()))

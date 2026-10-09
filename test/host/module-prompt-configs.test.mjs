@@ -48,7 +48,7 @@ function generatedConfigs(options = {}, prompt = 'PROMPT') {
     writeFileSync(file, doc.toString())
     writeFileSync(join(dir, FIXTURE_MODULE_ID, 'preset.md'), prompt)
     for (const item of planRulesMigration(dir).items) writeFileSync(join(item.directory, item.definitionFile), item.nextDefinition)
-    writeModule(prompt, { modulesRoot: dir, moduleId: FIXTURE_MODULE_ID })
+    writeModule({ modulesRoot: dir, moduleId: FIXTURE_MODULE_ID })
     const source = loadModuleSpec(join(dir, FIXTURE_MODULE_ID))
     const specs = source.rules.flatMap(rule => rule.then.filter(action => action.kind === 'inject-text').map(action => ({
       ...injectionConfigSpec(rule, action, source), enabled: rule.enabled !== false,

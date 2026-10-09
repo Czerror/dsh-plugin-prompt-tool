@@ -22,10 +22,27 @@ const forward = process.argv.slice(2)
   .flatMap((arg) => arg.split(/[,\s]+/))
   .filter((arg) => arg.length > 0)
 // node 自身的标志（--test-* / --experimental-*）原样透传，不能当成用例路径。
-const nodeFlags = forward.filter((arg) => arg.startsWith('-'))
-const patterns = forward
-  .filter((arg) => !arg.startsWith('-'))
-  .map((arg) => (/^[A-Za-z]:/.test(arg) || arg.startsWith('.') ? arg : join(root, arg)))
+// 取值式标志（如 `--test-name-pattern host`）的取值不带前导 `-`，必须紧跟其标志一起
+// 透传，否则会被拼成 <root>/host 当成用例路径。
+const VALUE_FLAGS = new Set([
+  '--test-name-pattern', '--test-skip-pattern', '--test-reporter', '--test-reporter-destination',
+  '--test-concurrency', '--test-timeout', '--test-shard', '--import', '--loader', '--require',
+])
+const nodeFlags = []
+const patterns = []
+for (let index = 0; index < forward.length; index += 1) {
+  const arg = forward[index]
+  if (!arg.startsWith('-')) {
+    patterns.push(/^[A-Za-z]:/.test(arg) || arg.startsWith('.') ? arg : join(root, arg))
+    continue
+  }
+  nodeFlags.push(arg)
+  const value = forward[index + 1]
+  if (VALUE_FLAGS.has(arg) && value !== undefined && !value.startsWith('-')) {
+    nodeFlags.push(value)
+    index += 1
+  }
+}
 
 function run(command, args, options = {}) {
   const result = spawnSync(command, args, {

@@ -667,7 +667,7 @@ test('能力注册：私有工具服务与内联工具接入官方注册表，�
   delete oldSource.triggers
   delete oldSource.layerSettings
   writeFileSync(join(dir, 'module.yml'), JSON.stringify({ ...oldSource, rules: migrated.rules, configOrder: migrated.configOrder }))
-  materialize('', { modulesRoot: moduleRoot, moduleId: 'live-tools', agentsInstructionText: '' })
+  materialize({ modulesRoot: moduleRoot, moduleId: 'live-tools', agentsInstructionText: '' })
   const h = await liveAssembly(t, () => ['live-tools'])
   const tool = {
     name: 'assembly_tool', description: 'assembly tool',
@@ -863,7 +863,7 @@ test('导入候选与运行配装同源：完整定义经过 rules 切片后保�
     id, name: id, modules: ['rule-engine'], rules: LITERAL_SLICES.map(promptConfigToRule),
   }, null, 2)}\n`, 'utf8')
   // 官方路径：把同一份切片交给 writeModule 物化到 <模块根>/<id>/configs。
-  writeModule('materialized prompt', {
+  writeModule({
     modulesRoot: moduleRoot,
     moduleId: id,
     targetModuleId: id,

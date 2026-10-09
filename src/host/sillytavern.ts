@@ -944,5 +944,3 @@ export function stModuleId(baseName: string): string {
   const slug = baseName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')
   return slug || `st-${createHash('sha1').update(baseName).digest('hex').slice(0, 6)}`
 }
-
-/** 旧转换 API 名称仅作调用兼容；外部 SillyTavern 预设格式仍保持原语义。 */

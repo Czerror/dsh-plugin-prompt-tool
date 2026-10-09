@@ -725,7 +725,7 @@ test('/persona：已有启用独占规则时拒绝顶层人设独占，禁用规
   const file = join(dir, 'module.yml')
   const writeModule = enabled => writeFileSync(file, JSON.stringify({ id: basename(dir), modules: ['rule-engine'], rules: [textRule('exclusive-section', '独占段', { enabled, layer: 'system-section', params: { complete: true } })] }))
   try {
-    registerSettingsBridge(ctx, 'prompt-tool', () => ({ available: true, providers: [] }), () => skillsStateStub(), () => '', undefined, () => dir, undefined, () => { rebuilds++ })
+    registerSettingsBridge(ctx, 'prompt-tool', () => ({ available: true, providers: [] }), () => skillsStateStub(), () => '', undefined, () => dir, () => { rebuilds++ })
     const handler = handlers.get(PREFIX + BRIDGE_ENDPOINTS.persona)
     const post = async () => {
       const res = fakeRes()
@@ -741,6 +741,7 @@ test('/persona：已有启用独占规则时拒绝顶层人设独占，禁用规
     assert.equal(rebuilds, 0)
     writeModule(false)
     assert.equal((await post()).status, 200)
+    assert.equal(rebuilds, 1, '写盘成功后按实际模块身份重建')
     assert.equal(parseYaml(readFileSync(file, 'utf8')).persona.complete, true)
   } finally { rmSync(dir, { recursive: true, force: true }) }
 })

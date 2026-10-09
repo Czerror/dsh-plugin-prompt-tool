@@ -1,6 +1,6 @@
 # dsh-plugin-prompt-tool — 全参数 module.yml 模板（自动生成）
-# 生成来源：scripts/rebuild-preset-template.mjs + ENGINE_PARAM_DEFINITIONS + engine/schema.mjs + templates/
-# 重建：pnpm rebuild:preset-template；检查：pnpm rebuild:preset-template -- --check
+# 生成来源：scripts/rebuild-module-template.mjs + ENGINE_PARAM_DEFINITIONS + engine/schema.mjs + templates/
+# 重建：pnpm rebuild:module-template；检查：pnpm rebuild:module-template -- --check
 # 复制到 DSH_HOME/.prompt-tool/modules/<id>/module.yml，id 与目录名保持一致。
 # rules 是唯一行为定义：if 判断树 → then 动作数组（另有 else）；提示词正文属于 inject-text 动作。
 # 共享设置只内嵌真实配置卡；空层不自动创建 UI 卡或提示词规则。

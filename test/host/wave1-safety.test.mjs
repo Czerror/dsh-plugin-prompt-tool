@@ -127,7 +127,7 @@ test('writeModule：恶意规则身份经统一编译器拒绝，不留半成品
     mkdirSync(sourceDir, { recursive: true })
     writeFileSync(join(sourceDir, 'module.yml'), JSON.stringify({ id: DEFAULT_MODULE_ID, modules: [], rules: [{ id: '../../evil', then: [{ id: 'inject', kind: 'inject-text', config: { text: 'x' } }] }] }))
     assert.throws(
-      () => writeModule('PROMPT', { modulesRoot: moduleDir, moduleId: DEFAULT_MODULE_ID, targetModuleId: 'safe-output' }),
+      () => writeModule({ modulesRoot: moduleDir, moduleId: DEFAULT_MODULE_ID, targetModuleId: 'safe-output' }),
       /rule id/,
     )
     // 原子物化失败：目标目录不存在（tmp 已清理）。
@@ -151,7 +151,7 @@ test('writeModule：规则裸文件名与状态清单序号独立', () => {
     }))
     mkdirSync(join(moduleDir, DEFAULT_MODULE_ID), { recursive: true })
     writeFileSync(join(moduleDir, DEFAULT_MODULE_ID, 'module.yml'), JSON.stringify({ id: DEFAULT_MODULE_ID, modules: [], rules: many.map(config => ({ id: config.id, layer: config.layer, then: [{ id: 'inject', kind: 'inject-text', config }] })) }))
-    writeModule('PROMPT', { modulesRoot: moduleDir, moduleId: DEFAULT_MODULE_ID })
+    writeModule({ modulesRoot: moduleDir, moduleId: DEFAULT_MODULE_ID })
     const rulesDir = join(moduleDir, DEFAULT_MODULE_ID, 'rules')
     const files = readdirSync(rulesDir).filter(name => name.startsWith('cfg-')).sort()
     assert.deepEqual(files, many.map(config => `${config.id}.yml`))

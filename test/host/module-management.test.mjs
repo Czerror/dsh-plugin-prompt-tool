@@ -57,10 +57,9 @@ function register(ctx, activeTemplate, afterOverridesChange) {
       return id === undefined ? '' : join(moduleRoot, id)
     },
     afterOverridesChange, // [8] 写盘后重建（module-enable 等端点等它完成才回响应）
-    undefined,
-    undefined,
-    undefined,
-    () => {},
+    undefined, // [9] afterModulePackageImport
+    undefined, // [10] afterCapabilityChange
+    () => {}, // [11] afterModuleListChange
   )
 }
 
