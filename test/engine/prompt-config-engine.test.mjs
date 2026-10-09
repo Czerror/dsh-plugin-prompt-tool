@@ -648,6 +648,28 @@ test('wireLayers 对没有注入通道的层告警一次：直供 tool-pipeline 
   assert.match(warnings[0], /tool-pipeline 没有注入通道/)
 })
 
+test('wireLayers 公开入口：注册层的动作级分支走条件化注册，不被无条件注册吞掉', async () => {
+  // 声明路径编译期已拒绝注册层的动作级分支（rule-spec.mjs 的 REGISTRATION_LAYERS 校验），
+  // 故 config.actionWhen 只剩公开 wireLayers 入口可达；直供配置带它时必须仍按分支注册，
+  // 否则动作级 if 会被无条件注册整段忽略，与其余七层经 actionMatches 的判定不一致。
+  const sections = []
+  const listeners = new Map()
+  const ctx = {
+    on(name, handler) { listeners.set(name, handler); return () => listeners.delete(name) },
+    get: (name) => (name === 'systemPrompt'
+      ? { variable: () => () => {}, section(def) { sections.push(def); return () => {} } }
+      : undefined),
+    logger: { warn() {} },
+  }
+  const config = { ...createPromptConfigs([{ id: 'gated', layer: 'system-section', strategy: 'static', text: 'GATED' }])[0], actionWhen: () => false }
+  wireLayers(ctx, [config], () => {})
+  assert.equal(sections.length, 1)
+  assert.match(sections[0].text, /^\{\{pt_rule_/, '带动作级分支必须注册占位，不得直接注册正文')
+  const assembly = { contexts: [], sections: [{ name: sections[0].name, text: sections[0].text }] }
+  const result = await listeners.get('system-prompt/assemble')(assembly, { agent: agent() }, async () => assembly)
+  assert.equal(result.sections[0].text, '', 'actionWhen=false 时该段正文为空')
+})
+
 test('原生关键词世界书只扫描本批真实对话消息：插件注入与指令文件正文都不触发', async () => {
   // 与 userText / ST 世界书同一判据（condition.mjs#isConversationMessage）：扫描范围
   // = 本批真实对话消息，不含任何插件来源（append-context / 子代理 inject / skill_load）

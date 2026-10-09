@@ -707,6 +707,8 @@ export function wireLayers(ctx, configs, warnOnce, options = {}) {
   const registry = registerOfficialVariables(ctx, configs.filter((config) => config.layer === 'system-section' || config.layer === 'runtime-context'), warnOnce, keep)
   // 有规则级 when 或动作级 actionWhen 才走条件化注册：只有动作级 if（无规则级 if）的配置
   // 若落入 regular 的无条件注册路径，动作级分支会被整段忽略，与其余八层不一致。
+  // 声明路径上注册层的动作级分支已被编译期拒绝（rule-spec.mjs 的 REGISTRATION_LAYERS），
+  // 故这一项只剩公开 wireLayers 入口可达——删掉它，直供配置的分支就被无条件注册静默吞掉。
   const conditional = configs.filter(config => ['system-section', 'runtime-context'].includes(config.layer)
     && (typeof config.rule?.when === 'function' || typeof config.actionWhen === 'function'))
   const regular = configs.filter(config => !conditional.includes(config))

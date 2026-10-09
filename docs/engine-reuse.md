@@ -220,6 +220,8 @@
   不从 UI 当前会话或挂载 scope 猜测缺失的事件身份。
 - 事件型文本注入支持顶层 `if`，包括 system-section 与 runtime-context：官方同步
   provider 注册占位，真实 assembly 中按本次判定填充；取消、卸载和失败不留下过期正文。
+  这两层的**动作级** `if` 在编译期拒绝（没有逐轮求值时机，与 `guard`/`complete` 同判据）；
+  只有公开 `wireLayers` 入口直供的配置才带动作级 `actionWhen`，同样走占位 + assembly 判定。
 - `guard`、`complete` 和 `suppressRuntimeContext` 是固定注册效果，拒绝动态 `if` 与
   waterfall 定位，不能用空文本模拟撤销注册。其中 `complete` / `suppressRuntimeContext`
   **只属于 `system-section` 层**：其他层写同名键（`false` 除外，出现即拒）既不注册成
