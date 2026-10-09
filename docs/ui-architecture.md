@@ -122,13 +122,12 @@
     │  ├─ modules/
     │  │  ├─ EngineModuleList.tsx
     │  │  ├─ EngineParamFields.tsx
-    │  │  └─ ModulesPage.tsx
+    │  │  ├─ ModulesPage.tsx
+    │  │  ├─ ModuleExportDialog.tsx
+    │  │  ├─ ModuleSwitcher.tsx
+    │  │  └─ modules.module.css
     │  ├─ persona/
     │  │  └─ ModulePersonaCard.tsx
-    │  ├─ presets/
-    │  │  ├─ presets.module.css
-    │  │  ├─ ModuleExportDialog.tsx
-    │  │  └─ ModuleSwitcher.tsx
     │  ├─ prompts/
     │  │  ├─ prompt-config-policy.ts
     │  │  ├─ prompts.module.css
@@ -229,7 +228,7 @@ CSS 构建模块只收集样式数据；`styles.ts` 在入口 `ctx.effect` 中�
 |---|---|---|---|---|
 | shell.overlay | prompt-tool-workbench | order 50 | WorkbenchOverlay | 可拖动悬浮触发器 + body portal 抽屉 |
 
-slot 使用 ctx.slots.inject() 等待官方槽位声明，再调用 ctx.slots.register()。返回的 disposer 在 register-workbench.tsx 中释放。不要添加第二个注册入口，也不要改变 id 或 inject face 的形状。宿主设置面板的 `settings.plugins.tab` 分区已移除：模块运行总闸只在工作台模块页设置（`presets.modulesEnabled.*`）。
+slot 使用 ctx.slots.inject() 等待官方槽位声明，再调用 ctx.slots.register()。返回的 disposer 在 register-workbench.tsx 中释放。不要添加第二个注册入口，也不要改变 id 或 inject face 的形状。宿主设置面板的 `settings.plugins.tab` 分区已移除：模块运行总闸只在工作台模块页设置（`modules.globalSwitch`）。
 
 两处注册都声明 `locale: PROMPT_TOOL_NS`：slot 组件由此拿到框架注入的 typed `t` seat，同时把「渲染需要已安装的 locale face」写成显式契约（locale face 由官方 dsh-client-locale 在 boot 期经 renderer 安装）。列表项 label（设置 tab 标题）用 `() => face.t('tab.label')` thunk，宿主重读 label 时取当前语言。
 
@@ -485,7 +484,7 @@ feature 只拥有自己的视图、瞬时状态、领域纯 helper 和 CSS：
 | subagents | 委派工具、实例级工具策略草稿及策略解析预览；不重复嵌入工具面 |
 | tools | 自定义工具编辑/保存、参数模板；独立工具预览页与只读工具面 |
 | skills | 按官方六类技能根分组展示清单、来源与遮蔽判定、调用策略开关、宿主目录选择导入与引用、创建、回收站删除；契约见 [skills-management.md](skills-management.md) |
-| presets | 模块页的模块列表：启停、编辑选择、新建/克隆、导入导出、复制/删除/打开（页面壳在 `features/modules/ModulesPage.tsx`） |
+| modules | 模块页的模块列表：启停、编辑选择、新建/克隆、导入导出、复制/删除/打开（页面壳在 `features/modules/ModulesPage.tsx`） |
 | characters | 角色来源解析／展示兼容；安装、库存、并入与删除统一归模块流程 |
 
 业务 feature 直接使用 data/bridge-client.ts 的 endpoint key；共享控件从 ui/导入。跨 feature 组合由 app/workspace/pages/完成，不在 feature 内建立第二个工作台。
@@ -639,7 +638,7 @@ world-book 视图只隐藏工具栏之外的列表主体之外的附加提示，
     ui/HintTooltip.module.css
     ui/StatusBadge.module.css
     ui/StatusDot.module.css
-    features/presets/presets.module.css
+    features/modules/modules.module.css
     features/prompts/prompts.module.css
     features/prompts/rules.module.css
     app/workspace/pages/layer-settings.module.css

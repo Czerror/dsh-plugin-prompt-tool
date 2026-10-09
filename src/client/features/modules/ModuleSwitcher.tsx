@@ -20,14 +20,14 @@ import { Switch } from '../../ui/Switch.tsx'
 import { Button } from '../../ui/Button.tsx'
 import { StatusBadge } from '../../ui/StatusBadge.tsx'
 import sharedCss from '../../ui/controls.module.css'
-import featureCss from './presets.module.css'
+import featureCss from './modules.module.css'
 
 const styles = { ...sharedCss, ...featureCss }
 
 export const ModuleSwitcher = memo(function ModuleSwitcher(props: { store: PromptToolStore; t: PromptToolTranslate }): ReactNode {
   const { store, t } = props
   const fields = usePromptToolFields(store, (value) => value)
-  const presets = store.meta.modules ?? []
+  const modules = store.meta.modules ?? []
   const templates = store.meta.builtinTemplates ?? []
   const [confirmingDelete, setConfirmingDelete] = useState<string | undefined>(undefined)
   const [pickerOpen, setPickerOpen] = useState(false)
@@ -47,11 +47,11 @@ export const ModuleSwitcher = memo(function ModuleSwitcher(props: { store: Promp
       return commitAsset('importModulePackage', preview)
     },
     onCommitted: async (label) => {
-      store.showNotice('ok', t('presetSwitcher.notice.imported', { id: label ?? '' }))
+      store.showNotice('ok', t('moduleSwitcher.notice.imported', { id: label ?? '' }))
       if (await store.load() === EMPTY_FIELDS) throw new Error(t('card.operationFailed'))
     },
     onError: (message, stale) => {
-      store.showNotice('error', t('presetSwitcher.notice.importFailed', { reason: stale ? t('importPreview.stale') : message }))
+      store.showNotice('error', t('moduleSwitcher.notice.importFailed', { reason: stale ? t('importPreview.stale') : message }))
     },
   })
 
@@ -59,11 +59,11 @@ export const ModuleSwitcher = memo(function ModuleSwitcher(props: { store: Promp
   const deleteModule = async (id: string): Promise<void> => {
     const res = await bridgeCall('moduleDelete', { id })
     if (res.ok) {
-      store.showNotice('ok', t('presetSwitcher.notice.deleted', { id }))
+      store.showNotice('ok', t('moduleSwitcher.notice.deleted', { id }))
       await store.load()
       setConfirmingDelete((current) => current === id ? undefined : current)
     } else {
-      throw new Error(t('presetSwitcher.notice.deleteFailed', { reason: res.message ?? 'settings bridge unavailable' }))
+      throw new Error(t('moduleSwitcher.notice.deleteFailed', { reason: res.message ?? 'settings bridge unavailable' }))
     }
   }
 
@@ -71,10 +71,10 @@ export const ModuleSwitcher = memo(function ModuleSwitcher(props: { store: Promp
   const duplicateModule = async (id: string): Promise<void> => {
     const res = await bridgeCall('moduleDuplicate', { id })
     if (res.ok) {
-      store.showNotice('ok', t('presetSwitcher.notice.duplicated', { id: res.value.id }))
+      store.showNotice('ok', t('moduleSwitcher.notice.duplicated', { id: res.value.id }))
       await store.load()
     } else {
-      store.showNotice('error', t('presetSwitcher.notice.duplicateFailed', { reason: res.message ?? 'settings bridge unavailable' }))
+      store.showNotice('error', t('moduleSwitcher.notice.duplicateFailed', { reason: res.message ?? 'settings bridge unavailable' }))
     }
   }
 
@@ -82,9 +82,9 @@ export const ModuleSwitcher = memo(function ModuleSwitcher(props: { store: Promp
   const openLocation = async (id: string): Promise<void> => {
     const res = await bridgeCall('moduleOpen', { id })
     if (res.ok) {
-      store.showNotice('ok', t('presetSwitcher.notice.opened', { path: res.value.path }))
+      store.showNotice('ok', t('moduleSwitcher.notice.opened', { path: res.value.path }))
     } else {
-      store.showNotice('error', t('presetSwitcher.notice.openFailed', { reason: res.message ?? 'settings bridge unavailable' }))
+      store.showNotice('error', t('moduleSwitcher.notice.openFailed', { reason: res.message ?? 'settings bridge unavailable' }))
     }
   }
 
@@ -93,10 +93,10 @@ export const ModuleSwitcher = memo(function ModuleSwitcher(props: { store: Promp
     const res = await bridgeCall('moduleClone', { id, autoSuffix })
     if (res.ok) {
       setPickerOpen(false)
-      store.showNotice('ok', t('presetSwitcher.notice.cloned', { id: res.value.id }))
+      store.showNotice('ok', t('moduleSwitcher.notice.cloned', { id: res.value.id }))
       await store.load()
     } else {
-      store.showNotice('error', t('presetSwitcher.notice.cloneFailed', { reason: res.message ?? 'settings bridge unavailable' }))
+      store.showNotice('error', t('moduleSwitcher.notice.cloneFailed', { reason: res.message ?? 'settings bridge unavailable' }))
     }
   }
 
@@ -110,11 +110,11 @@ export const ModuleSwitcher = memo(function ModuleSwitcher(props: { store: Promp
     const res = await bridgeCall('moduleEnable', { id, enabled })
     if (res.ok) {
       store.showNotice('ok', enabled
-        ? t('presetSwitcher.notice.enabled', { id })
-        : t('presetSwitcher.notice.disabled', { id }))
+        ? t('moduleSwitcher.notice.enabled', { id })
+        : t('moduleSwitcher.notice.disabled', { id }))
       await store.load()
     } else {
-      store.showNotice('error', t('presetSwitcher.notice.enableFailed', { reason: res.message ?? 'settings bridge unavailable' }))
+      store.showNotice('error', t('moduleSwitcher.notice.enableFailed', { reason: res.message ?? 'settings bridge unavailable' }))
     }
   }
 
@@ -122,32 +122,32 @@ export const ModuleSwitcher = memo(function ModuleSwitcher(props: { store: Promp
     <div className={styles.rowGroup}>
       <div className={styles.settingRowStack}>
         <span className={styles.inlineControls}>
-          <Button ref={pickerAnchorRef} shape="pill" variant="primary" size="md" onClick={() => setPickerOpen(true)}>{t('presetSwitcher.new')}</Button>
-          <Button shape="pill" variant="outline" size="md" onClick={() => setImportOpen(true)}>{t('assetImport.presetTitle')}…</Button>
+          <Button ref={pickerAnchorRef} shape="pill" variant="primary" size="md" onClick={() => setPickerOpen(true)}>{t('moduleSwitcher.new')}</Button>
+          <Button shape="pill" variant="outline" size="md" onClick={() => setImportOpen(true)}>{t('assetImport.moduleTitle')}…</Button>
           {/* 模块运行总闸：与新建/导入同排、靠最右，说明文字在开关左侧常驻。 */}
-          <span className={styles.presetGlobalSwitch}>
-            <span>{t('presets.modulesEnabled.label')}</span>
-            <Switch checked={fields.modulesEnabled} label={t('presets.modulesEnabled.label')}
+          <span className={styles.moduleGlobalSwitch}>
+            <span>{t('modules.globalSwitch')}</span>
+            <Switch checked={fields.modulesEnabled} label={t('modules.globalSwitch')}
               disabled={store.moduleFacts?.editable !== true} onChange={() => store.toggle('modulesEnabled')} />
           </span>
         </span>
       </div>
-      {importOpen && <ImportDialog t={t} destination="preset" {...flow} targets={presets}
+      {importOpen && <ImportDialog t={t} destination="module" {...flow} targets={modules}
         onFiles={(files) => { void flow.run(files) }} onChoices={flow.updateChoices} onConfirm={() => { void flow.confirm() }}
         onClose={() => { flow.cancel(); setImportOpen(false) }} onReset={flow.cancel} onSkip={flow.skip} onEnd={flow.end}
         onRepreview={() => { void flow.repreview() }} onRefresh={() => { void flow.retryRefresh() }}
         onUse={flow.resultLabel === undefined ? undefined : () => { store.setModuleId(flow.resultLabel!); flow.cancel(); setImportOpen(false) }} />}
-      {exportTarget && <ModuleExportDialog t={t} preset={exportTarget} onClose={() => setExportTarget(undefined)} />}
-      <div className={styles.presetGrid}>
-        {presets.length === 0 ? (
-          <p className={styles.readOnly} role="status">{t('presetSwitcher.empty')}</p>
-        ) : presets.map((preset) => renderCard(preset))}
+      {exportTarget && <ModuleExportDialog t={t} module={exportTarget} onClose={() => setExportTarget(undefined)} />}
+      <div className={styles.moduleGrid}>
+        {modules.length === 0 ? (
+          <p className={styles.readOnly} role="status">{t('moduleSwitcher.empty')}</p>
+        ) : modules.map((module) => renderCard(module))}
       </div>
       {pickerOpen && (
-        <DialogSurface title={t('presetSwitcher.dialog.title')} closeLabel={t('presetSwitcher.dialog.close')} anchorRef={pickerAnchorRef} onClose={() => setPickerOpen(false)}>
-          {templates.length === 0 && <p className={styles.configFieldHint}>{t('presetSwitcher.dialog.noTemplates')}</p>}
+        <DialogSurface title={t('moduleSwitcher.dialog.title')} closeLabel={t('moduleSwitcher.dialog.close')} anchorRef={pickerAnchorRef} onClose={() => setPickerOpen(false)}>
+          {templates.length === 0 && <p className={styles.configFieldHint}>{t('moduleSwitcher.dialog.noTemplates')}</p>}
           {templates.map((template) => (
-            <HintTooltip key={template.id} label={t('presetSwitcher.template.hint', { id: template.id })}>
+            <HintTooltip key={template.id} label={t('moduleSwitcher.template.hint', { id: template.id })}>
               <button type="button" className={styles.templateModalItem} onClick={() => void cloneModule(template.id)}>
                 <strong>{template.name}</strong>
                 <small>{template.id}</small>
@@ -159,70 +159,70 @@ export const ModuleSwitcher = memo(function ModuleSwitcher(props: { store: Promp
     </div>
   )
 
-  function renderCard(preset: ModuleSummary): ReactNode {
-    const active = fields.moduleId === preset.id
-    const confirming = confirmingDelete === preset.id
+  function renderCard(module: ModuleSummary): ReactNode {
+    const active = fields.moduleId === module.id
+    const confirming = confirmingDelete === module.id
     // 不可渲染（缺 modules/组合文件，包内也无同名模板可回退）：灰显禁切换，
     // 提示还原路径——避免点击后宿主挂载失败的哑弹。
-    const blocked = preset.renderable === false || preset.broken !== undefined
+    const blocked = module.renderable === false || module.broken !== undefined
     return (
-      <article key={preset.id} className={clsx(styles.presetCard, blocked && styles.presetCardBlocked)}
+      <article key={module.id} className={clsx(styles.moduleCard, blocked && styles.moduleCardBlocked)}
         data-active={active ? '' : undefined}>
         <div className={styles.moduleCardBody}>
-          <span className={styles.presetCardHead}>
-            <strong className={styles.presetCardName}>{preset.name}</strong>
-            {preset.enabled === true && !blocked && <StatusBadge className={styles.presetHeadBadge} tone="success" label={t('presetSwitcher.enabled')} />}
-            {blocked && <span className={styles.presetBlocked}>{t('presetSwitcher.blocked')}</span>}
+          <span className={styles.moduleCardHead}>
+            <strong className={styles.moduleCardName}>{module.name}</strong>
+            {module.enabled === true && !blocked && <StatusBadge className={styles.moduleHeadBadge} tone="success" label={t('moduleSwitcher.enabled')} />}
+            {blocked && <span className={styles.moduleBlocked}>{t('moduleSwitcher.blocked')}</span>}
           </span>
-          {preset.description !== undefined && preset.description.length > 0
-            && <p className={styles.presetCardDesc}>{preset.description}</p>}
-          {preset.broken !== undefined && <p className={styles.presetBlocked} role="alert">{preset.broken}</p>}
-          <code className={styles.presetCardId}>{preset.id}</code>
+          {module.description !== undefined && module.description.length > 0
+            && <p className={styles.moduleCardDesc}>{module.description}</p>}
+          {module.broken !== undefined && <p className={styles.moduleBlocked} role="alert">{module.broken}</p>}
+          <code className={styles.moduleCardId}>{module.id}</code>
         </div>
-        <span className={styles.presetCardFooter}>
+        <span className={styles.moduleCardFooter}>
           {/* 开关与卡头徽章都表达启用状态；编辑目标独立由边框高亮（data-active）表达。 */}
-          <Switch className={styles.presetActivate}
-            checked={preset.enabled === true}
+          <Switch className={styles.moduleActivate}
+            checked={module.enabled === true}
             disabled={blocked}
             label={blocked
-              ? preset.broken ?? t('presetSwitcher.card.blocked.hint')
-              : preset.enabled === true
-                ? t('presetSwitcher.card.disable.hint', { name: preset.name })
-                : t('presetSwitcher.card.enable.hint', { name: preset.name })}
-            onChange={(next) => void setModuleEnabled(preset.id, next)} />
-          <HintTooltip label={t('presetSwitcher.export')}>
-            <button type="button" className={styles.presetIconButton}
-              aria-label={t('presetSwitcher.export.aria', { name: preset.name })}
-              onClick={() => setExportTarget({ id: preset.id, name: preset.name })}>
+              ? module.broken ?? t('moduleSwitcher.card.blocked.hint')
+              : module.enabled === true
+                ? t('moduleSwitcher.card.disable.hint', { name: module.name })
+                : t('moduleSwitcher.card.enable.hint', { name: module.name })}
+            onChange={(next) => void setModuleEnabled(module.id, next)} />
+          <HintTooltip label={t('moduleSwitcher.export')}>
+            <button type="button" className={styles.moduleIconButton}
+              aria-label={t('moduleSwitcher.export.aria', { name: module.name })}
+              onClick={() => setExportTarget({ id: module.id, name: module.name })}>
               <IconDownloadOutlineRegular />
             </button>
           </HintTooltip>
-          <HintTooltip label={t('presetSwitcher.duplicate.label')}>
-            <button type="button" className={styles.presetIconButton}
-              aria-label={t('presetSwitcher.duplicate.aria', { name: preset.name })}
-              onClick={() => void duplicateModule(preset.id)}>
+          <HintTooltip label={t('moduleSwitcher.duplicate.label')}>
+            <button type="button" className={styles.moduleIconButton}
+              aria-label={t('moduleSwitcher.duplicate.aria', { name: module.name })}
+              onClick={() => void duplicateModule(module.id)}>
               <IconCopyOutlineRegular />
             </button>
           </HintTooltip>
-          <HintTooltip label={t('presetSwitcher.open.label')}>
-            <button type="button" className={styles.presetIconButton}
-              aria-label={t('presetSwitcher.open.aria', { name: preset.name })}
-              onClick={() => void openLocation(preset.id)}>
+          <HintTooltip label={t('moduleSwitcher.open.label')}>
+            <button type="button" className={styles.moduleIconButton}
+              aria-label={t('moduleSwitcher.open.aria', { name: module.name })}
+              onClick={() => void openLocation(module.id)}>
               <IconFolderOpenOutlineRegular />
             </button>
           </HintTooltip>
           {confirming && (
-            <ConfirmDialog title={t('card.deleteTitle', { name: preset.name })}
-              description={t('presetSwitcher.delete.description', { name: preset.name })}
-              confirmLabel={t('presetSwitcher.delete.confirm')} cancelLabel={t('presetSwitcher.delete.cancel')}
-              onConfirm={() => deleteModule(preset.id)} onCancel={() => setConfirmingDelete((current) => current === preset.id ? undefined : current)} />
+            <ConfirmDialog title={t('card.deleteTitle', { name: module.name })}
+              description={t('moduleSwitcher.delete.description', { name: module.name })}
+              confirmLabel={t('moduleSwitcher.delete.confirm')} cancelLabel={t('moduleSwitcher.delete.cancel')}
+              onConfirm={() => deleteModule(module.id)} onCancel={() => setConfirmingDelete((current) => current === module.id ? undefined : current)} />
           )}
           {(
-            <HintTooltip label={active ? t('presetSwitcher.delete.hintActive') : t('presetSwitcher.delete.hint')}>
-              <button type="button" className={styles.presetIconButton}
-                aria-label={t('presetSwitcher.delete.aria', { name: preset.name })}
+            <HintTooltip label={active ? t('moduleSwitcher.delete.hintActive') : t('moduleSwitcher.delete.hint')}>
+              <button type="button" className={styles.moduleIconButton}
+                aria-label={t('moduleSwitcher.delete.aria', { name: module.name })}
                 disabled={active}
-                onClick={() => setConfirmingDelete(preset.id)}>
+                onClick={() => setConfirmingDelete(module.id)}>
                 <IconTrashOutlineRegular />
               </button>
             </HintTooltip>

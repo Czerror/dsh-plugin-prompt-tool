@@ -15,7 +15,7 @@ import css from './ImportDialog.module.css'
 
 export function ImportDialog(props: {
   t: PromptToolTranslate
-  destination: 'preset' | 'character'
+  destination: 'module' | 'character'
   phase: 'idle' | 'reading' | 'confirming' | 'submitting' | 'stale' | 'error' | 'complete'
   preview?: ImportPreviewState
   candidates?: ImportOrderCandidates
@@ -54,18 +54,18 @@ export function ImportDialog(props: {
   useEffect(() => { setConfirming(false) }, [preview?.previewRevision, phase])
   useEffect(() => { setImageFailed(false) }, [props.sourceImage])
   const fromCharacter = summary?.kind === 'native-character' || summary?.kind === 'st-character'
-  const confirmLabel = choices.overwrite === true ? t('assetImport.update') : t(props.destination === 'preset' ? fromCharacter ? 'assetImport.createFromCharacter' : 'assetImport.createPreset' : 'assetImport.createCharacter')
+  const confirmLabel = choices.overwrite === true ? t('assetImport.update') : t(props.destination === 'module' ? fromCharacter ? 'assetImport.createFromCharacter' : 'assetImport.createModule' : 'assetImport.createCharacter')
   if (confirming) return <ConfirmDialog title={t('assetImport.overwriteTitle', { name: summary?.targetName ?? choices.targetName ?? '' })}
-    description={t(props.destination === 'character' ? 'assetImport.characterReplace' : 'assetImport.presetReplace')}
+    description={t(props.destination === 'character' ? 'assetImport.characterReplace' : 'assetImport.moduleReplace')}
     confirmLabel={confirmLabel} cancelLabel={t('assetImport.back')}
     onCancel={() => setConfirming(false)} onConfirm={() => { setConfirming(false); props.onConfirm() }} />
-  return <DialogSurface title={t(props.destination === 'preset' ? 'assetImport.presetTitle' : 'assetImport.characterTitle')}
+  return <DialogSurface title={t(props.destination === 'module' ? 'assetImport.moduleTitle' : 'assetImport.characterTitle')}
     closeLabel={t('assetImport.close')} onClose={close} size="wide" initialFocusRef={headingRef}
     footer={<>
       {complete ? <>
         <Button shape="pill" variant="outline" size="md" onClick={close}>{t('assetImport.done')}</Button>
         {props.refreshError ? <Button shape="pill" variant="primary" size="md" onClick={props.onRefresh}>{t('assetImport.refresh')}</Button>
-          : props.onUse && progress.imported > 0 ? <Button shape="pill" variant="primary" size="md" onClick={props.onUse}>{t(props.destination === 'preset' ? 'assetImport.switch' : 'assetImport.apply')}</Button> : null}
+          : props.onUse && progress.imported > 0 ? <Button shape="pill" variant="primary" size="md" onClick={props.onUse}>{t(props.destination === 'module' ? 'assetImport.switch' : 'assetImport.apply')}</Button> : null}
       </> : <>
         {phase !== 'idle' && progress.total <= 1 && <Button shape="pill" variant="outline" size="md" disabled={busy} onClick={props.onReset}>{t('assetImport.reselect')}</Button>}
         {progress.total > 1 && <Button shape="pill" variant="outline" size="md" disabled={busy} onClick={props.onSkip}>{t('assetImport.skip')}</Button>}
@@ -107,7 +107,7 @@ export function ImportDialog(props: {
             <label className={css.option}><input type="radio" name={`${id}-target`} checked={choices.overwrite === true} disabled={props.targets.length === 0} onChange={() => props.onChoices({ overwrite: true, targetId: props.targets[0]?.id })} />{t('assetImport.existing')}</label>
             {choices.overwrite && <div>{t('assetImport.existing')}<MenuSelect value={choices.targetId ?? ''} ariaLabel={t('assetImport.existing')} disabled={busy} onChange={(targetId) => props.onChoices({ targetId })} options={props.targets.map((target) => ({ value: target.id, label: `${target.name} · ${target.id}` }))} /></div>}
           </fieldset>
-          <p>{t(choices.overwrite ? props.destination === 'character' ? 'assetImport.characterReplace' : 'assetImport.presetReplace' : 'assetImport.newHint')}</p>
+          <p>{t(choices.overwrite ? props.destination === 'character' ? 'assetImport.characterReplace' : 'assetImport.moduleReplace' : 'assetImport.newHint')}</p>
           <details><summary>{t('assetImport.files', { count: summary.files.length })}</summary><ul className={css.files}>{summary.files.map((file) => <li key={file.path}><span>{file.path}</span><span>{file.bytes} B · {t(choices.overwrite ? 'assetImport.replace' : 'assetImport.add')}</span></li>)}</ul></details>
           {summary.warnings.length > 0 && <details open><summary>{t('assetImport.warnings')}</summary><ul>{summary.warnings.map((warning, index) => <li key={index}>{warning}</li>)}</ul></details>}
         </>}

@@ -5,10 +5,10 @@ import { bridgeCall, errorMessage } from '../../data/bridge-client.ts'
 import { DialogSurface } from '../../ui/DialogSurface.tsx'
 import { Button } from '../../ui/Button.tsx'
 import shared from '../../ui/controls.module.css'
-import css from './presets.module.css'
+import css from './modules.module.css'
 
-export function ModuleExportDialog(props: { preset: { id: string; name: string }; t: PromptToolTranslate; onClose: () => void }): ReactNode {
-  const { t, preset } = props
+export function ModuleExportDialog(props: { module: { id: string; name: string }; t: PromptToolTranslate; onClose: () => void }): ReactNode {
+  const { t, module } = props
   const id = useId()
   const [mode, setMode] = useState<'zip' | 'definition'>('zip')
   const [memoryChoices, setMemoryChoices] = useState<Record<string, 'include' | 'exclude'>>({})
@@ -26,7 +26,7 @@ export function ModuleExportDialog(props: { preset: { id: string; name: string }
     ready.current = false
     setPhase('reading')
     setError('')
-    void bridgeCall('exportModule', { id: preset.id, mode, memoryChoices, preview: true }).then((response) => {
+    void bridgeCall('exportModule', { id: module.id, mode, memoryChoices, preview: true }).then((response) => {
       if (sequence !== version.current) return
       if (!response.ok) { setError(response.message ?? t('card.operationFailed')); setPhase('error'); return }
       setPreview(response.value)
@@ -34,7 +34,7 @@ export function ModuleExportDialog(props: { preset: { id: string; name: string }
       ready.current = true
     })
     return () => { version.current += 1; ready.current = false }
-  }, [preset.id, mode, memoryChoices, retry, t])
+  }, [module.id, mode, memoryChoices, retry, t])
   const invalidate = (): void => { ready.current = false; version.current += 1; setPhase('reading') }
   const unresolved = (preview?.memoryConflicts ?? []).some((entry) => memoryChoices[entry.id] === undefined)
   const blocked = mode === 'zip' && (preview?.blockers?.length ?? 0) > 0
@@ -46,7 +46,7 @@ export function ModuleExportDialog(props: { preset: { id: string; name: string }
     const sequence = version.current
     setPhase('downloading')
     try {
-      const response = await bridgeCall('exportModule', { id: preset.id, mode, memoryChoices, expectedRevision: preview.revision })
+      const response = await bridgeCall('exportModule', { id: module.id, mode, memoryChoices, expectedRevision: preview.revision })
       if (sequence !== version.current) return
       if (!response.ok) throw new Error(response.message ?? t('card.operationFailed'))
       const exported = response.value
@@ -54,7 +54,7 @@ export function ModuleExportDialog(props: { preset: { id: string; name: string }
       const url = URL.createObjectURL(new Blob([bytes], { type: mode === 'zip' ? 'application/zip' : 'application/yaml' }))
       const anchor = document.createElement('a')
       anchor.href = url
-      anchor.download = exported.filename ?? `${preset.id}.${mode === 'zip' ? 'zip' : 'module.yml'}`
+      anchor.download = exported.filename ?? `${module.id}.${mode === 'zip' ? 'zip' : 'module.yml'}`
       document.body.append(anchor)
       anchor.click()
       anchor.remove()
@@ -67,14 +67,14 @@ export function ModuleExportDialog(props: { preset: { id: string; name: string }
     finally { pending.current = false }
   }
   const close = (): void => { if (!pending.current) props.onClose() }
-  return <DialogSurface title={t('assetExport.title', { name: preset.name })} closeLabel={t('assetImport.close')} onClose={close}
+  return <DialogSurface title={t('assetExport.title', { name: module.name })} closeLabel={t('assetImport.close')} onClose={close}
     footer={<>
       <Button shape="pill" variant="outline" size="md" disabled={phase === 'downloading'} onClick={close}>{t(phase === 'done' ? 'assetImport.done' : 'assetImport.cancel')}</Button>
       {phase === 'error' ? <Button shape="pill" variant="primary" size="md" onClick={() => setRetry((value) => value + 1)}>{t('assetExport.preview')}</Button>
         : phase !== 'done' && <Button shape="pill" variant="primary" size="md" disabled={!canDownload} onClick={() => { void download() }}>{t(mode === 'zip' ? 'assetExport.downloadZip' : 'assetExport.downloadYaml')}</Button>}
     </>}>
     <div className={css.exportContent}>
-      <p><code>{preset.id}</code></p>
+      <p><code>{module.id}</code></p>
       <fieldset disabled={phase === 'downloading'}>
         <legend>{t('assetExport.scope')}</legend>
         {(['zip', 'definition'] as const).map((option) => <label key={option} className={css.exportOption}>

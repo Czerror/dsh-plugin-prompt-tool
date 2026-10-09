@@ -325,7 +325,7 @@
 .skillRowInvalid .skillCardBody { color: var(--dsw-alias-label-secondary); }
 .skillRowInvalid .dragHandle { opacity: .4; cursor: not-allowed; }
 /* 模块卡片：对齐官方主菜单 agent 预设（自定义预设组）的卡片样式。 */
-.presetGrid {
+.moduleGrid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 268px), 1fr));
   /* 同行卡片等高，短描述不把卡片压矮。 */
@@ -334,7 +334,7 @@
   gap: 12px;
   margin-top: 2px;
 }
-.presetCard {
+.moduleCard {
   display: flex;
   min-width: 0;
   flex-direction: column;
@@ -342,13 +342,13 @@
   border-radius: 14px;
   background: var(--dsw-alias-bg-layer-3);
 }
-.presetCard:hover:not([data-active]) {
+.moduleCard:hover:not([data-active]) {
   border-color: var(--dsw-alias-border-l3);
 }
-.presetCard[data-active] {
+.moduleCard[data-active] {
   border-color: var(--dsw-alias-state-business-primary);
 }
-.presetCardHead {
+.moduleCardHead {
   display: flex;
   min-width: 0;
   align-items: flex-start;
@@ -364,28 +364,28 @@
   padding: 14px 16px 12px;
   border-radius: 14px 14px 0 0;
 }
-.presetCardName {
+.moduleCardName {
   flex: 1 1 auto;
   color: var(--dsw-alias-label-primary);
   min-width: 0;
   font: 500 13px/20px system-ui, sans-serif;
   overflow-wrap: anywhere;
 }
-.presetCardId {
+.moduleCardId {
   margin-top: auto;
   color: var(--dsw-alias-label-secondary);
   font: 12px/19px ui-monospace, monospace;
   font-family: ui-monospace, monospace;
   overflow-wrap: anywhere;
 }
-.presetCardDesc {
+.moduleCardDesc {
   min-height: 36px;
   margin: 0;
   color: var(--dsw-alias-label-secondary);
   font: 12px/18px system-ui, sans-serif;
   overflow-wrap: anywhere;
 }
-.presetCardFooter {
+.moduleCardFooter {
   display: flex;
   min-width: 0;
   flex-wrap: wrap;
@@ -396,8 +396,8 @@
   border-top: 0.5px solid var(--dsw-alias-border-l2);
 }
 /* 卡片标题行右侧状态徽章槽位（胶囊外观由 StatusBadge 提供）。 */
-.presetHeadBadge { flex: none; margin-left: auto; }
-.presetIconButton {
+.moduleHeadBadge { flex: none; margin-left: auto; }
+.moduleIconButton {
   position: relative;
   appearance: none;
   display: inline-flex;
@@ -411,11 +411,11 @@
   color: var(--dsw-alias-label-secondary);
   cursor: pointer;
 }
-.presetIconButton:hover:not(:disabled) {
+.moduleIconButton:hover:not(:disabled) {
   background: var(--dsw-alias-bg-layer-1);
   color: var(--dsw-alias-label-primary);
 }
-.presetIconButton:focus-visible {
+.moduleIconButton:focus-visible {
   outline: 2px solid var(--dsw-alias-state-business-primary);
   outline-offset: 2px;
 }
@@ -861,7 +861,7 @@
   .directoryInput { min-width: 44px; height: 44px; min-height: 44px; }
   .pillButton,
   .primaryPill,
-  .presetIconButton,
+  .moduleIconButton,
   .tagChipRemove,
   .dragHandle,
   .dialogClose,
@@ -875,7 +875,7 @@
 
 @media (forced-colors: active) {
   .configCard,
-  .presetCard,
+  .moduleCard,
   .skillCard,
   .tagChip,
   .emptyState { border-color: CanvasText; }
@@ -885,6 +885,6 @@
   .configCard[data-drop-after],
   .skillCard[data-drop-before],
   .skillCard[data-drop-after] { outline: 2px solid Highlight; }
-  .presetCard[data-active],
+  .moduleCard[data-active],
   .skillCard[data-selected] { border-color: Highlight; }
 }
