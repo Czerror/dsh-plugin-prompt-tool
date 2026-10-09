@@ -3,7 +3,6 @@ import { createHash, randomUUID } from 'node:crypto'
 import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, realpathSync, rmdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { basename, dirname, isAbsolute, join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { isDeepStrictEqual } from 'node:util'
 import { Document, parseDocument } from 'yaml'
 import type { RuleContent, RuleDefinition, RuleRevisions, RuleSettings } from '../shared/rules.ts'
 import { RULE_OWNED_MODEL_PARAMS } from '../shared/rules.ts'
@@ -171,17 +170,30 @@ function assertPlain(path: string, directory = false): void {
 function assertSource(snapshot: ModuleDefinitionSnapshot): void {
   if (assertModuleDirectory(dirname(snapshot.dir), basename(snapshot.dir)) !== snapshot.dir || revisionOf(readFileSync(snapshot.file)) !== snapshot.revision) throw new ModuleRulesError('写入前模块再次变化，请重新读取', 409, 'rules-conflict')
 }
+/** 与 removeInterruptedWrites 同源：只认 atomicWriteTextFile 的精确 UUID 临时名，不是用户素材。 */
+function isRulesTemporary(filename: string): boolean {
+  const target = temporaryTarget(filename)
+  if (target === undefined) return false
+  if (target === RULES_SETTINGS_FILE || target === RULES_VARIABLES_FILE) return true
+  if (!target.endsWith('.yml')) return false
+  try { assertRuleFileId(target.slice(0, -4)) } catch { return false }
+  return true
+}
+
 function readProjection(snapshot: ModuleDefinitionSnapshot): Projection {
   const expected = projection(snapshot.source, snapshot.dir, snapshot.revision)
   const dir = join(snapshot.dir, RULES_DIR)
   assertPlain(dir, true)
-  const files = readdirSync(dir).sort()
-  if (!isDeepStrictEqual(files, Object.keys(expected.files).sort())) throw new ModuleRulesError('规则切片文件集合失配', 409, 'rules-slices-invalid')
-  for (const file of files) {
+  // 只认名单内切片：名单外文件不读、不校验，也不参与集合比对。
+  const files = readdirSync(dir)
+  for (const file of Object.keys(expected.files)) {
     const path = join(dir, file)
+    if (!files.includes(file)) throw new ModuleRulesError(`规则切片缺失：${file}`, 409, 'rules-slices-invalid')
     assertPlain(path)
     if (readFileSync(path, 'utf8') !== expected.files[file]) throw new ModuleRulesError(`规则切片与完整定义失配：${file}`, 409, 'rules-slices-invalid')
   }
+  // 中断写入残留的临时文件不是用户素材，仍触发恢复路径（清临时名 + 回收死锁目录）。
+  if (files.some(isRulesTemporary)) throw new ModuleRulesError('规则目录含中断写入残留', 409, 'rules-slices-invalid')
   assertSource(snapshot)
   return expected
 }
@@ -298,16 +310,17 @@ function removeInterruptedWrites(directory: string): void {
   for (const path of paths) rmSync(path)
 }
 
-function staleRuleSlice(directory: string, filename: string): boolean {
-  if (!filename.endsWith('.yml')) return false
-  const id = filename.slice(0, -4)
-  try {
-    assertRuleFileId(id)
-    const doc = parseDocument(readFileSync(join(directory, filename), 'utf8'), { logLevel: 'silent' })
-    const source: unknown = doc.toJS()
-    if (doc.errors.length > 0 || !record(source) || source.id !== id || !Array.isArray(source.then)) return false
-    return true
-  } catch { return false }
+/** 旧 _settings.yml 名单里、新名单外的规则切片是插件自己的残留，需清理；其余名单外文件归用户。 */
+function removedRuleSlices(dir: string, projected: Projection): string[] {
+  const path = join(dir, RULES_SETTINGS_FILE)
+  if (!existsSync(path)) return []
+  const doc = parseDocument(readFileSync(path, 'utf8'), { logLevel: 'silent' })
+  const source: unknown = doc.toJS()
+  if (doc.errors.length > 0 || !record(source) || !record(source.rules)) return []
+  return Object.keys(source.rules).filter(id => {
+    try { assertRuleFileId(id) } catch { return false }
+    return !Object.hasOwn(projected.settings, id)
+  }).map(id => `${id}.yml`)
 }
 
 function writeProjection(snapshot: ModuleDefinitionSnapshot, phase: 'contents' | 'all'): void {
@@ -315,24 +328,17 @@ function writeProjection(snapshot: ModuleDefinitionSnapshot, phase: 'contents' |
   const dir = join(snapshot.dir, RULES_DIR)
   if (existsSync(dir)) assertPlain(dir, true)
   else mkdirSync(dir)
-  // 未知素材不归切片清理所有；先完整预检，避免报错前已写了一半。
-  const stale: string[] = []
-  for (const file of readdirSync(dir)) {
-    assertPlain(join(dir, file))
-    if (Object.hasOwn(projected.files, file)) continue
-    if (!staleRuleSlice(dir, file)) throw new ModuleRulesError('规则目录含未知文件，未自动清理：' + file, 409, 'rules-slices-invalid')
-    stale.push(file)
-  }
+  // 名单外文件归用户所有：不读、不校验、不写、不删；只清理旧名单里已移除的规则切片。
+  const removed = phase === 'all' ? removedRuleSlices(dir, projected) : []
   for (const [file, text] of Object.entries(projected.files)) {
     if (phase === 'contents' && file === RULES_SETTINGS_FILE) continue
     const target = join(dir, file)
     if (existsSync(target)) { assertPlain(target); if (readFileSync(target, 'utf8') === text) continue }
     atomicWriteTextFile(target, text, { beforeReplace: () => { assertPlain(dir, true); if (existsSync(target)) assertPlain(target) } })
   }
-  if (phase === 'all') for (const file of stale) {
+  if (phase === 'all') for (const file of removed) {
     const target = join(dir, file)
-    assertPlain(target)
-    rmSync(target)
+    if (existsSync(target)) { assertPlain(target); rmSync(target) }
   }
 }
 

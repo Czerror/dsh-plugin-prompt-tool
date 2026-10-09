@@ -48,14 +48,16 @@ test('运行切片按完整定义确定性恢复；纯读、合法源修改与�
   rmSync(join(dir, 'rules', '_settings.yml'))
   assert.equal(ensureModuleSlices(dir).rules.find(item => item.id === 'first').enabled, false, '缺失状态不复活禁用规则')
   writeFileSync(join(dir, 'rules', 'extra.yml'), JSON.stringify(rule('extra')))
-  assert.throws(() => readRulesDir(dir), /集合失配/)
+  const withOrphan = bytes(dir)
+  assert.deepEqual(readRulesDir(dir).contents.map(item => item.id), ['first', 'second'], '名单外孤儿切片不读不校验')
   ensureModuleSlices(dir)
-  assert.deepEqual(bytes(dir), initial, '孤儿切片不反向接纳')
+  assert.deepEqual(bytes(dir), withOrphan, '孤儿切片不再被静默删除，也不反向接纳')
+  rmSync(join(dir, 'rules', 'extra.yml'))
   for (const file of ['notes.md', 'not-a-rule.yml', '.first.yml.tmp-not-a-uuid']) {
     writeFileSync(join(dir, 'rules', file), 'USER OWNED MATERIAL')
     const before = bytes(dir)
-    assert.throws(() => ensureModuleSlices(dir), /未知文件/)
-    assert.deepEqual(bytes(dir), before, '未知素材不删除，也不部分改写切片')
+    ensureModuleSlices(dir)
+    assert.deepEqual(bytes(dir), before, '名单外文件归用户：不读、不校验、不写、不删')
     rmSync(join(dir, 'rules', file))
   }
   assert.equal(readFileSync(join(dir, 'module.yml'), 'utf8'), definition)
@@ -79,6 +81,32 @@ test('运行切片按完整定义确定性恢复；纯读、合法源修改与�
     assert.throws(() => ensureModuleSlices(invalid), /保留|冲突/)
     assert.equal(existsSync(join(invalid, 'rules')), false)
   }
+})
+
+test('名单外文件不连坐读写、原地保留；名单内缺失仍从 module.yml 单向重建', () => {
+  const dir = fixture('unknown-files')
+  ensureModuleSlices(dir)
+  const firstSlice = join(dir, 'rules', 'first.yml')
+  const strangers = { 'lore.yml.bak': 'BACKUP OF OLD RULE', 'notes.md': '# user note' }
+  for (const [name, text] of Object.entries(strangers)) writeFileSync(join(dir, 'rules', name), text)
+  // 主路径：陌生文件不连坐纯读与规则事务，且原样保留。
+  assert.deepEqual(readModuleRules(dir).rules.map(item => item.id), ['first', 'second'])
+  assert.deepEqual(readRulesDir(dir).contents.map(item => item.id), ['first', 'second'])
+  const baseline = readModuleRules(dir)
+  editModuleRules(dir, { expectedRevisions: baseline.revisions, edits: [{ previousId: 'first', rule: rule('first', 'EDITED') }] })
+  for (const [name, text] of Object.entries(strangers)) assert.equal(readFileSync(join(dir, 'rules', name), 'utf8'), text, `陌生文件 ${name} 内容原样保留`)
+  // 反向风险：孤儿切片形态（lore.yml，id: lore + then: []）不再被静默删除。
+  writeFileSync(join(dir, 'rules', 'lore.yml'), 'id: lore\nthen: []\n')
+  ensureModuleSlices(dir)
+  assert.equal(existsSync(join(dir, 'rules', 'lore.yml')), true, '孤儿切片形态不再被静默删除')
+  // 边界二：删除名单内切片，仍从 module.yml 单向重建，陌生文件不动。
+  const editedFirst = readFileSync(firstSlice, 'utf8')
+  rmSync(firstSlice)
+  const recovered = ensureModuleSlices(dir)
+  assert.deepEqual(recovered.rules.map(item => item.id), ['first', 'second'])
+  assert.equal(readFileSync(firstSlice, 'utf8'), editedFirst, '名单内切片从源重建')
+  assert.equal(readFileSync(join(dir, 'rules', 'lore.yml.bak'), 'utf8'), 'BACKUP OF OLD RULE', '重建不碰陌生文件')
+  assert.equal(readFileSync(join(dir, 'rules', 'lore.yml'), 'utf8'), 'id: lore\nthen: []\n', '重建不碰孤儿切片')
 })
 
 test('正文版本互不连坐；状态和变量独立，旧正文草稿不能回滚新状态', () => {

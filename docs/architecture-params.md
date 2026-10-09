@@ -15,7 +15,7 @@ Config 的规范键是 `modulesEnabled`，表示模块运行总闸。旧 `writeP
 
 共享引擎参数唯一存于 `layerSettings.<层名>.<参数键>`，例如 `layerSettings.subagent-start.maxDepth: 2`。归属由 `ENGINE_PARAM_DEFINITIONS.storageLayer` 固定；`card` 与编辑组 `displayLayer` 只管理展示，不改变磁盘路径。该段不创建提示词实例，也不生成空 UI 卡。
 
-`module.yml` 保存完整定义，是唯一持久化提交点和恢复依据，支持直接手工修改完整文件。初始化或发现有效定义变化时，将规则分解为 `rules/<ruleId>.yml`，状态放 `rules/_settings.yml` 的 `rules` 映射，模板变量放 `rules/variables.yml`。UI 和运行时使用校验通过的切片快照；切片不接受直接手改，缺件、集合或摘要失配均从完整定义单向重切。完整定义无效则报错，不以切片反向修复。
+`module.yml` 保存完整定义，是唯一持久化提交点和恢复依据，支持直接手工修改完整文件。初始化或发现有效定义变化时，将规则分解为 `rules/<ruleId>.yml`，状态放 `rules/_settings.yml` 的 `rules` 映射，模板变量放 `rules/variables.yml`。`rules/` 是物化目录：读取只认 `_settings.yml` 名单内的切片，名单外文件（编辑器备份、Explorer 副本、同步冲突等）归用户，引擎不读、不校验、不写、不删。UI 和运行时使用校验通过的切片快照；名单内切片不接受直接手改，缺失、失配或摘要失配均从完整定义单向重切。完整定义无效则报错，不以切片反向修复。
 
 每条规则正文只有 `id/name/layer/if/then[]`；`enabled/group/exclusive/order` 由状态清单拥有，模块级 `variablesEnabled` 与校验元数据也在清单中。完整定义仍包含合并后的规则与 `configOrder`。传给引擎时 `order` 拆为独立映射，不向规则对象添加未知字段。规则 id 使用可读名字和后缀去重，拒绝下划线前缀、保留名 `variables`、大小写冲突及 Windows 设备名。
 
