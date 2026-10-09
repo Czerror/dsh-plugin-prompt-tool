@@ -67,7 +67,9 @@ export function validateActionOptions(action, options = {}) {
 export function prepareAction(action, options = {}) {
   const { kind, plugin } = validateActionOptions(action, options)
   const max = action?.maxPerTurn
-  const bind = PREPARERS[kind](action, plugin, options.promptConfigOptions)
+  // 第 4 参是共享续跑预算：只有 append-context 的 continue 消费它（同模块一份），
+  // 其余准备器忽略。缺省 undefined 时该准备器自己新建，旧路径不变。
+  const bind = PREPARERS[kind](action, plugin, options.promptConfigOptions, options.turnStopBudget)
   const phase = actionSupportsWhen(kind) ? actionExecutionPoint(action).phase : undefined
   return (ctx) => {
     const warnOnce = options.warnOnce ?? createWarnOnce(ctx, plugin)

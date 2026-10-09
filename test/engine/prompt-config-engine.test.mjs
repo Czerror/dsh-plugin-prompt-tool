@@ -1,5 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
+import { fileURLToPath } from 'node:url'
 import { applyPromptConfigs } from '../../engine/executor.mjs'
 import { createPromptConfigs as createPromptConfigsCore } from '../../engine/schema.mjs'
 
@@ -326,6 +327,48 @@ test('pre-step 条件判定：用户消息命中才注入，未命中不占用 s
   harness.admit(probe, hit)
   const repeat = await harness.step(probe, say('u4', '还报错'))
   assert.equal(repeat.messages.length, 1, '宿主接纳后 session 去重照常生效')
+})
+
+test('解析器自带 source 的候选按身份盖章：dedupe=session 下多步只注入一次', async () => {
+  // instruction-hint 的 text / file 两个分支都返回 source（{"kind":"instruction-hint"} /
+  // {"kind":"instruction-file"}）且不带 plugin；resolved.source 直接当消息 source 用时，
+  // 身份只落在 kind 通道，alreadyDelivered 永远查不到，于是每步重复注入。
+  for (const params of [{ text: '参考文件提示' }, { file: fileURLToPath(import.meta.url) }]) {
+    const { step, admit } = makeHarness(createPromptConfigs([
+      { id: 'hint', strategy: 'placeholder', fill: 'instruction-hint', dedupe: 'session', params, position: 'after-user' },
+    ]))
+    const probe = agent({ session: { id: 's-hint-source', header: { delegationDepth: 0 }, snapshotEvents: () => [] } })
+    const hintOf = (decision) => decision.messages.filter((message) => message.source?.kind?.startsWith('instruction-'))
+    let injected = 0
+    for (let round = 0; round < 4; round += 1) {
+      const decision = await step(probe)
+      injected += hintOf(decision).length
+      admit(probe, decision)
+    }
+    assert.equal(injected, 1, `声明解析器 source 的候选每会话只投递一次（${JSON.stringify(params)}）`)
+  }
+})
+
+test('显式 identity：确认过身份后同身份的两张卡都不再注入', async () => {
+  const identity = { field: 'plugin', value: 'shared-identity' }
+  const { step, admit } = makeHarness(createPromptConfigs([
+    { id: 'card-a', strategy: 'static', dedupe: 'session', text: 'A', position: 'after-all', identity },
+    { id: 'card-b', strategy: 'static', dedupe: 'session', text: 'B', position: 'after-all', identity },
+  ]))
+  const events = []
+  const probe = agent({ session: { id: 's-shared-identity', header: { delegationDepth: 0 }, snapshotEvents: () => events } })
+  const injectedTexts = (decision) => decision.messages.filter((message) => message.source?.plugin !== undefined)
+    .map((message) => message.content[0].text)
+  // 宿主接纳 = 逐条写进持久事件流：快路径查显式身份，持久扫描查消息自带身份，两条都得命中。
+  const adopt = (decision) => {
+    admit(probe, decision)
+    for (const message of decision.messages) events.push({ type: 'user/message', seq: events.length + 1, data: { message } })
+  }
+
+  const first = await step(probe)
+  assert.deepEqual(injectedTexts(first), ['A', 'B'], '同一批里两张卡都算「先到」')
+  adopt(first)
+  assert.deepEqual(injectedTexts(await step(probe)), [], '接纳后共享身份的两张卡都不再注入')
 })
 
 test('config.variables 与内置 {{WORKSPACE}} 变量在注入前插值', async () => {

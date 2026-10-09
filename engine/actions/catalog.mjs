@@ -41,7 +41,7 @@ export const ACTION_KINDS = Object.freeze({
     services: [],
     degrade: ACTION_DEGRADE.keep,
     timing: 'mode=context 在 post-execute 追加 durable user 通知；mode=continue 在 agent/turn-stopping steer 一步。',
-    note: '续跑共用引擎的续跑预算（每轮 1 次 / 每会话 3 次），无正文时不追加（empty 情形）；绝不伪造 assistant 角色。',
+    note: '续跑共用引擎的续跑预算（每个来源（模块）每轮 1 次 / 每会话 3 次），无正文时不追加（empty 情形）；绝不伪造 assistant 角色。',
   },
   guard: {
     title: '执行层 guard',

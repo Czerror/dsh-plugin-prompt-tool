@@ -516,12 +516,18 @@ function wireToolPipelines(ctx, configs, warnOnce, on) {
 }
 
 /**
- * 轮次停止层的续跑上限：每轮 1 次、每会话 3 次，均为引擎常量。
- * 不暴露为配置——强制续跑失控会把会话卡在停不下来的循环里；官方桥在同一位置
- * 也只留了 TODO(stop-loop-guard) 而未实现上限。
+ * 轮次停止层（`turn-stop` 与续跑动作）的续跑上限：**每个来源（模块）**每轮 1 次、
+ * 每会话 3 次，均为引擎常量。不暴露为配置——强制续跑失控会把会话卡在停不下来的
+ * 循环里；官方桥在同一位置也只留了 TODO(stop-loop-guard) 而未实现上限。
  */
 export const TURN_STOP_MAX_PER_TURN = 1
 export const TURN_STOP_MAX_PER_SESSION = 3
+
+/**
+ * 续跑预算按来源模块分档：`turnStopBudgets` 的键就是模块 id，模块来源缺失时才落这个
+ * 兜底键（与 `wireTurnStops` 的 `config.sourceModuleId ?? ''` 同源）。
+ */
+export const TURN_STOP_BUDGET_SHARED = ''
 
 /** 会话内保留的轮次计数上限（与 deliberation-gate 同规模）。 */
 export const TURN_STOP_MAX_TRACKED_TURNS = 8
@@ -529,6 +535,8 @@ export const TURN_STOP_MAX_TRACKED_TURNS = 8
 /**
  * 续跑预算（唯一实现）：B3 T2 第 (4) 类动作的「续跑」与既有 turn-stop 层共用它，
  * 上限是引擎常量而不是配置——强制续跑失控会把会话卡在停不下来的循环里。
+ * **一份预算覆盖一个来源模块**（规则运行时按模块传入同一份），因此同模块的多条
+ * turn-stop / continue 动作合计每轮 1 次、每会话 3 次。
  * 三步语义刻意与迁移前逐行一致：
  *   entry(...)    取条目（含创建与超限轮次淘汰的副作用），在条件判定**之前**调用；
  *   available(...) 只读判定，不落账；
@@ -580,11 +588,15 @@ export function createTurnStopBudget() {
   }
 }
 
-/** turn-stop：命中条件时阻止本轮停止并强制续跑一步，上限在引擎内。 */
-function wireTurnStops(ctx, configs, warnOnce, on) {
+/**
+ * turn-stop：命中条件时阻止本轮停止并强制续跑一步，上限在引擎内。
+ * options.turnStopBudgets 由调用方传入时按同一份预算记账（规则运行时按模块一份），
+ * 缺省仍按 sourceModuleId 各建一份。
+ */
+function wireTurnStops(ctx, configs, warnOnce, on, turnStopBudgets) {
   const disposers = []
   if (configs.length === 0) return disposers
-  const budgets = new Map()
+  const budgets = turnStopBudgets ?? new Map()
 
   for (const config of configs) {
     const source = config.sourceModuleId ?? ''
@@ -724,6 +736,9 @@ function wireSubagentEvents(ctx, configs, warnOnce, on) {
 
 /**
  * 把非 pre-step 提示词配置接入其声明的官方层级通道。
+ * @param options.turnStopBudgets 可选的续跑预算映射（键 = 模块 id，缺来源用
+ *   {@link TURN_STOP_BUDGET_SHARED}）；规则运行时按模块传入同一份，使同模块的
+ *   turn-stop 与 continue 动作共享上限。
  * @returns 聚合 disposer：回收本次接线显式创建的 waterfall 监听器；段/上下文/
  *   变量注册走 keepDisposer（随 ctx fiber 释放），不在本函数的回收面内。
  */
@@ -751,7 +766,7 @@ export function wireLayers(ctx, configs, warnOnce, options = {}) {
     wireAgentRequests(ctx, configs.filter((config) => config.layer === 'agent-request'), warnOnce, on),
     wireLlmStreams(ctx, configs.filter((config) => config.layer === 'llm-stream'), warnOnce, on),
     wireToolPipelines(ctx, configs.filter((config) => config.layer === 'tool-pipeline'), warnOnce, on),
-    wireTurnStops(ctx, configs.filter((config) => config.layer === 'turn-stop'), warnOnce, on),
+    wireTurnStops(ctx, configs.filter((config) => config.layer === 'turn-stop'), warnOnce, on, options.turnStopBudgets),
     wireSubagentEvents(ctx, configs.filter((config) => config.layer === 'subagent-start' || config.layer === 'subagent-end'), warnOnce, on),
     owned,
   ].flat().filter((disposer) => typeof disposer === 'function')

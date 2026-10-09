@@ -1,6 +1,6 @@
 import { prepareAction } from './actions/index.mjs'
 import { applyPromptConfigSources } from './executor.mjs'
-import { wireLayers } from './layers.mjs'
+import { createTurnStopBudget, wireLayers, TURN_STOP_BUDGET_SHARED } from './layers.mjs'
 import { wireTriggerObservers } from './trigger.mjs'
 import { ruleFrame, actionMatches } from './conditions/evaluation.mjs'
 import { createWarnOnce } from './shared.mjs'
@@ -20,6 +20,14 @@ export function mountRuleSources(ctx, sources, options = {}) {
   })()
   const releases = []
   const points = new Map()
+  // 续跑预算按来源模块一份（与文档一致）：同模块的 turn-stop 与 continue 动作共享上限，
+  // 不再按动作各建一份。每个 mount 只装一个模块，故本 mount 内的预算就是该模块那一份。
+  const turnStopBudgets = new Map()
+  const turnStopBudgetFor = (moduleId) => {
+    const key = moduleId ?? TURN_STOP_BUDGET_SHARED
+    if (!turnStopBudgets.has(key)) turnStopBudgets.set(key, createTurnStopBudget())
+    return turnStopBudgets.get(key)
+  }
   const injections = new Map(sources.map(source => [source.moduleId, { sourceId: `module:${source.moduleId}`, configs: [], ruleActions: [], officialInstructions: source.officialInstructions === true }]))
   const rules = sources.flatMap(source => source.rules.filter(rule => rule.enabled !== false))
   // 动作级分支条件（actionWhen）也要喂 session/event：否则 else / 嵌套 if 里的 phase / count
@@ -32,7 +40,7 @@ export function mountRuleSources(ctx, sources, options = {}) {
   ], { plugin: options.plugin ?? 'rule-engine', warnOnce })
   if (observer) releases.push(observer)
   let active = true
-  const bind = (item, on) => prepareAction(item.action, { plugin: options.plugin, warnOnce, promptConfigOptions: item.rule.promptConfigOptions, on })(ctx)
+  const bind = (item, on) => prepareAction(item.action, { plugin: options.plugin, warnOnce, promptConfigOptions: item.rule.promptConfigOptions, turnStopBudget: turnStopBudgetFor(item.moduleId), on })(ctx)
   try {
     for (const source of sources) for (const [ruleIndex, rule] of source.rules.entries()) {
       if (rule.enabled === false) continue
@@ -52,6 +60,7 @@ export function mountRuleSources(ctx, sources, options = {}) {
       const flushLayers = () => {
         if (!textConfigs.length) return
         releases.push(wireLayers(ctx, textConfigs, warnOnce, {
+          turnStopBudgets,
           on: (channel, handler) => {
             if (channel !== point.channel) throw new TypeError(`rule action registered outside ${point.channel}: ${channel}`)
             handlers.push({ handler }); return () => {}

@@ -348,6 +348,27 @@ test('官方文本层同 order 的默认段按 sequence 排列，显式注册名
   assert.deepEqual(h.warnings, [])
 })
 
+test('重复模块身份：跨模块同 rule id 且 dedupe=session 只告警一次，装配照常成功', async (t) => {
+  // 复制模块保留 rule id，默认身份（rule:ruleId:actionId）因此跨模块重复。这是合法操作，
+  // 只可见化（warnOnce + 诊断），绝不整体拒绝——整体拒绝会让该 Agent 的全部装配失败，
+  // 违背「失败不伤会话」。
+  for (const id of ['dup-source-a', 'dup-source-b']) {
+    writePreset(id, {
+      modules: ['prompt-config-engine'],
+      promptConfigs: [{ id: 'shared-hint', text: `${id}-HINT`, dedupe: 'session', position: 'after-user' }],
+    })
+  }
+  const h = await liveAssembly(t, () => ['dup-source-a', 'dup-source-b'])
+  const agent = await h.makeAgent('duplicate-identity-agent')
+  assert.deepEqual(h.runtime.moduleIds(agent.id), ['dup-source-a', 'dup-source-b'], '重复身份不影响装配成功')
+  // 同一批内的候选不算「已投递」：两张卡各自注入一次，重复体现在**后续步**不再补发。
+  const first = (await h.inject(agent)).messages.flatMap(message => message.content.map(block => block.text))
+  assert.deepEqual(first, ['USER', 'dup-source-a-HINT', 'dup-source-b-HINT'])
+  assert.deepEqual(h.warnings.length, 1, `跨模块重复身份恰好一条告警：${JSON.stringify(h.warnings)}`)
+  assert.match(h.warnings[0], /同一个去重身份/)
+  assert.match(h.warnings[0], /dup-source-a、dup-source-b/)
+})
+
 test('热更新：空启用表到多模块、配置启停与拒绝后重试都更新同一个 Agent，重复刷新不重复注入', async (t) => {
   const { setModuleEnabled, enabledModuleIds } = await import('../../src/host/config-store.ts')
   for (const id of ['hot-a', 'hot-b']) writePreset(id, {

@@ -1,13 +1,15 @@
 import { labelOf, requireString } from './shared.mjs'
 import { createTurnStopBudget, pluginMessage } from '../layers.mjs'
 
-export function prepareAppendContext(action, plugin) {
+export function prepareAppendContext(action, plugin, _promptConfigOptions, turnStopBudget) {
   const label = labelOf(action)
   const text = requireString(action.text, `${label}.text`, plugin)
   if (text.length === 0) return
   if (action.mode === 'continue') {
     return (_ctx, { warnOnce, on, collect, take }) => {
-      const budget = createTurnStopBudget()
+      // 共享预算优先：同一来源模块的多条 continue 每轮只续跑一次（上限按模块一份）；
+      // 无调用方预算时保持按动作新建（独立 registerAction 路径）。
+      const budget = turnStopBudget ?? createTurnStopBudget()
       collect(on('agent/turn-stopping', ({ agent, turn } = {}) => {
         try {
           if (typeof action.match === 'function' && action.match(agent, turn) !== true) return

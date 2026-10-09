@@ -255,6 +255,47 @@ test('统一规则：模型流与停止事件各自执行，子代理启动复�
   assert.ok([...h.events.values()].every(list => list.length === 0))
 })
 
+test('统一规则：同模块多条续跑动作共享一份预算，每轮只续跑一次且每会话合计 3 次', async () => {
+  const steered = []
+  const agent = { ...actor(), steer: message => steered.push(message.content[0].text) }
+  const h = harness()
+  const dispose = mountRuleSources(h.ctx, [{ moduleId: 'module', rules: compileRules([
+    { id: 'continue-one', layer: 'turn-stop', then: [{ id: 'one', kind: 'append-context', mode: 'continue', text: 'ONE' }] },
+    { id: 'continue-two', layer: 'turn-stop', then: [{ id: 'two', kind: 'append-context', mode: 'continue', text: 'TWO' }] },
+    { id: 'continue-three', layer: 'turn-stop', then: [{ id: 'three', kind: 'append-context', mode: 'continue', text: 'THREE' }] },
+  ]) }])
+  const stop = turn => h.emit('agent/turn-stopping', { agent, turn })
+  // 同一轮三条 continue 只允许一次续跑：预算按来源模块一份，不按动作各建一份。
+  for (let turn = 1; turn <= 4; turn += 1) { await stop(turn); await stop(turn) }
+  assert.deepEqual(steered, ['ONE', 'ONE', 'ONE'], '每轮 1 次、每会话 3 次（四条轮次里第 4 轮已到会话上限）')
+  dispose()
+})
+
+test('统一规则：同模块两动作续跑一次，跨模块各保留一份预算且单动作路径不受影响', async () => {
+  const steered = []
+  const subject = () => ({ ...actor(), steer: message => steered.push(message.content[0].text) })
+  const h = harness()
+  const dispose = mountRuleSources(h.ctx, [{ moduleId: 'module', rules: compileRules([{ id: 'loop', layer: 'turn-stop', then: [
+    { id: 'one', kind: 'append-context', mode: 'continue', text: 'ONE' },
+    { id: 'two', kind: 'append-context', mode: 'continue', text: 'TWO' },
+  ] }]) }])
+  const single = subject()
+  await h.emit('agent/turn-stopping', { agent: single, turn: 1 })
+  await h.emit('agent/turn-stopping', { agent: single, turn: 1 })
+  assert.deepEqual(steered, ['ONE'], '同一轮只续跑一次；第二条动作不再各占一份预算')
+  dispose()
+
+  // 另一模块（另一个 mount）自带一份预算，不互相消耗。
+  const other = harness()
+  const separate = subject()
+  const disposeOther = mountRuleSources(other.ctx, [{ moduleId: 'other', rules: compileRules([
+    { id: 'other-loop', layer: 'turn-stop', then: [{ id: 'other-one', kind: 'append-context', mode: 'continue', text: 'OTHER' }] },
+  ]) }])
+  await other.emit('agent/turn-stopping', { agent: separate, turn: 1 })
+  assert.deepEqual(steered, ['ONE', 'OTHER'])
+  disposeOther()
+})
+
 test('统一规则：缺失真实会话的 not 保持未知，any 中已知 true 分支仍能执行', async () => {
   const unknown = [{ scope: { audience: 'main' } }, { phase: { promoted: false } }, { session: { type: 'user/message', present: true } }]
   for (const when of [...unknown.map(node => ({ not: node })), { notAny: unknown }, { any: [{ not: unknown[0] }, { scope: { modelScope: 'all' } }] }]) {

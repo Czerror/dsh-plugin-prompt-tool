@@ -204,6 +204,36 @@ export async function prepareAssembly(
 /** 上报点只读 message（本文件的 `warn`、settings-bridge 的 `String(error)`）：原因写进文本。 */
 const failureReason = (error: unknown): string => error instanceof Error ? error.message : String(error)
 
+/** 投递身份：merged 组按位置命名空间，独立配置用自身身份；与引擎 `identityOf` 同源。 */
+function effectiveIdentity(config: Record<string, unknown>): string {
+  if (config.mergeMode === 'merged') return `merged:${String(config.position)}`
+  const identity = config.identity as { value?: unknown } | undefined
+  return typeof identity?.value === 'string' ? identity.value : String(config.id)
+}
+
+/** 同时启用的模块间重复去重身份（F16(b)）：**只可见化，不拒绝**——复制模块后两者同时启用
+ * 是合法操作，整体拒绝会让该 Agent 的全部装配失败，违背「失败不伤会话」。 */
+interface DuplicateIdentity { identity: string; moduleIds: string[] }
+
+function duplicateDedupeIdentities(prepared: PreparedAssembly[]): DuplicateIdentity[] {
+  const modulesOf = new Map<string, Set<string>>()
+  for (const item of prepared) {
+    for (const rule of item.rules as Array<{ enabled?: boolean; actions?: Array<{ kind?: string; compiledConfig?: Record<string, unknown> }> }>) {
+      if (rule.enabled === false) continue
+      for (const action of rule.actions ?? []) {
+        if (action.kind !== 'inject-text') continue
+        const config = action.compiledConfig
+        if (config === undefined || (config.dedupe !== 'session' && config.dedupe !== 'batch')) continue
+        const identity = effectiveIdentity(config)
+        const modules = modulesOf.get(identity) ?? new Set<string>()
+        modules.add(item.moduleId); modulesOf.set(identity, modules)
+      }
+    }
+  }
+  return [...modulesOf].filter(([, modules]) => modules.size > 1)
+    .map(([identity, modules]) => ({ identity, moduleIds: [...modules].sort() }))
+}
+
 export function createAgentAssembly(ctx: Context, options: AgentAssemblyOptions): AgentAssemblyRuntime {
   const mounts = new Map<string, { agent: Agent; fiber: { dispose(): Promise<void> | void }; prepared: PreparedAssembly[]; moduleIds: readonly string[] }>()
   const disposed = new WeakSet<Agent>()
@@ -211,6 +241,15 @@ export function createAgentAssembly(ctx: Context, options: AgentAssemblyOptions)
   let active = true
   const warn = (error: unknown): void => {
     const message = `prompt-tool: 运行时配装失败：${failureReason(error)}`
+    if (options.warn !== undefined) options.warn(message)
+    else ctx.logger?.warn?.(message)
+  }
+  // 跨模块重复身份按「身份 → 模块集」只报一次：反复重装（每次保存、每个新 Agent）不刷屏；
+  // 装上第二处（新模块）时再加报一次。
+  const reportedDuplicates = new Set<string>()
+  const warnOnce = (message: string): void => {
+    if (reportedDuplicates.has(message)) return
+    reportedDuplicates.add(message)
     if (options.warn !== undefined) options.warn(message)
     else ctx.logger?.warn?.(message)
   }
@@ -229,7 +268,7 @@ export function createAgentAssembly(ctx: Context, options: AgentAssemblyOptions)
     await current.fiber.dispose()
   }
 
-  const mount = async (agent: Agent, prepared: PreparedAssembly[]): Promise<void> => {
+  const mount = async (agent: Agent, prepared: PreparedAssembly[], duplicateIdentities: DuplicateIdentity[] = []): Promise<void> => {
     // 宿主能力取并集；模块身份独立保留，提示词配置在各自插入点按持久序号执行。
     const services = new Set<string>()
     for (const item of prepared) for (const name of item.services) services.add(name)
@@ -237,6 +276,11 @@ export function createAgentAssembly(ctx: Context, options: AgentAssemblyOptions)
       name: 'prompt-tool-assembly',
       inject: [...services],
       apply: async (scopeCtx: Context) => {
+        // 跨模块重复身份：装配照常成功，只把可诊断的后果（按会话去重时后到者被前者的
+        // 身份挡下）上报一次；此处才 warnOnce 是因为试装/回滚会走两次 mount。
+        for (const item of duplicateIdentities) {
+          warnOnce(`模块 ${item.moduleIds.join('、')} 声明了同一个去重身份 ${JSON.stringify(item.identity)}（dedupe: session/batch）：按会话去重只保留先到者，请改 rule id 或显式 identity 以区分`)
+        }
         const standingMountFor = await loadStandingMountFor()
         // 只重绑纯条件，不重读定义、模板或动作。每次挂载/失败恢复都获得自己的闭包与观察状态。
         const ruleSources = prepared.filter(item => item.rules.length > 0).map(item => ({
@@ -311,7 +355,7 @@ export function createAgentAssembly(ctx: Context, options: AgentAssemblyOptions)
     try {
       // 撤旧也在 try 里：撤旧失败同样要尽力把旧装配装回去，否则旧贡献凭空消失。
       await release(agent.id)
-      await mount(agent, prepared)
+      await mount(agent, prepared, duplicateDedupeIdentities(prepared))
     } catch (error) {
       if (previous?.agent === agent && active && !disposed.has(agent)) {
         // ponytail: 撤旧只失败在 dispose 上时旧 fiber 可能半撤且已出账；出现重复贡献再改成「撤旧成功才记账」。

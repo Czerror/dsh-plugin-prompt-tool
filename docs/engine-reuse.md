@@ -183,6 +183,20 @@
 资产；保存、物化与运行使用同一边界。`strategyDir` 也相对规则包解析，不能从包内引擎目录
 反推数据目录。正文模板、策略目录和身份校验在所有入口同源。
 
+**dedupe 身份在同时启用的模块间须唯一**：模块复制保留 rule id，因此默认派生的身份
+（`rule:<ruleId>:<actionId>`）也跟着复制，不产生新身份；两个启用模块声明同一个
+`dedupe: session` / `batch` 身份时，装配**不拒绝**（复制模块后两者同时启用是合法操作），
+只在第一条装配时 `warnOnce` 一条诊断并照常装配。`identity` 显式声明时同样按值判重：
+`{ field: 'plugin', value }` 的值两卡相同即视为同一身份。
+
+**来源盖章与去重查找同源**：消息 `source.plugin` 写的是该配置的**去重身份**
+（`merged` 组用 `merged:<position>`，其余用 `identity.value`，默认即 `config.id`），
+与 `alreadyDelivered` 的查找键一致。解析器自带 `source` 的候选（`fill=instruction-hint`
+解析出的 `{ kind: 'instruction-hint' }` 等）也会被补盖 `source.plugin = 该身份`，否则身份
+只落在 kind 通道、`dedupe: session` 每步重复注入。副作用：`pre-step-filter` 的
+`blockPlugins` 按 `source.plugin` 匹配（见下文），显式 `identity` 的卡要屏蔽须写
+`identity.value` 而不是 `id`；旧消息的 kind 仍是 `plugin:<id>`，kind 通道继续命中。
+
 `getRuleEditorMeta()` 从实际条件、动作目录派生可序列化选项；`getEngineMeta()` 提供有效
 层和内容策略目录。新动作种子是可编译的中性空内容、空 patch 或空名单，不替用户选业务值。
 `custom-fallback` 不再发布，也没有可执行兼容分支，必须离线转为显式 `anchor` 条件和
@@ -303,9 +317,12 @@ UNAVAILABLE，不是编译期拒绝。
 | `subagent-start` | `subagent/start` | `subagentInfo` | 向该子代理注入一条上下文 |
 | `subagent-end` | `subagent/end` | `subagentInfo` | 默认记录；`params.action: inject-main` 时通过独立 Agent.inject 调用向所属主会话投递文本，不改写子代理结果、不唤醒空闲主会话 |
 
-- `turn-stop` 的续跑上限固定在引擎内（每轮 1 次、每会话 3 次：`engine/layers.mjs` 的
+- `turn-stop` 的续跑上限固定在引擎内（**每个来源（模块）**每轮 1 次、每会话 3 次：
+  `engine/layers.mjs` 的
   `TURN_STOP_MAX_PER_TURN` / `TURN_STOP_MAX_PER_SESSION`），**不暴露为配置**——强制续跑
   失控会把会话卡在停不下来的循环里，官方 hook 桥在同等位置也只留了 `TODO(stop-loop-guard)`。
+  预算按来源模块一份，经 options 下传到动作：同一模块的多条 `turn-stop` 配置与
+  `append-context`（`mode: continue`）动作共享它，不能靠「同模块多写几条」叠加次数。
 - 原生 `decision.toolNames` 支持明确的工具名单；名单类型错误必须拒绝，不能因解析失败
   把定向门扩大成全工具门。工具前、后阶段是不同执行点，各自重新判定。
 - **策略只在消费它的层生效**：`config.resolve` 只由 pre-step（`executor.mjs`）与 runtime-context

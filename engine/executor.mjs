@@ -162,11 +162,15 @@ function buildMessage(config, resolved, warnOnce) {
   const defaultContent = config.texts.length > 0
     ? config.texts.map((item) => ({ type: 'text', text: item }))
     : [{ type: 'text', text }]
-  const sourceValue = mergedIdentity(config)
+  // 盖章身份与 alreadyDelivered 的查找键同源（identityOf）：显式 identity 才真正共享去重，
+  // 也不会与他卡的 id 误撞；merged 组 identityOf 本就等于 mergedIdentity，存量输出不变。
+  const sourceValue = identityOf(config)
   // 策略 patch（templateFile 的 role 等）与配置声明都必须经过同一出口判定。
   const requested = downgradeRole(config, typeof resolved.role === 'string' ? resolved.role : config.role, warnOnce)
   const base = resolved.source !== null && typeof resolved.source === 'object'
-    ? resolved.source
+    // 解析器自带的 source 也要盖章：否则这类消息（如 fill=instruction-hint 的
+    // `{ kind: 'instruction-hint' }`）只带 kind 通道，dedupe=session 每步重复注入。
+    ? { ...resolved.source, plugin: typeof resolved.source.plugin === 'string' && resolved.source.plugin.length > 0 ? resolved.source.plugin : sourceValue }
     : {
         // v4 要求 kind 是**生产者名**：声明了 sourceKind 就用它，否则用与 pluginMessage 同一形状的
         // `plugin:<身份>`。裸 kind（undefined / 'plugin'）都会被 codec 拒绝，历史走的是同一个坑。
