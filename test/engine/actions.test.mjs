@@ -446,6 +446,10 @@ async function ptcHarness({ language = 'typescript', mode = 'ptc' } = {}) {
       }
     },
   })
+  // 带 Agent 的 run_code 会向 workingDirectory 服务要目录（dsh-tools 0.2.1-alpha.2 起强制，
+  // 见其 requireWorkingDirectory）；真实部署由 @deepseek-ai/dsh-working-directory 提供，
+  // 这里给最小替身，避免为了一个服务把新包引进 devDependencies。
+  root.provide('workingDirectory', { ensure: async () => process.cwd() })
   const makeAgent = async (id, parentScope) => {
     const record = {
       id,
