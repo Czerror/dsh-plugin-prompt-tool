@@ -283,11 +283,17 @@
 `engine/anchor-match.mjs`；非法组合、空文本键集合与非法正则在编译期拒绝。旧配置中的
 subject/match/promotion 只能经离线转换显式进入规则条件，不能把旧配置层当成第二规则来源。
 
-`if.text.subject` 必须由该条件被求值的官方通道真实提供：**动作级**分支条件写错通道或
-省略 subject 时，该动作永不执行且挂载与运行期都不报错，因此在编译期拒绝。可用集合由
-`engine/conditions/subject.mjs#channelTextSubjects()` 从通道载荷表反查，不另立名单。
+`if.text.subject` 与 `if.names` / `if.source` 要读的事实必须由该条件被求值的官方通道真实
+提供：**动作级**分支条件写错通道（或 `text` 省略 subject）时，该动作永不执行且挂载与运行期
+都不报错，因此在编译期拒绝。文本与事实的可用集合都由 `engine/conditions/subject.mjs` 的
+`channelTextSubjects()` / `channelFactSubjects()` 从**同一张**通道载荷表反查，不另立名单。
+`subagent/start`、`subagent/end` 在表里标记为提供 `name`（= provider），所以 `names` 在这两层
+合法；provider 真缺席（官方 one-shot 变 ready、持久 Activation 冷恢复）是**运行期**
+UNAVAILABLE，不是编译期拒绝。
 **规则级** `if` 不在此列——它在该规则每个动作的执行点各自求值，「缺事实即不执行」
-是三值语义的设计意图（见 `test/engine/rules.test.mjs` 的缺事实用例）。
+是三值语义的设计意图（见 `test/engine/rules.test.mjs` 的缺事实用例）。规则级 `if` 本身不被
+校验（`else` 注入的 `not(if)` 按节点身份排除，不按 subject 名字）；但**动作级嵌套分支的 `if`
+一律按该动作的执行点校验**，与规则级 `if` 同名 subject 不会因此被跳过。
 
 | 动作或展示层 | 真实扩展点 | 可选文本 subject | 命中后的行为 |
 |---|---|---|---|

@@ -18,7 +18,7 @@ export * from './session.mjs'
 export * from './preset.mjs'
 export * from './scope.mjs'
 export * from './anchor.mjs'
-export { subjectOf, channelTextSubjects } from './subject.mjs'
+export { subjectOf, channelTextSubjects, channelFactSubjects } from './subject.mjs'
 export { composite } from './composite.mjs'
 export const PREDICATE_FACTORIES = Object.freeze({
   text: createTextPredicate,

@@ -6,6 +6,8 @@ import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import { compileRules, getRuleEditorMeta } from '../../engine/rule-spec.mjs'
 import { mountRuleSources } from '../../engine/rule-runtime.mjs'
 import { ruleFrame, ruleMatches, actionMatches } from '../../engine/conditions/evaluation.mjs'
+import { createNameListPredicate, subjectOf } from '../../engine/conditions/index.mjs'
+import { UNAVAILABLE } from '../../engine/conditions/availability.mjs'
 
 function harness(services = {}) {
   const events = new Map()
@@ -408,8 +410,16 @@ test('if/then/else：动作级 text 条件必须落在本执行点真实提供�
   })
   // 主路径：subagent 两通道真实提供的文本只有 subagentInfo。
   assert.equal(compileRules([{ id: 'r', then: [branchOn('subagentInfo')] }])[0].actions.length, 1)
-  // 关键拒绝：写别的 subject 时该动作永不执行，且挂载与运行期都不报错。
-  assert.throws(() => compileRules([{ id: 'r', then: [branchOn('userMessage')] }]), /action inject: text subject "userMessage".*可用 subagentInfo/s)
+  // 关键拒绝（F26）：规则级 if 与嵌套分支同名 userMessage 时，嵌套分支仍按**自身执行点**校验。
+  // 按 subject 名字跳过会让 tools/pre-execute 上的 userMessage 死条件编译通过——基线正是如此。
+  assert.throws(() => compileRules([{
+    id: 'r',
+    if: { text: { keys: ['x'], subject: 'userMessage' } },
+    then: [{
+      if: { text: { keys: ['x'], subject: 'userMessage' } },
+      then: [{ id: 'deny', kind: 'decision', phase: 'pre', decision: 'deny', reason: 'blocked' }],
+    }],
+  }]), /action deny: text subject "userMessage".*可用 toolArgs/)
   // 边界：省略 subject 的判定恒为「缺事实」，同样是死路。
   assert.throws(() => compileRules([{ id: 'r', then: [branchOn(undefined)] }]), /action inject: text needs an explicit subject/)
   // 规则级 if 不在此列：它在每个动作的执行点各自求值，缺事实即不执行是三值语义的设计意图。
@@ -418,6 +428,25 @@ test('if/then/else：动作级 text 条件必须落在本执行点真实提供�
     if: { text: { keys: ['x'], subject: 'toolResult' } },
     then: [{ id: 'request', kind: 'request-params', modelScope: 'all', patch: {} }],
   }]).length, 1)
+})
+
+test('动作级 names / source 条件必须落在本执行点真实提供的事实上', () => {
+  const branchOn = (condition, action) => ({ if: condition, then: [action] })
+  const preDecision = { id: 'deny', kind: 'decision', phase: 'pre', decision: 'deny', reason: 'blocked' }
+  const inboxPrepend = { id: 'ip', kind: 'inbox-prepend', target: 'next-turn', text: 'X' }
+  // 主路径：工具执行点提供 name（exec.name），收件箱插入点提供 source（message.source）。
+  assert.equal(compileRules([{ id: 'r', then: [branchOn({ names: { allow: ['bash'] } }, preDecision)] }])[0].actions.length, 1)
+  assert.equal(compileRules([{ id: 'r', then: [branchOn({ source: { kind: 'plugin:x' } }, inboxPrepend)] }])[0].actions.length, 1)
+  // 关键拒绝：pre-step 的载荷既没有 name 也没有 source，写上去的动作永不执行且挂载与运行期都不报错。
+  assert.throws(() => compileRules([{ id: 'r', then: [branchOn({ names: { allow: ['bash'] } }, textAction('t', 'T'))] }]), /action t: names subject "name".*可用 （无）/)
+  assert.throws(() => compileRules([{ id: 'r', then: [branchOn({ source: { kind: 'user' } }, textAction('t', 'T'))] }]), /action t: source subject "source".*可用 （无）/)
+  // 边界：subagent 两层的 name = provider（表里标记为提供），因此 names 编译放行；
+  // provider 真缺席是**运行期** UNAVAILABLE，不是编译期拒绝。
+  assert.equal(compileRules([{
+    id: 'r',
+    then: [branchOn({ names: { allow: ['fork'] } }, { id: 's', kind: 'inject-text', config: { id: 's', layer: 'subagent-start', strategy: 'static', text: 'X' } })],
+  }])[0].actions.length, 1)
+  assert.equal(createNameListPredicate({ allow: ['fork'] })(subjectOf('subagent/start', [{ runId: 'r-1', id: 's-1', local: true }])), UNAVAILABLE)
 })
 
 test('统一规则：判定类别按通道上报，命中、条件为假与缺事实可区分', async () => {

@@ -181,8 +181,9 @@ rules:
   # 标记 ponytail: 债务）全部无关。
   #
   # `position: before-all` 保住原语义（规则排在任务文本之前），`dedupe: session` 保证每
-  # 个子代理只付一次。想再细化就改这一条的 `if`：按形态筛用 `names: { allow: [fork] }`
-  # （name = SubagentRunInfo.provider），按模型筛用 `scope: { modelScope: pro }`。
+  # 个子代理只付一次。想再细化就改这一条的 `if`：按模型筛用 `scope: { modelScope: pro }`；
+  # 按形态（provider）筛请另立 `subagent-start` 层的卡——`agent/pre-step` 的载荷没有 `name`，
+  # `names` 挂在这一层的规则或动作上恒不命中（动作级写法已在编译期拒绝）。
   #
   # **首轮守卫（`session.present: false`）不可省**：`agent/pre-step` 的 `messages` 是「本批
   # 被领取的消息」，任务文本只在**首轮**那一批里（真机会话实测：任务 `user/message` 只出现
