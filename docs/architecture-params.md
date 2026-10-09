@@ -21,7 +21,7 @@ Config 的规范键是 `modulesEnabled`，表示模块运行总闸。旧 `writeP
 
 `if` 组合条件，`then[]` 声明有稳定 id 的动作；注入正文、策略、模板和局部变量属于 `inject-text.config`。规则的 `layer` 是动作未声明 `config.layer` 时的缺省注入层，其余用于展示分组；它不建立跨插入点的全局运行顺序。
 
-共享只限于同一模块内的配置卡。`persona`、`variables`、`customTools`、`subagentToolPolicy` 和能力行的 `moduleConfigs` 保留独立所有者。`loadModuleSpec().params` 是 `layerSettings` 的内部平铺适配面，不是第二个磁盘参数源，也不承载规则正文。
+共享只限于同一模块内的配置卡。`persona`、`variables`、`customTools`、`subagentToolPolicy` 和能力行的 `moduleConfigs` 保留独立所有者；module.yml 顶层布尔 `stWorldBookRecursive`（缺省关闭、按模块生效，只决定该模块的 ST 世界书条目是否参与递归重扫）同属预设行为，不进部署设置。`loadModuleSpec().params` 是 `layerSettings` 的内部平铺适配面，不是第二个磁盘参数源，也不承载规则正文。
 
 模型路由与采样参数写入 `request-params` 动作；主会话、子代理和模型范围统一由规则级 `if.scope` 约束，不再在动作中另放动态门。模型未配置时继承宿主会话，不调用 `agentDefaultModel.saveSelection` 改写全局默认。十个旧 `model*` / `subagentModel*` 键由 `RULE_OWNED_MODEL_PARAMS` 标记为迁移输入，不再从 `layerSettings` 隐式生成请求规则。
 

@@ -36,7 +36,8 @@
 新写或跨项目复制模型工具时，两条宿主约束必须遵守（此前只写在代码注释里，此处上提）：
 
 1. **`tools:sdk` 段与 `{{var}}` 校验：现有代码注释与官方实现不符，此处按实测记录。**
-   `src/runtime/session-var-tools.ts:21-23` 的注释称「工具 `description` 会进入宿主 `tools:sdk` 段，
+   **版本标注**：本段按记录时的已安装版本 `@deepseek-ai/dsh-tools@0.1.6-alpha.2` 写成；当前安装为 `0.2.1-alpha.1`，段内源码位置未按新版本复核。
+   `src/runtime/session-var-tools.ts` 里 `session_var` 工具 `description` 上方的注释称「工具 `description` 会进入宿主 `tools:sdk` 段，
    宿主对该段做 `{{var}}` 变量校验（变量名须匹配 `[a-z][a-z0-9_]*` 且已注册），文本中不得出现双花括号字面量」。
    但在已安装的 `@deepseek-ai/dsh-tools@0.1.6-alpha.2` 上：
    - `sdkSection()` 返回的 `tools:sdk` 段**显式设了 `interpolate: false`**（`lib/index.js:2743-2758`）；
@@ -58,7 +59,7 @@
      但**不能移除**（`:271-277`）。
    - `agent?` 是发起该调用的 agent（`:211`）。官方 `@deepseek-ai/dsh-agent`
      （`lib/types/runtime-types.d.ts:139-143`）声明了 `readonly session: Session`，本项目据此用
-     `exec.agent?.session` 取当前会话（`src/runtime/session-var-tools.ts:60`）。
+     `exec.agent?.session` 取当前会话（`src/runtime/session-var-tools.ts#registerSessionVarTools`）。
 
 ## 复制协议（跨项目复用）
 
@@ -141,7 +142,7 @@
 | `engine/conditions/session.mjs` 的 `present` 镜像 | 当前上下文 | `present` 问「此刻可见上下文里有没有这类事件」，不是「本会话曾经发生过」 |
 | `engine/condition.mjs` 的 `lastAssistantText`（turn-stop 匹配对象） | 当前上下文 | 「刚刚这条回复」指模型看得见的那条 |
 | `engine/interpolate.mjs` 的 `lastusermessage` / `lastcharmessage` | 当前上下文 | 官方运行时事实按模型可见消息求值，读全量日志天然对不齐 |
-| `engine/st-render.mjs` 的 `generationKey`（ST 变量帧边界） | 当前上下文 | 「帧 = 同一代可见历史」，压缩遮蔽旧节点后帧边界必须跟着可见历史走 |
+| `engine/st-render.mjs` 的 `generationKey`（ST 变量帧边界） | 完整历史 | 帧边界（`turn/start` / `step/end` / `compaction/end`）与 `tool/call` 都不是 surface 承载类型，按当前上下文读恒为空，帧键因此回退完整历史 |
 | `engine/st-world-book.mjs` 的 `stChatMessages`（关键词扫描 haystack） | 当前上下文 | 关键词世界书只该由模型看得见的真实对话触发 |
 | `engine/compaction-epoch.mjs` 门控 / 晋升的冷启动重建 | 完整历史 | 「最后一次成功压缩之后是否曾经 `tool/call` / `assistant/message` 过」，`boundary` 本身是 log `seq` |
 | `engine/actions/assembly.mjs` 的 `fillUnlocked` 解锁名单 | 完整历史 | 跨请求、跨压缩保留「曾经发现过哪些工具」；压缩后丢名单会裁掉已解锁的工具 |
@@ -453,7 +454,8 @@ UNAVAILABLE），本点的编译期拒绝只有 `names` / `source` / `text.*` �
 - 后到的获准模板按**持久序号 `sequence`**（缺省回退 `order`，`engine/order.mjs#compareConfigSequence`）
   在同一变量帧内补求值，已求值的模板不重放副作用或随机宏；
   已返回的官方文本也不因后续 pre-step 赋值而倒放重算。两种入口顺序均沿用已有变量帧，
-  新步骤与成功压缩创建新帧，失败压缩不推进。该规则不增加跨插入点的全局调度顺序。
+  新步骤与成功压缩创建新帧，失败压缩不推进；帧键读完整历史，含 `turn/start` / `step/end` /
+  `compaction/end` / `tool/call` 这些非 surface 承载的 log-only 事件。该规则不增加跨插入点的全局调度顺序。
 
 ## 会话去重判据：当前上下文 + 模块维（2026-10-10 落地）
 

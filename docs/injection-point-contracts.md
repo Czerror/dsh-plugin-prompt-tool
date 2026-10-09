@@ -13,7 +13,7 @@
 
 ## 官方支持与插件映射
 
-`id/name/enabled/group/exclusive` 属于规则，`if` 统一判断，`then` 持有动作。`configKind/order/dedupe/mergeMode` 属于注入动作配置，不是各官方事件的 payload；下表描述注入动作复用的层适配能力，通用判断与其他动作见 [引擎指南](engine-reuse.md#声明的条件与动作边界)。组内显式启用目标卡会关闭其余卡，不按排序选择赢家。
+`id/name/enabled/group/exclusive` 属于规则，`if` 统一判断，`then` 持有动作。`configKind/order/dedupe/mergeMode` 属于注入动作配置，不是各官方事件的 payload；下表描述注入动作复用的层适配能力，通用判断与其他动作见 [引擎指南](engine-reuse.md#规则条件与动作边界)。组内显式启用目标卡会关闭其余卡，不按排序选择赢家。
 
 | 层 | 官方入口及真实参数 | 当前配置卡 | 约束 |
 |---|---|---|---|
@@ -48,7 +48,7 @@ rules:
 ## 各层的载荷求值窗口
 
 上表说「接入什么」，这一节说「什么时候求值」。它决定动作该用普通注册还是
-`waterfallPosition: outermost`（见 [引擎指南](engine-reuse.md#同-scope-内的注册顺序)），
+`waterfallPosition: outermost`（见 [引擎指南](engine-reuse.md#同-scope-内的注册顺序2026-09-22)），
 也决定配置改完是否需要新的一轮才生效。
 
 | 层 | 求值窗口 | 对配置的含义 |

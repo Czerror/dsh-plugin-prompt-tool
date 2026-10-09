@@ -155,7 +155,7 @@
 
 ## 8. 已知残留
 
-- **预设导出的下载确认**：`src/client/features/presets/PresetExportDialog.tsx` 用 blob URL + `a[download]` 触发下载。桌面主窗口 session 没有 `will-download` 处理（只有 guest 侧 session 注册并 `preventDefault`），因此走 Electron 默认下载流程（原生「另存为」对话框）。当前把 `revokeObjectURL` 的宽限期设为 60 秒作为冗余保险；blob 数据在下载启动时已被读取，**这是保险而非功能依赖**。
+- **预设导出的下载确认**：`src/client/features/presets/ModuleExportDialog.tsx` 用 blob URL + `a[download]` 触发下载。桌面主窗口 session 没有 `will-download` 处理（只有 guest 侧 session 注册并 `preventDefault`），因此走 Electron 默认下载流程（原生「另存为」对话框）。当前把 `revokeObjectURL` 的宽限期设为 60 秒作为冗余保险；blob 数据在下载启动时已被读取，**这是保险而非功能依赖**。
 - **悬浮入口位置偏好不做跨载体迁移**：位置只写 `localStorage`，桌面 origin 是 `dsh-app://app`，与 Web 版互不相通，清站点数据即丢。官方同类偏好在桌面版有走原生文件适配器的先例（快捷键存 `userData/keybindings.json`），本插件暂不跟进。
 - **悬浮入口可能落进窗口顶部拖拽带（影响有限）**：`src/client/app/workbench/floating-trigger-position.ts` 的夹取下界只保留 8px 边缘留白（`y ≥ 8`），没有避开 Windows 原生 caption 行（官方 `AppFrame.module.css:40-47` 的 `-webkit-app-region: drag`）。按钮高 28px，故拖到最上方时仍有下半截落在拖拽带之外：**按钮几何上始终完整可见，不会跑出窗口或"消失"，位置也仍可调整恢复**；真实影响只是上半截的按下会被当作拖窗口，可点区域变小。判定该交互是否需要避开、以及怎么避，属产品决策，需要时以官方变量 `--dsh-windows-titlebar-height` 为下界。
 
@@ -165,10 +165,10 @@
 
 | 位置 | 不一致 |
 |---|---|
-| `docs/subsystems/boot.zh.md:19` | 只列 `ChangeResult.application` 四个值；源码是五个（含 `cancelled`，`packages/boot/plugin-manager/src/types.ts:114`） |
+| `docs/subsystems/boot.zh.md:19` | 只列 `ChangeResult.application` 四个值；源码是五个（含 `cancelled`，`packages/boot/plugin-manager/src/types.ts` 的 `ChangeResult.application`） |
 | `packages/extensions/cordis-client-runner/src/index.ts:5` | 注释写作 `dshClient`，实际字段是 `package.json.dsh.client` |
 | `packages/boot/app-boot/src/profile.ts:11-14` | 层顺序注释漏了 home 级 patch；实现与另外三处文档都含它 |
-| `packages/bundle/web-app/cordis.patch.yml:271` | 注释称 "Web profiles opt in"，与 `:274` 表达式（非 desktop 一律 disabled，无 opt-in 开关）不符 |
+| `packages/bundle/web-app/cordis.patch.yml:290` | 注释称 "Web profiles opt in"，与 `:293` 表达式（非 desktop 一律 disabled，无 opt-in 开关）不符 |
 | `docs/cookbook/adding-a-settings-card.zh.md:42` | 写 `form.state`；源码无 `state` 成员，只有 `getSnapshot()` / `subscribe()` |
 
 ## 10. 更新本文的方式

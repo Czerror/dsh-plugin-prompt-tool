@@ -86,9 +86,9 @@
 |---|---|
 | `setvar/setglobalvar` | 设置 local/global，宏本身无输出；插值内建（`DSH_HOME`/`WORKSPACE`/`CWD`，大小写敏感）与动态宏名（`time`/`pick` 等，大小写不敏感）是**保留名**，`setvar`/`addvar`/`getvar`/`incvar`/`decvar` 一族不得占用——命中不写入 + 告警，表达式求值为空 |
 | `addvar/addglobalvar` | 数值相加、JSON 数组追加、非数值字符串拼接 |
-| `getvar/getglobalvar` | 读取对应表；缺失返回空；local 可回退声明变量。`::default`（缺失时取第二参数，非空则写回表，`engine/st-macros.mjs:183-189`）是**本项目扩展**：ST 的 `getvar` 只声明一个参数（`macros/definitions/variable-macros.js:99-116`），多给的参数按参数个数报错、宏文本原样保留（`macros/engine/MacroEngine.js:229-237`） |
+| `getvar/getglobalvar` | 读取对应表；缺失返回空；local 可回退声明变量。`::default`（缺失时取第二参数，非空则写回表，`engine/st-macros.mjs` 的变量宏 `get` 分支）是**本项目扩展**：ST 的 `getvar` 只声明一个参数（`macros/definitions/variable-macros.js:99-116`），多给的参数按参数个数报错、宏文本原样保留（`macros/engine/MacroEngine.js:229-237`） |
 | `incvar/decvar` 及 global 形式 | 更新数值并输出新值 |
-| `{{key}}`（**本项目扩展**） | ST 的裸 `{{key}}` 从不查变量：没有注册同名宏时原样保留（`macros/engine/MacroEngine.js:215-218`）。本项目按 ST local、自身声明变量、已有动态宏/内置变量依次解析（`engine/st-macros.mjs:204-212`、`engine/interpolate.mjs:124-157`） |
+| `{{key}}`（**本项目扩展**） | ST 的裸 `{{key}}` 从不查变量：没有注册同名宏时原样保留（`macros/engine/MacroEngine.js:215-218`）。本项目按 ST local、自身声明变量、已有动态宏/内置变量依次解析（`engine/st-macros.mjs` 的裸引用分支、`engine/interpolate.mjs#interpolateVariables`） |
 | 时间与最后消息宏 | 运行时求值，不登记为空默认值 |
 | `random` | 支持 `::` 或逗号分隔，转义逗号保留，每次出现求值 |
 | `pick` | 会话、来源与该次插值里出现序号确定的稳定选择（seed 不含正文，无关正文长度变化不改值）；来源是调用点的标识——世界书键用 `<条目 id>#keys<序号>`/`#secondaryKeys<序号>`，指令提示模板用模板名；不复刻 ST 的具体随机序列或 reroll 命令 |
@@ -125,7 +125,7 @@ ST 导入在既有 `buildWorldBookEntry` 结构上添加 `params.stWorldBook`，
 | ST 语义 | 导入后的处理 |
 |---|---|
 | `keys/key`、`secondary_keys/keysecondary` | 保留；只有主键命中才能进行选择性判断 |
-| `keys`/`secondary_keys` 里的 ST 宏 | 匹配前求值，方向对齐 ST 的 `substituteParams`（`world-info.js:4914-4917`、`world-info.js:4946-4948`），但**求值面窄于 ST**：只用配置声明的变量表（`engine/st-world-book.mjs:118-120`）。`session_var` 维护的会话变量只在 `engine/layers.mjs` 的官方变量读取器（`getSessionVar` 覆盖声明值处）与 `engine/executor.mjs#runPromptConfigBatch` 的合并变量表（`mergedVars`）显式并入，运行时 `setvar` 写入的 ST local 帧（`engine/st-render.mjs:74-85`）同样不在键的求值面里；`{{getvar::x}}` 一族也不求值（`engine/interpolate.mjs:124-157` 无对应分支），保持字面量参与匹配。卡内无源的宏（如只存在于 ST 全局 persona 的 `{{user}}`）登记为空占位并产出 `st-key-macro` 诊断：未赋值时该键不参与匹配（不会退化成字面量误判），在「模板变量」赋值后按既有匹配路径生效 |
+| `keys`/`secondary_keys` 里的 ST 宏 | 匹配前求值，方向对齐 ST 的 `substituteParams`（`world-info.js:4914-4917`、`world-info.js:4946-4948`），但**求值面窄于 ST**：只用配置声明的变量表（`engine/st-world-book.mjs` 的键插值）。`session_var` 维护的会话变量只在 `engine/layers.mjs` 的官方变量读取器（`getSessionVar` 覆盖声明值处）与 `engine/executor.mjs#runPromptConfigBatch` 的合并变量表（`mergedVars`）显式并入，运行时 `setvar` 写入的 ST local 帧（`engine/st-render.mjs` 的 `renderSt` 变量帧 `local` 表）同样不在键的求值面里；`{{getvar::x}}` 一族也不求值（`engine/interpolate.mjs#interpolateVariables` 无对应分支），保持字面量参与匹配。卡内无源的宏（如只存在于 ST 全局 persona 的 `{{user}}`）登记为空占位并产出 `st-key-macro` 诊断：未赋值时该键不参与匹配（不会退化成字面量误判），在「模板变量」赋值后按既有匹配路径生效 |
 | `selective=false` | 不要求副键；非常驻且没有主键时不自动激活 |
 | 0 AND_ANY | 主键命中且至少一个副键命中 |
 | 1 NOT_ALL | 主键命中且至少一个副键未命中 |
@@ -135,7 +135,7 @@ ST 导入在既有 `buildWorldBookEntry` 结构上添加 `params.stWorldBook`，
 | `selectiveLogic/selective_logic` | 副键组合逻辑；`extensions` 内两种拼写与条目顶层一并读取 |
 | `extensions.case_sensitive/match_whole_words` | 与编辑器顶层别名一并读取 |
 | `scan_depth` | 最近真实对话窗口（默认 2，0 不扫描聊天）；包含当前消息，排除插件注入和 reasoning 块 |
-| `delayUntilRecursion` / `delay_until_recursion` | 延迟到递归扫描：非递归 pass 一律抑制（sticky 命中例外），递归 pass 中按层级池判断是否解锁；层级池取条目集合里的最小层级并逐个打开（层级推进与 ST `world-info.js` 一致：有新正文可递归则层级不变，否则才打开下一层，因此没有 sticky 历史、只含延迟条目的世界书在两边同样永不激活） |
+| `delayUntilRecursion` / `delay_until_recursion` | 延迟到递归扫描：非递归 pass 一律抑制（sticky 命中例外），递归 pass 中按层级池判断是否解锁；层级池取条目集合里的最小层级并逐个打开（层级推进与 ST `world-info.js` 一致：有新正文可递归则层级不变，否则才打开下一层；最小层级在初始化时即被取走，因此只有全部延迟条目声明同一层级时层级池再无剩余、永不激活——声明两个及以上层级时，没有递归正文的 pass 每次打开下一层直到池耗尽，延迟条目随之解锁） |
 | `useGroupScoring` / `use_group_scoring` | 组内评分：组内存在显式开启的条目时整组按主/副键命中数评分，只有开启评分的条目会被淘汰（严格低于最高分），未开启者不被淘汰但其分数计入最高分 |
 | `characterFilter` | 真实形态是嵌套对象 `{ names, tags, isExclude }`（不是三个顶层字段）；原样保留到 `params.stWorldBook.characterFilter`，在两个维度至少一个非空时告警「按角色过滤不受支持」——不实现过滤、也不据此跳过条目 |
 | `automationId` / `automation_id` | 顶层驼峰与 extensions 蛇形都读；字段类型是字符串，非字符串形态（数字 0、布尔）视为未设置；非空时保留事实并告警「依赖 STscript 自动化」，其中无主键且非常驻的条目额外说明「不会自动注入」 |
@@ -195,12 +195,12 @@ ST 源码路径相对 `public/scripts/`，对照基线为 SillyTavern 1.19.0 / `
 | `selective` 缺省值 | 求值用 `entry.selective &&`，`undefined`/`false` 都不过滤（`world-info.js:4925`） | **等价**：`entry.selective === true` 与 ST 求值路径一致 | 无 |
 | `use_regex` | 匹配器不消费该字段，只有 `/pattern/flags` 形态才当正则 | **等价**：缺省时自动检测 `/pattern/flags` | 无 |
 | `world_info_logic` / `world_info_position` 默认值、`scan_depth`、`case_sensitive`、`match_whole_words` 的条目级默认 | 与 ST 定义一致 | **等价**（条目级 `recursive` 不在其中：它只作导入记录，见上表） | 无 |
-| `{{.key}}` / `{{$key}}` 变量简写与运算符 | 本地/全局变量简写，支持 `++ -- = += -= ?? == != > >= < <=` 等运算符（`macros/engine/MacroLexer.js:101-119`、`macros/engine/MacroParser.js:80-117`、`macros/engine/MacroCstWalker.js:651-795`） | **未复刻**：不解析简写与运算符。`{{.key}}` 在导入期被当成普通裸引用登记为空占位（`src/host/sillytavern.ts:769` 的键字符集含点），正文里替换为空串、世界书主键被过滤（`engine/st-world-book.mjs:118`）；`{{$key}}` 既不登记也不匹配插值正则（`engine/interpolate.mjs:199`），作为未解析引用被移除（`engine/st-render.mjs:82-83`） | 无 |
-| `{{if}}` / `{{else}}` 与 scoped 块、`#`/`/` flag | 条件块按真值选分支并支持 scoped 内容与 `{{else}}`（`macros/definitions/core-macros.js:134-225`）；闭合块内容作为最后一个无名参数、默认自动 trim、`#` 保留空白（`macros/engine/MacroCstWalker.js:438-469`、`macros/engine/MacroFlags.js:56-73`） | **未复刻**：这些宏不注册，条件不参与判断——`{{if}}`/`{{else}}`/`{{/if}}` 标签按未解析引用被移除（`engine/st-render.mjs:82-83`），两个分支的正文都会留下 | 无（正文出口只发一条聚合 warn） |
-| `hasvar` / `deletevar` / `setvarkey` / `getvarkey` 及 global 形式（另带 `varexists`/`flushvar`/`setvarindex`/`getvarindex` 等别名，共 8 个宏） | 本地与全局变量的存在性检查、删除、对象/数组键读写（`macros/definitions/variable-macros.js:119`、`:139`、`:159`、`:189` 与 `:323`、`:343`、`:363`、`:393`） | **未复刻**：`engine/st-macros.mjs:168` 只识别 `set`/`add`/`get`/`inc`/`dec` 加可选 `global` 的变量宏，这些宏按未解析引用被移除（`engine/st-render.mjs:82-83`）；变量表是扁平字符串，没有嵌套键/数组语义（`engine/interpolate.mjs:138`） | 无 |
-| scoped `{{setvar::k}}正文{{/setvar}}` | 闭合块内容成为最后一个无名参数，任何宏都可 scoped（`macros/engine/MacroFlags.js:56-63`、`macros/engine/MacroCstWalker.js:438-469`） | **未复刻**：`{{setvar::k}}` 缺第二个参数时既不赋值也不吞正文（`engine/st-macros.mjs:191-201`），两个标签按未解析引用被移除（`engine/st-render.mjs:82-83`）——正文留下，赋值不发生 | 无 |
-| 世界书键的宏求值面（会话变量） | 匹配前对主键/副键逐个 `substituteParams`（`world-info.js:4914-4917`、`world-info.js:4946-4948`），走同一套宏引擎（`../script.js:2997-3014`），`{{getvar::x}}` 读会话内 local 表 | **降级**：只用配置声明变量求值（`engine/st-world-book.mjs:118-120`），不含会话变量（会话变量表只在 `engine/layers.mjs` 的官方变量读取器与 `engine/executor.mjs#runPromptConfigBatch` 的合并变量表 `mergedVars` 中显式并入）；`{{getvar::x}}` 一族不求值，保持字面量参与匹配（`engine/interpolate.mjs:124-157`） | 无 |
-| 原生（手写）`world-book` 的 `keys` | 条目来源不改变键求值：任何条目都在匹配前对主键/副键 substituteParams（`world-info.js:4914-4917`、`:4946-4948`） | **未复刻**：原生 `world-book` 策略把 `params.keys` 原样交给匹配器，键里的 `{{key}}` 是字面量（`engine/strategies.mjs:149-158`、`:170-175`）；只有 ST 导入路径插值（`engine/st-world-book.mjs:118-120`） | 无 |
+| `{{.key}}` / `{{$key}}` 变量简写与运算符 | 本地/全局变量简写，支持 `++ -- = += -= ?? == != > >= < <=` 等运算符（`macros/engine/MacroLexer.js:101-119`、`macros/engine/MacroParser.js:80-117`、`macros/engine/MacroCstWalker.js:651-795`） | **未复刻**：不解析简写与运算符。`{{.key}}` 在导入期被当成普通裸引用登记为空占位（`src/host/sillytavern.ts` 的 `MACRO_RE` 键字符集含点），正文里替换为空串、世界书主键被过滤（`engine/st-world-book.mjs` 的键插值丢弃空键）；`{{$key}}` 既不登记也不匹配插值正则（`engine/interpolate.mjs` 的 `REFERENCE_RE` 键字符集不含 `$`），作为未解析引用被移除（`engine/st-render.mjs` 的 `stripUnresolvedRefs` 出口清洗） | 无 |
+| `{{if}}` / `{{else}}` 与 scoped 块、`#`/`/` flag | 条件块按真值选分支并支持 scoped 内容与 `{{else}}`（`macros/definitions/core-macros.js:134-225`）；闭合块内容作为最后一个无名参数、默认自动 trim、`#` 保留空白（`macros/engine/MacroCstWalker.js:438-469`、`macros/engine/MacroFlags.js:56-73`） | **未复刻**：这些宏不注册，条件不参与判断——`{{if}}`/`{{else}}`/`{{/if}}` 标签按未解析引用被移除（`engine/st-render.mjs` 的 `stripUnresolvedRefs` 出口清洗），两个分支的正文都会留下 | 无（正文出口只发一条聚合 warn） |
+| `hasvar` / `deletevar` / `setvarkey` / `getvarkey` 及 global 形式（另带 `varexists`/`flushvar`/`setvarindex`/`getvarindex` 等别名，共 8 个宏） | 本地与全局变量的存在性检查、删除、对象/数组键读写（`macros/definitions/variable-macros.js:119`、`:139`、`:159`、`:189` 与 `:323`、`:343`、`:363`、`:393`） | **未复刻**：`engine/st-macros.mjs` 的变量宏判据只识别 `set`/`add`/`get`/`inc`/`dec` 加可选 `global` 的变量宏，这些宏按未解析引用被移除（`engine/st-render.mjs` 的 `stripUnresolvedRefs` 出口清洗）；变量表是扁平字符串，没有嵌套键/数组语义（`engine/interpolate.mjs#interpolateVariables` 的值查找） | 无 |
+| scoped `{{setvar::k}}正文{{/setvar}}` | 闭合块内容成为最后一个无名参数，任何宏都可 scoped（`macros/engine/MacroFlags.js:56-63`、`macros/engine/MacroCstWalker.js:438-469`） | **未复刻**：`{{setvar::k}}` 缺第二个参数时既不赋值也不吞正文（`engine/st-macros.mjs` 的 `set`/`add`/`inc`/`dec` 分支），两个标签按未解析引用被移除（`engine/st-render.mjs` 的 `stripUnresolvedRefs` 出口清洗）——正文留下，赋值不发生 | 无 |
+| 世界书键的宏求值面（会话变量） | 匹配前对主键/副键逐个 `substituteParams`（`world-info.js:4914-4917`、`world-info.js:4946-4948`），走同一套宏引擎（`../script.js:2997-3014`），`{{getvar::x}}` 读会话内 local 表 | **降级**：只用配置声明变量求值（`engine/st-world-book.mjs` 的键插值），不含会话变量（会话变量表只在 `engine/layers.mjs` 的官方变量读取器与 `engine/executor.mjs#runPromptConfigBatch` 的合并变量表 `mergedVars` 中显式并入）；`{{getvar::x}}` 一族不求值，保持字面量参与匹配（`engine/interpolate.mjs#interpolateVariables`） | 无 |
+| 原生（手写）`world-book` 的 `keys` | 条目来源不改变键求值：任何条目都在匹配前对主键/副键 substituteParams（`world-info.js:4914-4917`、`:4946-4948`） | **未复刻**：原生 `world-book` 策略把 `params.keys` 原样交给匹配器，键里的 `{{key}}` 是字面量（`engine/actions/content.mjs#createWorldBookResolver` 把 `params.keys` 原样交给 `createAnchorMatcher`）；只有 ST 导入路径插值（`engine/st-world-book.mjs` 的键插值） | 无 |
 
 预算类字段（`world_info_budget` / `budget_cap` / `ignoreBudget`）需要官方 tokenizer 与上下文预算通道，
 超出本插件的宿主边界；`min_activations` 是 ST 的**全局用户设置**而非条目字段，插件没有世界书面板，
