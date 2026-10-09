@@ -80,7 +80,10 @@ export function selectStWorldBook(configs, session, messages, warn = () => {}) {
     .filter(Boolean)
     .map(value => value === true ? 1 : value))].sort((a, b) => a - b)
   let delayLevel = delayLevels.shift() ?? 0
-  const hasRecursive = entries.some(config => config.params.stWorldBook.recursive === true)
+  // 扫描是否递归只由模块级全局开关决定（module.yml 顶层 stWorldBookRecursive，对齐 ST 的
+  // `world_info_recursive`）：CCv2 的书级 `recursive_scanning` 在 ST 运行期不被读取，
+  // 因此条目级不再有自己的递归门控（ST 的同名条目字段与插件自造的 `stWorldBook.recursive` 都不是判据）。
+  const recursive = entries.some(config => config.stWorldBookRecursive === true)
   /** 键匹配器（按 params 对象缓存；签名含插值后的键与匹配选项）。 */
   const matcherOf = (config, material) => {
     const p = config.params
@@ -147,9 +150,9 @@ export function selectStWorldBook(configs, session, messages, warn = () => {}) {
         note(config, 'excluded', 'delay-until-recursion', { delayUntilRecursion: delayUntil, level: delayLevel, pass })
         continue
       }
-      // 递归 pass 的参与资格：excludeRecursion 对任何条目生效；其余条目仍要求自身声明
-      // recursive（延迟条目由层级池驱动，ST 的门控不要求全局 recursive）。
-      if (pass > 0 && (st.excludeRecursion === true || (!delayUntil && st.recursive !== true))) { note(config, 'excluded', 'recursion'); continue }
+      // 递归 pass 的参与资格只看条目自己的 excludeRecursion（ST world-info.js:4870）；
+      // 延迟条目由层级池驱动，其余条目在全局开关打开时一律参与重扫。
+      if (pass > 0 && st.excludeRecursion === true) { note(config, 'excluded', 'recursion'); continue }
       let active = sticky || p.constant === true
       let activation = sticky ? 'sticky' : p.constant === true ? 'constant' : 'key-match'
       if (!active) {
@@ -251,7 +254,7 @@ export function selectStWorldBook(configs, session, messages, warn = () => {}) {
     }
     // 递归驱动优先于延迟层级（ST world-info.js:5097-5133）：有新正文可递归时层级保持不变；
     // 没有新正文而层级池仍有剩余时打开下一层继续扫描；两者都没有才结束。
-    const recursiveAdds = hasRecursive ? added.filter(config => config.params.stWorldBook.preventRecursion !== true) : []
+    const recursiveAdds = recursive ? added.filter(config => config.params.stWorldBook.preventRecursion !== true) : []
     if (recursiveAdds.length) recursiveText.push(...recursiveAdds.map(config => config.texts.join('\n')))
     else if (delayLevels.length) delayLevel = delayLevels.shift()
     else break

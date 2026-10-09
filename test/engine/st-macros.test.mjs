@@ -4,9 +4,21 @@
 // 另含 ST 模板帧的来源判据（generationKey 只认真实对话消息）与世界书扫描范围。
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
+import { mkdirSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { stringify } from 'yaml'
 import { renderStText } from '../../engine/st-macros.mjs'
 import { attachStRenderers } from '../../engine/st-render.mjs'
+import { compileRules } from '../../engine/rule-spec.mjs'
 import { stChatMessages, selectStWorldBook } from '../../engine/st-world-book.mjs'
+import { isolatedHome } from '../fixtures/host-harness.mjs'
+
+// 模块级开关要按完整链路验证（module.yml → ModuleSpec → compileRules 顶层选项），
+// 因此先隔离 DSH_HOME 再动态 import host 侧——paths.ts 在 import 时冻结存储根。
+const { moduleRoot } = isolatedHome('pt-stwb-')
+const { prepareAssembly } = await import('../../src/runtime/agent-assembly.ts')
+const { validateModuleDefinitionText } = await import('../../src/host/module-storage.ts')
 
 test('st-macros：变量宏不得占用插值保留名（不落变量帧，宏求值不受影响）', () => {
   const session = { id: 'st-reserved', header: { cwd: 'C:/host-cwd' } }
@@ -136,4 +148,44 @@ test('st-world-book：扫描范围 = 模型可见的真实对话——被压缩�
   // 降级对照：无 surface 时退回完整历史，命中行为与迁移前一致。
   assert.equal(selectStWorldBook([entry('lore-degraded')], { snapshotEvents: store.session.snapshotEvents }, []).size, 1,
     '无 surface 的会话仍扫完整历史')
+})
+
+test('st-world-book：递归只由 module.yml 顶层 stWorldBookRecursive 决定，条目级 recursive 有/无同结果', async () => {
+  const dir = join(moduleRoot, 'stwb')
+  mkdirSync(dir, { recursive: true })
+  // 真值源：开关只在 module.yml 顶层（规格见 docs/SillyTavern.md）；`stWorldBook.recursive`
+  // 是旧导入遗留，`recursive_scanning` 在 ST 运行期本就不被读取。
+  // 夹具走与 `variablesEnabled` 同一条链路：module.yml 顶层 → ModuleSpec → prepareAssembly 的
+  // compileRules 顶层选项 → 校验后打标到 compiledConfig（装配期真实入口，不是手搓 config）。
+  const compile = async (recursive, entries) => {
+    writeFileSync(join(dir, 'module.yml'), stringify({ id: 'stwb', modules: ['rule-engine'], rules: entries, ...(recursive ? { stWorldBookRecursive: true } : {}) }))
+    return (await prepareAssembly(moduleRoot, 'stwb', () => true)).rules.map(rule => rule.actions[0].compiledConfig)
+  }
+  // 条目结构同 `buildWorldBookEntry`：正文在 text，匹配键在 params.keys，ST 语义在 params.stWorldBook。
+  const entry = (id, text, extra = {}) => ({
+    id, then: [{ id: 'inject', kind: 'inject-text', config: {
+      id, layer: 'pre-step', strategy: 'world-book', text,
+      params: { keys: [`key-${id}`], stWorldBook: { keys: [`key-${id}`], scanDepth: 2, ...extra } },
+    } }],
+  })
+  const session = {
+    id: 'stwb', header: {},
+    snapshotEvents: () => [{ type: 'user/message', seq: 0, data: { message: { id: 'u0', role: 'user', content: [{ type: 'text', text: 'key-a 现身' }], source: { kind: 'user' } } } }],
+  }
+  const scan = async (recursive, entries) => [...selectStWorldBook(await compile(recursive, entries), session, [])].map(config => config.id).sort()
+  // a 的正文含 b 的键：只有递归 pass 才可能让 b 入选（b 的键在对话里不出现）。
+  const plain = [entry('a', 'A 正文 key-b'), entry('b', 'B 正文')]
+  const declared = [entry('a', 'A 正文 key-b', { recursive: true }), entry('b', 'B 正文', { recursive: true })]
+
+  assert.deepEqual(await scan(true, plain), ['a', 'b'], '全局开关打开：正文里的键触发第二条')
+  assert.deepEqual(await scan(true, declared), ['a', 'b'], '条目级 recursive 有/无不改变扫描结果')
+  assert.deepEqual(await scan(false, plain), ['a'], '全局开关缺省（未声明）= 不递归，对齐 ST world_info_recursive 默认 false')
+  assert.deepEqual(await scan(false, declared), ['a'], '存量模块里孤立的条目级 recursive 不再打开递归')
+  assert.deepEqual(await scan(true, [entry('a', 'A 正文 key-b'), entry('b', 'B 正文', { excludeRecursion: true })]), ['a'],
+    'excludeRecursion 仍是条目级判据（ST world-info.js:4870）')
+  // 顶层字段是模块定义的一部分：类型错误在装载／保存边界 fail loud，不在扫描期静默当 false。
+  assert.throws(() => validateModuleDefinitionText(join(tmpdir(), 'stwb'), 'id: stwb\nstWorldBookRecursive: "yes"\nrules: []\n'),
+    /stWorldBookRecursive 必须是布尔值/)
+  assert.throws(() => compileRules([{ id: 'x', then: [{ id: 'i', kind: 'inject-text', config: { id: 'c', layer: 'pre-step', text: 'x', stWorldBookRecursive: true } }] }]),
+    /unknown config key/, '开关是模块级字段，写进动作配置按未知键拒绝')
 })

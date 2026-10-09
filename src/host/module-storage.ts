@@ -104,6 +104,7 @@ function projection(source: Record<string, unknown>, directory: string, sourceRe
   }
   if (source.variables !== undefined && (!record(source.variables) || Object.values(source.variables).some(value => typeof value !== 'string'))) throw new ModuleRulesError('variables 必须是平铺字符串对象')
   if (source.variablesEnabled !== undefined && typeof source.variablesEnabled !== 'boolean') throw new ModuleRulesError('variablesEnabled 必须是布尔值')
+  if (source.stWorldBookRecursive !== undefined && typeof source.stWorldBookRecursive !== 'boolean') throw new ModuleRulesError('stWorldBookRecursive 必须是布尔值')
   const variables = structuredClone((source.variables ?? {}) as Record<string, string>)
   const variablesEnabled = source.variablesEnabled !== false
   const configs = record(source.moduleConfigs) ? source.moduleConfigs : {}

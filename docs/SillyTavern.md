@@ -125,7 +125,7 @@ ST 导入在既有 `buildWorldBookEntry` 结构上添加 `params.stWorldBook`，
 | ST 语义 | 导入后的处理 |
 |---|---|
 | `keys/key`、`secondary_keys/keysecondary` | 保留；只有主键命中才能进行选择性判断 |
-| `keys`/`secondary_keys` 里的 ST 宏 | 匹配前求值，方向对齐 ST 的 `substituteParams`（`world-info.js:4914-4917`、`world-info.js:4946-4948`），但**求值面窄于 ST**：只用配置声明的变量表（`engine/st-world-book.mjs:114-116`）。`session_var` 维护的会话变量只在 `engine/layers.mjs` 的官方变量读取器（`getSessionVar` 覆盖声明值处）与 `engine/executor.mjs#runPromptConfigBatch` 的合并变量表（`mergedVars`）显式并入，运行时 `setvar` 写入的 ST local 帧（`engine/st-render.mjs:74-85`）同样不在键的求值面里；`{{getvar::x}}` 一族也不求值（`engine/interpolate.mjs:124-157` 无对应分支），保持字面量参与匹配。卡内无源的宏（如只存在于 ST 全局 persona 的 `{{user}}`）登记为空占位并产出 `st-key-macro` 诊断：未赋值时该键不参与匹配（不会退化成字面量误判），在「模板变量」赋值后按既有匹配路径生效 |
+| `keys`/`secondary_keys` 里的 ST 宏 | 匹配前求值，方向对齐 ST 的 `substituteParams`（`world-info.js:4914-4917`、`world-info.js:4946-4948`），但**求值面窄于 ST**：只用配置声明的变量表（`engine/st-world-book.mjs:118-120`）。`session_var` 维护的会话变量只在 `engine/layers.mjs` 的官方变量读取器（`getSessionVar` 覆盖声明值处）与 `engine/executor.mjs#runPromptConfigBatch` 的合并变量表（`mergedVars`）显式并入，运行时 `setvar` 写入的 ST local 帧（`engine/st-render.mjs:74-85`）同样不在键的求值面里；`{{getvar::x}}` 一族也不求值（`engine/interpolate.mjs:124-157` 无对应分支），保持字面量参与匹配。卡内无源的宏（如只存在于 ST 全局 persona 的 `{{user}}`）登记为空占位并产出 `st-key-macro` 诊断：未赋值时该键不参与匹配（不会退化成字面量误判），在「模板变量」赋值后按既有匹配路径生效 |
 | `selective=false` | 不要求副键；非常驻且没有主键时不自动激活 |
 | 0 AND_ANY | 主键命中且至少一个副键命中 |
 | 1 NOT_ALL | 主键命中且至少一个副键未命中 |
@@ -146,7 +146,8 @@ ST 导入在既有 `buildWorldBookEntry` 结构上添加 `params.stWorldBook`，
 | `probability/useProbability/use_probability` | 概率过滤；同一消息状态重复求值保持抽样结果 |
 | `group/group_override/group_weight` | 同组只选一个；override 优先选择高 order，否则按权重 |
 | `sticky/cooldown/delay` | 按真实对话消息数维护会话内窗口，实际插入后才提交激活状态 |
-| 显式 `recursive_scanning` | 有界重复匹配已选正文；支持 exclude/prevent recursion；不自动继承外部 ST 全局设置 |
+| `recursive_scanning`（书级）/ 条目级 `recursive` | **只作导入记录**：ST 运行期不读书级 `recursive_scanning`（全树唯一命中 `src/types/spec-v2.d.ts:30`，`convertCharacterBook` 只把它存进 `originalData`），导入后不产生行为；旧产物里由导入写入的 `params.stWorldBook.recursive` 同样不再是门控 |
+| 扫描是否递归 | 由**模块级开关**决定：`module.yml` 顶层 `stWorldBookRecursive: true` 才把新命中正文并入递归池并重扫条目，缺省（或 `false`）= 不递归。条目级只剩 `excludeRecursion` 能拒绝单条（`world-info.js:4870`、`:5097`）；`preventRecursion` 仍决定该条正文是否进入递归池 |
 | `insertion_order/order` | 选择优先级高值优先；最终正文按 ST unshift 后的低值在前 |
 
 位置与角色仍有边界：pre-step 不能无损插入历史深度，也不能创建 system 角色消息。
@@ -175,8 +176,9 @@ ST 源码路径相对 `public/scripts/`，对照基线为 SillyTavern 1.19.0 / `
 |---|---|---|---|
 | `world_info_budget`（默认 25）/ `budget_cap` / `ignoreBudget` | 按 token 预算裁剪注入（`world-info.js:73`、`:4095`） | **未复刻**：不做 token 预算裁剪，入选条目按顺序全部注入 | 无（不产生诊断） |
 | `forbid_overrides` | 保护 `main` / `jailbreak` 不被角色卡覆盖（`openai.js:1495-1513`） | **保留事实**：DSH 没有 prompt 覆盖机制，字段不产生行为 | 无 |
-| `min_activations` / `min_activations_depth_max`（默认 0） | 深度偏斜补足最少激活数（`world-info.js:5110-5126`） | **未复刻**：不实现深度偏斜 | 无 |
-| ST 全局开关 `recursive` / `use_group_scoring` / `case_sensitive` / `match_whole_words` | 全局默认 false（`world-info.js:69-82`），条目可继承 | **逐条目读取**：按条目字段判定，不读 ST 全局设置；缺省即按 false 语义 | 无 |
+| `min_activations` / `min_activations_depth_max`（默认 0） | **全局用户设置**，不是条目字段：未达最少激活数时把全局扫描深度 +1 补扫，只影响未声明 `scan_depth` 的条目（`world-info.js:69-71`、`:920-923`、`:280`、`:5110-5126`；面板 `index.html:4758-4771`） | **未复刻**：不实现深度偏斜；插件没有世界书面板，该值也没有等价的模块级声明面 | 无 |
+| ST 全局开关 `use_group_scoring` / `case_sensitive` / `match_whole_words` | 全局默认 false（`world-info.js:69-82`），条目可继承 | **逐条目读取**：按条目字段判定，不读 ST 全局设置；缺省即按 false 语义 | 无 |
+| ST 全局开关 `recursive`（`world_info_recursive`，默认 false） | 允许递归重扫新命中的正文（`world-info.js:5097`） | **等价但落点不同**：开关在 `module.yml` 顶层 `stWorldBookRecursive`（缺省 false 与 ST 默认一致；旧导入写的条目级 `recursive` 不再参与） | 无 |
 | 位置 `ANTop(2)` / `ANBottom(3)` / `EMTop(5)` / `EMBottom(6)` | Author's Note / Example Messages 插入点（`world-info.js:855-864`） | **降级**：落到当前消息批头部，原位置保留在 `stWorldBook.position` | `st-worldbook-position`（`position-downgraded`） |
 | 位置 `atDepth(4)` | 插入历史深度 | **降级**：保留 position/depth/role，落到当前消息批末尾 | `st-worldbook-depth`（`depth-collapsed`） |
 | 位置 `outlet(7)` 与 `outletName` | outlet 注入通道 | **不支持**：保留 `outletName` 事实，内容不被误注入 | `st-worldbook-controls`（`unsupported-controls`） |
@@ -192,16 +194,18 @@ ST 源码路径相对 `public/scripts/`，对照基线为 SillyTavern 1.19.0 / `
 | `prompts[].system_prompt` | 仅作「内置/全局 prompt」管理位（`openai.js:1240-1257`） | **等价**：不改变层归属，只保留来源事实 | `st-prompt-system-flag`（info） |
 | `selective` 缺省值 | 求值用 `entry.selective &&`，`undefined`/`false` 都不过滤（`world-info.js:4925`） | **等价**：`entry.selective === true` 与 ST 求值路径一致 | 无 |
 | `use_regex` | 匹配器不消费该字段，只有 `/pattern/flags` 形态才当正则 | **等价**：缺省时自动检测 `/pattern/flags` | 无 |
-| `world_info_logic` / `world_info_position` 默认值、`scan_depth`、`case_sensitive`、`match_whole_words`、`recursive` 的条目级默认 | 与 ST 定义一致 | **等价** | 无 |
-| `{{.key}}` / `{{$key}}` 变量简写与运算符 | 本地/全局变量简写，支持 `++ -- = += -= ?? == != > >= < <=` 等运算符（`macros/engine/MacroLexer.js:101-119`、`macros/engine/MacroParser.js:80-117`、`macros/engine/MacroCstWalker.js:651-795`） | **未复刻**：不解析简写与运算符。`{{.key}}` 在导入期被当成普通裸引用登记为空占位（`src/host/sillytavern.ts:769` 的键字符集含点），正文里替换为空串、世界书主键被过滤（`engine/st-world-book.mjs:114`）；`{{$key}}` 既不登记也不匹配插值正则（`engine/interpolate.mjs:199`），作为未解析引用被移除（`engine/st-render.mjs:82-83`） | 无 |
+| `world_info_logic` / `world_info_position` 默认值、`scan_depth`、`case_sensitive`、`match_whole_words` 的条目级默认 | 与 ST 定义一致 | **等价**（条目级 `recursive` 不在其中：它只作导入记录，见上表） | 无 |
+| `{{.key}}` / `{{$key}}` 变量简写与运算符 | 本地/全局变量简写，支持 `++ -- = += -= ?? == != > >= < <=` 等运算符（`macros/engine/MacroLexer.js:101-119`、`macros/engine/MacroParser.js:80-117`、`macros/engine/MacroCstWalker.js:651-795`） | **未复刻**：不解析简写与运算符。`{{.key}}` 在导入期被当成普通裸引用登记为空占位（`src/host/sillytavern.ts:769` 的键字符集含点），正文里替换为空串、世界书主键被过滤（`engine/st-world-book.mjs:118`）；`{{$key}}` 既不登记也不匹配插值正则（`engine/interpolate.mjs:199`），作为未解析引用被移除（`engine/st-render.mjs:82-83`） | 无 |
 | `{{if}}` / `{{else}}` 与 scoped 块、`#`/`/` flag | 条件块按真值选分支并支持 scoped 内容与 `{{else}}`（`macros/definitions/core-macros.js:134-225`）；闭合块内容作为最后一个无名参数、默认自动 trim、`#` 保留空白（`macros/engine/MacroCstWalker.js:438-469`、`macros/engine/MacroFlags.js:56-73`） | **未复刻**：这些宏不注册，条件不参与判断——`{{if}}`/`{{else}}`/`{{/if}}` 标签按未解析引用被移除（`engine/st-render.mjs:82-83`），两个分支的正文都会留下 | 无（正文出口只发一条聚合 warn） |
 | `hasvar` / `deletevar` / `setvarkey` / `getvarkey` 及 global 形式（另带 `varexists`/`flushvar`/`setvarindex`/`getvarindex` 等别名，共 8 个宏） | 本地与全局变量的存在性检查、删除、对象/数组键读写（`macros/definitions/variable-macros.js:119`、`:139`、`:159`、`:189` 与 `:323`、`:343`、`:363`、`:393`） | **未复刻**：`engine/st-macros.mjs:168` 只识别 `set`/`add`/`get`/`inc`/`dec` 加可选 `global` 的变量宏，这些宏按未解析引用被移除（`engine/st-render.mjs:82-83`）；变量表是扁平字符串，没有嵌套键/数组语义（`engine/interpolate.mjs:138`） | 无 |
 | scoped `{{setvar::k}}正文{{/setvar}}` | 闭合块内容成为最后一个无名参数，任何宏都可 scoped（`macros/engine/MacroFlags.js:56-63`、`macros/engine/MacroCstWalker.js:438-469`） | **未复刻**：`{{setvar::k}}` 缺第二个参数时既不赋值也不吞正文（`engine/st-macros.mjs:191-201`），两个标签按未解析引用被移除（`engine/st-render.mjs:82-83`）——正文留下，赋值不发生 | 无 |
-| 世界书键的宏求值面（会话变量） | 匹配前对主键/副键逐个 `substituteParams`（`world-info.js:4914-4917`、`world-info.js:4946-4948`），走同一套宏引擎（`../script.js:2997-3014`），`{{getvar::x}}` 读会话内 local 表 | **降级**：只用配置声明变量求值（`engine/st-world-book.mjs:114-116`），不含会话变量（会话变量表只在 `engine/layers.mjs` 的官方变量读取器与 `engine/executor.mjs#runPromptConfigBatch` 的合并变量表 `mergedVars` 中显式并入）；`{{getvar::x}}` 一族不求值，保持字面量参与匹配（`engine/interpolate.mjs:124-157`） | 无 |
-| 原生（手写）`world-book` 的 `keys` | 条目来源不改变键求值：任何条目都在匹配前对主键/副键 substituteParams（`world-info.js:4914-4917`、`:4946-4948`） | **未复刻**：原生 `world-book` 策略把 `params.keys` 原样交给匹配器，键里的 `{{key}}` 是字面量（`engine/strategies.mjs:149-158`、`:170-175`）；只有 ST 导入路径插值（`engine/st-world-book.mjs:114-116`） | 无 |
+| 世界书键的宏求值面（会话变量） | 匹配前对主键/副键逐个 `substituteParams`（`world-info.js:4914-4917`、`world-info.js:4946-4948`），走同一套宏引擎（`../script.js:2997-3014`），`{{getvar::x}}` 读会话内 local 表 | **降级**：只用配置声明变量求值（`engine/st-world-book.mjs:118-120`），不含会话变量（会话变量表只在 `engine/layers.mjs` 的官方变量读取器与 `engine/executor.mjs#runPromptConfigBatch` 的合并变量表 `mergedVars` 中显式并入）；`{{getvar::x}}` 一族不求值，保持字面量参与匹配（`engine/interpolate.mjs:124-157`） | 无 |
+| 原生（手写）`world-book` 的 `keys` | 条目来源不改变键求值：任何条目都在匹配前对主键/副键 substituteParams（`world-info.js:4914-4917`、`:4946-4948`） | **未复刻**：原生 `world-book` 策略把 `params.keys` 原样交给匹配器，键里的 `{{key}}` 是字面量（`engine/strategies.mjs:149-158`、`:170-175`）；只有 ST 导入路径插值（`engine/st-world-book.mjs:118-120`） | 无 |
 
-预算类字段（`world_info_budget` / `budget_cap` / `ignoreBudget`）与 `min_activations` 需要官方
-tokenizer 与上下文预算通道，超出本插件的宿主边界；`forbid_overrides` 对应的覆盖机制在 DSH
+预算类字段（`world_info_budget` / `budget_cap` / `ignoreBudget`）需要官方 tokenizer 与上下文预算通道，
+超出本插件的宿主边界；`min_activations` 是 ST 的**全局用户设置**而非条目字段，插件没有世界书面板，
+且导入期已把「条目未声明 `scan_depth`」塌缩成数字（`src/host/sillytavern.ts` 的
+`scan_depth ?? 2`），照搬它的深度偏斜会恒空转；`forbid_overrides` 对应的覆盖机制在 DSH
 不存在。这些差异不会让内容静默丢失：来源字段保留在 `params.stWorldBook` / `params.stSource`，
 报告按「降级 / 不支持」分类，不冒充等价。
 

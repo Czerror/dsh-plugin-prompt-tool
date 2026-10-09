@@ -139,6 +139,7 @@ export async function prepareAssembly(
     moduleId,
     configOrder: readConfigOrder(spec.configOrder),
     variables: spec.variables, variablesEnabled: spec.variablesEnabled,
+    stWorldBookRecursive: spec.stWorldBookRecursive,
     promptConfigOptions: rulePromptConfigOptions(moduleDir, ruleConfig.strategyDir),
   })
   const ruleConditions = new Map((spec.rules ?? []).map(rule => [rule.id, structuredClone(rule.if)]))

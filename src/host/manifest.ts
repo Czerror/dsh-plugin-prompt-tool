@@ -70,6 +70,8 @@ export interface ModuleSpec {
   triggers?: unknown[]
   /** 模板变量插值开关（缺省 true = 启用；false = 停用，writePreset 不生成变量文件）。 */
   variablesEnabled?: boolean
+  /** ST 世界书递归总开关（缺省 false = 不递归，对齐 ST `world_info_recursive`）：装配期传给 `compileRules`。 */
+  stWorldBookRecursive?: boolean
   /** @deprecated 仅标记旧导入形状；loadModuleSpec 拒绝，须先离线迁移。 */
   promptConfigs?: unknown[]
   /** 配置卡的持久文件序号；跨模块UI排序只改此轻量元数据。 */

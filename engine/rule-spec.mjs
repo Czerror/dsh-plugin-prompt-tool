@@ -286,6 +286,8 @@ export function compileRules(specs, options = {}) {
       // 停用标记在这里打，不在 `injectionConfigSpec`：那是校验**之前**，标记会变成作者可写的字段。
       // 校验之后打标，作者手写同名键按未知键 fail loud；执行期据此跳过会话变量合并。
       if (options.variablesEnabled === false) config[SESSION_VARIABLES_DISABLED] = true
+      // 模块级 ST 递归开关（module.yml 顶层）：与上一行同源同时序，作者写同名键按未知键 fail loud。
+      if (options.stWorldBookRecursive === true) config.stWorldBookRecursive = true
       item.action.compiledConfig = config
     }
   }
