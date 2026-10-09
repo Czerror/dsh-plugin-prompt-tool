@@ -400,3 +400,22 @@ test('if/then/else：注册制层不接受动作级分支（该层没有逐轮�
   const ok = compileRules([{ id: 'reg-ok', then: [{ id: 's', kind: 'inject-text', config: { id: 's', layer: 'system-section', text: 'X' } }] }])
   assert.equal(ok[0].actions.length, 1)
 })
+
+test('if/then/else：动作级 text 条件必须落在本执行点真实提供的 subject 上', () => {
+  const branchOn = subject => ({
+    if: { text: { keys: ['x'], ...(subject === undefined ? {} : { subject }) } },
+    then: [{ id: 'inject', kind: 'inject-text', config: { id: 'inject', layer: 'subagent-start', strategy: 'static', text: 'X' } }],
+  })
+  // 主路径：subagent 两通道真实提供的文本只有 subagentInfo。
+  assert.equal(compileRules([{ id: 'r', then: [branchOn('subagentInfo')] }])[0].actions.length, 1)
+  // 关键拒绝：写别的 subject 时该动作永不执行，且挂载与运行期都不报错。
+  assert.throws(() => compileRules([{ id: 'r', then: [branchOn('userMessage')] }]), /action inject: text subject "userMessage".*可用 subagentInfo/s)
+  // 边界：省略 subject 的判定恒为「缺事实」，同样是死路。
+  assert.throws(() => compileRules([{ id: 'r', then: [branchOn(undefined)] }]), /action inject: text needs an explicit subject/)
+  // 规则级 if 不在此列：它在每个动作的执行点各自求值，缺事实即不执行是三值语义的设计意图。
+  assert.equal(compileRules([{
+    id: 'r',
+    if: { text: { keys: ['x'], subject: 'toolResult' } },
+    then: [{ id: 'request', kind: 'request-params', modelScope: 'all', patch: {} }],
+  }]).length, 1)
+})

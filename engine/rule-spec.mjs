@@ -1,6 +1,6 @@
 /** module.yml.rules 的唯一运行时编译入口。旧声明仅由离线迁移器读取。 */
 import { ACTION_KINDS, actionExecutionPoint, prepareAction, validateActionOptions } from './actions/index.mjs'
-import { compileWhen, PREDICATE_FACTORIES, COMPOSITE_OPERATORS } from './conditions/index.mjs'
+import { compileWhen, PREDICATE_FACTORIES, COMPOSITE_OPERATORS, channelTextSubjects } from './conditions/index.mjs'
 import { createPromptConfigs, KNOWN_LAYERS } from './schema.mjs'
 import { WATERFALL_POSITIONS } from './trigger.mjs'
 import { ACTION_EXAMPLES } from './actions/examples.mjs'
@@ -11,6 +11,41 @@ import { conjunction, expandActions } from './branch.mjs'
 const RULE_FIELDS = new Set(['id', 'name', 'enabled', 'layer', 'group', 'exclusive', 'if', 'then', 'else', 'when', 'do'])
 const record = value => value !== null && typeof value === 'object' && !Array.isArray(value)
 const nonempty = value => typeof value === 'string' && value.trim().length > 0
+
+/**
+ * 条件树引用的全部 `text` subject（含组合与否定）；`undefined` = 作者漏写 subject。
+ * 树是数据，只能在校验期读——`compileWhen` 的产物把 subject 关进闭包，读不回来。
+ */
+function textSubjects(node, out = []) {
+  if (!record(node)) return out
+  for (const [key, value] of Object.entries(node)) {
+    if (key === 'text' && record(value)) out.push(value.subject)
+    else if (key === 'not') textSubjects(value, out)
+    else if ((key === 'all' || key === 'any' || key === 'notAny') && Array.isArray(value)) {
+      for (const child of value) textSubjects(child, out)
+    }
+  }
+  return out
+}
+
+/**
+ * **只用于动作级条件**：动作的判定绑定单一执行点，subject 写错通道等于该动作永不执行，
+ * 而挂载与运行期都不报错（`availability.mjs` 对通道取不到的字段返回 UNAVAILABLE，
+ * `condition.mjs#subjectTextOf` 取不到一律空串）。规则级 `if` 相反：它在该规则每个动作的
+ * 执行点上各自求值，「缺事实即不执行」是三值语义的设计意图（见 `test/engine/rules.test.mjs`
+ * 的缺事实用例），因此编译期不拒绝。
+ */
+function assertTextSubject(subject, allowed, label) {
+  if (subject === undefined) {
+    throw new TypeError(`${label}: text needs an explicit subject — 省略时判定恒为「缺事实」，规则永不命中`)
+  }
+  if (!allowed.includes(subject)) {
+    throw new TypeError(
+      `${label}: text subject ${JSON.stringify(subject)} is unavailable at this execution point`
+      + ` — 本执行点可用 ${allowed.length > 0 ? allowed.join(', ') : '（无）'}；写死条件不会命中`,
+    )
+  }
+}
 
 /** 规则及物化身份的唯一安全边界；host 保存、导入与直接编译共用。 */
 export function assertRuleId(id) {
@@ -98,6 +133,9 @@ export function compileRules(specs, options = {}) {
     if (spec.when !== undefined) throw new TypeError(`rule ${spec.id}: "when" 已退役，改用 "if"`)
     if (spec.do !== undefined) throw new TypeError(`rule ${spec.id}: "do" 已退役，改用 "then"`)
     const ruleIf = spec.if
+    // 规则级 `if` 跨执行点各自求值，不在这里判定（见 assertTextSubject 的说明）；
+    // 这份 subject 集合只用来跳过 `else` 注入进动作条件的 `not(if)` 节点。
+    const ruleSubjects = new Set(textSubjects(ruleIf))
     const ruleThen = spec.then
     if (!Array.isArray(ruleThen) || ruleThen.length === 0) throw new TypeError(`rule ${spec.id}.then must be a non-empty array`)
     const sequence = options.configOrder?.[spec.id] ?? index * 10
@@ -137,8 +175,16 @@ export function compileRules(specs, options = {}) {
         // 原始声明保持不变；稳定动作身份只在未提供正文身份时补入运行时编译输入。
         pendingConfigs.push({ action, source: { ...action.config, id: action.config.id ?? `${spec.id}:${action.id}` }, sequence: channelOrder, ruleId: spec.id, actionIndex })
       } else prepareAction(action, { promptConfigOptions: options.promptConfigOptions })
+      // 动作级条件只在本动作的执行点求值：subject 必须由该通道真实提供。规则级注入进来的
+      // 节点（`then` 分支条件的 outer、`else` 的 `not(if)`）已按并集判定，此处跳过。
+      const actionConditions = conjunction(conditions)
+      for (const subject of textSubjects(actionConditions)) {
+        if (!ruleSubjects.has(subject)) {
+          assertTextSubject(subject, channelTextSubjects(execution.channel), `rule ${spec.id}: action ${action.id}`)
+        }
+      }
       // 空条件数组经 conjunction → undefined → compileWhen 直接返回 undefined（无条件动作）。
-      const actionWhen = compileWhen(conjunction(conditions), options)
+      const actionWhen = compileWhen(actionConditions, options)
       const branchLayer = action.kind === 'inject-text' ? action.config.layer : spec.layer ?? 'pre-step'
       if (actionWhen !== undefined && (REGISTRATION_LAYERS.has(branchLayer) || execution.lifecycle === 'registration')) {
         throw new TypeError(`action ${action.id}: layer ${branchLayer} has no per-turn evaluation point — move the branch to pre-step / subagent-* / tool-pipeline / turn-stop`)

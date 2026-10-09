@@ -1,4 +1,4 @@
-import { lastAssistantText, subagentTextOf, toolArgsText, userMessagesText } from '../condition.mjs'
+import { SUBJECT_FIELDS, lastAssistantText, subagentTextOf, toolArgsText, userMessagesText } from '../condition.mjs'
 import { extractText } from '../shared.mjs'
 
 const CHANNEL_SUBJECTS = {
@@ -13,6 +13,37 @@ const CHANNEL_SUBJECTS = {
   'llm/stream': (args) => ({ model: args[0]?.model }),
   'subagent/start': () => ({}),
   'subagent/end': () => ({}),
+}
+
+/**
+ * 通道 → 归一化载荷里的**文本**字段与取值器；键名取自 `condition.mjs#SUBJECT_FIELDS`。
+ * 这份表同时是「某通道能提供哪些文本 subject」的唯一真相——编译期据此拒绝永不命中的
+ * `text` 条件（见 `rule-spec.mjs`）。非文本事实（agent/session/model/provider 名）走
+ * `CHANNEL_SUBJECTS`，不进此表。
+ */
+const CHANNEL_TEXT = {
+  'tools/pre-execute': { argsText: (args) => toolArgsText(args[0]?.arguments) },
+  'tools/post-execute': { argsText: (args) => toolArgsText(args[0]?.arguments), resultText: (args) => extractText(args[1]) },
+  'agent/pre-step': { userText: (args) => userMessagesText(args[0]?.messages) },
+  'agent/inbox/inserted': { userText: (args) => userMessagesText([args[0]?.message]) },
+  'agent/turn-stopping': { assistantText: (args) => lastAssistantText(args[0]?.agent?.session) },
+  'subagent/start': { subagentText: (args) => subagentTextOf(args[0]) },
+  'subagent/end': { subagentText: (args) => subagentTextOf(args[0]) },
+}
+
+/** 字段名 → subject 反查；键名只在 SUBJECT_FIELDS 声明一次，两表交叉而不重复。 */
+const SUBJECT_OF_FIELD = Object.fromEntries(Object.entries(SUBJECT_FIELDS).map(([subject, field]) => [field, subject]))
+
+/**
+ * 本通道可用的文本 subject。未列出的通道（`system-prompt/assemble`、`agent/request`、
+ * `llm/stream`、`session/event`）不提供任何文本，其上声明的 `text` 条件永不命中。
+ * @param {string} channel 官方事件名
+ * @returns {string[]} 可用 subject
+ */
+export function channelTextSubjects(channel) {
+  const fields = CHANNEL_TEXT[channel]
+  if (fields === undefined) return []
+  return Object.keys(fields).map(field => SUBJECT_OF_FIELD[field]).filter(subject => subject !== undefined)
 }
 
 /** 未知通道的告警去重（每个通道一次；判定期不刷屏）。 */
@@ -69,27 +100,17 @@ export function subjectOf(channel, args, warn, ctx) {
   const first = args[0]
   const base = first !== null && typeof first === 'object' && !Array.isArray(first) ? { ...first } : {}
   const pick = CHANNEL_SUBJECTS[channel]
-  const text = (() => {
-    switch (channel) {
-      case 'tools/pre-execute': return { argsText: toolArgsText(args[0]?.arguments) }
-      case 'tools/post-execute': return { argsText: toolArgsText(args[0]?.arguments), resultText: extractText(args[1]) }
-      case 'agent/pre-step': return { userText: userMessagesText(args[0]?.messages) }
-      case 'agent/inbox/inserted': return { userText: userMessagesText([args[0]?.message]) }
-      case 'agent/turn-stopping': return { assistantText: lastAssistantText(args[0]?.agent?.session) }
-      // 子代理事件的 `name` = provider（`SubagentRunInfo` 里唯一稳定的分类事实：
-      // spawn / fork / acp / codex / claude-code / dsh-sdk）。`names` 谓词读的就是
-      // `payload.name`，因此 `if: { names: { allow: ['fork'] } }` 在此可用。
-      // provider 可能缺席（官方注释：已接受的 one-shot 变 ready 或持久 Activation 冷恢复时
-      // 提供方未必仍注册）——那时不写键，让 `names` 走 UNAVAILABLE，而不是塞空串当「已知为空」。
-      case 'subagent/start':
-      case 'subagent/end': return {
-        subagentText: subagentTextOf(args[0]),
-        ...(typeof args[0]?.provider === 'string' && args[0].provider.length > 0 ? { name: args[0].provider } : {}),
-        ...subagentFacts(args[0], ctx),
-      }
-      default: return {}
-    }
-  })()
+  const fields = CHANNEL_TEXT[channel]
+  const text = fields === undefined ? {} : Object.fromEntries(Object.entries(fields).map(([key, read]) => [key, read(args)]))
+  if (channel === 'subagent/start' || channel === 'subagent/end') {
+    // 子代理事件的 `name` = provider（`SubagentRunInfo` 里唯一稳定的分类事实：
+    // spawn / fork / acp / codex / claude-code / dsh-sdk）。`names` 谓词读的就是
+    // `payload.name`，因此 `if: { names: { allow: ['fork'] } }` 在此可用。
+    // provider 可能缺席（官方注释：已接受的 one-shot 变 ready 或持久 Activation 冷恢复时
+    // 提供方未必仍注册）——那时不写键，让 `names` 走 UNAVAILABLE，而不是塞空串当「已知为空」。
+    if (typeof args[0]?.provider === 'string' && args[0].provider.length > 0) text.name = args[0].provider
+    Object.assign(text, subagentFacts(args[0], ctx))
+  }
   if (pick === undefined) {
     if (typeof warn === 'function' && !warnedChannels.has(channel)) {
       warnedChannels.add(channel)

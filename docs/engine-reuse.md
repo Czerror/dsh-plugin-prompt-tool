@@ -283,6 +283,12 @@
 `engine/anchor-match.mjs`；非法组合、空文本键集合与非法正则在编译期拒绝。旧配置中的
 subject/match/promotion 只能经离线转换显式进入规则条件，不能把旧配置层当成第二规则来源。
 
+`if.text.subject` 必须由该条件被求值的官方通道真实提供：**动作级**分支条件写错通道或
+省略 subject 时，该动作永不执行且挂载与运行期都不报错，因此在编译期拒绝。可用集合由
+`engine/conditions/subject.mjs#channelTextSubjects()` 从通道载荷表反查，不另立名单。
+**规则级** `if` 不在此列——它在该规则每个动作的执行点各自求值，「缺事实即不执行」
+是三值语义的设计意图（见 `test/engine/rules.test.mjs` 的缺事实用例）。
+
 | 动作或展示层 | 真实扩展点 | 可选文本 subject | 命中后的行为 |
 |---|---|---|---|
 | `pre-step` | `agent/pre-step` | `userMessage` | 与本层其余配置一致的消息批注入 |

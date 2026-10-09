@@ -24,7 +24,7 @@
 | 模型流 `llm-stream` | `llm/stream(GenerateOptions,next)` 返回 `AsyncIterable<StreamChunk>`，允许包装或替代流 | `mode=pass/replace`；仅 replace 显示替代输出文本，支持模型过滤 | 请求深冻结，不在此改写消息或调用配置；当前插件只实现文本流替换，不开放任意 chunk 脚本 |
 | 工具链 `tool-pipeline` | `tools/pre-execute(exec,next)`、`tools/execute(exec,next)`、`tools/post-execute(exec,result,next)`；exec 含 `callId/rootCallId/name/arguments/agent?/parent?/signal/token` | 工具名称；前置 allow/deny/ask；deny 原因；后置 accept/replace/block；工具参数或结果匹配；replace/block 才显示文本；内嵌工具共享设置 | 当前插件只接 pre/post，未开放 execute 包装；官方另有 cancel、value、additionalContexts，尚非本插件参数。arguments 不可改写；toolResult 条件仅后置入口具备数据 |
 | 轮次停止 `turn-stop` | `agent/turn-stopping({agent,turn,signal})` 为 serial，返回 void；通过 `agent.steer(UserMessage)` 请求继续 | 最后助手文本匹配、模型过滤、续跑文本和局部变量 | 没有 next 或拒绝停止返回值；每轮 1 次、每会话 3 次上限属于插件，不作为可关闭参数 |
-| 子代理启动 `subagent-start` | `subagent/start({runId,provider,id,local})` 为只读 emit；插件另调用 `agents.get(id).inject(UserMessage)` | 子代理事件信息匹配、模型过滤、注入子代理文本；卡内共享子代理路由/采样与递归深度 | 事件不提供 prompt/agentOptions/maxDepth。共享模型/深度分别作用于委派模块及请求层；inject 不唤醒 driver，不保证赶上已领取输入的首个请求。**判定期可用事实**：`name` = provider（`spawn`/`fork`/`acp`/`codex`/`claude-code`/`dsh-sdk`，缺 provider 时不写该键）、`model`、`session`；谓词由判定期按事件 `id` 反查 agent 补齐（取不到即 `UNAVAILABLE`，不乐观放行），因此 `scope.modelScope`、`scope.audience` 与 `names` 在本层真实生效。本层**拿不到任务文本**：载荷只有那四个字段，`text` 谓词在本层只允许 `subject: subagentInfo`（匹配 `SubagentRunInfo` 的序列化文本，可用于筛 `provider`/`local`；真机实测本地一次性子代理是 `{"runId":…,"provider":"spawn","id":…,"local":true}`）。**写别的 subject 是死条件**——例如 `subject: userMessage` 取的是 `frame.subject.userText`，而该字段在 `subagent/start`、`subagent/end` 两个通道都不存在，于是谓词永远取到空文本、永不命中，且**配上去合法、挂载成功、零诊断**（`editing.subjects` 已按层声明白名单，但挂载期尚未据此校验）。按任务内容筛请改用 `pre-step` 层（那里 `messages` 才是真的） |
+| 子代理启动 `subagent-start` | `subagent/start({runId,provider,id,local})` 为只读 emit；插件另调用 `agents.get(id).inject(UserMessage)` | 子代理事件信息匹配、模型过滤、注入子代理文本；卡内共享子代理路由/采样与递归深度 | 事件不提供 prompt/agentOptions/maxDepth。共享模型/深度分别作用于委派模块及请求层；inject 不唤醒 driver，不保证赶上已领取输入的首个请求。**判定期可用事实**：`name` = provider（`spawn`/`fork`/`acp`/`codex`/`claude-code`/`dsh-sdk`，缺 provider 时不写该键）、`model`、`session`；谓词由判定期按事件 `id` 反查 agent 补齐（取不到即 `UNAVAILABLE`，不乐观放行），因此 `scope.modelScope`、`scope.audience` 与 `names` 在本层真实生效。本层**拿不到任务文本**：载荷只有那四个字段，`text` 谓词在本层只允许 `subject: subagentInfo`（匹配 `SubagentRunInfo` 的序列化文本，可用于筛 `provider`/`local`；真机实测本地一次性子代理是 `{"runId":…,"provider":"spawn","id":…,"local":true}`）。**写别的 subject 是死条件**——例如 `subject: userMessage` 取的是 `frame.subject.userText`，而该字段在 `subagent/start`、`subagent/end` 两个通道都不存在，于是谓词恒为「缺事实」、永不命中。**动作级**分支条件这么写（或省略 subject）会在编译期被拒绝（按通道白名单，见[引擎指南](engine-reuse.md#条件判定与事件载荷)）；**规则级** `if` 不在拒绝之列——它在每个动作的执行点各自求值，「缺事实即不执行」是三值语义的设计意图，因此仍会合法而不命中（`test/engine/rules.test.mjs` 的缺事实用例即此语义）。注意与注入动作的 `config.subject` 区分：那是同名不同物，由 `editing.subjects` 按层校验、越界即抛错。按任务内容筛请改用 `pre-step` 层（那里 `messages` 才是真的） |
 | 子代理结束 `subagent-end` | `subagent/end({runId,provider,id,local,stopReason,lastAssistantMessage?})` 为只读 emit | `action=observe/inject-main`；默认只记录；inject-main 显示主会话文本与局部变量；事件匹配与模型过滤 | 通过 Agent.inject 独立投递到真实血缘的根主会话，不改写子代理返回值，不唤醒空闲主会话。缺主会话或无法验证血缘时跳过；同一 runId/config 去重。`subject` 限制与 `subagent-start` 相同：只允许 `subagentInfo` |
 
 子代理结束行为示例：
@@ -44,6 +44,24 @@ rules:
             action: inject-main
           text: 子代理已结束。请检查其结果，完成验证后再回复用户。
 ```
+
+## 各层的载荷求值窗口
+
+上表说「接入什么」，这一节说「什么时候求值」。它决定动作该用普通注册还是
+`waterfallPosition: outermost`（见 [引擎指南](engine-reuse.md#同-scope-内的注册顺序)），
+也决定配置改完是否需要新的一轮才生效。
+
+| 层 | 求值窗口 | 对配置的含义 |
+|---|---|---|
+| `pre-step` | 每次 `agent/pre-step` 调用（每步）：条件在 handler 判定，正文在返回消息批前拼装 | 改配置后下一步即生效 |
+| `system-section` | 注册发生在挂载期；静态正文注册时物化，动态正文与条件段先注册**同步占位**，再由 `system-prompt/assemble` 内的 waterfall 填充本次装配 | 正文可在装配内决定，但段本身必须在装配开始前已注册 |
+| `runtime-context` | 同上；动态策略的 `resolve()` 只在 `system-prompt/assemble` 内调用 | 空值或异常只让该条为空并告警，取消或卸载丢弃本次填充 |
+| `agent-request` | `next()` 解析完成后合并（浅合并 / `replace` 整体替换 / `unset` 按值删键） | 只影响本次请求配置，不改消息正文 |
+| `llm-stream` | `next()` 之前决定 pass / replace；请求此时已深冻结 | 只能替换流，不能改写消息与调用配置 |
+| `tool-pipeline` | `pre-execute` 在执行前裁决；`post-execute` 在结果到手后 | arguments 不可改写；`toolResult` 条件只有后置入口有数据 |
+| `turn-stop` | 停止被接受前触发；续跑经 `agent.steer` | 每轮 1 次 / 每会话 3 次上限固定在引擎内，配置改不掉 |
+| `subagent-start` | `subagent/start` emit 时（只读事件），注入另外调用 `Agent.inject` | 不唤醒 driver，赶不上已领取输入的首个请求 |
+| `subagent-end` | `subagent/end` emit 时（只读事件），投递到血缘主会话 | 不唤醒空闲主会话；同 runId + 配置去重 |
 
 ## order 的作用面与刻度来源
 
