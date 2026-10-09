@@ -29,7 +29,7 @@ export function mountRuleSources(ctx, sources, options = {}) {
     if (!turnStopBudgets.has(key)) turnStopBudgets.set(key, createTurnStopBudget())
     return turnStopBudgets.get(key)
   }
-  const injections = new Map(sources.map(source => [source.moduleId, { sourceId: `module:${source.moduleId}`, configs: [], ruleActions: [], officialInstructions: source.officialInstructions === true }]))
+  const injections = new Map(sources.map(source => [source.moduleId, { sourceId: `module:${source.moduleId}`, configs: [], ruleActions: [] }]))
   const rules = sources.flatMap(source => source.rules.filter(rule => rule.enabled !== false))
   // 动作级分支条件（actionWhen）也要喂 session/event：否则 else / 嵌套 if 里的 phase / count
   // 谓词永远收不到事件，状态停在冷扫那一刻（规则级 when 已由 rules 覆盖，动作级单独补齐）。

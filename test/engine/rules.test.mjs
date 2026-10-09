@@ -512,6 +512,48 @@ test('统一规则：判定类别按通道上报，命中、条件为假与缺�
   dispose()
 })
 
+test('动作级分支上报：按「规则∧动作」的最终判定记账，每帧每动作一次', async () => {
+  const h = harness()
+  const reported = []
+  const rules = compileRules([
+    // 主路径：规则级 if 为真且动作级分支为真 → 该动作记 hit。
+    { id: 'branch', if: { phase: { promoted: false } }, then: [
+      { if: { scope: { modelScope: 'flash' } }, then: [textAction('then-inject', 'THEN')] },
+    ] },
+    // 关键拒绝（F09）：规则级 if 为真、动作级分支为假 → 记 miss，不得记规则级 hit。
+    { id: 'gate-off', if: { phase: { promoted: false } }, then: [
+      { if: { scope: { modelScope: 'pro' } }, then: [textAction('off-inject', 'OFF')] },
+    ] },
+    // 缺事实同样按动作级最终判定记账，与「条件为假」分开。
+    { id: 'gate-unknown', if: { phase: { promoted: false } }, then: [
+      { if: { preset: { presetId: 'target' } }, then: [textAction('unknown-inject', 'UNKNOWN')] },
+    ] },
+    // 边界：规则级 else 自带 not(if)；else 动作按动作级最终判定入账，then 动作照旧走规则级。
+    { id: 'rule-else', if: { scope: { modelScope: 'flash' } }, then: [textAction('else-then', 'ET')], else: [textAction('else-else', 'EE')] },
+  ])
+  const dispose = mountRuleSources(h.ctx, [{ moduleId: 'module', rules }], { onOutcome: item => reported.push(item) })
+  const agent = actor()
+  agent.options = { model: 'deepseek-flash' }
+  const messages = [{ id: 'u', role: 'user', source: { kind: 'user' }, content: [{ type: 'text', text: 'USER' }] }]
+  const texts = (await h.run('agent/pre-step', [{ agent, messages }], () => ({ kind: 'enter', messages })))
+    .messages.flatMap(message => message.content.map(block => block.text))
+  const outcomes = ruleId => reported.filter(item => item.ruleId === ruleId).map(item => item.outcome)
+  assert.deepEqual(outcomes('branch'), ['hit'], '分支为真按动作级最终判定记 hit')
+  assert.deepEqual(outcomes('gate-off'), ['miss'], '分支为假记 miss，不记规则级 hit')
+  assert.deepEqual(outcomes('gate-unknown'), ['unavailable'], '动作级缺事实记 unavailable')
+  assert.deepEqual(outcomes('rule-else'), ['hit', 'miss'], 'else 独占通道：then 走规则级 hit、else 走动作级 miss')
+  assert.deepEqual(texts, ['USER', 'THEN', 'ET'], '只有命中分支注入正文')
+  // 边界：同一帧内同一动作实例重复求值只记一次（去重按动作实例，判定仍按当次事实）。
+  const branched = rules[1].actions[0]
+  const entry = { rule: rules[1], actionWhen: branched.actionWhen, bypassRuleWhen: branched.bypassRuleWhen, id: branched.id }
+  const direct = []
+  const frame = ruleFrame('agent/pre-step', [{ agent, messages }], () => {}, undefined, (rule, channel, outcome) => direct.push({ ruleId: rule.id, channel, outcome }))
+  assert.equal(actionMatches(entry, frame), false)
+  assert.equal(actionMatches(entry, frame), false)
+  assert.deepEqual(direct, [{ ruleId: 'gate-off', channel: 'agent/pre-step', outcome: 'miss' }], '同帧重复求值不重复记账')
+  dispose()
+})
+
 test('动作级分支：五层 inject-text 与默认位置 pre-step-filter 的 else 恰好一支生效', async () => {
   const childReceived = []
   const steered = []

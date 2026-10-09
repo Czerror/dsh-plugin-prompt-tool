@@ -466,9 +466,10 @@ wholeWords/selectiveLogic）单一权威。以下写入端共用：
   不由插件重做，不补回已省略内容，不撤回历史或因重新开启而强制重放。`instructionHint`
   在过滤之后、且具有显式有效消息模板时转换剩余官方消息；空模板保持原正文。运行时语义见
   [engine-reuse.md](engine-reuse.md#pre-step-协调器与官方指令过滤)。
-- **装配状态**：`instructions.owner.officialInstructions` 把 `true/false/null(未知)` 发给
-  工作台，分别表示官方负责、未装配、尚未观察到；不证明某个文件已经注入。预设保留官方
-  指令行，未装配时插件不补建文件注入。边界与旧决策替代关系见
+- **装配状态**：`instructions.owner.officialInstructions` 把观察结果发给工作台：`true` 仅在
+  观察到官方装配时出现（当前没有生产者），`null` 表示尚未观察到；不报「未装配」这类插件
+  观察不到的否定事实，也不证明某个文件已经注入。预设保留官方指令行，未装配时插件不补建
+  文件注入。边界与旧决策替代关系见
   [ADR-0004](adr/0004-official-instruction-filter.md)。
 
 ### 模块事实与能力卡（2026-09-05）

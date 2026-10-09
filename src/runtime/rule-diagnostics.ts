@@ -3,7 +3,8 @@
  * 引擎经 `mountRuleSources({ onOutcome })` 上报（见 engine/rule-runtime.mjs），
  * 工作台经 `/rule-diagnostics` 读取；两处共用 bridge-contract 的类型。
  *
- * 有界：达到身份上限后不再新增，只累加已有身份，长会话不会无界增长。
+ * 有界：达到身份上限后不再新增，只累加已有身份，长会话不会无界增长；被丢弃的判定次数
+ * 记在进程级 `dropped`，仅在大于 0 时随 `/rule-diagnostics` 响应下发（见 ruleDiagnosticsDropped）。
  */
 import type { RuleDiagnosticRecord, RuleOutcomeKind } from '../shared/bridge-contract.ts'
 
@@ -20,6 +21,9 @@ export interface RuleOutcomeReport {
 
 const counters = new Map<string, RuleDiagnosticRecord>()
 
+/** 达到身份上限后被丢弃的判定次数（进程级、有界、无告警通道）。 */
+let dropped = 0
+
 const keyOf = (report: RuleOutcomeReport): string =>
   `${report.moduleId ?? ''}\u0000${report.ruleId}\u0000${report.channel}`
 
@@ -30,7 +34,10 @@ export function recordRuleOutcome(report: RuleOutcomeReport): void {
   const key = keyOf(report)
   let record = counters.get(key)
   if (record === undefined) {
-    if (counters.size >= RULE_DIAGNOSTIC_LIMIT) return
+    if (counters.size >= RULE_DIAGNOSTIC_LIMIT) {
+      dropped += 1
+      return
+    }
     record = {
       ...(report.moduleId === undefined ? {} : { moduleId: report.moduleId }),
       ruleId: report.ruleId,
@@ -50,7 +57,13 @@ export function ruleDiagnosticsSnapshot(): RuleDiagnosticRecord[] {
   return [...counters.values()].map(record => ({ ...record }))
 }
 
+/** 超限丢弃的判定次数；0 表示没有丢弃（调用方据此决定是否下发该字段）。 */
+export function ruleDiagnosticsDropped(): number {
+  return dropped
+}
+
 /** 仅供测试隔离；生产不调用。 */
 export function resetRuleDiagnostics(): void {
   counters.clear()
+  dropped = 0
 }

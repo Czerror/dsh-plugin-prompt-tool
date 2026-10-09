@@ -57,7 +57,7 @@ import { assertModuleId, modulePathExists } from '../host/module-install.ts'
 import { DSH_HOME } from '../host/paths.ts'
 import type { AssetFile, AssetImportRequest, ImportKind, ModuleExportRequest } from '../shared/asset-transfer.ts'
 import { lastWorldBookDiagnostics } from '../../engine/st-world-book.mjs'
-import { ruleDiagnosticsSnapshot } from './rule-diagnostics.ts'
+import { ruleDiagnosticsDropped, ruleDiagnosticsSnapshot } from './rule-diagnostics.ts'
 import { BRIDGE_ENDPOINTS, EDIT_TARGET_HEADER, MAX_BRIDGE_BODY_BYTES, MODULE_ACTIVATION_FAILED, SETTINGS_BRIDGE_PREFIX, readEditTarget } from '../shared/bridge-contract.ts'
 import { moduleParamFallbacks, validateEngineParamValues } from '../shared/engine-params.ts'
 import { readPersonaSpec } from '../shared/persona-section.ts'
@@ -2500,7 +2500,9 @@ export function registerSettingsBridge(
         }
         const parsedBody = await readBridgeBodyForHandler(req, res)
         if (parsedBody === undefined) return
-        writeBridgeJson(res, 200, { ok: true, value: { records: ruleDiagnosticsSnapshot() } })
+        // 超限丢弃只在真的丢弃过时进载荷：未超限的响应与既有契约逐字不变。
+        const dropped = ruleDiagnosticsDropped()
+        writeBridgeJson(res, 200, { ok: true, value: { records: ruleDiagnosticsSnapshot(), ...(dropped > 0 ? { dropped } : {}) } })
       })
       return () => {
         for (const dispose of disposers) dispose()

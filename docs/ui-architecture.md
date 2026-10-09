@@ -349,7 +349,7 @@ workspace-pages.ts 是页面元数据的唯一来源。默认页为 features，�
 | 导入预览与提交阶段 | use-import-preview-flow | 每次 `run()` 独立生命周期；卸载结束等待、不悬挂 Promise |
 | 创建意图、菜单、删除/导入确认、拖拽 | 对应 feature | 仍随页面卸载失效；不恢复或重放危险操作 |
 | 保存队列、revision、草稿版本 | save-queue + store | 工作台挂载期 |
-| 规则判定计数（状态栏「N 不可用」） | `/rule-diagnostics` 只读端点 + 局部 hook | 工作台数据就绪后读一次；不进 store、不轮询，读取失败按 0 处理（不显示该段） |
+| 规则判定计数（状态栏「N 不可用」） | `/rule-diagnostics` 只读端点 + 局部 hook | 工作台数据就绪后读一次；不进 store、不轮询，读取失败按 0 处理（不显示该段）。按「模块+规则+通道」聚合，计数取每个动作的最终判定（不按动作拆分）；身份上限 512，超出只累加已有身份并把丢弃次数作为 `dropped` 下发 |
 | 大文本和角色卡原文件 | 文件通道/bridge | 不进入 settings descriptor |
 | 技能调用策略 / 技能文件夹引用 | 技能文件（`SKILL.md` 的两个官方键）+ 插件状态文件（`$DSH_HOME/skills/.system/prompt-tool/skills.yml`，只存 `folders`） | 停用 = 改写该技能 frontmatter 的 `disable-model-invocation` / `user-invocable`（正文与其余字段逐字保留）；引用只登记路径。技能实体归官方各技能根所有，插件不搬迁。契约见 [skills-management.md](skills-management.md) |
 
@@ -439,7 +439,7 @@ JSON bridge 的统一上限为 32 MiB；角色卡原始文件流独立限制为 
 8. 切换编辑模块先保存当前草稿，失败即取消切换并保留输入；成功后更新请求头目标并等待重读，不写 settings、不切换官方会话预设。首次加载或切换完成前，`loadedModuleRef` 拒绝依赖当前 Fields 的公共参数和模板变量写盘。逐卡规则事务使用独立模块草稿、显式请求身份与版本，在同一保存队列执行，不受另一编辑目标限制；工作台脏状态包含所有模块规则草稿。
 9. 技能清单和策略均不进 settings：单端调用策略走 `/skill-policy`（`name/path/side/enabled/sessionId?`，服务器在同工作区重新校验身份；显式两端操作可用 `scope`），引用走 `/skills-folders`，清单走 `/skills-list`。快照保留 `complete`，空数组是权威空结果；调用声明和当前会话注册状态分别呈现。创建/导入走既有端点；删除提交 `name/path/sessionId?`，确认框与请求使用同一条目，用户根及显式引用根按服务器能力开放回收站删除。契约见 [skills-management.md](skills-management.md)。
 10. 指令文件正文走独立草稿池（`data/instruction-drafts.ts`），模块保存与模块切换不带文件正文。焦点离开文件卡或折叠前提交 dirty 文件，成功只确认请求时快照，冲突/失败保留草稿并显示「重新读取」。会话或工作区切换建立新的指令上下文：旧上下文的迟到响应不覆盖当前视图，旧 `contextId` 保存由服务端 409 拒绝。
-11. 指令负责人事实来自 `/bootstrap` 的 `instructions.owner.officialInstructions`（服务端从 pre-step 协调器观察结果取）：`true` 表示官方负责注入，`false` 表示未装配官方来源，`null` 表示尚未观察到。文件可读与官方已装配都不能显示为该文件「已经注入」；官方未装配时插件不补建文件注入。
+11. 指令负责人事实来自 `/bootstrap` 的 `instructions.owner.officialInstructions`（服务端从 pre-step 协调器观察结果取）：`true` 仅在观察到官方装配时出现（当前没有生产者），`null` 表示尚未观察到。协调器对规则来源不写 `false`——那是插件观察不到的否定事实，三态因此收敛为「观察到 / 未观察到」。文件可读与官方已装配都不能显示为该文件「已经注入」；官方未装配时插件不补建文件注入。
 12. 不再提供「独立指令文件来源」总开关。文件卡启停仅写独立策略 `files[fileId].enabled`，默认放行；关闭只拦截后续官方注入，不撤回历史，重新开启不强制重放。策略不可读时禁用策略编辑，保留诊断；应答成功前不乐观显示已保存。名称与开关跨预设共享，位置、顺序、晋升、受众和模型范围不属于文件卡控制项。
 13. bootstrap 与策略快照均读取完成后再应用，异步边界复核请求序号、会话与草稿状态。暂时离开工作区只暂停文件写资格，保留草稿与版本基线；返回并读取时，版本未变可继续保存，版本变化仍须解决冲突。
 14. 列表保存按钮等待真实 `Promise<boolean>` 结果；文件或预设部分失败时不显示整体成功、不以静默重载清除错误。已经成功保存的文件立即更新其基线，不因后续失败回滚或丢失确认。

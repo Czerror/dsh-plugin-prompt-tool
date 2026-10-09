@@ -20,7 +20,8 @@ import { isolatedHome } from '../fixtures/host-harness.mjs'
 
 const { moduleRoot } = isolatedHome('pt-assembly-')
 const { prepareAssembly, createAgentAssembly } = await import('../../src/runtime/agent-assembly.ts')
-const { installPreStepCoordinator } = await import('../../src/runtime/pre-step-coordinator.ts')
+const { installPreStepCoordinator, PRE_STEP_COORDINATOR_SERVICE } = await import('../../src/runtime/pre-step-coordinator.ts')
+const { ruleDiagnosticsSnapshot, resetRuleDiagnostics } = await import('../../src/runtime/rule-diagnostics.ts')
 const { promptConfigToRule } = await import('../../src/host/rule-builder.ts')
 const { convertLegacyModuleRules } = await import('../../src/host/rules-migration.ts')
 const { mountRuleSources } = await import('../../engine/rule-runtime.mjs')
@@ -209,6 +210,47 @@ test('动作级 phase 在真实挂载 scope 重绑后仍接收 session/event', a
   h.root.emit(scopeTarget(agent.session, agent), 'session/event', agent.session, event)
   assert.equal((await request()).maxTokens, 111, '重绑后的动作级 phase 仍收到 session/event')
   await h.runtime.dispose()
+})
+
+test('规则诊断：协调器路径按模块/规则/通道分类入账，三类判定各自正确', async (t) => {
+  const dir = join(moduleRoot, 'diag-rules')
+  mkdirSync(dir, { recursive: true })
+  const rule = (id, when) => ({
+    id, layer: 'pre-step', ...(when === undefined ? {} : { if: when }),
+    then: [{ id: `${id}-action`, kind: 'inject-text', config: { id: `diag-${id}`, layer: 'pre-step', sourceKind: 'plugin', text: id.toUpperCase(), position: 'after-user' } }],
+  })
+  writeFileSync(join(dir, 'module.yml'), JSON.stringify({
+    id: 'diag-rules', modules: ['rule-engine'], rules: [
+      rule('hit', { all: [{ scope: { audience: 'main' } }] }),
+      rule('miss', { all: [{ scope: { audience: 'subagent' } }] }),
+      rule('unavailable', { preset: { presetId: 'target' } }),
+    ],
+  }))
+  resetRuleDiagnostics()
+  t.after(() => resetRuleDiagnostics())
+  const h = await liveAssembly(t, () => ['diag-rules'])
+  const main = await h.makeAgent('diag-main')
+  await h.runtime.settled()
+  const injected = (await h.inject(main)).messages.flatMap(message => message.content.map(block => block.text))
+  assert.deepEqual(injected, ['USER', 'HIT'], '命中规则注入正文，其余两支不注入')
+  const byRule = new Map(ruleDiagnosticsSnapshot().map(record => [record.ruleId, record]))
+  assert.deepEqual([...byRule.keys()].sort(), ['hit', 'miss', 'unavailable'], JSON.stringify(ruleDiagnosticsSnapshot()))
+  const record = (ruleId, counts) => ({ moduleId: 'diag-rules', ruleId, channel: 'agent/pre-step', hit: 0, miss: 0, unavailable: 0, error: 0, ...counts })
+  assert.deepEqual(byRule.get('hit'), record('hit', { hit: 1 }))
+  assert.deepEqual(byRule.get('miss'), record('miss', { miss: 1 }))
+  assert.deepEqual(byRule.get('unavailable'), record('unavailable', { unavailable: 1 }))
+})
+
+test('官方负责人事实：规则来源不再报 false，未观察到即 undefined', async (t) => {
+  writePreset('owner-none', { modules: ['prompt-config-engine'], promptConfigs: [{ id: 'owner-x', text: 'X', position: 'after-user' }] })
+  const h = await liveAssembly(t, () => ['owner-none'])
+  const agent = await h.makeAgent('owner-session')
+  await h.runtime.settled()
+  await h.inject(agent)
+  const coordinator = h.root.get(PRE_STEP_COORDINATOR_SERVICE)
+  assert.equal(coordinator.officialOwnerOf('owner-session'), undefined, '没有官方装配事实时不猜')
+  // bridge 载荷 = `observed ?? null`（settings-bridge 的 instructionOwner）。
+  assert.equal(coordinator.officialOwnerOf('owner-session') ?? null, null)
 })
 
 test('创建边界：agent/created 返回时首条请求已经能注入，无需额外等待队列', async (t) => {

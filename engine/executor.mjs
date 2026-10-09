@@ -415,14 +415,6 @@ async function runPromptConfigBatch(options) {
   }
 }
 
-/**
- * 把一组运行时提示词配置装配为注入执行器（独立模式 / 协调器管理模式的接线口）。
- *
- * @param options.prepend 是否以 prepend 注册本地 pre-step(合并行恒 true;由参数决定)。
- * @param options.sourceId 协调器里的来源 id(默认取首条配置 id 派生)。
- * @param options.officialInstructions 本 mount 的组合是否仍挂着官方指令加载行
- *   (负责人冲突事实;协调器据此拒绝同时注入文件正文)。
- */
 function effectivePromptConfigs(configs) {
   const list = configs.filter((config) => config !== undefined && config !== null)
   const claimedGroups = new Set()
@@ -448,6 +440,12 @@ export function applyPromptConfigSources(ctx, sources, options = {}) {
   }
 }
 
+/**
+ * 把一组运行时提示词配置装配为注入执行器（独立模式 / 协调器管理模式的接线口）。
+ *
+ * @param options.prepend 是否以 prepend 注册本地 pre-step(合并行恒 true;由参数决定)。
+ * @param options.sourceId 协调器里的来源 id(默认取首条配置 id 派生)。
+ */
 export function applyPromptConfigs(ctx, configs, options = {}) {
   const list = configs.filter((config) => config !== undefined && config !== null)
   const sourceId = typeof options.sourceId === 'string' && options.sourceId.length > 0
@@ -471,7 +469,6 @@ export function applyPromptConfigs(ctx, configs, options = {}) {
   const source = {
     configs: effectiveList,
     ruleActions: options.ruleActions ?? [],
-    officialInstructions: options.officialInstructions === true,
   }
   /** 已交给协调器的注册(仅管理路径非空)。 */
   let registration = null

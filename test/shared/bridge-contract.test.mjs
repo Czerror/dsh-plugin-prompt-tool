@@ -332,6 +332,37 @@ test('契约：/rule-diagnostics 只回判定计数，未启用不入账且读�
   resetRuleDiagnostics()
 })
 
+test('契约：/rule-diagnostics 身份上限溢出可见——512 条封顶并报 dropped', async (t) => {
+  const { recordRuleOutcome, resetRuleDiagnostics, ruleDiagnosticsSnapshot, RULE_DIAGNOSTIC_LIMIT } = await import('../../src/runtime/rule-diagnostics.ts')
+  const handlers = register()
+  const handler = handlers.get(SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.ruleDiagnostics)
+  resetRuleDiagnostics()
+  t.after(() => resetRuleDiagnostics())
+  for (let index = 0; index <= RULE_DIAGNOSTIC_LIMIT; index += 1) {
+    recordRuleOutcome({ moduleId: 'm', ruleId: `r${index}`, channel: 'agent/pre-step', outcome: 'hit' })
+  }
+  assert.equal(ruleDiagnosticsSnapshot().length, RULE_DIAGNOSTIC_LIMIT, '身份表封顶 512 条')
+  const overflow = fakeRes()
+  await handler(fakeReq({ body: {} }), overflow)
+  const payload = JSON.parse(overflow.body)
+  assert.equal(payload.value.records.length, RULE_DIAGNOSTIC_LIMIT)
+  assert.equal(payload.value.dropped, 1, '超限丢弃的判定次数随响应下发')
+  resetRuleDiagnostics()
+  const clean = fakeRes()
+  await handler(fakeReq({ body: {} }), clean)
+  assert.deepEqual(JSON.parse(clean.body), { ok: true, value: { records: [] } }, '未超限的响应不带 dropped')
+})
+
+test('契约：协调器未观察到官方装配时负责人事实是 null，不捏造 false', async () => {
+  const { PRE_STEP_COORDINATOR_SERVICE } = await import('../../src/runtime/pre-step-coordinator.ts')
+  const { ctx, handlers } = makeHarness({ [PRE_STEP_COORDINATOR_SERVICE]: { officialOwnerOf: () => undefined } })
+  registerSettingsBridge(ctx, 'prompt-tool', () => ({ available: true, providers: ['deepseek-official'] }), () => makeSkillsState(), () => '')
+  const res = fakeRes()
+  await handlers.get(SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.bootstrap)(fakeReq({ body: { sessionId: 'live-session' } }), res)
+  assert.equal(res.status, 200, res.body)
+  assert.equal(JSON.parse(res.body).instructions.owner.officialInstructions, null, 'undefined → null：三态收敛后不再报 false')
+})
+
 test('契约：/tool-surface 支持官方 preset scope 且只读有效 schema', async () => {
   const handlers = register()
   const handler = handlers.get(SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.toolSurface)

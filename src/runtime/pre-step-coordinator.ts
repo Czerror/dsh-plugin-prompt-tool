@@ -16,11 +16,11 @@ import { instructionFileIdFromDisplayPath } from '../host/agents-cards.ts'
 import { instructionPolicyPath, readInstructionPolicy, resolveInstructionPolicy } from '../host/instructions-policy.ts'
 import { filterOfficialInstructionMessages } from './official-instruction-filter.ts'
 import { recordRuleOutcome } from './rule-diagnostics.ts'
+import type { RuleOutcomeKind } from '../shared/bridge-contract.ts'
 
 export const PRE_STEP_COORDINATOR_SERVICE = 'promptToolPreStep'
 export const PRE_STEP_COORDINATOR_VERSION = 1
 const WARN_LABEL = 'prompt-tool:pre-step-coordinator'
-const MAX_TRACKED_OWNER_SESSIONS = 4096
 
 export interface PreStepPromptConfig {
   id: string
@@ -29,6 +29,8 @@ export interface PreStepPromptConfig {
   order: number
   sequence?: number
   sourceModuleId?: string
+  /** 引擎在 pre-step 条目上回填的规则实例（只用于诊断上报时反查来源模块）。 */
+  rule?: unknown
   position: string
   promotion: string
   audience: string | null
@@ -49,7 +51,6 @@ export interface PreStepSource {
   configs: readonly PreStepPromptConfig[]
   /** 已编译的本地点规则动作；执行与配置叶子共享同一批次资格帧。 */
   ruleActions?: readonly unknown[]
-  officialInstructions?: boolean
 }
 
 export interface PreStepCoordinatorOptions {
@@ -103,6 +104,9 @@ export function installPreStepCoordinator(ctx: Context, options: PreStepCoordina
     withSubagents: createEpochPromotion(PROMOTE_EVENTS.either, { includeSubagents: true }),
   }
   const memo = new Map<string, Set<string>>()
+  // 负责人事实：全仓没有生产者写 `officialInstructions: true`，协调器不再把「有规则来源」
+  // 当成「官方未装配」上报（那是插件观察不到的否定事实）。无人写入 → `officialOwnerOf`
+  // 返回 undefined → bridge 的 `observed ?? null` 上报 null；管线的整体去留见 ADR-0003。
   const officialOwner = new Map<string, boolean>()
   const warnOnce = createWarnOnce(ctx, WARN_LABEL)
   const readPolicy = createPolicyReader(options.policyFile)
@@ -163,14 +167,24 @@ export function installPreStepCoordinator(ctx: Context, options: PreStepCoordina
         !config.id.startsWith('agents-file-') && config.sourceKind !== 'instruction-file')
         .sort(compareConfigSequence)
       const ruleActions = sources.flatMap(source => source.ruleActions ?? [])
-      const sessionId = isRecord(session) && typeof session.id === 'string' ? session.id : undefined
-      if (sessionId !== undefined) {
-        if (officialOwner.size >= MAX_TRACKED_OWNER_SESSIONS) officialOwner.clear()
-        if (sources.length > 0) officialOwner.set(sessionId, sources.some(source => source.officialInstructions === true))
-        else officialOwner.delete(sessionId)
+      if (configs.length === 0 && ruleActions.length === 0) return decision
+      // 引擎以 (rule, channel, outcome) 三参调用帧回调（见 conditions/evaluation.mjs），
+      // 规则实例在这里反查回来源模块——直传记账函数会丢掉 moduleId 等身份。
+      const moduleOfRule = new Map<unknown, string | undefined>()
+      for (const entry of [...configs, ...ruleActions] as { rule?: unknown; sourceModuleId?: string }[]) {
+        if (entry.rule === undefined || entry.rule === null || moduleOfRule.has(entry.rule)) continue
+        moduleOfRule.set(entry.rule, entry.sourceModuleId)
       }
-      return configs.length === 0 && ruleActions.length === 0 ? decision
-        : await runPreStepBatch({ ctx, agent, payload, decision, configs, ruleActions, promotion, memo, warnOnce, onOutcome: recordRuleOutcome })
+      return await runPreStepBatch({
+        ctx, agent, payload, decision, configs, ruleActions, promotion, memo, warnOnce,
+        onOutcome: (rule: { id: string }, channel: string, outcome: RuleOutcomeKind) => {
+          try {
+            recordRuleOutcome({ moduleId: moduleOfRule.get(rule), ruleId: rule.id, channel, outcome })
+          } catch {
+            // 诊断只读：记账失败不得改变判定结果。
+          }
+        },
+      })
     } catch (error) {
       warnOnce(`${WARN_LABEL}: coordination failed, keeping decision: ${String((error as Error | undefined)?.message ?? error)}`)
       return decision
