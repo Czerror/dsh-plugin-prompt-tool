@@ -20,9 +20,8 @@ import { Switch } from '../../ui/Switch.tsx'
 import { Button } from '../../ui/Button.tsx'
 import { StatusBadge } from '../../ui/StatusBadge.tsx'
 import sharedCss from '../../ui/controls.module.css'
-import featureCss from './modules.module.css'
 
-const styles = { ...sharedCss, ...featureCss }
+const styles = sharedCss
 
 export const ModuleSwitcher = memo(function ModuleSwitcher(props: { store: PromptToolStore; t: PromptToolTranslate }): ReactNode {
   const { store, t } = props

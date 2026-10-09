@@ -3,9 +3,8 @@ import { memo, useEffect, type ReactNode } from 'react'
 import { usePromptToolFields } from '../../data/use-prompt-tool-fields.ts'
 import { ModuleSwitcher } from './ModuleSwitcher.tsx'
 import sharedCss from '../../ui/controls.module.css'
-import featureCss from './modules.module.css'
 
-const ui = { ...sharedCss, ...featureCss }
+const ui = sharedCss
 import type { PromptToolStore } from '../../data/use-prompt-tool-store.ts'
 import type { PromptToolTranslate } from '../../locales.ts'
 

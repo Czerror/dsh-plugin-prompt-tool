@@ -124,8 +124,7 @@
     │  │  ├─ EngineParamFields.tsx
     │  │  ├─ ModulesPage.tsx
     │  │  ├─ ModuleExportDialog.tsx
-    │  │  ├─ ModuleSwitcher.tsx
-    │  │  └─ modules.module.css
+    │  │  └─ ModuleSwitcher.tsx
     │  ├─ persona/
     │  │  └─ ModulePersonaCard.tsx
     │  ├─ prompts/
@@ -638,7 +637,6 @@ world-book 视图只隐藏工具栏之外的列表主体之外的附加提示，
     ui/HintTooltip.module.css
     ui/StatusBadge.module.css
     ui/StatusDot.module.css
-    features/modules/modules.module.css
     features/prompts/prompts.module.css
     features/prompts/rules.module.css
     app/workspace/pages/layer-settings.module.css

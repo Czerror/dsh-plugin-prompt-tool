@@ -5,7 +5,6 @@ import { bridgeCall, errorMessage } from '../../data/bridge-client.ts'
 import { DialogSurface } from '../../ui/DialogSurface.tsx'
 import { Button } from '../../ui/Button.tsx'
 import shared from '../../ui/controls.module.css'
-import css from './modules.module.css'
 
 export function ModuleExportDialog(props: { module: { id: string; name: string }; t: PromptToolTranslate; onClose: () => void }): ReactNode {
   const { t, module } = props
@@ -73,11 +72,11 @@ export function ModuleExportDialog(props: { module: { id: string; name: string }
       {phase === 'error' ? <Button shape="pill" variant="primary" size="md" onClick={() => setRetry((value) => value + 1)}>{t('assetExport.preview')}</Button>
         : phase !== 'done' && <Button shape="pill" variant="primary" size="md" disabled={!canDownload} onClick={() => { void download() }}>{t(mode === 'zip' ? 'assetExport.downloadZip' : 'assetExport.downloadYaml')}</Button>}
     </>}>
-    <div className={css.exportContent}>
+    <div className={shared.exportContent}>
       <p><code>{module.id}</code></p>
       <fieldset disabled={phase === 'downloading'}>
         <legend>{t('assetExport.scope')}</legend>
-        {(['zip', 'definition'] as const).map((option) => <label key={option} className={css.exportOption}>
+        {(['zip', 'definition'] as const).map((option) => <label key={option} className={shared.exportOption}>
           <input type="radio" name={`${id}-mode`} checked={mode === option} onChange={() => { invalidate(); setMode(option) }} />
           <span><strong>{t(`assetExport.${option}`)}</strong><small>{t(`assetExport.${option}Hint`)}</small></span>
         </label>)}
@@ -90,7 +89,7 @@ export function ModuleExportDialog(props: { module: { id: string; name: string }
           <legend>{t('assetExport.conflicts')}</legend>
           {preview.memoryConflicts!.map((entry) => <div key={entry.id}>
             <strong>{entry.name} · {entry.id}</strong>
-            {(['include', 'exclude'] as const).map((choice) => <label className={css.exportOption} key={choice}><input type="radio" name={`${id}-${entry.id}`} checked={memoryChoices[entry.id] === choice}
+            {(['include', 'exclude'] as const).map((choice) => <label className={shared.exportOption} key={choice}><input type="radio" name={`${id}-${entry.id}`} checked={memoryChoices[entry.id] === choice}
               onChange={() => { invalidate(); setMemoryChoices((current) => ({ ...current, [entry.id]: choice })) }} />{t(`assetExport.${choice}`)}</label>)}
           </div>)}
         </fieldset>}
