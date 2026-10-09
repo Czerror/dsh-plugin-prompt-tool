@@ -12,6 +12,9 @@ import { isolatedHome } from '../fixtures/host-harness.mjs'
 const { moduleRoot } = isolatedHome('pt-module-storage-')
 const { loadModuleDefinition, ensureModuleSlices, readRulesDir, commitModuleDefinition } = await import('../../src/host/module-storage.ts')
 const { readModuleRules, editModuleRules } = await import('../../src/host/module-rules.ts')
+const { readModuleConfigOrder } = await import('../../src/host/module-config-order.ts')
+const { prepareAssembly } = await import('../../src/runtime/agent-assembly.ts')
+const { setModuleEnabled } = await import('../../src/host/config-store.ts')
 const rule = (id, text = id, state = {}) => ({ id, ...state, then: [{ id: 'inject', kind: 'inject-text', config: { text } }] })
 function fixture(id, source = {}) {
   const dir = join(moduleRoot, id)
@@ -83,15 +86,32 @@ test('运行切片按完整定义确定性恢复；纯读、合法源修改与�
   }
 })
 
-test('名单外文件不连坐读写、原地保留；名单内缺失仍从 module.yml 单向重建', () => {
-  const dir = fixture('unknown-files')
+test('名单外文件不连坐读写、原地保留；名单内缺失仍从 module.yml 单向重建', async () => {
+  const dir = fixture('unknown-files', { configOrder: { first: 0, second: 10 } })
+  fixture('unknown-files-peer', { configOrder: { first: 20, second: 30 } })
   ensureModuleSlices(dir)
+  for (const id of ['unknown-files', 'unknown-files-peer']) setModuleEnabled(moduleRoot, id, true)
+  const clean = await prepareAssembly(moduleRoot, 'unknown-files', () => true)
   const firstSlice = join(dir, 'rules', 'first.yml')
   const strangers = { 'lore.yml.bak': 'BACKUP OF OLD RULE', 'notes.md': '# user note' }
   for (const [name, text] of Object.entries(strangers)) writeFileSync(join(dir, 'rules', name), text)
   // 主路径：陌生文件不连坐纯读与规则事务，且原样保留。
   assert.deepEqual(readModuleRules(dir).rules.map(item => item.id), ['first', 'second'])
   assert.deepEqual(readRulesDir(dir).contents.map(item => item.id), ['first', 'second'])
+  // 缺陷最重的两处用户可见后果：全局拖拽排序曾整体抛错、新会话注入曾整批丢弃。
+  assert.deepEqual(
+    readModuleConfigOrder(moduleRoot).entries.map(({ moduleId, configId, sequence }) => [moduleId, configId, sequence]),
+    [['unknown-files', 'first', 0], ['unknown-files', 'second', 10], ['unknown-files-peer', 'first', 20], ['unknown-files-peer', 'second', 30]],
+    '陌生文件存在时全局排序仍读到全部启用模块且顺序正确',
+  )
+  const assembled = await prepareAssembly(moduleRoot, 'unknown-files', () => true)
+  const shape = prepared => ({
+    rules: prepared.rules.map(item => [item.id, item.enabled, item.sequence, item.actions.map(action => [action.id, action.kind, action.compiledConfig?.text])]),
+    modules: prepared.modules.map(module => module.id),
+  })
+  assert.equal(assembled.rules.length, 2)
+  assert.deepEqual(shape(assembled), shape(clean), '陌生文件存在时装配输入与无陌生文件时一致')
+  for (const [name, text] of Object.entries(strangers)) assert.equal(readFileSync(join(dir, 'rules', name), 'utf8'), text, `配装不碰陌生文件 ${name}`)
   const baseline = readModuleRules(dir)
   editModuleRules(dir, { expectedRevisions: baseline.revisions, edits: [{ previousId: 'first', rule: rule('first', 'EDITED') }] })
   for (const [name, text] of Object.entries(strangers)) assert.equal(readFileSync(join(dir, 'rules', name), 'utf8'), text, `陌生文件 ${name} 内容原样保留`)
