@@ -471,6 +471,63 @@ test('重复模块身份：跨模块同 rule id 且 dedupe=session 只告警一�
   assert.deepEqual(h.warnings, reported, `重装不新增告警：${JSON.stringify(h.warnings)}`)
 })
 
+test('kind 通道的压制行为：同模块同身份算已投递，无模块维的外来消息按保守命中', async (t) => {
+  // 上一轮把判据改成「模块 + 通道 + 身份」后，跨模块同身份不再互相压制（见上一条用例：T5
+  // 起两副本各自注入）。「压制」只剩两种形态，各用一个 Agent 钉一条：
+  // ① 同一模块内两卡撞同一显式 sourceKind：同模块才共享这份身份 → 宿主接纳后不再注入。
+  //    判重只看**已交付**的消息，同批候选不算，所以首轮两张都注入。
+  // ② 与当前上下文里无模块维的旧消息相撞：升级前注入的那条只有 kind、没有 source.moduleId，
+  //    判据按保守命中 → 不重复注入；换成别的模块的坐标则不算命中。两条都用第二个 Agent，
+  //    为的是让它们走「扫当前上下文」那条判据，而不是被同会话的已投递记账提前拦下。
+  const sameKind = 'plugin:shared-same-kind'
+  // 旧消息只带一个**别的生产者**的 plugin 名：能认出来的只剩显式 kind 通道。
+  const seed = (label, moduleId) => ({
+    id: `seed-${label}`, role: 'user', content: [{ type: 'text', text: 'OLD' }],
+    source: { kind: 'plugin:shared-legacy-kind', plugin: 'foreign-producer', ...(moduleId === undefined ? {} : { moduleId }) },
+  })
+  const event = (message, seq) => ({ type: 'user/message', seq, data: { message } })
+  writePreset('kind-suppression', {
+    modules: ['prompt-config-engine'],
+    promptConfigs: [
+      { id: 'same-kind-a', text: 'SAME-A', dedupe: 'session', sourceKind: 'shared-same-kind', position: 'after-user' },
+      { id: 'same-kind-b', text: 'SAME-B', dedupe: 'session', sourceKind: 'shared-same-kind', position: 'after-user' },
+      { id: 'legacy-kind-hit', text: 'LEGACY', dedupe: 'session', sourceKind: 'shared-legacy-kind', position: 'after-user' },
+    ],
+  })
+  const h = await liveAssembly(t, () => ['kind-suppression'])
+  const texts = (result) => result.messages.flatMap((message) => message.content.map(block => block.text))
+  const owned = (result) => result.messages.filter(message => message.source?.moduleId === 'kind-suppression')
+  // ① 宿主接纳一条注入消息的样子：写进持久事件流，再通知 session/event（已投递由此记账）。
+  const agent = await h.makeAgent('kind-suppression-agent')
+  await h.runtime.settled()
+  const admit = (message) => {
+    const events = agent.session.snapshotEvents()
+    events.push(event(message, events.length))
+    h.root.emit(scopeTarget(agent.session, agent), 'session/event', agent.session, events.at(-1))
+  }
+  const first = await h.inject(agent)
+  const same = first.messages.filter(message => message.content[0].text.startsWith('SAME-'))
+  assert.deepEqual(texts(first), ['USER', 'SAME-A', 'SAME-B', 'LEGACY'], '同批候选不算已投递，三张各注入一次')
+  assert.deepEqual(same.map(message => message.source.kind), [sameKind, sameKind], '撞的是同一条显式 kind 通道')
+  assert.deepEqual(same.map(message => message.source.moduleId), ['kind-suppression', 'kind-suppression'], '同模块才共享这份身份')
+  for (const message of owned(first)) admit(message)
+  assert.deepEqual(texts(await h.inject(agent)), ['USER'], '同模块同身份：接纳后不再注入')
+  // ② 两个 Agent 各放一条「升级前注入」的旧消息（无模块维），正文改写以排除按正文判重。
+  const inherited = await h.makeAgent('kind-suppression-inherited')
+  inherited.session.snapshotEvents().push(event(seed('inherited'), 0))
+  const skipped = await h.inject(inherited)
+  assert.equal(skipped.messages.some(message => message.content[0].text === 'LEGACY'), false,
+    '无模块维的旧消息按保守命中算已投递')
+  assert.deepEqual(texts(skipped), ['USER', 'SAME-A', 'SAME-B'], '只压掉撞身份的那一张，同模块其余卡照常')
+  // ③ 同一形态换成别的模块的模块维：身份字符串一样，但这一维不同 → 不算命中，照常注入。
+  const foreign = await h.makeAgent('kind-suppression-foreign')
+  foreign.session.snapshotEvents().push(event(seed('foreign', 'other-module'), 0))
+  const others = await h.inject(foreign)
+  assert.deepEqual(texts(others), ['USER', 'SAME-A', 'SAME-B', 'LEGACY'], '别的模块的同 kind 消息不压制本模块')
+  await h.runtime.dispose()
+  assert.deepEqual(h.warnings, [], '单模块内撞身份不告警：告警只报跨模块那一笔账')
+})
+
 test('热更新：空启用表到多模块、配置启停与拒绝后重试都更新同一个 Agent，重复刷新不重复注入', async (t) => {
   const { setModuleEnabled, enabledModuleIds } = await import('../../src/host/config-store.ts')
   for (const id of ['hot-a', 'hot-b']) writePreset(id, {
