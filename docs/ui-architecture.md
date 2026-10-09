@@ -679,7 +679,7 @@ world-book 视图只隐藏工具栏之外的列表主体之外的附加提示，
 | seam | 覆盖位置 |
 |---|---|
 | 引擎注入行为（插入点 / 时机 / 次数 / 受众） | `test/engine/*.test.mjs` |
-| 写盘产物语义 | `test/host/write-preset.test.mjs`、`test/host/preset-*.test.mjs`、`test/host/module-storage.test.mjs`、`test/host/preset-engine-managed-paths.test.mjs` |
+| 写盘产物语义 | `test/host/write-module.test.mjs`、`test/host/preset-*.test.mjs`、`test/host/module-storage.test.mjs`、`test/host/preset-engine-managed-paths.test.mjs` |
 | bridge 端点载荷 | `test/shared/bridge-contract.test.mjs`、`test/client/bridge-client.test.mjs`、`test/host/settings-bridge.test.mjs`、`test/host/*-bridge.test.mjs` |
 | 安全与拒绝路径 | `test/host/instructions-policy.test.mjs`、`test/host/instruction-scope-guard.test.mjs`、`test/host/skill-policy.test.mjs`、`test/host/preset-package-import.test.mjs`、`test/host/characters-protection.test.mjs`、`test/host/wave1-safety.test.mjs`、`test/host/text-file.test.mjs`、`test/engine/config-whitelist.test.mjs` |
 

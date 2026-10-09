@@ -11,7 +11,7 @@ import { configIdentityKey } from '../../src/shared/module-config-order.ts'
 const { moduleRoot } = isolatedHome('pt-config-order-')
 const { appendModuleConfigOrder, readModuleConfigOrder, saveModuleConfigOrder } = await import('../../src/host/module-config-order.ts')
 const { setModuleEnabled } = await import('../../src/host/config-store.ts')
-const { materializeModule } = await import('../../src/host/write-preset.ts')
+const { materializeModule } = await import('../../src/host/write-module.ts')
 const { promptConfigToRule } = await import('../../src/host/rule-builder.ts')
 
 function fixture(name, cards) {

@@ -5,7 +5,7 @@ import { parseDocument } from 'yaml'
 // @ts-expect-error 纯引擎校验与运行时共用。
 import { validateSubagentToolPolicy } from '../../engine/subagent-tool-policy-core.mjs'
 import { MODULES_DIR, MODULE_DEFINITION_FILE } from './paths.ts'
-import { DEFAULT_MODULE_ID } from '../shared/preset-ids.ts'
+import { DEFAULT_MODULE_ID } from '../shared/module-ids.ts'
 import type { ModuleWriterParams } from '../shared/engine-params.ts'
 import type { PromptConfigSpec } from './prompt-configs.ts'
 import { appendModuleConfigOrder } from './module-config-order.ts'

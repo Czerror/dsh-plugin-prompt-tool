@@ -11,7 +11,7 @@ import { registerWorldBookTools } from './runtime/world-book-tools.ts'
 import { registerSessionVarTools } from './runtime/session-var-tools.ts'
 import { installPreStepCoordinator } from './runtime/pre-step-coordinator.ts'
 import { registerTuiCommand } from './runtime/tui.ts'
-import { ensureModuleReady } from './host/write-preset.ts'
+import { ensureModuleReady } from './host/write-module.ts'
 import {
   ensureModuleSeed,
   moduleDirExists,
@@ -24,7 +24,7 @@ import {
 import type { PromptSettings, RuntimeOptions } from './config.ts'
 import { MODULES_DIR } from './host/paths.ts'
 import { enabledModuleIds, resolveEditDir } from './host/config-store.ts'
-import { DEFAULT_MODULE_ID } from './shared/preset-ids.ts'
+import { DEFAULT_MODULE_ID } from './shared/module-ids.ts'
 import { ensureSkillSeed } from './host/skills-actions.ts'
 import { createSkillsRuntime } from './host/skills-runtime.ts'
 import { createAgentAssembly } from './runtime/agent-assembly.ts'
@@ -247,9 +247,9 @@ registerTuiCommand(
 
 // 公共 API：宿主与测试复用 settings schema 与提示词配置权威校验。
 export { Config } from './config.ts'
-export { writePreset } from './host/write-preset.ts'
-export { ensureModuleReady, writeModule } from './host/write-preset.ts'
-export type { WriteModuleOptions } from './host/write-preset.ts'
+export { writePreset } from './host/write-module.ts'
+export { ensureModuleReady, writeModule } from './host/write-module.ts'
+export type { WriteModuleOptions } from './host/write-module.ts'
 // AGENTS 文件卡：探测 → 卡片合成与文件写盘（bridge 端点与回归测试共用）。
 export {
   agentsFileCardSpecs,
@@ -293,7 +293,7 @@ export { USER_SKILLS_DIR } from './host/paths.ts'
 export { importSkillsPackage } from './host/skills-import.ts'
 export { detectModels, invalidateModelCatalog, listAdvertisedModels, peekModelCatalog, resolveSubagentStartOptions } from './runtime/models.ts'
 export type { PluginSubagentSeam } from './runtime/models.ts'
-export type { WritePresetOptions } from './host/write-preset.ts'
+export type { WritePresetOptions } from './host/write-module.ts'
 export { registerSettingsBridge } from './runtime/settings-bridge.ts'
 export { registerCharacterTools } from './runtime/character-tools.ts'
 export { registerWorldBookTools } from './runtime/world-book-tools.ts'
@@ -337,4 +337,4 @@ export { MODULE_CAPABILITIES as ENGINE_CAPABILITIES, moduleCapability as engineC
 export type { ModuleCapability as EngineCapability } from './shared/engine-capabilities.ts'
 export { parseFrontmatter } from './runtime/skills-parse.ts'
 export type { SkillFrontmatter } from './runtime/skills-parse.ts'
-export { DEFAULT_MODULE_ID } from './shared/preset-ids.ts'
+export { DEFAULT_MODULE_ID } from './shared/module-ids.ts'

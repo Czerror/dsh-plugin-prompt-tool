@@ -5,7 +5,7 @@ import type { PromptToolTranslate } from '../../locales.ts'
 import { MenuSelect } from '../../ui/MenuSelect.tsx'
 import { SearchInput } from '../../ui/SearchInput.tsx'
 import { ToolSurfaceView } from './ToolSurfaceView.tsx'
-import { officialPresetSources } from './preset-sources.ts'
+import { officialPresetSources } from './official-preset-sources.ts'
 import css from './tools.module.css'
 
 /** 参考官方 plugin-inventory 的搜索、分组与详情卡；数据仍是模型工具面。 */
@@ -33,7 +33,7 @@ export function ToolsPreviewPage({ api, presetId, t, browse, onNavigate, onReady
     setError('')
     void Promise.resolve().then(() => api.listAgentPresets()).then((options) => {
       if (!active) return
-      // 只列可用项：缺组合文件的预设选中也读不出工具面（规则与回归测试同源，见 preset-sources.ts）。
+      // 只列可用项：缺组合文件的预设选中也读不出工具面（规则与回归测试同源，见 official-preset-sources.ts）。
       const available = officialPresetSources(options)
       setPresets(available)
       setSelectedId((current) => available.some((preset) => preset.id === current)

@@ -29,7 +29,7 @@ const {
 } = await import('../../src/host/prompt-configs.ts')
 const { Config, readModulesEnabled } = await import('../../src/config.ts')
 const { createPromptConfigs } = await import('../../engine/schema.mjs')
-const { writePreset } = await import('../../src/host/write-preset.ts')
+const { writePreset } = await import('../../src/host/write-module.ts')
 // 模板定位契约以打包目录 lib/ 为锚；其余行为直接覆盖当前源码。
 const { loadPromptTemplates } = await import('../../lib/index.mjs')
 const { planRulesMigration } = await import('../../src/host/rules-migration.ts')

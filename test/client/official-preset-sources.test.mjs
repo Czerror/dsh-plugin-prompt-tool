@@ -8,7 +8,7 @@
  */
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { officialPresetSources } from '../../src/client/features/tools/preset-sources.ts'
+import { officialPresetSources } from '../../src/client/features/tools/official-preset-sources.ts'
 
 test('已损坏的官方预设不进列表，可用项原样保留顺序（缺组合文件 ⇒ 选中也读不出工具面）', () => {
   const roster = [

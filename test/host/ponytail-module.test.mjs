@@ -7,7 +7,7 @@
 //      走 pre-step 上的动作级 if/then/else。
 //
 // 定义只有一份真值源：`module.yml`。`rules/` 切片由 `ensureModuleSlices` 在运行时生成，
-// 不随包分发；旧的 `configs/` 投影已列入 write-preset 的 `LEGACY_ARTIFACTS`（只删不生成），
+// 不随包分发；旧的 `configs/` 投影已列入 write-module 的 `LEGACY_ARTIFACTS`（只删不生成），
 // 因此这里不再有「投影不得成为第二真相」的断言面。
 //
 // 修规则文本时，只有「上游改了措辞」才动 UPSTREAM_ANCHORS；本地 DSH 适配

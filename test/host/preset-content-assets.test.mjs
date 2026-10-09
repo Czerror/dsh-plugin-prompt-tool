@@ -1,6 +1,6 @@
 // 合并自 worldbook.test.mjs(6) + custom-tools.test.mjs(7)
 //（2026-09-17 测试归一精简 Wave 2）。两者都要求「先设隔离 DSH_HOME 再加载被测模块」：
-// worldbook 走 lib 入口，custom-tools 直接验证 src/host/write-preset.ts 与 engine 源码
+// worldbook 走 lib 入口，custom-tools 直接验证 src/host/write-module.ts 与 engine 源码
 //（原注释：不依赖 lib/ 或 build），合并后两类 import 都保留在这一处。
 // 原 worldbook 缺 after 清理，这里统一登记还原与清理（不改变任何断言）。
 import { after, test } from 'node:test'
@@ -22,7 +22,7 @@ after(() => {
   rmSync(home, { recursive: true, force: true })
 })
 const { buildWorldBookEntry, deleteWorldBookEntry, listWorldBookEntries, upsertWorldBookEntry } = await import('../../lib/index.mjs')
-const { writePreset } = await import('../../src/host/write-preset.ts')
+const { writePreset } = await import('../../src/host/write-module.ts')
 const { apply } = await import('../../engine/tool-config-engine.mjs')
 
 // —— 世界书条目（原 worldbook.test.mjs） ——

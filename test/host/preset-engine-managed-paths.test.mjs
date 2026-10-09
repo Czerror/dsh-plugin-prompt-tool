@@ -5,7 +5,7 @@ import { join, basename } from 'node:path'
 import { isolatedHome } from '../fixtures/host-harness.mjs'
 
 const { moduleRoot } = isolatedHome('pt-module-write-')
-const writer = await import('../../src/host/write-preset.ts')
+const writer = await import('../../src/host/write-module.ts')
 const { prepareAssembly } = await import('../../src/runtime/agent-assembly.ts')
 
 function moduleDirectory(id, extra = {}) {

@@ -10,7 +10,7 @@ import { createRuleEditor, getRulesDraft, rulesDirty } from '../../src/client/da
 
 const { home, moduleRoot } = isolatedHome('pt-rules-bridge-')
 const { registerSettingsBridge } = await import('../../src/runtime/settings-bridge.ts')
-const { writePreset } = await import('../../src/host/write-preset.ts')
+const { writePreset } = await import('../../src/host/write-module.ts')
 const { compileRules } = await import('../../engine/rule-spec.mjs')
 let sequence = 0
 

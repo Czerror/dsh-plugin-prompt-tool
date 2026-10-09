@@ -653,7 +653,7 @@ test('热更新：空启用表到多模块、配置启停与拒绝后重试都�
 
 test('能力注册：私有工具服务与内联工具接入官方注册表，禁用后释放', async (t) => {
   const dir = writePreset('live-tools', { modules: ['character-tools', 'tool-config-engine'] })
-  const { writePreset: materialize } = await import('../../src/host/write-preset.ts')
+  const { writePreset: materialize } = await import('../../src/host/write-module.ts')
   writeFileSync(join(dir, 'module.yml'), JSON.stringify({
     id: 'live-tools', name: 'live-tools', modules: ['character-tools', 'tool-config-engine'],
     layerSettings: { 'agent-request': { modelTemperature: '0.25' } },
@@ -854,7 +854,7 @@ test('「独占」段唯一性：装配前拒绝两个生效 complete（含人�
 })
 
 test('导入候选与运行配装同源：完整定义经过 rules 切片后保持所有执行维度', async () => {
-  const { writePreset } = await import('../../src/host/write-preset.ts')
+  const { writePreset } = await import('../../src/host/write-module.ts')
   const id = 'materialized-slices'
   // 定义来源目录（writePreset 的模板解析基准：sourceDir 优先于同名已安装预设）。
   const sourceDir = join(moduleRoot, '.source-materialized', id)

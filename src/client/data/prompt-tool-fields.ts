@@ -2,7 +2,7 @@
 import { ENGINE_PARAM_DEFINITIONS, ENGINE_PARAM_KEYS, type EngineParamKey, type EngineParams } from '../../shared/engine-params.ts'
 import { RULE_OWNED_MODEL_PARAMS } from '../../shared/rules.ts'
 import { INJECTION_POINT_ORDER } from '../../shared/engine-capabilities.ts'
-import { DEFAULT_MODULE_ID } from '../../shared/preset-ids.ts'
+import { DEFAULT_MODULE_ID } from '../../shared/module-ids.ts'
 import type { SkillCatalogEntry } from '../../shared/skills.ts'
 import type { EngineMeta, PromptConfigDraft } from '../prompt-tool-types.ts'
 

@@ -3,7 +3,7 @@
 > 适用范围：模块规则、独立共享参数、版本事务、离线迁移与配置排序。
 > 规则契约：`src/shared/rules.ts`、`engine/rule-spec.mjs`、`engine/rule-runtime.mjs`。
 > 存储与迁移：`src/host/module-storage.ts`、`src/host/module-rules.ts`、`src/host/rules-migration.ts`。
-> 接线与物化：`src/runtime/settings-bridge.ts`、`src/host/write-preset.ts`、`src/runtime/agent-assembly.ts`。
+> 接线与物化：`src/runtime/settings-bridge.ts`、`src/host/write-module.ts`、`src/runtime/agent-assembly.ts`。
 
 ## 部署设置与编辑目标
 
@@ -51,7 +51,7 @@ Config 的规范键是 `modulesEnabled`，表示模块运行总闸。旧 `writeP
 | 规则事务 | `host/module-rules.ts` | 按操作校验正文／状态版本、局部 edits、显式启用互斥、改名与删除同步 configOrder |
 | 参数守卫 | `shared/param-keys.ts`、`shared/rules.ts`、bridge | 先拒绝已归规则的旧键，再校验共享参数；不靠键名推断模板变量 |
 | 存储层 | `host/manifest.ts`、`host/module-layer-settings.ts` | `loadModuleSpec`（layerSettings → 内部平铺值）、`saveModuleParams`（平铺值 → 所属层；空值删键）、`buildModuleConfigsFromParams`（参数桥）、`renderComposition`（参数桥 > moduleConfigs > 行默认） |
-| 切片与候选 | `host/module-storage.ts`、`host/write-preset.ts` | `ensureModuleSlices` 校验恢复；`commitModuleDefinition` 提交完整定义；`writeModule` 为导入建立隔离候选，普通重建原地保留资产 |
+| 切片与候选 | `host/module-storage.ts`、`host/write-module.ts` | `ensureModuleSlices` 校验恢复；`commitModuleDefinition` 提交完整定义；`writeModule` 为导入建立隔离候选，普通重建原地保留资产 |
 | 排序层 | `host/module-config-order.ts` | 读配置身份和版本、启用时尾部追加、按身份重排并写回各模块 `configOrder` |
 | 装配层 | `index.ts`、`runtime/agent-assembly.ts` | 运行总闸、按启用集合挂载贡献、按配置序号排序与释放 |
 | 接线层 | `runtime/settings-bridge.ts` | `/rules` 规则事务、`/param-overrides` 共享参数与独立变量、`/module-config-order` 身份顺序 |
@@ -511,6 +511,6 @@ buildSubagentToolParameters(c)     → 模型可见扩展参数 Schema
 
 完整模块导入使用 `writeModule` 的 `sourceDir + stageOnly`：隔离暂存根下使用合法目标 id，完成定义、工具和附件校验，再复检目标版本并 rename 交换。普通 `materializeModule` 原地恢复切片，不重建整个用户目录；记忆、未知资产、技能及正文保留。详见 [资产交换](asset-transfer.md) 与 [ADR-0008](adr/0008-module-slices-memory-assembly.md)。
 
-- `test/host/write-preset.test.mjs`：规则物化与模型请求动作保持；旧源拒绝与显式离线转换；变量只读顶层 variables，保留空串与同名键，清空后不回退旧 params。
+- `test/host/write-module.test.mjs`：规则物化与模型请求动作保持；旧源拒绝与显式离线转换；变量只读顶层 variables，保留空串与同名键，清空后不回退旧 params。
 - `test/host/module-rules.test.mjs` 与 `rules-migration.test.mjs`：局部事务、改名／删除保序、显式互斥、CAS、坏结构、离线原字节回滚及业务空值行为。
 - `test/host/module-config-order.test.mjs` 与 bridge 契约：尾部追加、身份排序、版本拒绝与正文不变；引擎装配回归验证跨模块交错次序。

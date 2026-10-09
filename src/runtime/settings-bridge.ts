@@ -64,7 +64,7 @@ import { moduleParamFallbacks, validateEngineParamValues } from '../shared/engin
 import { readPersonaSpec } from '../shared/persona-section.ts'
 import { SKILL_NAME_PATTERN, type SkillsStateRead } from '../host/skills-config.ts'
 import { withGlobalSkillFallback, withSkillWinners } from '../host/skills-scan.ts'
-import { DEFAULT_MODULE_ID } from '../shared/preset-ids.ts'
+import { DEFAULT_MODULE_ID } from '../shared/module-ids.ts'
 import { ENGINE_EDITOR_GROUP_MAP, type ModuleFacts } from '../shared/engine-capabilities.ts'
 import { validateCustomTools } from '../host/custom-tools.ts'
 import {

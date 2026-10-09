@@ -64,7 +64,7 @@ export type ModuleWriterParams = Partial<EngineParams & LegacyPromptParams>
 export type PresetWriterParams = ModuleWriterParams
 
 /**
- * 数值型引擎参数保存前校验（与 write-preset.modelRequestConfigs 消费规则同源）。
+ * 数值型引擎参数保存前校验（与 write-module.modelRequestConfigs 消费规则同源）。
  * 保存层响亮失败（400 逐字段错误），渲染层保持宽容（never-brick）：
  *   - 布尔键：必须是 boolean；
  *   - 数值键（temperature / maxTokens / 字符数）：'' = 合法（删键回落默认）；

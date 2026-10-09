@@ -16,7 +16,7 @@ const {
   renderComposition,
   DEFAULT_MODULE_ID,
 } = await import('../../lib/index.mjs')
-const { writePreset } = await import('../../src/host/write-preset.ts')
+const { writePreset } = await import('../../src/host/write-module.ts')
 const { mergePromptConfigs } = await import('../../src/host/prompt-configs.ts')
 
 test('validateEngineParamValues：全量类型校验（布尔/数值/字符串/列表/枚举）', () => {
