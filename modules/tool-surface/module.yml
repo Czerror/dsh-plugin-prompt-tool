@@ -41,12 +41,6 @@ rules:
   - id: tool-surface-resident
     name: 工具面收窄（核心文件与任务集）
     enabled: true
-    # 两种收窄模式**同组互斥**（用现成的 group/exclusive，不另造机制）：
-    #   resident = 装配裁剪 + `allowFrom` 动态解锁（本项目特色，默认）
-    #   static   = 官方 `ctx.tools.restrict()` 静态收窄（被裁工具**执行层也拒绝**）
-    # 同组最多一条启用，多启用是编译期拒绝（engine/rule-spec.mjs）。
-    group: tool-surface-mode
-    exclusive: true
     then:
       - id: narrow-tools
         kind: assembly
@@ -66,34 +60,6 @@ rules:
             # 解锁项从 dev_tool_search 的持久调用参数回收（{ tool, key } 精确匹配）。
             allowFrom: { tool: dev_tool_search, key: toolNames }
             requireMatch: true
-  # 模式二：官方 `ctx.tools.restrict()`。与 resident **同组互斥**（二选一），默认停用。
-  #
-  # 换来的：被裁掉的全局工具**在执行层也拒绝**（`tools.get(name, scope)` 读作不存在），
-  # 不必再另配 guard 去守执行面。
-  # 代价（都在下面这条注释里，别漏）：
-  #   · `restrict` 只作用于**继承的全局工具**——本插件的 `dev_tool_search` / `skill_search` /
-  #     自定义工具 / 角色卡、世界书、会话变量工具都注册在 agent scope，**一个都裁不掉**；
-  #   · 它会砍掉 `ctx.tools.schemas(agent)` 的视野 → `dev_tool_search` 只剩已解锁项可见，
-  #     **搜索不再覆盖全量目录**，所以这两种模式才是二选一而不是叠加。
-  - id: tool-surface-static
-    name: 工具面收窄（restrict 静态）
-    enabled: false
-    group: tool-surface-mode
-    exclusive: true
-    then:
-      - id: narrow-tools-static
-        kind: tool-narrow
-        allow:
-          - pwsh
-          - read
-          - write
-          - edit
-          - glob
-          - grep
-          - todo_write
-          - skill_search
-          - skill_load
-          - dev_tool_search
   # 首轮告诉模型「工具面被裁过、缺能力来这里解锁」。为什么必须由规则补这一句：
   # dev_tool_search 自己的描述只说「不在常驻集里的工具用它发现」——方向是「已经来了怎么用」，
   # 模型看不到那 154 个工具、也就想不到该来。本条与收窄规则的 `dedupe`/`if` 双保险：
@@ -131,5 +97,4 @@ rules:
             callable from the next model request on.
 configOrder:
   tool-surface-resident: 90
-  tool-surface-static: 100
   tool-surface-notice: 110
