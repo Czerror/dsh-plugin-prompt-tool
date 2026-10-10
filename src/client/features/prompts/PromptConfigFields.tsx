@@ -30,7 +30,7 @@ const SELECTIVE_LOGIC_LABEL_KEYS: Record<string, PromptToolLocaleKey> = {
 /**
  * 层专属实例字段的键清单（与 engine/layers.mjs 的真实消费一一对应）：
  * 末尾的 JSON 兜底按此剔除已结构化的键，同一取值不会同时出现两份输入。
- * tool-pipeline 不在此表：它已无注入通道，params 只作离线迁移输入。
+ * tool-pipeline 不在此表：它已无注入通道，params 只作历史数据保留。
  * turn-stop（续跑上限是引擎常量）没有可写实例字段，只拿到只读说明。
  */
 const LAYER_PARAM_KEYS: Record<string, readonly string[]> = {

@@ -10,7 +10,7 @@
 #   `if (!enabled || templateOf(source, 'messageTemplate').trim().length === 0) return`
 # 而本行此前只配了 enabled/promoteOn/includeSubagents —— 于是把开关打开**不注册任何
 # 转换**：配置合法、零效果、零报错（与 count.delegated 的静默失效同类）。模板正文取自
-# templates/policies/legacy-defaults.yml#instructionHint，与 rules-migration.ts:102
+# templates/policies/legacy-defaults.yml#instructionHint（旧填充器的默认模板）
 # 的迁移默认值同源；两处必须一致，否则「迁移进来的定义」与「新装的组合源」行为分叉。
 # legacy-defaults.yml 自身标注「引擎运行时不得读取」，所以这里必须是实体而非引用。
 #

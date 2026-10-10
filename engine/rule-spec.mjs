@@ -1,4 +1,4 @@
-/** module.yml.rules 的唯一运行时编译入口。旧声明仅由离线迁移器读取。 */
+/** module.yml.rules 的唯一运行时编译入口。 */
 import { ACTION_KINDS, actionExecutionPoint, prepareAction, validateActionOptions } from './actions/index.mjs'
 // 字段清单与动作声明同住 `actions/catalog.mjs`（`actions/index.mjs` 不再导出新面）。
 import { ACTION_FIELDS } from './actions/catalog.mjs'

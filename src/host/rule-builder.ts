@@ -1,4 +1,4 @@
-/** 提示词配置 → 规则的纯构造函数：外部导入（SillyTavern / 角色卡 / 世界书）与离线迁移共用，运行时不调用。 */
+/** 提示词配置 → 规则的纯构造函数：外部导入（SillyTavern / 角色卡 / 世界书）与卡片创建共用，运行时不调用。 */
 import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { parseDocument } from 'yaml'
@@ -13,7 +13,7 @@ import { isFixedRegistration } from '../../engine/rule-spec.mjs'
 const record = (value: unknown): value is Record<string, unknown> => value !== null && typeof value === 'object' && !Array.isArray(value)
 const condition = (items: RuleCondition[]): RuleCondition | undefined => items.length === 0 ? undefined : items.length === 1 ? items[0] : { all: items }
 
-/** 旧业务参数快照的读取与补全：转换与离线迁移共用（迁移侧还要用它补旧条件默认与指令提示策略）。 */
+/** 旧业务参数快照的读取与补全：ST／角色卡导入的旧填充器需要它补旧条件默认与指令提示策略。 */
 export interface LegacyPolicyDefaults {
   fillers: { envFacts: { text: string }; skillCatalog: { text: string; params: Record<string, unknown> } }
   instructionHint: Record<string, string>

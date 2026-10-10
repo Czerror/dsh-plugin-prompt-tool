@@ -16,7 +16,6 @@ import { registerAction } from '../../engine/actions.mjs'
 import { SDK_SECTION_NAME, sdkToolNames } from '../../engine/sdk-strip.mjs'
 import { applyAgentRequestParams } from '../../engine/layers.mjs'
 import { createPromptConfigs } from '../../engine/schema.mjs'
-import { compileDeclarations, mountDeclarations } from '../../engine/trigger-spec.mjs'
 
 /** 记录型 ctx 桩：记录 ctx.on 的通道、注册的服务调用与 effect 释放。 */
 function recordingCtx(services = {}) {
@@ -136,34 +135,6 @@ test('动作声明 fail loud：名单形状错误、名单为空、名单命名 
 })
 
 // ───────────────────────── 二、与既有实现逐条对拍 ─────────────────────────
-
-test('(1) 纯数据声明：编译、挂载后实际注入正文，并遵守条件、受众与批次去重', async () => {
-  const recorder = recordingCtx()
-  const declaration = {
-    id: 'declared-text', channel: 'agent/pre-step',
-    then: { kind: 'inject-text', config: {
-      id: 'notice', layer: 'pre-step', text: 'HELLO {{who}}', variables: { who: 'WORLD' },
-      audience: 'main', dedupe: 'batch', match: { keys: ['RUN'] },
-    } },
-  }
-  const dispose = mountDeclarations(recorder.ctx, compileDeclarations([declaration]))
-  const handler = only(recorder.events, 'agent/pre-step')
-  const run = async (text, depth = 0) => {
-    const user = { id: 'u', role: 'user', content: [{ type: 'text', text }], source: { kind: 'user' } }
-    return handler({ agent: agent(depth), messages: [user] }, () => ({ kind: 'enter', messages: [user] }))
-  }
-  assert.equal((await run('SKIP')).messages.length, 1)
-  assert.equal((await run('RUN', 1)).messages.length, 1)
-  const result = await run('RUN')
-  assert.equal(result.messages.length, 2)
-  assert.equal(result.messages[1].content[0].text, 'HELLO WORLD')
-  const repeated = await handler({ agent: agent(), messages: result.messages }, () => result)
-  assert.equal(repeated.messages.length, 2, '已含本配置的批次不重复注入')
-  assert.deepEqual(recorder.warnings, [])
-  assert.equal(Object.hasOwn(declaration.then.config, 'resolve'), false, '编译不得把运行时函数写回声明')
-  dispose()
-  assert.deepEqual(recorder.events, [])
-})
 
 test('(2) 改装配 tools：名单裁剪（deny / allow / 空名单）', async () => {
   // B7 T3：原 `tool-filter` 模块已删除，本用例不再与它逐条对拍；期望值是按名单语义

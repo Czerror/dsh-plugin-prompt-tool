@@ -229,7 +229,7 @@ export async function installModulePackage(root: string, files: AssetFile[], req
       setModuleDefinitionId(doc, preview.summary.targetId)
       doc.set('name', preview.summary.targetName)
       writeFileSync(join(source, MODULE_DEFINITION_FILE), doc.toString(), 'utf8')
-      // 正文归 module.yml；preset.md 随包作资源落盘，供离线迁移读取。
+      // 正文归 module.yml；preset.md 随包作资源落盘（旧资产，保留不解析）。
       generated = writeModule({
         modulesRoot: root, moduleId: preview.summary.targetId, targetModuleId: preview.summary.targetId,
         sourceDir: source, stageOnly: true,

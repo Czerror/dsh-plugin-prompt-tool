@@ -2,7 +2,7 @@
 
 > 适用范围：模块规则、独立共享参数、版本事务、离线迁移与配置排序。
 > 规则契约：`src/shared/rules.ts`、`engine/rule-spec.mjs`、`engine/rule-runtime.mjs`。
-> 存储与迁移：`src/host/module-storage.ts`、`src/host/module-rules.ts`、`src/host/rules-migration.ts`。
+> 存储与过滤：`src/host/module-storage.ts`、`src/host/module-rules.ts`、`src/host/module-layer-settings.ts`。
 > 接线与物化：`src/runtime/settings-bridge.ts`、`src/host/write-module.ts`、`src/runtime/agent-assembly.ts`。
 
 ## 部署设置与编辑目标
@@ -39,7 +39,7 @@ Config 的唯一键是 `modulesEnabled`，表示模块运行总闸。关闭只�
 | 指令提示 | `instructionHint` | 官方指令消息过滤后的可选转换 |
 | 工具 | `toolGitBashEnabled`、`customToolRequireApproval` | 插件 Git Bash 开关与自定义执行器批准要求 |
 
-旧快捷键与模型键的类型目录仅服务旧数据校验、显式导入转换和离线迁移；目录中仍能识别一个键，不代表新模块允许写入该键。新 `/param-overrides` 拒绝规则、模型和旧快捷参数载荷，规则只走 `/rules`。`strReplaceEditorMaxOutputChars` 已退出插件参数面，编辑器输出限制归宿主工具所有。
+旧快捷键的类型目录只服务**写入侧拒绝**与旧数据识别；目录中仍能识别一个键，不代表模块允许写入该键，也不代表加载时会读取它（加载按 `ENGINE_PARAM_LAYERS` 白名单过滤）。`/param-overrides` 接受全部 14 个共享参数（含模型键），旧快捷参数载荷被拒绝。`strReplaceEditorMaxOutputChars` 已退出插件参数面，编辑器输出限制归宿主工具所有（写在 `layerSettings` 里会被过滤，不报错）。
 
 ## 1. 分层与职责
 
@@ -508,6 +508,6 @@ buildSubagentToolParameters(c)     → 模型可见扩展参数 Schema
 
 完整模块导入使用 `writeModule` 的 `sourceDir + stageOnly`：隔离暂存根下使用合法目标 id，完成定义、工具和附件校验，再复检目标版本并 rename 交换。普通 `ensureModuleReady` 原地恢复切片，不重建整个用户目录；记忆、未知资产、技能及正文保留。详见 [资产交换](asset-transfer.md) 与 [ADR-0008](adr/0008-module-slices-memory-assembly.md)。
 
-- `test/host/write-module.test.mjs`：规则物化与模型请求动作保持；旧源拒绝与显式离线转换；变量只读顶层 variables，保留空串与同名键，清空后不回退旧 params。
-- `test/host/module-rules.test.mjs` 与 `rules-migration.test.mjs`：局部事务、改名／删除保序、显式互斥、CAS、坏结构、离线原字节回滚及业务空值行为。
+- `test/host/write-module.test.mjs`：规则物化与模型请求动作保持；旧参数键不被读取、含旧内容的模块照常加载；变量只读顶层 variables，保留空串与同名键，清空后不回退旧 params。
+- `test/host/module-rules.test.mjs`：局部事务、改名／删除保序、显式互斥、CAS、坏结构与旧内容的白名单加载。
 - `test/host/module-config-order.test.mjs` 与 bridge 契约：尾部追加、身份排序、版本拒绝与正文不变；引擎装配回归验证跨模块交错次序。

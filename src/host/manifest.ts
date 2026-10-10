@@ -66,17 +66,17 @@ export interface ModuleSpec {
   customTools?: unknown[]
   /** 子代理实例级工具策略（subagentToolPolicy 顶层领域段；缺省 = 官方 delegation 行为）。 */
   subagentToolPolicy?: Record<string, unknown>
-  /** @deprecated 仅标记旧导入形状；loadModuleSpec 拒绝，须先离线迁移。 */
+  /** @deprecated 旧导入形状；未注册字段按白名单过滤，不参与执行。 */
   triggers?: unknown[]
   /** 模板变量插值开关（缺省 true = 启用；false = 停用，writeModule 不生成变量文件）。 */
   variablesEnabled?: boolean
   /** ST 世界书递归总开关（缺省 false = 不递归，对齐 ST `world_info_recursive`）：装配期传给 `compileRules`。 */
   stWorldBookRecursive?: boolean
-  /** @deprecated 仅标记旧导入形状；loadModuleSpec 拒绝，须先离线迁移。 */
+  /** @deprecated 旧导入形状；未注册字段按白名单过滤，不参与执行。 */
   promptConfigs?: unknown[]
   /** 配置卡的持久文件序号；跨模块UI排序只改此轻量元数据。 */
   configOrder?: Record<string, number>
-  /** 模块唯一的条件→动作定义；旧源只供离线迁移器读取。 */
+  /** 模块唯一的条件→动作定义；旧 `triggers` 声明不再被读取。 */
   rules?: RuleDefinition[]
   /** 可选:引擎组合模块行参数直写(行级 map config 浅合并;参数桥未覆盖的键生效,参数桥优先)。 */
   moduleConfigs?: Record<string, Record<string, unknown>>

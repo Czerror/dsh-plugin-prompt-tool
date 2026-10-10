@@ -84,7 +84,7 @@ function installWriterModule(id) {
   return dir
 }
 
-test('公共重建入口：已离线迁移规则逐模块重建，不串用模块正文', async () => {
+test('公共重建入口：规则逐模块重建，不串用模块正文', async () => {
   const dirs = ['writer-a', 'writer-b'].map(installWriterModule)
   for (const id of ['writer-b', 'writer-a']) ensureModuleReady(id, { modulesRoot: join(home, '.prompt-tool', 'modules') })
   for (const [index, id] of ['writer-a', 'writer-b'].entries()) {
@@ -427,7 +427,7 @@ test('writeModule 用户副本缺组合源时拒绝，不回退包内同名模�
   }
 })
 
-test('R3 离线迁移后的规则保留作者定义，只有显式规则事务才能改写', () => {
+test('R3 规则保留作者定义，只有显式规则事务才能改写', () => {
   const dir = join(tmpdir(), `prompt-tool-preserve-${process.pid}-${Date.now()}`)
   /** 安装夹具，并按作者定义补一条子代理模型参数规则（用于验证显式删除路径）。 */
   const install = (moduleDir) => {

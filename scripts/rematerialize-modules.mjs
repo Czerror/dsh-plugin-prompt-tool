@@ -3,7 +3,7 @@
  * rematerialize-modules.mjs — 从完整 module.yml 原地恢复 rules/ 切片，清理已退役产物。
  * 已有模块原地校验，不交换目录，不重写用户正文、记忆或其他资产。
  *
- * 缺少 modules/composition 的定义跳过；旧规则格式需要显式离线迁移。
+ * 缺少 modules/composition 的定义跳过；旧规则格式按白名单加载（旧内容不参与执行）。
  *
  * 用法：
  *   node scripts/rematerialize-modules.mjs [--dsh-home <dir>] [--dry-run]

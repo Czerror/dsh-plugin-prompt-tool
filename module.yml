@@ -16,7 +16,7 @@ engineCompat: ">=0.7.2"
 modules:
   # 仅启用规则引擎。其他能力保持 opt-in；写入其已登记参数后会自动补齐装配。
   # 可用模块（engine/compositions 下的文件名）：character-tools, filesystem-editor, instruction-hint, persistent-shell-posix, rule-engine, run-code-env, session-var-tools, skill-search, subagent-tool-policy, tool-bash-disabled, tool-config-engine, tool-git-bash, tool-search, world-book-tools
-  # 不可写入 modules 的退役名：prompt-config-engine, declared-triggers（写进即 409 rules-migration-required）。
+  # 已退役的引擎名（写进 modules 会被跳过）：prompt-config-engine, declared-triggers。
   # 人设使用顶层 persona；不存在 persona、code-presentation、cot-drip 等已撤销模块别名。
   - rule-engine
 layerSettings:

@@ -11,7 +11,7 @@ import { compileRules } from '../engine/rule-spec.mjs'
 
 const root = new URL('../', import.meta.url)
 const output = new URL('module.yml', root)
-/** 组合行文件仍在（旧数据校验与离线迁移要读），但写进 modules 会被 409 rules-migration-required 拒绝。 */
+/** 退役引擎名：写进 modules 会被装配跳过（白名单过滤），不再有任何引擎文件与之对应。 */
 const RETIRED_MODULE_NAMES = new Set(['prompt-config-engine', 'declared-triggers'])
 /** 只有本地源目录：官方切块已随「与预设彻底解耦」清理，`library/` 不再存在。 */
 const moduleNames = readdirSync(new URL('engine/compositions/source/local/', root))
@@ -34,7 +34,7 @@ doc.commentBefore = ` dsh-plugin-prompt-tool — 全参数 module.yml 模板（�
  指令文件正文和指令策略不放在本文件；不得将用户 AGENTS.md/CLAUDE.md 正文复制进来。`
 doc.get('modules', true).commentBefore = ` 仅启用规则引擎。其他能力保持 opt-in；写入其已登记参数后会自动补齐装配。
  可用模块（engine/compositions 下的文件名）：${moduleNames.join(', ')}
- 不可写入 modules 的退役名：${[...RETIRED_MODULE_NAMES].join(', ')}（写进即 409 rules-migration-required）。
+ 已退役的引擎名（写进 modules 会被跳过）：${[...RETIRED_MODULE_NAMES].join(', ')}。
  人设使用顶层 persona；不存在 persona、code-presentation、cot-drip 等已撤销模块别名。`
 doc.get('layerSettings', true).commentBefore = ' 唯一共享参数磁盘位置。按下方参考取消所需注释，不要复制旧 params/model/subagentModel 段。'
 doc.get('variables', true).commentBefore = ' 模块内容变量；与共享参数、每条规则的 variables 都是独立命名空间。空字符串是合法占位值。'

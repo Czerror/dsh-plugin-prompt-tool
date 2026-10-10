@@ -129,11 +129,13 @@ src/client/
 
 | 分类 | 键 |
 |---|---|
+| 模型路由 | `modelProvider` `modelName` `subagentModelProvider` `subagentModelName`（写 `layerSettings` 的 agent-request / subagent-start，装配期转成请求补丁；官方会话模型另由「当前会话模型」选择器管理） |
+| 模型采样 | `modelReasoningEffort` `modelTemperature` `modelMaxTokens` `subagentReasoningEffort` `subagentTemperature` `subagentMaxTokens`（空值 = 不设置，继承宿主） |
 | 策略深度 | `maxDepth`，只约束已启用的插件子代理工具策略；普通官方委派由宿主管理 |
 | 指令提示 | `instructionHint`，默认关闭 |
 | 工具 | `toolGitBashEnabled` `customToolRequireApproval` |
 
-以上共 4 个公开共享参数。模型参数属于 `request-params` 动作，主／子代理由条件区分；旧模型键与 15 个锚定／引导快捷键只供离线迁移读取，不再提供在线保存入口。无法等价承接的旧值明确拒迁，不丢弃也不静默激活。编辑器输出上限 `strReplaceEditorMaxOutputChars` 由宿主工具配置负责。
+以上共 14 个公开共享参数（`ENGINE_PARAM_DEFINITIONS` 是唯一权威）。规则级 `request-params` 动作仍可写同一批模型键，两者并存时按动作顺序合并。15 个锚定／引导旧快捷键与旧 `promptConfigs` **不再被读取**：加载时按白名单过滤，写入时被拒绝，旧内容不参与执行。
 
 > 首轮工具面与输出封顶、pre-step 来源名单、常驻工具白/黑名单、锚句、深思门与进度节拍通过 `rules` 声明（示例见 [engine 复用指南](docs/engine-reuse.md)）；子代理工具面仍由 `subagentToolPolicy` 实例策略授权。
 
