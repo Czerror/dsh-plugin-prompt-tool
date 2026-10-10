@@ -10,6 +10,7 @@
 
 ### 主要变化
 
+- **`dev_tool_search` 现在会主动招呼模型来解锁**：工具描述新增一条 IMPORTANT——任务需要常驻集以外的能力（web 搜索、子代理、任务板、MCP 等）时先来这里搜索并解锁，**不要用现有工具硬凑**；同时内置 `tool-surface` 模块新增 `tool-surface-notice` 规则，在会话最早阶段（`count{user-message,max:1}` + `dedupe: session`）注入一条约 500 字符的「工具面已收窄」提示。此前模型只看到被裁后的目录，没有任何线索提示它还有 154 个工具可解锁。
 - **内置 `tool-surface` 模块改为「打开即收窄」**：规则省略 `if`（= 无条件生效），不再等 `promoted` 才收窄——此前首轮（未晋升且未压缩）刻意放行完整目录，收窄要到模型第一次 `tool/call` 或 `assistant/message` 之后才生效，那几轮多付一次完整工具面（实测 46894 字符），且收窄生效的当轮会以「工具已更新 · 移除 N 个」出现在会话流里。代价是模型第一轮就以核心集开局，需要先调一次 `dev_tool_search` 才能解锁目标工具（解锁在**下一步模型请求**即可见，不必等一整轮）。需要旧的渐进语义时给规则加回 `if: { any: [phase{promoted: true}, phase{compacted: true, promoted: false}] }`；`templates/80-tool-surface.yml` 与 `docs/engine-reuse.md` 同步。
 - **动作级 `if` / `then` / `else` 与嵌套分支在六个执行点一致按条件生效**（`system-section` / `runtime-context` 的文本贡献、`agent-request`、`llm-stream`、`turn-stop`、`subagent-start`、`subagent-end`），与 `pre-step` 行为一致：此前这些点按规则级 `if` 判定，`else` 与嵌套分支等于无条件执行；`system-section` / `runtime-context` 上只写动作级 `if` 的配置，也从无条件注入变为按条件注入。
 - **同模块多条续跑动作共享一份预算**：`append-context`（`mode: continue`）与 `turn-stop` 不再各占一份——同模块每轮合计 1 次、每会话合计 3 次；此前两条续跑动作会让同一轮连跑 2–3 次。

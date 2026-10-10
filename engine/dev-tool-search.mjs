@@ -164,7 +164,7 @@ export function apply(ctx) {
       '- `toolNames` — unlock exact names. Unlocked tools appear from the NEXT request on and stay unlocked for the session.',
       '',
       'Example: dev_tool_search({"query":"pull request","toolNames":["mcp__github__create_pull_request"]}) — search AND unlock in one call.',
-      'IMPORTANT: an empty search result does NOT mean the tool does not exist — it only means no tool matched your keywords. Call with no arguments to see the catalog groups, then unlock by exact name.',
+      'IMPORTANT: if the task needs a capability outside that resident set — web search, subagents, task boards, MCP servers, anything not listed above — search for it here and unlock it. Do NOT make do with a resident tool when the tool you actually need is merely locked; an empty search result does NOT mean the tool does not exist, it only means no tool matched your keywords. Call with no arguments to see the catalog groups, then unlock by exact name.',
     ].join('\n'),
     parameters: toJsonSchema({
       query: { type: 'string', required: false, description: 'search keywords (e.g. "web", "subagent", "github")' },

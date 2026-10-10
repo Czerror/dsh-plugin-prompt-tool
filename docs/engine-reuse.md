@@ -194,6 +194,19 @@
   需要旧的渐进语义时把 `if` 加回来。
 - **`dev_tool_search` 在常驻集里**，所以收窄之后模型始终有发现入口；`allow` 漏掉它会让
   解锁通道彻底断开。
+- **收窄之后要有一条首轮提示，模型才会主动来解锁**（2026-10-10 用户拍板「两者都加」）：
+  `dev_tool_search` 自己的描述只说「不在常驻集里的工具用它发现」——方向是「已经来了怎么用」，
+  而收窄之后模型**看不到**被裁掉的那些工具，默认行为是用现有工具硬凑。提示落在内置模块的
+  `tool-surface-notice` 规则（`inject-text`，`pre-step`、`dedupe: session`、
+  `if: { count: { of: 'user-message', max: 1 } }`）：`if` 限制在会话最早阶段
+  （中途启用模块时历史用户消息已 >1，不会补注），`dedupe` 再按「每当前上下文一次」兜一层。
+  这条只在 `module.yml` 里存在——`templates/*.yml` 是**单条规则对象**，两者规则条数因此不同，
+  由 `test/host/surface-modules.test.mjs` 钉住。
+- **`inject-text` 的 `sourceKind` 不要写裸值**：schema 会把非 `plugin:` 开头的声明归一成
+  `plugin:<声明>`，所以 `sourceKind: plugin` 编成 `plugin:plugin`——所有这么写的配置共用一份
+  身份，`dedupe` 与「已投递」判定一起静默失效（实测：首轮提示每步重复注入）。省略该键即按
+  `plugin:<配置 id>` 生成；确需自定义身份就写完整的 `plugin:<owner>`。哨兵断言在
+  `test/engine/tool-surface-notice.test.mjs`。
 - `requireMatch: true` 是必配：任一 `allow` 工具缺失（含模型解锁了一个不存在的名字）就放弃
   裁剪、暴露完整目录。宁可多给上下文，也不静默裁成空目录。
 - **与已退场的 `tool-bootstrap` 原型的差别**：那份只**在受控相位**收窄、晋升后放开，且没有

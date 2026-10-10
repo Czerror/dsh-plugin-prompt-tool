@@ -31,6 +31,9 @@
 # **已存在的普通注册**之外，同点内声明之间仍按 `channelOrder` → 模块 id → 规则声明序排；
 # `assembly` 的改写发生在通道下游结算之后。模块层的出口已退役（写进 `modules` 或定义顶层
 # 即 409），需要本插件自己的最外层监听时只能回到插件侧声明。
+# 本模板只承载**核心收窄规则**（`templates/*.yml` 是单条规则对象）；首轮那条约 500 字符的
+# 「工具面已收窄」提示归内置模块 `modules/tool-surface/module.yml` 的 `tool-surface-notice`——
+# 那条只在模块形态里存在，两者因此**规则条数不同**，漂移由 test/host/surface-modules.test.mjs 钉住。
 id: tool-surface-resident
 name: 工具面收窄（核心文件与任务集）
 enabled: true

@@ -70,12 +70,28 @@ test('内置模块 tool-surface：allowFrom 与 dev-tool-search 写入端同名�
   }
 })
 
+test('内置模块 tool-surface：首轮提示规则只在模块形态里，条件与注入正文逐项钉住', () => {
+  // `templates/*.yml` 是**单条规则对象**（种子），所以这条提示只能活在 module.yml 里；
+  // 两处因此规则条数不同——正是这个测试存在的理由。
+  assert.notEqual(toolSurface.rules.length, toolTemplate.rules?.length, '模板不得是规则数组')
+  const notice = toolSurface.rules.find((rule) => rule.id === 'tool-surface-notice')
+  assert.ok(notice !== undefined, '模块必须带首轮提示规则')
+  assert.equal(notice.enabled, true)
+  assert.deepEqual(notice.if, { count: { of: 'user-message', max: 1 } }, '只在会话最早阶段注入')
+  const inject = notice.then.find((action) => action.kind === 'inject-text')
+  assert.ok(inject !== undefined, '提示走 inject-text')
+  assert.equal(inject.config.layer, 'pre-step')
+  assert.equal(inject.config.dedupe, 'session', '与 if 双保险，禁止每轮重复注入')
+  assert.match(inject.config.text, /dev_tool_search/, '正文必须点名解锁入口')
+  assert.match(inject.config.text, /instead of making do/, '正文必须明确「不要用现有工具硬凑」')
+})
+
 test('内置模块 tool-surface：与 templates/80-tool-surface.yml 同一声明不漂移', () => {
   // 同一行为的两个分发面（内置模块 / 模板）。改一边忘另一边，只会表现为「某个部署收窄没生效」。
   const templateAction = toolTemplate.then.find((action) => action.kind === 'assembly')
   assert.deepEqual(narrowTools.target.tools, templateAction.target.tools)
   // 两侧都**不声明** `if`（= 无条件生效，首轮即收窄）；一边加回相位、另一边没加也要在这里现形。
-  assert.deepEqual(toolRule.if, toolTemplate.if, '两侧的生效条件必须一致')
+  assert.deepEqual(toolRule.if, toolTemplate.if, '两侧的生效条件必须一致（都省略 if = 首轮即收窄）')
 })
 
 test('内置模块 skill-surface：只拦 skill-catalog，ponytail 与按需加载的 kind 必须留', () => {
