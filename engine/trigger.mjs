@@ -234,8 +234,7 @@ export function createDecisionLog({ enabled = false, logger, sessionOf } = {}) {
  * **不接**（返回 `undefined`，零开销）。观察者自身抛错只告警、不影响其它触发器
  * ——与判定失败的降级纪律一致。
  *
- * 两条调用路径共用它：`mountTriggers`（`do` 是函数的内联路径）与
- * `trigger-spec.mjs` 的 `mountDeclarations`（`do` 是动作声明的路径）。
+ * 由 `rule-runtime.mjs` 的 `mountRuleSources` 接线：规则条件里的观察者谓词共用一条监听。
  *
  * @returns disposer，或 `undefined`（本组无观察者）
  */

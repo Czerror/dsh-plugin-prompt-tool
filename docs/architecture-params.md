@@ -1,6 +1,6 @@
 # 后端参数框架（架构说明）
 
-> 适用范围：模块规则、独立共享参数、版本事务、离线迁移与配置排序。
+> 适用范围：模块规则、独立共享参数、版本事务、旧内容过滤与配置排序。
 > 规则契约：`src/shared/rules.ts`、`engine/rule-spec.mjs`、`engine/rule-runtime.mjs`。
 > 存储与过滤：`src/host/module-storage.ts`、`src/host/module-rules.ts`、`src/host/module-layer-settings.ts`。
 > 接线与物化：`src/runtime/settings-bridge.ts`、`src/host/write-module.ts`、`src/runtime/agent-assembly.ts`。
@@ -27,7 +27,7 @@ Config 的唯一键是 `modulesEnabled`，表示模块运行总闸。关闭只�
 
 插件管理路径直接使用 `compileRules → mountRuleSources`，工具和策略走内联输入。模块不再生成 `rules.yml`、`configs/`、`agent.cordis.yml`、`custom-tools/` 或 `subagent-tools/`；普通重建只恢复切片并清理已知旧产物，不交换整个用户目录。空模块不自动增加规则。
 
-运行时、正常保存与物化拒绝 `promptConfigs`、`triggers`、旧规则引擎声明、旧快捷参数及旧模型键，返回迁移诊断，不双读、不自动改盘。其他未知字段及不参与执行的旧内容元数据保留。已登记共享键放错层、层名或形态错误仍返回 `module-layer-settings-invalid`。旧格式只经本文的显式离线迁移入口转换。
+运行时与正常保存拒绝 `promptConfigs`、`triggers`、旧规则引擎声明与旧快捷参数的**写入**；加载则按白名单过滤（未注册键不投影为运行时参数，旧内容不参与执行、原定义不改写）。其他未知字段及不参与执行的旧内容元数据保留。已登记共享键放错层、层名或形态错误仍返回 `module-layer-settings-invalid`。语法升级不在产品内提供——按 `rules` 重写或交内置技能由模型改写。
 
 九层 UI、官方参数与插件参数的对照见 [九层契约](injection-point-contracts.md)。
 
@@ -105,8 +105,8 @@ UI fields
   而实测只有 `file://` 形态对全部受管字段一致有效（写成 Windows 盘符路径会被 `new URL()` 当成
   URL scheme，报 `is not readable: The URL must be of scheme file`）。
 - 规则注入动作的 `templateFile` 与策略基准由 `rulePromptConfigOptions` 明确提供：以本模块
-  `module.yml` 为相对基准、以本模块目录为允许根。离线迁移负责把已知旧基准改成等价相对路径，
-  无法证明来源或越界时拒绝；运行时不猜旧路径，也不读取兄弟模块的资产。
+  `module.yml` 为相对基准、以本模块目录为允许根。已知旧基准（`./engine/`、`../.engine/` 一类）
+  不再有自动改写入口，需按相对路径手工改写；无法证明来源或越界时拒绝，运行时不猜旧路径，也不读取兄弟模块的资产。
 - `tool-config-engine` 的 `resourceRoot` 仍是模块集合允许根，旧 `presetRoot` 只作输入别名；冲突拒绝，路径权限不因更名改变。独立引擎的文件入口继续可用，不要求插件生成对应文件。
 
 规则的模板基准使用 `templateModuleRoot`，独立规则入口使用 `moduleRoot`；旧参数名仅在兼容边界归一。
@@ -181,7 +181,7 @@ packages rather than a preset directory」，并把 `!!js` 限制在插件配置
 
 `validateOnly: true` 编译完整候选但不写盘。保存先校验候选规则、动作、互斥及独占约束，再使用 YAML Document 保留其他字段与注释，写临时文件并在替换前复核版本及目录身份。只有当前允许写入且具有可编辑 `modules` 清单的模块可保存。版本冲突返回 `409 rules-conflict`，不覆盖本地或磁盘未知修改。
 
-同模块完全同名的非空 `group` 中，只要任一成员 `exclusive: true`，该组便互斥。显式 `activateRuleId` 先启用目标卡，再原子写入同组其他卡的 `enabled: false`；不会保留多个亮起开关再由排序决定生效项。没有显式激活目标时，多启用候选由编译器拒绝，运行时和离线迁移均不默选赢家。
+同模块完全同名的非空 `group` 中，只要任一成员 `exclusive: true`，该组便互斥。显式 `activateRuleId` 先启用目标卡，再原子写入同组其他卡的 `enabled: false`；不会保留多个亮起开关再由排序决定生效项。没有显式激活目标时，多启用候选由编译器拒绝，运行时与保存端均不默选赢家。
 
 同模块保存与恢复串行，先校验完整候选，再写正文／变量切片、原子替换 module.yml、更新清单并校验发布。完整定义替换是提交点，不宣称多文件同时原子替换。提交前失败从旧完整定义恢复；提交后发布持续失败响应带 `persisted: true` 和版本信息，明确告知定义已保存，保留最后已验证的运行贡献。手改完整定义使旧草稿 CAS 冲突；切片手改或伪造摘要只会触发单向重切。客户端保留未确认草稿。
 
@@ -228,7 +228,7 @@ UI 侧 `persistParamOverrides` **条件发送**：
 
 ### 业务参数默认空，不由引擎补写
 
-`writeModule(options)` 读取已经持久化的 rules，不再接受旧业务开关或整表覆盖来重解释规则，也不再接受正文入参——`preset.md` 内容资产随该入口下线，正文只属于 module.yml 的动作定义（`preset.md` 仍可随包落盘，供离线迁移读取）。未提交的共享值不覆盖作者定义，显式规则编辑只改变对应字段；清空正文、目录字段或业务模式，不触发隐藏文案、长度阈值或模型偏好。
+`writeModule(options)` 读取已经持久化的 rules，不再接受旧业务开关或整表覆盖来重解释规则，也不再接受正文入参——`preset.md` 内容资产随该入口下线，正文只属于 module.yml 的动作定义（`preset.md` 仍可随包落盘，作为不解析的旧资产保留）。未提交的共享值不覆盖作者定义，显式规则编辑只改变对应字段；清空正文、目录字段或业务模式，不触发隐藏文案、长度阈值或模型偏好。
 
 - `inject-text` 的正文、环境事实模板、技能目录模板、目录字段与可选数量限制由动作或模块模板声明；缺少正文时不生成消息。
 - `guide-auto` 只有显式 `params.complexMinChars` 才启用长度判据，空值不启用；没有内置 120 字业务阈值。
@@ -236,7 +236,7 @@ UI 侧 `persistParamOverrides` **条件发送**：
 - 相位门控只在显式开启 `promoteGate` 时使用调用方提供的 `reasoningPattern/reasoningNegativePattern/reasoningFlags`；缺模式不内建 we／let me 匹配。
 - 模型范围缺省没有 Pro 偏好，空请求 patch 不覆盖宿主。旧行为需要的 Pro 范围、120 阈值和非空提示只在显式旧格式转换时写成数据。
 
-旧默认的精确数据快照位于 `templates/policies/legacy-defaults.yml`，仅供模板生成与显式离线迁移读取，运行时不得读取。迁移只补缺失字段，保留既有显式值与空值；不能因为一条动作的旧条件而改变同卡其他动作的范围。无法证明等价时报告预检失败。
+旧默认的精确数据快照位于 `templates/policies/legacy-defaults.yml`，供模板生成与 ST／角色卡导入期补齐旧填充器默认值，运行时不得读取。补默认只补缺失字段，保留既有显式值与空值；不能因为一条动作的旧条件而改变同卡其他动作的范围。
 
 
 ## 4. variables 双通道（两套体系，不互串）
@@ -302,7 +302,7 @@ ST 导入配置显式带 `params.stMacros: true`，赋值模板保留到运行�
 
 ### 旧规则快捷参数的迁移边界
 
-`shared/legacy-prompt-params.ts` 与 `host/legacy-prompt-params.ts` 仅供离线／外部导入转换识别旧数据，不参与正常加载、物化或旧 API 保存。迁移前旧来源被拒绝，迁移后不会再由快捷键覆盖规则。新功能不得追加第二条规则参数通道。
+`shared/legacy-prompt-params.ts` 只登记旧规则快捷键的键名与类型：加载侧按白名单过滤（不投影为运行时参数），写入侧由 `saveModuleParams` 拒绝，不参与物化或旧 API 保存。新功能不得追加第二条规则参数通道。
 
 ### 九层编辑归属契约（2026-09-20）
 

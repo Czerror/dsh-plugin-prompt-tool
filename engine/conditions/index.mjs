@@ -36,7 +36,7 @@ export const COMPOSITE_OPERATORS = Object.freeze(['any', 'all', 'not', 'notAny']
 const objectOrUndefined = (value, label) => {
   if (value === undefined || value === null) return undefined
   if (typeof value !== 'object' || Array.isArray(value)) {
-    throw new TypeError(`trigger-spec: ${label} must be an object`)
+    throw new TypeError(`rule.if: ${label} must be an object`)
   }
   return value
 }
@@ -44,15 +44,15 @@ const objectOrUndefined = (value, label) => {
 export function compileWhen(node, context = {}) {
   if (node === undefined || node === null) return undefined
   if (typeof node !== 'object' || Array.isArray(node)) {
-    throw new TypeError('trigger-spec: when must be an object (a composite node or a predicate node)')
+    throw new TypeError('rule.if: when must be an object (a composite node or a predicate node)')
   }
   const keys = Object.keys(node)
   if (keys.length === 0) {
-    throw new TypeError('trigger-spec: when must not be an empty object — 空节点是「恒真」还是「写漏了」无法区分')
+    throw new TypeError('rule.if: when must not be an empty object — 空节点是「恒真」还是「写漏了」无法区分')
   }
   if (keys.length > 1) {
     throw new TypeError(
-      `trigger-spec: when must declare exactly one key — got ${keys.sort().join(', ')}`
+      `rule.if: when must declare exactly one key — got ${keys.sort().join(', ')}`
       + `（allowed: ${[...COMPOSITE_OPERATORS, ...Object.keys(PREDICATE_FACTORIES)].sort().join(', ')}）`,
     )
   }
@@ -64,7 +64,7 @@ export function compileWhen(node, context = {}) {
       return composite({ not: compileWhen(value, context) })
     }
     if (!Array.isArray(value) || value.length === 0) {
-      throw new TypeError(`trigger-spec: when.${key} must be a non-empty array of nodes`)
+      throw new TypeError(`rule.if: when.${key} must be a non-empty array of nodes`)
     }
     return composite({ [key]: value.map((child) => compileWhen(child, context)) })
   }
@@ -72,7 +72,7 @@ export function compileWhen(node, context = {}) {
   const factory = PREDICATE_FACTORIES[key]
   if (factory === undefined) {
     throw new TypeError(
-      `trigger-spec: unknown predicate ${JSON.stringify(key)}`
+      `rule.if: unknown predicate ${JSON.stringify(key)}`
       + ` — known predicates: ${Object.keys(PREDICATE_FACTORIES).join(', ')}; composite: ${COMPOSITE_OPERATORS.join(', ')}`,
     )
   }

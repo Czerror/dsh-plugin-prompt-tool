@@ -1166,7 +1166,7 @@ test('T16：inject-text 在 tool-pipeline 层不可注入——规则路径与�
     }
   }
   const action = { id: 'tp', kind: 'inject-text', config: { id: 'tp', layer: 'tool-pipeline', strategy: 'static', text: 'X' } }
-  // 规则路径此前只有声明路径（trigger-spec）的断言；这里同时锁住两条公开路径的文案同源：
+  // 规则路径的报错文案与编译器同源：
   // 判据只有 `actionExecutionPoint` 一处（层清单派生自 schema 的 LAYER_DEFINITIONS）。
   const viaRules = messageOf(() => compileRules([{ id: 'rules-path', then: [action] }]))
   const viaAction = messageOf(() => prepareAction(action))

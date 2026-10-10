@@ -34,7 +34,7 @@ const PREPARERS = {
  *
  * @param action `{ kind, id?, ... }`，形状见 {@link ACTION_KINDS}。
  * @param options.plugin 调用方插件名（错误消息 / 告警 / disposer 标签），与
- *   `mountTriggers(ctx, declarations, { plugin })` 同一约定；缺省 `prompt-actions`。
+ *   与规则运行时 `mountRuleSources` 同一约定；缺省 `prompt-actions`。
  * @param options.warnOnce 复用宿主模块的告警器；缺省为本文件自己的 warnOnce。
  * @param options.when 可选判定：不命中（非 `true`）即放行下游、不执行本动作。仅对
  *   {@link ON_REGISTERED_KINDS} 里的动作有效；对 `inject-text` / `guard` 传它会挂载期报错

@@ -1,8 +1,7 @@
 /**
  * 分支语法的唯一展开器：只认 `if`/`then`/`else`，旧名 `when`/`do` 由各入口显式拒绝。
  *
- * 规则（`rule-spec.mjs`）与触发器声明（`trigger-spec.mjs`）共用这一份实现——
- * 两套入口必须是同一套语义，否则同一个模块换个入口就换行为。
+ * 只服务规则编译（`rule-spec.mjs`）：分支的展开语义在这里唯一实现。
  */
 
 const record = value => value !== null && typeof value === 'object' && !Array.isArray(value)

@@ -149,8 +149,8 @@
 | `engine/conditions/count.mjs` 的冷启动重建 | 按信号分视图 | 消息类信号（`user/message`、`assistant/message`、`tool/result`）读当前上下文，被压缩 / 位置替换遮蔽的不再计入；`tool/call` 与 `turn/start` 不在 `SURFACE_EVENT_TYPES` 里、永远不是节点，读完整历史——一律迁会让它们的冷启动重建恒为 0 |
 
 `actions.mjs`、`predicates.mjs`、`strategies.mjs` 仅保留重导出；不能把实现重新堆回这些入口。
-`trigger-spec.mjs` 用于旧声明的离线校验，新运行链只编译 `rules`。原专用能力模块
-`context-gate`、`tool-bootstrap`、`tool-filter`、`anchor-turn`、`deliberation-gate`、
+新运行链只编译 `rules`：旧声明式触发器（`trigger-spec.mjs` / `declared-triggers.mjs`）已随内置迁移器一并删除。
+原专用能力模块 `context-gate`、`tool-bootstrap`、`tool-filter`、`anchor-turn`、`deliberation-gate`、
 `progress-reminder` 与 `promoted-code-mode` 不再内置；需要时由明确规则组合表达。
 渐进阶段推进工具和按晋升时机切换 PTC 呈现没有恢复；需要 PTC 时显式装配官方呈现行。
 `workspaceLine` 与 `phase1FirstCallInstruction` 的既有段正文改写仍无通用动作，
@@ -184,7 +184,7 @@
   `waterfallPosition`——规则路径**接受**该字段（`engine/actions/catalog.mjs` 的通用键，
   `rule-runtime.mjs` 映射为 prepend）；它只保证落在已存在的普通注册之外，同点内声明之间仍按
   `channelOrder` → 模块 id → 规则声明序排。模块层的声明出口已退役（旧 `declared-triggers` /
-  顶层 `triggers` 写进 `modules` 即 409），需要本插件自己的最外层监听只能回到插件侧声明。
+  顶层 `triggers` 写进 `modules` 会被装配跳过），需要本插件自己的最外层监听只能回到插件侧声明。
 - 收窄**打开即生效，不按相位放行首轮**（2026-10-10 用户拍板「能否提前」）：规则省略 `if`，
   `compileWhen(undefined)` 返回 `undefined` = 无条件执行。此前用
   `any: [phase{promoted:true}, phase{compacted:true, promoted:false}]` 两支（单个 `phase` 节点
@@ -271,7 +271,7 @@
   `expandActions` 会静默丢掉分支。`prepend`（未文档化的注册后门，`executor.mjs` 直读
   `config.prepend`）已取消且暂无等价替代——`inject-text` 不接受 `waterfallPosition`，
   动作级位置只对非 inject-text 动作可用。
-- 通用动态判断只归规则级 `if`：注入动作不再声明受众、模型、晋升或文本匹配门；请求参数动作的受众与模型范围也用规则级 `if.scope`（动作级 `audience`/`modelScope` 只保留给旧声明迁移，非中性值一律报「move it to rule.if」）。未声明模型范围等价于 `all`。固定 system-section 独占／抑制的 `audience` 仅表示静态注册目标，仍不接受动态条件。
+- 通用动态判断只归规则级 `if`：注入动作不再声明受众、模型、晋升或文本匹配门；请求参数动作的受众与模型范围也用规则级 `if.scope`（动作级 `audience`/`modelScope` 是退役写法，非中性值一律报「move it to rule.if」）。未声明模型范围等价于 `all`。固定 system-section 独占／抑制的 `audience` 仅表示静态注册目标，仍不接受动态条件。
 - 旧单动作声明的判断在改写为规则时提升为规则级 `if`；只作用于某个动作的多动作条件不能提升后影响兄弟动作，须先明确拆分。
 - 同模块非空组中任一规则声明 `exclusive: true`，整组最多一条启用规则。编译器拒绝
   多启用冲突，不按排序选赢家；Host 显式激活一条卡时在一次原子事务中关闭同组其他卡。
@@ -635,7 +635,7 @@ ST 的两个条目级开关在引擎里按 `params.stWorldBook` 消费；未开�
   空模板或渲染为空时不替换、不丢弃官方指令。显式 `params.file` 仍实时读文件，
   `Instructions from:` 是来源协议标记，不是引擎自带的引导性文案。
 - `templates/policies/legacy-defaults.yml` 只保存旧业务参数的精确快照，供模板生成与
-  仅供人工改写参考。引擎运行时不得暗读该文件；改写只补缺失键，保留显式空值。
+  导入期补齐旧填充器默认值参考。引擎运行时不得暗读该文件以外的旧默认；改写只补缺失键，保留显式空值。
 - 诊断文本、数据结构和布尔组合真值、宿主协议、guard、续跑次数与资源预算是机制边界，
   不因移除业务默认而停用。ST/worldbook 的格式语义仍与转换和生命周期测试对拍。
 

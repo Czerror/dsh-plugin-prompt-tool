@@ -1,7 +1,7 @@
 /**
  * 规则卡内部的条件卡视图（「一个条件一张卡，对应它的动作」）。
  *
- * 结构对应引擎真值（engine/branch.mjs#expandActions）：
+ * 结构对应引擎真值（`engine/branch.mjs#expandActions`）：
  *   IF 卡        = 规则级条件，卡内是它的直属动作；
  *   分支卡       = `then` 里的分支节点 `{if, then, else}`，卡头即「当 ⟨条件⟩ → ⟨动作⟩」；
  *   动作卡       = 叶子动作，可展开改字段；
