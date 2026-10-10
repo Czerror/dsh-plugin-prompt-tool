@@ -46,8 +46,7 @@ Config 的唯一键是 `modulesEnabled`，表示模块运行总闸。关闭只�
 | 层 | 文件 | 职责 |
 |---|---|---|
 | 规则契约 | `shared/rules.ts`、`engine/rule-spec.mjs` | 规则、动作、条件树、身份及互斥校验；宿主与客户端不各写一套语义 |
-| 共享参数 | `shared/engine-params.ts` | 四个公开共享键的校验、storageLayer、UI 归属与能力行映射；旧类型只供迁移识别 |
-| 离线转换 | `host/rules-migration.ts`、`host/legacy-prompt-params.ts` | 明确转换旧来源；无法无损转换时拒绝，不作为运行时适配器 |
+| 共享参数 | `shared/engine-params.ts` | 14 个公开共享键的校验、storageLayer、UI 归属与能力行映射；旧类型只供白名单过滤与写入拒绝 |
 | 规则事务 | `host/module-rules.ts` | 按操作校验正文／状态版本、局部 edits、显式启用互斥、改名与删除同步 configOrder |
 | 参数守卫 | `shared/param-keys.ts`、`shared/rules.ts`、bridge | 先拒绝已归规则的旧键，再校验共享参数；不靠键名推断模板变量 |
 | 存储层 | `host/manifest.ts`、`host/module-layer-settings.ts` | `loadModuleSpec`（layerSettings → 内部平铺值）、`saveModuleParams`（平铺值 → 所属层；空值删键）、`buildModuleConfigsFromParams`（参数桥）、`renderComposition`（参数桥 > moduleConfigs > 行默认） |
@@ -186,13 +185,11 @@ packages rather than a preset directory」，并把 `!!js` 限制在插件配置
 
 同模块保存与恢复串行，先校验完整候选，再写正文／变量切片、原子替换 module.yml、更新清单并校验发布。完整定义替换是提交点，不宣称多文件同时原子替换。提交前失败从旧完整定义恢复；提交后发布持续失败响应带 `persisted: true` 和版本信息，明确告知定义已保存，保留最后已验证的运行贡献。手改完整定义使旧草稿 CAS 冲突；切片手改或伪造摘要只会触发单向重切。客户端保留未确认草稿。
 
-### 旧格式的唯一离线入口
+### 旧格式按白名单加载（无内置迁移器）
 
-发布命令 `prompt-tool-migrate-rules`（入口 `src/migrate-rules.ts`，发布产物 `lib/migrate-rules.mjs`）只接受显式绝对路径：模块根用 `--root`，原生角色库用 `--characters-root`，可分别或同时指定。源码开发也可使用 `pnpm --dir $Repo migrate:rules`。先 `--check`，确认后 `--apply`；`--rollback` 使用同根备份，仍按内容版本拒绝覆盖迁移后的用户修改。命令不推断真实 DSH_HOME。
+`promptConfigs`、`triggers`、退役引擎名与旧规则快捷键**不再阻断模块加载**：`assertCanonicalRuleSource` 只校验结构（对象、`rules` 必须是数组），未注册的参数由 `readModuleLayerSettings` 的键白名单过滤，旧内容不参与执行也不改写用户定义。`legacy-prompt-params.ts` 与 `LEGACY_PROMPT_PARAM_KEYS` 只用于**写入侧拒绝**（`saveModuleParams` 对旧快捷键响亮失败）与类型派生，不再有读取侧转换器。
 
-迁移先全量预检，再完整生成临时候选、复核源文件与资产树指纹、备份并以目录 rename 交换。保留未知字段、注释、规则身份、序号、正文与角色库原图／JSON／本地记忆。旧 `promptConfigs`、`triggers`、已承接快捷键和模型键只在此阶段归一到 `rules`；确认后的角色记忆证明同步更新，原证明已失配时保持未认领。
-
-无法无损转换的来源明确拒绝，包括互斥组多启用、来源身份冲突、未承接旧参数、不可证明顺序的混合声明、手写组合，以及需要先展开的动态填充器外部模板。迁移只认 `module.yml` 的定义，旧物化目录与引擎侧加载器已随本轮移除（不读、不校验、不比较）。原模块不会因预检失败被清空。旧 `/triggers`、旧整表规则及模型参数写入端点返回 `410 rules-route-retired`，不充当在线迁移器。
+产品内不提供语法迁移器（`prompt-tool-migrate-rules` / `migrate:rules` / `host/rules-migration.ts` 已删除）：要升级旧模块，按 `rules` 重写，或把旧 `module.yml` 交给内置 `dsh-module` 技能由模型改写。旧 `/triggers`、旧整表规则及模型参数写入端点仍返回 `410 rules-route-retired`。
 
 ## 3. 空值语义（统一规则）
 

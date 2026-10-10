@@ -182,7 +182,8 @@ export async function prepareAssembly(
   for (const id of new Set([...facts.effectiveModules, ...facts.rowIds])) {
     if (id === 'rule-engine') continue
     if (id === 'subagent-tool-policy' && (spec.subagentToolPolicy === undefined || spec.subagentToolPolicy === null)) continue
-    if (id === 'prompt-config-engine' || id === 'declared-triggers') throw new Error(`模块 ${moduleId} 仍声明旧规则引擎 ${id}，请先离线迁移`)
+    // 退役引擎名按白名单过滤：不装配、不报错（它们承载的是旧格式规则，改写由用户或模型完成）。
+    if (id === 'prompt-config-engine' || id === 'declared-triggers') continue
     const privateService = PRIVATE_SERVICES[id]
     if (privateService !== undefined) {
       if (!hasService(privateService)) throw new Error(`配装所需能力不可用：${privateService}`)

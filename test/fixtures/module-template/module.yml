@@ -1,57 +1,14 @@
-# 测试夹具预设模板 —— 不是产品内置预设，不随包分发（仅 test/ 引用）。
-#
-# 来源：原内置 anchored 预设的「模块装配 + params + 三条提示词配置」结构。该预设随上游
-# dsh-anchored-standard 冻结一并下线；测试仍需要一份「声明锚定/门控链路」的模板来验证
-# writeModule / ensureModuleReady / 参数桥的生成契约，因此把结构固化为测试夹具。
-# 夹具不含任何提示词正文（content 段），也不含越狱/角色扮演文本。
 id: fixture
 name: Fixture Template
 description: 测试夹具：锚定/门控链路装配与三条提示词配置模板。
 version: 1.0.0
 engineCompat: ">=0.4.2"
-promptConfigs:
-  - id: near-anchor
-    name: 首句锚点
-    enabled: true
-    strategy: first-turn-anchor
-    layer: pre-step
-    configKind: ordered
-    order: 0
-    role: user
-    position: after-user
-    dedupe: session
-    promotion: none
-  - id: router-guide
-    name: 每轮引导
-    enabled: true
-    strategy: guide-auto
-    layer: pre-step
-    configKind: ordered
-    order: 10
-    role: user
-    position: after-user
-    dedupe: batch
-    promotion: main
-    modelScope: flash
-  - id: prompt-injector
-    name: preset.md 注入
-    enabled: true
-    strategy: custom-fallback
-    layer: pre-step
-    configKind: ordered
-    order: 20
-    role: user
-    position: before-all
-    dedupe: session
-    promotion: main
-    sourceKind: plugin
 persona:
-  prefix: >-
-    You are a helpful assistant.
+  prefix: You are a helpful assistant.
   complete: true
   includeRuntimeContext: false
 modules:
-  - prompt-config-engine
+  - rule-engine
   - run-code-env
   - tool-bash-disabled
   - persistent-shell-posix
@@ -59,43 +16,76 @@ modules:
   - filesystem-editor
   - skill-search
 layerSettings:
-  pre-step:
-    firstTurnAnchor: false
-    firstTurnText: ""
-    firstTurnCustom: false
-    guideText: ""
-    guideCustom: false
-    injectPrompt: true
-    firstTurnWord: ""
-    buildPattern: "开发|创建|写一个|生成|从零|做一个|构建|新项目|搭建|实现|做出|上线|落地|脚本|工具|应用|build|create|\
-      develop|generate|implement|make a|new project"
-    complexPattern: "架构|重构|设计|系统|全面|深度|迁移|兼容|审查|architecture|refactor|comprehensive\
-      |design|system|migrate|review"
-    firstTurnBuild: "Start your reasoning with the exact sentence: We need to build
-      it directly and verify it."
-    firstTurnInspect: "Start your reasoning with the exact sentence: We need to
-      inspect the code first."
-    firstTurnDeep: "Start your reasoning with the exact sentence: Let me think
-      through the design before changing anything."
-    guideWeak: "Router: classify this task (build or fix) now, then adopt the
-      matching style — build: direct production; fix: inspect-first. Think
-      deeply first, then commit and act."
-    guideDeep: "Router: classify this task (build or fix) now, then adopt the
-      matching style — build: direct production; fix: inspect-first. Think
-      deeply about the architecture, edge cases, and integration points. Do not
-      spend reasoning on the environment or tooling. Produce when your
-      information is complete. End each reasoning block with a decision or an
-      information need."
-  agent-request:
-    modelProvider: ""
-    modelName: ""
-    modelReasoningEffort: ""
-    modelTemperature: ""
-    modelMaxTokens: ""
   subagent-start:
-    subagentModelProvider: ""
-    subagentModelName: ""
-    subagentReasoningEffort: ""
-    subagentTemperature: ""
-    subagentMaxTokens: ""
     maxDepth: ""
+rules:
+  - id: near-anchor
+    name: 首句锚点
+    enabled: true
+    layer: pre-step
+    then:
+      - id: inject
+        kind: inject-text
+        config:
+          id: near-anchor
+          strategy: first-turn-anchor
+          layer: pre-step
+          configKind: ordered
+          order: 0
+          role: user
+          position: after-user
+          dedupe: session
+  - id: router-guide
+    name: 每轮引导
+    enabled: true
+    layer: pre-step
+    if:
+      all:
+        - scope:
+            modelScope: flash
+        - phase:
+            promoted: true
+            includeSubagents: false
+    then:
+      - id: inject
+        kind: inject-text
+        config:
+          id: router-guide
+          strategy: guide-auto
+          layer: pre-step
+          configKind: ordered
+          order: 10
+          role: user
+          position: after-user
+          dedupe: batch
+          params:
+            complexMinChars: 120
+  - id: prompt-injector
+    name: preset.md 注入
+    enabled: true
+    layer: pre-step
+    if:
+      all:
+        - phase:
+            promoted: true
+            includeSubagents: false
+        - anchor:
+            keys: []
+            fallbackAfter: 1
+    then:
+      - id: inject
+        kind: inject-text
+        config:
+          id: prompt-injector
+          strategy: anchor-notice
+          layer: pre-step
+          configKind: ordered
+          order: 20
+          role: user
+          position: before-all
+          dedupe: session
+          sourceKind: plugin
+configOrder:
+  near-anchor: 0
+  router-guide: 10
+  prompt-injector: 20

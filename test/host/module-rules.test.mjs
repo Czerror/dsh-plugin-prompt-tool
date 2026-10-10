@@ -66,7 +66,7 @@ test('规则拒绝：版本过期、重复身份、坏动作与未显式解决�
   assert.equal(readFileSync(file, 'utf8'), aliased, '别名拒绝保持原文件字节')
 })
 
-test('规则边界：仅校验与无改动幂等，旧来源显式要求离线迁移', () => {
+test('规则边界：仅校验与无改动幂等；旧内容按白名单加载', () => {
   const dir = fixture('check', [rule('a')])
   const initial = readModuleRules(dir)
   const before = readFileSync(join(dir, 'module.yml'), 'utf8')
@@ -75,11 +75,11 @@ test('规则边界：仅校验与无改动幂等，旧来源显式要求离线�
   assert.equal(checked.revision, initial.revision)
   assert.deepEqual(editModuleRules(dir, { expectedRevision: initial.revision, edits: [] }), initial)
   assert.equal(readFileSync(join(dir, 'module.yml'), 'utf8'), before)
-  writeFileSync(join(dir, 'module.yml'), 'id: check\nmodules: []\npromptConfigs: []\n')
-  assert.throws(() => readModuleRules(dir), error => error.code === 'rules-migration-required')
-  // 模型路由/采样参数是公共参数（写在 layerSettings），不是旧规则来源：规则表与它并存必须能加载。
+  // 旧内容不再阻断加载：它不变成规则、不参与执行，定义原样保留。
+  writeFileSync(join(dir, 'module.yml'), 'id: check\nmodules: []\npromptConfigs:\n  - id: legacy-card\n    text: LEGACY\n')
+  assert.deepEqual(readModuleRules(dir).rules, [])
+  // 模型路由/采样参数是公共参数（写在 layerSettings），与规则表并存必须能加载并读回。
   writeFileSync(join(dir, 'module.yml'), 'id: check\nmodules: []\nrules: []\nlayerSettings:\n  agent-request:\n    modelTemperature: 0.5\n')
-  const withModelParams = readModuleRules(dir)
-  assert.equal(withModelParams.rules.length, 0)
-  assert.equal(loadModuleSpec(dir).params.modelTemperature, 0.5, '模型参数原样读回，不再被当作旧源拒绝')
+  assert.equal(readModuleRules(dir).rules.length, 0)
+  assert.equal(loadModuleSpec(dir).params.modelTemperature, 0.5, '模型参数原样读回')
 })

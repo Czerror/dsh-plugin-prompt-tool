@@ -151,23 +151,16 @@ test('导出：不存在的模块被拒，不回传任何定义内容', async ()
 
 test('并入的源模块优先：同名模块与角色卡并存时取模块定义', async () => {
   const characters = await import('../../src/host/characters.ts')
-  const { convertLegacyModuleRules } = await import('../../src/host/rules-migration.ts')
   const { promptConfigToRule } = await import('../../src/host/rule-builder.ts')
   const id = 'dual-source'
-  // 模块源：modules/<id>/module.yml
+  // 模块源：modules/<id>/module.yml（canonical rules；正文归规则，正文资产不属于并入范围）
   mkdirSync(join(moduleRoot, id), { recursive: true })
-  const legacySource = {
-    id, name: '模块源', modules: [],
-    layerSettings: { 'pre-step': { firstTurnAnchor: true, firstTurnCustom: true, firstTurnText: 'LEGACY ANCHOR' } },
-    promptConfigs: [
-      { id: 'intro', strategy: 'static', layer: 'system-section', text: 'FROM-MODULE' },
-      { id: 'near-anchor', strategy: 'first-turn-anchor', enabled: false },
-      { id: 'prompt-injector', strategy: 'custom-fallback' },
-    ],
-  }
-  writeFileSync(join(moduleRoot, id, 'preset.md'), 'LEGACY BODY', 'utf8')
-  const converted = convertLegacyModuleRules(legacySource, { directory: join(moduleRoot, id) })
-  writeFileSync(join(moduleRoot, id, 'module.yml'), JSON.stringify({ id, name: '模块源', modules: [], rules: converted.rules, configOrder: converted.configOrder }), 'utf8')
+  const moduleRules = [
+    { id: 'intro', strategy: 'static', layer: 'system-section', text: 'FROM-MODULE' },
+    { id: 'near-anchor', strategy: 'first-turn-anchor', enabled: false, layer: 'pre-step' },
+    { id: 'prompt-injector', strategy: 'custom-fallback', layer: 'pre-step' },
+  ].map(promptConfigToRule)
+  writeFileSync(join(moduleRoot, id, 'module.yml'), JSON.stringify({ id, name: '模块源', modules: [], rules: moduleRules, configOrder: Object.fromEntries(moduleRules.map((rule, index) => [rule.id, index * 10])) }), 'utf8')
   // 同名角色卡源：存储根下的 .characters/<id>/converted.yml（与模块根同级）
   const legacyDir = join(dirname(moduleRoot), '.characters', id)
   mkdirSync(legacyDir, { recursive: true })
@@ -187,9 +180,9 @@ test('并入的源模块优先：同名模块与角色卡并存时取模块定�
   assert.match(written, new RegExp(`module-${id}-intro`), '条目 id 用统一前缀')
   const configs = parse(written).rules
   const anchor = configs.find(config => config.id === `module-${id}-near-anchor`)
-  assert.equal(anchor.enabled, true, '并入前先把旧开关交给规则实例')
-  assert.equal(anchor.then[0].config.params.text, 'LEGACY ANCHOR')
-  assert.equal(configs.find(config => config.id === `module-${id}-prompt-injector`).then[0].config.params.text, 'LEGACY BODY')
+  assert.equal(anchor.enabled, false, '并入保留源模块定义的启停')
+  assert.equal(anchor.then[0].config.strategy, 'first-turn-anchor')
+  assert.equal(configs.find(config => config.id === `module-${id}-prompt-injector`).then[0].config.strategy, 'anchor-notice')
 })
 
 test('普通模块之间的并入是往返且幂等的：重复并入不翻倍，移除后自有内容原样保留', async () => {

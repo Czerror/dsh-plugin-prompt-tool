@@ -426,7 +426,7 @@ export function saveModuleParams(
       // 「从有值改回留空」依赖空值清掉旧键（渲染层空值跳过 = 继承模板/宿主默认）。
       if (value === undefined || value === null || key.trim().length === 0) continue
       const isEmpty = value === '' || (Array.isArray(value) && value.length === 0)
-      if (isLegacyPromptParam(key)) throw new Error(`旧规则参数 ${key} 已退出；请先离线迁移为 rules`)
+      if (isLegacyPromptParam(key)) throw new Error(`旧规则参数 ${key} 已退出；请改写为 rules（可由内置技能交给模型迁移）`)
       const path = engineParamPath(key)
       if (isEmpty) deleteYamlPath(doc, path)
       else doc.setIn(path, value)

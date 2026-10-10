@@ -28,18 +28,9 @@ dsh --profile prompt-tool
 
 ### 当前格式与宿主要求
 
-module.yml 保存模块完整定义，支持 UI 自动保存和直接手改完整文件；rules/ 是校验后供 UI 与运行时使用的切片，手改切片或校验失配会从完整定义恢复。旧 promptConfigs、triggers、模型路由与锚定快捷参数须先离线迁移；运行时不自动双读。共享能力参数归 layerSettings，指令正文保持独立权限通道。
+module.yml 保存模块完整定义，支持 UI 自动保存和直接手改完整文件；rules/ 是校验后供 UI 与运行时使用的切片，手改切片或校验失配会从完整定义恢复。共享能力参数归 layerSettings，指令正文保持独立权限通道。
 
-升级旧模块前，由用户停止相关 DSH 服务，再使用安装包提供的 `prompt-tool-migrate-rules`，或在已构建仓库中执行：
-
-```powershell
-$Repo = 'D:/AI/GitHub/dsh-plugin-prompt-tool'
-pnpm --dir $Repo migrate:rules -- --root '<DSH_HOME>/.prompt-tool/modules' --characters-root '<DSH_HOME>/.prompt-tool/.characters' --check
-pnpm --dir $Repo migrate:rules -- --root '<DSH_HOME>/.prompt-tool/modules' --characters-root '<DSH_HOME>/.prompt-tool/.characters' --apply
-# 需要恢复时，保持服务停止，并用相同目录执行 --rollback
-```
-
-目录必须显式指定为存在的绝对路径；没有角色库时省略 `--characters-root`。先全量预检，再生成完整候选、校验来源版本并原子替换；原文件保留在各根的 `.rules-migration-backup`。重复应用无改动，回滚只覆盖仍与迁移产物一致的目录。迁移只认 `module.yml` 的定义（旧物化目录不参与，不再做一致性校验）。无法证明等价的手写组合、互斥多启用冲突、失效旧参数或自定义策略目录会拒绝迁移，要求先整理。迁移完成后由用户重新启动 DSH。
+**旧格式按白名单加载**：`promptConfigs`、`triggers`、退役引擎名、旧规则快捷键与旧模型键不再阻断模块加载——定义照常读取，未注册的参数被键白名单过滤，旧内容不参与执行。产品内**不提供**语法迁移器：要升级旧模块，请按 `rules` 重写（`rules/<规则id>.yml` 的形态即权威形态），或把旧 `module.yml` 交给内置 `dsh-module` 技能由模型改写。
 
 技能调用策略只接受官方 frontmatter 键，状态文件只接受 v4；不提供旧布局迁移、回滚或备份脚本。
 

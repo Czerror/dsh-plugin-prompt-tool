@@ -1341,7 +1341,7 @@ export function registerSettingsBridge(
           path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.triggers,
           handler: async (req, res) => {
             if (!guard(req, res)) return
-            writeBridgeJson(res, 410, { ok: false, code: 'rules-route-retired', message: '声明规则已统一为 rules；请离线迁移旧模块并刷新客户端，使用 /rules 编辑。' })
+            writeBridgeJson(res, 410, { ok: false, code: 'rules-route-retired', message: '声明规则已统一为 rules；请改写旧声明（可由内置技能交给模型迁移）并刷新客户端，使用 /rules 编辑。' })
           },
         }),
         sctx.webServer.register({

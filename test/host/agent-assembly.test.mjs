@@ -23,7 +23,6 @@ const { prepareAssembly, createAgentAssembly } = await import('../../src/runtime
 const { installPreStepCoordinator, PRE_STEP_COORDINATOR_SERVICE } = await import('../../src/runtime/pre-step-coordinator.ts')
 const { ruleDiagnosticsSnapshot, resetRuleDiagnostics } = await import('../../src/runtime/rule-diagnostics.ts')
 const { promptConfigToRule } = await import('../../src/host/rule-builder.ts')
-const { convertLegacyModuleRules } = await import('../../src/host/rules-migration.ts')
 const { mountRuleSources } = await import('../../engine/rule-runtime.mjs')
 
 /** 装配能力探针：装配只问「宿主是否提供该服务」，这里全部视为提供。 */
@@ -658,15 +657,11 @@ test('能力注册：私有工具服务与内联工具接入官方注册表，�
     id: 'live-tools', name: 'live-tools', modules: ['character-tools', 'tool-config-engine'],
     layerSettings: { 'agent-request': { modelTemperature: '0.25' } },
     customTools: [{ id: 'delegated_tool', description: 'delegate', output: { schema: { type: 'json' } }, execute: { kind: 'delegate', tool: 'assembly_tool' } }],
-    triggers: [{ id: 'runtime-trigger', channel: 'agent/pre-step', do: { kind: 'inject-text', config: {
+    rules: [{ id: 'runtime-trigger', layer: 'pre-step', then: [{ id: 'inject', kind: 'inject-text', config: {
       id: 'trigger-text', layer: 'pre-step', text: 'TRIGGER', position: 'after-user',
-    } } }],
+    } }] }],
+    configOrder: { 'runtime-trigger': 0 },
   }), 'utf8')
-  const oldSource = JSON.parse(readFileSync(join(dir, 'module.yml'), 'utf8'))
-  const migrated = convertLegacyModuleRules(oldSource, { directory: dir })
-  delete oldSource.triggers
-  delete oldSource.layerSettings
-  writeFileSync(join(dir, 'module.yml'), JSON.stringify({ ...oldSource, rules: migrated.rules, configOrder: migrated.configOrder }))
   materialize({ modulesRoot: moduleRoot, moduleId: 'live-tools', agentsInstructionText: '' })
   const h = await liveAssembly(t, () => ['live-tools'])
   const tool = {

@@ -10,9 +10,6 @@
   "type": "module",
   "main": "lib/index.mjs",
   "types": "lib/index.d.mts",
-  "bin": {
-    "prompt-tool-migrate-rules": "lib/migrate-rules.mjs"
-  },
   "exports": {
     ".": {
       "types": "./lib/index.d.mts",
@@ -119,7 +116,6 @@
     "sync:harness": "node scripts/sync-harness-deps.mjs",
     "rebuild:module-template": "node scripts/rebuild-module-template.mjs",
     "rematerialize:modules": "node scripts/rematerialize-modules.mjs",
-    "migrate:rules": "node lib/migrate-rules.mjs",
     "repair:profile": "node scripts/repair-profile.mjs",
     "verify:harness": "node scripts/sync-harness-deps.mjs --check",
     "verify:host": "node scripts/verify-host-contracts.mjs",

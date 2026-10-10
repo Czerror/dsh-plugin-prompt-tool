@@ -5,7 +5,6 @@ import { basename, dirname, isAbsolute, join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { Document, parseDocument } from 'yaml'
 import type { RuleContent, RuleDefinition, RuleRevisions, RuleSettings } from '../shared/rules.ts'
-import { LEGACY_PROMPT_PARAM_KEYS } from '../shared/legacy-prompt-params.ts'
 import { assertModuleDirectory, assertModuleId, canonicalModulesRoot } from './module-install.ts'
 import { MODULE_DEFINITION_FILE, RULES_DIR, RULES_SETTINGS_FILE, RULES_VARIABLES_FILE } from './paths.ts'
 import { atomicWriteTextFile } from './text-file.ts'
@@ -40,14 +39,15 @@ export function assertRuleFileId(id: unknown): asserts id is string {
     || /^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i.test(id) || /[. ]$/.test(id)) throw new ModuleRulesError(`规则标识是保留文件名：${String(id)}`)
 }
 
-/** 旧源只能离线迁移；不得在读取、保存或运行时隐式双读。 */
+/**
+ * module.yml 的形状校验：**只拒绝结构错误**，旧内容按白名单加载。
+ *
+ * 旧格式（`promptConfigs` / `triggers` / 退役引擎名 / 旧规则快捷键 / 旧模型键）不再阻断加载：
+ * 定义照常读取，未注册的参数由 `readModuleLayerSettings` 的键白名单过滤，旧内容不参与执行。
+ * 语法迁移不在产品内提供——用户自行改写 `rules`，或交给内置技能由模型完成。
+ */
 export function assertCanonicalRuleSource(source: unknown): asserts source is Record<string, unknown> {
   if (!record(source)) throw new ModuleRulesError('module.yml 必须是对象')
-  const old = ['promptConfigs', 'triggers'].filter(key => Object.hasOwn(source, key))
-  if (Array.isArray(source.modules)) for (const name of source.modules) if (name === 'prompt-config-engine' || name === 'declared-triggers') old.push(String(name))
-  const parameters = [source.params, ...(record(source.layerSettings) ? Object.values(source.layerSettings) : [])]
-  for (const values of parameters) if (record(values)) for (const key of LEGACY_PROMPT_PARAM_KEYS) if (Object.hasOwn(values, key)) old.push(key)
-  if (old.length > 0) throw new ModuleRulesError(`模块仍含旧规则来源（${[...new Set(old)].join(', ')}）；请先运行 migrate:rules 离线迁移`, 409, 'rules-migration-required')
   if (source.rules !== undefined && !Array.isArray(source.rules)) throw new ModuleRulesError('module.yml.rules 必须是数组')
 }
 

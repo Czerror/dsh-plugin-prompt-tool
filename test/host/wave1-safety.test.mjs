@@ -17,7 +17,6 @@ const {
   DEFAULT_MODULE_ID,
 } = await import('../../lib/index.mjs')
 const { writeModule } = await import('../../src/host/write-module.ts')
-const { mergePromptConfigs } = await import('../../src/host/prompt-configs.ts')
 
 test('validateEngineParamValues：全量类型校验（布尔/数值/字符串/列表/枚举）', () => {
   // 合法值（含 '' = 删键、number 直写）无错误。
@@ -62,23 +61,6 @@ test('assertSafeConfigId / configFileName：路径穿越与 Windows 保留字符
   // 多字节（ST 导入 id 含中文）与点号小写组合允许。
   assert.equal(configFileName(1, 'beta-2.42'), '0001-beta-2.42.yml')
   assert.equal(configFileName(1, '夏瑾'), '0001-夏瑾.yml')
-})
-
-test('mergePromptConfigs：单源数组内重复 ID 合并前拒绝；跨源覆盖语义保留', () => {
-  assert.throws(
-    () => mergePromptConfigs([
-      { id: 'a', strategy: 'static', text: 'A' },
-      { id: 'a', strategy: 'static', text: 'A2' },
-    ]),
-    /duplicate prompt config id/,
-  )
-  // 跨源（默认 < 模板 < settings）同名覆盖是设计语义，不拒绝。
-  const merged = mergePromptConfigs(
-    [{ id: 'a', strategy: 'static', text: 'default' }],
-    [{ id: 'a', strategy: 'static', text: 'override' }],
-  )
-  assert.deepEqual(merged.map((spec) => spec.id), ['a'])
-  assert.equal(merged[0].text, 'override')
 })
 
 test('loadModuleSpec：坏 YAML fail loud 且带文件上下文', () => {
