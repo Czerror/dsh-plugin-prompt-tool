@@ -1,12 +1,11 @@
 /**
- * 提示词配置数据接口：默认提示词配置构建、通用 YAML 渲染、多源合并与目录加载。
+ * 提示词配置数据接口：默认提示词配置构建、通用 YAML 渲染与多源合并。
  *
  * 这是「用户自定义注入内容 + 自定义注入层级位置」的功能层：
- *   1. settings.promptConfigs 数组（UI 设置最终消费此接口）
- *   2. 生成目录 prompt-configs/（yml/json 提示词配置文件）
- *   3. 默认四条提示词配置
- * 三者按此优先级合并，同名 id 后者覆盖，新 id 追加在默认提示词配置之后。
- * 引擎（engine/prompt-config-engine.mjs）在运行时对生成 yml 做权威校验。
+ *   1. settings.promptConfigs 数组
+ *   2. 模块定义里的规则（`module.yml` 的 `rules`）
+ * 两者按此优先级合并，同名 id 后者覆盖，新 id 追加在默认提示词配置之后。
+ * 规则正文与切片归模块定义所有（`rules/<规则id>.yml`），UI 与运行时消费同一份切片。
  */
 import { stringify as stringifyYamlValue } from 'yaml'
 // @ts-expect-error 规则和文件身份使用引擎同一个边界校验。

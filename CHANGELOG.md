@@ -10,6 +10,8 @@
 
 ### 主要变化
 
+- **移除旧物化目录（`configs/`）的加载器：一切只认 `module.yml` + `rules/`**（2026-10-10 用户拍板「以后一切开发围绕新的模块模式」）。删除 `engine/schema.mjs` 的 `loadPromptConfigFiles` / `promptConfigFileNames` 与它们独占的 `engine/order.mjs#FILE_SEQUENCE`；离线迁移 `prompt-tool-migrate-rules` 不再读取旧物化目录——不再做「定义与旧实际物化内容不一致」的一致性校验，也不再从物化文件名前缀恢复 `configOrder`，迁移一律以 `module.yml` 为准。旧目录仍由 writer 在保存/迁移时清理，本插件不主动删除。
+- **修复根 `module.yml` 的生成物漂移**：`pnpm rebuild:module-template` 重新生成——一是模块清单注释的字母序（`tool-search` 归位），二是删掉 `tool-surface-resident` 规则上残留的 `if` 相位门控（组合源已在「打开即收窄」一轮删除该 `if`，根模板漏同步）。此前 `--check` 必然失败，与功能回归无关。
 - **新增 `tool-narrow` 动作：规则可直接声明官方 `ctx.tools.restrict()` 收窄工具面**。声明 `{ kind: tool-narrow, allow: [...] }` 即在 agent scope 挂一条实时过滤器，被裁掉的全局工具在模型目录**与执行层**同时消失（`get(name, scope)` 读作不存在），不必再另配 `guard` 守执行面。`allow` 是 fail-closed 白名单（空名单与保留名 `run_code` 在挂载期拒绝），名字按注册那一刻的全局目录过滤、未知名字丢弃并告警。收窄是**静态**的（注册期动作不支持条件，见 `engine/rule-spec.mjs`）；**当前没有内置模块声明它**——`tool-surface` 保持只保留无条件收窄，把它接到按需解锁上的完整方案（`deny`、动态撤销、收窄前目录副本）见 [ADR-0012](docs/adr/0012-progressive-disclosure-restrict.md)。注意它只作用于继承的全局工具，本插件注册在 agent scope 的工具裁不掉。
 - **发现工具改名 `dev_tool_search` → `tool_search`**（2026-10-10 用户拍板）：去掉 `dev_` 前缀，与既有的 `skill_search` / `skill_load` 命名对齐。查证结论：官方运行时**没有**同名工具（源码零命中，`tool_search` 只作为 `llm-pi-ai` 测试里的协议类型 `tool_search_call` 出现），`py-types` 的 `RESERVED` 只是 Python 关键字表，唯一硬保留名是 `run_code`；`tool_search` 同时满足 PTC 的裸标识符要求。代价是失去「本插件贡献」的命名空间标记——全局工具名是共享命名空间，近层同名会遮蔽，将来若官方引入同名工具需要重新让位。
 - **`tool_search` 现在会主动招呼模型来解锁**：工具描述新增一条 IMPORTANT——任务需要常驻集以外的能力（web 搜索、子代理、任务板、MCP 等）时先来这里搜索并解锁，**不要用现有工具硬凑**；同时内置 `tool-surface` 模块新增 `tool-surface-notice` 规则，在会话最早阶段（`count{user-message,max:1}` + `dedupe: session`）注入一条约 500 字符的「工具面已收窄」提示。此前模型只看到被裁后的目录，没有任何线索提示它还有 154 个工具可解锁。
@@ -34,6 +36,7 @@
 
 ### 破坏性变更（升级前必读）
 
+- **旧物化目录不再参与迁移**：旧实例上「`module.yml` 含旧键 + 旧物化目录（`configs/`）存在」的模块，迁移时不再做一致性校验，直接以 `module.yml` 的定义为准；`configOrder` 也不再从旧物化文件名前缀恢复（改由定义里的顺序或规则声明序派生）。若某个模块的定义不完整而内容只存在于旧物化目录，迁移后那份内容不会被恢复——需重新导入或手工补定义。旧目录本身仍由 writer 在保存/迁移时清理。
 - **发现工具改名 `dev_tool_search` → `tool_search`（旧会话需重新解锁一次）**：`allowFrom` 的判据是「历史 `tool/call` 的 `data.name` 精确等于声明的工具名」，改名后**旧会话里已解锁的工具会失去解锁依据**，模型需在 `tool_search` 名下重新解锁一次（压缩后同理）。模块层面：只改内置模板不会更新已有副本（`ensureModuleSeed` 只补缺失目录），副本里的 `allow` / `allowFrom.tool` 若停在旧名，`requireMatch` 会 fail-open 暴露完整目录——收窄失效而不报错，需手工同步副本或从模板重建。
 - **工具面从第一轮就收窄**：`tool-surface` 的规则不再声明 `if`，因此不再放行「首轮（未晋升且未压缩）的完整目录」——模型第一轮的工具清单就是常驻核心集加已解锁项，需要先调一次 `tool_search` 才知道还有什么可用。想恢复旧行为就在规则上加回 `if: { any: [phase{promoted: true}, phase{compacted: true, promoted: false}] }`。**只改内置模板不会更新已有副本**（`ensureModuleSeed` 只补缺失目录），要用新语义需从模板重新创建模块或手工删掉那条 `if`。
 - **`dedupe: session` 的判据改为「每当前上下文一次」**：不再扫持久事件流的全量日志，而是看该身份的消息是否还在模型可见的当前上下文里——被压缩或替换**遮蔽**的历史不再拦注入，条件仍满足时在后续步重新注入一次；此前压缩后不会重新注入（`append-context` 等续跑动作的每轮／每会话预算照旧，不随压缩重置）。完整口径见 `docs/engine-reuse.md` 的会话去重一节。

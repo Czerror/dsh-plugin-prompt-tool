@@ -1,6 +1,3 @@
-/** 加载器私有元数据：不进入 YAML、公共配置或客户端载荷。 */
-export const FILE_SEQUENCE = Symbol('prompt-tool:file-sequence')
-
 const compareText = (a, b) => a < b ? -1 : a > b ? 1 : 0
 
 /** 模块配置按持久序号执行；无物化来源的独立调用保留原 order 语义。 */

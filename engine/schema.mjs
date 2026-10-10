@@ -3,13 +3,13 @@
  * 只负责"配置长什么样";执行语义见 executor.mjs,内容策略见 strategies.mjs。
  */
 
-import { readFileSync, readdirSync } from 'node:fs'
+import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { sep } from 'node:path'
 import { parse as parseYaml } from './vendor/yaml/index.js'
 import { bindResolver } from './strategies.mjs'
 import { attachStRenderers } from './st-render.mjs'
-import { FILE_SEQUENCE, compareConfigSequence } from './order.mjs'
+import { compareConfigSequence } from './order.mjs'
 import { MATCH_LOGIC, createAnchorMatcher } from './anchor-match.mjs'
 
 const name = 'rule-engine'
@@ -80,70 +80,6 @@ export function parsePromptConfigYaml(raw) {
     throw new TypeError(`${name}: prompt config yaml must contain a single object`)
   }
   return parsed
-}
-
-/**
- * 枚举提示词配置候选文件：**两条加载路径共用同一份枚举规则**。
- *
- * 扩展名、排序与跳过名单必须两侧一致——否则 host（编辑/列举）与引擎（注入）会看到不同的
- * 文件集：host 让人编辑 A 文件、引擎却加载 B 文件。`variables.yml` 是模板变量源而非配置，
- * 两侧都跳过（引擎另行读取它做合并，见 `loadPromptConfigFiles`）。
- *
- * 只共享**枚举**这一层：解析、结构校验、错误类型与包装都留在各自边界——两边的入参类型
- * （URL vs 字符串路径）、空路径短路与异常消息本来就不同，强行合并会改变其中一侧的行为。
- *
- * @param entries `readdirSync(dir, { withFileTypes: true })` 的结果
- * @returns 按名排序的文件名（含扩展名），已剔除 `variables.yml`
- */
-export function promptConfigFileNames(entries) {
-  return entries
-    .filter((entry) => entry.isFile() && /\.(ya?ml|json)$/i.test(entry.name))
-    .sort((a, b) => a.name.localeCompare(b.name))
-    .map((entry) => entry.name)
-    .filter((fileName) => fileName !== 'variables.yml')
-}
-
-/**
- * 从提示词配置模块目录加载全部提示词配置描述:按文件名排序扫描 *.yml / *.yaml / *.json。
- * 文件名用数字前缀表达引擎执行顺序(00-…、10-…)。
- */
-export function loadPromptConfigFiles(dirUrl) {
-  let entries
-  try {
-    entries = readdirSync(dirUrl, { withFileTypes: true })
-  } catch (error) {
-    throw new TypeError(`${name}: configsDir ${String(dirUrl)} is not readable: ${String(error?.message ?? error)}`)
-  }
-  // 模块级模板变量（writeModule 生成 variables.yml）：读入后合并进每条配置
-  // variables（配置自身优先）；variables.yml 本身不当作配置解析。缺失或损坏
-  // 时为空变量源，不阻断加载。
-  let presetVariables = {}
-  try {
-    const parsed = parseYaml(readFileSync(new URL('variables.yml', dirUrl), 'utf8'))
-    if (parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed)) presetVariables = parsed
-  } catch {
-    // 无 variables.yml（旧产物/手写目录）或解析失败：保持空变量源。
-  }
-  const specs = []
-  for (const fileName of promptConfigFileNames(entries)) {
-    const raw = readFileSync(new URL(fileName, dirUrl), 'utf8')
-    const spec = /\.json$/i.test(fileName) ? JSON.parse(raw) : parsePromptConfigYaml(raw)
-    const prefix = /^(\d+)-/.exec(fileName)
-    if (prefix !== null && spec !== null && typeof spec === 'object' && !Array.isArray(spec)) {
-      const sequence = Number(prefix[1])
-      if (!Number.isSafeInteger(sequence)) throw new TypeError(`${name}: unsafe config sequence in ${fileName}`)
-      Object.defineProperty(spec, FILE_SEQUENCE, { value: sequence })
-    }
-    specs.push(spec)
-  }
-  for (const spec of specs) {
-    if (spec === null || typeof spec !== 'object' || Array.isArray(spec)) continue
-    const own = spec.variables !== null && typeof spec.variables === 'object' && !Array.isArray(spec.variables)
-      ? spec.variables
-      : {}
-    spec.variables = { ...presetVariables, ...own }
-  }
-  return specs
 }
 
 export const KNOWN_STRATEGIES = new Set(['static', 'placeholder', 'first-turn-anchor', 'guide-auto', 'anchor-notice', 'world-book'])
@@ -718,7 +654,7 @@ export function createPromptConfigs(specs, options = {}) {
       templatePatch,
       params,
     }
-    const sequence = (Object.hasOwn(options.configOrder ?? {}, spec.id) ? options.configOrder[spec.id] : undefined) ?? spec[FILE_SEQUENCE]
+    const sequence = (Object.hasOwn(options.configOrder ?? {}, spec.id) ? options.configOrder[spec.id] : undefined)
       ?? (typeof options.sourceModuleId === 'string' ? index * 10 : undefined)
     if (sequence !== undefined) config.sequence = sequence
     if (typeof options.sourceModuleId === 'string') config.sourceModuleId = options.sourceModuleId

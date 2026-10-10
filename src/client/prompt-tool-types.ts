@@ -96,7 +96,7 @@ export interface PromptConfigDraft extends PromptConfigSourceView {
   contentSaving?: boolean
 }
 
-/** 包内内置模板条目：文件 + 原文 + 解析后的单条配置（与生成目录 prompt-configs/*.yml 同构）。 */
+/** 包内内置模板条目：文件 + 原文 + 解析后的单条规则（与 `rules/<规则id>.yml` 同构）。 */
 export interface PromptConfigTemplateEntry {
   file: string
   content: string

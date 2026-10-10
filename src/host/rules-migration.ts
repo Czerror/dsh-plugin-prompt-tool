@@ -20,15 +20,13 @@ import { invalidateModuleSpec } from './manifest.ts'
 import { isMap, isSeq, parseDocument } from 'yaml'
 import { LEGACY_PROMPT_PARAM_KEYS } from '../shared/legacy-prompt-params.ts'
 // @ts-expect-error 引擎是所有新规则的唯一校验器。
-import { compileRules, injectionConfigSpec } from '../../engine/rule-spec.mjs'
+import { compileRules } from '../../engine/rule-spec.mjs'
 // @ts-expect-error 离线转换读取旧声明的真实执行点。
 import { actionExecutionPoint } from '../../engine/actions.mjs'
 // @ts-expect-error 与旧条件层的缺省匹配对象同源；patch / unset 的合法键集也由引擎校验器派生。
-import { createPromptConfigs, loadPromptConfigFiles, assertLlmCallPatch } from '../../engine/schema.mjs'
+import { assertLlmCallPatch } from '../../engine/schema.mjs'
 // @ts-expect-error 「固定注册效果」判据只在引擎实现一份。
 import { isFixedRegistration } from '../../engine/rule-spec.mjs'
-// @ts-expect-error 旧物化文件的顺序只在离线预检时读取。
-import { FILE_SEQUENCE } from '../../engine/order.mjs'
 
 const record = (value: unknown): value is Record<string, unknown> => value !== null && typeof value === 'object' && !Array.isArray(value)
 const condition = (items: RuleCondition[]): RuleCondition | undefined => items.length === 0 ? undefined : items.length === 1 ? items[0] : { all: items }
@@ -99,26 +97,6 @@ export function convertLegacyModuleRules(source: Record<string, unknown>, option
   let configs = mergePromptConfigs(modelRequestConfigs(readModuleLayerSettings(source)), legacy.configs)
   const rules: RuleDefinition[] = structuredClone((source.rules ?? []) as RuleDefinition[])
   const configOrder = readConfigOrder(source.configOrder)
-  if (directory !== undefined && existsSync(join(directory, 'configs'))) {
-    const actual = loadPromptConfigFiles(pathToFileURL(join(directory, 'configs') + sep)) as Array<PromptConfigSpec & Record<symbol, number>>
-    for (const [index, config] of actual.entries()) if (configOrder[config.id] === undefined) configOrder[config.id] = config[FILE_SEQUENCE] ?? index * 10
-    if (!Object.hasOwn(source, 'promptConfigs') && configs.length === 0) configs = actual
-    else {
-      const options = { sourceModuleId: source.id, configOrder, templateBaseUrl: pathToFileURL(join(root!, '.engine', 'prompt-config-engine.mjs')), templateModuleRoot: pathToFileURL(root! + sep) }
-      const prepared = configs.map(config => injectionConfigSpec({ id: config.id }, { id: 'inject', kind: 'inject-text', config }, source))
-      // 只对比结构，不恢复已退出的旧资格执行器；两侧同时替换策略名后参数/身份仍逐项比较。
-      const comparable = (config: PromptConfigSpec): PromptConfigSpec => config.strategy === 'custom-fallback' ? { ...config, strategy: 'anchor-notice' } : config
-      const expected = createPromptConfigs(prepared.map(comparable), options) as Array<Record<string, unknown>>
-      const running = createPromptConfigs(actual.map(comparable), options) as Array<Record<string, unknown>>
-      const fingerprint = (entries: Array<Record<string, unknown>>) => contentHash(entries.map(config => {
-        const value = { ...config }
-        // 禁用大文本曾在物化时瘦身；其正文从定义保留，不借迁移重新启用。
-        if (value.enabled === false) delete value.texts
-        return value
-      }))
-      if (fingerprint(expected) !== fingerprint(running)) throw new Error(`模块 ${String(source.id ?? directory)} 的定义与旧实际物化内容不一致，无法无损迁移；请先明确选择来源`)
-    }
-  }
   const append = (rule: RuleDefinition, sequence: number) => {
     if (rules.some(item => item.id === rule.id)) throw new Error(`规则身份冲突，须先明确改名：${rule.id}`)
     rules.push(rule)

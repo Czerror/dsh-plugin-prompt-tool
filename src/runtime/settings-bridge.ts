@@ -1209,7 +1209,7 @@ export function registerSettingsBridge(
               writeBridgeJson(res, 400, { ok: false, code: 'settings-rejected', message: session.message })
               return
             }
-            // 实际生效配置 = 生成目录 prompt-configs/（引擎加载源）；
+            // 实际生效配置 = 模块定义编译出的规则（`rules/` 切片）；
             // settings.promptConfigs 仅是用户覆盖层，默认为空不代表无配置。
             const dir = editDir(req) ?? ''
             if (!guardModuleFormat(dir, res)) return
