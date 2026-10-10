@@ -539,7 +539,11 @@ rules:
 #     {}
 #   agent-request:
 #     # 调用配置层：共享参数，不属于该层某一条提示词规则。
-#     {}
+#     modelProvider: "" # 模型服务商；string
+#     modelName: "" # 模型；string
+#     modelReasoningEffort: "" # 思维程度；string
+#     modelTemperature: "" # 采样温度；number；有限数；空继承宿主，不写入请求 patch
+#     modelMaxTokens: "" # 输出上限；number；正整数；空继承宿主
 #   llm-stream:
 #     # 模型流层：共享参数，不属于该层某一条提示词规则。
 #     {}
@@ -552,6 +556,11 @@ rules:
 #     {}
 #   subagent-start:
 #     # 子代理启动层：共享参数，不属于该层某一条提示词规则。
+#     subagentModelProvider: "" # 本地子代理请求服务商；string
+#     subagentModelName: "" # 本地子代理请求模型；string
+#     subagentReasoningEffort: "" # 子代理思维程度；string
+#     subagentTemperature: "" # 子代理采样温度；number；子代理采样最终通过 agent-request 生效
+#     subagentMaxTokens: "" # 子代理输出上限；number；正整数；空继承宿主
 #     maxDepth: "" # 策略委派深度；max-depth；0 禁止委派；provider-managed 交给 provider；正整数限制深度；空继承
 #   subagent-end:
 #     # 子代理结束层：共享参数，不属于该层某一条提示词规则。

@@ -23,7 +23,7 @@ Config 的唯一键是 `modulesEnabled`，表示模块运行总闸。关闭只�
 
 共享只限于同一模块内的配置卡。`persona`、`variables`、`customTools`、`subagentToolPolicy` 和能力行的 `moduleConfigs` 保留独立所有者；module.yml 顶层布尔 `stWorldBookRecursive`（缺省关闭、按模块生效，只决定该模块的 ST 世界书条目是否参与递归重扫）同属预设行为，不进部署设置。`loadModuleSpec().params` 是 `layerSettings` 的内部平铺适配面，不是第二个磁盘参数源，也不承载规则正文。
 
-模型路由与采样参数写入 `request-params` 动作；主会话、子代理和模型范围统一由规则级 `if.scope` 约束，不再在动作中另放动态门。模型未配置时继承宿主会话，不调用 `agentDefaultModel.saveSelection` 改写全局默认。十个旧 `model*` / `subagentModel*` 键由 `RULE_OWNED_MODEL_PARAMS` 标记为迁移输入，不再从 `layerSettings` 隐式生成请求规则。
+模型路由与采样参数有两条可写入口：公共参数（`main-model` / `subagent-model` 卡写 `layerSettings`）与规则动作 `request-params`。公共参数由**装配期**消费：`prepareAssembly` 调 `modelRequestConfigs` 生成 `param-model-params` / `param-subagent-model-params` 两条合成规则，与模块规则一并 `compileRules`，按 `scope.audience` 分别改写主会话与子代理的实际请求；合成规则不写 `module.yml` / `rules` 切片，未配置参数时不产生。主会话、子代理和模型范围由规则级 `if.scope` 约束，不在动作中另放动态门。模型未配置时继承宿主会话，不调用 `agentDefaultModel.saveSelection` 改写全局默认。
 
 插件管理路径直接使用 `compileRules → mountRuleSources`，工具和策略走内联输入。模块不再生成 `rules.yml`、`configs/`、`agent.cordis.yml`、`custom-tools/` 或 `subagent-tools/`；普通重建只恢复切片并清理已知旧产物，不交换整个用户目录。空模块不自动增加规则。
 

@@ -18,8 +18,9 @@ import { basename, join, resolve, sep } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import type { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
-import { packageEngineDir, resolveModuleFacts, resolveModuleDir, loadModuleSpec } from '../host/manifest.ts'
+import { packageEngineDir, resolveModuleFacts, resolveModuleDir, resolveModuleParams, loadModuleSpec } from '../host/manifest.ts'
 import type { ModuleSpec } from '../host/manifest.ts'
+import { modelRequestConfigs } from '../host/prompt-configs.ts'
 import { assertModuleId } from '../host/module-install.ts'
 import { readConfigOrder } from '../host/module-config-order.ts'
 import { rulePromptConfigOptions } from '../host/module-rules.ts'
@@ -135,14 +136,26 @@ export async function prepareAssembly(
   if (facts.effectiveModules === null) throw new Error(`模块 ${moduleId} 的模块声明无效，无法配装`)
   const configsByModule = facts.effectiveConfigs ?? {}
   const ruleConfig = absolutizeManagedFields(configsByModule['rule-engine'] ?? {}, moduleDir)
-  const rules = compileRules(spec.rules ?? [], {
+  // 公共参数区的模型路由/采样参数（`layerSettings` 的 agent-request / subagent-start）在装配期
+  // 转成请求补丁：参数桥是它们的唯一可写入口，`request-params` 是它们唯一的执行点。
+  // 合成规则与模块规则**一起编译**（不能事后推进已编译结果），只活在本次装配里，
+  // 不进 module.yml / rules 切片；作者手写了同名 id 时让位给作者的定义。
+  const declaredRules = spec.rules ?? []
+  const syntheticRules = modelRequestConfigs(resolveModuleParams(spec, {})).map(request => ({
+    id: `param-${request.id}`,
+    name: String(request.name ?? request.id),
+    layer: 'agent-request',
+    if: { scope: { audience: request.audience === 'subagent' ? 'subagent' : 'main' } },
+    then: [{ id: 'request', kind: 'request-params', ...request.params }],
+  })).filter(rule => !declaredRules.some(declared => declared.id === rule.id))
+  const rules = compileRules([...declaredRules, ...syntheticRules], {
     moduleId,
     configOrder: readConfigOrder(spec.configOrder),
     variables: spec.variables, variablesEnabled: spec.variablesEnabled,
     stWorldBookRecursive: spec.stWorldBookRecursive,
     promptConfigOptions: rulePromptConfigOptions(moduleDir, ruleConfig.strategyDir),
   })
-  const ruleConditions = new Map((spec.rules ?? []).map(rule => [rule.id, structuredClone(rule.if)]))
+  const ruleConditions = new Map(declaredRules.map(rule => [rule.id, structuredClone(rule.if)]))
   // 「独占」（`complete`）组装期兜底：宿主 system-prompt 对「多于一个生效 complete 段」
   // 直接抛错（packages/core/system-prompt/src/index.ts:597-600），而写盘前的互斥门控只
   // 覆盖两个 bridge 端点——手改 module.yml、还原 ZIP/备份、导入包都能绕过。这里在装配前

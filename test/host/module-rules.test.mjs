@@ -77,6 +77,9 @@ test('规则边界：仅校验与无改动幂等，旧来源显式要求离线�
   assert.equal(readFileSync(join(dir, 'module.yml'), 'utf8'), before)
   writeFileSync(join(dir, 'module.yml'), 'id: check\nmodules: []\npromptConfigs: []\n')
   assert.throws(() => readModuleRules(dir), error => error.code === 'rules-migration-required')
+  // 模型路由/采样参数是公共参数（写在 layerSettings），不是旧规则来源：规则表与它并存必须能加载。
   writeFileSync(join(dir, 'module.yml'), 'id: check\nmodules: []\nrules: []\nlayerSettings:\n  agent-request:\n    modelTemperature: 0.5\n')
-  assert.throws(() => readModuleRules(dir), error => error.code === 'rules-migration-required', '规则表存在也不能藏旧模型参数')
+  const withModelParams = readModuleRules(dir)
+  assert.equal(withModelParams.rules.length, 0)
+  assert.equal(loadModuleSpec(dir).params.modelTemperature, 0.5, '模型参数原样读回，不再被当作旧源拒绝')
 })

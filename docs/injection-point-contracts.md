@@ -104,7 +104,7 @@ rules:
           text: 先核实调用链，再开始修改。
 ```
 
-共享参数位置由参数目录的 `storageLayer` 固定，`card` 与编辑组 `displayLayer` 只决定 UI 展示；当前公开共享键为4个。旧模型键与15个规则快捷键只进入离线迁移。`maxDepth` 只在插件子代理工具策略启用时生效；子模型路由通过 `request-params` 动作和受众条件作用于实际请求，不改普通官方 spawn 预检。persona、variables、customTools、subagentToolPolicy、moduleConfigs 保留独立所有者，不复制到每条规则。详情见 [参数框架](architecture-params.md)。
+共享参数位置由参数目录的 `storageLayer` 固定，`card` 与编辑组 `displayLayer` 只决定 UI 展示；当前公开共享键为14个（含模型路由/采样参数）。模型键写在 `layerSettings` 的 `agent-request` / `subagent-start`，由 `modelRequestConfigs` 转成 `model-params` / `subagent-model-params` 请求规则（与规则动作 `request-params` 并存）；15个旧规则快捷键只进入离线迁移。`maxDepth` 只在插件子代理工具策略启用时生效；子模型路由同样作用于实际请求，不改普通官方 spawn 预检。persona、variables、customTools、subagentToolPolicy、moduleConfigs 保留独立所有者，不复制到每条规则。详情见 [参数框架](architecture-params.md)。
 
 ## 官方依据
 

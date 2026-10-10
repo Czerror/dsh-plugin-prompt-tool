@@ -8,7 +8,6 @@ import { ENGINE_PARAM_LAYERS } from '../src/host/module-layer-settings.ts'
 import { PARAMS_ZH } from '../src/client/locales-params.ts'
 import { LAYER_CONTRACTS, LAYER_LABELS, LAYER_ORDER } from '../engine/schema.mjs'
 import { compileRules } from '../engine/rule-spec.mjs'
-import { RULE_OWNED_MODEL_PARAMS } from '../src/shared/rules.ts'
 
 const root = new URL('../', import.meta.url)
 const output = new URL('module.yml', root)
@@ -87,7 +86,7 @@ const notes = {
   subagentMaxTokens: '正整数；空继承宿主',
 }
 for (const layer of LAYER_ORDER) reference.getIn(['layerSettings', layer], true).commentBefore = ` ${LAYER_LABELS[layer].title}：共享参数，不属于该层某一条提示词规则。`
-const sharedParamKeys = ENGINE_PARAM_KEYS.filter(key => !RULE_OWNED_MODEL_PARAMS.includes(key))
+const sharedParamKeys = ENGINE_PARAM_KEYS
 for (const key of sharedParamKeys) {
   const rule = ENGINE_PARAM_DEFINITIONS[key]
   const path = ['layerSettings', ENGINE_PARAM_LAYERS[key], key]

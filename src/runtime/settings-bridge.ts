@@ -20,7 +20,7 @@ import { ruleInjections } from '../host/rule-content.ts'
 import { readOfficialOrderSegments, type OfficialOrderLookup } from '../shared/official-orders.ts'
 import { ModuleLayerSettingsError, readModuleLayerSettings } from '../host/module-layer-settings.ts'
 import { readModuleRules, editModuleRules, ModuleRulesError } from '../host/module-rules.ts'
-import { RULE_OWNED_MODEL_PARAMS, type RuleEdit, type RuleEditorMeta, type RuleRevisions } from '../shared/rules.ts'
+import type { RuleEdit, RuleEditorMeta, RuleRevisions } from '../shared/rules.ts'
 import { loadPromptTemplates, loadToolTemplates } from '../host/templates.ts'
 import { assertImportableSource, importSkillsDirectory, importSkillsPackage } from '../host/skills-import.ts'
 import { createSkill, type SkillActionResult } from '../host/skills-actions.ts'
@@ -1472,10 +1472,6 @@ export function registerSettingsBridge(
             }
             if (!guardModuleWrite(dir, res)) return
             const rawOverrides = record.overrides as Record<string, unknown> | undefined
-            if (rawOverrides !== undefined && RULE_OWNED_MODEL_PARAMS.some(key => Object.hasOwn(rawOverrides, key))) {
-              writeBridgeJson(res, 410, { ok: false, code: 'rules-route-retired', message: '模型路由和采样参数已归入 request-params 规则动作，请通过 /rules 编辑。' })
-              return
-            }
             // 参数键白名单：未知键 fail loud，避免写入「读回/参数桥都不消费」的死键。
             if (rawOverrides !== undefined) {
               const unknownKeys = Object.keys(rawOverrides).filter((key) => key === 'promptConfigs' || !PARAM_KEYS.has(key))

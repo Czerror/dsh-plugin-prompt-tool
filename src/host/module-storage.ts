@@ -5,7 +5,6 @@ import { basename, dirname, isAbsolute, join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { Document, parseDocument } from 'yaml'
 import type { RuleContent, RuleDefinition, RuleRevisions, RuleSettings } from '../shared/rules.ts'
-import { RULE_OWNED_MODEL_PARAMS } from '../shared/rules.ts'
 import { LEGACY_PROMPT_PARAM_KEYS } from '../shared/legacy-prompt-params.ts'
 import { assertModuleDirectory, assertModuleId, canonicalModulesRoot } from './module-install.ts'
 import { MODULE_DEFINITION_FILE, RULES_DIR, RULES_SETTINGS_FILE, RULES_VARIABLES_FILE } from './paths.ts'
@@ -47,7 +46,7 @@ export function assertCanonicalRuleSource(source: unknown): asserts source is Re
   const old = ['promptConfigs', 'triggers'].filter(key => Object.hasOwn(source, key))
   if (Array.isArray(source.modules)) for (const name of source.modules) if (name === 'prompt-config-engine' || name === 'declared-triggers') old.push(String(name))
   const parameters = [source.params, ...(record(source.layerSettings) ? Object.values(source.layerSettings) : [])]
-  for (const values of parameters) if (record(values)) for (const key of [...LEGACY_PROMPT_PARAM_KEYS, ...RULE_OWNED_MODEL_PARAMS]) if (Object.hasOwn(values, key)) old.push(key)
+  for (const values of parameters) if (record(values)) for (const key of LEGACY_PROMPT_PARAM_KEYS) if (Object.hasOwn(values, key)) old.push(key)
   if (old.length > 0) throw new ModuleRulesError(`模块仍含旧规则来源（${[...new Set(old)].join(', ')}）；请先运行 migrate:rules 离线迁移`, 409, 'rules-migration-required')
   if (source.rules !== undefined && !Array.isArray(source.rules)) throw new ModuleRulesError('module.yml.rules 必须是数组')
 }

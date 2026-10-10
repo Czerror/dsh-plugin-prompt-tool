@@ -1,11 +1,5 @@
 import type { EngineLayer } from './engine-capabilities.ts'
 
-/** 仅离线迁移读取；新模型路由与采样参数必须写 request-params 动作。 */
-export const RULE_OWNED_MODEL_PARAMS = [
-  'modelProvider', 'modelName', 'modelReasoningEffort', 'modelTemperature', 'modelMaxTokens',
-  'subagentModelProvider', 'subagentModelName', 'subagentReasoningEffort', 'subagentTemperature', 'subagentMaxTokens',
-] as const
-
 /** 一张独立配置卡的判断树；原语与组合的合法形状由引擎唯一校验。 */
 export type RuleCondition = Record<string, unknown>
 

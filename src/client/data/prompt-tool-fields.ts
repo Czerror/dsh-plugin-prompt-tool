@@ -1,6 +1,5 @@
 /** 提示词工具客户端状态模型与稳定默认值（无网络、无 React）。 */
 import { ENGINE_PARAM_DEFINITIONS, ENGINE_PARAM_KEYS, type EngineParamKey, type EngineParams } from '../../shared/engine-params.ts'
-import { RULE_OWNED_MODEL_PARAMS } from '../../shared/rules.ts'
 import { INJECTION_POINT_ORDER } from '../../shared/engine-capabilities.ts'
 import { DEFAULT_MODULE_ID } from '../../shared/module-ids.ts'
 import type { SkillCatalogEntry } from '../../shared/skills.ts'
@@ -16,10 +15,9 @@ export interface HostDefaultModel {
 /** 技能目录条目：与服务端共用同一契约（来源、优先级、两端调用策略、同名遮蔽）。 */
 export type { SkillCatalogEntry } from '../../shared/skills.ts'
 
-/** 模型路由只由规则动作拥有；公共参数入口不读写这些旧键。 */
-export type SharedParamKey = Exclude<EngineParamKey, typeof RULE_OWNED_MODEL_PARAMS[number]>
-const ruleOwnedModelParams: ReadonlySet<string> = new Set(RULE_OWNED_MODEL_PARAMS)
-export const SHARED_PARAM_KEYS = ENGINE_PARAM_KEYS.filter((key): key is SharedParamKey => !ruleOwnedModelParams.has(key))
+/** 全部引擎参数都可从公共参数入口读写；模型参数归 `main-model` / `subagent-model` 卡。 */
+export type SharedParamKey = EngineParamKey
+export const SHARED_PARAM_KEYS = ENGINE_PARAM_KEYS
 
 /** 参数草稿类型从宿主契约派生，只转换 UI 的列表/深度形态。 */
 type EngineParamDrafts = {

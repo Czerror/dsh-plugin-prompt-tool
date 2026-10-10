@@ -23,4 +23,3 @@ export type LegacyPromptParams = {
 }
 export const LEGACY_PROMPT_PARAM_KEYS = Object.keys(LEGACY_PROMPT_PARAM_DEFINITIONS) as LegacyPromptParamKey[]
 export const isLegacyPromptParam = (key: string): key is LegacyPromptParamKey => Object.hasOwn(LEGACY_PROMPT_PARAM_DEFINITIONS, key)
-export const legacyPromptParamPath = (key: LegacyPromptParamKey): string[] => ['layerSettings', 'pre-step', key]

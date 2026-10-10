@@ -4,7 +4,6 @@ import { cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, re
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import type { RuleAction, RuleCondition, RuleDefinition } from '../shared/rules.ts'
-import { RULE_OWNED_MODEL_PARAMS } from '../shared/rules.ts'
 import type { PromptConfigSpec } from './prompt-configs.ts'
 import { mergePromptConfigs, modelRequestConfigs } from './prompt-configs.ts'
 import { readLegacyPromptParams, resolveLegacyPromptConfigs } from './legacy-prompt-params.ts'
@@ -157,7 +156,6 @@ export function convertLegacyModuleRules(source: Record<string, unknown>, option
   return { rules, configOrder, consumedLegacyKeys: Object.keys(readLegacyPromptParams(source)) }
 }
 
-const MODEL_KEYS = RULE_OWNED_MODEL_PARAMS
 const OLD_ENGINES = new Set(['prompt-config-engine', 'declared-triggers'])
 const digest = (value: string | Uint8Array): string => createHash('sha256').update(value).digest('hex')
 const sortedValue = (value: unknown): unknown => Array.isArray(value) ? value.map(sortedValue) : record(value)
@@ -242,9 +240,8 @@ export function planRulesMigration(root: string, options: { decompose?: boolean 
     if (doc.errors.length > 0) throw new Error(`模块 ${entry.name} YAML 无效：${doc.errors[0]!.message}`)
     const source: unknown = doc.toJS()
     if (!record(source)) throw new Error(`模块 ${entry.name} 定义必须是对象`)
-    const layerParams = readModuleLayerSettings(source)
     const oldModules = Array.isArray(source.modules) && source.modules.some(id => OLD_ENGINES.has(String(id)))
-    const oldRules = Object.hasOwn(source, 'promptConfigs') || Object.hasOwn(source, 'triggers') || Object.keys(readLegacyPromptParams(source)).length > 0 || MODEL_KEYS.some(key => Object.hasOwn(layerParams, key)) || oldModules
+    const oldRules = Object.hasOwn(source, 'promptConfigs') || Object.hasOwn(source, 'triggers') || Object.keys(readLegacyPromptParams(source)).length > 0 || oldModules
     const hintPatch = oldRules || !Object.hasOwn(source, 'rules') ? instructionHintPolicyPatch(source) : undefined
     const needs = oldRules || hintPatch !== undefined
     if (!needs) {
@@ -265,7 +262,7 @@ export function planRulesMigration(root: string, options: { decompose?: boolean 
     doc.delete('promptConfigs'); doc.delete('triggers')
     if (Array.isArray(source.modules)) doc.set('modules', [...new Set(source.modules.map(id => OLD_ENGINES.has(String(id)) ? 'rule-engine' : id))])
     if (record(source.layerSettings)) for (const [layer, values] of Object.entries(source.layerSettings)) if (record(values)) {
-      for (const key of [...converted.consumedLegacyKeys, ...MODEL_KEYS]) if (Object.hasOwn(values, key)) doc.deleteIn(['layerSettings', layer, key])
+      for (const key of converted.consumedLegacyKeys) if (Object.hasOwn(values, key)) doc.deleteIn(['layerSettings', layer, key])
     }
     if (record(source.moduleConfigs)) {
       const strategies = [source.moduleConfigs['prompt-config-engine'], source.moduleConfigs['declared-triggers']].filter(record).map(value => value.strategyDir).filter(value => typeof value === 'string' && value.length > 0)
