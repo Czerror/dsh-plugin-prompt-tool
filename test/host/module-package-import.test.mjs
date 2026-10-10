@@ -224,10 +224,10 @@ test('importPresetPackage：SillyTavern JSON 单文件经转换引擎导入（�
   const converted = parseYaml(readFileSync(presetFile, 'utf8'))
   assert.equal(converted.name, '我的角色（SillyTavern 转换）', '预设名取卡片 name 字段')
   assert.deepEqual(converted.modules, [
-    'rule-engine', 'character-tools',
-    'session-var-tools', 'tool-config-engine',
+    'rule-engine', 'module-import-tools',
+    'module-variable-tools', 'tool-config-engine',
   ], 'ST 管理工具按固定集合装配；persona 行由顶层 persona 段渲染时自动前插')
-  assert.deepEqual(converted.persona, { prefix: '', complete: false }, 'system-section 注入需要顶层 persona（complete: false 允许其生效）')
+  assert.deepEqual(converted.persona, { main: { prefix: '', complete: false }, subagent: { prefix: '', complete: false } }, '导入系统段时主子人设均显式解除独占')
   assert.equal(converted.modules.includes('tool-web'), false, 'enable_web_search: false 不组装 tool-web')
   // B7 T3「3+1 结合」：`enable_web_search: false` 由三条声明式触发器
   // （呈现裁剪 / SDK 正文裁剪 / 执行 guard）共用同一份 deny 名单表达。
@@ -256,8 +256,8 @@ test('importPresetPackage：SillyTavern JSON 单文件经转换引擎导入（�
       text: '你是助手。', layer: 'system-section', mergeMode: 'merged',
     // system_prompt 只是 ST 的管理位（不改变发送角色）：保留为来源事实，层归属仍按 role。
     params: {
-      stSource: { position: 0, depth: 4, order: 100, role: 'system', systemPrompt: true },
-      stMacros: true,
+      source: { format: 'sillytavern', id: 'main', original: { position: 0, depth: 4, order: 100, role: 'system', systemPrompt: true } },
+      templateEvaluation: true,
     },
     } }],
   })
@@ -361,7 +361,7 @@ test('importPresetPackage：角色卡世界书 add_always（CCv2/CCv3 常驻标�
   assert.equal(status, 200)
   assert.equal(payload.value?.id, 'ccv3-card')
   const converted = parseYaml(readFileSync(join(PRESETS, 'ccv3-card', 'module.yml'), 'utf8'))
-  const configs = contentEntries(converted).filter((config) => config.strategy === 'world-book')
+  const configs = contentEntries(converted).filter((config) => config.strategy === 'context-activation')
   assert.equal(configs.length, 3, '三条世界书条目全部转换')
   assert.equal(configs.find((config) => config.id === 'lore-1').params.constant, true, 'add_always: true 应常驻')
   assert.equal(configs.find((config) => config.id === 'lore-2').params.constant, false, 'add_always: false 不常驻')
@@ -377,11 +377,15 @@ test('importPresetPackage：世界书 ST 编辑器内部格式（key/keysecondar
         character_book: {
           entries: [
             // 关键词条目：key 单数 + add_always false → 必须保持关键词触发（不得常驻）。
-            { uid: 10, key: ['酒吧'], keysecondary: ['酒保'], content: '酒吧设定', add_always: false, disable: false, order: 50 },
+            { uid: 10, key: ['酒吧'], keysecondary: ['酒保'], content: '{{getvar::setting}}', add_always: false, disable: false, order: 50,
+              selective: true, selectiveLogic: 1, extensions: { scan_depth: 3, group: 'location', match_creator_notes: true } },
             // 禁用条目：disable: true → enabled: false。
             { uid: 11, key: ['禁词'], content: '禁用设定', add_always: false, disable: true, order: 60 },
             // 匹配开关 camelCase 形态 + 正则形态键（ST 无 useRegex 字段：正则键自动检测）。
             { uid: 12, key: ['/城堡\\d+/'], content: '城堡设定', add_always: false, disable: false, order: 70, caseSensitive: true, matchWholeWords: true },
+            { uid: 13, key: [], content: 'OUTLET', constant: true, outletName: 'private-channel' },
+            { uid: 14, key: [], content: 'VECTOR', constant: true, vectorized: true },
+            { uid: 15, key: [], content: 'TRIGGER', constant: true, triggers: ['swipe'] },
           ],
         },
       },
@@ -389,14 +393,21 @@ test('importPresetPackage：世界书 ST 编辑器内部格式（key/keysecondar
   })
   assert.equal(status, 200)
   const converted = parseYaml(readFileSync(join(PRESETS, 'editor-format', 'module.yml'), 'utf8'))
-  const configs = contentEntries(converted).filter((config) => config.strategy === 'world-book')
-  assert.equal(configs.length, 3)
+  const configs = contentEntries(converted).filter((config) => config.strategy === 'context-activation')
+  assert.equal(configs.length, 6)
   const bar = configs.find((config) => config.id === 'lore-10')
   assert.deepEqual(bar.params.keys, ['酒吧'], 'key 单数应收敛为 keys')
   assert.deepEqual(bar.params.secondaryKeys, ['酒保'], 'keysecondary 应收敛为 secondaryKeys')
   assert.equal(bar.params.constant, false, '关键词条目不常驻')
   assert.equal(bar.enabled, true, 'disable: false → 启用')
   assert.equal(bar.order, 50, '最终正文按 ST unshift 结果升序；激活优先级另行处理')
+  assert.equal(bar.text, '{{module.get::setting}}')
+  assert.equal(bar.params.templateEvaluation, true)
+  assert.equal(bar.params.selectiveLogic, 'NOT_ALL')
+  assert.equal(bar.params.wordBoundary, 'ascii-token')
+  assert.deepEqual(bar.params.activation, { scan: 'history', scanDepth: 3, selective: true, selectionGroup: 'location', scanVariables: ['creator_notes'] })
+  assert.equal(bar.params.source.format, 'sillytavern')
+  assert.equal(bar.params.source.original.selectiveLogic, 1)
   const banned = configs.find((config) => config.id === 'lore-11')
   assert.equal(banned.enabled, false, 'disable: true → 禁用')
   const castle = configs.find((config) => config.id === 'lore-12')
@@ -404,6 +415,8 @@ test('importPresetPackage：世界书 ST 编辑器内部格式（key/keysecondar
   assert.equal(castle.params.wholeWords, true)
   assert.deepEqual(castle.params.keys, ['/城堡\\d+/'], '正则形态键原样保留')
   assert.equal('useRegex' in castle.params, false, '不写幽灵字段 useRegex（正则键由 anchor-match 自动检测）')
+  assert.deepEqual(configs.filter(config => ['lore-13', 'lore-14', 'lore-15'].includes(config.id)).map(config => config.enabled), [false, false, false], '无法承接的控制不被误当常驻注入')
+  assert.ok(converted.meta.stWarnings.some(warning => warning.includes('已禁用该规则')))
 })
 
 test('convertStToModule：未定义宏登记为空占位；内建名与运行时宏名不登记也不诊断', () => {
@@ -411,7 +424,7 @@ test('convertStToModule：未定义宏登记为空占位；内建名与运行时
     name: '宏卡',
     character_book: { entries: [
       // 无来源（含中文名）→ 登记空占位并产出可定位诊断，插值不留字面。
-      { id: 1, key: ['{{未知宏}}', '{{时间}}', '{{dsh_home}}'], content: 'A', enabled: true, insertion_order: 100 },
+      { id: 1, key: ['{{未知宏}}', '{{时间}}', '{{dsh_home}}', '{{user}}'], content: 'A {{正文占位}}', enabled: true, insertion_order: 100 },
       // 运行时宏名大小写不敏感；内建名大小写敏感（只有精确的 DSH_HOME 是保留名）。
       { id: 2, key: ['{{time}}', '{{TIME}}'], content: 'B', enabled: true, insertion_order: 200 },
       { id: 3, key: ['{{DSH_HOME}}'], content: 'C', enabled: true, insertion_order: 300 },
@@ -419,7 +432,7 @@ test('convertStToModule：未定义宏登记为空占位；内建名与运行时
       { id: 4, key: ['{{char}}'], content: 'D', enabled: true, insertion_order: 400 },
     ] },
   }, 'macro-card')
-  for (const key of ['未知宏', '时间', 'dsh_home']) assert.equal(spec.variables[key], '', `${key} 无来源 → 空占位`)
+  for (const key of ['未知宏', '时间', 'dsh_home', 'user', '正文占位']) assert.equal(spec.variables[key], '', `${key} 无来源 → 空占位`)
   for (const key of ['time', 'TIME', 'DSH_HOME']) assert.equal(Object.hasOwn(spec.variables, key), false, `${key} 已有来源，不得登记为空占位`)
   assert.equal(spec.variables.char, '宏卡', 'declaredKeys 只跳过登记，不改写声明值')
   const diagnosed = id => report.diagnostics.some(item => item.code === 'st-key-macro' && item.entryId === id)

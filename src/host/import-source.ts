@@ -3,7 +3,7 @@ import { posix } from 'node:path'
 import { parseDocument, stringify, YAMLMap } from 'yaml'
 // @ts-expect-error 引擎 ESM 是权威校验实现，由构建器同源打包。
 import { compileRules } from '../../engine/rule-spec.mjs'
-import { assertCanonicalRuleSource } from './module-rules.ts'
+import { assertCanonicalRuleSource } from './module-storage.ts'
 import { ruleInjections } from './rule-content.ts'
 import { MODULE_DEFINITION_FILE } from './paths.ts'
 import type { AssetFile, ImportChoices, ImportKind } from '../shared/asset-transfer.ts'
@@ -81,7 +81,7 @@ export function validateCharacterSpec(spec: ModuleSpec): void {
       throw new Error(`角色片段不支持 ${field}；请从预设页导入完整预设`)
     }
   }
-  if (spec.persona !== undefined && (spec.persona.prefix || spec.persona.suffix || spec.persona.complete === true)) throw new Error('角色片段的 persona 正文请改为 rules 中的注入动作，或从模块页导入完整模块')
+  if (spec.persona !== undefined && Object.values(spec.persona).some(target => target.prefix || target.suffix || target.complete === true)) throw new Error('片段的人设请从模块页作为完整模块导入')
   for (const rule of spec.rules ?? []) assertSafeConfigId(rule.id)
   for (const { config } of ruleInjections(spec.rules)) {
     if (config.templateFile !== undefined) throw new Error(`角色配置 ${String(config.id)} 的 templateFile 外部文件不受支持`)
@@ -184,12 +184,10 @@ export function prepareImport(input: AssetFile[], target: 'preset' | 'character'
           if (legacyComposition) doc.set('composition', decodeAssetFile(legacyComposition).toString('utf8'))
         }
         if (kind === 'native-character' && spec.modules === undefined && spec.composition === undefined) {
-          const hasWorldBook = (spec.rules ?? []).some(rule => rule.then.some(action => action.kind === 'inject-text'
-            && (action.config as Record<string, unknown> | undefined)?.strategy === 'world-book'))
-          doc.set('modules', hasWorldBook ? ['world-book-tools'] : [])
+          const hasActivation = ruleInjections(spec.rules).some(({ config }) => config.strategy === 'context-activation')
+          doc.set('modules', hasActivation ? ['module-rule-tools', 'module-memory-tools'] : [])
         }
-        // 来源中的生成项证明不可信。分享出口必须经本机重新核验。
-        if (doc.hasIn(['meta', 'characterMemories'])) doc.deleteIn(['meta', 'characterMemories'])
+        if (['characterMemories', 'importedCharacters', 'characterModules'].some(key => doc.hasIn(['meta', key]))) throw new Error('旧私有记忆或角色来源标记需要先显式转换；拒绝丢弃标记后继续导入')
         spec = doc.toJS() as ModuleSpec
       } else {
         const converted = convertStToModuleWithReport(raw, posix.basename(file.path).replace(/\.[^.]+$/, ''), options)

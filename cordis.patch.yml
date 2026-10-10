@@ -1,3 +1,11 @@
 - insert:
+    - id: prompt-tool-persona-registration
+      name: dsh-plugin-prompt-tool/persona
     - id: prompt-tool
       name: dsh-plugin-prompt-tool
+
+- id: system-prompt
+  inject: [loader]
+  intercept:
+    loader:
+      await: true

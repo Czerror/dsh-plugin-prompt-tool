@@ -12,7 +12,7 @@
  *     模型参数由「模型设置」UI 统一管理（模块级 params.model*，writeModule 渲染
  *     agent-request patch），ST 卡固化值会覆盖用户在模型设置里的设置，故剥离；
  *   - modules 按需组装：rule-engine 始终，system-section 注入需要
- *     persona（complete: false 允许 system-section 生效），世界书条目需要 world-book-tools。
+ *     persona（complete: false 允许 system-section 生效），上下文条目使用模块规则与记忆工具。
  */
 import { createHash } from 'node:crypto'
 import type { ModuleSpec } from './manifest.ts'
@@ -29,15 +29,14 @@ import type {
   StConversionEntryReport,
   StConversionReport,
 } from '../shared/bridge-contract.ts'
-import { buildWorldBookEntry } from './worldbook.ts'
-import { prepareStText, renderStText } from '../../engine/st-macros.mjs'
+import { prepareStText } from './st-template.ts'
 // @ts-expect-error 保留名判据（内置变量 + 运行时宏）与插值引擎同源，不再手抄一份表。
 import { isReservedInterpolationName } from '../../engine/interpolate.mjs'
 
 /** 转换器版本：报告用它解释本次生成使用了哪一版语义（语义调整时同步递增）。
  *  v2：pre-step 角色统一降级为 user（原角色只作来源元数据）+ 选组优先级修正常量事实。
  *  v3：世界书触发键（keys/secondaryKeys）的未定义宏登记为空占位并产出可见诊断。 */
-export const ST_CONVERTER_VERSION = 'st-to-rules/4'
+export const ST_CONVERTER_VERSION = 'st-to-native-rules/5'
 
 /** 报告的展示上限：只截断观测数据，不改变转换结果。 */
 const REPORT_ENTRY_LIMIT = 500
@@ -46,7 +45,7 @@ const REPORT_DIAGNOSTIC_LIMIT = 200
 /**
  * pre-step 只接受 user：宿主把本批消息逐条写成 `user/message` 事件，事件校验要求
  * `role === 'user'`。ST 侧的 assistant/system 角色在导入期统一降级为 user，原角色
- * 保留在 stSource.role / stWorldBook.role，条目按 degraded 记录并带同一原因码。
+ * 保留在 source.original.role，条目按 degraded 记录并带同一原因码。
  */
 const ST_PRE_STEP_ROLE = 'user'
 const ST_ROLE_DOWNGRADE_CODE = 'assistant-role-downgrade'
@@ -63,11 +62,6 @@ const ST_WEB_TOOLS = ['web_search', 'web_fetch'] as const
  *  脚本/扩展配置/ToolBindings，动辄数百 KB）。两者转换时整体丢弃并计数进
  *  meta.stDroppedMarkers——防止设置 dump 与位置占位污染 promptConfigs 与注入。 */
 
-/** 显式文本求值工具；导入本身仅 prepare，避免执行禁用卡的副作用。 */
-export function processStText(text: string, cardName: string, variables: Record<string, string | number>): string {
-  return renderStText(prepareStText(text, cardName), { variables, local: variables }).trim()
-}
-
 /** 合并后的最终 id 映射：来源索引 → 该来源 promptConfigs 下标 → 合并后的配置 id。 */
 export type MergeIdMap = Map<number, Map<number, string>>
 
@@ -80,7 +74,15 @@ export function mergeStModulesWithReport(specs: ModuleSpec[]): { spec: ModuleSpe
   const rules: RuleDefinition[] = []
   const seen = new Set<string>()
   const idMap: MergeIdMap = new Map()
+  const variables: Record<string, string> = {}
+  const mergeVariables = (values: Record<string, string> = {}): void => {
+    for (const [key, value] of Object.entries(values)) {
+      if (Object.hasOwn(variables, key) && variables[key] !== value) throw new TypeError(`模块变量 ${key} 存在不同值，请先显式改名再合并`)
+      variables[key] = value
+    }
+  }
   for (const [sourceIndex, spec] of specs.entries()) {
+    if (spec.variablesEnabled !== false) mergeVariables(spec.variables)
     const perSource = new Map<number, string>()
     for (const [entryIndex, config] of (spec.rules ?? []).entries()) {
       if (config === null || typeof config !== 'object' || Array.isArray(config)) continue
@@ -93,8 +95,9 @@ export function mergeStModulesWithReport(specs: ModuleSpec[]): { spec: ModuleSpe
       seen.add(id)
       perSource.set(entryIndex, id)
       rules.push(mapRuleInjections({ ...entry, id }, payload => {
-        const next = { ...payload, variables: { ...(spec.variablesEnabled === false ? {} : spec.variables), ...payload.variables } }
-        if (id !== base) next.id = id
+        const { variables: local, ...next } = payload
+        if (spec.variablesEnabled !== false) mergeVariables(local)
+        if (id !== base && typeof next.id === 'string') next.id += id.slice(base.length)
         return next
       }))
     }
@@ -107,7 +110,6 @@ export function mergeStModulesWithReport(specs: ModuleSpec[]): { spec: ModuleSpe
     Object.assign(params, spec.params ?? {})
     for (const [layer, fields] of Object.entries(spec.layerSettings ?? {})) layerSettings[layer] = { ...layerSettings[layer], ...fields }
   }
-  const variables = Object.fromEntries(specs.filter(spec => spec.variablesEnabled !== false).flatMap(spec => Object.entries(spec.variables ?? {})))
   const warnings = [...new Set(specs.flatMap(spec => Array.isArray(spec.meta?.stWarnings) ? spec.meta.stWarnings.filter((value): value is string => typeof value === 'string') : []))]
   const modules: string[] = []
   for (const spec of specs) {
@@ -116,9 +118,9 @@ export function mergeStModulesWithReport(specs: ModuleSpec[]): { spec: ModuleSpe
     }
   }
   const managementModules = [
-    'character-tools',
-    ...(ruleInjections(rules).some(({ config }) => config.strategy === 'world-book') ? ['world-book-tools'] : []),
-    'session-var-tools',
+    'module-import-tools',
+    ...(ruleInjections(rules).some(({ config }) => config.strategy === 'context-activation') ? ['module-rule-tools', 'module-memory-tools'] : []),
+    'module-variable-tools',
     'tool-config-engine',
   ]
   for (const name of managementModules) if (!modules.includes(name)) modules.push(name)
@@ -308,6 +310,8 @@ export function convertStToModuleWithReport(
     })
   }
   const recordEntry = (entry: StConversionEntryReport): void => {
+    // 模型工具要求无损 JSON，省略未声明的可选字段。
+    for (const key of Object.keys(entry) as Array<keyof StConversionEntryReport>) if (entry[key] === undefined) delete entry[key]
     classifications[entry.classification] += 1
     if (reportEntries.length >= REPORT_ENTRY_LIMIT) { reportTruncated = true; return }
     // 绑定同源生成配置的下标：多文件合并后报告据此把 targetId 重写为最终 id，
@@ -341,8 +345,6 @@ export function convertStToModuleWithReport(
   const variables: Record<string, string> = {}
   if (cardName && (body.description !== undefined || body.first_mes !== undefined || body.character_book !== undefined)) {
     variables.char = cardName
-    variables.charifnotgroup = cardName
-    variables.charIfNotGroup = cardName
   }
   // 导入只保留模板，不执行 set/add/inc：否则禁用卡和重复引用会污染变量。
   const clean = (text: string): string => prepareStText(text, cardName)
@@ -413,12 +415,12 @@ export function convertStToModuleWithReport(
         const entryIndex = ++index
         const targetId = `dialogue-example-${entryIndex}`
         const order = -60 + entryIndex / 1000
-        // pre-step 只发出 user；示例对话的 assistant 轮次降级，原角色留在 stSource.role。
+        // pre-step 只发出 user；示例对话的 assistant 轮次降级，原角色仅作来源记录。
         const downgraded = part.role === 'assistant'
         exampleDowngraded ||= downgraded
         configs.push({ id: targetId, name: `示例对话 ${entryIndex}`, strategy: 'static', text,
           layer: 'pre-step', role: 'user', position: 'before-all', dedupe: 'session', order,
-          params: { stSource: { field: 'mes_example', role: part.role } } })
+          params: { source: { format: 'sillytavern', id: 'mes_example', original: { field: 'mes_example', role: part.role } } } })
         recordEntry({ sourceId: `mes_example[${entryIndex}]`, sourceIndex: entryIndex - 1, targetId,
           layer: 'pre-step', order, role: 'user', position: 'before-all',
           classification: downgraded ? 'degraded' : 'equivalent',
@@ -426,10 +428,10 @@ export function convertStToModuleWithReport(
       }
     }
     if (exampleDowngraded) {
-      noteInfo('st-example-role', 'DSH pre-step 只接受 user 角色：示例对话的 assistant 轮次降级为 user，原角色保留在 stSource.role', { entryId: 'mes_example', field: 'mes_example' })
+      noteInfo('st-example-role', 'DSH pre-step 只接受 user 角色：示例对话的 assistant 轮次降级为 user，原角色保留在 source.original.role', { entryId: 'mes_example', field: 'mes_example' })
     }
   }
-  // 世界书仍经同一工厂构造，ST 特有触发语义由 params.stWorldBook 显式启用。
+  // 外部世界书转为普通规则，扫描与选择由原生 activation 声明。
   // 形态兼容：entries 可能是数组（角色卡 CCv2/CCv3、spec v2）或对象
   // （ST 编辑器内部格式，键为字符串序数）。
   // 别名收敛：角色卡用 keys/secondary_keys/insertion_order/enabled/id，
@@ -456,10 +458,10 @@ export function convertStToModuleWithReport(
       const comment = typeof entry.comment === 'string' && entry.comment.trim().length > 0
         ? entry.comment.trim() : `世界书 ${String(entry.id ?? entry.uid ?? index)}`
       const rawKeys = entry.keys ?? entry.key
-      const keys = Array.isArray(rawKeys) ? rawKeys.map(String).filter((key) => key.trim().length > 0) : []
+      const keys = Array.isArray(rawKeys) ? rawKeys.map(key => prepareStText(String(key), cardName, false)).filter((key) => key.trim().length > 0) : []
       const rawSecondary = entry.secondary_keys ?? entry.keysecondary
       const secondaryKeys = Array.isArray(rawSecondary)
-        ? rawSecondary.map(String).filter((key) => key.trim().length > 0) : []
+        ? rawSecondary.map(key => prepareStText(String(key), cardName, false)).filter((key) => key.trim().length > 0) : []
       // 常驻兼容：ST 编辑器内部格式用 constant，角色卡（CCv2/CCv3）world entries 用 add_always。
       const constant = entry.constant === true || entry.add_always === true
       // 启用兼容：disable 是 ST 编辑器内部格式（disable=true 禁用），enabled 是角色卡格式。
@@ -479,28 +481,29 @@ export function convertStToModuleWithReport(
         return undefined
       }
       const position = option('position') ?? (entry.position === 'after_char' ? 1 : 0)
-      const stWorldBook: Record<string, unknown> = {
+      const activation: Record<string, unknown> = {
+        scan: 'history',
         selective: entry.selective === true,
-        position, depth: option('depth') ?? 4, role: option('role') ?? 0,
         scanDepth: option('scan_depth', 'scanDepth') ?? (book as Record<string, unknown>).scan_depth ?? 2,
       }
-      if ((book as Record<string, unknown>).recursive_scanning === true) stWorldBook.recursive = true
-      for (const [target, source] of Object.entries({ probability: 'probability', useProbability: 'useProbability', group: 'group',
+      const original: Record<string, unknown> = { ...entry, position, depth: option('depth') ?? 4, role: option('role') ?? 0,
+        ...((book as Record<string, unknown>).recursive_scanning === undefined ? {} : { recursive_scanning: (book as Record<string, unknown>).recursive_scanning }) }
+      for (const [target, source] of Object.entries({ probability: 'probability', useProbability: 'useProbability', selectionGroup: 'group',
         groupOverride: 'group_override', groupWeight: 'group_weight', sticky: 'sticky', cooldown: 'cooldown', delay: 'delay',
-        recursive: 'recursive_scanning', excludeRecursion: 'exclude_recursion', preventRecursion: 'prevent_recursion',
-        // 条目级条件字段（ST 有而我们此前未读）：延迟到递归扫描与组内评分。
-        // 磁盘形态是驼峰顶层 / extensions 蛇形，两种拼写都读。
+        excludeRecursion: 'exclude_recursion', preventRecursion: 'prevent_recursion',
         delayUntilRecursion: 'delay_until_recursion', useGroupScoring: 'use_group_scoring',
-        matchCharacterDescription: 'match_character_description', matchCharacterPersonality: 'match_character_personality',
-        matchScenario: 'match_scenario', matchPersonaDescription: 'match_persona_description',
-        // ST 的 globalScanData 另有 creator notes 与角色深度提示词两个扫描开关
-        // （world-info.js:5664/5666，磁盘形态是 extensions 蛇形）。
-        matchCreatorNotes: 'match_creator_notes', matchCharacterDepthPrompt: 'match_character_depth_prompt' })) {
+      })) {
         // ST 内嵌 extensions 的导出形状为蛇形（use_probability）；既有驼峰拼写仍是主名。
         const value = option(source, target, ...(target === 'useProbability' ? ['use_probability'] : []))
-        if (typeof value === 'number' || typeof value === 'boolean' || typeof value === 'string') stWorldBook[target] = value
+        if (typeof value === 'number' || typeof value === 'boolean' || typeof value === 'string') activation[target] = value
       }
-      const sourceRole = stWorldBook.role
+      const scanVariables = [
+        ['match_character_description', 'matchCharacterDescription', 'description'], ['match_character_personality', 'matchCharacterPersonality', 'personality'],
+        ['match_scenario', 'matchScenario', 'scenario'], ['match_persona_description', 'matchPersonaDescription', 'persona'],
+        ['match_creator_notes', 'matchCreatorNotes', 'creator_notes'], ['match_character_depth_prompt', 'matchCharacterDepthPrompt', 'depth_prompt'],
+      ].filter(([snake, camel]) => option(snake!, camel!) === true).map(([, , key]) => key!)
+      if (scanVariables.length > 0) activation.scanVariables = scanVariables
+      const sourceRole = original.role
       // 角色过滤（ST 1.19 条目级条件）：真实形态是嵌套对象 `{ names, tags, isExclude }`
       // （world-info.js:2125-2132 规范化、:4815-4843 求值），不是三个顶层字段。本项目没有
       // 「运行时切换角色」这一层（预设与角色在导入期绑定），因此不实现过滤、也不据此跳过
@@ -511,7 +514,7 @@ export function convertStToModuleWithReport(
       const filterNames = Array.isArray(filterSource?.names) ? filterSource.names as unknown[] : []
       const filterTags = Array.isArray(filterSource?.tags) ? filterSource.tags as unknown[] : []
       if (filterSource !== undefined) {
-        stWorldBook.characterFilter = {
+        original.characterFilter = {
           ...filterSource,
           ...(Array.isArray(filterSource.names) ? { names: [...filterSource.names as unknown[]] } : {}),
           ...(Array.isArray(filterSource.tags) ? { tags: [...filterSource.tags as unknown[]] } : {}),
@@ -531,11 +534,11 @@ export function convertStToModuleWithReport(
       }
       if (sourceRole === 0) {
         entryCodes.push('system-role-downgrade')
-        note('st-worldbook-role', 'DSH pre-step 不接受 system 角色：世界书 system 消息降级为 user，原角色保留在 stWorldBook', { entryId: sourceId, field: 'role' })
+        note('st-worldbook-role', 'DSH pre-step 不接受 system 角色：世界书 system 消息降级为 user，原角色保留在 source.original', { entryId: sourceId, field: 'role' })
       } else if (sourceRole === 2) {
         // assistant 只能由模型侧事件产生：导入期就降级，运行时出口不会再出现非法角色。
         entryCodes.push(ST_ROLE_DOWNGRADE_CODE)
-        noteInfo('st-worldbook-role-assistant', 'DSH pre-step 只接受 user 角色：世界书 assistant 消息降级为 user，原角色保留在 stWorldBook.role', { entryId: sourceId, field: 'role' })
+        noteInfo('st-worldbook-role-assistant', 'DSH pre-step 只接受 user 角色：世界书 assistant 消息降级为 user，原角色保留在 source.original.role', { entryId: sourceId, field: 'role' })
       }
       // STscript 自动化与 outlet：ST 独立世界书的这两个字段是**顶层驼峰**
       // （automationId / outletName），编辑器内部格式写在 extensions 蛇形别名里——只查蛇形
@@ -546,12 +549,13 @@ export function convertStToModuleWithReport(
       // 布尔、对象）视为未设置——否则 String(0)/String(false) 非空会被误报成依赖自动化。
       const automationId = typeof rawAutomationId === 'string' ? rawAutomationId.trim() : ''
       const outletName = typeof rawOutletName === 'string' ? rawOutletName.trim() : ''
-      if (automationId.length > 0) stWorldBook.automationId = rawAutomationId
-      if (outletName.length > 0) stWorldBook.outletName = rawOutletName
-      if (option('vectorized') === true || outletName.length > 0
-        || (Array.isArray(option('triggers')) && (option('triggers') as unknown[]).length > 0)) {
+      if (automationId.length > 0) original.automationId = rawAutomationId
+      if (outletName.length > 0) original.outletName = rawOutletName
+      const unsupportedControl = position === 7 || option('vectorized') === true || outletName.length > 0
+        || (Array.isArray(option('triggers')) && (option('triggers') as unknown[]).length > 0)
+      if (unsupportedControl) {
         entryCodes.push('unsupported-controls')
-        note('st-worldbook-controls', 'ST 世界书向量、outlet 或生成类型控制需要宿主专门适配', { entryId: sourceId, field: 'extensions' })
+        note('st-worldbook-controls', 'ST 世界书向量、outlet 或生成类型控制不受支持：已禁用该规则，原始控制项仅作来源记录', { entryId: sourceId, field: 'extensions' })
       }
       if (automationId.length > 0) {
         entryCodes.push('automation-dependent')
@@ -562,28 +566,22 @@ export function convertStToModuleWithReport(
           ? '该条目依赖 STscript 自动化触发，本项目不执行自动化；它没有主键也非常驻，因此不会自动注入'
           : '该条目依赖 STscript 自动化触发，本项目不执行自动化', { entryId: sourceId, field: 'automationId' })
       }
-      if (enabled === false) entryCodes.push('disabled')
-      const worldConfig = buildWorldBookEntry({
-        id: `lore-${sourceId}`,
-        name: comment,
-        // 启用状态保留；非常驻且无主键的 ST 条目不再隐式常驻。
-        enabled,
-        order: stOrder,
-        text: content,
-        constant,
-        keys: keys.length > 0 ? keys : undefined,
-        secondaryKeys: secondaryKeys.length > 0 ? secondaryKeys : undefined,
-        ...(option('case_sensitive', 'caseSensitive') === true ? { caseSensitive: true } : {}),
-        ...(option('match_whole_words', 'matchWholeWords') === true ? { wholeWords: true } : {}),
-        // selectiveLogic（ST world_info_logic 0/1/2/3）：选择性触发组合逻辑，
-        // 由 anchor-match 引擎消费（any/all/not）。保留不再丢弃。
-        ...(typeof option('selectiveLogic', 'selective_logic') === 'number'
-          ? { selectiveLogic: option('selectiveLogic', 'selective_logic') as number }
-          : {}),
-      })
+      if (enabled === false || unsupportedControl) entryCodes.push('disabled')
+      const logic = option('selectiveLogic', 'selective_logic') ?? 0
+      if (typeof logic !== 'number' || !Number.isInteger(logic) || logic < 0 || logic > 3) throw new TypeError(`ST entry ${sourceId}: invalid selectiveLogic`)
+      const worldConfig = {
+        id: `lore-${sourceId}`, name: comment, enabled: enabled && !unsupportedControl,
+        strategy: 'context-activation', layer: 'pre-step', order: stOrder, text: content,
+        params: { constant, keys, secondaryKeys, wordBoundary: 'ascii-token',
+          selectiveLogic: ['AND_ANY', 'NOT_ALL', 'NOT_ANY', 'AND_ALL'][logic],
+          ...(option('case_sensitive', 'caseSensitive') === true ? { caseSensitive: true } : {}),
+          ...(option('match_whole_words', 'matchWholeWords') === true ? { wholeWords: true } : {}),
+          activation, source: { format: 'sillytavern', id: sourceId, original },
+        },
+      }
       configs.push({ ...worldConfig, role: ST_PRE_STEP_ROLE,
         position: position === 4 ? 'after-all' : 'before-all',
-        params: { ...worldConfig.params as Record<string, unknown>, stWorldBook } })
+        params: worldConfig.params })
       worldBookSources.set(String(worldConfig.id), sourceId)
       recordEntry({ sourceId, sourceIndex: index, targetId: `lore-${sourceId}`,
         layer: 'pre-step', order: stOrder, role: ST_PRE_STEP_ROLE,
@@ -609,7 +607,7 @@ export function convertStToModuleWithReport(
       id: 'st-depth-prompt', name: '角色深度提示词', strategy: 'static', enabled: false, order,
       text: depthPromptText, layer: 'pre-step', mergeMode: 'merged', role: ST_PRE_STEP_ROLE,
       position: 'before-all', dedupe: 'none',
-      params: { stSource: { field: 'extensions.depth_prompt', depth: depthPromptSource?.depth ?? 4, role: depthPromptSource?.role ?? 0 } },
+      params: { source: { format: 'sillytavern', id: 'extensions.depth_prompt', original: { field: 'extensions.depth_prompt', depth: depthPromptSource?.depth ?? 4, role: depthPromptSource?.role ?? 0 } } },
     })
     recordEntry({ sourceId: 'extensions.depth_prompt', sourceIndex: 0, targetId: 'st-depth-prompt',
       layer: 'pre-step', order, role: ST_PRE_STEP_ROLE, position: 'before-all',
@@ -620,16 +618,16 @@ export function convertStToModuleWithReport(
   if (firstMes.length > 0) {
     sourceInputs += 1
     // 开场白：ST 的 assistant 侧开场白在 pre-step 降级为 user + 每会话一次
-    // （dedupe=session 避免每轮重复注入），原角色保留在 stSource.role。
+    // （dedupe=session 避免每轮重复注入），原角色仅作来源记录。
     configs.push({
       id: 'first-mes', name: '开场白', strategy: 'static', order: -40, text: firstMes,
       layer: 'pre-step', mergeMode: 'merged', role: ST_PRE_STEP_ROLE, position: 'before-all', dedupe: 'session',
-      params: { stSource: { field: 'first_mes', role: 'assistant' } },
+      params: { source: { format: 'sillytavern', id: 'first_mes', original: { field: 'first_mes', role: 'assistant' } } },
     })
     recordEntry({ sourceId: 'first_mes', sourceIndex: 0, targetId: 'first-mes',
       layer: 'pre-step', order: -40, role: ST_PRE_STEP_ROLE, position: 'before-all',
       classification: 'degraded', codes: [ST_ROLE_DOWNGRADE_CODE] })
-    noteInfo('st-first-mes-role', 'DSH pre-step 只接受 user 角色：ST 开场白降级为 user，原角色保留在 stSource.role', { entryId: 'first_mes', field: 'first_mes' })
+    noteInfo('st-first-mes-role', 'DSH pre-step 只接受 user 角色：ST 开场白降级为 user，原角色保留在 source.original.role', { entryId: 'first_mes', field: 'first_mes' })
   }
   // 备用开场白（alternate_greetings）：首条已启用；备用条目转禁用配置（UI 可切换启用，
   // fallback 起点——引擎按 order 排序，同一 dedupe=session 身份不重复注入）。
@@ -637,7 +635,7 @@ export function convertStToModuleWithReport(
     ? (body.alternate_greetings as unknown[]).map((item) => typeof item === 'string' ? item : '').map(clean).filter((item) => item.length > 0)
     : []
   if (alternateGreetings.length > 0) {
-    noteInfo('st-alternate-greetings-role', 'DSH pre-step 只接受 user 角色：备用开场白降级为 user，原角色保留在 stSource.role', { entryId: 'alternate_greetings', field: 'alternate_greetings' })
+    noteInfo('st-alternate-greetings-role', 'DSH pre-step 只接受 user 角色：备用开场白降级为 user，原角色保留在 source.original.role', { entryId: 'alternate_greetings', field: 'alternate_greetings' })
   }
   for (const [index, greeting] of alternateGreetings.entries()) {
     sourceInputs += 1
@@ -655,7 +653,7 @@ export function convertStToModuleWithReport(
       role: ST_PRE_STEP_ROLE,
       position: 'before-all',
       dedupe: 'session',
-      params: { stSource: { field: `alternate_greetings[${index}]`, role: 'assistant' } },
+      params: { source: { format: 'sillytavern', id: `alternate_greetings[${index}]`, original: { field: `alternate_greetings[${index}]`, role: 'assistant' } } },
     })
     recordEntry({ sourceId: `alternate_greetings[${index}]`, sourceIndex: index, targetId,
       layer: 'pre-step', order, role: ST_PRE_STEP_ROLE, position: 'before-all',
@@ -686,7 +684,7 @@ export function convertStToModuleWithReport(
     const id = rawId.length > 0 && !/^[0-9a-f-]{36}$/i.test(rawId) ? rawId : `st-prompt-${index + 1}`
     // ST 角色：system=系统消息（进 system-section 层，pre-step 无 system 角色）；
     // user/assistant/model 进 pre-step，但 pre-step 只发出 user——ST 的 assistant
-    // 与 'model'（第三方扩展角色）在导入期统一降级，原角色保留在 stSource.role。
+    // 与 'model'（第三方扩展角色）在导入期统一降级，原角色仅作来源记录。
     const stRole = typeof prompt.role === 'string' ? prompt.role : 'system'
     const preStep = stRole !== 'system'
     const role = preStep ? ST_PRE_STEP_ROLE : 'system'
@@ -700,19 +698,20 @@ export function convertStToModuleWithReport(
       name: typeof prompt.name === 'string' && prompt.name.length > 0 ? prompt.name : id,
       // 保留 SillyTavern 启用状态：prompt_order 禁用标记优先，其次 prompts 内 enabled。
       // 注意用原始 identifier 查表（UUID 会被 id 生成规则替换为 st-prompt-N，查生成 id 永远 miss）。
-      enabled: ordered ? orderEnabled.get(rawId) === true : prompt.enabled !== false,
+      enabled: (ordered ? orderEnabled.get(rawId) === true : prompt.enabled !== false)
+        && !(Array.isArray(prompt.injection_trigger) && prompt.injection_trigger.length > 0),
       strategy: 'static',
       // RELATIVE 注入顺序 = prompt_order 数组顺序（ST 忽略 injection_order）；
       // 无映射时按数组索引，保持 ST 预设内相对顺序。
       order: ((rawId.length > 0 ? orderIndex.get(rawId) : undefined) ?? (ordered ? orderIndex.size + index : index)) * 10,
       text: content,
-      // stSource 除深度/触发外也承载角色降级与 system_prompt 事实：原角色必须可定位。
-      ...((prompt.injection_position === 1 || Array.isArray(prompt.injection_trigger) || roleDowngraded || systemPromptFlag) ? { params: { stSource: {
+      // 来源元数据承载深度、触发、原角色与 system_prompt 管理位。
+      params: { source: { format: 'sillytavern', id: sourceId, original: {
         position: prompt.injection_position ?? 0, depth: prompt.injection_depth ?? 4,
         order: prompt.injection_order ?? 100, role: stRole,
         ...(Array.isArray(prompt.injection_trigger) ? { triggers: prompt.injection_trigger } : {}),
         ...(systemPromptFlag ? { systemPrompt: true } : {}),
-      } } } : {}),
+      } } },
     }
     const codes: string[] = []
     if (systemPromptFlag) {
@@ -720,15 +719,15 @@ export function convertStToModuleWithReport(
     }
     if (roleDowngraded) {
       codes.push(ST_ROLE_DOWNGRADE_CODE)
-      noteInfo('st-prompt-role', 'DSH pre-step 只接受 user 角色：ST prompt 的 assistant/model 角色降级为 user，原角色保留在 stSource.role', { entryId: sourceId, field: 'role' })
+      noteInfo('st-prompt-role', 'DSH pre-step 只接受 user 角色：ST prompt 的 assistant/model 角色降级为 user，原角色保留在 source.original.role', { entryId: sourceId, field: 'role' })
     }
     if (prompt.injection_position === 1) {
       codes.push('depth-collapsed')
-      note('st-prompt-depth', 'ST prompt 深度注入暂按 DSH 插入点降级，原 position/depth/order/role 保留在 stSource', { entryId: sourceId, field: 'injection_position' })
+      note('st-prompt-depth', 'ST prompt 深度注入暂按 DSH 插入点降级，原 position/depth/order/role 保留在 source.original', { entryId: sourceId, field: 'injection_position' })
     }
     if (Array.isArray(prompt.injection_trigger) && prompt.injection_trigger.length > 0) {
       codes.push('generation-trigger')
-      note('st-prompt-triggers', 'ST prompt 的生成类型触发条件在 DSH 不等价，保留在 stSource.triggers', { entryId: sourceId, field: 'injection_trigger' })
+      note('st-prompt-triggers', 'ST prompt 的生成类型触发条件不受支持：已禁用该规则，原值保留在 source.original.triggers', { entryId: sourceId, field: 'injection_trigger' })
     }
     if (base.enabled === false) codes.push(ordered && orderIndex.get(rawId) === undefined ? 'not-in-order-group' : 'disabled')
     if (!preStep) {
@@ -753,14 +752,15 @@ export function convertStToModuleWithReport(
   }
 
   // modules 按需组装：prompt-config-engine 始终。
-  const modules = ['prompt-config-engine', 'character-tools']
-  if (configs.some((config) => config.strategy === 'world-book')) modules.push('world-book-tools')
-  modules.push('session-var-tools', 'tool-config-engine')
+  const modules = ['rule-engine', 'module-import-tools']
+  if (configs.some((config) => config.strategy === 'context-activation')) modules.push('module-rule-tools', 'module-memory-tools')
+  modules.push('module-variable-tools', 'tool-config-engine')
   const moduleConfigs: Record<string, Record<string, unknown>> = {}
   // 含 system-section 段时用顶层 persona 段声明官方人设行：空 prefix 只做 scope
   // shadow（不注入标准编码 Agent 人设），complete: false 允许导入的 system-section
   // 生效（宿主部署人设 complete: true 会抑制它们）。
-  const persona: PersonaSpec | undefined = systemSectionCount > 0 ? { prefix: '', complete: false } : undefined
+  const persona: PersonaSpec | undefined = systemSectionCount > 0
+    ? { main: { prefix: '', complete: false }, subagent: { prefix: '', complete: false } } : undefined
   // enable_web_search 的落点（B7 T3「3+1 结合」，取代已删除的 tool-filter 专用模块）：
   //   true  → **本插件不再组装任何 web 工具行**：`tool-web` 已随「与预设彻底解耦」从模块库
   //           退役，联网能力由会话原有的官方预设提供。这里只如实报告，不静默当作已启用。
@@ -779,7 +779,7 @@ export function convertStToModuleWithReport(
 
   const moduleId = stModuleId(baseName)
   // 出口不变量：pre-step 只发出 user。各来源路径已在生成时逐条降级（原角色进
-  // stSource / stWorldBook）；这里兜住任何遗漏，保证写进 module.yml 的角色可注入。
+  // source.original）；这里兜住任何遗漏，保证写进 module.yml 的角色可注入。
   for (const config of configs) {
     if (config.layer !== 'pre-step' || config.role === ST_PRE_STEP_ROLE) continue
     const requested = config.role
@@ -788,7 +788,7 @@ export function convertStToModuleWithReport(
   }
   // 未定义自定义宏登记：卡内文本引用了但无变量源的 {{key}}（非内置 / 非运行时宏）
   // → 预设 variables 空值占位——插值替换为空不留字面；模板变量卡片可编辑默认值；
-  // 会话变量工具（session_var）可运行时覆盖（对应 ST 正则/STscript 更新语义）。
+  // 模块变量工具可在运行时显式更新相应的持久值。
   const MACRO_RE = /\{\{([A-Za-z0-9_.\u4e00-\u9fff-]+)\}\}/g
   // 判定基准是「登记开始时的变量表」：同一宏在后续条目里仍算未解析，诊断才能定位到
   // 每一条受影响的条目；登记动作本身幂等。
@@ -812,7 +812,8 @@ export function convertStToModuleWithReport(
   /** 键宏诊断文案：不记录键正文与卡片内容，只说明失效原因与恢复路径。 */
   const KEY_MACRO_MESSAGE = '世界书触发键含未解析的 ST 宏：已登记为空占位，在「模板变量」中赋值后该键才会命中'
   for (const config of configs) {
-    config.params = { ...config.params as Record<string, unknown> | undefined, stMacros: true }
+    const params = config.params as Record<string, unknown> | undefined
+    config.params = { ...params, source: params?.source ?? { format: 'sillytavern', id: String(config.id), original: {} }, templateEvaluation: true }
     const configRecord = config as { params?: { text?: unknown; keys?: unknown; secondaryKeys?: unknown } }
     const texts = [
       ...(typeof config.text === 'string' && config.text.length > 0 ? [config.text] : []),
@@ -823,7 +824,7 @@ export function convertStToModuleWithReport(
     // 触发键与正文共用同一份排除集与同一张变量表：ST 匹配前会对主键/副键求值
     // （world-info.js:4915/4947），键里的 {{user}} 之类无源宏在本项目同样按空值处理，
     // 不再以字面量参与匹配；受影响条目逐条产出可定位诊断。
-    if (config.strategy === 'world-book') {
+    if (config.strategy === 'context-activation') {
       const entryId = worldBookSources.get(String(config.id))
       for (const [field, value] of [['keys', configRecord.params?.keys], ['secondaryKeys', configRecord.params?.secondaryKeys]] as const) {
         const missing = (Array.isArray(value) ? value : []).flatMap((key) => registerMacros(key))

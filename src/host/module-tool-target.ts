@@ -36,4 +36,3 @@ export async function refreshModuleAfterSave(host: ModuleToolHost, id: string): 
   try { await host.rebuild(id) }
   catch (error) { throw new Error(`模块 ${id} 已保存，但重建失败：${String(error)}`, { cause: error }) }
 }
-export { refreshModuleAfterSave as rebuildSavedPreset }

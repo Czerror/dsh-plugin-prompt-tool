@@ -63,7 +63,7 @@ export function toolArgsText(args) {
  * `text.match` / 关键词世界书匹配到自己注入过的正文——正文里出现「重构」「实现」
  * 这类词就会自我命中，且命中判定在去重之前，`dedupe` 挡不住。
  * `userMessagesText`、原生关键词世界书的扫描 haystack 与
- * `st-world-book.mjs#stChatMessages` 三处共用这一份，不再各写各的。
+ * `context-activation.mjs#conversationMessages` 共用这一份，不再各写各的。
  */
 export function isConversationMessage(message) {
   if (message === null || typeof message !== 'object') return false

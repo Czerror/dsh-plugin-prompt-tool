@@ -210,8 +210,8 @@ ${renderTuiStatus(getSource(), readModuleParams(moduleDir), rules)}` }
           if (!moduleDir || !snapshot || !refreshModule) return { kind: 'error', text: '规则保存通道不可用' }
           try {
             editModuleRules(moduleDir, {
-              expectedRevision: snapshot.revision,
-              ...(next ? { activateRuleId: id } : { edits: [{ previousId: id, rule: { ...current, enabled: false } }] }),
+              expectedRevisions: snapshot.revisions,
+              ...(next ? { activateRuleId: id } : { edits: [{ previousId: id, rule: { ...current, enabled: false }, settingsChanged: true }] }),
             })
           } catch (error) {
             return { kind: 'error', text: `保存规则失败：${error instanceof Error ? error.message : String(error)}` }
@@ -250,6 +250,3 @@ ${renderTuiStatus(getSource(), readModuleParams(moduleDir), moduleDir ? readModu
     })
   })
 }
-
-/** 已发布的旧类型名。 */
-export type SavePresetParam = SaveModuleParam

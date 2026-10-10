@@ -12,13 +12,13 @@ import { HintTooltip } from '../../ui/HintTooltip.tsx'
 import { MenuSelect } from '../../ui/MenuSelect.tsx'
 import type { PromptToolTranslate } from '../../locales.ts'
 import { patchToolParameter } from './custom-tool-parameters.ts'
+import { MODULE_TOOL_NAMES } from '../../../shared/engine-capabilities.ts'
 import sharedCss from '../../ui/controls.module.css'
 import featureCss from './tools.module.css'
 
 const styles = { ...sharedCss, ...featureCss }
 /** 内置工具名（delegate 提示）。 */
-const BUILTIN_TOOL_NAMES = ['character_list', 'character_import', 'character_apply', 'character_remove', 'character_delete',
-  'world_book_list', 'world_book_upsert', 'world_book_delete', 'session_var']
+const BUILTIN_TOOL_NAMES = Object.values(MODULE_TOOL_NAMES)
 
 /**
  * execute.kind 下拉取值：必须与 engine/tool-definition.mjs:79 的校验列表逐值一致
@@ -268,7 +268,7 @@ export function CustomToolCard(props: {
           {kind === 'delegate' && (
             <FormField label={t('toolEditor.field.delegate')} hint={t('toolEditor.field.delegate.hint', { names: BUILTIN_TOOL_NAMES.join(' / ') })}>
               <TextInput aria-label={t('toolEditor.field.delegateAria')} spellCheck={false}
-                value={typeof execute.tool === 'string' ? execute.tool : ''} placeholder="world_book_upsert"
+                value={typeof execute.tool === 'string' ? execute.tool : ''} placeholder={MODULE_TOOL_NAMES.rulesEdit}
                 onChange={(e) => patchExecute({ tool: e.target.value })} />
             </FormField>
           )}

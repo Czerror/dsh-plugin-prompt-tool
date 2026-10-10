@@ -13,9 +13,8 @@ import { assertRuleId } from '../../engine/rule-spec.mjs'
 /**
  * `PromptConfigSpec` 各枚举字段的**运行期值清单**。
  *
- * 类型由它派生（`(typeof X)[number]`），守卫测试也读它——于是「类型允许的值」与
- * 「守卫断言的值」是同一份，不可能各自漂移；而这两个值集合都必须与 `engine/schema.mjs`
- * 的对应 `KNOWN_*` 一致（守卫见 `test/shared/prompt-config-spec-enums.test.mjs`）。
+ * 类型由它派生（`(typeof X)[number]`）；运行时仍由 `engine/schema.mjs` 的
+ * `KNOWN_*` 权威校验，bridge 的 /meta 契约保护实际输出。
  *
  * 为什么不直接从引擎派生类型：引擎是仓库根的纯 `.mjs`（无 `.d.mts`，`src/` 侧靠
  * `@ts-expect-error` 引入），其 `KNOWN_*` 在 TS 看来是 `any`，派生不出字面量联合。
@@ -120,13 +119,6 @@ export function modelRequestConfigs(params: Record<string, unknown>): PromptConf
   }
   if (Object.keys(subagentPatch).length > 0) configs.push({ id: 'subagent-model-params', name: '模型参数（子代理）', layer: 'agent-request', audience: 'subagent', order: -100, params: { patch: subagentPatch } })
   return configs
-}
-
-export interface PromptConfigFile {
-  /** 模块文件夹内文件名（数字前缀决定引擎执行顺序）。 */
-  file: string
-  /** yml 文件内容。 */
-  content: string
 }
 
 /**

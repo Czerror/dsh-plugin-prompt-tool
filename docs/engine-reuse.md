@@ -1,739 +1,170 @@
 # 统一规则引擎复用指南
 
-`module.yml` 保存完整定义与恢复依据，运行时消费校验通过的 rules/ 快照。一张卡对应一条具有稳定 `id` 的规则：
-`if` 判断树决定是否执行，`then` 数组承载具有各自稳定 `id` 的动作（`else` 承接动作级分支）。保存、导入与物化
-共用 `engine/rule-spec.mjs#compileRules()`；宿主管理路径和独立路径共用
-`engine/rule-runtime.mjs#mountRuleSources()`，独立插件入口是 `engine/rule-engine.mjs`。
+规则是唯一行为定义。插件读取模块定义、校验切片，再经 `compileRules → mountRuleSources` 装配到 Agent scope。模块不进入官方会话预设注册表；九个插入点各有生命周期，不形成插件自定义的全局管线。
 
-`ensureModuleSlices` 从完整定义分解规则正文、状态清单和模板变量；切片失配单向重切。`writeModule` 不生成宿主组合或旧目录，运行时不双读旧 `promptConfigs`、
-`triggers` 或快捷模型参数。旧定义按白名单加载（旧内容不参与执行）；旧 `/triggers` 以及
-提示词、模型参数写入口返回退役错误，编辑走带模块身份与版本的 `/rules` 事务。
-空模块不暗自增加正文、规则或请求参数。持久化、版本与恢复边界见 [后端框架](architecture-params.md#磁盘格式规则与共享参数各有所有者)。
+字段和磁盘事务见 [参数框架](architecture-params.md)，外部来源转换见 [SillyTavern 导入](SillyTavern.md)，设计决策见 [ADR-0013](adr/0013-native-context-module-state.md)。
 
-引擎是可复制的 ESM 模块库。晋升门控、首轮锚定、目录过滤、预算和节拍由模板或规则
-显式选择。模型配置与采样属于 `request-params` 动作；顶层 `persona` 在 Agent scope 中通过官方 systemPrompt 服务注册。ST/角色卡遵循同一边界。模块 memory.md 只由模型工具按需读取，不自动注入。
+## 原生运行与工具面
 
-### 能力内联与兼容入口
+### 工具、能力与公开入口
 
-- 自定义工具在保存和装配前完整校验，官方 DSL 编译后的定义数组通过 `tools` 传给 `tool-config-engine`。空数组代表无工具；字段缺失才读取 configsDir；显式非法值在注册前拒绝。
-- 子代理策略通过 `policy` 内联，沿用同一 compile／resolve seam、扩权审批与 ceiling 裁决。模块策略段缺失或 null 时不安装 shadow；独立入口缺 policy 才读取 policyFile，只有文件不存在可降级。
-- `resourceRoot` 是工具资源允许根，宿主仍传 modules 集合根；旧 presetRoot 是兼容别名，冲突拒绝。规则模板允许根使用 templateModuleRoot，独立规则入口使用 moduleRoot。更名不改变资源权限。
-- configsDir／policyFile 和独立规则文件入口供包使用者兼容，插件管理路径不生成旧文件。工具身份、注册 scope、disposer 和主／子代理授权边界保持。
+工具名称与能力归属的唯一目录为 `src/shared/engine-capabilities.ts` 的 `MODULE_TOOL_NAMES` / `MODULE_TOOL_CAPABILITIES`。注册、委托建议与补装消费该目录。
 
-### 官方与本地分类
+| 能力 | 实际模型工具 | 所有者 |
+|---|---|---|
+| `module-rule-tools` | `module_rules_read`、`module_rules_edit` | 完整原始规则与按域 revisions |
+| `module-variable-tools` | `module_variables` | global/module 两级持久变量 |
+| `module-memory-tools` | `module_memory_read`、`module_memory_append` | 当前受控模块 memory.md |
+| `module-import-tools` | `module_import` | 来源预览、选择、凭据和候选安装 |
+| `tool-config-engine` | 模块声明的自定义工具 | 官方工具注册、执行和批准管线 |
 
-- `engine/compositions/` 现在只有 `source/local/`：官方切块已全部随「与预设彻底解耦」清理——
-  插件不再分发预设，官方工具由会话原有预设提供，模块不需要重新声明它们。
-- `engine/compositions/source/local/` 是本地模块源码；`rule-engine` 负责统一规则入口。
-  `filesystem-editor` 显式装配隔离文件系统及编辑器，`tool-git-bash` 提供 Windows Git Bash。
-- 官方 row id 保持原样；同一组合不允许重复 row。模块文件名是 `modules` 中的引用标识。
-- 新模块不得恢复 `prompt-config-engine` / `declared-triggers` 的并行运行入口。底层兼容
-  导出只为既有内部调用和离线读取服务，不表示旧声明还能进入新模块运行链。
-- 组合与业务模板参数拥有默认值，引擎负责校验和执行；缺少业务正文或判据时不私自补齐。
+未声明的工具能力不注册。四个模块工具外壳通过 `ctx.inject` 等待各自 `pt-module-*` provider，贡献随 disposer 撤回。来源模块内的模板变量按该来源读写；模型工具目标由执行 Agent 的配装记录确定，`expectedModuleId` 只校验，不选择任意模块或目录。
 
-## 模型工具的宿主约束（exec 字段与 SDK 段变量校验）
+旧 character/world_book/session_var 工具、对应能力与 ST 运行文件退出公开面；外部标准中的世界书名称仍可出现在导入类型和来源记录中。没有新旧双读、角色专属存储或任意文件工具。
 
-新写或跨项目复制模型工具时，两条宿主约束必须遵守（此前只写在代码注释里，此处上提）：
+### 执行、状态与接入
 
-1. **`tools:sdk` 段与 `{{var}}` 校验：现有代码注释与官方实现不符，此处按实测记录。**
-   **版本标注**：本段按记录时的已安装版本 `@deepseek-ai/dsh-tools@0.1.6-alpha.2` 写成；当前安装为 `0.2.1-alpha.1`，段内源码位置未按新版本复核。
-   `src/runtime/session-var-tools.ts` 里 `session_var` 工具 `description` 上方的注释称「工具 `description` 会进入宿主 `tools:sdk` 段，
-   宿主对该段做 `{{var}}` 变量校验（变量名须匹配 `[a-z][a-z0-9_]*` 且已注册），文本中不得出现双花括号字面量」。
-   但在已安装的 `@deepseek-ai/dsh-tools@0.1.6-alpha.2` 上：
-   - `sdkSection()` 返回的 `tools:sdk` 段**显式设了 `interpolate: false`**（`lib/index.js:2743-2758`）；
-   - 装配端对 `interpolate === false` 的 section **保留字面文本、不做插值**（`@deepseek-ai/dsh-system-prompt`
-     的 `lib/index.js:105-116`，其注释原文是「Sections with `interpolate: false` retain literal text」——
-     只有**其它** section 的非法/未注册/无值引用才抛错，见同文件 `:60` 的
-     `VARIABLE_NAME = /^[a-z][a-z0-9_]*$/` 与 `:167`/`:170`/`:173`）。
-   - `dsh-tools` 只注册 `tools:sdk` 与 `tools:ptc-only` 两个工具类 section，二者都不从 `description` 构造文本。
+- 普通规则按真实执行点判定。条件/动作资格先于模板求值，禁用或受众不符的 setter 不影响 reader。
+- `template-evaluation.mjs` 返回正文、读取域和单域变更集；`template-frame.mjs` 通过显式变量 adapter 读取、CAS 提交和发布。
+- 执行身份由运行 Agent、取消信号与官方 turn/step durable 边界确定；assembly 与其后的 pre-step 共用同一次执行。账本独立于 mount，提交后重挂或重复出口只重用结果。
+- 同执行后续卡读取前卡提交的值；变量 revision 只作 CAS，不成为重放键。冲突最多重试当前未提交卡，保留其随机抽样。
+- 发布失败返回/记录已持久化状态，只重试发布；不重复自增。预览或无法确认真实执行身份时只读，赋值拒绝。
+- 账本有界且在进程内；不承诺任意崩溃后的跨进程 exactly-once。
 
-   即：**当前实现下该段不会触发 `{{var}}` 校验**。两种解释待定——注释描述的是更早版本的行为，
-   或另有尚未查明的校验路径。**在查明之前，工具 `description` 沿用现有写法**（占位符示例写成单花括号
-   `{变量名}`）：它不会造成问题，而注释所警告的风险也尚未被证伪。
+人设使用独立早入口 `dsh-plugin-prompt-tool/persona`。本插件 patch 为官方 system-prompt 使用 Loader 激活屏障，保证观察器先安装；不把官方服务生命周期依赖到插件 readiness。adapter 观察官方 section 声明，并包裹公开 agents.create/resume 的真实 AgentSetup 取得明确主/子身份。
 
-2. **`exec` 上可用的字段由官方 `ToolRunContext` 决定**（安装包
-   `@deepseek-ai/dsh-tools` 的 `lib/types/index.d.ts:198-294`）：`callId` / `rootCallId` / `name` /
-   `schema?` / `arguments` / `agent?` / `parent?` / `signal` / `token` / `deferContext()`。两点须注意：
-   - `signal` 是**必填的 caller-owned 取消信号**（同上 `:222-223`）。官方注释要求「异步工作必须观察或
-     转发 `exec.signal`，并只在其 settle 之后结束」（`:112`）；`tools/execute` 包装器可以替换它，
-     但**不能移除**（`:271-277`）。
-   - `agent?` 是发起该调用的 agent（`:211`）。官方 `@deepseek-ai/dsh-agent`
-     （`lib/types/runtime-types.d.ts:139-143`）声明了 `readonly session: Session`，本项目据此用
-     `exec.agent?.session` 取当前会话（`src/runtime/session-var-tools.ts#registerSessionVarTools`）。
+人设策略来源由 host 的 `selectedPersonaModules(root)` 提供：config.yml.personaSources 为 main/subagent 各保存一个模块 ID 或官方默认，仅读取所选模块的对应受众字段。正文仍归模块定义，rules/_settings.yml 只作校验投影；选择来源不启用模块 rules，不进行多模块逐字段合并。
 
-## 复制协议（跨项目复用）
+只有官方 prefix/suffix 被处理：共享 standing preset 的原声明保留，目标 Agent 使用有效克隆；同 scope setup 声明在注册入口克隆。正文与 complete 在首次 assemble 前确定，继承正文不被当作插件模板重执行。单选来源不代替独占校验，有效官方人设与启用规则的 complete 仍须预检。规则与人设纳入完整 prepare/commit/rollback，失败保留上次有效配装。取消、卸载、关闭或重新配装按原 disposer 恢复官方声明；不操作私有 layers，也不在截断后拼回系统段。
 
-1. 把 `engine/` 整个目录复制到你的项目（自包含 + vendor yaml，无外部依赖）。目录里的模块按依赖分三类，
-   复制后按需装配：
-
-   | 类别 | 模块 | 复制后的运行条件 |
-   |---|---|---|
-   | 核心可复制 | 统一规则引擎（规则编译器 / 动作库 / 条件谓词）、提示词批执行器、条件判定、ST 渲染、世界书选择、`compaction-epoch`、`subagent-tool-policy-core`、`classify-task` | 无额外依赖：隔离复制后即可挂载并完成注入 |
-   | 需官方 DSH 包 | 依赖宿主服务（`tools` / `systemPrompt` / `llm` / `agents` / `scope`）的模块行 | 目标项目需装配同名宿主服务；缺服务时按各自契约报错或跳过（`inject` 声明的行保持 pending） |
-   | 需 Prompt Tool 私有服务 | `character-tools.mjs`、`world-book-tools.mjs`、`session-var-tools.mjs` | 经 `ctx.inject` 等待各自 `pt-*` 服务；服务迟到后挂载，服务移除或组合卸载时释放 |
-
-   实测（2026-09-20）：把 `engine/` 复制到隔离目录、由最小 Cordis 根挂载并触发一次 `agent/pre-step`，
-   核心模块完成注入（正文 `COPIED`）；三条私有适配器在缺服务时各告警一次，补齐 mount 服务后全部注册成功。
-   因此私有适配器只在第二个真实宿主需要这些能力时再考虑下沉，当前只需按上表明确依赖契约。
-2. 组合文件（agent.cordis.yml）以相对路径引用引擎插件行：
-
-   ```yaml
-   - id: rule-engine
-     name: ./engine/rule-engine.mjs
-     config:
-       rulesFile: ../rules.yml
-   ```
-
-3. 需要按预设参数化时，参考本仓库 `manifest.ts` 的
-   `buildModuleConfigsFromParams`（params 扁平键 → 模块行 config 对象合并，
-   取代旧 `__TOKEN__` 文本占位符）与 `applyModuleConfigs`（行级/嵌套合并）。
-4. 破坏性变化：`inject-text` 不再有 `tool-pipeline` 通道（`schema.mjs` 的 `LAYER_DEFINITIONS`
-   里该层没有 `channel`）。经 `prepareAction` / `registerAction` 绑定 `config.layer: tool-pipeline`
-   的用法在**准备期显式报错**（与规则路径 `compileRules` 同一句，均由 `actionExecutionPoint` 抛出），
-   不再静默无操作；工具链的裁决与结果改写改用 `decision`、追加上下文改用 `append-context` 动作。
-   可注入层清单看 `getEngineMeta().injectionLayers`（八层）；`layerOrder` / `layers` 仍是九层，
-   供视图筛选与规则级 `layer` 使用。
+已缓存的方法、未观察的第三方注册或既有 Agent 路径不保证接管；显式覆盖时返回诊断，要求重建 owner/会话或用户重启 DSH。升级代码、patch 或 bundle 后需要用户重启服务，插件不自行重启。
 
 ## 统一入口与模块职责
 
-| 入口或目录 | 职责 |
+| 文件或目录 | 职责 |
 |---|---|
-| `engine/rule-engine.mjs` | 独立规则入口：读取 `rules.yml` 包，调用同一编译与挂载接口 |
-| `engine/rule-spec.mjs` | 规则、动作身份与选项校验；`assertRuleId` 是保存、导入、直接编译共用的安全身份边界 |
-| `engine/rule-runtime.mjs` | 将动作按真实官方执行点接线；同点共享判定，跨点独立求值 |
-| `engine/conditions/` | `text`、`phase`、`source`、`count`、`names`、`session`、`preset`、`scope`、`anchor` 及组合的真实实现 |
-| `engine/actions/` | 九类动作的真实实现；`content.mjs` 只负责显式正文选择与生成 |
-| `engine/executor.mjs` / `engine/layers.mjs` | 复用批次注入、变量、去重、官方文本注册与各层执行机制 |
-| `engine/instruction-hint.mjs` | 独立指令提示协议；显式模板生成提示，文件正文仍从声明的文件路径读取。**组合源行必须自带 `messageTemplate` 等模板**——`apply()` 在模板为空时不注册任何转换（开关打开也零效果） |
-| `engine/skill-search.mjs` | 技能面的按需发现与加载（`skill_search` / `skill_load`），替代官方全量技能目录注入 |
-| `engine/tool-search.mjs` | 工具面的按需发现与解锁（`tool_search`）；能力摘要从 `ctx.tools.schemas()` 运行时折叠分组，不手工维护索引 |
-| `engine/tool-config-engine.mjs` | 自定义工具资产到官方工具注册；执行器保留完整官方工具管线与批准边界 |
-| `engine/subagent-tool-policy.mjs` / `subagent-tool-policy-core.mjs` | 子代理实例策略、真实 provider 绑定及共享校验，贡献随 scope 释放 |
-| `engine/character-tools.mjs` / `world-book-tools.mjs` / `session-var-tools.mjs` | 等待宿主对应服务，按预设 scope 贡献工具并释放 |
-| `engine/compaction-epoch.mjs` | 可重建晋升状态机；不是插件行，不内建业务锚词 |
-| `engine/history.mjs` | 会话历史的**唯一**读取入口：两个视图（当前模型可见上下文 / 完整历史） |
+| `rule-spec.mjs` | 唯一规则编译、身份和字段校验 |
+| `branch.mjs` | 分支判据与展开；host 完整树遍历共用同一语法 |
+| `rule-runtime.mjs` | 同点排序、资格、作用域挂载和释放 |
+| `conditions/` | 谓词、三值条件与通道事实 |
+| `actions/` | 实际动作；`content.mjs` 只选择正文 |
+| `executor.mjs` | pre-step 资格快照、批处理、位置、去重与提交 |
+| `layers.mjs` | 非 pre-step 层、官方同步 provider 和条件化文本 |
+| `context-activation.mjs` | batch/history 扫描、候选选择、递归、时间窗和诊断 |
+| `template-evaluation.mjs` | 有界模板解析与原生 module/global 操作 |
+| `template-frame.mjs` | 显式变量 adapter、执行凭据、持久提交和发布重试 |
+| `history.mjs`、`compaction-epoch.mjs` | 可见/完整历史与 epoch-aware 晋升 |
+| `tool-search.mjs`、`skill-search.mjs` | 工具与技能的按需发现/解锁/加载 |
+| `tool-config-engine.mjs` | 自定义工具定义到官方注册 |
+| `subagent-tool-policy.mjs`、`subagent-tool-policy-core.mjs` | 策略校验、选择和实例授权 |
 
-### 历史读取：两个视图（`engine/history.mjs`）
+相对路径均基于包根的 `engine/`。`actions.mjs`、`predicates.mjs`、`strategies.mjs` 只是已有入口，不把实现堆回 barrel。`engine/vendor/yaml/` 是版本化分发快照，通过 package script 生成，不手改。
 
-| 视图 | 入口 | 语义 |
-|---|---|---|
-| 当前模型可见上下文 | `currentEvents(session)` | 按 surface 有序节点取事件：被压缩或位置替换**遮蔽**的节点不在其中 |
-| 完整历史 | `historyEvents(session)` | 本会话全部 durable 事件，按 log 序；供「必须看全量」的消费点 |
+## 复制协议（跨项目复用）
 
-- **降级**：surface 缺失、`nodes` 非数组或任一节点越界时，`currentEvents()` 退回完整历史 ——
-  「宁可多看见，不少看见」，且等价于迁移前的旧行为。空 `nodes` 是合法状态（新会话尚无消息），
-  按「当前上下文为空」返回空数组，**不**降级。
-- **两个视图并存，不互相替代**：`shared.mjs` 的 `sessionEvents` 是迁移过渡别名（指向
-  `historyEvents`），消费点逐个判定归属由 PLAN 的 T6 收口 —— 除**已迁的会话去重判据**
-  （`engine/executor.mjs`，见后文「会话去重判据」一节）外，其余消费点仍读完整历史视图。
-- **纯函数、零跨会话缓存**：每次都读当场快照；不引入「本会话曾投递 / 曾发生」的账本式真相。
-- 快照口径是 `snapshotEvents()`（`engine/history.mjs` 是唯一封装处）；不用已 deprecated 的
-  `eventAt()`，也**不在**读取层用 `deriveMessages()` —— 判据读事件而非正文，需要正文的消费点
-  （如 instruction-hint 的去重）另行按需取消息视图。
-- 验收入口：`test/engine/history.test.mjs`。
+复制完整 `engine/` 可复用纯编译器、动作、条件、历史与模板求值。宿主接线仍需要相应官方服务，四个模块工具外壳还需要 Prompt Tool 的 provider。独立引擎不偷偷读取插件 DSH_HOME 或 session 变量表。
 
-**消费点 → 视图归属**（PLAN 的 T6 逐点判定结果；上一条里「除已迁的会话去重判据外，其余消费点仍读完整历史视图」
-是迁移期间的临时说明，已被本表取代）：
+优先内联 `rules`、自定义工具与策略；独立入口的文件方式按该入口参数声明使用。显式内联空值表示无贡献，非法值不能回退旧文件掩盖错误。模块生产路径不生成 rules.yml、agent.cordis.yml 或第二套工具目录。
 
-| 消费点 | 视图 | 为什么 |
-|---|---|---|
-| `engine/executor.mjs` 会话去重判据 | 当前上下文 | 「模型看得见的才算投递过」；压缩后同一身份可以再次注入 |
-| `engine/conditions/anchor.mjs` 首条推理确认与 `fallbackAfter` 轮数 | 当前上下文 | 首轮条件按模型眼前的**第一条**推理判；轮数按 `seq` 去重（位置替换后同一节点可重复出现） |
-| `engine/conditions/session.mjs` 的 `present` 镜像 | 当前上下文 | `present` 问「此刻可见上下文里有没有这类事件」，不是「本会话曾经发生过」 |
-| `engine/condition.mjs` 的 `lastAssistantText`（turn-stop 匹配对象） | 当前上下文 | 「刚刚这条回复」指模型看得见的那条 |
-| `engine/interpolate.mjs` 的 `lastusermessage` / `lastcharmessage` | 当前上下文 | 官方运行时事实按模型可见消息求值，读全量日志天然对不齐 |
-| `engine/st-render.mjs` 的 `generationKey`（ST 变量帧边界） | 完整历史 | 帧边界（`turn/start` / `step/end` / `compaction/end`）与 `tool/call` 都不是 surface 承载类型，按当前上下文读恒为空，帧键因此回退完整历史 |
-| `engine/st-world-book.mjs` 的 `stChatMessages`（关键词扫描 haystack） | 当前上下文 | 关键词世界书只该由模型看得见的真实对话触发 |
-| `engine/compaction-epoch.mjs` 门控 / 晋升的冷启动重建 | 完整历史 | 「最后一次成功压缩之后是否曾经 `tool/call` / `assistant/message` 过」，`boundary` 本身是 log `seq` |
-| `engine/actions/assembly.mjs` 的 `fillUnlocked` 解锁名单 | 完整历史 | 跨请求、跨压缩保留「曾经发现过哪些工具」；压缩后丢名单会裁掉已解锁的工具 |
-| `engine/conditions/count.mjs` 的冷启动重建 | 按信号分视图 | 消息类信号（`user/message`、`assistant/message`、`tool/result`）读当前上下文，被压缩 / 位置替换遮蔽的不再计入；`tool/call` 与 `turn/start` 不在 `SURFACE_EVENT_TYPES` 里、永远不是节点，读完整历史——一律迁会让它们的冷启动重建恒为 0 |
+需要持久变量时向挂载接口传 `variableStore`：
 
-`actions.mjs`、`predicates.mjs`、`strategies.mjs` 仅保留重导出；不能把实现重新堆回这些入口。
-新运行链只编译 `rules`：旧声明式触发器（`trigger-spec.mjs` / `declared-triggers.mjs`）已随内置迁移器一并删除。
-原专用能力模块 `context-gate`、`tool-bootstrap`、`tool-filter`、`anchor-turn`、`deliberation-gate`、
-`progress-reminder` 与 `promoted-code-mode` 不再内置；需要时由明确规则组合表达。
-渐进阶段推进工具和按晋升时机切换 PTC 呈现没有恢复；需要 PTC 时显式装配官方呈现行。
-`workspaceLine` 与 `phase1FirstCallInstruction` 的既有段正文改写仍无通用动作，
-不要把 `assembly.sections.add/remove/keep` 宣称为等价实现。
+```js
+const dispose = mountRuleSources(ctx, sources, { variableStore })
+// read(moduleId) -> { module, global, effective, revisions, enabled }
+// commit(moduleId, { scope, changes, expectedRevisions }) -> persisted/publication 状态
+// publish(moduleId) -> 仅重试已提交快照发布
+```
 
-## 工具面收窄与按需解锁
+adapter 的目录、权限、原子写与版本责任归接入方。缺少 adapter 不能完成持久赋值；需要无状态试算时调用 `evaluateTemplate()` 并检查返回变更。复制验收应在隔离目录通过显式 adapter 测公共注入行为，而非依赖开发机变量或原仓库路径。
 
-工具面是每请求的固定开销：实测 156 个工具、描述合计 46894 字符（约 12K token）。把它
-收窄到常驻核心集、其余按需解锁，由三件**互相依赖**的东西组成，缺一件就退化：
+## 规则条件与动作边界
 
-| 件 | 落点 | 缺了它会怎样 |
-| --- | --- | --- |
-| 常驻白名单 + 动态白名单 | `assembly.target.tools.allow` / `allowFrom` | 目录不收窄，省不下 token |
-| 发现工具 | `engine/tool-search.mjs`（组合源 `source/local/tool-search.yml`） | 模型无法知道有什么可解锁，只能用别的方式硬凑 |
-| 解锁名单的回收 | `assembly` 的 `allowFrom` | 解锁是**一次性的**：当次请求用完即被裁掉 |
+规则含 `id/name/enabled/layer/group/exclusive/if/then/else`。动作有稳定 id 和 kind；then/else 与嵌套分支内的所有动作 id 在同一规则中唯一。读取投影可生成配置身份，编辑映射保留原始条件和载荷，不把编译默认值写回。
 
-- `allowFrom: { tool, key }` 读**本会话已持久化**的 `tool/call` 事件：筛 `type` 精确等于
-  `tool/call` 且 `data.name` 精确等于 `tool` 的事件，`try/catch` 解析 `data.arguments`，
-  只取 `key` 指向的字符串数组里的字符串项。**它只做加法**——`createMask.blocks()` 的语义
-  是「在 allow 里就放行」，所以动态集合只能解锁，永远不能裁掉任何工具。
-- 坏数据**逐条忽略、绝不上抛**：非法 JSON、`key` 非数组、`tool` 不匹配、缺 `arguments`、
-  数组混入非字符串，都只跳过那一条。取不到 session（无 `snapshotEvents`）或读事件抛错时，
-  退回静态 `allow`，并**不**影响其余工具。
-- `deny` 与 `allowFrom` 同声明在**挂载期 fail loud**：黑名单与「只做加法」的语义不可解释，
-  不留给运行期猜。
-- 解锁跨请求保留的原理是「持久事件 + 每轮重算」，因此**压缩后仍然保留**（成功压缩会清零
-  晋升相位，但不会删掉历史 `tool/call` 事件）。
-- **收窄模板**：`templates/80-tool-surface.yml`，常驻集
-  `pwsh / read / write / edit / glob / grep / todo_write / skill_search / skill_load / tool_search`。
-  它是**规则**（走 `compileRules`），需要 `outermost`（`prepend: true`）时在动作上声明
-  `waterfallPosition`——规则路径**接受**该字段（`engine/actions/catalog.mjs` 的通用键，
-  `rule-runtime.mjs` 映射为 prepend）；它只保证落在已存在的普通注册之外，同点内声明之间仍按
-  `channelOrder` → 模块 id → 规则声明序排。模块层的声明出口已退役（旧 `declared-triggers` /
-  顶层 `triggers` 写进 `modules` 会被装配跳过），需要本插件自己的最外层监听只能回到插件侧声明。
-- 收窄**打开即生效，不按相位放行首轮**（2026-10-10 用户拍板「能否提前」）：规则省略 `if`，
-  `compileWhen(undefined)` 返回 `undefined` = 无条件执行。此前用
-  `any: [phase{promoted:true}, phase{compacted:true, promoted:false}]` 两支（单个 `phase` 节点
-  **无法**表达「两个相位都命中」：`promoted` 的缺省是 `true` 而非「任意」，`promoted: 'ignore'`
-  又要求同时声明只接受布尔值的 `compacted`），代价是首轮与晋升前那几轮多付一次完整工具面
-  （实测 46894 字符），且收窄生效的当轮会以「工具已更新 · 移除 N 个」出现在会话流里。
-  需要旧的渐进语义时把 `if` 加回来。
-- **`tool_search` 在常驻集里**，所以收窄之后模型始终有发现入口；`allow` 漏掉它会让
-  解锁通道彻底断开。
-- **收窄之后要有一条首轮提示，模型才会主动来解锁**（2026-10-10 用户拍板「两者都加」）：
-  `tool_search` 自己的描述只说「不在常驻集里的工具用它发现」——方向是「已经来了怎么用」，
-  而收窄之后模型**看不到**被裁掉的那些工具，默认行为是用现有工具硬凑。提示落在内置模块的
-  `tool-surface-notice` 规则（`inject-text`，`pre-step`、`dedupe: session`、
-  `if: { count: { of: 'user-message', max: 1 } }`）：`if` 限制在会话最早阶段
-  （中途启用模块时历史用户消息已 >1，不会补注），`dedupe` 再按「每当前上下文一次」兜一层。
-  这条只在 `module.yml` 里存在——`templates/*.yml` 是**单条规则对象**，两者规则条数因此不同，
-  由 `test/host/surface-modules.test.mjs` 钉住。
-- **`inject-text` 的 `sourceKind` 不要写裸值**：schema 会把非 `plugin:` 开头的声明归一成
-  `plugin:<声明>`，所以 `sourceKind: plugin` 编成 `plugin:plugin`——所有这么写的配置共用一份
-  身份，`dedupe` 与「已投递」判定一起静默失效（实测：首轮提示每步重复注入）。省略该键即按
-  `plugin:<配置 id>` 生成；确需自定义身份就写完整的 `plugin:<owner>`。哨兵断言在
-  `test/engine/tool-surface-notice.test.mjs`。
-- **另一种收窄通道：`tool-narrow` 动作（官方 `ctx.tools.restrict()`）**：
-  规则可声明 `{ kind: tool-narrow, allow: [...] }`，在 agent scope 上挂一条实时过滤器——
-  被裁掉的**全局**工具在模型目录与执行层同时消失（`get(name, scope)` 读作不存在），
-  不必再另配 `guard` 去守执行面。`allow` 是 fail-closed 白名单，挂载期拒空名单与保留名
-  `run_code`；名字在**注册那一刻**按当前全局目录过滤，未知名字丢弃并告警一次（`restrict`
-  对未知名抛错，不能让它穿到装配层）。收窄是**静态**的（注册期动作不支持条件——见
-  `engine/rule-spec.mjs` 对 `registration` 生命周期的拒绝）。
-  **当前没有任何模块声明它**（2026-10-10 用户拍板先把 `tool-surface` 还原成只保留无条件收窄）；
-  它只作用于**继承的全局工具**——本插件注册在 agent scope 的那些工具（`tool_search`、
-  `skill_search`、自定义工具、角色卡/世界书/会话变量工具）**一个都裁不掉**，且会砍掉
-  `ctx.tools.schemas(agent)` 的视野、让 `tool_search` 只剩已解锁项可见。
-  把它接到按需解锁上的完整方案（含目录副本与动态撤销）见
-  [ADR-0012](adr/0012-progressive-disclosure-restrict.md)。
-  验收：`test/engine/tool-narrow.test.mjs`（跑在真实 `ToolRuntime` 上）。
-- `requireMatch: true` 是必配：任一 `allow` 工具缺失（含模型解锁了一个不存在的名字）就放弃
-  裁剪、暴露完整目录。宁可多给上下文，也不静默裁成空目录。
-- **与已退场的 `tool-bootstrap` 原型的差别**：那份只**在受控相位**收窄、晋升后放开，且没有
-  解锁通道；本模板覆盖晋升后与压缩后，靠 `allowFrom` 提供解锁。两者不叠加——同一通道上相邻的
-  `assembly` 动作各做一次白名单裁剪，**A 裁掉的工具 B 不会加回**，所以每个动作的 `allow`
-  都要点名它需要的全部工具。
+`if` 是单键谓词或 all/any/not/notAny 组合。必要事实缺失为 UNAVAILABLE，不会因 not 变成 true。规则级 else 要有同一规则的 if；事实未知时可能两支都不执行。分支节点不写 kind，不能把 if/then/else 塞进动作对象。
 
-## 规则、条件与动作边界
+| 动作 | 执行点与边界 |
+|---|---|
+| inject-text | config.layer 指定八个可注入层；tool-pipeline 只作展示归属 |
+| assembly / sdk-strip | system-prompt/assemble 的工具/系统文本/上下文投影 |
+| request-params | agent/request；patch/unset 按官方 LlmCallConfig 校验 |
+| decision | tools/pre-execute 或 post-execute 的裁决/结果处理 |
+| append-context | 工具后追加或 turn-stopping 续跑 |
+| pre-step-filter | 前置消息来源/插件过滤 |
+| inbox-prepend | inbox 通知补充上下文 |
+| guard / tool-narrow | 静态注册期授权限制，不支持动态条件 |
 
-- `rule.id` 是稳定且安全的模块内身份，禁用规则也必须通过校验；拒绝点目录、路径分隔、
-  控制字符和 Windows 保留字符。`action.id` 只承担动作身份，不能套用文件名限制。
-- `then` 必须是非空数组（动作级分支写 `else`）。规则可以跨多个官方执行点；`channel`、执行阶段由动作能力
-  决定，不能在规则顶层另填通道。规则的 `layer` 是动作未声明 `config.layer` 时的缺省注入层
-  （`config.layer ?? rule.layer ?? 'pre-step'`，见 `engine/rule-spec.mjs#injectionConfigSpec`），
-  其余用途是列表筛选与展示分组；注入动作一旦自带 `config.layer`，规则级 `layer` 不再决定它落在哪。
-- 同规则、同一真实执行点严格按 `then` 数组顺序执行，条件只求值一次；跨执行点、下一次
-  调用及新 epoch 重新求值。不按 session、turn 或同一 context 对象缓存规则结果。
-- `assembly` 动作 target 内的名单语义互斥，且都在**编译期**（`prepareAssembly` 经
-  `compileRules`）拒绝：`sections.keep` × `sections.remove`、`contexts.clear` ×
-  `contexts.add/remove`；`contexts.clear` 出现时必须是布尔（`'true'` / `1` 不再被静默当
-  false）。跨动作拆分不是同一个声明：`[clear 动作, add 动作]` 按 after-next 顺序串接，
-  后面的 `clear` 会清掉前面动作的 `add`。
-- `channelOrder` 位于动作中，只控制同执行点跨规则定位；同卡同点存在冲突值时编译拒绝，
-  不替作者任选一个。`waterfallPosition` 也位于动作中，缺省 `default`，适用的原生动作
-  可显式使用 `outermost`；它表达官方 waterfall 位置，不创建跨层全局顺序。
-- `if` 缺省表示没有附加门；组合采用 `all/any/not/notAny` 显式树形结构。缺少真实
-  agent/session/model 等必要事实时，条件内部返回 `UNAVAILABLE`，`not` 不会把未知变真；
-  `any` 中已知 true 仍可决断，`all` 中已知 false 仍可决断。只有结果严格为 true 才执行。
-  不从 UI 当前会话或挂载 scope 猜测缺失的事件身份。
-- 事件型文本注入支持顶层 `if`，包括 system-section 与 runtime-context：官方同步
-  provider 注册占位，真实 assembly 中按本次判定填充；取消、卸载和失败不留下过期正文。
-  这两层的**动作级** `if` 在编译期拒绝（没有逐轮求值时机，与 `guard`/`complete` 同判据）；
-  只有公开 `wireLayers` 入口直供的配置才带动作级 `actionWhen`，同样走占位 + assembly 判定。
-- `guard`、`complete` 和 `suppressRuntimeContext` 是固定注册效果，拒绝动态 `if` 与
-  waterfall 定位，不能用空文本模拟撤销注册。其中 `complete` / `suppressRuntimeContext`
-  **只属于 `system-section` 层**：其他层写同名键（`false` 除外，出现即拒）既不注册成
-  独占段、又会被独占计数误算，编译期逐动作拒绝并点名层。多个启用 complete，或与顶层
-  persona.complete 冲突，在候选编译时拒绝。`inject-text` / `guard` 不支持 `maxPerTurn`，
-  错误选项不能静默忽略。
-- 动作声明按**字段白名单**校验：九类动作各自的合法键见 `engine/actions/catalog.mjs`
-  的 `ACTION_KINDS[].fields`（通用键 `id`/`kind`/`channelOrder`/`waterfallPosition`/
-  `maxPerTurn` 另计），`inject-text.config` 的键由 `engine/schema.mjs` 的
-  `INJECT_CONFIG_FIELDS` 派生，`request-params` 的 `patch` / `unset` 子键复用
-  `schema.mjs` 的 `assertLlmCallPatch`（官方 LlmCallConfig 键集与值规则）；拼错的键在
-  保存与装配期报出动作 id 与允许键集合，不再静默失效。动作级 `enabled`/`group`/
-  `exclusive` 属于规则层，写了即报错（运行期 `rule-runtime.mjs` 会覆盖它们）。带 `kind`
-  的动作对象写 `if`/`then`/`else` 同样拒绝：分支必须写成无 `kind` 的节点，否则
-  `expandActions` 会静默丢掉分支。`prepend`（未文档化的注册后门，`executor.mjs` 直读
-  `config.prepend`）已取消且暂无等价替代——`inject-text` 不接受 `waterfallPosition`，
-  动作级位置只对非 inject-text 动作可用。
-- 通用动态判断只归规则级 `if`：注入动作不再声明受众、模型、晋升或文本匹配门；请求参数动作的受众与模型范围也用规则级 `if.scope`（动作级 `audience`/`modelScope` 是退役写法，非中性值一律报「move it to rule.if」）。未声明模型范围等价于 `all`。固定 system-section 独占／抑制的 `audience` 仅表示静态注册目标，仍不接受动态条件。
-- 旧单动作声明的判断在改写为规则时提升为规则级 `if`；只作用于某个动作的多动作条件不能提升后影响兄弟动作，须先明确拆分。
-- 同模块非空组中任一规则声明 `exclusive: true`，整组最多一条启用规则。编译器拒绝
-  多启用冲突，不按排序选赢家；Host 显式激活一条卡时在一次原子事务中关闭同组其他卡。
-
-`inject-text.config` 复用整批 `createPromptConfigs()`，保留 ST 共享变量帧。缺少显式
-`config.id` 时，投递身份由稳定 rule/action id 编码派生；**卡内**重排不改身份，**卡内**复制
-（换 rule/action id）产生新身份。迁移保留原有显式投递身份。`templateFile` 相对该模块的
-`module.yml` 解析，只允许读取模块根内
-资产；保存、物化与运行使用同一边界。`strategyDir` 也相对规则包解析，不能从包内引擎目录
-反推数据目录。正文模板、策略目录和身份校验在所有入口同源。
-
-**跨模块同身份不再互相压制（模块维，2026-10-10 落地）**：**整模块复制**保留 rule id，因此
-默认派生的身份（`rule:<ruleId>:<actionId>`）跟着复制，不产生新身份（与上段「卡内复制」是两回事）。
-去重身份自 T5 起是 **(模块, 通道, 身份)** 三元组（`engine/executor.mjs#identityHit`），
-所以两个启用模块声明同一个 `dedupe: session` / `batch` 身份时是**两份各自注入**，
-不再「先到者压制后到者」——这正是「不再有旧档限制」的落点。装配**不拒绝**这种组合
-（复制模块后两者同时启用是合法操作），只在第一条装配时 `warnOnce` 一条诊断并照常装配，
-措辞说明「去重按模块各记一份，两份正文都会注入」。该 `warnOnce`（`src/runtime/agent-assembly.ts`）
-是 mount 工厂级、按消息去重的集合，跨 `refresh()` 存活：切预设、保存模块后的重装都不再
-重复告警（刻意不刷屏），要重新看到需重载插件。判重同时覆盖两条通道：`plugin`
-（`identity.value`，缺省 `config.id`）与显式 `sourceKind`（进 `source.kind`）——两条通道
-各按同一份模块维判定，因此 id 不同、却声明同一个 sourceKind 的两卡同样在装配期可见。
-`identity` 显式声明时同样按值判重：`{ field: 'plugin', value }` 的值两卡相同即视为同一身份
-（同模块内才共享这份去重）。旧日志里没有模块维的注入按**保守命中**处理：升级前注入、
-尚未被压缩掉的那条仍算已投递，不因新增字段而重复注入。
-
-**来源盖章与去重查找同源**：消息 `source.plugin` 写的是该配置的**去重身份**
-（`merged` 组用 `merged:<position>`，其余用 `identity.value`，默认即 `config.id`），
-与 `alreadyDelivered` 的查找键一致。解析器自带 `source` 的候选（`fill=instruction-hint`
-解析出的 `{ kind: 'instruction-hint' }` 等）也会被补盖 `source.plugin = 该身份`，否则身份
-只落在 kind 通道、`dedupe: session` 每步重复注入。副作用：显式 `identity` 的卡要按
-`source.plugin` 屏蔽（`pre-step-filter` 的 `blockPlugins`）须写 `identity.value` 而不是
-`id`（该名单按 `source.plugin` 做精确等值匹配的完整语义见后文「会话去重判据」一节）；
-旧消息的 kind 仍是 `plugin:<id>`，kind 通道继续命中。**模块维不并进身份字符串**：它单列在
-`source.moduleId`（取配置编译期的 `sourceModuleId`，由模块 id 传入），`source.plugin` /
-`source.kind` 的格式与匹配契约一字未改，`blockPlugins` 名单不需要跟着改。
-
-`getRuleEditorMeta()` 从实际条件、动作目录派生可序列化选项；`getEngineMeta()` 提供有效
-层和内容策略目录，其中 `injectionLayers` 是 `inject-text` 真正可绑定的八层（`layers` /
-`layerOrder` 仍是九层：`tool-pipeline` 只作规则级展示归属，没有注入通道）。新动作种子是可编译的中性空内容、空 patch 或空名单，不替用户选业务值。
-动作种子（`engine/actions/examples.mjs`）是规则卡动作字段的**唯一驱动源**：`rule-spec.mjs` 把
-`{ kind, ...种子 }` 作为 `meta.actions[].example` 下发，`RuleParameterFields` 按它的键逐个渲染控件。
-因此除 `match` 外，种子覆盖 `catalog.mjs` 声明的全部字段：`decision` 给 phase / decision / action /
-reason / text / toolNames（缺省档全取引擎既有默认），`append-context` 给 mode / text。两条都是
-**空串 / 缺省枚举**，不替用户选业务值；`toolNames` 必须是**逗号分隔字符串**——`parseToolNames`
-只认字符串，数组会被解析成空 = 匹配所有工具，把定向门悄悄扩大成全工具门。
-`match` 刻意不进种子：动作级 `match` 在声明路径上**出现即拒**——函数形态过不了 `structuredClone`
-（声明要写回 `module.yml` / JSON，函数既进不了克隆也进不了 YAML；报错提示「改用函数」等于把人引向
-`DataCloneError` 这条死路），对象与字符串形态在运行期恒命中 = 配了门却没拦住；条件一律写规则级
-`if` 或分支节点的 `if`。`getRuleEditorMeta()` 的每条种子都会经 `compileRules` 实测编译，
-种子写错会当场炸掉规则编辑器，不是静默降级。
-`custom-fallback` 不再发布，也没有可执行兼容分支，必须离线转为显式 `anchor` 条件和
-`anchor-notice` 内容；条件未声明 `fallbackAfter` 时不启用轮数兜底。
-
-## pre-step 消息角色出口（2026-09-17）
-
-宿主把本批 `decision.messages` 逐条写成 `user/message` 事件，事件校验要求 `role === "user"`
-（assistant 只能由模型侧 `assistant/message` 事件产生）。引擎因此只有一个出口角色：
-
-- `executor.mjs#buildMessage` 统一发出 `user`；配置声明或策略 patch（含 `templateFile` 的 role）
-  给出的其它值在出口降级，同一句告警只 `warnOnce` 一次，原角色写入 `source.requestedRole`，正文、位置、
-  次数、dedupe、order 与变量副作用都不变。合并组按首条配置的角色发出，其余成员声明的非法角色
-  同样告警并留痕。
-- 配置的 `role` 只接受 `user`，`getEngineMeta().roles` 与表单同源；策略或模板 patch 的角色仍经出口守卫校验。
-- 想让消息以 assistant 出现在模型面前，只能走宿主 assistant 侧通道，不要在 pre-step 里伪造
-  assistant 历史：那会写出宿主无法重新加载的会话日志。
-
-**降级告警的去重语义**（`engine/shared.mjs#createWarnOnce`）：守卫按**消息**去重——同一条消息只记一次，
-内嵌错误文本的告警因此「不同故障各记一次、重复故障仍只记一次」，不再是一个 mount 只放行第一条。
-登记发生在 logger 调用**成功之后**（失败的告警不占名额），key 数上限 64，到上限时补一条
-「后续告警已抑制」提示后即静默；`message` 全文即 key，同一故障的变体文本各占一个 key。
-信息性提示不走这条通道：`subagent-end` 的 `action=observe` 命中按模板本意逐次走 `logger.info`。
-
-## pre-step 协调器与官方指令过滤
-
-`rule-runtime` 的注入来源通过共享批执行器接入 pre-step：
-
-- 宿主插件提供 `promptToolPreStep` 协调服务时，引擎行把本 mount 的提示词配置注册给协调器
-  （`registerPreset`），由协调器用**同一个** `engine/executor.mjs#runPreStepBatch` 统一执行
-  预设来源；任一时刻每个 scope 只有一条预设配置执行路径。文件正文由官方来源生成，插件
-  在消息进入会话前执行逐文件过滤，不把文件卡编译为第二批注入配置。
-- 没有该服务（引擎被复制到无宿主的目录复用）时，引擎行仍自带 pre-step 监听器，只执行自身
-  预设配置；引擎不 import `src/host`，也不强制协调服务存在。**独立路径按单一来源设计**
-  （`applyPromptConfigs` 每次只接一份配置列表；多份来源的汇总入口是
-  `applyPromptConfigSources`），多来源之间的次序只在协调器下定义。
-- 协调服务迟到时，引擎行先停止本地注入再启用管理路径；服务消失时反向恢复独立执行。
-  注册句柄同时绑定服务实例，HMR 在相邻两步之间替换服务时也会撤销旧登记、向新实例重登；
-  同一来源在接管期间只选择一个批执行器；无 pre-step 贡献时无需注册该来源。来源随 ctx disposer
-  标记为失效，已被 waterfall 捕获的旧回调也不得在服务重挂后恢复登记。
-- 来源作用域来自注册 ctx（`@deepseek-ai/dsh-scope`）：同一 scope 内**同名来源以最新一次登记
-  为准**——宿主重挂同一个 preset（同一 scope 上旧 mount 的 fiber 尚未释放）时后来者接管，
-  先撤旧登记再插新登记，不抛错；抛错会让引擎行未激活，进而让整个 preset 挂载失败（表现为
-  无法切换预设）。被顶替的旧登记句柄迟到撤销是空操作，不会移除已接管的登记；接管只在
-  同一 scope 内发生，兄弟 scope 的同名来源互不顶替。父 scope 的来源对子代理可见、兄弟
-  scope 互不串，scope dispose 即释放。resolver 也绑定来源 ctx，不因合并批次而改读协调器的
-  全局服务。预设批执行器使用普通监听顺序，留在最外层 pre-step 门（声明式 `pre-step-filter`，
-  `waterfallPosition: outermost`）内侧；官方指令过滤在官方消息生成之后、写入会话之前完成。
-  迟到或重挂不改变外层门对最终消息批的约束。
-
-### 官方指令的逐文件过滤
-
-官方 `@deepseek-ai/dsh-agent-instructions` 是文件正文的注入来源，负责发现、读取、预算、
-增量更新和压缩恢复。插件只对待注入消息应用 `$DSH_HOME/.prompt-tool/instructions.yml`
-中的 `files[fileId].enabled: false`，没有独立来源总开关，也不接管官方生命周期：
-
-- 仅处理 `source.kind: agent-instructions` 的官方消息；通过 `source.changes` 路径与
-  `Instructions from:`、`Additional instructions from:`、`Updated instructions from:`、
-  `Instructions removed:` 模板段落共同定位关闭的文件。其他来源不受逐文件过滤影响。
-- 基线、附加、更新和移除消息使用同一过滤入口；删除对应正文时同步删除该文件的
-  `source.changes`，保留其他文件、消息身份及其余元数据。该消息没有剩余文件时整条移除。
-- 项目路径按当批或当前可见官方基线 `baselineIdentity` 中的项目根解析，不用插件的 `.git`
-  探测替代官方根；路径必须能映射到本地文件身份，未知身份原样保留。格式歧义、标题重复或元数据与正文不
-  一致时原样放行该条消息并报告诊断，不通过猜测段落边界误删官方内容。策略损坏同样诊断
-  并放行，工作台拒绝覆盖损坏的策略文件。
-- 完整替代基线中的移除记录可能只由共同引言表达，没有独立正文区间；此类基线需要过滤时
-  原样放行并诊断，避免误删正文中的移除示例或确认模型没有收到的移除。
-- 缺省放行；首次请求前关闭可阻止可识别文件进入新历史。会话中关闭只作用于后续注入，
-  已有正文不撤回，重新开启也不强制重放；官方后续产生消息时再按当前开关处理。主会话、
-  子代理及压缩恢复使用同一过滤规则，不新增文件级位置、晋升、受众或模型控制。
-- 官方已经完成预算裁剪，插件不补回被省略的其他内容，不重复读取文件来生成注入正文。
-  文件卡为了编辑原文仍可读取文件；关闭不是文件访问控制，也不阻止官方读取。
-- `instructionHint` 默认关闭。显式开启且提供有效 messageTemplate 后先调用同一过滤入口，再转换剩余符合条件的官方
-  消息；转换与过滤都不改写历史。未装配官方指令时，插件不补建文件注入。
-- 旧版生成目录里的 `agents-file-*` 卡（按配置 id 前缀判定）继续跳过，
-  避免旧产物恢复插件自注入。`instructions.owner.officialInstructions` 只报告观察到的官方装配
-  事实：`true` 仅在观察到官方装配时出现（当前没有生产者），`null` 表示尚未观察到；不报
-  「未装配」这类插件观察不到的否定事实，也不表示某个文件已经进入模型上下文。
-
-策略结构与旧字段清理见 [参数架构](architecture-params.md#指令文件与逐文件过滤策略)。
-取舍记录见 [ADR-0004](adr/0004-official-instruction-filter.md)。
-
-## 提示词配置插入点与顺序
-
-- 九个插入点彼此独立，没有跨层全局运行顺序。
-- `order` 只在同一插入点内生效。
-- UI / 写盘展示顺序固定为 `pre-step → system-section → runtime-context → agent-request → llm-stream → tool-pipeline → turn-stop → subagent-start → subagent-end`；这是展示与写盘顺序，不是运行时优先级。
-- 模型实际收到的提示词文本顺序更接近 `system-section → runtime-context → pre-step`；`agent-request` / `llm-stream` / `tool-pipeline` / `turn-stop` / `subagent-start` / `subagent-end` 是控制通道，不构成提示词文本优先级。
-- 规则完整保存在 module.yml，规则正文切片使用裸 id 文件名；顺序由 _settings.yml.rules[id].order 承载，完整定义保留 configOrder。引擎仍接收独立顺序映射。
-- pre-step 中注入与原生过滤动作按声明顺序交错，分批插入继续排在先前仍存活的同位置消息之后；过滤器的 claimed 基线使用真实事件 payload，不把下游增量当成原始消息。
-
-### 同 scope 内的注册顺序（2026-09-22）
-
-上表的「顺序」说的是**配置层**的展示与文本顺序；宿主 waterfall 里另有一条**注册顺序**语义，两者互不替代：
-
-- waterfall **由外向内**执行，最外层监听器的返回值即最终结果（`@deepseek-ai/cordis` 的 `events.ts`：`cbs.shift()` 取数组头部先跑，`waterfall()` 返回最外层监听器的返回值）。
-- 普通注册（`push`）**先注册者在外**；`prepend: true` 等价 `unshift`，插到链首 = 最外层，且**同为 prepend 时后注册者更外层**。
-- 因此需要落在普通注册之外的**否决型**动作（清空 `contexts`、窄化 `tools`、按名单掩码、剥离请求参数）应显式选择 outermost；**协作式填充**（`runtime-context` 的同步占位与填充）与**纯副作用**监听器保持普通注册，不去抢外层。
-- 本引擎把这条位置表达在规则动作里：`then[]` 的 `waterfallPosition: outermost` 映射为 `prepend: true`（`engine/rule-runtime.mjs`），**缺省 `default` 即普通注册**。它表达的是**位置**，不承担同一通道内声明之间的排序——后者归 `channelOrder`。
-- 顺序语义只能用真实 cordis 用例证明；手写的 mock `ctx.on` 只记录选项、**不实现顺序**，不能用作顺序证据。
-- **已知边界**：`prepend` 只保证「比**已存在**的普通注册更外层」。若第三方插件同样 `prepend` 且注册更晚，它仍处于更外层、可以翻越门控；`global: true` 的注册也不受本 scope 约束。这正是「不再依赖组合行序」的确切含义——位置改由注册选项保证，而该保证有明确上界，不等价于「与顺序无关」。
+正文策略为 static、placeholder、first-turn-anchor、guide-auto、anchor-notice、context-activation。placeholder 仅 pre-step/runtime-context，其余动态内容策略仅 pre-step。普通规则无隐式业务正文、锚词、两轮兜底或长度阈值；空文本保持空。
 
 ### 条件判定与事件载荷
 
-规则条件在 `if` 中显式选择，文本条件使用 `if.text.subject` 与匹配参数；主子会话和
-模型范围使用 `if.scope`。条件真实实现位于 `engine/conditions/`，匹配器复用
-`engine/anchor-match.mjs`；非法组合、空文本键集合与非法正则在编译期拒绝。旧配置中的
-subject/match/promotion 只能经离线转换显式进入规则条件，不能把旧配置层当成第二规则来源。
+同一调用帧的规则判定共享，跨执行点重新判定；after-next 动作先调用下游再判定。动作级条件要匹配本点实际事实，规则级条件则在各执行点独立按三值语义处理。
 
-`if.text.subject` 与 `if.names` / `if.source` 要读的事实必须由该条件被求值的官方通道真实
-提供：**动作级**分支条件写错通道（或 `text` 省略 subject）时，该动作永不执行且挂载与运行期
-都不报错，因此在编译期拒绝。文本与事实的可用集合都由 `engine/conditions/subject.mjs` 的
-`channelTextSubjects()` / `channelFactSubjects()` 从**同一张**通道载荷表反查，不另立名单。
-`subagent/start`、`subagent/end` 在表里标记为提供 `name`（= provider），所以 `names` 在这两层
-合法；provider 真缺席（官方 one-shot 变 ready、持久 Activation 冷恢复）是**运行期**
-UNAVAILABLE，不是编译期拒绝。
-**规则级** `if` 不在此列——它在该规则每个动作的执行点各自求值，「缺事实即不执行」
-是三值语义的设计意图（见 `test/engine/rules.test.mjs` 的缺事实用例）。规则级 `if` 本身不被
-校验（`else` 注入的 `not(if)` 按节点身份排除，不按 subject 名字）；但**动作级嵌套分支的 `if`
-一律按该动作的执行点校验**，与规则级 `if` 同名 subject 不会因此被跳过。
-`llm/stream` 是同一判据的另一个特例：官方载荷没有 `agent`，但 `engine/layers.mjs` 在动作级
-判定**之前**用 `sessionId` 经 `agents` 补挂 agent，`phase`/`session`/`count`/`anchor`、
-`preset` 与 `scope.audience` 因此在动作级真实可用（`agents` 查不到该会话只是**运行期**
-UNAVAILABLE），本点的编译期拒绝只有 `names` / `source` / `text.*` 三类——见
-[九层契约](injection-point-contracts.md#官方支持与插件映射)。
+- pre-step 有本批真实用户文本；按任务给子代理分档应在这里使用 `scope.audience: subagent`。
+- tools 通道有工具名、参数或结果；names/source/text 按动作的 channel 白名单校验。
+- subagent/start/end 有 provider/id/local 等事件事实，不含任务正文；文本 subject 用 subagentInfo。
+- llm/stream 自身无文本 subject；引擎可由 sessionId 查回 Agent，因此 phase/session/count/anchor 等依赖会话的条件可用，查不到为 UNAVAILABLE。
+- system-section/runtime-context 的规则级条件在 assembly 生效；动作分支不能假装有逐轮注册时机。complete/suppressRuntimeContext 属固定注册效果，动态 if 组合在编译期拒绝。
 
-| 动作或展示层 | 真实扩展点 | 可选文本 subject | 命中后的行为 |
-|---|---|---|---|
-| `pre-step` | `agent/pre-step` | `userMessage` | 与本层其余配置一致的消息批注入 |
-| `decision` | `tools/pre-execute` / `tools/post-execute` | `toolArgs` / `toolResult` | 分别声明 phase 为 pre / post 的裁决动作 |
-| `turn-stop` | `agent/turn-stopping` | `assistantText` | 阻止本轮停止并强制续跑一步 |
-| `subagent-start` | `subagent/start` | `subagentInfo` | 向该子代理注入一条上下文 |
-| `subagent-end` | `subagent/end` | `subagentInfo` | 默认记录；`params.action: inject-main` 时通过独立 Agent.inject 调用向所属主会话投递文本，不改写子代理结果、不唤醒空闲主会话 |
+工具名单的 allow/deny 互斥。request-params 的 replace:true 必须同时给 provider 与 model。拒绝非法候选发生在保存和挂载前；运行失败按该动作的明确降级报告，不能据一次静态校验声称模型已收到内容。
 
-- `turn-stop` 的续跑上限固定在引擎内（**每个来源（模块）**每轮 1 次、每会话 3 次：
-  `engine/layers.mjs` 的
-  `TURN_STOP_MAX_PER_TURN` / `TURN_STOP_MAX_PER_SESSION`），**不暴露为配置**——强制续跑
-  失控会把会话卡在停不下来的循环里，官方 hook 桥在同等位置也只留了 `TODO(stop-loop-guard)`。
-  预算按来源模块一份，经 options 下传到动作：同一模块的多条 `turn-stop` 配置与
-  `append-context`（`mode: continue`）动作共享它，不能靠「同模块多写几条」叠加次数。
-- 原生 `decision.toolNames` 支持明确的工具名单；名单类型错误必须拒绝，不能因解析失败
-  把定向门扩大成全工具门。工具前、后阶段是不同执行点，各自重新判定。
-- **策略只在消费它的层生效**：`config.resolve` 只由 pre-step（`executor.mjs`）与 runtime-context
-  的 `system-prompt/assemble` waterfall（`layers.mjs`）调用，其余层声明非 `static` 策略会在挂载期报错
-  （`schema.mjs#STRATEGY_LAYER_SUPPORT`）。模板专属策略（`strategyDir` 懒加载）同样只允许
-  pre-step 与 runtime-context，两层都真实调用 resolver：runtime-context 的模板专属策略与
-  placeholder 一样先通过官方 context/variable 注册可渲染为空的同步占位，再由异步 waterfall
-  在 `next()` 前填充本次装配中的对应项。官方排序、作用域遮蔽及下游门控保持生效；不缓存
-  会话正文，复用同一 AssembleContext 的并发请求也各自求值。空值或异常只让该条为空并告警，
-  取消或卸载会丢弃本次待填充结果。`strategyDir` 在引擎入口统一解析为绝对 URL（相对写法按
-  当前模块的 `module.yml` 解析），相对目录不再让整行挂载抛 `ERR_INVALID_URL`。
-- 策略解析器按配置创建一次（`createPromptConfigs` 里的 `bindResolver`）；模板专属策略的
-  **工厂产物每次求值重建、无状态**（`engine/actions/content.mjs` 只缓存模块 import）：缓存它
-  等于同时改变闭包状态跨调用、模板文件热刷新、跨会话串扰三项可观察行为。
-- `conditions/subject.mjs` 按真实事件参数归一载荷；共享文本提取由 `engine/condition.mjs`
-  提供，条件在规则编译期准备。未命中的规则**不写入 session 去重**，条件恢复后仍能注入。
-- ST 宏模板（`params.stMacros`）的跨配置变量帧只求值**当前入口获准的配置**：
-  `executor.mjs#runPreStepBatch` 传入本批的层、受众、模型、晋升与条件资格集合，去重受限的
-  模板在通过去重后才由执行器触发。官方组装只求值其拥有的 system-section / runtime-context
-  模板，不提前执行 pre-step 或其他控制、事件插入点的 setter 与 reader；这些插入点的
-  条件与执行时机仍由各自入口决定。
-- 后到的获准模板按**持久序号 `sequence`**（缺省回退 `order`，`engine/order.mjs#compareConfigSequence`）
-  在同一变量帧内补求值，已求值的模板不重放副作用或随机宏；
-  已返回的官方文本也不因后续 pre-step 赋值而倒放重算。两种入口顺序均沿用已有变量帧，
-  新步骤与成功压缩创建新帧，失败压缩不推进；帧键读完整历史，含 `turn/start` / `step/end` /
-  `compaction/end` / `tool/call` 这些非 surface 承载的 log-only 事件。该规则不增加跨插入点的全局调度顺序。
+## 提示词配置插入点与顺序
 
-## 会话去重判据：当前上下文 + 模块维（2026-10-10 落地）
+九层展示序来自 `LAYER_ORDER`；八层可注入清单来自 `getEngineMeta().injectionLayers`。规则顶层 layer 是动作未写 config.layer 时的缺省及展示归属。详细载荷见 [九层契约](injection-point-contracts.md)。
 
-`dedupe: session` 的判据是**每当前上下文一次**（用户 2026-10-10 拍板）：只要该身份的
-消息还留在模型可见的**当前上下文**（`engine/history.mjs#currentEvents()`，即 surface 有序
-节点）里就不重复注入；被压缩或替换**遮蔽**的历史不再拦注入，条件仍满足时在后续步重新
-注入一次。这不新增「本会话曾投递」的跨压缩记忆——同一正文随上下文重建是预期行为
-（`append-context` 等续跑动作的每轮／每会话预算照旧，不随压缩重置）。
+跨模块同点顺序来自 module.yml.configOrder；同点动作按声明顺序，显式 channelOrder 冲突拒绝。order 只管所属官方插入点的位置，不建立跨层总顺序。pre-step 中注入和过滤可以交错 flush，后批继续排在仍存活的同位置消息之后。
 
-身份比较是 **(模块, 通道, 身份)** 三元组（`engine/executor.mjs#identityHit`，唯一实现，
-注入与批内去重共用）：
+### 同 scope 内的注册顺序（2026-09-22）
 
-- 两条通道的规则与迁移前逐字相同：`plugin`（本引擎身份，merged 组用 `merged:<position>`）
-  与 `kind`（显式 `sourceKind`，外来/第三方消息如 context-gate 的 instruction-hint）。
-- 模块维取自注入消息的 `source.moduleId`（见上节）；**升级前注入的消息没有这一维**，
-  按保守命中处理——任何模块都认这条旧消息，避免格式换代把仍在上下文里的正文重复注入。
-- 判据的两处可见后果：**整模块复制**的两个副本各自注入（复制不再等于压制）；压缩遮蔽后重新注入。
+Cordis waterfall 普通注册先注册者在外；prepend 注册插到最外层，同为 prepend 时后注册者更外。非注入动作通过 `waterfallPosition: outermost` 表达该要求，同点仍按编译顺序接线。inject-text 的位置属于官方插入层，不接受这个注册后门。
 
-候选生成与投递确认仍然分开记账：
+## 历史读取与去重
 
-- 候选只决定这一步注入什么；只有宿主把消息真正写进会话事件流（`session/event`）之后，
-  该身份才记入本会话的快路径（`confirmDelivered`）。
-- 快路径是**纯性能缓存**：真相永远是当场扫描当前上下文，条目可随时丢弃（上限、`release()`、
-  `clear()`），丢了只是多扫一次，不改变任何判定结果。条目键带**有效期戳** = surface 的
-  `replaceGeneration`：宿主只在 replace（成功压缩即一次 replace）时从可见视图移除/替换节点，
-  代次一变，此前记下的「已投递」就可能已不在当前上下文里，键随之失效并退回扫描；无 surface
-  （降级到完整历史）时戳恒定，条目一直有效（完整历史不会丢事件）。
-- 被最外层 pre-step 门（声明式 `pre-step-filter` 的 `sources` / `keepKinds` / `blockPlugins`）在**本步剥离**的候选
-  不算已注入：晋升或门控放行后仍会补发，不会出现「日志里从来没有这条正文，去重却认为
-  已注入」的永久缺失；`reject` 步同样不记账。
-  `blockPlugins` 是**按 `source.plugin` 的显式屏蔽**（可选逃生阀）：仅当来源 `kind` 为 `plugin`
-  时做大小写不敏感的**精确等值**比较，不做子串、正则或 glob，因此要覆盖某个插件须写全名；
-  默认不启用，未声明或空名单等于关闭（注意与白名单「空 = 全拦」相反）；它与 `sources` /
-  `keepKinds` 正交，可同时声明。模块维不在 `source.plugin` 里，该名单的写法不受影响。
-- 确认缓存分别记录 `plugin` / `kind` 两个字段（连同模块维与戳），只比较同字段的值，与扫描的
-  两条匹配规则一致；不同字段恰好同值不会误判已投递。
-- **同位置 merged 成员共享一个投递身份**（`merged:<position>`）：该组一旦投递，后来才满足
-  会话去重条件的 merged 成员按同一身份判为已投递、**不再补注入**。这是既定边界——需要逐条
-  补发就用 `mergeMode: separate`。
-- 独立执行路径与管理路径（协调器）共用同一确认实现与同一份判据，两条路径的去重语义一致；
-  重挂或进程恢复从当前上下文重建（快路径为空时多扫一次），不依赖进程内已投递集合。
-- **降级**：`session.surface` 缺失 / `nodes` 非数组 / 节点越界时 `currentEvents()` 退回完整
-  历史，判据因此等价于迁移前的行为（除新增的模块维与旧消息保守命中外逐例相同）。
-- 验收入口：`test/engine/prompt-config-engine.test.mjs`（模块维各自注入 / 旧格式保守命中 /
-  压缩后重新注入 / 无 surface 降级 / memo 清空后判定不变）、`test/host/agent-assembly.test.mjs`。
+| 入口 | 语义 | 主要消费者 |
+|---|---|---|
+| `currentEvents(session)` | 模型当前可见 surface | 注入去重、上下文历史扫描、anchor、session.present、最后对话事实 |
+| `historyEvents(session)` | 完整 durable 日志 | 晋升重建、模板执行边界、工具解锁、tool-call/turn 计数 |
+
+surface 缺失或非法时可见视图退回完整日志；合法空 nodes 就是空上下文。需要消息数量的消费者按 seq/id 去重，不给所有读取强加同一过滤。count 的消息类信号看可见面，tool-call/turn 看完整日志。取舍见 [ADR-0010](adr/0010-two-history-views.md)。
+
+`dedupe: session` 表示“该身份在当前可见上下文只出现一次”，不是持久历史终身一次。成功压缩或替换遮蔽旧消息后可再次注入；条件未命中或未被接纳不占去重。身份包括来源模块、通道和 identity；旧无模块维的已投递消息保守识别。memo 仅加速，不成为另一份投递真值。
 
 ## 晋升语义（epoch-aware）
 
-- `phase` 根据显式事件集合或 `promoteOn` 观察真实 durable 事件；默认事件类别 `either`
-  是状态机协议，不会生成业务正文。成功 compaction/end 开启新 epoch，失败压缩保持原相位。
-- 默认子代理被视为已晋升；需要对子代理施加同一相位时显式写 `includeSubagents: true`。
-- `promoteGate: true` 的锚定识别只使用调用方的 `reasoningPattern`、
-  `reasoningNegativePattern` 和 `reasoningFlags`；未提供正则时不内置 we/let me。
-  `maxPromoteSteps` 只有显式配置时才启用步数兜底。
-- `promoteAfterFirstResponse: true` 显式选择首响应或首轮结束释放。所有模式仍用同一
-  observe / 冷扫 / epoch 状态机，不另建第二套计数状态。
-- instruction-hint 的去重依据仍为 `session.deriveMessages()` 的可见 surface；但只有显式
-  messageTemplate 能开启转换，模板为空时不替换或丢弃官方正文。
+会话开始及每次成功压缩开启新 epoch。压缩失败不换 epoch；重挂、重启或恢复从 durable 边界重建。tool-call/assistant-message 按显式 promoteOn 推进；子代理参与、推理门和最大步数须由配置选择。PTC 是工具呈现，晋升是状态转移，两者正交。
 
-## 世界书入选/落选诊断（2026-09-16）
+## 上下文激活与诊断
 
-`selectStWorldBook()` 在既有判断分支旁记录只读诊断，执行器仍是真实注入与 commit 的最终
-权威。诊断挂在返回的入选集合上（`selection.diagnostics`），不新增后台状态服务，
-也不为解释结果重跑选择器。
+`selectContextActivation` 在批首对已合格配置求值，候选集合跨所有 flush 共用；过滤掉赢家不另选同组后补。选择分为 candidate/selected 与实际注入后的 commit，未投递不提交时间窗。状态包含概率、候选组、评分、sticky/cooldown/delay 和有界递归；算法与 ST 转换使用同一原生入口。
 
-- 选择时机是**批首一次**：合格配置集合、ST 世界书入选与模板位置身份集合都在步进入时取定
-  （`qualified` 每配置每步只判一次），动作把批切成多次 flush 也复用同一份。同组互斥、概率
-  与粘滞窗口因此按整步成立——旧实现每个 flush 各选一次，同组两条会在两个 flush 里各赢一条。
-  快照同样在批首写入，末批没有世界书配置也不会把它覆盖成空集。
+扫描面必须显式 batch/history，关键词和 scanVariables 通过来源模块两域快照只读求值；赋值表达式拒绝。激活变量读取不获得任意目录或写权限。参数及独立真值表见 [激活映射](SillyTavern.md#世界书到上下文激活)。
 
-- 阶段区分：`excluded`（禁用/延迟/冷却/递归边界）、`rejected`（主键未命中、副键未满足、
-  概率过滤、分组落选、匹配失败）、`candidate`（进入候选及激活原因 sticky/constant/key-match）、
-  `selected`（组内胜出或未分组入选）、`committed`（执行器实际注入后才记录）。
-- `committed` 只记录本次入选的 ST 世界书条目，普通提示词配置不占用世界书诊断额度。
-- 原因由实际负责层提供：扫描窗口、主/副键命中数、selective logic、probability/roll、
-  分组归属与 `delay` 等字段都取自真实求值结果，`primary-miss` 等不靠 UI 猜测。
-- 有界：记录上限 200 条，超出置 `truncated: true`；不持久化对话或世界书正文，
-  匹配异常只保留截断后的错误消息。
-- 一致性：记录只追加观测数据，不抽样、不调用宏、不推进 sticky/cooldown。
-  开关诊断的差分测试断言入选集合、顺序、`Math.random` 调用次数与粘滞窗口完全一致。
-- 消费入口：当前由确定性测试消费；工作台只读入口（typed bridge）见 `docs/SillyTavern.md`
-  的导入预览与诊断说明。
+`lastContextActivationDiagnostics(session)` 只返回最近一次快照，不重新扫描或抽样。快照区分尚未求值与已求值但为空；记录最多200条，truncated 只限制展示，不改变选择。commit 与快照引用同源，工作台显示实际投递事实。诊断不是永久审计记录，也不证明不可见的第三方行为。
 
-### 快照真实性（2026-09-17）
+## pre-step 协调器与官方指令过滤
 
-每次选择创建一个**有界快照对象**，`selection.diagnostics` 与会话最近快照
-（`lastWorldBookDiagnostics`）引用**同一对象**，因此 commit 阶段追加 `committed` 记录、
-或把 `truncated` 置真都写回同一份事实——不再复制布尔值（复制会让 commit 越限时读取端
-仍看到 `truncated: false`）。
+宿主 `src/runtime/pre-step-coordinator.ts` 汇总模块规则，先处理官方待注入指令，再执行规则。来源白名单过滤器使用真实已领取 payload，不将下游增量当原始消息。
 
-- 越限时机不受阶段影响：67 条常驻配置全部 commit 时，第 67 条触顶，快照与读取端同时为真。
-- 最近一次求值**总是**替换快照（含空集合），并附 `step`；空结果因此不会被读成
-  「本次又注入了旧条目」。
-- `evaluated` 区分"该会话尚未求值"与"已求值但本次没有参与/入选条目"：bridge 对未知会话
-  返回 `evaluated: false`，不伪报已检查。
-- 只读端点每次读取都在对象上限内切片，但快照对象本身仍是引擎内部事实，读取不触发求值、
-  抽样或时间窗推进。
+逐文件关闭只过滤能够可靠识别的未来官方正文和 change 元数据；无法识别或无法分段时保留并报告。不撤回历史、不补回官方预算裁掉的内容，不以文件卡开关阻止官方磁盘读取。重新开启也不强制重放。
 
-### 条目级条件字段：延迟到递归与组内评分（2026-09-17）
+`instructionHint` 默认关闭，只有显式有效 messageTemplate 才将过滤后的正文转成提示；空模板保持原文。正文编辑和文件授权属于独立 owner，见 [指令文件契约](architecture-params.md#指令文件与逐文件过滤策略)。
 
-ST 的两个条目级开关在引擎里按 `params.stWorldBook` 消费；未开启（缺省/假值）时求值路径与
-既有断言逐条一致，字段缺省不产生任何新诊断。
+## 工具面收窄与按需解锁
 
-- `delayUntilRecursion`（对齐 `world-info.js:4753-4762`、`:4860-4868`）：层级池只收真值、
-  `true` 归一为 1、升序去重；初始化即取走最小层级，层级只增不减，因此「延迟到第 N 层」的
-  条目在层级满足的那次递归 pass 就解锁（不是等 N 个 pass）。非递归 pass 一律抑制
-  （sticky 命中例外，`constant` 也不例外）；递归 pass 中「条目值 > 当前层级」同样抑制，
-  记录 `excluded: delay-until-recursion`（带 `delayUntilRecursion`/`level`/`pass`）。
-  pass 推进与 ST 一致：有新正文可递归时层级保持不变，否则在层级池仍有剩余时打开下一层。
-  有界扫描预算同时计入条目激活和延迟层级推进，避免后续层级在打开前耗尽 pass。
-- `useGroupScoring`（对齐 `world-info.js:428-473`、`:5292-5328`）：组内存在显式开启的条目时
-  整组按 `getScore` 等价实现评分（只统计命中键数，`NOT_ALL`/`NOT_ANY` 不参与加分，主键为空
-  记 0 分）；只有**开启评分**的条目会被「严格小于最高分」淘汰，未开启者不被淘汰，但其分数
-  计入最高分；组内有 sticky 命中时整组跳过评分。淘汰记录 `rejected: group-score-lost`
-  （带 `score`/`maxScore`），入选结果不变时诊断不改变 `Math.random` 调用路径。
+assembly 负责呈现，sdk-strip 负责 SDK 文本，guard 负责最终执行拒绝；呈现裁剪不等于授权。tool-narrow 调用官方 restrict，仅用于静态注册限制。
 
-两处都对拍 ST 源码（测试内保留 `getScore` 与组内淘汰的抄写夹具），并断言「开关关闭时行为
-与既有断言逐条一致」。
+按需发现必须同时保留发现工具、常驻集合和 allowFrom 回收：allowFrom 从本会话 durable tool/call 参数提取显式字符串名单，只做加法且不能越过 deny。工具名按真实注册名称匹配；坏参数逐条忽略，缺会话回落静态 allow。
 
-### 扫描字段开关（2026-09-17）
+内置 tool-surface 按其规则打开即收窄，tool_search 保持常驻并由首轮提示告知发现入口。需要晋升门时显式加规则条件；不由引擎偷偷恢复首轮全工具目录。
 
-世界书条目的角色字段扫描与 ST 的 `globalScanData` 对齐（`world-info.js:294-320`）：每个开关
-只在对应变量有值时把该字段并入本 pass 的扫描文本，未开启时不并入、既有触发面不变。
-除既有的 `matchCharacterDescription` / `matchCharacterPersonality` / `matchScenario` /
-`matchPersonaDescription` 外，本轮接入 `matchCreatorNotes`（变量 `creator_notes`，来源
-`data.creator_notes`）与 `matchCharacterDepthPrompt`（变量 `depth_prompt`，来源
-`data.extensions.depth_prompt.prompt`，`script.js:4626-4634`）。两个变量由 ST 导入期登记，
-缺省不存在时开关自动失效（零噪音）。
+## 自定义工具与宿主契约
 
-## 业务参数与空值
+工具通过已安装 `@deepseek-ai/dsh-tools` 的 defineTool/官方转换器定义，使用真实 ToolExecution 的 agent、signal、调用身份；异步工作观察或转发 caller-owned signal。delegate 走 `ctx.tools.execute`，保留批准、拒绝和取消管线。
 
-规则行为属于 `rules`；其余已知模块部署参数仍由 `ENGINE_PARAM_DEFINITIONS` 映射到
-对应 `moduleConfigs`。子代理工具面只由 `subagentToolPolicy` 实例策略授权，未启用时遵循
-官方委派行为，不恢复旧 toolFilter 下发通道。自定义工具仍由 `customTools` 资产及
-`tool-config-engine` 管理，保存和运行复用 `engine/tool-definition.mjs` 的官方 DSL 校验。
-
-- 引擎不生成业务默认正文、长度阈值或模型偏好。`first-turn-anchor` 和 `guide-auto` 的
-  正则与文本来自显式参数；`complexMinChars` 缺省、null、空字符串不启用长度判据，
-  明确数值按严格大于比较。
-- env-facts / skill-catalog 仅在存在 `config.texts`、`config.text` 或 `params.text` 的
-  显式正文模板时输出，事实变量包括 `ENV_FACTS`、`SKILL_COUNT`、`SKILL_NAMES`、
-  `SKILLS_TEXT`。目录 `fields` 缺省为空，`limit` 缺省不截断；业务字段和条数由模板选择。
-- instruction-hint 的 projectTemplate / globalTemplate / suffixTemplate / messageTemplate
-  均默认空。前两者支持 FILES、ROOT 插值，消息模板支持 FILES、SUFFIX；
-  模板名是各自 `{{pick}}` 的 seed 来源（同一会话下各模板位置不共用取值）。
-  空模板或渲染为空时不替换、不丢弃官方指令。显式 `params.file` 仍实时读文件，
-  `Instructions from:` 是来源协议标记，不是引擎自带的引导性文案。
-- `templates/policies/legacy-defaults.yml` 只保存旧业务参数的精确快照，供模板生成与
-  导入期补齐旧填充器默认值参考。引擎运行时不得暗读该文件以外的旧默认；改写只补缺失键，保留显式空值。
-- 诊断文本、数据结构和布尔组合真值、宿主协议、guard、续跑次数与资源预算是机制边界，
-  不因移除业务默认而停用。ST/worldbook 的格式语义仍与转换和生命周期测试对拍。
-
-## 组合示例
-
-以下数值、正文和工具名单都是示例作者显式选择的业务配置，不是引擎默认。
-PTC 呈现由官方工具呈现行装配，不随规则相位隐式切换。
-
-同一卡在 assembly 同点执行两个动作，再在 request 点独立判定；动作 id 在重排时保持不变：
-
-```yaml
-rules:
-  - id: controlled-tools-and-budget
-    if:
-      all:
-        - scope: { audience: main }
-        - phase: { promoted: false, promoteOn: either }
-    then:
-      - id: restrict-presentation
-        kind: assembly
-        target:
-          tools: { deny: [web_search, web_fetch] }
-      - id: restrict-sdk
-        kind: sdk-strip
-        mask: { deny: [web_search, web_fetch] }
-      - id: request-budget
-        kind: request-params
-        patch: { maxTokens: 1024 }
-        waterfallPosition: outermost
-```
-
-动态文本规则在一次真实 assembly 中共用条件结果；固定执行 guard 单独声明且没有 `if`：
-
-```yaml
-rules:
-  - id: main-context
-    layer: system-section
-    if:
-      scope: { audience: main }
-    then:
-      - id: main-section
-        kind: inject-text
-        config: { layer: system-section, text: '当前为主会话。' }
-      - id: main-runtime
-        kind: inject-text
-        config: { layer: runtime-context, text: '按当前工作区事实执行。' }
-  - id: fixed-tool-guard
-    then:
-      - id: deny-network-tools
-        kind: guard
-        mask: { deny: [web_search, web_fetch] }
-        includeSubagents: false
-        reason: '此规则禁止调用该工具'
-```
-
-外层 pre-step 来源过滤的位置写在动作中，缺少 `if` 才表示无附加门：
-
-```yaml
-rules:
-  - id: controlled-inputs
-    if:
-      phase: { promoted: false, includeSubagents: false }
-    then:
-      - id: keep-user-and-goal
-        kind: pre-step-filter
-        sources: [user, goal]
-        waterfallPosition: outermost
-```
-
-自定义锚词和可选轮数兜底分属条件，正文属于注入动作；不再声明 custom-fallback：
-
-```yaml
-rules:
-  - id: confirmed-notice
-    if:
-      anchor: { keys: [READY], fallbackAfter: 1 }
-    then:
-      - id: notice
-        kind: inject-text
-        config:
-          layer: pre-step
-          strategy: anchor-notice
-          text: '按已确认的任务约束继续执行。'
-          params: { firstTurnWord: READY }
-```
-
-示例中 fallbackAfter: 1 是明确选择超过一条 assistant 消息后的兜底；删掉该字段只按锚词确认。
+自定义执行器支持 shell/http/delegate/fs/ask-user。定义、参数 Schema、输出和路径在写入边界校验；不依赖工具描述来当权限。宿主 API 以安装包类型和官方文档为准，不复制旧版本行号作当前依据。
 
 ## 重建与验证
 
-- 官方组合块已全部随「与预设彻底解耦」清理删除（`engine/compositions/` 只剩 `source/local/`）：
-  生成器 `rebuild:composition` 与它的输入快照（内置预设目录等）都已退场；ST 导入的
-  `enable_web_search: true` 不再组装 web 工具行，改为在转换报告里提示。
-- 已发布依赖的实际版本以 package.json 为准，验证脚本不再另行硬编码 rc.2；更新前同时核实
-  npm 的版本列表与 dist-tags，不能把名字为 latest 的旧标签误当成更新版本。
-- 本地新增模块放 `engine/compositions/source/local/<name>.yml`，直接装配；
-- 规则通过 `compileRules` 校验；真实 channel/phase 从动作能力派生。`channelOrder` 缺省来自规则 configOrder（无配置时按规则序号定位）；同卡同点冲突值拒绝。after-next 先调用一次宿主 next，再按该时刻状态判断，压缩后读取新 epoch。
-- 原生动作经 `prepareAction` 校验；注入整批编译共用动作选项验证，避免破坏 ST 变量帧。固定注册效果、非法身份、互斥冲突和不支持的选项在保存/物化前拒绝。`inject-text` 的准备期同时校验层通道：没有通道的层（`tool-pipeline`）当场报错，不再静默不注册。
-- 工具名单的 `allow` 与 `deny` 互斥。仅主会话的 guard 不安装会传播到子代理的 restrict；受众仍在执行 guard 内校验。动作次数预算只在目标匹配并产生效果前消费，非目标工具和被阻止的结果不消耗额度。
-- 用户目录刷新：`pnpm rematerialize:modules` 按完整 module.yml 恢复 rules/ 并清理已退役产物，保留用户资产，`--dry-run` 只读。原「预设内嵌 skills 漂移比对 / `--refresh-skills`」已随该机制退场删除。
-- 交付验证：从隔离临时 cwd 执行 `pnpm --dir $Repo typecheck`、`lint`、`test`、`build`，最后 `git -C $Repo diff --check`。重点证据包括 rules、business-defaults、真实 agent-assembly 与 rules-bridge-safety 测试；文档 YAML 示例也应通过 compileRules。
+只在本插件仓库修改源文件；使用 package scripts 重建 lib 与 YAML vendor 快照，不手改产物或宿主源码。根 module.yml 由 rebuild:module-template 生成，示例默认关闭，普通规则变量需手动建立。
+
+交付从隔离 cwd 执行 typecheck、lint、test、build、diff --check；宿主/包接入另核对 verify:host、verify:pack。永久测试只进入注入行为、写盘语义、bridge 载荷、安全拒绝四条 seam，期望来自独立规格或字面样例，断言公共行为。退役接口不留仅证明旧名字不存在的测试。

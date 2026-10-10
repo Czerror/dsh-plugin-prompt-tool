@@ -190,13 +190,15 @@ export function moduleImportPreview(root: string, files: AssetFile[], request: A
 
 /** 同一进程的同目标安装串行；磁盘版本复检保护其他写入者。 */
 const installs = new Map<string, Promise<unknown>>()
-export async function installModulePackage(root: string, files: AssetFile[], request: AssetImportRequest, options: { preserveAssets?: boolean } = {}): Promise<{ id: string; backupPath?: string }> {
+export async function installModulePackage(root: string, files: AssetFile[], request: AssetImportRequest, options: { preserveAssets?: boolean; signal?: AbortSignal } = {}): Promise<{ id: string; backupPath?: string }> {
+  options.signal?.throwIfAborted()
   root = canonicalModulesRoot(root, true)
   const initial = moduleImportPreview(root, files, request)
   if (!('prepared' in initial)) throw new Error('请先完成来源和顺序组选择')
   const target = join(root, initial.summary.targetId)
   const previous = installs.get(target) ?? Promise.resolve()
   const run = previous.catch(() => {}).then(() => {
+    options.signal?.throwIfAborted()
     const preview = moduleImportPreview(root, files, request)
     if (!('prepared' in preview)) throw new Error('来源选择已失效')
     if (!request.expectedPreviewRevision || request.expectedPreviewRevision !== preview.previewRevision
@@ -236,6 +238,7 @@ export async function installModulePackage(root: string, files: AssetFile[], req
       })
       generatedRoot = dirname(generated)
       withModuleLock(root, preview.summary.targetId, () => {
+        options.signal?.throwIfAborted()
         const now = moduleImportPreview(root, files, request)
         if (!('prepared' in now) || now.previewRevision !== preview.previewRevision) stale()
         if (existsSync(target)) { renameSync(target, backup); moved = true }

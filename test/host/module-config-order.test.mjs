@@ -27,7 +27,7 @@ const identities = snapshot => snapshot.entries.map(({ moduleId, configId }) => 
 
 test('配置排序：跨模块同名卡保留受众与策略，身份排序写回各自定义且正文不变', () => {
   const root = fixture('append', {
-    a: [{ id: 'same', text: 'A1', audience: 'main' }, { id: 'last', text: 'A2', audience: 'subagent', strategy: 'world-book' }],
+    a: [{ id: 'same', text: 'A1', audience: 'main' }, { id: 'last', text: 'A2', audience: 'subagent', strategy: 'context-activation', params: { activation: { scan: 'batch' }, constant: true } }],
     b: [{ id: 'same', text: 'B1' }, { id: 'shared', text: 'B2', audience: null }],
   })
   assert.deepEqual(appendModuleConfigOrder(root, 'a'), ['a'])
@@ -36,7 +36,7 @@ test('配置排序：跨模块同名卡保留受众与策略，身份排序写�
   setModuleEnabled(root, 'b', true)
   const initial = readModuleConfigOrder(root)
   assert.deepEqual(initial.entries.map(x => [x.moduleId, x.configId, x.sequence, x.audience, x.strategy]), [
-    ['a', 'same', 0, 'main', 'static'], ['a', 'last', 10, 'subagent', 'world-book'],
+    ['a', 'same', 0, 'main', 'static'], ['a', 'last', 10, 'subagent', 'context-activation'],
     ['b', 'same', 20, undefined, 'static'], ['b', 'shared', 30, undefined, 'static'],
   ])
   assert.ok(initial.entries.every(entry => !('text' in entry) && !('templateFile' in entry)))
@@ -50,8 +50,8 @@ test('配置排序：跨模块同名卡保留受众与策略，身份排序写�
   assert.deepEqual(afterMain.entries.map(entry => [entry.moduleId, entry.configId]), [['b', 'same'], ['a', 'last'], ['a', 'same'], ['b', 'shared']], '主会话移动保留不可见子代理卡的槽位')
   const subDrafts = moduleOrderConfigs(afterMain.entries)
   const subIds = subDrafts.filter(card => card.audience !== 'main').map(card => card.id)
-  const worldBookIds = subDrafts.filter(card => card.audience !== 'main' && card.strategy === 'world-book').map(card => card.id)
-  assert.equal(moveToView(subDrafts, '["a","last"]', '["b","shared"]', false, undefined, ['pre-step'], 'world-book', worldBookIds), subDrafts)
+  const activationIds = subDrafts.filter(card => card.audience !== 'main' && card.strategy === 'context-activation').map(card => card.id)
+  assert.equal(moveToView(subDrafts, '["a","last"]', '["b","shared"]', false, undefined, ['pre-step'], 'context-activation', activationIds), subDrafts)
   assert.equal(sameConfigPosition(subDrafts[0], { ...subDrafts[1], position: 'before-user' }), false)
   const movedSub = moveToView(subDrafts, '["a","last"]', '["b","shared"]', false, undefined, ['pre-step'], undefined, subIds)
   const reordered = movedSub.map(card => entryByKey.get(card.id))

@@ -214,8 +214,7 @@ test('普通模块之间的并入是往返且幂等的：重复并入不翻倍�
   const afterRemove = readFileSync(targetFile, 'utf8')
   assert.equal(count(afterRemove, `module-${src}-a`), 0, '移除必须按前缀撤销干净')
   assert.equal(count(afterRemove, `module-${src}-b`), 0)
-  assert.match(afterRemove, /id: own/, '目标模块自带内容必须保留')
-  assert.match(afterRemove, /text: OWN/, '自带内容不得被移除波及')
+  assert.deepEqual(parse(afterRemove).rules, [rule('own', 'OWN')], '目标模块自带规则完整保留，不依赖 YAML 引号样式')
 })
 
 test('SillyTavern 多源合并：导入期的 variablesEnabled 只过滤字面变量并入', async () => {
@@ -226,9 +225,6 @@ test('SillyTavern 多源合并：导入期的 variablesEnabled 只过滤字面�
     { id: 'st-off', name: '停用', variables: { owner: 'Mia' }, variablesEnabled: false, rules: [stRule('OFF')] },
     { id: 'st-on', name: '启用', variables: { mood: 'calm' }, rules: [stRule('ON')] },
   ])
-  const configs = parse(JSON.stringify(merged)).rules.flatMap(rule => rule.then).map(action => action.config)
-  assert.deepEqual(configs[0].variables, {}, '停用来源的字面变量不得并入产物配置')
-  assert.equal(configs[1].variables.mood, 'calm', '启用来源的字面变量照常并入')
   assert.deepEqual(merged.variables, { mood: 'calm' }, '预设级 variables 按同一开关过滤')
 })
 
@@ -249,7 +245,7 @@ test('模块并入：导入期的 variablesEnabled 只过滤字面变量，产�
   assert.equal(applied.ok, true, applied.message)
   const merged = parse(readFileSync(join(moduleRoot, 'target', 'module.yml'), 'utf8'))
   const configOf = id => merged.rules.find(rule => rule.id === id).then[0].config
-  assert.deepEqual(configOf('module-card-source-intro').variables, {}, '被停用的字面变量不得写进产物配置')
+  assert.deepEqual(merged.variables, { owner: 'Mia' }, '目标模块变量保留，停用来源不另外建立局部表')
   assert.equal(configOf('intro').text, 'TARGET BODY', '目标自带配置不并入来源变量')
   assert.equal(merged.variablesEnabled, true, '导入不写目标模块的开关')
   assert.equal(readFileSync(join(moduleRoot, 'card-source', 'rules', '_settings.yml'), 'utf8'), sourceSettings, '导入不回写源模块开关')
@@ -287,7 +283,7 @@ test('module-enable：写启用表后等待装配，失败如实返回，非法�
       entered.promise.then(() => 'refresh'),
       enabling.then(() => 'response'),
     ]), 'refresh', '成功响应必须等到启用表对应的运行时装配完成')
-    assert.match(readEnabled(), /- enable-target/, '先写盘，再等待装配')
+    assert.deepEqual(parse(readEnabled()).enabled, [id], '先写盘，再等待装配')
     await new Promise(setImmediate)
     assert.equal(responded, false, '装配尚未完成时不能提前报告启用成功')
   } finally {
@@ -298,7 +294,7 @@ test('module-enable：写启用表后等待装配，失败如实返回，非法�
   assert.equal(on.status, 200, on.message)
   assert.deepEqual(on.value, { enabled: [id] })
   assert.deepEqual(refreshed, [undefined], '启用表改变需刷新全部实例，不只重装已包含该模块的实例')
-  assert.equal((readEnabled().match(new RegExp(`- ${id}$`, 'm')) ?? []).length, 1)
+  assert.deepEqual(parse(readEnabled()).enabled, [id])
   const again = await call(handlers, 'moduleEnable', { id, enabled: true })
   assert.deepEqual(again.value, { enabled: [id] }, '重复启用幂等')
 
@@ -329,7 +325,7 @@ test('module-enable：写启用表后等待装配，失败如实返回，非法�
   failRefresh = true
   const failed = await call(handlers, 'moduleEnable', { id, enabled: true })
   assert.equal(failed.status, 500)
-  assert.match(readEnabled(), /- enable-target/, '装配失败保留已保存的启用表，便于重试')
+  assert.deepEqual(parse(readEnabled()).enabled, [id], '装配失败保留已保存的启用表，便于重试')
   failRefresh = false
   assert.deepEqual((await call(handlers, 'moduleEnable', { id, enabled: false })).value, { enabled: [] })
 })

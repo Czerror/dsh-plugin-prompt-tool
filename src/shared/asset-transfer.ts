@@ -58,7 +58,3 @@ export interface ModuleExportResult {
   memoryConflicts?: Array<{ id: string; name: string }>
   excludedMemoryCount?: number
 }
-
-/** 已发布类型的边界兼容别名。 */
-export type PresetExportRequest = ModuleExportRequest
-export type PresetExportResult = ModuleExportResult

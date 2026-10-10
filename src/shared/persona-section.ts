@@ -1,47 +1,71 @@
-/**
- * module.yml 顶层 `persona` 段契约：与官方 `@deepseek-ai/dsh-persona` 行同构，
- * 由渲染层写入 `deployment:persona-prefix`（order 0）与
- * `deployment:persona-suffix`（order 10200）两段。
- * 旧 params.sectionName 人设写法不做兼容也不迁移（本项目不含迁移代码）。
- */
-
-/**
- * module.yml 顶层 `persona` 段：与官方 `@deepseek-ai/dsh-persona` 行的 config 同构。
- * 官方 schema：prefix required、suffix 默认 ''、complete 默认 false、
- * includeRuntimeContext 默认 true。
- */
-export interface PersonaSpec {
-  /** `deployment:persona-prefix` 文本（第一方指导之前，官方 order 0）。 */
-  prefix: string
-  /** `deployment:persona-suffix` 文本（第一方指导之后，官方 order 10200）。 */
+/** 独立人设卡：按受众和字段覆盖；省略继承，空文本和 false 都是显式值。 */
+export interface PersonaTargetSpec {
+  prefix?: string
   suffix?: string
-  /** prefix 独占整个 system prompt（抑制其余段与 suffix）。 */
   complete?: boolean
-  /** false = 抑制该 scope 的动态 runtime-context 快照。 */
+  /** false 额外抑制动态上下文；true 不施加插件抑制，不撤销宿主自己的策略。 */
   includeRuntimeContext?: boolean
 }
 
-/** 读取 module.yml persona 段；非对象或缺 prefix 返回 undefined（调用方按“未声明”处理）。 */
-export function readPersonaSpec(value: unknown): PersonaSpec | undefined {
-  if (value === null || typeof value !== 'object' || Array.isArray(value)) return undefined
-  const record = value as Record<string, unknown>
-  if (typeof record.prefix !== 'string') return undefined
-  return {
-    prefix: record.prefix,
-    ...(typeof record.suffix === 'string' ? { suffix: record.suffix } : {}),
-    ...(typeof record.complete === 'boolean' ? { complete: record.complete } : {}),
-    ...(typeof record.includeRuntimeContext === 'boolean' ? { includeRuntimeContext: record.includeRuntimeContext } : {}),
-  }
+export interface PersonaSpec {
+  main?: PersonaTargetSpec
+  subagent?: PersonaTargetSpec
 }
 
-/** persona 段 → 官方行 config；默认值不落键（suffix ''、complete false、
- *  includeRuntimeContext true）。键顺序对齐官方 agent.cordis.yml 写法：
- *  suffix 在上、prefix 在下（prefix 常为长 block scalar，放末尾更易读）。 */
-export function personaRowConfig(persona: PersonaSpec): Record<string, unknown> {
-  return {
-    ...(persona.suffix === undefined || persona.suffix === '' ? {} : { suffix: persona.suffix }),
-    prefix: persona.prefix,
-    ...(persona.complete === true ? { complete: true } : {}),
-    ...(persona.includeRuntimeContext === false ? { includeRuntimeContext: false } : {}),
+export interface PersonaSnapshot {
+  persona: PersonaSpec | null
+  /** 完整模块定义的原始字节版本，写入前核对。 */
+  revision: string
+}
+
+export type PersonaAudience = 'main' | 'subagent'
+export interface PersonaSources { main: string | null; subagent: string | null }
+export interface PersonaSourcesSnapshot {
+  sources: PersonaSources
+  revision: string | null
+  candidates: Array<{ id: string; name: string }>
+  persisted?: boolean
+  publicationPending?: boolean
+  publicationError?: string
+}
+export interface PersonaSourcesRequest {
+  sources?: PersonaSources
+  expectedRevision?: string | null
+  refreshOnly?: boolean
+}
+
+const FIELDS = ['prefix', 'suffix', 'complete', 'includeRuntimeContext'] as const
+
+/** 已声明的非法值必须拒绝，不能吞成「继承」。 */
+export function readPersonaSpec(value: unknown): PersonaSpec | undefined {
+  if (value === undefined) return undefined
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) throw new TypeError('persona 必须是对象')
+  const record = value as Record<string, unknown>
+  if (FIELDS.some(field => Object.hasOwn(record, field))) {
+    throw new TypeError('旧扁平 persona 已退役；请重新导入或显式转换为 persona.main / persona.subagent')
   }
+  for (const key of Object.keys(record)) if (key !== 'main' && key !== 'subagent') throw new TypeError(`未知人设受众：${key}`)
+  const result: PersonaSpec = {}
+  for (const audience of ['main', 'subagent'] as const) {
+    const target = record[audience]
+    if (target === undefined) continue
+    if (target === null || typeof target !== 'object' || Array.isArray(target)) throw new TypeError(`persona.${audience} 必须是对象`)
+    const source = target as Record<string, unknown>
+    const parsed: PersonaTargetSpec = {}
+    for (const key of Object.keys(source)) if (!FIELDS.includes(key as typeof FIELDS[number])) throw new TypeError(`未知人设字段：persona.${audience}.${key}`)
+    for (const field of FIELDS) {
+      const item = source[field]
+      if (item === undefined) continue
+      if (field === 'prefix' || field === 'suffix') {
+        if (typeof item !== 'string') throw new TypeError(`persona.${audience}.${field} 必须是字符串`)
+        if (new TextEncoder().encode(item).byteLength > 1024 * 1024) throw new TypeError(`persona.${audience}.${field} 超过 1 MiB`)
+        parsed[field] = item
+      } else {
+        if (typeof item !== 'boolean') throw new TypeError(`persona.${audience}.${field} 必须是布尔值`)
+        parsed[field] = item
+      }
+    }
+    if (Object.keys(parsed).length > 0) result[audience] = parsed
+  }
+  return result
 }

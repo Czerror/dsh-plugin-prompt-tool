@@ -2,10 +2,12 @@ import { MATCH_LOGIC, createAnchorMatcher } from '../anchor-match.mjs'
 import { subjectTextOf } from '../condition.mjs'
 import { keyList } from './values.mjs'
 import { conditionInputAvailable, UNAVAILABLE } from './availability.mjs'
-const MATCH_FLAGS = ['caseSensitive', 'wholeWords', 'useRegex', 'stWords']
+const MATCH_FLAGS = ['caseSensitive', 'wholeWords', 'useRegex']
 const MATCH_MODES = ['scan', 'prefix']
 
 export function createTextPredicate(options = {}) {
+  if (options.stWords !== undefined) throw new TypeError('stWords 已退役，请显式转换为 wordBoundary')
+  if (options.wordBoundary !== undefined && !['ascii-token', 'unicode'].includes(options.wordBoundary)) throw new TypeError('wordBoundary 必须是 ascii-token 或 unicode')
   const keys = keyList(options.keys, 'keys')
   const secondaryKeys = keyList(options.secondaryKeys, 'secondaryKeys')
   if (keys.length === 0 && secondaryKeys.length === 0) {
@@ -33,7 +35,7 @@ export function createTextPredicate(options = {}) {
     useRegex: options.useRegex,
     logic,
     mode,
-    stWords: options.stWords === true,
+    wordBoundary: options.wordBoundary,
   })
   const subject = options.subject
   const predicate = (payload) => conditionInputAvailable('text', options, payload)

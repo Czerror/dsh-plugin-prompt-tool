@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import type { RuleDefinition } from '../../../shared/rules.ts'
+import type { RuleAction } from '../../../shared/rules.ts'
 import type { ModuleConfigOrderEntry, ModuleConfigOrderSnapshot } from '../../../shared/module-config-order.ts'
 import { configIdentityKey } from '../../../shared/module-config-order.ts'
 import type { PromptToolStore } from '../../data/use-prompt-tool-store.ts'
@@ -32,6 +33,12 @@ export interface RulesWorkspaceProps {
   renderInstructionSettings?: (config: PromptConfigDraft) => ReactNode
   hasLayerSettings?: (layer: string) => boolean
   matchesLayerSettings?: (layer: string, keyword: string) => boolean
+}
+
+function hasContextActivation(actions: RuleAction[]): boolean {
+  return actions.some(action => asTriggerRecord(action.config).strategy === 'context-activation'
+    || Array.isArray(action.then) && hasContextActivation(action.then as RuleAction[])
+    || Array.isArray(action.else) && hasContextActivation(action.else as RuleAction[]))
 }
 function scopeVisible(rule: RuleDefinition, scope: 'main' | 'subagent'): boolean {
   const possible = (value: unknown): boolean => {
@@ -104,7 +111,7 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
     key: configIdentityKey({ moduleId: owner.moduleId, configId: entry.key }),
     identity: configIdentityKey({ moduleId: owner.moduleId, configId: entry.previousId ?? entry.value.id }),
   }))).filter(({ entry }) => !entry.deleted && scopeVisible(entry.value, props.scope ?? 'main'))
-    .filter(({ entry, moduleId: id }) => (view === 'all' || view === 'world-book' && entry.value.then.some(action => asTriggerRecord(action.config).strategy === 'world-book') || entry.value.layer === view)
+    .filter(({ entry, moduleId: id }) => (view === 'all' || view === 'context-activation' && hasContextActivation([...entry.value.then, ...entry.value.else ?? []]) || entry.value.layer === view)
       && (!query || JSON.stringify(entry.value).toLowerCase().includes(query) || id === moduleId && entry.value.layer !== undefined && props.matchesLayerSettings?.(entry.value.layer, query)))
     .sort((a, b) => (rank.get(a.identity) ?? Number.MAX_SAFE_INTEGER) - (rank.get(b.identity) ?? Number.MAX_SAFE_INTEGER))
   const batchDisabled = entries.length === 0 || entries.some(({ moduleId: id, draft }) => readOnly(id) || !draft.loaded || draft.busy !== undefined || hasRuleFields(draft) || draft.remote !== undefined)
@@ -143,7 +150,7 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
   return <section className={css.workspace} aria-label={t('rules.list')}>
     <div className={ui.listFilterRow} data-module-toolbar>
       <SearchInput inline aria-label={t('rules.search')} placeholder={t('rules.search')} value={props.keyword ?? filter} onChange={event => changeFilter(event.target.value)} />
-      <MenuSelect compact className={css.control} ariaLabel={t('rules.layerFilter')} value={view} options={[{ value: 'all', label: t('rules.all') }, { value: 'world-book', label: t('rules.worldBook') }, ...store.meta.layers.map(layer => ({ value: layer, label: translateLabel(t, LAYER_LABEL_KEYS, layer) }))]} onChange={value => props.onViewFilterChange?.(value)} />
+      <MenuSelect compact className={css.control} ariaLabel={t('rules.layerFilter')} value={view} options={[{ value: 'all', label: t('rules.all') }, { value: 'context-activation', label: t('rules.worldBook') }, ...store.meta.layers.map(layer => ({ value: layer, label: translateLabel(t, LAYER_LABEL_KEYS, layer) }))]} onChange={value => props.onViewFilterChange?.(value)} />
       {props.toolbarActions}
       <span className={ui.batchControls}>
         <Button shape="pill" variant="outline" data-batch="enable" disabled={batchDisabled} onClick={() => batchSetEnabled(true)}>{t('configs.batch.enableVisible')}</Button>

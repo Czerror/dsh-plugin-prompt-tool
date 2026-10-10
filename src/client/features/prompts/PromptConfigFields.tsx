@@ -19,12 +19,12 @@ import featureCss from './prompts.module.css'
 
 const styles = { ...sharedCss, ...featureCss }
 
-/** 世界书触发逻辑（selectiveLogic 0-3）的显示键。 */
+/** 上下文激活的具名副键逻辑。 */
 const SELECTIVE_LOGIC_LABEL_KEYS: Record<string, PromptToolLocaleKey> = {
-  '0': 'selectiveLogic.0',
-  '1': 'selectiveLogic.1',
-  '2': 'selectiveLogic.2',
-  '3': 'selectiveLogic.3',
+  AND_ANY: 'selectiveLogic.0',
+  NOT_ALL: 'selectiveLogic.1',
+  NOT_ANY: 'selectiveLogic.2',
+  AND_ALL: 'selectiveLogic.3',
 }
 
 /**
@@ -318,7 +318,7 @@ export function StrategyParamsFields(props: { t: PromptToolTranslate; strategy: 
     // system-section 层参数：段名（空则引擎回退 id 注册为普通段）与 complete（独占
     // system prompt）。人设不走本层：module.yml 顶层 persona 段（官方
     // @deepseek-ai/dsh-persona 行同构）由「人设」卡编辑。
-    // 未结构化的键仍走高级 JSON：手写/导入的其它 params（例如 stMacros）不被吞掉，
+    // 未结构化的键仍走高级 JSON：手写/导入的其它 params（例如 templateEvaluation）不被吞掉，
     // 提交时把结构化值并回，避免保存一次丢掉段名与 complete。
     const sectionKeys = ['sectionName', 'complete', 'suppressRuntimeContext']
     const sectionRest = Object.fromEntries(Object.entries(value).filter(([key]) => !sectionKeys.includes(key)))
@@ -404,12 +404,17 @@ export function StrategyParamsFields(props: { t: PromptToolTranslate; strategy: 
       </>
     )
   }
-  if (strategy === 'world-book') {
+  if (strategy === 'context-activation') {
+    const activation = objectOf('activation') ?? { scan: 'batch' }
+    const keys = ['constant', 'keys', 'secondaryKeys', 'caseSensitive', 'wholeWords', 'useRegex', 'selectiveLogic', 'activation']
+    const extra = Object.fromEntries(Object.entries(value).filter(([key]) => !keys.includes(key)))
     const list = (key: string): string => Array.isArray(value[key])
       ? (value[key] as unknown[]).map(String).join(', ') : str(key)
     const setList = (key: string, next: string): void => set(key, next.split(',').map((item) => item.trim()).filter((item) => item.length > 0))
     return (
       <>
+        <OptionField t={t} className={styles.fieldSpan6} label="activation.scan" value={String(activation.scan ?? 'batch')} options={['batch', 'history']} fallback="batch" onChange={scan => set('activation', { ...activation, scan })} />
+        <ParamToggle className={styles.fieldSpan3} label="activation.selective" checked={activation.selective === true} onChange={selective => set('activation', { ...activation, selective })} />
         <ParamToggle className={styles.fieldSpan3} label={t('strategyParam.constant.label')} hint={t('strategyParam.constant.hint')}
           checked={bool('constant')} onChange={(next) => set('constant', next)} />
         <div className={styles.fieldSpan6}><TagInput id={`${keyId}-keys`} label={t('strategyParam.keys.label')} hint={t('strategyParam.keys.hint')} hintMode="tooltip" onCommit={() => {}}
@@ -427,12 +432,14 @@ export function StrategyParamsFields(props: { t: PromptToolTranslate; strategy: 
           className={styles.fieldSpan6}
           label={t('strategyParam.selectiveLogic.label')}
           hint={t('strategyParam.selectiveLogic.hint')}
-          value={value['selectiveLogic'] !== undefined ? String(value['selectiveLogic']) : '0'}
-          options={['0', '1', '2', '3']}
-          fallback="0"
+          value={value['selectiveLogic'] !== undefined ? String(value['selectiveLogic']) : 'AND_ANY'}
+          options={['AND_ANY', 'NOT_ALL', 'NOT_ANY', 'AND_ALL']}
+          fallback="AND_ANY"
           labelKeys={SELECTIVE_LOGIC_LABEL_KEYS}
-          onChange={(next) => set('selectiveLogic', Number(next))}
+          onChange={(next) => set('selectiveLogic', next)}
         />
+        <JsonField t={t} label="activation" value={activation} fieldDrafts={props.fieldDrafts} draftKey={`${props.draftScope}:params.activation`} onChange={next => { if (next !== undefined) set('activation', next) }} />
+        <JsonField t={t} label={t('field.json.advanced')} value={extra} fieldDrafts={props.fieldDrafts} draftKey={`${props.draftScope}:params.extra`} onChange={next => { if (next !== undefined) onPatch({ ...Object.fromEntries(Object.entries(value).filter(([key]) => keys.includes(key))), ...next }) }} />
       </>
     )
   }

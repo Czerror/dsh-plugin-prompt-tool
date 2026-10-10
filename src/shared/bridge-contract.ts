@@ -4,11 +4,12 @@
  * 端点附加字段只能以 value 旁的可选扩展字段出现（describe）。
  * 改路径或载荷形状必须同步更新 test/shared/bridge-contract.test.mjs。
  */
-import type { PersonaSpec } from './persona-section.ts'
-import type { RuleRevisions, RulesRequest, RulesSnapshot } from './rules.ts'
+import type { PersonaSnapshot, PersonaSpec, PersonaSourcesRequest, PersonaSourcesSnapshot } from './persona-section.ts'
+import type { ModuleVariablesRequest, ModuleVariablesSnapshot } from './module-variables.ts'
+import type { RulesRequest, RulesSnapshot } from './rules.ts'
 import type { ModuleConfigIdentity, ModuleConfigOrderSnapshot } from './module-config-order.ts'
 import type { AssetImportRequest, AssetSummary, ImportKind, ModuleExportRequest, ModuleExportResult } from './asset-transfer.ts'
-import type { EngineEditorGroup, EngineLayer } from './engine-capabilities.ts'
+import type { EngineEditorGroup, InjectionPoint } from './engine-capabilities.ts'
 import type { ConfigFieldSources } from './managed-config-fields.ts'
 import type { OfficialOrdersView } from './official-orders.ts'
 import type { SkillContentSnapshot, SkillPolicyChange, SkillsCatalogSnapshot } from './skills.ts'
@@ -51,6 +52,7 @@ export const BRIDGE_ENDPOINTS = {
   triggers: '/triggers',
   rules: '/rules',
   persona: '/persona',
+  personaSources: '/persona-sources',
   moduleVariables: '/module-variables',
   customTools: '/custom-tools',
   importModulePackage: '/import-module-package',
@@ -71,7 +73,7 @@ export const BRIDGE_ENDPOINTS = {
   subagentToolPolicyPreview: '/subagent-tool-policy-preview',
   toolSurface: '/tool-surface',
   moduleCapability: '/module-capability',
-  worldBookDiagnostics: '/world-book-diagnostics',
+  contextActivationDiagnostics: '/context-activation-diagnostics',
   ruleDiagnostics: '/rule-diagnostics',
 } as const
 
@@ -166,9 +168,10 @@ export interface BridgeRequestMap {
   paramOverrides: { overrides?: Record<string, unknown>; promptConfigs?: unknown[]; rebuild?: boolean; expectedModuleId?: string }
   triggers: { expectedModuleId: string; triggers?: unknown[]; expectedRevision?: string; validateOnly?: boolean }
   rules: RulesRequest
-  /** 顶层 persona 段读写（官方 @deepseek-ai/dsh-persona 行 config 同构）；省略 persona 键 = 读取。 */
-  persona: { persona?: PersonaSpec | null; expectedModuleId?: string } | undefined
-  moduleVariables: { variables?: Record<string, string>; enabled?: boolean; expectedModuleId?: string; expectedRevisions?: Partial<RuleRevisions>; refreshOnly?: boolean }
+  /** 独立主/子人设卡；省略 persona 读取，写入必须携带读取时的完整定义版本。 */
+  persona: { persona?: PersonaSpec | null; expectedModuleId?: string; expectedRevision?: string; refreshOnly?: boolean } | undefined
+  personaSources: PersonaSourcesRequest | undefined
+  moduleVariables: ModuleVariablesRequest
   customTools: { customTools?: unknown[]; expectedModuleId?: string } | undefined
   /**
    * 模块包导入（原生/ST/PNG/ZIP）。`preview: true` 只转换并返回报告，不写目标；
@@ -199,7 +202,7 @@ export interface BridgeRequestMap {
   toolSurface: { sessionId: string; presetId?: never } | { presetId: string; sessionId?: never }
   moduleCapability: ({ action: 'create' | 'remove'; capabilityId: string } | { action: 'create-recipe'; recipeId: string }) & { expectedModuleId?: string }
   /** 只读世界书诊断：只回当前授权会话最近一次选择的观测记录。 */
-  worldBookDiagnostics: { sessionId?: string } | undefined
+  contextActivationDiagnostics: { sessionId?: string } | undefined
   /** 只读规则判定计数：无请求体，读取不触发求值。 */
   ruleDiagnostics: undefined
 }
@@ -292,7 +295,7 @@ export interface StConversionReport {
 }
 
 /** 世界书入选/落选诊断记录（只读派生数据，由引擎真实求值路径产生）。 */
-export interface WorldBookDiagnosticRecord {
+export interface ContextActivationDiagnosticRecord {
   /** 配置 id（`lore-<来源条目>`）。 */
   id: string
   stage: 'excluded' | 'rejected' | 'candidate' | 'selected' | 'committed'
@@ -357,17 +360,17 @@ export interface LayerContract {
  */
 export interface EngineMetaLayerContract {
   /** 九层固定顺序（引擎 LAYER_ORDER，host 不另写一份）。 */
-  layerOrder: readonly EngineLayer[]
+  layerOrder: readonly InjectionPoint[]
   /**
    * `inject-text` 真正可绑定的八层（引擎 `injectionLayers`，九层去掉无注入通道的 `tool-pipeline`）：
    * 动作的 `config.layer` 下拉用它；`layerOrder` / `layers` 保持九层，供视图筛选与规则级 `layer`。
    * bootstrap 之前的空加载快照不含本键，与同为空的 `layers` 是同一档退化。
    */
-  injectionLayers?: readonly EngineLayer[]
+  injectionLayers?: readonly InjectionPoint[]
   /** 编辑组主归属总表（能力组 id = 能力 id）；前端据此组织九层卡片。 */
   editorGroups: readonly EngineEditorGroup[]
   /** 每层真实可编辑的行为契约，来自独立可分发的 engine/schema.mjs。 */
-  layerContracts: Record<EngineLayer, LayerContract>
+  layerContracts: Record<InjectionPoint, LayerContract>
 }
 
 /** 物化配置的只读来源；与配置一同读回，不能作为写入字段或授权。 */
@@ -407,8 +410,9 @@ export interface BridgeValueMap {
   paramOverrides: { overrides?: Record<string, unknown>; promptConfigs?: unknown[] }
   triggers: { triggers: unknown[]; revision: string; meta: TriggerEditorMeta }
   rules: RulesSnapshot
-  persona: { persona: PersonaSpec | null }
-  moduleVariables: { variables: Record<string, string>; enabled: boolean; revisions: RuleRevisions; persisted?: boolean; publicationPending?: boolean; publicationError?: string }
+  persona: PersonaSnapshot & { persisted?: boolean; publicationPending?: boolean; publicationError?: string }
+  personaSources: PersonaSourcesSnapshot
+  moduleVariables: ModuleVariablesSnapshot
   customTools: { customTools?: unknown[] }
   importModulePackage: {
     id?: string
@@ -458,7 +462,7 @@ export interface BridgeValueMap {
   }
   moduleCapability: { changed: boolean; addedModules?: string[]; removedModules?: string[]; capabilityIds: string[] }
   /** 只读世界书诊断：只回当前授权会话最近一次选择的观测记录（读取不重新求值）。 */
-  worldBookDiagnostics: { records: WorldBookDiagnosticRecord[]; truncated: boolean; step: number; evaluated: boolean }
+  contextActivationDiagnostics: { records: ContextActivationDiagnosticRecord[]; truncated: boolean; step: number; evaluated: boolean }
   /** 只读规则判定计数：按「模块 + 规则 + 通道」聚合，读取不重新求值；`dropped` 仅在超出 512 身份上限时出现，该字段保留给外部消费者与后续 UI，当前工作台不渲染。状态栏另用 `configs` 报全仓启用/总配置卡数，配置读取失败时该字段缺席。 */
   ruleDiagnostics: { records: RuleDiagnosticRecord[]; dropped?: number; configs?: ModuleConfigOrderSnapshot }
 }

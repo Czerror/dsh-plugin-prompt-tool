@@ -1,13 +1,11 @@
 /**
  * strategies — 引擎内容策略绑定(config.resolve)。
- * 内容策略: static / placeholder / first-turn-anchor / guide-auto / anchor-notice / world-book。
+ * 内容策略: static / placeholder / first-turn-anchor / guide-auto / anchor-notice / context-activation。
  * 策略参数全部来自 config.params（由 preset.yml 单一配置源下发），引擎只负责组装。
  * 仍支持 strategyDir 懒加载自定义模板策略。
  */
 
 import { extractText } from '../shared.mjs'
-import { isConversationMessage } from '../condition.mjs'
-import { MATCH_LOGIC, createAnchorMatcher } from '../anchor-match.mjs'
 import { createTaskClassifier } from '../classify-task.mjs'
 import { createPlaceholderResolver } from '../fillers.mjs'
 import { createAnchorState } from '../conditions/anchor.mjs'
@@ -111,54 +109,6 @@ function createAnchorNoticeResolver(config) {
 }
 
 /**
- * world-book:世界书条目(角色卡 lorebook)。constant=true 恒注入(不扫 keys);
- * selective 条目扫描当前消息批文本,keys/secondaryKeys 按 selectiveLogic 组合
- * (any=任一命中 / all=副键全中 / not=副键全不中)。匹配经 anchor-match 引擎。
- */
-function createWorldBookResolver(config) {
-  if (config.params?.stWorldBook) return ({ stWorldBookSelected }) => stWorldBookSelected === true ? { text: config.texts.join('\n\n') } : null
-  const constant = config.params?.constant === true
-  // selectiveLogic：ST world_info_logic 0=AND_ANY 1=NOT_ALL 2=NOT_ANY 3=AND_ALL。
-  const rawLogic = config.params?.selectiveLogic
-  const logic = rawLogic === 3
-    ? MATCH_LOGIC.ALL
-    : (rawLogic === 1
-      ? MATCH_LOGIC.NOT
-      : (rawLogic === 2 ? MATCH_LOGIC.NOT_ANY : MATCH_LOGIC.ANY))
-  const matcher = createAnchorMatcher({
-    keys: Array.isArray(config.params?.keys) ? config.params.keys : [],
-    secondaryKeys: Array.isArray(config.params?.secondaryKeys) ? config.params.secondaryKeys : [],
-    caseSensitive: config.params?.caseSensitive === true,
-    wholeWords: config.params?.wholeWords === true,
-    // 三态透传：undefined=ST 语义自动检测（/regex/ 或含特殊字符键按正则）；
-    // 存量配置显式 true/false 仍强制对应行为。
-    useRegex: config.params?.useRegex,
-    logic,
-  })
-  // ST 语义：constant 或无任何键的条目恒注入（always active）。
-  const hasAnyKey = (Array.isArray(config.params?.keys) ? config.params.keys : [])
-      .some((key) => String(key).trim().length > 0)
-    || (Array.isArray(config.params?.secondaryKeys) ? config.params.secondaryKeys : [])
-      .some((key) => String(key).trim().length > 0)
-  const promptText = config.texts.length > 0
-    ? config.texts.join('\n\n')
-    : (typeof config.params?.text === 'string' && config.params.text.length > 0 ? config.params.text : undefined)
-  return ({ messages }) => {
-    if (promptText === undefined) return null
-    if (constant || !hasAnyKey) return { text: promptText }
-    // 只扫本批**真实对话**消息（与 userText / ST 世界书同一判据）：插件注入、
-    // agent-instructions 与工具回执都不参与关键词匹配，否则世界书会被自己注入的正文触发。
-    const haystack = (Array.isArray(messages) ? messages : [])
-      .filter(isConversationMessage)
-      .map((message) => extractText(message))
-      .filter((text) => text.length > 0)
-      .join('\n')
-    if (haystack.length === 0) return null
-    return matcher.scan(haystack).active ? { text: promptText } : null
-  }
-}
-
-/**
  * 为归一化后的提示词配置绑定策略 resolve(策略状态随提示词配置对象,不随 apply)。
  * strategyDir:外部策略模块目录(相对本文件 URL)。未声明时只允许内置策略。
  */
@@ -171,8 +121,8 @@ export function bindResolver(config, strategyDir) {
       throw new TypeError(`${name}: migrate custom-fallback to an anchor condition and anchor-notice content`)
     case 'anchor-notice':
       return createAnchorNoticeResolver(config)
-    case 'world-book':
-      return createWorldBookResolver(config)
+    case 'context-activation':
+      return ({ contextActivationSelected }) => contextActivationSelected === true ? { text: config.texts.join('\n\n') } : null
     case 'static': {
       const texts = config.texts
       const patch = config.templatePatch ?? {}

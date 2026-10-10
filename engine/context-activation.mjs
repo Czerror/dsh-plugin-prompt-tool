@@ -1,12 +1,12 @@
-/** ST 世界书选择器；只消费显式 ST 导入字段，不改变原生 world-book 约定。 */
+/** 原生上下文激活选择器；扫描、候选池与实际投递提交共用一条运行链。 */
 import { createAnchorMatcher } from './anchor-match.mjs'
 import { currentEvents, historyEvents } from './history.mjs'
-import { interpolateVariables } from './interpolate.mjs'
+import { evaluateTemplate } from './template-evaluation.mjs'
 import { isConversationMessage } from './condition.mjs'
 import { isSuccessfulCompactionEnd } from './compaction-epoch.mjs'
 
 /** 只扫描真实对话的可见文本，排除插件注入与思维块（判据与 userText / 关键词 haystack 同源）。 */
-export function stChatMessages(session, pending = []) {
+export function conversationMessages(session, pending = []) {
   const result = [], ids = new Set()
   const add = (message, role) => {
     if (!message || !['user', 'assistant'].includes(role) || !isConversationMessage(message)) return
@@ -31,7 +31,7 @@ export function stChatMessages(session, pending = []) {
 }
 
 const sessions = new WeakMap()
-/** 每个会话最近一次成功压缩在日志里的位置；前推即窗口状态的重基准点（见 selectStWorldBook）。 */
+/** 每个会话最近一次成功压缩在日志里的位置；前推即窗口状态的重基准点。 */
 const boundaries = new WeakMap()
 const matchers = new WeakMap()
 /** 每个会话只保留最近一次选择的诊断快照（随会话对象 GC 释放）。 */
@@ -43,7 +43,7 @@ const DIAGNOSTIC_LIMIT = 200
 
 /** 最近一次世界书选择诊断（只读快照；无记录时返回空集合，不触发任何求值）。
  *  `evaluated: false` 表示该会话还没求值过，与"已求值但本次为空"区分开。 */
-export function lastWorldBookDiagnostics(session) {
+export function lastContextActivationDiagnostics(session) {
   return lastRuns.get(session) ?? { records: [], truncated: false, step: 0, evaluated: false }
 }
 
@@ -62,8 +62,8 @@ function lastCompactionBoundary(session) {
   return -1
 }
 
-export function selectStWorldBook(configs, session, messages, warn = () => {}) {
-  const entries = configs.filter(config => config.enabled !== false && config.strategy === 'world-book' && config.params?.stWorldBook)
+export function selectContextActivation(configs, session, messages, warn = () => {}, readVariables = () => ({ module: {}, global: {} })) {
+  const entries = configs.filter(config => config.enabled !== false && config.strategy === 'context-activation')
   // 本次选择的有界观测快照：`selection.diagnostics` 与会话最近快照引用**同一对象**，
   // 因此 commit 阶段追加记录或把 truncated 置真都写回同一份事实（不复制布尔值，
   // 否则 commit 越限时读取端仍看到 truncated=false）。
@@ -80,10 +80,11 @@ export function selectStWorldBook(configs, session, messages, warn = () => {}) {
   }
   // 被显式禁用的 ST 条目：由本层负责报告，不由 UI 猜测。
   for (const config of configs) {
-    if (config.enabled === false && config.strategy === 'world-book' && config.params?.stWorldBook) note(config, 'excluded', 'disabled')
+    if (config.enabled === false && config.strategy === 'context-activation') note(config, 'excluded', 'disabled')
   }
   if (!entries.length) return finish(new Set())
-  const chat = stChatMessages(session, messages)
+  const chat = conversationMessages(session, messages)
+  const batch = conversationMessages(undefined, messages)
   snapshot.step = chat.length
   const boundary = lastCompactionBoundary(session)
   let state = sessions.get(session)
@@ -107,23 +108,21 @@ export function selectStWorldBook(configs, session, messages, warn = () => {}) {
   // 初始化即取走最小层级，因此「延迟到第 N 层」的条目在首次递归 pass 就能解锁；
   // 层级只增不减（:5131），已打开的层级对后续 pass 保持打开。
   const delayLevels = [...new Set(entries
-    .map(config => config.params.stWorldBook.delayUntilRecursion)
+    .map(config => config.params.activation.delayUntilRecursion)
     .filter(Boolean)
     .map(value => value === true ? 1 : value))].sort((a, b) => a - b)
   let delayLevel = delayLevels.shift() ?? 0
   // 池是全批共享的（对齐 ST `world_info_recursive` 的全局扫描缓冲：新入选正文都进同一个池），
   // 这里只决定「池是否产生内容、pass 是否由递归驱动」（层级池推进依赖后者，缺省时既有语义不变）；
-  // **谁参与重扫**按模块判，判据在下面对每个条目求值的 pass 门控。CCv2 的书级 `recursive_scanning`
-  // 在 ST 运行期不被读取，条目级也没有自己的递归门控（ST 的同名条目字段与插件自造的
-  // `stWorldBook.recursive` 都不是判据）。
-  const recursive = entries.some(config => config.stWorldBookRecursive === true)
+  // 谁参与重扫按模块判，来源格式中的书级或条目级递归记录不参与运行。
+  const recursive = entries.some(config => config.contextActivationRecursive === true)
   /** 键匹配器（按 params 对象缓存；签名含插值后的键与匹配选项）。 */
   const matcherOf = (config, material) => {
     const p = config.params
-    const signature = JSON.stringify([material.keys, material.secondaryKeys, p.caseSensitive, p.wholeWords, p.useRegex])
+    const signature = JSON.stringify([material.keys, material.secondaryKeys, p.caseSensitive, p.wholeWords, p.useRegex, p.wordBoundary])
     let compiled = matchers.get(p)
     if (compiled?.signature !== signature) {
-      compiled = { signature, matcher: createAnchorMatcher({ keys: material.keys, secondaryKeys: material.secondaryKeys, caseSensitive: p.caseSensitive === true, wholeWords: p.wholeWords === true, useRegex: p.useRegex, stWords: true }) }
+      compiled = { signature, matcher: createAnchorMatcher({ keys: material.keys, secondaryKeys: material.secondaryKeys, caseSensitive: p.caseSensitive === true, wholeWords: p.wholeWords === true, useRegex: p.useRegex, wordBoundary: p.wordBoundary }) }
       matchers.set(p, compiled)
     }
     return compiled.matcher
@@ -135,125 +134,126 @@ export function selectStWorldBook(configs, session, messages, warn = () => {}) {
     // 每 pass 的扫描材料缓存：递归文本随 pass 变化，材料必须按 pass 重新构造；
     // 材料只被匹配与评分读取，构造本身不改变入选结果。
     const scanCache = new Map()
-    const scanOf = (config, st) => {
+    const scanOf = (config, activation) => {
       let material = scanCache.get(config)
       if (material !== undefined) return material
-      const depth = count(st.scanDepth, 2)
-      const parts = depth === 0 ? [] : chat.slice(-depth).reverse().map(message => message.text)
-      // 角色字段扫描（ST globalScanData，world-info.js:294-320）：每个开关只在对应变量
-      // 有值时并入扫描文本；creator_notes / depth_prompt 由导入期登记（未开启不并入，
-      // 既有触发面不变）。
-      for (const [flag, key] of [['matchCharacterDescription', 'description'], ['matchCharacterPersonality', 'personality'], ['matchScenario', 'scenario'], ['matchPersonaDescription', 'persona'], ['matchCreatorNotes', 'creator_notes'], ['matchCharacterDepthPrompt', 'depth_prompt']]) {
-        if (depth > 0 && st[flag] === true && typeof config.variables[key] === 'string') parts.push(config.variables[key])
+      const history = activation.scan === 'history'
+      const depth = count(activation.scanDepth, history ? 2 : batch.length)
+      const parts = depth === 0 ? [] : (history ? chat : batch).slice(-depth).reverse().map(message => message.text)
+      const variables = readVariables(config)
+      const render = (text, source) => evaluateTemplate(text, { ...variables, session, sourceId: `${config.sourceModuleId ?? ''}:${config.id}:${source}`, readOnly: true }).text
+      for (const key of activation.scanVariables ?? []) {
+        const value = Object.hasOwn(variables.module, key) ? variables.module[key] : Object.hasOwn(variables.global, key) ? variables.global[key] : undefined
+        if (depth > 0 && typeof value === 'string') parts.push(render(value, `scan:${key}`))
       }
       // 池是全批共享的；开关没开的模块靠下面的 pass 门控不参与重扫（隔离不靠分池）。
       if (pass > 0 && depth > 0) parts.push(...recursiveText)
       const p = config.params
-      const keys = (Array.isArray(p.keys) ? p.keys : []).map((key, index) => interpolateVariables(String(key), config.variables, session, undefined, `${config.id}#keys${index}`)).filter(Boolean)
+      const keys = (p.keys ?? []).map((key, index) => render(key, `keys:${index}`)).filter(Boolean)
       // 空宏仍是一项未命中的副键：匹配器忽略空值，但 AND_ALL/NOT_ALL 的总数不能缩水。
-      const secondaryKeys = (Array.isArray(p.secondaryKeys) ? p.secondaryKeys : []).map((key, index) => interpolateVariables(String(key), config.variables, session, undefined, `${config.id}#secondaryKeys${index}`))
+      const secondaryKeys = (p.secondaryKeys ?? []).map((key, index) => render(key, `secondaryKeys:${index}`))
       material = { depth, keys, secondaryKeys, text: parts.length ? '\x01' + parts.join('\n\x01') : '' }
       scanCache.set(config, material)
       return material
     }
     // ST getScore 等价（world-info.js:428-473）：只统计命中数，否定逻辑（NOT_ALL/NOT_ANY）
     // 不参与加分，主键为空记 0 分。
-    const scoreOf = (config, st) => {
-      const material = scanOf(config, st)
+    const scoreOf = (config, activation) => {
+      const material = scanOf(config, activation)
       const match = matcherOf(config, material).scan(material.text)
       if (material.keys.length === 0) return 0
       if (material.secondaryKeys.length === 0) return match.primary
-      const logic = config.params.selectiveLogic ?? 0
-      if (logic === 0) return match.primary + match.secondary
-      if (logic === 3) return match.secondary === material.secondaryKeys.length ? match.primary + match.secondary : match.primary
+      const logic = config.params.selectiveLogic ?? 'AND_ANY'
+      if (logic === 'AND_ANY') return match.primary + match.secondary
+      if (logic === 'AND_ALL') return match.secondary === material.secondaryKeys.length ? match.primary + match.secondary : match.primary
       return match.primary
     }
     for (const config of priority) {
       if (selected.has(config) || failed.has(config)) continue
-      const p = config.params, st = p.stWorldBook
+      const p = config.params, activation = p.activation
       const previous = state.get(config)
-      const sticky = previous?.last !== undefined && count(st.sticky) > 0 && chat.length < previous.last + count(st.sticky)
+      const sticky = previous?.last !== undefined && count(activation.sticky) > 0 && chat.length < previous.last + count(activation.sticky)
       if (sticky) { stickyEntries.add(config); note(config, 'candidate', 'sticky') }
-      if (chat.length < count(st.delay)) { note(config, 'excluded', 'delay', { delay: count(st.delay), messages: chat.length }); continue }
-      if (!sticky && previous?.last !== undefined && count(st.cooldown) > 0 && chat.length > previous.last
-        && chat.length < previous.last + count(st.sticky) + count(st.cooldown)) { note(config, 'excluded', 'cooldown'); continue }
+      if (chat.length < count(activation.delay)) { note(config, 'excluded', 'delay', { delay: count(activation.delay), messages: chat.length }); continue }
+      if (!sticky && previous?.last !== undefined && count(activation.cooldown) > 0 && chat.length > previous.last
+        && chat.length < previous.last + count(activation.sticky) + count(activation.cooldown)) { note(config, 'excluded', 'cooldown'); continue }
       // ST 的延迟门控（world-info.js:4860-4868）：非递归 pass 一律抑制（sticky 例外，
       // constant 也不例外）；递归 pass 中层级未到同样抑制。比较用条目原始值。
-      const delayUntil = st.delayUntilRecursion
+      const delayUntil = activation.delayUntilRecursion
       if (!sticky && delayUntil && (pass === 0 || delayUntil > delayLevel)) {
         note(config, 'excluded', 'delay-until-recursion', { delayUntilRecursion: delayUntil, level: delayLevel, pass })
         continue
       }
       // 递归 pass 的参与资格：条目自己的 excludeRecursion（ST world-info.js:4870）与本模块开关
       // 都要过。延迟条目由层级池驱动——层级池是全批时钟（层级只增不减），与递归正文无关，
-      // 因此不受模块开关门控，`stWorldBookRecursive` 缺省时它的既有语义不变。
-      if (pass > 0 && st.excludeRecursion === true) { note(config, 'excluded', 'recursion'); continue }
-      if (pass > 0 && config.stWorldBookRecursive !== true && !delayUntil) { note(config, 'excluded', 'recursion'); continue }
+      // 因此不受模块递归开关门控，开关缺省时它的既有语义不变。
+      if (pass > 0 && activation.excludeRecursion === true) { note(config, 'excluded', 'recursion'); continue }
+      if (pass > 0 && config.contextActivationRecursive !== true && !delayUntil) { note(config, 'excluded', 'recursion'); continue }
       let active = sticky || p.constant === true
-      let activation = sticky ? 'sticky' : p.constant === true ? 'constant' : 'key-match'
+      const reason = sticky ? 'sticky' : p.constant === true ? 'constant' : 'key-match'
       if (!active) {
-        const material = scanOf(config, st)
         try {
+          const material = scanOf(config, activation)
           const match = matcherOf(config, material).scan(material.text)
           active = match.primary > 0
-          const logic = p.selectiveLogic ?? 0
+          const logic = p.selectiveLogic ?? 'AND_ANY'
           const detail = { scanDepth: material.depth, primary: match.primary, secondary: match.secondary, secondaryKeys: material.secondaryKeys.length, logic }
-          if (active && st.selective === true && material.secondaryKeys.length > 0) {
-            active = logic === 1 ? match.secondary < material.secondaryKeys.length : logic === 2 ? match.secondary === 0
-              : logic === 3 ? match.secondary === material.secondaryKeys.length : match.secondary > 0
+          if (active && activation.selective === true && material.secondaryKeys.length > 0) {
+            active = logic === 'NOT_ALL' ? match.secondary < material.secondaryKeys.length : logic === 'NOT_ANY' ? match.secondary === 0
+              : logic === 'AND_ALL' ? match.secondary === material.secondaryKeys.length : match.secondary > 0
             if (!active) note(config, 'rejected', 'secondary-miss', detail)
           } else if (!active) {
             note(config, 'rejected', 'primary-miss', detail)
           }
         } catch (error) {
           note(config, 'rejected', 'match-error', { message: String(error?.message ?? error).slice(0, 120) })
-          warn(`prompt-config-engine: 世界书 ${config.id} 匹配失败：${String(error?.message ?? error)}`)
+          warn(`prompt-config-engine: 上下文激活 ${config.id} 匹配失败：${String(error?.message ?? error)}`)
           failed.add(config)
           continue
         }
       }
       if (!active) continue
-      const probability = typeof st.probability === 'number' && Number.isFinite(st.probability) ? Math.max(0, Math.min(100, st.probability)) : 100
+      const probability = typeof activation.probability === 'number' && Number.isFinite(activation.probability) ? Math.max(0, Math.min(100, activation.probability)) : 100
       const roll = previous?.generation === generation ? previous.roll : Math.random() * 100
       state.set(config, { ...previous, generation, roll })
-      if (!sticky && st.useProbability !== false && (probability <= 0 || roll >= probability)) {
+      if (!sticky && activation.useProbability !== false && (probability <= 0 || roll >= probability)) {
         note(config, 'rejected', 'probability', { probability, roll })
         failed.add(config)
         continue
       }
-      note(config, 'candidate', activation, { probability, useProbability: st.useProbability !== false })
+      note(config, 'candidate', reason, { probability, useProbability: activation.useProbability !== false })
       candidates.push(config)
     }
     if (!candidates.length && !delayLevels.length) break
     const groups = new Map()
     for (const config of candidates) {
-      const names = String(config.params.stWorldBook.group ?? '').split(',').map(name => name.trim()).filter(Boolean)
+      const names = String(config.params.activation.selectionGroup ?? '').split(',').map(name => name.trim()).filter(Boolean)
       if (!names.length) { selected.add(config); note(config, 'selected', 'ungrouped'); continue }
       if (names.some(name => occupied.has(name))) { note(config, 'rejected', 'group-occupied'); failed.add(config); continue }
       for (const name of names) { const members = groups.get(name) ?? []; members.push(config); groups.set(name, members) }
     }
     for (const [name, members] of groups) {
       if (occupied.has(name)) continue
-      let remaining = members.filter(config => !failed.has(config) && !String(config.params.stWorldBook.group).split(',').some(group => occupied.has(group.trim())))
+      let remaining = members.filter(config => !failed.has(config) && !String(config.params.activation.selectionGroup).split(',').some(group => occupied.has(group.trim())))
       if (!remaining.length) continue
       const sticky = remaining.filter(config => stickyEntries.has(config))
       // 组内评分（ST filterGroupsByScoring 5292-5328）：无全局开关时，只要组内存在显式
       // 开启 useGroupScoring 的条目就整组参与评分；组内有 sticky 时整组跳过（5300-5305）。
       // 只有开启评分的条目会被淘汰（严格小于最高分）；未开启者不被淘汰，但其分数计入最高分。
       const scoreOut = new Set()
-      if (!sticky.length && remaining.some(config => config.params.stWorldBook.useGroupScoring === true)) {
+      if (!sticky.length && remaining.some(config => config.params.activation.useGroupScoring === true)) {
         let scores
         try {
-          scores = remaining.map(config => scoreOf(config, config.params.stWorldBook))
+          scores = remaining.map(config => scoreOf(config, config.params.activation))
         } catch (error) {
           scores = undefined
-          warn(`prompt-config-engine: 世界书分组评分失败：${String(error?.message ?? error)}`)
+          warn(`prompt-config-engine: 上下文激活分组评分失败：${String(error?.message ?? error)}`)
         }
         if (scores !== undefined) {
           const maxScore = Math.max(...scores)
           const survivors = []
           for (const [index, config] of remaining.entries()) {
-            if (config.params.stWorldBook.useGroupScoring !== true || scores[index] >= maxScore) { survivors.push(config); continue }
+            if (config.params.activation.useGroupScoring !== true || scores[index] >= maxScore) { survivors.push(config); continue }
             note(config, 'rejected', 'group-score-lost', { group: name, score: scores[index], maxScore })
             scoreOut.add(config)
             failed.add(config)
@@ -262,17 +262,17 @@ export function selectStWorldBook(configs, session, messages, warn = () => {}) {
           if (!remaining.length) continue
         }
       }
-      const overriding = sticky.length ? sticky : remaining.filter(config => config.params.stWorldBook.groupOverride === true)
+      const overriding = sticky.length ? sticky : remaining.filter(config => config.params.activation.groupOverride === true)
       const available = overriding.length ? overriding : remaining
-      const weight = config => typeof config.params.stWorldBook.groupWeight === 'number' ? Math.max(0, config.params.stWorldBook.groupWeight) : 100
+      const weight = config => typeof config.params.activation.groupWeight === 'number' ? Math.max(0, config.params.activation.groupWeight) : 100
       let choice = available[0]
       if (!overriding.length) {
         let roll = (state.get(choice).roll / 100) * available.reduce((sum, config) => sum + weight(config), 0)
         for (const config of available) { roll -= weight(config); if (roll < 0) { choice = config; break } }
       }
       selected.add(choice)
-      note(choice, 'selected', 'group-winner', { group: String(choice.params.stWorldBook.group ?? '') })
-      for (const group of String(choice.params.stWorldBook.group).split(',').map(value => value.trim()).filter(Boolean)) occupied.add(group)
+      note(choice, 'selected', 'group-winner', { group: String(choice.params.activation.selectionGroup ?? '') })
+      for (const group of String(choice.params.activation.selectionGroup).split(',').map(value => value.trim()).filter(Boolean)) occupied.add(group)
       for (const config of members) {
         // 已按评分淘汰的成员只记 group-score-lost：它没有参与最后的组内竞争，
         // 再记一条 group-lost 会让诊断给出两个互相矛盾的原因。
@@ -286,11 +286,11 @@ export function selectStWorldBook(configs, session, messages, warn = () => {}) {
     for (const config of added) {
       const previous = state.get(config)
       // sticky 期间的重发不延长有效期；新命中才开始下一段窗口。
-      if (previous.last === undefined || chat.length >= previous.last + count(config.params.stWorldBook.sticky)) updates.set(config, { ...previous, last: chat.length })
+      if (previous.last === undefined || chat.length >= previous.last + count(config.params.activation.sticky)) updates.set(config, { ...previous, last: chat.length })
     }
     // 递归驱动优先于延迟层级（ST world-info.js:5097-5133）：有新正文可递归时层级保持不变；
     // 没有新正文而层级池仍有剩余时打开下一层继续扫描；两者都没有才结束。
-    const recursiveAdds = recursive ? added.filter(config => config.params.stWorldBook.preventRecursion !== true) : []
+    const recursiveAdds = recursive ? added.filter(config => config.params.activation.preventRecursion !== true) : []
     if (recursiveAdds.length) recursiveText.push(...recursiveAdds.map(config => config.texts.join('\n')))
     else if (delayLevels.length) delayLevel = delayLevels.shift()
     else break

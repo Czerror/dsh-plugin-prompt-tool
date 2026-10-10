@@ -1,58 +1,23 @@
 /** 角色卡只是普通模块的导入来源；历史角色库仅用于分享过滤的只读核验。 */
-import { readFileSync, writeFileSync, appendFileSync, lstatSync } from 'node:fs'
-import { join, basename, dirname, resolve } from 'node:path'
+import { readFileSync } from 'node:fs'
+import { join, basename } from 'node:path'
 import { parse as parseYaml, parseDocument, YAMLSeq } from 'yaml'
-import { createHash } from 'node:crypto'
-import type { StConversionOptions, StOrderGroupSummary } from './sillytavern.ts'
-import { prepareImport, assetSourceDigest, normalizeAssetFiles, validateCharacterSpec } from './import-source.ts'
-import { assertModuleDirectory, assertModuleId, modulePathExists } from './module-install.ts'
+import type { StConversionOptions } from './sillytavern.ts'
+import { prepareImport, validateCharacterSpec } from './import-source.ts'
+import { assertModuleDirectory, assertModuleId, assertNoModuleLinks as assertNoLinks, modulePathExists } from './module-install.ts'
+import { readModuleMemory } from './module-memory.ts'
 import { MODULE_DEFINITION_FILE } from './paths.ts'
 import { appendModuleCapabilities, withModuleDefinition } from './manifest.ts'
-import { assertCanonicalRuleSource, rulePromptConfigOptions } from './module-rules.ts'
-import { promptConfigToRule } from './rule-builder.ts'
+import { assertCanonicalRuleSource, rulePromptConfigOptions } from './module-storage.ts'
 import { mapRuleInjections, ruleInjections } from './rule-content.ts'
 // @ts-expect-error 共享规则编译器校验模块并入候选。
 import { compileRules } from '../../engine/rule-spec.mjs'
 import { engineParamPath, readModuleLayerSettings } from './module-layer-settings.ts'
-import { buildWorldBookEntry } from './worldbook.ts'
 import type { ModuleSpec } from './manifest.ts'
-import type { StConversionReport } from '../shared/bridge-contract.ts'
-import type { AssetFile, ImportChoices, ImportKind } from '../shared/asset-transfer.ts'
+import type { AssetFile, ImportChoices } from '../shared/asset-transfer.ts'
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
-}
-
-/** 检查祖先与最终文件，避免 junction 或单文件链接越界。 */
-function assertNoLinks(path: string): void {
-  const absolute = resolve(path)
-  const parent = dirname(absolute)
-  if (parent !== absolute) assertNoLinks(parent)
-  if (modulePathExists(absolute) && lstatSync(absolute).isSymbolicLink()) throw new Error(`模块路径包含链接：${absolute}`)
-}
-
-function memoryFile(moduleDir: string): string {
-  assertNoLinks(moduleDir)
-  return join(assertModuleDirectory(dirname(moduleDir), basename(moduleDir)), 'memory.md')
-}
-
-/** 模块记忆与条目同归当前模块；来源和 id 前缀不改变位置。 */
-export function appendModuleMemory(moduleDir: string, note: string): void {
-  const content = note.trim()
-  if (content.length === 0) return
-  const file = memoryFile(moduleDir)
-  assertNoLinks(file)
-  const stamp = new Date().toISOString().slice(0, 19).replace('T', ' ')
-  const line = `\n- [${stamp}] ${content}\n`
-  if (modulePathExists(file)) appendFileSync(file, line, 'utf8')
-  else writeFileSync(file, `# 本地记忆\n${line}`, 'utf8')
-}
-
-/** 每次显式读取最新字节；缺失为空，链接与读取失败原样报错。 */
-export function readModuleMemory(moduleDir: string): string {
-  const file = memoryFile(moduleDir)
-  assertNoLinks(file)
-  return modulePathExists(file) ? readFileSync(file, 'utf8') : ''
 }
 
 function loadSpecFile(file: string): ModuleSpec | undefined {
@@ -72,97 +37,42 @@ function loadModuleSource(root: string, id: string): ModuleSpec | undefined {
   return loadSpecFile(join(assertModuleDirectory(root, id), MODULE_DEFINITION_FILE))
 }
 
-const CHARACTER_MEMORIES_KEY = 'characterMemories'
-interface CharacterMemoryRecord { characterId: string; configId: string; contentHash: string }
-
-function contentHash(value: unknown): string {
-  const canonical = (item: unknown): unknown => Array.isArray(item) ? item.map(canonical)
-    : isRecord(item) ? Object.fromEntries(Object.keys(item).sort().map(key => [key, canonical(item[key])])) : item
-  return createHash('sha256').update(JSON.stringify(canonical(value))).digest('hex')
-}
-
-function memoryRecords(meta: unknown): Record<string, CharacterMemoryRecord> {
-  if (!isRecord(meta) || !isRecord(meta[CHARACTER_MEMORIES_KEY])) return {}
-  return Object.fromEntries(Object.entries(meta[CHARACTER_MEMORIES_KEY]).filter(([id, record]) => isRecord(record)
-    && record.characterId === id && typeof record.configId === 'string' && typeof record.contentHash === 'string')) as Record<string, CharacterMemoryRecord>
-}
-
 function importPrefixes(id: string): readonly string[] {
-  return [`module-${id}-`, `chara-${id}-`]
+  return [`module-${id}-`]
 }
 
-/** 分享副本只排除可核验的历史自动记忆；来源缺失或被编辑时须明确选择。 */
+/** 私有记忆归独立文件；无法证明安全的旧定义必须显式转换后才能分享。 */
 export function projectCharacterMemories(
   source: ReturnType<typeof parseDocument>,
-  choices: Record<string, 'include' | 'exclude'> = {},
+  _choices: Record<string, 'include' | 'exclude'> = {},
   moduleRoot?: string,
 ): { doc: ReturnType<typeof parseDocument>; excludedMemoryCount: number; memoryConflicts: Array<{ id: string; name: string }> } {
   const doc = source.clone()
   const spec = doc.toJS() as ModuleSpec
-  const records = memoryRecords(spec.meta)
-  const imported = [...new Set([
-    ...(Array.isArray(spec.meta?.importedCharacters) ? spec.meta.importedCharacters.filter((id): id is string => typeof id === 'string') : []),
-    ...Object.keys(readMergedModules(spec.meta)),
-  ])]
-  const conflicts: Array<{ id: string; name: string }> = []
-  const excluded = new Set<number>()
+  if (isRecord(spec.meta) && ['characterMemories', 'importedCharacters', 'characterModules'].some(key => Object.hasOwn(spec.meta!, key))) {
+    throw new Error('模块含旧私有记忆或角色来源标记；请重新导入或显式转换并核对记忆归属后再导出')
+  }
+  const imported = Object.keys(readMergedModules(spec.meta))
   assertCanonicalRuleSource(spec)
-  for (const [index, config] of (spec.rules ?? []).entries()) {
+  for (const config of spec.rules ?? []) {
     if (!isRecord(config) || typeof config.id !== 'string') continue
     const id = config.id
-    const proof = Object.values(records).find(record => record.configId === id)
-    if (proof !== undefined && proof.contentHash === contentHash(config)) { excluded.add(index); continue }
-    const cardId = imported.find(card => importPrefixes(card).some(base => id === `${base}memory` || id.startsWith(`${base}memory-`))) ?? proof?.characterId
+    const cardId = imported.find(card => importPrefixes(card).some(base => id === `${base}memory` || id.startsWith(`${base}memory-`)))
     if (cardId === undefined) continue
     if (moduleRoot !== undefined) {
       assertModuleId(cardId)
-      const legacyDir = join(dirname(moduleRoot), '.characters', cardId)
-      const normal = loadModuleSource(moduleRoot, cardId)
-      const original = normal ?? loadSpecFile(join(legacyDir, 'converted.yml'))
+      const original = loadModuleSource(moduleRoot, cardId)
       if (original?.rules?.some(entry => importPrefixes(cardId).some(base => `${base}${entry.id}` === id))) continue
-      const file = join(normal === undefined ? legacyDir : join(moduleRoot, cardId), 'memory.md')
-      assertNoLinks(file)
-      const memory = modulePathExists(file) ? readFileSync(file, 'utf8').trim() : ''
-      if (original !== undefined && memory.length > 0) {
-        const entry = buildWorldBookEntry({ name: '角色记忆', enabled: true, order: 3000, text: `【${original.name} 的关系记忆】\n${memory}`, constant: true })
-        if (contentHash(promptConfigToRule({ ...entry, id })) === contentHash(config)) { excluded.add(index); continue }
-      }
     }
-    if (choices[id] === 'exclude') excluded.add(index)
-    else if (choices[id] !== 'include') conflicts.push({ id, name: String(config.name ?? id) })
+    throw new Error(`无法证明规则 ${id} 的旧记忆来源；请显式转换并核对私有内容后再导出`)
   }
-  const configs = doc.get('rules', true)
-  if (configs instanceof YAMLSeq) for (const index of [...excluded].sort((a, b) => b - a)) configs.delete(index)
-  else if (excluded.size > 0) doc.set('rules', (spec.rules ?? []).filter((_, index) => !excluded.has(index)))
-  if (doc.hasIn(['meta', CHARACTER_MEMORIES_KEY])) doc.deleteIn(['meta', CHARACTER_MEMORIES_KEY])
-  return { doc, excludedMemoryCount: excluded.size, memoryConflicts: conflicts }
+  return { doc, excludedMemoryCount: 0, memoryConflicts: [] }
 }
 
 type CharacterImportOptions = StConversionOptions & ImportChoices
 type CharacterImportResult = { ok: true; id: string; name: string; warning?: string } | { ok: false; message: string }
 function importChoices(options: CharacterImportOptions): ImportChoices {
   return { ...options, promptOrderCharacterId: options.promptOrderCharacterId ?? options.characterId }
-}
-
-export function characterOrderSelectionState(files: AssetFile[], options: CharacterImportOptions = {}):
-  { needsSelection: true; candidates: StOrderGroupSummary[] } | { needsSelection: false; error?: string } {
-  try {
-    const prepared = prepareImport(files, 'character', importChoices(options))
-    return prepared.state === 'needs-order-selection' ? { needsSelection: true, candidates: prepared.candidates } : { needsSelection: false }
-  } catch (error) { return { needsSelection: false, error: error instanceof Error ? error.message : String(error) } }
-}
-
-export function characterImportDigest(files: AssetFile[]): string {
-  return assetSourceDigest(normalizeAssetFiles(files))
-}
-
-export function previewCharacterCard(files: AssetFile[], options: CharacterImportOptions = {}):
-  { ok: true; name: string; id: string; sourceDigest: string; report?: StConversionReport; kind: ImportKind; files: AssetFile[]; sourceName: string } | { ok: false; message: string } {
-  try {
-    const prepared = prepareImport(files, 'character', importChoices(options))
-    if (prepared.state !== 'ready') return { ok: false, message: '请先选择角色内容类型或提示顺序组' }
-    return { ok: true, name: prepared.spec.name, id: prepared.spec.id, sourceDigest: prepared.sourceDigest, report: prepared.report, kind: prepared.kind, files: prepared.files, sourceName: prepared.sourceName }
-  } catch (error) { return { ok: false, message: `角色卡转换失败：${error instanceof Error ? error.message : String(error)}` } }
 }
 
 /** 复用普通模块候选校验、版本保护和目录交换，不生成角色专属存储。 */
@@ -189,26 +99,23 @@ export async function importCharacterCardFile(root: string, filePath: string, fi
   } catch (error) { return { ok: false, message: `角色卡转换失败：${error instanceof Error ? error.message : String(error)}` } }
 }
 
-interface MergedModule { active: boolean; capabilities: string[] }
+interface MergedModule { active: boolean; capabilities: string[]; variables?: Record<string, string> }
 
-/** 旧登记仅在此读边界转换，新写入只落 mergedModules。 */
+/** 并入登记只属于原生模块；不推断旧角色库所有权。 */
 function readMergedModules(meta: unknown): Record<string, MergedModule> {
   if (!isRecord(meta)) return {}
+  if (meta.importedCharacters !== undefined || meta.characterModules !== undefined) throw new Error('旧角色来源登记已退役，请显式转换为原生模块')
   if (isRecord(meta.mergedModules)) return Object.fromEntries(Object.entries(meta.mergedModules).filter(([, value]) =>
     isRecord(value) && typeof value.active === 'boolean' && Array.isArray(value.capabilities)).map(([id, value]) => {
     const row = value as Record<string, unknown>
-    return [id, { active: row.active === true, capabilities: (row.capabilities as unknown[]).filter((item): item is string => typeof item === 'string') }]
+    return [id, { active: row.active === true, capabilities: (row.capabilities as unknown[]).filter((item): item is string => typeof item === 'string'),
+      ...(isRecord(row.variables) ? { variables: Object.fromEntries(Object.entries(row.variables).filter((entry): entry is [string, string] => typeof entry[1] === 'string')) } : {}) }]
   }))
-  const active = Array.isArray(meta.importedCharacters) ? meta.importedCharacters.filter((id): id is string => typeof id === 'string') : []
-  const old = isRecord(meta.characterModules) ? meta.characterModules : {}
-  return Object.fromEntries([...new Set([...active, ...Object.keys(old)])].map(id => [id, {
-    active: active.includes(id), capabilities: Array.isArray(old[id]) ? old[id].filter((item): item is string => typeof item === 'string') : [],
-  }]))
+  return {}
 }
 
 function writeMergedModules(doc: ReturnType<typeof parseDocument>, records: Record<string, MergedModule>): void {
   doc.setIn(['meta', 'mergedModules'], records)
-  for (const key of ['importedCharacters', 'characterModules']) if (doc.hasIn(['meta', key])) doc.deleteIn(['meta', key])
 }
 
 function declaredCapabilities(spec: ModuleSpec): string[] {
@@ -223,11 +130,11 @@ function capabilityStillNeeded(capability: string, spec: ModuleSpec, active: rea
   const configs = ruleInjections(spec.rules ?? []).map(({ config }) => config)
   switch (capability) {
     case 'rule-engine': return (spec.rules?.length ?? 0) > 0
-    case 'prompt-config-engine': return configs.length > 0
-    case 'world-book-tools': return configs.some(config => config.strategy === 'world-book')
-    case 'session-var-tools': return configs.some(config => isRecord(config.params) && config.params.stMacros === true)
+    case 'module-rule-tools': return configs.some(config => config.strategy === 'context-activation')
+    case 'module-variable-tools': return configs.some(config => isRecord(config.params) && config.params.templateEvaluation === true)
+    case 'module-memory-tools': return active.length > 0
     case 'tool-config-engine': return (spec.customTools?.length ?? 0) > 0
-    case 'character-tools': return active.length > 0 || configs.some(config => /^(module|chara)-/.test(String(config.id ?? '')))
+    case 'module-import-tools': return active.length > 0 || configs.some(config => String(config.id ?? '').startsWith('module-'))
     default: return true
   }
 }
@@ -247,24 +154,35 @@ export function mergeModuleIntoModule(root: string, targetId: string, sourceId: 
     withModuleDefinition(dir, doc => {
       const current = doc.toJS() as ModuleSpec
       assertCanonicalRuleSource(current)
-      if (ruleInjections(spec.rules).some(({ config }) => config.layer === 'system-section') && current.persona?.complete === true) {
-        doc.setIn(['persona', 'complete'], false)
-        personaOpened = true
+      if (ruleInjections(spec.rules).some(({ config }) => config.layer === 'system-section')) {
+        for (const audience of ['main', 'subagent'] as const) if (current.persona?.[audience]?.complete === true) {
+          doc.setIn(['persona', audience, 'complete'], false)
+          personaOpened = true
+        }
       }
       const existing = (current.rules ?? []).filter(rule => !importPrefixes(sourceId).some(base => rule.id.startsWith(base)))
+      const records = readMergedModules(current.meta)
+      const introducedVariables = { ...records[sourceId]?.variables }
+      for (const [key, value] of Object.entries(spec.variablesEnabled === false ? {} : spec.variables ?? {})) {
+        if (Object.hasOwn(current.variables ?? {}, key) && current.variables![key] !== value) throw new Error(`模块变量 ${key} 存在不同值，请先显式改名再并入`)
+        if (!Object.hasOwn(current.variables ?? {}, key)) { doc.setIn(['variables', key], value); introducedVariables[key] = value }
+      }
       const added = (spec.rules ?? []).map(rule => mapRuleInjections({ ...rule, id: `${prefix}${rule.id}` }, config => ({
-        ...config, id: `${prefix}${config.id}`, variables: { ...(spec.variablesEnabled === false ? {} : spec.variables), ...config.variables },
+        ...config, ...(typeof config.id === 'string' ? { id: `${prefix}${config.id}` } : {}),
       })))
       for (const [key, value] of Object.entries(readModuleLayerSettings(spec))) doc.setIn(engineParamPath(key), value)
       const merged = [...existing, ...added]
       compileRules(merged, { promptConfigOptions: rulePromptConfigOptions(dir) })
       const before = readCapabilities(doc)
-      const required = ['rule-engine', ...(ruleInjections(merged).some(({ config }) => config.strategy === 'world-book') ? ['world-book-tools'] : [])]
+      const required = ['rule-engine', ...(ruleInjections(merged).some(({ config }) => config.strategy === 'context-activation') ? ['module-rule-tools', 'module-memory-tools'] : [])]
       appendModuleCapabilities(doc, [...new Set([...declaredCapabilities(spec), ...required])])
-      const records = readMergedModules(current.meta)
-      records[sourceId] = { active: true, capabilities: [...new Set([...(records[sourceId]?.capabilities ?? []), ...readCapabilities(doc).filter(capability => !before.includes(capability))])] }
+      records[sourceId] = { active: true, capabilities: [...new Set([...(records[sourceId]?.capabilities ?? []), ...readCapabilities(doc).filter(capability => !before.includes(capability))])], variables: introducedVariables }
       writeMergedModules(doc, records)
-      doc.set('rules', merged)
+      const ruleNodes = doc.get('rules', true)
+      if (ruleNodes instanceof YAMLSeq) {
+        ruleNodes.items = ruleNodes.items.filter((_, index) => existing.includes(current.rules![index]!))
+        for (const rule of added) ruleNodes.add(doc.createNode(rule))
+      } else doc.set('rules', merged)
       if (Array.isArray(spec.meta?.stWarnings) && spec.meta.stWarnings.length > 0) {
         const warnings = Array.isArray(current.meta?.stWarnings) ? current.meta.stWarnings : []
         doc.setIn(['meta', 'stWarnings'], [...new Set([...warnings, ...spec.meta.stWarnings].filter(value => typeof value === 'string'))])
@@ -275,7 +193,7 @@ export function mergeModuleIntoModule(root: string, targetId: string, sourceId: 
   } catch (error) { return { ok: false, message: `并入失败：${error instanceof Error ? error.message : String(error)}` } }
 }
 
-/** 撤销并入内容；旧 chara 前缀可撤销，能力归属只写一份登记。 */
+/** 撤销来源规则及仍未被修改、也未被其它来源依赖的自有变量。 */
 export function removeMergedModule(root: string, targetId: string, sourceId: string): { ok: true; count: number } | { ok: false; message: string } {
   try {
     assertModuleId(sourceId)
@@ -288,9 +206,10 @@ export function removeMergedModule(root: string, targetId: string, sourceId: str
       const kept = (current.rules ?? []).filter(rule => !importPrefixes(sourceId).some(base => rule.id.startsWith(base)))
       removed = (current.rules?.length ?? 0) - kept.length
       compileRules(kept, { promptConfigOptions: rulePromptConfigOptions(dir) })
-      doc.set('rules', kept)
+      const ruleNodes = doc.get('rules', true)
+      if (ruleNodes instanceof YAMLSeq) ruleNodes.items = ruleNodes.items.filter((_, index) => kept.includes(current.rules![index]!))
+      else doc.set('rules', kept)
       for (const rule of current.rules ?? []) if (!kept.some(item => item.id === rule.id) && doc.hasIn(['configOrder', rule.id])) doc.deleteIn(['configOrder', rule.id])
-      if (doc.hasIn(['meta', CHARACTER_MEMORIES_KEY, sourceId])) doc.deleteIn(['meta', CHARACTER_MEMORIES_KEY, sourceId])
       for (const [key, value] of Object.entries(spec === undefined ? {} : readModuleLayerSettings(spec))) {
         const path = engineParamPath(key)
         if (doc.getIn(path) === value) doc.deleteIn(path)
@@ -298,6 +217,10 @@ export function removeMergedModule(root: string, targetId: string, sourceId: str
       const records = readMergedModules(current.meta)
       if (records[sourceId] !== undefined) records[sourceId]!.active = false
       const active = Object.keys(records).filter(id => records[id]!.active)
+      const others = active.map(id => loadModuleSource(root, id))
+      for (const [key, value] of Object.entries(records[sourceId]?.variables ?? {})) {
+        if (current.variables?.[key] === value && others.every(other => other !== undefined && !Object.hasOwn(other.variables ?? {}, key))) doc.deleteIn(['variables', key])
+      }
       const claimed = new Set<string>()
       for (const id of active) {
         for (const capability of records[id]!.capabilities) claimed.add(capability)

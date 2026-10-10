@@ -116,9 +116,6 @@ export function isDelegated(session) {
   return (session?.header?.delegationDepth ?? 0) > 0
 }
 
-// 迁移过渡别名：实现已搬入 engine/history.mjs（完整历史视图 historyEvents），消费点改名归 T6。
-export { historyEvents as sessionEvents } from './history.mjs'
-
 /** True when a model id looks like a Flash-family model. */
 export function isFlashModel(modelId) {
   return typeof modelId === 'string' && /flash/i.test(modelId)

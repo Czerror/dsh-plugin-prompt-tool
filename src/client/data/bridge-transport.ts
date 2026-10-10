@@ -3,7 +3,7 @@ import type { EngineMeta, PromptConfigDraft } from '../prompt-tool-types.ts'
 import type { HostDefaultModel, SkillCatalogEntry } from './prompt-tool-fields.ts'
 import type { ModuleFacts } from '../../shared/engine-capabilities.ts'
 import type { InstructionsSnapshot } from '../../shared/instructions.ts'
-import type { RuleRevisions } from '../../shared/rules.ts'
+import type { ModuleVariablesSnapshot } from '../../shared/module-variables.ts'
 import {
   EDIT_TARGET_HEADER,
   MAX_BRIDGE_BODY_BYTES,
@@ -25,8 +25,7 @@ interface BridgeSuccessExtras {
   moduleFacts?: ModuleFacts
   meta?: { meta: EngineMeta }
   overrides?: { overrides: Record<string, unknown> }
-  variables?: { variables: Record<string, string>; enabled: boolean }
-  variablesRevisions?: RuleRevisions
+  variables?: ModuleVariablesSnapshot
   promptConfigs?: { promptConfigs: PromptConfigDraft[] }
   /** 指令文件快照（独立来源）：正文、身份、版本与读取状态来自同一次读取。 */
   instructions?: InstructionsSnapshot

@@ -8,6 +8,18 @@ export function engineGroupParamKeys(id: string): readonly EngineParamKey[] {
 
 export type ModuleSourceMode = 'explicit' | 'composition' | 'official' | 'unknown'
 
+/** 实际注册工具与 opt-in 能力的唯一目录，供注册、委托建议与自动补装消费。 */
+export const MODULE_TOOL_NAMES = {
+  import: 'module_import', rulesRead: 'module_rules_read', rulesEdit: 'module_rules_edit',
+  memoryRead: 'module_memory_read', memoryAppend: 'module_memory_append', variables: 'module_variables',
+} as const
+export const MODULE_TOOL_CAPABILITIES: Readonly<Record<string, string>> = {
+  [MODULE_TOOL_NAMES.import]: 'module-import-tools',
+  [MODULE_TOOL_NAMES.rulesRead]: 'module-rule-tools', [MODULE_TOOL_NAMES.rulesEdit]: 'module-rule-tools',
+  [MODULE_TOOL_NAMES.memoryRead]: 'module-memory-tools', [MODULE_TOOL_NAMES.memoryAppend]: 'module-memory-tools',
+  [MODULE_TOOL_NAMES.variables]: 'module-variable-tools',
+}
+
 /** 官方九个注入层：与 engine/schema.mjs 的 LAYER_ORDER 同源，改一处必须同步另一处。 */
 export type InjectionPoint =
   | 'pre-step'
@@ -92,6 +104,7 @@ export const SUBAGENT_TOOL_POLICY_SKELETON: Readonly<Record<string, unknown>> = 
 
 /** 首期只登记已有 typed editor 的能力，避免万能 key/value 表单。 */
 export const MODULE_CAPABILITIES: readonly ModuleCapability[] = [
+  ...[...new Set(Object.values(MODULE_TOOL_CAPABILITIES))].map(id => ({ id, moduleKeys: [id], rowIds: [id], displayLayer: 'tool-pipeline' as const })),
   // B7 T3：tool-bootstrap / context-gate / anchor-turn / promoted-code-mode / tool-filter /
   // deliberation-gate / progress-reminder 七张专用能力卡随对应引擎模块退场，不再登记。
   // 子代理工具面：模块 + 顶层策略段（段是结构化数据，物化为 subagent-tools/policy.yml）。
@@ -153,12 +166,12 @@ export const ENGINE_EDITOR_GROUP_MAP: readonly EngineEditorGroup[] = [
 ]
 
 /**
- * 该编辑组在给定层筛选下是否可见：`all` / `world-book` 视图恒可见（保持既有平铺位置），
+ * 该编辑组在给定层筛选下是否可见：`all` / `context-activation` 视图恒可见（保持既有平铺位置），
  * 否则主归属或 `relatedLayers` 命中该层才显示。未登记的 id 不猜归属，一律可见——
  * 这样新增卡片忘登记时是「哪层都能看到」，而不是「哪层都看不到」。
  */
 export function isEditorGroupVisible(id: string, viewFilter: string): boolean {
-  if (viewFilter === 'all' || viewFilter === 'world-book') return true
+  if (viewFilter === 'all' || viewFilter === 'context-activation') return true
   const group = ENGINE_EDITOR_GROUP_MAP.find((item) => item.id === id)
   if (group === undefined) return true
   return group.displayLayer === viewFilter || (group.relatedLayers ?? []).includes(viewFilter as InjectionPoint)
@@ -237,12 +250,6 @@ export function isModuleCapabilityPresent(id: string, facts: ModuleFacts | undef
   return capability.moduleKeys.some((key) => modules.includes(key))
 }
 
-export interface CustomToolIdentity {
-  index: number
-  id: string
-  name: string
-}
-
 /** custom tool 的运行时名称缺省回落 id；保存前拒绝会导致同层注册失败的重复项。 */
 export function validateCustomToolIdentities(tools: readonly unknown[]): string[] {
   const errors: string[] = []
@@ -269,8 +276,3 @@ export function validateCustomToolIdentities(tools: readonly unknown[]): string[
   }
   return errors
 }
-
-/** 已发布名称只在此边界保留，内部使用模块能力与插入点命名。 */
-export type EngineLayer = InjectionPoint
-export type EngineCapability = ModuleCapability
-export { MODULE_CAPABILITIES as ENGINE_CAPABILITIES, INJECTION_POINT_ORDER as ENGINE_LAYER_ORDER, moduleCapability as engineCapability, isModuleCapabilityPresent as isEngineCapabilityPresent }

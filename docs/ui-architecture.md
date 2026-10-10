@@ -217,7 +217,7 @@ CSS 构建模块只收集样式数据；`styles.ts` 在入口 `ctx.effect` 中�
 3. prompt-tool ConfigForms transport：`configForms.get('prompt-tool')` 复用标准部署设置的镜像与写入队列；`mutate` 返回 false 必须显示保存失败，不推进保存基线。
 4. PromptToolHostApi，提供目录选择、打开路径与当前会话模型等宿主适配。`currentSessionId()` 经 `session-id-source.ts` 读 `ctx.uiSession.adapter.current` 的作用域绑定；当前会话模型经 `session-model-face` 读取并通过官方 `selectModel` 写回。官方会话预设投影与模块编辑目标分离，工作台切换模块不调用官方预设切换，也不订阅预设跟随。
 5. PromptToolWorkbenchFace：controller / api / settings / `t`。
-6. registerWorkbenchSlots(ctx, face)，唯一负责 shell.overlay 悬浮入口与 settings.plugins.tab 的注册。
+6. registerWorkbenchSlots(ctx, face)，唯一负责 shell.overlay 悬浮入口的注册。
 
 入口不直接导入页面、bridge endpoint 或业务卡片；需要新宿主能力时先扩展 data/host-api.ts 或 shared 契约。
 
@@ -229,7 +229,7 @@ CSS 构建模块只收集样式数据；`styles.ts` 在入口 `ctx.effect` 中�
 
 slot 使用 ctx.slots.inject() 等待官方槽位声明，再调用 ctx.slots.register()。返回的 disposer 在 register-workbench.tsx 中释放。不要添加第二个注册入口，也不要改变 id 或 inject face 的形状。宿主设置面板的 `settings.plugins.tab` 分区已移除：模块运行总闸只在工作台模块页设置（`modules.globalSwitch`）。
 
-两处注册都声明 `locale: PROMPT_TOOL_NS`：slot 组件由此拿到框架注入的 typed `t` seat，同时把「渲染需要已安装的 locale face」写成显式契约（locale face 由官方 dsh-client-locale 在 boot 期经 renderer 安装）。列表项 label（设置 tab 标题）用 `() => face.t('tab.label')` thunk，宿主重读 label 时取当前语言。
+悬浮入口声明 `locale: PROMPT_TOOL_NS`：slot 组件由此取得 typed `t` seat，并明确依赖官方 renderer 的 locale face。组件在渲染时取当前语言，不缓存模块级文案。
 
 ### 4.2.1 文案归属（locale）
 
@@ -259,9 +259,6 @@ slot 使用 ctx.slots.inject() 等待官方槽位声明，再调用 ctx.slots.re
 
 ### 5.1 可见入口
 
-    settings.plugins.tab
-      └─ 基础设置：模块运行总闸
-
     悬浮入口（shell.overlay 可拖动触发器，位置存插件 localStorage）
       └─ 完整工作台（body portal 抽屉）
           ├─ 主会话
@@ -270,7 +267,7 @@ slot 使用 ctx.slots.inject() 等待官方槽位声明，再调用 ctx.slots.re
           ├─ 技能设置
           └─ 模块
 
-settings tab 不复制工作台内容。完整工作台由 PromptWorkspace 创建 store、保存当前页，并在打开时触发一次 load；WorkspaceFrame 负责公共 header、导航、canvas、loading 和 notice。
+模块运行总闸位于模块页，不另设 settings tab。完整工作台由 PromptWorkspace 创建 store、保存当前页，并在打开时触发一次 load；WorkspaceFrame 负责公共 header、导航、canvas、loading 和 notice。
 
 模块的目录物化、复制、删除和参数由本插件维护；模块不进入官方 `agentPresets` 注册表，编辑目标不驱动官方会话预设切换。工具预览仍可只读官方 roster；默认值 `selectedDefault` / `defaultId` 不参与模块设置。
 
@@ -296,7 +293,9 @@ workspace-pages.ts 是页面元数据的唯一来源。默认页为 features，�
 
 页面不再常驻“重新读取／校验规则／保存规则／已与模块同步”一行；卡内保存与失焦自动保存继续沿用规则事务，保存包含校验。批量操作按可见卡片所属模块分别提交。失败保留对应模块草稿并显示所属模块与就地错误，只在错误时提供重试与必要的丢弃确认；保存失败重试提交，读取失败或远端冲突重试读取。
 
-预设人设卡（`features/persona/ModulePersonaCard.tsx`）编辑 module.yml 顶层 `persona` 段的四个可编辑项：`prefix`、`suffix`，以及 `complete`（独占）与 `includeRuntimeContext`（动态运行时上下文）两个开关（后者默认开启）。读写都走 `/persona`，写由 host 校验并原子写盘；`complete` 与提示词配置的「独占」互斥，由 bridge 在写盘前 fail loud。卡头 meta 区分「存在 persona 段」与「继承预设」——空对象 `{}` 也算存在，不等于有实际内容。四项均未改动时保存落成删除语义（不带 persona 写盘）；二次确认的移除入口只在 persona 段已存在时渲染。它只在主会话页出现，不在子代理页渲染。
+独立人设卡（`features/persona/ModulePersonaCard.tsx`）为主会话和子代理各提供一个来源下拉，默认“官方”，也可分别选择一个模块。来源走 `/persona-sources`，config.yml.personaSources 只保存模块 ID；选择不自动启用来源模块的 rules。每个受众只有一个来源，界面和状态都不提供多来源逐字段合并。
+
+正文仍编辑对应模块的 persona.main/subagent：prefix/suffix 使用“继承/自定义”，complete/includeRuntimeContext 保留继承/true/false；空文本清空，删键继承。读写走 `/persona` 并携带完整定义字节 expectedRevision；来源选择和正文保存各自保留版本、未存草稿及迟到响应。人设不进入规则排序，rules/_settings.yml 仅保存校验投影。完整配装仍预检官方人设与启用规则的 complete 冲突，失败保持旧配装；persisted/publicationPending 如实显示，refreshOnly 只重试发布。这些是状态与交互契约，不代表已完成浏览器实测。
 
 ### 5.2.1 创建入口与过滤的分工
 
@@ -314,14 +313,14 @@ workspace-pages.ts 是页面元数据的唯一来源。默认页为 features，�
 
 工具预览的来源下拉展开时后台刷新目录，已有选项期间只更新 `aria-busy`，不插入挤动锚点的加载文案。分组标题和来源菜单保持挂载；来源变化只重置带来源身份的数据快照与详情列表，旧响应不覆盖新来源。加载期间保留已展开详情的高度，避免短暂收缩触发滚动；聚焦项被刷新移除时，菜单接续到可用项并使用 `preventScroll`，避免闪动、关闭或丢失键盘焦点。
 
-公共参数由 `EngineParamFields` 按 `ENGINE_PARAM_DEFINITIONS` 与 `SHARED_PARAM_KEYS` 生成，能力存在性由实际模块事实决定。十个旧模型参数从 Fields、默认值、读回、loaded keys、保存和脏快照中排除；模块路由与采样只编辑 `request-params` 动作，当前会话选择独立走官方 `selectModel`。枚举使用 MenuSelect，列表使用 TagInput。
+公共参数由 `EngineParamFields` 按 `ENGINE_PARAM_DEFINITIONS` 与 `SHARED_PARAM_KEYS` 生成，能力存在性来自实际模块事实。主/子模型的10个路由与采样键和4个能力键均参与读回、保存和脏检测；模型卡写 layerSettings，装配期生成受众限定的 request-params 规则。也可编辑显式请求动作。当前会话模型独立走官方 selectModel。枚举使用 MenuSelect，列表使用 TagInput。
 
 ### 5.3 状态展示约定
 
 - loading：保留已有数据；只有没有可展示数据时才显示骨架。
 - saving：只禁用冲突动作，不冻结其他草稿输入。
 - notice：配置保存/校验反馈位于操作区，字段错误用 aria-invalid/aria-describedby 关联；同一结果只由一个 live region 播报。
-- destructive action：配置、能力、预设、角色库删除以及丢弃文件草稿使用 ConfirmDialog；取消先聚焦、请求中防重复提交，失败保留确认面，关闭后还焦。危险按钮统一为「描边染红」形态（`.pillButton[data-danger]`：透明底 + error 混色的文字与描边），确认按钮与取消按钮是同一个 `.pillButton` 胶囊（尺寸、圆角、字号一致），只以 `data-danger` 区分主次；所有删除入口共用该组件，外观不各走一套。
+- destructive action：配置、能力、模块、技能删除以及丢弃文件草稿使用 ConfirmDialog；取消先聚焦、请求中防重复提交，失败保留确认面，关闭后还焦。危险按钮统一为「描边染红」形态（`.pillButton[data-danger]`：透明底 + error 混色的文字与描边），确认按钮与取消按钮是同一个 `.pillButton` 胶囊（尺寸、圆角、字号一致），只以 `data-danger` 区分主次；所有删除入口共用该组件，外观不各走一套。
 - 长路径与名称允许换行或在展开区提供完整可选择文本，不以原生 title 作为唯一读取入口。
 - 配置操作区与列表共用 canvas 滚动根，sticky 高度由自身 ResizeObserver 测量；短视口退回普通流，焦点与定位避开操作区。
 - 吸顶操作区自身不画背景：区内每一行都是不透明卡片（模块列表卡、过滤行卡），吸顶可读性由卡片提供；卡片之间的窄缝隙会透出滚动内容，这是不画底板的固有代价。
@@ -339,6 +338,9 @@ workspace-pages.ts 是页面元数据的唯一来源。默认页为 features，�
 | 当前会话模型 | session-model-face | 官方 sessions projection 生命周期 |
 | 模块编辑目标 | store + bridge 请求头 | 客户端编辑状态；通过 `x-module-id` 指定，不写部署设置，不决定启用集合 |
 | filter、search、列表展开、页滚动 | workspace-browse-state | 工作台实例期，配置视图按页面/预设区分；异步资源就绪后一次恢复滚动 |
+| 两级变量草稿 | module-variables + 现有变量编辑卡 | 按模块ID+scope隔离；同名覆盖来源来自 effective 快照，迟到响应只回原草稿 |
+| 人设来源 | personaSources 共享契约与 host owner | main/subagent 各单选官方或模块 ID，config.yml 只存引用；独立于规则启用集合 |
+| 人设正文/发布状态 | ModulePersonaCard + workspace-drafts | 正文属于来源模块；保留完整定义 revision、继承/空串/false，refreshOnly 不重写 |
 | 工具、人设、策略、原始 JSON/数字草稿 | store.editorDrafts / workspace-drafts | 按预设和字段身份保留；未存草稿或保存中阻止预设切换；改名迁移、删除清理对应字段 |
 | 模块规则与条件/动作字段草稿 | rule-drafts + use-rule-editor | 每模块单一 owner、读取去重、稳定编辑 key；改名/删除保留 previousId；CAS 失败和请求期间的新编辑不丢失 |
 | 指令文件正文草稿 | instruction-drafts | 与预设保存队列分离；按指令上下文（`contextId`）隔离，旧上下文迟到响应不覆盖当前视图 |
@@ -431,7 +433,7 @@ JSON bridge 的统一上限为 32 MiB；角色卡原始文件流独立限制为 
 4. 成功后的静默 load 留在预设队列内，且只在全局草稿版本未变化、其他通道无待存草稿、对应草稿仍等于请求快照时执行。
 5. 普通规则通过 /rules 自动保存及显式提交，载荷携带 expectedModuleId、expectedRevisions 与 edits[{previousId, rule, settingsChanged?}]。正文编辑只拥有正文，状态改动显式校验 settings；新增、删除、改名也使用 settings 版本。非法 JSON／数字阻止提交，失败保留输入。
 6. 参数空字符串/空数组沿用删除键语义；variables 的空字符串仍是合法占位值。详细参数规则见 [architecture-params.md](architecture-params.md)。
-7. 模块写入携带 expectedModuleId，旧身份键只在输入边界兼容，双键冲突拒绝。读回失败的工具不降级为空列表供覆盖；跨模块旧草稿拒绝，切换等待保存队列。
+7. 模块写入携带 expectedModuleId，模块目标由既有请求上下文解析，载荷身份只作校验。读回失败的工具不降级为空列表供覆盖；跨模块旧草稿拒绝，切换等待保存队列。
 8. 切换编辑模块先保存当前草稿，失败即取消切换并保留输入；成功后更新请求头目标并等待重读，不写 settings、不切换官方会话预设。首次加载或切换完成前，`loadedModuleRef` 拒绝依赖当前 Fields 的公共参数和模板变量写盘。逐卡规则事务使用独立模块草稿、显式请求身份与版本，在同一保存队列执行，不受另一编辑目标限制；工作台脏状态包含所有模块规则草稿。
 9. 技能清单和策略均不进 settings：单端调用策略走 `/skill-policy`（`name/path/side/enabled/sessionId?`，服务器在同工作区重新校验身份；显式两端操作可用 `scope`），引用走 `/skills-folders`，清单走 `/skills-list`。快照保留 `complete`，空数组是权威空结果；调用声明和当前会话注册状态分别呈现。创建/导入走既有端点；删除提交 `name/path/sessionId?`，确认框与请求使用同一条目，用户根及显式引用根按服务器能力开放回收站删除。契约见 [skills-management.md](skills-management.md)。
 10. 指令文件正文走独立草稿池（`data/instruction-drafts.ts`），模块保存与模块切换不带文件正文。焦点离开文件卡或折叠前提交 dirty 文件，成功只确认请求时快照，冲突/失败保留草稿并显示「重新读取」。会话或工作区切换建立新的指令上下文：旧上下文的迟到响应不覆盖当前视图，旧 `contextId` 保存由服务端 409 拒绝。
@@ -440,7 +442,7 @@ JSON bridge 的统一上限为 32 MiB；角色卡原始文件流独立限制为 
 13. bootstrap 与策略快照均读取完成后再应用，异步边界复核请求序号、会话与草稿状态。暂时离开工作区只暂停文件写资格，保留草稿与版本基线；返回并读取时，版本未变可继续保存，版本变化仍须解决冲突。
 14. 列表保存按钮等待真实 `Promise<boolean>` 结果；文件或预设部分失败时不显示整体成功、不以静默重载清除错误。已经成功保存的文件立即更新其基线，不因后续失败回滚或丢失确认。
 15. 配置排序走 typed `moduleConfigOrder` 端点，服务端校验身份集合与 revision，拒绝未知、重复身份及过期版本。顺序写回 `module.yml.configOrder`，客户端不提交正文、文件路径或序号；模块启用或停用均可保存自身排序，总闸关闭仍可改排序定义。
-16. 模板变量内容与开关分别校验 variables／settings 版本。保存已提交但切片发布持续失败时，服务端 persisted 响应必须显示“已保存但未发布”，不能当成未写盘或直接清空草稿。存储完整性与恢复规则以 [后端框架](architecture-params.md) 为准。
+16. 两级变量内容校验所选 global/module 域，模块开关校验 settings。草稿按模块+scope分开，切范围不串输入；空字符串保存为值，删行才删除。后台读回和保存只确认对应请求快照，冲突保留编辑。persisted 且 publicationPending 时显示“已保存但未发布”，refreshOnly 只发布，不重放变量写入。存储边界见 [后端框架](architecture-params.md)。
 
 ### 7.4 导入预览与提交
 
@@ -476,8 +478,8 @@ feature 只拥有自己的视图、瞬时状态、领域纯 helper 和 CSS：
 
 | feature | 责任边界 |
 |---|---|
-| prompts | 六层配置卡、字段策略、排序、模板插入、变量编辑和内容配置；世界书只读诊断卡 |
-| persona | module.yml 顶层 persona 段的编辑卡；prefix/suffix 与 complete 互斥校验，写盘经 host 校验与重建 |
+| prompts | 规则卡、字段策略、排序、模板插入、两域变量编辑；上下文激活只读诊断 |
+| persona | 主/子各自单选来源，模块内正文仍逐字段继承或显式覆盖；来源版本、正文 CAS 与发布重试分开 |
 | models | 当前预设的主/子代理模型路由卡；模型下拉展示完整目录并按服务商分组，选择模型时内部回写 provider + model，不提供独立服务商选择控件 |
 | modules | 模块页管理；引擎能力身份、存在性判定及「本层引擎设置」内容装配；消费 `/bootstrap.moduleFacts`，其中 `subagentToolPolicyEnabled` 区分插件策略与宿主委派 |
 | subagents | 委派工具、实例级工具策略草稿及策略解析预览；不重复嵌入工具面 |
@@ -529,7 +531,7 @@ fieldset 禁用时 MenuSelect 同时拒绝 portal 中的选择。Tooltip 的键�
 
 规则卡复用原 `PromptConfigNavigation`，基础身份常驻，"规则 / JSON / 设置"同级（条件与动作合并到同一面板：分处两个页签时看不出条件与动作的对应关系）。宽屏左侧导航，容器宽度不超过 620px 时变为上方 tabs；组件自身 ResizeObserver 同时驱动视觉布局与 ARIA 方向，避免跨 CSS Modules 的命名容器失配。
 
-「规则」面板按**条件作用域**组织，与引擎的展开语义同构（`engine/branch.mjs#expandActions`）：规则级 `if` 是一张可折叠的条件卡，它管住的 `then` 节点在一段竖线作用域内各自成卡——动作卡（卡头是类型 + 执行层 + 正文首行）与**分支卡**（节点 `{if, then, else}`，卡头是「当 ⟨条件⟩ → ⟨动作⟩」，卡内可继续嵌套）。分支节点因此是可视编辑的一等语法，不再落到"未知动作 + 裸 JSON"（旧行为会让动作类型下拉收到 `undefined` 并在渲染期抛错，整棵插件树卸载）。每张卡默认收起，卡头单行省略给出「条件 → 动作」一览，展开才编辑；`×` 删除整张卡，图标取官方 IconClose 复制件、与 TagInput 的 chip 删除同形态；↑↓ 只在同一作用域内换位。规则级 `else` 用同一段竖线作用域呈现，为空时只留「添加否则分支」。新增动作在**整条规则**范围内分配唯一 id（引擎拒绝重复 id）。
+「规则」面板按**条件作用域**组织，与引擎的展开语义同构（`engine/branch.mjs#expandActions`）：规则级 `if` 是一张可折叠的条件卡，它管住的 `then` 节点在一段竖线作用域内各自成卡——动作卡（卡头是类型 + 执行层 + 正文首行）与**分支卡**（节点 `{if, then, else}`，卡头是「当 ⟨条件⟩ → ⟨动作⟩」，卡内可继续嵌套）。分支节点因此是可视编辑的一等语法，不再落到"未知动作 + 裸 JSON"（旧行为会让动作类型下拉收到 `undefined` 并在渲染期抛错，整棵插件树卸载）。每张卡默认收起，卡头单行省略给出「条件 → 动作」一览，展开才编辑；`×` 删除整张卡，图标取官方 IconClose 复制件、与 TagInput 的 chip 删除同形态；↑↓ 只在同一作用域内换位。规则级 `else` 用同一段竖线作用域呈现，为空时只留「添加否则分支」。必要事实未知时两支都可能不执行，UI 不把 else 描述为必然执行。新增动作在**整条规则**范围内分配唯一 id（引擎拒绝重复 id）。
 
 动作的生效条件是**路径合取**：根到该动作路径上所有 `if` 取「且」、`else` 侧取「¬if」，因此不存在「第 i 个条件配第 i 个动作」；卡头提示逐字给出完整生效条件。注册制层（`system-section` / `runtime-context`）没有逐轮求值时机，引擎拒绝带条件的动作，这些层的添加行禁用分支入口并说明原因；作用域带条件时可选动作按 `supportsWhen`（event 生命周期）过滤。JSON 面板的结构门槛同样按「动作要有 `id` + `kind`、分支要有 `then` 数组」递归判定，不把分支判成非法 JSON。普通面板保持挂载，非活动面板使用 hidden 排除键盘焦点，设置首次进入才挂载。面板 `aria-label` 是页签文字的唯一来源，不在面板内重复标题。说明使用 HintTooltip，错误保留就地提示。
 
@@ -562,25 +564,25 @@ fieldset 禁用时 MenuSelect 同时拒绝 portal 中的选择。Tooltip 的键�
 
 `LayerSettingsContent` 的参数、装配能力与资产都按共享契约派生：`layerParamCards` 只列当前层实际装配且拥有通用参数的组，`layerAssembledCapabilities` 列出该层已装配能力，资产按 `displayLayer` 归位并复用各自专用编辑器、草稿池与写端点。模型参数不重复生成通用控件。创建本层能力复用 `EngineCapabilityCreateMenu`，提示词模板仍从原九层模板菜单创建。无可编辑设置的层不生成设置页签，无实例不生成兜底卡。设置视图首次进入才挂载，卡片保持展开时切换视图不丢输入；外层折叠卸载视图，草稿仍由工作台持有。
 
-选中某个注入层且该层没有内容时，列表给「该层还没有内容」的空状态与新增入口，不自动创建九张空卡、也不谎称「无匹配」；`world-book` 是策略筛选而非层，保持原有的「无匹配 + 清除筛选」提示。
+选中某个注入层且该层没有内容时，列表给「该层还没有内容」的空状态与新增入口，不自动创建九张空卡、也不谎称「无匹配」；`context-activation` 是策略筛选而非层，保持「无匹配 + 清除筛选」提示。
 
-本层设置由 `app/workspace/pages/layer-settings.module.css` 拥有，参数与资产使用平面小节和细分隔线，不叠加分类边框、内缩或分类级折叠。能力创建保留既有入口；模块模型覆盖只在规则动作编辑。人设、官方当前会话模型、委派和变量通过原编辑器的 embedded 呈现复用草稿与保存逻辑，独立使用时保持原折叠形态。
+本层设置由 `app/workspace/pages/layer-settings.module.css` 拥有，参数与资产使用平面小节和细分隔线，不叠加分类边框、内缩或分类级折叠。能力创建保留既有入口；模块模型覆盖可通过公共模型卡或显式请求动作编辑。人设、官方当前会话模型、委派和变量通过原编辑器的 embedded 呈现复用草稿与保存逻辑，独立使用时保持原折叠形态。
 
 共享参数短控件按内容宽度排列并自然换行，文本和列表整行；类型由现有渲染属性表达，不复制参数定义。已有主开关与子代理参与开关保留具名字段组和 DOM 顺序，数字使用等宽数字。说明可换行，hidden 优先于布局；控件 DOM 身份包含实例，草稿键与保存入口仍共享。
 
 同名引擎参数允许多处渲染（同层每张实例卡内各有一份本层设置区）：它们绑定同一 `store.fields[键]` 与同一草稿键，一次修改只提交一次保存；`EngineParamField` 的 `instanceId` 带上「层 + 卡身份」，同层多卡的 DOM id、aria 关联互不冲突，不引入第二份状态、同步服务或事件总线。未完成的数字输入与字段错误也属于这份共享草稿：`store.getDraftRevision` / `subscribeDrafts` / `publishDrafts` 是既有 `subscribeFields` 同一模式的窄广播，参数控件订阅它后，一个渲染点里的半成品输入或错误提示立即出现在其他渲染点（含跨层的相关设置），真实重渲染同步由 `module-policy-smoke` 用真实 Edge 覆盖（同层两张实例卡之间切换编辑、错误态同步、一次失焦只保存一次）。工具栏提供插入点层级与策略筛选、九层模板菜单和提示词配置操作；列表筛选只影响展示，不按插入点分区块。能力与提示词配置保留各自保存、排序和删除语义。
 
-world-book 视图只隐藏工具栏之外的列表主体之外的附加提示，不再有独立的模块卡容器需要隐藏；能力参数与资产编辑器都在实例卡的设置区里，随卡一起折叠，折叠时不渲染内容（同层120张卡不会因此多出成百上千控件）。能力与工具在本层设置内创建，模板从工具栏入口插入；创建不改动层级筛选与搜索词。只读预设（system 或关闭 modulesEnabled）下创建和资产编辑禁用，移除入口不渲染，折叠按钮仍可使用。
+context-activation 视图只调整附加提示，不另设模块卡容器；能力参数与资产编辑器随实例卡折叠，折叠时不渲染内容。能力与工具在本层设置内创建，模板从工具栏插入；创建不改筛选或搜索。受控只读目标下创建和资产编辑禁用，折叠按钮仍可使用；运行总闸与具体写许可分别按共享状态决定。
 
 工具栏提供九层模板创建，其他创建操作内置对应层设置；过滤与受众规则见 §5.2.1。主会话与子代理均显示本会话上下文中的指令文件卡，共用同一文件正文草稿、版本、读取状态与逐文件开关；子代理页不探测另一份文件集合，也不创建独立正文副本。
 
 展开指令卡后，「本层设置」提供当前编辑模块的 `instructionHint`（指令路径提示）开关。`injectionPointSlots.renderInstructionSettings` 只装配既有 `EngineParamField`，沿 `persistParamOverrides` 保存；不依赖普通 pre-step 规则卡存在。各文件卡与两页显示同一模块参数，模块总闸关闭或模块不可编辑时禁用。指令正文仍只允许原文件正文编辑，普通注入参数继续锁定，文件级启停仍写独立策略。
 
-世界书是提示词策略筛选，不承载引擎设置（只读诊断卡只在 `world-book` 视图显示）；自定义工具编辑器按 `custom-tools` 编辑组归位到 tool-pipeline 层。配置卡及设置内容可随筛选和折叠卸载，未保存资产与字段草稿由既有共享草稿池保留；工具读取与创建由页面所有者承载，保存失败保留原输入。
+上下文激活是提示词策略筛选，不承载引擎设置（只读诊断卡只在 `context-activation` 视图显示）；自定义工具编辑器按 `custom-tools` 编辑组归位到 tool-pipeline 层。配置卡及设置内容可随筛选和折叠卸载，未保存资产与字段草稿由既有共享草稿池保留；工具读取与创建由页面所有者承载，保存失败保留原输入。
 
 搜索统一覆盖「中文名 + 技术键」，且只影响展示：规则按自身定义及层设置匹配，真实层装配通过既有 `matchesEditorGroup` 与分组标题判定设置匹配，匹配时保留同层承载实例，展开后隐藏未命中的组。没有实例的层不会因为设置命中而生成卡片。批量启停作用于当前可见规则集合；旧快捷参数的 `fieldSources` 不再锁定规则或排除其编辑能力。清空搜索恢复原列表，不创建配置或保存。
 
-变量卡的输入、启停、删除和失焦保存受模块可写性约束，状态写入既有草稿键。模块模型参数属于规则动作，当前会话的 `selectModel` 单独按官方 selectable 决定可用性。
+变量卡复用同一编辑器切换 module/global，输入、模块开关、删除和失焦保存受受控目标与可写性约束；全局写提示影响同安装其它模块。同名覆盖来源由快照显示。普通规则的变量由用户手动建立，ST 导入才自动登记缺失裸引用为空占位。当前会话 selectModel 单独按官方 selectable 决定可用性。
 
 子代理工具策略（`subagent-tool-policy`）是模块类型能力：在能力菜单里创建，编辑器住在 tool-pipeline 层的层设置区资产分区里（`data-layer-asset="subagent-tool-policy"`），用「移除能力」入口移除。该编辑器只有**一个启用开关**：打开复用共享可用骨架并立即落盘；关闭删除顶层策略段并保留模块声明，同时把编辑区置为 `fieldset[disabled]` 只读。引擎仅在策略文件确实不存在时降级为官方委派行为，现存损坏文件仍报错。移除能力时模块声明与顶层段一起移除。历史“段在、声明不在”预设保留既有授权装配，装配清单如实列出它；保存或显式创建会补齐模块声明，不覆盖已有授权。子代理页排除「仅主对话」能力：它们的参数与装配条目不进本页设置区。能力卡的组织方式见前端实现（待 UI 重构时补充）。
 

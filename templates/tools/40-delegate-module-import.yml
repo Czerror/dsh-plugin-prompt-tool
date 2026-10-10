@@ -1,0 +1,22 @@
+# 模块导入预览；保存模板时按实际工具目录补装 module-import-tools。
+id: delegate-module-import
+name: my_module_import_preview
+description: 预览模块导入来源、降级报告与版本凭据
+parameters:
+  files:
+    type: json
+    required: true
+    description: 文件数组，每项包含相对 path、content 和可选 encoding
+output:
+  schema:
+    type: object
+    additionalProperties: true
+    properties:
+      ok: { type: boolean }
+      value: { type: json }
+execute:
+  kind: delegate
+  tool: module_import
+  args:
+    files: '{{args.files}}'
+    preview: true

@@ -88,6 +88,10 @@ export function validateDefinition(def) {
   if (exec.kind === 'delegate' && (typeof exec.tool !== 'string' || exec.tool.length === 0)) {
     throw new TypeError(`tool ${def.id}: execute.tool is required for delegate`)
   }
+  if (exec.kind === 'delegate' && ['character_import', 'character_list', 'character_apply', 'character_remove', 'character_delete',
+    'world_book_list', 'world_book_upsert', 'world_book_delete', 'world_book_read_memory', 'session_var'].includes(exec.tool)) {
+    throw new TypeError(`tool ${def.id}: delegate ${exec.tool} 已退役；请重新导入或显式转换为模块工具`)
+  }
   if (exec.kind === 'fs' && (typeof exec.action !== 'string'
     || (!['read', 'write', 'append', 'list', 'delete'].includes(exec.action) && !exec.action.includes('{{args.')))) {
     throw new TypeError(`tool ${def.id}: execute.action must be read/write/append/list/delete (or {{args.*}} template) for fs`)

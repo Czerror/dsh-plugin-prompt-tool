@@ -16,6 +16,7 @@
       "default": "./lib/index.mjs"
     },
     "./client": "./lib/client.js",
+    "./persona": "./lib/persona.mjs",
     "./engine/*": "./engine/*",
     "./package.json": "./package.json"
   },
@@ -124,6 +125,6 @@
   "dependencies": {
     "@deepseek-ai/schemastery": "^3.18.4",
     "@zip.js/zip.js": "2.15.0",
-    "yaml": "^2.9.0"
+    "yaml": "^2.9.1"
   }
 }

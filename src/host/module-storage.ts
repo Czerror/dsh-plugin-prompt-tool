@@ -5,12 +5,15 @@ import { basename, dirname, isAbsolute, join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { Document, parseDocument } from 'yaml'
 import type { RuleContent, RuleDefinition, RuleRevisions, RuleSettings } from '../shared/rules.ts'
+import { readPersonaSpec } from '../shared/persona-section.ts'
 import { assertModuleDirectory, assertModuleId, canonicalModulesRoot } from './module-install.ts'
 import { MODULE_DEFINITION_FILE, RULES_DIR, RULES_SETTINGS_FILE, RULES_VARIABLES_FILE } from './paths.ts'
 import { atomicWriteTextFile } from './text-file.ts'
 import { readModuleLayerSettings } from './module-layer-settings.ts'
 // @ts-expect-error 引擎是规则语义的唯一校验器。
 import { assertRuleId, compileRules } from '../../engine/rule-spec.mjs'
+// @ts-expect-error 保留名由插值器的内建与动态宏目录共同定义。
+import { isReservedInterpolationName } from '../../engine/interpolate.mjs'
 
 const record = (value: unknown): value is Record<string, unknown> => value !== null && typeof value === 'object' && !Array.isArray(value)
 export const revisionOf = (value: string | Uint8Array): string => createHash('sha256').update(value).digest('hex')
@@ -32,6 +35,23 @@ export class ModuleRulesError extends Error {
   }
 }
 
+/** 两级持久变量共用边界；错误只标识键，不输出变量内容。 */
+export function assertVariableValues(value: unknown): asserts value is Record<string, string> {
+  if (!record(value)) throw new ModuleRulesError('variables 必须是平铺字符串对象')
+  const entries = Object.entries(value)
+  if (entries.length > 4096) throw new ModuleRulesError('variables 最多允许 4096 个键')
+  let bytes = 0
+  for (const [key, item] of entries) {
+    if (typeof item !== 'string') throw new ModuleRulesError('variables 必须是平铺字符串对象')
+    if (key.length === 0 || key !== key.trim() || Buffer.byteLength(key) > 256
+      || ['__proto__', 'constructor', 'prototype'].includes(key) || isReservedInterpolationName(key)) throw new ModuleRulesError(`变量名非法或保留：${key}`)
+    const size = Buffer.byteLength(item)
+    if (size > 1024 * 1024) throw new ModuleRulesError(`变量值超过 1 MiB：${key}`)
+    bytes += Buffer.byteLength(key) + size
+  }
+  if (bytes > 4 * 1024 * 1024) throw new ModuleRulesError('variables 总量超过 4 MiB')
+}
+
 /** 文件身份校验不依赖操作系统是否区分大小写。 */
 export function assertRuleFileId(id: unknown): asserts id is string {
   assertRuleId(id)
@@ -49,6 +69,9 @@ export function assertRuleFileId(id: unknown): asserts id is string {
 export function assertCanonicalRuleSource(source: unknown): asserts source is Record<string, unknown> {
   if (!record(source)) throw new ModuleRulesError('module.yml 必须是对象')
   if (source.rules !== undefined && !Array.isArray(source.rules)) throw new ModuleRulesError('module.yml.rules 必须是数组')
+  const retired = ['character-tools', 'world-book-tools', 'session-var-tools']
+  const names = [...(Array.isArray(source.modules) ? source.modules : []), ...Object.keys(record(source.moduleConfigs) ? source.moduleConfigs : {})]
+  if (names.some(name => retired.includes(String(name)))) throw new ModuleRulesError('旧角色/世界书/会话变量能力已退役；请重新导入或显式转换为模块工具')
 }
 
 export function rulePromptConfigOptions(directory: string, strategy?: unknown) {
@@ -101,15 +124,18 @@ function projection(source: Record<string, unknown>, directory: string, sourceRe
     assertRuleFileId(id)
     if (!Number.isSafeInteger(sequence) || sequence < 0) throw new ModuleRulesError(`规则 ${id} 的顺序必须是非负安全整数`)
   }
-  if (source.variables !== undefined && (!record(source.variables) || Object.values(source.variables).some(value => typeof value !== 'string'))) throw new ModuleRulesError('variables 必须是平铺字符串对象')
+  if (source.variables !== undefined) assertVariableValues(source.variables)
   if (source.variablesEnabled !== undefined && typeof source.variablesEnabled !== 'boolean') throw new ModuleRulesError('variablesEnabled 必须是布尔值')
-  if (source.stWorldBookRecursive !== undefined && typeof source.stWorldBookRecursive !== 'boolean') throw new ModuleRulesError('stWorldBookRecursive 必须是布尔值')
+  if (source.stWorldBookRecursive !== undefined) throw new ModuleRulesError('stWorldBookRecursive 已退役；请重新导入或显式转换为 contextActivationRecursive')
+  if (source.contextActivationRecursive !== undefined && typeof source.contextActivationRecursive !== 'boolean') throw new ModuleRulesError('contextActivationRecursive 必须是布尔值')
   const variables = structuredClone((source.variables ?? {}) as Record<string, string>)
   const variablesEnabled = source.variablesEnabled !== false
   const configs = record(source.moduleConfigs) ? source.moduleConfigs : {}
   const options = record(configs['rule-engine']) ? configs['rule-engine'] : {}
+  let persona: ReturnType<typeof readPersonaSpec>
   try {
-    compileRules(rules, { moduleId: basename(directory), configOrder: order, variables, variablesEnabled, personaComplete: record(source.persona) && source.persona.complete === true,
+    persona = readPersonaSpec(source.persona)
+    compileRules(rules, { moduleId: basename(directory), configOrder: order, variables, variablesEnabled,
       promptConfigOptions: { ...rulePromptConfigOptions(directory, options.strategyDir), ...(validation.loadTemplate === undefined ? {} : { loadTemplate: validation.loadTemplate }) } })
   } catch (error) { throw new ModuleRulesError(String((error as Error).message ?? error)) }
   const contents: RuleContent[] = []
@@ -130,7 +156,8 @@ function projection(source: Record<string, unknown>, directory: string, sourceRe
   files[RULES_VARIABLES_FILE] = yaml(variables)
   const state = { rules: settings, variablesEnabled }
   const revisions: RuleRevisions = { rules: ruleRevisions, settings: digest(state), variables: digest(variables) }
-  files[RULES_SETTINGS_FILE] = yaml({ ...state, _integrity: { version: 1, module: sourceRevision, files: Object.fromEntries(Object.entries(files).map(([file, text]) => [file, revisionOf(text)])), settings: revisions.settings } })
+  // 人设投影受完整源版本与文件一致性校验保护，不占用规则状态的 CAS 版本。
+  files[RULES_SETTINGS_FILE] = yaml({ ...state, ...(persona === undefined ? {} : { persona }), _integrity: { version: 1, module: sourceRevision, files: Object.fromEntries(Object.entries(files).map(([file, text]) => [file, revisionOf(text)])), settings: revisions.settings } })
   return { contents, settings, variables, variablesEnabled, revisions, files }
 }
 
@@ -225,6 +252,14 @@ const active = new Set<string>()
 // 仅保留不可变原文；调用方改动 doc/source/rules 不会污染最后已验证快照。
 const published = new Map<string, { dir: string; text: string }>()
 const publish = (snapshot: ModuleDefinitionSnapshot): void => { published.set(directoryKey(snapshot.dir), { dir: snapshot.dir, text: snapshot.text }) }
+
+/** 运行贡献回退到最后验证通过的定义；路径安全仍现场校验，不接纳坏候选。 */
+export function lastPublishedModuleDefinition(directory: string): ModuleDefinitionSnapshot | undefined {
+  const dir = canonicalDirectory(directory)
+  assertPlain(join(dir, MODULE_DEFINITION_FILE))
+  const previous = published.get(directoryKey(dir))
+  return previous === undefined ? undefined : snapshotFromText(previous.dir, previous.text)
+}
 const busy = (): ModuleRulesError => new ModuleRulesError('模块保存或恢复正在进行，请重试', 409, 'rules-conflict')
 
 /** 活 PID 永不按超时夺锁；每个进程文件有唯一 token，回收死锁不会误删新持有者。 */

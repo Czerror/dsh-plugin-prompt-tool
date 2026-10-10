@@ -1,0 +1,5 @@
+# module: module-variable-tools
+# source: engine/compositions/source/local/module-variable-tools.yml
+
+- id: module-variable-tools
+  name: ./engine/module-variable-tools.mjs

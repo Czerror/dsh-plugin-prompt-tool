@@ -1,0 +1,14 @@
+# 完整规则读取；保存模板时补装 module-rule-tools。
+id: delegate-module-rules-read
+name: my_module_rules_read
+description: 读取当前模块的完整规则树和版本
+output:
+  schema:
+    type: object
+    additionalProperties: true
+    properties:
+      ok: { type: boolean }
+      value: { type: json }
+execute:
+  kind: delegate
+  tool: module_rules_read

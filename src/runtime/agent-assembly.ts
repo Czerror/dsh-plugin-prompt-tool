@@ -23,9 +23,12 @@ import type { ModuleSpec } from '../host/manifest.ts'
 import { modelRequestConfigs } from '../host/prompt-configs.ts'
 import { assertModuleId } from '../host/module-install.ts'
 import { readConfigOrder } from '../host/module-config-order.ts'
-import { rulePromptConfigOptions } from '../host/module-rules.ts'
+import { rulePromptConfigOptions } from '../host/module-storage.ts'
 import { compileCustomTool, validateCustomTools } from '../host/custom-tools.ts'
 import { recordRuleOutcome } from './rule-diagnostics.ts'
+import { createModuleVariableAdapter } from './module-variable-adapter.ts'
+import type { PersonaModule, PersonaPreparation } from './persona-registration.ts'
+import { MODULE_TOOL_CAPABILITIES } from '../shared/engine-capabilities.ts'
 
 // @ts-expect-error ESM 引擎源码随插件提供。
 import { compileRules, isFixedRegistration } from '../../engine/rule-spec.mjs'
@@ -40,11 +43,7 @@ import { compileWhen, loadStandingMountFor } from '../../engine/conditions/index
 const MANAGED_FIELDS = ['configsDir', 'strategyDir', 'policyFile', 'rulesFile'] as const
 
 /** 私有工具适配器依赖的服务；适配器仍复用包内引擎入口。 */
-const PRIVATE_SERVICES: Record<string, string> = {
-  'character-tools': 'pt-character-tools',
-  'world-book-tools': 'pt-world-book-tools',
-  'session-var-tools': 'pt-session-var-tools',
-}
+const PRIVATE_SERVICES: Record<string, string> = Object.fromEntries(Object.values(MODULE_TOOL_CAPABILITIES).map(id => [id, `pt-${id}`]))
 
 export interface AgentAssemblyRuntime {
   /** 等待当前排队的装配任务收敛（测试与诊断用；生产路径不依赖它）。 */
@@ -74,6 +73,8 @@ export interface AgentAssemblyOptions {
    * 返回空数组表示没有模块参与装配（此时不注册任何贡献）。
    */
   enabledModules: () => readonly string[]
+  /** 已按主/子选择过滤的人设来源；来源选择不隐式启用其普通规则。 */
+  personaModules?: () => readonly PersonaModule[]
   warn?: (message: string) => void
 }
 
@@ -116,6 +117,7 @@ export interface PreparedAssembly {
   services: Set<string>
   moduleId: string
   persona?: ModuleSpec['persona']
+  variablesEnabled?: boolean
 }
 
 /**
@@ -152,27 +154,18 @@ export async function prepareAssembly(
     moduleId,
     configOrder: readConfigOrder(spec.configOrder),
     variables: spec.variables, variablesEnabled: spec.variablesEnabled,
-    stWorldBookRecursive: spec.stWorldBookRecursive,
+    contextActivationRecursive: spec.contextActivationRecursive,
     promptConfigOptions: rulePromptConfigOptions(moduleDir, ruleConfig.strategyDir),
   })
   const ruleConditions = new Map(declaredRules.map(rule => [rule.id, structuredClone(rule.if)]))
-  // 「独占」（`complete`）组装期兜底：宿主 system-prompt 对「多于一个生效 complete 段」
-  // 直接抛错（packages/core/system-prompt/src/index.ts:597-600），而写盘前的互斥门控只
-  // 覆盖两个 bridge 端点——手改 module.yml、还原 ZIP/备份、导入包都能绕过。这里在装配前
-  // 查一次，把「system 提示被清到只剩一段 / 组装失败」挡在 Agent 创建之前。
-  // 判据与写盘门控同源（引擎的 isFixedRegistration；`module-storage.ts:112` 的
-  // `compileRules(…, { personaComplete })` 用同一判据），但本兜底**更窄**：只扫 `rule.then`、
-  // 不接收 personaComplete——正常读路径已先拒（那处扫全部展开动作，含 else 与嵌套分支），
-  // 这里只挡绕过读路径（手改 yml / 还原备份 / 导入包）的漏网。「独占」是 system-section 层的
-  // params.complete，只有它会被宿主当作唯一 system 段；其他层的同名键不是独占。
+  // 单模块规则独占先预检；实际选中人设和官方继承声明在整批撤旧前聚合验证。
   const exclusiveConfigs = (spec.rules ?? []).filter(rule => rule.enabled !== false).flatMap(rule => rule.then.filter(action => {
     const config = action.config as { params?: { complete?: unknown } } | undefined
     return action.kind === 'inject-text' && config?.params?.complete === true && isFixedRegistration(config, rule.layer)
   }))
-  const personaComplete = spec.persona?.complete === true
-  if (exclusiveConfigs.length > 1 || (personaComplete && exclusiveConfigs.length > 0)) {
+  if (exclusiveConfigs.length > 1) {
     throw new Error(
-      `模块 ${moduleId} 有多个生效的「独占」段（顶层人设${personaComplete ? '已' : '未'}开启），`
+      `模块 ${moduleId} 有多个生效的「独占」段，`
       + '同一模块只能有一个：请先关闭其一',
     )
   }
@@ -219,7 +212,7 @@ export async function prepareAssembly(
   for (const name of services) {
     if (!hasService(name)) throw new Error(`配装所需宿主能力不可用：${name}`)
   }
-  return { rules, ruleConditions, modules, services, moduleId, persona: spec.persona }
+  return { rules, ruleConditions, modules, services, moduleId, persona: spec.persona, variablesEnabled: spec.variablesEnabled }
 }
 
 /** 上报点只读 message（本文件的 `warn`、settings-bridge 的 `String(error)`）：原因写进文本。 */
@@ -248,6 +241,13 @@ function ruleKeyOf(config: Record<string, unknown>): string {
  * 两个模块也各按模块维记一份、不再互相压制，所以它不是一笔去重账——照它告警是假警报。
  */
 interface DuplicateIdentity { channel: 'plugin' | 'kind'; identity: string; suspectedCopy: boolean; moduleIds: string[] }
+
+function completeSectionsOf(prepared: PreparedAssembly[]): string[] {
+  return prepared.flatMap(item => (item.rules as Array<{ id: string; enabled?: boolean; actions?: Array<{ kind?: string; compiledConfig?: { layer?: string; params?: { complete?: boolean } } }> }>)
+    .filter(rule => rule.enabled !== false).flatMap(rule => (rule.actions ?? [])
+      .filter(action => action.kind === 'inject-text' && action.compiledConfig?.layer === 'system-section' && action.compiledConfig.params?.complete === true)
+      .map(() => `${item.moduleId}/${rule.id}`)))
+}
 
 function dedupeConfigsOf(prepared: PreparedAssembly[]): Array<{ moduleId: string; config: Record<string, unknown> }> {
   const found: Array<{ moduleId: string; config: Record<string, unknown> }> = []
@@ -291,9 +291,10 @@ function duplicateDedupeIdentities(prepared: PreparedAssembly[]): DuplicateIdent
 }
 
 export function createAgentAssembly(ctx: Context, options: AgentAssemblyOptions): AgentAssemblyRuntime {
+  const variableStore = createModuleVariableAdapter(options.moduleRoot)
   const mounts = new Map<string, { agent: Agent; fiber: { dispose(): Promise<void> | void }; prepared: PreparedAssembly[]; moduleIds: readonly string[] }>()
   const disposed = new WeakSet<Agent>()
-  const queues = new Map<string, Promise<void>>()
+  let pending: Promise<void> = Promise.resolve()
   let active = true
   const warn = (error: unknown): void => {
     const message = `prompt-tool: 运行时配装失败：${failureReason(error)}`
@@ -310,11 +311,9 @@ export function createAgentAssembly(ctx: Context, options: AgentAssemblyOptions)
     if (options.warn !== undefined) options.warn(message)
     else ctx.logger?.warn?.(message)
   }
-  const serial = (sessionId: string, task: () => Promise<void>): Promise<void> => {
-    const next = (queues.get(sessionId) ?? Promise.resolve()).then(task)
-    const settled = next.then(() => {}, () => {})
-    queues.set(sessionId, settled)
-    void settled.then(() => { if (queues.get(sessionId) === settled) queues.delete(sessionId) })
+  const serial = (task: () => Promise<void>): Promise<void> => {
+    const next = pending.then(task)
+    pending = next.then(() => {}, () => {})
     return next
   }
   const release = async (sessionId: string, agent?: Agent): Promise<void> => {
@@ -359,26 +358,14 @@ export function createAgentAssembly(ctx: Context, options: AgentAssemblyOptions)
             }
           }),
         }))
-        for (const item of prepared) {
-          if (item.persona !== undefined) {
-            const persona = item.persona
-            // 独立模块贡献使用独立段名，避免覆盖宿主或子代理 setup 的同名注册。
-            scopeCtx.systemPrompt.section({
-              name: `prompt-tool:${item.moduleId}:persona-prefix`,
-              order: scopeCtx.systemPrompt.getSectionOrder('DEPLOYMENT_PERSONA_PREFIX'),
-              text: persona.prefix, complete: persona.complete === true,
-            })
-            scopeCtx.systemPrompt.section({
-              name: `prompt-tool:${item.moduleId}:persona-suffix`,
-              order: scopeCtx.systemPrompt.getSectionOrder('DEPLOYMENT_PERSONA_SUFFIX'),
-              text: persona.suffix ?? '',
-            })
-            if (persona.includeRuntimeContext === false) scopeCtx.systemPrompt.suppressRuntimeContext()
-          }
-        }
-        scopeCtx.effect(() => mountRuleSources(scopeCtx, ruleSources, { onOutcome: recordRuleOutcome }))
+        scopeCtx.effect(() => mountRuleSources(scopeCtx, ruleSources, { onOutcome: recordRuleOutcome, variableStore }))
+        const privateMounted = new Set<string>()
         for (const item of prepared) {
           for (const module of item.modules) {
+            if (PRIVATE_SERVICES[module.id] !== undefined) {
+              if (privateMounted.has(module.id)) continue
+              privateMounted.add(module.id)
+            }
             // 引擎入口既有同步也有 async：先 await 再判
             // disposer，否则 Promise 会被当成清理函数存下来，永不被调用。
             const result: unknown = await module.apply(scopeCtx, module.config)
@@ -403,33 +390,52 @@ export function createAgentAssembly(ctx: Context, options: AgentAssemblyOptions)
     })
   }
 
-  const install = async (agent: Agent, refresh = false): Promise<void> => {
-    if (!active || disposed.has(agent)) return
-    const previous = mounts.get(agent.id)
-    if (!refresh && previous?.agent === agent) return
-    // 完整准备后才撤旧；坏配置不得拆掉当前可用贡献。
+  const replace = async (targets: readonly Agent[]): Promise<void> => {
+    const ids = [...options.enabledModules()]
+    const live = targets.filter(agent => active && !disposed.has(agent))
     const prepared: PreparedAssembly[] = []
-    for (const id of options.enabledModules()) {
-      prepared.push(await prepareAssembly(options.moduleRoot, id, (name) => agent.ctx.get(name) !== undefined))
+    for (const id of ids) prepared.push(await prepareAssembly(options.moduleRoot, id, name => live.every(agent => agent.ctx.get(name) !== undefined)))
+    const candidates = live.map(agent => ({ agent, prepared, previous: mounts.get(agent.id) }))
+    if (!active) return
+    const personaModules = options.personaModules?.() ?? prepared
+    const persona = ctx.get('promptToolPersona')
+    const completeSections = completeSectionsOf(prepared)
+    if (completeSections.length > 1) throw new Error(`多个生效 complete 段：${completeSections.join('、')}`)
+    const personaTargets = candidates.map(({ agent }) => ({ agent, completeSections }))
+    if (persona === undefined && (personaModules.some(item => item.persona !== undefined) || completeSections.length > 0)) {
+      throw new Error('人设原声明未被观察，无法验证独占段；请加载人设早入口并重启 DSH')
     }
-    if (!active || disposed.has(agent)) return
+    // 人设和官方继承独占必须在撤旧前验证；事务捕获快照后不再读取坏候选。
+    const personaChange: PersonaPreparation | undefined = persona?.prepare(personaTargets, personaModules)
+    const changed: typeof candidates = []
     try {
-      // 撤旧也在 try 里：撤旧失败同样要尽力把旧装配装回去，否则旧贡献凭空消失。
-      await release(agent.id)
-      await mount(agent, prepared, duplicateDedupeIdentities(prepared))
+      for (const candidate of candidates) {
+        if (!active || disposed.has(candidate.agent)) continue
+        changed.push(candidate)
+        await release(candidate.agent.id)
+        await mount(candidate.agent, candidate.prepared, duplicateDedupeIdentities(candidate.prepared))
+      }
+      if (active) personaChange?.commit()
     } catch (error) {
-      if (previous?.agent === agent && active && !disposed.has(agent)) {
-        // ponytail: 撤旧只失败在 dispose 上时旧 fiber 可能半撤且已出账；出现重复贡献再改成「撤旧成功才记账」。
+      const restoreErrors: unknown[] = []
+      try { personaChange?.rollback() } catch (restoreError) { restoreErrors.push(restoreError) }
+      for (const { agent, previous } of changed.reverse()) {
+        if (!active || disposed.has(agent)) continue
         try {
-          await mount(agent, previous.prepared)
-        } catch (restoreError) {
-          // 两个原因都得留下：只读 message 的上报点看不到 errors。
-          throw new AggregateError([error, restoreError],
-            `切换装配失败（${failureReason(error)}），且恢复原有装配也失败（${failureReason(restoreError)}）`)
-        }
+          await release(agent.id)
+          if (previous?.agent === agent) await mount(agent, previous.prepared)
+        } catch (restoreError) { restoreErrors.push(restoreError) }
+      }
+      if (restoreErrors.length > 0) {
+        throw new AggregateError([error, ...restoreErrors],
+          `切换装配失败（${failureReason(error)}），且恢复原有装配也失败（${restoreErrors.map(failureReason).join('；')}）`)
       }
       throw error
     }
+  }
+  const install = async (agent: Agent): Promise<void> => {
+    if (!active || disposed.has(agent) || mounts.get(agent.id)?.agent === agent) return
+    await replace([agent])
   }
 
     const listeners = [
@@ -439,7 +445,7 @@ export function createAgentAssembly(ctx: Context, options: AgentAssemblyOptions)
       // 装载后由 mounts 的身份判据挡住重复；失败的不记入，避免重试风暴。
       ctx.on('agent/created', async ({ agent }) => {
         // 宿主在首条请求前等待此 Promise；失败只告警，不中止官方会话创建。
-        await serial(agent.id, async () => {
+        await serial(async () => {
           try {
             await install(agent)
           } catch (error) {
@@ -450,13 +456,13 @@ export function createAgentAssembly(ctx: Context, options: AgentAssemblyOptions)
       }),
       ctx.on('agent/disposed', ({ agent }) => {
         disposed.add(agent)
-        void serial(agent.id, () => release(agent.id, agent)).catch(warn)
+        void serial(() => release(agent.id, agent)).catch(warn)
       }),
     ]
   ctx.effect(() => () => {
     active = false
     for (const remove of listeners) remove()
-    return Promise.all(queues.values()).then(async () => {
+    return pending.then(async () => {
       for (const id of mounts.keys()) await release(id)
     })
   }, 'prompt-tool assembly runtime')
@@ -464,35 +470,34 @@ export function createAgentAssembly(ctx: Context, options: AgentAssemblyOptions)
   // 新增 Agent 仍由 `agent/created` 兜住——构造期绝不因缺服务而抛。
   try {
     for (const agent of ctx.agents.list()) {
-      void serial(agent.id, () => install(agent)).catch(warn)
+      void serial(() => install(agent)).catch(warn)
     }
   } catch (error) {
     warn(error)
   }
   return {
-    settled: () => Promise.all(queues.values()).then(() => undefined),
+    settled: () => pending,
     hasMounted: (sessionId) => mounts.has(sessionId),
     moduleIds: (sessionId) => mounts.get(sessionId)?.moduleIds ?? [],
     refresh: async (moduleId) => {
       if (!active) throw new Error('运行时配装已释放')
-      const results = await Promise.allSettled(ctx.agents.list().map((agent) => serial(agent.id, async () => {
-        const current = mounts.get(agent.id)
-        if (moduleId !== undefined && current !== undefined
-          && !current.moduleIds.includes(moduleId) && !options.enabledModules().includes(moduleId)) return
-        await install(agent, true)
-      })))
-      const errors = results.filter((result): result is PromiseRejectedResult => result.status === 'rejected')
-      if (errors.length > 0) {
-        // 本层是唯一到达 bridge / TUI 的出口，而它们只读 message：原因必须带出来。
-        // 「已保存」由写盘的那一层（bridge / TUI / 模型工具）各自声明，本层只说装配这件事。
-        throw new AggregateError(errors.map((result) => result.reason),
-          `运行时配装更新失败：${errors.map((result) => failureReason(result.reason)).join('；')}`)
+      try {
+        await serial(async () => {
+          const enabled = options.enabledModules()
+          const targets = ctx.agents.list().filter(agent => {
+            const current = mounts.get(agent.id)
+            return options.personaModules !== undefined || moduleId === undefined || current === undefined || current.moduleIds.includes(moduleId) || enabled.includes(moduleId)
+          })
+          await replace(targets)
+        })
+      } catch (error) {
+        throw new AggregateError([error], `运行时配装更新失败：${failureReason(error)}`)
       }
     },
     dispose: async () => {
       active = false
       for (const remove of listeners) remove()
-      await Promise.all(queues.values())
+      await pending
       for (const id of mounts.keys()) await release(id)
     },
   }

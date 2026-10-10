@@ -1,185 +1,242 @@
-/** module.yml 顶层 persona 段编辑卡（官方 @deepseek-ai/dsh-persona 行 config 同构）。
- *  数据源 = /persona：无载荷读、带 persona 写，host 侧走 readPersonaSpec 校验 +
- *  saveModulePersona 原子写盘并重建。prefix/suffix 取代旧 promptConfigs
- *  params.sectionName + text 的人设承载方式；complete 与提示词配置的「独占」互斥，
- *  由 bridge 写盘前 fail loud。 */
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+/** 独立主/子人设卡；字段省略、显式空文本与 false 分别保存。 */
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { Button } from '../../ui/Button.tsx'
-import type { PersonaDraft, PersonaEditorDraft, WorkspaceDrafts } from '../../data/workspace-drafts.ts'
+import { createWorkspaceDrafts, type PersonaEditorDraft, type WorkspaceDrafts } from '../../data/workspace-drafts.ts'
 import { bridgeCall } from '../../data/bridge-client.ts'
 import type { PromptToolTranslate } from '../../locales.ts'
 import { EngineModuleCard } from '../../ui/EngineModuleCard.tsx'
-import { ToggleRow } from '../../ui/ToggleRow.tsx'
+import { MenuSelect } from '../../ui/MenuSelect.tsx'
+import type { PersonaAudience, PersonaSources, PersonaTargetSpec } from '../../../shared/persona-section.ts'
 import { ConfirmDialog } from '../../ui/ConfirmDialog.tsx'
 import styles from '../../ui/controls.module.css'
 
 type Notice = (kind: 'ok' | 'error', message: string) => void
-
-const EMPTY_PERSONA: PersonaDraft = { prefix: '', suffix: '', complete: false, includeRuntimeContext: true }
+const notify = (draft: { listeners?: Set<() => void> }): void => { for (const listener of draft.listeners ?? []) listener() }
 
 export function ModulePersonaCard(props: { t: PromptToolTranslate; moduleId?: string; disabled?: boolean; drafts?: WorkspaceDrafts; embedded?: boolean; onNotice: Notice }): ReactNode {
   const { t, onNotice } = props
-  const editor = useMemo((): PersonaEditorDraft => {
-    const key = props.moduleId ?? ''
-    const retained = props.drafts?.persona.get(key)
-    if (retained) return retained
-    const next = { value: EMPTY_PERSONA, saved: EMPTY_PERSONA, declared: false, loaded: false, error: '', saving: false }
-    props.drafts?.persona.set(key, next)
-    return next
-  }, [props.drafts, props.moduleId])
-  const [draft, setDraft] = useState<PersonaDraft>(editor.value)
-  const [declared, setDeclared] = useState(editor.declared)
-  const [loaded, setLoaded] = useState(editor.loaded)
-  const [dirty, setDirty] = useState(editor.value !== editor.saved)
-  const [saving, setSaving] = useState(false)
-  const [loadError, setLoadError] = useState(editor.error)
-  const [confirmingRemove, setConfirmingRemove] = useState(false)
-  const active = useRef<PersonaEditorDraft | null>(editor)
-
-  const load = useCallback(() => {
-    setLoadError('')
-    const readingDraft = editor.value
-    void bridgeCall('persona', { expectedModuleId: props.moduleId }).then((result) => {
-      if (active.current !== editor) return
-      if (editor.value !== readingDraft) return
-      if (result.ok) {
-        const persona = result.value.persona
-        const next = persona === null ? EMPTY_PERSONA : {
-          prefix: persona.prefix,
-          suffix: persona.suffix ?? '',
-          complete: persona.complete === true,
-          includeRuntimeContext: persona.includeRuntimeContext !== false,
-        }
-        editor.value = next
-        editor.saved = next
-        editor.declared = persona !== null
-        editor.loaded = true
-        editor.error = ''
-        setDraft(next)
-        setDirty(false)
-        setDeclared(persona !== null)
-      } else {
-        editor.error = result.message ?? t('persona.notice.loadFailed')
-        setLoadError(editor.error)
-        onNotice('error', editor.error)
-      }
-      setLoaded(true)
-    })
-  }, [editor, props.moduleId, onNotice, t])
-  useEffect(() => {
-    active.current = editor
-    const refresh = (): void => {
-      setDraft(editor.value); setDeclared(editor.declared); setLoaded(editor.loaded)
-      setDirty(editor.value !== editor.saved); setLoadError(editor.error); setSaving(editor.saving)
+  const localDrafts = useRef(createWorkspaceDrafts())
+  const drafts = props.drafts ?? localDrafts.current
+  const selection = drafts.personaSources
+  const [, redraw] = useState(0)
+  const mounted = useRef(false)
+  const [confirming, setConfirming] = useState<{ moduleId: string; audience: PersonaAudience; reload?: boolean }>()
+  const refresh = useCallback(() => { if (mounted.current) redraw(value => value + 1) }, [])
+  const editorOf = useCallback((moduleId: string): PersonaEditorDraft => {
+    let editor = drafts.persona.get(moduleId)
+    if (!editor) {
+      const empty = {}
+      editor = { value: empty, saved: empty, revision: '', declared: false, loaded: false, error: '', saving: false }
+      drafts.persona.set(moduleId, editor)
     }
-    editor.refresh = refresh
-    refresh()
-    if (!editor.loaded || (editor.value === editor.saved && !editor.saving)) load()
-    return () => { active.current = null; if (editor.refresh === refresh) editor.refresh = undefined }
-  }, [editor, load])
+    return editor
+  }, [drafts])
+  const loadSources = useCallback(async (): Promise<void> => {
+    if (selection.saving || selection.loading) return
+    const sequence = ++selection.readSequence
+    selection.loading = true
+    selection.error = ''
+    notify(selection)
+    const result = await bridgeCall('personaSources')
+    if (sequence !== selection.readSequence) return
+    selection.loading = false
+    if (result.ok) {
+      const { sources, revision, candidates } = result.value
+      selection.value = {
+        main: selection.value.main !== selection.saved.main ? selection.value.main : sources.main,
+        subagent: selection.value.subagent !== selection.saved.subagent ? selection.value.subagent : sources.subagent,
+      }
+      selection.saved = sources
+      selection.revision = revision
+      selection.candidates = candidates
+      selection.loaded = true
+    } else selection.error = result.message ?? t('persona.sources.loadFailed')
+    notify(selection)
+  }, [selection, t])
+  const saveSources = async (next: PersonaSources, refreshOnly = false): Promise<void> => {
+    if (selection.saving || selection.loading || !selection.loaded) return
+    selection.value = next
+    selection.saving = true
+    selection.error = ''
+    notify(selection)
+    const result = await bridgeCall('personaSources', refreshOnly ? { refreshOnly: true } : { sources: next, expectedRevision: selection.revision })
+    selection.saving = false
+    if (result.ok) {
+      selection.saved = result.value.sources
+      selection.revision = result.value.revision
+      selection.candidates = result.value.candidates
+      selection.publicationPending = result.value.publicationPending === true
+      selection.publicationError = result.value.publicationError
+    } else selection.error = result.message ?? t('persona.sources.saveFailed')
+    notify(selection)
+    if (mounted.current) onNotice(result.ok && !selection.publicationPending ? 'ok' : 'error',
+      selection.error || selection.publicationError || t('persona.sources.saved'))
+  }
+  const loadPersona = useCallback(async (moduleId: string, discard = false): Promise<void> => {
+    const editor = editorOf(moduleId)
+    if (editor.saving || editor.loading || (!discard && JSON.stringify(editor.value) !== JSON.stringify(editor.saved))) return
+    const sequence = (editor.readSequence ?? 0) + 1
+    editor.readSequence = sequence
+    editor.loading = true
+    const readingDraft = editor.value
+    editor.error = ''
+    notify(editor)
+    const result = await bridgeCall('persona', { expectedModuleId: moduleId }, moduleId)
+    if (editor.readSequence !== sequence) return
+    editor.loading = false
+    if (editor.value !== readingDraft) { notify(editor); return }
+    if (result.ok) {
+      editor.value = editor.saved = result.value.persona ?? {}
+      editor.revision = result.value.revision
+      editor.declared = result.value.persona !== null
+      editor.loaded = true
+    } else editor.error = result.message ?? t('persona.notice.loadFailed')
+    notify(editor)
+  }, [editorOf, t])
+  useEffect(() => {
+    mounted.current = true
+    selection.listeners ??= new Set()
+    selection.listeners.add(refresh)
+    void loadSources()
+    return () => { mounted.current = false; selection.listeners?.delete(refresh) }
+  }, [selection, refresh, loadSources])
+  const mainId = selection.value.main ?? props.moduleId
+  const subagentId = selection.value.subagent ?? props.moduleId
+  useEffect(() => {
+    if (!selection.loaded) return
+    const editors = [...new Set([mainId, subagentId])].filter(id => id !== undefined).map(moduleId => {
+      const editor = editorOf(moduleId)
+      editor.listeners ??= new Set()
+      editor.listeners.add(refresh)
+      if (!editor.saving) void loadPersona(moduleId)
+      return editor
+    })
+    return () => { for (const editor of editors) editor.listeners?.delete(refresh) }
+  }, [mainId, subagentId, selection.loaded, editorOf, loadPersona, refresh])
 
-  const patch = (next: Partial<PersonaDraft>): void => {
-    editor.value = { ...editor.value, ...next }
-    setDraft(editor.value)
-    setDirty(true)
+  const patch = (moduleId: string, audience: PersonaAudience, field: keyof PersonaTargetSpec, value: string | boolean | undefined): void => {
+    const editor = editorOf(moduleId)
+    const target = { ...editor.value[audience] }
+    if (value === undefined) delete target[field]
+    else Object.assign(target, { [field]: value })
+    const next = { ...editor.value }
+    if (Object.keys(target).length === 0) delete next[audience]
+    else next[audience] = target
+    editor.value = next
+    notify(editor)
   }
-  const write = async (persona: { prefix: string; suffix?: string; complete?: boolean; includeRuntimeContext?: boolean } | null): Promise<void> => {
-    if (editor.saving || !editor.loaded || props.disabled || loadError) return
-    const submitted = persona === null ? EMPTY_PERSONA : editor.value
+  const write = async (moduleId: string, audience: PersonaAudience, remove = false): Promise<void> => {
+    const editor = editorOf(moduleId)
+    if (editor.saving || !editor.loaded || editor.error || editor.loading) return
+    const target = editor.value[audience]
+    const submitted = { ...editor.saved }
+    if (remove || target === undefined) delete submitted[audience]
+    else submitted[audience] = target
     editor.saving = true
-    setSaving(true)
-    await bridgeCall('persona', { persona, expectedModuleId: props.moduleId }).then((result) => {
-      editor.saving = false
-      if (result.ok) {
-        editor.saved = submitted
-        editor.declared = persona !== null
-        if (persona === null && editor.value === draft) editor.value = EMPTY_PERSONA
+    notify(editor)
+    const result = await bridgeCall('persona', { persona: Object.keys(submitted).length ? submitted : null, expectedModuleId: moduleId, expectedRevision: editor.revision }, moduleId)
+    editor.saving = false
+    if (result.ok) {
+      editor.saved = result.value.persona ?? {}
+      editor.revision = result.value.revision
+      editor.declared = result.value.persona !== null
+      editor.publicationPending = result.value.publicationPending === true
+      editor.publicationError = result.value.publicationError
+      if (editor.value[audience] === target) {
+        editor.value = { ...editor.value }
+        if (editor.saved[audience] === undefined) delete editor.value[audience]
+        else editor.value[audience] = editor.saved[audience]
       }
-      editor.refresh?.()
-      if (active.current !== editor) return
-      setSaving(false)
-      if (result.ok) {
-        setDeclared(editor.declared)
-        setDraft(editor.value)
-        setDirty(editor.value !== editor.saved)
-        setConfirmingRemove(false)
-        onNotice('ok', persona === null ? t('persona.notice.removed') : t('persona.notice.saved'))
-      } else {
-        onNotice('error', result.message ?? t('persona.notice.saveFailed'))
-        if (persona === null) throw new Error(result.message ?? t('persona.notice.saveFailed'))
-      }
-    })
+    }
+    notify(editor)
+    if (mounted.current) onNotice(result.ok && !editor.publicationPending ? 'ok' : 'error',
+      result.ok ? editor.publicationError ?? t(remove ? 'persona.notice.removed' : 'persona.notice.saved') : result.message ?? t('persona.notice.saveFailed'))
+    if (!result.ok && remove) throw new Error(result.message ?? t('persona.notice.saveFailed'))
   }
-  const save = (): void => {
-    const untouched = draft.prefix === '' && draft.suffix === '' && !draft.complete && draft.includeRuntimeContext
-    void write(!declared && untouched ? null : {
-      prefix: draft.prefix,
-      ...(draft.suffix.length > 0 ? { suffix: draft.suffix } : {}),
-      ...(draft.complete ? { complete: true } : {}),
-      ...(draft.includeRuntimeContext ? {} : { includeRuntimeContext: false }),
-    })
+  const retryPublication = async (moduleId: string): Promise<void> => {
+    const editor = editorOf(moduleId)
+    if (editor.saving || !editor.publicationPending) return
+    editor.saving = true
+    notify(editor)
+    const result = await bridgeCall('persona', { expectedModuleId: moduleId, refreshOnly: true }, moduleId)
+    editor.saving = false
+    editor.publicationPending = !result.ok || result.value.publicationPending === true
+    editor.publicationError = result.ok ? result.value.publicationError : result.message ?? t('persona.notice.saveFailed')
+    notify(editor)
+    if (mounted.current) onNotice(editor.publicationPending ? 'error' : 'ok', editor.publicationError ?? t('persona.notice.saved'))
   }
-  const busy = props.disabled === true || saving || !loaded || loadError.length > 0
+  const sourcesDirty = selection.value.main !== selection.saved.main || selection.value.subagent !== selection.saved.subagent
   return (
     <EngineModuleCard
       name={t('persona.name')}
-      meta={declared ? t('persona.meta.declared') : t('persona.meta.inherited')}
+      meta={t('persona.sources.meta')}
       layer="system-section"
       embedded={props.embedded}
       defaultExpanded={props.drafts?.expanded.get(`${props.moduleId ?? ''}:persona`)}
       onExpandedChange={(value) => props.drafts?.expanded.set(`${props.moduleId ?? ''}:persona`, value)}
     >
-      {loadError && <p className={styles.noticeError} role="alert">{loadError} <Button size="sm" onClick={load}>{t('workspace.retry')}</Button></p>}
-      {dirty && <p className={styles.configFieldHint} role="status">{t('card.unsaved')}</p>}
-      {confirmingRemove && <ConfirmDialog title={t('persona.remove')} description={t('persona.removeDescription')}
-        confirmLabel={t('persona.remove')} cancelLabel={t('toolEditor.cancel')}
-        onConfirm={() => write(null)} onCancel={() => setConfirmingRemove(false)} />}
-      <span className={styles.configFieldStack}>
-        <span className={styles.configFieldLabel}>{t('persona.prefix.label')}</span>
-        <textarea
-          className={styles.configTextarea}
-          aria-label={t('persona.prefix.aria')}
-          value={draft.prefix}
-          spellCheck={false}
-          readOnly={props.disabled || !loaded || !!loadError}
-          onChange={(event) => patch({ prefix: event.target.value })}
-        />
-        <span className={styles.configFieldHint}>{t('persona.prefix.hint')}</span>
-      </span>
-      <span className={styles.configFieldStack}>
-        <span className={styles.configFieldLabel}>{t('persona.suffix.label')}</span>
-        <textarea
-          className={styles.configTextarea}
-          aria-label={t('persona.suffix.aria')}
-          value={draft.suffix}
-          spellCheck={false}
-          readOnly={props.disabled || !loaded || !!loadError}
-          onChange={(event) => patch({ suffix: event.target.value })}
-        />
-        <span className={styles.configFieldHint}>{t('persona.suffix.hint')}</span>
-      </span>
-      <ToggleRow
-        id="persona-complete"
-        label={t('persona.complete.label')}
-        hint={t('persona.complete.hint')}
-        checked={draft.complete}
-        disabled={props.disabled || !loaded || !!loadError}
-        onChange={(next) => patch({ complete: next })}
-      />
-      <ToggleRow
-        id="persona-runtime-context"
-        label={t('persona.runtimeContext.label')}
-        hint={t('persona.runtimeContext.hint')}
-        checked={draft.includeRuntimeContext}
-        disabled={props.disabled || !loaded || !!loadError}
-        onChange={(next) => patch({ includeRuntimeContext: next })}
-      />
-      <div className={styles.configActions}>
-        <Button size="sm" disabled={busy || !dirty} onClick={save}>{saving ? t('persona.saving') : t('persona.save')}</Button>
-        {declared && (
-          <Button shape="pill" variant="outline" data-danger disabled={busy} onClick={() => setConfirmingRemove(true)}>{t('persona.remove')}</Button>
-        )}
-      </div>
+      {selection.error && <p className={styles.noticeError} role="alert">{selection.error} <Button size="sm" disabled={selection.loading || selection.saving} onClick={() => { void loadSources() }}>{t('persona.sources.reload')}</Button></p>}
+      {selection.publicationPending && <p className={styles.noticeError} role="alert">{selection.publicationError ?? t('persona.sources.publicationPending')} <Button size="sm" disabled={selection.saving || selection.loading} onClick={() => { void saveSources(selection.value, true) }}>{t('workspace.retry')}</Button></p>}
+      {sourcesDirty && <p className={styles.configFieldHint} role="status">{t('persona.sources.unsaved')} <Button size="sm" disabled={selection.saving || selection.loading || !selection.loaded} onClick={() => { void saveSources(selection.value) }}>{t('workspace.retry')}</Button></p>}
+      {confirming && <ConfirmDialog title={t(confirming.reload ? 'persona.reload' : 'persona.remove')}
+        description={t(confirming.reload ? 'persona.sources.reloadDescription' : 'persona.sources.removeDescription', { module: confirming.moduleId, audience: t(`persona.${confirming.audience}`) })}
+        confirmLabel={t(confirming.reload ? 'persona.reload' : 'persona.remove')} cancelLabel={t('toolEditor.cancel')}
+        onConfirm={() => confirming.reload ? loadPersona(confirming.moduleId, true) : write(confirming.moduleId, confirming.audience, true)}
+        onCancel={() => setConfirming(undefined)} />}
+      {(['main', 'subagent'] as const).map(audience => {
+        const moduleId = selection.value[audience] ?? props.moduleId
+        const editor = moduleId ? editorOf(moduleId) : undefined
+        const target = editor?.value[audience]
+        const dirty = JSON.stringify(target) !== JSON.stringify(editor?.saved[audience])
+        const canEdit = !!moduleId && (selection.value[audience] !== null || props.disabled !== true)
+        const busy = !canEdit || !selection.loaded || !editor?.loaded || !!editor.error || editor.loading
+        const options = [{ value: '', label: t('persona.sources.official') }, ...selection.candidates.map(candidate => ({ value: candidate.id, label: `${candidate.name} · ${candidate.id}` }))]
+        return <div key={audience} role="group" aria-label={t(`persona.${audience}`)}>
+          <p className={styles.configFieldLabel}>{t(`persona.${audience}`)}</p>
+          <MenuSelect value={selection.value[audience] ?? ''} options={options}
+            ariaLabel={t('persona.sources.label', { audience: t(`persona.${audience}`) })}
+            disabled={selection.saving || selection.loading || !selection.loaded}
+            onChange={value => { void saveSources({ ...selection.value, [audience]: value || null }) }} />
+          <p className={styles.configFieldHint}>{moduleId ? t(selection.value[audience] === null ? 'persona.sources.createHint' : 'persona.sources.editHint', { module: moduleId }) : t('persona.sources.chooseModule')}</p>
+          {editor?.error && <p className={styles.noticeError} role="alert">{editor.error}</p>}
+          {editor?.publicationPending && <p className={styles.noticeError} role="alert">{editor.publicationError ?? t('persona.sources.publicationPending')} <Button size="sm" disabled={editor.saving} onClick={() => { if (moduleId) void retryPublication(moduleId) }}>{t('workspace.retry')}</Button></p>}
+          {dirty && <p className={styles.configFieldHint} role="status">{t('card.unsaved')}</p>}
+          {(['prefix', 'suffix'] as const).map(field => (
+            <div key={field} className={styles.configFieldStack}>
+              <span className={styles.configFieldLabel}>{t(`persona.${field}.label`)}</span>
+              <MenuSelect compact value={target?.[field] === undefined ? 'inherit' : 'custom'} disabled={busy}
+                ariaLabel={`${t(`persona.${audience}`)} ${t(`persona.${field}.label`)}`}
+                options={[{ value: 'inherit', label: t('persona.inherit') }, { value: 'custom', label: t('persona.custom') }]}
+                onChange={value => { if (moduleId) patch(moduleId, audience, field, value === 'inherit' ? undefined : '') }} />
+              {target?.[field] !== undefined && <textarea className={styles.configTextarea}
+                aria-label={`${t(`persona.${audience}`)} ${t(`persona.${field}.aria`)}`} spellCheck={false}
+                value={target[field]} readOnly={busy}
+                onChange={event => { if (moduleId) patch(moduleId, audience, field, event.target.value) }} />}
+              <span className={styles.configFieldHint}>{t(`persona.${field}.hint`)}</span>
+            </div>
+          ))}
+          {(['complete', 'includeRuntimeContext'] as const).map(field => {
+            const key = field === 'complete' ? 'complete' : 'runtimeContext'
+            return <div key={field} className={styles.configFieldStack}>
+              <span className={styles.configFieldLabel}>{t(`persona.${key}.label`)}</span>
+              <MenuSelect compact disabled={busy} value={target?.[field] === undefined ? 'inherit' : String(target?.[field])}
+                ariaLabel={`${t(`persona.${audience}`)} ${t(`persona.${key}.label`)}`}
+                options={[{ value: 'inherit', label: t('persona.inherit') }, { value: 'true', label: t('persona.on') }, { value: 'false', label: t('persona.off') }]}
+                onChange={value => { if (moduleId) patch(moduleId, audience, field, value === 'inherit' ? undefined : value === 'true') }} />
+              <span className={styles.configFieldHint}>{t(`persona.${key}.hint`)}</span>
+            </div>
+          })}
+          <div className={styles.configActions}>
+            <Button size="sm" disabled={busy || editor?.saving || !dirty} onClick={() => { if (moduleId) void write(moduleId, audience) }}>{editor?.saving ? t('persona.saving') : t('persona.save')}</Button>
+            <Button size="sm" variant="outline" disabled={!moduleId || editor?.saving || editor?.loading} onClick={() => {
+              if (!moduleId || !editor) return
+              if (JSON.stringify(editor.value) !== JSON.stringify(editor.saved)) setConfirming({ moduleId, audience, reload: true })
+              else void loadPersona(moduleId)
+            }}>{t('persona.reload')}</Button>
+            {editor?.saved[audience] && <Button shape="pill" variant="outline" data-danger disabled={busy || editor.saving} onClick={() => { if (moduleId) setConfirming({ moduleId, audience }) }}>{t('persona.remove')}</Button>}
+          </div>
+        </div>
+      })}
     </EngineModuleCard>
   )
 }

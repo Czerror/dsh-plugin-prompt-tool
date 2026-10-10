@@ -232,9 +232,10 @@ test('技能查找按 scope 隔离候选，scope 释放后候选消失', async (
 // —— 内置工具模块挂载（原 tool-modules.test.mjs） ——
 
 const modules = [
-  ["character-tools", "pt-character-tools"],
-  ["world-book-tools", "pt-world-book-tools"],
-  ["session-var-tools", "pt-session-var-tools"],
+  ["module-import-tools", "pt-module-import-tools"],
+  ["module-rule-tools", "pt-module-rule-tools"],
+  ["module-memory-tools", "pt-module-memory-tools"],
+  ["module-variable-tools", "pt-module-variable-tools"],
 ]
 
 /** tool-modules 组专用桩 ctx（与上面的 makeCtx 同名不同责，故分开命名）。 */

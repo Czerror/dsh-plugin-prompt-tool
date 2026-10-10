@@ -7,7 +7,7 @@ import { TextInput } from '../../ui/TextInput.tsx'
 import { HintTooltip } from '../../ui/HintTooltip.tsx'
 import type { PromptToolLocaleKey, PromptToolTranslate } from '../../locales.ts'
 import type { EngineMeta, PromptConfigDraft } from '../../prompt-tool-types.ts'
-import { MatchFields, NumberField, OptionField, StrategyParamsFields, VariablesEditor } from './PromptConfigFields.tsx'
+import { MatchFields, NumberField, OptionField, StrategyParamsFields } from './PromptConfigFields.tsx'
 import { autoResizeTextarea } from './textarea-resize.ts'
 import { PromptConfigNavigation } from './PromptConfigNavigation.tsx'
 import { instructionFileIdOf } from '../../data/prompt-config-content.ts'
@@ -97,7 +97,7 @@ export function PromptConfigForm(props: {
   // 官方装配刻度（B8 W2）：只有把 order 原样交给官方 `section()` / `context()` 的两层才有刻度。
   // 其余层只给说明——展示档位数值会让人以为可与官方装配位置比较。
   const layerShowsOfficialOrder = OFFICIAL_ORDER_LAYERS.some((layer) => layer === (config.layer ?? ''))
-  const worldBookPriority = config.strategy === 'world-book' && config.params?.stWorldBook !== undefined
+  const worldBookPriority = config.strategy === 'context-activation' && config.params?.activation !== undefined
   const officialSegments = config.layer === 'system-section'
     ? meta.officialOrders?.sections
     : config.layer === 'runtime-context' ? meta.officialOrders?.contexts : undefined
@@ -164,7 +164,12 @@ export function PromptConfigForm(props: {
       {!locked && <section className={styles.configSection} data-config-panel="execution" aria-label={t('form.navigation.execution')}>
       <div className={styles.executionFields}>
       <div className={styles.configGrid}>
-        <OptionField t={t} className={styles.fieldSpan4} label={t('form.strategy.label')} hint={t('form.strategy.hint')} value={strategy} options={strategies} fallback="static" labelKeys={STRATEGY_LABEL_KEYS} disabled={locked || disabled} onChange={(value) => onPatch({ strategy: value, fill: value === 'placeholder' ? (config.fill ?? 'env-facts') : undefined })} />
+        <OptionField t={t} className={styles.fieldSpan4} label={t('form.strategy.label')} hint={t('form.strategy.hint')} value={strategy} options={strategies} fallback="static" labelKeys={STRATEGY_LABEL_KEYS} disabled={locked || disabled} onChange={(value) => {
+          const params = { ...config.params }
+          if (value === 'context-activation') params.activation ??= { scan: 'batch' }
+          else delete params.activation
+          onPatch({ strategy: value, params, fill: value === 'placeholder' ? (config.fill ?? 'env-facts') : undefined })
+        }} />
         <OptionField t={t} className={styles.fieldSpan4} label={t('form.kind.label')} hint={t('form.kind.hint')} value={config.configKind} options={meta.slotKinds} fallback="ordered" labelKeys={SLOT_KIND_LABEL_KEYS} disabled={locked || disabled} onChange={(value) => onPatch({ configKind: value })} />
         {policy.merge && <OptionField t={t} className={styles.fieldSpan4} label={t('form.merge.label')} hint={t('form.merge.hint')} value={config.mergeMode} options={meta.mergeModes} fallback="separate" labelKeys={MERGE_MODE_LABEL_KEYS} disabled={locked || disabled} onChange={(value) => onPatch({ mergeMode: value })} />}
       </div>
@@ -222,7 +227,6 @@ export function PromptConfigForm(props: {
           }}
         />
       </FormField>
-      {!locked && contract?.variables !== false && <VariablesEditor t={t} value={config.variables} disabled={disabled} onChange={(value) => onPatch({ variables: value })} />}
       </>}
       {!locked && <h4 className={styles.configSectionTitle}>{t('form.advanced.label')}</h4>}
         <div className={styles.configGrid}>

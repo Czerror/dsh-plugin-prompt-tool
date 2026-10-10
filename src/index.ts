@@ -6,10 +6,13 @@ import { scheduleWebSurfaceRepair } from './web-surface.ts'
 import { detectModels, invalidateModelCatalog, listAdvertisedModels } from './runtime/models.ts'
 import type { ModelDetection } from './runtime/models.ts'
 import { registerSettingsBridge } from './runtime/settings-bridge.ts'
-import { registerCharacterTools } from './runtime/character-tools.ts'
-import { registerWorldBookTools } from './runtime/world-book-tools.ts'
-import { registerSessionVarTools } from './runtime/session-var-tools.ts'
+import { registerModuleImportTools } from './runtime/module-import-tools.ts'
+import { registerModuleRuleTools } from './runtime/module-rule-tools.ts'
+import { registerModuleMemoryTools } from './runtime/module-memory-tools.ts'
+import { registerModuleVariableTools } from './runtime/module-variable-tools.ts'
 import { installPreStepCoordinator } from './runtime/pre-step-coordinator.ts'
+import { createModuleVariableAdapter } from './runtime/module-variable-adapter.ts'
+import { PERSONA_REGISTRATION_SERVICE } from './runtime/persona-registration.ts'
 import { registerTuiCommand } from './runtime/tui.ts'
 import { ensureModuleReady } from './host/write-module.ts'
 import {
@@ -24,6 +27,7 @@ import {
 import type { PromptSettings, RuntimeOptions } from './config.ts'
 import { MODULES_DIR } from './host/paths.ts'
 import { enabledModuleIds, resolveEditDir } from './host/config-store.ts'
+import { selectedPersonaModules } from './host/persona-selection.ts'
 import { DEFAULT_MODULE_ID } from './shared/module-ids.ts'
 import { ensureSkillSeed } from './host/skills-actions.ts'
 import { createSkillsRuntime } from './host/skills-runtime.ts'
@@ -181,14 +185,17 @@ registerTuiCommand(
     target: (exec) => resolveModuleToolTarget(exec, MODULES_DIR, (sessionId) => assembly?.moduleIds(sessionId) ?? []),
     rebuild: (id) => refreshModuleRuntime(id),
   }
-  ctx.provide('pt-character-tools', {
-    mount: (scopeCtx: Context): (() => void) => registerCharacterTools(scopeCtx, moduleToolHost),
+  ctx.provide('pt-module-import-tools', {
+    mount: (scopeCtx: Context): (() => void) => registerModuleImportTools(scopeCtx, { ...moduleToolHost, rebuild: async id => { await assembly?.refresh(id) } }),
   })
-  ctx.provide('pt-world-book-tools', {
-    mount: (scopeCtx: Context): (() => void) => registerWorldBookTools(scopeCtx, moduleToolHost),
+  ctx.provide('pt-module-rule-tools', {
+    mount: (scopeCtx: Context): (() => void) => registerModuleRuleTools(scopeCtx, moduleToolHost),
   })
-  ctx.provide('pt-session-var-tools', {
-    mount: (scopeCtx: Context): (() => void) => registerSessionVarTools(scopeCtx),
+  ctx.provide('pt-module-memory-tools', {
+    mount: (scopeCtx: Context): (() => void) => registerModuleMemoryTools(scopeCtx, moduleToolHost),
+  })
+  ctx.provide('pt-module-variable-tools', {
+    mount: (scopeCtx: Context): (() => void) => registerModuleVariableTools(scopeCtx, moduleToolHost),
   })
 
   // 技能按需发现：`skill_search` / `skill_load` 注册到宿主侧（不是模块路径），
@@ -214,12 +221,21 @@ registerTuiCommand(
   installPreStepCoordinator(ctx)
 
   // 私有工具服务与协调器就绪后，再按官方 Agent 生命周期挂载既有引擎。
+  const personaModules = () => runtime.modulesEnabled ? selectedPersonaModules(MODULES_DIR) : []
+  ctx.inject([PERSONA_REGISTRATION_SERVICE], personaCtx => {
+    personaCtx.effect(() => personaCtx.promptToolPersona.configure({
+      modules: personaModules,
+      variableStore: createModuleVariableAdapter(MODULES_DIR),
+      warn: message => warn(ctx, message),
+    }), 'prompt-tool persona source')
+  })
   ctx.inject(['agents'], (actx: Context) => {
     const mounted = createAgentAssembly(actx, {
       moduleRoot: MODULES_DIR,
       enabledModules: () => runtime.modulesEnabled
         ? enabledModuleIds(MODULES_DIR).filter((id) => moduleDirExists(MODULES_DIR, id))
         : [],
+      personaModules,
       warn: (message) => warn(ctx, message),
     })
     assembly = mounted
@@ -269,7 +285,7 @@ export type {
   PreStepSource,
 } from './runtime/pre-step-coordinator.ts'
 export { mergeInstructionCards } from './runtime/settings-bridge.ts'
-export { convertStToModule, convertStToModuleWithReport, mergeStModules, mergeStModulesWithReport, processStText, stModuleId } from './host/sillytavern.ts'
+export { convertStToModule, convertStToModuleWithReport, mergeStModules, mergeStModulesWithReport, stModuleId } from './host/sillytavern.ts'
 export { applyModuleConfigs, appendModuleCapabilities, buildModuleConfigsFromParams, removeModuleCapabilityDeclaration, saveModuleParams, saveModulePersona, withModuleDefinition } from './host/manifest.ts'
 export { createModuleCapability, loadModuleSpec, removeModuleCapability, renderComposition, resolveModuleFacts, resolveModuleParams } from './host/manifest.ts'
 export { ENGINE_PARAM_KEYS, WRITER_PARAM_KEYS, validateEngineParamValues } from './shared/engine-params.ts'
@@ -285,7 +301,6 @@ export {
   resolveModuleDir,
   userModulesDir,
 } from './host/manifest.ts'
-export { buildWorldBookEntry } from './host/worldbook.ts'
 export { expandModuleSource, exportModulePackage, moduleImportPreview, installModulePackage } from './host/module-package.ts'
 export { ensureWebSurface, resolveProfileDir, scheduleWebSurfaceRepair } from './web-surface.ts'
 export { USER_SKILLS_DIR } from './host/paths.ts'
@@ -293,17 +308,17 @@ export { importSkillsPackage } from './host/skills-import.ts'
 export { detectModels, invalidateModelCatalog, listAdvertisedModels, peekModelCatalog, resolveSubagentStartOptions } from './runtime/models.ts'
 export type { PluginSubagentSeam } from './runtime/models.ts'
 export { registerSettingsBridge } from './runtime/settings-bridge.ts'
-export { registerCharacterTools } from './runtime/character-tools.ts'
-export { registerWorldBookTools } from './runtime/world-book-tools.ts'
+export { registerModuleImportTools } from './runtime/module-import-tools.ts'
+export { registerModuleRuleTools } from './runtime/module-rule-tools.ts'
+export { registerModuleMemoryTools } from './runtime/module-memory-tools.ts'
+export { registerModuleVariableTools } from './runtime/module-variable-tools.ts'
+export { appendModuleMemory, readModuleMemory } from './host/module-memory.ts'
 export {
-  appendModuleMemory,
-  readModuleMemory,
   mergeModuleIntoModule,
   removeMergedModule,
   importCharacterCard,
   importCharacterCardFile,
 } from './host/characters.ts'
-export { deleteWorldBookEntry, listWorldBookEntries, upsertWorldBookEntry } from './host/worldbook.ts'
 export { loadPromptTemplates, loadToolTemplates } from './host/templates.ts'
 export type { PromptConfigTemplate, ToolTemplate } from './host/templates.ts'
 export { registerTuiCommand } from './runtime/tui.ts'
@@ -326,8 +341,6 @@ export { ModuleLayerSettingsError, readModuleLayerSettings } from './host/module
 export type { ModuleWriterParams } from './shared/engine-params.ts'
 export type { ModuleSummary } from './shared/bridge-contract.ts'
 export type { ModuleExportRequest, ModuleExportResult } from './shared/asset-transfer.ts'
-export { MODULE_CAPABILITIES as ENGINE_CAPABILITIES, moduleCapability as engineCapability, isModuleCapabilityPresent as isEngineCapabilityPresent } from './shared/engine-capabilities.ts'
-export type { ModuleCapability as EngineCapability } from './shared/engine-capabilities.ts'
 export { parseFrontmatter } from './runtime/skills-parse.ts'
 export type { SkillFrontmatter } from './runtime/skills-parse.ts'
 export { DEFAULT_MODULE_ID } from './shared/module-ids.ts'

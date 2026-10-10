@@ -1,0 +1,5 @@
+# module: module-rule-tools
+# source: engine/compositions/source/local/module-rule-tools.yml
+
+- id: module-rule-tools
+  name: ./engine/module-rule-tools.mjs

@@ -10,7 +10,7 @@ const home = mkdtempSync(join(process.cwd(), 'pt-contract-'))
 process.env.DSH_HOME = home
 const { BRIDGE_ENDPOINTS, SETTINGS_BRIDGE_PREFIX } = await import('../../src/shared/bridge-contract.ts')
 const { registerSettingsBridge } = await import('../../src/runtime/settings-bridge.ts')
-const { ENGINE_CAPABILITIES, ENGINE_EDITOR_GROUP_MAP, ENGINE_LAYER_ORDER } = await import('../../src/shared/engine-capabilities.ts')
+const { MODULE_CAPABILITIES, ENGINE_EDITOR_GROUP_MAP, INJECTION_POINT_ORDER } = await import('../../src/shared/engine-capabilities.ts')
 const { getEngineMeta, LAYER_ORDER } = await import('../../engine/schema.mjs')
 const bridgeDisposers = []
 test.after(() => {
@@ -144,11 +144,10 @@ test('契约：/bootstrap 聚合 meta + overrides + variables + promptConfigs �
   assert.equal(res.status, 200)
   const payload = JSON.parse(res.body)
   assert.equal(payload.ok, true)
-  // 客户端 load() 消费路径：meta.meta / overrides.overrides / variables.variables /
-  // promptConfigs.promptConfigs 全部存在（空值兜底形状，非 undefined）。
+  // 没有编辑目标时仍返回已知的设置/技能事实，不捏造模块变量快照或版本。
   assert.ok(payload.meta !== undefined && payload.meta.meta !== undefined)
   assert.deepEqual(payload.overrides.overrides, {}, '无激活模块时参数覆盖是空表（对象），不是数组或 undefined')
-  assert.ok(typeof payload.variables.variables === 'object' && typeof payload.variables.enabled === 'boolean')
+  assert.equal(payload.variables, undefined)
   assert.ok(Array.isArray(payload.promptConfigs.promptConfigs))
   // 技能事实在同一聚合响应里下发：清单 + 引用目录 + 用户技能根。
   // 调用策略不单独下发——它已经逐条表达在 skillCatalog 条目的 modelInvocable / userInvocable 里。
@@ -167,7 +166,7 @@ test('契约：/meta 与 /bootstrap 同源下发 layerOrder 与 editorGroups，�
     'tool-pipeline', 'turn-stop', 'subagent-start', 'subagent-end',
   ])
   assert.deepEqual([...LAYER_ORDER], engineMeta.layerOrder, 'LAYER_ORDER 必须是九层固定顺序')
-  assert.deepEqual([...ENGINE_LAYER_ORDER], engineMeta.layerOrder, '前端退化默认必须与引擎层序同源')
+  assert.deepEqual([...INJECTION_POINT_ORDER], engineMeta.layerOrder, '前端退化默认必须与引擎层序同源')
   assert.deepEqual([...engineMeta.layers], [...LAYER_ORDER].sort(), 'layers 仍是排序后的合法集合（旧消费方不变）')
   // 两份层清单：九层给视图筛选与规则级 layer，八层（去 tool-pipeline）才可注入。
   assert.deepEqual([...engineMeta.injectionLayers], [...LAYER_ORDER].filter((layer) => layer !== 'tool-pipeline'))
@@ -183,7 +182,7 @@ test('契约：/meta 与 /bootstrap 同源下发 layerOrder 与 editorGroups，�
   assert.ok(Array.isArray(meta.editorGroups) && meta.editorGroups.length > 0)
   // 同源：host 下发的编辑组与共享契约逐条一致（含能力组）。
   assert.deepEqual(meta.editorGroups.map(({ id }) => id), ENGINE_EDITOR_GROUP_MAP.map(({ id }) => id))
-  const capabilityIds = ENGINE_CAPABILITIES.map(({ id }) => id)
+  const capabilityIds = MODULE_CAPABILITIES.map(({ id }) => id)
   const groupIds = meta.editorGroups.map(({ id }) => id)
   assert.equal(new Set(groupIds).size, groupIds.length, '编辑组 id 必须唯一（能力组与专用组不重复登记）')
   for (const id of capabilityIds) assert.ok(groupIds.includes(id), `能力 ${id} 必须有主归属`)

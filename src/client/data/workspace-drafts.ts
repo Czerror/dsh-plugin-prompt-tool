@@ -1,6 +1,8 @@
 /** 工作台实例期的业务草稿。每类数据有明确 owner，切页只卸载视图，不丢原始输入。 */
 import { rulesDirty, type RulesDraft } from './rule-drafts.ts'
 import type { SkillContentSnapshot } from '../../shared/skills.ts'
+import type { PersonaSources, PersonaSourcesSnapshot, PersonaSpec } from '../../shared/persona-section.ts'
+import { variablesDirty, type VariablesDraft } from './module-variables.ts'
 
 export interface SkillEditorDraft {
   saved?: SkillContentSnapshot
@@ -17,21 +19,36 @@ export interface FieldDraft {
   error: string
 }
 
-export interface PersonaDraft {
-  prefix: string
-  suffix: string
-  complete: boolean
-  includeRuntimeContext: boolean
-}
+export type PersonaDraft = PersonaSpec
 
 export interface PersonaEditorDraft {
-  refresh?: () => void
+  listeners?: Set<() => void>
+  loading?: boolean
+  readSequence?: number
   value: PersonaDraft
   saved: PersonaDraft
+  revision: string
   declared: boolean
   loaded: boolean
   error: string
   saving: boolean
+  publicationPending?: boolean
+  publicationError?: string
+}
+
+export interface PersonaSourcesEditorDraft {
+  listeners?: Set<() => void>
+  value: PersonaSources
+  saved: PersonaSources
+  revision: string | null
+  candidates: PersonaSourcesSnapshot['candidates']
+  loaded: boolean
+  loading: boolean
+  saving: boolean
+  error: string
+  readSequence: number
+  publicationPending?: boolean
+  publicationError?: string
 }
 
 export interface ToolsEditorDraft {
@@ -69,13 +86,17 @@ export interface WorkspaceDrafts {
   skills: Map<string, SkillEditorDraft>
   tools: Map<string, ToolsEditorDraft>
   persona: Map<string, PersonaEditorDraft>
+  personaSources: PersonaSourcesEditorDraft
+  variables: Map<string, VariablesDraft>
   policies: Map<string, PolicyEditorDraft>
   expanded: Map<string, boolean>
   fields: Map<string, FieldDraft>
 }
 
 export function createWorkspaceDrafts(): WorkspaceDrafts {
-  return { rules: new Map(), skills: new Map(), tools: new Map(), persona: new Map(), policies: new Map(), fields: new Map(), expanded: new Map() }
+  return { rules: new Map(), skills: new Map(), tools: new Map(), persona: new Map(),
+    personaSources: { value: { main: null, subagent: null }, saved: { main: null, subagent: null }, revision: null, candidates: [], loaded: false, loading: false, saving: false, error: '', readSequence: 0 },
+    variables: new Map(), policies: new Map(), fields: new Map(), expanded: new Map() }
 }
 
 /** 切换模块前阻止无声丢弃局部草稿；用户回对应页面处理，不替其隐式落盘。 */
@@ -88,6 +109,7 @@ export function hasWorkspaceDrafts(drafts: WorkspaceDrafts, moduleId: string): b
     || (tools !== undefined && (tools.saving || JSON.stringify(tools.tools) !== JSON.stringify(tools.saved)
     || [...tools.fields.values()].some((field) => field.text !== field.source || field.error.length > 0)))
     || (persona !== undefined && (persona.saving || JSON.stringify(persona.value) !== JSON.stringify(persona.saved)))
+    || [...drafts.variables].some(([key, draft]) => key.startsWith(`${moduleId}:`) && variablesDirty(draft))
     || (policy !== undefined && (policy.saving || JSON.stringify(policy.draft) !== JSON.stringify(policy.saved)))
     || [...drafts.fields].some(([key, field]) => key.startsWith(`${moduleId}:`) && (field.text !== field.source || field.error.length > 0))
 }

@@ -13,8 +13,8 @@ import {
   sessionState,
 } from './shared.mjs'
 import { INJECTION_LAYERS, KNOWN_STRATEGIES, SESSION_VARIABLES_DISABLED } from './schema.mjs'
-import { interpolateVariables, stripUnresolvedRefs, RUNTIME_FACTS, runtimeFactValue } from './interpolate.mjs'
-import { getSessionVar, sessionVarsSnapshot } from './session-vars.mjs'
+import { interpolateVariables, stripUnresolvedRefs, RUNTIME_FACTS, runtimeFactValue, isReservedInterpolationName } from './interpolate.mjs'
+import { renderTemplate } from './template-frame.mjs'
 import { conditionHit, lastAssistantText, subagentTextOf } from './condition.mjs'
 import { compareConfigSequence, compareTextPlacement } from './order.mjs'
 import { ruleFrame, actionMatches } from './conditions/evaluation.mjs'
@@ -31,11 +31,14 @@ const subagentEndDeliveries = new WeakMap()
  *  keep=官方变量通道按 assembly 求值的名字，静态 pass 命中即原样保留引用。 */
 function configText(config, registries, warnOnce, context) {
   const registry = registries.get(config)
-  if (typeof config.renderSt === 'function') {
-    return officialChannelText(config.renderSt(context?.agent, [], warnOnce, context), `${config.layer} ${config.id}`, registry, warnOnce)
+  if (config.params?.templateEvaluation === true) {
+    try { return officialChannelText(renderTemplate(config, context, { enabled: config[SESSION_VARIABLES_DISABLED] !== true, warn: warnOnce }), `${config.layer} ${config.id}`, registry, warnOnce) }
+    catch (error) { warnOnce(`${name}: template ${config.id} failed: ${String(error?.message ?? error)}`); return '' }
   }
+  const variables = config[SESSION_VARIABLES_DISABLED] === true ? {} : config.texts.some(text => text.includes('{{'))
+    ? config.variableStore?.read(config.sourceModuleId).effective ?? config.variables : config.variables
   const text = config.texts
-    .map((item, index) => interpolateVariables(item, config.variables, context?.agent?.session, registry?.protect, `${config.id}#${index}`))
+    .map((item, index) => interpolateVariables(item, variables, context?.agent?.session, registry?.protect, `${config.id}#${index}`))
     .filter((item) => item.length > 0)
     .join('\n\n')
   return officialChannelText(text, `${config.layer} ${config.id}`, registry, warnOnce)
@@ -74,7 +77,8 @@ function registerOfficialVariables(ctx, configs, warnOnce, keep) {
   const reserved = new Set()
   const facts = new Set()
   for (const config of configs) {
-    if (config.params?.stMacros === true) continue
+    // 持久值在各正文 provider 被调用时读取，使后卡看到前卡刚提交的变量。
+    if (config.params?.templateEvaluation === true || config.variableStore !== undefined) continue
     const referenced = new Set()
     for (const text of config.texts) {
       for (const match of String(text).matchAll(NAME_REFERENCE_RE)) referenced.add(match[1])
@@ -91,14 +95,14 @@ function registerOfficialVariables(ctx, configs, warnOnce, keep) {
   for (const [config, referenced] of references) {
     const registry = registries.get(config)
     for (const name of referenced) {
-      const declared = Object.hasOwn(config.variables, name)
+      const declared = Object.hasOwn(config.variables, name) || config.variableStore !== undefined && !isReservedInterpolationName(name)
       const isFact = !declared && RUNTIME_FACTS.has(name.toLowerCase())
       if (!declared && !isFact) continue
       let official = isFact ? name.toLowerCase() : OFFICIAL_NAME_RE.test(name) ? name : officialAliasOf(name)
       try {
         // 内容绑定包含局部命名空间：会话覆盖也可以再引用其中的变量。
         // 纯事实不属于任何配置的内容命名空间，所有大小写变体复用规范名。
-        const signature = isFact ? `fact:${official}` : JSON.stringify([name, Object.entries(config.variables).sort(([a], [b]) => a.localeCompare(b))])
+        const signature = isFact ? `fact:${official}` : JSON.stringify([config.sourceModuleId, name, config.variableStore === undefined ? Object.entries(config.variables).sort(([a], [b]) => a.localeCompare(b)) : null])
         let binding = bindings.get(signature)
         if (binding === undefined) {
           if (usedNames.has(official) || (!isFact && facts.has(official)) || (official !== name && !isFact && reserved.has(official))) {
@@ -108,15 +112,13 @@ function registerOfficialVariables(ctx, configs, warnOnce, keep) {
           }
           usedNames.add(official)
           const source = isFact ? name.toLowerCase() : name
-          const declaredValue = declared ? String(config.variables[name] ?? '') : undefined
           const variablesDisabled = config[SESSION_VARIABLES_DISABLED] === true
           keep(systemPrompt.variable(official, (context) => {
             const session = context?.agent?.session
-            // 停用模板变量的模块连会话变量一起停（与 pre-step 通道同判据）；ST 模板宏帧不在此列。
-            const override = variablesDisabled ? undefined : getSessionVar(session, source)
-            const value = override !== undefined ? String(override) : declaredValue ?? runtimeFactValue(source, session) ?? ''
+            const variables = variablesDisabled ? {} : config.variableStore?.read(config.sourceModuleId).effective ?? config.variables
+            const value = Object.hasOwn(variables, source) ? String(variables[source]) : runtimeFactValue(source, session) ?? ''
             // 变量值内的 {{pick}} 同样要有位置身份（配置 id + 声明名），否则同会话下多个变量的首个 pick 撞值。
-            const expanded = interpolateVariables(value, { ...config.variables, ...(variablesDisabled ? {} : sessionVarsSnapshot(session)) }, session, undefined, `variable:${config.id}:${name}`)
+            const expanded = interpolateVariables(value, variables, session, undefined, `variable:${config.sourceModuleId}:${config.id}:${name}`)
             return officialChannelText(expanded, `variable ${official}`, { alias: new Map(), registered: new Set() }, warnOnce)
           }), `${name}: official prompt variable ${official}`)
           binding = official
@@ -200,7 +202,7 @@ function wireSystemSections(ctx, configs, registry, warnOnce, keep) {
   for (const group of textLayerGroups(configs)) {
     const base = group[0]
     try {
-      const dynamic = group.some((config) => config.audience != null || typeof config.renderSt === 'function'
+      const dynamic = group.some((config) => config.audience != null || config.params?.templateEvaluation === true || config.variableStore !== undefined
         || config.texts.some(text => /\{\{\s*(?:random|pick|roll|chance)(?=\s|:|\})/i.test(text)))
       const groupText = dynamic ? '' : group.map((config) => configText(config, registry, warnOnce)).filter((item) => item.length > 0).join('\n\n')
       if (!dynamic && groupText.length === 0) continue
@@ -232,7 +234,11 @@ async function resolvedContextText(ctx, config, context, registry, warnOnce) {
   const session = agent?.session
   const resolved = await config.resolve({ ctx, agent, session, signal: context.signal, decision: { kind: 'ok', messages: [] }, messages: [] })
   if (context.signal?.aborted || resolved == null) return ''
-  const variables = { ...config.variables, ...(resolved.variables !== null && typeof resolved.variables === 'object' ? resolved.variables : {}) }
+  const variables = { ...(config[SESSION_VARIABLES_DISABLED] === true ? {} : config.variableStore?.read(config.sourceModuleId).effective ?? config.variables), ...(resolved.variables !== null && typeof resolved.variables === 'object' ? resolved.variables : {}) }
+  if (config.params?.templateEvaluation === true) {
+    const texts = config.texts.length ? config.texts : [resolved.text ?? '']
+    return officialChannelText(renderTemplate({ ...config, texts }, context, { enabled: config[SESSION_VARIABLES_DISABLED] !== true, warn: warnOnce }), `runtime-context ${config.id}`, registry, warnOnce)
+  }
   // 模板位置身份 = 配置 id（texts 合并与 resolved.text 是同一位置的两个互斥分支）；缺省会退化成 [会话, 出现序号]。
   const rendered = config.texts.length > 0 ? interpolateVariables(config.texts.join('\n\n'), variables, session, undefined, config.id)
     : typeof resolved.text === 'string' ? interpolateVariables(resolved.text, variables, session, undefined, config.id) : ''
@@ -295,7 +301,7 @@ function wireRuntimeContexts(ctx, configs, registry, warnOnce, keep, on) {
   for (const group of textLayerGroups(staticConfigs)) {
     const base = group[0]
     try {
-      const dynamic = group.some(config => typeof config.renderSt === 'function'
+      const dynamic = group.some(config => config.params?.templateEvaluation === true || config.variableStore !== undefined
         || config.texts.some(text => /\{\{\s*(?:random|pick|roll|chance)(?=\s|:|\})/i.test(text)))
       const render = context => group.map(config => configText(config, registry, warnOnce, context)).filter(item => item.length > 0).join('\n\n')
       const text = dynamic ? render : render()
@@ -457,8 +463,10 @@ export function pluginMessage(prefix, text, summary) {
 /** 层级文本：按声明变量插值后按空行拼接；不走官方插值通道（非 system-section）。 */
 function layerText(config, agent, warnOnce) {
   try {
+    if (config.params?.templateEvaluation === true) return renderTemplate(config, { agent }, { enabled: config[SESSION_VARIABLES_DISABLED] !== true, warn: warnOnce })
+    const variables = config[SESSION_VARIABLES_DISABLED] === true ? {} : config.variableStore?.read(config.sourceModuleId).effective ?? config.variables
     return config.texts
-      .map((item, index) => interpolateVariables(item, config.variables, agent?.session, undefined, `${config.id}#${index}`))
+      .map((item, index) => interpolateVariables(item, variables, agent?.session, undefined, `${config.sourceModuleId}:${config.id}#${index}`))
       .filter((item) => item.length > 0)
       .join('\n\n')
   } catch (error) {
@@ -710,7 +718,8 @@ export function wireLayers(ctx, configs, warnOnce, options = {}) {
   // 声明路径上注册层的动作级分支已被编译期拒绝（rule-spec.mjs 的 REGISTRATION_LAYERS），
   // 故这一项只剩公开 wireLayers 入口可达——删掉它，直供配置的分支就被无条件注册静默吞掉。
   const conditional = configs.filter(config => ['system-section', 'runtime-context'].includes(config.layer)
-    && (typeof config.rule?.when === 'function' || typeof config.actionWhen === 'function'))
+    && (typeof config.rule?.when === 'function' || typeof config.actionWhen === 'function'
+      || (config.rule !== undefined || config.params?.templateEvaluation === true) && config.params?.complete !== true && config.params?.suppressRuntimeContext !== true))
   const regular = configs.filter(config => !conditional.includes(config))
   const registered = [
     wireSystemSections(ctx, regular.filter((config) => config.layer === 'system-section'), registry, warnOnce, keep),

@@ -1,295 +1,130 @@
 # SillyTavern 导入与兼容边界
 
-转换器为 `src/host/sillytavern.ts`。目标是把 ST 的声明式内容映射到普通模块，
-不执行 ST 扩展脚本，也不声称复刻 ST 的完整会话运行时。导入成功、YAML 可解析或零告警
-只代表结构可用；行为需按启停、顺序、变量、触发条件、角色和位置验证。
+转换器把外部预设、角色卡与世界书变成普通模块。原始 ST 字段只在 `src/host/sillytavern.ts` 和 `st-template.ts` 识别；运行时使用规则、上下文激活和两级持久变量。转换成功不代表与 ST 全部行为等价，降级报告和生成规则应一起检查。
+
+本次映射核对的 ST 基线为 `ad29cbda62e92f145e44d7a10398a38af22ca986`。持久化与格式切换见 [参数框架](architecture-params.md#原生格式与持久状态) 和 [ADR-0013](adr/0013-native-context-module-state.md)。
 
 ## 输入与入口
 
-- 「模块」页的模块导入：没有 YAML 模块定义时，JSON 可为含 `prompts[]` 的预设、角色卡，
-  或顶层 `entries` 的独立世界书；多个 JSON 合并后沿同一模块物化通道写盘。
-- 角色卡 PNG/JSON 与其他来源共用模块导入，直接建立 `.prompt-tool/modules/<id>/`；来源类型不成为存储身份。
-- PNG 按魔数判断而非扩展名，读取 `tEXt` 的 `ccv3`，缺失时回退 `chara`；保留原图和原始 JSON。
-- id 从文件名生成合法英文 slug；纯中文文件名回退 `st-<短哈希>`，显示名仍保留中文。
-- 兼容提示存放于 `meta.stWarnings`；物化时通过现有 warn 通道报告。原始文件不修改。
+工作台模块页与 `module_import` 共用来源识别、预览、选择、凭据和候选安装。支持原生 JSON/YAML、目录/ZIP、ST JSON 预设、PNG/JSON 角色卡和独立世界书。角色卡导入后位于普通 `modules/<id>/`，没有角色专属库或新的角色身份。
 
-## JSON 预设
+- PNG 按魔数识别，读取 `ccv3`，缺失时回退 `chara`；保留原图与来源资产。
+- 包里有唯一原生定义时以它为准，其余文件作附件；多定义或矛盾来源拒绝。
+- 无原生定义的多个 ST 来源按显式输入顺序组合；模块与规则身份冲突通过同一分配结果回填报告。
+- 导入前显示来源、目标、启停与降级；默认同名另存，不自动启用。
+- 提交带回 `expectedSourceDigest` 与 `expectedPreviewRevision`。来源、目标或选择变化后必须重新预览，不能复用旧确认。
+- 覆盖安装先完整生成隔离候选，再核对版本并原子交换；模型工具导入保留目标记忆和用户资产。资源、路径、链接与体积限制见 [资产交换](asset-transfer.md)。
 
-| 输入 | 转换行为 |
+## 原生转换映射
+
+一条外部条目生成一条普通规则。`rule.enabled` 是总开关，`then` 保存有稳定 id 的动作。原生 `params.source` 保存 `format: sillytavern`、来源身份和 `original`；运行时不以来源格式选另一套算法。
+
+### 预设和角色内容
+
+| ST 输入 | 生成行为 | 边界 |
+|---|---|---|
+| `prompts[].content` | 普通注入正文，启用原生模板求值 | 清洗后空白跳过；纯赋值模板保留 |
+| `prompt_order` | 按选中的顺序组保留启停和相对次序 | 优先全局组 `100001`，只有一组时使用该组；多组有歧义则先选择 |
+| 顺序组 `enabled` | 优先于 prompt 自身开关 | 已选组未列出的 prompt 禁用 |
+| `role: system` | `system-section` | 系统段的顺序不等于跨插入点全序 |
+| `role: user/assistant/model` | `pre-step` 的 user 消息 | assistant/model 明确降级，原角色进入 `source.original` |
+| `marker`、`SPresetSettings` | 排除位置标记和扩展配置 dump | 不把脚本或设置 JSON 混入正文 |
+| `injection_position/depth` | 映射到当前可用投递位置 | 不宣称支持持久历史深度插入，报告原值与降级 |
+| `system_prompt` 管理位 | 来源元数据 | 不因该管理位改变 role/插入点 |
+| `injection_trigger` | 保留来源并禁用该规则 | 当前不能等价执行生成类型门 |
+| `description/personality/scenario` | 角色设定系统段及同名模块变量 | 同名不同值的组合拒绝，不能取顺序赢家 |
+| `system_prompt/post_history_instructions` | 系统段 | 后历史指令的原位置报告降级 |
+| `first_mes/alternate_greetings/mes_example` | 一次性 user 消息；备用开场白默认禁用 | 原角色保留，不伪造 assistant 消息 |
+| `extensions.depth_prompt` | 默认禁用的 pre-step 规则及 `depth_prompt` 变量 | ST 群聊自动注入未实现 |
+| `creator_notes` | 模块变量 | 仅在显式扫描清单中参与激活 |
+| 采样参数 | 不导入 | 使用模块模型卡或 `request-params` 动作 |
+| `enable_web_search: true` | 提示确认官方预设已提供工具 | 不装配额外 web 工具 |
+| `enable_web_search: false` | 装配呈现、SDK 文本和执行拒绝规则 | 仍经官方工具管线执行 |
+
+含系统段的来源生成主/子人设定义，但导入或启用规则不自动选择该人设。用户在独立人设卡中为主/子各选一个模块来源，默认仍为官方；运行时只取选中模块对应受众的字段。规则配装前仍检查有效官方人设与规则 complete 的冲突。字段和继承语义见 [独立人设卡](architecture-params.md#独立人设卡与继承)。
+
+### 世界书到上下文激活
+
+策略为 `context-activation`，只支持 `pre-step`。匹配共有字段位于 `params`，选择和扫描字段位于 `params.activation`。手写模块可直接使用同一结构。
+
+| ST 输入或行为 | 原生承接 |
 |---|---|
-| `prompts[].content` | 保留为配置模板；注释清理后空白内容跳过，纯赋值模板不跳过 |
-| `identifier` / `name` | 标识与名称；UUID 标识转为 `st-prompt-N`，名称用 YAML 安全标量输出 |
-| `prompt_order[].order[]` | 选择 `character_id` 对应表，默认选择全局表 `100001`；只有一张表时使用该表；多表且无法选择时拒绝 |
-| 顺序表的 `enabled` | 优先于 `prompts[].enabled`；未在所选表出现的条目禁用；无顺序表时才回退条目自身 |
-| 相对顺序 | 使用顺序表次序；无顺序表时使用数组次序。与原始 UUID 对应后再生成 id |
-| `role: system` | `system-section`，同层可合并 |
-| `role: user/assistant/model` | `pre-step`；相对位置映射到消息批头部或用户消息之后。pre-step 只发出 user：assistant/model 在导入期降级，原角色保留在 `params.stSource.role` |
-| `marker: true` / `SPresetSettings` | 位置占位和扩展设置 dump 不作为正文注入；记录在 `meta.stDroppedMarkers` |
-| `injection_position: 1` | 不具备完整历史深度等价性；原 position/depth/order/role 存 `params.stSource`，报告降级 |
-| `injection_trigger` | 保留在 `params.stSource.triggers`；非空时报生成类型不兼容提示 |
-| `prompts[].system_prompt` | 只保留事实（`params.stSource.systemPrompt`）并记 info：ST 用它标记内置/全局 prompt 的管理位（不可删除、不参与导出、不在 append 候选），不改变发送角色与位置，因此层归属仍按 `role` |
+| `uid/id`、`comment`、`content` | 稳定规则身份、名称、正文；空正文排除 |
+| `disable/enabled` | `rule.enabled`；存在 disable 时优先 |
+| `constant/add_always` | `params.constant`；空主键不隐式常驻 |
+| `keys/key`、`secondary_keys/keysecondary` | `params.keys/secondaryKeys`，求值来自来源模块与全局快照 |
+| ST 可见历史扫描 | `activation.scan: history`；原生还可声明 `batch` |
+| `scan_depth/scanDepth` | `activation.scanDepth`；条目→书级→2 的导入缺省 |
+| `selective` | `activation.selective`，控制副键约束 |
+| `selectiveLogic/selective_logic` | `params.selectiveLogic` 的具名逻辑，见下表 |
+| 大小写、整词、正则 | `caseSensitive/wholeWords/useRegex` 与 `wordBoundary` |
+| 六个字段扫描开关 | `activation.scanVariables`：description、personality、scenario、persona、creator_notes、depth_prompt |
+| `probability/useProbability` | activation 中同名字段；百分比 0–100，显式 false 跳过概率门 |
+| `group` | `activation.selectionGroup`，逗号分组；不是规则互斥组 |
+| `group_override/group_weight` | `groupOverride/groupWeight`；sticky/override 优先，其余按权重 |
+| `use_group_scoring` | `useGroupScoring`；只有显式启用评分且低于最高分的候选被淘汰 |
+| `sticky/cooldown/delay` | 同名消息计数窗口；实际投递才 commit，sticky 重发不延期 |
+| `exclude_recursion/prevent_recursion` | 分别限制参与重扫和正文进入递归池 |
+| `delay_until_recursion` | `delayUntilRecursion`；true 为层级1，层级池只增不减 |
+| 书级/条目 `recursive_scanning` | 只保留在来源；不能自动开启模块递归 |
+| `insertion_order/order` | 保留选择高值优先与最终内容低值在前的区别 |
+| 原位置/深度/角色 | `source.original`；位置4降到当前批尾，其余可承接位置降到批头 |
 
-各 DSH 插入点仍然独立。这里的排序不建立跨插入点的全局注入顺序，角色不同的 ST 消息
-也不能被视为在 DSH 中保留了完全相同的全序。原始采样参数不导入，由宿主模型设置管理。
+来源别名按 `extensions` 优先于条目顶层处理；同作用域的大部分开关先蛇形后驼峰，selectiveLogic 先驼峰后蛇形。显式 false/0 不当缺省丢弃。
 
-生成模块按需装配 `rule-engine`、`character-tools`、`session-var-tools`、
-`tool-config-engine`；有世界书则加 `world-book-tools`。含 system-section 时
-生成 `persona: { prefix: '', complete: false }`。`enable_web_search=true` **不再组装 web 工具行**
-（`tool-web` 已随预设解耦从模块库退役，联网能力由会话原有预设提供），只在转换报告里提示；
-显式 false 时产出三条 `rules` 声明（`assembly` 呈现剔除 + `sdk-strip` 裁 `tools:sdk`
-正文 + `guard` 执行层拒绝，共用同一份 `deny: [web_search, web_fetch]`），
-完整规则保存于 module.yml，初始化分解 rules/，运行时内存编译；所有动作都有稳定 id，do 始终为数组。
+历史扫描只看当前可见的真实对话，排除插件、指令及工具回执；batch 只看本批真实对话。`scanDepth: 0` 不扫描聊天、扫描变量或递归正文，但显式常驻仍可入选。键求值只读：set/add/inc/dec 和带默认写回的 get 被拒，不能在扫描时写变量。
 
-## 角色卡（PNG / JSON）导入
+设 P 为主键命中数，S 为副键命中数，N 为求值前副键项数。selective 未开或 N=0 时只要求 P>0；开启时：
 
-角色来源转换为普通模块，完整定义写 module.yml，原图和源数据作为模块资产保留。没有独立 converted.yml 身份或 .characters 写入通道；同目标更新保留本地 memory.md、未知资产与未替换头像。
+| ST 数值 | 原生逻辑 | 条件 |
+|---|---|---|
+| 0 | `AND_ANY` | P>0 且 S>0 |
+| 1 | `NOT_ALL` | P>0 且 S<N |
+| 2 | `NOT_ANY` | P>0 且 S=0 |
+| 3 | `AND_ALL` | P>0 且 S=N |
 
-| 字段 | 落点 |
+求值为空的副键仍占 N 的一项，不能缩小 ALL 约束。规则 `text.logic` 的 any/all/not/notAny 是另一组已有语义，不能仅按名字替换。ST 整词采用 `wordBoundary: ascii-token`（单词 ASCII 边界、多词子串）；原生可选 `unicode`。`useRegex` 保留强制正则/强制字面/省略时检测 `/pattern/flags` 的三态；ST 的 `use_regex` 不被当作强制正则。
+
+模块顶层 `contextActivationRecursive` 默认 false，只控制本模块是否参与重扫。候选正文池跨模块共享，`preventRecursion` 控制哪段正文进入池；延迟层级池独立推进。成功压缩重基准窗口，非压缩 surface 替换不额外改变 sticky 契约。时间窗不承诺跨进程恢复。
+
+## 模板操作与外部降级
+
+ST 导入正文设置 `params.templateEvaluation: true`，变量操作经有界 parser 转成原生操作，不在导入时执行。
+
+| 来源 | 原生操作或处理 |
 |---|---|
-| `description/personality/scenario` | 角色设定 system-section；同名内容变量可引用 |
-| `system_prompt/post_history_instructions` | system-section；不是 ST 对 main/jailbreak 的完整覆盖语义 |
-| `first_mes` | 一次性开场白，`dedupe: session`；ST 的 assistant 侧降级为 user，原角色存 `params.stSource.role` |
-| `alternate_greetings` | 独立备用开场白，默认禁用，用户可切换；同样降级为 user |
-| `mes_example` | 按 `<START>` 和角色标记拆成一次性示例消息；assistant 轮次降级为 user（原角色存 `params.stSource.role`），无法识别的块保留为 user 文本 |
-| `extensions.depth_prompt` | 只在群聊自动注入（ST 语义），本项目没有群聊：保留为一条**默认禁用**的 pre-step 配置（`st-depth-prompt`，来源与原因码 `depth-prompt-group-only` 齐全），用户可手动启用；同时登记 `depth_prompt` 变量供扫描开关使用 |
-| `creator_notes` | 登记为 `creator_notes` 内容变量，供世界书条目按需扫描（ST 的 `globalScanData.creatorNotes` 同名来源） |
-| `character_book.entries` | ST world-book 配置 |
-| `extensions` 的 regex/TavernHelper/JS | 不执行、不放入提示正文，报告兼容提示 |
+| set/get/add/inc/decvar | `module.set/get/add/inc/dec` |
+| 对应 globalvar | `global.set/get/add/inc/dec` |
+| 裸 `{{key}}` | 模块覆盖全局；具名空值替换为空 |
+| `getvar::key::default` | 保留现有缺值默认写回扩展，纳入单域事务 |
+| 嵌套表达式 | 同一 parser 分隔参数、递归求值 |
+| pick/random/roll/chance 与事实宏 | 沿用有界求值；pick 不随普通前后缀长度漂移 |
+| 注释、trim、ERA 标记 | 导入清洗 |
+| if/else、scoped 块、STscript、变量简写、对象/数组下标宏 | 没有完整 ST 语义；需要显式审查和改写，不能当作已支持 |
 
-导入后通过普通模块启停与编辑流程使用。导入不添加角色专属规则前缀，不写 importedCharacters／characterModules 两套登记。若用户随后选择模块并入，使用普通模块来源记录与移除逻辑，保留来源局部变量绑定。
+**自动登记只属于 ST 导入。** 转换器扫描正文与激活键中的未声明裸引用，登记到模块 `variables`，初值为 `''`；触发键的缺值还进入报告。普通规则、模板选择器和手写模块不自动创建变量，需在变量卡手动建立。`WHO`、`stateKeys` 这类示例也遵守该边界。
 
-`world_book_upsert/delete` 的 note 写入当前模块 memory.md；world_book_read_memory 按需读取最新文件。记忆缺失返回空文本，读取失败报错，记忆从不自动注入。
-这是 DSH 的附加管理能力，不等同于 ST 扩展脚本或 MVU 状态更新。
+正文中的角色名和用户称呼按当前转换器的名称处理；触发键保留引用再登记占位，避免凭空猜测匹配词。占位空值不是删除。模块变量跨会话持久，共享该模块的主/子会话看到同一值；不再有 ST 会话 local/global 表。
 
-### 模块能力与移除边界
+一张模板可读两域、只写一域；解析/循环/保留名/预算/双域写失败零提交。模板读取/写入、CAS、执行去重和发布失败边界见 [变量事务](architecture-params.md#规则与变量事务)。
 
-角色来源转换后的能力按 modules 声明和实际内容装配：
+## 不支持能力的处理
 
-- **声明优先**：卡顶层 `modules` 存在时按声明追加。ST 转换产物自带 `rule-engine`、`character-tools`、
-  `world-book-tools`（有世界书时）、`session-var-tools`、`tool-config-engine` 的声明，
-  所以 ST 卡的应用行为与改造前一致。
-- **必需项兜底**：有规则时补齐 `rule-engine`，避免定义存在但没有执行入口；
-  卡含 `world-book` 策略配置时补 `world-book-tools`。因此未声明 `modules` 的手写卡只会得到必需项。
-- **来源记录**：普通模块并入记录自己的新增内容和能力；没有新角色专属登记。移除只撤回能证明属于该来源且没有其他消费者的贡献，保留目标原有内容。历史记录只在兼容路径识别。
-- **手写卡的档位**：用规则的 `group` + `exclusive` 表达档位三选一；在工作台或 `/prompt-tool config <id> on` 显式启用目标规则，即关闭同组其他规则的总开关，排序不决定赢家。
-- ST 的宏与状态变量仍需要 session-var-tools；角色作为来源不会另建装配或热更新通道。
-
-## ST 宏与变量
-
-导入只做 `prepareStText`：清理注释、trim/ERA、替换默认 user/已知 char、归一宏拼写。
-赋值不在导入期执行。配置带 `params.stMacros: true`，模型实际收到的是运行时求值结果。
-来源模块的 `variablesEnabled` 在导入期只决定**字面**变量是否并入这条卡的配置；导入不写
-产物的开关，导入完成后「是否停用会话变量」由该模块自己的 `rules/_settings.yml` 决定
-（`src/host/sillytavern.ts`、`src/host/characters.ts`）——两者是两件事。
-
-| 宏 | 运行时行为 |
+| 能力 | 实际处理 |
 |---|---|
-| `setvar/setglobalvar` | 设置 local/global，宏本身无输出；插值内建（`DSH_HOME`/`WORKSPACE`/`CWD`，大小写敏感）与动态宏名（`time`/`pick` 等，大小写不敏感）是**保留名**，`setvar`/`addvar`/`getvar`/`incvar`/`decvar` 一族不得占用——命中不写入 + 告警，表达式求值为空 |
-| `addvar/addglobalvar` | 数值相加、JSON 数组追加、非数值字符串拼接 |
-| `getvar/getglobalvar` | 读取对应表；缺失返回空；local 可回退声明变量。`::default`（缺失时取第二参数，非空则写回表，`engine/st-macros.mjs` 的变量宏 `get` 分支）是**本项目扩展**：ST 的 `getvar` 只声明一个参数（`macros/definitions/variable-macros.js:99-116`），多给的参数按参数个数报错、宏文本原样保留（`macros/engine/MacroEngine.js:229-237`） |
-| `incvar/decvar` 及 global 形式 | 更新数值并输出新值 |
-| `{{key}}`（**本项目扩展**） | ST 的裸 `{{key}}` 从不查变量：没有注册同名宏时原样保留（`macros/engine/MacroEngine.js:215-218`）。本项目按 ST local、自身声明变量、已有动态宏/内置变量依次解析（`engine/st-macros.mjs` 的裸引用分支、`engine/interpolate.mjs#interpolateVariables`） |
-| 时间与最后消息宏 | 运行时求值，不登记为空默认值 |
-| `random` | 支持 `::` 或逗号分隔，转义逗号保留，每次出现求值 |
-| `pick` | 会话、来源与该次插值里出现序号确定的稳定选择（seed 不含正文，无关正文长度变化不改值）；来源是调用点的标识——世界书键用 `<条目 id>#keys<序号>`/`#secondaryKeys<序号>`，指令提示模板用模板名；不复刻 ST 的具体随机序列或 reroll 命令 |
-| `roll` | `NdM±K` 或数字（按 `1dN`），非法输入空输出 |
+| outlet / vectorized / 条目 triggers | 记录原字段、报告不支持并禁用生成规则，避免变成无条件普通条目 |
+| prompt 的生成类型触发 | 记录并禁用该规则 |
+| 角色/标签动态过滤 | 保留 `characterFilter` 并报告；不实现过滤，也不据此静默丢条目 |
+| automationId / STscript 自动激活 | 只记录并告警；无主键且非常驻的条目不会自动注入 |
+| 历史深度、Author’s Note、Example Messages 特殊位置 | 映射到可用批位置并明确降级 |
+| token 预算/上限、最少激活补扫、向量检索 | 未实现；没有等价预算或检索接口 |
+| TavernHelper、扩展正则、任意脚本 | 不执行脚本，不把脚本源码注入正文 |
+| 群聊轮转、跨进程 sticky/cooldown 恢复 | 未实现 |
 
-同一请求的 ST 模板按持久序号 `configOrder`（`sequence`，缺省回退 `order`）构造变量帧；禁用和
-不匹配受众的模板不执行，纯赋值卡可以
-独立启停。多个官方插入点读取同一帧不会重复自增。world-book 只在命中时求值，一次性卡只在
-实际注入时求值。宏解析限制输入/输出 1 MiB、嵌套 32 层及总展开工作量，拒绝循环和原型键；
-单卡失败不提交其变量修改，也不阻断其他卡。
-
-local/global 两张表隔离，但目前均为会话内、mount 生命周期状态；**global 不跨会话持久化，
-恢复进程或重挂不会恢复 ST 宏状态**。`session_var` 可显式覆盖 local，clear 回退默认值，但不得
-占用插值保留名（内建 `DSH_HOME`/`WORKSPACE`/`CWD`，大小写敏感；动态宏名 `time`/`pick` 等，
-大小写不敏感）：命中即拒绝写入并返回可读错误，读取路径跳过历史脏键；运行时 `setvar` 一族写
-local/global 走同一判据，命中不写入 + 告警、表达式求值为空。判据与插值共用
-`engine/interpolate.mjs` 的 `isReservedInterpolationName`。
-这不是 ST 的全局持久变量或 slash-command 运行时。
-
-普通（非 ST）配置继续使用官方变量注册通道：按局部命名空间绑定变量，相同事实名的大小写
-形式共用注册，非法官方名用确定性别名。声明值与会话覆盖值先有界展开，再清洗未解析引用；
-空白引用规范化，避免官方严格渲染器抛错。所有注册跟随 scope/disposer。
-
-## 世界书
-
-ST 导入在既有 `buildWorldBookEntry` 结构上添加 `params.stWorldBook`，与原生世界书策略区分。
-原生手写 world-book 的扫描范围是**本批真实对话消息**（判据
-`engine/condition.mjs#isConversationMessage`：角色是真实对话且 `source` 不带插件来源）：
-插件注入（`append-context` 的 steer、子代理 inject、`skill_load` 的 `skill-invocation`）、
-`agent-instructions` 正文与工具回执都不计入关键词匹配。世界书因此不会被自己注入的正文触发；
-需要常驻正文时写 `constant` 条目，或把关键词写进真实对话。它与 ST 条目（`params.stWorldBook`）
-仍不是等价模式：ST 条目另有扫描窗口、递归、分组与延迟语义。
-
-| ST 语义 | 导入后的处理 |
-|---|---|
-| `keys/key`、`secondary_keys/keysecondary` | 保留；只有主键命中才能进行选择性判断 |
-| `keys`/`secondary_keys` 里的 ST 宏 | 匹配前求值，方向对齐 ST 的 `substituteParams`（`world-info.js:4914-4917`、`world-info.js:4946-4948`），但**求值面窄于 ST**：只用配置声明的变量表（`engine/st-world-book.mjs` 的键插值）。`session_var` 维护的会话变量只在 `engine/layers.mjs` 的官方变量读取器（`getSessionVar` 覆盖声明值处）与 `engine/executor.mjs#runPromptConfigBatch` 的合并变量表（`mergedVars`）显式并入，运行时 `setvar` 写入的 ST local 帧（`engine/st-render.mjs` 的 `renderSt` 变量帧 `local` 表）同样不在键的求值面里；`{{getvar::x}}` 一族也不求值（`engine/interpolate.mjs#interpolateVariables` 无对应分支），保持字面量参与匹配。卡内无源的宏（如只存在于 ST 全局 persona 的 `{{user}}`）登记为空占位并产出 `st-key-macro` 诊断：未赋值时该键不参与匹配（不会退化成字面量误判），在「模板变量」赋值后按既有匹配路径生效 |
-| `selective=false` | 不要求副键；非常驻且没有主键时不自动激活 |
-| 0 AND_ANY | 主键命中且至少一个副键命中 |
-| 1 NOT_ALL | 主键命中且至少一个副键未命中 |
-| 2 NOT_ANY | 主键命中且所有副键未命中 |
-| 3 AND_ALL | 主键命中且所有副键命中 |
-| `constant` / `add_always` | 常驻候选；概率、分组、延迟仍可限制 |
-| `selectiveLogic/selective_logic` | 副键组合逻辑；`extensions` 内两种拼写与条目顶层一并读取 |
-| `extensions.case_sensitive/match_whole_words` | 与编辑器顶层别名一并读取 |
-| `scan_depth` | 最近真实对话窗口（默认 2，0 不扫描聊天）；包含当前消息，排除插件注入和 reasoning 块 |
-| `delayUntilRecursion` / `delay_until_recursion` | 延迟到递归扫描：非递归 pass 一律抑制（sticky 命中例外），递归 pass 中按层级池判断是否解锁；层级池取条目集合里的最小层级并逐个打开（层级推进与 ST `world-info.js` 一致：有新正文可递归则层级不变，否则才打开下一层；最小层级在初始化时即被取走，因此只有全部延迟条目声明同一层级时层级池再无剩余、永不激活——声明两个及以上层级时，没有递归正文的 pass 每次打开下一层直到池耗尽，延迟条目随之解锁） |
-| `useGroupScoring` / `use_group_scoring` | 组内评分：组内存在显式开启的条目时整组按主/副键命中数评分，只有开启评分的条目会被淘汰（严格低于最高分），未开启者不被淘汰但其分数计入最高分 |
-| `characterFilter` | 真实形态是嵌套对象 `{ names, tags, isExclude }`（不是三个顶层字段）；原样保留到 `params.stWorldBook.characterFilter`，在两个维度至少一个非空时告警「按角色过滤不受支持」——不实现过滤、也不据此跳过条目 |
-| `automationId` / `automation_id` | 顶层驼峰与 extensions 蛇形都读；字段类型是字符串，非字符串形态（数字 0、布尔）视为未设置；非空时保留事实并告警「依赖 STscript 自动化」，其中无主键且非常驻的条目额外说明「不会自动注入」 |
-| `outletName` / `outlet_name` | 双形态读取；非空时保留事实并计入不支持控制项（`unsupported-controls`） |
-| 角色描述/性格/场景/persona 扫描开关 | 显式开启时把相应声明字段加入扫描 |
-| `matchCreatorNotes` / `match_creator_notes` | 显式开启时把卡片 `creator_notes`（清洗后）加入扫描文本；未开启时不并入，既有触发面不变 |
-| `matchCharacterDepthPrompt` / `match_character_depth_prompt` | 显式开启时把 `extensions.depth_prompt.prompt`（清洗后）加入扫描文本；未开启时不并入 |
-| `probability/useProbability/use_probability` | 概率过滤；同一消息状态重复求值保持抽样结果 |
-| `group/group_override/group_weight` | 同组只选一个；override 优先选择高 order，否则按权重 |
-| `sticky/cooldown/delay` | 按真实对话消息数维护会话内窗口，实际插入后才提交激活状态 |
-| `recursive_scanning`（书级）/ 条目级 `recursive` | **只作导入记录**：ST 运行期不读书级 `recursive_scanning`（全树唯一命中 `src/types/spec-v2.d.ts:30`，`convertCharacterBook` 只把它存进 `originalData`），导入后不产生行为；旧产物里由导入写入的 `params.stWorldBook.recursive` 同样不再是门控 |
-| 扫描是否递归 | 由 `module.yml` 顶层 `stWorldBookRecursive` **按模块生效**（不是同批模块的并集、也不是全局）：只有声明 `true` 的模块，其条目才在递归 pass 重扫；未声明的模块（缺省即 `false`）不被同批其他模块牵连。递归池本身是全批共享的（对齐 ST 的全局扫描缓冲：新入选正文都进同一个池；`preventRecursion` 决定该条正文是否进池），开关只管「谁参与重扫」。条目级只剩 `excludeRecursion` 能拒绝单条（`world-info.js:4870`、`:5097`）；`delayUntilRecursion` 的层级池与递归正文无关（全批时钟、层级只增不减），因此不受该开关门控 |
-| `insertion_order/order` | 选择优先级高值优先；最终正文按 ST unshift 后的低值在前 |
-
-位置与角色仍有边界：pre-step 不能无损插入历史深度，也不能创建 system 角色消息。
-position=4 降级为当前消息批末尾；其他世界书位置落在消息批头部。`role: 0`（system）与
-`role: 2`（assistant）都降级为 user；原位置/深度/角色仍在 stWorldBook 中并产生诊断，
-不冒充等价。
-
-别名冲突按固定优先级读取：同一作用域内既有拼写（驼峰主名）优先于兼容别名，`extensions`
-整体优先于条目顶层；显式 `false`/`0` 不当作缺省值丢弃。
-
-未复刻 token 预算、向量检索、outlet、Author's Note、生成类型触发、ST 插件正则、跨进程
-粘滞/冷却恢复等能力。角色卡中的源选项不会授权执行任意脚本。
-
-键宏的恢复路径不新增通道：诊断只说明哪条条目的触发键需要赋值，赋值仍在工作台
-「模板变量」里完成，完整回写 `module.yml` 并更新 `rules/variables.yml` 后刷新运行贡献。本项目不猜测 `{{user}}`
-的值（它来自 ST 全局设置与 persona，卡内不存在，用同义词反推属猜测），也不在导入期执行宏。
-
-## 未复刻的 ST 能力与降级对照
-
-下表每行都与实现一致：**等价** = 行为与 ST 一致；**降级** = 内容保留但位置/角色/时机改变；
-**保留事实** = 只记录来源字段，行为不生效；**不支持 / 未复刻** = 本项目不执行该能力。
-诊断码列写的是真实产出（`st-*` 是导入期诊断码，括号内是报告条目的原因码或引擎原因码）。
-ST 源码路径相对 `public/scripts/`，对照基线为 SillyTavern 1.19.0 / `7c399419`（新宏引擎在该版本默认开启：`power-user.js:302`）。
-
-| ST 能力 / 字段 | ST 行为（源码位置） | 本项目处理 | 诊断码 |
-|---|---|---|---|
-| `world_info_budget`（默认 25）/ `budget_cap` / `ignoreBudget` | 按 token 预算裁剪注入（`world-info.js:73`、`:4095`） | **未复刻**：不做 token 预算裁剪，入选条目按顺序全部注入 | 无（不产生诊断） |
-| `forbid_overrides` | 保护 `main` / `jailbreak` 不被角色卡覆盖（`openai.js:1495-1513`） | **保留事实**：DSH 没有 prompt 覆盖机制，字段不产生行为 | 无 |
-| `min_activations` / `min_activations_depth_max`（默认 0） | **全局用户设置**，不是条目字段：未达最少激活数时把全局扫描深度 +1 补扫，只影响未声明 `scan_depth` 的条目（`world-info.js:69-71`、`:920-923`、`:280`、`:5110-5126`；面板 `index.html:4758-4771`） | **未复刻**：不实现深度偏斜；插件没有世界书面板，该值也没有等价的模块级声明面 | 无 |
-| ST 全局开关 `use_group_scoring` / `case_sensitive` / `match_whole_words` | 全局默认 false（`world-info.js:69-82`），条目可继承 | **逐条目读取**：按条目字段判定，不读 ST 全局设置；缺省即按 false 语义 | 无 |
-| ST 全局开关 `recursive`（`world_info_recursive`，默认 false） | 允许递归重扫新命中的正文（`world-info.js:5097`） | **等价但粒度不同**：开关在 `module.yml` 顶层 `stWorldBookRecursive`，**每个模块各管各的**（ST 是全局）：未声明的模块不被同批其他模块牵连、其条目不重扫；递归池与 ST 一样是全批共享的。缺省 false 与 ST 默认一致；旧导入写的条目级 `recursive` 不再参与 | 无 |
-| 位置 `ANTop(2)` / `ANBottom(3)` / `EMTop(5)` / `EMBottom(6)` | Author's Note / Example Messages 插入点（`world-info.js:855-864`） | **降级**：落到当前消息批头部，原位置保留在 `stWorldBook.position` | `st-worldbook-position`（`position-downgraded`） |
-| 位置 `atDepth(4)` | 插入历史深度 | **降级**：保留 position/depth/role，落到当前消息批末尾 | `st-worldbook-depth`（`depth-collapsed`） |
-| 位置 `outlet(7)` 与 `outletName` | outlet 注入通道 | **不支持**：保留 `outletName` 事实，内容不被误注入 | `st-worldbook-controls`（`unsupported-controls`） |
-| `vectorized` | 向量检索激活条目 | **不支持**：只保留字段 | `st-worldbook-controls`（`unsupported-controls`） |
-| `triggers`（生成类型触发） | 按生成类型过滤（`world-info.js:4807-4813`） | **不支持**：保留在 `stSource.triggers`，不按生成类型过滤 | `st-prompt-triggers` / `st-worldbook-controls` |
-| `automationId`（STscript 自动化） | 由自动化脚本激活条目 | **不支持**：保留事实并告警；无主键且非常驻时明确「不会自动注入」 | `st-worldbook-automation`（`automation-dependent`） |
-| `characterFilter`（角色 / 标签过滤） | 按当前角色头像名或标签过滤条目（`world-info.js:4815-4843`） | **不支持**：保留嵌套对象，条目对所有角色生效（不静默跳过） | `st-worldbook-character-filter`（`character-filter-unsupported`） |
-| `extensions.depth_prompt` | 只在群聊自动注入（`group-chats.js:459-464`） | **降级**：保留为默认禁用的 pre-step 配置，登记 `depth_prompt` 变量 | `st-depth-prompt`（`depth-prompt-group-only`） |
-| 群聊（多角色轮转） | `group-chats.js` 逐成员注入 | **未复刻**：本项目是单角色会话 | 无 |
-| 跨进程 sticky / cooldown 恢复 | 持久化在 `chat_metadata.timedWorldInfo`（`world-info.js:619-660`） | **未复刻**：时间窗状态只在会话内、随 mount 生命周期 | 无 |
-| ST 插件正则 / 扩展脚本 / TavernHelper | `regex_scripts` 等在 ST 内执行 | **不执行**：脚本不进入提示正文 | `st-extension-scripts` |
-| `allowWIScan` 的扩展提示词扫描 | `setExtensionPrompt(..., scan)` 让扩展文本无条件进入扫描（`world-info.js:4719-4726`） | **未复刻**：只按条目开关并入 `creator_notes` / `depth_prompt` | 无 |
-| `prompts[].system_prompt` | 仅作「内置/全局 prompt」管理位（`openai.js:1240-1257`） | **等价**：不改变层归属，只保留来源事实 | `st-prompt-system-flag`（info） |
-| `selective` 缺省值 | 求值用 `entry.selective &&`，`undefined`/`false` 都不过滤（`world-info.js:4925`） | **等价**：`entry.selective === true` 与 ST 求值路径一致 | 无 |
-| `use_regex` | 匹配器不消费该字段，只有 `/pattern/flags` 形态才当正则 | **等价**：缺省时自动检测 `/pattern/flags` | 无 |
-| `world_info_logic` / `world_info_position` 默认值、`scan_depth`、`case_sensitive`、`match_whole_words` 的条目级默认 | 与 ST 定义一致 | **等价**（条目级 `recursive` 不在其中：它只作导入记录，见上表） | 无 |
-| `{{.key}}` / `{{$key}}` 变量简写与运算符 | 本地/全局变量简写，支持 `++ -- = += -= ?? == != > >= < <=` 等运算符（`macros/engine/MacroLexer.js:101-119`、`macros/engine/MacroParser.js:80-117`、`macros/engine/MacroCstWalker.js:651-795`） | **未复刻**：不解析简写与运算符。`{{.key}}` 在导入期被当成普通裸引用登记为空占位（`src/host/sillytavern.ts` 的 `MACRO_RE` 键字符集含点），正文里替换为空串、世界书主键被过滤（`engine/st-world-book.mjs` 的键插值丢弃空键）；`{{$key}}` 既不登记也不匹配插值正则（`engine/interpolate.mjs` 的 `REFERENCE_RE` 键字符集不含 `$`），作为未解析引用被移除（`engine/st-render.mjs` 的 `stripUnresolvedRefs` 出口清洗） | 无 |
-| `{{if}}` / `{{else}}` 与 scoped 块、`#`/`/` flag | 条件块按真值选分支并支持 scoped 内容与 `{{else}}`（`macros/definitions/core-macros.js:134-225`）；闭合块内容作为最后一个无名参数、默认自动 trim、`#` 保留空白（`macros/engine/MacroCstWalker.js:438-469`、`macros/engine/MacroFlags.js:56-73`） | **未复刻**：这些宏不注册，条件不参与判断——`{{if}}`/`{{else}}`/`{{/if}}` 标签按未解析引用被移除（`engine/st-render.mjs` 的 `stripUnresolvedRefs` 出口清洗），两个分支的正文都会留下 | 无（正文出口只发一条聚合 warn） |
-| `hasvar` / `deletevar` / `setvarkey` / `getvarkey` 及 global 形式（另带 `varexists`/`flushvar`/`setvarindex`/`getvarindex` 等别名，共 8 个宏） | 本地与全局变量的存在性检查、删除、对象/数组键读写（`macros/definitions/variable-macros.js:119`、`:139`、`:159`、`:189` 与 `:323`、`:343`、`:363`、`:393`） | **未复刻**：`engine/st-macros.mjs` 的变量宏判据只识别 `set`/`add`/`get`/`inc`/`dec` 加可选 `global` 的变量宏，这些宏按未解析引用被移除（`engine/st-render.mjs` 的 `stripUnresolvedRefs` 出口清洗）；变量表是扁平字符串，没有嵌套键/数组语义（`engine/interpolate.mjs#interpolateVariables` 的值查找） | 无 |
-| scoped `{{setvar::k}}正文{{/setvar}}` | 闭合块内容成为最后一个无名参数，任何宏都可 scoped（`macros/engine/MacroFlags.js:56-63`、`macros/engine/MacroCstWalker.js:438-469`） | **未复刻**：`{{setvar::k}}` 缺第二个参数时既不赋值也不吞正文（`engine/st-macros.mjs` 的 `set`/`add`/`inc`/`dec` 分支），两个标签按未解析引用被移除（`engine/st-render.mjs` 的 `stripUnresolvedRefs` 出口清洗）——正文留下，赋值不发生 | 无 |
-| 世界书键的宏求值面（会话变量） | 匹配前对主键/副键逐个 `substituteParams`（`world-info.js:4914-4917`、`world-info.js:4946-4948`），走同一套宏引擎（`../script.js:2997-3014`），`{{getvar::x}}` 读会话内 local 表 | **降级**：只用配置声明变量求值（`engine/st-world-book.mjs` 的键插值），不含会话变量（会话变量表只在 `engine/layers.mjs` 的官方变量读取器与 `engine/executor.mjs#runPromptConfigBatch` 的合并变量表 `mergedVars` 中显式并入）；`{{getvar::x}}` 一族不求值，保持字面量参与匹配（`engine/interpolate.mjs#interpolateVariables`） | 无 |
-| 原生（手写）`world-book` 的 `keys` | 条目来源不改变键求值：任何条目都在匹配前对主键/副键 substituteParams（`world-info.js:4914-4917`、`:4946-4948`） | **未复刻**：原生 `world-book` 策略把 `params.keys` 原样交给匹配器，键里的 `{{key}}` 是字面量（`engine/actions/content.mjs#createWorldBookResolver` 把 `params.keys` 原样交给 `createAnchorMatcher`）；只有 ST 导入路径插值（`engine/st-world-book.mjs` 的键插值） | 无 |
-
-预算类字段（`world_info_budget` / `budget_cap` / `ignoreBudget`）需要官方 tokenizer 与上下文预算通道，
-超出本插件的宿主边界；`min_activations` 是 ST 的**全局用户设置**而非条目字段，插件没有世界书面板，
-且导入期已把「条目未声明 `scan_depth`」塌缩成数字（`src/host/sillytavern.ts` 的
-`scan_depth ?? 2`），照搬它的深度偏斜会恒空转；`forbid_overrides` 对应的覆盖机制在 DSH
-不存在。这些差异不会让内容静默丢失：来源字段保留在 `params.stWorldBook` / `params.stSource`，
-报告按「降级 / 不支持」分类，不冒充等价。
+报告的 `entries` 使用最终规则身份，`diagnostics` 给出原因，`summary` 区分转换、禁用、排除、不支持与降级。报告有展示上限，截断不影响实际转换。多源组合复用同一身份映射；同名不同变量值要求先改名，不保留动作局部变量表。
 
 ## 更新与验证
 
-- 新导入才能恢复源文件中的纯赋值卡、真实顺序表及遗漏字段；旧转换产物没有这些信息，
-  单纯重新物化不能恢复，需用户重新导入并确认是否覆盖手工修改。
-- 引擎更新后通过现有重建流程物化；运行中的 DSH 是否重启由用户决定，插件不会自动重启。
+旧内部 world-book/ST 帧/会话变量字段与工具能力不作为运行兼容输入。重新导入原始 ST 来源，或经用户授权显式转换旧 module.yml；转换前备份用户文件并单独处理私有记忆标记，不能删标记后直接分享。
 
-### pre-step 角色出口（2026-09-17）
-
-- 宿主把 pre-step 批次的每条消息写成 `user/message` 事件，事件校验要求 `role === "user"`；
-  assistant 只能来自模型侧 `assistant/message` 事件。因此 ST 的 assistant/system 角色在
-  **导入期**就降级为 user，**运行出口**再兜底一次：执行器创建消息时统一发出 user，策略或模板
-  patch 给出的其他角色保留正文、只告警一次，原角色记入
-  `source.requestedRole`，不把非法值传给宿主。
-- 导入期降级逐条留痕：条目分类为 `degraded`、原因码 `assistant-role-downgrade`，原角色保留在
-  `params.stSource.role`（prompt / 开场白 / 示例对话）或 `params.stWorldBook.role`（世界书），
-  并产生 info 级诊断（同类来源只发一条，不刷屏）。预览报告因此不把这些条目报成「等价」。
-- 原生提示词配置只接受 `role: user`；SillyTavern 的角色转换属于导入契约，转换后交给同一引擎校验。
-
-### 顺序组选择、预览版本与报告身份（2026-09-17）
-
-- 选组优先级（唯一实现，转换与预览共用）：请求显式 `promptOrderCharacterId` → 文件内
-  `character_id` → 全局组 `100001` → 仅有一组时回退。显式选择必须命中：找不到时明确报错，
-  不回落；同一 `character_id` 重复出现时拒绝（无法明确对应）。
-- 首次预览即歧义（多组且按优先级无法确定）时返回 `state: 'needs-order-selection'` 与有界候选
-  （`candidates: [{ characterId, entries }]` 加来源文件显示名），此时**没有**报告与写入凭据、
-  确认按钮禁用；用户在预览卡里选择顺序组后立即重新预览，`state: 'ready'` 才可确认。
-  提交仍拒绝歧义——候选状态从未宣称已转换。
-- 预览版本：预览除 `sourceDigest`（本次上传文件内容）外返回 `previewRevision`，由服务端对
-  预览协议版本、转换器版本、规范化文件有序数组、实际选组与目标身份（导入类型、目标 id、
-  目标**当前**内容版本、目标归属）计算。提交携带 `expectedPreviewRevision`，服务端重算：
-  文件、选组、转换器版本或目标（含预览期间被用户改动的目标）任一不符即 409
-  （`module-preview-stale` / `characters-preview-stale`）且零写盘。目标"不存在"与"已存在"
-  必须可区分。旧调用只带 `expectedSourceDigest` 时仍按文件校验，但若要新的选组覆盖则必须重新预览。
-- 客户端不计算版本：换文件、换组、目标变化都让旧 ready 失效并重新预览；迟到的预览响应按
-  请求序号丢弃，重预览期间卡片保留但确认禁用（可继续换组）。
-  重预览期间取消会失效在途结果；迟到响应不能恢复卡片或触发提交。
-- 报告身份：多文件合并的最终 id 只由合并分配一次，报告条目的 `targetId` 消费同一份映射
-  （`targetIndex` 关联到生成配置下标），并附 `sourceName` / `sourceFileIndex`；
-  `sourceId` 表达来源身份、`targetId` 表达目标身份，被排除条目没有目标身份。
-- 有损信息完整展示：预览卡渲染服务端返回的全部 warning、info 级降级与被排除条目
-  （长列表在容器内滚动，容器可键盘聚焦），每条带来源/目标定位，不存在前端二次截断。
-  服务端报告被截断时明确给出已展示条目数、诊断数与来源条目总数，并建议拆分导入复核，
-  不标成"全部已展示"。
-
-### 导入预览与转换报告（2026-09-16）
-
-`convertStToModule()` 仍是唯一转换实现；`convertStToModuleWithReport()` 在同一路径上额外
-返回结构化报告。报告是派生元数据：不写入 `module.yml`、不进入模型上下文、也不是写入凭证。
-
-- 预览与提交同源：模块导入端点带 `preview: true` 时
-  只做转换并返回 `report` + `sourceDigest`，不落盘、不重建、不执行宏。
-- 入口参数严格区分缺省与非法类型：`preview` 只接受布尔（省略或 `false` = 显式提交，
-  `true` = 只读预览）；字符串 `"true"`、数值、`null`、数组、对象返回 400。
-  `expectedSourceDigest` 提供时必须是 SHA-256 十六进制摘要，`promptOrderCharacterId`
-  必须是有界非空字符串；`files` 容器与条目（path/content）类型错误一律 fail closed。
-  校验全部发生在创建目录、备份、写盘与重建之前，错误请求对目录树与重建回调零副作用。
-- 过期校验：提交带 `expectedSourceDigest` 时服务端按本次上传文件重算摘要，不一致返回
-  409（`module-preview-stale` / `characters-preview-stale`）且不写盘。
-- 报告内容：来源身份（文件显示名、原 identifier/uid、序号、顺序组）、目标身份（生成的
-  配置 id、层、顺序、角色、位置）、分类（等价/降级/不支持/被排除，禁用与失败区分）、
-  结构化诊断（稳定 code + severity + 定位）、摘要计数、转换器版本。
-- 多顺序组：`prompt_order` 歧义保持拒绝；显式 `promptOrderCharacterId`（或文件内
-  `character_id`）才选择，未选中的组在报告中标记 `selected: false`。
-- 兼容：`meta.stWarnings` 由结构化诊断派生（同一事实来源，消息仍去重），有损映射在预览里
-  单独列为需确认项。条数上限：条目 500、诊断 200，超出标 `truncated`。
-  上限只限制展示数组；分类摘要与 `needsReview` 统计全部输入，完整去重告警继续保存在
-  `meta.stWarnings`，不会因较早的 info 记录耗尽展示额度而丢失。
-- 世界书副键中的无源宏求值为空时仍代表一项未命中的条件；AND_ANY/AND_ALL 不因此取消
-  副键约束，NOT_ALL/NOT_ANY 也按原始副键数量及实际命中数判断。
-- PNG 与大 JSON 的原始流仅暂存；所有载体统一预览后提交，旧直接入库端点返回刷新页面提示。
-  世界书运行期诊断见 [引擎复用](engine-reuse.md) 的入选/落选诊断一节。
-
-### 工作台入口（2026-09-18）
-
-- 模块导入与角色卡 PNG/JSON/YAML 导入（同在「模块」页）都走「预览 → 确认 → 提交」：
-  预览来自同一个 `convertStToModuleWithReport()`，确认时回传 `expectedSourceDigest`。
-  取消预览不写目标；来源或目标版本变化时返回 409，保留来源并要求重新预览。
-- 预设目录中的定义、正文和自有附件共同预览；技能库与指令文件不属于预设交换包。
-  无原生定义的多个 ST 来源按输入顺序合并为预设。角色卡按文件逐张确认，“跳过这张”和“结束本次导入”分别控制当前项与剩余批次。
-- 有损项（深度注入降级、system 角色降级、不支持的控制项、被排除条目）在预览卡里逐条列出，
-  用户确认后才写入；预览身份本身不是写入授权。
-- 世界书筛选视图（主会话页「世界书」过滤）显示只读诊断卡：记录来自引擎真实选择路径，
-  展示配置 id、阶段（未参与/被拒/候选/入选/已注入）与稳定原因码；刷新只重读、不重新求值。
-- JSON bridge 上限为 32 MiB，原始上传及 ZIP 解压总量上限为 64 MiB；大小只影响传输，不改变确认时机。完整格式、事务、记忆保留与导出规则见 [资产交换](asset-transfer.md)。
+验收使用公共接口：预览→提交→重读→编译→实际注入，核对层、位置、时机、次数、受众、epoch、候选与 commit。未知控制项不能仅靠告警证明“没有注入”；禁用项必须检查最终行为。

@@ -4,13 +4,16 @@ import fs, { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } f
 import { syncBuiltinESMExports } from 'node:module'
 import { createHash } from 'node:crypto'
 import { join } from 'node:path'
-import { parse } from 'yaml'
+import { parse, parseDocument } from 'yaml'
 import { isolatedHome } from '../fixtures/host-harness.mjs'
 
 const { moduleRoot } = isolatedHome('pt-package-roundtrip-')
 const { moduleImportPreview, installModulePackage, exportModulePackage, expandModuleSource } = await import('../../src/host/module-package.ts')
 const { ensureModuleSlices, readRulesDir } = await import('../../src/host/module-storage.ts')
 const { decodeAssetFile } = await import('../../src/host/import-source.ts')
+const { mergeModuleIntoModule, removeMergedModule } = await import('../../src/host/characters.ts')
+const { ruleInjections } = await import('../../src/host/rule-content.ts')
+const { mergeStModulesWithReport } = await import('../../src/host/sillytavern.ts')
 const rule = (id, text, extra = {}) => ({ id, enabled: false, then: [{ id: 'inject', kind: 'inject-text', config: { text, ...extra } }] })
 const source = (id, extra = {}) => ({ id, name: id, modules: [], rules: [rule('hello', 'SOURCE')], variables: { owner: 'Mia' }, variablesEnabled: false, configOrder: { hello: 40 }, ...extra })
 function fixture(id, value = source(id)) {
@@ -26,11 +29,78 @@ async function install(files, targetId) {
 }
 const state = dir => ({ definition: readFileSync(join(dir, 'module.yml'), 'utf8'), files: readdirSync(dir).sort() })
 
+test('完整分支模块并入、导出读回与重复并入保留原始载荷和稳定身份', async () => {
+  const origin = 'branch-source', target = 'branch-target'
+  const leaf = (id, config) => ({ id, kind: 'inject-text', config })
+  const branch = {
+    id: 'branches', enabled: false, if: { scope: { audience: 'main' } },
+    then: [
+      leaf('top', { id: 'explicit-top', text: 'TOP' }),
+      { if: { scope: { audience: 'main' } }, then: [leaf('nested', { text: 'NESTED' })],
+        else: [leaf('nested-else', { text: 'NESTED ELSE', params: { custom: { untouched: true } } })] },
+    ],
+    else: [leaf('fallback', { id: null, text: 'ELSE' })],
+  }
+  fixture(origin, source(origin, { rules: [branch], configOrder: { branches: 10 }, variablesEnabled: true }))
+  const targetDir = fixture(target)
+  const annotated = parseDocument(readFileSync(join(targetDir, 'module.yml'), 'utf8'))
+  annotated.getIn(['rules', 0, 'then', 0, 'config', 'text'], true).comment = ' target rule comment'
+  writeFileSync(join(targetDir, 'module.yml'), annotated.toString())
+  const own = parse(readFileSync(join(targetDir, 'module.yml'), 'utf8')).rules[0]
+  const expected = {
+    ...branch, id: 'module-branch-source-branches',
+    then: [
+      leaf('top', { id: 'module-branch-source-explicit-top', text: 'TOP' }),
+      { if: { scope: { audience: 'main' } }, then: [leaf('nested', { text: 'NESTED' })],
+        else: [leaf('nested-else', { text: 'NESTED ELSE', params: { custom: { untouched: true } } })] },
+    ],
+    else: [leaf('fallback', { id: null, text: 'ELSE' })],
+  }
+  const applied = mergeModuleIntoModule(moduleRoot, target, origin)
+  assert.equal(applied.ok, true, applied.message)
+  const once = parse(readFileSync(join(targetDir, 'module.yml'), 'utf8'))
+  assert.deepEqual(once.variables, { owner: 'Mia' }, '变量提升到模块真值且保留现有值')
+  assert.deepEqual(once.rules, [own, expected], '并入只映射显式身份与变量，不写回编译默认值或展开条件')
+  assert.match(readFileSync(join(targetDir, 'module.yml'), 'utf8'), /target rule comment/)
+  assert.deepEqual(ruleInjections([once.rules[1]]).map(({ config }) => config.id), [
+    'module-branch-source-explicit-top', 'rule:module-branch-source-branches:nested',
+    'rule:module-branch-source-branches:nested-else', 'rule:module-branch-source-branches:fallback',
+  ])
+  assert.equal(mergeModuleIntoModule(moduleRoot, target, origin).ok, true)
+  assert.deepEqual(parse(readFileSync(join(targetDir, 'module.yml'), 'utf8')).rules, once.rules)
+  const exported = await exportModulePackage(moduleRoot, { id: target, mode: 'zip' })
+  const files = await expandModuleSource([{ path: 'module.zip', content: exported.content, encoding: 'base64' }])
+  const restored = await install(files, 'branch-copy')
+  const copied = readFileSync(join(moduleRoot, restored.id, 'module.yml'), 'utf8')
+  assert.deepEqual(parse(copied).rules, once.rules)
+  assert.match(copied, /owner comment/)
+  assert.match(copied, /target rule comment/)
+  assert.equal(removeMergedModule(moduleRoot, target, origin).ok, true)
+  assert.deepEqual(parse(readFileSync(join(targetDir, 'module.yml'), 'utf8')).rules, [own])
+  assert.match(readFileSync(join(targetDir, 'module.yml'), 'utf8'), /target rule comment/)
+  const imported = source(origin, { rules: [branch], configOrder: { branches: 10 }, variablesEnabled: true })
+  const merged = mergeStModulesWithReport([imported, imported])
+  assert.deepEqual([...merged.idMap.values()].map(ids => ids.get(0)), ['branches', 'branches-2'])
+  assert.deepEqual(merged.spec.variables, { owner: 'Mia' })
+  assert.equal(merged.spec.rules[0].then[0].config.variables, undefined)
+  assert.deepEqual(ruleInjections(merged.spec.rules).map(({ config }) => config.id), [
+    'explicit-top', 'rule:branches:nested', 'rule:branches:nested-else', 'rule:branches:fallback',
+    'explicit-top-2', 'rule:branches-2:nested', 'rule:branches-2:nested-else', 'rule:branches-2:fallback',
+  ])
+  assert.ok(moduleImportPreview(moduleRoot, [{ path: 'module.yml', content: JSON.stringify(merged.spec) }], {}).prepared)
+  assert.deepEqual(imported.rules, [branch], '导入组合不修改来源规则')
+  assert.throws(() => mergeStModulesWithReport([imported, { ...imported, variables: { owner: 'OTHER' } }]), /模块变量 owner.*不同值/)
+})
+
 test('模块包往返以完整定义为准，漂移切片只在候选重建，素材和变量保持', async () => {
   const id = 'roundtrip-source', dir = fixture(id)
   mkdirSync(join(dir, 'assets'))
   writeFileSync(join(dir, 'assets', 'notice.txt'), 'PACKAGED TEMPLATE')
-  const spec = source(id, { rules: [rule('hello', undefined, { templateFile: './assets/notice.txt' })] })
+  const spec = source(id, { rules: [{
+    ...rule('hello', 'TOP'), if: { scope: { audience: 'main' } },
+    else: [{ if: { scope: { audience: 'subagent' } }, then: [{ id: 'nested', kind: 'inject-text', config: { templateFile: './assets/notice.txt' } }],
+      else: [{ id: 'fallback', kind: 'inject-text', config: { templateFile: './assets/notice.txt' } }] }],
+  }] })
   writeFileSync(join(dir, 'module.yml'), '# owner comment\n' + JSON.stringify(spec))
   ensureModuleSlices(dir)
   writeFileSync(join(dir, 'rules', 'hello.yml'), 'FORGED SLICE')
@@ -57,7 +127,7 @@ test('模块包往返以完整定义为准，漂移切片只在候选重建，�
     const copied = join(moduleRoot, id)
     const restored = readRulesDir(copied)
     assert.equal(restored.contents[0].id, 'hello')
-    assert.equal(restored.contents[0].then[0].config.templateFile, './assets/notice.txt')
+    assert.deepEqual(restored.contents[0].else, spec.rules[0].else)
     assert.equal(restored.settings.hello.enabled, false)
     assert.equal(restored.settings.hello.order, 40)
     assert.deepEqual(restored.variables, { owner: 'Mia' })
@@ -81,6 +151,8 @@ test('语义无效源在预览、安装、导出共同拒绝，模板预览只�
     { configOrder: { hello: -1 } },
     { variables: { owner: 1 } },
     { variablesEnabled: 'false' },
+    { rules: [{ ...rule('hello', 'TOP'), if: { scope: { audience: 'main' } }, else: [{ id: 'inject', kind: 'inject-text', config: { text: 'DUPLICATE' } }] }] },
+    { rules: [{ ...rule('hello', 'TOP', { id: 'same-config' }), if: { scope: { audience: 'main' } }, else: [{ id: 'other', kind: 'inject-text', config: { id: 'same-config', text: 'DUPLICATE' } }] }] },
   ]
   for (const [index, extra] of invalid.entries()) {
     const id = 'invalid-' + index, spec = source(id, extra)
@@ -108,6 +180,16 @@ test('语义无效源在预览、安装、导出共同拒绝，模板预览只�
   assert.deepEqual(state(dir), before)
   candidate.rules[0].then[0].config.templateFile = '../outside.txt'
   assert.throws(() => moduleImportPreview(moduleRoot, [{ path: 'module.yml', content: JSON.stringify(candidate) }], { targetId: id }), /外部|越界|资源/)
+  const nestedSource = fixture('nested-external', source('nested-external', { rules: [{
+    ...rule('hello', 'TOP'), if: { scope: { audience: 'main' } },
+    else: [{ if: { scope: { audience: 'subagent' } }, then: [{ id: 'external', kind: 'inject-text', config: { text: 'EXTERNAL', params: { file: '../private.md' } } }] }],
+  }] }))
+  const sourceBefore = state(nestedSource), targetBefore = state(dir)
+  const rejected = mergeModuleIntoModule(moduleRoot, id, 'nested-external')
+  assert.equal(rejected.ok, false)
+  assert.match(rejected.message, /params\.file.*外部文件/)
+  assert.deepEqual(state(nestedSource), sourceBefore)
+  assert.deepEqual(state(dir), targetBefore)
 })
 
 test('不分享的切片和记忆不读、不影响导出版本；定义模式可携缺附件告警', async () => {
@@ -137,14 +219,14 @@ test('不分享的切片和记忆不读、不影响导出版本；定义模式�
   const blocked = await exportModulePackage(moduleRoot, { id: missing, mode: 'zip', preview: true })
   assert.ok(blocked.blockers.some(warning => warning.includes('absent.txt')))
   await assert.rejects(exportModulePackage(moduleRoot, { id: missing, mode: 'zip' }), /absent.txt/)
-  const provenance = fixture('provenance-source')
+  fixture('provenance-source')
   const privateId = 'module-provenance-source-memory'
   fixture('provenance-owner', source('provenance-owner', {
     rules: [rule(privateId, 'POTENTIAL PRIVATE')], configOrder: { [privateId]: 0 },
     meta: { importedCharacters: ['provenance-source'] },
   }))
-  const unresolved = await exportModulePackage(moduleRoot, { id: 'provenance-owner', mode: 'definition', preview: true })
-  assert.deepEqual(unresolved.memoryConflicts.map(item => item.id), [privateId])
-  writeFileSync(join(provenance, 'module.yml'), JSON.stringify(source('provenance-source', { rules: [rule('memory', 'ORDINARY SOURCE')], configOrder: { memory: 0 } })))
-  await assert.rejects(exportModulePackage(moduleRoot, { id: 'provenance-owner', mode: 'definition', expectedRevision: unresolved.revision }), error => error.code === 'module-preview-stale', '实际分享来源证明变化使旧确认失效')
+  const privateFile = join(moduleRoot, 'provenance-owner', 'module.yml')
+  const original = readFileSync(privateFile, 'utf8')
+  for (const mode of ['definition', 'zip']) await assert.rejects(exportModulePackage(moduleRoot, { id: 'provenance-owner', mode }), /私有记忆|显式转换/, '来源不明的私有记忆不得进入任何分享包')
+  assert.equal(readFileSync(privateFile, 'utf8'), original, '拒绝导出不改用户定义')
 })

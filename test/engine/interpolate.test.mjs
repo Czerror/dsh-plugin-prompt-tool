@@ -1,10 +1,7 @@
-// 并入原 session-vars.test.mjs 的 1 条用例；同族的静态替换/剥离/会话事实/动态宏用例改为参数化表
-// （每行仍是一条独立用例，名称保留原场景关键词），递归预算、循环预算、原型安全与会话变量保持独立 test()；
-// 断言逐条保留，未做语义改写。
+// 静态替换、可见会话事实、动态宏与展开预算。
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { interpolateStatic, interpolateVariables, isReservedInterpolationName, normalizeMacroSyntax, runtimeFactValue, stripUnresolvedRefs } from '../../engine/interpolate.mjs'
-import { SESSION_VARS_KEY, getSessionVar, setSessionVar, sessionVarsSnapshot, clearSessionVars } from '../../engine/session-vars.mjs'
+import { interpolateStatic, interpolateVariables, normalizeMacroSyntax, runtimeFactValue, stripUnresolvedRefs } from '../../engine/interpolate.mjs'
 
 // 表 1：静态替换与语法归一（无会话上下文）。
 for (const [name, run] of [
@@ -218,70 +215,4 @@ test('interpolate：递归循环和展开预算只阻断不安全引用，不吞
   assert.equal(stripUnresolvedRefs(expanded).text.endsWith('后|OK'), true)
   const literal = '合法文本'.repeat(8192)
   assert.equal(interpolateVariables('{{literal}}', { literal }), literal, '合法长文本不因清洗丢失')
-})
-
-test('interpolate：会话变量只读取自有键，原型名字可作为内容值且读取不创建状态', () => {
-  const session = {}
-  assert.equal(getSessionVar(session, 'constructor'), undefined)
-  assert.deepEqual(sessionVarsSnapshot(session), {})
-  assert.equal(Object.hasOwn(session, SESSION_VARS_KEY), false)
-  setSessionVar(session, '__proto__', '原型键')
-  setSessionVar(session, 'constructor', '')
-  assert.equal(getSessionVar(session, '__proto__'), '原型键')
-  assert.equal(getSessionVar(session, 'constructor'), '')
-  clearSessionVars(session, '__proto__')
-  assert.equal(getSessionVar(session, '__proto__'), undefined)
-  clearSessionVars(session)
-  assert.deepEqual(sessionVarsSnapshot(session), {})
-  assert.equal(interpolateVariables('{{constructor}}', {}), '{{constructor}}', '动态宏也不得读取原型成员')
-})
-
-test('session-vars：保留名不得占用（写入拒绝、读取过滤、历史脏键失效）', () => {
-  // 判据与真实插值出口同源：内建名大小写敏感，动态宏名大小写不敏感。
-  assert.equal(isReservedInterpolationName('DSH_HOME'), true)
-  assert.equal(isReservedInterpolationName('CWD'), true)
-  assert.equal(isReservedInterpolationName('dsh_home'), false, '内建名大小写敏感')
-  assert.equal(isReservedInterpolationName('time'), true)
-  assert.equal(isReservedInterpolationName('TIME'), true, '宏名大小写不敏感')
-  assert.equal(isReservedInterpolationName('owner'), false)
-
-  const session = { id: 'reserved', header: { cwd: 'C:/host-cwd' } }
-  // 主路径：普通名字正常写入并可插值。
-  assert.equal(setSessionVar(session, 'owner', 'Mia'), undefined)
-  assert.equal(interpolateVariables('{{owner}}', sessionVarsSnapshot(session), session), 'Mia')
-  // 关键拒绝：内建名与宏名（含大小写变体）拒绝写入，插值仍取宿主事实与宏值。
-  assert.match(String(setSessionVar(session, 'CWD', 'C:/fake')), /保留名 CWD/)
-  assert.match(String(setSessionVar(session, 'TIME', 'FAKE-TIME')), /保留名 TIME/)
-  assert.equal(getSessionVar(session, 'CWD'), undefined)
-  const merged = { ...sessionVarsSnapshot(session) }
-  assert.equal(interpolateVariables('{{CWD}}', merged, session), 'C:/host-cwd')
-  assert.match(interpolateVariables('{{time}}', merged, session), /^\d{2}:\d{2}$/)
-  // 边界：存量脏键（绕过 setter 直接落表）在读取路径被跳过，不再生效。
-  session[SESSION_VARS_KEY].CWD = 'C:/dirty'
-  session[SESSION_VARS_KEY].time = 'FAKE-DIRTY'
-  assert.deepEqual(sessionVarsSnapshot(session), { owner: 'Mia' })
-  assert.equal(getSessionVar(session, 'CWD'), undefined)
-  assert.equal(interpolateVariables('{{CWD}}', sessionVarsSnapshot(session), session), 'C:/host-cwd')
-})
-
-test('session-vars：设置/读取/快照/清除（挂在 session 对象上）', () => {
-  const session = { id: 's1' }
-  assert.deepEqual(sessionVarsSnapshot(session), {}, '初始空')
-  assert.equal(getSessionVar(session, '心情'), undefined)
-  setSessionVar(session, '心情', '😊')
-  setSessionVar(session, '接受值', '42')
-  assert.equal(getSessionVar(session, '心情'), '😊')
-  assert.deepEqual(sessionVarsSnapshot(session), { 心情: '😊', 接受值: '42' })
-  // 值转字符串。
-  setSessionVar(session, '数字', 7)
-  assert.equal(getSessionVar(session, '数字'), '7')
-  // 单键清除。
-  clearSessionVars(session, '心情')
-  assert.equal(getSessionVar(session, '心情'), undefined)
-  assert.equal(getSessionVar(session, '接受值'), '42', '其余保留')
-  // 全部清除。
-  clearSessionVars(session)
-  assert.deepEqual(sessionVarsSnapshot(session), {})
-  // 无 session（非对象）安全。
-  assert.deepEqual(sessionVarsSnapshot(undefined), {})
 })

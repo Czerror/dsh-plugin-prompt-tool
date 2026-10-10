@@ -249,14 +249,15 @@ test('模板变量与参数独立保存，读取与 bootstrap 不回退旧 param
   registerSettingsBridge(ctx, 'prompt-tool', () => ({ available: true, providers: [] }),
     () => skillsStateStub(), () => '', undefined, () => dir)
   const write = handlers.get(PREFIX + BRIDGE_ENDPOINTS.moduleVariables)
+  const variableRequest = (body = {}) => fakeReq({ async *[Symbol.asyncIterator]() {
+    yield Buffer.from(JSON.stringify({ scope: 'module', expectedModuleId: basename(dir), ...body }))
+  } })
   for (const variables of [{ toolGitBashEnabled: 'text', strReplaceEditorMaxOutputChars: '' }, {}]) {
     const initial = fakeRes()
-    await write(fakeReq(), initial)
+    await write(variableRequest(), initial)
     const expectedRevisions = JSON.parse(initial.body).value.revisions
     const res = fakeRes()
-    await write(fakeReq({ [Symbol.asyncIterator]: async function* () {
-      yield Buffer.from(JSON.stringify({ variables, expectedRevisions }))
-    } }), res)
+    await write(variableRequest({ variables, expectedRevisions }), res)
     assert.equal(res.status, 200)
     const saved = parseYaml(readFileSync(file, 'utf8'))
     assert.deepEqual(saved.params, params)
@@ -264,17 +265,17 @@ test('模板变量与参数独立保存，读取与 bootstrap 不回退旧 param
     assert.deepEqual(saved.variables ?? {}, variables)
     assert.match(readFileSync(file, 'utf8'), /# keep comment/)
     const read = fakeRes()
-    await write(fakeReq(), read)
+    await write(variableRequest(), read)
     assert.equal(read.status, 200)
-    assert.deepEqual(JSON.parse(read.body).value.variables, variables)
+    assert.deepEqual(JSON.parse(read.body).value.module, variables)
     assert.equal(JSON.parse(read.body).value.enabled, true)
-    assert.match(JSON.parse(read.body).value.revisions.variables, /^[a-f0-9]{64}$/)
+    assert.match(JSON.parse(read.body).value.revisions.module, /^[a-f0-9]{64}$/)
     const bootstrap = fakeRes()
     await handlers.get(PREFIX + BRIDGE_ENDPOINTS.bootstrap)(fakeReq(), bootstrap)
     assert.equal(bootstrap.status, 200)
-    assert.deepEqual(JSON.parse(bootstrap.body).variables.variables, variables)
+    assert.deepEqual(JSON.parse(bootstrap.body).variables.module, variables)
     assert.equal(JSON.parse(bootstrap.body).variables.enabled, true)
-    assert.deepEqual(JSON.parse(bootstrap.body).variablesRevisions, JSON.parse(read.body).value.revisions)
+    assert.deepEqual(JSON.parse(bootstrap.body).variables.revisions, JSON.parse(read.body).value.revisions)
   }
   const before = readFileSync(file, 'utf8')
   const rejected = fakeRes()
@@ -320,7 +321,7 @@ test('请求模块身份统一 bootstrap 快照与规则写入；错误身份和
       assert.equal(payload.templatePreStepCount, 1)
       if (endpoint === 'bootstrap') {
         assert.deepEqual(payload.overrides.overrides, {})
-        assert.deepEqual(payload.variables.variables, { owner: 'A' })
+        assert.deepEqual(payload.variables.module, { owner: 'A' })
         assert.equal(payload.variables.enabled, true)
         assert.deepEqual(payload.promptConfigs.promptConfigs, [], '旧配置卡入口只承载独立文件卡')
       }
@@ -571,13 +572,13 @@ test('settings bridge：system 预设拒绝全部当前预设写入', async () =
     const revisions = JSON.parse(rulesRead.body).value.revisions
     const cases = [
       [BRIDGE_ENDPOINTS.rules, { expectedModuleId: basename(dir), expectedRevisions: revisions, edits: [{ previousId: null, rule: textRule('readonly', 'FORBIDDEN') }] }],
-      [BRIDGE_ENDPOINTS.moduleVariables, { variables: { empty: '' }, enabled: true, expectedRevisions: revisions }],
+      [BRIDGE_ENDPOINTS.moduleVariables, { scope: 'module', expectedModuleId: basename(dir), variables: { empty: '' }, enabled: true, expectedRevisions: { module: revisions.variables, settings: revisions.settings } }],
       [BRIDGE_ENDPOINTS.customTools, { customTools: [] }],
       [BRIDGE_ENDPOINTS.charactersImport, { files: [{ path: 'card.json', content: '{}' }] }],
       [BRIDGE_ENDPOINTS.moduleMerge, { id: 'card' }],
       [BRIDGE_ENDPOINTS.moduleUnmerge, { id: 'card' }],
       [BRIDGE_ENDPOINTS.subagentToolPolicy, { policy: null }],
-      [BRIDGE_ENDPOINTS.moduleCapability, { action: 'create', capabilityId: 'context-gate' }],
+      [BRIDGE_ENDPOINTS.moduleCapability, { action: 'create', capabilityId: 'module-variable-tools' }],
     ]
     for (const [endpoint, body] of cases) {
       const handler = handlers.get(PREFIX + endpoint)
@@ -627,13 +628,13 @@ test('settings bridge /custom-tools 保存时自动追加工具模块', async ()
     assert.ok(handler, '/custom-tools 端点应注册')
     const payload = Buffer.from(JSON.stringify({ customTools: [
       { id: 'shell', description: '运行命令', output: { schema: { type: 'string' } }, execute: { kind: 'shell', command: 'echo' } },
-      { id: 'world', description: '写入世界书', output: { schema: { type: 'json' } }, execute: { kind: 'delegate', tool: 'world_book_upsert' } },
+      { id: 'rules', description: '写入模块规则', output: { schema: { type: 'json' } }, execute: { kind: 'delegate', tool: 'module_rules_edit' } },
     ] }))
     const res = fakeRes()
     await handler(fakeReq({ [Symbol.asyncIterator]: async function* () { yield payload } }), res)
     assert.equal(res.status, 200)
     const parsed = parseYaml(readFileSync(join(dir, 'module.yml'), 'utf8'))
-    assert.deepEqual(parsed.modules, ['tool-config-engine', 'world-book-tools'], '只装配自定义工具实际依赖的模块')
+    assert.deepEqual(parsed.modules, ['tool-config-engine', 'module-rule-tools'], '只装配自定义工具实际依赖的模块')
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }
@@ -691,24 +692,34 @@ test('settings bridge /persona 读写顶层 persona 段并按实际模块身份�
     )
     const handler = handlers.get(PREFIX + BRIDGE_ENDPOINTS.persona)
     assert.ok(handler, '/persona 端点应注册')
+    const initial = fakeRes()
+    await handler(fakeReq(), initial)
+    const expectedRevision = JSON.parse(initial.body).value.revision
     const write = fakeRes()
     await handler(fakeReq({ [Symbol.asyncIterator]: async function* () {
-      yield Buffer.from(JSON.stringify({ persona: { prefix: 'PREFIX', suffix: 'SUFFIX', complete: true, includeRuntimeContext: false } }))
+      yield Buffer.from(JSON.stringify({ expectedModuleId: basename(dir), expectedRevision, persona: { main: { prefix: '', suffix: 'SUFFIX', complete: false }, subagent: { complete: true, includeRuntimeContext: false } } }))
     } }), write)
     assert.equal(write.status, 200)
     const written = parseYaml(readFileSync(join(dir, 'module.yml'), 'utf8'))
-    assert.deepEqual(written.persona, { prefix: 'PREFIX', suffix: 'SUFFIX', complete: true, includeRuntimeContext: false })
+    assert.deepEqual(written.persona, { main: { prefix: '', suffix: 'SUFFIX', complete: false }, subagent: { complete: true, includeRuntimeContext: false } })
     assert.equal(written.unknown, 'keep', '未知字段保留')
     assert.deepEqual(rebuilds, [basename(dir)], '写盘后把实际模块身份交给运行时')
+    const stale = fakeRes()
+    const savedBytes = readFileSync(join(dir, 'module.yml'))
+    await handler(fakeReq({ [Symbol.asyncIterator]: async function* () {
+      yield Buffer.from(JSON.stringify({ expectedModuleId: basename(dir), persona: null, expectedRevision }))
+    } }), stale)
+    assert.equal(stale.status, 409)
+    assert.deepEqual(readFileSync(join(dir, 'module.yml')), savedBytes)
     // 无 persona 载荷 = 读取。
     const read = fakeRes()
     await handler(fakeReq(), read)
     assert.equal(read.status, 200)
-    assert.deepEqual(JSON.parse(read.body).value.persona, { prefix: 'PREFIX', suffix: 'SUFFIX', complete: true, includeRuntimeContext: false })
+    assert.deepEqual(JSON.parse(read.body).value.persona, written.persona)
     // persona: null = 移除顶层段。
     const remove = fakeRes()
     await handler(fakeReq({ [Symbol.asyncIterator]: async function* () {
-      yield Buffer.from(JSON.stringify({ persona: null }))
+      yield Buffer.from(JSON.stringify({ expectedModuleId: basename(dir), persona: null, expectedRevision: JSON.parse(read.body).value.revision }))
     } }), remove)
     assert.equal(remove.status, 200)
     assert.equal(parseYaml(readFileSync(join(dir, 'module.yml'), 'utf8')).persona, undefined)
@@ -718,62 +729,114 @@ test('settings bridge /persona 读写顶层 persona 段并按实际模块身份�
   }
 })
 
-test('/persona：已有启用独占规则时拒绝顶层人设独占，禁用规则不构成冲突', async () => {
+test('/persona：未选人设可以保存独占字段，发布失败保留定义且只重试刷新', async () => {
   const { ctx, handlers } = makeHarness()
   const dir = makeUserPresetDir('pt-persona-complete-')
-  let rebuilds = 0
+  let rebuilds = 0, failPublication = false
   const file = join(dir, 'module.yml')
   const writeModule = enabled => writeFileSync(file, JSON.stringify({ id: basename(dir), modules: ['rule-engine'], rules: [textRule('exclusive-section', '独占段', { enabled, layer: 'system-section', params: { complete: true } })] }))
   try {
-    registerSettingsBridge(ctx, 'prompt-tool', () => ({ available: true, providers: [] }), () => skillsStateStub(), () => '', undefined, () => dir, () => { rebuilds++ })
+    registerSettingsBridge(ctx, 'prompt-tool', () => ({ available: true, providers: [] }), () => skillsStateStub(), () => '', undefined, () => dir, () => { rebuilds++; if (failPublication) throw new Error('publication unavailable') })
     const handler = handlers.get(PREFIX + BRIDGE_ENDPOINTS.persona)
     const post = async () => {
+      const read = fakeRes()
+      await handler(fakeReq(), read)
       const res = fakeRes()
-      await handler(fakeReq({ async *[Symbol.asyncIterator]() { yield Buffer.from(JSON.stringify({ persona: { prefix: 'PREFIX', complete: true } })) } }), res)
+      await handler(fakeReq({ async *[Symbol.asyncIterator]() { yield Buffer.from(JSON.stringify({ expectedModuleId: basename(dir), expectedRevision: JSON.parse(read.body).value.revision, persona: { main: { prefix: 'PREFIX', complete: true } } })) } }), res)
       return res
     }
     writeModule(true)
-    const before = readFileSync(file, 'utf8')
-    const rejected = await post()
-    assert.equal(rejected.status, 400)
-    assert.equal(JSON.parse(rejected.body).code, 'module-persona-complete-conflict')
-    assert.equal(readFileSync(file, 'utf8'), before)
-    assert.equal(rebuilds, 0)
-    writeModule(false)
     assert.equal((await post()).status, 200)
     assert.equal(rebuilds, 1, '写盘成功后按实际模块身份重建')
-    assert.equal(parseYaml(readFileSync(file, 'utf8')).persona.complete, true)
+    assert.equal(parseYaml(readFileSync(file, 'utf8')).persona.main.complete, true)
+    failPublication = true
+    const pending = JSON.parse((await post()).body).value
+    assert.equal(pending.persisted, true)
+    assert.equal(pending.publicationPending, true)
+    assert.match(pending.publicationError, /publication unavailable/)
+    const saved = readFileSync(file)
+    failPublication = false
+    const refreshed = fakeRes()
+    await handler(fakeReq({ async *[Symbol.asyncIterator]() { yield Buffer.from(JSON.stringify({ expectedModuleId: basename(dir), refreshOnly: true })) } }), refreshed)
+    assert.equal(JSON.parse(refreshed.body).value.publicationPending, false)
+    assert.deepEqual(readFileSync(file), saved, '刷新不重写已提交正文')
   } finally { rmSync(dir, { recursive: true, force: true }) }
 })
 
-test('/rules：顶层人设独占时拒绝启用独占规则，保留禁用边界和零写入', async () => {
+test('/persona-sources：主子来源独立于编辑模块，保存不启用规则，发布失败可只重试', async () => {
   const { ctx, handlers } = makeHarness()
-  const dir = makeUserPresetDir('pt-rules-complete-'), file = join(dir, 'module.yml')
-  const id = basename(dir), rebuilds = []
-  const definition = complete => ({ id, modules: ['rule-engine'], persona: { prefix: 'PREFIX', ...(complete ? { complete: true } : {}) }, rules: [] })
-  const completeRule = enabled => textRule('exclusive-section', '独占段', { enabled, layer: 'system-section', params: { complete: true } })
-  const call = async (body = {}) => {
-    const res = fakeRes()
-    await handlers.get(PREFIX + BRIDGE_ENDPOINTS.rules)(fakeReq({ async *[Symbol.asyncIterator]() { yield Buffer.from(JSON.stringify({ expectedModuleId: id, ...body })) } }), res)
-    return { status: res.status, ...JSON.parse(res.body) }
-  }
-  const save = async enabled => call({ expectedRevisions: (await call()).value.revisions, edits: [{ previousId: null, rule: completeRule(enabled) }] })
+  const alpha = makeUserPresetDir('pt-source-main-'), beta = makeUserPresetDir('pt-source-child-')
+  const { readPersonaSources, writePersonaSources, selectedPersonaModules } = await import('../../src/host/persona-selection.ts')
+  const { enabledModuleIds, enableTablePath } = await import('../../src/host/config-store.ts')
+  const original = readPersonaSources(userPresetRoot).sources, enabled = enabledModuleIds(userPresetRoot)
+  const rebuilds = []
+  let failPublication = false
+  for (const [dir, prefix] of [[alpha, 'ALPHA'], [beta, 'BETA']]) writeFileSync(join(dir, 'module.yml'), JSON.stringify({ id: basename(dir), modules: [], rules: [], persona: { main: { prefix: prefix + '-MAIN' }, subagent: { prefix: prefix + '-CHILD' } } }))
   try {
-    registerSettingsBridge(ctx, 'prompt-tool', () => ({ available: true, providers: [] }), () => skillsStateStub(), () => '', undefined, () => dir, target => { rebuilds.push(target) }, undefined)
-    writeFileSync(file, JSON.stringify(definition(false)))
-    assert.equal((await save(true)).status, 200)
-    assert.deepEqual(rebuilds, [id])
-    writeFileSync(file, JSON.stringify(definition(true)))
-    const before = readFileSync(file, 'utf8')
-    const rejected = await save(true)
-    assert.equal(rejected.status, 400)
-    assert.equal(rejected.code, 'rules-invalid')
-    assert.match(rejected.message, /complete|独占/)
-    assert.equal(readFileSync(file, 'utf8'), before)
-    assert.deepEqual(rebuilds, [id])
-    assert.equal((await save(false)).status, 200)
-    assert.deepEqual(rebuilds, [id, id])
-  } finally { rmSync(dir, { recursive: true, force: true }) }
+    registerSettingsBridge(ctx, 'prompt-tool', () => ({ available: true, providers: [] }), () => skillsStateStub(), () => '', undefined, () => '', target => { rebuilds.push(target); if (failPublication) throw new Error('runtime unavailable') })
+    const post = skillsPost(handlers, 'personaSources')
+    const initial = await post({})
+    assert.equal(initial.status, 200)
+    const sources = { main: basename(alpha), subagent: basename(beta) }
+    failPublication = true
+    const saved = await post({ sources, expectedRevision: initial.body.value.revision })
+    assert.equal(saved.status, 200)
+    assert.deepEqual(saved.body.value.sources, sources)
+    assert.equal(saved.body.value.persisted, true)
+    assert.equal(saved.body.value.publicationPending, true)
+    assert.deepEqual(enabledModuleIds(userPresetRoot), enabled)
+    assert.deepEqual(selectedPersonaModules(userPresetRoot).map(item => item.persona), [{ main: { prefix: 'ALPHA-MAIN' } }, { subagent: { prefix: 'BETA-CHILD' } }])
+    const file = enableTablePath(userPresetRoot), bytes = readFileSync(file)
+    assert.equal((await post({ sources, expectedRevision: initial.body.value.revision })).status, 409)
+    assert.deepEqual(readFileSync(file), bytes)
+    failPublication = false
+    const refreshed = await post({ refreshOnly: true })
+    assert.equal(refreshed.body.value.publicationPending, false)
+    assert.equal(refreshed.body.value.revision, saved.body.value.revision)
+    assert.deepEqual(rebuilds, [undefined, undefined], '来源变化刷新全部 Agent')
+    assert.deepEqual(readFileSync(file), bytes, '发布重试不重写来源配置')
+    const cleared = await post({ sources: { main: null, subagent: null }, expectedRevision: saved.body.value.revision })
+    assert.equal(cleared.status, 200)
+    assert.deepEqual(cleared.body.value.sources, { main: null, subagent: null })
+    assert.deepEqual(enabledModuleIds(userPresetRoot), enabled)
+  } finally {
+    writePersonaSources(userPresetRoot, original, readPersonaSources(userPresetRoot).revision)
+    for (const dir of [alpha, beta]) rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('/persona-sources：非法载荷和远端请求零写入，在用人设模块不能删除', async () => {
+  const { ctx, handlers } = makeHarness()
+  const dir = makeUserPresetDir('pt-source-protected-'), id = basename(dir)
+  const { readPersonaSources, writePersonaSources } = await import('../../src/host/persona-selection.ts')
+  const { enableTablePath } = await import('../../src/host/config-store.ts')
+  const original = readPersonaSources(userPresetRoot).sources
+  writeFileSync(join(dir, 'module.yml'), JSON.stringify({ id, modules: [], rules: [], persona: { main: { prefix: 'PRESERVE' } } }))
+  try {
+    registerSettingsBridge(ctx, 'prompt-tool', () => ({ available: true, providers: [] }), () => skillsStateStub(), () => '', undefined, () => '')
+    const post = skillsPost(handlers, 'personaSources')
+    const selection = writePersonaSources(userPresetRoot, { main: id, subagent: null }, readPersonaSources(userPresetRoot).revision)
+    const bytes = readFileSync(enableTablePath(userPresetRoot))
+    for (const body of [
+      { sources: { main: id, subagent: null } },
+      { sources: { main: '../escape', subagent: null }, expectedRevision: selection.revision },
+      { sources: { main: 'missing-source', subagent: null }, expectedRevision: selection.revision },
+      { sources: { main: id }, expectedRevision: selection.revision },
+      { sources: { main: null, subagent: null }, expectedRevision: selection.revision, refreshOnly: true },
+      { sources: { main: null, subagent: null }, expectedRevision: selection.revision, extra: true },
+    ]) assert.notEqual((await post(body)).status, 200)
+    const remote = fakeRes()
+    await handlers.get(PREFIX + BRIDGE_ENDPOINTS.personaSources)(fakeReq({ socket: { remoteAddress: '192.168.1.4' } }), remote)
+    assert.equal(remote.status, 403)
+    assert.deepEqual(readFileSync(enableTablePath(userPresetRoot)), bytes)
+    const removed = await skillsPost(handlers, 'moduleDelete')({ id })
+    assert.equal(removed.status, 400)
+    assert.match(removed.body.message, /人设|persona/)
+    assert.equal(existsSync(join(dir, 'module.yml')), true)
+  } finally {
+    writePersonaSources(userPresetRoot, original, readPersonaSources(userPresetRoot).revision)
+    rmSync(dir, { recursive: true, force: true })
+  }
 })
 
 /** 用户技能根（技能实体的落点）：创建、复制导入与回收站都落在这里。 */

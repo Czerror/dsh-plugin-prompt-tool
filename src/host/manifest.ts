@@ -12,21 +12,20 @@
 
 import { readFileSync, existsSync, readdirSync, mkdirSync, mkdtempSync, rmSync, writeFileSync, cpSync, renameSync, statSync } from 'node:fs'
 import { spawn } from 'node:child_process'
-import { basename, join, resolve, sep } from 'node:path'
+import { basename, dirname, join, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { isDeepStrictEqual } from 'node:util'
 import { Pair, Scalar, parse as parseYaml, parseDocument, YAMLMap, YAMLSeq } from 'yaml'
 import { MODULES_DIR, MODULE_DEFINITION_FILE } from './paths.ts'
 import { moduleCapability, engineRecipe, impliedModulesForParams, isModuleCapabilityPresent, type ModuleSourceMode, type ModuleFacts } from '../shared/engine-capabilities.ts'
 import { ENGINE_PARAM_DEFINITIONS, ENGINE_PARAM_KEYS, buildEngineModuleParams, normalizeMaxDepth } from '../shared/engine-params.ts'
-import { personaRowConfig, readPersonaSpec, type PersonaSpec } from '../shared/persona-section.ts'
-import { DEFAULT_MODULE_ID } from '../shared/module-ids.ts'
+import { readPersonaSpec, type PersonaSnapshot, type PersonaSpec } from '../shared/persona-section.ts'
+import { readStorageConfig } from './config-store.ts'
 import { assertModuleDirectory, assertModuleId, assertModuleTree, modulePathExists, setModuleDefinitionId } from './module-install.ts'
 import { engineParamPath, readModuleLayerSettings, ModuleLayerSettingsError } from './module-layer-settings.ts'
 import { isLegacyPromptParam } from '../shared/legacy-prompt-params.ts'
-import type { RuleDefinition, RuleRevisions } from '../shared/rules.ts'
-import { assertCanonicalRuleSource } from './module-rules.ts'
-import { ensureModuleSlices, loadModuleDefinition, commitModuleDefinition, withModuleDefinition as commitDefinitionEdit, withModuleLock, ModuleRulesError } from './module-storage.ts'
-export { atomicWriteTextFile } from './text-file.ts'
+import type { RuleDefinition } from '../shared/rules.ts'
+import { assertCanonicalRuleSource, ensureModuleSlices, loadModuleDefinition, commitModuleDefinition, withModuleDefinition as commitDefinitionEdit, withModuleLock, ModuleRulesError } from './module-storage.ts'
 export { ModuleLayerSettingsError } from './module-layer-settings.ts'
 
 /**
@@ -58,7 +57,7 @@ export interface ModuleSpec {
   params?: Record<string, unknown>
   /** 共享引擎参数按编辑组的主归属插入点存储；规则实例仍拥有各自 params。 */
   layerSettings?: Record<string, Record<string, unknown>>
-  /** 顶层人设段（官方 @deepseek-ai/dsh-persona 行同构）：prefix/suffix/complete/includeRuntimeContext。 */
+  /** 独立人设卡，按主会话与子代理逐字段覆盖官方声明。 */
   persona?: PersonaSpec
   /** 模块级模板变量（{{key}} 插值源；与 layerSettings 分离，顶层 variables 段）。 */
   variables?: Record<string, string>
@@ -70,8 +69,8 @@ export interface ModuleSpec {
   triggers?: unknown[]
   /** 模板变量插值开关（缺省 true = 启用；false = 停用，writeModule 不生成变量文件）。 */
   variablesEnabled?: boolean
-  /** ST 世界书递归总开关（缺省 false = 不递归，对齐 ST `world_info_recursive`）：装配期传给 `compileRules`。 */
-  stWorldBookRecursive?: boolean
+  /** 上下文激活的模块递归开关，缺省 false。 */
+  contextActivationRecursive?: boolean
   /** @deprecated 旧导入形状；未注册字段按白名单过滤，不参与执行。 */
   promptConfigs?: unknown[]
   /** 配置卡的持久文件序号；跨模块UI排序只改此轻量元数据。 */
@@ -150,6 +149,7 @@ export function removeModuleCapabilityDeclaration(dir: string, moduleId: string)
 export function loadModuleSpec(dir: string): ModuleSpec {
   // 完整性检查先于缓存；mtime/size 不能掩盖手改切片或伪造清单。
   const snapshot = ensureModuleSlices(dir, { writable: !resolve(dir).startsWith(resolve(packageModulesDir()) + sep) })
+  readPersonaSpec(snapshot.source.persona)
   const cached = moduleSpecCache.get(snapshot.file)
   if (cached?.revision === snapshot.revision) return structuredClone(cached.spec)
   const parsed = { ...snapshot.source, id: snapshot.source.id ?? basename(dir), rules: snapshot.rules,
@@ -158,20 +158,6 @@ export function loadModuleSpec(dir: string): ModuleSpec {
   if (parsed.layerSettings !== undefined || parsed.params !== undefined) parsed.params = params
   moduleSpecCache.set(snapshot.file, { revision: snapshot.revision, spec: structuredClone(parsed) })
   return parsed
-}
-
-/** 读取模块模板内容资产(presetText / agentsText);模板缺失时静默降级。
- *  模板目录按 resolveModuleDir 解析（用户自定义模块优先，包内模板回退）。 */
-export function loadModuleContent(template = DEFAULT_MODULE_ID, moduleRoot = userModulesDir()): { presetText: string; agentsText: string } {
-  try {
-    const spec = loadModuleSpec(resolveModuleDir(template, moduleRoot))
-    return {
-      presetText: typeof spec.content?.presetText === 'string' ? spec.content.presetText : '',
-      agentsText: typeof spec.content?.agentsText === 'string' ? spec.content.agentsText : '',
-    }
-  } catch {
-    return { presetText: '', agentsText: '' }
-  }
 }
 
 export const asString = (value: unknown, fallback = ''): string => {
@@ -396,7 +382,7 @@ function deleteYamlPath(doc: ReturnType<typeof parseDocument>, path: string[]): 
 }
 
 /**
- * 保存部署能力参数与模板变量；规则写入只走 module-rules 的版本事务。
+ * 保存共享能力参数；规则与持久变量分别通过各自的版本事务提交。
  * parseDocument 保留注释与未知键（module.yml 模板含大量注释）；空值键删除（'' / []，
  * 回落模板/引擎默认；0 与 false 照常写入——语义与函数内注释、docs §3 一致）。
  */
@@ -405,15 +391,8 @@ export function saveModuleParams(
   templateName: string,
   params: Record<string, unknown> | undefined,
   promptConfigs: unknown[] | undefined,
-  variables?: Record<string, string>,
-  variablesEnabled?: boolean,
-  expectedRevisions?: Partial<RuleRevisions>,
 ): void {
   const snapshot = loadModuleDefinition(assertModuleDirectory(moduleRoot, templateName))
-  if (expectedRevisions !== undefined && ((variables !== undefined && expectedRevisions.variables !== snapshot.revisions.variables)
-    || (variablesEnabled !== undefined && expectedRevisions.settings !== snapshot.revisions.settings))) {
-    throw new ModuleRulesError('模块变量或状态已变化，请重新读取', 409, 'rules-conflict')
-  }
   const doc = snapshot.doc
   readModuleLayerSettings(doc.toJS())
   assertCanonicalRuleSource(doc.toJS())
@@ -432,45 +411,56 @@ export function saveModuleParams(
       else doc.setIn(path, value)
     }
   }
-  if (variables !== undefined) {
-    // 模板变量只写顶层 variables 段，不修改 layerSettings 中的同名引擎参数。
-    const kept = Object.fromEntries(
-      Object.entries(variables).filter(([key, value]) => key.trim().length > 0 && typeof value === 'string'),
-    )
-    if (Object.keys(kept).length > 0) {
-      doc.setIn(['variables'], kept)
-    } else {
-      doc.deleteIn(['variables'])
-    }
-  }
-  if (variablesEnabled !== undefined) {
-    // 模板变量插值开关：true = 缺省（删除键）；false = 显式停用。
-    if (variablesEnabled) {
-      doc.deleteIn(['variablesEnabled'])
-    } else {
-      doc.setIn(['variablesEnabled'], false)
-    }
-  }
   commitModuleDefinition(snapshot, doc)
   invalidateModuleSpec(join(moduleRoot, templateName))
 }
 
-/**
- * 保存激活模块的顶层 persona 段（官方 `@deepseek-ai/dsh-persona` 行 config 同构）。
- * null = 删除该段（回落宿主部署人设）；默认值不落键（见 personaRowConfig）。
- */
-export function saveModulePersona(moduleRoot: string, templateName: string, persona: PersonaSpec | null): void {
+export function readModulePersona(moduleDir: string): PersonaSnapshot {
+  const snapshot = loadModuleDefinition(moduleDir)
+  return { persona: readPersonaSpec(snapshot.source.persona) ?? null, revision: snapshot.revision }
+}
+
+/** 人设与模块共用唯一写盘事务；空串/false 保留，删段恢复继承。 */
+export function saveModulePersona(moduleRoot: string, templateName: string, persona: PersonaSpec | null, expectedRevision: string): PersonaSnapshot {
   const snapshot = loadModuleDefinition(assertModuleDirectory(moduleRoot, templateName))
+  if (typeof expectedRevision !== 'string' || expectedRevision !== snapshot.revision) {
+    throw new ModuleRulesError('模块已更新，请重新读取人设后再保存', 409, 'module-persona-conflict')
+  }
+  const parsed = persona === null ? null : readPersonaSpec(persona)
+  if (parsed === undefined) throw new TypeError('persona 必须是对象或 null')
   const doc = snapshot.doc
   readModuleLayerSettings(doc.toJS())
-  if (persona === null) doc.deleteIn(['persona'])
-  else doc.setIn(['persona'], personaRowConfig(persona))
-  commitModuleDefinition(snapshot, doc)
+  const expected = { ...snapshot.source }
+  if (parsed === null || Object.keys(parsed).length === 0) {
+    doc.delete('persona')
+    delete expected.persona
+  } else {
+    expected.persona = parsed
+    const section = doc.get('persona', true)
+    if (!(section instanceof YAMLMap)) doc.set('persona', parsed)
+    else for (const audience of ['main', 'subagent'] as const) {
+      const fields = parsed[audience]
+      if (fields === undefined) { section.delete(audience); continue }
+      const target = section.get(audience, true)
+      if (!(target instanceof YAMLMap)) section.set(audience, fields)
+      else {
+        for (const key of target.items.map(pair => String(pair.key))) if (!Object.hasOwn(fields, key)) target.delete(key)
+        for (const [key, value] of Object.entries(fields)) target.set(key, value)
+      }
+    }
+  }
+  let next: string
+  try {
+    next = doc.toString()
+    if (!isDeepStrictEqual(doc.toJS(), expected)) throw new Error('shared alias changed')
+  } catch { throw new ModuleRulesError('YAML 共享引用会改变其他定义；请先解除相关引用后再编辑人设') }
+  const committed = commitModuleDefinition(snapshot, next)
   invalidateModuleSpec(join(moduleRoot, templateName))
+  return { persona: readPersonaSpec(committed.source.persona) ?? null, revision: committed.revision }
 }
 
 /** 模块文件读-改-写（parseDocument 保留注释与未知键；mutate 内 setIn/deleteIn）。
- *  角色卡库（characters）与世界书工具（world-book-tools）共用此入口，避免
+ *  模块并入与模块管理共用此入口，避免
  *  各自实现 parseDocument 往返。写盘走原子替换，失败保留旧文件。 */
 export function withModuleDefinition(moduleDir: string, mutate: (doc: ReturnType<typeof parseDocument>, source: Record<string, unknown>) => void): ReturnType<typeof commitDefinitionEdit> {
   const committed = commitDefinitionEdit(moduleDir, (doc, source) => {
@@ -504,27 +494,21 @@ export function appendModuleCapabilities(
  *  模块不在宿主预设注册表里，删除后无需撤销官方登记；调用方按需重建当前模块。 */
 export function removeUserModule(id: string, moduleRoot = userModulesDir()): { ok: true } | { ok: false; message: string } {
   try {
-    withModuleLock(moduleRoot, id, () => {
+    // 来源选择与删除共用配置锁，避免校验后又被选中而留下悬空引用。
+    withModuleLock(dirname(moduleRoot), 'config', () => withModuleLock(moduleRoot, id, () => {
+      const sources = readStorageConfig(moduleRoot).source.personaSources
+      if (sources !== null && typeof sources === 'object' && Object.values(sources).includes(id)) {
+        throw new Error(`模块「${id}」正在作为人设来源，请先切换对应受众的人设`)
+      }
       const target = assertModuleDirectory(moduleRoot, id)
       assertModuleTree(target)
       rmSync(target, { recursive: true, force: true })
       invalidateModuleSpec(target)
-    })
+    }))
     return { ok: true }
   } catch (error) {
     return { ok: false, message: `删除失败：${error instanceof Error ? error.message : String(error)}` }
   }
-}
-
-/** 从导入的 module.yml 读取合法 ID；仅缺失时使用同样合法的目录名。 */
-export function parseImportedModuleId(moduleYaml: string, fallback: string): string {
-  const doc = parseDocument(moduleYaml, { logLevel: 'silent' })
-  if (doc.errors.length > 0 || !(doc.contents instanceof YAMLMap)) throw new Error('预设定义必须是合法 YAML 对象')
-  readModuleLayerSettings(doc.toJS())
-  const declared = doc.get('id')
-  const id = declared === undefined ? fallback : declared
-  assertModuleId(id)
-  return id
 }
 
 /** on/off 等字面开关归一化为布尔。 */
@@ -998,26 +982,9 @@ export function renderComposition(spec: ModuleSpec, runtime: Record<string, unkn
     // 参数桥优先：UI/运行时参数不被模板或 ST 直写覆盖。
     merged[id] = { ...cfg, ...merged[id] }
   }
-  let raw = loadCompositionText(spec, templateDir, runtime)
-  // 人设由模块字段直接生成官方行，不查模块库，也不改写 modules 清单。
-  // composition 文件仍自行提供该行；顶层字段只覆盖它的配置。
-  const persona = readPersonaSpec(spec.persona)
-  if (persona !== undefined && Array.isArray(spec.modules)) {
-    const doc = parseDocument(raw, { logLevel: 'silent' })
-    if (!(doc.contents instanceof YAMLSeq)) throw new Error(`module ${spec.id}: composition must be a YAML array`)
-    merged.persona = personaRowConfig(persona)
-    const rows: YAMLSeq = doc.contents
-    rows.items.unshift(doc.createNode({ id: 'persona', name: '@deepseek-ai/dsh-persona', config: merged.persona }))
-    raw = doc.toString()
-  } else if (persona !== undefined) {
-    merged.persona = {
-      ...merged.persona,
-      prefix: persona.prefix,
-      suffix: persona.suffix ?? undefined,
-      complete: persona.complete ?? undefined,
-      includeRuntimeContext: persona.includeRuntimeContext ?? undefined,
-    }
-  }
+  const raw = loadCompositionText(spec, templateDir, runtime)
+  // 人设由注册前适配器按 Agent 配装，不再生成另一份官方 persona 行。
+  readPersonaSpec(spec.persona)
   return applyModuleConfigs(raw, merged)
 }
 

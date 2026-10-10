@@ -732,12 +732,12 @@ test('wireLayers 公开入口：注册层的动作级分支走条件化注册，
   assert.equal(result.sections[0].text, '', 'actionWhen=false 时该段正文为空')
 })
 
-test('原生关键词世界书只扫描本批真实对话消息：插件注入与指令文件正文都不触发', async () => {
+test('上下文激活的 batch 只扫描本批真实对话消息：插件注入与指令文件正文都不触发', async () => {
   // 与 userText / ST 世界书同一判据（condition.mjs#isConversationMessage）：扫描范围
   // = 本批真实对话消息，不含任何插件来源（append-context / 子代理 inject / skill_load）
   // 与 agent-instructions 正文。
   const { step } = makeHarness(createPromptConfigs([{
-    id: 'lore', strategy: 'world-book', text: 'LORE', position: 'after-all', params: { keys: ['龙'] },
+    id: 'lore', strategy: 'context-activation', text: 'LORE', position: 'after-all', params: { keys: ['龙'], activation: { scan: 'batch' } },
   }]))
   const say = (id, text, source = { kind: 'user' }, role = 'user') => ({ id, role, content: [{ type: 'text', text }], source })
   const injected = decision => decision.messages.filter((message) => message.source?.plugin === 'lore').map((message) => message.content[0].text)

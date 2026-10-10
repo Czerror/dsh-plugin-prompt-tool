@@ -13,7 +13,7 @@ import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { Context } from '@deepseek-ai/cordis'
-import { createScope, scopeTarget } from '@deepseek-ai/dsh-scope'
+import { bindScopeParent, createScope, scopeOf, scopeTarget } from '@deepseek-ai/dsh-scope'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime from '@deepseek-ai/dsh-tools'
 import { isolatedHome } from '../fixtures/host-harness.mjs'
@@ -24,6 +24,8 @@ const { installPreStepCoordinator, PRE_STEP_COORDINATOR_SERVICE } = await import
 const { ruleDiagnosticsSnapshot, resetRuleDiagnostics } = await import('../../src/runtime/rule-diagnostics.ts')
 const { promptConfigToRule } = await import('../../src/host/rule-builder.ts')
 const { mountRuleSources } = await import('../../engine/rule-runtime.mjs')
+const { installPersonaRegistration } = await import('../../src/runtime/persona-registration.ts')
+const { loadModuleSpec } = await import('../../src/host/manifest.ts')
 
 /** 装配能力探针：装配只问「宿主是否提供该服务」，这里全部视为提供。 */
 const hasEveryService = () => true
@@ -48,7 +50,7 @@ async function liveAssembly(t, enabledModules) {
     await root.serial(scopeTarget(agent, agent), 'agent/created', { agent, source: 'startup' })
     return agent
   }
-  const inject = (agent) => root.waterfall(scopeTarget(agent, agent), 'agent/pre-step', { agent }, async () => ({
+  const inject = (agent) => root.waterfall(scopeTarget(agent, agent), 'agent/pre-step', { agent, signal: new AbortController().signal }, async () => ({
     kind: 'continue', messages: [{ role: 'user', source: { kind: 'user' }, content: [{ type: 'text', text: 'USER' }] }],
   }))
   return { root, runtime, makeAgent, inject, warnings }
@@ -57,7 +59,6 @@ async function liveAssembly(t, enabledModules) {
 test('真实注入：启用配置进入主/子会话正确位置，关闭项不注入，释放后不再贡献', async (t) => {
   writeModuleFixture('live-injection', {
     modules: ['prompt-config-engine'],
-    persona: { prefix: 'PERSONA', suffix: 'SUFFIX', includeRuntimeContext: false },
     promptConfigs: [
       { id: 'main', text: 'MAIN', audience: 'main', position: 'before-all' },
       { id: 'child', text: 'CHILD', audience: 'subagent', position: 'after-user' },
@@ -75,8 +76,8 @@ test('真实注入：启用配置进入主/子会话正确位置，关闭项不�
   assert.deepEqual(texts(await h.inject(main)), ['MAIN', 'USER'])
   assert.deepEqual(texts(await h.inject(child)), ['USER', 'CHILD'])
   const system = await h.root.systemPrompt.assemble({ agent: main, scope: main })
-  for (const text of ['SYSTEM', 'PERSONA', 'SUFFIX']) assert.ok(system.sections.some((section) => section.text === text))
-  assert.deepEqual(system.contexts, [])
+  assert.ok(system.sections.some((section) => section.text === 'SYSTEM'))
+  assert.ok(system.contexts.some((context) => context.text === 'CONTEXT'))
   const record = (type) => {
     const events = main.session.snapshotEvents()
     const event = { seq: events.length + 1, type, data: {} }
@@ -120,7 +121,7 @@ test('真实注入：启用配置进入主/子会话正确位置，关闭项不�
   await h.runtime.dispose()
   assert.deepEqual(texts(await h.inject(main)), ['USER'])
   const after = await h.root.systemPrompt.assemble({ agent: main, scope: main })
-  assert.equal(after.sections.some((section) => ['SYSTEM', 'PERSONA', 'SUFFIX'].includes(section.text)), false)
+  assert.equal(after.sections.some((section) => section.text === 'SYSTEM'), false)
   assert.ok(after.contexts.some((context) => context.text === 'CONTEXT'))
 })
 
@@ -321,14 +322,14 @@ test('跨模块配置按文件序号交错执行，后序请求覆盖且不受�
   assert.deepEqual(h.warnings, [])
 })
 
-test('持久序号覆盖文件旧前缀，ST 宏按全局调度求值并保留模块自己的变量帧', async (t) => {
+test('持久序号调度模板求值，交错模块使用各自的持久变量', async (t) => {
   for (const [id, promptConfigs, configOrder] of [
     ['sequence-macro-a', [
-      { id: 'a10', text: 'A10 {{setvar::scope::A}}{{roll::100}}', params: { stMacros: true } },
-      { id: 'a30', text: 'A30 {{getvar::scope}} {{roll::100}}', params: { stMacros: true } },
+      { id: 'a10', text: 'A10 {{module.set::scope::A}}{{roll::100}}', params: { templateEvaluation: true } },
+      { id: 'a30', text: 'A30 {{module.get::scope}} {{roll::100}}', params: { templateEvaluation: true } },
     ], { a10: 10, a30: 30 }],
     ['sequence-macro-b', [
-      { id: 'b20', text: 'B20 {{setvar::scope::B}}{{roll::100}}', params: { stMacros: true } },
+      { id: 'b20', text: 'B20 {{module.set::scope::B}}{{roll::100}}', params: { templateEvaluation: true } },
     ], { b20: 20 }],
   ]) {
     const dir = writeModuleFixture(id, { modules: ['prompt-config-engine'], promptConfigs })
@@ -336,6 +337,8 @@ test('持久序号覆盖文件旧前缀，ST 宏按全局调度求值并保留�
   }
   const h = await liveAssembly(t, () => ['sequence-macro-b', 'sequence-macro-a'])
   const agent = await h.makeAgent('sequence-macro-agent')
+  agent.status = 'running'
+  agent.session.snapshotEvents().push({ type: 'turn/start', seq: 0, data: { turn: 1 } })
   const draws = [0.1, 0.2, 0.3]
   const random = t.mock.method(Math, 'random', () => draws.shift())
   const texts = async () => (await h.inject(agent)).messages.flatMap(message => message.content.map(block => block.text))
@@ -610,7 +613,8 @@ test('热更新：空启用表到多模块、配置启停与拒绝后重试都�
   const { setModuleEnabled, enabledModuleIds } = await import('../../src/host/config-store.ts')
   for (const id of ['hot-a', 'hot-b']) writeModuleFixture(id, {
     modules: ['prompt-config-engine'],
-    promptConfigs: [{ id, text: id, position: 'after-user' }],
+    variables: { label: id },
+    promptConfigs: [{ id, text: '{{label}}', position: 'after-user' }],
   })
   const h = await liveAssembly(t, () => enabledModuleIds(moduleRoot))
   const agent = await h.makeAgent('hot-agent')
@@ -651,10 +655,10 @@ test('热更新：空启用表到多模块、配置启停与拒绝后重试都�
 })
 
 test('能力注册：私有工具服务与内联工具接入官方注册表，禁用后释放', async (t) => {
-  const dir = writeModuleFixture('live-tools', { modules: ['character-tools', 'tool-config-engine'] })
+  const dir = writeModuleFixture('live-tools', { modules: ['module-rule-tools', 'tool-config-engine'] })
   const { writeModule: materialize } = await import('../../src/host/write-module.ts')
   writeFileSync(join(dir, 'module.yml'), JSON.stringify({
-    id: 'live-tools', name: 'live-tools', modules: ['character-tools', 'tool-config-engine'],
+    id: 'live-tools', name: 'live-tools', modules: ['module-rule-tools', 'tool-config-engine'],
     layerSettings: { 'agent-request': { modelTemperature: '0.25' } },
     customTools: [{ id: 'delegated_tool', description: 'delegate', output: { schema: { type: 'json' } }, execute: { kind: 'delegate', tool: 'assembly_tool' } }],
     rules: [{ id: 'runtime-trigger', layer: 'pre-step', then: [{ id: 'inject', kind: 'inject-text', config: {
@@ -670,7 +674,7 @@ test('能力注册：私有工具服务与内联工具接入官方注册表，�
     output: { schema: { type: 'object' }, render: () => [] },
     execute: async () => ({}),
   }
-  h.root.provide('pt-character-tools', { mount: (ctx) => ctx.tools.register(tool) })
+  h.root.provide('pt-module-rule-tools', { mount: (ctx) => ctx.tools.register(tool) })
   const agent = await h.makeAgent('tools-agent')
   assert.deepEqual(h.warnings, [])
   assert.equal(h.root.tools.schemas(agent).filter(schema => schema.name === 'assembly_tool').length, 1)
@@ -718,13 +722,14 @@ const LITERAL_SLICES = [
   },
 ]
 
-function writeModuleFixture(id, { modules, promptConfigs = [], moduleConfigs, persona, configOrder }) {
+function writeModuleFixture(id, { modules, promptConfigs = [], moduleConfigs, persona, configOrder, variables }) {
   const dir = join(moduleRoot, id)
   mkdirSync(dir, { recursive: true })
   writeFileSync(join(dir, 'module.yml'), `${JSON.stringify({
     id, name: id, modules: [...new Set(modules.map(name => ['prompt-config-engine', 'declared-triggers'].includes(name) ? 'rule-engine' : name))],
     rules: promptConfigs.map(promptConfigToRule), ...(configOrder === undefined ? {} : { configOrder }),
     ...(moduleConfigs === undefined ? {} : { moduleConfigs }), ...(persona === undefined ? {} : { persona }),
+    ...(variables === undefined ? {} : { variables }),
   }, null, 2)}\n`, 'utf8')
   if (promptConfigs.length > 0) {
     const configsDir = join(dir, 'configs')
@@ -768,12 +773,12 @@ test('受管字段一律解析到当前预设目录内', async () => {
 
 test('模块清单：私有能力复用现有适配器挂载服务', async () => {
   writeModuleFixture('module-roster', {
-    modules: ['character-tools', 'tool-config-engine'],
+    modules: ['module-rule-tools', 'tool-config-engine'],
   })
   const prepared = await prepareAssembly(moduleRoot, 'module-roster', hasEveryService)
 
   // 私有能力复用现有适配器挂载服务，而不是只登记依赖。
-  assert.equal(prepared.services.has('pt-character-tools'), true)
+  assert.equal(prepared.services.has('pt-module-rule-tools'), true)
 })
 
 test('拒绝路径：非法 id、无效模块声明、缺失宿主能力都在装配前 fail loud', async () => {
@@ -793,7 +798,7 @@ test('拒绝路径：非法 id、无效模块声明、缺失宿主能力都在�
   )
 })
 
-test('「独占」段唯一性：装配前拒绝两个生效 complete（含人设×配置），禁用不算冲突', async () => {
+test('「独占」段唯一性：聚合选中人设及跨模块规则，准备拒绝保留所有 Agent 的旧贡献', async t => {
   // 真值源：宿主 system-prompt 对「多于一个生效 complete 段」直接抛错
   // （packages/core/system-prompt/src/index.ts:597-600）。写门控只覆盖两个 bridge 端点，
   // 手改 YAML / 还原备份 / 导入包能绕过，这里钉住装配期的那道兜底。
@@ -818,17 +823,13 @@ test('「独占」段唯一性：装配前拒绝两个生效 complete（含人�
     '两个启用 complete 必须被拒',
   )
 
-  // ② 顶层人设独占 × 配置独占 → 同样被拒。
+  // 未选中的人设只是定义；不能在单模块准备阶段限制其普通规则。
   writeModuleFixture('persona-complete', {
     modules: ['prompt-config-engine'],
     promptConfigs: [exclusive('excl-a')],
-    persona: { prefix: 'PREFIX', complete: true },
+    persona: { main: { prefix: 'PREFIX', complete: true } },
   })
-  await assert.rejects(
-    prepareAssembly(moduleRoot, 'persona-complete', hasEveryService),
-    /人设已开启|multiple complete system sections/,
-    '人设与配置同时独占必须被拒',
-  )
+  assert.equal((await prepareAssembly(moduleRoot, 'persona-complete', hasEveryService)).rules.length, 1)
 
   // ③ 边界一：第二个独占被 `enabled: false` 关掉 → 不算冲突。
   writeModuleFixture('one-complete-disabled', {
@@ -842,10 +843,72 @@ test('「独占」段唯一性：装配前拒绝两个生效 complete（含人�
   writeModuleFixture('single-complete', {
     modules: ['prompt-config-engine'],
     promptConfigs: [exclusive('excl-a')],
-    persona: { prefix: 'PREFIX' },
+    persona: { main: { prefix: 'PREFIX' } },
   })
   const single = await prepareAssembly(moduleRoot, 'single-complete', hasEveryService)
   assert.equal(single.rules.length, 1, '单个独占段正常装配')
+
+  writeModuleFixture('exclusive-live', { modules: [], promptConfigs: [{ id: 'old', text: 'OLD', position: 'after-all' }] })
+  writeModuleFixture('selected-persona', { modules: [], persona: { main: { prefix: 'SELECTED', complete: false }, subagent: { prefix: 'CHILD', complete: false } } })
+  const root = new Context(), actors = [], scopes = [], warnings = []
+  let persona, driver
+  await root.plugin({ name: 'test-persona-early', apply(ctx) { persona = installPersonaRegistration(ctx) } })
+  await root.plugin(SystemPrompt)
+  await root.plugin(ToolRuntime)
+  root.provide('llm', {})
+  root.provide('agents', { list: () => actors, async create(options) {
+    const agent = { id: options.sessionId, status: 'idle', options: {}, session: { id: options.sessionId, header: options.meta ?? {}, snapshotEvents: () => [] } }
+    const scope = createScope(driver, agent); scopes.push(scope); agent.ctx = scope.ctx
+    bindScopeParent(scopeOf(agent.ctx), scopeOf(standing.ctx))
+    await options.setup?.(agent.ctx, agent)
+    actors.push(agent)
+    await root.serial(scopeTarget(agent, agent), 'agent/created', { agent, source: 'startup' })
+    return agent
+  } })
+  await root.plugin({ name: 'test-persona-driver', inject: ['agents', 'systemPrompt'], apply(ctx) { driver = ctx } })
+  const standing = createScope(driver, {})
+  scopes.push(standing)
+  standing.ctx.systemPrompt.section({ name: 'deployment:persona-prefix', order: 0, text: 'OFFICIAL', complete: true })
+  let selected = 'selected-persona', enabled = ['exclusive-live']
+  const selectedModules = () => selected === undefined ? [] : [{ moduleId: selected, persona: loadModuleSpec(join(moduleRoot, selected)).persona }]
+  const releaseSource = persona.configure({ modules: selectedModules })
+  const runtime = createAgentAssembly(root, { moduleRoot, enabledModules: () => enabled, personaModules: selectedModules, warn: message => warnings.push(message) })
+  t.after(async () => { await runtime.dispose(); releaseSource(); for (const scope of scopes.reverse()) await scope.dispose(); await root.fiber.dispose() })
+  const main = await driver.agents.create({ sessionId: 'exclusive-main' })
+  const child = await driver.agents.create({ sessionId: 'exclusive-child', meta: { origin: 'subagent' } })
+  const stepTexts = async agent => (await root.waterfall(scopeTarget(agent, agent), 'agent/pre-step', { agent, signal: new AbortController().signal }, async () => ({ kind: 'enter', messages: [] }))).messages.flatMap(message => message.content.map(block => block.text))
+  const sectionTexts = async agent => (await root.systemPrompt.assemble({ agent, scope: agent })).sections.map(section => section.text)
+  for (const agent of [main, child]) assert.deepEqual(await stepTexts(agent), ['OLD'])
+  assert.ok((await sectionTexts(main)).includes('SELECTED'))
+  assert.ok((await sectionTexts(child)).includes('CHILD'))
+  assert.deepEqual(runtime.moduleIds(main.id), ['exclusive-live'], '选择人设不启用来源模块的普通规则')
+
+  writeModuleFixture('exclusive-live', { modules: [], promptConfigs: [exclusive('one')] })
+  writeModuleFixture('exclusive-other', { modules: [], promptConfigs: [exclusive('two')] })
+  enabled = ['exclusive-live', 'exclusive-other']
+  await assert.rejects(runtime.refresh(), /多个生效 complete/)
+  for (const agent of [main, child]) { assert.deepEqual(await stepTexts(agent), ['OLD']); assert.equal(runtime.hasMounted(agent.id), true) }
+
+  // 主会话显式 false 合法，子代理继承官方 complete=true 冲突；必须整批预检，主会话也不先切换。
+  enabled = ['exclusive-live']
+  writeModuleFixture('selected-persona', { modules: [], persona: { main: { prefix: 'NEW', complete: false } } })
+  await assert.rejects(runtime.refresh('selected-persona'), /官方人设.*exclusive-live/)
+  assert.ok((await sectionTexts(main)).includes('SELECTED'))
+  assert.ok((await sectionTexts(child)).includes('CHILD'))
+  for (const agent of [main, child]) assert.deepEqual(await stepTexts(agent), ['OLD'])
+
+  // 磁盘人设正文非法也在撤旧之前失败，恢复绝不重新读取坏候选。
+  writeFileSync(join(moduleRoot, 'selected-persona', 'module.yml'), 'id: selected-persona\nmodules: []\npersona: [bad]\n')
+  await assert.rejects(runtime.refresh('selected-persona'), /persona/)
+  for (const agent of [main, child]) assert.deepEqual(await stepTexts(agent), ['OLD'])
+
+  writeModuleFixture('selected-persona', { modules: [], persona: { main: { complete: false }, subagent: { complete: false } } })
+  await runtime.refresh('selected-persona')
+  for (const agent of [main, child]) assert.deepEqual(await sectionTexts(agent), ['one 正文'])
+  selected = undefined
+  await assert.rejects(runtime.refresh(), /官方人设/)
+  for (const agent of [main, child]) assert.deepEqual(await sectionTexts(agent), ['one 正文'])
+  assert.deepEqual(warnings, [])
 })
 
 test('导入候选与运行配装同源：完整定义经过 rules 切片后保持所有执行维度', async () => {
@@ -1031,6 +1094,21 @@ test('装配失败与恢复：准备期失败只告警，撤旧失败仍尝试�
   })
   assert.equal(runtime4.hasMounted(agent4.id), true, '恢复成功：旧贡献复原')
   await runtime4.dispose()
+
+  // 第二个 Agent 挂载失败时，第一个已成功的新配装也必须撤回。
+  let enabled5 = ['assembly-restore']
+  const batchFailure = new Error('SECOND-AGENT-FAIL')
+  const host5 = stubHostContext({ services: ['systemPrompt', 'tools', 'llm'], fault: attempt => attempt === 4 ? { mount: batchFailure } : {} })
+  const runtime5 = createAgentAssembly(host5.ctx, { moduleRoot, enabledModules: () => enabled5 })
+  const first = host5.makeAgent('batch-first'), second = host5.makeAgent('batch-second')
+  await host5.fire('agent/created', { agent: first, source: 'startup' })
+  await host5.fire('agent/created', { agent: second, source: 'startup' })
+  enabled5 = []
+  await assert.rejects(runtime5.refresh(), /SECOND-AGENT-FAIL/)
+  assert.deepEqual(runtime5.moduleIds(first.id), ['assembly-restore'])
+  assert.deepEqual(runtime5.moduleIds(second.id), ['assembly-restore'])
+  assert.equal(host5.mounts.length, 6, '两份旧准备均重新挂回，没有半数 Agent 留在新配装')
+  await runtime5.dispose()
 })
 
 test('启用即配装：启用表里的每个模块各贡献一份，清单为空则不装配', async () => {

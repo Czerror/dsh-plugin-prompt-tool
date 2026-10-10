@@ -1,4 +1,4 @@
-import type { EngineLayer } from './engine-capabilities.ts'
+import type { InjectionPoint } from './engine-capabilities.ts'
 
 /** 一张独立配置卡的判断树；原语与组合的合法形状由引擎唯一校验。 */
 export type RuleCondition = Record<string, unknown>
@@ -21,7 +21,7 @@ export interface RuleDefinition {
   id: string
   name?: string
   enabled?: boolean
-  layer?: EngineLayer
+  layer?: InjectionPoint
   group?: string
   exclusive?: boolean
   /** 分支条件；缺省 = 无条件。 */
@@ -50,7 +50,6 @@ export interface RuleSettings { order: number; enabled?: boolean; group?: string
 
 export interface RulesRequest {
   expectedModuleId?: string
-  expectedRevision?: string
   expectedRevisions?: Partial<RuleRevisions>
   edits?: RuleEdit[]
   /** 显式启用目标；保存端同时停用同模块互斥组的其他卡。 */
@@ -77,8 +76,6 @@ export interface RuleEditorMeta {
 export interface RulesSnapshot {
   rules: RuleDefinition[]
   revisions: RuleRevisions
-  /** 仅旧客户端兼容输入，不是规范响应的版本来源。 */
-  revision?: string
   meta: RuleEditorMeta
   persisted?: boolean
   publicationPending?: boolean

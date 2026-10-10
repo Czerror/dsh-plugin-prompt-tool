@@ -76,7 +76,7 @@ export function mountRuleSources(ctx, sources, options = {}) {
       for (const item of point.items) {
         const { action, rule, moduleId } = item
         if (action.kind === 'inject-text') {
-          const config = { ...action.compiledConfig, rule, sourceModuleId: moduleId, group: undefined, exclusive: false, enabled: true, actionWhen: action.actionWhen, bypassRuleWhen: action.bypassRuleWhen }
+          const config = { ...action.compiledConfig, rule, sourceModuleId: moduleId, variableStore: options.variableStore, group: undefined, exclusive: false, enabled: true, actionWhen: action.actionWhen, bypassRuleWhen: action.bypassRuleWhen }
           if (config.layer === 'pre-step') injections.get(moduleId).configs.push(config)
           else textConfigs.push(config)
           continue

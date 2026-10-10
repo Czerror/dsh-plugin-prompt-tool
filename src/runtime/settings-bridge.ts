@@ -13,13 +13,13 @@ import { PARAM_KEYS, readModulesEnabled } from '../config.ts'
 import { invalidateModelCatalog, listAdvertisedModels, peekModelCatalog, refreshModelReasoning, type ModelDetection } from './models.ts'
 import type { SkillCatalogEntry, SkillPolicyChange, SkillPolicyScope, SkillsCatalogSnapshot } from '../shared/skills.ts'
 import { enabledModuleIds, setModuleEnabled } from '../host/config-store.ts'
+import { readPersonaSources, writePersonaSources } from '../host/persona-selection.ts'
 import { appendModuleConfigOrder, ModuleConfigOrderError, readModuleConfigOrder, saveModuleConfigOrder } from '../host/module-config-order.ts'
 import type { ModuleConfigIdentity } from '../shared/module-config-order.ts'
 import { moduleDirExists } from '../host/manifest.ts'
-import { ruleInjections } from '../host/rule-content.ts'
 import { readOfficialOrderSegments, type OfficialOrderLookup } from '../shared/official-orders.ts'
 import { ModuleLayerSettingsError, readModuleLayerSettings } from '../host/module-layer-settings.ts'
-import { readModuleRules, editModuleRules, ModuleRulesError } from '../host/module-rules.ts'
+import { readModuleRules, editModuleRules } from '../host/module-rules.ts'
 import type { RuleEdit, RuleEditorMeta, RuleRevisions } from '../shared/rules.ts'
 import { loadPromptTemplates, loadToolTemplates } from '../host/templates.ts'
 import { assertImportableSource, importSkillsDirectory, importSkillsPackage } from '../host/skills-import.ts'
@@ -44,28 +44,29 @@ import {
   resolveModuleDir,
   saveModuleParams,
   saveModulePersona,
+  readModulePersona,
   userModulesDir,
   withModuleDefinition,
 } from '../host/manifest.ts'
 import { mergeModuleIntoModule, removeMergedModule } from '../host/characters.ts'
-import { ensureModuleSlices, loadModuleDefinition } from '../host/module-storage.ts'
+import { ensureModuleSlices, loadModuleDefinition, ModuleRulesError } from '../host/module-storage.ts'
+import { editModuleVariables, readModuleVariables } from '../host/module-variables.ts'
+import type { ModuleVariableRevisions, ModuleVariablesSnapshot } from '../shared/module-variables.ts'
 import { createAssetSources } from '../host/asset-sources.ts'
 import { expandModuleSource, exportModulePackage, installModulePackage, moduleImportPreview } from '../host/module-package.ts'
 import { prepareImport } from '../host/import-source.ts'
 import { assertModuleId, modulePathExists } from '../host/module-install.ts'
 import { DSH_HOME } from '../host/paths.ts'
 import type { AssetFile, AssetImportRequest, ImportKind, ModuleExportRequest } from '../shared/asset-transfer.ts'
-import { lastWorldBookDiagnostics } from '../../engine/st-world-book.mjs'
-// @ts-expect-error ESM 引擎源码随插件提供。
-import { isFixedRegistration } from '../../engine/rule-spec.mjs'
+import { lastContextActivationDiagnostics } from '../../engine/context-activation.mjs'
 import { ruleDiagnosticsDropped, ruleDiagnosticsSnapshot } from './rule-diagnostics.ts'
 import { BRIDGE_ENDPOINTS, EDIT_TARGET_HEADER, MAX_BRIDGE_BODY_BYTES, MODULE_ACTIVATION_FAILED, SETTINGS_BRIDGE_PREFIX, readEditTarget } from '../shared/bridge-contract.ts'
 import { moduleParamFallbacks, validateEngineParamValues } from '../shared/engine-params.ts'
-import { readPersonaSpec } from '../shared/persona-section.ts'
+import { readPersonaSpec, type PersonaSources } from '../shared/persona-section.ts'
 import { SKILL_NAME_PATTERN, type SkillsStateRead } from '../host/skills-config.ts'
 import { withGlobalSkillFallback, withSkillWinners } from '../host/skills-scan.ts'
 import { DEFAULT_MODULE_ID } from '../shared/module-ids.ts'
-import { ENGINE_EDITOR_GROUP_MAP, type ModuleFacts } from '../shared/engine-capabilities.ts'
+import { ENGINE_EDITOR_GROUP_MAP, MODULE_TOOL_CAPABILITIES, type ModuleFacts } from '../shared/engine-capabilities.ts'
 import { validateCustomTools } from '../host/custom-tools.ts'
 import {
   agentsFileCardSpecs,
@@ -494,9 +495,8 @@ function customToolModules(tools: unknown[]): string[] {
     if (executeRecord.kind !== 'delegate') continue
     const target = executeRecord.tool
     if (typeof target !== 'string') continue
-    if (target.startsWith('character_')) modules.add('character-tools')
-    else if (target.startsWith('world_book_')) modules.add('world-book-tools')
-    else if (target === 'session_var') modules.add('session-var-tools')
+    const capability = MODULE_TOOL_CAPABILITIES[target]
+    if (capability !== undefined) modules.add(capability)
   }
   return [...modules]
 }
@@ -784,11 +784,13 @@ export function registerSettingsBridge(
         }
       }
 
-      /** 完整已提交定义的只读变量快照，不因发布失败而再次触发切片恢复。 */
-      const readModuleVariables = (dir: string): { variables: Record<string, string>; enabled: boolean; revisions: RuleRevisions } => {
-        const snapshot = loadModuleDefinition(dir)
-        return { variables: snapshot.variables, enabled: snapshot.variablesEnabled, revisions: snapshot.revisions }
-      }
+      // 值更新已由 owner 发布；只有开关的配装失败需要重试运行刷新。
+      const pendingVariableSettings = new Map<string, string>()
+      const variableView = (dir: string): ModuleVariablesSnapshot => ({
+        ...readModuleVariables(dir, { writable: isEditableModuleDir(dir) }),
+        publicationPending: pendingVariableSettings.has(dir),
+        ...(pendingVariableSettings.has(dir) ? { publicationError: pendingVariableSettings.get(dir)! } : {}),
+      })
 
       const disposers = [
         assetSources.dispose,
@@ -818,14 +820,13 @@ export function registerSettingsBridge(
               const meta = await loadEngineMeta()
               const extras = await collectDescribeExtras(dir, session.sessionId)
               const scope = resolveInstructionScope(sctx, session.sessionId)
-              const variables = dir.length > 0 ? readModuleVariables(dir) : { variables: {}, enabled: true }
+              const variables = dir.length > 0 ? variableView(dir) : undefined
               writeBridgeJson(res, 200, {
                 ok: true,
                 value: descriptorForTarget(descriptor, dir),
                 meta: { meta },
                 overrides: { overrides: dir.length > 0 ? readParamOverrides(dir) : {} },
-                variables,
-                ...('revisions' in variables ? { variablesRevisions: variables.revisions } : {}),
+                ...(variables === undefined ? {} : { variables }),
                 promptConfigs: { promptConfigs: mergeInstructionCards([], scope.files) },
                 instructions: { context: scope.context, files: scope.files, owner: instructionOwner() },
                 ...extras,
@@ -1358,9 +1359,8 @@ export function registerSettingsBridge(
             if (parsed === undefined) return
             const record = parsed.body ?? {}
             if (!isRecord(record)
-              || Object.keys(record).some(key => !['expectedModuleId', 'expectedRevision', 'expectedRevisions', 'edits', 'activateRuleId', 'validateOnly', 'refreshOnly'].includes(key))
+              || Object.keys(record).some(key => !['expectedModuleId', 'expectedRevisions', 'edits', 'activateRuleId', 'validateOnly', 'refreshOnly'].includes(key))
               || typeof record.expectedModuleId !== 'string' || record.expectedModuleId === ''
-              || (record.expectedRevision !== undefined && (typeof record.expectedRevision !== 'string' || !SHA256_HEX_RE.test(record.expectedRevision)))
               || (record.edits !== undefined && !Array.isArray(record.edits))
               || (record.activateRuleId !== undefined && (typeof record.activateRuleId !== 'string' || record.activateRuleId.length === 0))
               || (record.validateOnly !== undefined && typeof record.validateOnly !== 'boolean')
@@ -1385,7 +1385,7 @@ export function registerSettingsBridge(
             }
             const editing = record.edits !== undefined || record.activateRuleId !== undefined
             const writing = editing && record.validateOnly !== true
-            if (editing && record.expectedRevisions === undefined && typeof record.expectedRevision !== 'string') {
+            if (editing && !isRecord(record.expectedRevisions)) {
               writeBridgeJson(res, 400, { ok: false, code: 'rules-invalid', message: '修改规则必须提供读取时的 expectedRevisions' })
               return
             }
@@ -1394,8 +1394,7 @@ export function registerSettingsBridge(
               const { getRuleEditorMeta } = await import(pathToFileURL(join(packageEngineDir(), 'rule-spec.mjs')).href) as { getRuleEditorMeta: () => RuleEditorMeta }
               if (!guardModuleIdentity(req, record, dir, res)) return
               const candidate = editing ? editModuleRules(dir, {
-                ...(record.expectedRevision === undefined ? {} : { expectedRevision: record.expectedRevision as string }),
-                ...(record.expectedRevisions === undefined ? {} : { expectedRevisions: record.expectedRevisions as Partial<import('../shared/rules.ts').RuleRevisions> }),
+                expectedRevisions: record.expectedRevisions as Partial<RuleRevisions>,
                 ...(record.edits === undefined ? {} : { edits: record.edits as RuleEdit[] }),
                 ...(record.activateRuleId === undefined ? {} : { activateRuleId: record.activateRuleId as string }),
                 ...(record.validateOnly === undefined ? {} : { validateOnly: record.validateOnly as boolean }),
@@ -1527,79 +1526,61 @@ export function registerSettingsBridge(
               writeBridgeJson(res, 400, { ok: false, code: 'module-dir-unavailable', message: '模块目录未配置' })
               return
             }
-            // 模块级模板变量：只读写激活模块 module.yml
-            // 完整定义的 variables 段同步到 rules/variables.yml，
-            // 引擎加载合并进每条配置 variables（官方插值源）。配置卡片 variables
-            // 只显示配置自身，模板变量统一在本卡片编辑。
-            const moduleRoot = dirname(dir)
-            const templateName = basename(dir)
             const parsedBody = await readBridgeBodyForHandler(req, res)
             if (parsedBody === undefined) return
-            const { body } = parsedBody
-            const record = (body ?? {}) as Record<string, unknown>
+            const record = parsedBody.body
+            if (!isRecord(record) || (record.scope !== 'global' && record.scope !== 'module')
+              || Object.keys(record).some(key => !['scope', 'variables', 'enabled', 'expectedModuleId', 'expectedRevisions', 'refreshOnly'].includes(key))) {
+              writeBridgeJson(res, 400, { ok: false, code: 'module-variables-invalid', message: '变量请求必须声明 global/module 范围，且只包含已声明字段' })
+              return
+            }
             if (!guardModuleIdentity(req, record, dir, res)) return
-            // 无载荷 = 读取（module.yml 顶层 variables + 插值开关，不回退 params）。
             if (record.refreshOnly !== undefined && (typeof record.refreshOnly !== 'boolean'
-              || (record.refreshOnly === true && (record.variables !== undefined || record.enabled !== undefined)))) {
+              || (record.refreshOnly === true && (record.variables !== undefined || record.enabled !== undefined || record.expectedRevisions !== undefined)))) {
               writeBridgeJson(res, 400, { ok: false, code: 'module-variables-invalid', message: 'refreshOnly 不能与变量写入混用' })
               return
             }
-            if (record.refreshOnly === true) {
-              if (!guardModuleWrite(dir, res)) return
-              try { await afterOverridesChange?.(basename(dir)) }
-              catch (error) {
-                writeBridgeJson(res, 200, { ok: true, value: { ...readModuleVariables(dir), persisted: true, publicationPending: true, publicationError: `运行刷新失败：${String(error)}` } })
-                return
-              }
-              writeBridgeJson(res, 200, { ok: true, value: { ...readModuleVariables(dir), publicationPending: false } })
-              return
-            }
-            if (record.variables === undefined && record.enabled === undefined) {
-              writeBridgeJson(res, 200, { ok: true, value: readModuleVariables(dir) })
-              return
-            }
-            if (record.variables !== undefined
-              && (!isRecord(record.variables) || Object.values(record.variables).some((value) => typeof value !== 'string'))) {
-              writeBridgeJson(res, 400, { ok: false, code: 'module-variables-invalid', message: 'variables must be an object with string values' })
-              return
-            }
-            if (record.enabled !== undefined && typeof record.enabled !== 'boolean') {
-              writeBridgeJson(res, 400, { ok: false, code: 'module-variables-invalid', message: 'enabled must be a boolean' })
-              return
-            }
-            if (!isRecord(record.expectedRevisions)
-              || Object.keys(record.expectedRevisions).some(key => !['rules', 'settings', 'variables'].includes(key))
-              || (record.variables !== undefined && (typeof record.expectedRevisions.variables !== 'string' || !SHA256_HEX_RE.test(record.expectedRevisions.variables)))
-              || (record.enabled !== undefined && (typeof record.expectedRevisions.settings !== 'string' || !SHA256_HEX_RE.test(record.expectedRevisions.settings)))) {
-              writeBridgeJson(res, 400, { ok: false, code: 'module-variables-invalid', message: '保存变量或开关必须提供对应 expectedRevisions' })
-              return
-            }
-            if (!guardModuleWrite(dir, res)) return
             try {
+              if (record.refreshOnly === true) {
+                if (!guardModuleWrite(dir, res)) return
+                if (typeof record.expectedModuleId !== 'string') throw new ModuleRulesError('刷新变量必须提供 expectedModuleId')
+                const state = readModuleVariables(dir)
+                if (pendingVariableSettings.has(dir)) {
+                  try { await afterOverridesChange?.(basename(dir)); pendingVariableSettings.delete(dir) }
+                  catch (error) { pendingVariableSettings.set(dir, `变量开关已保存，但运行发布失败：${String(error)}`) }
+                }
+                writeBridgeJson(res, 200, { ok: true, value: { ...state, ...variableView(dir), persisted: true } })
+                return
+              }
+              if (record.variables === undefined && record.enabled === undefined) {
+                if (record.expectedRevisions !== undefined) throw new ModuleRulesError('读取变量不接受写入版本')
+                writeBridgeJson(res, 200, { ok: true, value: variableView(dir) })
+                return
+              }
+              if (!guardModuleWrite(dir, res)) return
+              if (typeof record.expectedModuleId !== 'string') throw new ModuleRulesError('保存变量必须提供 expectedModuleId')
+              if (!isRecord(record.expectedRevisions)) throw new ModuleRulesError('保存变量或开关必须提供对应 expectedRevisions')
               if (!guardModuleIdentity(req, record, dir, res)) return
-              saveModuleParams(
-                moduleRoot,
-                templateName,
-                undefined,
-                undefined,
-                record.variables as Record<string, string> | undefined,
-                record.enabled as boolean | undefined,
-                record.expectedRevisions as Partial<RuleRevisions>,
-              )
-              const committed = readModuleVariables(dir)
-              try { await afterOverridesChange?.(basename(dir)) }
-              catch (error) {
-                writeBridgeJson(res, 200, { ok: true, value: { ...committed, persisted: true, publicationPending: true, publicationError: `变量已保存，但运行刷新失败：${String(error)}` } })
+              const settingsChanged = record.enabled !== undefined && record.enabled !== loadModuleDefinition(dir).variablesEnabled
+              const committed = editModuleVariables(dir, {
+                scope: record.scope as 'global' | 'module', expectedRevisions: record.expectedRevisions as Partial<ModuleVariableRevisions>,
+                ...(record.variables === undefined ? {} : { values: record.variables as Record<string, string> }),
+                ...(record.enabled === undefined ? {} : { enabled: record.enabled as boolean }),
+              })
+              if (settingsChanged) pendingVariableSettings.set(dir, '变量开关已保存，等待运行发布')
+              if (committed.publicationPending) {
+                writeBridgeJson(res, 200, { ok: true, value: committed })
                 return
               }
-              writeBridgeJson(res, 200, { ok: true, value: committed })
+              if (settingsChanged) {
+                try { await afterOverridesChange?.(basename(dir)); pendingVariableSettings.delete(dir) }
+                catch (error) { pendingVariableSettings.set(dir, `变量开关已保存，但运行发布失败：${String(error)}`) }
+              }
+              writeBridgeJson(res, 200, { ok: true, value: { ...committed, publicationPending: pendingVariableSettings.has(dir),
+                ...(pendingVariableSettings.has(dir) ? { publicationError: pendingVariableSettings.get(dir)! } : {}) } })
             } catch (error) {
-              if (error instanceof ModuleRulesError && error.persisted) {
-                writeBridgeJson(res, 200, { ok: true, value: { ...readModuleVariables(dir), persisted: true, publicationPending: true, publicationError: error.message } })
-                return
-              }
               const message = error instanceof Error ? error.message : String(error)
-              writeBridgeJson(res, error instanceof ModuleRulesError ? error.status : 409, { ok: false, code: error instanceof ModuleRulesError ? error.code : 'module-variables-rejected', message: `模板变量保存失败：${message}` })
+              writeBridgeJson(res, error instanceof ModuleRulesError ? error.status : 409, { ok: false, code: error instanceof ModuleRulesError ? error.code : 'module-variables-rejected', message: `变量读取或保存失败：${message}` })
             }
           },
         }),
@@ -1670,54 +1651,85 @@ export function registerSettingsBridge(
             }
             const parsedBody = await readBridgeBodyForHandler(req, res)
             if (parsedBody === undefined) return
-            const record = (parsedBody.body ?? {}) as Record<string, unknown>
-            if (!guardModuleIdentity(req, record, dir, res)) return
-            // 无 persona 载荷 = 读取（module.yml 顶层 persona 段）。
-            if (record.persona === undefined) {
-              try {
-                writeBridgeJson(res, 200, { ok: true, value: { persona: readPersonaSpec(loadModuleSpec(dir).persona) ?? null } })
-              } catch (error) {
-                if (writeLayerSettingsError(res, error)) return
-                writeBridgeJson(res, 200, { ok: true, value: { persona: null } })
-              }
+            const record = parsedBody.body ?? {}
+            if (!isRecord(record) || Object.keys(record).some(key => !['persona', 'expectedModuleId', 'expectedRevision', 'refreshOnly'].includes(key))
+              || record.refreshOnly !== undefined && (typeof record.refreshOnly !== 'boolean'
+                || record.refreshOnly === true && (record.persona !== undefined || record.expectedRevision !== undefined))) {
+              writeBridgeJson(res, 400, { ok: false, code: 'module-persona-invalid', message: '人设请求包含非法字段或混合了刷新与写入' })
               return
             }
-            if (!guardModuleWrite(dir, res)) return
+            if (!guardModuleIdentity(req, record, dir, res)) return
             try {
-              const raw = record.persona
-              const persona = raw === null ? null : readPersonaSpec(raw)
-              if (persona === undefined) {
-                writeBridgeJson(res, 400, {
-                  ok: false,
-                  code: 'module-persona-invalid',
-                  message: 'persona 必须包含字符串 prefix（可选 suffix / complete / includeRuntimeContext）',
-                })
+              if (record.persona === undefined && record.refreshOnly !== true) {
+                if (record.expectedRevision !== undefined) throw new TypeError('读取人设不接受写入版本')
+                writeBridgeJson(res, 200, { ok: true, value: readModulePersona(dir) })
                 return
               }
-              // 官方 complete 段一个 scope 只能有一个：顶层人设「独占」与提示词配置
-              // 「独占」同时启用时装配会失败，写盘前 fail loud（与 paramOverrides 的
-              // 晋升信号一致性检查同模式）。
-              if (persona?.complete === true) {
-                // 判据与装配兜底同源（引擎的 isFixedRegistration）：只有 system-section 的
-                // params.complete 会成为「独占」段；其他层的同名键不是独占。
-                const conflicting = ruleInjections(loadModuleSpec(dir).rules).some(({ rule, config }) =>
-                  rule.enabled !== false && config.enabled !== false
-                  && config.params?.complete === true && isFixedRegistration(config))
-                if (conflicting) {
-                  writeBridgeJson(res, 400, {
-                    ok: false,
-                    code: 'module-persona-complete-conflict',
-                    message: '提示词配置已有「独占」段；顶层人设的「独占」与之互斥，请先关闭其一',
-                  })
-                  return
-                }
+              if (!guardModuleWrite(dir, res)) return
+              if (typeof record.expectedModuleId !== 'string') throw new TypeError('保存或刷新人设必须提供 expectedModuleId')
+              let saved
+              if (record.refreshOnly === true) saved = readModulePersona(dir)
+              else {
+                if (typeof record.expectedRevision !== 'string' || !SHA256_HEX_RE.test(record.expectedRevision)) throw new TypeError('保存人设必须提供读取时的 expectedRevision')
+                const persona = record.persona === null ? null : readPersonaSpec(record.persona)
+                if (persona === undefined) throw new TypeError('persona 必须是主/子覆盖对象或 null')
+                const root = dirname(dir), id = basename(dir)
+                if (!guardModuleIdentity(req, record, dir, res)) return
+                saved = saveModulePersona(root, id, persona, record.expectedRevision)
               }
-              saveModulePersona(dirname(dir), basename(dir), persona)
-              if (!await runOverridesChange(res, basename(dir))) return
-              writeBridgeJson(res, 200, { ok: true, value: { persona } })
+              try { await afterOverridesChange?.(basename(dir)) }
+              catch (error) {
+                writeBridgeJson(res, 200, { ok: true, value: { ...saved, persisted: true, publicationPending: true, publicationError: `人设已保存，但运行发布失败：${String(error)}` } })
+                return
+              }
+              writeBridgeJson(res, 200, { ok: true, value: { ...saved, persisted: true, publicationPending: false } })
             } catch (error) {
+              if (error instanceof ModuleRulesError && error.persisted) {
+                writeBridgeJson(res, 200, { ok: true, value: { ...readModulePersona(dir), persisted: true, publicationPending: true, publicationError: error.message } })
+                return
+              }
               const message = error instanceof Error ? error.message : String(error)
-              writeBridgeJson(res, 409, { ok: false, code: 'module-persona-rejected', message: `人设保存失败：${message}` })
+              writeBridgeJson(res, error instanceof ModuleRulesError ? error.status : error instanceof TypeError ? 400 : 409,
+                { ok: false, code: error instanceof ModuleRulesError ? error.code : 'module-persona-rejected', message: `人设读取或保存失败：${message}` })
+            }
+          },
+        }),
+        sctx.webServer.register({
+          kind: 'exact',
+          path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.personaSources,
+          handler: async (req, res) => {
+            if (!guard(req, res)) return
+            const parsedBody = await readBridgeBodyForHandler(req, res)
+            if (parsedBody === undefined) return
+            const record = parsedBody.body ?? {}
+            if (!isRecord(record) || Object.keys(record).some(key => !['sources', 'expectedRevision', 'refreshOnly'].includes(key))
+              || record.refreshOnly !== undefined && typeof record.refreshOnly !== 'boolean'
+              || record.refreshOnly === true && (record.sources !== undefined || record.expectedRevision !== undefined)) {
+              writeBridgeJson(res, 400, { ok: false, code: 'persona-sources-invalid', message: '人设来源请求包含非法字段或混合了刷新与写入' })
+              return
+            }
+            try {
+              const root = userModulesDir()
+              if (record.sources === undefined && record.refreshOnly !== true) {
+                if (record.expectedRevision !== undefined) throw new TypeError('读取人设来源不接受写入版本')
+                writeBridgeJson(res, 200, { ok: true, value: readPersonaSources(root) })
+                return
+              }
+              if (record.refreshOnly !== true && record.expectedRevision !== null
+                && (typeof record.expectedRevision !== 'string' || !SHA256_HEX_RE.test(record.expectedRevision))) {
+                throw new TypeError('保存人设来源必须提供读取时的 expectedRevision')
+              }
+              const saved = record.refreshOnly === true ? readPersonaSources(root)
+                : writePersonaSources(root, record.sources as PersonaSources, record.expectedRevision as string | null)
+              try { await afterOverridesChange?.() }
+              catch (error) {
+                writeBridgeJson(res, 200, { ok: true, value: { ...saved, persisted: true, publicationPending: true, publicationError: `人设来源已保存，但运行发布失败：${String(error)}` } })
+                return
+              }
+              writeBridgeJson(res, 200, { ok: true, value: { ...saved, persisted: true, publicationPending: false } })
+            } catch (error) {
+              writeBridgeJson(res, error instanceof ModuleRulesError ? error.status : error instanceof TypeError ? 400 : 409,
+                { ok: false, code: error instanceof ModuleRulesError ? error.code : 'persona-sources-rejected', message: error instanceof Error ? error.message : String(error) })
             }
           },
         }),
@@ -2368,7 +2380,7 @@ export function registerSettingsBridge(
         }
       })
       // 世界书诊断（只读）：返回当前会话最近一次选择的观测记录；读取不触发求值、抽样或时间窗推进。
-      register(BRIDGE_ENDPOINTS.worldBookDiagnostics, async (req, res) => {
+      register(BRIDGE_ENDPOINTS.contextActivationDiagnostics, async (req, res) => {
         if (!isLoopbackRequest(req)) {
           writeBridgeJson(res, 403, { ok: false, code: 'settings-not-exposed', message: 'loopback requests only' })
           return
@@ -2381,12 +2393,12 @@ export function registerSettingsBridge(
         if (parsedBody === undefined) return
         const session = readSessionIdField(parsedBody.body)
         if (!session.ok) {
-          writeBridgeJson(res, 400, { ok: false, code: 'world-book-diagnostics-invalid', message: session.message })
+          writeBridgeJson(res, 400, { ok: false, code: 'context-activation-diagnostics-invalid', message: session.message })
           return
         }
         const empty = { records: [], truncated: false, step: 0, evaluated: false }
         const agent = session.sessionId === undefined ? undefined : stx.agents.get(session.sessionId as never) as { session?: unknown } | undefined
-        const snapshot = agent?.session === undefined ? empty : lastWorldBookDiagnostics(agent.session)
+        const snapshot = agent?.session === undefined ? empty : lastContextActivationDiagnostics(agent.session)
         writeBridgeJson(res, 200, {
           ok: true,
           value: {

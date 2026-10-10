@@ -2,6 +2,19 @@
 
 ## [Unreleased]
 
+### 原生上下文、两级变量与人设覆盖（2026-10-11）
+
+- **破坏性格式切换**：内部策略使用 `context-activation`、`params.activation`、`templateEvaluation` 和 `persona.main/subagent`。旧 ST 运行字段、动作 `config.variables`、旧角色/世界书/会话变量能力明确拒绝；重新导入标准来源或经授权显式转换，不自动改写用户目录。
+- **完整规则事务**：模型工具改为 `module_rules_read/edit`，保留 then/else/嵌套动作，统一按域 revisions；映射写回不固化编译默认值，删除整规则须显式 `rule:null`。
+- **两级持久变量**：`module_variables` 与工作台/模板共用 global/module 存储；空字符串有效，删除模块键才回落全局。普通规则手动建立变量，ST 导入自动登记缺失裸引用为空占位。单模板只写一域、校验全部读取域，真实执行重入不重复提交。
+- **独立记忆和导入能力**：`module_memory_read/append` 与 `module_import` 分开注册，使用受控模块目标、官方工具管线与 disposer。记忆不再附带在规则 note，也不自动注入；旧私有记忆标记阻止未经显式处理的分享。
+- **统一上下文激活**：显式 batch/history 扫描、具名副键逻辑、候选组与时间窗；读取键只读求值，实际投递才 commit。ST 的 outlet/vectorized/triggers 保留来源并禁用规则，避免静默普通注入。
+- **主/子人设各自单选来源**：默认官方，人设卡分别选择一个模块；config.yml.personaSources 只存模块 ID，正文仍属于 module.yml.persona.main/subagent，选择不自动启用该模块的 rules。只读所选受众字段，替代多模块逐字段合并。空文本/false 语义保留，rules/_settings.yml 增加校验投影；官方人设与启用规则的 complete 仍预检，完整配装 prepare/commit/rollback 失败保旧。早入口在官方声明注册/AgentSetup 中应用覆盖与恢复，升级 patch 后需要用户重启 DSH。
+- **YAML 补丁升级**：yaml 2.9.0 → 2.9.1，继续使用现有 Document API；同步74份 ESM 分发文件，不更换解析器。
+- **文档与模板**：模板不再写动作局部变量；WHO/stateKeys 由变量卡手动建立。参考生成脚本、模块技能和权威说明同步原生格式。旧运行文件删除，仍有效的行为测试迁至新公共接口，不保留旧名墓碑测试。
+
+下列未发布条目记录此前阶段的改动；本节明确替代其中关于旧工具名、ST 会话变量、动作局部变量及扁平人设的行为说明。
+
 ### 内置 ponytail 模块对齐上游 v5.0.0
 
 - **规则正文按上游 `skills/ponytail/SKILL.md`（v5.0.0）重建**：5.0 把规则整段重写——`## The ladder` 变 `## The smallest complete change`（六级、平台自带组件优先于原生控件、明确「删功能要一句话点名」），新增 `## Before you write` 的改动面清单（callers / tests / fixtures / config / exports，以及会不会毁数据、会不会让调用方失效），`## Rules` 的散条合并为 bullet 清单，原 `## Output` 与 `## When NOT to be lazy` 收进开头一句与末尾 `Never cut:` 一行；`ponytail:` 债务注释与「同尺寸取边界正确的那版」两条保留。档位表随上游改名 `## Levels` 并逐档重写文案，上游已删的 worked examples 同步删除。

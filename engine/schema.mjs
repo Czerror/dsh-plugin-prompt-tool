@@ -8,7 +8,6 @@ import { fileURLToPath } from 'node:url'
 import { sep } from 'node:path'
 import { parse as parseYaml } from './vendor/yaml/index.js'
 import { bindResolver } from './strategies.mjs'
-import { attachStRenderers } from './st-render.mjs'
 import { compareConfigSequence } from './order.mjs'
 import { MATCH_LOGIC, createAnchorMatcher } from './anchor-match.mjs'
 
@@ -70,19 +69,7 @@ function loadTemplate(file, baseUrl = import.meta.url, presetRootUrl) {
   return { text: raw }
 }
 
-/**
- * 完整 YAML 解析(vendored yaml 包):提示词配置文件直接使用标准 YAML。
- * 支持缩进 map、列表、block scalar、行尾注释、引号转义等全部语法。
- */
-export function parsePromptConfigYaml(raw) {
-  const parsed = parseYaml(raw)
-  if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
-    throw new TypeError(`${name}: prompt config yaml must contain a single object`)
-  }
-  return parsed
-}
-
-export const KNOWN_STRATEGIES = new Set(['static', 'placeholder', 'first-turn-anchor', 'guide-auto', 'anchor-notice', 'world-book'])
+export const KNOWN_STRATEGIES = new Set(['static', 'placeholder', 'first-turn-anchor', 'guide-auto', 'anchor-notice', 'context-activation'])
 /**
  * 策略 × 层支持矩阵：`config.resolve` 只在 pre-step（executor）与 runtime-context 的
  * placeholder（layers）被消费，其他层声明非 static 策略会绑定 resolver 却无人调用，
@@ -95,7 +82,7 @@ export const STRATEGY_LAYER_SUPPORT = {
   'first-turn-anchor': ['pre-step'],
   'guide-auto': ['pre-step'],
   'anchor-notice': ['pre-step'],
-  'world-book': ['pre-step'],
+  'context-activation': ['pre-step'],
 }
 /** 模板专属策略允许的层：resolver 同样只在 pre-step / runtime-context 被调用。 */
 const TEMPLATE_STRATEGY_LAYERS = ['pre-step', 'runtime-context']
@@ -227,8 +214,6 @@ export const LAYER_DEFAULT_SUBJECT = Object.fromEntries(
     .filter((definition) => definition.defaultSubject !== undefined)
     .map((definition) => [definition.layer, definition.defaultSubject]),
 )
-/** 支持 subject / match 的层；其余层声明这两个字段即 fail loud（避免误以为是门）。 */
-export const CONDITIONAL_LAYERS = new Set(Object.keys(LAYER_DEFAULT_SUBJECT))
 export const KNOWN_POSITIONS = new Set(['after-user', 'before-all', 'after-all'])
 export const KNOWN_DEDUPES = new Set(['session', 'batch', 'none'])
 export const KNOWN_PROMOTIONS = new Set(['none', 'main', 'include-subagents'])
@@ -533,6 +518,45 @@ function resolveConfigFields(spec, label, layer) {
   return resolved
 }
 
+const ACTIVATION_FIELDS = new Set(['scan', 'scanDepth', 'scanVariables', 'selective', 'probability', 'useProbability', 'selectionGroup', 'groupOverride', 'groupWeight', 'useGroupScoring', 'sticky', 'cooldown', 'delay', 'excludeRecursion', 'preventRecursion', 'delayUntilRecursion'])
+const ACTIVATION_LOGIC = new Set(['AND_ANY', 'NOT_ALL', 'NOT_ANY', 'AND_ALL'])
+function validateActivation(params, strategy, label) {
+  for (const key of ['stWorldBook', 'stMacros', 'stSource', 'stWords']) {
+    if (Object.hasOwn(params, key)) throw new TypeError(`${label}.params.${key} is retired; reimport or explicitly convert to native context/template fields`)
+  }
+  if (params.templateEvaluation !== undefined && typeof params.templateEvaluation !== 'boolean') throw new TypeError(`${label}.params.templateEvaluation must be boolean`)
+  if (strategy !== 'context-activation') {
+    if (params.activation !== undefined) throw new TypeError(`${label}.params.activation requires strategy context-activation`)
+    return
+  }
+  const activation = params.activation
+  if (activation === null || typeof activation !== 'object' || Array.isArray(activation)) throw new TypeError(`${label}.params.activation must be an object`)
+  const invalid = Object.keys(activation).filter(key => !ACTIVATION_FIELDS.has(key))
+  if (invalid.length) throw new TypeError(`${label}.params.activation unknown fields: ${invalid.join(', ')}`)
+  if (!['batch', 'history'].includes(activation.scan)) throw new TypeError(`${label}.params.activation.scan must be batch or history`)
+  for (const key of ['scanDepth', 'sticky', 'cooldown', 'delay']) {
+    if (activation[key] !== undefined && (!Number.isSafeInteger(activation[key]) || activation[key] < 0)) throw new TypeError(`${label}.params.activation.${key} must be a non-negative integer`)
+  }
+  if (activation.delayUntilRecursion !== undefined && typeof activation.delayUntilRecursion !== 'boolean'
+    && (!Number.isSafeInteger(activation.delayUntilRecursion) || activation.delayUntilRecursion < 0)) throw new TypeError(`${label}.params.activation.delayUntilRecursion must be boolean or a non-negative integer`)
+  for (const key of ['selective', 'useProbability', 'groupOverride', 'useGroupScoring', 'excludeRecursion', 'preventRecursion']) {
+    if (activation[key] !== undefined && typeof activation[key] !== 'boolean') throw new TypeError(`${label}.params.activation.${key} must be boolean`)
+  }
+  for (const key of ['probability', 'groupWeight']) {
+    if (activation[key] !== undefined && (!Number.isFinite(activation[key]) || activation[key] < 0 || (key === 'probability' && activation[key] > 100))) throw new TypeError(`${label}.params.activation.${key} is out of range`)
+  }
+  if (activation.selectionGroup !== undefined && typeof activation.selectionGroup !== 'string') throw new TypeError(`${label}.params.activation.selectionGroup must be string`)
+  if (activation.scanVariables !== undefined && (!Array.isArray(activation.scanVariables) || activation.scanVariables.some(key => typeof key !== 'string' || key.length === 0))) throw new TypeError(`${label}.params.activation.scanVariables must contain variable names`)
+  for (const key of ['keys', 'secondaryKeys']) {
+    if (params[key] !== undefined && (!Array.isArray(params[key]) || params[key].some(value => typeof value !== 'string'))) throw new TypeError(`${label}.params.${key} must contain strings`)
+  }
+  for (const key of ['constant', 'caseSensitive', 'wholeWords', 'useRegex']) {
+    if (params[key] !== undefined && typeof params[key] !== 'boolean') throw new TypeError(`${label}.params.${key} must be boolean`)
+  }
+  if (params.selectiveLogic !== undefined && !ACTIVATION_LOGIC.has(params.selectiveLogic)) throw new TypeError(`${label}.params.selectiveLogic must use a named logic`)
+  if (params.wordBoundary !== undefined && !['ascii-token', 'unicode'].includes(params.wordBoundary)) throw new TypeError(`${label}.params.wordBoundary must be ascii-token or unicode`)
+}
+
 /** 从 YAML 提示词配置描述构造运行时提示词配置。配置错误必须在挂载时暴露(fail loud)。 */
 export function createPromptConfigs(specs, options = {}) {
   if (options.templateModuleRoot !== undefined && options.templatePresetRoot !== undefined
@@ -560,6 +584,7 @@ export function createPromptConfigs(specs, options = {}) {
     }
     const rawStrategy = spec.strategy ?? 'static'
     const strategy = rawStrategy
+    if (strategy === 'world-book') throw new TypeError(`${name}: world-book is retired; reimport or explicitly convert to context-activation`)
     if (strategy === 'custom-fallback') throw new TypeError(`${name}: migrate custom-fallback to an anchor condition and anchor-notice content`)
     if (!KNOWN_STRATEGIES.has(strategy)) {
       // 模板专属策略:声明了 strategyDir 时由 strategies.bindResolver 懒加载,
@@ -610,6 +635,7 @@ export function createPromptConfigs(specs, options = {}) {
     // 数组写法会被静默解析为空 = 匹配所有工具，把一条定向门扩大成全工具门，
     // 与条件判定叠加后危害更大，这里归一化而不是留给运行时。
     const params = normalizeLayerParams(spec.params, layer, `${name}: ${label}`)
+    validateActivation(params, strategy, `${name}: ${label}`)
     const config = {
       id: spec.id,
       name: fields.name ?? spec.id,
@@ -665,7 +691,7 @@ export function createPromptConfigs(specs, options = {}) {
     return config
   })
   // 模块/物化来源按持久序号；没有文件来源的独立数组继续采用 anchor + order 契约。
-  return attachStRenderers(configs
+  return configs
     .map((config, fileOrder) => ({ config, fileOrder }))
     .sort((a, b) => {
       if (a.config.sequence !== undefined || b.config.sequence !== undefined) {
@@ -677,5 +703,5 @@ export function createPromptConfigs(specs, options = {}) {
       if (aAnchor === 1 && a.config.order !== b.config.order) return a.config.order - b.config.order
       return a.fileOrder - b.fileOrder
     })
-    .map(({ config }) => config))
+    .map(({ config }) => config)
 }

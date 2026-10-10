@@ -18,6 +18,7 @@ const { prepareAssembly } = await import('../../src/runtime/agent-assembly.ts')
 const { loadModuleSpec, saveModuleParams } = await import('../../src/host/manifest.ts')
 const { promptConfigToRule } = await import('../../src/host/rule-builder.ts')
 const { readModuleRules, editModuleRules } = await import('../../src/host/module-rules.ts')
+const { readModuleVariables, editModuleVariables } = await import('../../src/host/module-variables.ts')
 // 夹具模板同时装进隔离 DSH_HOME 的官方模块根（resolveModuleDir 场景）与各测试的输出根（见 makeOptions）。
 installFixtureModuleInHome(home)
 test.after(() => rmSync(home, { recursive: true, force: true }))
@@ -343,7 +344,8 @@ test('writeModule 预设变量只读顶层 variables，清空后不复活 params
     doc.get('modules', true).add('tool-config-engine')
     writeFileSync(presetFile, doc.toString(), 'utf8')
     const variables = { wordsCloud: '1500字', 日期: '', usePtcMode: '同名内容变量' }
-    saveModuleParams(moduleDir, 'fixture', undefined, undefined, variables)
+    const variableDir = join(moduleDir, 'fixture')
+    editModuleVariables(variableDir, { scope: 'module', values: variables, expectedRevisions: readModuleVariables(variableDir).revisions })
     const storedParams = parseYaml(readFileSync(presetFile, 'utf8')).params
     writeModule(makeOptions(moduleDir))
     const pcDir = join(moduleDir, 'fixture', 'rules')
@@ -358,7 +360,7 @@ test('writeModule 预设变量只读顶层 variables，清空后不复活 params
     const vars = parseYaml(readFileSync(varsFile, 'utf8'))
     assert.deepEqual(vars, variables, '变量文件只包含顶层变量，保留空串与同名键')
     assert.equal(parsed.params?.wordsCloud, undefined, '内容变量不再进 params')
-    saveModuleParams(moduleDir, 'fixture', undefined, undefined, {})
+    editModuleVariables(variableDir, { scope: 'module', values: {}, expectedRevisions: readModuleVariables(variableDir).revisions })
     writeModule(makeOptions(moduleDir))
     assert.deepEqual(parseYaml(readFileSync(varsFile, 'utf8')), {}, '清空顶层变量后切片为空映射，params 内容键不复活')
     assert.deepEqual(parseYaml(readFileSync(presetFile, 'utf8')).params, storedParams, '不迁移或清理原 params')

@@ -20,7 +20,7 @@ import { CurrentSessionModel } from '../../../features/models/CurrentSessionMode
 import { ModulePersonaCard } from '../../../features/persona/ModulePersonaCard.tsx'
 import { DelegationToolsModuleCard } from '../../../features/subagents/DelegationToolsCard.tsx'
 import { SubagentToolPolicyCard } from '../../../features/subagents/SubagentToolPolicyCard.tsx'
-import { WorldBookDiagnosticsCard } from '../../../features/prompts/WorldBookDiagnosticsCard.tsx'
+import { ContextActivationDiagnosticsCard } from '../../../features/prompts/ContextActivationDiagnosticsCard.tsx'
 import { TemplateVariablesModuleCard } from '../../../features/prompts/PromptConfigsEditor.tsx'
 import { CustomToolsCard } from '../../../features/tools/CustomToolsCard.tsx'
 import { cssEscapeId, scrollToCreatedCard } from '../../../ui/reveal-card.ts'
@@ -177,6 +177,11 @@ export function LayerSettingsContent(props: {
           {id === 'variables' && (
             <TemplateVariablesModuleCard
               t={t}
+              scope={store.variablesScope}
+              onScopeChange={store.setVariablesScope}
+              inheritedVariables={store.inheritedVariables}
+              loading={store.variablesLoading}
+              error={store.variablesError}
               templateVariables={store.templateVariables}
               setTemplateVariables={store.setTemplateVariables}
               templateVariablesEnabled={store.templateVariablesEnabled}
@@ -228,7 +233,7 @@ export interface InjectionPointSlots {
 export interface InjectionPointSlotsInput {
   store: PromptToolStore
   t: PromptToolTranslate
-  /** 当前层筛选（`all` / `world-book` / 九层之一）；过滤只影响展示，不改变保存语义。 */
+  /** 当前层筛选（`all` / `context-activation` / 九层之一）；过滤只影响展示，不改变保存语义。 */
   viewFilter: string
   /** 统一搜索词：同时过滤配置实例、能力卡、共享设置区与单例卡（只影响展示）。 */
   keyword?: string
@@ -249,7 +254,7 @@ export function injectionPointSlots(input: InjectionPointSlotsInput): InjectionP
   // 主会话页保留世界书只读诊断卡（策略视图）；其余单例卡与资产编辑器都进本层设置区。
   const beforeCards = (
     <>
-      {audience === 'main' && <div hidden={viewFilter !== 'world-book'}><WorldBookDiagnosticsCard store={store} t={t} /></div>}
+      {audience === 'main' && <div hidden={viewFilter !== 'context-activation'}><ContextActivationDiagnosticsCard store={store} t={t} /></div>}
       <LayerSettingsFocus layer={input.focusCapability?.layer} token={input.focusCapability?.token ?? 0} />
     </>
   )

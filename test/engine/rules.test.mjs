@@ -10,13 +10,11 @@ import { toolNameSet } from '../../engine/actions/shared.mjs'
 import { ACTION_EXAMPLES } from '../../engine/actions/examples.mjs'
 import { ACTION_KINDS } from '../../engine/actions/catalog.mjs'
 import { mountRuleSources } from '../../engine/rule-runtime.mjs'
-import { wireLayers } from '../../engine/layers.mjs'
 import { WARN_ONCE_LIMIT, createWarnOnce } from '../../engine/shared.mjs'
-import { setSessionVar } from '../../engine/session-vars.mjs'
 import { ruleFrame, ruleMatches, actionMatches } from '../../engine/conditions/evaluation.mjs'
 import { createNameListPredicate, subjectOf, FACT_PREDICATE_SUBJECTS, createAnchorPredicate, createCountPredicate, createSessionStatePredicate } from '../../engine/conditions/index.mjs'
 import { UNAVAILABLE } from '../../engine/conditions/availability.mjs'
-import { lastWorldBookDiagnostics, stChatMessages } from '../../engine/st-world-book.mjs'
+import { lastContextActivationDiagnostics, conversationMessages } from '../../engine/context-activation.mjs'
 import { currentEvents, viewRestricted } from '../../engine/history.mjs'
 
 function harness(services = {}) {
@@ -937,8 +935,8 @@ test('after-next 动作读取 next 之后的下游结果：unset 命中下游值
   dispose()
 })
 
-test('ST 世界书组互斥在整步成立：默认位置 filter 切开批次时同组两条只注入一条', async () => {
-  const lore = (id, text) => ({ id, kind: 'inject-text', config: { id, layer: 'pre-step', strategy: 'world-book', position: 'after-all', text, params: { keys: ['KEY'], stWorldBook: { group: 'lore' } } } })
+test('上下文候选组在整步成立：默认位置 filter 切开批次时同组两条只注入一条', async () => {
+  const lore = (id, text) => ({ id, kind: 'inject-text', config: { id, layer: 'pre-step', strategy: 'context-activation', position: 'after-all', text, params: { keys: ['KEY'], activation: { scan: 'history', selectionGroup: 'lore' } } } })
   const noopFilter = id => ({ id, kind: 'pre-step-filter', blockPlugins: ['nothing'] })
   // 真值源：两个同组成员分别在两个 flush 里（filter 切在两条之间），末批只有非世界书配置。
   const plan = split => compileRules([{ id: 'lore', then: split
@@ -958,7 +956,7 @@ test('ST 世界书组互斥在整步成立：默认位置 filter 切开批次时
     } finally { Math.random = original }
     const loreTexts = result.messages.flatMap(message => message.content.map(block => block.text)).filter(text => text.endsWith('-LORE'))
     dispose()
-    return { loreTexts, records: lastWorldBookDiagnostics(agent.session).records }
+    return { loreTexts, records: lastContextActivationDiagnostics(agent.session).records }
   }
   const split = await run(plan(true))
   const whole = await run(plan(false))
@@ -970,20 +968,18 @@ test('ST 世界书组互斥在整步成立：默认位置 filter 切开批次时
   assert.ok(split.records.some(record => record.stage === 'committed'), 'commit 事实写回同一份快照')
 })
 
-test('世界书选择抛错按「本步跳过注入」降级：只告警一次、不抛进 waterfall', async () => {
+test('上下文触发键读取失败只拒绝该条目：其它规则仍注入，告警不抛进 waterfall', async () => {
   const rules = compileRules([{ id: 'lore', then: [
     textAction('plain', 'PLAIN', { position: 'after-all' }),
-    { id: 'wb', kind: 'inject-text', config: { id: 'wb', layer: 'pre-step', strategy: 'world-book', position: 'after-all', text: 'LORE', params: { keys: ['KEY'], stWorldBook: { group: 'lore' } } } },
+    { id: 'wb', kind: 'inject-text', config: { id: 'wb', layer: 'pre-step', strategy: 'context-activation', position: 'after-all', text: 'LORE', params: { keys: ['{{module.set::key::KEY}}'], activation: { scan: 'history', selectionGroup: 'lore' } } } },
   ] }])
-  // 键的宏求值在 selectStWorldBook 的 per-config try 之外：坏键只能降级本步，不能逸出。
-  rules[0].actions.find(action => action.id === 'wb').compiledConfig.params.keys[0] = { toString() { throw new Error('key exploded') } }
   const h = harness()
   const dispose = mountRuleSources(h.ctx, [{ moduleId: 'module', rules }])
   const agent = actor()
   const messages = [{ id: 'u', role: 'user', source: { kind: 'user' }, content: [{ type: 'text', text: 'KEY 提示' }] }]
   const result = await h.run('agent/pre-step', [{ agent, messages }], () => ({ kind: 'enter', messages }))
-  assert.deepEqual(result.messages, messages, '批级判定失败 → 本步不注入，decision 原样返回')
-  assert.equal(h.warnings.filter(message => String(message).includes('prompt config failed, skipping')).length, 1, '失败恰好告警一次')
+  assert.deepEqual(result.messages.flatMap(message => message.content.map(block => block.text)), ['KEY 提示', 'PLAIN'], '扫描赋值被拒绝，其它规则仍正常注入')
+  assert.equal(h.warnings.filter(message => String(message).includes('上下文激活 wb 匹配失败')).length, 1, '失败恰好告警一次')
   dispose()
 })
 
@@ -1033,9 +1029,9 @@ test('variablesEnabled=false：声明变量引用按插值语法剥离，未声�
   assert.equal(Object.hasOwn(enabled.text, SESSION_VARIABLES_DISABLED), false, '启用时不打标记')
 })
 
-test('variablesEnabled=false 执行期连会话变量一起停：内建与未声明引用不受影响，同批其他模块照常', async () => {
+test('variablesEnabled=false 停止读取持久变量：内建与空占位保留，同批其他模块照常', async () => {
   // 真值源：同一份声明（owner=MODULE），只有顶层开关不同——两模块同批（各自来源）注入，
-  // 差异只能来自开关：停用模块的会话值不注入、声明键已剥离，启用模块两者都生效。
+  // 差异只能来自开关：停用模块不读取持久快照，启用模块读取当前值。
   const module = variablesEnabled => compileRules([{ id: 'vars', then: [
     textAction('vars-text', 'owner={{owner}} other={{other}} home={{DSH_HOME}}', { position: 'after-all' }),
   ] }], { variables: { owner: 'MODULE' }, variablesEnabled })
@@ -1043,10 +1039,8 @@ test('variablesEnabled=false 执行期连会话变量一起停：内建与未声
   const dispose = mountRuleSources(h.ctx, [
     { moduleId: 'off-module', rules: module(false) },
     { moduleId: 'on-module', rules: module(true) },
-  ])
+  ], { variableStore: { read: () => ({ module: { owner: 'CURRENT' }, global: { other: 'OTHER' }, effective: { owner: 'CURRENT', other: 'OTHER' } }) } })
   const agent = actor()
-  setSessionVar(agent.session, 'owner', 'SESSION')
-  setSessionVar(agent.session, 'other', 'OTHER')
   const messages = [{ id: 'u', role: 'user', source: { kind: 'user' }, content: [{ type: 'text', text: 'USER' }] }]
   const texts = (await h.run('agent/pre-step', [{ agent, messages }], () => ({ kind: 'enter', messages })))
     .messages.flatMap(message => message.content.map(block => block.text))
@@ -1059,33 +1053,33 @@ test('variablesEnabled=false 执行期连会话变量一起停：内建与未声
   // 不写死 DSH_HOME 的真值：runner 注入的与宿主回退值都成立。
   assert.deepEqual(ownerLines.map(line => line.replace(/home=.*/, 'home=<resolved>')), [
     'owner= other={{other}} home=<resolved>',
-    'owner=SESSION other=OTHER home=<resolved>',
-  ], '停用模块连会话变量一起停，启用模块会话覆盖声明值')
+    'owner=CURRENT other=OTHER home=<resolved>',
+  ], '停用模块不读取变量，启用模块使用 adapter 的当前快照')
 })
 
-test('variablesEnabled=false 在注册层同样停会话变量：官方变量不吃会话覆盖与并入', () => {
-  const session = { id: 'vars-off-layer', header: {}, snapshotEvents: () => [] }
-  setSessionVar(session, 'owner', 'SESSION')
-  const registered = []
-  const systemPrompt = {
-    section: () => () => {},
-    context: () => () => {},
-    variable(name, read) { registered.push({ name, read }); return () => {} },
-  }
-  const ctx = { on: () => () => {}, get: (name) => (name === 'systemPrompt' ? systemPrompt : undefined), logger: { warn() {} } }
-  const render = (variablesEnabled) => {
-    registered.length = 0
-    // 动作级 config.variables 在停用时仍保留（停的只是模块级合并），所以该名字照常注册。
-    const rule = compileRules([{ id: 'sec', then: [{
-      id: 'sec-text', kind: 'inject-text',
-      config: { id: 'sec-text', layer: 'system-section', strategy: 'static', params: { sectionName: 'S' }, text: 'owner={{owner}}', variables: { owner: 'MODULE' } },
-    }] }], { variablesEnabled })[0]
-    wireLayers(ctx, [rule.actions[0].compiledConfig], () => {})
-    return registered.map(item => item.read({ agent: { session } })).join('|')
-  }
-  // 注册出去的是该变量的值（文本插值由 section/context 那条路径做）。
-  assert.equal(render(false), 'MODULE', '停用后官方变量不吃会话覆盖')
-  assert.equal(render(true), 'SESSION', '启用时会话覆盖声明值')
+test('variablesEnabled=false 在官方注册层也停读变量，重新装配仍读取最新快照', async () => {
+  const root = new Context()
+  await root.plugin(SystemPrompt)
+  const agent = actor()
+  createScope(root, agent)
+  const module = variablesEnabled => compileRules([{ id: 'sec', then: [{
+    id: 'sec-text', kind: 'inject-text',
+    config: { layer: 'system-section', text: 'owner={{owner}}' },
+  }] }], { variables: { owner: 'DECLARED' }, variablesEnabled })
+  let current = 'CURRENT'
+  const dispose = mountRuleSources(root, [
+    { moduleId: 'off-module', rules: module(false) },
+    { moduleId: 'on-module', rules: module(true) },
+  ], { variableStore: { read: () => ({ module: { owner: current }, global: {}, effective: { owner: current } }) } })
+  const render = async () => (await root.systemPrompt.assemble({ agent, scope: agent })).sections
+    .filter(section => section.name.startsWith('prompt-tool:')).map(section => section.text).sort()
+  assert.deepEqual(await render(), ['owner=', 'owner=CURRENT'])
+  current = ''
+  assert.deepEqual(await render(), ['owner=', 'owner='], '合法空值保留，无需重挂')
+  current = 'UPDATED'
+  assert.deepEqual(await render(), ['owner=', 'owner=UPDATED'])
+  dispose()
+  assert.deepEqual(await render(), [])
 })
 
 test('动作声明白名单：未知键、对象形态 match 与带 kind 的分支节点编译期拒绝', () => {
@@ -1481,7 +1475,7 @@ test('T36③：无 id 的消息在重复 seq 下只计一次（chat.length 不�
     nodes: [0, 0],
   }
   const session = { id: 't36-chat', header: {}, snapshotEvents: () => state.log, surface: { get nodes() { return state.nodes } } }
-  assert.equal(stChatMessages(session).length, 1, '同一 seq 占两个位置只算一条：它驱动 delay / sticky 窗口与概率 generation')
+  assert.equal(conversationMessages(session).length, 1, '同一 seq 占两个位置只算一条：它驱动 delay / sticky 窗口与概率 generation')
 })
 
 /**

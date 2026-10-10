@@ -4,14 +4,12 @@ import fs, { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } fro
 import { syncBuiltinESMExports } from 'node:module'
 import { join } from 'node:path'
 import { atomicWriteTextFile } from '../../src/host/text-file.ts'
-import { atomicWriteTextFile as manifestWrite } from '../../src/host/manifest.ts'
 
-test('预设旧接口与技能共享原子文本替换；替换前失败保留原件并清理暂存', (t) => {
+test('原子文本替换保留正文；替换前失败保留原件并清理暂存', (t) => {
   const directory = mkdtempSync(join(process.cwd(), 'pt-text-file-'))
   t.after(() => rmSync(directory, { recursive: true, force: true }))
   const file = join(directory, 'preset.yml')
   writeFileSync(file, '# 原始注释\nname: original\n')
-  assert.equal(manifestWrite, atomicWriteTextFile)
   atomicWriteTextFile(file, '# 原始注释\nname: updated\n', { mode: 0o600 })
   assert.equal(readFileSync(file, 'utf8'), '# 原始注释\nname: updated\n')
   assert.throws(() => atomicWriteTextFile(file, 'invalid', { beforeReplace() { throw new Error('版本冲突') } }), /版本冲突/)
@@ -20,7 +18,7 @@ test('预设旧接口与技能共享原子文本替换；替换前失败保留�
   t.mock.method(fs, 'renameSync', () => { throw new Error('替换失败') })
   syncBuiltinESMExports()
   try {
-    assert.throws(() => manifestWrite(file, 'invalid'), /替换失败/)
+    assert.throws(() => atomicWriteTextFile(file, 'invalid'), /替换失败/)
     assert.equal(readFileSync(file, 'utf8'), '# 原始注释\nname: updated\n')
     assert.deepEqual(readdirSync(directory), ['preset.yml'])
   } finally { t.mock.restoreAll(); syncBuiltinESMExports() }

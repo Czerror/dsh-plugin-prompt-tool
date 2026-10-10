@@ -1,8 +1,6 @@
 # 模板：system-section 静态 system 段（缓存友好，静态内容优先放这里）
 # order 参考：-100 身份 / 0 persona-prefix / 100-199 工具引导 / 10200 persona-suffix。
-# 人设用法：params.sectionName = deployment:persona-prefix（第一方指导之前）或
-# deployment:persona-suffix（第一方指导之后）时注册为人设段
-# （同名 shadow 全局 persona，模块列表显示「人设」徽标；子代理经 scope 链继承）。
+# 自定义系统段使用自己的 sectionName；官方人设覆盖由独立 persona.main/subagent 卡管理。
 #   - complete: true 让本段成为唯一的 system prompt 段（身份注入、人设后缀、工具指南等
 #     其余 system 段全部被抑制；工具链、运行时上下文与变量仍保留）。同一模块只能有一个，
 #     且与顶层人设的「独占」互斥：写盘前由 bridge 拒绝（400），装配前另有一道兜底校验，
@@ -22,7 +20,6 @@ then:
       mergeMode: merged
       text: |
 
-      variables: {}
       params:
         complete: false
         suppressRuntimeContext: false

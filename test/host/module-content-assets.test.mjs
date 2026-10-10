@@ -1,8 +1,4 @@
-// 合并自 worldbook.test.mjs(6) + custom-tools.test.mjs(7)
-//（2026-09-17 测试归一精简 Wave 2）。两者都要求「先设隔离 DSH_HOME 再加载被测模块」：
-// worldbook 走 lib 入口，custom-tools 直接验证 src/host/write-module.ts 与 engine 源码
-//（原注释：不依赖 lib/ 或 build），合并后两类 import 都保留在这一处。
-// 原 worldbook 缺 after 清理，这里统一登记还原与清理（不改变任何断言）。
+// 自定义工具的写盘与实际执行契约。
 import { after, test } from 'node:test'
 import assert from 'node:assert/strict'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
@@ -21,102 +17,8 @@ after(() => {
   else process.env.DSH_HOME = previousHome
   rmSync(home, { recursive: true, force: true })
 })
-const { buildWorldBookEntry, deleteWorldBookEntry, listWorldBookEntries, upsertWorldBookEntry } = await import('../../lib/index.mjs')
 const { writeModule } = await import('../../src/host/write-module.ts')
 const { apply } = await import('../../engine/tool-config-engine.mjs')
-
-// —— 世界书条目（原 worldbook.test.mjs） ——
-
-const dir = join(home, 'modules', 'wb-test')
-mkdirSync(dir, { recursive: true })
-writeFileSync(join(dir, 'module.yml'), JSON.stringify({ id: 'wb-test', name: '世界书测试', modules: [], rules: [
-  { id: 'static-one', name: '普通配置', then: [{ id: 'inject', kind: 'inject-text', config: { id: 'static-one', strategy: 'static', order: 1, text: '普通' } }] },
-  { id: 'lore-1', name: '已有条目', then: [{ id: 'inject', kind: 'inject-text', config: { id: 'lore-1', strategy: 'world-book', order: -100, text: '旧内容', params: { constant: true } } }] },
-] }), 'utf8')
-
-test('worldbook list：只返回 world-book 策略配置', () => {
-  const entries = listWorldBookEntries(dir)
-  assert.equal(entries.length, 1)
-  assert.equal(entries[0].id, 'lore-1')
-})
-
-test('buildWorldBookEntry 结构工厂：固定字段与 params 键集单一权威', () => {
-  const entry = buildWorldBookEntry({
-    id: 'lore-x',
-    name: '气味描写',
-    text: '空气中弥漫着…',
-    constant: false,
-    keys: ['气味', 'smell'],
-    secondaryKeys: ['香水'],
-    caseSensitive: true,
-    wholeWords: true,
-    selectiveLogic: 1,
-  })
-  assert.equal(entry.strategy, 'world-book')
-  assert.equal(entry.layer, 'pre-step')
-  assert.equal(entry.position, 'before-all')
-  assert.equal(entry.order, 100, 'order 缺省 100')
-  assert.deepEqual(entry.params, {
-    constant: false,
-    keys: ['气味', 'smell'],
-    secondaryKeys: ['香水'],
-    caseSensitive: true,
-    wholeWords: true,
-    selectiveLogic: 1,
-  })
-  // 空列表/缺省不写键（与 ST/工具通道历史产物一致）。
-  const minimal = buildWorldBookEntry({ id: 'lore-y', name: '全局', text: 't', constant: true })
-  assert.deepEqual(minimal.params, { constant: true })
-  assert.equal(minimal.enabled, undefined, 'enabled 缺省不写')
-})
-
-test('worldbook upsert：新增与更新（按 id），count 只统计世界书条目', () => {
-  const added = upsertWorldBookEntry(dir, {
-    id: 'lore-new',
-    name: '新条目',
-    strategy: 'world-book',
-    order: -50,
-    text: '新内容',
-    layer: 'pre-step',
-    position: 'before-all',
-    params: { keys: ['新词'] },
-  })
-  assert.equal(added, 2, '新增后世界书条目数 = 2')
-
-  const updated = upsertWorldBookEntry(dir, {
-    id: 'lore-1',
-    name: '已有条目',
-    strategy: 'world-book',
-    order: -200,
-    text: '更新内容',
-    params: { constant: true },
-  })
-  assert.equal(updated, 2, '更新不新增')
-
-  const preset = parseYaml(readFileSync(join(dir, 'module.yml'), 'utf8'))
-  const lore1 = preset.rules.find((rule) => rule.id === 'lore-1').then[0].config
-  assert.equal(lore1.text, '更新内容')
-  assert.equal(lore1.order, -200)
-  assert.equal(preset.rules.length, 3, '普通配置保留')
-})
-
-test('worldbook upsert：缺 id 抛 TypeError', () => {
-  assert.throws(
-    () => upsertWorldBookEntry(dir, { name: '无 id', strategy: 'world-book' }),
-    /非空字符串 id/,
-  )
-})
-
-test('worldbook delete：删除并计数；不存在抛错', () => {
-  const after = deleteWorldBookEntry(dir, 'lore-new')
-  assert.equal(after, 1)
-  assert.throws(() => deleteWorldBookEntry(dir, 'lore-new'), /不存在/)
-  const entries = listWorldBookEntries(dir)
-  assert.equal(entries.length, 1)
-  assert.equal(entries[0].id, 'lore-1')
-})
-
-// —— 自定义工具定义（原 custom-tools.test.mjs） ——
 
 const validTool = (patch = {}) => ({
   id: 'custom_tool', description: '自定义工具',
@@ -259,6 +161,12 @@ test('writeModule：坏工具完整拒绝无写，合法 DSL 保留并由内联�
   const before = readFileSync(file, 'utf8')
   assert.throws(() => writeModule({ modulesRoot: moduleDir, moduleId: 'custom-tools-test' }), /invalid customTools/)
   assert.equal(readFileSync(file, 'utf8'), before)
+  assert.equal(existsSync(join(dir, 'rules')), false)
+  doc.setIn(['customTools'], [validTool({ execute: { kind: 'delegate', tool: 'session_var' } })])
+  writeFileSync(file, doc.toString(), 'utf8')
+  const unsupported = readFileSync(file)
+  assert.throws(() => writeModule({ modulesRoot: moduleDir, moduleId: 'custom-tools-test' }), /显式转换/)
+  assert.deepEqual(readFileSync(file), unsupported, '不支持的委托必须在物化前明确拒绝，不能发布无效果模块')
   assert.equal(existsSync(join(dir, 'rules')), false)
   doc.setIn(['customTools'], tools.slice(0, 4))
   writeFileSync(file, doc.toString(), 'utf8')

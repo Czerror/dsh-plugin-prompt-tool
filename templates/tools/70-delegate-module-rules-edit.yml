@@ -1,0 +1,31 @@
+# 完整规则事务；先读取规则和版本，只改需要的字段。
+id: delegate-module-rules-edit
+name: my_module_rules_edit
+description: 按读取版本编辑当前模块的完整规则
+parameters:
+  moduleId:
+    type: string
+    required: true
+    description: 读取时返回的模块身份
+  revisions:
+    type: json
+    required: true
+    description: 读取时返回的按域版本
+  edits:
+    type: json
+    required: true
+    description: 完整规则修改数组，整规则删除须显式 rule 为 null
+output:
+  schema:
+    type: object
+    additionalProperties: true
+    properties:
+      ok: { type: boolean }
+      value: { type: json }
+execute:
+  kind: delegate
+  tool: module_rules_edit
+  args:
+    expectedModuleId: '{{args.moduleId}}'
+    expectedRevisions: '{{args.revisions}}'
+    edits: '{{args.edits}}'

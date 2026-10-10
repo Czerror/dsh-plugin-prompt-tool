@@ -41,14 +41,6 @@ export interface TrashedSkill {
   container: string
 }
 
-/** 把技能目录移入回收站：命名唯一、记录来源与时间，可人工恢复。
- *  失败时清理自己刚创建的容器，不在回收站里留下空条目。
- *  自带目录名校验：导出函数不依赖调用方先验，否则直接调用方可以用 '..' 把容器外的目录搬走。 */
-export function trashSkill(base: string, folder: string, origin: 'delete'): TrashedSkill {
-  if (!SKILL_NAME_PATTERN.test(folder)) throw new Error(`技能目录名不合法：${folder}`)
-  return trashTarget(base, folder, origin)
-}
-
 function trashTarget(base: string, folder: string, origin: 'delete'): TrashedSkill {
   const root = resolve(base)
   const recycle = join(root, ...TRASH_SEGMENTS)
@@ -138,11 +130,6 @@ export function deleteSkillTarget(allowedRoots: readonly string[], path: string)
   } catch (error) {
     return { ok: false, message: `删除技能失败：${error instanceof Error ? error.message : String(error)}` }
   }
-}
-
-/** 读取技能标记文件（供预览与测试使用）。 */
-export function readSkillMarker(path: string): string {
-  return readFileSync(join(path, 'SKILL.md'), 'utf8')
 }
 
 /** 包根 `skills/` 目录：随包分发的**内置技能库**（目录形态与用户技能根同构）。兼容源码与打包运行。 */

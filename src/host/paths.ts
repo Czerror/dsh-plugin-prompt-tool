@@ -32,6 +32,8 @@ export const USER_SKILLS_DIR = join(DSH_HOME, 'skills')
  * 旧根 `.agent-presets/` 只读不删，本插件不再读写它。
  */
 const STORAGE_ROOT = join(DSH_HOME, '.prompt-tool')
+/** 同一 DSH_HOME 的全局持久变量；不属于任何模块交换包。 */
+export const GLOBAL_VARIABLES_FILE = join(STORAGE_ROOT, 'variables.yml')
 /**
  * 存储根下的**模块根**：一个模块一个目录（`modules/<id>/`），定义与物化产物都在其内。
  *
@@ -53,5 +55,3 @@ export const MODULE_DEFINITION_FILE = 'module.yml'
 export const RULES_DIR = 'rules'
 export const RULES_SETTINGS_FILE = '_settings.yml'
 export const RULES_VARIABLES_FILE = 'variables.yml'
-/** 模块在列表里的默认排序权重。 */
-export const DEFAULT_MODULE_ORDER = 5

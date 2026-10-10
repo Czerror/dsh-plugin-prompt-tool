@@ -6,13 +6,11 @@ import type { RuleDefinition, RuleEdit, RuleRevisions } from '../shared/rules.ts
 import { assertRuleFileId, commitModuleDefinition, ensureModuleSlices, ModuleRulesError, validateModuleDefinitionText } from './module-storage.ts'
 import type { ModuleDefinitionSnapshot } from './module-storage.ts'
 import { invalidateModuleSpec } from './manifest.ts'
-export { assertCanonicalRuleSource, rulePromptConfigOptions, ModuleRulesError, readRulesDir, ruleSettingsPath, ruleVariablesPath, ensureModuleSlices, decomposeModule } from './module-storage.ts'
 
 const record = (value: unknown): value is Record<string, unknown> => value !== null && typeof value === 'object' && !Array.isArray(value)
-export interface ModuleRulesSnapshot { rules: RuleDefinition[]; revisions: RuleRevisions; readonly revision: string }
+export interface ModuleRulesSnapshot { rules: RuleDefinition[]; revisions: RuleRevisions }
 function publicSnapshot(snapshot: ModuleDefinitionSnapshot, rules = snapshot.rules): ModuleRulesSnapshot {
-  // 旧 host API 仍可读取 revision；规范 JSON 输出仅含 revisions。
-  return Object.defineProperty({ rules: structuredClone(rules), revisions: structuredClone(snapshot.revisions) }, 'revision', { value: snapshot.revision }) as ModuleRulesSnapshot
+  return { rules: structuredClone(rules), revisions: structuredClone(snapshot.revisions) }
 }
 export function readModuleRules(directory: string): ModuleRulesSnapshot { return publicSnapshot(ensureModuleSlices(directory)) }
 
@@ -45,8 +43,7 @@ function replaceNode(doc: ReturnType<typeof parseDocument>, original: unknown, v
 }
 
 export interface ModuleRuleEditRequest {
-  expectedRevision?: string
-  expectedRevisions?: Partial<RuleRevisions>
+  expectedRevisions: Partial<RuleRevisions>
   edits?: RuleEdit[]
   activateRuleId?: string
   validateOnly?: boolean
@@ -55,22 +52,18 @@ export interface ModuleRuleEditRequest {
 export function editModuleRules(directory: string, request: ModuleRuleEditRequest): ModuleRulesSnapshot {
   const snapshot = ensureModuleSlices(directory, { writable: request?.validateOnly !== true })
   const hash = (value: unknown): value is string => typeof value === 'string' && /^[a-f0-9]{64}$/i.test(value)
-  if (!record(request) || (request.expectedRevision === undefined && !record(request.expectedRevisions))
-    || (request.expectedRevision !== undefined && !hash(request.expectedRevision))
-    || Object.keys(request).some(key => !['expectedRevision', 'expectedRevisions', 'edits', 'activateRuleId', 'validateOnly'].includes(key))
+  if (!record(request) || !record(request.expectedRevisions)
+    || Object.keys(request).some(key => !['expectedRevisions', 'edits', 'activateRuleId', 'validateOnly'].includes(key))
     || (request.validateOnly !== undefined && typeof request.validateOnly !== 'boolean')
     || (request.edits !== undefined && !Array.isArray(request.edits))
     || (request.activateRuleId !== undefined && (typeof request.activateRuleId !== 'string' || request.activateRuleId.length === 0))) throw new ModuleRulesError('规则事务字段或版本格式不合法')
-  if (request.expectedRevisions !== undefined && (!record(request.expectedRevisions)
-    || Object.keys(request.expectedRevisions).some(key => !['rules', 'settings', 'variables'].includes(key))
+  if (Object.keys(request.expectedRevisions).some(key => !['rules', 'settings', 'variables'].includes(key))
     || (request.expectedRevisions.rules !== undefined && (!record(request.expectedRevisions.rules) || Object.values(request.expectedRevisions.rules).some(value => !hash(value))))
     || (request.expectedRevisions.settings !== undefined && !hash(request.expectedRevisions.settings))
-    || (request.expectedRevisions.variables !== undefined && !hash(request.expectedRevisions.variables)))) throw new ModuleRulesError('规则版本对象不合法')
-  const legacy = request.expectedRevisions === undefined
-  const expectedRevisions = request.expectedRevisions as Partial<RuleRevisions> | undefined
-  if (legacy && snapshot.revision !== request.expectedRevision) throw new ModuleRulesError('模块文件已变化，请重新读取规则', 409, 'rules-conflict')
-  const checkSettings = () => { if (!legacy && expectedRevisions?.settings !== snapshot.revisions.settings) throw new ModuleRulesError('规则状态已变化，请重新读取', 409, 'rules-conflict') }
-  const checkRule = (id: string) => { if (!legacy && expectedRevisions?.rules?.[id] !== snapshot.revisions.rules[id]) throw new ModuleRulesError(`规则 ${id} 正文已变化，请重新读取`, 409, 'rules-conflict') }
+    || (request.expectedRevisions.variables !== undefined && !hash(request.expectedRevisions.variables))) throw new ModuleRulesError('规则版本对象不合法')
+  const expectedRevisions = request.expectedRevisions
+  const checkSettings = () => { if (expectedRevisions.settings !== snapshot.revisions.settings) throw new ModuleRulesError('规则状态已变化，请重新读取', 409, 'rules-conflict') }
+  const checkRule = (id: string) => { if (expectedRevisions.rules?.[id] !== snapshot.revisions.rules[id]) throw new ModuleRulesError(`规则 ${id} 正文已变化，请重新读取`, 409, 'rules-conflict') }
   if (!Array.isArray(snapshot.source.modules)) throw new ModuleRulesError('当前组合没有可编辑的 modules 清单')
   const previous = (snapshot.source.rules ?? []) as RuleDefinition[]
   const rules = structuredClone(previous)
@@ -94,7 +87,7 @@ export function editModuleRules(directory: string, request: ModuleRuleEditReques
     if (edit.rule === null) { rules.splice(index, 1); ruleNodes.items.splice(index, 1); delete order[edit.previousId!]; continue }
     assertRuleFileId(edit.rule.id)
     const replacement = structuredClone(edit.rule) as unknown as RuleDefinition
-    if (!legacy && index >= 0 && edit.settingsChanged !== true) {
+    if (index >= 0 && edit.settingsChanged !== true) {
       const current = rules[index]!
       delete replacement.enabled; delete replacement.group; delete replacement.exclusive
       for (const key of ['enabled', 'group', 'exclusive'] as const) if (Object.hasOwn(current, key)) Object.assign(replacement, { [key]: current[key] })

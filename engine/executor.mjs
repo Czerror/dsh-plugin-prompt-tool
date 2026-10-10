@@ -28,8 +28,8 @@ import { interpolateVariables } from './interpolate.mjs'
 import { conditionHit, userMessagesText } from './condition.mjs'
 import { createEpochPromotion } from './compaction-epoch.mjs'
 import { wireLayers } from './layers.mjs'
-import { sessionVarsSnapshot } from './session-vars.mjs'
-import { selectStWorldBook } from './st-world-book.mjs'
+import { renderTemplate } from './template-frame.mjs'
+import { selectContextActivation } from './context-activation.mjs'
 import { compareConfigSequence } from './order.mjs'
 import { ruleFrame, actionMatches } from './conditions/evaluation.mjs'
 // 标记键名与「已登记进 config 白名单」同源（schema.mjs），此处不另写字面量。
@@ -340,9 +340,8 @@ function batchScope(options, frame) {
     && actionMatches(config, frame))
   return {
     qualified: new Set(qualified),
-    // 协调器为绑定来源 ctx 会复制 config；renderSt 函数身份在副本间保持不变。
-    eligible: new Set(qualified.map(config => config.renderSt)),
-    stWorldBook: selectStWorldBook(qualified, session, messages, warnOnce),
+    contextActivation: selectContextActivation(qualified, session, messages, warnOnce, config => config[SESSION_VARIABLES_DISABLED] === true
+      ? { module: {}, global: {} } : config.variableStore?.read(config.sourceModuleId) ?? { module: config.variables, global: {} }),
   }
 }
 
@@ -408,6 +407,10 @@ async function runPromptConfigBatch(options) {
     for (const config of configs) {
       try {
         if (!scope.qualified.has(config)) continue
+        if (config.position === 'after-user' && !messages.some(message => message?.source?.kind === 'user')) {
+          warnOnce(`${name}: after-user config(s) ${config.id} skipped this batch — no user message anchor`)
+          continue
+        }
 
         if (config.dedupe === 'session') {
           if (alreadyDelivered(config, session, memo)) continue
@@ -415,22 +418,20 @@ async function runPromptConfigBatch(options) {
           continue
         }
 
-        const resolved = await config.resolve({ ctx, agent, session, decision, messages, stWorldBookSelected: scope.stWorldBook.has(config) })
+        const signal = options.payload?.signal
+        if (signal?.aborted) continue
+        const resolved = await config.resolve({ ctx, agent, session, signal, decision, messages, contextActivationSelected: scope.contextActivation.has(config) })
+        if (signal?.aborted) continue
         if (resolved === null || resolved === undefined) continue
         const patched = { ...resolved }
-        // params 并入插值变量：ST 变量（setvar/getvar 收集 + 预设参数）顶层 key 直接可插值
-        //（含中文 key 如 {{接受值}}——引擎正则已支持 Unicode 字母）。
-        // 会话变量（session_var 工具维护）覆盖配置/预设默认：resolved > 会话 > params > 配置。
-        // 模块停用模板变量（variablesEnabled=false）时不让位到会话变量：只保留内建事实与
-        // 动态宏（声明键引用已在编译期剥离，见 rule-spec.mjs#injectionConfigSpec）。
+        // 按来源读取最新持久值；无变量正文不因另一个坏候选的读盘失败撤回。
         const mergedVars = {
-          ...config.variables,
-          ...config.params,
-          ...(config[SESSION_VARIABLES_DISABLED] === true ? {} : sessionVarsSnapshot(session)),
+          ...(config[SESSION_VARIABLES_DISABLED] === true ? {} : config.params?.templateEvaluation !== true && [patched.text, ...config.texts].some(text => typeof text === 'string' && text.includes('{{'))
+            ? config.variableStore?.read(config.sourceModuleId).effective ?? config.variables : config.variables),
           ...(resolved.variables !== null && typeof resolved.variables === 'object' ? resolved.variables : {}),
         }
-        if (typeof config.renderSt === 'function') {
-          patched.text = config.renderSt(agent, messages, warnOnce, options, scope.eligible)
+        if (config.params?.templateEvaluation === true) {
+          patched.text = renderTemplate({ ...config, texts: config.texts.length ? config.texts : [patched.text ?? ''] }, { agent, signal }, { enabled: config[SESSION_VARIABLES_DISABLED] !== true, warn: warnOnce })
           patched.content = patched.text.length > 0 ? [{ type: 'text', text: patched.text }] : []
         } else if (typeof patched.text === 'string') {
           // 提示词配置级模板变量 + filler 变量 + 内置环境变量插值。
@@ -438,12 +439,12 @@ async function runPromptConfigBatch(options) {
           // 缺省空串会让不同配置的首个 pick 退化成同一个 seed。
           patched.text = interpolateVariables(patched.text, mergedVars, session, undefined, config.id)
         }
-        if (config.texts.length > 0 && typeof config.renderSt !== 'function') {
+        if (config.texts.length > 0 && config.params?.templateEvaluation !== true) {
           const blocks = config.texts
             .map((item, index) => interpolateVariables(item, mergedVars, session, undefined, `${config.id}#${index}`))
             .filter((item) => item.length > 0)
             .map((item) => ({ type: 'text', text: item }))
-          if (blocks.length > 0) patched.content = blocks
+          patched.content = blocks
         }
         const hasText = typeof patched.text === 'string' && patched.text.length > 0
         const hasContent = Array.isArray(patched.content) && patched.content.length > 0
@@ -505,7 +506,7 @@ async function runPromptConfigBatch(options) {
     // 同位置批量插入:planned 已按 order 升序,多元素 splice/unshift/push 保持该顺序。
     // 去重记账不在这里：候选被外层门控剥离时也必须保持「未投递」，由 confirmDelivered 确认。
     const markGroup = (group) => {
-      for (const entry of group) scope.stWorldBook.commit?.(entry.config)
+      for (const entry of group) scope.contextActivation.commit?.(entry.config)
     }
     const beforeAll = planned.filter((item) => item.position === 'before-all')
     const afterUser = planned.filter((item) => item.position !== 'before-all' && item.position !== 'after-all')

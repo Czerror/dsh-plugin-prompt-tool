@@ -1,0 +1,17 @@
+# 持久变量读取；保存模板时补装 module-variable-tools。
+id: delegate-module-variables
+name: my_module_variables
+description: 列出当前模块的有效持久变量、覆盖来源和版本
+output:
+  schema:
+    type: object
+    additionalProperties: true
+    properties:
+      ok: { type: boolean }
+      value: { type: json }
+execute:
+  kind: delegate
+  tool: module_variables
+  args:
+    scope: module
+    action: list

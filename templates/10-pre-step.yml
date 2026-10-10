@@ -4,7 +4,8 @@
 #   - configKind=anchor → 固定锚点序，按模块文件相对顺序排所有 ordered 之前（原 13-anchor）
 # 接入：复制本文件到 模块规则模板目录，或把对象写入 module.yml.rules 数组。
 # 保存前可 POST /api/prompt-tool/settings/rules 做权威校验。
-# audience 为配置项（缺省=公用；main=仅主会话；subagent=仅子代理），模板不锁定。
+# 受众写在规则 if.scope.audience（main/subagent）；不设置即公用。
+# 如需 {{WHO}}，先在工作台的模块变量卡手动建立 WHO；本模板不自动登记变量。
 id: example-pre-step
 name: 示例：消息批注入
 enabled: false
@@ -30,6 +31,4 @@ then:
         value: example-pre-step
       text: |
 
-      variables:
-        WHO: ''
       params: {}

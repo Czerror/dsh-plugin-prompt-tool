@@ -69,6 +69,7 @@ export function assertRuleId(id) {
 /** 注入叶子的唯一身份投影；稳定动作 id 保证重排不改变投递身份。 */
 export function injectionConfigSpec(rule, action, options = {}) {
   if (action?.kind !== 'inject-text' || !record(action.config)) throw new TypeError('inject-text config must be an object')
+  if (Object.hasOwn(action.config, 'variables')) throw new TypeError('动作 config.variables 已退役；请显式提升为模块 variables，同名不同值须先解决冲突')
   const config = { ...action.config, id: action.config.id ?? `rule:${encodeURIComponent(rule.id)}:${encodeURIComponent(action.id)}`, layer: action.config.layer ?? rule.layer ?? 'pre-step' }
   const variables = record(options.variables) ? options.variables : {}
   if (options.variablesEnabled === false) {
@@ -123,7 +124,7 @@ function normalizeActionGates(action, execution) {
   const target = inject ? action.config : action
   if (inject) {
     // 这三个键在 `rule-runtime.mjs` 组装注入配置时被逐条覆盖（group/exclusive/enabled），
-    // 写在动作上既不生效、又会被 st-render 的互斥认领按声明序消费后清空。
+    // 动作不另建启停和互斥状态，避免出现第二个规则总闸。
     for (const field of ['enabled', 'group', 'exclusive']) {
       if (target[field] !== undefined) throw new TypeError(`action ${action.id}: config.${field} 属于规则层，移到 rule.${field}`)
     }
@@ -287,7 +288,7 @@ export function compileRules(specs, options = {}) {
       // 校验之后打标，作者手写同名键按未知键 fail loud；执行期据此跳过会话变量合并。
       if (options.variablesEnabled === false) config[SESSION_VARIABLES_DISABLED] = true
       // 模块级 ST 递归开关（module.yml 顶层）：与上一行同源同时序，作者写同名键按未知键 fail loud。
-      if (options.stWorldBookRecursive === true) config.stWorldBookRecursive = true
+      if (options.contextActivationRecursive === true) config.contextActivationRecursive = true
       item.action.compiledConfig = config
     }
   }

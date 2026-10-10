@@ -13,6 +13,7 @@ const { registerSettingsBridge } = await import('../../src/runtime/settings-brid
 const { writeModule } = await import('../../src/host/write-module.ts')
 const { compileRules } = await import('../../engine/rule-spec.mjs')
 const { ACTION_KINDS } = await import('../../engine/actions/catalog.mjs')
+const { setModuleEnabled } = await import('../../src/host/config-store.ts')
 let sequence = 0
 
 function harness({ readonly = false, rebuildFails = false, afterRebuild } = {}) {
@@ -103,6 +104,7 @@ test('坏声明、错误类型、未知载荷与缺少写入版本均不改盘',
     { edits: createEdits(rules), validateOnly: 'true' },
     { edits: createEdits(rules), unknown: true },
     { edits: createEdits(rules), expectedRevisions: undefined },
+    { edits: createEdits(rules), expectedRevision: '0'.repeat(64) },
     { edits: createEdits(rules), expectedModuleId: undefined },
   ]) {
     const result = await h.call({ expectedRevisions: revisions, ...payload })
@@ -204,21 +206,28 @@ test('重建期间规则被另一写者更改时，不把新版本确认为旧�
 
 test('变量值与开关各自校验版本，不覆盖陈旧字段，发布失败返回已提交快照', async () => {
   const h = harness({ rebuildFails: true })
-  const call = body => h.call(body, {}, 'module-variables')
+  const call = body => h.call({ scope: 'module', ...body }, {}, 'module-variables')
   const initial = await call({})
   assert.equal(initial.ok, true)
-  const saved = await call({ variables: { city: 'A' }, expectedRevisions: { variables: initial.value.revisions.variables } })
+  const saved = await call({ variables: { city: 'A', blank: '' }, expectedRevisions: { module: initial.value.revisions.module } })
   assert.equal(saved.ok, true)
   assert.equal(saved.value.persisted, true)
-  assert.match(saved.value.publicationError, /已保存/)
-  assert.deepEqual(saved.value.variables, { city: 'A' })
-  const stale = await call({ variables: { city: 'STALE' }, expectedRevisions: { variables: initial.value.revisions.variables } })
+  assert.equal(saved.value.publicationPending, false)
+  assert.equal(h.rebuilds, 0, '变量内容更新不重挂 Agent')
+  assert.deepEqual(saved.value.module, { city: 'A', blank: '' })
+  const global = await call({ scope: 'global', variables: { city: 'GLOBAL', shared: '' }, expectedRevisions: { global: saved.value.revisions.global } })
+  assert.equal(global.ok, true, global.message)
+  assert.deepEqual(global.value.effective, { city: 'A', blank: '', shared: '' })
+  const stale = await call({ variables: { city: 'STALE' }, expectedRevisions: { module: initial.value.revisions.module } })
   assert.equal(stale.status, 409)
-  assert.deepEqual(parse(readFileSync(h.file, 'utf8')).variables, { city: 'A' })
+  assert.deepEqual(parse(readFileSync(h.file, 'utf8')).variables, { city: 'A', blank: '' })
   const toggled = await call({ enabled: false, expectedRevisions: { settings: initial.value.revisions.settings } })
   assert.equal(toggled.ok, true, toggled.message)
   assert.equal(toggled.value.enabled, false)
-  assert.deepEqual(toggled.value.variables, { city: 'A' })
+  assert.deepEqual(toggled.value.module, { city: 'A', blank: '' })
+  assert.equal(toggled.value.publicationPending, true)
+  assert.match(toggled.value.publicationError, /已保存/)
+  assert.equal(h.rebuilds, 1, '仅模块开关变化需要重新配装')
   assert.equal((await call({ enabled: true, expectedRevisions: { settings: initial.value.revisions.settings } })).status, 409)
   assert.equal((await call({ variables: { city: 'X' } })).status, 400)
 })
@@ -300,9 +309,9 @@ test('规则编辑器发布失败后只刷新重试，保留在途输入且不�
 test('变量发布重试仅刷新一次已保存定义，拒绝混合写入与只读目标', async () => {
   let fail = true
   const h = harness({ rebuildFails: () => fail })
-  const call = body => h.call(body, {}, 'module-variables')
+  const call = body => h.call({ scope: 'module', ...body }, {}, 'module-variables')
   const initial = await call({})
-  const saved = await call({ variables: { name: 'persisted' }, expectedRevisions: { variables: initial.value.revisions.variables } })
+  const saved = await call({ variables: { name: 'persisted' }, enabled: false, expectedRevisions: { module: initial.value.revisions.module, settings: initial.value.revisions.settings } })
   assert.equal(saved.value.publicationPending, true)
   const committed = readFileSync(h.file, 'utf8')
   fail = false
@@ -313,5 +322,104 @@ test('变量发布重试仅刷新一次已保存定义，拒绝混合写入与�
   assert.equal(readFileSync(h.file, 'utf8'), committed)
   assert.equal((await call({ refreshOnly: true, variables: { name: 'REPLAY' } })).status, 400)
   const locked = harness({ readonly: true })
-  assert.equal((await locked.call({ refreshOnly: true }, {}, 'module-variables')).status, 403)
+  assert.equal((await locked.call({ scope: 'module', refreshOnly: true }, {}, 'module-variables')).status, 403)
+})
+
+test('变量端点拒绝越权/非法范围/过期域；切片发布失败后的值重试不重挂或重放', async () => {
+  const h = harness()
+  const call = body => h.call({ scope: 'module', ...body }, {}, 'module-variables')
+  const initial = await call({})
+  const before = readFileSync(h.file, 'utf8')
+  for (const body of [
+    { scope: 'session' }, { scope: 'global', enabled: false, expectedRevisions: initial.value.revisions },
+    { variables: { keep: null }, expectedRevisions: initial.value.revisions },
+    { variables: { keep: 'NO' }, expectedModuleId: 'elsewhere', expectedRevisions: initial.value.revisions },
+    { variables: { keep: 'NO' }, expectedRevisions: { module: '0'.repeat(64) } },
+    { variables: {}, expectedRevisions: initial.value.revisions, path: 'outside' },
+  ]) {
+    assert.equal((await call(body)).ok, false)
+    assert.equal(readFileSync(h.file, 'utf8'), before)
+  }
+  const locked = harness({ readonly: true })
+  assert.equal((await locked.call({ scope: 'global', variables: {}, expectedRevisions: initial.value.revisions }, {}, 'module-variables')).status, 403)
+  const originalRename = fs.renameSync
+  const rename = mock.method(fs, 'renameSync', (from, to) => {
+    if (String(to).endsWith('_settings.yml')) throw new Error('VARIABLE_PUBLICATION_FAILED')
+    return originalRename(from, to)
+  })
+  syncBuiltinESMExports()
+  let saved
+  try { saved = await call({ variables: { keep: 'SAVED', placeholder: '' }, expectedRevisions: initial.value.revisions }) }
+  finally { rename.mock.restore(); syncBuiltinESMExports() }
+  assert.equal(saved.ok, true, saved.message)
+  assert.equal(saved.value.persisted, true)
+  assert.equal(saved.value.publicationPending, true)
+  const committed = readFileSync(h.file, 'utf8')
+  const refreshed = await call({ refreshOnly: true })
+  assert.equal(refreshed.ok, true, refreshed.message)
+  assert.deepEqual(refreshed.value.module, { keep: 'SAVED', placeholder: '' })
+  assert.equal(refreshed.value.publicationPending, false)
+  assert.equal(h.rebuilds, 0)
+  assert.equal(readFileSync(h.file, 'utf8'), committed)
+})
+
+test('人设 bridge 保留主子三态与定义版本；删除覆盖恢复继承且不改变规则排序', async () => {
+  const h = harness()
+  const before = await h.call({}, {}, 'persona')
+  assert.equal(before.ok, true)
+  assert.equal(before.value.persona, null)
+  assert.match(before.value.revision, /^[a-f0-9]{64}$/)
+  const persona = { main: { prefix: '', complete: false }, subagent: { suffix: 'CHILD' } }
+  const saved = await h.call({ persona, expectedRevision: before.value.revision }, {}, 'persona')
+  assert.equal(saved.ok, true, saved.message)
+  assert.deepEqual(saved.value.persona, persona)
+  assert.deepEqual((await h.call({}, {}, 'persona')).value.persona, persona)
+  assert.equal(parse(readFileSync(h.file, 'utf8')).configOrder, undefined)
+  const removed = await h.call({ persona: null, expectedRevision: saved.value.revision }, {}, 'persona')
+  assert.equal(removed.ok, true, removed.message)
+  assert.equal(removed.value.persona, null)
+})
+
+test('人设 bridge 保存未选中模块不与其他定义冲突，陈旧版本和非法输入零写入', async t => {
+  const h = harness(), peer = harness()
+  writeFileSync(peer.file, peer.original + 'persona:\n  main:\n    prefix: PEER\n')
+  for (const id of [h.id, peer.id]) setModuleEnabled(moduleRoot, id, true)
+  t.after(() => { for (const id of [h.id, peer.id]) setModuleEnabled(moduleRoot, id, false) })
+  const before = await h.call({}, {}, 'persona')
+  const peerBytes = readFileSync(peer.file)
+  const saved = await h.call({ persona: { main: { prefix: 'OWN' } }, expectedRevision: before.value.revision }, {}, 'persona')
+  assert.equal(saved.ok, true, saved.message)
+  assert.deepEqual(saved.value.persona, { main: { prefix: 'OWN' } })
+  assert.deepEqual(readFileSync(peer.file), peerBytes)
+  const bytes = readFileSync(h.file, 'utf8')
+  for (const body of [
+    { persona: { main: { prefix: false } }, expectedRevision: saved.value.revision },
+    { persona: null, expectedRevision: before.value.revision },
+    { persona: null, expectedRevision: saved.value.revision, path: 'outside' },
+    { persona: null, expectedRevision: saved.value.revision, expectedModuleId: peer.id },
+  ]) {
+    assert.equal((await h.call(body, {}, 'persona')).ok, false)
+    assert.equal(readFileSync(h.file, 'utf8'), bytes)
+  }
+  writeFileSync(h.file, 'id: [broken\n')
+  assert.equal((await h.call({}, {}, 'persona')).ok, false)
+  assert.equal(readFileSync(h.file, 'utf8'), 'id: [broken\n')
+})
+
+test('人设 bridge 发布失败返回已提交值与版本，仅发布重试不重放写入', async () => {
+  let fail = true
+  const h = harness({ rebuildFails: () => fail })
+  const before = await h.call({}, {}, 'persona')
+  const persona = { main: { suffix: '', complete: false } }
+  const saved = await h.call({ persona, expectedRevision: before.value.revision }, {}, 'persona')
+  assert.equal(saved.ok, true, saved.message)
+  assert.equal(saved.value.persisted, true)
+  assert.equal(saved.value.publicationPending, true)
+  assert.deepEqual(saved.value.persona, persona)
+  const committed = readFileSync(h.file, 'utf8')
+  fail = false
+  const refreshed = await h.call({ refreshOnly: true }, {}, 'persona')
+  assert.equal(refreshed.ok, true, refreshed.message)
+  assert.equal(refreshed.value.publicationPending, false)
+  assert.equal(readFileSync(h.file, 'utf8'), committed)
 })

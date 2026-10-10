@@ -1,22 +1,24 @@
 /**
- * 存储根的配置：**模块启用表**。
+ * 存储根配置：模块启用表与独立主/子人设来源；正文仍归各模块。
  *
- * `<存储根>/config.yml` 只回答一件事——哪些模块参与运行时装配，格式是
- * `schemaVersion: 3` + `enabled: [<id>, …]`。启用即配装：装了 A+B，再加 C 就是 A+B+C，
- * 每个模块各自贡献自己的定义与参数，互不合并、互不改写。
+ * `<存储根>/config.yml` 保存 schemaVersion、enabled 和 personaSources。
+ * enabled 决定普通模块配装，personaSources 单独选择主/子人设来源，不互相启用。
  *
  * 这里**没有**版本指针、配装段、参数副本与归属表：参数、提示词与素材都在各模块自己的
  * 目录里（`modules/<id>/`）。写模块卡与写参数都不是启用，它们不创建这个文件。
  *
  * 写盘走 yaml Document API（保留注释与未知字段）＋原子替换，与仓库其余写盘同规。
  */
-import { existsSync, readFileSync } from 'node:fs'
+import { lstatSync, mkdirSync, readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
-import { isMap, parseDocument } from 'yaml'
+import { isDeepStrictEqual } from 'node:util'
+import { isMap, isSeq, parseDocument } from 'yaml'
 import { atomicWriteTextFile } from './text-file.ts'
 import { moduleDirExists } from './manifest.ts'
+import { assertModuleId, assertNoModuleLinks, modulePathExists } from './module-install.ts'
+import { ModuleRulesError, revisionOf, withModuleLock } from './module-storage.ts'
 
-/** 启用表 schema：3 = `config.yml` 只有 `schemaVersion` 与 `enabled`。 */
+/** 启用表 schema：3 起 enabled 才拥有普通模块启用语义。 */
 export const ENABLE_TABLE_SCHEMA = 3
 /** 存储根配置文件名。 */
 export const STORAGE_CONFIG_FILE = 'config.yml'
@@ -32,11 +34,55 @@ export function enableTablePath(moduleRoot: string): string {
   return join(dirname(moduleRoot), STORAGE_CONFIG_FILE)
 }
 
-function readDocument(file: string): ReturnType<typeof parseDocument> | undefined {
-  if (!existsSync(file)) return undefined
-  const doc = parseDocument(readFileSync(file, 'utf8'), { logLevel: 'silent' })
-  if (doc.errors.length > 0 || !isMap(doc.contents)) return undefined
-  return doc
+export interface StorageConfigSnapshot {
+  doc: ReturnType<typeof parseDocument>
+  source: Record<string, unknown>
+  text: string | null
+  revision: string | null
+  mode?: number
+}
+
+/** 人设选择等新 owner 必须看到读取失败，不能用空配置覆盖损坏文件。 */
+export function readStorageConfig(moduleRoot: string): StorageConfigSnapshot {
+  const file = enableTablePath(moduleRoot)
+  assertNoModuleLinks(moduleRoot)
+  assertNoModuleLinks(file)
+  if (!modulePathExists(file)) {
+    const doc = parseDocument(`schemaVersion: ${ENABLE_TABLE_SCHEMA}\nenabled: []\n`)
+    return { doc, source: doc.toJS() as Record<string, unknown>, text: null, revision: null }
+  }
+  const stat = lstatSync(file)
+  if (!stat.isFile()) throw new ModuleRulesError('存储配置必须是普通文件', 403, 'storage-config-path')
+  if (stat.size > 1024 * 1024) throw new ModuleRulesError('存储配置超过 1 MiB')
+  const bytes = readFileSync(file), text = new TextDecoder('utf-8', { fatal: true }).decode(bytes)
+  const doc = parseDocument(text, { logLevel: 'silent' })
+  if (doc.errors.length > 0 || !isMap(doc.contents)) throw new ModuleRulesError('存储配置 YAML 必须是有效对象')
+  return { doc, source: doc.toJS() as Record<string, unknown>, text, revision: revisionOf(bytes), mode: stat.mode }
+}
+
+/** 启用表与人设选择共用跨进程锁；回调声明完整候选以拒绝共享别名连带修改。 */
+export function updateStorageConfig(moduleRoot: string, expectedRevision: string | null | undefined,
+  update: (doc: ReturnType<typeof parseDocument>, source: Record<string, unknown>) => Record<string, unknown>,
+): StorageConfigSnapshot {
+  const file = enableTablePath(moduleRoot), storageRoot = dirname(file)
+  readStorageConfig(moduleRoot)
+  mkdirSync(storageRoot, { recursive: true })
+  return withModuleLock(storageRoot, 'config', () => {
+    const current = readStorageConfig(moduleRoot)
+    if (expectedRevision !== undefined && expectedRevision !== current.revision) throw new ModuleRulesError('存储配置已变化，请重新读取', 409, 'storage-config-conflict')
+    const expected = update(current.doc, current.source)
+    let text: string
+    try {
+      text = current.doc.toString()
+      if (!isDeepStrictEqual(current.doc.toJS(), expected)) throw new Error('shared alias changed')
+    } catch { throw new ModuleRulesError('YAML 共享引用会改变其他配置；请先解除相关引用') }
+    if (text === current.text || isDeepStrictEqual(expected, current.source)) return current
+    if (Buffer.byteLength(text) > 1024 * 1024) throw new ModuleRulesError('存储配置超过 1 MiB')
+    atomicWriteTextFile(file, text, { mode: current.mode, beforeReplace: () => {
+      if (readStorageConfig(moduleRoot).revision !== current.revision) throw new ModuleRulesError('存储配置已变化，请重新读取', 409, 'storage-config-conflict')
+    } })
+    return { ...current, source: expected, text, revision: revisionOf(text) }
+  })
 }
 
 /**
@@ -47,33 +93,12 @@ function readDocument(file: string): ReturnType<typeof parseDocument> | undefine
  * `enabled` 还没有启用语义，当成启用会让历史键意外参与装配。
  */
 export function enabledModuleIds(moduleRoot: string): string[] {
-  const doc = readDocument(enableTablePath(moduleRoot))
-  if (doc === undefined) return []
+  let doc: ReturnType<typeof parseDocument>
+  try { doc = readStorageConfig(moduleRoot).doc } catch { return [] }
   if (Number(doc.get('schemaVersion')) < ENABLE_TABLE_SCHEMA) return []
   const list: unknown = doc.toJS()?.enabled
   if (!Array.isArray(list)) return []
   return [...new Set(list.filter((id): id is string => typeof id === 'string' && id.trim().length > 0).map((id) => id.trim()))]
-}
-
-/** 写启用表：保留既有注释与未知字段，只改 `schemaVersion` 与 `enabled`。 */
-function writeEnabled(moduleRoot: string, ids: readonly string[]): void {
-  const file = enableTablePath(moduleRoot)
-  const doc = readDocument(file)
-  if (doc === undefined) {
-    const lines = [
-      '# Prompt Tool 模块启用表：只记录哪些模块参与运行时装配。',
-      '# 参数、提示词与素材在各模块自己的目录里（modules/<id>/）；这里没有版本指针，也没有配装段。',
-      '',
-      `schemaVersion: ${ENABLE_TABLE_SCHEMA}`,
-      ...(ids.length === 0 ? ['enabled: []'] : ['enabled:', ...ids.map((id) => `  - ${id}`)]),
-      '',
-    ]
-    atomicWriteTextFile(file, lines.join('\n'))
-    return
-  }
-  doc.set('schemaVersion', ENABLE_TABLE_SCHEMA)
-  doc.set('enabled', [...ids])
-  atomicWriteTextFile(file, doc.toString())
 }
 
 /**
@@ -94,10 +119,16 @@ export function resolveEditDir(moduleRoot: string, moduleId?: string): string {
  * 顺序即装配顺序，新模块追加在末尾（同键参数的覆盖顺序因此可预测）。
  */
 export function setModuleEnabled(moduleRoot: string, id: string, enabled: boolean): void {
-  const current = enabledModuleIds(moduleRoot)
-  const next = enabled
-    ? (current.includes(id) ? current : [...current, id])
-    : current.filter((existing) => existing !== id)
-  if (next.length === current.length && next.every((value, index) => value === current[index])) return
-  writeEnabled(moduleRoot, next)
+  assertModuleId(id)
+  if (typeof enabled !== 'boolean') throw new TypeError('enabled 必须是布尔值')
+  updateStorageConfig(moduleRoot, undefined, (doc, source) => {
+    const current = enabledModuleIds(moduleRoot)
+    const next = enabled ? current.includes(id) ? current : [...current, id] : current.filter(existing => existing !== id)
+    if (isDeepStrictEqual(current, next)) return source
+    doc.set('schemaVersion', ENABLE_TABLE_SCHEMA)
+    const list = doc.get('enabled', true)
+    if (isSeq(list)) list.items = next.map(value => list.items.find(item => String(item) === value) ?? doc.createNode(value))
+    else doc.set('enabled', next)
+    return { ...source, schemaVersion: ENABLE_TABLE_SCHEMA, enabled: next }
+  })
 }

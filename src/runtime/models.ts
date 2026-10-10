@@ -64,7 +64,6 @@ const MODEL_QUERY_TIMEOUT_MS = 1500
 const REASONING_QUERY_TIMEOUT_MS = 1500
 
 /** provider/model 未查过时的空视图（不虚构档位）。 */
-const UNKNOWN_REASONING: ModelReasoningView = { known: false, efforts: [] }
 
 const reasoningCache = new WeakMap<object, Map<string, ModelReasoningView | undefined>>()
 const reasoningInflight = new WeakMap<object, Map<string, Promise<ModelReasoningView | undefined>>>()
@@ -109,15 +108,6 @@ function reasoningViewOf(value: unknown): ModelReasoningView {
   }
   const defaultEffort = typeof record.defaultEffort === 'string' && record.defaultEffort.length > 0 ? record.defaultEffort : undefined
   return { known: true, efforts, ...(defaultEffort === undefined ? {} : { defaultEffort }) }
-}
-
-/**
- * 某个 provider/model 路由的推理档位：命中缓存同步返回，未命中返回 UNKNOWN（不触发查询）。
- * 已查过但不提供档位的路由返回 `{ known: true, efforts: [] }`，调用方据此隐藏档位选择
- * 而不是用固定列表伪造能力（M-12）。
- */
-export function peekModelReasoning(ctx: Context, provider: string, model: string): ModelReasoningView {
-  return reasoningStore(ctx).get(reasoningKey(provider, model)) ?? UNKNOWN_REASONING
 }
 
 /**

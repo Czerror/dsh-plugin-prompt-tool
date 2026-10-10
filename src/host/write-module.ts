@@ -14,8 +14,6 @@ import { ensureModuleSlices, loadModuleDefinition, validateModuleDefinitionText,
 import { atomicWriteTextFile } from './text-file.ts'
 import { directoryVersionOf } from './preview-revision.ts'
 
-/** 仅供旧导出包 requires.renderVersion 兼容读取；不再生成渲染版本戳。 */
-export const RENDER_VERSION = 6
 const LEGACY_ARTIFACTS = ['configs', 'rules.yml', 'agent.cordis.yml', 'custom-tools', 'subagent-tools', 'triggers.yml']
 
 export interface WriteModuleOptions {
