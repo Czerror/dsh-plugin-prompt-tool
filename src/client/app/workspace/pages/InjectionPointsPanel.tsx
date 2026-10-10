@@ -256,7 +256,6 @@ export function injectionPointSlots(input: InjectionPointSlotsInput): InjectionP
   return {
     beforeCards,
     renderInstructionSettings: config => <div className={css.settings}>
-      <p>{t('param.instructionHint.scope', { module: store.fields.moduleId })}</p>
       <EngineParamField store={store} param="instructionHint" t={t} instanceId={`instruction-${audience}-${config.id}`} />
     </div>,
     renderLayerSettings: (layer: string, config: PromptConfigDraft) => (
