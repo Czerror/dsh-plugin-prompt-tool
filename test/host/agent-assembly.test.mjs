@@ -851,6 +851,12 @@ test('「独占」段唯一性：聚合选中人设及跨模块规则，准备�
   writeModuleFixture('exclusive-live', { modules: [], promptConfigs: [{ id: 'old', text: 'OLD', position: 'after-all' }] })
   writeModuleFixture('selected-persona', { modules: [], persona: { main: { prefix: 'SELECTED', complete: false }, subagent: { prefix: 'CHILD', complete: false } } })
   const root = new Context(), actors = [], scopes = [], warnings = []
+  // Loader 只替代模块解析；声明按官方 Persona 的公开字段注册到真实 SystemPrompt。
+  const OfficialPersona = { name: 'fixture-official-persona', inject: ['systemPrompt'], apply(ctx, config) {
+    ctx.systemPrompt.section({ name: 'deployment:persona-prefix', order: 0, text: config.prefix, complete: config.complete })
+    ctx.systemPrompt.section({ name: 'deployment:persona-suffix', order: 10200, text: config.suffix ?? '' })
+  } }
+  root.provide('loader', { import: async name => { assert.equal(name, '@deepseek-ai/dsh-persona'); return OfficialPersona }, unwrapExports: value => value })
   let persona, driver
   await root.plugin({ name: 'test-persona-early', apply(ctx) { persona = installPersonaRegistration(ctx) } })
   await root.plugin(SystemPrompt)
@@ -868,12 +874,12 @@ test('「独占」段唯一性：聚合选中人设及跨模块规则，准备�
   await root.plugin({ name: 'test-persona-driver', inject: ['agents', 'systemPrompt'], apply(ctx) { driver = ctx } })
   const standing = createScope(driver, {})
   scopes.push(standing)
-  standing.ctx.systemPrompt.section({ name: 'deployment:persona-prefix', order: 0, text: 'OFFICIAL', complete: true })
+  await standing.ctx.plugin(OfficialPersona, { prefix: 'OFFICIAL', complete: true })
   let selected = 'selected-persona', enabled = ['exclusive-live']
   const selectedModules = () => selected === undefined ? [] : [{ moduleId: selected, persona: loadModuleSpec(join(moduleRoot, selected)).persona }]
-  const releaseSource = persona.configure({ modules: selectedModules })
+  const releaseSource = await persona.configure({ modules: selectedModules })
   const runtime = createAgentAssembly(root, { moduleRoot, enabledModules: () => enabled, personaModules: selectedModules, warn: message => warnings.push(message) })
-  t.after(async () => { await runtime.dispose(); releaseSource(); for (const scope of scopes.reverse()) await scope.dispose(); await root.fiber.dispose() })
+  t.after(async () => { await runtime.dispose(); await releaseSource(); for (const scope of scopes.reverse()) await scope.dispose(); await root.fiber.dispose() })
   const main = await driver.agents.create({ sessionId: 'exclusive-main' })
   const child = await driver.agents.create({ sessionId: 'exclusive-child', meta: { origin: 'subagent', delegationDepth: 1 } })
   const stepTexts = async agent => (await root.waterfall(scopeTarget(agent, agent), 'agent/pre-step', { agent, signal: new AbortController().signal }, async () => ({ kind: 'enter', messages: [] }))).messages.flatMap(message => message.content.map(block => block.text))

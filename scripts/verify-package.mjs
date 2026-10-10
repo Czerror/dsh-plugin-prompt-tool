@@ -29,8 +29,6 @@ import { pathToFileURL } from 'node:url'
 const pluginRoot = 'node_modules/dsh-plugin-prompt-tool'
 const plugin = await import('dsh-plugin-prompt-tool')
 if (plugin.name !== 'prompt-tool' || typeof plugin.apply !== 'function') throw new Error('主入口导出不完整')
-const persona = await import('dsh-plugin-prompt-tool/persona')
-if (typeof persona.apply !== 'function') throw new Error('人设早入口导出不完整')
 const { compileRules } = await import(pathToFileURL(join(pluginRoot, 'engine/rule-spec.mjs')).href)
 const rules = [{ id: 'smoke', then: [{ id: 's', kind: 'inject-text', config: { layer: 'pre-step', strategy: 'context-activation', text: '{{module.get::greeting}}', params: { activation: { scan: 'batch' }, keys: ['hello'], templateEvaluation: true } } }] }]
 const compiled = compileRules(rules)
@@ -40,7 +38,7 @@ for (const name of ['rule-engine', 'module-import-tools', 'module-rule-tools', '
   if (!modules.includes(name + '.yml')) throw new Error('组合模块库缺少 ' + name)
 }
 if (!existsSync(join(pluginRoot, 'skills/dsh-module/SKILL.md'))) throw new Error('随包技能缺失')
-console.log('smoke: 主入口 + 人设入口 + 原生规则编译 + 组合模块库 + 随包技能 均通过')
+console.log('smoke: 主入口 + 原生规则编译 + 组合模块库 + 随包技能 均通过')
 `
 
 const failures = []

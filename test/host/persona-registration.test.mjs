@@ -17,6 +17,11 @@ const { installPersonaRegistration } = await import('../../src/runtime/persona-r
 const require = createRequire(import.meta.url)
 const dependencies = createRequire(require.resolve('@deepseek-ai/dsh-agent-preset-registry'))
 const { default: Loader } = await import(pathToFileURL(dependencies.resolve('@deepseek-ai/cordis-plugin-loader')).href)
+// 模块解析替身按官方 Persona 配置契约贡献真实声明。
+const OfficialPersona = { name: 'fixture-official-persona', inject: ['systemPrompt'], apply(ctx, config) {
+  ctx.systemPrompt.section(Object.freeze({ name: 'deployment:persona-prefix', order: 0, text: config.prefix, complete: config.complete }))
+  ctx.systemPrompt.section(Object.freeze({ name: 'deployment:persona-suffix', order: 10200, text: config.suffix ?? '' }))
+} }
 
 async function personaWorld(t, modules) {
   const root = new Context()
@@ -27,11 +32,10 @@ async function personaWorld(t, modules) {
   Object.assign(root.loader.builtins, {
     adapter: new Promise(resolve => setImmediate(() => resolve({ name: 'persona-production', apply: ctx => { installPersonaRegistration(ctx) } }))),
     prompt: SystemPrompt, agents: AgentRegistry,
-    driver: { name: 'persona-driver', inject: ['agents', 'systemPrompt'], apply(ctx) {
+    driver: { name: 'persona-driver', inject: ['agents', 'systemPrompt'], async apply(ctx) {
       driver = ctx
       const standing = createScope(ctx, {})
-      standing.ctx.systemPrompt.section(original)
-      standing.ctx.systemPrompt.section(Object.freeze({ name: 'deployment:persona-suffix', order: 10200, text: 'TAIL' }))
+      await standing.ctx.plugin(OfficialPersona, { prefix: 'OFFICIAL', suffix: 'TAIL', complete: true })
       ctx.effect(() => ctx.agents.setFactory({ async createAgent(_owner, options) {
         const agent = { id: options.sessionId, status: 'idle', options: {}, session: { id: options.sessionId, header: options.meta ?? {}, snapshotEvents: () => [] } }
         const scope = createScope(ctx, agent)
@@ -50,21 +54,25 @@ async function personaWorld(t, modules) {
     } },
   })
   await root.loader.root.update([
-    { id: 'adapter', name: 'cordis:adapter' },
-    { id: 'prompt', name: 'cordis:prompt', inject: ['loader'], intercept: { loader: { await: true } } },
+    { id: 'prompt', name: 'cordis:prompt' },
     { id: 'agents', name: 'cordis:agents' }, { id: 'driver', name: 'cordis:driver' },
   ])
   await root.loader.await()
+  const originalImport = root.loader.import.bind(root.loader)
+  root.loader.import = (name, ...args) => name === '@deepseek-ai/dsh-persona' ? OfficialPersona : originalImport(name, ...args)
+  await root.loader.create({ id: 'adapter', name: 'cordis:adapter' })
+  await root.loader.await()
   root.systemPrompt.context({ name: 'fixture:runtime', order: 0, text: 'CONTEXT' })
   const runtime = root.get('promptToolPersona')
-  const releaseSource = runtime.configure({ modules: () => modules, variableStore: {
+  const warnings = []
+  const releaseSource = await runtime.configure({ modules: () => modules, warn: text => warnings.push(text), variableStore: {
     read(moduleId) { assert.equal(moduleId, 'first'); return { module: { empty: '' }, global: {}, revisions: { module: 'm', global: null } } },
     commit() { throw new Error('read-only assembly must not commit') }, publish() {},
   } })
-  t.after(async () => { releaseSource(); for (const handle of handles.reverse()) await handle.dispose(); await root.fiber.dispose() })
+  t.after(async () => { await releaseSource(); for (const handle of handles.reverse()) await handle.dispose(); await root.fiber.dispose() })
   const assemble = agent => agent.ctx.systemPrompt.assemble({ scope: scopeOf(agent.ctx), agent })
   const create = async (id, subagent = false, setup) => (await driver.agents.create({ sessionId: id, meta: subagent ? { origin: 'subagent' } : {}, setup })).agent
-  return { root, runtime, driver, original, assemble, create }
+  return { root, runtime, driver, original, assemble, create, warnings }
 }
 
 test('人设保存保留主子字段继承、空串和 false，CAS 拒绝覆盖更新', () => {
@@ -130,7 +138,7 @@ test('旧扁平人设和非法新字段明确拒绝且不改盘', () => {
   assert.equal(saveModulePersona(moduleRoot, 'persona-retired', null, updated.revision).persona, null, '没有外部引用时允许明确删除人设')
 })
 
-test('真实 Loader 的生产适配器首装主子人设，冲突保留原状态，卸载恢复冻结原声明', async t => {
+test('会话人设：官方服务先启动，主子首装覆盖，冲突保旧且卸载恢复原声明', async t => {
   const modules = [{ moduleId: 'first', persona: { main: { prefix: '{{empty}}MAIN', complete: false, includeRuntimeContext: false } } }]
   const { root, runtime, original, assemble, create } = await personaWorld(t, modules)
   const main = await create('main')
@@ -140,7 +148,7 @@ test('真实 Loader 的生产适配器首装主子人设，冲突保留原状态
   assert.deepEqual((await assemble(main)).contexts, [])
   assert.ok((await assemble(child)).contexts.some(context => context.text === 'CONTEXT'))
   modules.push({ moduleId: 'second', persona: { main: { prefix: 'CONFLICT' } } })
-  assert.throws(() => runtime.refresh(), /main\.prefix.*first.*second/)
+  await assert.rejects(runtime.refresh(), /main\.prefix.*first.*second/)
   assert.ok((await assemble(main)).sections.some(section => section.text === 'MAIN'))
   modules.pop()
   modules[0].persona.subagent = { prefix: '', complete: true }
@@ -154,10 +162,16 @@ test('真实 Loader 的生产适配器首装主子人设，冲突保留原状态
   assert.deepEqual((await assemble(setup)).sections.map(section => section.text), ['You are an AI agent powered by DeepSeek Harness.', 'CHILD ORIGINAL', 'TAIL'])
 })
 
-test('未知创建/注册路径拒绝，取消与发布失败清理原 scope', async t => {
-  const { driver, assemble, create } = await personaWorld(t, [{ moduleId: 'first', persona: { main: { complete: false }, subagent: { prefix: 'CUSTOM', complete: true } } }])
-  await assert.rejects(driver.get('agents').create({ sessionId: 'bypassed-create' }), /创建路径未被观察/)
-  await assert.rejects(create('bypassed-section', true, ctx => ctx.get('systemPrompt').section({ name: 'deployment:persona-prefix', order: 0, text: 'BYPASS' })), /未观察/)
+test('未知声明保持原状并报告，取消与发布失败清理原 scope', async t => {
+  const { driver, runtime, assemble, create, warnings } = await personaWorld(t, [{ moduleId: 'first', persona: { main: { complete: false }, subagent: { prefix: 'CUSTOM', complete: true } } }])
+  const bypass = (await driver.get('agents').create({ sessionId: 'bypassed-create' })).agent
+  assert.deepEqual((await assemble(bypass)).sections.map(section => section.text), ['OFFICIAL'])
+  const change = await runtime.prepare([{ agent: bypass, completeSections: [] }])
+  try { await change.commit() } finally { await change.release() }
+  assert.ok((await assemble(bypass)).sections.some(section => section.name === 'harness:identity'), '既有继承会话可运行期接管')
+  const unknown = await create('bypassed-section', true, ctx => { ctx.get('systemPrompt').section({ name: 'deployment:persona-prefix', order: 0, text: 'BYPASS', complete: true }) })
+  assert.deepEqual((await assemble(unknown)).sections.map(section => section.text), ['BYPASS'])
+  assert.ok(warnings.some(message => /未观察/.test(message)))
   const abort = new AbortController()
   await assert.rejects(driver.agents.create({ sessionId: 'canceled', signal: abort.signal, meta: { origin: 'subagent' }, setup(ctx) {
     ctx.systemPrompt.section({ name: 'deployment:persona-prefix', order: 0, text: 'CANCELED' })
@@ -169,4 +183,84 @@ test('未知创建/注册路径拒绝，取消与发布失败清理原 scope', a
   }), /publication rejected/)
   const agent = await create('after-failures', true)
   assert.deepEqual((await assemble(agent)).sections.map(section => section.text), ['CUSTOM'])
+})
+
+test('旧会话官方人设在维护窗口接管：动态值、忙碌拒绝、外部更新保留与卸载恢复', async t => {
+  const root = new Context(), scopes = [], actors = []
+  await root.plugin(SystemPrompt)
+  root.provide('loader', { import: async name => { assert.equal(name, '@deepseek-ai/dsh-persona'); return OfficialPersona }, unwrapExports: value => value })
+  root.provide('agents', { list: () => actors })
+  const makeOld = async id => {
+    const events = Object.freeze([{ type: 'user/message', seq: 1, data: { text: 'EXISTING HISTORY' } }])
+    let maintenance = false, cancelCalls = 0, claims = 0
+    const agent = { id, status: 'idle', options: {}, session: { id, header: {}, snapshotEvents: () => events },
+      cancel() { cancelCalls++ },
+      async runMaintenance(job) {
+        if (maintenance || agent.status !== 'idle') throw new Error('already has active work')
+        maintenance = true; claims++
+        try { return await job(new AbortController().signal) } finally { maintenance = false }
+      },
+    }
+    const scope = createScope(root, {}); scopes.push(scope); agent.ctx = scope.ctx
+    const fiber = await scope.ctx.plugin(OfficialPersona, { prefix: `${id} ORIGINAL`, suffix: 'TAIL', complete: true })
+    actors.push(agent)
+    return { agent, fiber, events, stats: () => ({ maintenance, cancelCalls, claims }) }
+  }
+  const first = await makeOld('first'), second = await makeOld('second')
+  let veto
+  const blocking = await root.plugin({ name: 'fixture-config-veto', apply(ctx) {
+    veto = ctx.on('internal/update', function(_config, _noSave, next) { return this === second.fiber ? undefined : next() }, { global: true })
+  } })
+  let runtime, value = 'A'
+  const owner = await root.plugin({ name: 'late-persona-owner', apply(ctx) { runtime = installPersonaRegistration(ctx) } })
+  const modules = []
+  const releaseSource = await runtime.configure({ modules: () => modules, variableStore: {
+    read() { return { module: { label: value }, global: {}, revisions: { module: 'm', global: null } } },
+    commit() { throw new Error('预览不得写模板变量') }, publish() {},
+  } })
+  t.after(async () => { await releaseSource(); await owner.dispose(); for (const scope of scopes.reverse()) await scope.dispose(); await root.fiber.dispose() })
+  const assemble = async actor => (await actor.agent.ctx.get('systemPrompt').assemble({ agent: actor.agent, scope: scopeOf(actor.agent.ctx) })).sections.map(item => item.text)
+  const source = { moduleId: 'selected', persona: { main: { prefix: 'CUSTOM {{label}}', complete: false } } }
+  assert.deepEqual(await assemble(first), ['first ORIGINAL'])
+  assert.deepEqual(await assemble(second), ['second ORIGINAL'])
+  modules.push(source)
+  const rejected = await runtime.prepare(actors.map(agent => ({ agent, completeSections: [] })))
+  try { await assert.rejects(rejected.commit(), /重载被拦截|声明不完整/) } finally { await rejected.release() }
+  assert.deepEqual(await assemble(first), ['first ORIGINAL'], '第二个owner拒绝接管时前一个恢复')
+  assert.deepEqual(await assemble(second), ['second ORIGINAL'])
+  veto()
+  await blocking.dispose()
+  const change = await runtime.prepare(actors.map(agent => ({ agent, completeSections: [] })))
+  assert.equal(first.stats().maintenance, true, '准备到提交整个配装窗口保持维护锁')
+  assert.equal(second.stats().maintenance, true)
+  try { await change.commit() } finally { await change.release() }
+  assert.deepEqual(await assemble(first), ['You are an AI agent powered by DeepSeek Harness.', 'CUSTOM A', 'TAIL'])
+  value = 'B'
+  assert.ok((await assemble(second)).includes('CUSTOM B'), '接管后模板仍动态读取来源值')
+  assert.equal(first.agent.session.snapshotEvents(), first.events)
+  assert.equal(first.stats().maintenance, false)
+  const firstCtx = first.agent.ctx
+  source.persona.main.prefix = 'NEW {{label}}'
+  second.agent.status = 'running'
+  await assert.rejects(runtime.refresh(), /正在运行|active work/)
+  assert.ok((await assemble(first)).includes('CUSTOM B'))
+  assert.equal(first.stats().maintenance, false, '后续Agent拒绝时已取得的维护锁释放')
+  assert.equal(first.stats().cancelCalls + second.stats().cancelCalls, 0)
+  second.agent.status = 'idle'
+  await runtime.refresh()
+  assert.ok((await assemble(first)).includes('NEW B'))
+  const beforeConflict = await runtime.prepare(actors.map(agent => ({ agent, completeSections: [] })), [{ moduleId: 'next', persona: { main: { prefix: 'NO OVERWRITE', complete: false } } }])
+  second.fiber.update({ prefix: 'EXTERNAL', suffix: 'NEW TAIL', complete: true }, true)
+  await second.fiber.await()
+  try { await assert.rejects(beforeConflict.commit(), /配置已变化|注册已变化/) } finally { await beforeConflict.release() }
+  assert.ok((await assemble(first)).includes('NEW B'), '整批后续失败恢复前一个Agent')
+  assert.deepEqual(await assemble(second), ['EXTERNAL'])
+  const pending = await runtime.prepare([{ agent: first.agent, completeSections: [] }], [{ moduleId: 'pending', persona: { main: { prefix: 'AFTER UNLOAD', complete: false } } }])
+  await owner.dispose()
+  try { await assert.rejects(pending.commit(), /取消|释放/) } finally { await pending.release() }
+  assert.deepEqual(await assemble(first), ['first ORIGINAL'])
+  assert.deepEqual(await assemble(second), ['EXTERNAL'], '卸载不得把外部改动回写为旧值')
+  assert.equal(first.agent.ctx, firstCtx)
+  assert.equal(first.agent.session.snapshotEvents(), first.events)
+  assert.ok(root.get('systemPrompt'))
 })

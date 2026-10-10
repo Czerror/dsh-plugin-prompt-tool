@@ -12,7 +12,7 @@ import { registerModuleMemoryTools } from './runtime/module-memory-tools.ts'
 import { registerModuleVariableTools } from './runtime/module-variable-tools.ts'
 import { installPreStepCoordinator } from './runtime/pre-step-coordinator.ts'
 import { createModuleVariableAdapter } from './runtime/module-variable-adapter.ts'
-import { PERSONA_REGISTRATION_SERVICE } from './runtime/persona-registration.ts'
+import { installPersonaRegistration } from './runtime/persona-registration.ts'
 import { registerTuiCommand } from './runtime/tui.ts'
 import { ensureModuleReady } from './host/write-module.ts'
 import {
@@ -220,30 +220,32 @@ registerTuiCommand(
   // 策略缺省 enabled=false；服务缺失时引擎只执行模块卡（独立引擎复制场景）。
   installPreStepCoordinator(ctx)
 
-  // 私有工具服务与协调器就绪后，再按官方 Agent 生命周期挂载既有引擎。
+  // 人设适配属于主插件运行态，不作为官方服务的启动依赖。
   const personaModules = () => runtime.modulesEnabled ? selectedPersonaModules(MODULES_DIR) : []
-  ctx.inject([PERSONA_REGISTRATION_SERVICE], personaCtx => {
-    personaCtx.effect(() => personaCtx.promptToolPersona.configure({
+  const persona = installPersonaRegistration(ctx)
+  ctx.effect(async function* () {
+    yield await persona.configure({
       modules: personaModules,
       variableStore: createModuleVariableAdapter(MODULES_DIR),
       warn: message => warn(ctx, message),
-    }), 'prompt-tool persona source')
-  })
-  ctx.inject(['agents'], (actx: Context) => {
-    const mounted = createAgentAssembly(actx, {
-      moduleRoot: MODULES_DIR,
-      enabledModules: () => runtime.modulesEnabled
-        ? enabledModuleIds(MODULES_DIR).filter((id) => moduleDirExists(MODULES_DIR, id))
-        : [],
-      personaModules,
-      warn: (message) => warn(ctx, message),
     })
-    assembly = mounted
-    actx.effect(() => () => {
-      if (assembly === mounted) assembly = undefined
-      return mounted.dispose()
-    }, 'prompt-tool assembly')
-  })
+    const agentsFiber = ctx.inject(['agents'], (actx: Context) => {
+      const mounted = createAgentAssembly(actx, {
+        moduleRoot: MODULES_DIR,
+        enabledModules: () => runtime.modulesEnabled
+          ? enabledModuleIds(MODULES_DIR).filter((id) => moduleDirExists(MODULES_DIR, id))
+          : [],
+        personaModules,
+        warn: (message) => warn(ctx, message),
+      })
+      assembly = mounted
+      actx.effect(() => () => {
+        if (assembly === mounted) assembly = undefined
+        return mounted.dispose()
+      }, 'prompt-tool assembly')
+    })
+    yield () => agentsFiber.dispose()
+  }, 'prompt-tool persona and assembly')
 
   const applyConfig = (): void => {
     settingsBridge.invalidateDescriptor()

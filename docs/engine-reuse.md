@@ -31,13 +31,15 @@
 - 发布失败返回/记录已持久化状态，只重试发布；不重复自增。预览或无法确认真实执行身份时只读，赋值拒绝。
 - 账本有界且在进程内；不承诺任意崩溃后的跨进程 exactly-once。
 
-人设使用独立早入口 `dsh-plugin-prompt-tool/persona`。本插件 patch 为官方 system-prompt 使用 Loader 激活屏障，保证观察器先安装；不把官方服务生命周期依赖到插件 readiness。adapter 观察官方 section 声明，并包裹公开 agents.create/resume 的真实 AgentSetup 取得明确主/子身份。
+人设适配器归主插件运行态。包补丁只注册 `dsh-plugin-prompt-tool`，不覆盖官方 system-prompt 的 inject/intercept，不要求它等待 Loader 或本插件服务。独立人设早入口已移除。
 
 人设策略来源由 host 的 `selectedPersonaModules(root)` 提供：config.yml.personaSources 为 main/subagent 各保存一个模块 ID 或官方默认，仅读取所选模块的对应受众字段。正文仍归模块定义，rules/_settings.yml 只作校验投影；选择来源不启用模块 rules，不进行多模块逐字段合并。
 
-只有官方 prefix/suffix 被处理：共享 standing preset 的原声明保留，目标 Agent 使用有效克隆；同 scope setup 声明在注册入口克隆。正文与 complete 在首次 assemble 前确定，继承正文不被当作插件模板重执行。单选来源不代替独占校验，有效官方人设与启用规则的 complete 仍须预检。规则与人设纳入完整 prepare/commit/rollback，失败保留上次有效配装。取消、卸载、关闭或重新配装按原 disposer 恢复官方声明；不操作私有 layers，也不在截断后拼回系统段。
+只有官方 prefix/suffix 被处理：既有会话继承的 standing persona 从准确官方插件公开配置读取，在原 Agent scope 建立同名覆盖，不改共享预设。新建/恢复会话仅在真实 AgentSetup 窗口捕获该 scope 的人设注册，窗口结束即撤去钩子。会话自有官方 Persona 通过精确 fiber 身份，在 `runMaintenance()` 空闲窗口重载并取得实际注册句柄；正在工作时拒绝并允许稍后重试，不主动取消回合。继承正文不被当作插件模板重执行，自定义正文继续读取来源模块变量。
 
-已缓存的方法、未观察的第三方注册或既有 Agent 路径不保证接管；显式覆盖时返回诊断，要求重建 owner/会话或用户重启 DSH。升级代码、patch 或 bundle 后需要用户重启服务，插件不自行重启。
+单选来源不代替独占校验，有效官方人设与启用规则的 complete 仍须预检。规则与人设纳入异步 prepare/commit/rollback，失败保留上次有效配装；恢复前核对原 owner 与配置，不能覆盖外部新改动。关闭与卸载释放自己的覆盖或恢复准确原声明；不操作私有 layers，不替换 Agent scope，不在截断后拼回系统段。
+
+未知第三方同层直接注册没有公开按名替换接口，保持原状并明确报告，不猜测原文或擅自重载其 owner。官方自有 Persona 的外部重载、配置冲突或未完成接管也必须报告，不能假称已生效。升级代码、patch 或 bundle 后需要用户重启服务，插件不自行重启。
 
 ## 统一入口与模块职责
 

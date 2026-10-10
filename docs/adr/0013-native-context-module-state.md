@@ -10,6 +10,8 @@
 
 人设不参与规则排序，rules/_settings.yml 可保存由 module.yml 恢复的校验投影。单选来源仍需预检有效官方人设与启用规则的 complete 冲突；完整 prepare/commit/rollback 同时覆盖规则与人设，失败保留上次有效配装。正文与 complete 在官方声明注册或首次装配前共同确定，不以事后恢复结果替代。接入验收包括真实 Loader、共享预设、子代理 setup 与卸载生命周期。
 
+后续启动事故复核取消了独立人设早入口和对 system-prompt 的 Loader 等待：可选插件不能改变官方核心启动依赖，也不能改为让核心依赖插件服务。用户选择会话期官方 API 组合：继承人设在原 Agent scope 覆盖，自有官方 Persona 在空闲维护窗口接管准确注册，新建/恢复会话只在 setup 窗口捕获目标声明；未知直接注册保持原状并报告。维护锁覆盖异步配装提交/回滚，不改变历史或共享预设，不采用派生 scope 路由、非空会话重配或私有层修改。
+
 普通规则只引用手动建立的变量，不自动扫描登记；ST 导入负责把缺失裸引用登记为空占位。空串属于显式值，不能与删除或未声明混同。工具更新变量与模板赋值共用同一存储 owner。
 
 本决策取代 [ADR-0008](0008-module-slices-memory-assembly.md) 的公开旧名兼容和世界书 note 记忆入口，并替代此前文档中的会话变量及 ST local/global 所有权。继续保留该 ADR 的完整定义、切片恢复、提交后发布失败语义；[ADR-0006](0006-module-config-order.md) 的配置排序、[ADR-0007](0007-unified-condition-action-rules.md) 的规则与显式互斥、[ADR-0010](0010-two-history-views.md) 的历史视图分工均不变。

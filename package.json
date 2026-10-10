@@ -16,7 +16,6 @@
       "default": "./lib/index.mjs"
     },
     "./client": "./lib/client.js",
-    "./persona": "./lib/persona.mjs",
     "./engine/*": "./engine/*",
     "./package.json": "./package.json"
   },

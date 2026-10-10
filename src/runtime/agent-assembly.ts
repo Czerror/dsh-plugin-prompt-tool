@@ -393,10 +393,10 @@ export function createAgentAssembly(ctx: Context, options: AgentAssemblyOptions)
     }
     const personaTargets = candidates.map(({ agent }) => ({ agent, completeSections: sections[isDelegated(agent.session) ? 'subagent' : 'main'] }))
     if (persona === undefined && (personaModules.some(item => item.persona !== undefined) || personaTargets.some(target => target.completeSections.length > 0))) {
-      throw new Error('人设原声明未被观察，无法验证独占段；请加载人设早入口并重启 DSH')
+      throw new Error('人设运行适配器不可用，无法验证独占段；请检查提示词插件状态')
     }
     // 人设和官方继承独占必须在撤旧前验证；事务捕获快照后不再读取坏候选。
-    const personaChange: PersonaPreparation | undefined = persona?.prepare(personaTargets, personaModules)
+    const personaChange: PersonaPreparation | undefined = await persona?.prepare(personaTargets, personaModules)
     const changed: typeof candidates = []
     try {
       for (const candidate of candidates) {
@@ -405,10 +405,10 @@ export function createAgentAssembly(ctx: Context, options: AgentAssemblyOptions)
         await release(candidate.agent.id)
         await mount(candidate.agent, candidate.prepared, duplicateDedupeIdentities(candidate.prepared))
       }
-      if (active) personaChange?.commit()
+      if (active) await personaChange?.commit()
     } catch (error) {
       const restoreErrors: unknown[] = []
-      try { personaChange?.rollback() } catch (restoreError) { restoreErrors.push(restoreError) }
+      try { await personaChange?.rollback() } catch (restoreError) { restoreErrors.push(restoreError) }
       for (const { agent, previous } of changed.reverse()) {
         if (!active || disposed.has(agent)) continue
         try {
@@ -421,6 +421,8 @@ export function createAgentAssembly(ctx: Context, options: AgentAssemblyOptions)
           `切换装配失败（${failureReason(error)}），且恢复原有装配也失败（${restoreErrors.map(failureReason).join('；')}）`)
       }
       throw error
+    } finally {
+      await personaChange?.release()
     }
   }
   const install = async (agent: Agent): Promise<void> => {
