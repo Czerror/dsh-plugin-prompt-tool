@@ -5,7 +5,7 @@ import { historyEvents } from '../history.mjs'
  * 动态白名单：从**本会话已持久化的** `tool/call` 事件里回收解锁名单，填入 `into`。
  *
  * 语义对齐原 `tool-bootstrap.mjs` 的 `unlockedFor(session)`：某个发现工具（如
- * `dev_tool_search`）上一次调用时把要解锁的工具名写进了自己的调用参数，本函数把它读回来
+ * `tool_search`）上一次调用时把要解锁的工具名写进了自己的调用参数，本函数把它读回来
  * 填入 allow，于是**解锁能跨请求保留**——没有它，解锁是一次性的（当次请求用完即被裁掉）。
  *
  * 判据来源**刻意是完整历史**（`historyEvents`，不是 `currentEvents`）：语义是「本会话曾经

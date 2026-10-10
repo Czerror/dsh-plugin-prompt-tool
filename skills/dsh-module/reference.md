@@ -125,7 +125,7 @@ rules:
 **可写进 `modules` 的名字**（＝ `engine/compositions/source/local/` 下的文件名；下面这份就是完整清单，不必去枚举目录）：
 
 ```
-character-tools, dev-tool-search, filesystem-editor, instruction-hint, persistent-shell-posix,
+character-tools, tool-search, filesystem-editor, instruction-hint, persistent-shell-posix,
 rule-engine, run-code-env, session-var-tools, skill-search, subagent-tool-policy,
 tool-bash-disabled, tool-config-engine, tool-git-bash, world-book-tools
 ```

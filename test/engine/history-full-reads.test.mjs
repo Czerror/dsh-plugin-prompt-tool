@@ -15,7 +15,7 @@ import assert from 'node:assert/strict'
 import { registerAction } from '../../engine/actions.mjs'
 import { createEpochPromotion as rawCreateEpochPromotion } from '../../engine/compaction-epoch.mjs'
 
-const unlockCall = { type: 'tool/call', seq: 0, data: { name: 'dev_tool_search', arguments: JSON.stringify({ toolNames: ['web_search'] }) } }
+const unlockCall = { type: 'tool/call', seq: 0, data: { name: 'tool_search', arguments: JSON.stringify({ toolNames: ['web_search'] }) } }
 const summary = { type: 'user/message', seq: 1, data: { message: { id: 'summary', role: 'user', content: [{ type: 'text', text: '摘要' }] } } }
 /** 压缩后的 surface：只剩摘要节点，解锁调用已被遮蔽。 */
 const compactedSession = (id) => ({
@@ -42,7 +42,7 @@ function recordingCtx() {
 
 test('allowFrom 刻意读完整历史：解锁调用被压缩遮蔽后，已解锁的工具仍留在目录里', async () => {
   const recorder = recordingCtx()
-  registerAction(recorder.ctx, { kind: 'assembly', id: 'dyn', target: { tools: { allow: ['pwsh'], allowFrom: { tool: 'dev_tool_search', key: 'toolNames' } } } })
+  registerAction(recorder.ctx, { kind: 'assembly', id: 'dyn', target: { tools: { allow: ['pwsh'], allowFrom: { tool: 'tool_search', key: 'toolNames' } } } })
   const handler = recorder.events.find((entry) => entry.event === 'system-prompt/assemble').handler
   const input = { sections: [], contexts: [], variables: {}, tools: ['pwsh', 'web_search', 'memory_recall'].map((name) => ({ name, description: name, parameters: {} })) }
   const output = await handler(input, { agent: { session: compactedSession('s-unlock') } }, async () => input)

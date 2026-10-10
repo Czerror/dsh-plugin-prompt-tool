@@ -3,7 +3,7 @@
 // 断言面各自有独立真值源：
 //   1. 定义合法性归唯一引擎编译器（compileRules），不复刻规则校验；
 //   2. 跨模块契约的真值在对端产物里——tool-surface 的 `allowFrom` 对齐
-//      `engine/dev-tool-search.mjs` 的注册名与参数键，skill-surface 的白名单对齐
+//      `engine/tool-search.mjs` 的注册名与参数键，skill-surface 的白名单对齐
 //      ponytail 与宿主侧实际注入的 source.kind。
 //
 // 目录内容也是一条契约：包内 `modules/<id>/` 只放 `module.yml`，`rules/` 切片由
@@ -18,7 +18,7 @@ import { parse as parseYaml } from 'yaml'
 // @ts-expect-error 定义合法性归唯一引擎编译器，测试直接调它而不是复刻规则。
 import { compileRules } from '../../engine/rule-spec.mjs'
 // @ts-expect-error 跨模块契约的对端：插件注册侧的公开导出。
-import { apply as applyDevToolSearch } from '../../engine/dev-tool-search.mjs'
+import { apply as applyDevToolSearch } from '../../engine/tool-search.mjs'
 
 const modulesDir = fileURLToPath(new URL('../../modules/', import.meta.url))
 const loadModule = (id) => parseYaml(readFileSync(join(modulesDir, id, 'module.yml'), 'utf8'), { logLevel: 'silent' })
@@ -51,9 +51,9 @@ test('内置模块：包内目录只含 module.yml，运行时切片不随包分
   }
 })
 
-test('内置模块 tool-surface：allowFrom 与 dev-tool-search 写入端同名同键（跨模块契约）', () => {
+test('内置模块 tool-surface：allowFrom 与 tool-search 写入端同名同键（跨模块契约）', () => {
   // 名字或键任一写错，解锁就是**静默无效**（当次请求用完即被裁、无告警）。
-  assert.deepEqual(narrowTools.target.tools.allowFrom, { tool: 'dev_tool_search', key: 'toolNames' })
+  assert.deepEqual(narrowTools.target.tools.allowFrom, { tool: 'tool_search', key: 'toolNames' })
   assert.equal(narrowTools.target.tools.requireMatch, true, '缺任一工具必须 fail-open 到完整目录')
 
   const registered = []
@@ -83,7 +83,7 @@ test('内置模块 tool-surface：首轮提示规则只在模块形态里，条�
   assert.ok(inject !== undefined, '提示走 inject-text')
   assert.equal(inject.config.layer, 'pre-step')
   assert.equal(inject.config.dedupe, 'session', '与 if 双保险，禁止每轮重复注入')
-  assert.match(inject.config.text, /dev_tool_search/, '正文必须点名解锁入口')
+  assert.match(inject.config.text, /tool_search/, '正文必须点名解锁入口')
   assert.match(inject.config.text, /instead of making do/, '正文必须明确「不要用现有工具硬凑」')
 })
 

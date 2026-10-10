@@ -9,7 +9,7 @@
 # `compacted` 拆成两条即可。
 #
 # 配套两件（缺一不可）：
-#   1. `dev_tool_search` 工具（组合源 engine/compositions/source/local/dev-tool-search.yml）
+#   1. `tool_search` 工具（组合源 engine/compositions/source/local/tool-search.yml）
 #      ——唯一发现入口，模型靠它搜索并解锁。
 #   2. `allowFrom`（engine/actions/assembly.mjs）——从历史 `tool/call` 参数回收解锁名单。
 #      只挂插件不配 allowFrom 的话，解锁是**一次性的**（当次请求用完即被裁）。
@@ -58,7 +58,7 @@ then:
           - todo_write
           - skill_search
           - skill_load
-          - dev_tool_search
-        # 解锁项从 dev_tool_search 的持久调用参数回收（{ tool, key } 精确匹配）。
-        allowFrom: { tool: dev_tool_search, key: toolNames }
+          - tool_search
+        # 解锁项从 tool_search 的持久调用参数回收（{ tool, key } 精确匹配）。
+        allowFrom: { tool: tool_search, key: toolNames }
         requireMatch: true

@@ -1,11 +1,11 @@
-# 工具面收窄 —— 常驻核心集 + dev_tool_search 按需解锁。
+# 工具面收窄 —— 常驻核心集 + tool_search 按需解锁。
 #
 # 为什么：工具面实测 **156 个工具、描述合计 46894 字符（≈12K token）**，每个请求都付，
 # 而多数请求只用到其中几个。收窄到核心集后只剩 10 个左右。
 #
 # 三件东西互相依赖，缺一件就退化（详见 docs/engine-reuse.md 的「工具面收窄与按需解锁」）：
 #   1. 本模块的 `narrow-tools` 规则 —— 常驻白名单 `allow` + 动态白名单 `allowFrom`
-#   2. `dev-tool-search` 组合源行 —— 唯一发现入口，模型靠它搜索并解锁
+#   2. `tool-search` 组合源行 —— 唯一发现入口，模型靠它搜索并解锁
 #   3. `allowFrom` 读回 —— 解锁名写进持久 `tool/call` 参数，下次请求起生效
 # 只挂插件不配 allowFrom 的话，解锁是**一次性的**（当次请求用完即被裁）。
 #
@@ -30,12 +30,12 @@ id: tool-surface
 name: 工具面收窄（核心文件与任务集）
 version: 1.0.0
 engineCompat: ">=0.4.2"
-description: 把工具面收窄到常驻核心集（pwsh/read/write/edit/glob/grep/todo_write/skill_search/skill_load/dev_tool_search），其余由 dev_tool_search 按需解锁；解锁名经 allowFrom 从持久 tool/call 参数回收，跨请求与压缩保留。实测工具描述合计 46894 字符。
+description: 把工具面收窄到常驻核心集（pwsh/read/write/edit/glob/grep/todo_write/skill_search/skill_load/tool_search），其余由 tool_search 按需解锁；解锁名经 allowFrom 从持久 tool/call 参数回收，跨请求与压缩保留。实测工具描述合计 46894 字符。
 meta:
   source: manual
 modules:
   - rule-engine
-  - dev-tool-search
+  - tool-search
 order: 7
 rules:
   - id: tool-surface-resident
@@ -56,12 +56,12 @@ rules:
               - todo_write
               - skill_search
               - skill_load
-              - dev_tool_search
-            # 解锁项从 dev_tool_search 的持久调用参数回收（{ tool, key } 精确匹配）。
-            allowFrom: { tool: dev_tool_search, key: toolNames }
+              - tool_search
+            # 解锁项从 tool_search 的持久调用参数回收（{ tool, key } 精确匹配）。
+            allowFrom: { tool: tool_search, key: toolNames }
             requireMatch: true
   # 首轮告诉模型「工具面被裁过、缺能力来这里解锁」。为什么必须由规则补这一句：
-  # dev_tool_search 自己的描述只说「不在常驻集里的工具用它发现」——方向是「已经来了怎么用」，
+  # tool_search 自己的描述只说「不在常驻集里的工具用它发现」——方向是「已经来了怎么用」，
   # 模型看不到那 154 个工具、也就想不到该来。本条与收窄规则的 `dedupe`/`if` 双保险：
   # `count{user-message,max:1}` 把它限制在会话最早阶段（中途启用模块时历史消息数已 >1，不会补注），
   # `dedupe: session` 再按「每当前上下文一次」兜一层，正文被压缩遮蔽后不会重复出现。
@@ -89,10 +89,10 @@ rules:
           text: >-
             Tool catalog notice: this session only exposes a resident core set
             (pwsh, read, write, edit, glob, grep, todo_write, skill_search,
-            skill_load, dev_tool_search). The rest of the catalog is locked to
+            skill_load, tool_search). The rest of the catalog is locked to
             keep each request small. When a task needs a capability outside that
             set — web search, subagents, task boards, MCP servers, anything not
-            listed — search for it with dev_tool_search and unlock it by exact
+            listed — search for it with tool_search and unlock it by exact
             name instead of making do with a resident tool. Unlocked tools become
             callable from the next model request on.
 configOrder:

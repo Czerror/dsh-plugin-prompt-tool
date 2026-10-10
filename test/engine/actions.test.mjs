@@ -126,7 +126,7 @@ test('动作声明 fail loud：名单形状错误、名单为空、名单命名 
   assert.throws(() => registerAction(ctx, { kind: 'assembly', id: 'x', target: { sections: { keep: ['a'], remove: ['b'], add: {} } } }), /assembly\.sections\.add must be an array/)
   assert.throws(() => registerAction(ctx, { kind: 'assembly', id: 'x', target: { sections: { keep: ['a'], remove: ['b'], add: null } } }), /assembly\.sections\.add must be an array/)
   // allowFrom 的声明期形状校验（搬自 (2e)，语义不变）。
-  assert.throws(() => registerAction(ctx, { kind: 'assembly', id: 'x', target: { tools: { allow: ['a'], allowFrom: ['dev_tool_search'] } } }), /allowFrom must be an object/)
+  assert.throws(() => registerAction(ctx, { kind: 'assembly', id: 'x', target: { tools: { allow: ['a'], allowFrom: ['tool_search'] } } }), /allowFrom must be an object/)
   assert.throws(() => registerAction(ctx, { kind: 'assembly', id: 'x', target: { tools: { allow: ['a'], allowFrom: { key: 'k' } } } }), /allowFrom\.tool must be a string/)
   assert.throws(() => registerAction(ctx, { kind: 'assembly', id: 'x', target: { tools: { allow: ['a'], allowFrom: { tool: 't' } } } }), /allowFrom\.key must be a string/)
   assert.throws(() => registerAction(ctx, { kind: 'assembly', id: 'x', target: { tools: { deny: ['x'], allowFrom: { tool: 't', key: 'k' } } } }), /cannot combine deny with allowFrom/)
@@ -198,13 +198,13 @@ test('(2) 改装配 tools：名单裁剪（deny / allow / 空名单）', async (
 const sessionWith = (events) => ({ id: `ev-${Math.random()}`, header: { delegationDepth: 0 }, snapshotEvents: () => events })
 const agentWith = (events) => ({ session: sessionWith(events), options: { model: 'deepseek-chat' } })
 /** 发现工具的调用记录：`arguments` 是字符串（模型产出的就是 JSON 文本）。 */
-const unlockCall = (toolNames) => ({ type: 'tool/call', data: { name: 'dev_tool_search', arguments: JSON.stringify({ query: 'web', toolNames }) } })
+const unlockCall = (toolNames) => ({ type: 'tool/call', data: { name: 'tool_search', arguments: JSON.stringify({ query: 'web', toolNames }) } })
 
 test('(2b) allowFrom：解锁名单从历史 tool/call 回收，未解锁的仍被裁掉', async () => {
   const catalog = ['pwsh', 'read', 'web_search', 'memory_recall'].map(tool)
   const run = async (events, mask = { allow: ['pwsh', 'read'] }) => {
     const recorder = recordingCtx()
-    registerAction(recorder.ctx, { kind: 'assembly', id: 'dyn', target: { tools: { ...mask, allowFrom: { tool: 'dev_tool_search', key: 'toolNames' } } } })
+    registerAction(recorder.ctx, { kind: 'assembly', id: 'dyn', target: { tools: { ...mask, allowFrom: { tool: 'tool_search', key: 'toolNames' } } } })
     const handler = only(recorder.events, 'system-prompt/assemble')
     const input = assembled(catalog.map((item) => ({ ...item })))
     const output = await handler(input, { agent: agentWith(events) }, async () => input)
@@ -215,8 +215,8 @@ test('(2b) allowFrom：解锁名单从历史 tool/call 回收，未解锁的仍�
   assert.deepEqual(await run([unlockCall(['web_search'])]), ['pwsh', 'read', 'web_search'], '解锁项并入静态名单')
   assert.deepEqual(await run([unlockCall(['web_search']), unlockCall(['memory_recall'])]), ['pwsh', 'read', 'web_search', 'memory_recall'], '多次调用累积')
   // 只声明 allowFrom（无静态 allow）= 白名单模式，未解锁即裁掉——不能退化成「全通过」。
-  assert.deepEqual(await run([], { allowFrom: { tool: 'dev_tool_search', key: 'toolNames' } }), [], '只配 allowFrom 且未解锁 → 空目录')
-  assert.deepEqual(await run([unlockCall(['web_search'])], { allowFrom: { tool: 'dev_tool_search', key: 'toolNames' } }), ['web_search'], '只配 allowFrom 且已解锁 → 仅解锁项')
+  assert.deepEqual(await run([], { allowFrom: { tool: 'tool_search', key: 'toolNames' } }), [], '只配 allowFrom 且未解锁 → 空目录')
+  assert.deepEqual(await run([unlockCall(['web_search'])], { allowFrom: { tool: 'tool_search', key: 'toolNames' } }), ['web_search'], '只配 allowFrom 且已解锁 → 仅解锁项')
 })
 
 test('(2c) allowFrom：坏数据逐条忽略且不上抛（非法 JSON / key 非数组 / tool 不匹配）', async () => {
@@ -225,17 +225,17 @@ test('(2c) allowFrom：坏数据逐条忽略且不上抛（非法 JSON / key 非
   registerAction(recorder.ctx, {
     kind: 'assembly',
     id: 'dyn-bad',
-    target: { tools: { allow: ['pwsh'], allowFrom: { tool: 'dev_tool_search', key: 'toolNames' } } },
+    target: { tools: { allow: ['pwsh'], allowFrom: { tool: 'tool_search', key: 'toolNames' } } },
   })
   const events = [
-    { type: 'tool/call', data: { name: 'dev_tool_search', arguments: '{ 这不是 JSON' } },           // 非法 JSON → 整条忽略
-    { type: 'tool/call', data: { name: 'dev_tool_search', arguments: JSON.stringify({ toolNames: 'web_search' }) } }, // key 非数组 → 整条忽略（字符串不是数组）
+    { type: 'tool/call', data: { name: 'tool_search', arguments: '{ 这不是 JSON' } },           // 非法 JSON → 整条忽略
+    { type: 'tool/call', data: { name: 'tool_search', arguments: JSON.stringify({ toolNames: 'web_search' }) } }, // key 非数组 → 整条忽略（字符串不是数组）
     { type: 'tool/call', data: { name: 'other_tool', arguments: JSON.stringify({ toolNames: ['memory_recall'] }) } },  // tool 名不匹配 → 忽略
-    { type: 'tool/call', data: { name: 'dev_tool_search', arguments: JSON.stringify({ toolNames: [42, null, '', 'web_search'] }) } }, // 混入非字符串 → 只取合法项
+    { type: 'tool/call', data: { name: 'tool_search', arguments: JSON.stringify({ toolNames: [42, null, '', 'web_search'] }) } }, // 混入非字符串 → 只取合法项
     { type: 'assistant/message', data: { message: 'x' } },                                          // 非 tool/call → 忽略
-    { type: 'tool/call', data: { name: 'dev_tool_search' } },                                        // 无 arguments → 忽略
-    { type: 'tool/call', data: { name: 'dev_tool_search', arguments: JSON.stringify(['web_search']) } }, // 解析成数组（非对象）→ 忽略
-    { type: 'tool/call', data: { name: 'dev_tool_search', arguments: JSON.stringify({ toolNames: ['memory_recall'] }) } }, // 有效项
+    { type: 'tool/call', data: { name: 'tool_search' } },                                        // 无 arguments → 忽略
+    { type: 'tool/call', data: { name: 'tool_search', arguments: JSON.stringify(['web_search']) } }, // 解析成数组（非对象）→ 忽略
+    { type: 'tool/call', data: { name: 'tool_search', arguments: JSON.stringify({ toolNames: ['memory_recall'] }) } }, // 有效项
   ]
   const input = assembled(catalog.map((item) => ({ ...item })))
   const output = await only(recorder.events, 'system-prompt/assemble')(input, { agent: agentWith(events) }, async () => input)
@@ -247,7 +247,7 @@ test('(2c) allowFrom：坏数据逐条忽略且不上抛（非法 JSON / key 非
 test('(2d) allowFrom：无 session / 事件不可用时不抛错，按静态名单裁', async () => {
   const catalog = ['pwsh', 'web_search'].map(tool)
   const build = (recorder) => {
-    registerAction(recorder.ctx, { kind: 'assembly', id: 'dyn-none', target: { tools: { allow: ['pwsh'], allowFrom: { tool: 'dev_tool_search', key: 'toolNames' } } } })
+    registerAction(recorder.ctx, { kind: 'assembly', id: 'dyn-none', target: { tools: { allow: ['pwsh'], allowFrom: { tool: 'tool_search', key: 'toolNames' } } } })
     return only(recorder.events, 'system-prompt/assemble')
   }
   // ① 完全没有 session

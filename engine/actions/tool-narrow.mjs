@@ -3,13 +3,13 @@
  *
  * 与工具面收窄模板（`assembly` 重写装配结果）的差别，两条都真实：
  *  - `restrict` 只作用于**继承的全局工具**（部署全局层 + 祖先链），scope 自己注册的工具
- *    既不过滤也不受影响——本插件的 `dev_tool_search` / `skill_search` / 自定义工具 /
+ *    既不过滤也不受影响——本插件的 `tool_search` / `skill_search` / 自定义工具 /
  *    角色卡、世界书、会话变量工具都注册在 agent scope，所以它们**裁不掉**；
  *  - 被过滤掉的全局工具**在执行层也拒绝**（`tools.get(name, scope)` 读作不存在，与不存在的
  *    工具无法区分），不再依赖另行配对的 `decision` / `guard`。
  *
  * 与本项目「按需解锁」的关系是**二选一**（2026-10-10 用户拍板）：`restrict` 会砍掉
- * `ctx.tools.schemas(agent)` 的视野，`dev_tool_search` 因此只剩已解锁项可见、搜索不再覆盖
+ * `ctx.tools.schemas(agent)` 的视野，`tool_search` 因此只剩已解锁项可见、搜索不再覆盖
  * 全量目录。要么 `assembly` + `allowFrom` 动态解锁，要么本动作的静态收窄。
  *
  * 收窄是**静态**的：注册即生效、不随会话变化。`allow` 在注册那一刻按当前全局目录过滤

@@ -106,7 +106,7 @@
 | `engine/executor.mjs` / `engine/layers.mjs` | 复用批次注入、变量、去重、官方文本注册与各层执行机制 |
 | `engine/instruction-hint.mjs` | 独立指令提示协议；显式模板生成提示，文件正文仍从声明的文件路径读取。**组合源行必须自带 `messageTemplate` 等模板**——`apply()` 在模板为空时不注册任何转换（开关打开也零效果） |
 | `engine/skill-search.mjs` | 技能面的按需发现与加载（`skill_search` / `skill_load`），替代官方全量技能目录注入 |
-| `engine/dev-tool-search.mjs` | 工具面的按需发现与解锁（`dev_tool_search`）；能力摘要从 `ctx.tools.schemas()` 运行时折叠分组，不手工维护索引 |
+| `engine/tool-search.mjs` | 工具面的按需发现与解锁（`tool_search`）；能力摘要从 `ctx.tools.schemas()` 运行时折叠分组，不手工维护索引 |
 | `engine/tool-config-engine.mjs` | 自定义工具资产到官方工具注册；执行器保留完整官方工具管线与批准边界 |
 | `engine/subagent-tool-policy.mjs` / `subagent-tool-policy-core.mjs` | 子代理实例策略、真实 provider 绑定及共享校验，贡献随 scope 释放 |
 | `engine/character-tools.mjs` / `world-book-tools.mjs` / `session-var-tools.mjs` | 等待宿主对应服务，按预设 scope 贡献工具并释放 |
@@ -164,7 +164,7 @@
 | 件 | 落点 | 缺了它会怎样 |
 | --- | --- | --- |
 | 常驻白名单 + 动态白名单 | `assembly.target.tools.allow` / `allowFrom` | 目录不收窄，省不下 token |
-| 发现工具 | `engine/dev-tool-search.mjs`（组合源 `source/local/dev-tool-search.yml`） | 模型无法知道有什么可解锁，只能用别的方式硬凑 |
+| 发现工具 | `engine/tool-search.mjs`（组合源 `source/local/tool-search.yml`） | 模型无法知道有什么可解锁，只能用别的方式硬凑 |
 | 解锁名单的回收 | `assembly` 的 `allowFrom` | 解锁是**一次性的**：当次请求用完即被裁掉 |
 
 - `allowFrom: { tool, key }` 读**本会话已持久化**的 `tool/call` 事件：筛 `type` 精确等于
@@ -179,7 +179,7 @@
 - 解锁跨请求保留的原理是「持久事件 + 每轮重算」，因此**压缩后仍然保留**（成功压缩会清零
   晋升相位，但不会删掉历史 `tool/call` 事件）。
 - **收窄模板**：`templates/80-tool-surface.yml`，常驻集
-  `pwsh / read / write / edit / glob / grep / todo_write / skill_search / skill_load / dev_tool_search`。
+  `pwsh / read / write / edit / glob / grep / todo_write / skill_search / skill_load / tool_search`。
   它是**规则**（走 `compileRules`），需要 `outermost`（`prepend: true`）时在动作上声明
   `waterfallPosition`——规则路径**接受**该字段（`engine/actions/catalog.mjs` 的通用键，
   `rule-runtime.mjs` 映射为 prepend）；它只保证落在已存在的普通注册之外，同点内声明之间仍按
@@ -192,10 +192,10 @@
   又要求同时声明只接受布尔值的 `compacted`），代价是首轮与晋升前那几轮多付一次完整工具面
   （实测 46894 字符），且收窄生效的当轮会以「工具已更新 · 移除 N 个」出现在会话流里。
   需要旧的渐进语义时把 `if` 加回来。
-- **`dev_tool_search` 在常驻集里**，所以收窄之后模型始终有发现入口；`allow` 漏掉它会让
+- **`tool_search` 在常驻集里**，所以收窄之后模型始终有发现入口；`allow` 漏掉它会让
   解锁通道彻底断开。
 - **收窄之后要有一条首轮提示，模型才会主动来解锁**（2026-10-10 用户拍板「两者都加」）：
-  `dev_tool_search` 自己的描述只说「不在常驻集里的工具用它发现」——方向是「已经来了怎么用」，
+  `tool_search` 自己的描述只说「不在常驻集里的工具用它发现」——方向是「已经来了怎么用」，
   而收窄之后模型**看不到**被裁掉的那些工具，默认行为是用现有工具硬凑。提示落在内置模块的
   `tool-surface-notice` 规则（`inject-text`，`pre-step`、`dedupe: session`、
   `if: { count: { of: 'user-message', max: 1 } }`）：`if` 限制在会话最早阶段
@@ -215,9 +215,9 @@
   对未知名抛错，不能让它穿到装配层）。收窄是**静态**的（注册期动作不支持条件——见
   `engine/rule-spec.mjs` 对 `registration` 生命周期的拒绝）。
   **当前没有任何模块声明它**（2026-10-10 用户拍板先把 `tool-surface` 还原成只保留无条件收窄）；
-  它只作用于**继承的全局工具**——本插件注册在 agent scope 的那些工具（`dev_tool_search`、
+  它只作用于**继承的全局工具**——本插件注册在 agent scope 的那些工具（`tool_search`、
   `skill_search`、自定义工具、角色卡/世界书/会话变量工具）**一个都裁不掉**，且会砍掉
-  `ctx.tools.schemas(agent)` 的视野、让 `dev_tool_search` 只剩已解锁项可见。
+  `ctx.tools.schemas(agent)` 的视野、让 `tool_search` 只剩已解锁项可见。
   把它接到按需解锁上的完整方案（含目录副本与动态撤销）见
   [ADR-0012](adr/0012-progressive-disclosure-restrict.md)。
   验收：`test/engine/tool-narrow.test.mjs`（跑在真实 `ToolRuntime` 上）。

@@ -15,13 +15,13 @@
  * 名字写错还会让模型照着错名字解锁（那份实现甚至需要一条专门测试来防错名）。
  * 官方注册表只投影 name/description（无分组字段），所以分组只能按前缀在本地折叠。
  *
- * 与原 `dev-tool-search.mjs` 的两处修正照搬：
+ * 与原 `tool-search.mjs` 的两处修正照搬：
  *  1. 匹配是**打分**而非 AND 过滤——长自然语言查询（"file edit write replace"）在
  *     AND 口径下命中零个，等于白搜。现在精确名优先，其次按命中 token 数排序。
  *  2. 描述里显式教解锁路径（"搜索为空 ≠ 工具不存在"）——实测模型只会搜、不会传
  *     toolNames，于是收窄后永远拿不到工具。
  */
-export const name = 'dev-tool-search'
+export const name = 'tool-search'
 
 /** 工具注册表必须先于本工具存在（同 skill-search 的 inject 纪律）。 */
 export const inject = ['tools']
@@ -133,7 +133,7 @@ export function renderMatches(scored, query) {
   const matches = scored.slice(0, MAX_RESULTS)
   if (matches.length === 0) {
     lines.push(
-      `No tools match "${query}". An empty result only means no tool matched your keywords — if you need a specific tool, unlock it directly by exact name, e.g. dev_tool_search({"toolNames":["web_search"]}).`,
+      `No tools match "${query}". An empty result only means no tool matched your keywords — if you need a specific tool, unlock it directly by exact name, e.g. tool_search({"toolNames":["web_search"]}).`,
     )
     return lines
   }
@@ -145,14 +145,14 @@ export function renderMatches(scored, query) {
   if (scored.length > MAX_RESULTS) {
     lines.push(`(truncated at ${MAX_RESULTS} — add tokens to narrow the query)`)
   }
-  lines.push('Unlock with dev_tool_search({"toolNames": ["<exact name>"]}).')
+  lines.push('Unlock with tool_search({"toolNames": ["<exact name>"]}).')
   return lines
 }
 
-/** 注册模型可见的 `dev_tool_search`。 */
+/** 注册模型可见的 `tool_search`。 */
 export function apply(ctx) {
   ctx.tools.register({
-    name: 'dev_tool_search',
+    name: 'tool_search',
     description: [
       'Discover and unlock tools that are NOT currently available.',
       '',
@@ -163,7 +163,7 @@ export function apply(ctx) {
       '- call with NO arguments — list the catalog as group counts (`<prefix>_*(count) ...`), so you can see what exists before searching.',
       '- `toolNames` — unlock exact names. Unlocked tools appear from the NEXT request on and stay unlocked for the session.',
       '',
-      'Example: dev_tool_search({"query":"pull request","toolNames":["mcp__github__create_pull_request"]}) — search AND unlock in one call.',
+      'Example: tool_search({"query":"pull request","toolNames":["mcp__github__create_pull_request"]}) — search AND unlock in one call.',
       'IMPORTANT: if the task needs a capability outside that resident set — web search, subagents, task boards, MCP servers, anything not listed above — search for it here and unlock it. Do NOT make do with a resident tool when the tool you actually need is merely locked; an empty search result does NOT mean the tool does not exist, it only means no tool matched your keywords. Call with no arguments to see the catalog groups, then unlock by exact name.',
     ].join('\n'),
     parameters: toJsonSchema({

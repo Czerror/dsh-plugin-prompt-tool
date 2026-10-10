@@ -66,7 +66,7 @@ test('tool-surface 首轮提示：只在会话最早阶段注入一次，后续�
   const first = await step()
   assert.equal(isNotice(textsOf(first)), true, '会话最早阶段必须注入提示')
   const notice = first.find(message => message.content[0].text.startsWith('Tool catalog notice:'))
-  assert.match(notice.content[0].text, /dev_tool_search/)
+  assert.match(notice.content[0].text, /tool_search/)
   assert.match(notice.content[0].text, /instead of making do/, '必须明确「不要用现有工具硬凑」')
   // 身份必须是 `plugin:<配置 id>`：写裸 `sourceKind: plugin` 会归一成 `plugin:plugin`，
   // 于是所有注入共用一份身份、`dedupe` 静默失效（这条断言就是那个坑的哨兵）。

@@ -1,7 +1,7 @@
 /**
- * 工具面收窄模板 + dev-tool-search 的**跨模块契约**验收。
+ * 工具面收窄模板 + tool-search 的**跨模块契约**验收。
  *
- * 本模板与 `engine/dev-tool-search.mjs` 之间有一条隐式契约，任一端单独看都正常、
+ * 本模板与 `engine/tool-search.mjs` 之间有一条隐式契约，任一端单独看都正常、
  * 合起来才失效，所以必须一起锁：
  *   插件把解锁名写进 `tool/call` 参数对象；
  *   模板的 `allowFrom: { tool, key }` 靠 `tool` 名精确匹配事件、靠 `key` 取出数组。
@@ -16,13 +16,13 @@ import { readFileSync } from 'node:fs'
 import { parse } from 'yaml'
 
 import { compileRules } from '../../engine/rule-spec.mjs'
-import { apply as applyDevToolSearch } from '../../engine/dev-tool-search.mjs'
+import { apply as applyDevToolSearch } from '../../engine/tool-search.mjs'
 
 const raw = readFileSync(new URL('../../templates/80-tool-surface.yml', import.meta.url), 'utf8')
 const parsed = parse(raw, { logLevel: 'silent' })
 
-/** 模板声明的核心常驻集（与 engine/dev-tool-search.mjs 的 RESIDENT 应对应）。 */
-const EXPECTED_ALLOW = ['pwsh', 'read', 'write', 'edit', 'glob', 'grep', 'todo_write', 'skill_search', 'skill_load', 'dev_tool_search']
+/** 模板声明的核心常驻集（与 engine/tool-search.mjs 的 RESIDENT 应对应）。 */
+const EXPECTED_ALLOW = ['pwsh', 'read', 'write', 'edit', 'glob', 'grep', 'todo_write', 'skill_search', 'skill_load', 'tool_search']
 
 test('工具面模板：通过引擎权威校验，且是单条规则对象', () => {
   assert.equal(Array.isArray(parsed), false, 'templates/*.yml 必须是单个规则对象，不是声明数组')
@@ -38,10 +38,10 @@ test('工具面模板：allow 集与常驻清单逐字一致', () => {
   assert.equal(action.target.tools.requireMatch, true, '缺任一工具必须 fail-open 到完整目录')
 })
 
-test('工具面模板：allowFrom 与 dev-tool-search 的写入端同名同键（跨模块契约）', async () => {
+test('工具面模板：allowFrom 与 tool-search 的写入端同名同键（跨模块契约）', async () => {
   const action = parsed.then.find((entry) => entry.kind === 'assembly')
   const allowFrom = action.target.tools.allowFrom
-  assert.deepEqual(allowFrom, { tool: 'dev_tool_search', key: 'toolNames' })
+  assert.deepEqual(allowFrom, { tool: 'tool_search', key: 'toolNames' })
 
   // 从插件导出侧拿工具名，确认与模板声明的 tool 一致。
   const registered = []

@@ -1,5 +1,5 @@
-# module: dev-tool-search
-# source: engine/compositions/source/local/dev-tool-search.yml (本地附加,非官方模块)
+# module: tool-search
+# source: engine/compositions/source/local/tool-search.yml (本地附加,非官方模块)
 #
 # 工具面的按需发现与解锁。与 assembly 动作的 allowFrom 配对使用：
 #   本工具把解锁名写进持久 tool/call 参数 → allowFrom 读回 → 下次请求起生效。
@@ -7,5 +7,5 @@
 #
 # 常驻集由模板声明（见 templates/ 的工具面收窄模板），本行只负责发现入口。
 
-- id: dev-tool-search
-  name: ./engine/dev-tool-search.mjs
+- id: tool-search
+  name: ./engine/tool-search.mjs

@@ -1,5 +1,5 @@
 /**
- * dev-tool-search —— 工具面按需发现与解锁的行为验收。
+ * tool-search —— 工具面按需发现与解锁的行为验收。
  *
  * 覆盖：**运行时分组摘要**、目录概览与命中渲染、搜索超限截断、解锁回报与去重、
  * 无 agent / 目录抛错时的降级。
@@ -11,7 +11,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 
-import { MAX_RESULTS, apply, groupKeyOf, unlockNames } from '../../engine/dev-tool-search.mjs'
+import { MAX_RESULTS, apply, groupKeyOf, unlockNames } from '../../engine/tool-search.mjs'
 
 /** 目录样本（真实工具名 + 一行描述）。 */
 const catalog = [
@@ -40,9 +40,9 @@ function recordingCtx(schemasImpl) {
 
 const run = (definition, args, exec) => definition.execute(args, exec)
 
-test('dev-tool-search：注册名为 dev_tool_search 的工具，参数是可选的 query / toolNames', () => {
+test('tool-search：注册名为 tool_search 的工具，参数是可选的 query / toolNames', () => {
   const definition = recordingCtx(() => catalog)
-  assert.equal(definition.name, 'dev_tool_search')
+  assert.equal(definition.name, 'tool_search')
   const parameters = definition.parameters
   assert.deepEqual(Object.keys(parameters.properties).sort(), ['query', 'toolNames'])
   assert.deepEqual(parameters.required, [], '两个参数都可选——只解锁不搜、只搜不解锁、都不给都有定义')
@@ -50,12 +50,12 @@ test('dev-tool-search：注册名为 dev_tool_search 的工具，参数是可选
   assert.equal(parameters.additionalProperties, false)
 })
 
-test('dev-tool-search：非法 toolNames 与无名工具的分组键', () => {
+test('tool-search：非法 toolNames 与无名工具的分组键', () => {
   assert.deepEqual(unlockNames('web_search'), [], '非数组一律空（模型传字符串是常见错误）')
   assert.equal(groupKeyOf(''), undefined)
 })
 
-test('dev-tool-search：空查询返回目录概览，命中渲染名字与截断描述', async () => {
+test('tool-search：空查询返回目录概览，命中渲染名字与截断描述', async () => {
   const definition = recordingCtx(() => catalog)
   const overview = await run(definition, {}, { agent: {} })
   assert.match(overview.text, /Catalog groups \(\d+ tools\): /)
@@ -65,7 +65,7 @@ test('dev-tool-search：空查询返回目录概览，命中渲染名字与截�
   const hit = await run(definition, { query: 'web' }, { agent: {} })
   assert.match(hit.text, /Matching tools \(2\)/)
   assert.match(hit.text, /- web_search: Search the web/)
-  assert.match(hit.text, /Unlock with dev_tool_search/)
+  assert.match(hit.text, /Unlock with tool_search/)
   assert.doesNotMatch(hit.text, /parameters/, '不回 parameters')
 
   const miss = await run(definition, { query: 'zzzz' }, { agent: {} })
@@ -73,7 +73,7 @@ test('dev-tool-search：空查询返回目录概览，命中渲染名字与截�
   assert.match(miss.text, /unlock it directly by exact name/, '空结果必须教解锁路径')
 })
 
-test('dev-tool-search：搜索超限给出收窄提示', async () => {
+test('tool-search：搜索超限给出收窄提示', async () => {
   const many = Array.from({ length: MAX_RESULTS + 5 }, (_, index) => ({ name: `web_tool_${index}`, description: 'web' }))
   const definition = recordingCtx(() => many)
   const truncated = await run(definition, { query: 'web' }, { agent: {} })
@@ -81,7 +81,7 @@ test('dev-tool-search：搜索超限给出收窄提示', async () => {
   assert.match(truncated.text, new RegExp(`truncated at ${MAX_RESULTS}`))
 })
 
-test('dev-tool-search：解锁回报去重、不需要目录，且只解锁时不搜目录', async () => {
+test('tool-search：解锁回报去重、不需要目录，且只解锁时不搜目录', async () => {
   let calls = 0
   const definition = recordingCtx(() => { calls += 1; throw new Error('catalog down') })
   // 解锁不依赖目录：即便目录抛错也必须回报成功（引擎只读持久调用参数）。
@@ -94,7 +94,7 @@ test('dev-tool-search：解锁回报去重、不需要目录，且只解锁时�
   assert.match(both.text, /catalog search unavailable: catalog down/, '同一次调用里解锁成功、搜索降级')
 })
 
-test('dev-tool-search：无 agent 照常搜索，目录抛错降级为一行说明而不上抛', async () => {
+test('tool-search：无 agent 照常搜索，目录抛错降级为一行说明而不上抛', async () => {
   let seenScope
   const definition = recordingCtx((scope) => { seenScope = scope; return catalog })
   const noAgent = await run(definition, { query: 'web' }, undefined)
@@ -110,7 +110,7 @@ test('dev-tool-search：无 agent 照常搜索，目录抛错降级为一行说�
   assert.match(degraded.text, /catalog search unavailable: catalog down/)
 })
 
-test('dev-tool-search：描述如实告知常驻集与三种用法', () => {
+test('tool-search：描述如实告知常驻集与三种用法', () => {
   const description = recordingCtx(() => catalog).description
   for (const name of ['pwsh', 'read', 'write', 'edit', 'glob', 'grep', 'todo_write', 'skill_search', 'skill_load']) {
     assert.ok(description.includes(name), `描述应告知常驻工具 ${name}`)
