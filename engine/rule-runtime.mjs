@@ -50,7 +50,8 @@ export function mountRuleSources(ctx, sources, options = {}) {
       if (rule.enabled === false) continue
       for (const action of rule.actions) {
         const item = { moduleId: source.moduleId, ruleIndex, rule, action }
-        if (action.execution.lifecycle === 'registration' && action.kind === 'guard') { releases.push(bind(item)); continue }
+        // 注册期动作不走 on(...)：guard 挂 agent scope 的最终拒绝，tool-narrow 挂 restrict。
+        if (action.execution.lifecycle === 'registration' && (action.kind === 'guard' || action.kind === 'tool-narrow')) { releases.push(bind(item)); continue }
         const point = action.execution
         const key = `${point.channel}:${point.phase}:${action.waterfallPosition}`
         const bucket = points.get(key) ?? { ...point, waterfallPosition: action.waterfallPosition, items: [] }

@@ -10,6 +10,9 @@ export const ACTION_EXAMPLES = {
   decision: { phase: 'pre', decision: 'allow', action: 'accept', reason: '', text: '', toolNames: '' },
   'append-context': { mode: 'context', text: '' },
   guard: { mask: { deny: [] } },
+  // `allow` 是 fail-closed 白名单，空数组等于「收窄到零个工具」，所以种子必须给一个真实名字
+  // （`deny` 的空数组是「什么都不拒」，语义不同——两者不能共用空值形态）。
+  'tool-narrow': { allow: ['pwsh'] },
   'sdk-strip': { mask: { deny: [] } },
   'request-params': { patch: {} },
   'inbox-prepend': { target: 'next-turn', text: '' },

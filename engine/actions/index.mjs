@@ -7,6 +7,7 @@ import { prepareAssembly } from './assembly.mjs'
 import { prepareDecision } from './decision.mjs'
 import { prepareAppendContext } from './append-context.mjs'
 import { prepareGuard } from './guard.mjs'
+import { prepareToolNarrow } from './tool-narrow.mjs'
 import { prepareSdkStrip } from './sdk-strip.mjs'
 import { prepareRequestParams } from './request-params.mjs'
 import { prepareInboxPrepend } from './inbox-prepend.mjs'
@@ -21,6 +22,7 @@ const PREPARERS = {
   decision: prepareDecision,
   'append-context': prepareAppendContext,
   guard: prepareGuard,
+  'tool-narrow': prepareToolNarrow,
   'sdk-strip': prepareSdkStrip,
   'request-params': prepareRequestParams,
   'inbox-prepend': prepareInboxPrepend,

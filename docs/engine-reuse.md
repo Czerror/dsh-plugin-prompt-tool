@@ -207,6 +207,18 @@
   身份，`dedupe` 与「已投递」判定一起静默失效（实测：首轮提示每步重复注入）。省略该键即按
   `plugin:<配置 id>` 生成；确需自定义身份就写完整的 `plugin:<owner>`。哨兵断言在
   `test/engine/tool-surface-notice.test.mjs`。
+- **另一种收窄模式：`tool-narrow` 动作（官方 `ctx.tools.restrict()`）**（2026-10-10 用户拍板）：
+  规则可直接声明 `{ kind: tool-narrow, allow: [...] }`，在 agent scope 上挂一条实时过滤器——
+  被裁掉的**全局**工具在模型目录与执行层同时消失（`get(name, scope)` 读作不存在），
+  不必再另配 `guard` 去守执行面。`allow` 是 fail-closed 白名单，挂载期拒空名单与保留名
+  `run_code`；名字在**注册那一刻**按当前全局目录过滤，未知名字丢弃并告警一次（`restrict`
+  对未知名抛错，不能让它穿到装配层）。两条模式**同组互斥**（现成的 `group` + `exclusive`，
+  多启用即编译期拒绝）：`tool-surface-resident` 是装配裁剪 + `allowFrom` 动态解锁（默认），
+  `tool-surface-static` 是本动作的静态收窄。**为什么必须二选一**：`restrict` 会砍掉
+  `ctx.tools.schemas(agent)` 的视野，`dev_tool_search` 因此只剩已解锁项可见、搜索不再覆盖全量
+  目录；同时它只作用于**继承的全局工具**，本插件注册在 agent scope 的那些工具（`dev_tool_search`、
+  `skill_search`、自定义工具、角色卡/世界书/会话变量工具）**一个都裁不掉**。
+  验收：`test/engine/tool-narrow.test.mjs`（跑在真实 `ToolRuntime` 上）。
 - `requireMatch: true` 是必配：任一 `allow` 工具缺失（含模型解锁了一个不存在的名字）就放弃
   裁剪、暴露完整目录。宁可多给上下文，也不静默裁成空目录。
 - **与已退场的 `tool-bootstrap` 原型的差别**：那份只**在受控相位**收窄、晋升后放开，且没有

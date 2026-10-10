@@ -12,6 +12,7 @@ const { home, moduleRoot } = isolatedHome('pt-rules-bridge-')
 const { registerSettingsBridge } = await import('../../src/runtime/settings-bridge.ts')
 const { writeModule } = await import('../../src/host/write-module.ts')
 const { compileRules } = await import('../../engine/rule-spec.mjs')
+const { ACTION_KINDS } = await import('../../engine/actions/catalog.mjs')
 let sequence = 0
 
 function harness({ readonly = false, rebuildFails = false, afterRebuild } = {}) {
@@ -66,7 +67,9 @@ test('声明读取、只校验、写盘、物化和清空往返；注释与未�
   const initial = await h.call()
   assert.equal(initial.status, 200)
   assert.deepEqual(initial.value.rules, [])
-  assert.equal(initial.value.meta.actions.length, 9)
+  // 动作种类数从 catalog 派生：新增一类动作（如 tool-narrow）不该让这条契约测试红，
+  // 但没有下发动作元数据才是真的坏了。
+  assert.equal(initial.value.meta.actions.length, Object.keys(ACTION_KINDS).length)
   assert.match(initial.value.revisions.settings, /^[a-f0-9]{64}$/)
   const checked = await h.call({ edits: createEdits(rules), expectedRevisions: initial.value.revisions, validateOnly: true })
   assert.equal(checked.ok, true)

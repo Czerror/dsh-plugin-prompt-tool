@@ -73,7 +73,8 @@ test('内置模块 tool-surface：allowFrom 与 dev-tool-search 写入端同名�
 test('内置模块 tool-surface：首轮提示规则只在模块形态里，条件与注入正文逐项钉住', () => {
   // `templates/*.yml` 是**单条规则对象**（种子），所以这条提示只能活在 module.yml 里；
   // 两处因此规则条数不同——正是这个测试存在的理由。
-  assert.notEqual(toolSurface.rules.length, toolTemplate.rules?.length, '模板不得是规则数组')
+  assert.equal(toolTemplate.rules, undefined, '模板 `templates/*.yml` 是单条规则对象，不是规则数组')
+  assert.ok(Array.isArray(toolSurface.rules), '模块定义必须携带 rules 数组')
   const notice = toolSurface.rules.find((rule) => rule.id === 'tool-surface-notice')
   assert.ok(notice !== undefined, '模块必须带首轮提示规则')
   assert.equal(notice.enabled, true)
@@ -84,6 +85,22 @@ test('内置模块 tool-surface：首轮提示规则只在模块形态里，条�
   assert.equal(inject.config.dedupe, 'session', '与 if 双保险，禁止每轮重复注入')
   assert.match(inject.config.text, /dev_tool_search/, '正文必须点名解锁入口')
   assert.match(inject.config.text, /instead of making do/, '正文必须明确「不要用现有工具硬凑」')
+})
+
+test('内置模块 tool-surface：两种收窄模式同组互斥，且同名清单逐字一致', () => {
+  // 二选一是**引擎机制**（`rule-spec.mjs` 的 exclusive 组多启用即编译期拒绝），不是文案：
+  // 两条模式规则必须同组同标记，且只有一条启用；同名清单不许漂移，切模式不能漏工具。
+  const staticRule = toolSurface.rules.find((rule) => rule.id === 'tool-surface-static')
+  assert.ok(staticRule !== undefined, '模块必须提供 restrict 静态收窄那条模式')
+  for (const rule of [toolRule, staticRule]) {
+    assert.equal(rule.group, 'tool-surface-mode', `${rule.id}: 两种模式必须同组`)
+    assert.equal(rule.exclusive, true, `${rule.id}: 必须标 exclusive`)
+  }
+  assert.deepEqual([toolRule.enabled, staticRule.enabled], [true, false], '默认走动态解锁，静态收窄停用')
+  assert.deepEqual(staticRule.then[0].allow, narrowTools.target.tools.allow, '两条模式的 allow 清单逐字一致')
+  // 机制判别力：把两条模式都启用，编译器必须拒绝（源码已改坏过类似形态，这里按行为断言）。
+  const bothEnabled = toolSurface.rules.map(rule => (rule.id === 'tool-surface-static' ? { ...rule, enabled: true } : rule))
+  assert.throws(() => compileRules(bothEnabled, { configOrder: toolSurface.configOrder ?? {} }), /exclusive group/, '同组多启用必须被拒绝')
 })
 
 test('内置模块 tool-surface：与 templates/80-tool-surface.yml 同一声明不漂移', () => {

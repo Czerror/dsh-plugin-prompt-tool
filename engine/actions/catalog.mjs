@@ -63,6 +63,18 @@ export const ACTION_KINDS = Object.freeze({
     timing: '首次 assembly 时按 agent scope 惰性注册一次（预设切换/重绑后按新的 agent.ctx 重注册）。',
     note: '最终拒绝层：注册在 agent.ctx 上（工具本层与晚到工具也被裁决），命中返回拒绝原因；不注册全局 guard。guard 自身不吞异常——异常即失败，绝不退化成"放行"。',
   },
+  'tool-narrow': {
+    title: '收窄工具面（restrict）',
+    fields: ['allow', 'includeSubagents'],
+    events: ['system-prompt/assemble'],
+    services: ['tools.restrict'],
+    degrade: ACTION_DEGRADE.silent,
+    timing: '首次 assembly 时按 agent scope 惰性注册一次（预设切换/重绑后按新的 agent.ctx 重注册）。',
+    note: '官方 `ctx.tools.restrict({ allow })` 的声明面：只收窄**继承的全局工具**，scope 自己注册的工具裁不掉；'
+      + '被过滤掉的工具在模型目录与执行层同时消失（`get(name, scope)` 读作不存在）。'
+      + '与本项目「按需解锁」（`assembly` 的 `allowFrom` + `dev_tool_search`）**二选一**：restrict 会砍掉 '
+      + '`schemas(agent)` 的视野，两者同开会让 `dev_tool_search` 只剩已解锁项可见。',
+  },
   'sdk-strip': {
     title: '裁 SDK 声明文本',
     fields: ['mask', 'allow', 'deny', 'requireMatch'],
