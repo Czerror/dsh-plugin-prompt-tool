@@ -12,7 +12,7 @@ const noNext = new Set(['agent/inbox/inserted', 'agent/turn-stopping', 'subagent
 const compare = (a, b) => a.action.channelOrder - b.action.channelOrder
   || a.moduleId.localeCompare(b.moduleId) || a.ruleIndex - b.ruleIndex || a.action.actionIndex - b.action.actionIndex
 
-/** 所有来源只进入这个装配入口；注入保留原有批处理和协调器所有权。 */
+/** 所有来源只进入这个装配入口；受众限定固定效果要求 ctx 属于 options.agent 的 scope。 */
 export function mountRuleSources(ctx, sources, options = {}) {
   const warnOnce = options.warnOnce ?? createWarnOnce(ctx, options.plugin ?? 'rule-engine')
   // 诊断上报是只读旁路：把规则对象换回来源模块，供宿主区分跨模块同名 id；缺省不传即零开销。
@@ -65,6 +65,7 @@ export function mountRuleSources(ctx, sources, options = {}) {
       const flushLayers = () => {
         if (!textConfigs.length) return
         releases.push(wireLayers(ctx, textConfigs, warnOnce, {
+          agent: options.agent,
           turnStopBudgets,
           on: (channel, handler) => {
             if (channel !== point.channel) throw new TypeError(`rule action registered outside ${point.channel}: ${channel}`)

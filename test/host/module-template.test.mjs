@@ -12,6 +12,7 @@ import { isolatedHome } from '../fixtures/host-harness.mjs'
 const { moduleRoot } = isolatedHome('pt-native-template-')
 const { readModuleVariables, editModuleVariables } = await import('../../src/host/module-variables.ts')
 const { createModuleVariableAdapter } = await import('../../src/runtime/module-variable-adapter.ts')
+const { prepareStText } = await import('../../src/host/st-template.ts')
 const rule = (id, text, extra = {}, config = {}) => ({ id, ...extra, then: [{ id: 'text', kind: 'inject-text', config: { layer: 'system-section', text, params: { templateEvaluation: true }, ...config } }] })
 let sequence = 0
 async function fixture(t, rules, values = {}) {
@@ -55,6 +56,7 @@ test('原生模板资格与空占位：禁用和不匹配受众不赋值，后�
       + '|{{global.set::blank::GLOBAL}}{{global.set::globalBlank::}}EMPTY={{global.get::globalBlank::FALLBACK}}'
       + '|DEFAULT={{global.get::globalDefault::seed}}'),
     rule('reader', 'READ={{module.get::n}}|{{module.get::leak}}|{{placeholder}}'),
+    rule('st-edit-fragment', prepareStText('{{s}')),
     rule('ordinary', 'PLAIN={{later}}|{{placeholder}}', {}, { params: {} }),
     rule('empty-step', '{{placeholder}}', {}, { layer: 'pre-step', position: 'after-all', params: {} }),
     rule('anchored-step', '{{module.inc::anchored}}', {}, { layer: 'pre-step', position: 'after-user' }),
@@ -65,6 +67,7 @@ test('原生模板资格与空占位：禁用和不匹配受众不赋值，后�
   assert.deepEqual((await step([])).messages, [], '纯空占位不泄漏原模板正文')
   assert.equal(readModuleVariables(h.dir).module.anchored, undefined, '没有真实用户锚点时模板不写变量')
   const first = texts(await main.assemble())
+  assert.ok(first.includes('{{s}'), '启用的 ST 编辑残片经过原生模板与官方装配后仍保留原文')
   assert.ok(first.includes('READ=1||'), first.join('\n'))
   assert.ok(first.includes('PLAIN=|'), first.join('\n'))
   assert.ok(first.includes('NUM=6,5,5|LIST=["a",{"close":"}","items":[1]},"b"]|TEXT=b-done|EMPTY='), first.join('\n'))
@@ -124,7 +127,7 @@ test('原生模板重入：装配、重挂和已保存发布失败不重复提�
 })
 
 test('原生模板拒绝与冲突：双域写和预览零提交，全局回落变化后有界重算只提交新值', async t => {
-  const unchanged = { cycle: '{{module.get::cycle}}', block: 'Z'.repeat(512 * 1024 + 1) }
+  const unchanged = { cycle: '{{module.get::cycle}}', block: 'Z'.repeat(512 * 1024 + 1), fragment: '{{s}' }
   const h = await fixture(t, [
     rule('dual', '{{module.set::bad::x}}{{global.set::bad::y}}'),
     rule('dangerous-key', '{{module.set::rollback::DIRTY}}{{module.set::__proto__::x}}'),
@@ -133,6 +136,12 @@ test('原生模板拒绝与冲突：双域写和预览零提交，全局回落�
     rule('depth', '{{module.set::rollback::DIRTY}}' + '{{module.get::'.repeat(33) + 'missing' + '}}'.repeat(33)),
     rule('input-budget', '{{module.set::rollback::DIRTY}}' + 'X'.repeat(1024 * 1024)),
     rule('output-budget', '{{module.set::rollback::DIRTY}}{{block}}{{block}}'),
+    rule('unclosed-native-operation', '{{module.set::rollback::DIRTY}}{{module.set::broken::value}'),
+    rule('unclosed-nested-operation', '{{module.set::rollback::DIRTY}}{{module.set::broken::{{s}'),
+    rule('unclosed-expanded-variable', '{{module.set::rollback::DIRTY}}{{fragment}}'),
+    rule('unclosed-reserved-fragment', '{{module.set::rollback::DIRTY}}{{TIME}'),
+    rule('unclosed-dangerous-fragment', '{{global.set::rollback::DIRTY}}{{__proto__}'),
+    rule('unclosed-parameter-fragment', '{{module.set::rollback::DIRTY}}{{s::value}'),
     rule('counter', '{{module.inc::n}}'),
   ], unchanged)
   let snapshot = readModuleVariables(h.dir)
@@ -157,7 +166,7 @@ test('原生模板拒绝与冲突：双域写和预览零提交，全局回落�
   assert.deepEqual(readModuleVariables(h.dir).module, { ...unchanged, n: '21' })
   assert.equal(Object.hasOwn(readModuleVariables(h.dir).global, 'bad'), false)
   assert.equal(Object.hasOwn(readModuleVariables(h.dir).global, 'rollback'), false)
-  for (const reason of ['one variable scope', 'key blocked: __proto__', 'key blocked: TIME', 'variable cycle', 'depth exceeds 32', 'text exceeds 1 MiB', 'output exceeds 1 MiB']) {
+  for (const reason of ['one variable scope', 'key blocked: __proto__', 'key blocked: TIME', 'variable cycle', 'depth exceeds 32', 'text exceeds 1 MiB', 'output exceeds 1 MiB', 'Unclosed template expression']) {
     assert.ok(h.warnings.some(message => message.includes(reason)), reason)
   }
 })

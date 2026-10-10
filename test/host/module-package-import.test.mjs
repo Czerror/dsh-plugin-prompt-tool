@@ -208,7 +208,7 @@ test('importPresetPackage：SillyTavern JSON 单文件经转换引擎导入（�
         name: '我的角色',
         prompts: [
           { identifier: 'main', name: '主提示', content: '你是助手。', role: 'system', system_prompt: true, injection_order: 100, enabled: true },
-          { identifier: 'nsfw', name: '备用提示', content: '关闭限制。', role: 'user', enabled: false, injection_position: 1 },
+          { identifier: 'nsfw', name: '备用提示', content: '{{s}', role: 'user', enabled: false, injection_position: 1 },
         ],
         temperature: 0.8,
         openai_max_tokens: 2048,
@@ -262,6 +262,7 @@ test('importPresetPackage：SillyTavern JSON 单文件经转换引擎导入（�
     } }],
   })
   const nsfw = configs.find((config) => config.id === 'nsfw')
+  assert.equal(nsfw.text, '{{s}', '禁用 ST 编辑残片按原文保留，后续仍可启用')
   assert.equal(nsfw.enabled, false, 'ST OFF 备用提示词保留 enabled: false')
   assert.equal(nsfw.layer, 'pre-step')
   assert.equal(nsfw.role, 'user')

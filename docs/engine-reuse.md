@@ -106,6 +106,10 @@ adapter 的目录、权限、原子写与版本责任归接入方。缺少 adapt
 - llm/stream 自身无文本 subject；引擎可由 sessionId 查回 Agent，因此 phase/session/count/anchor 等依赖会话的条件可用，查不到为 UNAVAILABLE。
 - system-section/runtime-context 的规则级条件在 assembly 生效；动作分支不能假装有逐轮注册时机。complete/suppressRuntimeContext 属固定注册效果，动态 if 组合在编译期拒绝。
 
+固定系统段可通过 `config.audience: main/subagent` 限定受众；complete 和 suppressRuntimeContext 都在该 Agent 注册前筛选，非目标受众不注册这些效果。省略受众覆盖主/子两类。独占检查按受众分别聚合：主/子各一条可以同模块或跨模块共存，同受众重叠（包括未限定受众的段）在发布前拒绝；官方人设 complete 也只与该 Agent 的规则比较。
+
+插件管理路径自动传递真实 Agent。独立代码调用 `mountRuleSources`、`applyPromptConfigs`、`applyPromptConfigSources`、`wireLayers` 或 `registerAction` 时，受众限定的固定系统段要求在目标 Agent scope 调用并传入 `options.agent`；共享 standing scope 的文件式入口无法确定受众，明确拒绝该组合。普通正文与未限定受众的固定效果保持原注册方式，不能通过返回空正文解除独占或上下文抑制。
+
 工具名单的 allow/deny 互斥。request-params 的 replace:true 必须同时给 provider 与 model。拒绝非法候选发生在保存和挂载前；运行失败按该动作的明确降级报告，不能据一次静态校验声称模型已收到内容。
 
 ## 提示词配置插入点与顺序

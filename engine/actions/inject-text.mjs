@@ -16,11 +16,11 @@ export function prepareInjectText(action, plugin, promptConfigOptions) {
   actionExecutionPoint(action)
   // 纯声明复用提示词配置编译；函数仅来自已有编程接口，不写回可序列化声明。
   const config = typeof source.resolve === 'function' ? source : createPromptConfigs([source], promptConfigOptions)[0]
-  return (ctx, { warnOnce, collect }) => {
+  return (ctx, { warnOnce, collect, agent }) => {
     if (config.layer === 'pre-step') {
       collect(applyPromptConfigs(ctx, [config], action.options ?? {}))
       return
     }
-    collect(wireLayers(ctx, [config], warnOnce))
+    collect(wireLayers(ctx, [config], warnOnce, { agent }))
   }
 }

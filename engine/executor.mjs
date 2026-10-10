@@ -562,9 +562,9 @@ function effectivePromptConfigs(configs) {
 /** 多模块仍各自拥有来源/互斥组；只有非 pre-step 层汇总接线，避免模块块状执行。 */
 export function applyPromptConfigSources(ctx, sources, options = {}) {
   const selected = sources.map(source => ({ ...source, configs: effectivePromptConfigs(source.configs) }))
-  const releases = selected.map(source => applyPromptConfigs(ctx, source.configs, { ...options, ...source, layers: false }))
   const releaseLayers = options.layers === false ? () => {} : wireLayers(ctx, selected.flatMap(source => source.configs)
-    .filter(config => config.layer !== 'pre-step'), createWarnOnce(ctx, name))
+    .filter(config => config.layer !== 'pre-step'), createWarnOnce(ctx, name), { agent: options.agent })
+  const releases = selected.map(source => applyPromptConfigs(ctx, source.configs, { ...options, ...source, layers: false }))
   return () => {
     for (const release of releases) release()
     releaseLayers()
@@ -588,6 +588,10 @@ export function applyPromptConfigs(ctx, configs, options = {}) {
     : `preset:${String(list[0]?.id ?? 'unknown')}`
   // 互斥组仍在本来源内筛选；空来源也保留协调器迟到/HMR 接管。
   const effectiveList = effectivePromptConfigs(list)
+  const warnOnce = createWarnOnce(ctx, name)
+  // 先验证固定效果的注册目标，拒绝时不留下本执行器的监听或协调器来源。
+  const releaseLayers = options.layers === false ? () => {}
+    : wireLayers(ctx, effectiveList.filter((config) => config.layer !== 'pre-step'), warnOnce, { agent: options.agent })
   const injectedMemo = new Map()
   const main = createEpochPromotion(PROMOTE_EVENTS.either, { includeSubagents: false })
   const withSubagents = createEpochPromotion(PROMOTE_EVENTS.either, { includeSubagents: true })
@@ -599,7 +603,6 @@ export function applyPromptConfigs(ctx, configs, options = {}) {
     confirmDelivered(injectedMemo, session, event)
   })
 
-  const warnOnce = createWarnOnce(ctx, name)
   const prepend = options.prepend === true || list.some((config) => config.prepend === true)
   const promotion = { main, withSubagents }
   const source = {
@@ -626,11 +629,6 @@ export function applyPromptConfigs(ctx, configs, options = {}) {
     injectedMemo.clear()
   }
   keepDisposer(ctx, release)
-
-  // 非 pre-step 提示词配置接入各自声明的官方层级通道（可注入八层去掉 pre-step 的七层，
-  // 层表见 schema.mjs 的 LAYER_DEFINITIONS；pre-step 走上面的批执行器）。
-  const releaseLayers = options.layers === false ? () => {}
-    : wireLayers(ctx, effectiveList.filter((config) => config.layer !== 'pre-step'), warnOnce)
 
   // 协调器已在（正常装配顺序：插件先加载、预设后挂载）时立即登记来源；
   // 迟到/消失由下面的监听器按「先撤旧再启新」处理。

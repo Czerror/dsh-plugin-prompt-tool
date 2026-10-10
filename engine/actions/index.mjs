@@ -42,6 +42,7 @@ const PREPARERS = {
  * @param options.prepend 让本动作落在宿主 waterfall 的**最外层**（否决型动作需要）。同样只对
  *   `ON_REGISTERED_KINDS` 有效；它表达的是**位置**，不承担声明之间的排序。
  * @param options.promptConfigOptions 宿主提供的 createPromptConfigs 选项（模板基准和策略目录），不从动作数据读取。
+ * @param options.agent 当前挂载 scope 的真实 Agent；受众限定的固定系统段必须显式提供。
  * @returns 已校验的动作类别与调用方插件名。
  */
 export function validateActionOptions(action, options = {}) {
@@ -83,7 +84,7 @@ export function prepareAction(action, options = {}) {
     // 预算是「本动作生效次数」，不是 durable 事件计数）。
     if (budget !== undefined) collect(ctx.on('session/event', (session, event) => budget.observe(session, event)))
     const take = (subject) => budget?.take(subject) ?? true
-    bind?.(ctx, { warnOnce, on, collect, take })
+    bind?.(ctx, { warnOnce, on, collect, take, agent: options.agent })
     const dispose = () => {
       for (const release of disposers.splice(0)) {
         try {

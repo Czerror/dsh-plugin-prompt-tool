@@ -8,6 +8,7 @@ import {
   getService,
   isDelegated,
   keepDisposer,
+  matchesAudience,
   matchesModel,
   newMessageId,
   sessionState,
@@ -144,9 +145,7 @@ function rewriteOfficialAliases(text, alias) {
 /** agent/request 与 tools/* 层的作用域过滤。 */
 export function matchesAgentScope(config, agent) {
   if (agent === undefined) return true
-  const delegated = isDelegated(agent.session)
-  if (config.audience === 'main' && delegated) return false
-  if (config.audience === 'subagent' && !delegated) return false
+  if (!matchesAudience(config.audience, isDelegated(agent.session) ? 'subagent' : 'main')) return false
   return matchesModel(config.modelScope, agent.options?.model)
 }
 
@@ -174,6 +173,8 @@ function textLayerGroups(configs) {
     const base = previous?.[0]
     if (config.mergeMode === 'merged' && base?.mergeMode === 'merged'
       && config.sourceModuleId === base.sourceModuleId
+      && (config.params?.complete === true) === (base.params?.complete === true)
+      && (config.params?.suppressRuntimeContext === true) === (base.params?.suppressRuntimeContext === true)
       && config.position === base.position && config.order === base.order) previous.push(config)
     else groups.push([config])
   }
@@ -692,12 +693,19 @@ function wireSubagentEvents(ctx, configs, warnOnce, on) {
 
 /**
  * 把非 pre-step 提示词配置接入其声明的官方层级通道。
+ * @param options.agent 当前 ctx 所属的真实 Agent；固定效果的受众在注册前匹配。
  * @param options.turnStopBudgets 可选的续跑预算映射（键 = 模块 id，来源缺失用空串兜底）；
  *   规则运行时按模块传入同一份，使同模块的 turn-stop 与 continue 动作共享上限。
- * @returns 聚合 disposer：回收本次接线显式创建的 waterfall 监听器；段/上下文/
- *   变量注册走 keepDisposer（随 ctx fiber 释放），不在本函数的回收面内。
+ * @returns 聚合 disposer：回收监听器及段/上下文/变量注册；后者也绑定 ctx fiber，重复释放幂等。
  */
 export function wireLayers(ctx, configs, warnOnce, options = {}) {
+  // 固定效果必须在目标 Agent 注册前筛选；空正文不能撤销官方 complete/suppress 声明。
+  configs = configs.filter(config => {
+    if (config.layer !== 'system-section' || config.audience == null
+      || config.params?.complete !== true && config.params?.suppressRuntimeContext !== true) return true
+    if (options.agent?.session === undefined) throw new TypeError(`${name}: fixed system-section ${config.id} with audience requires an explicit Agent in options.agent`)
+    return matchesAudience(config.audience, isDelegated(options.agent.session) ? 'subagent' : 'main')
+  })
   configs = [...configs].sort(compareConfigSequence)
   // 没有注入通道的层（`tool-pipeline`）在这里没有分派：显式告警一次，别让 config 级入口静默丢弃。
   for (const config of configs) {

@@ -31,7 +31,9 @@ import type { PersonaModule, PersonaPreparation } from './persona-registration.t
 import { MODULE_TOOL_CAPABILITIES } from '../shared/engine-capabilities.ts'
 
 // @ts-expect-error ESM 引擎源码随插件提供。
-import { compileRules, isFixedRegistration } from '../../engine/rule-spec.mjs'
+import { compileRules, completeRuleSections } from '../../engine/rule-spec.mjs'
+// @ts-expect-error 与引擎注册侧共用主子身份判据。
+import { isDelegated } from '../../engine/shared.mjs'
 // @ts-expect-error ESM 引擎源码随插件提供。
 import { mountRuleSources } from '../../engine/rule-runtime.mjs'
 // @ts-expect-error ESM 引擎源码随插件提供（去重身份判据的唯一来源）。
@@ -158,17 +160,6 @@ export async function prepareAssembly(
     promptConfigOptions: rulePromptConfigOptions(moduleDir, ruleConfig.strategyDir),
   })
   const ruleConditions = new Map(declaredRules.map(rule => [rule.id, structuredClone(rule.if)]))
-  // 单模块规则独占先预检；实际选中人设和官方继承声明在整批撤旧前聚合验证。
-  const exclusiveConfigs = (spec.rules ?? []).filter(rule => rule.enabled !== false).flatMap(rule => rule.then.filter(action => {
-    const config = action.config as { params?: { complete?: unknown } } | undefined
-    return action.kind === 'inject-text' && config?.params?.complete === true && isFixedRegistration(config, rule.layer)
-  }))
-  if (exclusiveConfigs.length > 1) {
-    throw new Error(
-      `模块 ${moduleId} 有多个生效的「独占」段，`
-      + '同一模块只能有一个：请先关闭其一',
-    )
-  }
   const engineDir = packageEngineDir()
   const services = new Set<string>()
   const modules: PreparedAssembly['modules'] = []
@@ -242,11 +233,8 @@ function ruleKeyOf(config: Record<string, unknown>): string {
  */
 interface DuplicateIdentity { channel: 'plugin' | 'kind'; identity: string; suspectedCopy: boolean; moduleIds: string[] }
 
-function completeSectionsOf(prepared: PreparedAssembly[]): string[] {
-  return prepared.flatMap(item => (item.rules as Array<{ id: string; enabled?: boolean; actions?: Array<{ kind?: string; compiledConfig?: { layer?: string; params?: { complete?: boolean } } }> }>)
-    .filter(rule => rule.enabled !== false).flatMap(rule => (rule.actions ?? [])
-      .filter(action => action.kind === 'inject-text' && action.compiledConfig?.layer === 'system-section' && action.compiledConfig.params?.complete === true)
-      .map(() => `${item.moduleId}/${rule.id}`)))
+function completeSectionsOf(prepared: PreparedAssembly[], audience: 'main' | 'subagent'): string[] {
+  return prepared.flatMap(item => completeRuleSections(item.rules, audience).map((id: string) => `${item.moduleId}/${id}`))
 }
 
 function dedupeConfigsOf(prepared: PreparedAssembly[]): Array<{ moduleId: string; config: Record<string, unknown> }> {
@@ -358,7 +346,7 @@ export function createAgentAssembly(ctx: Context, options: AgentAssemblyOptions)
             }
           }),
         }))
-        scopeCtx.effect(() => mountRuleSources(scopeCtx, ruleSources, { onOutcome: recordRuleOutcome, variableStore }))
+        scopeCtx.effect(() => mountRuleSources(scopeCtx, ruleSources, { agent, onOutcome: recordRuleOutcome, variableStore }))
         const privateMounted = new Set<string>()
         for (const item of prepared) {
           for (const module of item.modules) {
@@ -399,10 +387,12 @@ export function createAgentAssembly(ctx: Context, options: AgentAssemblyOptions)
     if (!active) return
     const personaModules = options.personaModules?.() ?? prepared
     const persona = ctx.get('promptToolPersona')
-    const completeSections = completeSectionsOf(prepared)
-    if (completeSections.length > 1) throw new Error(`多个生效 complete 段：${completeSections.join('、')}`)
-    const personaTargets = candidates.map(({ agent }) => ({ agent, completeSections }))
-    if (persona === undefined && (personaModules.some(item => item.persona !== undefined) || completeSections.length > 0)) {
+    const sections = { main: completeSectionsOf(prepared, 'main'), subagent: completeSectionsOf(prepared, 'subagent') }
+    for (const [audience, complete] of Object.entries(sections)) {
+      if (complete.length > 1) throw new Error(`${audience} 有多个生效 complete 段：${complete.join('、')}`)
+    }
+    const personaTargets = candidates.map(({ agent }) => ({ agent, completeSections: sections[isDelegated(agent.session) ? 'subagent' : 'main'] }))
+    if (persona === undefined && (personaModules.some(item => item.persona !== undefined) || personaTargets.some(target => target.completeSections.length > 0))) {
       throw new Error('人设原声明未被观察，无法验证独占段；请加载人设早入口并重启 DSH')
     }
     // 人设和官方继承独占必须在撤旧前验证；事务捕获快照后不再读取坏候选。

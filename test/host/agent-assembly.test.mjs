@@ -875,7 +875,7 @@ test('「独占」段唯一性：聚合选中人设及跨模块规则，准备�
   const runtime = createAgentAssembly(root, { moduleRoot, enabledModules: () => enabled, personaModules: selectedModules, warn: message => warnings.push(message) })
   t.after(async () => { await runtime.dispose(); releaseSource(); for (const scope of scopes.reverse()) await scope.dispose(); await root.fiber.dispose() })
   const main = await driver.agents.create({ sessionId: 'exclusive-main' })
-  const child = await driver.agents.create({ sessionId: 'exclusive-child', meta: { origin: 'subagent' } })
+  const child = await driver.agents.create({ sessionId: 'exclusive-child', meta: { origin: 'subagent', delegationDepth: 1 } })
   const stepTexts = async agent => (await root.waterfall(scopeTarget(agent, agent), 'agent/pre-step', { agent, signal: new AbortController().signal }, async () => ({ kind: 'enter', messages: [] }))).messages.flatMap(message => message.content.map(block => block.text))
   const sectionTexts = async agent => (await root.systemPrompt.assemble({ agent, scope: agent })).sections.map(section => section.text)
   for (const agent of [main, child]) assert.deepEqual(await stepTexts(agent), ['OLD'])
@@ -908,7 +908,99 @@ test('「独占」段唯一性：聚合选中人设及跨模块规则，准备�
   selected = undefined
   await assert.rejects(runtime.refresh(), /官方人设/)
   for (const agent of [main, child]) assert.deepEqual(await sectionTexts(agent), ['one 正文'])
+
+  // 不同受众的独占可跨模块共存；同受众重叠仍在撤旧前拒绝。
+  selected = 'selected-persona'
+  enabled = ['exclusive-live', 'exclusive-other']
+  writeModuleFixture('exclusive-live', { modules: [], promptConfigs: [{ ...exclusive('main-only'), audience: 'main' }] })
+  writeModuleFixture('exclusive-other', { modules: [], promptConfigs: [{ ...exclusive('child-only'), audience: 'subagent' }] })
+  await runtime.refresh()
+  assert.deepEqual(await sectionTexts(main), ['main-only 正文'])
+  assert.deepEqual(await sectionTexts(child), ['child-only 正文'])
+  writeModuleFixture('exclusive-other', { modules: [], promptConfigs: [{ ...exclusive('overlap'), audience: 'main' }] })
+  await assert.rejects(runtime.refresh(), /main.*多个生效 complete/)
+  assert.deepEqual(await sectionTexts(main), ['main-only 正文'])
+  assert.deepEqual(await sectionTexts(child), ['child-only 正文'])
+
+  // 官方独占只与对应受众的规则比较，不阻止另一受众的固定注册。
+  enabled = ['exclusive-live']
+  writeModuleFixture('selected-persona', { modules: [], persona: { main: { complete: false } } })
+  await runtime.refresh()
+  assert.deepEqual(await sectionTexts(main), ['main-only 正文'])
+  assert.deepEqual(await sectionTexts(child), ['OFFICIAL'])
+  enabled = ['exclusive-other']
+  writeModuleFixture('exclusive-other', { modules: [], promptConfigs: [{ ...exclusive('child-only'), audience: 'subagent' }] })
+  writeModuleFixture('selected-persona', { modules: [], persona: { subagent: { complete: false } } })
+  await runtime.refresh()
+  assert.deepEqual(await sectionTexts(main), ['OFFICIAL'])
+  assert.deepEqual(await sectionTexts(child), ['child-only 正文'])
   assert.deepEqual(warnings, [])
+})
+
+test('固定系统段：独占和上下文抑制只作用目标受众，主子分别独占并可释放', async t => {
+  const root = new Context()
+  await root.plugin(SystemPrompt)
+  const standing = createScope(root, {})
+  const actors = ['main', 'subagent'].map(audience => {
+    const agent = { id: `fixed-${audience}`, options: {}, session: { id: audience, header: { origin: audience === 'subagent' ? 'subagent' : 'user', delegationDepth: audience === 'subagent' ? 1 : 0 }, snapshotEvents: () => [] } }
+    const scope = createScope(root, {}, { parent: scopeOf(standing.ctx) })
+    agent.ctx = scope.ctx
+    return { agent, scope }
+  })
+  standing.ctx.get('systemPrompt').context({ name: 'shared-context', order: 0, text: 'CONTEXT' })
+  const { compileRules } = await import('../../engine/rule-spec.mjs')
+  const { createPromptConfigs } = await import('../../engine/schema.mjs')
+  const { applyPromptConfigs, applyPromptConfigSources } = await import('../../engine/executor.mjs')
+  const config = (audience, extra = {}) => ({ id: 'fixed', layer: 'system-section', audience, text: audience.toUpperCase(), mergeMode: 'merged', params: { complete: true, suppressRuntimeContext: true }, ...extra })
+  const compile = configs => compileRules(configs.map((item, index) => ({ id: `fixed-${index}`, then: [{ id: 'inject', kind: 'inject-text', config: item }] })))
+  let releases = []
+  const release = () => { for (const off of releases.splice(0)) off() }
+  const mount = configs => {
+    release()
+    const rules = compile(configs)
+    releases = actors.map(({ agent }) => mountRuleSources(agent.ctx, [{ moduleId: 'fixed', rules }], { agent }))
+  }
+  const assembly = ({ agent }) => root.systemPrompt.assemble({ agent, scope: scopeOf(agent.ctx) })
+  const sectionTexts = value => value.sections.map(item => item.text).filter(Boolean)
+  t.after(async () => { release(); for (const { scope } of actors) await scope.dispose(); await standing.dispose(); await root.fiber.dispose() })
+  const baseline = await Promise.all(actors.map(assembly))
+  for (const audience of ['main', 'subagent']) {
+    mount([config(audience)])
+    for (const [index, actor] of actors.entries()) {
+      const result = await assembly(actor)
+      if (actor.agent.session.id === audience) {
+        assert.deepEqual(sectionTexts(result), [audience.toUpperCase()])
+        assert.deepEqual(result.contexts, [])
+      } else {
+        assert.deepEqual(result.sections, baseline[index].sections, '非目标受众保留完整官方系统段')
+        assert.deepEqual(result.contexts, baseline[index].contexts, '非目标受众保留动态上下文')
+      }
+    }
+  }
+  mount([config('main', { id: 'main-complete' }), config('subagent', { id: 'child-complete' })])
+  assert.deepEqual(sectionTexts(await assembly(actors[0])), ['MAIN'])
+  assert.deepEqual(sectionTexts(await assembly(actors[1])), ['SUBAGENT'])
+  mount([config('main', { params: { suppressRuntimeContext: true } })])
+  assert.ok(sectionTexts(await assembly(actors[0])).includes('MAIN'))
+  assert.deepEqual((await assembly(actors[1])).contexts, baseline[1].contexts)
+  release()
+  for (const [index, actor] of actors.entries()) assert.deepEqual(await assembly(actor), baseline[index], '释放后恢复完整官方装配')
+  const independent = createPromptConfigs([config('main')])
+  const mixed = createPromptConfigs([{ id: 'sentinel', layer: 'pre-step', text: 'NO LEAK', position: 'after-all' }, config('main')])
+  const step = () => root.waterfall(scopeTarget(actors[0].agent, scopeOf(actors[0].agent.ctx)), 'agent/pre-step', { agent: actors[0].agent, signal: new AbortController().signal }, async () => ({ kind: 'enter', messages: [] }))
+  assert.throws(() => applyPromptConfigs(standing.ctx, mixed), /Agent|agent|受众/, '共享作用域缺少明确Agent时不能发布受众限定固定效果')
+  assert.throws(() => applyPromptConfigSources(standing.ctx, [{ sourceId: 'shared', configs: mixed }]), /Agent|agent|受众/)
+  assert.deepEqual((await step()).messages, [], '被拒的混合来源没有遗留pre-step注入')
+  releases.push(applyPromptConfigs(actors[0].agent.ctx, mixed, { agent: actors[0].agent }))
+  assert.deepEqual((await step()).messages.map(item => item.content[0].text), ['NO LEAK'], '同一输入有明确Agent时确实执行')
+  release()
+  const merged = createPromptConfigs([{ id: 'ordinary', layer: 'system-section', text: 'ORDINARY', mergeMode: 'merged' }, config('main')])
+  releases.push(applyPromptConfigs(actors[0].agent.ctx, merged, { agent: actors[0].agent }))
+  assert.deepEqual(sectionTexts(await assembly(actors[0])), ['MAIN'], '独立引擎入口可显式提供目标Agent')
+  release()
+  releases.push(applyPromptConfigs(actors[0].agent.ctx, independent, { agent: actors[0].agent }))
+  assert.deepEqual(sectionTexts(await assembly(actors[0])), ['MAIN'], '重挂保持相同独占行为')
+  assert.deepEqual((await assembly(actors[1])).sections, baseline[1].sections)
 })
 
 test('导入候选与运行配装同源：完整定义经过 rules 切片后保持所有执行维度', async () => {

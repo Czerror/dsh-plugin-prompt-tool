@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### 固定系统段受众修复（2026-10-11）
+
+- `system-section` 的 `complete` 与 `suppressRuntimeContext` 现在在注册前匹配主/子受众，避免非目标 Agent 收到空独占段或丢失上下文。同/跨模块按受众校验独占，主/子各一条可共存，同受众冲突拒绝且保持旧配装。独立引擎的受众限定固定效果要求显式真实 `options.agent` 和对应 Agent scope；共享/未知身份路径明确拒绝。
+- 修复 ST JSON 预设因末尾未知裸引用残片（如 `{{s}`）而整包报 `Unclosed template expression`：导入与运行保留该普通文本。变量赋值、保留宏、参数和嵌套表达式的闭合与预算校验不放宽；ST 预设、角色卡、世界书导入入口保持。
+
 ### 原生上下文、两级变量与人设覆盖（2026-10-11）
 
 - **破坏性格式切换**：内部策略使用 `context-activation`、`params.activation`、`templateEvaluation` 和 `persona.main/subagent`。旧 ST 运行字段、动作 `config.variables`、旧角色/世界书/会话变量能力明确拒绝；重新导入标准来源或经授权显式转换，不自动改写用户目录。

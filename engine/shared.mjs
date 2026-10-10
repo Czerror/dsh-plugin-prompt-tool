@@ -116,6 +116,11 @@ export function isDelegated(session) {
   return (session?.header?.delegationDepth ?? 0) > 0
 }
 
+/** 已校验的静态受众；未声明或 null 同时覆盖主会话与子代理。 */
+export function matchesAudience(declared, target) {
+  return declared == null || declared === target
+}
+
 /** True when a model id looks like a Flash-family model. */
 export function isFlashModel(modelId) {
   return typeof modelId === 'string' && /flash/i.test(modelId)

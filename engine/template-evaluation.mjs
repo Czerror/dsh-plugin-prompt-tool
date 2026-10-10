@@ -38,6 +38,15 @@ function macroEnd(text, start, depth = 0) {
   return -1
 }
 
+/** ST 编辑残片不是可执行表达式；只保留顶层尾部未知裸名，不放宽操作或嵌套语法。 */
+function isLiteralFragment(text) {
+  const match = /^\{\{\s*([A-Za-z0-9_.\u4e00-\u9fff-]+)\s*\}?$/.exec(text.trimEnd())
+  if (!match) return false
+  const key = match[1]
+  return !FORBIDDEN_KEYS.has(key) && !isReservedInterpolationName(key)
+    && !/^(?:(?:module|global)(?:\.|$)|(?:set|add|get|inc|dec)(?:global)?var$|char$|charifnotgroup$|user$|trim$|ERA$)/i.test(key)
+}
+
 /** 转换端和求值端共用边界与预算；出现身份不含正文字符偏移。 */
 export function transformTemplate(text, macro) {
   let work = 0, occurrence = 0
@@ -56,7 +65,11 @@ export function transformTemplate(text, macro) {
       if (start < 0) { append(source.slice(cursor)); break }
       append(source.slice(cursor, start))
       const end = macroEnd(source, start, depth)
-      if (end < 0) throw new TypeError('Unclosed template expression')
+      if (end < 0) {
+        const rest = source.slice(start)
+        if (depth === 0 && isLiteralFragment(rest)) { append(rest); break }
+        throw new TypeError('Unclosed template expression')
+      }
       append(macro(source.slice(start + 2, end - 2), value => walk(value, depth + 1), occurrence++))
       cursor = end
     }

@@ -5,7 +5,7 @@ import { ACTION_FIELDS } from './actions/catalog.mjs'
 import { compileWhen, PREDICATE_FACTORIES, COMPOSITE_OPERATORS, FACT_PREDICATE_SUBJECTS, channelFactSubjects, channelTextSubjects } from './conditions/index.mjs'
 import { createPromptConfigs, INJECT_CONFIG_FIELDS, KNOWN_LAYERS, SESSION_VARIABLES_DISABLED, assertLlmCallPatch } from './schema.mjs'
 import { stripDeclaredRefs } from './interpolate.mjs'
-import { validateConfig } from './shared.mjs'
+import { matchesAudience, validateConfig } from './shared.mjs'
 import { WATERFALL_POSITIONS } from './trigger.mjs'
 import { ACTION_EXAMPLES } from './actions/examples.mjs'
 import { PREDICATE_EXAMPLES } from './conditions/examples.mjs'
@@ -101,15 +101,23 @@ export function validateRuleGroups(rules) {
  * 「固定注册效果」判据的**唯一实现**：只有 `system-section` 层的 `complete` /
  * `suppressRuntimeContext` 是注册期效果（无逐轮求值时机）。其他层写同名键是死配置
  * ——`params` 不做键白名单（pre-step 的 params 承载策略参数），所以在 `compileRules`
- * 的逐动作校验里点名拒绝；装配兜底（agent-assembly）与写盘门控（settings-bridge）复用
- * 本谓词，避免各自再写一份「system-section 才算独占」。
+ * 的逐动作校验里点名拒绝；规则编译与导入转换共用本谓词。
  * 独占计数只认 `complete`：`suppressRuntimeContext` 不产生「多个 complete 段」冲突。
- * `layer` 是声明缺省层——装配兜底读的是原始声明，config 可能省略 layer，回退规则与
+ * `layer` 是声明缺省层——导入转换的 config 可能省略 layer，回退规则与
  * `injectionConfigSpec` 的 `config.layer ?? rule.layer ?? 'pre-step'` 一致。
  */
 export function isFixedRegistration(config, layer) {
   return record(config) && (config.layer ?? layer) === 'system-section'
     && (config.params?.complete === true || config.params?.suppressRuntimeContext === true)
+}
+
+/** 编译与宿主聚合共用的受众独占清单，身份保留到规则和动作。 */
+export function completeRuleSections(rules, audience) {
+  return rules.filter(rule => rule.enabled !== false).flatMap(rule => rule.actions.flatMap(action => {
+    const config = action.compiledConfig ?? action.config
+    return action.kind === 'inject-text' && config?.layer === 'system-section' && config.params?.complete === true
+      && matchesAudience(config.audience, audience) ? [`${rule.id}/${action.id}`] : []
+  }))
 }
 
 export function ruleActionExecution(action) {
@@ -274,10 +282,12 @@ export function compileRules(specs, options = {}) {
     return { id: spec.id, name: spec.name, layer: spec.layer, group: spec.group, exclusive: spec.exclusive === true, enabled: spec.enabled !== false, sequence, when, actions, promptConfigOptions: options.promptConfigOptions }
   })
   validateRuleGroups(rules)
-  // 独占只可能是 system-section 的 complete：其他层的同名键在逐动作校验处已被拒绝，
-  // 所以这里不再重复层判定（`isFixedRegistration` 只服务 lifecycle 与两处运行期消费方）。
-  const complete = rules.filter(rule => rule.enabled).flatMap(rule => rule.actions).filter(action => action.config?.params?.complete === true)
-  if (complete.length > 1 || (complete.length > 0 && options.personaComplete === true)) throw new TypeError('rules: multiple complete system sections are active')
+  for (const audience of ['main', 'subagent']) {
+    const complete = completeRuleSections(rules, audience)
+    if (complete.length > 1 || (complete.length > 0 && options.personaComplete === true)) {
+      throw new TypeError(`rules: multiple complete system sections are active for ${audience}: ${complete.join(', ')}`)
+    }
+  }
   if (pendingConfigs.length) {
     const compiled = createPromptConfigs(pendingConfigs.map(item => item.source), { ...options.promptConfigOptions, ...(moduleId === undefined ? {} : { sourceModuleId: moduleId }) })
     const byId = new Map(compiled.map(config => [config.id, config]))

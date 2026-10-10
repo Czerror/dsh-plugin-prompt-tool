@@ -10,6 +10,9 @@ const { readModuleRules, editModuleRules } = await import('../../src/host/module
 const { loadModuleSpec, resolveModuleFacts } = await import('../../src/host/manifest.ts')
 const { readRulesDir } = await import('../../src/host/module-storage.ts')
 const rule = (id, extra = {}) => ({ id, layer: 'agent-request', then: [{ id: 'request', kind: 'request-params', patch: { maxTokens: 512 } }], ...extra })
+const completeRule = (id, audience, enabled = true) => ({ id, enabled, then: [{ id: 'section', kind: 'inject-text', config: {
+  layer: 'system-section', text: id, ...(audience === undefined ? {} : { audience }), params: { complete: true },
+} }] })
 function fixture(id, rules) {
   const dir = join(moduleRoot, id)
   mkdirSync(dir, { recursive: true })
@@ -46,6 +49,12 @@ test('规则局部事务：改名和删除同步序号，显式启用原子关�
   for (const comment of ['identity comment', 'name comment', 'action comment', 'value comment', 'order comment']) assert.ok(text.includes('# ' + comment), `改名保留 ${comment}`)
   assert.ok(resolveModuleFacts(loadModuleSpec(dir), dir).effectiveModules.includes('rule-engine'), '模块事实如实报告规则的隐式执行入口')
   assert.notEqual(updated.revisions.settings, initial.revisions.settings)
+  const split = fixture('complete-audiences', [])
+  const expected = [completeRule('main-only', 'main'), completeRule('child-only', 'subagent'), completeRule('disabled-main', 'main', false)]
+  editModuleRules(split, { expectedRevisions: readModuleRules(split).revisions, edits: expected.map(rule => ({ previousId: null, rule })) })
+  assert.deepEqual(readModuleRules(split).rules, expected, '主子各一条独占可同时保存，禁用条目不参与计数')
+  assert.deepEqual(parse(readFileSync(join(split, 'module.yml'), 'utf8')).rules, expected)
+  assert.deepEqual(readRulesDir(split).contents.map(rule => rule.then[0].config.audience), ['main', 'subagent', 'main'], '受众保留到可恢复投影')
 })
 
 test('规则拒绝：版本过期、重复身份、坏动作与未显式解决的互斥均不写盘', () => {
@@ -72,6 +81,15 @@ test('规则拒绝：版本过期、重复身份、坏动作与未显式解决�
   const aliasSnapshot = readModuleRules(dir)
   for (const validateOnly of [true, false]) assert.throws(() => editModuleRules(dir, { expectedRevisions: aliasSnapshot.revisions, validateOnly, edits: [{ previousId: 'a', rule: { ...aliasSnapshot.rules[0], name: 'After' } }] }), /YAML.*引用/, '共享别名不允许局部编辑改变其他定义')
   assert.equal(readFileSync(file, 'utf8'), aliased, '别名拒绝保持原文件字节')
+  const overlap = fixture('complete-overlap', [completeRule('one', 'main')])
+  const snapshot = readModuleRules(overlap), original = readFileSync(join(overlap, 'module.yml')), projection = readRulesDir(overlap)
+  for (const audience of ['main', undefined, null]) {
+    assert.throws(() => editModuleRules(overlap, { expectedRevisions: snapshot.revisions,
+      edits: [{ previousId: null, rule: completeRule('overlap', audience) }],
+    }), /multiple complete system sections/, '同主受众或通用独占与已有主独占重叠')
+    assert.deepEqual(readFileSync(join(overlap, 'module.yml')), original, '拒绝保持完整定义原字节')
+    assert.deepEqual(readRulesDir(overlap), projection, '拒绝不发布候选切片')
+  }
 })
 
 test('规则边界：仅校验与无改动幂等；旧内容按白名单加载', () => {
