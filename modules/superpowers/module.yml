@@ -63,7 +63,7 @@ rules:
             - 「修这个 bug / 测试失败 / 行为异常」→ `systematic-debugging`：先定位根因，再改。
             - 需求已定、动手之前 → `writing-plans`：拆成可逐条执行的任务。
             - 要动实现代码 → `test-driven-development`：先写失败的测试，再写让它通过的最小代码。
-            - 手上已有计划 → `subagent-driven-development`（当前会话：每任务一个子代理 + 两阶段评审）或 `executing-plans`（独立会话执行，带审查检查点）。
+            - 手上已有计划 → 默认 `subagent-driven-development`（每任务一个子代理 + 两阶段评审）；人类伙伴选内联执行、或本会话没有子代理工具时用 `executing-plans`（自己动手，与前者共用同一套计划工作区与账本）。
             - 需要与当前工作区隔离 → `using-git-worktrees`：先探测是否已在隔离工作区，再选原生工具或 git worktree。
             - 多个互不依赖的任务或失败 → `dispatching-parallel-agents`：一个域一个子代理并行。
             - 实现完成 → `verification-before-completion`（先跑验证命令、看输出，再声称成功）；要核对需求时 `requesting-code-review`。
