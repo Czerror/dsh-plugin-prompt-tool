@@ -1,7 +1,10 @@
-import { useLayoutEffect, useRef, useState, type CSSProperties, type RefObject } from 'react'
-import { measurePanelContentHeight, resolveAnchoredPopoverFit } from './anchored-popover-fit.ts'
+import { useLayoutEffect, useState, type CSSProperties, type RefObject } from 'react'
+import { resolveAnchoredPopoverFit } from './anchored-popover-fit.ts'
 
-/** body-portaled 浮层的统一定位：滚动、缩放和锚点/面板尺寸变化时重新测量。 */
+/** body-portaled 浮层的统一定位：滚动、缩放和锚点/面板尺寸变化时重新测量。
+ *  只读锚点、视口和面板宽度，不读内容高度——高度上限由可用空间给出，面板按内容生长。
+ *  这里刻意不测量内容：测量要临时改样式，同步回流会把面板内的 scrollTop 钳回 0，
+ *  而滚动本身又会触发重测，浮层里就再也滚不动。 */
 export function useAnchoredPopoverStyle(options: {
   open: boolean
   anchorRef: RefObject<HTMLElement | null>
@@ -13,12 +16,9 @@ export function useAnchoredPopoverStyle(options: {
 }): CSSProperties | null {
   const { open, anchorRef, panelRef, gap = 8, margin = 12, maxViewportRatio = 0.72, align = 'start' } = options
   const [position, setPosition] = useState<CSSProperties | null>(null)
-  /** 最近一次测量：内容异步变化时补测（见下方第二次 useLayoutEffect）。 */
-  const measureRef = useRef<() => void>(() => {})
 
   useLayoutEffect(() => {
     if (!open) {
-      measureRef.current = () => {}
       setPosition(null)
       return
     }
@@ -29,30 +29,34 @@ export function useAnchoredPopoverStyle(options: {
       // 桌面标题栏是公开窗口几何；从自己的面板读取继承值，不查询宿主 DOM。
       const titlebar = Math.max(0, Number.parseFloat(getComputedStyle(panel).getPropertyValue('--dsh-windows-titlebar-height')) || 0)
       const cap = Math.max(0, Math.min(Math.floor(window.innerHeight * maxViewportRatio), window.innerHeight - titlebar - margin * 2))
-      const desiredHeight = Math.min(measurePanelContentHeight(panel), cap)
       const next = resolveAnchoredPopoverFit({
         anchorTop: anchor.top - titlebar,
         anchorBottom: anchor.bottom - titlebar,
-        desiredHeight,
         viewportHeight: window.innerHeight - titlebar,
         gap,
         margin,
       })
       const maxHeight = Math.min(next.maxHeight, cap)
-      const height = Math.min(desiredHeight, maxHeight)
       const width = panel.offsetWidth
       const left = Math.max(margin, Math.min(align === 'end' ? anchor.right - width : anchor.left, window.innerWidth - width - margin))
-      const top = Math.max(margin + titlebar, Math.min(next.side === 'top' ? anchor.top - gap - height : anchor.bottom + gap, window.innerHeight - height - margin))
-      setPosition((current) => current?.left === left && current.top === top && current.maxHeight === maxHeight ? current : { left, top, maxHeight })
+      // 朝下沿用顶边贴锚点：maxHeight 不超过下方可用空间，面板底边不会越出视口。
+      // 朝上改用 bottom 定位让底边贴锚点，面板按内容向上生长——不测高度也能贴紧。
+      const edge: CSSProperties = next.side === 'top'
+        ? { bottom: Math.max(margin + titlebar, window.innerHeight - (anchor.top - gap)) }
+        : { top: Math.max(margin + titlebar, anchor.bottom + gap) }
+      setPosition((current) => current?.left === left && current.top === edge.top
+        && current.bottom === edge.bottom && current.maxHeight === maxHeight
+        ? current
+        : { left, maxHeight, ...edge })
     }
-    measureRef.current = measure
     measure()
     window.addEventListener('scroll', measure, true)
     window.addEventListener('resize', measure)
+    // 面板宽度参与左右夹取，锚点与面板的尺寸变化都要重算。
     const observer = typeof ResizeObserver === 'undefined' ? undefined : new ResizeObserver(measure)
     if (anchorRef.current !== null) observer?.observe(anchorRef.current)
     if (panelRef.current !== null) observer?.observe(panelRef.current)
-    // 抽屉移动可能没有 scroll/resize；仅锚点位置改变时重算，不在每帧重测内容。
+    // 抽屉移动可能没有 scroll/resize；仅锚点位置改变时重算，不在每帧测量。
     let previous = anchorRef.current?.getBoundingClientRect()
     let frame = 0
     const track = (): void => {
@@ -71,12 +75,6 @@ export function useAnchoredPopoverStyle(options: {
       window.removeEventListener('resize', measure)
     }
   }, [open, anchorRef, panelRef, gap, margin, maxViewportRatio, align])
-
-  // 面板被 max-height 锁住后，异步内容变高不会改变元素尺寸，ResizeObserver 不再触发
-  // （模板列表首次打开为空、随后加载即此场景）；每次渲染补测一次，让 scrollHeight 重新参与计算。
-  useLayoutEffect(() => {
-    measureRef.current()
-  })
 
   return position
 }
