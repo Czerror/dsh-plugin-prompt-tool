@@ -141,21 +141,6 @@ test('settings bridge /meta 返回引擎能力矩阵', async () => {
   assert.ok(payload.value.meta.strategies.includes('anchor-notice'))
 })
 
-test('settings bridge 拒绝非 loopback 请求', async () => {
-  const { ctx, handlers } = makeHarness()
-  registerSettingsBridge(ctx, {
-    ns: 'prompt-tool',
-    models: () => ({ available: true, providers: [] }),
-    skills: () => skillsStateStub(),
-    schemaDir: () => '',
-  })
-  const handler = handlers.get(`${PREFIX}/meta`)
-  const res = fakeRes()
-  await handler(fakeReq({ socket: { remoteAddress: '203.0.113.1' } }), res)
-  assert.equal(res.status, 403)
-  assert.equal(JSON.parse(res.body).ok, false)
-})
-
 test('settings bridge /skills-import 写入技能文件并触发目录刷新回调', async () => {
   const dir = mkdtempSync(join(tmpdir(), `pt-skills-import-${process.pid}-`))
   let refreshes = 0

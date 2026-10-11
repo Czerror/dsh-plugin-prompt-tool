@@ -225,6 +225,45 @@ test('契约：所有端点路径全部注册且无多余', () => {
   assert.deepEqual(registered, wanted)
 })
 
+// ── 全路径拒绝扫描：边界只有事务一处实现，因此必须在**每条**路径上可观测 ──────────────
+// 例外清单为空：声明 body:'none' 的原始流端点同样先过边界，请求流只在进入 handler 后才消费。
+
+/** 逐条路径打同一个请求；返回 [路径, 状态, 载荷]，扫描条数参与断言。 */
+async function scanEveryBridgePath(makeRequest) {
+  const handlers = register()
+  const paths = Object.values(BRIDGE_ENDPOINTS)
+  const seen = []
+  for (const path of paths) {
+    const full = SETTINGS_BRIDGE_PREFIX + path
+    const handler = handlers.get(full)
+    assert.ok(handler, `${full} 未注册`)
+    const res = fakeRes()
+    await handler(makeRequest(), res)
+    seen.push([full, res.status, JSON.parse(res.body)])
+  }
+  assert.equal(seen.length, Object.keys(BRIDGE_ENDPOINTS).length,
+    `扫描 ${seen.length} 条路径，路径表 ${Object.keys(BRIDGE_ENDPOINTS).length} 条`)
+  return seen
+}
+
+test('契约：全部桥路径拒绝非 loopback，无一条绕过事务', async () => {
+  const scanned = await scanEveryBridgePath(() => fakeReq({ body: {}, remoteAddress: '203.0.113.1' }))
+  for (const [path, status, payload] of scanned) {
+    assert.equal(status, 403, `${path} 必须拒绝非 loopback`)
+    assert.equal(payload.ok, false, `${path} 拒绝载荷必须 ok:false`)
+    assert.equal(payload.code, 'settings-not-exposed', `${path} 拒绝码必须与设置桥同源`)
+  }
+})
+
+test('契约：全部桥路径只收 POST 且拒绝跨站 Origin', async () => {
+  for (const [path, status] of await scanEveryBridgePath(() => fakeReq({ body: {}, method: 'GET' }))) {
+    assert.equal(status, 405, `${path} 必须只收 POST`)
+  }
+  for (const [path, status] of await scanEveryBridgePath(() => fakeReq({ body: {}, headers: { origin: 'https://example.com' } }))) {
+    assert.equal(status, 403, `${path} 必须拒绝跨站 Origin`)
+  }
+})
+
 test('部署总闸经桥读写 modulesEnabled', async () => {
   const handlers = new Map()
   let value = { modulesEnabled: false }

@@ -3,7 +3,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-agent-preset-registry'
 import { scopeOf } from '@deepseek-ai/dsh-scope'
 import type { SkillRegistry, SkillViewOptions } from '@deepseek-ai/dsh-skill'
-import type { IncomingMessage, ServerResponse } from 'node:http'
+import type { IncomingMessage } from 'node:http'
 import { createHash } from 'node:crypto'
 import { basename, dirname, join, resolve, sep } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -62,13 +62,10 @@ import { lastContextActivationDiagnostics } from '../../engine/context-activatio
 import { ruleDiagnosticsDropped, ruleDiagnosticsSnapshot } from './rule-diagnostics.ts'
 import {
   bridgeTransaction,
-  isLoopbackRequest,
-  readBridgeBodyForHandler,
-  writeBridgeBodyTooLarge,
-  writeBridgeJson,
   type BridgeRouteSpec,
+  type BridgeTransaction,
 } from './bridge-transaction.ts'
-import { BRIDGE_ENDPOINTS, EDIT_TARGET_HEADER, MAX_BRIDGE_BODY_BYTES, MODULE_ACTIVATION_FAILED, SETTINGS_BRIDGE_PREFIX, readEditTarget } from '../shared/bridge-contract.ts'
+import { BRIDGE_ENDPOINTS, EDIT_TARGET_HEADER, MODULE_ACTIVATION_FAILED, SETTINGS_BRIDGE_PREFIX, readEditTarget } from '../shared/bridge-contract.ts'
 import { moduleParamFallbacks, validateEngineParamValues } from '../shared/engine-params.ts'
 import { readPersonaSpec, type PersonaSources } from '../shared/persona-section.ts'
 import { SKILL_NAME_PATTERN, type SkillsStateRead } from '../host/skills-config.ts'
@@ -108,14 +105,17 @@ export interface SkillsBridgeState {
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   value !== null && typeof value === 'object' && !Array.isArray(value)
 
+/** 写一次响应；事务的 `tx.write` 与桥内本地守卫共用这一个形态。 */
+type BridgeWrite = (status: number, body: unknown) => void
+
 /** 当前层参数格式错误统一反馈，不能在读回时伪装成空配置。 */
-function writeLayerSettingsError(res: ServerResponse, error: unknown): boolean {
+function writeLayerSettingsError(write: BridgeWrite, error: unknown): boolean {
   if (error instanceof ModuleRulesError) {
-    writeBridgeJson(res, error.status, { ok: false, code: error.code, message: error.message })
+    write(error.status, { ok: false, code: error.code, message: error.message })
     return true
   }
   if (!(error instanceof ModuleLayerSettingsError)) return false
-  writeBridgeJson(res, 400, { ok: false, code: error.code, message: error.message })
+  write(400, { ok: false, code: error.code, message: error.message })
   return true
 }
 
@@ -372,9 +372,9 @@ function isEditableModuleDir(dir: string, moduleRoot = userModulesDir()): boolea
   return target !== root && target.startsWith(root + sep)
 }
 
-function guardEditableModuleDir(dir: string, res: ServerResponse): boolean {
+function guardEditableModuleDir(dir: string, write: BridgeWrite): boolean {
   if (isEditableModuleDir(dir)) return true
-  writeBridgeJson(res, 403, { ok: false, code: 'module-readonly', message: 'system preset 只读，请先复制为用户模块' })
+  write(403, { ok: false, code: 'module-readonly', message: 'system preset 只读，请先复制为用户模块' })
   return false
 }
 
@@ -460,22 +460,27 @@ export function registerSettingsBridge(
   let capabilityQueue: Promise<void> = Promise.resolve()
   let moduleOrderQueue: Promise<void> = Promise.resolve()
   /** 写盘已完成：等待重建，失败立即返回统一错误，不覆盖持久化结果。 */
-  const finishModuleChange = async (res: ServerResponse, activate: () => void | Promise<void>): Promise<boolean> => {
+  const finishModuleChange = async (write: BridgeWrite, activate: () => void | Promise<void>): Promise<boolean> => {
     try {
       await activate()
       return true
     } catch (error) {
-      writeBridgeJson(res, 500, { ok: false, code: MODULE_ACTIVATION_FAILED, message: `更改已保存，但模块未生效；请重试：${String(error)}` })
+      write(500, { ok: false, code: MODULE_ACTIVATION_FAILED, message: `更改已保存，但模块未生效；请重试：${String(error)}` })
       return false
     }
   }
-  const runOverridesChange = (res: ServerResponse, moduleId?: string): Promise<boolean> => finishModuleChange(res, () => deps.overridesChanged?.(moduleId))
+  const runOverridesChange = (write: BridgeWrite, moduleId?: string): Promise<boolean> => finishModuleChange(write, () => deps.overridesChanged?.(moduleId))
   /**
    * 本次请求的编辑目标目录：读 `x-module-id` 头（形状不合法当未声明），交给注入的实现定位。
    * 所有「读/写哪个模块的配置」都走这里，端点不再各自记一个全局目标。
    */
   const editDir = (req: IncomingMessage): string => deps.moduleDirectory?.(readEditTarget(req.headers[EDIT_TARGET_HEADER])) ?? ''
-  const refreshModuleList = (res: ServerResponse, id: string): Promise<boolean> => finishModuleChange(res, () => deps.moduleListChanged?.(id))
+  const refreshModuleList = (write: BridgeWrite, id: string): Promise<boolean> => finishModuleChange(write, () => deps.moduleListChanged?.(id))
+  /**
+   * 本文件所有端点的唯一注册形态：边界（loopback/Origin、POST、32 MiB、JSON 形状）由事务统一完成，
+   * `spec.handle` 只写业务判断。路径仍由各端点从 `BRIDGE_ENDPOINTS` 取。
+   */
+  const route = (spec: BridgeRouteSpec): ReturnType<typeof bridgeTransaction> => bridgeTransaction(spec, { editDir })
   // 动态等待 webServer：webServer 由 @deepseek-ai/dsh-web-app 提供。
   // profile 首次缺少该 bundle 时，本子插件先 pending 但不阻塞启动审计；
   // ensureWebSurface 仅报告缺失能力，profile 装配交给官方插件管理流程。
@@ -510,43 +515,32 @@ export function registerSettingsBridge(
         cachedDescriptor = undefined
       }
       invalidateCachedDescriptor = invalidateDescriptor
-      const guard = (req: IncomingMessage, res: ServerResponse): boolean => {
-        if (!isLoopbackRequest(req)) {
-          writeBridgeJson(res, 403, { ok: false, code: 'settings-not-exposed', message: 'loopback requests only' })
-          return false
-        }
-        if (req.method !== 'POST') {
-          writeBridgeJson(res, 405, { ok: false, code: 'settings-not-exposed', message: 'method not allowed: ' + (req.method ?? '') })
-          return false
-        }
-        return true
-      }
-      const guardModuleFormat = (dir: string, res: ServerResponse): boolean => {
+      const guardModuleFormat = (dir: string, write: BridgeWrite): boolean => {
         if (dir.length === 0) return true
         try { readModuleLayerSettings(loadModuleDefinition(dir).source) } catch (error) {
-          if (writeLayerSettingsError(res, error)) return false
+          if (writeLayerSettingsError(write, error)) return false
         }
         return true
       }
-      const guardModuleWrite = (dir: string, res: ServerResponse): boolean =>
-        guardEditableModuleDir(dir, res) && guardModuleFormat(dir, res)
-      const writeModuleOrderError = (res: ServerResponse, error: unknown): void => {
+      const guardModuleWrite = (dir: string, write: BridgeWrite): boolean =>
+        guardEditableModuleDir(dir, write) && guardModuleFormat(dir, write)
+      const writeModuleOrderError = (write: BridgeWrite, error: unknown): void => {
         const status = error instanceof ModuleConfigOrderError ? error.status : 500
         const code = error instanceof ModuleConfigOrderError ? error.code : 'module-config-order-failed'
-        writeBridgeJson(res, status, { ok: false, code, message: String((error as Error)?.message ?? error) })
+        write(status, { ok: false, code, message: String((error as Error)?.message ?? error) })
       }
       /** 模块身份只作一致性检查，绝不用客户端 ID 构造写入路径。 */
-      const guardModuleIdentity = (req: IncomingMessage, record: Record<string, unknown>, dir: string, res: ServerResponse): boolean => {
+      const guardModuleIdentity = (tx: BridgeTransaction, record: Record<string, unknown>, dir: string): boolean => {
         const expected = record.expectedModuleId
         if (expected !== undefined && (typeof expected !== 'string' || expected.length === 0 || expected.length > 256)) {
-          writeBridgeJson(res, 400, { ok: false, code: 'module-identity-invalid', message: 'expectedModuleId 必须是非空模块 ID' })
+          tx.write(400, { ok: false, code: 'module-identity-invalid', message: 'expectedModuleId 必须是非空模块 ID' })
           return false
         }
-        if (editDir(req) !== dir || (expected !== undefined && expected !== basename(dir))) {
-          writeBridgeJson(res, 409, { ok: false, code: 'module-changed', message: '当前模块已切换；旧草稿未写入，请重新读取后保存' })
+        if (tx.editDir() !== dir || (expected !== undefined && expected !== basename(dir))) {
+          tx.write(409, { ok: false, code: 'module-changed', message: '当前模块已切换；旧草稿未写入，请重新读取后保存' })
           return false
         }
-        return guardModuleFormat(dir, res)
+        return guardModuleFormat(dir, tx.write)
       }
       /** 官方刻度取值失败只告警一次：本函数被 /meta 与 /bootstrap 共用，不能每次调用都刷屏。 */
       let warnedOfficialOrders = false
@@ -726,19 +720,16 @@ export function registerSettingsBridge(
         sctx.webServer.register({
           kind: 'exact',
           path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.bootstrap,
-          handler: async (req, res) => {
-            if (!guard(req, res)) return
-            const dir = editDir(req)
+          handler: route({ body: 'required', handle: async (tx) => {
+            const dir = tx.editDir()
             const descriptor = findDescriptor()
             if (descriptor === undefined) {
-              writeBridgeJson(res, 404, { ok: false, code: 'settings-not-exposed', message: 'prompt-tool settings namespace is not registered' })
+              tx.write(404, { ok: false, code: 'settings-not-exposed', message: 'prompt-tool settings namespace is not registered' })
               return
             }
-            const parsedBody = await readBridgeBodyForHandler(req, res)
-            if (parsedBody === undefined) return
-            const session = readSessionIdField(parsedBody.body)
+            const session = readSessionIdField(tx.record)
             if (!session.ok) {
-              writeBridgeJson(res, 400, { ok: false, code: 'settings-rejected', message: session.message })
+              tx.write(400, { ok: false, code: 'settings-rejected', message: session.message })
               return
             }
             // 工作台首屏/保存后刷新的聚合读取：meta + describe 事实 + 参数覆盖 +
@@ -750,7 +741,7 @@ export function registerSettingsBridge(
               const extras = await collectDescribeExtras(dir, session.sessionId)
               const scope = resolveInstructionScope(sctx, session.sessionId)
               const variables = dir.length > 0 ? variableView(dir) : undefined
-              writeBridgeJson(res, 200, {
+              tx.write(200, {
                 ok: true,
                 value: descriptorForTarget(descriptor, dir),
                 meta: { meta },
@@ -761,95 +752,74 @@ export function registerSettingsBridge(
                 ...extras,
               })
             } catch (error) {
-              if (writeLayerSettingsError(res, error)) return
+              if (writeLayerSettingsError(tx.write, error)) return
               const message = error instanceof Error ? error.message : String(error)
-              writeBridgeJson(res, 500, { ok: false, code: 'bootstrap-failed', message })
+              tx.write(500, { ok: false, code: 'bootstrap-failed', message })
             }
-          },
+          } }),
         }),
         sctx.webServer.register({
           kind: 'exact',
           path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.meta,
-          handler: async (req, res) => {
-            if (!guard(req, res)) return
+          handler: route({ body: 'none', handle: async (tx) => {
             try {
               const meta = await loadEngineMeta()
-              writeBridgeJson(res, 200, { ok: true, value: { meta } })
+              tx.write(200, { ok: true, value: { meta } })
             } catch (error) {
-              writeBridgeJson(res, 503, { ok: false, code: 'meta-unavailable', message: String(error) })
+              tx.write(503, { ok: false, code: 'meta-unavailable', message: String(error) })
             }
-          },
+          } }),
         }),
         sctx.webServer.register({
           kind: 'exact',
           path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.describe,
-          handler: async (req, res) => {
-            if (!guard(req, res)) return
-            const dir = editDir(req)
+          handler: route({ body: 'none', handle: async (tx) => {
+            const dir = tx.editDir()
             const descriptor = findDescriptor()
             if (descriptor === undefined) {
-              writeBridgeJson(res, 404, { ok: false, code: 'settings-not-exposed', message: 'prompt-tool settings namespace is not registered' })
+              tx.write(404, { ok: false, code: 'settings-not-exposed', message: 'prompt-tool settings namespace is not registered' })
               return
             }
             try {
-              writeBridgeJson(res, 200, { ok: true, value: descriptorForTarget(descriptor, dir), ...await collectDescribeExtras(dir) })
+              tx.write(200, { ok: true, value: descriptorForTarget(descriptor, dir), ...await collectDescribeExtras(dir) })
             } catch (error) {
-              if (!writeLayerSettingsError(res, error)) throw error
+              if (!writeLayerSettingsError(tx.write, error)) throw error
             }
-          },
+          } }),
         }),
         sctx.webServer.register({
           kind: 'exact',
           path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.models,
-          handler: async (req, res) => {
-            if (!guard(req, res)) return
-            const parsedBody = await readBridgeBodyForHandler(req, res)
-            if (parsedBody === undefined) return
-            const record = parsedBody.body as { refresh?: unknown } | undefined
+          handler: route({ body: 'required', handle: async (tx) => {
+            const record = tx.record as { refresh?: unknown }
             // 显式刷新（客户端重连、用户重试）越过 10 分钟 TTL：先失效再全量查询。
             // 目录查询失败不影响下一次调用，也不返回空目录冒充成功。
-            if (record?.refresh === true) invalidateModelCatalog(sctx)
+            if (record.refresh === true) invalidateModelCatalog(sctx)
             const modelCatalog = await listAdvertisedModels(sctx)
-            writeBridgeJson(res, 200, { ok: true, value: { modelCatalog } })
-          },
+            tx.write(200, { ok: true, value: { modelCatalog } })
+          } }),
         }),
         sctx.webServer.register({
           kind: 'exact',
           path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.modelReasoning,
-          handler: async (req, res) => {
-            if (!guard(req, res)) return
-            const parsedBody = await readBridgeBodyForHandler(req, res)
-            if (parsedBody === undefined) return
-            const record = parsedBody.body
-            if (record === null || record === undefined || typeof record !== 'object') {
-              writeBridgeJson(res, 400, { ok: false, code: 'reasoning-invalid-shape', message: 'model reasoning requires a JSON body' })
-              return
-            }
-            const { provider, model } = record as { provider?: unknown; model?: unknown }
+          handler: route({ body: 'required', handle: async (tx) => {
+            const { provider, model } = tx.record as { provider?: unknown; model?: unknown }
             if (typeof provider !== 'string' || provider.length === 0 || typeof model !== 'string' || model.length === 0) {
-              writeBridgeJson(res, 400, { ok: false, code: 'reasoning-invalid-shape', message: 'provider and model must be non-empty strings' })
+              tx.write(400, { ok: false, code: 'reasoning-invalid-shape', message: 'provider and model must be non-empty strings' })
               return
             }
             // 查询失败/超时返回 known:false：客户端据此保持「未查到」，不虚构档位。
             const reasoning = await refreshModelReasoning(sctx, provider, model) ?? { known: false, efforts: [] }
-            writeBridgeJson(res, 200, { ok: true, value: { reasoning } })
-          },
+            tx.write(200, { ok: true, value: { reasoning } })
+          } }),
         }),
         sctx.webServer.register({
           kind: 'exact',
           path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.mutate,
-          handler: async (req, res) => {
-            if (!guard(req, res)) return
-            const parsedBody = await readBridgeBodyForHandler(req, res)
-            if (parsedBody === undefined) return
-            const { body } = parsedBody
-            if (body === null || body === undefined || typeof body !== 'object') {
-              writeBridgeJson(res, 400, { ok: false, code: 'settings-rejected', message: 'unreadable JSON body' })
-              return
-            }
-            const record = body as Record<string, unknown>
+          handler: route({ body: 'required', handle: async (tx) => {
+            const record = tx.record
             if (!Array.isArray(record.ops)) {
-              writeBridgeJson(res, 400, { ok: false, code: 'settings-rejected', message: 'malformed bridge settings request' })
+              tx.write(400, { ok: false, code: 'settings-rejected', message: 'malformed bridge settings request' })
               return
             }
             // 引擎参数按模块存储（激活模块 module.yml）：settings mutate 只接受全局键。
@@ -858,7 +828,7 @@ export function registerSettingsBridge(
               return Array.isArray(path) && path.length > 0 && typeof path[0] === 'string' && PARAM_KEYS.has(path[0])
             })
             if (paramOp !== undefined) {
-              writeBridgeJson(res, 400, { ok: false, code: 'settings-rejected', message: '引擎参数按模块存储：请用设置页保存（/param-overrides），settings 只接受全局开关' })
+              tx.write(400, { ok: false, code: 'settings-rejected', message: '引擎参数按模块存储：请用设置页保存（/param-overrides），settings 只接受全局开关' })
               return
             }
             const expectedRevision = typeof record.expectedRevision === 'number' ? record.expectedRevision : undefined
@@ -870,34 +840,31 @@ export function registerSettingsBridge(
               await sctx.settings.mutate(ns, ops, expectedRevision)
             } catch (error) {
               const message = error instanceof Error ? error.message : String(error)
-              writeBridgeJson(res, 409, { ok: false, code: 'settings-rejected', message })
+              tx.write(409, { ok: false, code: 'settings-rejected', message })
               return
             }
             // mutate 后必须重查宿主拿新 view（缓存已失效，跳过旧值）。
             invalidateDescriptor()
             const descriptor = findDescriptor()
             if (descriptor === undefined) {
-              writeBridgeJson(res, 500, { ok: false, code: 'settings-rejected', message: 'prompt-tool settings namespace was disposed after mutate' })
+              tx.write(500, { ok: false, code: 'settings-rejected', message: 'prompt-tool settings namespace was disposed after mutate' })
               return
             }
-            writeBridgeJson(res, 200, { ok: true, value: descriptorForTarget(descriptor, editDir(req)) })
-          },
+            tx.write(200, { ok: true, value: descriptorForTarget(descriptor, tx.editDir()) })
+          } }),
         }),
         sctx.webServer.register({
           kind: 'exact',
           path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.skillsList,
-          handler: async (req, res) => {
-            if (!guard(req, res)) return
-            const parsedBody = await readBridgeBodyForHandler(req, res)
-            if (parsedBody === undefined) return
-            const session = readSessionIdField(parsedBody.body)
+          handler: route({ body: 'required', handle: async (tx) => {
+            const session = readSessionIdField(tx.record)
             if (!session.ok) {
-              writeBridgeJson(res, 400, { ok: false, code: 'skills-list-rejected', message: session.message })
+              tx.write(400, { ok: false, code: 'skills-list-rejected', message: session.message })
               return
             }
             // 项目技能按会话工作目录解析；没有存活会话时只列用户根与内置来源。
             const state = deps.skills()
-            writeBridgeJson(res, 200, {
+            tx.write(200, {
               ok: true,
               value: {
                 ...await collectSkills(session.sessionId),
@@ -905,47 +872,35 @@ export function registerSettingsBridge(
                 roots: [state.skillsRoot],
               },
             })
-          },
+          } }),
         }),
         sctx.webServer.register({
           kind: 'exact',
           path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.skillsImport,
-          handler: async (req, res) => {
-            if (!guard(req, res)) return
-            const parsedBody = await readBridgeBodyForHandler(req, res)
-            if (parsedBody === undefined) return
-            const { body } = parsedBody
-            if (body === null || body === undefined || typeof body !== 'object') {
-              writeBridgeJson(res, 400, { ok: false, code: 'settings-rejected', message: 'unreadable JSON body' })
-              return
-            }
-            const record = body as Record<string, unknown>
+          handler: route({ body: 'required', handle: async (tx) => {
+            const record = tx.record
             const files = Array.isArray(record.files) ? record.files : []
             const overwrite = readSkillOverwrite(record.overwrite)
             if (overwrite === undefined) {
-              writeBridgeJson(res, 400, { ok: false, code: 'skills-import-rejected', message: 'overwrite 必须是已确认的技能目录名数组' })
+              tx.write(400, { ok: false, code: 'skills-import-rejected', message: 'overwrite 必须是已确认的技能目录名数组' })
               return
             }
             const root = deps.skills().skillsRoot
             const result = importSkillsPackage(root, files, overwrite)
             if (!result.ok) {
-              writeBridgeJson(res, result.code === 'skills-overwrite-required' ? 409 : 400,
+              tx.write(result.code === 'skills-overwrite-required' ? 409 : 400,
                 { ...result, code: result.code ?? 'skills-import-rejected' })
               return
             }
             deps.afterSkillsChange?.()
-            writeBridgeJson(res, 200, { ok: true, value: result })
-          },
+            tx.write(200, { ok: true, value: result })
+          } }),
         }),
         sctx.webServer.register({
           kind: 'exact',
           path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.skillPolicy,
-          handler: async (req, res) => {
-            if (!guard(req, res)) return
-            const parsedBody = await readBridgeBodyForHandler(req, res)
-            if (parsedBody === undefined) return
-            const body = parsedBody.body
-            const record = body !== null && typeof body === 'object' && !Array.isArray(body) ? body as Record<string, unknown> : {}
+          handler: route({ body: 'required', handle: async (tx) => {
+            const record = tx.record
             const change: SkillPolicyChange | undefined = record.scope === undefined
               ? ((record.side === 'model' || record.side === 'user') && typeof record.enabled === 'boolean'
                 ? { side: record.side, enabled: record.enabled } : undefined)
@@ -954,12 +909,12 @@ export function registerSettingsBridge(
                 ? { scope: record.scope as SkillPolicyScope } : undefined)
             if (typeof record.name !== 'string' || record.name.length === 0
               || typeof record.path !== 'string' || record.path.length === 0 || change === undefined) {
-              writeBridgeJson(res, 400, { ok: false, code: 'skill-policy-rejected', message: 'name、path 与单端 side/enabled 或显式 scope 必填' })
+              tx.write(400, { ok: false, code: 'skill-policy-rejected', message: 'name、path 与单端 side/enabled 或显式 scope 必填' })
               return
             }
-            const session = readSessionIdField(body)
+            const session = readSessionIdField(tx.record)
             if (!session.ok) {
-              writeBridgeJson(res, 400, { ok: false, code: 'skill-policy-rejected', message: session.message })
+              tx.write(400, { ok: false, code: 'skill-policy-rejected', message: session.message })
               return
             }
             // 身份校验在与清单相同的工作区视图里做：客户端提交的 path 只有命中服务端当次扫描的
@@ -968,22 +923,18 @@ export function registerSettingsBridge(
             const written = deps.skills().setSkillPolicy(record.name, record.path, change, cwd)
             if (written.ok === false) {
               // 界面陈旧、技能无效、只读或链接目标等都在这里如实回报，不静默。
-              writeBridgeJson(res, 409, { ok: false, code: 'skill-policy-rejected', message: written.message })
+              tx.write(409, { ok: false, code: 'skill-policy-rejected', message: written.message })
               return
             }
             deps.afterSkillsChange?.()
-            writeBridgeJson(res, 200, { ok: true, value: await collectSkills(session.sessionId) })
-          },
+            tx.write(200, { ok: true, value: await collectSkills(session.sessionId) })
+          } }),
         }),
         ...(['skillRead', 'skillWrite'] as const).map((endpoint) => sctx.webServer.register({
           kind: 'exact',
           path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS[endpoint],
-          handler: async (req, res) => {
-            if (!guard(req, res)) return
-            const parsedBody = await readBridgeBodyForHandler(req, res)
-            if (parsedBody === undefined) return
-            const body = parsedBody.body
-            const record = isRecord(body) ? body : {}
+          handler: route({ body: 'required', handle: async (tx) => {
+            const record = tx.record
             const code = endpoint === 'skillWrite' ? 'skill-write-rejected' : 'skill-read-rejected'
             if (typeof record.name !== 'string' || record.name.length === 0 || record.name.length > 256
               || typeof record.path !== 'string' || record.path.length === 0 || record.path.length > 32768
@@ -991,12 +942,12 @@ export function registerSettingsBridge(
                 || Buffer.byteLength(record.content, 'utf8') > MAX_SKILL_CONTENT_BYTES
                 || typeof record.description !== 'string' || record.description.trim().length === 0 || record.description.length > 8192
                 || typeof record.expectedRevision !== 'string' || !/^[a-f0-9]{64}$/.test(record.expectedRevision)))) {
-              writeBridgeJson(res, 400, { ok: false, code, message: 'name、path 必填；保存需要 1 MiB 以内的 content、非空 description（最多 8192 字符）和有效 expectedRevision' })
+              tx.write(400, { ok: false, code, message: 'name、path 必填；保存需要 1 MiB 以内的 content、非空 description（最多 8192 字符）和有效 expectedRevision' })
               return
             }
-            const session = readSessionIdField(body)
+            const session = readSessionIdField(tx.record)
             if (!session.ok) {
-              writeBridgeJson(res, 400, { ok: false, code, message: session.message })
+              tx.write(400, { ok: false, code, message: session.message })
               return
             }
             const cwd = session.sessionId === undefined ? undefined : localAgentCwd(sctx, session.sessionId)
@@ -1005,173 +956,145 @@ export function registerSettingsBridge(
               ? state.writeSkillContent(record.name, record.path, record.content as string, record.description as string, record.expectedRevision as string, cwd)
               : state.readSkillContent(record.name, record.path, cwd)
             if (!result.ok) {
-              writeBridgeJson(res, 409, { ok: false, code, message: result.message })
+              tx.write(409, { ok: false, code, message: result.message })
               return
             }
             if (endpoint === 'skillWrite' && result.changed) deps.afterSkillsChange?.()
-            writeBridgeJson(res, 200, { ok: true, value: { content: result.content, description: result.description, revision: result.revision } })
-          },
+            tx.write(200, { ok: true, value: { content: result.content, description: result.description, revision: result.revision } })
+          } }),
         })),
         sctx.webServer.register({
           kind: 'exact',
           path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.skillsFolders,
-          handler: async (req, res) => {
-            if (!guard(req, res)) return
-            const parsedBody = await readBridgeBodyForHandler(req, res)
-            if (parsedBody === undefined) return
-            const body = parsedBody.body
-            const record = body !== null && typeof body === 'object' && !Array.isArray(body) ? body as Record<string, unknown> : {}
+          handler: route({ body: 'required', handle: async (tx) => {
+            const record = tx.record
             if (!Array.isArray(record.folders) || record.folders.some((item) => typeof item !== 'string')) {
-              writeBridgeJson(res, 400, { ok: false, code: 'skills-folders-rejected', message: 'folders 必须是字符串数组' })
+              tx.write(400, { ok: false, code: 'skills-folders-rejected', message: 'folders 必须是字符串数组' })
               return
             }
-            const session = readSessionIdField(body)
+            const session = readSessionIdField(tx.record)
             if (!session.ok) {
-              writeBridgeJson(res, 400, { ok: false, code: 'skills-folders-rejected', message: session.message })
+              tx.write(400, { ok: false, code: 'skills-folders-rejected', message: session.message })
               return
             }
             // 只记引用，不复制也不移动任何文件。
             const written = await deps.skills().patchSkillFolders(record.folders as string[])
             if (written.ok === false) {
-              writeBridgeJson(res, 409, { ok: false, code: 'skills-folders-rejected', message: written.message })
+              tx.write(409, { ok: false, code: 'skills-folders-rejected', message: written.message })
               return
             }
             deps.afterSkillsChange?.()
-            writeBridgeJson(res, 200, {
+            tx.write(200, {
               ok: true,
               value: { ...await collectSkills(session.sessionId), folders: written.state.folders },
             })
-          },
+          } }),
         }),
         sctx.webServer.register({
           kind: 'exact',
           path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.skillCreate,
-          handler: async (req, res) => {
-            if (!guard(req, res)) return
-            const parsedBody = await readBridgeBodyForHandler(req, res)
-            if (parsedBody === undefined) return
-            const body = parsedBody.body
-            const record = body !== null && typeof body === 'object' && !Array.isArray(body) ? body as Record<string, unknown> : {}
+          handler: route({ body: 'required', handle: async (tx) => {
+            const record = tx.record
             const result = createSkill(deps.skills().skillsRoot, record as { name: unknown; description: unknown; content: unknown })
-            if (!result.ok) { writeBridgeJson(res, 400, { ok: false, code: 'skill-create-rejected', message: result.message }); return }
+            if (!result.ok) { tx.write(400, { ok: false, code: 'skill-create-rejected', message: result.message }); return }
             deps.afterSkillsChange?.()
-            writeBridgeJson(res, 200, { ok: true, value: result })
-          },
+            tx.write(200, { ok: true, value: result })
+          } }),
         }),
         sctx.webServer.register({
           kind: 'exact',
           path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.skillDelete,
-          handler: async (req, res) => {
-            if (!guard(req, res)) return
-            const parsedBody = await readBridgeBodyForHandler(req, res)
-            if (parsedBody === undefined) return
-            const body = parsedBody.body
-            const record = isRecord(body) ? body : {}
-            const session = readSessionIdField(body)
+          handler: route({ body: 'required', handle: async (tx) => {
+            const record = tx.record
+            const session = readSessionIdField(tx.record)
             if (!session.ok || typeof record.name !== 'string' || record.name.length === 0
               || typeof record.path !== 'string' || record.path.length === 0) {
-              writeBridgeJson(res, 400, { ok: false, code: 'skill-delete-rejected', message: session.ok ? 'name、path 必填' : session.message })
+              tx.write(400, { ok: false, code: 'skill-delete-rejected', message: session.ok ? 'name、path 必填' : session.message })
               return
             }
             const cwd = session.sessionId === undefined ? undefined : localAgentCwd(sctx, session.sessionId)
             const result = deps.skills().deleteSkill(record.name, record.path, cwd)
-            if (!result.ok) { writeBridgeJson(res, 400, { ok: false, code: 'skill-delete-rejected', message: result.message }); return }
+            if (!result.ok) { tx.write(400, { ok: false, code: 'skill-delete-rejected', message: result.message }); return }
             deps.afterSkillsChange?.()
-            writeBridgeJson(res, 200, { ok: true, value: result })
-          },
+            tx.write(200, { ok: true, value: result })
+          } }),
         }),
         sctx.webServer.register({
           kind: 'exact',
           path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.skillsImportDirectory,
-          handler: async (req, res) => {
-            if (!guard(req, res)) return
-            const parsedBody = await readBridgeBodyForHandler(req, res)
-            if (parsedBody === undefined) return
-            const body = parsedBody.body
-            const source = body !== null && typeof body === 'object' && !Array.isArray(body) && typeof (body as Record<string, unknown>).path === 'string'
-              ? (body as Record<string, unknown>).path as string : ''
+          handler: route({ body: 'required', handle: async (tx) => {
+            const body = tx.record
+            const source = typeof body.path === 'string' ? body.path : ''
             // 与实现层共用同一个校验入口：空串不能落到 resolve，否则会退化成进程工作目录。
             try {
               assertImportableSource(source)
             } catch (error) {
-              writeBridgeJson(res, 400, { ok: false, code: 'skills-import-rejected', message: `技能导入失败：${error instanceof Error ? error.message : String(error)}` })
+              tx.write(400, { ok: false, code: 'skills-import-rejected', message: `技能导入失败：${error instanceof Error ? error.message : String(error)}` })
               return
             }
-            const overwrite = readSkillOverwrite(isRecord(body) ? body.overwrite : undefined)
+            const overwrite = readSkillOverwrite(body.overwrite)
             if (overwrite === undefined) {
-              writeBridgeJson(res, 400, { ok: false, code: 'skills-import-rejected', message: 'overwrite 必须是已确认的技能目录名数组' })
+              tx.write(400, { ok: false, code: 'skills-import-rejected', message: 'overwrite 必须是已确认的技能目录名数组' })
               return
             }
             const result = importSkillsDirectory(deps.skills().skillsRoot, source, overwrite)
             if (!result.ok) {
-              writeBridgeJson(res, result.code === 'skills-overwrite-required' ? 409 : 400,
+              tx.write(result.code === 'skills-overwrite-required' ? 409 : 400,
                 { ...result, code: result.code ?? 'skills-import-rejected' })
               return
             }
             deps.afterSkillsChange?.()
-            writeBridgeJson(res, 200, { ok: true, value: result })
-          },
+            tx.write(200, { ok: true, value: result })
+          } }),
         }),
         sctx.webServer.register({
           kind: 'exact',
           path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.templates,
-          handler: async (req, res) => {
-            if (!guard(req, res)) return
+          handler: route({ body: 'none', handle: async (tx) => {
             try {
               const templates = loadPromptTemplates()
               const toolTemplates = loadToolTemplates()
-              writeBridgeJson(res, 200, { ok: true, value: { templates, toolTemplates } })
+              tx.write(200, { ok: true, value: { templates, toolTemplates } })
             } catch (error) {
               const message = error instanceof Error ? error.message : String(error)
-              writeBridgeJson(res, 500, { ok: false, code: 'templates-unavailable', message })
+              tx.write(500, { ok: false, code: 'templates-unavailable', message })
             }
-          },
+          } }),
         }),
         sctx.webServer.register({
           kind: 'exact',
           path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.promptConfigs,
-          handler: async (req, res) => {
-            if (!guard(req, res)) return
-            const parsedBody = await readBridgeBodyForHandler(req, res)
-            if (parsedBody === undefined) return
-            const session = readSessionIdField(parsedBody.body)
+          handler: route({ body: 'required', handle: async (tx) => {
+            const session = readSessionIdField(tx.record)
             if (!session.ok) {
-              writeBridgeJson(res, 400, { ok: false, code: 'settings-rejected', message: session.message })
+              tx.write(400, { ok: false, code: 'settings-rejected', message: session.message })
               return
             }
             // 实际生效配置 = 模块定义编译出的规则（`rules/` 切片）；
             // settings.promptConfigs 仅是用户覆盖层，默认为空不代表无配置。
-            const dir = editDir(req) ?? ''
-            if (!guardModuleFormat(dir, res)) return
+            const dir = tx.editDir()
+            if (!guardModuleFormat(dir, tx.write)) return
             // 独立文件来源：与 /bootstrap 共用同一读取入口，附正文、字节版本与读取状态。
             const scope = resolveInstructionScope(sctx, session.sessionId)
-            writeBridgeJson(res, 200, {
+            tx.write(200, {
               ok: true,
               value: {
                 promptConfigs: mergeInstructionCards([], scope.files),
                 instructions: { context: scope.context, files: scope.files, owner: instructionOwner() },
               },
             })
-          },
+          } }),
         }),
         sctx.webServer.register({
           kind: 'exact',
           path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.agentsFile,
-          handler: async (req, res) => {
-            if (!guard(req, res)) return
-            const parsedBody = await readBridgeBodyForHandler(req, res)
-            if (parsedBody === undefined) return
-            const { body } = parsedBody
-            if (!isRecord(body)) {
-              writeBridgeJson(res, 400, { ok: false, code: 'settings-rejected', message: 'unreadable JSON body' })
-              return
-            }
-            const session = readSessionIdField(body)
+          handler: route({ body: 'required', handle: async (tx) => {
+            const session = readSessionIdField(tx.record)
             if (!session.ok) {
-              writeBridgeJson(res, 400, { ok: false, code: 'settings-rejected', message: session.message })
+              tx.write(400, { ok: false, code: 'settings-rejected', message: session.message })
               return
             }
-            const record = body
+            const record = tx.record
             const fileId = typeof record.fileId === 'string' ? record.fileId.trim() : ''
             const contextId = typeof record.contextId === 'string' ? record.contextId.trim() : ''
             const content = record.content
@@ -1181,7 +1104,7 @@ export function registerSettingsBridge(
                 ? record.expectedRevision
                 : undefined)
             if (fileId === '' || contextId === '' || typeof content !== 'string' || expectedRevision === undefined) {
-              writeBridgeJson(res, 400, {
+              tx.write(400, {
                 ok: false,
                 code: 'settings-rejected',
                 message: 'fileId/contextId 必须是非空字符串，content 必须是字符串，expectedRevision 必须是 SHA-256 或 null',
@@ -1192,7 +1115,7 @@ export function registerSettingsBridge(
             // 说明「它是按哪次读取起草的」，过期工作区（切会话/外部改动上下文）一律拒绝。
             const scope = resolveInstructionScope(sctx, session.sessionId)
             if (contextId !== scope.context.contextId) {
-              writeBridgeJson(res, 409, {
+              tx.write(409, {
                 ok: false,
                 code: 'agents-file-context-stale',
                 message: '工作区上下文已变化，未写盘；请重新读取后再保存',
@@ -1201,7 +1124,7 @@ export function registerSettingsBridge(
             }
             const file = scope.cards.find((card) => card.fileId === fileId)
             if (file === undefined) {
-              writeBridgeJson(res, 400, {
+              tx.write(400, {
                 ok: false,
                 code: 'settings-rejected',
                 message: `unknown agents file: ${fileId}`,
@@ -1210,31 +1133,23 @@ export function registerSettingsBridge(
             }
             const outcome = await writeAgentsFileChecked({ file, content, expectedRevision })
             if (!outcome.ok) {
-              writeBridgeJson(res, outcome.status, { ok: false, code: outcome.code, message: outcome.message })
+              tx.write(outcome.status, { ok: false, code: outcome.code, message: outcome.message })
               return
             }
             // 正文写入是文件事实，不触发模块重建：运行时下一次读取直接看新文件。
-            writeBridgeJson(res, 200, { ok: true, value: { fileId: outcome.fileId, revision: outcome.revision } })
-          },
+            tx.write(200, { ok: true, value: { fileId: outcome.fileId, revision: outcome.revision } })
+          } }),
         }),
         sctx.webServer.register({
           kind: 'exact',
           path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.instructionsPolicy,
-          handler: async (req, res) => {
-            if (!guard(req, res)) return
-            const parsedBody = await readBridgeBodyForHandler(req, res)
-            if (parsedBody === undefined) return
-            const body = parsedBody.body
-            if (body !== undefined && body !== null && !isRecord(body)) {
-              writeBridgeJson(res, 400, { ok: false, code: 'settings-rejected', message: 'unreadable JSON body' })
-              return
-            }
-            const record = isRecord(body) ? body : {}
+          handler: route({ body: 'required', handle: async (tx) => {
+            const record = tx.record
             const file = instructionPolicyPath()
             // 省略 policy = 读取：损坏/版本不认识时带 error 返回，客户端据此禁用保存。
             if (record.policy === undefined) {
               const snapshot = readInstructionPolicy(file)
-              writeBridgeJson(res, 200, {
+              tx.write(200, {
                 ok: true,
                 value: {
                   policy: snapshot.policy,
@@ -1251,7 +1166,7 @@ export function registerSettingsBridge(
                 ? record.expectedRevision
                 : undefined)
             if (expectedRevision === undefined) {
-              writeBridgeJson(res, 400, {
+              tx.write(400, {
                 ok: false,
                 code: 'instructions-policy-invalid',
                 message: 'expectedRevision 必须是 SHA-256 或 null',
@@ -1260,33 +1175,29 @@ export function registerSettingsBridge(
             }
             const outcome = writeInstructionPolicy({ file, patch: record.policy, expectedRevision })
             if (!outcome.ok) {
-              writeBridgeJson(res, outcome.status, { ok: false, code: outcome.code, message: outcome.message })
+              tx.write(outcome.status, { ok: false, code: outcome.code, message: outcome.message })
               return
             }
-            writeBridgeJson(res, 200, { ok: true, value: { policy: outcome.policy, revision: outcome.revision, exists: true } })
-          },
+            tx.write(200, { ok: true, value: { policy: outcome.policy, revision: outcome.revision, exists: true } })
+          } }),
         }),
         sctx.webServer.register({
           kind: 'exact',
           path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.triggers,
-          handler: async (req, res) => {
-            if (!guard(req, res)) return
-            writeBridgeJson(res, 410, { ok: false, code: 'rules-route-retired', message: '声明规则已统一为 rules；请改写旧声明（可由内置技能交给模型迁移）并刷新客户端，使用 /rules 编辑。' })
-          },
+          handler: route({ body: 'none', handle: async (tx) => {
+            tx.write(410, { ok: false, code: 'rules-route-retired', message: '声明规则已统一为 rules；请改写旧声明（可由内置技能交给模型迁移）并刷新客户端，使用 /rules 编辑。' })
+          } }),
         }),
         sctx.webServer.register({
           kind: 'exact',
           path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.rules,
-          handler: async (req, res) => {
-            if (!guard(req, res)) return
-            const dir = editDir(req) ?? ''
+          handler: route({ body: 'required', handle: async (tx) => {
+            const dir = tx.editDir()
             if (dir.length === 0) {
-              writeBridgeJson(res, 400, { ok: false, code: 'module-dir-unavailable', message: '当前模块目录不可用' })
+              tx.write(400, { ok: false, code: 'module-dir-unavailable', message: '当前模块目录不可用' })
               return
             }
-            const parsed = await readBridgeBodyForHandler(req, res)
-            if (parsed === undefined) return
-            const record = parsed.body ?? {}
+            const record = tx.record
             if (!isRecord(record)
               || Object.keys(record).some(key => !['expectedModuleId', 'expectedRevisions', 'edits', 'activateRuleId', 'validateOnly', 'refreshOnly'].includes(key))
               || typeof record.expectedModuleId !== 'string' || record.expectedModuleId === ''
@@ -1295,33 +1206,33 @@ export function registerSettingsBridge(
               || (record.validateOnly !== undefined && typeof record.validateOnly !== 'boolean')
               || (record.refreshOnly !== undefined && typeof record.refreshOnly !== 'boolean')
               || (record.refreshOnly === true && (record.edits !== undefined || record.activateRuleId !== undefined || record.validateOnly !== undefined))) {
-              writeBridgeJson(res, 400, { ok: false, code: 'rules-invalid', message: '规则请求字段、模块身份或版本格式不合法' })
+              tx.write(400, { ok: false, code: 'rules-invalid', message: '规则请求字段、模块身份或版本格式不合法' })
               return
             }
-            if (!guardModuleIdentity(req, record, dir, res)) return
+            if (!guardModuleIdentity(tx, record, dir)) return
             if (record.refreshOnly === true) {
-              if (!guardModuleWrite(dir, res)) return
+              if (!guardModuleWrite(dir, tx.write)) return
               const { getRuleEditorMeta } = await import(pathToFileURL(join(packageEngineDir(), 'rule-spec.mjs')).href) as { getRuleEditorMeta: () => RuleEditorMeta }
               try { await deps.overridesChanged?.(basename(dir)) }
               catch (error) {
                 const committed = loadModuleDefinition(dir)
-                writeBridgeJson(res, 200, { ok: true, value: { rules: committed.rules, revisions: committed.revisions, meta: getRuleEditorMeta(), persisted: true, publicationPending: true, publicationError: `运行刷新失败：${String(error)}` } })
+                tx.write(200, { ok: true, value: { rules: committed.rules, revisions: committed.revisions, meta: getRuleEditorMeta(), persisted: true, publicationPending: true, publicationError: `运行刷新失败：${String(error)}` } })
                 return
               }
               const committed = loadModuleDefinition(dir)
-              writeBridgeJson(res, 200, { ok: true, value: { rules: committed.rules, revisions: committed.revisions, meta: getRuleEditorMeta(), publicationPending: false } })
+              tx.write(200, { ok: true, value: { rules: committed.rules, revisions: committed.revisions, meta: getRuleEditorMeta(), publicationPending: false } })
               return
             }
             const editing = record.edits !== undefined || record.activateRuleId !== undefined
             const writing = editing && record.validateOnly !== true
             if (editing && !isRecord(record.expectedRevisions)) {
-              writeBridgeJson(res, 400, { ok: false, code: 'rules-invalid', message: '修改规则必须提供读取时的 expectedRevisions' })
+              tx.write(400, { ok: false, code: 'rules-invalid', message: '修改规则必须提供读取时的 expectedRevisions' })
               return
             }
-            if (writing && !guardModuleWrite(dir, res)) return
+            if (writing && !guardModuleWrite(dir, tx.write)) return
             try {
               const { getRuleEditorMeta } = await import(pathToFileURL(join(packageEngineDir(), 'rule-spec.mjs')).href) as { getRuleEditorMeta: () => RuleEditorMeta }
-              if (!guardModuleIdentity(req, record, dir, res)) return
+              if (!guardModuleIdentity(tx, record, dir)) return
               const candidate = editing ? editModuleRules(dir, {
                 expectedRevisions: record.expectedRevisions as Partial<RuleRevisions>,
                 ...(record.edits === undefined ? {} : { edits: record.edits as RuleEdit[] }),
@@ -1331,40 +1242,39 @@ export function registerSettingsBridge(
               if (writing) {
                 try { await deps.overridesChanged?.(basename(dir)) }
                 catch (error) {
-                  writeBridgeJson(res, 200, { ok: true, value: { rules: candidate.rules, revisions: candidate.revisions, meta: getRuleEditorMeta(), persisted: true, publicationPending: true, publicationError: `规则已保存，但运行刷新失败：${String(error)}` } })
+                  tx.write(200, { ok: true, value: { rules: candidate.rules, revisions: candidate.revisions, meta: getRuleEditorMeta(), persisted: true, publicationPending: true, publicationError: `规则已保存，但运行刷新失败：${String(error)}` } })
                   return
                 }
               }
               const result = writing ? readModuleRules(dir) : candidate
               if (writing && !isDeepStrictEqual(result.rules, candidate.rules)) {
-                writeBridgeJson(res, 409, { ok: false, code: 'rules-conflict', message: '重建期间规则再次变化；请重新读取，当前草稿仍保留' })
+                tx.write(409, { ok: false, code: 'rules-conflict', message: '重建期间规则再次变化；请重新读取，当前草稿仍保留' })
                 return
               }
-              writeBridgeJson(res, 200, { ok: true, value: { rules: result.rules, revisions: result.revisions, meta: getRuleEditorMeta() } })
+              tx.write(200, { ok: true, value: { rules: result.rules, revisions: result.revisions, meta: getRuleEditorMeta() } })
             } catch (error) {
               if (error instanceof ModuleRulesError) {
                 if (error.persisted) {
                   const committed = loadModuleDefinition(dir)
                   const { getRuleEditorMeta } = await import(pathToFileURL(join(packageEngineDir(), 'rule-spec.mjs')).href) as { getRuleEditorMeta: () => RuleEditorMeta }
-                  writeBridgeJson(res, 200, { ok: true, value: { rules: committed.rules, revisions: committed.revisions, meta: getRuleEditorMeta(), persisted: true, publicationPending: true, publicationError: error.message } })
+                  tx.write(200, { ok: true, value: { rules: committed.rules, revisions: committed.revisions, meta: getRuleEditorMeta(), persisted: true, publicationPending: true, publicationError: error.message } })
                   return
                 }
-                writeBridgeJson(res, error.status, { ok: false, code: error.code, message: error.message })
+                tx.write(error.status, { ok: false, code: error.code, message: error.message })
                 return
               }
-              if (writeLayerSettingsError(res, error)) return
-              writeBridgeJson(res, 500, { ok: false, code: 'rules-failed', message: String((error as Error).message ?? error) })
+              if (writeLayerSettingsError(tx.write, error)) return
+              tx.write(500, { ok: false, code: 'rules-failed', message: String((error as Error).message ?? error) })
             }
-          },
+          } }),
         }),
         sctx.webServer.register({
           kind: 'exact',
           path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.paramOverrides,
-          handler: async (req, res) => {
-            if (!guard(req, res)) return
-            const dir = editDir(req) ?? ''
+          handler: route({ body: 'required', handle: async (tx) => {
+            const dir = tx.editDir()
             if (dir.length === 0) {
-              writeBridgeJson(res, 400, { ok: false, code: 'module-dir-unavailable', message: '模块目录未配置' })
+              tx.write(400, { ok: false, code: 'module-dir-unavailable', message: '模块目录未配置' })
               return
             }
             // 阶段 2：参数按模块存储——读写激活模块 module.yml 的 params（+ promptConfigs）。
@@ -1372,39 +1282,36 @@ export function registerSettingsBridge(
             const templateName = basename(dir)
             // promptConfigs 全量数组随配置卡数量增长；所有 JSON bridge 端点统一使用 32 MiB
             // 内存缓冲上限，超过后由调用方收到明确 413，不再静默降级为读取分支。
-            const parsedBody = await readBridgeBodyForHandler(req, res)
-            if (parsedBody === undefined) return
-            const { body } = parsedBody
-            const record = (body ?? {}) as Record<string, unknown>
-            if (!guardModuleIdentity(req, record, dir, res)) return
+            const record = tx.record
+            if (!guardModuleIdentity(tx, record, dir)) return
             if (record.rebuild !== undefined && typeof record.rebuild !== 'boolean') {
-              writeBridgeJson(res, 400, { ok: false, code: 'overrides-invalid-shape', message: 'rebuild must be a boolean' })
+              tx.write(400, { ok: false, code: 'overrides-invalid-shape', message: 'rebuild must be a boolean' })
               return
             }
             // 无载荷 = 读取当前 layerSettings 展平后的参数子集。
             if (record.promptConfigs !== undefined) {
-              writeBridgeJson(res, 410, { ok: false, code: 'rules-route-retired', message: '提示词配置已统一为 rules，请使用带版本的 /rules 事务编辑。' })
+              tx.write(410, { ok: false, code: 'rules-route-retired', message: '提示词配置已统一为 rules，请使用带版本的 /rules 事务编辑。' })
               return
             }
             if (record.overrides === undefined) {
               if (record.rebuild !== undefined) {
-                writeBridgeJson(res, 400, { ok: false, code: 'overrides-invalid-shape', message: 'rebuild requires overrides or promptConfigs' })
+                tx.write(400, { ok: false, code: 'overrides-invalid-shape', message: 'rebuild requires overrides or promptConfigs' })
                 return
               }
-              writeBridgeJson(res, 200, { ok: true, value: { overrides: readParamOverrides(dir) } })
+              tx.write(200, { ok: true, value: { overrides: readParamOverrides(dir) } })
               return
             }
             if (record.overrides !== undefined && !isRecord(record.overrides)) {
-              writeBridgeJson(res, 400, { ok: false, code: 'overrides-invalid-shape', message: 'overrides must be an object' })
+              tx.write(400, { ok: false, code: 'overrides-invalid-shape', message: 'overrides must be an object' })
               return
             }
-            if (!guardModuleWrite(dir, res)) return
+            if (!guardModuleWrite(dir, tx.write)) return
             const rawOverrides = record.overrides as Record<string, unknown> | undefined
             // 参数键白名单：未知键 fail loud，避免写入「读回/参数桥都不消费」的死键。
             if (rawOverrides !== undefined) {
               const unknownKeys = Object.keys(rawOverrides).filter((key) => key === 'promptConfigs' || !PARAM_KEYS.has(key))
               if (unknownKeys.length > 0) {
-                writeBridgeJson(res, 400, {
+                tx.write(400, {
                   ok: false,
                   code: 'overrides-unknown-key',
                   message: `未知引擎参数键：${unknownKeys.join(', ')}`,
@@ -1416,7 +1323,7 @@ export function registerSettingsBridge(
             // 渲染层保持宽容（never-brick），保存层响亮失败直达 UI notice。
             const valueErrors = rawOverrides !== undefined ? validateEngineParamValues(rawOverrides) : []
             if (valueErrors.length > 0) {
-              writeBridgeJson(res, 400, {
+              tx.write(400, {
                 ok: false,
                 code: 'overrides-invalid-value',
                 message: valueErrors.map((item) => item.message).join('; '),
@@ -1424,7 +1331,7 @@ export function registerSettingsBridge(
               return
             }
             try {
-              if (!guardModuleIdentity(req, record, dir, res)) return
+              if (!guardModuleIdentity(tx, record, dir)) return
               saveModuleParams(
                 moduleRoot,
                 templateName,
@@ -1433,63 +1340,60 @@ export function registerSettingsBridge(
               )
               // 模块切换前保存当前配置卡时只需落盘，不立即重建；
               // 后续运行刷新按目标模块执行。
-              if (record.rebuild !== false && !await runOverridesChange(res, basename(dir))) return
-              writeBridgeJson(res, 200, {
+              if (record.rebuild !== false && !await runOverridesChange(tx.write, basename(dir))) return
+              tx.write(200, {
                 ok: true,
                 value: { overrides: record.overrides },
               })
             } catch (error) {
-              if (writeLayerSettingsError(res, error)) return
+              if (writeLayerSettingsError(tx.write, error)) return
               const message = error instanceof Error ? error.message : String(error)
-              writeBridgeJson(res, 500, { ok: false, code: 'overrides-write-failed', message })
+              tx.write(500, { ok: false, code: 'overrides-write-failed', message })
             }
-          },
+          } }),
         }),
         sctx.webServer.register({
           kind: 'exact',
           path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.moduleVariables,
-          handler: async (req, res) => {
-            if (!guard(req, res)) return
-            const dir = editDir(req) ?? ''
+          handler: route({ body: 'required', handle: async (tx) => {
+            const dir = tx.editDir()
             if (dir.length === 0) {
-              writeBridgeJson(res, 400, { ok: false, code: 'module-dir-unavailable', message: '模块目录未配置' })
+              tx.write(400, { ok: false, code: 'module-dir-unavailable', message: '模块目录未配置' })
               return
             }
-            const parsedBody = await readBridgeBodyForHandler(req, res)
-            if (parsedBody === undefined) return
-            const record = parsedBody.body
+            const record = tx.record
             if (!isRecord(record) || (record.scope !== 'global' && record.scope !== 'module')
               || Object.keys(record).some(key => !['scope', 'variables', 'enabled', 'expectedModuleId', 'expectedRevisions', 'refreshOnly'].includes(key))) {
-              writeBridgeJson(res, 400, { ok: false, code: 'module-variables-invalid', message: '变量请求必须声明 global/module 范围，且只包含已声明字段' })
+              tx.write(400, { ok: false, code: 'module-variables-invalid', message: '变量请求必须声明 global/module 范围，且只包含已声明字段' })
               return
             }
-            if (!guardModuleIdentity(req, record, dir, res)) return
+            if (!guardModuleIdentity(tx, record, dir)) return
             if (record.refreshOnly !== undefined && (typeof record.refreshOnly !== 'boolean'
               || (record.refreshOnly === true && (record.variables !== undefined || record.enabled !== undefined || record.expectedRevisions !== undefined)))) {
-              writeBridgeJson(res, 400, { ok: false, code: 'module-variables-invalid', message: 'refreshOnly 不能与变量写入混用' })
+              tx.write(400, { ok: false, code: 'module-variables-invalid', message: 'refreshOnly 不能与变量写入混用' })
               return
             }
             try {
               if (record.refreshOnly === true) {
-                if (!guardModuleWrite(dir, res)) return
+                if (!guardModuleWrite(dir, tx.write)) return
                 if (typeof record.expectedModuleId !== 'string') throw new ModuleRulesError('刷新变量必须提供 expectedModuleId')
                 const state = readModuleVariables(dir)
                 if (pendingVariableSettings.has(dir)) {
                   try { await deps.overridesChanged?.(basename(dir)); pendingVariableSettings.delete(dir) }
                   catch (error) { pendingVariableSettings.set(dir, `变量开关已保存，但运行发布失败：${String(error)}`) }
                 }
-                writeBridgeJson(res, 200, { ok: true, value: { ...state, ...variableView(dir), persisted: true } })
+                tx.write(200, { ok: true, value: { ...state, ...variableView(dir), persisted: true } })
                 return
               }
               if (record.variables === undefined && record.enabled === undefined) {
                 if (record.expectedRevisions !== undefined) throw new ModuleRulesError('读取变量不接受写入版本')
-                writeBridgeJson(res, 200, { ok: true, value: variableView(dir) })
+                tx.write(200, { ok: true, value: variableView(dir) })
                 return
               }
-              if (!guardModuleWrite(dir, res)) return
+              if (!guardModuleWrite(dir, tx.write)) return
               if (typeof record.expectedModuleId !== 'string') throw new ModuleRulesError('保存变量必须提供 expectedModuleId')
               if (!isRecord(record.expectedRevisions)) throw new ModuleRulesError('保存变量或开关必须提供对应 expectedRevisions')
-              if (!guardModuleIdentity(req, record, dir, res)) return
+              if (!guardModuleIdentity(tx, record, dir)) return
               const settingsChanged = record.enabled !== undefined && record.enabled !== loadModuleDefinition(dir).variablesEnabled
               const committed = editModuleVariables(dir, {
                 scope: record.scope as 'global' | 'module', expectedRevisions: record.expectedRevisions as Partial<ModuleVariableRevisions>,
@@ -1498,61 +1402,57 @@ export function registerSettingsBridge(
               })
               if (settingsChanged) pendingVariableSettings.set(dir, '变量开关已保存，等待运行发布')
               if (committed.publicationPending) {
-                writeBridgeJson(res, 200, { ok: true, value: committed })
+                tx.write(200, { ok: true, value: committed })
                 return
               }
               if (settingsChanged) {
                 try { await deps.overridesChanged?.(basename(dir)); pendingVariableSettings.delete(dir) }
                 catch (error) { pendingVariableSettings.set(dir, `变量开关已保存，但运行发布失败：${String(error)}`) }
               }
-              writeBridgeJson(res, 200, { ok: true, value: { ...committed, publicationPending: pendingVariableSettings.has(dir),
+              tx.write(200, { ok: true, value: { ...committed, publicationPending: pendingVariableSettings.has(dir),
                 ...(pendingVariableSettings.has(dir) ? { publicationError: pendingVariableSettings.get(dir)! } : {}) } })
             } catch (error) {
               const message = error instanceof Error ? error.message : String(error)
-              writeBridgeJson(res, error instanceof ModuleRulesError ? error.status : 409, { ok: false, code: error instanceof ModuleRulesError ? error.code : 'module-variables-rejected', message: `变量读取或保存失败：${message}` })
+              tx.write(error instanceof ModuleRulesError ? error.status : 409, { ok: false, code: error instanceof ModuleRulesError ? error.code : 'module-variables-rejected', message: `变量读取或保存失败：${message}` })
             }
-          },
+          } }),
         }),
         sctx.webServer.register({
           kind: 'exact',
           path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.customTools,
-          handler: async (req, res) => {
-            if (!guard(req, res)) return
-            const dir = editDir(req) ?? ''
+          handler: route({ body: 'required', handle: async (tx) => {
+            const dir = tx.editDir()
             if (dir.length === 0) {
-              writeBridgeJson(res, 400, { ok: false, code: 'module-dir-unavailable', message: '模块目录未配置' })
+              tx.write(400, { ok: false, code: 'module-dir-unavailable', message: '模块目录未配置' })
               return
             }
-            const parsedBody = await readBridgeBodyForHandler(req, res)
-            if (parsedBody === undefined) return
-            const { body } = parsedBody
-            const record = (body ?? {}) as Record<string, unknown>
-            if (!guardModuleIdentity(req, record, dir, res)) return
+            const record = tx.record
+            if (!guardModuleIdentity(tx, record, dir)) return
             // 无载荷 = 读取（module.yml 顶层 customTools 段）。
             if (record.customTools === undefined) {
               try {
                 const spec = loadModuleSpec(dir)
                 const customTools = Array.isArray(spec.customTools) ? spec.customTools : []
-                writeBridgeJson(res, 200, { ok: true, value: { customTools } })
+                tx.write(200, { ok: true, value: { customTools } })
               } catch (error) {
-                if (writeLayerSettingsError(res, error)) return
-                writeBridgeJson(res, 409, { ok: false, code: 'custom-tools-unavailable', message: '自定义工具读取失败，原文件保持不变' })
+                if (writeLayerSettingsError(tx.write, error)) return
+                tx.write(409, { ok: false, code: 'custom-tools-unavailable', message: '自定义工具读取失败，原文件保持不变' })
               }
               return
             }
             try {
               const customTools = record.customTools
               if (!Array.isArray(customTools)) {
-                writeBridgeJson(res, 400, { ok: false, code: 'custom-tools-invalid', message: 'customTools 必须是数组' })
+                tx.write(400, { ok: false, code: 'custom-tools-invalid', message: 'customTools 必须是数组' })
                 return
               }
               const errors = validateCustomTools(customTools)
               if (errors.length > 0) {
-                writeBridgeJson(res, 400, { ok: false, code: 'custom-tools-invalid', message: errors.join('; ') })
+                tx.write(400, { ok: false, code: 'custom-tools-invalid', message: errors.join('; ') })
                 return
               }
-              if (!guardModuleWrite(dir, res)) return
-              if (!guardModuleIdentity(req, record, dir, res)) return
+              if (!guardModuleWrite(dir, tx.write)) return
+              if (!guardModuleIdentity(tx, record, dir)) return
               withModuleDefinition(dir, (doc) => {
                 if (customTools.length === 0) doc.deleteIn(['customTools'])
                 else {
@@ -1560,41 +1460,38 @@ export function registerSettingsBridge(
                   appendModuleCapabilities(doc, customToolModules(customTools))
                 }
               })
-              if (!await runOverridesChange(res, basename(dir))) return
-              writeBridgeJson(res, 200, { ok: true, value: { customTools } })
+              if (!await runOverridesChange(tx.write, basename(dir))) return
+              tx.write(200, { ok: true, value: { customTools } })
             } catch (error) {
               const message = error instanceof Error ? error.message : String(error)
-              writeBridgeJson(res, 409, { ok: false, code: 'custom-tools-rejected', message: `自定义工具保存失败：${message}` })
+              tx.write(409, { ok: false, code: 'custom-tools-rejected', message: `自定义工具保存失败：${message}` })
             }
-          },
+          } }),
         }),
         sctx.webServer.register({
           kind: 'exact',
           path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.persona,
-          handler: async (req, res) => {
-            if (!guard(req, res)) return
-            const dir = editDir(req) ?? ''
+          handler: route({ body: 'required', handle: async (tx) => {
+            const dir = tx.editDir()
             if (dir.length === 0) {
-              writeBridgeJson(res, 400, { ok: false, code: 'module-dir-unavailable', message: '模块目录未配置' })
+              tx.write(400, { ok: false, code: 'module-dir-unavailable', message: '模块目录未配置' })
               return
             }
-            const parsedBody = await readBridgeBodyForHandler(req, res)
-            if (parsedBody === undefined) return
-            const record = parsedBody.body ?? {}
+            const record = tx.record
             if (!isRecord(record) || Object.keys(record).some(key => !['persona', 'expectedModuleId', 'expectedRevision', 'refreshOnly'].includes(key))
               || record.refreshOnly !== undefined && (typeof record.refreshOnly !== 'boolean'
                 || record.refreshOnly === true && (record.persona !== undefined || record.expectedRevision !== undefined))) {
-              writeBridgeJson(res, 400, { ok: false, code: 'module-persona-invalid', message: '人设请求包含非法字段或混合了刷新与写入' })
+              tx.write(400, { ok: false, code: 'module-persona-invalid', message: '人设请求包含非法字段或混合了刷新与写入' })
               return
             }
-            if (!guardModuleIdentity(req, record, dir, res)) return
+            if (!guardModuleIdentity(tx, record, dir)) return
             try {
               if (record.persona === undefined && record.refreshOnly !== true) {
                 if (record.expectedRevision !== undefined) throw new TypeError('读取人设不接受写入版本')
-                writeBridgeJson(res, 200, { ok: true, value: readModulePersona(dir) })
+                tx.write(200, { ok: true, value: readModulePersona(dir) })
                 return
               }
-              if (!guardModuleWrite(dir, res)) return
+              if (!guardModuleWrite(dir, tx.write)) return
               if (typeof record.expectedModuleId !== 'string') throw new TypeError('保存或刷新人设必须提供 expectedModuleId')
               let saved
               if (record.refreshOnly === true) saved = readModulePersona(dir)
@@ -1603,45 +1500,42 @@ export function registerSettingsBridge(
                 const persona = record.persona === null ? null : readPersonaSpec(record.persona)
                 if (persona === undefined) throw new TypeError('persona 必须是主/子覆盖对象或 null')
                 const root = dirname(dir), id = basename(dir)
-                if (!guardModuleIdentity(req, record, dir, res)) return
+                if (!guardModuleIdentity(tx, record, dir)) return
                 saved = saveModulePersona(root, id, persona, record.expectedRevision)
               }
               try { await deps.overridesChanged?.(basename(dir)) }
               catch (error) {
-                writeBridgeJson(res, 200, { ok: true, value: { ...saved, persisted: true, publicationPending: true, publicationError: `人设已保存，但运行发布失败：${String(error)}` } })
+                tx.write(200, { ok: true, value: { ...saved, persisted: true, publicationPending: true, publicationError: `人设已保存，但运行发布失败：${String(error)}` } })
                 return
               }
-              writeBridgeJson(res, 200, { ok: true, value: { ...saved, persisted: true, publicationPending: false } })
+              tx.write(200, { ok: true, value: { ...saved, persisted: true, publicationPending: false } })
             } catch (error) {
               if (error instanceof ModuleRulesError && error.persisted) {
-                writeBridgeJson(res, 200, { ok: true, value: { ...readModulePersona(dir), persisted: true, publicationPending: true, publicationError: error.message } })
+                tx.write(200, { ok: true, value: { ...readModulePersona(dir), persisted: true, publicationPending: true, publicationError: error.message } })
                 return
               }
               const message = error instanceof Error ? error.message : String(error)
-              writeBridgeJson(res, error instanceof ModuleRulesError ? error.status : error instanceof TypeError ? 400 : 409,
+              tx.write(error instanceof ModuleRulesError ? error.status : error instanceof TypeError ? 400 : 409,
                 { ok: false, code: error instanceof ModuleRulesError ? error.code : 'module-persona-rejected', message: `人设读取或保存失败：${message}` })
             }
-          },
+          } }),
         }),
         sctx.webServer.register({
           kind: 'exact',
           path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.personaSources,
-          handler: async (req, res) => {
-            if (!guard(req, res)) return
-            const parsedBody = await readBridgeBodyForHandler(req, res)
-            if (parsedBody === undefined) return
-            const record = parsedBody.body ?? {}
+          handler: route({ body: 'required', handle: async (tx) => {
+            const record = tx.record
             if (!isRecord(record) || Object.keys(record).some(key => !['sources', 'expectedRevision', 'refreshOnly'].includes(key))
               || record.refreshOnly !== undefined && typeof record.refreshOnly !== 'boolean'
               || record.refreshOnly === true && (record.sources !== undefined || record.expectedRevision !== undefined)) {
-              writeBridgeJson(res, 400, { ok: false, code: 'persona-sources-invalid', message: '人设来源请求包含非法字段或混合了刷新与写入' })
+              tx.write(400, { ok: false, code: 'persona-sources-invalid', message: '人设来源请求包含非法字段或混合了刷新与写入' })
               return
             }
             try {
               const root = userModulesDir()
               if (record.sources === undefined && record.refreshOnly !== true) {
                 if (record.expectedRevision !== undefined) throw new TypeError('读取人设来源不接受写入版本')
-                writeBridgeJson(res, 200, { ok: true, value: readPersonaSources(root) })
+                tx.write(200, { ok: true, value: readPersonaSources(root) })
                 return
               }
               if (record.refreshOnly !== true && record.expectedRevision !== null
@@ -1652,64 +1546,52 @@ export function registerSettingsBridge(
                 : writePersonaSources(root, record.sources as PersonaSources, record.expectedRevision as string | null)
               try { await deps.overridesChanged?.() }
               catch (error) {
-                writeBridgeJson(res, 200, { ok: true, value: { ...saved, persisted: true, publicationPending: true, publicationError: `人设来源已保存，但运行发布失败：${String(error)}` } })
+                tx.write(200, { ok: true, value: { ...saved, persisted: true, publicationPending: true, publicationError: `人设来源已保存，但运行发布失败：${String(error)}` } })
                 return
               }
-              writeBridgeJson(res, 200, { ok: true, value: { ...saved, persisted: true, publicationPending: false } })
+              tx.write(200, { ok: true, value: { ...saved, persisted: true, publicationPending: false } })
             } catch (error) {
-              writeBridgeJson(res, error instanceof ModuleRulesError ? error.status : error instanceof TypeError ? 400 : 409,
+              tx.write(error instanceof ModuleRulesError ? error.status : error instanceof TypeError ? 400 : 409,
                 { ok: false, code: error instanceof ModuleRulesError ? error.code : 'persona-sources-rejected', message: error instanceof Error ? error.message : String(error) })
             }
-          },
+          } }),
         }),
         sctx.webServer.register({
           kind: 'exact',
           path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.assetUpload,
-          handler: async (req, res) => {
-            if (!guard(req, res)) return
+          handler: route({ body: 'none', handle: async (tx) => {
             try {
-              const value = await assetSources.upload(uploadFileName(req), req)
-              writeBridgeJson(res, 200, { ok: true, value })
+              const value = await assetSources.upload(uploadFileName(tx.req), tx.req)
+              tx.write(200, { ok: true, value })
             } catch (error) {
               const message = error instanceof Error ? error.message : String(error)
-              writeBridgeJson(res, message.includes('64 MiB') ? 413 : 400, { ok: false, code: 'asset-upload-rejected', message })
+              tx.write(message.includes('64 MiB') ? 413 : 400, { ok: false, code: 'asset-upload-rejected', message })
             }
-          },
+          } }),
         }),
         sctx.webServer.register({
           kind: 'exact',
           path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.assetRelease,
-          handler: async (req, res) => {
-            if (!guard(req, res)) return
-            const parsed = await readBridgeBodyForHandler(req, res)
-            if (parsed === undefined) return
-            const record = parsed.body
+          handler: route({ body: 'required', handle: async (tx) => {
+            const record = tx.record
             if (!isRecord(record) || Object.keys(record).length !== 1 || typeof record.sourceId !== 'string' || !/^[0-9a-f-]{36}$/i.test(record.sourceId)) {
-              writeBridgeJson(res, 400, { ok: false, code: 'asset-release-rejected', message: 'sourceId 必须是有效上传来源标识' })
+              tx.write(400, { ok: false, code: 'asset-release-rejected', message: 'sourceId 必须是有效上传来源标识' })
               return
             }
-            try { writeBridgeJson(res, 200, { ok: true, value: { released: assetSources.release(record.sourceId) } }) }
-            catch (error) { writeBridgeJson(res, 400, { ok: false, code: 'asset-release-rejected', message: String(error) }) }
-          },
+            try { tx.write(200, { ok: true, value: { released: assetSources.release(record.sourceId) } }) }
+            catch (error) { tx.write(400, { ok: false, code: 'asset-release-rejected', message: String(error) }) }
+          } }),
         }),
         sctx.webServer.register({
           kind: 'exact',
           path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.importModulePackage,
-          handler: async (req, res) => {
-            if (!guard(req, res)) return
-            const parsedBody = await readBridgeBodyForHandler(req, res)
-            if (parsedBody === undefined) return
-            const { body } = parsedBody
-            if (body === null || body === undefined || typeof body !== 'object') {
-              writeBridgeJson(res, 400, { ok: false, code: 'settings-rejected', message: 'unreadable JSON body' })
-              return
-            }
-            const record = body as Record<string, unknown>
+          handler: route({ body: 'required', handle: async (tx) => {
+            const record = tx.record
             // 入口校验先于任何转换与写盘：非法 preview/摘要/顺序组类型一律 400，
             // 不静默回落到"直接写入"，也不在拒绝前创建目录或备份。
             const request = readImportRequestParams(record)
             if (!request.ok) {
-              writeBridgeJson(res, 400, { ok: false, code: 'module-package-invalid', message: request.message })
+              tx.write(400, { ok: false, code: 'module-package-invalid', message: request.message })
               return
             }
             try {
@@ -1717,33 +1599,29 @@ export function registerSettingsBridge(
               const preview = moduleImportPreview(userModulesDir(), files, request.params)
               if (!('prepared' in preview)) {
                 if (!request.params.preview) throw new Error('请先选择内容类型或提示顺序组并重新预览')
-                writeBridgeJson(res, 200, { ok: true, value: { preview: true, ...preview } })
+                tx.write(200, { ok: true, value: { preview: true, ...preview } })
                 return
               }
               const { prepared, summary, sourceDigest, previewRevision } = preview
               if (request.params.preview) {
-                writeBridgeJson(res, 200, { ok: true, value: { preview: true, state: 'ready', summary, sourceDigest, previewRevision, ...(prepared.report === undefined ? {} : { report: prepared.report }) } })
+                tx.write(200, { ok: true, value: { preview: true, state: 'ready', summary, sourceDigest, previewRevision, ...(prepared.report === undefined ? {} : { report: prepared.report }) } })
                 return
               }
               const installed = await installModulePackage(userModulesDir(), files, request.params)
               invalidateDescriptor()
-              if (!await finishModuleChange(res, () => deps.moduleInstalled?.(installed.id))) return
-              writeBridgeJson(res, 200, { ok: true, value: { ...installed, sourceDigest, ...(prepared.report === undefined ? {} : { report: prepared.report }) } })
+              if (!await finishModuleChange(tx.write, () => deps.moduleInstalled?.(installed.id))) return
+              tx.write(200, { ok: true, value: { ...installed, sourceDigest, ...(prepared.report === undefined ? {} : { report: prepared.report }) } })
             } catch (error) {
               const code = typeof (error as { code?: unknown }).code === 'string' ? String((error as { code: string }).code) : 'module-package-invalid'
-              writeBridgeJson(res, code === 'module-preview-stale' ? 409 : 400, { ok: false, code, message: error instanceof Error ? error.message : String(error) })
+              tx.write(code === 'module-preview-stale' ? 409 : 400, { ok: false, code, message: error instanceof Error ? error.message : String(error) })
             }
-          },
+          } }),
         }),
         sctx.webServer.register({
           kind: 'exact',
           path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.exportModule,
-          handler: async (req, res) => {
-            if (!guard(req, res)) return
-            const parsedBody = await readBridgeBodyForHandler(req, res)
-            if (parsedBody === undefined) return
-            const { body } = parsedBody
-            const record = (body ?? {}) as Record<string, unknown>
+          handler: route({ body: 'required', handle: async (tx) => {
+            const record = tx.record
             try {
               const allowed = new Set(['id', 'mode', 'preview', 'expectedRevision', 'memoryChoices'])
               if (Object.keys(record).some((key) => !allowed.has(key))) throw new Error('导出请求包含未知字段')
@@ -1755,134 +1633,114 @@ export function registerSettingsBridge(
               if (record.memoryChoices !== undefined && (!isRecord(record.memoryChoices) || Object.keys(record.memoryChoices).length > 2048
                 || Object.entries(record.memoryChoices).some(([key, value]) => key.length === 0 || key.length > 256 || (value !== 'include' && value !== 'exclude')))) throw new Error('memoryChoices 必须包含合法条目 ID 和 include/exclude 选择')
               const value = await exportModulePackage(userModulesDir(), record as unknown as ModuleExportRequest)
-              writeBridgeJson(res, 200, { ok: true, value })
+              tx.write(200, { ok: true, value })
             } catch (error) {
               const message = error instanceof Error ? error.message : String(error)
               const code = typeof (error as { code?: unknown }).code === 'string' ? String((error as { code: string }).code) : 'module-export-failed'
-              writeBridgeJson(res, code.includes('stale') ? 409 : 400, { ok: false, code, message })
+              tx.write(code.includes('stale') ? 409 : 400, { ok: false, code, message })
             }
-          },
+          } }),
         }),
         sctx.webServer.register({
           kind: 'exact',
           path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.moduleDelete,
-          handler: async (req, res) => {
-            if (!guard(req, res)) return
-            const parsedBody = await readBridgeBodyForHandler(req, res)
-            if (parsedBody === undefined) return
-            const { body } = parsedBody
-            const record = (body ?? {}) as Record<string, unknown>
+          handler: route({ body: 'required', handle: async (tx) => {
+            const record = tx.record
             const id = typeof record.id === 'string' ? record.id.trim() : ''
             if (id.length === 0) {
-              writeBridgeJson(res, 400, { ok: false, code: 'module-delete-rejected', message: '缺少模块 id' })
+              tx.write(400, { ok: false, code: 'module-delete-rejected', message: '缺少模块 id' })
               return
             }
             // 当前使用中的模块不可删除（先切换再删）。
-            const activeDir = editDir(req)
+            const activeDir = tx.editDir()
             if (activeDir.length > 0 && basename(activeDir) === id) {
-              writeBridgeJson(res, 400, { ok: false, code: 'module-in-use', message: `模块「${id}」正在使用中，请先切换其他模块再删除` })
+              tx.write(400, { ok: false, code: 'module-in-use', message: `模块「${id}」正在使用中，请先切换其他模块再删除` })
               return
             }
             // 删除插件自有模块存储中的用户副本，包内模板保留。
             // 模块不在宿主预设注册表里，删除后无需撤销任何官方登记。
             const result = removeUserModule(id)
             if (!result.ok) {
-              writeBridgeJson(res, 400, { ok: false, code: 'module-delete-rejected', message: result.message })
+              tx.write(400, { ok: false, code: 'module-delete-rejected', message: result.message })
               return
             }
-            if (!await refreshModuleList(res, id)) return
-            writeBridgeJson(res, 200, { ok: true, value: { id } })
-          },
+            if (!await refreshModuleList(tx.write, id)) return
+            tx.write(200, { ok: true, value: { id } })
+          } }),
         }),
         sctx.webServer.register({
           kind: 'exact',
           path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.moduleClone,
-          handler: async (req, res) => {
-            if (!guard(req, res)) return
-            const parsedBody = await readBridgeBodyForHandler(req, res)
-            if (parsedBody === undefined) return
-            const { body } = parsedBody
-            const record = (body ?? {}) as Record<string, unknown>
+          handler: route({ body: 'required', handle: async (tx) => {
+            const record = tx.record
             const id = typeof record.id === 'string' ? record.id.trim() : ''
             if (id.length === 0) {
-              writeBridgeJson(res, 400, { ok: false, code: 'module-clone-rejected', message: '缺少模块 id' })
+              tx.write(400, { ok: false, code: 'module-clone-rejected', message: '缺少模块 id' })
               return
             }
             const result = cloneBuiltinModule(id, record.autoSuffix === true)
             if (!result.ok) {
-              writeBridgeJson(res, 400, { ok: false, code: 'module-clone-rejected', message: result.message })
+              tx.write(400, { ok: false, code: 'module-clone-rejected', message: result.message })
               return
             }
-            if (!await refreshModuleList(res, result.id)) return
-            writeBridgeJson(res, 200, { ok: true, value: { id: result.id } })
-          },
+            if (!await refreshModuleList(tx.write, result.id)) return
+            tx.write(200, { ok: true, value: { id: result.id } })
+          } }),
         }),
         sctx.webServer.register({
           kind: 'exact',
           path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.moduleDuplicate,
-          handler: async (req, res) => {
-            if (!guard(req, res)) return
-            const parsedBody = await readBridgeBodyForHandler(req, res)
-            if (parsedBody === undefined) return
-            const { body } = parsedBody
-            const record = (body ?? {}) as Record<string, unknown>
+          handler: route({ body: 'required', handle: async (tx) => {
+            const record = tx.record
             const id = typeof record.id === 'string' ? record.id.trim() : ''
             if (id.length === 0) {
-              writeBridgeJson(res, 400, { ok: false, code: 'module-duplicate-rejected', message: '缺少模块 id' })
+              tx.write(400, { ok: false, code: 'module-duplicate-rejected', message: '缺少模块 id' })
               return
             }
             const result = duplicateUserModule(id)
             if (!result.ok) {
-              writeBridgeJson(res, 400, { ok: false, code: 'module-duplicate-rejected', message: result.message })
+              tx.write(400, { ok: false, code: 'module-duplicate-rejected', message: result.message })
               return
             }
-            if (!await refreshModuleList(res, result.id)) return
-            writeBridgeJson(res, 200, { ok: true, value: { id: result.id } })
-          },
+            if (!await refreshModuleList(tx.write, result.id)) return
+            tx.write(200, { ok: true, value: { id: result.id } })
+          } }),
         }),
         sctx.webServer.register({
           kind: 'exact',
           path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.moduleOpen,
-          handler: async (req, res) => {
-            if (!guard(req, res)) return
-            const parsedBody = await readBridgeBodyForHandler(req, res)
-            if (parsedBody === undefined) return
-            const { body } = parsedBody
-            const record = (body ?? {}) as Record<string, unknown>
+          handler: route({ body: 'required', handle: async (tx) => {
+            const record = tx.record
             const id = typeof record.id === 'string' ? record.id.trim() : ''
             if (id.length === 0) {
-              writeBridgeJson(res, 400, { ok: false, code: 'module-open-rejected', message: '缺少模块 id' })
+              tx.write(400, { ok: false, code: 'module-open-rejected', message: '缺少模块 id' })
               return
             }
             const result = openModuleLocation(id)
             if (!result.ok) {
-              writeBridgeJson(res, 400, { ok: false, code: 'module-open-rejected', message: `${result.message}（${result.path}）` })
+              tx.write(400, { ok: false, code: 'module-open-rejected', message: `${result.message}（${result.path}）` })
               return
             }
-            writeBridgeJson(res, 200, { ok: true, value: { path: result.path } })
-          },
+            tx.write(200, { ok: true, value: { path: result.path } })
+          } }),
         }),
         sctx.webServer.register({
           kind: 'exact',
           path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.moduleEnable,
-          handler: async (req, res) => {
-            if (!guard(req, res)) return
-            const parsedBody = await readBridgeBodyForHandler(req, res)
-            if (parsedBody === undefined) return
-            const { body } = parsedBody
-            const record = (body ?? {}) as Record<string, unknown>
+          handler: route({ body: 'required', handle: async (tx) => {
+            const record = tx.record
             const id = typeof record.id === 'string' ? record.id.trim() : ''
             if (id.length === 0) {
-              writeBridgeJson(res, 400, { ok: false, code: 'module-enable-rejected', message: '缺少模块 id' })
+              tx.write(400, { ok: false, code: 'module-enable-rejected', message: '缺少模块 id' })
               return
             }
             if (typeof record.enabled !== 'boolean') {
-              writeBridgeJson(res, 400, { ok: false, code: 'module-enable-rejected', message: 'enabled 必须是布尔值' })
+              tx.write(400, { ok: false, code: 'module-enable-rejected', message: 'enabled 必须是布尔值' })
               return
             }
             // 只允许启用磁盘上真实存在的模块：启用表写进一个不存在的 id 会让装配静默少装一个。
             if (record.enabled && !moduleDirExists(userModulesDir(), id)) {
-              writeBridgeJson(res, 400, { ok: false, code: 'module-enable-rejected', message: `模块 ${id} 不存在` })
+              tx.write(400, { ok: false, code: 'module-enable-rejected', message: `模块 ${id} 不存在` })
               return
             }
             const enabled = record.enabled
@@ -1894,96 +1752,84 @@ export function registerSettingsBridge(
                   if (!changed.includes(id) && !enabledModuleIds(userModulesDir()).includes(id)
                     && readModuleConfigOrder(userModulesDir(), id).entries.length > 0) changed.push(id)
                   for (const changedId of changed) {
-                    if (!await runOverridesChange(res, changedId)) return
+                    if (!await runOverridesChange(tx.write, changedId)) return
                   }
                 }
                 setModuleEnabled(userModulesDir(), id, enabled)
-                if (!await runOverridesChange(res)) return
-                writeBridgeJson(res, 200, { ok: true, value: { enabled: enabledModuleIds(userModulesDir()) } })
+                if (!await runOverridesChange(tx.write)) return
+                tx.write(200, { ok: true, value: { enabled: enabledModuleIds(userModulesDir()) } })
               } catch (error) {
-                writeModuleOrderError(res, error)
+                writeModuleOrderError(tx.write, error)
               }
             })
             moduleOrderQueue = run.catch(() => {})
             await run
-          },
+          } }),
         }),
         sctx.webServer.register({
           kind: 'exact',
           path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.moduleConfigOrder,
-          handler: async (req, res) => {
-            if (!guard(req, res)) return
-            const parsed = await readBridgeBodyForHandler(req, res)
-            if (parsed === undefined) return
-            const body = parsed.body
+          handler: route({ body: 'required', handle: async (tx) => {
+            const body = tx.record
             // 客户端无参数读取序列化为 {}；与空请求体一样读取全局排序。
-            const writing = isRecord(body) && (body.entries !== undefined || body.expectedRevision !== undefined)
-            if (body !== undefined && (!isRecord(body)
-              || Object.keys(body).some((key) => key !== 'moduleId' && key !== 'entries' && key !== 'expectedRevision')
+            const writing = body.entries !== undefined || body.expectedRevision !== undefined
+            if (Object.keys(body).some((key) => key !== 'moduleId' && key !== 'entries' && key !== 'expectedRevision')
               || (body.moduleId !== undefined && (typeof body.moduleId !== 'string' || readEditTarget(body.moduleId) !== body.moduleId))
               || (writing && (typeof body.expectedRevision !== 'string' || !SHA256_HEX_RE.test(body.expectedRevision)
                 || !Array.isArray(body.entries)
                 || body.entries.some((entry) => !isRecord(entry)
                 || Object.keys(entry).some((key) => key !== 'moduleId' && key !== 'configId')
                 || typeof entry.moduleId !== 'string' || readEditTarget(entry.moduleId) !== entry.moduleId
-                || typeof entry.configId !== 'string' || entry.configId.length === 0 || entry.configId.length > 256))))) {
-              writeBridgeJson(res, 400, { ok: false, code: 'module-config-order-invalid', message: '排序只接受配置身份列表和读取时的版本' })
+                || typeof entry.configId !== 'string' || entry.configId.length === 0 || entry.configId.length > 256)))) {
+              tx.write(400, { ok: false, code: 'module-config-order-invalid', message: '排序只接受配置身份列表和读取时的版本' })
               return
             }
             const run = moduleOrderQueue.then(async () => {
               try {
-                const moduleId = isRecord(body) ? body.moduleId as string | undefined : undefined
+                const moduleId = body.moduleId as string | undefined
                 if (writing) {
                   const changedIds = saveModuleConfigOrder(userModulesDir(), body.expectedRevision as string, body.entries as ModuleConfigIdentity[], moduleId)
                   for (const id of changedIds) {
-                    if (!await runOverridesChange(res, id)) return
+                    if (!await runOverridesChange(tx.write, id)) return
                   }
                 }
-                writeBridgeJson(res, 200, { ok: true, value: readModuleConfigOrder(userModulesDir(), moduleId) })
+                tx.write(200, { ok: true, value: readModuleConfigOrder(userModulesDir(), moduleId) })
               } catch (error) {
-                writeModuleOrderError(res, error)
+                writeModuleOrderError(tx.write, error)
               }
             })
             moduleOrderQueue = run.catch(() => {})
             await run
-          },
+          } }),
         }),
         // 角色来源沿同一模块安装事务；不再维护独立角色库。
         sctx.webServer.register({
           kind: 'exact',
           path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.charactersImport,
-          handler: async (req, res) => {
-            if (!guard(req, res)) return
-            const dir = editDir(req) ?? ''
+          handler: route({ body: 'required', handle: async (tx) => {
+            const dir = tx.editDir()
             if (dir.length === 0) {
-              writeBridgeJson(res, 400, { ok: false, code: 'module-dir-unavailable', message: '模块目录未配置' })
+              tx.write(400, { ok: false, code: 'module-dir-unavailable', message: '模块目录未配置' })
               return
             }
-            const parsedBody = await readBridgeBodyForHandler(req, res)
-            if (parsedBody === undefined) return
-            const { body } = parsedBody
-            if (body === null || typeof body !== 'object') {
-              writeBridgeJson(res, 400, { ok: false, code: 'settings-rejected', message: 'unreadable JSON body' })
-              return
-            }
-            const record = body as Record<string, unknown>
+            const record = tx.record
             // 与模块包同一套入口校验：非法 preview/摘要一律 400，且发生在写入之前。
             const request = readImportRequestParams(record)
             if (!request.ok) {
-              writeBridgeJson(res, 400, { ok: false, code: 'characters-rejected', message: request.message })
+              tx.write(400, { ok: false, code: 'characters-rejected', message: request.message })
               return
             }
-            if (!guardModuleWrite(dir, res)) return
+            if (!guardModuleWrite(dir, tx.write)) return
             try {
               const files = await expandModuleSource(request.params.sourceId === undefined ? readBridgeFiles(record.files) : assetSources.read(request.params.sourceId))
-              if (editDir(req) !== dir) {
-                writeBridgeJson(res, 409, { ok: false, code: 'characters-preview-stale', message: '当前模块已切换，请重新预览' })
+              if (tx.editDir() !== dir) {
+                tx.write(409, { ok: false, code: 'characters-preview-stale', message: '当前模块已切换，请重新预览' })
                 return
               }
               const prepared = prepareImport(files, 'character', request.params)
               if (prepared.state !== 'ready') {
                 if (!request.params.preview) throw new Error('请先选择内容类型或提示顺序组并重新预览')
-                writeBridgeJson(res, 200, { ok: true, value: { preview: true, ...prepared } })
+                tx.write(200, { ok: true, value: { preview: true, ...prepared } })
                 return
               }
               const root = userModulesDir()
@@ -1991,113 +1837,100 @@ export function registerSettingsBridge(
               if (!('prepared' in preview)) throw new Error('角色来源未形成有效模块候选')
               const { summary, sourceDigest, previewRevision } = preview
               if (request.params.preview) {
-                writeBridgeJson(res, 200, { ok: true, value: { preview: true, state: 'ready', name: summary.targetName, summary, sourceDigest, previewRevision, ...(prepared.report === undefined ? {} : { report: prepared.report }) } })
+                tx.write(200, { ok: true, value: { preview: true, state: 'ready', name: summary.targetName, summary, sourceDigest, previewRevision, ...(prepared.report === undefined ? {} : { report: prepared.report }) } })
                 return
               }
               const result = await installModulePackage(root, files, request.params, { preserveAssets: true })
               invalidateDescriptor()
-              if (!await finishModuleChange(res, () => deps.moduleInstalled?.(result.id))) return
-              writeBridgeJson(res, 200, { ok: true, value: { id: result.id, name: summary.targetName } })
+              if (!await finishModuleChange(tx.write, () => deps.moduleInstalled?.(result.id))) return
+              tx.write(200, { ok: true, value: { id: result.id, name: summary.targetName } })
             } catch (error) {
               const code = typeof (error as { code?: unknown }).code === 'string' ? String((error as { code: string }).code) : 'characters-rejected'
-              writeBridgeJson(res, code.includes('stale') ? 409 : 400, { ok: false, code, message: error instanceof Error ? error.message : String(error) })
+              tx.write(code.includes('stale') ? 409 : 400, { ok: false, code, message: error instanceof Error ? error.message : String(error) })
             }
-          },
+          } }),
         }),
         sctx.webServer.register({
           kind: 'exact',
           path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.charactersImportStream,
-          handler: async (req, res) => {
-            if (!guard(req, res)) return
-            writeBridgeJson(res, 410, { ok: false, code: 'asset-client-upgrade-required', message: '请刷新页面：角色卡需先上传暂存并预览，再确认导入' })
-          },
+          handler: route({ body: 'none', handle: async (tx) => {
+            tx.write(410, { ok: false, code: 'asset-client-upgrade-required', message: '请刷新页面：角色卡需先上传暂存并预览，再确认导入' })
+          } }),
         }),
         sctx.webServer.register({
           kind: 'exact',
           path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.moduleMerge,
-          handler: async (req, res) => {
-            if (!guard(req, res)) return
-            const dir = editDir(req) ?? ''
+          handler: route({ body: 'required', handle: async (tx) => {
+            const dir = tx.editDir()
             if (dir.length === 0) {
-              writeBridgeJson(res, 400, { ok: false, code: 'module-dir-unavailable', message: '模块目录未配置' })
+              tx.write(400, { ok: false, code: 'module-dir-unavailable', message: '模块目录未配置' })
               return
             }
-            const parsedBody = await readBridgeBodyForHandler(req, res)
-            if (parsedBody === undefined) return
-            const { body } = parsedBody
-            const record = (body ?? {}) as Record<string, unknown>
+            const record = tx.record
             const id = typeof record.id === 'string' ? record.id.trim() : ''
             if (id.length === 0) {
-              writeBridgeJson(res, 400, { ok: false, code: 'characters-rejected', message: '缺少角色卡 id' })
+              tx.write(400, { ok: false, code: 'characters-rejected', message: '缺少角色卡 id' })
               return
             }
-            if (!guardModuleWrite(dir, res)) return
+            if (!guardModuleWrite(dir, tx.write)) return
             const result = mergeModuleIntoModule(dirname(dir), basename(dir), id)
             if (!result.ok) {
-              writeBridgeJson(res, 400, { ok: false, code: 'characters-rejected', message: result.message })
+              tx.write(400, { ok: false, code: 'characters-rejected', message: result.message })
               return
             }
-            if (!await runOverridesChange(res, basename(dir))) return
-            writeBridgeJson(res, 200, { ok: true, value: { id, count: result.count } })
-          },
+            if (!await runOverridesChange(tx.write, basename(dir))) return
+            tx.write(200, { ok: true, value: { id, count: result.count } })
+          } }),
         }),
         sctx.webServer.register({
           kind: 'exact',
           path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.moduleUnmerge,
-          handler: async (req, res) => {
-            if (!guard(req, res)) return
-            const dir = editDir(req) ?? ''
+          handler: route({ body: 'required', handle: async (tx) => {
+            const dir = tx.editDir()
             if (dir.length === 0) {
-              writeBridgeJson(res, 400, { ok: false, code: 'module-dir-unavailable', message: '模块目录未配置' })
+              tx.write(400, { ok: false, code: 'module-dir-unavailable', message: '模块目录未配置' })
               return
             }
-            const parsedBody = await readBridgeBodyForHandler(req, res)
-            if (parsedBody === undefined) return
-            const { body } = parsedBody
-            const record = (body ?? {}) as Record<string, unknown>
+            const record = tx.record
             const id = typeof record.id === 'string' ? record.id.trim() : ''
             if (id.length === 0) {
-              writeBridgeJson(res, 400, { ok: false, code: 'characters-rejected', message: '缺少角色卡 id' })
+              tx.write(400, { ok: false, code: 'characters-rejected', message: '缺少角色卡 id' })
               return
             }
-            if (!guardModuleWrite(dir, res)) return
+            if (!guardModuleWrite(dir, tx.write)) return
             const result = removeMergedModule(dirname(dir), basename(dir), id)
             if (!result.ok) {
-              writeBridgeJson(res, 400, { ok: false, code: 'characters-rejected', message: result.message })
+              tx.write(400, { ok: false, code: 'characters-rejected', message: result.message })
               return
             }
-            if (!await runOverridesChange(res, basename(dir))) return
-            writeBridgeJson(res, 200, { ok: true, value: { id, count: result.count } })
-          },
+            if (!await runOverridesChange(tx.write, basename(dir))) return
+            tx.write(200, { ok: true, value: { id, count: result.count } })
+          } }),
         }),
         sctx.webServer.register({
           kind: 'exact',
           path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.subagentToolPolicy,
-          handler: async (req, res) => {
-            if (!guard(req, res)) return
-            const dir = editDir(req) ?? ''
+          handler: route({ body: 'required', handle: async (tx) => {
+            const dir = tx.editDir()
             if (dir.length === 0) {
-              writeBridgeJson(res, 400, { ok: false, code: 'module-dir-unavailable', message: '模块目录未配置' })
+              tx.write(400, { ok: false, code: 'module-dir-unavailable', message: '模块目录未配置' })
               return
             }
-            const parsedBody = await readBridgeBodyForHandler(req, res)
-            if (parsedBody === undefined) return
-            const { body } = parsedBody
-            const record = (body ?? {}) as Record<string, unknown>
-            if (!guardModuleIdentity(req, record, dir, res)) return
+            const record = tx.record
+            if (!guardModuleIdentity(tx, record, dir)) return
             // 无 policy 载荷 = 读取（module.yml 顶层 subagentToolPolicy 段）。
             if (record.policy === undefined) {
               try {
                 const spec = loadModuleSpec(dir)
                 const policy = spec.subagentToolPolicy ?? null
-                writeBridgeJson(res, 200, { ok: true, value: { policy } })
+                tx.write(200, { ok: true, value: { policy } })
               } catch (error) {
-                if (writeLayerSettingsError(res, error)) return
-                writeBridgeJson(res, 200, { ok: true, value: { policy: null } })
+                if (writeLayerSettingsError(tx.write, error)) return
+                tx.write(200, { ok: true, value: { policy: null } })
               }
               return
             }
-            if (!guardModuleWrite(dir, res)) return
+            if (!guardModuleWrite(dir, tx.write)) return
             try {
               const policy = record.policy
               const policyUrl = pathToFileURL(join(packageEngineDir(), 'subagent-tool-policy-core.mjs'))
@@ -2107,10 +1940,10 @@ export function registerSettingsBridge(
               const isEmpty = policy === null || (typeof policy === 'object' && !Array.isArray(policy) && Object.keys(policy as Record<string, unknown>).length === 0)
               const errors = isEmpty ? [] : core.validateSubagentToolPolicy(policy)
               if (errors.length > 0) {
-                writeBridgeJson(res, 409, { ok: false, code: 'subagent-tool-policy-rejected', message: '策略校验失败：' + errors.join('; '), value: { errors } })
+                tx.write(409, { ok: false, code: 'subagent-tool-policy-rejected', message: '策略校验失败：' + errors.join('; '), value: { errors } })
                 return
               }
-              if (!guardModuleIdentity(req, record, dir, res)) return
+              if (!guardModuleIdentity(tx, record, dir)) return
               withModuleDefinition(dir, (doc) => {
                 if (isEmpty) {
                   // 关闭开关：只删除策略段，**保留模块声明**——能力卡仍在，用户可再次打开；
@@ -2121,32 +1954,28 @@ export function registerSettingsBridge(
                   appendModuleCapabilities(doc, ['subagent-tool-policy'])
                 }
               })
-              if (!await runOverridesChange(res, basename(dir))) return
-              writeBridgeJson(res, 200, { ok: true, value: { policy, errors } })
+              if (!await runOverridesChange(tx.write, basename(dir))) return
+              tx.write(200, { ok: true, value: { policy, errors } })
             } catch (error) {
               const message = error instanceof Error ? error.message : String(error)
-              writeBridgeJson(res, 409, { ok: false, code: 'subagent-tool-policy-rejected', message: '子代理工具策略保存失败：' + message })
+              tx.write(409, { ok: false, code: 'subagent-tool-policy-rejected', message: '子代理工具策略保存失败：' + message })
             }
-          },
+          } }),
         }),
         sctx.webServer.register({
           kind: 'exact',
           path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.subagentToolPolicyPreview,
-          handler: async (req, res) => {
-            if (!guard(req, res)) return
-            const dir = editDir(req) ?? ''
+          handler: route({ body: 'required', handle: async (tx) => {
+            const dir = tx.editDir()
             if (dir.length === 0) {
-              writeBridgeJson(res, 400, { ok: false, code: 'module-dir-unavailable', message: '模块目录未配置' })
+              tx.write(400, { ok: false, code: 'module-dir-unavailable', message: '模块目录未配置' })
               return
             }
-            const parsedBody = await readBridgeBodyForHandler(req, res)
-            if (parsedBody === undefined) return
-            const { body } = parsedBody
-            const record = (body ?? {}) as Record<string, unknown>
+            const record = tx.record
             try {
               const spec = loadModuleSpec(dir)
               if (spec.subagentToolPolicy === undefined || spec.subagentToolPolicy === null) {
-                writeBridgeJson(res, 400, { ok: false, code: 'subagent-tool-policy-missing', message: '当前模块未配置 subagentToolPolicy' })
+                tx.write(400, { ok: false, code: 'subagent-tool-policy-missing', message: '当前模块未配置 subagentToolPolicy' })
                 return
               }
               const policyUrl = pathToFileURL(join(packageEngineDir(), 'subagent-tool-policy-core.mjs'))
@@ -2162,56 +1991,53 @@ export function registerSettingsBridge(
               const result = core.resolveSubagentToolPolicy(compiled, record as Record<string, unknown>, available)
               const tool = record.tool === 'subagent_fork' ? 'subagent_fork' : 'subagent'
               const provider = tool === 'subagent_fork' ? 'fork' : 'spawn'
-              writeBridgeJson(res, 200, { ok: true, value: { result: { ...(result as Record<string, unknown>), tool, provider, providerCapability: '运行时创建前校验 toolFilter/continuable/depth/model-route' } } })
+              tx.write(200, { ok: true, value: { result: { ...(result as Record<string, unknown>), tool, provider, providerCapability: '运行时创建前校验 toolFilter/continuable/depth/model-route' } } })
             } catch (error) {
               const message = error instanceof Error ? error.message : String(error)
-              writeBridgeJson(res, 409, { ok: false, code: 'subagent-tool-policy-preview-failed', message: '策略预览失败：' + message })
+              tx.write(409, { ok: false, code: 'subagent-tool-policy-preview-failed', message: '策略预览失败：' + message })
             }
-          },
+          } }),
         }),
         sctx.webServer.register({
           kind: 'exact',
           path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.moduleCapability,
-          handler: async (req, res) => {
-            if (!guard(req, res)) return
-            const dir = editDir(req) ?? ''
+          handler: route({ body: 'required', handle: async (tx) => {
+            const dir = tx.editDir()
             if (dir.length === 0) {
-              writeBridgeJson(res, 400, { ok: false, code: 'module-dir-unavailable', message: '模块目录未配置' })
+              tx.write(400, { ok: false, code: 'module-dir-unavailable', message: '模块目录未配置' })
               return
             }
-            const parsedBody = await readBridgeBodyForHandler(req, res)
-            if (parsedBody === undefined) return
-            const body = asRecord(parsedBody.body)
-            if (!guardModuleIdentity(req, body, dir, res)) return
+            const body = tx.record
+            if (!guardModuleIdentity(tx, body, dir)) return
             const action = body.action
             const id = action === 'create' || action === 'remove' ? body.capabilityId : action === 'create-recipe' ? body.recipeId : undefined
             if ((action !== 'create' && action !== 'remove' && action !== 'create-recipe') || typeof id !== 'string' || id.trim().length === 0 || id.length > 128) {
-              writeBridgeJson(res, 400, { ok: false, code: 'engine-capability-invalid', message: '能力或 recipe 请求格式无效' })
+              tx.write(400, { ok: false, code: 'engine-capability-invalid', message: '能力或 recipe 请求格式无效' })
               return
             }
-            if (!guardModuleWrite(dir, res)) return
+            if (!guardModuleWrite(dir, tx.write)) return
             const run = capabilityQueue.then(async () => {
-              if (!guardModuleIdentity(req, body, dir, res)) return
+              if (!guardModuleIdentity(tx, body, dir)) return
               try {
                 const result = action === 'remove'
                   ? removeModuleCapability(dir, id.trim())
                   : createModuleCapability(dir, action === 'create'
                     ? { action: 'create', capabilityId: id.trim() }
                     : { action: 'create-recipe', recipeId: id.trim() })
-                if (result.changed && !await finishModuleChange(res, () => deps.capabilityChanged?.(basename(dir)))) return
-                writeBridgeJson(res, 200, { ok: true, value: result })
+                if (result.changed && !await finishModuleChange(tx.write, () => deps.capabilityChanged?.(basename(dir)))) return
+                tx.write(200, { ok: true, value: result })
               } catch (error) {
                 if (error instanceof ModuleRulesError && error.persisted) {
-                  writeBridgeJson(res, 500, { ok: false, code: MODULE_ACTIVATION_FAILED, message: `能力变更已保存，但切片未发布；请重试刷新：${error.message}` })
+                  tx.write(500, { ok: false, code: MODULE_ACTIVATION_FAILED, message: `能力变更已保存，但切片未发布；请重试刷新：${error.message}` })
                   return
                 }
                 const message = error instanceof Error ? error.message : String(error)
-                writeBridgeJson(res, 409, { ok: false, code: 'engine-capability-rejected', message: `引擎能力变更失败：${message}` })
+                tx.write(409, { ok: false, code: 'engine-capability-rejected', message: `引擎能力变更失败：${message}` })
               }
             })
             capabilityQueue = run.then(() => undefined, () => undefined)
             await run
-          },
+          } }),
         }),
       ]
       return () => {
@@ -2226,51 +2052,41 @@ export function registerSettingsBridge(
   ctx.inject(['agents', 'tools', 'webServer'], (stx: Context) => {
     stx.effect(() => {
       const disposers: Array<() => void> = []
-      const register = (endpoint: string, handler: (req: IncomingMessage, res: ServerResponse) => Promise<void> | void): void => {
-        disposers.push(stx.webServer.register({ kind: 'exact', path: SETTINGS_BRIDGE_PREFIX + endpoint, handler }))
+      /** 尾部三个端点同样经事务入口；这里单独动态等待只为拿 agents/tools。 */
+      const register = (endpoint: string, spec: BridgeRouteSpec): void => {
+        disposers.push(stx.webServer.register({ kind: 'exact', path: SETTINGS_BRIDGE_PREFIX + endpoint, handler: route(spec) }))
       }
-      register(BRIDGE_ENDPOINTS.toolSurface, async (req, res) => {
-        if (!isLoopbackRequest(req)) {
-          writeBridgeJson(res, 403, { ok: false, code: 'settings-not-exposed', message: 'loopback requests only' })
-          return
-        }
-        if (req.method !== 'POST') {
-          writeBridgeJson(res, 405, { ok: false, code: 'settings-not-exposed', message: 'method not allowed: ' + (req.method ?? '') })
-          return
-        }
-        const parsedBody = await readBridgeBodyForHandler(req, res)
-        if (parsedBody === undefined) return
-        const { body } = parsedBody
-        const record = (body ?? {}) as Record<string, unknown>
+      register(BRIDGE_ENDPOINTS.toolSurface, { body: 'required', handle: async (tx) => {
+        const record = tx.record
         const hasSessionId = Object.prototype.hasOwnProperty.call(record, 'sessionId')
         const hasPresetId = Object.prototype.hasOwnProperty.call(record, 'presetId')
         const sessionId = hasSessionId && typeof record.sessionId === 'string' ? record.sessionId.trim() : undefined
         const presetId = hasPresetId && typeof record.presetId === 'string' ? record.presetId.trim() : undefined
         if ((hasSessionId && sessionId === undefined) || (hasPresetId && presetId === undefined)
           || (sessionId === '' || presetId === '')) {
-          writeBridgeJson(res, 400, { ok: false, code: 'tool-surface-invalid', message: 'sessionId/presetId 必须是非空字符串' })
+          tx.write(400, { ok: false, code: 'tool-surface-invalid', message: 'sessionId/presetId 必须是非空字符串' })
           return
         }
         if ((sessionId === undefined) === (presetId === undefined)) {
-          writeBridgeJson(res, 400, { ok: false, code: 'tool-surface-invalid', message: 'sessionId 与 presetId 必须且只能提供一个非空字符串' })
+          tx.write(400, { ok: false, code: 'tool-surface-invalid', message: 'sessionId 与 presetId 必须且只能提供一个非空字符串' })
           return
         }
         if ((sessionId ?? presetId ?? '').length > 256) {
-          writeBridgeJson(res, 400, { ok: false, code: 'tool-surface-invalid', message: 'sessionId/presetId 长度不能超过 256' })
+          tx.write(400, { ok: false, code: 'tool-surface-invalid', message: 'sessionId/presetId 长度不能超过 256' })
           return
         }
         if (sessionId !== undefined) {
           const agent = stx.agents.get(sessionId as never)
           if (agent === undefined) {
-            writeBridgeJson(res, 404, { ok: false, code: 'tool-surface-unknown-session', message: '当前没有存活的本地 Agent 对应此 sessionId（冷态/远程子代理不支持）' })
+            tx.write(404, { ok: false, code: 'tool-surface-unknown-session', message: '当前没有存活的本地 Agent 对应此 sessionId（冷态/远程子代理不支持）' })
             return
           }
           try {
             const tools = projectToolSchemas(stx.tools.schemas(agent))
-            writeBridgeJson(res, 200, { ok: true, value: { source: 'session', sessionId, tools } })
+            tx.write(200, { ok: true, value: { source: 'session', sessionId, tools } })
           } catch (error) {
             const message = error instanceof Error ? error.message : String(error)
-            writeBridgeJson(res, 409, { ok: false, code: 'tool-surface-failed', message })
+            tx.write(409, { ok: false, code: 'tool-surface-failed', message })
           }
           return
         }
@@ -2279,7 +2095,7 @@ export function registerSettingsBridge(
         // 结束；与官方 plugin-inventory/session-controller 一致，用 ctx.get 解析可选服务。
         const agentPresets = stx.get?.('agentPresets')
         if (agentPresets === undefined) {
-          writeBridgeJson(res, 503, { ok: false, code: 'tool-surface-unavailable', message: 'agentPresets 服务尚未就绪' })
+          tx.write(503, { ok: false, code: 'tool-surface-unavailable', message: 'agentPresets 服务尚未就绪' })
           return
         }
         let roster: Awaited<ReturnType<NonNullable<typeof agentPresets>['list']>>
@@ -2287,11 +2103,11 @@ export function registerSettingsBridge(
           roster = await agentPresets.list()
         } catch (error) {
           const message = error instanceof Error ? error.message : String(error)
-          writeBridgeJson(res, 503, { ok: false, code: 'tool-surface-unavailable', message: `官方预设 roster 读取失败：${message}` })
+          tx.write(503, { ok: false, code: 'tool-surface-unavailable', message: `官方预设 roster 读取失败：${message}` })
           return
         }
         if (!roster.some((preset) => preset.id === presetId)) {
-          writeBridgeJson(res, 404, { ok: false, code: 'tool-surface-unknown-preset', message: `未知官方预设：${presetId}` })
+          tx.write(404, { ok: false, code: 'tool-surface-unknown-preset', message: `未知官方预设：${presetId}` })
           return
         }
         try {
@@ -2302,33 +2118,23 @@ export function registerSettingsBridge(
           } finally {
             await lease[Symbol.asyncDispose]()
           }
-          writeBridgeJson(res, 200, { ok: true, value: { source: 'preset', presetId, tools } })
+          tx.write(200, { ok: true, value: { source: 'preset', presetId, tools } })
         } catch (error) {
           const message = error instanceof Error ? error.message : String(error)
-          writeBridgeJson(res, 409, { ok: false, code: 'tool-surface-preset-failed', message })
+          tx.write(409, { ok: false, code: 'tool-surface-preset-failed', message })
         }
-      })
+      } })
       // 世界书诊断（只读）：返回当前会话最近一次选择的观测记录；读取不触发求值、抽样或时间窗推进。
-      register(BRIDGE_ENDPOINTS.contextActivationDiagnostics, async (req, res) => {
-        if (!isLoopbackRequest(req)) {
-          writeBridgeJson(res, 403, { ok: false, code: 'settings-not-exposed', message: 'loopback requests only' })
-          return
-        }
-        if (req.method !== 'POST') {
-          writeBridgeJson(res, 405, { ok: false, code: 'settings-not-exposed', message: 'method not allowed: ' + (req.method ?? '') })
-          return
-        }
-        const parsedBody = await readBridgeBodyForHandler(req, res)
-        if (parsedBody === undefined) return
-        const session = readSessionIdField(parsedBody.body)
+      register(BRIDGE_ENDPOINTS.contextActivationDiagnostics, { body: 'required', handle: async (tx) => {
+        const session = readSessionIdField(tx.record)
         if (!session.ok) {
-          writeBridgeJson(res, 400, { ok: false, code: 'context-activation-diagnostics-invalid', message: session.message })
+          tx.write(400, { ok: false, code: 'context-activation-diagnostics-invalid', message: session.message })
           return
         }
         const empty = { records: [], truncated: false, step: 0, evaluated: false }
         const agent = session.sessionId === undefined ? undefined : stx.agents.get(session.sessionId as never) as { session?: unknown } | undefined
         const snapshot = agent?.session === undefined ? empty : lastContextActivationDiagnostics(agent.session)
-        writeBridgeJson(res, 200, {
+        tx.write(200, {
           ok: true,
           value: {
             records: Array.isArray(snapshot.records) ? snapshot.records.slice(0, 200) : [],
@@ -2337,27 +2143,17 @@ export function registerSettingsBridge(
             evaluated: snapshot.evaluated === true,
           },
         })
-      })
+      } })
       // 规则判定计数（只读）：按「模块 + 规则 + 通道」聚合，供状态栏显示「配了没生效」；
       // 读取不触发求值，也不回规则正文或事件载荷。
-      register(BRIDGE_ENDPOINTS.ruleDiagnostics, async (req, res) => {
-        if (!isLoopbackRequest(req)) {
-          writeBridgeJson(res, 403, { ok: false, code: 'settings-not-exposed', message: 'loopback requests only' })
-          return
-        }
-        if (req.method !== 'POST') {
-          writeBridgeJson(res, 405, { ok: false, code: 'settings-not-exposed', message: 'method not allowed: ' + (req.method ?? '') })
-          return
-        }
-        const parsedBody = await readBridgeBodyForHandler(req, res)
-        if (parsedBody === undefined) return
+      register(BRIDGE_ENDPOINTS.ruleDiagnostics, { body: 'required', handle: async (tx) => {
         // 超限丢弃只在真的丢弃过时进载荷：未超限的响应与既有契约逐字不变。
         const dropped = ruleDiagnosticsDropped()
         // 状态栏的「X/Y 规则」顺路带回全仓配置卡；配置读取失败只影响这一段，诊断照旧下发。
         let configs: ReturnType<typeof readModuleConfigOrder> | undefined
         try { configs = readModuleConfigOrder(userModulesDir()) } catch { configs = undefined }
-        writeBridgeJson(res, 200, { ok: true, value: { records: ruleDiagnosticsSnapshot(), ...(dropped > 0 ? { dropped } : {}), ...(configs === undefined ? {} : { configs }) } })
-      })
+        tx.write(200, { ok: true, value: { records: ruleDiagnosticsSnapshot(), ...(dropped > 0 ? { dropped } : {}), ...(configs === undefined ? {} : { configs }) } })
+      } })
       return () => {
         for (const dispose of disposers) dispose()
       }

@@ -420,6 +420,8 @@ bridge-transport.ts 只负责 HTTP/Blob 传输和结果 shape guard：
     成功：{ ok: true, value, ...可选扩展 }
     失败：{ ok: false, code?, message?, conflicts? }
 
+host 侧的边界只有一处：`src/runtime/bridge-transaction.ts` 的事务入口。全部桥端点经它注册，loopback／Origin 校验、只收 POST、32 MiB 上限与 JSON 对象形状在一次请求里由事务完成，端点的 handler 只写业务判断（`tx.record`／`tx.write`／`tx.editDir`）。声明 `body: 'none'` 的端点（`/meta`、`/describe`、`/templates`、`/triggers`、`/asset-upload`、`/characters-import-stream`）不消费请求流：它们在事务里既不解析也不排空，原始流由端点自己从 `tx.req` 读。新增端点默认继承完整边界，因此拒绝路径的测试面覆盖全部路径，而不是抽样两个端点。
+
 技能导入同名时返回 `skills-overwrite-required` 与目录名单，由技能页复用 ConfirmDialog 等待用户选择。
 确认后以 `overwrite` 名单重发原载荷；取消或页面卸载结束等待，不发覆盖请求。两个导入入口共用
 `data/skill-import.ts` 的确认协议；该协议不使用内容版本或历史备份。
