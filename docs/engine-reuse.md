@@ -18,7 +18,7 @@
 | `module-import-tools` | `module_import` | 来源预览、选择、凭据和候选安装 |
 | `tool-config-engine` | 模块声明的自定义工具 | 官方工具注册、执行和批准管线 |
 
-未声明的工具能力不注册。四个模块工具外壳通过 `ctx.inject` 等待各自 `pt-module-*` provider，贡献随 disposer 撤回。来源模块内的模板变量按该来源读写；模型工具目标由执行 Agent 的配装记录确定，`expectedModuleId` 只校验，不选择任意模块或目录。
+未声明的工具能力不注册。四个模块工具外壳通过 `ctx.inject` 等待各自 `pt-module-*` provider，贡献随 disposer 撤回。来源模块内的模板变量按该来源读写；模型工具目标由执行 Agent 的配装记录确定（只含已启用的规则模块；人设来源是人设卡的独立引用，可以指向未启用的模块，正文写入走 persona 端点），`expectedModuleId` 只校验，不选择任意模块或目录。
 
 旧 character/world_book/session_var 工具、对应能力与 ST 运行文件退出公开面；外部标准中的世界书名称仍可出现在导入类型和来源记录中。没有新旧双读、角色专属存储或任意文件工具。
 

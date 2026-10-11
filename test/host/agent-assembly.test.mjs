@@ -1248,10 +1248,10 @@ test('启用即配装：启用表里的每个模块各贡献一份，清单为�
 })
 
 /**
- * 配装记录是「这个 Agent 到底装了哪几层提示词」的唯一运行时答案。
+ * 配装记录是「这个 Agent 到底装了哪几层规则」的唯一运行时答案；人设来源是独立引用，不在其中。
  * 真值源是**启用表的字面量顺序**，不是实现自己算出的另一份结果。
  */
-test('配装记录报告本 Agent 的提示词层：顺序即启用表，装配前与释放后为空', async () => {
+test('配装记录报告本 Agent 的规则层：顺序即启用表，装配前与释放后为空', async () => {
   writeModuleFixture('layer-a', {
     modules: ['prompt-config-engine'],
     promptConfigs: [{ id: 'from-a', strategy: 'static', text: 'A', position: 'after-user' }],

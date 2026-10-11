@@ -105,7 +105,7 @@ persona:
 
 完整规则工具先读原始树与版本，再提交合法完整候选；删除整规则需显式 rule:null。变量工具提供 global/module 的 list/get/set/delete，set 必须显式字符串。模块记忆独立 read/append，不自动注入，也不附带在规则 note 中。
 
-工具目录仅注册已声明能力，晚到 provider 与 disposer 按原生命周期处理。模型工具目标来自执行 Agent 的受控配装记录，expectedModuleId 只复核；不能通过工具参数访问任意模块或文件。自定义工具继续支持 shell/http/delegate/fs/ask-user，并保留官方批准、拒绝与取消管线。
+工具目录仅注册已声明能力，晚到 provider 与 disposer 按原生命周期处理。模型工具目标来自执行 Agent 的受控配装记录（只含已启用的规则模块；人设来源是独立引用，未启用的模块也可以被选为人设来源，但不会成为工具写入目标），expectedModuleId 只复核；不能通过工具参数访问任意模块或文件。自定义工具继续支持 shell/http/delegate/fs/ask-user，并保留官方批准、拒绝与取消管线。
 
 ## SillyTavern 与资产交换
 

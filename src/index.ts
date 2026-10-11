@@ -179,8 +179,8 @@ registerTuiCommand(
 
   // 内置模型工具由三个独立模块按需挂载；宿主只提供对应注册服务。
   const moduleToolHost: ModuleToolHost = {
-    // 写入目标按该 Agent 的运行时配装记录解析（启用表 ∩ 磁盘，多个时取第一个），
-    // 不再查询官方 `agentPresets` 的会话绑定。
+    // 写入目标是该 Agent 已启用的规则模块（启用表 ∩ 磁盘，多个时取第一个），
+    // 不再查询官方 `agentPresets` 的会话绑定；人设来源是独立引用，不参与这里。
     target: (exec) => resolveModuleToolTarget(exec, MODULES_DIR, (sessionId) => assembly?.moduleIds(sessionId) ?? []),
     rebuild: (id) => refreshModuleRuntime(id),
   }
