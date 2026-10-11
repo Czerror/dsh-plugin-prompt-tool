@@ -38,8 +38,8 @@ export function PromptWorkspace(props: PromptWorkspaceProps): ReactNode {
     changePage(target)
     setFocusPage((value) => value + 1)
   }
-  const moduleId = store.fields.moduleId
-  const scrollKey = page === 'features' || page === 'subagent' ? `${page}:${moduleId}` : page
+  // 页面与滚动 key 只认页面 id：主语由每张卡自报，页面不再随任何模块重挂。
+  const scrollKey = page
   const open = useSyncExternalStore(
     props.controller.subscribe,
     props.controller.getSnapshot,
@@ -51,9 +51,9 @@ export function PromptWorkspace(props: PromptWorkspaceProps): ReactNode {
   }, [open, store.load])
 
   const content = page === 'features'
-    ? <MainSessionPage key={moduleId} store={store} t={t} browse={configPageBrowse(browse, scrollKey)} onNavigate={navigate} />
+    ? <MainSessionPage store={store} t={t} browse={configPageBrowse(browse, scrollKey)} onNavigate={navigate} />
     : page === 'subagent'
-      ? <SubagentPage key={moduleId} store={store} t={t} browse={configPageBrowse(browse, scrollKey)} onNavigate={navigate} />
+      ? <SubagentPage store={store} t={t} browse={configPageBrowse(browse, scrollKey)} onNavigate={navigate} />
       : page === 'tools'
         ? <ToolsPreviewPage api={props.api} presetId={props.api.sessionPreset.snapshot()} t={t} browse={browse.tools} onNavigate={navigate} onReady={markReady} />
         : page === 'skills'

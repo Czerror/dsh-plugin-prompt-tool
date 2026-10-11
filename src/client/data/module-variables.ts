@@ -24,11 +24,16 @@ export interface VariablesDraft {
   readSequence: number
 }
 
+/** 变量草稿的唯一构造点：草稿表按主语键（`${moduleId}:${scope}`）索引，无主语不建键。 */
+export function createVariablesDraft(scope: ModuleVariableScope): VariablesDraft {
+  return { scope, variables: {}, enabled: true, loading: false, saving: false, error: '', readSequence: 0 }
+}
+
 export function getVariablesDraft(drafts: Map<string, VariablesDraft>, moduleId: string, scope: ModuleVariableScope): VariablesDraft {
   const key = `${moduleId}:${scope}`
   let draft = drafts.get(key)
   if (!draft) {
-    draft = { scope, variables: {}, enabled: true, loading: false, saving: false, error: '', readSequence: 0 }
+    draft = createVariablesDraft(scope)
     drafts.set(key, draft)
   }
   return draft

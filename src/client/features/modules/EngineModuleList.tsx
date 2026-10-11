@@ -1,82 +1,51 @@
-import { useRef, useState, type ReactNode, type RefObject } from 'react'
+import { useRef, useState, type ReactNode } from 'react'
 import { IconChevronDownOutlineRegular } from '../../ui/icons.tsx'
 import { Menu } from '../../ui/Menu.tsx'
 import { Button } from '../../ui/Button.tsx'
 import type { PromptToolStore } from '../../data/use-prompt-tool-store.ts'
 import type { PromptToolTranslate } from '../../locales.ts'
 import { MODULE_CAPABILITIES, ENGINE_RECIPES, engineRecipe, isModuleCapabilityPresent } from '../../../shared/engine-capabilities.ts'
-import styles from '../../ui/controls.module.css'
+import { canEditModule, moduleFactsOf } from '../../data/module-subject.ts'
 
-/** 合并进「添加能力 / 工具模块」菜单的创建项（提示词配置、自定义工具）。 */
-export interface ModuleCreateItem {
-  id: string
-  label: string
-}
-
+/** 模块能力创建菜单：**主语＝调用方给的模块**（`moduleId`），没有归属模块就不出创建入口。 */
 export function ModuleCapabilityCreateMenu(props: {
   store: PromptToolStore
   t: PromptToolTranslate
-  /** 菜单按钮 ref：模板浮层锚定到该按钮。 */
-  anchorRef?: RefObject<HTMLButtonElement>
-  /** 合并入口：排在能力模块项之前的创建项。 */
-  extraItems?: readonly ModuleCreateItem[]
-  templatesOnly?: boolean
+  moduleId: string
   layer?: string
-  onExtraSelect?: (id: string) => void
   onCreated?: (capabilityId: string) => void
   /** 该页面不提供创建的能力（受众视图差异，如仅主对话生效的能力）。 */
   excludeCapabilities?: readonly string[]
 }): ReactNode {
-  const { store, t, anchorRef, extraItems = [], onExtraSelect, excludeCapabilities = [] } = props
+  const { store, t, moduleId, excludeCapabilities = [] } = props
   const [open, setOpen] = useState(false)
   const fallbackAnchor = useRef<HTMLButtonElement>(null)
-  const trigger = anchorRef ?? fallbackAnchor
-  const editable = store.fields.modulesEnabled && store.moduleFacts?.editable === true
+  const editable = canEditModule(store.fields, store.meta.modules, moduleId)
+  if (!editable) return null
+  const facts = moduleFactsOf(store.meta.modules, moduleId)
   const excluded = new Set(excludeCapabilities)
-  if (!editable && extraItems.length === 0) return null
   const items = [
-    ...extraItems,
-    ...(editable && !props.templatesOnly
-      ? [
-        ...MODULE_CAPABILITIES.filter(({ id, displayLayer }) => !excluded.has(id) && !isModuleCapabilityPresent(id, store.moduleFacts)
-          && (props.layer === undefined || displayLayer === props.layer))
-          .map(({ id }) => ({ id: `cap:${id}`, label: t('modules.addCapabilityItem', { id }) })),
-        ...ENGINE_RECIPES.filter(({ capabilities }) => !capabilities.some((id) => excluded.has(id))
-          && (props.layer === undefined || MODULE_CAPABILITIES.find(({ id }) => id === capabilities[0])?.displayLayer === props.layer))
-          .map(({ id }) => ({ id: `recipe:${id}`, label: t('modules.createRecipeItem', { id }) })),
-      ]
-      : []),
+    ...MODULE_CAPABILITIES.filter(({ id, displayLayer }) => !excluded.has(id) && !isModuleCapabilityPresent(id, facts)
+      && (props.layer === undefined || displayLayer === props.layer))
+      .map(({ id }) => ({ id: `cap:${id}`, label: t('modules.addCapabilityItem', { id }) })),
+    ...ENGINE_RECIPES.filter(({ capabilities }) => !capabilities.some((id) => excluded.has(id))
+      && (props.layer === undefined || MODULE_CAPABILITIES.find(({ id }) => id === capabilities[0])?.displayLayer === props.layer))
+      .map(({ id }) => ({ id: `recipe:${id}`, label: t('modules.createRecipeItem', { id }) })),
   ]
   if (items.length === 0) return null
   return <span data-engine-create-layer={props.layer}><Menu open={open} onClose={() => setOpen(false)} items={items} align="end" compact
     onSelect={(id) => {
       setOpen(false)
-      trigger.current?.focus()
-      if (!editable || !items.some((item) => item.id === id)) return
+      fallbackAnchor.current?.focus()
+      if (!items.some((item) => item.id === id)) return
       const [kind, value] = id.split(':', 2)
-      if (kind === 'cap' || kind === 'recipe') {
-        if (value !== undefined) void store.createModuleCapability(kind === 'recipe' ? 'create-recipe' : 'create', value).then((created) => {
-          const capabilityId = kind === 'recipe' ? engineRecipe(value)?.capabilities[0] : value
-          if (created && capabilityId !== undefined) props.onCreated?.(capabilityId)
-        })
-      } else onExtraSelect?.(id)
+      if (value === undefined) return
+      void store.createModuleCapability(moduleId, kind === 'recipe' ? 'create-recipe' : 'create', value).then((created) => {
+        const capabilityId = kind === 'recipe' ? engineRecipe(value)?.capabilities[0] : value
+        if (created && capabilityId !== undefined) props.onCreated?.(capabilityId)
+      })
     }}
-    anchor={<Button ref={trigger} shape="pill" variant="outline" disabled={!editable} aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen(!open)}>
-      {t(props.templatesOnly ? 'modules.addTemplates' : 'modules.addCapability')}<IconChevronDownOutlineRegular />
+    anchor={<Button ref={fallbackAnchor} shape="pill" variant="outline" aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen(!open)}>
+      {t('modules.addCapability')}<IconChevronDownOutlineRegular />
     </Button>} /></span>
-}
-
-export function EngineModuleActions(props: {
-  store: PromptToolStore
-  t: PromptToolTranslate
-  anchorRef?: RefObject<HTMLButtonElement>
-  extraItems?: readonly ModuleCreateItem[]
-  templatesOnly?: boolean
-  layer?: string
-  onExtraSelect?: (id: string) => void
-  onCreated?: (capabilityId: string) => void
-  /** 该页面不提供创建的能力。 */
-  excludeCapabilities?: readonly string[]
-}): ReactNode {
-  return <div className={styles.configActions}><ModuleCapabilityCreateMenu {...props} /></div>
 }

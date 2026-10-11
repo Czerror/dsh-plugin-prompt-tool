@@ -55,13 +55,14 @@ function PolicyNumberInput(props: { value: number; label: string; draftKey: stri
 export function SubagentToolPolicyCard(props: {
   t: PromptToolTranslate
   onNotice: Notice
-  /** 卡片所属模块＝每次请求的主语，必填：模块类端点漏传主语在编译期即拦。 */
+  /** **主语由归属方给**：`moduleId` 是这张卡所属的模块（必填）——策略读取、草稿键与写路径全按它取；
+   *  没有归属模块时调用方不渲染本卡，所以这里不做「空主语降级」。 */
   moduleId: string
   modules: ModuleOption[]
   drafts?: WorkspaceDrafts
   disabled?: boolean
 }): ReactNode {
-  const { onNotice, t } = props
+  const { onNotice, t, moduleId } = props
   const [policy, setPolicy] = useState<PolicyDraft | null>(null)
   const [loaded, setLoaded] = useState(false)
   /** 读取失败不能降级成「无策略」：否则再次打开开关会用新骨架整体覆盖磁盘中的既有策略。 */
@@ -77,12 +78,12 @@ export function SubagentToolPolicyCard(props: {
   const editorRef = useRef<PolicyEditorDraft | null>(null)
 
   const load = useCallback(() => {
-    const editor = props.drafts?.policies.get(props.moduleId ?? '') ?? { draft: null, saved: null, saving: false, loaded: false }
+    const editor = props.drafts?.policies.get(moduleId) ?? { draft: null, saved: null, saving: false, loaded: false }
     editorRef.current = editor
-    props.drafts?.policies.set(props.moduleId ?? '', editor)
+    props.drafts?.policies.set(moduleId, editor)
     editor.refresh = () => { setPolicy(editor.draft); setSaving(editor.saving); setLoaded(editor.loaded) }
     editor.report = onNotice
-    const rawDirty = [...(props.drafts?.fields ?? [])].some(([key, field]) => key.startsWith(`${props.moduleId ?? ''}:policy:`) && (field.error || field.text !== field.source))
+    const rawDirty = [...(props.drafts?.fields ?? [])].some(([key, field]) => key.startsWith(`${moduleId}:policy:`) && (field.error || field.text !== field.source))
     if (editor.loaded && (editor.saving || !deepEqual(editor.draft, editor.saved) || rawDirty)) {
       setPolicy(editor.draft)
       setLoaded(true)
@@ -96,7 +97,7 @@ export function SubagentToolPolicyCard(props: {
     setPreview(null)
     setPreviewInput({})
     setLoadError('')
-    void bridgeCall('subagentToolPolicy', { expectedModuleId: props.moduleId }, props.moduleId).then((result) => {
+    void bridgeCall('subagentToolPolicy', { expectedModuleId: moduleId }, moduleId).then((result) => {
       if (editorRef.current !== editor) return
       if (!result.ok) {
         setLoadError(result.message ?? t('policy.loadFailed'))
@@ -110,7 +111,7 @@ export function SubagentToolPolicyCard(props: {
       setPolicy(next)
       setLoaded(true)
     })
-  }, [onNotice, props.drafts, props.moduleId, t])
+  }, [moduleId, onNotice, props.drafts, t])
 
   useEffect(() => {
     load()
@@ -134,7 +135,7 @@ export function SubagentToolPolicyCard(props: {
         const submitted = editor.pending
         editor.pending = undefined
         if (deepEqual(submitted, editor.saved)) continue
-        const result = await bridgeCall('subagentToolPolicy', { policy: submitted, expectedModuleId: props.moduleId }, props.moduleId)
+        const result = await bridgeCall('subagentToolPolicy', { policy: submitted, expectedModuleId: moduleId }, moduleId)
         // 已发请求只确认自身快照；卸载取消未发队列，同模块重挂仍共享串行状态。
         if (result.ok) {
           editor.saved = submitted
@@ -147,7 +148,7 @@ export function SubagentToolPolicyCard(props: {
       editor.saving = false
       editor.refresh?.()
     })()
-  }, [props.disabled, props.moduleId, t])
+  }, [moduleId, props.disabled, t])
 
   const patch = (next: PolicyDraft | null): void => {
     if (editorRef.current === null || props.disabled) return
@@ -158,7 +159,7 @@ export function SubagentToolPolicyCard(props: {
   const toggle = (next: boolean): void => {
     if (props.disabled) return
     if (!next) for (const key of props.drafts?.fields.keys() ?? []) {
-      if (key.startsWith(`${props.moduleId ?? ''}:policy:`)) props.drafts?.fields.delete(key)
+      if (key.startsWith(`${moduleId}:policy:`)) props.drafts?.fields.delete(key)
     }
     const draft = next ? structuredClone(SUBAGENT_TOOL_POLICY_SKELETON) : null
     patch(draft)
@@ -167,7 +168,7 @@ export function SubagentToolPolicyCard(props: {
 
   const runPreview = (): void => {
     const editor = editorRef.current
-    void bridgeCall('subagentToolPolicyPreview', previewInput, props.moduleId).then((result) => {
+    void bridgeCall('subagentToolPolicyPreview', previewInput, moduleId).then((result) => {
       if (editorRef.current !== editor) return
       if (result.ok) setPreview(result.value.result)
       else onNotice('error', ('message' in result ? result.message : undefined) ?? t('policy.notice.previewFailed'))
@@ -188,7 +189,7 @@ export function SubagentToolPolicyCard(props: {
     scopeFocused.current = false
     requestAnimationFrame(() => {
     if (scopeFocused.current) return
-    if ([...(props.drafts?.fields ?? [])].some(([key, field]) => key.startsWith(`${props.moduleId ?? ''}:policy:`) && (field.error || field.text !== field.source))) return
+    if ([...(props.drafts?.fields ?? [])].some(([key, field]) => key.startsWith(`${moduleId}:policy:`) && (field.error || field.text !== field.source))) return
     const draft = editorRef.current?.draft
     if (draft === undefined || draft === null || loadError.length > 0) return
     // 存在无效角色卡绑定时端点会拒绝，先不写盘；用户修正后失焦即保存。
@@ -361,10 +362,10 @@ export function SubagentToolPolicyCard(props: {
                 {inlineField('id', t('policy.rule.id.hint'), (
                   <TextInput aria-label={t('policy.rule.idAria')} value={rule.id} placeholder="id" spellCheck={false}
                     onChange={(event) => {
-                      const oldKey = `${props.moduleId ?? ''}:policy:rule:${rule.id}:order`
+                      const oldKey = `${moduleId}:policy:rule:${rule.id}:order`
                       const retained = props.drafts?.fields.get(oldKey)
                       if (retained !== undefined) {
-                        props.drafts?.fields.set(`${props.moduleId ?? ''}:policy:rule:${event.target.value}:order`, retained)
+                        props.drafts?.fields.set(`${moduleId}:policy:rule:${event.target.value}:order`, retained)
                         props.drafts?.fields.delete(oldKey)
                       }
                       patch({ ...policy, taskRules: (policy.taskRules ?? []).map((item, at) => at === index ? { ...item, id: event.target.value } : item) })
@@ -380,7 +381,7 @@ export function SubagentToolPolicyCard(props: {
                 ))}
                 {inlineField('order', t('policy.rule.order.hint'), (
                   <PolicyNumberInput label="order" value={rule.order ?? 100} t={t} drafts={props.drafts?.fields}
-                    draftKey={`${props.moduleId ?? ''}:policy:rule:${rule.id}:order`}
+                    draftKey={`${moduleId}:policy:rule:${rule.id}:order`}
                     onChange={(value) => patch({ ...policy, taskRules: (policy.taskRules ?? []).map((item, at) => at === index ? { ...item, order: value } : item) })} />
                 ))}
                 {inlineField(t('policy.rule.profile'), t('policy.rule.profile.hint'), (
@@ -392,7 +393,7 @@ export function SubagentToolPolicyCard(props: {
                 {rule.pattern.length > 0 && (() => { try { new RegExp(rule.pattern); return null } catch { return <small className={styles.noticeError}>{t('policy.rule.invalidPattern')}</small> } })()}
                 <HintTooltip label={t('policy.remove')}><Button shape="pill" size="sm" variant="outline" icon type="button" data-danger aria-label={t('policy.rule.removeAria')}
                   onClick={() => {
-                    props.drafts?.fields.delete(`${props.moduleId ?? ''}:policy:rule:${rule.id}:order`)
+                    props.drafts?.fields.delete(`${moduleId}:policy:rule:${rule.id}:order`)
                     patch({ ...policy, taskRules: (policy.taskRules ?? []).filter((_, at) => at !== index) })
                   }}>×</Button></HintTooltip>
               </div>
@@ -409,7 +410,7 @@ export function SubagentToolPolicyCard(props: {
               {policyChip(t('policy.expansion.approval'), t('policy.expansion.approval.hint'), asBool(policy.modelExpansion?.requireApproval), (next) => patch({ ...policy, modelExpansion: { ...policy.modelExpansion, requireApproval: next } }))}
               {inlineField(t('policy.expansion.max'), t('policy.expansion.max.hint'), (
                 <PolicyNumberInput min={0} label={t('policy.expansion.maxAria')} value={asNum(policy.modelExpansion?.maxAdditionalTools)}
-                  t={t} drafts={props.drafts?.fields} draftKey={`${props.moduleId ?? ''}:policy:maxAdditionalTools`}
+                  t={t} drafts={props.drafts?.fields} draftKey={`${moduleId}:policy:maxAdditionalTools`}
                   onChange={(value) => patch({ ...policy, modelExpansion: { ...policy.modelExpansion, maxAdditionalTools: value } })} />
               ))}
             </div>

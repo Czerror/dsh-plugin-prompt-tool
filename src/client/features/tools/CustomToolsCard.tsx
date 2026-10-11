@@ -13,25 +13,58 @@ const styles = { ...sharedCss, ...featureCss }
 /** 所属层按钮直接提交的创建请求；草稿由常驻页面立即建立。 */
 export type ToolCreateIntent = { kind: 'blank' | 'template'; spec?: ToolDraft; moduleId?: string }
 
+/** 工具草稿的唯一构造点：按模块的编辑区与「新建工具模板」入口共用同一份草稿。 */
+export const createToolsEditorDraft = (): ToolsEditorDraft => ({
+  tools: [], saved: [], expanded: new Set(), fields: new Map(), loaded: false, error: '', saving: false,
+})
+
+/**
+ * 把工具模板插入该模块的工具草稿（主语＝调用方给的模块）。
+ * 草稿还没读回时先按同一主语读一次（与卡内同一端点、同一载荷形状）；
+ * 读回期间已有插入/编辑时只补基线，不覆盖草稿。
+ */
+export async function insertToolTemplateIntoDraft(drafts: WorkspaceDrafts, moduleId: string, spec: Record<string, unknown>): Promise<'inserted' | 'duplicate' | 'failed'> {
+  const editor = drafts.tools.get(moduleId) ?? createToolsEditorDraft()
+  drafts.tools.set(moduleId, editor)
+  if (!editor.loaded) {
+    const readingTools = editor.tools
+    const result = await bridgeCall('customTools', { expectedModuleId: moduleId }, moduleId)
+    if (!result.ok) return 'failed'
+    const loaded = (result.value.customTools ?? []).map((tool) => asRecord(tool))
+    if (editor.tools === readingTools) editor.tools = loaded
+    editor.saved = loaded
+    editor.loaded = true
+    editor.error = ''
+    editor.refresh?.()
+  }
+  if (editor.tools.some((tool) => tool.id === spec.id)) return 'duplicate'
+  editor.tools = [...editor.tools, JSON.parse(JSON.stringify(spec)) as ToolDraft]
+  editor.refresh?.()
+  return 'inserted'
+}
+
 /** 工具草稿与保存由常驻页面持有；设置区只渲染同一份编辑内容。 */
 export function useCustomToolsEditor(props: {
   t: PromptToolTranslate
   onNotice: (kind: 'ok' | 'error', message: string) => void
   disabled?: boolean
-  /** 卡片所属模块＝每次请求的主语，必填：模块类端点漏传主语在编译期即拦。 */
-  moduleId: string
+  /** **主语由归属方给**：`moduleId` 是这张卡所属模块＝每次请求的主语（读、写、草稿表都按它）；
+   *  没有归属模块时调用方不渲染本卡，草稿与请求都不会以空主语发出。 */
+  moduleId?: string
   drafts?: WorkspaceDrafts
   onChooseTemplate?: (anchor: HTMLButtonElement) => void
 }): { createTool: (intent: ToolCreateIntent) => void; content: ReactNode } {
   const { t } = props
+  const moduleId = props.moduleId
   const editor = useMemo((): ToolsEditorDraft => {
-    const key = props.moduleId ?? ''
-    const retained = props.drafts?.tools.get(key)
+    // 无主语：不建工具草稿（空串键会与真模块混用），给一份不落表的空草稿。
+    if (moduleId === undefined) return createToolsEditorDraft()
+    const retained = props.drafts?.tools.get(moduleId)
     if (retained !== undefined) return retained
-    const next: ToolsEditorDraft = { tools: [], saved: [], expanded: new Set(), fields: new Map(), loaded: false, error: '', saving: false }
-    props.drafts?.tools.set(key, next)
+    const next = createToolsEditorDraft()
+    props.drafts?.tools.set(moduleId, next)
     return next
-  }, [props.drafts, props.moduleId])
+  }, [props.drafts, moduleId])
   const [tools, renderTools] = useState<ToolDraft[]>(editor.tools)
   const setTools = (next: ToolDraft[]): void => { editor.tools = next; renderTools(next) }
   const [expandedCards, renderExpanded] = useState(editor.expanded)
@@ -59,6 +92,8 @@ export function useCustomToolsEditor(props: {
       activeEditor.current = null
       if (editor.refresh === refresh) editor.refresh = undefined
     }
+    // 无主语：不发模块类请求（卡片由 canEditSubject 判定为只读）。
+    if (moduleId === undefined) { setLoading(false); setLoadError(''); return cleanup }
     const dirty = JSON.stringify(editor.tools) !== JSON.stringify(editor.saved)
       || [...editor.fields.values()].some((field) => field.text !== field.source || !!field.error)
     if (editor.loaded && (dirty || editor.saving) && revision === 0) {
@@ -70,9 +105,9 @@ export function useCustomToolsEditor(props: {
     setLoadError('')
     const readingTools = editor.tools
     void (async () => {
-      // 第三个实参 = `x-module-id`：服务端按它解析编辑目标；不带就回退到首个启用模块，
-      // 与 expectedModuleId 不一致时直接 409 module-changed（卡片会一直读不出工具）。
-      const customResult = await bridgeCall('customTools', { expectedModuleId: props.moduleId }, props.moduleId)
+      // 第三个实参 = `x-module-id`：主语＝这张卡所属的模块。服务端**没有任何回退**
+      // （未声明就是没有目标，模块类端点按空目标拒绝），所以这个实参必须带，且只能带该模块的 id。
+      const customResult = await bridgeCall('customTools', { expectedModuleId: moduleId }, moduleId)
       if (!active) return
       if (!customResult.ok) {
         editor.error = customResult.message ?? t('customTools.loadFailed')
@@ -95,12 +130,12 @@ export function useCustomToolsEditor(props: {
       setLoading(false)
     })()
     return cleanup
-  }, [editor, revision])
+  }, [editor, moduleId, revision])
   const updateTools = (next: ToolDraft[]): void => {
     if (!disabled) setTools(next)
   }
   const save = (): void => {
-    if (disabled || editor.saving) return
+    if (moduleId === undefined || disabled || editor.saving) return
     if ([...editor.fields.values()].some((field) => field.error || field.text !== field.source)) {
       props.onNotice('error', t('customTools.invalidDraft'))
       return
@@ -120,7 +155,7 @@ export function useCustomToolsEditor(props: {
     })
     setSaving(true)
     editor.saving = true
-    void bridgeCall('customTools', { customTools: cleanTools, expectedModuleId: props.moduleId }, props.moduleId).then((customResult) => {
+    void bridgeCall('customTools', { customTools: cleanTools, expectedModuleId: moduleId }, moduleId).then((customResult) => {
       editor.saving = false
       if (customResult.ok) editor.saved = tools
       editor.refresh?.()
@@ -154,7 +189,7 @@ export function useCustomToolsEditor(props: {
   }
   /** 创建使用草稿当前值，连续点击即使尚未重渲染也不会相互覆盖。 */
   const createTool = (intent: ToolCreateIntent): void => {
-    if (intent.moduleId !== undefined && intent.moduleId !== props.moduleId) return
+    if (intent.moduleId !== undefined && intent.moduleId !== moduleId) return
     if (disabled || !editor.loaded) {
       props.onNotice('error', t(props.disabled ? 'customTools.readonly' : editor.error ? 'customTools.loadFailed' : 'customTools.loading'))
       return
@@ -191,7 +226,7 @@ export function useCustomToolsEditor(props: {
       {loadError && <p role="alert">{loadError} <Button shape="pill" size="md" variant="outline" type="button" onClick={() => setRevision((value) => value + 1)}>{t('customTools.retry')}</Button></p>}
       <fieldset className={styles.customToolsFields} aria-label={t('customTools.fieldsAria')}>
         <div className={styles.configActions}>
-          <Button shape="pill" size="sm" variant="outline" type="button" disabled={disabled} onClick={() => createTool({ kind: 'blank', moduleId: props.moduleId })}>{t('main.newBlankTool')}</Button>
+          <Button shape="pill" size="sm" variant="outline" type="button" disabled={disabled} onClick={() => createTool({ kind: 'blank', moduleId })}>{t('main.newBlankTool')}</Button>
           {props.onChooseTemplate !== undefined && <Button shape="pill" size="sm" variant="outline" type="button" disabled={disabled}
             onClick={(event) => { if (!disabled) props.onChooseTemplate?.(event.currentTarget) }}>{t('main.addToolTemplate')}</Button>}
           {(tools.length > 0 || hasPersistedTools) && (

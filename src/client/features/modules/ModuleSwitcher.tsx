@@ -39,8 +39,10 @@ export const ModuleSwitcher = memo(function ModuleSwitcher(props: { store: Promp
     directoryTooLarge: t('assetImport.directoryTooLarge'),
     preview: (request) => previewAsset('importModulePackage', request),
     commit: async (preview) => {
-      if (preview.overwrite && preview.summary?.targetId === store.fields.moduleId) {
-        if (hasWorkspaceDrafts(store.editorDrafts, store.fields.moduleId)) return { ok: false, message: t('assetImport.draftBlocked') }
+      // 覆盖导入会替换目标模块的定义：该模块自己的草稿还在时先拦住（不问任何会话级目标）。
+      const targetId = preview.summary?.targetId
+      if (preview.overwrite && targetId !== undefined) {
+        if (hasWorkspaceDrafts(store.editorDrafts, targetId)) return { ok: false, message: t('assetImport.draftBlocked') }
         if (store.dirtySwitches) return { ok: false, message: t('assetImport.draftBlocked') }
       }
       return commitAsset('importModulePackage', preview)
@@ -56,8 +58,8 @@ export const ModuleSwitcher = memo(function ModuleSwitcher(props: { store: Promp
 
   /** 删除模块（物理删除用户目录副本；插件目录模板保留，可经「新建模块」还原）。 */
   const deleteModule = async (id: string): Promise<void> => {
-    // 主语＝当前编辑目标：服务端据此执行「在用模块不可删」；空主语由 bridgeCall 省略该头。
-    const res = await bridgeCall('moduleDelete', { id }, store.fields.moduleId)
+    // 没有会话级「在用模块」：不带主语即无声明（「在用」保护在人设引用那一侧，服务端另有判据）。
+    const res = await bridgeCall('moduleDelete', { id })
     if (res.ok) {
       store.showNotice('ok', t('moduleSwitcher.notice.deleted', { id }))
       await store.load()
@@ -124,11 +126,11 @@ export const ModuleSwitcher = memo(function ModuleSwitcher(props: { store: Promp
         <span className={styles.inlineControls}>
           <Button ref={pickerAnchorRef} shape="pill" variant="primary" size="md" onClick={() => setPickerOpen(true)}>{t('moduleSwitcher.new')}</Button>
           <Button shape="pill" variant="outline" size="md" onClick={() => setImportOpen(true)}>{t('assetImport.moduleTitle')}…</Button>
-          {/* 模块运行总闸：与新建/导入同排、靠最右，说明文字在开关左侧常驻。 */}
+          {/* 模块运行总闸：与新建/导入同排、靠最右，说明文字在开关左侧常驻。全局设置，无模块主语。 */}
           <span className={styles.moduleGlobalSwitch}>
             <span>{t('modules.globalSwitch')}</span>
             <Switch checked={fields.modulesEnabled} label={t('modules.globalSwitch')}
-              disabled={store.moduleFacts?.editable !== true} onChange={() => store.toggle('modulesEnabled')} />
+              onChange={() => store.toggle()} />
           </span>
         </span>
       </div>
@@ -136,7 +138,7 @@ export const ModuleSwitcher = memo(function ModuleSwitcher(props: { store: Promp
         onFiles={(files) => { void flow.run(files) }} onChoices={flow.updateChoices} onConfirm={() => { void flow.confirm() }}
         onClose={() => { flow.cancel(); setImportOpen(false) }} onReset={flow.cancel} onSkip={flow.skip} onEnd={flow.end}
         onRepreview={() => { void flow.repreview() }} onRefresh={() => { void flow.retryRefresh() }}
-        onUse={flow.resultLabel === undefined ? undefined : () => { store.setModuleId(flow.resultLabel!); flow.cancel(); setImportOpen(false) }} />}
+        onUse={flow.resultLabel === undefined ? undefined : () => { void setModuleEnabled(flow.resultLabel!, true); flow.cancel(); setImportOpen(false) }} />}
       {exportTarget && <ModuleExportDialog t={t} module={exportTarget} onClose={() => setExportTarget(undefined)} />}
       <div className={styles.moduleGrid}>
         {modules.length === 0 ? (
@@ -160,14 +162,12 @@ export const ModuleSwitcher = memo(function ModuleSwitcher(props: { store: Promp
   )
 
   function renderCard(module: ModuleSummary): ReactNode {
-    const active = fields.moduleId === module.id
     const confirming = confirmingDelete === module.id
     // 不可渲染（缺 modules/组合文件，包内也无同名模板可回退）：灰显禁切换，
     // 提示还原路径——避免点击后宿主挂载失败的哑弹。
     const blocked = module.renderable === false || module.broken !== undefined
     return (
-      <article key={module.id} className={clsx(styles.moduleCard, blocked && styles.moduleCardBlocked)}
-        data-active={active ? '' : undefined}>
+      <article key={module.id} className={clsx(styles.moduleCard, blocked && styles.moduleCardBlocked)}>
         <div className={styles.moduleCardBody}>
           <span className={styles.moduleCardHead}>
             <strong className={styles.moduleCardName}>{module.name}</strong>
@@ -180,7 +180,7 @@ export const ModuleSwitcher = memo(function ModuleSwitcher(props: { store: Promp
           <code className={styles.moduleCardId}>{module.id}</code>
         </div>
         <span className={styles.moduleCardFooter}>
-          {/* 开关与卡头徽章都表达启用状态；编辑目标独立由边框高亮（data-active）表达。 */}
+          {/* 开关与卡头徽章都表达启用状态；模块页只回答「谁参与装配」，没有「当前模块」高亮。 */}
           <Switch className={styles.moduleActivate}
             checked={module.enabled === true}
             disabled={blocked}
@@ -218,10 +218,9 @@ export const ModuleSwitcher = memo(function ModuleSwitcher(props: { store: Promp
               onConfirm={() => deleteModule(module.id)} onCancel={() => setConfirmingDelete((current) => current === module.id ? undefined : current)} />
           )}
           {(
-            <HintTooltip label={active ? t('moduleSwitcher.delete.hintActive') : t('moduleSwitcher.delete.hint')}>
+            <HintTooltip label={t('moduleSwitcher.delete.hint')}>
               <button type="button" className={styles.moduleIconButton}
                 aria-label={t('moduleSwitcher.delete.aria', { name: module.name })}
-                disabled={active}
                 onClick={() => setConfirmingDelete(module.id)}>
                 <IconTrashOutlineRegular />
               </button>

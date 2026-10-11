@@ -25,7 +25,9 @@ export function RuleCard(props: {
   expandedRows: Map<string, boolean>
   headerActions?: ReactNode
   source?: string
-  renderSettings?: (rule: RuleDefinition) => ReactNode
+  /** 本卡的主语（它所属的模块）：层内设置按它取，不从任何会话状态兜底。 */
+  moduleId: string
+  renderSettings?: (rule: RuleDefinition, moduleId: string) => ReactNode
 }): ReactNode {
   const { t, entry, editor, draft } = props, rule = entry.value
   const panelId = useId(), ownsFocus = useRef(false)
@@ -69,7 +71,7 @@ export function RuleCard(props: {
         </div>
       </div>
       {unsupported && <p role="alert" className={css.error}>{t('rules.unsupported')}</p>}
-      <PromptConfigNavigation t={t} layer={rule.layer ?? 'module'} renderLayerSettings={props.renderSettings ? () => <section className={css.section} aria-label={t('rules.settings')}>{props.renderSettings?.(rule)}</section> : undefined}>
+      <PromptConfigNavigation t={t} layer={rule.layer ?? 'module'} renderLayerSettings={props.renderSettings ? () => <section className={css.section} aria-label={t('rules.settings')}>{props.renderSettings?.(rule, props.moduleId)}</section> : undefined}>
         <section data-config-panel="rule" aria-label={t('rules.stepsTab')} className={css.section}>{draft.meta && <RuleStepsPanel
           t={t} rule={rule} meta={draft.meta} engineMeta={props.meta} fields={draft.fields} expanded={props.expandedRows}
           prefix={props.source ?? rule.id} fieldKey={entry.key} disabled={disabled} onDraft={editor.changed}

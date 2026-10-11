@@ -16,7 +16,19 @@ import css from './persona.module.css'
 type Notice = (kind: 'ok' | 'error', message: string) => void
 const notify = (draft: { listeners?: Set<() => void> }): void => { for (const listener of draft.listeners ?? []) listener() }
 
-export function ModulePersonaCard(props: { t: PromptToolTranslate; audience: PersonaAudience; moduleId?: string; disabled?: boolean; drafts?: WorkspaceDrafts; onNotice: Notice }): ReactNode {
+/** 独立主/子人设卡；字段省略、显式空文本与 false 分别保存。
+ *  **主语由归属方给**：本卡的主语来自它自己读到的 `personaSources`（main／subagent 指向哪个模块）；
+ *  `moduleId` 只是外部给的首选模块，`canEditModule` 兜该模块的逐模块可编辑判据（无模块时不兜底）。 */
+export function ModulePersonaCard(props: {
+  t: PromptToolTranslate
+  audience: PersonaAudience
+  moduleId?: string
+  disabled?: boolean
+  /** 该模块此刻是否可编辑（总闸 + 逐模块事实）；不传＝只按全局总闸判断。 */
+  canEditModule?: (moduleId: string) => boolean
+  drafts?: WorkspaceDrafts
+  onNotice: Notice
+}): ReactNode {
   const { t, onNotice, audience } = props
   const localDrafts = useRef(createWorkspaceDrafts())
   const drafts = props.drafts ?? localDrafts.current
@@ -171,17 +183,19 @@ export function ModulePersonaCard(props: { t: PromptToolTranslate; audience: Per
   const dirty = JSON.stringify(target) !== JSON.stringify(editor?.saved[audience])
   const canEdit = !!moduleId && (selection.value[audience] !== null || props.disabled !== true)
   const busy = !canEdit || !selection.loaded || !editor?.loaded || !!editor.error || editor.loading
+    || (moduleId !== undefined && props.canEditModule !== undefined && !props.canEditModule(moduleId))
   const options = [{ value: '', label: t('persona.sources.official') }, ...selection.candidates.map(candidate => ({ value: candidate.id, label: `${candidate.name} · ${candidate.id}` }))]
   const source = options.find(option => option.value === (selection.value[audience] ?? ''))?.label ?? selection.value[audience] ?? ''
-  const expandedKey = `${props.moduleId ?? ''}:persona:${audience}`
+  // 展开状态按主语建键；无主语不建 `undefined:persona:*` 之类的串模块键。
+  const expandedKey = moduleId === undefined ? undefined : `${moduleId}:persona:${audience}`
   return (
     <CollapsibleCard
       id={`persona-${audience}`}
       title={t('persona.title', { audience: t(`persona.${audience}`) })}
       meta={t('persona.sources.current', { source })}
       bodyClassName={`${styles.configForm} ${css.body}`}
-      expanded={drafts.expanded.get(expandedKey) ?? false}
-      onToggle={value => { drafts.expanded.set(expandedKey, value); refresh() }}
+      expanded={expandedKey !== undefined && drafts.expanded.get(expandedKey) === true}
+      onToggle={value => { if (expandedKey !== undefined) drafts.expanded.set(expandedKey, value); refresh() }}
       actions={<MenuSelect compact value={selection.value[audience] ?? ''} options={options}
         ariaLabel={t('persona.sources.label', { audience: t(`persona.${audience}`) })}
         disabled={selection.saving || selection.loading || !selection.loaded}

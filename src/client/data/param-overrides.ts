@@ -1,7 +1,17 @@
 /** module.yml params 与客户端字段之间的纯转换；字段清单/类型/默认值来自共享契约。 */
 import { ENGINE_PARAM_DEFINITIONS, engineParamList } from '../../shared/engine-params.ts'
-import { SHARED_PARAM_KEYS, type Fields, type SharedParamKey } from './prompt-tool-fields.ts'
+import { EMPTY_FIELDS, SHARED_PARAM_KEYS, type Fields, type SharedParamKey } from './prompt-tool-fields.ts'
 import { deepEqual } from './dirty-state.ts'
+
+/** 某模块的公共参数快照：读回值 + 本地编辑，缺键由契约默认值补齐（参数按主语隔离，不进全局 fields）。 */
+export type ParamSnapshot = Pick<Fields, SharedParamKey>
+
+export const EMPTY_PARAMS: ParamSnapshot = Object.fromEntries(
+  SHARED_PARAM_KEYS.map((key) => [key, EMPTY_FIELDS[key]]),
+) as ParamSnapshot
+
+/** 把 `/param-overrides` 读回或用户编辑的补丁套到契约默认值上，得到完整参数快照。 */
+export const paramSnapshot = (patch: Partial<Fields>): ParamSnapshot => ({ ...EMPTY_PARAMS, ...patch })
 
 export function readParamOverridesPatch(source: Record<string, unknown>): Partial<Fields> {
   const patch: Record<string, unknown> = {}
@@ -62,7 +72,7 @@ function serializedParam(key: SharedParamKey, value: unknown): unknown {
 }
 
 /** 只发送已存键或偏离默认的草稿；未操作字段不覆盖组合默认值。 */
-export function buildParamOverrides(fields: Fields, options: ParamOverrideBuildOptions): Record<string, unknown> {
+export function buildParamOverrides(fields: Partial<Fields>, options: ParamOverrideBuildOptions): Record<string, unknown> {
   const overrides: Record<string, unknown> = {}
   for (const key of SHARED_PARAM_KEYS) {
     const value = serializedParam(key, fields[key])
@@ -72,7 +82,3 @@ export function buildParamOverrides(fields: Fields, options: ParamOverrideBuildO
   }
   return overrides
 }
-
-/** 保存队列中的过期草稿不得发往新模块；服务端另校验 expectedModuleId。 */
-export const isCurrentModuleDraft = (draft: Pick<Fields, 'moduleId'>, current: Pick<Fields, 'moduleId'>): boolean =>
-  draft.moduleId === current.moduleId

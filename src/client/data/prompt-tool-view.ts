@@ -2,8 +2,6 @@
 import type { PromptConfigDraft } from '../prompt-tool-types.ts'
 import type { BridgeResult, BridgeSettingsView } from './bridge-transport.ts'
 import { EMPTY_FIELDS, type Fields, type SkillCatalogEntry } from './prompt-tool-fields.ts'
-import { readParamOverridesPatch } from './param-overrides.ts'
-import { DEFAULT_MODULE_ID } from '../../shared/module-ids.ts'
 import { SKILL_SOURCES } from '../../shared/skills.ts'
 import type { BridgeValueMap } from '../../shared/bridge-contract.ts'
 
@@ -110,7 +108,7 @@ export function fieldsFromView(res: BridgeResult<BridgeSettingsView>): Fields {
       roots: res.ok ? res.activeSkillsDirs ?? [] : [],
     }),
     modulesEnabled: readBoolean(value, 'modulesEnabled', readBoolean(base, 'modulesEnabled', true)),
-    moduleId: readString(value, 'moduleId') ?? readString(base, 'moduleId') ?? DEFAULT_MODULE_ID,
+    // 没有会话级主语：主语由每张卡的归属模块给出，descriptor 里也不再有 moduleId。
     promptConfigs: value.promptConfigs !== undefined
       ? readPromptConfigs(value, 'promptConfigs')
       : readPromptConfigs(base, 'promptConfigs'),
@@ -139,9 +137,4 @@ export function bridgeViewFromBoot(boot: BridgeResult<BridgeSettingsView>): Brid
     hostDefaultModel: boot.hostDefaultModel,
     moduleFacts: boot.moduleFacts,
   }
-}
-
-/** 只从模块投影行为参数；不把 settings 重新引入模块优先级链。 */
-export function mergeModuleParams(fields: Fields, params: Record<string, unknown> | undefined): Fields {
-  return params === undefined ? fields : { ...fields, ...readParamOverridesPatch(params) }
 }

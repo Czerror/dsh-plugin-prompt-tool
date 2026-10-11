@@ -5,7 +5,8 @@ import type { ModuleConfigOrderEntry } from '../../../shared/module-config-order
 import { configIdentityKey } from '../../../shared/module-config-order.ts'
 import type { PromptToolStore } from '../../data/use-prompt-tool-store.ts'
 import { usePromptToolFields } from '../../data/use-prompt-tool-fields.ts'
-import { useModuleRuleEditors, useRuleEditor, type ModuleRuleEditor } from '../../data/use-rule-editor.ts'
+import { useModuleRuleEditors, type ModuleRuleEditor } from '../../data/use-rule-editor.ts'
+import { canEditModule } from '../../data/module-subject.ts'
 import { useModuleConfigOrder } from '../../data/use-module-config-order.ts'
 import { hasRuleFields, rulesDirty } from '../../data/rule-drafts.ts'
 import { instructionFileIdOf } from '../../data/prompt-config-content.ts'
@@ -20,20 +21,23 @@ import { PromptConfigCard } from './PromptConfigCard.tsx'
 import { LAYER_LABEL_KEYS, translateLabel } from './prompt-config-policy.ts'
 import { asTriggerRecord } from './RuleJsonField.tsx'
 import { RuleCard } from './RuleCard.tsx'
+import { useTemplatePicker } from './useTemplatePicker.ts'
+import { insertToolTemplateIntoDraft } from '../tools/CustomToolsCard.tsx'
+import { TemplatePicker } from '../../ui/TemplatePicker.tsx'
 import ui from '../../ui/controls.module.css'
 import css from './rules.module.css'
 
 export interface RulesWorkspaceProps {
   store: PromptToolStore; t: PromptToolTranslate; scope?: 'main' | 'subagent'
   browse?: { filter: string; expanded?: string }
-  createdHidden?: boolean; onShowCreated?: () => void; createdConfigId?: string
-  beforeCards?: ReactNode; toolbarActions?: ReactNode
+  createdHidden?: boolean; onShowCreated?: () => void
+  beforeCards?: ReactNode
   viewFilter?: string; onViewFilterChange?: (value: string) => void
   keyword?: string; onKeywordChange?: (value: string) => void
-  renderLayerSettings?: (layer: string, config: PromptConfigDraft) => ReactNode
-  renderInstructionSettings?: (config: PromptConfigDraft) => ReactNode
-  hasLayerSettings?: (layer: string) => boolean
-  matchesLayerSettings?: (layer: string, keyword: string) => boolean
+  /** 层内设置：主语＝该实例卡所属模块，由调用方传进第三参。 */
+  renderLayerSettings?: (layer: string, config: PromptConfigDraft, moduleId: string) => ReactNode
+  hasLayerSettings?: (layer: string, moduleId: string) => boolean
+  matchesLayerSettings?: (layer: string, keyword: string, moduleId: string) => boolean
 }
 
 function hasContextActivation(actions: RuleAction[]): boolean {
@@ -58,35 +62,73 @@ function scopeVisible(rule: RuleDefinition, scope: 'main' | 'subagent'): boolean
 const samePosition = (a: ModuleConfigOrderEntry, b: ModuleConfigOrderEntry): boolean => a.layer === b.layer && a.position === b.position
   && (!(a.layer === 'system-section' || a.layer === 'runtime-context') || a.order === b.order)
 
-/** 两个受众页共用各模块规则草稿；排序只写身份，指令文件只走原文件通道。 */
+/**
+ * 一个模块自己的新建入口（装配集合视图＝每模块一条，没有「当前模块」可回退）：
+ * 主语＝该分组的模块——新建配置进该模块的规则草稿，新建工具模板进该模块的工具草稿。
+ */
+function ModuleCreateBar(props: {
+  store: PromptToolStore; t: PromptToolTranslate; owner: ModuleRuleEditor
+  scope: 'main' | 'subagent'; canEdit: boolean
+  onCreated: (moduleId: string, configKey: string) => void
+}): ReactNode {
+  const { store, t, owner, canEdit } = props
+  const moduleId = owner.moduleId
+  /** 新建只能落在**已读回**的规则草稿上：`add()` 自身不检查 `loaded`，未读回就写入会让随后的读回落进
+   *  「草稿 ≠ 磁盘」的冲突分支且 `loaded` 永不为真——新规则随后既保存不了也重试不了。 */
+  const ready = canEdit && owner.draft.loaded
+  const picker = useTemplatePicker(
+    owner.draft.entries.filter(entry => !entry.deleted).map(entry => entry.value),
+    (rule) => { if (ready) props.onCreated(moduleId, owner.editor.add(rule)) },
+    store.showNotice,
+    t,
+    props.scope,
+  )
+  const insertTool = (spec: Record<string, unknown>): void => {
+    if (!ready) return
+    void insertToolTemplateIntoDraft(store.editorDrafts, moduleId, spec).then((result) => {
+      if (result === 'duplicate') store.showNotice('error', t('customTools.duplicateId', { id: String(spec.id ?? '') }))
+      else if (result === 'failed') store.showNotice('error', t('customTools.loadFailed'))
+      else store.showNotice('ok', t('customTools.templateInserted', { id: String(spec.id ?? '') }))
+    })
+  }
+  // 可访问名带上归属模块：同一列表里多个同名按钮必须能分辨是往哪个模块新建。
+  const ruleLabel = `${t('modules.addTemplates')} · ${t('rules.source', { module: moduleId })}`
+  const toolLabel = `${t('main.addToolTemplate')} · ${t('rules.source', { module: moduleId })}`
+  return <div className={css.row} data-module-create={moduleId}>
+    <span>{t('rules.source', { module: moduleId })}</span>
+    <Button shape="pill" variant="outline" disabled={!ready} aria-label={ruleLabel} onClick={() => picker.openPicker()}>{t('modules.addTemplates')}</Button>
+    <Button shape="pill" variant="outline" disabled={!ready} aria-label={toolLabel} onClick={event => picker.openTools(event.currentTarget)}>{t('main.addToolTemplate')}</Button>
+    {picker.open && <TemplatePicker t={t} anchorRef={picker.popoverAnchorRef} templates={picker.toolsOnly ? [] : picker.templates} layer={picker.layer}
+      toolTemplates={picker.layer === undefined ? picker.toolTemplates : undefined}
+      onPick={picker.pickTemplate} onPickTool={insertTool} onClose={picker.closePicker} />}
+  </div>
+}
+
+/** 两个受众页共用各模块规则草稿；排序只写身份，指令文件只走原文件通道。
+ *  **没有「当前模块」**：每张规则卡的主语是它自己所属的模块（`owners` 的 moduleId）。 */
 export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
   const { store, t } = props, fields = usePromptToolFields(store, value => value)
-  const { moduleId, draft } = useRuleEditor(store)
   const [expanded, setExpanded] = useState<string | undefined>(props.browse?.expanded)
   const [filter, setFilter] = useState(props.browse?.filter ?? '')
   // 卡片准入的第一优先级是存储根 config.yml 的启用表：未启用的模块不建编辑器、不读 rules/*.yml。
-  // 排序快照与当前编辑目标只决定「已启用模块里显示哪些卡」，越过不了这道门。
-  const enabledIds = new Set((store.meta.modules ?? []).filter(module => module.enabled === true).map(module => module.id))
+  // 排序快照与任何会话级目标都不参与准入（没有「当前编辑目标」）。
+  const ownerIds = (store.meta.modules ?? []).filter(module => module.enabled === true).map(module => module.id)
   // 排序请求生命周期归 useModuleConfigOrder（全仓唯一一份实现）；页面只提供「保存成功后要刷新哪些编辑器」。
   const ownersRef = useRef<ModuleRuleEditor[]>([])
   const order = useModuleConfigOrder(t, async () => (await Promise.all(ownersRef.current.map(owner => owner.editor.load(true)))).every(Boolean))
-  const owners = useModuleRuleEditors(store, [moduleId, ...order.snapshot?.entries.map(entry => entry.moduleId) ?? []].filter(id => enabledIds.has(id)))
+  const owners = useModuleRuleEditors(store, ownerIds)
   ownersRef.current = owners
   const revisions = JSON.stringify(owners.map(owner => [owner.moduleId, owner.draft.revisions?.settings]))
   const [discard, setDiscard] = useState<string>()
-  const dragId = useRef<string>(), lastCreated = useRef<string>()
-  const readOnly = (id: string): boolean => !fields.modulesEnabled || id === moduleId && store.moduleFacts?.editable !== true
+  const dragId = useRef<string>()
+  // 逐模块可编辑判据：判据来源是该模块自己的事实（/meta 的 modules[].facts）。
+  const readOnly = (id: string): boolean => !canEditModule(fields, store.meta.modules, id)
   const sortDisabled = order.busy || owners.some(owner => owner.draft.busy !== undefined || rulesDirty(owner.draft) || owner.draft.remote !== undefined)
   const query = (props.keyword ?? filter).trim().toLowerCase(), view = props.viewFilter ?? 'all'
   const changeFilter = (value: string): void => { setFilter(value); props.onKeywordChange?.(value); if (props.browse) props.browse.filter = value }
   const toggle = (key: string): void => { const next = expanded === key ? undefined : key; setExpanded(next); if (props.browse) props.browse.expanded = next }
-  useEffect(() => { order.reset(); setExpanded(props.browse?.expanded) }, [moduleId, order.reset])
+  useEffect(() => { order.reset(); setExpanded(props.browse?.expanded) }, [ownerIds.join('\u0000'), order.reset])
   useEffect(() => { void order.load() }, [revisions, store.meta.modules, order.load])
-  useEffect(() => {
-    if (props.createdConfigId === lastCreated.current) return
-    const created = draft.entries.find(entry => entry.value.id === props.createdConfigId && !entry.deleted)
-    if (created) { lastCreated.current = props.createdConfigId; setExpanded(configIdentityKey({ moduleId, configId: created.key })) }
-  }, [props.createdConfigId, draft.entries])
   const saveOrder = async (sourceId: string, targetId: string): Promise<void> => {
     const cards = order.configs, entries = order.snapshot?.entries
     if (order.busy || sortDisabled || entries === undefined || sourceId === targetId) return
@@ -102,7 +144,7 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
     identity: configIdentityKey({ moduleId: owner.moduleId, configId: entry.previousId ?? entry.value.id }),
   }))).filter(({ entry }) => !entry.deleted && scopeVisible(entry.value, props.scope ?? 'main'))
     .filter(({ entry, moduleId: id }) => (view === 'all' || view === 'context-activation' && hasContextActivation([...entry.value.then, ...entry.value.else ?? []]) || entry.value.layer === view)
-      && (!query || JSON.stringify(entry.value).toLowerCase().includes(query) || id === moduleId && entry.value.layer !== undefined && props.matchesLayerSettings?.(entry.value.layer, query)))
+      && (!query || JSON.stringify(entry.value).toLowerCase().includes(query) || entry.value.layer !== undefined && props.matchesLayerSettings?.(entry.value.layer, query, id)))
     .sort((a, b) => (rank.get(a.identity) ?? Number.MAX_SAFE_INTEGER) - (rank.get(b.identity) ?? Number.MAX_SAFE_INTEGER))
   const batchDisabled = entries.length === 0 || entries.some(({ moduleId: id, draft }) => readOnly(id) || !draft.loaded || draft.busy !== undefined || hasRuleFields(draft) || draft.remote !== undefined)
   const batchSetEnabled = (enabled: boolean): void => {
@@ -138,8 +180,8 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
     clone.then = clone.then.map(action => { if (action.kind !== 'inject-text') return action; const { id: _sourceId, ...config } = asTriggerRecord(action.config); return { ...action, config } })
     setExpanded(configIdentityKey({ moduleId, configId: editor.add({ ...clone, id, enabled: false }) }))
   }
+  // 指令文件卡是全局段（不属于任何模块）：模块级参数没有主语，因此这里不给它层设置区。
   const instructionCards = fields.promptConfigs.filter(config => instructionFileIdOf(config) !== undefined).map(config => <PromptConfigCard key={config.id} t={t} meta={store.meta} config={config} expanded={expanded === config.id} canMoveUp={false} canMoveDown={false}
-    renderLayerSettings={props.renderInstructionSettings === undefined ? undefined : (_layer, config) => props.renderInstructionSettings!(config)}
     onToggleExpanded={() => toggle(config.id)} onToggleEnabled={() => {}} onPatch={(id, patch) => store.patch({ promptConfigs: store.getFields().promptConfigs.map(item => item.id === id ? { ...item, ...patch } : item) })}
     onMoveUp={() => {}} onMoveDown={() => {}} onDuplicate={() => {}} onDelete={() => {}}
     onSaveInstructionFile={id => { void store.persistInstructionFiles([id]) }} onReloadInstructionFile={id => store.reloadInstructionFile(id).then(() => {})}
@@ -148,12 +190,14 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
     <div className={ui.listFilterRow} data-module-toolbar>
       <SearchInput inline aria-label={t('rules.search')} placeholder={t('rules.search')} value={props.keyword ?? filter} onChange={event => changeFilter(event.target.value)} />
       <MenuSelect compact className={css.control} ariaLabel={t('rules.layerFilter')} value={view} options={[{ value: 'all', label: t('rules.all') }, { value: 'context-activation', label: t('rules.worldBook') }, ...store.meta.layers.map(layer => ({ value: layer, label: translateLabel(t, LAYER_LABEL_KEYS, layer) }))]} onChange={value => props.onViewFilterChange?.(value)} />
-      {props.toolbarActions}
       <span className={ui.batchControls}>
         <Button shape="pill" variant="outline" data-batch="enable" disabled={batchDisabled} onClick={() => batchSetEnabled(true)}>{t('configs.batch.enableVisible')}</Button>
         <Button shape="pill" variant="outline" data-danger data-batch="disable" disabled={batchDisabled} onClick={() => batchSetEnabled(false)}>{t('configs.batch.disableVisible')}</Button>
       </span>
     </div>
+    {/* 每个装配模块自己的新建入口：新建只落到该模块的草稿，没有「当前模块」可回退。 */}
+    {owners.map(owner => <ModuleCreateBar key={owner.moduleId} store={store} t={t} owner={owner} scope={props.scope ?? 'main'}
+      canEdit={!readOnly(owner.moduleId)} onCreated={(moduleId, configKey) => setExpanded(configIdentityKey({ moduleId, configId: configKey }))} />)}
     {owners.map(({ moduleId: id, draft, editor }) => {
       const retrySave = draft.loaded && rulesDirty(draft) && draft.remote === undefined
       return (draft.error || hasRuleFields(draft)) && <div key={id}>
@@ -174,12 +218,12 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
         const { entry, draft, editor, moduleId: id, key } = row
         const orderEntry = order.snapshot?.entries.find(item => configIdentityKey(item) === row.identity)
         return <div key={key} data-module-id={id} onDragOver={event => event.preventDefault()} onDrop={event => { event.preventDefault(); if (orderEntry && dragId.current) void saveOrder(dragId.current, configIdentityKey(orderEntry)); dragId.current = undefined }}>
-          <RuleCard t={t} entry={entry} draft={draft} editor={editor} meta={store.meta} source={id} disabled={readOnly(id)} expanded={expanded === key} onToggle={() => toggle(key)} onDuplicate={() => duplicate(row, entry.value)}
+          <RuleCard t={t} entry={entry} draft={draft} editor={editor} meta={store.meta} source={id} moduleId={id} disabled={readOnly(id)} expanded={expanded === key} onToggle={() => toggle(key)} onDuplicate={() => duplicate(row, entry.value)}
             expandedRows={store.editorDrafts.expanded}
             headerActions={orderEntry && <><HintTooltip label={slotPinned(orderEntry) ? t('rules.orderPinnedHint') : t('card.dragHint')}><button type="button" className={ui.dragHandle} disabled={sortDisabled || !!query} draggable={!sortDisabled && !query} aria-label={t('card.dragHint')} aria-keyshortcuts="ArrowUp ArrowDown"
               onDragStart={event => { dragId.current = configIdentityKey(orderEntry); event.dataTransfer.effectAllowed = 'move'; event.dataTransfer.setData('text/plain', dragId.current) }} onDragEnd={() => { dragId.current = undefined }}
               onKeyDown={event => { if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return; event.preventDefault(); const peers = orderPeers(orderEntry), index = peers.findIndex(item => configIdentityKey(item) === configIdentityKey(orderEntry)); const target = peers[index + (event.key === 'ArrowUp' ? -1 : 1)]; if (target) void saveOrder(configIdentityKey(orderEntry), configIdentityKey(target)) }}>⋮⋮</button></HintTooltip>{moveButtons(orderEntry)}</>}
-            renderSettings={id === moduleId && entry.value.layer !== undefined && props.hasLayerSettings?.(entry.value.layer) && props.renderLayerSettings ? rule => props.renderLayerSettings!(rule.layer!, { id: rule.id, layer: rule.layer }) : undefined} />
+            renderSettings={entry.value.layer !== undefined && props.hasLayerSettings?.(entry.value.layer, id) && props.renderLayerSettings ? (rule, module) => props.renderLayerSettings!(rule.layer!, { id: rule.id, layer: rule.layer }, module) : undefined} />
         </div>
       })}
     {entries.length === 0 && (query !== '' || view !== 'all') && owners.every(owner => owner.draft.loaded) && <p>{t('rules.noMatch')}</p>}

@@ -4,6 +4,7 @@ import { TextInput } from '../../ui/TextInput.tsx'
 import { ENGINE_PARAM_DEFINITIONS } from '../../../shared/engine-params.ts'
 import { SHARED_PARAM_KEYS, type SharedParamKey } from '../../data/prompt-tool-fields.ts'
 import { engineGroupParamKeys } from '../../../shared/engine-capabilities.ts'
+import { moduleFactsOf } from '../../data/module-subject.ts'
 import type { PromptToolStore } from '../../data/use-prompt-tool-store.ts'
 import type { FieldDraft } from '../../data/workspace-drafts.ts'
 import type { PromptToolTranslate } from '../../locales.ts'
@@ -37,13 +38,13 @@ export function matchesEditorGroup(id: string, keyword: string, t: PromptToolTra
  * 显示标签不进 shared：shared 只给参数键，UI 按 `param.<键>` 查 prompt-tool 字典
  * （键类型由 ENGINE_PARAM_KEY 的模板字面量约束，新增参数缺词条即编译失败）。
  */
-export function EngineParamFields({ store, card, t, instanceId }: { store: PromptToolStore; card: string; t: PromptToolTranslate; instanceId?: string }): ReactNode {
+export function EngineParamFields({ store, moduleId, card, t, instanceId }: { store: PromptToolStore; moduleId: string; card: string; t: PromptToolTranslate; instanceId?: string }): ReactNode {
   const keys = SHARED_PARAM_KEYS.filter((key) => ENGINE_PARAM_DEFINITIONS[key].card === card)
   const primary = keys.find((key) => ENGINE_PARAM_DEFINITIONS[key].module?.key === 'enabled')
   const subagents = keys.find((key) => ENGINE_PARAM_DEFINITIONS[key].module?.key === 'includeSubagents')
   const paired = primary !== undefined && subagents !== undefined ? [primary, subagents] : []
   const renderField = (key: SharedParamKey): ReactNode => (
-    <EngineParamField key={`${store.fields.moduleId}:${key}`} store={store} param={key} t={t} instanceId={instanceId} />
+    <EngineParamField key={`${moduleId}:${key}`} store={store} moduleId={moduleId} param={key} t={t} instanceId={instanceId} />
   )
   return <>
     {paired.length > 0 && <fieldset data-param-pair={primary} aria-label={t(`param.${primary!}`)}>{paired.map(renderField)}</fieldset>}
@@ -53,19 +54,22 @@ export function EngineParamFields({ store, card, t, instanceId }: { store: Promp
 
 /**
  * 同一个引擎参数可以在多个位置渲染（层卡内的能力卡 + 工具管线的共享设置区，含跨层相关设置）：
- * 它们绑定同一 `store.fields[param]` 与同一草稿键，天然同源，不需要同步服务；
+ * **同一模块**的这些渲染点绑定同一份 `store.moduleParamsOf(moduleId)[param]` 与同一草稿键
+ * （键里带模块 id），天然同源，不需要同步服务；不同模块的同名参数互不影响。
  * `instanceId` 只用来给每个渲染点一份独立的 DOM id / aria 关联，避免镜像控件
  * 出现重复 id 与标签错配。
  *
  * 未完成的数字输入与字段错误也属于这份共享草稿：渲染点订阅同一草稿修订号后一起重渲染，
  * 因此一个渲染点里的半成品输入或错误提示会立即出现在其他渲染点，且不各留一份本地 state。
  */
-export function EngineParamField({ store, param, t, instanceId }: { store: PromptToolStore; param: SharedParamKey; t: PromptToolTranslate; instanceId?: string }): ReactNode {
+export function EngineParamField({ store, moduleId, param, t, instanceId }: { store: PromptToolStore; moduleId: string; param: SharedParamKey; t: PromptToolTranslate; instanceId?: string }): ReactNode {
   const definition = ENGINE_PARAM_DEFINITIONS[param]
-  const value = store.fields[param]
-  const disabled = !store.fields.modulesEnabled || store.moduleFacts?.editable !== true
-    || (param === 'maxDepth' && store.moduleFacts?.subagentToolPolicyEnabled !== true)
-  const draftKey = `${store.fields.moduleId}:param:${param}`
+  const facts = moduleFactsOf(store.meta.modules, moduleId)
+  // 读数与写路径都按主语：不同模块的同名参数互不影响，草稿键也带上模块 id。
+  const value = store.moduleParamsOf(moduleId)[param]
+  const disabled = !store.fields.modulesEnabled || facts?.editable !== true
+    || (param === 'maxDepth' && facts?.subagentToolPolicyEnabled !== true)
+  const draftKey = `${moduleId}:param:${param}`
   const getDraftRevision = store.getDraftRevision ?? getZero
   useSyncExternalStore(store.subscribeDrafts ?? subscribeNothing, getDraftRevision, getDraftRevision)
   const draft = store.editorDrafts?.fields.get(draftKey)
@@ -76,8 +80,8 @@ export function EngineParamField({ store, param, t, instanceId }: { store: Promp
     else store.editorDrafts?.fields.set(draftKey, next)
     store.publishDrafts?.()
   }
-  const save = (): void => { void store.persistParamOverrides() }
-  const patch = (next: unknown): void => { store.patch({ [param]: next }) }
+  const save = (): void => { void store.persistParamOverrides(moduleId) }
+  const patch = (next: unknown): void => { store.setModuleParam(moduleId, param, next) }
   // 默认渲染点沿用 `pt-param-<键>`（层卡内唯一）；镜像渲染点带实例前缀，DOM id 不重复。
   const id = instanceId === undefined ? `pt-param-${param}` : `pt-param-${instanceId}-${param}`
   const label = t(`param.${param}`)

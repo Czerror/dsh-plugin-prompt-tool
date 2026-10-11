@@ -1,7 +1,6 @@
 /** 提示词工具客户端状态模型与稳定默认值（无网络、无 React）。 */
 import { ENGINE_PARAM_DEFINITIONS, ENGINE_PARAM_KEYS, type EngineParamKey, type EngineParams } from '../../shared/engine-params.ts'
 import { INJECTION_POINT_ORDER } from '../../shared/engine-capabilities.ts'
-import { DEFAULT_MODULE_ID } from '../../shared/module-ids.ts'
 import type { SkillCatalogEntry } from '../../shared/skills.ts'
 import type { EngineMeta, PromptConfigDraft } from '../prompt-tool-types.ts'
 
@@ -39,7 +38,6 @@ export interface Fields extends EngineParamDrafts {
   /** 用户技能根（创建、复制导入与回收站的落点）。 */
   skillsRoot: string
   modulesEnabled: boolean
-  moduleId: string
   promptConfigs: PromptConfigDraft[]
 }
 
@@ -87,7 +85,6 @@ export const EMPTY_FIELDS: Fields = {
   skillFolders: [],
   skillsRoot: '',
   modulesEnabled: true,
-  moduleId: DEFAULT_MODULE_ID,
   promptConfigs: [],
 }
 /** 编译期契约：公共参数必须进入 Fields；规则所有的模型参数不得混入。 */

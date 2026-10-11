@@ -1,25 +1,15 @@
 import { memo, useCallback, useState, type ReactNode } from 'react'
 import type { PromptToolStore } from '../../../data/use-prompt-tool-store.ts'
-import { usePromptToolFields } from '../../../data/use-prompt-tool-fields.ts'
-import { useRuleEditor } from '../../../data/use-rule-editor.ts'
 import type { PromptToolTranslate } from '../../../locales.ts'
 import { RulesWorkspace } from '../../../features/prompts/RulesWorkspace.tsx'
-import { useTemplatePicker } from '../../../features/prompts/useTemplatePicker.ts'
-import { INSERTION_LAYERS, LAYER_LABEL_KEYS, translateLabel } from '../../../features/prompts/prompt-config-policy.ts'
-import { EngineModuleActions } from '../../../features/modules/EngineModuleList.tsx'
 import { moduleCapability } from '../../../../shared/engine-capabilities.ts'
 import { injectionPointSlots } from './InjectionPointsPanel.tsx'
-import { TemplatePicker } from '../../../ui/TemplatePicker.tsx'
-import { useCustomToolsEditor } from '../../../features/tools/CustomToolsCard.tsx'
 import ui from '../../../ui/controls.module.css'
 import type { ConfigPageBrowse } from '../workspace-browse-state.ts'
 import type { WorkspacePage } from '../workspace-pages.ts'
-/** 主会话页：公共配置 + 平铺模块列表 + 合并创建菜单（提示词配置 / 工具 / 能力模块）。 */
+/** 主会话页：按装配集合呈现各启用模块的规则与层内资产（主语由每张卡的归属模块给出）。 */
 export const MainSessionPage = memo(function MainSessionPage(props: { store: PromptToolStore; t: PromptToolTranslate; browse?: ConfigPageBrowse; onNavigate?: (page: WorkspacePage) => void }): ReactNode {
   const { store, t } = props
-  // L3 selector 化：fields 引用变化才重渲染（父级 loading/notice/page 变化不再级联）。
-  const fields = usePromptToolFields(store, (value) => value)
-  const { draft, editor } = useRuleEditor(store)
   const [viewFilter, setViewFilter] = useState(props.browse?.viewFilter ?? 'all')
   const changeViewFilter = useCallback((value: string) => {
     if (props.browse !== undefined) props.browse.viewFilter = value
@@ -37,29 +27,8 @@ export const MainSessionPage = memo(function MainSessionPage(props: { store: Pro
     const layer = moduleCapability(id)?.displayLayer
     setFocusCapability((current) => ({ id, layer, token: (current?.token ?? 0) + 1 }))
   }, [viewFilter])
-  // 稳定回调：卡片 memo 的生效前提（store 引用已稳定）。
-  const canEditModule = store.fields.modulesEnabled && store.moduleFacts?.editable === true
-  // 顶部只提供九层注入模板；其它创建由所属层设置承载。
-  // 作用域 = 主会话：新建配置清除模板自带的「仅子代理」限制（缺省 = 公用，两侧都可见）。
-  const picker = useTemplatePicker(
-    draft.entries.filter(entry => !entry.deleted).map(entry => entry.value),
-    (rule) => { if (canEditModule && draft.loaded) editor.add(rule) },
-    store.showNotice,
-    t,
-    'main',
-  )
-  const toolEditor = useCustomToolsEditor({ t, moduleId: fields.moduleId, disabled: !canEditModule, drafts: store.editorDrafts, onNotice: store.showNotice, onChooseTemplate: picker.openTools })
-  const createItems = INSERTION_LAYERS.map((layer) => ({ id: `tpl:${layer}`, label: t('main.addTemplate', { layer: translateLabel(t, LAYER_LABEL_KEYS, layer) }) }))
-  const onCreateSelect = useCallback((id: string) => {
-    if (canEditModule && id.startsWith('tpl:')) picker.openPicker(id.slice(4))
-  }, [canEditModule, picker])
-  const insertToolTemplate = useCallback((spec: Record<string, unknown>) => {
-    setCreatedHidden(viewFilter !== 'all' && viewFilter !== 'tool-pipeline')
-    toolEditor.createTool({ kind: 'template', spec, moduleId: fields.moduleId })
-    picker.closePicker()
-  }, [fields.moduleId, picker, viewFilter, toolEditor.createTool])
   // 九层归位、层内设置与资产编辑器统一由 InjectionPointsPanel 提供：本页只声明受众视图与
-  // 页面编排（创建菜单、模板浮层、指令回调），不再自己手写层名判断或注入单例卡。
+  // 页面编排（定位信号、搜索词），不再自己手写层名判断或注入单例卡。
   const layers = injectionPointSlots({
     store,
     t,
@@ -68,7 +37,6 @@ export const MainSessionPage = memo(function MainSessionPage(props: { store: Pro
     keyword,
     focusCapability,
     onCreated: revealCapability,
-    toolEditor: toolEditor.content,
   })
   return (
     <section className={ui.section} aria-label={t('main.aria')}>
@@ -78,30 +46,15 @@ export const MainSessionPage = memo(function MainSessionPage(props: { store: Pro
         browse={props.browse}
         createdHidden={createdHidden}
         onShowCreated={() => { changeViewFilter('all'); setCreatedHidden(false) }}
-        createdConfigId={picker.createdConfigId}
         viewFilter={viewFilter}
         onViewFilterChange={changeViewFilter}
         keyword={keyword}
         onKeywordChange={setKeyword}
         renderLayerSettings={layers.renderLayerSettings}
-        renderInstructionSettings={layers.renderInstructionSettings}
         hasLayerSettings={layers.hasLayerSettings}
         matchesLayerSettings={layers.matchesLayerSettings}
         beforeCards={layers.beforeCards}
-        toolbarActions={<EngineModuleActions store={store} t={t} anchorRef={picker.anchorRef} extraItems={createItems} templatesOnly onExtraSelect={onCreateSelect} />}
       />
-      {picker.open && (
-        <TemplatePicker
-          t={t}
-          anchorRef={picker.popoverAnchorRef}
-          templates={picker.toolsOnly ? [] : picker.templates}
-          layer={picker.layer}
-          toolTemplates={picker.layer === undefined ? picker.toolTemplates : undefined}
-          onPick={picker.pickTemplate}
-          onPickTool={insertToolTemplate}
-          onClose={picker.closePicker}
-        />
-      )}
     </section>
   )
 })

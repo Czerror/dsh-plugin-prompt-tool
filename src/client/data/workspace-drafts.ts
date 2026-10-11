@@ -100,7 +100,9 @@ export function createWorkspaceDrafts(): WorkspaceDrafts {
 }
 
 /** 切换模块前阻止无声丢弃局部草稿；用户回对应页面处理，不替其隐式落盘。 */
-export function hasWorkspaceDrafts(drafts: WorkspaceDrafts, moduleId: string): boolean {
+export function hasWorkspaceDrafts(drafts: WorkspaceDrafts, moduleId: string | undefined): boolean {
+  // 无主语：草稿无法归属任何模块，既不阻塞切换也没有可写盘的内容。
+  if (moduleId === undefined) return false
   const rules = drafts.rules.get(moduleId)
   const tools = drafts.tools.get(moduleId)
   const persona = drafts.persona.get(moduleId)
