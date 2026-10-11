@@ -5,7 +5,7 @@ import { scopeOf } from '@deepseek-ai/dsh-scope'
 import type { SkillRegistry, SkillViewOptions } from '@deepseek-ai/dsh-skill'
 import type { IncomingMessage } from 'node:http'
 import { createHash } from 'node:crypto'
-import { basename, dirname, join, resolve, sep } from 'node:path'
+import { basename, dirname, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { isDeepStrictEqual } from 'node:util'
 import type { SettingsDescriptor, SettingsPathOp } from '@deepseek-ai/dsh-settings'
@@ -18,7 +18,7 @@ import { appendModuleConfigOrder, ModuleConfigOrderError, readModuleConfigOrder,
 import type { ModuleConfigIdentity } from '../shared/module-config-order.ts'
 import { moduleDirExists } from '../host/manifest.ts'
 import { readOfficialOrderSegments, type OfficialOrderLookup } from '../shared/official-orders.ts'
-import { ModuleLayerSettingsError, readModuleLayerSettings } from '../host/module-layer-settings.ts'
+import { ModuleLayerSettingsError } from '../host/module-layer-settings.ts'
 import { readModuleRules, editModuleRules } from '../host/module-rules.ts'
 import type { RuleEdit, RuleEditorMeta, RuleRevisions } from '../shared/rules.ts'
 import { loadPromptTemplates, loadToolTemplates } from '../host/templates.ts'
@@ -63,14 +63,14 @@ import { ruleDiagnosticsDropped, ruleDiagnosticsSnapshot } from './rule-diagnost
 import {
   bridgeTransaction,
   type BridgeRouteSpec,
-  type BridgeTransaction,
 } from './bridge-transaction.ts'
+import { isEditableModuleDir, subjectGate, writeLayerSettingsError } from './module-subject-gate.ts'
 import { BRIDGE_ENDPOINTS, EDIT_TARGET_HEADER, MODULE_ACTIVATION_FAILED, MODULE_IDENTITY_INVALID, SETTINGS_BRIDGE_PREFIX, readEditTarget, readSubjectHeader } from '../shared/bridge-contract.ts'
 import { moduleParamFallbacks, validateEngineParamValues } from '../shared/engine-params.ts'
 import { readPersonaSpec, type PersonaSources } from '../shared/persona-section.ts'
 import { SKILL_NAME_PATTERN, type SkillsStateRead } from '../host/skills-config.ts'
 import { withGlobalSkillFallback, withSkillWinners } from '../host/skills-scan.ts'
-import { DEFAULT_MODULE_ID, isModuleId } from '../shared/module-ids.ts'
+import { isModuleId } from '../shared/module-ids.ts'
 import { ENGINE_EDITOR_GROUP_MAP, MODULE_TOOL_CAPABILITIES, type ModuleFacts } from '../shared/engine-capabilities.ts'
 import { validateCustomTools } from '../host/custom-tools.ts'
 import {
@@ -105,19 +105,8 @@ export interface SkillsBridgeState {
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   value !== null && typeof value === 'object' && !Array.isArray(value)
 
-/** 写一次响应；事务的 `tx.write` 与桥内本地守卫共用这一个形态。 */
+/** 写一次响应；事务的 `tx.write` 与门内判据共用这一个形态。 */
 type BridgeWrite = (status: number, body: unknown) => void
-
-/** 当前层参数格式错误统一反馈，不能在读回时伪装成空配置。 */
-function writeLayerSettingsError(write: BridgeWrite, error: unknown): boolean {
-  if (error instanceof ModuleRulesError) {
-    write(error.status, { ok: false, code: error.code, message: error.message })
-    return true
-  }
-  if (!(error instanceof ModuleLayerSettingsError)) return false
-  write(400, { ok: false, code: error.code, message: error.message })
-  return true
-}
 
 /** 确认名单只授权已展示的目录；不是允许覆盖任意同名目标的总开关。 */
 function readSkillOverwrite(value: unknown): string[] | undefined {
@@ -366,18 +355,6 @@ function projectToolSchemas(schemas: readonly ToolSchemaLike[]): Array<{ name: s
   return [...unique.values()].sort((a, b) => a.name < b.name ? -1 : a.name > b.name ? 1 : 0)
 }
 
-function isEditableModuleDir(dir: string, moduleRoot = userModulesDir()): boolean {
-  const root = resolve(moduleRoot)
-  const target = resolve(dir)
-  return target !== root && target.startsWith(root + sep)
-}
-
-function guardEditableModuleDir(dir: string, write: BridgeWrite): boolean {
-  if (isEditableModuleDir(dir)) return true
-  write(403, { ok: false, code: 'module-readonly', message: 'system preset 只读，请先复制为用户模块' })
-  return false
-}
-
 /** 逐模块身份与能力事实：与 /bootstrap 的 `moduleFacts` 走同一条 resolveModuleFacts 链。
  *  模块损坏（定义不可解析等）或事实算不出时返回 undefined，绝不下发部分字段。 */
 function moduleFactsOf(moduleId: string): ModuleFacts | undefined {
@@ -557,32 +534,10 @@ export function registerSettingsBridge(
         cachedDescriptor = undefined
       }
       invalidateCachedDescriptor = invalidateDescriptor
-      const guardModuleFormat = (dir: string, write: BridgeWrite): boolean => {
-        if (dir.length === 0) return true
-        try { readModuleLayerSettings(loadModuleDefinition(dir).source) } catch (error) {
-          if (writeLayerSettingsError(write, error)) return false
-        }
-        return true
-      }
-      const guardModuleWrite = (dir: string, write: BridgeWrite): boolean =>
-        guardEditableModuleDir(dir, write) && guardModuleFormat(dir, write)
       const writeModuleOrderError = (write: BridgeWrite, error: unknown): void => {
         const status = error instanceof ModuleConfigOrderError ? error.status : 500
         const code = error instanceof ModuleConfigOrderError ? error.code : 'module-config-order-failed'
         write(status, { ok: false, code, message: String((error as Error)?.message ?? error) })
-      }
-      /** 模块身份只作一致性检查，绝不用客户端 ID 构造写入路径。 */
-      const guardModuleIdentity = (tx: BridgeTransaction, record: Record<string, unknown>, dir: string): boolean => {
-        const expected = record.expectedModuleId
-        if (expected !== undefined && (typeof expected !== 'string' || expected.length === 0 || expected.length > 256)) {
-          tx.write(400, { ok: false, code: 'module-identity-invalid', message: 'expectedModuleId 必须是非空模块 ID' })
-          return false
-        }
-        if (tx.editDir() !== dir || (expected !== undefined && expected !== basename(dir))) {
-          tx.write(409, { ok: false, code: 'module-changed', message: '当前模块已切换；旧草稿未写入，请重新读取后保存' })
-          return false
-        }
-        return guardModuleFormat(dir, tx.write)
       }
       /** 官方刻度取值失败只告警一次：本函数被 /meta 与 /bootstrap 共用，不能每次调用都刷屏。 */
       let warnedOfficialOrders = false
@@ -688,36 +643,35 @@ export function registerSettingsBridge(
         const modelCatalog = peekModelCatalog(sctx)
         // 引擎参数按模块存储：/describe 附带激活模块参数（settings 已不承载；
         // 客户端 fields 参数键由此合并，promptConfigs 仍以 /prompt-configs 实际配置为准）。
-        let moduleParams: Record<string, unknown> = {}
+        // 空主语就没有模块段：不拿包内默认模块冒充当前模块，两个键整体缺席（不是空对象）。
+        let moduleParams: Record<string, unknown> | undefined
         let moduleFacts: ModuleFacts | undefined
         // 当前模块模板消息批层（pre-step）配置数：UI 消息批层入口开关联动——
         // 模板无 pre-step 配置（layer 缺省即 pre-step）时开关关闭且禁编辑。
         let templatePreStepCount = 0
-        try {
-          // 聚合响应复用端点已解析的请求目录，与 overrides、配置卡和变量同源。
-          const templateName = activeDir.length > 0 ? basename(activeDir) : DEFAULT_MODULE_ID
-          const spec = loadModuleSpec(activeDir.length > 0 ? activeDir : resolveModuleDir(templateName))
-          moduleParams = resolveModuleParams(spec, {})
-          const resolvedFacts = resolveModuleFacts(
-            spec,
-            activeDir.length > 0 ? activeDir : undefined,
-            isEditableModuleDir(activeDir.length > 0 ? activeDir : resolveModuleDir(templateName)),
-          )
-          mergeModuleConfigFallbacks(moduleParams, resolvedFacts)
-          // effectiveConfigs 只用于服务端把已存在的 moduleConfigs 回显到已知字段；
-          // 不把整份行级配置（可能含路径/未知字段）发送到浏览器。
-          moduleFacts = {
-            declaredModules: resolvedFacts.declaredModules,
-            effectiveModules: resolvedFacts.effectiveModules,
-            rowIds: resolvedFacts.rowIds,
-            sourceMode: resolvedFacts.sourceMode,
-            editable: resolvedFacts.editable,
-            subagentToolPolicyEnabled: resolvedFacts.subagentToolPolicyEnabled === true,
+        if (activeDir.length > 0) {
+          moduleParams = {}
+          try {
+            // 聚合响应复用端点已解析的请求目录，与 overrides、配置卡和变量同源。
+            const spec = loadModuleSpec(activeDir)
+            moduleParams = resolveModuleParams(spec, {})
+            const resolvedFacts = resolveModuleFacts(spec, activeDir, isEditableModuleDir(activeDir))
+            mergeModuleConfigFallbacks(moduleParams, resolvedFacts)
+            // effectiveConfigs 只用于服务端把已存在的 moduleConfigs 回显到已知字段；
+            // 不把整份行级配置（可能含路径/未知字段）发送到浏览器。
+            moduleFacts = {
+              declaredModules: resolvedFacts.declaredModules,
+              effectiveModules: resolvedFacts.effectiveModules,
+              rowIds: resolvedFacts.rowIds,
+              sourceMode: resolvedFacts.sourceMode,
+              editable: resolvedFacts.editable,
+              subagentToolPolicyEnabled: resolvedFacts.subagentToolPolicyEnabled === true,
+            }
+            templatePreStepCount = (spec.rules ?? []).filter(rule => rule.layer === 'pre-step').length
+          } catch (error) {
+            if (error instanceof ModuleLayerSettingsError || error instanceof ModuleRulesError) throw error
+            templatePreStepCount = 0
           }
-          templatePreStepCount = (spec.rules ?? []).filter(rule => rule.layer === 'pre-step').length
-        } catch (error) {
-          if (error instanceof ModuleLayerSettingsError || error instanceof ModuleRulesError) throw error
-          templatePreStepCount = 0
         }
         return {
           moduleParams,
@@ -769,7 +723,9 @@ export function registerSettingsBridge(
           kind: 'exact',
           path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.bootstrap,
           handler: route({ body: 'json', handle: async (tx) => {
-            const dir = tx.editDir()
+            // optional：空目标是合法状态，只回全局段（模块段缺席）。
+            const dir = subjectGate(tx, 'bootstrap')
+            if (dir === undefined) return
             const descriptor = findDescriptor()
             if (descriptor === undefined) {
               tx.write(404, { ok: false, code: 'settings-not-exposed', message: 'prompt-tool settings namespace is not registered' })
@@ -822,7 +778,9 @@ export function registerSettingsBridge(
           kind: 'exact',
           path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.describe,
           handler: route({ body: 'none', handle: async (tx) => {
-            const dir = tx.editDir()
+            // required：describe 的主体就是模块段，空目标在门处 400。
+            const dir = subjectGate(tx, 'describe')
+            if (dir === undefined) return
             const descriptor = findDescriptor()
             if (descriptor === undefined) {
               tx.write(404, { ok: false, code: 'settings-not-exposed', message: 'prompt-tool settings namespace is not registered' })
@@ -865,6 +823,10 @@ export function registerSettingsBridge(
           kind: 'exact',
           path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.mutate,
           handler: route({ body: 'json', handle: async (tx) => {
+            // optional：空目标 = 只改全局键、descriptor 不投影 moduleId；目标只当身份用，
+            // 形状检查关掉——总闸开关不该被某个损坏模块挡住。
+            const dir = subjectGate(tx, 'mutate', { format: false })
+            if (dir === undefined) return
             const record = tx.record
             if (!Array.isArray(record.ops)) {
               tx.write(400, { ok: false, code: 'settings-rejected', message: 'malformed bridge settings request' })
@@ -898,7 +860,7 @@ export function registerSettingsBridge(
               tx.write(500, { ok: false, code: 'settings-rejected', message: 'prompt-tool settings namespace was disposed after mutate' })
               return
             }
-            tx.write(200, { ok: true, value: descriptorForTarget(descriptor, tx.editDir()) })
+            tx.write(200, { ok: true, value: descriptorForTarget(descriptor, dir) })
           } }),
         }),
         sctx.webServer.register({
@@ -1120,8 +1082,8 @@ export function registerSettingsBridge(
             }
             // 实际生效配置 = 模块定义编译出的规则（`rules/` 切片）；
             // settings.promptConfigs 仅是用户覆盖层，默认为空不代表无配置。
-            const dir = tx.editDir()
-            if (!guardModuleFormat(dir, tx.write)) return
+            const dir = subjectGate(tx, 'promptConfigs')
+            if (dir === undefined) return
             // 独立文件来源：与 /bootstrap 共用同一读取入口，附正文、字节版本与读取状态。
             const scope = resolveInstructionScope(sctx, session.sessionId)
             tx.write(200, {
@@ -1240,11 +1202,8 @@ export function registerSettingsBridge(
           kind: 'exact',
           path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.rules,
           handler: route({ body: 'json', handle: async (tx) => {
-            const dir = tx.editDir()
-            if (dir.length === 0) {
-              tx.write(400, { ok: false, code: 'module-dir-unavailable', message: '当前模块目录不可用' })
-              return
-            }
+            const dir = subjectGate(tx, 'rules')
+            if (dir === undefined) return
             const record = tx.record
             if (Object.keys(record).some(key => !['expectedModuleId', 'expectedRevisions', 'edits', 'activateRuleId', 'validateOnly', 'refreshOnly'].includes(key))
               || typeof record.expectedModuleId !== 'string' || record.expectedModuleId === ''
@@ -1256,9 +1215,8 @@ export function registerSettingsBridge(
               tx.write(400, { ok: false, code: 'rules-invalid', message: '规则请求字段、模块身份或版本格式不合法' })
               return
             }
-            if (!guardModuleIdentity(tx, record, dir)) return
             if (record.refreshOnly === true) {
-              if (!guardModuleWrite(dir, tx.write)) return
+              if (subjectGate(tx, 'rules', { write: true }) === undefined) return
               const { getRuleEditorMeta } = await import(pathToFileURL(join(packageEngineDir(), 'rule-spec.mjs')).href) as { getRuleEditorMeta: () => RuleEditorMeta }
               try { await deps.overridesChanged?.(basename(dir)) }
               catch (error) {
@@ -1276,10 +1234,10 @@ export function registerSettingsBridge(
               tx.write(400, { ok: false, code: 'rules-invalid', message: '修改规则必须提供读取时的 expectedRevisions' })
               return
             }
-            if (writing && !guardModuleWrite(dir, tx.write)) return
             try {
               const { getRuleEditorMeta } = await import(pathToFileURL(join(packageEngineDir(), 'rule-spec.mjs')).href) as { getRuleEditorMeta: () => RuleEditorMeta }
-              if (!guardModuleIdentity(tx, record, dir)) return
+              // 动态 import 之后的写前复检：可写 + 身份都在这里再判一次（豁免不适用，写端点默认核形状）。
+              if (subjectGate(tx, 'rules', { write: writing }) === undefined) return
               const candidate = editing ? editModuleRules(dir, {
                 expectedRevisions: record.expectedRevisions as Partial<RuleRevisions>,
                 ...(record.edits === undefined ? {} : { edits: record.edits as RuleEdit[] }),
@@ -1319,18 +1277,14 @@ export function registerSettingsBridge(
           kind: 'exact',
           path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.paramOverrides,
           handler: route({ body: 'json', handle: async (tx) => {
-            const dir = tx.editDir()
-            if (dir.length === 0) {
-              tx.write(400, { ok: false, code: 'module-dir-unavailable', message: '模块目录未配置' })
-              return
-            }
+            const dir = subjectGate(tx, 'paramOverrides')
+            if (dir === undefined) return
             // 阶段 2：参数按模块存储——读写激活模块 module.yml 的 params（+ promptConfigs）。
             const moduleRoot = dirname(dir)
             const templateName = basename(dir)
             // promptConfigs 全量数组随配置卡数量增长；所有 JSON bridge 端点统一使用 32 MiB
             // 内存缓冲上限，超过后由调用方收到明确 413，不再静默降级为读取分支。
             const record = tx.record
-            if (!guardModuleIdentity(tx, record, dir)) return
             if (record.rebuild !== undefined && typeof record.rebuild !== 'boolean') {
               tx.write(400, { ok: false, code: 'overrides-invalid-shape', message: 'rebuild must be a boolean' })
               return
@@ -1352,7 +1306,7 @@ export function registerSettingsBridge(
               tx.write(400, { ok: false, code: 'overrides-invalid-shape', message: 'overrides must be an object' })
               return
             }
-            if (!guardModuleWrite(dir, tx.write)) return
+            if (subjectGate(tx, 'paramOverrides', { write: true }) === undefined) return
             const rawOverrides = record.overrides as Record<string, unknown> | undefined
             // 参数键白名单：未知键 fail loud，避免写入「读回/参数桥都不消费」的死键。
             if (rawOverrides !== undefined) {
@@ -1378,7 +1332,6 @@ export function registerSettingsBridge(
               return
             }
             try {
-              if (!guardModuleIdentity(tx, record, dir)) return
               saveModuleParams(
                 moduleRoot,
                 templateName,
@@ -1403,18 +1356,14 @@ export function registerSettingsBridge(
           kind: 'exact',
           path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.moduleVariables,
           handler: route({ body: 'json', handle: async (tx) => {
-            const dir = tx.editDir()
-            if (dir.length === 0) {
-              tx.write(400, { ok: false, code: 'module-dir-unavailable', message: '模块目录未配置' })
-              return
-            }
+            const dir = subjectGate(tx, 'moduleVariables')
+            if (dir === undefined) return
             const record = tx.record
             if ((record.scope !== 'global' && record.scope !== 'module')
               || Object.keys(record).some(key => !['scope', 'variables', 'enabled', 'expectedModuleId', 'expectedRevisions', 'refreshOnly'].includes(key))) {
               tx.write(400, { ok: false, code: 'module-variables-invalid', message: '变量请求必须声明 global/module 范围，且只包含已声明字段' })
               return
             }
-            if (!guardModuleIdentity(tx, record, dir)) return
             if (record.refreshOnly !== undefined && (typeof record.refreshOnly !== 'boolean'
               || (record.refreshOnly === true && (record.variables !== undefined || record.enabled !== undefined || record.expectedRevisions !== undefined)))) {
               tx.write(400, { ok: false, code: 'module-variables-invalid', message: 'refreshOnly 不能与变量写入混用' })
@@ -1422,7 +1371,7 @@ export function registerSettingsBridge(
             }
             try {
               if (record.refreshOnly === true) {
-                if (!guardModuleWrite(dir, tx.write)) return
+                if (subjectGate(tx, 'moduleVariables', { write: true }) === undefined) return
                 if (typeof record.expectedModuleId !== 'string') throw new ModuleRulesError('刷新变量必须提供 expectedModuleId')
                 const state = readModuleVariables(dir)
                 if (pendingVariableSettings.has(dir)) {
@@ -1437,10 +1386,9 @@ export function registerSettingsBridge(
                 tx.write(200, { ok: true, value: variableView(dir) })
                 return
               }
-              if (!guardModuleWrite(dir, tx.write)) return
+              if (subjectGate(tx, 'moduleVariables', { write: true }) === undefined) return
               if (typeof record.expectedModuleId !== 'string') throw new ModuleRulesError('保存变量必须提供 expectedModuleId')
               if (!isRecord(record.expectedRevisions)) throw new ModuleRulesError('保存变量或开关必须提供对应 expectedRevisions')
-              if (!guardModuleIdentity(tx, record, dir)) return
               const settingsChanged = record.enabled !== undefined && record.enabled !== loadModuleDefinition(dir).variablesEnabled
               const committed = editModuleVariables(dir, {
                 scope: record.scope as 'global' | 'module', expectedRevisions: record.expectedRevisions as Partial<ModuleVariableRevisions>,
@@ -1468,13 +1416,9 @@ export function registerSettingsBridge(
           kind: 'exact',
           path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.customTools,
           handler: route({ body: 'json', handle: async (tx) => {
-            const dir = tx.editDir()
-            if (dir.length === 0) {
-              tx.write(400, { ok: false, code: 'module-dir-unavailable', message: '模块目录未配置' })
-              return
-            }
+            const dir = subjectGate(tx, 'customTools')
+            if (dir === undefined) return
             const record = tx.record
-            if (!guardModuleIdentity(tx, record, dir)) return
             // 无载荷 = 读取（module.yml 顶层 customTools 段）。
             if (record.customTools === undefined) {
               try {
@@ -1498,8 +1442,7 @@ export function registerSettingsBridge(
                 tx.write(400, { ok: false, code: 'custom-tools-invalid', message: errors.join('; ') })
                 return
               }
-              if (!guardModuleWrite(dir, tx.write)) return
-              if (!guardModuleIdentity(tx, record, dir)) return
+              if (subjectGate(tx, 'customTools', { write: true }) === undefined) return
               withModuleDefinition(dir, (doc) => {
                 if (customTools.length === 0) doc.deleteIn(['customTools'])
                 else {
@@ -1519,11 +1462,8 @@ export function registerSettingsBridge(
           kind: 'exact',
           path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.persona,
           handler: route({ body: 'json', handle: async (tx) => {
-            const dir = tx.editDir()
-            if (dir.length === 0) {
-              tx.write(400, { ok: false, code: 'module-dir-unavailable', message: '模块目录未配置' })
-              return
-            }
+            const dir = subjectGate(tx, 'persona')
+            if (dir === undefined) return
             const record = tx.record
             if (Object.keys(record).some(key => !['persona', 'expectedModuleId', 'expectedRevision', 'refreshOnly'].includes(key))
               || record.refreshOnly !== undefined && (typeof record.refreshOnly !== 'boolean'
@@ -1531,14 +1471,13 @@ export function registerSettingsBridge(
               tx.write(400, { ok: false, code: 'module-persona-invalid', message: '人设请求包含非法字段或混合了刷新与写入' })
               return
             }
-            if (!guardModuleIdentity(tx, record, dir)) return
             try {
               if (record.persona === undefined && record.refreshOnly !== true) {
                 if (record.expectedRevision !== undefined) throw new TypeError('读取人设不接受写入版本')
                 tx.write(200, { ok: true, value: readModulePersona(dir) })
                 return
               }
-              if (!guardModuleWrite(dir, tx.write)) return
+              if (subjectGate(tx, 'persona', { write: true }) === undefined) return
               if (typeof record.expectedModuleId !== 'string') throw new TypeError('保存或刷新人设必须提供 expectedModuleId')
               let saved
               if (record.refreshOnly === true) saved = readModulePersona(dir)
@@ -1547,7 +1486,6 @@ export function registerSettingsBridge(
                 const persona = record.persona === null ? null : readPersonaSpec(record.persona)
                 if (persona === undefined) throw new TypeError('persona 必须是主/子覆盖对象或 null')
                 const root = dirname(dir), id = basename(dir)
-                if (!guardModuleIdentity(tx, record, dir)) return
                 saved = saveModulePersona(root, id, persona, record.expectedRevision)
               }
               try { await deps.overridesChanged?.(basename(dir)) }
@@ -1698,8 +1636,10 @@ export function registerSettingsBridge(
               tx.write(400, { ok: false, code: 'module-delete-rejected', message: '缺少模块 id' })
               return
             }
-            // 当前使用中的模块不可删除（先切换再删）。
-            const activeDir = tx.editDir()
+            // 当前使用中的模块不可删除（先切换再删）。optional：编辑目标只当「在用」判据，
+            // 不核形状——损坏的模块必须仍能删掉；声明不存在即没有在用模块。
+            const activeDir = subjectGate(tx, 'moduleDelete', { format: false })
+            if (activeDir === undefined) return
             if (activeDir.length > 0 && basename(activeDir) === id) {
               tx.write(400, { ok: false, code: 'module-in-use', message: `模块「${id}」正在使用中，请先切换其他模块再删除` })
               return
@@ -1854,11 +1794,8 @@ export function registerSettingsBridge(
           kind: 'exact',
           path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.charactersImport,
           handler: route({ body: 'json', handle: async (tx) => {
-            const dir = tx.editDir()
-            if (dir.length === 0) {
-              tx.write(400, { ok: false, code: 'module-dir-unavailable', message: '模块目录未配置' })
-              return
-            }
+            const dir = subjectGate(tx, 'charactersImport')
+            if (dir === undefined) return
             const record = tx.record
             // 与模块包同一套入口校验：非法 preview/摘要一律 400，且发生在写入之前。
             const request = readImportRequestParams(record)
@@ -1866,7 +1803,7 @@ export function registerSettingsBridge(
               tx.write(400, { ok: false, code: 'characters-rejected', message: request.message })
               return
             }
-            if (!guardModuleWrite(dir, tx.write)) return
+            if (subjectGate(tx, 'charactersImport', { write: true }) === undefined) return
             try {
               const files = await expandModuleSource(request.params.sourceId === undefined ? readBridgeFiles(record.files) : assetSources.read(request.params.sourceId))
               if (tx.editDir() !== dir) {
@@ -1908,18 +1845,15 @@ export function registerSettingsBridge(
           kind: 'exact',
           path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.moduleMerge,
           handler: route({ body: 'json', handle: async (tx) => {
-            const dir = tx.editDir()
-            if (dir.length === 0) {
-              tx.write(400, { ok: false, code: 'module-dir-unavailable', message: '模块目录未配置' })
-              return
-            }
+            const dir = subjectGate(tx, 'moduleMerge')
+            if (dir === undefined) return
             const record = tx.record
             const id = typeof record.id === 'string' ? record.id.trim() : ''
             if (id.length === 0) {
               tx.write(400, { ok: false, code: 'characters-rejected', message: '缺少角色卡 id' })
               return
             }
-            if (!guardModuleWrite(dir, tx.write)) return
+            if (subjectGate(tx, 'moduleMerge', { write: true }) === undefined) return
             const result = mergeModuleIntoModule(dirname(dir), basename(dir), id)
             if (!result.ok) {
               tx.write(400, { ok: false, code: 'characters-rejected', message: result.message })
@@ -1933,18 +1867,15 @@ export function registerSettingsBridge(
           kind: 'exact',
           path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.moduleUnmerge,
           handler: route({ body: 'json', handle: async (tx) => {
-            const dir = tx.editDir()
-            if (dir.length === 0) {
-              tx.write(400, { ok: false, code: 'module-dir-unavailable', message: '模块目录未配置' })
-              return
-            }
+            const dir = subjectGate(tx, 'moduleUnmerge')
+            if (dir === undefined) return
             const record = tx.record
             const id = typeof record.id === 'string' ? record.id.trim() : ''
             if (id.length === 0) {
               tx.write(400, { ok: false, code: 'characters-rejected', message: '缺少角色卡 id' })
               return
             }
-            if (!guardModuleWrite(dir, tx.write)) return
+            if (subjectGate(tx, 'moduleUnmerge', { write: true }) === undefined) return
             const result = removeMergedModule(dirname(dir), basename(dir), id)
             if (!result.ok) {
               tx.write(400, { ok: false, code: 'characters-rejected', message: result.message })
@@ -1958,13 +1889,9 @@ export function registerSettingsBridge(
           kind: 'exact',
           path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.subagentToolPolicy,
           handler: route({ body: 'json', handle: async (tx) => {
-            const dir = tx.editDir()
-            if (dir.length === 0) {
-              tx.write(400, { ok: false, code: 'module-dir-unavailable', message: '模块目录未配置' })
-              return
-            }
+            const dir = subjectGate(tx, 'subagentToolPolicy')
+            if (dir === undefined) return
             const record = tx.record
-            if (!guardModuleIdentity(tx, record, dir)) return
             // 无 policy 载荷 = 读取（module.yml 顶层 subagentToolPolicy 段）。
             if (record.policy === undefined) {
               try {
@@ -1977,7 +1904,6 @@ export function registerSettingsBridge(
               }
               return
             }
-            if (!guardModuleWrite(dir, tx.write)) return
             try {
               const policy = record.policy
               const policyUrl = pathToFileURL(join(packageEngineDir(), 'subagent-tool-policy-core.mjs'))
@@ -1990,7 +1916,7 @@ export function registerSettingsBridge(
                 tx.write(409, { ok: false, code: 'subagent-tool-policy-rejected', message: '策略校验失败：' + errors.join('; '), value: { errors } })
                 return
               }
-              if (!guardModuleIdentity(tx, record, dir)) return
+              if (subjectGate(tx, 'subagentToolPolicy', { write: true }) === undefined) return
               withModuleDefinition(dir, (doc) => {
                 if (isEmpty) {
                   // 关闭开关：只删除策略段，**保留模块声明**——能力卡仍在，用户可再次打开；
@@ -2013,11 +1939,8 @@ export function registerSettingsBridge(
           kind: 'exact',
           path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.subagentToolPolicyPreview,
           handler: route({ body: 'json', handle: async (tx) => {
-            const dir = tx.editDir()
-            if (dir.length === 0) {
-              tx.write(400, { ok: false, code: 'module-dir-unavailable', message: '模块目录未配置' })
-              return
-            }
+            const dir = subjectGate(tx, 'subagentToolPolicyPreview')
+            if (dir === undefined) return
             const record = tx.record
             try {
               const spec = loadModuleSpec(dir)
@@ -2049,22 +1972,18 @@ export function registerSettingsBridge(
           kind: 'exact',
           path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.moduleCapability,
           handler: route({ body: 'json', handle: async (tx) => {
-            const dir = tx.editDir()
-            if (dir.length === 0) {
-              tx.write(400, { ok: false, code: 'module-dir-unavailable', message: '模块目录未配置' })
-              return
-            }
+            const dir = subjectGate(tx, 'moduleCapability')
+            if (dir === undefined) return
             const body = tx.record
-            if (!guardModuleIdentity(tx, body, dir)) return
             const action = body.action
             const id = action === 'create' || action === 'remove' ? body.capabilityId : action === 'create-recipe' ? body.recipeId : undefined
             if ((action !== 'create' && action !== 'remove' && action !== 'create-recipe') || typeof id !== 'string' || id.trim().length === 0 || id.length > 128) {
               tx.write(400, { ok: false, code: 'engine-capability-invalid', message: '能力或 recipe 请求格式无效' })
               return
             }
-            if (!guardModuleWrite(dir, tx.write)) return
             const run = capabilityQueue.then(async () => {
-              if (!guardModuleIdentity(tx, body, dir)) return
+              // 队列等待之后的写前复检：可写 + 身份一次判完（默认核形状）。
+              if (subjectGate(tx, 'moduleCapability', { write: true }) === undefined) return
               try {
                 const result = action === 'remove'
                   ? removeModuleCapability(dir, id.trim())

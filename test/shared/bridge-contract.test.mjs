@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { cpSync, mkdtempSync, rmSync } from 'node:fs'
+import { cpSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { Context } from '@deepseek-ai/cordis'
@@ -318,6 +318,9 @@ test('契约：全部桥路径只收 POST 且拒绝跨站 Origin', async () => {
 
 test('部署总闸经桥读写 modulesEnabled', async () => {
   const handlers = new Map()
+  const subjectDir = join(home, 'gate-subject')
+  mkdirSync(subjectDir, { recursive: true })
+  writeFileSync(join(subjectDir, 'module.yml'), 'id: gate-subject\nmodules: []\n', 'utf8')
   let value = { modulesEnabled: false }
   const writes = []
   const scope = {
@@ -335,9 +338,16 @@ test('部署总闸经桥读写 modulesEnabled', async () => {
     webServer: { register: ({ path, handler }) => { handlers.set(path, handler); return () => {} } },
     effect: fn => { const dispose = fn(); if (dispose) bridgeDisposers.push(dispose) },
   }
-  registerSettingsBridge({ inject: (_deps, callback) => callback(scope) }, { ns: 'prompt-tool', models: () => ({}), skills: () => makeSkillsState() })
+  registerSettingsBridge({ inject: (_deps, callback) => callback(scope) }, {
+    ns: 'prompt-tool',
+    models: () => ({}),
+    skills: () => makeSkillsState(),
+    // describe 在策略表里是 required：它的主语就是模块段，读取必须带主语头（无头 → 400）。
+    moduleDirectory: () => subjectDir,
+  })
   const read = fakeRes()
-  await handlers.get(SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.describe)(fakeReq(), read)
+  await handlers.get(SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.describe)(
+    fakeReq({ headers: { 'x-module-id': 'gate-subject' } }), read)
   assert.equal(JSON.parse(read.body).value.value.modulesEnabled, false)
   const save = async ops => {
     const res = fakeRes()
@@ -378,8 +388,9 @@ test('契约：/bootstrap 聚合 meta + overrides + variables + promptConfigs �
   assert.deepEqual(payload.skillFolders, ['D:/referenced'])
   assert.deepEqual(payload.skillCatalog, [entry])
   assert.equal(payload.skillsComplete, false, '无注册表观测时不得宣称会话技能清单完整')
-  // 包内默认模块可解析，moduleFacts 确有值：这里查的是投影本身不夹带行级配置。
-  assert.equal(payload.moduleFacts.effectiveConfigs, undefined, 'bootstrap 不应暴露完整行级配置')
+  // 空主语没有模块段：不再拿包内默认模块冒充当前模块（两个键整体缺席，不是空对象）。
+  assert.equal('moduleParams' in payload, false, '空主语时 moduleParams 整体缺席')
+  assert.equal('moduleFacts' in payload, false, '空主语时 moduleFacts 整体缺席')
 })
 
 test('契约：/meta 与 /bootstrap 同源下发 layerOrder 与 editorGroups，且只含白名单字段', async () => {

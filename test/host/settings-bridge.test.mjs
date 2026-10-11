@@ -78,17 +78,25 @@ function makeHarness(services = {}, value = {}) {
   return { ctx, handlers }
 }
 
-test('settings bridge /describe 返回宿主默认模型（agent-default-model 回显）', async () => {
+test('settings bridge /describe 无主语 400，有主语才返回宿主默认模型（agent-default-model 回显）', async () => {
+  const dir = makeUserPresetDir('pt-describe-subject-')
+  writeFileSync(join(dir, 'module.yml'), `id: ${basename(dir)}\nmodules: []\n`, 'utf8')
   const { ctx, handlers } = makeHarness()
   registerSettingsBridge(ctx, {
     ns: 'prompt-tool',
     models: () => ({ available: true, providers: ['deepseek-official'] }),
     skills: () => skillsStateStub(),
+    moduleDirectory: (id) => id === undefined ? '' : dir,
   })
   const handler = handlers.get(PREFIX + BRIDGE_ENDPOINTS.describe)
   assert.ok(handler, 'describe 端点应注册')
+  // describe 的主语就是模块段：无目标必须拒绝（策略表 required）。
+  const noSubject = fakeRes()
+  await handler(fakeReq(), noSubject)
+  assert.equal(noSubject.status, 400)
+  assert.equal(JSON.parse(noSubject.body).code, 'module-dir-unavailable')
   const res = fakeRes()
-  await handler(fakeReq(), res)
+  await handler(fakeReq({ headers: { host: 'localhost', 'x-module-id': basename(dir) } }), res)
   assert.equal(res.status, 200)
   const payload = JSON.parse(res.body)
   assert.deepEqual(payload.hostDefaultModel, {
@@ -347,6 +355,9 @@ test('请求模块身份统一 bootstrap 快照与规则写入；错误身份和
       assert.equal(status, 200)
       assert.equal(payload.value.value.moduleId, idA)
       assert.deepEqual(payload.moduleFacts.declaredModules, ['rule-engine'])
+      assert.deepEqual(Object.keys(payload.moduleFacts).sort(),
+        ['declaredModules', 'editable', 'effectiveModules', 'rowIds', 'sourceMode', 'subagentToolPolicyEnabled'],
+        '模块事实只含白名单字段，不夹带行级配置')
       assert.equal(payload.templatePreStepCount, 1)
       if (endpoint === 'bootstrap') {
         assert.deepEqual(payload.overrides.overrides, {})
@@ -382,8 +393,8 @@ test('请求模块身份统一 bootstrap 快照与规则写入；错误身份和
     assert.equal(deleting.payload.code, 'module-in-use')
     assert.equal(readFileSync(fileA, 'utf8'), beforeA)
     const rejected = await call('rules', { expectedModuleId: idB, expectedRevisions: saved.payload.value.revisions, edits })
-    assert.equal(rejected.status, 409)
-    assert.equal(rejected.payload.code, 'module-changed')
+    assert.equal(rejected.status, 400)
+    assert.equal(rejected.payload.code, 'module-subject-conflict', '头声明 A 而载荷声明 B = 两个主语，不是目标被换')
     assert.equal(readFileSync(fileA, 'utf8'), beforeA)
     assert.equal(readFileSync(fileB, 'utf8'), beforeB)
     assert.deepEqual(rebuilt, [idA])
@@ -399,6 +410,19 @@ test('请求模块身份统一 bootstrap 快照与规则写入；错误身份和
     assert.equal(readFileSync(fileA, 'utf8'), beforeA)
     assert.equal(readFileSync(fileB, 'utf8'), beforeB)
     assert.equal(rebuilt.length, beforeRebuilds)
+  })
+  await t.test('请求中途目标目录消失：按当次解析拒绝为无目标', async () => {
+    requestedDir = dirA
+    const beforeA = readFileSync(fileA, 'utf8'), beforeB = readFileSync(fileB, 'utf8')
+    const revisions = (await call('rules')).payload.value.revisions
+    // 声明过 A、请求处理期间 A 的目录不再可解析（被删/改名）：按当次解析拒绝，不写另一个模块。
+    const vanished = await call('rules', { expectedRevisions: revisions, edits: [{ previousId: 'model', rule: requestRule('model', { temperature: 0.7 }) }] },
+      { onRead: () => { requestedDir = '' } })
+    assert.equal(vanished.status, 400)
+    assert.equal(vanished.payload.code, 'module-dir-unavailable')
+    assert.equal(readFileSync(fileA, 'utf8'), beforeA)
+    assert.equal(readFileSync(fileB, 'utf8'), beforeB)
+    requestedDir = dirA
   })
 })
 
@@ -1069,4 +1093,44 @@ test('settings bridge /skills-folders 只登记引用路径，不复制也不改
     rmSync(root, { recursive: true, force: true })
     rmSync(referenced, { recursive: true, force: true })
   }
+})
+
+test('归属门：形状豁免只对「编辑目标当身份用」的端点生效——坏定义仍可删模块、可切总闸', async () => {
+  const brokenDir = makeUserPresetDir('pt-broken-subject-')
+  const brokenId = basename(brokenDir)
+  // 活动模块的定义不可解析：形状核（loadModuleDefinition/readModuleLayerSettings）必然失败。
+  writeFileSync(join(brokenDir, 'module.yml'), 'id: [unclosed\n', 'utf8')
+  const otherDir = makeUserPresetDir('pt-delete-target-')
+  const otherId = basename(otherDir)
+  writeFileSync(join(otherDir, 'module.yml'), `id: ${otherId}\nmodules: []\n`, 'utf8')
+  const { ctx, handlers } = makeHarness()
+  registerSettingsBridge(ctx, {
+    ns: 'prompt-tool',
+    models: () => ({ available: true, providers: [] }),
+    skills: () => skillsStateStub(),
+    moduleDirectory: () => brokenDir,
+  })
+  const call = async (endpoint, body) => {
+    const handler = handlers.get(PREFIX + BRIDGE_ENDPOINTS[endpoint])
+    assert.ok(handler, `${endpoint} 端点应注册`)
+    const res = fakeRes()
+    await handler(fakeReq({ [Symbol.asyncIterator]: async function* () {
+      yield Buffer.from(JSON.stringify(body))
+    } }), res)
+    return { status: res.status, payload: JSON.parse(res.body) }
+  }
+
+  // 对照：模块类读端点仍核形状（豁免不是「坏定义一律放行」）。
+  const denied = await call('rules', { expectedModuleId: brokenId })
+  assert.equal(denied.status, 400, `rules 读仍须核形状：${JSON.stringify(denied.payload)}`)
+  assert.equal(denied.payload.ok, false)
+
+  // 豁免一：坏定义不挡全局总闸保存（mutate 只把目标当 descriptor 投影）。
+  const toggled = await call('mutate', { ops: [{ op: 'set', path: ['modulesEnabled'], value: true }] })
+  assert.equal(toggled.status, 200, `总闸保存不该被坏模块挡住：${JSON.stringify(toggled.payload)}`)
+
+  // 豁免二：坏定义仍可删除**另一个**模块（moduleDelete 只把目标当「在用」判据）。
+  const deleted = await call('moduleDelete', { id: otherId })
+  assert.equal(deleted.status, 200, `坏模块不该让别的模块删不掉：${JSON.stringify(deleted.payload)}`)
+  assert.equal(existsSync(otherDir), false)
 })

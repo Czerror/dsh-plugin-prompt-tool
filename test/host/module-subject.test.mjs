@@ -1,9 +1,11 @@
 /**
- * 模块主语解析回归网：`resolveEditDir` 只按**声明**定位，接线函数把「未声明」译为无目标。
+ * 模块主语解析回归网：`resolveEditDir` 只按**声明**定位，接线函数把「未声明」译为无目标；
+ * 「这次读写归哪个模块」由归属门一处判（策略表 + 身份一致 + 可写/形状）。
  *
- * 真值源：`docs/superpowers/specs/2026-10-12-module-subject-design.md` 与 ADR-0011
+ * 真值源：`docs/superpowers/specs/2026-10-12-module-subject-design.md` §六／§10.2、ADR-0011
  * ——显式 id 命中该模块（与是否在启用表里无关），不存在的 id 与未声明一律返回空串，
- * 不再回退启用表首项；非法 `x-module-id` 在事务边界显式 400，不降级成「未声明」。
+ * 不再回退启用表首项；非法 `x-module-id` 在事务边界显式 400，不降级成「未声明」；
+ * `required` 无目标 400 `module-dir-unavailable`，载荷主语 ≠ 头声明 400 `module-subject-conflict`。
  * 断言落在公共接口（`resolveEditDir` / `resolveRequestedModuleDir` / 端点载荷）上。
  */
 import { test } from 'node:test'
@@ -16,7 +18,8 @@ const { moduleRoot } = isolatedHome('pt-module-subject-')
 const { resolveEditDir, resolveRequestedModuleDir, setModuleEnabled } =
   await import('../../src/host/config-store.ts')
 const { registerSettingsBridge } = await import('../../src/runtime/settings-bridge.ts')
-const { BRIDGE_ENDPOINTS, MODULE_IDENTITY_INVALID } = await import('../../src/shared/bridge-contract.ts')
+const { BRIDGE_ENDPOINTS, MODULE_IDENTITY_INVALID, MODULE_SUBJECT_CONFLICT } =
+  await import('../../src/shared/bridge-contract.ts')
 
 function makeModule(id, body = 'modules: []\n') {
   const dir = join(moduleRoot, id)
@@ -30,6 +33,38 @@ function makePlainDir(id) {
   const dir = join(moduleRoot, id)
   mkdirSync(dir, { recursive: true })
   return dir
+}
+
+/** 归属门端到端夹具：真实 `resolveRequestedModuleDir` 接线 + 记录型 webServer。 */
+function bridgeHarness(deps = {}) {
+  const table = handlerTable()
+  const ctx = {
+    inject: (_deps, cb) => cb({
+      get: () => undefined,
+      settings: { describe: () => [{ ns: 'prompt-tool', value: {}, base: {} }], mutate: async () => {} },
+      webServer: { register: table.register },
+      effect: (fn) => fn(),
+    }),
+  }
+  registerSettingsBridge(ctx, {
+    ns: 'prompt-tool',
+    models: () => ({ available: true, providers: [] }),
+    skills: () => ({ skillsRoot: moduleRoot, folders: [], listSkills: () => [], setSkillPolicy: () => ({ ok: true, changed: false }) }),
+    moduleDirectory: (subject) => resolveRequestedModuleDir(moduleRoot, subject),
+    ...deps,
+  })
+  const call = async (endpoint, header, request = {}) => {
+    const handler = table.handler('/api/prompt-tool/settings' + BRIDGE_ENDPOINTS[endpoint])
+    assert.equal(typeof handler, 'function', `${endpoint} 端点已注册`)
+    const res = fakeRes()
+    await handler(fakeReq({
+      body: {},
+      headers: header === undefined ? {} : { 'x-module-id': header },
+      ...request,
+    }), res)
+    return { ...readBridge(res), raw: res.body }
+  }
+  return { call }
 }
 
 test('resolveEditDir 按声明定位：命中启用与否无关，缺定义与未声明一律无目标', () => {
@@ -55,32 +90,7 @@ test('未声明主语不选目标：接线函数返回空串，绝不落到启�
 
 test('非法 x-module-id 在事务边界显式 400，不进入端点 handler', async () => {
   makeModule('header-ok', 'modules: [rule-engine]\nrules: []\n')
-  const table = handlerTable()
-  const ctx = {
-    inject: (_deps, cb) => cb({
-      get: () => undefined,
-      settings: { describe: () => [{ ns: 'prompt-tool', value: {}, base: {} }], mutate: async () => {} },
-      webServer: { register: table.register },
-      effect: (fn) => fn(),
-    }),
-  }
-  registerSettingsBridge(ctx, {
-    ns: 'prompt-tool',
-    models: () => ({ available: true, providers: [] }),
-    skills: () => ({ skillsRoot: moduleRoot, folders: [], listSkills: () => [], setSkillPolicy: () => ({ ok: true, changed: false }) }),
-    moduleDirectory: (subject) => resolveRequestedModuleDir(moduleRoot, subject),
-  })
-  const call = async (endpoint, header, request = {}) => {
-    const handler = table.handler('/api/prompt-tool/settings' + BRIDGE_ENDPOINTS[endpoint])
-    assert.equal(typeof handler, 'function', `${endpoint} 端点已注册`)
-    const res = fakeRes()
-    await handler(fakeReq({
-      body: {},
-      headers: header === undefined ? {} : { 'x-module-id': header },
-      ...request,
-    }), res)
-    return readBridge(res)
-  }
+  const { call } = bridgeHarness()
 
   for (const endpoint of ['rules', 'describe', 'meta']) {
     for (const bad of ['../x', 'a'.repeat(65), '   ', '', 'Bad_ID', 'a/b']) {
@@ -101,4 +111,41 @@ test('非法 x-module-id 在事务边界显式 400，不进入端点 handler', a
   assert.equal(nonLoopback.status, 403, '非 loopback socket + 非法头仍是 403')
   const wrongMethod = await call('rules', '../x', { method: 'GET' })
   assert.equal(wrongMethod.status, 405, '非 POST + 非法头仍是 405')
+})
+
+test('归属门：required 无目标 400、载荷主语与头声明冲突 400、optional 空主语只回全局段', async () => {
+  const dirA = makeModule('gate-a', 'modules: [rule-engine]\nrules: []\n')
+  const dirB = makeModule('gate-b', 'modules: [rule-engine]\nrules: []\n')
+  const idA = basename(dirA), idB = basename(dirB)
+  const { call } = bridgeHarness()
+
+  // required 无目标：报「没有目标」，不是「只读」。行为回归锁。
+  const noSubject = await call('rules', undefined, { body: { expectedModuleId: idA } })
+  assert.equal(noSubject.status, 400)
+  assert.equal(noSubject.code, 'module-dir-unavailable')
+
+  // 写端点同样先报 400：门内顺序固定为「无目标 → 可写」。
+  const writeNoSubject = await call('paramOverrides', undefined, { body: { overrides: { modelTemperature: '0.5' } } })
+  assert.equal(writeNoSubject.status, 400, '写端点无目标报 400，不是 403')
+  assert.equal(writeNoSubject.code, 'module-dir-unavailable')
+
+  // 两个主语：请求头声明 A、载荷声明 B。
+  const conflict = await call('rules', idA, { body: { expectedModuleId: idB } })
+  assert.equal(conflict.status, 400)
+  assert.equal(conflict.code, MODULE_SUBJECT_CONFLICT)
+  assert.match(conflict.message, new RegExp(idA))
+  assert.match(conflict.message, new RegExp(idB))
+
+  // 主语一致时照常读写 A。
+  const consistent = await call('rules', idA, { body: { expectedModuleId: idA } })
+  assert.equal(consistent.status, 200, consistent.message)
+
+  // optional：空目标是合法状态，模块段整体缺席，只剩全局段。
+  const bootstrap = await call('bootstrap', undefined)
+  assert.equal(bootstrap.status, 200)
+  const payload = JSON.parse(bootstrap.raw)
+  assert.equal('moduleParams' in payload, false, '空主语时 moduleParams 整体缺席')
+  assert.equal('moduleFacts' in payload, false, '空主语时 moduleFacts 整体缺席')
+  assert.equal(payload.templatePreStepCount, 0, '空主语不拿包内默认模块算批层数')
+  assert.ok(payload.instructions?.context?.cwd, '全局段照常下发指令文件上下文')
 })
