@@ -26,8 +26,6 @@ export type { InstructionPolicy, InstructionPolicyFileOverride, InstructionPolic
 
 /** 策略文件名（唯一权威定义）；路径由它派生，不再各自拼一份。 */
 const INSTRUCTIONS_POLICY_FILE = 'instructions.yml'
-/** 相对 DSH_HOME 的策略文件位置。 */
-export const INSTRUCTIONS_POLICY_RELATIVE = join(storageRootOf('.'), INSTRUCTIONS_POLICY_FILE)
 
 /** 策略文件格式版本；不认识的值按损坏处理，不猜测迁移。 */
 export const INSTRUCTIONS_POLICY_VERSION = 1

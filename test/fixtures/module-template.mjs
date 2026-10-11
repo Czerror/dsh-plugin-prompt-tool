@@ -33,6 +33,9 @@ export function installFixtureModule(moduleRoot) {
 
 /**
  * 把夹具模板安装到隔离 DSH_HOME 的模块根：`<dshHome>/.prompt-tool/modules/fixture`。
+ *
+ * 这里保留内联拼接、**不** import `paths.ts` 的 `storageRootOf`：本夹具被静态求值，会在用例
+ * 隔离 DSH_HOME 之前冻结 `paths.ts` 的模块级 `STORAGE_ROOT`（与 host-harness 同一个理由）。
  * @param {string} dshHome 隔离的 DSH_HOME（测试用临时目录）
  * @returns {string} 安装后的模块目录
  */

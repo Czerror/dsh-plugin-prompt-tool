@@ -129,7 +129,12 @@ export function createModuleConfigOrderSession(deps: ModuleConfigOrderDeps): Mod
   }
 }
 
-/** 跨模块范围只持有排序摘要；正文草稿始终留在当前模块的 store 中。 */
+/**
+ * 跨模块范围只持有排序摘要；正文草稿始终留在当前模块的 store 中。
+ *
+ * **hook 不自带首读**：调用方必须在 effect 里调用 `load()`（`RulesWorkspace` 在规则版本与
+ * 启用表变化时读），否则排序列表恒空；`reset()` 用于编辑目标变化，`save(next)` 需要先有快照。
+ */
 export function useModuleConfigOrder(t: PromptToolTranslate, reloadConfigs?: () => Promise<boolean>) {
   const [state, setState] = useState<ModuleConfigOrderState>(emptyState)
   const latest = useRef({ t, reloadConfigs })

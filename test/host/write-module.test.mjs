@@ -11,6 +11,9 @@ import { Context } from '@deepseek-ai/cordis'
 // 真实用户环境 .prompt-tool/modules/<id> 会遮蔽包内模板，测试必须隔离。
 const home = mkdtempSync(join(tmpdir(), 'pt-wp-home-'))
 process.env.DSH_HOME = home
+const { storageRootOf } = await import('../../src/host/paths.ts')
+/** 模块根沿用生产派生（`storageRootOf`），不再各文件手拼 `.prompt-tool/modules`。 */
+const moduleRoot = join(storageRootOf(home), 'modules')
 const ROOT = fileURLToPath(new URL('../..', import.meta.url))
 const { FIXTURE_MODULE_ID, FIXTURE_MODULE_SRC, installFixtureModule, installFixtureModuleInHome } = await import('../fixtures/module-template.mjs')
 const { ensureModuleReady, writeModule } = await import('../../src/host/write-module.ts')
@@ -64,7 +67,7 @@ async function liveWriter(t, initial) {
 }
 
 function installWriterModule(id) {
-  const moduleDir = join(home, '.prompt-tool', 'modules')
+  const moduleDir = moduleRoot
   const dir = join(moduleDir, id)
   mkdirSync(dir, { recursive: true })
   writeFileSync(join(dir, 'module.yml'), JSON.stringify({
@@ -87,7 +90,7 @@ function installWriterModule(id) {
 
 test('公共重建入口：规则逐模块重建，不串用模块正文', async () => {
   const dirs = ['writer-a', 'writer-b'].map(installWriterModule)
-  for (const id of ['writer-b', 'writer-a']) ensureModuleReady(id, { modulesRoot: join(home, '.prompt-tool', 'modules') })
+  for (const id of ['writer-b', 'writer-a']) ensureModuleReady(id, { modulesRoot: moduleRoot })
   for (const [index, id] of ['writer-a', 'writer-b'].entries()) {
     const dir = dirs[index]
     const config = projectedConfig(dir, 'near-anchor')
@@ -178,7 +181,7 @@ test('运行总闸：关闭再开启不改模块定义或物化产物字节', as
   }
   await update({ modulesEnabled: false })
   patchRule(dir, 'near-anchor', rule => ({ ...rule, then: [{ ...rule.then[0], config: { ...rule.then[0].config, params: { ...rule.then[0].config.params, text: 'SAVED-WHILE-OFF' } } }] }))
-  ensureModuleReady('writer-gate', { modulesRoot: join(home, '.prompt-tool', 'modules') })
+  ensureModuleReady('writer-gate', { modulesRoot: moduleRoot })
   assert.equal(projectedConfig(dir, 'near-anchor').params.text, 'SAVED-WHILE-OFF')
 })
 
@@ -409,7 +412,7 @@ test('writeModule 自定义工具拒绝坏定义，合法 DSL 在配装期编译
 })
 
 test('writeModule 用户副本缺组合源时拒绝，不回退包内同名模板', () => {
-  const moduleDir = join(home, '.prompt-tool', 'modules')
+  const moduleDir = moduleRoot
   const userMinimal = join(moduleDir, 'pt-minimal')
   try {
     rmSync(userMinimal, { recursive: true, force: true })

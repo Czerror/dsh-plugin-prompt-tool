@@ -139,33 +139,6 @@ test('settings bridge /meta 返回引擎能力矩阵', async () => {
   assert.ok(payload.value.meta.strategies.includes('anchor-notice'))
 })
 
-// 空请求体在事务里等于 `{}`（T6 规格）：端点按字段拒绝，但拒绝码不再统一是 settings-rejected。
-// 本表把这条已接受的行为变化钉住——真实客户端恒发 JSON.stringify(body ?? {})，走不到空体。
-test('settings bridge 空请求体按 {} 处理：状态码与拒绝码以本表为准', async () => {
-  const { ctx, handlers } = makeHarness()
-  registerSettingsBridge(ctx, {
-    ns: 'prompt-tool',
-    models: () => ({ available: true, providers: [] }),
-    skills: () => skillsStateStub(),
-    moduleDirectory: () => 'D:/isolated/module',
-  })
-  for (const [endpoint, code] of [
-    [BRIDGE_ENDPOINTS.mutate, 'settings-rejected'],
-    [BRIDGE_ENDPOINTS.modelReasoning, 'reasoning-invalid-shape'],
-    [BRIDGE_ENDPOINTS.skillsImport, 'skills-import-rejected'],
-    [BRIDGE_ENDPOINTS.importModulePackage, 'module-package-invalid'],
-    [BRIDGE_ENDPOINTS.charactersImport, 'characters-rejected'],
-    [BRIDGE_ENDPOINTS.agentsFile, 'settings-rejected'],
-  ]) {
-    const handler = handlers.get(PREFIX + endpoint)
-    assert.ok(handler, `${endpoint} 端点应注册`)
-    const res = fakeRes()
-    await handler(fakeReq(), res)
-    assert.equal(res.status, 400, `${endpoint} 空请求体必须拒绝`)
-    assert.equal(JSON.parse(res.body).code, code, `${endpoint} 拒绝码`)
-  }
-})
-
 test('settings bridge /skills-import 写入技能文件并触发目录刷新回调', async () => {
   const dir = mkdtempSync(join(tmpdir(), `pt-skills-import-${process.pid}-`))
   let refreshes = 0

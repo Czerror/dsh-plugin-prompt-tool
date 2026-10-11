@@ -18,6 +18,9 @@ after(() => {
   rmSync(home, { recursive: true, force: true })
 })
 const { writeModule } = await import('../../src/host/write-module.ts')
+const { storageRootOf } = await import('../../src/host/paths.ts')
+/** 模块根沿用生产派生（`storageRootOf`），不再手拼 `.prompt-tool/modules`。 */
+const moduleRoot = join(storageRootOf(home), 'modules')
 const { apply } = await import('../../engine/tool-config-engine.mjs')
 
 const validTool = (patch = {}) => ({
@@ -143,7 +146,7 @@ test('compileCustomTool：五种现有执行器和 fs 动态 action 保持可用
 })
 
 test('writeModule：坏工具完整拒绝无写，合法 DSL 保留并由内联入口执行和释放', async () => {
-  const moduleDir = join(home, '.prompt-tool', 'modules')
+  const moduleDir = moduleRoot
   const dir = join(moduleDir, 'custom-tools-test')
   mkdirSync(dir, { recursive: true })
   const tools = [

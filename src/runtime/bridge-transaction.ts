@@ -19,7 +19,7 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
   value !== null && typeof value === 'object' && !Array.isArray(value)
 
 /** 统一的 JSON 响应写出；桥的每条成功/失败载荷都经它落地。 */
-export function writeBridgeJson(res: ServerResponse, status: number, body: unknown): void {
+function writeBridgeJson(res: ServerResponse, status: number, body: unknown): void {
   const payload = JSON.stringify(body)
   res.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'referrer-policy': 'no-referrer' })
   res.end(payload)
@@ -31,7 +31,7 @@ export function writeBridgeJson(res: ServerResponse, status: number, body: unkno
  * 官方把 `/api` 注册成 prefix 路由，本插件的 exact 路由先于它命中，因此**不经过**
  * 官方连接层的 Host/Origin 鉴权，必须自守。
  */
-export function isLoopbackRequest(req: IncomingMessage): boolean {
+function isLoopbackRequest(req: IncomingMessage): boolean {
   const address = req.socket.remoteAddress
   if (address !== '127.0.0.1' && address !== '::1' && address !== '::ffff:127.0.0.1') return false
   const host = req.headers.host
@@ -66,7 +66,7 @@ export function isLoopbackRequest(req: IncomingMessage): boolean {
 }
 
 /** 读取 JSON bridge 请求体；所有 JSON 端点统一使用 32 MiB 内存上限。 */
-export async function readBridgeBody(
+async function readBridgeBody(
   req: IncomingMessage,
 ): Promise<{ body: unknown; tooLarge: boolean; invalidJson: boolean; receivedBytes: number }> {
   const chunks: Buffer[] = []
@@ -93,7 +93,7 @@ export async function readBridgeBody(
   }
 }
 
-export function writeBridgeBodyTooLarge(res: ServerResponse, receivedBytes: number): void {
+function writeBridgeBodyTooLarge(res: ServerResponse, receivedBytes: number): void {
   writeBridgeJson(res, 413, {
     ok: false,
     code: 'bridge-body-too-large',
@@ -105,7 +105,7 @@ export function writeBridgeBodyTooLarge(res: ServerResponse, receivedBytes: numb
  * 读请求体并把三种失败直接写成响应，成功时返回 `{ body }`。
  * 返回 `undefined` 表示「事务已经结束」，调用方必须立即 return。
  */
-export async function readBridgeBodyForHandler(req: IncomingMessage, res: ServerResponse): Promise<{ body: unknown } | undefined> {
+async function readBridgeBodyForHandler(req: IncomingMessage, res: ServerResponse): Promise<{ body: unknown } | undefined> {
   const result = await readBridgeBody(req)
   if (result.tooLarge) {
     writeBridgeBodyTooLarge(res, result.receivedBytes)
@@ -125,11 +125,12 @@ export async function readBridgeBodyForHandler(req: IncomingMessage, res: Server
 /**
  * 端点声明的请求体需求。
  *
- * - `required` / `optional`：解析 JSON 对象（空体得到 `{}`），字段形状由 handler 判。
+ * - `json`（缺省）：解析成 JSON 对象，**空体得到 `{}`**——字段形状由 handler 按字段判。
+ *   客户端恒发 `JSON.stringify(body ?? {})`，真正空体只来自非浏览器调用。
  * - `none`：**不碰请求流**——这类端点要么只回固定应答，要么自己把 `tx.req` 当原始流消费
  *   （上传、原始文件流）。替它们排空流会把要读的数据吃掉。
  */
-export type BridgeBodyMode = 'required' | 'optional' | 'none'
+export type BridgeBodyMode = 'json' | 'none'
 
 /** 已解析的请求：handler 需要的一切请求事实都在这里，不再回头碰 `req`/`res`。 */
 export interface BridgeTransaction {
@@ -170,7 +171,7 @@ export function bridgeTransaction(
   spec: BridgeRouteSpec,
   deps: BridgeTransactionDeps,
 ): (req: IncomingMessage, res: ServerResponse) => Promise<void> {
-  const mode: BridgeBodyMode = spec.body ?? 'required'
+  const mode: BridgeBodyMode = spec.body ?? 'json'
   return async (req, res) => {
     if (!isLoopbackRequest(req)) {
       writeBridgeJson(res, 403, { ok: false, code: 'settings-not-exposed', message: 'loopback requests only' })

@@ -720,7 +720,7 @@ export function registerSettingsBridge(
         sctx.webServer.register({
           kind: 'exact',
           path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.bootstrap,
-          handler: route({ body: 'required', handle: async (tx) => {
+          handler: route({ body: 'json', handle: async (tx) => {
             const dir = tx.editDir()
             const descriptor = findDescriptor()
             if (descriptor === undefined) {
@@ -790,7 +790,7 @@ export function registerSettingsBridge(
         sctx.webServer.register({
           kind: 'exact',
           path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.models,
-          handler: route({ body: 'required', handle: async (tx) => {
+          handler: route({ body: 'json', handle: async (tx) => {
             const record = tx.record as { refresh?: unknown }
             // 显式刷新（客户端重连、用户重试）越过 10 分钟 TTL：先失效再全量查询。
             // 目录查询失败不影响下一次调用，也不返回空目录冒充成功。
@@ -802,7 +802,7 @@ export function registerSettingsBridge(
         sctx.webServer.register({
           kind: 'exact',
           path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.modelReasoning,
-          handler: route({ body: 'required', handle: async (tx) => {
+          handler: route({ body: 'json', handle: async (tx) => {
             const { provider, model } = tx.record as { provider?: unknown; model?: unknown }
             if (typeof provider !== 'string' || provider.length === 0 || typeof model !== 'string' || model.length === 0) {
               tx.write(400, { ok: false, code: 'reasoning-invalid-shape', message: 'provider and model must be non-empty strings' })
@@ -816,7 +816,7 @@ export function registerSettingsBridge(
         sctx.webServer.register({
           kind: 'exact',
           path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.mutate,
-          handler: route({ body: 'required', handle: async (tx) => {
+          handler: route({ body: 'json', handle: async (tx) => {
             const record = tx.record
             if (!Array.isArray(record.ops)) {
               tx.write(400, { ok: false, code: 'settings-rejected', message: 'malformed bridge settings request' })
@@ -856,7 +856,7 @@ export function registerSettingsBridge(
         sctx.webServer.register({
           kind: 'exact',
           path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.skillsList,
-          handler: route({ body: 'required', handle: async (tx) => {
+          handler: route({ body: 'json', handle: async (tx) => {
             const session = readSessionIdField(tx.record)
             if (!session.ok) {
               tx.write(400, { ok: false, code: 'skills-list-rejected', message: session.message })
@@ -877,7 +877,7 @@ export function registerSettingsBridge(
         sctx.webServer.register({
           kind: 'exact',
           path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.skillsImport,
-          handler: route({ body: 'required', handle: async (tx) => {
+          handler: route({ body: 'json', handle: async (tx) => {
             const record = tx.record
             const files = Array.isArray(record.files) ? record.files : []
             const overwrite = readSkillOverwrite(record.overwrite)
@@ -899,7 +899,7 @@ export function registerSettingsBridge(
         sctx.webServer.register({
           kind: 'exact',
           path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.skillPolicy,
-          handler: route({ body: 'required', handle: async (tx) => {
+          handler: route({ body: 'json', handle: async (tx) => {
             const record = tx.record
             const change: SkillPolicyChange | undefined = record.scope === undefined
               ? ((record.side === 'model' || record.side === 'user') && typeof record.enabled === 'boolean'
@@ -933,7 +933,7 @@ export function registerSettingsBridge(
         ...(['skillRead', 'skillWrite'] as const).map((endpoint) => sctx.webServer.register({
           kind: 'exact',
           path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS[endpoint],
-          handler: route({ body: 'required', handle: async (tx) => {
+          handler: route({ body: 'json', handle: async (tx) => {
             const record = tx.record
             const code = endpoint === 'skillWrite' ? 'skill-write-rejected' : 'skill-read-rejected'
             if (typeof record.name !== 'string' || record.name.length === 0 || record.name.length > 256
@@ -966,7 +966,7 @@ export function registerSettingsBridge(
         sctx.webServer.register({
           kind: 'exact',
           path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.skillsFolders,
-          handler: route({ body: 'required', handle: async (tx) => {
+          handler: route({ body: 'json', handle: async (tx) => {
             const record = tx.record
             if (!Array.isArray(record.folders) || record.folders.some((item) => typeof item !== 'string')) {
               tx.write(400, { ok: false, code: 'skills-folders-rejected', message: 'folders 必须是字符串数组' })
@@ -993,7 +993,7 @@ export function registerSettingsBridge(
         sctx.webServer.register({
           kind: 'exact',
           path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.skillCreate,
-          handler: route({ body: 'required', handle: async (tx) => {
+          handler: route({ body: 'json', handle: async (tx) => {
             const record = tx.record
             const result = createSkill(deps.skills().skillsRoot, record as { name: unknown; description: unknown; content: unknown })
             if (!result.ok) { tx.write(400, { ok: false, code: 'skill-create-rejected', message: result.message }); return }
@@ -1004,7 +1004,7 @@ export function registerSettingsBridge(
         sctx.webServer.register({
           kind: 'exact',
           path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.skillDelete,
-          handler: route({ body: 'required', handle: async (tx) => {
+          handler: route({ body: 'json', handle: async (tx) => {
             const record = tx.record
             const session = readSessionIdField(tx.record)
             if (!session.ok || typeof record.name !== 'string' || record.name.length === 0
@@ -1022,7 +1022,7 @@ export function registerSettingsBridge(
         sctx.webServer.register({
           kind: 'exact',
           path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.skillsImportDirectory,
-          handler: route({ body: 'required', handle: async (tx) => {
+          handler: route({ body: 'json', handle: async (tx) => {
             const body = tx.record
             const source = typeof body.path === 'string' ? body.path : ''
             // 与实现层共用同一个校验入口：空串不能落到 resolve，否则会退化成进程工作目录。
@@ -1064,7 +1064,7 @@ export function registerSettingsBridge(
         sctx.webServer.register({
           kind: 'exact',
           path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.promptConfigs,
-          handler: route({ body: 'required', handle: async (tx) => {
+          handler: route({ body: 'json', handle: async (tx) => {
             const session = readSessionIdField(tx.record)
             if (!session.ok) {
               tx.write(400, { ok: false, code: 'settings-rejected', message: session.message })
@@ -1088,7 +1088,7 @@ export function registerSettingsBridge(
         sctx.webServer.register({
           kind: 'exact',
           path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.agentsFile,
-          handler: route({ body: 'required', handle: async (tx) => {
+          handler: route({ body: 'json', handle: async (tx) => {
             const session = readSessionIdField(tx.record)
             if (!session.ok) {
               tx.write(400, { ok: false, code: 'settings-rejected', message: session.message })
@@ -1143,7 +1143,7 @@ export function registerSettingsBridge(
         sctx.webServer.register({
           kind: 'exact',
           path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.instructionsPolicy,
-          handler: route({ body: 'required', handle: async (tx) => {
+          handler: route({ body: 'json', handle: async (tx) => {
             const record = tx.record
             const file = instructionPolicyPath()
             // 省略 policy = 读取：损坏/版本不认识时带 error 返回，客户端据此禁用保存。
@@ -1191,7 +1191,7 @@ export function registerSettingsBridge(
         sctx.webServer.register({
           kind: 'exact',
           path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.rules,
-          handler: route({ body: 'required', handle: async (tx) => {
+          handler: route({ body: 'json', handle: async (tx) => {
             const dir = tx.editDir()
             if (dir.length === 0) {
               tx.write(400, { ok: false, code: 'module-dir-unavailable', message: '当前模块目录不可用' })
@@ -1271,7 +1271,7 @@ export function registerSettingsBridge(
         sctx.webServer.register({
           kind: 'exact',
           path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.paramOverrides,
-          handler: route({ body: 'required', handle: async (tx) => {
+          handler: route({ body: 'json', handle: async (tx) => {
             const dir = tx.editDir()
             if (dir.length === 0) {
               tx.write(400, { ok: false, code: 'module-dir-unavailable', message: '模块目录未配置' })
@@ -1355,7 +1355,7 @@ export function registerSettingsBridge(
         sctx.webServer.register({
           kind: 'exact',
           path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.moduleVariables,
-          handler: route({ body: 'required', handle: async (tx) => {
+          handler: route({ body: 'json', handle: async (tx) => {
             const dir = tx.editDir()
             if (dir.length === 0) {
               tx.write(400, { ok: false, code: 'module-dir-unavailable', message: '模块目录未配置' })
@@ -1420,7 +1420,7 @@ export function registerSettingsBridge(
         sctx.webServer.register({
           kind: 'exact',
           path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.customTools,
-          handler: route({ body: 'required', handle: async (tx) => {
+          handler: route({ body: 'json', handle: async (tx) => {
             const dir = tx.editDir()
             if (dir.length === 0) {
               tx.write(400, { ok: false, code: 'module-dir-unavailable', message: '模块目录未配置' })
@@ -1471,7 +1471,7 @@ export function registerSettingsBridge(
         sctx.webServer.register({
           kind: 'exact',
           path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.persona,
-          handler: route({ body: 'required', handle: async (tx) => {
+          handler: route({ body: 'json', handle: async (tx) => {
             const dir = tx.editDir()
             if (dir.length === 0) {
               tx.write(400, { ok: false, code: 'module-dir-unavailable', message: '模块目录未配置' })
@@ -1523,7 +1523,7 @@ export function registerSettingsBridge(
         sctx.webServer.register({
           kind: 'exact',
           path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.personaSources,
-          handler: route({ body: 'required', handle: async (tx) => {
+          handler: route({ body: 'json', handle: async (tx) => {
             const record = tx.record
             if (!isRecord(record) || Object.keys(record).some(key => !['sources', 'expectedRevision', 'refreshOnly'].includes(key))
               || record.refreshOnly !== undefined && typeof record.refreshOnly !== 'boolean'
@@ -1572,7 +1572,7 @@ export function registerSettingsBridge(
         sctx.webServer.register({
           kind: 'exact',
           path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.assetRelease,
-          handler: route({ body: 'required', handle: async (tx) => {
+          handler: route({ body: 'json', handle: async (tx) => {
             const record = tx.record
             if (!isRecord(record) || Object.keys(record).length !== 1 || typeof record.sourceId !== 'string' || !/^[0-9a-f-]{36}$/i.test(record.sourceId)) {
               tx.write(400, { ok: false, code: 'asset-release-rejected', message: 'sourceId 必须是有效上传来源标识' })
@@ -1585,7 +1585,7 @@ export function registerSettingsBridge(
         sctx.webServer.register({
           kind: 'exact',
           path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.importModulePackage,
-          handler: route({ body: 'required', handle: async (tx) => {
+          handler: route({ body: 'json', handle: async (tx) => {
             const record = tx.record
             // 入口校验先于任何转换与写盘：非法 preview/摘要/顺序组类型一律 400，
             // 不静默回落到"直接写入"，也不在拒绝前创建目录或备份。
@@ -1620,7 +1620,7 @@ export function registerSettingsBridge(
         sctx.webServer.register({
           kind: 'exact',
           path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.exportModule,
-          handler: route({ body: 'required', handle: async (tx) => {
+          handler: route({ body: 'json', handle: async (tx) => {
             const record = tx.record
             try {
               const allowed = new Set(['id', 'mode', 'preview', 'expectedRevision', 'memoryChoices'])
@@ -1644,7 +1644,7 @@ export function registerSettingsBridge(
         sctx.webServer.register({
           kind: 'exact',
           path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.moduleDelete,
-          handler: route({ body: 'required', handle: async (tx) => {
+          handler: route({ body: 'json', handle: async (tx) => {
             const record = tx.record
             const id = typeof record.id === 'string' ? record.id.trim() : ''
             if (id.length === 0) {
@@ -1671,7 +1671,7 @@ export function registerSettingsBridge(
         sctx.webServer.register({
           kind: 'exact',
           path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.moduleClone,
-          handler: route({ body: 'required', handle: async (tx) => {
+          handler: route({ body: 'json', handle: async (tx) => {
             const record = tx.record
             const id = typeof record.id === 'string' ? record.id.trim() : ''
             if (id.length === 0) {
@@ -1690,7 +1690,7 @@ export function registerSettingsBridge(
         sctx.webServer.register({
           kind: 'exact',
           path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.moduleDuplicate,
-          handler: route({ body: 'required', handle: async (tx) => {
+          handler: route({ body: 'json', handle: async (tx) => {
             const record = tx.record
             const id = typeof record.id === 'string' ? record.id.trim() : ''
             if (id.length === 0) {
@@ -1709,7 +1709,7 @@ export function registerSettingsBridge(
         sctx.webServer.register({
           kind: 'exact',
           path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.moduleOpen,
-          handler: route({ body: 'required', handle: async (tx) => {
+          handler: route({ body: 'json', handle: async (tx) => {
             const record = tx.record
             const id = typeof record.id === 'string' ? record.id.trim() : ''
             if (id.length === 0) {
@@ -1727,7 +1727,7 @@ export function registerSettingsBridge(
         sctx.webServer.register({
           kind: 'exact',
           path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.moduleEnable,
-          handler: route({ body: 'required', handle: async (tx) => {
+          handler: route({ body: 'json', handle: async (tx) => {
             const record = tx.record
             const id = typeof record.id === 'string' ? record.id.trim() : ''
             if (id.length === 0) {
@@ -1769,7 +1769,7 @@ export function registerSettingsBridge(
         sctx.webServer.register({
           kind: 'exact',
           path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.moduleConfigOrder,
-          handler: route({ body: 'required', handle: async (tx) => {
+          handler: route({ body: 'json', handle: async (tx) => {
             const body = tx.record
             // 客户端无参数读取序列化为 {}；与空请求体一样读取全局排序。
             const writing = body.entries !== undefined || body.expectedRevision !== undefined
@@ -1806,7 +1806,7 @@ export function registerSettingsBridge(
         sctx.webServer.register({
           kind: 'exact',
           path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.charactersImport,
-          handler: route({ body: 'required', handle: async (tx) => {
+          handler: route({ body: 'json', handle: async (tx) => {
             const dir = tx.editDir()
             if (dir.length === 0) {
               tx.write(400, { ok: false, code: 'module-dir-unavailable', message: '模块目录未配置' })
@@ -1860,7 +1860,7 @@ export function registerSettingsBridge(
         sctx.webServer.register({
           kind: 'exact',
           path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.moduleMerge,
-          handler: route({ body: 'required', handle: async (tx) => {
+          handler: route({ body: 'json', handle: async (tx) => {
             const dir = tx.editDir()
             if (dir.length === 0) {
               tx.write(400, { ok: false, code: 'module-dir-unavailable', message: '模块目录未配置' })
@@ -1885,7 +1885,7 @@ export function registerSettingsBridge(
         sctx.webServer.register({
           kind: 'exact',
           path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.moduleUnmerge,
-          handler: route({ body: 'required', handle: async (tx) => {
+          handler: route({ body: 'json', handle: async (tx) => {
             const dir = tx.editDir()
             if (dir.length === 0) {
               tx.write(400, { ok: false, code: 'module-dir-unavailable', message: '模块目录未配置' })
@@ -1910,7 +1910,7 @@ export function registerSettingsBridge(
         sctx.webServer.register({
           kind: 'exact',
           path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.subagentToolPolicy,
-          handler: route({ body: 'required', handle: async (tx) => {
+          handler: route({ body: 'json', handle: async (tx) => {
             const dir = tx.editDir()
             if (dir.length === 0) {
               tx.write(400, { ok: false, code: 'module-dir-unavailable', message: '模块目录未配置' })
@@ -1965,7 +1965,7 @@ export function registerSettingsBridge(
         sctx.webServer.register({
           kind: 'exact',
           path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.subagentToolPolicyPreview,
-          handler: route({ body: 'required', handle: async (tx) => {
+          handler: route({ body: 'json', handle: async (tx) => {
             const dir = tx.editDir()
             if (dir.length === 0) {
               tx.write(400, { ok: false, code: 'module-dir-unavailable', message: '模块目录未配置' })
@@ -2001,7 +2001,7 @@ export function registerSettingsBridge(
         sctx.webServer.register({
           kind: 'exact',
           path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.moduleCapability,
-          handler: route({ body: 'required', handle: async (tx) => {
+          handler: route({ body: 'json', handle: async (tx) => {
             const dir = tx.editDir()
             if (dir.length === 0) {
               tx.write(400, { ok: false, code: 'module-dir-unavailable', message: '模块目录未配置' })
@@ -2056,7 +2056,7 @@ export function registerSettingsBridge(
       const register = (endpoint: string, spec: BridgeRouteSpec): void => {
         disposers.push(stx.webServer.register({ kind: 'exact', path: SETTINGS_BRIDGE_PREFIX + endpoint, handler: route(spec) }))
       }
-      register(BRIDGE_ENDPOINTS.toolSurface, { body: 'required', handle: async (tx) => {
+      register(BRIDGE_ENDPOINTS.toolSurface, { body: 'json', handle: async (tx) => {
         const record = tx.record
         const hasSessionId = Object.prototype.hasOwnProperty.call(record, 'sessionId')
         const hasPresetId = Object.prototype.hasOwnProperty.call(record, 'presetId')
@@ -2125,7 +2125,7 @@ export function registerSettingsBridge(
         }
       } })
       // 世界书诊断（只读）：返回当前会话最近一次选择的观测记录；读取不触发求值、抽样或时间窗推进。
-      register(BRIDGE_ENDPOINTS.contextActivationDiagnostics, { body: 'required', handle: async (tx) => {
+      register(BRIDGE_ENDPOINTS.contextActivationDiagnostics, { body: 'json', handle: async (tx) => {
         const session = readSessionIdField(tx.record)
         if (!session.ok) {
           tx.write(400, { ok: false, code: 'context-activation-diagnostics-invalid', message: session.message })
@@ -2146,7 +2146,7 @@ export function registerSettingsBridge(
       } })
       // 规则判定计数（只读）：按「模块 + 规则 + 通道」聚合，供状态栏显示「配了没生效」；
       // 读取不触发求值，也不回规则正文或事件载荷。
-      register(BRIDGE_ENDPOINTS.ruleDiagnostics, { body: 'required', handle: async (tx) => {
+      register(BRIDGE_ENDPOINTS.ruleDiagnostics, { body: 'json', handle: async (tx) => {
         // 超限丢弃只在真的丢弃过时进载荷：未超限的响应与既有契约逐字不变。
         const dropped = ruleDiagnosticsDropped()
         // 状态栏的「X/Y 规则」顺路带回全仓配置卡；配置读取失败只影响这一段，诊断照旧下发。

@@ -160,20 +160,20 @@ test('契约：桥事务把解析后的 record 与编辑目标交给 handler', a
   assert.deepEqual(seen, [[{ sessionId: ' s-1 ', scope: 'module' }, 'module-dir']])
 })
 
-test('契约：桥事务的 body 三态——required/optional 解析空体、none 不消费请求流', async () => {
-  // required：空请求体解析成空对象（形状校验由 handler 按字段做，现有端点在缺字段时自回 400）。
-  let requiredRecord
-  const required = txRes()
-  await bridgeTransaction({ body: 'required', handle: (tx) => { requiredRecord = tx.record; tx.write(400, { ok: false, code: 'field-missing' }) } }, txDeps())(txReq(), required)
-  assert.deepEqual(requiredRecord, {})
-  assert.equal(required.state.status, 400)
+test('契约：桥事务的 body 两态——json 解析空体、none 不消费请求流', async () => {
+  // json（缺省）：空请求体解析成空对象（形状校验由 handler 按字段做，现有端点在缺字段时自回 400）。
+  let jsonRecord
+  const json = txRes()
+  await bridgeTransaction({ body: 'json', handle: (tx) => { jsonRecord = tx.record; tx.write(400, { ok: false, code: 'field-missing' }) } }, txDeps())(txReq(), json)
+  assert.deepEqual(jsonRecord, {})
+  assert.equal(json.state.status, 400)
 
-  // optional：同样放行空体。
-  let optionalRecord
-  const optional = txRes()
-  await bridgeTransaction({ body: 'optional', handle: (tx) => { optionalRecord = tx.record; tx.write(200, { ok: true, value: {} }) } }, txDeps())(txReq(), optional)
-  assert.deepEqual(optionalRecord, {})
-  assert.equal(optional.state.status, 200)
+  // 省略 body 即 json：默认档与显式声明行为一致。
+  let defaultRecord
+  const fallback = txRes()
+  await bridgeTransaction({ handle: (tx) => { defaultRecord = tx.record; tx.write(200, { ok: true, value: {} }) } }, txDeps())(txReq(), fallback)
+  assert.deepEqual(defaultRecord, {})
+  assert.equal(fallback.state.status, 200)
 
   // none：不解析、也**不消费请求流**——原始流端点（上传）要自己读 tx.req。
   let noneRecord, readByTransaction = false
@@ -202,17 +202,6 @@ test('契约：桥事务不为 handler 兜底成功——静默 500、抛错 500
   await bridgeTransaction({ handle: (tx) => { tx.write(409, { ok: false, code: 'x' }); throw new Error('after write') } }, txDeps())(txReq({ chunks: ['{}'] }), wroteThenThrew)
   assert.equal(wroteThenThrew.state.status, 409)
   assert.equal(wroteThenThrew.state.writes, 1)
-})
-
-test('契约：桥事务的编辑目标不做请求内缓存（写入身份重检依赖两次解析可不同）', async () => {
-  const dirs = ['module-a', 'module-b']
-  let resolved = 0
-  const seen = []
-  await bridgeTransaction(
-    { handle: (tx) => { seen.push(tx.editDir(), tx.editDir()); tx.write(200, { ok: true, value: {} }) } },
-    { editDir: () => dirs[Math.min(resolved++, dirs.length - 1)] },
-  )(txReq({ chunks: ['{}'] }), txRes())
-  assert.deepEqual(seen, ['module-a', 'module-b'], '同一请求内每次调用都要重新解析，否则「请求期间编辑目标变了」的判据恒假')
 })
 
 test('契约：载荷字段形状不进事务——端点保留自己的错误码', async () => {

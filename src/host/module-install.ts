@@ -2,7 +2,6 @@ import { lstatSync, readdirSync, readFileSync, realpathSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { parseDocument, YAMLMap } from 'yaml'
 import { MODULE_DEFINITION_FILE } from './paths.ts'
-
 import { isModuleId } from '../shared/module-ids.ts'
 
 export function assertModuleId(id: unknown): asserts id is string {

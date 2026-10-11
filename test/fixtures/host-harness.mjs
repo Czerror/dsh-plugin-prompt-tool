@@ -14,10 +14,10 @@
  *     const { home, moduleRoot } = isolatedHome('pt-xxx-')
  *     const { registerSettingsBridge } = await import('../../lib/index.mjs')
  *
- * 为什么不在这里包 `registerSettingsBridge`：现有测试对它的实参形态并不统一
- * （既有 `(ctx, ns, getModels, getSkills, getEngineStrategyDir)` 五参调用，
- * 也有省略 ns 的四参调用），统一实参等于改变被测行为；本 harness 只负责
- * handler 表、假请求/响应与载荷解析，注册实参留给各测试自己表达。
+ * 为什么不在这里包 `registerSettingsBridge`：实参自 f188e6c9（Wave 1）起已是具名 `BridgeDeps`，
+ * 位置对齐问题不存在；但本文件被静态 import，包装会把「每个测试关心哪几个键」固化成第二份默认值
+ * 清单，而 `test/` 下的 .mjs 不参与 typecheck——多写一个不存在的键也不会被发现（2026-10-12 已删掉
+ * 各测试里 30 处不存在的 `schemaDir` 键）。注册实参留给各测试自己表达。
  */
 import { after } from 'node:test'
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
