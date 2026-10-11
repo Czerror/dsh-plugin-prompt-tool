@@ -59,8 +59,8 @@ export interface AgentAssemblyRuntime {
    * 这个 Agent 当前装着哪几层**规则模块**，按**启用表顺序**给出（装配失败的为空数组）。
    *
    * 它只覆盖启用表：人设来源由 `personaSources` 独立引用、可以指向未启用的模块，
-   * 所以「有人设」不等于「在这里」。这是工具写入目标的判据——模型改规则只能改该 Agent
-   * 规则面里真实存在的模块；人设正文的写入走 persona 端点，显式携带模块 id。
+   * 所以「有人设」不等于「在这里」。阶段 4 之后它只作工具拒绝文案里的候选提示——写入目标来自
+   * 每次调用显式声明的 `moduleId`（ADR-0014）；人设正文的写入走 persona 端点，显式携带模块 id。
    * 取它而不是问宿主「这个会话绑定了哪个官方预设」，因为模块早已与官方预设解耦。
    */
   moduleIds(sessionId: string): readonly string[]
@@ -76,7 +76,7 @@ export interface AgentAssemblyOptions {
    *
    * **启用即配装**：列了 A+B 就装 A+B，追加 C 就是 A+B+C。每个模块各自贡献自己的
    * 提示词配置、引擎参数与能力声明，彼此不合并、不互相改写。配置执行按各卡的持久序号，
-   * `agent-request` 后序覆盖前序；启用表顺序仅保留模块身份与工具写入目标语义。
+   * `agent-request` 后序覆盖前序；启用表顺序仅保留模块身份与拒绝文案里的候选提示顺序，不再决定工具写入目标。
    * 返回空数组表示没有模块参与装配（此时不注册任何贡献）。
    */
   enabledModules: () => readonly string[]

@@ -1,5 +1,7 @@
 # 模块主语：把「归属」从会话状态拉回操作本身
 
+> ⚠️ **后补注记（不改写下文历史）**：本文是当轮设计记录。其中 §10.2 Q14 的「写以载荷主语为准」与最终实现不同——实际是**读与写都由请求头 `x-module-id` 定位目录**，写端点另在载荷带 `expectedModuleId` 作**一致性校验**（不一致 → 400 `module-subject-conflict`；缺头 → 400 `module-dir-unavailable`，载荷不能替请求头选路径）；以 `docs/adr/0014-module-subject-declared-per-operation.md` 为准。
+
 日期：2026-10-12 · 状态：已评审（用户批准，2026-10-12），待拆计划；尚未动代码
 来源：`/improve-codebase-architecture` 评审报告（`%TEMP%\architecture-review-20261012-0251.html`）候选 1／2／5 的合并与更正
 
@@ -119,7 +121,7 @@ guard 在空目标时：`guardModuleFormat` → `true` 不写响应（`settings-
 1. **真值源**：删全局目标与回退（含 `EMPTY_FIELDS.moduleId`、非法头 400、bootstrap 空目标合法、describe 拒绝），补 `resolveEditDir` 与接线的回归网。
 2. **门收口**：46 个端点的语义名单变成一处门的接口。
 3. **声明面**：顶层键存在性 + 下发 + 端点同一道门，「没声明就不调用」在界面落地。
-4. **Agent 侧与 TUI**：8 个模块工具的主语改为工具参数，TUI 显式声明（不阻塞前三个阶段）。
+4. **Agent 侧与 TUI**：5 个模块工具的主语改为工具参数（`module_import` 用自己的 `targetId`／`targetName`，不在此列），TUI 显式声明（不阻塞前三个阶段）。
 
 ## 十、builder check 裁定（2026-10-12）
 
@@ -133,11 +135,11 @@ guard 在空目标时：`guardModuleFormat` → `true` 不写响应（`settings-
 
 ### 10.2 我拍的（可推翻）
 
-- **头与载荷谁权威**：写端点主语**必填于载荷**，请求头可缺席、存在时必须一致；读端点主语**必填于请求头**。两者都存在且不同 → **新 400 `module-subject-conflict`**（「声明了两个主语」），与 409 `module-changed`（「主语还在但目标已被换掉」）区分开。门不按端点分叉：一个端点属于「模块类读」「模块类写」还是「全局类」由 Q8 的名单决定。
+- **头与载荷谁权威**：写端点主语**必填于载荷**，请求头可缺席、存在时必须一致（此处措辞已被 `docs/adr/0014-module-subject-declared-per-operation.md` 取代：读写都由请求头 `x-module-id` 定位，载荷只作一致性校验）；读端点主语**必填于请求头**。两者都存在且不同 → **新 400 `module-subject-conflict`**（「声明了两个主语」），与 409 `module-changed`（「主语还在但目标已被换掉」）区分开。门不按端点分叉：一个端点属于「模块类读」「模块类写」还是「全局类」由 Q8 的名单决定。
 - **「没声明就不调用」做成类型约束**：是。模块类端点在 `bridge-client` 的类型层要求主语实参（名单与门共用同一张表），漏传在 `src/**` 编译期即拦；`test/` 是 `.mjs` 不受类型约束，用载荷断言兜。
 - **声明失效**：服务端门**每次请求读盘**（真值源是 `module.yml`，不缓存声明）；客户端拿到的声明快照只作「这一步发不发」的准入，**不引入声明 revision**；快照过期只会漏发一次，重读沿用现有 `/meta` 重读路径（导入、保存、模块页刷新）。
 - **测试落位**：服务端门与声明拒绝 → bridge 端点载荷 + 安全与拒绝路径两条 seam（`test/host/`）；客户端「不发请求」→ 沿用既有 `test/client/bridge-client.test.mjs` 的 stub-fetch 形态，断言调用序列与载荷主语。不引入新框架。
 
 ### 10.3 用户裁定
 
-- **主语模型覆盖范围**（2026-10-12 拍板）：桥的三个阶段照做；**Agent 侧 8 个模块工具（`module-tool-target.ts:32` 的装配记录 [0]）与 TUI 的 `activeModuleDir()`（`index.ts:84-85`）单列第 4 阶段**——工具的主语改为工具参数（模型显式指定模块 id），TUI 同样显式声明。它不阻塞前三个阶段。
+- **主语模型覆盖范围**（2026-10-12 拍板）：桥的三个阶段照做；**Agent 侧 5 个模块工具（吃 `MODULE_ID_PARAM` 的 `module_rules_read`／`module_rules_edit`／`module_memory_read`／`module_memory_append`／`module_variables`；`module_import` 用自己的 `targetId`／`targetName`，原 `module-tool-target.ts:32` 的装配记录 [0]）与 TUI 的 `activeModuleDir()`（`index.ts:84-85`）单列第 4 阶段**——工具的主语改为工具参数（模型显式指定模块 id），TUI 同样显式声明。它不阻塞前三个阶段。
