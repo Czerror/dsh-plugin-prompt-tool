@@ -16,6 +16,7 @@ const {
 } = await import('../../src/index.ts')
 const { deleteSkillTarget } = await import('../../src/host/skills-actions.ts')
 const { storageRootOf } = await import('../../src/host/paths.ts')
+const { moduleDeclares } = await import('../../src/host/module-declarations.ts')
 after(() => {
   rmSync(bridgeHome, { recursive: true, force: true })
   delete process.env.DSH_HOME
@@ -282,7 +283,8 @@ test('模板变量与参数独立保存，读取与 bootstrap 不回退旧 param
   // B7 T3：变量名故意与**已登记的存活引擎参数**同名（原 usePtcMode / stagePreUnlock 已删除）——
   // 模板变量只写顶层 `variables`，不得污染 `layerSettings` 上的同名引擎参数。
   const layerSettings = { 'tool-pipeline': { toolGitBashEnabled: false, strReplaceEditorMaxOutputChars: 16000 } }
-  writeFileSync(file, `# keep comment\nid: ${basename(dir)}\nparams: ${JSON.stringify(params)}\nlayerSettings: ${JSON.stringify(layerSettings)}\n`, 'utf8')
+  // 声明面：顶层 `variables` 键必须存在，模块变量端点才可用（键整个不存在＝没声明）。
+  writeFileSync(file, `# keep comment\nid: ${basename(dir)}\nparams: ${JSON.stringify(params)}\nlayerSettings: ${JSON.stringify(layerSettings)}\nvariables: {}\n`, 'utf8')
   registerSettingsBridge(ctx, { ns: 'prompt-tool', models: () => ({ available: true, providers: [] }),
     skills: () => skillsStateStub(), moduleDirectory: () => dir })
   const write = handlers.get(PREFIX + BRIDGE_ENDPOINTS.moduleVariables)
@@ -609,7 +611,9 @@ test('settings bridge：system 预设拒绝全部当前预设写入', async () =
   const dir = join(container, 'system')
   mkdirSync(dir)
   const presetFile = join(dir, 'module.yml')
-  const original = 'id: system\nmodules: []\nrules: []\n'
+  // 声明面：`params` 是「写路径不查、读路径要查」的那一侧——这个用例的 `{promptConfigs: []}` 是读模式请求，
+  // 要先过声明面才会走到 410；其余写请求在新语义下由写路径直达 403，不需要预先声明。
+  const original = 'id: system\nmodules: []\nrules: []\nparams: {}\n'
   writeFileSync(presetFile, original, 'utf8')
   try {
     const { ctx, handlers } = makeHarness()
@@ -666,6 +670,7 @@ test('settings bridge：请求体与角色卡流的字节上限常量', () => {
 test('settings bridge /custom-tools 保存时自动追加工具模块', async () => {
   const dir = makeUserPresetDir('pt-custom-tools-modules-')
   try {
+    // 声明面：写路径不查声明面，所以这里刻意不预先声明 `customTools`——写会建立该节。
     writeFileSync(join(dir, 'module.yml'), [`id: ${basename(dir)}`, 'modules: []', ''].join(String.fromCharCode(10)), 'utf8')
     const { ctx, handlers } = makeHarness()
     registerSettingsBridge(ctx, {
@@ -694,6 +699,7 @@ test('settings bridge /custom-tools 保存时自动追加工具模块', async ()
 test('settings bridge /subagent-tool-policy 保存、停用与模块装配均为原子操作', async () => {
   const dir = makeUserPresetDir('pt-subagent-policy-')
   try {
+    // 声明面：写路径不查声明面，这里刻意不预先声明 `subagentToolPolicy`——保存会建立该节，停用再删段。
     writeFileSync(join(dir, 'module.yml'), `id: ${basename(dir)}\nmodules: []\nunknown: keep\n`, 'utf8')
     const { ctx, handlers } = makeHarness()
     let rebuilds = 0
@@ -730,7 +736,8 @@ test('settings bridge /subagent-tool-policy 保存、停用与模块装配均为
 test('settings bridge /persona 读写顶层 persona 段并按实际模块身份重建', async () => {
   const { ctx, handlers } = makeHarness()
   const dir = makeUserPresetDir('pt-persona-')
-  writeFileSync(join(dir, 'module.yml'), `id: ${basename(dir)}\nname: beta\nunknown: keep\n`, 'utf8')
+  // 声明面：顶层 `persona` 键存在，读通道才可用（键整个不存在＝没声明）。
+  writeFileSync(join(dir, 'module.yml'), `id: ${basename(dir)}\nname: beta\nunknown: keep\npersona: ${JSON.stringify({ main: { prefix: 'INITIAL' } })}\n`, 'utf8')
   const rebuilds = []
   try {
     registerSettingsBridge(ctx, {
@@ -784,7 +791,7 @@ test('/persona：未选人设可以保存独占字段，发布失败保留定义
   const dir = makeUserPresetDir('pt-persona-complete-')
   let rebuilds = 0, failPublication = false
   const file = join(dir, 'module.yml')
-  const writeModule = enabled => writeFileSync(file, JSON.stringify({ id: basename(dir), modules: ['rule-engine'], rules: [textRule('exclusive-section', '独占段', { enabled, layer: 'system-section', params: { complete: true } })] }))
+  const writeModule = enabled => writeFileSync(file, JSON.stringify({ id: basename(dir), modules: ['rule-engine'], persona: { main: { prefix: 'INITIAL' } }, rules: [textRule('exclusive-section', '独占段', { enabled, layer: 'system-section', params: { complete: true } })] }))
   try {
     registerSettingsBridge(ctx, { ns: 'prompt-tool', models: () => ({ available: true, providers: [] }), skills: () => skillsStateStub(), moduleDirectory: () => dir, overridesChanged: () => { rebuilds++; if (failPublication) throw new Error('publication unavailable') } })
     const handler = handlers.get(PREFIX + BRIDGE_ENDPOINTS.persona)
@@ -1133,4 +1140,49 @@ test('归属门：形状豁免只对「编辑目标当身份用」的端点生�
   const deleted = await call('moduleDelete', { id: otherId })
   assert.equal(deleted.status, 200, `坏模块不该让别的模块删不掉：${JSON.stringify(deleted.payload)}`)
   assert.equal(existsSync(otherDir), false)
+})
+
+test('声明面：读没声明 400 module-not-declared，写路径建立声明，任一节存在即算已声明，解析失败不降级', async () => {
+  const undeclared = makeUserPresetDir('pt-declares-missing-')
+  const declared = makeUserPresetDir('pt-declares-empty-')
+  const broken = makeUserPresetDir('pt-declares-broken-')
+  writeFileSync(join(undeclared, 'module.yml'), `id: ${basename(undeclared)}\nmodules: []\nrules: []\n`, 'utf8')
+  writeFileSync(join(declared, 'module.yml'), `id: ${basename(declared)}\nmodules: []\ncustomTools: []\nlayerSettings: {}\n`, 'utf8')
+  writeFileSync(join(broken, 'module.yml'), `id: ${basename(broken)}\nrules: [unclosed\n`, 'utf8')
+  let dir = undeclared
+  const { ctx, handlers } = makeHarness()
+  registerSettingsBridge(ctx, { ns: 'prompt-tool', models: () => ({ available: true, providers: [] }),
+    skills: () => skillsStateStub(), moduleDirectory: () => dir })
+  const call = async (endpoint, body = {}) => {
+    const handler = handlers.get(PREFIX + BRIDGE_ENDPOINTS[endpoint])
+    assert.ok(handler, `${endpoint} 端点应注册`)
+    const res = fakeRes()
+    await handler(fakeReq({ [Symbol.asyncIterator]: async function* () { yield Buffer.from(JSON.stringify(body)) } }), res)
+    return { status: res.status, payload: JSON.parse(res.body) }
+  }
+
+  const before = readFileSync(join(undeclared, 'module.yml'), 'utf8')
+  const read = await call('customTools')
+  assert.equal(read.status, 400, `未声明 customTools 必须拒绝：${JSON.stringify(read.payload)}`)
+  assert.equal(read.payload.code, 'module-not-declared')
+  assert.match(read.payload.message, /customTools/)
+  assert.equal(readFileSync(join(undeclared, 'module.yml'), 'utf8'), before, '读拒绝时零写入')
+
+  // 写路径不查声明面：允许给已有模块添加第一节，写成功后该节真实存在，随后读也合法。
+  const tool = { id: 'shell', description: '运行命令', output: { schema: { type: 'string' } }, execute: { kind: 'shell', command: 'echo' } }
+  const write = await call('customTools', { customTools: [tool] })
+  assert.equal(write.status, 200, `写路径应放行并建立声明：${JSON.stringify(write.payload)}`)
+  assert.equal(moduleDeclares(undeclared, 'customTools'), true, '写路径建立声明')
+  const readBack = await call('customTools')
+  assert.equal(readBack.status, 200, `写后读应合法：${JSON.stringify(readBack.payload)}`)
+  assert.deepEqual(readBack.payload.value.customTools, [tool])
+
+  dir = declared
+  assert.deepEqual((await call('customTools')).payload.value.customTools, [], 'customTools: [] 算已声明')
+  assert.equal((await call('paramOverrides')).status, 200, 'layerSettings 也算声明（数组任一存在）')
+
+  dir = broken
+  const unparsable = await call('customTools')
+  assert.equal(unparsable.status, 400)
+  assert.equal(unparsable.payload.code, 'rules-invalid', '解析失败是既有错误，不得降级成「没声明」')
 })

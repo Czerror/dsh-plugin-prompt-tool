@@ -21,7 +21,9 @@ function harness({ readonly = false, rebuildFails = false, afterRebuild, onResol
   const directory = join(readonly ? join(home, 'system') : moduleRoot, id)
   mkdirSync(directory, { recursive: true })
   const file = join(directory, 'module.yml')
-  const original = `# 用户注释\nid: ${id}\nmodules: []\nunknown: keep # 未知字段注释\n`
+  // 声明面：这个夹具建模的是「有规则、有变量的模块」，所以顶层 `rules` 与 `variables` 必须声明
+  // （键整个不存在＝没声明，端点会被 400 `module-not-declared` 拒）。人设按用例各自追加声明。
+  const original = `# 用户注释\nid: ${id}\nmodules: []\nrules: []\nvariables: {}\nunknown: keep # 未知字段注释\n`
   writeFileSync(file, original)
   let activeDirectory = directory
   let rebuilds = 0
@@ -174,7 +176,8 @@ test('重建失败如实反馈，已保存定义可重新读取，不报告全�
 test('链接定义及非模块组合不得写入规则', async () => {
   const h = harness()
   const { revisions } = (await h.call()).value
-  const composition = `id: ${h.id}\ncomposition: |\n  []\n`
+  // 声明面：非模块组合也要先声明 `rules`，读得回来才能测「组合定义不接受规则写入」这条判据本身。
+  const composition = `id: ${h.id}\ncomposition: |\n  []\nrules: []\n`
   writeFileSync(h.file, composition)
   const fresh = await h.call()
   const unsupported = await h.call({ edits: createEdits(rules), expectedRevisions: fresh.value.revisions })
@@ -383,9 +386,12 @@ test('变量端点拒绝越权/非法范围/过期域；切片发布失败后的
 
 test('人设 bridge 保留主子三态与定义版本；删除覆盖恢复继承且不改变规则排序', async () => {
   const h = harness()
+  // 声明 `persona` 才可用该端点；初始值非空，故下面不再断言「未声明人设读成 null」
+  // （那条在新语义下不可能成立，由 T10 的 `module-not-declared` 用例覆盖）。
+  writeFileSync(h.file, h.original + 'persona:\n  main:\n    prefix: INITIAL\n')
   const before = await h.call({}, {}, 'persona')
   assert.equal(before.ok, true)
-  assert.equal(before.value.persona, null)
+  assert.deepEqual(before.value.persona, { main: { prefix: 'INITIAL' } })
   assert.match(before.value.revision, /^[a-f0-9]{64}$/)
   const persona = { main: { prefix: '', complete: false }, subagent: { suffix: 'CHILD' } }
   const saved = await h.call({ persona, expectedRevision: before.value.revision }, {}, 'persona')
@@ -400,6 +406,7 @@ test('人设 bridge 保留主子三态与定义版本；删除覆盖恢复继承
 
 test('人设 bridge 保存未选中模块不与其他定义冲突，陈旧版本和非法输入零写入', async t => {
   const h = harness(), peer = harness()
+  writeFileSync(h.file, h.original + 'persona:\n  main:\n    prefix: INITIAL\n')
   writeFileSync(peer.file, peer.original + 'persona:\n  main:\n    prefix: PEER\n')
   for (const id of [h.id, peer.id]) setModuleEnabled(moduleRoot, id, true)
   t.after(() => { for (const id of [h.id, peer.id]) setModuleEnabled(moduleRoot, id, false) })
@@ -427,6 +434,7 @@ test('人设 bridge 保存未选中模块不与其他定义冲突，陈旧版本
 test('人设 bridge 发布失败返回已提交值与版本，仅发布重试不重放写入', async () => {
   let fail = true
   const h = harness({ rebuildFails: () => fail })
+  writeFileSync(h.file, h.original + 'persona:\n  main:\n    prefix: INITIAL\n')
   const before = await h.call({}, {}, 'persona')
   const persona = { main: { suffix: '', complete: false } }
   const saved = await h.call({ persona, expectedRevision: before.value.revision }, {}, 'persona')

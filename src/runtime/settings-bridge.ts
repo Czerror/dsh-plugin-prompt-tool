@@ -1202,9 +1202,12 @@ export function registerSettingsBridge(
           kind: 'exact',
           path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.rules,
           handler: route({ body: 'json', handle: async (tx) => {
-            const dir = subjectGate(tx, 'rules')
-            if (dir === undefined) return
             const record = tx.record
+            // 声明面只在读侧拦：这次请求要落盘（编辑或刷新发布）就放行，写完 rules 段才存在。
+            const writing = record.refreshOnly === true
+              || ((record.edits !== undefined || record.activateRuleId !== undefined) && record.validateOnly !== true)
+            const dir = subjectGate(tx, 'rules', { write: writing })
+            if (dir === undefined) return
             if (Object.keys(record).some(key => !['expectedModuleId', 'expectedRevisions', 'edits', 'activateRuleId', 'validateOnly', 'refreshOnly'].includes(key))
               || typeof record.expectedModuleId !== 'string' || record.expectedModuleId === ''
               || (record.edits !== undefined && !Array.isArray(record.edits))
@@ -1229,7 +1232,6 @@ export function registerSettingsBridge(
               return
             }
             const editing = record.edits !== undefined || record.activateRuleId !== undefined
-            const writing = editing && record.validateOnly !== true
             if (editing && !isRecord(record.expectedRevisions)) {
               tx.write(400, { ok: false, code: 'rules-invalid', message: '修改规则必须提供读取时的 expectedRevisions' })
               return
@@ -1277,14 +1279,15 @@ export function registerSettingsBridge(
           kind: 'exact',
           path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.paramOverrides,
           handler: route({ body: 'json', handle: async (tx) => {
-            const dir = subjectGate(tx, 'paramOverrides')
+            const record = tx.record
+            // 声明面只在读侧拦（无载荷 = 读 layerSettings 展平后的参数子集）。
+            const dir = subjectGate(tx, 'paramOverrides', { write: record.overrides !== undefined })
             if (dir === undefined) return
             // 阶段 2：参数按模块存储——读写激活模块 module.yml 的 params（+ promptConfigs）。
             const moduleRoot = dirname(dir)
             const templateName = basename(dir)
             // promptConfigs 全量数组随配置卡数量增长；所有 JSON bridge 端点统一使用 32 MiB
             // 内存缓冲上限，超过后由调用方收到明确 413，不再静默降级为读取分支。
-            const record = tx.record
             if (record.rebuild !== undefined && typeof record.rebuild !== 'boolean') {
               tx.write(400, { ok: false, code: 'overrides-invalid-shape', message: 'rebuild must be a boolean' })
               return
@@ -1356,9 +1359,14 @@ export function registerSettingsBridge(
           kind: 'exact',
           path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.moduleVariables,
           handler: route({ body: 'json', handle: async (tx) => {
-            const dir = subjectGate(tx, 'moduleVariables')
-            if (dir === undefined) return
             const record = tx.record
+            // 声明面只在读侧拦：写变量/开关是给模块添加第一节，放行。
+            // 全局变量跨模块共享，与「这个模块有没有声明 variables」无关：`scope: 'global'` 显式跳过声明面。
+            const dir = subjectGate(tx, 'moduleVariables', {
+              write: record.refreshOnly === true || record.variables !== undefined || record.enabled !== undefined,
+              declaration: record.scope === 'global' ? false : undefined,
+            })
+            if (dir === undefined) return
             if ((record.scope !== 'global' && record.scope !== 'module')
               || Object.keys(record).some(key => !['scope', 'variables', 'enabled', 'expectedModuleId', 'expectedRevisions', 'refreshOnly'].includes(key))) {
               tx.write(400, { ok: false, code: 'module-variables-invalid', message: '变量请求必须声明 global/module 范围，且只包含已声明字段' })
@@ -1416,9 +1424,10 @@ export function registerSettingsBridge(
           kind: 'exact',
           path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.customTools,
           handler: route({ body: 'json', handle: async (tx) => {
-            const dir = subjectGate(tx, 'customTools')
-            if (dir === undefined) return
             const record = tx.record
+            // 声明面只在读侧拦：写自定义工具是给模块添加第一节，放行。
+            const dir = subjectGate(tx, 'customTools', { write: record.customTools !== undefined })
+            if (dir === undefined) return
             // 无载荷 = 读取（module.yml 顶层 customTools 段）。
             if (record.customTools === undefined) {
               try {
@@ -1462,9 +1471,10 @@ export function registerSettingsBridge(
           kind: 'exact',
           path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.persona,
           handler: route({ body: 'json', handle: async (tx) => {
-            const dir = subjectGate(tx, 'persona')
-            if (dir === undefined) return
             const record = tx.record
+            // 声明面只在读侧拦：保存/刷新人设是给模块添加第一节，放行。
+            const dir = subjectGate(tx, 'persona', { write: record.persona !== undefined || record.refreshOnly === true })
+            if (dir === undefined) return
             if (Object.keys(record).some(key => !['persona', 'expectedModuleId', 'expectedRevision', 'refreshOnly'].includes(key))
               || record.refreshOnly !== undefined && (typeof record.refreshOnly !== 'boolean'
                 || record.refreshOnly === true && (record.persona !== undefined || record.expectedRevision !== undefined))) {
@@ -1889,9 +1899,10 @@ export function registerSettingsBridge(
           kind: 'exact',
           path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.subagentToolPolicy,
           handler: route({ body: 'json', handle: async (tx) => {
-            const dir = subjectGate(tx, 'subagentToolPolicy')
-            if (dir === undefined) return
             const record = tx.record
+            // 声明面只在读侧拦：保存子代理策略是给模块添加第一节，放行。
+            const dir = subjectGate(tx, 'subagentToolPolicy', { write: record.policy !== undefined })
+            if (dir === undefined) return
             // 无 policy 载荷 = 读取（module.yml 顶层 subagentToolPolicy 段）。
             if (record.policy === undefined) {
               try {
@@ -1972,7 +1983,8 @@ export function registerSettingsBridge(
           kind: 'exact',
           path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.moduleCapability,
           handler: route({ body: 'json', handle: async (tx) => {
-            const dir = subjectGate(tx, 'moduleCapability')
+            // 这个端点的三种动作都改定义（`modules` 段），按写路径走门：不查声明面，可写校验先判。
+            const dir = subjectGate(tx, 'moduleCapability', { write: true })
             if (dir === undefined) return
             const body = tx.record
             const action = body.action

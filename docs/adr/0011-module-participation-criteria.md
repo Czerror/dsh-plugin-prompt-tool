@@ -19,6 +19,24 @@
 
 **模块目录身份不是一张登记表，而是写死的路径结构**：`<modulesRoot>/<id>/` 加上 `module.yml` 的 `id`，由 `assertModuleDirectory` 强制两者一致（并拒绝符号链接、越界与大小写混淆）——它是那个约定的**执行者**，不是身份的载体。全仓没有 id→路径 的映射：定位一律 `join(root, id)`，唯一的 `moduleSpecCache` 也以**定义文件路径**为键。因此**身份含根**——不同根下的同一个 id 是**两个身份**（包内模板与用户副本一直如此），不构成冲突；反过来，「根传错」得到的是「操作到另一个身份」，属参数归属问题，不是身份冲突。
 
+**入口表随实现更新（2026-10-12 核对）**：同一个问题「这次读写/装配属于哪个模块」在阶段 1／2 之后有 **6 个现存入口**，它们问的不是同一个问题，故不合并：
+
+| # | 侧 | 入口 | 判据 | 它问的问题 |
+|---|---|---|---|---|
+| 1 | 请求 | `src/shared/bridge-contract.ts` 的 `readSubjectHeader` | `x-module-id` 头（`ok`／`absent`／`invalid`） | 这次请求**声明了**哪个模块 |
+| 2 | 请求 | `src/runtime/settings-bridge.ts` 的 `editDir()` + `src/index.ts` 的 `moduleDirectory` 接线（`resolveRequestedModuleDir`） | 声明存在且 `<root>/<id>/module.yml` 存在 | 声明的主语**能不能解析成目录** |
+| 3 | 请求 | `src/runtime/module-subject-gate.ts` 的 `subjectGate(tx, key, { write?, format?, declaration? })` | 请求头声明的目录 + 载荷主语 + `BRIDGE_SUBJECT_POLICY[key]` + `DECLARED_SECTIONS[key]`（`module.yml` 顶层键存在性） | 目标**是谁**／这次调用**凭什么成立**（门统一拒绝；未声明时回退启用表 `[0]` **已删**；**读**模块没声明该节 400 `module-not-declared`，**写**不查声明面并建立该节） |
+| 4 | 请求 | `src/host/module-config-order.ts` 的 `readInputs` | `enabledModuleIds()` 后 `.sort()` 字典序 | 跨模块排序**按什么取输入与定序**（排序首项与声明顺序首项不是同一个） |
+| 5 | 请求 | `src/host/persona-selection.ts` 的 `personaSources` | `config.yml.personaSources` 的 main／subagent 引用 | 人设正文**读哪个模块**（与启用表正交） |
+| 6 | Agent | `src/host/module-tool-target.ts` 的 `resolveModuleToolTarget` | 每 Agent 装配记录 `[0]` | 模块工具**默认落到哪个模块**（**待改**：阶段 4 改为工具参数显式声明） |
+
+**已删入口（登记备查，不计入上面的 6 个）**：
+
+- 客户端传输层的**模块级可变全局目标**（`src/client/data/bridge-transport.ts` 的 `editTarget` 与默认头，随 `c8fc22ae` 删除）——`postBridge` / `bridgeCall` 的 `subject` 实参仍在，但它每次调用显式传入、不持有状态。
+- 客户端 store 的目标写入点（`src/client/data/use-prompt-tool-store.ts` 的 `setModuleId` 与单主语事实镜像）——`rg 'setModuleId' src test` 现已零命中，主语由卡片归属决定。
+
+「表随实现更新」：本表按落地时的 `rg` 结果登记，不承诺入口数长期不变——阶段 1 删掉两处猜目标的入口、阶段 2 把归属判据收进 `subjectGate`（入口 3，见 [ADR-0014](0014-module-subject-declared-per-operation.md)），阶段 3 的声明面与阶段 4 的 Agent 侧落地后还会变化；新增消费者时先回答它问的是上表哪一类问题，再登记。
+
 ## 取舍
 
 - **不引入 `isModuleActive()` 之类的统一判据**：表里那三个问题的答案本就不同，合并的结果只能是加参数区分（等于没统一），或者删掉「总闸关闭仍可改排序定义」这条既有行为。
@@ -36,4 +54,5 @@
 
 - [ADR-0008](0008-module-slices-memory-assembly.md) 的模块切片与内存装配不变：本 ADR 只规定「谁按什么判据决定参与」，不改写盘与装配机制。
 - [ADR-0010](0010-two-history-views.md) 管的是会话历史的视图归属，与模块参与无关。
+- [ADR-0014](0014-module-subject-declared-per-operation.md) 把「写入目标」从启用表旁路出去（主语由这次操作声明，缺声明即无目标）：本 ADR 的三个问题与「编辑通道不查启用」不变，启用表仍然只回答「谁参与装配」。
 - `docs/ui-architecture.md` 的模块列表与配置排序两节是本 ADR 的事实依据。

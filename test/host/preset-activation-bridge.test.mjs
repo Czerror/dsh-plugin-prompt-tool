@@ -10,7 +10,8 @@ const { registerSettingsBridge } = await import('../../src/runtime/settings-brid
 const dir = join(moduleRoot, 'editable')
 mkdirSync(dir, { recursive: true })
 const file = join(dir, 'module.yml')
-writeFileSync(file, 'id: editable\nmodules: []\n')
+// 声明面：顶层 `params` 键存在，参数端点才可用（键整个不存在＝没声明）。
+writeFileSync(file, 'id: editable\nmodules: []\nparams: {}\n')
 
 async function bounded(promise, label) {
   let timer

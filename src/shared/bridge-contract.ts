@@ -159,6 +159,8 @@ export const BRIDGE_SUBJECT_POLICY = {
 export const MODULE_SUBJECT_CONFLICT = 'module-subject-conflict'
 /** 请求头带模块身份但形状非法：边界显式拒绝（400），不静默当作缺席。 */
 export const MODULE_IDENTITY_INVALID = 'module-identity-invalid'
+/** 模块没声明这次读写要用的节：判据只看 `module.yml` 顶层键存在性（键不存在＝没声明），解析失败另有错误码。 */
+export const MODULE_NOT_DECLARED = 'module-not-declared'
 
 /**
  * 主语头三态：`absent` 只表示请求头**完全没有**（`undefined` / `null`）；
