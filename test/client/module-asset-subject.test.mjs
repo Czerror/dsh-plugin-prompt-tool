@@ -22,6 +22,16 @@ const { RulesWorkspace } = await withSsr([
 const { usePromptToolStore } = await withSsr([
   new URL('../../src/client/data/use-prompt-tool-store.ts', import.meta.url).href,
 ])
+const { ModulePersonaCard, personaWriteBody, readModulePersona } = await withSsr([
+  new URL('../../src/client/features/persona/ModulePersonaCard.tsx', import.meta.url).href,
+])
+const { readCustomTools } = await withSsr([
+  new URL('../../src/client/features/tools/CustomToolsCard.tsx', import.meta.url).href,
+])
+const { readSubagentPolicy } = await withSsr([
+  new URL('../../src/client/features/subagents/SubagentToolPolicyCard.tsx', import.meta.url).href,
+])
+const { saveModuleVariables: saveVariablesRequest } = await import('../../src/client/data/module-variables.ts')
 
 const facts = (editable = true) => ({ declaredModules: [], effectiveModules: [], rowIds: [], sourceMode: 'explicit', editable })
 const twoModules = [
@@ -44,6 +54,8 @@ const stubStore = (drafts, modules = twoModules) => {
     publishDrafts: () => {},
     enqueueModuleTask: (_moduleId, task) => task(),
     enqueueRuleTask: (task) => task(),
+    // 参数编辑器读回值：桩里没有按主语的读数，契约默认值就是「未读回」的视图。
+    moduleParamsOf: () => EMPTY_PARAMS,
   }
 }
 
@@ -61,6 +73,165 @@ test('无主语：资产卡整块不渲染（装配集合为空即无卡），�
   assert.equal(drafts.expanded.size, 0)
   assert.equal(drafts.policies.size, 0)
   assert.equal(drafts.tools.size, 0)
+})
+
+/** 声明面来自 `/meta` 的 `declares`：这是「这一步发不发、这张卡出不出」的唯一准入。 */
+const modulesDeclaring = (declares) => [
+  { id: 'mod-a', name: 'A', enabled: true, facts: facts(), declares },
+]
+
+test('声明面：未声明 customTools 的模块不出这张卡，改出添加入口（不渲染草稿里的工具）', () => {
+  const drafts = createWorkspaceDrafts()
+  drafts.tools.set('mod-a', toolsDraft(['tool-a']))
+  const store = stubStore(drafts, modulesDeclaring(['rules']))
+  const html = renderElement(LayerSettingsContent, { store, t, layer: 'tool-pipeline', moduleId: 'mod-a' })
+  assert.doesNotMatch(html, /tool-a/, '未声明就不出这张卡：草稿里的工具不渲染')
+  assert.doesNotMatch(html, /data-layer-asset="custom-tools"/, '未声明的资产卡整体不出场')
+  assert.match(html, /data-declare-section="customTools"/, '该处改出添加入口（节名＝module.yml 顶层键）')
+  assert.match(html, new RegExp(`aria-label="${t('declare.add', { name: t('customTools.aria') })} · ${t('rules.source', { module: 'mod-a' })}"`),
+    '添加入口的主语＝该模块')
+})
+
+test('声明面：声明了 customTools 但内容为空 → 卡片渲染为空态，不给添加入口', () => {
+  const drafts = createWorkspaceDrafts()
+  const store = stubStore(drafts, modulesDeclaring(['rules', 'customTools']))
+  const html = renderElement(LayerSettingsContent, { store, t, layer: 'tool-pipeline', moduleId: 'mod-a' })
+  assert.match(html, /data-layer-asset="custom-tools"/, '声明了该节就出卡（空态由卡自己渲染）')
+  assert.doesNotMatch(html, /data-declare-section="customTools"/, '已声明不再给添加入口（两种形态不同）')
+})
+
+test('声明面：逐节判定——声明了 customTools 不给它入口，未声明的 subagentToolPolicy 仍出入口', () => {
+  const store = stubStore(createWorkspaceDrafts(), modulesDeclaring(['rules', 'customTools']))
+  const html = renderElement(LayerSettingsContent, { store, t, layer: 'tool-pipeline', moduleId: 'mod-a' })
+  assert.doesNotMatch(html, /data-declare-section="customTools"/, '已声明的节不给入口')
+  assert.match(html, /data-declare-section="subagentToolPolicy"/, '同层别的未声明节照旧出入口')
+})
+
+test('声明面：声明面未下发（老载荷／损坏模块）＝未知，照旧出卡不误判成未声明', () => {
+  const drafts = createWorkspaceDrafts()
+  drafts.tools.set('mod-a', toolsDraft(['tool-a']))
+  const store = stubStore(drafts, twoModules)
+  const html = renderElement(LayerSettingsContent, { store, t, layer: 'tool-pipeline', moduleId: 'mod-a' })
+  assert.match(html, /tool-a/, '未知声明面不改变今天的渲染')
+  assert.doesNotMatch(html, /data-declare-section="customTools"/)
+})
+
+test('声明面：params 添加入口真的把参数编辑器渲染出来（未声明≠没有创建通道）', () => {
+  const store = stubStore(createWorkspaceDrafts(), modulesDeclaring(['rules']))
+  const before = renderElement(LayerSettingsContent, { store, t, layer: 'pre-step', moduleId: 'mod-a' })
+  assert.match(before, /data-declare-section="params"/, '未声明 params → 该层给添加入口')
+  assert.doesNotMatch(before, /data-layer-param-group=/, '未声明就不出参数编辑器')
+  // 点了入口＝创建模式：参数编辑器必须真的渲染出来（否则入口是死按钮）。
+  const creating = renderElement(LayerSettingsContent, {
+    store, t, layer: 'pre-step', moduleId: 'mod-a', creatingSections: ['params'],
+  })
+  assert.match(creating, /data-layer-param-group="prompt-defaults"/, '创建模式渲染参数编辑器')
+  assert.doesNotMatch(creating, /data-declare-section="params"/, '已进入创建模式，入口不再重复')
+  // 对照：声明了 params 的模块不需要创建模式也出编辑器。
+  const declaredStore = stubStore(createWorkspaceDrafts(), modulesDeclaring(['rules', 'params']))
+  const declaredHtml = renderElement(LayerSettingsContent, { store: declaredStore, t, layer: 'pre-step', moduleId: 'mod-a' })
+  assert.match(declaredHtml, /data-layer-param-group="prompt-defaults"/, '已声明照旧出编辑器')
+})
+
+test('声明面：创建模式不粘连——声明一建立，卡片立刻退出创建模式并回到正常形态', () => {
+  // 卡内的创建模式提示带 role="status"；添加入口的同文案不带，所以按 role 前缀断言卡自己的形态。
+  const cardHint = new RegExp(`role="status">${t('declare.createHint')}`)
+  // 同一份「点过添加」的创建态：声明面里已含 customTools ⇒ 不是创建模式，卡回到正常形态。
+  const declaredStore = stubStore(createWorkspaceDrafts(), modulesDeclaring(['rules', 'customTools']))
+  const declaredHtml = renderElement(LayerSettingsContent, {
+    store: declaredStore, t, layer: 'tool-pipeline', moduleId: 'mod-a', creatingSections: ['custom-tools'],
+  })
+  assert.match(declaredHtml, /data-layer-asset="custom-tools"/, '声明成立后卡照旧在场')
+  assert.doesNotMatch(declaredHtml, cardHint, '不再带创建模式提示（未声明判据是实时快照）')
+  // 未声明时同一创建态才是创建模式（卡内提示在场）。
+  const undeclaredStore = stubStore(createWorkspaceDrafts(), modulesDeclaring(['rules']))
+  const undeclaredHtml = renderElement(LayerSettingsContent, {
+    store: undeclaredStore, t, layer: 'tool-pipeline', moduleId: 'mod-a', creatingSections: ['custom-tools'],
+  })
+  assert.match(undeclaredHtml, cardHint, '未声明 + 创建态 ⇒ 卡以创建模式渲染')
+})
+
+test('声明面：人设写载荷——创建模式不传 expectedRevision，已声明带读取版本', () => {
+  const creating = personaWriteBody('mod-a', { main: { prefix: 'P' } }, '', true)
+  assert.deepEqual(creating, { persona: { main: { prefix: 'P' } }, expectedModuleId: 'mod-a' }, '创建模式不带版本期望（空串会被服务端当非法版本拒绝）')
+  assert.equal('expectedRevision' in creating, false)
+  const declared = personaWriteBody('mod-a', { main: { prefix: 'P' } }, 'a'.repeat(64), false)
+  assert.equal(declared.expectedRevision, 'a'.repeat(64), '已声明带读取时的模块版本')
+  assert.equal(personaWriteBody('mod-a', {}, '', true).persona, null, '空对象仍是删除语义')
+})
+
+test('声明面：变量写载荷——没有前状态整键不带 expectedRevisions，有前状态照旧带版本', async () => {
+  const bodies = []
+  const request = async (body) => {
+    bodies.push(body)
+    return { ok: true, value: { global: {}, module: { k: 'v' }, effective: { k: 'v' }, revisions: { global: null, module: 'M2', settings: 'S2' }, enabled: true } }
+  }
+  // 创建模式：合成基线没有任何版本 → 整键缺席（只留键而值是 undefined 经 JSON 会变 `{}`，服务端读不到期望）。
+  await saveVariablesRequest('mod-a', { scope: 'module', variables: {}, enabled: true, revisions: {} }, { variables: { k: 'v' }, enabled: true }, request)
+  const creating = bodies[0]
+  assert.deepEqual(creating, { scope: 'module', expectedModuleId: 'mod-a', variables: { k: 'v' } }, '创建写不带版本期望')
+  assert.equal('expectedRevisions' in creating, false)
+  // 有前状态：照旧带该 scope 的版本。
+  await saveVariablesRequest('mod-a',
+    { scope: 'module', variables: {}, enabled: true, revisions: { global: null, module: 'M1', settings: 'S1' } },
+    { variables: { k: 'v2' }, enabled: true }, request)
+  assert.deepEqual(bodies[1].expectedRevisions, { module: 'M1' }, '有前状态仍按既有并发校验')
+})
+
+test('声明面：三张卡的读构造点——未声明不构造请求（请求计数，不用「卡不渲染」当代理）', async () => {
+  const fetchStub = withFetch(() => ({ ok: true, value: {} }))
+  try {
+    assert.equal(readCustomTools('mod-a', true), undefined, '未声明 customTools → 不构造请求')
+    assert.equal(readSubagentPolicy('mod-a', true), undefined, '未声明 subagentToolPolicy → 不构造请求')
+    assert.equal(readModulePersona('mod-a', true), undefined, '未声明 persona → 不构造请求')
+    assert.equal(fetchStub.requests.length, 0, '未声明时一个请求都没发出去')
+
+    await readCustomTools('mod-a', false)
+    await readSubagentPolicy('mod-a', false)
+    await readModulePersona('mod-a', false)
+    assert.deepEqual(fetchStub.requests.map((request) => request.path.split('/api/prompt-tool/settings')[1]),
+      ['/custom-tools', '/subagent-tool-policy', '/persona'], '声明的节照旧各读一次')
+    for (const request of fetchStub.requests) assert.equal(request.headers['x-module-id'], 'mod-a', '读的主语＝该模块')
+  } finally {
+    fetchStub.restore()
+  }
+})
+
+test('声明面：params 入口只出现在真有参数组的层——没有可渲染参数组的层不给入口、也不「一点就塌陷」', () => {
+  const store = stubStore(createWorkspaceDrafts(), modulesDeclaring(['rules']))
+  const render = (layer, creating) => renderElement(LayerSettingsContent,
+    { store, t, layer, moduleId: 'mod-a', ...(creating ? { creatingSections: ['params'] } : {}) })
+
+  // 有参数组的层：入口在场，点后真的渲染出参数编辑器（不塌陷）。
+  const preBefore = render('pre-step', false)
+  assert.match(preBefore, /data-declare-section="params"/, 'pre-step 有参数组 → 给入口')
+  const preCreating = render('pre-step', true)
+  assert.match(preCreating, /data-layer-param-group="prompt-defaults"/, 'pre-step 点后渲染参数编辑器')
+  assert.doesNotMatch(preCreating, /data-declare-section="params"/, '进入创建模式后入口不再重复')
+
+  // 没有可渲染参数组的层：**不给入口**（点了也没编辑器），且创建态与初始态渲染逐字节一致
+  // ——评审现场这里是「点前有入口、点后整块 0 字节／内容骤减」，本断言咬住那个形态。
+  for (const layer of ['system-section', 'runtime-context', 'tool-pipeline']) {
+    const before = render(layer, false)
+    const creating = render(layer, true)
+    assert.doesNotMatch(before, /data-declare-section="params"/, `${layer} 没有可渲染参数组 → 不给 params 入口`)
+    assert.equal(creating, before, `${layer} 的创建态不改变这一层的渲染（不出现「一点就塌陷」）`)
+  }
+})
+
+test('声明面：人设卡按主语的声明面出场——未声明只给入口，声明了才出编辑器', () => {
+  const html = (declares) => {
+    const drafts = createWorkspaceDrafts()
+    drafts.personaSources.value = { main: 'mod-a', subagent: null }
+    drafts.expanded.set('mod-a:persona:main', true)
+    return renderElement(ModulePersonaCard, { t, audience: 'main', modules: modulesDeclaring(declares), drafts, onNotice: () => {} })
+  }
+  const undeclared = html(['rules'])
+  assert.match(undeclared, /data-declare-section="persona"/, '未声明 persona → 该处只有添加入口')
+  assert.doesNotMatch(undeclared, /data-config-panel="prefix"/, '未声明就不出这张卡（编辑器不渲染）')
+  const declaredHtml = html(['rules', 'persona'])
+  assert.doesNotMatch(declaredHtml, /data-declare-section="persona"/, '已声明的节不给添加入口')
+  assert.match(declaredHtml, /data-config-panel="prefix"/, '声明了 persona 照旧出编辑器（空态由编辑器自己表示）')
 })
 
 test('同一层两个模块的实例卡各自渲染自己模块的资产', () => {
@@ -247,6 +418,57 @@ test('store：写参数只写该模块的键与主语；不可编辑模块不发
     // 判据本身逐模块：同一次装配里 A 可编辑不影响 B（notice 是 React 状态，SSR 下只认判据与请求）。
     assert.equal(canEditModule({ modulesEnabled: true }, modules, 'mod-b'), false)
     assert.equal(canEditModule({ modulesEnabled: true }, modules, 'mod-a'), true)
+  } finally {
+    fetchStub.restore()
+  }
+})
+
+test('store：silent load 重读 /meta 快照（创建模式写后刷新声明面的触发点）', async () => {
+  const modules = [{ id: 'mod-a', name: 'A', enabled: true, facts: facts(), declares: ['rules'] }]
+  const fetchStub = withFetch((request) => {
+    if (request.path.endsWith('/bootstrap')) return bootstrapPayload(modules)
+    return { ok: true, value: {} }
+  })
+  try {
+    const store = mountStore()
+    await store.load()
+    const bootstraps = () => fetchStub.requests.filter((request) => request.path.endsWith('/bootstrap')).length
+    const mark = bootstraps()
+    await store.load({ silent: true })
+    assert.equal(bootstraps(), mark + 1, 'silent load 仍是一次 /meta 重读（不闪 loading 但不省请求）')
+  } finally {
+    fetchStub.restore()
+  }
+})
+
+test('store：未声明 params 的模块不发这次读；首次写走既有写路径建立声明并重读 /meta', async () => {
+  const modules = [{ id: 'mod-a', name: 'A', enabled: true, facts: facts(), declares: ['rules'] }]
+  const fetchStub = withFetch((request) => {
+    if (request.path.endsWith('/bootstrap')) return bootstrapPayload(modules)
+    if (request.path.endsWith('/param-overrides')) return { ok: true, value: { overrides: {} } }
+    return { ok: true, value: {} }
+  })
+  try {
+    const store = mountStore()
+    await store.load()
+    const mark = fetchStub.requests.length
+    store.ensureModuleParams('mod-a')
+    store.ensureModuleVariables('mod-a')
+    await tick()
+    const reads = fetchStub.requests.slice(mark)
+    assert.equal(reads.filter((request) => request.path.endsWith('/param-overrides')).length, 0,
+      '没声明 params 就不发这次读（发过去也是 400）')
+    assert.equal(reads.filter((request) => request.path.endsWith('/module-variables')).length, 0,
+      '没声明 variables 同样不发读')
+
+    store.setModuleParam('mod-a', 'maxDepth', '3')
+    await store.persistParamOverrides('mod-a')
+    const write = fetchStub.writes()[0]
+    assert.ok(write, '未声明时首次写仍走既有写路径：写就是创建这个节')
+    assert.equal(write.headers['x-module-id'], 'mod-a')
+    assert.deepEqual(write.body, { overrides: { maxDepth: 3 }, expectedModuleId: 'mod-a' })
+    assert.ok(fetchStub.requests.filter((request) => request.path.endsWith('/bootstrap')).length >= 2,
+      '写成功后重读 /meta，声明面快照随之刷新')
   } finally {
     fetchStub.restore()
   }

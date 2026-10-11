@@ -4,16 +4,39 @@ import { Button } from '../../ui/Button.tsx'
 import { createWorkspaceDrafts, type PersonaEditorDraft, type WorkspaceDrafts } from '../../data/workspace-drafts.ts'
 import { bridgeCall } from '../../data/bridge-client.ts'
 import type { PromptToolTranslate } from '../../locales.ts'
+import { moduleDeclares } from '../../data/module-subject.ts'
+import type { ModuleSummary } from '../../../shared/bridge-contract.ts'
 import { CollapsibleCard } from '../../ui/CollapsibleCard.tsx'
 import { PromptConfigNavigation } from '../../ui/PromptConfigNavigation.tsx'
 import { MenuSelect } from '../../ui/MenuSelect.tsx'
-import type { PersonaAudience, PersonaSources, PersonaTargetSpec } from '../../../shared/persona-section.ts'
+import type { PersonaAudience, PersonaSources, PersonaSpec, PersonaTargetSpec } from '../../../shared/persona-section.ts'
+import type { BridgeRequestMap } from '../../../shared/bridge-contract.ts'
 import { ConfirmDialog } from '../../ui/ConfirmDialog.tsx'
 import { FormField } from '../../ui/FormField.tsx'
 import styles from '../../ui/controls.module.css'
 import css from './persona.module.css'
 
 type Notice = (kind: 'ok' | 'error', message: string) => void
+
+/**
+ * 人设写请求载荷：**创建模式（该模块未声明 `persona`）不传 `expectedRevision`**——没有前状态就没有
+ * 可冲突的对象（服务端据此走创建语义）；已声明时必须带读取到的模块版本。
+ * `persona: null` 仍是「删除该段」的既有语义（只在已声明时有意义）。
+ */
+export function personaWriteBody(moduleId: string, submitted: PersonaSpec, revision: string, creating: boolean): BridgeRequestMap['persona'] {
+  return {
+    persona: Object.keys(submitted).length ? submitted : null,
+    expectedModuleId: moduleId,
+    ...(creating ? {} : { expectedRevision: revision }),
+  }
+}
+
+/**
+ * 人设读数请求（主语＝该模块）：**声明面明确未声明就不构造这次请求**（返回 `undefined`），
+ * 卡片据此只给添加入口／转创建模式——服务端读了也是 400 `module-not-declared`。
+ */
+export const readModulePersona = (moduleId: string, undeclared: boolean) =>
+  undeclared ? undefined : bridgeCall('persona', { expectedModuleId: moduleId }, moduleId)
 const notify = (draft: { listeners?: Set<() => void> }): void => { for (const listener of draft.listeners ?? []) listener() }
 
 /** 独立主/子人设卡；字段省略、显式空文本与 false 分别保存。
@@ -26,6 +49,10 @@ export function ModulePersonaCard(props: {
   disabled?: boolean
   /** 该模块此刻是否可编辑（总闸 + 逐模块事实）；不传＝只按全局总闸判断。 */
   canEditModule?: (moduleId: string) => boolean
+  /** `/meta` 的模块快照：`declares` 是「这个主语声明了 persona 吗」的唯一判据。 */
+  modules?: readonly ModuleSummary[]
+  /** 该模块未声明 `persona`、首次成功写盘建立声明后回调：调用方据此重读 `/meta`。 */
+  onDeclared?: () => void
   drafts?: WorkspaceDrafts
   onNotice: Notice
 }): ReactNode {
@@ -37,6 +64,8 @@ export function ModulePersonaCard(props: {
   const mounted = useRef(false)
   const [confirming, setConfirming] = useState<{ moduleId: string; audience: PersonaAudience; reload?: boolean }>()
   const [activeField, setActiveField] = useState<'prefix' | 'suffix'>('prefix')
+  /** 声明面明确未声明 `persona` 时先只给添加入口；点了才按创建模式渲染编辑器（读请求仍不发）。 */
+  const [creating, setCreating] = useState(false)
   const refresh = useCallback(() => { if (mounted.current) redraw(value => value + 1) }, [])
   const editorOf = useCallback((moduleId: string): PersonaEditorDraft => {
     let editor = drafts.persona.get(moduleId)
@@ -88,16 +117,28 @@ export function ModulePersonaCard(props: {
     if (mounted.current) onNotice(result.ok && !selection.publicationPending ? 'ok' : 'error',
       selection.error || selection.publicationError || t('persona.sources.saved'))
   }
+  /** 本卡的主语：人设来源指向的模块（没有来源就用调用方给的首选模块）。 */
+  const moduleId = selection.value[audience] ?? props.moduleId
+  /** 该主语没声明 `persona`：不读、不出编辑器（改出添加入口）。未知（未下发）不当作未声明。 */
+  const undeclared = moduleId !== undefined && moduleDeclares(props.modules, moduleId, 'persona') === false
   const loadPersona = useCallback(async (moduleId: string, discard = false): Promise<void> => {
     const editor = editorOf(moduleId)
     if (editor.saving || editor.loading || (!discard && JSON.stringify(editor.value) !== JSON.stringify(editor.saved))) return
+    // 声明面明确未声明：创建模式——**不构造这次读**（读了也是 400）；空草稿就是真值，保存即建立该节。
+    const pending = readModulePersona(moduleId, undeclared)
+    if (pending === undefined) {
+      editor.loaded = true
+      editor.error = ''
+      notify(editor)
+      return
+    }
     const sequence = (editor.readSequence ?? 0) + 1
     editor.readSequence = sequence
     editor.loading = true
     const readingDraft = editor.value
     editor.error = ''
     notify(editor)
-    const result = await bridgeCall('persona', { expectedModuleId: moduleId }, moduleId)
+    const result = await pending
     if (editor.readSequence !== sequence) return
     editor.loading = false
     if (editor.value !== readingDraft) { notify(editor); return }
@@ -108,7 +149,7 @@ export function ModulePersonaCard(props: {
       editor.loaded = true
     } else editor.error = result.message ?? t('persona.notice.loadFailed')
     notify(editor)
-  }, [editorOf, t])
+  }, [editorOf, t, undeclared])
   useEffect(() => {
     mounted.current = true
     selection.listeners ??= new Set()
@@ -116,7 +157,9 @@ export function ModulePersonaCard(props: {
     void loadSources()
     return () => { mounted.current = false; selection.listeners?.delete(refresh) }
   }, [selection, refresh, loadSources])
-  const moduleId = selection.value[audience] ?? props.moduleId
+  /** 声明面明确未声明时先只给添加入口；点了才按创建模式渲染编辑器。
+   *  `creating`（用户点了添加）与 `undeclared`（实时声明面）分开：写成功后快照刷新，编辑器自动回到正常形态。 */
+  const editing = !undeclared || creating
   useEffect(() => {
     if (!selection.loaded || !moduleId) return
     const editor = editorOf(moduleId)
@@ -146,7 +189,9 @@ export function ModulePersonaCard(props: {
     else submitted[audience] = target
     editor.saving = true
     notify(editor)
-    const result = await bridgeCall('persona', { persona: Object.keys(submitted).length ? submitted : null, expectedModuleId: moduleId, expectedRevision: editor.revision }, moduleId)
+    // 未声明 persona 的首次写入＝创建：不传 expectedRevision——没有前状态就没有可冲突的对象，
+    // 传空串会被服务端当成非法版本拒绝。已声明时仍带读取到的模块版本。
+    const result = await bridgeCall('persona', personaWriteBody(moduleId, submitted, editor.revision, undeclared), moduleId)
     editor.saving = false
     if (result.ok) {
       editor.saved = result.value.persona ?? {}
@@ -154,6 +199,8 @@ export function ModulePersonaCard(props: {
       editor.declared = result.value.persona !== null
       editor.publicationPending = result.value.publicationPending === true
       editor.publicationError = result.value.publicationError
+      // 创建模式下这次写盘建立了声明：重读 `/meta`，卡片随即按正常形态出现。
+      if (undeclared) props.onDeclared?.()
       if (editor.value[audience] === target) {
         editor.value = { ...editor.value }
         if (editor.saved[audience] === undefined) delete editor.value[audience]
@@ -213,6 +260,20 @@ export function ModulePersonaCard(props: {
       {dirty && <p className={styles.configFieldHint} role="status">{t('card.unsaved')}</p>}
       {editor?.error && <p className={styles.noticeError} role="alert">{editor.error}</p>}
       {editor?.publicationPending && <p className={styles.noticeError} role="alert">{editor.publicationError ?? t('persona.sources.publicationPending')} <Button shape="pill" variant="outline" size="sm" disabled={editor.saving} onClick={() => { if (moduleId) void retryPublication(moduleId) }}>{t('workspace.retry')}</Button></p>}
+      {/* 声明面明确未声明 persona：不出编辑器（读请求也不发），只给添加入口；
+          点了用现有编辑与保存动作创建第一项，写盘建立声明后由调用方重读 `/meta`。 */}
+      {!editing && (
+        <div className={css.options}>
+          <p className={styles.configFieldHint} role="status">{t('declare.createHint')}</p>
+          <Button shape="pill" variant="outline" size="sm" type="button" data-declare-section="persona"
+            disabled={moduleId === undefined || (props.canEditModule !== undefined && !props.canEditModule(moduleId))}
+            aria-label={`${t('declare.add', { name: t('persona.title', { audience: t(`persona.${audience}`) }) })} · ${t('rules.source', { module: moduleId })}`}
+            onClick={() => setCreating(true)}>
+            {t('declare.add', { name: t('persona.title', { audience: t(`persona.${audience}`) }) })}
+          </Button>
+        </div>
+      )}
+      {editing && <>
       <div className={css.options}>
         <FormField label={t('persona.mode')}>
           <MenuSelect compact value={target?.[activeField] === undefined ? 'inherit' : 'custom'} disabled={busy}
@@ -252,6 +313,7 @@ export function ModulePersonaCard(props: {
         }}>{t('persona.reload')}</Button>
         {editor?.saved[audience] && <Button shape="pill" variant="outline" data-danger disabled={busy || editor.saving} onClick={() => { if (moduleId) setConfirming({ moduleId, audience }) }}>{t('persona.remove')}</Button>}
       </div>
+      </>}
     </CollapsibleCard>
   )
 }

@@ -43,6 +43,13 @@ export async function insertToolTemplateIntoDraft(drafts: WorkspaceDrafts, modul
   return 'inserted'
 }
 
+/**
+ * 这张卡的读数请求（主语＝该模块）：**声明面明确未声明就不构造这次请求**（返回 `undefined`），
+ * 卡片据此转创建模式——服务端读了也是 400 `module-not-declared`。抽成函数是为了让「不发这次读」可被请求计数断言。
+ */
+export const readCustomTools = (moduleId: string, undeclared: boolean) =>
+  undeclared ? undefined : bridgeCall('customTools', { expectedModuleId: moduleId }, moduleId)
+
 /** 工具草稿与保存由常驻页面持有；设置区只渲染同一份编辑内容。 */
 export function useCustomToolsEditor(props: {
   t: PromptToolTranslate
@@ -53,9 +60,14 @@ export function useCustomToolsEditor(props: {
   moduleId?: string
   drafts?: WorkspaceDrafts
   onChooseTemplate?: (anchor: HTMLButtonElement) => void
+  /** 声明面明确未声明 `customTools`（＝本卡处于「创建第一节」模式）：照旧不发这次读（发了也是 400）。 */
+  undeclared?: boolean
+  /** 创建模式下首次成功写盘后回调：调用方据此重读 `/meta`，卡片随即按正常形态出现。 */
+  onDeclared?: () => void
 }): { createTool: (intent: ToolCreateIntent) => void; content: ReactNode } {
   const { t } = props
   const moduleId = props.moduleId
+  const undeclared = props.undeclared === true
   const editor = useMemo((): ToolsEditorDraft => {
     // 无主语：不建工具草稿（空串键会与真模块混用），给一份不落表的空草稿。
     if (moduleId === undefined) return createToolsEditorDraft()
@@ -101,13 +113,22 @@ export function useCustomToolsEditor(props: {
       setLoadError(editor.error)
       return cleanup
     }
+    // 声明面明确未声明：本卡处于创建模式——**不构造这次读**（读了也是 400），
+    // 草稿从空集开始，保存即由服务端建立该节。
+    const customRequest = readCustomTools(moduleId, undeclared)
+    if (customRequest === undefined) {
+      editor.loaded = true
+      setLoading(false)
+      setLoadError('')
+      return cleanup
+    }
     setLoading(!editor.loaded)
     setLoadError('')
     const readingTools = editor.tools
     void (async () => {
       // 第三个实参 = `x-module-id`：主语＝这张卡所属的模块。服务端**没有任何回退**
       // （未声明就是没有目标，模块类端点按空目标拒绝），所以这个实参必须带，且只能带该模块的 id。
-      const customResult = await bridgeCall('customTools', { expectedModuleId: moduleId }, moduleId)
+      const customResult = await customRequest
       if (!active) return
       if (!customResult.ok) {
         editor.error = customResult.message ?? t('customTools.loadFailed')
@@ -130,7 +151,7 @@ export function useCustomToolsEditor(props: {
       setLoading(false)
     })()
     return cleanup
-  }, [editor, moduleId, revision])
+  }, [editor, moduleId, revision, undeclared])
   const updateTools = (next: ToolDraft[]): void => {
     if (!disabled) setTools(next)
   }
@@ -163,6 +184,7 @@ export function useCustomToolsEditor(props: {
       setSaving(false)
       if (customResult.ok) {
         setHasPersistedTools(cleanTools.length > 0)
+        props.onDeclared?.()
         props.onNotice('ok', t('customTools.saved', { count: cleanTools.length }))
       } else {
         props.onNotice('error', ('message' in customResult ? customResult.message : undefined) ?? t('customTools.saveFailed'))
@@ -221,6 +243,7 @@ export function useCustomToolsEditor(props: {
   return { createTool, content: (
     <section aria-label={t('customTools.aria')}>
       <p className={styles.configFieldHint}>{t('customTools.hint')}</p>
+      {undeclared && <p className={styles.configFieldHint} role="status">{t('declare.createHint')}</p>}
       {props.disabled && <p className={styles.configFieldHint} role="status">{t('customTools.readonly')}</p>}
       {loading && <p className={styles.configFieldHint} role="status">{t('customTools.loading')}</p>}
       {loadError && <p role="alert">{loadError} <Button shape="pill" size="md" variant="outline" type="button" onClick={() => setRevision((value) => value + 1)}>{t('customTools.retry')}</Button></p>}

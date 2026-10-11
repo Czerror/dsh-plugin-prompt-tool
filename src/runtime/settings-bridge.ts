@@ -49,6 +49,7 @@ import {
   withModuleDefinition,
 } from '../host/manifest.ts'
 import { mergeModuleIntoModule, removeMergedModule } from '../host/characters.ts'
+import { moduleDeclarations } from '../host/module-declarations.ts'
 import { ensureModuleSlices, loadModuleDefinition, ModuleRulesError } from '../host/module-storage.ts'
 import { editModuleVariables, readModuleVariables } from '../host/module-variables.ts'
 import type { ModuleVariableRevisions, ModuleVariablesSnapshot } from '../shared/module-variables.ts'
@@ -355,6 +356,21 @@ function projectToolSchemas(schemas: readonly ToolSchemaLike[]): Array<{ name: s
   return [...unique.values()].sort((a, b) => a.name < b.name ? -1 : a.name > b.name ? 1 : 0)
 }
 
+/** 该模块目录的声明面（`module.yml` 顶层键名，与门的判据同源）。
+ *  定义不可解析时返回 undefined＝**未知**：调用方照既有语义放行，绝不把「读不到」降级成「没声明」。
+ *  `byModuleId` 为真时先按 id 解析目录（`listModules` 只给 id）。 */
+function declarationsOf(target: string, byModuleId = false): Set<string> | undefined {
+  try {
+    return moduleDeclarations(byModuleId ? resolveModuleDir(target) : target)
+  } catch {
+    return undefined
+  }
+}
+
+/** 声明面准入：未知一律放行；明确下发时「任一节存在」即算已声明（与 `DECLARED_SECTIONS` 同口径）。 */
+const declaresAny = (declares: Set<string> | undefined, sections: readonly string[]): boolean =>
+  declares === undefined || sections.some((section) => declares.has(section))
+
 /** 逐模块身份与能力事实：与 /bootstrap 的 `moduleFacts` 走同一条 resolveModuleFacts 链。
  *  模块损坏（定义不可解析等）或事实算不出时返回 undefined，绝不下发部分字段。 */
 function moduleFactsOf(moduleId: string): ModuleFacts | undefined {
@@ -557,10 +573,12 @@ export function registerSettingsBridge(
         // 不必按模块逐个聚合读；算不出事实的模块 facts 缺席（broken 等），不影响整个响应。
         meta.modules = listModules().map((preset) => {
           const facts = moduleFactsOf(preset.id)
+          const declares = declarationsOf(preset.id, true)
           return {
             ...preset,
             enabled: enabledSet.has(preset.id),
             ...(facts === undefined ? {} : { facts }),
+            ...(declares === undefined ? {} : { declares: [...declares] }),
           }
         })
         meta.builtinTemplates = listBuiltinTemplates()
@@ -614,6 +632,8 @@ export function registerSettingsBridge(
         }
       }
       const collectDescribeExtras = async (activeDir: string, sessionId?: string): Promise<Record<string, unknown>> => {
+        // 模块段的声明面快照：只对声明面登记的节按声明填（未声明的节不下发，客户端也就不会去读）。
+        const declares = activeDir.length > 0 ? declarationsOf(activeDir) : undefined
         const detection = deps.models()
         const skillsState = deps.skills()
         const skillsSnapshot = await collectSkills(sessionId)
@@ -650,13 +670,17 @@ export function registerSettingsBridge(
         // 模板无 pre-step 配置（layer 缺省即 pre-step）时开关关闭且禁编辑。
         let templatePreStepCount = 0
         if (activeDir.length > 0) {
-          moduleParams = {}
+          // 只对声明面登记的节按声明填：`moduleFacts` 是身份与引擎事实（不是 module.yml 的节），不受声明面影响。
+          const paramsDeclared = declaresAny(declares, ['params', 'layerSettings'])
+          if (paramsDeclared) moduleParams = {}
           try {
             // 聚合响应复用端点已解析的请求目录，与 overrides、配置卡和变量同源。
             const spec = loadModuleSpec(activeDir)
-            moduleParams = resolveModuleParams(spec, {})
             const resolvedFacts = resolveModuleFacts(spec, activeDir, isEditableModuleDir(activeDir))
-            mergeModuleConfigFallbacks(moduleParams, resolvedFacts)
+            if (paramsDeclared) {
+              moduleParams = resolveModuleParams(spec, {})
+              mergeModuleConfigFallbacks(moduleParams, resolvedFacts)
+            }
             // effectiveConfigs 只用于服务端把已存在的 moduleConfigs 回显到已知字段；
             // 不把整份行级配置（可能含路径/未知字段）发送到浏览器。
             moduleFacts = {
@@ -744,7 +768,10 @@ export function registerSettingsBridge(
               const meta = await loadEngineMeta()
               const extras = await collectDescribeExtras(dir, session.sessionId)
               const scope = resolveInstructionScope(sctx, session.sessionId)
-              const variables = dir.length > 0 ? variableView(dir) : undefined
+              // 变量段与模块参数同口径：只对声明面登记的节下发，未声明就整体缺席（客户端据此不出卡、不发读）。
+              const variables = dir.length > 0 && declaresAny(declarationsOf(dir), ['variables', 'variablesEnabled'])
+                ? variableView(dir)
+                : undefined
               tx.write(200, {
                 ok: true,
                 value: descriptorForTarget(descriptor, dir),
@@ -1396,10 +1423,21 @@ export function registerSettingsBridge(
               }
               if (subjectGate(tx, 'moduleVariables', { write: true }) === undefined) return
               if (typeof record.expectedModuleId !== 'string') throw new ModuleRulesError('保存变量必须提供 expectedModuleId')
-              if (!isRecord(record.expectedRevisions)) throw new ModuleRulesError('保存变量或开关必须提供对应 expectedRevisions')
+              // 未声明 variables／variablesEnabled 的模块首次写入＝**创建**：没有前状态就没有可冲突的对象，
+              // 允许 `expectedRevisions` 整键缺席——按当次定义的版本补齐（写盘前仍逐键复核，冲突照旧 409）。
+              const creating = record.scope === 'module' && record.expectedRevisions === undefined
+                && !declaresAny(declarationsOf(dir), ['variables', 'variablesEnabled'])
+              if (!creating && !isRecord(record.expectedRevisions)) throw new ModuleRulesError('保存变量或开关必须提供对应 expectedRevisions')
+              const definition = creating ? loadModuleDefinition(dir) : undefined
+              const expectedRevisions = definition === undefined
+                ? record.expectedRevisions as Partial<ModuleVariableRevisions>
+                : {
+                  module: definition.revisions.variables,
+                  ...(record.enabled === undefined ? {} : { settings: definition.revisions.settings }),
+                }
               const settingsChanged = record.enabled !== undefined && record.enabled !== loadModuleDefinition(dir).variablesEnabled
               const committed = editModuleVariables(dir, {
-                scope: record.scope as 'global' | 'module', expectedRevisions: record.expectedRevisions as Partial<ModuleVariableRevisions>,
+                scope: record.scope as 'global' | 'module', expectedRevisions,
                 ...(record.variables === undefined ? {} : { values: record.variables as Record<string, string> }),
                 ...(record.enabled === undefined ? {} : { enabled: record.enabled as boolean }),
               })
@@ -1492,11 +1530,16 @@ export function registerSettingsBridge(
               let saved
               if (record.refreshOnly === true) saved = readModulePersona(dir)
               else {
-                if (typeof record.expectedRevision !== 'string' || !SHA256_HEX_RE.test(record.expectedRevision)) throw new TypeError('保存人设必须提供读取时的 expectedRevision')
                 const persona = record.persona === null ? null : readPersonaSpec(record.persona)
                 if (persona === undefined) throw new TypeError('persona 必须是主/子覆盖对象或 null')
                 const root = dirname(dir), id = basename(dir)
-                saved = saveModulePersona(root, id, persona, record.expectedRevision)
+                // 未声明 persona 的模块首次写入＝**创建**：没有前状态就没有可冲突的对象，允许 `expectedRevision`
+                // 缺席（用当次读取的版本即可，saveModulePersona 仍会在写盘前复核它）；已声明时仍必须是读取时的 64 位 hex。
+                const creating = record.expectedRevision === undefined && !Object.hasOwn(loadModuleDefinition(dir).source, 'persona')
+                if (!creating && (typeof record.expectedRevision !== 'string' || !SHA256_HEX_RE.test(record.expectedRevision))) {
+                  throw new TypeError('保存人设必须提供读取时的 expectedRevision')
+                }
+                saved = saveModulePersona(root, id, persona, creating ? readModulePersona(dir).revision : record.expectedRevision as string)
               }
               try { await deps.overridesChanged?.(basename(dir)) }
               catch (error) {

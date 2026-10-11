@@ -196,6 +196,9 @@ export interface ModuleSummary {
   /** 该模块的身份与能力派生事实（与 `/bootstrap` 的 `moduleFacts` 同源同形）；
    *  模块损坏或事实算不出时缺席，绝不下发部分字段。 */
   facts?: ModuleFacts
+  /** 该模块 `module.yml` 的顶层键名（＝它声明了哪些节）；只下发键名不下发内容。
+   *  定义不可解析（损坏）时与 `facts` 同口径缺席——客户端据此保守放行，不把「读不到」当「没声明」。 */
+  declares?: string[]
 }
 
 /**

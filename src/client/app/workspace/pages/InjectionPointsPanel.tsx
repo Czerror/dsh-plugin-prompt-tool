@@ -11,7 +11,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { MODULE_CAPABILITIES, ENGINE_EDITOR_GROUP_MAP, moduleCapability, engineGroupParamKeys, isEditorGroupVisible, isModuleCapabilityPresent } from '../../../../shared/engine-capabilities.ts'
 import type { PromptConfigDraft } from '../../../prompt-tool-types.ts'
 import type { PromptToolStore } from '../../../data/use-prompt-tool-store.ts'
-import { canEditModule, moduleFactsOf } from '../../../data/module-subject.ts'
+import { canEditModule, moduleDeclares, moduleFactsOf } from '../../../data/module-subject.ts'
 import type { PromptToolLocaleKey, PromptToolTranslate } from '../../../locales.ts'
 import { ConfirmDialog } from '../../../ui/ConfirmDialog.tsx'
 import { Button } from '../../../ui/Button.tsx'
@@ -25,6 +25,7 @@ import { ContextActivationDiagnosticsCard } from '../../../features/prompts/Cont
 import { TemplateVariablesModuleCard } from '../../../features/prompts/PromptConfigsEditor.tsx'
 import { CustomToolsCard } from '../../../features/tools/CustomToolsCard.tsx'
 import { cssEscapeId, scrollToCreatedCard } from '../../../ui/reveal-card.ts'
+import styles from '../../../ui/controls.module.css'
 import css from './layer-settings.module.css'
 
 export { isEditorGroupVisible }
@@ -47,8 +48,12 @@ const CARD_LABEL_KEYS: Record<string, PromptToolLocaleKey> = {
  * 能力组要求真实装配（未装配的能力参数写了不生效，不显示假入口）；
  * 专用编辑组（提示词生成默认值等）不依赖模块装配，始终可编辑。
  * 参数键仍由 `ENGINE_PARAM_DEFINITIONS` 给出，这里不另抄键表，也不按层硬编码。
+ *
+ * 声明面（ADR-0014）：模块没声明 `params`／`layerSettings` 时这一组整卡不出场
+ * （改为添加入口），更不会发这次参数读。
  */
-export function layerParamCards(store: PromptToolStore, layer: string, moduleId: string | undefined, exclude: readonly string[] = []): readonly string[] {
+export function layerParamCards(store: PromptToolStore, layer: string, moduleId: string | undefined, exclude: readonly string[] = [], creating = false): readonly string[] {
+  if (!creating && moduleId !== undefined && moduleDeclares(store.meta.modules, moduleId, ...PARAM_SECTIONS) === false) return []
   const excluded = new Set(exclude)
   const facts = moduleId === undefined ? undefined : moduleFactsOf(store.meta.modules, moduleId)
   return ENGINE_EDITOR_GROUP_MAP
@@ -105,15 +110,49 @@ function LayerCapabilityRow(props: { store: PromptToolStore; t: PromptToolTransl
  */
 const LAYER_ASSET_IDS = ['variables', 'main-model', 'subagent-model', 'subagent-tools', 'custom-tools', 'subagent-tool-policy'] as const
 
+/** 资产卡读写的 `module.yml` 节（键名与门的登记表同名：只回答「这张卡要哪个节」，不另立判据）。
+ *  没登记的资产（模型路由、委派深度）不按声明面门控——它们的数据不在 `module.yml` 的这些节里。 */
+const ASSET_SECTIONS: Record<string, readonly string[]> = {
+  'variables': ['variables', 'variablesEnabled'],
+  'custom-tools': ['customTools'],
+  'subagent-tool-policy': ['subagentToolPolicy'],
+}
+
+/** `params`／`layerSettings` 任一存在即算已声明（与 `DECLARED_SECTIONS.paramOverrides` 同口径）。 */
+const PARAM_SECTIONS = ['params', 'layerSettings'] as const
+
 /** 该组已有专属编辑器（模型路由卡、资产编辑器）：参数不再走通用控件渲染，避免同一批字段两遍。 */
 function isLayerAsset(id: string): boolean {
   return (LAYER_ASSET_IDS as readonly string[]).includes(id)
 }
 
-function layerAssets(layer: string, excluded: readonly string[]): string[] {
+/** 本层归属的结构化资产候选（不看声明面）。 */
+function assetCandidates(layer: string, excluded: readonly string[]): string[] {
   return ENGINE_EDITOR_GROUP_MAP.filter((group) => group.displayLayer === layer
     && group.id !== 'subagent-model'
     && !excluded.includes(group.id) && (LAYER_ASSET_IDS as readonly string[]).includes(group.id)).map((group) => group.id)
+}
+
+/** 本层该模块可渲染的资产：声明面明确未声明的节整卡不出场（改为添加入口）。 */
+function layerAssets(store: PromptToolStore, layer: string, moduleId: string, excluded: readonly string[]): string[] {
+  return assetCandidates(layer, excluded).filter((id) => declaredOrUnknown(store, moduleId, ASSET_SECTIONS[id]))
+}
+
+/** 本层该模块**未声明**、需要给添加入口的节（资产节 + `params`）。
+ *  `params` 只在该层真有可渲染参数组时才给入口——否则点了既出不了编辑器、入口又被剔除，
+ *  会留下「一点就整块塌陷」的死按钮（各层的参数组归属不同，不能按层硬塞）。 */
+function undeclaredSections(store: PromptToolStore, layer: string, moduleId: string, excluded: readonly string[]): string[] {
+  const paramsRenderable = layerParamCards(store, layer, moduleId, excluded, true).length > 0
+  return [
+    ...assetCandidates(layer, excluded).filter((id) => ASSET_SECTIONS[id] !== undefined
+      && moduleDeclares(store.meta.modules, moduleId, ...ASSET_SECTIONS[id]) === false),
+    ...(paramsRenderable && moduleDeclares(store.meta.modules, moduleId, ...PARAM_SECTIONS) === false ? ['params'] : []),
+  ]
+}
+
+/** 未登记声明面的资产＝不门控；未知（未下发）也放行——不把「读不到」当「没声明」。 */
+function declaredOrUnknown(store: PromptToolStore, moduleId: string, sections: readonly string[] | undefined): boolean {
+  return sections === undefined || moduleDeclares(store.meta.modules, moduleId, ...sections) !== false
 }
 
 function matchesLayerGroup(id: string, keyword: string, t: PromptToolTranslate): boolean {
@@ -138,19 +177,41 @@ export function LayerSettingsContent(props: {
   toolEditor?: ReactNode
   onCreated?: (capabilityId: string) => void
   keyword?: string
+  /** 初始创建模式（外部装配／测试用）；生产路径由「添加」按钮驱动。 */
+  creatingSections?: readonly string[]
 }): ReactNode {
   const { store, t, layer } = props
   const moduleId = props.moduleId
   const excluded = props.excludeCapabilities ?? []
-  const cards = moduleId === undefined ? [] : layerParamCards(store, layer, moduleId, excluded)
+  /** 已点「添加」的节：只记「用户开了这个节的创建模式」，不记「声明已建立」。 */
+  const [creating, setCreating] = useState<readonly string[]>(() => (props.creatingSections ?? []).map(id => `${String(moduleId)}:${id}`))
+  const creatingKey = (id: string): string => `${String(moduleId)}:${id}`
+  const creatingSection = (id: string): boolean => creating.includes(creatingKey(id))
+  /** 该节要读写的 `module.yml` 节（`params` 也在内：它同样是可创建的一节）。 */
+  const sectionsOf = (id: string): readonly string[] | undefined => id === 'params' ? PARAM_SECTIONS : ASSET_SECTIONS[id]
+  /** 该节此刻**仍**没声明——取自实时的 `/meta` 快照，不粘连；未知（未下发）不当作未声明。 */
+  const undeclaredNow = (id: string): boolean => {
+    if (moduleId === undefined) return false
+    const sections = sectionsOf(id)
+    return sections !== undefined && moduleDeclares(store.meta.modules, moduleId, ...sections) === false
+  }
+  /** 创建模式＝「点了添加」且「此刻仍未声明」：写成功后快照刷新，创建模式自动退出，卡片恢复回读与正常形态。 */
+  const inCreateMode = (id: string): boolean => creatingSection(id) && undeclaredNow(id)
+  const cards = moduleId === undefined ? [] : layerParamCards(store, layer, moduleId, excluded, inCreateMode('params'))
   const capabilities = moduleId === undefined ? [] : layerAssembledCapabilities(store, layer, moduleId).filter((id) => !excluded.includes(id))
-  const assets = moduleId === undefined ? [] : layerAssets(layer, excluded)
+  const addable = moduleId === undefined ? [] : undeclaredSections(store, layer, moduleId, excluded)
+  const pendingAdds = addable.filter((id) => !creatingSection(id))
+  // 声明面登记的节照旧出卡；未声明的节只在创建模式下出卡；未登记声明面的资产（模型路由等）不受影响。
+  const assets = moduleId === undefined
+    ? []
+    : assetCandidates(layer, excluded).filter((id) => declaredOrUnknown(store, moduleId, ASSET_SECTIONS[id]) || inCreateMode(id))
   // 同层每张实例卡各渲染一份设置内容：instanceId 带上卡身份，DOM id 才不会互相冲突。
   const instanceId = `layer-${layer}-${props.configId ?? 'standalone'}`
   const canEdit = moduleId !== undefined && canEditModule(store.fields, store.meta.modules, moduleId)
   const keyword = (props.keyword ?? '').trim().toLowerCase()
   const matches = (id: string): boolean => matchesLayerGroup(id, keyword, t)
-  // 参数与变量按主语读一次（每模块每轮加载一次，同模块的层卡共享同一份）。
+  // 参数与变量按主语读一次（每模块每轮加载一次，同模块的层卡共享同一份）；
+  // store 侧按 `/meta` 的声明面跳过未声明的读，这里不重复判一次。
   const wantsVariables = assets.includes('variables')
   useEffect(() => {
     if (moduleId === undefined) return
@@ -158,13 +219,27 @@ export function LayerSettingsContent(props: {
     if (wantsVariables) store.ensureModuleVariables(moduleId)
   }, [store, moduleId, wantsVariables])
   if (moduleId === undefined) return null
-  if (cards.length === 0 && capabilities.length === 0 && assets.length === 0) return null
+  if (cards.length === 0 && capabilities.length === 0 && assets.length === 0 && pendingAdds.length === 0) return null
   const variables = wantsVariables ? store.moduleVariables(moduleId) : undefined
+  /** 创建模式下的第一次成功写盘＝服务端建立声明：重读 `/meta`，卡片随即按正常形态出现。 */
+  const afterDeclared = (): void => { void store.load({ silent: true }) }
   return (
     <div className={css.settings} data-layer-settings-content={layer}>
       <div className={css.actions}>
         <ModuleCapabilityCreateMenu store={store} t={t} layer={layer} moduleId={moduleId} excludeCapabilities={excluded} onCreated={props.onCreated} />
       </div>
+      {pendingAdds.map((id) => (
+        <section key={id} className={css.asset} data-layer-asset-add={id} aria-label={t(CARD_LABEL_KEYS[id] ?? 'modules.layer.asset')}>
+          <h4 className={css.groupTitle}>{id === 'params' ? t('declare.params') : t(CARD_LABEL_KEYS[id] ?? 'modules.layer.asset')}</h4>
+          <p className={styles.configFieldHint}>{t('declare.createHint')}</p>
+          <Button shape="pill" size="sm" variant="outline" type="button" disabled={!canEdit}
+            data-declare-section={id === 'params' ? 'params' : ASSET_SECTIONS[id]?.[0] ?? id}
+            aria-label={`${t('declare.add', { name: id === 'params' ? t('declare.params') : t(CARD_LABEL_KEYS[id] ?? 'modules.layer.asset') })} · ${t('rules.source', { module: moduleId })}`}
+            onClick={() => setCreating(current => [...current, creatingKey(id)])}>
+            {t('declare.add', { name: id === 'params' ? t('declare.params') : t(CARD_LABEL_KEYS[id] ?? 'modules.layer.asset') })}
+          </Button>
+        </section>
+      ))}
       {cards.map((card) => (
         <section key={card} hidden={!matches(card)} className={css.group} data-layer-param-group={card}
           aria-label={t(CARD_LABEL_KEYS[card] ?? 'modules.group.other')}>
@@ -194,7 +269,11 @@ export function LayerSettingsContent(props: {
               setTemplateVariables={value => store.setModuleVariables(moduleId, value)}
               templateVariablesEnabled={variables.enabled}
               setTemplateVariablesEnabled={value => store.setModuleVariablesEnabled(moduleId, value)}
-              saveTemplateVariables={(next, enabled) => store.saveModuleVariables(moduleId, next, enabled)}
+              saveTemplateVariables={async (next, enabled) => {
+                const saved = await store.saveModuleVariables(moduleId, next, enabled)
+                if (saved && inCreateMode('variables')) afterDeclared()
+                return saved
+              }}
               publicationPending={variables.publicationPending}
               retryPublication={() => store.retryModuleVariablesPublication(moduleId)}
               embedded
@@ -206,10 +285,12 @@ export function LayerSettingsContent(props: {
           {(id === 'custom-tools' || id === 'subagent-tool-policy') && <h4 className={css.groupTitle}>{t(CARD_LABEL_KEYS[id] ?? 'modules.layer.asset')}</h4>}
           {id === 'custom-tools' && (props.toolEditor ?? (
             <CustomToolsCard key={moduleId} moduleId={moduleId} t={t} onNotice={store.showNotice}
-              drafts={store.editorDrafts} disabled={!canEdit} />
+              drafts={store.editorDrafts} disabled={!canEdit}
+              undeclared={inCreateMode('custom-tools')} onDeclared={inCreateMode('custom-tools') ? afterDeclared : undefined} />
           ))}
           {id === 'subagent-tool-policy' && (
-            <SubagentToolPolicyCard key={moduleId} moduleId={moduleId} modules={store.meta.modules ?? []} disabled={!canEdit} t={t} onNotice={store.showNotice} drafts={store.editorDrafts} />
+            <SubagentToolPolicyCard key={moduleId} moduleId={moduleId} modules={store.meta.modules ?? []} disabled={!canEdit} t={t} onNotice={store.showNotice} drafts={store.editorDrafts}
+              undeclared={inCreateMode('subagent-tool-policy')} onDeclared={inCreateMode('subagent-tool-policy') ? afterDeclared : undefined} />
           )}
         </section>
       ))}
@@ -262,7 +343,9 @@ export function injectionPointSlots(input: InjectionPointSlotsInput): InjectionP
     <>
       <ModulePersonaCard t={t} audience={audience}
         disabled={!store.fields.modulesEnabled}
+        modules={store.meta.modules}
         canEditModule={moduleId => canEditModule(store.fields, store.meta.modules, moduleId)}
+        onDeclared={() => { void store.load({ silent: true }) }}
         onNotice={store.showNotice} drafts={store.editorDrafts} />
       {audience === 'main' && <div hidden={viewFilter !== 'context-activation'}><ContextActivationDiagnosticsCard store={store} t={t} /></div>}
       <LayerSettingsFocus layer={input.focusCapability?.layer} token={input.focusCapability?.token ?? 0} />
@@ -283,13 +366,15 @@ export function injectionPointSlots(input: InjectionPointSlotsInput): InjectionP
         keyword={input.keyword}
       />
     ),
+    // 未声明任何节的模块也要有设置入口：那里的「添加」是它唯一的创建通道。
     hasLayerSettings: (layer: string, moduleId: string) => layerParamCards(store, layer, moduleId, excluded).length > 0
       || layerAssembledCapabilities(store, layer, moduleId).some((id) => !excluded.includes(id))
-      || layerAssets(layer, excluded).length > 0,
+      || layerAssets(store, layer, moduleId, excluded).length > 0
+      || undeclaredSections(store, layer, moduleId, excluded).length > 0,
     matchesLayerSettings: (layer, keyword, moduleId) => [
       ...layerParamCards(store, layer, moduleId, excluded),
       ...layerAssembledCapabilities(store, layer, moduleId).filter((id) => !excluded.includes(id)),
-      ...layerAssets(layer, excluded),
+      ...layerAssets(store, layer, moduleId, excluded),
     ].some((id) => matchesLayerGroup(id, keyword, t)),
   }
 }

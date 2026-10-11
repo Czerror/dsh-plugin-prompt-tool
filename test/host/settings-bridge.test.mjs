@@ -1,6 +1,7 @@
 import { after, test } from 'node:test'
 import assert from 'node:assert/strict'
 import { basename, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { tmpdir } from 'node:os'
 import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { parse as parseYaml } from 'yaml'
@@ -16,7 +17,8 @@ const {
 } = await import('../../src/index.ts')
 const { deleteSkillTarget } = await import('../../src/host/skills-actions.ts')
 const { storageRootOf } = await import('../../src/host/paths.ts')
-const { moduleDeclares } = await import('../../src/host/module-declarations.ts')
+const { moduleDeclares, moduleDeclarations } = await import('../../src/host/module-declarations.ts')
+const { SUBAGENT_TOOL_POLICY_SKELETON } = await import('../../src/shared/engine-capabilities.ts')
 after(() => {
   rmSync(bridgeHome, { recursive: true, force: true })
   delete process.env.DSH_HOME
@@ -194,6 +196,162 @@ test('settings bridge /meta 逐模块下发同源事实：可编辑、算不出�
 
   assert.equal(typeof byId.get(brokenId).broken, 'string')
   assert.equal('facts' in byId.get(brokenId), false)
+})
+
+test('settings bridge /meta 下发声明面（顶层键名）：只声明 rules 的模块不含未声明节，损坏模块缺席', async () => {
+  const rulesOnlyDir = makeUserPresetDir('declares-rules-')
+  const rulesOnlyId = basename(rulesOnlyDir)
+  writeFileSync(join(rulesOnlyDir, 'module.yml'),
+    `id: ${rulesOnlyId}\nname: 规则模块\nmodules: []\nrules: []\n`, 'utf8')
+  const brokenDir = makeUserPresetDir('declares-broken-')
+  const brokenId = basename(brokenDir)
+  writeFileSync(join(brokenDir, 'module.yml'), 'id: [unclosed\n', 'utf8')
+
+  const { ctx, handlers } = makeHarness()
+  registerSettingsBridge(ctx, {
+    ns: 'prompt-tool',
+    models: () => ({ available: true, providers: [] }),
+    skills: () => skillsStateStub(),
+  })
+  const res = fakeRes()
+  await handlers.get(`${PREFIX}/meta`)(fakeReq(), res)
+  assert.equal(res.status, 200)
+  const byId = new Map(JSON.parse(res.body).value.meta.modules.map((entry) => [entry.id, entry]))
+
+  const declares = byId.get(rulesOnlyId).declares
+  assert.ok(Array.isArray(declares), '/meta 必须逐模块下发 declares 键名数组')
+  assert.equal(declares.includes('rules'), true)
+  for (const section of ['customTools', 'persona', 'subagentToolPolicy', 'params', 'variables']) {
+    assert.equal(declares.includes(section), false, `只声明 rules 的模块不含 ${section}`)
+  }
+  assert.doesNotMatch(JSON.stringify(declares), /TOP-SECRET/, '只下发键名，不下发内容')
+
+  assert.equal('declares' in byId.get(brokenId), false, '损坏模块的声明面与 facts 同口径缺席')
+
+  // 契约：包内四个真实模块的声明面（顶层键名）与设计文档 §7.4 实测一致。
+  for (const id of ['ponytail', 'tool-surface', 'skill-surface', 'superpowers']) {
+    const real = moduleDeclarations(fileURLToPath(new URL(`../../modules/${id}`, import.meta.url)))
+    for (const section of ['rules', 'modules']) assert.equal(real.has(section), true, `${id} 声明 ${section}`)
+    assert.equal(real.has('customTools'), false, `${id} 不含 customTools`)
+  }
+})
+
+test('声明面：五个节的首次写入＝创建（无版本期望也 200），写后声明成立、读合法；已声明则仍要版本', async () => {
+  const dir = makeUserPresetDir('create-first-')
+  const id = basename(dir)
+  const file = join(dir, 'module.yml')
+  writeFileSync(file, `id: ${id}\nname: 创建测试\nmodules: []\nrules: []\n`, 'utf8')
+  const { ctx, handlers } = makeHarness()
+  registerSettingsBridge(ctx, {
+    ns: 'prompt-tool',
+    models: () => ({ available: true, providers: [] }),
+    skills: () => skillsStateStub(),
+    moduleDirectory: () => dir,
+  })
+  const call = async (endpoint, body = {}) => {
+    const handler = handlers.get(PREFIX + BRIDGE_ENDPOINTS[endpoint])
+    assert.ok(handler, `${endpoint} 端点应注册`)
+    const res = fakeRes()
+    await handler(fakeReq({ [Symbol.asyncIterator]: async function* () { yield Buffer.from(JSON.stringify(body)) } }), res)
+    return { status: res.status, payload: JSON.parse(res.body) }
+  }
+  /** 判据与门的登记表同口径：该端点读写哪些节，任一「写前没有、写后存在」即算建立声明。 */
+  const created = async (endpoint, sections, body) => {
+    const before = readFileSync(file, 'utf8')
+    assert.equal(sections.some((section) => moduleDeclares(dir, section)), false, `${endpoint} 前置：未声明 ${sections.join('/')}`)
+    const write = await call(endpoint, body)
+    assert.equal(write.status, 200, `${endpoint} 创建写应 200：${JSON.stringify(write.payload)}`)
+    assert.notEqual(readFileSync(file, 'utf8'), before, `${endpoint} 创建写必须落盘`)
+    assert.equal(sections.some((section) => moduleDeclares(dir, section)), true, `${endpoint} 写后声明成立（${sections.join('/')}）`)
+    const read = await call(endpoint, endpoint === 'moduleVariables' ? { scope: 'module' } : {})
+    assert.equal(read.status, 200, `${endpoint} 写后读应合法：${JSON.stringify(read.payload)}`)
+  }
+
+  const tool = { id: 'shell', description: '运行命令', output: { schema: { type: 'string' } }, execute: { kind: 'shell', command: 'echo' } }
+  await created('customTools', ['customTools'], { customTools: [tool] })
+  await created('subagentToolPolicy', ['subagentToolPolicy'], { policy: SUBAGENT_TOOL_POLICY_SKELETON })
+  // 人设与变量：创建语义＝**不传版本期望**（客户端创建模式就该这么发；传空串会被当非法版本拒绝）。
+  await created('persona', ['persona'], { persona: { main: { prefix: 'CREATED' } }, expectedModuleId: id })
+  await created('moduleVariables', ['variables'], { scope: 'module', variables: { owner: 'created' }, expectedModuleId: id })
+  // 引擎参数写的是 `layerSettings`（`engineParamPath`），登记表里 `params` 与 `layerSettings` 任一存在即算已声明。
+  await created('paramOverrides', ['params', 'layerSettings'], { overrides: { maxDepth: 3 } })
+
+  // 有前状态就仍要版本期望：声明之后再省略版本必须被拒（创建语义不放宽并发校验）。
+  // 拒法与写区外的校验同源，所以这里连状态码与 code 一起锁住——只断「不是 200」会漏掉状态码分类退化。
+  const personaNoRevision = await call('persona', { persona: { main: { prefix: 'AGAIN' } }, expectedModuleId: id })
+  assert.equal(personaNoRevision.status, 400, `已声明 persona 的写必须带读取版本：${JSON.stringify(personaNoRevision.payload)}`)
+  assert.equal(personaNoRevision.payload.code, 'module-persona-rejected')
+  const variablesNoRevisions = await call('moduleVariables', { scope: 'module', variables: { owner: 'again' }, expectedModuleId: id })
+  assert.equal(variablesNoRevisions.status, 400, `已声明 variables 的写必须带读取版本：${JSON.stringify(variablesNoRevisions.payload)}`)
+  assert.equal(variablesNoRevisions.payload.code, 'rules-invalid')
+})
+
+test('声明面：创建语义只认「版本期望整键缺席」——空串版本与空对象照旧拒绝（旧客户端载荷的 RED）', async () => {
+  const dir = makeUserPresetDir('create-strict-')
+  const id = basename(dir)
+  writeFileSync(join(dir, 'module.yml'), `id: ${id}\nname: 严格创建\nmodules: []\nrules: []\n`, 'utf8')
+  const { ctx, handlers } = makeHarness()
+  registerSettingsBridge(ctx, { ns: 'prompt-tool', models: () => ({ available: true, providers: [] }),
+    skills: () => skillsStateStub(), moduleDirectory: () => dir })
+  const call = async (endpoint, body = {}) => {
+    const res = fakeRes()
+    await handlers.get(PREFIX + BRIDGE_ENDPOINTS[endpoint])(fakeReq({ [Symbol.asyncIterator]: async function* () {
+      yield Buffer.from(JSON.stringify(body))
+    } }), res)
+    return { status: res.status, payload: JSON.parse(res.body) }
+  }
+
+  // 客户端创建模式曾经发出的两种形状都必须被拒：空串版本、空的 expectedRevisions 对象。
+  const personaEmpty = await call('persona', { persona: { main: { prefix: 'X' } }, expectedModuleId: id, expectedRevision: '' })
+  assert.equal(personaEmpty.status, 400, `空串版本必须拒绝：${JSON.stringify(personaEmpty.payload)}`)
+  const variablesEmpty = await call('moduleVariables', { scope: 'module', variables: { k: 'v' }, expectedModuleId: id, expectedRevisions: {} })
+  assert.equal(variablesEmpty.status, 400, `空 expectedRevisions 必须拒绝：${JSON.stringify(variablesEmpty.payload)}`)
+  assert.equal(moduleDeclares(dir, 'persona'), false, '被拒的写不建立声明')
+  assert.equal(moduleDeclares(dir, 'variables'), false, '被拒的写不建立声明')
+
+  // 对照（同一未声明模块）：整键缺席＝创建，照旧 200 并建立声明。
+  const personaCreated = await call('persona', { persona: { main: { prefix: 'X' } }, expectedModuleId: id })
+  assert.equal(personaCreated.status, 200, JSON.stringify(personaCreated.payload))
+  const variablesCreated = await call('moduleVariables', { scope: 'module', variables: { k: 'v' }, expectedModuleId: id })
+  assert.equal(variablesCreated.status, 200, JSON.stringify(variablesCreated.payload))
+  assert.equal(moduleDeclares(dir, 'variables'), true)
+})
+
+test('settings bridge /bootstrap 的模块段按声明出现：未声明的节整键缺席，声明的节照旧下发', async () => {
+  const rulesOnly = makeUserPresetDir('boot-declares-rules-')
+  const declared = makeUserPresetDir('boot-declares-all-')
+  writeFileSync(join(rulesOnly, 'module.yml'),
+    `id: ${basename(rulesOnly)}\nname: 只声明规则\nmodules: []\nrules: []\n`, 'utf8')
+  writeFileSync(join(declared, 'module.yml'),
+    `id: ${basename(declared)}\nname: 全声明\nmodules: []\nrules: []\nparams: {}\nvariables: { k: v }\n`, 'utf8')
+  let dir = rulesOnly
+  const { ctx, handlers } = makeHarness()
+  registerSettingsBridge(ctx, {
+    ns: 'prompt-tool',
+    models: () => ({ available: true, providers: [] }),
+    skills: () => skillsStateStub(),
+    moduleDirectory: () => dir,
+  })
+  const boot = async () => {
+    const res = fakeRes()
+    await handlers.get(PREFIX + BRIDGE_ENDPOINTS.bootstrap)(fakeReq({
+      headers: { host: 'localhost', 'x-module-id': basename(dir) },
+      [Symbol.asyncIterator]: async function* () { yield Buffer.from(JSON.stringify({})) },
+    }), res)
+    assert.equal(res.status, 200, res.body)
+    return JSON.parse(res.body)
+  }
+
+  const undeclared = await boot()
+  assert.equal('moduleParams' in undeclared, false, '未声明 params → moduleParams 整键缺席（不是空对象）')
+  assert.equal('variables' in undeclared, false, '未声明 variables → 变量段缺席')
+  assert.ok(undeclared.moduleFacts !== undefined, 'moduleFacts 不受声明面影响（身份与引擎事实照旧）')
+
+  dir = declared
+  const withSections = await boot()
+  assert.ok('moduleParams' in withSections, '声明了 params → 参数段在场')
+  assert.ok('variables' in withSections, '声明了 variables → 变量段在场')
+  assert.deepEqual(withSections.variables.module, { k: 'v' })
 })
 
 test('settings bridge /skills-import 写入技能文件并触发目录刷新回调', async () => {

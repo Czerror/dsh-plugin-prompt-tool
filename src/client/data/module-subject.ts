@@ -19,6 +19,20 @@ export const subjectDraftKey = (moduleId: string | undefined, scope: ModuleVaria
 export const moduleFactsOf = (modules: readonly ModuleSummary[] | undefined, moduleId: string): ModuleFacts | undefined =>
   modules?.find((module) => module.id === moduleId)?.facts
 
+/**
+ * 「这一步发不发、这张卡出不出」的声明面准入：判据是 `/meta` 下发的 `declares`（`module.yml` 顶层键名）。
+ * 多节＝**任一存在**即已声明（与 `DECLARED_SECTIONS` 同口径，如 `params` 或 `layerSettings`）。
+ * 返回 `undefined`＝**未知**（模块不在快照里／声明面未下发）：不把「读不到」当「没声明」，调用方保守放行。
+ */
+export const moduleDeclares = (
+  modules: readonly ModuleSummary[] | undefined,
+  moduleId: string,
+  ...sections: readonly string[]
+): boolean | undefined => {
+  const declares = modules?.find((module) => module.id === moduleId)?.declares
+  return declares === undefined ? undefined : sections.some((section) => declares.includes(section))
+}
+
 /** 该模块此刻是否可编辑：总闸 + 该模块自己的事实——卡按归属问它，不用单主语镜像。 */
 export const canEditModule = (
   fields: Pick<Fields, 'modulesEnabled'>,

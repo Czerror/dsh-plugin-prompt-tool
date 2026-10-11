@@ -95,10 +95,16 @@ export async function saveModuleVariables(moduleId: string, baseline: VariablesB
   const valuesChanged = !deepEqual(variables, baseline.variables)
   const enabledChanged = baseline.scope === 'module' && enabled !== baseline.enabled
   if (!valuesChanged && !enabledChanged) return baseline.publicationPending ? retryModuleVariablesPublication(moduleId, baseline, request) : { baseline }
+  // 有前状态才带版本期望；没有前状态（合成基线只用于未声明节的首次创建）就**整键缺席**——
+  // 只留键而值是 undefined 经 JSON 会变成 `{}`，服务端读不到期望版本反而拒绝，所以连键一起省。
+  const expectedRevisions = {
+    ...(valuesChanged && Object.hasOwn(baseline.revisions, baseline.scope) ? { [baseline.scope]: baseline.revisions[baseline.scope] } : {}),
+    ...(enabledChanged && Object.hasOwn(baseline.revisions, 'settings') ? { settings: baseline.revisions.settings } : {}),
+  }
   const result = await request({
     scope: baseline.scope,
     expectedModuleId: moduleId,
-    expectedRevisions: { ...(valuesChanged ? { [baseline.scope]: baseline.revisions[baseline.scope] } : {}), ...(enabledChanged ? { settings: baseline.revisions.settings } : {}) },
+    ...(Object.keys(expectedRevisions).length === 0 ? {} : { expectedRevisions }),
     ...(valuesChanged ? { variables } : {}), ...(enabledChanged ? { enabled } : {}),
   })
   if (!result.ok) throw new Error(result.message ?? result.code ?? '模板变量保存失败')

@@ -26,6 +26,13 @@ const styles = { ...sharedCss, ...featureCss }
 type Notice = (kind: 'ok' | 'error', message: string) => void
 interface ModuleOption { id: string; name: string }
 
+/**
+ * 这张卡的读数请求（主语＝该模块）：**声明面明确未声明就不构造这次请求**（返回 `undefined`），
+ * 卡片据此转创建模式（打开开关即写骨架＝服务端建立该节）——服务端读了也是 400。
+ */
+export const readSubagentPolicy = (moduleId: string, undeclared: boolean) =>
+  undeclared ? undefined : bridgeCall('subagentToolPolicy', { expectedModuleId: moduleId }, moduleId)
+
 function PolicyNumberInput(props: { value: number; label: string; draftKey: string; drafts?: Map<string, FieldDraft>; t: PromptToolTranslate; min?: number; onChange: (value: number) => void }): ReactNode {
   const retained = props.drafts?.get(props.draftKey)
   const initial = retained && (retained.error || retained.text !== retained.source) ? retained : { source: String(props.value), text: String(props.value), error: '' }
@@ -61,6 +68,10 @@ export function SubagentToolPolicyCard(props: {
   modules: ModuleOption[]
   drafts?: WorkspaceDrafts
   disabled?: boolean
+  /** 声明面明确未声明 `subagentToolPolicy`（＝本卡处于「创建第一节」模式）：照旧不发这次读。 */
+  undeclared?: boolean
+  /** 创建模式下首次成功写盘后回调：调用方据此重读 `/meta`，卡片随即按正常形态出现。 */
+  onDeclared?: () => void
 }): ReactNode {
   const { onNotice, t, moduleId } = props
   const [policy, setPolicy] = useState<PolicyDraft | null>(null)
@@ -91,13 +102,28 @@ export function SubagentToolPolicyCard(props: {
       setLoadError('')
       return
     }
+    // 声明面明确未声明：本卡处于创建模式——**不构造这次读**（读了也是 400）；
+    // 打开开关即写入可用骨架，服务端随即建立该节。
+    const pending = readSubagentPolicy(moduleId, props.undeclared === true)
+    if (pending === undefined) {
+      editor.draft = null
+      editor.saved = null
+      editor.loaded = true
+      setPolicy(null)
+      setLoaded(true)
+      setSaving(false)
+      setPreview(null)
+      setPreviewInput({})
+      setLoadError('')
+      return
+    }
     setLoaded(false)
     setPolicy(null)
     setSaving(false)
     setPreview(null)
     setPreviewInput({})
     setLoadError('')
-    void bridgeCall('subagentToolPolicy', { expectedModuleId: moduleId }, moduleId).then((result) => {
+    void pending.then((result) => {
       if (editorRef.current !== editor) return
       if (!result.ok) {
         setLoadError(result.message ?? t('policy.loadFailed'))
@@ -111,7 +137,7 @@ export function SubagentToolPolicyCard(props: {
       setPolicy(next)
       setLoaded(true)
     })
-  }, [moduleId, onNotice, props.drafts, t])
+  }, [moduleId, onNotice, props.drafts, props.undeclared, t])
 
   useEffect(() => {
     load()
@@ -140,6 +166,7 @@ export function SubagentToolPolicyCard(props: {
         if (result.ok) {
           editor.saved = submitted
           if (editor.draft === submitted) editor.report?.('ok', t('policy.notice.autosaved'))
+          props.onDeclared?.()
         } else {
           editor.report?.('error', result.message ?? t('policy.notice.saveFailed'))
         }
@@ -148,7 +175,7 @@ export function SubagentToolPolicyCard(props: {
       editor.saving = false
       editor.refresh?.()
     })()
-  }, [moduleId, props.disabled, t])
+  }, [moduleId, props.disabled, props.onDeclared, t])
 
   const patch = (next: PolicyDraft | null): void => {
     if (editorRef.current === null || props.disabled) return
@@ -263,6 +290,9 @@ export function SubagentToolPolicyCard(props: {
           {t('policy.loadFailed')}
           <Button shape="pill" size="md" variant="outline" type="button" onClick={() => { setLoaded(false); load() }}>{t('policy.retry')}</Button>
         </p>
+      )}
+      {loaded && props.undeclared === true && (
+        <p className={styles.configFieldHint} role="status">{t('declare.createHint')}</p>
       )}
       {loaded && loadError.length === 0 && locked && (
         <p className={styles.configFieldHint}>{t('policy.disabledHint')}</p>

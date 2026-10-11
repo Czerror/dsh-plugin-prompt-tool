@@ -51,9 +51,9 @@ import { buildParamOverrides, EMPTY_PARAMS, paramSnapshot, readParamOverridesPat
 import { createSerialTaskQueue } from './save-queue.ts'
 import { createWorkspaceDrafts, type WorkspaceDrafts } from './workspace-drafts.ts'
 import { rulesDirty } from './rule-drafts.ts'
-import type { ModuleVariableScope } from '../../shared/module-variables.ts'
+import type { ModuleVariableRevisions, ModuleVariableScope } from '../../shared/module-variables.ts'
 import { createVariablesDraft, readVariablesDraft, retryModuleVariablesPublication as retryModuleVariablesPublicationRequest, saveModuleVariables as saveModuleVariablesRequest, type VariablesDraft } from './module-variables.ts'
-import { canEditModule, subjectDraftKey } from './module-subject.ts'
+import { canEditModule, moduleDeclares, subjectDraftKey } from './module-subject.ts'
 import { modulesEnabledOps } from '../../shared/module-settings.ts'
 import { modelChoiceValue } from '../features/models/model-options.ts'
 import type { ModelReasoningView } from '../../shared/bridge-contract.ts'
@@ -147,7 +147,7 @@ export interface PromptToolStore {
   noticeKind: 'ok' | 'error'
   /** 通知前导的绿色胶囊文本（会话名）；undefined 表示这条通知没有胶囊。 */
   noticePill: string | undefined
-  load: () => Promise<Fields>
+  load: (options?: { silent?: boolean }) => Promise<Fields>
   showNotice: (kind: 'ok' | 'error', message: string, pill?: string) => void
   patch: (partial: Partial<Fields>) => void
   /** 保存全局开关与技能顺序/rank；返回两个通道是否都成功（失败字段保持 dirty）。 */
@@ -305,6 +305,12 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
   /** 该模块是否在装配集合里（`/meta` 的 modules）：按主语读/写的状态只对集合内的模块落地。 */
   const assembledModule = useCallback((moduleId: string): boolean =>
     (metaRef.current.modules ?? []).some((module) => module.id === moduleId), [])
+  /**
+   * 声明面准入：`/meta` 明确下发该模块且不含这些节时为假——**没声明就不发这次读**
+   * （发过去也是 400 `module-not-declared`）。未下发/未知一律为真：不把「读不到」当「没声明」。
+   */
+  const sectionDeclared = useCallback((moduleId: string, ...sections: readonly string[]): boolean =>
+    moduleDeclares(metaRef.current.modules, moduleId, ...sections) !== false, [])
   /** 变量草稿只在有主语时建键：无主语返回 undefined（不建 `undefined:module` 之类的串模块键）。 */
   const variablesDraftFor = useCallback((moduleId: string | undefined, scope: ModuleVariableScope): VariablesDraft | undefined => {
     const key = subjectDraftKey(moduleId, scope)
@@ -427,6 +433,11 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
   /** 按主语读一次模块参数：读回前不写盘；同一模块同轮加载只发一次（层卡共享）。 */
   const readModuleParams = useCallback(async (moduleId: string): Promise<void> => {
     const entry = moduleParamEntry(moduleId)
+    if (!sectionDeclared(moduleId, 'params', 'layerSettings')) {
+      // 声明面明确未声明：磁盘上没有该节，空基线就是真值。不发读；首次保存即建立声明（写路径不查声明面）。
+      entry.loaded = true
+      return
+    }
     if (paramReadsRef.current.has(moduleId)) return
     paramReadsRef.current.add(moduleId)
     try {
@@ -448,7 +459,7 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
     } finally {
       paramReadsRef.current.delete(moduleId)
     }
-  }, [assembledModule, moduleParamEntry, showNotice])
+  }, [assembledModule, moduleParamEntry, sectionDeclared, showNotice])
   const ensureModuleParams = useCallback((moduleId: string): void => {
     if (moduleParamEntry(moduleId).loaded) return
     void readModuleParams(moduleId)
@@ -464,12 +475,21 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
   const refreshVariables = useCallback(async (moduleId: string, scope: ModuleVariableScope): Promise<void> => {
     const draft = variablesDraftFor(moduleId, scope)
     if (draft === undefined) return
+    if (!sectionDeclared(moduleId, 'variables', 'variablesEnabled') && scope === 'module') {
+      // 声明面明确未声明：磁盘上（这个模块的作用域）没有该节，空基线就是真值，不发读。
+      // 合成基线不带任何版本 → 首次保存整键不带 `expectedRevisions`（没有前状态就没有可冲突的对象），
+      // 服务端写路径建立该节，真版本由写应答回填。
+      // 全局作用域不受这个模块的声明面约束（读它不会 400），仍走真实读取，版本期望照旧。
+      draft.baseline ??= { scope, variables: {}, enabled: true, revisions: {} as unknown as ModuleVariableRevisions }
+      publishSubject(version => version + 1)
+      return
+    }
     const pending = readVariablesDraft(moduleId, draft, body => bridgeCall('moduleVariables', body, moduleId))
     publishSubject(version => version + 1)
     await pending
     publishSubject(version => version + 1)
     if (variablesScopesRef.current.get(moduleId) === scope && draft.error) showNotice('error', draft.error)
-  }, [variablesDraftFor, showNotice])
+  }, [variablesDraftFor, sectionDeclared, showNotice])
   const ensureModuleVariables = useCallback((moduleId: string): void => {
     const scope = variablesScopesRef.current.get(moduleId) ?? 'module'
     const draft = variablesDraftFor(moduleId, scope)
