@@ -107,7 +107,7 @@ test('规则所有者：无旧快捷参数的同名规则保留自身字段，�
   mkdirSync(dir)
   const configs = [
     { id: 'near-anchor', strategy: 'first-turn-anchor', enabled: true, params: { useCustom: true, text: 'RULE ANCHOR' } },
-    { id: 'router-guide', strategy: 'guide-auto', enabled: true, modelScope: 'all', params: { useCustom: true, text: 'RULE GUIDE' } },
+    { id: 'router-guide', strategy: 'guide-auto', enabled: true, params: { useCustom: true, text: 'RULE GUIDE' } },
     { id: 'prompt-injector', strategy: 'first-turn-anchor', enabled: false, params: { text: 'RULE BODY', firstTurnWord: 'custom' } },
   ]
   writeFileSync(join(dir, 'module.yml'), JSON.stringify({ id: 'example', order: 91, modules: [], rules: configs.map(promptConfigToRule) }), 'utf8')

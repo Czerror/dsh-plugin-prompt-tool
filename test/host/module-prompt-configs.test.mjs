@@ -70,13 +70,6 @@ test('退役策略在转换入口就拒绝，不产出引擎必然拒绝的规�
     /custom-fallback.*(退役|anchor)/, '旧策略必须指向替代写法，而不是静默转换')
 })
 
-test('writeModule 保留作者定义的规则条件（模型范围归规则级 if）', () => {
-  const rule = promptConfigToRule({ id: 'router-guide', strategy: 'guide-auto', layer: 'pre-step', modelScope: 'flash' })
-  const { rules, byId } = generatedConfigs([rule])
-  assert.ok((rules['router-guide'].if.all ?? [rules['router-guide'].if]).some(condition => condition.scope?.modelScope === 'flash'))
-  assert.equal(byId['router-guide'].strategy, 'guide-auto')
-})
-
 test('Config：部署设置仅保留模块运行总闸', () => {
   const config = Config({})
   assert.deepEqual(Object.keys(config), ['modulesEnabled'])

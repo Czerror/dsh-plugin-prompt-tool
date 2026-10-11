@@ -4,7 +4,7 @@ import fs, { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { syncBuiltinESMExports } from 'node:module'
 import { basename, dirname, join } from 'node:path'
 import { parse } from 'yaml'
-import { isolatedHome } from '../fixtures/host-harness.mjs'
+import { isolatedHome, fixtureRule } from '../fixtures/host-harness.mjs'
 import { moduleOrderConfigs, moveToView, sameConfigPosition } from '../../src/client/data/prompt-config-order.ts'
 import { configIdentityKey } from '../../src/shared/module-config-order.ts'
 
@@ -12,14 +12,13 @@ const { moduleRoot } = isolatedHome('pt-config-order-')
 const { appendModuleConfigOrder, readModuleConfigOrder, saveModuleConfigOrder } = await import('../../src/host/module-config-order.ts')
 const { setModuleEnabled } = await import('../../src/host/config-store.ts')
 const { ensureModuleReady } = await import('../../src/host/write-module.ts')
-const { promptConfigToRule } = await import('../../src/host/rule-builder.ts')
 
 function fixture(name, cards) {
   const root = join(moduleRoot, name, 'modules')
   for (const [moduleId, configs] of Object.entries(cards)) {
     const dir = join(root, moduleId)
     mkdirSync(dir, { recursive: true })
-    writeFileSync(join(dir, 'module.yml'), '# keep comment\n' + JSON.stringify({ id: moduleId, modules: ['rule-engine'], custom: 'keep', rules: configs.map(promptConfigToRule) }))
+    writeFileSync(join(dir, 'module.yml'), '# keep comment\n' + JSON.stringify({ id: moduleId, modules: ['rule-engine'], custom: 'keep', rules: configs.map(fixtureRule) }))
   }
   return root
 }
@@ -112,7 +111,7 @@ test('配置排序：重复启用幂等；新增卡追加，停用模块重排�
   assert.deepEqual(appendModuleConfigOrder(root, 'a'), [])
   assert.equal(readFileSync(join(root, 'a', 'module.yml'), 'utf8'), before)
   const spec = parse(before)
-  spec.rules.push(promptConfigToRule({ id: 'new', text: 'NEW' }))
+  spec.rules.push(fixtureRule({ id: 'new', text: 'NEW' }))
   writeFileSync(join(root, 'a', 'module.yml'), JSON.stringify(spec))
   appendModuleConfigOrder(root, 'a')
   const ordered = readModuleConfigOrder(root)

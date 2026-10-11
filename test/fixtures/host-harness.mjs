@@ -25,6 +25,31 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Readable } from 'node:stream'
 
+const { promptConfigToRule } = await import('../../src/host/rule-builder.ts')
+
+/**
+ * 夹具用扁平字段表达注入意图（`audience` / `modelScope` / `promotion`）。
+ *
+ * 生产的转换器只做搬运（ST 转换出口不再产生这些字段），意图在这里翻成现行规则语法：
+ * 普通注入进规则级 `if`；`system-section` 的固定注册效果（`params.complete` /
+ * `suppressRuntimeContext`）不吃规则条件，受众按引擎契约留在动作 config 上。
+ */
+export function fixtureRule(config) {
+  const { audience, modelScope, promotion, ...rest } = config
+  const rule = promptConfigToRule(rest)
+  const layer = rest.layer ?? 'pre-step'
+  if (layer === 'system-section' && (rest.params?.complete === true || rest.params?.suppressRuntimeContext === true)) {
+    if (audience === undefined || audience === null) return rule
+    const [inject] = rule.then
+    return { ...rule, then: [{ ...inject, config: { ...inject.config, audience } }] }
+  }
+  const gates = []
+  if (audience !== undefined && audience !== null) gates.push({ scope: { audience } })
+  if (modelScope !== undefined && modelScope !== 'all') gates.push({ scope: { modelScope } })
+  if (promotion !== undefined && promotion !== 'none') gates.push({ phase: { promoted: true, ...(promotion === 'include-subagents' ? { includeSubagents: true } : {}) } })
+  return gates.length === 0 ? rule : { ...rule, if: gates.length === 1 ? gates[0] : { all: gates } }
+}
+
 /** 隔离 DSH_HOME：设置环境变量、登记 after() 还原并清理；返回常用子路径。 */
 export function isolatedHome(prefix) {
   const home = mkdtempSync(join(tmpdir(), prefix))

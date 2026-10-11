@@ -16,13 +16,12 @@ import { Context } from '@deepseek-ai/cordis'
 import { bindScopeParent, createScope, scopeOf, scopeTarget } from '@deepseek-ai/dsh-scope'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime from '@deepseek-ai/dsh-tools'
-import { isolatedHome } from '../fixtures/host-harness.mjs'
+import { isolatedHome, fixtureRule } from '../fixtures/host-harness.mjs'
 
 const { moduleRoot } = isolatedHome('pt-assembly-')
 const { prepareAssembly, createAgentAssembly } = await import('../../src/runtime/agent-assembly.ts')
 const { installPreStepCoordinator, PRE_STEP_COORDINATOR_SERVICE } = await import('../../src/runtime/pre-step-coordinator.ts')
 const { ruleDiagnosticsSnapshot, resetRuleDiagnostics } = await import('../../src/runtime/rule-diagnostics.ts')
-const { promptConfigToRule } = await import('../../src/host/rule-builder.ts')
 const { mountRuleSources } = await import('../../engine/rule-runtime.mjs')
 const { installPersonaCapture } = await import('../../src/runtime/persona-registration.ts')
 const { loadModuleSpec } = await import('../../src/host/manifest.ts')
@@ -727,7 +726,7 @@ function writeModuleFixture(id, { modules, promptConfigs = [], moduleConfigs, pe
   mkdirSync(dir, { recursive: true })
   writeFileSync(join(dir, 'module.yml'), `${JSON.stringify({
     id, name: id, modules: [...new Set(modules.map(name => ['prompt-config-engine', 'declared-triggers'].includes(name) ? 'rule-engine' : name))],
-    rules: promptConfigs.map(promptConfigToRule), ...(configOrder === undefined ? {} : { configOrder }),
+    rules: promptConfigs.map(fixtureRule), ...(configOrder === undefined ? {} : { configOrder }),
     ...(moduleConfigs === undefined ? {} : { moduleConfigs }), ...(persona === undefined ? {} : { persona }),
     ...(variables === undefined ? {} : { variables }),
   }, null, 2)}\n`, 'utf8')
@@ -987,7 +986,7 @@ test('导入候选与运行配装同源：完整定义经过 rules 切片后保�
   const sourceDir = join(moduleRoot, '.source-materialized', id)
   mkdirSync(sourceDir, { recursive: true })
   writeFileSync(join(sourceDir, 'module.yml'), `${JSON.stringify({
-    id, name: id, modules: ['rule-engine'], rules: LITERAL_SLICES.map(promptConfigToRule),
+    id, name: id, modules: ['rule-engine'], rules: LITERAL_SLICES.map(fixtureRule),
   }, null, 2)}\n`, 'utf8')
   // 官方路径：把同一份切片交给 writeModule 物化到 <模块根>/<id>/configs。
   writeModule({
