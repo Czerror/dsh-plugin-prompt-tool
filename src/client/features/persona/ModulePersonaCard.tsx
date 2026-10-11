@@ -179,6 +179,7 @@ export function ModulePersonaCard(props: { t: PromptToolTranslate; audience: Per
       id={`persona-${audience}`}
       title={t('persona.title', { audience: t(`persona.${audience}`) })}
       meta={t('persona.sources.current', { source })}
+      bodyClassName={`${styles.configForm} ${css.body}`}
       expanded={drafts.expanded.get(expandedKey) ?? false}
       onToggle={value => { drafts.expanded.set(expandedKey, value); refresh() }}
       actions={<MenuSelect compact value={selection.value[audience] ?? ''} options={options}
