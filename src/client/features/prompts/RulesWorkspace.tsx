@@ -1,13 +1,13 @@
-import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import type { RuleDefinition } from '../../../shared/rules.ts'
 import type { RuleAction } from '../../../shared/rules.ts'
-import type { ModuleConfigOrderEntry, ModuleConfigOrderSnapshot } from '../../../shared/module-config-order.ts'
+import type { ModuleConfigOrderEntry } from '../../../shared/module-config-order.ts'
 import { configIdentityKey } from '../../../shared/module-config-order.ts'
 import type { PromptToolStore } from '../../data/use-prompt-tool-store.ts'
 import { usePromptToolFields } from '../../data/use-prompt-tool-fields.ts'
 import { useModuleRuleEditors, useRuleEditor, type ModuleRuleEditor } from '../../data/use-rule-editor.ts'
+import { useModuleConfigOrder } from '../../data/use-module-config-order.ts'
 import { hasRuleFields, rulesDirty } from '../../data/rule-drafts.ts'
-import { bridgeCall } from '../../data/bridge-client.ts'
 import { instructionFileIdOf } from '../../data/prompt-config-content.ts'
 import type { PromptConfigDraft } from '../../prompt-tool-types.ts'
 import type { PromptToolTranslate } from '../../locales.ts'
@@ -63,50 +63,39 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
   const { moduleId, draft } = useRuleEditor(store)
   const [expanded, setExpanded] = useState<string | undefined>(props.browse?.expanded)
   const [filter, setFilter] = useState(props.browse?.filter ?? '')
-  const [order, setOrder] = useState<ModuleConfigOrderSnapshot>()
   // 卡片准入的第一优先级是存储根 config.yml 的启用表：未启用的模块不建编辑器、不读 rules/*.yml。
   // 排序快照与当前编辑目标只决定「已启用模块里显示哪些卡」，越过不了这道门。
   const enabledIds = new Set((store.meta.modules ?? []).filter(module => module.enabled === true).map(module => module.id))
-  const owners = useModuleRuleEditors(store, [moduleId, ...order?.entries.map(entry => entry.moduleId) ?? []].filter(id => enabledIds.has(id)))
+  // 排序请求生命周期归 useModuleConfigOrder（全仓唯一一份实现）；页面只提供「保存成功后要刷新哪些编辑器」。
+  const ownersRef = useRef<ModuleRuleEditor[]>([])
+  const order = useModuleConfigOrder(t, async () => (await Promise.all(ownersRef.current.map(owner => owner.editor.load(true)))).every(Boolean))
+  const owners = useModuleRuleEditors(store, [moduleId, ...order.snapshot?.entries.map(entry => entry.moduleId) ?? []].filter(id => enabledIds.has(id)))
+  ownersRef.current = owners
   const revisions = JSON.stringify(owners.map(owner => [owner.moduleId, owner.draft.revisions?.settings]))
-  const [sorting, setSorting] = useState(false), [orderError, setOrderError] = useState(''), [discard, setDiscard] = useState<string>()
-  const dragId = useRef<string>(), epoch = useRef(0), sortBusy = useRef(false), lastCreated = useRef<string>()
+  const [discard, setDiscard] = useState<string>()
+  const dragId = useRef<string>(), lastCreated = useRef<string>()
   const readOnly = (id: string): boolean => !fields.modulesEnabled || id === moduleId && store.moduleFacts?.editable !== true
-  const sortDisabled = sorting || owners.some(owner => owner.draft.busy !== undefined || rulesDirty(owner.draft) || owner.draft.remote !== undefined)
+  const sortDisabled = order.busy || owners.some(owner => owner.draft.busy !== undefined || rulesDirty(owner.draft) || owner.draft.remote !== undefined)
   const query = (props.keyword ?? filter).trim().toLowerCase(), view = props.viewFilter ?? 'all'
   const changeFilter = (value: string): void => { setFilter(value); props.onKeywordChange?.(value); if (props.browse) props.browse.filter = value }
   const toggle = (key: string): void => { const next = expanded === key ? undefined : key; setExpanded(next); if (props.browse) props.browse.expanded = next }
-  const readOrder = useCallback(async (): Promise<void> => {
-    const generation = epoch.current
-    const result = await bridgeCall('moduleConfigOrder')
-    if (generation !== epoch.current) return
-    if (result.ok) { setOrder(result.value); setOrderError('') }
-    else setOrderError(result.message ?? t('moduleOrder.unavailable'))
-  }, [moduleId, t])
-  useEffect(() => { epoch.current++; setOrder(undefined); setExpanded(props.browse?.expanded); return () => { epoch.current++ } }, [moduleId])
-  useEffect(() => { void readOrder() }, [revisions, store.meta.modules, readOrder])
+  useEffect(() => { order.reset(); setExpanded(props.browse?.expanded) }, [moduleId, order.reset])
+  useEffect(() => { void order.load() }, [revisions, store.meta.modules, order.load])
   useEffect(() => {
     if (props.createdConfigId === lastCreated.current) return
     const created = draft.entries.find(entry => entry.value.id === props.createdConfigId && !entry.deleted)
     if (created) { lastCreated.current = props.createdConfigId; setExpanded(configIdentityKey({ moduleId, configId: created.key })) }
   }, [props.createdConfigId, draft.entries])
   const saveOrder = async (sourceId: string, targetId: string): Promise<void> => {
-    if (sortBusy.current || sortDisabled || order === undefined || sourceId === targetId) return
-    const from = order.entries.findIndex(item => configIdentityKey(item) === sourceId), to = order.entries.findIndex(item => configIdentityKey(item) === targetId)
-    if (from < 0 || to < 0 || !samePosition(order.entries[from]!, order.entries[to]!)) return
-    const entries = [...order.entries]
-    ;[entries[from], entries[to]] = [entries[to]!, entries[from]!]
-    const generation = epoch.current
-    sortBusy.current = true; setSorting(true)
-    try {
-      const result = await bridgeCall('moduleConfigOrder', { expectedRevision: order.revision, entries: entries.map(({ moduleId, configId }) => ({ moduleId, configId })) })
-      if (generation !== epoch.current) return
-      // 失败后重读：拖拽用的 revision 已过期，不重读会反复 409、要手动刷页；提示文案以重读结果为准。
-      if (!result.ok) { await readOrder(); return }
-      setOrder(result.value); setOrderError(''); await Promise.all(owners.map(owner => owner.editor.load(true)))
-    } finally { sortBusy.current = false; if (generation === epoch.current) setSorting(false) }
+    const cards = order.configs, entries = order.snapshot?.entries
+    if (order.busy || sortDisabled || entries === undefined || sourceId === targetId) return
+    const from = cards.findIndex(card => card.id === sourceId), to = cards.findIndex(card => card.id === targetId)
+    if (from < 0 || to < 0 || !samePosition(entries[from]!, entries[to]!)) return
+    const next = [...cards]
+    ;[next[from], next[to]] = [next[to]!, next[from]!]
+    await order.save(next)
   }
-  const rank = new Map(order?.entries.map(entry => [configIdentityKey(entry), entry.sequence]) ?? [])
+  const rank = new Map(order.snapshot?.entries.map(entry => [configIdentityKey(entry), entry.sequence]) ?? [])
   const entries = owners.flatMap(owner => owner.draft.entries.map(entry => ({ ...owner, entry,
     key: configIdentityKey({ moduleId: owner.moduleId, configId: entry.key }),
     identity: configIdentityKey({ moduleId: owner.moduleId, configId: entry.previousId ?? entry.value.id }),
@@ -123,7 +112,7 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
     for (const editor of new Set(entries.map(row => row.editor))) void editor.submit()
   }
   const orderPeers = (entry: ModuleConfigOrderEntry): ModuleConfigOrderEntry[] => {
-    const visible = order?.entries.filter(item => entries.some(row => row.identity === configIdentityKey(item))) ?? []
+    const visible = order.snapshot?.entries.filter(item => entries.some(row => row.identity === configIdentityKey(item))) ?? []
     return visible.filter(item => samePosition(entry, item))
   }
   const moveButtons = (entry: ModuleConfigOrderEntry): ReactNode => {
@@ -169,13 +158,13 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
         {hasRuleFields(draft) && <p role="alert" className={css.error}>{t('rules.source', { module: id })} · {t('rules.fieldsPending')}</p>}
       </div>
     })}
-    {orderError && <p role="alert" className={css.error}>{orderError}</p>}
+    {order.error && <p role="alert" className={css.error}>{order.error}</p>}
     {props.createdHidden && <Button variant="outline" shape="pill" onClick={props.onShowCreated}>{t('rules.showCreated')}</Button>}
     {instructionCards}
     {props.beforeCards}
     {entries.map(row => {
         const { entry, draft, editor, moduleId: id, key } = row
-        const orderEntry = order?.entries.find(item => configIdentityKey(item) === row.identity)
+        const orderEntry = order.snapshot?.entries.find(item => configIdentityKey(item) === row.identity)
         return <div key={key} data-module-id={id} onDragOver={event => event.preventDefault()} onDrop={event => { event.preventDefault(); if (orderEntry && dragId.current) void saveOrder(dragId.current, configIdentityKey(orderEntry)); dragId.current = undefined }}>
           <RuleCard t={t} entry={entry} draft={draft} editor={editor} meta={store.meta} source={id} disabled={readOnly(id)} expanded={expanded === key} onToggle={() => toggle(key)} onDuplicate={() => duplicate(row, entry.value)}
             expandedRows={store.editorDrafts.expanded}

@@ -139,3 +139,144 @@ test('配置排序：重复启用幂等；新增卡追加，停用模块重排�
   ensureModuleReady('fresh', { modulesRoot: freshRoot })
   assert.deepEqual(readModuleConfigOrder(freshRoot, 'fresh').entries.map(x => [x.configId, x.sequence]), [['y', 0], ['x', 10]], '未启用且未分配序号的模块同样可排序')
 })
+
+// ── 排序请求生命周期（T9）：hook 与页面影子实现合并后的唯一接缝 ──────────────────────
+// 断言落在三处真实接缝：发出的载荷、调用序列、会话状态对象；不渲染 React，也不 mock 被测逻辑。
+
+const sessionFactory = async () => (await import('../../src/client/data/use-module-config-order.ts')).createModuleConfigOrderSession
+const { PROMPT_TOOL_DICTS } = await import('../../src/client/locales.ts')
+
+/** 真实 zh 文案（键或插值缺失即抛错）：合并后的错误必须仍是用户看得懂的那几条。 */
+const t = (key, params) => {
+  const template = PROMPT_TOOL_DICTS.zh[key]
+  assert.ok(template !== undefined, `缺少文案键：${key}`)
+  return template.replace(/\{(\w+)\}/g, (_, name) => String(params?.[name] ?? ''))
+}
+
+const orderEntry = (moduleId, configId, sequence, extra = {}) =>
+  ({ moduleId, configId, sequence, name: configId, layer: 'pre-step', position: 'after-user', enabled: true, ...extra })
+const orderSnapshot = (revision, ...entries) => ({ revision, entries })
+const swappedCards = cards => [cards[1], cards[0]]
+const firstSnapshot = orderSnapshot('rev-1', orderEntry('a', 'x', 0), orderEntry('b', 'y', 10))
+const swappedSnapshot = orderSnapshot('rev-2', orderEntry('b', 'y', 0), orderEntry('a', 'x', 10))
+
+/** 建会话：`respond(body, nth)` 决定每个请求的结果（读取时 body 为 undefined），`calls` 记录载荷。 */
+async function makeOrderSession(respond, reloadConfigs) {
+  const createModuleConfigOrderSession = await sessionFactory()
+  const calls = []
+  const session = createModuleConfigOrderSession({
+    t,
+    request: async (body, nth) => { calls.push(body); return respond(body, nth) },
+    reloadConfigs,
+  })
+  return { session, calls }
+}
+
+test('排序请求：读取期间的 reset 让迟到响应不写入状态', async () => {
+  let release
+  const pending = new Promise((resolve) => { release = resolve })
+  const { session, calls } = await makeOrderSession(() => pending)
+  const loading = session.load()
+  session.reset()
+  release({ ok: true, value: firstSnapshot })
+  assert.equal(await loading, false, '已失效的读取不算成功')
+  assert.equal(session.state.snapshot, undefined)
+  assert.deepEqual(session.state.configs, [])
+  assert.equal(session.state.error, '')
+  assert.equal(session.state.busy, false)
+  assert.equal(calls.length, 1, 'reset 不补发请求')
+})
+
+test('排序请求：dispose（卸载）后迟到响应不写入状态', async () => {
+  let release
+  const pending = new Promise((resolve) => { release = resolve })
+  const { session, calls } = await makeOrderSession(() => pending)
+  const loading = session.load()
+  session.dispose()
+  release({ ok: true, value: firstSnapshot })
+  assert.equal(await loading, false)
+  assert.equal(session.state.snapshot, undefined)
+  assert.deepEqual(session.state.configs, [])
+  assert.equal(calls.length, 1)
+})
+
+test('排序请求：保存携带完整身份列表与读取时的 revision', async () => {
+  const { session, calls } = await makeOrderSession((body) => body === undefined ? { ok: true, value: firstSnapshot } : { ok: true, value: swappedSnapshot })
+  assert.equal(await session.load(), true)
+  await session.save(swappedCards(session.state.configs))
+  assert.deepEqual(calls, [
+    undefined,
+    { expectedRevision: 'rev-1', entries: [{ moduleId: 'b', configId: 'y' }, { moduleId: 'a', configId: 'x' }] },
+  ])
+  assert.deepEqual(session.state.snapshot, swappedSnapshot, '成功后采纳服务端回执')
+  assert.equal(session.state.busy, false)
+})
+
+test('排序请求：保存失败显示错误并重读一次，重读成功也不静默清错误', async () => {
+  let reads = 0
+  const { session, calls } = await makeOrderSession((body) => {
+    if (body !== undefined) return { ok: false, code: 'rules-conflict', message: '版本已变化' }
+    reads += 1
+    return { ok: true, value: reads === 1 ? firstSnapshot : swappedSnapshot }
+  })
+  await session.load()
+  await session.save(swappedCards(session.state.configs))
+  assert.equal(calls.length, 3, '失败后恰好重读一次')
+  assert.equal(calls[2], undefined, '重读不带载荷')
+  assert.deepEqual(session.state.snapshot, swappedSnapshot, '重读结果被采纳')
+  assert.match(session.state.error, /排序保存失败，调整已保留：版本已变化/)
+  assert.equal(session.state.busy, false)
+})
+
+test('排序请求：重读也失败时错误以重读结果为准', async () => {
+  let reads = 0
+  const { session } = await makeOrderSession((body) => {
+    if (body !== undefined) return { ok: false, code: 'rules-conflict', message: '版本已变化' }
+    reads += 1
+    return reads === 1 ? { ok: true, value: firstSnapshot } : { ok: false, message: '读取超时' }
+  })
+  await session.load()
+  await session.save(swappedCards(session.state.configs))
+  assert.match(session.state.error, /读取排序失败：读取超时/)
+})
+
+test('排序请求：保存成功后刷新各模块规则版本，刷新失败如实显示', async () => {
+  let refreshes = 0
+  const ok = await makeOrderSession(
+    (body) => body === undefined ? { ok: true, value: firstSnapshot } : { ok: true, value: swappedSnapshot },
+    async () => { refreshes += 1; return true },
+  )
+  await ok.session.load()
+  await ok.session.save(swappedCards(ok.session.state.configs))
+  assert.equal(refreshes, 1, '保存成功必须刷新一次各模块规则版本')
+  assert.deepEqual(ok.session.state.snapshot, swappedSnapshot)
+  assert.equal(ok.session.state.error, '')
+
+  const failed = await makeOrderSession(
+    (body) => body === undefined ? { ok: true, value: firstSnapshot } : { ok: true, value: swappedSnapshot },
+    async () => false,
+  )
+  await failed.session.load()
+  await failed.session.save(swappedCards(failed.session.state.configs))
+  assert.match(failed.session.state.error, /排序已保存，但当前模块读取失败/)
+})
+
+test('排序请求：并发保存第二次被拒，只发一次保存请求', async () => {
+  let release
+  const pending = new Promise((resolve) => { release = resolve })
+  const { session, calls } = await makeOrderSession((body) => body === undefined ? { ok: true, value: firstSnapshot } : pending)
+  await session.load()
+  const cards = session.state.configs
+  const saving = session.save([cards[1], cards[0]])
+  await session.save([cards[0], cards[1]])
+  assert.equal(calls.length, 2, '第二次保存被 busy 拒绝')
+  release({ ok: true, value: swappedSnapshot })
+  await saving
+})
+
+test('排序请求：未变化的排序不发保存请求', async () => {
+  const { session, calls } = await makeOrderSession((body) => body === undefined ? { ok: true, value: firstSnapshot } : { ok: true, value: swappedSnapshot })
+  await session.load()
+  await session.save(session.state.configs)
+  assert.equal(calls.length, 1, '同一个数组引用 = 未变化')
+})
