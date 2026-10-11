@@ -79,6 +79,8 @@ export const BRIDGE_ENDPOINTS = {
 
 export type BridgeEndpoint = (typeof BRIDGE_ENDPOINTS)[keyof typeof BRIDGE_ENDPOINTS]
 
+export type BridgeEndpointKey = keyof typeof BRIDGE_ENDPOINTS
+
 /** 失败载荷：两端共用。 */
 export type BridgeErrorPayload = { ok: false; code?: string; message?: string; conflicts?: string[] }
 
@@ -94,11 +96,87 @@ export const MODULE_ACTIVATION_FAILED = 'module-activation-failed'
  */
 export const EDIT_TARGET_HEADER = 'x-module-id'
 
-/** 读编辑目标：形状不合法（空、超长、含非法字符）一律当「未声明」，由 host 回退启用表首项。 */
-export function readEditTarget(value: unknown): string | undefined {
-  if (typeof value !== 'string') return undefined
+/** 一次读写的主语是哪个模块：`required` 没有主语就不能执行，`optional` 缺省只做全局段，`none` 与模块无关。 */
+export type BridgeSubjectPolicy = 'required' | 'optional' | 'none'
+
+/**
+ * 主语策略表——客户端类型约束与服务端归属门的**唯一名单**（`Record` 覆盖保证漏标即 typecheck 失败）。
+ * 判据＝服务端 handler 是否读 `tx.editDir()`：`required` 缺主语必须拒绝，不得回退启用表首项。
+ */
+export const BRIDGE_SUBJECT_POLICY: Record<BridgeEndpointKey, BridgeSubjectPolicy> = {
+  meta: 'none',
+  /** 空主语只回全局段。 */
+  bootstrap: 'optional',
+  describe: 'required',
+  models: 'none',
+  modelReasoning: 'none',
+  mutate: 'optional',
+  skillsList: 'none',
+  skillPolicy: 'none',
+  skillRead: 'none',
+  skillWrite: 'none',
+  skillsFolders: 'none',
+  skillsImport: 'none',
+  skillsImportDirectory: 'none',
+  skillCreate: 'none',
+  skillDelete: 'none',
+  templates: 'none',
+  promptConfigs: 'optional',
+  agentsFile: 'none',
+  instructionsPolicy: 'none',
+  paramOverrides: 'required',
+  triggers: 'none',
+  rules: 'required',
+  persona: 'required',
+  personaSources: 'none',
+  moduleVariables: 'required',
+  customTools: 'required',
+  importModulePackage: 'none',
+  assetUpload: 'none',
+  assetRelease: 'none',
+  exportModule: 'none',
+  /** 在用判据。 */
+  moduleDelete: 'optional',
+  moduleClone: 'none',
+  moduleDuplicate: 'none',
+  moduleOpen: 'none',
+  moduleEnable: 'none',
+  moduleConfigOrder: 'none',
+  charactersImport: 'required',
+  charactersImportStream: 'none',
+  moduleMerge: 'required',
+  moduleUnmerge: 'required',
+  subagentToolPolicy: 'required',
+  subagentToolPolicyPreview: 'required',
+  toolSurface: 'none',
+  moduleCapability: 'required',
+  contextActivationDiagnostics: 'none',
+  ruleDiagnostics: 'none',
+}
+
+/** 请求头声明的模块 id 与 handler 实际归属不一致：归属门拒绝，绝不按请求头改归属。 */
+export const MODULE_SUBJECT_CONFLICT = 'module-subject-conflict'
+/** 请求头带模块身份但形状非法：边界显式拒绝（400），不静默当作缺席。 */
+export const MODULE_IDENTITY_INVALID = 'module-identity-invalid'
+
+/**
+ * 主语头三态：`absent` 只表示请求头**完全没有**（`undefined` / `null`）；
+ * 其余非 `ok` 一律 `invalid`（空串、纯空白、重复头数组、非字符串、超长、非法字符）。
+ */
+export type SubjectHeaderState = { state: 'ok'; id: string } | { state: 'absent' } | { state: 'invalid' }
+
+/** 读主语头：带了身份但形状非法一律 `invalid`，由边界显式拒绝（400），不当作「未声明」降级。 */
+export function readSubjectHeader(value: unknown): SubjectHeaderState {
+  if (value === undefined || value === null) return { state: 'absent' }
+  if (typeof value !== 'string') return { state: 'invalid' }
   const id = value.trim()
-  return id.length > 0 && id.length <= 64 && isModuleId(id) ? id : undefined
+  return id.length > 0 && id.length <= 64 && isModuleId(id) ? { state: 'ok', id } : { state: 'invalid' }
+}
+
+/** 读编辑目标（旧语义：形状非法当「未声明」）；形状非法由边界显式拒绝（400），不再回退启用表首项。 */
+export function readEditTarget(value: unknown): string | undefined {
+  const header = readSubjectHeader(value)
+  return header.state === 'ok' ? header.id : undefined
 }
 
 /** 插件可编辑模块的身份与展示元数据；不可渲染的项保留身份供用户修复。 */

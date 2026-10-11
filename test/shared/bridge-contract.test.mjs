@@ -8,7 +8,10 @@ import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import { fakeReq, fakeRes, handlerTable } from '../fixtures/host-harness.mjs'
 const home = mkdtempSync(join(process.cwd(), 'pt-contract-'))
 process.env.DSH_HOME = home
-const { BRIDGE_ENDPOINTS, SETTINGS_BRIDGE_PREFIX, MAX_BRIDGE_BODY_BYTES } = await import('../../src/shared/bridge-contract.ts')
+const {
+  BRIDGE_ENDPOINTS, SETTINGS_BRIDGE_PREFIX, MAX_BRIDGE_BODY_BYTES,
+  BRIDGE_SUBJECT_POLICY, MODULE_SUBJECT_CONFLICT, MODULE_IDENTITY_INVALID, readSubjectHeader,
+} = await import('../../src/shared/bridge-contract.ts')
 const { registerSettingsBridge } = await import('../../src/runtime/settings-bridge.ts')
 const { bridgeTransaction } = await import('../../src/runtime/bridge-transaction.ts')
 const { MODULE_CAPABILITIES, ENGINE_EDITOR_GROUP_MAP, INJECTION_POINT_ORDER } = await import('../../src/shared/engine-capabilities.ts')
@@ -82,6 +85,56 @@ function assertMetaSameSource(boot, meta, keys) {
 
 test('契约：client 前缀与 server 注册前缀同源', () => {
   assert.equal(SETTINGS_BRIDGE_PREFIX, '/api/prompt-tool/settings')
+})
+
+// ── 主语策略表：一次读写的主语是哪个模块 ─────────────────────────────────────────
+// 这张表是客户端类型约束与服务端归属门的**唯一名单**；漏标一个端点即失败。
+
+test('契约：主语策略表登记每一个端点（46 个），三类计数 12/4/30', () => {
+  assert.deepEqual(Object.keys(BRIDGE_ENDPOINTS).sort(), Object.keys(BRIDGE_SUBJECT_POLICY).sort(),
+    'BRIDGE_SUBJECT_POLICY 必须与 BRIDGE_ENDPOINTS 逐 key 一致')
+  assert.equal(Object.keys(BRIDGE_SUBJECT_POLICY).length, 46)
+  const counts = { required: 0, optional: 0, none: 0 }
+  for (const [key, policy] of Object.entries(BRIDGE_SUBJECT_POLICY)) {
+    assert.ok(['required', 'optional', 'none'].includes(policy), `${key} 的策略非法：${policy}`)
+    counts[policy] += 1
+  }
+  assert.deepEqual(counts, { required: 12, optional: 4, none: 30 })
+})
+
+test('契约：主语策略按端点逐一标注 required 12 个 / optional 4 个', () => {
+  const required = Object.entries(BRIDGE_SUBJECT_POLICY).filter(([, policy]) => policy === 'required').map(([key]) => key).sort()
+  const optional = Object.entries(BRIDGE_SUBJECT_POLICY).filter(([, policy]) => policy === 'optional').map(([key]) => key).sort()
+  assert.deepEqual(required, [
+    'charactersImport', 'customTools', 'describe', 'moduleCapability', 'moduleMerge', 'moduleUnmerge',
+    'moduleVariables', 'paramOverrides', 'persona', 'rules', 'subagentToolPolicy', 'subagentToolPolicyPreview',
+  ].sort())
+  assert.deepEqual(optional, ['bootstrap', 'moduleDelete', 'mutate', 'promptConfigs'].sort())
+})
+
+test('契约：主语头解析三态——absent 只认「头完全没有」，其余非法形状一律 invalid', () => {
+  const cases = [
+    [undefined, { state: 'absent' }],
+    [null, { state: 'absent' }],
+    ['', { state: 'invalid' }],
+    ['   ', { state: 'invalid' }],
+    [42, { state: 'invalid' }],
+    [['a'], { state: 'invalid' }],
+    ['a'.repeat(65), { state: 'invalid' }],
+    ['../x', { state: 'invalid' }],
+    ['A/B', { state: 'invalid' }],
+    ['Ponytail', { state: 'invalid' }],
+    ['ponytail', { state: 'ok', id: 'ponytail' }],
+    ['  demo-module  ', { state: 'ok', id: 'demo-module' }],
+  ]
+  for (const [input, expected] of cases) {
+    assert.deepEqual(readSubjectHeader(input), expected, `readSubjectHeader(${JSON.stringify(input)}) 判定错误`)
+  }
+})
+
+test('契约：主语冲突与身份非法是两个稳定码', () => {
+  assert.equal(MODULE_SUBJECT_CONFLICT, 'module-subject-conflict')
+  assert.equal(MODULE_IDENTITY_INVALID, 'module-identity-invalid')
 })
 
 // ── 桥事务（src/runtime/bridge-transaction.ts）：一次请求的边界与信封 ──────────────
