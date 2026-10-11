@@ -358,14 +358,6 @@ export function StrategyParamsFields(props: { t: PromptToolTranslate; strategy: 
       </>
     )
   }
-  if (strategy === 'custom-fallback') {
-    return (
-      <>
-        <ParamInput className={styles.fieldSpan6} label={t('strategyParam.firstTurnWord.label')} hint={t('strategyParam.firstTurnWord.hint')}
-          value={str('firstTurnWord')} onChange={(next) => set('firstTurnWord', next)} />
-      </>
-    )
-  }
   if (strategy === 'context-activation') {
     const activation = objectOf('activation') ?? { scan: 'batch' }
     const keys = ['constant', 'keys', 'secondaryKeys', 'caseSensitive', 'wholeWords', 'useRegex', 'selectiveLogic', 'activation']

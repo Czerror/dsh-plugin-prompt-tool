@@ -19,12 +19,3 @@ export const isAgentsFileCard = (config: PromptConfigDraft): boolean => instruct
 
 /** 模块卡（不含指令文件来源）。 */
 export const isModuleCard = (config: PromptConfigDraft): boolean => !isAgentsFileCard(config)
-
-/** 旧正文注入规则转为自身的可编辑正文，不再按固定ID走独立文件保存。 */
-export const liftContentText = (config: PromptConfigDraft): PromptConfigDraft => {
-  if (config.strategy !== 'custom-fallback' || config.text !== undefined) return config
-  const text = typeof config.params?.text === 'string' ? config.params.text : ''
-  if (text.length === 0) return config
-  const { text: _text, ...params } = config.params ?? {}
-  return { ...config, text, params }
-}

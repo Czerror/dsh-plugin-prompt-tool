@@ -18,7 +18,6 @@ async function injected(spec, services = {}) {
 }
 
 test('动态填充器：空正文不输出，显式模板与目录参数决定结果', async () => {
-  assert.throws(() => createPromptConfigs([{ id: 'legacy', strategy: 'custom-fallback', text: 'OLD' }]), /migrat|迁移/)
   assert.deepEqual(await injected({ strategy: 'placeholder', fill: 'env-facts' }), [])
   const env = await injected({ strategy: 'placeholder', fill: 'env-facts', text: '{{ENV_FACTS}}' })
   assert.match(env[0], /- CWD=\/repo/)

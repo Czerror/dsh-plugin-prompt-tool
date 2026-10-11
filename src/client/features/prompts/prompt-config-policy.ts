@@ -59,7 +59,6 @@ export const STRATEGY_LABEL_KEYS: Record<string, PromptToolLocaleKey> = {
   placeholder: 'strategy.placeholder',
   'first-turn-anchor': 'strategy.firstTurnAnchor',
   'guide-auto': 'strategy.guideAuto',
-  'custom-fallback': 'strategy.customFallback',
   'context-activation': 'strategy.worldBook',
 }
 export const SLOT_KIND_LABEL_KEYS: Record<string, PromptToolLocaleKey> = { ordered: 'slotKind.ordered', anchor: 'slotKind.anchor' }

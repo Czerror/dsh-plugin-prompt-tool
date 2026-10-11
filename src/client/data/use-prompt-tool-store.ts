@@ -27,7 +27,7 @@ import {
   switchesEqual,
   type SwitchSnapshot,
 } from './dirty-state.ts'
-import { instructionFileIdOf, isModuleCard, liftContentText } from './prompt-config-content.ts'
+import { instructionFileIdOf, isModuleCard } from './prompt-config-content.ts'
 import {
   applySaveOutcomes,
   EMPTY_INSTRUCTION_POOL,
@@ -528,7 +528,7 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
         const userConfigs = boot.promptConfigs.promptConfigs.filter((config) => !engineGenerated.has(config.id) && instructionFileIdOf(config) !== undefined)
         // 内容资产条目（prompt-injector / instruction-hint）：params.text（生成目录文件渲染产物）
         // 提升到 text 框显示，编辑入口统一为模块卡片。
-        const actual = withInstructionState(userConfigs.map(liftContentText), instructionPoolRef.current, instructionPolicyRef.current)
+        const actual = withInstructionState(userConfigs, instructionPoolRef.current, instructionPolicyRef.current)
         const next = { ...fieldsRef.current, promptConfigs: actual }
         publishFields(next)
         setSavedConfigs(actual)
