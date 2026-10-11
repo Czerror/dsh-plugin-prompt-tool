@@ -46,6 +46,14 @@ export const RULES_ZH = {
   'rules.steps.branchUnsupported': '该层是注册制层（装配时注册一次），没有逐轮求值时机，不能使用条件分支；请改用 pre-step、subagent、tool-pipeline 或 turn-stop 层。',
   // 动作卡里与动作类型名同名、但含义不同的字段（裁决档 / 事后判决）。
   'rules.actionField.action': '事后判决', 'rules.actionField.decision': '裁决', 'rules.actionField.toolNames': '生效工具',
+  // 页级创建：选完注入模板**只多这一步**选目标（已存在模块 / 新建空白模块）。
+  'rules.create.title': '选择目标模块',
+  'rules.create.new': '新建空白模块',
+  'rules.create.newHint': '从空白模板新建并写入。模块 id 由服务端定（本次为 {id}，重名会自动加后缀，以服务端结果为准）。',
+  'rules.create.submit': '新建并写入',
+  'rules.create.cancel': '取消',
+  'rules.create.failed': '新建模块失败，请重试',
+  'rules.create.none': '暂无已安装模块',
 } as const
 export const RULES_EN: Record<keyof typeof RULES_ZH, string> = {
   'rules.title': 'Rules', 'rules.module': 'Module level',
@@ -93,4 +101,11 @@ export const RULES_EN: Record<keyof typeof RULES_ZH, string> = {
   'rules.steps.chain': 'Effective condition: {chain}',
   'rules.steps.branchUnsupported': 'This layer registers once at assembly time and has no per-turn evaluation point, so conditional branches are unavailable here. Use pre-step, subagent, tool-pipeline, or turn-stop instead.',
   'rules.actionField.action': 'Post-execute verdict', 'rules.actionField.decision': 'Decision', 'rules.actionField.toolNames': 'Target tools',
+  'rules.create.title': 'Choose the target module',
+  'rules.create.new': 'New blank module',
+  'rules.create.newHint': 'Create from the blank template and insert. The server picks the module id (this time {id}; a name clash gets a numeric suffix, so the server result is authoritative).',
+  'rules.create.submit': 'Create and insert',
+  'rules.create.cancel': 'Cancel',
+  'rules.create.failed': 'Failed to create the module; try again',
+  'rules.create.none': 'No installed module yet',
 }

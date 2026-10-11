@@ -271,11 +271,11 @@ test('规则工作台：同一层两个模块的规则卡各自按自己模块�
   assert.doesNotMatch(html, /rule-b/, 'B 的事实里没有该能力，不跟着 A 命中')
 })
 
-test('新建入口：每个已装配模块恰好一条，且入口主语是该模块（未启用模块没有入口）', () => {
+/** T18：每模块横栏已删除——创建入口只剩页级一处（不依赖「当前模块」，也不按模块重复）。 */
+test('创建入口：每模块横栏不再渲染，页级也不出现逐模块的创建按钮', () => {
   const drafts = createWorkspaceDrafts()
   drafts.rules.set('mod-a', rulesDraft('rule-a'))
   drafts.rules.set('mod-b', rulesDraft('rule-b'))
-  drafts.rules.set('mod-off', rulesDraft('rule-off'))
   const store = stubStore(drafts, [
     ...twoModules,
     { id: 'mod-off', name: 'off', enabled: false, facts: facts() },
@@ -283,43 +283,10 @@ test('新建入口：每个已装配模块恰好一条，且入口主语是该�
   const html = renderElement(RulesWorkspace, {
     store, t, ...injectionPointSlots({ store, t, viewFilter: 'all', audience: 'main' }),
   })
-  const groups = [...html.matchAll(/data-module-create="([^"]+)"/g)].map((match) => match[1])
-  assert.deepEqual(groups, ['mod-a', 'mod-b'], '每个已装配模块恰好一条新建入口，未启用模块没有入口')
-  for (const moduleId of groups) {
+  assert.doesNotMatch(html, /data-module-create/, '横栏整体退场')
+  for (const moduleId of ['mod-a', 'mod-b', 'mod-off']) {
     const ownership = ` · ${t('rules.source', { module: moduleId })}`
-    assert.match(html, new RegExp(`aria-label="${t('modules.addTemplates')}${ownership}"`), `新建配置入口的归属＝${moduleId}`)
-    assert.match(html, new RegExp(`aria-label="${t('main.addToolTemplate')}${ownership}"`), `新建工具模板入口的归属＝${moduleId}`)
-  }
-  assert.ok(!html.includes('data-module-create="mod-off"'), '未启用模块不出现新建入口')
-})
-
-/** 按钮标签定位（含 `[^>]*`，标签里没有 `>`）。 */
-const labelledButtons = (html, label) => [...html.matchAll(new RegExp(`<button[^>]*aria-label="${label}"[^>]*>`, 'g'))].map((match) => match[0])
-
-test('新建入口：规则草稿尚未读回时禁用（新规则只能落在已读回的草稿上）', () => {
-  // 不预置 rules 草稿：useModuleRuleEditors 会建出 loaded=false 的草稿（SSR 不跑 effect，读回不会发生）。
-  const store = stubStore(createWorkspaceDrafts())
-  const html = renderElement(RulesWorkspace, {
-    store, t, ...injectionPointSlots({ store, t, viewFilter: 'all', audience: 'main' }),
-  })
-  for (const moduleId of ['mod-a', 'mod-b']) {
-    const ownership = ` · ${t('rules.source', { module: moduleId })}`
-    const rule = labelledButtons(html, `${t('modules.addTemplates')}${ownership}`)
-    const tool = labelledButtons(html, `${t('main.addToolTemplate')}${ownership}`)
-    assert.equal(rule.length, 1, `${moduleId} 的新建配置入口在场`)
-    assert.match(rule[0], /disabled/, `${moduleId} 的规则草稿未读回时新建配置禁用`)
-    assert.match(tool[0], /disabled/, `${moduleId} 的规则草稿未读回时新建工具模板禁用`)
-  }
-  // 已读回时同一入口必须可用（对照，避免把「永远禁用」当成修好）。
-  const loaded = createWorkspaceDrafts()
-  loaded.rules.set('mod-a', rulesDraft('rule-a'))
-  loaded.rules.set('mod-b', rulesDraft('rule-b'))
-  const loadedHtml = renderElement(RulesWorkspace, {
-    store: stubStore(loaded), t, ...injectionPointSlots({ store, t, viewFilter: 'all', audience: 'main' }),
-  })
-  for (const moduleId of ['mod-a', 'mod-b']) {
-    const ownership = ` · ${t('rules.source', { module: moduleId })}`
-    assert.doesNotMatch(labelledButtons(loadedHtml, `${t('modules.addTemplates')}${ownership}`)[0], /disabled/, `${moduleId} 读回后可新建配置`)
+    assert.doesNotMatch(html, new RegExp(`aria-label="${t('modules.addTemplates')}${ownership}"`), `${moduleId} 不再有专属创建入口`)
   }
 })
 

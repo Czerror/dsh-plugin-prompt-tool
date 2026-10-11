@@ -6,7 +6,7 @@ import { configIdentityKey } from '../../../shared/module-config-order.ts'
 import type { PromptToolStore } from '../../data/use-prompt-tool-store.ts'
 import { usePromptToolFields } from '../../data/use-prompt-tool-fields.ts'
 import { useModuleRuleEditors, type ModuleRuleEditor } from '../../data/use-rule-editor.ts'
-import { canEditModule } from '../../data/module-subject.ts'
+import { BLANK_MODULE_TEMPLATE, canEditModule, isWritableTarget, writableModuleTargets } from '../../data/module-subject.ts'
 import { useModuleConfigOrder } from '../../data/use-module-config-order.ts'
 import { hasRuleFields, rulesDirty } from '../../data/rule-drafts.ts'
 import { instructionFileIdOf } from '../../data/prompt-config-content.ts'
@@ -21,9 +21,9 @@ import { PromptConfigCard } from './PromptConfigCard.tsx'
 import { LAYER_LABEL_KEYS, translateLabel } from './prompt-config-policy.ts'
 import { asTriggerRecord } from './RuleJsonField.tsx'
 import { RuleCard } from './RuleCard.tsx'
-import { useTemplatePicker } from './useTemplatePicker.ts'
-import { insertToolTemplateIntoDraft } from '../tools/CustomToolsCard.tsx'
-import { TemplatePicker } from '../../ui/TemplatePicker.tsx'
+import { useTemplateCreate } from './useTemplatePicker.tsx'
+import { TemplateTargetPicker } from '../../ui/TemplatePicker.tsx'
+import type { ModuleCreateItem } from '../modules/EngineModuleList.tsx'
 import ui from '../../ui/controls.module.css'
 import css from './rules.module.css'
 
@@ -34,10 +34,14 @@ export interface RulesWorkspaceProps {
   beforeCards?: ReactNode
   viewFilter?: string; onViewFilterChange?: (value: string) => void
   keyword?: string; onKeywordChange?: (value: string) => void
-  /** 层内设置：主语＝该实例卡所属模块，由调用方传进第三参。 */
-  renderLayerSettings?: (layer: string, config: PromptConfigDraft, moduleId: string) => ReactNode
+  /** 层内设置：主语＝该实例卡所属模块，由调用方传进第三参；第四参是该卡内工具模板入口。 */
+  renderLayerSettings?: (layer: string, config: PromptConfigDraft, moduleId: string, onChooseToolTemplate: (moduleId: string, anchor: HTMLButtonElement) => void) => ReactNode
   hasLayerSettings?: (layer: string, moduleId: string) => boolean
   matchesLayerSettings?: (layer: string, keyword: string, moduleId: string) => boolean
+  /** 页级「添加」下拉的创建项（注入模板按层）：创建编排由本组件统一持有，两页只传清单。 */
+  createItems?: readonly ModuleCreateItem[]
+  /** SSR 可断言的入口：直接以「模板已选完、等选目标」的状态渲染目标选择浮层本身。 */
+  addingTarget?: boolean
 }
 
 function hasContextActivation(actions: RuleAction[]): boolean {
@@ -61,48 +65,6 @@ function scopeVisible(rule: RuleDefinition, scope: 'main' | 'subagent'): boolean
 }
 const samePosition = (a: ModuleConfigOrderEntry, b: ModuleConfigOrderEntry): boolean => a.layer === b.layer && a.position === b.position
   && (!(a.layer === 'system-section' || a.layer === 'runtime-context') || a.order === b.order)
-
-/**
- * 一个模块自己的新建入口（装配集合视图＝每模块一条，没有「当前模块」可回退）：
- * 主语＝该分组的模块——新建配置进该模块的规则草稿，新建工具模板进该模块的工具草稿。
- */
-function ModuleCreateBar(props: {
-  store: PromptToolStore; t: PromptToolTranslate; owner: ModuleRuleEditor
-  scope: 'main' | 'subagent'; canEdit: boolean
-  onCreated: (moduleId: string, configKey: string) => void
-}): ReactNode {
-  const { store, t, owner, canEdit } = props
-  const moduleId = owner.moduleId
-  /** 新建只能落在**已读回**的规则草稿上：`add()` 自身不检查 `loaded`，未读回就写入会让随后的读回落进
-   *  「草稿 ≠ 磁盘」的冲突分支且 `loaded` 永不为真——新规则随后既保存不了也重试不了。 */
-  const ready = canEdit && owner.draft.loaded
-  const picker = useTemplatePicker(
-    owner.draft.entries.filter(entry => !entry.deleted).map(entry => entry.value),
-    (rule) => { if (ready) props.onCreated(moduleId, owner.editor.add(rule)) },
-    store.showNotice,
-    t,
-    props.scope,
-  )
-  const insertTool = (spec: Record<string, unknown>): void => {
-    if (!ready) return
-    void insertToolTemplateIntoDraft(store.editorDrafts, moduleId, spec).then((result) => {
-      if (result === 'duplicate') store.showNotice('error', t('customTools.duplicateId', { id: String(spec.id ?? '') }))
-      else if (result === 'failed') store.showNotice('error', t('customTools.loadFailed'))
-      else store.showNotice('ok', t('customTools.templateInserted', { id: String(spec.id ?? '') }))
-    })
-  }
-  // 可访问名带上归属模块：同一列表里多个同名按钮必须能分辨是往哪个模块新建。
-  const ruleLabel = `${t('modules.addTemplates')} · ${t('rules.source', { module: moduleId })}`
-  const toolLabel = `${t('main.addToolTemplate')} · ${t('rules.source', { module: moduleId })}`
-  return <div className={css.row} data-module-create={moduleId}>
-    <span>{t('rules.source', { module: moduleId })}</span>
-    <Button shape="pill" variant="outline" disabled={!ready} aria-label={ruleLabel} onClick={() => picker.openPicker()}>{t('modules.addTemplates')}</Button>
-    <Button shape="pill" variant="outline" disabled={!ready} aria-label={toolLabel} onClick={event => picker.openTools(event.currentTarget)}>{t('main.addToolTemplate')}</Button>
-    {picker.open && <TemplatePicker t={t} anchorRef={picker.popoverAnchorRef} templates={picker.toolsOnly ? [] : picker.templates} layer={picker.layer}
-      toolTemplates={picker.layer === undefined ? picker.toolTemplates : undefined}
-      onPick={picker.pickTemplate} onPickTool={insertTool} onClose={picker.closePicker} />}
-  </div>
-}
 
 /** 两个受众页共用各模块规则草稿；排序只写身份，指令文件只走原文件通道。
  *  **没有「当前模块」**：每张规则卡的主语是它自己所属的模块（`owners` 的 moduleId）。 */
@@ -180,6 +142,20 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
     clone.then = clone.then.map(action => { if (action.kind !== 'inject-text') return action; const { id: _sourceId, ...config } = asTriggerRecord(action.config); return { ...action, config } })
     setExpanded(configIdentityKey({ moduleId, configId: editor.add({ ...clone, id, enabled: false }) }))
   }
+  // 页级创建编排（T18 唯一入口）：下拉 → 模板浮层 → 只加一步选目标 → 写入所选模块。
+  // 主语来自目标选择，不存在「当前模块」；写入只落在该目标模块自己已读回的草稿上。
+  // 候选＝**只列可写模块**（启用 + 可编辑 + 可渲染，同一判据的共享实现）；写入前还会再判一次。
+  const create = useTemplateCreate({
+    store,
+    t,
+    items: props.createItems ?? [],
+    scope: props.scope ?? 'main',
+    targets: writableModuleTargets(fields, store.meta.modules).sort((a, b) => a.id.localeCompare(b.id)),
+    existingIds: (store.meta.modules ?? []).map(module => module.id),
+    canWrite: (moduleId) => isWritableTarget(fields, store.meta.modules, moduleId),
+    owners,
+    onCreated: (moduleId, configKey) => setExpanded(configIdentityKey({ moduleId, configId: configKey })),
+  })
   // 指令文件卡是全局段（不属于任何模块）：模块级参数没有主语，因此这里不给它层设置区。
   const instructionCards = fields.promptConfigs.filter(config => instructionFileIdOf(config) !== undefined).map(config => <PromptConfigCard key={config.id} t={t} meta={store.meta} config={config} expanded={expanded === config.id} canMoveUp={false} canMoveDown={false}
     onToggleExpanded={() => toggle(config.id)} onToggleEnabled={() => {}} onPatch={(id, patch) => store.patch({ promptConfigs: store.getFields().promptConfigs.map(item => item.id === id ? { ...item, ...patch } : item) })}
@@ -190,14 +166,16 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
     <div className={ui.listFilterRow} data-module-toolbar>
       <SearchInput inline aria-label={t('rules.search')} placeholder={t('rules.search')} value={props.keyword ?? filter} onChange={event => changeFilter(event.target.value)} />
       <MenuSelect compact className={css.control} ariaLabel={t('rules.layerFilter')} value={view} options={[{ value: 'all', label: t('rules.all') }, { value: 'context-activation', label: t('rules.worldBook') }, ...store.meta.layers.map(layer => ({ value: layer, label: translateLabel(t, LAYER_LABEL_KEYS, layer) }))]} onChange={value => props.onViewFilterChange?.(value)} />
+      {create.toolbar}
+      {props.addingTarget && <TemplateTargetPicker t={t} modules={writableModuleTargets(fields, store.meta.modules)}
+        existingIds={(store.meta.modules ?? []).map(module => module.id)}
+        newModuleTemplate={BLANK_MODULE_TEMPLATE} onPick={() => {}} onClose={() => {}} />}
       <span className={ui.batchControls}>
         <Button shape="pill" variant="outline" data-batch="enable" disabled={batchDisabled} onClick={() => batchSetEnabled(true)}>{t('configs.batch.enableVisible')}</Button>
         <Button shape="pill" variant="outline" data-danger data-batch="disable" disabled={batchDisabled} onClick={() => batchSetEnabled(false)}>{t('configs.batch.disableVisible')}</Button>
       </span>
     </div>
-    {/* 每个装配模块自己的新建入口：新建只落到该模块的草稿，没有「当前模块」可回退。 */}
-    {owners.map(owner => <ModuleCreateBar key={owner.moduleId} store={store} t={t} owner={owner} scope={props.scope ?? 'main'}
-      canEdit={!readOnly(owner.moduleId)} onCreated={(moduleId, configKey) => setExpanded(configIdentityKey({ moduleId, configId: configKey }))} />)}
+    {create.dialogs}
     {owners.map(({ moduleId: id, draft, editor }) => {
       const retrySave = draft.loaded && rulesDirty(draft) && draft.remote === undefined
       return (draft.error || hasRuleFields(draft)) && <div key={id}>
@@ -223,7 +201,7 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
             headerActions={orderEntry && <><HintTooltip label={slotPinned(orderEntry) ? t('rules.orderPinnedHint') : t('card.dragHint')}><button type="button" className={ui.dragHandle} disabled={sortDisabled || !!query} draggable={!sortDisabled && !query} aria-label={t('card.dragHint')} aria-keyshortcuts="ArrowUp ArrowDown"
               onDragStart={event => { dragId.current = configIdentityKey(orderEntry); event.dataTransfer.effectAllowed = 'move'; event.dataTransfer.setData('text/plain', dragId.current) }} onDragEnd={() => { dragId.current = undefined }}
               onKeyDown={event => { if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return; event.preventDefault(); const peers = orderPeers(orderEntry), index = peers.findIndex(item => configIdentityKey(item) === configIdentityKey(orderEntry)); const target = peers[index + (event.key === 'ArrowUp' ? -1 : 1)]; if (target) void saveOrder(configIdentityKey(orderEntry), configIdentityKey(target)) }}>⋮⋮</button></HintTooltip>{moveButtons(orderEntry)}</>}
-            renderSettings={entry.value.layer !== undefined && props.hasLayerSettings?.(entry.value.layer, id) && props.renderLayerSettings ? (rule, module) => props.renderLayerSettings!(rule.layer!, { id: rule.id, layer: rule.layer }, module) : undefined} />
+            renderSettings={entry.value.layer !== undefined && props.hasLayerSettings?.(entry.value.layer, id) && props.renderLayerSettings ? (rule, module) => props.renderLayerSettings!(rule.layer!, { id: rule.id, layer: rule.layer }, module, create.openToolsForModule) : undefined} />
         </div>
       })}
     {entries.length === 0 && (query !== '' || view !== 'all') && owners.every(owner => owner.draft.loaded) && <p>{t('rules.noMatch')}</p>}

@@ -1,0 +1,19 @@
+# 空白模块模板：什么都不声明。
+#
+# 用途：创建入口选完注入模板后「新建空白模块」这一步的复制源。它只声明身份与
+# 组合行，没有 `rules` / `params` / `layerSettings` / `persona` / `variables` 等节——
+# 客户端把内容写进来时，写路径按既有语义为它建立第一节声明（写成功即声明）。
+#
+# 不预置任何配置卡：新建出来的模块是干净起点，唯一入口是页级「添加」。
+# 目录名 = id，`modules/` 下每个目录都是一份可复制的模块模板（与其余内置同构）。
+
+id: blank
+name: 空白模块
+version: 1.0.0
+engineCompat: ">=0.4.2"
+description: 空白起点：不预置任何配置，创建入口选完模板后可写入第一节。
+meta:
+  source: manual
+modules:
+  - rule-engine
+order: 9

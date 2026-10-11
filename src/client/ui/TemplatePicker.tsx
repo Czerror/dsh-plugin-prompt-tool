@@ -1,7 +1,8 @@
 /** 内置模板选择浮层：body 顶层 portal，并持续跟随触发按钮。 */
-import type { ReactNode, RefObject } from 'react'
+import { useState, type ReactNode, type RefObject } from 'react'
 import { createPortal } from 'react-dom'
 import { Button } from './Button.tsx'
+import { DialogSurface } from './DialogSurface.tsx'
 import { useDismissOnOutsidePointer } from './outside-pointer.ts'
 import type { PromptToolLocaleKey, PromptToolTranslate } from '../locales.ts'
 import { useAnchoredPopoverStyle } from './anchored-popover.ts'
@@ -116,4 +117,77 @@ export function TemplatePicker(props: {
     </div>
   )
   return typeof document === 'undefined' || document.body === null ? surface : createPortal(surface, document.body)
+}
+
+/** 目标选择的候选行：候选**只列可写模块**，由调用方按共享判据过滤后传入。 */
+export interface TemplateTargetListEntry {
+  id: string
+  name?: string
+  /** 是否在装配集合（存储根启用表）里；仅作展示，可写性已由过滤保证。 */
+  enabled?: boolean
+}
+
+/**
+ * 待创建模块的 id 预览：目录名**已存在**就说明服务端会加后缀（`blank` → `blank-2`）。
+ * 判据是「已存在的模块目录」全集（含未启用），不是候选列表——包内空白模板会被种子化进用户
+ * 模块根且默认未启用，只看候选就会永远预览错一位。预览仍不承诺结果（多级后缀/不在 /meta 时偏乐观），
+ * 文案里已写「以服务端结果为准」。
+ */
+export const newModuleIdPreview = (templateId: string, existingIds: readonly string[]): string =>
+  existingIds.includes(templateId) ? `${templateId}-2` : templateId
+
+/**
+ * 选完模板后的**唯一**追加步骤：目标模块（已存在 / 新建空白模块）。
+ *
+ * 这里是「一步」的边界：对话框只回两种结果——选中某个已存在模块的 id，或让调用方用**既有**
+ * 新建动作建一个新模块（`onCreate` 返回新模块 id，失败返回 undefined）。
+ * 主语一律来自所选目标，不引入任何「当前模块」语义。
+ */
+export function TemplateTargetPicker(props: {
+  t: PromptToolTranslate
+  /** 浮层锚点＝页级「添加」按钮；缺省时居中模态。 */
+  anchorRef?: RefObject<HTMLElement | null>
+  /** 候选：**只列可写模块**（调用方按共享判据过滤后传入）。 */
+  modules: readonly TemplateTargetListEntry[]
+  /** 已存在的模块目录 id 全集（含未启用）：只影响新建 id 预览，不影响可选性。 */
+  existingIds?: readonly string[]
+  /** 新建空白模块的复制源模板 id（只用于展示预览；真实名字由服务端定）。 */
+  newModuleTemplate: string
+  /** 选中已存在模块：主语就是它，创建动作立刻带上这个 id。 */
+  onPick: (moduleId: string) => void
+  /** 新建空白模块：走既有新建动作，返回新模块 id（失败 undefined，对话框内就地报错）。 */
+  onCreate?: () => Promise<string | undefined>
+  onClose: () => void
+}): ReactNode {
+  const { t, modules, onPick, onCreate, onClose } = props
+  const [busy, setBusy] = useState(false)
+  const [failed, setFailed] = useState(false)
+  const submitNew = async (): Promise<void> => {
+    if (onCreate === undefined || busy) return
+    setBusy(true); setFailed(false)
+    const created = await onCreate()
+    setBusy(false)
+    if (created === undefined) { setFailed(true); return }
+    // 建好即写进它：这就是「新建空白模块」的收口（创建 + 写入，仍是一步语义）。
+    onPick(created)
+  }
+  return <DialogSurface title={t('rules.create.title')} ariaLabel={t('rules.create.title')}
+    closeLabel={t('rules.create.cancel')} anchorRef={props.anchorRef} onClose={onClose}>
+    {modules.length === 0 && <p className={styles.configFieldHint}>{t('rules.create.none')}</p>}
+    {modules.map(module => <button key={module.id} type="button" className={styles.templateModalItem} data-template-target={module.id}
+      onClick={() => onPick(module.id)}>
+      <strong>{module.name ?? module.id}</strong>
+      <small>{module.id}</small>
+    </button>)}
+    <div className={styles.templateGroup} data-template-new-module>
+      <strong className={styles.templateGroupTitle}>{t('rules.create.new')}</strong>
+      <p className={styles.configFieldHint}>{t('rules.create.newHint', { id: newModuleIdPreview(props.newModuleTemplate, props.existingIds ?? modules.map((module) => module.id)) })}</p>
+      {failed && <p role="alert" className={styles.confirmError}>{t('rules.create.failed')}</p>}
+      <div className={styles.dialogFooter}>
+        <Button shape="pill" variant="outline" onClick={onClose}>{t('rules.create.cancel')}</Button>
+        <Button shape="pill" variant="primary" data-template-new-submit disabled={onCreate === undefined || busy}
+          onClick={() => { void submitNew() }}>{t('rules.create.submit')}</Button>
+      </div>
+    </div>
+  </DialogSurface>
 }

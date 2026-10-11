@@ -175,6 +175,8 @@ export function LayerSettingsContent(props: {
   configId?: string
   excludeCapabilities?: readonly string[]
   toolEditor?: ReactNode
+  /** 卡内「添加工具模板…」入口：主语＝该卡所属模块（未声明 customTools 的创建模式也必须有它）。 */
+  onChooseToolTemplate?: (moduleId: string, anchor: HTMLButtonElement) => void
   onCreated?: (capabilityId: string) => void
   keyword?: string
   /** 初始创建模式（外部装配／测试用）；生产路径由「添加」按钮驱动。 */
@@ -286,6 +288,7 @@ export function LayerSettingsContent(props: {
           {id === 'custom-tools' && (props.toolEditor ?? (
             <CustomToolsCard key={moduleId} moduleId={moduleId} t={t} onNotice={store.showNotice}
               drafts={store.editorDrafts} disabled={!canEdit}
+              onChooseTemplate={props.onChooseToolTemplate === undefined ? undefined : (anchor) => props.onChooseToolTemplate!(moduleId, anchor)}
               undeclared={inCreateMode('custom-tools')} onDeclared={inCreateMode('custom-tools') ? afterDeclared : undefined} />
           ))}
           {id === 'subagent-tool-policy' && (
@@ -310,8 +313,9 @@ function LayerSettingsFocus(props: { layer?: string; token: number }): ReactNode
 
 export interface InjectionPointSlots {
   beforeCards: ReactNode
-  /** 本层引擎设置内容，只由真实实例卡内的设置区承载；主语＝该实例卡的模块。 */
-  renderLayerSettings: (layer: string, config: PromptConfigDraft, moduleId: string) => ReactNode
+  /** 本层引擎设置内容，只由真实实例卡内的设置区承载；主语＝该实例卡的模块。
+   *  第四参＝卡内「添加工具模板…」入口的绑定（由 `injectionPointSlots` 装配进本层的卡）。 */
+  renderLayerSettings: (layer: string, config: PromptConfigDraft, moduleId: string, onChooseToolTemplate: (moduleId: string, anchor: HTMLButtonElement) => void) => ReactNode
   /** 该层**该模块**是否有可编辑设置，控制真实实例卡内的设置区。 */
   hasLayerSettings: (layer: string, moduleId: string) => boolean
   matchesLayerSettings: (layer: string, keyword: string, moduleId: string) => boolean
@@ -353,7 +357,7 @@ export function injectionPointSlots(input: InjectionPointSlotsInput): InjectionP
   )
   return {
     beforeCards,
-    renderLayerSettings: (layer: string, config: PromptConfigDraft, moduleId: string) => (
+    renderLayerSettings: (layer: string, config: PromptConfigDraft, moduleId: string, onChooseToolTemplate: (moduleId: string, anchor: HTMLButtonElement) => void) => (
       <LayerSettingsContent
         key={`${moduleId}:${config.id}`}
         store={store}
@@ -362,6 +366,7 @@ export function injectionPointSlots(input: InjectionPointSlotsInput): InjectionP
         moduleId={moduleId}
         configId={config?.id}
         excludeCapabilities={input.excludeCapabilities}
+        onChooseToolTemplate={onChooseToolTemplate}
         onCreated={input.onCreated}
         keyword={input.keyword}
       />

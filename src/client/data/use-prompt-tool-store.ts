@@ -53,7 +53,7 @@ import { createWorkspaceDrafts, type WorkspaceDrafts } from './workspace-drafts.
 import { rulesDirty } from './rule-drafts.ts'
 import type { ModuleVariableRevisions, ModuleVariableScope } from '../../shared/module-variables.ts'
 import { createVariablesDraft, readVariablesDraft, retryModuleVariablesPublication as retryModuleVariablesPublicationRequest, saveModuleVariables as saveModuleVariablesRequest, type VariablesDraft } from './module-variables.ts'
-import { canEditModule, moduleDeclares, subjectDraftKey } from './module-subject.ts'
+import { canEditModule, createBlankModule, moduleDeclares, subjectDraftKey } from './module-subject.ts'
 import { modulesEnabledOps } from '../../shared/module-settings.ts'
 import { modelChoiceValue } from '../features/models/model-options.ts'
 import type { ModelReasoningView } from '../../shared/bridge-contract.ts'
@@ -180,6 +180,8 @@ export interface PromptToolStore {
   /** 能力变更的主语＝调用方给的模块 id；该模块不可编辑时不发请求。 */
   createModuleCapability: (moduleId: string, action: 'create' | 'create-recipe', id: string) => Promise<boolean>
   removeModuleCapability: (moduleId: string, id: string) => Promise<boolean>
+  /** 新建空白模块（走既有新建动作；名字由服务端定），返回新模块 id（失败 undefined）。 */
+  createModule: () => Promise<string | undefined>
   /** 从宿主机目录复制导入到用户技能根。 */
   importSkillsDirectory: (path: string, confirm?: ConfirmSkillOverwrite) => Promise<boolean>
   /** 只刷新技能事实，不重读模块或覆盖其它草稿。 */
@@ -1038,6 +1040,18 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
   const createModuleCapability = useCallback((moduleId: string, action: 'create' | 'create-recipe', id: string) => changeModuleCapability(moduleId, action, id), [changeModuleCapability])
   const removeModuleCapability = useCallback((moduleId: string, id: string) => changeModuleCapability(moduleId, 'remove', id), [changeModuleCapability])
 
+  /**
+   * 新建空白模块：走**既有** `/module-clone` 复制空白模板 + 既有 `/module-enable` 加入装配集合，
+   * 再 `load()` 让新卡出现。名字不是用户输入（服务端定），返回值就是那个 id。
+   */
+  const createModule = useCallback((): Promise<string | undefined> => {
+    return createBlankModule(bridgeCall).then(async (created) => {
+      if (created === undefined) { showNotice('error', '新建模块失败：服务不可用或空白模板缺失'); return undefined }
+      await load({ silent: true })
+      return created
+    })
+  }, [load, showNotice])
+
   const refreshSkills = useCallback(async (): Promise<boolean> => {
     const seq = ++skillsSeqRef.current
     const sessionId = api.currentSessionId()
@@ -1213,6 +1227,7 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
     toggle,
     createModuleCapability,
     removeModuleCapability,
+    createModule,
     importSkillsDirectory,
     refreshSkills,
     createSkill,

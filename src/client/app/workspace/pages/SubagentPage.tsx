@@ -4,6 +4,7 @@ import type { PromptToolTranslate } from '../../../locales.ts'
 import { moduleCapability } from '../../../../shared/engine-capabilities.ts'
 import { injectionPointSlots } from './InjectionPointsPanel.tsx'
 import { RulesWorkspace } from '../../../features/prompts/RulesWorkspace.tsx'
+import { INSERTION_LAYERS, LAYER_LABEL_KEYS, translateLabel } from '../../../features/prompts/prompt-config-policy.ts'
 import ui from '../../../ui/controls.module.css'
 import type { ConfigPageBrowse } from '../workspace-browse-state.ts'
 import type { WorkspacePage } from '../workspace-pages.ts'
@@ -61,6 +62,7 @@ export const SubagentPage = memo(function SubagentPage(props: { store: PromptToo
         renderLayerSettings={layers.renderLayerSettings}
         hasLayerSettings={layers.hasLayerSettings}
         matchesLayerSettings={layers.matchesLayerSettings}
+        createItems={INSERTION_LAYERS.map((layer) => ({ id: `tpl:${layer}`, label: t('main.addTemplate', { layer: translateLabel(t, LAYER_LABEL_KEYS, layer) }) }))}
       />
     </section>
   )

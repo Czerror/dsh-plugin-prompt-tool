@@ -2,6 +2,7 @@ import { memo, useCallback, useState, type ReactNode } from 'react'
 import type { PromptToolStore } from '../../../data/use-prompt-tool-store.ts'
 import type { PromptToolTranslate } from '../../../locales.ts'
 import { RulesWorkspace } from '../../../features/prompts/RulesWorkspace.tsx'
+import { INSERTION_LAYERS, LAYER_LABEL_KEYS, translateLabel } from '../../../features/prompts/prompt-config-policy.ts'
 import { moduleCapability } from '../../../../shared/engine-capabilities.ts'
 import { injectionPointSlots } from './InjectionPointsPanel.tsx'
 import ui from '../../../ui/controls.module.css'
@@ -38,6 +39,8 @@ export const MainSessionPage = memo(function MainSessionPage(props: { store: Pro
     focusCapability,
     onCreated: revealCapability,
   })
+  // 页级创建入口的清单（编排与浮层都在 RulesWorkspace 里，主语由那次目标选择给出）。
+  const createItems = INSERTION_LAYERS.map((layer) => ({ id: `tpl:${layer}`, label: t('main.addTemplate', { layer: translateLabel(t, LAYER_LABEL_KEYS, layer) }) }))
   return (
     <section className={ui.section} aria-label={t('main.aria')}>
       <RulesWorkspace
@@ -54,6 +57,7 @@ export const MainSessionPage = memo(function MainSessionPage(props: { store: Pro
         hasLayerSettings={layers.hasLayerSettings}
         matchesLayerSettings={layers.matchesLayerSettings}
         beforeCards={layers.beforeCards}
+        createItems={createItems}
       />
     </section>
   )

@@ -7,6 +7,45 @@ import type { PromptToolTranslate } from '../../locales.ts'
 import { MODULE_CAPABILITIES, ENGINE_RECIPES, engineRecipe, isModuleCapabilityPresent } from '../../../shared/engine-capabilities.ts'
 import { canEditModule, moduleFactsOf } from '../../data/module-subject.ts'
 
+/** 合并进页级「添加」菜单的创建项（注入模板按层分组）。 */
+export interface ModuleCreateItem {
+  id: string
+  label: string
+}
+
+/**
+ * 页级下拉「添加」：本轮创建的唯一入口（T18 起不再有每模块横栏）。
+ *
+ * 为什么主语不在菜单里：选择器只回答「创建什么」，目标模块由随后的
+ * `TemplateTargetPicker` 一步选（已存在 / 新建空白模块）——主语来自那次选择。
+ */
+export function EngineModuleActions(props: {
+  store: PromptToolStore
+  t: PromptToolTranslate
+  /** 菜单按钮 ref：模板浮层锚定到该按钮。 */
+  anchorRef?: React.RefObject<HTMLButtonElement>
+  /** 菜单项：注入模板的层清单。 */
+  extraItems?: readonly ModuleCreateItem[]
+  onExtraSelect?: (id: string) => void
+  /** 菜单按钮文案（默认＝添加注入模板）。 */
+  label?: string
+}): ReactNode {
+  const { t, anchorRef, extraItems = [], onExtraSelect } = props
+  const [open, setOpen] = useState(false)
+  const fallbackAnchor = useRef<HTMLButtonElement>(null)
+  const trigger = anchorRef ?? fallbackAnchor
+  if (extraItems.length === 0) return null
+  return <span data-engine-add-menu><Menu open={open} onClose={() => setOpen(false)} items={extraItems} align="end" compact
+    onSelect={(id) => {
+      setOpen(false)
+      trigger.current?.focus()
+      if (extraItems.some((item) => item.id === id)) onExtraSelect?.(id)
+    }}
+    anchor={<Button ref={trigger} shape="pill" variant="outline" aria-label={props.label ?? t('modules.addTemplates')} aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen(!open)}>
+      {props.label ?? t('modules.addTemplates')}<IconChevronDownOutlineRegular />
+    </Button>} /></span>
+}
+
 /** 模块能力创建菜单：**主语＝调用方给的模块**（`moduleId`），没有归属模块就不出创建入口。 */
 export function ModuleCapabilityCreateMenu(props: {
   store: PromptToolStore
