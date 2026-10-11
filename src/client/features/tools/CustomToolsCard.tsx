@@ -69,7 +69,9 @@ export function useCustomToolsEditor(props: {
     setLoadError('')
     const readingTools = editor.tools
     void (async () => {
-      const customResult = await bridgeCall('customTools', { expectedModuleId: props.moduleId })
+      // 第三个实参 = `x-module-id`：服务端按它解析编辑目标；不带就回退到首个启用模块，
+      // 与 expectedModuleId 不一致时直接 409 module-changed（卡片会一直读不出工具）。
+      const customResult = await bridgeCall('customTools', { expectedModuleId: props.moduleId }, props.moduleId)
       if (!active) return
       if (!customResult.ok) {
         editor.error = customResult.message ?? t('customTools.loadFailed')
@@ -117,7 +119,7 @@ export function useCustomToolsEditor(props: {
     })
     setSaving(true)
     editor.saving = true
-    void bridgeCall('customTools', { customTools: cleanTools, expectedModuleId: props.moduleId }).then((customResult) => {
+    void bridgeCall('customTools', { customTools: cleanTools, expectedModuleId: props.moduleId }, props.moduleId).then((customResult) => {
       editor.saving = false
       if (customResult.ok) editor.saved = tools
       editor.refresh?.()

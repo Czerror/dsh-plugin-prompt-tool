@@ -15,6 +15,7 @@ import { MenuSelect } from '../../ui/MenuSelect.tsx'
 import { SearchInput } from '../../ui/SearchInput.tsx'
 import { Button } from '../../ui/Button.tsx'
 import { ConfirmDialog } from '../../ui/ConfirmDialog.tsx'
+import { HintTooltip } from '../../ui/HintTooltip.tsx'
 import { PromptConfigCard } from './PromptConfigCard.tsx'
 import { LAYER_LABEL_KEYS, translateLabel } from './prompt-config-policy.ts'
 import { asTriggerRecord } from './RuleJsonField.tsx'
@@ -115,12 +116,19 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
     const visible = order.snapshot?.entries.filter(item => entries.some(row => row.identity === configIdentityKey(item))) ?? []
     return visible.filter(item => samePosition(entry, item))
   }
+  /** 独占官方档位的卡（system-section／runtime-context 每个档位只有一张）没有可交换的 peer：
+   *  跨档位先后由宿主装配顺序决定（引擎按 order 分组注册官方段），这里只说明原因，不假装能排。 */
+  const slotPinned = (entry: ModuleConfigOrderEntry): boolean =>
+    (entry.layer === 'system-section' || entry.layer === 'runtime-context') && orderPeers(entry).length <= 1
   const moveButtons = (entry: ModuleConfigOrderEntry): ReactNode => {
     const peers = orderPeers(entry), index = peers.findIndex(item => configIdentityKey(item) === configIdentityKey(entry))
+    const pinned = slotPinned(entry)
     return <span className={css.row}>
-      {[-1, 1].map(delta => <Button key={delta} variant="outline" shape="pill" icon aria-label={t(delta < 0 ? 'rules.moveUp' : 'rules.moveDown', { id: entry.configId })}
-        disabled={sortDisabled || !!query || peers[index + delta] === undefined}
-        onClick={() => { const target = peers[index + delta]; if (target) void saveOrder(configIdentityKey(entry), configIdentityKey(target)) }}>{delta < 0 ? '↑' : '↓'}</Button>)}
+      {[-1, 1].map(delta => <HintTooltip key={delta} label={pinned ? t('rules.orderPinnedHint') : t(delta < 0 ? 'rules.moveUp' : 'rules.moveDown', { id: entry.configId })}>
+        <Button variant="outline" shape="pill" icon aria-label={t(delta < 0 ? 'rules.moveUp' : 'rules.moveDown', { id: entry.configId })}
+          disabled={sortDisabled || !!query || peers[index + delta] === undefined}
+          onClick={() => { const target = peers[index + delta]; if (target) void saveOrder(configIdentityKey(entry), configIdentityKey(target)) }}>{delta < 0 ? '↑' : '↓'}</Button>
+      </HintTooltip>)}
     </span>
   }
   const duplicate = ({ moduleId, draft, editor }: ModuleRuleEditor, rule: RuleDefinition): void => {
@@ -168,9 +176,9 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
         return <div key={key} data-module-id={id} onDragOver={event => event.preventDefault()} onDrop={event => { event.preventDefault(); if (orderEntry && dragId.current) void saveOrder(dragId.current, configIdentityKey(orderEntry)); dragId.current = undefined }}>
           <RuleCard t={t} entry={entry} draft={draft} editor={editor} meta={store.meta} source={id} disabled={readOnly(id)} expanded={expanded === key} onToggle={() => toggle(key)} onDuplicate={() => duplicate(row, entry.value)}
             expandedRows={store.editorDrafts.expanded}
-            headerActions={orderEntry && <><button type="button" className={ui.dragHandle} disabled={sortDisabled || !!query} draggable={!sortDisabled && !query} aria-label={t('card.dragHint')} aria-keyshortcuts="ArrowUp ArrowDown"
+            headerActions={orderEntry && <><HintTooltip label={slotPinned(orderEntry) ? t('rules.orderPinnedHint') : t('card.dragHint')}><button type="button" className={ui.dragHandle} disabled={sortDisabled || !!query} draggable={!sortDisabled && !query} aria-label={t('card.dragHint')} aria-keyshortcuts="ArrowUp ArrowDown"
               onDragStart={event => { dragId.current = configIdentityKey(orderEntry); event.dataTransfer.effectAllowed = 'move'; event.dataTransfer.setData('text/plain', dragId.current) }} onDragEnd={() => { dragId.current = undefined }}
-              onKeyDown={event => { if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return; event.preventDefault(); const peers = orderPeers(orderEntry), index = peers.findIndex(item => configIdentityKey(item) === configIdentityKey(orderEntry)); const target = peers[index + (event.key === 'ArrowUp' ? -1 : 1)]; if (target) void saveOrder(configIdentityKey(orderEntry), configIdentityKey(target)) }}>⋮⋮</button>{moveButtons(orderEntry)}</>}
+              onKeyDown={event => { if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return; event.preventDefault(); const peers = orderPeers(orderEntry), index = peers.findIndex(item => configIdentityKey(item) === configIdentityKey(orderEntry)); const target = peers[index + (event.key === 'ArrowUp' ? -1 : 1)]; if (target) void saveOrder(configIdentityKey(orderEntry), configIdentityKey(target)) }}>⋮⋮</button></HintTooltip>{moveButtons(orderEntry)}</>}
             renderSettings={id === moduleId && entry.value.layer !== undefined && props.hasLayerSettings?.(entry.value.layer) && props.renderLayerSettings ? rule => props.renderLayerSettings!(rule.layer!, { id: rule.id, layer: rule.layer }) : undefined} />
         </div>
       })}
