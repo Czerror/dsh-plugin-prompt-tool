@@ -9,7 +9,7 @@ import { Context } from '@deepseek-ai/cordis'
 import { isolatedHome } from '../fixtures/host-harness.mjs'
 
 const { home } = isolatedHome('pt-startup-dependencies-')
-const { installPersonaRegistration } = await import('../../src/runtime/persona-registration.ts')
+const { installPersonaCapture } = await import('../../src/runtime/persona-registration.ts')
 const require = createRequire(import.meta.url)
 const dependencies = createRequire(require.resolve('@deepseek-ai/dsh-agent-preset-registry'))
 const load = name => import(pathToFileURL(dependencies.resolve(name)).href)
@@ -32,7 +32,7 @@ test('包补丁不阻塞官方启动，迟到依赖收敛且卸载插件后官�
   Object.assign(root.loader.builtins, core, {
     include: Include,
     // 只替换会启动工作台的宿主外壳；官方服务、补丁与主入口的人设注册均走实际实现。
-    owner: { name: 'startup-prompt-tool-owner', inject: ['subagents'], apply(ctx) { installPersonaRegistration(ctx) } },
+    owner: { name: 'startup-prompt-tool-owner', inject: ['subagents'], apply(ctx) { installPersonaCapture(ctx) } },
     required: { name: 'startup-agent-loop-consumer', inject: ['tools', 'systemPrompt'], apply() {} },
     first: { name: 'startup-first-provider', async* apply(ctx) {
       yield ctx.provide('startupFirst', {})

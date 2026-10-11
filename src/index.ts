@@ -11,8 +11,7 @@ import { registerModuleRuleTools } from './runtime/module-rule-tools.ts'
 import { registerModuleMemoryTools } from './runtime/module-memory-tools.ts'
 import { registerModuleVariableTools } from './runtime/module-variable-tools.ts'
 import { installPreStepCoordinator } from './runtime/pre-step-coordinator.ts'
-import { createModuleVariableAdapter } from './runtime/module-variable-adapter.ts'
-import { installPersonaRegistration } from './runtime/persona-registration.ts'
+import { installPersonaCapture } from './runtime/persona-registration.ts'
 import { registerTuiCommand } from './runtime/tui.ts'
 import { ensureModuleReady } from './host/write-module.ts'
 import {
@@ -220,15 +219,11 @@ registerTuiCommand(
   // 策略缺省 enabled=false；服务缺失时引擎只执行模块卡（独立引擎复制场景）。
   installPreStepCoordinator(ctx)
 
-  // 人设适配属于主插件运行态，不作为官方服务的启动依赖。
+  // 人设适配属于主插件运行态，不作为官方服务的启动依赖；来源选择不隐式启用其普通规则。
   const personaModules = () => runtime.modulesEnabled ? selectedPersonaModules(MODULES_DIR) : []
-  const persona = installPersonaRegistration(ctx)
-  ctx.effect(async function* () {
-    yield await persona.configure({
-      modules: personaModules,
-      variableStore: createModuleVariableAdapter(MODULES_DIR),
-      warn: message => warn(ctx, message),
-    })
+  const personaCapture = installPersonaCapture(ctx)
+  ctx.effect(function* () {
+    yield () => personaCapture.dispose()
     const agentsFiber = ctx.inject(['agents'], (actx: Context) => {
       const mounted = createAgentAssembly(actx, {
         moduleRoot: MODULES_DIR,
@@ -236,6 +231,7 @@ registerTuiCommand(
           ? enabledModuleIds(MODULES_DIR).filter((id) => moduleDirExists(MODULES_DIR, id))
           : [],
         personaModules,
+        personaCapture,
         warn: (message) => warn(ctx, message),
       })
       assembly = mounted

@@ -16,7 +16,7 @@ dsh --profile prompt-tool
 
 本地开发可将安装来源换为 `link:<本仓库绝对路径>`。插件只诊断缺失的 Web 能力，不改 profile manifest、包链接或重启服务。Node 与官方包版本要求见 [package.json](package.json)；宿主接入以实际安装的公开包验证，不能仅凭 peer 范围推断所有未来版本已验收。
 
-**升级代码、bundle 或 cordis.patch.yml 后，需要用户重启 DSH 服务。** 人设由主插件在会话作用域管理，不改变官方服务的启动依赖。旧会话的继承人设可覆盖，会话自有官方 Persona 在空闲维护窗口接管；未知插件直接注册的声明保持原状并报告，不以事后拼回系统段代替。
+**升级代码、bundle 或 cordis.patch.yml 后，需要用户重启 DSH 服务。** 人设由主插件在会话作用域管理，不改变官方服务的启动依赖：在每个 Agent 自己的 scope 注册同名段，遮蔽部署人设与预设 persona 行，不接管任何官方 fiber。AgentSetup 窗口内注册的同层声明会被撤换（插件人设优先），窗口外的同层声明撤不掉时装配失败并保留旧装配。
 
 ## 模块与工作台
 
@@ -91,7 +91,7 @@ persona:
 
 人设卡为主会话和子代理各提供一个来源下拉，默认“官方”，也可分别选择一个模块。正文仍保存在各模块的 persona.main/subagent；config.yml 的 personaSources 只保存两个来源模块 ID，选择人设不自动启用该模块的 rules。
 
-运行时只读取所选模块对应受众的字段，不跨模块逐字段合并。选中字段省略时继承官方原文，显式空文本清空，complete:false 解除人设独占；includeRuntimeContext:false 单独抑制动态上下文。人设不进入 rules 数组或排序，rules/_settings.yml 只保存其校验投影。官方人设与启用规则的 complete 冲突仍在完整配装前检查，失败保留上次有效配装。自定义文本读取所选来源模块的变量，继承官方正文不重新执行为模板。
+运行时只读取所选模块对应受众的字段，不跨模块逐字段合并。选中字段省略时继承已有声明（同层被接住的声明、祖先的官方 persona 行，最后是根部署人设），显式空文本清空，complete:false 解除人设独占；includeRuntimeContext:false 单独抑制动态上下文。人设不进入 rules 数组或排序，rules/_settings.yml 只保存其校验投影。人设与启用规则的 complete 冲突仍在撤旧之前检查，失败保留上次有效配装。自定义文本读取所选来源模块的变量，继承官方正文不重新执行为模板。
 
 ## 按需工具
 

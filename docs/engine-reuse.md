@@ -35,11 +35,11 @@
 
 人设策略来源由 host 的 `selectedPersonaModules(root)` 提供：config.yml.personaSources 为 main/subagent 各保存一个模块 ID 或官方默认，仅读取所选模块的对应受众字段。正文仍归模块定义，rules/_settings.yml 只作校验投影；选择来源不启用模块 rules，不进行多模块逐字段合并。
 
-只有官方 prefix/suffix 被处理：既有会话继承的 standing persona 从准确官方插件公开配置读取，在原 Agent scope 建立同名覆盖，不改共享预设。新建/恢复会话仅在真实 AgentSetup 窗口捕获该 scope 的人设注册，窗口结束即撤去钩子。会话自有官方 Persona 通过精确 fiber 身份，在 `runMaintenance()` 空闲窗口重载并取得实际注册句柄；正在工作时拒绝并允许稍后重试，不主动取消回合。继承正文不被当作插件模板重执行，自定义正文继续读取来源模块变量。
+人设段由装配通道在**每个 Agent 自己的 scope** 注册同名 `deployment:persona-prefix` / `deployment:persona-suffix`。同名段按 scope 链遮蔽、近者胜（`@deepseek-ai/dsh-scope` 的 `ScopedLayers.merge`），所以全局部署人设与预设挂在祖先 scope 的 persona 行都被替换，不需要接管任何人的 fiber。段落位置取 `getSectionOrder()`；未声明的字段、位置与 `complete` 从最近的已有声明继承（同层被接住的声明优先，其次是祖先的官方 persona 行，最后是根部署人设），找不到继承源也照常注册——遮蔽一个不存在的声明本身无害，不再因为「未观察」拒绝配装。继承的官方正文直接沿用原 `text`，不被当作本插件模板重执行；自定义正文继续读取来源模块变量。
 
-单选来源不代替独占校验，有效官方人设与启用规则的 complete 仍须预检。规则与人设纳入异步 prepare/commit/rollback，失败保留上次有效配装；恢复前核对原 owner 与配置，不能覆盖外部新改动。关闭与卸载释放自己的覆盖或恢复准确原声明；不操作私有 layers，不替换 Agent scope，不在截断后拼回系统段。
+单选来源不代替独占校验：人设的 `complete` 与同受众规则的 `complete` 仍在撤旧之前预检，冲突时保留上次有效配装。人设是装配通道里的一段普通贡献，随装配 fiber 一同挂载与释放——没有独立的人设事务、维护锁，也不重载任何官方 fiber；不操作私有 layers，不替换 Agent scope，不在截断后拼回系统段。
 
-未知第三方同层直接注册没有公开按名替换接口，保持原状并明确报告，不猜测原文或擅自重载其 owner。官方自有 Persona 的外部重载、配置冲突或未完成接管也必须报告，不能假称已生效。升级代码、patch 或 bundle 后需要用户重启服务，插件不自行重启。
+AgentSetup 窗口内注册的同层同名段会被接住：装配时先撤销它、再注册我们的段落，撤销凭据保留原 `PromptSection`，因此本插件人设优先于 `@deepseek-ai/dsh-subagent` 的 per-child persona 这类直接声明。窗口之外出现的同层声明撤不掉，装配失败并保留旧装配，由告警说明；释放后回落祖先声明，不回装被撤段落。升级代码、patch 或 bundle 后需要用户重启服务，插件不自行重启。
 
 ## 统一入口与模块职责
 

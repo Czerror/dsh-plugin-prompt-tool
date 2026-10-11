@@ -16,8 +16,11 @@
 import { existsSync } from 'node:fs'
 import { basename, join, resolve, sep } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import type { Context } from '@deepseek-ai/cordis'
+import type { Context, Fiber, Plugin } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
+import SystemPrompt, { PERSONA_PREFIX_SECTION } from '@deepseek-ai/dsh-system-prompt'
+import type { PromptSection, PromptSectionOrderName } from '@deepseek-ai/dsh-system-prompt'
+import { scopeChainOf, scopeOf, type ScopeKey } from '@deepseek-ai/dsh-scope'
 import { packageEngineDir, resolveModuleFacts, resolveModuleDir, resolveModuleParams, loadModuleSpec } from '../host/manifest.ts'
 import type { ModuleSpec } from '../host/manifest.ts'
 import { modelRequestConfigs } from '../host/prompt-configs.ts'
@@ -27,7 +30,7 @@ import { rulePromptConfigOptions } from '../host/module-storage.ts'
 import { compileCustomTool, validateCustomTools } from '../host/custom-tools.ts'
 import { recordRuleOutcome } from './rule-diagnostics.ts'
 import { createModuleVariableAdapter } from './module-variable-adapter.ts'
-import type { PersonaModule, PersonaPreparation } from './persona-registration.ts'
+import { planPersonaSections, type PersonaCapture, type PersonaModule, type PersonaPlan } from './persona-registration.ts'
 import { MODULE_TOOL_CAPABILITIES } from '../shared/engine-capabilities.ts'
 
 // @ts-expect-error ESM 引擎源码随插件提供。
@@ -77,6 +80,8 @@ export interface AgentAssemblyOptions {
   enabledModules: () => readonly string[]
   /** 已按主/子选择过滤的人设来源；来源选择不隐式启用其普通规则。 */
   personaModules?: () => readonly PersonaModule[]
+  /** AgentSetup 窗口内接住的同层人设声明；缺失只影响同层接管，遮蔽祖先声明不依赖它。 */
+  personaCapture?: PersonaCapture
   warn?: (message: string) => void
 }
 
@@ -289,6 +294,64 @@ export function createAgentAssembly(ctx: Context, options: AgentAssemblyOptions)
     if (options.warn !== undefined) options.warn(message)
     else ctx.logger?.warn?.(message)
   }
+  // 官方 persona 行以公开 config 提供人设声明；解析不到就当没有继承源，不阻断装配。
+  let personaPlugin: Plugin | undefined
+  let personaKnowledge: Promise<void> | undefined
+  const readPersonaKnowledge = (): Promise<void> => {
+    personaKnowledge = personaKnowledge ?? Promise.resolve().then(async () => {
+      const loader = ctx.get('loader') as { import(name: string): unknown | Promise<unknown>, unwrapExports(value: unknown): Plugin } | undefined
+      if (loader === undefined) return
+      const plugin = loader.unwrapExports(await loader.import('@deepseek-ai/dsh-persona'))
+      if (!ctx.registry.resolve(plugin)) throw new Error('官方 Persona 导出无有效入口')
+      personaPlugin = plugin
+    }).catch((error: unknown) => { warn(error) })
+    return personaKnowledge
+  }
+  const liveFiber = (fiber: Fiber): boolean => fiber.uid !== null && fiber.store !== undefined && fiber.inertia === undefined
+  const officialAt = (scope: ScopeKey): Fiber | undefined => {
+    const fibers = [...(personaPlugin ? ctx.registry.get(personaPlugin)?.fibers ?? [] : [])].filter(fiber => liveFiber(fiber) && scopeOf(fiber.ctx) === scope)
+    if (fibers.length > 1) throw new Error('同作用域存在多个官方人设实例，拒绝猜测所有者')
+    return fibers[0]
+  }
+  const sectionFromConfig = (fiber: Fiber, name: string, root = false): PromptSection => {
+    const prefix = name === PERSONA_PREFIX_SECTION
+    const field = root ? prefix ? 'personaPrefix' : 'personaSuffix' : prefix ? 'prefix' : 'suffix'
+    const prompt = fiber.ctx.get('systemPrompt')
+    if (prompt === undefined) throw new Error('官方人设需要 systemPrompt 服务')
+    return { name, text: String(fiber.config[field] ?? ''), order: prompt.getSectionOrder(prefix ? 'DEPLOYMENT_PERSONA_PREFIX' : 'DEPLOYMENT_PERSONA_SUFFIX'),
+      ...(!root && prefix && fiber.config.complete === true ? { complete: true } : {}) }
+  }
+  /**
+   * 同名段的继承源：同层被接住的声明优先，其次沿 scope 链找最近的官方 persona 行，最后是根部署人设。
+   * 找不到就是没有继承源——遮蔽一个不存在的声明本身无害，不再因为「未观察」拒绝配装。
+   */
+  const inheritedSection = (scope: ScopeKey, name: string): PromptSection | undefined => {
+    const captured = options.personaCapture?.records(scope).find(record => record.name === name)
+    if (captured !== undefined) return captured.section
+    for (const parent of [...scopeChainOf(scope).slice(1), undefined]) {
+      const fiber = parent === undefined
+        ? [...(ctx.registry.get(SystemPrompt)?.fibers ?? [])].find(item => liveFiber(item) && scopeOf(item.ctx) === undefined)
+        : officialAt(parent)
+      if (fiber !== undefined) return sectionFromConfig(fiber, name, parent === undefined)
+    }
+    return undefined
+  }
+  const personaPlanFor = (agent: Agent, modules: readonly PersonaModule[]): PersonaPlan => planPersonaSections({
+    audience: isDelegated(agent.session) ? 'subagent' : 'main',
+    modules,
+    // 两个取值都惰性：没有人设来源的 Agent 不因为缺服务而失败。
+    inherited: name => {
+      const scope = scopeOf(agent.ctx)
+      return scope === undefined ? undefined : inheritedSection(scope, name)
+    },
+    order: (name: PromptSectionOrderName) => {
+      const prompt = agent.ctx.get('systemPrompt')
+      if (prompt === undefined) throw new Error('人设配装需要 systemPrompt 服务')
+      return prompt.getSectionOrder(name)
+    },
+    variableStore,
+    ...options.warn === undefined ? {} : { warn: options.warn },
+  })
   // 跨模块重复身份按「身份 → 模块集」只报一次：反复重装（每次保存、每个新 Agent）不刷屏；
   // 装上第二处（新模块）时再加报一次。集合建在 mount 工厂级，故跨 refresh()（切预设、重装）
   // 存活——同一重复不再告警是刻意的，要重新看到需重载插件。
@@ -312,10 +375,12 @@ export function createAgentAssembly(ctx: Context, options: AgentAssemblyOptions)
     await current.fiber.dispose()
   }
 
-  const mount = async (agent: Agent, prepared: PreparedAssembly[], duplicateIdentities: DuplicateIdentity[] = []): Promise<void> => {
+  const mount = async (agent: Agent, prepared: PreparedAssembly[], plan: PersonaPlan, duplicateIdentities: DuplicateIdentity[] = []): Promise<void> => {
     // 宿主能力取并集；模块身份独立保留，提示词配置在各自插入点按持久序号执行。
     const services = new Set<string>()
     for (const item of prepared) for (const name of item.services) services.add(name)
+    const personaActive = plan.sections.length > 0 || plan.suppressRuntimeContext
+    if (personaActive) services.add('systemPrompt')
     const fiber = agent.ctx.plugin({
       name: 'prompt-tool-assembly',
       inject: [...services],
@@ -347,6 +412,25 @@ export function createAgentAssembly(ctx: Context, options: AgentAssemblyOptions)
           }),
         }))
         scopeCtx.effect(() => mountRuleSources(scopeCtx, ruleSources, { agent, onOutcome: recordRuleOutcome, variableStore }))
+        // 人设：在 Agent 自己的 scope 注册同名段，遮蔽祖先的部署人设与预设 persona 行；
+        // 同层已被注册时只能先撤后挂，撤销凭据来自 AgentSetup 窗口内的捕获。
+        if (personaActive) {
+          const capture = options.personaCapture
+          const scope = scopeOf(scopeCtx)
+          scopeCtx.effect(() => {
+            const applied: Array<() => void> = []
+            const rollback = (): void => { while (applied.length > 0) applied.pop()?.() }
+            try {
+              for (const section of plan.sections) {
+                const taken = scope === undefined ? undefined : capture?.records(scope).find(record => record.name === section.name)
+                taken?.off()
+                applied.push(scopeCtx.systemPrompt.section(section))
+              }
+              if (plan.suppressRuntimeContext) applied.push(scopeCtx.systemPrompt.suppressRuntimeContext())
+            } catch (error) { rollback(); throw error }
+            return rollback
+          }, 'prompt-tool persona')
+        }
         const privateMounted = new Set<string>()
         for (const item of prepared) {
           for (const module of item.modules) {
@@ -386,34 +470,35 @@ export function createAgentAssembly(ctx: Context, options: AgentAssemblyOptions)
     const candidates = live.map(agent => ({ agent, prepared, previous: mounts.get(agent.id) }))
     if (!active) return
     const personaModules = options.personaModules?.() ?? prepared
-    const persona = ctx.get('promptToolPersona')
+    if (options.personaModules !== undefined) await readPersonaKnowledge()
     const sections = { main: completeSectionsOf(prepared, 'main'), subagent: completeSectionsOf(prepared, 'subagent') }
     for (const [audience, complete] of Object.entries(sections)) {
       if (complete.length > 1) throw new Error(`${audience} 有多个生效 complete 段：${complete.join('、')}`)
     }
-    const personaTargets = candidates.map(({ agent }) => ({ agent, completeSections: sections[isDelegated(agent.session) ? 'subagent' : 'main'] }))
-    if (persona === undefined && (personaModules.some(item => item.persona !== undefined) || personaTargets.some(target => target.completeSections.length > 0))) {
-      throw new Error('人设运行适配器不可用，无法验证独占段；请检查提示词插件状态')
-    }
-    // 人设和官方继承独占必须在撤旧前验证；事务捕获快照后不再读取坏候选。
-    const personaChange: PersonaPreparation | undefined = await persona?.prepare(personaTargets, personaModules)
+    // 人设候选与独占冲突必须在撤旧之前算清：坏候选、同受众双 complete 都在这里拒绝。
+    const plans = candidates.map(({ agent }) => {
+      const plan = personaPlanFor(agent, personaModules)
+      const audience = isDelegated(agent.session) ? 'subagent' : 'main'
+      if (plan.sections.some(section => section.name === PERSONA_PREFIX_SECTION && section.complete === true) && sections[audience].length > 0) {
+        throw new Error(`Agent ${agent.id} 的 ${audience} 有多个生效 complete 段：人设与 ${sections[audience].join('、')}`)
+      }
+      return plan
+    })
     const changed: typeof candidates = []
     try {
-      for (const candidate of candidates) {
+      for (const [index, candidate] of candidates.entries()) {
         if (!active || disposed.has(candidate.agent)) continue
         changed.push(candidate)
         await release(candidate.agent.id)
-        await mount(candidate.agent, candidate.prepared, duplicateDedupeIdentities(candidate.prepared))
+        await mount(candidate.agent, candidate.prepared, plans[index] as PersonaPlan, duplicateDedupeIdentities(candidate.prepared))
       }
-      if (active) await personaChange?.commit()
     } catch (error) {
       const restoreErrors: unknown[] = []
-      try { await personaChange?.rollback() } catch (restoreError) { restoreErrors.push(restoreError) }
       for (const { agent, previous } of changed.reverse()) {
         if (!active || disposed.has(agent)) continue
         try {
           await release(agent.id)
-          if (previous?.agent === agent) await mount(agent, previous.prepared)
+          if (previous?.agent === agent) await mount(agent, previous.prepared, personaPlanFor(agent, personaModules))
         } catch (restoreError) { restoreErrors.push(restoreError) }
       }
       if (restoreErrors.length > 0) {
@@ -421,8 +506,6 @@ export function createAgentAssembly(ctx: Context, options: AgentAssemblyOptions)
           `切换装配失败（${failureReason(error)}），且恢复原有装配也失败（${restoreErrors.map(failureReason).join('；')}）`)
       }
       throw error
-    } finally {
-      await personaChange?.release()
     }
   }
   const install = async (agent: Agent): Promise<void> => {
@@ -476,7 +559,9 @@ export function createAgentAssembly(ctx: Context, options: AgentAssemblyOptions)
       try {
         await serial(async () => {
           const enabled = options.enabledModules()
-          const targets = ctx.agents.list().filter(agent => {
+          // 宿主 registry 未必列出全部存活 Agent（嵌入运行时、测试替身），已挂载的一并纳入。
+          const known = new Set<Agent>([...(ctx.get('agents')?.list() ?? []), ...[...mounts.values()].map(mount => mount.agent)])
+          const targets = [...known].filter(agent => {
             const current = mounts.get(agent.id)
             return options.personaModules !== undefined || moduleId === undefined || current === undefined || current.moduleIds.includes(moduleId) || enabled.includes(moduleId)
           })

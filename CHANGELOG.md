@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+### 人设段并入运行时配装通道（2026-10-11）
+
+- **人设不再接管官方 fiber**：官方把 `deployment:persona-prefix` / `deployment:persona-suffix` 设计成可替换槽位——同名段按 scope 链遮蔽、近者胜（`@deepseek-ai/dsh-scope` 的 `ScopedLayers.merge`），只有同一层内重名才抛。装配现在只在自己的 Agent scope 注册同名段，就替换掉全局部署人设与预设挂在祖先 scope 的 persona 行，不再需要 `fiber.update()` 重载、注册租约重放、`runMaintenance()` 空闲窗口与独立的人设事务。
+- **优先级明确**：插件人设优先于其他来源。Agent scope 同层已被注册的声明（例如 `@deepseek-ai/dsh-subagent` 的 per-child persona）在 AgentSetup 窗口内被接住，装配时先撤后挂（保留原 `PromptSection` 作凭据）；窗口之外出现的同层声明撤不掉，装配失败并保留旧装配，由告警说明。
+- **继承语义不变，判定更宽**：未声明的字段、段落位置与 `complete` 从最近的已有声明继承（同层被接住的声明 > 祖先官方 persona 行 > 根部署人设）；继承正文直接沿用原 `text`，不重复执行本插件模板。祖先链上没有官方 persona 行时**不再**以「人设原声明未被观察」拒绝整批配装——遮蔽一个不存在的声明本身无害。
+- **受众判据统一**：人设与规则改用同一个 `isDelegated`（`delegationDepth > 0`），不再看 `header.origin`；历史、恢复与第三方创建的会话不再出现「规则按主会话、人设按子代理」的受众分叉。
+- **行为变化（已确认接受）**：取消「Agent 忙碌时拒绝保存、等空闲重试」的维护锁语义，人设随装配立即重挂；外部对官方 persona 行的改动不再被检测并拒绝，本插件一律优先。
+- **回归**：`test/host/persona-registration.test.mjs` 重写为装配期行为断言（主/子受众、三态、同层撤换、无官方声明、候选非法保旧），`test/host/agent-assembly.test.mjs` 的独占用例改为跨来源（规则 × 人设）聚合。
+
 ### 内置 superpowers 引导模块（2026-10-11）
 
 - **新增内置模块 `superpowers`（默认不启用）**：把上游 [obra/superpowers](https://github.com/obra/superpowers) v7.0.0 的启动引导（`skills/using-superpowers/SKILL.md` + `hooks/session-start` 注入的那段）DSH 化后常驻注入 `system-section`——「任何回答或动作之前先 `skill_search` / `skill_load`」、流程技能优先、常见路由表与红旗清单。上游靠 SessionStart hook 注入，DSH 没有 hook 通道，改用模块注入。
@@ -14,6 +23,7 @@
 
 - 删除对官方 `system-prompt` 的 Loader 等待覆写及独立人设早入口，避免两级异步服务就绪通知遗漏导致系统提示、工具和子代理级联 pending。主插件自行管理人设运行态，官方核心不依赖可选插件。
 - 人设覆盖转到会话期：支持既有会话继承的预设人设、空闲维护窗口内的会话自有官方 Persona，以及新建/恢复子代理的 setup 声明。未知插件直接注册的人设不强行替换，报告边界；保持原会话 scope、历史与共享预设，不事后恢复截断结果。此方案替代下列早入口与启动屏障说明。
+- 本节描述的会话期接管（`runMaintenance` 空闲窗口与官方 Persona fiber 重载）已由上面的「人设段并入运行时配装通道」取代；启动解耦本身不变——包补丁仍只注册主插件，官方核心不依赖可选插件。
 
 ### 固定系统段受众修复（2026-10-11）
 

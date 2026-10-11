@@ -24,7 +24,7 @@ const { installPreStepCoordinator, PRE_STEP_COORDINATOR_SERVICE } = await import
 const { ruleDiagnosticsSnapshot, resetRuleDiagnostics } = await import('../../src/runtime/rule-diagnostics.ts')
 const { promptConfigToRule } = await import('../../src/host/rule-builder.ts')
 const { mountRuleSources } = await import('../../engine/rule-runtime.mjs')
-const { installPersonaRegistration } = await import('../../src/runtime/persona-registration.ts')
+const { installPersonaCapture } = await import('../../src/runtime/persona-registration.ts')
 const { loadModuleSpec } = await import('../../src/host/manifest.ts')
 
 /** 装配能力探针：装配只问「宿主是否提供该服务」，这里全部视为提供。 */
@@ -858,7 +858,7 @@ test('「独占」段唯一性：聚合选中人设及跨模块规则，准备�
   } }
   root.provide('loader', { import: async name => { assert.equal(name, '@deepseek-ai/dsh-persona'); return OfficialPersona }, unwrapExports: value => value })
   let persona, driver
-  await root.plugin({ name: 'test-persona-early', apply(ctx) { persona = installPersonaRegistration(ctx) } })
+  await root.plugin({ name: 'test-persona-early', apply(ctx) { persona = installPersonaCapture(ctx) } })
   await root.plugin(SystemPrompt)
   await root.plugin(ToolRuntime)
   root.provide('llm', {})
@@ -877,9 +877,8 @@ test('「独占」段唯一性：聚合选中人设及跨模块规则，准备�
   await standing.ctx.plugin(OfficialPersona, { prefix: 'OFFICIAL', complete: true })
   let selected = 'selected-persona', enabled = ['exclusive-live']
   const selectedModules = () => selected === undefined ? [] : [{ moduleId: selected, persona: loadModuleSpec(join(moduleRoot, selected)).persona }]
-  const releaseSource = await persona.configure({ modules: selectedModules })
-  const runtime = createAgentAssembly(root, { moduleRoot, enabledModules: () => enabled, personaModules: selectedModules, warn: message => warnings.push(message) })
-  t.after(async () => { await runtime.dispose(); await releaseSource(); for (const scope of scopes.reverse()) await scope.dispose(); await root.fiber.dispose() })
+  const runtime = createAgentAssembly(root, { moduleRoot, enabledModules: () => enabled, personaModules: selectedModules, personaCapture: persona, warn: message => warnings.push(message) })
+  t.after(async () => { await runtime.dispose(); for (const scope of scopes.reverse()) await scope.dispose(); await root.fiber.dispose() })
   const main = await driver.agents.create({ sessionId: 'exclusive-main' })
   const child = await driver.agents.create({ sessionId: 'exclusive-child', meta: { origin: 'subagent', delegationDepth: 1 } })
   const stepTexts = async agent => (await root.waterfall(scopeTarget(agent, agent), 'agent/pre-step', { agent, signal: new AbortController().signal }, async () => ({ kind: 'enter', messages: [] }))).messages.flatMap(message => message.content.map(block => block.text))
@@ -889,58 +888,30 @@ test('「独占」段唯一性：聚合选中人设及跨模块规则，准备�
   assert.ok((await sectionTexts(child)).includes('CHILD'))
   assert.deepEqual(runtime.moduleIds(main.id), ['exclusive-live'], '选择人设不启用来源模块的普通规则')
 
-  writeModuleFixture('exclusive-live', { modules: [], promptConfigs: [exclusive('one')] })
-  writeModuleFixture('exclusive-other', { modules: [], promptConfigs: [exclusive('two')] })
-  enabled = ['exclusive-live', 'exclusive-other']
+  // 人设 complete:false 遮蔽官方 complete：规则独占与它不再互相误报，规则段成为唯一系统段。
+  writeModuleFixture('exclusive-live', { modules: [], promptConfigs: [{ ...exclusive('one'), audience: 'main' }] })
+  await runtime.refresh()
+  assert.deepEqual(await sectionTexts(main), ['one 正文'])
+  assert.ok((await sectionTexts(child)).includes('CHILD'), '子代理不受主会话规则的 complete 影响')
+
+  // 人设显式 complete:true 与同受众规则 complete 冲突：撤旧之前拒绝，旧装配原样保留。
+  writeModuleFixture('selected-persona', { modules: [], persona: { main: { prefix: 'NEW', complete: true }, subagent: { prefix: 'CHILD', complete: false } } })
   await assert.rejects(runtime.refresh(), /多个生效 complete/)
-  for (const agent of [main, child]) { assert.deepEqual(await stepTexts(agent), ['OLD']); assert.equal(runtime.hasMounted(agent.id), true) }
-
-  // 主会话显式 false 合法，子代理继承官方 complete=true 冲突；必须整批预检，主会话也不先切换。
-  enabled = ['exclusive-live']
-  writeModuleFixture('selected-persona', { modules: [], persona: { main: { prefix: 'NEW', complete: false } } })
-  await assert.rejects(runtime.refresh('selected-persona'), /官方人设.*exclusive-live/)
-  assert.ok((await sectionTexts(main)).includes('SELECTED'))
+  assert.deepEqual(await sectionTexts(main), ['one 正文'])
   assert.ok((await sectionTexts(child)).includes('CHILD'))
-  for (const agent of [main, child]) assert.deepEqual(await stepTexts(agent), ['OLD'])
+  assert.deepEqual(runtime.moduleIds(main.id), ['exclusive-live'])
 
-  // 磁盘人设正文非法也在撤旧之前失败，恢复绝不重新读取坏候选。
+  // 不同受众的独占可跨来源共存：主会话由规则独占，子代理由人设独占。
+  writeModuleFixture('selected-persona', { modules: [], persona: { main: { prefix: 'NEW', complete: false }, subagent: { prefix: 'CHILD', complete: true } } })
+  await runtime.refresh()
+  assert.deepEqual(await sectionTexts(child), ['CHILD'], '子代理人设独占')
+  assert.deepEqual(await sectionTexts(main), ['one 正文'], '主会话仍由规则独占')
+
+  // 来源文件坏掉时拒绝刷新，两个受众都保持上一个有效装配。
   writeFileSync(join(moduleRoot, 'selected-persona', 'module.yml'), 'id: selected-persona\nmodules: []\npersona: [bad]\n')
-  await assert.rejects(runtime.refresh('selected-persona'), /persona/)
-  for (const agent of [main, child]) assert.deepEqual(await stepTexts(agent), ['OLD'])
-
-  writeModuleFixture('selected-persona', { modules: [], persona: { main: { complete: false }, subagent: { complete: false } } })
-  await runtime.refresh('selected-persona')
-  for (const agent of [main, child]) assert.deepEqual(await sectionTexts(agent), ['one 正文'])
-  selected = undefined
-  await assert.rejects(runtime.refresh(), /官方人设/)
-  for (const agent of [main, child]) assert.deepEqual(await sectionTexts(agent), ['one 正文'])
-
-  // 不同受众的独占可跨模块共存；同受众重叠仍在撤旧前拒绝。
-  selected = 'selected-persona'
-  enabled = ['exclusive-live', 'exclusive-other']
-  writeModuleFixture('exclusive-live', { modules: [], promptConfigs: [{ ...exclusive('main-only'), audience: 'main' }] })
-  writeModuleFixture('exclusive-other', { modules: [], promptConfigs: [{ ...exclusive('child-only'), audience: 'subagent' }] })
-  await runtime.refresh()
-  assert.deepEqual(await sectionTexts(main), ['main-only 正文'])
-  assert.deepEqual(await sectionTexts(child), ['child-only 正文'])
-  writeModuleFixture('exclusive-other', { modules: [], promptConfigs: [{ ...exclusive('overlap'), audience: 'main' }] })
-  await assert.rejects(runtime.refresh(), /main.*多个生效 complete/)
-  assert.deepEqual(await sectionTexts(main), ['main-only 正文'])
-  assert.deepEqual(await sectionTexts(child), ['child-only 正文'])
-
-  // 官方独占只与对应受众的规则比较，不阻止另一受众的固定注册。
-  enabled = ['exclusive-live']
-  writeModuleFixture('selected-persona', { modules: [], persona: { main: { complete: false } } })
-  await runtime.refresh()
-  assert.deepEqual(await sectionTexts(main), ['main-only 正文'])
-  assert.deepEqual(await sectionTexts(child), ['OFFICIAL'])
-  enabled = ['exclusive-other']
-  writeModuleFixture('exclusive-other', { modules: [], promptConfigs: [{ ...exclusive('child-only'), audience: 'subagent' }] })
-  writeModuleFixture('selected-persona', { modules: [], persona: { subagent: { complete: false } } })
-  await runtime.refresh()
-  assert.deepEqual(await sectionTexts(main), ['OFFICIAL'])
-  assert.deepEqual(await sectionTexts(child), ['child-only 正文'])
-  assert.deepEqual(warnings, [])
+  await assert.rejects(runtime.refresh(), /persona/)
+  assert.deepEqual(await sectionTexts(child), ['CHILD'])
+  assert.deepEqual(await sectionTexts(main), ['one 正文'])
 })
 
 test('固定系统段：独占和上下文抑制只作用目标受众，主子分别独占并可释放', async t => {
