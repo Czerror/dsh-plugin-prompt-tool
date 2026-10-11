@@ -84,7 +84,6 @@ test('settings bridge /describe 返回宿主默认模型（agent-default-model �
     ns: 'prompt-tool',
     models: () => ({ available: true, providers: ['deepseek-official'] }),
     skills: () => skillsStateStub(),
-    schemaDir: () => '',
   })
   const handler = handlers.get(PREFIX + BRIDGE_ENDPOINTS.describe)
   assert.ok(handler, 'describe 端点应注册')
@@ -128,7 +127,6 @@ test('settings bridge /meta 返回引擎能力矩阵', async () => {
     ns: 'prompt-tool',
     models: () => ({ available: true, providers: [] }),
     skills: () => skillsStateStub(),
-    schemaDir: () => '',
   })
   const handler = handlers.get(`${PREFIX}/meta`)
   assert.ok(handler)
@@ -141,6 +139,33 @@ test('settings bridge /meta 返回引擎能力矩阵', async () => {
   assert.ok(payload.value.meta.strategies.includes('anchor-notice'))
 })
 
+// 空请求体在事务里等于 `{}`（T6 规格）：端点按字段拒绝，但拒绝码不再统一是 settings-rejected。
+// 本表把这条已接受的行为变化钉住——真实客户端恒发 JSON.stringify(body ?? {})，走不到空体。
+test('settings bridge 空请求体按 {} 处理：状态码与拒绝码以本表为准', async () => {
+  const { ctx, handlers } = makeHarness()
+  registerSettingsBridge(ctx, {
+    ns: 'prompt-tool',
+    models: () => ({ available: true, providers: [] }),
+    skills: () => skillsStateStub(),
+    moduleDirectory: () => 'D:/isolated/module',
+  })
+  for (const [endpoint, code] of [
+    [BRIDGE_ENDPOINTS.mutate, 'settings-rejected'],
+    [BRIDGE_ENDPOINTS.modelReasoning, 'reasoning-invalid-shape'],
+    [BRIDGE_ENDPOINTS.skillsImport, 'skills-import-rejected'],
+    [BRIDGE_ENDPOINTS.importModulePackage, 'module-package-invalid'],
+    [BRIDGE_ENDPOINTS.charactersImport, 'characters-rejected'],
+    [BRIDGE_ENDPOINTS.agentsFile, 'settings-rejected'],
+  ]) {
+    const handler = handlers.get(PREFIX + endpoint)
+    assert.ok(handler, `${endpoint} 端点应注册`)
+    const res = fakeRes()
+    await handler(fakeReq(), res)
+    assert.equal(res.status, 400, `${endpoint} 空请求体必须拒绝`)
+    assert.equal(JSON.parse(res.body).code, code, `${endpoint} 拒绝码`)
+  }
+})
+
 test('settings bridge /skills-import 写入技能文件并触发目录刷新回调', async () => {
   const dir = mkdtempSync(join(tmpdir(), `pt-skills-import-${process.pid}-`))
   let refreshes = 0
@@ -150,8 +175,7 @@ test('settings bridge /skills-import 写入技能文件并触发目录刷新回�
       ns: 'prompt-tool',
       models: () => ({ available: true, providers: [] }),
       skills: () => skillsStateStub({ skillsRoot: dir }),
-      schemaDir: () => '',
-      afterSkillsChange: () => { refreshes += 1 },
+        afterSkillsChange: () => { refreshes += 1 },
     })
     const handler = handlers.get(PREFIX + BRIDGE_ENDPOINTS.skillsImport)
     assert.ok(handler, '/skills-import 端点应注册')
@@ -185,7 +209,7 @@ test('两个技能导入端点先报告冲突，确认名单才能覆盖，非�
   const { ctx, handlers } = makeHarness()
   let refreshes = 0
   registerSettingsBridge(ctx, { ns: 'prompt-tool', models: () => ({ available: false, providers: [] }),
-    skills: () => skillsStateStub({ skillsRoot: root }), schemaDir: () => '', afterSkillsChange: () => { refreshes += 1 } })
+    skills: () => skillsStateStub({ skillsRoot: root }), afterSkillsChange: () => { refreshes += 1 } })
   for (const [endpoint, body] of [
     ['skillsImport', { files: [{ path: 'demo/SKILL.md', content: Buffer.from(marker('new')).toString('base64') }] }],
     ['skillsImportDirectory', { path: source }],
@@ -231,7 +255,7 @@ test('模板变量与参数独立保存，读取与 bootstrap 不回退旧 param
   const layerSettings = { 'tool-pipeline': { toolGitBashEnabled: false, strReplaceEditorMaxOutputChars: 16000 } }
   writeFileSync(file, `# keep comment\nid: ${basename(dir)}\nparams: ${JSON.stringify(params)}\nlayerSettings: ${JSON.stringify(layerSettings)}\n`, 'utf8')
   registerSettingsBridge(ctx, { ns: 'prompt-tool', models: () => ({ available: true, providers: [] }),
-    skills: () => skillsStateStub(), schemaDir: () => '', moduleDirectory: () => dir })
+    skills: () => skillsStateStub(), moduleDirectory: () => dir })
   const write = handlers.get(PREFIX + BRIDGE_ENDPOINTS.moduleVariables)
   const variableRequest = (body = {}) => fakeReq({ async *[Symbol.asyncIterator]() {
     yield Buffer.from(JSON.stringify({ scope: 'module', expectedModuleId: basename(dir), ...body }))
@@ -282,7 +306,7 @@ test('请求模块身份统一 bootstrap 快照与规则写入；错误身份和
   let requestedDir = dirA
   const rebuilt = []
   registerSettingsBridge(ctx, { ns: 'prompt-tool', models: () => ({ available: true, providers: [] }),
-    skills: () => skillsStateStub(), schemaDir: () => '',
+    skills: () => skillsStateStub(),
     moduleDirectory: (id) => id === idA ? requestedDir : dirB, overridesChanged: (id) => { rebuilt.push(id) } })
   const call = async (endpoint, body = {}, options = {}) => {
     const target = Object.hasOwn(options, 'target') ? options.target : idA
@@ -373,7 +397,7 @@ test('模块配置排序端点：启用尾部追加、跨模块保存、冲突�
   const rebuilt = []
   let beforeRebuild = async () => {}
   registerSettingsBridge(ctx, { ns: 'prompt-tool', models: () => ({ available: true, providers: [] }),
-    skills: () => skillsStateStub(), schemaDir: () => '', moduleDirectory: () => dirs[0],
+    skills: () => skillsStateStub(), moduleDirectory: () => dirs[0],
     overridesChanged: async (id) => { await beforeRebuild(id); rebuilt.push(id) } })
   const call = async (endpoint, body) => {
     const handler = handlers.get(PREFIX + BRIDGE_ENDPOINTS[endpoint])
@@ -504,8 +528,7 @@ test('预设列表、导出、复制、删除、新建与导入都作用于官�
       ns: 'prompt-tool',
       models: () => ({ available: true, providers: [] }),
       skills: () => skillsStateStub(),
-      schemaDir: () => '',
-      moduleDirectory: () => activeDir,
+        moduleDirectory: () => activeDir,
       moduleInstalled: (id) => { importedIds.push(id) },
       moduleListChanged: () => { registryRefreshes++ },
     })
@@ -549,8 +572,7 @@ test('settings bridge：system 预设拒绝全部当前预设写入', async () =
       ns: 'prompt-tool',
       models: () => ({ available: true, providers: [] }),
       skills: () => skillsStateStub(),
-      schemaDir: () => '',
-      moduleDirectory: () => dir,
+        moduleDirectory: () => dir,
     })
     const rulesRead = fakeRes()
     await handlers.get(PREFIX + BRIDGE_ENDPOINTS.rules)(fakeReq({ async *[Symbol.asyncIterator]() { yield Buffer.from(JSON.stringify({ expectedModuleId: basename(dir) })) } }), rulesRead)
@@ -605,8 +627,7 @@ test('settings bridge /custom-tools 保存时自动追加工具模块', async ()
       ns: 'prompt-tool',
       models: () => ({ available: true, providers: [] }),
       skills: () => skillsStateStub(),
-      schemaDir: () => '',
-      moduleDirectory: () => dir,
+        moduleDirectory: () => dir,
       overridesChanged: () => {},
     })
     const handler = handlers.get(PREFIX + BRIDGE_ENDPOINTS.customTools)
@@ -632,7 +653,7 @@ test('settings bridge /subagent-tool-policy 保存、停用与模块装配均为
     const { ctx, handlers } = makeHarness()
     let rebuilds = 0
     registerSettingsBridge(ctx, { ns: 'prompt-tool', models: () => ({ available: true, providers: [] }),
-      skills: () => skillsStateStub(), schemaDir: () => '', moduleDirectory: () => dir,
+      skills: () => skillsStateStub(), moduleDirectory: () => dir,
       overridesChanged: () => { rebuilds += 1 } })
     const handler = handlers.get(PREFIX + BRIDGE_ENDPOINTS.subagentToolPolicy)
     const policy = {
@@ -671,8 +692,7 @@ test('settings bridge /persona 读写顶层 persona 段并按实际模块身份�
       ns: 'prompt-tool',
       models: () => ({ available: true, providers: [] }),
       skills: () => skillsStateStub(),
-      schemaDir: () => '',
-      moduleDirectory: () => dir,
+        moduleDirectory: () => dir,
       overridesChanged: (id) => { rebuilds.push(id) },
     })
     const handler = handlers.get(PREFIX + BRIDGE_ENDPOINTS.persona)
@@ -721,7 +741,7 @@ test('/persona：未选人设可以保存独占字段，发布失败保留定义
   const file = join(dir, 'module.yml')
   const writeModule = enabled => writeFileSync(file, JSON.stringify({ id: basename(dir), modules: ['rule-engine'], rules: [textRule('exclusive-section', '独占段', { enabled, layer: 'system-section', params: { complete: true } })] }))
   try {
-    registerSettingsBridge(ctx, { ns: 'prompt-tool', models: () => ({ available: true, providers: [] }), skills: () => skillsStateStub(), schemaDir: () => '', moduleDirectory: () => dir, overridesChanged: () => { rebuilds++; if (failPublication) throw new Error('publication unavailable') } })
+    registerSettingsBridge(ctx, { ns: 'prompt-tool', models: () => ({ available: true, providers: [] }), skills: () => skillsStateStub(), moduleDirectory: () => dir, overridesChanged: () => { rebuilds++; if (failPublication) throw new Error('publication unavailable') } })
     const handler = handlers.get(PREFIX + BRIDGE_ENDPOINTS.persona)
     const post = async () => {
       const read = fakeRes()
@@ -758,7 +778,7 @@ test('/persona-sources：主子来源独立于编辑模块，保存不启用规�
   let failPublication = false
   for (const [dir, prefix] of [[alpha, 'ALPHA'], [beta, 'BETA']]) writeFileSync(join(dir, 'module.yml'), JSON.stringify({ id: basename(dir), modules: [], rules: [], persona: { main: { prefix: prefix + '-MAIN' }, subagent: { prefix: prefix + '-CHILD' } } }))
   try {
-    registerSettingsBridge(ctx, { ns: 'prompt-tool', models: () => ({ available: true, providers: [] }), skills: () => skillsStateStub(), schemaDir: () => '', moduleDirectory: () => '', overridesChanged: target => { rebuilds.push(target); if (failPublication) throw new Error('runtime unavailable') } })
+    registerSettingsBridge(ctx, { ns: 'prompt-tool', models: () => ({ available: true, providers: [] }), skills: () => skillsStateStub(), moduleDirectory: () => '', overridesChanged: target => { rebuilds.push(target); if (failPublication) throw new Error('runtime unavailable') } })
     const post = skillsPost(handlers, 'personaSources')
     const initial = await post({})
     assert.equal(initial.status, 200)
@@ -798,7 +818,7 @@ test('/persona-sources：非法载荷和远端请求零写入，在用人设模�
   const original = readPersonaSources(userPresetRoot).sources
   writeFileSync(join(dir, 'module.yml'), JSON.stringify({ id, modules: [], rules: [], persona: { main: { prefix: 'PRESERVE' } } }))
   try {
-    registerSettingsBridge(ctx, { ns: 'prompt-tool', models: () => ({ available: true, providers: [] }), skills: () => skillsStateStub(), schemaDir: () => '', moduleDirectory: () => '' })
+    registerSettingsBridge(ctx, { ns: 'prompt-tool', models: () => ({ available: true, providers: [] }), skills: () => skillsStateStub(), moduleDirectory: () => '' })
     const post = skillsPost(handlers, 'personaSources')
     const selection = writePersonaSources(userPresetRoot, { main: id, subagent: null }, readPersonaSources(userPresetRoot).revision)
     const bytes = readFileSync(enableTablePath(userPresetRoot))
@@ -875,7 +895,7 @@ test('settings bridge 技能端点：创建 → 调用策略写入 → 恢复 �
       return written
     }
     registerSettingsBridge(ctx, { ns: 'prompt-tool', models: () => ({ available: true, providers: [] }),
-      skills: () => skillsStateStub({ skillsRoot: root, listSkills, setSkillPolicy }), schemaDir: () => '', afterSkillsChange: () => { refreshes += 1 } })
+      skills: () => skillsStateStub({ skillsRoot: root, listSkills, setSkillPolicy }), afterSkillsChange: () => { refreshes += 1 } })
     const postCreate = skillsPost(handlers, 'skillCreate')
     const postPolicy = skillsPost(handlers, 'skillPolicy')
     const postDelete = skillsPost(handlers, 'skillDelete')
@@ -999,7 +1019,7 @@ test('settings bridge /skills-folders 只登记引用路径，不复制也不改
         skillsRoot: root,
         listSkills,
         patchSkillFolders: (folders) => writeSkillsState({ folders }, stateFile),
-      }), schemaDir: () => '' })
+      }) })
     const post = skillsPost(handlers, 'skillsFolders')
     const namesOf = (payload) => payload.value.skills.map((skill) => skill.name).sort()
 

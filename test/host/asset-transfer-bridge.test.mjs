@@ -30,7 +30,6 @@ function harness(t, refresh = () => {}) {
     ns: 'prompt-tool',
     models: () => ({}),
     skills: () => ({}),
-    schemaDir: () => '',
     moduleDirectory: () => active,
     moduleInstalled: async (id) => { await refresh(id) },
   })

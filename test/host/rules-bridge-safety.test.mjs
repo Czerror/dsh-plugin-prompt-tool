@@ -16,7 +16,7 @@ const { ACTION_KINDS } = await import('../../engine/actions/catalog.mjs')
 const { setModuleEnabled } = await import('../../src/host/config-store.ts')
 let sequence = 0
 
-function harness({ readonly = false, rebuildFails = false, afterRebuild } = {}) {
+function harness({ readonly = false, rebuildFails = false, afterRebuild, onResolveTarget } = {}) {
   const id = `rules-${++sequence}`
   const directory = join(readonly ? join(home, 'system') : moduleRoot, id)
   mkdirSync(directory, { recursive: true })
@@ -38,8 +38,7 @@ function harness({ readonly = false, rebuildFails = false, afterRebuild } = {}) 
     ns: 'prompt-tool',
     models: () => ({}),
     skills: () => ({}),
-    schemaDir: () => '',
-    moduleDirectory: () => activeDirectory,
+    moduleDirectory: () => { onResolveTarget?.(); return activeDirectory },
     overridesChanged: async () => {
       rebuilds++
       if (typeof rebuildFails === 'function' ? rebuildFails() : rebuildFails) throw new Error('REBUILD_FAILED')
@@ -135,6 +134,19 @@ test('外部改动和预设切换拒绝陈旧写入；重新读取返回新版�
   const other = harness()
   h.switchTo(other.directory)
   assert.equal((await h.call({ edits: createEdits(rules), expectedRevisions: fresh.value.revisions })).status, 409)
+  assert.equal(readFileSync(other.file, 'utf8'), other.original)
+})
+
+test('请求处理期间编辑目标被换掉时按当次解析拒绝，不写另一模块', async () => {
+  let other
+  let resolved = 0
+  // 目标在「handler 取到 dir」之后、「身份重检」之前被换掉：只有每次重新解析才能发现。
+  const h = harness({ onResolveTarget: () => { if (++resolved === 2) h.switchTo(other.directory) } })
+  other = harness()
+  const rejected = await h.call()
+  assert.equal(rejected.status, 409)
+  assert.equal(rejected.code, 'module-changed')
+  assert.equal(readFileSync(h.file, 'utf8'), h.original)
   assert.equal(readFileSync(other.file, 'utf8'), other.original)
 })
 

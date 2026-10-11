@@ -42,7 +42,6 @@ function register() {
     ns: 'prompt-tool',
     models: () => ({ available: true, providers: [] }),
     skills: () => ({ activeSkillsDirs: [], skillCatalog: [] }),
-    schemaDir: () => '',
   })
   return handlers
 }

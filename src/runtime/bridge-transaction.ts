@@ -139,7 +139,7 @@ export interface BridgeTransaction {
   record: Record<string, unknown>
   /** 写出响应（信封由调用方组装，状态码由业务判断决定）。 */
   write(status: number, body: unknown): void
-  /** 本次请求声明的编辑目标目录（`x-module-id` 解析结果；未声明时由 host 回退）。 */
+  /** 当前编辑目标目录（`x-module-id` 解析结果；未声明时由 host 回退）；每次调用重新解析。 */
   editDir(): string
 }
 
@@ -150,7 +150,9 @@ export interface BridgeRouteSpec {
 
 export interface BridgeTransactionDeps {
   /**
-   * 解析请求声明的编辑目标。每次请求只调用一次，结果在本次事务内缓存。
+   * 解析请求声明的编辑目标。**每次 `tx.editDir()` 都重新调用**，不做请求内缓存：
+   * 「请求处理期间编辑目标被换掉就拒绝」这类判据依赖两次解析结果可能不同
+   * （未声明 `x-module-id` 时解析的是**当前**编辑目标，一次请求处理期间它会变）。
    *
    * 返回空字符串表示「没有可用的模块目录」，由 handler 决定是否拒绝。
    */
@@ -184,13 +186,12 @@ export function bridgeTransaction(
       if (parsed === undefined) return
       record = isRecord(parsed.body) ? parsed.body : {}
     }
-    const dir = deps.editDir(req)
     let handled = false
     const tx: BridgeTransaction = {
       req,
       record,
       write: (status, body) => { handled = true; writeBridgeJson(res, status, body) },
-      editDir: () => dir,
+      editDir: () => deps.editDir(req),
     }
     try {
       await spec.handle(tx)

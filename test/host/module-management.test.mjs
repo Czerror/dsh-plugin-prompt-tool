@@ -49,7 +49,6 @@ function register(ctx, activeTemplate, afterOverridesChange) {
       setSkillPolicy: () => ({ ok: true, changed: false }),
       patchSkillFolders: () => ({ ok: true, state: { version: 4, folders: [] }, exists: true }),
     }),
-    schemaDir: () => '',
     moduleDirectory: (requested) => {
       const id = requested ?? activeTemplate
       return id === undefined ? '' : join(moduleRoot, id)

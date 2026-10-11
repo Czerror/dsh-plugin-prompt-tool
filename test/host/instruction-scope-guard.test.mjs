@@ -76,7 +76,6 @@ function makeHarness(cwdBySession) {
       setSkillBlocked: () => ({ ok: true, state: { version: 3, blocked: [], folders: [] }, exists: true }),
       patchSkillFolders: () => ({ ok: true, state: { version: 3, blocked: [], folders: [] }, exists: true }),
     }),
-    schemaDir: () => '',
   })
   const call = async (endpoint, body, overrides) => {
     const handler = handlers.get(SETTINGS_BRIDGE_PREFIX + endpoint)

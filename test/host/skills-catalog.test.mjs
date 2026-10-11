@@ -200,7 +200,7 @@ test('/skills-list 端点：按会话 cwd 解析项目来源，无存活会话�
   }
   registerSettingsBridge({ inject: (_deps, callback) => callback(sctx) }, {
     ns: 'prompt-tool',
-    models: () => ({ available: true, providers: [] }), skills: () => state, schemaDir: () => '',
+    models: () => ({ available: true, providers: [] }), skills: () => state,
   })
   const call = async (endpoint, body = {}) => {
     const handler = handlers.get(SETTINGS_BRIDGE_PREFIX + endpoint)

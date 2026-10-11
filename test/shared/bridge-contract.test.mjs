@@ -71,7 +71,6 @@ function register(skillsState = makeSkillsState()) {
     ns: 'prompt-tool',
     models: () => ({ available: true, providers: ['deepseek-official'] }),
     skills: () => skillsState,
-    schemaDir: () => '',
   })
   return handlers
 }
@@ -205,6 +204,17 @@ test('契约：桥事务不为 handler 兜底成功——静默 500、抛错 500
   assert.equal(wroteThenThrew.state.writes, 1)
 })
 
+test('契约：桥事务的编辑目标不做请求内缓存（写入身份重检依赖两次解析可不同）', async () => {
+  const dirs = ['module-a', 'module-b']
+  let resolved = 0
+  const seen = []
+  await bridgeTransaction(
+    { handle: (tx) => { seen.push(tx.editDir(), tx.editDir()); tx.write(200, { ok: true, value: {} }) } },
+    { editDir: () => dirs[Math.min(resolved++, dirs.length - 1)] },
+  )(txReq({ chunks: ['{}'] }), txRes())
+  assert.deepEqual(seen, ['module-a', 'module-b'], '同一请求内每次调用都要重新解析，否则「请求期间编辑目标变了」的判据恒假')
+})
+
 test('契约：载荷字段形状不进事务——端点保留自己的错误码', async () => {
   const res = txRes()
   await bridgeTransaction({
@@ -283,7 +293,7 @@ test('部署总闸经桥读写 modulesEnabled', async () => {
     webServer: { register: ({ path, handler }) => { handlers.set(path, handler); return () => {} } },
     effect: fn => { const dispose = fn(); if (dispose) bridgeDisposers.push(dispose) },
   }
-  registerSettingsBridge({ inject: (_deps, callback) => callback(scope) }, { ns: 'prompt-tool', models: () => ({}), skills: () => makeSkillsState(), schemaDir: () => '' })
+  registerSettingsBridge({ inject: (_deps, callback) => callback(scope) }, { ns: 'prompt-tool', models: () => ({}), skills: () => makeSkillsState() })
   const read = fakeRes()
   await handlers.get(SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.describe)(fakeReq(), read)
   assert.equal(JSON.parse(read.body).value.value.modulesEnabled, false)
@@ -396,7 +406,6 @@ test('契约：官方装配刻度随 /meta 与 /bootstrap 同源下发，服务�
     ns: 'prompt-tool',
     models: () => ({ available: true, providers: ['deepseek-official'] }),
     skills: () => makeSkillsState(),
-    schemaDir: () => '',
   })
   const metaRes = fakeRes()
   await present.handlers.get(SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.meta)(fakeReq(), metaRes)
@@ -426,7 +435,6 @@ test('契约：官方装配刻度随 /meta 与 /bootstrap 同源下发，服务�
     ns: 'prompt-tool',
     models: () => ({ available: true, providers: ['deepseek-official'] }),
     skills: () => makeSkillsState(),
-    schemaDir: () => '',
   })
   for (const endpoint of [BRIDGE_ENDPOINTS.meta, BRIDGE_ENDPOINTS.meta]) {
     const res = fakeRes()
@@ -585,7 +593,7 @@ test('契约：工具预览在 schema 成功或抛错时均释放 revision lease
         return [{ name: 'example', description: 'example' }]
       } },
     })
-    registerSettingsBridge(ctx, { ns: 'prompt-tool', models: () => ({ available: true, providers: [] }), skills: () => makeSkillsState(), schemaDir: () => '' })
+    registerSettingsBridge(ctx, { ns: 'prompt-tool', models: () => ({ available: true, providers: [] }), skills: () => makeSkillsState() })
     const handler = handlers.get(SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.toolSurface)
     const res = fakeRes()
     await handler(fakeReq({ body: { presetId: 'official' } }), res)
