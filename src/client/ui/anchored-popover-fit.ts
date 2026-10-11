@@ -21,16 +21,15 @@ export function resolveAnchoredPopoverFit(input: {
 }
 
 /** 测量面板真实内容高度：面板可能已被 max-height 限制，内部滚动容器的溢出不计入
- *  panel.scrollHeight，直接测量只会得到被裁剪后的高度；先临时解除限制再量。
- *  同步读写不产生可见闪烁，测量后恢复原值。 */
+ *  panel.scrollHeight，把直接子级的溢出量加回来即可。
+ *  不临时解除 max-height：解除会让滚动容器瞬时不再溢出，同步回流时浏览器随即把它的
+ *  scrollTop 钳回 0；滚动本身又会触发重测，于是面板内怎么滚都弹回顶部。 */
 export function measurePanelContentHeight(panel: {
-  style: { maxHeight: string }
   scrollHeight: number
   offsetHeight: number
+  children: ArrayLike<{ scrollHeight: number; clientHeight: number }>
 }): number {
-  const applied = panel.style.maxHeight
-  panel.style.maxHeight = 'none'
-  const height = Math.max(panel.scrollHeight, panel.offsetHeight)
-  panel.style.maxHeight = applied
+  let height = Math.max(panel.scrollHeight, panel.offsetHeight)
+  for (const child of Array.from(panel.children)) height += Math.max(0, child.scrollHeight - child.clientHeight)
   return height
 }
