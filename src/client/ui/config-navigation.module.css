@@ -1,0 +1,17 @@
+.configNavigation { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 24px; min-width: 0; border-top: 0.5px solid var(--dsw-alias-border-l2); padding-top: 24px; }
+/* 卡头已给出身份，无需再次分隔。 */
+.configNavigationFlat { border-top: 0; padding-top: 0; }
+/* 导航贴合文案宽度，将剩余空间留给编辑区。 */
+.configTabs { display: flex; flex-direction: column; gap: 4px; align-self: start; align-items: flex-start; min-width: 0; }
+.configTab { display: flex; align-items: center; justify-content: space-between; gap: 4px; min-width: 0; min-height: 40px; border: 0; border-radius: 8px; padding: 8px 12px; font: 500 13px/20px system-ui, sans-serif; text-align: start; color: var(--dsw-alias-label-secondary); background: transparent; cursor: pointer; overflow-wrap: anywhere; }
+.configTab:hover { background: var(--dsw-alias-bg-layer-3); color: var(--dsw-alias-label-primary); }
+.configTab[aria-selected="true"] { background: var(--dsw-alias-bg-layer-3); color: var(--dsw-alias-label-primary); box-shadow: inset 3px 0 var(--dsw-alias-state-business-primary); }
+.configTab:focus-visible, .configPanel:focus-visible { outline: 2px solid var(--dsw-alias-state-business-primary); outline-offset: 2px; }
+.configTabError { color: var(--dsw-alias-state-error-primary); font-weight: 700; }
+.configNavigation[data-horizontal] { grid-template-columns: minmax(0, 1fr); }
+.configNavigation[data-horizontal] .configTabs { flex-direction: row; flex-wrap: wrap; align-items: stretch; }
+.configNavigation[data-horizontal] .configTab { flex: 1 1 auto; justify-content: center; padding-inline: 8px; }
+.configNavigation[data-horizontal] .configTab[aria-selected="true"] { box-shadow: inset 0 -3px var(--dsw-alias-state-business-primary); }
+.configPanels { min-width: 0; container: config-panel / inline-size; }
+.configPanel { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.configPanel[hidden] { display: none !important; }

@@ -30,7 +30,6 @@ export { isEditorGroupVisible }
 
 /** card → 参数分组标题词条：分组标题按 card 派生，不另抄一份参数归属。 */
 const CARD_LABEL_KEYS: Record<string, PromptToolLocaleKey> = {
-  'persona': 'persona.name',
   'variables': 'variables.title',
   'custom-tools': 'customTools.aria',
   'subagent-tool-policy': 'policy.title',
@@ -103,10 +102,10 @@ function LayerCapabilityRow(props: { store: PromptToolStore; t: PromptToolTransl
 }
 
 /**
- * 结构化资产编辑器按主归属层渲染（人设、模板变量、模型路由、委派深度、自定义工具、子代理策略）：
+ * 结构化资产编辑器按主归属层渲染（模板变量、模型路由、委派深度、自定义工具、子代理策略）：
  * 层归属来自共享契约，不在这里硬编码层名；每个资产复用各自专用编辑器、草稿池与写端点。
  */
-const LAYER_ASSET_IDS = ['persona', 'variables', 'main-model', 'subagent-model', 'subagent-tools', 'custom-tools', 'subagent-tool-policy'] as const
+const LAYER_ASSET_IDS = ['variables', 'main-model', 'subagent-model', 'subagent-tools', 'custom-tools', 'subagent-tool-policy'] as const
 
 /** 该组已有专属编辑器（模型路由卡、资产编辑器）：参数不再走通用控件渲染，避免同一批字段两遍。 */
 function isLayerAsset(id: string): boolean {
@@ -173,7 +172,6 @@ export function LayerSettingsContent(props: {
       )}
       {assets.map((id) => (
         <section key={id} hidden={!matches(id)} className={css.asset} data-layer-asset={id} aria-label={t(CARD_LABEL_KEYS[id] ?? 'modules.layer.asset')}>
-          {id === 'persona' && <ModulePersonaCard t={t} moduleId={moduleId} disabled={!canEditModule} onNotice={store.showNotice} drafts={store.editorDrafts} embedded />}
           {id === 'variables' && (
             <TemplateVariablesModuleCard
               t={t}
@@ -248,12 +246,15 @@ export interface InjectionPointSlotsInput {
   excludeCapabilities?: readonly string[]
 }
 
-/** 按受众视图装配层内设置；页面级只保留诊断卡与不占布局的定位 effect。 */
+/** 按受众视图装配人设卡、层内设置和诊断。 */
 export function injectionPointSlots(input: InjectionPointSlotsInput): InjectionPointSlots {
   const { store, t, viewFilter, audience } = input
-  // 主会话页保留世界书只读诊断卡（策略视图）；其余单例卡与资产编辑器都进本层设置区。
+  // 人设来源跨模块且不依赖规则实例，按页面受众独立装配。
   const beforeCards = (
     <>
+      <ModulePersonaCard t={t} audience={audience} moduleId={store.fields.moduleId}
+        disabled={!store.fields.modulesEnabled || store.moduleFacts?.editable !== true}
+        onNotice={store.showNotice} drafts={store.editorDrafts} />
       {audience === 'main' && <div hidden={viewFilter !== 'context-activation'}><ContextActivationDiagnosticsCard store={store} t={t} /></div>}
       <LayerSettingsFocus layer={input.focusCapability?.layer} token={input.focusCapability?.token ?? 0} />
     </>

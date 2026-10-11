@@ -1,7 +1,7 @@
 import { Children, isValidElement, useEffect, useId, useRef, useState, type ReactNode } from 'react'
-import type { PromptToolTranslate } from '../../locales.ts'
-import { nextTabIndex } from '../../ui/tab-key.ts'
-import styles from './prompts.module.css'
+import type { PromptToolTranslate } from '../locales.ts'
+import { nextTabIndex } from './tab-key.ts'
+import styles from './config-navigation.module.css'
 
 /** 本卡的编辑视图；普通面板保持挂载，层共享设置在首次进入后保留。 */
 export function PromptConfigNavigation(props: {
@@ -10,6 +10,8 @@ export function PromptConfigNavigation(props: {
   layer: string
   /** 上方没有可分隔的身份区（指令文件卡）时去掉分区横线与顶部留白。 */
   flat?: boolean
+  activePanel?: string
+  onPanelChange?: (panel: string) => void
   renderLayerSettings?: () => ReactNode
 }): ReactNode {
   const id = useId()
@@ -27,7 +29,8 @@ export function PromptConfigNavigation(props: {
     key: child.props['data-config-panel'], label: child.props['aria-label'], content: child,
   }))
   if (props.renderLayerSettings !== undefined) panels.push({ key: 'settings', label: props.t('form.navigation.settings'), content: <></> })
-  const active = panels.some(panel => panel.key === selected) ? selected : panels[0]?.key
+  const selection = props.activePanel ?? selected
+  const active = panels.some(panel => panel.key === selection) ? selection : panels[0]?.key
   const refreshInvalid = () => {
     const next = [...root.current?.querySelectorAll<HTMLElement>('[data-config-view]') ?? []]
       .filter(panel => panel.querySelector('[aria-invalid="true"], [role="alert"]') !== null)
@@ -47,7 +50,8 @@ export function PromptConfigNavigation(props: {
   const select = (key: string) => {
     refreshInvalid()
     if (key === 'settings') setVisitedSettings(props.layer)
-    setSelected(key)
+    if (props.activePanel === undefined) setSelected(key)
+    props.onPanelChange?.(key)
   }
   return <div ref={root} data-horizontal={horizontal || undefined} className={props.flat === true ? `${styles.configNavigation} ${styles.configNavigationFlat}` : styles.configNavigation}>
     <div role="tablist" aria-label={props.t('form.navigation.label')} aria-orientation={horizontal ? 'horizontal' : 'vertical'} className={styles.configTabs}>

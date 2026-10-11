@@ -9,7 +9,7 @@ import type { PromptToolLocaleKey, PromptToolTranslate } from '../../locales.ts'
 import type { EngineMeta, PromptConfigDraft } from '../../prompt-tool-types.ts'
 import { MatchFields, NumberField, OptionField, StrategyParamsFields } from './PromptConfigFields.tsx'
 import { autoResizeTextarea } from './textarea-resize.ts'
-import { PromptConfigNavigation } from './PromptConfigNavigation.tsx'
+import { PromptConfigNavigation } from '../../ui/PromptConfigNavigation.tsx'
 import { instructionFileIdOf } from '../../data/prompt-config-content.ts'
 import { isManagedConfigField } from '../../../shared/managed-config-fields.ts'
 import {

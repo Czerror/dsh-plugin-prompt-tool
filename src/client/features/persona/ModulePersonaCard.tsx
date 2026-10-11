@@ -4,23 +4,27 @@ import { Button } from '../../ui/Button.tsx'
 import { createWorkspaceDrafts, type PersonaEditorDraft, type WorkspaceDrafts } from '../../data/workspace-drafts.ts'
 import { bridgeCall } from '../../data/bridge-client.ts'
 import type { PromptToolTranslate } from '../../locales.ts'
-import { EngineModuleCard } from '../../ui/EngineModuleCard.tsx'
+import { CollapsibleCard } from '../../ui/CollapsibleCard.tsx'
+import { PromptConfigNavigation } from '../../ui/PromptConfigNavigation.tsx'
 import { MenuSelect } from '../../ui/MenuSelect.tsx'
 import type { PersonaAudience, PersonaSources, PersonaTargetSpec } from '../../../shared/persona-section.ts'
 import { ConfirmDialog } from '../../ui/ConfirmDialog.tsx'
+import { FormField } from '../../ui/FormField.tsx'
 import styles from '../../ui/controls.module.css'
+import css from './persona.module.css'
 
 type Notice = (kind: 'ok' | 'error', message: string) => void
 const notify = (draft: { listeners?: Set<() => void> }): void => { for (const listener of draft.listeners ?? []) listener() }
 
-export function ModulePersonaCard(props: { t: PromptToolTranslate; moduleId?: string; disabled?: boolean; drafts?: WorkspaceDrafts; embedded?: boolean; onNotice: Notice }): ReactNode {
-  const { t, onNotice } = props
+export function ModulePersonaCard(props: { t: PromptToolTranslate; audience: PersonaAudience; moduleId?: string; disabled?: boolean; drafts?: WorkspaceDrafts; onNotice: Notice }): ReactNode {
+  const { t, onNotice, audience } = props
   const localDrafts = useRef(createWorkspaceDrafts())
   const drafts = props.drafts ?? localDrafts.current
   const selection = drafts.personaSources
   const [, redraw] = useState(0)
   const mounted = useRef(false)
   const [confirming, setConfirming] = useState<{ moduleId: string; audience: PersonaAudience; reload?: boolean }>()
+  const [activeField, setActiveField] = useState<'prefix' | 'suffix'>('prefix')
   const refresh = useCallback(() => { if (mounted.current) redraw(value => value + 1) }, [])
   const editorOf = useCallback((moduleId: string): PersonaEditorDraft => {
     let editor = drafts.persona.get(moduleId)
@@ -100,19 +104,15 @@ export function ModulePersonaCard(props: { t: PromptToolTranslate; moduleId?: st
     void loadSources()
     return () => { mounted.current = false; selection.listeners?.delete(refresh) }
   }, [selection, refresh, loadSources])
-  const mainId = selection.value.main ?? props.moduleId
-  const subagentId = selection.value.subagent ?? props.moduleId
+  const moduleId = selection.value[audience] ?? props.moduleId
   useEffect(() => {
-    if (!selection.loaded) return
-    const editors = [...new Set([mainId, subagentId])].filter(id => id !== undefined).map(moduleId => {
-      const editor = editorOf(moduleId)
-      editor.listeners ??= new Set()
-      editor.listeners.add(refresh)
-      if (!editor.saving) void loadPersona(moduleId)
-      return editor
-    })
-    return () => { for (const editor of editors) editor.listeners?.delete(refresh) }
-  }, [mainId, subagentId, selection.loaded, editorOf, loadPersona, refresh])
+    if (!selection.loaded || !moduleId) return
+    const editor = editorOf(moduleId)
+    editor.listeners ??= new Set()
+    editor.listeners.add(refresh)
+    if (!editor.saving) void loadPersona(moduleId)
+    return () => { editor.listeners?.delete(refresh) }
+  }, [moduleId, selection.loaded, editorOf, loadPersona, refresh])
 
   const patch = (moduleId: string, audience: PersonaAudience, field: keyof PersonaTargetSpec, value: string | boolean | undefined): void => {
     const editor = editorOf(moduleId)
@@ -166,77 +166,77 @@ export function ModulePersonaCard(props: { t: PromptToolTranslate; moduleId?: st
     if (mounted.current) onNotice(editor.publicationPending ? 'error' : 'ok', editor.publicationError ?? t('persona.notice.saved'))
   }
   const sourcesDirty = selection.value.main !== selection.saved.main || selection.value.subagent !== selection.saved.subagent
+  const editor = moduleId ? editorOf(moduleId) : undefined
+  const target = editor?.value[audience]
+  const dirty = JSON.stringify(target) !== JSON.stringify(editor?.saved[audience])
+  const canEdit = !!moduleId && (selection.value[audience] !== null || props.disabled !== true)
+  const busy = !canEdit || !selection.loaded || !editor?.loaded || !!editor.error || editor.loading
+  const options = [{ value: '', label: t('persona.sources.official') }, ...selection.candidates.map(candidate => ({ value: candidate.id, label: `${candidate.name} · ${candidate.id}` }))]
+  const source = options.find(option => option.value === (selection.value[audience] ?? ''))?.label ?? selection.value[audience] ?? ''
+  const expandedKey = `${props.moduleId ?? ''}:persona:${audience}`
   return (
-    <EngineModuleCard
-      name={t('persona.name')}
-      meta={t('persona.sources.meta')}
-      layer="system-section"
-      embedded={props.embedded}
-      defaultExpanded={props.drafts?.expanded.get(`${props.moduleId ?? ''}:persona`)}
-      onExpandedChange={(value) => props.drafts?.expanded.set(`${props.moduleId ?? ''}:persona`, value)}
+    <CollapsibleCard
+      id={`persona-${audience}`}
+      title={t('persona.title', { audience: t(`persona.${audience}`) })}
+      meta={t('persona.sources.current', { source })}
+      expanded={drafts.expanded.get(expandedKey) ?? false}
+      onToggle={value => { drafts.expanded.set(expandedKey, value); refresh() }}
+      actions={<MenuSelect compact value={selection.value[audience] ?? ''} options={options}
+        ariaLabel={t('persona.sources.label', { audience: t(`persona.${audience}`) })}
+        disabled={selection.saving || selection.loading || !selection.loaded}
+        onChange={value => { void saveSources({ ...selection.value, [audience]: value || null }) }} />}
     >
-      {selection.error && <p className={styles.noticeError} role="alert">{selection.error} <Button size="sm" disabled={selection.loading || selection.saving} onClick={() => { void loadSources() }}>{t('persona.sources.reload')}</Button></p>}
-      {selection.publicationPending && <p className={styles.noticeError} role="alert">{selection.publicationError ?? t('persona.sources.publicationPending')} <Button size="sm" disabled={selection.saving || selection.loading} onClick={() => { void saveSources(selection.value, true) }}>{t('workspace.retry')}</Button></p>}
-      {sourcesDirty && <p className={styles.configFieldHint} role="status">{t('persona.sources.unsaved')} <Button size="sm" disabled={selection.saving || selection.loading || !selection.loaded} onClick={() => { void saveSources(selection.value) }}>{t('workspace.retry')}</Button></p>}
+      {selection.error && <p className={styles.noticeError} role="alert">{selection.error} <Button shape="pill" variant="outline" size="sm" disabled={selection.loading || selection.saving} onClick={() => { void loadSources() }}>{t('persona.sources.reload')}</Button></p>}
+      {selection.publicationPending && <p className={styles.noticeError} role="alert">{selection.publicationError ?? t('persona.sources.publicationPending')} <Button shape="pill" variant="outline" size="sm" disabled={selection.saving || selection.loading} onClick={() => { void saveSources(selection.value, true) }}>{t('workspace.retry')}</Button></p>}
+      {sourcesDirty && <p className={styles.configFieldHint} role="status">{t('persona.sources.unsaved')} <Button shape="pill" variant="outline" size="sm" disabled={selection.saving || selection.loading || !selection.loaded} onClick={() => { void saveSources(selection.value) }}>{t('workspace.retry')}</Button></p>}
       {confirming && <ConfirmDialog title={t(confirming.reload ? 'persona.reload' : 'persona.remove')}
         description={t(confirming.reload ? 'persona.sources.reloadDescription' : 'persona.sources.removeDescription', { module: confirming.moduleId, audience: t(`persona.${confirming.audience}`) })}
         confirmLabel={t(confirming.reload ? 'persona.reload' : 'persona.remove')} cancelLabel={t('toolEditor.cancel')}
         onConfirm={() => confirming.reload ? loadPersona(confirming.moduleId, true) : write(confirming.moduleId, confirming.audience, true)}
         onCancel={() => setConfirming(undefined)} />}
-      {(['main', 'subagent'] as const).map(audience => {
-        const moduleId = selection.value[audience] ?? props.moduleId
-        const editor = moduleId ? editorOf(moduleId) : undefined
-        const target = editor?.value[audience]
-        const dirty = JSON.stringify(target) !== JSON.stringify(editor?.saved[audience])
-        const canEdit = !!moduleId && (selection.value[audience] !== null || props.disabled !== true)
-        const busy = !canEdit || !selection.loaded || !editor?.loaded || !!editor.error || editor.loading
-        const options = [{ value: '', label: t('persona.sources.official') }, ...selection.candidates.map(candidate => ({ value: candidate.id, label: `${candidate.name} · ${candidate.id}` }))]
-        return <div key={audience} role="group" aria-label={t(`persona.${audience}`)}>
-          <p className={styles.configFieldLabel}>{t(`persona.${audience}`)}</p>
-          <MenuSelect value={selection.value[audience] ?? ''} options={options}
-            ariaLabel={t('persona.sources.label', { audience: t(`persona.${audience}`) })}
-            disabled={selection.saving || selection.loading || !selection.loaded}
-            onChange={value => { void saveSources({ ...selection.value, [audience]: value || null }) }} />
-          <p className={styles.configFieldHint}>{moduleId ? t(selection.value[audience] === null ? 'persona.sources.createHint' : 'persona.sources.editHint', { module: moduleId }) : t('persona.sources.chooseModule')}</p>
-          {editor?.error && <p className={styles.noticeError} role="alert">{editor.error}</p>}
-          {editor?.publicationPending && <p className={styles.noticeError} role="alert">{editor.publicationError ?? t('persona.sources.publicationPending')} <Button size="sm" disabled={editor.saving} onClick={() => { if (moduleId) void retryPublication(moduleId) }}>{t('workspace.retry')}</Button></p>}
-          {dirty && <p className={styles.configFieldHint} role="status">{t('card.unsaved')}</p>}
-          {(['prefix', 'suffix'] as const).map(field => (
-            <div key={field} className={styles.configFieldStack}>
-              <span className={styles.configFieldLabel}>{t(`persona.${field}.label`)}</span>
-              <MenuSelect compact value={target?.[field] === undefined ? 'inherit' : 'custom'} disabled={busy}
-                ariaLabel={`${t(`persona.${audience}`)} ${t(`persona.${field}.label`)}`}
-                options={[{ value: 'inherit', label: t('persona.inherit') }, { value: 'custom', label: t('persona.custom') }]}
-                onChange={value => { if (moduleId) patch(moduleId, audience, field, value === 'inherit' ? undefined : '') }} />
-              {target?.[field] !== undefined && <textarea className={styles.configTextarea}
-                aria-label={`${t(`persona.${audience}`)} ${t(`persona.${field}.aria`)}`} spellCheck={false}
-                value={target[field]} readOnly={busy}
-                onChange={event => { if (moduleId) patch(moduleId, audience, field, event.target.value) }} />}
-              <span className={styles.configFieldHint}>{t(`persona.${field}.hint`)}</span>
-            </div>
-          ))}
-          {(['complete', 'includeRuntimeContext'] as const).map(field => {
-            const key = field === 'complete' ? 'complete' : 'runtimeContext'
-            return <div key={field} className={styles.configFieldStack}>
-              <span className={styles.configFieldLabel}>{t(`persona.${key}.label`)}</span>
-              <MenuSelect compact disabled={busy} value={target?.[field] === undefined ? 'inherit' : String(target?.[field])}
-                ariaLabel={`${t(`persona.${audience}`)} ${t(`persona.${key}.label`)}`}
-                options={[{ value: 'inherit', label: t('persona.inherit') }, { value: 'true', label: t('persona.on') }, { value: 'false', label: t('persona.off') }]}
-                onChange={value => { if (moduleId) patch(moduleId, audience, field, value === 'inherit' ? undefined : value === 'true') }} />
-              <span className={styles.configFieldHint}>{t(`persona.${key}.hint`)}</span>
-            </div>
-          })}
-          <div className={styles.configActions}>
-            <Button size="sm" disabled={busy || editor?.saving || !dirty} onClick={() => { if (moduleId) void write(moduleId, audience) }}>{editor?.saving ? t('persona.saving') : t('persona.save')}</Button>
-            <Button size="sm" variant="outline" disabled={!moduleId || editor?.saving || editor?.loading} onClick={() => {
-              if (!moduleId || !editor) return
-              if (JSON.stringify(editor.value) !== JSON.stringify(editor.saved)) setConfirming({ moduleId, audience, reload: true })
-              else void loadPersona(moduleId)
-            }}>{t('persona.reload')}</Button>
-            {editor?.saved[audience] && <Button shape="pill" variant="outline" data-danger disabled={busy || editor.saving} onClick={() => { if (moduleId) setConfirming({ moduleId, audience }) }}>{t('persona.remove')}</Button>}
-          </div>
-        </div>
-      })}
-    </EngineModuleCard>
+      {!moduleId && <p className={styles.configFieldHint}>{t('persona.sources.chooseModule')}</p>}
+      {dirty && <p className={styles.configFieldHint} role="status">{t('card.unsaved')}</p>}
+      {editor?.error && <p className={styles.noticeError} role="alert">{editor.error}</p>}
+      {editor?.publicationPending && <p className={styles.noticeError} role="alert">{editor.publicationError ?? t('persona.sources.publicationPending')} <Button shape="pill" variant="outline" size="sm" disabled={editor.saving} onClick={() => { if (moduleId) void retryPublication(moduleId) }}>{t('workspace.retry')}</Button></p>}
+      <div className={css.options}>
+        <FormField label={t('persona.mode')}>
+          <MenuSelect compact value={target?.[activeField] === undefined ? 'inherit' : 'custom'} disabled={busy}
+            ariaLabel={`${t(`persona.${audience}`)} ${t(`persona.${activeField}.label`)}`}
+            options={[{ value: 'inherit', label: t('persona.inherit') }, { value: 'custom', label: t('persona.custom') }]}
+            onChange={value => { if (moduleId) patch(moduleId, audience, activeField, value === 'inherit' ? undefined : '') }} />
+        </FormField>
+        {(['complete', 'includeRuntimeContext'] as const).map(option => {
+          const key = option === 'complete' ? 'complete' : 'runtimeContext'
+          return <FormField key={option} label={t(`persona.${key}.label`)} hint={t(`persona.${key}.hint`)} hintMode="tooltip">
+            <MenuSelect compact disabled={busy} value={target?.[option] === undefined ? 'inherit' : String(target?.[option])}
+              ariaLabel={`${t(`persona.${audience}`)} ${t(`persona.${key}.label`)}`}
+              options={[{ value: 'inherit', label: t('persona.inherit') }, { value: 'true', label: t('persona.on') }, { value: 'false', label: t('persona.off') }]}
+              onChange={value => { if (moduleId) patch(moduleId, audience, option, value === 'inherit' ? undefined : value === 'true') }} />
+          </FormField>
+        })}
+      </div>
+      <PromptConfigNavigation t={t} layer="system-section" activePanel={activeField}
+        onPanelChange={field => setActiveField(field === 'suffix' ? 'suffix' : 'prefix')}>
+        {(['prefix', 'suffix'] as const).map(field => (
+          <section key={field} data-config-panel={field} aria-label={t(`persona.${field}.label`)} className={css.panel}>
+            <textarea className={styles.configTextarea}
+              aria-label={`${t(`persona.${audience}`)} ${t(`persona.${field}.aria`)}`} spellCheck={false}
+              value={target?.[field] ?? ''} readOnly={busy || target?.[field] === undefined}
+              placeholder={target?.[field] === undefined ? t('persona.inheritedText', { field: t(`persona.${field}.label`) }) : undefined}
+              onChange={event => { if (moduleId) patch(moduleId, audience, field, event.target.value) }} />
+            <p className={styles.configFieldHint}>{t(`persona.${field}.hint`)}</p>
+          </section>
+        ))}
+      </PromptConfigNavigation>
+      <div className={css.footer}>
+        <Button shape="pill" variant="outline" size="sm" disabled={busy || editor?.saving || !dirty} onClick={() => { if (moduleId) void write(moduleId, audience) }}>{editor?.saving ? t('persona.saving') : t('persona.save')}</Button>
+        <Button shape="pill" variant="outline" size="sm" disabled={!moduleId || editor?.saving || editor?.loading} onClick={() => {
+          if (!moduleId || !editor) return
+          if (JSON.stringify(editor.value) !== JSON.stringify(editor.saved)) setConfirming({ moduleId, audience, reload: true })
+          else void loadPersona(moduleId)
+        }}>{t('persona.reload')}</Button>
+        {editor?.saved[audience] && <Button shape="pill" variant="outline" data-danger disabled={busy || editor.saving} onClick={() => { if (moduleId) setConfirming({ moduleId, audience }) }}>{t('persona.remove')}</Button>}
+      </div>
+    </CollapsibleCard>
   )
 }

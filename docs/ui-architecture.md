@@ -133,7 +133,6 @@
     │  │  ├─ PromptConfigCard.tsx
     │  │  ├─ PromptConfigFields.tsx
     │  │  ├─ PromptConfigForm.tsx
-    │  │  ├─ PromptConfigNavigation.tsx
     │  │  ├─ PromptConfigsEditor.tsx
     │  │  ├─ RuleCard.tsx
     │  │  ├─ RuleFields.tsx
@@ -166,6 +165,7 @@
        ├─ anchored-popover-fit.ts
        ├─ anchored-popover.ts
        ├─ CollapsibleCard.tsx
+       ├─ config-navigation.module.css
        ├─ ConfirmDialog.tsx
        ├─ controls.module.css
        ├─ dialog-focus.ts
@@ -179,6 +179,7 @@
        ├─ ImportFileButton.tsx
        ├─ ImportPreviewCard.tsx
        ├─ MenuSelect.tsx
+       ├─ PromptConfigNavigation.tsx
        ├─ reveal-card.ts
        ├─ SettingInputRow.tsx
        ├─ StatusBadge.module.css
@@ -293,7 +294,9 @@ workspace-pages.ts 是页面元数据的唯一来源。默认页为 features，�
 
 页面不再常驻“重新读取／校验规则／保存规则／已与模块同步”一行；卡内保存与失焦自动保存继续沿用规则事务，保存包含校验。批量操作按可见卡片所属模块分别提交。失败保留对应模块草稿并显示所属模块与就地错误，只在错误时提供重试与必要的丢弃确认；保存失败重试提交，读取失败或远端冲突重试读取。
 
-独立人设卡（`features/persona/ModulePersonaCard.tsx`）为主会话和子代理各提供一个来源下拉，默认“官方”，也可分别选择一个模块。来源走 `/persona-sources`，config.yml.personaSources 只保存模块 ID；选择不自动启用来源模块的 rules。每个受众只有一个来源，界面和状态都不提供多来源逐字段合并。
+独立人设卡（`features/persona/ModulePersonaCard.tsx`）在主会话和子代理页各渲染一张，位于指令文件卡之后、规则卡之前，不嵌入模块规则设置，也不依赖规则存在或参与规则筛选排序。卡头提供当前受众的来源下拉，默认“官方”，也可分别选择一个模块。来源走 `/persona-sources`，config.yml.personaSources.main/subagent 只保存模块 ID，省略或空值继承官方；选择跨模块生效，不自动启用来源模块的 rules。每个受众只有一个来源，界面和状态都不提供多来源逐字段合并。
+
+卡头两行显示人设名称与“来源：官方／所选模块”，不重复编辑模块说明。内部头部仿照规则卡基础字段区，紧凑横排内容模式、独占、动态运行时上下文；内容模式跟随当前前缀／后缀页签，仅修改对应字段，说明复用 FormField/HintTooltip。分隔线下复用 `ui/PromptConfigNavigation.tsx`：宽屏左侧“前缀 / 后缀”，窄容器改为上方 tabs，键盘与 ARIA 方向同步。正文使用全宽编辑框，继承时只读并提示切换自定义，显式空串仍可保存。保存、重新读取与重试统一使用共享 Button 的胶囊样式，底部操作组左对齐。两受众展开状态分别保留，来源与正文草稿继续共享现有草稿池。
 
 正文仍编辑对应模块的 persona.main/subagent：prefix/suffix 使用“继承/自定义”，complete/includeRuntimeContext 保留继承/true/false；空文本清空，删键继承。读写走 `/persona` 并携带完整定义字节 expectedRevision；来源选择和正文保存各自保留版本、未存草稿及迟到响应。人设不进入规则排序，rules/_settings.yml 仅保存校验投影。完整配装仍预检官方人设与启用规则的 complete 冲突，失败保持旧配装；persisted/publicationPending 如实显示，refreshOnly 只重试发布。这些是状态与交互契约，不代表已完成浏览器实测。
 
@@ -529,7 +532,7 @@ fieldset 禁用时 MenuSelect 同时拒绝 portal 中的选择。Tooltip 的键�
 
 模块卡内的选择器、开关及小型文本/数字输入使用紧凑尺寸；大文本和 JSON 编辑器保留 `field-sizing: content`、手动纵向缩放与现有自动测高，不随紧凑控件一起压缩。
 
-规则卡复用原 `PromptConfigNavigation`，基础身份常驻，"规则 / JSON / 设置"同级（条件与动作合并到同一面板：分处两个页签时看不出条件与动作的对应关系）。宽屏左侧导航，容器宽度不超过 620px 时变为上方 tabs；组件自身 ResizeObserver 同时驱动视觉布局与 ARIA 方向，避免跨 CSS Modules 的命名容器失配。
+规则卡、指令文件卡与人设卡共用 `ui/PromptConfigNavigation.tsx` 和 `ui/config-navigation.module.css`。规则卡基础身份常驻，"规则 / JSON / 设置"同级（条件与动作合并到同一面板：分处两个页签时看不出条件与动作的对应关系）。宽屏左侧导航，容器宽度不超过 620px 时变为上方 tabs；组件自身 ResizeObserver 同时驱动视觉布局与 ARIA 方向，避免跨 CSS Modules 的命名容器失配。
 
 「规则」面板按**条件作用域**组织，与引擎的展开语义同构（`engine/branch.mjs#expandActions`）：规则级 `if` 是一张可折叠的条件卡，它管住的 `then` 节点在一段竖线作用域内各自成卡——动作卡（卡头是类型 + 执行层 + 正文首行）与**分支卡**（节点 `{if, then, else}`，卡头是「当 ⟨条件⟩ → ⟨动作⟩」，卡内可继续嵌套）。分支节点因此是可视编辑的一等语法，不再落到"未知动作 + 裸 JSON"（旧行为会让动作类型下拉收到 `undefined` 并在渲染期抛错，整棵插件树卸载）。每张卡默认收起，卡头单行省略给出「条件 → 动作」一览，展开才编辑；`×` 删除整张卡，图标取官方 IconClose 复制件、与 TagInput 的 chip 删除同形态；↑↓ 只在同一作用域内换位。规则级 `else` 用同一段竖线作用域呈现，为空时只留「添加否则分支」。必要事实未知时两支都可能不执行，UI 不把 else 描述为必然执行。新增动作在**整条规则**范围内分配唯一 id（引擎拒绝重复 id）。
 
@@ -560,13 +563,13 @@ fieldset 禁用时 MenuSelect 同时拒绝 portal 中的选择。Tooltip 的键�
 
 主会话与子代理共用 `RuleCard`，每卡就是一条真实规则，不再存在模块级“编辑行为规则”二级编辑器。最外层折叠保留，收起只显示卡头，展开才挂载导航和表单；折叠前提交可保存草稿，非法输入保留供重开继续编辑。设置只承载共享参数与资产。原 `PromptConfigCard` 继续拥有指令文件编辑，主会话中置顶，子代理不显示重复文件卡。页面顺序不建立跨插入点的全局执行顺序。
 
-`EngineLayersPanel#engineLayerSlots({ store, t, viewFilter, audience, keyword, … })` 是唯一的层装配入口，返回 `beforeCards`（页面级诊断卡与不占布局的定位 effect）以及 `renderLayerSettings`、`hasLayerSettings` 和 `matchesLayerSettings`。两个页面声明受众视图、创建编排并持有工具草稿所有者，不手写层名判断或重复资产布局。能力参数和资产编辑器由实例卡内的层设置区承载；共享 `EngineModuleCard` 只为模型、人设与子代理参数提供折叠形态。
+`InjectionPointsPanel#injectionPointSlots({ store, t, viewFilter, audience, keyword, … })` 是唯一的层装配入口，返回 `beforeCards`（当前受众的独立人设卡、页面级诊断卡与不占布局的定位 effect）以及 `renderLayerSettings`、`hasLayerSettings` 和 `matchesLayerSettings`。两个页面声明受众视图、创建编排并持有工具草稿所有者，不手写层名判断或重复资产布局。能力参数与其余资产编辑器由实例卡内的层设置区承载；人设复用 `CollapsibleCard` 卡壳，来源选择与折叠按钮互为兄弟。
 
 `LayerSettingsContent` 的参数、装配能力与资产都按共享契约派生：`layerParamCards` 只列当前层实际装配且拥有通用参数的组，`layerAssembledCapabilities` 列出该层已装配能力，资产按 `displayLayer` 归位并复用各自专用编辑器、草稿池与写端点。模型参数不重复生成通用控件。创建本层能力复用 `EngineCapabilityCreateMenu`，提示词模板仍从原九层模板菜单创建。无可编辑设置的层不生成设置页签，无实例不生成兜底卡。设置视图首次进入才挂载，卡片保持展开时切换视图不丢输入；外层折叠卸载视图，草稿仍由工作台持有。
 
 选中某个注入层且该层没有内容时，列表给「该层还没有内容」的空状态与新增入口，不自动创建九张空卡、也不谎称「无匹配」；`context-activation` 是策略筛选而非层，保持「无匹配 + 清除筛选」提示。
 
-本层设置由 `app/workspace/pages/layer-settings.module.css` 拥有，参数与资产使用平面小节和细分隔线，不叠加分类边框、内缩或分类级折叠。能力创建保留既有入口；模块模型覆盖可通过公共模型卡或显式请求动作编辑。人设、官方当前会话模型、委派和变量通过原编辑器的 embedded 呈现复用草稿与保存逻辑，独立使用时保持原折叠形态。
+本层设置由 `app/workspace/pages/layer-settings.module.css` 拥有，参数与资产使用平面小节和细分隔线，不叠加分类边框、内缩或分类级折叠。能力创建保留既有入口；模块模型覆盖可通过公共模型卡或显式请求动作编辑。官方当前会话模型、委派和变量通过原编辑器呈现复用草稿与保存逻辑；人设独立于层设置，业务字段排列归 `features/persona/persona.module.css`。
 
 共享参数短控件按内容宽度排列并自然换行，文本和列表整行；类型由现有渲染属性表达，不复制参数定义。已有主开关与子代理参与开关保留具名字段组和 DOM 顺序，数字使用等宽数字。说明可换行，hidden 优先于布局；控件 DOM 身份包含实例，草稿键与保存入口仍共享。
 
