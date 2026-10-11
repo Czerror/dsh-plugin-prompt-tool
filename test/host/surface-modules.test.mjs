@@ -128,8 +128,10 @@ test('内置模块 superpowers：引导常驻 system-section，且点名按需�
   const rule = superpowers.rules.find((item) => item.id === 'superpowers-bootstrap')
   assert.ok(rule !== undefined, '模块必须带引导规则')
   assert.equal(rule.enabled, true)
-  assert.equal(rule.if, undefined, '引导常驻：省略 if = 无条件生效')
-  assert.equal(rule.layer, 'system-section', '只进主会话，与上游 using-superpowers 的 SUBAGENT-STOP 一致')
+  // 每个 Agent（含子代理）都各自装配启用表里的模块——实测子代理的 system prompt 里
+  // 也出现过这段引导，所以「只进主会话」必须靠显式受众门，层本身不保证。
+  assert.deepEqual(rule.if, { scope: { audience: 'main' } }, '引导只进主会话，对齐上游 SUBAGENT-STOP')
+  assert.equal(rule.layer, 'system-section')
   const inject = rule.then.find((action) => action.kind === 'inject-text')
   assert.ok(inject !== undefined, '引导走 inject-text')
   assert.equal(inject.config.layer, 'system-section')

@@ -34,6 +34,12 @@ rules:
   - id: superpowers-bootstrap
     name: Superpowers 引导（常驻）
     enabled: true
+    # 每个 Agent（含子代理）都各自装配启用表里的模块，所以 system-section 并不等于
+    # "只进主会话"——必须用 scope 门显式限定。上游 using-superpowers 自带
+    # <SUBAGENT-STOP>（子代理忽略该技能），这里是同一语义。
+    if:
+      scope:
+        audience: main
     layer: system-section
     then:
       - id: inject
