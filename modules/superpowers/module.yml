@@ -72,6 +72,8 @@ rules:
 
             上表按名字给方向：`skill_search` 没命中就换相近关键词再搜一次，仍没有就明说这个缺口、按默认流程做。其他主题（测试先行、worktree、并行派发、技能编写等）同样先搜。
 
+            本 harness 的工具名映射、技能目录与会话存储见 `using-superpowers` 技能的 `references/dsh-tools.md`。
+
             ## 红旗——出现这些念头就停下查技能
 
             | 念头 | 事实 |
