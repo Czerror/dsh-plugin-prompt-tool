@@ -38,7 +38,7 @@ function makeHarness() {
   return { ctx: { inject: (_deps, cb) => cb(sctx) }, handlers }
 }
 
-function register(ctx, activeTemplate, afterOverridesChange) {
+function register(ctx, afterOverridesChange) {
   registerSettingsBridge(ctx, {
     ns: 'prompt-tool',
     models: () => ({ available: true, providers: [] }),
@@ -49,17 +49,15 @@ function register(ctx, activeTemplate, afterOverridesChange) {
       setSkillPolicy: () => ({ ok: true, changed: false }),
       patchSkillFolders: () => ({ ok: true, state: { version: 4, folders: [] }, exists: true }),
     }),
-    moduleDirectory: (requested) => {
-      const id = requested ?? activeTemplate
-      return id === undefined ? '' : join(moduleRoot, id)
-    },
+    // 只按请求声明解析（与生产接线同形）：未声明 = 无目标，不回退任何启用模块。
+    moduleDirectory: (moduleId) => moduleId === undefined ? '' : join(moduleRoot, moduleId),
     overridesChanged: afterOverridesChange, // 写盘后重建（module-enable 等端点等它完成才回响应）
     moduleListChanged: () => {},
   })
 }
 
-/** 调端点；不假定成功，原样返回状态与错误载荷。 */
-async function call(handlers, endpoint, payload = {}) {
+/** 调端点；不假定成功，原样返回状态与错误载荷。`options.target` 给出 `x-module-id` 头。 */
+async function call(handlers, endpoint, payload = {}, options = {}) {
   const handler = handlers.get(PREFIX + BRIDGE_ENDPOINTS[endpoint])
   assert.ok(handler !== undefined, `${endpoint} 端点应注册`)
   const res = fakeRes()
@@ -67,7 +65,10 @@ async function call(handlers, endpoint, payload = {}) {
   // 因此只认 `body` 形态。注意 settings-bridge.test.mjs 里另有一个**同名但不同实现**的本地
   // fakeReq（`(overrides = {})`，`...overrides` 展开在最后），那边传 Symbol.asyncIterator 才是对的。
   // 两者别互抄：抄错就会得到空请求流，端点以「缺少 id」拒绝，拒绝路径用例随即假通过。
-  await handler(fakeReq({ body: payload }), res)
+  await handler(fakeReq({
+    body: payload,
+    headers: options.target === undefined ? {} : { 'x-module-id': options.target },
+  }), res)
   const body = JSON.parse(res.body)
   // 判别性保护：若 payload 没送达，端点会以「id 未定义」拒绝，而多个端点用的错误码与
   // 「真实业务拒绝」是同一个（例如缺 id 与同名都用 preset-clone-rejected），断言就会假通过。
@@ -85,23 +86,35 @@ function writeModule(id, content = `id: ${id}\nname: ${id}\nmodules: []\n`) {
   return dir
 }
 
-test('使用中禁删：激活模块的删除被拒，目录与定义保持原样', async () => {
+test('使用中禁删：带该模块身份的删除被拒，目录与定义保持原样', async () => {
   const id = 'in-use-module'
   const dir = writeModule(id)
   const before = readFileSync(join(dir, 'module.yml'), 'utf8')
-  const { ctx, handlers } = makeHarness(id)
-  register(ctx, id)
+  const { ctx, handlers } = makeHarness()
+  register(ctx)
 
-  const result = await call(handlers, 'moduleDelete', { id })
+  const result = await call(handlers, 'moduleDelete', { id }, { target: id })
   assert.equal(result.status, 400, result.message)
   assert.equal(result.code, 'module-in-use')
   assert.equal(existsSync(dir), true, '被拒的删除不得移除目录')
   assert.equal(readFileSync(join(dir, 'module.yml'), 'utf8'), before, '被拒的删除不得改动定义')
 })
 
+test('无头删除没有在用模块：无声明不触发在用保护，删除成功', async () => {
+  // 裁定见 ADR-0011/Q7：没有 x-module-id 就是没有在用模块，不得由服务端猜一个。
+  const id = 'no-header-module'
+  const dir = writeModule(id)
+  const { ctx, handlers } = makeHarness()
+  register(ctx)
+
+  const result = await call(handlers, 'moduleDelete', { id })
+  assert.equal(result.status, 200, result.message)
+  assert.equal(existsSync(dir), false, '无声明时删除照常执行，不触发在用保护')
+})
+
 test('打开目录：越界与非法 id 一律被拒，不进入打开动作', async () => {
-  const { ctx, handlers } = makeHarness(undefined)
-  register(ctx, undefined)
+  const { ctx, handlers } = makeHarness()
+  register(ctx)
   // 白名单允许的是裸 id 与 `/.characters/<id>` 形式；下列都不属于任何一种。
   for (const bad of ['../outside', '/absolute/path', 'a/b', '.hidden', '']) {
     const result = await call(handlers, 'moduleOpen', { id: bad })
@@ -114,8 +127,8 @@ test('新建：同名且未要求递增时被拒，既有模块不被覆盖', as
   const id = 'pt-custom'
   const dir = writeModule(id, `id: ${id}\nname: 已存在的模块\nmodules: []\n`)
   const before = readFileSync(join(dir, 'module.yml'), 'utf8')
-  const { ctx, handlers } = makeHarness(undefined)
-  register(ctx, undefined)
+  const { ctx, handlers } = makeHarness()
+  register(ctx)
 
   const result = await call(handlers, 'moduleClone', { id })
   assert.equal(result.status, 400, result.message)
@@ -124,8 +137,8 @@ test('新建：同名且未要求递增时被拒，既有模块不被覆盖', as
 })
 
 test('复制：源不存在时被拒，模块根不留残留目录', async () => {
-  const { ctx, handlers } = makeHarness(undefined)
-  register(ctx, undefined)
+  const { ctx, handlers } = makeHarness()
+  register(ctx)
   const before = readdirSync(moduleRoot).sort()
 
   const result = await call(handlers, 'moduleDuplicate', { id: 'no-such-module' })
@@ -135,8 +148,8 @@ test('复制：源不存在时被拒，模块根不留残留目录', async () =>
 })
 
 test('导出：不存在的模块被拒，不回传任何定义内容', async () => {
-  const { ctx, handlers } = makeHarness(undefined)
-  register(ctx, undefined)
+  const { ctx, handlers } = makeHarness()
+  register(ctx)
 
   const result = await call(handlers, 'exportModule', { id: 'no-such-module', mode: 'definition' })
   assert.equal(result.status, 400, result.message)
@@ -255,7 +268,7 @@ test('module-enable：写启用表后等待装配，失败如实返回，非法�
   const refreshed = []
   let hold = true
   let failRefresh = false
-  register(ctx, undefined, async (moduleId) => {
+  register(ctx, async (moduleId) => {
     refreshed.push(moduleId)
     entered.resolve()
     if (hold) await resume.promise

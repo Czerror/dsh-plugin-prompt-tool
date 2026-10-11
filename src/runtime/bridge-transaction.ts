@@ -140,7 +140,7 @@ export interface BridgeTransaction {
   record: Record<string, unknown>
   /** 写出响应（信封由调用方组装，状态码由业务判断决定）。 */
   write(status: number, body: unknown): void
-  /** 当前编辑目标目录（`x-module-id` 解析结果；未声明时由 host 回退）；每次调用重新解析。 */
+  /** 当前编辑目标目录（`x-module-id` 解析结果；未声明时为空串）；每次调用重新解析。 */
   editDir(): string
 }
 

@@ -102,16 +102,21 @@ export function enabledModuleIds(moduleRoot: string): string[] {
 }
 
 /**
- * 解析**编辑目标**模块目录：请求声明了目标就按它定位，没声明则回退启用表首项。
+ * 解析**编辑目标**模块目录：只按请求声明定位，没有声明就没有目标。
  *
  * 这是「按请求定位编辑目标」的唯一入口——编辑器不必依赖某个全局单选：写请求带上
- * 模块 id 就写那个模块，不带则落到启用表第一项（= 装配顺序首项）。目标不存在时返回
- * 空串，由调用方按「无目标」拒绝，不静默改写到别的模块。
+ * 模块 id 就写那个模块。目标目录不存在或 `<root>/<id>/module.yml` 缺失时返回空串，
+ * 由调用方按「无目标」拒绝，不静默改写到别的模块（尤其是启用表首项）。
  */
-export function resolveEditDir(moduleRoot: string, moduleId?: string): string {
-  const target = moduleId !== undefined && moduleId.trim().length > 0 ? moduleId.trim() : enabledModuleIds(moduleRoot)[0]
-  if (target === undefined) return ''
+export function resolveEditDir(moduleRoot: string, moduleId: string): string {
+  const target = moduleId.trim()
+  if (target.length === 0) return ''
   return moduleDirExists(moduleRoot, target) ? join(moduleRoot, target) : ''
+}
+
+/** 请求主语（`x-module-id` 解析结果）→ 模块目录；未声明主语即无目标，不选默认模块。 */
+export function resolveRequestedModuleDir(modulesDir: string, subject: string | undefined): string {
+  return subject === undefined ? '' : resolveEditDir(modulesDir, subject)
 }
 
 /**

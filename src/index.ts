@@ -25,7 +25,7 @@ import {
 } from './config.ts'
 import type { PromptSettings, RuntimeOptions } from './config.ts'
 import { MODULES_DIR } from './host/paths.ts'
-import { enabledModuleIds, resolveEditDir } from './host/config-store.ts'
+import { enabledModuleIds, resolveRequestedModuleDir } from './host/config-store.ts'
 import { selectedPersonaModules } from './host/persona-selection.ts'
 import { DEFAULT_MODULE_ID } from './shared/module-ids.ts'
 import { ensureSkillSeed } from './host/skills-actions.ts'
@@ -80,9 +80,17 @@ export function apply(ctx: Context, configIn: Config): void {
     await assembly?.refresh(id)
   }
 
-  /** 无请求目标时供TUI使用的模块；编辑器的显式ID始终单独解析。 */
-  const activeModuleDir = (): string =>
-    resolveEditDir(MODULES_DIR) || (moduleDirExists(MODULES_DIR, DEFAULT_MODULE_ID) ? join(MODULES_DIR, DEFAULT_MODULE_ID) : '')
+  /**
+   * 无请求目标时供 TUI 使用的模块：启用表首项（目录必须真实存在），表为空或 schema 过旧时
+   * 退回种子默认模块；编辑器的显式 id 单独解析，未经此函数。
+   */
+  const activeModuleDir = (): string => {
+    const [first] = enabledModuleIds(MODULES_DIR)
+    const id = first !== undefined && moduleDirExists(MODULES_DIR, first)
+      ? first
+      : (moduleDirExists(MODULES_DIR, DEFAULT_MODULE_ID) ? DEFAULT_MODULE_ID : '')
+    return id === '' ? '' : join(MODULES_DIR, id)
+  }
 
   // 宿主模块拥有技能状态、官方引用 provider 与资产操作的生命周期。
   const skillsRuntime = createSkillsRuntime(ctx)
@@ -105,7 +113,7 @@ export function apply(ctx: Context, configIn: Config): void {
     }),
     afterSkillsChange: skillsRuntime.invalidate,
     // 显式目标不存在就拒绝，不能落到另一个模块；编辑选择不进入部署设置。
-    moduleDirectory: (moduleId) => moduleId === undefined ? activeModuleDir() : resolveEditDir(MODULES_DIR, moduleId),
+    moduleDirectory: (subject) => resolveRequestedModuleDir(MODULES_DIR, subject),
     overridesChanged: (id) => id === undefined ? assembly?.refresh() : refreshModuleRuntime(id),
     // host 已安装完整候选；不能二次物化覆盖导入资产。
     moduleInstalled: async (id) => {

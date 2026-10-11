@@ -280,7 +280,7 @@ test('请求模块身份统一 bootstrap 快照与规则写入；错误身份和
   const rebuilt = []
   registerSettingsBridge(ctx, { ns: 'prompt-tool', models: () => ({ available: true, providers: [] }),
     skills: () => skillsStateStub(),
-    moduleDirectory: (id) => id === idA ? requestedDir : dirB, overridesChanged: (id) => { rebuilt.push(id) } })
+    moduleDirectory: (id) => id === undefined ? '' : (id === idA ? requestedDir : dirB), overridesChanged: (id) => { rebuilt.push(id) } })
   const call = async (endpoint, body = {}, options = {}) => {
     const target = Object.hasOwn(options, 'target') ? options.target : idA
     const res = fakeRes()
@@ -314,10 +314,10 @@ test('请求模块身份统一 bootstrap 快照与规则写入；错误身份和
     assert.deepEqual(descriptorValue, {}, '响应投影不修改全局设置')
     const noHeader = await call('bootstrap', {}, { target: undefined })
     assert.equal(noHeader.status, 200)
-    assert.equal(noHeader.payload.value.value.moduleId, idB, '无目标时描述身份来自实际回退目录')
-    const fallback = await call('rules', { expectedModuleId: idB }, { target: undefined })
-    assert.equal(fallback.status, 200)
-    assert.equal(fallback.payload.value.rules[0].then[0].patch.maxTokens, 888)
+    assert.equal(noHeader.payload.value.value.moduleId, undefined, '无目标时不再回退到别的模块目录')
+    const noTarget = await call('rules', { expectedModuleId: idB }, { target: undefined })
+    assert.equal(noTarget.payload.code, 'module-dir-unavailable', '无声明即无目标，不回退启用表首项')
+    assert.equal(noTarget.status, 400)
   })
   await t.test('A 请求可以保存 A，expected B 被拒且不改任一模块', async () => {
     const beforeB = readFileSync(fileB, 'utf8')

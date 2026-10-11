@@ -1,0 +1,104 @@
+/**
+ * 模块主语解析回归网：`resolveEditDir` 只按**声明**定位，接线函数把「未声明」译为无目标。
+ *
+ * 真值源：`docs/superpowers/specs/2026-10-12-module-subject-design.md` 与 ADR-0011
+ * ——显式 id 命中该模块（与是否在启用表里无关），不存在的 id 与未声明一律返回空串，
+ * 不再回退启用表首项；非法 `x-module-id` 在事务边界显式 400，不降级成「未声明」。
+ * 断言落在公共接口（`resolveEditDir` / `resolveRequestedModuleDir` / 端点载荷）上。
+ */
+import { test } from 'node:test'
+import assert from 'node:assert/strict'
+import { mkdirSync, writeFileSync } from 'node:fs'
+import { basename, join } from 'node:path'
+import { isolatedHome, fakeReq, fakeRes, handlerTable, readBridge } from '../fixtures/host-harness.mjs'
+
+const { moduleRoot } = isolatedHome('pt-module-subject-')
+const { resolveEditDir, resolveRequestedModuleDir, setModuleEnabled } =
+  await import('../../src/host/config-store.ts')
+const { registerSettingsBridge } = await import('../../src/runtime/settings-bridge.ts')
+const { BRIDGE_ENDPOINTS, MODULE_IDENTITY_INVALID } = await import('../../src/shared/bridge-contract.ts')
+
+function makeModule(id, body = 'modules: []\n') {
+  const dir = join(moduleRoot, id)
+  mkdirSync(dir, { recursive: true })
+  writeFileSync(join(dir, 'module.yml'), `id: ${id}\n${body}`, 'utf8')
+  return dir
+}
+
+/** 存储根里的普通目录，没有 module.yml：不得被当成编辑目标。 */
+function makePlainDir(id) {
+  const dir = join(moduleRoot, id)
+  mkdirSync(dir, { recursive: true })
+  return dir
+}
+
+test('resolveEditDir 按声明定位：命中启用与否无关，缺定义与未声明一律无目标', () => {
+  const declared = makeModule('declared-one')
+  const undeclared = makeModule('undeclared-two')
+  setModuleEnabled(moduleRoot, basename(declared), true)
+
+  assert.equal(resolveEditDir(moduleRoot, basename(declared)), declared, '显式 id 命中该模块目录（绝对路径）')
+  assert.equal(resolveEditDir(moduleRoot, basename(undeclared)), undeclared, 'ADR-0011：未启用模块也可作为编辑目标')
+  assert.equal(resolveEditDir(moduleRoot, 'no-such-module'), '', '不存在的 id 返回空串，不回退启用表首项')
+  assert.equal(resolveEditDir(moduleRoot, 'plain-dir'), '', '没有 module.yml 的目录不是编辑目标')
+})
+
+test('未声明主语不选目标：接线函数返回空串，绝不落到启用表首项', () => {
+  const declared = makeModule('declared-wire')
+  setModuleEnabled(moduleRoot, basename(declared), true)
+  makePlainDir('plain-wire')
+
+  assert.equal(resolveRequestedModuleDir(moduleRoot, undefined), '', '未声明 = 无目标')
+  assert.equal(resolveRequestedModuleDir(moduleRoot, basename(declared)), declared, '声明了才解析目录')
+  assert.equal(resolveRequestedModuleDir(moduleRoot, 'no-such-wire'), '', '声明了但不存在也是无目标')
+})
+
+test('非法 x-module-id 在事务边界显式 400，不进入端点 handler', async () => {
+  makeModule('header-ok', 'modules: [rule-engine]\nrules: []\n')
+  const table = handlerTable()
+  const ctx = {
+    inject: (_deps, cb) => cb({
+      get: () => undefined,
+      settings: { describe: () => [{ ns: 'prompt-tool', value: {}, base: {} }], mutate: async () => {} },
+      webServer: { register: table.register },
+      effect: (fn) => fn(),
+    }),
+  }
+  registerSettingsBridge(ctx, {
+    ns: 'prompt-tool',
+    models: () => ({ available: true, providers: [] }),
+    skills: () => ({ skillsRoot: moduleRoot, folders: [], listSkills: () => [], setSkillPolicy: () => ({ ok: true, changed: false }) }),
+    moduleDirectory: (subject) => resolveRequestedModuleDir(moduleRoot, subject),
+  })
+  const call = async (endpoint, header, request = {}) => {
+    const handler = table.handler('/api/prompt-tool/settings' + BRIDGE_ENDPOINTS[endpoint])
+    assert.equal(typeof handler, 'function', `${endpoint} 端点已注册`)
+    const res = fakeRes()
+    await handler(fakeReq({
+      body: {},
+      headers: header === undefined ? {} : { 'x-module-id': header },
+      ...request,
+    }), res)
+    return readBridge(res)
+  }
+
+  for (const endpoint of ['rules', 'describe', 'meta']) {
+    for (const bad of ['../x', 'a'.repeat(65), '   ', '', 'Bad_ID', 'a/b']) {
+      const result = await call(endpoint, bad)
+      assert.equal(result.status, 400, `${endpoint} + ${JSON.stringify(bad)} 应显式拒绝：${result.message}`)
+      assert.equal(result.code, MODULE_IDENTITY_INVALID, `${endpoint} + ${JSON.stringify(bad)} 的错误码`)
+    }
+  }
+  // 合法头仍照常解析到声明的模块；缺失头不是非法头：策略为 none 的端点不受影响。
+  assert.equal((await call('describe', 'header-ok')).status, 200, '合法头不受影响')
+  assert.equal((await call('meta', undefined)).status, 200, '「头完全没有」不是非法头')
+
+  // 自守边界先于主语头判定：非法头不得把 403/405 顶掉。
+  const foreignHost = await call('rules', '../x', { headers: { host: 'evil.example.com' } })
+  assert.equal(foreignHost.status, 403, '非 loopback + 非法头仍是 403')
+  assert.equal(foreignHost.code, 'settings-not-exposed', '403 载荷不受主语头影响')
+  const nonLoopback = await call('rules', '../x', { remoteAddress: '10.0.0.7' })
+  assert.equal(nonLoopback.status, 403, '非 loopback socket + 非法头仍是 403')
+  const wrongMethod = await call('rules', '../x', { method: 'GET' })
+  assert.equal(wrongMethod.status, 405, '非 POST + 非法头仍是 405')
+})

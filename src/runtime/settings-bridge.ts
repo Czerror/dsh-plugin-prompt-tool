@@ -65,7 +65,7 @@ import {
   type BridgeRouteSpec,
   type BridgeTransaction,
 } from './bridge-transaction.ts'
-import { BRIDGE_ENDPOINTS, EDIT_TARGET_HEADER, MODULE_ACTIVATION_FAILED, SETTINGS_BRIDGE_PREFIX, readEditTarget } from '../shared/bridge-contract.ts'
+import { BRIDGE_ENDPOINTS, EDIT_TARGET_HEADER, MODULE_ACTIVATION_FAILED, MODULE_IDENTITY_INVALID, SETTINGS_BRIDGE_PREFIX, readEditTarget, readSubjectHeader } from '../shared/bridge-contract.ts'
 import { moduleParamFallbacks, validateEngineParamValues } from '../shared/engine-params.ts'
 import { readPersonaSpec, type PersonaSources } from '../shared/persona-section.ts'
 import { SKILL_NAME_PATTERN, type SkillsStateRead } from '../host/skills-config.ts'
@@ -431,11 +431,9 @@ export interface BridgeDeps {
   /** 技能运行态：技能根、引用目录、清单与策略写入。 */
   skills: () => SkillsBridgeState
   /**
-   * 生成目录（模块目录）：读取/写入哪一份提示词配置。
-   *
-   * 参数是**请求声明的编辑目标**（`x-module-id` 头解析而来）：给了就定位那个模块，
-   * 没给则由 host 回退启用表首项。编辑器因此不必依赖某个全局单选——配置卡自己的
-   * 模块身份决定写哪里。
+   * 请求声明的编辑目标（`x-module-id` 头解析而来）：`ok` 定位那个模块，未声明 = 无目标
+   * （由 handler 按策略拒绝），不再由 host 回退启用表首项。编辑器因此不必依赖某个全局单选
+   * ——配置卡自己的模块身份决定写哪里。
    */
   moduleDirectory?: (moduleId?: string) => string
   /** 参数写入后重建指定模块；省略身份表示启用表变化，刷新全部运行实例。 */
@@ -471,16 +469,41 @@ export function registerSettingsBridge(
   }
   const runOverridesChange = (write: BridgeWrite, moduleId?: string): Promise<boolean> => finishModuleChange(write, () => deps.overridesChanged?.(moduleId))
   /**
-   * 本次请求的编辑目标目录：读 `x-module-id` 头（形状不合法当未声明），交给注入的实现定位。
-   * 所有「读/写哪个模块的配置」都走这里，端点不再各自记一个全局目标。
+   * 本次请求的主语头解析结果：每次调用重新解析。头**完全没有** = 未声明（无目标）；
+   * 带了身份但形状非法 = `invalid`，由 `route` 显式拒绝，端点 handler 拿不到它。
    */
-  const editDir = (req: IncomingMessage): string => deps.moduleDirectory?.(readEditTarget(req.headers[EDIT_TARGET_HEADER])) ?? ''
+  const subjectHeader = (req: IncomingMessage): ReturnType<typeof readSubjectHeader> =>
+    readSubjectHeader(req.headers[EDIT_TARGET_HEADER])
+  /**
+   * 本次请求的编辑目标目录：只按声明定位（未声明 → 空串，由 handler 决定是否拒绝），
+   * 交给注入的实现解析。所有「读/写哪个模块的配置」都走这里，端点不再各自记一个全局目标。
+   */
+  const editDir = (req: IncomingMessage): string => {
+    const subject = subjectHeader(req)
+    return deps.moduleDirectory?.(subject.state === 'ok' ? subject.id : undefined) ?? ''
+  }
   const refreshModuleList = (write: BridgeWrite, id: string): Promise<boolean> => finishModuleChange(write, () => deps.moduleListChanged?.(id))
   /**
    * 本文件所有端点的唯一注册形态：边界（loopback/Origin、POST、32 MiB、JSON 形状）由事务统一完成，
    * `spec.handle` 只写业务判断。路径仍由各端点从 `BRIDGE_ENDPOINTS` 取。
+   *
+   * 主语头形状在事务边界**之后**判定：`invalid` 一律 400 并终止，与端点自身策略（required/optional/none）无关；
+   * 放在 handler 内层是为了不把 403（非 loopback）/405（非 POST）挡在自守边界之前。
    */
-  const route = (spec: BridgeRouteSpec): ReturnType<typeof bridgeTransaction> => bridgeTransaction(spec, { editDir })
+  const route = (spec: BridgeRouteSpec): ReturnType<typeof bridgeTransaction> => bridgeTransaction({
+    ...spec,
+    handle: async (tx) => {
+      if (subjectHeader(tx.req).state === 'invalid') {
+        tx.write(400, {
+          ok: false,
+          code: MODULE_IDENTITY_INVALID,
+          message: `请求头 ${EDIT_TARGET_HEADER} 的模块身份形状非法：只接受小写字母或数字开头、小写字母/数字/连字符组成、长度不超过 64 的模块 id`,
+        })
+        return
+      }
+      await spec.handle(tx)
+    },
+  }, { editDir })
   // 动态等待 webServer：webServer 由 @deepseek-ai/dsh-web-app 提供。
   // profile 首次缺少该 bundle 时，本子插件先 pending 但不阻塞启动审计；
   // ensureWebSurface 仅报告缺失能力，profile 装配交给官方插件管理流程。
