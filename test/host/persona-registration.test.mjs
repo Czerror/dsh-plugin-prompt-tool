@@ -7,7 +7,7 @@ import { pathToFileURL } from 'node:url'
 import { parse } from 'yaml'
 import { Context } from '@deepseek-ai/cordis'
 import AgentRegistry from '@deepseek-ai/dsh-agent'
-import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
+import SystemPrompt, { renderPrompt } from '@deepseek-ai/dsh-system-prompt'
 import { bindScopeParent, createScope, scopeOf, scopeTarget } from '@deepseek-ai/dsh-scope'
 import { isolatedHome } from '../fixtures/host-harness.mjs'
 
@@ -21,7 +21,8 @@ const { default: Loader } = await import(pathToFileURL(dependencies.resolve('@de
 const IDENTITY = 'You are an AI agent powered by DeepSeek Harness.'
 // 模块解析替身按官方 Persona 配置契约贡献真实声明。
 const OfficialPersona = { name: 'fixture-official-persona', inject: ['systemPrompt'], apply(ctx, config) {
-  ctx.systemPrompt.section(Object.freeze({ name: 'deployment:persona-prefix', order: 0, text: config.prefix, complete: config.complete }))
+  ctx.systemPrompt.section(Object.freeze({ name: 'deployment:persona-prefix', order: 0, text: config.prefix, complete: config.complete,
+    ...config.interpolate === undefined ? {} : { interpolate: config.interpolate } }))
   ctx.systemPrompt.section(Object.freeze({ name: 'deployment:persona-suffix', order: 10200, text: config.suffix ?? '' }))
 } }
 
@@ -203,6 +204,16 @@ test('预设未挂 persona 行：人设照常生效，不因未观察而失败',
   const main = await world.create('no-official')
   assert.deepEqual((await world.texts(main)).filter(Boolean), [IDENTITY, 'ALONE'])
   assert.deepEqual(world.warnings, [])
+})
+
+test('同层声明的 interpolate 随继承保留：原文不被当作提示词变量重解析', async t => {
+  const modules = [{ moduleId: 'first', persona: { subagent: { complete: false } } }]
+  const world = await personaWorld(t, modules)
+  const child = await world.create('inherit-raw', { delegationDepth: 1 }, ctx => {
+    ctx.systemPrompt.section(Object.freeze({ name: 'deployment:persona-prefix', order: 0, text: 'RAW {{missing}}', interpolate: false }))
+  })
+  const assembly = await child.ctx.systemPrompt.assemble({ scope: scopeOf(child.ctx), agent: child })
+  assert.equal(renderPrompt(assembly), `${IDENTITY}\n\nRAW {{missing}}\n\nTAIL`)
 })
 
 test('人设候选非法时拒绝刷新并保留上一个有效装配', async t => {

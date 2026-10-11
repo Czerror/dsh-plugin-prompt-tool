@@ -45,7 +45,8 @@ export interface PersonaCapture {
  * 窗口之外（含本插件自己的装配注册）一律不捕获。
  */
 export function installPersonaCapture(ctx: Context): PersonaCapture {
-  const records = new Map<ScopeKey, CapturedSection[]>()
+  // 弱引用：scope 释放后捕获记录随之回收，不随会话数增长。
+  const records = new WeakMap<ScopeKey, CapturedSection[]>()
   const pending = new Set<ScopeKey>()
   let active = true
   const isPersonaSection = (name: string): boolean => (PERSONA_SECTION_NAMES as readonly string[]).includes(name)
@@ -136,6 +137,7 @@ export function planPersonaSections(options: PersonaPlanOptions): PersonaPlan {
       name,
       order: base?.order ?? order(field === 'prefix' ? 'DEPLOYMENT_PERSONA_PREFIX' : 'DEPLOYMENT_PERSONA_SUFFIX'),
       ...(complete ?? base?.complete) === true ? { complete: true } : {},
+      ...base?.interpolate === undefined ? {} : { interpolate: base.interpolate },
       ...text === undefined ? { text: base?.text ?? '' } : {
         text: (context: AssembleContext) => renderTemplate({
           sourceModuleId: owner!.moduleId, ruleId: 'persona', id: `persona-${audience}-${field}`, texts: [text],
