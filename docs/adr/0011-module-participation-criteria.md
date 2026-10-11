@@ -24,18 +24,18 @@
 | # | 侧 | 入口 | 判据 | 它问的问题 |
 |---|---|---|---|---|
 | 1 | 请求 | `src/shared/bridge-contract.ts` 的 `readSubjectHeader` | `x-module-id` 头（`ok`／`absent`／`invalid`） | 这次请求**声明了**哪个模块 |
-| 2 | 请求 | `src/runtime/settings-bridge.ts` 的 `editDir()` + `src/index.ts` 的 `moduleDirectory` 接线（`resolveRequestedModuleDir`） | 声明存在且 `<root>/<id>/module.yml` 存在 | 声明的主语**能不能解析成目录** |
+| 2 | 请求 | `src/runtime/settings-bridge.ts` 的 `editDir()` + `src/index.ts` 的 `moduleDirectory` 接线（`resolveRequestedModuleDir`）；TUI 侧的调用点是 `src/runtime/tui.ts` 的 `getModuleDirectory(moduleId)` | 声明存在且 `<root>/<id>/module.yml` 存在（TUI 的 `moduleId` 来自用户显式声明，未声明即传 `undefined`、解析为空） | 声明的主语**能不能解析成目录** |
 | 3 | 请求 | `src/runtime/module-subject-gate.ts` 的 `subjectGate(tx, key, { write?, format?, declaration? })` | 请求头声明的目录 + 载荷主语 + `BRIDGE_SUBJECT_POLICY[key]` + `DECLARED_SECTIONS[key]`（`module.yml` 顶层键存在性） | 目标**是谁**／这次调用**凭什么成立**（门统一拒绝；未声明时回退启用表 `[0]` **已删**；**读**模块没声明该节 400 `module-not-declared`，**写**不查声明面并建立该节） |
 | 4 | 请求 | `src/host/module-config-order.ts` 的 `readInputs` | `enabledModuleIds()` 后 `.sort()` 字典序 | 跨模块排序**按什么取输入与定序**（排序首项与声明顺序首项不是同一个） |
 | 5 | 请求 | `src/host/persona-selection.ts` 的 `personaSources` | `config.yml.personaSources` 的 main／subagent 引用 | 人设正文**读哪个模块**（与启用表正交） |
-| 6 | Agent | `src/host/module-tool-target.ts` 的 `resolveModuleToolTarget` | 每 Agent 装配记录 `[0]` | 模块工具**默认落到哪个模块**（**待改**：阶段 4 改为工具参数显式声明） |
+| 6 | Agent | `src/host/module-tool-target.ts` 的 `resolveModuleToolTarget` + `MODULE_ID_PARAM` | 这次调用显式声明的 `moduleId`（`<root>/<id>/module.yml` 存在性由 `assertModuleDirectory` 复核；该 Agent 的装配记录只作拒绝提示） | 模块工具**这次读写哪个模块**（**无声明即拒绝**，不再默认落到任何模块） |
 
 **已删入口（登记备查，不计入上面的 6 个）**：
 
 - 客户端传输层的**模块级可变全局目标**（`src/client/data/bridge-transport.ts` 的 `editTarget` 与默认头，随 `c8fc22ae` 删除）——`postBridge` / `bridgeCall` 的 `subject` 实参仍在，但它每次调用显式传入、不持有状态。
 - 客户端 store 的目标写入点（`src/client/data/use-prompt-tool-store.ts` 的 `setModuleId` 与单主语事实镜像）——`rg 'setModuleId' src test` 现已零命中，主语由卡片归属决定。
 
-「表随实现更新」：本表按落地时的 `rg` 结果登记，不承诺入口数长期不变——阶段 1 删掉两处猜目标的入口、阶段 2 把归属判据收进 `subjectGate`（入口 3，见 [ADR-0014](0014-module-subject-declared-per-operation.md)），阶段 3 的声明面与阶段 4 的 Agent 侧落地后还会变化；新增消费者时先回答它问的是上表哪一类问题，再登记。
+「表随实现更新」：本表按落地时的 `rg` 结果登记，不承诺入口数长期不变——阶段 1 删掉两处猜目标的入口、阶段 2 把归属判据收进 `subjectGate`（入口 3，见 [ADR-0014](0014-module-subject-declared-per-operation.md)），阶段 3 的声明面与阶段 4 的 Agent 侧／TUI 已落地（入口 2 与入口 6 已按下述口径更新，未新增入口行：TUI 的会话主语是「用户声明」的状态，仍走入口 2 的目录解析，不另立判据）；新增消费者时先回答它问的是上表哪一类问题，再登记。
 
 ## 取舍
 
