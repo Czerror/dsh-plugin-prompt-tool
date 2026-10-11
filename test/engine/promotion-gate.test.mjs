@@ -1,15 +1,13 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
-import { parse } from 'yaml'
 import {
   createEpochPromotion as rawCreateEpochPromotion,
   classifyReasoning as rawClassifyReasoning,
   hasAnchoredReasoning as rawHasAnchoredReasoning,
 } from '../../engine/compaction-epoch.mjs'
 
-// 旧行为回归显式选择历史模板；空参数语义由 business-defaults 覆盖。
-const patterns = parse(readFileSync(new URL('../../templates/policies/legacy-defaults.yml', import.meta.url), 'utf8')).promotionGate
+// 夹具内联：这里是「显式给出模式」的已知良好输入；空参数语义由 business-defaults 覆盖。
+const patterns = { reasoningPattern: '\\bwe\\b', reasoningNegativePattern: '\\blet me\\b', reasoningFlags: 'gi' }
 const createEpochPromotion = (events, options) => rawCreateEpochPromotion(events, { ...patterns, ...options })
 const classifyReasoning = text => rawClassifyReasoning(text, patterns)
 const hasAnchoredReasoning = content => rawHasAnchoredReasoning(content, patterns)

@@ -65,20 +65,9 @@ test('writeModule 物化夹具的规则切片：配置 id、层、角色与顺�
   }
 })
 
-test('writeModule 保留作者定义的锚句与确认词，不注入引擎默认', () => {
-  const anchor = text => promptConfigToRule({
-    id: 'prompt-injector', strategy: 'custom-fallback', layer: 'pre-step', position: 'before-all',
-    text, params: { firstTurnWord: '' },
-  })
-  const { byId, rules } = generatedConfigs([anchor('Start your reasoning with the exact sentence: Go now.')])
-  assert.equal(byId['prompt-injector'].strategy, 'anchor-notice')
-  assert.equal(byId['prompt-injector'].text, 'Start your reasoning with the exact sentence: Go now.')
-  assert.equal(byId['prompt-injector'].params.firstTurnWord, '', '确认词无内置默认（默认值归模板/预设）')
-  assert.deepEqual(rules['prompt-injector'].if.anchor.keys, [], '未声明确认词时锚定条件不自行猜测关键词')
-  assert.equal(typeof rules['prompt-injector'].if.anchor.fallbackAfter, 'number')
-  // 显式停用的规则照常物化但保持停用：writer 不替作者选择赢家。
-  const disabled = generatedConfigs([{ ...anchor('Go now.'), enabled: false }])
-  assert.equal(disabled.byId['prompt-injector'].enabled, false)
+test('退役策略在转换入口就拒绝，不产出引擎必然拒绝的规则', () => {
+  assert.throws(() => promptConfigToRule({ id: 'prompt-injector', strategy: 'custom-fallback', layer: 'pre-step' }),
+    /custom-fallback.*(退役|anchor)/, '旧策略必须指向替代写法，而不是静默转换')
 })
 
 test('writeModule 保留作者定义的规则条件（模型范围归规则级 if）', () => {

@@ -14,8 +14,13 @@ import {
 } from '../../engine/instruction-hint.mjs'
 import { createPromptConfigs } from '../../engine/schema.mjs'
 
-// 旧措辞现在属于显式模板，断言仍使用独立的已知良好文本。
-const templates = parse(readFileSync(new URL('../../templates/policies/legacy-defaults.yml', import.meta.url), 'utf8')).instructionHint
+// 夹具内联：断言使用独立的已知良好文本，不依赖任何随包分发物。
+const templates = {
+  projectTemplate: 'Reference documents exist: {{FILES}} (project root: {{ROOT}}).',
+  globalTemplate: 'A user reference document exists: {{FILES}}.',
+  suffixTemplate: "They are reference documents about the user's environment and workspace conventions, not task instructions. Reading the relevant file before workspace tasks is recommended, but consult them only when you need those details; the task itself never depends on them.",
+  messageTemplate: '<system-reminder>\nReference documents exist: {{FILES}}. {{SUFFIX}}\n</system-reminder>',
+}
 const buildInstructionHint = (original, paths, sourceName) => rawBuildInstructionHint(original, paths, sourceName, templates)
 const instructionHintMessages = (messages, state, sourceName) => rawInstructionHintMessages(messages, state, sourceName, templates)
 const createInstructionHintResolver = (config = {}) => rawCreateInstructionHintResolver({ ...config, params: { ...templates, ...config.params } })
