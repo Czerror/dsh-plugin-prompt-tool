@@ -274,13 +274,12 @@ test('(2f) allowFrom：发现工具不在装配目录里时告警，且裁切行
   assert.deepEqual(outA.tools.map((item) => item.name), ['pwsh'], '失配不影响裁切：仍按静态名单')
   assert.equal(ghost.warnings.length, 1, '失配应恰好告警一次')
   assert.match(ghost.warnings[0], /gone_finder.*not in the assembled tool set/)
-  // ② 白名单模式下发现工具被自己裁掉：它不可能被调用，解锁通道同样断了——等价失配。
+  // ② 白名单模式下发现工具被自动保留：它是解锁通道本身，引擎不该让它把自己裁掉。
   const selfCut = recordingCtx()
   const inputB = assembled(catalog.map((item) => ({ ...item })))
   const outB = await run(selfCut, { allowFrom: { tool: 'tool_search', key: 'toolNames' } }, inputB, [])
-  assert.deepEqual(outB.tools.map((item) => item.name), [], '只配 allowFrom 且未解锁 → 空目录')
-  assert.equal(selfCut.warnings.length, 1, '自我裁掉同样告警一次')
-  assert.match(selfCut.warnings[0], /tool_search.*not in the assembled tool set/)
+  assert.deepEqual(outB.tools.map((item) => item.name), ['tool_search'], '只配 allowFrom 且未解锁 → 只留发现工具自己')
+  assert.deepEqual(selfCut.warnings, [], '引擎自己修得掉的情况不告警')
   // ③ 只配 allowFrom 且已解锁 → 仅解锁项（工具在目录里则无告警）。
   const unlocked = recordingCtx()
   const inputC = assembled(catalog.map((item) => ({ ...item })))

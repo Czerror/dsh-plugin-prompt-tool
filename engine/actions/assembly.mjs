@@ -23,6 +23,10 @@ import { historyEvents } from '../history.mjs'
  */
 function fillUnlocked(into, session, tool, key, warnOnce, plugin, label) {
   into.clear()
+  // 发现工具是解锁通道本身：它必须能被模型调用，所以恒在放行集里——白名单模式（allow 未点名
+  // 它）下若把它一并裁掉，解锁就永远不可能发生，那不是「收窄」而是自断通道。放在 clear 之后、
+  // 读事件之前：读历史失败时它同样要保留，否则模型连搜都搜不了。
+  into.add(tool)
   let events
   try {
     events = historyEvents(session)
@@ -120,11 +124,11 @@ export function prepareAssembly(action, plugin) {
         // 原模块给完整目录，只判"全缺"会裁成 `[bash]`）。
         // 声明写 `requireMatch: true` 才启用；**不写就照名单裁**（与 `tool-filter.mjs` 一致）。
         const available = new Set(result.tools.map((tool) => tool?.name).filter((name) => typeof name === 'string'))
-        // 发现工具必须真的留在裁切后的目录里：不在（改名、副本停在旧名）或它自己会被裁掉
-        // （白名单模式下没写进静态 allow），模型都调不到它，解锁名单永远读回空。原本这是
-        // **静默失效**——收窄照常发生、只是解锁再也不生效，这里补一条可观察告警。
+        // 发现工具已被 fillUnlocked 恒放行，所以这里只剩引擎自己修不掉的一类：工具压根不在
+        // 目录里（改名后已有副本停在旧名、或把名字写错）。此时保留一个不存在的名字没有意义，
+        // 解锁名单永远读回空——原本毫无提示，这里补一条可观察告警。
         // key 写错同理但判据不可得（模型产出的参数名没有 schema 可比对），属已知边界。
-        if (allowExtra !== undefined && (!available.has(allowFrom.tool) || tools.blocks(allowFrom.tool))) {
+        if (allowExtra !== undefined && !available.has(allowFrom.tool)) {
           warnOnce(`${plugin}: assembly action ${labelOf(action)}: allowFrom.tool "${allowFrom.tool}" is not in the assembled tool set — unlocking can never take effect`)
         }
         // 必需名单 = 静态 allow ∪ 本轮解锁项：解锁项同样是「本该存在」的工具，缺了就 fail-open。
