@@ -139,6 +139,54 @@ test('settings bridge /meta 返回引擎能力矩阵', async () => {
   assert.ok(payload.value.meta.strategies.includes('anchor-notice'))
 })
 
+test('settings bridge /meta 逐模块下发同源事实：可编辑、算不出缺席、正文不外泄', async () => {
+  const { ctx, handlers } = makeHarness()
+  registerSettingsBridge(ctx, {
+    ns: 'prompt-tool',
+    models: () => ({ available: true, providers: [] }),
+    skills: () => skillsStateStub(),
+  })
+  // 场景一：用户副本模块（显式 modules 清单）⇒ editable 真。
+  const editableDir = makeUserPresetDir('facts-user-')
+  const editableId = basename(editableDir)
+  writeFileSync(join(editableDir, 'module.yml'), JSON.stringify({
+    id: editableId,
+    name: '可编辑副本',
+    modules: ['rule-engine', 'tool-search'],
+    rules: [textRule('body-row', 'TOP-SECRET-BODY')],
+    persona: { main: { prefix: 'TOP-SECRET-PERSONA' } },
+  }), 'utf8')
+  // 场景二：组合源解析不到 ⇒ facts 在、editable 假（/meta 只列存储根，包内回退模块不在此列）。
+  const unresolvedDir = makeUserPresetDir('facts-unresolved-')
+  const unresolvedId = basename(unresolvedDir)
+  writeFileSync(join(unresolvedDir, 'module.yml'), JSON.stringify({
+    id: unresolvedId, name: '组合缺失', composition: 'no-such-composition',
+  }), 'utf8')
+  // 场景三：module.yml 不可解析 ⇒ broken 且 facts 缺席，且不让整个 /meta 失败。
+  const brokenDir = makeUserPresetDir('facts-broken-')
+  const brokenId = basename(brokenDir)
+  writeFileSync(join(brokenDir, 'module.yml'), 'id: [unclosed\n', 'utf8')
+
+  const res = fakeRes()
+  await handlers.get(`${PREFIX}/meta`)(fakeReq(), res)
+  assert.equal(res.status, 200)
+  const byId = new Map(JSON.parse(res.body).value.meta.modules.map((entry) => [entry.id, entry]))
+
+  const facts = byId.get(editableId).facts
+  assert.equal(facts.editable, true)
+  assert.equal(facts.sourceMode, 'explicit')
+  assert.deepEqual(facts.declaredModules, ['rule-engine', 'tool-search'])
+  assert.deepEqual(Object.keys(facts).sort(),
+    ['declaredModules', 'editable', 'effectiveModules', 'rowIds', 'sourceMode', 'subagentToolPolicyEnabled'])
+  assert.doesNotMatch(JSON.stringify(facts), /TOP-SECRET/)
+
+  assert.equal(byId.get(unresolvedId).facts.editable, false)
+  assert.equal(byId.get(unresolvedId).facts.sourceMode, 'unknown')
+
+  assert.equal(typeof byId.get(brokenId).broken, 'string')
+  assert.equal('facts' in byId.get(brokenId), false)
+})
+
 test('settings bridge /skills-import 写入技能文件并触发目录刷新回调', async () => {
   const dir = mkdtempSync(join(tmpdir(), `pt-skills-import-${process.pid}-`))
   let refreshes = 0

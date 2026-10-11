@@ -378,6 +378,25 @@ function guardEditableModuleDir(dir: string, write: BridgeWrite): boolean {
   return false
 }
 
+/** 逐模块身份与能力事实：与 /bootstrap 的 `moduleFacts` 走同一条 resolveModuleFacts 链。
+ *  模块损坏（定义不可解析等）或事实算不出时返回 undefined，绝不下发部分字段。 */
+function moduleFactsOf(moduleId: string): ModuleFacts | undefined {
+  try {
+    const dir = resolveModuleDir(moduleId)
+    const facts = resolveModuleFacts(loadModuleSpec(dir), dir, isEditableModuleDir(dir))
+    return {
+      declaredModules: facts.declaredModules,
+      effectiveModules: facts.effectiveModules,
+      rowIds: facts.rowIds,
+      sourceMode: facts.sourceMode,
+      editable: facts.editable,
+      subagentToolPolicyEnabled: facts.subagentToolPolicyEnabled === true,
+    }
+  } catch {
+    return undefined
+  }
+}
+
 /** 将 moduleConfigs/行默认投影为 UI 字段兜底；显式 params 永远优先。 */
 function mergeModuleConfigFallbacks(params: Record<string, unknown>, facts: ModuleFacts): void {
   for (const [key, value] of Object.entries(moduleParamFallbacks(facts.effectiveConfigs ?? {}))) {
@@ -579,10 +598,16 @@ export function registerSettingsBridge(
         // 模块的 broken 只来自本插件自己的 module.yml 解析结果（manifest.ts#listModules）。
         // 模块不进入官方 agentPresets 注册表，故不叠加官方 roster 的同名诊断——那会把
         // 「与某官方预设同名」误报成模块损坏，并据此禁用它的启用开关。
-        meta.modules = listModules().map((preset) => ({
-          ...preset,
-          enabled: enabledSet.has(preset.id),
-        }))
+        // 逐模块事实与 /bootstrap 的 moduleFacts 同源：装配集合视图一次全局读即可，
+        // 不必按模块逐个聚合读；算不出事实的模块 facts 缺席（broken 等），不影响整个响应。
+        meta.modules = listModules().map((preset) => {
+          const facts = moduleFactsOf(preset.id)
+          return {
+            ...preset,
+            enabled: enabledSet.has(preset.id),
+            ...(facts === undefined ? {} : { facts }),
+          }
+        })
         meta.builtinTemplates = listBuiltinTemplates()
         if (modulePathExists(join(dirname(userModulesDir()), '.characters'))) {
           meta.moduleWarnings = ['检测到旧 .characters 角色库；其内容尚未作为模块导入。请通过模块导入入口显式导入，旧目录不会自动迁移或删除。']

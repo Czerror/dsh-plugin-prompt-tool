@@ -9,7 +9,7 @@ import type { ModuleVariablesRequest, ModuleVariablesSnapshot } from './module-v
 import type { RulesRequest, RulesSnapshot } from './rules.ts'
 import type { ModuleConfigIdentity, ModuleConfigOrderSnapshot } from './module-config-order.ts'
 import type { AssetImportRequest, AssetSummary, ImportKind, ModuleExportRequest, ModuleExportResult } from './asset-transfer.ts'
-import type { EngineEditorGroup, InjectionPoint } from './engine-capabilities.ts'
+import type { EngineEditorGroup, InjectionPoint, ModuleFacts } from './engine-capabilities.ts'
 import type { OfficialOrdersView } from './official-orders.ts'
 import { isModuleId } from './module-ids.ts'
 import type { SkillContentSnapshot, SkillPolicyChange, SkillsCatalogSnapshot } from './skills.ts'
@@ -191,6 +191,9 @@ export interface ModuleSummary {
   broken?: string
   /** 是否在存储根 `config.yml` 的启用表里（启用即参与运行时装配）。 */
   enabled?: boolean
+  /** 该模块的身份与能力派生事实（与 `/bootstrap` 的 `moduleFacts` 同源同形）；
+   *  模块损坏或事实算不出时缺席，绝不下发部分字段。 */
+  facts?: ModuleFacts
 }
 
 /**
