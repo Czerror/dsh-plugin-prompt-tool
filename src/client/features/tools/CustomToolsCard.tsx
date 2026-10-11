@@ -18,7 +18,8 @@ export function useCustomToolsEditor(props: {
   t: PromptToolTranslate
   onNotice: (kind: 'ok' | 'error', message: string) => void
   disabled?: boolean
-  moduleId?: string
+  /** 卡片所属模块＝每次请求的主语，必填：模块类端点漏传主语在编译期即拦。 */
+  moduleId: string
   drafts?: WorkspaceDrafts
   onChooseTemplate?: (anchor: HTMLButtonElement) => void
 }): { createTool: (intent: ToolCreateIntent) => void; content: ReactNode } {

@@ -55,7 +55,8 @@ function PolicyNumberInput(props: { value: number; label: string; draftKey: stri
 export function SubagentToolPolicyCard(props: {
   t: PromptToolTranslate
   onNotice: Notice
-  moduleId?: string
+  /** 卡片所属模块＝每次请求的主语，必填：模块类端点漏传主语在编译期即拦。 */
+  moduleId: string
   modules: ModuleOption[]
   drafts?: WorkspaceDrafts
   disabled?: boolean
@@ -95,7 +96,7 @@ export function SubagentToolPolicyCard(props: {
     setPreview(null)
     setPreviewInput({})
     setLoadError('')
-    void bridgeCall('subagentToolPolicy', { expectedModuleId: props.moduleId }).then((result) => {
+    void bridgeCall('subagentToolPolicy', { expectedModuleId: props.moduleId }, props.moduleId).then((result) => {
       if (editorRef.current !== editor) return
       if (!result.ok) {
         setLoadError(result.message ?? t('policy.loadFailed'))
@@ -133,7 +134,7 @@ export function SubagentToolPolicyCard(props: {
         const submitted = editor.pending
         editor.pending = undefined
         if (deepEqual(submitted, editor.saved)) continue
-        const result = await bridgeCall('subagentToolPolicy', { policy: submitted, expectedModuleId: props.moduleId })
+        const result = await bridgeCall('subagentToolPolicy', { policy: submitted, expectedModuleId: props.moduleId }, props.moduleId)
         // 已发请求只确认自身快照；卸载取消未发队列，同模块重挂仍共享串行状态。
         if (result.ok) {
           editor.saved = submitted
@@ -166,7 +167,7 @@ export function SubagentToolPolicyCard(props: {
 
   const runPreview = (): void => {
     const editor = editorRef.current
-    void bridgeCall('subagentToolPolicyPreview', previewInput).then((result) => {
+    void bridgeCall('subagentToolPolicyPreview', previewInput, props.moduleId).then((result) => {
       if (editorRef.current !== editor) return
       if (result.ok) setPreview(result.value.result)
       else onNotice('error', ('message' in result ? result.message : undefined) ?? t('policy.notice.previewFailed'))

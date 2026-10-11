@@ -65,29 +65,14 @@ async function readBridgeResponse<T>(response: Response): Promise<BridgeResult<T
 }
 
 /**
- * 当前**编辑目标**（模块 id）。
- *
- * 同一身份路径：模块内的配置卡启停、编辑与模块级写盘都按它定位——模块 id 唯一
- * （复制必带 `-copy` 后缀），加上卡自身的 id 就唯一确定一张配置卡。
- * 未设置时不带该头，host 侧维持既有语义（当前激活模块目录）。
+ * 主语只在调用实参里携带：`subject` 是模块 id（模块目录名），模块 id 唯一（复制必带 `-copy`
+ * 后缀），加上卡自身的 id 就唯一确定一张配置卡。没有会话级目标，未传即不带该头。
  */
-let editTarget: string | undefined
-
-/** 由工作台在编辑目标变化时调用（来源：当前激活的模块）。 */
-export function setEditTarget(moduleId: string | undefined): void {
-  editTarget = moduleId !== undefined && moduleId.length > 0 ? moduleId : undefined
-}
-
-function editTargetHeader(moduleId = editTarget): Record<string, string> {
-  return moduleId === undefined ? {} : { [EDIT_TARGET_HEADER]: moduleId }
-}
-
-/** 单次请求可绑定卡片所属模块，不改变工作台的全局编辑目标。 */
-export async function postBridge<T>(path: string, body: unknown, moduleId?: string): Promise<BridgeResult<T>> {
+export async function postBridge<T>(path: string, body: unknown, subject?: string): Promise<BridgeResult<T>> {
   try {
     const response = await fetch(SETTINGS_BRIDGE_PREFIX + path, {
       method: 'POST',
-      headers: { 'content-type': 'application/json', ...editTargetHeader(moduleId) },
+      headers: { 'content-type': 'application/json', ...(subject === undefined ? {} : { [EDIT_TARGET_HEADER]: subject }) },
       body: JSON.stringify(body ?? {}),
     })
     return await readBridgeResponse<T>(response)
@@ -104,7 +89,6 @@ export async function uploadBridge<T>(path: string, file: Blob, fileName: string
       headers: {
         'content-type': file.type || 'application/octet-stream',
         'x-file-name': encodeURIComponent(fileName),
-        ...editTargetHeader(),
       },
       body: file,
     })

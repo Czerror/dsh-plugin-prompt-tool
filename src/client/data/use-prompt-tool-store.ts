@@ -6,7 +6,6 @@ import type { PromptToolHostApi } from './host-api.ts'
 import type { ModuleFacts } from '../../shared/engine-capabilities.ts'
 import type { SkillCatalogEntry, SkillContentSnapshot, SkillPolicyChange } from '../../shared/skills.ts'
 import { bridgeCall, errorMessage, type BridgeResult, type BridgeSettingsView } from './bridge-client.ts'
-import { setEditTarget } from './bridge-transport.ts'
 import { requestSkillImport, type ConfirmSkillOverwrite } from './skill-import.ts'
 import {
   EMPTY_FIELDS,
@@ -292,9 +291,6 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
   const fieldsListenersRef = useRef(new Set<() => void>())
   const publishFields = useCallback((next: Fields) => {
     fieldsRef.current = next
-    // 编辑目标随当前模块走：模块内的配置卡启停/编辑与模块级写盘都按这个身份定位
-    // （模块 id 唯一，复制必带 `-copy` 后缀）。这里是 fields 更新的唯一收口，故一处即可。
-    setEditTarget(next.moduleId)
     setFields(next)
     for (const listener of fieldsListenersRef.current) listener()
   }, [])
@@ -385,7 +381,7 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
 
   const refreshVariables = useCallback(async (moduleId: string, scope: ModuleVariableScope): Promise<void> => {
     const draft = getVariablesDraft(editorDrafts.variables, moduleId, scope)
-    const pending = readVariablesDraft(moduleId, draft, body => bridgeCall('moduleVariables', body))
+    const pending = readVariablesDraft(moduleId, draft, body => bridgeCall('moduleVariables', body, moduleId))
     publishVariables(version => version + 1)
     await pending
     publishVariables(version => version + 1)
@@ -465,7 +461,8 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
       const instructionSnapshot = instructionPoolRef.current
       const policySnapshot = instructionPolicyRef.current
       const [boot] = await Promise.all([
-        bridgeCall('bootstrap', sessionId === undefined ? {} : { sessionId }),
+        // ponytail: T6 改为按装配集合逐主语加载后删除这条临时主语（见 PLAN T6）
+        bridgeCall('bootstrap', sessionId === undefined ? {} : { sessionId }, fieldsRef.current.moduleId),
         refreshVariables(fieldsRef.current.moduleId, variablesScopeRef.current),
       ])
       if (seq !== loadSeqRef.current || sessionId !== api.currentSessionId()) return EMPTY_FIELDS
@@ -708,7 +705,7 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
         loadedKeys: loadedKeysRef.current,
         baseline: paramBaselineRef.current,
       })
-      const res = await bridgeCall('paramOverrides', { overrides, expectedModuleId: f.moduleId })
+      const res = await bridgeCall('paramOverrides', { overrides, expectedModuleId: f.moduleId }, f.moduleId)
       if (!isCurrentModuleDraft(f, fieldsRef.current)) return
       if (res.ok) {
         updateLoadedParamKeys(loadedKeysRef.current, overrides)
@@ -870,7 +867,7 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
       draft.saving = true
       publishVariables(version => version + 1)
       try {
-        const res = await saveModuleVariables(expectedModuleId, baseline, desired, body => bridgeCall('moduleVariables', body))
+        const res = await saveModuleVariables(expectedModuleId, baseline, desired, body => bridgeCall('moduleVariables', body, expectedModuleId))
         draft.baseline = res.baseline
         if (next !== undefined && draft.variables === previousValues) draft.variables = { ...next }
         draft.error = res.publicationError ?? ''
@@ -893,7 +890,7 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
         await refreshVariables(moduleId, scope)
         return !draft.error
       }
-      const result = await retryModuleVariablesPublication(moduleId, draft.baseline, body => bridgeCall('moduleVariables', body))
+      const result = await retryModuleVariablesPublication(moduleId, draft.baseline, body => bridgeCall('moduleVariables', body, moduleId))
       draft.baseline = result.baseline
       draft.error = result.publicationError ?? ''
       publishVariables(version => version + 1)
@@ -937,7 +934,7 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
         return false
       }
       const request = action === 'create-recipe' ? { action, recipeId: id } : { action, capabilityId: id }
-      const result = await bridgeCall('moduleCapability', { ...request, expectedModuleId })
+      const result = await bridgeCall('moduleCapability', { ...request, expectedModuleId }, expectedModuleId)
       if (expectedModuleId !== fieldsRef.current.moduleId) return false
       if (!result.ok) {
         showNotice('error', '引擎能力变更失败：' + (result.message ?? 'settings bridge unavailable'))

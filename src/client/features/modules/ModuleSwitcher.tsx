@@ -56,7 +56,8 @@ export const ModuleSwitcher = memo(function ModuleSwitcher(props: { store: Promp
 
   /** 删除模块（物理删除用户目录副本；插件目录模板保留，可经「新建模块」还原）。 */
   const deleteModule = async (id: string): Promise<void> => {
-    const res = await bridgeCall('moduleDelete', { id })
+    // 主语＝当前编辑目标：服务端据此执行「在用模块不可删」；空主语由 bridgeCall 省略该头。
+    const res = await bridgeCall('moduleDelete', { id }, store.fields.moduleId)
     if (res.ok) {
       store.showNotice('ok', t('moduleSwitcher.notice.deleted', { id }))
       await store.load()

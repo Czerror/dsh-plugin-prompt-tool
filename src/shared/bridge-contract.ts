@@ -100,10 +100,11 @@ export const EDIT_TARGET_HEADER = 'x-module-id'
 export type BridgeSubjectPolicy = 'required' | 'optional' | 'none'
 
 /**
- * 主语策略表——客户端类型约束与服务端归属门的**唯一名单**（`Record` 覆盖保证漏标即 typecheck 失败）。
+ * 主语策略表——客户端类型约束与服务端归属门的**唯一名单**（`satisfies Record` 覆盖保证漏标即 typecheck 失败）。
  * 判据＝服务端 handler 是否读 `tx.editDir()`：`required` 缺主语必须拒绝，不得回退启用表首项。
+ * 不用 `: Record<...>` 注解：注解会把每项加宽成 `BridgeSubjectPolicy`，客户端就再也读不到单个端点的字面量。
  */
-export const BRIDGE_SUBJECT_POLICY: Record<BridgeEndpointKey, BridgeSubjectPolicy> = {
+export const BRIDGE_SUBJECT_POLICY = {
   meta: 'none',
   /** 空主语只回全局段。 */
   bootstrap: 'optional',
@@ -152,7 +153,7 @@ export const BRIDGE_SUBJECT_POLICY: Record<BridgeEndpointKey, BridgeSubjectPolic
   moduleCapability: 'required',
   contextActivationDiagnostics: 'none',
   ruleDiagnostics: 'none',
-}
+} satisfies Record<BridgeEndpointKey, BridgeSubjectPolicy>
 
 /** 请求头声明的模块 id 与 handler 实际归属不一致：归属门拒绝，绝不按请求头改归属。 */
 export const MODULE_SUBJECT_CONFLICT = 'module-subject-conflict'
