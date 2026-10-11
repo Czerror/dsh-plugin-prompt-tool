@@ -1,5 +1,6 @@
 import { useEffect, useId, useRef, useState, type ReactNode } from 'react'
 import type { ImportChoices, ImportKind } from '../../shared/asset-transfer.ts'
+import { isModuleId } from '../../shared/module-ids.ts'
 import type { ImportOrderCandidates, ImportPreviewState } from '../prompt-tool-types.ts'
 import type { PromptToolTranslate } from '../locales.ts'
 import { DialogSurface } from './DialogSurface.tsx'
@@ -47,7 +48,7 @@ export function ImportDialog(props: {
   const summary = preview?.summary
   const busy = phase === 'submitting'
   const complete = phase === 'complete'
-  const validId = choices.targetId === undefined || (choices.targetId.length <= 128 && /^[a-z0-9][a-z0-9-]*$/.test(choices.targetId))
+  const validId = choices.targetId === undefined || (choices.targetId.length <= 128 && isModuleId(choices.targetId))
   const ready = phase === 'confirming' && preview !== undefined && validId && (choices.targetName === undefined || choices.targetName.trim().length > 0)
   const close = (): void => { if (!busy) props.onClose() }
   useEffect(() => { if (props.error) errorRef.current?.focus() }, [props.error])

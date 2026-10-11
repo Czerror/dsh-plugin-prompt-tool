@@ -3,7 +3,7 @@
  *  复制完成后技能由官方 skill 文件提供者直接发现，插件不需要登记任何状态。 */
 import { existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
-import { parseFrontmatter } from '../runtime/skills-parse.ts'
+import { parseFrontmatter } from './skills-parse.ts'
 import { SKILL_NAME_PATTERN } from './skills-config.ts'
 
 export interface SkillsImportFile { path?: unknown; content?: unknown }

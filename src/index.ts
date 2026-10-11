@@ -336,6 +336,6 @@ export { ModuleLayerSettingsError, readModuleLayerSettings } from './host/module
 export type { ModuleWriterParams } from './shared/engine-params.ts'
 export type { ModuleSummary } from './shared/bridge-contract.ts'
 export type { ModuleExportRequest, ModuleExportResult } from './shared/asset-transfer.ts'
-export { parseFrontmatter } from './runtime/skills-parse.ts'
-export type { SkillFrontmatter } from './runtime/skills-parse.ts'
+export { parseFrontmatter } from './host/skills-parse.ts'
+export type { SkillFrontmatter } from './host/skills-parse.ts'
 export { DEFAULT_MODULE_ID } from './shared/module-ids.ts'

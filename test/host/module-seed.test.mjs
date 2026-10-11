@@ -8,8 +8,9 @@ import { join } from 'node:path'
 const home = mkdtempSync(join(tmpdir(), 'pt-seed-'))
 process.env.DSH_HOME = home
 const { ensureModuleSeed } = await import('../../lib/index.mjs')
+const { storageRootOf } = await import('../../src/host/paths.ts')
 
-const PRESETS_DIR = join(home, '.prompt-tool', 'modules')
+const PRESETS_DIR = join(storageRootOf(home), 'modules')
 
 test('ensureModuleSeed：首次复制内置模板，二次幂等，删除后自动补建', () => {
   const first = ensureModuleSeed()

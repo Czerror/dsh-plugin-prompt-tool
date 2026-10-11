@@ -15,6 +15,7 @@ const {
   catalogFromScan, readSkillInvocation, readSkillsState, scanRoots, setSkillInvocation, skillRoots, writeSkillsState,
 } = await import('../../src/index.ts')
 const { deleteSkillTarget } = await import('../../src/host/skills-actions.ts')
+const { storageRootOf } = await import('../../src/host/paths.ts')
 after(() => {
   rmSync(bridgeHome, { recursive: true, force: true })
   delete process.env.DSH_HOME
@@ -41,7 +42,7 @@ function skillsStateStub(overrides = {}) {
 }
 
 const PREFIX = '/api/prompt-tool/settings'
-const userPresetRoot = join(bridgeHome, '.prompt-tool', 'modules')
+const userPresetRoot = join(storageRootOf(bridgeHome), 'modules')
 
 let presetSequence = 0
 function makeUserPresetDir(prefix) {

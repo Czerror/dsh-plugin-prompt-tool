@@ -937,9 +937,9 @@ export function mergeStConversionReports(
   }
 }
 
-/** ST 导入预设 id：必须是官方 agent-presets 可发现的目录名（PRESET_ID =
- *  /^[a-z0-9][a-z0-9-]*$/——含中文的目录会被宿主 discovery 静默跳过，会话
- *  resume 报 preset not found）。文件名 slug 化（去中文）；纯中文名退化为
+/** ST 导入预设 id：必须是官方 agent-presets 可发现的目录名（形状判据见
+ *  `shared/module-ids.ts` 的 `MODULE_ID_PATTERN`——含中文的目录会被宿主 discovery
+ *  静默跳过，会话 resume 报 preset not found）。文件名 slug 化（去中文）；纯中文名退化为
  *  st-<文件名短哈希>（唯一且合法）；显示名 name 仍保留中文原名。 */
 export function stModuleId(baseName: string): string {
   const slug = baseName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')

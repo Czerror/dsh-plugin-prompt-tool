@@ -17,8 +17,9 @@ after(() => {
 })
 
 const { BRIDGE_ENDPOINTS, SETTINGS_BRIDGE_PREFIX, registerSettingsBridge } = await import('../../lib/index.mjs')
+const { storageRootOf } = await import('../../src/host/paths.ts')
 
-const policyPath = join(home, '.prompt-tool', 'instructions.yml')
+const policyPath = join(storageRootOf(home), 'instructions.yml')
 beforeEach(() => { rmSync(policyPath, { force: true }) })
 const endpoint = SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.instructionsPolicy
 

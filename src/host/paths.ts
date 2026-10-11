@@ -25,13 +25,24 @@ export const DSH_HOME = resolveDshHome()
  *  内置技能按「只补缺失」补建（见 `ensureSkillSeed`）：已有目录的正文、资源与调用策略保持原样。 */
 export const USER_SKILLS_DIR = join(DSH_HOME, 'skills')
 /**
- * 插件自有**存储根**（DSH_HOME/.prompt-tool）。
+ * 插件自有**存储根**的派生（`<DSH_HOME>/.prompt-tool`）：本插件拥有的全部状态与
+ * 生成目录都在它下面，其他用户或官方文件不在其中。
+ *
+ * 纯函数、不读 `DSH_HOME`，因此测试可以用它按自己的隔离目录现算（夹具与用例各自
+ * 持有 `home`，不能用下面那个 import 时冻结的常量）。
+ */
+export function storageRootOf(dshHome: string): string {
+  return join(dshHome, '.prompt-tool')
+}
+/**
+ * 当前进程的存储根（`DSH_HOME/.prompt-tool`）。
  *
  * `modules/` 放完整定义、经校验规则切片和用户素材；角色卡导入后也是普通模块。
- * 路径在 import 时按 `DSH_HOME` 冻结，测试必须在导入前隔离环境。
+ * 路径在 import 时按 `DSH_HOME` 冻结，测试必须在导入前隔离环境 —— 需要按自己的
+ * 目录现算时用 {@link storageRootOf}。
  * 旧根 `.agent-presets/` 只读不删，本插件不再读写它。
  */
-const STORAGE_ROOT = join(DSH_HOME, '.prompt-tool')
+export const STORAGE_ROOT = storageRootOf(DSH_HOME)
 /** 同一 DSH_HOME 的全局持久变量；不属于任何模块交换包。 */
 export const GLOBAL_VARIABLES_FILE = join(STORAGE_ROOT, 'variables.yml')
 /**

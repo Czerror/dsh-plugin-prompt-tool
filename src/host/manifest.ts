@@ -20,6 +20,7 @@ import { MODULES_DIR, MODULE_DEFINITION_FILE } from './paths.ts'
 import { moduleCapability, engineRecipe, impliedModulesForParams, isModuleCapabilityPresent, type ModuleSourceMode, type ModuleFacts } from '../shared/engine-capabilities.ts'
 import { ENGINE_PARAM_DEFINITIONS, ENGINE_PARAM_KEYS, buildEngineModuleParams, normalizeMaxDepth } from '../shared/engine-params.ts'
 import { readPersonaSpec, type PersonaSnapshot, type PersonaSpec } from '../shared/persona-section.ts'
+import { isModuleId } from '../shared/module-ids.ts'
 import { readStorageConfig } from './config-store.ts'
 import { assertModuleDirectory, assertModuleId, assertModuleTree, modulePathExists, setModuleDefinitionId } from './module-install.ts'
 import { engineParamPath, readModuleLayerSettings, ModuleLayerSettingsError } from './module-layer-settings.ts'
@@ -203,7 +204,7 @@ export function listModules(moduleRoot = userModulesDir()): Array<{ id: string; 
   const scan = (dir: string): Array<{ id: string; name: string; user: boolean; renderable: boolean; description?: string; meta?: Record<string, unknown> }> => {
     try {
       return readdirSync(dir, { withFileTypes: true })
-        .filter((entry) => entry.isDirectory() && /^[a-z0-9][a-z0-9-]*$/.test(entry.name))
+        .filter((entry) => entry.isDirectory() && isModuleId(entry.name))
         .flatMap((entry) => {
           try {
             const spec = loadModuleSpec(assertModuleDirectory(dir, entry.name))
@@ -350,7 +351,7 @@ export function duplicateUserModule(id: string, moduleRoot = userModulesDir()): 
 /** 在系统文件管理器中打开模块目录（尽力而为：无桌面环境时打开失败也返回路径供 UI 展示）。 */
 export function openModuleLocation(id: string, moduleRoot = userModulesDir()): { ok: true; path: string } | { ok: false; message: string; path: string } {
   // 普通模块 id（裸目录名）或角色卡库子路径（/.characters/<cardId>）两种形态。
-  const isBareId = typeof id === 'string' && /^[a-z0-9][a-z0-9-]*$/.test(id)
+  const isBareId = isModuleId(id)
   const isCardPath = typeof id === 'string' && /^\/\.[a-zA-Z0-9_-]+\/[^/\\]+$/.test(id)
   if (!isBareId && !isCardPath) {
     return { ok: false, message: `非法预设 id：${id}`, path: '' }
@@ -481,7 +482,7 @@ export function appendModuleCapabilities(
   const current = source.modules.filter((item): item is string => typeof item === 'string' && item.length > 0)
   const modules = [...current]
   for (const module of additions) {
-    if (!/^[a-z0-9][a-z0-9-]*$/.test(module)) throw new Error('非法模块名：' + module)
+    if (!isModuleId(module)) throw new Error('非法模块名：' + module)
     if (!modules.includes(module)) modules.push(module)
   }
   doc.set('modules', modules)

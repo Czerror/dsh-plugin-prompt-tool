@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url'
 import { Document } from 'yaml'
 import { SKILL_NAME_PATTERN } from './skills-config.ts'
 import { USER_SKILLS_DIR } from './paths.ts'
-import { parseFrontmatter } from '../runtime/skills-parse.ts'
+import { parseFrontmatter } from './skills-parse.ts'
 
 export type SkillActionResult = { ok: true; id: string; path: string } | { ok: false; message: string }
 

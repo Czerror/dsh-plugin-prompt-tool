@@ -14,7 +14,7 @@ import { createHash } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { Document, isMap, isScalar, parseDocument, visit } from 'yaml'
-import { DSH_HOME } from './paths.ts'
+import { DSH_HOME, storageRootOf } from './paths.ts'
 import type {
   InstructionPolicy,
   InstructionPolicyFileOverride,
@@ -24,8 +24,10 @@ import type {
 
 export type { InstructionPolicy, InstructionPolicyFileOverride, InstructionPolicyPatch, InstructionPolicySnapshot }
 
-/** 相对 DSH_HOME 的策略文件位置（唯一权威定义）。 */
-export const INSTRUCTIONS_POLICY_RELATIVE = join('.prompt-tool', 'instructions.yml')
+/** 策略文件名（唯一权威定义）；路径由它派生，不再各自拼一份。 */
+const INSTRUCTIONS_POLICY_FILE = 'instructions.yml'
+/** 相对 DSH_HOME 的策略文件位置。 */
+export const INSTRUCTIONS_POLICY_RELATIVE = join(storageRootOf('.'), INSTRUCTIONS_POLICY_FILE)
 
 /** 策略文件格式版本；不认识的值按损坏处理，不猜测迁移。 */
 export const INSTRUCTIONS_POLICY_VERSION = 1
@@ -47,7 +49,7 @@ export function defaultInstructionPolicy(): InstructionPolicy {
 }
 
 export function instructionPolicyPath(dshHome: string = DSH_HOME): string {
-  return join(dshHome, INSTRUCTIONS_POLICY_RELATIVE)
+  return join(storageRootOf(dshHome), INSTRUCTIONS_POLICY_FILE)
 }
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>

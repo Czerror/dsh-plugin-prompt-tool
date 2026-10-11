@@ -56,7 +56,7 @@ import { createAssetSources } from '../host/asset-sources.ts'
 import { expandModuleSource, exportModulePackage, installModulePackage, moduleImportPreview } from '../host/module-package.ts'
 import { prepareImport } from '../host/import-source.ts'
 import { assertModuleId, modulePathExists } from '../host/module-install.ts'
-import { DSH_HOME } from '../host/paths.ts'
+import { STORAGE_ROOT } from '../host/paths.ts'
 import type { AssetFile, AssetImportRequest, ImportKind, ModuleExportRequest } from '../shared/asset-transfer.ts'
 import { lastContextActivationDiagnostics } from '../../engine/context-activation.mjs'
 import { ruleDiagnosticsDropped, ruleDiagnosticsSnapshot } from './rule-diagnostics.ts'
@@ -65,7 +65,7 @@ import { moduleParamFallbacks, validateEngineParamValues } from '../shared/engin
 import { readPersonaSpec, type PersonaSources } from '../shared/persona-section.ts'
 import { SKILL_NAME_PATTERN, type SkillsStateRead } from '../host/skills-config.ts'
 import { withGlobalSkillFallback, withSkillWinners } from '../host/skills-scan.ts'
-import { DEFAULT_MODULE_ID } from '../shared/module-ids.ts'
+import { DEFAULT_MODULE_ID, isModuleId } from '../shared/module-ids.ts'
 import { ENGINE_EDITOR_GROUP_MAP, MODULE_TOOL_CAPABILITIES, type ModuleFacts } from '../shared/engine-capabilities.ts'
 import { validateCustomTools } from '../host/custom-tools.ts'
 import {
@@ -225,7 +225,7 @@ function readImportRequestParams(record: Record<string, unknown>):
   if ((record.files === undefined) === (record.sourceId === undefined)) return { ok: false, message: 'files 与 sourceId 必须且只能提供一个' }
   if (record.sourceId !== undefined && (typeof record.sourceId !== 'string' || !/^[0-9a-f-]{36}$/i.test(record.sourceId))) return { ok: false, message: 'sourceId 必须是有效上传来源标识' }
   if (record.overwrite !== undefined && typeof record.overwrite !== 'boolean') return { ok: false, message: 'overwrite 必须是布尔值' }
-  if (record.targetId !== undefined && (typeof record.targetId !== 'string' || record.targetId.length > 128 || !/^[a-z0-9][a-z0-9-]*$/.test(record.targetId))) return { ok: false, message: 'targetId 必须是合法小写模块 ID（最多 128 字符）' }
+  if (record.targetId !== undefined && (typeof record.targetId !== 'string' || record.targetId.length > 128 || !isModuleId(record.targetId))) return { ok: false, message: 'targetId 必须是合法小写模块 ID（最多 128 字符）' }
   if (record.targetName !== undefined && (typeof record.targetName !== 'string' || record.targetName.trim().length === 0 || record.targetName.length > 256)) return { ok: false, message: 'targetName 必须是 1–256 字符的非空字符串' }
   const kinds: ImportKind[] = ['native-preset', 'native-character', 'st-preset', 'st-character', 'world-book']
   if (record.sourceKind !== undefined && !kinds.includes(record.sourceKind as ImportKind)) return { ok: false, message: 'sourceKind 不是支持的内容类型' }
@@ -569,7 +569,7 @@ export function registerSettingsBridge(
   ctx.inject(['settings', 'webServer'], (sctx: Context) => {
     sctx.effect(() => {
       // 上传暂存根归插件自己的状态目录（与 modules / config.yml 同级），不再平级散落在 DSH_HOME 下。
-      const assetSources = createAssetSources(join(DSH_HOME, '.prompt-tool', 'uploads'))
+      const assetSources = createAssetSources(join(STORAGE_ROOT, 'uploads'))
       // descriptor 缓存（30s TTL）：宿主 settings.describe 是同步全量遍历——
       // 遍历所有注册 namespace + section 读取 + structuredClone 深度克隆 + schema
       // 序列化；插件越多越慢且阻塞事件循环。每个桥端点（meta/describe/delete/export…）

@@ -12,12 +12,12 @@ import { basename, dirname, join } from 'node:path'
 import { isAbsolute } from 'node:path'
 import { Document, isMap, parseDocument, visit } from 'yaml'
 import { SKILL_MARKER, invocationForScope, type SkillCatalogEntry, type SkillInvocation, type SkillPolicyChange, type SkillPolicyScope } from '../shared/skills.ts'
-import { parseSkillBoolean } from '../runtime/skills-parse.ts'
+import { parseSkillBoolean } from './skills-parse.ts'
 import { assertUnlinkedPath } from './skills-actions.ts'
 import { SKILL_NAME_PATTERN } from './skills-config.ts'
 
 const BOM = '\ufeff'
-/** 与 runtime/skills-parse.ts 同一套 frontmatter 边界（容忍 CRLF 与缺失尾换行）。 */
+/** 与 host/skills-parse.ts 同一套 frontmatter 边界（容忍 CRLF 与缺失尾换行）。 */
 const FRONTMATTER = /^---\r?\n([\s\S]*?)\r?\n---(\r?\n|$)/
 
 export type SkillPolicyRead =

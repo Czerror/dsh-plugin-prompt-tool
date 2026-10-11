@@ -3,8 +3,10 @@ import { dirname, join, resolve } from 'node:path'
 import { parseDocument, YAMLMap } from 'yaml'
 import { MODULE_DEFINITION_FILE } from './paths.ts'
 
+import { isModuleId } from '../shared/module-ids.ts'
+
 export function assertModuleId(id: unknown): asserts id is string {
-  if (typeof id !== 'string' || !/^[a-z0-9][a-z0-9-]*$/.test(id)) {
+  if (!isModuleId(id)) {
     throw new Error(`非法模块 id：${String(id)}；必须为小写字母、数字和连字符`)
   }
 }

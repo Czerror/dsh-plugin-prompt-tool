@@ -3,7 +3,7 @@ import { accessSync, constants, existsSync, lstatSync, readFileSync, readdirSync
 import { homedir } from 'node:os'
 import { basename, dirname, join, resolve, sep } from 'node:path'
 import type { SkillSummary } from '@deepseek-ai/dsh-skill'
-import { parseFrontmatter } from '../runtime/skills-parse.ts'
+import { parseFrontmatter } from './skills-parse.ts'
 import { SKILL_MARKER, SKILL_SOURCES, type SkillCatalogEntry, type SkillSourceKind } from '../shared/skills.ts'
 import { SKILL_NAME_PATTERN } from './skills-config.ts'
 import { readSkillInvocation } from './skills-policy.ts'

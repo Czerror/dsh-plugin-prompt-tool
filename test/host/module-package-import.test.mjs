@@ -14,10 +14,11 @@ const { registerSettingsBridge } = await import('../../src/runtime/settings-brid
 const { stModuleId, convertStToModuleWithReport } = await import('../../src/host/sillytavern.ts')
 const { ruleInjections } = await import('../../src/host/rule-content.ts')
 const contentEntries = spec => ruleInjections(spec.rules).map(({ rule, config }) => ({ ...config, enabled: rule.enabled !== false }))
+const { storageRootOf } = await import('../../src/host/paths.ts')
 const bridgeDisposers = []
 
 const PREFIX = '/api/prompt-tool/settings'
-const PRESETS = join(home, '.prompt-tool', 'modules')
+const PRESETS = join(storageRootOf(home), 'modules')
 
 function makeHarness() {
   const handlers = new Map()

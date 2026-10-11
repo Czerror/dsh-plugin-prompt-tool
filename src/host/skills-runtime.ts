@@ -4,7 +4,7 @@ import type { SkillProviderControl, SkillViewOptions } from '@deepseek-ai/dsh-sk
 import type {} from '@deepseek-ai/dsh-fs'
 import { isAbsolute, join, relative, resolve, sep } from 'node:path'
 import type { SkillCatalogEntry, SkillPolicyChange, SkillsCatalogSnapshot, SkillsState } from '../shared/skills.ts'
-import { createSkillsWatcher } from '../runtime/skills-watcher.ts'
+import { createSkillsWatcher } from './skills-watcher.ts'
 import { deleteSkillTarget, type SkillActionResult } from './skills-actions.ts'
 import { readSkillsState, skillsStatePath, writeSkillsState, type SkillsStateRead } from './skills-config.ts'
 import { policyTarget, setSkillInvocation, type SkillPolicyWrite } from './skills-policy.ts'

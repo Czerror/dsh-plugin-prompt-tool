@@ -9,8 +9,9 @@ const home = mkdtempSync(join(process.cwd(), 'pt-assets-bridge-'))
 process.env.DSH_HOME = home
 const { registerSettingsBridge } = await import('../../src/runtime/settings-bridge.ts')
 const { BRIDGE_ENDPOINTS, MAX_BRIDGE_BODY_BYTES, SETTINGS_BRIDGE_PREFIX } = await import('../../src/shared/bridge-contract.ts')
-const root = join(home, '.prompt-tool', 'modules')
-const storageRoot = join(home, '.prompt-tool')
+const { storageRootOf } = await import('../../src/host/paths.ts')
+const storageRoot = storageRootOf(home)
+const root = join(storageRoot, 'modules')
 mkdirSync(join(root, 'owner'), { recursive: true })
 writeFileSync(join(root, 'owner/module.yml'), 'id: owner\nname: Owner\nmodules: []\n')
 test.after(() => rmSync(home, { recursive: true, force: true }))
@@ -131,7 +132,7 @@ test('PNG 原始上传只暂存；角色确认后字节一致，释放和卸载�
   assert.equal((await call(h, 'charactersImport', { sourceId, preview: true })).status, 400)
   await upload(h, png)
   h.dispose()
-  assert.deepEqual(readdirSync(join(home, '.prompt-tool', 'uploads')), [])
+  assert.deepEqual(readdirSync(join(storageRoot, 'uploads')), [])
 })
 
 test('角色预览绑定普通模块目标和覆盖选择；重导入保留记忆', async (t) => {

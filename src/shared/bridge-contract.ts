@@ -11,6 +11,7 @@ import type { ModuleConfigIdentity, ModuleConfigOrderSnapshot } from './module-c
 import type { AssetImportRequest, AssetSummary, ImportKind, ModuleExportRequest, ModuleExportResult } from './asset-transfer.ts'
 import type { EngineEditorGroup, InjectionPoint } from './engine-capabilities.ts'
 import type { OfficialOrdersView } from './official-orders.ts'
+import { isModuleId } from './module-ids.ts'
 import type { SkillContentSnapshot, SkillPolicyChange, SkillsCatalogSnapshot } from './skills.ts'
 import type {
   InstructionFileWriteResult,
@@ -92,13 +93,12 @@ export const MODULE_ACTIVATION_FAILED = 'module-activation-failed'
  * 拒绝重复），所以「模块 id + 卡 id」不存在重复可能。
  */
 export const EDIT_TARGET_HEADER = 'x-module-id'
-const MODULE_ID_PATTERN = /^[a-z0-9][a-z0-9-]*$/
 
 /** 读编辑目标：形状不合法（空、超长、含非法字符）一律当「未声明」，由 host 回退启用表首项。 */
 export function readEditTarget(value: unknown): string | undefined {
   if (typeof value !== 'string') return undefined
   const id = value.trim()
-  return id.length > 0 && id.length <= 64 && MODULE_ID_PATTERN.test(id) ? id : undefined
+  return id.length > 0 && id.length <= 64 && isModuleId(id) ? id : undefined
 }
 
 /** 插件可编辑模块的身份与展示元数据；不可渲染的项保留身份供用户修复。 */
