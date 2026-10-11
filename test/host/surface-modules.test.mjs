@@ -25,6 +25,7 @@ const loadModule = (id) => parseYaml(readFileSync(join(modulesDir, id, 'module.y
 
 const skillSurface = loadModule('skill-surface')
 const toolSurface = loadModule('tool-surface')
+const superpowers = loadModule('superpowers')
 const toolTemplate = parseYaml(
   readFileSync(new URL('../../templates/80-tool-surface.yml', import.meta.url), 'utf8'),
   { logLevel: 'silent' },
@@ -35,8 +36,8 @@ const narrowTools = toolRule.then.find((action) => action.kind === 'assembly')
 const skillRule = skillSurface.rules.find((rule) => rule.id === 'skill-surface-narrowing')
 const dropCatalog = skillRule.then.find((action) => action.kind === 'pre-step-filter')
 
-test('内置模块：skill-surface / tool-surface 定义通过引擎权威校验', () => {
-  for (const [id, spec] of [['skill-surface', skillSurface], ['tool-surface', toolSurface]]) {
+test('内置模块：skill-surface / superpowers / tool-surface 定义通过引擎权威校验', () => {
+  for (const [id, spec] of [['skill-surface', skillSurface], ['superpowers', superpowers], ['tool-surface', toolSurface]]) {
     assert.equal(spec.id, id, `${id}: 定义 id 与目录名一致`)
     // 只 parseYaml 会漏掉引擎侧不变量（真踩过：同规则内两个分支动作重名，YAML 合法、引擎拒绝）。
     assert.doesNotThrow(() => compileRules(spec.rules, { configOrder: spec.configOrder ?? {} }),
@@ -45,7 +46,7 @@ test('内置模块：skill-surface / tool-surface 定义通过引擎权威校验
 })
 
 test('内置模块：包内目录只含 module.yml，运行时切片不随包分发', () => {
-  for (const id of ['ponytail', 'skill-surface', 'tool-surface']) {
+  for (const id of ['ponytail', 'skill-surface', 'superpowers', 'tool-surface']) {
     assert.deepEqual(readdirSync(join(modulesDir, id)).sort(), ['module.yml'],
       `${id}: rules/ 与 configs/ 都是运行时产物，进工作区就会被打进 npm 包`)
   }
@@ -118,4 +119,22 @@ test('内置模块 skill-surface：只拦 skill-catalog，ponytail 与按需加�
     assert.ok(sources.includes(kind), `白名单漏掉 ${kind} 会静默删掉一段上下文`)
   }
   assert.equal(new Set(sources).size, sources.length, '白名单不得有重复项')
+})
+
+test('内置模块 superpowers：引导常驻 system-section，且点名按需发现的两个入口', () => {
+  // 真值源是插件注册侧的公开出口：技能面的按需发现就是 `skill_search` / `skill_load`
+  // （engine/skill-search.mjs）。正文若退化成「凭记忆加载技能」，这两个名字会消失，
+  // 而让模型知道该去搜正是本模块的全部价值——所以名字钉在定义里。
+  const rule = superpowers.rules.find((item) => item.id === 'superpowers-bootstrap')
+  assert.ok(rule !== undefined, '模块必须带引导规则')
+  assert.equal(rule.enabled, true)
+  assert.equal(rule.if, undefined, '引导常驻：省略 if = 无条件生效')
+  assert.equal(rule.layer, 'system-section', '只进主会话，与上游 using-superpowers 的 SUBAGENT-STOP 一致')
+  const inject = rule.then.find((action) => action.kind === 'inject-text')
+  assert.ok(inject !== undefined, '引导走 inject-text')
+  assert.equal(inject.config.layer, 'system-section')
+  assert.equal(inject.config.strategy, 'static')
+  for (const tool of ['skill_search', 'skill_load']) {
+    assert.match(inject.config.text, new RegExp(tool), `正文必须点名 ${tool}`)
+  }
 })

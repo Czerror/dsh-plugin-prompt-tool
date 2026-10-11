@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+### 内置 superpowers 引导模块（2026-10-11）
+
+- **新增内置模块 `superpowers`（默认不启用）**：把上游 [obra/superpowers](https://github.com/obra/superpowers) v7.0.0 的启动引导（`skills/using-superpowers/SKILL.md` + `hooks/session-start` 注入的那段）DSH 化后常驻注入 `system-section`——「任何回答或动作之前先 `skill_search` / `skill_load`」、流程技能优先、常见路由表与红旗清单。上游靠 SessionStart hook 注入，DSH 没有 hook 通道，改用模块注入；`system-section` 只进主会话，与上游 `using-superpowers` 自带的 `<SUBAGENT-STOP>` 语义天然一致。
+- **技能正文不进模块**：上游 15 个技能共 43.5 万字符，正确归属是 `$DSH_HOME/skills`（走既有按需发现 `skill_search` / `skill_load` 与技能页策略）。本模块只做引导与路由，不分发也不改写任何技能文件；官方全量技能目录注入仍由 `skill-surface` 拦掉。
+- **与 `ponytail` 的消歧**：superpowers 的重流程（brainstorm → 计划 → TDD → 评审）与 ponytail 的最小改动会互相拉扯。正文保留上游「用户指令优先于技能」一句；真要消歧就在工作台停用其中一个，停用即回滚。
+- **回归**：`test/host/surface-modules.test.mjs` 把新模块纳入既有的定义权威校验与「包内目录只含 module.yml」两条契约，并新增一条正文断言（常驻 `system-section` 且点名两个按需发现入口）。
+
 ### 修复启动阻塞与旧会话人设接管（2026-10-11）
 
 - 删除对官方 `system-prompt` 的 Loader 等待覆写及独立人设早入口，避免两级异步服务就绪通知遗漏导致系统提示、工具和子代理级联 pending。主插件自行管理人设运行态，官方核心不依赖可选插件。
