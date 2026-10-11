@@ -15,7 +15,7 @@ import {
   type Fields,
   type HostDefaultModel,
 } from './prompt-tool-fields.ts'
-import { bridgeViewFromBoot, fieldsFromView, mergeModuleParams, skillFieldsFromSnapshot, withConfigFieldSources } from './prompt-tool-view.ts'
+import { bridgeViewFromBoot, fieldsFromView, mergeModuleParams, skillFieldsFromSnapshot } from './prompt-tool-view.ts'
 import {
   EMPTY_SWITCHES,
   deepEqual,
@@ -528,14 +528,14 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
         const userConfigs = boot.promptConfigs.promptConfigs.filter((config) => !engineGenerated.has(config.id) && instructionFileIdOf(config) !== undefined)
         // 内容资产条目（prompt-injector / instruction-hint）：params.text（生成目录文件渲染产物）
         // 提升到 text 框显示，编辑入口统一为模块卡片。
-        const actual = withInstructionState(userConfigs.map(withConfigFieldSources).map(liftContentText), instructionPoolRef.current, instructionPolicyRef.current)
+        const actual = withInstructionState(userConfigs.map(liftContentText), instructionPoolRef.current, instructionPolicyRef.current)
         const next = { ...fieldsRef.current, promptConfigs: actual }
         publishFields(next)
         setSavedConfigs(actual)
       }
       if (retainedConfigs !== undefined) {
-        const refreshed = new Map(fieldsRef.current.promptConfigs.map((config) => [config.id, { fieldSources: config.fieldSources, sequence: config.sequence }]))
-        const restored = [...retainedConfigs.map((config) => withConfigFieldSources({ ...config, ...refreshed.get(config.id) })), ...fieldsRef.current.promptConfigs.filter((config) => !isModuleCard(config))]
+        const refreshed = new Map(fieldsRef.current.promptConfigs.map((config) => [config.id, { sequence: config.sequence }]))
+        const restored = [...retainedConfigs.map((config) => ({ ...config, ...refreshed.get(config.id) })), ...fieldsRef.current.promptConfigs.filter((config) => !isModuleCard(config))]
         publishFields({ ...fieldsRef.current, promptConfigs: restored })
         // 明确保存的定义是权威应答；生成目录的暂时空快照不能让新卡消失。
         if (options?.moduleConfigs !== undefined) setSavedConfigs(restored)

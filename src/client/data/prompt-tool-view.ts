@@ -6,14 +6,6 @@ import { readParamOverridesPatch } from './param-overrides.ts'
 import { DEFAULT_MODULE_ID } from '../../shared/module-ids.ts'
 import { SKILL_SOURCES } from '../../shared/skills.ts'
 import type { BridgeValueMap } from '../../shared/bridge-contract.ts'
-import { readConfigFieldSources, stripConfigFieldSources } from '../../shared/managed-config-fields.ts'
-
-/** 来源随当前物化快照读回，不从配置 id 或参数值猜测。 */
-export function withConfigFieldSources(config: PromptConfigDraft): PromptConfigDraft {
-  const fieldSources = readConfigFieldSources(config.id, config.fieldSources)
-  return { ...stripConfigFieldSources(config), ...(fieldSources === undefined ? {} : { fieldSources }),
-    ...(typeof config.sequence === 'number' ? { sequence: config.sequence } : {}) }
-}
 
 const asRecord = (value: unknown): Record<string, unknown> =>
   value !== null && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {}

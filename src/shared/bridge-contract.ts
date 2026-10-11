@@ -10,7 +10,6 @@ import type { RulesRequest, RulesSnapshot } from './rules.ts'
 import type { ModuleConfigIdentity, ModuleConfigOrderSnapshot } from './module-config-order.ts'
 import type { AssetImportRequest, AssetSummary, ImportKind, ModuleExportRequest, ModuleExportResult } from './asset-transfer.ts'
 import type { EngineEditorGroup, InjectionPoint } from './engine-capabilities.ts'
-import type { ConfigFieldSources } from './managed-config-fields.ts'
 import type { OfficialOrdersView } from './official-orders.ts'
 import type { SkillContentSnapshot, SkillPolicyChange, SkillsCatalogSnapshot } from './skills.ts'
 import type {
@@ -373,10 +372,8 @@ export interface EngineMetaLayerContract {
   layerContracts: Record<InjectionPoint, LayerContract>
 }
 
-/** 物化配置的只读来源；与配置一同读回，不能作为写入字段或授权。 */
+/** 物化配置的只读排序投影；不能作为客户端提供的写盘序号。 */
 export interface PromptConfigSourceView {
-  fieldSources?: ConfigFieldSources
-  /** 只读排序投影；不能作为客户端提供的写盘序号。 */
   sequence?: number
 }
 

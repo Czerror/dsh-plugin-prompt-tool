@@ -11,7 +11,6 @@ import { MatchFields, NumberField, OptionField, StrategyParamsFields } from './P
 import { autoResizeTextarea } from './textarea-resize.ts'
 import { PromptConfigNavigation } from '../../ui/PromptConfigNavigation.tsx'
 import { instructionFileIdOf } from '../../data/prompt-config-content.ts'
-import { isManagedConfigField } from '../../../shared/managed-config-fields.ts'
 import {
   AUDIENCE_LABEL_KEYS,
   DEDUPE_LABEL_KEYS,
@@ -150,7 +149,7 @@ export function PromptConfigForm(props: {
         <div className={styles.configGrid}>
           {policy.promotion && <OptionField t={t} className={styles.fieldSpan6} label={t('form.promotion.label')} hint={t('form.promotion.hint')} value={config.promotion} options={meta.promotions} fallback="none" labelKeys={PROMOTION_LABEL_KEYS} disabled={disabled} onChange={(value) => onPatch({ promotion: value })} />}
           {policy.audience && <OptionField t={t} className={styles.fieldSpan6} label={t('form.audience.label')} hint={t('form.audience.hint')} value={config.audience ?? undefined} options={['', ...meta.audienceModes]} fallback="" labelKeys={AUDIENCE_LABEL_KEYS} disabled={disabled} onChange={(value) => onPatch(value === '' ? { audience: null } : { audience: value })} />}
-          {policy.modelScope && <OptionField t={t} className={styles.fieldSpan6} label={t('form.modelScope.label')} hint={t('form.modelScope.hint')} value={config.modelScope} options={meta.modelScopes} fallback="all" labelKeys={MODEL_SCOPE_LABEL_KEYS} disabled={disabled || isManagedConfigField(config, 'modelScope')} onChange={(value) => { if (!isManagedConfigField(config, 'modelScope')) onPatch({ modelScope: value }) }} />}
+          {policy.modelScope && <OptionField t={t} className={styles.fieldSpan6} label={t('form.modelScope.label')} hint={t('form.modelScope.hint')} value={config.modelScope} options={meta.modelScopes} fallback="all" labelKeys={MODEL_SCOPE_LABEL_KEYS} disabled={disabled} onChange={(value) => onPatch({ modelScope: value })} />}
           {conditional && <>
             <p className={clsx(styles.configFieldLabel, styles.fieldFull)}>{t('form.match.group')}</p>
             <OptionField t={t} className={styles.fieldSpan6} label={t('form.subject.label')} hint={t('form.subject.hint')}
@@ -199,7 +198,7 @@ export function PromptConfigForm(props: {
         {placeholder && (
           <OptionField t={t} className={styles.fieldSpan3} label={t('form.fill.label')} hint={t('form.fill.hint')} value={config.fill} options={fillOptions} fallback="" labelKeys={FILL_LABEL_KEYS} disabled={locked || disabled} onChange={(value) => onPatch({ fill: value || undefined })} />
         )}
-        {!locked && <StrategyParamsFields t={t} strategy={strategy} layer={config.layer} contract={contract} params={config.params} id={config.id} fieldSources={config.fieldSources} enabled={config.enabled} modelScope={config.modelScope} fieldDrafts={props.fieldDrafts} draftScope={props.draftScope} onPatch={(value) => onPatch({ params: value })} />}
+        {!locked && <StrategyParamsFields t={t} strategy={strategy} layer={config.layer} contract={contract} params={config.params} fieldDrafts={props.fieldDrafts} draftScope={props.draftScope} onPatch={(value) => onPatch({ params: value })} />}
       </fieldset>
       </section>}
 

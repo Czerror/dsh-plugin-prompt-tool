@@ -11,7 +11,6 @@ import { TagInput } from '../../ui/TagInput.tsx'
 import type { PromptToolLocaleKey, PromptToolTranslate } from '../../locales.ts'
 import type { PromptConfigMatch } from '../../prompt-tool-types.ts'
 import type { LayerContract } from '../../../shared/bridge-contract.ts'
-import { managedConfigSpec, managedFieldValue, type ConfigFieldSources, type ManagedConfigSpec } from '../../../shared/managed-config-fields.ts'
 import { autoResizeTextarea } from './textarea-resize.ts'
 import { EMPTY_BEHAVIOR_LABEL_KEYS, MATCH_LOGIC_LABEL_KEYS, MATCH_LOGICS, MATCH_REGEX_MODE_LABEL_KEYS, MATCH_REGEX_MODES, normalizeMatch, translateLabel } from './prompt-config-policy.ts'
 import sharedCss from '../../ui/controls.module.css'
@@ -264,37 +263,6 @@ function RequestPatchFields(props: { t: PromptToolTranslate; value: Record<strin
   </>
 }
 
-/** 仅展示 host 确认来自参数投影的字段；白名单提供来源参数标签。 */
-function ManagedFieldsPanel(props: {
-  t: PromptToolTranslate
-  spec: ManagedConfigSpec
-  config: { enabled?: boolean; modelScope?: string; params?: Record<string, unknown> }
-}): ReactNode {
-  const { t, spec } = props
-  return (
-    <div className={clsx(styles.configFieldHint, styles.fieldFull)} data-managed-config={spec.configId}>
-      <p>{t(spec.configId === 'near-anchor' ? 'strategyParam.anchorManaged' : 'strategyParam.guideManaged')}</p>
-      <ul>
-        {spec.fields.map((field) => {
-          const value = managedFieldValue(field, props.config)
-          const shown = value === undefined || value === null || value === ''
-            ? t('strategyParam.managed.empty')
-            : typeof value === 'boolean' ? t(value ? 'param.on' : 'param.off') : String(value)
-          const note = field.derived === true
-            ? t('strategyParam.managed.derived')
-            : field.fallbackNote === 'followsCustom' ? t('strategyParam.managed.followsCustom') : undefined
-          return (
-            <li key={field.path} data-managed-path={field.path} data-managed-source={field.sourceParam}>
-              {t('strategyParam.managed.source', { param: field.sourceParam })} · {shown}
-              {note === undefined ? undefined : <> · {note}</>}
-            </li>
-          )
-        })}
-      </ul>
-    </div>
-  )
-}
-
 /**
  * 按 layer / strategy 拆解 params 为结构化编辑框（替代裸 JSON）：
  *   层专属 → system-section（段名/独占/动态抑制）、runtime-context（注册名）、
@@ -305,8 +273,8 @@ function ManagedFieldsPanel(props: {
  *   placeholder → fill 模板参数（text/envKeys/limit/fields/providers/emptyBehavior/emptyText）；
  * 无固定字段的策略回退 JSON 编辑（保留任意 params 能力）。
  */
-export function StrategyParamsFields(props: { t: PromptToolTranslate; strategy: string; layer?: string; contract?: LayerContract; params: Record<string, unknown> | undefined; onPatch: (params: Record<string, unknown>) => void; id?: string; fieldSources?: ConfigFieldSources; enabled?: boolean; modelScope?: string; fieldDrafts?: Map<string, FieldDraft>; draftScope?: string }): ReactNode {
-  const { strategy, layer, params, onPatch, id } = props
+export function StrategyParamsFields(props: { t: PromptToolTranslate; strategy: string; layer?: string; contract?: LayerContract; params: Record<string, unknown> | undefined; onPatch: (params: Record<string, unknown>) => void; fieldDrafts?: Map<string, FieldDraft>; draftScope?: string }): ReactNode {
+  const { strategy, layer, params, onPatch } = props
   const t = props.t
   const value = params ?? {}
   const keyId = useId()
@@ -370,29 +338,23 @@ export function StrategyParamsFields(props: { t: PromptToolTranslate; strategy: 
   const covered = Object.fromEntries(Object.entries(value).filter(([key]) => known.includes(key)))
   const readOnlyNote = LAYER_READ_ONLY_NOTES[layer ?? '']
 
-  const managed = managedConfigSpec(id, props.fieldSources)
-  const projected = (key: string): boolean => managed?.fields.some((field) => field.path === `params.${key}`) === true
   if (strategy === 'first-turn-anchor' || strategy === 'guide-auto') {
     const anchor = strategy === 'first-turn-anchor'
     return (
       <>
-        {managed !== undefined && <ManagedFieldsPanel t={t} spec={managed} config={{ enabled: props.enabled, modelScope: props.modelScope, params: value }} />}
-        {props.fieldSources?.configId === id && props.fieldSources?.fields.some((field) => field.source === 'prompt-config') && (
-          <p className={clsx(styles.configFieldHint, styles.fieldFull)} data-config-source="prompt-config">{t('strategyParam.managed.local')}</p>
-        )}
-        {!projected('useCustom') && <ParamToggle className={styles.fieldSpan4} label={t('strategyParam.custom.label')} hint={t('strategyParam.custom.hint')}
-          checked={bool('useCustom')} onChange={(next) => set('useCustom', next)} />}
-        {!projected('text') && <ParamTextarea className={styles.fieldFull} label={t(anchor ? 'strategyParam.anchorText.label' : 'strategyParam.guideText.label')}
-          hint={t(anchor ? 'strategyParam.anchorText.hint' : 'strategyParam.guideText.hint')} value={str('text')} onChange={(next) => set('text', next)} />}
-        {anchor && !projected('buildPattern') && <ParamInput className={styles.fieldSpan6} label={t('strategyParam.buildPattern.label')} hint={t('strategyParam.buildPattern.hint')}
+        <ParamToggle className={styles.fieldSpan4} label={t('strategyParam.custom.label')} hint={t('strategyParam.custom.hint')}
+          checked={bool('useCustom')} onChange={(next) => set('useCustom', next)} />
+        <ParamTextarea className={styles.fieldFull} label={t(anchor ? 'strategyParam.anchorText.label' : 'strategyParam.guideText.label')}
+          hint={t(anchor ? 'strategyParam.anchorText.hint' : 'strategyParam.guideText.hint')} value={str('text')} onChange={(next) => set('text', next)} />
+        {anchor && <ParamInput className={styles.fieldSpan6} label={t('strategyParam.buildPattern.label')} hint={t('strategyParam.buildPattern.hint')}
           value={str('buildPattern')} onChange={(next) => set('buildPattern', next)} />}
-        {!projected('complexPattern') && <ParamInput className={styles.fieldSpan6} label={t('strategyParam.complexPattern.label')} hint={t('strategyParam.complexPattern.hint')}
-          value={str('complexPattern')} onChange={(next) => set('complexPattern', next)} />}
-        {anchor && !projected('firstTurnBuild') && <ParamTextarea className={styles.fieldFull} label={t('strategyParam.firstTurnBuild')} value={str('firstTurnBuild')} onChange={(next) => set('firstTurnBuild', next)} />}
-        {anchor && !projected('firstTurnInspect') && <ParamTextarea className={styles.fieldFull} label={t('strategyParam.firstTurnInspect')} value={str('firstTurnInspect')} onChange={(next) => set('firstTurnInspect', next)} />}
-        {!anchor && !projected('guideWeak') && <ParamTextarea className={styles.fieldFull} label={t('strategyParam.guideWeak')} value={str('guideWeak')} onChange={(next) => set('guideWeak', next)} />}
-        {!projected(anchor ? 'firstTurnDeep' : 'guideDeep') && <ParamTextarea className={styles.fieldFull} label={t('strategyParam.deepGuide')}
-          value={str(anchor ? 'firstTurnDeep' : 'guideDeep')} onChange={(next) => set(anchor ? 'firstTurnDeep' : 'guideDeep', next)} />}
+        <ParamInput className={styles.fieldSpan6} label={t('strategyParam.complexPattern.label')} hint={t('strategyParam.complexPattern.hint')}
+          value={str('complexPattern')} onChange={(next) => set('complexPattern', next)} />
+        {anchor && <ParamTextarea className={styles.fieldFull} label={t('strategyParam.firstTurnBuild')} value={str('firstTurnBuild')} onChange={(next) => set('firstTurnBuild', next)} />}
+        {anchor && <ParamTextarea className={styles.fieldFull} label={t('strategyParam.firstTurnInspect')} value={str('firstTurnInspect')} onChange={(next) => set('firstTurnInspect', next)} />}
+        {!anchor && <ParamTextarea className={styles.fieldFull} label={t('strategyParam.guideWeak')} value={str('guideWeak')} onChange={(next) => set('guideWeak', next)} />}
+        <ParamTextarea className={styles.fieldFull} label={t('strategyParam.deepGuide')}
+          value={str(anchor ? 'firstTurnDeep' : 'guideDeep')} onChange={(next) => set(anchor ? 'firstTurnDeep' : 'guideDeep', next)} />
       </>
     )
   }
