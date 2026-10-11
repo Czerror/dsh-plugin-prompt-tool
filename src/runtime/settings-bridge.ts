@@ -60,6 +60,14 @@ import { STORAGE_ROOT } from '../host/paths.ts'
 import type { AssetFile, AssetImportRequest, ImportKind, ModuleExportRequest } from '../shared/asset-transfer.ts'
 import { lastContextActivationDiagnostics } from '../../engine/context-activation.mjs'
 import { ruleDiagnosticsDropped, ruleDiagnosticsSnapshot } from './rule-diagnostics.ts'
+import {
+  bridgeTransaction,
+  isLoopbackRequest,
+  readBridgeBodyForHandler,
+  writeBridgeBodyTooLarge,
+  writeBridgeJson,
+  type BridgeRouteSpec,
+} from './bridge-transaction.ts'
 import { BRIDGE_ENDPOINTS, EDIT_TARGET_HEADER, MAX_BRIDGE_BODY_BYTES, MODULE_ACTIVATION_FAILED, SETTINGS_BRIDGE_PREFIX, readEditTarget } from '../shared/bridge-contract.ts'
 import { moduleParamFallbacks, validateEngineParamValues } from '../shared/engine-params.ts'
 import { readPersonaSpec, type PersonaSources } from '../shared/persona-section.ts'
@@ -95,47 +103,6 @@ export interface SkillsBridgeState {
   deleteSkill: (name: string, path: string, cwd?: string) => SkillActionResult
   /** 添加 / 移除引用的技能文件夹。 */
   patchSkillFolders: (folders: string[]) => SkillsStateRead | Promise<SkillsStateRead>
-}
-
-/** 仅允许本机回环请求，镜像官方 settings bridge 的边界。 */
-function isLoopbackRequest(req: IncomingMessage): boolean {
-  const address = req.socket.remoteAddress
-  if (address !== '127.0.0.1' && address !== '::1' && address !== '::ffff:127.0.0.1') return false
-  const host = req.headers.host
-  if (typeof host !== 'string') return false
-  try {
-    const hostname = new URL('http://' + host).hostname
-    if (hostname !== '127.0.0.1' && hostname !== 'localhost' && hostname !== '[::1]') return false
-  } catch {
-    return false
-  }
-  // 浏览器跨站盲请求（字符串 body 的 POST 是 CORS 简单请求，text/plain 不触发预检）
-  // 可绕过上面的 socket/Host 检查直接到达本桥；校验 Origin 拦截跨站来源。
-  // 非浏览器客户端（curl 等）不带 Origin，放行。
-  // 完整校验 scheme/host/port：Origin 必须与本桥自身的 Host 头端口一致，
-  // 防「本地其他端口服务」伪造 loopback hostname 跨站（仅比 hostname 不够）。
-  const origin = req.headers.origin
-  if (origin !== undefined) {
-    try {
-      const originUrl = new URL(origin)
-      if (originUrl.protocol !== 'http:' && originUrl.protocol !== 'https:') return false
-      const originHost = originUrl.hostname
-      if (originHost !== '127.0.0.1' && originHost !== 'localhost' && originHost !== '[::1]') return false
-      const originPort = originUrl.port.length > 0 ? originUrl.port : (originUrl.protocol === 'https:' ? '443' : '80')
-      const hostUrl = new URL('http://' + host)
-      const hostPort = hostUrl.port.length > 0 ? hostUrl.port : '80'
-      if (originPort !== hostPort) return false
-    } catch {
-      return false
-    }
-  }
-  return true
-}
-
-function writeBridgeJson(res: ServerResponse, status: number, body: unknown): void {
-  const payload = JSON.stringify(body)
-  res.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'referrer-policy': 'no-referrer' })
-  res.end(payload)
 }
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -416,60 +383,6 @@ function mergeModuleConfigFallbacks(params: Record<string, unknown>, facts: Modu
   for (const [key, value] of Object.entries(moduleParamFallbacks(facts.effectiveConfigs ?? {}))) {
     if (!Object.hasOwn(params, key)) params[key] = value
   }
-}
-
-/** 读取 JSON bridge 请求体；所有 JSON 端点统一使用 32 MiB 内存上限。 */
-async function readBridgeBody(
-  req: IncomingMessage,
-): Promise<{ body: unknown; tooLarge: boolean; invalidJson: boolean; receivedBytes: number }> {
-  const maxBytes = MAX_BRIDGE_BODY_BYTES
-  const chunks: Buffer[] = []
-  let size = 0
-  let overflow = false
-  for await (const chunk of req) {
-    if (overflow) continue
-    const buffer = chunk as Buffer
-    size += buffer.length
-    if (size > maxBytes) {
-      // 超限：继续消费完请求流（保持连接可用），丢弃已收内容。
-      overflow = true
-      chunks.length = 0
-      continue
-    }
-    chunks.push(buffer)
-  }
-  if (overflow) return { body: undefined, tooLarge: true, invalidJson: false, receivedBytes: size }
-  if (size === 0) return { body: undefined, tooLarge: false, invalidJson: false, receivedBytes: 0 }
-  try {
-    return { body: JSON.parse(Buffer.concat(chunks).toString('utf8')) as unknown, tooLarge: false, invalidJson: false, receivedBytes: size }
-  } catch {
-    return { body: undefined, tooLarge: false, invalidJson: true, receivedBytes: size }
-  }
-}
-
-function writeBridgeBodyTooLarge(res: ServerResponse, receivedBytes: number): void {
-  writeBridgeJson(res, 413, {
-    ok: false,
-    code: 'bridge-body-too-large',
-    message: `请求载荷超过 ${Math.round(MAX_BRIDGE_BODY_BYTES / 1024 / 1024)}MB 上限（已收到 ${receivedBytes} 字节）`,
-  })
-}
-
-async function readBridgeBodyForHandler(req: IncomingMessage, res: ServerResponse): Promise<{ body: unknown } | undefined> {
-  const result = await readBridgeBody(req)
-  if (result.tooLarge) {
-    writeBridgeBodyTooLarge(res, result.receivedBytes)
-    return undefined
-  }
-  if (result.invalidJson) {
-    writeBridgeJson(res, 400, { ok: false, code: 'bridge-request-invalid', message: 'malformed JSON body' })
-    return undefined
-  }
-  if (result.body !== undefined && !isRecord(result.body)) {
-    writeBridgeJson(res, 400, { ok: false, code: 'bridge-request-invalid', message: 'request body must be an object' })
-    return undefined
-  }
-  return { body: result.body }
 }
 
 function uploadFileName(req: IncomingMessage): string {
