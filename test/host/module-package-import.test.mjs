@@ -37,13 +37,12 @@ function makeHarness() {
 
 function register() {
   const { ctx, handlers } = makeHarness()
-  registerSettingsBridge(
-    ctx,
-    'prompt-tool',
-    () => ({ available: true, providers: [] }),
-    () => ({ activeSkillsDirs: [], skillCatalog: [] }),
-    () => '',
-  )
+  registerSettingsBridge(ctx, {
+    ns: 'prompt-tool',
+    models: () => ({ available: true, providers: [] }),
+    skills: () => ({ activeSkillsDirs: [], skillCatalog: [] }),
+    schemaDir: () => '',
+  })
   return handlers
 }
 

@@ -503,13 +503,20 @@ function customToolModules(tools: unknown[]): string[] {
 
 
 /** 自建 loopback settings bridge：替代 registerConfigurableProviders，避免模型设置区出现插件条目。 */
-export function registerSettingsBridge(
-  ctx: Context,
-  ns: string,
-  getModelsState: () => ModelDetection,
-  getSkillsState: () => SkillsBridgeState,
-  _getEngineStrategyDir: () => string,
-  afterSkillsChange?: () => void,
+/**
+ * 桥的宿主依赖面：`registerSettingsBridge` 需要宿主提供的全部能力都在这里，
+ * 不再靠位置对齐（此前 11 个位置参数里 8 个可选，测试必须数逗号跳过前项）。
+ *
+ * 除 `ns`／`models`／`skills` 外其余都是可选的晚到能力：缺哪个就少哪一类端点的效果，
+ * 不影响其余端点注册。
+ */
+export interface BridgeDeps {
+  /** settings namespace；宿主 `settings.describe()` 按它定位本插件目录。 */
+  ns: string
+  /** 当前模型探测结果（/meta 与 /bootstrap 的模型能力事实）。 */
+  models: () => ModelDetection
+  /** 技能运行态：技能根、引用目录、清单与策略写入。 */
+  skills: () => SkillsBridgeState
   /**
    * 生成目录（模块目录）：读取/写入哪一份提示词配置。
    *
@@ -517,16 +524,25 @@ export function registerSettingsBridge(
    * 没给则由 host 回退启用表首项。编辑器因此不必依赖某个全局单选——配置卡自己的
    * 模块身份决定写哪里。
    */
-  getModuleDirectory?: (moduleId?: string) => string,
+  moduleDirectory?: (moduleId?: string) => string
   /** 参数写入后重建指定模块；省略身份表示启用表变化，刷新全部运行实例。 */
-  afterOverridesChange?: (moduleId?: string) => void | Promise<void>,
+  overridesChanged?: (moduleId?: string) => void | Promise<void>
   /** 模块已完整安装后的刷新回调；失败返回未生效诊断，不再物化或撤销安装。 */
-  afterModulePackageImport?: (id: string) => void | Promise<void>,
+  moduleInstalled?: (id: string) => void | Promise<void>
   /** 能力/recipe 提交后刷新回调；失败保留已提交定义并明确报告。 */
-  afterCapabilityChange?: (moduleId?: string) => void | Promise<void>,
+  capabilityChanged?: (moduleId?: string) => void | Promise<void>
   /** 新建、复制或删除模块后重建当前模块。 */
-  afterModuleListChange?: (id: string) => void | Promise<void>,
+  moduleListChanged?: (id: string) => void | Promise<void>
+  /** 技能策略写入后的目录刷新回调。 */
+  afterSkillsChange?: () => void
+}
+
+export function registerSettingsBridge(
+  ctx: Context,
+  deps: BridgeDeps,
 ): { invalidateDescriptor: () => void } {
+  const { ns } = deps
+
   let invalidateCachedDescriptor: () => void = () => {}
   let capabilityQueue: Promise<void> = Promise.resolve()
   let moduleOrderQueue: Promise<void> = Promise.resolve()
@@ -540,13 +556,13 @@ export function registerSettingsBridge(
       return false
     }
   }
-  const runOverridesChange = (res: ServerResponse, moduleId?: string): Promise<boolean> => finishModuleChange(res, () => afterOverridesChange?.(moduleId))
+  const runOverridesChange = (res: ServerResponse, moduleId?: string): Promise<boolean> => finishModuleChange(res, () => deps.overridesChanged?.(moduleId))
   /**
    * 本次请求的编辑目标目录：读 `x-module-id` 头（形状不合法当未声明），交给注入的实现定位。
    * 所有「读/写哪个模块的配置」都走这里，端点不再各自记一个全局目标。
    */
-  const editDir = (req: IncomingMessage): string => getModuleDirectory?.(readEditTarget(req.headers[EDIT_TARGET_HEADER])) ?? ''
-  const refreshModuleList = (res: ServerResponse, id: string): Promise<boolean> => finishModuleChange(res, () => afterModuleListChange?.(id))
+  const editDir = (req: IncomingMessage): string => deps.moduleDirectory?.(readEditTarget(req.headers[EDIT_TARGET_HEADER])) ?? ''
+  const refreshModuleList = (res: ServerResponse, id: string): Promise<boolean> => finishModuleChange(res, () => deps.moduleListChanged?.(id))
   // 动态等待 webServer：webServer 由 @deepseek-ai/dsh-web-app 提供。
   // profile 首次缺少该 bundle 时，本子插件先 pending 但不阻塞启动审计；
   // ensureWebSurface 仅报告缺失能力，profile 装配交给官方插件管理流程。
@@ -672,7 +688,7 @@ export function registerSettingsBridge(
         const agents = sctx.get?.('agents') as { get?: (id: string) => { ctx?: Context } | undefined } | undefined
         const agent = sessionId === undefined ? undefined : agents?.get?.(sessionId)
         const scope = agent?.ctx === undefined ? undefined : scopeOf(agent.ctx)
-        const state = getSkillsState()
+        const state = deps.skills()
         try {
           if (state.snapshot !== undefined) return await state.snapshot({ cwd, scope })
           const entries = state.listSkills(cwd)
@@ -688,8 +704,8 @@ export function registerSettingsBridge(
         }
       }
       const collectDescribeExtras = async (activeDir: string, sessionId?: string): Promise<Record<string, unknown>> => {
-        const detection = getModelsState()
-        const skillsState = getSkillsState()
+        const detection = deps.models()
+        const skillsState = deps.skills()
         const skillsSnapshot = await collectSkills(sessionId)
         // 宿主默认模型（agent-default-model settings：主对话新会话默认）：
         // 插件参数未设置（空 = 继承宿主）时回显给客户端（模型名下拉候选/状态行）。
@@ -967,7 +983,7 @@ export function registerSettingsBridge(
               return
             }
             // 项目技能按会话工作目录解析；没有存活会话时只列用户根与内置来源。
-            const state = getSkillsState()
+            const state = deps.skills()
             writeBridgeJson(res, 200, {
               ok: true,
               value: {
@@ -997,14 +1013,14 @@ export function registerSettingsBridge(
               writeBridgeJson(res, 400, { ok: false, code: 'skills-import-rejected', message: 'overwrite 必须是已确认的技能目录名数组' })
               return
             }
-            const root = getSkillsState().skillsRoot
+            const root = deps.skills().skillsRoot
             const result = importSkillsPackage(root, files, overwrite)
             if (!result.ok) {
               writeBridgeJson(res, result.code === 'skills-overwrite-required' ? 409 : 400,
                 { ...result, code: result.code ?? 'skills-import-rejected' })
               return
             }
-            afterSkillsChange?.()
+            deps.afterSkillsChange?.()
             writeBridgeJson(res, 200, { ok: true, value: result })
           },
         }),
@@ -1036,13 +1052,13 @@ export function registerSettingsBridge(
             // 身份校验在与清单相同的工作区视图里做：客户端提交的 path 只有命中服务端当次扫描的
             // 同名条目才被接受，陈旧界面因此改不到被替换过的同名技能。
             const cwd = session.sessionId === undefined ? undefined : localAgentCwd(sctx, session.sessionId)
-            const written = getSkillsState().setSkillPolicy(record.name, record.path, change, cwd)
+            const written = deps.skills().setSkillPolicy(record.name, record.path, change, cwd)
             if (written.ok === false) {
               // 界面陈旧、技能无效、只读或链接目标等都在这里如实回报，不静默。
               writeBridgeJson(res, 409, { ok: false, code: 'skill-policy-rejected', message: written.message })
               return
             }
-            afterSkillsChange?.()
+            deps.afterSkillsChange?.()
             writeBridgeJson(res, 200, { ok: true, value: await collectSkills(session.sessionId) })
           },
         }),
@@ -1071,7 +1087,7 @@ export function registerSettingsBridge(
               return
             }
             const cwd = session.sessionId === undefined ? undefined : localAgentCwd(sctx, session.sessionId)
-            const state = getSkillsState()
+            const state = deps.skills()
             const result = endpoint === 'skillWrite'
               ? state.writeSkillContent(record.name, record.path, record.content as string, record.description as string, record.expectedRevision as string, cwd)
               : state.readSkillContent(record.name, record.path, cwd)
@@ -1079,7 +1095,7 @@ export function registerSettingsBridge(
               writeBridgeJson(res, 409, { ok: false, code, message: result.message })
               return
             }
-            if (endpoint === 'skillWrite' && result.changed) afterSkillsChange?.()
+            if (endpoint === 'skillWrite' && result.changed) deps.afterSkillsChange?.()
             writeBridgeJson(res, 200, { ok: true, value: { content: result.content, description: result.description, revision: result.revision } })
           },
         })),
@@ -1102,12 +1118,12 @@ export function registerSettingsBridge(
               return
             }
             // 只记引用，不复制也不移动任何文件。
-            const written = await getSkillsState().patchSkillFolders(record.folders as string[])
+            const written = await deps.skills().patchSkillFolders(record.folders as string[])
             if (written.ok === false) {
               writeBridgeJson(res, 409, { ok: false, code: 'skills-folders-rejected', message: written.message })
               return
             }
-            afterSkillsChange?.()
+            deps.afterSkillsChange?.()
             writeBridgeJson(res, 200, {
               ok: true,
               value: { ...await collectSkills(session.sessionId), folders: written.state.folders },
@@ -1123,9 +1139,9 @@ export function registerSettingsBridge(
             if (parsedBody === undefined) return
             const body = parsedBody.body
             const record = body !== null && typeof body === 'object' && !Array.isArray(body) ? body as Record<string, unknown> : {}
-            const result = createSkill(getSkillsState().skillsRoot, record as { name: unknown; description: unknown; content: unknown })
+            const result = createSkill(deps.skills().skillsRoot, record as { name: unknown; description: unknown; content: unknown })
             if (!result.ok) { writeBridgeJson(res, 400, { ok: false, code: 'skill-create-rejected', message: result.message }); return }
-            afterSkillsChange?.()
+            deps.afterSkillsChange?.()
             writeBridgeJson(res, 200, { ok: true, value: result })
           },
         }),
@@ -1145,9 +1161,9 @@ export function registerSettingsBridge(
               return
             }
             const cwd = session.sessionId === undefined ? undefined : localAgentCwd(sctx, session.sessionId)
-            const result = getSkillsState().deleteSkill(record.name, record.path, cwd)
+            const result = deps.skills().deleteSkill(record.name, record.path, cwd)
             if (!result.ok) { writeBridgeJson(res, 400, { ok: false, code: 'skill-delete-rejected', message: result.message }); return }
-            afterSkillsChange?.()
+            deps.afterSkillsChange?.()
             writeBridgeJson(res, 200, { ok: true, value: result })
           },
         }),
@@ -1173,13 +1189,13 @@ export function registerSettingsBridge(
               writeBridgeJson(res, 400, { ok: false, code: 'skills-import-rejected', message: 'overwrite 必须是已确认的技能目录名数组' })
               return
             }
-            const result = importSkillsDirectory(getSkillsState().skillsRoot, source, overwrite)
+            const result = importSkillsDirectory(deps.skills().skillsRoot, source, overwrite)
             if (!result.ok) {
               writeBridgeJson(res, result.code === 'skills-overwrite-required' ? 409 : 400,
                 { ...result, code: result.code ?? 'skills-import-rejected' })
               return
             }
-            afterSkillsChange?.()
+            deps.afterSkillsChange?.()
             writeBridgeJson(res, 200, { ok: true, value: result })
           },
         }),
@@ -1373,7 +1389,7 @@ export function registerSettingsBridge(
             if (record.refreshOnly === true) {
               if (!guardModuleWrite(dir, res)) return
               const { getRuleEditorMeta } = await import(pathToFileURL(join(packageEngineDir(), 'rule-spec.mjs')).href) as { getRuleEditorMeta: () => RuleEditorMeta }
-              try { await afterOverridesChange?.(basename(dir)) }
+              try { await deps.overridesChanged?.(basename(dir)) }
               catch (error) {
                 const committed = loadModuleDefinition(dir)
                 writeBridgeJson(res, 200, { ok: true, value: { rules: committed.rules, revisions: committed.revisions, meta: getRuleEditorMeta(), persisted: true, publicationPending: true, publicationError: `运行刷新失败：${String(error)}` } })
@@ -1400,7 +1416,7 @@ export function registerSettingsBridge(
                 ...(record.validateOnly === undefined ? {} : { validateOnly: record.validateOnly as boolean }),
               }) : isEditableModuleDir(dir) ? readModuleRules(dir) : ensureModuleSlices(dir, { writable: false })
               if (writing) {
-                try { await afterOverridesChange?.(basename(dir)) }
+                try { await deps.overridesChanged?.(basename(dir)) }
                 catch (error) {
                   writeBridgeJson(res, 200, { ok: true, value: { rules: candidate.rules, revisions: candidate.revisions, meta: getRuleEditorMeta(), persisted: true, publicationPending: true, publicationError: `规则已保存，但运行刷新失败：${String(error)}` } })
                   return
@@ -1546,7 +1562,7 @@ export function registerSettingsBridge(
                 if (typeof record.expectedModuleId !== 'string') throw new ModuleRulesError('刷新变量必须提供 expectedModuleId')
                 const state = readModuleVariables(dir)
                 if (pendingVariableSettings.has(dir)) {
-                  try { await afterOverridesChange?.(basename(dir)); pendingVariableSettings.delete(dir) }
+                  try { await deps.overridesChanged?.(basename(dir)); pendingVariableSettings.delete(dir) }
                   catch (error) { pendingVariableSettings.set(dir, `变量开关已保存，但运行发布失败：${String(error)}`) }
                 }
                 writeBridgeJson(res, 200, { ok: true, value: { ...state, ...variableView(dir), persisted: true } })
@@ -1573,7 +1589,7 @@ export function registerSettingsBridge(
                 return
               }
               if (settingsChanged) {
-                try { await afterOverridesChange?.(basename(dir)); pendingVariableSettings.delete(dir) }
+                try { await deps.overridesChanged?.(basename(dir)); pendingVariableSettings.delete(dir) }
                 catch (error) { pendingVariableSettings.set(dir, `变量开关已保存，但运行发布失败：${String(error)}`) }
               }
               writeBridgeJson(res, 200, { ok: true, value: { ...committed, publicationPending: pendingVariableSettings.has(dir),
@@ -1677,7 +1693,7 @@ export function registerSettingsBridge(
                 if (!guardModuleIdentity(req, record, dir, res)) return
                 saved = saveModulePersona(root, id, persona, record.expectedRevision)
               }
-              try { await afterOverridesChange?.(basename(dir)) }
+              try { await deps.overridesChanged?.(basename(dir)) }
               catch (error) {
                 writeBridgeJson(res, 200, { ok: true, value: { ...saved, persisted: true, publicationPending: true, publicationError: `人设已保存，但运行发布失败：${String(error)}` } })
                 return
@@ -1721,7 +1737,7 @@ export function registerSettingsBridge(
               }
               const saved = record.refreshOnly === true ? readPersonaSources(root)
                 : writePersonaSources(root, record.sources as PersonaSources, record.expectedRevision as string | null)
-              try { await afterOverridesChange?.() }
+              try { await deps.overridesChanged?.() }
               catch (error) {
                 writeBridgeJson(res, 200, { ok: true, value: { ...saved, persisted: true, publicationPending: true, publicationError: `人设来源已保存，但运行发布失败：${String(error)}` } })
                 return
@@ -1798,7 +1814,7 @@ export function registerSettingsBridge(
               }
               const installed = await installModulePackage(userModulesDir(), files, request.params)
               invalidateDescriptor()
-              if (!await finishModuleChange(res, () => afterModulePackageImport?.(installed.id))) return
+              if (!await finishModuleChange(res, () => deps.moduleInstalled?.(installed.id))) return
               writeBridgeJson(res, 200, { ok: true, value: { ...installed, sourceDigest, ...(prepared.report === undefined ? {} : { report: prepared.report }) } })
             } catch (error) {
               const code = typeof (error as { code?: unknown }).code === 'string' ? String((error as { code: string }).code) : 'module-package-invalid'
@@ -2067,7 +2083,7 @@ export function registerSettingsBridge(
               }
               const result = await installModulePackage(root, files, request.params, { preserveAssets: true })
               invalidateDescriptor()
-              if (!await finishModuleChange(res, () => afterModulePackageImport?.(result.id))) return
+              if (!await finishModuleChange(res, () => deps.moduleInstalled?.(result.id))) return
               writeBridgeJson(res, 200, { ok: true, value: { id: result.id, name: summary.targetName } })
             } catch (error) {
               const code = typeof (error as { code?: unknown }).code === 'string' ? String((error as { code: string }).code) : 'characters-rejected'
@@ -2269,7 +2285,7 @@ export function registerSettingsBridge(
                   : createModuleCapability(dir, action === 'create'
                     ? { action: 'create', capabilityId: id.trim() }
                     : { action: 'create-recipe', recipeId: id.trim() })
-                if (result.changed && !await finishModuleChange(res, () => afterCapabilityChange?.(basename(dir)))) return
+                if (result.changed && !await finishModuleChange(res, () => deps.capabilityChanged?.(basename(dir)))) return
                 writeBridgeJson(res, 200, { ok: true, value: result })
               } catch (error) {
                 if (error instanceof ModuleRulesError && error.persisted) {

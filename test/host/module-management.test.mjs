@@ -39,28 +39,24 @@ function makeHarness() {
 }
 
 function register(ctx, activeTemplate, afterOverridesChange) {
-  registerSettingsBridge(
-    ctx,
-    'prompt-tool',
-    () => ({ available: true, providers: [] }),
-    () => ({
+  registerSettingsBridge(ctx, {
+    ns: 'prompt-tool',
+    models: () => ({ available: true, providers: [] }),
+    skills: () => ({
       skillsRoot: join(home, 'skills'),
       folders: [],
       listSkills: () => [],
       setSkillPolicy: () => ({ ok: true, changed: false }),
       patchSkillFolders: () => ({ ok: true, state: { version: 4, folders: [] }, exists: true }),
     }),
-    () => '',
-    undefined, // [6] afterSkillsChange
-    (requested) => {
+    schemaDir: () => '',
+    moduleDirectory: (requested) => {
       const id = requested ?? activeTemplate
       return id === undefined ? '' : join(moduleRoot, id)
     },
-    afterOverridesChange, // [8] 写盘后重建（module-enable 等端点等它完成才回响应）
-    undefined, // [9] afterModulePackageImport
-    undefined, // [10] afterCapabilityChange
-    () => {}, // [11] afterModuleListChange
-  )
+    overridesChanged: afterOverridesChange, // 写盘后重建（module-enable 等端点等它完成才回响应）
+    moduleListChanged: () => {},
+  })
 }
 
 /** 调端点；不假定成功，原样返回状态与错误载荷。 */

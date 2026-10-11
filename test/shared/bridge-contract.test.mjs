@@ -66,13 +66,12 @@ function makeSkillsState(overrides = {}) {
 
 function register(skillsState = makeSkillsState()) {
   const { ctx, handlers } = makeHarness()
-  registerSettingsBridge(
-    ctx,
-    'prompt-tool',
-    () => ({ available: true, providers: ['deepseek-official'] }),
-    () => skillsState,
-    () => '',
-  )
+  registerSettingsBridge(ctx, {
+    ns: 'prompt-tool',
+    models: () => ({ available: true, providers: ['deepseek-official'] }),
+    skills: () => skillsState,
+    schemaDir: () => '',
+  })
   return handlers
 }
 
@@ -112,7 +111,7 @@ test('部署总闸经桥读写 modulesEnabled', async () => {
     webServer: { register: ({ path, handler }) => { handlers.set(path, handler); return () => {} } },
     effect: fn => { const dispose = fn(); if (dispose) bridgeDisposers.push(dispose) },
   }
-  registerSettingsBridge({ inject: (_deps, callback) => callback(scope) }, 'prompt-tool', () => ({}), () => makeSkillsState(), () => '')
+  registerSettingsBridge({ inject: (_deps, callback) => callback(scope) }, { ns: 'prompt-tool', models: () => ({}), skills: () => makeSkillsState(), schemaDir: () => '' })
   const read = fakeRes()
   await handlers.get(SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.describe)(fakeReq(), read)
   assert.equal(JSON.parse(read.body).value.value.modulesEnabled, false)
@@ -221,10 +220,12 @@ test('契约：官方装配刻度随 /meta 与 /bootstrap 同源下发，服务�
 
   const warnings = []
   const present = makeHarness({ systemPrompt: root.systemPrompt }, { warn: (message) => warnings.push(message) })
-  registerSettingsBridge(
-    present.ctx, 'prompt-tool',
-    () => ({ available: true, providers: ['deepseek-official'] }), () => makeSkillsState(), () => '',
-  )
+  registerSettingsBridge(present.ctx, {
+    ns: 'prompt-tool',
+    models: () => ({ available: true, providers: ['deepseek-official'] }),
+    skills: () => makeSkillsState(),
+    schemaDir: () => '',
+  })
   const metaRes = fakeRes()
   await present.handlers.get(SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.meta)(fakeReq(), metaRes)
   assert.equal(metaRes.status, 200)
@@ -249,10 +250,12 @@ test('契约：官方装配刻度随 /meta 与 /bootstrap 同源下发，服务�
   // 服务缺失：字段整体缺席、端点不失败，且只告警一次（两个端点共用同一函数）。
   const missingWarnings = []
   const missing = makeHarness({}, { warn: (message) => missingWarnings.push(message) })
-  registerSettingsBridge(
-    missing.ctx, 'prompt-tool',
-    () => ({ available: true, providers: ['deepseek-official'] }), () => makeSkillsState(), () => '',
-  )
+  registerSettingsBridge(missing.ctx, {
+    ns: 'prompt-tool',
+    models: () => ({ available: true, providers: ['deepseek-official'] }),
+    skills: () => makeSkillsState(),
+    schemaDir: () => '',
+  })
   for (const endpoint of [BRIDGE_ENDPOINTS.meta, BRIDGE_ENDPOINTS.meta]) {
     const res = fakeRes()
     await missing.handlers.get(SETTINGS_BRIDGE_PREFIX + endpoint)(fakeReq(), res)
@@ -410,7 +413,7 @@ test('契约：工具预览在 schema 成功或抛错时均释放 revision lease
         return [{ name: 'example', description: 'example' }]
       } },
     })
-    registerSettingsBridge(ctx, 'prompt-tool', () => ({ available: true, providers: [] }), () => makeSkillsState(), () => '')
+    registerSettingsBridge(ctx, { ns: 'prompt-tool', models: () => ({ available: true, providers: [] }), skills: () => makeSkillsState(), schemaDir: () => '' })
     const handler = handlers.get(SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.toolSurface)
     const res = fakeRes()
     await handler(fakeReq({ body: { presetId: 'official' } }), res)

@@ -64,12 +64,11 @@ function makeHarness(cwdBySession) {
     effect: (fn) => fn(),
   }
   const ctx = { inject: (_deps, cb) => cb(sctx) }
-  registerSettingsBridge(
-    ctx,
-    'prompt-tool',
-    () => ({ available: true, providers: [] }),
+  registerSettingsBridge(ctx, {
+    ns: 'prompt-tool',
+    models: () => ({ available: true, providers: [] }),
     // 注册层屏蔽模型的技能状态：技能实体留在官方技能根，插件只提供屏蔽表、引用目录与清单。
-    () => ({
+    skills: () => ({
       skillsRoot: join(home, 'skills'),
       blocked: [],
       folders: [],
@@ -77,8 +76,8 @@ function makeHarness(cwdBySession) {
       setSkillBlocked: () => ({ ok: true, state: { version: 3, blocked: [], folders: [] }, exists: true }),
       patchSkillFolders: () => ({ ok: true, state: { version: 3, blocked: [], folders: [] }, exists: true }),
     }),
-    () => '',
-  )
+    schemaDir: () => '',
+  })
   const call = async (endpoint, body, overrides) => {
     const handler = handlers.get(SETTINGS_BRIDGE_PREFIX + endpoint)
     assert.ok(handler, `${endpoint} 未注册`)

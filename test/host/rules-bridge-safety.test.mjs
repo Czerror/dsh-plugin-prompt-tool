@@ -34,13 +34,19 @@ function harness({ readonly = false, rebuildFails = false, afterRebuild } = {}) 
     effect: fn => { const dispose = fn(); if (dispose) disposers.push(dispose) },
   }
   const ctx = { inject: (_deps, cb) => cb(sctx) }
-  registerSettingsBridge(ctx, 'prompt-tool', () => ({}), () => ({}), () => '', undefined,
-    () => activeDirectory, async () => {
+  registerSettingsBridge(ctx, {
+    ns: 'prompt-tool',
+    models: () => ({}),
+    skills: () => ({}),
+    schemaDir: () => '',
+    moduleDirectory: () => activeDirectory,
+    overridesChanged: async () => {
       rebuilds++
       if (typeof rebuildFails === 'function' ? rebuildFails() : rebuildFails) throw new Error('REBUILD_FAILED')
       writeModule({ modulesRoot: moduleRoot, moduleId: id, targetModuleId: id })
       await afterRebuild?.(file)
-    })
+    },
+  })
   test.after(() => disposers.forEach(dispose => dispose()))
   return {
     id, directory, file, original,

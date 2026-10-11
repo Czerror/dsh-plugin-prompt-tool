@@ -89,11 +89,10 @@ export function apply(ctx: Context, configIn: Config): void {
 
   // 在线编辑不再经 ctx.llm 暴露 settings namespace：改为自建 loopback bridge，
   // 这样模型设置页不会出现「提示词工具」目录条目。
-  const settingsBridge = registerSettingsBridge(
-    ctx,
-    NS,
-    getModelsState,
-    () => ({
+  const settingsBridge = registerSettingsBridge(ctx, {
+    ns: NS,
+    models: getModelsState,
+    skills: () => ({
       skillsRoot: skillsRuntime.skillsRoot,
       get folders() { return skillsRuntime.folders },
       listSkills: skillsRuntime.listSkills,
@@ -104,20 +103,18 @@ export function apply(ctx: Context, configIn: Config): void {
       writeSkillContent: skillsRuntime.writeContent,
       patchSkillFolders: skillsRuntime.setFolders,
     }),
-    // 模板专属策略目录：当前内置策略全部随引擎提供，自定义模板可经此注入。
-    () => '',
-    skillsRuntime.invalidate,
+    afterSkillsChange: skillsRuntime.invalidate,
     // 显式目标不存在就拒绝，不能落到另一个模块；编辑选择不进入部署设置。
-    (moduleId) => moduleId === undefined ? activeModuleDir() : resolveEditDir(MODULES_DIR, moduleId),
-    (id) => id === undefined ? assembly?.refresh() : refreshModuleRuntime(id),
+    moduleDirectory: (moduleId) => moduleId === undefined ? activeModuleDir() : resolveEditDir(MODULES_DIR, moduleId),
+    overridesChanged: (id) => id === undefined ? assembly?.refresh() : refreshModuleRuntime(id),
     // host 已安装完整候选；不能二次物化覆盖导入资产。
-    async (id) => {
+    moduleInstalled: async (id) => {
       skillsRuntime.invalidate()
       await assembly?.refresh(id)
     },
-    (id) => refreshModuleRuntime(id),
-    () => assembly?.refresh(),
-  )
+    capabilityChanged: (id) => refreshModuleRuntime(id),
+    moduleListChanged: () => assembly?.refresh(),
+  })
 
   // 装配结束后只读诊断 Web 能力；插件卸载时取消任务，不编辑 profile。
   scheduleWebSurfaceRepair(ctx, (message) => warn(ctx, message))

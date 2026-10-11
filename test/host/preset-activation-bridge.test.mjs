@@ -29,8 +29,14 @@ test('预设保存等待宿主采用；异步拒绝保留定义并可重试；�
     webServer: { register: ({ path, handler }) => { handlers.set(path, handler); return () => {} } },
     effect: fn => { const dispose = fn(); if (dispose) disposers.push(dispose) },
   }
-  registerSettingsBridge({ inject: (_deps, cb) => cb(sctx) }, 'prompt-tool', () => ({}), () => ({}), () => '', undefined,
-    () => dir, async () => { calls++; await rebuild() })
+  registerSettingsBridge({ inject: (_deps, cb) => cb(sctx) }, {
+    ns: 'prompt-tool',
+    models: () => ({}),
+    skills: () => ({}),
+    schemaDir: () => '',
+    moduleDirectory: () => dir,
+    overridesChanged: async () => { calls++; await rebuild() },
+  })
   const handler = handlers.get('/api/prompt-tool/settings/param-overrides')
   const save = async (overrides, extra = {}) => {
     const res = fakeRes()
