@@ -22,13 +22,7 @@ import { validateSubagentToolPolicy } from '../../engine/subagent-tool-policy-co
 const MANIFEST = 'prompt-tool-package.json'
 const PACKAGE_VERSION = 1
 const STORAGE_VERSION = 6
-/**
- * 包内定义文件名：写入用新名，**读取接受历史名**。
- *
- * 包是可分享的外部产物，用户手里可能有旧版导出的包（清单 `definition: preset.yml`）；
- * 导入是信任边界，拒绝它等于把用户已有的包判为损坏。
- */
-const DEFINITION_NAMES: readonly string[] = [MODULE_DEFINITION_FILE, 'preset.yml']
+/** 包内定义只认这一个文件名：模块规则体系不接受官方预设形态的包。 */
 const sha = (bytes: Uint8Array | string): string => createHash('sha256').update(bytes).digest('hex')
 const isRecord = (value: unknown): value is Record<string, unknown> => value !== null && typeof value === 'object' && !Array.isArray(value)
 
@@ -107,9 +101,7 @@ export async function expandModuleSource(input: AssetFile[]): Promise<AssetFile[
   files = normalizeAssetFiles(files)
   // 仅当所有条目共享一个真实外层目录时剥离一次。
   const first = files[0]?.path.split('/')[0]
-  let sourceFolder: string | undefined
   if (first !== undefined && files.every((file) => file.path.startsWith(first + '/'))) {
-    sourceFolder = first
     files = files.map((file) => ({ ...file, path: file.path.slice(first.length + 1) }))
   }
   const seen = new Set<string>()
@@ -126,28 +118,14 @@ export async function expandModuleSource(input: AssetFile[]): Promise<AssetFile[
   const manifest = files.find((file) => file.path === MANIFEST)
   if (manifest !== undefined) {
     const value: unknown = JSON.parse(decodeAssetFile(manifest).toString('utf8'))
-    if (!isRecord(value) || value.version !== PACKAGE_VERSION || typeof value.definition !== 'string' || !DEFINITION_NAMES.includes(value.definition) || !isRecord(value.files)) throw new Error('不支持或损坏的预设包清单')
+    if (!isRecord(value) || value.version !== PACKAGE_VERSION || value.definition !== MODULE_DEFINITION_FILE || !isRecord(value.files)) throw new Error(`包清单必须声明 definition: ${MODULE_DEFINITION_FILE}`)
     if (isRecord(value.requires) && typeof value.requires.renderVersion === 'number' && value.requires.renderVersion > STORAGE_VERSION) throw new Error('模块包需要较新的 Prompt Tool')
     const entries = files.filter((file) => file !== manifest)
     if (Object.keys(value.files).length !== entries.length) throw new Error('包清单与文件集合不一致')
     for (const file of entries) if (value.files[file.path] !== sha(decodeAssetFile(file))) throw new Error(`包文件摘要不符：${file.path}`)
     files = entries
   }
-  // 官方目录可只声明 name 并携带 agent.cordis.yml；保留既有无 ID 回退语义。
-  const yaml = files.filter((file) => !file.path.includes('/') && /\.ya?ml$/i.test(file.path) && file.path !== 'agent.cordis.yml')
-  // 定义文件名接受新旧两种（旧包 = 用户手里已导出的产物，导入是信任边界）。
-  const definition = yaml.find((file) => /^(?:module|preset)\.ya?ml$/i.test(file.path)) ?? (yaml.length === 1 ? yaml[0] : undefined)
-  if (definition !== undefined) {
-    const doc = parseDocument(decodeAssetFile(definition).toString('utf8'), { logLevel: 'silent' })
-    const value: unknown = doc.errors.length === 0 ? doc.toJS({ maxAliasCount: 100 }) : undefined
-    if (isRecord(value) && value.id === undefined && !('prompts' in value) && !('spec' in value)
-      && (['modules', 'composition', 'rules', 'params', 'content'].some((key) => key in value)
-        || (typeof value.name === 'string' && files.some((file) => file.path === 'agent.cordis.yml')))) {
-      doc.set('id', sourceFolder ?? 'imported-preset')
-      definition.content = doc.toString()
-      definition.encoding = 'utf8'
-    }
-  }
+  // 定义只认精确文件名：没有它就不是本插件认识的包，不做内容猜测，也不补 id。
   return files
 }
 
@@ -221,7 +199,7 @@ export async function installModulePackage(root: string, files: AssetFile[], req
           cpSync(path, join(source, entry), { recursive: true })
         }
       }
-      for (const file of preview.prepared.files.filter((file) => file.path !== MANIFEST && !DEFINITION_NAMES.includes(file.path))) {
+      for (const file of preview.prepared.files.filter((file) => file.path !== MANIFEST && file.path !== MODULE_DEFINITION_FILE)) {
         const path = join(source, safeAssetPath(file.path))
         mkdirSync(dirname(path), { recursive: true })
         if (file.path === 'memory.md' && existsSync(path)) continue

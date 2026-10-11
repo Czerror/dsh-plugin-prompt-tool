@@ -84,12 +84,11 @@ async function importPackage(body) {
   return { status: res.status, payload: JSON.parse(res.body) }
 }
 
-/** 合法预设包：id + 数组组合（agent.cordis.yml 回退）。 */
+/** 合法模块包：定义只带 module.yml。 */
 function presetPackage(overrides = {}) {
   return {
     files: [
-      { path: 'demo/module.yml', content: overrides.presetYml ?? 'id: demo\nname: Demo 预设\n' },
-      { path: 'demo/agent.cordis.yml', content: '- id: demo-row\n  name: "@deepseek-ai/dsh-demo"\n' },
+      { path: 'demo/module.yml', content: overrides.presetYml ?? 'id: demo\nmodules: []\nname: Demo 预设\n' },
       ...(overrides.files ?? []),
     ],
   }
@@ -99,13 +98,11 @@ test('importPresetPackage：文件夹导入保留子目录（服务端为唯一�
   const { status, payload } = await importPackage(presetPackage({
     files: [{ path: 'demo/engine/foo.mjs', content: 'export const x = 1\n' }],
   }))
-  assert.equal(status, 200)
+  assert.equal(status, 200, JSON.stringify(payload))
   assert.equal(payload.value?.id, 'demo')
   const engineFile = join(PRESETS, 'demo', 'engine', 'foo.mjs')
   assert.ok(existsSync(engineFile), '子目录文件应保留为 engine/foo.mjs')
   assert.equal(readFileSync(engineFile, 'utf8'), 'export const x = 1\n')
-  assert.equal(existsSync(join(PRESETS, 'demo', 'agent.cordis.yml')), false, '旧组合不再落独立产物')
-  assert.match(parseYaml(readFileSync(join(PRESETS, 'demo', 'module.yml'), 'utf8')).composition, /demo-row/, '旧包组合完整收进定义')
 })
 
 test('importPresetPackage：超过 32MB 上限返回 413 明确错误', async () => {
@@ -178,7 +175,7 @@ test('importPresetPackage：组合无法解析（modules 引用缺失）→ 400 
 
 test('importPresetPackage：显式同名覆盖安装完整候选，成功清理备份', async () => {
   const first = await importPackage(presetPackage())
-  assert.equal(first.status, 200)
+  assert.equal(first.status, 200, JSON.stringify(first.payload))
   const second = await importPackage(presetPackage({
     files: [{ path: 'demo/version2.txt', content: 'v2' }],
   }))
@@ -186,18 +183,6 @@ test('importPresetPackage：显式同名覆盖安装完整候选，成功清理�
   assert.equal(second.payload.value?.id, 'demo')
   assert.equal(second.payload.value?.backupPath, undefined)
   assert.ok(existsSync(join(PRESETS, 'demo', 'version2.txt')), '新版文件应写入目标目录')
-})
-
-test('importPresetPackage：文件夹导入且 module.yml 无 id 时回退文件夹名', async () => {
-  const { status, payload } = await importPackage({
-    files: [
-      { path: 'my-persona/module.yml', content: 'name: 我的预设\n' },
-      { path: 'my-persona/agent.cordis.yml', content: '- id: demo-row\n  name: "@deepseek-ai/dsh-demo"\n' },
-    ],
-  })
-  assert.equal(status, 200)
-  assert.equal(payload.value?.id, 'my-persona', '无 id 时应用文件夹名')
-  assert.ok(existsSync(join(PRESETS, 'my-persona', 'module.yml')))
 })
 
 test('importPresetPackage：SillyTavern JSON 单文件经转换引擎导入（按需组装，不注入默认内容）', async () => {

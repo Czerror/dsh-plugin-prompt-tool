@@ -179,10 +179,6 @@ export function prepareImport(input: AssetFile[], target: 'preset' | 'character'
         spec = raw as ModuleSpec
         if (spec.id === undefined) doc.set('id', stModuleId(posix.basename(file.path).replace(/\.[^.]+$/, '')))
         if (spec.name === undefined) doc.set('name', String(doc.get('id')))
-        if (spec.modules === undefined && spec.composition === undefined) {
-          const legacyComposition = files.find(item => item.path === 'agent.cordis.yml')
-          if (legacyComposition) doc.set('composition', decodeAssetFile(legacyComposition).toString('utf8'))
-        }
         if (kind === 'native-character' && spec.modules === undefined && spec.composition === undefined) {
           const hasActivation = ruleInjections(spec.rules).some(({ config }) => config.strategy === 'context-activation')
           doc.set('modules', hasActivation ? ['module-rule-tools', 'module-memory-tools'] : [])
