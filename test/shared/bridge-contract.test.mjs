@@ -8,8 +8,9 @@ import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import { fakeReq, fakeRes, handlerTable } from '../fixtures/host-harness.mjs'
 const home = mkdtempSync(join(process.cwd(), 'pt-contract-'))
 process.env.DSH_HOME = home
-const { BRIDGE_ENDPOINTS, SETTINGS_BRIDGE_PREFIX } = await import('../../src/shared/bridge-contract.ts')
+const { BRIDGE_ENDPOINTS, SETTINGS_BRIDGE_PREFIX, MAX_BRIDGE_BODY_BYTES } = await import('../../src/shared/bridge-contract.ts')
 const { registerSettingsBridge } = await import('../../src/runtime/settings-bridge.ts')
+const { bridgeTransaction } = await import('../../src/runtime/bridge-transaction.ts')
 const { MODULE_CAPABILITIES, ENGINE_EDITOR_GROUP_MAP, INJECTION_POINT_ORDER } = await import('../../src/shared/engine-capabilities.ts')
 const { getEngineMeta, LAYER_ORDER } = await import('../../engine/schema.mjs')
 const bridgeDisposers = []
@@ -82,6 +83,138 @@ function assertMetaSameSource(boot, meta, keys) {
 
 test('契约：client 前缀与 server 注册前缀同源', () => {
   assert.equal(SETTINGS_BRIDGE_PREFIX, '/api/prompt-tool/settings')
+})
+
+// ── 桥事务（src/runtime/bridge-transaction.ts）：一次请求的边界与信封 ──────────────
+// 这些用例是事务的规格：loopback／Origin、只收 POST、32 MiB 上限、body 三态、
+// 以及「不得替 handler 兜底成功」。此前 44 个端点各自实现这套规则，只在两个端点上被测。
+
+/** 事务级假请求：只带事务实际读的字段。 */
+function txReq({ method = 'POST', remoteAddress = '127.0.0.1', headers = { host: '127.0.0.1' }, chunks = [] } = {}) {
+  return {
+    method,
+    headers,
+    socket: { remoteAddress },
+    async *[Symbol.asyncIterator]() { for (const chunk of chunks) yield Buffer.from(chunk) },
+  }
+}
+
+/** 事务级假响应：记录状态、头、正文与 writeHead 次数。 */
+function txRes() {
+  const state = { status: undefined, body: '', writes: 0 }
+  return {
+    state,
+    writeHead(status) { state.status = status; state.writes += 1 },
+    end(payload) { if (payload !== undefined) state.body += payload },
+  }
+}
+
+/** 事务级假依赖：编辑目标固定（字段形状判断归各端点，事务不管）。 */
+function txDeps(overrides = {}) {
+  return { editDir: () => 'module-dir', ...overrides }
+}
+
+const txJson = (res) => JSON.parse(res.state.body)
+
+test('契约：桥事务拒绝非 loopback，且不进入 handler', async () => {
+  let handled = 0
+  const route = bridgeTransaction({ handle: () => { handled += 1 } }, txDeps())
+  const res = txRes()
+  await route(txReq({ remoteAddress: '203.0.113.1', chunks: ['{}'] }), res)
+  assert.equal(res.state.status, 403)
+  assert.deepEqual(txJson(res), { ok: false, code: 'settings-not-exposed', message: 'loopback requests only' })
+  assert.equal(handled, 0, '边界不通过时 handler 不得被调用')
+})
+
+test('契约：桥事务拒绝跨站 Origin（同 host 不同端口也不行）', async () => {
+  for (const origin of ['https://example.com', 'http://127.0.0.1:9999']) {
+    const res = txRes()
+    await bridgeTransaction({ handle: () => {} }, txDeps())(
+      txReq({ headers: { host: '127.0.0.1:56184', origin }, chunks: ['{}'] }), res)
+    assert.equal(res.state.status, 403, `Origin ${origin} 必须被拒`)
+  }
+})
+
+test('契约：桥事务只收 POST', async () => {
+  const res = txRes()
+  await bridgeTransaction({ handle: () => {} }, txDeps())(txReq({ method: 'GET', chunks: ['{}'] }), res)
+  assert.equal(res.state.status, 405)
+  assert.equal(txJson(res).code, 'settings-not-exposed')
+})
+
+test('契约：桥事务超过 32 MiB 上限回 413，且不进入 handler', async () => {
+  let handled = 0
+  const oversized = Buffer.alloc(MAX_BRIDGE_BODY_BYTES + 1, 0x20)
+  const res = txRes()
+  await bridgeTransaction({ handle: () => { handled += 1 } }, txDeps())(txReq({ chunks: [oversized] }), res)
+  assert.equal(res.state.status, 413)
+  assert.equal(txJson(res).code, 'bridge-body-too-large')
+  assert.equal(handled, 0)
+})
+
+test('契约：桥事务把解析后的 record 与编辑目标交给 handler', async () => {
+  const seen = []
+  const route = bridgeTransaction({ handle: (tx) => { seen.push([tx.record, tx.editDir()]); tx.write(200, { ok: true, value: {} }) } }, txDeps())
+  const res = txRes()
+  await route(txReq({ chunks: [JSON.stringify({ sessionId: ' s-1 ', scope: 'module' })] }), res)
+  assert.equal(res.state.status, 200)
+  assert.deepEqual(seen, [[{ sessionId: ' s-1 ', scope: 'module' }, 'module-dir']])
+})
+
+test('契约：桥事务的 body 三态——required/optional 解析空体、none 不消费请求流', async () => {
+  // required：空请求体解析成空对象（形状校验由 handler 按字段做，现有端点在缺字段时自回 400）。
+  let requiredRecord
+  const required = txRes()
+  await bridgeTransaction({ body: 'required', handle: (tx) => { requiredRecord = tx.record; tx.write(400, { ok: false, code: 'field-missing' }) } }, txDeps())(txReq(), required)
+  assert.deepEqual(requiredRecord, {})
+  assert.equal(required.state.status, 400)
+
+  // optional：同样放行空体。
+  let optionalRecord
+  const optional = txRes()
+  await bridgeTransaction({ body: 'optional', handle: (tx) => { optionalRecord = tx.record; tx.write(200, { ok: true, value: {} }) } }, txDeps())(txReq(), optional)
+  assert.deepEqual(optionalRecord, {})
+  assert.equal(optional.state.status, 200)
+
+  // none：不解析、也**不消费请求流**——原始流端点（上传）要自己读 tx.req。
+  let noneRecord, readByTransaction = false
+  const none = txRes()
+  const req = txReq({ chunks: ['not json at all'] })
+  const originalIterator = req[Symbol.asyncIterator].bind(req)
+  req[Symbol.asyncIterator] = () => { readByTransaction = true; return originalIterator() }
+  await bridgeTransaction({ body: 'none', handle: (tx) => { noneRecord = tx.record; tx.write(200, { ok: true, value: {} }) } }, txDeps())(req, none)
+  assert.deepEqual(noneRecord, {})
+  assert.equal(none.state.status, 200)
+  assert.equal(readByTransaction, false, 'body:none 不得消费请求流')
+})
+
+test('契约：桥事务不为 handler 兜底成功——静默 500、抛错 500、已写过则不再补写', async () => {
+  const silent = txRes()
+  await bridgeTransaction({ handle: () => {} }, txDeps())(txReq({ chunks: ['{}'] }), silent)
+  assert.equal(silent.state.status, 500)
+  assert.equal(txJson(silent).code, 'bridge-handler-silent')
+
+  const failed = txRes()
+  await bridgeTransaction({ handle: () => { throw new Error('boom') } }, txDeps())(txReq({ chunks: ['{}'] }), failed)
+  assert.equal(failed.state.status, 500)
+  assert.equal(txJson(failed).code, 'bridge-handler-failed')
+
+  const wroteThenThrew = txRes()
+  await bridgeTransaction({ handle: (tx) => { tx.write(409, { ok: false, code: 'x' }); throw new Error('after write') } }, txDeps())(txReq({ chunks: ['{}'] }), wroteThenThrew)
+  assert.equal(wroteThenThrew.state.status, 409)
+  assert.equal(wroteThenThrew.state.writes, 1)
+})
+
+test('契约：载荷字段形状不进事务——端点保留自己的错误码', async () => {
+  const res = txRes()
+  await bridgeTransaction({
+    handle: (tx) => {
+      assert.deepEqual(tx.record, { sessionId: 42 })
+      tx.write(400, { ok: false, code: 'skills-list-rejected', message: 'sessionId must be a string' })
+    },
+  }, txDeps())(txReq({ chunks: [JSON.stringify({ sessionId: 42 })] }), res)
+  assert.equal(res.state.status, 400)
+  assert.equal(txJson(res).code, 'skills-list-rejected')
 })
 
 test('契约：所有端点路径全部注册且无多余', () => {
