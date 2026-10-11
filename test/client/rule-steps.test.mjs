@@ -9,8 +9,6 @@
  */
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
-import { parse } from 'yaml'
 import { withSsr, renderElement, makeTranslate } from './support/ssr-render.mjs'
 import { createWorkspaceDrafts } from '../../src/client/data/workspace-drafts.ts'
 import { getRuleEditorMeta } from '../../engine/rule-spec.mjs'
@@ -23,9 +21,18 @@ import {
 const t = makeTranslate()
 const action = (id, text) => ({ id, kind: 'inject-text', config: { id: `${id}-config`, text, layer: 'pre-step', strategy: 'static' } })
 
-/** 真实模块里的那张卡：ponytail 子代理按任务只读/写入分档（modules/ponytail/module.yml）。 */
-const moduleYml = parse(readFileSync(new URL('../../modules/ponytail/module.yml', import.meta.url), 'utf8'))
-const ponytailRule = moduleYml.rules.find(rule => rule.id === 'ponytail-subagent')
+/**
+ * 分支夹具内联构造：外层一个 `if/then/else` 分支，两支各带一个动作。
+ * 不读随包模块——模块内容随时会变，夹具是测试自己的数据。
+ */
+const branchFixture = {
+  id: 'fixture-branch', name: '夹具规则', enabled: true, layer: 'pre-step',
+  then: [{
+    if: { all: [{ scope: { audience: 'subagent' } }, { session: { type: 'user/message', present: false } }] },
+    then: [action('inject-readonly', 'READONLY: 子代理只读档')],
+    else: [action('inject-write', 'WRITE: 子代理写入档')],
+  }],
+}
 
 test('rule-steps: 分支与动作的判据只看 kind，未知节点不猜成动作', () => {
   assert.equal(isActionNode(action('a', 'x')), true)
@@ -52,35 +59,33 @@ test('rule-steps: 摘要把多条件写成「且/或/非」，超出上限退化
 
 test('rule-steps: 动作摘要取正文首行，分支摘要写成「当 条件 → 动作」', () => {
   assert.match(actionSummary(t, action('a', '# 标题\n\n正文首行之后还有很多')), /注入文本 · 前置步骤 · 固定文本 · 标题/)
-  const branch = ponytailRule.then[0]
+  const branch = branchFixture.then[0]
   const summary = branchSummary(t, branch)
   assert.match(summary, /^当 /)
-  assert.match(summary, /PONYTAIL:readonly/)
-  assert.match(summary, /→ 1 个动作/, '带 else 的分支在卡头报条数')
+  assert.match(summary, /→ 1 个动作/, '带 else 的分支在卡头报条数，不逐条列动作正文')
   assert.match(branchSummary(t, { if: { phase: { promoted: true } }, then: [action('solo', '只此一个')] }), /→ 注入文本 · 前置步骤 · 固定文本 · 只此一个/, '单个动作且无 else 时卡头直接写该动作')
   assert.match(conditionChain(t, [{ all: [{ phase: { promoted: true } }] }, branch.if]), /^生效条件：/)
 })
 
 test('rule-steps: 计数与动作 id 收集递归整棵分支树', () => {
-  const totals = countNodes(nodeList(ponytailRule.then))
+  const totals = countNodes(nodeList(branchFixture.then))
   assert.equal(totals.branches, 1)
-  const ids = collectActionIds(nodeList(ponytailRule.then))
+  const ids = collectActionIds(nodeList(branchFixture.then))
   assert.ok(ids.has('inject-readonly') && ids.has('inject-write'), '嵌套动作 id 都要收进唯一性集合')
-  assert.deepEqual([...conditionalActions(nodeList(ponytailRule.then), false)].map(item => item.id).sort(), ['inject-readonly', 'inject-write'])
+  assert.deepEqual([...conditionalActions(nodeList(branchFixture.then), false)].map(item => item.id).sort(), ['inject-readonly', 'inject-write'])
 })
 
 test('rule-steps: 含分支的真实规则渲染不抛错，卡默认收起且摘要可读', async () => {
   const { RuleStepsPanel } = await withSsr([new URL('../../src/client/features/prompts/RuleSteps.tsx', import.meta.url).href])
   const render = (rule) => renderElement(RuleStepsPanel, {
     t, rule, meta: getRuleEditorMeta(), engineMeta: { layerFieldPolicies: {}, layers: [] },
-    fields: new Map(), expanded: new Map(), prefix: 'ponytail', fieldKey: 'rule-key', onDraft: () => {}, onChange: () => {},
+    fields: new Map(), expanded: new Map(), prefix: 'fixture-branch', fieldKey: 'rule-key', onDraft: () => {}, onChange: () => {},
   })
-  const html = render(ponytailRule)
+  const html = render(branchFixture)
   assert.match(html, /data-step="if"/)
   assert.match(html, /data-step="branch"/, '分支节点成为一等公民，不再落到未知动作')
   assert.match(html, /hidden=""/)
-  assert.match(html, /PONYTAIL:readonly/)
-  const unsupported = render({ ...ponytailRule, layer: 'system-section' })
+  const unsupported = render({ ...branchFixture, layer: 'system-section' })
   assert.match(unsupported, /不能使用条件分支/, '注册制层禁用条件分支并说明原因')
 })
 
