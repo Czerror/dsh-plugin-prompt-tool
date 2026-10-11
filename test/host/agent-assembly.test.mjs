@@ -316,7 +316,7 @@ test('跨模块配置按文件序号交错执行，后序请求覆盖且不受�
     const system = await h.root.systemPrompt.assemble({ agent, scope: agent })
     assert.deepEqual(system.sections.filter(section => section.text.startsWith('SYS-')).map(section => section.text), ['SYS-B', 'SYS-A'],
       '官方 system-section 定位仍由 order 决定')
-    assert.deepEqual(h.runtime.moduleIds(agent.id), enabled, '工具写入目标的启用表顺序不随配置执行序改写')
+    assert.deepEqual(h.runtime.moduleIds(agent.id), enabled, '配装记录报告本 Agent 装了哪几层：顺序即启用表顺序，不随配置执行序改写')
   }
   assert.deepEqual(h.warnings, [])
 })

@@ -4,6 +4,7 @@ import { mkdtempSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSyn
 import { join } from 'node:path'
 import { parse } from 'yaml'
 import { registerModuleMemoryTools } from '../../src/runtime/module-memory-tools.ts'
+import { resolveModuleToolTarget } from '../../src/host/module-tool-target.ts'
 
 function fixture(t) {
   const root = mkdtempSync(join(process.cwd(), 'pt-module-memory-'))
@@ -18,7 +19,7 @@ function fixture(t) {
       tools.set(tool.name, tool)
       return () => tools.delete(tool.name)
     } } }) }),
-  }, { target: () => ({ root: moduleRoot, dir, id: 'alice' }), rebuild: async () => { rebuilds += 1 } })
+  }, { root: moduleRoot, target: (exec, moduleId) => resolveModuleToolTarget(exec, moduleRoot, () => ['alice'], moduleId), rebuild: async () => { rebuilds += 1 } })
   t.after(() => { dispose(); assert.equal(tools.size, 0); rmSync(root, { recursive: true, force: true }) })
   return { root, dir, tools, rebuilds: () => rebuilds }
 }
@@ -27,16 +28,17 @@ test('模块记忆工具独立追加和读取最新内容，空追加不写盘�
   const f = fixture(t)
   const read = f.tools.get('module_memory_read')
   assert.ok(read, '必须注册显式记忆读取工具')
-  assert.deepEqual(await read.execute({}, {}), { memory: '' })
-  await f.tools.get('module_memory_append').execute({ content: 'PRIVATE NOTE', expectedModuleId: 'alice' }, {})
+  await assert.rejects(read.execute({}, {}), /没有声明模块目标/, '不声明模块就不挑一个')
+  assert.deepEqual(await read.execute({ moduleId: 'alice' }, {}), { memory: '' })
+  await f.tools.get('module_memory_append').execute({ content: 'PRIVATE NOTE', moduleId: 'alice' }, {})
   assert.match(readFileSync(join(f.dir, 'memory.md'), 'utf8'), /PRIVATE NOTE/)
-  const memory = (await read.execute({}, {})).memory
+  const memory = (await read.execute({ moduleId: 'alice' }, {})).memory
   assert.match(memory, /PRIVATE NOTE/)
   writeFileSync(join(f.dir, 'memory.md'), 'UPDATED MEMORY')
-  assert.deepEqual(await read.execute({}, {}), { memory: 'UPDATED MEMORY' })
+  assert.deepEqual(await read.execute({ moduleId: 'alice' }, {}), { memory: 'UPDATED MEMORY' })
   const spec = parse(readFileSync(join(f.dir, 'module.yml'), 'utf8'))
   assert.deepEqual(spec.rules, [])
-  await f.tools.get('module_memory_append').execute({ content: '   ', expectedModuleId: 'alice' }, {})
+  await f.tools.get('module_memory_append').execute({ content: '   ', moduleId: 'alice' }, {})
   assert.equal(readFileSync(join(f.dir, 'memory.md'), 'utf8'), 'UPDATED MEMORY')
   assert.equal(f.rebuilds(), 0, '记忆操作不触发重新装配')
 })
@@ -46,13 +48,13 @@ test('模块记忆读取失败显式拒绝，链接目标不能读写', async t 
   const read = f.tools.get('module_memory_read')
   assert.ok(read)
   mkdirSync(join(f.dir, 'memory.md'))
-  await assert.rejects(read.execute({}, {}), /memory|directory|EISDIR|EPERM/i)
+  await assert.rejects(read.execute({ moduleId: 'alice' }, {}), /memory|directory|EISDIR|EPERM/i)
   rmSync(join(f.dir, 'memory.md'), { recursive: true })
   const outside = join(f.root, 'outside')
   mkdirSync(outside)
   writeFileSync(join(outside, 'memory.md'), 'OUTSIDE')
   symlinkSync(outside, join(f.dir, 'memory.md'), 'junction')
-  await assert.rejects(read.execute({}, {}), /链接|link/)
-  await assert.rejects(f.tools.get('module_memory_append').execute({ content: 'BAD', expectedModuleId: 'alice' }, {}), /链接|link/)
+  await assert.rejects(read.execute({ moduleId: 'alice' }, {}), /链接|link/)
+  await assert.rejects(f.tools.get('module_memory_append').execute({ content: 'BAD', moduleId: 'alice' }, {}), /链接|link/)
   assert.equal(readFileSync(join(outside, 'memory.md'), 'utf8'), 'OUTSIDE')
 })

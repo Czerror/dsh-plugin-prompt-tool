@@ -1,7 +1,6 @@
 /** /prompt-tool 命令：读取规则定义，通过统一事务切换总开关与互斥组。 */
 import type { Context } from '@deepseek-ai/cordis'
 import type { CommandResult } from '@deepseek-ai/dsh-commands'
-import { basename } from 'node:path'
 import type { ModelDetection } from './models.ts'
 import type { PromptSettings } from '../config.ts'
 import type { SkillCatalogEntry } from '../shared/skills.ts'
@@ -31,13 +30,15 @@ function readModuleParams(moduleDir: string | undefined): Record<string, unknown
   }
 }
 
-type TuiSource = PromptSettings & { skillCatalog: SkillCatalogEntry[]; activeSkillsDirs: string[] }
+type TuiSource = PromptSettings & { skillCatalog: SkillCatalogEntry[]; activeSkillsDirs: string[]; enabledModules?: readonly string[] }
 
-function renderTuiStatus(source: TuiSource, params: Record<string, unknown>, rules: RuleDefinition[]): string {
+function renderTuiStatus(source: TuiSource, params: Record<string, unknown>, rules: RuleDefinition[], moduleId: string | undefined): string {
   const onOff = (value: boolean): string => value ? '开' : '关'
   const paramBoolean = (key: string): boolean => (params[key] ?? ENGINE_PARAM_DEFINITIONS[key as EngineParamKey]?.defaultValue) === true
   const lines = [
     '提示词工具开关',
+    `module                  ${moduleId ?? '（未声明模块目标：用 module <模块id> 声明）'}`,
+    `enabledModules          ${source.enabledModules?.length ? source.enabledModules.join('、') : '（无）'}`,
     ...TUI_GLOBAL_SWITCHES.map(([key, label]) => {
       const value = source[key as keyof PromptSettings]
       return `${key.padEnd(22)}${onOff(typeof value === 'boolean' ? value : false)}  ${label}`
@@ -105,8 +106,8 @@ function parseIdentifierAndAction(
   return { id: tokens.join(' ') }
 }
 
-/** 参数保存回调：写激活模块 module.yml；失败必须抛给命令层渲染为错误。 */
-export type SaveModuleParam = (key: string, value: unknown) => void | Promise<void>
+/** 参数保存回调：写这次显式声明的模块 module.yml；失败必须抛给命令层渲染为错误。 */
+export type SaveModuleParam = (moduleId: string, key: string, value: unknown) => void | Promise<void>
 
 /** 技能启停回调：切换受管实体的根链接。 */
 export type ToggleSkillState = (folder: string, enabled: boolean) => { ok: boolean; message?: string }
@@ -118,39 +119,66 @@ export function registerTuiCommand(
   getSource: () => TuiSource,
   getModelsState: () => ModelDetection,
   getModelCatalog: () => Promise<Record<string, string[]>>,
-  getModuleDirectory?: () => string,
+  getModuleDirectory?: (moduleId: string) => string,
   saveModuleParam?: SaveModuleParam,
   toggleSkillState?: ToggleSkillState,
   refreshModule?: (id: string) => Promise<void>,
 ): void {
   ctx.inject(['settings'], (sctx: Context) => {
+    /** 用户显式声明过的 TUI 会话主语（按发起命令的 Agent）：只记用户说的，不持久化、不跨会话共享。 */
+    const sessionSubjects = new Map<string, string>()
     return sctx.commands.register({
       name: 'prompt-tool',
       description: '提示词工具：查看或切换本插件开关',
-      input: { hint: 'status | on/off/toggle <开关> | skill <技能名> on/off/toggle | config <id> [on/off/toggle]' },
+      input: { hint: 'status | module [模块id] | on/off/toggle <开关> | skill <技能名> on/off/toggle | [module <模块id>] config <id> [on/off/toggle]' },
       handler: async (invocation): Promise<CommandResult> => {
         const usage = (): CommandResult => ({
           kind: 'error',
           text: '用法：/prompt-tool status\n' +
             `      /prompt-tool on|off|toggle <${[...TUI_GLOBAL_SWITCHES, ...TUI_PARAM_SWITCHES].map(([key]) => key).join('|')}>\n` +
             '      /prompt-tool skill <frontmatter 技能名> on|off|toggle\n' +
+            '      /prompt-tool module <模块id>（声明本次会话主语，随后命令都作用在它上面）\n' +
+            '      /prompt-tool module（显示当前声明）\n' +
+            '      /prompt-tool module <模块id> on|off|toggle <模块参数>（单条命令前声明并执行）\n' +
             '      /prompt-tool config <id>（id 可含空格）\n' +
-            '      /prompt-tool config <id> on|off|toggle',
+            '      /prompt-tool config <id> on|off|toggle\n' +
+            '模块参数与规则读写要先声明主语（`module <模块id>`，可写在单条命令前覆盖）；没有声明就没有目标。',
         })
+        // 主语由**用户自己声明**：`module <模块id>` 记到该 Agent 的会话上，也可写在单条命令前覆盖。
+        // 插件不猜目标；没声明过就不调用任何模块写盘路径。
+        const raw = invocation.rawInput.trim().split(/\s+/).filter((token) => token.length > 0)
+        const sessionKey = invocation.agent?.id ?? ''
+        const declares = raw[0] === 'module'
+        const inlineId = declares ? raw[1] : undefined
+        if (declares && inlineId === undefined) {
+          const current = sessionSubjects.get(sessionKey)
+          return { kind: 'success', text: current === undefined
+            ? '未声明模块目标：用 /prompt-tool module <模块id> 声明本次会话的主语'
+            : `本次会话主语：${current}` }
+        }
+        const tokens = declares ? raw.slice(2) : raw
+        const declared = declares ? inlineId : sessionSubjects.get(sessionKey)
+        const moduleDir = declared === undefined ? '' : (getModuleDirectory?.(declared) ?? '')
+        const noTarget = (): CommandResult => ({ kind: 'error', text: declared === undefined
+          ? '没有声明模块目标：用 /prompt-tool module <模块id> 声明本次会话主语，或写成 /prompt-tool module <模块id> …'
+          : `未找到模块 ${declared}：模块存储根下没有 ${declared}/module.yml` })
+        // 声明不成立就不记：错 id 不能把会话主语悄悄换掉。
+        if (declares && (declared === undefined || moduleDir.length === 0)) return noTarget()
+        /** 子命令形状确认后才记主语：`module A <非法子命令>` 只报用法，不动会话主语。 */
+        const commitSubject = (): void => { if (declares && declared !== undefined) sessionSubjects.set(sessionKey, declared) }
         const persistModuleParam = async (key: string, value: unknown): Promise<CommandResult | undefined> => {
+          if (declared === undefined || moduleDir.length === 0) return noTarget()
           if (saveModuleParam === undefined) {
             return { kind: 'error', text: `无法保存 ${key}：模块参数保存回调不可用` }
           }
           try {
-            await saveModuleParam(key, value)
+            await saveModuleParam(declared, key, value)
             return undefined
           } catch (error) {
             return { kind: 'error', text: `保存 ${key} 失败：${error instanceof Error ? error.message : String(error)}` }
           }
         }
-        const tokens = invocation.rawInput.trim().split(/\s+/).filter((token) => token.length > 0)
         const source = getSource()
-        const moduleDir = getModuleDirectory?.()
         const params = readModuleParams(moduleDir)
         let snapshot: ReturnType<typeof readModuleRules> | undefined
         try {
@@ -160,6 +188,7 @@ export function registerTuiCommand(
         }
         const rules = snapshot?.rules ?? []
         if (tokens.length === 0 || tokens[0] === 'status') {
+          commitSubject()
           const detection = getModelsState()
           const catalog = await getModelCatalog()
           const providersLine = detection.available
@@ -169,11 +198,12 @@ export function registerTuiCommand(
           const modelsLine = catalogEntries.length > 0
             ? `检测到的模型名: ${catalogEntries.map(([provider, models]) => `${provider} → ${models.join(', ')}`).join('；')}`
             : '未检测到模型名（adapter 未公布或查询失败）'
-          return { kind: 'success', text: renderTuiStatus(source, params, rules) + '\n' + providersLine + '\n' + modelsLine }
+          return { kind: 'success', text: renderTuiStatus(source, params, rules, declared) + '\n' + providersLine + '\n' + modelsLine }
         }
         if (tokens[0] === 'skill') {
           const { id, action } = parseIdentifierAndAction(tokens.slice(1), () => true)
           if (id.length === 0) return usage()
+          commitSubject()
           const matches = source.skillCatalog.filter((skill) => skill.name === id)
           if (matches.length !== 1) return { kind: 'error', text: matches.length === 0
             ? `未找到技能：${id}` : `存在多个同名技能：${id}，请在技能管理页选择具体文件` }
@@ -192,7 +222,7 @@ export function registerTuiCommand(
           }
           return { kind: 'success', text: `已把技能 ${id} 设为 ${next ? '开' : '关'}
 
-${renderTuiStatus(getSource(), readModuleParams(moduleDir), rules)}` }
+${renderTuiStatus(getSource(), readModuleParams(moduleDir), rules, declared)}` }
         }
         if (tokens[0] === 'config') {
           const { id, action } = parseIdentifierAndAction(
@@ -200,14 +230,16 @@ ${renderTuiStatus(getSource(), readModuleParams(moduleDir), rules)}` }
             (candidate) => rules.some(rule => rule.id === candidate),
           )
           if (id.length === 0) return usage()
+          if (declared === undefined || moduleDir.length === 0) return noTarget()
+          commitSubject()
           const current = rules.find(rule => rule.id === id)
           if (current === undefined) {
-            return { kind: 'error', text: `未找到规则 ${id}；用 /prompt-tool status 查看全部 id。` }
+            return { kind: 'error', text: `未找到规则 ${id}；用 /prompt-tool module ${declared} status 查看全部 id。` }
           }
           if (action === undefined) return { kind: 'success', text: renderConfigDetail(id, rules) }
           const next = parseTuiBoolean(action, current.enabled !== false)
           if (next === undefined) return usage()
-          if (!moduleDir || !snapshot || !refreshModule) return { kind: 'error', text: '规则保存通道不可用' }
+          if (!snapshot || !refreshModule) return { kind: 'error', text: '规则保存通道不可用' }
           try {
             editModuleRules(moduleDir, {
               expectedRevisions: snapshot.revisions,
@@ -216,7 +248,7 @@ ${renderTuiStatus(getSource(), readModuleParams(moduleDir), rules)}` }
           } catch (error) {
             return { kind: 'error', text: `保存规则失败：${error instanceof Error ? error.message : String(error)}` }
           }
-          try { await refreshModule(basename(moduleDir)) } catch (error) {
+          try { await refreshModule(declared) } catch (error) {
             return { kind: 'error', text: `规则已保存，但重新装配失败：${error instanceof Error ? error.message : String(error)}` }
           }
           return { kind: 'success', text: `已把规则 ${id} 设为 ${next ? '开' : '关'}\n\n${renderConfigDetail(id, readModuleRules(moduleDir).rules)}` }
@@ -230,6 +262,9 @@ ${renderTuiStatus(getSource(), readModuleParams(moduleDir), rules)}` }
           return usage()
         }
         const globalSwitch = TUI_GLOBAL_SWITCHES.some(([candidate]) => candidate === key)
+        // 模块参数必须声明主语；没有声明就没有目标，不回退任何默认模块。
+        if (!globalSwitch && (declared === undefined || moduleDir.length === 0)) return noTarget()
+        commitSubject()
         const currentValue = globalSwitch ? source[key as keyof PromptSettings] : params[key] ?? ENGINE_PARAM_DEFINITIONS[key as EngineParamKey]?.defaultValue
         if (typeof currentValue !== 'boolean') {
           return { kind: 'error', text: `${key} 不是布尔开关，不能这样切换` }
@@ -239,13 +274,13 @@ ${renderTuiStatus(getSource(), readModuleParams(moduleDir), rules)}` }
         if (globalSwitch) {
           await sctx.settings.mutate(ns, modulesEnabledOps(next))
         } else {
-          // 参数开关：写激活模块 module.yml（settings 不再承载引擎参数）。
+          // 参数开关：写这次声明的模块 module.yml（settings 不再承载引擎参数）。
           const failure = await persistModuleParam(key, next)
           if (failure !== undefined) return failure
         }
         return { kind: 'success', text: `已把 ${key} 设为 ${next ? '开' : '关'}
 
-${renderTuiStatus(getSource(), readModuleParams(moduleDir), moduleDir ? readModuleRules(moduleDir).rules : [])}` }
+${renderTuiStatus(getSource(), readModuleParams(moduleDir), moduleDir ? readModuleRules(moduleDir).rules : [], declared)}` }
       },
     })
   })

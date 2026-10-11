@@ -1,4 +1,4 @@
-/** 模型通过完整规则事务编辑受控模块，读写不展开或重造注入叶子。 */
+/** 模型通过完整规则事务编辑 moduleId 声明的模块，读写不展开或重造注入叶子。 */
 import type { Context } from '@deepseek-ai/cordis'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import { MODULE_TOOL_NAMES } from '../shared/engine-capabilities.ts'
@@ -6,6 +6,7 @@ import type { InferValue } from '@deepseek-ai/dsh-tools'
 import { editModuleRules, readModuleRules } from '../host/module-rules.ts'
 import type { ModuleRuleEditRequest, ModuleRulesSnapshot } from '../host/module-rules.ts'
 import { loadModuleDefinition, ModuleRulesError } from '../host/module-storage.ts'
+import { MODULE_ID_PARAM } from '../host/module-tool-target.ts'
 import type { ModuleToolHost } from '../host/module-tool-target.ts'
 import { MAX_BRIDGE_BODY_BYTES } from '../shared/bridge-contract.ts'
 // @ts-expect-error 动作与条件目录归唯一引擎编译器。
@@ -30,35 +31,33 @@ export function registerModuleRuleTools(ctx: Context, host: ModuleToolHost): () 
   const fiber = ctx.inject(['tools'], toolsCtx => {
     const read = toolsCtx.tools.register(defineTool({
         name: MODULE_TOOL_NAMES.rulesRead,
-      description: '读取当前受控模块的完整原始规则树、按域版本和引擎动作/条件目录。编辑前先读取；保留未修改的条件、then/else、动作与参数。',
-      parameters: { expectedModuleId: { type: 'string', description: '可选目标身份校验，不用于选择模块或目录。' } },
+      description: '读取 moduleId 声明模块的完整原始规则树、按域版本和引擎动作/条件目录。编辑前先读取；保留未修改的条件、then/else、动作与参数。',
+      parameters: { moduleId: MODULE_ID_PARAM },
       output: { schema, render: (_args, value) => [{ type: 'text', text: JSON.stringify(value) }] },
       execute: async (args, exec) => {
-        allowed(args, ['expectedModuleId'])
+        allowed(args, ['moduleId'])
         exec.signal.throwIfAborted()
-        const target = host.target(exec)
-        if (args.expectedModuleId !== undefined && args.expectedModuleId !== target.id) throw new ModuleRulesError('模块目标已变化，请重新读取', 409, 'module-target-conflict')
+        const target = host.target(exec, args.moduleId)
         return result(target.id, readModuleRules(target.dir))
       },
     }))
     const edit = toolsCtx.tools.register(defineTool({
         name: MODULE_TOOL_NAMES.rulesEdit,
-      description: '按读取时的模块身份和 expectedRevisions 提交完整规则事务。edits 每项含 previousId、完整 rule，可选 settingsChanged；rule=null 明确删除整规则。关闭规则标记 settingsChanged，启用用 activateRuleId。validateOnly 只校验；已保存但发布失败时用 refreshOnly 重试发布，不重放 edits。',
+      description: '按 moduleId 声明的模块和读取时的 expectedRevisions 提交完整规则事务。edits 每项含 previousId、完整 rule，可选 settingsChanged；rule=null 明确删除整规则。关闭规则标记 settingsChanged，启用用 activateRuleId。validateOnly 只校验；已保存但发布失败时用 refreshOnly 重试发布，不重放 edits。',
       parameters: {
-        expectedModuleId: { type: 'string', required: true },
+        moduleId: MODULE_ID_PARAM,
         expectedRevisions: { type: 'object', additionalProperties: true, required: true },
         edits: { type: 'array', items: { type: 'json' } },
         activateRuleId: { type: 'string' }, validateOnly: { type: 'boolean' }, refreshOnly: { type: 'boolean' },
       },
       output: { schema, render: (_args, value) => [{ type: 'text', text: JSON.stringify(value) }] },
       execute: async (args, exec) => {
-        allowed(args, ['expectedModuleId', 'expectedRevisions', 'edits', 'activateRuleId', 'validateOnly', 'refreshOnly'])
+        allowed(args, ['moduleId', 'expectedRevisions', 'edits', 'activateRuleId', 'validateOnly', 'refreshOnly'])
         if (args.refreshOnly === true && (args.edits !== undefined || args.activateRuleId !== undefined || args.validateOnly !== undefined)) throw new ModuleRulesError('refreshOnly 不能混用规则修改或候选校验')
         if (args.refreshOnly !== true && args.edits === undefined && args.activateRuleId === undefined) throw new ModuleRulesError('规则事务需要 edits 或 activateRuleId')
         exec.signal.throwIfAborted()
-        const target = host.target(exec)
-        if (args.expectedModuleId !== target.id) throw new ModuleRulesError('模块目标已变化，请重新读取', 409, 'module-target-conflict')
-        const { expectedModuleId: _id, refreshOnly: _refresh, ...request } = args
+        const target = host.target(exec, args.moduleId)
+        const { moduleId: _id, refreshOnly: _refresh, ...request } = args
         let state: ModuleRulesSnapshot
         try {
           state = editModuleRules(target.dir, args.refreshOnly === true

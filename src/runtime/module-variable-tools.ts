@@ -5,16 +5,18 @@ import { MODULE_TOOL_NAMES } from '../shared/engine-capabilities.ts'
 import { editModuleVariables, readModuleVariables } from '../host/module-variables.ts'
 import type { ModuleVariableRevisions, ModuleVariablesResult } from '../host/module-variables.ts'
 import { assertVariableValues, ModuleRulesError } from '../host/module-storage.ts'
+import { MODULE_ID_PARAM } from '../host/module-tool-target.ts'
 import type { ModuleToolHost } from '../host/module-tool-target.ts'
 
 export function registerModuleVariableTools(ctx: Context, host: Pick<ModuleToolHost, 'target'>): () => void {
   const fiber = ctx.inject(['tools'], toolsCtx => toolsCtx.tools.register(defineTool({
     name: MODULE_TOOL_NAMES.variables,
-    description: '读写跨会话持久变量：scope=module 使用当前受控模块并回落全局，scope=global 影响同一 DSH_HOME 的所有模块。list/get 返回有效来源和版本；set 必须显式 value，空字符串保留；delete 只删目标范围的键，模块删除后回落全局。写入带读取时的模块身份和 expectedRevisions；不使用会话内变量表。',
+    description: '读写跨会话持久变量：scope=module 使用 moduleId 声明的模块并回落全局，scope=global 影响同一 DSH_HOME 的所有模块。list/get 返回有效来源和版本；set 必须显式 value，空字符串保留；delete 只删目标范围的键，模块删除后回落全局。写入带读取时的 expectedRevisions；不使用会话内变量表。',
     parameters: {
+      moduleId: MODULE_ID_PARAM,
       scope: { type: 'string', enum: ['global', 'module'], required: true },
       action: { type: 'string', enum: ['list', 'get', 'set', 'delete'], required: true },
-      key: { type: 'string' }, value: { type: 'string' }, expectedModuleId: { type: 'string' },
+      key: { type: 'string' }, value: { type: 'string' },
       expectedRevisions: { type: 'object', additionalProperties: true },
     },
     output: {
@@ -35,7 +37,7 @@ export function registerModuleVariableTools(ctx: Context, host: Pick<ModuleToolH
       render: (_args, value) => [{ type: 'text', text: JSON.stringify(value) }],
     },
     execute: async (args, exec) => {
-      if (Object.keys(args).some(key => !['scope', 'action', 'key', 'value', 'expectedModuleId', 'expectedRevisions'].includes(key))) throw new ModuleRulesError('变量工具含未知字段')
+      if (Object.keys(args).some(key => !['moduleId', 'scope', 'action', 'key', 'value', 'expectedRevisions'].includes(key))) throw new ModuleRulesError('变量工具含未知字段')
       const writing = args.action === 'set' || args.action === 'delete'
       if (args.action === 'list' && args.key !== undefined || args.action !== 'set' && args.value !== undefined) throw new ModuleRulesError('该变量操作不接受 key 或 value')
       if (!writing && args.expectedRevisions !== undefined) throw new ModuleRulesError('读取变量不接受写入版本')
@@ -44,10 +46,9 @@ export function registerModuleVariableTools(ctx: Context, host: Pick<ModuleToolH
         assertVariableValues({ [args.key]: '' })
       }
       if (args.action === 'set' && typeof args.value !== 'string') throw new ModuleRulesError('set 必须显式提供字符串 value；空串是有效值')
-      if (writing && (args.expectedModuleId === undefined || args.expectedRevisions === undefined)) throw new ModuleRulesError('写变量必须提供 expectedModuleId 和 expectedRevisions')
+      if (writing && args.expectedRevisions === undefined) throw new ModuleRulesError('写变量必须提供 expectedRevisions')
       exec.signal.throwIfAborted()
-      const target = host.target(exec)
-      if (args.expectedModuleId !== undefined && args.expectedModuleId !== target.id) throw new ModuleRulesError('模块目标已变化，请重新读取', 409, 'module-target-conflict')
+      const target = host.target(exec, args.moduleId)
       let saved: ModuleVariablesResult | undefined
       const state = writing ? (saved = editModuleVariables(target.dir, {
         scope: args.scope, changes: { [args.key!]: args.action === 'delete' ? null : args.value! },

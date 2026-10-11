@@ -1,6 +1,5 @@
 import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-host-webserver'
-import { basename, join } from 'node:path'
 import { saveModuleParams } from './host/manifest.ts'
 import { scheduleWebSurfaceRepair } from './web-surface.ts'
 import { detectModels, invalidateModelCatalog, listAdvertisedModels } from './runtime/models.ts'
@@ -27,7 +26,6 @@ import type { PromptSettings, RuntimeOptions } from './config.ts'
 import { MODULES_DIR } from './host/paths.ts'
 import { enabledModuleIds, resolveRequestedModuleDir } from './host/config-store.ts'
 import { selectedPersonaModules } from './host/persona-selection.ts'
-import { DEFAULT_MODULE_ID } from './shared/module-ids.ts'
 import { ensureSkillSeed } from './host/skills-actions.ts'
 import { createSkillsRuntime } from './host/skills-runtime.ts'
 import { createAgentAssembly } from './runtime/agent-assembly.ts'
@@ -75,21 +73,9 @@ export function apply(ctx: Context, configIn: Config): void {
       warn: (message) => warn(ctx, message),
     })
   }
-  const refreshModuleRuntime = async (id = basename(activeModuleDir())): Promise<void> => {
+  const refreshModuleRuntime = async (id: string): Promise<void> => {
     refreshModuleSlices(id)
     await assembly?.refresh(id)
-  }
-
-  /**
-   * 无请求目标时供 TUI 使用的模块：启用表首项（目录必须真实存在），表为空或 schema 过旧时
-   * 退回种子默认模块；编辑器的显式 id 单独解析，未经此函数。
-   */
-  const activeModuleDir = (): string => {
-    const [first] = enabledModuleIds(MODULES_DIR)
-    const id = first !== undefined && moduleDirExists(MODULES_DIR, first)
-      ? first
-      : (moduleDirExists(MODULES_DIR, DEFAULT_MODULE_ID) ? DEFAULT_MODULE_ID : '')
-    return id === '' ? '' : join(MODULES_DIR, id)
   }
 
   // 宿主模块拥有技能状态、官方引用 provider 与资产操作的生命周期。
@@ -120,7 +106,7 @@ export function apply(ctx: Context, configIn: Config): void {
       skillsRuntime.invalidate()
       await assembly?.refresh(id)
     },
-    capabilityChanged: (id) => refreshModuleRuntime(id),
+    capabilityChanged: (id) => id === undefined ? assembly?.refresh() : refreshModuleRuntime(id),
     moduleListChanged: () => assembly?.refresh(),
   })
 
@@ -140,15 +126,16 @@ export function apply(ctx: Context, configIn: Config): void {
 registerTuiCommand(
   ctx,
   NS,
-  () => ({ ...currentSource(), skillCatalog: skillsRuntime.listSkills(), activeSkillsDirs: [skillsRuntime.skillsRoot] }),
+  () => ({ ...currentSource(), skillCatalog: skillsRuntime.listSkills(), activeSkillsDirs: [skillsRuntime.skillsRoot], enabledModules: enabledModuleIds(MODULES_DIR).filter((id) => moduleDirExists(MODULES_DIR, id)) }),
   getModelsState,
   () => listAdvertisedModels(ctx),
-  () => activeModuleDir(),
-  // TUI 参数开关：写激活模块 module.yml（settings 不再承载引擎参数）。
+  // TUI 的主语由命令里的 `module <id>` 显式声明：这里只把声明的 id 解析成目录，未声明解析为空。
+  (moduleId) => resolveRequestedModuleDir(MODULES_DIR, moduleId),
+  // TUI 参数开关：写这次声明的模块 module.yml（settings 不再承载引擎参数）。
   // 保存/重建失败直接抛给命令层，由 CommandResult:error 呈现给用户。
-  async (key, value) => {
-    saveModuleParams(MODULES_DIR, basename(activeModuleDir()), { [key]: value }, undefined)
-    await refreshModuleRuntime()
+  async (moduleId, key, value) => {
+    saveModuleParams(MODULES_DIR, moduleId, { [key]: value }, undefined)
+    await refreshModuleRuntime(moduleId)
   },
   // 技能启停：改写技能文件的调用策略键（正文不动），失败原因回给命令层。
   (name, enabled) => {
@@ -184,9 +171,9 @@ registerTuiCommand(
 
   // 内置模型工具由三个独立模块按需挂载；宿主只提供对应注册服务。
   const moduleToolHost: ModuleToolHost = {
-    // 写入目标是该 Agent 已启用的规则模块（启用表 ∩ 磁盘，多个时取第一个），
-    // 不再查询官方 `agentPresets` 的会话绑定；人设来源是独立引用，不参与这里。
-    target: (exec) => resolveModuleToolTarget(exec, MODULES_DIR, (sessionId) => assembly?.moduleIds(sessionId) ?? []),
+    root: MODULES_DIR,
+    // 写入目标由这次工具调用显式声明的 moduleId 定位；该 Agent 已启用的模块只作拒绝提示。
+    target: (exec, moduleId) => resolveModuleToolTarget(exec, MODULES_DIR, (sessionId) => assembly?.moduleIds(sessionId) ?? [], moduleId),
     rebuild: (id) => refreshModuleRuntime(id),
   }
   ctx.provide('pt-module-import-tools', {

@@ -17,6 +17,7 @@ import { atomicWriteTextFile } from './text-file.ts'
 import { moduleDirExists } from './manifest.ts'
 import { assertModuleId, assertNoModuleLinks, modulePathExists } from './module-install.ts'
 import { ModuleRulesError, revisionOf, withModuleLock } from './module-storage.ts'
+import { isModuleId } from '../shared/module-ids.ts'
 
 /** 启用表 schema：3 起 enabled 才拥有普通模块启用语义。 */
 export const ENABLE_TABLE_SCHEMA = 3
@@ -105,12 +106,14 @@ export function enabledModuleIds(moduleRoot: string): string[] {
  * 解析**编辑目标**模块目录：只按请求声明定位，没有声明就没有目标。
  *
  * 这是「按请求定位编辑目标」的唯一入口——编辑器不必依赖某个全局单选：写请求带上
- * 模块 id 就写那个模块。目标目录不存在或 `<root>/<id>/module.yml` 缺失时返回空串，
- * 由调用方按「无目标」拒绝，不静默改写到别的模块（尤其是启用表首项）。
+ * 模块 id 就写那个模块。id 形状非法（`../x`、`..`、含大写或斜杠）或目标目录不存在、
+ * `<root>/<id>/module.yml` 缺失时返回空串，由调用方按「无目标」拒绝，不静默改写到
+ * 别的模块（尤其是启用表首项）。形状判据必须先于存在性：`join` 不拦 `..`，只查
+ * 「文件在不在」会让存储根之外的同级模块被当成本插件管理的模块读写。
  */
 export function resolveEditDir(moduleRoot: string, moduleId: string): string {
   const target = moduleId.trim()
-  if (target.length === 0) return ''
+  if (!isModuleId(target)) return ''
   return moduleDirExists(moduleRoot, target) ? join(moduleRoot, target) : ''
 }
 

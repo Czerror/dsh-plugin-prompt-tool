@@ -8,28 +8,40 @@ export interface ModuleToolTarget {
 }
 
 export interface ModuleToolHost {
-  target: (exec: ToolExecution) => ModuleToolTarget
+  /** 模块存储根：导入类工具在这里创建新模块，不需要既有模块作主语。 */
+  root: string
+  /** 目标模块只来自这次调用声明的 `moduleId`；未声明即无目标，拒绝，不回退任何默认模块。 */
+  target: (exec: ToolExecution, moduleId: string | undefined) => ModuleToolTarget
   rebuild: (id: string) => Promise<void>
 }
 
 /**
- * 工具目标来自执行 Agent 的**已启用规则模块**：这个 Agent 实际装了哪几层规则。
+ * 模块工具的主语参数：每次调用显式声明，不传即没有目标。
  *
- * 不再查询宿主 `agentPresets.composedPreset()`——模块与官方预设已解耦，会话绑定哪个
- * 官方预设与本插件的写入目标无关（那正是「装的是 A 的提示词、工具却写进 B」的成因）。
- * 装了多层时取启用表里的第一个，与配装顺序同源。
+ * 主语由**这次操作**声明，工具 schema 是静态的、列不出会话里的模块，候选 id 因此进拒绝文案。
+ */
+export const MODULE_ID_PARAM = {
+  type: 'string',
+  description: '本次读写的模块 id（模块存储根下 module.yml 所在目录名）。不传即没有目标，直接拒绝——本工具不会替你挑一个模块。',
+} as const
+
+/**
+ * 工具目标由这次调用显式声明的 `moduleId` 定位（ADR-0014 阶段 4）：未声明即**没有目标**，
+ * 按错误拒绝，不回退装配记录首项或包内默认模块。
  *
- * 人设来源不在其中：它由 `personaSources` 独立引用、可以指向未启用的模块，正文写入走
- * persona 端点并显式携带模块 id，因此「这套人设从哪来」不经过本函数。
- *
- * 目标 id 只来自装配记录（宿主 `agent/created` 事件建立），**不取自工具参数或模型输出**；
- * 落点仍由 `assertModuleDirectory` 做存在性、链接与身份校验。
+ * 该 Agent 这次装了哪几层只作拒绝时的候选提示，绝不作为目标；落点由 `assertModuleDirectory`
+ * 做存在性、链接与身份校验，任意已安装模块都可读写（编辑通道不查启用，ADR-0011）。
  */
 export function resolveModuleToolTarget(
-  exec: ToolExecution, root: string, moduleIdsOf: (sessionId: string) => readonly string[],
+  exec: ToolExecution, root: string, moduleIdsOf: (sessionId: string) => readonly string[], moduleId: string | undefined,
 ): ModuleToolTarget {
-  const agent = exec.agent
-  const id = agent === undefined ? undefined : moduleIdsOf(agent.id)[0]
-  if (id === undefined) throw new Error('当前会话没有已启用的规则模块：请先在模块页启用至少一个模块')
+  const id = typeof moduleId === 'string' ? moduleId.trim() : ''
+  if (id.length === 0) {
+    const agent = exec.agent
+    const candidates = agent === undefined ? [] : moduleIdsOf(agent.id)
+    throw new Error(candidates.length === 0
+      ? '没有声明模块目标：请在 moduleId 参数里指定要读写的模块 id'
+      : `没有声明模块目标：请在 moduleId 参数里指定要读写的模块 id（本 Agent 已启用：${candidates.join('、')}）`)
+  }
   return { id, root, dir: assertModuleDirectory(root, id) }
 }

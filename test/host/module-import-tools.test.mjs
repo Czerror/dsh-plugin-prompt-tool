@@ -27,7 +27,7 @@ async function setup(t, rebuild = async () => {}) {
   root.provide('agents', { list: () => [agent] })
   const enabled = []
   const runtime = createAgentAssembly(root, { moduleRoot, enabledModules: () => enabled })
-  const dispose = registerModuleImportTools(agent.ctx, { target: () => ({ id, dir, root: moduleRoot }), rebuild: async id => { await rebuild(id); await runtime.refresh(id) } })
+  const dispose = registerModuleImportTools(agent.ctx, { root: moduleRoot, rebuild: async id => { await rebuild(id); await runtime.refresh(id) } })
   await new Promise(resolve => setImmediate(resolve))
   t.after(async () => { dispose(); await runtime.dispose(); await root.fiber.dispose() })
   const call = (args, signal = new AbortController().signal) => root.tools.execute({ callId: `call-${++calls}`, name: 'module_import', arguments: args, agent, signal })
@@ -102,4 +102,15 @@ test('模块导入工具把顺序歧义返回为候选，选择后重新预览�
   const saved = await f.success({ files, promptOrderCharacterId: '20', preview: false, expectedSourceDigest: preview.sourceDigest, expectedPreviewRevision: preview.previewRevision })
   const module = parse(readFileSync(join(moduleRoot, saved.id, 'module.yml'), 'utf8'))
   assert.deepEqual(module.rules.filter(item => item.enabled !== false).map(item => item.then[0].config.text), ['B'])
+})
+
+test('导入工具与装配记录解耦：没有启用模块时显式目标的导入照常落盘', async t => {
+  const f = await setup(t)
+  assert.deepEqual(f.enabled, [], '这个 Agent 没有任何装配记录（导入不借既有模块当主语）')
+  const files = [{ path: 'plain.json', content: JSON.stringify({ id: 'plain', name: 'Plain', modules: [], rules: [rule] }) }]
+  const preview = await f.success({ files })
+  assert.equal(preview.state, 'ready')
+  const saved = await f.success({ files, preview: false, expectedSourceDigest: preview.sourceDigest, expectedPreviewRevision: preview.previewRevision })
+  assert.equal(saved.persisted, true)
+  assert.equal(parse(readFileSync(join(moduleRoot, saved.id, 'module.yml'), 'utf8')).rules.length, 1, '正文真的落盘')
 })

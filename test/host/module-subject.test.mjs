@@ -89,6 +89,19 @@ test('未声明主语不选目标：接线函数返回空串，绝不落到启�
   assert.equal(resolveRequestedModuleDir(moduleRoot, 'no-such-wire'), '', '声明了但不存在也是无目标')
 })
 
+test('非法模块 id 不解引用到存储根之外：形状判据先于存在性', () => {
+  // 存储根的**同级**放一个合法模块目录：`../evil` 这类 id 不得把它解成编辑目标。
+  const outside = join(moduleRoot, '..', 'evil')
+  mkdirSync(outside, { recursive: true })
+  writeFileSync(join(outside, 'module.yml'), 'id: evil\nmodules: []\n', 'utf8')
+
+  for (const bad of ['../evil', '..', 'a/b', 'Bad_ID', '']) {
+    assert.equal(resolveEditDir(moduleRoot, bad), '', `${JSON.stringify(bad)} 不是模块 id，不解析目录`)
+    assert.equal(resolveRequestedModuleDir(moduleRoot, bad), '', `${JSON.stringify(bad)} 的主语解析同样拒绝`)
+  }
+  assert.equal(resolveEditDir(moduleRoot, 'evil'), '', '同级模块不在存储根内：不因「名字合法」而解出来')
+})
+
 test('非法 x-module-id 在事务边界显式 400，不进入端点 handler', async () => {
   makeModule('header-ok', 'modules: [rule-engine]\nrules: []\n')
   const { call } = bridgeHarness()
