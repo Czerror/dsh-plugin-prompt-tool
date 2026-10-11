@@ -120,6 +120,13 @@ export function prepareAssembly(action, plugin) {
         // 原模块给完整目录，只判"全缺"会裁成 `[bash]`）。
         // 声明写 `requireMatch: true` 才启用；**不写就照名单裁**（与 `tool-filter.mjs` 一致）。
         const available = new Set(result.tools.map((tool) => tool?.name).filter((name) => typeof name === 'string'))
+        // 发现工具必须真的留在裁切后的目录里：不在（改名、副本停在旧名）或它自己会被裁掉
+        // （白名单模式下没写进静态 allow），模型都调不到它，解锁名单永远读回空。原本这是
+        // **静默失效**——收窄照常发生、只是解锁再也不生效，这里补一条可观察告警。
+        // key 写错同理但判据不可得（模型产出的参数名没有 schema 可比对），属已知边界。
+        if (allowExtra !== undefined && (!available.has(allowFrom.tool) || tools.blocks(allowFrom.tool))) {
+          warnOnce(`${plugin}: assembly action ${labelOf(action)}: allowFrom.tool "${allowFrom.tool}" is not in the assembled tool set — unlocking can never take effect`)
+        }
         // 必需名单 = 静态 allow ∪ 本轮解锁项：解锁项同样是「本该存在」的工具，缺了就 fail-open。
         const required = tools.allow === undefined && allowExtra === undefined
           ? undefined
