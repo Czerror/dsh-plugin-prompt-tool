@@ -285,7 +285,7 @@ function ManagedFieldsPanel(props: {
             : field.fallbackNote === 'followsCustom' ? t('strategyParam.managed.followsCustom') : undefined
           return (
             <li key={field.path} data-managed-path={field.path} data-managed-source={field.sourceParam}>
-              {t(`param.${field.sourceParam}`)} · {t('strategyParam.managed.source', { param: field.sourceParam })} · {shown}
+              {t('strategyParam.managed.source', { param: field.sourceParam })} · {shown}
               {note === undefined ? undefined : <> · {note}</>}
             </li>
           )

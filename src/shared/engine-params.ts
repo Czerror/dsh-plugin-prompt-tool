@@ -14,7 +14,6 @@
  * 全部字段可选：缺省 = 模板 module.yml layerSettings / 引擎默认，符合「一切皆可自定义」。
  */
 import type { InjectionPoint } from './engine-capabilities.ts'
-import { LEGACY_PROMPT_PARAM_DEFINITIONS, LEGACY_PROMPT_PARAM_KEYS, isLegacyPromptParam, type LegacyPromptParams } from './legacy-prompt-params.ts'
 
 export interface EngineParams {
   /** 主会话请求路由 provider；与模型名同时非空时生效。 */
@@ -60,7 +59,7 @@ type AssertKeysEqual<A extends string, B extends string> =
  * RuntimeOptions（装配态）与 WriteModuleOptions（写入态）都从这里派生，
  * 防止「加参数只改一处、模块写者忘透传」的静默漂移（如 stageAdvanceDescription 历史事故）。
  */
-export type ModuleWriterParams = Partial<EngineParams & LegacyPromptParams>
+export type ModuleWriterParams = Partial<EngineParams>
 
 /**
  * 数值型引擎参数保存前校验。
@@ -130,7 +129,7 @@ export const ENGINE_PARAM_DEFINITIONS: Record<EngineParamKey, EngineParamDefinit
 export const ENGINE_PARAM_KEYS = Object.keys(ENGINE_PARAM_DEFINITIONS) as EngineParamKey[]
 
 /** writeModule 实际透传键：全部引擎参数可直接进入 writer。 */
-export const WRITER_PARAM_KEYS = [...ENGINE_PARAM_KEYS, ...LEGACY_PROMPT_PARAM_KEYS]
+export const WRITER_PARAM_KEYS = [...ENGINE_PARAM_KEYS]
 
 /** 编译期断言：WRITER_PARAM_KEYS 与 ModuleWriterParams 键必须一致。 */
 const _assertWriterParamsKeys: AssertKeysEqual<typeof WRITER_PARAM_KEYS[number], keyof ModuleWriterParams> = true
@@ -246,8 +245,7 @@ export function validateEngineParamValues(overrides: Record<string, unknown>): E
   for (const [key, value] of Object.entries(overrides)) {
     // undefined/null 由保存层跳过。
     if (value === undefined || value === null) continue
-    const rule = Object.hasOwn(ENGINE_PARAM_DEFINITIONS, key) ? ENGINE_PARAM_DEFINITIONS[key as EngineParamKey]
-      : isLegacyPromptParam(key) ? LEGACY_PROMPT_PARAM_DEFINITIONS[key] : undefined
+    const rule = Object.hasOwn(ENGINE_PARAM_DEFINITIONS, key) ? ENGINE_PARAM_DEFINITIONS[key as EngineParamKey] : undefined
     if (rule === undefined) {
       errors.push({ key, message: `${key}: 未知参数键，请按当前参数定义更新模块` })
       continue

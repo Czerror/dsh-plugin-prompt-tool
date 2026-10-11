@@ -149,7 +149,7 @@ test('旧参数键不被读取，规则只由显式事务改写；含旧内容�
   const ownedNear = loadModuleSpec(dir).rules.find(rule => rule.id === 'near-anchor')
   assert.equal(ownedNear.enabled, false)
   assert.equal(ownedNear.then[0].config.params.text, 'OWNED RULE')
-  assert.throws(() => saveModuleParams(root, FIXTURE_MODULE_ID, { firstTurnText: '' }, undefined), /旧规则参数/)
+  assert.throws(() => saveModuleParams(root, FIXTURE_MODULE_ID, { notAParam: '' }, undefined), /未知引擎参数/)
   assert.equal(loadModuleSpec(dir).rules.find(rule => rule.id === 'near-anchor').then[0].config.params.text, 'OWNED RULE', '被拒的写入不改动已提交规则')
   // 只含旧内容的孤儿模块照常加载，旧内容不参与执行、原文件不被改写。
   const orphanDir = join(root, 'orphan')

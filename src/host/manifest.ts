@@ -23,7 +23,6 @@ import { readPersonaSpec, type PersonaSnapshot, type PersonaSpec } from '../shar
 import { readStorageConfig } from './config-store.ts'
 import { assertModuleDirectory, assertModuleId, assertModuleTree, modulePathExists, setModuleDefinitionId } from './module-install.ts'
 import { engineParamPath, readModuleLayerSettings, ModuleLayerSettingsError } from './module-layer-settings.ts'
-import { isLegacyPromptParam } from '../shared/legacy-prompt-params.ts'
 import type { RuleDefinition } from '../shared/rules.ts'
 import { assertCanonicalRuleSource, ensureModuleSlices, loadModuleDefinition, commitModuleDefinition, withModuleDefinition as commitDefinitionEdit, withModuleLock, ModuleRulesError } from './module-storage.ts'
 export { ModuleLayerSettingsError } from './module-layer-settings.ts'
@@ -405,7 +404,6 @@ export function saveModuleParams(
       // 「从有值改回留空」依赖空值清掉旧键（渲染层空值跳过 = 继承模板/宿主默认）。
       if (value === undefined || value === null || key.trim().length === 0) continue
       const isEmpty = value === '' || (Array.isArray(value) && value.length === 0)
-      if (isLegacyPromptParam(key)) throw new Error(`旧规则参数 ${key} 已退出；请改写为 rules（可由内置技能交给模型迁移）`)
       const path = engineParamPath(key)
       if (isEmpty) deleteYamlPath(doc, path)
       else doc.setIn(path, value)

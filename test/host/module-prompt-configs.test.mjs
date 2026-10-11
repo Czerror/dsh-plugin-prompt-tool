@@ -24,7 +24,6 @@ const { FIXTURE_MODULE_ID, installFixtureModule } = await import('../fixtures/mo
 const { Config, readModulesEnabled } = await import('../../src/config.ts')
 const { createPromptConfigs } = await import('../../engine/schema.mjs')
 const { writeModule } = await import('../../src/host/write-module.ts')
-const { promptConfigToRule } = await import('../../src/host/rule-builder.ts')
 // 模板定位契约以打包目录 lib/ 为锚；其余行为直接覆盖当前源码。
 const { loadPromptTemplates } = await import('../../lib/index.mjs')
 const { loadModuleSpec } = await import('../../src/host/manifest.ts')
@@ -63,11 +62,6 @@ test('writeModule 物化夹具的规则切片：配置 id、层、角色与顺�
     assert.equal(typeof spec.order, 'number')
     assert.equal(spec.role, 'user')
   }
-})
-
-test('退役策略在转换入口就拒绝，不产出引擎必然拒绝的规则', () => {
-  assert.throws(() => promptConfigToRule({ id: 'prompt-injector', strategy: 'custom-fallback', layer: 'pre-step' }),
-    /custom-fallback.*(退役|anchor)/, '旧策略必须指向替代写法，而不是静默转换')
 })
 
 test('Config：部署设置仅保留模块运行总闸', () => {

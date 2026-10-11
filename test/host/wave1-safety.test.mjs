@@ -23,12 +23,11 @@ test('validateEngineParamValues：全量类型校验（布尔/数值/字符串/�
   // B7 T3：原用例里的 bootstrapTools / allowKinds / stages / bootstrapMaxTokens 已随七个专用能力删除，
   // 换成本批存活的同 kind 键。
   assert.deepEqual(validateEngineParamValues({
-    firstTurnAnchor: true,
+    toolGitBashEnabled: true,
     modelTemperature: '0.7',
     modelMaxTokens: 8192,
     subagentTemperature: '',
     customToolRequireApproval: ['shell', 'fs'],
-    buildPattern: '^(写|实现)',
     maxDepth: 'provider-managed',
   }), [])
   // 布尔键收窄。

@@ -1,12 +1,11 @@
 /** 受管字段白名单；实际来源必须由 writer 最终合并分支提供，不能仅凭 id 判定。 */
-import type { LegacyPromptParamKey } from './legacy-prompt-params.ts'
-import { ENGINE_PARAM_DEFINITIONS, type EngineParamKey } from './engine-params.ts'
+import { ENGINE_PARAM_DEFINITIONS } from './engine-params.ts'
 
 export interface ManagedConfigField {
   /** 配置内的字段路径：`params.<键>` 或顶层字段名（`enabled` / `modelScope`）。 */
   path: string
   /** 该字段由 writer 投影时使用的模块级扁平参数键。 */
-  sourceParam: EngineParamKey | LegacyPromptParamKey
+  sourceParam: string
   /**
    * 计算结果而不是逐字映射：来源参数的组合结果（或集合开关），
    * 只读回显但不断言等于来源参数的字面值。
