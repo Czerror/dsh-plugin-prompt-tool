@@ -1198,8 +1198,7 @@ export function registerSettingsBridge(
               return
             }
             const record = tx.record
-            if (!isRecord(record)
-              || Object.keys(record).some(key => !['expectedModuleId', 'expectedRevisions', 'edits', 'activateRuleId', 'validateOnly', 'refreshOnly'].includes(key))
+            if (Object.keys(record).some(key => !['expectedModuleId', 'expectedRevisions', 'edits', 'activateRuleId', 'validateOnly', 'refreshOnly'].includes(key))
               || typeof record.expectedModuleId !== 'string' || record.expectedModuleId === ''
               || (record.edits !== undefined && !Array.isArray(record.edits))
               || (record.activateRuleId !== undefined && (typeof record.activateRuleId !== 'string' || record.activateRuleId.length === 0))
@@ -1362,7 +1361,7 @@ export function registerSettingsBridge(
               return
             }
             const record = tx.record
-            if (!isRecord(record) || (record.scope !== 'global' && record.scope !== 'module')
+            if ((record.scope !== 'global' && record.scope !== 'module')
               || Object.keys(record).some(key => !['scope', 'variables', 'enabled', 'expectedModuleId', 'expectedRevisions', 'refreshOnly'].includes(key))) {
               tx.write(400, { ok: false, code: 'module-variables-invalid', message: '变量请求必须声明 global/module 范围，且只包含已声明字段' })
               return
@@ -1478,7 +1477,7 @@ export function registerSettingsBridge(
               return
             }
             const record = tx.record
-            if (!isRecord(record) || Object.keys(record).some(key => !['persona', 'expectedModuleId', 'expectedRevision', 'refreshOnly'].includes(key))
+            if (Object.keys(record).some(key => !['persona', 'expectedModuleId', 'expectedRevision', 'refreshOnly'].includes(key))
               || record.refreshOnly !== undefined && (typeof record.refreshOnly !== 'boolean'
                 || record.refreshOnly === true && (record.persona !== undefined || record.expectedRevision !== undefined))) {
               tx.write(400, { ok: false, code: 'module-persona-invalid', message: '人设请求包含非法字段或混合了刷新与写入' })
@@ -1525,7 +1524,7 @@ export function registerSettingsBridge(
           path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.personaSources,
           handler: route({ body: 'json', handle: async (tx) => {
             const record = tx.record
-            if (!isRecord(record) || Object.keys(record).some(key => !['sources', 'expectedRevision', 'refreshOnly'].includes(key))
+            if (Object.keys(record).some(key => !['sources', 'expectedRevision', 'refreshOnly'].includes(key))
               || record.refreshOnly !== undefined && typeof record.refreshOnly !== 'boolean'
               || record.refreshOnly === true && (record.sources !== undefined || record.expectedRevision !== undefined)) {
               tx.write(400, { ok: false, code: 'persona-sources-invalid', message: '人设来源请求包含非法字段或混合了刷新与写入' })
@@ -1574,7 +1573,7 @@ export function registerSettingsBridge(
           path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.assetRelease,
           handler: route({ body: 'json', handle: async (tx) => {
             const record = tx.record
-            if (!isRecord(record) || Object.keys(record).length !== 1 || typeof record.sourceId !== 'string' || !/^[0-9a-f-]{36}$/i.test(record.sourceId)) {
+            if (Object.keys(record).length !== 1 || typeof record.sourceId !== 'string' || !/^[0-9a-f-]{36}$/i.test(record.sourceId)) {
               tx.write(400, { ok: false, code: 'asset-release-rejected', message: 'sourceId 必须是有效上传来源标识' })
               return
             }

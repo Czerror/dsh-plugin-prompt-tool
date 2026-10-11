@@ -280,3 +280,31 @@ test('排序请求：未变化的排序不发保存请求', async () => {
   await session.save(session.state.configs)
   assert.equal(calls.length, 1, '同一个数组引用 = 未变化')
 })
+
+test('排序请求：订阅者在状态变化时收到通知，退订后不再收到', async () => {
+  const { session } = await makeOrderSession((body) => body === undefined ? { ok: true, value: firstSnapshot } : { ok: true, value: swappedSnapshot })
+  let notified = 0
+  const unsubscribe = session.subscribe(() => { notified += 1 })
+  assert.equal(await session.load(), true)
+  assert.ok(notified > 0, '读取完成必须通知订阅者')
+  const settled = notified
+  unsubscribe()
+  await session.save(swappedCards(session.state.configs))
+  assert.equal(notified, settled, '退订后不得再收到通知')
+})
+
+test('排序请求：update 换掉依赖后，后续调用用新依赖', async () => {
+  let refreshes = 0
+  const { session } = await makeOrderSession(
+    (body) => body === undefined ? { ok: true, value: firstSnapshot } : { ok: true, value: swappedSnapshot },
+    async () => { refreshes += 1; return true },
+  )
+  await session.load()
+  await session.save(swappedCards(session.state.configs))
+  assert.equal(refreshes, 1)
+  // hook 每次提交后都会刷新依赖：换掉之后旧回调不得再被调用。
+  session.update({ t, reloadConfigs: async () => false })
+  await session.save(swappedCards(session.state.configs))
+  assert.equal(refreshes, 1, '旧回调不再被调用')
+  assert.match(session.state.error, /排序已保存，但当前模块读取失败/)
+})
