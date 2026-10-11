@@ -112,7 +112,7 @@ function guardModuleIdentity(tx: BridgeTransaction, dir: string): boolean {
     return false
   }
   if (tx.editDir() !== dir || (typeof expected === 'string' && expected !== basename(dir))) {
-    tx.write(409, { ok: false, code: 'module-changed', message: '当前模块已切换；旧草稿未写入，请重新读取后保存' })
+    tx.write(409, { ok: false, code: 'module-changed', message: '目标模块已切换；旧草稿未写入，请重新读取后保存' })
     return false
   }
   return true
@@ -141,7 +141,7 @@ export function subjectGate(
 ): string | undefined {
   const dir = tx.editDir()
   if (BRIDGE_SUBJECT_POLICY[key] === 'required' && dir.length === 0) {
-    tx.write(400, { ok: false, code: 'module-dir-unavailable', message: '当前模块目录不可用' })
+    tx.write(400, { ok: false, code: 'module-dir-unavailable', message: '该模块目录不可用' })
     return undefined
   }
   if (needs.write === true && !guardEditableModuleDir(dir, tx.write)) return undefined

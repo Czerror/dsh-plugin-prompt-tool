@@ -12,11 +12,11 @@
  */
 export const PROMPTS_ZH = {
   'variables.deleteTitle': '清空模板变量？',
-  'variables.deleteDescription': '清空当前模块的全部模板变量；提示词配置仍保留。',
+  'variables.deleteDescription': '清空该模块的全部模板变量；提示词配置仍保留。',
   'variables.deleteFailed': '模板变量清空失败，请重试。',
   'card.actionsAria': '{name} 的操作',
   'card.deleteTitle': '删除 {name}',
-  'card.deleteDescription': '从当前模块移除“{name}”及其配置。',
+  'card.deleteDescription': '从该模块移除“{name}”及其配置。',
   'card.reloadTitle': '重新读取 {name}',
   'card.reloadDescription': '重新读取将丢弃“{name}”的未保存草稿，并采用当前磁盘内容。',
   'card.operationFailed': '操作失败，请重试',
@@ -45,7 +45,7 @@ export const PROMPTS_ZH = {
   'configs.createFirst': '创建第一条配置',
   'configs.chooseEditable': '选择或新建可编辑模块',
   'configs.readOnly.disabled': '模块写入已关闭，请在模块配置中开启。',
-  'configs.readOnly.system': '当前模块只读，请选择可编辑模块。',
+  'configs.readOnly.system': '该模块只读，请选择可编辑模块。',
   'workspace.refreshing': '正在刷新，保留当前数据',
   'workspace.retry': '重新读取',
   // 配置列表与编辑器（PromptConfigList / PromptConfigsEditor）。
@@ -131,7 +131,7 @@ export const PROMPTS_ZH = {
   'form.text.mainSession': '注入主会话的文本',
   'form.text.actionHint': '仅在上方选择的行为生效时使用此文本。',
   'form.layerSettings.label': '本层共享设置（{layer}）',
-  'form.layerSettings.hint': '作用于当前模块的「{layer}」相关能力，同层所有规则共用。修改这里会影响其他卡片；其他视图仅编辑当前规则。',
+  'form.layerSettings.hint': '作用于该配置所属模块的「{layer}」相关能力，同层所有规则共用。修改这里会影响其他卡片；其他视图仅编辑当前规则。',
   'form.advanced.label': '高级元数据',
   'form.advanced.setCount': '高级元数据 · 已设置 {count} 项',
   'form.id.label': '标识',
@@ -376,10 +376,10 @@ export const PROMPTS_ZH = {
 
   // 模板变量编辑器与模块级变量卡（VariablesEditor / PromptConfigsEditor）。
   'variables.title': '模板变量',
-  'variables.scope.module': '当前模块',
+  'variables.scope.module': '模块范围',
   'variables.scope.global': '全局共享',
   'variables.globalHint': '全局值由所有模块共享；模块中的同名值优先。',
-  'variables.overridden': '由当前模块覆盖：{names}',
+  'variables.overridden': '由该模块覆盖：{names}',
   'variables.inherited': '继承全局值：{names}',
   'variables.nameSeparator': '、',
   'variables.loading': '正在读取变量…',
@@ -586,7 +586,7 @@ export const PROMPTS_EN: Record<keyof typeof PROMPTS_ZH, string> = {
   'form.text.mainSession': 'Text injected into the main session',
   'form.text.actionHint': 'This text is used only by the selected behavior above.',
   'form.layerSettings.label': 'Shared layer settings ({layer})',
-  'form.layerSettings.hint': 'These settings control the current module’s capabilities associated with {layer} and are shared by all rules in the layer. Changes affect other cards; other views edit only this rule.',
+  'form.layerSettings.hint': 'These settings control the capabilities associated with {layer} in the module that owns this configuration, and are shared by all rules in the layer. Changes affect other cards; other views edit only this rule.',
   'form.advanced.label': 'Advanced metadata',
   'form.advanced.setCount': 'Advanced metadata · {count} set',
   'form.id.label': 'ID',
@@ -825,7 +825,7 @@ export const PROMPTS_EN: Record<keyof typeof PROMPTS_ZH, string> = {
   'strategyParam.noParams': 'This strategy has no extra parameters; template variables are edited above.',
 
   'variables.title': 'Template variables',
-  'variables.scope.module': 'Current module',
+  'variables.scope.module': 'Module scope',
   'variables.scope.global': 'Shared globally',
   'variables.globalHint': 'Global values are shared by all modules. Module values override matching names.',
   'variables.overridden': 'Overridden by this module: {names}',

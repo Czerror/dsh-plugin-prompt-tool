@@ -258,7 +258,7 @@ test('排序请求：保存成功后刷新各模块规则版本，刷新失败�
   )
   await failed.session.load()
   await failed.session.save(swappedCards(failed.session.state.configs))
-  assert.match(failed.session.state.error, /排序已保存，但当前模块读取失败/)
+  assert.match(failed.session.state.error, /排序已保存，但配置刷新失败/)
 })
 
 test('排序请求：并发保存第二次被拒，只发一次保存请求', async () => {
@@ -306,5 +306,5 @@ test('排序请求：update 换掉依赖后，后续调用用新依赖', async (
   session.update({ t, reloadConfigs: async () => false })
   await session.save(swappedCards(session.state.configs))
   assert.equal(refreshes, 1, '旧回调不再被调用')
-  assert.match(session.state.error, /排序已保存，但当前模块读取失败/)
+  assert.match(session.state.error, /排序已保存，但配置刷新失败/)
 })

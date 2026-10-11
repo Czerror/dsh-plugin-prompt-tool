@@ -1860,7 +1860,7 @@ export function registerSettingsBridge(
             try {
               const files = await expandModuleSource(request.params.sourceId === undefined ? readBridgeFiles(record.files) : assetSources.read(request.params.sourceId))
               if (tx.editDir() !== dir) {
-                tx.write(409, { ok: false, code: 'characters-preview-stale', message: '当前模块已切换，请重新预览' })
+                tx.write(409, { ok: false, code: 'characters-preview-stale', message: '目标模块已切换，请重新预览' })
                 return
               }
               const prepared = prepareImport(files, 'character', request.params)
@@ -1999,7 +1999,7 @@ export function registerSettingsBridge(
             try {
               const spec = loadModuleSpec(dir)
               if (spec.subagentToolPolicy === undefined || spec.subagentToolPolicy === null) {
-                tx.write(400, { ok: false, code: 'subagent-tool-policy-missing', message: '当前模块未配置 subagentToolPolicy' })
+                tx.write(400, { ok: false, code: 'subagent-tool-policy-missing', message: '该模块未配置 subagentToolPolicy' })
                 return
               }
               const policyUrl = pathToFileURL(join(packageEngineDir(), 'subagent-tool-policy-core.mjs'))

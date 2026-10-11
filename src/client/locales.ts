@@ -208,7 +208,7 @@ const ZH_CORE = {
   'moduleOrder.unavailable': '排序服务不可用',
   'moduleOrder.readFailed': '读取排序失败：{reason}',
   'moduleOrder.saveFailed': '排序保存失败，调整已保留：{reason}',
-  'moduleOrder.refreshFailed': '排序已保存，但当前模块读取失败，请刷新后再编辑。',
+  'moduleOrder.refreshFailed': '排序已保存，但配置刷新失败，请刷新后再编辑。',
 
   'moduleSwitcher.new': '新建模块',
   'moduleSwitcher.import': '导入模块',
@@ -464,7 +464,7 @@ const EN_CORE: Record<keyof typeof ZH_CORE, string> = {
   'moduleOrder.unavailable': 'The ordering service is unavailable',
   'moduleOrder.readFailed': 'Unable to read order: {reason}',
   'moduleOrder.saveFailed': 'Unable to save order. Your changes are retained: {reason}',
-  'moduleOrder.refreshFailed': 'Order saved, but the current module could not be reloaded. Refresh before editing.',
+  'moduleOrder.refreshFailed': 'Order saved, but reloading the configurations failed. Refresh before editing.',
 
   'moduleSwitcher.new': 'New module',
   'moduleSwitcher.import': 'Import module',
