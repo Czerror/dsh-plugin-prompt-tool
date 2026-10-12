@@ -356,6 +356,77 @@ test('store：空主语 bootstrap 不带 x-module-id；模块参数按主语读�
   }
 })
 
+test('store：模块操作刷新更新干净参数，不覆盖总闸、全局值或其他模块的未保存输入', async () => {
+  let depth = 9
+  let modules = twoModules
+  const fetchStub = withFetch(request => {
+    if (request.path.endsWith('/bootstrap')) return bootstrapPayload(twoModules)
+    if (request.path.endsWith('/meta')) return { ok: true, value: { meta: { layers: [], modules } } }
+    if (request.path.endsWith('/param-overrides')) return { ok: true, value: { overrides: { maxDepth: depth } } }
+    if (request.path.endsWith('/module-name')) return { ok: true, value: { name: '新名称', revision: 'updated' } }
+    return { ok: true, value: {} }
+  })
+  try {
+    const store = mountStore()
+    await store.load()
+    store.ensureModuleParams('mod-a'); store.ensureModuleParams('mod-b')
+    await tick()
+    store.patch({ modulesEnabled: false })
+    store.setModuleParam('mod-b', 'maxDepth', '77')
+    store.setGlobalParam('maxDepth', '88')
+    depth = 12; fetchStub.requests.length = 0
+    assert.equal((await store.moduleActions.rename('mod-a', '新名称', 'old')).ok, true)
+    await tick()
+    assert.equal(store.getFields().modulesEnabled, false)
+    assert.equal(store.globalParams.maxDepth, '88')
+    assert.equal(store.moduleParamsOf('mod-a').maxDepth, '12')
+    assert.equal(store.moduleParamsOf('mod-b').maxDepth, '77')
+    assert.deepEqual(fetchStub.reads().map(r => r.headers['x-module-id']), ['mod-a'])
+    assert.equal(fetchStub.requests.some(r => r.path.endsWith('/bootstrap')), false)
+    modules = twoModules.map(module => ({ ...module, declares: [] }))
+    await store.moduleActions.refresh(); await tick()
+    assert.deepEqual(store.moduleParamsOf('mod-a'), EMPTY_PARAMS, '覆盖导入删除参数节后，干净缓存恢复未声明默认值')
+    assert.equal(store.moduleParamsOf('mod-b').maxDepth, '77', '未保存参数仍保留')
+  } finally { fetchStub.restore() }
+})
+
+test('store：模块刷新期间新输入保留，迟到 bootstrap 不回退目录事实', async () => {
+  const original = globalThis.fetch
+  let delayedBoot, delayedParams, waitBoot = false, waitParams = false
+  let modules = twoModules, responseDepth = 9
+  const respond = payload => ({ status: 200, text: async () => JSON.stringify(payload) })
+  globalThis.fetch = async (url) => {
+    const path = String(url)
+    if (path.endsWith('/bootstrap')) {
+      const payload = bootstrapPayload(structuredClone(modules))
+      if (waitBoot) await new Promise(resolve => { delayedBoot = resolve })
+      return respond(payload)
+    }
+    if (path.endsWith('/meta')) return respond({ ok: true, value: { meta: { layers: [], modules } } })
+    if (path.endsWith('/param-overrides')) {
+      if (waitParams) await new Promise(resolve => { delayedParams = resolve })
+      return respond({ ok: true, value: { overrides: { maxDepth: responseDepth } } })
+    }
+    return respond({ ok: true, value: {} })
+  }
+  try {
+    const store = mountStore()
+    await store.load(); store.ensureModuleParams('mod-a'); await tick()
+    waitParams = true; responseDepth = 12
+    await store.moduleActions.refresh(); await tick()
+    store.setModuleParam('mod-a', 'maxDepth', '77')
+    delayedParams(); await tick()
+    assert.equal(store.moduleParamsOf('mod-a').maxDepth, '77')
+    waitParams = false; waitBoot = true
+    const older = store.load()
+    await tick()
+    modules = []
+    await store.moduleActions.refresh()
+    delayedBoot(); await older; await tick()
+    assert.deepEqual(store.moduleParamsOf('mod-a'), EMPTY_PARAMS, '旧 bootstrap 不复活已从目录事实移除的模块缓存')
+  } finally { globalThis.fetch = original }
+})
+
 test('store：写参数只写该模块的键与主语；不可编辑模块不发请求', async () => {
   const modules = [twoModules[0], { ...twoModules[1], facts: facts(false) }]
   const fetchStub = withFetch((request) => {

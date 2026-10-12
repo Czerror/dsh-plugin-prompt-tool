@@ -17,6 +17,7 @@ import {
 import { bridgeViewFromBoot, fieldsFromView, skillFieldsFromSnapshot } from './prompt-tool-view.ts'
 import {
   EMPTY_SWITCHES,
+  deepEqual,
   hasPendingVariableRows,
   promptConfigsDirty,
   shouldReloadAfterModuleSave,
@@ -404,6 +405,7 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
   const saveQueueRef = useRef(createSerialTaskQueue())
   const moduleSaveQueueRef = useRef(createSerialTaskQueue())
   const loadSeqRef = useRef(0)
+  const metaSeqRef = useRef(0)
   const skillsSeqRef = useRef(0)
   const skillsSessionRef = useRef<string | undefined>(undefined)
   /** 用户草稿版本：patch 时递增。load 应答返回时若版本变化，跳过覆盖，避免
@@ -460,6 +462,7 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
   /** 按主语读一次模块参数：读回前不写盘；同一模块同轮加载只发一次（层卡共享）。 */
   const readModuleParams = useCallback(async (moduleId: string): Promise<void> => {
     const entry = moduleParamEntry(moduleId)
+    const readingValues = entry.values
     if (!sectionDeclared(moduleId, 'params', 'layerSettings')) {
       // 声明面明确未声明：磁盘上没有该节，空基线就是真值。不发读；首次保存即建立声明（写路径不查声明面）。
       entry.loaded = true
@@ -472,14 +475,17 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
       // 读数落地前复核：主语仍在该轮装配集合里、且条目没有被这一轮的剪枝丢掉。
       // 模块在读的这段时间可能被停用/删除——迟到的读数不得复活它的按主语状态，
       // 也不得用「模块 X 参数读取失败」盖掉刚弹出的「已删除」提示。
-      if (!assembledModule(moduleId) || moduleParamsRef.current.get(moduleId) !== entry) return
+      if (!assembledModule(moduleId) || moduleParamsRef.current.get(moduleId) !== entry || !sectionDeclared(moduleId, 'params', 'layerSettings')) return
       if (!res.ok) {
         showNotice('error', `模块 ${moduleId} 参数读取失败：` + (res.message ?? 'settings bridge unavailable'))
         return
       }
       const patch = readParamOverridesPatch(res.value.overrides ?? {})
-      entry.values = paramSnapshot(patch)
-      entry.baseline = { ...entry.values }
+      const next = paramSnapshot(patch)
+      entry.baseline = { ...next }
+      // 后台读回只更新未在请求期间编辑的字段。
+      for (const key of SHARED_PARAM_KEYS) if (!deepEqual(entry.values[key], readingValues[key])) Object.assign(next, { [key]: entry.values[key] })
+      entry.values = next
       entry.loadedKeys = new Set(SHARED_PARAM_KEYS.filter((key) => Object.hasOwn(patch, key)))
       entry.loaded = true
       publishSubject(version => version + 1)
@@ -589,6 +595,7 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
   const load = useCallback(async (options?: { silent?: boolean }) => {
     // 并发保护：慢的旧请求不得覆盖新请求（last-good 语义保留旧数据）。
     const seq = ++loadSeqRef.current
+    const metaSeq = ++metaSeqRef.current
     const skillsSeq = skillsSeqRef.current
     const draftVersion = draftVersionRef.current
     const sessionId = api.currentSessionId()
@@ -615,7 +622,7 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
         return EMPTY_FIELDS
       }
       // 模块目录事实不属于字段草稿：创建/启用后的刷新不能被无关输入拦住。
-      if (boot.meta !== undefined) publishMeta(boot.meta.meta)
+      if (boot.meta !== undefined && metaSeq === metaSeqRef.current) publishMeta(boot.meta.meta)
       if (draftVersionRef.current !== draftVersion) return fieldsRef.current
       // 两次读取都完成后才应用快照；任何 await 期间的新上下文/草稿/文件结果优先。
       const policyRes = await bridgeCall('instructionsPolicy')
@@ -1110,10 +1117,28 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
   const createModuleCapability = useCallback((moduleId: string, action: 'create' | 'create-recipe', id: string) => changeModuleCapability(moduleId, action, id), [changeModuleCapability])
   const removeModuleCapability = useCallback((moduleId: string, id: string) => changeModuleCapability(moduleId, 'remove', id), [changeModuleCapability])
 
-  /** 操作对象保持稳定；刷新闭包始终读取最新工作台依赖。 */
-  const moduleRefreshRef = useRef<() => Promise<boolean>>(async () => false)
-  moduleRefreshRef.current = async () => await load({ silent: true }) !== EMPTY_FIELDS
-  const [moduleActions] = useState(() => createModuleActions({ enqueue: enqueueRuleTask, refresh: () => moduleRefreshRef.current() }))
+  /** 模块操作只刷新目录事实和规则版本，不覆盖总闸、指令或参数的未保存输入。 */
+  const refreshModules = useCallback(async (): Promise<boolean> => {
+    const seq = ++metaSeqRef.current
+    const result = await bridgeCall('meta')
+    if (seq !== metaSeqRef.current || !result.ok) return false
+    publishMeta({ ...metaRef.current, ...result.value.meta })
+    for (const [id, entry] of moduleParamsRef.current) {
+      if (!assembledModule(id)) { moduleParamsRef.current.delete(id); continue }
+      const rawDirty = [...editorDrafts.fields].some(([key, field]) => key.startsWith(id + ':param:') && (field.text !== field.source || field.error !== ''))
+      if (rawDirty || !deepEqual(entry.values, entry.baseline)) continue
+      if (!sectionDeclared(id, 'params', 'layerSettings')) {
+        entry.values = { ...EMPTY_PARAMS }; entry.baseline = { ...EMPTY_PARAMS }; entry.loadedKeys.clear(); entry.loaded = true
+        continue
+      }
+      entry.loaded = false
+      void readModuleParams(id)
+    }
+    for (const draft of editorDrafts.rules.values()) if (draft.loaded && draft.busy === undefined) draft.loaded = false
+    publishDrafts()
+    return true
+  }, [assembledModule, editorDrafts, publishMeta, publishDrafts, readModuleParams, sectionDeclared])
+  const [moduleActions] = useState(() => createModuleActions({ enqueue: enqueueRuleTask, refresh: refreshModules }))
   /** 新建只复制定义、保持关闭；id 与刷新结果由模块操作返回。 */
   const createModule = useCallback((): Promise<string | undefined> => {
     return moduleActions.create().then(result => {

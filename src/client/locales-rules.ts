@@ -55,6 +55,7 @@ export const RULES_ZH = {
   'rules.create.failed': '新建模块失败，请重试',
   'rules.create.enableFailed': '模板已保存到模块 {id}，但启用失败：{reason}。请到模块页启用，无需重复添加模板。',
   'rules.create.refreshFailed': '模板已保存，模块 {id} 已启用，但列表刷新失败；请重新打开工作台，无需重复添加模板。',
+  'rules.create.localConflict': '模板已保存到模块 {id}，本地未保存输入已保留；请先处理规则冲突，无需重复添加模板。',
   'rules.create.none': '暂无已安装模块',
 } as const
 export const RULES_EN: Record<keyof typeof RULES_ZH, string> = {
@@ -111,5 +112,6 @@ export const RULES_EN: Record<keyof typeof RULES_ZH, string> = {
   'rules.create.failed': 'Failed to create the module; try again',
   'rules.create.enableFailed': 'The template is saved in module {id}, but enabling failed: {reason}. Enable it on the Modules page; do not insert the template again.',
   'rules.create.refreshFailed': 'The template is saved and module {id} is enabled, but the list could not refresh. Reopen the workspace; do not insert the template again.',
+  'rules.create.localConflict': 'The template is saved in module {id}. Your unsaved input is preserved; resolve the rule conflict before continuing. Do not insert the template again.',
   'rules.create.none': 'No installed module yet',
 }

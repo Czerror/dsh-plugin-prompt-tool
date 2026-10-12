@@ -6,7 +6,7 @@ import { isWritableTarget } from './module-subject.ts'
 import type { WorkspaceDrafts } from './workspace-drafts.ts'
 import type { ModuleActions } from './module-actions.ts'
 
-export type TemplateWriteResult = BridgeResult<RulesSnapshot> & { moduleEnabled?: boolean; moduleEnableError?: string; refreshError?: string }
+export type TemplateWriteResult = BridgeResult<RulesSnapshot> & { moduleEnabled?: boolean; moduleEnableError?: string; refreshError?: string; localConflict?: boolean }
 
 /** 操作完成后先接纳共享事实；视图只拥有选择意图、提示与展开。 */
 export function createTemplateRuleWriter(deps: {
@@ -29,9 +29,10 @@ export function createTemplateRuleWriter(deps: {
     const result = await editor.create(rule, declared)
     if (!result.ok) return result
     deps.markDeclared(moduleId, 'rules')
-    if (!newlyCreated) return result
+    const committed = { ...result, localConflict: draft.remote !== undefined }
+    if (!newlyCreated) return committed
     const enabled = await deps.actions.enable(moduleId, true)
-    if (!enabled.ok) return { ...result, moduleEnableError: enabled.message ?? enabled.code ?? 'module-enable-failed' }
-    return { ...result, moduleEnabled: true, ...(enabled.refreshError === undefined ? {} : { refreshError: enabled.refreshError }) }
+    if (!enabled.ok) return { ...committed, moduleEnableError: enabled.message ?? enabled.code ?? 'module-enable-failed' }
+    return { ...committed, moduleEnabled: true, ...(enabled.refreshError === undefined ? {} : { refreshError: enabled.refreshError }) }
   }
 }

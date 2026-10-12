@@ -216,11 +216,13 @@ export function useTemplateCreate(props: {
     }
     const createdRuleId = result.value.createdRuleId ?? config.id
     if (writeGeneration.current !== generation) return
-    onCreated(moduleId, createdRuleId)
+    if (!result.localConflict) onCreated(moduleId, createdRuleId)
     if (result.moduleEnableError !== undefined) {
       store.showNotice('error', t('rules.create.enableFailed', { id: moduleId, reason: result.moduleEnableError }))
     } else if (result.refreshError !== undefined) {
       store.showNotice('error', t('rules.create.refreshFailed', { id: moduleId }))
+    } else if (result.localConflict) {
+      store.showNotice('error', t('rules.create.localConflict', { id: moduleId }))
     } else if (result.value.publicationPending === true || result.value.publicationError !== undefined) {
       store.showNotice('error', `${t('persona.sources.publicationPending')}：${result.value.publicationError ?? '请重试'}`)
     } else {

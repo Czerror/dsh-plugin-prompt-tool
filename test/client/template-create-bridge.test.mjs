@@ -76,7 +76,9 @@ test('模板已保存但发布待处理：离页后仍保留结果和原输入�
   draft.fields.set('stable:raw', { source: '', text: 'incomplete', error: 'keep' })
   const next = { ...rule, id: 'new' }
   await withFetch([ok(snapshot([rule, next], { publicationPending: true, publicationError: 'publish failed' }))], async calls => {
-    assert.equal((await h.writer('module-a', next)).ok, true)
+    const result = await h.writer('module-a', next)
+    assert.equal(result.ok, true, '持久化成功不可伪报失败导致重复创建')
+    assert.equal(result.localConflict, true, '成功保存但未接纳本地草稿须另行提示')
     assert.equal(draft.entries[0].value.name, 'local edit')
     assert.equal(draft.fields.get('stable:raw').text, 'incomplete')
     assert.equal(draft.remote.rules[1].id, 'new')
