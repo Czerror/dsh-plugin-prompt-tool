@@ -354,7 +354,7 @@
   align-items: flex-start;
   gap: 8px;
 }
-/* 卡体：只承载内容，没有点击语义；模块卡与角色卡共用（动作全在卡脚上）。 */
+/* 名称可原位编辑；其余卡体不承担点击，管理动作仍在卡脚。 */
 .moduleCardBody {
   display: flex;
   min-width: 0;
@@ -371,6 +371,18 @@
   font: 500 13px/20px system-ui, sans-serif;
   overflow-wrap: anywhere;
 }
+.moduleNameTrigger {
+  padding: 0;
+  border: 0;
+  border-radius: var(--dsw-radius-sm, 8px);
+  background: transparent;
+  text-align: left;
+  cursor: text;
+}
+.moduleNameTrigger:hover:not(:disabled) { text-decoration: underline; text-underline-offset: 3px; }
+.moduleNameTrigger:focus-visible { outline: 2px solid var(--dsw-alias-state-business-primary); outline-offset: 2px; }
+.moduleNameTrigger:disabled { cursor: default; }
+.moduleNameEditor { display: flex; flex: 1 1 auto; flex-direction: column; min-width: 0; gap: 4px; }
 .moduleCardId {
   margin-top: auto;
   color: var(--dsw-alias-label-secondary);
@@ -862,6 +874,7 @@
   .pillButton,
   .primaryPill,
   .moduleIconButton,
+  .moduleNameTrigger,
   .tagChipRemove,
   .dragHandle,
   .dialogClose,

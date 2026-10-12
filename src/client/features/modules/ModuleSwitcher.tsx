@@ -1,5 +1,5 @@
 /** 模块管理：名称与创建归模块页；规则编辑仍归主会话／子代理。 */
-import { memo, useEffect, useRef, useState, type ReactNode } from 'react'
+import { memo, useEffect, useId, useRef, useState, type ReactNode } from 'react'
 import { usePromptToolFields } from '../../data/use-prompt-tool-fields.ts'
 import { EMPTY_FIELDS } from '../../data/prompt-tool-fields.ts'
 import clsx from 'clsx'
@@ -24,13 +24,17 @@ import sharedCss from '../../ui/controls.module.css'
 
 const styles = sharedCss
 
-function ModuleNameDialog(props: { module: ModuleSummary; t: PromptToolTranslate; onClose: () => void; onSaved: (publicationError?: string) => Promise<void> }): ReactNode {
+function ModuleNameEditor(props: { module: ModuleSummary; t: PromptToolTranslate; onClose: () => void; onSaved: (publicationError?: string) => Promise<void> }): ReactNode {
   const { module, t } = props
   const [name, setName] = useState(module.name)
   const [revision, setRevision] = useState<string>()
   const [busy, setBusy] = useState(false)
   const busyRef = useRef(false)
   const activeRef = useRef(true)
+  const baselineRef = useRef(module.name)
+  const inputRef = useRef<HTMLInputElement>(null)
+  const editorRef = useRef<HTMLSpanElement>(null)
+  const errorId = useId()
   const [loaded, setLoaded] = useState(false)
   const [error, setError] = useState<string>()
   useEffect(() => {
@@ -38,19 +42,22 @@ function ModuleNameDialog(props: { module: ModuleSummary; t: PromptToolTranslate
     activeRef.current = true
     void bridgeCall('moduleName', {}, module.id).then((result) => {
       if (!active) return
-      if (result.ok) { setName(result.value.name); setRevision(result.value.revision); setLoaded(true) }
+      if (result.ok) { baselineRef.current = result.value.name; setName(result.value.name); setRevision(result.value.revision); setLoaded(true) }
       else setError(result.message ?? t('moduleSwitcher.name.readFailed'))
     })
     return () => { active = false; activeRef.current = false }
   }, [module.id, t])
+  useEffect(() => { if (loaded) inputRef.current?.select() }, [loaded])
   const save = async (): Promise<void> => {
-    if (revision === undefined || busyRef.current) return
+    if (!activeRef.current || revision === undefined || busyRef.current) return
+    if (name.trim().length === 0) { setError(t('moduleSwitcher.name.required')); return }
+    if (name.trim() === baselineRef.current) { close(); return }
     busyRef.current = true; setBusy(true); setError(undefined)
     const result = await bridgeCall('moduleName', { name, expectedRevision: revision, expectedModuleId: module.id }, module.id)
-    if (!activeRef.current) return
     if (result.ok) {
+      activeRef.current = false
       await props.onSaved(result.value.publicationError)
-    } else {
+    } else if (activeRef.current) {
       if (result.code === 'module-name-conflict' || result.code === 'rules-conflict') setRevision(undefined)
       setError(result.message ?? t('moduleSwitcher.name.saveFailed'))
       busyRef.current = false; setBusy(false)
@@ -63,16 +70,34 @@ function ModuleNameDialog(props: { module: ModuleSummary; t: PromptToolTranslate
     if (!activeRef.current) return
     if (result.ok) {
       if (!loaded) setName(result.value.name)
+      baselineRef.current = result.value.name
       setRevision(result.value.revision); setLoaded(true); setError(undefined)
     } else setError(result.message ?? t('moduleSwitcher.name.readFailed'))
     busyRef.current = false; setBusy(false)
   }
-  const close = (): void => { if (!busyRef.current) props.onClose() }
-  return <DialogSurface title={t('moduleSwitcher.name.title')} closeLabel={t('moduleSwitcher.name.close')} onClose={close}
-    footer={<><Button variant="outline" shape="pill" size="md" disabled={busy} onClick={close}>{t('moduleSwitcher.name.cancel')}</Button>{error !== undefined && <Button variant="outline" shape="pill" size="md" disabled={busy} onClick={() => void reload()}>{t('moduleSwitcher.name.reload')}</Button>}<Button variant="primary" shape="pill" size="md" disabled={busy || !loaded || revision === undefined || name.trim().length === 0} onClick={() => void save()}>{t('moduleSwitcher.name.save')}</Button></>}>
-    <TextInput value={name} maxLength={128} autoFocus aria-label={t('moduleSwitcher.name.label')} disabled={busy || !loaded} onChange={(event) => setName(event.target.value)} />
-    {error !== undefined && <p className={styles.configFieldHint} role="alert">{error}</p>}
-  </DialogSurface>
+  const close = (): void => { if (!busyRef.current) { activeRef.current = false; props.onClose() } }
+  return <span ref={editorRef} className={styles.moduleNameEditor} aria-busy={busy || !loaded}>
+    <TextInput ref={inputRef} value={name} autoFocus aria-label={t('moduleSwitcher.name.label')}
+      aria-invalid={error !== undefined} aria-describedby={error === undefined ? undefined : errorId}
+      readOnly={busy || !loaded} onChange={(event) => { setName(event.target.value); if (revision !== undefined) setError(undefined) }}
+      onBlur={(event) => {
+        if (editorRef.current?.contains(event.relatedTarget)) return
+        if (error === undefined) void save()
+      }}
+      onKeyDown={(event) => {
+        if (event.key !== 'Enter' && event.key !== 'Escape') return
+        event.stopPropagation()
+        if (event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229) return
+        event.preventDefault()
+        if (event.key === 'Escape') close()
+        else void save()
+      }} />
+    {error !== undefined && <span id={errorId} className={styles.configFieldHint} role="alert">{error}</span>}
+    {error !== undefined && <span className={styles.inlineControls}>
+      {revision === undefined && <Button variant="outline" shape="pill" size="sm" disabled={busy} onClick={() => void reload()}>{t('moduleSwitcher.name.reload')}</Button>}
+      <Button variant="outline" shape="pill" size="sm" disabled={busy} onClick={close}>{t('moduleSwitcher.name.cancel')}</Button>
+    </span>}
+  </span>
 }
 
 export const ModuleSwitcher = memo(function ModuleSwitcher(props: { store: PromptToolStore; t: PromptToolTranslate }): ReactNode {
@@ -204,12 +229,6 @@ export const ModuleSwitcher = memo(function ModuleSwitcher(props: { store: Promp
         onRepreview={() => { void flow.repreview() }} onRefresh={() => { void flow.retryRefresh() }}
         onUse={flow.resultLabel === undefined ? undefined : () => { void setModuleEnabled(flow.resultLabel!, true); flow.cancel(); setImportOpen(false) }} />}
       {exportTarget && <ModuleExportDialog t={t} module={exportTarget} onClose={() => setExportTarget(undefined)} />}
-      {nameTarget && <ModuleNameDialog key={nameTarget.id} module={nameTarget} t={t} onClose={() => setNameTarget(undefined)} onSaved={async (publicationError) => {
-        setNameTarget(undefined)
-        const refreshed = await store.load({ silent: true })
-        if (publicationError !== undefined) store.showNotice('error', t('moduleSwitcher.name.savedPending', { reason: publicationError }))
-        else if (refreshed !== EMPTY_FIELDS) store.showNotice('ok', t('moduleSwitcher.name.saved'))
-      }} />}
       <div className={styles.moduleGrid}>
         {modules.length === 0 ? (
           <p className={styles.readOnly} role="status">{t('moduleSwitcher.empty')}</p>
@@ -244,7 +263,15 @@ export const ModuleSwitcher = memo(function ModuleSwitcher(props: { store: Promp
       <article key={module.id} className={clsx(styles.moduleCard, blocked && styles.moduleCardBlocked)}>
         <div className={styles.moduleCardBody}>
           <span className={styles.moduleCardHead}>
-            <strong className={styles.moduleCardName}>{module.name}</strong>
+            {nameTarget?.id === module.id ? <ModuleNameEditor key={module.id} module={nameTarget} t={t}
+              onClose={() => setNameTarget(current => current?.id === module.id ? undefined : current)} onSaved={async (publicationError) => {
+                setNameTarget(current => current?.id === module.id ? undefined : current)
+                const refreshed = await store.load({ silent: true })
+                if (publicationError !== undefined) store.showNotice('error', t('moduleSwitcher.name.savedPending', { reason: publicationError }))
+                else if (refreshed !== EMPTY_FIELDS) store.showNotice('ok', t('moduleSwitcher.name.saved'))
+              }} /> : <button type="button" className={clsx(styles.moduleCardName, styles.moduleNameTrigger)}
+              disabled={nameTarget !== undefined || blocked || module.user !== true || module.facts?.editable !== true}
+              aria-label={t('moduleSwitcher.name.editAria', { name: module.name })} onClick={() => setNameTarget(module)}>{module.name}</button>}
             {module.enabled === true && !blocked && <StatusBadge className={styles.moduleHeadBadge} tone="success" label={t('moduleSwitcher.enabled')} />}
             {blocked && <span className={styles.moduleBlocked}>{t('moduleSwitcher.blocked')}</span>}
           </span>
@@ -264,8 +291,6 @@ export const ModuleSwitcher = memo(function ModuleSwitcher(props: { store: Promp
                 ? t('moduleSwitcher.card.disable.hint', { name: module.name })
                 : t('moduleSwitcher.card.enable.hint', { name: module.name })}
             onChange={(next) => void setModuleEnabled(module.id, next)} />
-          <Button variant="ghost" size="sm" disabled={blocked || module.user !== true || module.facts?.editable !== true}
-            aria-label={t('moduleSwitcher.name.editAria', { name: module.name })} onClick={() => setNameTarget(module)}>{t('moduleSwitcher.name.edit')}</Button>
           <HintTooltip label={t('moduleSwitcher.export')}>
             <button type="button" className={styles.moduleIconButton}
               aria-label={t('moduleSwitcher.export.aria', { name: module.name })}
