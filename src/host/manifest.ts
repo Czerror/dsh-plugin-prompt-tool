@@ -231,14 +231,29 @@ export function listModules(moduleRoot = userModulesDir()): Array<{ id: string; 
   return [...byId.values()].sort((a, b) => a.id.localeCompare(b.id))
 }
 
-/** 插件目录模板清单（「新建」选择器与首次种子化数据源；不直接出现在模块列表）。 */
+/** 内部模板：只当复制源（`moduleClone`），不进「新建模块」选择器、也不种子化进用户模块根。
+ *  ponytail: 判据是模板自己 `module.yml` 的 `meta.internal: true`（见 `modules/blank/module.yml`）。
+ *  现在只有 blank 一个内部模板，所以两处各读一次这个键；出现第二个时再抽成一个 helper。 */
+function isInternalModuleSpec(dir: string): boolean {
+  if (!existsSync(join(dir, MODULE_DEFINITION_FILE))) return false
+  try {
+    return loadModuleSpec(dir).meta?.internal === true
+  } catch {
+    return false
+  }
+}
+
+/** 插件目录模板清单（「新建」选择器与首次种子化数据源；不直接出现在模块列表）。
+ *  内部模板（复制源）不在其中——它们只经 `moduleClone(id)` 显式复制。 */
 export function listBuiltinTemplates(): Array<{ id: string; name: string }> {
   try {
     return readdirSync(packageModulesDir(), { withFileTypes: true })
       .filter((entry) => entry.isDirectory())
       .flatMap((entry) => {
+        const dir = join(packageModulesDir(), entry.name)
+        if (isInternalModuleSpec(dir)) return []
         try {
-          const spec = loadModuleSpec(join(packageModulesDir(), entry.name))
+          const spec = loadModuleSpec(dir)
           return [{ id: entry.name, name: spec.name }]
         } catch {
           return []
@@ -250,7 +265,8 @@ export function listBuiltinTemplates(): Array<{ id: string; name: string }> {
   }
 }
 
-/** 按包内同名目录补建缺失的内置模块；已有目录的定义、生成物和资源保持原样。 */
+/** 按包内同名目录补建缺失的内置模块；已有目录的定义、生成物和资源保持原样。
+ *  内部模板（如 blank 复制源）不种子化：它只该存在于插件包内，不成为用户可见模块。 */
 export function ensureModuleSeed(root = userModulesDir()): { created: string[] } {
   const created: string[] = []
   try {
@@ -259,7 +275,9 @@ export function ensureModuleSeed(root = userModulesDir()): { created: string[] }
       if (!entry.isDirectory() || entry.name.startsWith('.')) continue
       const target = join(root, entry.name)
       if (existsSync(target)) continue
-      cpSync(join(packageModulesDir(), entry.name), target, { recursive: true })
+      const source = join(packageModulesDir(), entry.name)
+      if (isInternalModuleSpec(source)) continue
+      cpSync(source, target, { recursive: true })
       created.push(entry.name)
     }
   } catch {

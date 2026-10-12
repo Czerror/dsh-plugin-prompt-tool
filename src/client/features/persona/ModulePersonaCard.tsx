@@ -64,8 +64,6 @@ export function ModulePersonaCard(props: {
   const mounted = useRef(false)
   const [confirming, setConfirming] = useState<{ moduleId: string; audience: PersonaAudience; reload?: boolean }>()
   const [activeField, setActiveField] = useState<'prefix' | 'suffix'>('prefix')
-  /** 声明面明确未声明 `persona` 时先只给添加入口；点了才按创建模式渲染编辑器（读请求仍不发）。 */
-  const [creating, setCreating] = useState(false)
   const refresh = useCallback(() => { if (mounted.current) redraw(value => value + 1) }, [])
   const editorOf = useCallback((moduleId: string): PersonaEditorDraft => {
     let editor = drafts.persona.get(moduleId)
@@ -119,7 +117,8 @@ export function ModulePersonaCard(props: {
   }
   /** 本卡的主语：人设来源指向的模块（没有来源就用调用方给的首选模块）。 */
   const moduleId = selection.value[audience] ?? props.moduleId
-  /** 该主语没声明 `persona`：不读、不出编辑器（改出添加入口）。未知（未下发）不当作未声明。 */
+  /** 该主语没声明 `persona`：**不读该节**（读了也是 400）、内容按空、保存即建立声明。
+   *  本卡是固定卡——未声明也照常出编辑器，编辑器不随声明面出现或消失。未知（未下发）不当作未声明。 */
   const undeclared = moduleId !== undefined && moduleDeclares(props.modules, moduleId, 'persona') === false
   const loadPersona = useCallback(async (moduleId: string, discard = false): Promise<void> => {
     const editor = editorOf(moduleId)
@@ -157,9 +156,6 @@ export function ModulePersonaCard(props: {
     void loadSources()
     return () => { mounted.current = false; selection.listeners?.delete(refresh) }
   }, [selection, refresh, loadSources])
-  /** 声明面明确未声明时先只给添加入口；点了才按创建模式渲染编辑器。
-   *  `creating`（用户点了添加）与 `undeclared`（实时声明面）分开：写成功后快照刷新，编辑器自动回到正常形态。 */
-  const editing = !undeclared || creating
   useEffect(() => {
     if (!selection.loaded || !moduleId) return
     const editor = editorOf(moduleId)
@@ -260,20 +256,8 @@ export function ModulePersonaCard(props: {
       {dirty && <p className={styles.configFieldHint} role="status">{t('card.unsaved')}</p>}
       {editor?.error && <p className={styles.noticeError} role="alert">{editor.error}</p>}
       {editor?.publicationPending && <p className={styles.noticeError} role="alert">{editor.publicationError ?? t('persona.sources.publicationPending')} <Button shape="pill" variant="outline" size="sm" disabled={editor.saving} onClick={() => { if (moduleId) void retryPublication(moduleId) }}>{t('workspace.retry')}</Button></p>}
-      {/* 声明面明确未声明 persona：不出编辑器（读请求也不发），只给添加入口；
-          点了用现有编辑与保存动作创建第一项，写盘建立声明后由调用方重读 `/meta`。 */}
-      {!editing && (
-        <div className={css.options}>
-          <p className={styles.configFieldHint} role="status">{t('declare.createHint')}</p>
-          <Button shape="pill" variant="outline" size="sm" type="button" data-declare-section="persona"
-            disabled={moduleId === undefined || (props.canEditModule !== undefined && !props.canEditModule(moduleId))}
-            aria-label={`${t('declare.add', { name: t('persona.title', { audience: t(`persona.${audience}`) }) })} · ${t('rules.source', { module: moduleId })}`}
-            onClick={() => setCreating(true)}>
-            {t('declare.add', { name: t('persona.title', { audience: t(`persona.${audience}`) }) })}
-          </Button>
-        </div>
-      )}
-      {editing && <>
+      {/* 固定卡：未声明 `persona` 也照常出编辑器（读请求不发、内容按空、保存即建立声明）。 */}
+      {undeclared && <p className={styles.configFieldHint} role="status">{t('declare.createHint')}</p>}
       <div className={css.options}>
         <FormField label={t('persona.mode')}>
           <MenuSelect compact value={target?.[activeField] === undefined ? 'inherit' : 'custom'} disabled={busy}
@@ -313,7 +297,6 @@ export function ModulePersonaCard(props: {
         }}>{t('persona.reload')}</Button>
         {editor?.saved[audience] && <Button shape="pill" variant="outline" data-danger disabled={busy || editor.saving} onClick={() => { if (moduleId) setConfirming({ moduleId, audience }) }}>{t('persona.remove')}</Button>}
       </div>
-      </>}
     </CollapsibleCard>
   )
 }

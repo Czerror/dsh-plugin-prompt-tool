@@ -14,6 +14,10 @@ engineCompat: ">=0.4.2"
 description: 空白起点：不预置任何配置，创建入口选完模板后可写入第一节。
 meta:
   source: manual
+  # ponytail: 内部标记＝这个模板只当 moduleClone 的复制源，不进「新建模块」选择器、不种子化到用户模块根。
+  # 隐藏约定由 ensureModuleSeed / listBuiltinTemplates 两处读同一个键维持；若将来出现第二个「可克隆但不可见」
+  # 的模板，就把这两处的过滤合并成一个 helper，而不是再加一列名单。
+  internal: true
 modules:
   - rule-engine
 order: 9

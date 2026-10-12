@@ -49,11 +49,10 @@ const CARD_LABEL_KEYS: Record<string, PromptToolLocaleKey> = {
  * 专用编辑组（提示词生成默认值等）不依赖模块装配，始终可编辑。
  * 参数键仍由 `ENGINE_PARAM_DEFINITIONS` 给出，这里不另抄键表，也不按层硬编码。
  *
- * 声明面（ADR-0014）：模块没声明 `params`／`layerSettings` 时这一组整卡不出场
- * （改为添加入口），更不会发这次参数读。
+ * 声明面（ADR-0014）只决定**发不发这次参数读**（store 侧按 `/meta` 跳过未声明的读），
+ * 不决定参数组出不出场：参数组是指令卡内的固定设置区，未声明时按空内容渲染、保存即建立声明。
  */
-export function layerParamCards(store: PromptToolStore, layer: string, moduleId: string | undefined, exclude: readonly string[] = [], creating = false): readonly string[] {
-  if (!creating && moduleId !== undefined && moduleDeclares(store.meta.modules, moduleId, ...PARAM_SECTIONS) === false) return []
+export function layerParamCards(store: PromptToolStore, layer: string, moduleId: string | undefined, exclude: readonly string[] = []): readonly string[] {
   const excluded = new Set(exclude)
   const facts = moduleId === undefined ? undefined : moduleFactsOf(store.meta.modules, moduleId)
   return ENGINE_EDITOR_GROUP_MAP
@@ -118,9 +117,6 @@ const ASSET_SECTIONS: Record<string, readonly string[]> = {
   'subagent-tool-policy': ['subagentToolPolicy'],
 }
 
-/** `params`／`layerSettings` 任一存在即算已声明（与 `DECLARED_SECTIONS.paramOverrides` 同口径）。 */
-const PARAM_SECTIONS = ['params', 'layerSettings'] as const
-
 /** 该组已有专属编辑器（模型路由卡、资产编辑器）：参数不再走通用控件渲染，避免同一批字段两遍。 */
 function isLayerAsset(id: string): boolean {
   return (LAYER_ASSET_IDS as readonly string[]).includes(id)
@@ -133,21 +129,15 @@ function assetCandidates(layer: string, excluded: readonly string[]): string[] {
     && !excluded.includes(group.id) && (LAYER_ASSET_IDS as readonly string[]).includes(group.id)).map((group) => group.id)
 }
 
-/** 本层该模块可渲染的资产：声明面明确未声明的节整卡不出场（改为添加入口）。 */
+/** 本层该模块可渲染的资产：声明面明确未声明的节整卡不出场（改为添加入口）——通用资产卡按需存在，行为不变。 */
 function layerAssets(store: PromptToolStore, layer: string, moduleId: string, excluded: readonly string[]): string[] {
   return assetCandidates(layer, excluded).filter((id) => declaredOrUnknown(store, moduleId, ASSET_SECTIONS[id]))
 }
 
-/** 本层该模块**未声明**、需要给添加入口的节（资产节 + `params`）。
- *  `params` 只在该层真有可渲染参数组时才给入口——否则点了既出不了编辑器、入口又被剔除，
- *  会留下「一点就整块塌陷」的死按钮（各层的参数组归属不同，不能按层硬塞）。 */
+/** 本层该模块**未声明**、需要给添加入口的通用资产节（参数组不走这里：它是固定设置区，始终渲染）。 */
 function undeclaredSections(store: PromptToolStore, layer: string, moduleId: string, excluded: readonly string[]): string[] {
-  const paramsRenderable = layerParamCards(store, layer, moduleId, excluded, true).length > 0
-  return [
-    ...assetCandidates(layer, excluded).filter((id) => ASSET_SECTIONS[id] !== undefined
-      && moduleDeclares(store.meta.modules, moduleId, ...ASSET_SECTIONS[id]) === false),
-    ...(paramsRenderable && moduleDeclares(store.meta.modules, moduleId, ...PARAM_SECTIONS) === false ? ['params'] : []),
-  ]
+  return assetCandidates(layer, excluded).filter((id) => ASSET_SECTIONS[id] !== undefined
+    && moduleDeclares(store.meta.modules, moduleId, ...ASSET_SECTIONS[id]) === false)
 }
 
 /** 未登记声明面的资产＝不门控；未知（未下发）也放行——不把「读不到」当「没声明」。 */
@@ -179,18 +169,18 @@ export function LayerSettingsContent(props: {
   onChooseToolTemplate?: (moduleId: string, anchor: HTMLButtonElement) => void
   onCreated?: (capabilityId: string) => void
   keyword?: string
-  /** 初始创建模式（外部装配／测试用）；生产路径由「添加」按钮驱动。 */
+  /** 初始创建模式（外部装配／测试用；生产路径由「添加」按钮驱动）。参数组是固定设置区，不在此列。 */
   creatingSections?: readonly string[]
 }): ReactNode {
   const { store, t, layer } = props
   const moduleId = props.moduleId
   const excluded = props.excludeCapabilities ?? []
-  /** 已点「添加」的节：只记「用户开了这个节的创建模式」，不记「声明已建立」。 */
+  /** 已点「添加」的通用资产节：只记「用户开了这个节的创建模式」，不记「声明已建立」。 */
   const [creating, setCreating] = useState<readonly string[]>(() => (props.creatingSections ?? []).map(id => `${String(moduleId)}:${id}`))
   const creatingKey = (id: string): string => `${String(moduleId)}:${id}`
   const creatingSection = (id: string): boolean => creating.includes(creatingKey(id))
-  /** 该节要读写的 `module.yml` 节（`params` 也在内：它同样是可创建的一节）。 */
-  const sectionsOf = (id: string): readonly string[] | undefined => id === 'params' ? PARAM_SECTIONS : ASSET_SECTIONS[id]
+  /** 该节要读写的 `module.yml` 节（通用资产节；参数组不走这门控）。 */
+  const sectionsOf = (id: string): readonly string[] | undefined => ASSET_SECTIONS[id]
   /** 该节此刻**仍**没声明——取自实时的 `/meta` 快照，不粘连；未知（未下发）不当作未声明。 */
   const undeclaredNow = (id: string): boolean => {
     if (moduleId === undefined) return false
@@ -199,11 +189,12 @@ export function LayerSettingsContent(props: {
   }
   /** 创建模式＝「点了添加」且「此刻仍未声明」：写成功后快照刷新，创建模式自动退出，卡片恢复回读与正常形态。 */
   const inCreateMode = (id: string): boolean => creatingSection(id) && undeclaredNow(id)
-  const cards = moduleId === undefined ? [] : layerParamCards(store, layer, moduleId, excluded, inCreateMode('params'))
+  // 参数组是指令卡内的固定设置区：只看该层有没有可渲染的参数组，不看声明面（未声明＝不发读 + 空内容）。
+  const cards = moduleId === undefined ? [] : layerParamCards(store, layer, moduleId, excluded)
   const capabilities = moduleId === undefined ? [] : layerAssembledCapabilities(store, layer, moduleId).filter((id) => !excluded.includes(id))
   const addable = moduleId === undefined ? [] : undeclaredSections(store, layer, moduleId, excluded)
   const pendingAdds = addable.filter((id) => !creatingSection(id))
-  // 声明面登记的节照旧出卡；未声明的节只在创建模式下出卡；未登记声明面的资产（模型路由等）不受影响。
+  // 通用资产卡（不是固定卡）：声明面登记的节照旧出卡；未声明的节只在用户点了添加后出卡；未登记声明面的（模型路由等）不受影响。
   const assets = moduleId === undefined
     ? []
     : assetCandidates(layer, excluded).filter((id) => declaredOrUnknown(store, moduleId, ASSET_SECTIONS[id]) || inCreateMode(id))
@@ -232,13 +223,13 @@ export function LayerSettingsContent(props: {
       </div>
       {pendingAdds.map((id) => (
         <section key={id} className={css.asset} data-layer-asset-add={id} aria-label={t(CARD_LABEL_KEYS[id] ?? 'modules.layer.asset')}>
-          <h4 className={css.groupTitle}>{id === 'params' ? t('declare.params') : t(CARD_LABEL_KEYS[id] ?? 'modules.layer.asset')}</h4>
+          <h4 className={css.groupTitle}>{t(CARD_LABEL_KEYS[id] ?? 'modules.layer.asset')}</h4>
           <p className={styles.configFieldHint}>{t('declare.createHint')}</p>
           <Button shape="pill" size="sm" variant="outline" type="button" disabled={!canEdit}
-            data-declare-section={id === 'params' ? 'params' : ASSET_SECTIONS[id]?.[0] ?? id}
-            aria-label={`${t('declare.add', { name: id === 'params' ? t('declare.params') : t(CARD_LABEL_KEYS[id] ?? 'modules.layer.asset') })} · ${t('rules.source', { module: moduleId })}`}
+            data-declare-section={ASSET_SECTIONS[id]?.[0] ?? id}
+            aria-label={`${t('declare.add', { name: t(CARD_LABEL_KEYS[id] ?? 'modules.layer.asset') })} · ${t('rules.source', { module: moduleId })}`}
             onClick={() => setCreating(current => [...current, creatingKey(id)])}>
-            {t('declare.add', { name: id === 'params' ? t('declare.params') : t(CARD_LABEL_KEYS[id] ?? 'modules.layer.asset') })}
+            {t('declare.add', { name: t(CARD_LABEL_KEYS[id] ?? 'modules.layer.asset') })}
           </Button>
         </section>
       ))}
