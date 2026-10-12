@@ -700,12 +700,12 @@ context-activation 视图只调整附加提示，不另设模块卡容器；能�
 |---|---|
 | 引擎注入行为（插入点 / 时机 / 次数 / 受众） | `test/engine/*.test.mjs` |
 | 写盘产物语义 | `test/host/write-module.test.mjs`、`test/host/module-*.test.mjs`、`test/host/module-storage.test.mjs`、`test/host/global-params.test.mjs`（全局层 `config.yml#layerSettings` 的写/删键/空层回收与优先级） |
-| bridge 端点载荷 | `test/shared/bridge-contract.test.mjs`、`test/client/bridge-client.test.mjs`、`test/host/settings-bridge.test.mjs`、`test/host/*-bridge.test.mjs` |
+| bridge 端点载荷 | `test/shared/bridge-contract.test.mjs`、`test/client/bridge-client.test.mjs`、`test/host/settings-bridge.test.mjs`、`test/host/*-bridge.test.mjs`、`test/client/*.test.mjs`（客户端侧的固定卡接线、请求主语与渲染链路） |
 | 安全与拒绝路径 | `test/host/instructions-policy.test.mjs`、`test/host/instruction-scope-guard.test.mjs`、`test/host/skill-policy.test.mjs`、`test/host/module-package-import.test.mjs`、`test/host/characters-protection.test.mjs`、`test/host/wave1-safety.test.mjs`、`test/host/text-file.test.mjs`、`test/engine/config-whitelist.test.mjs` |
 
 **安全边界的守护位置**：指令文件读写（授权、上下文白名单、内容版本冲突、读取失败）、导入回滚、路径穿越、大小上限、桥端点安全面、晋升门控与 epoch 这些不变量，由上面「安全与拒绝路径」一栏的文件覆盖；改动它们需要独立授权，不得顺带删减。
 
-不再引入 Jest、Vitest、jsdom 或 happy-dom：客户端渲染与交互不再由渲染断言覆盖，改为人工核对加 §12.2 的命令门禁。
+不再引入 Jest、Vitest、jsdom 或 happy-dom。客户端渲染断言**只**覆盖两类：固定卡（指令卡、人设卡）的**接线**——卡在场、可展开、设置区页签在场、缺主语时不写不发；通用规则卡（参数组、变量、自定义工具、子代理策略、资产卡）的**渲染链路**——按声明出卡/不出卡、添加入口在场、参数组按事实渲染、请求主语正确。内部 `data-*` 属性**可以**作为在场/缺席的见证（选择器锚点），但不得锁它的形态、拼法与结构；文案断言必须经 `t()` 词条取值，不写死正文；排除式断言只禁止**为已删除的实现或产物写的墓碑**（`doesNotMatch(已删标记)`），不禁止「按声明不出卡」这类行为性缺席。交互、真实 CSS 计算值与 portal 内容一律不做断言——它们留**真机浏览器核对（Edge smoke）**；`§12.2` 的命令门禁只覆盖可自动化的部分（typecheck／lint／test／build／`git diff --check`）。
 
 ### 12.2 验证命令
 

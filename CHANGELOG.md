@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### 测试面按 seam 收敛（2026-10-12）
+
+- **删墓碑与恒真断言**：`test/client/` 删 4 处为已删除实现或产物写的墓碑断言（`data-module-create` ×2、`data-template-new-name`、`data-instruction-module`），另删 2 处恒真断言（生产与字典均 0 命中的「选择一个来源模块…」文案、`/global/` 子串）。
+- **去真值源自证与重复变体**：契约测试不再复述实现常量——删掉 `BRIDGE_SUBJECT_POLICY` 的 46 计数、11/5/30 计数、逐端点名单快照、两个错误码字面镜像与 `DECLARED_SECTIONS` 逐条快照，以及 `module-subject` 与 `settings-bridge` 之间重复的声明面用例；同时把 `customTools` / `persona` / `paramOverrides` 三节的「读 400 + `module-not-declared` + 零写盘」、未登记端点 200、`paramOverrides` 写 200 建立 `layerSettings` 声明、`scope:'global'` 变量读不受声明面约束等拒绝路径补回。
+- **渲染断言收窄到接线与渲染链路**：客户端用例只断言固定卡（指令卡、人设卡）接线与通用规则卡（参数组、变量、自定义工具、子代理策略、资产卡）渲染链路；删掉本轮新增的恒真断言（`aria-haspopup` 恒带）、测试自造形态的 `aria-label` 排除、写死字典正文的 `t('rules.source', …)` 排除与私有 `Map` 形状、`subjectDraftKey` 键形断言。口径同时写进 [docs/ui-architecture.md](docs/ui-architecture.md) §12.1 与 `test/client/support/ssr-render.mjs` 头注释。
+- **临时目录纪律**：三处 `mkdtempSync` 与一处 `process.cwd()` 下的临时目录改走夹具的 `isolatedHome` / `tempDir`（自带 after 清理与 `DSH_HOME` 还原）。
+- **回归**：`pnpm --dir $Repo test` 全量 **613 passed（0 失败 0 跳过）**——即 `b79f03d7` 这一轮（测试面收敛收尾）修复后的全量结果。
+
 ### 人设段并入运行时配装通道（2026-10-11）
 
 - **人设不再接管官方 fiber**：官方把 `deployment:persona-prefix` / `deployment:persona-suffix` 设计成可替换槽位——同名段按 scope 链遮蔽、近者胜（`@deepseek-ai/dsh-scope` 的 `ScopedLayers.merge`），只有同一层内重名才抛。装配现在只在自己的 Agent scope 注册同名段，就替换掉全局部署人设与预设挂在祖先 scope 的 persona 行，不再需要 `fiber.update()` 重载、注册租约重放、`runMaintenance()` 空闲窗口与独立的人设事务。

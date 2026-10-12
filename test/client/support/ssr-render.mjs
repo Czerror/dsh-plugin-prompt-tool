@@ -8,8 +8,11 @@
  *
  * 边界（与 docs/ui-architecture.md §12.1 一致）：只用 Node 内置能力 +
  * 已安装的 React server renderer，**不新增 jsdom / happy-dom / Testing Library**。
- * SSR 能断言真实 DOM 属性、文案、结构与顺序；**不能**断言 portal 内容、
- * 真实 CSS 计算值、真实事件与焦点——那些必须留在 Edge smoke。
+ * SSR 断言**只**覆盖两类：固定卡（指令卡、人设卡）的**接线**与通用规则卡的**渲染链路**；
+ * 内部 `data-*` 属性可作为在场/缺席的见证（选择器锚点），不锁形态、拼法与结构；文案断言经
+ * `t()` 词条取值；排除式断言只禁为已删实现或产物写的墓碑，不禁「按声明不出卡」这类行为性缺席。
+ * 交互、真实 CSS 计算值与 portal 内容一律不做断言——留**真机浏览器核对（Edge smoke）**；
+ * `§12.2` 的命令门禁只覆盖可自动化部分（typecheck／lint／test／build／`git diff --check`）。
  *
  * 用法（**推荐传以调用方文件为基准的绝对 URL**，可避免相对路径的基准歧义）：
  *
