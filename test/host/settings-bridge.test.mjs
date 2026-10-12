@@ -241,7 +241,9 @@ test('settings bridge /meta 下发声明面（顶层键名）：只声明 rules 
   for (const id of ['ponytail', 'tool-surface', 'skill-surface', 'superpowers']) {
     const real = moduleDeclarations(fileURLToPath(new URL(`../../modules/${id}`, import.meta.url)))
     for (const section of ['rules', 'modules']) assert.equal(real.has(section), true, `${id} 声明 ${section}`)
-    assert.equal(real.has('customTools'), false, `${id} 不含 customTools`)
+    for (const section of ['customTools', 'persona', 'subagentToolPolicy', 'variables', 'variablesEnabled', 'params', 'layerSettings']) {
+      assert.equal(real.has(section), false, `${id} 未声明 ${section}（对应端点会 400 module-not-declared）`)
+    }
   }
 })
 

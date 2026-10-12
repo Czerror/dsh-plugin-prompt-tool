@@ -22,8 +22,8 @@ const { applyCreateWrite, planCreateWrite } = await withSsr([
 const facts = (editable = true) => ({ declaredModules: [], effectiveModules: [], rowIds: [], sourceMode: 'explicit', editable })
 /**
  * 只有前两个可写；`mod-z` 未启用、`mod-ro` 只读——两者都不该出现在候选里。
- * `blank` 代表「复制源目录已存在于用户根下」（历史上被种子化过，或用户从它建过模块）：
- * 它同样不是候选，但它决定新建 id 的预览（目录名已存在 ⇒ 服务端会加后缀）。
+ * `blank` 代表「用户根下已有名为 blank 的目录」（历史上被种子化过，或用户从引擎内组装的空白
+ * 模板建过模块）：它同样不是候选，但它决定新建 id 的预览（目录名已存在 ⇒ 服务端会加后缀）。
  */
 const modules = [
   { id: 'mod-a', name: 'A', enabled: true, facts: facts(), declares: ['rules'] },

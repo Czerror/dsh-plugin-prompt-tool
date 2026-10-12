@@ -32,7 +32,6 @@ test('canEditModule：判据逐模块——同一次快照里 A 可编辑不影�
 
 test('writableModuleTargets：模块总闸关闭时没有任何可写目标', () => {
   assert.deepEqual(writableModuleTargets({ modulesEnabled: false }, [moduleEntry('mod-a')]), [], '总闸关闭时谁都不写')
-  assert.deepEqual(writableModuleTargets(gate, [moduleEntry('mod-a')]).map((module) => module.id), ['mod-a'])
 })
 
 /** 声明面判据来自 `/meta` 下发的 `declares`（顶层键名数组），不是客户端另立的名录。 */

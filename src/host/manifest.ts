@@ -120,7 +120,7 @@ const BLANK_MODULE_TEMPLATE: Record<string, unknown> = {
   name: '空白模块',
   version: '1.0.0',
   engineCompat: '>=0.4.2',
-  description: '空白起点：不预置任何配置，创建入口选完模板后写入第一节。',
+  description: '空白起点：不预置任何配置，创建入口选完模板后可写入第一节。',
   meta: { source: 'manual' },
   modules: ['rule-engine'],
   order: 9,
@@ -130,13 +130,14 @@ const BLANK_MODULE_TEMPLATE: Record<string, unknown> = {
 function blankModuleDefinitionText(targetId: string): string {
   const doc = new Document(structuredClone(BLANK_MODULE_TEMPLATE))
   doc.set('id', targetId)
+  // 块注释的每行都以 `# ` 起（yaml 库不自动补空格），与包内其它 module.yml 的注释风格一致。
   doc.commentBefore = [
     '空白模块模板：什么都不声明。',
     '用途：创建入口选完注入模板后「新建空白模块」这一步的源。由引擎按内置模板常量组装（不随包',
     '分发 `modules/blank/`），只声明身份与组合行，没有 rules / params / layerSettings / persona /',
     'variables 等节——客户端把内容写进来时，写路径按既有语义为它建立第一节声明（写成功即声明）。',
     '不预置任何配置卡：新建出来的模块是干净起点，唯一入口是页级「添加」。',
-  ].join('\n')
+  ].join('\n').replace(/^/gm, ' ')
   return doc.toString()
 }
 
