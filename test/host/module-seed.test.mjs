@@ -2,12 +2,13 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { parse as parseYaml } from 'yaml'
 import { isolatedHome, tempDir } from '../fixtures/host-harness.mjs'
 
 // 种子化只发生在预设根内：隔离 DSH_HOME 验证补建、幂等与安全边界（清理与还原由夹具登记）。
 const { home } = isolatedHome('pt-seed-')
 const { storageRootOf } = await import('../../src/host/paths.ts')
-const { cloneBuiltinModule, ensureModuleSeed, listBuiltinTemplates, packageModulesDir } = await import('../../src/host/manifest.ts')
+const { cloneBuiltinModule, ensureModuleSeed, packageModulesDir } = await import('../../src/host/manifest.ts')
 
 const PRESETS_DIR = join(storageRootOf(home), 'modules')
 
@@ -46,22 +47,30 @@ test('种子化不写状态文件，也不改动 DSH_HOME 根下其他文件', (
   assert.deepEqual(snapshot(), before, 'DSH_HOME 根下其他文件必须逐字节不变、无新增/删除')
 })
 
-test('空白模板是内部复制源：不种子化到用户模块根，也不进「新建模块」选择器', () => {
-  // 复制源本身必须还在包内（moduleClone 的目标），隐藏的是它的可见性，不是文件。
-  assert.ok(existsSync(join(packageModulesDir(), 'blank', 'module.yml')), '包内 blank 模板仍在（moduleClone 的复制源）')
-  const root = tempDir('pt-blank-seed-')
-  const { created } = ensureModuleSeed(root)
-  assert.ok(!created.includes('blank'), 'blank 不进种子化清单')
-  assert.ok(!existsSync(join(root, 'blank')), '用户模块根不出现 blank 目录')
-  assert.ok(created.some((id) => id !== 'blank'), '其余内置模板照旧种子化')
-  assert.ok(!listBuiltinTemplates().some((template) => template.id === 'blank'), '「新建模块」选择器不含 blank')
-})
-
-test('隐藏的复制源仍可克隆：cloneBuiltinModule 不走模板清单，且内部标记不落进用户模块', () => {
+test('新建空白模块：引擎内组装出 module.yml，目录名=id，冲突时递增', () => {
   const root = tempDir('pt-blank-clone-')
   const cloned = cloneBuiltinModule('blank', true, root)
-  assert.equal(cloned.ok, true, '内部模板仍可作复制源（隐藏的是可见性，不是能力）')
-  assert.equal(cloned.id, 'blank')
+  assert.equal(cloned.ok, true, cloned.message)
+  assert.equal(cloned.id, 'blank', '目录名 = id')
   const definition = readFileSync(join(root, 'blank', 'module.yml'), 'utf8')
-  assert.doesNotMatch(definition, /internal/, '内部标记不外泄到用户模块（否则将来按它隐藏会连克隆件一起隐藏）')
+  assert.doesNotMatch(definition, /internal/, 'meta.internal 机制随目录复制源退役，产物里不得再出现')
+  const spec = parseYaml(definition)
+  assert.equal(spec.id, 'blank')
+  assert.equal(spec.name, '空白模块')
+  assert.deepEqual(spec.modules, ['rule-engine'])
+  assert.equal(spec.order, 9)
+  assert.equal(existsSync(join(packageModulesDir(), 'blank')), false, '包内不再有 blank 目录（源是内存常量）')
+  // 同名已占用时按 id-2 / id-3 递增，定义身份跟着目录名走。
+  const again = cloneBuiltinModule('blank', true, root)
+  assert.equal(again.ok, true, again.message)
+  assert.equal(again.id, 'blank-2')
+  assert.equal(parseYaml(readFileSync(join(root, 'blank-2', 'module.yml'), 'utf8')).id, 'blank-2')
+})
+
+test('新建空白模块：未知模板 id 仍被拒，模块根不留痕迹', () => {
+  const root = tempDir('pt-blank-unknown-')
+  const before = readdirSync(root).sort()
+  const rejected = cloneBuiltinModule('no-such-template', true, root)
+  assert.equal(rejected.ok, false, '未知模板 id 不得组装出模块')
+  assert.deepEqual(readdirSync(root).sort(), before, '被拒的新建不得留下候选目录')
 })

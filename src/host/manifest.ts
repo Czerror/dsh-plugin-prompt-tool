@@ -15,7 +15,7 @@ import { spawn } from 'node:child_process'
 import { basename, dirname, join, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { isDeepStrictEqual } from 'node:util'
-import { Pair, Scalar, parse as parseYaml, parseDocument, YAMLMap, YAMLSeq } from 'yaml'
+import { Document, Pair, Scalar, parse as parseYaml, parseDocument, YAMLMap, YAMLSeq } from 'yaml'
 import { MODULES_DIR, MODULE_DEFINITION_FILE } from './paths.ts'
 import { moduleCapability, engineRecipe, impliedModulesForParams, isModuleCapabilityPresent, type ModuleSourceMode, type ModuleFacts } from '../shared/engine-capabilities.ts'
 import { ENGINE_PARAM_DEFINITIONS, ENGINE_PARAM_KEYS, buildEngineModuleParams, normalizeMaxDepth } from '../shared/engine-params.ts'
@@ -108,6 +108,38 @@ export function packageModulesDir(): string {
   throw new Error('prompt-tool: cannot locate package modules/ directory')
 }
 
+/**
+ * 内置空白模板（唯一的内存形态模板）：`moduleClone('blank')` 的源。
+ *
+ * 为什么不落 `modules/blank/module.yml`：唯一的新建通道是目录到目录复制，落一个目录就得
+ * 再给「可复制但用户不可见」加一套过滤（旧 `meta.internal` + 两处过滤），源与机制都不必要。
+ * 字段与包内其它模板（各自目录下的 module.yml）逐字段同构，只有身份、组合行与排序。
+ */
+const BLANK_MODULE_TEMPLATE: Record<string, unknown> = {
+  id: 'blank',
+  name: '空白模块',
+  version: '1.0.0',
+  engineCompat: '>=0.4.2',
+  description: '空白起点：不预置任何配置，创建入口选完模板后写入第一节。',
+  meta: { source: 'manual' },
+  modules: ['rule-engine'],
+  order: 9,
+}
+
+/** 引擎内组装空白模板的 `module.yml`：身份跟随目标目录名，同一输入逐字节稳定；文件头注释说明它是组装的内置模板。 */
+function blankModuleDefinitionText(targetId: string): string {
+  const doc = new Document(structuredClone(BLANK_MODULE_TEMPLATE))
+  doc.set('id', targetId)
+  doc.commentBefore = [
+    '空白模块模板：什么都不声明。',
+    '用途：创建入口选完注入模板后「新建空白模块」这一步的源。由引擎按内置模板常量组装（不随包',
+    '分发 `modules/blank/`），只声明身份与组合行，没有 rules / params / layerSettings / persona /',
+    'variables 等节——客户端把内容写进来时，写路径按既有语义为它建立第一节声明（写成功即声明）。',
+    '不预置任何配置卡：新建出来的模块是干净起点，唯一入口是页级「添加」。',
+  ].join('\n')
+  return doc.toString()
+}
+
 /** 包根 engine/ 目录(插件引擎,与配置文件夹分离):兼容源码与打包运行。 */
 export function packageEngineDir(): string {
   const candidates = [
@@ -158,7 +190,7 @@ export function removeModuleCapabilityDeclaration(dir: string, moduleId: string)
  *
  * 认两处目录：① 用户模块根下的目录；② **用户在启用表里声明过的 id**、但用户目录已被删、
  * `resolveModuleDir` 回落到包内同名模板的情形——否则「模块未声明 ⇒ 回退全局」对它静默失效。
- * 包内模板（`blank` 等，不在启用表里）**不继承**全局层：克隆/导入时会把全局值烘进新模块定义。
+ * 包内模板（如 `blank` 内存模板）**不继承**全局层：克隆/导入时会把全局值烘进新模块定义。
  *
  * 读是**软失败**（`readGlobalLayerSettingsSafe`）：全局层坏掉只让这个模块按「无全局层」装配，
  * 绝不因为一个笔误打掉 `prepareAssembly`；诊断由 `/meta` 的 `moduleWarnings` 给出。
@@ -258,27 +290,13 @@ export function listModules(moduleRoot = userModulesDir()): Array<{ id: string; 
   return [...byId.values()].sort((a, b) => a.id.localeCompare(b.id))
 }
 
-/** 内部模板：只当复制源（`moduleClone`），不进「新建模块」选择器、也不种子化进用户模块根。
- *  ponytail: 判据是模板自己 `module.yml` 的 `meta.internal: true`（见 `modules/blank/module.yml`）。
- *  现在只有 blank 一个内部模板，所以两处各读一次这个键；出现第二个时再抽成一个 helper。 */
-function isInternalModuleSpec(dir: string): boolean {
-  if (!existsSync(join(dir, MODULE_DEFINITION_FILE))) return false
-  try {
-    return loadModuleSpec(dir).meta?.internal === true
-  } catch {
-    return false
-  }
-}
-
-/** 插件目录模板清单（「新建」选择器与首次种子化数据源；不直接出现在模块列表）。
- *  内部模板（复制源）不在其中——它们只经 `moduleClone(id)` 显式复制。 */
+/** 插件目录模板清单（「新建」选择器与首次种子化数据源；不直接出现在模块列表）。 */
 export function listBuiltinTemplates(): Array<{ id: string; name: string }> {
   try {
     return readdirSync(packageModulesDir(), { withFileTypes: true })
       .filter((entry) => entry.isDirectory())
       .flatMap((entry) => {
         const dir = join(packageModulesDir(), entry.name)
-        if (isInternalModuleSpec(dir)) return []
         try {
           const spec = loadModuleSpec(dir)
           return [{ id: entry.name, name: spec.name }]
@@ -292,8 +310,7 @@ export function listBuiltinTemplates(): Array<{ id: string; name: string }> {
   }
 }
 
-/** 按包内同名目录补建缺失的内置模块；已有目录的定义、生成物和资源保持原样。
- *  内部模板（如 blank 复制源）不种子化：它只该存在于插件包内，不成为用户可见模块。 */
+/** 按包内同名目录补建缺失的内置模块；已有目录的定义、生成物和资源保持原样。 */
 export function ensureModuleSeed(root = userModulesDir()): { created: string[] } {
   const created: string[] = []
   try {
@@ -303,7 +320,6 @@ export function ensureModuleSeed(root = userModulesDir()): { created: string[] }
       const target = join(root, entry.name)
       if (existsSync(target)) continue
       const source = join(packageModulesDir(), entry.name)
-      if (isInternalModuleSpec(source)) continue
       cpSync(source, target, { recursive: true })
       created.push(entry.name)
     }
@@ -311,6 +327,40 @@ export function ensureModuleSeed(root = userModulesDir()): { created: string[] }
     // 种子化失败（目录不可写等）不阻断启动，用户仍可经 UI 新建/导入。
   }
   return { created }
+}
+
+/** 目标目录名分配（目录复制与内存组装两条源共用）：`id` 被占用时递增 `id-2` / `id-3`…。 */
+function nextModuleDirId(id: string, root: string, autoSuffix: boolean): { ok: true; id: string } | { ok: false; message: string } {
+  const free = (candidate: string): boolean => !modulePathExists(join(root, candidate))
+  if (free(id)) return { ok: true, id }
+  if (!autoSuffix) return { ok: false, message: `用户目录已存在同名预设 ${id}，请先删除再新建` }
+  for (let suffix = 2; ; suffix++) {
+    const candidate = `${id}-${suffix}`
+    if (free(candidate)) return { ok: true, id: candidate }
+  }
+}
+
+/**
+ * 引擎内组装内置空白模板：Document API 生成 `module.yml`，先写模块根下的临时目录再原子
+ * rename，失败清理临时目录、不留半个模块（与 `writeModule` 同一写盘纪律）。
+ */
+function writeBlankModule(root: string, targetId: string): void {
+  assertModuleId(targetId)
+  const target = assertModuleDirectory(root, targetId, true)
+  mkdirSync(root, { recursive: true })
+  const stage = mkdtempSync(join(root, `.${targetId}.assemble-`))
+  const candidate = join(stage, targetId)
+  try {
+    mkdirSync(candidate)
+    writeFileSync(join(candidate, MODULE_DEFINITION_FILE), blankModuleDefinitionText(targetId), 'utf8')
+    ensureModuleSlices(candidate)
+    withModuleLock(root, targetId, () => {
+      if (modulePathExists(target)) throw new Error(`目标模块已存在：${targetId}`)
+      renameSync(candidate, target)
+    })
+  } finally {
+    rmSync(stage, { recursive: true, force: true })
+  }
 }
 
 /** 完整复制到隐藏候选；只更新定义 ID 和已知共享引擎配置位置。 */
@@ -333,12 +383,6 @@ function copyModuleDirectory(source: string, root: string, targetId: string): vo
       setModuleDefinitionId(doc, targetId)
       changed = true
     }
-    // 内部标记只描述包内模板的可见性（复制源），不是模块自身属性：克隆出来的用户模块必须去掉，
-    // 否则将来按该键隐藏历史遗留模板时，所有克隆件会一起被隐藏。
-    if (doc.hasIn(['meta', 'internal'])) {
-      doc.deleteIn(['meta', 'internal'])
-      changed = true
-    }
     if (changed) writeFileSync(definition, doc.toString(), 'utf8')
     ensureModuleSlices(candidate)
     for (const legacy of ['configs', 'rules.yml', 'agent.cordis.yml', 'custom-tools', 'subagent-tools']) {
@@ -353,28 +397,22 @@ function copyModuleDirectory(source: string, root: string, targetId: string): vo
   }
 }
 
-/** 从包内同名目录复制模块；autoSuffix=true 时递增目录名并同步定义身份。 */
+/** 从包内同名目录复制模块；autoSuffix=true 时递增目录名并同步定义身份。
+ *  `blank` 没有包内目录：它由 `BLANK_MODULE_TEMPLATE` 在引擎内组装（同一条目录名规则）。 */
 export function cloneBuiltinModule(id: string, autoSuffix = false, moduleRoot = userModulesDir()): { ok: true; id: string } | { ok: false; message: string } {
   try {
     assertModuleId(id)
-    const builtin = findModuleDir(packageModulesDir(), id)
-    if (builtin === undefined) {
+    const blank = id === BLANK_MODULE_TEMPLATE.id
+    const builtin = blank ? undefined : findModuleDir(packageModulesDir(), id)
+    if (!blank && builtin === undefined) {
       return { ok: false, message: `预设 ${id} 不是包内置预设` }
     }
-    let targetId = id
-    let target = join(moduleRoot, targetId)
-    if (modulePathExists(target)) {
-      if (!autoSuffix) {
-        return { ok: false, message: `用户目录已存在同名预设 ${targetId}，请先删除再新建` }
-      }
-      for (let suffix = 2; ; suffix++) {
-        targetId = `${id}-${suffix}`
-        target = join(moduleRoot, targetId)
-        if (!modulePathExists(target)) break
-      }
-    }
-    copyModuleDirectory(builtin, moduleRoot, targetId)
-    return { ok: true, id: targetId }
+    const allocated = nextModuleDirId(id, moduleRoot, autoSuffix)
+    if (!allocated.ok) return allocated
+    assertModuleId(allocated.id)
+    if (blank) writeBlankModule(moduleRoot, allocated.id)
+    else copyModuleDirectory(builtin!, moduleRoot, allocated.id)
+    return { ok: true, id: allocated.id }
   } catch (error) {
     return { ok: false, message: `新建预设失败：${error instanceof Error ? error.message : String(error)}` }
   }

@@ -136,6 +136,17 @@ test('新建：同名且未要求递增时被拒，既有模块不被覆盖', as
   assert.equal(readFileSync(join(dir, 'module.yml'), 'utf8'), before, '被拒的克隆不得覆盖既有定义')
 })
 
+test('新建：未知模板 id 被拒，模块根不留候选目录', async () => {
+  const { ctx, handlers } = makeHarness()
+  register(ctx)
+  const before = readdirSync(moduleRoot).sort()
+
+  const result = await call(handlers, 'moduleClone', { id: 'no-such-template', autoSuffix: true })
+  assert.equal(result.status, 400, result.message)
+  assert.equal(result.code, 'module-clone-rejected')
+  assert.deepEqual(readdirSync(moduleRoot).sort(), before, '被拒的新建不得留下候选目录')
+})
+
 test('复制：源不存在时被拒，模块根不留残留目录', async () => {
   const { ctx, handlers } = makeHarness()
   register(ctx)

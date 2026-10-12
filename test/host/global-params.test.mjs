@@ -15,7 +15,7 @@ const home = mkdtempSync(join(tmpdir(), 'pt-global-params-home-'))
 process.env.DSH_HOME = home
 const { storageRootOf } = await import('../../src/host/paths.ts')
 const { readGlobalLayerSettings, readGlobalLayerSettingsSafe, setModuleEnabled, writeGlobalLayerSettings } = await import('../../src/host/config-store.ts')
-const { loadModuleSpec, packageModulesDir, resolveModuleDir, resolveModuleParams } = await import('../../src/host/manifest.ts')
+const { listBuiltinTemplates, loadModuleSpec, packageModulesDir, resolveModuleDir, resolveModuleParams } = await import('../../src/host/manifest.ts')
 
 after(() => {
   rmSync(home, { recursive: true, force: true })
@@ -105,9 +105,12 @@ test('全局兜底：用户目录被删、回落到包内同名模板的模块�
   assert.ok(fallbackDir.startsWith(resolve(packageModulesDir())), '确实回落到包内目录')
   assert.deepEqual(loadModuleSpec(fallbackDir).globalParams, { instructionHint: true },
     '启用表声明过的 id 照旧认全局层（否则「模块未声明 ⇒ 回退全局」对它静默失效）')
-  const blank = resolveModuleDir('blank', modulesRoot)
-  assert.ok(blank.startsWith(resolve(packageModulesDir())), 'blank 同样在包内')
-  assert.equal(loadModuleSpec(blank).globalParams, undefined,
+  // 样本换成任一未启用的包内模板：blank 已改为引擎内组装的模板，包内不再有它的目录。
+  const other = listBuiltinTemplates().find((template) => template.id !== 'ponytail')?.id
+  assert.ok(other !== undefined, '包内应当还有 ponytail 之外的内置模板')
+  const unlisted = resolveModuleDir(other, modulesRoot)
+  assert.ok(unlisted.startsWith(resolve(packageModulesDir())), '未启用的包内模板仍在包内')
+  assert.equal(loadModuleSpec(unlisted).globalParams, undefined,
     '不在启用表里的包内模板不继承全局层（克隆/导入不会把全局值烘进新模块定义）')
 })
 

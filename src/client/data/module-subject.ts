@@ -67,7 +67,8 @@ export const isWritableTarget = (
 ): boolean => (modules ?? []).some((module) => module.id === moduleId && isWritableTargetModule(fields, module))
 
 /**
- * 「新建空白模块」的复制源：包内 `modules/blank`（只声明身份，不预置任何节）。
+ * 「新建空白模块」的源：引擎内组装的空白模板（`src/host/manifest.ts` 的 `BLANK_MODULE_TEMPLATE`，
+ * 不落包内目录）；只声明身份，不预置任何节。
  *
  * ponytail: 名字**不可由用户指定**——`/module-clone` 只吃模板 id，目录名由服务端定
  * （模板名已占用则追加 `-2`/`-3`…）。要自定义命名就得给 `/module-clone` 加显式 targetId，

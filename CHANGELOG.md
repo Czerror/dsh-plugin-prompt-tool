@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+### 空白模板改为引擎内组装（2026-10-12）
+
+- **`modules/blank/` 目录删除，空白模板改由引擎组装**：`cloneBuiltinModule('blank')` 现在用 yaml Document API 在内存生成 `module.yml`（写盘仍是「模块根下临时目录 → 原子 rename」，失败清理临时目录）。公开接口零变化：`/module-clone` 的入参、返回与错误码不变，客户端 `BLANK_MODULE_TEMPLATE = 'blank'` 一行不动。
+- **`meta.internal` 机制退役**：模板不再是包内目录，也就不必再对「新建模块」选择器（`listBuiltinTemplates`）与首次种子化（`ensureModuleSeed`）加过滤——`isInternalModuleSpec` 与两处过滤一并删除。生成的定义与包内其它模板字段同构（`id` / `name` / `version` / `engineCompat` / `description` / `meta.source` / `modules` / `order`），不含 `meta.internal`；文件头保留一段注释说明它是引擎组装的内置模板。
+- **回归**：`node --test --test-concurrency=1 test/host/module-seed.test.mjs test/host/module-management.test.mjs test/host/settings-bridge.test.mjs` **52 passed（0 失败）**，`pnpm --dir $Repo typecheck` EXIT=0。宿主侧改动，**需重启 DSH 后生效**。
+
 ### 测试面按 seam 收敛（2026-10-12）
 
 - **删墓碑与恒真断言**：`test/client/` 删 4 处为已删除实现或产物写的墓碑断言（`data-module-create` ×2、`data-template-new-name`、`data-instruction-module`），另删 2 处恒真断言（生产与字典均 0 命中的「选择一个来源模块…」文案、`/global/` 子串）。
