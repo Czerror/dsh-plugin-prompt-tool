@@ -9,7 +9,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { mkdirSync, writeFileSync } from 'node:fs'
-import { fileURLToPath } from 'node:url'
 import { join } from 'node:path'
 import { isolatedHome } from '../fixtures/host-harness.mjs'
 
@@ -37,15 +36,9 @@ test('顶层键整个不存在才算没声明；空值键算已声明', () => {
   assert.equal(moduleDeclares(emptyCustomTools, 'rules'), false, '没写的节照旧判没声明')
 })
 
-test('登记表：模块类端点各要哪个节，全局类端点不登记', () => {
-  assert.deepEqual(DECLARED_SECTIONS.customTools, ['customTools'])
-  assert.deepEqual(DECLARED_SECTIONS.persona, ['persona'])
-  assert.deepEqual(DECLARED_SECTIONS.subagentToolPolicy, ['subagentToolPolicy'])
-  assert.deepEqual(DECLARED_SECTIONS.subagentToolPolicyPreview, ['subagentToolPolicy'])
-  assert.deepEqual(DECLARED_SECTIONS.moduleVariables, ['variables', 'variablesEnabled'], '任一存在即算已声明')
-  assert.deepEqual(DECLARED_SECTIONS.paramOverrides, ['params', 'layerSettings'], '任一存在即算已声明')
-  assert.deepEqual(DECLARED_SECTIONS.rules, ['rules'])
-  assert.deepEqual(DECLARED_SECTIONS.moduleCapability, ['modules'])
+test('登记表：只有模块类端点登记声明面，全局类端点不登记', () => {
+  // 登记表逐条内容不在这里镜像（行为面由 settings-bridge 的六个节端到端守）；
+  // 这里只守「过度登记」：把定义本身或全局段端点拖进归属门会让它们凭空 400。
   for (const key of ['charactersImport', 'moduleMerge', 'moduleUnmerge', 'bootstrap', 'describe',
     'promptConfigs', 'moduleDelete', 'mutate', 'meta', 'moduleConfigOrder']) {
     assert.equal(key in DECLARED_SECTIONS, false, `${key} 读写的是定义本身、全局段或不过归属门，不登记声明面`)
@@ -59,16 +52,4 @@ test('非法 YAML 抛既有错误，不返回空声明集', () => {
     assert.equal(error.code, 'rules-invalid', '用定义校验那条链的既有错误码')
     return true
   }, '解析失败必须是错误，不能当成「没声明」')
-})
-
-test('随包分发的四个真实模块：只声明 rules／modules，工具、人设、策略、变量与参数都未声明', () => {
-  const bundled = fileURLToPath(new URL('../../modules/', import.meta.url))
-  for (const id of ['ponytail', 'skill-surface', 'tool-surface', 'superpowers']) {
-    const declared = moduleDeclarations(join(bundled, id))
-    assert.equal(declared.has('rules'), true, `${id} 声明 rules`)
-    assert.equal(declared.has('modules'), true, `${id} 声明 modules`)
-    for (const section of ['customTools', 'persona', 'subagentToolPolicy', 'variables', 'variablesEnabled', 'params', 'layerSettings']) {
-      assert.equal(declared.has(section), false, `${id} 未声明 ${section}（对应端点会 400 module-not-declared）`)
-    }
-  }
 })

@@ -7,6 +7,8 @@
  * 不再回退启用表首项；非法 `x-module-id` 在事务边界显式 400，不降级成「未声明」；
  * `required` 无目标 400 `module-dir-unavailable`，载荷主语 ≠ 头声明 400 `module-subject-conflict`。
  * 断言落在公共接口（`resolveEditDir` / `resolveRequestedModuleDir` / 端点载荷）上。
+ * 声明面（读 400 `module-not-declared` / 写路径建立声明）的行为面归 settings-bridge.test.mjs，
+ * 这里只留它不覆盖的那一条：解析失败不降级成「没声明」。
  */
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
@@ -20,7 +22,6 @@ const { resolveEditDir, resolveRequestedModuleDir, setModuleEnabled } =
 const { registerSettingsBridge } = await import('../../src/runtime/settings-bridge.ts')
 const { BRIDGE_ENDPOINTS, MODULE_IDENTITY_INVALID, MODULE_NOT_DECLARED, MODULE_SUBJECT_CONFLICT } =
   await import('../../src/shared/bridge-contract.ts')
-const { moduleDeclares } = await import('../../src/host/module-declarations.ts')
 
 function makeModule(id, body = 'modules: []\n') {
   const dir = join(moduleRoot, id)
@@ -167,53 +168,6 @@ test('归属门：required 无目标 400、载荷主语与头声明冲突 400、
   assert.equal('moduleFacts' in payload, false, '空主语时 moduleFacts 整体缺席')
   assert.equal(payload.templatePreStepCount, 0, '空主语不拿包内默认模块算批层数')
   assert.ok(payload.instructions?.context?.cwd, '全局段照常下发指令文件上下文')
-})
-
-test('声明面：读没声明 400 module-not-declared，写路径不查并在写后建立声明', async () => {
-  const onlyRules = makeModule('declares-rules-only', 'modules: [rule-engine]\nrules: []\n')
-  const withTools = makeModule('declares-custom-tools', 'modules: [rule-engine]\nrules: []\ncustomTools: []\n')
-  const { call } = bridgeHarness()
-  const tool = { id: 'shell', description: '运行命令', output: { schema: { type: 'string' } }, execute: { kind: 'shell', command: 'echo' } }
-
-  // 读路径判声明面：键整个不存在＝没声明，没有内容可读，拒绝（customTools／persona／paramOverrides 各一条）。
-  const missing = await call('customTools', basename(onlyRules))
-  assert.equal(missing.status, 400)
-  assert.equal(missing.code, MODULE_NOT_DECLARED)
-  assert.match(missing.message, /customTools/)
-
-  const missingPersona = await call('persona', basename(onlyRules))
-  assert.equal(missingPersona.status, 400)
-  assert.equal(missingPersona.code, MODULE_NOT_DECLARED)
-  assert.match(missingPersona.message, /persona/)
-
-  const missingParams = await call('paramOverrides', basename(onlyRules))
-  assert.equal(missingParams.status, 400)
-  assert.equal(missingParams.code, MODULE_NOT_DECLARED)
-  assert.match(missingParams.message, /params 或 layerSettings/)
-
-  // 全局变量跨模块共享，与这个模块是否声明 `variables` 无关：global 读不受声明面约束，module 读仍拒。
-  const globalRead = await call('moduleVariables', basename(onlyRules), { body: { scope: 'global' } })
-  assert.equal(globalRead.status, 200, `全局变量读不该被模块声明挡住：${JSON.stringify(globalRead.value ?? globalRead)}`)
-  const moduleRead = await call('moduleVariables', basename(onlyRules), { body: { scope: 'module' } })
-  assert.equal(moduleRead.status, 400)
-  assert.equal(moduleRead.code, MODULE_NOT_DECLARED)
-  assert.match(moduleRead.message, /variables/)
-
-  // 写路径不查声明面：给已有模块添加第一节是合法的；写成功后该节真实存在，随后读也合法。
-  const created = await call('customTools', basename(onlyRules), { body: { customTools: [tool] } })
-  assert.equal(created.status, 200, `写路径应放行：${JSON.stringify(created.value ?? created)}`)
-  assert.equal(moduleDeclares(onlyRules, 'customTools'), true, '写路径建立声明')
-  const readBack = await call('customTools', basename(onlyRules))
-  assert.equal(readBack.status, 200, `写后读应合法：${JSON.stringify(readBack.value ?? readBack)}`)
-  assert.deepEqual(readBack.value.customTools, [tool])
-
-  // 键在、值为空算已声明：读到空数组（与「没声明」区分开）。
-  const declared = await call('customTools', basename(withTools))
-  assert.equal(declared.status, 200, `customTools: [] 应可读：${JSON.stringify(declared.value ?? declared)}`)
-  assert.deepEqual(declared.value.customTools, [], 'customTools: [] 算已声明，读到空数组')
-
-  // 未登记的端点不看声明面（全局段/定义管理照旧）。
-  assert.equal((await call('describe', basename(onlyRules))).status, 200)
 })
 
 test('声明面：解析失败走既有错误码，不降级成 module-not-declared；顺序在身份判据之前', async () => {

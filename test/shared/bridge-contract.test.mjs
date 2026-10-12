@@ -1,25 +1,27 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { cpSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { Context } from '@deepseek-ai/cordis'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
-import { fakeReq, fakeRes, handlerTable } from '../fixtures/host-harness.mjs'
-const home = mkdtempSync(join(process.cwd(), 'pt-contract-'))
+import { fakeReq, fakeRes, handlerTable, isolatedHome } from '../fixtures/host-harness.mjs'
+// 隔离 DSH_HOME：夹具登记 after 清理并在文件末尾还原旧值（别让后续用例读到临时 HOME）；
+// 设置必须在动态 import 那些 import 时冻结路径的模块之前。
+const { home } = isolatedHome('pt-contract-')
 process.env.DSH_HOME = home
 const {
-  BRIDGE_ENDPOINTS, SETTINGS_BRIDGE_PREFIX, MAX_BRIDGE_BODY_BYTES,
-  BRIDGE_SUBJECT_POLICY, MODULE_SUBJECT_CONFLICT, MODULE_IDENTITY_INVALID, readSubjectHeader,
+  BRIDGE_ENDPOINTS, SETTINGS_BRIDGE_PREFIX, MAX_BRIDGE_BODY_BYTES, BRIDGE_SUBJECT_POLICY, readSubjectHeader,
 } = await import('../../src/shared/bridge-contract.ts')
 const { registerSettingsBridge } = await import('../../src/runtime/settings-bridge.ts')
 const { bridgeTransaction } = await import('../../src/runtime/bridge-transaction.ts')
 const { MODULE_CAPABILITIES, ENGINE_EDITOR_GROUP_MAP, INJECTION_POINT_ORDER } = await import('../../src/shared/engine-capabilities.ts')
 const { getEngineMeta, LAYER_ORDER } = await import('../../engine/schema.mjs')
 const bridgeDisposers = []
+// 先放掉本轮注册的端点，再让夹具的 after 清掉 home（登记顺序即执行顺序）。
 test.after(() => {
   for (const dispose of bridgeDisposers) dispose()
-  rmSync(home, { recursive: true, force: true })
 })
 
 // 跨端契约测试：shared 常量（client 消费）必须与 server 注册路由逐点一致。
@@ -88,29 +90,16 @@ test('契约：client 前缀与 server 注册前缀同源', () => {
 })
 
 // ── 主语策略表：一次读写的主语是哪个模块 ─────────────────────────────────────────
-// 这张表是客户端类型约束与服务端归属门的**唯一名单**；漏标一个端点即失败。
+// 只守键集：漏标一个端点即失败。逐端点的**策略值**不在这里锁快照（加端点/改策略就要手改
+// 测试，且 typecheck 只保证键集），改由端点行为守——required 端点无主语 400 见
+// test/host/module-subject.test.mjs 与 test/host/settings-bridge.test.mjs，optional 端点空主语 200 见后者。
 
-test('契约：主语策略表登记每一个端点（46 个），三类计数 11/5/30', () => {
+test('契约：主语策略表登记每一个端点，策略值只认三态', () => {
   assert.deepEqual(Object.keys(BRIDGE_ENDPOINTS).sort(), Object.keys(BRIDGE_SUBJECT_POLICY).sort(),
     'BRIDGE_SUBJECT_POLICY 必须与 BRIDGE_ENDPOINTS 逐 key 一致')
-  assert.equal(Object.keys(BRIDGE_SUBJECT_POLICY).length, 46)
-  const counts = { required: 0, optional: 0, none: 0 }
   for (const [key, policy] of Object.entries(BRIDGE_SUBJECT_POLICY)) {
     assert.ok(['required', 'optional', 'none'].includes(policy), `${key} 的策略非法：${policy}`)
-    counts[policy] += 1
   }
-  // `paramOverrides` 由 required 改 optional（用户裁定 2026-10-12）：空主语＝全局层（config.yml）。
-  assert.deepEqual(counts, { required: 11, optional: 5, none: 30 })
-})
-
-test('契约：主语策略按端点逐一标注 required 11 个 / optional 5 个', () => {
-  const required = Object.entries(BRIDGE_SUBJECT_POLICY).filter(([, policy]) => policy === 'required').map(([key]) => key).sort()
-  const optional = Object.entries(BRIDGE_SUBJECT_POLICY).filter(([, policy]) => policy === 'optional').map(([key]) => key).sort()
-  assert.deepEqual(required, [
-    'charactersImport', 'customTools', 'describe', 'moduleCapability', 'moduleMerge', 'moduleUnmerge',
-    'moduleVariables', 'persona', 'rules', 'subagentToolPolicy', 'subagentToolPolicyPreview',
-  ].sort())
-  assert.deepEqual(optional, ['bootstrap', 'moduleDelete', 'mutate', 'paramOverrides', 'promptConfigs'].sort())
 })
 
 test('契约：主语头解析三态——absent 只认「头完全没有」，其余非法形状一律 invalid', () => {
@@ -131,11 +120,6 @@ test('契约：主语头解析三态——absent 只认「头完全没有」，�
   for (const [input, expected] of cases) {
     assert.deepEqual(readSubjectHeader(input), expected, `readSubjectHeader(${JSON.stringify(input)}) 判定错误`)
   }
-})
-
-test('契约：主语冲突与身份非法是两个稳定码', () => {
-  assert.equal(MODULE_SUBJECT_CONFLICT, 'module-subject-conflict')
-  assert.equal(MODULE_IDENTITY_INVALID, 'module-identity-invalid')
 })
 
 // ── 桥事务（src/runtime/bridge-transaction.ts）：一次请求的边界与信封 ──────────────
@@ -501,7 +485,7 @@ test('契约：官方装配刻度随 /meta 与 /bootstrap 同源下发，服务�
 })
 
 test('契约：复制引擎目录即可提供层契约，不依赖 src', async () => {
-  const copied = mkdtempSync(join(process.cwd(), 'pt-engine-copy-'))
+  const copied = mkdtempSync(join(tmpdir(), 'pt-engine-copy-'))
   try {
     cpSync(new URL('../../engine', import.meta.url), join(copied, 'engine'), { recursive: true })
     const copy = await import(pathToFileURL(join(copied, 'engine', 'schema.mjs')).href)

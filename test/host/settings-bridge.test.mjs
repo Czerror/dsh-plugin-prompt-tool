@@ -55,6 +55,15 @@ function makeUserPresetDir(prefix) {
   return dir
 }
 
+/** 合并后的共享桩：端点表 + 请求体 → 状态与统一载荷；声明面两条用例共用（此前各抄一份）。 */
+async function call(handlers, endpoint, body = {}) {
+  const handler = handlers.get(PREFIX + BRIDGE_ENDPOINTS[endpoint])
+  assert.ok(handler, `${endpoint} 端点应注册`)
+  const res = fakeRes()
+  await handler(fakeReq({ [Symbol.asyncIterator]: async function* () { yield Buffer.from(JSON.stringify(body)) } }), res)
+  return { status: res.status, payload: JSON.parse(res.body) }
+}
+
 const textRule = (id, text, options = {}) => {
   const { enabled, ...config } = options
   return { id, layer: config.layer ?? 'pre-step', ...(enabled === undefined ? {} : { enabled }), then: [{ id: 'inject', kind: 'inject-text', config: { id, layer: 'pre-step', text, ...config } }] }
@@ -248,22 +257,15 @@ test('声明面：五个节的首次写入＝创建（无版本期望也 200）�
     skills: () => skillsStateStub(),
     moduleDirectory: () => dir,
   })
-  const call = async (endpoint, body = {}) => {
-    const handler = handlers.get(PREFIX + BRIDGE_ENDPOINTS[endpoint])
-    assert.ok(handler, `${endpoint} 端点应注册`)
-    const res = fakeRes()
-    await handler(fakeReq({ [Symbol.asyncIterator]: async function* () { yield Buffer.from(JSON.stringify(body)) } }), res)
-    return { status: res.status, payload: JSON.parse(res.body) }
-  }
   /** 判据与门的登记表同口径：该端点读写哪些节，任一「写前没有、写后存在」即算建立声明。 */
   const created = async (endpoint, sections, body) => {
     const before = readFileSync(file, 'utf8')
     assert.equal(sections.some((section) => moduleDeclares(dir, section)), false, `${endpoint} 前置：未声明 ${sections.join('/')}`)
-    const write = await call(endpoint, body)
+    const write = await call(handlers, endpoint, body)
     assert.equal(write.status, 200, `${endpoint} 创建写应 200：${JSON.stringify(write.payload)}`)
     assert.notEqual(readFileSync(file, 'utf8'), before, `${endpoint} 创建写必须落盘`)
     assert.equal(sections.some((section) => moduleDeclares(dir, section)), true, `${endpoint} 写后声明成立（${sections.join('/')}）`)
-    const read = await call(endpoint, endpoint === 'moduleVariables' ? { scope: 'module' } : {})
+    const read = await call(handlers, endpoint, endpoint === 'moduleVariables' ? { scope: 'module' } : {})
     assert.equal(read.status, 200, `${endpoint} 写后读应合法：${JSON.stringify(read.payload)}`)
   }
 
@@ -278,10 +280,10 @@ test('声明面：五个节的首次写入＝创建（无版本期望也 200）�
 
   // 有前状态就仍要版本期望：声明之后再省略版本必须被拒（创建语义不放宽并发校验）。
   // 拒法与写区外的校验同源，所以这里连状态码与 code 一起锁住——只断「不是 200」会漏掉状态码分类退化。
-  const personaNoRevision = await call('persona', { persona: { main: { prefix: 'AGAIN' } }, expectedModuleId: id })
+  const personaNoRevision = await call(handlers, 'persona', { persona: { main: { prefix: 'AGAIN' } }, expectedModuleId: id })
   assert.equal(personaNoRevision.status, 400, `已声明 persona 的写必须带读取版本：${JSON.stringify(personaNoRevision.payload)}`)
   assert.equal(personaNoRevision.payload.code, 'module-persona-rejected')
-  const variablesNoRevisions = await call('moduleVariables', { scope: 'module', variables: { owner: 'again' }, expectedModuleId: id })
+  const variablesNoRevisions = await call(handlers, 'moduleVariables', { scope: 'module', variables: { owner: 'again' }, expectedModuleId: id })
   assert.equal(variablesNoRevisions.status, 400, `已声明 variables 的写必须带读取版本：${JSON.stringify(variablesNoRevisions.payload)}`)
   assert.equal(variablesNoRevisions.payload.code, 'rules-invalid')
 })
@@ -1311,38 +1313,70 @@ test('声明面：读没声明 400 module-not-declared，写路径建立声明�
   const { ctx, handlers } = makeHarness()
   registerSettingsBridge(ctx, { ns: 'prompt-tool', models: () => ({ available: true, providers: [] }),
     skills: () => skillsStateStub(), moduleDirectory: () => dir })
-  const call = async (endpoint, body = {}) => {
-    const handler = handlers.get(PREFIX + BRIDGE_ENDPOINTS[endpoint])
-    assert.ok(handler, `${endpoint} 端点应注册`)
-    const res = fakeRes()
-    await handler(fakeReq({ [Symbol.asyncIterator]: async function* () { yield Buffer.from(JSON.stringify(body)) } }), res)
-    return { status: res.status, payload: JSON.parse(res.body) }
-  }
 
   const before = readFileSync(join(undeclared, 'module.yml'), 'utf8')
-  const read = await call('customTools')
-  assert.equal(read.status, 400, `未声明 customTools 必须拒绝：${JSON.stringify(read.payload)}`)
-  assert.equal(read.payload.code, 'module-not-declared')
-  assert.match(read.payload.message, /customTools/)
-  assert.equal(readFileSync(join(undeclared, 'module.yml'), 'utf8'), before, '读拒绝时零写入')
+  // 声明面逐节：每个节端点自己那条 400 都要在场——逐节断言（不是遇错即停），
+  // 缺哪一节就红在哪一节；端点的策略值/登记表不再由 shared 快照守，这里就是它们的行为面判据。
+  const undeclaredSections = [
+    ['customTools', 'customTools'],
+    ['persona', 'persona'],
+    ['paramOverrides', 'params 或 layerSettings'],
+  ]
+  for (const [endpoint, sections] of undeclaredSections) {
+    const denied = await call(handlers, endpoint)
+    assert.equal(denied.status, 400, `未声明 ${sections} 必须拒绝：${JSON.stringify(denied.payload)}`)
+    assert.equal(denied.payload.code, 'module-not-declared', `${endpoint} 的错误码`)
+    assert.match(denied.payload.message, new RegExp(sections), `${endpoint} 的 message 要点名缺的节`)
+  }
+  assert.equal(readFileSync(join(undeclared, 'module.yml'), 'utf8'), before, '逐节读拒绝都零写入')
+
+  // 未登记声明面的端点照旧放行（「登记表不得过度登记」的行为面配对）。
+  assert.equal((await call(handlers, 'describe')).status, 200, '未登记声明的端点不看声明面')
+
+  // 全局变量跨模块共享，与这个模块是否声明 `variables` 无关：global 读不受声明面约束，module 读仍拒。
+  // （从 module-subject 那份重复用例里并过来的唯一判据。）
+  const globalRead = await call(handlers, 'moduleVariables', { scope: 'global' })
+  assert.equal(globalRead.status, 200, `全局变量读不该被模块声明挡住：${JSON.stringify(globalRead.payload)}`)
+  const moduleRead = await call(handlers, 'moduleVariables', { scope: 'module' })
+  assert.equal(moduleRead.status, 400)
+  assert.equal(moduleRead.payload.code, 'module-not-declared')
+  assert.match(moduleRead.payload.message, /variables/)
+  assert.equal(readFileSync(join(undeclared, 'module.yml'), 'utf8'), before, '全局读也没有写盘')
 
   // 写路径不查声明面：允许给已有模块添加第一节，写成功后该节真实存在，随后读也合法。
   const tool = { id: 'shell', description: '运行命令', output: { schema: { type: 'string' } }, execute: { kind: 'shell', command: 'echo' } }
-  const write = await call('customTools', { customTools: [tool] })
+  const write = await call(handlers, 'customTools', { customTools: [tool] })
   assert.equal(write.status, 200, `写路径应放行并建立声明：${JSON.stringify(write.payload)}`)
   assert.equal(moduleDeclares(undeclared, 'customTools'), true, '写路径建立声明')
-  const readBack = await call('customTools')
+  const readBack = await call(handlers, 'customTools')
   assert.equal(readBack.status, 200, `写后读应合法：${JSON.stringify(readBack.payload)}`)
   assert.deepEqual(readBack.payload.value.customTools, [tool])
 
   dir = declared
-  assert.deepEqual((await call('customTools')).payload.value.customTools, [], 'customTools: [] 算已声明')
-  assert.equal((await call('paramOverrides')).status, 200, 'layerSettings 也算声明（数组任一存在）')
+  assert.deepEqual((await call(handlers, 'customTools')).payload.value.customTools, [], 'customTools: [] 算已声明')
+  assert.equal((await call(handlers, 'paramOverrides')).status, 200, 'layerSettings 也算声明（数组任一存在）')
 
   dir = broken
-  const unparsable = await call('customTools')
+  const unparsable = await call(handlers, 'customTools')
   assert.equal(unparsable.status, 400)
   assert.equal(unparsable.payload.code, 'rules-invalid', '解析失败是既有错误，不得降级成「没声明」')
+})
+
+test('声明面：paramOverrides 写路径建立 layerSettings 声明（读 200 不算建立）', async () => {
+  const dir = makeUserPresetDir('pt-declares-param-write-')
+  const file = join(dir, 'module.yml')
+  writeFileSync(file, `id: ${basename(dir)}\nmodules: []\nrules: []\n`, 'utf8')
+  const { ctx, handlers } = makeHarness()
+  registerSettingsBridge(ctx, { ns: 'prompt-tool', models: () => ({ available: true, providers: [] }),
+    skills: () => skillsStateStub(), moduleDirectory: () => dir })
+
+  assert.equal(moduleDeclares(dir, 'layerSettings'), false, '前置：未声明 layerSettings')
+  const write = await call(handlers, 'paramOverrides', { overrides: { maxDepth: 3 } })
+  assert.equal(write.status, 200, `写路径应放行：${JSON.stringify(write.payload)}`)
+  assert.equal(moduleDeclares(dir, 'layerSettings'), true, '写路径建立声明')
+  const readBack = await call(handlers, 'paramOverrides')
+  assert.equal(readBack.status, 200, `写后读应合法：${JSON.stringify(readBack.payload)}`)
+  assert.deepEqual(readBack.payload.value.overrides, { maxDepth: 3 })
 })
 
 test('param-overrides：空主语＝全局层——写 config.yml 的 layerSettings，模块 module.yml 零改动', async () => {

@@ -1,13 +1,15 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { parse } from 'yaml'
+import { tempDir } from '../fixtures/host-harness.mjs'
 import { registerModuleMemoryTools } from '../../src/runtime/module-memory-tools.ts'
 import { resolveModuleToolTarget } from '../../src/host/module-tool-target.ts'
 
 function fixture(t) {
-  const root = mkdtempSync(join(process.cwd(), 'pt-module-memory-'))
+  // 系统临时目录 + 夹具登记的清理：不在仓库 cwd 里留 pt-module-memory-*。
+  const root = tempDir('pt-module-memory-')
   const moduleRoot = join(root, 'modules')
   const dir = join(moduleRoot, 'alice')
   mkdirSync(dir, { recursive: true })
@@ -20,7 +22,7 @@ function fixture(t) {
       return () => tools.delete(tool.name)
     } } }) }),
   }, { root: moduleRoot, target: (exec, moduleId) => resolveModuleToolTarget(exec, moduleRoot, () => ['alice'], moduleId), rebuild: async () => { rebuilds += 1 } })
-  t.after(() => { dispose(); assert.equal(tools.size, 0); rmSync(root, { recursive: true, force: true }) })
+  t.after(() => { dispose(); assert.equal(tools.size, 0) })
   return { root, dir, tools, rebuilds: () => rebuilds }
 }
 

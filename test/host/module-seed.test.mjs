@@ -1,12 +1,11 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { isolatedHome, tempDir } from '../fixtures/host-harness.mjs'
 
-// 种子化只发生在预设根内：独立进程 + 临时 DSH_HOME 验证补建、幂等与安全边界。
-const home = mkdtempSync(join(tmpdir(), 'pt-seed-'))
-process.env.DSH_HOME = home
+// 种子化只发生在预设根内：隔离 DSH_HOME 验证补建、幂等与安全边界（清理与还原由夹具登记）。
+const { home } = isolatedHome('pt-seed-')
 const { storageRootOf } = await import('../../src/host/paths.ts')
 const { cloneBuiltinModule, ensureModuleSeed, listBuiltinTemplates, packageModulesDir } = await import('../../src/host/manifest.ts')
 
@@ -50,7 +49,7 @@ test('种子化不写状态文件，也不改动 DSH_HOME 根下其他文件', (
 test('空白模板是内部复制源：不种子化到用户模块根，也不进「新建模块」选择器', () => {
   // 复制源本身必须还在包内（moduleClone 的目标），隐藏的是它的可见性，不是文件。
   assert.ok(existsSync(join(packageModulesDir(), 'blank', 'module.yml')), '包内 blank 模板仍在（moduleClone 的复制源）')
-  const root = mkdtempSync(join(tmpdir(), 'pt-blank-seed-'))
+  const root = tempDir('pt-blank-seed-')
   const { created } = ensureModuleSeed(root)
   assert.ok(!created.includes('blank'), 'blank 不进种子化清单')
   assert.ok(!existsSync(join(root, 'blank')), '用户模块根不出现 blank 目录')
@@ -59,7 +58,7 @@ test('空白模板是内部复制源：不种子化到用户模块根，也不�
 })
 
 test('隐藏的复制源仍可克隆：cloneBuiltinModule 不走模板清单，且内部标记不落进用户模块', () => {
-  const root = mkdtempSync(join(tmpdir(), 'pt-blank-clone-'))
+  const root = tempDir('pt-blank-clone-')
   const cloned = cloneBuiltinModule('blank', true, root)
   assert.equal(cloned.ok, true, '内部模板仍可作复制源（隐藏的是可见性，不是能力）')
   assert.equal(cloned.id, 'blank')
