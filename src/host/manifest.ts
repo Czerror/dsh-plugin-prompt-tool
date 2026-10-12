@@ -21,7 +21,7 @@ import { moduleCapability, engineRecipe, impliedModulesForParams, isModuleCapabi
 import { ENGINE_PARAM_DEFINITIONS, ENGINE_PARAM_KEYS, buildEngineModuleParams, normalizeMaxDepth } from '../shared/engine-params.ts'
 import { readPersonaSpec, type PersonaSnapshot, type PersonaSpec } from '../shared/persona-section.ts'
 import { isModuleId } from '../shared/module-ids.ts'
-import { readGlobalLayerSettings, readStorageConfig } from './config-store.ts'
+import { enabledModuleIds, readGlobalLayerSettingsSafe, readStorageConfig } from './config-store.ts'
 import { assertModuleDirectory, assertModuleId, assertModuleTree, modulePathExists, setModuleDefinitionId } from './module-install.ts'
 import { engineParamPath, readModuleLayerSettings, ModuleLayerSettingsError } from './module-layer-settings.ts'
 import type { RuleDefinition } from '../shared/rules.ts'
@@ -153,12 +153,22 @@ export function removeModuleCapabilityDeclaration(dir: string, moduleId: string)
   return true
 }
 
-/** 用户模块 = 存储根下的模块目录：只有它们才有存储根全局层可兜底。 */
+/**
+ * 把存储根的全局层挂到这个模块上（`resolveModuleParams` 的兜底输入）。
+ *
+ * 认两处目录：① 用户模块根下的目录；② **用户在启用表里声明过的 id**、但用户目录已被删、
+ * `resolveModuleDir` 回落到包内同名模板的情形——否则「模块未声明 ⇒ 回退全局」对它静默失效。
+ * 包内模板（`blank` 等，不在启用表里）**不继承**全局层：克隆/导入时会把全局值烘进新模块定义。
+ *
+ * 读是**软失败**（`readGlobalLayerSettingsSafe`）：全局层坏掉只让这个模块按「无全局层」装配，
+ * 绝不因为一个笔误打掉 `prepareAssembly`；诊断由 `/meta` 的 `moduleWarnings` 给出。
+ */
 function withGlobalParams(spec: ModuleSpec, dir: string): ModuleSpec {
-  if (!resolve(dir).startsWith(resolve(userModulesDir()) + sep)) return spec
-  const globalParams = readGlobalLayerSettings(dirname(dir))
-  if (Object.keys(globalParams).length === 0) return spec
-  return { ...spec, globalParams }
+  const inUserRoot = resolve(dir).startsWith(resolve(userModulesDir()) + sep)
+  if (!inUserRoot && !enabledModuleIds(userModulesDir()).includes(spec.id)) return spec
+  const { params } = readGlobalLayerSettingsSafe(userModulesDir())
+  if (Object.keys(params).length === 0) return spec
+  return { ...spec, globalParams: params }
 }
 
 /** 加载某个模块模板的单一参数文件 modules/<name>/module.yml。 */

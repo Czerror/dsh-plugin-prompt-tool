@@ -157,10 +157,32 @@ export function readGlobalLayerSettings(moduleRoot: string): Record<string, unkn
 }
 
 /**
+ * 全局层的**软失败**读：解析失败不抛，返回空参数 + 一条诊断。
+ *
+ * 全局层挂在**每次 `loadModuleSpec`**（装配）与 `/bootstrap`（首屏）上，而它的形状校验是
+ * 响亮的（未知插入点/错位键即抛）——用户手写 `config.yml` 一个层名笔误就会同时打掉整个
+ * 工作台与全部模块装配，爆炸半径远大于单个 `module.yml`。因此这两条读路径按「没有全局层」
+ * 继续，诊断由 `/meta` 与 `/bootstrap` 的 `meta.moduleWarnings` 下发（模块页可见）。
+ * **写路径不软**：目标文件坏掉时拒绝写入（响亮 400），不覆盖用户内容。
+ */
+export function readGlobalLayerSettingsSafe(moduleRoot: string): { params: Record<string, unknown>; error?: string } {
+  try {
+    return { params: readGlobalLayerSettings(moduleRoot) }
+  } catch (error) {
+    return { params: {}, error: error instanceof Error ? error.message : String(error) }
+  }
+}
+
+/**
  * 写全局层引擎参数（固定卡指令卡的设置区）。
  *
  * 只动 `layerSettings.<层>.<参数键>`，其余内容（注释、未知字段、enabled、personaSources）
  * 原样保留；空值（`''` / `[]`）删除键，`false` 与 `0` 是显式值照常写入。
+ *
+ * 删键要连**空的父层**一起回收：`deleteIn` 不会清掉 `pre-step: {}`，而 `expected` 是按
+ * 「这个键没了」算的，留下空壳会让 `updateStorageConfig` 的 shared-alias 守卫（`doc.toJS()`
+ * 与 `expected` 深比）不成立、写盘被 400 拒绝；层键本来就缺失时 `deleteIn` 还会直接抛。
+ * 所以每次删键都走 `hasIn` 守卫 + 空层回收。
  */
 export function writeGlobalLayerSettings(moduleRoot: string, params: Record<string, unknown>): void {
   updateStorageConfig(moduleRoot, undefined, (doc, source) => {
@@ -173,18 +195,29 @@ export function writeGlobalLayerSettings(moduleRoot: string, params: Record<stri
       if (value === undefined || value === null) continue
       const [section, layer, paramKey] = engineParamPath(key)
       const empty = value === '' || (Array.isArray(value) && value.length === 0)
-      if (empty) doc.deleteIn([section, layer, paramKey])
-      else doc.setIn([section, layer, paramKey], value)
       const entries = { ...next[layer] }
-      if (empty) delete entries[paramKey]
-      else entries[paramKey] = value
-      if (Object.keys(entries).length === 0) delete next[layer]
-      else next[layer] = entries
+      if (empty) {
+        deleteYamlPath(doc, [section, layer, paramKey])
+        delete entries[paramKey]
+        // 该层没内容了就连层键一起删：留着 `pre-step: {}` 会与 expected 不一致。
+        if (Object.keys(entries).length === 0) {
+          deleteYamlPath(doc, [section, layer])
+          delete next[layer]
+        } else next[layer] = entries
+      } else {
+        doc.setIn([section, layer, paramKey], value)
+        next[layer] = { ...entries, [paramKey]: value }
+      }
     }
     if (Object.keys(next).length === 0) {
-      doc.delete('layerSettings')
+      deleteYamlPath(doc, ['layerSettings'])
       delete expected.layerSettings
     } else expected.layerSettings = next
     return expected
   })
+}
+
+/** 父集合缺失时不触发 `deleteIn` 对不存在集合的异常（与 `manifest.ts#deleteYamlPath` 同规）。 */
+function deleteYamlPath(doc: ReturnType<typeof parseDocument>, path: string[]): void {
+  if (doc.hasIn(path)) doc.deleteIn(path)
 }

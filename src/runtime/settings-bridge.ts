@@ -12,7 +12,7 @@ import type { SettingsDescriptor, SettingsPathOp } from '@deepseek-ai/dsh-settin
 import { PARAM_KEYS, readModulesEnabled } from '../config.ts'
 import { invalidateModelCatalog, listAdvertisedModels, peekModelCatalog, refreshModelReasoning, type ModelDetection } from './models.ts'
 import type { SkillCatalogEntry, SkillPolicyChange, SkillPolicyScope, SkillsCatalogSnapshot } from '../shared/skills.ts'
-import { enabledModuleIds, readGlobalLayerSettings, setModuleEnabled, writeGlobalLayerSettings } from '../host/config-store.ts'
+import { enabledModuleIds, readGlobalLayerSettingsSafe, setModuleEnabled, writeGlobalLayerSettings } from '../host/config-store.ts'
 import { readPersonaSources, writePersonaSources } from '../host/persona-selection.ts'
 import { appendModuleConfigOrder, ModuleConfigOrderError, readModuleConfigOrder, saveModuleConfigOrder } from '../host/module-config-order.ts'
 import type { ModuleConfigIdentity } from '../shared/module-config-order.ts'
@@ -582,9 +582,17 @@ export function registerSettingsBridge(
           }
         })
         meta.builtinTemplates = listBuiltinTemplates()
+        const warnings: string[] = []
         if (modulePathExists(join(dirname(userModulesDir()), '.characters'))) {
-          meta.moduleWarnings = ['检测到旧 .characters 角色库；其内容尚未作为模块导入。请通过模块导入入口显式导入，旧目录不会自动迁移或删除。']
+          warnings.push('检测到旧 .characters 角色库；其内容尚未作为模块导入。请通过模块导入入口显式导入，旧目录不会自动迁移或删除。')
         }
+        // 全局层（config.yml 的 layerSettings）解析失败是**可诊断软失败**：首屏与装配都照常，
+        // 诊断随 /meta 与 /bootstrap 的 moduleWarnings 下发（模块页 role=alert 可见）。
+        const globalLayerError = readGlobalLayerSettingsSafe(userModulesDir()).error
+        if (globalLayerError !== undefined) {
+          warnings.push(`全局层 layerSettings 解析失败，已按「无全局层」继续（指令卡的全局开关暂不可用）：${globalLayerError}`)
+        }
+        if (warnings.length > 0) meta.moduleWarnings = warnings
         // 编辑组主归属与引擎 meta 同源组合下发：layerOrder 由引擎 schema 提供（不另写层序清单），
         // editorGroups 来自共享契约。逐条挑白名单字段，避免将来给契约加字段就顺带泄漏到浏览器。
         meta.editorGroups = ENGINE_EDITOR_GROUP_MAP.map(({ id, displayLayer, relatedLayers, hook }) => ({
@@ -779,7 +787,8 @@ export function registerSettingsBridge(
                 overrides: { overrides: dir.length > 0 ? readParamOverrides(dir) : {} },
                 // 全局层参数（存储根 config.yml 的 layerSettings）：固定卡指令卡的设置区读它。
                 // 与「模块自己写了哪个键」无关；优先级判定只在 resolveModuleParams 一处。
-                globalParams: readGlobalLayerSettings(userModulesDir()),
+                // 软失败：全局层坏掉只让这一段为空，首屏照常（诊断见 meta.moduleWarnings）。
+                globalParams: readGlobalLayerSettingsSafe(userModulesDir()).params,
                 ...(variables === undefined ? {} : { variables }),
                 promptConfigs: { promptConfigs: mergeInstructionCards([], scope.files) },
                 instructions: { context: scope.context, files: scope.files, owner: instructionOwner() },
@@ -1335,7 +1344,8 @@ export function registerSettingsBridge(
                 tx.write(400, { ok: false, code: 'overrides-invalid-shape', message: 'rebuild requires overrides or promptConfigs' })
                 return
               }
-              tx.write(200, { ok: true, value: { overrides: global ? readGlobalLayerSettings(userModulesDir()) : readParamOverrides(dir) } })
+              // 全局层读同样软失败（坏文件按空读回；**写**仍然响亮拒绝，不覆盖用户内容）。
+              tx.write(200, { ok: true, value: { overrides: global ? readGlobalLayerSettingsSafe(userModulesDir()).params : readParamOverrides(dir) } })
               return
             }
             if (record.overrides !== undefined && !isRecord(record.overrides)) {

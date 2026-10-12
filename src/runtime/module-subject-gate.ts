@@ -10,7 +10,9 @@
  * 顺序固定，拒绝时写响应并返回 `undefined`（调用点必须
  * `const dir = subjectGate(tx, key, …); if (dir === undefined) return`）：
  * 1. `required` 且 `tx.editDir() === ''` → 400 `module-dir-unavailable`（先于可写校验：无目标报 400，不是 403）；
- * 2. `needs.write` → 目标不在用户模块根下 → 403 `module-readonly`；
+ * 2. `needs.write` → 目标不在用户模块根下 → 403 `module-readonly`；**空目标豁免本步**：没有模块
+ *    目录可写时不判模块只读，写到哪里由端点的空目标分支决定——今天**唯一**用它的就是
+ *    `paramOverrides` 的「空主语＝全局层」（写存储根 `config.yml` 的 `layerSettings`）；
  * 3. 形状核（`loadModuleDefinition` + `readModuleLayerSettings`，**默认开**，只有显式 `format: false` 才豁免）；
  * 4. 声明面（登记表里有这个端点、有主语、且**这次是读**时）：模块没声明该节 → 400 `module-not-declared`；
  *    写在读侧拦的是「没内容可读」，写侧不拦——写一个不存在的节恰恰是**创建**它，写完它就被声明了；

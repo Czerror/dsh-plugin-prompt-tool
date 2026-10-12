@@ -52,6 +52,11 @@ export function EngineParamFields({ store, moduleId, card, t, instanceId }: { st
   </>
 }
 
+/** 参数控件的主语：**全局层**（固定卡指令卡）或**某个模块**，二选一必填。 */
+export type EngineParamSubject =
+  | { moduleId: string; global?: false }
+  | { global: true; moduleId?: never }
+
 /**
  * 同一个引擎参数可以在多个位置渲染（层卡内的能力卡 + 工具管线的共享设置区，含跨层相关设置）：
  * **同一模块**的这些渲染点绑定同一份 `store.moduleParamsOf(moduleId)[param]` 与同一草稿键
@@ -65,13 +70,14 @@ export function EngineParamFields({ store, moduleId, card, t, instanceId }: { st
  * 未完成的数字输入与字段错误也属于这份共享草稿：渲染点订阅同一草稿修订号后一起重渲染，
  * 因此一个渲染点里的半成品输入或错误提示会立即出现在其他渲染点，且不各留一份本地 state。
  */
-export function EngineParamField({ store, moduleId, param, t, instanceId, global }: {
-  store: PromptToolStore; moduleId?: string; param: SharedParamKey; t: PromptToolTranslate; instanceId?: string
-  /** 全局层主语（与 `moduleId` 互斥）：固定卡（指令卡）设置区用。 */
-  global?: boolean
-}): ReactNode {
+export function EngineParamField({ store, param, t, instanceId, ...subject }: {
+  store: PromptToolStore; param: SharedParamKey; t: PromptToolTranslate; instanceId?: string
+} & EngineParamSubject): ReactNode {
+  // 主语**二选一必填**（判别联合）：`moduleId`（某个模块）或 `global: true`（全局层）。
+  // 「都不传」在类型层不可能——否则将来新增调用点会经 `optional` 策略静默写到全局层。
+  const moduleId = subject.global === true ? undefined : subject.moduleId
+  const isGlobal = subject.global === true
   const definition = ENGINE_PARAM_DEFINITIONS[param]
-  const isGlobal = global === true
   const facts = isGlobal || moduleId === undefined ? undefined : moduleFactsOf(store.meta.modules, moduleId)
   // 读数与写路径都按主语：不同模块的同名参数互不影响，草稿键也带上主语。
   const value = isGlobal ? store.globalParams[param] : store.moduleParamsOf(moduleId ?? '')[param]

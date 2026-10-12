@@ -1378,3 +1378,30 @@ test('param-overrides：空主语＝全局层——写 config.yml 的 layerSetti
   assert.deepEqual((await call('paramOverrides')).payload.value.overrides, { instructionHint: true },
     '模块写不影响全局层（两处各存各的，优先级由 resolveModuleParams 判）')
 })
+
+test('bootstrap：config.yml 层名笔误只降级成诊断，不打掉首屏（也不再 400/500）', async () => {
+  const moduleDir = makeUserPresetDir('pt-global-typo-')
+  writeFileSync(join(moduleDir, 'module.yml'), `id: ${basename(moduleDir)}\nmodules: []\nrules: []\n`, 'utf8')
+  const configFile = join(storageRootOf(bridgeHome), 'config.yml')
+  const before = existsSync(configFile) ? readFileSync(configFile, 'utf8') : ''
+  // 层名笔误：`pre-step-typo` 不是合法插入点 ⇒ 全局层形状校验抛错（爆炸半径原本覆盖首屏 + 全部装配）。
+  writeFileSync(configFile, 'schemaVersion: 3\nenabled: []\nlayerSettings:\n  pre-step-typo:\n    instructionHint: true\n', 'utf8')
+  try {
+    const { ctx, handlers } = makeHarness()
+    registerSettingsBridge(ctx, { ns: 'prompt-tool', models: () => ({ available: true, providers: [] }),
+      skills: () => skillsStateStub(), moduleDirectory: (moduleId) => moduleId === undefined ? '' : moduleDir })
+    const res = fakeRes()
+    await handlers.get(PREFIX + BRIDGE_ENDPOINTS.bootstrap)(fakeReq({
+      async *[Symbol.asyncIterator]() { yield Buffer.from(JSON.stringify({})) },
+    }), res)
+    assert.equal(res.status, 200, `全局层笔误不得打掉工作台首屏：${res.body}`)
+    const payload = JSON.parse(res.body)
+    assert.deepEqual(payload.globalParams, {}, '全局段按空读回（软失败）')
+    const warnings = payload.meta?.meta?.moduleWarnings ?? []
+    assert.ok(warnings.some((message) => message.includes('全局层') && message.includes('pre-step-typo')),
+      `要能看出诊断（模块页 role=alert 可见）：${JSON.stringify(warnings)}`)
+  } finally {
+    if (before.length > 0) writeFileSync(configFile, before, 'utf8')
+    else rmSync(configFile, { force: true })
+  }
+})

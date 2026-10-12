@@ -558,6 +558,8 @@ test('人设卡接线：来源＝官方（没有模块主语）时也能展开�
   assert.match(html, new RegExp(t('persona.inherit')), '选项区仍有「继承官方」')
   assert.match(html, new RegExp(t('persona.complete.label')), '独占选项在场')
   assert.match(html, new RegExp(t('persona.runtimeContext.label')), '动态运行时上下文选项在场')
+  // 用户直接指示删掉的那句「选择一个来源模块…」不许回来；词条也已删除，引用它会当场抛错。
+  assert.doesNotMatch(html, /选择一个来源模块/, '多余提示保持删除（用户直接指示）')
   assert.match(html, new RegExp(t('persona.reload')), '页脚「重新读取人设」在场')
   assert.doesNotMatch(html, /global/, '人设没有全局层：主语只来自模块上下文，不发明全局主语')
 })
