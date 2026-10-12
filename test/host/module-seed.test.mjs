@@ -8,7 +8,7 @@ import { join } from 'node:path'
 const home = mkdtempSync(join(tmpdir(), 'pt-seed-'))
 process.env.DSH_HOME = home
 const { storageRootOf } = await import('../../src/host/paths.ts')
-const { ensureModuleSeed, listBuiltinTemplates, packageModulesDir } = await import('../../src/host/manifest.ts')
+const { cloneBuiltinModule, ensureModuleSeed, listBuiltinTemplates, packageModulesDir } = await import('../../src/host/manifest.ts')
 
 const PRESETS_DIR = join(storageRootOf(home), 'modules')
 
@@ -56,4 +56,13 @@ test('空白模板是内部复制源：不种子化到用户模块根，也不�
   assert.ok(!existsSync(join(root, 'blank')), '用户模块根不出现 blank 目录')
   assert.ok(created.some((id) => id !== 'blank'), '其余内置模板照旧种子化')
   assert.ok(!listBuiltinTemplates().some((template) => template.id === 'blank'), '「新建模块」选择器不含 blank')
+})
+
+test('隐藏的复制源仍可克隆：cloneBuiltinModule 不走模板清单，且内部标记不落进用户模块', () => {
+  const root = mkdtempSync(join(tmpdir(), 'pt-blank-clone-'))
+  const cloned = cloneBuiltinModule('blank', true, root)
+  assert.equal(cloned.ok, true, '内部模板仍可作复制源（隐藏的是可见性，不是能力）')
+  assert.equal(cloned.id, 'blank')
+  const definition = readFileSync(join(root, 'blank', 'module.yml'), 'utf8')
+  assert.doesNotMatch(definition, /internal/, '内部标记不外泄到用户模块（否则将来按它隐藏会连克隆件一起隐藏）')
 })

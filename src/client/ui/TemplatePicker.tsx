@@ -129,9 +129,9 @@ export interface TemplateTargetListEntry {
 
 /**
  * 待创建模块的 id 预览：目录名**已存在**就说明服务端会加后缀（`blank` → `blank-2`）。
- * 判据是「已存在的模块目录」全集（含未启用），不是候选列表——包内空白模板会被种子化进用户
- * 模块根且默认未启用，只看候选就会永远预览错一位。预览仍不承诺结果（多级后缀/不在 /meta 时偏乐观），
- * 文案里已写「以服务端结果为准」。
+ * 判据是「已存在的模块目录」全集（含未启用），不是候选列表——复制源模板本身不会出现在
+ * 候选里，但它可能已经（或历史上曾经）作为模块目录存在于用户根下，只看候选就会预览错一位。
+ * 预览仍不承诺结果（多级后缀/不在 /meta 时偏乐观），文案里已写「以服务端结果为准」。
  */
 export const newModuleIdPreview = (templateId: string, existingIds: readonly string[]): string =>
   existingIds.includes(templateId) ? `${templateId}-2` : templateId

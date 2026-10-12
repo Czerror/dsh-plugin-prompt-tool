@@ -362,7 +362,8 @@ export function injectionPointSlots(input: InjectionPointSlotsInput): InjectionP
         keyword={input.keyword}
       />
     ),
-    // 未声明任何节的模块也要有设置入口：那里的「添加」是它唯一的创建通道。
+    // 本层有可渲染内容就要有设置入口：参数组（固定设置区）不依赖声明面；
+    // 通用资产节的「添加」只是它的创建入口，不是本层唯一的编辑器通路。
     hasLayerSettings: (layer: string, moduleId: string) => layerParamCards(store, layer, moduleId, excluded).length > 0
       || layerAssembledCapabilities(store, layer, moduleId).some((id) => !excluded.includes(id))
       || layerAssets(store, layer, moduleId, excluded).length > 0

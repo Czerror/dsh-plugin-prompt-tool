@@ -53,9 +53,9 @@ export const PARAMS_ZH = {
   'modules.layer.removeTitle': '移除「{id}」能力？',
   'modules.layer.removeDesc': '从该模块移除该能力：模块声明与行配置一起移除，它的参数不再生效；其他能力与本层配置不受影响。',
 
-  // 声明面（ADR-0014）：该模块未声明某节时，只给添加入口；写路径建立声明后卡片随即出现。
+  // 声明面（ADR-0014）：通用资产卡未声明某节时只给添加入口；写路径建立声明后卡片随即出现。
+  // 固定卡（指令卡参数组、人设卡）不走这里，它们始终渲染，提示只用 `declare.createHint`。
   'declare.add': '添加{name}',
-  'declare.params': '引擎参数',
   'declare.createHint': '该模块尚未声明这一节；用下面的编辑器创建第一项并保存，服务端随即建立声明。',
 }
 
@@ -103,8 +103,8 @@ export const PARAMS_EN: Record<keyof typeof PARAMS_ZH, string> = {
   'modules.layer.removeTitle': 'Remove the "{id}" capability?',
   'modules.layer.removeDesc': 'Removes this capability from its module: the module declaration and its row config go away and its parameters stop applying; other capabilities and this layer configs are unaffected.',
 
-  // Declaration surface (ADR-0014): an undeclared section shows only an add entry; the write path creates the declaration.
+  // Declaration surface (ADR-0014): an undeclared general asset card shows only an add entry; the write path creates the declaration.
+  // Fixed cards (the instruction card's parameter groups, the persona card) always render and use `declare.createHint` only.
   'declare.add': 'Add {name}',
-  'declare.params': 'Engine parameters',
   'declare.createHint': 'This module does not declare this section yet; create the first item in the editor below and save — the server then establishes the declaration.',
 }

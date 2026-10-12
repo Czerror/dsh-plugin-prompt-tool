@@ -1,6 +1,6 @@
 # 模块主语由这次操作声明：装配成员资格与写入目标解耦
 
-状态：已采纳（阶段 1／2／3／4 均已实施）。阶段 3 的服务端声明面与客户端声明下发／「没声明就不调用」的界面形态已落地；阶段 4 的 Agent 侧（工具主语改为显式 `moduleId`）与 TUI（用户显式声明会话主语）已落地。桥侧唯一保留的例外是 `src/host/manifest.ts:184-186` 的「用户目录缺失时回退包内同名模板」，见下文。
+状态：已采纳（阶段 1／2／3／4 均已实施）。阶段 3 的服务端声明面与客户端声明下发／「没声明就不发读」的界面形态已落地（客户端只把快照当**读的准入**：固定卡永远渲染、未声明按空内容；通用资产卡未声明时只给添加入口）；阶段 4 的 Agent 侧（工具主语改为显式 `moduleId`）与 TUI（用户显式声明会话主语）已落地。桥侧唯一保留的例外是 `src/host/manifest.ts:184-186` 的「用户目录缺失时回退包内同名模板」，见下文。
 
 「这次读写属于哪个模块」曾由两处**猜**回答：客户端 `src/client/data/bridge-transport.ts` 的模块级可变 `editTarget`（首帧未初始化即发请求），以及服务端 `src/host/config-store.ts` 的目标解析在请求未声明时回退**启用表首项**。两者的不同步产生两种后果——响亮的 409 `module-changed`，以及沉默的落到回退目标。根源是「当前模块」不在领域里：模块是可自由组装的多份，真正存在的只是**这次操作的主语**。本决策把主语还给操作本身：**读与写都由请求头 `x-module-id` 定位目录**，写端点另在载荷带 `expectedModuleId` 作**一致性校验**；服务端**只按声明解析**——缺声明即无目标（`required` 端点 400 `module-dir-unavailable`），不回退启用表首项，不替换成包内同名模块；**非法声明显式拒绝**而不是静默当「未声明」（三态：`ok` / `absent` / `invalid`，`absent` 只认请求头完全没有）。**实现的实际语义比设计文档的 Q14 措辞更严**：设计文档 §六 Q14 写「写以载荷主语为准」，而实现是「头定位 + 载荷只做一致性校验」（`src/runtime/settings-bridge.ts` 的 `editDir` 只读请求头，`src/runtime/module-subject-gate.ts` 的 `guardModuleIdentity` 只比对载荷）；两者对真实调用方等价（客户端都带且一致），以本节为准。
 
@@ -18,7 +18,7 @@
 ## 后续
 
 - **阶段 2 归属门（已实施）**：各端点的空目标早退与三件套判据已收进 `src/runtime/module-subject-gate.ts` 的 `subjectGate`，`BRIDGE_SUBJECT_POLICY`（12 `required`／4 `optional`／30 `none`）就是门的名单与接口；门由 16 个端点调用（28 个调用点，写端点分别核读写两侧），30 个未解析目录的 `none` 端点不调用。
-- **阶段 3 声明面（已实施）**：服务端判据已落地（`src/host/module-declarations.ts` 的 `moduleDeclarations`／`DECLARED_SECTIONS` 与门的声明面检查：**读**端点要的节没声明即 400 `module-not-declared`，**写**路径不查并建立该节）；客户端声明下发与「没声明就不调用」也已落地——`/meta` 的 `meta.modules[].declares` 下发顶层键名（`/bootstrap` 的模块段同口径按声明出现），客户端按该快照决定「这张卡出不出、这次读发不发」：没声明就不出卡、不发该端点的读，只给添加入口（沿用该节既有的创建动作），写成功后重读 `/meta`，卡片随即出现。客户端那张「资产卡要哪个节」的小表与 `DECLARED_SECTIONS` **同口径**（节名就是 `module.yml` 的键名，「任一存在即已声明」的语义也一致），它只回答「这张卡读写哪个节」，判据仍只有服务端那张登记表 + `/meta` 下发的 `declares`。
+- **阶段 3 声明面（已实施）**：服务端判据已落地（`src/host/module-declarations.ts` 的 `moduleDeclarations`／`DECLARED_SECTIONS` 与门的声明面检查：**读**端点要的节没声明即 400 `module-not-declared`，**写**路径不查并建立该节）；客户端声明下发也已落地——`/meta` 的 `meta.modules[].declares` 下发顶层键名（`/bootstrap` 的模块段同口径按声明出现）。客户端拿这个快照只决定**两件事**：①**这次读发不发**（没声明就不发该端点的读，发过去也是 400）；②**空内容从哪来**（未声明的节按空内容渲染，保存即建立该节、写成功后重读 `/meta`）。它**不决定卡在不在**：固定卡（指令卡及其参数设置区、人设卡）永远在场、可展开、可编辑，未声明时按空内容渲染并给一行「保存即建立该节」的提示；通用资产卡（`customTools`／`subagentToolPolicy`／`variables`，按规则/配置存在）保持既有行为——没声明就不出卡、只给添加入口（沿用该节既有的创建动作），写成功后重读 `/meta`，卡片随即出现。客户端那张「资产卡要哪个节」的小表与 `DECLARED_SECTIONS` **同口径**（节名就是 `module.yml` 的键名，「任一存在即已声明」的语义也一致），它只回答「这张卡读写哪个节」，判据仍只有服务端那张登记表 + `/meta` 下发的 `declares`。
 - **阶段 4 Agent 侧与 TUI（已实施）**：`src/host/module-tool-target.ts` 的 `MODULE_ID_PARAM` 让 5 个模块工具（`module_rules_read`／`module_rules_edit`／`module_memory_read`／`module_memory_append`／`module_variables`）的主语改为显式工具参数，`resolveModuleToolTarget` 不再取装配记录 `[0]`（该 Agent 的已启用模块只作拒绝提示），未声明即拒绝；`module_import` 的主语是它自己的 `targetId`／`targetName`，不经此处。TUI 同样显式声明（`src/runtime/tui.ts` 的 `sessionSubjects` + `getModuleDirectory(moduleId)`），`src/index.ts` 的 `activeModuleDir()` 与 `DEFAULT_MODULE_ID` 接线已删。
 - **不持久化「上次选择的模块」**，不引入新的浏览器状态，也不把「加载失败／读不到」当成「没声明」。
 

@@ -193,17 +193,32 @@ test('声明面：三张卡的读构造点——未声明不构造请求，且�
 
 test('声明面：逐层出卡——有参数组的层出参数编辑器，没有的层整块不出（不留死入口）', () => {
   const store = stubStore(createWorkspaceDrafts(), modulesDeclaring(['rules']))
-  const render = (layer, creating) => renderElement(LayerSettingsContent,
-    { store, t, layer, moduleId: 'mod-a', ...(creating ? { creatingSections: ['params'] } : {}) })
+  const render = (layer) => renderElement(LayerSettingsContent, { store, t, layer, moduleId: 'mod-a' })
 
-  assert.match(render('pre-step', false), /data-layer-param-group="prompt-defaults"/, 'pre-step 有参数组 → 渲染参数编辑器')
+  assert.match(render('pre-step'), /data-layer-param-group="prompt-defaults"/, 'pre-step 有参数组 → 渲染参数编辑器')
+  assert.doesNotMatch(render('pre-step'), /data-declare-section="params"/, '参数组不走「添加入口」通路（它始终渲染）')
 
-  // 该层没有参数组时不凭空造组：整块不出，创建态也不改变渲染（不出现「一点就塌陷」）。
+  // 该层没有参数组时不凭空造组、也不给参数入口：整块不出。
   for (const layer of ['system-section', 'runtime-context', 'tool-pipeline']) {
-    const before = render(layer, false)
-    assert.doesNotMatch(before, /data-layer-param-group=/, `${layer} 没有该层参数组`)
-    assert.equal(render(layer, true), before, `${layer} 的创建态不改变这一层的渲染`)
+    const html = render(layer)
+    assert.doesNotMatch(html, /data-layer-param-group=/, `${layer} 没有该层参数组`)
+    assert.doesNotMatch(html, /data-declare-section="params"/, `${layer} 不给参数入口（点了也没编辑器）`)
   }
+})
+
+test('声明面：通用资产卡进入创建模式后，声明一建立就退出创建模式（不粘连）', () => {
+  // 卡内的创建模式提示带 role="status"；添加入口的同文案不带，所以按 role 前缀断言卡自己的形态。
+  const cardHint = new RegExp(`role="status">${t('declare.createHint')}`)
+  const html = (declares) => renderElement(LayerSettingsContent, {
+    store: stubStore(createWorkspaceDrafts(), modulesDeclaring(declares)),
+    t, layer: 'tool-pipeline', moduleId: 'mod-a', creatingSections: ['custom-tools'],
+  })
+  // 声明面里已含 customTools ⇒ 不是创建模式，卡回到正常形态（未声明判据是实时快照）。
+  assert.match(html(['rules', 'customTools']), /data-layer-asset="custom-tools"/, '声明成立后卡照旧在场')
+  assert.doesNotMatch(html(['rules', 'customTools']), cardHint, '声明成立后不再带创建模式提示')
+  // 未声明时同一创建态才是创建模式（卡内提示在场）。
+  assert.match(html(['rules']), /data-layer-asset="custom-tools"/, '未声明 + 创建态仍渲染该卡')
+  assert.match(html(['rules']), cardHint, '未声明 + 创建态 ⇒ 卡以创建模式渲染')
 })
 
 test('声明面：人设卡按主语的声明面渲染——未声明也照常出编辑器，空态带建立声明提示', () => {

@@ -768,7 +768,7 @@ export function registerSettingsBridge(
               const meta = await loadEngineMeta()
               const extras = await collectDescribeExtras(dir, session.sessionId)
               const scope = resolveInstructionScope(sctx, session.sessionId)
-              // 变量段与模块参数同口径：只对声明面登记的节下发，未声明就整体缺席（客户端据此不出卡、不发读）。
+              // 变量段与模块参数同口径：只对声明面登记的节下发，未声明就整体缺席（客户端据此不发这次读；变量卡是通用卡，缺段时走添加入口）。
               const variables = dir.length > 0 && declaresAny(declarationsOf(dir), ['variables', 'variablesEnabled'])
                 ? variableView(dir)
                 : undefined

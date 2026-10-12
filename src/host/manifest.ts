@@ -300,11 +300,19 @@ function copyModuleDirectory(source: string, root: string, targetId: string): vo
     const definition = join(candidate, MODULE_DEFINITION_FILE)
     const doc = parseDocument(readFileSync(definition, 'utf8'), { logLevel: 'silent' })
     if (doc.errors.length > 0 || !(doc.contents instanceof YAMLMap)) throw new Error('预设定义必须是合法 YAML 对象')
+    let changed = false
     const oldId = doc.get('id')
     if (oldId !== targetId) {
       setModuleDefinitionId(doc, targetId)
-      writeFileSync(definition, doc.toString(), 'utf8')
+      changed = true
     }
+    // 内部标记只描述包内模板的可见性（复制源），不是模块自身属性：克隆出来的用户模块必须去掉，
+    // 否则将来按该键隐藏历史遗留模板时，所有克隆件会一起被隐藏。
+    if (doc.hasIn(['meta', 'internal'])) {
+      doc.deleteIn(['meta', 'internal'])
+      changed = true
+    }
+    if (changed) writeFileSync(definition, doc.toString(), 'utf8')
     ensureModuleSlices(candidate)
     for (const legacy of ['configs', 'rules.yml', 'agent.cordis.yml', 'custom-tools', 'subagent-tools']) {
       rmSync(join(candidate, legacy), { recursive: true, force: true })

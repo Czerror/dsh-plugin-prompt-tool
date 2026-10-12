@@ -32,8 +32,9 @@ export function personaWriteBody(moduleId: string, submitted: PersonaSpec, revis
 }
 
 /**
- * 人设读数请求（主语＝该模块）：**声明面明确未声明就不构造这次请求**（返回 `undefined`），
- * 卡片据此只给添加入口／转创建模式——服务端读了也是 400 `module-not-declared`。
+ * 人设读数请求（主语＝该模块）：**声明面明确未声明就不构造这次请求**（返回 `undefined`）——
+ * 服务端读了也是 400 `module-not-declared`。这只决定「读不发」，不决定编辑器出不出：
+ * 本卡是固定卡，未声明时按空内容渲染编辑器，保存即建立该节（写路径不查声明面）。
  */
 export const readModulePersona = (moduleId: string, undeclared: boolean) =>
   undeclared ? undefined : bridgeCall('persona', { expectedModuleId: moduleId }, moduleId)

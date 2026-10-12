@@ -22,8 +22,8 @@ const { applyCreateWrite, planCreateWrite } = await withSsr([
 const facts = (editable = true) => ({ declaredModules: [], effectiveModules: [], rowIds: [], sourceMode: 'explicit', editable })
 /**
  * 只有前两个可写；`mod-z` 未启用、`mod-ro` 只读——两者都不该出现在候选里。
- * `blank` 代表「包内空白模板已被种子化进用户模块根且默认未启用」：它同样不是候选，
- * 但它决定新建 id 的预览（服务端会加后缀）。
+ * `blank` 代表「复制源目录已存在于用户根下」（历史上被种子化过，或用户从它建过模块）：
+ * 它同样不是候选，但它决定新建 id 的预览（目录名已存在 ⇒ 服务端会加后缀）。
  */
 const modules = [
   { id: 'mod-a', name: 'A', enabled: true, facts: facts(), declares: ['rules'] },
@@ -75,12 +75,12 @@ test('目标候选只列**可写**模块：未启用与只读都不提供（不�
   }
   assert.doesNotMatch(html, /data-template-target="mod-z"/, '未启用模块不作为候选（写不进去＝不许列）')
   assert.doesNotMatch(html, /data-template-target="mod-ro"/, '只读模块不作为候选（存不下去＝不许列）')
-  assert.doesNotMatch(html, /data-template-target="blank"/, '种子化的空白模板自身也不是候选（它未启用）')
+  assert.doesNotMatch(html, /data-template-target="blank"/, '复制源不是候选（它未启用，也不是新建出来的模块）')
   assert.match(html, /data-template-new-module/, '新建空白模块分支存在')
   assert.doesNotMatch(html, /data-template-new-name/, '不再有填了不生效的名字输入')
   // 工具栏的搜索框不算：只看「新建空白模块」那一段里有没有输入框。
   assert.doesNotMatch(html.slice(html.indexOf('data-template-new-module')), /<input/, '新建分支没有任何输入框（名字由服务端定）')
-  assert.match(html, new RegExp(t('rules.create.newHint', { id: 'blank-2' })), '预览按「已存在目录」判定：blank 已被种子化 → blank-2')
+  assert.match(html, new RegExp(t('rules.create.newHint', { id: 'blank-2' })), '预览按「已存在目录」判定：用户根下已有 blank → blank-2')
 })
 
 test('可写判据（候选过滤与写前第二道闸共用同一实现）', () => {
