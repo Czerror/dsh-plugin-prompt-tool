@@ -42,29 +42,18 @@ export const canEditModule = (
   moduleId: string,
 ): boolean => canEditSubject({ modulesEnabled: fields.modulesEnabled, moduleFacts: moduleFactsOf(modules, moduleId) })
 
-/**
- * 「新建内容能写进哪个模块」的唯一判据：**在装配集合内**（启用表）+ 该模块事实可编辑 + 可渲染。
- *
- * 为什么不能只看 `canEditModule`：`/meta` 对**未启用**的模块也下发 facts，只判可编辑会把停用模块
- * 当成可写目标——它的编辑器根本不在装配集合里，写进去只会静默丢失。候选列表与写入前的第二道闸
- * 共用这一个判据，两侧不会分叉。
- */
-const isWritableTargetModule = (fields: Pick<Fields, 'modulesEnabled'>, module: ModuleSummary): boolean =>
-  module.enabled === true && module.renderable !== false && module.broken === undefined
-  && canEditSubject({ modulesEnabled: fields.modulesEnabled, moduleFacts: module.facts })
+/** 目标写入只看用户模块定义是否有效、可编辑，不看运行时装配开关。 */
+const isWritableTargetModule = (module: ModuleSummary): boolean =>
+  isModuleId(module.id) && module.user === true && module.renderable !== false && module.broken === undefined
+  && module.facts?.editable === true
 
-/** 目标选择的候选：只列**可写**模块（未启用／只读／损坏都不出现）。 */
-export const writableModuleTargets = (
-  fields: Pick<Fields, 'modulesEnabled'>,
-  modules: readonly ModuleSummary[] | undefined,
-): ModuleSummary[] => (modules ?? []).filter((module) => isWritableTargetModule(fields, module))
+/** 目标选择候选：所有有效、可写的用户模块，包含未启用模块。 */
+export const writableModuleTargets = (modules: readonly ModuleSummary[] | undefined): ModuleSummary[] =>
+  (modules ?? []).filter(isWritableTargetModule)
 
-/** 写入前的第二道闸：目标此刻是否真的可写（候选过滤将来被改坏也不静默丢内容）。 */
-export const isWritableTarget = (
-  fields: Pick<Fields, 'modulesEnabled'>,
-  modules: readonly ModuleSummary[] | undefined,
-  moduleId: string,
-): boolean => (modules ?? []).some((module) => module.id === moduleId && isWritableTargetModule(fields, module))
+/** 写入前的第二道闸：目标仍是有效、可写的用户模块。 */
+export const isWritableTarget = (modules: readonly ModuleSummary[] | undefined, moduleId: string): boolean =>
+  (modules ?? []).some((module) => module.id === moduleId && isWritableTargetModule(module))
 
 /**
  * 「新建空白模块」的源：引擎内组装的空白模板（`src/host/manifest.ts` 的 `BLANK_MODULE_TEMPLATE`，
@@ -79,21 +68,17 @@ export const BLANK_MODULE_TEMPLATE = 'blank'
 /** 该模板是否合法模块 id（唯一进路径的值都从这里过一道，非法即拒绝发请求）。 */
 export const blankModuleTargetValid = (): boolean => isModuleId(BLANK_MODULE_TEMPLATE)
 
-/** 新建空白模块要用的两个既有端点的最小子集（调用方用 `bridgeCall` 适配即可）。 */
+/** 新建空白模块要用的既有复制端点（调用方用 `bridgeCall` 适配即可）。 */
 export type BlankModuleCall = (
-  endpoint: 'moduleClone' | 'moduleEnable',
-  body: { id: string; autoSuffix?: boolean; enabled?: boolean },
+  endpoint: 'moduleClone',
+  body: { id: string; autoSuffix?: boolean },
 ) => Promise<{ ok: boolean; value?: any }>
 
 /**
- * 新建空白模块：**复用**既有 `/module-clone` 动作（复制内置空白模板）再用既有 `/module-enable`
- * 把它加入装配集合。名字不是用户输入：目标 id 由服务端返回并回传。不新增端点、不新增创建通道。
+ * 新建空白模块只复制定义，保持未启用。名字不是用户输入：目标 id 由服务端返回并回传。
  */
 export async function createBlankModule(call: BlankModuleCall): Promise<string | undefined> {
   if (!blankModuleTargetValid()) return undefined
   const cloned = await call('moduleClone', { id: BLANK_MODULE_TEMPLATE, autoSuffix: true })
-  const created = cloned.ok ? cloned.value?.id : undefined
-  if (created === undefined) return undefined
-  const enabled = await call('moduleEnable', { id: created, enabled: true })
-  return enabled.ok ? created : undefined
+  return cloned.ok ? cloned.value?.id : undefined
 }

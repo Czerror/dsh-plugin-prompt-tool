@@ -5,7 +5,7 @@ import { canEditModule, moduleDeclares, writableModuleTargets } from '../../src/
 /** 判据只读「模块总闸 + 该模块自己的事实」两项；走生产同源入口 canEditModule（不直调内部 canEditSubject）。 */
 const gate = { modulesEnabled: true }
 const facts = (editable) => ({ declaredModules: [], effectiveModules: [], rowIds: [], sourceMode: 'explicit', editable })
-const moduleEntry = (id, editable = true, enabled = true) => ({ id, name: id, enabled, facts: facts(editable) })
+const moduleEntry = (id, editable = true, enabled = true) => ({ id, name: id, user: true, renderable: true, enabled, facts: facts(editable) })
 
 test('canEditModule：模块不在装配集合里（没有主语）时不可编辑', () => {
   assert.equal(canEditModule(gate, [moduleEntry('mod-a')], 'mod-missing'), false)
@@ -30,8 +30,17 @@ test('canEditModule：判据逐模块——同一次快照里 A 可编辑不影�
   assert.equal(canEditModule(gate, modules, 'mod-b'), false)
 })
 
-test('writableModuleTargets：模块总闸关闭时没有任何可写目标', () => {
-  assert.deepEqual(writableModuleTargets({ modulesEnabled: false }, [moduleEntry('mod-a')]), [], '总闸关闭时谁都不写')
+test('writableModuleTargets：可写用户模块不受启用状态与总闸影响', () => {
+  const modules = [
+    moduleEntry('mod-a'),
+    moduleEntry('mod-disabled', true, false),
+    moduleEntry('mod-read-only', false, false),
+    { ...moduleEntry('mod-builtin'), user: false },
+    { ...moduleEntry('mod-unrenderable', true, false), renderable: false },
+    { ...moduleEntry('mod-broken', true, false), broken: 'invalid module.yml' },
+    moduleEntry('../invalid', true, false),
+  ]
+  assert.deepEqual(writableModuleTargets(modules).map(({ id }) => id), ['mod-a', 'mod-disabled'], '只列有效、可写的用户目录模块')
 })
 
 /** 声明面判据来自 `/meta` 下发的 `declares`（顶层键名数组），不是客户端另立的名录。 */

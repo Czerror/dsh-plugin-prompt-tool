@@ -3,9 +3,10 @@ import { useCallback, useEffect, useRef, useState, type ReactNode, type RefObjec
 import { bridgeCall, errorMessage } from '../../data/bridge-client.ts'
 import type { PromptToolTranslate } from '../../locales.ts'
 import type { PromptConfigTemplateEntry } from '../../prompt-tool-types.ts'
-import type { RuleDefinition } from '../../../shared/rules.ts'
+import type { RuleDefinition, RulesSnapshot } from '../../../shared/rules.ts'
 import type { PromptToolStore } from '../../data/use-prompt-tool-store.ts'
 import type { ModuleRuleEditor } from '../../data/use-rule-editor.ts'
+import { getRulesDraft } from '../../data/rule-drafts.ts'
 import { BLANK_MODULE_TEMPLATE } from '../../data/module-subject.ts'
 import { EngineModuleActions, type ModuleCreateItem } from '../modules/EngineModuleList.tsx'
 import { insertToolTemplateIntoDraft } from '../tools/CustomToolsCard.tsx'
@@ -14,6 +15,58 @@ import { TemplatePicker, TemplateTargetPicker, type TemplateTargetListEntry } fr
 /** 自定义工具模板条目：与提示词模板同一次 /templates 返回。 */
 export type ToolTemplateEntry = { file: string; spec: Record<string, unknown> }
 
+/** 模板创建的唯一规则写入 seam：服务端负责目标内 id 分配与规则事务。 */
+export const createTemplateRule = (moduleId: string, rule: RuleDefinition, rulesDeclared: boolean | undefined) =>
+  bridgeCall('rules', {
+    expectedModuleId: moduleId,
+    ...(rulesDeclared === false ? { expectedRulesAbsent: true as const } : {}),
+    createRule: rule,
+  }, moduleId)
+
+type TemplateModuleDeclaration = { id: string; declares?: readonly string[] }
+type PendingTemplate = { intentId: number; entry: PromptConfigTemplateEntry }
+
+/** 保留本次挂载内已成功建立 rules 节的事实，避免首写后继续相信陈旧 /meta。 */
+export function createTemplateRuleWriter(
+  markModuleDeclared?: (moduleId: string, section: string) => void,
+  rulesAbsentModules?: Set<string>,
+) {
+  const declaredModules = new Set<string>()
+  const retryAbsentModules = new Set<string>()
+  return async (moduleId: string, rule: RuleDefinition, modules: readonly TemplateModuleDeclaration[] | undefined) => {
+    const module = modules?.find(candidate => candidate.id === moduleId)
+    const rulesDeclared = declaredModules.has(moduleId)
+      ? true
+      : (rulesAbsentModules?.has(moduleId) === true || retryAbsentModules.has(moduleId)) ? false
+      : module?.declares === undefined ? undefined : module.declares.includes('rules')
+    const result = await createTemplateRule(moduleId, rule, rulesDeclared)
+    if (result.ok) {
+      declaredModules.add(moduleId)
+      rulesAbsentModules?.delete(moduleId)
+      retryAbsentModules.delete(moduleId)
+      markModuleDeclared?.(moduleId, 'rules')
+    } else if (rulesDeclared === false) {
+      // 外部集合只标记尚未完成的首写；失败后由本 writer 保留重试的 absent 前置。
+      rulesAbsentModules?.delete(moduleId)
+      retryAbsentModules.add(moduleId)
+    }
+    return result
+  }
+}
+
+/** 将模板写入的发布结果接入现有规则草稿；未挂载目标保持未加载，后续挂载可复用 refreshOnly。 */
+export function applyTemplatePublicationState(
+  drafts: PromptToolStore['editorDrafts'],
+  moduleId: string,
+  result: Pick<RulesSnapshot, 'publicationPending' | 'publicationError'>,
+) {
+  const draft = getRulesDraft(drafts, moduleId)
+  draft.publicationPending = result.publicationPending === true || result.publicationError !== undefined
+  draft.publicationError = result.publicationError
+  draft.error = result.publicationError
+  return draft
+}
+
 /** 列表作用域：决定新建配置的消息受众代入方向（过滤状态一律不动）。 */
 export type TemplatePickerScope = 'main' | 'subagent'
 
@@ -21,34 +74,6 @@ export type TemplatePickerScope = 'main' | 'subagent'
 export interface TemplatePickerTarget {
   /** 已存在模块的 id，或「新建空白模块」返回的新模块 id。 */
   moduleId: string
-}
-
-/** 这次创建写不写得进去：写 / 等目标读回 / 拒绝。拒绝**绝不**允许走到成功提示。 */
-export type CreateWritePlan = 'write' | 'pending' | 'reject'
-
-/**
- * 写前的唯一判定（纯函数，供测试直接对拍）：
- * 目标不可写（未启用／只读／损坏）→ `reject`；可写但编辑器还没读回（新建模块要下一帧）→ `pending`；
- * 可写且已读回 → `write`。**先判可写再判读回**：不可写不能靠「等一等」变成可写。
- */
-export const planCreateWrite = (state: { writable: boolean; ownerFound: boolean; ownerLoaded: boolean }): CreateWritePlan =>
-  !state.writable ? 'reject' : state.ownerFound && state.ownerLoaded ? 'write' : 'pending'
-
-/**
- * 按判定执行，**顺序固定**：拒绝＝就地报错且一个字都不写；写入＝先落草稿再报成功。
- * 任何路径都不允许「先报成功、再静默挂起」。
- */
-export function applyCreateWrite(args: {
-  plan: CreateWritePlan
-  add: () => void
-  onOk: () => void
-  onError: () => void
-}): 'written' | 'pending' | 'rejected' {
-  if (args.plan === 'reject') { args.onError(); return 'rejected' }
-  if (args.plan === 'pending') return 'pending'
-  args.add()
-  args.onOk()
-  return 'written'
 }
 
 /**
@@ -102,6 +127,8 @@ export function useTemplatePicker(
   open: boolean
   /** 目标选择步骤是否打开。 */
   targetOpen: boolean
+  /** 当前目标选择意图；异步新建模块完成后只允许仍属当前意图的回调提交。 */
+  targetIntentId: number
   /** 当前浮层的插入点层级过滤；undefined 表示按层分组展示全部模板。 */
   layer: string | undefined
   /** 只展示工具模板（菜单「添加工具模板」入口）。 */
@@ -114,7 +141,7 @@ export function useTemplatePicker(
   closePicker: () => void
   pickTemplate: (entry: PromptConfigTemplateEntry) => void
   /** 确认目标模块：按目标模块自己的配置去重派生草稿，连同显式主语交回调用方。 */
-  confirmTarget: (target: TemplatePickerTarget, configsAtTarget?: readonly RuleDefinition[]) => void
+  confirmTarget: (target: TemplatePickerTarget, configsAtTarget?: readonly RuleDefinition[], expectedIntentId?: number) => void
   /** 放弃这次创建：关闭目标选择并丢掉待写入的模板。 */
   cancelTarget: () => void
 } {
@@ -124,7 +151,9 @@ export function useTemplatePicker(
   const [toolTemplates, setToolTemplates] = useState<ToolTemplateEntry[]>([])
   const [open, setOpen] = useState(false)
   const [targetOpen, setTargetOpen] = useState(false)
-  const pendingEntry = useRef<PromptConfigTemplateEntry>()
+  const pendingEntry = useRef<PendingTemplate>()
+  const targetIntentRef = useRef(0)
+  useEffect(() => () => { targetIntentRef.current++ }, [scope])
   const [layer, setLayer] = useState<string | undefined>(undefined)
   const [toolsOnly, setToolsOnly] = useState(false)
   const [createdConfigId, setCreatedConfigId] = useState<string>()
@@ -171,13 +200,16 @@ export function useTemplatePicker(
   const pickTemplate = (entry: PromptConfigTemplateEntry): void => {
     setOpen(false)
     // 目标未定：只记下模板，等用户选完目标（唯一的那一步）再按目标模块去重派生草稿。
-    pendingEntry.current = entry
+    const intentId = ++targetIntentRef.current
+    pendingEntry.current = { intentId, entry }
     setTargetOpen(true)
   }
 
-  const confirmTarget = (target: TemplatePickerTarget, configsAtTarget?: readonly RuleDefinition[]): void => {
-    const entry = pendingEntry.current
-    if (entry === undefined) return
+  const confirmTarget = (target: TemplatePickerTarget, configsAtTarget?: readonly RuleDefinition[], expectedIntentId?: number): void => {
+    const pending = pendingEntry.current
+    if (pending === undefined) return
+    if (expectedIntentId !== undefined && (expectedIntentId !== targetIntentRef.current || expectedIntentId !== pending.intentId)) return
+    const { entry } = pending
     pendingEntry.current = undefined
     setTargetOpen(false)
     // 去重集合＝目标模块自己的配置：其它模块有同名 id 不影响写进这个模块。
@@ -187,9 +219,9 @@ export function useTemplatePicker(
     onPickConfig(clone, target, entry.file)
   }
 
-  const cancelTarget = (): void => { pendingEntry.current = undefined; setTargetOpen(false) }
+  const cancelTarget = (): void => { pendingEntry.current = undefined; targetIntentRef.current++; setTargetOpen(false) }
 
-  return { anchorRef, popoverAnchorRef, templates, toolTemplates, open, targetOpen, layer, toolsOnly, createdConfigId, openPicker, openTools, closePicker, pickTemplate, confirmTarget, cancelTarget }
+  return { anchorRef, popoverAnchorRef, templates, toolTemplates, open, targetOpen, targetIntentId: targetIntentRef.current, layer, toolsOnly, createdConfigId, openPicker, openTools, closePicker, pickTemplate, confirmTarget, cancelTarget }
 }
 
 /**
@@ -198,9 +230,8 @@ export function useTemplatePicker(
  * 两次受众页（主会话 / 子代理）共用这一份编排，视图差异只在调用方传进来的 `items`、`scope`
  * 与 `targets`；「主语」始终来自目标选择那一步，不存在任何全局「当前模块」。
  *
- * 两道闸缺一不可：① `targets` 只列可写模块；② 写入前用**同一个判据**再判一次（`planCreateWrite`），
- * 不可写就地报错、绝不静默挂起，也绝不先弹成功。新建分支的时序：`store.createModule()` 会
- * `load()` 重读 /meta，编辑器要到下一帧才有——只有**可写但尚未读回**才走 `pending`。
+ * 写入只以显式 moduleId 为主语，服务端在目标模块锁内按规则 id 分配后缀；规则卡 owner
+ * 只负责成功后的展示刷新，不是创建前置。这样未启用模块与空白模块都能直接接收首条模板。
  */
 export function useTemplateCreate(props: {
   store: PromptToolStore
@@ -225,30 +256,45 @@ export function useTemplateCreate(props: {
   openToolsForModule: (moduleId: string, anchor: HTMLButtonElement) => void
 } {
   const { store, t, items, scope, targets, existingIds, canWrite, owners, onCreated } = props
-  const [pending, setPending] = useState<{ moduleId: string; config: RuleDefinition; file: string }>()
   /** 卡内工具模板入口打开时记下主权模块：点选模板后要落进它的工具草稿。 */
   const toolModule = useRef<string>()
-  const writeInto = useCallback((moduleId: string, config: RuleDefinition, file: string): void => {
-    const owner = owners.find((candidate) => candidate.moduleId === moduleId)
-    const plan = planCreateWrite({ writable: canWrite(moduleId), ownerFound: owner !== undefined, ownerLoaded: owner?.draft.loaded === true })
-    applyCreateWrite({
-      plan,
-      add: () => { if (owner !== undefined) onCreated(moduleId, owner.editor.add(config)) },
-      onOk: () => store.showNotice('ok', t('templates.inserted', { file, id: config.id })),
-      onError: () => store.showNotice('error', t('rules.create.failed')),
-    })
-    if (plan === 'pending') setPending({ moduleId, config, file })
-  }, [canWrite, onCreated, owners, store, t])
-  // 新建模块的草稿要等它自己的读回；装配集合一出现该模块就收口（只写一次）。
-  useEffect(() => {
-    if (pending === undefined) return
-    const owner = owners.find((candidate) => candidate.moduleId === pending.moduleId)
-    if (owner === undefined || !owner.draft.loaded) return
-    setPending(undefined)
-    onCreated(pending.moduleId, owner.editor.add(pending.config))
-    store.showNotice('ok', t('templates.inserted', { file: pending.file, id: pending.config.id }))
-  }, [pending, owners, onCreated, store, t])
-  const picker = useTemplatePicker((config, target, file) => { writeInto(target.moduleId, config, file) }, store.showNotice, t, scope)
+  const writeGeneration = useRef(0)
+  useEffect(() => () => { writeGeneration.current++ }, [scope])
+  const createdModuleIds = useRef(new Set<string>())
+  const writeTemplateRule = useRef(createTemplateRuleWriter(store.markModuleDeclared, createdModuleIds.current)).current
+  const writeInto = useCallback(async (moduleId: string, config: RuleDefinition, file: string): Promise<void> => {
+    const generation = writeGeneration.current
+    if (!canWrite(moduleId)) {
+      store.showNotice('error', `${t('rules.create.failed')}（moduleId=${moduleId}）`)
+      return
+    }
+    const result = await store.enqueueRuleTask(() => writeTemplateRule(moduleId, config, store.meta.modules))
+    if (!result.ok) {
+      if (writeGeneration.current !== generation) return
+      store.showNotice('error', `${t('rules.create.failed')}（moduleId=${moduleId}）`)
+      return
+    }
+    const createdRuleId = result.value.createdRuleId ?? config.id
+    const owner = owners.find(candidate => candidate.moduleId === moduleId)
+    const publicationPending = result.value.publicationPending === true || result.value.publicationError !== undefined
+    if (owner !== undefined || publicationPending) {
+      applyTemplatePublicationState(store.editorDrafts, moduleId, result.value)
+      store.publishDrafts()
+    }
+    if (writeGeneration.current !== generation) return
+    if (owner !== undefined) {
+      // 让干净草稿刷新；有未提交输入时由 editor 保留本地草稿并进入冲突态。
+      void owner.editor.load(true)
+    }
+    onCreated(moduleId, createdRuleId)
+    if (result.value.publicationPending === true || result.value.publicationError !== undefined) {
+      store.showNotice('error', `${t('persona.sources.publicationPending')}：${result.value.publicationError ?? '请重试'}`)
+    } else {
+      store.showNotice('ok', t('templates.inserted', { file, id: createdRuleId }))
+    }
+  }, [canWrite, onCreated, owners, store, t, writeTemplateRule])
+  const picker = useTemplatePicker((config, target, file) => { void writeInto(target.moduleId, config, file) }, store.showNotice, t, scope)
+  const cancelTarget = useCallback(() => { picker.cancelTarget() }, [picker])
   const openToolsForModule = useCallback((moduleId: string, anchor: HTMLButtonElement): void => {
     toolModule.current = moduleId
     picker.openTools(anchor)
@@ -264,8 +310,6 @@ export function useTemplateCreate(props: {
       else store.showNotice('ok', t('customTools.templateInserted', { id: String(spec.id ?? '') }))
     })
   }, [picker, store, t])
-  const configsAt = (moduleId: string): RuleDefinition[] =>
-    owners.find((owner) => owner.moduleId === moduleId)?.draft.entries.filter((entry) => !entry.deleted).map((entry) => entry.value) ?? []
   const toolbar = <EngineModuleActions store={store} t={t} anchorRef={picker.anchorRef} extraItems={items}
     onExtraSelect={(id) => { if (id.startsWith('tpl:')) picker.openPicker(id.slice(4)) }} />
   const dialogs = <>
@@ -275,9 +319,13 @@ export function useTemplateCreate(props: {
     {picker.targetOpen && <TemplateTargetPicker t={t} anchorRef={picker.popoverAnchorRef} modules={targets}
       existingIds={existingIds}
       newModuleTemplate={BLANK_MODULE_TEMPLATE}
-      onPick={(moduleId) => picker.confirmTarget({ moduleId }, configsAt(moduleId))}
-      onCreate={store.createModule === undefined ? undefined : () => store.createModule!()}
-      onClose={picker.cancelTarget} />}
+      onPick={(moduleId) => picker.confirmTarget({ moduleId }, undefined, picker.targetIntentId)}
+      onCreate={store.createModule === undefined ? undefined : async () => {
+        const moduleId = await store.createModule!()
+        if (moduleId !== undefined) createdModuleIds.current.add(moduleId)
+        return moduleId
+      }}
+      onClose={cancelTarget} />}
   </>
   return { toolbar, dialogs, openToolsForModule }
 }

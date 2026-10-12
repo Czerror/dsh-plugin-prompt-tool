@@ -113,6 +113,8 @@ export interface PromptToolStore {
   /** 草稿池写入后调用：镜像控件一起重渲染，读同一草稿键。 */
   publishDrafts: () => void
   meta: EngineMeta
+  /** 记录成功写入的模块声明，供跨页面模板创建共享最新主语事实。 */
+  markModuleDeclared: (moduleId: string, section: string) => void
   loading: boolean
   modelCatalog: Record<string, string[]>
   /** provider/model 路由的推理档位元数据（按 modelChoiceValue 键）；未查到 = known:false。 */
@@ -296,6 +298,16 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
   /** meta 的 ref 镜像：写盘守卫与按主语读取在回调里执行，等下一次渲染的快照会过期。 */
   const metaRef = useRef<EngineMeta>(EMPTY_META)
   const publishMeta = useCallback((next: EngineMeta) => { metaRef.current = next; setMeta(next) }, [])
+  const markModuleDeclared = useCallback((moduleId: string, section: string): void => {
+    const current = metaRef.current
+    const modules = current.modules
+    const module = modules?.find(candidate => candidate.id === moduleId)
+    if (module === undefined || modules === undefined) return
+    if (module.declares?.includes(section) === true) return
+    publishMeta({ ...current, modules: modules.map(candidate => candidate.id === moduleId
+      ? { ...candidate, declares: [...(candidate.declares ?? []), section] }
+      : candidate) })
+  }, [publishMeta])
   const [templatePreStepCount, setTemplatePreStepCount] = useState(0)
   const [savedSwitches, setSavedSwitches] = useState<SwitchSnapshot>(EMPTY_SWITCHES)
   const [savedConfigs, setSavedConfigsState] = useState<PromptConfigDraft[]>([])
@@ -1096,10 +1108,7 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
   const createModuleCapability = useCallback((moduleId: string, action: 'create' | 'create-recipe', id: string) => changeModuleCapability(moduleId, action, id), [changeModuleCapability])
   const removeModuleCapability = useCallback((moduleId: string, id: string) => changeModuleCapability(moduleId, 'remove', id), [changeModuleCapability])
 
-  /**
-   * 新建空白模块：走**既有** `/module-clone` 复制空白模板 + 既有 `/module-enable` 加入装配集合，
-   * 再 `load()` 让新卡出现。名字不是用户输入（服务端定），返回值就是那个 id。
-   */
+  /** 新建空白模块只复制定义并保持未启用，再 `load()` 刷新模块快照；id 由服务端定。 */
   const createModule = useCallback((): Promise<string | undefined> => {
     return createBlankModule(bridgeCall).then(async (created) => {
       if (created === undefined) { showNotice('error', '新建模块失败：服务不可用或空白模板缺失'); return undefined }
@@ -1243,6 +1252,7 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
     subscribeDrafts,
     publishDrafts,
     meta,
+    markModuleDeclared,
     loading,
     modelCatalog,
     modelReasoning,

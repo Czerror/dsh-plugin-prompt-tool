@@ -16,14 +16,14 @@ const { ACTION_KINDS } = await import('../../engine/actions/catalog.mjs')
 const { setModuleEnabled } = await import('../../src/host/config-store.ts')
 let sequence = 0
 
-function harness({ readonly = false, rebuildFails = false, afterRebuild, onResolveTarget } = {}) {
+function harness({ readonly = false, rebuildFails = false, afterRebuild, onResolveTarget, declareRules = true } = {}) {
   const id = `rules-${++sequence}`
   const directory = join(readonly ? join(home, 'system') : moduleRoot, id)
   mkdirSync(directory, { recursive: true })
   const file = join(directory, 'module.yml')
   // 声明面：这个夹具建模的是「有规则、有变量的模块」，所以顶层 `rules` 与 `variables` 必须声明
   // （键整个不存在＝没声明，端点会被 400 `module-not-declared` 拒）。人设按用例各自追加声明。
-  const original = `# 用户注释\nid: ${id}\nmodules: []\nrules: []\nvariables: {}\nunknown: keep # 未知字段注释\n`
+  const original = `# 用户注释\nid: ${id}\nmodules: []\n${declareRules ? 'rules: []\n' : ''}variables: {}\nunknown: keep # 未知字段注释\n`
   writeFileSync(file, original)
   let activeDirectory = directory
   let rebuilds = 0
@@ -150,6 +150,127 @@ test('请求处理期间编辑目标被换掉时按当次解析拒绝，不写�
   assert.equal(rejected.code, 'module-changed')
   assert.equal(readFileSync(h.file, 'utf8'), h.original)
   assert.equal(readFileSync(other.file, 'utf8'), other.original)
+})
+
+test('缺少 rules 的模块拒绝读回，只允许显式首写且陈旧首写冲突', async () => {
+  const h = harness({ declareRules: false })
+  const before = readFileSync(h.file)
+  const read = await h.call()
+  assert.equal(read.status, 400)
+  assert.equal(read.code, 'module-not-declared')
+  assert.ok(readFileSync(h.file).equals(before))
+
+  const body = { expectedRulesAbsent: true, createRule: rules[0] }
+  const saved = await h.call(body)
+  assert.equal(saved.ok, true, saved.message)
+  assert.equal(saved.value.createdRuleId, 'budget')
+  assert.deepEqual(saved.value.rules, rules)
+  assert.deepEqual(parse(readFileSync(h.file, 'utf8')).rules, rules)
+  assert.equal(saved.value.rules[0].enabled, undefined, '首写不自动启用规则')
+
+  const stale = await h.call(body)
+  assert.equal(stale.status, 409)
+  assert.equal(stale.code, 'rules-conflict')
+  assert.deepEqual(parse(readFileSync(h.file, 'utf8')).rules, rules, '陈旧首写不覆盖已提交规则')
+  assert.equal(h.rebuilds, 1)
+
+  const declared = harness()
+  const declaredBefore = readFileSync(declared.file)
+  const wrongPrecondition = await declared.call(body)
+  assert.equal(wrongPrecondition.status, 409)
+  assert.equal(wrongPrecondition.code, 'rules-conflict')
+  assert.ok(readFileSync(declared.file).equals(declaredBefore))
+})
+
+test('缺少 rules 的非法显式首写拒绝时不物化规则切片', async () => {
+  const h = harness({ declareRules: false })
+  const before = readFileSync(h.file)
+  const rejected = await h.call({
+    expectedRulesAbsent: true,
+    createRule: { ...rules[0], then: [{ id: 'bad', kind: 'missing' }] },
+  })
+  assert.equal(rejected.ok, false)
+  assert.equal(rejected.status, 400)
+  assert.equal(rejected.code, 'rules-invalid')
+  assert.deepEqual(readFileSync(h.file), before)
+  assert.equal(existsSync(join(h.directory, 'rules')), false)
+})
+
+test('显式首写仍执行三位身份校验、只读拒绝及已保存发布重试', async () => {
+  const h = harness({ declareRules: false })
+  const initial = readFileSync(h.file)
+  const body = { expectedRulesAbsent: true, createRule: rules[0] }
+  const conflict = await h.call(body, { headers: { 'x-module-id': 'other-module' } })
+  assert.equal(conflict.status, 400)
+  assert.equal(conflict.code, 'module-subject-conflict')
+  assert.ok(readFileSync(h.file).equals(initial))
+
+  const switched = harness({ declareRules: false })
+  const switchedBefore = readFileSync(switched.file)
+  h.switchTo(switched.directory)
+  const changed = await h.call(body)
+  assert.equal(changed.status, 409)
+  assert.equal(changed.code, 'module-changed')
+  assert.ok(readFileSync(switched.file).equals(switchedBefore))
+
+  const locked = harness({ readonly: true, declareRules: false })
+  const readonly = await locked.call({ expectedRulesAbsent: true, createRule: rules[0] })
+  assert.equal(readonly.status, 403)
+  assert.equal(readonly.code, 'module-readonly')
+
+  const brokenIdentity = harness({ declareRules: false })
+  const mismatched = `id: another-module\nmodules: []\nvariables: {}\n`
+  writeFileSync(brokenIdentity.file, mismatched)
+  const refused = await brokenIdentity.call({ expectedRulesAbsent: true, createRule: rules[0] })
+  assert.equal(refused.ok, false)
+  assert.equal(refused.status, 400)
+  assert.equal(refused.code, 'rules-invalid')
+  assert.equal(readFileSync(brokenIdentity.file, 'utf8'), mismatched)
+  assert.equal(existsSync(join(brokenIdentity.directory, 'rules')), false, '身份拒绝不创建规则切片')
+
+  let fail = true
+  const pending = harness({ declareRules: false, rebuildFails: () => fail })
+  const persisted = await pending.call({ expectedRulesAbsent: true, createRule: rules[0] })
+  assert.equal(persisted.ok, true, persisted.message)
+  assert.equal(persisted.value.createdRuleId, 'budget')
+  assert.equal(persisted.value.persisted, true)
+  assert.equal(persisted.value.publicationPending, true)
+  const committed = readFileSync(pending.file, 'utf8')
+  fail = false
+  const refreshed = await pending.call({ refreshOnly: true })
+  assert.equal(refreshed.ok, true, refreshed.message)
+  assert.equal(refreshed.value.publicationPending, false)
+  assert.equal(readFileSync(pending.file, 'utf8'), committed)
+  assert.deepEqual(parse(committed).rules, rules, '刷新重试不重放首写')
+  assert.equal(pending.rebuilds, 2)
+})
+
+test('createRule 由服务端按目标模块分配规则 id，不依赖规则读回或客户端版本', async () => {
+  const h = harness()
+  const first = await h.call({ createRule: rules[0] })
+  assert.equal(first.ok, true, first.message)
+  assert.equal(first.value.createdRuleId, 'budget')
+  const second = await h.call({ createRule: rules[0] })
+  assert.equal(second.ok, true, second.message)
+  assert.equal(second.value.createdRuleId, 'budget-2')
+  const third = await h.call({ createRule: { ...rules[0], id: 'BUDGET' } })
+  assert.equal(third.ok, true, third.message)
+  assert.equal(third.value.createdRuleId, 'BUDGET-3')
+  assert.deepEqual(parse(readFileSync(h.file, 'utf8')).rules.map(rule => rule.id), ['budget', 'budget-2', 'BUDGET-3'])
+
+  const blank = harness({ declareRules: false })
+  const absent = await blank.call({ createRule: rules[0], expectedRulesAbsent: true })
+  assert.equal(absent.ok, true, absent.message)
+  assert.equal(absent.value.createdRuleId, 'budget')
+  const staleAbsent = await blank.call({ createRule: rules[0], expectedRulesAbsent: true })
+  assert.equal(staleAbsent.status, 409)
+  assert.equal(staleAbsent.code, 'rules-conflict')
+
+  const missingPrecondition = harness({ declareRules: false })
+  const rejected = await missingPrecondition.call({ createRule: rules[0] })
+  assert.equal(rejected.status, 409)
+  assert.equal(rejected.code, 'rules-conflict')
+  assert.deepEqual(parse(readFileSync(missingPrecondition.file, 'utf8')).rules, undefined)
 })
 
 test('只读预设、非回环与跨站请求拒绝；路径不由客户端指定', async () => {

@@ -6,13 +6,14 @@
 
 **「一个模块是否参与」只有一个真值源**：存储根 `config.yml` 的启用表（`schemaVersion: 3` 的 `enabled` 列表）。`src/host/config-store.ts` 的 `enabledModuleIds()` 是它**唯一**的读取口，客户端不另立一份真相——它用的是 `/bootstrap` 下发的 `meta.modules[].enabled`，那是启用表的**副本**。
 
-**判据按用途分，不合并成一个入口。** 四个消费者问的是三个不同的问题：
+**判据按用途分，不合并成一个入口。** 五个消费者问的是三个不同的问题：
 
 | 消费者 | 判据 | 它问的问题 | 为什么不合并 |
 |---|---|---|---|
 | 运行时装配（`src/index.ts` 的 `enabledModules`） | **总闸** && `enabledModuleIds()` && 模块目录存在 | 这个模块**现在参与装配吗** | 总闸是运行开关，不是「模块是否存在」；关掉它只是不装配 |
 | 跨模块排序（`src/host/module-config-order.ts` 的 `readInputs`） | `enabledModuleIds()` | 已启用模块之间**怎么排** | 排序定义的编辑不该被总闸牵连 |
 | 规则卡准入（`src/client/features/prompts/RulesWorkspace.tsx` 的 `owners`） | `meta.modules[].enabled`（启用表副本） | 这张卡**给不给编辑** | 用户 2026-10-10 拍板：启用表是第一优先级，其次才是 `_settings.yml` 与 `rules/*.yml` |
+| 创建/模板写入目标（`src/client/features/prompts/useTemplatePicker.tsx` → `/rules` `createRule`） | 本次操作显式 `moduleId` + 用户目录内有效、可写的模块身份 | 这次创建**写入哪个模块** | 不查启用表或总闸；未启用模块也可作为目标，系统模板、损坏或只读模块仍拒绝 |
 | 编辑通道（`src/runtime/settings-bridge.ts` 的 `/rules` 端点） | **不查启用** | 我**能不能读写**这个模块的定义 | 保留「先把模块写好、再启用」的能力 |
 
 **模块与配置的身份同样只有一处**：`src/shared/module-config-order.ts` 的 `configIdentityKey({ moduleId, configId })` —— 规则区的卡、排序条目与运行时的 `promptConfigs` 共用它，所以「卡的身份链路」不会分叉。
@@ -47,8 +48,8 @@
 ## 后续
 
 - 新增消费者时，先回答「它在问这三个问题里的哪一个」，并在上表登记；**不要**因为「别处已经有判据」就直接复用。
-- 卡片准入的收窄（2026-10-10，提交 `c35b93bc`）带来的结果：未启用模块不出卡、不发 `/rules`；要编辑它的规则，先在「模块」页启用。
-- 真值源若将来变化（例如启用表增列），只需改 `enabledModuleIds()` 与 `/bootstrap` 的下发，四个消费者不动。
+- 卡片准入的收窄（2026-10-10，提交 `c35b93bc`）仍只约束规则卡展示与卡内读取：未启用模块不出卡、不发卡内 `/rules`；模板创建与显式编辑目标不受该收窄影响，可先写未启用模块再决定是否启用。
+- 真值源若将来变化（例如启用表增列），只需改 `enabledModuleIds()` 与 `/bootstrap` 的下发，装配与卡片消费者不动；显式创建/编辑目标仍按本次 `moduleId` 判定。
 
 ## 与历史决策的关系
 

@@ -146,15 +146,15 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
   }
   // 页级创建编排（T18 唯一入口）：下拉 → 模板浮层 → 只加一步选目标 → 写入所选模块。
   // 主语来自目标选择，不存在「当前模块」；写入只落在该目标模块自己已读回的草稿上。
-  // 候选＝**只列可写模块**（启用 + 可编辑 + 可渲染，同一判据的共享实现）；写入前还会再判一次。
+  // 候选＝**只列可写用户模块**（启用状态与总闸不参与目标判据）；写入前还会再判一次。
   const create = useTemplateCreate({
     store,
     t,
     items: props.createItems ?? [],
     scope: props.scope ?? 'main',
-    targets: writableModuleTargets(fields, store.meta.modules).sort((a, b) => a.id.localeCompare(b.id)),
+    targets: writableModuleTargets(store.meta.modules).sort((a, b) => a.id.localeCompare(b.id)),
     existingIds: (store.meta.modules ?? []).map(module => module.id),
-    canWrite: (moduleId) => isWritableTarget(fields, store.meta.modules, moduleId),
+    canWrite: (moduleId) => isWritableTarget(store.meta.modules, moduleId),
     owners,
     onCreated: (moduleId, configKey) => setExpanded(configIdentityKey({ moduleId, configId: configKey })),
   })
@@ -170,7 +170,7 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
       <SearchInput inline aria-label={t('rules.search')} placeholder={t('rules.search')} value={props.keyword ?? filter} onChange={event => changeFilter(event.target.value)} />
       <MenuSelect compact className={css.control} ariaLabel={t('rules.layerFilter')} value={view} options={[{ value: 'all', label: t('rules.all') }, { value: 'context-activation', label: t('rules.worldBook') }, ...store.meta.layers.map(layer => ({ value: layer, label: translateLabel(t, LAYER_LABEL_KEYS, layer) }))]} onChange={value => props.onViewFilterChange?.(value)} />
       {create.toolbar}
-      {props.addingTarget && <TemplateTargetPicker t={t} modules={writableModuleTargets(fields, store.meta.modules)}
+      {props.addingTarget && <TemplateTargetPicker t={t} modules={writableModuleTargets(store.meta.modules)}
         existingIds={(store.meta.modules ?? []).map(module => module.id)}
         newModuleTemplate={BLANK_MODULE_TEMPLATE} onPick={() => {}} onClose={() => {}} />}
       <span className={ui.batchControls}>

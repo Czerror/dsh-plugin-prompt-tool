@@ -19,8 +19,8 @@ import type { ModuleConfigIdentity } from '../shared/module-config-order.ts'
 import { moduleDirExists } from '../host/manifest.ts'
 import { readOfficialOrderSegments, type OfficialOrderLookup } from '../shared/official-orders.ts'
 import { ModuleLayerSettingsError } from '../host/module-layer-settings.ts'
-import { readModuleRules, editModuleRules } from '../host/module-rules.ts'
-import type { RuleEdit, RuleEditorMeta, RuleRevisions } from '../shared/rules.ts'
+import { readModuleRules, editModuleRules, createModuleRule } from '../host/module-rules.ts'
+import type { RuleDefinition, RuleEdit, RuleEditorMeta, RuleRevisions } from '../shared/rules.ts'
 import { loadPromptTemplates, loadToolTemplates } from '../host/templates.ts'
 import { assertImportableSource, importSkillsDirectory, importSkillsPackage } from '../host/skills-import.ts'
 import { createSkill, type SkillActionResult } from '../host/skills-actions.ts'
@@ -1244,16 +1244,22 @@ export function registerSettingsBridge(
             const record = tx.record
             // 声明面只在读侧拦：这次请求要落盘（编辑或刷新发布）就放行，写完 rules 段才存在。
             const writing = record.refreshOnly === true
+              || record.expectedRulesAbsent === true
+              || record.createRule !== undefined
               || ((record.edits !== undefined || record.activateRuleId !== undefined) && record.validateOnly !== true)
             const dir = subjectGate(tx, 'rules', { write: writing })
             if (dir === undefined) return
-            if (Object.keys(record).some(key => !['expectedModuleId', 'expectedRevisions', 'edits', 'activateRuleId', 'validateOnly', 'refreshOnly'].includes(key))
+            if (Object.keys(record).some(key => !['expectedModuleId', 'expectedRevisions', 'expectedRulesAbsent', 'createRule', 'edits', 'activateRuleId', 'validateOnly', 'refreshOnly'].includes(key))
               || typeof record.expectedModuleId !== 'string' || record.expectedModuleId === ''
               || (record.edits !== undefined && !Array.isArray(record.edits))
               || (record.activateRuleId !== undefined && (typeof record.activateRuleId !== 'string' || record.activateRuleId.length === 0))
               || (record.validateOnly !== undefined && typeof record.validateOnly !== 'boolean')
               || (record.refreshOnly !== undefined && typeof record.refreshOnly !== 'boolean')
-              || (record.refreshOnly === true && (record.edits !== undefined || record.activateRuleId !== undefined || record.validateOnly !== undefined))) {
+              || (record.createRule !== undefined && !isRecord(record.createRule))
+              || (record.expectedRulesAbsent !== undefined && record.expectedRulesAbsent !== true)
+              || (record.refreshOnly === true && (record.edits !== undefined || record.activateRuleId !== undefined || record.validateOnly !== undefined || record.expectedRulesAbsent !== undefined || record.createRule !== undefined))
+              || (record.createRule !== undefined && (record.edits !== undefined || record.activateRuleId !== undefined || record.validateOnly !== undefined || record.expectedRevisions !== undefined))
+              || (record.expectedRulesAbsent === true && (record.createRule === undefined || record.expectedRevisions !== undefined))) {
               tx.write(400, { ok: false, code: 'rules-invalid', message: '规则请求字段、模块身份或版本格式不合法' })
               return
             }
@@ -1275,11 +1281,18 @@ export function registerSettingsBridge(
               tx.write(400, { ok: false, code: 'rules-invalid', message: '修改规则必须提供读取时的 expectedRevisions' })
               return
             }
+            let createdRuleId: string | undefined
             try {
               const { getRuleEditorMeta } = await import(pathToFileURL(join(packageEngineDir(), 'rule-spec.mjs')).href) as { getRuleEditorMeta: () => RuleEditorMeta }
               // 动态 import 之后的写前复检：可写 + 身份都在这里再判一次（豁免不适用，写端点默认核形状）。
               if (subjectGate(tx, 'rules', { write: writing }) === undefined) return
-              const candidate = editing ? editModuleRules(dir, {
+              const candidate = record.createRule !== undefined
+                ? (() => {
+                  const created = createModuleRule(dir, { rule: record.createRule as unknown as RuleDefinition, ...(record.expectedRulesAbsent === true ? { expectedRulesAbsent: true } : {}) })
+                  createdRuleId = created.createdRuleId
+                  return created.snapshot
+                })()
+                : editing ? editModuleRules(dir, {
                 expectedRevisions: record.expectedRevisions as Partial<RuleRevisions>,
                 ...(record.edits === undefined ? {} : { edits: record.edits as RuleEdit[] }),
                 ...(record.activateRuleId === undefined ? {} : { activateRuleId: record.activateRuleId as string }),
@@ -1288,7 +1301,7 @@ export function registerSettingsBridge(
               if (writing) {
                 try { await deps.overridesChanged?.(basename(dir)) }
                 catch (error) {
-                  tx.write(200, { ok: true, value: { rules: candidate.rules, revisions: candidate.revisions, meta: getRuleEditorMeta(), persisted: true, publicationPending: true, publicationError: `规则已保存，但运行刷新失败：${String(error)}` } })
+                  tx.write(200, { ok: true, value: { rules: candidate.rules, revisions: candidate.revisions, meta: getRuleEditorMeta(), ...(createdRuleId === undefined ? {} : { createdRuleId }), persisted: true, publicationPending: true, publicationError: `规则已保存，但运行刷新失败：${String(error)}` } })
                   return
                 }
               }
@@ -1297,13 +1310,14 @@ export function registerSettingsBridge(
                 tx.write(409, { ok: false, code: 'rules-conflict', message: '重建期间规则再次变化；请重新读取，当前草稿仍保留' })
                 return
               }
-              tx.write(200, { ok: true, value: { rules: result.rules, revisions: result.revisions, meta: getRuleEditorMeta() } })
+              tx.write(200, { ok: true, value: { rules: result.rules, revisions: result.revisions, meta: getRuleEditorMeta(), ...(createdRuleId === undefined ? {} : { createdRuleId }) } })
             } catch (error) {
               if (error instanceof ModuleRulesError) {
+                createdRuleId ??= error.createdRuleId
                 if (error.persisted) {
                   const committed = loadModuleDefinition(dir)
                   const { getRuleEditorMeta } = await import(pathToFileURL(join(packageEngineDir(), 'rule-spec.mjs')).href) as { getRuleEditorMeta: () => RuleEditorMeta }
-                  tx.write(200, { ok: true, value: { rules: committed.rules, revisions: committed.revisions, meta: getRuleEditorMeta(), persisted: true, publicationPending: true, publicationError: error.message } })
+                  tx.write(200, { ok: true, value: { rules: committed.rules, revisions: committed.revisions, meta: getRuleEditorMeta(), ...(createdRuleId === undefined ? {} : { createdRuleId }), persisted: true, publicationPending: true, publicationError: error.message } })
                   return
                 }
                 tx.write(error.status, { ok: false, code: error.code, message: error.message })

@@ -29,6 +29,7 @@ export class ModuleRulesError extends Error {
   readonly code: string
   readonly persisted: boolean
   readonly revisions?: RuleRevisions
+  createdRuleId?: string
   constructor(message: string, status: 400 | 403 | 409 | 500 = 400, code = 'rules-invalid', persisted = false, revisions?: RuleRevisions) {
     super(message); this.name = 'ModuleRulesError'; this.status = status; this.code = code
     this.persisted = persisted; this.revisions = revisions

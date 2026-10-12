@@ -51,6 +51,10 @@ export interface RuleSettings { order: number; enabled?: boolean; group?: string
 export interface RulesRequest {
   expectedModuleId?: string
   expectedRevisions?: Partial<RuleRevisions>
+  /** `/meta` 明确显示目标没有 rules 时，声明这是建立该节的首写。 */
+  expectedRulesAbsent?: true
+  /** 直接创建一条规则；宿主读取目标、分配目标内唯一 id 并提交。 */
+  createRule?: RuleDefinition
   edits?: RuleEdit[]
   /** 显式启用目标；保存端同时停用同模块互斥组的其他卡。 */
   activateRuleId?: string
@@ -80,4 +84,5 @@ export interface RulesSnapshot {
   persisted?: boolean
   publicationPending?: boolean
   publicationError?: string
+  createdRuleId?: string
 }
