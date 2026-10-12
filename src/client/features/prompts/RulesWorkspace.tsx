@@ -36,6 +36,8 @@ export interface RulesWorkspaceProps {
   keyword?: string; onKeywordChange?: (value: string) => void
   /** 层内设置：主语＝该实例卡所属模块，由调用方传进第三参；第四参是该卡内工具模板入口。 */
   renderLayerSettings?: (layer: string, config: PromptConfigDraft, moduleId: string, onChooseToolTemplate: (moduleId: string, anchor: HTMLButtonElement) => void) => ReactNode
+  /** 指令文件卡的设置区：卡是全局段、没有归属模块，主语由装配层按启用模块逐个给出。 */
+  renderInstructionSettings?: (config: PromptConfigDraft) => ReactNode
   hasLayerSettings?: (layer: string, moduleId: string) => boolean
   matchesLayerSettings?: (layer: string, keyword: string, moduleId: string) => boolean
   /** 页级「添加」下拉的创建项（注入模板按层）：创建编排由本组件统一持有，两页只传清单。 */
@@ -156,8 +158,9 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
     owners,
     onCreated: (moduleId, configKey) => setExpanded(configIdentityKey({ moduleId, configId: configKey })),
   })
-  // 指令文件卡是全局段（不属于任何模块）：模块级参数没有主语，因此这里不给它层设置区。
+  // 指令文件卡是全局段（不属于任何模块）：设置区的主语由装配层按每个启用模块给出（参数按模块存储）。
   const instructionCards = fields.promptConfigs.filter(config => instructionFileIdOf(config) !== undefined).map(config => <PromptConfigCard key={config.id} t={t} meta={store.meta} config={config} expanded={expanded === config.id} canMoveUp={false} canMoveDown={false}
+    renderLayerSettings={props.renderInstructionSettings === undefined ? undefined : (_layer, card) => props.renderInstructionSettings!(card)}
     onToggleExpanded={() => toggle(config.id)} onToggleEnabled={() => {}} onPatch={(id, patch) => store.patch({ promptConfigs: store.getFields().promptConfigs.map(item => item.id === id ? { ...item, ...patch } : item) })}
     onMoveUp={() => {}} onMoveDown={() => {}} onDuplicate={() => {}} onDelete={() => {}}
     onSaveInstructionFile={id => { void store.persistInstructionFiles([id]) }} onReloadInstructionFile={id => store.reloadInstructionFile(id).then(() => {})}
