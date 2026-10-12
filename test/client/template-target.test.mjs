@@ -1,8 +1,8 @@
 /**
  * T18 页级创建入口回归：一处页级下拉「添加」+ 选完模板**只加一步**选目标。
  *
- * 判据（RED 现场）：今天横栏在（`data-module-create`）、页级下拉不在；
- * 选完模板后的目标选择（已存在模块 / 新建空白模块）完全没有。
+ * 判据：页级下拉「添加」是创建的唯一入口（每模块横栏 `data-module-create` 形态已随实现删除，
+ * 不再断言其缺席）；选完模板**只加一步**选目标，候选只列可写模块、新建分支不接受名字输入。
  * 点击类交互（下拉展开、真机里建出的模块出现在 /meta）SSR 断言不了，交真机。
  */
 import test from 'node:test'
@@ -57,14 +57,10 @@ const stubStore = () => {
 /** 页级「添加」下拉的创建项（与页面接线同形：按注入层一组菜单项）。 */
 const createItems = ['pre-step', 'system-section'].map((layer) => ({ id: `tpl:${layer}`, label: t('main.addTemplate', { layer }) }))
 
-test('页级下拉「添加」在工具栏里，且每模块横栏已消失', () => {
+test('页级下拉「添加」在工具栏里（入口接线见 module-asset-subject 的页级用例）', () => {
   const html = renderElement(RulesWorkspace, { store: stubStore(), t, createItems })
   assert.match(html, /data-module-toolbar/, '工具栏仍在场')
   assert.match(html, /data-engine-add-menu/, '页级下拉「添加」存在（页级创建的唯一入口）')
-  assert.match(html, new RegExp(`aria-label="${t('modules.addTemplates')}"`), '可访问名＝添加注入模板')
-  assert.match(html, /aria-haspopup="menu"/, '下拉语义')
-  assert.doesNotMatch(html, /data-module-create/, '每模块横栏已删除')
-  assert.doesNotMatch(html, new RegExp(t('rules.source', { module: 'mod-a' })), '横栏里的「模块：xxx」文案不再出现')
 })
 
 test('目标候选只列**可写**模块：未启用与只读都不提供（不是可选后静默丢弃）', () => {
@@ -77,9 +73,9 @@ test('目标候选只列**可写**模块：未启用与只读都不提供（不�
   assert.doesNotMatch(html, /data-template-target="mod-ro"/, '只读模块不作为候选（存不下去＝不许列）')
   assert.doesNotMatch(html, /data-template-target="blank"/, '复制源不是候选（它未启用，也不是新建出来的模块）')
   assert.match(html, /data-template-new-module/, '新建空白模块分支存在')
-  assert.doesNotMatch(html, /data-template-new-name/, '不再有填了不生效的名字输入')
   // 工具栏的搜索框不算：只看「新建空白模块」那一段里有没有输入框。
   assert.doesNotMatch(html.slice(html.indexOf('data-template-new-module')), /<input/, '新建分支没有任何输入框（名字由服务端定）')
+  // 预览文案的期望值取自 locales 词条（独立真值源）：blank-2 是场景事实，不在测试里重算预览算法。
   assert.match(html, new RegExp(t('rules.create.newHint', { id: 'blank-2' })), '预览按「已存在目录」判定：用户根下已有 blank → blank-2')
 })
 

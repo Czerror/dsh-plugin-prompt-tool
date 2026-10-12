@@ -1,34 +1,38 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { canEditSubject, moduleDeclares, subjectDraftKey } from '../../src/client/data/module-subject.ts'
+import { canEditModule, moduleDeclares, writableModuleTargets } from '../../src/client/data/module-subject.ts'
 
-/** 判据只读「模块总闸 + 当前模块事实」两项；moduleFacts 缺席＝没有主语（无模块事实）。 */
-const gate = (overrides = {}) => ({ modulesEnabled: true, ...overrides })
+/** 判据只读「模块总闸 + 该模块自己的事实」两项；走生产同源入口 canEditModule（不直调内部 canEditSubject）。 */
+const gate = { modulesEnabled: true }
+const facts = (editable) => ({ declaredModules: [], effectiveModules: [], rowIds: [], sourceMode: 'explicit', editable })
+const moduleEntry = (id, editable = true, enabled = true) => ({ id, name: id, enabled, facts: facts(editable) })
 
-test('canEditSubject：moduleFacts 缺席（无主语）时不可编辑', () => {
-  assert.equal(canEditSubject(gate()), false)
+test('canEditModule：模块不在装配集合里（没有主语）时不可编辑', () => {
+  assert.equal(canEditModule(gate, [moduleEntry('mod-a')], 'mod-missing'), false)
+  assert.equal(canEditModule(gate, undefined, 'mod-a'), false)
 })
 
-test('canEditSubject：moduleFacts.editable 为假时不可编辑', () => {
-  assert.equal(canEditSubject(gate({ moduleFacts: { editable: false } })), false)
+test('canEditModule：该模块事实不可编辑时不可编辑', () => {
+  assert.equal(canEditModule(gate, [moduleEntry('mod-a', false)], 'mod-a'), false)
 })
 
-test('canEditSubject：模块总闸关闭时不可编辑', () => {
-  assert.equal(canEditSubject({ modulesEnabled: false, moduleFacts: { editable: true } }), false)
+test('canEditModule：模块总闸关闭时不可编辑', () => {
+  assert.equal(canEditModule({ modulesEnabled: false }, [moduleEntry('mod-a')], 'mod-a'), false)
 })
 
-test('canEditSubject：总闸打开且当前模块可编辑时为真', () => {
-  assert.equal(canEditSubject(gate({ moduleFacts: { editable: true } })), true)
+test('canEditModule：总闸打开且该模块可编辑时为真', () => {
+  assert.equal(canEditModule(gate, [moduleEntry('mod-a')], 'mod-a'), true)
 })
 
-test('subjectDraftKey：无主语不产生草稿键（不得退化成 undefined:scope）', () => {
-  assert.equal(subjectDraftKey(undefined, 'module'), undefined)
-  assert.equal(subjectDraftKey(undefined, 'subagent'), undefined)
+test('canEditModule：判据逐模块——同一次快照里 A 可编辑不影响 B', () => {
+  const modules = [moduleEntry('mod-a'), moduleEntry('mod-b', false)]
+  assert.equal(canEditModule(gate, modules, 'mod-a'), true)
+  assert.equal(canEditModule(gate, modules, 'mod-b'), false)
 })
 
-test('subjectDraftKey：有主语时与今日同形', () => {
-  assert.equal(subjectDraftKey('mod-a', 'module'), 'mod-a:module')
-  assert.equal(subjectDraftKey('mod-a', 'subagent'), 'mod-a:subagent')
+test('writableModuleTargets：模块总闸关闭时没有任何可写目标', () => {
+  assert.deepEqual(writableModuleTargets({ modulesEnabled: false }, [moduleEntry('mod-a')]), [], '总闸关闭时谁都不写')
+  assert.deepEqual(writableModuleTargets(gate, [moduleEntry('mod-a')]).map((module) => module.id), ['mod-a'])
 })
 
 /** 声明面判据来自 `/meta` 下发的 `declares`（顶层键名数组），不是客户端另立的名录。 */

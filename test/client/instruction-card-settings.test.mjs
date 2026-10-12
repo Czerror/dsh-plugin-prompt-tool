@@ -5,7 +5,8 @@
  * **一个全局开关**（写存储根 `config.yml` 的 `layerSettings`）；模块自己写了该参数时模块值
  * 优先（存在即覆盖，判定在服务端）。所以这里钉死两件相反方向的事：
  *  ① 页签必须在场——它与启用模块数量无关（`64a66174` 按启用模块逐个渲染的形态已否掉）；
- *  ② 设置区里 `instructionHint` 控件**恰好一个**，且不再有 `data-instruction-module` 分节。
+ *  ② 设置区里 `instructionHint` 控件**恰好一个**（`64a66174` 那版的 `data-instruction-module`
+ *     每模块分节已随实现删除，不再断言其缺席）。
  */
 import test from 'node:test'
 import assert from 'node:assert/strict'
@@ -79,16 +80,10 @@ const renderSettings = (store) => {
   return renderElement(function Probe() { return slots.renderInstructionSettings(instructionCard) }, {})
 }
 
-test('指令卡：展开后有「设置」页签（d86eea76 删掉 renderInstructionSettings 的回归）', () => {
-  const html = renderWorkspace(stubStore())
-  assert.match(html, /data-config-tab="content"/, '内容页签照旧在场')
-  assert.match(html, /data-config-tab="settings"/, '设置页签必须在场（用户报的就是它整块消失）')
-})
-
-test('指令卡：设置页签与启用模块数量无关（没有启用模块也有全局开关）', () => {
+test('指令卡：设置页签在场，且与启用模块数量无关（没有启用模块也有那一个全局开关）', () => {
   const html = renderWorkspace(stubStore([moduleOff]))
   assert.match(html, /data-config-tab="content"/, '内容页签照旧在场')
-  assert.match(html, /data-config-tab="settings"/, '全局层不属于任何模块：没有启用模块同样有可设置的内容')
+  assert.match(html, /data-config-tab="settings"/, '设置页签必须在场（全局层不属于任何模块：没有启用模块同样有可设置的内容）')
   assert.equal((renderSettings(stubStore([moduleOff])).match(/data-param-key="instructionHint"/g) ?? []).length, 1,
     '没有启用模块时仍是那一个全局开关')
 })
@@ -97,10 +92,9 @@ test('指令卡设置区：只有**一个**全局开关，没有按模块分节�
   const html = renderSettings(stubStore([moduleA, moduleB, moduleOff]))
   assert.match(html, /data-param-key="instructionHint"/, '路径指引控件在场')
   assert.equal((html.match(/data-param-key="instructionHint"/g) ?? []).length, 1, '一个开关，不按模块重复')
-  assert.doesNotMatch(html, /data-instruction-module/, '不再有按模块分节的设置区')
   assert.doesNotMatch(html, /data-layer-param-group/, '不再借用按模块的层设置内容')
   assert.doesNotMatch(html, /mod-a/, '没有模块名分节标题（卡片主语是全局层）')
-  assert.match(html, /aria-label="指令路径提示"/, 'labels 仍是既有词条')
+  assert.match(html, new RegExp(`aria-label="${t('param.instructionHint')}"`), 'labels 仍是既有词条')
 })
 
 test('指令卡设置区：全局值读回前禁写（不把 UI 默认值固化成全局键）', () => {

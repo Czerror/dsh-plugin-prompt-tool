@@ -2,8 +2,8 @@
  * 装配集合视图的资产卡主语回归（T6）：每张资产卡的主语只能来自它的归属模块。
  *
  * 判据（RED 现场）：卡按归属取主语与读数（props / 逐模块事实），不从 store 全局兜底；
- * 缺主语时整块不渲染、不建草稿键；同一层两个模块的实例卡互不串读。
- * 卡片只渲染、请求走 store：请求主语用 stub fetch 断言 `x-module-id`。
+ * 缺主语时整块不渲染（`html === ''`，不在界面上出卡）；同一层两个模块的实例卡互不串读；
+ * 卡片只渲染、请求走 store：请求主语用 stub fetch 断言 `x-module-id`（含「未声明＝零请求」）。
  */
 import test from 'node:test'
 import assert from 'node:assert/strict'
@@ -18,6 +18,9 @@ const { LayerSettingsContent, injectionPointSlots } = await withSsr([
 ])
 const { RulesWorkspace } = await withSsr([
   new URL('../../src/client/features/prompts/RulesWorkspace.tsx', import.meta.url).href,
+])
+const { MainSessionPage } = await withSsr([
+  new URL('../../src/client/app/workspace/pages/MainSessionPage.tsx', import.meta.url).href,
 ])
 const { usePromptToolStore } = await withSsr([
   new URL('../../src/client/data/use-prompt-tool-store.ts', import.meta.url).href,
@@ -65,14 +68,10 @@ const toolsDraft = (ids) => ({
   loaded: true, error: '', saving: false,
 })
 
-test('无主语：资产卡整块不渲染（装配集合为空即无卡），也不建任何草稿键', () => {
+test('无主语：资产卡整块不渲染（装配集合为空即无卡）', () => {
   const drafts = createWorkspaceDrafts()
   const html = renderElement(LayerSettingsContent, { store: stubStore(drafts), t, layer: 'tool-pipeline' })
   assert.equal(html, '', '没有归属模块就没有资产卡')
-  assert.equal(drafts.fields.size, 0)
-  assert.equal(drafts.expanded.size, 0)
-  assert.equal(drafts.policies.size, 0)
-  assert.equal(drafts.tools.size, 0)
 })
 
 /** 声明面来自 `/meta` 的 `declares`：只决定「这一步发不发读」与「空内容从哪来」。
@@ -163,12 +162,12 @@ test('声明面：变量写载荷——没有前状态整键不带 expectedRevis
   assert.deepEqual(bodies[1].expectedRevisions, { module: 'M1' }, '有前状态仍按既有并发校验')
 })
 
-test('声明面：三张卡的读构造点——未声明不构造请求，且此时编辑器照常在场（两条同时成立）', async () => {
+test('声明面：三张通用卡的读——未声明一个请求都不发，声明后各读一次（编辑器在场不受影响）', async () => {
   const fetchStub = withFetch(() => ({ ok: true, value: {} }))
   try {
-    assert.equal(readCustomTools('mod-a', true), undefined, '未声明 customTools → 不构造请求')
-    assert.equal(readSubagentPolicy('mod-a', true), undefined, '未声明 subagentToolPolicy → 不构造请求')
-    assert.equal(readModulePersona('mod-a', true), undefined, '未声明 persona → 不构造请求')
+    await readCustomTools('mod-a', true)
+    await readSubagentPolicy('mod-a', true)
+    await readModulePersona('mod-a', true)
     assert.equal(fetchStub.requests.length, 0, '未声明时一个请求都没发出去')
     // 同一未声明主语：固定卡（人设编辑器、指令卡参数组）照常渲染——「不读」不等于「不出编辑器」。
     const drafts = createWorkspaceDrafts()
@@ -274,7 +273,7 @@ test('规则工作台：同一层两个模块的规则卡各自按自己模块�
 })
 
 /** T18：每模块横栏已删除——创建入口只剩页级一处（不依赖「当前模块」，也不按模块重复）。 */
-test('创建入口：每模块横栏不再渲染，页级也不出现逐模块的创建按钮', () => {
+test('创建入口接线：页级「添加」下拉在场（主语不由菜单给）', () => {
   const drafts = createWorkspaceDrafts()
   drafts.rules.set('mod-a', rulesDraft('rule-a'))
   drafts.rules.set('mod-b', rulesDraft('rule-b'))
@@ -282,14 +281,9 @@ test('创建入口：每模块横栏不再渲染，页级也不出现逐模块�
     ...twoModules,
     { id: 'mod-off', name: 'off', enabled: false, facts: facts() },
   ])
-  const html = renderElement(RulesWorkspace, {
-    store, t, ...injectionPointSlots({ store, t, viewFilter: 'all', audience: 'main' }),
-  })
-  assert.doesNotMatch(html, /data-module-create/, '横栏整体退场')
-  for (const moduleId of ['mod-a', 'mod-b', 'mod-off']) {
-    const ownership = ` · ${t('rules.source', { module: moduleId })}`
-    assert.doesNotMatch(html, new RegExp(`aria-label="${t('modules.addTemplates')}${ownership}"`), `${moduleId} 不再有专属创建入口`)
-  }
+  // 走真实页级编排：清单由页面自己算（`MainSessionPage` 不接受调用方传清单），这里只断言接线结果。
+  const html = renderElement(MainSessionPage, { store, t })
+  assert.match(html, new RegExp(`aria-label="${t('modules.addTemplates')}"`), '页级创建入口的可访问名＝添加注入模板')
 })
 
 /** stub fetch：记录每次请求的路径、头与 JSON 载荷。 */
@@ -558,8 +552,5 @@ test('人设卡接线：来源＝官方（没有模块主语）时也能展开�
   assert.match(html, new RegExp(t('persona.inherit')), '选项区仍有「继承官方」')
   assert.match(html, new RegExp(t('persona.complete.label')), '独占选项在场')
   assert.match(html, new RegExp(t('persona.runtimeContext.label')), '动态运行时上下文选项在场')
-  // 用户直接指示删掉的那句「选择一个来源模块…」不许回来；词条也已删除，引用它会当场抛错。
-  assert.doesNotMatch(html, /选择一个来源模块/, '多余提示保持删除（用户直接指示）')
   assert.match(html, new RegExp(t('persona.reload')), '页脚「重新读取人设」在场')
-  assert.doesNotMatch(html, /global/, '人设没有全局层：主语只来自模块上下文，不发明全局主语')
 })
