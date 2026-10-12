@@ -11,6 +11,7 @@ export function useModuleRuleEditors(store: PromptToolStore, moduleIds: readonly
   const identity = JSON.stringify([...new Set(moduleIds)].filter(Boolean))
   const active = useRef(moduleIds)
   active.current = moduleIds
+  useEffect(() => { active.current = moduleIds; return () => { active.current = [] } }, [identity])
   const editors = useMemo(() => (JSON.parse(identity) as string[]).map(moduleId => {
     const draft = getRulesDraft(store.editorDrafts, moduleId)
     return { moduleId, draft, editor: createRuleEditor(moduleId, draft, {

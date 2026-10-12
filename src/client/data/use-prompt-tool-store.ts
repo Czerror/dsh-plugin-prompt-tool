@@ -51,9 +51,11 @@ import { buildParamOverrides, EMPTY_PARAMS, paramSnapshot, readParamOverridesPat
 import { createSerialTaskQueue } from './save-queue.ts'
 import { createWorkspaceDrafts, type WorkspaceDrafts } from './workspace-drafts.ts'
 import { rulesDirty } from './rule-drafts.ts'
+import { createTemplateRuleWriter } from './template-rule-writer.ts'
+import { createModuleActions, type ModuleActions } from './module-actions.ts'
 import type { ModuleVariableRevisions, ModuleVariableScope } from '../../shared/module-variables.ts'
 import { createVariablesDraft, readVariablesDraft, retryModuleVariablesPublication as retryModuleVariablesPublicationRequest, saveModuleVariables as saveModuleVariablesRequest, type VariablesDraft } from './module-variables.ts'
-import { canEditModule, createBlankModule, moduleDeclares, subjectDraftKey } from './module-subject.ts'
+import { canEditModule, moduleDeclares, subjectDraftKey } from './module-subject.ts'
 import { modulesEnabledOps } from '../../shared/module-settings.ts'
 import { modelChoiceValue } from '../features/models/model-options.ts'
 import type { ModelReasoningView } from '../../shared/bridge-contract.ts'
@@ -113,10 +115,6 @@ export interface PromptToolStore {
   /** 草稿池写入后调用：镜像控件一起重渲染，读同一草稿键。 */
   publishDrafts: () => void
   meta: EngineMeta
-  /** 异步写入读取最新事实，不捕获创建前的渲染快照。 */
-  getMeta: () => EngineMeta
-  /** 记录成功写入的模块声明，供跨页面模板创建共享最新主语事实。 */
-  markModuleDeclared: (moduleId: string, section: string) => void
   loading: boolean
   modelCatalog: Record<string, string[]>
   /** provider/model 路由的推理档位元数据（按 modelChoiceValue 键）；未查到 = known:false。 */
@@ -194,6 +192,8 @@ export interface PromptToolStore {
   removeModuleCapability: (moduleId: string, id: string) => Promise<boolean>
   /** 新建空白模块（走既有新建动作；名字由服务端定），返回新模块 id（失败 undefined）。 */
   createModule: () => Promise<string | undefined>
+  moduleActions: ModuleActions
+  createTemplateRule: ReturnType<typeof createTemplateRuleWriter>
   /** 从宿主机目录复制导入到用户技能根。 */
   importSkillsDirectory: (path: string, confirm?: ConfirmSkillOverwrite) => Promise<boolean>
   /** 只刷新技能事实，不重读模块或覆盖其它草稿。 */
@@ -299,7 +299,6 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
   const [meta, setMeta] = useState<EngineMeta>(EMPTY_META)
   /** meta 的 ref 镜像：写盘守卫与按主语读取在回调里执行，等下一次渲染的快照会过期。 */
   const metaRef = useRef<EngineMeta>(EMPTY_META)
-  const getMeta = useCallback(() => metaRef.current, [])
   const publishMeta = useCallback((next: EngineMeta) => { metaRef.current = next; setMeta(next) }, [])
   const markModuleDeclared = useCallback((moduleId: string, section: string): void => {
     const current = metaRef.current
@@ -1111,14 +1110,23 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
   const createModuleCapability = useCallback((moduleId: string, action: 'create' | 'create-recipe', id: string) => changeModuleCapability(moduleId, action, id), [changeModuleCapability])
   const removeModuleCapability = useCallback((moduleId: string, id: string) => changeModuleCapability(moduleId, 'remove', id), [changeModuleCapability])
 
-  /** 新建空白模块只复制定义并保持未启用，再 `load()` 刷新模块快照；id 由服务端定。 */
+  /** 操作对象保持稳定；刷新闭包始终读取最新工作台依赖。 */
+  const moduleRefreshRef = useRef<() => Promise<boolean>>(async () => false)
+  moduleRefreshRef.current = async () => await load({ silent: true }) !== EMPTY_FIELDS
+  const [moduleActions] = useState(() => createModuleActions({ enqueue: enqueueRuleTask, refresh: () => moduleRefreshRef.current() }))
+  /** 新建只复制定义、保持关闭；id 与刷新结果由模块操作返回。 */
   const createModule = useCallback((): Promise<string | undefined> => {
-    return createBlankModule(bridgeCall).then(async (created) => {
-      if (created === undefined) { showNotice('error', '新建模块失败：服务不可用或空白模板缺失'); return undefined }
-      await load({ silent: true })
-      return created
+    return moduleActions.create().then(result => {
+      if (!result.ok) { showNotice('error', result.message ?? '新建模块失败'); return undefined }
+      if (result.refreshError !== undefined) showNotice('error', '模块已创建，但列表刷新失败；请重新打开工作台，不要重复创建。')
+      return result.value.id
     })
-  }, [load, showNotice])
+  }, [moduleActions, showNotice])
+  const templateWriter = useRef<ReturnType<typeof createTemplateRuleWriter>>()
+  templateWriter.current ??= createTemplateRuleWriter({
+    drafts: editorDrafts, modules: () => metaRef.current.modules, changed: publishDrafts, markDeclared: markModuleDeclared,
+    enqueue: enqueueRuleTask, actions: moduleActions,
+  })
 
   const refreshSkills = useCallback(async (): Promise<boolean> => {
     const seq = ++skillsSeqRef.current
@@ -1255,8 +1263,6 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
     subscribeDrafts,
     publishDrafts,
     meta,
-    getMeta,
-    markModuleDeclared,
     loading,
     modelCatalog,
     modelReasoning,
@@ -1303,6 +1309,8 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
     createModuleCapability,
     removeModuleCapability,
     createModule,
+    moduleActions,
+    createTemplateRule: templateWriter.current,
     importSkillsDirectory,
     refreshSkills,
     createSkill,

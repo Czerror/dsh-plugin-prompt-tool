@@ -59,26 +59,6 @@ export const isWritableTarget = (modules: readonly ModuleSummary[] | undefined, 
  * 「新建空白模块」的源：引擎内组装的空白模板（`src/host/manifest.ts` 的 `BLANK_MODULE_TEMPLATE`，
  * 不落包内目录）；只声明身份，不预置任何节。
  *
- * ponytail: 名字**不可由用户指定**——`/module-clone` 只吃模板 id，目录名由服务端定
- * （模板名已占用则追加 `-2`/`-3`…）。要自定义命名就得给 `/module-clone` 加显式 targetId，
- * 那是另一条任务；在那之前不要在客户端拼路径，也不要在界面上给一个不生效的输入框。
+ * 目录身份仍由服务端分配为 blank、blank-2 等；显示名称可编辑，不用于拼路径。
  */
 export const BLANK_MODULE_TEMPLATE = 'blank'
-
-/** 该模板是否合法模块 id（唯一进路径的值都从这里过一道，非法即拒绝发请求）。 */
-export const blankModuleTargetValid = (): boolean => isModuleId(BLANK_MODULE_TEMPLATE)
-
-/** 新建空白模块要用的既有复制端点（调用方用 `bridgeCall` 适配即可）。 */
-export type BlankModuleCall = (
-  endpoint: 'moduleClone',
-  body: { id: string; autoSuffix?: boolean },
-) => Promise<{ ok: boolean; value?: any }>
-
-/**
- * 新建空白模块只复制定义，保持未启用。名字不是用户输入：目标 id 由服务端返回并回传。
- */
-export async function createBlankModule(call: BlankModuleCall): Promise<string | undefined> {
-  if (!blankModuleTargetValid()) return undefined
-  const cloned = await call('moduleClone', { id: BLANK_MODULE_TEMPLATE, autoSuffix: true })
-  return cloned.ok ? cloned.value?.id : undefined
-}

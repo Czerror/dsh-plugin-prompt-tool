@@ -1,185 +1,91 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { withSsr } from './support/ssr-render.mjs'
+import { createTemplateRuleWriter } from '../../src/client/data/template-rule-writer.ts'
+import { createModuleActions } from '../../src/client/data/module-actions.ts'
+import { createWorkspaceDrafts } from '../../src/client/data/workspace-drafts.ts'
+import { createRuleEditor, getRulesDraft } from '../../src/client/data/rule-drafts.ts'
 import { EDIT_TARGET_HEADER } from '../../src/shared/bridge-contract.ts'
 
-const { createTemplateRule, createTemplateRuleWriter, applyTemplatePublicationState } = await withSsr([
-  new URL('../../src/client/features/prompts/useTemplatePicker.tsx', import.meta.url).href,
-])
-const { createWorkspaceDrafts } = await import('../../src/client/data/workspace-drafts.ts')
-
 const rule = { id: 'budget', enabled: false, then: [] }
-const ok = (value) => new Response(JSON.stringify({ ok: true, value }), { status: 200 })
+const snapshot = (rules = [rule], extras = {}) => ({ rules, revisions: { rules: {}, settings: 's1', variables: 'v1' }, meta: { predicates: [], composites: [], actions: [], waterfallPositions: [] }, createdRuleId: rules.at(-1)?.id, ...extras })
+const ok = value => new Response(JSON.stringify({ ok: true, value }))
 const failure = (code, message) => new Response(JSON.stringify({ ok: false, code, message }), { status: 409 })
-
+const module = (id, declares) => ({ id, user: true, renderable: true, enabled: false, facts: { editable: true }, ...(declares === undefined ? {} : { declares }) })
+function setup(modules = []) {
+  const drafts = createWorkspaceDrafts(), marks = []; let refreshes = 0
+  const actions = createModuleActions({ enqueue: task => task(), refresh: async () => { refreshes++; return true } })
+  const writer = createTemplateRuleWriter({ drafts, modules: () => modules, changed() {}, markDeclared: (...args) => marks.push(args), enqueue: task => task(), actions })
+  return { drafts, writer, marks, get refreshes() { return refreshes } }
+}
 async function withFetch(responses, run) {
-  const originalFetch = globalThis.fetch
-  const calls = []
-  globalThis.fetch = async (url, init) => {
-    calls.push({ url, init })
-    return Array.isArray(responses) ? responses.shift() : responses
-  }
-  try { return await run(calls) } finally { globalThis.fetch = originalFetch }
+  const original = globalThis.fetch, calls = []
+  globalThis.fetch = async (url, init) => { calls.push({ url, init, body: JSON.parse(init.body) }); return responses.shift() }
+  try { await run(calls) } finally { globalThis.fetch = original }
 }
 
-test('成功的空白模块首写覆盖陈旧声明快照，后续模板写入省略 absent 前置', async () => {
-  const writeTemplateRule = createTemplateRuleWriter()
-  const staleMeta = [{ id: 'blank-2', declares: [] }]
-  await withFetch([
-    ok({ createdRuleId: 'budget', rules: [rule] }),
-    ok({ createdRuleId: 'budget-2', rules: [rule] }),
-  ], async (calls) => {
-    assert.equal((await writeTemplateRule('blank-2', rule, staleMeta)).ok, true)
-    assert.equal((await writeTemplateRule('blank-2', rule, staleMeta)).ok, true)
-    assert.equal(JSON.parse(calls[0].init.body).expectedRulesAbsent, true)
-    assert.equal(Object.hasOwn(JSON.parse(calls[1].init.body), 'expectedRulesAbsent'), false)
-  })
-})
-
-test('失败的空白模块首写不会记为已声明，重试仍要求 absent 前置', async () => {
-  const writeTemplateRule = createTemplateRuleWriter()
-  const staleMeta = [{ id: 'blank-2', declares: [] }]
-  await withFetch([
-    failure('rules-conflict', '规则声明冲突'),
-    ok({ createdRuleId: 'budget', rules: [rule] }),
-  ], async (calls) => {
-    assert.equal((await writeTemplateRule('blank-2', rule, staleMeta)).ok, false)
-    assert.equal((await writeTemplateRule('blank-2', rule, staleMeta)).ok, true)
-    for (const call of calls) assert.equal(JSON.parse(call.init.body).expectedRulesAbsent, true)
-  })
-})
-
-test('成功首写更新共享声明快照，另一模板 writer 省略 absent 前置', async () => {
-  const modules = [{ id: 'blank-2', declares: [] }]
-  const markModuleDeclared = (moduleId, section) => {
-    const module = modules.find(candidate => candidate.id === moduleId)
-    if (module && !module.declares.includes(section)) module.declares.push(section)
-  }
-  const firstWriter = createTemplateRuleWriter(markModuleDeclared)
-  const secondWriter = createTemplateRuleWriter(markModuleDeclared)
-  await withFetch([
-    ok({ createdRuleId: 'budget', rules: [rule] }),
-    ok({ createdRuleId: 'budget-2', rules: [rule] }),
-  ], async (calls) => {
-    assert.equal((await firstWriter('blank-2', rule, modules)).ok, true)
-    assert.equal((await secondWriter('blank-2', rule, modules)).ok, true)
-    assert.equal(Object.hasOwn(JSON.parse(calls[1].init.body), 'expectedRulesAbsent'), false)
-  })
-})
-
-test('新建模块未出现在旧 meta 时，显式 rulesAbsent 集合仍发送 absent 前置', async () => {
-  const createdModuleIds = new Set(['blank-3'])
-  const writeTemplateRule = createTemplateRuleWriter(undefined, createdModuleIds)
-  await withFetch([
-    failure('rules-conflict', '规则声明冲突'),
-    ok({ createdRuleId: 'budget', rules: [rule] }),
-    ok({ enabled: ['blank-3'] }),
-  ], async (calls) => {
-    assert.equal((await writeTemplateRule('blank-3', rule, [])).ok, false)
-    assert.equal((await writeTemplateRule('blank-3', rule, [])).ok, true)
-    for (const call of calls.slice(0, 2)) assert.equal(JSON.parse(call.init.body).expectedRulesAbsent, true)
-    assert.equal(calls.length, 3, '写入失败不启用；重试写入成功后才启用本次新建模块')
-    assert.deepEqual(JSON.parse(calls[2].init.body), { id: 'blank-3', enabled: true })
-    assert.equal(createdModuleIds.has('blank-3'), false)
-  })
-})
-
-test('新建目标先保存关闭的规则再启用模块；后续写入不重复启用', async () => {
-  const created = new Set(['blank'])
-  const writer = createTemplateRuleWriter(undefined, created)
-  await withFetch([
-    ok({ createdRuleId: 'budget', rules: [rule] }),
-    ok({ enabled: ['blank'] }),
-    ok({ createdRuleId: 'budget-2', rules: [rule] }),
-  ], async (calls) => {
-    const result = await writer('blank', rule, [])
+test('模板首写无视图依赖：先保存关闭规则、再启用本次新模块，返回结果进入共享草稿', async () => {
+  const h = setup()
+  await withFetch([ok(snapshot()), ok({ enabled: ['blank'] }), ok(snapshot([{ ...rule, id: 'budget-2' }]))], async calls => {
+    const result = await h.writer('blank', rule, true)
     assert.equal(result.ok, true)
     assert.equal(result.moduleEnabled, true)
-    assert.equal(JSON.parse(calls[0].init.body).createRule.enabled, false)
+    assert.equal(h.refreshes, 1)
+    assert.deepEqual(calls[0].body, { expectedModuleId: 'blank', expectedRulesAbsent: true, createRule: rule })
     assert.equal(calls[0].init.headers[EDIT_TARGET_HEADER], 'blank')
-    assert.match(calls[0].url, /\/rules$/)
     assert.match(calls[1].url, /\/module-enable$/)
-    assert.deepEqual(JSON.parse(calls[1].init.body), { id: 'blank', enabled: true })
-    assert.equal((await writer('blank', rule, [])).ok, true)
+    assert.deepEqual(calls[1].body, { id: 'blank', enabled: true })
+    const draft = h.drafts.rules.get('blank')
+    assert.equal(draft.loaded, true)
+    assert.equal(draft.entries[0].value.enabled, false)
+    const second = createTemplateRuleWriter({ drafts: h.drafts, modules: () => [module('blank', [])], changed() {}, markDeclared() {}, enqueue: task => task(), actions: createModuleActions({ enqueue: task => task(), refresh: async () => true }) })
+    assert.equal((await second('blank', rule)).ok, true)
+    assert.equal(Object.hasOwn(calls[2].body, 'expectedRulesAbsent'), false, '首写事实跨调用方保留，不信陈旧声明')
     assert.equal(calls.length, 3)
-    assert.match(calls[2].url, /\/rules$/)
   })
 })
 
-test('模块启用失败保留规则保存成功，不重复创建或自动启用已有目标', async () => {
-  const created = new Set(['blank'])
-  const writer = createTemplateRuleWriter(undefined, created)
-  await withFetch([
-    ok({ createdRuleId: 'budget', rules: [rule] }),
-    failure('module-enable-rejected', '启用失败'),
-    ok({ createdRuleId: 'budget', rules: [rule] }),
-  ], async (calls) => {
-    const result = await writer('blank', rule, [])
-    assert.equal(result.ok, true, '名称与规则已经持久化，不得伪报创建失败')
+test('模板拒绝与启用失败：失败不启用，成功不重放，既有关闭/未知声明目标保持原策略', async () => {
+  const h = setup([module('existing'), { ...module('readonly', []), facts: { editable: false } }])
+  await withFetch([failure('rules-conflict', '首写冲突'), ok(snapshot()), failure('module-enable-rejected', '启用失败'), ok(snapshot())], async calls => {
+    assert.equal((await h.writer('readonly', rule)).ok, false)
+    assert.equal(calls.length, 0)
+    assert.equal((await h.writer('blank', rule, true)).ok, false)
+    assert.equal(calls.length, 1)
+    const result = await h.writer('blank', rule, true)
+    assert.equal(result.ok, true)
     assert.equal(result.moduleEnableError, '启用失败')
-    assert.equal(created.has('blank'), false)
-    assert.equal((await writer('existing-disabled', rule, [{ id: 'existing-disabled', declares: [] }])).ok, true)
-    assert.equal(calls.length, 3, '既有未启用模块只写规则，不调用 module-enable')
-    assert.match(calls[2].url, /\/rules$/)
+    assert.equal(calls[1].body.expectedRulesAbsent, true)
+    assert.equal(h.refreshes, 0)
+    assert.equal((await h.writer('existing', rule)).ok, true)
+    assert.equal(Object.hasOwn(calls[3].body, 'expectedRulesAbsent'), false)
+    assert.equal(calls.filter(call => call.url.endsWith('/module-enable')).length, 1)
+  })
+  const existing = setup([module('later-existing', [])])
+  await withFetch([failure('rules-conflict', 'first failed'), ok(snapshot())], async calls => {
+    assert.equal((await existing.writer('later-existing', rule, true)).ok, false)
+    assert.equal((await existing.writer('later-existing', rule)).ok, true)
+    assert.equal(calls.length, 2, '新的选择意图把它当既有目标，不能继承上次失败的新建启用意图')
   })
 })
 
-test('模板规则写入按显式 moduleId 发起 createRule，空白模块携带 absent 前置', async () => {
-  await withFetch(ok({ createdRuleId: 'budget', rules: [rule] }), async (calls) => {
-    const result = await createTemplateRule('blank-2', rule, false)
-    assert.equal(result.ok, true)
-    assert.equal(result.value.createdRuleId, 'budget')
+test('模板已保存但发布待处理：离页后仍保留结果和原输入，重试仅发布不重复创建', async () => {
+  const h = setup([module('module-a', ['rules'])])
+  const draft = getRulesDraft(h.drafts, 'module-a')
+  draft.loaded = true; draft.saved = [rule]; draft.revisions = snapshot().revisions
+  draft.entries = [{ key: 'stable', previousId: 'budget', value: { ...rule, name: 'local edit' } }]
+  draft.fields.set('stable:raw', { source: '', text: 'incomplete', error: 'keep' })
+  const next = { ...rule, id: 'new' }
+  await withFetch([ok(snapshot([rule, next], { publicationPending: true, publicationError: 'publish failed' }))], async calls => {
+    assert.equal((await h.writer('module-a', next)).ok, true)
+    assert.equal(draft.entries[0].value.name, 'local edit')
+    assert.equal(draft.fields.get('stable:raw').text, 'incomplete')
+    assert.equal(draft.remote.rules[1].id, 'new')
+    assert.equal(draft.publicationPending, true)
     assert.equal(calls.length, 1)
-    assert.equal(calls[0].init.headers[EDIT_TARGET_HEADER], 'blank-2')
-    assert.deepEqual(JSON.parse(calls[0].init.body), {
-      expectedModuleId: 'blank-2',
-      expectedRulesAbsent: true,
-      createRule: rule,
-    })
   })
-})
-
-test('已有 rules 的模板写入不要求客户端 revisions 或规则读回', async () => {
-  await withFetch(ok({ createdRuleId: 'budget-2', rules: [rule] }), async (calls) => {
-    const result = await createTemplateRule('module-z', rule, true)
-    assert.equal(result.ok, true)
-    assert.equal(calls.length, 1)
-    assert.equal(calls[0].init.headers[EDIT_TARGET_HEADER], 'module-z')
-    assert.deepEqual(JSON.parse(calls[0].init.body), {
-      expectedModuleId: 'module-z',
-      createRule: rule,
-    })
-  })
-})
-
-test('声明快照未知时不伪造 rulesAbsent 前置', async () => {
-  await withFetch(ok({ createdRuleId: 'budget', rules: [rule] }), async (calls) => {
-    const result = await createTemplateRule('module-z', rule, undefined)
-    assert.equal(result.ok, true)
-    assert.deepEqual(JSON.parse(calls[0].init.body), {
-      expectedModuleId: 'module-z',
-      createRule: rule,
-    })
-  })
-})
-
-test('模板规则写入保留目标身份冲突载荷', async () => {
-  await withFetch(failure('module-changed', '目标模块已变化'), async (calls) => {
-    const result = await createTemplateRule('module-z', rule, true)
-    assert.deepEqual(result, { ok: false, code: 'module-changed', message: '目标模块已变化' })
-    assert.equal(calls[0].init.headers[EDIT_TARGET_HEADER], 'module-z')
-  })
-})
-
-test('发布失败为未挂载目标建立共享规则草稿，保留 refreshOnly 状态', () => {
-  const drafts = createWorkspaceDrafts()
-  const draft = applyTemplatePublicationState(drafts, 'module-z', {
-    publicationPending: true,
-    publicationError: '运行刷新失败',
-  })
-  assert.equal(drafts.rules.get('module-z'), draft)
-  assert.equal(draft.loaded, false, '未挂载目标仍等待后续规则读回')
-  assert.equal(draft.publicationPending, true)
-  assert.equal(draft.publicationError, '运行刷新失败')
-  assert.equal(draft.error, '运行刷新失败')
+  const requests = []
+  const editor = createRuleEditor('module-a', draft, { changed() {}, isCurrent: () => true, enqueue: (_id, task) => task(), request: async body => { requests.push(body); return { ok: true, value: snapshot([rule, next]) } } })
+  assert.equal(await editor.retryPublication(), true)
+  assert.deepEqual(requests, [{ expectedModuleId: 'module-a', refreshOnly: true }])
+  assert.equal(draft.entries[0].value.name, 'local edit')
 })

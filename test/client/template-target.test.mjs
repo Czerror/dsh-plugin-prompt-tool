@@ -9,7 +9,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { renderElement, withSsr, makeTranslate } from './support/ssr-render.mjs'
 import { createWorkspaceDrafts } from '../../src/client/data/workspace-drafts.ts'
-import { blankModuleTargetValid, createBlankModule, isWritableTarget } from '../../src/client/data/module-subject.ts'
+import { isWritableTarget } from '../../src/client/data/module-subject.ts'
 
 const t = makeTranslate()
 const { RulesWorkspace } = await withSsr([
@@ -88,19 +88,4 @@ test('目标写判据（候选过滤与写前第二道闸共用同一实现）',
   assert.equal(isWritableTarget(modules, 'builtin'), false, '非用户目录模块不可写')
   assert.equal(isWritableTarget(modules, 'broken'), false, '损坏模块不可写')
   assert.equal(isWritableTarget(modules, 'mod-missing'), false)
-})
-
-test('新建空白模块只克隆定义并保持未启用，id 由服务端返回', async () => {
-  const calls = []
-  const call = async (endpoint, body) => {
-    calls.push({ endpoint, body })
-    return { ok: true, value: { id: 'blank-2' } }
-  }
-  assert.equal(await createBlankModule(call), 'blank-2', '返回服务端定的新模块 id')
-  assert.deepEqual(calls, [
-    { endpoint: 'moduleClone', body: { id: 'blank', autoSuffix: true } },
-  ], '只复用 moduleClone，不调用 moduleEnable')
-  const failing = async () => ({ ok: false, message: 'nope' })
-  assert.equal(await createBlankModule(failing), undefined, '新建失败不上报成功')
-  assert.equal(blankModuleTargetValid(), true, '复制源模板 id 自己是合法模块 id（唯一进路径的值）')
 })

@@ -7,12 +7,12 @@ const meta = { predicates: [], composites: ['all', 'any', 'not', 'notAny'], acti
 const alpha = { id: 'alpha', enabled: true, group: 'mode', exclusive: true, then: [{ id: 'alpha-text', kind: 'inject-text', config: { id: 'text', text: 'Alpha', layer: 'pre-step', future: { keep: 42 } } }] }
 const beta = { id: 'beta', enabled: false, group: 'mode', then: [{ id: 'beta-text', kind: 'inject-text', config: { id: 'other', text: 'Beta', layer: 'pre-step' } }] }
 const snapshot = (rules = [alpha, beta], revision = 'baseline') => ({ rules: structuredClone(rules), revisions: { rules: Object.fromEntries(rules.map(rule => [rule.id, revision])), settings: revision, variables: revision }, meta })
-function harness(request) {
+function harness(request, enqueue = async (_moduleId, task) => task()) {
   const draft = getRulesDraft(createWorkspaceDrafts(), 'module-a'), calls = []
   let current = true
   const editor = createRuleEditor('module-a', draft, {
     request: async body => { calls.push(structuredClone(body)); return request(body) },
-    enqueue: async (moduleId, task) => { assert.equal(moduleId, 'module-a'); return task() },
+    enqueue: async (moduleId, task) => { assert.equal(moduleId, 'module-a'); return enqueue(moduleId, task) },
     isCurrent: () => current, changed: () => {},
   })
   return { draft, editor, calls, switchModule: () => { current = false } }
@@ -50,9 +50,59 @@ test('rules bridge: CAS failure and switched module never discard local input', 
   assert.deepEqual(h.draft.entries[0].value, changed)
   assert.equal(h.draft.revisions.rules.alpha, 'baseline')
   assert.deepEqual(h.calls[1].expectedRevisions, { rules: { alpha: 'baseline' } }, '正文编辑不提交无关规则或状态指纹')
+  assert.equal(await h.editor.submit(), false, '冲突后禁止再次提交旧版本')
+  assert.equal(h.calls.length, 2)
+  assert.equal(h.editor.retryKind, 'read')
+  assert.equal(await h.editor.retry(), true, '重试只读新版本，不重放写入')
+  assert.deepEqual(h.calls[2], { expectedModuleId: 'module-a' })
+  assert.deepEqual(h.draft.entries[0].value, changed)
   h.switchModule()
   assert.equal(await h.editor.submit(), false)
-  assert.equal(h.calls.length, 2)
+  assert.equal(h.calls.length, 3)
+})
+
+test('rules bridge: conflict recovery reads remote, preserves local input and never repeats an old write', async () => {
+  let reads = 0
+  const remote = { ...alpha, name: 'remote change' }
+  const h = harness(async body => {
+    if (body.edits) return { ok: false, code: 'rules-conflict', message: 'revision changed' }
+    reads++
+    if (reads === 2) return { ok: false, message: 'offline' }
+    return { ok: true, value: reads === 1 ? snapshot() : snapshot([remote, beta], 'remote') }
+  })
+  await h.editor.load()
+  h.editor.patch(h.draft.entries[0].key, { ...alpha, name: 'keep local' })
+  await h.editor.submit()
+  assert.equal(await h.editor.retry(), false)
+  assert.equal(await h.editor.submit(), false)
+  assert.equal(await h.editor.retry(), false, 'remote change requires explicit conflict handling')
+  assert.equal(h.draft.entries[0].value.name, 'keep local')
+  assert.equal(h.draft.remote.rules[0].name, 'remote change')
+  assert.equal(h.calls.filter(call => call.edits).length, 1)
+  h.editor.discard()
+  assert.equal(h.draft.entries[0].value.name, 'remote change')
+  assert.equal(h.draft.revisions.rules.alpha, 'remote')
+})
+
+test('rules bridge: first creation stores the complete result without an active view and retries only publication', async () => {
+  const created = { id: 'first', enabled: false, then: [] }
+  const h = harness(async body => ({ ok: true, value: { ...snapshot([created], body.createRule ? 'created' : 'published'),
+    ...(body.createRule ? { createdRuleId: 'first', publicationPending: true, publicationError: 'publish failed' } : {}),
+  } }))
+  const result = await h.editor.create(created, false)
+  assert.equal(result.ok, true)
+  assert.deepEqual(h.calls[0], { expectedModuleId: 'module-a', expectedRulesAbsent: true, createRule: created })
+  assert.equal(h.draft.loaded, true)
+  assert.equal(h.draft.entries[0].value.id, 'first')
+  assert.equal(h.draft.entries[0].value.enabled, false)
+  assert.equal(h.editor.retryKind, 'publish')
+  h.editor.patch(h.draft.entries[0].key, { ...created, name: 'unsaved' })
+  assert.equal(await h.editor.retry(), true)
+  assert.deepEqual(h.calls[1], { expectedModuleId: 'module-a', refreshOnly: true })
+  assert.equal(h.calls.filter(call => call.createRule).length, 1)
+  assert.equal(h.draft.publicationPending, false)
+  assert.equal(h.draft.revisions.rules.first, 'published')
+  assert.equal(h.draft.entries[0].value.name, 'unsaved')
 })
 
 test('rules bridge: activation accepts full mutex snapshot while preserving edits made during save', async () => {
@@ -77,4 +127,34 @@ test('rules bridge: activation accepts full mutex snapshot while preserving edit
     { previousId: 'beta', rule: { ...beta, enabled: true, name: 'typed during save' }, settingsChanged: false },
   ])
   assert.equal(h.draft.revisions.settings, 'activated')
+})
+
+test('rules bridge: queued save and in-flight read survive leaving the view without losing input', async () => {
+  let finish
+  let dispatch
+  const pending = new Promise(resolve => { finish = resolve })
+  const h = harness(async body => body.edits ? pending : { ok: true, value: snapshot() },
+    (_id, task) => new Promise(resolve => { dispatch = () => resolve(task()) }))
+  await h.editor.load()
+  const key = h.draft.entries[0].key
+  h.editor.patch(key, { ...alpha, name: 'sent' })
+  const saving = h.editor.submit()
+  await Promise.resolve()
+  h.editor.patch(key, { ...alpha, name: 'typed later' })
+  h.switchModule()
+  dispatch()
+  finish({ ok: true, value: snapshot([{ ...alpha, name: 'sent' }, beta], 'saved') })
+  assert.equal(await saving, true)
+  assert.equal(h.draft.saved[0].name, 'sent')
+  assert.equal(h.draft.entries[0].value.name, 'typed later')
+  assert.equal(h.draft.revisions.rules.alpha, 'saved')
+  assert.equal(h.draft.entries[0].key, key)
+  let readDone
+  const delayed = harness(() => new Promise(resolve => { readDone = resolve }))
+  const loading = delayed.editor.load()
+  delayed.switchModule()
+  readDone({ ok: true, value: snapshot([alpha], 'read-after-leave') })
+  assert.equal(await loading, true)
+  assert.equal(delayed.draft.loaded, true)
+  assert.equal(delayed.draft.revisions.rules.alpha, 'read-after-leave')
 })

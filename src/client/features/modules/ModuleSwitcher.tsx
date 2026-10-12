@@ -1,10 +1,9 @@
 /** 模块管理：名称与创建归模块页；规则编辑仍归主会话／子代理。 */
 import { memo, useEffect, useId, useRef, useState, type ReactNode } from 'react'
 import { usePromptToolFields } from '../../data/use-prompt-tool-fields.ts'
-import { EMPTY_FIELDS } from '../../data/prompt-tool-fields.ts'
 import clsx from 'clsx'
 import { IconCopyOutlineRegular, IconDownloadOutlineRegular, IconFolderOpenOutlineRegular, IconTrashOutlineRegular } from '../../ui/icons.tsx'
-import { bridgeCall } from '../../data/bridge-client.ts'
+import type { ModuleActions, ModuleActionResult } from '../../data/module-actions.ts'
 import { previewAsset, commitAsset } from '../../data/asset-import.ts'
 import { hasWorkspaceDrafts } from '../../data/workspace-drafts.ts'
 import type { PromptToolStore } from '../../data/use-prompt-tool-store.ts'
@@ -24,7 +23,7 @@ import sharedCss from '../../ui/controls.module.css'
 
 const styles = sharedCss
 
-function ModuleNameEditor(props: { module: ModuleSummary; t: PromptToolTranslate; onClose: () => void; onSaved: (publicationError?: string) => Promise<void> }): ReactNode {
+function ModuleNameEditor(props: { module: ModuleSummary; actions: ModuleActions; t: PromptToolTranslate; onClose: () => void; onSaved: (publicationError?: string) => void }): ReactNode {
   const { module, t } = props
   const [name, setName] = useState(module.name)
   const [revision, setRevision] = useState<string>()
@@ -40,23 +39,23 @@ function ModuleNameEditor(props: { module: ModuleSummary; t: PromptToolTranslate
   useEffect(() => {
     let active = true
     activeRef.current = true
-    void bridgeCall('moduleName', {}, module.id).then((result) => {
+    void props.actions.readName(module.id).then((result) => {
       if (!active) return
       if (result.ok) { baselineRef.current = result.value.name; setName(result.value.name); setRevision(result.value.revision); setLoaded(true) }
       else setError(result.message ?? t('moduleSwitcher.name.readFailed'))
     })
     return () => { active = false; activeRef.current = false }
-  }, [module.id, t])
+  }, [module.id, props.actions, t])
   useEffect(() => { if (loaded) inputRef.current?.select() }, [loaded])
   const save = async (): Promise<void> => {
     if (!activeRef.current || revision === undefined || busyRef.current) return
     if (name.trim().length === 0) { setError(t('moduleSwitcher.name.required')); return }
     if (name.trim() === baselineRef.current) { close(); return }
     busyRef.current = true; setBusy(true); setError(undefined)
-    const result = await bridgeCall('moduleName', { name, expectedRevision: revision, expectedModuleId: module.id }, module.id)
+    const result = await props.actions.rename(module.id, name, revision)
     if (result.ok) {
       activeRef.current = false
-      await props.onSaved(result.value.publicationError)
+      props.onSaved(result.value.publicationError ?? (result.refreshError === undefined ? undefined : t('moduleSwitcher.notice.refreshFailed')))
     } else if (activeRef.current) {
       if (result.code === 'module-name-conflict' || result.code === 'rules-conflict') setRevision(undefined)
       setError(result.message ?? t('moduleSwitcher.name.saveFailed'))
@@ -66,7 +65,7 @@ function ModuleNameEditor(props: { module: ModuleSummary; t: PromptToolTranslate
   const reload = async (): Promise<void> => {
     if (busyRef.current) return
     busyRef.current = true; setBusy(true)
-    const result = await bridgeCall('moduleName', {}, module.id)
+    const result = await props.actions.readName(module.id)
     if (!activeRef.current) return
     if (result.ok) {
       if (!loaded) setName(result.value.name)
@@ -113,6 +112,10 @@ export const ModuleSwitcher = memo(function ModuleSwitcher(props: { store: Promp
   const [creating, setCreating] = useState(false)
   const creatingRef = useRef(false)
   const pickerAnchorRef = useRef<HTMLButtonElement>(null)
+  const report = (result: ModuleActionResult<unknown>, success: string, failure: string): void => {
+    if (!result.ok) store.showNotice('error', result.committed ? result.message ?? failure : failure)
+    else store.showNotice(result.refreshError === undefined ? 'ok' : 'error', result.refreshError === undefined ? success : t('moduleSwitcher.notice.refreshFailed'))
+  }
 
   // 预览流程（与角色卡 JSON 导入共用同一状态机）：确认回传来源摘要 + 预览版本。
   const flow = useImportPreviewFlow({
@@ -128,8 +131,8 @@ export const ModuleSwitcher = memo(function ModuleSwitcher(props: { store: Promp
       return commitAsset('importModulePackage', preview)
     },
     onCommitted: async (label) => {
+      if (!await store.moduleActions.refresh()) throw new Error(t('moduleSwitcher.notice.refreshFailed'))
       store.showNotice('ok', t('moduleSwitcher.notice.imported', { id: label ?? '' }))
-      if (await store.load() === EMPTY_FIELDS) throw new Error(t('card.operationFailed'))
     },
     onError: (message, stale) => {
       store.showNotice('error', t('moduleSwitcher.notice.importFailed', { reason: stale ? t('importPreview.stale') : message }))
@@ -139,10 +142,9 @@ export const ModuleSwitcher = memo(function ModuleSwitcher(props: { store: Promp
   /** 删除模块（物理删除用户目录副本；插件目录模板保留，可经「新建模块」还原）。 */
   const deleteModule = async (id: string): Promise<void> => {
     // 没有会话级「在用模块」：不带主语即无声明（「在用」保护在人设引用那一侧，服务端另有判据）。
-    const res = await bridgeCall('moduleDelete', { id })
-    if (res.ok) {
-      store.showNotice('ok', t('moduleSwitcher.notice.deleted', { id }))
-      await store.load()
+    const res = await store.moduleActions.remove(id)
+    if (res.ok || res.committed) {
+      report(res, t('moduleSwitcher.notice.deleted', { id }), res.ok ? '' : res.message ?? t('card.operationFailed'))
       setConfirmingDelete((current) => current === id ? undefined : current)
     } else {
       throw new Error(t('moduleSwitcher.notice.deleteFailed', { reason: res.message ?? 'settings bridge unavailable' }))
@@ -151,18 +153,14 @@ export const ModuleSwitcher = memo(function ModuleSwitcher(props: { store: Promp
 
   /** 复制模块：用户目录完整副本，id 自动递增（<id>-copy / <id>-copy-2 / …）。 */
   const duplicateModule = async (id: string): Promise<void> => {
-    const res = await bridgeCall('moduleDuplicate', { id })
-    if (res.ok) {
-      store.showNotice('ok', t('moduleSwitcher.notice.duplicated', { id: res.value.id }))
-      await store.load()
-    } else {
-      store.showNotice('error', t('moduleSwitcher.notice.duplicateFailed', { reason: res.message ?? 'settings bridge unavailable' }))
-    }
+    const res = await store.moduleActions.duplicate(id)
+    report(res, res.ok ? t('moduleSwitcher.notice.duplicated', { id: res.value.id }) : '',
+      res.ok ? '' : t('moduleSwitcher.notice.duplicateFailed', { reason: res.message ?? 'settings bridge unavailable' }))
   }
 
   /** 打开模块文件夹（宿主系统文件管理器；失败时提示路径）。 */
   const openLocation = async (id: string): Promise<void> => {
-    const res = await bridgeCall('moduleOpen', { id })
+    const res = await store.moduleActions.open(id)
     if (res.ok) {
       store.showNotice('ok', t('moduleSwitcher.notice.opened', { path: res.value.path }))
     } else {
@@ -172,14 +170,10 @@ export const ModuleSwitcher = memo(function ModuleSwitcher(props: { store: Promp
 
   /** 新建：从插件目录模板复制到用户目录（还原/自定义起点）；自定义入口重名自动递增。 */
   const cloneModule = async (id: string, autoSuffix = false): Promise<void> => {
-    const res = await bridgeCall('moduleClone', { id, autoSuffix })
-    if (res.ok) {
-      setPickerOpen(false)
-      store.showNotice('ok', t('moduleSwitcher.notice.cloned', { id: res.value.id }))
-      await store.load()
-    } else {
-      store.showNotice('error', t('moduleSwitcher.notice.cloneFailed', { reason: res.message ?? 'settings bridge unavailable' }))
-    }
+    const res = await store.moduleActions.clone(id, autoSuffix)
+    if (res.ok || res.committed) setPickerOpen(false)
+    report(res, res.ok ? t('moduleSwitcher.notice.cloned', { id: res.value.id }) : '',
+      res.ok ? '' : t('moduleSwitcher.notice.cloneFailed', { reason: res.message ?? 'settings bridge unavailable' }))
   }
 
   const createBlankModule = async (): Promise<void> => {
@@ -198,15 +192,9 @@ export const ModuleSwitcher = memo(function ModuleSwitcher(props: { store: Promp
    * 贡献自己的配置与参数，互不合并。这是模块页唯一改变装配范围的动作。
    */
   const setModuleEnabled = async (id: string, enabled: boolean): Promise<void> => {
-    const res = await bridgeCall('moduleEnable', { id, enabled })
-    if (res.ok) {
-      store.showNotice('ok', enabled
-        ? t('moduleSwitcher.notice.enabled', { id })
-        : t('moduleSwitcher.notice.disabled', { id }))
-      await store.load()
-    } else {
-      store.showNotice('error', t('moduleSwitcher.notice.enableFailed', { reason: res.message ?? 'settings bridge unavailable' }))
-    }
+    const res = await store.moduleActions.enable(id, enabled)
+    report(res, t(enabled ? 'moduleSwitcher.notice.enabled' : 'moduleSwitcher.notice.disabled', { id }),
+      res.ok ? '' : t('moduleSwitcher.notice.enableFailed', { reason: res.message ?? 'settings bridge unavailable' }))
   }
 
   return (
@@ -263,12 +251,11 @@ export const ModuleSwitcher = memo(function ModuleSwitcher(props: { store: Promp
       <article key={module.id} className={clsx(styles.moduleCard, blocked && styles.moduleCardBlocked)}>
         <div className={styles.moduleCardBody}>
           <span className={styles.moduleCardHead}>
-            {nameTarget?.id === module.id ? <ModuleNameEditor key={module.id} module={nameTarget} t={t}
-              onClose={() => setNameTarget(current => current?.id === module.id ? undefined : current)} onSaved={async (publicationError) => {
+            {nameTarget?.id === module.id ? <ModuleNameEditor key={module.id} module={nameTarget} actions={store.moduleActions} t={t}
+              onClose={() => setNameTarget(current => current?.id === module.id ? undefined : current)} onSaved={(publicationError) => {
                 setNameTarget(current => current?.id === module.id ? undefined : current)
-                const refreshed = await store.load({ silent: true })
                 if (publicationError !== undefined) store.showNotice('error', t('moduleSwitcher.name.savedPending', { reason: publicationError }))
-                else if (refreshed !== EMPTY_FIELDS) store.showNotice('ok', t('moduleSwitcher.name.saved'))
+                else store.showNotice('ok', t('moduleSwitcher.name.saved'))
               }} /> : <button type="button" className={clsx(styles.moduleCardName, styles.moduleNameTrigger)}
               disabled={nameTarget !== undefined || blocked || module.user !== true || module.facts?.editable !== true}
               aria-label={t('moduleSwitcher.name.editAria', { name: module.name })} onClick={() => setNameTarget(module)}>{module.name}</button>}

@@ -15,6 +15,8 @@ export interface RulesDraft {
   loaded: boolean
   busy?: 'read' | 'save' | 'validate'
   error?: string
+  retry?: 'read' | 'save'
+  rulesDeclared?: boolean
   publicationPending?: boolean
   publicationError?: string
   validated: boolean
@@ -48,7 +50,9 @@ function acceptRules(draft: RulesDraft, snapshot: RulesSnapshot): void {
   draft.meta = snapshot.meta
   draft.revisions = snapshot.revisions
   draft.loaded = true
+  draft.rulesDeclared = true
   draft.remote = undefined
+  draft.retry = undefined
   draft.error = draft.publicationError
 }
 interface RuleEditorDependencies {
@@ -59,8 +63,43 @@ interface RuleEditorDependencies {
 }
 /** 读取、编辑、改名、激活和整组响应都通过这一 owner，不写旧配置段。 */
 export function createRuleEditor(moduleId: string, draft: RulesDraft, deps: RuleEditorDependencies) {
-  const current = (sequence: number): boolean => draft.sequence === sequence && deps.isCurrent()
   const changed = (): void => { draft.validated = false; deps.changed() }
+  const publication = (snapshot: RulesSnapshot): void => {
+    draft.publicationPending = snapshot.publicationPending === true || !!snapshot.publicationError
+    draft.publicationError = snapshot.publicationError ?? (snapshot.publicationPending === true ? 'rules-refresh-pending' : undefined)
+    draft.error = draft.retry === 'read' ? 'rules-conflict' : draft.publicationError
+  }
+  const receive = (snapshot: RulesSnapshot): boolean => {
+    if (rulesDirty(draft)) {
+      if (!deepEqual(snapshot.rules, draft.saved)) {
+        draft.remote = snapshot; draft.retry = 'read'; draft.error = 'rules-conflict'; draft.loaded = true; return false
+      }
+      draft.revisions = snapshot.revisions; draft.meta = snapshot.meta
+    } else acceptRules(draft, snapshot)
+    draft.loaded = true; draft.rulesDeclared = true; draft.remote = undefined; draft.retry = undefined; draft.error = draft.publicationError
+    return true
+  }
+  const create = async (rule: RuleDefinition, rulesDeclared?: boolean): Promise<BridgeResult<RulesSnapshot>> => {
+    if (draft.busy !== undefined) return { ok: false, code: 'rules-busy', message: '规则正在读写，请稍后重试' }
+    const sequence = ++draft.sequence, candidate = structuredClone(rule)
+    draft.busy = 'save'; deps.changed()
+    try {
+      const result = await deps.enqueue(moduleId, () => deps.request({ expectedModuleId: moduleId,
+        ...(draft.rulesDeclared !== true && rulesDeclared === false ? { expectedRulesAbsent: true as const } : {}),
+        createRule: candidate,
+      }))
+      if (draft.sequence !== sequence) return result
+      if (result.ok) {
+        receive(result.value)
+        draft.rulesDeclared = true
+        publication(result.value)
+      } else draft.error = result.message ?? result.code ?? 'rules-create-failed'
+      return result
+    } catch (error) {
+      if (draft.sequence === sequence) draft.error = String(error)
+      return { ok: false, message: String(error) }
+    } finally { if (draft.sequence === sequence) { draft.busy = undefined; deps.changed() } }
+  }
   const load = async (force = false): Promise<boolean> => {
     if (!deps.isCurrent() || draft.busy !== undefined) return false
     if (draft.loaded && !force) return true
@@ -68,14 +107,10 @@ export function createRuleEditor(moduleId: string, draft: RulesDraft, deps: Rule
     draft.busy = 'read'; deps.changed()
     try {
       const result = await deps.request({ expectedModuleId: moduleId })
-      if (!current(sequence)) return false
-      if (!result.ok) { draft.error = result.message ?? result.code ?? 'rules-read-failed'; return false }
-      if (rulesDirty(draft)) {
-        if (!deepEqual(result.value.rules, draft.saved)) { draft.remote = result.value; draft.error = 'rules-conflict'; return false }
-        draft.revisions = result.value.revisions; draft.meta = result.value.meta
-      } else acceptRules(draft, result.value)
-      draft.loaded = true; draft.error = draft.publicationError; return true
-    } catch (error) { if (current(sequence)) draft.error = String(error); return false }
+      if (draft.sequence !== sequence) return false
+      if (!result.ok) { draft.retry = 'read'; draft.error = result.message ?? result.code ?? 'rules-read-failed'; return false }
+      return receive(result.value)
+    } catch (error) { if (draft.sequence === sequence) { draft.retry = 'read'; draft.error = String(error) }; return false }
     finally { if (draft.sequence === sequence) { draft.busy = undefined; deps.changed() } }
   }
   const patch = (key: string, value: RuleDefinition): void => {
@@ -97,21 +132,22 @@ export function createRuleEditor(moduleId: string, draft: RulesDraft, deps: Rule
     const sequence = ++draft.sequence
     draft.busy = 'save'; deps.changed()
     try {
-      const result = await deps.enqueue(moduleId, async () => current(sequence)
+      const result = await deps.enqueue(moduleId, async () => draft.sequence === sequence
         ? deps.request({ expectedModuleId: moduleId, refreshOnly: true }) : undefined)
-      if (!current(sequence) || result === undefined) return false
-      if (!result.ok || result.value.publicationError) {
-        draft.publicationError = result.ok ? result.value.publicationError : result.message ?? result.code ?? 'rules-refresh-failed'
+      if (draft.sequence !== sequence || result === undefined) return false
+      if (result.ok) receive(result.value)
+      if (!result.ok || result.value.publicationError || result.value.publicationPending === true) {
+        draft.publicationError = result.ok ? result.value.publicationError ?? 'rules-refresh-pending' : result.message ?? result.code ?? 'rules-refresh-failed'
         draft.error = draft.publicationError
         return false
       }
-      draft.publicationPending = false; draft.publicationError = undefined; draft.error = undefined
+      draft.publicationPending = false; draft.publicationError = undefined; draft.error = draft.retry === 'read' ? 'rules-conflict' : undefined
       return true
-    } catch (error) { if (current(sequence)) { draft.error = String(error); draft.publicationError = draft.error }; return false }
+    } catch (error) { if (draft.sequence === sequence) { draft.error = String(error); draft.publicationError = draft.error }; return false }
     finally { if (draft.sequence === sequence) { draft.busy = undefined; deps.changed() } }
   }
   const submit = async (options: { validateOnly?: boolean; activateRuleId?: string } = {}): Promise<boolean> => {
-    if (!deps.isCurrent() || !draft.loaded || draft.busy !== undefined || draft.remote !== undefined || !draft.revisions || hasRuleFields(draft)) return false
+    if (!deps.isCurrent() || !draft.loaded || draft.busy !== undefined || draft.remote !== undefined || draft.retry === 'read' || !draft.revisions || hasRuleFields(draft)) return false
     const sequence = ++draft.sequence, entries = structuredClone(draft.entries), edits = ruleEdits(draft)
     const expectedRevisions: Partial<RuleRevisions> = { rules: Object.fromEntries(edits.flatMap(edit =>
       edit.previousId === null ? [] : [[edit.previousId, draft.revisions!.rules[edit.previousId]!]])) }
@@ -120,10 +156,15 @@ export function createRuleEditor(moduleId: string, draft: RulesDraft, deps: Rule
     if (edits.length === 0 && options.activateRuleId === undefined && !options.validateOnly) return draft.publicationPending ? retryPublication() : true
     draft.busy = options.validateOnly ? 'validate' : 'save'; draft.error = undefined; deps.changed()
     try {
-      const result = await deps.enqueue(moduleId, async () => current(sequence)
+      const result = await deps.enqueue(moduleId, async () => draft.sequence === sequence
         ? deps.request({ expectedModuleId: moduleId, expectedRevisions, edits, ...options }) : undefined)
-      if (!current(sequence) || result === undefined) return false
-      if (!result.ok) { draft.error = result.message ?? result.code ?? 'rules-save-failed'; return false }
+      // 入口确认操作资格；入队后的显式目标事务与结果归共享草稿，不随切页取消。
+      if (draft.sequence !== sequence || result === undefined) return false
+      if (!result.ok) {
+        draft.retry = result.code === 'rules-conflict' || result.code === 'module-changed' ? 'read' : 'save'
+        draft.error = result.message ?? result.code ?? 'rules-save-failed'; return false
+      }
+      draft.retry = undefined
       if (options.validateOnly) draft.validated = deepEqual(draft.entries, entries) && !hasRuleFields(draft)
       else {
         const returned = new Map(result.value.rules.map(rule => [rule.id, rule]))
@@ -147,23 +188,29 @@ export function createRuleEditor(moduleId: string, draft: RulesDraft, deps: Rule
           return [{ ...entry, previousId: saved.id, value }]
         })
         for (const value of returned.values()) draft.entries.push({ key: `rule-${draft.nextKey++}`, previousId: value.id, value: structuredClone(value) })
-        draft.saved = structuredClone(result.value.rules); draft.revisions = result.value.revisions; draft.meta = result.value.meta
+        draft.saved = structuredClone(result.value.rules); draft.revisions = result.value.revisions; draft.meta = result.value.meta; draft.rulesDeclared = true
       }
       if (!options.validateOnly) {
-        draft.publicationPending = result.value.publicationPending === true || !!result.value.publicationError
-        draft.publicationError = result.value.publicationError
+        publication(result.value)
       }
       if (draft.publicationError) { draft.error = draft.publicationError; return false }
       return true
-    } catch (error) { if (current(sequence)) draft.error = String(error); return false }
+    } catch (error) { if (draft.sequence === sequence) { draft.retry = 'save'; draft.error = String(error) }; return false }
     finally { if (draft.sequence === sequence) { draft.busy = undefined; deps.changed() } }
   }
   const discard = (): void => {
     if (draft.busy !== undefined) return
     if (draft.remote !== undefined) acceptRules(draft, draft.remote)
-    else if (draft.meta && draft.revisions) acceptRules(draft, { rules: draft.saved, meta: draft.meta, revisions: draft.revisions })
+    else if (draft.meta && draft.revisions) {
+      const retry = draft.retry
+      acceptRules(draft, { rules: draft.saved, meta: draft.meta, revisions: draft.revisions })
+      if (retry === 'read') { draft.retry = 'read'; draft.error = 'rules-conflict' }
+    }
     draft.fields.clear(); changed()
   }
-  return { load, patch, add, remove, submit, retryPublication, discard, changed }
+  const retryKind = (): 'read' | 'save' | 'publish' => draft.retry === 'read' || draft.remote !== undefined ? 'read'
+    : draft.publicationPending ? 'publish' : draft.loaded && rulesDirty(draft) ? 'save' : 'read'
+  const retry = (): Promise<boolean> => retryKind() === 'publish' ? retryPublication() : retryKind() === 'save' ? submit() : load(true)
+  return { load, patch, add, remove, create, submit, retryPublication, discard, changed, retry, get retryKind() { return retryKind() } }
 }
 export type RuleEditor = ReturnType<typeof createRuleEditor>

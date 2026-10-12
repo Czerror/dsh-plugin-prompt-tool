@@ -154,7 +154,7 @@ export function TemplateTargetPicker(props: {
   /** 新建空白模块的复制源模板 id（只用于展示预览；真实名字由服务端定）。 */
   newModuleTemplate: string
   /** 选中已存在模块：主语就是它，创建动作立刻带上这个 id。 */
-  onPick: (moduleId: string) => void
+  onPick: (moduleId: string, newlyCreated?: boolean) => void
   /** 新建空白模块：走既有新建动作，返回新模块 id（失败 undefined，对话框内就地报错）。 */
   onCreate?: () => Promise<string | undefined>
   onClose: () => void
@@ -169,7 +169,7 @@ export function TemplateTargetPicker(props: {
     setBusy(false)
     if (created === undefined) { setFailed(true); return }
     // 建好即写进它：这就是「新建空白模块」的收口（创建 + 写入，仍是一步语义）。
-    onPick(created)
+    onPick(created, true)
   }
   return <DialogSurface title={t('rules.create.title')} ariaLabel={t('rules.create.title')}
     closeLabel={t('rules.create.cancel')} anchorRef={props.anchorRef} onClose={onClose}>

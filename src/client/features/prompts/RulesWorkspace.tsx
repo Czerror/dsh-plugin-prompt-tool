@@ -154,7 +154,6 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
     scope: props.scope ?? 'main',
     targets: writableModuleTargets(store.meta.modules).sort((a, b) => a.id.localeCompare(b.id)),
     existingIds: (store.meta.modules ?? []).map(module => module.id),
-    owners,
     onCreated: (moduleId, configKey) => setExpanded(configIdentityKey({ moduleId, configId: configKey })),
   })
   // 指令文件卡是全局段（不属于任何模块）：设置区的主语由装配层按每个启用模块给出（参数按模块存储）。
@@ -179,12 +178,11 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
     </div>
     {create.dialogs}
     {owners.map(({ moduleId: id, draft, editor }) => {
-      const retrySave = draft.loaded && rulesDirty(draft) && draft.remote === undefined
       return (draft.error || hasRuleFields(draft)) && <div key={id}>
         {draft.error && <div className={css.row}>
           <span>{t('rules.source', { module: id })}</span>
           <p role="alert" className={css.error}>{draft.remote ? t('rules.conflict') : draft.error}</p>
-          <Button variant="outline" shape="pill" disabled={draft.busy !== undefined} onClick={() => { void (draft.publicationPending ? editor.retryPublication() : retrySave ? editor.submit() : editor.load(true)) }}>{t(!draft.publicationPending && retrySave ? 'rules.retrySave' : 'workspace.retry')}</Button>
+          <Button variant="outline" shape="pill" disabled={draft.busy !== undefined} onClick={() => { void editor.retry() }}>{t(editor.retryKind === 'save' ? 'rules.retrySave' : 'workspace.retry')}</Button>
           {(rulesDirty(draft) || draft.remote) && <Button variant="outline" shape="pill" disabled={draft.busy !== undefined} onClick={() => setDiscard(id)}>{t('triggers.discard')}</Button>}
         </div>}
         {hasRuleFields(draft) && <p role="alert" className={css.error}>{t('rules.source', { module: id })} · {t('rules.fieldsPending')}</p>}
