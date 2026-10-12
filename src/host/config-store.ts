@@ -1,11 +1,15 @@
 /**
- * 存储根配置：模块启用表与独立主/子人设来源；正文仍归各模块。
+ * 存储根配置：模块启用表、独立主/子人设来源与**全局层引擎参数**。
  *
- * `<存储根>/config.yml` 保存 schemaVersion、enabled 和 personaSources。
- * enabled 决定普通模块配装，personaSources 单独选择主/子人设来源，不互相启用。
+ * `<存储根>/config.yml` 保存 schemaVersion、enabled、personaSources 与 layerSettings。
+ * enabled 决定普通模块配装，personaSources 单独选择主/子人设来源，不互相启用；
+ * `layerSettings` 是**全局层**引擎参数（用户裁定 2026-10-12：「模块未声明 ⇒ 回退为全局」），
+ * 与 `module.yml` 的 `layerSettings` 同形同校验。
  *
- * 这里**没有**版本指针、配装段、参数副本与归属表：参数、提示词与素材都在各模块自己的
- * 目录里（`modules/<id>/`）。写模块卡与写参数都不是启用，它们不创建这个文件。
+ * 全局层与模块层只有一条关系：**存在即覆盖**——模块对该参数有显式取值（`false` 也算）就用
+ * 模块的，没有这个键才回退全局。判据与合并都收在 `manifest.ts#resolveModuleParams` 一处，
+ * 读写端点与客户端都不重复判优先级。固定卡（指令卡）是全局段，它的参数设置区写这里；
+ * 模块自己的覆盖仍旧写各自 module.yml。
  *
  * 写盘走 yaml Document API（保留注释与未知字段）＋原子替换，与仓库其余写盘同规。
  */
@@ -17,6 +21,7 @@ import { atomicWriteTextFile } from './text-file.ts'
 import { moduleDirExists } from './manifest.ts'
 import { assertModuleId, assertNoModuleLinks, modulePathExists } from './module-install.ts'
 import { ModuleRulesError, revisionOf, withModuleLock } from './module-storage.ts'
+import { engineParamPath, readLayerSettings } from './module-layer-settings.ts'
 import { isModuleId } from '../shared/module-ids.ts'
 
 /** 启用表 schema：3 起 enabled 才拥有普通模块启用语义。 */
@@ -138,5 +143,48 @@ export function setModuleEnabled(moduleRoot: string, id: string, enabled: boolea
     if (isSeq(list)) list.items = next.map(value => list.items.find(item => String(item) === value) ?? doc.createNode(value))
     else doc.set('enabled', next)
     return { ...source, schemaVersion: ENABLE_TABLE_SCHEMA, enabled: next }
+  })
+}
+
+/**
+ * 全局层引擎参数：`config.yml` 顶层 `layerSettings` 展平后的参数子集。
+ *
+ * 与 `module.yml` 同形同校验（`readLayerSettings`），未知插入点/错位键响亮失败——
+ * 调用方（读端点、模块参数解析）不得把损坏的全局层当空值吞掉。
+ */
+export function readGlobalLayerSettings(moduleRoot: string): Record<string, unknown> {
+  return readLayerSettings(readStorageConfig(moduleRoot).source.layerSettings)
+}
+
+/**
+ * 写全局层引擎参数（固定卡指令卡的设置区）。
+ *
+ * 只动 `layerSettings.<层>.<参数键>`，其余内容（注释、未知字段、enabled、personaSources）
+ * 原样保留；空值（`''` / `[]`）删除键，`false` 与 `0` 是显式值照常写入。
+ */
+export function writeGlobalLayerSettings(moduleRoot: string, params: Record<string, unknown>): void {
+  updateStorageConfig(moduleRoot, undefined, (doc, source) => {
+    const expected: Record<string, unknown> = { ...source }
+    // 先核现有全局层的形状（未知层/错位键响亮失败），与 saveModuleParams 对 module.yml 同规。
+    readLayerSettings(source.layerSettings)
+    const next = { ...(source.layerSettings === null || typeof source.layerSettings !== 'object' || Array.isArray(source.layerSettings)
+      ? {} : source.layerSettings as Record<string, Record<string, unknown>>) }
+    for (const [key, value] of Object.entries(params)) {
+      if (value === undefined || value === null) continue
+      const [section, layer, paramKey] = engineParamPath(key)
+      const empty = value === '' || (Array.isArray(value) && value.length === 0)
+      if (empty) doc.deleteIn([section, layer, paramKey])
+      else doc.setIn([section, layer, paramKey], value)
+      const entries = { ...next[layer] }
+      if (empty) delete entries[paramKey]
+      else entries[paramKey] = value
+      if (Object.keys(entries).length === 0) delete next[layer]
+      else next[layer] = entries
+    }
+    if (Object.keys(next).length === 0) {
+      doc.delete('layerSettings')
+      delete expected.layerSettings
+    } else expected.layerSettings = next
+    return expected
   })
 }

@@ -230,16 +230,19 @@ export function ModulePersonaCard(props: {
     || (moduleId !== undefined && props.canEditModule !== undefined && !props.canEditModule(moduleId))
   const options = [{ value: '', label: t('persona.sources.official') }, ...selection.candidates.map(candidate => ({ value: candidate.id, label: `${candidate.name} · ${candidate.id}` }))]
   const source = options.find(option => option.value === (selection.value[audience] ?? ''))?.label ?? selection.value[audience] ?? ''
-  // 展开状态按主语建键；无主语不建 `undefined:persona:*` 之类的串模块键。
-  const expandedKey = moduleId === undefined ? undefined : `${moduleId}:persona:${audience}`
+  // 展开状态按**卡片自己的模块主语**建键（调用方给的 `props.moduleId`，与资产卡同一来源）：
+  // 恒有字符串键，所以「继承官方」（没有模块主语）那一态也能点开——否则这张卡默认状态整块打不开。
+  // 用来源模块（下面那个解析后的 `moduleId`）建键会让「换来源」顺手把卡收起来，也不是原始接线。
+  // 不回落 DEFAULT_MODULE_ID，也不发明「当前模块」。
+  const expandedKey = `${props.moduleId ?? ''}:persona:${audience}`
   return (
     <CollapsibleCard
       id={`persona-${audience}`}
       title={t('persona.title', { audience: t(`persona.${audience}`) })}
       meta={t('persona.sources.current', { source })}
       bodyClassName={`${styles.configForm} ${css.body}`}
-      expanded={expandedKey !== undefined && drafts.expanded.get(expandedKey) === true}
-      onToggle={value => { if (expandedKey !== undefined) drafts.expanded.set(expandedKey, value); refresh() }}
+      expanded={drafts.expanded.get(expandedKey) ?? false}
+      onToggle={value => { drafts.expanded.set(expandedKey, value); refresh() }}
       actions={<MenuSelect compact value={selection.value[audience] ?? ''} options={options}
         ariaLabel={t('persona.sources.label', { audience: t(`persona.${audience}`) })}
         disabled={selection.saving || selection.loading || !selection.loaded}
@@ -253,7 +256,6 @@ export function ModulePersonaCard(props: {
         confirmLabel={t(confirming.reload ? 'persona.reload' : 'persona.remove')} cancelLabel={t('toolEditor.cancel')}
         onConfirm={() => confirming.reload ? loadPersona(confirming.moduleId, true) : write(confirming.moduleId, confirming.audience, true)}
         onCancel={() => setConfirming(undefined)} />}
-      {!moduleId && <p className={styles.configFieldHint}>{t('persona.sources.chooseModule')}</p>}
       {dirty && <p className={styles.configFieldHint} role="status">{t('card.unsaved')}</p>}
       {editor?.error && <p className={styles.noticeError} role="alert">{editor.error}</p>}
       {editor?.publicationPending && <p className={styles.noticeError} role="alert">{editor.publicationError ?? t('persona.sources.publicationPending')} <Button shape="pill" variant="outline" size="sm" disabled={editor.saving} onClick={() => { if (moduleId) void retryPublication(moduleId) }}>{t('workspace.retry')}</Button></p>}

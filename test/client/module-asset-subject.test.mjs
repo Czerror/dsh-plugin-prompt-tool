@@ -174,7 +174,7 @@ test('声明面：三张卡的读构造点——未声明不构造请求，且�
     const drafts = createWorkspaceDrafts()
     drafts.personaSources.value = { main: 'mod-a', subagent: null }
     drafts.expanded.set('mod-a:persona:main', true)
-    const persona = renderElement(ModulePersonaCard, { t, audience: 'main', modules: modulesDeclaring(['rules']), drafts, onNotice: () => {} })
+    const persona = renderElement(ModulePersonaCard, { t, audience: 'main', moduleId: 'mod-a', modules: modulesDeclaring(['rules']), drafts, onNotice: () => {} })
     assert.match(persona, /data-config-panel="prefix"/, '未声明的 persona 编辑器在场')
     const params = renderElement(LayerSettingsContent, { store: stubStore(createWorkspaceDrafts(), modulesDeclaring(['rules'])), t, layer: 'pre-step', moduleId: 'mod-a' })
     assert.match(params, /data-layer-param-group="prompt-defaults"/, '未声明的参数组在场')
@@ -226,7 +226,7 @@ test('声明面：人设卡按主语的声明面渲染——未声明也照常�
     const drafts = createWorkspaceDrafts()
     drafts.personaSources.value = { main: 'mod-a', subagent: null }
     drafts.expanded.set('mod-a:persona:main', true)
-    return renderElement(ModulePersonaCard, { t, audience: 'main', modules: modulesDeclaring(declares), drafts, onNotice: () => {} })
+    return renderElement(ModulePersonaCard, { t, audience: 'main', moduleId: 'mod-a', modules: modulesDeclaring(declares), drafts, onNotice: () => {} })
   }
   const undeclared = html(['rules'])
   assert.match(undeclared, /data-config-panel="prefix"/, '未声明也出编辑器（不许只给入口/按钮）')
@@ -392,6 +392,30 @@ test('store：写参数只写该模块的键与主语；不可编辑模块不发
   }
 })
 
+test('store：全局层参数读自 /bootstrap 的全局段，写不带主语头（指令卡的一个开关）', async () => {
+  const fetchStub = withFetch((request) => {
+    if (request.path.endsWith('/bootstrap')) return { ...bootstrapPayload(twoModules), globalParams: { instructionHint: true } }
+    if (request.path.endsWith('/param-overrides')) return { ok: true, value: { overrides: { instructionHint: true } } }
+    return { ok: true, value: {} }
+  })
+  try {
+    const store = mountStore()
+    await store.load()
+    assert.equal(store.globalParamsLoaded, true, '全局段随 bootstrap 读回')
+    assert.equal(store.globalParams.instructionHint, true, '全局值照原样回显')
+
+    store.setGlobalParam('instructionHint', false)
+    await store.persistGlobalParams()
+    const write = fetchStub.writes()[0]
+    assert.equal(write.headers['x-module-id'], undefined, '全局层写不带主语头（空主语＝全局层）')
+    assert.deepEqual(write.body, { overrides: { instructionHint: false } }, '只写全局层的键')
+    assert.equal(fetchStub.requests.some((request) => request.headers['x-module-id'] !== undefined && request.path.endsWith('/param-overrides')), false,
+      '没有任何模块被写：全局层与模块层各存各的')
+  } finally {
+    fetchStub.restore()
+  }
+})
+
 test('store：silent load 重读 /meta 快照（创建模式写后刷新声明面的触发点）', async () => {
   const modules = [{ id: 'mod-a', name: 'A', enabled: true, facts: facts(), declares: ['rules'] }]
   const fetchStub = withFetch((request) => {
@@ -519,4 +543,21 @@ test('store：读在飞的模块被剪枝后，迟到的读数不落地、也不
   } finally {
     globalThis.fetch = original
   }
+})
+
+test('人设卡接线：来源＝官方（没有模块主语）时也能展开，界面与模块主语态同形（只接线）', () => {
+  // 修复前：展开键在无模块主语时是 `undefined` ⇒ 卡头点不动、整个设计好的卡体看不见
+  // （浏览器实测：#persona-main 点击后 aria-expanded 仍 false、textarea 数 0）。
+  const drafts = createWorkspaceDrafts()
+  drafts.personaSources.value = { main: null, subagent: null }
+  drafts.expanded.set(':persona:main', true)
+  const html = renderElement(ModulePersonaCard, { t, audience: 'main', modules: modulesDeclaring(['rules']), drafts, onNotice: () => {} })
+  assert.match(html, /data-config-panel="prefix"/, '继承官方态照常展开')
+  assert.match(html, /data-config-panel="suffix"/, '后置面板同样在场')
+  assert.match(html, new RegExp(t('persona.sources.label', { audience: t('persona.main') })), '来源选择器在场')
+  assert.match(html, new RegExp(t('persona.inherit')), '选项区仍有「继承官方」')
+  assert.match(html, new RegExp(t('persona.complete.label')), '独占选项在场')
+  assert.match(html, new RegExp(t('persona.runtimeContext.label')), '动态运行时上下文选项在场')
+  assert.match(html, new RegExp(t('persona.reload')), '页脚「重新读取人设」在场')
+  assert.doesNotMatch(html, /global/, '人设没有全局层：主语只来自模块上下文，不发明全局主语')
 })

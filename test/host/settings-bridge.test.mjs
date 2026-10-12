@@ -1344,3 +1344,37 @@ test('声明面：读没声明 400 module-not-declared，写路径建立声明�
   assert.equal(unparsable.status, 400)
   assert.equal(unparsable.payload.code, 'rules-invalid', '解析失败是既有错误，不得降级成「没声明」')
 })
+
+test('param-overrides：空主语＝全局层——写 config.yml 的 layerSettings，模块 module.yml 零改动', async () => {
+  const moduleDir = makeUserPresetDir('pt-global-layer-')
+  writeFileSync(join(moduleDir, 'module.yml'), `id: ${basename(moduleDir)}\nmodules: []\nrules: []\n`, 'utf8')
+  const moduleBefore = readFileSync(join(moduleDir, 'module.yml'), 'utf8')
+  const configFile = join(storageRootOf(bridgeHome), 'config.yml')
+  const { ctx, handlers } = makeHarness()
+  registerSettingsBridge(ctx, { ns: 'prompt-tool', models: () => ({ available: true, providers: [] }),
+    skills: () => skillsStateStub(), moduleDirectory: (moduleId) => moduleId === undefined ? '' : moduleDir })
+  const call = async (endpoint, body = {}, target) => {
+    const handler = handlers.get(PREFIX + BRIDGE_ENDPOINTS[endpoint])
+    assert.ok(handler, `${endpoint} 端点应注册`)
+    const res = fakeRes()
+    await handler(fakeReq({
+      headers: { host: 'localhost', ...(target === undefined ? {} : { 'x-module-id': target }) },
+      async *[Symbol.asyncIterator]() { yield Buffer.from(JSON.stringify(body)) },
+    }), res)
+    return { status: res.status, payload: JSON.parse(res.body) }
+  }
+
+  const empty = await call('paramOverrides', { overrides: { instructionHint: true } })
+  assert.equal(empty.status, 200, `空主语必须写全局层：${JSON.stringify(empty.payload)}`)
+  assert.equal(readFileSync(join(moduleDir, 'module.yml'), 'utf8'), moduleBefore, '全局层写入不碰任何模块定义')
+  assert.match(readFileSync(configFile, 'utf8'), /instructionHint: true/, '全局值落在存储根 config.yml')
+  const readBack = await call('paramOverrides')
+  assert.equal(readBack.status, 200)
+  assert.deepEqual(readBack.payload.value.overrides, { instructionHint: true }, '空主语读回全局值')
+
+  const moduleWrite = await call('paramOverrides', { overrides: { instructionHint: false } }, basename(moduleDir))
+  assert.equal(moduleWrite.status, 200, `模块主语照旧写模块：${JSON.stringify(moduleWrite.payload)}`)
+  assert.match(readFileSync(join(moduleDir, 'module.yml'), 'utf8'), /instructionHint: false/, '模块写路径不变')
+  assert.deepEqual((await call('paramOverrides')).payload.value.overrides, { instructionHint: true },
+    '模块写不影响全局层（两处各存各的，优先级由 resolveModuleParams 判）')
+})

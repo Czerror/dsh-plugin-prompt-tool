@@ -138,10 +138,15 @@ test('归属门：required 无目标 400、载荷主语与头声明冲突 400、
   assert.equal(noSubject.status, 400)
   assert.equal(noSubject.code, 'module-dir-unavailable')
 
-  // 写端点同样先报 400：门内顺序固定为「无目标 → 可写」。
-  const writeNoSubject = await call('paramOverrides', undefined, { body: { overrides: { modelTemperature: '0.5' } } })
+  // 写端点同样先报 400：门内顺序固定为「无目标 → 可写」（required 写端点照旧）。
+  const writeNoSubject = await call('rules', undefined, { body: { edits: [] } })
   assert.equal(writeNoSubject.status, 400, '写端点无目标报 400，不是 403')
   assert.equal(writeNoSubject.code, 'module-dir-unavailable')
+
+  // paramOverrides 是 optional：空主语＝**全局层**（存储根 config.yml 的 layerSettings），
+  // 不是「没有目标」——固定卡（指令卡）是全局段，它的设置区就写在这里。
+  const globalWrite = await call('paramOverrides', undefined, { body: { overrides: { modelTemperature: '0.5' } } })
+  assert.equal(globalWrite.status, 200, `空主语应写全局层：${globalWrite.message}`)
 
   // 两个主语：请求头声明 A、载荷声明 B。
   const conflict = await call('rules', idA, { body: { expectedModuleId: idB } })

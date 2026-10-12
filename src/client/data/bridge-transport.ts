@@ -21,6 +21,8 @@ interface BridgeSuccessExtras {
   skillFolders?: string[]
   templatePreStepCount?: number
   moduleParams?: Record<string, unknown>
+  /** 全局层参数（存储根 `config.yml` 的 `layerSettings`）：随 `/bootstrap` 的空主语全局段下发。 */
+  globalParams?: Record<string, unknown>
   hostDefaultModel?: HostDefaultModel
   moduleFacts?: ModuleFacts
   meta?: { meta: EngineMeta }

@@ -59,17 +59,26 @@ export function EngineParamFields({ store, moduleId, card, t, instanceId }: { st
  * `instanceId` 只用来给每个渲染点一份独立的 DOM id / aria 关联，避免镜像控件
  * 出现重复 id 与标签错配。
  *
+ * `global` = **全局层主语**（存储根 `config.yml` 的 `layerSettings`）：固定卡（指令卡）是全局段、
+ * 不属于任何模块，它的设置区用这一态；读数、草稿键、写通道全部走全局，与模块主语互斥。
+ *
  * 未完成的数字输入与字段错误也属于这份共享草稿：渲染点订阅同一草稿修订号后一起重渲染，
  * 因此一个渲染点里的半成品输入或错误提示会立即出现在其他渲染点，且不各留一份本地 state。
  */
-export function EngineParamField({ store, moduleId, param, t, instanceId }: { store: PromptToolStore; moduleId: string; param: SharedParamKey; t: PromptToolTranslate; instanceId?: string }): ReactNode {
+export function EngineParamField({ store, moduleId, param, t, instanceId, global }: {
+  store: PromptToolStore; moduleId?: string; param: SharedParamKey; t: PromptToolTranslate; instanceId?: string
+  /** 全局层主语（与 `moduleId` 互斥）：固定卡（指令卡）设置区用。 */
+  global?: boolean
+}): ReactNode {
   const definition = ENGINE_PARAM_DEFINITIONS[param]
-  const facts = moduleFactsOf(store.meta.modules, moduleId)
-  // 读数与写路径都按主语：不同模块的同名参数互不影响，草稿键也带上模块 id。
-  const value = store.moduleParamsOf(moduleId)[param]
-  const disabled = !store.fields.modulesEnabled || facts?.editable !== true
+  const isGlobal = global === true
+  const facts = isGlobal || moduleId === undefined ? undefined : moduleFactsOf(store.meta.modules, moduleId)
+  // 读数与写路径都按主语：不同模块的同名参数互不影响，草稿键也带上主语。
+  const value = isGlobal ? store.globalParams[param] : store.moduleParamsOf(moduleId ?? '')[param]
+  const disabled = !store.fields.modulesEnabled
+    || (isGlobal ? store.globalParamsLoaded !== true : facts?.editable !== true)
     || (param === 'maxDepth' && facts?.subagentToolPolicyEnabled !== true)
-  const draftKey = `${moduleId}:param:${param}`
+  const draftKey = `${isGlobal ? 'global' : moduleId}:param:${param}`
   const getDraftRevision = store.getDraftRevision ?? getZero
   useSyncExternalStore(store.subscribeDrafts ?? subscribeNothing, getDraftRevision, getDraftRevision)
   const draft = store.editorDrafts?.fields.get(draftKey)
@@ -80,8 +89,11 @@ export function EngineParamField({ store, moduleId, param, t, instanceId }: { st
     else store.editorDrafts?.fields.set(draftKey, next)
     store.publishDrafts?.()
   }
-  const save = (): void => { void store.persistParamOverrides(moduleId) }
-  const patch = (next: unknown): void => { store.setModuleParam(moduleId, param, next) }
+  const save = (): void => { void (isGlobal ? store.persistGlobalParams() : store.persistParamOverrides(moduleId ?? '')) }
+  const patch = (next: unknown): void => {
+    if (isGlobal) store.setGlobalParam(param, next)
+    else store.setModuleParam(moduleId ?? '', param, next)
+  }
   // 默认渲染点沿用 `pt-param-<键>`（层卡内唯一）；镜像渲染点带实例前缀，DOM id 不重复。
   const id = instanceId === undefined ? `pt-param-${param}` : `pt-param-${instanceId}-${param}`
   const label = t(`param.${param}`)

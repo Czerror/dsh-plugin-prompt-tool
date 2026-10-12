@@ -195,3 +195,55 @@ test('真实组合指令提示：主会话和子代理晋升后转换，压缩�
     assert.deepEqual((await step()).messages, [original], '卸载后不再转换或丢弃官方消息')
   }
 })
+
+test('全局层回退：两个模块同时装到同一行时不重复转换（一份提示、一次晋升、一次压缩重置）', async (t) => {
+  // 场景来源：用户裁定「模块未声明 ⇒ 回退 config.yml 全局值」后，未声明该键的模块会**都**
+  // 回退到同一份全局参数 ⇒ 同一行被 N 个模块各装配一次（D2-a）。这里把同一行装两次，
+  // 钉住「不会各转一份、不会重复投递、不会互相吃掉」。
+  const rows = parse(readFileSync(new URL('../../engine/compositions/source/local/instruction-hint.yml', import.meta.url), 'utf8'))
+  const row = rows.find((entry) => entry?.id === 'instruction-hint')
+  assert.ok(row !== undefined)
+  const root = new Context()
+  t.after(() => root.fiber.dispose())
+  const original = {
+    id: 'official-instructions', role: 'user',
+    content: [{ type: 'text', text: 'Instructions from: /repo/AGENTS.md\nFULL BODY' }],
+    source: { kind: 'agent-instructions' },
+  }
+  const events = [], visible = []
+  const session = {
+    id: 'global-fallback-dedupe', header: { delegationDepth: 0 },
+    snapshotEvents: () => events, deriveMessages: () => visible,
+  }
+  const first = await root.plugin({ apply }, { ...row.config, enabled: true })
+  const second = await root.plugin({ apply }, { ...row.config, enabled: true })
+  const step = () => root.waterfall('agent/pre-step', { agent: { session } }, async () => ({ kind: 'enter', messages: [original] }))
+  const record = (type, data = {}) => {
+    const event = { type, seq: events.length + 1, data }
+    events.push(event)
+    root.emit('session/event', session, event)
+  }
+
+  assert.deepEqual((await step()).messages, [original], '未晋升时两条行都不转换')
+  visible.push(original)
+  record('tool/call')
+  const promoted = await step()
+  assert.equal(promoted.messages.length, 1, '两份监听只产生一份提示，不重复投递')
+  assert.equal(promoted.messages[0].source.kind, 'instruction-hint')
+  assert.match(promoted.messages[0].content[0].text, /Reference documents exist: \/repo\/AGENTS\.md/)
+  assert.doesNotMatch(promoted.messages[0].content[0].text, /FULL BODY/)
+  visible.push(...promoted.messages)
+  assert.deepEqual((await step()).messages, [], '可见面已有提示时不重复投递（去重按会话）')
+
+  record('compaction/end')
+  visible.length = 0
+  assert.deepEqual((await step()).messages, [original], '成功压缩后仍按既有语义重新保留全文')
+  record('tool/call')
+  const promotedAgain = await step()
+  assert.equal(promotedAgain.messages.length, 1, '压缩后第二次晋升仍只产生一份提示')
+  assert.equal(promotedAgain.messages[0].source.kind, 'instruction-hint')
+
+  await second.dispose()
+  await first.dispose()
+  assert.deepEqual((await step()).messages, [original], '两条行都卸载后不再转换')
+})

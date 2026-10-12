@@ -12,7 +12,7 @@ import type { SettingsDescriptor, SettingsPathOp } from '@deepseek-ai/dsh-settin
 import { PARAM_KEYS, readModulesEnabled } from '../config.ts'
 import { invalidateModelCatalog, listAdvertisedModels, peekModelCatalog, refreshModelReasoning, type ModelDetection } from './models.ts'
 import type { SkillCatalogEntry, SkillPolicyChange, SkillPolicyScope, SkillsCatalogSnapshot } from '../shared/skills.ts'
-import { enabledModuleIds, setModuleEnabled } from '../host/config-store.ts'
+import { enabledModuleIds, readGlobalLayerSettings, setModuleEnabled, writeGlobalLayerSettings } from '../host/config-store.ts'
 import { readPersonaSources, writePersonaSources } from '../host/persona-selection.ts'
 import { appendModuleConfigOrder, ModuleConfigOrderError, readModuleConfigOrder, saveModuleConfigOrder } from '../host/module-config-order.ts'
 import type { ModuleConfigIdentity } from '../shared/module-config-order.ts'
@@ -777,6 +777,9 @@ export function registerSettingsBridge(
                 value: descriptorForTarget(descriptor, dir),
                 meta: { meta },
                 overrides: { overrides: dir.length > 0 ? readParamOverrides(dir) : {} },
+                // 全局层参数（存储根 config.yml 的 layerSettings）：固定卡指令卡的设置区读它。
+                // 与「模块自己写了哪个键」无关；优先级判定只在 resolveModuleParams 一处。
+                globalParams: readGlobalLayerSettings(userModulesDir()),
                 ...(variables === undefined ? {} : { variables }),
                 promptConfigs: { promptConfigs: mergeInstructionCards([], scope.files) },
                 instructions: { context: scope.context, files: scope.files, owner: instructionOwner() },
@@ -859,13 +862,13 @@ export function registerSettingsBridge(
               tx.write(400, { ok: false, code: 'settings-rejected', message: 'malformed bridge settings request' })
               return
             }
-            // 引擎参数按模块存储（激活模块 module.yml）：settings mutate 只接受全局键。
+            // 引擎参数按模块/全局层存储：settings mutate 只接受全局键。
             const paramOp = record.ops.find((op) => {
               const path = (op as { path?: unknown })?.path
               return Array.isArray(path) && path.length > 0 && typeof path[0] === 'string' && PARAM_KEYS.has(path[0])
             })
             if (paramOp !== undefined) {
-              tx.write(400, { ok: false, code: 'settings-rejected', message: '引擎参数按模块存储：请用设置页保存（/param-overrides），settings 只接受全局开关' })
+              tx.write(400, { ok: false, code: 'settings-rejected', message: '引擎参数不进 settings：模块自己的写 module.yml、指令卡的全局层写 config.yml，请用设置页保存（/param-overrides）' })
               return
             }
             const expectedRevision = typeof record.expectedRevision === 'number' ? record.expectedRevision : undefined
@@ -1310,7 +1313,10 @@ export function registerSettingsBridge(
             // 声明面只在读侧拦（无载荷 = 读 layerSettings 展平后的参数子集）。
             const dir = subjectGate(tx, 'paramOverrides', { write: record.overrides !== undefined })
             if (dir === undefined) return
-            // 阶段 2：参数按模块存储——读写激活模块 module.yml 的 params（+ promptConfigs）。
+            // 空主语 = **全局层**（存储根 config.yml 的 layerSettings）：固定卡（指令卡）是全局段，
+            // 它的设置区写这里；有主语才读写该模块自己的 module.yml。
+            const global = dir.length === 0
+            // 参数按模块存储——读写激活模块 module.yml 的 params（+ promptConfigs）。
             const moduleRoot = dirname(dir)
             const templateName = basename(dir)
             // promptConfigs 全量数组随配置卡数量增长；所有 JSON bridge 端点统一使用 32 MiB
@@ -1329,14 +1335,15 @@ export function registerSettingsBridge(
                 tx.write(400, { ok: false, code: 'overrides-invalid-shape', message: 'rebuild requires overrides or promptConfigs' })
                 return
               }
-              tx.write(200, { ok: true, value: { overrides: readParamOverrides(dir) } })
+              tx.write(200, { ok: true, value: { overrides: global ? readGlobalLayerSettings(userModulesDir()) : readParamOverrides(dir) } })
               return
             }
             if (record.overrides !== undefined && !isRecord(record.overrides)) {
               tx.write(400, { ok: false, code: 'overrides-invalid-shape', message: 'overrides must be an object' })
               return
             }
-            if (subjectGate(tx, 'paramOverrides', { write: true }) === undefined) return
+            // 全局层不是模块目录：可写判据（模块根之下）对它不适用，只有模块主语才过这道闸。
+            if (!global && subjectGate(tx, 'paramOverrides', { write: true }) === undefined) return
             const rawOverrides = record.overrides as Record<string, unknown> | undefined
             // 参数键白名单：未知键 fail loud，避免写入「读回/参数桥都不消费」的死键。
             if (rawOverrides !== undefined) {
@@ -1362,15 +1369,16 @@ export function registerSettingsBridge(
               return
             }
             try {
-              saveModuleParams(
+              if (global) writeGlobalLayerSettings(userModulesDir(), rawOverrides ?? {})
+              else saveModuleParams(
                 moduleRoot,
                 templateName,
                 rawOverrides,
                 undefined,
               )
               // 模块切换前保存当前配置卡时只需落盘，不立即重建；
-              // 后续运行刷新按目标模块执行。
-              if (record.rebuild !== false && !await runOverridesChange(tx.write, basename(dir))) return
+              // 后续运行刷新按目标模块执行。全局层影响所有已启用模块：主语缺席即整轮刷新。
+              if (record.rebuild !== false && !await runOverridesChange(tx.write, global ? undefined : basename(dir))) return
               tx.write(200, {
                 ok: true,
                 value: { overrides: record.overrides },

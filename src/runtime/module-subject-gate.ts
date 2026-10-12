@@ -66,6 +66,9 @@ export function isEditableModuleDir(dir: string, moduleRoot = userModulesDir()):
 }
 
 function guardEditableModuleDir(dir: string, write: GateWrite): boolean {
+  // 空目标＝这次写不落在任何模块目录里（`optional` 端点「空主语＝全局层」）：模块只读判据
+  // 对它不适用，写到哪里由端点的空目标分支自己决定；有目标才判是否在用户模块根下。
+  if (dir.length === 0) return true
   if (isEditableModuleDir(dir)) return true
   write(403, { ok: false, code: 'module-readonly', message: 'system preset 只读，请先复制为用户模块' })
   return false

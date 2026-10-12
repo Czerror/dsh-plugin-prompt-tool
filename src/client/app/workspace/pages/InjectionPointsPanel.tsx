@@ -15,7 +15,7 @@ import { canEditModule, moduleDeclares, moduleFactsOf } from '../../../data/modu
 import type { PromptToolLocaleKey, PromptToolTranslate } from '../../../locales.ts'
 import { ConfirmDialog } from '../../../ui/ConfirmDialog.tsx'
 import { Button } from '../../../ui/Button.tsx'
-import { EngineParamFields, matchesEditorGroup } from '../../../features/modules/EngineParamFields.tsx'
+import { EngineParamField, EngineParamFields, matchesEditorGroup } from '../../../features/modules/EngineParamFields.tsx'
 import { ModuleCapabilityCreateMenu } from '../../../features/modules/EngineModuleList.tsx'
 import { CurrentSessionModel } from '../../../features/models/CurrentSessionModel.tsx'
 import { ModulePersonaCard } from '../../../features/persona/ModulePersonaCard.tsx'
@@ -292,30 +292,6 @@ export function LayerSettingsContent(props: {
   )
 }
 
-/**
- * 指令文件卡的设置区：卡是全局段、不属于任何模块，而 pre-step 参数按模块存储
- * （其他启用模块各自独立生效），因此逐个启用模块各渲染一份层设置，主语＝该模块——
- * 不回落成「随便挑一个模块」，也不因为模块多于一个就整块不出。
- */
-export function InstructionSettingsContent(props: {
-  store: PromptToolStore
-  t: PromptToolTranslate
-  config: PromptConfigDraft
-  excludeCapabilities?: readonly string[]
-  keyword?: string
-}): ReactNode {
-  const { store, t, config } = props
-  const layer = config.layer ?? 'pre-step'
-  const modules = (store.meta.modules ?? []).filter((module) => module.enabled === true)
-  return <>{modules.map((module) => (
-    <section key={module.id} className={css.group} data-instruction-module={module.id} aria-label={t('rules.source', { module: module.id })}>
-      <h4 className={css.groupTitle}>{t('rules.source', { module: module.id })}</h4>
-      <LayerSettingsContent store={store} t={t} layer={layer} moduleId={module.id} configId={`${module.id}:${config.id}`}
-        excludeCapabilities={props.excludeCapabilities} keyword={props.keyword} />
-    </section>
-  ))}</>
-}
-
 /** 新建能力后的定位：滚动到该层实例卡内的设置折叠区（能力卡已退场，锚点改在设置区）。 */
 function LayerSettingsFocus(props: { layer?: string; token: number }): ReactNode {
   const { layer, token } = props
@@ -333,7 +309,7 @@ export interface InjectionPointSlots {
   renderLayerSettings: (layer: string, config: PromptConfigDraft, moduleId: string, onChooseToolTemplate: (moduleId: string, anchor: HTMLButtonElement) => void) => ReactNode
   /** 该层**该模块**是否有可编辑设置，控制真实实例卡内的设置区。 */
   hasLayerSettings: (layer: string, moduleId: string) => boolean
-  /** 指令文件卡的设置区（卡没有归属模块，主语由这里按启用模块逐个给出）；没有启用模块即缺席。 */
+  /** 指令文件卡的设置区：卡是全局段、没有归属模块，主语＝**全局层**（存储根 `config.yml`）。 */
   renderInstructionSettings?: (config: PromptConfigDraft) => ReactNode
   matchesLayerSettings: (layer: string, keyword: string, moduleId: string) => boolean
 }
@@ -394,9 +370,13 @@ export function injectionPointSlots(input: InjectionPointSlotsInput): InjectionP
       || layerAssembledCapabilities(store, layer, moduleId).some((id) => !excluded.includes(id))
       || layerAssets(store, layer, moduleId, excluded).length > 0
       || undeclaredSections(store, layer, moduleId, excluded).length > 0,
-    renderInstructionSettings: (store.meta.modules ?? []).some((module) => module.enabled === true)
-      ? (config: PromptConfigDraft) => <InstructionSettingsContent store={store} t={t} config={config} keyword={input.keyword} excludeCapabilities={input.excludeCapabilities} />
-      : undefined,
+    // 指令卡是全局段：设置区主语＝全局层（存储根 config.yml 的 layerSettings），一个开关。
+    // 与启用模块数量无关——模块自己写了该参数时，模块值仍然优先（存在即覆盖，服务端判定）。
+    renderInstructionSettings: (config: PromptConfigDraft) => (
+      <div className={css.settings}>
+        <EngineParamField store={store} param="instructionHint" t={t} instanceId={`instruction-${audience}-${config.id}`} global />
+      </div>
+    ),
     matchesLayerSettings: (layer, keyword, moduleId) => [
       ...layerParamCards(store, layer, moduleId, excluded),
       ...layerAssembledCapabilities(store, layer, moduleId).filter((id) => !excluded.includes(id)),

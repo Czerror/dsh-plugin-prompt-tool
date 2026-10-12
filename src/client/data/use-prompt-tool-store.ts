@@ -160,6 +160,14 @@ export interface PromptToolStore {
   ensureModuleParams: (moduleId: string) => void
   /** 改该模块某个参数（本地草稿；落盘经 persistParamOverrides）。 */
   setModuleParam: (moduleId: string, key: SharedParamKey, value: unknown) => void
+  /** 全局层参数快照（存储根 `config.yml` 的 `layerSettings`）：固定卡（指令卡）设置区读它。 */
+  globalParams: ParamSnapshot
+  /** 全局层读回前不写盘（与模块参数同规：否则 UI 默认值会被固化成全局键）。 */
+  globalParamsLoaded: boolean
+  /** 改全局层某个参数（本地草稿；落盘经 persistGlobalParams）。 */
+  setGlobalParam: (key: SharedParamKey, value: unknown) => void
+  /** 保存全局层参数：`/param-overrides` **不带主语头**（空主语 = 全局层），影响所有启用模块。 */
+  persistGlobalParams: () => Promise<void>
   /** 规则声明复用模块队列；实际执行时复核目标模块（无主语即拒绝）。 */
   enqueueModuleTask: <T>(moduleId: string | undefined, task: () => Promise<T>) => Promise<T>
   /** 已绑定模块身份与独立草稿的规则事务，共用保存队列但不依赖当前 Fields。 */
@@ -397,6 +405,9 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
     moduleParamsRef.current.set(moduleId, created)
     return created
   }, [])
+  /** 全局层参数条目：与模块条目同形状，但主语是存储根（`config.yml`），不是某个模块。
+   *  读数/基线/已存键只存 ref（与模块参数同规），重渲染走既有 `publishSubject` 通道。 */
+  const globalParamsRef = useRef<ModuleParamEntry>({ values: { ...EMPTY_PARAMS }, baseline: { ...EMPTY_PARAMS }, loadedKeys: new Set(), loaded: false })
   const setModuleVariables = useCallback((moduleId: string, next: Record<string, string>) => {
     const draft = variablesDraftFor(moduleId, variablesScopesRef.current.get(moduleId) ?? 'module')
     if (draft === undefined) return
@@ -473,6 +484,22 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
     publishSubject(version => version + 1)
     publishDrafts()
   }, [moduleParamEntry, publishDrafts])
+  /** 全局层参数（固定卡指令卡的设置区）：随 `/bootstrap` 的空主语全局段一次取回。 */
+  const publishGlobalParams = useCallback((patch: Record<string, unknown>): void => {
+    const entry = globalParamsRef.current
+    entry.values = paramSnapshot(readParamOverridesPatch(patch))
+    entry.baseline = { ...entry.values }
+    entry.loadedKeys = new Set(SHARED_PARAM_KEYS.filter((key) => Object.hasOwn(patch, key)))
+    entry.loaded = true
+    publishSubject(version => version + 1)
+  }, [])
+  const setGlobalParam = useCallback((key: SharedParamKey, value: unknown): void => {
+    const entry = globalParamsRef.current
+    draftVersionRef.current += 1
+    entry.values = { ...entry.values, [key]: value } as ParamSnapshot
+    publishSubject(version => version + 1)
+    publishDrafts()
+  }, [publishDrafts])
 
   const refreshVariables = useCallback(async (moduleId: string, scope: ModuleVariableScope): Promise<void> => {
     const draft = variablesDraftFor(moduleId, scope)
@@ -585,6 +612,9 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
       // 配置卡十几秒才出现的瓶颈。
       const res = bridgeViewFromBoot(boot)
       applyView(res, skillsSeq)
+      // 全局层参数（空主语的全局段）：指令卡设置区读它。模块自己写了该键时模块值仍然优先
+      // （存在即覆盖的判定在服务端，客户端不重复判）。
+      if (boot.globalParams !== undefined) publishGlobalParams(boot.globalParams)
       if (skillsSeq === skillsSeqRef.current) skillsSessionRef.current = sessionId
       // 指令文件（独立来源）：正文、身份、版本、读取状态来自同一次读取。
       if (boot.ok && boot.instructions !== undefined) {
@@ -652,7 +682,7 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
     } finally {
       if (seq === loadSeqRef.current && !options?.silent) setLoading(false)
     }
-  }, [api, applyView, assembledModule, clearNotice, editorDrafts, publishDrafts, publishInstructionPolicy, publishInstructions, readModuleParams, settings, showNotice, variablesDraftFor])
+  }, [api, applyView, assembledModule, clearNotice, editorDrafts, publishDrafts, publishGlobalParams, publishInstructionPolicy, publishInstructions, readModuleParams, settings, showNotice, variablesDraftFor])
 
   // 挂载即后台拉取模型目录（不阻塞工作台首屏；10min 缓存兜底重复打开）。
   useEffect(() => {
@@ -815,6 +845,32 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
       }
     })
   }, [editableSubject, load, moduleParamEntry, savedConfigs, showNotice])
+
+  /** 全局层参数保存：`/param-overrides` **不带主语头**（空主语 = 全局层）写存储根 `config.yml`。
+   *  与模块参数共用保存队列与「发起时快照」语义；成功后整轮刷新（引擎按所有启用模块重装）。 */
+  const persistGlobalParams = useCallback(async () => {
+    if (!fieldsRef.current.modulesEnabled) {
+      showNotice('error', NO_SUBJECT_MESSAGE)
+      return
+    }
+    const entry = globalParamsRef.current
+    if (!entry.loaded) {
+      showNotice('error', MODULE_PENDING_MESSAGE)
+      return
+    }
+    const submitted = entry.values
+    const overrides = buildParamOverrides(submitted, { loadedKeys: entry.loadedKeys, baseline: entry.baseline })
+    await moduleSaveQueueRef.current.enqueue(async () => {
+      const res = await bridgeCall('paramOverrides', { overrides })
+      // 请求期间又有新编辑：不把提交时的快照标记为已保存（当前值仍是 dirty）。
+      if (entry.values !== submitted) return
+      if (res.ok) {
+        updateLoadedParamKeys(entry.loadedKeys, overrides)
+        entry.baseline = submitted
+        await load({ silent: true })
+      } else showNotice('error', '参数保存失败：' + (res.message ?? 'settings bridge unavailable'))
+    })
+  }, [load, showNotice])
 
   /**
    * 指令文件显式保存：只提交「已改动 + 读取就绪 + 有基线版本 + 上下文匹配」的文件。
@@ -1215,6 +1271,11 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
     moduleParamsOf: (moduleId: string) => moduleParamEntry(moduleId).values,
     ensureModuleParams,
     setModuleParam,
+    // 全局层读数读 ref（与 `moduleParamsOf` 同形）：SSR 下没有二次渲染，state 快照会停在旧值。
+    get globalParams() { return globalParamsRef.current.values },
+    get globalParamsLoaded() { return globalParamsRef.current.loaded },
+    setGlobalParam,
+    persistGlobalParams,
     enqueueModuleTask,
     enqueueRuleTask,
     moduleVariables,

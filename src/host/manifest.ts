@@ -21,7 +21,7 @@ import { moduleCapability, engineRecipe, impliedModulesForParams, isModuleCapabi
 import { ENGINE_PARAM_DEFINITIONS, ENGINE_PARAM_KEYS, buildEngineModuleParams, normalizeMaxDepth } from '../shared/engine-params.ts'
 import { readPersonaSpec, type PersonaSnapshot, type PersonaSpec } from '../shared/persona-section.ts'
 import { isModuleId } from '../shared/module-ids.ts'
-import { readStorageConfig } from './config-store.ts'
+import { readGlobalLayerSettings, readStorageConfig } from './config-store.ts'
 import { assertModuleDirectory, assertModuleId, assertModuleTree, modulePathExists, setModuleDefinitionId } from './module-install.ts'
 import { engineParamPath, readModuleLayerSettings, ModuleLayerSettingsError } from './module-layer-settings.ts'
 import type { RuleDefinition } from '../shared/rules.ts'
@@ -57,6 +57,14 @@ export interface ModuleSpec {
   params?: Record<string, unknown>
   /** 共享引擎参数按编辑组的主归属插入点存储；规则实例仍拥有各自 params。 */
   layerSettings?: Record<string, Record<string, unknown>>
+  /**
+   * **全局层**引擎参数（存储根 `config.yml` 的 `layerSettings`，由 `loadModuleSpec` 读入）。
+   *
+   * 只作 `resolveModuleParams` 的兜底输入，**不并入 `params`**：`params` 是「这个模块显式写了
+   * 哪些键」的事实，UI 读回与声明面判据都靠它；并进来会让「未声明」看起来像「已声明」。
+   * 优先级（用户裁定 2026-10-12）：模块显式键（`false` 也算）＞ 全局键 ＞ 引擎/行默认。
+   */
+  globalParams?: Record<string, unknown>
   /** 独立人设卡，按主会话与子代理逐字段覆盖官方声明。 */
   persona?: PersonaSpec
   /** 模块级模板变量（{{key}} 插值源；与 layerSettings 分离，顶层 variables 段）。 */
@@ -145,19 +153,28 @@ export function removeModuleCapabilityDeclaration(dir: string, moduleId: string)
   return true
 }
 
+/** 用户模块 = 存储根下的模块目录：只有它们才有存储根全局层可兜底。 */
+function withGlobalParams(spec: ModuleSpec, dir: string): ModuleSpec {
+  if (!resolve(dir).startsWith(resolve(userModulesDir()) + sep)) return spec
+  const globalParams = readGlobalLayerSettings(dirname(dir))
+  if (Object.keys(globalParams).length === 0) return spec
+  return { ...spec, globalParams }
+}
+
 /** 加载某个模块模板的单一参数文件 modules/<name>/module.yml。 */
 export function loadModuleSpec(dir: string): ModuleSpec {
   // 完整性检查先于缓存；mtime/size 不能掩盖手改切片或伪造清单。
   const snapshot = ensureModuleSlices(dir, { writable: !resolve(dir).startsWith(resolve(packageModulesDir()) + sep) })
   readPersonaSpec(snapshot.source.persona)
   const cached = moduleSpecCache.get(snapshot.file)
-  if (cached?.revision === snapshot.revision) return structuredClone(cached.spec)
+  if (cached?.revision === snapshot.revision) return withGlobalParams(structuredClone(cached.spec), dir)
   const parsed = { ...snapshot.source, id: snapshot.source.id ?? basename(dir), rules: snapshot.rules,
     configOrder: snapshot.configOrder, variables: snapshot.variables, variablesEnabled: snapshot.variablesEnabled } as unknown as ModuleSpec
   const params = readModuleLayerSettings(parsed)
   if (parsed.layerSettings !== undefined || parsed.params !== undefined) parsed.params = params
+  // 缓存只存 module.yml 的事实：全局层每次现读，config.yml 改动不靠签名也能立即生效。
   moduleSpecCache.set(snapshot.file, { revision: snapshot.revision, spec: structuredClone(parsed) })
-  return parsed
+  return withGlobalParams(parsed, dir)
 }
 
 export const asString = (value: unknown, fallback = ''): string => {
@@ -543,9 +560,16 @@ export function normalizeParam(value: unknown): unknown {
   return value
 }
 
-/** 当前 layerSettings 与显式运行参数合并；不从旧磁盘 params 段回退取值。 */
+/**
+ * 有效引擎参数（**优先级唯一判定点**）：全局层垫底 → 模块显式键覆盖（存在即覆盖，
+ * `false` / `0` 都是显式值）→ 运行时入参覆盖；三处都没有的键不出现，由引擎/行默认兜底。
+ * 不从旧磁盘 `params` 段回退取值。
+ */
 export function resolveModuleParams(spec: ModuleSpec, runtime: Record<string, unknown>): Record<string, unknown> {
   const params: Record<string, unknown> = {}
+  for (const [key, value] of Object.entries(spec.globalParams ?? {})) {
+    params[key] = normalizeParam(value)
+  }
   for (const [key, value] of Object.entries(readModuleLayerSettings(spec))) {
     params[key] = normalizeParam(value)
   }

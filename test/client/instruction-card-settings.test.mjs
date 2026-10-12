@@ -1,19 +1,14 @@
 /**
- * 指令文件卡的「设置」页签回归（T22）：展开指令卡必须有设置页签，里面的
- * 「指令路径提示」（`param.instructionHint`）必须照旧可读写。
+ * 指令文件卡的「设置」页签与设置区（**全局层**）回归。
  *
- * 判据（RED 现场，浏览器实测复核）：d86eea76 删掉 `renderInstructionSettings`
- * 后，`RulesWorkspace` 渲染指令卡时不再传 `renderLayerSettings`，
- * `PromptConfigNavigation` 因此不 push `settings` 页签 —— 用户只剩「内容」页签。
- * 本机实例里四个模块都没有 pre-step 规则卡，所以指令卡是该参数组**唯一**的落点。
- *
- * 断言分两层：① `RulesWorkspace` 层——页签本身在不在（调用方观察到的行为）；
- * ② `injectionPointSlots.renderInstructionSettings` 层——主语按启用模块逐个给出
- * （阶段 4 删掉全局「当前模块」后，指令卡没有唯一主语，不能只渲染一份）。
+ * 判据（用户裁定 2026-10-12）：指令卡是全局段、没有归属模块，它的「指令路径提示」是
+ * **一个全局开关**（写存储根 `config.yml` 的 `layerSettings`）；模块自己写了该参数时模块值
+ * 优先（存在即覆盖，判定在服务端）。所以这里钉死两件相反方向的事：
+ *  ① 页签必须在场——它与启用模块数量无关（`64a66174` 按启用模块逐个渲染的形态已否掉）；
+ *  ② 设置区里 `instructionHint` 控件**恰好一个**，且不再有 `data-instruction-module` 分节。
  */
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { createElement } from 'react'
 import { renderElement, withSsr, makeTranslate } from './support/ssr-render.mjs'
 import { createWorkspaceDrafts } from '../../src/client/data/workspace-drafts.ts'
 import { EMPTY_PARAMS } from '../../src/client/data/param-overrides.ts'
@@ -41,11 +36,11 @@ const instructionCard = {
   text: '# 全局入口',
 }
 
-const stubStore = (modules = [moduleA]) => {
+const stubStore = (modules = [moduleA], globalParamsLoaded = true) => {
   const fields = { modulesEnabled: true, promptConfigs: [instructionCard] }
   return {
     fields,
-    // 指令卡要渲染正文与页签，必须给齐 `fieldPolicyFor` 读的字段能力表（省了它＝渲染期抛错，不是本次回归）。
+    // 指令卡要渲染正文与页签，必须给齐 `fieldPolicyFor` 读的字段能力表（省了它＝渲染期抛错）。
     meta: { layers: ['pre-step'], modules, layerFieldPolicies: {}, fills: [] },
     editorDrafts: createWorkspaceDrafts(),
     instructionPolicy: { error: undefined },
@@ -59,6 +54,11 @@ const stubStore = (modules = [moduleA]) => {
     enqueueRuleTask: (task) => task(),
     moduleParamsOf: () => EMPTY_PARAMS,
     ensureModuleParams: () => {},
+    // 全局层主语：指令卡设置区的读数与写通道都走这里（不是某个模块）。
+    globalParams: EMPTY_PARAMS,
+    globalParamsLoaded,
+    setGlobalParam: () => {},
+    persistGlobalParams: async () => {},
     persistInstructionFiles: async () => true,
     reloadInstructionFile: async () => {},
     updateInstructionPolicy: async () => {},
@@ -75,7 +75,7 @@ const renderWorkspace = (store) => renderElement(RulesWorkspace, {
 /** 直接渲染设置区内容（页签内容首次点击才挂载，SSR 看不到 tabpanel 里那一层）。 */
 const renderSettings = (store) => {
   const slots = injectionPointSlots({ store, t, viewFilter: 'all', audience: 'main' })
-  assert.equal(typeof slots.renderInstructionSettings, 'function', '有启用模块就该有指令卡设置区')
+  assert.equal(typeof slots.renderInstructionSettings, 'function', '指令卡是全局段，设置区不依赖启用模块')
   return renderElement(function Probe() { return slots.renderInstructionSettings(instructionCard) }, {})
 }
 
@@ -85,20 +85,25 @@ test('指令卡：展开后有「设置」页签（d86eea76 删掉 renderInstruc
   assert.match(html, /data-config-tab="settings"/, '设置页签必须在场（用户报的就是它整块消失）')
 })
 
-test('指令卡：没有启用模块时不生成空设置页签', () => {
+test('指令卡：设置页签与启用模块数量无关（没有启用模块也有全局开关）', () => {
   const html = renderWorkspace(stubStore([moduleOff]))
   assert.match(html, /data-config-tab="content"/, '内容页签照旧在场')
-  assert.doesNotMatch(html, /data-config-tab="settings"/, '没有主语就没有可设置的内容，不留空页签')
+  assert.match(html, /data-config-tab="settings"/, '全局层不属于任何模块：没有启用模块同样有可设置的内容')
+  assert.equal((renderSettings(stubStore([moduleOff])).match(/data-param-key="instructionHint"/g) ?? []).length, 1,
+    '没有启用模块时仍是那一个全局开关')
 })
 
-test('指令卡设置区：参数组与路径指引控件在场，主语逐个启用模块（不是「唯一模块」回落）', () => {
+test('指令卡设置区：只有**一个**全局开关，没有按模块分节（64a66174 的每模块一份已否掉）', () => {
   const html = renderSettings(stubStore([moduleA, moduleB, moduleOff]))
-  assert.match(html, /data-layer-param-group="prompt-defaults"/, '提示词默认值＝路径指引设置所属参数组')
-  assert.match(html, /data-layer-param-fields="prompt-defaults"/, '参数控件渲染出来（不是空壳）')
-  assert.match(html, /data-param-key="instructionHint"/, '路径指引控件＝既有 instructionHint')
-  assert.match(html, /data-instruction-module="mod-a"/, '每个启用模块各一份，主语＝该模块')
-  assert.match(html, /data-instruction-module="mod-b"/, '第二个启用模块同样在场')
-  assert.doesNotMatch(html, /data-instruction-module="mod-off"/, '未启用模块不进设置区')
-  assert.equal((html.match(/data-layer-param-group="prompt-defaults"/g) ?? []).length, 2, '一份／模块，不合并成一份')
-  assert.match(html, new RegExp(t('rules.source', { module: 'mod-a' })), '模块名可见，两份控件能分辨')
+  assert.match(html, /data-param-key="instructionHint"/, '路径指引控件在场')
+  assert.equal((html.match(/data-param-key="instructionHint"/g) ?? []).length, 1, '一个开关，不按模块重复')
+  assert.doesNotMatch(html, /data-instruction-module/, '不再有按模块分节的设置区')
+  assert.doesNotMatch(html, /data-layer-param-group/, '不再借用按模块的层设置内容')
+  assert.doesNotMatch(html, /mod-a/, '没有模块名分节标题（卡片主语是全局层）')
+  assert.match(html, /aria-label="指令路径提示"/, 'labels 仍是既有词条')
+})
+
+test('指令卡设置区：全局值读回前禁写（不把 UI 默认值固化成全局键）', () => {
+  assert.match(renderSettings(stubStore([moduleA], false)), /role="switch"[^>]*disabled/, '未读回时禁写')
+  assert.doesNotMatch(renderSettings(stubStore([moduleA], true)), /role="switch"[^>]*disabled/, '读回后可写')
 })

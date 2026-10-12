@@ -90,7 +90,7 @@ test('契约：client 前缀与 server 注册前缀同源', () => {
 // ── 主语策略表：一次读写的主语是哪个模块 ─────────────────────────────────────────
 // 这张表是客户端类型约束与服务端归属门的**唯一名单**；漏标一个端点即失败。
 
-test('契约：主语策略表登记每一个端点（46 个），三类计数 12/4/30', () => {
+test('契约：主语策略表登记每一个端点（46 个），三类计数 11/5/30', () => {
   assert.deepEqual(Object.keys(BRIDGE_ENDPOINTS).sort(), Object.keys(BRIDGE_SUBJECT_POLICY).sort(),
     'BRIDGE_SUBJECT_POLICY 必须与 BRIDGE_ENDPOINTS 逐 key 一致')
   assert.equal(Object.keys(BRIDGE_SUBJECT_POLICY).length, 46)
@@ -99,17 +99,18 @@ test('契约：主语策略表登记每一个端点（46 个），三类计数 1
     assert.ok(['required', 'optional', 'none'].includes(policy), `${key} 的策略非法：${policy}`)
     counts[policy] += 1
   }
-  assert.deepEqual(counts, { required: 12, optional: 4, none: 30 })
+  // `paramOverrides` 由 required 改 optional（用户裁定 2026-10-12）：空主语＝全局层（config.yml）。
+  assert.deepEqual(counts, { required: 11, optional: 5, none: 30 })
 })
 
-test('契约：主语策略按端点逐一标注 required 12 个 / optional 4 个', () => {
+test('契约：主语策略按端点逐一标注 required 11 个 / optional 5 个', () => {
   const required = Object.entries(BRIDGE_SUBJECT_POLICY).filter(([, policy]) => policy === 'required').map(([key]) => key).sort()
   const optional = Object.entries(BRIDGE_SUBJECT_POLICY).filter(([, policy]) => policy === 'optional').map(([key]) => key).sort()
   assert.deepEqual(required, [
     'charactersImport', 'customTools', 'describe', 'moduleCapability', 'moduleMerge', 'moduleUnmerge',
-    'moduleVariables', 'paramOverrides', 'persona', 'rules', 'subagentToolPolicy', 'subagentToolPolicyPreview',
+    'moduleVariables', 'persona', 'rules', 'subagentToolPolicy', 'subagentToolPolicyPreview',
   ].sort())
-  assert.deepEqual(optional, ['bootstrap', 'moduleDelete', 'mutate', 'promptConfigs'].sort())
+  assert.deepEqual(optional, ['bootstrap', 'moduleDelete', 'mutate', 'paramOverrides', 'promptConfigs'].sort())
 })
 
 test('契约：主语头解析三态——absent 只认「头完全没有」，其余非法形状一律 invalid', () => {
