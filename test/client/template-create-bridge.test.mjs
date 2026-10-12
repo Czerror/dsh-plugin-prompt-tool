@@ -73,11 +73,54 @@ test('新建模块未出现在旧 meta 时，显式 rulesAbsent 集合仍发送 
   await withFetch([
     failure('rules-conflict', '规则声明冲突'),
     ok({ createdRuleId: 'budget', rules: [rule] }),
+    ok({ enabled: ['blank-3'] }),
   ], async (calls) => {
     assert.equal((await writeTemplateRule('blank-3', rule, [])).ok, false)
     assert.equal((await writeTemplateRule('blank-3', rule, [])).ok, true)
-    for (const call of calls) assert.equal(JSON.parse(call.init.body).expectedRulesAbsent, true)
+    for (const call of calls.slice(0, 2)) assert.equal(JSON.parse(call.init.body).expectedRulesAbsent, true)
+    assert.equal(calls.length, 3, '写入失败不启用；重试写入成功后才启用本次新建模块')
+    assert.deepEqual(JSON.parse(calls[2].init.body), { id: 'blank-3', enabled: true })
     assert.equal(createdModuleIds.has('blank-3'), false)
+  })
+})
+
+test('新建目标先保存关闭的规则再启用模块；后续写入不重复启用', async () => {
+  const created = new Set(['blank'])
+  const writer = createTemplateRuleWriter(undefined, created)
+  await withFetch([
+    ok({ createdRuleId: 'budget', rules: [rule] }),
+    ok({ enabled: ['blank'] }),
+    ok({ createdRuleId: 'budget-2', rules: [rule] }),
+  ], async (calls) => {
+    const result = await writer('blank', rule, [])
+    assert.equal(result.ok, true)
+    assert.equal(result.moduleEnabled, true)
+    assert.equal(JSON.parse(calls[0].init.body).createRule.enabled, false)
+    assert.equal(calls[0].init.headers[EDIT_TARGET_HEADER], 'blank')
+    assert.match(calls[0].url, /\/rules$/)
+    assert.match(calls[1].url, /\/module-enable$/)
+    assert.deepEqual(JSON.parse(calls[1].init.body), { id: 'blank', enabled: true })
+    assert.equal((await writer('blank', rule, [])).ok, true)
+    assert.equal(calls.length, 3)
+    assert.match(calls[2].url, /\/rules$/)
+  })
+})
+
+test('模块启用失败保留规则保存成功，不重复创建或自动启用已有目标', async () => {
+  const created = new Set(['blank'])
+  const writer = createTemplateRuleWriter(undefined, created)
+  await withFetch([
+    ok({ createdRuleId: 'budget', rules: [rule] }),
+    failure('module-enable-rejected', '启用失败'),
+    ok({ createdRuleId: 'budget', rules: [rule] }),
+  ], async (calls) => {
+    const result = await writer('blank', rule, [])
+    assert.equal(result.ok, true, '名称与规则已经持久化，不得伪报创建失败')
+    assert.equal(result.moduleEnableError, '启用失败')
+    assert.equal(created.has('blank'), false)
+    assert.equal((await writer('existing-disabled', rule, [{ id: 'existing-disabled', declares: [] }])).ok, true)
+    assert.equal(calls.length, 3, '既有未启用模块只写规则，不调用 module-enable')
+    assert.match(calls[2].url, /\/rules$/)
   })
 })
 

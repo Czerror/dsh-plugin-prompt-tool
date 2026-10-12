@@ -70,12 +70,13 @@ function makeSkillsState(overrides = {}) {
   }
 }
 
-function register(skillsState = makeSkillsState()) {
+function register(skillsState = makeSkillsState(), bridgeDeps = {}) {
   const { ctx, handlers } = makeHarness()
   registerSettingsBridge(ctx, {
     ns: 'prompt-tool',
     models: () => ({ available: true, providers: ['deepseek-official'] }),
     skills: () => skillsState,
+    ...bridgeDeps,
   })
   return handlers
 }
@@ -252,6 +253,48 @@ test('契约：载荷字段形状不进事务——端点保留自己的错误�
   }, txDeps())(txReq({ chunks: [JSON.stringify({ sessionId: 42 })] }), res)
   assert.equal(res.state.status, 400)
   assert.equal(txJson(res).code, 'skills-list-rejected')
+})
+
+test('契约：moduleName 的公开主语与身份安全边界', async () => {
+  const { userModulesDir } = await import('../../src/host/manifest.ts')
+  const subjectDir = join(userModulesDir(), 'module-name-subject')
+  mkdirSync(subjectDir, { recursive: true })
+  writeFileSync(join(subjectDir, 'module.yml'), 'id: module-name-subject\nname: 原名\nmodules: []\nrules: []\n', 'utf8')
+  const handlers = register(makeSkillsState(), {
+    moduleDirectory: (id) => id === 'module-name-subject' ? subjectDir : '',
+    overridesChanged: async () => { throw new Error('refresh unavailable') },
+  })
+  const path = SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.moduleName
+  const missing = fakeRes()
+  await handlers.get(path)(fakeReq({ body: {}, headers: {} }), missing)
+  assert.equal(missing.status, 400)
+  assert.equal(JSON.parse(missing.body).code, 'module-dir-unavailable')
+  const conflict = fakeRes()
+  await handlers.get(path)(fakeReq({ body: { name: '新名', expectedRevision: '0'.repeat(64), expectedModuleId: 'other' }, headers: { 'x-module-id': 'module-name-subject' } }), conflict)
+  assert.equal(conflict.status, 400)
+  assert.equal(JSON.parse(conflict.body).code, 'module-subject-conflict')
+  const readonly = fakeRes()
+  const readonlyHandlers = register(makeSkillsState(), { moduleDirectory: () => join(tmpdir(), 'pt-module-name-readonly') })
+  await readonlyHandlers.get(path)(fakeReq({ body: { name: '新名', expectedRevision: '0'.repeat(64), expectedModuleId: 'module-name-subject' }, headers: { 'x-module-id': 'module-name-subject' } }), readonly)
+  assert.equal(readonly.status, 403)
+  assert.equal(JSON.parse(readonly.body).code, 'module-readonly')
+  const read = fakeRes()
+  await handlers.get(path)(fakeReq({ body: {}, headers: { 'x-module-id': 'module-name-subject' } }), read)
+  assert.equal(read.status, 200)
+  const initial = JSON.parse(read.body).value
+  assert.equal(initial.name, '原名')
+  const saved = fakeRes()
+  await handlers.get(path)(fakeReq({ body: { name: '新名', expectedRevision: initial.revision, expectedModuleId: 'module-name-subject' }, headers: { 'x-module-id': 'module-name-subject' } }), saved)
+  assert.equal(saved.status, 200, '运行刷新失败不能伪报名称未保存')
+  assert.equal(JSON.parse(saved.body).value.persisted, true)
+  assert.match(JSON.parse(saved.body).value.publicationError, /refresh unavailable/)
+  const again = fakeRes()
+  await handlers.get(path)(fakeReq({ body: {}, headers: { 'x-module-id': 'module-name-subject' } }), again)
+  assert.equal(JSON.parse(again.body).value.name, '新名')
+  const stale = fakeRes()
+  await handlers.get(path)(fakeReq({ body: { name: '过期写入', expectedRevision: initial.revision, expectedModuleId: 'module-name-subject' }, headers: { 'x-module-id': 'module-name-subject' } }), stale)
+  assert.equal(stale.status, 409)
+  assert.equal(JSON.parse(stale.body).code, 'module-name-conflict')
 })
 
 test('契约：所有端点路径全部注册且无多余', () => {

@@ -1,13 +1,14 @@
 /** 模板库加载与插入：两页共用，顶部注入模板与层内工具按钮分别提供真实锚点。 */
 import { useCallback, useEffect, useRef, useState, type ReactNode, type RefObject } from 'react'
-import { bridgeCall, errorMessage } from '../../data/bridge-client.ts'
+import { bridgeCall, errorMessage, type BridgeResult } from '../../data/bridge-client.ts'
+import { EMPTY_FIELDS } from '../../data/prompt-tool-fields.ts'
 import type { PromptToolTranslate } from '../../locales.ts'
 import type { PromptConfigTemplateEntry } from '../../prompt-tool-types.ts'
 import type { RuleDefinition, RulesSnapshot } from '../../../shared/rules.ts'
 import type { PromptToolStore } from '../../data/use-prompt-tool-store.ts'
 import type { ModuleRuleEditor } from '../../data/use-rule-editor.ts'
 import { getRulesDraft } from '../../data/rule-drafts.ts'
-import { BLANK_MODULE_TEMPLATE } from '../../data/module-subject.ts'
+import { BLANK_MODULE_TEMPLATE, isWritableTarget } from '../../data/module-subject.ts'
 import { EngineModuleActions, type ModuleCreateItem } from '../modules/EngineModuleList.tsx'
 import { insertToolTemplateIntoDraft } from '../tools/CustomToolsCard.tsx'
 import { TemplatePicker, TemplateTargetPicker, type TemplateTargetListEntry } from '../../ui/TemplatePicker.tsx'
@@ -26,14 +27,15 @@ export const createTemplateRule = (moduleId: string, rule: RuleDefinition, rules
 type TemplateModuleDeclaration = { id: string; declares?: readonly string[] }
 type PendingTemplate = { intentId: number; entry: PromptConfigTemplateEntry }
 
-/** 保留本次挂载内已成功建立 rules 节的事实，避免首写后继续相信陈旧 /meta。 */
+/** 保留成功首写事实；仅本次新建目标在规则提交后启用，不改变规则开关。 */
 export function createTemplateRuleWriter(
   markModuleDeclared?: (moduleId: string, section: string) => void,
   rulesAbsentModules?: Set<string>,
 ) {
   const declaredModules = new Set<string>()
   const retryAbsentModules = new Set<string>()
-  return async (moduleId: string, rule: RuleDefinition, modules: readonly TemplateModuleDeclaration[] | undefined) => {
+  return async (moduleId: string, rule: RuleDefinition, modules: readonly TemplateModuleDeclaration[] | undefined): Promise<BridgeResult<RulesSnapshot> & { moduleEnabled?: boolean; moduleEnableError?: string }> => {
+    const newlyCreated = rulesAbsentModules?.has(moduleId) === true
     const module = modules?.find(candidate => candidate.id === moduleId)
     const rulesDeclared = declaredModules.has(moduleId)
       ? true
@@ -45,9 +47,13 @@ export function createTemplateRuleWriter(
       rulesAbsentModules?.delete(moduleId)
       retryAbsentModules.delete(moduleId)
       markModuleDeclared?.(moduleId, 'rules')
+      if (newlyCreated) {
+        // 创建已提交：启用失败只报告后续动作失败，不能重放 createRule。
+        const enabled = await bridgeCall('moduleEnable', { id: moduleId, enabled: true })
+        return { ...result, ...(enabled.ok ? { moduleEnabled: true } : { moduleEnableError: enabled.message ?? enabled.code ?? 'module-enable-failed' }) }
+      }
     } else if (rulesDeclared === false) {
-      // 外部集合只标记尚未完成的首写；失败后由本 writer 保留重试的 absent 前置。
-      rulesAbsentModules?.delete(moduleId)
+      // 首写失败保留新建身份，重试成功后仍只启用本次新建模块。
       retryAbsentModules.add(moduleId)
     }
     return result
@@ -239,12 +245,10 @@ export function useTemplateCreate(props: {
   /** 菜单项：注入模板的层清单（id 形如 `tpl:<layer>`）。 */
   items: readonly ModuleCreateItem[]
   scope: TemplatePickerScope
-  /** 目标选择的候选：**只列可写模块**（未启用／只读／损坏不出现）。 */
+  /** 目标选择的候选：只列可写模块，包含未启用模块。 */
   targets: readonly TemplateTargetListEntry[]
   /** 已存在的模块目录 id 全集（含未启用）：只影响新建 id 预览（种子化的空白模板默认未启用）。 */
   existingIds: readonly string[]
-  /** 第二道写闸：目标此刻是否可写（与候选过滤同一判据，由调用方给）。 */
-  canWrite: (moduleId: string) => boolean
   /** 当前工作区的逐模块编辑器（写入按所选目标取；不在集合里＝尚未读回）。 */
   owners: readonly ModuleRuleEditor[]
   /** 创建成功后展开新卡（主语＝所选目标模块）。 */
@@ -255,7 +259,7 @@ export function useTemplateCreate(props: {
   /** 卡内「添加工具模板…」入口：主语＝**该卡所属模块**（工具模板不进目标选择那一步）。 */
   openToolsForModule: (moduleId: string, anchor: HTMLButtonElement) => void
 } {
-  const { store, t, items, scope, targets, existingIds, canWrite, owners, onCreated } = props
+  const { store, t, items, scope, targets, existingIds, owners, onCreated } = props
   /** 卡内工具模板入口打开时记下主权模块：点选模板后要落进它的工具草稿。 */
   const toolModule = useRef<string>()
   const writeGeneration = useRef(0)
@@ -264,11 +268,11 @@ export function useTemplateCreate(props: {
   const writeTemplateRule = useRef(createTemplateRuleWriter(store.markModuleDeclared, createdModuleIds.current)).current
   const writeInto = useCallback(async (moduleId: string, config: RuleDefinition, file: string): Promise<void> => {
     const generation = writeGeneration.current
-    if (!canWrite(moduleId)) {
+    if (!createdModuleIds.current.has(moduleId) && !isWritableTarget(store.getMeta().modules, moduleId)) {
       store.showNotice('error', `${t('rules.create.failed')}（moduleId=${moduleId}）`)
       return
     }
-    const result = await store.enqueueRuleTask(() => writeTemplateRule(moduleId, config, store.meta.modules))
+    const result = await store.enqueueRuleTask(() => writeTemplateRule(moduleId, config, store.getMeta().modules))
     if (!result.ok) {
       if (writeGeneration.current !== generation) return
       store.showNotice('error', `${t('rules.create.failed')}（moduleId=${moduleId}）`)
@@ -281,20 +285,29 @@ export function useTemplateCreate(props: {
       applyTemplatePublicationState(store.editorDrafts, moduleId, result.value)
       store.publishDrafts()
     }
+    const refreshed = result.moduleEnabled === true ? await store.load({ silent: true }) : undefined
     if (writeGeneration.current !== generation) return
     if (owner !== undefined) {
       // 让干净草稿刷新；有未提交输入时由 editor 保留本地草稿并进入冲突态。
       void owner.editor.load(true)
     }
     onCreated(moduleId, createdRuleId)
-    if (result.value.publicationPending === true || result.value.publicationError !== undefined) {
+    if (result.moduleEnableError !== undefined) {
+      store.showNotice('error', t('rules.create.enableFailed', { id: moduleId, reason: result.moduleEnableError }))
+    } else if (refreshed === EMPTY_FIELDS) {
+      store.showNotice('error', t('rules.create.refreshFailed', { id: moduleId }))
+    } else if (result.value.publicationPending === true || result.value.publicationError !== undefined) {
       store.showNotice('error', `${t('persona.sources.publicationPending')}：${result.value.publicationError ?? '请重试'}`)
     } else {
       store.showNotice('ok', t('templates.inserted', { file, id: createdRuleId }))
     }
-  }, [canWrite, onCreated, owners, store, t, writeTemplateRule])
+  }, [onCreated, owners, store, t, writeTemplateRule])
   const picker = useTemplatePicker((config, target, file) => { void writeInto(target.moduleId, config, file) }, store.showNotice, t, scope)
-  const cancelTarget = useCallback(() => { picker.cancelTarget() }, [picker])
+  const cancelTarget = useCallback(() => {
+    writeGeneration.current++
+    createdModuleIds.current.clear()
+    picker.cancelTarget()
+  }, [picker])
   const openToolsForModule = useCallback((moduleId: string, anchor: HTMLButtonElement): void => {
     toolModule.current = moduleId
     picker.openTools(anchor)
@@ -321,7 +334,9 @@ export function useTemplateCreate(props: {
       newModuleTemplate={BLANK_MODULE_TEMPLATE}
       onPick={(moduleId) => picker.confirmTarget({ moduleId }, undefined, picker.targetIntentId)}
       onCreate={store.createModule === undefined ? undefined : async () => {
+        const generation = writeGeneration.current
         const moduleId = await store.createModule!()
+        if (generation !== writeGeneration.current) return undefined
         if (moduleId !== undefined) createdModuleIds.current.add(moduleId)
         return moduleId
       }}

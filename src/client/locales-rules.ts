@@ -49,10 +49,12 @@ export const RULES_ZH = {
   // 页级创建：选完注入模板**只多这一步**选目标（已存在模块 / 新建空白模块）。
   'rules.create.title': '选择目标模块',
   'rules.create.new': '新建空白模块',
-  'rules.create.newHint': '从空白模板新建并写入。模块 id 由服务端定（本次为 {id}，重名会自动加后缀，以服务端结果为准）。',
+  'rules.create.newHint': '新建“默认模块”并写入模板，保存成功后启用模块，规则仍保持关闭。模块 id 由服务端定（预计 {id}，以服务端结果为准）。',
   'rules.create.submit': '新建并写入',
   'rules.create.cancel': '取消',
   'rules.create.failed': '新建模块失败，请重试',
+  'rules.create.enableFailed': '模板已保存到模块 {id}，但启用失败：{reason}。请到模块页启用，无需重复添加模板。',
+  'rules.create.refreshFailed': '模板已保存，模块 {id} 已启用，但列表刷新失败；请重新打开工作台，无需重复添加模板。',
   'rules.create.none': '暂无已安装模块',
 } as const
 export const RULES_EN: Record<keyof typeof RULES_ZH, string> = {
@@ -103,9 +105,11 @@ export const RULES_EN: Record<keyof typeof RULES_ZH, string> = {
   'rules.actionField.action': 'Post-execute verdict', 'rules.actionField.decision': 'Decision', 'rules.actionField.toolNames': 'Target tools',
   'rules.create.title': 'Choose the target module',
   'rules.create.new': 'New blank module',
-  'rules.create.newHint': 'Create from the blank template and insert. The server picks the module id (this time {id}; a name clash gets a numeric suffix, so the server result is authoritative).',
+  'rules.create.newHint': 'Create a module named 默认模块 and insert the template. Enable the module after saving; keep the rule disabled. The server assigns the id (estimated {id}).',
   'rules.create.submit': 'Create and insert',
   'rules.create.cancel': 'Cancel',
   'rules.create.failed': 'Failed to create the module; try again',
+  'rules.create.enableFailed': 'The template is saved in module {id}, but enabling failed: {reason}. Enable it on the Modules page; do not insert the template again.',
+  'rules.create.refreshFailed': 'The template is saved and module {id} is enabled, but the list could not refresh. Reopen the workspace; do not insert the template again.',
   'rules.create.none': 'No installed module yet',
 }

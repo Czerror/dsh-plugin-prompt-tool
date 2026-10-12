@@ -6,7 +6,7 @@ import { configIdentityKey } from '../../../shared/module-config-order.ts'
 import type { PromptToolStore } from '../../data/use-prompt-tool-store.ts'
 import { usePromptToolFields } from '../../data/use-prompt-tool-fields.ts'
 import { useModuleRuleEditors, type ModuleRuleEditor } from '../../data/use-rule-editor.ts'
-import { BLANK_MODULE_TEMPLATE, canEditModule, isWritableTarget, writableModuleTargets } from '../../data/module-subject.ts'
+import { BLANK_MODULE_TEMPLATE, canEditModule, writableModuleTargets } from '../../data/module-subject.ts'
 import { useModuleConfigOrder } from '../../data/use-module-config-order.ts'
 import { hasRuleFields, rulesDirty } from '../../data/rule-drafts.ts'
 import { instructionFileIdOf } from '../../data/prompt-config-content.ts'
@@ -154,7 +154,6 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
     scope: props.scope ?? 'main',
     targets: writableModuleTargets(store.meta.modules).sort((a, b) => a.id.localeCompare(b.id)),
     existingIds: (store.meta.modules ?? []).map(module => module.id),
-    canWrite: (moduleId) => isWritableTarget(store.meta.modules, moduleId),
     owners,
     onCreated: (moduleId, configKey) => setExpanded(configIdentityKey({ moduleId, configId: configKey })),
   })

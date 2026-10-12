@@ -117,7 +117,7 @@ export function packageModulesDir(): string {
  */
 const BLANK_MODULE_TEMPLATE: Record<string, unknown> = {
   id: 'blank',
-  name: '空白模块',
+  name: '默认模块',
   version: '1.0.0',
   engineCompat: '>=0.4.2',
   description: '空白起点：不预置任何配置，创建入口选完模板后可写入第一节。',

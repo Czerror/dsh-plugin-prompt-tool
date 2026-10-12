@@ -51,6 +51,7 @@ import {
 import { mergeModuleIntoModule, removeMergedModule } from '../host/characters.ts'
 import { moduleDeclarations } from '../host/module-declarations.ts'
 import { ensureModuleSlices, loadModuleDefinition, ModuleRulesError } from '../host/module-storage.ts'
+import { ModuleNameError, readModuleName, writeModuleName } from '../host/module-name.ts'
 import { editModuleVariables, readModuleVariables } from '../host/module-variables.ts'
 import type { ModuleVariableRevisions, ModuleVariablesSnapshot } from '../shared/module-variables.ts'
 import { createAssetSources } from '../host/asset-sources.ts'
@@ -1794,6 +1795,36 @@ export function registerSettingsBridge(
               return
             }
             tx.write(200, { ok: true, value: { path: result.path } })
+          } }),
+        }),
+        sctx.webServer.register({
+          kind: 'exact',
+          path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.moduleName,
+          handler: route({ body: 'json', handle: async (tx) => {
+            const dir = subjectGate(tx, 'moduleName', { write: tx.record.name !== undefined })
+            if (dir === undefined) return
+            try {
+              const record = tx.record
+              const allowed = record.name === undefined ? [] : ['name', 'expectedRevision', 'expectedModuleId']
+              if (Object.keys(record).some((key) => !allowed.includes(key))) throw new ModuleNameError('名称请求包含未知字段')
+              if (record.name === undefined) {
+                tx.write(200, { ok: true, value: readModuleName(dir) })
+                return
+              }
+              if (record.expectedRevision === undefined || record.expectedModuleId === undefined) throw new ModuleNameError('保存名称必须提供 expectedRevision 和 expectedModuleId')
+              const value = writeModuleName(dir, record as { name: unknown; expectedRevision: unknown; expectedModuleId: unknown })
+              let publicationError: string | undefined
+              try { await deps.overridesChanged?.(basename(dir)) }
+              catch (error) { publicationError = String(error) }
+              tx.write(200, { ok: true, value: { ...value, persisted: true, ...(publicationError === undefined ? {} : { publicationError }) } })
+            } catch (error) {
+              if (error instanceof ModuleRulesError && error.persisted) {
+                tx.write(200, { ok: true, value: { ...readModuleName(dir), persisted: true, publicationError: error.message } })
+                return
+              }
+              const typed = error instanceof ModuleNameError || error instanceof ModuleRulesError ? error : undefined
+              tx.write(typed?.status ?? 400, { ok: false, code: typed?.code ?? 'module-name-rejected', message: error instanceof Error ? error.message : String(error) })
+            }
           } }),
         }),
         sctx.webServer.register({

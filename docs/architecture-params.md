@@ -15,8 +15,11 @@
 | 人设来源选择 | config.yml.personaSources | main/subagent 各选一个模块 ID 或官方默认，不存正文 |
 | 自定义工具、子代理策略 | customTools / subagentToolPolicy | 经验证的内联运行输入 |
 | 外部来源事实 | 注入动作 params.source | 导入报告与导出元数据 |
+| 模块显示名称 | module.yml.name | 模块卡、目标选择与人设来源目录；不改变模块 ID 或目录 |
 
 当前格式的决策见 [ADR-0013](adr/0013-native-context-module-state.md)。模块不注册为官方会话预设、不保存会话绑定，不通过 settings 携带规则正文或大文本。
+
+`/module-name` 通过显式 `x-module-id` 读取 `{ name, revision }`；保存仅接受 `name`、`expectedModuleId`、`expectedRevision`，名称修剪后为 1–128 个字符。写入先校验用户可写目录、身份和完整定义版本，再用 YAML Document 与既有原子提交只修改 `name`，保留注释、未知字段与规则。过期版本返回 409；已保存但刷新失败返回 `persisted` 与 `publicationError`，不伪报保存失败。模块显示名称不代表默认主语，空白创建名为“默认模块”也不会建立隐式写入目标。
 
 ## 部署设置与编辑目标
 

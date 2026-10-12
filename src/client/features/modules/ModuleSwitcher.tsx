@@ -1,5 +1,5 @@
-/** 模块切换器：模块全部在用户目录（首次启动种子化），列表点击切换；新建 = 从内置模板复制还原。 */
-import { memo, useRef, useState, type ReactNode } from 'react'
+/** 模块管理：名称与创建归模块页；规则编辑仍归主会话／子代理。 */
+import { memo, useEffect, useRef, useState, type ReactNode } from 'react'
 import { usePromptToolFields } from '../../data/use-prompt-tool-fields.ts'
 import { EMPTY_FIELDS } from '../../data/prompt-tool-fields.ts'
 import clsx from 'clsx'
@@ -18,10 +18,62 @@ import { ModuleExportDialog } from './ModuleExportDialog.tsx'
 import { useImportPreviewFlow } from '../../data/use-import-preview-flow.ts'
 import { Switch } from '../../ui/Switch.tsx'
 import { Button } from '../../ui/Button.tsx'
+import { TextInput } from '../../ui/TextInput.tsx'
 import { StatusBadge } from '../../ui/StatusBadge.tsx'
 import sharedCss from '../../ui/controls.module.css'
 
 const styles = sharedCss
+
+function ModuleNameDialog(props: { module: ModuleSummary; t: PromptToolTranslate; onClose: () => void; onSaved: (publicationError?: string) => Promise<void> }): ReactNode {
+  const { module, t } = props
+  const [name, setName] = useState(module.name)
+  const [revision, setRevision] = useState<string>()
+  const [busy, setBusy] = useState(false)
+  const busyRef = useRef(false)
+  const activeRef = useRef(true)
+  const [loaded, setLoaded] = useState(false)
+  const [error, setError] = useState<string>()
+  useEffect(() => {
+    let active = true
+    activeRef.current = true
+    void bridgeCall('moduleName', {}, module.id).then((result) => {
+      if (!active) return
+      if (result.ok) { setName(result.value.name); setRevision(result.value.revision); setLoaded(true) }
+      else setError(result.message ?? t('moduleSwitcher.name.readFailed'))
+    })
+    return () => { active = false; activeRef.current = false }
+  }, [module.id, t])
+  const save = async (): Promise<void> => {
+    if (revision === undefined || busyRef.current) return
+    busyRef.current = true; setBusy(true); setError(undefined)
+    const result = await bridgeCall('moduleName', { name, expectedRevision: revision, expectedModuleId: module.id }, module.id)
+    if (!activeRef.current) return
+    if (result.ok) {
+      await props.onSaved(result.value.publicationError)
+    } else {
+      if (result.code === 'module-name-conflict' || result.code === 'rules-conflict') setRevision(undefined)
+      setError(result.message ?? t('moduleSwitcher.name.saveFailed'))
+      busyRef.current = false; setBusy(false)
+    }
+  }
+  const reload = async (): Promise<void> => {
+    if (busyRef.current) return
+    busyRef.current = true; setBusy(true)
+    const result = await bridgeCall('moduleName', {}, module.id)
+    if (!activeRef.current) return
+    if (result.ok) {
+      if (!loaded) setName(result.value.name)
+      setRevision(result.value.revision); setLoaded(true); setError(undefined)
+    } else setError(result.message ?? t('moduleSwitcher.name.readFailed'))
+    busyRef.current = false; setBusy(false)
+  }
+  const close = (): void => { if (!busyRef.current) props.onClose() }
+  return <DialogSurface title={t('moduleSwitcher.name.title')} closeLabel={t('moduleSwitcher.name.close')} onClose={close}
+    footer={<><Button variant="outline" shape="pill" size="md" disabled={busy} onClick={close}>{t('moduleSwitcher.name.cancel')}</Button>{error !== undefined && <Button variant="outline" shape="pill" size="md" disabled={busy} onClick={() => void reload()}>{t('moduleSwitcher.name.reload')}</Button>}<Button variant="primary" shape="pill" size="md" disabled={busy || !loaded || revision === undefined || name.trim().length === 0} onClick={() => void save()}>{t('moduleSwitcher.name.save')}</Button></>}>
+    <TextInput value={name} maxLength={128} autoFocus aria-label={t('moduleSwitcher.name.label')} disabled={busy || !loaded} onChange={(event) => setName(event.target.value)} />
+    {error !== undefined && <p className={styles.configFieldHint} role="alert">{error}</p>}
+  </DialogSurface>
+}
 
 export const ModuleSwitcher = memo(function ModuleSwitcher(props: { store: PromptToolStore; t: PromptToolTranslate }): ReactNode {
   const { store, t } = props
@@ -32,6 +84,9 @@ export const ModuleSwitcher = memo(function ModuleSwitcher(props: { store: Promp
   const [pickerOpen, setPickerOpen] = useState(false)
   const [importOpen, setImportOpen] = useState(false)
   const [exportTarget, setExportTarget] = useState<{ id: string; name: string }>()
+  const [nameTarget, setNameTarget] = useState<ModuleSummary | undefined>()
+  const [creating, setCreating] = useState(false)
+  const creatingRef = useRef(false)
   const pickerAnchorRef = useRef<HTMLButtonElement>(null)
 
   // 预览流程（与角色卡 JSON 导入共用同一状态机）：确认回传来源摘要 + 预览版本。
@@ -102,6 +157,15 @@ export const ModuleSwitcher = memo(function ModuleSwitcher(props: { store: Promp
     }
   }
 
+  const createBlankModule = async (): Promise<void> => {
+    if (creatingRef.current) return
+    creatingRef.current = true; setCreating(true)
+    try {
+      const id = await store.createModule()
+      if (id !== undefined) setPickerOpen(false)
+    } finally { creatingRef.current = false; setCreating(false) }
+  }
+
   /**
    * 启用/停用模块 = 改存储根 `config.yml` 的启用表。
    *
@@ -140,6 +204,12 @@ export const ModuleSwitcher = memo(function ModuleSwitcher(props: { store: Promp
         onRepreview={() => { void flow.repreview() }} onRefresh={() => { void flow.retryRefresh() }}
         onUse={flow.resultLabel === undefined ? undefined : () => { void setModuleEnabled(flow.resultLabel!, true); flow.cancel(); setImportOpen(false) }} />}
       {exportTarget && <ModuleExportDialog t={t} module={exportTarget} onClose={() => setExportTarget(undefined)} />}
+      {nameTarget && <ModuleNameDialog key={nameTarget.id} module={nameTarget} t={t} onClose={() => setNameTarget(undefined)} onSaved={async (publicationError) => {
+        setNameTarget(undefined)
+        const refreshed = await store.load({ silent: true })
+        if (publicationError !== undefined) store.showNotice('error', t('moduleSwitcher.name.savedPending', { reason: publicationError }))
+        else if (refreshed !== EMPTY_FIELDS) store.showNotice('ok', t('moduleSwitcher.name.saved'))
+      }} />}
       <div className={styles.moduleGrid}>
         {modules.length === 0 ? (
           <p className={styles.readOnly} role="status">{t('moduleSwitcher.empty')}</p>
@@ -147,6 +217,10 @@ export const ModuleSwitcher = memo(function ModuleSwitcher(props: { store: Promp
       </div>
       {pickerOpen && (
         <DialogSurface title={t('moduleSwitcher.dialog.title')} closeLabel={t('moduleSwitcher.dialog.close')} anchorRef={pickerAnchorRef} onClose={() => setPickerOpen(false)}>
+          <button type="button" className={styles.templateModalItem} disabled={creating} onClick={() => void createBlankModule()}>
+            <strong>{t('moduleSwitcher.custom.title')}</strong>
+            <small>{t('moduleSwitcher.custom.detail')}</small>
+          </button>
           {templates.length === 0 && <p className={styles.configFieldHint}>{t('moduleSwitcher.dialog.noTemplates')}</p>}
           {templates.map((template) => (
             <HintTooltip key={template.id} label={t('moduleSwitcher.template.hint', { id: template.id })}>
@@ -190,6 +264,8 @@ export const ModuleSwitcher = memo(function ModuleSwitcher(props: { store: Promp
                 ? t('moduleSwitcher.card.disable.hint', { name: module.name })
                 : t('moduleSwitcher.card.enable.hint', { name: module.name })}
             onChange={(next) => void setModuleEnabled(module.id, next)} />
+          <Button variant="ghost" size="sm" disabled={blocked || module.user !== true || module.facts?.editable !== true}
+            aria-label={t('moduleSwitcher.name.editAria', { name: module.name })} onClick={() => setNameTarget(module)}>{t('moduleSwitcher.name.edit')}</Button>
           <HintTooltip label={t('moduleSwitcher.export')}>
             <button type="button" className={styles.moduleIconButton}
               aria-label={t('moduleSwitcher.export.aria', { name: module.name })}

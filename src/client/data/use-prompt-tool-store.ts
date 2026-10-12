@@ -113,6 +113,8 @@ export interface PromptToolStore {
   /** 草稿池写入后调用：镜像控件一起重渲染，读同一草稿键。 */
   publishDrafts: () => void
   meta: EngineMeta
+  /** 异步写入读取最新事实，不捕获创建前的渲染快照。 */
+  getMeta: () => EngineMeta
   /** 记录成功写入的模块声明，供跨页面模板创建共享最新主语事实。 */
   markModuleDeclared: (moduleId: string, section: string) => void
   loading: boolean
@@ -297,6 +299,7 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
   const [meta, setMeta] = useState<EngineMeta>(EMPTY_META)
   /** meta 的 ref 镜像：写盘守卫与按主语读取在回调里执行，等下一次渲染的快照会过期。 */
   const metaRef = useRef<EngineMeta>(EMPTY_META)
+  const getMeta = useCallback(() => metaRef.current, [])
   const publishMeta = useCallback((next: EngineMeta) => { metaRef.current = next; setMeta(next) }, [])
   const markModuleDeclared = useCallback((moduleId: string, section: string): void => {
     const current = metaRef.current
@@ -608,17 +611,17 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
       const policySnapshot = instructionPolicyRef.current
       const boot = await bridgeCall('bootstrap', sessionId === undefined ? {} : { sessionId })
       if (seq !== loadSeqRef.current || sessionId !== api.currentSessionId()) return EMPTY_FIELDS
-      // 读取期间用户已修改草稿：不应用服务端快照覆盖，保留草稿；后续保存/读取再同步。
-      if (draftVersionRef.current !== draftVersion) return fieldsRef.current
       if (!boot.ok) {
         showNotice('error', '读取配置失败：' + (boot.message ?? 'bootstrap unavailable'))
         return EMPTY_FIELDS
       }
+      // 模块目录事实不属于字段草稿：创建/启用后的刷新不能被无关输入拦住。
+      if (boot.meta !== undefined) publishMeta(boot.meta.meta)
+      if (draftVersionRef.current !== draftVersion) return fieldsRef.current
       // 两次读取都完成后才应用快照；任何 await 期间的新上下文/草稿/文件结果优先。
       const policyRes = await bridgeCall('instructionsPolicy')
       if (seq !== loadSeqRef.current || sessionId !== api.currentSessionId()) return EMPTY_FIELDS
       if (draftVersionRef.current !== draftVersion || instructionPoolRef.current !== instructionSnapshot) return fieldsRef.current
-      if (boot.meta !== undefined) publishMeta(boot.meta.meta)
       // /bootstrap 已携带 settings descriptor（value/base/revision）：直接作为 fields
       // 主源，不再 await settings.ensure()——宿主全量 describe mirror 是切换模块后
       // 配置卡十几秒才出现的瓶颈。
@@ -1252,6 +1255,7 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
     subscribeDrafts,
     publishDrafts,
     meta,
+    getMeta,
     markModuleDeclared,
     loading,
     modelCatalog,

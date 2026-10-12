@@ -63,6 +63,7 @@ export const BRIDGE_ENDPOINTS = {
   moduleClone: '/module-clone',
   moduleDuplicate: '/module-duplicate',
   moduleOpen: '/module-open',
+  moduleName: '/module-name',
   moduleEnable: '/module-enable',
   moduleConfigOrder: '/module-config-order',
   charactersImport: '/characters-import',
@@ -147,6 +148,7 @@ export const BRIDGE_SUBJECT_POLICY = {
   moduleClone: 'none',
   moduleDuplicate: 'none',
   moduleOpen: 'none',
+  moduleName: 'required',
   moduleEnable: 'none',
   moduleConfigOrder: 'none',
   charactersImport: 'required',
@@ -282,6 +284,7 @@ export interface BridgeRequestMap {
   moduleClone: { id: string; autoSuffix?: boolean }
   moduleDuplicate: { id: string }
   moduleOpen: { id: string }
+  moduleName: { name?: string; expectedRevision?: string; expectedModuleId?: string }
   moduleEnable: { id: string; enabled: boolean }
   moduleConfigOrder: { moduleId: string } | { moduleId?: string; entries: ModuleConfigIdentity[]; expectedRevision: string } | undefined
   /** 角色卡来源导入为普通模块；预览只读，提交与模块安装共用版本边界。 */
@@ -525,6 +528,7 @@ export interface BridgeValueMap {
   moduleClone: { id: string }
   moduleDuplicate: { id: string }
   moduleOpen: { path: string }
+  moduleName: { name: string; revision: string; persisted?: boolean; publicationError?: string }
   moduleEnable: { enabled: string[] }
   moduleConfigOrder: ModuleConfigOrderSnapshot
   charactersImport: {

@@ -56,7 +56,7 @@ test('新建空白模块：引擎内组装出 module.yml，目录名=id，冲突
   assert.doesNotMatch(definition, /internal/, 'meta.internal 机制随目录复制源退役，产物里不得再出现')
   const spec = parseYaml(definition)
   assert.equal(spec.id, 'blank')
-  assert.equal(spec.name, '空白模块')
+  assert.equal(spec.name, '默认模块')
   assert.deepEqual(spec.modules, ['rule-engine'])
   assert.equal(spec.order, 9)
   assert.equal(existsSync(join(packageModulesDir(), 'blank')), false, '包内不再有 blank 目录（源是内存常量）')
@@ -65,6 +65,7 @@ test('新建空白模块：引擎内组装出 module.yml，目录名=id，冲突
   assert.equal(again.ok, true, again.message)
   assert.equal(again.id, 'blank-2')
   assert.equal(parseYaml(readFileSync(join(root, 'blank-2', 'module.yml'), 'utf8')).id, 'blank-2')
+  assert.equal(parseYaml(readFileSync(join(root, 'blank-2', 'module.yml'), 'utf8')).name, '默认模块')
 })
 
 test('新建空白模块：未知模板 id 仍被拒，模块根不留痕迹', () => {
