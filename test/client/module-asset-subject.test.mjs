@@ -320,9 +320,9 @@ const bootstrapPayload = (modules) => ({
 })
 
 /** SSR 下拿到 store 实例（不跑 effect：模块类读取由测试显式触发）。 */
-function mountStore() {
+function mountStore(api = { currentSessionId: () => undefined }) {
   let store
-  function Probe() { store = usePromptToolStore({ currentSessionId: () => undefined }, settingsStub()); return null }
+  function Probe() { store = usePromptToolStore(api, settingsStub()); return null }
   renderElement(Probe, {})
   return store
 }
@@ -424,6 +424,65 @@ test('store：模块刷新期间新输入保留，迟到 bootstrap 不回退目�
     await store.moduleActions.refresh()
     delayedBoot(); await older; await tick()
     assert.deepEqual(store.moduleParamsOf('mod-a'), EMPTY_PARAMS, '旧 bootstrap 不复活已从目录事实移除的模块缓存')
+  } finally { globalThis.fetch = original }
+})
+
+test('store：会话切换期间草稿变更仍回填全局与项目指令卡', async () => {
+  const original = globalThis.fetch
+  let session = 'session-a'
+  let releaseBootstrap
+  const files = [
+    { fileId: 'global-agents', path: '/home/.dsh/AGENTS.md', displayPath: '~/.dsh/AGENTS.md', scope: 'global', status: 'ready', text: 'global', revision: 'g1' },
+    { fileId: 'project-agents', path: '/repo/AGENTS.md', displayPath: 'AGENTS.md', scope: 'project', status: 'ready', text: 'project', revision: 'p1' },
+    { fileId: 'project-claude', path: '/repo/CLAUDE.md', displayPath: 'CLAUDE.md', scope: 'project', status: 'ready', text: 'claude', revision: 'c1' },
+  ]
+  const cards = files.map((file, index) => ({
+    id: `agents-file-${file.fileId}`,
+    name: file.displayPath,
+    sourceKind: 'instruction-file',
+    origin: { kind: 'instruction-file', fileId: file.fileId },
+    params: { fileId: file.fileId, scope: file.scope, file: file.path },
+    layer: 'pre-step', order: 30 + index,
+  }))
+  const payload = (contextId) => ({
+    ...bootstrapPayload(twoModules),
+    promptConfigs: { promptConfigs: cards },
+    instructions: { context: { contextId, cwd: '/repo', source: 'session' }, files, owner: { officialInstructions: null } },
+  })
+  globalThis.fetch = async (url) => {
+    const path = String(url)
+    if (path.endsWith('/bootstrap')) {
+      const boot = payload(session)
+      if (session === 'session-b') await new Promise(resolve => { releaseBootstrap = resolve })
+      return { status: 200, text: async () => JSON.stringify(boot) }
+    }
+    if (path.endsWith('/instructions-policy')) return { status: 200, text: async () => JSON.stringify({ ok: true, value: { policy: { files: {} }, revision: null, exists: false } }) }
+    return { status: 200, text: async () => JSON.stringify({ ok: true, value: {} }) }
+  }
+  try {
+    const api = { currentSessionId: () => session }
+    const store = mountStore(api)
+    await store.load()
+    assert.equal(store.getFields().promptConfigs.length, 3)
+    session = 'session-b'
+    const pending = store.load()
+    await tick()
+    assert.equal(store.getFields().promptConfigs.length, 0, '切换期间先清空旧上下文指令卡')
+    store.patch({ promptText: 'draft during session switch' })
+    releaseBootstrap()
+    await pending
+    await tick()
+    const ids = store.getFields().promptConfigs.map(config => config.origin?.fileId)
+    assert.deepEqual(ids, files.map(file => file.fileId), '迟到响应不应丢失全局与项目指令卡')
+    assert.equal(store.getFields().promptText, 'draft during session switch', '既有非指令草稿仍应保留')
+    const older = store.load()
+    await tick()
+    session = 'session-c'
+    await store.load()
+    releaseBootstrap()
+    await older
+    assert.equal(store.getInstructionPool().contextId, 'session-c', '旧会话迟到响应不得覆盖当前文件上下文')
+    assert.deepEqual(store.getFields().promptConfigs.map(config => config.origin?.fileId), ids)
   } finally { globalThis.fetch = original }
 })
 

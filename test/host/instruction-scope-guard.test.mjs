@@ -49,7 +49,7 @@ function fakeRes() {
   }
 }
 
-function makeHarness(cwdBySession) {
+function makeHarness(cwdBySession, stat = async () => undefined) {
   const handlers = new Map()
   const sctx = {
     settings: {
@@ -60,7 +60,9 @@ function makeHarness(cwdBySession) {
     webServer: { register: ({ path, handler }) => { handlers.set(path, handler); return () => {} } },
     get: (name) => name === 'agents'
       ? { get: (id) => (cwdBySession[id] === undefined ? undefined : { session: { header: { cwd: cwdBySession[id] } } }) }
-      : undefined,
+      : name === 'sessionPersistence'
+        ? { stat }
+        : undefined,
     effect: (fn) => fn(),
   }
   const ctx = { inject: (_deps, cb) => cb(sctx) }
@@ -138,12 +140,14 @@ test('目录候选与越界符号链接都不进入白名单，也不能被写�
   }
 })
 
-test('两个本地会话各自解析工作区：文件集与 contextId 不串，旧上下文写请求 409（T11/T12）', async () => {
-  const { call } = makeHarness({ 'session-a': rootA, 'session-b': rootB })
+test('存活与冷态本地会话各自解析工作区：文件集不串，旧上下文写请求 409（T11/T12）', async () => {
+  const { call } = makeHarness({ 'session-a': rootA }, async id =>
+    ['session-a', 'session-b'].includes(id) ? { header: { cwd: rootB } } : undefined)
   const a = await call(BRIDGE_ENDPOINTS.bootstrap, { sessionId: 'session-a' })
   const b = await call(BRIDGE_ENDPOINTS.bootstrap, { sessionId: 'session-b' })
   assert.equal(a.body.instructions.context.cwd, rootA)
   assert.equal(b.body.instructions.context.cwd, rootB)
+  assert.equal(b.body.instructions.context.source, 'session', '冷态会话从官方持久化元数据恢复工作区')
   assert.notEqual(a.body.instructions.context.contextId, b.body.instructions.context.contextId)
   assert.deepEqual(
     a.body.instructions.files.map((file) => file.text),
@@ -170,8 +174,20 @@ test('两个本地会话各自解析工作区：文件集与 contextId 不串，
   assert.equal(readFileSync(join(rootB, 'CLAUDE.md'), 'utf8'), 'WORKSPACE B\n', 'B 的文件未被改动')
   assert.equal(readFileSync(join(rootA, 'AGENTS.md'), 'utf8'), 'WORKSPACE A\n', 'A 的文件未被改动')
 
-  // 未存活的会话不借用别的会话工作区：回退部署 cwd，并如实标记来源。
+  const bFile = b.body.instructions.files.find((file) => file.scope === 'project')
+  const write = await call(BRIDGE_ENDPOINTS.agentsFile, {
+    sessionId: 'session-b', contextId: b.body.instructions.context.contextId,
+    fileId: bFile.fileId, expectedRevision: bFile.revision, content: 'WORKSPACE B UPDATED\n',
+  })
+  assert.equal(write.status, 200, '冷态会话只允许写入其已探测的工作区文件')
+  assert.equal(readFileSync(join(rootB, 'CLAUDE.md'), 'utf8'), 'WORKSPACE B UPDATED\n')
+
+  // 没有存活句柄或持久化记录的会话不借用别的工作区。
   const cold = await call(BRIDGE_ENDPOINTS.bootstrap, { sessionId: 'session-gone' })
   assert.equal(cold.body.instructions.context.source, 'deploy-cwd')
   assert.deepEqual(cold.body.instructions.files.map((file) => file.scope), ['global'])
+
+  const failed = makeHarness({}, async () => { throw new Error('session metadata unreadable') })
+  const rejected = await failed.call(BRIDGE_ENDPOINTS.bootstrap, { sessionId: 'session-b' })
+  assert.equal(rejected.status, 500, '元数据读取失败应拒绝，不能把部署目录冒充该会话工作区')
 })

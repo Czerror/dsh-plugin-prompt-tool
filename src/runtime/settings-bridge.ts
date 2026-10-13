@@ -321,11 +321,19 @@ function instructionOwner(): InstructionsOwnerView {
   return { officialInstructions: null }
 }
 
-function resolveInstructionScope(ctx: Context, sessionId: string | undefined): ResolvedInstructionScope {
+async function resolveInstructionScope(ctx: Context, sessionId: string | undefined): Promise<ResolvedInstructionScope> {
   // 读放宽、写不放宽：拿不到会话工作区时按官方 agent-instructions 的口径回退到
   // 部署进程 cwd，并如实标记来源；写通道白名单仍只由本次探测到的文件构成，
   // 回退不扩大可写范围。
-  const sessionCwd = sessionId === undefined ? undefined : localAgentCwd(ctx, sessionId)
+  let sessionCwd = sessionId === undefined ? undefined : localAgentCwd(ctx, sessionId)
+  if (sessionCwd === undefined && sessionId !== undefined) {
+    // 浏览历史会话不会创建 Agent；只读官方元数据即可恢复它的工作区。
+    const persistence = ctx.get?.('sessionPersistence') as {
+      stat(id: string): Promise<{ header: { cwd?: unknown } } | undefined>
+    } | undefined
+    const storedCwd = (await persistence?.stat(sessionId))?.header.cwd
+    if (typeof storedCwd === 'string' && storedCwd.length > 0) sessionCwd = storedCwd
+  }
   const cwd = sessionCwd ?? process.cwd()
   const cards = detectAgentsFiles({ cwd })
   const contextId = createHash('sha256')
@@ -776,7 +784,7 @@ export function registerSettingsBridge(
             try {
               const meta = await loadEngineMeta()
               const extras = await collectDescribeExtras(dir, session.sessionId)
-              const scope = resolveInstructionScope(sctx, session.sessionId)
+              const scope = await resolveInstructionScope(sctx, session.sessionId)
               // 变量段与模块参数同口径：只对声明面登记的节下发，未声明就整体缺席（客户端据此不发这次读；变量卡是通用卡，缺段时走添加入口）。
               const variables = dir.length > 0 && declaresAny(declarationsOf(dir), ['variables', 'variablesEnabled'])
                 ? variableView(dir)
@@ -1125,7 +1133,7 @@ export function registerSettingsBridge(
             const dir = subjectGate(tx, 'promptConfigs')
             if (dir === undefined) return
             // 独立文件来源：与 /bootstrap 共用同一读取入口，附正文、字节版本与读取状态。
-            const scope = resolveInstructionScope(sctx, session.sessionId)
+            const scope = await resolveInstructionScope(sctx, session.sessionId)
             tx.write(200, {
               ok: true,
               value: {
@@ -1163,7 +1171,7 @@ export function registerSettingsBridge(
             }
             // 白名单与上下文都由服务端本次重新解析：客户端提交的 contextId 只用于
             // 说明「它是按哪次读取起草的」，过期工作区（切会话/外部改动上下文）一律拒绝。
-            const scope = resolveInstructionScope(sctx, session.sessionId)
+            const scope = await resolveInstructionScope(sctx, session.sessionId)
             if (contextId !== scope.context.contextId) {
               tx.write(409, {
                 ok: false,

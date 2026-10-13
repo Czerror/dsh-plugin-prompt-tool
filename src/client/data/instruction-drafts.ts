@@ -37,7 +37,7 @@ export interface InstructionDraftPool {
   contextId: string | null
   cwd: string | null
   /**
-   * session = 由存活本地 Agent 的会话 cwd 解析；deploy-cwd = 会话不可用，
+   * session = 由存活本地 Agent 或官方持久化 header 的 cwd 解析；deploy-cwd = 会话不可用，
    * 退回部署进程 cwd；global-only = 客户端尚无服务端解析结果时的空池标记。
    */
   source: 'session' | 'deploy-cwd' | 'global-only'

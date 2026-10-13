@@ -623,20 +623,20 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
       }
       // 模块目录事实不属于字段草稿：创建/启用后的刷新不能被无关输入拦住。
       if (boot.meta !== undefined && metaSeq === metaSeqRef.current) publishMeta(boot.meta.meta)
-      if (draftVersionRef.current !== draftVersion) return fieldsRef.current
       // 两次读取都完成后才应用快照；任何 await 期间的新上下文/草稿/文件结果优先。
       const policyRes = await bridgeCall('instructionsPolicy')
       if (seq !== loadSeqRef.current || sessionId !== api.currentSessionId()) return EMPTY_FIELDS
-      if (draftVersionRef.current !== draftVersion || instructionPoolRef.current !== instructionSnapshot) return fieldsRef.current
+      if (instructionPoolRef.current !== instructionSnapshot) return fieldsRef.current
+      const fieldsChanged = draftVersionRef.current !== draftVersion
       // /bootstrap 已携带 settings descriptor（value/base/revision）：直接作为 fields
       // 主源，不再 await settings.ensure()——宿主全量 describe mirror 是切换模块后
       // 配置卡十几秒才出现的瓶颈。
-      const res = bridgeViewFromBoot(boot)
-      applyView(res, skillsSeq)
-      // 全局层参数（空主语的全局段）：指令卡设置区读它。模块自己写了该键时模块值仍然优先
-      // （存在即覆盖的判定在服务端，客户端不重复判）。
-      if (boot.globalParams !== undefined) publishGlobalParams(boot.globalParams)
-      if (skillsSeq === skillsSeqRef.current) skillsSessionRef.current = sessionId
+      if (!fieldsChanged) {
+        applyView(bridgeViewFromBoot(boot), skillsSeq)
+        // 全局参数仍保护读取期间的新输入；指令文件上下文独立回填。
+        if (boot.globalParams !== undefined) publishGlobalParams(boot.globalParams)
+        if (skillsSeq === skillsSeqRef.current) skillsSessionRef.current = sessionId
+      }
       // 指令文件（独立来源）：正文、身份、版本、读取状态来自同一次读取。
       if (boot.ok && boot.instructions !== undefined) {
         publishInstructions(poolFromSnapshot(boot.instructions, ++instructionSeqRef.current, instructionPoolRef.current))
@@ -673,6 +673,7 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
         publishFields(next)
         setSavedConfigs(actual)
       }
+      if (fieldsChanged) return fieldsRef.current
       // 每轮加载对**当前装配集合**里的模块各重读一次参数（层卡按自己主语读，不随全局主语重挂）：
       // 写盘/导入后磁盘上的 params 已变，已挂载的层卡必须拿到新值；已退出集合的模块连它的
       // 按主语状态一起丢掉——请求数与状态都随装配集合，不随「曾经挂载过什么」增长。
