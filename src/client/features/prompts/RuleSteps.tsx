@@ -8,8 +8,7 @@
  *   否则卡       = 规则级 `else`。
  * 每张卡都是 TagInput 式的小卡：卡头单行摘要，展开才编辑，右侧 ↑↓ 与 × 。
  */
-import { useId, useRef, useState, type ReactNode } from 'react'
-import clsx from 'clsx'
+import { useState, type ReactNode } from 'react'
 import type { RuleAction, RuleCondition, RuleDefinition, RuleEditorMeta } from '../../../shared/rules.ts'
 import type { FieldDraft } from '../../data/workspace-drafts.ts'
 import type { EngineMeta } from '../../prompt-tool-types.ts'
@@ -17,7 +16,7 @@ import type { PromptToolTranslate } from '../../locales.ts'
 import { Button } from '../../ui/Button.tsx'
 import { HintTooltip } from '../../ui/HintTooltip.tsx'
 import { MenuSelect } from '../../ui/MenuSelect.tsx'
-import { IconChevronDownOutlineRegular, IconCloseFillRegular } from '../../ui/icons.tsx'
+import { StepCard, CloseButton, StepAdd, type StepCreation } from './RuleStepCard.tsx'
 import { RuleConditionFields, RuleParameterFields, cleared } from './RuleFields.tsx'
 import { TriggerJsonField, asTriggerRecord } from './RuleJsonField.tsx'
 import { triggerLabel } from './rule-labels.ts'
@@ -25,56 +24,10 @@ import {
   actionSummary, branchSummary, collectActionIds, conditionChain, conditionSummary, nodeSummary,
   isActionNode, isBranchNode, nodeList, type RuleBranch, type RuleNode,
 } from './rule-steps.ts'
-import ui from '../../ui/controls.module.css'
 import css from './rules.module.css'
 
 /** 注册制层没有逐轮求值时机，引擎拒绝带条件的动作（engine/rule-spec.mjs:79,143）。 */
 const REGISTRATION_LAYERS: readonly string[] = ['system-section', 'runtime-context']
-
-/** 关闭按钮：与 TagInput 的 chip 删除同形态，图标是官方 IconClose 的复制件。 */
-function CloseButton(props: { label: string; disabled?: boolean; onClick: () => void }): ReactNode {
-  return <HintTooltip label={props.label}>
-    <button type="button" className={clsx(ui.tagChipRemove, css.stepClose)} aria-label={props.label} disabled={props.disabled} onClick={props.onClick}>
-      <IconCloseFillRegular />
-    </button>
-  </HintTooltip>
-}
-
-/** 一张小卡：卡头是一整行摘要（点开才编辑），右侧是这张卡自己的操作。 */
-function StepCard(props: {
-  kind: string
-  kindLabel: string
-  summary: string
-  hint?: string
-  open: boolean
-  onToggle: () => void
-  actions?: ReactNode
-  level: number
-  children: ReactNode
-}): ReactNode {
-  const panelId = useId()
-  const toggleRef = useRef<HTMLButtonElement>(null)
-  const bodyRef = useRef<HTMLDivElement>(null)
-  const toggle = (
-    <button ref={toggleRef} type="button" className={css.stepToggle} aria-expanded={props.open} aria-controls={panelId}
-      onClick={() => {
-        // 收起会把卡内控件卸载：先把焦点带回卡头，避免焦点掉到 body。
-        if (props.open && bodyRef.current !== null && bodyRef.current.contains(document.activeElement)) toggleRef.current?.focus()
-        props.onToggle()
-      }}>
-      <IconChevronDownOutlineRegular className={clsx(ui.chevron, props.open && ui.chevronOpen)} />
-      <span className={css.stepKind}>{props.kindLabel}</span>
-      <span className={css.stepSummary}>{props.summary}</span>
-    </button>
-  )
-  return <section className={clsx(css.stepCard, props.open && css.stepCardOpen)} data-step={props.kind} data-open={props.open || undefined} data-level={props.level}>
-    <div className={css.stepHead}>
-      {props.hint === undefined ? toggle : <HintTooltip label={props.hint}>{toggle}</HintTooltip>}
-      {props.actions !== undefined && <span className={css.stepActions}>{props.actions}</span>}
-    </div>
-    <div id={panelId} ref={bodyRef} hidden={!props.open} className={css.stepBody}>{props.open && props.children}</div>
-  </section>
-}
 
 /** 作用域头：只声明「下面这批动作属于哪个条件」，本身没有可编辑内容。 */
 function ScopeHead(props: { kindLabel: string; summary: string; disabled?: boolean; removeLabel?: string; onRemove?: () => void }): ReactNode {
@@ -106,6 +59,7 @@ interface StepContext {
   prefix: string
   disabled: boolean
   onDraft: () => void
+  creation: StepCreation
 }
 
 const rowKey = (context: StepContext, path: string): string => `${context.prefix}:${path}`
@@ -216,6 +170,7 @@ export function RuleStepsPanel(props: {
   const { t, rule, meta } = props
   const [addActionKind, setAddActionKind] = useState('inject-text')
   const [addConditionKind, setAddConditionKind] = useState('')
+  const [activeCreation, setActiveCreation] = useState(`${props.fieldKey}:then`)
   const disabled = props.disabled === true
   const then = nodeList(rule.then), otherwise = nodeList(rule.else)
   const usedIds = collectActionIds([...then, ...otherwise])
@@ -224,6 +179,7 @@ export function RuleStepsPanel(props: {
   const context: StepContext = {
     t, meta, engineMeta: props.engineMeta, fields: props.fields, expanded: props.expanded,
     prefix: props.prefix, disabled, onDraft: props.onDraft,
+    creation: { active: activeCreation, select: setActiveCreation },
   }
   const patch = (next: Partial<RuleDefinition>): void => { if (!disabled) props.onChange({ ...rule, ...next }) }
   const setNodes = (next: RuleNode[]): void => patch({ then: next as RuleAction[] })
@@ -267,7 +223,7 @@ export function RuleStepsPanel(props: {
             onChange={next => setAt(index, asTriggerRecord(next) as unknown as RuleNode)} />
         </StepCard>
       })}
-      <div className={css.stepAdd} data-step-add>
+      <StepAdd creation={context.creation} path={path} label={t('configList.create')} disabled={disabled}>
         <MenuSelect compact ariaLabel={t('rules.steps.addConditionType')} value={addConditionKind} disabled={disabled || candidates.length === 0}
           options={[{ value: '', label: t('triggers.unconditional') }, ...meta.predicates.map(item => ({ value: item.kind, label: triggerLabel(t, item.kind) }))]}
           onChange={setAddConditionKind} />
@@ -276,7 +232,7 @@ export function RuleStepsPanel(props: {
         <Button shape="pill" variant="outline" disabled={disabled || !branchAllowed || addConditionKind.length === 0 || candidates.length === 0} onClick={addBranch}>{t('rules.steps.addBranch')}</Button>
         <Button shape="pill" variant="outline" disabled={disabled || selected === undefined} onClick={addAction}>{t('rules.addAction')}</Button>
         {!branchAllowed && <span className={css.stepHint}>{t('rules.steps.branchUnsupported')}</span>}
-      </div>
+      </StepAdd>
     </>
   }
 

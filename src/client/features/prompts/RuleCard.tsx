@@ -1,4 +1,5 @@
-import { useId, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useId, useRef, useState, type ReactNode } from 'react'
+import { AutoSaveSelection } from '../../ui/AutoSaveSelection.ts'
 import type { RuleDefinition } from '../../../shared/rules.ts'
 import type { RuleEditor, RuleEntry, RulesDraft } from '../../data/rule-drafts.ts'
 import { hasRuleFields, rulesDirty } from '../../data/rule-drafts.ts'
@@ -32,6 +33,8 @@ export function RuleCard(props: {
   const { t, entry, editor, draft } = props, rule = entry.value
   const panelId = useId(), ownsFocus = useRef(false)
   const [confirming, setConfirming] = useState(false)
+  const saveTimer = useRef<ReturnType<typeof setTimeout>>()
+  const composing = useRef(false)
   const disabled = props.disabled === true || draft.busy === 'save'
   const nodes = [...nodeList(rule.then), ...nodeList(rule.else)]
   // 路径上带条件的动作必须支持条件（event 生命周期）；引擎在编译期拒绝其余组合。
@@ -41,12 +44,22 @@ export function RuleCard(props: {
   const summary = totals.branches === 0
     ? t('rules.summary', { conditions: countConditions(rule.if), actions: totals.actions })
     : t('rules.summary.branches', { conditions: countConditions(rule.if), actions: totals.actions, branches: totals.branches })
-  const patch = (next: Partial<RuleDefinition>): void => { if (!disabled) editor.patch(entry.key, { ...entry.value, ...next }) }
-  const save = (): void => { if (!disabled && !unsupported && rulesDirty(draft) && !hasRuleFields(draft)) void editor.submit() }
-  const fieldContext = { t, fields: draft.fields, disabled, engineMeta: props.meta, onDraft: editor.changed }
-  return <CollapsibleCard id={panelId} title={rule.name || rule.id} meta={(props.source ? t('rules.source', { module: props.source }) + ' · ' : '') + (rule.layer === undefined ? t('rules.module') : translateLabel(t, LAYER_LABEL_KEYS, rule.layer)) + ' · ' + summary}
+  const patch = (next: Partial<RuleDefinition>): void => { if (!disabled) { editor.patch(entry.key, { ...entry.value, ...next }); scheduleSave() } }
+  const save = (): void => { if (!composing.current && !disabled && !unsupported && rulesDirty(draft) && !hasRuleFields(draft)) void editor.submit() }
+  const latestSave = useRef(save)
+  latestSave.current = save
+  const scheduleSave = (): void => {
+    if (saveTimer.current !== undefined) clearTimeout(saveTimer.current)
+    saveTimer.current = setTimeout(() => { saveTimer.current = undefined; latestSave.current() }, 600)
+  }
+  useEffect(() => () => { if (saveTimer.current !== undefined) clearTimeout(saveTimer.current) }, [])
+  const onDraft = (): void => { editor.changed(); scheduleSave() }
+  const fieldContext = { t, fields: draft.fields, disabled, engineMeta: props.meta, onDraft }
+  return <AutoSaveSelection.Provider value={() => { if (saveTimer.current !== undefined) clearTimeout(saveTimer.current); latestSave.current() }}><CollapsibleCard id={panelId} title={rule.name || rule.id} meta={(props.source ? t('rules.source', { module: props.source }) + ' · ' : '') + (rule.layer === undefined ? t('rules.module') : translateLabel(t, LAYER_LABEL_KEYS, rule.layer)) + ' · ' + summary}
     expanded={props.expanded} onToggle={() => { if (props.expanded) save(); props.onToggle() }} bodyClassName={css.cardPanel}
     data-rule-id={rule.id} data-rule-key={entry.key}
+    onCompositionStart={() => { composing.current = true; if (saveTimer.current !== undefined) clearTimeout(saveTimer.current) }}
+    onCompositionEnd={() => { composing.current = false; scheduleSave() }}
     onFocus={() => { ownsFocus.current = true }} onBlur={(event) => {
       ownsFocus.current = false
       // 批量开关自行提交，避免离卡自动保存抢先发出旧状态。
@@ -54,9 +67,9 @@ export function RuleCard(props: {
       requestAnimationFrame(() => { if (!ownsFocus.current) save() })
     }}
     actions={<span className={css.headerActions} data-rule-header-actions>{props.headerActions}<span className={css.switchLine}>
-      <Switch label={t('rules.enable', { name: rule.name || rule.id })} checked={rule.enabled !== false} disabled={disabled || draft.busy !== undefined || hasRuleFields(draft)} onChange={enabled => {
+      <AutoSaveSelection.Provider value={undefined}><Switch label={t('rules.enable', { name: rule.name || rule.id })} checked={rule.enabled !== false} disabled={disabled || draft.busy !== undefined || hasRuleFields(draft)} onChange={enabled => {
         patch({ enabled }); void editor.submit(enabled ? { activateRuleId: rule.id } : {})
-      }} />
+      }} /></AutoSaveSelection.Provider>
       </span></span>}>
     <div className={css.body} data-rule-editor>
       <div className={css.fields}>
@@ -71,10 +84,10 @@ export function RuleCard(props: {
         </div>
       </div>
       {unsupported && <p role="alert" className={css.error}>{t('rules.unsupported')}</p>}
-      <PromptConfigNavigation t={t} layer={rule.layer ?? 'module'} renderLayerSettings={props.renderSettings ? () => <section className={css.section} aria-label={t('rules.settings')}>{props.renderSettings?.(rule, props.moduleId)}</section> : undefined}>
+      <PromptConfigNavigation t={t} layer={rule.layer ?? 'module'} renderLayerSettings={props.renderSettings ? () => <AutoSaveSelection.Provider value={undefined}><section className={css.section} aria-label={t('rules.settings')}>{props.renderSettings?.(rule, props.moduleId)}</section></AutoSaveSelection.Provider> : undefined}>
         <section data-config-panel="rule" aria-label={t('rules.stepsTab')} className={css.section}>{draft.meta && <RuleStepsPanel
           t={t} rule={rule} meta={draft.meta} engineMeta={props.meta} fields={draft.fields} expanded={props.expandedRows}
-          prefix={props.source ?? rule.id} fieldKey={entry.key} disabled={disabled} onDraft={editor.changed}
+          prefix={props.source ?? rule.id} fieldKey={entry.key} disabled={disabled} onDraft={onDraft}
           onChange={next => patch(next)} />}</section>
       <section data-config-panel="definition" aria-label={t('rules.jsonTab')} className={css.section}><TriggerJsonField {...fieldContext} fieldKey={entry.key + ':full'} label={t('triggers.advanced')} shape="object" value={rule} onChange={value => {
         const candidate = asTriggerRecord(value)
@@ -94,5 +107,5 @@ export function RuleCard(props: {
     </div>
     {confirming && <ConfirmDialog title={t('rules.delete')} description={t('rules.deleteHint', { id: rule.id })} confirmLabel={t('rules.delete')} cancelLabel={t('triggers.cancel')}
       onCancel={() => setConfirming(false)} onConfirm={() => { editor.remove(entry.key); void editor.submit() }} />}
-  </CollapsibleCard>
+  </CollapsibleCard></AutoSaveSelection.Provider>
 }

@@ -11,6 +11,7 @@ import { renderElement, withSsr, makeTranslate } from './support/ssr-render.mjs'
 import { createWorkspaceDrafts } from '../../src/client/data/workspace-drafts.ts'
 import { EMPTY_PARAMS } from '../../src/client/data/param-overrides.ts'
 import { canEditModule } from '../../src/client/data/module-subject.ts'
+import { configIdentityKey } from '../../src/shared/module-config-order.ts'
 
 const t = makeTranslate()
 const { LayerSettingsContent, injectionPointSlots } = await withSsr([
@@ -270,6 +271,19 @@ test('规则工作台：同一层两个模块的规则卡各自按自己模块�
   })
   assert.match(html, /rule-a/, 'A 的层内设置命中自己模块的装配事实')
   assert.doesNotMatch(html, /rule-b/, 'B 的事实里没有该能力，不跟着 A 命中')
+})
+
+test('展开规则的未完成条件及受众修改不让编辑卡消失；收起后恢复受众过滤', () => {
+  const drafts = createWorkspaceDrafts(), draft = rulesDraft('editing-condition')
+  draft.entries[0].value.if = { any: [] }
+  drafts.rules.set('mod-a', draft)
+  const store = stubStore(drafts, [twoModules[0]])
+  const props = { store, t, scope: 'subagent', browse: { expanded: configIdentityKey({ moduleId: 'mod-a', configId: 'editing-condition' }) } }
+  assert.match(renderElement(RulesWorkspace, props), /editing-condition/, '未完成 any 条件仍可编辑')
+  draft.entries[0].value.if = { scope: { audience: 'main' } }
+  draft.saved = [structuredClone(draft.entries[0].value)]
+  assert.match(renderElement(RulesWorkspace, props), /editing-condition/, '自动保存成功后仍保留正在展开的卡')
+  assert.doesNotMatch(renderElement(RulesWorkspace, { ...props, browse: {} }), /editing-condition/, '收起后按实际受众过滤')
 })
 
 /** T18：每模块横栏已删除——创建入口只剩页级一处（不依赖「当前模块」，也不按模块重复）。 */

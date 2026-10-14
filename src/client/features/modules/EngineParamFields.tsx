@@ -1,7 +1,7 @@
 import { useSyncExternalStore, type ReactNode } from 'react'
 import { Switch } from '../../ui/Switch.tsx'
 import { TextInput } from '../../ui/TextInput.tsx'
-import { ENGINE_PARAM_DEFINITIONS } from '../../../shared/engine-params.ts'
+import { ENGINE_PARAM_DEFINITIONS, validateEngineParamValues } from '../../../shared/engine-params.ts'
 import { SHARED_PARAM_KEYS, type SharedParamKey } from '../../data/prompt-tool-fields.ts'
 import { engineGroupParamKeys } from '../../../shared/engine-capabilities.ts'
 import { moduleFactsOf } from '../../data/module-subject.ts'
@@ -12,6 +12,7 @@ import { MenuSelect } from '../../ui/MenuSelect.tsx'
 import { TagInput } from '../../ui/TagInput.tsx'
 import { HintTooltip } from '../../ui/HintTooltip.tsx'
 import styles from '../../ui/controls.module.css'
+import { useAutosave } from '../../data/use-autosave.ts'
 
 /** 未提供草稿通道的 store（单测桩）退化订阅：不广播，字段仍按当前草稿读一次。 */
 const subscribeNothing = (): (() => void) => () => {}
@@ -95,11 +96,35 @@ export function EngineParamField({ store, param, t, instanceId, ...subject }: {
     else store.editorDrafts?.fields.set(draftKey, next)
     store.publishDrafts?.()
   }
-  const save = (): void => { void (isGlobal ? store.persistGlobalParams() : store.persistParamOverrides(moduleId ?? '')) }
+  const save = (): void => {
+    const current = (isGlobal ? store.globalParams : store.moduleParamsOf(moduleId ?? ''))[param]
+    const reason = validateEngineParamValues({ [param]: current })[0]?.message
+    if (reason !== undefined) { writeDraft({ source: String(current ?? ''), text: String(current ?? ''), error: reason }); return }
+    void (isGlobal ? store.persistGlobalParams() : store.persistParamOverrides(moduleId ?? ''))
+  }
   const patch = (next: unknown): void => {
     if (isGlobal) store.setGlobalParam(param, next)
     else store.setModuleParam(moduleId ?? '', param, next)
   }
+  const commitNumber = (): void => {
+    if (definition.kind !== 'number') return
+    const text = store.editorDrafts?.fields.get(draftKey)?.text
+    if (text === undefined || disabled) return
+    const next = text.trim() === '' ? definition.defaultValue : Number(text)
+    const reason = typeof next === 'number' ? definition.check(next) : undefined
+    if (reason !== undefined) {
+      writeDraft({ source: String(value ?? ''), text, error: reason })
+      return
+    }
+    patch(next)
+    writeDraft(undefined)
+    save()
+  }
+  const composition = useAutosave(draftKey, () => {
+    if (disabled) return
+    if (definition.kind === 'number') commitNumber()
+    else if (definition.kind !== 'boolean') save()
+  })
   // 默认渲染点沿用 `pt-param-<键>`（层卡内唯一）；镜像渲染点带实例前缀，DOM id 不重复。
   const id = instanceId === undefined ? `pt-param-${param}` : `pt-param-${instanceId}-${param}`
   const label = t(`param.${param}`)
@@ -128,22 +153,13 @@ export function EngineParamField({ store, param, t, instanceId, ...subject }: {
     control = <TextInput id={id} inputMode="decimal" aria-label={label}
       aria-invalid={error !== undefined} aria-describedby={error === undefined ? undefined : `${id}-error`}
       value={draftText ?? String(value ?? '')} readOnly={disabled}
-      onChange={(event) => writeDraft({ source: String(value ?? ''), text: event.target.value, error: '' })}
-      onBlur={() => {
-        if (draftText === undefined || disabled) return
-        const next = draftText.trim() === '' ? definition.defaultValue : Number(draftText)
-        const reason = typeof next === 'number' ? definition.check(next) : undefined
-        if (reason !== undefined) {
-          writeDraft({ source: String(value ?? ''), text: draftText, error: reason })
-          return
-        }
-        patch(next)
-        writeDraft(undefined)
-        save()
-      }} />
+      onCompositionStart={composition.onCompositionStart} onCompositionEnd={composition.onCompositionEnd}
+      onChange={(event) => { writeDraft({ source: String(value ?? ''), text: event.target.value, error: '' }); composition.schedule() }}
+      onBlur={composition.flush} />
   } else {
     control = <textarea id={id} className={styles.configTextarea} rows={2} aria-label={label} value={String(value ?? '')}
-      readOnly={disabled} onChange={(event) => patch(event.target.value)} onBlur={() => { if (!disabled) save() }} />
+      onCompositionStart={composition.onCompositionStart} onCompositionEnd={composition.onCompositionEnd}
+      readOnly={disabled} onChange={(event) => { patch(event.target.value); composition.schedule() }} />
   }
   return <div className={styles.settingRowStack} data-param-key={param} data-param-kind={definition.kind}
     data-control={menuField ? 'select' : definition.kind === 'boolean' ? 'switch' : definition.kind === 'number' ? 'number' : 'text'}>

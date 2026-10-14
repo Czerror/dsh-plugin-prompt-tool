@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react'
+import { useState, type ReactNode } from 'react'
 import type { RuleCondition, RuleEditorMeta } from '../../../shared/rules.ts'
 import type { FieldDraft } from '../../data/workspace-drafts.ts'
 import type { PromptToolLocaleKey, PromptToolTranslate } from '../../locales.ts'
@@ -10,6 +10,8 @@ import { Switch } from '../../ui/Switch.tsx'
 import { Button } from '../../ui/Button.tsx'
 import { TriggerJsonField, asTriggerRecord } from './RuleJsonField.tsx'
 import { triggerLabel } from './rule-labels.ts'
+import { conditionSummary } from './rule-steps.ts'
+import { StepCard, CloseButton, StepAdd, type StepCreation } from './RuleStepCard.tsx'
 import { LAYER_LABEL_KEYS, STRATEGY_LABEL_KEYS, POSITION_LABEL_KEYS, AUDIENCE_LABEL_KEYS, MODEL_SCOPE_LABEL_KEYS, SUBJECT_LABEL_KEYS, MERGE_MODE_LABEL_KEYS, DEDUPE_LABEL_KEYS, PROMOTION_LABEL_KEYS, SLOT_KIND_LABEL_KEYS, ROLE_LABEL_KEYS, FILL_LABEL_KEYS, translateLabel } from './prompt-config-policy.ts'
 import ui from '../../ui/controls.module.css'
 import css from './rules.module.css'
@@ -19,14 +21,15 @@ const FIELD_LABELS: Record<string, PromptToolLocaleKey> = { layer: 'form.layer.l
   // 动作字段：`decision` 与 `action` 是动作类型名之外的两份含义（裁决档 / 事后判决），不能借 triggerLabel。
   action: 'rules.actionField.action', decision: 'rules.actionField.decision', toolNames: 'rules.actionField.toolNames' }
 /** 清掉某个字段前缀下的原始草稿（含嵌套键）。 */
-export const cleared = (fields: Map<string, FieldDraft>, prefix: string): void => { for (const key of fields.keys()) if (key === prefix || key.startsWith(prefix + ':')) fields.delete(key) }
-function moveConditionDrafts(fields: Map<string, FieldDraft>, from: string, to: string): void {
+export const cleared = <T,>(fields: Map<string, T>, prefix: string): void => { for (const key of fields.keys()) if (key === prefix || key.startsWith(prefix + ':')) fields.delete(key) }
+function moveConditionDrafts<T>(fields: Map<string, T>, from: string, to: string): void {
   const values = [...fields].filter(([key]) => key === from || key.startsWith(from + ':'))
   cleared(fields, from)
   for (const [key, value] of values) fields.set(to + key.slice(from.length), value)
 }
+
 /** 删除条件节点时，同步移动仍保留的原始字段草稿。 */
-export function removeConditionDraft(fields: Map<string, FieldDraft>, prefix: string, index: number): void {
+export function removeConditionDraft<T>(fields: Map<string, T>, prefix: string, index: number): void {
   const retained = [...fields]
   cleared(fields, prefix)
   for (const [key, value] of retained) {
@@ -81,36 +84,71 @@ export function RuleParameterFields(props: FieldContext & { value: Record<string
     </FormField>
   })
 }
-export function RuleConditionFields(props: FieldContext & { value: RuleCondition | undefined; meta: RuleEditorMeta; nested?: boolean; heading?: string; onRemove?: () => void; onChange: (value: RuleCondition | undefined) => void }): ReactNode {
+export function RuleConditionFields(props: FieldContext & { expanded: Map<string, boolean>; prefix: string; creation: StepCreation; value: RuleCondition | undefined; meta: RuleEditorMeta; nested?: boolean; heading?: string; onRemove?: () => void; onChange: (value: RuleCondition | undefined) => void }): ReactNode {
   const { t, value, meta } = props
+  const [addKind, setAddKind] = useState('')
+  const viewKey = (path: string): string => `${props.prefix}:${path}`
+  const move = (from: string, to: string): void => {
+    moveConditionDrafts(props.fields, from, to)
+    moveConditionDrafts(props.expanded, viewKey(from), viewKey(to))
+  }
+  const clearChildren = (): void => {
+    for (const key of props.expanded.keys()) if (key.startsWith(viewKey(props.fieldKey) + ':')) props.expanded.delete(key)
+  }
   const keys = Object.keys(value ?? {}), kind = keys[0] ?? '', entry = meta.predicates.find(item => item.kind === kind)
   const invalid = value !== undefined && (keys.length !== 1 || entry === undefined)
   const remove = props.onRemove ? <Button variant="outline" shape="pill" data-danger disabled={props.disabled} onClick={props.onRemove}>{t('rules.removeCondition')}</Button>
-    : value !== undefined && <Button variant="outline" shape="pill" disabled={props.disabled} onClick={() => { cleared(props.fields, props.fieldKey); props.onChange(undefined) }}>{t('rules.clearCondition')}</Button>
+    : value !== undefined && <Button variant="outline" shape="pill" disabled={props.disabled} onClick={() => { cleared(props.fields, props.fieldKey); clearChildren(); props.onChange(undefined) }}>{t('rules.clearCondition')}</Button>
   if (invalid) return <div className={css.full}><div className={css.conditionHead}>{props.heading && <span className={css.conditionOrdinal}>{props.heading}</span>}{remove}</div><p role="note">{t('rules.unknown')}</p><TriggerJsonField {...props} value={value} shape="object" label={t('triggers.conditionJson')} onChange={next => props.onChange(asTriggerRecord(next))} /></div>
   const children = kind === 'not' ? [asTriggerRecord(value?.not)] : Array.isArray(value?.[kind]) ? value[kind] as RuleCondition[] : []
   const composite = meta.composites.includes(kind)
   const first = meta.predicates.find(item => !meta.composites.includes(item.kind))
+  const selected = meta.predicates.find(item => item.kind === addKind) ?? first
+  const add = kind !== 'not' && (composite || !props.nested && value !== undefined) && <StepAdd
+    creation={props.creation} path={props.fieldKey} label={t('rules.addCondition')} disabled={props.disabled}>
+    <MenuSelect compact ariaLabel={t('rules.steps.addConditionType')} value={selected?.kind ?? ''} disabled={props.disabled || selected === undefined}
+      options={meta.predicates.map(item => ({ value: item.kind, label: triggerLabel(t, item.kind) }))} onChange={setAddKind} />
+    <Button variant="outline" shape="pill" disabled={props.disabled || selected === undefined} onClick={() => {
+      if (!selected || value === undefined) return
+      if (composite) {
+        props.expanded.set(viewKey(props.fieldKey + ':' + kind + ':' + children.length), true)
+        props.onChange({ [kind]: [...children, structuredClone(selected.example)] })
+      } else {
+        move(props.fieldKey, props.fieldKey + ':all:0')
+        props.expanded.set(viewKey(props.fieldKey), true)
+        props.expanded.set(viewKey(props.fieldKey + ':all:1'), true)
+        props.onChange({ all: [value, structuredClone(selected.example)] })
+      }
+    }}>{t('rules.addCondition')}</Button>
+  </StepAdd>
   const selectKind = (next: string): void => {
     if (value !== undefined && meta.composites.includes(next)) {
       if (next === 'not') {
-        moveConditionDrafts(props.fields, props.fieldKey, props.fieldKey + ':not:0')
+        move(props.fieldKey, props.fieldKey + ':not:0')
+        props.expanded.set(viewKey(props.fieldKey), true)
         props.onChange({ not: value })
       } else if (composite) {
-        moveConditionDrafts(props.fields, props.fieldKey + ':' + kind, props.fieldKey + ':' + next)
+        move(props.fieldKey + ':' + kind, props.fieldKey + ':' + next)
         props.onChange({ [next]: children })
       } else {
-        moveConditionDrafts(props.fields, props.fieldKey, props.fieldKey + ':' + next + ':0')
+        move(props.fieldKey, props.fieldKey + ':' + next + ':0')
+        props.expanded.set(viewKey(props.fieldKey), true)
         props.onChange({ [next]: [value] })
       }
       return
     }
     cleared(props.fields, props.fieldKey)
+    clearChildren()
     const selected = meta.predicates.find(item => item.kind === next)
     props.onChange(selected === undefined ? undefined : structuredClone(selected.example))
   }
   const updateChild = (index: number, next: RuleCondition | undefined): void => {
-    if (next === undefined) { removeConditionDraft(props.fields, props.fieldKey + ':' + kind, index); props.onChange(kind === 'not' || children.length === 1 ? undefined : { [kind]: children.filter((_, at) => at !== index) }); return }
+    if (next === undefined) {
+      removeConditionDraft(props.fields, props.fieldKey + ':' + kind, index)
+      removeConditionDraft(props.expanded, viewKey(props.fieldKey + ':' + kind), index)
+      props.onChange(kind === 'not' || children.length === 1 ? undefined : { [kind]: children.filter((_, at) => at !== index) })
+      return
+    }
     props.onChange({ [kind]: kind === 'not' ? next : children.map((child, at) => at === index ? next : child) })
   }
   return <div className={css.condition} data-rule-condition={props.fieldKey}>
@@ -120,13 +158,16 @@ export function RuleConditionFields(props: FieldContext & { value: RuleCondition
       {remove}
     </div>
     {composite ? <div className={css.conditions}>
-      {children.map((child, index) => <div key={index} className={css.conditionChild} role="group" aria-label={t('rules.condition', { index: index + 1 })}>
-        <RuleConditionFields {...props} value={child} nested heading={t('rules.condition', { index: index + 1 })} onRemove={() => updateChild(index, undefined)} fieldKey={props.fieldKey + ':' + kind + ':' + index} onChange={next => updateChild(index, next)} /></div>)}
-      {kind !== 'not' && <Button variant="outline" shape="pill" disabled={props.disabled || first === undefined} onClick={() => { if (first) props.onChange({ [kind]: [...children, structuredClone(first.example)] }) }}>{t('rules.addCondition')}</Button>}
+      {children.map((child, index) => {
+        const path = props.fieldKey + ':' + kind + ':' + index
+        const key = viewKey(path), open = props.expanded.get(key) === true
+        return <StepCard key={path} kind="condition" kindLabel={t('rules.condition', { index: index + 1 })} summary={conditionSummary(t, child)} level={1}
+          open={open} onToggle={() => { props.expanded.set(key, !open); props.onDraft() }}
+          actions={<CloseButton label={t('rules.removeCondition')} disabled={props.disabled} onClick={() => updateChild(index, undefined)} />}>
+          <RuleConditionFields {...props} value={child} nested heading={undefined} onRemove={undefined} fieldKey={path} onChange={next => updateChild(index, next)} />
+        </StepCard>
+      })}
     </div> : entry && <div className={css.fields}><RuleParameterFields {...props} value={asTriggerRecord(value?.[kind])} example={asTriggerRecord(entry.example[kind])} fieldKey={props.fieldKey + ':' + kind} onChange={next => props.onChange({ ...value, [kind]: next })} /></div>}
-    {!props.nested && !composite && value !== undefined && first && <Button variant="outline" shape="pill" disabled={props.disabled} onClick={() => {
-      moveConditionDrafts(props.fields, props.fieldKey, props.fieldKey + ':all:0')
-      props.onChange({ all: [value, structuredClone(first.example)] })
-    }}>{t('rules.addCondition')}</Button>}
+    {add}
   </div>
 }

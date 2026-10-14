@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { useContext, useEffect, useRef, useState, type ReactNode } from 'react'
+import { AutoSaveSelection } from './AutoSaveSelection.ts'
 import clsx from 'clsx'
 import { IconChevronDownOutlineRegular } from './icons.tsx'
 import { Menu, type MenuEntry } from './Menu.tsx'
@@ -32,6 +33,7 @@ export function MenuSelect(props: {
   'aria-describedby'?: string
 }): ReactNode {
   const [open, setOpen] = useState(false)
+  const commitSelection = useContext(AutoSaveSelection)
   const triggerRef = useRef<HTMLButtonElement>(null)
   const pointerBeganInside = useRef(true)
   const ownsFocus = useRef(false)
@@ -77,7 +79,7 @@ export function MenuSelect(props: {
         setOpen(false)
         triggerRef.current?.focus()
         if (triggerRef.current?.matches(':disabled')) return
-        if (value !== props.value) props.onChange(value)
+        if (value !== props.value) { props.onChange(value); if (commitSelection) queueMicrotask(commitSelection) }
       }}
       anchor={(
         <Button

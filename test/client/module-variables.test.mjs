@@ -68,4 +68,13 @@ test('变量读取按模块和范围隔离草稿，迟到响应不能覆盖新�
   assert.deepEqual(calls.map(body => [body.expectedModuleId, body.scope]), [['module-a', 'module'], ['module-a', 'module'], ['module-a', 'global']])
   await readVariablesDraft('module-a', module, async () => result({ name: 'EXTERNAL' }))
   assert.equal(module.variables.name, 'sent', '远端新值不覆盖本地未保存草稿')
+  assert.equal(Object.hasOwn(module.variables, ''), true, '新建空白行在后台读取后仍保留')
+  const outgoing = []
+  const saved = await saveModuleVariables('module-a', module.baseline, { variables: module.variables, enabled: true }, async body => { outgoing.push(body); return result({ name: 'sent', empty: '' }) })
+  assert.equal(Object.hasOwn(module.variables, ''), true, '保存开关不删除用户待编辑的空白行')
+  assert.equal(outgoing[0].variables, undefined, '只保存开关，空白行不误写也不触发清空变量')
+  module.baseline = saved.baseline
+  module.variables = { name: 'sent', empty: '', created: '' }
+  await saveModuleVariables('module-a', module.baseline, { variables: module.variables, enabled: true }, async body => { outgoing.push(body); return result(module.variables) })
+  assert.deepEqual(outgoing[1].variables, { name: 'sent', empty: '', created: '' }, '命名完成的空字符串变量照常保存')
 })

@@ -1,4 +1,4 @@
-import { useId, useRef, useState, type FocusEvent, type ReactNode } from 'react'
+import { useId, useRef, useState, type ReactNode } from 'react'
 import clsx from 'clsx'
 import { IconChevronDownOutlineRegular } from '../../ui/icons.tsx'
 import { Switch } from '../../ui/Switch.tsx'
@@ -8,6 +8,7 @@ import type { ModuleVariableScope } from '../../../shared/module-variables.ts'
 import type { PromptToolTranslate } from '../../locales.ts'
 import { HintTooltip } from '../../ui/HintTooltip.tsx'
 import { ConfirmDialog } from '../../ui/ConfirmDialog.tsx'
+import { useAutosave } from '../../data/use-autosave.ts'
 import { VariablesEditor } from './PromptConfigFields.tsx'
 import sharedCss from '../../ui/controls.module.css'
 import featureCss from './prompts.module.css'
@@ -44,6 +45,9 @@ export function TemplateVariablesModuleCard(props: {
   const panelId = useId()
   const count = Object.keys(props.templateVariables).length
   const disabled = props.disabled || props.loading
+  const autosave = useAutosave(props.scope, () => {
+    if (!disabled && !confirmingDelete && !props.publicationPending && Object.keys(props.templateVariables).every(key => key.trim().length > 0)) void props.saveTemplateVariables()
+  })
   const overrides = Object.keys(props.templateVariables).filter(key => Object.hasOwn(props.inheritedVariables, key))
   const inherited = Object.keys(props.inheritedVariables).filter(key => !Object.hasOwn(props.templateVariables, key))
   const enabled = props.templateVariablesEnabled
@@ -57,16 +61,9 @@ export function TemplateVariablesModuleCard(props: {
     if (!props.embedded && props.expanded) props.onToggleExpanded?.()
     requestAnimationFrame(() => addRef.current?.focus())
   }
-  /** 失焦自动保存：焦点离开卡片容器（含收起/切换开关/点击删除）即持久化。 */
-  const autoSaveOnBlur = (event: FocusEvent<HTMLElement>): void => {
-    if (confirmingDelete || disabled || props.publicationPending) return
-    const next = event.relatedTarget
-    if (next === null || !cardRef.current?.contains(next as Node)) {
-      void props.saveTemplateVariables()
-    }
-  }
   return (
-    <article ref={cardRef} className={props.embedded ? styles.moduleEmbedded : styles.configCard} onBlur={autoSaveOnBlur}>
+    <article ref={cardRef} className={props.embedded ? styles.moduleEmbedded : styles.configCard}
+      onInput={autosave.schedule} onCompositionStart={autosave.onCompositionStart} onCompositionEnd={autosave.onCompositionEnd}>
       <header className={props.embedded ? styles.moduleEmbeddedHeader : styles.configHeader}>
         {props.embedded ? <>
           <h4 className={styles.moduleEmbeddedTitle}>{t('variables.title')}</h4>
@@ -111,7 +108,7 @@ export function TemplateVariablesModuleCard(props: {
           </>}
           {props.loading ? (!props.error && <p className={styles.configFieldHint}>{t('variables.loading')}</p>)
             : count === 0 ? <p className={styles.configFieldHint}>{t('variables.empty')}</p>
-              : <VariablesEditor t={t} value={props.templateVariables} disabled={disabled} hideHeading={props.embedded} onChange={(next) => { if (!disabled) props.setTemplateVariables(next ?? {}) }} />}
+              : <VariablesEditor t={t} value={props.templateVariables} disabled={disabled} hideHeading={props.embedded} onChange={(next) => { if (!disabled) { props.setTemplateVariables(next ?? {}); autosave.schedule() } }} />}
         </div>
       )}
       {confirmingDelete && <ConfirmDialog title={t('variables.deleteTitle')} description={props.scope === 'global' ? t('variables.globalDeleteDescription') : t('variables.deleteDescription')}

@@ -61,6 +61,29 @@ test('rules bridge: CAS failure and switched module never discard local input', 
   assert.equal(h.calls.length, 3)
 })
 
+test('新建条件与空白规则留在草稿；无效字段不提交，后台读取不删除，修正后完整保存', async () => {
+  const h = harness(async body => ({ ok: true, value: body.edits
+    ? snapshot(body.edits.map(edit => edit.rule).filter(Boolean), 'saved') : snapshot() }))
+  await h.editor.load()
+  const entry = h.draft.entries[0]
+  const condition = { scope: { audience: 'main' } }
+  h.editor.patch(entry.key, { ...entry.value, if: condition })
+  h.draft.fields.set(entry.key + ':if', { source: '{}', text: '{', error: '未完成 JSON' })
+  assert.equal(await h.editor.submit(), false)
+  assert.equal(h.calls.length, 1, '无效输入只留草稿，不发保存请求')
+  await h.editor.load(true)
+  assert.deepEqual(h.draft.entries[0].value.if, condition)
+  assert.equal(h.draft.fields.get(entry.key + ':if').text, '{', '刷新不删除未完成条件')
+  h.draft.fields.clear()
+  assert.equal(await h.editor.submit(), true)
+  assert.deepEqual(h.calls.at(-1).edits[0].rule.if, condition, '新条件跟随完整规则提交')
+  const blank = { id: '', then: [] }, key = h.editor.add(blank)
+  h.draft.fields.set(key + ':id', { source: '', text: '', error: '请输入规则标识' })
+  assert.equal(await h.editor.submit(), false)
+  await h.editor.load(true)
+  assert.deepEqual(h.draft.entries.find(item => item.key === key).value, blank, '未完成的新规则不会被远端列表隐藏')
+})
+
 test('rules bridge: conflict recovery reads remote, preserves local input and never repeats an old write', async () => {
   let reads = 0
   const remote = { ...alpha, name: 'remote change' }

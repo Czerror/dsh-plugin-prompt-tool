@@ -65,6 +65,8 @@ export function ModulePersonaCard(props: {
   const mounted = useRef(false)
   const [confirming, setConfirming] = useState<{ moduleId: string; audience: PersonaAudience; reload?: boolean }>()
   const [activeField, setActiveField] = useState<'prefix' | 'suffix'>('prefix')
+  const saveTimer = useRef<ReturnType<typeof setTimeout>>()
+  const composing = useRef(false)
   const refresh = useCallback(() => { if (mounted.current) redraw(value => value + 1) }, [])
   const editorOf = useCallback((moduleId: string): PersonaEditorDraft => {
     let editor = drafts.persona.get(moduleId)
@@ -118,6 +120,8 @@ export function ModulePersonaCard(props: {
   }
   /** 本卡的主语：人设来源指向的模块（没有来源就用调用方给的首选模块）。 */
   const moduleId = selection.value[audience] ?? props.moduleId
+  const currentOwner = useRef({ moduleId, audience })
+  currentOwner.current = { moduleId, audience }
   /** 该主语没声明 `persona`：**不读该节**（读了也是 400）、内容按空、保存即建立声明。
    *  本卡是固定卡——未声明也照常出编辑器，编辑器不随声明面出现或消失。未知（未下发）不当作未声明。 */
   const undeclared = moduleId !== undefined && moduleDeclares(props.modules, moduleId, 'persona') === false
@@ -176,6 +180,11 @@ export function ModulePersonaCard(props: {
     else next[audience] = target
     editor.value = next
     notify(editor)
+    if (saveTimer.current !== undefined) clearTimeout(saveTimer.current)
+    saveTimer.current = setTimeout(() => {
+      saveTimer.current = undefined
+      if (!composing.current) void write(moduleId, audience)
+    }, 600)
   }
   const write = async (moduleId: string, audience: PersonaAudience, remove = false): Promise<void> => {
     const editor = editorOf(moduleId)
@@ -188,7 +197,8 @@ export function ModulePersonaCard(props: {
     notify(editor)
     // 未声明 persona 的首次写入＝创建：不传 expectedRevision——没有前状态就没有可冲突的对象，
     // 传空串会被服务端当成非法版本拒绝。已声明时仍带读取到的模块版本。
-    const result = await bridgeCall('persona', personaWriteBody(moduleId, submitted, editor.revision, undeclared), moduleId)
+    const creating = !editor.declared && moduleDeclares(props.modules, moduleId, 'persona') === false
+    const result = await bridgeCall('persona', personaWriteBody(moduleId, submitted, editor.revision, creating), moduleId)
     editor.saving = false
     if (result.ok) {
       editor.saved = result.value.persona ?? {}
@@ -203,6 +213,11 @@ export function ModulePersonaCard(props: {
         if (editor.saved[audience] === undefined) delete editor.value[audience]
         else editor.value[audience] = editor.saved[audience]
       }
+    }
+    if (result.ok && mounted.current && currentOwner.current.moduleId === moduleId && currentOwner.current.audience === audience
+      && JSON.stringify(editor.value[audience]) !== JSON.stringify(editor.saved[audience]) && !composing.current) {
+      if (saveTimer.current !== undefined) clearTimeout(saveTimer.current)
+      saveTimer.current = setTimeout(() => { saveTimer.current = undefined; void write(moduleId, audience) }, 600)
     }
     notify(editor)
     if (mounted.current) onNotice(result.ok && !editor.publicationPending ? 'ok' : 'error',
@@ -221,6 +236,7 @@ export function ModulePersonaCard(props: {
     notify(editor)
     if (mounted.current) onNotice(editor.publicationPending ? 'error' : 'ok', editor.publicationError ?? t('persona.notice.saved'))
   }
+  useEffect(() => () => { if (saveTimer.current !== undefined) clearTimeout(saveTimer.current) }, [moduleId, audience])
   const sourcesDirty = selection.value.main !== selection.saved.main || selection.value.subagent !== selection.saved.subagent
   const editor = moduleId ? editorOf(moduleId) : undefined
   const target = editor?.value[audience]
@@ -266,7 +282,7 @@ export function ModulePersonaCard(props: {
           <MenuSelect compact value={target?.[activeField] === undefined ? 'inherit' : 'custom'} disabled={busy}
             ariaLabel={`${t(`persona.${audience}`)} ${t(`persona.${activeField}.label`)}`}
             options={[{ value: 'inherit', label: t('persona.inherit') }, { value: 'custom', label: t('persona.custom') }]}
-            onChange={value => { if (moduleId) patch(moduleId, audience, activeField, value === 'inherit' ? undefined : '') }} />
+            onChange={value => { if (moduleId) { patch(moduleId, audience, activeField, value === 'inherit' ? undefined : ''); if (saveTimer.current !== undefined) clearTimeout(saveTimer.current); void write(moduleId, audience) } }} />
         </FormField>
         {(['complete', 'includeRuntimeContext'] as const).map(option => {
           const key = option === 'complete' ? 'complete' : 'runtimeContext'
@@ -274,7 +290,7 @@ export function ModulePersonaCard(props: {
             <MenuSelect compact disabled={busy} value={target?.[option] === undefined ? 'inherit' : String(target?.[option])}
               ariaLabel={`${t(`persona.${audience}`)} ${t(`persona.${key}.label`)}`}
               options={[{ value: 'inherit', label: t('persona.inherit') }, { value: 'true', label: t('persona.on') }, { value: 'false', label: t('persona.off') }]}
-              onChange={value => { if (moduleId) patch(moduleId, audience, option, value === 'inherit' ? undefined : value === 'true') }} />
+              onChange={value => { if (moduleId) { patch(moduleId, audience, option, value === 'inherit' ? undefined : value === 'true'); if (saveTimer.current !== undefined) clearTimeout(saveTimer.current); void write(moduleId, audience) } }} />
           </FormField>
         })}
       </div>
@@ -286,6 +302,8 @@ export function ModulePersonaCard(props: {
               aria-label={`${t(`persona.${audience}`)} ${t(`persona.${field}.aria`)}`} spellCheck={false}
               value={target?.[field] ?? ''} readOnly={busy || target?.[field] === undefined}
               placeholder={target?.[field] === undefined ? t('persona.inheritedText', { field: t(`persona.${field}.label`) }) : undefined}
+              onCompositionStart={() => { composing.current = true; if (saveTimer.current !== undefined) clearTimeout(saveTimer.current) }}
+              onCompositionEnd={() => { composing.current = false; if (moduleId) { if (saveTimer.current !== undefined) clearTimeout(saveTimer.current); saveTimer.current = setTimeout(() => { saveTimer.current = undefined; void write(moduleId, audience) }, 600) } }}
               onChange={event => { if (moduleId) patch(moduleId, audience, field, event.target.value) }} />
             <p className={styles.configFieldHint}>{t(`persona.${field}.hint`)}</p>
           </section>

@@ -2,6 +2,8 @@
 
 状态：已采纳，2026-10-10。
 
+2026-10-14 实时编辑补充：运行配装仍以总闸与启用表决定成员；已启用模块的定义暂时不可读属于读取失败，不再先过滤成未启用。候选完整校验失败时保留最后有效配装并告警，恢复后自动更新；明确从启用表移除仍撤销贡献。这一补充只调整运行读取失败的处理，不改变编辑主语与规则卡准入。
+
 ## 决策
 
 **「一个模块是否参与」只有一个真值源**：存储根 `config.yml` 的启用表（`schemaVersion: 3` 的 `enabled` 列表）。`src/host/config-store.ts` 的 `enabledModuleIds()` 是它**唯一**的读取口，客户端不另立一份真相——它用的是 `/bootstrap` 下发的 `meta.modules[].enabled`，那是启用表的**副本**。
@@ -10,7 +12,7 @@
 
 | 消费者 | 判据 | 它问的问题 | 为什么不合并 |
 |---|---|---|---|
-| 运行时装配（`src/index.ts` 的 `enabledModules`） | **总闸** && `enabledModuleIds()` && 模块目录存在 | 这个模块**现在参与装配吗** | 总闸是运行开关，不是「模块是否存在」；关掉它只是不装配 |
+| 运行时装配（`src/index.ts` 的 `enabledModules`） | **总闸** && `enabledModuleIds()`；目录与定义在候选校验中检查 | 这个模块**现在参与装配吗** | 总闸关闭撤销贡献；定义读取失败保留最后有效配装并告警，不等同于停用 |
 | 跨模块排序（`src/host/module-config-order.ts` 的 `readInputs`） | `enabledModuleIds()` | 已启用模块之间**怎么排** | 排序定义的编辑不该被总闸牵连 |
 | 规则卡准入（`src/client/features/prompts/RulesWorkspace.tsx` 的 `owners`） | `meta.modules[].enabled`（启用表副本） | 这张卡**给不给编辑** | 用户 2026-10-10 拍板：启用表是第一优先级，其次才是 `_settings.yml` 与 `rules/*.yml` |
 | 创建/模板写入目标（`src/client/features/prompts/useTemplatePicker.tsx` → `/rules` `createRule`） | 本次操作显式 `moduleId` + 用户目录内有效、可写的模块身份 | 这次创建**写入哪个模块** | 不查启用表或总闸；未启用模块也可作为目标，系统模板、损坏或只读模块仍拒绝 |

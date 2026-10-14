@@ -220,7 +220,7 @@ registerTuiCommand(
       const mounted = createAgentAssembly(actx, {
         moduleRoot: MODULES_DIR,
         enabledModules: () => runtime.modulesEnabled
-          ? enabledModuleIds(MODULES_DIR).filter((id) => moduleDirExists(MODULES_DIR, id))
+          ? enabledModuleIds(MODULES_DIR)
           : [],
         personaModules,
         personaCapture,

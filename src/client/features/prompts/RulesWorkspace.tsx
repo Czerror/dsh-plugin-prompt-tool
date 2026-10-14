@@ -106,8 +106,8 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
   const entries = owners.flatMap(owner => owner.draft.entries.map(entry => ({ ...owner, entry,
     key: configIdentityKey({ moduleId: owner.moduleId, configId: entry.key }),
     identity: configIdentityKey({ moduleId: owner.moduleId, configId: entry.previousId ?? entry.value.id }),
-  }))).filter(({ entry }) => !entry.deleted && scopeVisible(entry.value, props.scope ?? 'main'))
-    .filter(({ entry, moduleId: id }) => (view === 'all' || view === 'context-activation' && hasContextActivation([...entry.value.then, ...entry.value.else ?? []]) || entry.value.layer === view)
+  }))).filter(({ entry, key }) => !entry.deleted && (expanded === key || scopeVisible(entry.value, props.scope ?? 'main')))
+    .filter(({ entry, moduleId: id, key }) => expanded === key || (view === 'all' || view === 'context-activation' && hasContextActivation([...entry.value.then, ...entry.value.else ?? []]) || entry.value.layer === view)
       && (!query || JSON.stringify(entry.value).toLowerCase().includes(query) || entry.value.layer !== undefined && props.matchesLayerSettings?.(entry.value.layer, query, id)))
     .sort((a, b) => (rank.get(a.identity) ?? Number.MAX_SAFE_INTEGER) - (rank.get(b.identity) ?? Number.MAX_SAFE_INTEGER))
   const batchDisabled = entries.length === 0 || entries.some(({ moduleId: id, draft }) => readOnly(id) || !draft.loaded || draft.busy !== undefined || hasRuleFields(draft) || draft.remote !== undefined)

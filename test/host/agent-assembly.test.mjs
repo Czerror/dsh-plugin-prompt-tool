@@ -9,7 +9,7 @@
  */
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { Context } from '@deepseek-ai/cordis'
@@ -30,7 +30,7 @@ const { loadModuleSpec } = await import('../../src/host/manifest.ts')
 const hasEveryService = () => true
 
 /** 只替代 Agent/模型驱动；注册、scope 路由与注入执行器使用真实实现。 */
-async function liveAssembly(t, enabledModules) {
+async function liveAssembly(t, enabledModules, options = {}) {
   const root = new Context()
   await root.plugin(SystemPrompt)
   await root.plugin(ToolRuntime)
@@ -39,7 +39,7 @@ async function liveAssembly(t, enabledModules) {
   root.provide('agents', { list: () => agents })
   installPreStepCoordinator(root)
   const warnings = []
-  const runtime = createAgentAssembly(root, { moduleRoot, enabledModules, warn: (message) => warnings.push(message) })
+  const runtime = createAgentAssembly(root, { moduleRoot, enabledModules, ...options, warn: (message) => warnings.push(message) })
   t.after(async () => { await runtime.dispose(); await root.fiber.dispose() })
   const makeAgent = async (id, depth = 0, surface) => {
     const events = []
@@ -54,6 +54,105 @@ async function liveAssembly(t, enabledModules) {
   }))
   return { root, runtime, makeAgent, inject, warnings }
 }
+
+test('官方 assemble 自动采用最新有效本地定义，坏定义保旧并在修复后恢复', async (t) => {
+  const id = 'live-system-definition'
+  const write = text => writeModuleFixture(id, { modules: ['prompt-config-engine'], promptConfigs: [{ id: 'live-system', layer: 'system-section', text }] })
+  write('LIVE-A')
+  const h = await liveAssembly(t, () => [id])
+  const main = await h.makeAgent('live-system-main')
+  const child = await h.makeAgent('live-system-child', 1)
+  const readers = new Map()
+  for (const agent of [main, child]) await agent.ctx.plugin({ inject: ['systemPrompt'], apply(ctx) {
+    readers.set(agent, () => ctx.systemPrompt.assemble({ agent, scope: agent }))
+  } })
+  const texts = async agent => (await readers.get(agent)()).sections.map(section => section.text)
+  for (const agent of [main, child]) assert.ok((await texts(agent)).includes('LIVE-A'))
+  write('LIVE-B')
+  for (const agent of [main, child]) {
+    const actual = await texts(agent)
+    assert.ok(actual.includes('LIVE-B'))
+    assert.ok(!actual.includes('LIVE-A'))
+  }
+  writeFileSync(join(moduleRoot, id, 'module.yml'), 'rules: [')
+  for (const agent of [main, child]) assert.ok((await texts(agent)).includes('LIVE-B'))
+  assert.ok(h.warnings.length > 0)
+  write('LIVE-C')
+  for (const agent of [main, child]) {
+    const actual = await texts(agent)
+    assert.ok(actual.includes('LIVE-C'))
+    assert.ok(!actual.includes('LIVE-B'))
+  }
+  const file = join(moduleRoot, id, 'module.yml')
+  renameSync(file, file + '.away')
+  try { for (const agent of [main, child]) assert.ok((await texts(agent)).includes('LIVE-C'), '读取失败沿用旧贡献') }
+  finally { renameSync(file + '.away', file) }
+  let registrations = 0
+  const off = h.root.on('system-prompt/change', () => { registrations++ })
+  for (const agent of [main, child]) await texts(agent)
+  assert.equal(registrations, 0, '未改定义不重挂注册')
+  off()
+  writeModuleFixture(id, { modules: ['prompt-config-engine'], promptConfigs: [
+    { id: 'new-step', layer: 'pre-step', text: 'CHILD-STEP', audience: 'subagent', position: 'after-user' },
+    { id: 'disabled', layer: 'system-section', text: 'OFF', enabled: false },
+  ] })
+  for (const agent of [main, child]) {
+    const sections = await texts(agent)
+    assert.ok(!sections.includes('LIVE-C') && !sections.includes('OFF'))
+  }
+  const messages = result => result.messages.flatMap(message => message.content.map(block => block.text))
+  assert.deepEqual(messages(await h.inject(main)), ['USER'])
+  assert.deepEqual(messages(await h.inject(child)), ['USER', 'CHILD-STEP'])
+  const { writeGlobalLayerSettings } = await import('../../src/host/config-store.ts')
+  writeGlobalLayerSettings(moduleRoot, { modelMaxTokens: '55' })
+  await texts(main)
+  const request = () => h.root.waterfall(scopeTarget(main, main), 'agent/request', { agent: main }, async () => ({ maxTokens: 999 }))
+  assert.equal((await request()).maxTokens, 55, '全局参数变化也更新下一官方请求')
+  writeGlobalLayerSettings(moduleRoot, { modelMaxTokens: '' })
+  await texts(main)
+  assert.equal((await request()).maxTokens, 999, '删除全局覆盖恢复宿主参数')
+  writeModuleFixture(id, { modules: ['rule-engine'], promptConfigs: [{ id: 'external', text: 'WATCHED', position: 'after-user' }] })
+  const deadline = Date.now() + 2000
+  let changed
+  do {
+    await new Promise(resolve => setTimeout(resolve, 25))
+    changed = messages(await h.inject(main))
+  } while (!changed.includes('WATCHED') && Date.now() < deadline)
+  assert.deepEqual(changed, ['USER', 'WATCHED'], '外部原地改动自动更新下一官方事件，不需要手动刷新')
+  await h.runtime.dispose()
+  for (const agent of [main, child]) assert.ok(!(await texts(agent)).includes('LIVE-C'))
+  assert.deepEqual(messages(await h.inject(child)), ['USER'])
+})
+
+test('本地人设正文和来源下一次官方装配生效；坏来源保留两类受众的有效内容', async t => {
+  const { selectedPersonaModules, writePersonaSources, readPersonaSources } = await import('../../src/host/persona-selection.ts')
+  const first = 'live-persona-first', second = 'live-persona-second'
+  const write = (id, main, child) => writeModuleFixture(id, { modules: [], persona: { main: { prefix: main }, subagent: { prefix: child } } })
+  write(first, 'MAIN-A', 'CHILD-A'); write(second, 'MAIN-B', 'CHILD-B')
+  writePersonaSources(moduleRoot, { main: first, subagent: first }, readPersonaSources(moduleRoot).revision)
+  const h = await liveAssembly(t, () => [], { personaModules: () => selectedPersonaModules(moduleRoot) })
+  const actors = [await h.makeAgent('live-persona-main'), await h.makeAgent('live-persona-child', 1)]
+  const readers = []
+  for (const agent of actors) await agent.ctx.plugin({ inject: ['systemPrompt'], apply(ctx) {
+    readers.push(async () => (await ctx.systemPrompt.assemble({ agent, scope: agent })).sections.map(section => section.text))
+  } })
+  assert.ok((await readers[0]()).includes('MAIN-A'))
+  assert.ok((await readers[1]()).includes('CHILD-A'))
+  write(first, 'MAIN-A2', 'CHILD-A2')
+  assert.ok((await readers[0]()).includes('MAIN-A2'))
+  assert.ok((await readers[1]()).includes('CHILD-A2'))
+  writePersonaSources(moduleRoot, { main: second, subagent: first }, readPersonaSources(moduleRoot).revision)
+  assert.ok((await readers[0]()).includes('MAIN-B'))
+  assert.ok((await readers[1]()).includes('CHILD-A2'))
+  writeFileSync(join(moduleRoot, second, 'module.yml'), 'persona: [')
+  assert.ok((await readers[0]()).includes('MAIN-B'))
+  assert.ok((await readers[1]()).includes('CHILD-A2'))
+  assert.ok(h.warnings.length > 0)
+  write(second, 'MAIN-C', 'CHILD-C')
+  assert.ok((await readers[0]()).includes('MAIN-C'))
+  assert.deepEqual(h.runtime.moduleIds(actors[0].id), [], '人设来源不启用该模块规则')
+  writePersonaSources(moduleRoot, { main: null, subagent: null }, readPersonaSources(moduleRoot).revision)
+})
 
 test('真实注入：启用配置进入主/子会话正确位置，关闭项不注入，释放后不再贡献', async (t) => {
   writeModuleFixture('live-injection', {

@@ -13,6 +13,7 @@ import { ConfirmDialog } from '../../ui/ConfirmDialog.tsx'
 import { StatusBadge } from '../../ui/StatusBadge.tsx'
 import { PromptConfigForm } from './PromptConfigForm.tsx'
 import { instructionFileIdOf } from '../../data/prompt-config-content.ts'
+import { useAutosave } from '../../data/use-autosave.ts'
 import { AUDIENCE_LABEL_KEYS, LAYER_LABEL_KEYS, POSITION_LABEL_KEYS, STRATEGY_LABEL_KEYS, fieldPolicyFor, translateLabel } from './prompt-config-policy.ts'
 import sharedCss from '../../ui/controls.module.css'
 import featureCss from './prompts.module.css'
@@ -104,12 +105,21 @@ export const PromptConfigCard = memo(function PromptConfigCard(props: {
     if (config.contentSaving === true || config.contentConflict === true) return
     props.onSaveInstructionFile?.(instructionFileId)
   }
+  const autosave = useAutosave(`${props.draftScope}:${config.id}`, flushInstructionSave)
+  const wasSaving = useRef(config.contentSaving === true)
+  useEffect(() => {
+    const finished = wasSaving.current && config.contentSaving !== true
+    wasSaving.current = config.contentSaving === true
+    if (finished && config.contentDirty && !config.contentConflict && !config.contentMessage) autosave.schedule()
+  }, [config.contentSaving, config.contentDirty, config.contentConflict, config.contentMessage])
   const title = <span className={styles.configTitle}>
     <span className={styles.configTitleRow}><span className={styles.configName}>{name}</span></span>
     {props.sourceLabel && <span className={styles.configMeta}>{props.sourceLabel}</span>}
     <span className={styles.configMeta}>{chips.join(' · ')}</span>
   </span>
   return <article ref={cardRef} className={clsx(styles.configCard, props.expanded && styles.configCardOpen)}
+    onInput={instructionFileId === undefined ? undefined : autosave.schedule}
+    onCompositionStart={autosave.onCompositionStart} onCompositionEnd={instructionFileId === undefined ? undefined : autosave.onCompositionEnd}
     data-config-id={config.id} data-dragging={props.dragging ? '' : undefined}
     data-drop-before={props.dropBefore ? '' : undefined} data-drop-after={props.dropAfter ? '' : undefined}
     onFocus={() => { ownsFocus.current = true }}
@@ -118,7 +128,7 @@ export const PromptConfigCard = memo(function PromptConfigCard(props: {
       requestAnimationFrame(() => {
         if (ownsFocus.current) return
         setMenuOpen(false)
-        flushInstructionSave()
+        autosave.flush()
       })
     }}
     onDragOver={props.onDragOver === undefined ? undefined : (event) => props.onDragOver!(config.id, event)}
@@ -139,7 +149,7 @@ export const PromptConfigCard = memo(function PromptConfigCard(props: {
       {props.summaryOnly ? <div className={styles.configToggle}>{title}</div> : <button type="button" className={styles.configToggle} aria-expanded={props.expanded} aria-controls={panelId}
         onClick={() => {
           // 折叠会让编辑区卸载、焦点仍留在卡片内，失焦保存不会触发；先落盘再切换。
-          if (props.expanded) flushInstructionSave()
+          if (props.expanded) autosave.flush()
           props.onToggleExpanded(config.id)
         }}>
         {title}
