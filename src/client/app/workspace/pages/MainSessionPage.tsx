@@ -8,8 +8,21 @@ import { injectionPointSlots } from './InjectionPointsPanel.tsx'
 import ui from '../../../ui/controls.module.css'
 import type { ConfigPageBrowse } from '../workspace-browse-state.ts'
 import type { WorkspacePage } from '../workspace-pages.ts'
-/** 主会话页：按装配集合呈现各启用模块的规则与层内资产（主语由每张卡的归属模块给出）。 */
-export const MainSessionPage = memo(function MainSessionPage(props: { store: PromptToolStore; t: PromptToolTranslate; browse?: ConfigPageBrowse; onNavigate?: (page: WorkspacePage) => void }): ReactNode {
+/** 主会话页：按装配集合呈现各启用模块的规则与层内资产（主语由每张卡的归属模块给出）。
+ *  store 是纯透传：面＝`RulesWorkspace` 与 `injectionPointSlots` 两张子面的并集，本页自己一个成员都不取。 */
+export const MainSessionPage = memo(function MainSessionPage(props: {
+  store: Pick<PromptToolStore,
+    'meta' | 'fields' | 'load' | 'api' | 'showNotice' | 'editorDrafts'
+    | 'subscribeFields' | 'getFields' | 'subscribeDrafts' | 'getDraftRevision' | 'publishDrafts' | 'enqueueRuleTask'
+    | 'createTemplateRule' | 'createModule' | 'createModuleCapability' | 'patch'
+    | 'persistInstructionFiles' | 'reloadInstructionFile' | 'instructionPolicy' | 'updateInstructionPolicy'
+    | 'ensureModuleParams' | 'ensureModuleVariables' | 'moduleVariables' | 'setModuleVariables'
+    | 'setModuleVariablesEnabled' | 'setModuleVariablesScope' | 'saveModuleVariables' | 'retryModuleVariablesPublication'
+    | 'removeModuleCapability' | 'moduleParamsOf' | 'globalParams' | 'globalParamsLoaded' | 'setGlobalParam'
+    | 'persistGlobalParams' | 'persistParamOverrides' | 'setModuleParam'
+    | 'modelCatalog' | 'modelReasoning' | 'hostDefaultModel'>
+  t: PromptToolTranslate; browse?: ConfigPageBrowse; onNavigate?: (page: WorkspacePage) => void
+}): ReactNode {
   const { store, t } = props
   const [viewFilter, setViewFilter] = useState(props.browse?.viewFilter ?? 'all')
   const changeViewFilter = useCallback((value: string) => {

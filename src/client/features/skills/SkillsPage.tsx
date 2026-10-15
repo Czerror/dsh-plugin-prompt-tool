@@ -32,7 +32,13 @@ const SKILL_STATUS_TABS: Array<{ id: SkillStatusTab; labelKey: PromptToolLocaleK
 /** 创建表单的本地校验：与官方 `SKILL_NAME` 同规则（kebab-case）。 */
 const SKILL_NAME_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
 
-export const SkillsPage = memo(function SkillsPage(props: { store: PromptToolStore; api: PromptToolHostApi; t: PromptToolTranslate; browse?: { query: string; status: SkillStatusTab } }): ReactNode {
+/** 本页取用的 store 能力面：技能资产读写、目录引用与通知。 */
+type SkillsPageStore = Pick<PromptToolStore,
+  'setSkillPolicy' | 'skillsBusy' | 'importSkillsDirectory' | 'patchSkillFolders' | 'createSkill'
+  | 'refreshSkills' | 'deleteSkill' | 'openSkillsDir' | 'showNotice' | 'subscribeFields' | 'getFields'
+  | 'editorDrafts' | 'readSkill' | 'saveSkill'>
+
+export const SkillsPage = memo(function SkillsPage(props: { store: SkillsPageStore; api: PromptToolHostApi; t: PromptToolTranslate; browse?: { query: string; status: SkillStatusTab } }): ReactNode {
   const { store, api, t } = props
   const fields = usePromptToolFields(store, (value) => value)
   const [skillFilter, setSkillFilter] = useState(props.browse?.query ?? '')

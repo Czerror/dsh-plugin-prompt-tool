@@ -5,8 +5,12 @@ import type { PromptToolStore } from './use-prompt-tool-store.ts'
 
 export interface ModuleRuleEditor { moduleId: string; draft: RulesDraft; editor: RuleEditor }
 
+/** 规则编辑器从 store 转交出去的能力面：草稿订阅、按模块取草稿与两个写通道。 */
+export type RuleEditorStore = Pick<PromptToolStore,
+  'subscribeDrafts' | 'getDraftRevision' | 'editorDrafts' | 'enqueueRuleTask' | 'publishDrafts'>
+
 /** 规则按模块共享草稿；读取集合＝装配集合里各模块自己的 id（没有「当前模块」特例）。 */
-export function useModuleRuleEditors(store: PromptToolStore, moduleIds: readonly string[]): ModuleRuleEditor[] {
+export function useModuleRuleEditors(store: RuleEditorStore, moduleIds: readonly string[]): ModuleRuleEditor[] {
   useSyncExternalStore(store.subscribeDrafts, store.getDraftRevision, store.getDraftRevision)
   const identity = JSON.stringify([...new Set(moduleIds)].filter(Boolean))
   const active = useRef(moduleIds)

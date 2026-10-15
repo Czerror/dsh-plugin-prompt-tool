@@ -12,8 +12,22 @@ import type { WorkspacePage } from '../workspace-pages.ts'
  *
  *  例外：仅主对话生效的能力**不在本页创建、也不在本页显示卡片**。
  *
- *  纪律：过滤抽屉与搜索词只由用户手动改变；新建只做「展开新卡 + 滚动定位」两件事。 */
-export const SubagentPage = memo(function SubagentPage(props: { store: PromptToolStore; t: PromptToolTranslate; browse?: ConfigPageBrowse; onNavigate?: (page: WorkspacePage) => void }): ReactNode {
+ *  纪律：过滤抽屉与搜索词只由用户手动改变；新建只做「展开新卡 + 滚动定位」两件事。
+ *
+ *  store 是与主会话页同源的纯透传：面＝`RulesWorkspace` 与 `injectionPointSlots` 两张子面的并集。 */
+export const SubagentPage = memo(function SubagentPage(props: {
+  store: Pick<PromptToolStore,
+    'meta' | 'fields' | 'load' | 'api' | 'showNotice' | 'editorDrafts'
+    | 'subscribeFields' | 'getFields' | 'subscribeDrafts' | 'getDraftRevision' | 'publishDrafts' | 'enqueueRuleTask'
+    | 'createTemplateRule' | 'createModule' | 'createModuleCapability' | 'patch'
+    | 'persistInstructionFiles' | 'reloadInstructionFile' | 'instructionPolicy' | 'updateInstructionPolicy'
+    | 'ensureModuleParams' | 'ensureModuleVariables' | 'moduleVariables' | 'setModuleVariables'
+    | 'setModuleVariablesEnabled' | 'setModuleVariablesScope' | 'saveModuleVariables' | 'retryModuleVariablesPublication'
+    | 'removeModuleCapability' | 'moduleParamsOf' | 'globalParams' | 'globalParamsLoaded' | 'setGlobalParam'
+    | 'persistGlobalParams' | 'persistParamOverrides' | 'setModuleParam'
+    | 'modelCatalog' | 'modelReasoning' | 'hostDefaultModel'>
+  t: PromptToolTranslate; browse?: ConfigPageBrowse; onNavigate?: (page: WorkspacePage) => void
+}): ReactNode {
   const { store, t } = props
   const [viewFilter, setViewFilter] = useState(props.browse?.viewFilter ?? 'all')
   const changeViewFilter = (value: string): void => {

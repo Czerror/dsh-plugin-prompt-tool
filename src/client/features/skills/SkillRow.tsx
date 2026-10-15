@@ -23,7 +23,7 @@ export interface SkillRowProps {
   skill: SkillCatalogEntry
   t: PromptToolTranslate
   busy: boolean
-  store: PromptToolStore
+  store: Pick<PromptToolStore, 'editorDrafts' | 'readSkill' | 'saveSkill'>
   sessionId: string | undefined
   onSetPolicy: (name: string, path: string, change: SkillPolicyChange) => Promise<boolean>
   onDelete: (skill: SkillCatalogEntry) => void

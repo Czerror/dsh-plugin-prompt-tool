@@ -14,6 +14,9 @@ import { HintTooltip } from '../../ui/HintTooltip.tsx'
 import styles from '../../ui/controls.module.css'
 import { useAutosave } from '../../data/use-autosave.ts'
 
+/** 参数控件实际取用的能力面：读数、草稿池与写通道；其余成员与本文件无关。 */
+type EngineParamStore = Pick<PromptToolStore, 'editorDrafts' | 'fields' | 'getDraftRevision' | 'subscribeDrafts' | 'publishDrafts' | 'meta' | 'persistParamOverrides' | 'moduleParamsOf' | 'globalParams' | 'globalParamsLoaded' | 'setGlobalParam' | 'persistGlobalParams' | 'setModuleParam'>
+
 /** 未提供草稿通道的 store（单测桩）退化订阅：不广播，字段仍按当前草稿读一次。 */
 const subscribeNothing = (): (() => void) => () => {}
 const getZero = (): number => 0
@@ -39,7 +42,7 @@ export function matchesEditorGroup(id: string, keyword: string, t: PromptToolTra
  * 显示标签不进 shared：shared 只给参数键，UI 按 `param.<键>` 查 prompt-tool 字典
  * （键类型由 ENGINE_PARAM_KEY 的模板字面量约束，新增参数缺词条即编译失败）。
  */
-export function EngineParamFields({ store, moduleId, card, t, instanceId }: { store: PromptToolStore; moduleId: string; card: string; t: PromptToolTranslate; instanceId?: string }): ReactNode {
+export function EngineParamFields({ store, moduleId, card, t, instanceId }: { store: EngineParamStore; moduleId: string; card: string; t: PromptToolTranslate; instanceId?: string }): ReactNode {
   const keys = SHARED_PARAM_KEYS.filter((key) => ENGINE_PARAM_DEFINITIONS[key].card === card)
   const primary = keys.find((key) => ENGINE_PARAM_DEFINITIONS[key].module?.key === 'enabled')
   const subagents = keys.find((key) => ENGINE_PARAM_DEFINITIONS[key].module?.key === 'includeSubagents')
@@ -72,7 +75,7 @@ export type EngineParamSubject =
  * 因此一个渲染点里的半成品输入或错误提示会立即出现在其他渲染点，且不各留一份本地 state。
  */
 export function EngineParamField({ store, param, t, instanceId, ...subject }: {
-  store: PromptToolStore; param: SharedParamKey; t: PromptToolTranslate; instanceId?: string
+  store: EngineParamStore; param: SharedParamKey; t: PromptToolTranslate; instanceId?: string
 } & EngineParamSubject): ReactNode {
   // 主语**二选一必填**（判别联合）：`moduleId`（某个模块）或 `global: true`（全局层）。
   // 「都不传」在类型层不可能——否则将来新增调用点会经 `optional` 策略静默写到全局层。

@@ -99,7 +99,7 @@ function ModuleNameEditor(props: { module: ModuleSummary; actions: ModuleActions
   </span>
 }
 
-export const ModuleSwitcher = memo(function ModuleSwitcher(props: { store: PromptToolStore; t: PromptToolTranslate }): ReactNode {
+export const ModuleSwitcher = memo(function ModuleSwitcher(props: { store: Pick<PromptToolStore, 'moduleActions' | 'meta' | 'subscribeFields' | 'getFields' | 'showNotice' | 'editorDrafts' | 'dirtySwitches' | 'createModule' | 'toggle'>; t: PromptToolTranslate }): ReactNode {
   const { store, t } = props
   const fields = usePromptToolFields(store, (value) => value)
   const modules = store.meta.modules ?? []

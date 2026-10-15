@@ -40,6 +40,23 @@ const CARD_LABEL_KEYS: Record<string, PromptToolLocaleKey> = {
 }
 
 /**
+ * 本页三个依赖面，按「谁真正读到什么」分，不共用一个更大的并集：
+ * 纯读 helper 只要 `/meta` 的装配事实；能力行多要可编辑性与自己那张卡的移除端点；
+ * 页面与层设置区还要承接子卡（参数控件、模型路由、诊断卡）已声明的能力面。
+ */
+type MetaFactsStore = Pick<PromptToolStore, 'meta'>
+
+type CapabilityRowStore = Pick<PromptToolStore, 'fields' | 'meta' | 'removeModuleCapability'>
+
+type PanelStore = Pick<PromptToolStore,
+  | 'api' | 'createModuleCapability' | 'editorDrafts' | 'ensureModuleParams' | 'ensureModuleVariables'
+  | 'fields' | 'getDraftRevision' | 'globalParams' | 'globalParamsLoaded' | 'hostDefaultModel'
+  | 'load' | 'meta' | 'modelCatalog' | 'modelReasoning' | 'moduleParamsOf' | 'moduleVariables'
+  | 'persistGlobalParams' | 'persistParamOverrides' | 'publishDrafts' | 'removeModuleCapability'
+  | 'retryModuleVariablesPublication' | 'saveModuleVariables' | 'setGlobalParam' | 'setModuleParam'
+  | 'setModuleVariables' | 'setModuleVariablesEnabled' | 'setModuleVariablesScope' | 'showNotice' | 'subscribeDrafts'>
+
+/**
  * 该层在共享契约里拥有扁平参数、且**该模块**确实可编辑的编辑组：
  * 能力组要求真实装配（未装配的能力参数写了不生效，不显示假入口）；
  * 专用编辑组（提示词生成默认值等）不依赖模块装配，始终可编辑。
@@ -48,7 +65,7 @@ const CARD_LABEL_KEYS: Record<string, PromptToolLocaleKey> = {
  * 声明面（ADR-0014）只决定**发不发这次参数读**（store 侧按 `/meta` 跳过未声明的读），
  * 不决定参数组出不出场：参数组是指令卡内的固定设置区，未声明时按空内容渲染、保存即建立声明。
  */
-export function layerParamCards(store: PromptToolStore, layer: string, moduleId: string | undefined, exclude: readonly string[] = []): readonly string[] {
+export function layerParamCards(store: MetaFactsStore, layer: string, moduleId: string | undefined, exclude: readonly string[] = []): readonly string[] {
   const excluded = new Set(exclude)
   const facts = moduleId === undefined ? undefined : moduleFactsOf(store.meta.modules, moduleId)
   return ENGINE_EDITOR_GROUP_MAP
@@ -62,7 +79,7 @@ export function layerParamCards(store: PromptToolStore, layer: string, moduleId:
 }
 
 /** 该层**该模块**已装配的能力（装配事实来自 `/meta` 的逐模块 facts，不是前端开关）。 */
-export function layerAssembledCapabilities(store: PromptToolStore, layer: string, moduleId: string | undefined): readonly string[] {
+export function layerAssembledCapabilities(store: MetaFactsStore, layer: string, moduleId: string | undefined): readonly string[] {
   const facts = moduleId === undefined ? undefined : moduleFactsOf(store.meta.modules, moduleId)
   return MODULE_CAPABILITIES
     .filter(({ id, displayLayer }) => displayLayer === layer && isModuleCapabilityPresent(id, facts))
@@ -70,7 +87,7 @@ export function layerAssembledCapabilities(store: PromptToolStore, layer: string
 }
 
 /** 单个已装配能力：装配状态 + 移除入口（二次确认沿用统一对话框）。主语＝该卡的归属模块。 */
-function LayerCapabilityRow(props: { store: PromptToolStore; t: PromptToolTranslate; moduleId: string; capabilityId: string }): ReactNode {
+function LayerCapabilityRow(props: { store: CapabilityRowStore; t: PromptToolTranslate; moduleId: string; capabilityId: string }): ReactNode {
   const { store, t, moduleId, capabilityId } = props
   const [confirming, setConfirming] = useState(false)
   const buttonRef = useRef<HTMLButtonElement>(null)
@@ -125,18 +142,18 @@ function assetCandidates(layer: string, excluded: readonly string[]): string[] {
 }
 
 /** 本层该模块可渲染的资产：声明面明确未声明的节整卡不出场（改为添加入口）——通用资产卡按需存在，行为不变。 */
-function layerAssets(store: PromptToolStore, layer: string, moduleId: string, excluded: readonly string[]): string[] {
+function layerAssets(store: MetaFactsStore, layer: string, moduleId: string, excluded: readonly string[]): string[] {
   return assetCandidates(layer, excluded).filter((id) => declaredOrUnknown(store, moduleId, ASSET_SECTIONS[id]))
 }
 
 /** 本层该模块**未声明**、需要给添加入口的通用资产节（参数组不走这里：它是固定设置区，始终渲染）。 */
-function undeclaredSections(store: PromptToolStore, layer: string, moduleId: string, excluded: readonly string[]): string[] {
+function undeclaredSections(store: MetaFactsStore, layer: string, moduleId: string, excluded: readonly string[]): string[] {
   return assetCandidates(layer, excluded).filter((id) => ASSET_SECTIONS[id] !== undefined
     && moduleDeclares(store.meta.modules, moduleId, ...ASSET_SECTIONS[id]) === false)
 }
 
 /** 未登记声明面的资产＝不门控；未知（未下发）也放行——不把「读不到」当「没声明」。 */
-function declaredOrUnknown(store: PromptToolStore, moduleId: string, sections: readonly string[] | undefined): boolean {
+function declaredOrUnknown(store: MetaFactsStore, moduleId: string, sections: readonly string[] | undefined): boolean {
   return sections === undefined || moduleDeclares(store.meta.modules, moduleId, ...sections) !== false
 }
 
@@ -152,7 +169,7 @@ function matchesLayerGroup(id: string, keyword: string, t: PromptToolTranslate):
  * 没有模块就没有卡（不进入「先渲染再禁用」的分支）。
  */
 export function LayerSettingsContent(props: {
-  store: PromptToolStore
+  store: PanelStore
   t: PromptToolTranslate
   layer: string
   /** 资产卡的归属模块＝主语；缺席即装配集合为空，整块不渲染。 */
@@ -305,7 +322,7 @@ export interface InjectionPointSlots {
 }
 
 export interface InjectionPointSlotsInput {
-  store: PromptToolStore
+  store: PanelStore
   t: PromptToolTranslate
   /** 当前层筛选（`all` / `context-activation` / 九层之一）；过滤只影响展示，不改变保存语义。 */
   viewFilter: string

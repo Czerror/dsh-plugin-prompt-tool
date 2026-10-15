@@ -12,7 +12,8 @@ import ui from '../../ui/controls.module.css'
 import css from './PromptWorkspace.module.css'
 
 export function WorkspaceFrame(props: {
-  store: PromptToolStore
+  store: Pick<PromptToolStore,
+    'meta' | 'loading' | 'load' | 'notice' | 'noticeKind' | 'noticePill' | 'subscribeDrafts' | 'getDraftRevision'>
   page: WorkspacePage
   t: PromptToolTranslate
   onPageChange: (page: WorkspacePage) => void

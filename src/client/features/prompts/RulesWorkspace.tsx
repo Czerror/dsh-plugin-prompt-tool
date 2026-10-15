@@ -29,7 +29,11 @@ import ui from '../../ui/controls.module.css'
 import css from './rules.module.css'
 
 export interface RulesWorkspaceProps {
-  store: PromptToolStore; t: PromptToolTranslate; scope?: 'main' | 'subagent'
+  store: Pick<PromptToolStore,
+    'meta' | 'subscribeFields' | 'getFields' | 'subscribeDrafts' | 'getDraftRevision' | 'editorDrafts'
+    | 'enqueueRuleTask' | 'publishDrafts' | 'createTemplateRule' | 'showNotice' | 'createModule' | 'patch'
+    | 'persistInstructionFiles' | 'reloadInstructionFile' | 'instructionPolicy' | 'updateInstructionPolicy'>
+  t: PromptToolTranslate; scope?: 'main' | 'subagent'
   browse?: { filter: string; expanded?: string }
   createdHidden?: boolean; onShowCreated?: () => void
   beforeCards?: ReactNode

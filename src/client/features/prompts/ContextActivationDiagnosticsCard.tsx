@@ -9,7 +9,7 @@ import ui from '../../ui/controls.module.css'
 import { Button } from '../../ui/Button.tsx'
 
 export const ContextActivationDiagnosticsCard = memo(function ContextActivationDiagnosticsCard(props: {
-  store: PromptToolStore
+  store: Pick<PromptToolStore, 'api'>
   t: PromptToolTranslate
 }): ReactNode {
   const { store, t } = props

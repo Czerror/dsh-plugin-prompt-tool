@@ -20,7 +20,6 @@ export interface ModuleCreateItem {
  * `TemplateTargetPicker` 一步选（已存在 / 新建空白模块）——主语来自那次选择。
  */
 export function EngineModuleActions(props: {
-  store: PromptToolStore
   t: PromptToolTranslate
   /** 菜单按钮 ref：模板浮层锚定到该按钮。 */
   anchorRef?: React.RefObject<HTMLButtonElement>
@@ -48,7 +47,7 @@ export function EngineModuleActions(props: {
 
 /** 模块能力创建菜单：**主语＝调用方给的模块**（`moduleId`），没有归属模块就不出创建入口。 */
 export function ModuleCapabilityCreateMenu(props: {
-  store: PromptToolStore
+  store: Pick<PromptToolStore, 'fields' | 'meta' | 'createModuleCapability'>
   t: PromptToolTranslate
   moduleId: string
   layer?: string

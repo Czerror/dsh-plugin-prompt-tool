@@ -183,7 +183,7 @@ export function useTemplatePicker(
  * 只负责成功后的展示刷新，不是创建前置。这样未启用模块与空白模块都能直接接收首条模板。
  */
 export function useTemplateCreate(props: {
-  store: PromptToolStore
+  store: Pick<PromptToolStore, 'createTemplateRule' | 'showNotice' | 'editorDrafts' | 'createModule'>
   t: PromptToolTranslate
   /** 菜单项：注入模板的层清单（id 形如 `tpl:<layer>`）。 */
   items: readonly ModuleCreateItem[]
@@ -249,7 +249,7 @@ export function useTemplateCreate(props: {
       else store.showNotice('ok', t('customTools.templateInserted', { id: String(spec.id ?? '') }))
     })
   }, [picker, store, t])
-  const toolbar = <EngineModuleActions store={store} t={t} anchorRef={picker.anchorRef} extraItems={items}
+  const toolbar = <EngineModuleActions t={t} anchorRef={picker.anchorRef} extraItems={items}
     onExtraSelect={(id) => { if (id.startsWith('tpl:')) picker.openPicker(id.slice(4)) }} />
   const dialogs = <>
     {picker.open && <TemplatePicker t={t} anchorRef={picker.popoverAnchorRef} templates={picker.toolsOnly ? [] : picker.templates}

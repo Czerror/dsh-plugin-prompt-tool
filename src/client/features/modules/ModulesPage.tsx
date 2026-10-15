@@ -9,7 +9,13 @@ import type { PromptToolStore } from '../../data/use-prompt-tool-store.ts'
 import type { PromptToolTranslate } from '../../locales.ts'
 
 export const ModulesPage = memo(function ModulesPage(
-  props: { store: PromptToolStore; t: PromptToolTranslate; onReady?: () => void },
+  /** 本页只读 `meta.moduleWarnings`，其余面透传给子组件（并集）。 */
+  props: {
+    store: Pick<PromptToolStore,
+      'meta' | 'subscribeFields' | 'getFields'
+      | 'moduleActions' | 'showNotice' | 'editorDrafts' | 'dirtySwitches' | 'createModule' | 'toggle'>
+    t: PromptToolTranslate; onReady?: () => void
+  },
 ): ReactNode {
   const { store, t } = props
   useEffect(() => { props.onReady?.() }, [props.onReady])
