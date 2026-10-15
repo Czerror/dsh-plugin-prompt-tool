@@ -394,7 +394,13 @@ bootstrap 是首屏聚合请求，不因筛选或输入字符增加 bridge 请�
 
 ### 6.3 纯逻辑与 facade
 
-use-prompt-tool-store.ts 是唯一工作台 facade，负责把 ConfigForms mirror、typed bridge、字段快照、保存队列和 feature actions 组合成 React 可消费状态。可独立测试的逻辑放在以下模块：
+use-prompt-tool-store.ts 是唯一工作台 facade，负责把 ConfigForms mirror、typed bridge、字段快照、保存队列和 feature actions 组合成 React 可消费状态。
+
+**消费方的依赖面按「能力面」声明**：每个消费方（组件 props、内部 helper 参数、hook 包装）用 `Pick<PromptToolStore, …>` 只列出它真正取用的成员，而不是拿整个 store——成员改名或删除会在编译期指到具体消费者，纯透传页则取子面并集。注意这是**依赖面收窄**，store 的成员数不因它变小（壳仍以原名转发）。判别力是单向的：`typecheck` 抓得住"少列"（漏了就报错），抓不住"多列"，所以"只列实际取用"靠逐处核对。
+
+**切页与退出时保存**：`store.persistBeforeLeave()` 在切页（`PromptWorkspace.changePage`）与退出工作台（`onClose`）时调用，只覆盖 store 能触及的两个域——**全局开关与指令文件**。**规则草稿不在此列**：它的保存入口是各模块的 rule editor 实例（组件层按 moduleId 现建），store 拿不到；它按 moduleId 留在内存里、不会因离开而丢，且有自己的显式保存。失败只提示一次并保留脏标记，**不阻断**离开。Escape/backdrop 只是收起抽屉、不等于收工，不触发保存。
+
+可独立测试的逻辑放在以下模块：
 
 | 模块 | 责任 |
 |---|---|

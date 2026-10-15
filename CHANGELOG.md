@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+### store 依赖面收窄成能力面；切页与退出时保存（2026-10-16）
+
+- **收窄（零行为变化）**：撤下 8 个零消费者成员（`ensureModelReasoning`／`templatePreStepCount`／`savedSwitches`／`savedConfigs`／`instructionPool`／`dirtyInstructions`／`getInstructionPolicy`／`enqueueModuleTask`）；14 个消费方与 2 个 hook 包装改用 `Pick<PromptToolStore, …>` 显式声明能力面（同文件内复用局部类型），两个纯透传页取子面并集；顺手删掉 `EngineModuleActions` 的死 `store` prop（该菜单只读 `t` 与 `items`）。
+- **注意：收窄的是「依赖面」，不是成员数**——壳仍以原名转发，而 `persistBeforeLeave` 是**有意净增**的一个成员，它换掉的是"切页与退出两处各自编排该调哪几个 `persist`"。
+- **判别力是单向的**：`typecheck` 抓得住"少列"（漏了就报错，实施中误删 `dirtySwitches` 即被当场抓住），抓不住"多列"（真实调用方传整个 store，它确实有那个成员）。所以"每处只列实际取用"靠逐处核对；两个透传页用脚本核对过 `missing=0 extra=0`。
+- **切页与退出时保存**：新增 `store.persistBeforeLeave()`，在 `PromptWorkspace.changePage`（覆盖所有切页路径）与 `onClose`（退出工作台）调用。它只存 **store 能触及的两个域**——全局开关（脏了才发请求，靠新增的已保存快照 ref 实时比较）与指令文件（交给 `persistInstructionFiles` 自己过滤已改动/可写/上下文匹配的文件）。**规则草稿不在此列**：其保存入口是各模块的 rule editor 实例（组件层按 moduleId 现建），store 拿不到；它按 moduleId 留在内存、不会因离开而丢，且有自己的显式保存。失败只提示一次并保留脏标记，**不阻断**离开。Escape/backdrop 收起抽屉不等于收工，不触发保存。
+- **已知边界**：`InjectionPointsPanel` 的 `PanelStore` 29 项里 15 项是"整份转发 store 给子卡"漏进页面签名的，真正的收窄要按需分片传参（另一轮）；`persistBeforeLeave` 的 4 行编排无自动化用例（它调用的两个 `persist` 各自有测试覆盖），靠 `typecheck` 与结构审查。
+- **验证**：`typecheck`／`lint`（0 警告 0 错误）／`test`（654 pass）／`build`／`git diff --check` 全绿。
+
 ### 内部：manifest 导出面收窄，并记录候选 7 的复核结论（2026-10-16）
 
 - 去掉 4 个**零外部消费者**的导出（`asString`／`isRenderableModuleDir`／`normalizeParam`／`loadCompositionText`——逐个 `rg -l` 核实只出现在 `manifest.ts` 自身）：`src/host/manifest.ts` 的导出面 **39 → 35**。跨文件类型检查确认无人引用，**零行为变化**。

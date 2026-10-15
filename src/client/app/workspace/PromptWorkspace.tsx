@@ -30,7 +30,12 @@ export function PromptWorkspace(props: PromptWorkspaceProps): ReactNode {
   const [focusPage, setFocusPage] = useState(0)
   const [readyPage, setReadyPage] = useState<WorkspacePage>()
   const changePage = (target: WorkspacePage): void => {
-    if (target !== page) setReadyPage(undefined)
+    if (target !== page) {
+      setReadyPage(undefined)
+      // 离开当前页前保存一次（只覆盖 store 能触及的域：全局开关与指令文件；规则草稿由各模块的
+      // rule editor 自己负责）。不 await、不阻断：失败由入口自己提示，草稿仍在内存里。
+      void store.persistBeforeLeave()
+    }
     setPage(target)
   }
   const markReady = useCallback(() => setReadyPage(page), [page])
@@ -70,7 +75,7 @@ export function PromptWorkspace(props: PromptWorkspaceProps): ReactNode {
       scrollPositions={browse.scroll}
       focusPage={focusPage}
       contentReady={page !== 'modules' && page !== 'tools' || readyPage === page}
-      onClose={props.onClose}
+      onClose={() => { void store.persistBeforeLeave(); props.onClose() }}
     >
       {content}
     </WorkspaceFrame>

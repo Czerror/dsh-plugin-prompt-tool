@@ -125,6 +125,14 @@ export interface PromptToolStore {
   getInstructionPool: () => InstructionDraftPool
   /** 显式保存指令文件（不传 fileIds = 保存全部可写文件）；只提交已改动、可写、上下文匹配的文件。 */
   persistInstructionFiles: (fileIds?: readonly string[]) => Promise<boolean>
+  /**
+   * 离开前保存（切页、关抽屉）：只覆盖本 store 能触及的两个域——**全局开关与指令文件**。
+   *
+   * **规则草稿不在此列**：它的保存入口是各模块的 rule editor 实例（由 `useModuleRuleEditors`
+   * 在组件层按 moduleId 现建），store 拿不到。它按 moduleId 留在内存里、不会因离开而丢，
+   * 且有自己的显式保存——因此这里不替它落盘，返回值也只表示上述两个域是否都成功。
+   */
+  persistBeforeLeave: () => Promise<boolean>
   /** 重新读取单个指令文件并丢弃本地草稿（版本冲突时使用）。 */
   reloadInstructionFile: (fileId: string) => Promise<void>
   /** 指令卡策略快照（独立存储）：error 非空时 UI 禁用策略编辑。 */
@@ -806,6 +814,10 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
     })
   }, [refreshRevision, settings, showNotice])
 
+  /** 已保存开关快照的 ref 镜像：离开前保存要判断「真的脏吗」，而渲染期的 state 在闭包里会过期。 */
+  const savedSwitchesRef = useRef(savedSwitches)
+  savedSwitchesRef.current = savedSwitches
+
   /** 全局开关保存：技能状态已不进 settings（调用策略直接写技能文件，走自己的端点）。 */
   const persistSwitches = useCallback((onSaved?: () => void): Promise<boolean> => {
     const savedSnapshot = snapshotSwitches(fieldsRef.current)
@@ -1263,6 +1275,21 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
   }
 
 
+  /**
+   * 离开前保存：只做「判断 → 调已有 persist」，不新写保存逻辑。
+   *
+   * 开关先比实时快照（脏了才发请求，避免每次关抽屉都空写一次）；指令文件直接交给
+   * `persistInstructionFiles` 自己过滤（它的契约就是只提交已改动、可写、上下文匹配的文件）。
+   * 失败只报一次并保留脏标记（`savedSwitches` 没被更新、文件草稿仍脏），**不阻断离开**。
+   */
+  const persistBeforeLeave = useCallback(async (): Promise<boolean> => {
+    let ok = true
+    if (!switchesEqual(snapshotSwitches(fieldsRef.current), savedSwitchesRef.current)) ok = await persistSwitches()
+    if (!await persistInstructionFiles()) ok = false
+    if (!ok) showNotice('error', '离开前保存未完成：草稿仍在本地，请检查后重试')
+    return ok
+  }, [persistSwitches, persistInstructionFiles, showNotice])
+
   // 返回引用稳定化：memo 子组件以 props.store 同一性跳过父级重渲染（订阅式 selector
   // 化依赖稳定 store 引用）；每次渲染重建内容对象但复用 ref 外壳。
   const storeRef = useRef<PromptToolStore>()
@@ -1282,6 +1309,7 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
     hostDefaultModel,
     getInstructionPool: () => instructionPoolRef.current,
     persistInstructionFiles,
+    persistBeforeLeave,
     reloadInstructionFile,
     instructionPolicy,
     updateInstructionPolicy,
