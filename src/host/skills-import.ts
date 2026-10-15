@@ -101,9 +101,10 @@ function importFiles(root: string, files: SkillFile[], overwrite: readonly strin
       const marker = seen.get(key(`${name}/SKILL.md`))
       if (marker === undefined || marker.path !== `${name}/SKILL.md`) throw new Error(`技能目录缺少 SKILL.md：${name}`)
       const parsed = parseFrontmatter(marker.buffer.toString('utf8'))
-      if (parsed.issue !== undefined) throw new Error(`${name}：${parsed.issue}`)
-      if (typeof parsed.data.name !== 'string' || !SKILL_NAME_PATTERN.test(parsed.data.name)
-        || typeof parsed.data.description !== 'string' || parsed.data.description.trim().length === 0) {
+      if (!parsed.ok) throw new Error(`${name}：${parsed.issue}`)
+      const declared = parsed.source.declared
+      if (typeof declared.name !== 'string' || !SKILL_NAME_PATTERN.test(declared.name)
+        || typeof declared.description !== 'string' || declared.description.trim().length === 0) {
         throw new Error(`技能 ${name} 的 SKILL.md 必须包含合法 name 与非空 description`)
       }
     }
@@ -188,7 +189,7 @@ export function importSkillsPackage(root: string, files: SkillsImportFile[], ove
       const marker = rootless.find((file) => file.path === 'SKILL.md')
       if (marker === undefined) throw new Error('单技能包必须包含 SKILL.md')
       const parsed = parseFrontmatter(marker.buffer.toString('utf8'))
-      const name = typeof parsed.data.name === 'string' ? parsed.data.name : ''
+      const name = parsed.ok && typeof parsed.source.declared.name === 'string' ? parsed.source.declared.name : ''
       if (!SKILL_NAME_PATTERN.test(name)) throw new Error('单技能包 frontmatter.name 不合法')
       for (const file of decoded) file.path = `${name}/${file.path}`
     } else {

@@ -3,7 +3,7 @@ import { accessSync, constants, existsSync, lstatSync, readFileSync, readdirSync
 import { homedir } from 'node:os'
 import { basename, dirname, join, resolve, sep } from 'node:path'
 import type { SkillSummary } from '@deepseek-ai/dsh-skill'
-import { parseFrontmatter } from './skills-parse.ts'
+import { parseFrontmatter, type SkillFrontmatter } from './skills-parse.ts'
 import { SKILL_MARKER, SKILL_SOURCES, type SkillCatalogEntry, type SkillSourceKind } from '../shared/skills.ts'
 import { SKILL_NAME_PATTERN } from './skills-config.ts'
 import { readSkillInvocation } from './skills-policy.ts'
@@ -94,7 +94,11 @@ export function scanRoot(root: ScanRoot): ScannedSkill[] {
     if (file === undefined) continue
     let raw: string
     try { raw = readFileSync(file, 'utf8') } catch { continue }
-    const { data, body, issue: parseIssue } = parseFrontmatter(raw)
+    const parsed = parseFrontmatter(raw)
+    // 解析失败时键对象为空、正文按全文兜底（与统一解析之前的本层行为一致）。
+    const data: SkillFrontmatter = parsed.ok ? parsed.source.declared : {}
+    const body = parsed.ok ? parsed.source.body : raw
+    const parseIssue = parsed.ok ? undefined : parsed.issue
     const fallback = entry.isDirectory() ? entry.name : basename(entry.name, '.md')
     const declared = typeof data.name === 'string' && data.name.length > 0 ? data.name : fallback
     const description = typeof data.description === 'string' ? data.description : ''

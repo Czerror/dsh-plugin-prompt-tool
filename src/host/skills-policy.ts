@@ -10,15 +10,11 @@ import { existsSync, lstatSync, readFileSync, renameSync, unlinkSync, writeFileS
 import { randomUUID } from 'node:crypto'
 import { basename, dirname, join } from 'node:path'
 import { isAbsolute } from 'node:path'
-import { Document, isMap, parseDocument, visit } from 'yaml'
+import { Document } from 'yaml'
 import { SKILL_MARKER, invocationForScope, type SkillCatalogEntry, type SkillInvocation, type SkillPolicyChange, type SkillPolicyScope } from '../shared/skills.ts'
-import { parseSkillBoolean } from './skills-parse.ts'
+import { parseFrontmatter, parseSkillBoolean } from './skills-parse.ts'
 import { assertUnlinkedPath } from './skills-actions.ts'
 import { SKILL_NAME_PATTERN } from './skills-config.ts'
-
-const BOM = '\ufeff'
-/** 与 host/skills-parse.ts 同一套 frontmatter 边界（容忍 CRLF 与缺失尾换行）。 */
-const FRONTMATTER = /^---\r?\n([\s\S]*?)\r?\n---(\r?\n|$)/
 
 export type SkillPolicyRead =
   | { ok: true; invocation: SkillInvocation; frontmatter?: string; body?: string }
@@ -56,18 +52,15 @@ function assertWritableMarker(file: string, writable = false): string {
 function parseMarker(file: string): ParsedMarker {
   assertWritableMarker(file)
   const raw = readFileSync(file, 'utf8')
-  const bom = raw.startsWith(BOM) ? BOM : ''
-  const source = bom.length > 0 ? raw.slice(1) : raw
-  const match = FRONTMATTER.exec(source)
-  if (match === null) throw new Error(`技能文件缺少 frontmatter：${file}`)
-  const document = parseDocument(match[1]!)
-  if (document.errors.length > 0) throw new Error(`frontmatter 不是合法 YAML：${document.errors[0]?.message ?? '解析失败'}`)
-  if (!isMap(document.contents)) throw new Error('frontmatter 必须是 YAML 映射')
-  visit(document, { Alias() { throw new Error('frontmatter 不支持 YAML 别名') } })
-  for (const key of ['disableModelInvocation', 'modelInvocable', 'userInvocable']) {
-    if (document.has(key)) throw new Error(`frontmatter field "${key}" is unsupported`)
+  // 合法性判定走唯一一份解析：BOM 读时剥写回保留、YAML 别名一律拒绝、legacy 键文案统一，都在那里。
+  const parsed = parseFrontmatter(raw)
+  if (!parsed.ok) throw new Error(`${parsed.issue}：${file}`)
+  const { doc, bom, frontmatter, boundaries } = parsed.source
+  return {
+    raw, frontmatter, bom, doc,
+    // `---` 之后的全部原文（逐字保留）：写回时直接接在收尾 `---` 后。
+    rest: boundaries.tail,
   }
-  return { raw, frontmatter: match[1]!, rest: source.slice(match[0].length - match[2]!.length), bom, doc: document }
 }
 
 function currentInvocation(doc: Document): SkillInvocation {

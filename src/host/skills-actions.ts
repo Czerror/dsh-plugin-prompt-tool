@@ -123,8 +123,11 @@ export function deleteSkillTarget(allowedRoots: readonly string[], path: string)
     assertWritable(source)
     assertWritable(target)
     const parsed = parseFrontmatter(readFileSync(target, 'utf8'))
-    if (parsed.issue !== undefined || typeof parsed.data.name !== 'string' || !SKILL_NAME_PATTERN.test(parsed.data.name)
-      || typeof parsed.data.description !== 'string' || parsed.data.description.length === 0) throw new Error(`不是有效技能：${parsed.issue ?? target}`)
+    const declared = parsed.ok ? parsed.source.declared : undefined
+    if (declared === undefined || typeof declared.name !== 'string' || !SKILL_NAME_PATTERN.test(declared.name)
+      || typeof declared.description !== 'string' || declared.description.length === 0) {
+      throw new Error(`不是有效技能：${parsed.ok ? target : parsed.issue}`)
+    }
     const trashed = trashTarget(base, folder, 'delete')
     return { ok: true, id: folder, path: trashed.path }
   } catch (error) {

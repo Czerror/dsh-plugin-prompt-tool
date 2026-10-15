@@ -2,9 +2,8 @@
 import { createHash } from 'node:crypto'
 import { lstatSync, readFileSync } from 'node:fs'
 import { basename, isAbsolute } from 'node:path'
-import { isMap, parseDocument, visit } from 'yaml'
 import { MAX_SKILL_CONTENT_BYTES, SKILL_MARKER, type SkillCatalogEntry, type SkillContentSnapshot } from '../shared/skills.ts'
-import { parseSkillBoolean } from './skills-parse.ts'
+import { parseFrontmatter, parseSkillBoolean } from './skills-parse.ts'
 import { assertUnlinkedPath } from './skills-actions.ts'
 import { SKILL_NAME_PATTERN } from './skills-config.ts'
 import { skillWriteRestriction } from './skills-scan.ts'
@@ -17,7 +16,6 @@ export type SkillContentResult =
 type Catalog = () => readonly SkillCatalogEntry[]
 const revisionOf = (content: string): string => createHash('sha256').update(content).digest('hex')
 const failure = (error: unknown): SkillContentResult => ({ ok: false, message: error instanceof Error ? error.message : String(error) })
-const FRONTMATTER = /^(\ufeff?---(\r?\n))([\s\S]*?)\r?\n---(\r?\n|$)/
 
 function assertTarget(catalog: Catalog, name: string, path: string, writable = false): void {
   if (typeof name !== 'string' || name.length === 0 || typeof path !== 'string' || !isAbsolute(path)) throw new Error('技能名与绝对路径必填')
@@ -43,26 +41,29 @@ function readContent(path: string): string {
 }
 
 function parseMarker(raw: string) {
-  const match = FRONTMATTER.exec(raw)
-  if (match === null) throw new Error('技能文件缺少有效 frontmatter')
-  const doc = parseDocument(match[3]!)
-  if (doc.errors.length > 0) throw new Error(`frontmatter 不是合法 YAML：${doc.errors[0]?.message ?? '解析失败'}`)
-  if (!isMap(doc.contents)) throw new Error('frontmatter 必须是 YAML 映射')
-  visit(doc, { Alias() { throw new Error('frontmatter 不支持 YAML 别名') } })
+  // 合法性（边界／YAML 映射／YAML 别名／legacy 键）走唯一一份解析：BOM 宽容与文案统一都在那里。
+  const parsed = parseFrontmatter(raw)
+  if (!parsed.ok) throw new Error(parsed.issue)
+  const { doc, bom, body, boundaries } = parsed.source
   const declared = doc.get('name')
   if (typeof declared !== 'string' || !SKILL_NAME_PATTERN.test(declared)) throw new Error('技能名须为 kebab-case')
   // 缺描述的条目在清单中回退目录名；只修改描述，不重写原文里的合法 name。
   const description = doc.get('description') ?? ''
   if (typeof description !== 'string') throw new Error('技能描述必须是字符串')
-  for (const key of ['disableModelInvocation', 'modelInvocable', 'userInvocable']) {
-    if (doc.has(key)) throw new Error(`frontmatter field "${key}" is unsupported`)
-  }
   for (const key of ['disable-model-invocation', 'user-invocable']) {
     if (doc.has(key)) parseSkillBoolean(doc.get(key), key)
   }
-  const body = raw.slice(match[0].length)
   const spacing = /^(?:[\t ]*\r?\n)*/.exec(body)![0]
-  return { doc, description, head: match[0], start: match[1]!, newline: match[2]!, separator: match[4]!, spacing, content: body.slice(spacing.length) }
+  return {
+    doc, description,
+    // 原 frontmatter 块（含 BOM 与分隔线）＝ 原文去掉正文；其余片段由边界原文派生。
+    head: raw.slice(0, raw.length - body.length),
+    start: bom + boundaries.open,
+    newline: boundaries.open.slice(3),
+    separator: /\r?\n/.exec(boundaries.tail)?.[0] ?? '',
+    spacing,
+    content: body.slice(spacing.length),
+  }
 }
 
 export function readSkillContent(catalog: Catalog, name: string, path: string): SkillContentResult {
