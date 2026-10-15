@@ -54,6 +54,33 @@ export function dependencyVersionProblems(name, section, version, selectedManife
 }
 
 /**
+ * `engines.dsh` 声明（作者声明的兼容 DSH 版本，SemVer 范围）与已安装官方包的符合性。
+ *
+ * 为什么必须有：DSH 在插件安装与 profile 启动时按该字段决定是否拒绝加载，缺省才回退到
+ * `@deepseek-ai/dsh*` 的 peer 范围合取。声明一旦与实际问题不符，用户拿到的是安装拒绝
+ * 或静默的错配运行。
+ * @param range - `package.json` 的 `engines.dsh`；未声明时返回空数组（由 peer 范围兜底）。
+ * @param installedVersions - 官方 dsh 包名到实际安装版本的映射。
+ * @returns 逐条问题描述；空数组表示通过。
+ */
+export function enginesDshProblems(range, installedVersions) {
+  if (range === undefined) return []
+  const problems = []
+  if (typeof range !== 'string' || !semver.validRange(range)) {
+    problems.push(`engines.dsh 不是合法 SemVer 范围：${JSON.stringify(range)}`)
+    return problems
+  }
+  for (const [name, version] of Object.entries(installedVersions)) {
+    if (!peerRangeAccepts(range, version)) problems.push(`engines.dsh ${range} 不接受 ${name} 的安装版本 ${version}`)
+  }
+  const minimum = semver.minVersion(range)
+  if (minimum === null || semver.lt(minimum, DSH_BASELINE)) {
+    problems.push(`engines.dsh 的下限不得低于已验证的宿主基线 ${DSH_BASELINE}`)
+  }
+  return problems
+}
+
+/**
  * 已安装官方包必须来自仓库内的 node_modules（.pnpm 真实目录），
  * 不能是 `link:../deepseek-harness/...` 这种开发机同级源码。
  */

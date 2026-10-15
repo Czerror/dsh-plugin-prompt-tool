@@ -7,7 +7,8 @@
 //   2. 安装版本与锁文件不一致，或声明丢失最低宿主版本；
 //   3. 解析目标落在仓库 node_modules 之外（典型为 ../deepseek-harness 源码 link）；
 //   4. src/engine 的类型、Client 值或 Host 值导入不符合各自依赖契约；
-//   5. `dsh.client.inject` 声明的包没有对应的开发依赖。
+//   5. `dsh.client.inject` 声明的包没有对应的开发依赖；
+//   6. `engines.dsh` 不接受某个已安装官方 dsh 包的版本，或下限低于已验证的宿主基线。
 //
 // 只读：不写盘、不安装、不触碰当前运行中的 DSH。
 import { existsSync, readFileSync, realpathSync } from 'node:fs'
@@ -18,6 +19,7 @@ import { parse } from 'yaml'
 import {
   OFFICIAL_SCOPE,
   dependencyVersionProblems,
+  enginesDshProblems,
   isRepoLocalResolution,
   moduleImportEdges,
   importContractProblems,
@@ -103,6 +105,17 @@ for (const specifier of manifest.dsh?.client?.external ?? []) {
   if (specifier.startsWith(`${OFFICIAL_SCOPE}dsh-`)) {
     failures.push(`dsh.client.external: 禁止把 Harness 功能包 ${specifier} 作为运行时模块请求`)
   }
+}
+
+// engines.dsh 是安装与 profile 启动的拒绝依据；声明必须覆盖实际安装的全部官方 dsh 包。
+const dshVersions = {}
+for (const [name] of Object.entries(manifest.devDependencies ?? {})) {
+  if (!name.startsWith(`${OFFICIAL_SCOPE}dsh-`)) continue
+  const installed = installedPackage(name)
+  if (installed !== undefined) dshVersions[name] = installed.version
+}
+for (const problem of enginesDshProblems(manifest.engines?.dsh, dshVersions)) {
+  failures.push(`engines.dsh: ${problem}`)
 }
 
 const width = (values) => values.reduce((max, value) => Math.max(max, value.length), 0)
