@@ -35,7 +35,7 @@ export function createTaskClassifier({ buildPattern, complexPattern }) {
 }
 
 /**
- * 通用有序任务规则分类器（subagentToolPolicy.taskRules 单一实现）。
+ * 通用有序任务规则分类器。
  * 规则：order 升序（同 order 按数组顺序）、首个匹配获胜；输入为
  * description + "\n" + prompt；无匹配回落 undefined（调用方用 default）。
  * 规则在保存时已编译（非法 pattern 拒绝整次保存），此处只按顺序 test。

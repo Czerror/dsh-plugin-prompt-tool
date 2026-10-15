@@ -62,7 +62,7 @@ export function validateDefinition(def) {
     throw new TypeError(`tool ${def.id}: description is required`)
   }
   if (def.scope !== undefined) {
-    throw new TypeError(`tool ${def.id}: customTools.scope is not supported (subagent tool policy is configured via subagentToolPolicy, not per-tool scope)`)
+    throw new TypeError(`tool ${def.id}: customTools.scope is not supported (a custom tool carries no per-tool scope)`)
   }
   if (def.parameters !== undefined) {
     validateJsonSchemaNode(def.parameters, `tool ${def.id}: parameters`)
