@@ -593,18 +593,25 @@ export function applyPromptConfigs(ctx, configs, options = {}) {
   const releaseLayers = options.layers === false ? () => {}
     : wireLayers(ctx, effectiveList.filter((config) => config.layer !== 'pre-step'), warnOnce, { agent: options.agent })
   const injectedMemo = new Map()
-  const main = createEpochPromotion(PROMOTE_EVENTS.either, { includeSubagents: false })
-  const withSubagents = createEpochPromotion(PROMOTE_EVENTS.either, { includeSubagents: true })
+  // 相位追踪器优先用调用方注入的实例对（挂载缝的池按配置复用一份，事件由池统一喂）；缺省自建，
+  // 让不经挂载缝的独立调用路径照常可跑——自建时由本执行器自己喂事件。共用实例时**不能**再喂：
+  // 门控模式下 `applyEvent` 的 `steps += 1` 不幂等，重复喂会让步数翻倍、晋升提前。
+  const promotion = options.promotion ?? {
+    main: createEpochPromotion(PROMOTE_EVENTS.either, { includeSubagents: false }),
+    withSubagents: createEpochPromotion(PROMOTE_EVENTS.either, { includeSubagents: true }),
+  }
+  const feedsPromotion = options.promotion === undefined
   const observerDisposer = ctx.on('session/event', (session, event) => {
-    main.observe(session, event)
-    withSubagents.observe(session, event)
+    if (feedsPromotion) {
+      promotion.main.observe(session, event)
+      promotion.withSubagents.observe(session, event)
+    }
     // 独立路径的去重记账：只有宿主真正持久化的注入消息才确认投递（门控剥离的候选不算）；
     // 只写快路径缓存，判定真相仍是当前上下文扫描。
     confirmDelivered(injectedMemo, session, event)
   })
 
   const prepend = options.prepend === true || list.some((config) => config.prepend === true)
-  const promotion = { main, withSubagents }
   const source = {
     configs: effectiveList,
     ruleActions: options.ruleActions ?? [],

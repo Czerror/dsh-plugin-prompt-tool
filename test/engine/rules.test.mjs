@@ -10,7 +10,8 @@ import { toolNameSet } from '../../engine/actions/shared.mjs'
 import { ACTION_EXAMPLES } from '../../engine/actions/examples.mjs'
 import { ACTION_KINDS } from '../../engine/actions/catalog.mjs'
 import { mountRuleSources } from '../../engine/rule-runtime.mjs'
-import { WARN_ONCE_LIMIT, createWarnOnce } from '../../engine/shared.mjs'
+import { createPromotionPool } from '../../engine/promotion-pool.mjs'
+import { PROMOTE_EVENTS, WARN_ONCE_LIMIT, createWarnOnce } from '../../engine/shared.mjs'
 import { ruleFrame, ruleMatches, actionMatches } from '../../engine/conditions/evaluation.mjs'
 import { createNameListPredicate, subjectOf, FACT_PREDICATE_SUBJECTS, createAnchorPredicate, createCountPredicate, createSessionStatePredicate } from '../../engine/conditions/index.mjs'
 import { UNAVAILABLE } from '../../engine/conditions/availability.mjs'
@@ -53,9 +54,11 @@ test('统一规则：同执行点共享一次条件，动作按 do 顺序，跨�
     { id: 'pre', kind: 'decision', phase: 'pre', decision: 'deny', reason: 'blocked' },
   ] }])
   let reads = 0
-  rules[0].when = () => { reads++; return true }
   const h = harness()
   const dispose = mountRuleSources(h.ctx, [{ moduleId: 'module', rules }])
+  // 计数注入在挂载缝绑定之后：含 `phase` 的规则会在挂载时重绑（订阅模式要从挂载缝的追踪器池
+  // 取实例），绑定之前放进产物里的 when 会被覆盖。
+  rules[0].when = () => { reads++; return true }
   let nextCalls = 0
   const request = () => h.run('agent/request', [{ agent: actor() }], () => { nextCalls++; return { maxTokens: 5 } })
   assert.equal((await request()).maxTokens, 20)
@@ -271,11 +274,12 @@ test('统一规则：注入与过滤在同一 pre-step 按 do 顺序处理，并
     { id: 'filter', kind: 'pre-step-filter', blockPlugins: ['a'] },
     textAction('b', 'B', { sourceKind: 'plugin' }),
   ] }])
-  const predicate = rules[1].when
   let reads = 0
-  rules[1].when = Object.assign(subject => { reads++; return predicate(subject) }, { observe: predicate.observe })
   const h = harness()
   const dispose = mountRuleSources(h.ctx, [{ moduleId: 'module', rules }])
+  // 同上：含 `phase` 的规则在挂载时被重绑（池接管追踪器），计数包装只能加在绑定之后。
+  const predicate = rules[1].when
+  rules[1].when = Object.assign(subject => { reads++; return predicate(subject) }, { observe: predicate.observe })
   const events = []
   const agent = actor()
   agent.session.snapshotEvents = () => events
@@ -1635,4 +1639,62 @@ test('挂载缝绑定：动作级分支（else / 嵌套 if）里的 preset 同�
   const disposeMiss = mountRuleSources(miss.ctx, [{ moduleId: 'module', rules: branch() }])
   assert.deepEqual(await preStepMessages(miss, presetActor()), ['USER', 'OTHER'], '分支不成立 → else 注入，preset 不是死条件')
   disposeMiss()
+})
+
+// ── 晋升相位池：同配置复用、统一喂事件、生命周期随归属 ───────────────────────
+
+/** 会话替身：追踪器只读 `id`/`header` 与 `snapshotEvents`（冷扫），计数用来见证复用。 */
+const countingSession = (id, events = []) => ({
+  session: { id, header: {}, snapshotEvents: () => { tally.scans += 1; return events } },
+})
+let tally = { scans: 0 }
+
+test('相位池：同配置的消费者共用一份追踪器（只冷扫一次），异配置分建', () => {
+  const h = harness()
+  const pool = createPromotionPool(h.ctx)
+  const config = { includeSubagents: false }
+  assert.equal(pool.tracker(PROMOTE_EVENTS.either, config), pool.tracker(PROMOTE_EVENTS.either, config), '同配置同实例')
+  assert.notEqual(pool.tracker(PROMOTE_EVENTS.either, config), pool.tracker(PROMOTE_EVENTS.either, { includeSubagents: true }), 'includeSubagents 不同＝不同相位语义')
+  // 表达式顺序无语义（追踪器内部是 Set）：`['a','b']` 与 `['b','a']` 必须复用同一份。
+  assert.equal(pool.tracker(['tool/call', 'assistant/message'], config), pool.tracker(['assistant/message', 'tool/call'], config), '事件顺序不影响配置身份')
+
+  tally = { scans: 0 }
+  const first = pool.tracker(PROMOTE_EVENTS.either, config)
+  const second = pool.tracker(PROMOTE_EVENTS.either, config)
+  const { session } = countingSession('pool-reuse', [{ seq: 1, type: 'tool/call' }])
+  assert.deepEqual(first.status({ session }), second.status({ session }))
+  assert.equal(tally.scans, 1, '同配置共用一份 → 该会话只冷扫一次')
+  pool.tracker(PROMOTE_EVENTS.either, { includeSubagents: true }).status({ session })
+  assert.equal(tally.scans, 2, '异配置各自冷扫')
+  pool.dispose()
+})
+
+test('相位池：事件由池统一喂一次，门控步数不因多消费者翻倍', () => {
+  const h = harness()
+  const pool = createPromotionPool(h.ctx)
+  const config = { includeSubagents: false, promoteGate: true, maxPromoteSteps: 3 }
+  // 执行与提示两处消费者取同一配置 → 同一实例；若各喂一遍，steps 会翻倍、门限提前到达。
+  const tracker = pool.tracker(PROMOTE_EVENTS.either, config)
+  assert.equal(tracker, pool.tracker(PROMOTE_EVENTS.either, config))
+  const { session } = countingSession('pool-feed', [])
+  tracker.status({ session })
+  h.emit('session/event', session, { seq: 1, type: 'step/start' })
+  h.emit('session/event', session, { seq: 2, type: 'step/start' })
+  h.emit('session/event', session, { seq: 3, type: 'tool/call' })
+  assert.equal(tracker.status({ session }).promoted, false, '两步 + 一次工具调用未达 3 步门限（重复喂会提前晋升）')
+  pool.dispose()
+})
+
+test('相位池：池自己订阅；dispose 摘掉订阅且不释放注入方的池', () => {
+  const h = harness()
+  const pool = createPromotionPool(h.ctx)
+  const listeners = () => (h.events.get('session/event') ?? []).length
+  assert.equal(listeners(), 1, '订阅随池的归属走，调用方不需要另外接')
+  // 注入给挂载缝：挂载释放不得代管注入池的生命周期。
+  const release = mountRuleSources(h.ctx, [], { promotionPool: pool })
+  assert.equal(listeners(), 1, '挂载缝不为注入池再订阅一份')
+  release()
+  assert.equal(listeners(), 1, '释放挂载不动注入池的订阅')
+  pool.dispose()
+  assert.equal(listeners(), 0, '池由创建者释放')
 })

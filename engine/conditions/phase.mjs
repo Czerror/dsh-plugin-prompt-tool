@@ -18,7 +18,13 @@ export function createPhasePredicate(options = {}) {
     reasoningNegativePattern: options.reasoningNegativePattern,
     reasoningFlags: options.reasoningFlags,
   }
-  const tracker = createEpochPromotion(promoteEvents, trackerOptions)
+  // 订阅模式：追踪器从挂载缝的池里取（同配置复用、事件由池统一喂），本谓词**不再提供 observe**
+  // ——共用实例后重复喂会让门控步数翻倍（`applyEvent` 的 `steps += 1` 不幂等）。
+  // 池缺席（不经挂载缝直接调 `compileWhen` 的调用方，例如谓词单测）：退回自建并自带 observe，
+  // 行为与从前一致。不订阅模式（作者显式要求）：保持每次判定冷扫、且不给 observe——那正是
+  // 「不订阅」的语义，多一个入口只会诱使调用方以为状态被记住了。
+  const pooled = subscribe ? options.promotionPool : undefined
+  const tracker = pooled === undefined ? createEpochPromotion(promoteEvents, trackerOptions) : pooled.tracker(promoteEvents, trackerOptions)
   // 载荷归一后 agent 在 `payload.agent`；旧的手工形态（载荷本身就是 agent）由 agentOf 兼容。
   //
   // `compacted`（2026-09-22 用户拍板「扩原语」）：`status()` 本来就返回 `boundary`
@@ -47,7 +53,7 @@ export function createPhasePredicate(options = {}) {
     return status.promoted === (promotedOption ?? true)
   }
   predicate.kind = 'phase'
-  // 只有订阅模式才有增量入口：不订阅时多一个入口只会诱使调用方以为状态被记住了。
-  if (subscribe) predicate.observe = (session, event) => tracker.observe(session, event)
+  // 只有「自建 + 订阅」才提供增量入口：池已经统一喂过，再给入口就是重复推进相位。
+  if (subscribe && pooled === undefined) predicate.observe = (session, event) => tracker.observe(session, event)
   return predicate
 }

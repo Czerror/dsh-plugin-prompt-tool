@@ -318,16 +318,19 @@ export function compileRules(specs, options = {}) {
 }
 
 /**
- * 树里是否含 `preset` 谓词——只有它需要挂载期的 ctx：`conditions/preset.mjs` 把服务查询基准
- * 绑在**构造期**，其余原语只用节点选项（见 `conditions/index.mjs` 的 preset 分支）。
+ * 树里是否需要挂载期的输入——两类：
+ * - `preset` 谓词：`conditions/preset.mjs` 把服务查询基准绑在**构造期**；
+ * - `phase` 谓词（且未显式 `subscribe: false`）：订阅模式要从挂载缝的追踪器池里取实例
+ *   （见 `promotion-pool.mjs`），否则每个编译出的谓词各建一份、各自订阅、各自喂事件。
  *
- * 因此只重绑需要重绑的树：调用方对不含 preset 的条件谓词做的包装/替换不会被覆盖，
- * 「挂载缝接管绑定」与「调用方仍可注入自定义判定」两件事不冲突。
+ * 其余原语只用节点选项。只重绑需要重绑的树：调用方对不含这两类节点的条件谓词做的包装/替换
+ * 不会被覆盖，「挂载缝接管绑定」与「调用方仍可注入自定义判定」两件事不冲突。
  */
 function needsMountContext(node) {
   if (node === null || typeof node !== 'object') return false
   if (Array.isArray(node)) return node.some(needsMountContext)
   if (Object.hasOwn(node, 'preset')) return true
+  if (Object.hasOwn(node, 'phase') && node.phase?.subscribe !== false) return true
   return Object.values(node).some(needsMountContext)
 }
 

@@ -4,7 +4,8 @@ import { createTurnStopBudget, wireLayers } from './layers.mjs'
 import { rebindConditions } from './rule-spec.mjs'
 import { wireTriggerObservers } from './trigger.mjs'
 import { ruleFrame, actionMatches } from './conditions/evaluation.mjs'
-import { createWarnOnce } from './shared.mjs'
+import { createPromotionPool } from './promotion-pool.mjs'
+import { PROMOTE_EVENTS, createWarnOnce } from './shared.mjs'
 
 const noNext = new Set(['agent/inbox/inserted', 'agent/turn-stopping', 'subagent/start', 'subagent/end'])
 // 判据与 `order.mjs#compareConfigSequence` 有意不同：这里在同通道同点内按 moduleId 字母序 +
@@ -15,10 +16,13 @@ const compare = (a, b) => a.action.channelOrder - b.action.channelOrder
 
 /** 所有来源只进入这个装配入口；受众限定固定效果要求 ctx 属于 options.agent 的 scope。 */
 export function mountRuleSources(ctx, sources, options = {}) {
+  // 晋升相位池先建：条件的挂载期绑定要用它（`phase` 的订阅模式从池取实例，见 promotion-pool.mjs）。
+  // 池自己订阅 `session/event` 并统一喂事件；自建的随本挂载释放，注入的由创建者释放。
+  const pool = options.promotionPool ?? createPromotionPool(ctx)
   // 条件绑定**在这里**发生：`compileRules` 编译期没有挂载 scope 的 ctx（preset 条件在那边恒
   // UNAVAILABLE 且静默）。必须早于事件订阅与动作注册——动作级 `actionWhen.observe` 是订阅通道，
   // 绑晚了那一类谓词会漏事件。`standingMountFor` 是可选兜底（官方包缺席＝没有兜底，不是错误）。
-  rebindConditions(sources, { ctx, standingMountFor: options.standingMountFor })
+  rebindConditions(sources, { ctx, standingMountFor: options.standingMountFor, promotionPool: pool })
   const warnOnce = options.warnOnce ?? createWarnOnce(ctx, options.plugin ?? 'rule-engine')
   // 诊断上报是只读旁路：把规则对象换回来源模块，供宿主区分跨模块同名 id；缺省不传即零开销。
   const report = options.onOutcome === undefined ? undefined : (() => {
@@ -27,6 +31,8 @@ export function mountRuleSources(ctx, sources, options = {}) {
     return (rule, channel, outcome) => options.onOutcome({ moduleId: moduleOfRule.get(rule), ruleId: rule.id, channel, outcome })
   })()
   const releases = []
+  // 自建池随本挂载释放；注入的池由创建者释放（生命周期随归属，不跨界代管）。
+  if (options.promotionPool === undefined) releases.push(() => pool.dispose())
   const points = new Map()
   // 续跑预算按来源模块一份（与文档一致）：同模块的 turn-stop 与 continue 动作共享上限，
   // 不再按动作各建一份。本 mount 可能含多个模块（agent-assembly 一次装载全部启用模块），
@@ -139,8 +145,14 @@ export function mountRuleSources(ctx, sources, options = {}) {
         return invoke(0)
       }, point.waterfallPosition === 'outermost' ? { prepend: true } : undefined))
     }
+    // 晋升相位实例对：`options.promotion` 注入（托管路径传协调器那两份），否则从池里按配置取
+    // ——池在挂载开头已建，条件绑定也用它。共用实例后事件由池统一喂，消费者一律不得再 observe。
+    const promotion = options.promotion ?? {
+      main: pool.tracker(PROMOTE_EVENTS.either, { includeSubagents: false }),
+      withSubagents: pool.tracker(PROMOTE_EVENTS.either, { includeSubagents: true }),
+    }
     const preStep = [...injections.values()].filter(source => source.configs.length || source.ruleActions.length)
-    if (preStep.length) releases.push(applyPromptConfigSources(ctx, preStep, { layers: false, onOutcome: report }))
+    if (preStep.length) releases.push(applyPromptConfigSources(ctx, preStep, { layers: false, onOutcome: report, promotion, promotionPool: pool }))
   } catch (error) {
     active = false
     for (const dispose of releases.reverse()) { try { dispose?.() } catch {} }

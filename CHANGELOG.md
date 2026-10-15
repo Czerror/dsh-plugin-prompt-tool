@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+### 晋升相位收成挂载缝的追踪器池（2026-10-16）
+
+- **池 + 统一喂事件**：新增 `engine/promotion-pool.mjs`。`createEpochPromotion` 自己不订阅任何事件（初始相位靠 `status()` 的全量冷扫建立），此前 `executor` **每次 `applyPromptConfigs`** 建两份、`phase` **每个编译谓词**建一份、`instruction-hint` 每次 apply 建一份、`pre-step-coordinator` 插件级两份，各自订阅、各自喂。现在由挂载缝持有池：按 `(promoteEvents, 其余选项)` 缓存复用，**池自己订阅 `session/event` 并统一喂**（订阅随池的归属走，调用方不需要记住"注入时谁喂"）。
+- **共用实例的前提是喂事件收敛到一处**：门控模式下 `applyEvent` 的 `steps += 1` 不幂等（非门控才是 `promoted = true`），多来源喂同一实例会让步数翻倍、晋升提前——所以 `executor` 删掉了自己的两行 `observe`（同一条监听里的 `confirmDelivered` 去重记账**保留**）。
+- **`executor` 改用既有注入口**：`options.promotion` 这个键早已存在（`:357` 的文档注释、`runPromptConfigBatch` 的 `:320,327` 都读它、托管路径由 `pre-step-coordinator.ts:180` 传入），但独立路径无条件自建并把它盖掉；现在改为 `options.promotion ?? 自建`，`{ main, withSubagents }` 形状不变（三个测试直接传这个形状的替身）。
+- **`phase` 谓词从池取追踪器**：编译期没有池，因此把它纳入挂载期绑定——`needsMountContext` 扩展为「含 `preset`，或含 `phase` 且未显式 `subscribe: false`」，`rebindConditions` 在挂载时注入池。订阅模式下谓词**不再提供 `observe`**（池已统一喂，再给入口就是重复推进）；`subscribe: false` 分支逐字保留（每次判定冷扫、不给 `observe`）。
+- **未做的边界**：`instruction-hint`（不在 `mountRuleSources` 的 options 链上——它由 `prepareAssembly` 阶段的 `module.apply(ctx, config)` 挂载，早于建池）与 `pre-step-coordinator`（插件级两份）保持现状；将来要并，走 `options.promotion` / `options.promotionPool` 注入即可，引擎不用改。
+- **回归**：`test/engine/rules.test.mjs` 新增三条（同配置复用且事件顺序无语义、统一喂使门控步数不翻倍、池自己订阅且释放不代管注入池）；两处含 `phase` 的计数用例改为在绑定之后注入（`rules.test.mjs`、`host/agent-assembly.test.mjs`）。`typecheck`／`lint`／`test`／`build` 全绿。
+
 ### 模块事实读取收成单一入口（2026-10-16）
 
 - **`readModuleFacts(target, moduleRoot?)` 是唯一入口**（`src/host/manifest.ts`）：「目录解析 → 定义读取 → 事实计算」三步此前在桥的 `/meta`、`/describe`+`/bootstrap` 与 `prepareAssembly` 三处各自展开，现收成一处。`target` 接受模块 id 或绝对目录（调用方手里是端点已解析的目录时直接传）；**返回事实本身**，不捎带 `dir`/`spec`——三处调用点没有一个用它们，需要目录的调用方自己调纯路径函数 `resolveModuleDir`。

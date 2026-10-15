@@ -202,9 +202,11 @@ test('真实注入：启用配置进入主/子会话正确位置，关闭项不�
   const releases = []
   for (const [key, agent] of [['main', main], ['child', child]]) {
     const prepared = await prepareAssembly(moduleRoot, 'managed-chain', hasEveryService)
+    releases.push(mountRuleSources(agent.ctx, [{ moduleId: 'managed-chain', rules: prepared.rules }]))
+    // 计数注入在挂载缝绑定之后：含 `phase` 的规则会在挂载时重绑（订阅模式从挂载缝的追踪器池
+    // 取实例），绑定之前放进产物里的 when 会被覆盖。
     const evaluate = prepared.rules[0].when
     prepared.rules[0].when = Object.assign(subject => { checks[key]++; return evaluate(subject) }, evaluate)
-    releases.push(mountRuleSources(agent.ctx, [{ moduleId: 'managed-chain', rules: prepared.rules }]))
   }
   assert.deepEqual(texts(await h.inject(main)), ['MAIN', 'USER', 'PROMOTED', 'CHAIN-B'], '受管批次逐动作执行 A→过滤A→B')
   assert.deepEqual(texts(await h.inject(child)), ['USER', 'CHILD'])
