@@ -16,9 +16,6 @@ modules:
   - tool-git-bash
   - filesystem-editor
   - skill-search
-layerSettings:
-  subagent-start:
-    maxDepth: ""
 rules:
   - id: near-anchor
     name: 首句锚点
