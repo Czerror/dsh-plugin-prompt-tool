@@ -5,7 +5,6 @@ import type { EngineMeta, PromptConfigDraft } from '../prompt-tool-types.ts'
 import type { PromptToolHostApi } from './host-api.ts'
 import type { SkillCatalogEntry, SkillContentSnapshot, SkillPolicyChange } from '../../shared/skills.ts'
 import { bridgeCall, errorMessage, type BridgeResult } from './bridge-client.ts'
-import { requestSkillImport, type ConfirmSkillOverwrite } from './skill-import.ts'
 import {
   EMPTY_FIELDS,
   EMPTY_META,
@@ -15,6 +14,7 @@ import {
   type SharedParamKey,
 } from './prompt-tool-fields.ts'
 import { bridgeViewFromBoot, fieldsFromView, skillFieldsFromSnapshot } from './prompt-tool-view.ts'
+import { createSkillEditor } from './skill-editor.ts'
 import {
   EMPTY_SWITCHES,
   deepEqual,
@@ -1156,118 +1156,20 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
     enqueue: enqueueRuleTask, actions: moduleActions,
   })
 
-  const refreshSkills = useCallback(async (): Promise<boolean> => {
-    const seq = ++skillCatalogRef.current.seq
-    const sessionId = api.currentSessionId()
-    const res = await bridgeCall('skillsList', sessionId === undefined ? {} : { sessionId })
-    if (seq !== skillCatalogRef.current.seq || sessionId !== api.currentSessionId()) return false
-    if (!res.ok) {
-      showNotice('error', '技能列表刷新失败：' + (res.message ?? 'settings bridge unavailable'))
-      return false
-    }
-    skillCatalogRef.current.session = sessionId
-    skillCatalogRef.current.seq += 1
-    publishFields({ ...fieldsRef.current, ...skillFieldsFromSnapshot(res.value) })
-    return true
-  }, [api, publishFields, showNotice])
-
-  /** 所有技能写操作共用即时忙期守卫与局部刷新，覆盖确认期间也保持忙碌。 */
-  const writeSkill = useCallback(async <T,>(
-    submit: () => Promise<BridgeResult<T>>, success: (value: T) => string, failure: string,
-  ): Promise<boolean> => {
-    if (skillCatalogRef.current.writing) { showNotice('error', '技能正在保存，请稍候再试'); return false }
-    skillCatalogRef.current.writing = true
-    setSkillsBusy(true)
-    try {
-      const res = await submit()
-      if (!res.ok) {
-        if (res.code !== 'skills-import-cancelled') showNotice('error', failure + '：' + (res.message ?? 'settings bridge unavailable'))
-        return false
-      }
-      const refreshed = await refreshSkills()
-      showNotice(refreshed ? 'ok' : 'error', success(res.value) + (refreshed ? '' : '；技能列表刷新失败，请重新读取'))
-      return true
-    } catch (error) {
-      showNotice('error', failure + '：' + errorMessage(error))
-      return false
-    } finally {
-      skillCatalogRef.current.writing = false
-      setSkillsBusy(false)
-    }
-  }, [refreshSkills, showNotice])
-
-  const importSkills = useCallback((submit: Parameters<typeof requestSkillImport>[0], confirm?: ConfirmSkillOverwrite) =>
-    writeSkill(() => requestSkillImport(submit, confirm), ({ count, path, overwritten, warning }) =>
-      `已复制 ${count} 个技能文件到 ${path}` + (overwritten > 0 ? `，覆盖 ${overwritten} 个已确认的同名技能` : '')
-      + (warning ? `；导入已完成，清理提示：${warning}` : ''), '导入技能目录失败'), [writeSkill])
-
-  const importSkillsDirectory = useCallback((path: string, confirm?: ConfirmSkillOverwrite): Promise<boolean> => {
-    const source = path.trim()
-    if (source.length === 0) { showNotice('error', '请选择要导入的目录'); return Promise.resolve(false) }
-    return importSkills((overwrite) => bridgeCall('skillsImportDirectory', { path: source, ...(overwrite === undefined ? {} : { overwrite }) }), confirm)
-  }, [importSkills, showNotice])
-
-  const createSkill = useCallback((input: { name: string; description: string; content: string }) =>
-    writeSkill(() => bridgeCall('skillCreate', input), ({ id }) => `已创建技能：${id}`, '创建技能失败'), [writeSkill])
-
-  const readSkill = useCallback(async (skill: SkillCatalogEntry, sessionId: string | undefined): Promise<BridgeResult<SkillContentSnapshot>> => {
-    if (skill.path === undefined || sessionId !== api.currentSessionId() || sessionId !== skillCatalogRef.current.session) {
-      return { ok: false, message: '技能上下文已变化，请刷新后重试' }
-    }
-    const result = await bridgeCall('skillRead', { name: skill.name, path: skill.path, ...(sessionId === undefined ? {} : { sessionId }) })
-    return sessionId === api.currentSessionId() ? result : { ok: false, message: '技能上下文已变化，请刷新后重试' }
-  }, [api])
-
-  const saveSkill = useCallback(async (skill: SkillCatalogEntry, content: string, description: string, expectedRevision: string, sessionId: string | undefined): Promise<BridgeResult<SkillContentSnapshot>> => {
-    const path = skill.path
-    if (path === undefined || sessionId !== api.currentSessionId() || sessionId !== skillCatalogRef.current.session) {
-      return { ok: false, message: '技能上下文已变化，请刷新后重试' }
-    }
-    let result: BridgeResult<SkillContentSnapshot> = { ok: false, message: '技能正在保存，请稍候再试' }
-    await writeSkill(async () => {
-      result = await bridgeCall('skillWrite', { name: skill.name, path, content, description, expectedRevision, ...(sessionId === undefined ? {} : { sessionId }) })
-      return result
-    }, () => `已保存技能：${skill.name}`, '技能保存失败')
-    return result
-  }, [api, writeSkill])
-
-  const deleteSkill = useCallback((skill: Pick<SkillCatalogEntry, 'name' | 'path'>): Promise<boolean> => {
-    const sessionId = api.currentSessionId()
-    const path = skill.path
-    if (path === undefined || sessionId !== skillCatalogRef.current.session) {
-      showNotice('error', '技能上下文已变化，请刷新后重试')
-      return Promise.resolve(false)
-    }
-    return writeSkill(() => bridgeCall('skillDelete', { name: skill.name, path, ...(sessionId === undefined ? {} : { sessionId }) }),
-      ({ path }) => `已删除技能 ${skill.name}；文件已移入回收站 ${path}，可人工恢复`, `删除技能 ${skill.name} 失败`)
-  }, [api, showNotice, writeSkill])
-
-  const setSkillPolicy = useCallback((name: string, path: string, change: SkillPolicyChange): Promise<boolean> => {
-    const sessionId = api.currentSessionId()
-    if (sessionId !== skillCatalogRef.current.session) {
-      showNotice('error', '技能上下文已变化，请刷新后重试')
-      return Promise.resolve(false)
-    }
-    return writeSkill(() => bridgeCall('skillPolicy', { name, path, ...change, ...(sessionId === undefined ? {} : { sessionId }) }),
-      () => `已更新技能 ${name} 的调用策略`, `技能 ${name} 调用策略写入失败`)
-  }, [api, showNotice, writeSkill])
-
-  const patchSkillFolders = useCallback((folders: string[]) => {
-    const sessionId = api.currentSessionId()
-    return writeSkill(() => bridgeCall('skillsFolders', { folders, ...(sessionId === undefined ? {} : { sessionId }) }),
-      () => `已更新技能文件夹引用（${folders.length} 个）`, '技能文件夹保存失败')
-  }, [api, writeSkill])
-
-  const openSkillsDir = useCallback(async (path?: string) => {
-    const target = path ?? fieldsRef.current.skillsRoot
-    if (!target) { showNotice('error', '技能目录路径未知，请先重新读取配置'); return }
-    try {
-      await api.openPath(target)
-      showNotice('ok', '已打开技能目录：' + target)
-    } catch (error) {
-      showNotice('error', '打开失败：' + errorMessage(error))
-    }
-  }, [api, showNotice])
+  /**
+   * 技能目录与写入 owner：110 行实现搬进 `skill-editor.ts`，这里只做组装与转发。
+   * 依赖都是稳定的（ref / state setter / useCallback），所以只建一次。
+   */
+  const skillEditorRef = useRef<ReturnType<typeof createSkillEditor>>()
+  const skillEditor = (skillEditorRef.current ??= createSkillEditor({
+    state: skillCatalogRef,
+    currentSessionId: () => api.currentSessionId(),
+    publishSkills: (snapshot) => publishFields({ ...fieldsRef.current, ...skillFieldsFromSnapshot(snapshot) }),
+    setBusy: setSkillsBusy,
+    skillsRoot: () => fieldsRef.current.skillsRoot ?? '',
+    showNotice,
+    openPath: (path) => api.openPath(path),
+  }))
 
   const currentSwitches = snapshotSwitches(fields)
   const dirtySwitches = !switchesEqual(currentSwitches, savedSwitches)
@@ -1346,15 +1248,7 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
     createModule,
     moduleActions,
     createTemplateRule: templateWriter.current,
-    importSkillsDirectory,
-    refreshSkills,
-    createSkill,
-    readSkill,
-    saveSkill,
-    deleteSkill,
-    setSkillPolicy,
-    patchSkillFolders,
-    openSkillsDir,
+    ...skillEditor,
     dirtySwitches,
     get dirtyConfigs() { return configsAreDirty() },
     get dirty() { return dirtySwitches || configsAreDirty() },
