@@ -2,6 +2,7 @@ import type { BridgeRequestMap, BridgeValueMap } from '../../shared/bridge-contr
 import type { ModuleVariableRevisions, ModuleVariableScope, ModuleVariablesSnapshot } from '../../shared/module-variables.ts'
 import type { BridgeResult } from './bridge-client.ts'
 import { deepEqual } from './dirty-state.ts'
+import { beginLatest, isLatest } from './resource-track.ts'
 
 export interface VariablesBaseline {
   scope: ModuleVariableScope
@@ -21,12 +22,12 @@ export interface VariablesDraft {
   loading: boolean
   saving: boolean
   error: string
-  readSequence: number
+  latest: number
 }
 
 /** 变量草稿的唯一构造点：草稿表按主语键（`${moduleId}:${scope}`）索引，无主语不建键。 */
 export function createVariablesDraft(scope: ModuleVariableScope): VariablesDraft {
-  return { scope, variables: {}, enabled: true, loading: false, saving: false, error: '', readSequence: 0 }
+  return { scope, variables: {}, enabled: true, loading: false, saving: false, error: '', latest: 0 }
 }
 
 /** 某模块的模板变量读数：范围、值、开关与状态都按主语取（store 的 VariablesPort 返回它）。 */
@@ -58,11 +59,11 @@ type Request = (body: BridgeRequestMap['moduleVariables']) => Promise<BridgeResu
 
 /** 响应只进入发起请求的草稿；新请求和已有编辑分别保留自己的版本。 */
 export async function readVariablesDraft(moduleId: string, draft: VariablesDraft, request: Request): Promise<void> {
-  const sequence = ++draft.readSequence
+  const sequence = beginLatest(draft)
   draft.loading = true
   try {
     const result = await request({ scope: draft.scope, expectedModuleId: moduleId })
-    if (sequence !== draft.readSequence) return
+    if (!isLatest(draft, sequence)) return
     if (!result.ok) throw new Error(result.message ?? result.code ?? '变量读取失败')
     const previous = draft.baseline, next = result.value
     const retainValues = previous !== undefined && !deepEqual(draft.variables, previous.variables)
@@ -80,8 +81,8 @@ export async function readVariablesDraft(moduleId: string, draft: VariablesDraft
     draft.snapshot = next
     draft.error = ''
   } catch (error) {
-    if (sequence === draft.readSequence) draft.error = error instanceof Error ? error.message : String(error)
-  } finally { if (sequence === draft.readSequence) draft.loading = false }
+    if (isLatest(draft, sequence)) draft.error = error instanceof Error ? error.message : String(error)
+  } finally { if (isLatest(draft, sequence)) draft.loading = false }
 }
 
 /** 只刷新已提交定义，既不重放变量写入，也不确认调用方尚未保存的新草稿。 */

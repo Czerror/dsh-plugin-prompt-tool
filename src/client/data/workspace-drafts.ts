@@ -24,7 +24,8 @@ export type PersonaDraft = PersonaSpec
 export interface PersonaEditorDraft {
   listeners?: Set<() => void>
   loading?: boolean
-  readSequence?: number
+  /** 最新优先序号（见 resource-track.ts）：迟到响应不落地、不清 loading。 */
+  latest: number
   value: PersonaDraft
   saved: PersonaDraft
   revision: string
@@ -46,7 +47,8 @@ export interface PersonaSourcesEditorDraft {
   loading: boolean
   saving: boolean
   error: string
-  readSequence: number
+  /** 最新优先序号（见 resource-track.ts）。 */
+  latest: number
   publicationPending?: boolean
   publicationError?: string
 }
@@ -95,7 +97,7 @@ export interface WorkspaceDrafts {
 
 export function createWorkspaceDrafts(): WorkspaceDrafts {
   return { rules: new Map(), skills: new Map(), tools: new Map(), persona: new Map(),
-    personaSources: { value: { main: null, subagent: null }, saved: { main: null, subagent: null }, revision: null, candidates: [], loaded: false, loading: false, saving: false, error: '', readSequence: 0 },
+    personaSources: { value: { main: null, subagent: null }, saved: { main: null, subagent: null }, revision: null, candidates: [], loaded: false, loading: false, saving: false, error: '', latest: 0 },
     variables: new Map(), policies: new Map(), fields: new Map(), expanded: new Map() }
 }
 

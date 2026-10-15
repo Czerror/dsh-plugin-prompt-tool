@@ -2,6 +2,7 @@ import type { RuleDefinition, RuleEdit, RuleRevisions, RulesRequest, RulesSnapsh
 import type { BridgeResult } from './bridge-client.ts'
 import type { FieldDraft, WorkspaceDrafts } from './workspace-drafts.ts'
 import { deepEqual } from './dirty-state.ts'
+import { beginLatest, isLatest } from './resource-track.ts'
 
 /**
  * 需要「先重新读取」才能继续的拒绝码：这些失败重放保存只会重复同一次拒绝。
@@ -27,13 +28,13 @@ export interface RulesDraft {
   publicationPending?: boolean
   publicationError?: string
   validated: boolean
-  sequence: number
+  latest: number
   nextKey: number
 }
 export function getRulesDraft(drafts: WorkspaceDrafts, moduleId: string): RulesDraft {
   let draft = drafts.rules.get(moduleId)
   if (draft === undefined) {
-    draft = { entries: [], saved: [], fields: new Map(), loaded: false, validated: false, sequence: 0, nextKey: 0 }
+    draft = { entries: [], saved: [], fields: new Map(), loaded: false, validated: false, latest: 0, nextKey: 0 }
     drafts.rules.set(moduleId, draft)
   }
   return draft
@@ -88,14 +89,14 @@ export function createRuleEditor(moduleId: string, draft: RulesDraft, deps: Rule
   }
   const create = async (rule: RuleDefinition, rulesDeclared?: boolean): Promise<BridgeResult<RulesSnapshot>> => {
     if (draft.busy !== undefined) return { ok: false, code: 'rules-busy', message: '规则正在读写，请稍后重试' }
-    const sequence = ++draft.sequence, candidate = structuredClone(rule)
+    const sequence = beginLatest(draft), candidate = structuredClone(rule)
     draft.busy = 'save'; deps.changed()
     try {
       const result = await deps.enqueue(moduleId, () => deps.request({ expectedModuleId: moduleId,
         ...(draft.rulesDeclared !== true && rulesDeclared === false ? { expectedRulesAbsent: true as const } : {}),
         createRule: candidate,
       }))
-      if (draft.sequence !== sequence) return result
+      if (!isLatest(draft, sequence)) return result
       if (result.ok) {
         receive(result.value)
         draft.rulesDeclared = true
@@ -103,22 +104,22 @@ export function createRuleEditor(moduleId: string, draft: RulesDraft, deps: Rule
       } else draft.error = result.message ?? result.code ?? 'rules-create-failed'
       return result
     } catch (error) {
-      if (draft.sequence === sequence) draft.error = String(error)
+      if (isLatest(draft, sequence)) draft.error = String(error)
       return { ok: false, message: String(error) }
-    } finally { if (draft.sequence === sequence) { draft.busy = undefined; deps.changed() } }
+    } finally { if (isLatest(draft, sequence)) { draft.busy = undefined; deps.changed() } }
   }
   const load = async (force = false): Promise<boolean> => {
     if (!deps.isCurrent() || draft.busy !== undefined) return false
     if (draft.loaded && !force) return true
-    const sequence = ++draft.sequence
+    const sequence = beginLatest(draft)
     draft.busy = 'read'; deps.changed()
     try {
       const result = await deps.request({ expectedModuleId: moduleId })
-      if (draft.sequence !== sequence) return false
+      if (!isLatest(draft, sequence)) return false
       if (!result.ok) { draft.retry = 'read'; draft.error = result.message ?? result.code ?? 'rules-read-failed'; return false }
       return receive(result.value)
-    } catch (error) { if (draft.sequence === sequence) { draft.retry = 'read'; draft.error = String(error) }; return false }
-    finally { if (draft.sequence === sequence) { draft.busy = undefined; deps.changed() } }
+    } catch (error) { if (isLatest(draft, sequence)) { draft.retry = 'read'; draft.error = String(error) }; return false }
+    finally { if (isLatest(draft, sequence)) { draft.busy = undefined; deps.changed() } }
   }
   const patch = (key: string, value: RuleDefinition): void => {
     draft.entries = draft.entries.map(entry => entry.key === key ? { ...entry, value } : entry)
@@ -136,12 +137,12 @@ export function createRuleEditor(moduleId: string, draft: RulesDraft, deps: Rule
   }
   const retryPublication = async (): Promise<boolean> => {
     if (!deps.isCurrent() || draft.busy !== undefined || !draft.publicationPending) return false
-    const sequence = ++draft.sequence
+    const sequence = beginLatest(draft)
     draft.busy = 'save'; deps.changed()
     try {
-      const result = await deps.enqueue(moduleId, async () => draft.sequence === sequence
+      const result = await deps.enqueue(moduleId, async () => isLatest(draft, sequence)
         ? deps.request({ expectedModuleId: moduleId, refreshOnly: true }) : undefined)
-      if (draft.sequence !== sequence || result === undefined) return false
+      if (!isLatest(draft, sequence) || result === undefined) return false
       if (result.ok) receive(result.value)
       if (!result.ok || result.value.publicationError || result.value.publicationPending === true) {
         draft.publicationError = result.ok ? result.value.publicationError ?? 'rules-refresh-pending' : result.message ?? result.code ?? 'rules-refresh-failed'
@@ -150,12 +151,12 @@ export function createRuleEditor(moduleId: string, draft: RulesDraft, deps: Rule
       }
       draft.publicationPending = false; draft.publicationError = undefined; draft.error = draft.retry === 'read' ? 'rules-conflict' : undefined
       return true
-    } catch (error) { if (draft.sequence === sequence) { draft.error = String(error); draft.publicationError = draft.error }; return false }
-    finally { if (draft.sequence === sequence) { draft.busy = undefined; deps.changed() } }
+    } catch (error) { if (isLatest(draft, sequence)) { draft.error = String(error); draft.publicationError = draft.error }; return false }
+    finally { if (isLatest(draft, sequence)) { draft.busy = undefined; deps.changed() } }
   }
   const submit = async (options: { validateOnly?: boolean; activateRuleId?: string } = {}): Promise<boolean> => {
     if (!deps.isCurrent() || !draft.loaded || draft.busy !== undefined || draft.remote !== undefined || draft.retry === 'read' || !draft.revisions || hasRuleFields(draft)) return false
-    const sequence = ++draft.sequence, entries = structuredClone(draft.entries), edits = ruleEdits(draft)
+    const sequence = beginLatest(draft), entries = structuredClone(draft.entries), edits = ruleEdits(draft)
     const expectedRevisions: Partial<RuleRevisions> = { rules: Object.fromEntries(edits.flatMap(edit =>
       edit.previousId === null ? [] : [[edit.previousId, draft.revisions!.rules[edit.previousId]!]])) }
     if (options.activateRuleId !== undefined || edits.some(edit => edit.settingsChanged || edit.previousId === null
@@ -163,10 +164,10 @@ export function createRuleEditor(moduleId: string, draft: RulesDraft, deps: Rule
     if (edits.length === 0 && options.activateRuleId === undefined && !options.validateOnly) return draft.publicationPending ? retryPublication() : true
     draft.busy = options.validateOnly ? 'validate' : 'save'; draft.error = undefined; deps.changed()
     try {
-      const result = await deps.enqueue(moduleId, async () => draft.sequence === sequence
+      const result = await deps.enqueue(moduleId, async () => isLatest(draft, sequence)
         ? deps.request({ expectedModuleId: moduleId, expectedRevisions, edits, ...options }) : undefined)
       // 入口确认操作资格；入队后的显式目标事务与结果归共享草稿，不随切页取消。
-      if (draft.sequence !== sequence || result === undefined) return false
+      if (!isLatest(draft, sequence) || result === undefined) return false
       if (!result.ok) {
         draft.retry = READ_FIRST_CODES.includes(result.code ?? '') ? 'read' : 'save'
         draft.error = result.message ?? result.code ?? 'rules-save-failed'; return false
@@ -202,8 +203,8 @@ export function createRuleEditor(moduleId: string, draft: RulesDraft, deps: Rule
       }
       if (draft.publicationError) { draft.error = draft.publicationError; return false }
       return true
-    } catch (error) { if (draft.sequence === sequence) { draft.retry = 'save'; draft.error = String(error) }; return false }
-    finally { if (draft.sequence === sequence) { draft.busy = undefined; deps.changed() } }
+    } catch (error) { if (isLatest(draft, sequence)) { draft.retry = 'save'; draft.error = String(error) }; return false }
+    finally { if (isLatest(draft, sequence)) { draft.busy = undefined; deps.changed() } }
   }
   const discard = (): void => {
     if (draft.busy !== undefined) return

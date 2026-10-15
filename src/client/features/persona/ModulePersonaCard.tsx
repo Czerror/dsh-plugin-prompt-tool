@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { Button } from '../../ui/Button.tsx'
 import { createWorkspaceDrafts, type PersonaEditorDraft, type WorkspaceDrafts } from '../../data/workspace-drafts.ts'
+import { beginLatest, isLatest } from '../../data/resource-track.ts'
 import { bridgeCall } from '../../data/bridge-client.ts'
 import type { PromptToolTranslate } from '../../locales.ts'
 import { moduleDeclares } from '../../data/module-subject.ts'
@@ -72,19 +73,19 @@ export function ModulePersonaCard(props: {
     let editor = drafts.persona.get(moduleId)
     if (!editor) {
       const empty = {}
-      editor = { value: empty, saved: empty, revision: '', declared: false, loaded: false, error: '', saving: false }
+      editor = { value: empty, saved: empty, revision: '', declared: false, loaded: false, error: '', saving: false, latest: 0 }
       drafts.persona.set(moduleId, editor)
     }
     return editor
   }, [drafts])
   const loadSources = useCallback(async (): Promise<void> => {
     if (selection.saving || selection.loading) return
-    const sequence = ++selection.readSequence
+    const sequence = beginLatest(selection)
     selection.loading = true
     selection.error = ''
     notify(selection)
     const result = await bridgeCall('personaSources')
-    if (sequence !== selection.readSequence) return
+    if (!isLatest(selection, sequence)) return
     selection.loading = false
     if (result.ok) {
       const { sources, revision, candidates } = result.value
@@ -136,14 +137,13 @@ export function ModulePersonaCard(props: {
       notify(editor)
       return
     }
-    const sequence = (editor.readSequence ?? 0) + 1
-    editor.readSequence = sequence
+    const sequence = beginLatest(editor)
     editor.loading = true
     const readingDraft = editor.value
     editor.error = ''
     notify(editor)
     const result = await pending
-    if (editor.readSequence !== sequence) return
+    if (!isLatest(editor, sequence)) return
     editor.loading = false
     if (editor.value !== readingDraft) { notify(editor); return }
     if (result.ok) {

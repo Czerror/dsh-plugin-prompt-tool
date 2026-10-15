@@ -823,7 +823,7 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
     const targets = saveableInstructionDrafts(pool)
       .filter((draft) => fileIds === undefined || fileIds.includes(draft.fileId))
     const sessionId = api.currentSessionId()
-    const isCurrent = (): boolean => isCurrentInstructionSeq(instructionPoolRef.current, pool.seq)
+    const isCurrent = (): boolean => isCurrentInstructionSeq(instructionPoolRef.current, pool.latest)
       && instructionPoolRef.current.contextId === pool.contextId
       && sessionId === api.currentSessionId() && sessionId === instructionSessionRef.current
     if (!isCurrent()) return false
@@ -909,7 +909,7 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
     const draft = pool.drafts.find((entry) => entry.fileId === fileId)
     if (pool.contextId === null || draft?.contextId !== pool.contextId || sessionId !== instructionSessionRef.current) return
     const res = await bridgeCall('promptConfigs', sessionId === undefined ? {} : { sessionId })
-    if (sessionId !== api.currentSessionId() || !isCurrentInstructionSeq(instructionPoolRef.current, pool.seq)
+    if (sessionId !== api.currentSessionId() || !isCurrentInstructionSeq(instructionPoolRef.current, pool.latest)
       || instructionPoolRef.current.contextId !== pool.contextId) return
     if (instructionPoolRef.current.drafts.find((entry) => entry.fileId === fileId) !== draft) {
       showNotice('error', '重新读取期间文件草稿已更新，本次读取未覆盖新草稿')

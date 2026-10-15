@@ -41,8 +41,8 @@ export interface InstructionDraftPool {
    * 退回部署进程 cwd；global-only = 客户端尚无服务端解析结果时的空池标记。
    */
   source: 'session' | 'deploy-cwd' | 'global-only'
-  /** 上下文序号：迟到响应按序号丢弃，不写入新上下文。 */
-  seq: number
+  /** 最新优先序号：迟到响应按序号丢弃，不写入新上下文（见 resource-track.ts）。 */
+  latest: number
   drafts: InstructionDraft[]
   /** 负责人事实（服务端观察，当前无 `true` 生产者）：只随快照携带，UI 不据此改行为。 */
   owner: InstructionsOwnerView
@@ -69,7 +69,7 @@ export const EMPTY_INSTRUCTION_POOL: InstructionDraftPool = {
   contextId: null,
   cwd: null,
   source: 'global-only',
-  seq: 0,
+  latest: 0,
   drafts: [],
   owner: { officialInstructions: null },
 }
@@ -161,7 +161,7 @@ export function poolFromSnapshot(
     contextId,
     cwd: snapshot.context.cwd,
     source: snapshot.context.source,
-    seq,
+    latest: seq,
     drafts,
     // 老宿主/异常载荷缺 owner 时按「未观察到」处理，不猜成冲突。
     owner: snapshot.owner ?? { officialInstructions: null },
@@ -170,11 +170,11 @@ export function poolFromSnapshot(
 
 /** 上下文切换：保留草稿（不丢输入），但旧上下文草稿自此不可写；负责人事实回到未观察态。 */
 export function switchInstructionContext(pool: InstructionDraftPool, seq: number): InstructionDraftPool {
-  return { ...pool, contextId: null, cwd: null, source: 'global-only', seq, drafts: pool.drafts.map((draft) => ({ ...draft, saving: false })), owner: { officialInstructions: null } }
+  return { ...pool, contextId: null, cwd: null, source: 'global-only', latest: seq, drafts: pool.drafts.map((draft) => ({ ...draft, saving: false })), owner: { officialInstructions: null } }
 }
 
-/** 迟到响应（上下文序号已过期）不得写入当前视图。 */
-export const isCurrentInstructionSeq = (pool: InstructionDraftPool, seq: number): boolean => pool.seq === seq
+/** 迟到响应（上下文序号已过期）不得写入当前视图：判据是共用的最新优先原语。 */
+export { isLatest as isCurrentInstructionSeq } from './resource-track.ts'
 
 export function setDraftContent(pool: InstructionDraftPool, fileId: string, content: string): InstructionDraftPool {
   return {

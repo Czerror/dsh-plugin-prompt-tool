@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+### 资源编辑器读改写协议：最新优先原语 ＋ 统一序号命名（2026-10-16）
+
+- **新增 `src/client/data/resource-track.ts`**（`beginLatest`／`isLatest` ＋ `LatestSequence`）：六个 owner（rules／variables／persona／instructions／skills／config-order）真正共用的只有这一条策略——**只有最新一次请求拥有落地与清理权**，晚到应答既不写草稿也不清 `busy`/`loading`。序号字段统一叫 `latest`（此前三派：`readSequence`／`sequence`／`seq`）。
+- **四家换上新原语与命名**：`rule-drafts.ts`（20 处）、`module-variables.ts`、`workspace-drafts.ts` ＋ `ModulePersonaCard.tsx`（persona 段与 sources 段两套）、`instruction-drafts.ts` ＋ store（`isCurrentInstructionSeq` 改成 `isLatest` 的领域别名）。**运行期零行为变化**。
+- **核实后不做**（只读对照表推翻了本来的假设）：六家共享的是**模式**而非可共用代码——请求形状、分域粒度、失败语义各不相同；包一个通用「读改写轨道」需要约 9 个回调，接口比它替换掉的代码还长（浅模块）。发布态派生也**不抽**：rules 把「`publicationError` 非空」也算 pending，variables／persona 只看显式 `publicationPending`，统一它会改变重试入口的显示——这条差异改为写进文档的**有意行为**。
+- **两处例外保持原样**：skills 用 `writing` 布尔锁 ＋ session 字符串一致性替代版本/序号（其 `seq` 还与 store 的 bootstrap 覆盖保护耦合）；config-order 的 `generation` 是闭包变量、外部不可观测。
+- **修正先前的误判**：迟到丢弃并非零覆盖——`test/client/module-variables.test.mjs:53` 已覆盖「迟到响应不能覆盖新读取」；本轮只补原语自身的判据（`test/client/resource-track.test.mjs`）。
+- **投机项判废**：`bridgeCall` 有 18 个消费者但传输只有一条 loopback fetch（没有第二个 adapter，注入点是为不存在的需求造缝）；locales 已是「前缀分区 ＋ zh 键类型强制 en 键集一致 ＋ 六子字典合成」的结构（`locales.ts` 549 ＋ `locales-prompts.ts` 895 行），余下只是文件切分，868 个键的搬迁零行为收益。
+- **验证**：`typecheck`／`lint`（0 警告 0 错误）／`test`（**670 pass / 0 fail**，默认 4 路）／`build`／`git diff --check` 全绿。
+
 ### 客户端 store 端口化；两个受众页合一（2026-10-16）
 
 - **新增 `src/client/data/store-ports.ts`**：按域切十个端口（`ModuleFactsPort`／`DraftsPort`／`ParamsPort`／`VariablesPort`／`SkillsPort`／`InstructionFilesPort`／`RuleEditingPort`／`ModuleActionsPort`／`NoticePort`／`ModelsPort`／`HostApiPort`），每个端口一段注释说明它服务哪些卡。`PromptToolStore` 改成这些端口的**交叉类型别名**——运行期零变化：store 仍是同一个扁平对象，订阅时序与保存队列一字未改。
