@@ -40,9 +40,6 @@ export function readParamOverridesPatch(source: Record<string, unknown>): Partia
       case 'string-list':
         if (typeof value === 'string' || Array.isArray(value)) patch[key] = engineParamList(value).join(', ')
         break
-      case 'max-depth':
-        if (typeof value === 'string' || typeof value === 'number') patch[key] = String(value)
-        break
     }
   }
   return patch as Partial<Fields>
@@ -66,7 +63,6 @@ export function updateLoadedParamKeys(loadedKeys: Set<string>, overrides: Readon
 function serializedParam(key: SharedParamKey, value: unknown): unknown {
   switch (ENGINE_PARAM_DEFINITIONS[key].kind) {
     case 'string-list': return engineParamList(value)
-    case 'max-depth': return value === '' || value === 'provider-managed' ? value : Number(value)
     default: return value
   }
 }

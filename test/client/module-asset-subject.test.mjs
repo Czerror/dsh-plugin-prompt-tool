@@ -32,9 +32,6 @@ const { ModulePersonaCard, personaWriteBody, readModulePersona } = await withSsr
 const { readCustomTools } = await withSsr([
   new URL('../../src/client/features/tools/CustomToolsCard.tsx', import.meta.url).href,
 ])
-const { readSubagentPolicy } = await withSsr([
-  new URL('../../src/client/features/subagents/SubagentToolPolicyCard.tsx', import.meta.url).href,
-])
 const { saveModuleVariables: saveVariablesRequest } = await import('../../src/client/data/module-variables.ts')
 
 const facts = (editable = true) => ({ declaredModules: [], effectiveModules: [], rowIds: [], sourceMode: 'explicit', editable })
@@ -101,11 +98,10 @@ test('声明面：声明了 customTools 但内容为空 → 卡片渲染为空�
   assert.doesNotMatch(html, /data-declare-section="customTools"/, '已声明不再给添加入口（两种形态不同）')
 })
 
-test('声明面：逐节判定——声明了 customTools 不给它入口，未声明的 subagentToolPolicy 仍出入口', () => {
+test('声明面：逐节判定——声明了 customTools 就不给它添加入口', () => {
   const store = stubStore(createWorkspaceDrafts(), modulesDeclaring(['rules', 'customTools']))
   const html = renderElement(LayerSettingsContent, { store, t, layer: 'tool-pipeline', moduleId: 'mod-a' })
   assert.doesNotMatch(html, /data-declare-section="customTools"/, '已声明的节不给入口')
-  assert.match(html, /data-declare-section="subagentToolPolicy"/, '同层别的未声明节照旧出入口')
 })
 
 test('声明面：声明面未下发（老载荷／损坏模块）＝未知，照旧出卡不误判成未声明', () => {
@@ -163,11 +159,10 @@ test('声明面：变量写载荷——没有前状态整键不带 expectedRevis
   assert.deepEqual(bodies[1].expectedRevisions, { module: 'M1' }, '有前状态仍按既有并发校验')
 })
 
-test('声明面：三张通用卡的读——未声明一个请求都不发，声明后各读一次（编辑器在场不受影响）', async () => {
+test('声明面：通用卡的读——未声明一个请求都不发，声明后各读一次（编辑器在场不受影响）', async () => {
   const fetchStub = withFetch(() => ({ ok: true, value: {} }))
   try {
     await readCustomTools('mod-a', true)
-    await readSubagentPolicy('mod-a', true)
     await readModulePersona('mod-a', true)
     assert.equal(fetchStub.requests.length, 0, '未声明时一个请求都没发出去')
     // 同一未声明主语：固定卡（人设编辑器、指令卡参数组）照常渲染——「不读」不等于「不出编辑器」。
@@ -181,10 +176,9 @@ test('声明面：三张通用卡的读——未声明一个请求都不发，�
 
     fetchStub.requests.length = 0
     await readCustomTools('mod-a', false)
-    await readSubagentPolicy('mod-a', false)
     await readModulePersona('mod-a', false)
     assert.deepEqual(fetchStub.requests.map((request) => request.path.split('/api/prompt-tool/settings')[1]),
-      ['/custom-tools', '/subagent-tool-policy', '/persona'], '声明的节照旧各读一次')
+      ['/custom-tools', '/persona'], '声明的节照旧各读一次')
     for (const request of fetchStub.requests) assert.equal(request.headers['x-module-id'], 'mod-a', '读的主语＝该模块')
   } finally {
     fetchStub.restore()
@@ -346,7 +340,7 @@ const tick = () => new Promise((resolve) => setImmediate(resolve))
 test('store：空主语 bootstrap 不带 x-module-id；模块参数按主语读一次并在层卡之间共享', async () => {
   const fetchStub = withFetch((request) => {
     if (request.path.endsWith('/bootstrap')) return bootstrapPayload(twoModules)
-    if (request.path.endsWith('/param-overrides')) return { ok: true, value: { overrides: { maxDepth: 9 } } }
+    if (request.path.endsWith('/param-overrides')) return { ok: true, value: { overrides: { modelTemperature: 9 } } }
     return { ok: true, value: {} }
   })
   try {
@@ -363,7 +357,7 @@ test('store：空主语 bootstrap 不带 x-module-id；模块参数按主语读�
     const reads = fetchStub.reads()
     assert.equal(reads.length, 1, '同一模块同一轮加载只读一次（层卡之间共享同一份）')
     assert.equal(reads[0].headers['x-module-id'], 'mod-a', '参数读的主语是该卡归属的模块')
-    assert.equal(store.moduleParamsOf('mod-a').maxDepth, '9')
+    assert.equal(store.moduleParamsOf('mod-a').modelTemperature, '9')
     assert.deepEqual(store.moduleParamsOf('mod-b'), EMPTY_PARAMS, '别的模块不继承这份读数')
   } finally {
     fetchStub.restore()
@@ -376,7 +370,7 @@ test('store：模块操作刷新更新干净参数，不覆盖总闸、全局值
   const fetchStub = withFetch(request => {
     if (request.path.endsWith('/bootstrap')) return bootstrapPayload(twoModules)
     if (request.path.endsWith('/meta')) return { ok: true, value: { meta: { layers: [], modules } } }
-    if (request.path.endsWith('/param-overrides')) return { ok: true, value: { overrides: { maxDepth: depth } } }
+    if (request.path.endsWith('/param-overrides')) return { ok: true, value: { overrides: { modelTemperature: depth } } }
     if (request.path.endsWith('/module-name')) return { ok: true, value: { name: '新名称', revision: 'updated' } }
     return { ok: true, value: {} }
   })
@@ -386,21 +380,21 @@ test('store：模块操作刷新更新干净参数，不覆盖总闸、全局值
     store.ensureModuleParams('mod-a'); store.ensureModuleParams('mod-b')
     await tick()
     store.patch({ modulesEnabled: false })
-    store.setModuleParam('mod-b', 'maxDepth', '77')
-    store.setGlobalParam('maxDepth', '88')
+    store.setModuleParam('mod-b', 'modelTemperature', '77')
+    store.setGlobalParam('modelTemperature', '88')
     depth = 12; fetchStub.requests.length = 0
     assert.equal((await store.moduleActions.rename('mod-a', '新名称', 'old')).ok, true)
     await tick()
     assert.equal(store.getFields().modulesEnabled, false)
-    assert.equal(store.globalParams.maxDepth, '88')
-    assert.equal(store.moduleParamsOf('mod-a').maxDepth, '12')
-    assert.equal(store.moduleParamsOf('mod-b').maxDepth, '77')
+    assert.equal(store.globalParams.modelTemperature, '88')
+    assert.equal(store.moduleParamsOf('mod-a').modelTemperature, '12')
+    assert.equal(store.moduleParamsOf('mod-b').modelTemperature, '77')
     assert.deepEqual(fetchStub.reads().map(r => r.headers['x-module-id']), ['mod-a'])
     assert.equal(fetchStub.requests.some(r => r.path.endsWith('/bootstrap')), false)
     modules = twoModules.map(module => ({ ...module, declares: [] }))
     await store.moduleActions.refresh(); await tick()
     assert.deepEqual(store.moduleParamsOf('mod-a'), EMPTY_PARAMS, '覆盖导入删除参数节后，干净缓存恢复未声明默认值')
-    assert.equal(store.moduleParamsOf('mod-b').maxDepth, '77', '未保存参数仍保留')
+    assert.equal(store.moduleParamsOf('mod-b').modelTemperature, '77', '未保存参数仍保留')
   } finally { fetchStub.restore() }
 })
 
@@ -419,7 +413,7 @@ test('store：模块刷新期间新输入保留，迟到 bootstrap 不回退目�
     if (path.endsWith('/meta')) return respond({ ok: true, value: { meta: { layers: [], modules } } })
     if (path.endsWith('/param-overrides')) {
       if (waitParams) await new Promise(resolve => { delayedParams = resolve })
-      return respond({ ok: true, value: { overrides: { maxDepth: responseDepth } } })
+      return respond({ ok: true, value: { overrides: { modelTemperature: responseDepth } } })
     }
     return respond({ ok: true, value: {} })
   }
@@ -428,9 +422,9 @@ test('store：模块刷新期间新输入保留，迟到 bootstrap 不回退目�
     await store.load(); store.ensureModuleParams('mod-a'); await tick()
     waitParams = true; responseDepth = 12
     await store.moduleActions.refresh(); await tick()
-    store.setModuleParam('mod-a', 'maxDepth', '77')
+    store.setModuleParam('mod-a', 'modelTemperature', '77')
     delayedParams(); await tick()
-    assert.equal(store.moduleParamsOf('mod-a').maxDepth, '77')
+    assert.equal(store.moduleParamsOf('mod-a').modelTemperature, '77')
     waitParams = false; waitBoot = true
     const older = store.load()
     await tick()
@@ -504,7 +498,7 @@ test('store：写参数只写该模块的键与主语；不可编辑模块不发
   const modules = [twoModules[0], { ...twoModules[1], facts: facts(false) }]
   const fetchStub = withFetch((request) => {
     if (request.path.endsWith('/bootstrap')) return bootstrapPayload(modules)
-    if (request.path.endsWith('/param-overrides')) return { ok: true, value: { overrides: { maxDepth: 9 } } }
+    if (request.path.endsWith('/param-overrides')) return { ok: true, value: { overrides: { modelTemperature: 9 } } }
     return { ok: true, value: {} }
   })
   try {
@@ -512,11 +506,11 @@ test('store：写参数只写该模块的键与主语；不可编辑模块不发
     await store.load()
     store.ensureModuleParams('mod-a')
     await tick()
-    store.setModuleParam('mod-a', 'maxDepth', '3')
+    store.setModuleParam('mod-a', 'modelTemperature', '3')
     await store.persistParamOverrides('mod-a')
     const write = fetchStub.writes()[0]
     assert.equal(write.headers['x-module-id'], 'mod-a')
-    assert.deepEqual(write.body, { overrides: { maxDepth: 3 }, expectedModuleId: 'mod-a' }, '只写该模块已存/已改的键')
+    assert.deepEqual(write.body, { overrides: { modelTemperature: '3' }, expectedModuleId: 'mod-a' }, '只写该模块已存/已改的键')
 
     const before = fetchStub.requests.length
     await store.persistParamOverrides('mod-b')
@@ -592,12 +586,12 @@ test('store：未声明 params 的模块不发这次读；首次写走既有写�
     assert.equal(reads.filter((request) => request.path.endsWith('/module-variables')).length, 0,
       '没声明 variables 同样不发读')
 
-    store.setModuleParam('mod-a', 'maxDepth', '3')
+    store.setModuleParam('mod-a', 'modelTemperature', '3')
     await store.persistParamOverrides('mod-a')
     const write = fetchStub.writes()[0]
     assert.ok(write, '未声明时首次写仍走既有写路径：写就是创建这个节')
     assert.equal(write.headers['x-module-id'], 'mod-a')
-    assert.deepEqual(write.body, { overrides: { maxDepth: 3 }, expectedModuleId: 'mod-a' })
+    assert.deepEqual(write.body, { overrides: { modelTemperature: '3' }, expectedModuleId: 'mod-a' })
     assert.ok(fetchStub.requests.filter((request) => request.path.endsWith('/bootstrap')).length >= 2,
       '写成功后重读 /meta，声明面快照随之刷新')
   } finally {
@@ -609,7 +603,7 @@ test('store：模块退出装配集合后，下一轮 load 不再为它读参数
   let modules = twoModules
   const fetchStub = withFetch((request) => {
     if (request.path.endsWith('/bootstrap')) return bootstrapPayload(modules)
-    if (request.path.endsWith('/param-overrides')) return { ok: true, value: { overrides: { maxDepth: 9 } } }
+    if (request.path.endsWith('/param-overrides')) return { ok: true, value: { overrides: { modelTemperature: 9 } } }
     return { ok: true, value: {} }
   })
   try {
@@ -649,7 +643,7 @@ test('store：读在飞的模块被剪枝后，迟到的读数不落地、也不
     if (request.path.endsWith('/param-overrides')) {
       // mod-b 的参数读悬挂在这里，等测试显式放行：模拟「读还没回来，模块已被剪枝」。
       if (request.headers['x-module-id'] === 'mod-b') await new Promise((resolve) => { releaseModB = resolve })
-      return respond({ ok: true, value: { overrides: { maxDepth: 9 } } })
+      return respond({ ok: true, value: { overrides: { modelTemperature: 9 } } })
     }
     return respond({ ok: true, value: {} })
   }

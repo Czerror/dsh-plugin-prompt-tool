@@ -84,7 +84,6 @@ export function EngineParamField({ store, param, t, instanceId, ...subject }: {
   const value = isGlobal ? store.globalParams[param] : store.moduleParamsOf(moduleId ?? '')[param]
   const disabled = !store.fields.modulesEnabled
     || (isGlobal ? store.globalParamsLoaded !== true : facts?.editable !== true)
-    || (param === 'maxDepth' && facts?.subagentToolPolicyEnabled !== true)
   const draftKey = `${isGlobal ? 'global' : moduleId}:param:${param}`
   const getDraftRevision = store.getDraftRevision ?? getZero
   useSyncExternalStore(store.subscribeDrafts ?? subscribeNothing, getDraftRevision, getDraftRevision)
@@ -128,7 +127,7 @@ export function EngineParamField({ store, param, t, instanceId, ...subject }: {
   // 默认渲染点沿用 `pt-param-<键>`（层卡内唯一）；镜像渲染点带实例前缀，DOM id 不重复。
   const id = instanceId === undefined ? `pt-param-${param}` : `pt-param-${instanceId}-${param}`
   const label = t(`param.${param}`)
-  const hint = param === 'maxDepth' ? t('param.maxDepth.hint') : param === 'instructionHint' ? t('param.instructionHint.hint') : t('param.hint', { param, label })
+  const hint = param === 'instructionHint' ? t('param.instructionHint.hint') : t('param.hint', { param, label })
   const optionLabels: Record<string, string> = {
     either: t('param.option.either'),
     'tool-call': t('param.option.tool-call'),

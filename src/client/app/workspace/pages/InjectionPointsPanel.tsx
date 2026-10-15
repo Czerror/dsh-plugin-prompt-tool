@@ -19,8 +19,6 @@ import { EngineParamField, EngineParamFields, matchesEditorGroup } from '../../.
 import { ModuleCapabilityCreateMenu } from '../../../features/modules/EngineModuleList.tsx'
 import { CurrentSessionModel } from '../../../features/models/CurrentSessionModel.tsx'
 import { ModulePersonaCard } from '../../../features/persona/ModulePersonaCard.tsx'
-import { DelegationToolsModuleCard } from '../../../features/subagents/DelegationToolsCard.tsx'
-import { SubagentToolPolicyCard } from '../../../features/subagents/SubagentToolPolicyCard.tsx'
 import { ContextActivationDiagnosticsCard } from '../../../features/prompts/ContextActivationDiagnosticsCard.tsx'
 import { TemplateVariablesModuleCard } from '../../../features/prompts/PromptConfigsEditor.tsx'
 import { CustomToolsCard } from '../../../features/tools/CustomToolsCard.tsx'
@@ -34,11 +32,9 @@ export { isEditorGroupVisible }
 const CARD_LABEL_KEYS: Record<string, PromptToolLocaleKey> = {
   'variables': 'variables.title',
   'custom-tools': 'customTools.aria',
-  'subagent-tool-policy': 'policy.title',
   'prompt-defaults': 'modules.group.prompt-defaults',
   'main-model': 'modules.group.main-model',
   'subagent-model': 'modules.group.subagent-model',
-  'subagent-tools': 'modules.group.subagent-delegation',
   'str-replace-editor': 'modules.group.str-replace-editor',
   'tool-config-engine': 'modules.group.tool-config-engine',
 }
@@ -114,7 +110,6 @@ const LAYER_ASSET_IDS = ['variables', 'main-model', 'subagent-model', 'subagent-
 const ASSET_SECTIONS: Record<string, readonly string[]> = {
   'variables': ['variables', 'variablesEnabled'],
   'custom-tools': ['customTools'],
-  'subagent-tool-policy': ['subagentToolPolicy'],
 }
 
 /** 该组已有专属编辑器（模型路由卡、资产编辑器）：参数不再走通用控件渲染，避免同一批字段两遍。 */
@@ -274,18 +269,13 @@ export function LayerSettingsContent(props: {
             />
           )}
           {id === 'main-model' && <CurrentSessionModel store={store} t={t} />}
-          {id === 'subagent-tools' && <DelegationToolsModuleCard store={store} t={t} moduleId={moduleId} embedded />}
-          {(id === 'custom-tools' || id === 'subagent-tool-policy') && <h4 className={css.groupTitle}>{t(CARD_LABEL_KEYS[id] ?? 'modules.layer.asset')}</h4>}
+          {id === 'custom-tools' && <h4 className={css.groupTitle}>{t(CARD_LABEL_KEYS[id] ?? 'modules.layer.asset')}</h4>}
           {id === 'custom-tools' && (props.toolEditor ?? (
             <CustomToolsCard key={moduleId} moduleId={moduleId} t={t} onNotice={store.showNotice}
               drafts={store.editorDrafts} disabled={!canEdit}
               onChooseTemplate={props.onChooseToolTemplate === undefined ? undefined : (anchor) => props.onChooseToolTemplate!(moduleId, anchor)}
               undeclared={inCreateMode('custom-tools')} onDeclared={inCreateMode('custom-tools') ? afterDeclared : undefined} />
           ))}
-          {id === 'subagent-tool-policy' && (
-            <SubagentToolPolicyCard key={moduleId} moduleId={moduleId} modules={store.meta.modules ?? []} disabled={!canEdit} t={t} onNotice={store.showNotice} drafts={store.editorDrafts}
-              undeclared={inCreateMode('subagent-tool-policy')} onDeclared={inCreateMode('subagent-tool-policy') ? afterDeclared : undefined} />
-          )}
         </section>
       ))}
     </div>

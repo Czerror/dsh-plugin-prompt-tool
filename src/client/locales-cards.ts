@@ -12,17 +12,11 @@ export const CARDS_ZH = {
   'modelRoute.idle.main': '未设置：选择模型（留空 = 继承当前会话）',
   'modelRoute.idle.subagent': '未设置：选择模型（留空 = 继承子代理当前请求）',
   'modelRoute.idle.host': '未设置：选择模型（当前继承宿主默认 {model}）',
-  // 子代理「工具与深度」模块卡（DelegationToolsCard；深度标签复用 param.maxDepth）。
-  'policy.delegation.name': '工具与深度',
-  'policy.delegation.meta': '委派递归深度（工具授权已归「subagent-tool-policy」能力卡）',
-  'policy.delegation.hint': '工具授权由「subagent-tool-policy」能力卡统一维护（授权上限、工具档与模型扩权）；此处只保留子代理递归深度。',
-  'policy.delegation.policyMoved': '子代理工具策略已改为模块类型能力：在模块列表里启用/删除「subagent-tool-policy」能力卡，卡内编辑授权上限、工具档与模型扩权。',
-  'policy.delegation.depthHint': '0 表示禁止委派；服务商管理表示由服务商决定；正整数限制递归层数；留空使用默认值',
-  'policy.delegation.depthUnset': '（不设置）',
-  'policy.delegation.section': '子代理工具策略（subagentToolPolicy · 实例级授权）',
-
-  // 实例级工具策略编辑器（SubagentToolPolicyCard）：单一开关 + 自动保存。
+  // 已退役：子代理工具策略编辑器（SubagentToolPolicyCard）随引擎退场，下方 `policy.*` 文案
+  // 暂无渲染点；保留键值以维持与 CARDS_EN 的键集相等，清理属独立一轮。
   'policy.title': '子代理工具策略',
+
+  // 自定义工具容器（CustomToolsCard）。
   'policy.titleHint': '模型只能在用户授权上限内选择工具；策略只影响后续新实例',
   'policy.toggleLabel': '启用子代理工具策略',
   'policy.status.enabled': '已启用（{count} 档）',
@@ -293,14 +287,9 @@ export const CARDS_EN: Record<keyof typeof CARDS_ZH, string> = {
   'modelRoute.idle.main': 'Not set: choose a model (blank inherits the current session)',
   'modelRoute.idle.subagent': 'Not set: choose a model (blank inherits the current subagent request)',
   'modelRoute.idle.host': 'Not set: choose a model (currently inheriting host default {model})',
-  'policy.delegation.name': 'Tools & depth',
-  'policy.delegation.meta': 'Delegation recursion depth (tool grants live in the "subagent-tool-policy" card)',
-  'policy.delegation.hint': 'Tool grants are maintained by the "subagent-tool-policy" capability card (ceiling, profiles and model expansion); only subagent recursion depth lives here.',
-  'policy.delegation.policyMoved': 'The subagent tool policy is now a module-type capability: enable or remove the "subagent-tool-policy" card in the module list and edit the ceiling, profiles and model expansion inside it.',
-  'policy.delegation.depthHint': '0 forbids delegation; provider-managed leaves it to the provider; a positive integer limits recursion depth; empty uses the default',
-  'policy.delegation.depthUnset': '(Not set)',
-  'policy.delegation.section': 'Subagent tool policy (subagentToolPolicy · per-instance grants)',
 
+  // Retired: the subagent tool policy editor shipped with the removed engine, so these `policy.*`
+  // entries have no render point; they stay to keep CARDS_EN's key set equal to CARDS_ZH.
   'policy.title': 'Subagent tool policy',
   'policy.titleHint': 'The model can only pick tools within the user-authorized ceiling; the policy affects new instances only',
   'policy.status.enabled': 'Enabled ({count} profiles)',

@@ -18,10 +18,9 @@ export type { SkillCatalogEntry } from '../../shared/skills.ts'
 export type SharedParamKey = EngineParamKey
 export const SHARED_PARAM_KEYS = ENGINE_PARAM_KEYS
 
-/** 参数草稿类型从宿主契约派生，只转换 UI 的列表/深度形态。 */
+/** 参数草稿类型从宿主契约派生：所有值在草稿里按文本编辑。 */
 type EngineParamDrafts = {
-  [K in SharedParamKey]-?: K extends 'maxDepth' ? string
-    : NonNullable<EngineParams[K]> extends string | string[] ? string : NonNullable<EngineParams[K]>
+  [K in SharedParamKey]-?: NonNullable<EngineParams[K]> extends string | string[] ? string : NonNullable<EngineParams[K]>
 }
 
 export interface Fields extends EngineParamDrafts {
