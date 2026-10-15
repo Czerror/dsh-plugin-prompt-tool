@@ -31,7 +31,7 @@ export type CardOrigin =
 /**
  * 条件判定的组合逻辑取值域：与 engine/anchor-match.mjs 的 MATCH_LOGIC 同域。
  * 下拉的取值与展示顺序表在 prompt-config-policy.ts 的 MATCH_LOGICS（同一取值域）；
- * 与引擎的逐值对拍守卫见 test/client/prompt-config-form-layout.test.mjs。
+ * 与引擎的逐值一致性由 test/engine/predicates.test.mjs 的行为断言覆盖（它 import MATCH_LOGIC）。
  */
 export type MatchLogic = 'any' | 'all' | 'not' | 'notAny'
 
@@ -106,7 +106,8 @@ export interface PromptConfigTemplateEntry {
 /**
  * 层字段能力矩阵（11 项）的**唯一常量表**：{@link LayerFieldPolicy} 与
  * prompt-config-policy.ts 的 EMPTY_POLICY 都从本表派生，两处不再各自数一遍字段。
- * 取值与 engine/schema.mjs 每层 `fields` 的键集一致（对拍守卫见 test/client/mirror-guards.test.mjs）。
+ * 取值与 engine/schema.mjs 每层 `fields` 的键集一致（对拍守卫见 test/shared/bridge-contract.test.mjs
+ * 的「客户端层字段矩阵与 /meta 下发的逐层字段键集一致」）。
  */
 export const LAYER_FIELD_POLICY_KEYS = [
   'position', 'dedupe', 'promotion', 'audience', 'modelScope', 'merge',

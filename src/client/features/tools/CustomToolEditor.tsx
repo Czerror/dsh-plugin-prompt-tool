@@ -22,10 +22,10 @@ const BUILTIN_TOOL_NAMES = Object.values(MODULE_TOOL_NAMES)
 
 /**
  * execute.kind 下拉取值：必须与 engine/tool-definition.mjs:79 的校验列表逐值一致
- * （对拍守卫见 test/client/mirror-guards.test.mjs，那里 import 引擎模块做行为对拍）。
+ * （引擎侧的取值校验由 test/host/module-content-assets.test.mjs 的 validateDefinition 行为断言覆盖）。
  */
 export const KIND_OPTIONS = ['shell', 'http', 'delegate', 'fs', 'ask-user'] as const
-/** fs 的 action 取值：与 engine/tool-definition.mjs:92 的 read/write/append/list/delete 同域（引擎另收 {{args.*}} 模板，UI 不提供）。 */
+/** fs 的 action 取值：与 engine/tool-definition.mjs:96 的 read/write/append/list/delete 同域（引擎另收 {{args.*}} 模板，UI 不提供）。 */
 export const FS_ACTIONS = ['read', 'write', 'append', 'list', 'delete'] as const
 const HTTP_METHODS = ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'] as const
 const SHELLS = ['pwsh', 'powershell', 'cmd', 'sh', 'bash'] as const
@@ -35,7 +35,7 @@ const SHELLS = ['pwsh', 'powershell', 'cmd', 'sh', 'bash'] as const
  * 会被直接拒绝（tool-definition.mjs:17 的报错即为此而写）；二者由 host 保存前的
  * parameterSchemaSpecToJsonSchema 物化——`json` → 仅注释节点（任意 JSON），`oneOf` → 分支联合。
  * 因此行编辑器必须把「无 type 的节点」显示为 json、把 oneOf 节点显示为 oneOf（见下方 type 推导），
- * 不能把这两个值当成引擎类型。对拍守卫见 test/client/mirror-guards.test.mjs。
+ * 不能把这两个值当成引擎类型（物化后的类型集由 test/host/module-content-assets.test.mjs 的 validateDefinition 行为断言覆盖）。
  */
 export const SCHEMA_TYPES = ['string', 'number', 'integer', 'boolean', 'null', 'array', 'object', 'json', 'oneOf'] as const
 

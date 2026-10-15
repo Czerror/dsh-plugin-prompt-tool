@@ -40,7 +40,8 @@ export function translateLabel(
 export const AUDIENCE_LABEL_KEYS: Record<string, PromptToolLocaleKey> = { '': 'audience.none', all: 'audience.none', main: 'audience.main', subagent: 'audience.subagent' }
 /**
  * 层显示标签的字典键：键集由共享契约的 {@link InjectionPoint} 联合在编译期约束（九层穷尽、禁多余键），
- * 与引擎下发的 layerLabels 的键集对拍见 test/client/mirror-guards.test.mjs。
+ * 与引擎下发的 layerLabels 的键集对拍见 test/shared/bridge-contract.test.mjs
+ * 的「客户端层标签字典的键集与 /meta 下发的 layerLabels 一致」。
  * 文案仍归 `prompt-tool` 字典（zh/en 双份），不消费 /meta 的 layerLabels.title（引擎只下发中文单份）。
  */
 export const LAYER_LABEL_KEYS: Record<InjectionPoint, PromptToolLocaleKey> = {
@@ -107,7 +108,7 @@ export const SUBJECT_LABEL_KEYS: Record<string, PromptToolLocaleKey> = {
 /**
  * 组合逻辑取值（引擎 MATCH_LOGIC 的四个值），顺序即下拉展示顺序；取值域由 {@link MatchLogic} 约束。
  * 不做运行期派生：产品代码不 import engine/*.mjs（无既有先例），
- * 与 engine/anchor-match.mjs 的逐值对拍守卫见 test/client/prompt-config-form-layout.test.mjs。
+ * 与 engine/anchor-match.mjs 的逐值一致性由 test/engine/predicates.test.mjs 的行为断言覆盖（它 import MATCH_LOGIC）。
  */
 export const MATCH_LOGICS: readonly MatchLogic[] = ['any', 'all', 'not', 'notAny']
 export const MATCH_LOGIC_LABEL_KEYS: Record<MatchLogic, PromptToolLocaleKey> = {

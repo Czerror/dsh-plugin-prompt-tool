@@ -700,3 +700,34 @@ test('契约：失败载荷统一为 { ok: false, code?, message? }', async () =
   assert.equal(typeof payload.code, 'string')
   assert.equal(typeof payload.message, 'string')
 })
+
+// ── 客户端镜像守卫：引擎下发的矩阵与客户端手抄的常量表必须一致 ───────────────
+// 这两条补的是「漏了不报错」的缺口：字段矩阵与层标签都是客户端手抄 engine/schema.mjs 的
+// 常量（engine 是 .mjs、shared 无单一来源、没有生成器），漏一个字段不会 typecheck 报错。
+// 断言停在两端的公共接口上：一端是 /meta 载荷，一端是客户端模块导出。
+
+test('契约：客户端层字段矩阵与 /meta 下发的逐层字段键集一致（9 层 × 11 字段）', async () => {
+  const { LAYER_FIELD_POLICY_KEYS } = await import('../../src/client/prompt-tool-types.ts')
+  const handlers = register()
+  const res = fakeRes()
+  await handlers.get(SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.meta)(fakeReq(), res)
+  assert.equal(res.status, 200)
+  const policies = JSON.parse(res.body).value.meta.layerFieldPolicies
+  assert.deepEqual(Object.keys(policies).sort(), [...LAYER_ORDER].sort(), '下发的层集合与引擎层序一致')
+  const expected = [...LAYER_FIELD_POLICY_KEYS].sort()
+  // 逐层比对，不只比总键集：某一层少一个字段同样要红。
+  for (const layer of LAYER_ORDER) {
+    assert.deepEqual(Object.keys(policies[layer]).sort(), expected, `${layer} 的字段键集必须与客户端常量表一致`)
+  }
+})
+
+test('契约：客户端层标签字典的键集与 /meta 下发的 layerLabels 一致', async () => {
+  const { LAYER_LABEL_KEYS } = await import('../../src/client/features/prompts/prompt-config-policy.ts')
+  const handlers = register()
+  const res = fakeRes()
+  await handlers.get(SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.meta)(fakeReq(), res)
+  assert.equal(res.status, 200)
+  const labels = JSON.parse(res.body).value.meta.layerLabels
+  // 客户端漏一层会被 InjectionPoint 联合的穷尽约束挡住，但引擎侧多一层只有这里能发现。
+  assert.deepEqual(Object.keys(labels).sort(), Object.keys(LAYER_LABEL_KEYS).sort())
+})

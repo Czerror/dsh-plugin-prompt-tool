@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### 恢复层字段矩阵与层标签的镜像守卫，清理 6 处悬空引用（2026-10-16）
+
+- **两条守卫重建**（`test/shared/bridge-contract.test.mjs`）：「客户端层字段矩阵与 /meta 下发的逐层字段键集一致」（**逐层**比对，不只比总键集）与「客户端层标签字典的键集与 /meta 下发的 layerLabels 一致」。它们补的是**「漏了不报错」**的缺口：`LAYER_FIELD_POLICY_KEYS` 是客户端手抄 `engine/schema.mjs` 每层 `fields` 的常量表，engine 是 `.mjs`、`shared` 无该字段的单一来源、也没有生成器，**少一个字段不会 typecheck 报错**；`LAYER_LABEL_KEYS` 漏一层会被 `InjectionPoint` 联合的穷尽约束挡住，但**引擎多一层**只有运行期对拍能发现。断言停在两端的公共接口上（`/meta` 载荷 ↔ 客户端模块导出），**不做**源码字符串对拍。
+- **判别力实测**：临时给 `engine/schema.mjs` 的 pre-step 层加一个字段 → 第一条守卫变红且报错精确到层（「pre-step 的字段键集必须与客户端常量表一致」）；改回后 31 例全绿，引擎文件确认无残留。跑不红的测试等于注释，所以这一步是验收的一部分。
+- **清理 6 处悬空引用**：`prompt-tool-types.ts:34,109`、`CustomToolEditor.tsx:25,38`、`prompt-config-policy.ts:43,110` 指向的 `test/client/mirror-guards.test.mjs` 与 `test/client/prompt-config-form-layout.test.mjs`，都在 `01336d85`（测试按 TDD seam 收敛，1617 → 289 例）被**整文件删除**——那轮清理了 README/docs 的 36 处引用与 scripts 2 处，漏了 src 里这 6 处。现在：守矩阵与层标签的两处**指向新建守卫**，其余四处改为**陈述真实覆盖**（`test/engine/predicates.test.mjs` 的 `MATCH_LOGIC` 行为断言、`test/host/module-content-assets.test.mjs` 的 `validateDefinition` 断言——两处 import 都经核实）。
+- **另修一处行号漂移**：`CustomToolEditor.tsx:28` 引 `tool-definition.mjs:92` 的 fs action 列表，实际已在 `:96`（退役的 delegate 工具列表插在前面）。
+- **未做**：不重建被删文件里另外 4 个用例（`MATCH_LOGICS`／`KIND_OPTIONS`／`FS_ACTIONS`／`SCHEMA_TYPES`——今天都有等价的行为覆盖），也不恢复「正则解析引擎源码」那种形态。今天两份定义**值层面无漂移**：9 层 × 11 字段键集与顺序全一致。
+
 ### 引擎：机器路径事实单一来源 + 参数 schema 抽公共（2026-10-16）
 
 - **`engine/machine-paths.mjs`（新建）是 `DSH_HOME`／`CWD`／`WORKSPACE` 的唯一取值来源**：此前这条配方在四处各写一遍（`interpolate` 的内置变量、`fillers` 的 env facts、`run-code-env` 的进程环境兜底、`instruction-hint` 的指令文件探测），而且已经分叉——未设 `DSH_HOME` 时前两者按 `<USERPROFILE>\.dsh` 推导，`run-code-env` **不给该键**，于是同一台机器上 `{{DSH_HOME}}` 与 `run_code` 里的 `env.DSH_HOME` 是两个答案。四处改为共用它。
