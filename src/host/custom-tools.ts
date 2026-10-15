@@ -1,6 +1,6 @@
 /** 自定义工具的保存校验与物化：只编译定义，不注册或执行工具，不修改输入。 */
 import { parameterSchemaSpecToJsonSchema, valueSchemaSpecToJsonSchema } from '@deepseek-ai/dsh-tools'
-// @ts-expect-error 仓库根 ESM 引擎文件由 tsdown 作为源码依赖打包，无独立声明文件。
+// 仓库根 ESM 引擎文件由 tsdown 作为源码依赖打包。
 import { validateDefinition } from '../../engine/tool-definition.mjs'
 import { validateCustomToolIdentities } from '../shared/engine-capabilities.ts'
 import { assertSafeConfigId } from './prompt-configs.ts'

@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### 引擎接口进编译期；打破组合/参数循环（2026-10-16）
+
+- **`src/` 不再靠 `@ts-expect-error` 引入引擎**：给 10 个被 `src/` 静态引入的引擎模块补手写 `.d.mts`（`rule-spec`／`shared`／`interpolate`／`executor`／`branch`／`tool-definition`／`order`／`rule-runtime`／`compaction-epoch`／`conditions/index`），删掉 `src/` 的 23 条 pragma ＋ `test/host/bundled-assets.test.mjs` 那条（`test/` 本不在 tsc 项目内）。加上既有的三份（`template-evaluation`／`template-frame`／`context-activation`），插件侧现在只对**未被静态引入**的模块（如 `schema.mjs`，只经 URL 动态导入）留运行期断言。
+- **声明只覆盖插件依赖面**：`compileRules`／`completeRuleSections` 这类结构性入参按 `readonly unknown[]` 声明（引擎本就只做结构校验），`InjectionConfigSpec` 只列编译必产出字段（写全会破坏 `rule-content.ts` 的 `as PromptConfigSpec`）；声明文件不引用 `src/` 类型，跨引擎模块用 `import type { X } from './y.mjs'`。零构建配置改动：不进 `lib/` 打包，`exports["./engine/*"]` 已覆盖，TS 按 `./x.mjs` → `./x.d.mts` 解析。
+- **打破组合/参数循环（manifest 拆分第一回合）**：`loadCompositionText` 改成接收**已解析的 params**（去掉形参 `_runtime` 与内部的 `resolveModuleParams` 自调），两个调用点各传自己那一份——`renderComposition` 仍按空 runtime 解析，**行为不变**（旧实现把 runtime 传进来但内部同样用空 runtime）。这条入参边界让「组合文本」成为不依赖参数/事实的纯文本模块，为下一回合按簇拆分（七块 ＋ 删 `manifest.ts`、`index.ts` 重导出改指新路径、包公共面不变）扫清唯一的 C↔D 环。
+- **文档**：`docs/engine-reuse.md` 新增「插件侧怎么引入引擎（类型边界）」；`prompt-configs.ts`／`custom-tools.ts` 里「无 `.d.mts` 靠 pragma 引入」的注释改为事实。
+- **验证**：`typecheck`／`lint`（0 警告 0 错误）／`test`（**670 pass / 0 fail**，默认 4 路）／`build`／`git diff --check` 全绿；`rg '@ts-expect-error' src test` 零命中，`engine/vendor/**` 的 10 条未动。
+
 ### 资源编辑器读改写协议：最新优先原语 ＋ 统一序号命名（2026-10-16）
 
 - **新增 `src/client/data/resource-track.ts`**（`beginLatest`／`isLatest` ＋ `LatestSequence`）：六个 owner（rules／variables／persona／instructions／skills／config-order）真正共用的只有这一条策略——**只有最新一次请求拥有落地与清理权**，晚到应答既不写草稿也不清 `busy`/`loading`。序号字段统一叫 `latest`（此前三派：`readSequence`／`sequence`／`seq`）。

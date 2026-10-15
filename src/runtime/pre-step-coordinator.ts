@@ -4,13 +4,9 @@ import { resolve } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import type { PreStepDecision } from '@deepseek-ai/dsh-agent'
 import { NamedEntries, ScopedLayers, scopeOf } from '@deepseek-ai/dsh-scope'
-// @ts-expect-error 引擎 ESM 随插件打包。
 import { createEpochPromotion } from '../../engine/compaction-epoch.mjs'
-// @ts-expect-error 引擎 ESM 随插件打包。
 import { PROMOTE_EVENTS, createWarnOnce } from '../../engine/shared.mjs'
-// @ts-expect-error 引擎 ESM 随插件打包。
 import { runPreStepBatch, confirmDelivered } from '../../engine/executor.mjs'
-// @ts-expect-error 引擎 ESM 随插件打包。
 import { compareConfigSequence } from '../../engine/order.mjs'
 import { instructionFileIdFromDisplayPath } from '../host/agents-cards.ts'
 import { instructionPolicyPath, readInstructionPolicy, resolveInstructionPolicy } from '../host/instructions-policy.ts'

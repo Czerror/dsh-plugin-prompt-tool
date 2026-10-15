@@ -19,7 +19,7 @@ import type { ModuleSpec } from './manifest.ts'
 import type { RuleDefinition } from '../shared/rules.ts'
 import type { PromptConfigSpec } from './prompt-configs.ts'
 import { promptConfigToRule } from './rule-builder.ts'
-// @ts-expect-error 与写盘链路共用同一道规则校验。
+// 与写盘链路共用同一道规则校验。
 import { compileRules } from '../../engine/rule-spec.mjs'
 import { mapRuleInjections, ruleInjections } from './rule-content.ts'
 import { readModuleLayerSettings } from './module-layer-settings.ts'
@@ -30,7 +30,7 @@ import type {
   StConversionReport,
 } from '../shared/bridge-contract.ts'
 import { prepareStText } from './st-template.ts'
-// @ts-expect-error 保留名判据（内置变量 + 运行时宏）与插值引擎同源，不再手抄一份表。
+// 保留名判据（内置变量 + 运行时宏）与插值引擎同源，不再手抄一份表。
 import { isReservedInterpolationName } from '../../engine/interpolate.mjs'
 
 /** 转换器版本：报告用它解释本次生成使用了哪一版语义（语义调整时同步递增）。

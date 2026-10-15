@@ -14,7 +14,6 @@ import { readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { parse as parseYaml } from 'yaml'
-// @ts-expect-error 定义合法性归唯一引擎编译器，测试直接调它而不是复刻规则。
 import { compileRules } from '../../engine/rule-spec.mjs'
 import { validateCustomTools } from '../../src/host/custom-tools.ts'
 

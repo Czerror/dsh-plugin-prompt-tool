@@ -34,15 +34,13 @@ import { planPersonaSections, type PersonaCapture, type PersonaModule, type Pers
 import { MODULE_TOOL_CAPABILITIES } from '../shared/engine-capabilities.ts'
 import { enableTablePath, readGlobalLayerSettings } from '../host/config-store.ts'
 
-// @ts-expect-error ESM 引擎源码随插件提供。
 import { compileRules, completeRuleSections } from '../../engine/rule-spec.mjs'
-// @ts-expect-error 与引擎注册侧共用主子身份判据。
+// 与引擎注册侧共用主子身份判据。
 import { isDelegated } from '../../engine/shared.mjs'
-// @ts-expect-error ESM 引擎源码随插件提供。
 import { mountRuleSources } from '../../engine/rule-runtime.mjs'
-// @ts-expect-error ESM 引擎源码随插件提供（去重身份判据的唯一来源）。
+// 去重身份判据的唯一来源。
 import { identityOf } from '../../engine/executor.mjs'
-// @ts-expect-error 条件在真实挂载 scope 绑定；准备期只保留经过预检的定义快照。
+// 条件在真实挂载 scope 绑定；准备期只保留经过预检的定义快照。
 import { loadStandingMountFor } from '../../engine/conditions/index.mjs'
 
 /** 引擎模块的受管配置字段：值按历史语义相对模块根书写（如 `../<id>/custom-tools`）。 */

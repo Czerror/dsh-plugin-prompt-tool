@@ -1,6 +1,6 @@
 /** 外部 ST 语法只在导入时转换，赋值交给获准执行的原生模板事务。 */
 import { splitTemplateArgument, transformTemplate } from '../../engine/template-evaluation.mjs'
-// @ts-expect-error 动态宏拼写与引擎同源。
+// 动态宏拼写与引擎同源。
 import { normalizeMacroSyntax } from '../../engine/interpolate.mjs'
 
 export function prepareStText(text: string, cardName = '', replaceNames = true): string {

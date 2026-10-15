@@ -10,7 +10,7 @@ import { MODULE_DEFINITION_FILE } from './paths.ts'
 import { appendModuleCapabilities, withModuleDefinition } from './manifest.ts'
 import { assertCanonicalRuleSource, rulePromptConfigOptions } from './module-storage.ts'
 import { mapRuleInjections, ruleInjections } from './rule-content.ts'
-// @ts-expect-error 共享规则编译器校验模块并入候选。
+// 共享规则编译器校验模块并入候选。
 import { compileRules } from '../../engine/rule-spec.mjs'
 import { engineParamPath, readModuleLayerSettings } from './module-layer-settings.ts'
 import type { ModuleSpec } from './manifest.ts'

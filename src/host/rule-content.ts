@@ -1,8 +1,8 @@
 import type { RuleAction, RuleDefinition } from '../shared/rules.ts'
 import type { PromptConfigSpec } from './prompt-configs.ts'
-// @ts-expect-error 动作身份和内容默认值归唯一引擎编译器。
+// 动作身份和内容默认值归唯一引擎编译器。
 import { injectionConfigSpec } from '../../engine/rule-spec.mjs'
-// @ts-expect-error 分支识别与引擎编译使用同一语法。
+// 分支识别与引擎编译使用同一语法。
 import { isBranchNode } from '../../engine/branch.mjs'
 
 export interface RuleInjection {

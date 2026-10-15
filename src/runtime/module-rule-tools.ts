@@ -9,7 +9,7 @@ import { loadModuleDefinition, ModuleRulesError } from '../host/module-storage.t
 import { MODULE_ID_PARAM } from '../host/module-tool-target.ts'
 import type { ModuleToolHost } from '../host/module-tool-target.ts'
 import { MAX_BRIDGE_BODY_BYTES } from '../shared/bridge-contract.ts'
-// @ts-expect-error 动作与条件目录归唯一引擎编译器。
+// 动作与条件目录归唯一引擎编译器。
 import { getRuleEditorMeta } from '../../engine/rule-spec.mjs'
 
 const schema = {

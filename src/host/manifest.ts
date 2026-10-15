@@ -768,15 +768,19 @@ export function applyModuleConfigs(raw: string, configs: Record<string, Record<s
  *  - `modules:` 清单 → 引擎模块库按序装配;
  *  - `composition: ./xxx.yml` → 模块模板目录内组合文件(官方预设直用);
  *  - `composition:` 内联文本或组合清单名。
+ *
+ * **纯文本装配，params 由调用方传入**：本函数不解析参数、不读运行时——隐含能力模块的补齐
+ * 需要「参数桥那层的声明」时，由调用方算好传进来。这条入参边界是模块拆分的前提：文本簇
+ * 因此不依赖参数/事实簇（见 docs/ui-architecture.md 的组合渲染链路）。
  */
-function loadCompositionText(spec: ModuleSpec, templateDir?: string, _runtime: Record<string, unknown> = {}): string {
+function loadCompositionText(spec: ModuleSpec, params: Record<string, unknown>, templateDir?: string): string {
   let raw: string
   let modules = spec.modules
   if (Array.isArray(modules)) {
     const declared: string[] = modules
     // 参数在 ⇒ 装配在：显式 params/moduleConfigs 隐含的能力模块自动补齐。
     const extra = [
-      ...impliedModulesForParams(resolveModuleParams(spec, {}), spec.moduleConfigs),
+      ...impliedModulesForParams(params, spec.moduleConfigs),
       ...((spec.rules?.length ?? 0) > 0 ? ['rule-engine'] : []),
     ].filter((module) => !declared.includes(module))
     if (extra.length > 0) modules = [...declared, ...extra]
@@ -846,7 +850,7 @@ export function resolveModuleFacts(
     const factsSpec = sourceMode === 'explicit' && declaredModules !== null
       ? { ...spec, modules: declaredModules }
       : spec
-    raw = loadCompositionText(factsSpec, templateDir)
+    raw = loadCompositionText(factsSpec, resolveModuleParams(factsSpec, {}), templateDir)
   } catch {
     return { declaredModules, effectiveModules: null, rowIds: [], sourceMode: 'unknown', editable: false }
   }
@@ -1084,7 +1088,9 @@ export function renderComposition(spec: ModuleSpec, runtime: Record<string, unkn
     // 参数桥优先：UI/运行时参数不被模板或 ST 直写覆盖。
     merged[id] = { ...cfg, ...merged[id] }
   }
-  const raw = loadCompositionText(spec, templateDir, runtime)
+  // 文本层按**声明**装配：runtime 覆盖只进参数桥，不改模块清单——所以这里显式给空 runtime 的
+  // 解析结果（旧实现把 runtime 传进 loadCompositionText 但内部同样用空 runtime，行为不变）。
+  const raw = loadCompositionText(spec, resolveModuleParams(spec, {}), templateDir)
   // 人设由注册前适配器按 Agent 配装，不再生成另一份官方 persona 行。
   readPersonaSpec(spec.persona)
   return applyModuleConfigs(raw, merged)

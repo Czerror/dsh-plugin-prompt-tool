@@ -11,9 +11,9 @@ import { assertModuleDirectory, assertModuleId, canonicalModulesRoot } from './m
 import { MODULE_DEFINITION_FILE, RULES_DIR, RULES_SETTINGS_FILE, RULES_VARIABLES_FILE } from './paths.ts'
 import { atomicTemporaryTarget, atomicWriteTextFile } from './text-file.ts'
 import { readModuleLayerSettings } from './module-layer-settings.ts'
-// @ts-expect-error 引擎是规则语义的唯一校验器。
+// 引擎是规则语义的唯一校验器。
 import { assertRuleId, compileRules } from '../../engine/rule-spec.mjs'
-// @ts-expect-error 保留名由插值器的内建与动态宏目录共同定义。
+// 保留名由插值器的内建与动态宏目录共同定义。
 import { isReservedInterpolationName } from '../../engine/interpolate.mjs'
 
 const record = (value: unknown): value is Record<string, unknown> => value !== null && typeof value === 'object' && !Array.isArray(value)

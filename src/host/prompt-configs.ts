@@ -7,7 +7,7 @@
  * 两者按此优先级合并，同名 id 后者覆盖，新 id 追加在默认提示词配置之后。
  * 规则正文与切片归模块定义所有（`rules/<规则id>.yml`），UI 与运行时消费同一份切片。
  */
-// @ts-expect-error 规则和文件身份使用引擎同一个边界校验。
+// 规则和文件身份使用引擎同一个边界校验。
 import { assertRuleId } from '../../engine/rule-spec.mjs'
 
 /**
@@ -16,8 +16,8 @@ import { assertRuleId } from '../../engine/rule-spec.mjs'
  * 类型由它派生（`(typeof X)[number]`）；运行时仍由 `engine/schema.mjs` 的
  * `KNOWN_*` 权威校验，bridge 的 /meta 契约保护实际输出。
  *
- * 为什么不直接从引擎派生类型：引擎是仓库根的纯 `.mjs`（无 `.d.mts`，`src/` 侧靠
- * `@ts-expect-error` 引入），其 `KNOWN_*` 在 TS 看来是 `any`，派生不出字面量联合。
+ * 为什么不直接从引擎派生类型：枚举清单的权威是 `engine/schema.mjs` 的 `KNOWN_*`，
+ * 那是没有 `.d.mts` 的纯 `.mjs`，在 TS 看来是 `any`，派生不出字面量联合。
  */
 export const PROMPT_CONFIG_SPEC_ENUMS = {
   configKind: ['ordered', 'anchor'],

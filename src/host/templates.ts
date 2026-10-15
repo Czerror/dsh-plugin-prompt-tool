@@ -10,7 +10,7 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { parse as parseYaml } from 'yaml'
 import type { RuleDefinition } from '../shared/rules.ts'
-// @ts-expect-error 模板和运行时使用同一个规则校验目录。
+// 模板和运行时使用同一个规则校验目录。
 import { compileRules } from '../../engine/rule-spec.mjs'
 
 export interface PromptConfigTemplate {

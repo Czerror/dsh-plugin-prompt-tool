@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto'
 import { posix } from 'node:path'
 import { parseDocument, stringify, YAMLMap } from 'yaml'
-// @ts-expect-error 引擎 ESM 是权威校验实现，由构建器同源打包。
+// 引擎 ESM 是权威校验实现，由构建器同源打包。
 import { compileRules } from '../../engine/rule-spec.mjs'
 import { assertCanonicalRuleSource } from './module-storage.ts'
 import { ruleInjections } from './rule-content.ts'
