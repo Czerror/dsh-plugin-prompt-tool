@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+### /bootstrap 载荷形状收进共享契约（2026-10-16）
+
+- **顶层附加字段按端点声明**：新增 `BridgeSessionExtras`（12 键，`/bootstrap` 与 `/describe` 共用）与 `BridgeBootstrapExtras`（`/bootstrap` 独有 6 键：`meta`／`overrides`／`globalParams`／`variables?`／`promptConfigs`／`instructions`），以及 `BridgeExtrasMap` / `BridgeExtrasOf<K>` / `BridgeResponse<K>`。事实核对发现两个端点**字段集不同**——`/describe` 不下发会话段，套用同一份会让它声称自己下发并不存在的键。条件存在的 6 个键标 `?` 并注明缺席条件；某个键将来变成必有，只需去掉 `?`，编译器会指出 host 是否补齐。
+- **host 构造受编译期约束**：`collectDescribeExtras` 的返回类型由 `Record<string, unknown>` 收紧为 `BridgeSessionExtras`；`/bootstrap` 与 `/describe` 的响应体加 `satisfies`；`loadEngineMeta` 跨 `.mjs` 边界补 `EngineMetaLayerContract` 断言（形状由 `getEngineMeta` 保证，运行期由契约测试兜底）。
+- **client 收窄**：`bridge-transport.ts` 里那份 16 键的共用 `BridgeSuccessExtras` 删除；`BridgeResult<T, E = unknown>` 的 `E` 表示该端点的顶层字段（缺省为空），`bridgeCall`／`bridgeUpload` 返回契约的 `BridgeResponse<K>`。效果：**在 `/meta` 上读 `skillCatalog` 现在是编译错误**——此前一份共用类型让任何端点读任何字段都合法。
+- **`bridgeViewFromBoot` 改为 extras 原样传递**：旧实现逐字段搬 12 个（本身就是第二份清单，正因如此漏掉了 `meta`／`promptConfigs` 等会话段）。
+- **第二道保险**：`test/shared/bridge-contract.test.mjs` 新增「常态下发的顶层键恰好是这 15 个」清单断言，挡住「某段被条件短路、或 `JSON.stringify` 丢掉 `undefined` 键」这类**类型看不见**的漏传。写这条断言时它当场抓出我漏数了 `ok`。
+- **判别力实测两处**：① 临时删 host 构造的 `providers` → typecheck 报 `Property 'providers' is missing ... but required in 'BridgeSessionExtras'`；② 用「类型对但运行期没发」的方式（`undefined as unknown as string[]`）→ 清单断言变红（改完均已还原、无残留）。另外标注当场抓出**声明自身**的错误：`meta` 少了一层包裹，按运行期事实改声明而不是改 host。
+- **已知边界（下一步）**：契约的 `meta` 段只声明四项共性（`EngineMeta` 的其余字段仍是客户端视图）、`promptConfigs.promptConfigs` 只保证是数组（卡片完整形状是客户端 `PromptConfigDraft`）——两处消费点各按既有事实收窄一次，把完整形状上移契约属独立一轮。
+
 ### 恢复层字段矩阵与层标签的镜像守卫，清理 6 处悬空引用（2026-10-16）
 
 - **两条守卫重建**（`test/shared/bridge-contract.test.mjs`）：「客户端层字段矩阵与 /meta 下发的逐层字段键集一致」（**逐层**比对，不只比总键集）与「客户端层标签字典的键集与 /meta 下发的 layerLabels 一致」。它们补的是**「漏了不报错」**的缺口：`LAYER_FIELD_POLICY_KEYS` 是客户端手抄 `engine/schema.mjs` 每层 `fields` 的常量表，engine 是 `.mjs`、`shared` 无该字段的单一来源、也没有生成器，**少一个字段不会 typecheck 报错**；`LAYER_LABEL_KEYS` 漏一层会被 `InjectionPoint` 联合的穷尽约束挡住，但**引擎多一层**只有运行期对拍能发现。断言停在两端的公共接口上（`/meta` 载荷 ↔ 客户端模块导出），**不做**源码字符串对拍。

@@ -429,6 +429,7 @@ src/shared/bridge-contract.ts 同时拥有：
 - BRIDGE_ENDPOINTS 路径表；
 - BridgeRequestMap 请求体映射；
 - BridgeValueMap 响应 value 映射；
+- BridgeExtrasMap 端点级**顶层附加字段**映射——与 `value` 平铺的那些键（除 `ok`）**按端点声明**：`bootstrap` 与 `describe` 的字段集**不同**（后者不下发 `meta`／`promptConfigs` 等会话段）。`BridgeResponse<K>` 是「`value` ＋ 该端点顶层字段」的完整成功响应，条件是**条件存在的键标 `?` 并注明缺席条件**（如空主语时 `moduleParams`／`moduleFacts` 整键缺席）；某个键变为必有时去掉 `?`，编译器会指出 host 是否补齐；
 - 请求/响应覆盖的编译期断言。
 
 data/bridge-client.ts 提供泛型 bridgeCall(endpoint key, typed body, subject?) 和角色卡专用 bridgeUpload。主语是**每次调用显式携带的实参**（模块 id），没有会话级编辑目标，也不保留上次用到的主语；逐卡规则读写使用所属模块身份。业务组件不得拼接 /bootstrap、/module-delete 等原始路径。新增或改名端点必须同步 shared map、host 注册和契约测试。

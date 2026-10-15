@@ -731,3 +731,20 @@ test('契约：客户端层标签字典的键集与 /meta 下发的 layerLabels 
   // 客户端漏一层会被 InjectionPoint 联合的穷尽约束挡住，但引擎侧多一层只有这里能发现。
   assert.deepEqual(Object.keys(labels).sort(), Object.keys(LAYER_LABEL_KEYS).sort())
 })
+
+// ── /bootstrap 顶层字段清单：类型之外的第二道保险 ───────────────────────────
+// 契约声明与 host 标注挡住「类型层面的漏传」；这条挡「运行期真的没发这个键」——
+// 例如某段被条件短路、或 JSON.stringify 把 undefined 键丢掉。两者互为保险。
+
+test('契约：/bootstrap 常态下发的顶层键恰好是那 14 个（空主语、无模块段）', async () => {
+  const handlers = register()
+  const res = fakeRes()
+  await handlers.get(SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.bootstrap)(fakeReq(), res)
+  assert.equal(res.status, 200)
+  const payload = JSON.parse(res.body)
+  assert.deepEqual(Object.keys(payload).sort(), [
+    'activeSkillsDirs', 'globalParams', 'instructions', 'meta', 'modelCatalog', 'modelsAvailable',
+    'ok', 'overrides', 'promptConfigs', 'providers', 'skillCatalog', 'skillFolders', 'skillsComplete',
+    'templatePreStepCount', 'value',
+  ], '常态清单：少一个多一个都要红。moduleParams／moduleFacts 需模块主语、variables 需声明面、modelsError 仅探测失败，故此场景不在')
+})
