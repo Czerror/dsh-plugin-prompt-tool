@@ -57,8 +57,6 @@ export interface ModuleFacts {
   sourceMode: ModuleSourceMode
   editable: boolean
   effectiveConfigs?: Record<string, Record<string, unknown>>
-  /** 策略段真实存在；能力声明仍在并不代表策略已开启。 */
-  subagentToolPolicyEnabled?: boolean
 }
 
 export interface ModuleCapability {
@@ -80,41 +78,11 @@ export interface ModuleCapability {
   }
 }
 
-/** 子代理工具策略的启用骨架：常用工具全放行 + 扩权受限（用户决策，可在卡片内继续收窄）。 */
-export const SUBAGENT_TOOL_POLICY_SKELETON: Readonly<Record<string, unknown>> = {
-  defaultProfile: 'default',
-  ceiling: { allow: ['read', 'write', 'edit', 'glob', 'grep', 'bash'], deny: [] },
-  profiles: [
-    {
-      id: 'default',
-      name: '默认',
-      allow: ['read', 'write', 'edit', 'glob', 'grep', 'bash'],
-      deny: [],
-      modelSelectable: true,
-    },
-  ],
-  // 扩权必须严格 ⊆ ceiling.allow（校验会拒绝超限）；requireApproval 要求宿主有批准通道（无通道则 fail closed）。
-  modelExpansion: {
-    enabled: true,
-    allow: ['write', 'edit', 'glob', 'grep'],
-    maxAdditionalTools: 2,
-    requireApproval: true,
-  },
-}
-
 /** 首期只登记已有 typed editor 的能力，避免万能 key/value 表单。 */
 export const MODULE_CAPABILITIES: readonly ModuleCapability[] = [
   ...[...new Set(Object.values(MODULE_TOOL_CAPABILITIES))].map(id => ({ id, moduleKeys: [id], rowIds: [id], displayLayer: 'tool-pipeline' as const })),
   // B7 T3：tool-bootstrap / context-gate / anchor-turn / promoted-code-mode / tool-filter /
   // deliberation-gate / progress-reminder 七张专用能力卡随对应引擎模块退场，不再登记。
-  // 子代理工具面：模块 + 顶层策略段（段是结构化数据，物化为 subagent-tools/policy.yml）。
-  {
-    id: 'subagent-tool-policy',
-    moduleKeys: ['subagent-tool-policy'],
-    rowIds: ['subagent-tool-policy'],
-    displayLayer: 'tool-pipeline',
-    ownSection: { key: 'subagentToolPolicy', skeleton: SUBAGENT_TOOL_POLICY_SKELETON },
-  },
   { id: 'tool-config-engine', moduleKeys: ['tool-config-engine'], rowIds: ['tool-config-engine'], displayLayer: 'tool-pipeline' },
   // B2 T3：tool-git-bash 此前没有能力卡（开关只能靠「行在不在组合里」），补 `enabled` 键后登记卡片，
   // 否则 impliedModulesForParams 查不到 card，「参数在 ⇒ 装配在」对该行静默失效。
@@ -150,8 +118,6 @@ export const ENGINE_EDITOR_GROUPS: readonly EngineEditorGroup[] = [
   { id: 'main-model', displayLayer: 'agent-request', hook: 'agent-request' },
   // 本地子代理的模型路由与采样参数都在 agent-request 生效；磁盘仍沿用 subagent-start。
   { id: 'subagent-model', displayLayer: 'agent-request', hook: 'agent-request' },
-  // maxDepth 仅由已开启的 subagent-tool-policy 承载；普通官方委派由宿主管理。
-  { id: 'subagent-tools', displayLayer: 'subagent-start', hook: 'subagent-start' },
   // 自定义工具定义进 tools/* 管线。
   { id: 'custom-tools', displayLayer: 'tool-pipeline', hook: 'tool-pipeline' },
 ] as const

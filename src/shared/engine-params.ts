@@ -3,7 +3,7 @@
  *
  * 这是「可配置引擎参数」的类型唯一权威：所有消费引擎参数的接口（RuntimeOptions /
  * WriteModuleOptions）从这里派生，不再各自手写一遍字段
- * （此前多处重复声明导致同字段签名漂移，如 maxDepth / modelTemperature）。
+ * （此前多处重复声明导致同字段签名漂移，如 modelTemperature）。
  *
  * 分层约定：
  *  - 本文件 = 引擎参数「契约层」（类型）：参数桥/模板/UI 可配置的键与类型；
@@ -36,8 +36,6 @@ export interface EngineParams {
   subagentTemperature?: string
   /** 子代理输出上限（agent-request patch，audience=subagent；''=不设置）。 */
   subagentMaxTokens?: string
-  /** 已启用子代理工具策略的递归深度上限；普通官方委派由宿主管理。 */
-  maxDepth?: number | 'provider-managed' | string
   /** 晋升后 agent-instructions 全文 → 一次性 hint。 */
   instructionHint?: boolean
   /** tool-git-bash 行的能力开关（B2 T3 补；此前该行只能靠「在不在组合里」决定启停）。 */
@@ -69,7 +67,6 @@ export type ModuleWriterParams = Partial<EngineParams>
  *     非空必须可解析为数字并满足各自约束（有限数 / 正整数）；
  *   - 字符串键：必须是 string（'' = 删键回落默认）；
  *   - 列表键（执行器种类等）：必须是 string 或 string[]；
- *   - maxDepth：'' / 'provider-managed' / 非负安全整数及其数字字符串。
  * 未知键（旧内容别名等不兼容键）在保存期响亮失败，不做运行时自动兼容。
  * 注意：内容占位变量（variables）的空字符串是合理设计（世界书动态引用），
  * 本函数只校验引擎行为参数，绝不碰 variables 通道。
@@ -86,7 +83,6 @@ type ParamRule =
   /** 正则字符串：编译规则与 engine/classify-task.mjs 的 new RegExp(pattern, 'i') 同源。 */
   | { kind: 'pattern' }
   | { kind: 'string-list'; options?: readonly string[] }
-  | { kind: 'max-depth' }
 
 const FINITE_NUMBER: (value: number) => string | undefined = (value) =>
   Number.isFinite(value) ? undefined : '必须是有限数字'
@@ -118,7 +114,6 @@ export const ENGINE_PARAM_DEFINITIONS: Record<EngineParamKey, EngineParamDefinit
   subagentReasoningEffort: { kind: 'string', defaultValue: '', card: 'subagent-model', storageLayer: 'subagent-start' },
   subagentTemperature: { kind: 'number', check: FINITE_NUMBER, defaultValue: '', card: 'subagent-model', storageLayer: 'subagent-start' },
   subagentMaxTokens: { kind: 'number', check: POSITIVE_INTEGER, defaultValue: '', card: 'subagent-model', storageLayer: 'subagent-start' },
-  maxDepth: { kind: 'max-depth', defaultValue: '', card: 'subagent-tools', storageLayer: 'subagent-start' },
   // B7 T3：card 随 `context-gate` 卡删除一并改到 prompt-defaults。`module.row` 早已绑定到
   // `instruction-hint`（B7 T1），所以这条只改展示归属，不改它写进哪一行配置。
   instructionHint: { kind: 'boolean', defaultValue: false, card: 'prompt-defaults', storageLayer: 'pre-step', module: { row: 'instruction-hint', key: 'enabled' } },
@@ -229,9 +224,6 @@ function validateParamValue(key: string, rule: ParamRule, value: unknown): strin
           ? `${key}: 只允许 ${rule.options.join('/')}` : undefined
       }
       return `${key}: 必须是字符串或字符串数组`
-    case 'max-depth':
-      return normalizeMaxDepth(value) !== undefined
-        ? undefined : `${key}: 必须是非负安全整数、数字字符串、provider-managed 或留空`
   }
 }
 

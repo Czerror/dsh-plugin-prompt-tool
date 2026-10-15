@@ -70,8 +70,6 @@ export const BRIDGE_ENDPOINTS = {
   charactersImportStream: '/characters-import-stream',
   moduleMerge: '/module-merge',
   moduleUnmerge: '/module-unmerge',
-  subagentToolPolicy: '/subagent-tool-policy',
-  subagentToolPolicyPreview: '/subagent-tool-policy-preview',
   toolSurface: '/tool-surface',
   moduleCapability: '/module-capability',
   contextActivationDiagnostics: '/context-activation-diagnostics',
@@ -155,8 +153,6 @@ export const BRIDGE_SUBJECT_POLICY = {
   charactersImportStream: 'none',
   moduleMerge: 'required',
   moduleUnmerge: 'required',
-  subagentToolPolicy: 'required',
-  subagentToolPolicyPreview: 'required',
   toolSurface: 'none',
   moduleCapability: 'required',
   contextActivationDiagnostics: 'none',
@@ -292,8 +288,6 @@ export interface BridgeRequestMap {
   charactersImportStream: undefined
   moduleMerge: { id: string }
   moduleUnmerge: { id: string }
-  subagentToolPolicy: { policy?: unknown; expectedModuleId?: string } | undefined
-  subagentToolPolicyPreview: { tool?: string; description?: string; prompt?: string; tool_profile?: string; character_id?: string; task_type?: string; additional_tools?: string[]; restrict_tools?: string[] }
   toolSurface: { sessionId: string; presetId?: never } | { presetId: string; sessionId?: never }
   moduleCapability: ({ action: 'create' | 'remove'; capabilityId: string } | { action: 'create-recipe'; recipeId: string }) & { expectedModuleId?: string }
   /** 只读世界书诊断：只回当前授权会话最近一次选择的观测记录。 */
@@ -546,8 +540,6 @@ export interface BridgeValueMap {
   charactersImportStream: { id: string; name: string }
   moduleMerge: { id: string; count: number }
   moduleUnmerge: { id: string; count: number }
-  subagentToolPolicy: { policy: unknown; defaultProfile?: string; errors?: string[] }
-  subagentToolPolicyPreview: { result: unknown; errors?: string[] }
   toolSurface: {
     source: 'session' | 'preset'
     sessionId?: string
