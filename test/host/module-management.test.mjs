@@ -13,7 +13,7 @@ import assert from 'node:assert/strict'
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join, dirname } from 'node:path'
 import { parse } from 'yaml'
-import { fakeReq, fakeRes, isolatedHome } from '../fixtures/host-harness.mjs'
+import { fakeReq, fakeRes, isolatedHome, makeHostContext } from '../fixtures/host-harness.mjs'
 
 // 隔离 HOME 必须在动态 import 之前（仓库约定，见 host-harness 注释）。
 const { home, moduleRoot } = isolatedHome('pt-module-mgmt-')
@@ -73,19 +73,10 @@ test('共享引用守卫：owns 之外的顶层键被连带改写一律拒绝（
   assert.match(readFileSync(okFile, 'utf8'), /customTools/, '无共享引用时编辑正常提交')
 })
 
-/** 最小宿主桩：编辑目标由请求目录解析器提供，不再存入 settings。 */
+/** 最小宿主桩：编辑目标由请求目录解析器提供，不再存入 settings（共用 harness 的实现）。 */
 function makeHarness() {
-  const handlers = new Map()
-  const sctx = {
-    get: () => undefined,
-    settings: {
-      describe: () => [{ ns: 'prompt-tool', value: {}, base: {} }],
-      mutate: async () => {},
-    },
-    webServer: { register: ({ path, handler }) => { handlers.set(path, handler) } },
-    effect: (fn) => fn(),
-  }
-  return { ctx: { inject: (_deps, cb) => cb(sctx) }, handlers }
+  const { ctx, handlers } = makeHostContext()
+  return { ctx, handlers }
 }
 
 function register(ctx, afterOverridesChange) {

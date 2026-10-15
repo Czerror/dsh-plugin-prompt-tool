@@ -23,6 +23,7 @@ import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Readable } from 'node:stream'
+import { SETTINGS_BRIDGE_PREFIX } from '../../src/shared/bridge-contract.ts'
 
 const { promptConfigToRule } = await import('../../src/host/rule-builder.ts')
 
@@ -128,6 +129,37 @@ export function handlerTable() {
     handler: (path) => handlers.get(path),
     register: ({ path, handler }) => { handlers.set(path, handler); return () => { handlers.delete(path) } },
   }
+}
+
+/**
+ * 宿主 Context 桩：桥用例的共用脚手架（handlers ＋ settings ＋ webServer ＋ inject ＋ 一次调用）。
+ *
+ * 只放各文件真正共用的默认值；差异项（多 namespace 的 describe、晚到服务、带 disposer 的 effect）
+ * 用选项覆盖，不在这里长成配置表。刻意**不**迁 `lib/index.mjs` 派系的用例（`wave1-safety`、
+ * `instructions-policy-endpoint`、`instruction-scope-guard`、`module-prompt-configs`）：
+ * 它们打的是构建产物面，与本夹具的 src 输入不是同一个 seam。
+ */
+export function makeHostContext(options = {}) {
+  const handlers = new Map()
+  const sctx = {
+    get: options.get ?? (() => undefined),
+    settings: {
+      describe: options.describe ?? (() => [{ ns: 'prompt-tool', value: options.value ?? {}, base: {} }]),
+      mutate: options.mutate ?? (async () => {}),
+    },
+    webServer: { register: ({ path, handler }) => { handlers.set(path, handler); return () => { handlers.delete(path) } } },
+    effect: options.effect ?? ((fn) => fn()),
+  }
+  const ctx = { inject: (_deps, cb) => cb(sctx) }
+  /** 调一次桥端点：路径由共享前缀拼出，返回解析后的统一载荷（`{ status, ok, value, code, message }`）。 */
+  const call = async (endpoint, body = {}, overrides = {}) => {
+    const handler = handlers.get(SETTINGS_BRIDGE_PREFIX + endpoint)
+    if (handler === undefined) throw new Error(`端点未注册：${endpoint}`)
+    const res = fakeRes()
+    await handler(fakeReq({ body, ...overrides }), res)
+    return readBridge(res)
+  }
+  return { ctx, handlers, call }
 }
 
 /** 字节快照 + 断言辅助：用于「零写盘 / 未修改」类断言，避免各文件各写一份。 */

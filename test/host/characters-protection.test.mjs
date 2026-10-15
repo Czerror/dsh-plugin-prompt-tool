@@ -20,6 +20,16 @@ const source = [{ path: 'alice.json', content: JSON.stringify({ data: { name: 'A
 const textRule = (id, text) => ({ id, layer: 'pre-step', then: [{ id: 'inject', kind: 'inject-text', config: { id, layer: 'pre-step', text } }] })
 const overwrite = { targetId: 'alice', overwrite: true }
 
+test('importCharacterCardFile：从磁盘文件导入与直接传字节同结果', async (t) => {
+  const { moduleRoot } = setup(t)
+  const card = join(moduleRoot, 'alice.json')
+  writeFileSync(card, JSON.stringify({ data: { name: 'Alice', description: 'hello' } }))
+  const imported = await characters.importCharacterCardFile(moduleRoot, card)
+  assert.equal(imported.ok, true, imported.message)
+  assert.equal(imported.id, 'alice')
+  assert.ok(existsSync(join(moduleRoot, 'alice', 'module.yml')), '包装入口走同一条安装事务')
+})
+
 test('角色导入直接生成普通模块；重导入默认另存，显式覆盖保留记忆、未知资产和头像', async t => {
   const { storageRoot, moduleRoot } = setup(t)
   const imported = await characters.importCharacterCard(moduleRoot, source)

@@ -4,6 +4,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { parse as parseYaml } from 'yaml'
+import { makeHostContext } from '../fixtures/host-harness.mjs'
 
 // DSH_HOME 必须先于 lib 加载设置（paths.ts 模块级常量在 import 时求值），
 // 因此本文件用动态 import 加载 lib，避免污染真实用户预设目录。
@@ -21,19 +22,8 @@ const PREFIX = '/api/prompt-tool/settings'
 const PRESETS = join(storageRootOf(home), 'modules')
 
 function makeHarness() {
-  const handlers = new Map()
-  const sctx = {
-    settings: {
-      describe: () => [{ ns: 'prompt-tool', value: {}, base: {} }],
-      mutate: async () => {},
-    },
-    webServer: {
-      register: ({ path, handler }) => { handlers.set(path, handler); return () => {} },
-    },
-    effect: (fn) => { const dispose = fn(); if (dispose) bridgeDisposers.push(dispose) },
-  }
-  const ctx = { inject: (deps, cb) => { if (deps.includes('settings')) cb(sctx) } }
-  return { ctx, handlers }
+  // 差异项用选项表达：本文件的 effect 要收集 disposer（after 统一释放），其余走 harness 默认值。
+  return makeHostContext({ effect: (fn) => { const dispose = fn(); if (dispose) bridgeDisposers.push(dispose) } })
 }
 
 function register() {
@@ -196,6 +186,28 @@ test('装载窗口：暂存期间目标被外部改动即拒装，外部内容�
   assert.equal(JSON.parse(res.body).code, 'module-preview-stale')
   assert.equal(readFileSync(join(target, 'external.txt'), 'utf8'), 'EXTERNAL\n', '窗口内的外部改动不得被清理或覆盖')
   assert.equal(readFileSync(join(target, 'keep.txt'), 'utf8'), 'v1\n', '拒装时目标正文保持原字节')
+})
+
+test('原生片段歧义：预览回 needs-kind-selection，选定类型后进入 ready 且全程不落盘', async () => {
+  const handler = register().get(`${PREFIX}/import-module-package`)
+  assert.ok(handler, '/import-module-package 端点应注册')
+  // 片段特征：顶层只有 id/name/rules，没有 version/engineCompat/modules/composition/customTools/persona/content，
+  // 且通过角色片段校验——正是 import-source 要求用户二选一的那种输入。
+  const fragment = 'id: fragment\nname: Fragment\nrules:\n  - id: body\n    then:\n      - { id: inject, kind: inject-text, config: { id: text, layer: pre-step, text: FRAGMENT } }\n'
+  const files = [{ path: 'fragment.yml', content: fragment }]
+
+  const ambiguous = fakeRes()
+  await handler(fakeReq({ files, preview: true }), ambiguous)
+  assert.equal(ambiguous.status, 200, ambiguous.body)
+  const first = JSON.parse(ambiguous.body).value
+  assert.equal(first.state, 'needs-kind-selection')
+  assert.deepEqual(first.kinds, ['native-preset', 'native-character'])
+  assert.ok(!existsSync(join(PRESETS, 'fragment')), '歧义态不落盘')
+
+  const chosen = fakeRes()
+  await handler(fakeReq({ files, preview: true, sourceKind: 'native-character' }), chosen)
+  assert.equal(chosen.status, 200, chosen.body)
+  assert.equal(JSON.parse(chosen.body).value.state, 'ready', '选定类型后候选消歧')
 })
 
 test('importPresetPackage：路径穿越条目被明确拒绝，不落盘', async () => {

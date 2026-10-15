@@ -16,10 +16,12 @@ mkdirSync(join(root, 'owner'), { recursive: true })
 writeFileSync(join(root, 'owner/module.yml'), 'id: owner\nname: Owner\nmodules: []\n')
 test.after(() => rmSync(home, { recursive: true, force: true }))
 
-function harness(t, refresh = () => {}) {
+function harness(t, refresh = () => {}, resolveDirectory) {
   const handlers = new Map()
   const disposers = []
   let active = join(root, 'owner')
+  // 默认解析器必须在函数体内构造：参数默认值的作用域看不到 body 的 `let active`。
+  const directoryOf = resolveDirectory ?? (() => active)
   const sctx = {
     settings: { describe: () => [], get: () => undefined },
     webServer: { register: ({ path, handler }) => { handlers.set(path, handler); return () => handlers.delete(path) } },
@@ -30,7 +32,7 @@ function harness(t, refresh = () => {}) {
     ns: 'prompt-tool',
     models: () => ({}),
     skills: () => ({}),
-    moduleDirectory: () => active,
+    moduleDirectory: () => directoryOf(),
     moduleInstalled: async (id) => { await refresh(id) },
   })
   const dispose = () => { for (const fn of disposers.splice(0)) fn() }
@@ -191,4 +193,32 @@ test('旧角色库只报告迁移提示，不列库、读取正文或迁移文�
   assert.doesNotMatch(JSON.stringify(result.payload), /LEGACY PRIVATE/)
   assert.equal(readFileSync(join(legacy, 'memory.md'), 'utf8'), 'LEGACY PRIVATE')
   assert.equal(existsSync(join(root, 'old')), false)
+})
+
+test('/characters-import 未知字段当场拒绝：400 characters-rejected，且不展开上传', async (t) => {
+  const h = harness(t)
+  const before = readFileSync(join(root, 'owner/module.yml'))
+  const rejected = await call(h, 'charactersImport', { preview: true, files: [], bogus: 1 })
+  assert.equal(rejected.status, 400)
+  assert.equal(rejected.payload.code, 'characters-rejected')
+  assert.ok(readFileSync(join(root, 'owner/module.yml')).equals(before))
+})
+
+test('/characters-import 目标在同一请求内被换掉：409 characters-preview-stale 且原目标零写盘', async (t) => {
+  const dirA = join(root, 'owner')
+  const dirB = join(root, 'other')
+  mkdirSync(dirB, { recursive: true })
+  writeFileSync(join(dirB, 'module.yml'), 'id: other\nname: Other\nmodules: []\n')
+  const before = readFileSync(join(dirA, 'module.yml'))
+  // 计数式桩：两道 subjectGate 各含一次身份复核（第 1–4 次 editDir），第 5 次才是端点自己的陈旧性检查。
+  let calls = 0
+  const h = harness(t, () => {}, () => (++calls <= 4 ? dirA : dirB))
+  const res = await call(h, 'charactersImport', {
+    preview: true,
+    files: [{ path: 'alice.json', content: JSON.stringify({ data: { name: 'Alice', description: 'hello' } }) }],
+  })
+  assert.equal(res.status, 409, JSON.stringify(res.payload))
+  assert.equal(res.payload.code, 'characters-preview-stale')
+  assert.ok(readFileSync(join(dirA, 'module.yml')).equals(before), '换掉目标后不得再往原目标写')
+  assert.equal(existsSync(join(dirB, 'alice')), false, '也不得改写到新目标')
 })
