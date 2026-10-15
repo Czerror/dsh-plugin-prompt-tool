@@ -32,6 +32,7 @@
 `complete=false` 表示观测不完整，不能将缺席解释成不存在。注册表中的额外提供方技能也会展示，未命中可管理本地资产时只读。
 `/bootstrap` 与 `/skills-list` 使用同一个会话工作目录与作用域。技能清单、根与引用目录不进入 settings descriptor/base，权威空清单正常清空页面。
 TUI 的 `skill <技能名>` 使用 frontmatter.name；同名多个文件时要求到管理页选择具体条目。
+`SKILL.md` 的**合法性判定**（frontmatter 边界、YAML 映射、YAML 别名、legacy 键、BOM）由 `src/host/skills-parse.ts` **一处**实现，清单扫描／导入／删除／内容读写／策略写入五处共用：BOM **读时剥、写回保留**；含 YAML 别名的文件四侧一致拒绝；legacy 键的报错带 `; use "…"` 修正提示；写回靠边界片段 `open`/`close`/`tail`（不变式 `bom + open + frontmatter + close + tail ≡ 原文`）保留用户原文。
 
 ## 2. 停用 = 改写技能文件的调用策略
 

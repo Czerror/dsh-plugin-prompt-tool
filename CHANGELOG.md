@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### SKILL.md 的合法性收成一份解析（2026-10-16）
+
+- **`src/host/skills-parse.ts` 成为唯一实现**：边界正则、「必须是 YAML 映射」检查、YAML 别名拒绝、legacy 键名单与文案、BOM 口径全在这里；清单扫描、导入、删除、内容读写、策略写入五处共用。`content` 与 `policy` 的 `parseMarker` 保留外壳（读盘、路径与可写校验、各自专有的 name/description 校验），只把合法性判定交给它。
+- **修掉的真问题**（评审报告的前提是反的：容忍 BOM 的是 policy 与 content，**只有 `skills-parse.ts` 不容忍**）：带 BOM 的 SKILL.md 此前是「**清单判无效、导入/删除/策略全拒，而编辑器读得开、保存也不消除 BOM**」——同一份文件两个答案。另一处：`skills-parse.ts` 缺 YAML 别名检查，于是清单/导入/删除对含别名的文件「接受」、另两侧「拒绝」。
+- **三处行为变化**（均经授权）：① **BOM 都容忍**（读时剥、写回保留）——清单/导入/删除从拒绝变正常工作；② **别名检查补进统一解析**——同三侧从接受变一致拒绝（别名会让「保留注释改写」出错）；③ **legacy 键文案统一**为带 `; use "…"` 修正提示的那条。
+- **边界产物 `boundaries: { open, close, tail }`**：每个片段都有明确消费者（`content` 用 `open`/`close`，`policy` 用 `tail`），写回不再各自 slice 边界；不变式 `bom + open + frontmatter + close + tail ≡ raw` 由测试钉住。实施中把 `tail` 的起点算错过一次（旧的 `rest` 是「`---` 之后的一切」而非「从收尾换行开始」），由 `skill-policy` 的行数断言抓出。
+- **测试**：新增 `test/host/skills-frontmatter.test.mjs`——解析层直测（BOM 剥离 ＋ 逐字还原）＋ 三条「清单与策略写入对同一文件结论一致」。**判别力实测**：临时去掉 BOM 剥离 → 两条用例变红，且报错正是「带 BOM 的技能应当有效；本轮之前这里是无效」。
+
 ### /bootstrap 载荷形状收进共享契约（2026-10-16）
 
 - **顶层附加字段按端点声明**：新增 `BridgeSessionExtras`（12 键，`/bootstrap` 与 `/describe` 共用）与 `BridgeBootstrapExtras`（`/bootstrap` 独有 6 键：`meta`／`overrides`／`globalParams`／`variables?`／`promptConfigs`／`instructions`），以及 `BridgeExtrasMap` / `BridgeExtrasOf<K>` / `BridgeResponse<K>`。事实核对发现两个端点**字段集不同**——`/describe` 不下发会话段，套用同一份会让它声称自己下发并不存在的键。条件存在的 6 个键标 `?` 并注明缺席条件；某个键将来变成必有，只需去掉 `?`，编译器会指出 host 是否补齐。
