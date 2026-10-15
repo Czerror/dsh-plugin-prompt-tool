@@ -56,7 +56,7 @@ import type { ModuleVariableRevisions, ModuleVariablesSnapshot } from '../shared
 import { createAssetSources } from '../host/asset-sources.ts'
 import { expandModuleSource, exportModulePackage, installModulePackage, moduleImportPreview } from '../host/module-package.ts'
 import { assertModuleId, modulePathExists } from '../host/module-install.ts'
-import { STORAGE_ROOT } from '../host/paths.ts'
+import { storageRoot } from '../host/paths.ts'
 import type { AssetFile, AssetImportRequest, ImportKind, ModuleExportRequest } from '../shared/asset-transfer.ts'
 import { lastContextActivationDiagnostics } from '../../engine/context-activation.mjs'
 import { ruleDiagnosticsDropped, ruleDiagnosticsSnapshot } from './rule-diagnostics.ts'
@@ -529,7 +529,7 @@ export function registerSettingsBridge(
   ctx.inject(['settings', 'webServer'], (sctx: Context) => {
     sctx.effect(() => {
       // 上传暂存根归插件自己的状态目录（与 modules / config.yml 同级），不再平级散落在 DSH_HOME 下。
-      const assetSources = createAssetSources(join(STORAGE_ROOT, 'uploads'))
+      const assetSources = createAssetSources(join(storageRoot(), 'uploads'))
       // descriptor 缓存（30s TTL）：宿主 settings.describe 是同步全量遍历——
       // 遍历所有注册 namespace + section 读取 + structuredClone 深度克隆 + schema
       // 序列化；插件越多越慢且阻塞事件循环。每个桥端点（meta/describe/delete/export…）

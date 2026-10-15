@@ -10,15 +10,15 @@ import ToolRuntime from '@deepseek-ai/dsh-tools'
 import { isolatedHome } from '../fixtures/host-harness.mjs'
 
 const { moduleRoot } = isolatedHome('pt-module-variable-tools-')
-const { GLOBAL_VARIABLES_FILE } = await import('../../src/host/paths.ts')
+const { globalVariablesFile } = await import('../../src/host/paths.ts')
 const { resolveModuleToolTarget } = await import('../../src/host/module-tool-target.ts')
 const tick = () => new Promise(resolve => setImmediate(resolve))
 async function setup(t, id, late = false) {
   const dir = join(moduleRoot, id), file = join(dir, 'module.yml')
   mkdirSync(dir, { recursive: true })
   writeFileSync(file, `id: ${id}\nmodules: []\nrules: []\nvariables: { keep: KEEP, blank: "" }\n`)
-  rmSync(GLOBAL_VARIABLES_FILE, { force: true })
-  t.after(() => rmSync(GLOBAL_VARIABLES_FILE, { force: true }))
+  rmSync(globalVariablesFile(), { force: true })
+  t.after(() => rmSync(globalVariablesFile(), { force: true }))
   const { registerModuleVariableTools } = await import('../../src/runtime/module-variable-tools.ts')
   const shell = await import('../../engine/module-variable-tools.mjs')
   const root = new Context()

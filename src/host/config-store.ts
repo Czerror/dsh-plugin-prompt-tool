@@ -32,9 +32,8 @@ export const STORAGE_CONFIG_FILE = 'config.yml'
 /**
  * 启用表文件位置。
  *
- * 以**模块根**为入口、上溯一级取存储根：模块级常量在 import 时按 `DSH_HOME` 冻结，
- * 而测试会在动态 import 之后才设 `DSH_HOME`，所以这里必须按传入的根现算
- * （与 `charactersDir(moduleRoot)` 同一条约定）。
+ * 以**模块根**为入口、上溯一级取存储根：调用方手里已经有根时按它现算，不去读环境
+ * （与 `charactersDir(moduleRoot)` 同一条约定；paths.ts 自 2026-10-16 起也按调用求值）。
  */
 export function enableTablePath(moduleRoot: string): string {
   return join(dirname(moduleRoot), STORAGE_CONFIG_FILE)

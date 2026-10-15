@@ -8,7 +8,7 @@
 import { createHash } from 'node:crypto'
 import { existsSync, readFileSync, realpathSync, statSync } from 'node:fs'
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
-import { DSH_HOME } from './paths.ts'
+import { dshHome } from './paths.ts'
 import { atomicWriteTextFile } from './text-file.ts'
 import type { PromptConfigSpec } from './prompt-configs.ts'
 import {
@@ -76,7 +76,7 @@ function findProjectRoot(cwd: string): string {
 }
 
 /** 官方展示路径 → 既有卡片身份；只解析路径，不读取正文，也不构成写入授权。 */
-export function instructionFileIdFromDisplayPath(displayPath: string, projectRoot?: string, home: string = DSH_HOME): string | undefined {
+export function instructionFileIdFromDisplayPath(displayPath: string, projectRoot?: string, home: string = dshHome()): string | undefined {
   const global = displayPath === '~/.dsh/AGENTS.md' || displayPath === '$DSH_HOME/AGENTS.md'
   if (!global && (projectRoot === undefined || isAbsolute(displayPath) || displayPath.includes('\0'))) return undefined
   const root = global ? resolve(home) : resolve(projectRoot!)
@@ -117,7 +117,7 @@ function displayPathOf(path: string, home: string, projectRoot: string): string 
  * 只返回已存在的文件——探测不到就不生成卡。
  */
 export function detectAgentsFiles(options: { cwd?: string; home?: string; projects?: boolean } = {}): AgentsFileCard[] {
-  const home = resolve(options.home ?? DSH_HOME)
+  const home = resolve(options.home ?? dshHome())
   const cwd = resolve(options.cwd ?? process.cwd())
   const root = findProjectRoot(cwd)
   const realHome = realPathOf(home)

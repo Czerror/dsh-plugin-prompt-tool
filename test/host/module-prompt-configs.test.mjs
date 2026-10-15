@@ -10,8 +10,8 @@ import { parse, parseDocument } from 'yaml'
 
 // 隔离 DSH_HOME：writeModule 的模板解析（resolveModuleDir）用户模块优先——
 // 真实用户环境 .prompt-tool/<id> 会遮蔽包内模板，测试必须隔离。
-// 注意：paths 模块顶层缓存 MODULES_DIR（join(DSH_HOME, ...)），
-// host/index 必须全部在 env 设置后动态 import，否则读到真实用户根。
+// 注意：本文件在被测模块之前设置 env 只是**风格**（让 fixture 与断言的根一眼一致）；
+// paths.ts 自 2026-10-16 起按调用求值，不再有 import 期冻结，动态 import 也不再是必须。
 const home = mkdtempSync(join(tmpdir(), 'pt-prompt-configs-home-'))
 const previousHome = process.env.DSH_HOME
 process.env.DSH_HOME = home

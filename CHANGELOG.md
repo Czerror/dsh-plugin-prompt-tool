@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+### 部署根改成按调用求值；host 用例默认 4 路并行（2026-10-16）
+
+- **去掉「import 时冻结」**：`paths.ts` 的五个根派生量（`DSH_HOME`／`STORAGE_ROOT`／`MODULES_DIR`／`USER_SKILLS_DIR`／`GLOBAL_VARIABLES_FILE`）改成按调用求值的函数（`dshHome()`／`storageRoot()`／`modulesDir()`／`userSkillsDir()`／`globalVariablesFile()`）。部署根仍由平台层 `DSH_HOME` 决定（与官方 `resolveDshHome` 同口径），插件不另立配置项；`storageRootOf(home)` 仍是纯函数。
+- **两个名字合一**：`MODULES_DIR` 常量消失，`manifest.ts#userModulesDir()`（32 处调用，其中 7 处是调用期求值的默认参数）改为委托 `modulesDir()`——同一个值不再有两个名字，两处都按调用求值。
+- **测试不再受导入顺序约束**：此前必须在 import 之前设 `DSH_HOME`（`run-tests.mjs` 里记着 2026-10-02 的真实事故：某用例在 import 之后才设，把夹具角色卡写进了真实 `.dsh`）。现在后设的环境变量同样被采纳，那个失败模式消失；runner 的兜底默认值继续挡住「从没设过」的情况。若干测试文件与 `config-store.ts` 里描述该约束的注释同步更新。
+- **host 用例默认 4 路并行**：`run-tests.mjs` 此前硬性 `--test-concurrency=1`（注释归因于共享 DSH_HOME／模块根与跨进程锁）。根改成按调用求值后实测：4 路与 8 路各跑一次**全绿（669/669）**，全量用时 ~23s → ~6.6s／~4.3s；默认值取 4，可用 `--test-concurrency=N` 覆盖。
+- **形状变化**：`index.ts` 的再导出从常量 `USER_SKILLS_DIR` 变为函数 `userSkillsDir()`（对外形状变化，与 `withModuleDefinition` 那次同类）；`instructionPolicyPath`／`skillsStatePath` 的入参名由 `dshHome` 改为 `home`（形参名，调用方按位置传参不受影响）。
+- **未做**：不做显式 root 贯穿（审查原建议）——要动几十个签名与全部调用点，换来的是「同进程双根」，而今天只有一个部署根（YAGNI）；`index.ts` 装配处读一次已经让「根从哪来」显式。
+- **验证**：`typecheck`／`lint`（0 警告 0 错误）／`test`（**669 pass / 0 fail**，默认 4 路）／`build`／`git diff --check` 全绿。
+
 ### 桥测试基底；补导入侧四个缺口（2026-10-16）
 
 - **宿主桩迁移收尾**：`skills-catalog`／`settings-bridge`／`rules-bridge-safety`／`preset-activation-bridge`／`asset-transfer-bridge` 五处手写桩也改调 `makeHostContext`（差异项用 `describe`／`get`／`effect` 选项表达）；全仓手写宿主桩只剩两处**刻意保留**的（`module-subject`／`shared/bridge-contract` 用 `handlerTable()` 拼多次注册与逐端点取 handler），`lib` 派系四个用例仍打构建产物面。各文件自己的 `call` 包装保留（返回形状不同，合并要改十几处断言）。

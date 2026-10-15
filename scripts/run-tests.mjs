@@ -80,14 +80,16 @@ try {
   const build = buildInvocation()
   code = run(build.command, build.args, { cwd: root, shell: build.shell })
   if (code === 0) {
-    // 并发默认 1：本仓库多个用例共享 DSH_HOME / 模块根与跨进程锁，并行会互相抢占而挂住。
-    // 需要提速时显式传 --test-concurrency=N。
+    // 并发默认 4（2026-10-16 实测）：此前固定 1，原因是 paths.ts 的根派生量在 import 时冻结，
+    // 用例只能靠「先设 env 再动态 import」隔离，共享模块根与跨进程锁会互相抢占。根改成按调用
+    // 求值后，4 路与 8 路各跑一次全绿（669/669），全量用时 ~23s → ~6.6s／~4.3s。
+    // 需要更保守或更快时显式传 --test-concurrency=N。
     const runPatterns = patterns.length > 0
       ? patterns
       : [join(root, 'test', '**', '*.test.mjs').replaceAll('\\', '/')]
     const flags = nodeFlags.some((flag) => flag.startsWith('--test-concurrency'))
       ? nodeFlags
-      : [...nodeFlags, '--test-concurrency=1']
+      : [...nodeFlags, '--test-concurrency=4']
     // 测试进程不得写用户真实的 DSH_HOME：默认指到本次临时目录，忘记隔离的用例
     // 最多写进 runDir（用完即删），而不是 `~/.dsh`。自己隔离的用例照旧在文件顶部覆盖本值。
     // （2026-10-02 实测踩过：一个在 import 之后才设 DSH_HOME 的用例把夹具角色卡写进了真实 .dsh。）

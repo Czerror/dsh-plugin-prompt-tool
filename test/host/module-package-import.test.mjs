@@ -6,7 +6,7 @@ import { join } from 'node:path'
 import { parse as parseYaml } from 'yaml'
 import { makeHostContext } from '../fixtures/host-harness.mjs'
 
-// DSH_HOME 必须先于 lib 加载设置（paths.ts 模块级常量在 import 时求值），
+// DSH_HOME 在加载被测模块前设置（风格一致；paths.ts 自 2026-10-16 起按调用求值，不再要求这个顺序），
 // 因此本文件用动态 import 加载 lib，避免污染真实用户预设目录。
 const home = mkdtempSync(join(tmpdir(), 'pt-package-import-'))
 process.env.DSH_HOME = home

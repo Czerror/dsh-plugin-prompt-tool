@@ -12,8 +12,8 @@ import { identityStampOf, runPreStepBatch } from '../../engine/executor.mjs'
 import { createPromptConfigs as createPromptConfigsCore } from '../../engine/schema.mjs'
 import { isolatedHome } from '../fixtures/host-harness.mjs'
 
-// 模块级开关要按完整链路验证（module.yml → ModuleSpec → compileRules 顶层选项），
-// 因此先隔离 DSH_HOME 再动态 import host 侧——paths.ts 在 import 时冻结存储根。
+// 模块级开关要按完整链路验证（module.yml → ModuleSpec → compileRules 顶层选项）；
+// 隔离 DSH_HOME 用夹具完成，动态 import 只是本文件的既有写法（paths.ts 已不再 import 期冻结）。
 const { moduleRoot } = isolatedHome('pt-stwb-')
 const { prepareAssembly } = await import('../../src/runtime/agent-assembly.ts')
 const { validateModuleDefinitionText } = await import('../../src/host/module-storage.ts')

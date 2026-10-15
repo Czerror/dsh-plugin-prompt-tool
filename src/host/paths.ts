@@ -3,13 +3,11 @@ import { join, resolve } from 'node:path'
 import { homedir } from 'node:os'
 
 /**
- * 部署路径默认值；凡是不同部署可能需要不同值的参数都通过 Config 暴露，
- * cordis.yml 可以覆盖，无需改代码。
- * 与官方 dsh-home-paths.resolveDshHome 语义对齐：
+ * 解析部署根。与官方 dsh-home-paths.resolveDshHome 语义对齐：
  * 未设置 / 空串 / 纯空白回退 OS home 下的 .dsh；支持 ~、~/、~\；
  * 相对路径按进程 cwd 解析为绝对路径，避免生成目录随运行目录漂移。
  */
-function resolveDshHome(): string {
+export function resolveDshHome(): string {
   const ambient = process.env.DSH_HOME
   if (typeof ambient !== 'string' || ambient.trim().length === 0) return join(homedir(), '.dsh')
   const expanded = ambient === '~'
@@ -20,31 +18,42 @@ function resolveDshHome(): string {
   return resolve(expanded)
 }
 
-export const DSH_HOME = resolveDshHome()
-/** 用户技能根：官方 `user-dsh` 技能根，也是本插件创建、复制导入、回收站与内置技能种子化的落点。
- *  内置技能按「只补缺失」补建（见 `ensureSkillSeed`）：已有目录的正文、资源与调用策略保持原样。 */
-export const USER_SKILLS_DIR = join(DSH_HOME, 'skills')
 /**
- * 插件自有**存储根**的派生（`<DSH_HOME>/.prompt-tool`）：本插件拥有的全部状态与
- * 生成目录都在它下面，其他用户或官方文件不在其中。
+ * 部署根：**每次调用按当前环境求值**，不在 import 时冻结。
  *
- * 纯函数、不读 `DSH_HOME`，因此测试可以用它按自己的隔离目录现算（夹具与用例各自
- * 持有 `home`，不能用下面那个 import 时冻结的常量）。
+ * 根仍由平台层的 `DSH_HOME` 决定（与官方 `resolveDshHome` 同口径），插件不另立配置项；
+ * 惰性求值换来两件事：测试可以按自己的隔离目录现算、不必「先设环境变量再动态 import」，
+ * 同一进程内换根也立即生效（此前那套时序是真实事故的来源，见 scripts/run-tests.mjs 的注释）。
  */
-export function storageRootOf(dshHome: string): string {
-  return join(dshHome, '.prompt-tool')
-}
+export const dshHome = (): string => resolveDshHome()
+
 /**
- * 当前进程的存储根（`DSH_HOME/.prompt-tool`）。
+ * 插件自有**存储根**的派生（`<部署根>/.prompt-tool`）：本插件拥有的全部状态与生成目录都在
+ * 它下面，其他用户或官方文件不在其中。
+ *
+ * 纯函数、不读环境：调用方手里已经有部署根时（测试、夹具、多根场景）用它现算。
+ */
+export function storageRootOf(home: string): string {
+  return join(home, '.prompt-tool')
+}
+
+/**
+ * 当前进程的存储根（`DSH_HOME/.prompt-tool`），每次调用按当前环境求值。
  *
  * `modules/` 放完整定义、经校验规则切片和用户素材；角色卡导入后也是普通模块。
- * 路径在 import 时按 `DSH_HOME` 冻结，测试必须在导入前隔离环境 —— 需要按自己的
- * 目录现算时用 {@link storageRootOf}。
  * 旧根 `.agent-presets/` 只读不删，本插件不再读写它。
  */
-export const STORAGE_ROOT = storageRootOf(DSH_HOME)
-/** 同一 DSH_HOME 的全局持久变量；不属于任何模块交换包。 */
-export const GLOBAL_VARIABLES_FILE = join(STORAGE_ROOT, 'variables.yml')
+export const storageRoot = (): string => storageRootOf(dshHome())
+
+/** 同一部署根的全局持久变量；不属于任何模块交换包。 */
+export const globalVariablesFile = (): string => join(storageRoot(), 'variables.yml')
+
+/**
+ * 用户技能根：官方 `user-dsh` 技能根，也是本插件创建、复制导入、回收站与内置技能种子化的落点。
+ * 内置技能按「只补缺失」补建（见 `ensureSkillSeed`）：已有目录的正文、资源与调用策略保持原样。
+ */
+export const userSkillsDir = (): string => join(dshHome(), 'skills')
+
 /**
  * 存储根下的**模块根**：一个模块一个目录（`modules/<id>/`），定义与物化产物都在其内。
  *
@@ -52,7 +61,8 @@ export const GLOBAL_VARIABLES_FILE = join(STORAGE_ROOT, 'variables.yml')
  * 也是「本插件管理的模块」身份判定的基准。模块目录必须是它的**直接子目录**
  * （`assertModuleDirectory` 的一层深度契约由此成立）。
  */
-export const MODULES_DIR = join(STORAGE_ROOT, 'modules')
+export const modulesDir = (): string => join(storageRoot(), 'modules')
+
 /**
  * 模块定义文件名：`<模块根>/<id>/module.yml`。
  *

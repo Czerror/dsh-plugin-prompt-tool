@@ -23,7 +23,7 @@ import {
   readModulesEnabled,
 } from './config.ts'
 import type { PromptSettings, RuntimeOptions } from './config.ts'
-import { MODULES_DIR } from './host/paths.ts'
+import { modulesDir } from './host/paths.ts'
 import { enabledModuleIds, resolveRequestedModuleDir } from './host/config-store.ts'
 import { selectedPersonaModules } from './host/persona-selection.ts'
 import { ensureSkillSeed } from './host/skills-actions.ts'
@@ -52,7 +52,7 @@ function warn(ctx: Context, message: string): void {
 
 export function apply(ctx: Context, configIn: Config): void {
   // 包内目录与输出目录同名；启动只复制缺失项，现有用户定义不被重新铺写。
-  const seededModules = new Set(ensureModuleSeed(MODULES_DIR).created)
+  const seededModules = new Set(ensureModuleSeed(modulesDir()).created)
   // 内置技能同一纪律：只补缺失项，用户改过或删过的技能保持原样。
   ensureSkillSeed()
   const readConfig = () => ({
@@ -69,7 +69,7 @@ export function apply(ctx: Context, configIn: Config): void {
   }
   const refreshModuleSlices = (id: string): void => {
     ensureModuleReady(id, {
-      modulesRoot: MODULES_DIR,
+      modulesRoot: modulesDir(),
       warn: (message) => warn(ctx, message),
     })
   }
@@ -99,7 +99,7 @@ export function apply(ctx: Context, configIn: Config): void {
     }),
     afterSkillsChange: skillsRuntime.invalidate,
     // 显式目标不存在就拒绝，不能落到另一个模块；编辑选择不进入部署设置。
-    moduleDirectory: (subject) => resolveRequestedModuleDir(MODULES_DIR, subject),
+    moduleDirectory: (subject) => resolveRequestedModuleDir(modulesDir(), subject),
     overridesChanged: (id) => id === undefined ? assembly?.refresh() : refreshModuleRuntime(id),
     // host 已安装完整候选；不能二次物化覆盖导入资产。
     moduleInstalled: async (id) => {
@@ -126,15 +126,15 @@ export function apply(ctx: Context, configIn: Config): void {
 registerTuiCommand(
   ctx,
   NS,
-  () => ({ ...currentSource(), skillCatalog: skillsRuntime.listSkills(), activeSkillsDirs: [skillsRuntime.skillsRoot], enabledModules: enabledModuleIds(MODULES_DIR).filter((id) => moduleDirExists(MODULES_DIR, id)) }),
+  () => ({ ...currentSource(), skillCatalog: skillsRuntime.listSkills(), activeSkillsDirs: [skillsRuntime.skillsRoot], enabledModules: enabledModuleIds(modulesDir()).filter((id) => moduleDirExists(modulesDir(), id)) }),
   getModelsState,
   () => listAdvertisedModels(ctx),
   // TUI 的主语由命令里的 `module <id>` 显式声明：这里只把声明的 id 解析成目录，未声明解析为空。
-  (moduleId) => resolveRequestedModuleDir(MODULES_DIR, moduleId),
+  (moduleId) => resolveRequestedModuleDir(modulesDir(), moduleId),
   // TUI 参数开关：写这次声明的模块 module.yml（settings 不再承载引擎参数）。
   // 保存/重建失败直接抛给命令层，由 CommandResult:error 呈现给用户。
   async (moduleId, key, value) => {
-    saveModuleParams(MODULES_DIR, moduleId, { [key]: value }, undefined)
+    saveModuleParams(modulesDir(), moduleId, { [key]: value }, undefined)
     await refreshModuleRuntime(moduleId)
   },
   // 技能启停：改写技能文件的调用策略键（正文不动），失败原因回给命令层。
@@ -171,9 +171,9 @@ registerTuiCommand(
 
   // 内置模型工具由三个独立模块按需挂载；宿主只提供对应注册服务。
   const moduleToolHost: ModuleToolHost = {
-    root: MODULES_DIR,
+    root: modulesDir(),
     // 写入目标由这次工具调用显式声明的 moduleId 定位；该 Agent 已启用的模块只作拒绝提示。
-    target: (exec, moduleId) => resolveModuleToolTarget(exec, MODULES_DIR, (sessionId) => assembly?.moduleIds(sessionId) ?? [], moduleId),
+    target: (exec, moduleId) => resolveModuleToolTarget(exec, modulesDir(), (sessionId) => assembly?.moduleIds(sessionId) ?? [], moduleId),
     rebuild: (id) => refreshModuleRuntime(id),
   }
   ctx.provide('pt-module-import-tools', {
@@ -212,15 +212,15 @@ registerTuiCommand(
   installPreStepCoordinator(ctx)
 
   // 人设适配属于主插件运行态，不作为官方服务的启动依赖；来源选择不隐式启用其普通规则。
-  const personaModules = () => runtime.modulesEnabled ? selectedPersonaModules(MODULES_DIR) : []
+  const personaModules = () => runtime.modulesEnabled ? selectedPersonaModules(modulesDir()) : []
   const personaCapture = installPersonaCapture(ctx)
   ctx.effect(function* () {
     yield () => personaCapture.dispose()
     const agentsFiber = ctx.inject(['agents'], (actx: Context) => {
       const mounted = createAgentAssembly(actx, {
-        moduleRoot: MODULES_DIR,
+        moduleRoot: modulesDir(),
         enabledModules: () => runtime.modulesEnabled
-          ? enabledModuleIds(MODULES_DIR)
+          ? enabledModuleIds(modulesDir())
           : [],
         personaModules,
         personaCapture,
@@ -293,7 +293,7 @@ export {
 } from './host/manifest.ts'
 export { expandModuleSource, exportModulePackage, moduleImportPreview, installModulePackage } from './host/module-package.ts'
 export { ensureWebSurface, resolveProfileDir, scheduleWebSurfaceRepair } from './web-surface.ts'
-export { USER_SKILLS_DIR } from './host/paths.ts'
+export { userSkillsDir } from './host/paths.ts'
 export { importSkillsPackage } from './host/skills-import.ts'
 export { detectModels, invalidateModelCatalog, listAdvertisedModels, peekModelCatalog, resolveSubagentStartOptions } from './runtime/models.ts'
 export type { PluginSubagentSeam } from './runtime/models.ts'

@@ -15,7 +15,7 @@ import { spawn } from 'node:child_process'
 import { basename, dirname, isAbsolute, join, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { Document, Pair, Scalar, parse as parseYaml, parseDocument, YAMLMap, YAMLSeq } from 'yaml'
-import { MODULES_DIR, MODULE_DEFINITION_FILE } from './paths.ts'
+import { MODULE_DEFINITION_FILE, modulesDir } from './paths.ts'
 import { moduleCapability, engineRecipe, impliedModulesForParams, isModuleCapabilityPresent, type ModuleSourceMode, type ModuleFacts } from '../shared/engine-capabilities.ts'
 import { ENGINE_PARAM_DEFINITIONS, ENGINE_PARAM_KEYS, buildEngineModuleParams } from '../shared/engine-params.ts'
 import { readPersonaSpec, type PersonaSnapshot, type PersonaSpec } from '../shared/persona-section.ts'
@@ -225,7 +225,7 @@ const asString = (value: unknown, fallback = ''): string => {
 
 /** 模块根：本插件的存储根（~/.dsh/.prompt-tool），导入/新建/种子化的模块都放这里。 */
 export function userModulesDir(): string {
-  return MODULES_DIR
+  return modulesDir()
 }
 
 /** 只按合法目录身份定位；现存坏身份必须报错，不能绕到同名模板。 */

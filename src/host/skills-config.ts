@@ -6,7 +6,7 @@ import { isAbsolute, join, resolve } from 'node:path'
 import { Document, isMap, parseDocument, visit } from 'yaml'
 import type { SkillsState } from '../shared/skills.ts'
 import { SKILLS_STATE_VERSION } from '../shared/skills.ts'
-import { DSH_HOME } from './paths.ts'
+import { dshHome } from './paths.ts'
 import { atomicWriteTextFile } from './text-file.ts'
 
 export const SKILLS_STATE_RELATIVE = join('skills', '.system', 'prompt-tool', 'skills.yml')
@@ -22,8 +22,8 @@ export function defaultSkillsState(): SkillsState {
   return { version: SKILLS_STATE_VERSION, folders: [] }
 }
 
-export function skillsStatePath(dshHome: string = DSH_HOME): string {
-  return join(dshHome, SKILLS_STATE_RELATIVE)
+export function skillsStatePath(home: string = dshHome()): string {
+  return join(home, SKILLS_STATE_RELATIVE)
 }
 
 const pathKey = (value: string): string => process.platform === 'win32' ? value.toLowerCase() : value

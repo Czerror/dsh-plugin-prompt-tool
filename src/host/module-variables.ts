@@ -4,7 +4,7 @@ import type { Stats } from 'node:fs'
 import { basename, dirname } from 'node:path'
 import { isDeepStrictEqual } from 'node:util'
 import { isMap, isScalar, parseDocument } from 'yaml'
-import { DSH_HOME, GLOBAL_VARIABLES_FILE } from './paths.ts'
+import { dshHome, globalVariablesFile } from './paths.ts'
 import { atomicWriteTextFile } from './text-file.ts'
 import { assertUnownedUnchanged, assertVariableValues, commitModuleDefinition, ensureModuleSlices, lastPublishedModuleDefinition, loadModuleDefinition, ModuleRulesError, revisionOf, withModuleLock } from './module-storage.ts'
 import type { ModuleDefinitionSnapshot } from './module-storage.ts'
@@ -43,12 +43,12 @@ function plain(path: string, directory = false): Stats | undefined {
   }
 }
 function readGlobal(): GlobalSnapshot {
-  plain(DSH_HOME, true)
-  plain(dirname(GLOBAL_VARIABLES_FILE), true)
-  const stat = plain(GLOBAL_VARIABLES_FILE)
+  plain(dshHome(), true)
+  plain(dirname(globalVariablesFile()), true)
+  const stat = plain(globalVariablesFile())
   if (!stat) return { doc: parseDocument('variables: {}\n'), values: {}, revision: null }
   if (stat.size > 8 * 1024 * 1024) throw new ModuleRulesError('全局变量文件超过 8 MiB')
-  const bytes = readFileSync(GLOBAL_VARIABLES_FILE)
+  const bytes = readFileSync(globalVariablesFile())
   const doc = parseDocument(new TextDecoder('utf-8', { fatal: true }).decode(bytes), { logLevel: 'silent' })
   if (doc.errors.length || !isMap(doc.contents)) throw new ModuleRulesError('全局变量 YAML 必须是有效对象')
   const source: unknown = doc.toJS()
@@ -122,9 +122,9 @@ export function editModuleVariables(directory: string, request: ModuleVariablesE
   validateRequest(request)
   const initial = loadModuleDefinition(directory)
   readGlobal()
-  mkdirSync(dirname(GLOBAL_VARIABLES_FILE), { recursive: true })
-  plain(dirname(GLOBAL_VARIABLES_FILE), true)
-  return withModuleLock(dirname(GLOBAL_VARIABLES_FILE), 'variables', () => {
+  mkdirSync(dirname(globalVariablesFile()), { recursive: true })
+  plain(dirname(globalVariablesFile()), true)
+  return withModuleLock(dirname(globalVariablesFile()), 'variables', () => {
     if (request.scope === 'module') {
       const module = loadModuleDefinition(initial.dir), global = readGlobal()
       checkRevisions(request, module, global)
@@ -150,7 +150,7 @@ export function editModuleVariables(directory: string, request: ModuleVariablesE
       replaceVariables(global.doc, values)
       const text = global.doc.toString()
       if (Buffer.byteLength(text) > 8 * 1024 * 1024) throw new ModuleRulesError('全局变量文件超过 8 MiB')
-      atomicWriteTextFile(GLOBAL_VARIABLES_FILE, text, { mode: global.mode, beforeReplace: () => {
+      atomicWriteTextFile(globalVariablesFile(), text, { mode: global.mode, beforeReplace: () => {
         const current = readGlobal()
         if (current.revision !== global.revision) throw conflict()
         checkRevisions(request, loadModuleDefinition(module.dir), current)

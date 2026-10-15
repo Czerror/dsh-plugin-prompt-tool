@@ -2,7 +2,7 @@
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync } from 'node:fs'
 import { basename, join, resolve } from 'node:path'
 import { parseDocument } from 'yaml'
-import { MODULES_DIR, MODULE_DEFINITION_FILE } from './paths.ts'
+import { MODULE_DEFINITION_FILE, modulesDir } from './paths.ts'
 import { appendModuleConfigOrder } from './module-config-order.ts'
 import { enabledModuleIds } from './config-store.ts'
 import { assertModuleDirectory, assertModuleId, assertModuleTree } from './module-install.ts'
@@ -61,7 +61,7 @@ function assertKnownOptions(label: string, options: object, allowed: readonly st
 /** 按模块身份原地恢复切片；用户资产、正文与完整定义均不重写。 */
 export function ensureModuleReady(id: string, options: { modulesRoot?: string; warn?: (message: string) => void }): string {
   assertKnownOptions('ensureModuleReady', options, ['modulesRoot', 'warn'])
-  const root = options.modulesRoot ?? MODULES_DIR
+  const root = options.modulesRoot ?? modulesDir()
   const directory = assertModuleDirectory(root, id)
   validateModule(directory, options.warn)
   if (enabledModuleIds(root).includes(id)) appendModuleConfigOrder(root, id)
@@ -76,7 +76,7 @@ export function ensureModuleReady(id: string, options: { modulesRoot?: string; w
 /** 已有同一模块只恢复切片；导入/复制先完整生成合法身份候选，再交换目标。 */
 export function writeModule(options: WriteModuleOptions): string {
   assertKnownOptions('writeModule', options, ['modulesRoot', 'moduleId', 'targetModuleId', 'sourceDir', 'stageOnly', 'agentsInstructionText', 'warn'])
-  const root = options.modulesRoot.trim().length > 0 ? options.modulesRoot : MODULES_DIR
+  const root = options.modulesRoot.trim().length > 0 ? options.modulesRoot : modulesDir()
   assertModuleId(options.moduleId)
   const targetId = options.targetModuleId ?? options.moduleId
   assertModuleId(targetId)

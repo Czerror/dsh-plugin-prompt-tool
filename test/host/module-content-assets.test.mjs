@@ -8,7 +8,7 @@ import { parse as parseYaml, parseDocument } from 'yaml'
 import { compileCustomTool, validateCustomTools } from '../../src/host/custom-tools.ts'
 import { validateDefinition } from '../../engine/tool-definition.mjs'
 
-// 隔离 DSH_HOME：writer 的路径常量在 import 时求值，必须先设 env 再加载被测模块。
+// 隔离 DSH_HOME：writer 的路径按调用求值（2026-10-16 起不再 import 期冻结），先设 env 只为让断言里的根一致。
 const home = mkdtempSync(join(tmpdir(), 'pt-content-assets-home-'))
 const previousHome = process.env.DSH_HOME
 process.env.DSH_HOME = home

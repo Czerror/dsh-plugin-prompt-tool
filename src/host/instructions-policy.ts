@@ -14,7 +14,7 @@ import { createHash } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { Document, isMap, isScalar, parseDocument, visit } from 'yaml'
-import { DSH_HOME, storageRootOf } from './paths.ts'
+import { dshHome, storageRootOf } from './paths.ts'
 import { atomicWriteTextFile } from './text-file.ts'
 import { ModuleRulesError, withModuleLock } from './module-storage.ts'
 import type {
@@ -50,8 +50,8 @@ export function defaultInstructionPolicy(): InstructionPolicy {
   return { files: {} }
 }
 
-export function instructionPolicyPath(dshHome: string = DSH_HOME): string {
-  return join(storageRootOf(dshHome), INSTRUCTIONS_POLICY_FILE)
+export function instructionPolicyPath(home: string = dshHome()): string {
+  return join(storageRootOf(home), INSTRUCTIONS_POLICY_FILE)
 }
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>

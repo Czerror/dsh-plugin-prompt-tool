@@ -11,7 +11,7 @@ import { isolatedHome, tempDir } from '../fixtures/host-harness.mjs'
 const { home, moduleRoot } = isolatedHome('pt-module-variables-')
 const otherHome = tempDir('pt-module-variables-other-')
 const { readModuleVariables, editModuleVariables } = await import('../../src/host/module-variables.ts')
-const { GLOBAL_VARIABLES_FILE } = await import('../../src/host/paths.ts')
+const { globalVariablesFile } = await import('../../src/host/paths.ts')
 const entry = new URL('../../src/host/module-variables.ts', import.meta.url).href
 const storage = new URL('../../src/host/module-storage.ts', import.meta.url).href
 
@@ -19,8 +19,8 @@ function fixture(t, id) {
   const dir = join(moduleRoot, id)
   mkdirSync(dir, { recursive: true })
   writeFileSync(join(dir, 'module.yml'), `id: ${id}\nmodules: []\nrules: []\nvariables:\n  owner: Mia # owner comment\nunknown: { keep: true }\n`)
-  rmSync(GLOBAL_VARIABLES_FILE, { force: true })
-  t.after(() => rmSync(GLOBAL_VARIABLES_FILE, { force: true }))
+  rmSync(globalVariablesFile(), { force: true })
+  t.after(() => rmSync(globalVariablesFile(), { force: true }))
   return dir
 }
 
@@ -29,14 +29,14 @@ test('变量主路径：全局持久值跨进程共享，模块快照独立且 Y
   const initial = readModuleVariables(dir)
   assert.deepEqual(initial.global, {})
   assert.equal(initial.revisions.global, null)
-  assert.equal(existsSync(GLOBAL_VARIABLES_FILE), false, '缺失只读不创建全局文件')
-  writeFileSync(GLOBAL_VARIABLES_FILE, '# global owner\nvariables:\n  counter: "10" # counter comment\nunknown: { keep: true }\n')
+  assert.equal(existsSync(globalVariablesFile()), false, '缺失只读不创建全局文件')
+  writeFileSync(globalVariablesFile(), '# global owner\nvariables:\n  counter: "10" # counter comment\nunknown: { keep: true }\n')
   const before = readModuleVariables(dir)
   const saved = editModuleVariables(dir, { scope: 'global', changes: { counter: '20', empty: '' }, expectedRevisions: before.revisions })
   assert.deepEqual(saved.global, { counter: '20', empty: '' })
   assert.deepEqual(saved.effective, { counter: '20', empty: '', owner: 'Mia' })
   assert.equal(saved.persisted, true)
-  const text = readFileSync(GLOBAL_VARIABLES_FILE, 'utf8')
+  const text = readFileSync(globalVariablesFile(), 'utf8')
   for (const comment of ['global owner', 'counter comment']) assert.ok(text.includes('# ' + comment))
   assert.deepEqual(parse(text).unknown, { keep: true })
   const child = spawnSync(process.execPath, ['--input-type=module', '--eval', `
@@ -73,7 +73,7 @@ test('变量拒绝：缺值、保留名、过期版本、体积、坏 YAML 与�
   const dir = fixture(t, 'reject')
   const first = readModuleVariables(dir)
   const saved = editModuleVariables(dir, { scope: 'global', values: { keep: 'KEEP' }, expectedRevisions: first.revisions })
-  const before = readFileSync(GLOBAL_VARIABLES_FILE, 'utf8')
+  const before = readFileSync(globalVariablesFile(), 'utf8')
   for (const request of [
     { scope: 'session', changes: { keep: 'NO' } },
     { changes: { keep: undefined } },
@@ -89,7 +89,7 @@ test('变量拒绝：缺值、保留名、过期版本、体积、坏 YAML 与�
     { values: {}, changes: {} },
   ]) {
     assert.throws(() => editModuleVariables(dir, { scope: 'global', expectedRevisions: saved.revisions, ...request }))
-    assert.equal(readFileSync(GLOBAL_VARIABLES_FILE, 'utf8'), before)
+    assert.equal(readFileSync(globalVariablesFile(), 'utf8'), before)
   }
   const dependency = readModuleVariables(dir)
   const globalChanged = editModuleVariables(dir, { scope: 'global', changes: { counter: '20' }, expectedRevisions: dependency.revisions })
@@ -101,21 +101,21 @@ test('变量拒绝：缺值、保留名、过期版本、体积、坏 YAML 与�
   assert.throws(() => editModuleVariables(dir, { scope: 'module', changes: { other: 'LOST' }, expectedRevisions: globalChanged.revisions }), error => error.status === 409, '两个调用者读取同一模块后，不允许后写者覆盖先写者')
   const retry = editModuleVariables(dir, { scope: 'module', changes: { other: 'KEPT' }, expectedRevisions: moduleChanged.revisions })
   assert.deepEqual(retry.module, { owner: 'Lee', other: 'KEPT' })
-  writeFileSync(GLOBAL_VARIABLES_FILE, 'variables: &shared { keep: KEEP }\nunknown: *shared\n')
+  writeFileSync(globalVariablesFile(), 'variables: &shared { keep: KEEP }\nunknown: *shared\n')
   const aliased = readModuleVariables(dir)
-  const aliasBytes = readFileSync(GLOBAL_VARIABLES_FILE, 'utf8')
+  const aliasBytes = readFileSync(globalVariablesFile(), 'utf8')
   assert.throws(() => editModuleVariables(dir, { scope: 'global', changes: { keep: 'ALTERED' }, expectedRevisions: aliased.revisions }), /YAML.*引用/)
-  assert.equal(readFileSync(GLOBAL_VARIABLES_FILE, 'utf8'), aliasBytes, '变量锚点不能连带修改其他字段')
-  writeFileSync(GLOBAL_VARIABLES_FILE, 'variables: null\n')
+  assert.equal(readFileSync(globalVariablesFile(), 'utf8'), aliasBytes, '变量锚点不能连带修改其他字段')
+  writeFileSync(globalVariablesFile(), 'variables: null\n')
   assert.throws(() => readModuleVariables(dir), /平铺字符串/)
-  writeFileSync(GLOBAL_VARIABLES_FILE, 'variables: [\n')
+  writeFileSync(globalVariablesFile(), 'variables: [\n')
   assert.throws(() => readModuleVariables(dir), /YAML/)
   assert.throws(() => editModuleVariables(dir, { scope: 'global', values: {}, expectedRevisions: saved.revisions }), /YAML/)
-  assert.equal(readFileSync(GLOBAL_VARIABLES_FILE, 'utf8'), 'variables: [\n')
-  rmSync(GLOBAL_VARIABLES_FILE)
+  assert.equal(readFileSync(globalVariablesFile(), 'utf8'), 'variables: [\n')
+  rmSync(globalVariablesFile())
   const target = join(home, 'outside-variables.yml')
   writeFileSync(target, before)
-  symlinkSync(target, GLOBAL_VARIABLES_FILE)
+  symlinkSync(target, globalVariablesFile())
   assert.throws(() => readModuleVariables(dir), /链接|普通文件/)
   assert.throws(() => editModuleVariables(dir, { scope: 'global', values: {}, expectedRevisions: saved.revisions }), /链接|普通文件/)
   assert.equal(readFileSync(target, 'utf8'), before)
@@ -125,10 +125,10 @@ test('变量边界：相同整表幂等，跨进程锁阻止并行丢更新', as
   const dir = fixture(t, 'boundary')
   const first = readModuleVariables(dir)
   const saved = editModuleVariables(dir, { scope: 'global', values: { count: '1' }, expectedRevisions: first.revisions })
-  const before = readFileSync(GLOBAL_VARIABLES_FILE, 'utf8')
+  const before = readFileSync(globalVariablesFile(), 'utf8')
   const result = editModuleVariables(dir, { scope: 'global', values: { count: '1' }, expectedRevisions: saved.revisions })
   assert.deepEqual(result.revisions, saved.revisions)
-  assert.equal(readFileSync(GLOBAL_VARIABLES_FILE, 'utf8'), before)
+  assert.equal(readFileSync(globalVariablesFile(), 'utf8'), before)
   const child = spawn(process.execPath, ['--input-type=module', '--eval', `
     import fs from 'node:fs';
     import { withModuleLock } from ${JSON.stringify(storage)};
@@ -136,13 +136,13 @@ test('变量边界：相同整表幂等，跨进程锁阻止并行丢更新', as
       fs.writeSync(1, 'locked\\n');
       fs.readSync(0, Buffer.alloc(1), 0, 1, null);
     });
-  `, dirname(GLOBAL_VARIABLES_FILE)], { cwd: process.cwd(), stdio: ['pipe', 'pipe', 'pipe'] })
+  `, dirname(globalVariablesFile())], { cwd: process.cwd(), stdio: ['pipe', 'pipe', 'pipe'] })
   const exited = once(child, 'exit')
   try {
     const [signal] = await once(child.stdout, 'data')
     assert.equal(signal.toString(), 'locked\n')
     assert.throws(() => editModuleVariables(dir, { scope: 'global', changes: { count: '2' }, expectedRevisions: saved.revisions }), error => error.status === 409)
-    assert.equal(readFileSync(GLOBAL_VARIABLES_FILE, 'utf8'), before)
+    assert.equal(readFileSync(globalVariablesFile(), 'utf8'), before)
   } finally {
     child.stdin.end('x')
     assert.equal((await exited)[0], 0)
@@ -150,7 +150,7 @@ test('变量边界：相同整表幂等，跨进程锁阻止并行丢更新', as
   const rename = fs.renameSync
   let observedModuleLock = false
   mock.method(fs, 'renameSync', (from, to) => {
-    if (to === GLOBAL_VARIABLES_FILE) {
+    if (to === globalVariablesFile()) {
       const contender = spawnSync(process.execPath, ['--input-type=module', '--eval', `
         import { loadModuleDefinition, commitModuleDefinition } from ${JSON.stringify(storage)};
         const source = loadModuleDefinition(process.argv[1]);

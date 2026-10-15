@@ -60,9 +60,10 @@ export function isolatedHome(prefix) {
     else process.env.DSH_HOME = previous
     rmSync(home, { recursive: true, force: true })
   })
-  // 存储根的唯一真值源是 `src/host/paths.ts` 的 `storageRootOf(dshHome)`（模块根 = 它的
-  // `modules/` 子目录）。这里刻意不 import 它：本夹具被静态 import，而 `paths.ts` 的
-  // 模块级常量在 import 时读 `DSH_HOME` —— 那会把路径冻结到真实用户目录，先于用例的隔离。
+  // 存储根的唯一真值源是 `src/host/paths.ts`（`storageRootOf(dshHome)` 纯函数；模块根 = 它的
+  // `modules/` 子目录）。这里刻意不 import 它：本夹具被静态 import，内联拼接让「这次装到哪个 HOME」
+  // 一眼可见。paths.ts 自 2026-10-16 起按调用求值，不再有 import 期冻结——设置 env 与调用之间的
+  // 顺序因此不再是约束，夹具仍然先设、只为语义直白。
   return { home, moduleRoot: join(home, '.prompt-tool', 'modules'), skillsRoot: join(home, 'skills') }
 }
 

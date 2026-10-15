@@ -12,7 +12,7 @@ import { readSkillContent, writeSkillContent, type SkillContentResult } from './
 import { createSkillsProvider } from './skills-provider.ts'
 import { createSkillsReloader } from './skills-refresh.ts'
 import { catalogFromScan, resolveBundledSkillsDir, scanRoots, skillPathKey, skillRoots, skillWriteRestriction, withGlobalSkillFallback, withSkillWinners } from './skills-scan.ts'
-import { DSH_HOME } from './paths.ts'
+import { dshHome as resolveDshHome } from './paths.ts'
 
 export interface SkillsRuntime {
   readonly skillsRoot: string
@@ -33,7 +33,7 @@ const within = (path: string, root: string): boolean => {
 }
 
 export function createSkillsRuntime(ctx: Context, options: { dshHome?: string } = {}): SkillsRuntime {
-  const dshHome = resolve(options.dshHome ?? DSH_HOME)
+  const dshHome = resolve(options.dshHome ?? resolveDshHome())
   const skillsRoot = join(dshHome, 'skills')
   const stateFile = skillsStatePath(dshHome)
   const initial = readSkillsState(stateFile)

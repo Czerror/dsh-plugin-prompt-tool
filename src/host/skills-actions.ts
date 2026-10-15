@@ -4,7 +4,7 @@ import { basename, dirname, isAbsolute, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { Document } from 'yaml'
 import { SKILL_NAME_PATTERN } from './skills-config.ts'
-import { USER_SKILLS_DIR } from './paths.ts'
+import { userSkillsDir } from './paths.ts'
 import { parseFrontmatter } from './skills-parse.ts'
 
 export type SkillActionResult = { ok: true; id: string; path: string } | { ok: false; message: string }
@@ -154,7 +154,7 @@ export function packageSkillsDir(): string {
  * 与内置模块的种子化同一纪律：只补缺失项，用户改过或删过的技能不会被重新铺写；
  * 失败（包内无 `skills/`、目标不可写等）不阻断启动，用户仍可经 UI 创建或导入。
  */
-export function ensureSkillSeed(root = USER_SKILLS_DIR): { created: string[] } {
+export function ensureSkillSeed(root = userSkillsDir()): { created: string[] } {
   const created: string[] = []
   try {
     mkdirSync(root, { recursive: true })
