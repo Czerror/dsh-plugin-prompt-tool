@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+### 桥端点注册收进同一个入口（2026-10-16）
+
+- **41 处手抄骨架收成一个 helper**：`settings-bridge.ts` 里 39 处数组内 ＋ 2 处 map 内的 `webServer.register({ kind, path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.x, handler: route({...}) })` 全部换成 `register(BRIDGE_ENDPOINTS.x, spec)`。`webServer.register` 的站点数从 42 降到 **2**（两个 inject 作用域各一个 helper）；45 个端点由 43 次调用覆盖（`skillRead`／`skillWrite` 在 map 内共用一次注册）。
+- **收益不是"少打字"**：端点键现在**进类型**——写错键是编译错误；而此前每处手写 `PREFIX + BRIDGE_ENDPOINTS.x` 是一类**静默笔误**的来源（路径拼接错了不会有人报错，只会在运行期 404）。
+- **`body` 默认值经核实后省略冗余**：`bridge-transaction.ts` 的 `spec.body ?? 'json'` 确认默认就是 json，因此省略 39 处显式的 `body:'json'`；**`body:'none'` 的 4 条逐字保留**（`templates`／`triggers`／`assetUpload`／`charactersImportStream`——它们要自消费原始流，那里明写"替它们排空流会把要读的数据吃掉"）。
+- **一行行为都没改（有形状证据）**：diff 里 206 处删除**全是旧外壳行**、46 处新增**全是注册与 helper 行**，没有一行 handler 正文被动过；`route(...)` 的调用形态、主语策略、各端点状态码与错误码全部保持。
+- **测试零改动**：`bridge-contract.test.mjs` 的"所有端点路径全部注册且无多余"（键集＝45 路径）与逐路径扫描、`settings-bridge.test.mjs` 的桩全部原样通过（全量 654 pass）。
+- **未做**：不改 `route()` 的签名（那要动 `BridgeRouteSpec` 与 `bridge-transaction` 的四道边界顺序：loopback 403／非 POST 405／32MiB 413／非对象 400，那是行为契约）；不统一约 90 处内联信封（里面混着各端点自己的状态码与条件 code，统一它是**改行为**而不是收骨架）；两个作用域的 helper 仍并存（settings 作用域返回 disposer、tool-surface 作用域返回 void），合并它们需要先统一两处的生命周期归属。
+- **验证**：`typecheck`／`lint`（0 警告 0 错误）／`test`（654 pass / 0 fail）／`build`／`git diff --check` 全绿。
+
 ### store 依赖面收窄成能力面；切页与退出时保存（2026-10-16）
 
 - **收窄（零行为变化）**：撤下 8 个零消费者成员（`ensureModelReasoning`／`templatePreStepCount`／`savedSwitches`／`savedConfigs`／`instructionPool`／`dirtyInstructions`／`getInstructionPolicy`／`enqueueModuleTask`）；14 个消费方与 2 个 hook 包装改用 `Pick<PromptToolStore, …>` 显式声明能力面（同文件内复用局部类型），两个纯透传页取子面并集；顺手删掉 `EngineModuleActions` 的死 `store` prop（该菜单只读 `t` 与 `items`）。
