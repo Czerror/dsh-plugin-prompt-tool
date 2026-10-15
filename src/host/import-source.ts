@@ -75,7 +75,7 @@ export function assetSourceDigest(files: AssetFile[]): string {
 export function validateCharacterSpec(spec: ModuleSpec): void {
   assertCanonicalRuleSource(spec)
   readModuleLayerSettings(spec)
-  for (const field of ['composition', 'customTools', 'content', 'subagentToolPolicy', 'moduleConfigs'] as const) {
+  for (const field of ['composition', 'customTools', 'content', 'moduleConfigs'] as const) {
     const value = spec[field]
     if (value !== undefined && !(Array.isArray(value) && value.length === 0) && !(isRecord(value) && Object.keys(value).length === 0)) {
       throw new Error(`角色片段不支持 ${field}；请从预设页导入完整预设`)

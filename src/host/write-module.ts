@@ -2,8 +2,6 @@
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync } from 'node:fs'
 import { basename, join, resolve } from 'node:path'
 import { parseDocument } from 'yaml'
-// @ts-expect-error 纯引擎校验与运行时共用。
-import { validateSubagentToolPolicy } from '../../engine/subagent-tool-policy-core.mjs'
 import { MODULES_DIR, MODULE_DEFINITION_FILE } from './paths.ts'
 import { appendModuleConfigOrder } from './module-config-order.ts'
 import { enabledModuleIds } from './config-store.ts'
@@ -36,10 +34,6 @@ function validateModule(directory: string, warn?: (message: string) => void): vo
   if (spec.customTools !== undefined && !Array.isArray(spec.customTools)) throw new TypeError('customTools must be an array')
   const toolErrors = validateCustomTools(spec.customTools ?? [])
   if (toolErrors.length > 0) throw new Error(`invalid customTools: ${toolErrors.join('; ')}`)
-  if (spec.subagentToolPolicy !== undefined && spec.subagentToolPolicy !== null) {
-    const policyErrors = validateSubagentToolPolicy(spec.subagentToolPolicy)
-    if (policyErrors.length > 0) throw new Error(`invalid subagentToolPolicy: ${policyErrors.join('; ')}`)
-  }
   if (Array.isArray(spec.meta?.stWarnings)) for (const warning of spec.meta.stWarnings) {
     if (typeof warning === 'string') warn?.(`prompt-tool: ST 导入兼容提示：${warning}`)
   }

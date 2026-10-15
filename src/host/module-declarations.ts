@@ -21,8 +21,6 @@ import { loadModuleDefinition } from './module-storage.ts'
 export const DECLARED_SECTIONS: Partial<Record<BridgeEndpointKey, readonly string[]>> = {
   customTools: ['customTools'],
   persona: ['persona'],
-  subagentToolPolicy: ['subagentToolPolicy'],
-  subagentToolPolicyPreview: ['subagentToolPolicy'],
   moduleVariables: ['variables', 'variablesEnabled'],
   paramOverrides: ['params', 'layerSettings'],
   rules: ['rules'],

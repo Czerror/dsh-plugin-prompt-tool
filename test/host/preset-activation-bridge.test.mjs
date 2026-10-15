@@ -50,7 +50,7 @@ test('预设保存等待宿主采用；异步拒绝保留定义并可重试；�
     const pending = new Promise(resolve => { release = resolve })
     rebuild = async () => { entered(); await pending }
     let settled = false
-    const saving = save({ maxDepth: 0 }).then(value => { settled = true; return value })
+    const saving = save({ modelTemperature: 0.3 }).then(value => { settled = true; return value })
     await bounded(started, '重建开始')
     await new Promise(resolve => setImmediate(resolve))
     assert.equal(settled, false, '注册尚未完成不能发送成功响应')
@@ -58,17 +58,17 @@ test('预设保存等待宿主采用；异步拒绝保留定义并可重试；�
     assert.equal((await saving).ok, true)
 
     rebuild = async () => { await Promise.resolve(); throw new Error('REGISTRATION_FAILED') }
-    const failed = await save({ maxDepth: 2 })
+    const failed = await save({ modelTemperature: 0.5 })
     assert.equal(failed.status, 500)
     assert.equal(failed.ok, false)
     assert.equal(failed.code, 'module-activation-failed')
     assert.match(failed.message, /已保存.*REGISTRATION_FAILED/)
-    assert.equal(parse(readFileSync(file, 'utf8')).layerSettings['subagent-start'].maxDepth, 2)
+    assert.equal(parse(readFileSync(file, 'utf8')).layerSettings['agent-request'].modelTemperature, 0.5)
 
     rebuild = async () => {}
-    assert.equal((await save({ maxDepth: 2 })).ok, true)
+    assert.equal((await save({ modelTemperature: 0.5 })).ok, true)
     const before = calls
-    assert.equal((await save({ maxDepth: 0 }, { rebuild: false })).ok, true)
+    assert.equal((await save({ modelTemperature: 0.8 }, { rebuild: false })).ok, true)
     assert.equal(calls, before)
   } finally { for (const dispose of disposers) dispose() }
 })

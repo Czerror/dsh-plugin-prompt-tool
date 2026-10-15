@@ -48,18 +48,13 @@ test('writeModule 暂存候选保持目标身份，失败保留原目标且拒�
   assert.throws(() => writer.writeModule({ modulesRoot: moduleRoot, moduleId: '../outside' }), /id/)
 })
 
-test('配装仅从定义内联工具和策略，旧目录不再决定运行内容', async () => {
+test('配装仅从定义内联工具，旧目录不再决定运行内容', async () => {
   const tool = { id: 'confirm', description: '确认', output: { schema: { type: 'json' } }, execute: { kind: 'ask-user' } }
-  const directory = moduleDirectory('inline', { modules: ['tool-config-engine', 'subagent-tool-policy'], customTools: [tool] })
+  const directory = moduleDirectory('inline', { modules: ['tool-config-engine'], customTools: [tool] })
   const prepared = await prepareAssembly(moduleRoot, 'inline', () => true)
   const custom = prepared.modules.find(module => module.id === 'tool-config-engine')
   assert.deepEqual(custom.config.tools.map(tool => tool.name), ['confirm'])
   assert.deepEqual(custom.config.tools[0].output.schema, {})
   assert.equal(typeof custom.config.resourceRoot, 'string')
-  assert.equal(prepared.modules.some(module => module.id === 'subagent-tool-policy'), false, '策略段缺失即停用')
   assert.equal(existsSync(join(directory, 'custom-tools')), false)
-  const policy = { defaultProfile: 'read', ceiling: { allow: ['read'] }, profiles: [{ id: 'read', name: '只读', allow: ['read'] }] }
-  writeFileSync(join(directory, 'module.yml'), JSON.stringify({ id: 'inline', modules: [], rules: [], subagentToolPolicy: policy }))
-  const enabled = await prepareAssembly(moduleRoot, 'inline', () => true)
-  assert.deepEqual(enabled.modules.find(module => module.id === 'subagent-tool-policy').config.policy, policy)
 })

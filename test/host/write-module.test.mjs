@@ -73,7 +73,6 @@ function installWriterModule(id) {
   writeFileSync(join(dir, 'module.yml'), JSON.stringify({
     id, modules: ['rule-engine'],
     content: { presetText: `BODY-${id}`, agentsText: `AGENTS-${id}` },
-    layerSettings: { 'subagent-start': { maxDepth: '' } },
     rules: [
       { id: 'near-anchor', layer: 'pre-step', then: [{ id: 'inject', kind: 'inject-text', config: {
         id: 'near-anchor', strategy: 'first-turn-anchor', layer: 'pre-step', position: 'after-user',
@@ -146,8 +145,6 @@ test('旧参数键不被读取，规则只由显式事务改写；含旧内容�
   assert.ok(existsSync(join(imported, 'module.yml')), '旧参数不影响重建')
   // 显式规则事务才是唯一改写入口。
   patchRule(dir, 'near-anchor', rule => ({ ...rule, enabled: false, then: [{ ...rule.then[0], config: { ...near, params: { ...near.params, text: 'OWNED RULE' } } }] }))
-  saveModuleParams(root, FIXTURE_MODULE_ID, { maxDepth: 0 }, undefined)
-  assert.equal(parseYaml(readFileSync(file, 'utf8')).layerSettings['subagent-start'].maxDepth, 0)
   ensureModuleReady(FIXTURE_MODULE_ID, { modulesRoot: root })
   const ownedNear = loadModuleSpec(dir).rules.find(rule => rule.id === 'near-anchor')
   assert.equal(ownedNear.enabled, false)

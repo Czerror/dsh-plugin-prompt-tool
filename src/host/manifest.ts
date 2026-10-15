@@ -18,7 +18,7 @@ import { isDeepStrictEqual } from 'node:util'
 import { Document, Pair, Scalar, parse as parseYaml, parseDocument, YAMLMap, YAMLSeq } from 'yaml'
 import { MODULES_DIR, MODULE_DEFINITION_FILE } from './paths.ts'
 import { moduleCapability, engineRecipe, impliedModulesForParams, isModuleCapabilityPresent, type ModuleSourceMode, type ModuleFacts } from '../shared/engine-capabilities.ts'
-import { ENGINE_PARAM_DEFINITIONS, ENGINE_PARAM_KEYS, buildEngineModuleParams, normalizeMaxDepth } from '../shared/engine-params.ts'
+import { ENGINE_PARAM_DEFINITIONS, ENGINE_PARAM_KEYS, buildEngineModuleParams } from '../shared/engine-params.ts'
 import { readPersonaSpec, type PersonaSnapshot, type PersonaSpec } from '../shared/persona-section.ts'
 import { isModuleId } from '../shared/module-ids.ts'
 import { enabledModuleIds, readGlobalLayerSettingsSafe, readStorageConfig } from './config-store.ts'
@@ -71,8 +71,6 @@ export interface ModuleSpec {
   variables?: Record<string, string>
   /** 自定义工具定义（tool-config-engine 渲染进 custom-tools/ 后运行时注册）。 */
   customTools?: unknown[]
-  /** 子代理实例级工具策略（subagentToolPolicy 顶层领域段；缺省 = 官方 delegation 行为）。 */
-  subagentToolPolicy?: Record<string, unknown>
   /** @deprecated 旧导入形状；未注册字段按白名单过滤，不参与执行。 */
   triggers?: unknown[]
   /** 模板变量插值开关（缺省 true = 启用；false = 停用，writeModule 不生成变量文件）。 */
@@ -490,7 +488,7 @@ export function saveModuleParams(
   assertCanonicalRuleSource(doc.toJS())
   if (promptConfigs !== undefined) throw new Error('promptConfigs 写入已退出；请使用 rules 局部事务')
   // 空值 = 删除键（回落模板/引擎默认）：''（字符串清空）、[]（列表清空）。
-  // 其余 0/false 照常写入——0 是合法档位（如 maxDepth 0 = 禁止委派），不能当空值吞掉。
+  // 其余 0/false 照常写入——数值 0 是合法档位，不能当空值吞掉。
   if (params !== undefined) {
     for (const [key, value] of Object.entries(params)) {
       // 仅跳过 undefined/null 与空 key 名；空串/空数组照常写入——
@@ -638,48 +636,21 @@ export function resolveModuleParams(spec: ModuleSpec, runtime: Record<string, un
  *  - 未声明的键不合并（composition 行默认 / 引擎默认生效），与旧"空值删行"语义等价；
  *  - 值类型直达（布尔/数字/数组不再字符串化再解析）；
  *  - 合并优先级：参数桥（UI/基础层）> moduleConfigs（模板/ST 行级直写）> 行默认。
- * 模型路由/委派参数统一扁平键（modelProvider/subagentModelProvider/maxDepth 等），
- * 与官方 AgentOptions{provider,model} / maxDepth 对齐。
+ * 模型路由/委派参数统一扁平键（modelProvider/subagentModelProvider 等），
+ * 与官方 AgentOptions{provider,model} 对齐。
  */
-export function buildModuleConfigsFromParams(params: Record<string, unknown>, options: { subagentPolicyEnabled?: boolean } = {}): Record<string, Record<string, unknown>> {
+export function buildModuleConfigsFromParams(params: Record<string, unknown>): Record<string, Record<string, unknown>> {
   const out = buildEngineModuleParams(params)
-  const merge = (module: string, cfg: Record<string, unknown>): void => {
-    if (Object.keys(cfg).length === 0) return
-    out[module] = { ...out[module], ...cfg }
-  }
 
-  // delegation 组：子代理模型路由/人设/工具集/深度（spawn 与 fork 两行同配置，
-  // 由 applyModuleConfigs 的嵌套合并按子行 id 落位）。
+  // delegation 组：子代理模型路由（spawn 与 fork 两行同配置，
+  // 由 applyModuleConfigs 的嵌套合并按子行 id 落位）。递归深度由宿主官方管理。
   const subagent: Record<string, unknown> = {}
   const provider = asString(params.subagentModelProvider, '')
   const model = asString(params.subagentModelName, '')
   if (provider.length > 0 && model.length > 0) subagent.agentOptions = { provider, model }
-  // B7 T3：委派 `toolFilter` 通道随 `toolFilterAllow/Deny` 参数一并删除——子代理工具面
-  // 一律由 subagentToolPolicy 实例级解析授权，不再有第二条「主代理列表直写子代理」的路径。
-  const maxDepth = normalizeMaxDepth(params.maxDepth)
-  if (maxDepth !== undefined) subagent.maxDepth = maxDepth
   if (Object.keys(subagent).length > 0) {
     out['tool-subagent'] = subagent
     out['tool-subagent-fork'] = subagent
-  }
-  if (options.subagentPolicyEnabled === true) {
-    const policy: Record<string, unknown> = {}
-    if (provider.length > 0 && model.length > 0) {
-      policy.agentOptions = {
-        provider,
-        model,
-        ...(typeof params.subagentReasoningEffort === 'string' && params.subagentReasoningEffort.length > 0
-          ? { reasoningEffort: params.subagentReasoningEffort }
-          : {}),
-        ...((): Record<string, number> => {
-          const raw = params.subagentMaxTokens
-          const maxTokens = typeof raw === 'string' ? Number(raw.trim()) : raw
-          return typeof maxTokens === 'number' && Number.isSafeInteger(maxTokens) && maxTokens > 0 ? { maxTokens } : {}
-        })(),
-      }
-    }
-    if (maxDepth !== undefined) policy.maxDepth = maxDepth
-    merge('subagent-tool-policy', policy)
   }
   return out
 }
@@ -796,9 +767,8 @@ export function loadCompositionText(spec: ModuleSpec, templateDir?: string, _run
   let modules = spec.modules
   if (Array.isArray(modules)) {
     const declared: string[] = modules
-    // 参数在 ⇒ 装配在：显式 params/moduleConfigs 隐含的能力模块自动补齐，与顶层策略段同一规则。
+    // 参数在 ⇒ 装配在：显式 params/moduleConfigs 隐含的能力模块自动补齐。
     const extra = [
-      ...(spec.subagentToolPolicy !== undefined && spec.subagentToolPolicy !== null ? ['subagent-tool-policy'] : []),
       ...impliedModulesForParams(resolveModuleParams(spec, {}), spec.moduleConfigs),
       ...((spec.rules?.length ?? 0) > 0 ? ['rule-engine'] : []),
     ].filter((module) => !declared.includes(module))
@@ -899,14 +869,11 @@ export function resolveModuleFacts(
   } catch {
     return { declaredModules, effectiveModules: null, rowIds: [], sourceMode: 'unknown', editable: false }
   }
-  // 隐式装配如实进入 effectiveModules（declaredModules 保持磁盘事实）：参数在 ⇒ 装配在；
-  // 顶层策略段同理——两者都让编辑卡与「本层已装配的能力」展示真实运行状态。
+  // 隐式装配如实进入 effectiveModules（declaredModules 保持磁盘事实）：参数在 ⇒ 装配在，
+  // 让编辑卡与「本层已装配的能力」展示真实运行状态。
   if (effectiveModules !== null) {
     for (const module of impliedModulesForParams(resolveModuleParams(spec, {}), spec.moduleConfigs)) {
       if (!effectiveModules.includes(module)) effectiveModules.push(module)
-    }
-    if (rowIds.includes('subagent-tool-policy') && !effectiveModules.includes('subagent-tool-policy')) {
-      effectiveModules.push('subagent-tool-policy')
     }
     if (rowIds.includes('rule-engine') && !effectiveModules.includes('rule-engine')) {
       effectiveModules.push('rule-engine')
@@ -917,14 +884,11 @@ export function resolveModuleFacts(
   for (const [id, config] of Object.entries(spec.moduleConfigs ?? {})) {
     effectiveConfigs[id] = { ...effectiveConfigs[id], ...config }
   }
-  const generated = buildModuleConfigsFromParams(resolveModuleParams(spec, {}), {
-    subagentPolicyEnabled: spec.subagentToolPolicy !== undefined && spec.subagentToolPolicy !== null,
-  })
+  const generated = buildModuleConfigsFromParams(resolveModuleParams(spec, {}))
   for (const [id, config] of Object.entries(generated)) {
     effectiveConfigs[id] = { ...effectiveConfigs[id], ...config }
   }
-  return { declaredModules, effectiveModules, rowIds, sourceMode, editable: editable && sourceMode === 'explicit', effectiveConfigs,
-    subagentToolPolicyEnabled: spec.subagentToolPolicy !== undefined && spec.subagentToolPolicy !== null }
+  return { declaredModules, effectiveModules, rowIds, sourceMode, editable: editable && sourceMode === 'explicit', effectiveConfigs }
 }
 
 export type ModuleCapabilityCreateRequest =
@@ -980,8 +944,7 @@ export function createModuleCapability(
   for (const [key, value] of Object.entries(recipe?.initialParams ?? {})) {
     if (!Object.prototype.hasOwnProperty.call(sourceParams, key)) doc.setIn(engineParamPath(key), value)
   }
-  // 拥有顶层数据段的能力（如 subagent-tool-policy → subagentToolPolicy）：启用即写入可用骨架，
-  // 保证"模块在 ⇒ 数据在"（否则 shadow 行会读不到物化后的 policy.yml）。
+  // 拥有顶层数据段的能力（`ownSection`）：启用即写入可用骨架，保证"模块在 ⇒ 数据在"。
   let sectionWritten = false
   for (const id of capabilityIds) {
     const section = moduleCapability(id)?.ownSection
@@ -1073,9 +1036,7 @@ export function removeModuleCapability(
  */
 export function renderComposition(spec: ModuleSpec, runtime: Record<string, unknown>, templateDir?: string): string {
   const params = resolveModuleParams(spec, runtime)
-  const merged: Record<string, Record<string, unknown>> = buildModuleConfigsFromParams(params, {
-    subagentPolicyEnabled: spec.subagentToolPolicy !== undefined && spec.subagentToolPolicy !== null,
-  })
+  const merged: Record<string, Record<string, unknown>> = buildModuleConfigsFromParams(params)
   for (const [id, cfg] of Object.entries(spec.moduleConfigs ?? {})) {
     // 参数桥优先：UI/运行时参数不被模板或 ST 直写覆盖。
     merged[id] = { ...cfg, ...merged[id] }

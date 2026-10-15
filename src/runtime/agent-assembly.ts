@@ -174,7 +174,6 @@ export async function prepareAssembly(
   const modules: PreparedAssembly['modules'] = []
   for (const id of new Set([...facts.effectiveModules, ...facts.rowIds])) {
     if (id === 'rule-engine') continue
-    if (id === 'subagent-tool-policy' && (spec.subagentToolPolicy === undefined || spec.subagentToolPolicy === null)) continue
     // 退役引擎名按白名单过滤：不装配、不报错（它们承载的是旧格式规则，改写由用户或模型完成）。
     if (id === 'prompt-config-engine' || id === 'declared-triggers') continue
     const privateService = PRIVATE_SERVICES[id]
@@ -197,7 +196,6 @@ export async function prepareAssembly(
       config.resourceRoot = pathToFileURL(moduleRoot + sep).href
       delete config.presetRoot
     }
-    if (id === 'subagent-tool-policy') config.policy = structuredClone(spec.subagentToolPolicy)
     // 引擎自带的声明就绪校验（未知键 fail loud）在装配期先跑一次，避免挂载到一半才炸。
     const contract = (module as { configContract?: { parse?: (value: unknown, name: string) => unknown } }).configContract
     contract?.parse?.(config, id)

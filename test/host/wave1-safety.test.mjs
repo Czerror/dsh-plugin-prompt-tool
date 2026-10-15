@@ -28,7 +28,6 @@ test('validateEngineParamValues：全量类型校验（布尔/数值/字符串/�
     modelMaxTokens: 8192,
     subagentTemperature: '',
     customToolRequireApproval: ['shell', 'fs'],
-    maxDepth: 'provider-managed',
   }), [])
   // 布尔键收窄。
   assert.deepEqual(validateEngineParamValues({ instructionHint: 'yes' }).map((e) => e.key), ['instructionHint'])
@@ -38,8 +37,6 @@ test('validateEngineParamValues：全量类型校验（布尔/数值/字符串/�
   assert.deepEqual(validateEngineParamValues({ subagentMaxTokens: 1.5 }).map((e) => e.key), ['subagentMaxTokens'])
   // 列表键收窄。
   assert.deepEqual(validateEngineParamValues({ customToolRequireApproval: [1, 2] }).map((e) => e.key), ['customToolRequireApproval'])
-  // maxDepth 枚举收窄。
-  assert.deepEqual(validateEngineParamValues({ maxDepth: -1 }).map((e) => e.key), ['maxDepth'])
   // 正则键结构校验（pattern kind）。
   assert.deepEqual(validateEngineParamValues({ buildPattern: '(' }).map((e) => e.key), ['buildPattern'])
   assert.deepEqual(validateEngineParamValues({ complexPattern: 'a{2,1}' }).map((e) => e.key), ['complexPattern'])

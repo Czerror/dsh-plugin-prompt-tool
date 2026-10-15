@@ -16,8 +16,6 @@ import { writeModule } from './write-module.ts'
 import { assertModuleId, assertModuleTree, assertModuleDirectory, canonicalModulesRoot, modulePathExists, setModuleDefinitionId } from './module-install.ts'
 import { ruleInjections } from './rule-content.ts'
 import { validateModuleDefinitionText, withModuleLock } from './module-storage.ts'
-// @ts-expect-error 与保存、装配使用同一策略校验器。
-import { validateSubagentToolPolicy } from '../../engine/subagent-tool-policy-core.mjs'
 
 const MANIFEST = 'prompt-tool-package.json'
 const PACKAGE_VERSION = 1
@@ -86,10 +84,6 @@ function validatePackageDefinition(directory: string, text: string, files: reado
   if (spec.customTools !== undefined) {
     if (!Array.isArray(spec.customTools)) throw new Error('customTools 必须是数组')
     const errors = validateCustomTools(spec.customTools)
-    if (errors.length > 0) throw new Error(errors.join('\n'))
-  }
-  if (spec.subagentToolPolicy !== undefined && spec.subagentToolPolicy !== null) {
-    const errors = validateSubagentToolPolicy(spec.subagentToolPolicy)
     if (errors.length > 0) throw new Error(errors.join('\n'))
   }
   return snapshot
