@@ -21,7 +21,7 @@ import type { Agent } from '@deepseek-ai/dsh-agent'
 import SystemPrompt, { PERSONA_PREFIX_SECTION } from '@deepseek-ai/dsh-system-prompt'
 import type { AssembleContext, PromptSection, PromptSectionOrderName } from '@deepseek-ai/dsh-system-prompt'
 import { scopeChainOf, scopeOf, type ScopeKey } from '@deepseek-ai/dsh-scope'
-import { packageEngineDir, resolveModuleFacts, resolveModuleDir, resolveModuleParams, loadModuleSpec } from '../host/manifest.ts'
+import { packageEngineDir, readModuleFacts, resolveModuleDir, resolveModuleParams, loadModuleSpec } from '../host/manifest.ts'
 import type { ModuleSpec } from '../host/manifest.ts'
 import { modelRequestConfigs } from '../host/prompt-configs.ts'
 import { assertModuleDirectory, assertModuleId } from '../host/module-install.ts'
@@ -144,7 +144,9 @@ export async function prepareAssembly(
   if (spec.customTools !== undefined && !Array.isArray(spec.customTools)) throw new TypeError('customTools must be an array')
   const toolErrors = validateCustomTools(spec.customTools ?? [])
   if (toolErrors.length > 0) throw new Error(`invalid customTools: ${toolErrors.join('; ')}`)
-  const facts = resolveModuleFacts(spec, moduleDir)
+  // 事实与桥端走同一条 `readModuleFacts` 链（`editable` 由目录判据自判）；定义仍在本函数自己读，
+  // 因为下面还要用它做工具校验与受管字段换算。
+  const facts = readModuleFacts(moduleDir)
   if (facts.effectiveModules === null) throw new Error(`模块 ${moduleId} 的模块声明无效，无法配装`)
   const configsByModule = facts.effectiveConfigs ?? {}
   const ruleConfig = absolutizeManagedFields(configsByModule['rule-engine'] ?? {}, moduleDir)

@@ -27,7 +27,7 @@
  *
  * `none` 策略的端点今天根本不解析目录，照旧不调用本门。
  */
-import { basename, resolve, sep } from 'node:path'
+import { basename } from 'node:path'
 import type { BridgeEndpointKey } from '../shared/bridge-contract.ts'
 import {
   BRIDGE_SUBJECT_POLICY,
@@ -40,7 +40,7 @@ import {
 import type { BridgeTransaction } from './bridge-transaction.ts'
 import { DECLARED_SECTIONS, moduleDeclarations } from '../host/module-declarations.ts'
 import { ModuleLayerSettingsError, readModuleLayerSettings } from '../host/module-layer-settings.ts'
-import { userModulesDir } from '../host/manifest.ts'
+import { isEditableModuleDir } from '../host/manifest.ts'
 import { loadModuleDefinition, ModuleRulesError } from '../host/module-storage.ts'
 
 /** 写一次响应；事务的 `tx.write` 与门内判据共用这一个形态。 */
@@ -55,16 +55,6 @@ export function writeLayerSettingsError(write: GateWrite, error: unknown): boole
   if (!(error instanceof ModuleLayerSettingsError)) return false
   write(400, { ok: false, code: error.code, message: error.message })
   return true
-}
-
-/**
- * 目标是否为**用户模块**（在用户模块根之下）：system 目录只读，写通道据此拒绝。
- * 读通道不受影响；路径先解析真实相对关系，不用客户端 ID 拼路径。
- */
-export function isEditableModuleDir(dir: string, moduleRoot = userModulesDir()): boolean {
-  const root = resolve(moduleRoot)
-  const target = resolve(dir)
-  return target !== root && target.startsWith(root + sep)
 }
 
 function guardEditableModuleDir(dir: string, write: GateWrite): boolean {

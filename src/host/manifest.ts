@@ -12,7 +12,7 @@
 
 import { readFileSync, existsSync, readdirSync, mkdirSync, mkdtempSync, rmSync, writeFileSync, cpSync, renameSync, statSync } from 'node:fs'
 import { spawn } from 'node:child_process'
-import { basename, dirname, join, resolve, sep } from 'node:path'
+import { basename, dirname, isAbsolute, join, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { isDeepStrictEqual } from 'node:util'
 import { Document, Pair, Scalar, parse as parseYaml, parseDocument, YAMLMap, YAMLSeq } from 'yaml'
@@ -242,6 +242,19 @@ function findModuleDir(scanDir: string, template: string): string | undefined {
 export function resolveModuleDir(template: string, moduleRoot = userModulesDir()): string {
   const found = findModuleDir(moduleRoot, template) ?? findModuleDir(packageModulesDir(), template)
   return found ?? join(packageModulesDir(), template)
+}
+
+/**
+ * 目标是否为**用户模块**（在用户模块根之下）：system 目录只读，写通道据此拒绝。
+ * 读通道不受影响；路径先解析真实相对关系，不用客户端 ID 拼路径。
+ *
+ * 语义边界：它判的是**目录**可写，不是「这次操作可写」——同一目录上的操作资格由各自的门决定。
+ * 判据本身不读盘，纯路径比较。
+ */
+export function isEditableModuleDir(dir: string, moduleRoot = userModulesDir()): boolean {
+  const root = resolve(moduleRoot)
+  const target = resolve(dir)
+  return target !== root && target.startsWith(root + sep)
 }
 
 /** 模块目录是否含组合源：modules、composition 或官方 agent.cordis.yml。 */
@@ -889,6 +902,28 @@ export function resolveModuleFacts(
     effectiveConfigs[id] = { ...effectiveConfigs[id], ...config }
   }
   return { declaredModules, effectiveModules, rowIds, sourceMode, editable: editable && sourceMode === 'explicit', effectiveConfigs }
+}
+
+/**
+ * 读一个模块的身份与能力事实：**目录解析 → 定义读取 → 事实计算的唯一入口**。
+ *
+ * 三处消费点（桥的 `/meta`、`/describe`+`/bootstrap`、装配的准备期，以及能力写入）此前各自展开
+ * 这三步，且各自决定 `editable` 传什么——这里收成一处，`editable` 由目录判据自判（判据 = 目录是否
+ * 在用户模块根之下，不表示「这次操作可写」）。
+ *
+ * 不变量：
+ * - **不 catch**：错误原样上抛，由调用方决定软硬（`/meta` 全吞成键缺席；`/describe`+`/bootstrap`
+ *   把层设置/规则错误重抛、其余软失败；装配直接让它冒出来）。
+ * - **不缓存**：事实每次现算。`loadModuleSpec` 那层缓存（键 = `module.yml` 绝对路径）已经覆盖读盘，
+ *   再按目录缓存整个 facts 会掩盖组合文件与参数派生（它们不在那份缓存签名里）。
+ * - `target` 接受模块 id 或**绝对目录**：调用方手里是端点已解析的目录时直接传它。
+ *
+ * 需要目录本身时调用方自己调 `resolveModuleDir`（纯路径函数）——返回值刻意只给事实，不摆实现细节。
+ */
+export function readModuleFacts(target: string, moduleRoot?: string): ModuleFacts {
+  const dir = isAbsolute(target) ? target : resolveModuleDir(target, moduleRoot)
+  const spec = loadModuleSpec(dir)
+  return resolveModuleFacts(spec, dir, isEditableModuleDir(dir))
 }
 
 export type ModuleCapabilityCreateRequest =

@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### 模块事实读取收成单一入口（2026-10-16）
+
+- **`readModuleFacts(target, moduleRoot?)` 是唯一入口**（`src/host/manifest.ts`）：「目录解析 → 定义读取 → 事实计算」三步此前在桥的 `/meta`、`/describe`+`/bootstrap` 与 `prepareAssembly` 三处各自展开，现收成一处。`target` 接受模块 id 或绝对目录（调用方手里是端点已解析的目录时直接传）；**返回事实本身**，不捎带 `dir`/`spec`——三处调用点没有一个用它们，需要目录的调用方自己调纯路径函数 `resolveModuleDir`。
+- **`editable` 由入口自判**（判据＝目录在用户模块根之下），不再由调用方传：装配那处原吃默认 `false`，现为真实判据（下游不读该字段，行为不变）。`createModuleCapability` **保留自算**——它要的是刚读盘的那份定义（`loadModuleDefinition` 后 `doc.toJS()`），而入口走 `loadModuleSpec` 的缓存，两者在磁盘刚变化时会不一致。
+- **`isEditableModuleDir` 从 `src/runtime/module-subject-gate.ts` 迁到 `src/host/manifest.ts`**：它是纯路径判据（不读盘），住在 runtime 会让 host 侧的入口反向依赖 runtime；gate 的对外行为不变（403 判定逐字保留）。
+- **失败与下发口径不变**：入口不 catch（`/meta` 全吞成 facts 键缺席、`/describe`+`/bootstrap` 把层设置/规则错误重抛、装配硬抛）；桥上下发仍锁 5 键，`effectiveConfigs` 不出桥；事实每次现算，不引入缓存（`loadModuleSpec` 那层缓存已覆盖读盘，再缓存 facts 会掩盖组合文件与参数派生）。
+- **测试**：新增 `test/host/module-facts.test.mjs` 直测入口——id 与绝对目录两种形态同源、用户根内 `editable` 为真、包内模板为假、定义不可解析时抛出。
+
 ### 条件绑定收回挂载缝：`compileRules` 不再接受 ctx（2026-10-16）
 
 - **绑定发生在挂载缝**：`compileRules` 只编译与校验，产物每条规则携带 `conditionTrees`（规则级 `if` 树 + 按动作 id 索引的展开条件）；`mountRuleSources` 在注册前调 `rebindConditions`，用挂载 scope 的 ctx（以及调用方可选传入的 `standingMountFor`）重绑。此前准备期编译时没有 ctx，`preset` 条件的产物恒 UNAVAILABLE，只能由 `agent-assembly` 另存一份原始条件树、逐规则逐动作重编——同一件事两个入口，而 `docs/engine-reuse.md` 的配方对 `preset` 是**静默死条件**。引擎内 `rule-engine.mjs` 的独立入口同样改为在挂载缝绑定。

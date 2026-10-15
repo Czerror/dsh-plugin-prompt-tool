@@ -16,7 +16,7 @@ import { enabledModuleIds, readGlobalLayerSettingsSafe, setModuleEnabled, writeG
 import { readPersonaSources, writePersonaSources } from '../host/persona-selection.ts'
 import { appendModuleConfigOrder, ModuleConfigOrderError, readModuleConfigOrder, saveModuleConfigOrder } from '../host/module-config-order.ts'
 import type { ModuleConfigIdentity } from '../shared/module-config-order.ts'
-import { moduleDirExists } from '../host/manifest.ts'
+import { isEditableModuleDir, moduleDirExists, readModuleFacts } from '../host/manifest.ts'
 import { readOfficialOrderSegments, type OfficialOrderLookup } from '../shared/official-orders.ts'
 import { ModuleLayerSettingsError } from '../host/module-layer-settings.ts'
 import { readModuleRules, editModuleRules, createModuleRule } from '../host/module-rules.ts'
@@ -40,7 +40,6 @@ import {
   removeModuleCapability,
   removeUserModule,
   resolveModuleParams,
-  resolveModuleFacts,
   resolveModuleDir,
   saveModuleParams,
   saveModulePersona,
@@ -66,7 +65,7 @@ import {
   bridgeTransaction,
   type BridgeRouteSpec,
 } from './bridge-transaction.ts'
-import { isEditableModuleDir, subjectGate, writeLayerSettingsError } from './module-subject-gate.ts'
+import { subjectGate, writeLayerSettingsError } from './module-subject-gate.ts'
 import { BRIDGE_ENDPOINTS, EDIT_TARGET_HEADER, MODULE_ACTIVATION_FAILED, MODULE_IDENTITY_INVALID, SETTINGS_BRIDGE_PREFIX, readEditTarget, readSubjectHeader } from '../shared/bridge-contract.ts'
 import { moduleParamFallbacks, validateEngineParamValues } from '../shared/engine-params.ts'
 import { readPersonaSpec, type PersonaSources } from '../shared/persona-section.ts'
@@ -380,19 +379,20 @@ function declarationsOf(target: string, byModuleId = false): Set<string> | undef
 const declaresAny = (declares: Set<string> | undefined, sections: readonly string[]): boolean =>
   declares === undefined || sections.some((section) => declares.has(section))
 
-/** 逐模块身份与能力事实：与 /bootstrap 的 `moduleFacts` 走同一条 resolveModuleFacts 链。
+/** 下发给客户端的 5 键投影：`effectiveConfigs` 是服务端兜底输入，绝不出桥。 */
+const moduleFactsView = (facts: ModuleFacts): ModuleFacts => ({
+  declaredModules: facts.declaredModules,
+  effectiveModules: facts.effectiveModules,
+  rowIds: facts.rowIds,
+  sourceMode: facts.sourceMode,
+  editable: facts.editable,
+})
+
+/** 逐模块身份与能力事实：与 /bootstrap 的 `moduleFacts` 走同一条 `readModuleFacts` 链。
  *  模块损坏（定义不可解析等）或事实算不出时返回 undefined，绝不下发部分字段。 */
 function moduleFactsOf(moduleId: string): ModuleFacts | undefined {
   try {
-    const dir = resolveModuleDir(moduleId)
-    const facts = resolveModuleFacts(loadModuleSpec(dir), dir, isEditableModuleDir(dir))
-    return {
-      declaredModules: facts.declaredModules,
-      effectiveModules: facts.effectiveModules,
-      rowIds: facts.rowIds,
-      sourceMode: facts.sourceMode,
-      editable: facts.editable,
-    }
+    return moduleFactsView(readModuleFacts(moduleId))
   } catch {
     return undefined
   }
@@ -691,21 +691,17 @@ export function registerSettingsBridge(
           if (paramsDeclared) moduleParams = {}
           try {
             // 聚合响应复用端点已解析的请求目录，与 overrides、配置卡和变量同源。
+            const facts = readModuleFacts(activeDir)
+            // 定义另读一次：参数解析与 pre-step 计数要的是**定义**而不是事实，且这次读走
+            // `loadModuleSpec` 的缓存（键 = module.yml 绝对路径），不重复读盘。
             const spec = loadModuleSpec(activeDir)
-            const resolvedFacts = resolveModuleFacts(spec, activeDir, isEditableModuleDir(activeDir))
             if (paramsDeclared) {
               moduleParams = resolveModuleParams(spec, {})
-              mergeModuleConfigFallbacks(moduleParams, resolvedFacts)
+              mergeModuleConfigFallbacks(moduleParams, facts)
             }
             // effectiveConfigs 只用于服务端把已存在的 moduleConfigs 回显到已知字段；
             // 不把整份行级配置（可能含路径/未知字段）发送到浏览器。
-            moduleFacts = {
-              declaredModules: resolvedFacts.declaredModules,
-              effectiveModules: resolvedFacts.effectiveModules,
-              rowIds: resolvedFacts.rowIds,
-              sourceMode: resolvedFacts.sourceMode,
-              editable: resolvedFacts.editable,
-            }
+            moduleFacts = moduleFactsView(facts)
             templatePreStepCount = (spec.rules ?? []).filter(rule => rule.layer === 'pre-step').length
           } catch (error) {
             if (error instanceof ModuleLayerSettingsError || error instanceof ModuleRulesError) throw error
