@@ -182,6 +182,24 @@ test('缺少 rules 的模块拒绝读回，只允许显式首写且陈旧首写�
   assert.ok(readFileSync(declared.file).equals(declaredBefore))
 })
 
+test('共享引用：规则编辑连带改到无关键时过桥返回 400 shared-alias 且零写盘', async () => {
+  const h = harness()
+  // 嵌套标量与无关键共享锚点：局部编辑会写到同一个节点，候选比对与序列化都必须判为共享引用。
+  const aliased = `id: ${h.id}\nmodules: []\nvariables: {}\nrules:\n  - id: budget\n    name: &shared Before\n    then:\n      - { id: request, kind: request-params, patch: { maxTokens: 512 } }\nunknown: *shared\n`
+  writeFileSync(h.file, aliased)
+  const read = await h.call()
+  assert.equal(read.status, 200, JSON.stringify(read))
+  const edited = await h.call({
+    expectedRevisions: read.value.revisions,
+    edits: [{ previousId: 'budget', rule: { ...read.value.rules[0], name: 'After' } }],
+  })
+  assert.equal(edited.ok, false)
+  assert.equal(edited.status, 400)
+  assert.equal(edited.code, 'shared-alias', '不变量有自己的错误码，客户端可按码分支')
+  assert.match(edited.message, /YAML.*引用/)
+  assert.equal(readFileSync(h.file, 'utf8'), aliased, '拒绝时定义逐字节不变')
+})
+
 test('缺少 rules 的非法显式首写拒绝时不物化规则切片', async () => {
   const h = harness({ declareRules: false })
   const before = readFileSync(h.file)

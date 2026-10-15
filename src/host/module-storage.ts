@@ -3,6 +3,7 @@ import { createHash, randomUUID } from 'node:crypto'
 import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, realpathSync, rmdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { basename, dirname, isAbsolute, join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
+import { isDeepStrictEqual } from 'node:util'
 import { Document, parseDocument } from 'yaml'
 import type { RuleContent, RuleDefinition, RuleRevisions, RuleSettings } from '../shared/rules.ts'
 import { readPersonaSpec } from '../shared/persona-section.ts'
@@ -34,6 +35,70 @@ export class ModuleRulesError extends Error {
     super(message); this.name = 'ModuleRulesError'; this.status = status; this.code = code
     this.persisted = persisted; this.revisions = revisions
   }
+}
+
+/**
+ * 共享引用被连带改写时的统一错误码。
+ *
+ * 不变量（本文件是它唯一的家）：**调用方只声明自己要改的键，其余字段必须逐字不变**——
+ * YAML 的 anchor/alias 会让一次「只改 A」的编辑同时改掉 B，静默改掉用户没打算动的字段。
+ * 两种写法见 {@link serializeWithoutSharedAlias}（声明完整候选）与
+ * {@link assertUnownedUnchanged}（改-后-比对）。
+ */
+export const SHARED_ALIAS_CODE = 'shared-alias'
+
+/** 未拥有且值真的变了的顶层键（新增与删除都算），供拒绝文案点名。 */
+function changedUnownedKeys(before: Record<string, unknown>, after: Record<string, unknown>, owns: readonly string[]): string[] {
+  const owned = new Set(owns)
+  const keys = new Set([...Object.keys(before), ...Object.keys(after)])
+  return [...keys].filter(key => !owned.has(key) && !isDeepStrictEqual(before[key], after[key]))
+}
+
+const sharedAliasError = (message: string, changed: readonly string[]): ModuleRulesError =>
+  new ModuleRulesError(changed.length === 0 ? message : `${message}（连带改了 ${changed.join('、')}）`, 400, SHARED_ALIAS_CODE)
+
+/**
+ * 序列化并要求结果等于调用方声明的完整候选；不等即按共享引用拒绝。
+ *
+ * `doc.toString()` 与比对同包在一个 try 里是刻意的：别名锚点被移除时序列化本身就会抛，
+ * 那同样属于「共享引用」，不能让它冒成 500。诊断（点名连带改动的键）自己也包在 try 里——
+ * 文档已不可解析时只报固有文案。
+ */
+export function serializeWithoutSharedAlias(doc: ReturnType<typeof parseDocument>, expected: unknown, message: string): string {
+  try {
+    const text = doc.toString()
+    if (!isDeepStrictEqual(doc.toJS(), expected)) throw new Error('shared alias changed')
+    return text
+  } catch {
+    let changed: string[] = []
+    try {
+      changed = changedUnownedKeys(record(expected) ? expected : {}, doc.toJS() as Record<string, unknown>, [])
+    } catch { /* 别名悬空：文档已不可解析，只报固有文案。 */ }
+    throw sharedAliasError(message, changed)
+  }
+}
+
+/**
+ * 改-后-比对形态：`owns` 之外的顶层键必须逐字不变。
+ *
+ * `owns` 是调用方义务而不是类型能检查的东西——少声明的代价是**误拒**（fail-closed，用例会立刻红），
+ * 多声明只是守卫变弱；拒绝文案点名被连带改动的键，让前者一眼可诊。`doc.toJS()` 的解析失败
+ * （别名悬空）同样按共享引用拒绝。
+ */
+export function assertUnownedUnchanged(before: unknown, doc: ReturnType<typeof parseDocument>, owns: readonly string[], message: string): void {
+  let after: Record<string, unknown>
+  try {
+    after = doc.toJS() as Record<string, unknown>
+  } catch {
+    throw sharedAliasError(message, [])
+  }
+  const changed = changedUnownedKeys(record(before) ? before : {}, after, owns)
+  if (changed.length > 0) throw sharedAliasError(message, changed)
+}
+
+/** 父集合缺失时不触发 `deleteIn` 对不存在集合的异常。 */
+export function deleteYamlPath(doc: ReturnType<typeof parseDocument>, path: string[]): void {
+  if (doc.hasIn(path)) doc.deleteIn(path)
 }
 
 /** 两级持久变量共用边界；错误只标识键，不输出变量内容。 */
@@ -442,8 +507,19 @@ export function commitModuleDefinition(snapshot: ModuleDefinitionSnapshot, next:
   })
 }
 
-export function withModuleDefinition(directory: string, mutate: (doc: ReturnType<typeof parseDocument>, source: Record<string, unknown>) => void): ModuleDefinitionSnapshot {
+/**
+ * 模块文件读-改-写（parseDocument 保留注释与未知键；mutate 内 setIn/deleteIn）。
+ *
+ * `owns` 必填：调用方声明这次编辑**拥有**哪些顶层键，其余键必须逐字不变（见 `SHARED_ALIAS_CODE`）。
+ */
+export function withModuleDefinition(
+  directory: string,
+  mutate: (doc: ReturnType<typeof parseDocument>, source: Record<string, unknown>) => void,
+  options: { owns: readonly string[] },
+): ModuleDefinitionSnapshot {
   const snapshot = ensureModuleSlices(directory)
+  const before = snapshot.doc.toJS()
   mutate(snapshot.doc, snapshot.source)
+  assertUnownedUnchanged(before, snapshot.doc, options.owns, 'YAML 共享引用会改变其他定义；请先解除相关引用后再编辑')
   return commitModuleDefinition(snapshot, snapshot.doc)
 }

@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+### 共享引用守卫收成一处，三条写路径不再无守卫（2026-10-16）
+
+- **四处拷贝合成一份判据**：`config-store`（存储配置）、`manifest`（人设保存）、`module-rules`（规则编辑）逐字相同的「序列化 → 与声明的候选比对 → 不一致即拒」收进 `module-storage.ts#serializeWithoutSharedAlias`；`module-variables` 的变体（只比未拥有字段）改用同文件的 `assertUnownedUnchanged`。`deleteYamlPath` 的两份合并（顺手项：按删除测试它属搬家而非集中）。
+- **三条此前完全无守卫的写路径关闭**：`withModuleDefinition`（角色卡并入、来源移除、`/customTools`）新增必填 `{ owns }`，守卫在提交前比对「owns 之外的顶层键」；能力增删（`createModuleCapability`／`removeModuleCapability`）两条直调 `commitModuleDefinition` 的路径各补一行守卫，owns 的 section 键从能力登记表推、不硬编码。此前 YAML 共享引用可让「只改 modules／rules」的编辑连带改掉 persona 等字段并**静默成功**。
+- **不变量有了自己的错误码 `shared-alias`**：四处拒绝原先是 `ModuleRulesError` 的默认 `rules-invalid`，客户端只能靠文案分辨；各领域文案逐字保留（含 `toString()` 失败也按共享引用判定的既有语义），并**点名被连带改动的键**，`owns` 少声明的误拒一眼可诊。
+- **`/customTools` 归入全桥错误规则**：host 分类优先、端点码兜底（与 `/persona` 同形），此前它把任何错误都包成 409 `custom-tools-rejected`，新 code 到不了客户端。
+- **形状变化**：`withModuleDefinition` 的导出签名从 `(dir, mutate)` 变为 `(dir, mutate, { owns })`（`index.ts` 再导出；仓库内三个调用点同轮更新）。
+- **未做（已知边界）**：守卫收的是机制不是 seam——提交口有两个（module.yml 走 `commitModuleDefinition`，config.yml 走 `atomicWriteTextFile`），「守卫必然被调用」仍靠调用点自觉；`owns` 是声明式义务，类型系统管不着，结构性做法（只暴露 owned 键的编辑器）代价远超本轮；`/rules` 返回 `shared-alias` 时客户端仍按「重试保存」处理（只对 `rules-conflict`／`module-changed` 走重读），改重试策略属客户端交互，本轮不动。
+- **验证**：`typecheck`／`lint`（0 警告 0 错误）／`test`（**659 pass / 0 fail**，新增 2 条：三条 owns 的守卫不变式 ＋ 主路径；`/rules` 过桥返回 400 `shared-alias` 且零写盘）／`build`／`git diff --check` 全绿。
+
 ### 指令策略补跨进程锁；指令文件在 rename 前复核（2026-10-16）
 
 - **指令策略写入有了跨进程锁**：`writeInstructionPolicy` 按 `config-store` 的形状取 `withModuleLock(存储根, 'instructions')`，锁包住「读 revision → 校验 patch → 写盘」整段。此前两个共享 DSH_HOME 的进程（TUI ＋ web）可以同时通过 revision 校验，后者 rename 静默覆盖前者、双方都返回 ok。锁被占时返回 409 `instructions-policy-busy`（不是 500），客户端可提示重试；同进程并发请求同样被这把锁挡下。

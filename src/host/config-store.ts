@@ -20,7 +20,7 @@ import { isMap, isSeq, parseDocument } from 'yaml'
 import { atomicWriteTextFile } from './text-file.ts'
 import { moduleDirExists } from './manifest.ts'
 import { assertModuleId, assertNoModuleLinks, modulePathExists } from './module-install.ts'
-import { ModuleRulesError, revisionOf, withModuleLock } from './module-storage.ts'
+import { ModuleRulesError, deleteYamlPath, revisionOf, serializeWithoutSharedAlias, withModuleLock } from './module-storage.ts'
 import { engineParamPath, readLayerSettings } from './module-layer-settings.ts'
 import { isModuleId } from '../shared/module-ids.ts'
 
@@ -77,11 +77,7 @@ export function updateStorageConfig(moduleRoot: string, expectedRevision: string
     const current = readStorageConfig(moduleRoot)
     if (expectedRevision !== undefined && expectedRevision !== current.revision) throw new ModuleRulesError('存储配置已变化，请重新读取', 409, 'storage-config-conflict')
     const expected = update(current.doc, current.source)
-    let text: string
-    try {
-      text = current.doc.toString()
-      if (!isDeepStrictEqual(current.doc.toJS(), expected)) throw new Error('shared alias changed')
-    } catch { throw new ModuleRulesError('YAML 共享引用会改变其他配置；请先解除相关引用') }
+    const text = serializeWithoutSharedAlias(current.doc, expected, 'YAML 共享引用会改变其他配置；请先解除相关引用')
     if (text === current.text || isDeepStrictEqual(expected, current.source)) return current
     if (Buffer.byteLength(text) > 1024 * 1024) throw new ModuleRulesError('存储配置超过 1 MiB')
     atomicWriteTextFile(file, text, { mode: current.mode, beforeReplace: () => {
@@ -215,9 +211,4 @@ export function writeGlobalLayerSettings(moduleRoot: string, params: Record<stri
     } else expected.layerSettings = next
     return expected
   })
-}
-
-/** 父集合缺失时不触发 `deleteIn` 对不存在集合的异常（与 `manifest.ts#deleteYamlPath` 同规）。 */
-function deleteYamlPath(doc: ReturnType<typeof parseDocument>, path: string[]): void {
-  if (doc.hasIn(path)) doc.deleteIn(path)
 }

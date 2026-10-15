@@ -19,9 +19,59 @@ import { fakeReq, fakeRes, isolatedHome } from '../fixtures/host-harness.mjs'
 const { home, moduleRoot } = isolatedHome('pt-module-mgmt-')
 process.env.DSH_AGENTS_HOME = join(home, 'agents')
 
-const { registerSettingsBridge, BRIDGE_ENDPOINTS } = await import('../../src/index.ts')
+const { registerSettingsBridge, BRIDGE_ENDPOINTS, withModuleDefinition } = await import('../../src/index.ts')
 
 const PREFIX = '/api/prompt-tool/settings'
+
+/** 共用头：合法模块定义（一条真实规则），各行再追加自己的共享引用声明。 */
+const moduleHead = (id) => `id: ${id}\nname: ${id}\nmodules: []\nrules:\n  - id: body\n    then:\n      - id: inject\n        kind: inject-text\n        config: { id: inject, layer: pre-step, text: GUARD }\n`
+const personaAlias = (id) => moduleHead(id) + 'persona:\n  main:\n    prefix: &shared BEFORE\ndescription: *shared\n'
+const toolsAlias = (id) => moduleHead(id) + 'customTools: &tools\n  - id: shell\n    description: 运行命令\n    output: { schema: { type: string } }\n    execute: { kind: shell, command: echo }\nunknownTools: *tools\n'
+
+test('共享引用守卫：owns 之外的顶层键被连带改写一律拒绝（三条 owns ＋ 一条主路径）', () => {
+  // owns 取自三个真实调用点（characters 并入／移除、/customTools），不另编一份。
+  const mergeOwns = ['rules', 'configOrder', 'variables', 'layerSettings', 'modules', 'meta', 'persona']
+  const unmergeOwns = ['rules', 'configOrder', 'variables', 'layerSettings', 'modules', 'meta']
+  const toolsOwns = ['customTools', 'modules']
+  const inPlacePersona = (doc) => { doc.getIn(['persona', 'main', 'prefix'], true).value = 'AFTER' }
+  const rows = [
+    { title: '并入 owns 含 persona：改 persona 连带改了 description', owns: mergeOwns, body: personaAlias, mutate: inPlacePersona, names: /description/ },
+    { title: '移除 owns 不含 persona：persona 本身即越界', owns: unmergeOwns, body: personaAlias, mutate: inPlacePersona, names: /persona/ },
+    { title: '自定义工具 owns：改 customTools 连带改了 unknownTools', owns: toolsOwns, body: toolsAlias, mutate: (doc) => { doc.setIn(['customTools', 0, 'description'], '改过') }, names: /unknownTools/ },
+  ]
+  let sequence = 0
+  for (const row of rows) {
+    const id = `guard-${++sequence}`
+    const dir = join(moduleRoot, id)
+    mkdirSync(dir, { recursive: true })
+    const file = join(dir, 'module.yml')
+    const text = row.body(id)
+    writeFileSync(file, text)
+    // 真值源：错误码与失败方向（拒绝而非静默写盘），不是实现自己算出的值。
+    assert.throws(
+      () => withModuleDefinition(dir, row.mutate, { owns: row.owns }),
+      (error) => {
+        assert.equal(error.code, 'shared-alias', row.title)
+        assert.equal(error.status, 400, row.title)
+        assert.match(error.message, /YAML.*引用/, row.title)
+        assert.match(error.message, row.names, `${row.title}：拒绝文案点名被连带改动的键`)
+        return true
+      },
+      row.title,
+    )
+    assert.equal(readFileSync(file, 'utf8'), text, `${row.title}：拒绝时定义逐字节不变`)
+  }
+
+  // 主路径：没有共享引用时同一类编辑照常落盘——守卫不是「一律拒绝」。
+  const okDir = join(moduleRoot, 'guard-ok')
+  mkdirSync(okDir, { recursive: true })
+  const okFile = join(okDir, 'module.yml')
+  writeFileSync(okFile, moduleHead('guard-ok'))
+  withModuleDefinition(okDir, (doc) => {
+    doc.setIn(['customTools'], [{ id: 'shell', description: '运行命令', output: { schema: { type: 'string' } }, execute: { kind: 'shell', command: 'echo' } }])
+  }, { owns: toolsOwns })
+  assert.match(readFileSync(okFile, 'utf8'), /customTools/, '无共享引用时编辑正常提交')
+})
 
 /** 最小宿主桩：编辑目标由请求目录解析器提供，不再存入 settings。 */
 function makeHarness() {

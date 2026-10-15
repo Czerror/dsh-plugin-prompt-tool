@@ -6,7 +6,7 @@ import { isDeepStrictEqual } from 'node:util'
 import { isMap, isScalar, parseDocument } from 'yaml'
 import { DSH_HOME, GLOBAL_VARIABLES_FILE } from './paths.ts'
 import { atomicWriteTextFile } from './text-file.ts'
-import { assertVariableValues, commitModuleDefinition, ensureModuleSlices, lastPublishedModuleDefinition, loadModuleDefinition, ModuleRulesError, revisionOf, withModuleLock } from './module-storage.ts'
+import { assertUnownedUnchanged, assertVariableValues, commitModuleDefinition, ensureModuleSlices, lastPublishedModuleDefinition, loadModuleDefinition, ModuleRulesError, revisionOf, withModuleLock } from './module-storage.ts'
 import type { ModuleDefinitionSnapshot } from './module-storage.ts'
 import type { ModuleVariableRevisions, ModuleVariablesSnapshot } from '../shared/module-variables.ts'
 export type { ModuleVariableRevisions, ModuleVariablesSnapshot } from '../shared/module-variables.ts'
@@ -105,7 +105,7 @@ function changedValues(previous: Record<string, string>, request: ModuleVariable
   return values
 }
 function replaceVariables(doc: ReturnType<typeof parseDocument>, values: Record<string, string>): void {
-  const { variables: _before, ...unowned } = doc.toJS() as Record<string, unknown>
+  const before = doc.toJS()
   const node = doc.get('variables', true)
   if (isMap(node)) {
     for (const key of node.items.map(pair => String(pair.key))) if (!Object.hasOwn(values, key)) node.delete(key)
@@ -115,8 +115,7 @@ function replaceVariables(doc: ReturnType<typeof parseDocument>, values: Record<
       else node.set(key, value)
     }
   } else doc.set('variables', values)
-  const { variables: _after, ...nextUnowned } = doc.toJS() as Record<string, unknown>
-  if (!isDeepStrictEqual(unowned, nextUnowned)) throw new ModuleRulesError('变量 YAML 引用会改变其他字段，拒绝写入')
+  assertUnownedUnchanged(before, doc, ['variables'], '变量 YAML 引用会改变其他字段，拒绝写入')
 }
 
 export function editModuleVariables(directory: string, request: ModuleVariablesEdit): ModuleVariablesResult {

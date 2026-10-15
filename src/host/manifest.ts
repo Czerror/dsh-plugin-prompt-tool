@@ -14,7 +14,6 @@ import { readFileSync, existsSync, readdirSync, mkdirSync, mkdtempSync, rmSync, 
 import { spawn } from 'node:child_process'
 import { basename, dirname, isAbsolute, join, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { isDeepStrictEqual } from 'node:util'
 import { Document, Pair, Scalar, parse as parseYaml, parseDocument, YAMLMap, YAMLSeq } from 'yaml'
 import { MODULES_DIR, MODULE_DEFINITION_FILE } from './paths.ts'
 import { moduleCapability, engineRecipe, impliedModulesForParams, isModuleCapabilityPresent, type ModuleSourceMode, type ModuleFacts } from '../shared/engine-capabilities.ts'
@@ -25,7 +24,7 @@ import { enabledModuleIds, readGlobalLayerSettingsSafe, readStorageConfig } from
 import { assertModuleDirectory, assertModuleId, assertModuleTree, modulePathExists, setModuleDefinitionId } from './module-install.ts'
 import { engineParamPath, readModuleLayerSettings, ModuleLayerSettingsError } from './module-layer-settings.ts'
 import type { RuleDefinition } from '../shared/rules.ts'
-import { assertCanonicalRuleSource, ensureModuleSlices, loadModuleDefinition, commitModuleDefinition, withModuleDefinition as commitDefinitionEdit, withModuleLock, ModuleRulesError } from './module-storage.ts'
+import { assertCanonicalRuleSource, assertUnownedUnchanged, deleteYamlPath, ensureModuleSlices, loadModuleDefinition, commitModuleDefinition, serializeWithoutSharedAlias, withModuleDefinition as commitDefinitionEdit, withModuleLock, ModuleRulesError } from './module-storage.ts'
 export { ModuleLayerSettingsError } from './module-layer-settings.ts'
 
 /**
@@ -479,13 +478,7 @@ export function openModuleLocation(id: string, moduleRoot = userModulesDir()): {
   }
 }
 
-/** 父集合缺失时不触发 deleteIn 对不存在集合的异常。 */
-function deleteYamlPath(doc: ReturnType<typeof parseDocument>, path: string[]): void {
-  if (doc.hasIn(path)) doc.deleteIn(path)
-}
-
-/**
- * 保存共享能力参数；规则与持久变量分别通过各自的版本事务提交。
+/** 保存共享能力参数；规则与持久变量分别通过各自的版本事务提交。
  * parseDocument 保留注释与未知键（module.yml 模板含大量注释）；空值键删除（'' / []，
  * 回落模板/引擎默认；0 与 false 照常写入——语义与函数内注释、docs §3 一致）。
  */
@@ -551,11 +544,7 @@ export function saveModulePersona(moduleRoot: string, templateName: string, pers
       }
     }
   }
-  let next: string
-  try {
-    next = doc.toString()
-    if (!isDeepStrictEqual(doc.toJS(), expected)) throw new Error('shared alias changed')
-  } catch { throw new ModuleRulesError('YAML 共享引用会改变其他定义；请先解除相关引用后再编辑人设') }
+  const next = serializeWithoutSharedAlias(doc, expected, 'YAML 共享引用会改变其他定义；请先解除相关引用后再编辑人设')
   const committed = commitModuleDefinition(snapshot, next)
   invalidateModuleSpec(join(moduleRoot, templateName))
   return { persona: readPersonaSpec(committed.source.persona) ?? null, revision: committed.revision }
@@ -563,13 +552,18 @@ export function saveModulePersona(moduleRoot: string, templateName: string, pers
 
 /** 模块文件读-改-写（parseDocument 保留注释与未知键；mutate 内 setIn/deleteIn）。
  *  模块并入与模块管理共用此入口，避免
- *  各自实现 parseDocument 往返。写盘走原子替换，失败保留旧文件。 */
-export function withModuleDefinition(moduleDir: string, mutate: (doc: ReturnType<typeof parseDocument>, source: Record<string, unknown>) => void): ReturnType<typeof commitDefinitionEdit> {
+ *  各自实现 parseDocument 往返。写盘走原子替换，失败保留旧文件。
+ *  `owns` 必填且含义见 `module-storage.ts#SHARED_ALIAS_CODE`：mutate 只许碰这些顶层键。 */
+export function withModuleDefinition(
+  moduleDir: string,
+  mutate: (doc: ReturnType<typeof parseDocument>, source: Record<string, unknown>) => void,
+  options: { owns: readonly string[] },
+): ReturnType<typeof commitDefinitionEdit> {
   const committed = commitDefinitionEdit(moduleDir, (doc, source) => {
     readModuleLayerSettings(doc.toJS())
     mutate(doc, source)
     readModuleLayerSettings(doc.toJS())
-  })
+  }, options)
   invalidateModuleSpec(moduleDir)
   return committed
 }
@@ -943,6 +937,16 @@ export interface ModuleCapabilityRemoveResult {
 }
 
 /** 在内存候选文档中展开能力/recipe，校验成功后一次原子替换 module.yml。 */
+/** 能力拥有的顶层数据段键（能力登记表的 `ownSection`）：守卫的 owns 从这里推，不硬编码。 */
+function sectionKeysOf(capabilityIds: readonly string[]): string[] {
+  const keys = new Set<string>()
+  for (const id of capabilityIds) {
+    const key = moduleCapability(id)?.ownSection?.key
+    if (key !== undefined) keys.add(key)
+  }
+  return [...keys]
+}
+
 export function createModuleCapability(
   moduleDir: string,
   request: ModuleCapabilityCreateRequest,
@@ -1018,6 +1022,8 @@ export function createModuleCapability(
   if (addedModules.length === 0 && recipe !== undefined && Object.entries(recipe.initialParams ?? {}).every(([key]) => Object.prototype.hasOwnProperty.call(sourceParams, key))) {
     return { changed: false, addedModules, capabilityIds }
   }
+  // 直调提交的路径同样过守卫：section 键取自能力登记表，不硬编码。
+  assertUnownedUnchanged(source, doc, ['modules', 'layerSettings', ...sectionKeysOf(capabilityIds)], 'YAML 共享引用会改变其他定义；请先解除相关引用后再编辑')
   commitModuleDefinition(snapshot, doc)
   invalidateModuleSpec(moduleDir)
   return { changed: true, addedModules, capabilityIds }
@@ -1058,6 +1064,8 @@ export function removeModuleCapability(
   for (const rowId of configRows) doc.deleteIn(['moduleConfigs', rowId])
   const candidate = doc.toJS() as ModuleSpec
   assertCompositionArray(renderComposition(candidate, {}, moduleDir), candidate)
+  // 与创建同一条守卫：删能力拥有 modules、能力自己的数据段、参数与行配置。
+  assertUnownedUnchanged(source, doc, ['modules', 'layerSettings', 'moduleConfigs', ...(section === undefined ? [] : [section.key])], 'YAML 共享引用会改变其他定义；请先解除相关引用后再编辑')
   commitModuleDefinition(snapshot, doc)
   invalidateModuleSpec(moduleDir)
   return { changed: true, removedModules, capabilityIds: [capabilityId] }

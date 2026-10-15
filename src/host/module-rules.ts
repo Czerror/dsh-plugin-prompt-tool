@@ -1,9 +1,8 @@
 /** 经验证规则切片的局部事务；正文和状态各有独立 CAS。 */
-import { isDeepStrictEqual } from 'node:util'
 import { isMap, isSeq, isScalar, parseDocument } from 'yaml'
 import type { Node, Scalar, YAMLMap, YAMLSeq } from 'yaml'
 import type { RuleDefinition, RuleEdit, RuleRevisions } from '../shared/rules.ts'
-import { assertRuleFileId, commitModuleDefinition, ensureModuleSlices, ModuleRulesError, validateModuleDefinitionText } from './module-storage.ts'
+import { assertRuleFileId, commitModuleDefinition, ensureModuleSlices, ModuleRulesError, serializeWithoutSharedAlias, validateModuleDefinitionText } from './module-storage.ts'
 import type { ModuleDefinitionSnapshot } from './module-storage.ts'
 import { invalidateModuleSpec } from './manifest.ts'
 
@@ -176,11 +175,8 @@ export function editModuleRules(directory: string, request: ModuleRuleEditReques
   else snapshot.doc.delete('configOrder')
   const expected = { ...snapshot.source, rules, configOrder: order } as Record<string, unknown>
   if (Object.keys(order).length === 0) delete expected.configOrder
-  try {
-    if (!isDeepStrictEqual(snapshot.doc.toJS(), expected)) throw new Error('shared alias changed')
-  } catch {
-    throw new ModuleRulesError('YAML 共享引用会改变其他定义；请先解除相关引用后再编辑')
-  }
+  // 序列化本身也受检（别名锚点失配时 toString 会抛），故不取返回值。
+  serializeWithoutSharedAlias(snapshot.doc, expected, 'YAML 共享引用会改变其他定义；请先解除相关引用后再编辑')
   // 与保存共用完整候选校验，但验证请求不写切片或完整定义。
   if (request.validateOnly) {
     validateModuleDefinitionText(snapshot.dir, snapshot.doc.toString())

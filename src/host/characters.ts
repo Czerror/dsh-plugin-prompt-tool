@@ -188,7 +188,7 @@ export function mergeModuleIntoModule(root: string, targetId: string, sourceId: 
         doc.setIn(['meta', 'stWarnings'], [...new Set([...warnings, ...spec.meta.stWarnings].filter(value => typeof value === 'string'))])
       }
       count = added.length
-    })
+    }, { owns: ['rules', 'configOrder', 'variables', 'layerSettings', 'modules', 'meta', 'persona'] })
     return { ok: true, count, ...(personaOpened ? { personaOpened: true } : {}) }
   } catch (error) { return { ok: false, message: `并入失败：${error instanceof Error ? error.message : String(error)}` } }
 }
@@ -236,7 +236,7 @@ export function removeMergedModule(root: string, targetId: string, sourceId: str
         if (!record.active && record.capabilities.length === 0) delete records[id]
       }
       writeMergedModules(doc, records)
-    })
+    }, { owns: ['rules', 'configOrder', 'variables', 'layerSettings', 'modules', 'meta'] })
     return { ok: true, count: removed }
   } catch (error) { return { ok: false, message: `移除失败：${error instanceof Error ? error.message : String(error)}` } }
 }

@@ -1446,12 +1446,17 @@ export function registerSettingsBridge(
                   doc.setIn(['customTools'], customTools)
                   appendModuleCapabilities(doc, customToolModules(customTools))
                 }
-              })
+              }, { owns: ['customTools', 'modules'] })
               if (!await runOverridesChange(tx.write, basename(dir))) return
               tx.write(200, { ok: true, value: { customTools } })
             } catch (error) {
               const message = error instanceof Error ? error.message : String(error)
-              tx.write(409, { ok: false, code: 'custom-tools-rejected', message: `自定义工具保存失败：${message}` })
+              // 全桥统一规则：host 分类优先（如 shared-alias），端点码只兜底——与 /persona 同形。
+              tx.write(error instanceof ModuleRulesError ? error.status : 409, {
+                ok: false,
+                code: error instanceof ModuleRulesError ? error.code : 'custom-tools-rejected',
+                message: `自定义工具保存失败：${message}`,
+              })
             }
           } }),
         register(BRIDGE_ENDPOINTS.persona, { handle: async (tx) => {
