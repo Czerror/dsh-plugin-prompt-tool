@@ -120,30 +120,17 @@ export interface PromptToolStore {
   modelCatalog: Record<string, string[]>
   /** provider/model 路由的推理档位元数据（按 modelChoiceValue 键）；未查到 = known:false。 */
   modelReasoning: Record<string, ModelReasoningView>
-  /** 按需查询某路由的推理档位（结果进 modelReasoning；失败静默保持未查到）。 */
-  ensureModelReasoning: (provider: string, model: string) => void
   hostDefaultModel?: HostDefaultModel
-  /** 当前模块模板消息批层（pre-step）配置数；0 = 模板无配置（入口开关联动关闭）。 */
-  templatePreStepCount: number
-  savedSwitches: SwitchSnapshot
-  savedConfigs: PromptConfigDraft[]
-  /** 指令文件草稿池：正文/版本/读取状态按 fileId 索引，跨模块保留。 */
-  instructionPool: InstructionDraftPool
-  /** 草稿池读取（回调里读最新值，不依赖渲染快照）。 */
+  /** 指令文件草稿池读取（回调里读最新值，不依赖渲染快照）。 */
   getInstructionPool: () => InstructionDraftPool
-  /** 存在未保存的指令文件草稿（模块保存不覆盖它们）。 */
-  dirtyInstructions: boolean
   /** 显式保存指令文件（不传 fileIds = 保存全部可写文件）；只提交已改动、可写、上下文匹配的文件。 */
   persistInstructionFiles: (fileIds?: readonly string[]) => Promise<boolean>
   /** 重新读取单个指令文件并丢弃本地草稿（版本冲突时使用）。 */
   reloadInstructionFile: (fileId: string) => Promise<void>
   /** 指令卡策略快照（独立存储）：error 非空时 UI 禁用策略编辑。 */
   instructionPolicy: InstructionPolicySnapshot
-  /** 策略快照读取（回调里读最新值，不依赖渲染快照）。 */
-  getInstructionPolicy: () => InstructionPolicySnapshot
   /** 写单个文件的行为策略（null = 删除覆盖、恢复默认）；带 revision 乐观并发。 */
   updateInstructionPolicy: (fileId: string, override: InstructionPolicyFileOverride | null) => Promise<boolean>
-  /** 独立来源总开关：仅写策略顶层 enabled，不改变官方负责人或单文件覆盖。 */
   /** 技能资产写入忙碌态（复制导入 / 创建 / 删除）。 */
   skillsBusy: boolean
   notice: string
@@ -171,8 +158,6 @@ export interface PromptToolStore {
   setGlobalParam: (key: SharedParamKey, value: unknown) => void
   /** 保存全局层参数：`/param-overrides` **不带主语头**（空主语 = 全局层），影响所有启用模块。 */
   persistGlobalParams: () => Promise<void>
-  /** 规则声明复用模块队列；实际执行时复核目标模块（无主语即拒绝）。 */
-  enqueueModuleTask: <T>(moduleId: string | undefined, task: () => Promise<T>) => Promise<T>
   /** 已绑定模块身份与独立草稿的规则事务，共用保存队列但不依赖当前 Fields。 */
   enqueueRuleTask: <T>(task: () => Promise<T>) => Promise<T>
   /** 某模块的模板变量读数（范围、值、开关与状态都按主语取）。 */
@@ -311,7 +296,6 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
       ? { ...candidate, declares: [...(candidate.declares ?? []), section] }
       : candidate) })
   }, [publishMeta])
-  const [templatePreStepCount, setTemplatePreStepCount] = useState(0)
   const [savedSwitches, setSavedSwitches] = useState<SwitchSnapshot>(EMPTY_SWITCHES)
   const [savedConfigs, setSavedConfigsState] = useState<PromptConfigDraft[]>([])
   const savedConfigsRef = useRef<PromptConfigDraft[]>([])
@@ -319,7 +303,8 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
     savedConfigsRef.current = next
     setSavedConfigsState(next)
   }, [])
-  const [instructionPool, setInstructionPool] = useState<InstructionDraftPool>(EMPTY_INSTRUCTION_POOL)
+  // 池本体读 ref（`getInstructionPool` 回调式读取）；这里的 state 只承担触发重渲染。
+  const [, setInstructionPool] = useState<InstructionDraftPool>(EMPTY_INSTRUCTION_POOL)
   const [instructionPolicy, setInstructionPolicy] = useState<InstructionPolicySnapshot>(EMPTY_INSTRUCTION_POLICY_SNAPSHOT)
   /** 变量范围按模块各存一份（同一模块的层卡共享）；范围变化只影响该模块的读数与草稿键。 */
   const variablesScopesRef = useRef(new Map<string, ModuleVariableScope>())
@@ -575,7 +560,6 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
   }, [])
 
   const applyView = useCallback((res: BridgeResponse<'bootstrap'>, skillsSeq: number): Fields => {
-    setTemplatePreStepCount(res.ok && typeof res.templatePreStepCount === 'number' ? res.templatePreStepCount : 0)
     setModelCatalog(res.ok ? res.modelCatalog ?? {} : {})
     setHostDefaultModel(res.ok ? res.hostDefaultModel : undefined)
     const next = fieldsFromView(res)
@@ -1273,7 +1257,6 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
 
   const currentSwitches = snapshotSwitches(fields)
   const dirtySwitches = !switchesEqual(currentSwitches, savedSwitches)
-  const dirtyInstructions = unsavedInstructionDrafts(instructionPool).length > 0
   // 规则草稿由订阅式 owner 更新；读取时计算，避免退出/切换守卫读到旧的脏状态。
   const configsAreDirty = (): boolean => {
     return unsavedInstructionDrafts(instructionPoolRef.current).length > 0 || [...editorDrafts.rules.values()].some(rulesDirty)
@@ -1296,18 +1279,11 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
     loading,
     modelCatalog,
     modelReasoning,
-    ensureModelReasoning,
     hostDefaultModel,
-    templatePreStepCount,
-    savedSwitches,
-    savedConfigs,
-    instructionPool,
     getInstructionPool: () => instructionPoolRef.current,
-    dirtyInstructions,
     persistInstructionFiles,
     reloadInstructionFile,
     instructionPolicy,
-    getInstructionPolicy: () => instructionPolicyRef.current,
     updateInstructionPolicy,
     skillsBusy,
     notice,
@@ -1326,7 +1302,6 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
     get globalParamsLoaded() { return globalParamsRef.current.loaded },
     setGlobalParam,
     persistGlobalParams,
-    enqueueModuleTask,
     enqueueRuleTask,
     moduleVariables,
     ensureModuleVariables,
