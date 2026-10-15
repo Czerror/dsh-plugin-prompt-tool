@@ -1,6 +1,6 @@
 # 统一规则引擎复用指南
 
-规则是唯一行为定义。插件读取模块定义、校验切片，再经 `compileRules → mountRuleSources` 装配到 Agent scope。模块不进入官方会话预设注册表；九个插入点各有生命周期，不形成插件自定义的全局管线。
+规则是唯一行为定义。插件读取模块定义、校验切片，再经 `compileRules → mountRuleSources` 装配到 Agent scope，这是一条**两段式**生命周期：`compileRules` 只编译与校验（产物每条规则携带 `conditionTrees`，选项里的 `ctx` / `standingMountFor` 会被显式剥掉），**条件绑定由 `mountRuleSources` 在注册前完成**（内部调 `rebindConditions`）。原因是 `preset` 谓词要挂载 scope 的 ctx（`conditions/preset.mjs` 把服务查询基准绑在构造期），准备期拿不到——那边绑出来的 `preset` 条件是恒 UNAVAILABLE 的**静默死条件**。需要官方模块导出的兜底时，由调用方通过 options 传 `standingMountFor`；只重绑含 `preset` 的树，其余谓词原样保留。模块不进入官方会话预设注册表；九个插入点各有生命周期，不形成插件自定义的全局管线。
 
 编辑保存与运行注入分别负责：客户端只提交合法草稿；发送消息不等待自动保存，运行使用磁盘已保存的有效定义。官方 `systemPrompt.assemble()` 开始、同步 provider 求值之前，插件核对本地定义与人设来源；变化才复用现有配装更新注册，没有变化不重挂。变量值仍在模板求值时读取，不因值更新重挂规则。
 

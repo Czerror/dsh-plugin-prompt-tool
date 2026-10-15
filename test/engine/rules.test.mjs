@@ -1586,3 +1586,53 @@ test('T36④：从种子出发把 decision 改成 deny，空串 reason 回退引
   assert.equal(outcome.reason, 'denied: denied by action', '空串是「取引擎缺省」，不是「抑制默认原因」')
   dispose()
 })
+
+// ── 条件绑定在挂载缝：preset 谓词按挂载 scope 的事实判定 ─────────────────────
+
+const preStepMessages = (h, agent) => {
+  const messages = [{ id: 'u', role: 'user', source: { kind: 'user' }, content: [{ type: 'text', text: 'USER' }] }]
+  return h.run('agent/pre-step', [{ agent, messages }], () => ({ kind: 'enter', messages }))
+    .then(result => result.messages.flatMap(message => message.content.map(block => block.text)))
+}
+/** preset 是**进程内**判定：输入可用性要求 `agent.ctx != null`（`conditions/availability.mjs`）。 */
+const presetActor = () => Object.assign(actor(), { ctx: {} })
+
+test('挂载缝绑定：preset 条件在编译期无 ctx 时仍按挂载 scope 的事实命中，缺事实则不命中', async () => {
+  // 编译期不传 ctx：绑定的责任在挂载缝（compileRules 即使被传 ctx 也会剥掉）。
+  const rules = compileRules([{ id: 'gated', if: { preset: { presetId: 'flash-preset' } }, then: [textAction('gated-text', 'GATED')] }])
+  const hit = harness({ agentPresets: { composedPreset: () => 'flash-preset' } })
+  const disposeHit = mountRuleSources(hit.ctx, [{ moduleId: 'module', rules }])
+  assert.deepEqual(await preStepMessages(hit, presetActor()), ['USER', 'GATED'], '预设相同 → 条件命中')
+  disposeHit()
+
+  // 服务缺席且没有兜底＝「拿不到预设事实」：三值语义里是 UNAVAILABLE，不命中也不抛。
+  const rules2 = compileRules([{ id: 'gated', if: { preset: { presetId: 'flash-preset' } }, then: [textAction('gated-text', 'GATED')] }])
+  const miss = harness()
+  const disposeMiss = mountRuleSources(miss.ctx, [{ moduleId: 'module', rules: rules2 }])
+  assert.deepEqual(await preStepMessages(miss, presetActor()), ['USER'], '缺事实 → 不命中')
+  disposeMiss()
+})
+
+test('挂载缝绑定：官方模块导出的 standingMountFor 作为可选兜底参与判定', async () => {
+  const rules = compileRules([{ id: 'gated', if: { preset: { presetId: 'flash-preset' } }, then: [textAction('gated-text', 'GATED')] }])
+  const h = harness()
+  // 服务缺席时由调用方传入的兜底取预设 id（真实调用方是 `loadStandingMountFor()`）。
+  const dispose = mountRuleSources(h.ctx, [{ moduleId: 'module', rules }], { standingMountFor: () => ({ presetId: 'flash-preset' }) })
+  assert.deepEqual(await preStepMessages(h, presetActor()), ['USER', 'GATED'], '兜底命中')
+  dispose()
+})
+
+test('挂载缝绑定：动作级分支（else / 嵌套 if）里的 preset 同样被绑定', async () => {
+  const branch = () => compileRules([{ id: 'branch', then: [
+    { if: { preset: { presetId: 'flash-preset' } }, then: [textAction('flash-inject', 'FLASH', { position: 'after-user' })], else: [textAction('other-inject', 'OTHER', { position: 'after-user' })] },
+  ] }])
+  const hit = harness({ agentPresets: { composedPreset: () => 'flash-preset' } })
+  const disposeHit = mountRuleSources(hit.ctx, [{ moduleId: 'module', rules: branch() }])
+  assert.deepEqual(await preStepMessages(hit, presetActor()), ['USER', 'FLASH'], '分支命中 → then 注入')
+  disposeHit()
+
+  const miss = harness({ agentPresets: { composedPreset: () => 'other-preset' } })
+  const disposeMiss = mountRuleSources(miss.ctx, [{ moduleId: 'module', rules: branch() }])
+  assert.deepEqual(await preStepMessages(miss, presetActor()), ['USER', 'OTHER'], '分支不成立 → else 注入，preset 不是死条件')
+  disposeMiss()
+})

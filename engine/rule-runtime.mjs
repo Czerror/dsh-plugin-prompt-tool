@@ -1,6 +1,7 @@
 import { prepareAction } from './actions/index.mjs'
 import { applyPromptConfigSources } from './executor.mjs'
 import { createTurnStopBudget, wireLayers } from './layers.mjs'
+import { rebindConditions } from './rule-spec.mjs'
 import { wireTriggerObservers } from './trigger.mjs'
 import { ruleFrame, actionMatches } from './conditions/evaluation.mjs'
 import { createWarnOnce } from './shared.mjs'
@@ -14,6 +15,10 @@ const compare = (a, b) => a.action.channelOrder - b.action.channelOrder
 
 /** 所有来源只进入这个装配入口；受众限定固定效果要求 ctx 属于 options.agent 的 scope。 */
 export function mountRuleSources(ctx, sources, options = {}) {
+  // 条件绑定**在这里**发生：`compileRules` 编译期没有挂载 scope 的 ctx（preset 条件在那边恒
+  // UNAVAILABLE 且静默）。必须早于事件订阅与动作注册——动作级 `actionWhen.observe` 是订阅通道，
+  // 绑晚了那一类谓词会漏事件。`standingMountFor` 是可选兜底（官方包缺席＝没有兜底，不是错误）。
+  rebindConditions(sources, { ctx, standingMountFor: options.standingMountFor })
   const warnOnce = options.warnOnce ?? createWarnOnce(ctx, options.plugin ?? 'rule-engine')
   // 诊断上报是只读旁路：把规则对象换回来源模块，供宿主区分跨模块同名 id；缺省不传即零开销。
   const report = options.onOutcome === undefined ? undefined : (() => {

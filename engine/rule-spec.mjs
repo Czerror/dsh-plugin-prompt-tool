@@ -21,7 +21,7 @@ const PREPEND_RETIRED = '`prepend` 已取消 — 它是未文档化的注册后�
 
 /**
  * 条件树引用的全部「谓词 → 通道事实」对（含组合与否定）；`subject === undefined` = 作者漏写。
- * 树是数据，只能在校验期读——`compileWhen` 的产物把 subject 关进闭包，读不回来。
+ * 树是数据：校验期读它，挂载期由 `rebindConditions` 用它重绑——`compileWhen` 的产物把 subject 关进闭包，读不回来。
  * `text` 的 subject 由作者声明；事实谓词读的事实取自谓词侧的 `FACT_PREDICATE_SUBJECTS`
  * （唯一登记处，见 `conditions/subject.mjs`），本函数不再逐谓词手抄。
  */
@@ -153,6 +153,9 @@ const REGISTRATION_LAYERS = new Set(['system-section', 'runtime-context'])
 /** options.promptConfigOptions 拥有模板/策略路径；configOrder 使用规则 id，moduleId 只标记来源。 */
 export function compileRules(specs, options = {}) {
   if (!Array.isArray(specs)) throw new TypeError('rules must be an array')
+  // 条件的绑定**不在编译期**：`preset` 谓词的取法要挂载 scope 的 ctx（`conditions/preset.mjs`），
+  // 准备期拿不到。这里显式剥掉挂载期选项——传了也不生效，免得调用方以为已经绑好。
+  const { ctx: _ctx, standingMountFor: _standingMountFor, ...conditionOptions } = options
   const ids = new Set()
   const pendingConfigs = []
   const moduleId = options.moduleId ?? options.sourceModuleId
@@ -178,7 +181,7 @@ export function compileRules(specs, options = {}) {
     if (!Array.isArray(ruleThen) || ruleThen.length === 0) throw new TypeError(`rule ${spec.id}.then must be a non-empty array`)
     const sequence = options.configOrder?.[spec.id] ?? index * 10
     if (!Number.isSafeInteger(sequence) || sequence < 0) throw new TypeError(`rule ${spec.id}: invalid configOrder`)
-    const when = compileWhen(ruleIf, options)
+    const when = compileWhen(ruleIf, conditionOptions)
     // 规则级 else 依赖 `not(if)` 才能与 then 互斥；没有 if 时 else 会退化成无条件动作。
     if (spec.else !== undefined && (ruleIf === undefined || ruleIf === null)) {
       throw new TypeError(`rule ${spec.id}: else requires an if — 规则级 else 不能脱离 if 存在`)
@@ -265,7 +268,7 @@ export function compileRules(specs, options = {}) {
           `rule ${spec.id}: action ${action.id}`)
       }
       // 空条件数组经 conjunction → undefined → compileWhen 直接返回 undefined（无条件动作）。
-      const actionWhen = compileWhen(actionConditions, options)
+      const actionWhen = compileWhen(actionConditions, conditionOptions)
       const branchLayer = action.kind === 'inject-text' ? action.config.layer : spec.layer ?? 'pre-step'
       if (actionWhen !== undefined && (REGISTRATION_LAYERS.has(branchLayer) || execution.lifecycle === 'registration')) {
         throw new TypeError(`action ${action.id}: layer ${branchLayer} has no per-turn evaluation point — move the branch to pre-step / subagent-* / tool-pipeline / turn-stop`)
@@ -279,7 +282,16 @@ export function compileRules(specs, options = {}) {
       if (previous !== undefined && previous.channelOrder !== action.channelOrder) throw new TypeError(`rule ${spec.id}: conflicting channelOrder for actions ${previous.id} and ${action.id} at ${key}`)
       pointOrders.set(key, action)
     }
-    return { id: spec.id, name: spec.name, layer: spec.layer, group: spec.group, exclusive: spec.exclusive === true, enabled: spec.enabled !== false, sequence, when, actions, promptConfigOptions: options.promptConfigOptions }
+    return {
+      id: spec.id, name: spec.name, layer: spec.layer, group: spec.group, exclusive: spec.exclusive === true, enabled: spec.enabled !== false,
+      sequence, when, actions, promptConfigOptions: options.promptConfigOptions,
+      // 绑定所需的树：规则级 `if` + 每个动作展开后的条件（动作那半与 `action.conditions` 同一引用）。
+      // **只有 `rebindConditions` 读它**——调用方与挂载缝都不需要知道这个形状。
+      conditionTrees: {
+        ...(ruleIf === undefined ? {} : { when: structuredClone(ruleIf) }),
+        actions: Object.fromEntries(actions.filter(action => action.conditions !== undefined).map(action => [action.id, action.conditions])),
+      },
+    }
   })
   validateRuleGroups(rules)
   for (const audience of ['main', 'subagent']) {
@@ -303,6 +315,44 @@ export function compileRules(specs, options = {}) {
     }
   }
   return rules
+}
+
+/**
+ * 树里是否含 `preset` 谓词——只有它需要挂载期的 ctx：`conditions/preset.mjs` 把服务查询基准
+ * 绑在**构造期**，其余原语只用节点选项（见 `conditions/index.mjs` 的 preset 分支）。
+ *
+ * 因此只重绑需要重绑的树：调用方对不含 preset 的条件谓词做的包装/替换不会被覆盖，
+ * 「挂载缝接管绑定」与「调用方仍可注入自定义判定」两件事不冲突。
+ */
+function needsMountContext(node) {
+  if (node === null || typeof node !== 'object') return false
+  if (Array.isArray(node)) return node.some(needsMountContext)
+  if (Object.hasOwn(node, 'preset')) return true
+  return Object.values(node).some(needsMountContext)
+}
+
+/**
+ * 把需要挂载期 ctx 的条件绑定到挂载缝：**`compileRules` 只编译与校验，绑定由 `mountRuleSources`
+ * 在这里完成**（`rule-runtime.mjs`）。
+ *
+ * 为什么不在编译期绑：`preset` 谓词要挂载 scope 的 ctx，准备期拿不到——编译期绑出来的 preset
+ * 条件恒 UNAVAILABLE，而且是静默的。树只在本模块读：调用方与挂载缝都不需要知道
+ * `conditionTrees` 的形状；没有该字段的产物（已绑好的输入）原样保留。
+ */
+export function rebindConditions(sources, context = {}) {
+  if (!Array.isArray(sources)) throw new TypeError('sources must be an array')
+  for (const source of sources) {
+    for (const rule of source?.rules ?? []) {
+      const trees = rule.conditionTrees
+      if (trees === undefined) continue
+      if (trees.when !== undefined && needsMountContext(trees.when)) rule.when = compileWhen(trees.when, context)
+      for (const action of rule.actions ?? []) {
+        const tree = trees.actions?.[action.id]
+        if (tree !== undefined && needsMountContext(tree)) action.actionWhen = compileWhen(tree, context)
+      }
+    }
+  }
+  return sources
 }
 
 export function getRuleEditorMeta() {

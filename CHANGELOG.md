@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+### 条件绑定收回挂载缝：`compileRules` 不再接受 ctx（2026-10-16）
+
+- **绑定发生在挂载缝**：`compileRules` 只编译与校验，产物每条规则携带 `conditionTrees`（规则级 `if` 树 + 按动作 id 索引的展开条件）；`mountRuleSources` 在注册前调 `rebindConditions`，用挂载 scope 的 ctx（以及调用方可选传入的 `standingMountFor`）重绑。此前准备期编译时没有 ctx，`preset` 条件的产物恒 UNAVAILABLE，只能由 `agent-assembly` 另存一份原始条件树、逐规则逐动作重编——同一件事两个入口，而 `docs/engine-reuse.md` 的配方对 `preset` 是**静默死条件**。引擎内 `rule-engine.mjs` 的独立入口同样改为在挂载缝绑定。
+- **只重绑需要重绑的树**：含 `preset` 的条件才需要挂载期 ctx（其余原语只用节点选项），因此不含 `preset` 的谓词不被覆盖——调用方与测试对这类条件的注入照旧有效。
+- **接口变化**：`compileRules` 的 `ctx` / `standingMountFor` 选项被显式剥掉（传了也不生效，免得以为已经绑好）；`mountRuleSources` 的 options 新增可选 `standingMountFor`、签名保持同步（既有调用点零改动）；`PreparedAssembly` 不再有 `ruleConditions` 字段，装配侧不再读产物字段名。
+- **回归**：`test/engine/rules.test.mjs` 新增三条用例——规则级 `preset` 命中与「缺事实不命中」、`standingMountFor` 兜底、动作级 `else` 分支里的 `preset`；先确认判别力（临时去掉绑定后 3/3 红）再落地。
+
 ### 提示词卡排序收成一份判据，导入顺序改由 configOrder 表达（2026-10-16）
 
 - **拖拽改为一步重排**：拖到目标卡上/下半区 = 插到目标前/后（指针半高判据 `clientY` 对卡片中线，恢复 `41ce6b36` 的原始设计并复用同款 `data-drop-*` 指示线）。此前是「两张卡互换」，在 ST 导入的上百张卡里无法把一张卡直接调到目标位；上移/下移按钮与拖拽手柄的 ArrowUp/ArrowDown 走同一实现。

@@ -43,7 +43,7 @@ import { mountRuleSources } from '../../engine/rule-runtime.mjs'
 // @ts-expect-error ESM 引擎源码随插件提供（去重身份判据的唯一来源）。
 import { identityOf } from '../../engine/executor.mjs'
 // @ts-expect-error 条件在真实挂载 scope 绑定；准备期只保留经过预检的定义快照。
-import { compileWhen, loadStandingMountFor } from '../../engine/conditions/index.mjs'
+import { loadStandingMountFor } from '../../engine/conditions/index.mjs'
 
 /** 引擎模块的受管配置字段：值按历史语义相对模块根书写（如 `../<id>/custom-tools`）。 */
 const MANAGED_FIELDS = ['configsDir', 'strategyDir', 'policyFile', 'rulesFile'] as const
@@ -123,7 +123,6 @@ function engineModuleFile(engineDir: string, id: string): string | undefined {
 
 export interface PreparedAssembly {
   rules: unknown[]
-  ruleConditions: ReadonlyMap<string, unknown>
   modules: Array<{ id: string; apply: (ctx: Context, config: Record<string, unknown>) => unknown; config: Record<string, unknown> }>
   services: Set<string>
   moduleId: string
@@ -168,7 +167,6 @@ export async function prepareAssembly(
     contextActivationRecursive: spec.contextActivationRecursive,
     promptConfigOptions: rulePromptConfigOptions(moduleDir, ruleConfig.strategyDir),
   })
-  const ruleConditions = new Map(declaredRules.map(rule => [rule.id, structuredClone(rule.if)]))
   const engineDir = packageEngineDir()
   const services = new Set<string>()
   const modules: PreparedAssembly['modules'] = []
@@ -210,7 +208,7 @@ export async function prepareAssembly(
   for (const name of services) {
     if (!hasService(name)) throw new Error(`配装所需宿主能力不可用：${name}`)
   }
-  return { rules, ruleConditions, modules, services, moduleId, persona: spec.persona, variablesEnabled: spec.variablesEnabled }
+  return { rules, modules, services, moduleId, persona: spec.persona, variablesEnabled: spec.variablesEnabled }
 }
 
 /** 上报点只读 message（本文件的 `warn`、settings-bridge 的 `String(error)`）：原因写进文本。 */
@@ -398,24 +396,11 @@ export function createAgentAssembly(ctx: Context, options: AgentAssemblyOptions)
             ? `模块 ${item.moduleIds.join('、')} 疑似由复制产生同一个${where}（dedupe: session/batch）：去重按模块各记一份，两份正文都会注入，请改 rule id 或显式 identity 以区分`
             : `模块 ${item.moduleIds.join('、')} 声明了同一个${where}（dedupe: session/batch）：去重按模块各记一份，两模块各自注入；同一模块内才共享这份去重`)
         }
+        // 条件由挂载缝绑定（`mountRuleSources` 内部调 `rebindConditions`）：编译期没有挂载 scope 的
+        // ctx，preset 条件在那边恒 UNAVAILABLE。调用方只负责把可选的官方模块兜底取到手，不再复制规则对象。
         const standingMountFor = await loadStandingMountFor()
-        // 只重绑纯条件，不重读定义、模板或动作。每次挂载/失败恢复都获得自己的闭包与观察状态。
-        const ruleSources = prepared.filter(item => item.rules.length > 0).map(item => ({
-          moduleId: item.moduleId,
-          rules: item.rules.map(value => {
-            const rule = value as { id: string; actions?: unknown[] } & Record<string, unknown>
-            return {
-              ...rule,
-              when: compileWhen(item.ruleConditions.get(rule.id), { ctx: scopeCtx, standingMountFor }),
-              // 动作级条件同样在真实挂载 scope 重绑，否则 else / 嵌套 if 里的 preset 恒 UNAVAILABLE。
-              actions: rule.actions?.map(rawAction => {
-                const action = rawAction as { conditions?: unknown } & Record<string, unknown>
-                return { ...action, actionWhen: compileWhen(action.conditions, { ctx: scopeCtx, standingMountFor }) }
-              }),
-            }
-          }),
-        }))
-        scopeCtx.effect(() => mountRuleSources(scopeCtx, ruleSources, { agent, onOutcome: recordRuleOutcome, variableStore }))
+        const ruleSources = prepared.filter(item => item.rules.length > 0).map(item => ({ moduleId: item.moduleId, rules: item.rules }))
+        scopeCtx.effect(() => mountRuleSources(scopeCtx, ruleSources, { agent, onOutcome: recordRuleOutcome, variableStore, standingMountFor }))
         // 人设：在 Agent 自己的 scope 注册同名段，遮蔽祖先的部署人设与预设 persona 行；
         // 同层已被注册时只能先撤后挂，撤销凭据来自 AgentSetup 窗口内的捕获。
         if (personaActive) {

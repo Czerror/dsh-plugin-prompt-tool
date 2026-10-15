@@ -35,6 +35,7 @@ export async function apply(ctx, config) {
     : isAbsolute(source.moduleRoot) ? pathToFileURL(source.moduleRoot.replace(/[\\/]?$/, '/')) : new URL(source.moduleRoot.replace(/\/?$/, '/'), templateBaseUrl)
   const strategyDir = source.strategyDir === undefined ? undefined : isAbsolute(source.strategyDir) ? pathToFileURL(source.strategyDir).href : new URL(source.strategyDir, templateBaseUrl).href
   const moduleId = typeof packet.moduleId === 'string' ? packet.moduleId : basename(dirname(file))
-  const rules = compileRules(packet.rules, { moduleId, variables: packet.variables, variablesEnabled: packet.variablesEnabled, configOrder: packet.configOrder, ctx, standingMountFor: await loadStandingMountFor(), promptConfigOptions: { templateBaseUrl, templateModuleRoot, strategyDir } })
-  return mountRuleSources(ctx, [{ moduleId, rules }])
+  const rules = compileRules(packet.rules, { moduleId, variables: packet.variables, variablesEnabled: packet.variablesEnabled, configOrder: packet.configOrder, promptConfigOptions: { templateBaseUrl, templateModuleRoot, strategyDir } })
+  // 条件在挂载缝绑定（preset 需要挂载 scope 的 ctx）；官方模块导出只作可选兜底。
+  return mountRuleSources(ctx, [{ moduleId, rules }], { standingMountFor: await loadStandingMountFor() })
 }
