@@ -11,11 +11,12 @@
  * 拒绝写入（不把损坏文件当空配置覆盖）。
  */
 import { createHash } from 'node:crypto'
-import { existsSync, readFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { existsSync, mkdirSync, readFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
 import { Document, isMap, isScalar, parseDocument, visit } from 'yaml'
 import { DSH_HOME, storageRootOf } from './paths.ts'
 import { atomicWriteTextFile } from './text-file.ts'
+import { ModuleRulesError, withModuleLock } from './module-storage.ts'
 import type {
   InstructionPolicy,
   InstructionPolicyFileOverride,
@@ -30,6 +31,8 @@ const INSTRUCTIONS_POLICY_FILE = 'instructions.yml'
 
 /** 策略文件格式版本；不认识的值按损坏处理，不猜测迁移。 */
 export const INSTRUCTIONS_POLICY_VERSION = 1
+/** 跨进程锁的模块 id 形状（`withModuleLock` 的 id 与模块 id 同规则）；锁目录为存储根下的 `.instructions.rules-locks`。 */
+const INSTRUCTIONS_POLICY_LOCK = 'instructions'
 
 export type InstructionPolicyWriteOutcome =
   | { ok: true; revision: string; policy: InstructionPolicy }
@@ -185,6 +188,24 @@ export function writeInstructionPolicy(options: {
   file?: string
 }): InstructionPolicyWriteOutcome {
   const file = options.file ?? instructionPolicyPath()
+  // 与存储根 config.yml 的写事务同形：跨进程锁只包住「读版本 → 校验 → 写盘」这一段。
+  // 没有它，两个共享 DSH_HOME 的进程可以同时通过 revision 校验，后者静默覆盖前者。
+  try {
+    mkdirSync(dirname(file), { recursive: true })
+    return withModuleLock(dirname(file), INSTRUCTIONS_POLICY_LOCK, () => writeInstructionPolicyLocked(file, options))
+  } catch (error) {
+    if (error instanceof ModuleRulesError) {
+      return { ok: false, status: 409, code: 'instructions-policy-busy', message: '指令策略正在被另一个进程写入，请稍后重试' }
+    }
+    throw error
+  }
+}
+
+/** 锁内实现：读当前版本 → 校验 patch → 写盘。锁的取得与释放在 writeInstructionPolicy。 */
+function writeInstructionPolicyLocked(file: string, options: {
+  patch: unknown
+  expectedRevision: string | null
+}): InstructionPolicyWriteOutcome {
   const current = readInstructionPolicy(file)
   if (current.error !== undefined) {
     return { ok: false, status: 409, code: 'instructions-policy-unreadable', message: current.error }

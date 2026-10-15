@@ -240,10 +240,18 @@ export type AgentsFileWriteOutcome =
 /** 同一文件的写盘串行队列（进程内）：两个并发请求不得交错读写同一目标。 */
 const writeQueues = new Map<string, Promise<unknown>>()
 
+/** rename 前的复核失败：`writeAgentsFile` 只抛错，由写盘入口按这两个码映射成 409。 */
+class AgentsFileRecheckError extends Error {
+  readonly code: string
+  constructor(code: string, message: string) {
+    super(message); this.name = 'AgentsFileRecheckError'; this.code = code
+  }
+}
+
 /** 原子写指令文件（tmp + rename）；调用方必须先用 detectAgentsFiles() 校验路径白名单。 */
-export function writeAgentsFile(path: string, content: string): void {
+export function writeAgentsFile(path: string, content: string, beforeReplace?: () => void): void {
   // 暂存命名、独占创建、权限精确保留与失败清理归 text-file；本函数只解析目标路径。
-  atomicWriteTextFile(resolve(path), content, { mkdir: true })
+  atomicWriteTextFile(resolve(path), content, { mkdir: true, ...(beforeReplace === undefined ? {} : { beforeReplace }) })
 }
 
 /**
@@ -308,8 +316,18 @@ export async function writeAgentsFileChecked(options: {
       return { ok: false, status: 409, code: 'agents-file-identity-changed', message: '目标文件身份已变化，未写盘' }
     }
     try {
-      writeAgentsFile(file.realPath, content)
+      writeAgentsFile(file.realPath, content, () => {
+        // 上面那次比对到 rename 之间仍可能被外部改写：替换前再核一次版本与身份。
+        const again = readAgentsFileSnapshot(file)
+        if (again.status !== 'ready' || again.revision !== expectedRevision) {
+          throw new AgentsFileRecheckError('agents-file-conflict', '文件已被外部修改，保存被拒绝；请重新读取后再保存')
+        }
+        if (realPathOf(file.path) !== file.realPath) {
+          throw new AgentsFileRecheckError('agents-file-identity-changed', '目标文件身份已变化，未写盘')
+        }
+      })
     } catch (error) {
+      if (error instanceof AgentsFileRecheckError) return { ok: false, status: 409, code: error.code, message: error.message }
       const message = error instanceof Error ? error.message : String(error)
       return { ok: false, status: 409, code: 'agents-file-write-failed', message: `写盘失败：${message}` }
     }

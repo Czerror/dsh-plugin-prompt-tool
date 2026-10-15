@@ -1,6 +1,7 @@
 import { after, test } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import fs, { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { syncBuiltinESMExports } from 'node:module'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -190,4 +191,38 @@ test('存活与冷态本地会话各自解析工作区：文件集不串，旧�
   const failed = makeHarness({}, async () => { throw new Error('session metadata unreadable') })
   const rejected = await failed.call(BRIDGE_ENDPOINTS.bootstrap, { sessionId: 'session-b' })
   assert.equal(rejected.status, 500, '元数据读取失败应拒绝，不能把部署目录冒充该会话工作区')
+})
+
+test('写暂存期间目标被外部改写：rename 前复核拒绝，外部内容不被覆盖（T10）', async (t) => {
+  const rootR = mkdtempSync(join(tmpdir(), 'pt-guard-recheck-'))
+  mkdirSync(join(rootR, '.git'), { recursive: true })
+  const target = join(rootR, 'AGENTS.md')
+  writeFileSync(target, 'ORIGINAL\n', 'utf8')
+  try {
+    const { call } = makeHarness({ 'session-r': rootR })
+    const boot = await call(BRIDGE_ENDPOINTS.bootstrap, { sessionId: 'session-r' })
+    const file = boot.body.instructions.files.find((item) => item.scope === 'project')
+    assert.ok(file, '工作区文件卡在场')
+    // 只在写暂存文件的那一刻改写目标：模拟外部写入落在「读快照之后、rename 之前」的窗口里。
+    const real = fs.writeFileSync.bind(fs)
+    t.mock.method(fs, 'writeFileSync', (path, ...rest) => {
+      real(path, ...rest)
+      if (typeof path === 'string' && path.includes('.AGENTS.md.tmp-')) real(target, 'EXTERNAL WRITE\n')
+    })
+    syncBuiltinESMExports()
+    const write = await call(BRIDGE_ENDPOINTS.agentsFile, {
+      sessionId: 'session-r',
+      contextId: boot.body.instructions.context.contextId,
+      fileId: file.fileId,
+      expectedRevision: file.revision,
+      content: 'SAVED\n',
+    })
+    assert.equal(write.status, 409)
+    assert.equal(write.body.code, 'agents-file-conflict', '窗口内的外部改写必须在 rename 前被拒')
+    assert.equal(readFileSync(target, 'utf8'), 'EXTERNAL WRITE\n', '外部内容未被覆盖')
+  } finally {
+    t.mock.restoreAll()
+    syncBuiltinESMExports()
+    rmSync(rootR, { recursive: true, force: true })
+  }
 })

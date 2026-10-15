@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### 指令策略补跨进程锁；指令文件在 rename 前复核（2026-10-16）
+
+- **指令策略写入有了跨进程锁**：`writeInstructionPolicy` 按 `config-store` 的形状取 `withModuleLock(存储根, 'instructions')`，锁包住「读 revision → 校验 patch → 写盘」整段。此前两个共享 DSH_HOME 的进程（TUI ＋ web）可以同时通过 revision 校验，后者 rename 静默覆盖前者、双方都返回 ok。锁被占时返回 409 `instructions-policy-busy`（不是 500），客户端可提示重试；同进程并发请求同样被这把锁挡下。
+- **指令文件的 CAS 窗口收紧到 rename 前**：`writeAgentsFile` 增加可选 `beforeReplace` 谓词，`writeAgentsFileChecked` 在其中重读快照、复核 `expectedRevision` 与真实路径——原先的比对发生在写暂存**之前**，写暂存到 rename 之间被外部改写会静默覆盖用户内容。冲突仍映射为 409 `agents-file-conflict` / `agents-file-identity-changed`，不降级成 `agents-file-write-failed`，更不是 500。
+- **踩坑记录（方法论）**：让复核失败携带错误码时不能用 TS 参数属性（`constructor(readonly code: string)`）——本仓库直接跑 `.ts`（Node strip-only 模式），参数属性会抛 `ERR_UNSUPPORTED_TYPESCRIPT_SYNTAX`，而 `typecheck` **抓不到**（首次全量测试因此红了 11 个文件）。已按 `ModuleRulesError` 的写法显式赋值。
+- **已知边界**：存储根若被替换成符号链接或非目录，`canonicalModulesRoot` 抛的是普通错误（500），不再落到结构化 409——这是「配置损坏」而非「并发冲突」，与模块写路径同口径。
+- **验证**：`typecheck`／`lint`（0 警告 0 错误）／`test`（**657 pass / 0 fail**，新增 2 条：锁被占时 409 busy 且目标零写盘、写暂存期间外部改写被 rename 前拒绝且外部内容保留）／`build`／`git diff --check` 全绿。
+
 ### 原子替换纪律收回 text-file（2026-10-16）
 
 - **四份手写替换合成一处**：`skills-policy`（技能调用策略）、`skills-config`（技能状态）、`instructions-policy`（指令策略）、`agents-cards`（用户 AGENTS.md／CLAUDE.md 正文）各自维护的「同目录暂存 → 写前复核 → rename → 失败清理」全部改调 `host/text-file.ts#atomicWriteTextFile`；连同既有 7 个调用点，全仓原子文本替换只剩一个实现，暂存名从 5 种形态收敛成 `.目标名.tmp-<uuid>` 一种。

@@ -2,6 +2,7 @@
 // 独立存储、默认放行官方内容、Document API 保留注释与未知字段、乐观并发。
 import { after, test } from 'node:test'
 import assert from 'node:assert/strict'
+import { randomUUID } from 'node:crypto'
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
@@ -43,6 +44,22 @@ test('策略文件缺失：默认放行官方注入且不自动创建文件', ()
   assert.deepEqual(resolveInstructionPolicy(snapshot.policy, 'unconfigured'), { enabled: true })
   // 只读不落盘。
   assert.throws(() => readFileSync(file, 'utf8'), /ENOENT/)
+})
+
+test('跨进程锁被占：写入返回 409 busy 且目标文件逐字节未变', () => {
+  const file = newFile()
+  const created = writeInstructionPolicy({ file, expectedRevision: null, patch: { files: { f1: { enabled: false } } } })
+  assert.equal(created.ok, true)
+  const before = readFileSync(file)
+  // 伪造另一个持有者：活 PID ＋ 合法 token 名——活锁永不按超时回收，withModuleLock 必须拒绝本次写入。
+  const locks = join(dirname(file), '.instructions.rules-locks')
+  mkdirSync(locks, { recursive: true })
+  writeFileSync(join(locks, `${process.pid}-${randomUUID()}.lock`), '{}')
+  const refused = writeInstructionPolicy({ file, expectedRevision: created.revision, patch: { files: { f1: { enabled: true } } } })
+  assert.equal(refused.ok, false)
+  assert.equal(refused.status, 409)
+  assert.equal(refused.code, 'instructions-policy-busy')
+  assert.ok(readFileSync(file).equals(before), '锁被占时目标文件不得被写')
 })
 
 test('首次保存（expectedRevision=null）创建文件并读回一致', () => {
