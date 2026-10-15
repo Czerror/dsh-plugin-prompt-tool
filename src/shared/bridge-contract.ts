@@ -12,7 +12,7 @@ import type { AssetImportRequest, AssetSummary, ImportKind, ModuleExportRequest,
 import type { EngineEditorGroup, InjectionPoint, ModuleFacts } from './engine-capabilities.ts'
 import type { OfficialOrdersView } from './official-orders.ts'
 import { isModuleId } from './module-ids.ts'
-import type { SkillContentSnapshot, SkillPolicyChange, SkillsCatalogSnapshot } from './skills.ts'
+import type { SkillCatalogEntry, SkillContentSnapshot, SkillPolicyChange, SkillsCatalogSnapshot } from './skills.ts'
 import type {
   InstructionFileWriteResult,
   InstructionPolicy,
@@ -467,13 +467,82 @@ export interface PromptConfigSourceView {
   sequence?: number
 }
 
+/** `/meta` 与 `/bootstrap` 的 meta 段：层契约 + 官方装配刻度。`officialOrders` 缺席＝服务降级或档位名不匹配，消费方必须退化。 */
+export interface BridgeMetaSection {
+  meta: Record<string, unknown> & EngineMetaLayerContract & { officialOrders?: OfficialOrdersView }
+}
+
+/**
+ * `/bootstrap` 与 `/describe` 共用的**模块与模型事实段**：host 侧同一段 extras 构造的产物（`collectDescribeExtras`）。
+ *
+ * 信封四键（`ns`/`value`/`base?`/`revision`）在 {@link BridgeSettingsView} 里，两者与 descriptor 在响应体同一层平铺。
+ *
+ * **条件存在的键标 `?` 并注明缺席条件**——它们不是"宽松"，而是记录真实语义。某个键将来变成必有时
+ * **只需去掉 `?`**，编译器会指出 host 构造处是否补齐（这就是这份声明对升级的价值）。
+ */
+export interface BridgeSessionExtras {
+  /** 条件：目录非空且声明了 params / layerSettings；**空主语时整键缺席**（JSON.stringify 丢 undefined）。 */
+  moduleParams?: Record<string, unknown>
+  /** 条件：模块事实可算；算不出时整个键缺席，**绝不**下发部分字段。 */
+  moduleFacts?: ModuleFacts
+  /** 条件：宿主 agent-default-model 设置在位。 */
+  hostDefaultModel?: { provider?: string; model?: string; reasoningEffort?: string }
+  templatePreStepCount: number
+  modelsAvailable: boolean
+  providers: string[]
+  modelCatalog: Record<string, string[]>
+  /** 条件：模型探测失败时才有；成功时整键缺席。 */
+  modelsError?: string
+  activeSkillsDirs: string[]
+  skillCatalog: SkillCatalogEntry[]
+  skillsComplete: boolean
+  skillFolders: string[]
+}
+
+/**
+ * `/bootstrap` 在组装处**额外**加的会话段——`/describe` **不下发**这些键。
+ *
+ * 与 {@link BridgeSessionExtras} 分开声明是刻意的：两个端点的字段集不同，套用同一份会让 `/describe`
+ * 声称自己下发 `meta`／`promptConfigs` 等并不存在的键，那正是本轮要消灭的「类型骗人」。
+ */
+export interface BridgeBootstrapExtras {
+  /** meta 段：响应里是 `meta: { meta: <引擎元数据> }` 的一层包裹，形状见 {@link BridgeMetaSection}。 */
+  meta: BridgeMetaSection
+  overrides: { overrides: Record<string, unknown> }
+  /** 全局层参数（存储根 `config.yml` 的 layerSettings）；软失败时为空表，首屏照常。 */
+  globalParams: Record<string, unknown>
+  /** 条件：目标模块目录非空且声明了 variables / variablesEnabled。 */
+  variables?: ModuleVariablesSnapshot
+  promptConfigs: { promptConfigs: unknown[] }
+  instructions: InstructionsSnapshot
+}
+
+/**
+ * 端点级**顶层附加字段**契约：响应体里与 `value` 平铺的那些键（不含 `ok`）。
+ *
+ * 与 {@link BridgeValueMap} 分开是刻意的——那个描述 `value` **字段本身**的形状（`/bootstrap` 的
+ * `value` 只是 settings descriptor），这个描述它旁边的扩展字段。**按端点声明**而不是一份共用：
+ * 共用会让每个端点都"看起来"有别人的字段（在 `/meta` 上读 `skillCatalog` 编译通过、运行期
+ * `undefined`），而按端点声明把这种误读变成编译错误。
+ */
+export interface BridgeExtrasMap {
+  /** `/bootstrap`：会话段（`meta`／`overrides`／`globalParams`／`variables?`／`promptConfigs`／`instructions`）＋ 模块与模型事实段。 */
+  bootstrap: BridgeBootstrapExtras & BridgeSessionExtras
+  /** `/describe`：只有模块与模型事实段，**没有**会话段（它不下发 `meta`／`promptConfigs` 等键）。 */
+  describe: BridgeSessionExtras
+}
+
+/** 端点未声明顶层附加字段时为空对象（交叉进响应体不产生任何键）。 */
+export type BridgeExtrasOf<K extends BridgeEndpointKey> = K extends keyof BridgeExtrasMap ? BridgeExtrasMap[K] : Record<string, never>
+
+/** 一次 bridge 调用的成功响应体：`value` 字段 ＋ 该端点的顶层附加字段。 */
+export type BridgeResponse<K extends BridgeEndpointKey> =
+  ({ ok: true; value: BridgeValueMap[K] } & BridgeExtrasOf<K>) | BridgeErrorPayload
+
 /** 端点级响应 value 契约（value 字段形状；扩展字段仍以 value 旁可选字段出现）。 */
 export interface BridgeValueMap {
-  /**
-   * `/meta` 与 `/bootstrap` 的 meta 段：层契约 + 官方装配刻度。
-   * `officialOrders` 缺席表示服务降级或官方档位名不匹配，消费方必须退化（不渲染刻度）。
-   */
-  meta: { meta: Record<string, unknown> & EngineMetaLayerContract & { officialOrders?: OfficialOrdersView } }
+  /** `/meta` 与 `/bootstrap` 的 meta 段（形状与缺席语义见 {@link BridgeMetaSection}）。 */
+  meta: BridgeMetaSection
   bootstrap: BridgeSettingsView
   describe: BridgeSettingsView
   models: { modelCatalog: Record<string, string[]> }

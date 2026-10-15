@@ -66,7 +66,7 @@ import {
   type BridgeRouteSpec,
 } from './bridge-transaction.ts'
 import { subjectGate, writeLayerSettingsError } from './module-subject-gate.ts'
-import { BRIDGE_ENDPOINTS, EDIT_TARGET_HEADER, MODULE_ACTIVATION_FAILED, MODULE_IDENTITY_INVALID, SETTINGS_BRIDGE_PREFIX, readEditTarget, readSubjectHeader } from '../shared/bridge-contract.ts'
+import { BRIDGE_ENDPOINTS, EDIT_TARGET_HEADER, MODULE_ACTIVATION_FAILED, MODULE_IDENTITY_INVALID, SETTINGS_BRIDGE_PREFIX, readEditTarget, readSubjectHeader, type BridgeBootstrapExtras, type BridgeSessionExtras, type EngineMetaLayerContract } from '../shared/bridge-contract.ts'
 import { moduleParamFallbacks, validateEngineParamValues } from '../shared/engine-params.ts'
 import { readPersonaSpec, type PersonaSources } from '../shared/persona-section.ts'
 import { SKILL_NAME_PATTERN, type SkillsStateRead } from '../host/skills-config.ts'
@@ -565,13 +565,15 @@ export function registerSettingsBridge(
       }
       /** 官方刻度取值失败只告警一次：本函数被 /meta 与 /bootstrap 共用，不能每次调用都刷屏。 */
       let warnedOfficialOrders = false
-      /** 引擎能力矩阵（meta 端点与 /bootstrap 共用）：动态 import 引擎 schema。 */
-      const loadEngineMeta = async (): Promise<Record<string, unknown>> => {
+      /** 引擎能力矩阵（meta 端点与 /bootstrap 共用）：动态 import 引擎 schema。
+       *  `EngineMetaLayerContract` 是跨 `.mjs` 边界的断言：形状由 engine/schema.mjs 的 `getEngineMeta`
+       *  保证，运行期由契约测试的字段清单与层序断言兜底（这里是唯一需要断言的地方）。 */
+      const loadEngineMeta = async (): Promise<Record<string, unknown> & EngineMetaLayerContract> => {
         const engineMetaUrl = pathToFileURL(join(packageEngineDir(), 'schema.mjs'))
         const { getEngineMeta } = await import(engineMetaUrl.href) as {
-          getEngineMeta: () => Record<string, unknown>
+          getEngineMeta: () => Record<string, unknown> & EngineMetaLayerContract
         }
-        const meta = getEngineMeta() as Record<string, unknown>
+        const meta = getEngineMeta() as Record<string, unknown> & EngineMetaLayerContract
         // 启用表是「参与运行时装配」的唯一事实来源；随每个模块下发，UI 的开关据此显示。
         const enabledSet = new Set(enabledModuleIds(userModulesDir()))
         // 模块的 broken 只来自本插件自己的 module.yml 解析结果（manifest.ts#listModules）。
@@ -647,7 +649,7 @@ export function registerSettingsBridge(
           return { skills: withSkillWinners(state.listSkills(cwd), []), complete: false }
         }
       }
-      const collectDescribeExtras = async (activeDir: string, sessionId?: string): Promise<Record<string, unknown>> => {
+      const collectDescribeExtras = async (activeDir: string, sessionId?: string): Promise<BridgeSessionExtras> => {
         // 模块段的声明面快照：只对声明面登记的节按声明填（未声明的节不下发，客户端也就不会去读）。
         const declares = activeDir.length > 0 ? declarationsOf(activeDir) : undefined
         const detection = deps.models()
@@ -796,7 +798,7 @@ export function registerSettingsBridge(
                 promptConfigs: { promptConfigs: mergeInstructionCards([], scope.files) },
                 instructions: { context: scope.context, files: scope.files, owner: instructionOwner() },
                 ...extras,
-              })
+              } satisfies { ok: true; value: unknown } & BridgeBootstrapExtras & BridgeSessionExtras)
             } catch (error) {
               if (writeLayerSettingsError(tx.write, error)) return
               const message = error instanceof Error ? error.message : String(error)
@@ -829,7 +831,7 @@ export function registerSettingsBridge(
               return
             }
             try {
-              tx.write(200, { ok: true, value: descriptorForTarget(descriptor, dir), ...await collectDescribeExtras(dir) })
+              tx.write(200, { ok: true, value: descriptorForTarget(descriptor, dir), ...await collectDescribeExtras(dir) } satisfies { ok: true; value: unknown } & BridgeSessionExtras)
             } catch (error) {
               if (!writeLayerSettingsError(tx.write, error)) throw error
             }
