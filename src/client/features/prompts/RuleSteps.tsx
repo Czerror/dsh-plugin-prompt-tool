@@ -18,6 +18,7 @@ import { HintTooltip } from '../../ui/HintTooltip.tsx'
 import { MenuSelect } from '../../ui/MenuSelect.tsx'
 import { StepCard, CloseButton, StepAdd, type StepCreation } from './RuleStepCard.tsx'
 import { RuleConditionFields, RuleParameterFields, cleared } from './RuleFields.tsx'
+import { AssemblyFields, MessageFilterFields } from './RuleSurfaceFields.tsx'
 import { TriggerJsonField, asTriggerRecord } from './RuleJsonField.tsx'
 import { triggerLabel } from './rule-labels.ts'
 import {
@@ -110,10 +111,12 @@ function ActionCard(props: {
             cleared(context.fields, fieldKey)
             props.onChange({ ...structuredClone(next.example), id: action.id, kind } as unknown as RuleAction)
           }} /></div>
-        <div className={css.fields}><RuleParameterFields {...context} fieldKey={fieldKey} value={action} requestPatch={action.kind === 'request-params'} example={example}
+        {action.kind === 'assembly' ? <AssemblyFields {...context} fieldKey={fieldKey} value={action} onChange={next => props.onChange(next as RuleAction)} />
+          : action.kind === 'pre-step-filter' ? <MessageFilterFields {...context} fieldKey={fieldKey} value={action} onChange={next => props.onChange(next as RuleAction)} />
+          : <div className={css.fields}><RuleParameterFields {...context} fieldKey={fieldKey} value={action} requestPatch={action.kind === 'request-params'} example={example}
           omit={['id', 'kind', ...(action.kind === 'request-params' ? ['audience', 'modelScope'] : [])]}
           configOmit={action.kind === 'inject-text' ? ['modelScope', 'promotion', 'subject', 'match', ...staticAudience ? [] : ['audience']] : undefined}
-          onChange={next => props.onChange({ ...next, id: action.id, kind: String(next.kind ?? action.kind) } as unknown as RuleAction)} /></div>
+          onChange={next => props.onChange({ ...next, id: action.id, kind: String(next.kind ?? action.kind) } as unknown as RuleAction)} /></div>}
       </>}
   </StepCard>
 }

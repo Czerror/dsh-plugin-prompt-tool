@@ -497,7 +497,7 @@
   gap: 8px;
 }
 
-/* 标签输入：chip 增删 + 输入框；底层仍为逗号分隔字符串。 */
+/* 标签输入：紧凑词卡与行内输入。 */
 .tagInput {
   display: flex;
   min-width: 0;
@@ -519,6 +519,7 @@
 
 .tagChip {
   display: inline-flex;
+  min-width: 0;
   align-items: center;
   gap: 4px;
   max-width: 100%;
@@ -529,6 +530,12 @@
   color: var(--dsw-alias-label-primary);
   background: var(--dsw-alias-bg-layer-2);
   font: 12px/18px system-ui, sans-serif;
+  overflow-wrap: anywhere;
+}
+
+.tagChipText {
+  min-width: 0;
+  white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
 

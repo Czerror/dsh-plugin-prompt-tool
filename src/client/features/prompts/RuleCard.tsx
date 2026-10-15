@@ -17,6 +17,7 @@ import { LAYER_LABEL_KEYS, translateLabel } from './prompt-config-policy.ts'
 import { TriggerJsonField, asTriggerRecord } from './RuleJsonField.tsx'
 import { RuleStepsPanel } from './RuleSteps.tsx'
 import { conditionalActions, countConditions, countNodes, isValidNode, nodeList } from './rule-steps.ts'
+import ui from '../../ui/controls.module.css'
 import css from './rules.module.css'
 
 export function RuleCard(props: {
@@ -56,7 +57,7 @@ export function RuleCard(props: {
   const onDraft = (): void => { editor.changed(); scheduleSave() }
   const fieldContext = { t, fields: draft.fields, disabled, engineMeta: props.meta, onDraft }
   return <AutoSaveSelection.Provider value={() => { if (saveTimer.current !== undefined) clearTimeout(saveTimer.current); latestSave.current() }}><CollapsibleCard id={panelId} title={rule.name || rule.id} meta={(props.source ? t('rules.source', { module: props.source }) + ' · ' : '') + (rule.layer === undefined ? t('rules.module') : translateLabel(t, LAYER_LABEL_KEYS, rule.layer)) + ' · ' + summary}
-    expanded={props.expanded} onToggle={() => { if (props.expanded) save(); props.onToggle() }} bodyClassName={css.cardPanel}
+    expanded={props.expanded} onToggle={() => { if (props.expanded) save(); props.onToggle() }} bodyClassName={`${ui.configForm} ${css.cardPanel}`}
     data-rule-id={rule.id} data-rule-key={entry.key}
     onCompositionStart={() => { composing.current = true; if (saveTimer.current !== undefined) clearTimeout(saveTimer.current) }}
     onCompositionEnd={() => { composing.current = false; scheduleSave() }}

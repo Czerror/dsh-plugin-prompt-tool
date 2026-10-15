@@ -6,3 +6,20 @@ export function triggerLabel(t: PromptToolTranslate, name: string): string {
   const key = `triggers.label.${name}` as PromptToolLocaleKey
   return Object.hasOwn(TRIGGERS_ZH, key) ? t(key) : name
 }
+
+const FIELD_OPTIONS: Record<string, Record<string, readonly string[]>> = {
+  decision: { phase: ['pre', 'post'], decision: ['allow', 'deny', 'ask'], action: ['accept', 'replace', 'block'] },
+  'append-context': { mode: ['context', 'continue'] },
+  'inbox-prepend': { target: ['next-turn', 'next-step'] },
+  count: { per: ['session', 'turn'], of: ['tool-call', 'tool-result', 'assistant-message', 'assistant-chars', 'user-message', 'turn'] },
+  text: { logic: ['any', 'all', 'not', 'notAny'], mode: ['scan', 'prefix'], wordBoundary: ['ascii-token', 'unicode'] },
+  source: { match: ['exact', 'prefix'] },
+  phase: { promoteOn: ['tool-call', 'assistant-message', 'either'] },
+}
+
+/** 仅有限枚举使用选择器，协议值与自由文本保持原样。 */
+export function ruleFieldOptions(t: PromptToolTranslate, kind: string, field: string): { value: string; label: string }[] | undefined {
+  const values = field === 'waterfallPosition' ? ['default', 'outermost'] : FIELD_OPTIONS[kind]?.[field]
+  return values?.map(value => ({ value, label: field === 'waterfallPosition' ? triggerLabel(t, value)
+    : t(`triggers.option.${kind === 'count' && field === 'of' && value === 'turn' ? 'turn-count' : value}` as PromptToolLocaleKey) }))
+}

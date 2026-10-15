@@ -8,15 +8,16 @@ import { TextInput } from '../../ui/TextInput.tsx'
 import { MenuSelect } from '../../ui/MenuSelect.tsx'
 import { Switch } from '../../ui/Switch.tsx'
 import { Button } from '../../ui/Button.tsx'
+import { TagInput } from '../../ui/TagInput.tsx'
 import { TriggerJsonField, asTriggerRecord } from './RuleJsonField.tsx'
-import { triggerLabel } from './rule-labels.ts'
+import { triggerLabel, ruleFieldOptions } from './rule-labels.ts'
 import { conditionSummary } from './rule-steps.ts'
 import { StepCard, CloseButton, StepAdd, type StepCreation } from './RuleStepCard.tsx'
 import { LAYER_LABEL_KEYS, STRATEGY_LABEL_KEYS, POSITION_LABEL_KEYS, AUDIENCE_LABEL_KEYS, MODEL_SCOPE_LABEL_KEYS, SUBJECT_LABEL_KEYS, MERGE_MODE_LABEL_KEYS, DEDUPE_LABEL_KEYS, PROMOTION_LABEL_KEYS, SLOT_KIND_LABEL_KEYS, ROLE_LABEL_KEYS, FILL_LABEL_KEYS, translateLabel } from './prompt-config-policy.ts'
 import ui from '../../ui/controls.module.css'
 import css from './rules.module.css'
 
-interface FieldContext { t: PromptToolTranslate; fields: Map<string, FieldDraft>; fieldKey: string; disabled?: boolean; engineMeta?: EngineMeta; onDraft: () => void }
+export interface FieldContext { t: PromptToolTranslate; fields: Map<string, FieldDraft>; fieldKey: string; disabled?: boolean; engineMeta?: EngineMeta; onDraft: () => void }
 const FIELD_LABELS: Record<string, PromptToolLocaleKey> = { layer: 'form.layer.label', strategy: 'form.strategy.label', position: 'form.position.label', audience: 'form.audience.label', modelScope: 'form.modelScope.label', subject: 'form.subject.label', mergeMode: 'form.merge.label', dedupe: 'form.dedupe.label', promotion: 'form.promotion.label', configKind: 'form.kind.label', role: 'form.role.label', fill: 'form.fill.label', order: 'form.order.label',
   // 动作字段：`decision` 与 `action` 是动作类型名之外的两份含义（裁决档 / 事后判决），不能借 triggerLabel。
   action: 'rules.actionField.action', decision: 'rules.actionField.decision', toolNames: 'rules.actionField.toolNames' }
@@ -48,6 +49,9 @@ export function RuleParameterFields(props: FieldContext & { value: Record<string
     const fieldKey = props.fieldKey + ':' + key, label = FIELD_LABELS[key] === undefined ? triggerLabel(t, key) : t(FIELD_LABELS[key])
     const patch = (next: unknown): void => { const value = { ...props.value }; if (next === undefined) delete value[key]; else value[key] = next; props.onChange(value) }
     const requestField = props.requestPatch && props.fieldKey.endsWith(':patch')
+    const choices = ruleFieldOptions(t, String(props.value.id === undefined ? props.fieldKey.split(':').at(-1) ?? '' : props.value.kind ?? ''), key)
+    if (choices !== undefined && typeof value === 'string') return <FormField key={key} label={label}><MenuSelect compact ariaLabel={label} value={value} disabled={props.disabled}
+      options={choices.some(option => option.value === value) ? choices : [...choices, { value, label: value }]} onChange={patch} /></FormField>
     // 动作的 config.layer 只能选引擎真正可注入的八层（tool-pipeline 只作规则级展示归属）；
     // 其余 layer 下拉（视图筛选等）仍是九层。`:config` 前缀只有 inject-text 会产生。
     const layerOptions = props.fieldKey.endsWith(':config') ? props.engineMeta?.injectionLayers : props.engineMeta?.layers
@@ -67,6 +71,8 @@ export function RuleParameterFields(props: FieldContext & { value: Record<string
       ? <div key={key} className={css.parameterGroup}>{key !== 'config' && <h5>{label}</h5>}<div className={css.fields}><RuleParameterFields {...props} depth={(props.depth ?? 0) + 1} omit={key === 'config' ? props.configOmit : undefined} fieldKey={fieldKey} value={asTriggerRecord(value)} example={asTriggerRecord(props.example?.[key])} onChange={patch} /></div></div>
       : <div key={key} className={css.full}><TriggerJsonField {...props} value={value} shape="object" fieldKey={fieldKey} label={label} onChange={patch} /></div>
     if (Array.isArray(value) && !value.every(item => typeof item === 'string')) return <div key={key} className={css.full}><TriggerJsonField {...props} value={value} shape="array" fieldKey={fieldKey} label={label} onChange={patch} /></div>
+    if (Array.isArray(value)) return <div key={key} className={css.full}><TagInput label={label} value={value} disabled={props.disabled}
+      placeholder={t('rules.tokens.placeholder')} removeLabel={tag => t('rules.tokens.remove', { tag })} onChange={patch} /></div>
     if (typeof value === 'boolean') return <div key={key} className={css.toggle}><span>{label}</span><span className={css.switchLine}><Switch label={label} checked={value} disabled={props.disabled} onChange={patch} /></span></div>
     const optionalNumber = requestField && ['temperature', 'maxTokens'].includes(key)
     if (typeof value === 'number' || optionalNumber) {
@@ -75,11 +81,11 @@ export function RuleParameterFields(props: FieldContext & { value: Record<string
       return <FormField key={key} label={label} error={draft?.error}><TextInput aria-label={label} inputMode="decimal" readOnly={props.disabled} value={draft?.text ?? String(value ?? '')}
         onChange={event => { const text = event.target.value, empty = text.trim() === '', valid = optionalNumber && empty || !empty && Number.isFinite(Number(text)); props.fields.set(fieldKey, { source: valid ? text : String(value ?? ''), text, error: valid ? '' : t('triggers.number') }); if (valid) patch(empty ? undefined : Number(text)); props.onDraft() }} /></FormField>
     }
-    const multiline = Array.isArray(value) || ['text', 'prompt', 'prefix', 'suffix', 'template', 'description'].includes(key)
-    const text = Array.isArray(value) ? value.join('\n') : String(value ?? '')
-    const edit = (next: string): void => patch(Array.isArray(value) ? next === '' ? [] : next.split('\n') : requestField && ['provider', 'model', 'reasoningEffort'].includes(key) && next === '' ? undefined : next)
-    return <FormField key={key} className={multiline && !Array.isArray(value) ? css.full : undefined} label={label}>
-      {multiline ? <textarea className={ui.configTextarea + (Array.isArray(value) ? ' ' + css.listControl : '')} aria-label={label} rows={Array.isArray(value) ? 2 : 3} readOnly={props.disabled} value={text} onChange={event => edit(event.target.value)} />
+    const multiline = ['text', 'prompt', 'prefix', 'suffix', 'template', 'description'].includes(key)
+    const text = String(value ?? '')
+    const edit = (next: string): void => patch(requestField && ['provider', 'model', 'reasoningEffort'].includes(key) && next === '' ? undefined : next)
+    return <FormField key={key} className={multiline ? css.full : undefined} label={label}>
+      {multiline ? <textarea className={ui.configTextarea} aria-label={label} rows={3} readOnly={props.disabled} value={text} onChange={event => edit(event.target.value)} />
         : <TextInput aria-label={label} readOnly={props.disabled} value={text} onChange={event => edit(event.target.value)} />}
     </FormField>
   })

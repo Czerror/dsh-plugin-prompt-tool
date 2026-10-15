@@ -1,4 +1,4 @@
-.configNavigation { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 24px; min-width: 0; border-top: 0.5px solid var(--dsw-alias-border-l2); padding-top: 24px; }
+.configNavigation { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 12px; min-width: 0; border-top: 0.5px solid var(--dsw-alias-border-l2); padding-top: 24px; }
 /* 卡头已给出身份，无需再次分隔。 */
 .configNavigationFlat { border-top: 0; padding-top: 0; }
 /* 导航贴合文案宽度，将剩余空间留给编辑区。 */

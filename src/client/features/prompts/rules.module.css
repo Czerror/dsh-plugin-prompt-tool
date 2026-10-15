@@ -1,10 +1,10 @@
 /* 统一规则卡、条件树和条件卡/动作卡的私有样式。 */
 .workspace { display: flex; flex-direction: column; gap: 12px; min-width: 0; color: var(--dsw-alias-label-primary); font: 12px/18px system-ui, sans-serif; font-feature-settings: "cv01", "ss03"; }
 .row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; min-width: 0; }
-.cardPanel { min-width: 0; }
+.cardPanel { container: rule-card / inline-size; min-width: 0; }
 .headerActions { display: inline-flex; flex: 0 0 auto; align-items: center; gap: 6px; max-width: 100%; }
 .headerActions .row { flex-wrap: nowrap; gap: 4px; }
-.body { container: rule-editor / inline-size; display: flex; flex-direction: column; gap: 16px; padding: 16px; min-width: 0; border-top: .5px solid var(--dsw-alias-border-l2); }
+.body { container: rule-editor / inline-size; display: flex; flex-direction: column; gap: 16px; padding: 0; min-width: 0; border-top: 0; }
 .fields { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 8px 12px; min-width: 0; }
 .fields > * { flex: 0 1 auto; min-width: 0; max-width: 100%; }
 .fields > .full, .fields > .parameterGroup { flex-basis: 100%; }
@@ -15,7 +15,6 @@
 .parameterGroup h5, .section h3 { margin: 0; font: 500 13px/20px system-ui,sans-serif; color: var(--dsw-alias-label-primary); }
 .control { max-width: 100%; min-width: 0; }
 .body textarea { width: 100%; min-width: 0; resize: vertical; font: 12px/18px system-ui,sans-serif; }
-.body .listControl { width: 24ch; max-width: 100%; min-height: 46px; }
 .section { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
 .section + .section { padding-top: 16px; border-top: .5px solid var(--dsw-alias-border-l2); }
 .toggle { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; min-width: 0; font: 12px/18px system-ui,sans-serif; }
@@ -27,6 +26,16 @@
 .conditions > button, .condition > button { align-self: flex-start; }
 .conditionChild { display: flex; flex-direction: column; gap: 8px; padding-inline-start: 12px; border-inline-start: 2px solid var(--dsw-alias-border-l2); min-width: 0; }
 .status { margin: 0; color: var(--dsw-alias-label-secondary); font: 12px/18px system-ui,sans-serif; overflow-wrap: anywhere; }
+.surfaceFields, .surfaceSection, .surfaceGroup, .surfaceEntry { display: flex; flex-direction: column; min-width: 0; gap: 12px; }
+.surfaceSection + .surfaceSection { padding-top: 12px; border-top: .5px solid var(--dsw-alias-border-l2); }
+.surfaceHeading { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-width: 0; }
+.surfaceHeading > :first-child { min-width: 0; overflow-wrap: anywhere; }
+.surfaceHeading h5 { margin: 0; font: 500 13px/20px system-ui,sans-serif; }
+.surfaceSwitchRow { display: inline-flex; align-items: center; gap: 8px; min-width: 0; width: max-content; max-width: 100%; }
+.surfaceSwitchRow > span { min-width: 0; overflow-wrap: anywhere; }
+.surfaceColumns { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 12px; }
+.surfaceColumns > * { flex: 0 1 auto; min-width: 0; max-width: 100%; }
+.surfaceEntry + .surfaceEntry { padding-top: 12px; border-top: .5px solid var(--dsw-alias-border-l2); }
 .error { color: var(--dsw-alias-state-error-primary); overflow-wrap: anywhere; }
 .body [hidden] { display: none !important; }
 
