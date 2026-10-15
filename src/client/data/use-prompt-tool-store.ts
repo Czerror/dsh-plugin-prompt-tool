@@ -5,6 +5,7 @@ import type { EngineMeta, PromptConfigDraft } from '../prompt-tool-types.ts'
 import type { PromptToolHostApi } from './host-api.ts'
 import type { SkillCatalogEntry, SkillContentSnapshot, SkillPolicyChange } from '../../shared/skills.ts'
 import { bridgeCall, errorMessage, type BridgeResult } from './bridge-client.ts'
+import type { ConfirmSkillOverwrite } from './skill-import.ts'
 import {
   EMPTY_FIELDS,
   EMPTY_META,
