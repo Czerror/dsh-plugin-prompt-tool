@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+### 原子替换纪律收回 text-file（2026-10-16）
+
+- **四份手写替换合成一处**：`skills-policy`（技能调用策略）、`skills-config`（技能状态）、`instructions-policy`（指令策略）、`agents-cards`（用户 AGENTS.md／CLAUDE.md 正文）各自维护的「同目录暂存 → 写前复核 → rename → 失败清理」全部改调 `host/text-file.ts#atomicWriteTextFile`；连同既有 7 个调用点，全仓原子文本替换只剩一个实现，暂存名从 5 种形态收敛成 `.目标名.tmp-<uuid>` 一种。
+- **一个真缺陷随统一消失**：`instructions-policy` 原实现既没有 `flag:'wx'` 也没有失败清理（rename 失败就在 `.prompt-tool/` 里留下 `<instructions.yml>.tmp-<pid>-<ts>`），统一后由 helper 覆盖；`skills-config` 里裸 `unlinkSync` 的 `finally`（unlink 抛错会穿透 `{ok:false}` 映射）随该段删除一并消失。
+- **权限语义改成「精确保留」**：`mode` 从 `writeFileSync` 的 mode（内核会再按 umask 掩一次，只会收窄）改为写后 `chmod`；省略 `mode` 时默认保留目标现有权限位，目标不存在才按 0o644 与 umask 新建。此前 5 个没传 mode 的调用点会把 0o600 的目标换成 `0o666 & ~umask`（POSIX 上真实的放宽），现在收口到 helper 的一处默认值。已解析权限时暂存先按属主可读写建、再设位，设位前不比目标更宽。
+- **接口只加两样**：`mkdir?: boolean`（两个调用点原本各自 `mkdirSync`）与导出的 `atomicTemporaryTarget`（暂存名的「造」与「认」同源——`module-storage` 的中断写入清扫改引用它，私有正则删除）。不加「内容没变就不写」：三家判据本就不同（整份文本／两个 frontmatter 键／不做），收进 helper 只能再加参数区分。
+- **清理异常吞掉**：helper 的失败清理用 `try/catch` 包住，保证原始错误（版本冲突／rename 失败）总能抛出，与 agents-cards 原实现同口径。
+- **未做（已知边界）**：模块目录之外的崩溃残留（技能目录、`.prompt-tool/`、用户指令文件目录）不做自动清扫——它们不进技能清单与模块列表，也不影响后续写入（每次取新的 UUID 暂存名）。「写前自清」与「启动扫描」都评估过：前者要按命名形态删用户目录里的文件，后者要目录级授权，本轮都不做。
+- **未做（已排进 PLAN 的 Wave 2）**：`instructions-policy` 仍不取 `withModuleLock`（两个共享 DSH_HOME 的进程可同时通过 revision 校验，后者静默覆盖前者）；`agents-cards` 的 `expectedRevision` 比对仍在写暂存之前、rename 前不再复核。
+- **验证**：`typecheck`／`lint`（0 警告 0 错误）／`test`（655 pass / 0 fail，新增 1 条权限位用例 `test/host/text-file.test.mjs`）／`build`／`git diff --check` 全绿。
+
 ### 桥端点注册收进同一个入口（2026-10-16）
 
 - **41 处手抄骨架收成一个 helper**：`settings-bridge.ts` 里 39 处数组内 ＋ 2 处 map 内的 `webServer.register({ kind, path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.x, handler: route({...}) })` 全部换成 `register(BRIDGE_ENDPOINTS.x, spec)`。`webServer.register` 的站点数从 42 降到 **2**（两个 inject 作用域各一个 helper）；45 个端点由 43 次调用覆盖（`skillRead`／`skillWrite` 在 map 内共用一次注册）。

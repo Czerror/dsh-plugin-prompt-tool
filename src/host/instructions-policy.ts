@@ -11,10 +11,11 @@
  * 拒绝写入（不把损坏文件当空配置覆盖）。
  */
 import { createHash } from 'node:crypto'
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
-import { dirname, join } from 'node:path'
+import { existsSync, readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { Document, isMap, isScalar, parseDocument, visit } from 'yaml'
 import { DSH_HOME, storageRootOf } from './paths.ts'
+import { atomicWriteTextFile } from './text-file.ts'
 import type {
   InstructionPolicy,
   InstructionPolicyFileOverride,
@@ -174,12 +175,6 @@ function documentFor(file: string): { doc: Document } | { error: string } {
   }
 }
 
-function writeFileAtomic(file: string, content: string): void {
-  const tmp = `${file}.tmp-${process.pid}-${Date.now().toString(36)}`
-  writeFileSync(tmp, content, 'utf8')
-  renameSync(tmp, file)
-}
-
 /**
  * 乐观并发写入：`expectedRevision` 必须等于当前文件版本（文件缺失时为 null）。
  * 只改传入的键；恢复默认值即删除该键，不留空壳。
@@ -283,8 +278,8 @@ export function writeInstructionPolicy(options: {
   let content: string
   try {
     content = doc.toString()
-    mkdirSync(dirname(file), { recursive: true })
-    writeFileAtomic(file, content)
+    // 替换机制归 helper（独占暂存、失败清理、权限精确保留）；revision 语义留在本函数上半段。
+    atomicWriteTextFile(file, content, { mkdir: true })
   } catch (error) {
     return {
       ok: false,

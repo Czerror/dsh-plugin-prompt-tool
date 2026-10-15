@@ -6,9 +6,10 @@
  * 本模块拥有本地卡片的文件身份、读取快照与读写校验；读取失败与空文件严格区分。
  */
 import { createHash } from 'node:crypto'
-import { chmodSync, existsSync, mkdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { existsSync, readFileSync, realpathSync, statSync } from 'node:fs'
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { DSH_HOME } from './paths.ts'
+import { atomicWriteTextFile } from './text-file.ts'
 import type { PromptConfigSpec } from './prompt-configs.ts'
 import {
   MAX_INSTRUCTION_FILE_BYTES,
@@ -241,28 +242,8 @@ const writeQueues = new Map<string, Promise<unknown>>()
 
 /** 原子写指令文件（tmp + rename）；调用方必须先用 detectAgentsFiles() 校验路径白名单。 */
 export function writeAgentsFile(path: string, content: string): void {
-  const target = resolve(path)
-  mkdirSync(dirname(target), { recursive: true })
-  const tmp = `${target}.tmp-${process.pid}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
-  let mode: number | undefined
-  try {
-    mode = statSync(target).mode & 0o777
-  } catch {
-    mode = undefined
-  }
-  try {
-    writeFileSync(tmp, content, 'utf8')
-    // 保留原文件权限，不让原子替换扩大访问范围。
-    if (mode !== undefined) chmodSync(tmp, mode)
-    renameSync(tmp, target)
-  } catch (error) {
-    try {
-      rmSync(tmp, { force: true })
-    } catch {
-      // 清理失败不掩盖原始错误。
-    }
-    throw error
-  }
+  // 暂存命名、独占创建、权限精确保留与失败清理归 text-file；本函数只解析目标路径。
+  atomicWriteTextFile(resolve(path), content, { mkdir: true })
 }
 
 /**

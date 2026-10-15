@@ -8,7 +8,7 @@ import type { RuleContent, RuleDefinition, RuleRevisions, RuleSettings } from '.
 import { readPersonaSpec } from '../shared/persona-section.ts'
 import { assertModuleDirectory, assertModuleId, canonicalModulesRoot } from './module-install.ts'
 import { MODULE_DEFINITION_FILE, RULES_DIR, RULES_SETTINGS_FILE, RULES_VARIABLES_FILE } from './paths.ts'
-import { atomicWriteTextFile } from './text-file.ts'
+import { atomicTemporaryTarget, atomicWriteTextFile } from './text-file.ts'
 import { readModuleLayerSettings } from './module-layer-settings.ts'
 // @ts-expect-error 引擎是规则语义的唯一校验器。
 import { assertRuleId, compileRules } from '../../engine/rule-spec.mjs'
@@ -200,7 +200,7 @@ function assertSource(snapshot: ModuleDefinitionSnapshot): void {
 }
 /** 与 removeInterruptedWrites 同源：只认 atomicWriteTextFile 的精确 UUID 临时名，不是用户素材。 */
 function isRulesTemporary(filename: string): boolean {
-  const target = temporaryTarget(filename)
+  const target = atomicTemporaryTarget(filename)
   if (target === undefined) return false
   if (target === RULES_SETTINGS_FILE || target === RULES_VARIABLES_FILE) return true
   if (!target.endsWith('.yml')) return false
@@ -321,11 +321,8 @@ function coordinated<T>(directory: string, action: () => T): T {
 }
 
 /** 只认 atomicWriteTextFile 的精确 UUID 临时名，不碰普通点文件或用户素材。 */
-function temporaryTarget(filename: string): string | undefined {
-  return /^\.(.+)\.tmp-[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.exec(filename)?.[1]
-}
 function rootTemporaries(directory: string): string[] {
-  return readdirSync(directory).filter(file => temporaryTarget(file) === MODULE_DEFINITION_FILE)
+  return readdirSync(directory).filter(file => atomicTemporaryTarget(file) === MODULE_DEFINITION_FILE)
 }
 function removeInterruptedWrites(directory: string): void {
   const paths = rootTemporaries(directory).map(file => join(directory, file))

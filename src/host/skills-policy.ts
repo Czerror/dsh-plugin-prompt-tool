@@ -5,16 +5,16 @@
  *  任何预设装配、任何提供方都会读到同一个事实。
  *
  *  写入纪律：只用 yaml Document API 改目标键，保留注释、未知字段、其余键与正文；
- *  内容无变化不落盘；写盘先同目录暂存再原子 rename；失败时原文件保持逐字节不变。 */
-import { existsSync, lstatSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs'
-import { randomUUID } from 'node:crypto'
-import { basename, dirname, join } from 'node:path'
-import { isAbsolute } from 'node:path'
+ *  内容无变化不落盘；写盘先同目录暂存再原子 rename；失败时原文件保持逐字节不变。
+ *  替换机制（暂存命名、独占创建、写前复核调用点、失败清理、权限保留）归 `host/text-file.ts`。 */
+import { lstatSync, readFileSync } from 'node:fs'
+import { basename, isAbsolute } from 'node:path'
 import { Document } from 'yaml'
 import { SKILL_MARKER, invocationForScope, type SkillCatalogEntry, type SkillInvocation, type SkillPolicyChange, type SkillPolicyScope } from '../shared/skills.ts'
 import { parseFrontmatter, parseSkillBoolean } from './skills-parse.ts'
 import { assertUnlinkedPath } from './skills-actions.ts'
 import { SKILL_NAME_PATTERN } from './skills-config.ts'
+import { atomicWriteTextFile } from './text-file.ts'
 
 export type SkillPolicyRead =
   | { ok: true; invocation: SkillInvocation; frontmatter?: string; body?: string }
@@ -104,7 +104,6 @@ export function policyTarget(
 
 /** 把技能文件的调用策略写到目标范围；返回是否发生写入。 */
 export function setSkillInvocation(file: string, change: SkillPolicyChange | SkillPolicyScope): SkillPolicyWrite {
-  let temporary: string | undefined
   try {
     const parsed = parseMarker(file)
     assertWritableMarker(file, true)
@@ -122,18 +121,13 @@ export function setSkillInvocation(file: string, change: SkillPolicyChange | Ski
     const userChanged = ('scope' in operation || operation.side === 'user') && writeKey(parsed.doc, 'user-invocable', target.userInvocable)
     if (!modelChanged && !userChanged) return { ok: true, changed: false, invocation: target }
     const content = `${parsed.bom}---\n${parsed.doc.toString()}---${parsed.rest}`
-    temporary = join(dirname(file), `.${basename(file)}.tmp-${randomUUID()}`)
-    writeFileSync(temporary, content, { encoding: 'utf8', flag: 'wx', mode: lstatSync(file).mode & 0o777 })
-    assertWritableMarker(file, true)
-    if (readFileSync(file, 'utf8') !== parsed.raw) throw new Error('技能内容版本冲突，请刷新后重试')
-    renameSync(temporary, file)
-    temporary = undefined
+    // 时序归 helper；「比什么」是本域的版本语义：清单身份 + 原文逐字节。
+    atomicWriteTextFile(file, content, { beforeReplace: () => {
+      assertWritableMarker(file, true)
+      if (readFileSync(file, 'utf8') !== parsed.raw) throw new Error('技能内容版本冲突，请刷新后重试')
+    } })
     return { ok: true, changed: true, invocation: target }
   } catch (error) {
     return { ok: false, message: error instanceof Error ? error.message : String(error) }
-  } finally {
-    if (temporary !== undefined && existsSync(temporary)) {
-      try { unlinkSync(temporary) } catch { /* 残留暂存文件不影响原文件，交给人工清理 */ }
-    }
   }
 }
