@@ -583,21 +583,3 @@ rules:
 # moduleConfigs:
 #   instruction-hint:
 #     messageTemplate: "Instructions from: {{FILES}}"
-# subagentToolPolicy:
-#   defaultProfile: default
-#   ceiling:
-#     allow:
-#       - read
-#     deny: []
-#   profiles:
-#     - id: default
-#       name: 只读
-#       allow:
-#         - read
-#       deny: []
-#       modelSelectable: true
-#   modelExpansion:
-#     enabled: false
-#     allow: []
-#     maxAdditionalTools: 0
-#     requireApproval: true

@@ -100,7 +100,6 @@ const assets = new Document({
   variablesEnabled: true,
   contextActivationRecursive: false,
   moduleConfigs: { 'instruction-hint': { messageTemplate: 'Instructions from: {{FILES}}' } },
-  subagentToolPolicy: { defaultProfile: 'default', ceiling: { allow: ['read'], deny: [] }, profiles: [{ id: 'default', name: '只读', allow: ['read'], deny: [], modelSelectable: true }], modelExpansion: { enabled: false, allow: [], maxAdditionalTools: 0, requireApproval: true } },
 })
 const commented = value => value.toString().trimEnd().split('\n').map(line => `# ${line}`).join('\n')
 const text = doc.toString() + `\n# BEGIN SHARED PARAMETER REFERENCE\n# 以下穷举全部登记键；值是编辑器示例，不承诺等于模块运行时默认值。\n# '' / [] 保存时删键；false / 0 保留。按需合并到上方 layerSettings，勿保留重复顶层键。\n${commented(reference)}\n# END SHARED PARAMETER REFERENCE\n\n# 其他领域资产参考（按需合并；moduleConfigs 低于已声明共享参数，不能绕过权限）\n# persona 的省略字段继承官方；空文本清空，complete:false 解除人设独占。\n# 多模块重复定义同一受众的同一字段会拒绝，不按顺序挑选赢家。\n${commented(assets)}\n`

@@ -95,8 +95,8 @@ export interface AgentAssemblyOptions {
  *   - `./configs`（新形态）→ `<模块目录>/configs`；
  *   - `../<id>/triggers.yml`（历史形态：`ENGINE_MANAGED_PATHS` 的改写成这样，语义是
  *     「从历史引擎位置 `<模块根>/.engine/` 回到 `<模块根>/<id>/`」）→ `<模块目录>/triggers.yml`；
- *   - `../subagent-tools/policy.yml`（组合源初值）→ 相对模块内历史引擎位置，
- *     同样落进当前模块目录；引擎继续负责资源越界校验。
+ *   - `../subagent-tools/policy.yml`（已退役策略的历史形态）→ 同样按模块目录作基准，
+ *     用于兼容既有预设里仍写着该路径的值；引擎继续负责资源越界校验。
  * 已是 `file:` URL 的值原样保留。
  */
 function absolutizeManagedFields(

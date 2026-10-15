@@ -22,7 +22,7 @@ const { injectionPointSlots } = await withSsr([
   new URL('../../src/client/app/workspace/pages/InjectionPointsPanel.tsx', import.meta.url).href,
 ])
 
-const facts = (editable = true) => ({ declaredModules: [], effectiveModules: [], rowIds: [], sourceMode: 'explicit', editable, subagentToolPolicyEnabled: false })
+const facts = (editable = true) => ({ declaredModules: [], effectiveModules: [], rowIds: [], sourceMode: 'explicit', editable })
 const moduleA = { id: 'mod-a', name: 'A', enabled: true, declares: ['rules'], facts: facts() }
 const moduleB = { id: 'mod-b', name: 'B', enabled: true, declares: ['rules'], facts: facts() }
 const moduleOff = { id: 'mod-off', name: 'off', enabled: false, declares: ['rules'], facts: facts() }

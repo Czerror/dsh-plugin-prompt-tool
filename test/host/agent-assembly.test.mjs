@@ -848,7 +848,7 @@ test('受管字段一律解析到当前预设目录内', async () => {
   const id = 'managed-paths'
   const dir = join(moduleRoot, id)
   writeModuleFixture(id, {
-    modules: ['prompt-config-engine', 'tool-config-engine', 'declared-triggers', 'subagent-tool-policy'],
+    modules: ['prompt-config-engine', 'tool-config-engine', 'declared-triggers'],
     moduleConfigs: {
       // 新形态：预设目录基准。
       'tool-config-engine': { configsDir: './custom-tools' },

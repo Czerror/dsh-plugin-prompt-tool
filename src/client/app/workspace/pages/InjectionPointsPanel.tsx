@@ -100,10 +100,10 @@ function LayerCapabilityRow(props: { store: PromptToolStore; t: PromptToolTransl
 }
 
 /**
- * 结构化资产编辑器按主归属层渲染（模板变量、模型路由、委派深度、自定义工具、子代理策略）：
+ * 结构化资产编辑器按主归属层渲染（模板变量、模型路由、自定义工具）：
  * 层归属来自共享契约，不在这里硬编码层名；每个资产复用各自专用编辑器、草稿池与写端点。
  */
-const LAYER_ASSET_IDS = ['variables', 'main-model', 'subagent-model', 'subagent-tools', 'custom-tools', 'subagent-tool-policy'] as const
+const LAYER_ASSET_IDS = ['variables', 'main-model', 'subagent-model', 'custom-tools'] as const
 
 /** 资产卡读写的 `module.yml` 节（键名与门的登记表同名：只回答「这张卡要哪个节」，不另立判据）。
  *  没登记的资产（模型路由、委派深度）不按声明面门控——它们的数据不在 `module.yml` 的这些节里。 */
