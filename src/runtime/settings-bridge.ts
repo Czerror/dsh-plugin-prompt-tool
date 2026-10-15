@@ -392,7 +392,6 @@ function moduleFactsOf(moduleId: string): ModuleFacts | undefined {
       rowIds: facts.rowIds,
       sourceMode: facts.sourceMode,
       editable: facts.editable,
-      subagentToolPolicyEnabled: facts.subagentToolPolicyEnabled === true,
     }
   } catch {
     return undefined
@@ -706,7 +705,6 @@ export function registerSettingsBridge(
               rowIds: resolvedFacts.rowIds,
               sourceMode: resolvedFacts.sourceMode,
               editable: resolvedFacts.editable,
-              subagentToolPolicyEnabled: resolvedFacts.subagentToolPolicyEnabled === true,
             }
             templatePreStepCount = (spec.rules ?? []).filter(rule => rule.layer === 'pre-step').length
           } catch (error) {
@@ -2007,90 +2005,6 @@ export function registerSettingsBridge(
             }
             if (!await runOverridesChange(tx.write, basename(dir))) return
             tx.write(200, { ok: true, value: { id, count: result.count } })
-          } }),
-        }),
-        sctx.webServer.register({
-          kind: 'exact',
-          path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.subagentToolPolicy,
-          handler: route({ body: 'json', handle: async (tx) => {
-            const record = tx.record
-            // 声明面只在读侧拦：保存子代理策略是给模块添加第一节，放行。
-            const dir = subjectGate(tx, 'subagentToolPolicy', { write: record.policy !== undefined })
-            if (dir === undefined) return
-            // 无 policy 载荷 = 读取（module.yml 顶层 subagentToolPolicy 段）。
-            if (record.policy === undefined) {
-              try {
-                const spec = loadModuleSpec(dir)
-                const policy = spec.subagentToolPolicy ?? null
-                tx.write(200, { ok: true, value: { policy } })
-              } catch (error) {
-                if (writeLayerSettingsError(tx.write, error)) return
-                tx.write(200, { ok: true, value: { policy: null } })
-              }
-              return
-            }
-            try {
-              const policy = record.policy
-              const policyUrl = pathToFileURL(join(packageEngineDir(), 'subagent-tool-policy-core.mjs'))
-              const core = await import(policyUrl.href) as {
-                validateSubagentToolPolicy: (raw: unknown) => string[]
-              }
-              const isEmpty = policy === null || (typeof policy === 'object' && !Array.isArray(policy) && Object.keys(policy as Record<string, unknown>).length === 0)
-              const errors = isEmpty ? [] : core.validateSubagentToolPolicy(policy)
-              if (errors.length > 0) {
-                tx.write(409, { ok: false, code: 'subagent-tool-policy-rejected', message: '策略校验失败：' + errors.join('; '), value: { errors } })
-                return
-              }
-              if (subjectGate(tx, 'subagentToolPolicy', { write: true }) === undefined) return
-              withModuleDefinition(dir, (doc) => {
-                if (isEmpty) {
-                  // 关闭开关：只删除策略段，**保留模块声明**——能力卡仍在，用户可再次打开；
-                  // 引擎在策略文件缺失时降级为官方委派行为（见 engine/subagent-tool-policy.mjs）。
-                  doc.deleteIn(['subagentToolPolicy'])
-                } else {
-                  doc.setIn(['subagentToolPolicy'], policy)
-                  appendModuleCapabilities(doc, ['subagent-tool-policy'])
-                }
-              })
-              if (!await runOverridesChange(tx.write, basename(dir))) return
-              tx.write(200, { ok: true, value: { policy, errors } })
-            } catch (error) {
-              const message = error instanceof Error ? error.message : String(error)
-              tx.write(409, { ok: false, code: 'subagent-tool-policy-rejected', message: '子代理工具策略保存失败：' + message })
-            }
-          } }),
-        }),
-        sctx.webServer.register({
-          kind: 'exact',
-          path: SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.subagentToolPolicyPreview,
-          handler: route({ body: 'json', handle: async (tx) => {
-            const dir = subjectGate(tx, 'subagentToolPolicyPreview')
-            if (dir === undefined) return
-            const record = tx.record
-            try {
-              const spec = loadModuleSpec(dir)
-              if (spec.subagentToolPolicy === undefined || spec.subagentToolPolicy === null) {
-                tx.write(400, { ok: false, code: 'subagent-tool-policy-missing', message: '该模块未配置 subagentToolPolicy' })
-                return
-              }
-              const policyUrl = pathToFileURL(join(packageEngineDir(), 'subagent-tool-policy-core.mjs'))
-              const core = await import(policyUrl.href) as {
-                compileSubagentToolPolicy: (raw: unknown) => unknown
-                resolveSubagentToolPolicy: (compiled: unknown, request: Record<string, unknown>, available: string[]) => unknown
-              }
-              const compiled = core.compileSubagentToolPolicy(spec.subagentToolPolicy)
-              // 预览用 ceiling 工具宇宙作为可用集（策略设计视图；运行时以实际可见工具为准，
-              // 统一走同一 resolveSubagentToolPolicy seam，不复制解析算法）。
-              const ceilingAllow = (spec.subagentToolPolicy.ceiling as { allow?: unknown })?.allow
-              const available = Array.isArray(ceilingAllow) ? ceilingAllow.map(String) : []
-              const result = core.resolveSubagentToolPolicy(compiled, record as Record<string, unknown>, available)
-              const tool = record.tool === 'subagent_fork' ? 'subagent_fork' : 'subagent'
-              const provider = tool === 'subagent_fork' ? 'fork' : 'spawn'
-              tx.write(200, { ok: true, value: { result: { ...(result as Record<string, unknown>), tool, provider, providerCapability: '运行时创建前校验 toolFilter/continuable/depth/model-route' } } })
-            } catch (error) {
-              const message = error instanceof Error ? error.message : String(error)
-              tx.write(409, { ok: false, code: 'subagent-tool-policy-preview-failed', message: '策略预览失败：' + message })
-            }
           } }),
         }),
         sctx.webServer.register({

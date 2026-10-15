@@ -18,7 +18,6 @@ const {
 const { deleteSkillTarget } = await import('../../src/host/skills-actions.ts')
 const { storageRootOf } = await import('../../src/host/paths.ts')
 const { moduleDeclares, moduleDeclarations } = await import('../../src/host/module-declarations.ts')
-const { SUBAGENT_TOOL_POLICY_SKELETON } = await import('../../src/shared/engine-capabilities.ts')
 after(() => {
   rmSync(bridgeHome, { recursive: true, force: true })
   delete process.env.DSH_HOME
@@ -197,7 +196,7 @@ test('settings bridge /meta 逐模块下发同源事实：可编辑、算不出�
   assert.equal(facts.sourceMode, 'explicit')
   assert.deepEqual(facts.declaredModules, ['rule-engine', 'tool-search'])
   assert.deepEqual(Object.keys(facts).sort(),
-    ['declaredModules', 'editable', 'effectiveModules', 'rowIds', 'sourceMode', 'subagentToolPolicyEnabled'])
+    ['declaredModules', 'editable', 'effectiveModules', 'rowIds', 'sourceMode'])
   assert.doesNotMatch(JSON.stringify(facts), /TOP-SECRET/)
 
   assert.equal(byId.get(unresolvedId).facts.editable, false)
@@ -230,7 +229,7 @@ test('settings bridge /meta 下发声明面（顶层键名）：只声明 rules 
   const declares = byId.get(rulesOnlyId).declares
   assert.ok(Array.isArray(declares), '/meta 必须逐模块下发 declares 键名数组')
   assert.equal(declares.includes('rules'), true)
-  for (const section of ['customTools', 'persona', 'subagentToolPolicy', 'params', 'variables']) {
+  for (const section of ['customTools', 'persona', 'params', 'variables']) {
     assert.equal(declares.includes(section), false, `只声明 rules 的模块不含 ${section}`)
   }
   assert.doesNotMatch(JSON.stringify(declares), /TOP-SECRET/, '只下发键名，不下发内容')
@@ -241,7 +240,7 @@ test('settings bridge /meta 下发声明面（顶层键名）：只声明 rules 
   for (const id of ['ponytail', 'tool-surface', 'skill-surface', 'superpowers']) {
     const real = moduleDeclarations(fileURLToPath(new URL(`../../modules/${id}`, import.meta.url)))
     for (const section of ['rules', 'modules']) assert.equal(real.has(section), true, `${id} 声明 ${section}`)
-    for (const section of ['customTools', 'persona', 'subagentToolPolicy', 'variables', 'variablesEnabled', 'params', 'layerSettings']) {
+    for (const section of ['customTools', 'persona', 'variables', 'variablesEnabled', 'params', 'layerSettings']) {
       assert.equal(real.has(section), false, `${id} 未声明 ${section}（对应端点会 400 module-not-declared）`)
     }
   }
@@ -273,12 +272,11 @@ test('声明面：五个节的首次写入＝创建（无版本期望也 200）�
 
   const tool = { id: 'shell', description: '运行命令', output: { schema: { type: 'string' } }, execute: { kind: 'shell', command: 'echo' } }
   await created('customTools', ['customTools'], { customTools: [tool] })
-  await created('subagentToolPolicy', ['subagentToolPolicy'], { policy: SUBAGENT_TOOL_POLICY_SKELETON })
   // 人设与变量：创建语义＝**不传版本期望**（客户端创建模式就该这么发；传空串会被当非法版本拒绝）。
   await created('persona', ['persona'], { persona: { main: { prefix: 'CREATED' } }, expectedModuleId: id })
   await created('moduleVariables', ['variables'], { scope: 'module', variables: { owner: 'created' }, expectedModuleId: id })
   // 引擎参数写的是 `layerSettings`（`engineParamPath`），登记表里 `params` 与 `layerSettings` 任一存在即算已声明。
-  await created('paramOverrides', ['params', 'layerSettings'], { overrides: { maxDepth: 3 } })
+  await created('paramOverrides', ['params', 'layerSettings'], { overrides: { modelTemperature: 0.3 } })
 
   // 有前状态就仍要版本期望：声明之后再省略版本必须被拒（创建语义不放宽并发校验）。
   // 拒法与写区外的校验同源，所以这里连状态码与 code 一起锁住——只断「不是 200」会漏掉状态码分类退化。
@@ -520,7 +518,7 @@ test('请求模块身份统一 bootstrap 快照与规则写入；错误身份和
       assert.equal(payload.value.value.moduleId, idA)
       assert.deepEqual(payload.moduleFacts.declaredModules, ['rule-engine'])
       assert.deepEqual(Object.keys(payload.moduleFacts).sort(),
-        ['declaredModules', 'editable', 'effectiveModules', 'rowIds', 'sourceMode', 'subagentToolPolicyEnabled'],
+        ['declaredModules', 'editable', 'effectiveModules', 'rowIds', 'sourceMode'],
         '模块事实只含白名单字段，不夹带行级配置')
       assert.equal(payload.templatePreStepCount, 1)
       if (endpoint === 'bootstrap') {
@@ -796,7 +794,6 @@ test('settings bridge：system 预设拒绝全部当前预设写入', async () =
       [BRIDGE_ENDPOINTS.charactersImport, { files: [{ path: 'card.json', content: '{}' }] }],
       [BRIDGE_ENDPOINTS.moduleMerge, { id: 'card' }],
       [BRIDGE_ENDPOINTS.moduleUnmerge, { id: 'card' }],
-      [BRIDGE_ENDPOINTS.subagentToolPolicy, { policy: null }],
       [BRIDGE_ENDPOINTS.moduleCapability, { action: 'create', capabilityId: 'module-variable-tools' }],
     ]
     for (const [endpoint, body] of cases) {
@@ -853,43 +850,6 @@ test('settings bridge /custom-tools 保存时自动追加工具模块', async ()
     assert.equal(res.status, 200)
     const parsed = parseYaml(readFileSync(join(dir, 'module.yml'), 'utf8'))
     assert.deepEqual(parsed.modules, ['tool-config-engine', 'module-rule-tools'], '只装配自定义工具实际依赖的模块')
-  } finally {
-    rmSync(dir, { recursive: true, force: true })
-  }
-})
-
-test('settings bridge /subagent-tool-policy 保存、停用与模块装配均为原子操作', async () => {
-  const dir = makeUserPresetDir('pt-subagent-policy-')
-  try {
-    // 声明面：写路径不查声明面，这里刻意不预先声明 `subagentToolPolicy`——保存会建立该节，停用再删段。
-    writeFileSync(join(dir, 'module.yml'), `id: ${basename(dir)}\nmodules: []\nunknown: keep\n`, 'utf8')
-    const { ctx, handlers } = makeHarness()
-    let rebuilds = 0
-    registerSettingsBridge(ctx, { ns: 'prompt-tool', models: () => ({ available: true, providers: [] }),
-      skills: () => skillsStateStub(), moduleDirectory: () => dir,
-      overridesChanged: () => { rebuilds += 1 } })
-    const handler = handlers.get(PREFIX + BRIDGE_ENDPOINTS.subagentToolPolicy)
-    const policy = {
-      defaultProfile: 'base', ceiling: { allow: ['read'], deny: [] },
-      profiles: [{ id: 'base', name: '基础', allow: ['read'], deny: [], modelSelectable: false }],
-      characterBindings: [], taskRules: [],
-      modelExpansion: { enabled: false, allow: [], maxAdditionalTools: 0, requireApproval: true },
-    }
-    const save = fakeRes()
-    await handler(fakeReq({ [Symbol.asyncIterator]: async function* () { yield Buffer.from(JSON.stringify({ policy })) } }), save)
-    assert.equal(save.status, 200)
-    let parsed = parseYaml(readFileSync(join(dir, 'module.yml'), 'utf8'))
-    assert.deepEqual(parsed.subagentToolPolicy, policy)
-    assert.deepEqual(parsed.modules, ['subagent-tool-policy'], '空白预设只装配子代理策略模块')
-    assert.equal(parsed.unknown, 'keep')
-    const disable = fakeRes()
-    await handler(fakeReq({ [Symbol.asyncIterator]: async function* () { yield Buffer.from(JSON.stringify({ policy: null })) } }), disable)
-    assert.equal(disable.status, 200)
-    parsed = parseYaml(readFileSync(join(dir, 'module.yml'), 'utf8'))
-    assert.equal(parsed.subagentToolPolicy, undefined)
-    assert.ok(parsed.modules.includes('subagent-tool-policy'), '关闭开关只删策略段，模块声明保留（能力卡可再次打开）')
-    assert.equal(parsed.unknown, 'keep')
-    assert.equal(rebuilds, 2)
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }
@@ -1373,12 +1333,12 @@ test('声明面：paramOverrides 写路径建立 layerSettings 声明（读 200 
     skills: () => skillsStateStub(), moduleDirectory: () => dir })
 
   assert.equal(moduleDeclares(dir, 'layerSettings'), false, '前置：未声明 layerSettings')
-  const write = await call(handlers, 'paramOverrides', { overrides: { maxDepth: 3 } })
+  const write = await call(handlers, 'paramOverrides', { overrides: { modelTemperature: 0.3 } })
   assert.equal(write.status, 200, `写路径应放行：${JSON.stringify(write.payload)}`)
   assert.equal(moduleDeclares(dir, 'layerSettings'), true, '写路径建立声明')
   const readBack = await call(handlers, 'paramOverrides')
   assert.equal(readBack.status, 200, `写后读应合法：${JSON.stringify(readBack.payload)}`)
-  assert.deepEqual(readBack.payload.value.overrides, { maxDepth: 3 })
+  assert.deepEqual(readBack.payload.value.overrides, { modelTemperature: 0.3 })
 })
 
 test('param-overrides：空主语＝全局层——写 config.yml 的 layerSettings，模块 module.yml 零改动', async () => {
