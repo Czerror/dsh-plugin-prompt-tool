@@ -8,6 +8,7 @@ import { usePromptToolFields } from '../../data/use-prompt-tool-fields.ts'
 import { useModuleRuleEditors, type ModuleRuleEditor } from '../../data/use-rule-editor.ts'
 import { BLANK_MODULE_TEMPLATE, canEditModule, writableModuleTargets } from '../../data/module-subject.ts'
 import { useModuleConfigOrder } from '../../data/use-module-config-order.ts'
+import { reorderToView, sameConfigPosition } from '../../data/prompt-config-order.ts'
 import { hasRuleFields, rulesDirty } from '../../data/rule-drafts.ts'
 import { instructionFileIdOf } from '../../data/prompt-config-content.ts'
 import type { PromptConfigDraft } from '../../prompt-tool-types.ts'
@@ -65,8 +66,6 @@ function scopeVisible(rule: RuleDefinition, scope: 'main' | 'subagent'): boolean
     return audience == null || audience === 'all' || audience === scope
   })
 }
-const samePosition = (a: ModuleConfigOrderEntry, b: ModuleConfigOrderEntry): boolean => a.layer === b.layer && a.position === b.position
-  && (!(a.layer === 'system-section' || a.layer === 'runtime-context') || a.order === b.order)
 
 /** 两个受众页共用各模块规则草稿；排序只写身份，指令文件只走原文件通道。
  *  **没有「当前模块」**：每张规则卡的主语是它自己所属的模块（`owners` 的 moduleId）。 */
@@ -85,6 +84,8 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
   const revisions = JSON.stringify(owners.map(owner => [owner.moduleId, owner.draft.revisions?.settings]))
   const [discard, setDiscard] = useState<string>()
   const dragId = useRef<string>()
+  /** 拖拽落点：身份键 + 指针是否落在卡片上半区（半高判据，恢复 41ce6b36 的原始设计）。 */
+  const [dropTarget, setDropTarget] = useState<{ id: string; before: boolean }>()
   // 逐模块可编辑判据：判据来源是该模块自己的事实（/meta 的 modules[].facts）。
   const readOnly = (id: string): boolean => !canEditModule(fields, store.meta.modules, id)
   const sortDisabled = order.busy || owners.some(owner => owner.draft.busy !== undefined || rulesDirty(owner.draft) || owner.draft.remote !== undefined)
@@ -93,13 +94,18 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
   const toggle = (key: string): void => { const next = expanded === key ? undefined : key; setExpanded(next); if (props.browse) props.browse.expanded = next }
   useEffect(() => { order.reset(); setExpanded(props.browse?.expanded) }, [ownerIds.join('\u0000'), order.reset])
   useEffect(() => { void order.load() }, [revisions, store.meta.modules, order.load])
-  const saveOrder = async (sourceId: string, targetId: string): Promise<void> => {
-    const cards = order.configs, entries = order.snapshot?.entries
-    if (order.busy || sortDisabled || entries === undefined || sourceId === targetId) return
-    const from = cards.findIndex(card => card.id === sourceId), to = cards.findIndex(card => card.id === targetId)
-    if (from < 0 || to < 0 || !samePosition(entries[from]!, entries[to]!)) return
-    const next = [...cards]
-    ;[next[from], next[to]] = [next[to]!, next[from]!]
+  /**
+   * 把源卡移到目标卡前/后：判据（`sameConfigPosition`）与重排（`reorderToView`）都在 data 层，
+   * 这里只算可移动集合、调一次保存。跨插入点与跨官方档位的目标不在集合里，重排原样返回。
+   */
+  const saveOrder = async (sourceId: string, targetId: string, before: boolean): Promise<void> => {
+    const cards = order.configs
+    if (order.busy || sortDisabled || order.snapshot === undefined || sourceId === targetId) return
+    const source = cards.find(card => card.id === sourceId), target = cards.find(card => card.id === targetId)
+    if (source === undefined || target === undefined || !sameConfigPosition(source, target)) return
+    const movableIds = cards.filter(card => sameConfigPosition(card, source)).map(card => card.id)
+    const next = reorderToView(cards, sourceId, targetId, before, movableIds)
+    if (next === cards) return
     await order.save(next)
   }
   const rank = new Map(order.snapshot?.entries.map(entry => [configIdentityKey(entry), entry.sequence]) ?? [])
@@ -120,7 +126,7 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
   }
   const orderPeers = (entry: ModuleConfigOrderEntry): ModuleConfigOrderEntry[] => {
     const visible = order.snapshot?.entries.filter(item => entries.some(row => row.identity === configIdentityKey(item))) ?? []
-    return visible.filter(item => samePosition(entry, item))
+    return visible.filter(item => sameConfigPosition(entry, item))
   }
   /** 独占官方档位的卡（system-section／runtime-context 每个档位只有一张）没有可交换的 peer：
    *  跨档位先后由宿主装配顺序决定（引擎按 order 分组注册官方段），这里只说明原因，不假装能排。 */
@@ -133,7 +139,7 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
       {[-1, 1].map(delta => <HintTooltip key={delta} label={pinned ? t('rules.orderPinnedHint') : t(delta < 0 ? 'rules.moveUp' : 'rules.moveDown', { id: entry.configId })}>
         <Button variant="outline" shape="pill" icon aria-label={t(delta < 0 ? 'rules.moveUp' : 'rules.moveDown', { id: entry.configId })}
           disabled={sortDisabled || !!query || peers[index + delta] === undefined}
-          onClick={() => { const target = peers[index + delta]; if (target) void saveOrder(configIdentityKey(entry), configIdentityKey(target)) }}>{delta < 0 ? '↑' : '↓'}</Button>
+          onClick={() => { const target = peers[index + delta]; if (target) void saveOrder(configIdentityKey(entry), configIdentityKey(target), delta < 0) }}>{delta < 0 ? '↑' : '↓'}</Button>
       </HintTooltip>)}
     </span>
   }
@@ -195,12 +201,33 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
     {entries.map(row => {
         const { entry, draft, editor, moduleId: id, key } = row
         const orderEntry = order.snapshot?.entries.find(item => configIdentityKey(item) === row.identity)
-        return <div key={key} data-module-id={id} onDragOver={event => event.preventDefault()} onDrop={event => { event.preventDefault(); if (orderEntry && dragId.current) void saveOrder(dragId.current, configIdentityKey(orderEntry)); dragId.current = undefined }}>
+        const dropId = orderEntry === undefined ? undefined : configIdentityKey(orderEntry)
+        const dropping = dropId !== undefined && dropTarget?.id === dropId ? dropTarget.before : undefined
+        return <div key={key} data-module-id={id}
+          data-dragging={dropId !== undefined && dragId.current === dropId ? '' : undefined}
+          data-drop-before={dropping === true ? '' : undefined} data-drop-after={dropping === false ? '' : undefined}
+          onDragOver={event => {
+            event.preventDefault()
+            if (dropId === undefined) return
+            const rect = event.currentTarget.getBoundingClientRect()
+            setDropTarget({ id: dropId, before: event.clientY < rect.top + rect.height / 2 })
+          }}
+          onDragLeave={() => setDropTarget(current => current?.id === dropId ? undefined : current)}
+          onDrop={event => {
+            event.preventDefault()
+            const source = dragId.current
+            dragId.current = undefined
+            setDropTarget(undefined)
+            if (source === undefined || dropId === undefined) return
+            // 落点在 drop 时重算：不依赖 onDragOver 那次 setState 的异步生效。
+            const rect = event.currentTarget.getBoundingClientRect()
+            void saveOrder(source, dropId, event.clientY < rect.top + rect.height / 2)
+          }}>
           <RuleCard t={t} entry={entry} draft={draft} editor={editor} meta={store.meta} source={id} moduleId={id} disabled={readOnly(id)} expanded={expanded === key} onToggle={() => toggle(key)} onDuplicate={() => duplicate(row, entry.value)}
             expandedRows={store.editorDrafts.expanded}
             headerActions={orderEntry && <><HintTooltip label={slotPinned(orderEntry) ? t('rules.orderPinnedHint') : t('card.dragHint')}><button type="button" className={ui.dragHandle} disabled={sortDisabled || !!query} draggable={!sortDisabled && !query} aria-label={t('card.dragHint')} aria-keyshortcuts="ArrowUp ArrowDown"
               onDragStart={event => { dragId.current = configIdentityKey(orderEntry); event.dataTransfer.effectAllowed = 'move'; event.dataTransfer.setData('text/plain', dragId.current) }} onDragEnd={() => { dragId.current = undefined }}
-              onKeyDown={event => { if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return; event.preventDefault(); const peers = orderPeers(orderEntry), index = peers.findIndex(item => configIdentityKey(item) === configIdentityKey(orderEntry)); const target = peers[index + (event.key === 'ArrowUp' ? -1 : 1)]; if (target) void saveOrder(configIdentityKey(orderEntry), configIdentityKey(target)) }}>⋮⋮</button></HintTooltip>{moveButtons(orderEntry)}</>}
+              onKeyDown={event => { if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return; event.preventDefault(); const peers = orderPeers(orderEntry), index = peers.findIndex(item => configIdentityKey(item) === configIdentityKey(orderEntry)); const target = peers[index + (event.key === 'ArrowUp' ? -1 : 1)]; if (target) void saveOrder(configIdentityKey(orderEntry), configIdentityKey(target), event.key === 'ArrowUp') }}>⋮⋮</button></HintTooltip>{moveButtons(orderEntry)}</>}
             renderSettings={entry.value.layer !== undefined && props.hasLayerSettings?.(entry.value.layer, id) && props.renderLayerSettings ? (rule, module) => props.renderLayerSettings!(rule.layer!, { id: rule.id, layer: rule.layer }, module, create.openToolsForModule) : undefined} />
         </div>
       })}

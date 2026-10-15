@@ -1,3 +1,11 @@
+/**
+ * 配置卡在视图内的移动与同档位判据（**全仓唯一一份**）。
+ *
+ * 顺序的唯一权威是 `module.yml` 顶层的 `configOrder`（`src/host/module-config-order.ts` 写、
+ * `src/host/module-storage.ts` 的 `order[rule.id] ?? tail` 读）：本模块只把「拖到哪」翻译成
+ * 「身份的新顺序」，**不改卡定义、不碰官方档位 `order`**——那个值属于宿主
+ * `systemPrompt.section({ order })` 的装配刻度，插件的排序通道不提交它。
+ */
 import type { PromptConfigDraft } from '../prompt-tool-types.ts'
 import { configIdentityKey, type ModuleConfigOrderEntry } from '../../shared/module-config-order.ts'
 
@@ -10,111 +18,48 @@ export function moduleOrderConfigs(entries: readonly ModuleConfigOrderEntry[]): 
   }))
 }
 
-/** 跨模块只交换同插入点、位置与官方档位中的可见槽位。 */
-export function sameConfigPosition(left: PromptConfigDraft, right: PromptConfigDraft): boolean {
-  return promptConfigLayer(left) === promptConfigLayer(right)
+/** 插入点归属：省略层按引擎缺省 `pre-step`。 */
+const layerOf = (config: SortableConfig): string => config.layer ?? 'pre-step'
+
+type SortableConfig = Pick<PromptConfigDraft, 'layer' | 'position' | 'order'>
+
+/**
+ * 同档位判据：同插入点、同位置；`system-section` / `runtime-context` 另要求同官方档位
+ * （不同档位之间的先后由宿主装配刻度决定，插件不假装能排）。
+ *
+ * 入参只要排序相关的三个字段：排序快照的条目（`ModuleConfigOrderEntry`）与视图草稿
+ * （`PromptConfigDraft`）都能直接传，页内不再另写一份判据。
+ */
+export function sameConfigPosition(left: SortableConfig, right: SortableConfig): boolean {
+  return layerOf(left) === layerOf(right)
     && (left.position ?? 'after-user') === (right.position ?? 'after-user')
     && (!(left.layer === 'system-section' || left.layer === 'runtime-context') || (left.order ?? 0) === (right.order ?? 0))
 }
 
-export const promptConfigLayer = (config: PromptConfigDraft): string => config.layer ?? 'pre-step'
-export const promptConfigViewOrder = (config: PromptConfigDraft): number =>
-  config.layer === 'system-section' || config.layer === 'runtime-context' ? config.order ?? 0 : config.sequence ?? config.order ?? 0
-/** 与列表一致的显示视图排序：按（层序, order, 声明序）稳定排序，返回排序后 id 序列。
- *  strategy 传入时（世界书筛选视图）只在该策略子集内移动/排序，避免与不可见配置交换。 */
-export function viewOrderedIds(
-  all: PromptConfigDraft[],
-  layer: string | undefined,
-  layers: readonly string[],
-  strategy?: string,
-  visibleIds?: readonly string[],
-): string[] {
-  const layerRank = (config: PromptConfigDraft): number => {
-    const index = layers.indexOf(promptConfigLayer(config))
-    return index < 0 ? layers.length : index
-  }
-  return all
-    .map((config, index) => ({ config, index }))
-    .filter((entry) => layer === undefined || promptConfigLayer(entry.config) === layer)
-    .filter((entry) => strategy === undefined || entry.config.strategy === strategy)
-    .filter((entry) => visibleIds === undefined || visibleIds.includes(entry.config.id))
-    .sort((a, b) => {
-      const byLayer = layerRank(a.config) - layerRank(b.config)
-      if (byLayer !== 0) return byLayer
-      const byOrder = promptConfigViewOrder(a.config) - promptConfigViewOrder(b.config)
-      if (byOrder !== 0) return byOrder
-      const bySequence = (a.config.sequence ?? 0) - (b.config.sequence ?? 0)
-      if (bySequence !== 0) return bySequence
-      return a.index - b.index
-    })
-    .map((entry) => entry.config.id)
-}
-
 /**
- * 在显示视图中向上/向下移动：目标 = 当前项的显示相邻项（层序/order/声明序），
- * 交换两者的 order 与数组位置——显示顺序与引擎注入顺序（数组序）同步变化。
- * 修复：此前按数组相邻交换，跨层配置混合时数组顺序 ≠ 显示顺序，上移/下移视觉失效。
+ * 把 `sourceId` 移到 `targetId` 前（`before`）或后：一步重排，返回新的身份顺序。
+ *
+ * `movableIds` 是**必填**的可移动集合（身份键）——调用方用 `sameConfigPosition` 过滤出同档位集合，
+ * 跨插入点/跨官方档位的目标不在集合里，本函数原样返回入参。这个参数刻意没有「不限制」的缺省值：
+ * 缺省不限制正是历史上跨插入点错位的来源。
+ *
+ * 返回值交给 `use-module-config-order` 的 `save(next)`，由 `/module-config-order` 端点写回
+ * `configOrder`；本函数只重排身份顺序，不修改任何卡的字段。
  */
-export function moveWithinLayer(
-  all: PromptConfigDraft[],
-  globalIndex: number,
-  delta: -1 | 1,
-  layer?: string,
-  layers?: readonly string[],
-  strategy?: string,
-  visibleIds?: readonly string[],
-): PromptConfigDraft[] {
-  const source = all[globalIndex]
-  if (source === undefined || (layer !== undefined && promptConfigLayer(source) !== layer)) return all
-  const currentId = source.id
-  const view = viewOrderedIds(all, promptConfigLayer(source), layers ?? [], strategy, visibleIds)
-  const viewIndex = view.indexOf(currentId)
-  const targetViewIndex = viewIndex + delta
-  if (viewIndex < 0 || targetViewIndex < 0 || targetViewIndex >= view.length) return all
-  const targetId = view[targetViewIndex]!
-  const currentIndex = all.findIndex((config) => config.id === currentId)
-  const targetIndex = all.findIndex((config) => config.id === targetId)
-  if (currentIndex < 0 || targetIndex < 0) return all
-  const next = [...all]
-  const current = next[currentIndex]
-  const targetCard = next[targetIndex]
-  // 引擎按 order 升序渲染（executor pre-step / layers 同规则）：层内移动必须同步
-  // 交换 order，否则拖拽后实际注入顺序不变（显示与引擎脱节 = 排序混乱）。
-  if (current === undefined || targetCard === undefined) return all
-  next[currentIndex] = { ...targetCard, order: current.order ?? 0, ...(current.sequence === undefined ? {} : { sequence: current.sequence }) }
-  next[targetIndex] = { ...current, order: targetCard.order ?? 0, ...(targetCard.sequence === undefined ? {} : { sequence: targetCard.sequence }) }
-  return next
-}
-
-/** 拖拽移动到目标显示位置：把 source 移到 target 前/后，用显示视图相邻交换逐步到位
- *  （order 链式交换，与连续点击上移/下移等价）。 */
-export function moveToView(
+export function reorderToView(
   all: PromptConfigDraft[],
   sourceId: string,
   targetId: string,
   before: boolean,
-  layer?: string,
-  layers?: readonly string[],
-  strategy?: string,
-  visibleIds?: readonly string[],
+  movableIds: readonly string[],
 ): PromptConfigDraft[] {
-  const source = all.find((config) => config.id === sourceId)
-  if (source === undefined || (layer !== undefined && promptConfigLayer(source) !== layer)) return all
-  const view = viewOrderedIds(all, promptConfigLayer(source), layers ?? [], strategy, visibleIds)
-  const sourceIndex = view.indexOf(sourceId)
-  if (sourceIndex < 0) return all
-  const rest = view.filter((id) => id !== sourceId)
-  const targetIndex = rest.indexOf(targetId)
-  if (targetIndex < 0) return all
-  const targetViewIndex = targetIndex + (before ? 0 : 1)
-  if (targetViewIndex === sourceIndex) return all
-  const steps = targetViewIndex - sourceIndex
-  const delta: -1 | 1 = steps > 0 ? 1 : -1
-  let current = all
-  for (let step = 0; step < Math.abs(steps); step++) {
-    const globalIndex = current.findIndex((config) => config.id === sourceId)
-    if (globalIndex < 0) break
-    current = moveWithinLayer(current, globalIndex, delta, layer, layers, strategy, visibleIds)
-  }
-  return current
+  if (sourceId === targetId) return all
+  if (!movableIds.includes(sourceId) || !movableIds.includes(targetId)) return all
+  const sourceIndex = all.findIndex(config => config.id === sourceId)
+  if (sourceIndex < 0 || !all.some(config => config.id === targetId)) return all
+  const source = all[sourceIndex]!
+  const rest = all.filter((_, index) => index !== sourceIndex)
+  const anchor = rest.findIndex(config => config.id === targetId)
+  const insertAt = before ? anchor : anchor + 1
+  return [...rest.slice(0, insertAt), source, ...rest.slice(insertAt)]
 }

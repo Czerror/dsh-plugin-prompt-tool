@@ -93,6 +93,14 @@
 .stepAdd { display: flex; min-width: 0; flex-wrap: wrap; align-items: center; gap: 6px; }
 .stepHint { color: var(--dsw-alias-label-tertiary); font: 12px/18px system-ui, sans-serif; }
 
+/* 拖拽排序：源卡半透明，落点按指针上/下半区给出上缘或下缘指示线（与 ui/controls.module.css 的 .configCard 同款）。 */
+.workspace [data-dragging] { opacity: .4; }
+.workspace [data-drop-before] { box-shadow: 0 -2px 0 0 var(--dsw-alias-state-business-primary); }
+.workspace [data-drop-after] { box-shadow: 0 2px 0 0 var(--dsw-alias-state-business-primary); }
+@media (forced-colors: active) {
+  .workspace [data-drop-before], .workspace [data-drop-after] { outline: 2px solid Highlight; }
+}
+
 @container rule-editor (max-width: 480px) {
   .conditionChild { padding-inline-start: 8px; }
   .stepBody { padding-inline-start: 8px; }

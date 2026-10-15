@@ -51,6 +51,17 @@ const ST_PRE_STEP_ROLE = 'user'
 const ST_ROLE_DOWNGRADE_CODE = 'assistant-role-downgrade'
 
 /**
+ * 导入的 `system-section` 卡统一落在这个官方装配档位。
+ *
+ * 取值依据：官方 `SECTION_ORDERS`（`@deepseek-ai/dsh-system-prompt`，经 `getSectionOrder` 求值）里
+ * `DEPLOYMENT_PERSONA_PREFIX`(0) 与 `PLAN_POLICY`(500) 之间的空档，**不与任何官方档位同值**。
+ * 官方按 `order` 再按名字排序，而本插件的默认段名编码了 `configOrder`（`engine/layers.mjs` 的
+ * `textRegistrationName`），所以同档位内的先后由配置序号决定——卡因此可被拖拽排序。
+ * 官方调整档位时按 `src/shared/official-orders.ts` 的同源纪律复核本值。
+ */
+const SYSTEM_SECTION_SLOT = 100
+
+/**
  * `enable_web_search: false` 时被拒绝的 web 工具名。
  * 三个声明式触发器（assembly / sdk-strip / guard）共用这一份名单——呈现过滤与执行
  * 边界必须同一判据，不得各写一份（见 engine/actions.mjs 的 (5) 类说明）。
@@ -84,7 +95,17 @@ export function mergeStModulesWithReport(specs: ModuleSpec[]): { spec: ModuleSpe
   for (const [sourceIndex, spec] of specs.entries()) {
     if (spec.variablesEnabled !== false) mergeVariables(spec.variables)
     const perSource = new Map<number, string>()
-    for (const [entryIndex, config] of (spec.rules ?? []).entries()) {
+    // 各来源的先后由它自己的 configOrder 表达（缺失项按数组顺序接在尾部，与
+    // `module-storage.ts` 的 `order[rule.id] ?? tail` 同口径），不能退回 rules 数组顺序。
+    // 排序携带原下标：报告的 targetIndex 是生成配置的下标，不随合并顺序改变。
+    const sequenceOf = (config: unknown): number => {
+      const id = config !== null && typeof config === 'object' ? String((config as RuleDefinition).id ?? '') : ''
+      const sequence = spec.configOrder?.[id]
+      return typeof sequence === 'number' ? sequence : Number.MAX_SAFE_INTEGER
+    }
+    const ordered = (spec.rules ?? []).map((config, entryIndex) => ({ config, entryIndex }))
+      .sort((left, right) => sequenceOf(left.config) - sequenceOf(right.config))
+    for (const { config, entryIndex } of ordered) {
       if (config === null || typeof config !== 'object' || Array.isArray(config)) continue
       const entry = config as RuleDefinition
       const base = String(entry.id ?? '')
@@ -147,6 +168,8 @@ export function mergeStModulesWithReport(specs: ModuleSpec[]): { spec: ModuleSpe
     ...(persona === undefined ? {} : { persona }),
     modules,
     moduleConfigs,
+    // 合并后的顺序仍是配置序号：按拼接顺序编号，与各来源自己的 configOrder 口径一致。
+    configOrder: Object.fromEntries(rules.map((rule, index) => [String(rule.id), index * 10])),
     rules,
   }
   return { spec, idMap }
@@ -280,6 +303,8 @@ export function convertStToModuleWithReport(
     }
   }
   const configs: Array<Record<string, unknown>> = []
+  /** ST prompt 卡的顺序意图（prompt_order 名次 × 10）：出口写进顶层 configOrder，不留在卡里。 */
+  const stSequences = new Map<string, number>()
   /** `enable_web_search: false` 的三条 Web 防护规则（呈现裁剪 / SDK 正文裁剪 / 执行 guard）。 */
   const webRules: RuleDefinition[] = []
   // 世界书配置 id → 来源条目 id：键宏诊断必须定位到源条目，不按 id 前缀反推。
@@ -693,6 +718,9 @@ export function convertStToModuleWithReport(
     // 不在 append 候选里），发送角色与位置仍由 role 与 prompt_order 决定
     // （openai.js:1187-1257、PromptManager.js:1723-1729）。因此只保留事实、不改层归属。
     const systemPromptFlag = prompt.system_prompt === true
+    // RELATIVE 注入顺序 = prompt_order 数组顺序（ST 忽略 injection_order）；
+    // 无映射时按数组索引，保持 ST 预设内相对顺序。顺序意图在出口统一写进顶层 configOrder。
+    stSequences.set(id, ((rawId.length > 0 ? orderIndex.get(rawId) : undefined) ?? (ordered ? orderIndex.size + index : index)) * 10)
     const base = {
       id,
       name: typeof prompt.name === 'string' && prompt.name.length > 0 ? prompt.name : id,
@@ -701,9 +729,8 @@ export function convertStToModuleWithReport(
       enabled: (ordered ? orderEnabled.get(rawId) === true : prompt.enabled !== false)
         && !(Array.isArray(prompt.injection_trigger) && prompt.injection_trigger.length > 0),
       strategy: 'static',
-      // RELATIVE 注入顺序 = prompt_order 数组顺序（ST 忽略 injection_order）；
-      // 无映射时按数组索引，保持 ST 预设内相对顺序。
-      order: ((rawId.length > 0 ? orderIndex.get(rawId) : undefined) ?? (ordered ? orderIndex.size + index : index)) * 10,
+      // pre-step 卡不在卡里表达先后（顺序只由 configOrder 决定）；system-section 卡统一落档位。
+      ...(preStep ? {} : { order: SYSTEM_SECTION_SLOT }),
       text: content,
       // 来源元数据承载深度、触发、原角色与 system_prompt 管理位。
       params: { source: { format: 'sillytavern', id: sourceId, original: {
@@ -850,6 +877,18 @@ export function convertStToModuleWithReport(
     },
     ...(reportTruncated ? { truncated: true } : {}),
   }
+  // 顺序的唯一来源是 module.yml 顶层的 configOrder：每张卡的顺序意图（ST prompt 卡取
+  // prompt_order 名次，其余卡取各自既有的 order 值）按升序编号。卡里的顺序字段只保留
+  // system-section 的官方档位，pre-step 不再带 order——先后从此只有一处表达。
+  const sequenceIntent = (config: Record<string, unknown>): number => {
+    const st = stSequences.get(String(config.id))
+    if (st !== undefined) return st
+    return typeof config.order === 'number' ? config.order : 0
+  }
+  const configOrder = Object.fromEntries(
+    [...configs].sort((left, right) => sequenceIntent(left) - sequenceIntent(right))
+      .map((config, index) => [String(config.id), index * 10]),
+  )
   // 规则在出口一次成型：每条内容的注入动作 payload + 三条 Web 防护规则，直接就是 rules[]。
   const rules = [...configs.map(config => promptConfigToRule(config as unknown as PromptConfigSpec)), ...webRules]
   // 与写盘链路同一道校验：不合法在这里失败，不留给物化阶段。
@@ -871,6 +910,7 @@ export function convertStToModuleWithReport(
     ...(persona === undefined ? {} : { persona }),
     modules: [...new Set(modules.map(name => name === 'prompt-config-engine' || name === 'declared-triggers' ? 'rule-engine' : name))],
     moduleConfigs,
+    configOrder,
     rules,
   }
   return { spec, report }

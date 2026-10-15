@@ -5,7 +5,7 @@ import { syncBuiltinESMExports } from 'node:module'
 import { basename, dirname, join } from 'node:path'
 import { parse } from 'yaml'
 import { isolatedHome, fixtureRule } from '../fixtures/host-harness.mjs'
-import { moduleOrderConfigs, moveToView, sameConfigPosition } from '../../src/client/data/prompt-config-order.ts'
+import { moduleOrderConfigs, reorderToView, sameConfigPosition } from '../../src/client/data/prompt-config-order.ts'
 import { configIdentityKey } from '../../src/shared/module-config-order.ts'
 
 const { moduleRoot } = isolatedHome('pt-config-order-')
@@ -42,20 +42,20 @@ test('配置排序：跨模块同名卡保留受众与策略，身份排序写�
   const drafts = moduleOrderConfigs(initial.entries)
   const mainIds = drafts.filter(card => card.audience !== 'subagent').map(card => card.id)
   const entryByKey = new Map(initial.entries.map(entry => [configIdentityKey(entry), entry]))
-  const movedMain = moveToView(drafts, '["b","same"]', '["a","same"]', true, undefined, ['pre-step'], undefined, mainIds)
+  const movedMain = reorderToView(drafts, '["b","same"]', '["a","same"]', true, mainIds)
   const mainOrder = movedMain.map(card => entryByKey.get(card.id))
   saveModuleConfigOrder(root, initial.revision, identities({ entries: mainOrder }))
   const afterMain = readModuleConfigOrder(root)
-  assert.deepEqual(afterMain.entries.map(entry => [entry.moduleId, entry.configId]), [['b', 'same'], ['a', 'last'], ['a', 'same'], ['b', 'shared']], '主会话移动保留不可见子代理卡的槽位')
+  assert.deepEqual(afterMain.entries.map(entry => [entry.moduleId, entry.configId]), [['b', 'same'], ['a', 'same'], ['a', 'last'], ['b', 'shared']], '移到目标前：源卡落在目标卡紧前，其余卡保持相对顺序')
   const subDrafts = moduleOrderConfigs(afterMain.entries)
   const subIds = subDrafts.filter(card => card.audience !== 'main').map(card => card.id)
   const activationIds = subDrafts.filter(card => card.audience !== 'main' && card.strategy === 'context-activation').map(card => card.id)
-  assert.equal(moveToView(subDrafts, '["a","last"]', '["b","shared"]', false, undefined, ['pre-step'], 'context-activation', activationIds), subDrafts)
+  assert.equal(reorderToView(subDrafts, '["a","last"]', '["b","shared"]', false, activationIds), subDrafts)
   assert.equal(sameConfigPosition(subDrafts[0], { ...subDrafts[1], position: 'before-user' }), false)
-  const movedSub = moveToView(subDrafts, '["a","last"]', '["b","shared"]', false, undefined, ['pre-step'], undefined, subIds)
+  const movedSub = reorderToView(subDrafts, '["a","last"]', '["b","shared"]', false, subIds)
   const reordered = movedSub.map(card => entryByKey.get(card.id))
   saveModuleConfigOrder(root, afterMain.revision, identities({ entries: reordered }))
-  assert.deepEqual(readModuleConfigOrder(root).entries.map(entry => [entry.moduleId, entry.configId]), [['b', 'same'], ['b', 'shared'], ['a', 'same'], ['a', 'last']], '子代理移动保留不可见主会话卡的槽位')
+  assert.deepEqual(readModuleConfigOrder(root).entries.map(entry => [entry.moduleId, entry.configId]), [['b', 'same'], ['a', 'same'], ['b', 'shared'], ['a', 'last']], '移到目标后：目标卡之后即源卡')
   for (const id of ['a', 'b']) ensureModuleReady(id, { modulesRoot: root })
   for (const id of ['b', 'a']) ensureModuleReady(id, { modulesRoot: root })
   assert.deepEqual(identities(readModuleConfigOrder(root)), identities({ entries: reordered }), '重建不会按模块数组重新编号')
@@ -307,4 +307,96 @@ test('排序请求：update 换掉依赖后，后续调用用新依赖', async (
   await session.save(swappedCards(session.state.configs))
   assert.equal(refreshes, 1, '旧回调不再被调用')
   assert.match(session.state.error, /排序已保存，但配置刷新失败/)
+})
+
+// ── 一步重排：判据与移动的唯一实现（拖拽/按钮/键盘共用） ──────────────────────
+
+/** 视图草稿的身份键 → 排序身份：写盘只提交身份，序号由服务端按索引分配。 */
+const reorderIdentities = (cards, entryByKey) => cards.map(card => {
+  const entry = entryByKey.get(card.id)
+  return { moduleId: entry.moduleId, configId: entry.configId }
+})
+
+test('一步重排：移到目标前/后按身份顺序写回 configOrder，卡定义一个字不动', () => {
+  const root = fixture('reorder', { a: [{ id: 'A', text: 'a' }, { id: 'B', text: 'b' }, { id: 'C', text: 'c' }, { id: 'D', text: 'd' }] })
+  setModuleEnabled(root, 'a', true)
+  const initial = readModuleConfigOrder(root)
+  const cards = moduleOrderConfigs(initial.entries)
+  const entryByKey = new Map(initial.entries.map(entry => [configIdentityKey(entry), entry]))
+  const [A, B, C, D] = cards.map(card => card.id)
+  assert.deepEqual(cards.map(card => card.id), ['["a","A"]', '["a","B"]', '["a","C"]', '["a","D"]'])
+
+  // 拖 D 到 B 前：一步重排（不是与 B 互换，也不逐个对调中间卡）
+  const dropped = reorderToView(cards, D, B, true, cards.map(card => card.id))
+  assert.deepEqual(dropped.map(card => card.id), [A, D, B, C])
+  saveModuleConfigOrder(root, initial.revision, reorderIdentities(dropped, entryByKey))
+  const afterDrop = readModuleConfigOrder(root)
+  assert.deepEqual(afterDrop.entries.map(entry => entry.configId), ['A', 'D', 'B', 'C'])
+  assert.deepEqual(afterDrop.entries.map(entry => entry.sequence), [0, 10, 20, 30], '写回的是身份顺序，序号由服务端按索引分配')
+
+  // 按钮与键盘的相邻移动落到同一实现：D 下移一格 = 移到 C 之后
+  const cards2 = moduleOrderConfigs(afterDrop.entries)
+  const entryByKey2 = new Map(afterDrop.entries.map(entry => [configIdentityKey(entry), entry]))
+  const movedNext = reorderToView(cards2, D, C, false, cards2.map(card => card.id))
+  assert.deepEqual(movedNext.map(card => card.id), [A, B, C, D])
+  saveModuleConfigOrder(root, afterDrop.revision, reorderIdentities(movedNext, entryByKey2))
+  assert.deepEqual(readModuleConfigOrder(root).entries.map(entry => entry.configId), ['A', 'B', 'C', 'D'])
+
+  // 排序只改顺序：正文与卡内字段都不动
+  const spec = parse(readFileSync(join(root, 'a', 'module.yml'), 'utf8'))
+  assert.deepEqual(spec.rules.map(rule => rule.then[0].config.text), ['a', 'b', 'c', 'd'])
+})
+
+test('一步重排：集合外的目标（跨插入点／跨官方档位）原样返回，集合外的卡引用不变', () => {
+  const root = fixture('reorder-guards', { a: [
+    { id: 'P1', text: 'p1' }, { id: 'P2', text: 'p2' },
+    { id: 'S1', text: 's1', layer: 'system-section', order: 100 },
+    { id: 'S2', text: 's2', layer: 'system-section', order: 500 },
+  ] })
+  setModuleEnabled(root, 'a', true)
+  const cards = moduleOrderConfigs(readModuleConfigOrder(root).entries)
+  const key = id => `["a","${id}"]`
+  const movableView = sourceId => cards
+    .filter(card => sameConfigPosition(card, cards.find(item => item.id === sourceId)))
+    .map(card => card.id)
+
+  // 不变量：跨插入点绝不动——pre-step 的可移动集合里根本没有 system-section 卡
+  const preStep = movableView(key('P1'))
+  assert.deepEqual(preStep, [key('P1'), key('P2')])
+  assert.equal(reorderToView(cards, key('P1'), key('S1'), true, preStep), cards)
+
+  // 跨官方档位：两张 system-section 卡 order 不同，互不在集合内
+  assert.deepEqual(movableView(key('S1')), [key('S1')])
+  assert.equal(reorderToView(cards, key('S1'), key('S2'), true, movableView(key('S1'))), cards)
+
+  // 同档位 system-section（导入统一档位后的形状）可以互排
+  const sameSlot = cards.map(card => card.id === key('S2') ? { ...card, order: 100 } : card)
+  const s1 = sameSlot.find(card => card.id === key('S1'))
+  const both = sameSlot.filter(card => sameConfigPosition(card, s1)).map(card => card.id)
+  assert.deepEqual(both, [key('S1'), key('S2')])
+  // 资格在可移动集合里判，插入位置在完整数组里算：S2 落到 S1 紧前，P1/P2 的相对位置不变
+  const moved = reorderToView(sameSlot, key('S2'), key('S1'), true, both)
+  assert.deepEqual(moved.map(card => card.id), [key('P1'), key('P2'), key('S2'), key('S1')])
+  // 不可移动集合外的卡不被重建：引用逐字保留
+  assert.equal(moved.find(card => card.id === key('P1')), cards[0])
+  assert.equal(moved.find(card => card.id === key('P2')), cards[1])
+})
+
+test('双通道版本：卡定义的官方档位被改写后，旧 revision 的排序写入被拒（409）', () => {
+  const root = fixture('reorder-conflict', { a: [
+    { id: 'S1', text: 's1', layer: 'system-section', order: 100 },
+    { id: 'S2', text: 's2', layer: 'system-section', order: 500 },
+  ] })
+  setModuleEnabled(root, 'a', true)
+  const before = readModuleConfigOrder(root)
+  const file = join(root, 'a', 'module.yml')
+  const raw = readFileSync(file, 'utf8')
+  const spec = JSON.parse(raw.slice(raw.indexOf('{')))
+  spec.rules.find(rule => rule.id === 'S1').then[0].config.order = 200
+  writeFileSync(file, '# keep comment\n' + JSON.stringify(spec))
+  assert.throws(
+    () => saveModuleConfigOrder(root, before.revision, identities(before)),
+    error => error.code === 'module-config-order-conflict',
+    'system-section 卡的官方档位进入排序 revision：改过卡定义后旧 revision 不再可用',
+  )
 })

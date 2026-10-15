@@ -406,7 +406,7 @@ use-prompt-tool-store.ts 是唯一工作台 facade，负责把 ConfigForms mirro
 | template-rule-writer.ts | 模板创建的显式目标、首写和新模块启用编排；规则结果统一交回 rule-drafts |
 | module-actions.ts | 模块操作与事实刷新，保留成功结果和刷新失败区别；与规则保存共用队列 |
 | prompt-config-content.ts | AGENTS 文件卡（`params.file`）的正文提升与文件写回分流（`preset.md` 内容资产已随 `/module-content`、`/import-preset` 下线） |
-| prompt-config-order.ts | 配置视图内的移动算法；普通列表与跨模块排序共同复用 |
+| prompt-config-order.ts | 配置视图内的同档位判据（`sameConfigPosition`）与一步重排（`reorderToView`）：资格在可移动集合内判、插入位置在完整数组里算；拖拽、上移/下移按钮与拖拽手柄的键盘操作共用同一份实现 |
 | use-module-config-order.ts | 跨模块排序摘要、版本读写与请求生命周期（`createModuleConfigOrderSession` 是唯一实现，hook 只把它投影成 React state）；由规则工作台消费 |
 | save-queue.ts | 串行保存任务的最小队列 |
 | import-files.ts | 浏览器文件导入的纯读取辅助 |
@@ -482,7 +482,7 @@ JSON bridge 的统一上限为 32 MiB；角色卡原始文件流独立限制为 
 12. 不再提供「独立指令文件来源」总开关。文件卡启停仅写独立策略 `files[fileId].enabled`，默认放行；关闭只拦截后续官方注入，不撤回历史，重新开启不强制重放。策略不可读时禁用策略编辑，保留诊断；应答成功前不乐观显示已保存。名称与开关跨预设共享，位置、顺序、晋升、受众和模型范围不属于文件卡控制项。
 13. bootstrap 与策略快照均读取完成后再应用，异步边界复核请求序号、会话与草稿状态。暂时离开工作区只暂停文件写资格，保留草稿与版本基线；返回并读取时，版本未变可继续保存，版本变化仍须解决冲突。
 14. 列表保存按钮等待真实 `Promise<boolean>` 结果；文件或预设部分失败时不显示整体成功、不以静默重载清除错误。已经成功保存的文件立即更新其基线，不因后续失败回滚或丢失确认。
-15. 配置排序走 typed `moduleConfigOrder` 端点，服务端校验身份集合与 revision，拒绝未知、重复身份及过期版本。顺序写回 `module.yml.configOrder`，客户端不提交正文、文件路径或序号；模块启用或停用均可保存自身排序，总闸关闭仍可改排序定义。
+15. 配置排序走 typed `moduleConfigOrder` 端点，服务端校验身份集合与 revision，拒绝未知、重复身份及过期版本。顺序写回 `module.yml.configOrder`，客户端不提交正文、文件路径或序号；模块启用或停用均可保存自身排序，总闸关闭仍可改排序定义。拖拽落点用指针半高判据（`clientY` 对卡片中线）给出「插到目标前/后」，重排**不改卡定义**：可移动集合由 `sameConfigPosition` 过滤（跨插入点与跨官方档位的目标不在集合内、原样不写），`system-section` / `runtime-context` 卡的官方档位不参与排序请求。
 16. 两级变量内容校验所选 global/module 域，模块开关校验 settings。草稿按模块+scope分开，切范围不串输入；空字符串保存为值，删行才删除。后台读回和保存只确认对应请求快照，冲突保留编辑。persisted 且 publicationPending 时显示“已保存但未发布”，refreshOnly 只发布，不重放变量写入。存储边界见 [后端框架](architecture-params.md)。
 
 模板创建沿用同一规则事务，但使用 `createRule` 直接提交解析后的规则对象；不要求规则卡 owner 已加载或先读回 `/rules`。缺少 `rules` 的目标模块按空基线首写，重复创建在目标模块内按规则 id 自动加后缀。三位身份校验仍适用于首写和普通写入：头体冲突 400 `module-subject-conflict`、目标切换 409 `module-changed`、系统或只读目录 403 `module-readonly`。写盘成功而刷新失败时保留 `persisted/publicationPending`，不新增重试 UI；未启用目标的待发布状态只在当前工作台会话保留，启用并挂载规则卡后通过既有 `retryPublication` / `refreshOnly` 重试，不重放规则写入；刷新工作台不恢复该状态。

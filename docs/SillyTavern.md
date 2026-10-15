@@ -24,10 +24,10 @@
 | ST 输入 | 生成行为 | 边界 |
 |---|---|---|
 | `prompts[].content` | 普通注入正文，启用原生模板求值 | 清洗后空白跳过；纯赋值模板保留 |
-| `prompt_order` | 按选中的顺序组保留启停和相对次序 | 优先全局组 `100001`，只有一组时使用该组；多组有歧义则先选择 |
+| `prompt_order` | 按选中的顺序组保留启停和相对次序 | 优先全局组 `100001`，只有一组时使用该组；多组有歧义则先选择。名次写进 `module.yml` 顶层 `configOrder`（与工作台拖拽排序同一来源），不再写进卡内 `order` |
 | 顺序组 `enabled` | 优先于 prompt 自身开关 | 已选组未列出的 prompt 禁用 |
-| `role: system` | `system-section` | 系统段的顺序不等于跨插入点全序 |
-| `role: user/assistant/model` | `pre-step` 的 user 消息 | assistant/model 明确降级，原角色进入 `source.original` |
+| `role: system` | `system-section` | 系统段的顺序不等于跨插入点全序；导入的 `system-section` 卡统一官方档位 `100`（官方刻度里人设前缀与 `PLAN_POLICY` 之间的空档，不与任何官方档位同值），同档位内按 `configOrder` 排、可拖拽排序 |
+| `role: user/assistant/model` | `pre-step` 的 user 消息 | assistant/model 明确降级，原角色进入 `source.original`；卡内不写 `order`，先后只由 `configOrder` 表达 |
 | `marker`、`SPresetSettings` | 排除位置标记和扩展配置 dump | 不把脚本或设置 JSON 混入正文 |
 | `injection_position/depth` | 映射到当前可用投递位置 | 不宣称支持持久历史深度插入，报告原值与降级 |
 | `system_prompt` 管理位 | 来源元数据 | 不因该管理位改变 role/插入点 |

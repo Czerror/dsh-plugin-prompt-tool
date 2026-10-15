@@ -233,10 +233,11 @@ test('importPresetPackage：SillyTavern JSON 单文件经转换引擎导入（�
   assert.equal(converted.rules.length, 5, '只生成两条内容规则和三条 Web 防护规则')
   const main = converted.rules.find((rule) => rule.id === 'main')
   assert.deepEqual(main, {
-    // RELATIVE 注入顺序 = prompt_order / 数组顺序（ST 忽略 injection_order）。
     id: 'main', name: '主提示', enabled: true, layer: 'system-section',
     then: [{ id: 'inject', kind: 'inject-text', config: {
-      id: 'main', strategy: 'static', order: 0,
+      // system-section 卡统一官方档位（100 = 官方刻度里人设前缀与 PLAN_POLICY 之间的空档），
+      // 卡与卡之间的先后由顶层 configOrder 表达，不再按 ST 名次挤进官方刻度。
+      id: 'main', strategy: 'static', order: 100,
       text: '你是助手。', layer: 'system-section', mergeMode: 'merged',
     // system_prompt 只是 ST 的管理位（不改变发送角色）：保留为来源事实，层归属仍按 role。
     params: {
@@ -251,7 +252,8 @@ test('importPresetPackage：SillyTavern JSON 单文件经转换引擎导入（�
   assert.equal(nsfw.layer, 'pre-step')
   assert.equal(nsfw.role, 'user')
   assert.equal(nsfw.position, 'after-user')
-  assert.equal(nsfw.order, 10, 'in-chat 注入同样按数组顺序排（本项目无深度注入）')
+  assert.equal(nsfw.order, undefined, 'pre-step 卡不在卡里表达先后：顺序只由 configOrder 决定')
+  assert.deepEqual(converted.configOrder, { main: 0, nsfw: 10 }, 'prompt_order / 数组顺序进顶层 configOrder')
   // 采样参数剥离：模型参数由「模型设置」UI 管理，ST 卡固化值不写入转换产物
   //（避免覆盖用户在模型设置里的设置）。
   for (const key of ['modelTemperature', 'modelMaxTokens', 'modelReasoningEffort']) {
@@ -287,8 +289,10 @@ test('importPresetPackage：SillyTavern UUID identifier 的 prompt_order 禁用�
   // UUID identifier 回退 st-prompt-N 作 id，但禁用/排序必须按原始 identifier 查 prompt_order。
   assert.equal(system.enabled, true, 'prompt_order 未禁用的条目保持启用')
   assert.equal(disabled.enabled, false, 'prompt_order 禁用的 UUID 条目必须禁用（P1：此前回退 prompts.enabled 误启用）')
-  assert.equal(system.order, 10, 'prompt_order 中排第 2 → order 10')
-  assert.equal(disabled.order, 0, 'prompt_order 中排第 1 → order 0（P1：此前回退数组序）')
+  assert.equal(system.order, 100, 'system-section 卡统一官方档位')
+  assert.equal(disabled.order, undefined, 'pre-step 卡不在卡里表达先后')
+  assert.deepEqual(converted.configOrder, { 'st-prompt-2': 0, 'st-prompt-1': 10 },
+    'prompt_order 名次进 configOrder：排第 1 的禁用卡在前（P1：此前回退数组序）')
 })
 
 test('importPresetPackage：SillyTavern JSON 非法内容返回 400 且不落盘', async () => {

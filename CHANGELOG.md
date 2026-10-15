@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### 提示词卡排序收成一份判据，导入顺序改由 configOrder 表达（2026-10-16）
+
+- **拖拽改为一步重排**：拖到目标卡上/下半区 = 插到目标前/后（指针半高判据 `clientY` 对卡片中线，恢复 `41ce6b36` 的原始设计并复用同款 `data-drop-*` 指示线）。此前是「两张卡互换」，在 ST 导入的上百张卡里无法把一张卡直接调到目标位；上移/下移按钮与拖拽手柄的 ArrowUp/ArrowDown 走同一实现。
+- **判据唯一**：`src/client/data/prompt-config-order.ts` 的 `sameConfigPosition` 是同档位判据（同插入点＋同位置；`system-section` / `runtime-context` 另要求同官方档位），`reorderToView` 是唯一步重排实现——**资格在可移动集合内判、插入位置在完整数组里算**，不改卡定义、不碰官方档位。页内那份复制判据，以及生产侧零调用的 `moveToView` / `moveWithinLayer` / `viewOrderedIds`（含发不出去的 `order` 交换）一并删除。跨插入点与跨官方档位的目标一律原样返回、不写盘。
+- **导入顺序对齐**：ST 转换把 `prompt_order` 名次写进 `module.yml` 顶层 `configOrder`（ADR-0006 的顺序源），`pre-step` 卡不再写 `order = 名次×10`；`system-section` 卡统一官方档位 `100`（官方 `SECTION_ORDERS` 里 `DEPLOYMENT_PERSONA_PREFIX`(0) 与 `PLAN_POLICY`(500) 之间的空档，不与任何官方档位同值）——此前按名次挤官方刻度，`system-section` 卡会随预设条目数落到官方提示的不同段落，且两两不同档、彼此不可排序。多源合并按各来源 `configOrder` 拼接后重新编号。
+- **行为变化（已确认接受）**：导入的 `system-section` 卡从「按名次散布在官方刻度」变为「统一在人设前缀之后、`PLAN_POLICY` 之前，同档位内按配置序号排」，因此可被拖拽排序；名次 510+ 的原 `role: system` 卡会前移过 `PLAN_POLICY`。存量已导入模块不迁移，需要时重新导入。
+- **回归**：`pnpm --dir $Repo typecheck`、`lint`、`test` 全绿（**635 passed / 0 fail**）；`test/host/module-config-order.test.mjs` 新增一步重排主路径、集合外拒绝（跨插入点／跨官方档位）、卡对象引用不变与双通道 revision 409，并补回历史删除时丢掉的两条不变量；`test/host/module-package-import.test.mjs` 的顺序断言改落在 `configOrder` 上。拖拽落点与指示线属交互，留真机 Edge smoke 核对。
+
 ### 空白模板改为引擎内组装（2026-10-12）
 
 - **`modules/blank/` 目录删除，空白模板改由引擎组装**：`cloneBuiltinModule('blank')` 现在用 yaml Document API 在内存生成 `module.yml`（写盘仍是「模块根下临时目录 → 原子 rename」，失败清理临时目录）。公开接口零变化：`/module-clone` 的入参、返回与错误码不变，客户端 `BLANK_MODULE_TEMPLATE = 'blank'` 一行不动。
