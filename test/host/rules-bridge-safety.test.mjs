@@ -4,7 +4,7 @@ import fs, { mkdirSync, readFileSync, writeFileSync, existsSync, symlinkSync, un
 import { syncBuiltinESMExports } from 'node:module'
 import { join } from 'node:path'
 import { parse } from 'yaml'
-import { isolatedHome, fakeReq, fakeRes, readBridge } from '../fixtures/host-harness.mjs'
+import { isolatedHome, fakeReq, fakeRes, makeHostContext, readBridge } from '../fixtures/host-harness.mjs'
 import { createWorkspaceDrafts } from '../../src/client/data/workspace-drafts.ts'
 import { createRuleEditor, getRulesDraft, rulesDirty } from '../../src/client/data/rule-drafts.ts'
 
@@ -28,14 +28,11 @@ function harness({ readonly = false, rebuildFails = false, afterRebuild, onResol
   let activeDirectory = directory
   let rebuilds = 0
   const disposers = []
-  const handlers = new Map()
-  const sctx = {
-    settings: { describe: () => [] },
-    webServer: { register: ({ path, handler }) => { handlers.set(path, handler); return () => {} } },
-    get: () => undefined,
+  // 差异项：本文件的 effect 收集 disposer；其余走 harness 默认值。
+  const { ctx, handlers } = makeHostContext({
+    describe: () => [],
     effect: fn => { const dispose = fn(); if (dispose) disposers.push(dispose) },
-  }
-  const ctx = { inject: (_deps, cb) => cb(sctx) }
+  })
   registerSettingsBridge(ctx, {
     ns: 'prompt-tool',
     models: () => ({}),

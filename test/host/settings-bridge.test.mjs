@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url'
 import { tmpdir } from 'node:os'
 import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { parse as parseYaml } from 'yaml'
+import { makeHostContext } from '../fixtures/host-harness.mjs'
 
 const bridgeHome = mkdtempSync(join(tmpdir(), 'pt-settings-bridge-home-'))
 process.env.DSH_HOME = bridgeHome
@@ -70,23 +71,15 @@ const textRule = (id, text, options = {}) => {
 const requestRule = (id, patch) => ({ id, layer: 'agent-request', then: [{ id: 'request', kind: 'request-params', patch }] })
 
 function makeHarness(services = {}, value = {}) {
-  const handlers = new Map()
-  const sctx = {
+  // 差异项：本文件要两个 namespace 的 describe（含宿主默认模型）与按名取服务；其余走 harness 默认值。
+  return makeHostContext({
+    value,
+    describe: () => [
+      { ns: 'prompt-tool', value, base: {} },
+      { ns: 'agent-default-model', value: { provider: 'deepseek-official', model: 'deepseek-v4-flash', reasoningEffort: 'high' } },
+    ],
     get: (name) => services[name],
-    settings: {
-      describe: () => [
-        { ns: 'prompt-tool', value, base: {} },
-        { ns: 'agent-default-model', value: { provider: 'deepseek-official', model: 'deepseek-v4-flash', reasoningEffort: 'high' } },
-      ],
-      mutate: async () => {},
-    },
-    webServer: {
-      register: ({ path, handler }) => { handlers.set(path, handler) },
-    },
-    effect: (fn) => fn(),
-  }
-  const ctx = { inject: (_deps, cb) => cb(sctx) }
-  return { ctx, handlers }
+  })
 }
 
 test('settings bridge /describe 无主语 400，有主语才返回宿主默认模型（agent-default-model 回显）', async () => {

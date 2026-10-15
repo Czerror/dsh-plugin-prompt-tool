@@ -4,6 +4,7 @@
 
 ### 桥测试基底；补导入侧四个缺口（2026-10-16）
 
+- **宿主桩迁移收尾**：`skills-catalog`／`settings-bridge`／`rules-bridge-safety`／`preset-activation-bridge`／`asset-transfer-bridge` 五处手写桩也改调 `makeHostContext`（差异项用 `describe`／`get`／`effect` 选项表达）；全仓手写宿主桩只剩两处**刻意保留**的（`module-subject`／`shared/bridge-contract` 用 `handlerTable()` 拼多次注册与逐端点取 handler），`lib` 派系四个用例仍打构建产物面。各文件自己的 `call` 包装保留（返回形状不同，合并要改十几处断言）。
 - **harness 出 `makeHostContext`**：宿主 Context 桩（handlers ＋ settings ＋ webServer ＋ inject ＋ 一次桥调用 `call`）收进 `test/fixtures/host-harness.mjs`，差异项（多 namespace 的 `describe`、带 disposer 的 `effect`、晚到服务）用选项覆盖，不做成配置表。`module-management` 与 `module-package-import` 两个文件的桩先迁移作样板；`handlerTable` 保留给 `module-subject`／`bridge-contract`。**刻意不迁**打构建产物面的四个用例（`wave1-safety`／`instructions-policy-endpoint`／`instruction-scope-guard`／`module-prompt-configs`）——它们与 src 输入不是同一个 seam，强行统一会丢掉「bundle 也能跑」的覆盖；harness 里已写明理由。
 - **补四个此前零覆盖的导入侧路径**：① `needs-kind-selection`（原生片段在 native-preset／native-character 间二选一：预览回候选与两种 kind、选定类型后进入 ready、全程零落盘）；② `/characters-import` 未知字段 400 `characters-rejected`；③ 目标在同一请求内被换掉 409 `characters-preview-stale`，原目标与新目标都零写盘（计数式 `moduleDirectory` 桩：两道 `subjectGate` 各含一次身份复核，第 5 次才是端点自己的陈旧性检查）；④ `importCharacterCardFile`（6 行包装入口）与直接传字节同结果。
 - **核实后不做**：导出端点与导入端点的参数白名单**不同物**（`id/mode/preview/expectedRevision/memoryChoices` vs `files/sourceId/targetId/targetName/overwrite/sourceKind/expectedSourceDigest/expectedPreviewRevision/promptOrderCharacterId/preview`），SHA-256 校验与 `assertModuleId` 早已共用；合并只会做出一个「假共享」的校验器。

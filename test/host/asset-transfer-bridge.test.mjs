@@ -4,6 +4,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, 
 import { join } from 'node:path'
 import { Readable } from 'node:stream'
 import { parse } from 'yaml'
+import { makeHostContext } from '../fixtures/host-harness.mjs'
 
 const home = mkdtempSync(join(process.cwd(), 'pt-assets-bridge-'))
 process.env.DSH_HOME = home
@@ -17,17 +18,15 @@ writeFileSync(join(root, 'owner/module.yml'), 'id: owner\nname: Owner\nmodules: 
 test.after(() => rmSync(home, { recursive: true, force: true }))
 
 function harness(t, refresh = () => {}, resolveDirectory) {
-  const handlers = new Map()
   const disposers = []
   let active = join(root, 'owner')
   // 默认解析器必须在函数体内构造：参数默认值的作用域看不到 body 的 `let active`。
   const directoryOf = resolveDirectory ?? (() => active)
-  const sctx = {
-    settings: { describe: () => [], get: () => undefined },
-    webServer: { register: ({ path, handler }) => { handlers.set(path, handler); return () => handlers.delete(path) } },
+  // 差异项：本文件的 effect 收集 disposer、register 的 disposer 由用例统一释放；其余走 harness 默认值。
+  const { ctx, handlers } = makeHostContext({
+    describe: () => [],
     effect: (fn) => { const dispose = fn(); if (dispose) disposers.push(dispose) },
-  }
-  const ctx = { inject: (deps, fn) => { if (deps.includes('settings')) fn(sctx) } }
+  })
   registerSettingsBridge(ctx, {
     ns: 'prompt-tool',
     models: () => ({}),

@@ -9,6 +9,7 @@ import assert from 'node:assert/strict'
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { makeHostContext } from '../fixtures/host-harness.mjs'
 
 const sandbox = mkdtempSync(join(tmpdir(), 'pt-skills-catalog-'))
 const dshHome = join(sandbox, 'home')
@@ -182,7 +183,6 @@ test('调用策略写入后清单随之变化：catalogFromScan 读的就是文�
 })
 
 test('/skills-list 端点：按会话 cwd 解析项目来源，无存活会话时只列用户与内置来源', async () => {
-  const handlers = new Map()
   const state = {
     skillsRoot,
     folders: [...FOLDERS],
@@ -190,15 +190,13 @@ test('/skills-list 端点：按会话 cwd 解析项目来源，无存活会话�
     setSkillPolicy: () => ({ ok: true, changed: true, invocation: { modelInvocable: false, userInvocable: false } }),
     patchSkillFolders: () => ({ ok: true, state: { version: SKILLS_STATE_VERSION, folders: FOLDERS }, exists: true }),
   }
-  const sctx = {
-    settings: { describe: () => [], get: () => undefined, mutate: async () => {} },
-    webServer: { register: ({ path, handler }) => { handlers.set(path, handler); return () => {} } },
+  const { ctx, handlers } = makeHostContext({
+    describe: () => [],
     get: (name) => name === 'agents'
       ? { get: (id) => (id === 'session-1' ? { session: { header: { cwd } } } : undefined) }
       : undefined,
-    effect: (fn) => fn(),
-  }
-  registerSettingsBridge({ inject: (_deps, callback) => callback(sctx) }, {
+  })
+  registerSettingsBridge(ctx, {
     ns: 'prompt-tool',
     models: () => ({ available: true, providers: [] }), skills: () => state,
   })

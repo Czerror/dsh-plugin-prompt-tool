@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { parse } from 'yaml'
-import { isolatedHome, fakeReq, fakeRes, readBridge } from '../fixtures/host-harness.mjs'
+import { isolatedHome, fakeReq, fakeRes, makeHostContext, readBridge } from '../fixtures/host-harness.mjs'
 
 const { moduleRoot } = isolatedHome('pt-activation-bridge-')
 const { registerSettingsBridge } = await import('../../src/runtime/settings-bridge.ts')
@@ -21,16 +21,15 @@ async function bounded(promise, label) {
 }
 
 test('预设保存等待宿主采用；异步拒绝保留定义并可重试；只保存不触发注册', async () => {
-  const handlers = new Map()
   const disposers = []
   let rebuild = async () => {}
   let calls = 0
-  const sctx = {
-    settings: { describe: () => [] },
-    webServer: { register: ({ path, handler }) => { handlers.set(path, handler); return () => {} } },
+  // 差异项：本文件的 effect 收集 disposer；其余走 harness 默认值。
+  const { ctx, handlers } = makeHostContext({
+    describe: () => [],
     effect: fn => { const dispose = fn(); if (dispose) disposers.push(dispose) },
-  }
-  registerSettingsBridge({ inject: (_deps, cb) => cb(sctx) }, {
+  })
+  registerSettingsBridge(ctx, {
     ns: 'prompt-tool',
     models: () => ({}),
     skills: () => ({}),
