@@ -19,6 +19,7 @@
  */
 
 import { bool, defineConfig, stringList } from './fields.mjs'
+import { machinePaths } from './machine-paths.mjs'
 
 /** Cordis 插件名，供 loader 诊断使用。 */
 export const name = 'run-code-env'
@@ -126,16 +127,15 @@ export function buildEnv(ctx, keys, agent) {
     // shellEnv 缺失/失败只意味着没有受管变量，不阻断 PTC。
   }
 
-  // DSH_HOME 兜底：启动器/宿主进程通常显式设置了 DSH_HOME（本机为
-  // D:\AI\DeepSeek harness\.dsh）。shellEnv 不可用时退回到该值；shellEnv
-  // 已给出受管值时这里不会覆盖。
-  if (env.DSH_HOME === undefined) {
-    const ambientHome = lookupEnv(hostEnv, 'DSH_HOME')
-    if (ambientHome !== undefined && ambientHome !== null && !SENSITIVE_ENV_RE.test('DSH_HOME')) {
-      env.DSH_HOME = String(ambientHome)
-    }
+  // DSH_HOME 兜底：受管快照没给值时按机器路径事实的**唯一来源**推导（与插值同答案：
+  // 显式环境变量 → `USERPROFILE\.dsh`）。这是有意的**行为对齐**——此前未设 DSH_HOME 时
+  // 这里不给该键，于是 `{{DSH_HOME}}` 与 `run_code` 的 `env.DSH_HOME` 是两个答案。
+  if (env.DSH_HOME === undefined && !SENSITIVE_ENV_RE.test('DSH_HOME')) {
+    const derived = machinePaths(agent?.session, hostEnv).DSH_HOME
+    if (derived.length > 0) env.DSH_HOME = derived
   }
 
+  // DSH_WORKSPACE 只认**会话 cwd**（没有就不落键）——取值统一后仍按本处规则决定给不给键。
   const cwd = agent?.session?.header?.cwd
   if (typeof cwd === 'string' && cwd.length > 0 && !SENSITIVE_ENV_RE.test('DSH_WORKSPACE')) {
     env.DSH_WORKSPACE = cwd

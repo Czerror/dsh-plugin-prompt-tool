@@ -21,6 +21,7 @@
 import { randomUUID } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { createEpochPromotion } from './compaction-epoch.mjs'
+import { machinePaths } from './machine-paths.mjs'
 import { interpolateStatic } from './interpolate.mjs'
 import { booleanOption, createWarnOnce, getService, parsePromoteOn, validateConfig } from './shared.mjs'
 
@@ -102,8 +103,8 @@ export async function collectInstructionFiles(fs, cwd, signal, home) {
   }
 
   const userGlobalFiles = []
-  const dshHome = home ?? process.env.DSH_HOME
-    ?? (process.env.USERPROFILE ? `${process.env.USERPROFILE}\\.dsh` : undefined)
+  // 路径类事实取唯一来源；本处需要 `undefined` 表示「没有可探测的全局目录」，故把空串折回缺省。
+  const dshHome = home ?? (machinePaths().DSH_HOME || undefined)
   if (dshHome !== undefined) {
     userGlobalFiles.push(...await presentInDir(fs, dshHome, [USER_GLOBAL_INSTRUCTION_CANDIDATE], signal))
   }

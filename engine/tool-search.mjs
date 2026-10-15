@@ -26,6 +26,8 @@ export const name = 'tool-search'
 /** 工具注册表必须先于本工具存在（同 skill-search 的 inject 纪律）。 */
 export const inject = ['tools']
 
+import { toJsonSchema } from './shared.mjs'
+
 /** 单次搜索结果上限：再多就该让模型收窄关键词。 */
 export const MAX_RESULTS = 25
 
@@ -38,19 +40,7 @@ const MAX_GROUPS = 24
 /** 常驻核心集：由工具面收窄模板声明，这里只在描述里如实告知模型。 */
 const RESIDENT = ['pwsh', 'read', 'write', 'edit', 'glob', 'grep', 'todo_write', 'skill_search', 'skill_load']
 
-/** 零依赖的最小 JSON schema 编译器（与 skill-search 同构）。 */
-function toJsonSchema(spec) {
-  const properties = {}
-  const required = []
-  for (const [key, meta] of Object.entries(spec || {})) {
-    const prop = { type: meta.type }
-    if (meta.description) prop.description = meta.description
-    if (meta.items) prop.items = meta.items
-    properties[key] = prop
-    if (meta.required) required.push(key)
-  }
-  return { type: 'object', properties, required, additionalProperties: false }
-}
+/** 参数 schema 由 `shared.mjs` 的统一实现生成（与 `skill-search` 同一份）。 */
 
 /**
  * 能力索引：常驻核心集（pwsh / read / write / edit / glob / grep / todo_write /

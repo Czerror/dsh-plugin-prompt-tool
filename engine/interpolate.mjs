@@ -14,6 +14,7 @@
  */
 
 import { currentEvents } from './history.mjs'
+import { machinePaths } from './machine-paths.mjs'
 import { createHash } from 'node:crypto'
 
 /** 会话事件中最后一条指定类型消息的文本（事件倒序扫描；无则空串）。 */
@@ -96,13 +97,9 @@ const DYNAMIC_MACROS = {
   pipe: () => '|',
 }
 
-/** 内置变量：路径类事实（无会话上下文时回退进程 cwd）；两条插值通道同源。 */
+/** 内置变量：路径类事实取机器路径事实的唯一来源（无会话上下文时回退进程 cwd）；两条插值通道同源。 */
 function builtinVariables(session) {
-  return {
-    DSH_HOME: process.env.DSH_HOME ?? (process.env.USERPROFILE ? `${process.env.USERPROFILE}\\.dsh` : ''),
-    WORKSPACE: process.env.DSH_WORKSPACE ?? session?.header?.cwd ?? process.cwd(),
-    CWD: session?.header?.cwd ?? process.cwd(),
-  }
+  return machinePaths(session)
 }
 
 /** 内置变量名的单一来源：从 builtinVariables 的键派生（惰性，不在 import 期取 cwd）。 */

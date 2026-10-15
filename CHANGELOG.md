@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+### 引擎：机器路径事实单一来源 + 参数 schema 抽公共（2026-10-16）
+
+- **`engine/machine-paths.mjs`（新建）是 `DSH_HOME`／`CWD`／`WORKSPACE` 的唯一取值来源**：此前这条配方在四处各写一遍（`interpolate` 的内置变量、`fillers` 的 env facts、`run-code-env` 的进程环境兜底、`instruction-hint` 的指令文件探测），而且已经分叉——未设 `DSH_HOME` 时前两者按 `<USERPROFILE>\.dsh` 推导，`run-code-env` **不给该键**，于是同一台机器上 `{{DSH_HOME}}` 与 `run_code` 里的 `env.DSH_HOME` 是两个答案。四处改为共用它。
+- **有意的行为变化**：`run_code` 注入的 `env.DSH_HOME` 在未显式设置时会得到与插值一致的推导值（此前不落键）。`DSH_WORKSPACE` 仍只认会话 cwd（没有就不落键）——统一的是**取值**，「这个键给不给」仍由各处策略决定。
+- **接口只给取值不给策略**：`machinePaths(session, env?)` 返回三个字符串；需要「不可用」语义的调用方自行把空串折回 `undefined`（`instruction-hint` 如此）。无 `process` 的环境不抛（环境与 cwd 退化成空值，与 `run-code-env` 原有的 `typeof process === 'undefined'` 守卫同口径）；`env` 参数有生产消费者（`run-code-env` 的宿主快照），也让测试不必改全局态。
+- **`toJsonSchema` 收进 `shared.mjs`**：`tool-search` 与 `skill-search` 曾各有一份逐字相同的私有实现，只差 `meta.items` 一行（skill 版缺）。抽公共时保留该分支，且 skill 侧 `meta.items` 恒为 `undefined` → **零行为变化**。
+- **未做（一并记录，免得下次扫描又当新发现）**：`conditions/count.mjs` 与 `actions/registration.mjs` 各有一套「本会话当前轮」状态——两处互不读取，后者是每个动作私有的 `maxPerTurn` 上限（本就不该共享容器），且全仓 yml 无任何 `maxPerTurn`（无生产使用者）。真要启用它时先改喂事件方式：现在每个 `maxPerTurn` 动作各接一条 `ctx.on('session/event')`，与 `trigger.mjs` 明写的「不按规则各接一条」相反。
+- **测试**：新增 `test/engine/machine-paths.test.mjs`（三个键的推导 + `run-code-env` 与唯一来源同答案）。
+
 ### 晋升相位收成挂载缝的追踪器池（2026-10-16）
 
 - **池 + 统一喂事件**：新增 `engine/promotion-pool.mjs`。`createEpochPromotion` 自己不订阅任何事件（初始相位靠 `status()` 的全量冷扫建立），此前 `executor` **每次 `applyPromptConfigs`** 建两份、`phase` **每个编译谓词**建一份、`instruction-hint` 每次 apply 建一份、`pre-step-coordinator` 插件级两份，各自订阅、各自喂。现在由挂载缝持有池：按 `(promoteEvents, 其余选项)` 缓存复用，**池自己订阅 `session/event` 并统一喂**（订阅随池的归属走，调用方不需要记住"注入时谁喂"）。

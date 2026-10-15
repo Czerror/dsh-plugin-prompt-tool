@@ -133,6 +133,26 @@ export function matchesModel(scope, model) {
   return scope === 'flash' ? isFlash : !isFlash
 }
 
+/**
+ * 零依赖的最小 JSON schema 编译器：把工具参数的字段字面量编译成宿主
+ * `ctx.tools.register` 需要的形状。`tool-search` 与 `skill-search` 共用这一份。
+ *
+ * `meta.items` 是数组元素的项描述——保留这一支：删掉它等于让带 items 的参数丢掉项描述
+ * （`tool-search` 的 `toolNames` 正是这种参数）。
+ */
+export function toJsonSchema(spec) {
+  const properties = {}
+  const required = []
+  for (const [key, meta] of Object.entries(spec || {})) {
+    const prop = { type: meta.type }
+    if (meta.description) prop.description = meta.description
+    if (meta.items) prop.items = meta.items
+    properties[key] = prop
+    if (meta.required) required.push(key)
+  }
+  return { type: 'object', properties, required, additionalProperties: false }
+}
+
 /** 逗号分隔的 token 列表;空 = 空数组(调用方自行决定"全部"语义)。 */
 export function parseToolNames(value) {
   if (typeof value !== 'string' || value.trim() === '') return []

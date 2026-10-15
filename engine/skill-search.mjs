@@ -25,6 +25,7 @@
  * the composition must NOT mount both, or the catalog injection returns.
  */
 import { importHostPackage } from './host-package.mjs'
+import { toJsonSchema } from './shared.mjs'
 
 const { isModelInvocable, renderSkillContent } = await importHostPackage('@deepseek-ai/dsh-skill')
 
@@ -36,18 +37,7 @@ export const inject = ['agents', 'tools', 'skills']
 
 const MAX_RESULTS = 20
 
-/** Minimal JSON schema compiler for tool parameters (zero dependencies). */
-function toJsonSchema(spec) {
-  const properties = {}
-  const required = []
-  for (const [key, meta] of Object.entries(spec || {})) {
-    const prop = { type: meta.type }
-    if (meta.description) prop.description = meta.description
-    properties[key] = prop
-    if (meta.required) required.push(key)
-  }
-  return { type: 'object', properties, required, additionalProperties: false }
-}
+/** 参数 schema 由 `shared.mjs` 的统一实现生成（与 `tool-search` 同一份）。 */
 
 /** Register the two on-demand skill tools. */
 /**

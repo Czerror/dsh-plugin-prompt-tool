@@ -4,6 +4,7 @@
  */
 
 import { getService, parseToolNames } from './shared.mjs'
+import { machinePaths } from './machine-paths.mjs'
 import { createInstructionHintResolver } from './instruction-hint.mjs'
 
 const name = 'prompt-config-engine'
@@ -25,18 +26,19 @@ function createEnvFactsResolver(config) {
   const keys = parseToolNames(typeof config.params?.envKeys === 'string' ? config.params.envKeys : '')
   return ({ agent }) => {
     const session = agent?.session
-    const cwd = session?.header?.cwd ?? process.cwd()
-    const builtinHome = process.env.DSH_HOME ?? (process.env.USERPROFILE ? `${process.env.USERPROFILE}\\.dsh` : '')
+    // 路径类事实取唯一来源；白名单（envKeys）与「空串不算有值」是本处的策略，不外包。
+    const paths = machinePaths(session)
     const facts = {}
     for (const key of keys) {
       let value
-      if (key === 'CWD' || key === 'WORKSPACE') value = cwd
-      else if (key === 'DSH_HOME') value = builtinHome
+      if (key === 'CWD') value = paths.CWD
+      else if (key === 'WORKSPACE') value = paths.WORKSPACE
+      else if (key === 'DSH_HOME') value = paths.DSH_HOME
       else value = process.env[key]
       if (typeof value === 'string' && value.length > 0) facts[key] = value
     }
-    facts.WORKSPACE = process.env.DSH_WORKSPACE ?? cwd
-    facts.CWD = cwd
+    facts.WORKSPACE = paths.WORKSPACE
+    facts.CWD = paths.CWD
     const envFacts = Object.entries(facts).map(([key, value]) => `- ${key}=${value}`).join('\n')
     return { text: template, variables: { ...facts, ENV_FACTS: envFacts } }
   }
