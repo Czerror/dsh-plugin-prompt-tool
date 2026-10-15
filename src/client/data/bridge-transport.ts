@@ -1,9 +1,4 @@
 /** settings bridge 的底层 HTTP/文件传输与统一结果解析。 */
-import type { EngineMeta, PromptConfigDraft } from '../prompt-tool-types.ts'
-import type { HostDefaultModel, SkillCatalogEntry } from './prompt-tool-fields.ts'
-import type { ModuleFacts } from '../../shared/engine-capabilities.ts'
-import type { InstructionsSnapshot } from '../../shared/instructions.ts'
-import type { ModuleVariablesSnapshot } from '../../shared/module-variables.ts'
 import {
   EDIT_TARGET_HEADER,
   MAX_BRIDGE_BODY_BYTES,
@@ -11,31 +6,14 @@ import {
   type BridgeErrorPayload,
 } from '../../shared/bridge-contract.ts'
 
-interface BridgeSuccessExtras {
-  providers?: string[]
-  modelCatalog?: Record<string, string[]>
-  activeSkillsDirs?: string[]
-  skillCatalog?: SkillCatalogEntry[]
-  skillsComplete?: boolean
-  /** 用户添加的技能文件夹（只引用，不复制）。 */
-  skillFolders?: string[]
-  templatePreStepCount?: number
-  moduleParams?: Record<string, unknown>
-  /** 全局层参数（存储根 `config.yml` 的 `layerSettings`）：随 `/bootstrap` 的空主语全局段下发。 */
-  globalParams?: Record<string, unknown>
-  hostDefaultModel?: HostDefaultModel
-  moduleFacts?: ModuleFacts
-  meta?: { meta: EngineMeta }
-  overrides?: { overrides: Record<string, unknown> }
-  variables?: ModuleVariablesSnapshot
-  promptConfigs?: { promptConfigs: PromptConfigDraft[] }
-  /** 指令文件快照（独立来源）：正文、身份、版本与读取状态来自同一次读取。 */
-  instructions?: InstructionsSnapshot
-}
-
 export type { BridgeSettingsView } from '../../shared/bridge-contract.ts'
 
-export type BridgeResult<T> = ({ ok: true; value: T } & BridgeSuccessExtras) | BridgeErrorPayload
+/**
+ * 一次 bridge 调用的结果。`T` 是 `value` 字段的形状；`E` 是该端点的**顶层附加字段**
+ * （契约里的 `BridgeExtrasOf<K>`），**缺省为空**——transport 不认识端点，形状由调用方
+ * （`bridgeCall`）按端点填进来；它自己只判 `ok` 与 `value` 存在与否。
+ */
+export type BridgeResult<T, E = unknown> = ({ ok: true; value: T } & E) | BridgeErrorPayload
 
 export const errorMessage = (error: unknown): string => error instanceof Error ? error.message : String(error)
 
@@ -50,7 +28,7 @@ const isBridgeResultPayload = (payload: unknown): payload is BridgeResult<unknow
  * 宿主尚未就绪或路由未注册时，HTTP 层可能返回空体/非 JSON 响应；
  * 统一转成可诊断的桥接错误，不把原生 response.json() 异常透传给 UI。
  */
-async function readBridgeResponse<T>(response: Response): Promise<BridgeResult<T>> {
+async function readBridgeResponse<T, E = unknown>(response: Response): Promise<BridgeResult<T, E>> {
   const text = await response.text()
   if (text.trim().length === 0) {
     return { ok: false, message: `桥接接口返回空响应（HTTP ${response.status}）` }
@@ -62,7 +40,7 @@ async function readBridgeResponse<T>(response: Response): Promise<BridgeResult<T
     const preview = text.trim().replace(/\s+/g, ' ').slice(0, 80)
     return { ok: false, message: `桥接接口返回非 JSON 响应（HTTP ${response.status}：${preview}）` }
   }
-  if (isBridgeResultPayload(payload)) return payload as BridgeResult<T>
+  if (isBridgeResultPayload(payload)) return payload as BridgeResult<T, E>
   return { ok: false, message: `invalid settings bridge payload (HTTP ${response.status})` }
 }
 
@@ -70,21 +48,21 @@ async function readBridgeResponse<T>(response: Response): Promise<BridgeResult<T
  * 主语只在调用实参里携带：`subject` 是模块 id（模块目录名），模块 id 唯一（复制必带 `-copy`
  * 后缀），加上卡自身的 id 就唯一确定一张配置卡。没有会话级目标，未传即不带该头。
  */
-export async function postBridge<T>(path: string, body: unknown, subject?: string): Promise<BridgeResult<T>> {
+export async function postBridge<T, E = unknown>(path: string, body: unknown, subject?: string): Promise<BridgeResult<T, E>> {
   try {
     const response = await fetch(SETTINGS_BRIDGE_PREFIX + path, {
       method: 'POST',
       headers: { 'content-type': 'application/json', ...(subject === undefined ? {} : { [EDIT_TARGET_HEADER]: subject }) },
       body: JSON.stringify(body ?? {}),
     })
-    return await readBridgeResponse<T>(response)
+    return await readBridgeResponse<T, E>(response)
   } catch (error) {
     return { ok: false, message: errorMessage(error) }
   }
 }
 
 /** 原始文件流上传；用于避开 JSON/base64 的额外膨胀。 */
-export async function uploadBridge<T>(path: string, file: Blob, fileName: string): Promise<BridgeResult<T>> {
+export async function uploadBridge<T, E = unknown>(path: string, file: Blob, fileName: string): Promise<BridgeResult<T, E>> {
   try {
     const response = await fetch(SETTINGS_BRIDGE_PREFIX + path, {
       method: 'POST',

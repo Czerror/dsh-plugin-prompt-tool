@@ -513,6 +513,10 @@ export interface BridgeBootstrapExtras {
   globalParams: Record<string, unknown>
   /** 条件：目标模块目录非空且声明了 variables / variablesEnabled。 */
   variables?: ModuleVariablesSnapshot
+  /**
+   * 配置卡数组。**元素的完整形状是客户端视图**（client 的 `PromptConfigDraft`：id／kind／层／内容字段），
+   * 契约只保证「这是一个数组」——消费方按既有的 shape guard 文化自行收窄，不在这里假装知道卡片的形状。
+   */
   promptConfigs: { promptConfigs: unknown[] }
   instructions: InstructionsSnapshot
 }
@@ -532,8 +536,8 @@ export interface BridgeExtrasMap {
   describe: BridgeSessionExtras
 }
 
-/** 端点未声明顶层附加字段时为空对象（交叉进响应体不产生任何键）。 */
-export type BridgeExtrasOf<K extends BridgeEndpointKey> = K extends keyof BridgeExtrasMap ? BridgeExtrasMap[K] : Record<string, never>
+/** 端点未声明顶层附加字段时是恒等交叉（`A & unknown` 不改变 `A`）。 */
+export type BridgeExtrasOf<K extends BridgeEndpointKey> = K extends keyof BridgeExtrasMap ? BridgeExtrasMap[K] : unknown
 
 /** 一次 bridge 调用的成功响应体：`value` 字段 ＋ 该端点的顶层附加字段。 */
 export type BridgeResponse<K extends BridgeEndpointKey> =

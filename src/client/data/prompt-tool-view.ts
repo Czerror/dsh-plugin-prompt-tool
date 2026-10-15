@@ -1,9 +1,8 @@
 /** settings/bootstrap 载荷到客户端 Fields 的纯映射。 */
 import type { PromptConfigDraft } from '../prompt-tool-types.ts'
-import type { BridgeResult, BridgeSettingsView } from './bridge-transport.ts'
 import { EMPTY_FIELDS, type Fields, type SkillCatalogEntry } from './prompt-tool-fields.ts'
 import { SKILL_SOURCES } from '../../shared/skills.ts'
-import type { BridgeValueMap } from '../../shared/bridge-contract.ts'
+import type { BridgeResponse, BridgeValueMap } from '../../shared/bridge-contract.ts'
 
 const asRecord = (value: unknown): Record<string, unknown> =>
   value !== null && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {}
@@ -91,7 +90,7 @@ export function skillFieldsFromSnapshot(snapshot: BridgeValueMap['skillsList']):
   }
 }
 
-export function fieldsFromView(res: BridgeResult<BridgeSettingsView>): Fields {
+export function fieldsFromView(res: BridgeResponse<'bootstrap'>): Fields {
   const ns = res.ok ? res.value : undefined
   const value = asRecord(ns?.value)
   const base = asRecord(ns?.base)
@@ -116,25 +115,17 @@ export function fieldsFromView(res: BridgeResult<BridgeSettingsView>): Fields {
   return next
 }
 /** /bootstrap 已携带 descriptor；归一成 fieldsFromView 使用的结果形状。 */
-export function bridgeViewFromBoot(boot: BridgeResult<BridgeSettingsView>): BridgeResult<BridgeSettingsView> {
+export function bridgeViewFromBoot(boot: BridgeResponse<'bootstrap'>): BridgeResponse<'bootstrap'> {
   if (!boot.ok) return boot
+  // 只归一化 `value`（补 ns、透传 base/revision）；**extras 原样传递**——它们本来就属于这次响应，
+  // 逐个搬运等于在这里维护第二份清单（旧实现正因如此漏掉了 meta／promptConfigs 等会话段）。
   return {
-    ok: true,
+    ...boot,
     value: {
       ns: 'prompt-tool',
       value: boot.value.value,
       base: boot.value.base,
       revision: boot.value.revision,
     },
-    providers: boot.providers,
-    modelCatalog: boot.modelCatalog,
-    activeSkillsDirs: boot.activeSkillsDirs,
-    skillCatalog: boot.skillCatalog,
-    skillsComplete: boot.skillsComplete,
-    skillFolders: boot.skillFolders,
-    templatePreStepCount: boot.templatePreStepCount,
-    moduleParams: boot.moduleParams,
-    hostDefaultModel: boot.hostDefaultModel,
-    moduleFacts: boot.moduleFacts,
   }
 }

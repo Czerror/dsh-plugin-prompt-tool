@@ -4,7 +4,7 @@ import type { ConfigForm, ConfigFormSnapshot } from '@deepseek-ai/dsh-client-ui-
 import type { EngineMeta, PromptConfigDraft } from '../prompt-tool-types.ts'
 import type { PromptToolHostApi } from './host-api.ts'
 import type { SkillCatalogEntry, SkillContentSnapshot, SkillPolicyChange } from '../../shared/skills.ts'
-import { bridgeCall, errorMessage, type BridgeResult, type BridgeSettingsView } from './bridge-client.ts'
+import { bridgeCall, errorMessage, type BridgeResult } from './bridge-client.ts'
 import { requestSkillImport, type ConfirmSkillOverwrite } from './skill-import.ts'
 import {
   EMPTY_FIELDS,
@@ -59,7 +59,7 @@ import { createVariablesDraft, readVariablesDraft, retryModuleVariablesPublicati
 import { canEditModule, moduleDeclares, subjectDraftKey } from './module-subject.ts'
 import { modulesEnabledOps } from '../../shared/module-settings.ts'
 import { modelChoiceValue } from '../features/models/model-options.ts'
-import type { ModelReasoningView } from '../../shared/bridge-contract.ts'
+import type { BridgeResponse, ModelReasoningView } from '../../shared/bridge-contract.ts'
 
 /** 官方 ConfigForms 共享镜像传输面：标准字段共用宿主读写队列。 */
 export interface PromptToolSettingsTransport {
@@ -574,7 +574,7 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
     })()
   }, [])
 
-  const applyView = useCallback((res: BridgeResult<BridgeSettingsView>, skillsSeq: number): Fields => {
+  const applyView = useCallback((res: BridgeResponse<'bootstrap'>, skillsSeq: number): Fields => {
     setTemplatePreStepCount(res.ok && typeof res.templatePreStepCount === 'number' ? res.templatePreStepCount : 0)
     setModelCatalog(res.ok ? res.modelCatalog ?? {} : {})
     setHostDefaultModel(res.ok ? res.hostDefaultModel : undefined)
@@ -622,7 +622,9 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
         return EMPTY_FIELDS
       }
       // 模块目录事实不属于字段草稿：创建/启用后的刷新不能被无关输入拦住。
-      if (boot.meta !== undefined && metaSeq === metaSeqRef.current) publishMeta(boot.meta.meta)
+      // 契约的 meta 段只声明四项共性（层序／编辑组／层契约／官方刻度）；引擎实际下发的完整形状是
+      // 客户端视图 `EngineMeta`（另含 layers／strategies／slotKinds…），按既有事实收窄一次。
+      if (boot.meta !== undefined && metaSeq === metaSeqRef.current) publishMeta(boot.meta.meta as unknown as EngineMeta)
       // 两次读取都完成后才应用快照；任何 await 期间的新上下文/草稿/文件结果优先。
       const policyRes = await bridgeCall('instructionsPolicy')
       if (seq !== loadSeqRef.current || sessionId !== api.currentSessionId()) return EMPTY_FIELDS
@@ -665,7 +667,9 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
         // 引擎自动生成的模型参数配置（model-params / subagent-model-params）由
         // 「模型设置」卡片管理，不进入模块列表（避免重复编辑入口）。
         const engineGenerated = new Set(['model-params', 'subagent-model-params'])
-        const userConfigs = boot.promptConfigs.promptConfigs.filter((config) => !engineGenerated.has(config.id) && instructionFileIdOf(config) !== undefined)
+        // 契约只保证「这是一个数组」（卡片的完整形状是客户端视图 `PromptConfigDraft`）：按既有事实收窄一次。
+        const cards = boot.promptConfigs.promptConfigs as PromptConfigDraft[]
+        const userConfigs = cards.filter((config) => !engineGenerated.has(config.id) && instructionFileIdOf(config) !== undefined)
         // 内容资产条目（prompt-injector / instruction-hint）：params.text（生成目录文件渲染产物）
         // 提升到 text 框显示，编辑入口统一为模块卡片。
         const actual = withInstructionState(userConfigs, instructionPoolRef.current, instructionPolicyRef.current)
