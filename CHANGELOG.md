@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### 内部：manifest 导出面收窄，并记录候选 7 的复核结论（2026-10-16）
+
+- 去掉 4 个**零外部消费者**的导出（`asString`／`isRenderableModuleDir`／`normalizeParam`／`loadCompositionText`——逐个 `rg -l` 核实只出现在 `manifest.ts` 自身）：`src/host/manifest.ts` 的导出面 **39 → 35**。跨文件类型检查确认无人引用，**零行为变化**。
+- **复核结论：候选 7 不做大改造**。删除测试显示它在赚钱——39 个导出、**22 个消费者文件**，约 90% 的导出有多个消费者（`loadModuleSpec` 13 个、`resolveModuleDir` 11 个…）；按族拆成"发现／参数／人设／能力／组合"会把 22 个消费者需要的知识散到多个文件，与 locality 相反。报告标它 Speculative 是准确的。
+
 ### SKILL.md 的合法性收成一份解析（2026-10-16）
 
 - **`src/host/skills-parse.ts` 成为唯一实现**：边界正则、「必须是 YAML 映射」检查、YAML 别名拒绝、legacy 键名单与文案、BOM 口径全在这里；清单扫描、导入、删除、内容读写、策略写入五处共用。`content` 与 `policy` 的 `parseMarker` 保留外壳（读盘、路径与可写校验、各自专有的 name/description 校验），只把合法性判定交给它。

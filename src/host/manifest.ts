@@ -218,7 +218,7 @@ export function loadModuleSpec(dir: string): ModuleSpec {
   return withGlobalParams(parsed, dir)
 }
 
-export const asString = (value: unknown, fallback = ''): string => {
+const asString = (value: unknown, fallback = ''): string => {
   if (typeof value === 'string') return value
   if (value === undefined || value === null) return fallback
   return String(value)
@@ -258,7 +258,7 @@ export function isEditableModuleDir(dir: string, moduleRoot = userModulesDir()):
 }
 
 /** 模块目录是否含组合源：modules、composition 或官方 agent.cordis.yml。 */
-export function isRenderableModuleDir(dir: string): boolean {
+function isRenderableModuleDir(dir: string): boolean {
   try {
     const spec = loadModuleSpec(dir)
     if (Array.isArray(spec.modules)) return true
@@ -614,7 +614,7 @@ export function removeUserModule(id: string, moduleRoot = userModulesDir()): { o
 }
 
 /** on/off 等字面开关归一化为布尔。 */
-export function normalizeParam(value: unknown): unknown {
+function normalizeParam(value: unknown): unknown {
   if (value === 'on') return true
   if (value === 'off') return false
   return value
@@ -775,7 +775,7 @@ export function applyModuleConfigs(raw: string, configs: Record<string, Record<s
  *  - `composition: ./xxx.yml` → 模块模板目录内组合文件(官方预设直用);
  *  - `composition:` 内联文本或组合清单名。
  */
-export function loadCompositionText(spec: ModuleSpec, templateDir?: string, _runtime: Record<string, unknown> = {}): string {
+function loadCompositionText(spec: ModuleSpec, templateDir?: string, _runtime: Record<string, unknown> = {}): string {
   let raw: string
   let modules = spec.modules
   if (Array.isArray(modules)) {
