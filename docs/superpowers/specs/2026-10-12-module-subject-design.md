@@ -1,6 +1,8 @@
 # 模块主语：把「归属」从会话状态拉回操作本身
 
 > ⚠️ **后补注记（不改写下文历史）**：本文是当轮设计记录。其中 §10.2 Q14 的「写以载荷主语为准」与最终实现不同——实际是**读与写都由请求头 `x-module-id` 定位目录**，写端点另在载荷带 `expectedModuleId` 作**一致性校验**（不一致 → 400 `module-subject-conflict`；缺头 → 400 `module-dir-unavailable`，载荷不能替请求头选路径）；以 `docs/adr/0014-module-subject-declared-per-operation.md` 为准。
+>
+> ⚠️ **再补注记（2026-10-16）**：下文清单中的 `subagentToolPolicy` / `subagentToolPolicyPreview` 两个端点与 `subagentToolPolicy` 顶层节已随子代理工具策略引擎退场删除（上游 alpha.3 移除 `toolFilter`）。当时的 11 `required` 现为 10，节总数为 15。
 
 日期：2026-10-12 · 状态：已评审（用户批准，2026-10-12），待拆计划；尚未动代码
 来源：`/improve-codebase-architecture` 评审报告（`%TEMP%\architecture-review-20261012-0251.html`）候选 1／2／5 的合并与更正

@@ -13,7 +13,7 @@
 | 模块记忆 | 当前受控模块 memory.md | 显式工具读取，不自动注入 |
 | 人设正文与选项 | 各模块 module.yml.persona.main / persona.subagent | rules/_settings.yml 的校验投影与官方有效声明 |
 | 人设来源选择 | config.yml.personaSources | main/subagent 各选一个模块 ID 或官方默认，不存正文 |
-| 自定义工具、子代理策略 | customTools / subagentToolPolicy | 经验证的内联运行输入 |
+| 自定义工具 | customTools | 经验证的内联运行输入 |
 | 外部来源事实 | 注入动作 params.source | 导入报告与导出元数据 |
 | 模块显示名称 | module.yml.name | 模块卡、目标选择与人设来源目录；不改变模块 ID 或目录 |
 
@@ -111,11 +111,11 @@ null 或未配置表示官方默认。选择 project-persona 不自动启用它�
 
 ## 共享参数与保存链路
 
-`layerSettings.<层>.<键>` 是共享参数唯一磁盘路径。storageLayer 由参数目录固定，UI displayLayer/card 只影响展示。公开目录目前有14个键：主/子模型各5个，以及 maxDepth、instructionHint、toolGitBashEnabled、customToolRequireApproval。完整表与类型直接查 `ENGINE_PARAM_DEFINITIONS`，根 [module.yml](../module.yml) 由脚本生成参考。
+`layerSettings.<层>.<键>` 是共享参数唯一磁盘路径。storageLayer 由参数目录固定，UI displayLayer/card 只影响展示。公开目录目前有13个键：主/子模型各5个，以及 instructionHint、toolGitBashEnabled、customToolRequireApproval。完整表与类型直接查 `ENGINE_PARAM_DEFINITIONS`，根 [module.yml](../module.yml) 由脚本生成参考。
 
 同名键在两处存在：模块自己的 `module.yml`（模块层）与存储根 `config.yml` 的 `layerSettings`（**全局层**，固定卡指令卡的设置区写它）。有效值优先级是**模块显式键 ＞ 全局键 ＞ 引擎/行默认**——存在即覆盖，`false`/`0` 也算显式；判据与合并只在 `manifest.ts#resolveModuleParams` 一处，客户端与端点都不重复判。模块没有该键时回退全局值，因此全局开关对未声明它的模块同样生效。
 
-模型卡的路由/采样在 prepareAssembly 转成两条受众限定的 request-params 合成规则，不写回规则文件。也可显式写 request-params 动作。未配置模型参数继承宿主，不修改全局默认模型。maxDepth 只约束已启用的插件子代理策略，普通官方委派归宿主管理。
+模型卡的路由/采样在 prepareAssembly 转成两条受众限定的 request-params 合成规则，不写回规则文件。也可显式写 request-params 动作。未配置模型参数继承宿主，不修改全局默认模型。子代理递归深度归宿主官方委派管理（`subagent.maxDepth`），插件不再提供逐模块深度配置。
 
 ```text
 共享参数草稿 → /param-overrides → saveModuleParams → 完整定义提交
@@ -165,16 +165,6 @@ customTools 独立于规则/变量。`compileCustomTool` 使用官方 DSL 转换
 
 支持 shell/http/delegate/fs/ask-user；delegate 通过官方工具调度保留批准与拒绝。customToolRequireApproval 只接受实际执行器名称。大文本、秘密与 token 不放 settings；shell 环境沿白名单处理。工具卡的参数行编辑不得丢嵌套 properties/items/oneOf/enum。
 
-## 子代理工具策略
-
-subagentToolPolicy 拥有 ceiling、defaultProfile、profiles、characterBindings、taskRules、modelExpansion。关闭策略不改官方委派；启用时在真实创建窗口解析并冻结实例 toolFilter，不能靠提示词假装授权。
-
-- deny 永远优先，allow 和模型扩权都不能越过 ceiling。
-- requireApproval:true 缺 approval 时拒绝，provider 不支持必需能力时启动前报错。
-- taskRules 按序首个命中，选择器与额外工具参数经官方 Schema 验证。
-- 预览与运行共用 `subagent-tool-policy-core.mjs`，不复制算法；普通官方子代理模型/深度由宿主自身控制。
-- 工具预览读取存活 Agent 或官方 preset scope 的摘要，不冒称未来能力等于模型当前 wire 直连目录。
-
 ## 指令文件与逐文件过滤策略
 
 AGENTS.md/CLAUDE.md 及 local 变体属于用户文件。正文就地保存；显示名和后续注入开关属于独立 `$DSH_HOME/.prompt-tool/instructions.yml`。两者不写入 module.yml、settings、生成目录或模板变量。
@@ -188,7 +178,6 @@ AGENTS.md/CLAUDE.md 及 local 变体属于用户文件。正文就地保存；�
 细节与理由见 [ADR-0003](adr/0003-instruction-files-independent.md)、[ADR-0004](adr/0004-official-instruction-filter.md)、[引擎过滤](engine-reuse.md#pre-step-协调器与官方指令过滤)。
 
 ## 旧格式与显式转换
-
 新内部上下文、变量、工具和人设字段不双读：world-book/stWorldBook/stWorldBookRecursive/stMacros/stSource、动作局部变量、旧工具能力和扁平 persona 均需明确转换。外部 ST 标准别名仍由 adapter 识别。
 
 其它历史快捷参数按共享白名单读取，未登记值不参与执行；旧快捷键写入拒绝。不能因此推断任意旧模块可运行，更不能把被拒绝的本次退役字段当普通未知元数据略过。完整边界以 load/compile/save 的实际错误为准。

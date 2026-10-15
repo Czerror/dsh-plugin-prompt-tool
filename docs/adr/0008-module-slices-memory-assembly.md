@@ -12,6 +12,8 @@ module.yml 保存一个模块的完整规则、参数与能力定义，是唯一
 
 运行配装直接编译校验后的规则，内联编译后的 customTools 和 subagentToolPolicy。不再生成 configs/、rules.yml、agent.cordis.yml、custom-tools/、subagent-tools/。独立引擎保留缺字段时的文件入口；内联空值与非法值不得回落。工具资源根改名为 resourceRoot，兼容旧输入且保持原允许范围。
 
+> 退役注记（2026-10-16）：`subagentToolPolicy` 的内联与独立引擎入口已随上游 alpha.3 的 API 变更删除（官方移除 `SubagentStartRequest.toolFilter` 与 `SubagentCapabilities.toolFilter`）。本条其余决策（切片生成、resourceRoot、文件入口语义）继续有效。
+
 角色卡只是一种导入来源：转为普通 modules/<id>/，没有 character- 前缀目录、.characters 库或新角色专属登记。导入、更新和冲突复用模块机制，更新保留用户记忆、未知资产与未替换头像。模块 memory.md 由世界书工具按需读取，note 追加记忆；存在记忆文件不会自动新增规则或注入。
 
 插件自有身份和端点使用 module 命名，运行总闸使用 modulesEnabled。旧名只在明确输入／公开 API 兼容边界归一，冲突拒绝；宿主官方 preset 和外部格式仍保留真实术语。

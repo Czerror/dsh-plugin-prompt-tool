@@ -62,7 +62,6 @@ AgentSetup 窗口内注册的同层同名段会被接住：装配时先撤销它
 | `history.mjs`、`compaction-epoch.mjs` | 可见/完整历史与 epoch-aware 晋升 |
 | `tool-search.mjs`、`skill-search.mjs` | 工具与技能的按需发现/解锁/加载 |
 | `tool-config-engine.mjs` | 自定义工具定义到官方注册 |
-| `subagent-tool-policy.mjs`、`subagent-tool-policy-core.mjs` | 策略校验、选择和实例授权 |
 
 相对路径均基于包根的 `engine/`。`actions.mjs`、`predicates.mjs`、`strategies.mjs` 只是已有入口，不把实现堆回 barrel。`engine/vendor/yaml/` 是版本化分发快照，通过 package script 生成，不手改。
 

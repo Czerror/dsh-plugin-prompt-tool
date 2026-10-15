@@ -439,13 +439,13 @@ data/bridge-client.ts 提供泛型 bridgeCall(endpoint key, typed body, subject?
 
 | 类别 | 数量 | 端点 | 语义 |
 |---|---|---|---|
-| `required` | 11 | `rules`、`moduleVariables`、`customTools`、`persona`、`charactersImport`、`moduleMerge`、`moduleUnmerge`、`subagentToolPolicy`、`subagentToolPolicyPreview`、`moduleCapability`、`describe` | 没有主语的调用不成立；客户端类型层要求实参，缺主语不发请求直接失败 |
+| `required` | 10 | `rules`、`moduleVariables`、`customTools`、`persona`、`charactersImport`、`moduleMerge`、`moduleUnmerge`、`moduleCapability`、`uploads`、`describe` | 没有主语的调用不成立；客户端类型层要求实参，缺主语不发请求直接失败 |
 | `optional` | 5 | `bootstrap`（空主语只回全局段）、`moduleDelete`（无声明＝没有在用模块）、`promptConfigs`、`mutate`、`paramOverrides`（空主语＝全局层） | 可省；省略时不带该头，端点按自己的无目标语义处理 |
 | `none` | 30 | `meta`、`models`、`modelReasoning`、`skillsList`、`skillPolicy`、`skillRead`、`skillWrite`、`skillsFolders`、`skillsImport`、`skillsImportDirectory`、`skillCreate`、`skillDelete`、`templates`、`agentsFile`、`instructionsPolicy`、`triggers`、`personaSources`、`assetUpload`、`assetRelease`、`exportModule`、`importModulePackage`、`moduleClone`、`moduleDuplicate`、`moduleOpen`、`moduleEnable`、`moduleConfigOrder`、`charactersImportStream`、`toolSurface`、`contextActivationDiagnostics`、`ruleDiagnostics` | 与模块无关，不接受该实参；带上也会被忽略 |
 
-**空主语只有两条语义**：`bootstrap` 的空目标是合法状态，只回全局段（指令文件卡与 session／scope 事实）——`moduleParams`／`moduleFacts` 键整体缺席（不是空对象）、`variables` 缺席、`overrides` 为空、`templatePreStepCount` 保持 `0`；`paramOverrides` 的空主语是**全局层**（存储根 `config.yml` 的 `layerSettings`，固定卡指令卡的设置区写这里），不是「没有目标」——全局层解析失败是**可诊断软失败**：`/bootstrap` 与模块装配都按「无全局层」继续（诊断随 `meta.moduleWarnings` 下发、模块页可见），只有**写**路径仍响亮 400 拒绝，不覆盖用户内容；其余模块类端点没有主语即拒绝——`required` 一律 400 `module-dir-unavailable`（`describe` 也在其中，它的主体就是模块段）。拒绝路径统一用同一个码与同一条文案。服务端只按声明解析目标（`src/host/config-store.ts` 的 `resolveEditDir`／`resolveRequestedModuleDir`），没有声明就没有目标——不回退启用表首项，不替换成包内同名模块。声明面（「`module.yml` 顶层键是否存在」）的**服务端半边已落地**：归属门的第 4 步按 `src/host/module-declarations.ts` 的 `DECLARED_SECTIONS` 判这次要用的节——**读**没声明即 400 `module-not-declared`（定义不可解析时走既有错误码，不算「没声明」），**写**不查声明面（写一个不存在的节就是创建它，写完它就被声明了）。**阶段 3 已实施**：`/meta` 的 `meta.modules[].declares` 下发顶层键名，`/bootstrap` 的模块段按声明出现，客户端按快照只决定**两件事**——①**这次读发不发**（没声明就不发该节的读，发过去也是 400）；②**空内容从哪来**（未声明的节按空渲染，保存即建立该节）。声明面**不决定界面上的卡在不在**：固定卡（指令卡及其参数设置区、人设卡）永远在场、可展开、可编辑，未声明时按空内容渲染并给一行「保存即建立该节」的提示；通用资产卡（`customTools`／`subagentToolPolicy`／`variables`，按规则/配置存在）保持「没声明就不出卡、只给添加入口」的既有行为，写路径建立声明后重读 `/meta` 卡片随即出现。**阶段 4 已实施**：Agent 侧模块工具改吃显式 `moduleId`（`src/host/module-tool-target.ts` 的 `MODULE_ID_PARAM` 与 `resolveModuleToolTarget`），给不出目标即拒绝、不再取装配记录 `[0]`；TUI 的主语由**用户显式声明**（`/prompt-tool module <id>` 记进该 Agent 会话，单条命令的 `module <id> …` 前缀可覆盖并成为新主语，既不带主语又未声明过即拒绝），内存态、按 agent 隔离、不持久化。
+**空主语只有两条语义**：`bootstrap` 的空目标是合法状态，只回全局段（指令文件卡与 session／scope 事实）——`moduleParams`／`moduleFacts` 键整体缺席（不是空对象）、`variables` 缺席、`overrides` 为空、`templatePreStepCount` 保持 `0`；`paramOverrides` 的空主语是**全局层**（存储根 `config.yml` 的 `layerSettings`，固定卡指令卡的设置区写这里），不是「没有目标」——全局层解析失败是**可诊断软失败**：`/bootstrap` 与模块装配都按「无全局层」继续（诊断随 `meta.moduleWarnings` 下发、模块页可见），只有**写**路径仍响亮 400 拒绝，不覆盖用户内容；其余模块类端点没有主语即拒绝——`required` 一律 400 `module-dir-unavailable`（`describe` 也在其中，它的主体就是模块段）。拒绝路径统一用同一个码与同一条文案。服务端只按声明解析目标（`src/host/config-store.ts` 的 `resolveEditDir`／`resolveRequestedModuleDir`），没有声明就没有目标——不回退启用表首项，不替换成包内同名模块。声明面（「`module.yml` 顶层键是否存在」）的**服务端半边已落地**：归属门的第 4 步按 `src/host/module-declarations.ts` 的 `DECLARED_SECTIONS` 判这次要用的节——**读**没声明即 400 `module-not-declared`（定义不可解析时走既有错误码，不算「没声明」），**写**不查声明面（写一个不存在的节就是创建它，写完它就被声明了）。**阶段 3 已实施**：`/meta` 的 `meta.modules[].declares` 下发顶层键名，`/bootstrap` 的模块段按声明出现，客户端按快照只决定**两件事**——①**这次读发不发**（没声明就不发该节的读，发过去也是 400）；②**空内容从哪来**（未声明的节按空渲染，保存即建立该节）。声明面**不决定界面上的卡在不在**：固定卡（指令卡及其参数设置区、人设卡）永远在场、可展开、可编辑，未声明时按空内容渲染并给一行「保存即建立该节」的提示；通用资产卡（`customTools`／`variables`，按规则/配置存在）保持「没声明就不出卡、只给添加入口」的既有行为，写路径建立声明后重读 `/meta` 卡片随即出现。**阶段 4 已实施**：Agent 侧模块工具改吃显式 `moduleId`（`src/host/module-tool-target.ts` 的 `MODULE_ID_PARAM` 与 `resolveModuleToolTarget`），给不出目标即拒绝、不再取装配记录 `[0]`；TUI 的主语由**用户显式声明**（`/prompt-tool module <id>` 记进该 Agent 会话，单条命令的 `module <id> …` 前缀可覆盖并成为新主语，既不带主语又未声明过即拒绝），内存态、按 agent 隔离、不持久化。
 
-**归属判据收在一处门**：`src/runtime/module-subject-gate.ts` 的 `subjectGate(tx, key, { write?, format?, declaration? })` 是唯一的「这次读写属于哪个模块」入口，顺序固定：`required` 且无目标 → 400 `module-dir-unavailable`；写通道目标不在用户模块根下 → 403 `module-readonly`；形状核（`loadModuleDefinition` + `readModuleLayerSettings`，**默认开**）；声明面（`DECLARED_SECTIONS[key]`，三态 `declaration`：缺省查表／字符串显式覆盖要声明的节／`false` 显式跳过，例如 `/module-variables` 的 `scope: 'global'`——全局变量跨模块共享；**仅在有主语、且这次是读时**）目标没声明该节 → 400 `module-not-declared`（写路径 `write: true` 跳过本判据：写会建立该节），定义不可解析时按既有错误路径冒泡；身份两条判据。身份两条**任何情况下都跑**：载荷主语 ≠ 请求头声明 → 400 `module-subject-conflict`；解析目录或载荷与当次目标不符 → 409 `module-changed`。形状核只有 `moduleDelete` 与 `mutate` 显式传 `format: false` 豁免（目标只当身份用：坏模块仍可删、总闸不被挡），豁免只跳过形状核。门由 16 个端点（11 `required` + 5 `optional`，28 个调用点）调用，未解析目录的 30 个 `none` 端点不调用。
+**归属判据收在一处门**：`src/runtime/module-subject-gate.ts` 的 `subjectGate(tx, key, { write?, format?, declaration? })` 是唯一的「这次读写属于哪个模块」入口，顺序固定：`required` 且无目标 → 400 `module-dir-unavailable`；写通道目标不在用户模块根下 → 403 `module-readonly`；形状核（`loadModuleDefinition` + `readModuleLayerSettings`，**默认开**）；声明面（`DECLARED_SECTIONS[key]`，三态 `declaration`：缺省查表／字符串显式覆盖要声明的节／`false` 显式跳过，例如 `/module-variables` 的 `scope: 'global'`——全局变量跨模块共享；**仅在有主语、且这次是读时**）目标没声明该节 → 400 `module-not-declared`（写路径 `write: true` 跳过本判据：写会建立该节），定义不可解析时按既有错误路径冒泡；身份两条判据。身份两条**任何情况下都跑**：载荷主语 ≠ 请求头声明 → 400 `module-subject-conflict`；解析目录或载荷与当次目标不符 → 409 `module-changed`。形状核只有 `moduleDelete` 与 `mutate` 显式传 `format: false` 豁免（目标只当身份用：坏模块仍可删、总闸不被挡），豁免只跳过形状核。门由 15 个端点（10 `required` + 5 `optional`，28 个调用点）调用，未解析目录的 30 个 `none` 端点不调用。
 
 ### 7.2 传输层
 
@@ -524,8 +524,8 @@ feature 只拥有自己的视图、瞬时状态、领域纯 helper 和 CSS：
 | prompts | 规则卡、字段策略、排序、模板插入、两域变量编辑；上下文激活只读诊断 |
 | persona | 主/子各自单选来源，模块内正文仍逐字段继承或显式覆盖；来源版本、正文 CAS 与发布重试分开 |
 | models | 当前预设的主/子代理模型路由卡；模型下拉展示完整目录并按服务商分组，选择模型时内部回写 provider + model，不提供独立服务商选择控件 |
-| modules | 模块页管理；引擎能力身份、存在性判定及「本层引擎设置」内容装配；消费 `/bootstrap.moduleFacts`，其中 `subagentToolPolicyEnabled` 区分插件策略与宿主委派 |
-| subagents | 委派工具、实例级工具策略草稿及策略解析预览；不重复嵌入工具面 |
+| modules | 模块页管理；引擎能力身份、存在性判定及「本层引擎设置」内容装配 |
+| subagents | 委派工具、子代理模型路由与采样；不重复嵌入工具面 |
 | tools | 自定义工具编辑/保存、参数模板；独立工具预览页与只读工具面 |
 | skills | 按官方六类技能根分组展示清单、来源与遮蔽判定、调用策略开关、宿主目录选择导入与引用、创建、回收站删除；契约见 [skills-management.md](skills-management.md) |
 | modules | 模块页的模块列表：启停、编辑选择、新建/克隆、导入导出、复制/删除/打开（页面壳在 `features/modules/ModulesPage.tsx`） |
@@ -635,9 +635,9 @@ context-activation 视图只调整附加提示，不另设模块卡容器；能�
 
 引擎参数与人设正文同样采用 600ms 停顿自动保存，选项与来源立即保存；数字先按共享参数定义校验，无效值保持原始草稿。输入法组合结束后才安排提交，切换编辑身份或卸载取消未发送定时器。指令文件正文也采用停顿保存，保留离卡与折叠时提交作为补充；文件读取失败、版本冲突和上下文失效继续拒写。发送消息不等待自动保存；运行时使用已落盘有效内容，不将输入框草稿直接注入。
 
-子代理工具策略（`subagent-tool-policy`）是模块类型能力：在能力菜单里创建，编辑器住在 tool-pipeline 层的层设置区资产分区里（`data-layer-asset="subagent-tool-policy"`），用「移除能力」入口移除。该编辑器只有**一个启用开关**：打开复用共享可用骨架并立即落盘；关闭删除顶层策略段并保留模块声明，同时把编辑区置为 `fieldset[disabled]` 只读。引擎仅在策略文件确实不存在时降级为官方委派行为，现存损坏文件仍报错。移除能力时模块声明与顶层段一起移除。历史“段在、声明不在”预设保留既有授权装配，装配清单如实列出它；保存或显式创建会补齐模块声明，不覆盖已有授权。子代理页排除「仅主对话」能力：它们的参数与装配条目不进本页设置区。能力卡的组织方式见前端实现（待 UI 重构时补充）。
+子代理工具策略卡（`subagent-tool-policy`）已随上游 alpha.3 的 API 变更退场（官方删除 `SubagentStartRequest.toolFilter` 与 `SubagentCapabilities.toolFilter`，迁移指南明确 preset 不提供逐子级工具名过滤器）：能力菜单、tool-pipeline 层设置区的资产分区、策略端点与本地草稿一并移除，见 [PLAN](.scratch/archive/) 归档。子代理页排除「仅主对话」能力：它们的参数与装配条目不进本页设置区。能力卡的组织方式见前端实现（待 UI 重构时补充）。
 
-策略编辑器在焦点离开编辑区时自动保存，没有保存按钮。标签输入的失焦提交先更新最新草稿，再生成保存快照；保存成功只确认对应快照，期间新编辑仍保持待存。再次失焦时若旧请求未完成，只保留最新待存快照并串行提交；失败保留草稿供下一次失焦重试。切换预设或卸载会使旧读取、保存响应及未发送队列失效。
+指令文件正文的自动保存同样采用停顿策略，没有保存按钮。
 
 层设置区展示当前预设实际装配的能力（`modules` 声明、参数与行配置隐含补齐、以及实际运行的历史子代理策略），按主归属层分组：清单里每项是能力 id 与「移除能力」入口（二次确认），没有「编辑行为」这类选择控件（能力编辑统一走各卡自己的编辑区，归属由卡片决定，不选模块）；能力自身的参数在同一设置区的参数分组里编辑，新能力从本层创建入口添加。`modules: []` 不展开默认骨架，官方组合行不生成插件能力条目。二次确认移除是完整移除：模块声明、该能力的显式参数与行配置（拥有顶层段的能力连数据段）一起删除，成功后重建一次并刷新模块事实。
 
