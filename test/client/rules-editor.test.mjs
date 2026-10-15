@@ -61,6 +61,21 @@ test('rules bridge: CAS failure and switched module never discard local input', 
   assert.equal(h.calls.length, 3)
 })
 
+test('rules bridge: 共享引用被拒后只许重新读取，不重放那一次写', async () => {
+  const h = harness(async body => body.edits
+    ? { ok: false, code: 'shared-alias', message: 'YAML 共享引用会改变其他定义；请先解除相关引用后再编辑（连带改了 persona）' }
+    : { ok: true, value: snapshot() })
+  await h.editor.load()
+  h.editor.patch(h.draft.entries[0].key, { ...structuredClone(alpha), name: 'local draft' })
+  assert.equal(await h.editor.submit(), false)
+  assert.match(h.draft.error, /共享引用/)
+  assert.equal(h.editor.retryKind, 'read', '共享引用不是「重试保存」能解决的')
+  assert.equal(await h.editor.submit(), false, '被拒后禁止再次提交旧版本')
+  assert.equal(h.calls.length, 2, '不重放注定失败的写请求')
+  assert.equal(await h.editor.retry(), true, '重试走重新读取')
+  assert.equal(h.calls.at(-1).edits, undefined, '重试只读，不重放写')
+})
+
 test('新建条件与空白规则留在草稿；无效字段不提交，后台读取不删除，修正后完整保存', async () => {
   const h = harness(async body => ({ ok: true, value: body.edits
     ? snapshot(body.edits.map(edit => edit.rule).filter(Boolean), 'saved') : snapshot() }))

@@ -45,10 +45,6 @@ export const deepEqual = (a: unknown, b: unknown): boolean => {
 
 export const switchesEqual = (a: SwitchSnapshot, b: SwitchSnapshot): boolean => deepEqual(a, b)
 
-/** 参数保存后仅在草稿未继续变化时重载（结构化草稿由各自编辑器自行保留）。 */
-export const shouldReloadAfterParamSave = (current: SwitchSnapshot, saved: SwitchSnapshot): boolean =>
-  switchesEqual(current, saved)
-
 /** 任一通道出现新草稿时，旧保存响应不得触发全量重载。 */
 export const shouldReloadAfterModuleSave = (
   savedDraftVersion: number,

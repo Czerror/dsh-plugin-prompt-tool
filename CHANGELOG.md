@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+### 指令文件草稿补回归网；两处收尾（2026-10-16）
+
+- **`shared-alias` 归入「先重新读取」**：规则编辑器的重试判定抽成 `READ_FIRST_CODES`（`rules-conflict`／`module-changed`／`shared-alias`）——上一轮引入 `shared-alias` 后被旧判定当成「重试保存」，点重试只会重放同一次注定失败的写；现在与版本冲突同列：阻止旧版本再次提交、重试走重新读取（按钮文案本就是「重新读取」）。客户端行为变化，`docs/ui-architecture.md` 的重试契约同步一句。
+- **跨进程锁有了真双进程回归**：`test/host/instructions-policy.test.mjs` 原来那条用手工写入的 `<pid>-<uuid>.lock` 伪造活锁，换成真另一个进程持锁（子进程 `withModuleLock` ＋ stdio 握手阻塞）：本进程 409 `instructions-policy-busy` 且目标逐字节零写盘，释放后同一 revision 可写。按「一个 seam 只留一条关键拒绝」，伪造 token 那条删除。
+- **指令文件草稿协议补 4 条行为用例**（新建 `test/client/instruction-drafts.test.mjs`）：请求形状与「保存成功只确认请求时的快照」（在途新输入仍算未保存）／冲突保留草稿与旧基线且此后不发注定失败的请求／切上下文保住草稿但不可写、迟到序号不写回／多文件结果各归各（不宣称跨文件原子）。该文件 294 行此前零用例。
+- **删两个零消费者导出**：`dirty-state.ts#shouldReloadAfterParamSave`（一行 `switchesEqual` 包装）与 `prompt-config-content.ts#isModuleCard`（一行取反）。
+- **未做**：`instruction-drafts` 只补钉子、不改行为（本轮没发现要修的 bug）；真机交互（按钮、焦点、脏提示）按 §12.1 留 Edge smoke，不做断言。
+- **验证**：`typecheck`／`lint`（0 警告 0 错误）／`test`（**664 pass / 0 fail**，新增 5 条）／`build`／`git diff --check` 全绿。
+
 ### 共享引用守卫收成一处，三条写路径不再无守卫（2026-10-16）
 
 - **四处拷贝合成一份判据**：`config-store`（存储配置）、`manifest`（人设保存）、`module-rules`（规则编辑）逐字相同的「序列化 → 与声明的候选比对 → 不一致即拒」收进 `module-storage.ts#serializeWithoutSharedAlias`；`module-variables` 的变体（只比未拥有字段）改用同文件的 `assertUnownedUnchanged`。`deleteYamlPath` 的两份合并（顺手项：按删除测试它属搬家而非集中）。

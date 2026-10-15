@@ -2,7 +2,8 @@
 // 独立存储、默认放行官方内容、Document API 保留注释与未知字段、乐观并发。
 import { after, test } from 'node:test'
 import assert from 'node:assert/strict'
-import { randomUUID } from 'node:crypto'
+import { spawn } from 'node:child_process'
+import { once } from 'node:events'
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
@@ -25,6 +26,9 @@ const {
   writeInstructionPolicy,
 } = await import('../../src/host/instructions-policy.ts')
 
+/** 子进程持锁用：锁的实现与父进程同源（同一个模块 URL）。 */
+const storageUrl = new URL('../../src/host/module-storage.ts', import.meta.url).href
+
 let counter = 0
 const newFile = () => {
   counter += 1
@@ -46,20 +50,40 @@ test('策略文件缺失：默认放行官方注入且不自动创建文件', ()
   assert.throws(() => readFileSync(file, 'utf8'), /ENOENT/)
 })
 
-test('跨进程锁被占：写入返回 409 busy 且目标文件逐字节未变', () => {
+test('跨进程锁：另一个真进程持锁时拒绝写入，释放后同一 revision 可写', async () => {
   const file = newFile()
   const created = writeInstructionPolicy({ file, expectedRevision: null, patch: { files: { f1: { enabled: false } } } })
   assert.equal(created.ok, true)
   const before = readFileSync(file)
-  // 伪造另一个持有者：活 PID ＋ 合法 token 名——活锁永不按超时回收，withModuleLock 必须拒绝本次写入。
-  const locks = join(dirname(file), '.instructions.rules-locks')
-  mkdirSync(locks, { recursive: true })
-  writeFileSync(join(locks, `${process.pid}-${randomUUID()}.lock`), '{}')
-  const refused = writeInstructionPolicy({ file, expectedRevision: created.revision, patch: { files: { f1: { enabled: true } } } })
-  assert.equal(refused.ok, false)
-  assert.equal(refused.status, 409)
-  assert.equal(refused.code, 'instructions-policy-busy')
-  assert.ok(readFileSync(file).equals(before), '锁被占时目标文件不得被写')
+  // 真另一个进程持锁（不是伪造 token）：子进程拿到锁后握手并阻塞在 stdin，直到父进程放行。
+  const child = spawn(process.execPath, ['--input-type=module', '--eval', `
+    import fs from 'node:fs';
+    import { withModuleLock } from ${JSON.stringify(storageUrl)};
+    const [root] = process.argv.slice(1);
+    withModuleLock(root, 'instructions', () => {
+      fs.writeSync(1, 'held\\n');
+      fs.readSync(0, Buffer.alloc(1), 0, 1, null);
+    });
+  `, dirname(file)], { cwd: tmpdir(), stdio: ['pipe', 'pipe', 'pipe'] })
+  const exit = once(child, 'exit')
+  let stderr = ''
+  child.stderr.setEncoding('utf8').on('data', (text) => { stderr += text })
+  try {
+    const [signal] = await once(child.stdout, 'data')
+    assert.equal(signal.toString(), 'held\n', `子进程未持锁：${stderr}`)
+    const refused = writeInstructionPolicy({ file, expectedRevision: created.revision, patch: { files: { f1: { enabled: true } } } })
+    assert.equal(refused.ok, false)
+    assert.equal(refused.status, 409)
+    assert.equal(refused.code, 'instructions-policy-busy')
+    assert.ok(readFileSync(file).equals(before), '另一个进程持锁时目标文件不得被写')
+    child.stdin.write('x')
+    assert.equal((await exit)[0], 0, stderr)
+    const after = writeInstructionPolicy({ file, expectedRevision: created.revision, patch: { files: { f1: { enabled: true } } } })
+    assert.equal(after.ok, true, '锁释放后同一份 revision 可以写入')
+  } finally {
+    child.stdin.destroy()
+    if (child.exitCode === null) { child.kill(); await exit }
+  }
 })
 
 test('首次保存（expectedRevision=null）创建文件并读回一致', () => {

@@ -3,6 +3,13 @@ import type { BridgeResult } from './bridge-client.ts'
 import type { FieldDraft, WorkspaceDrafts } from './workspace-drafts.ts'
 import { deepEqual } from './dirty-state.ts'
 
+/**
+ * 需要「先重新读取」才能继续的拒绝码：这些失败重放保存只会重复同一次拒绝。
+ * `rules-conflict`／`module-changed` 是目标版本已变，必须读回新版本；
+ * `shared-alias` 是 YAML 共享引用连带改了别人的字段，得先让用户解除引用再重读。
+ */
+const READ_FIRST_CODES: readonly string[] = ['rules-conflict', 'module-changed', 'shared-alias']
+
 /** key 只归编辑器；重命名不能改变正在输入的字段身份。 */
 export interface RuleEntry { key: string; previousId: string | null; value: RuleDefinition; deleted?: boolean }
 export interface RulesDraft {
@@ -161,7 +168,7 @@ export function createRuleEditor(moduleId: string, draft: RulesDraft, deps: Rule
       // 入口确认操作资格；入队后的显式目标事务与结果归共享草稿，不随切页取消。
       if (draft.sequence !== sequence || result === undefined) return false
       if (!result.ok) {
-        draft.retry = result.code === 'rules-conflict' || result.code === 'module-changed' ? 'read' : 'save'
+        draft.retry = READ_FIRST_CODES.includes(result.code ?? '') ? 'read' : 'save'
         draft.error = result.message ?? result.code ?? 'rules-save-failed'; return false
       }
       draft.retry = undefined
