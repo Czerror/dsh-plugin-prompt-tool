@@ -15,7 +15,7 @@ version: 1.0.0
 engineCompat: ">=0.7.2"
 modules:
   # 仅启用规则引擎。其他能力保持 opt-in；写入其已登记参数后会自动补齐装配。
-  # 可用模块（engine/compositions 下的文件名）：filesystem-editor, instruction-hint, module-import-tools, module-memory-tools, module-rule-tools, module-variable-tools, persistent-shell-posix, rule-engine, run-code-env, skill-search, subagent-tool-policy, tool-bash-disabled, tool-config-engine, tool-git-bash, tool-search
+  # 可用模块（engine/compositions 下的文件名）：filesystem-editor, instruction-hint, module-import-tools, module-memory-tools, module-rule-tools, module-variable-tools, persistent-shell-posix, rule-engine, run-code-env, skill-search, tool-bash-disabled, tool-config-engine, tool-git-bash, tool-search
   # 已退役的引擎名：prompt-config-engine, declared-triggers；旧定义需显式转换。
   # 人设使用 persona.main / persona.subagent；未声明字段继承官方值。
   - rule-engine
@@ -563,7 +563,6 @@ rules:
 #     subagentReasoningEffort: "" # 子代理思维程度；string
 #     subagentTemperature: "" # 子代理采样温度；number；子代理采样最终通过 agent-request 生效
 #     subagentMaxTokens: "" # 子代理输出上限；number；正整数；空继承宿主
-#     maxDepth: "" # 策略委派深度；max-depth；0 禁止委派；provider-managed 交给 provider；正整数限制深度；空继承
 #   subagent-end:
 #     # 子代理结束层：共享参数，不属于该层某一条提示词规则。
 #     {}

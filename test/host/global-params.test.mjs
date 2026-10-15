@@ -61,7 +61,7 @@ test('全局层删键：空父层连壳回收（双层不留 `pre-step: {}`）�
   // ② 层键整体缺失：删一个不存在的层的键 ⇒ 不抛、不写、幂等（`deleteIn` 直接抛的旧形态是 bug）。
   writeFileSync(configFile, '# 只有一层\nschemaVersion: 3\nenabled:\n  - mod-a\n', 'utf8')
   const before = readFileSync(configFile, 'utf8')
-  assert.doesNotThrow(() => writeGlobalLayerSettings(modulesRoot, { maxDepth: '' }), '层键缺失时删键不抛')
+  assert.doesNotThrow(() => writeGlobalLayerSettings(modulesRoot, { modelTemperature: '' }), '层键缺失时删键不抛')
   assert.equal(readFileSync(configFile, 'utf8'), before, '无处可删就原样不动')
 })
 

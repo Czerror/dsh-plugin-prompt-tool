@@ -82,7 +82,6 @@ doc.get('rules', true).commentBefore = ` 每条规则默认 enabled:false；规�
 
 const reference = new Document({ layerSettings: Object.fromEntries(LAYER_ORDER.map(layer => [layer, {}])) })
 const notes = {
-  maxDepth: '0 禁止委派；provider-managed 交给 provider；正整数限制深度；空继承',
   modelTemperature: '有限数；空继承宿主，不写入请求 patch',
   modelMaxTokens: '正整数；空继承宿主',
   subagentTemperature: '子代理采样最终通过 agent-request 生效',
