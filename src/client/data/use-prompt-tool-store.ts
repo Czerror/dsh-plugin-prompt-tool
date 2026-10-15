@@ -341,8 +341,12 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
   }, [editorDrafts])
   const [loading, setLoading] = useState(false)
   const [skillsBusy, setSkillsBusy] = useState(false)
-  // ref 同步守卫覆盖按钮、Enter 与浏览器导入，React disabled 尚未渲染时也不会重复提交。
-  const skillWriteRef = useRef(false)
+  /**
+   * 技能目录族的**状态载体**：写锁（并发守卫）、序号（陈旧应答判定）、会话（上下文一致性）同属一族。
+   * 序号与会话与核心 `load` **共用**——它读序号判这次技能读是否过期、在应答落地时写会话。
+   * 忙碌态 `skillsBusy` **不在载体里**：它是 state、要触发重渲染，塞进 ref 会让忙碌态不更新。
+   */
+  const skillCatalogRef = useRef({ seq: 0, session: undefined as string | undefined, writing: false })
   const [notice, setNotice] = useState('')
   const [noticeKind, setNoticeKind] = useState<'ok' | 'error'>('ok')
   /** 通知前导胶囊（会话名）：与 notice 同批更新，清空时一并清掉。 */
@@ -399,8 +403,6 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
   const moduleSaveQueueRef = useRef(createSerialTaskQueue())
   const loadSeqRef = useRef(0)
   const metaSeqRef = useRef(0)
-  const skillsSeqRef = useRef(0)
-  const skillsSessionRef = useRef<string | undefined>(undefined)
   /** 用户草稿版本：patch 时递增。load 应答返回时若版本变化，跳过覆盖，避免
    *  保存后的静默刷新吞掉用户在读取期间的编辑。 */
   const draftVersionRef = useRef(0)
@@ -571,7 +573,7 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
     setModelCatalog(res.ok ? res.modelCatalog ?? {} : {})
     setHostDefaultModel(res.ok ? res.hostDefaultModel : undefined)
     const next = fieldsFromView(res)
-    if (skillsSeq !== skillsSeqRef.current) {
+    if (skillsSeq !== skillCatalogRef.current.seq) {
       const current = fieldsRef.current
       Object.assign(next, { skillCatalog: current.skillCatalog, skillsComplete: current.skillsComplete, skillFolders: current.skillFolders, skillsRoot: current.skillsRoot })
     }
@@ -588,7 +590,7 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
     // 并发保护：慢的旧请求不得覆盖新请求（last-good 语义保留旧数据）。
     const seq = ++loadSeqRef.current
     const metaSeq = ++metaSeqRef.current
-    const skillsSeq = skillsSeqRef.current
+    const skillsSeq = skillCatalogRef.current.seq
     const draftVersion = draftVersionRef.current
     const sessionId = api.currentSessionId()
     // silent：保存后静默刷新（不闪 loading、避免重渲染风暴与滚动跳动）；失败仍报错。
@@ -629,7 +631,7 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
         applyView(bridgeViewFromBoot(boot), skillsSeq)
         // 全局参数仍保护读取期间的新输入；指令文件上下文独立回填。
         if (boot.globalParams !== undefined) publishGlobalParams(boot.globalParams)
-        if (skillsSeq === skillsSeqRef.current) skillsSessionRef.current = sessionId
+        if (skillsSeq === skillCatalogRef.current.seq) skillCatalogRef.current.session = sessionId
       }
       // 指令文件（独立来源）：正文、身份、版本、读取状态来自同一次读取。
       if (boot.ok && boot.instructions !== undefined) {
@@ -1155,16 +1157,16 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
   })
 
   const refreshSkills = useCallback(async (): Promise<boolean> => {
-    const seq = ++skillsSeqRef.current
+    const seq = ++skillCatalogRef.current.seq
     const sessionId = api.currentSessionId()
     const res = await bridgeCall('skillsList', sessionId === undefined ? {} : { sessionId })
-    if (seq !== skillsSeqRef.current || sessionId !== api.currentSessionId()) return false
+    if (seq !== skillCatalogRef.current.seq || sessionId !== api.currentSessionId()) return false
     if (!res.ok) {
       showNotice('error', '技能列表刷新失败：' + (res.message ?? 'settings bridge unavailable'))
       return false
     }
-    skillsSessionRef.current = sessionId
-    skillsSeqRef.current += 1
+    skillCatalogRef.current.session = sessionId
+    skillCatalogRef.current.seq += 1
     publishFields({ ...fieldsRef.current, ...skillFieldsFromSnapshot(res.value) })
     return true
   }, [api, publishFields, showNotice])
@@ -1173,8 +1175,8 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
   const writeSkill = useCallback(async <T,>(
     submit: () => Promise<BridgeResult<T>>, success: (value: T) => string, failure: string,
   ): Promise<boolean> => {
-    if (skillWriteRef.current) { showNotice('error', '技能正在保存，请稍候再试'); return false }
-    skillWriteRef.current = true
+    if (skillCatalogRef.current.writing) { showNotice('error', '技能正在保存，请稍候再试'); return false }
+    skillCatalogRef.current.writing = true
     setSkillsBusy(true)
     try {
       const res = await submit()
@@ -1189,7 +1191,7 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
       showNotice('error', failure + '：' + errorMessage(error))
       return false
     } finally {
-      skillWriteRef.current = false
+      skillCatalogRef.current.writing = false
       setSkillsBusy(false)
     }
   }, [refreshSkills, showNotice])
@@ -1209,7 +1211,7 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
     writeSkill(() => bridgeCall('skillCreate', input), ({ id }) => `已创建技能：${id}`, '创建技能失败'), [writeSkill])
 
   const readSkill = useCallback(async (skill: SkillCatalogEntry, sessionId: string | undefined): Promise<BridgeResult<SkillContentSnapshot>> => {
-    if (skill.path === undefined || sessionId !== api.currentSessionId() || sessionId !== skillsSessionRef.current) {
+    if (skill.path === undefined || sessionId !== api.currentSessionId() || sessionId !== skillCatalogRef.current.session) {
       return { ok: false, message: '技能上下文已变化，请刷新后重试' }
     }
     const result = await bridgeCall('skillRead', { name: skill.name, path: skill.path, ...(sessionId === undefined ? {} : { sessionId }) })
@@ -1218,7 +1220,7 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
 
   const saveSkill = useCallback(async (skill: SkillCatalogEntry, content: string, description: string, expectedRevision: string, sessionId: string | undefined): Promise<BridgeResult<SkillContentSnapshot>> => {
     const path = skill.path
-    if (path === undefined || sessionId !== api.currentSessionId() || sessionId !== skillsSessionRef.current) {
+    if (path === undefined || sessionId !== api.currentSessionId() || sessionId !== skillCatalogRef.current.session) {
       return { ok: false, message: '技能上下文已变化，请刷新后重试' }
     }
     let result: BridgeResult<SkillContentSnapshot> = { ok: false, message: '技能正在保存，请稍候再试' }
@@ -1232,7 +1234,7 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
   const deleteSkill = useCallback((skill: Pick<SkillCatalogEntry, 'name' | 'path'>): Promise<boolean> => {
     const sessionId = api.currentSessionId()
     const path = skill.path
-    if (path === undefined || sessionId !== skillsSessionRef.current) {
+    if (path === undefined || sessionId !== skillCatalogRef.current.session) {
       showNotice('error', '技能上下文已变化，请刷新后重试')
       return Promise.resolve(false)
     }
@@ -1242,7 +1244,7 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
 
   const setSkillPolicy = useCallback((name: string, path: string, change: SkillPolicyChange): Promise<boolean> => {
     const sessionId = api.currentSessionId()
-    if (sessionId !== skillsSessionRef.current) {
+    if (sessionId !== skillCatalogRef.current.session) {
       showNotice('error', '技能上下文已变化，请刷新后重试')
       return Promise.resolve(false)
     }
