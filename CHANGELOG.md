@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+### 导入安装器去掉重复转换（2026-10-16）
+
+- **一次安装从三次全量 preview 收到一次 ＋ 两次廉价复核**：`installModulePackage` 原先在链外、链内、锁内各跑一次 `moduleImportPreview`——每次都要全量 decode 上传文件、重算来源摘要、YAML 解析与 classify、ST 转换、规则编译，并**递归读目标目录每个文件**重算目录版本；三次里只有链内那次的内容被用于写盘。现在保留链外那一次（拿转换产物与串行键），链内按当前事实重解目标 id（`-copy` 后缀只看 `existsSync`）＋读一次目录版本＋用**同一个成分函数**重算 revision 与客户端凭据比对，锁内只再读一次目录版本。判据与今日等价（同一次调用内 revision 的其余成分不可能变），代价从「全量转换」降到「一次目录遍历」。
+- **revision 的成分只有一个来源**：从 `moduleImportPreview` 抽出 `revisionOf(...)`（源摘要 ＋ 选组 ＋ 目标身份），预览与提交共用——将来加一项成分只改这一处。**公开签名一个都没动**：`moduleImportPreview`／`installModulePackage`／`exportModulePackage` 的形状与返回保持不变。
+- **`/characters-import` 去重复解析**：同一请求原先先 `prepareImport(files,'character')` 再 `moduleImportPreview`（后者内部又 prepare 一次），现在一次 preview 同时给出候选状态与转换产物（`report` 取自 `preview.prepared.report`）。端点安全面（两道 `subjectGate`、目标切换 409、写前参数校验）与响应形状未变。
+- **未做（用户拍板）**：不新建导入事务模块——四个入口有 10 条真差异（门、`preview` 默认语义相反、记忆预检、钩子、返回形状、失败映射），抽成一个函数只能得到一个宽 options 接口；seam 保持「preview ＋ install」两次调用，新入口／新来源＝加一个调用点＋自己的响应层。`characters ↔ module-package` 的**潜在**环不动：静态图今天无环；导出默认只出一份 `module.yml`，而 `projectCharacterMemories` 的投影发生在模式分支之前、两种模式都要用，剥离不掉——拆它只能给导出接口开角色专用注入口（接口污染），或把整块导出编排搬走（另一轮的量）。
+- **新增回归**：`装载窗口：暂存期间目标被外部改动即拒装，外部内容不被覆盖`——在暂存写盘期间往目标目录塞外部文件，断言 409 `module-preview-stale` 且外部内容与目标正文都保持原字节。诚实说明：这条**不是**「改前必红」的判别测试（旧实现靠第三次全量 preview 同样会拒），它的价值是钉住重构不得削弱这条保证。
+- **验证**：`typecheck`／`lint`（0 警告 0 错误）／`test`（**665 pass / 0 fail**）／`build`／`git diff --check` 全绿。
+
 ### 指令文件草稿补回归网；两处收尾（2026-10-16）
 
 - **`shared-alias` 归入「先重新读取」**：规则编辑器的重试判定抽成 `READ_FIRST_CODES`（`rules-conflict`／`module-changed`／`shared-alias`）——上一轮引入 `shared-alias` 后被旧判定当成「重试保存」，点重试只会重放同一次注定失败的写；现在与版本冲突同列：阻止旧版本再次提交、重试走重新读取（按钮文案本就是「重新读取」）。客户端行为变化，`docs/ui-architecture.md` 的重试契约同步一句。

@@ -55,7 +55,6 @@ import { editModuleVariables, readModuleVariables } from '../host/module-variabl
 import type { ModuleVariableRevisions, ModuleVariablesSnapshot } from '../shared/module-variables.ts'
 import { createAssetSources } from '../host/asset-sources.ts'
 import { expandModuleSource, exportModulePackage, installModulePackage, moduleImportPreview } from '../host/module-package.ts'
-import { prepareImport } from '../host/import-source.ts'
 import { assertModuleId, modulePathExists } from '../host/module-install.ts'
 import { STORAGE_ROOT } from '../host/paths.ts'
 import type { AssetFile, AssetImportRequest, ImportKind, ModuleExportRequest } from '../shared/asset-transfer.ts'
@@ -1792,18 +1791,17 @@ export function registerSettingsBridge(
                 tx.write(409, { ok: false, code: 'characters-preview-stale', message: '目标模块已切换，请重新预览' })
                 return
               }
-              const prepared = prepareImport(files, 'character', request.params)
-              if (prepared.state !== 'ready') {
+              const root = userModulesDir()
+              // 一次 preview 同时给出候选状态与转换产物：同一个请求不再把同一批文件解析两遍。
+              const preview = moduleImportPreview(root, files, request.params)
+              if (!('prepared' in preview)) {
                 if (!request.params.preview) throw new Error('请先选择内容类型或提示顺序组并重新预览')
-                tx.write(200, { ok: true, value: { preview: true, ...prepared } })
+                tx.write(200, { ok: true, value: { preview: true, ...preview } })
                 return
               }
-              const root = userModulesDir()
-              const preview = moduleImportPreview(root, files, request.params)
-              if (!('prepared' in preview)) throw new Error('角色来源未形成有效模块候选')
               const { summary, sourceDigest, previewRevision } = preview
               if (request.params.preview) {
-                tx.write(200, { ok: true, value: { preview: true, state: 'ready', name: summary.targetName, summary, sourceDigest, previewRevision, ...(prepared.report === undefined ? {} : { report: prepared.report }) } })
+                tx.write(200, { ok: true, value: { preview: true, state: 'ready', name: summary.targetName, summary, sourceDigest, previewRevision, ...(preview.prepared.report === undefined ? {} : { report: preview.prepared.report }) } })
                 return
               }
               const result = await installModulePackage(root, files, request.params, { preserveAssets: true })

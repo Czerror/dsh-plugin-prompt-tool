@@ -133,6 +133,21 @@ function targetId(root: string, wanted: string, request: AssetImportRequest): st
 
 type ReadyImport = Extract<ReturnType<typeof prepareImport>, { state: 'ready' }>
 
+/**
+ * previewRevision 的成分：源摘要 ＋ 选组 ＋ 目标身份（含目标当前版本）。
+ *
+ * 预览与提交共用这一个函数——提交端因此可以只重读目标事实（目录版本）就重算出同一个 revision，
+ * 不必为校验凭据再跑一次全量转换；将来加一项成分也只改这里。
+ */
+function revisionOf(sourceDigest: string, request: AssetImportRequest, id: string, targetVersion: string | null, root: string): string {
+  return computePreviewRevision({
+    files: [{ path: 'source', content: sourceDigest }, { path: 'choices', content: JSON.stringify([id, request.targetName ?? '', request.overwrite === true, request.sourceKind ?? null]) }],
+    ...(request.promptOrderCharacterId === undefined ? {} : { orderCharacterId: request.promptOrderCharacterId }),
+    converter: 'asset-import/1',
+    target: { kind: 'module-package', targetId: id, targetVersion, ownerModule: root },
+  })
+}
+
 export function moduleImportPreview(root: string, files: AssetFile[], request: AssetImportRequest): {
   prepared: ReadyImport
   summary: AssetSummary
@@ -146,12 +161,7 @@ export function moduleImportPreview(root: string, files: AssetFile[], request: A
   const target = assertModuleDirectory(root, id, true)
   const version = directoryVersionOf(target)
   const sourceDigest = assetSourceDigest(files)
-  const previewRevision = computePreviewRevision({
-    files: [{ path: 'source', content: sourceDigest }, { path: 'choices', content: JSON.stringify([id, request.targetName ?? '', request.overwrite === true, request.sourceKind ?? null]) }],
-    ...(request.promptOrderCharacterId === undefined ? {} : { orderCharacterId: request.promptOrderCharacterId }),
-    converter: 'asset-import/1',
-    target: { kind: 'module-package', targetId: id, targetVersion: version, ownerModule: root },
-  })
+  const previewRevision = revisionOf(sourceDigest, request, id, version, root)
   return {
     prepared, sourceDigest, previewRevision,
     summary: { sourceName: prepared.sourceName, kind: prepared.kind, targetId: id, targetName: request.targetName ?? prepared.spec.name,
@@ -165,27 +175,31 @@ const installs = new Map<string, Promise<unknown>>()
 export async function installModulePackage(root: string, files: AssetFile[], request: AssetImportRequest, options: { preserveAssets?: boolean; signal?: AbortSignal } = {}): Promise<{ id: string; backupPath?: string }> {
   options.signal?.throwIfAborted()
   root = canonicalModulesRoot(root, true)
-  const initial = moduleImportPreview(root, files, request)
-  if (!('prepared' in initial)) throw new Error('请先完成来源和顺序组选择')
-  const target = join(root, initial.summary.targetId)
-  const previous = installs.get(target) ?? Promise.resolve()
+  // 唯一一次全量转换：转换只取决于上传内容，链内与锁内重跑它只是白烧解码、规则编译与目录遍历。
+  const preview = moduleImportPreview(root, files, request)
+  if (!('prepared' in preview)) throw new Error('请先完成来源和顺序组选择')
+  const chainKey = join(root, preview.summary.targetId)
+  const previous = installs.get(chainKey) ?? Promise.resolve()
   const run = previous.catch(() => {}).then(() => {
     options.signal?.throwIfAborted()
-    const preview = moduleImportPreview(root, files, request)
-    if (!('prepared' in preview)) throw new Error('来源选择已失效')
-    if (!request.expectedPreviewRevision || request.expectedPreviewRevision !== preview.previewRevision
+    // 目标事实在链内重解：上一个安装可能刚创建或改动了目标（-copy 后缀与目录版本都会变）。
+    const id = targetId(root, request.targetId ?? preview.prepared.spec.id, request)
+    const target = assertModuleDirectory(root, id, true)
+    const version = directoryVersionOf(target)
+    if (!request.expectedPreviewRevision || request.expectedPreviewRevision !== revisionOf(preview.sourceDigest, request, id, version, root)
       || request.expectedSourceDigest !== preview.sourceDigest) stale()
-    if (preview.summary.exists && request.overwrite !== true) throw new Error('目标已存在，请明确选择更新或另存')
+    const exists = version !== null
+    if (exists && request.overwrite !== true) throw new Error('目标已存在，请明确选择更新或另存')
     mkdirSync(root, { recursive: true })
     const stage = mkdtempSync(join(root, '.import-'))
-    const source = join(stage, preview.summary.targetId)
+    const source = join(stage, id)
     mkdirSync(source)
     let generated: string | undefined
     let generatedRoot: string | undefined
     let moved = false
     const backup = join(stage, 'previous')
     try {
-      if ((options.preserveAssets || preview.prepared.kind === 'st-character' || preview.prepared.kind === 'native-character') && preview.summary.exists) {
+      if ((options.preserveAssets || preview.prepared.kind === 'st-character' || preview.prepared.kind === 'native-character') && exists) {
         for (const entry of readdirSync(target)) {
           if ([MODULE_DEFINITION_FILE, 'rules', 'configs', 'rules.yml', 'agent.cordis.yml', 'custom-tools', 'subagent-tools'].includes(entry)) continue
           const path = join(target, entry)
@@ -200,19 +214,19 @@ export async function installModulePackage(root: string, files: AssetFile[], req
         writeFileSync(path, decodeAssetFile(file))
       }
       const doc = parseDocument(preview.prepared.yaml)
-      setModuleDefinitionId(doc, preview.summary.targetId)
+      setModuleDefinitionId(doc, id)
       doc.set('name', preview.summary.targetName)
       writeFileSync(join(source, MODULE_DEFINITION_FILE), doc.toString(), 'utf8')
       // 正文归 module.yml；preset.md 随包作资源落盘（旧资产，保留不解析）。
       generated = writeModule({
-        modulesRoot: root, moduleId: preview.summary.targetId, targetModuleId: preview.summary.targetId,
+        modulesRoot: root, moduleId: id, targetModuleId: id,
         sourceDir: source, stageOnly: true,
       })
       generatedRoot = dirname(generated)
-      withModuleLock(root, preview.summary.targetId, () => {
+      withModuleLock(root, id, () => {
         options.signal?.throwIfAborted()
-        const now = moduleImportPreview(root, files, request)
-        if (!('prepared' in now) || now.previewRevision !== preview.previewRevision) stale()
+        // 装载窗口：暂存期间目标被改过就拒绝。revision 的其余成分（源摘要、选组、目标身份）在本调用内不可能变。
+        if (directoryVersionOf(target) !== version) stale()
         if (existsSync(target)) { renameSync(target, backup); moved = true }
         try { renameSync(generated!, target); generated = undefined }
         catch (error) {
@@ -225,16 +239,16 @@ export async function installModulePackage(root: string, files: AssetFile[], req
       })
       invalidateModuleSpec(target)
       // 备份清理失败不会把已经成功的安装说成失败；保留路径供诊断。
-      try { rmSync(stage, { recursive: true, force: true }); moved = false } catch { return { id: preview.summary.targetId, backupPath: stage } }
-      return { id: preview.summary.targetId }
+      try { rmSync(stage, { recursive: true, force: true }); moved = false } catch { return { id, backupPath: stage } }
+      return { id }
     } finally {
       if (generated !== undefined) rmSync(generated, { recursive: true, force: true })
       if (generatedRoot !== undefined) rmSync(generatedRoot, { recursive: true, force: true })
       if (!moved) rmSync(stage, { recursive: true, force: true })
     }
   })
-  installs.set(target, run)
-  try { return await run } finally { if (installs.get(target) === run) installs.delete(target) }
+  installs.set(chainKey, run)
+  try { return await run } finally { if (installs.get(chainKey) === run) installs.delete(chainKey) }
 }
 
 function collectFiles(dir: string): PackageFile[] {

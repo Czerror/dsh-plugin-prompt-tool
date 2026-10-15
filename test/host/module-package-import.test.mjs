@@ -143,6 +143,61 @@ test('准备期被改动即拒写：预览后源内容变化，旧凭据提交�
   assert.ok(!existsSync(join(target, 'added-after-preview.txt')), '被拒的提交不得写入新增文件')
 })
 
+test('装载窗口：暂存期间目标被外部改动即拒装，外部内容不被覆盖', async (t) => {
+  const handler = register().get(`${PREFIX}/import-module-package`)
+  assert.ok(handler, '/import-module-package 端点应注册')
+  const target = join(PRESETS, 'window')
+  const pack = (text) => ({
+    files: [
+      { path: 'window/module.yml', content: 'id: window\nmodules: []\nname: Window\n' },
+      { path: 'window/keep.txt', content: text },
+    ],
+  })
+  // 1) 先真装一次，建立目标。
+  const first = fakeRes()
+  await handler(fakeReq({ ...pack('v1\n'), overwrite: true, preview: true }), first)
+  const seed = JSON.parse(first.body).value
+  const install = fakeRes()
+  await handler(fakeReq({ ...pack('v1\n'), overwrite: true, expectedSourceDigest: seed.sourceDigest, expectedPreviewRevision: seed.previewRevision }), install)
+  assert.equal(install.status, 200, install.body)
+  assert.equal(readFileSync(join(target, 'keep.txt'), 'utf8'), 'v1\n')
+
+  // 2) 用 v2 预览取凭据。
+  const previewRes = fakeRes()
+  await handler(fakeReq({ ...pack('v2\n'), overwrite: true, preview: true }), previewRes)
+  const preview = JSON.parse(previewRes.body).value
+  assert.equal(preview.state, 'ready')
+
+  // 3) 暂存写盘期间往目标目录塞一个外部文件：模拟「装载窗口内目标被别人改动」。
+  // 只能 mock 默认导出（CJS 对象）——ESM 命名空间的属性不可重定义。
+  const fs = (await import('node:fs')).default
+  const { syncBuiltinESMExports } = await import('node:module')
+  const real = fs.writeFileSync
+  let injected = false
+  t.mock.method(fs, 'writeFileSync', (path, ...rest) => {
+    real(path, ...rest)
+    if (!injected && typeof path === 'string' && path.includes('.import-') && path.endsWith('keep.txt')) {
+      injected = true
+      real(join(target, 'external.txt'), 'EXTERNAL\n')
+    }
+  })
+  syncBuiltinESMExports()
+  let res
+  try {
+    res = fakeRes()
+    await handler(fakeReq({ ...pack('v2\n'), overwrite: true, expectedSourceDigest: preview.sourceDigest, expectedPreviewRevision: preview.previewRevision }), res)
+  } finally {
+    t.mock.restoreAll()
+    syncBuiltinESMExports()
+  }
+
+  assert.ok(injected, '用例应命中暂存写盘窗口')
+  assert.equal(res.status, 409, res.body)
+  assert.equal(JSON.parse(res.body).code, 'module-preview-stale')
+  assert.equal(readFileSync(join(target, 'external.txt'), 'utf8'), 'EXTERNAL\n', '窗口内的外部改动不得被清理或覆盖')
+  assert.equal(readFileSync(join(target, 'keep.txt'), 'utf8'), 'v1\n', '拒装时目标正文保持原字节')
+})
+
 test('importPresetPackage：路径穿越条目被明确拒绝，不落盘', async () => {
   for (const files of [
     [{ path: 'demo/../evil.yml', content: 'x' }],
