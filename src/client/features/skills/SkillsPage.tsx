@@ -2,7 +2,7 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import clsx from 'clsx'
 import type { SkillCatalogEntry } from '../../data/prompt-tool-fields.ts'
-import type { PromptToolStore } from '../../data/use-prompt-tool-store.ts'
+import type { DraftsPort, ModuleFactsPort, NoticePort, SkillsPort } from '../../data/store-ports.ts'
 import type { PromptToolHostApi } from '../../data/host-api.ts'
 import type { PromptToolLocaleKey, PromptToolTranslate } from '../../locales.ts'
 import type { SkillPolicyChange } from '../../../shared/skills.ts'
@@ -32,11 +32,8 @@ const SKILL_STATUS_TABS: Array<{ id: SkillStatusTab; labelKey: PromptToolLocaleK
 /** 创建表单的本地校验：与官方 `SKILL_NAME` 同规则（kebab-case）。 */
 const SKILL_NAME_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
 
-/** 本页取用的 store 能力面：技能资产读写、目录引用与通知。 */
-type SkillsPageStore = Pick<PromptToolStore,
-  'setSkillPolicy' | 'skillsBusy' | 'importSkillsDirectory' | 'patchSkillFolders' | 'createSkill'
-  | 'refreshSkills' | 'deleteSkill' | 'openSkillsDir' | 'showNotice' | 'subscribeFields' | 'getFields'
-  | 'editorDrafts' | 'readSkill' | 'saveSkill'>
+/** 本页取用的 store 能力面：技能资产读写与目录引用、模块事实与草稿、通知。 */
+type SkillsPageStore = SkillsPort & ModuleFactsPort & DraftsPort & NoticePort
 
 export const SkillsPage = memo(function SkillsPage(props: { store: SkillsPageStore; api: PromptToolHostApi; t: PromptToolTranslate; browse?: { query: string; status: SkillStatusTab } }): ReactNode {
   const { store, api, t } = props

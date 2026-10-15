@@ -2,14 +2,14 @@
  *  只在用户点击或挂载时读取一次，不触发求值、抽样或时间窗推进。 */
 import { memo, useCallback, useEffect, useState, type ReactNode } from 'react'
 import { bridgeCall } from '../../data/bridge-client.ts'
-import type { PromptToolStore } from '../../data/use-prompt-tool-store.ts'
+import type { HostApiPort } from '../../data/store-ports.ts'
 import type { PromptToolTranslate } from '../../locales.ts'
 import type { ContextActivationDiagnosticRecord } from '../../../shared/bridge-contract.ts'
 import ui from '../../ui/controls.module.css'
 import { Button } from '../../ui/Button.tsx'
 
 export const ContextActivationDiagnosticsCard = memo(function ContextActivationDiagnosticsCard(props: {
-  store: Pick<PromptToolStore, 'api'>
+  store: HostApiPort
   t: PromptToolTranslate
 }): ReactNode {
   const { store, t } = props

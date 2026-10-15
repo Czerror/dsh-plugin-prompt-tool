@@ -6,7 +6,7 @@ import { IconCopyOutlineRegular, IconDownloadOutlineRegular, IconFolderOpenOutli
 import type { ModuleActions, ModuleActionResult } from '../../data/module-actions.ts'
 import { previewAsset, commitAsset } from '../../data/asset-import.ts'
 import { hasWorkspaceDrafts } from '../../data/workspace-drafts.ts'
-import type { PromptToolStore } from '../../data/use-prompt-tool-store.ts'
+import type { DraftsPort, ModuleActionsPort, ModuleFactsPort, NoticePort } from '../../data/store-ports.ts'
 import type { PromptToolTranslate } from '../../locales.ts'
 import type { ModuleSummary } from '../../../shared/bridge-contract.ts'
 import { DialogSurface } from '../../ui/DialogSurface.tsx'
@@ -99,7 +99,7 @@ function ModuleNameEditor(props: { module: ModuleSummary; actions: ModuleActions
   </span>
 }
 
-export const ModuleSwitcher = memo(function ModuleSwitcher(props: { store: Pick<PromptToolStore, 'moduleActions' | 'meta' | 'subscribeFields' | 'getFields' | 'showNotice' | 'editorDrafts' | 'dirtySwitches' | 'createModule' | 'toggle'>; t: PromptToolTranslate }): ReactNode {
+export const ModuleSwitcher = memo(function ModuleSwitcher(props: { store: ModuleActionsPort & ModuleFactsPort & NoticePort & DraftsPort; t: PromptToolTranslate }): ReactNode {
   const { store, t } = props
   const fields = usePromptToolFields(store, (value) => value)
   const modules = store.meta.modules ?? []

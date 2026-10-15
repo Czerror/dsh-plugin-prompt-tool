@@ -5,15 +5,13 @@ import { ModuleSwitcher } from './ModuleSwitcher.tsx'
 import sharedCss from '../../ui/controls.module.css'
 
 const ui = sharedCss
-import type { PromptToolStore } from '../../data/use-prompt-tool-store.ts'
+import type { DraftsPort, ModuleActionsPort, ModuleFactsPort, NoticePort } from '../../data/store-ports.ts'
 import type { PromptToolTranslate } from '../../locales.ts'
 
 export const ModulesPage = memo(function ModulesPage(
   /** 本页只读 `meta.moduleWarnings`，其余面透传给子组件（并集）。 */
   props: {
-    store: Pick<PromptToolStore,
-      'meta' | 'subscribeFields' | 'getFields'
-      | 'moduleActions' | 'showNotice' | 'editorDrafts' | 'dirtySwitches' | 'createModule' | 'toggle'>
+    store: ModuleActionsPort & ModuleFactsPort & NoticePort & DraftsPort
     t: PromptToolTranslate; onReady?: () => void
   },
 ): ReactNode {

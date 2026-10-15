@@ -37,6 +37,8 @@ const instructionCard = {
   text: '# 全局入口',
 }
 
+/** 指令卡只读这些端口：`ModuleFactsPort & DraftsPort & ParamsPort & InstructionFilesPort & NoticePort`
+ *  （端口之外的成员不再抄；测试文件不参与 typecheck，缺成员会在渲染期暴露）。 */
 const stubStore = (modules = [moduleA], globalParamsLoaded = true) => {
   const fields = { modulesEnabled: true, promptConfigs: [instructionCard] }
   return {
@@ -51,7 +53,6 @@ const stubStore = (modules = [moduleA], globalParamsLoaded = true) => {
     getDraftRevision: () => 0,
     subscribeDrafts: () => () => {},
     publishDrafts: () => {},
-    enqueueModuleTask: (_moduleId, task) => task(),
     enqueueRuleTask: (task) => task(),
     moduleParamsOf: () => EMPTY_PARAMS,
     ensureModuleParams: () => {},

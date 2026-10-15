@@ -29,6 +29,17 @@ export function createVariablesDraft(scope: ModuleVariableScope): VariablesDraft
   return { scope, variables: {}, enabled: true, loading: false, saving: false, error: '', readSequence: 0 }
 }
 
+/** 某模块的模板变量读数：范围、值、开关与状态都按主语取（store 的 VariablesPort 返回它）。 */
+export interface ModuleVariablesView {
+  scope: ModuleVariableScope
+  values: Record<string, string>
+  inherited: Record<string, string>
+  enabled: boolean
+  loading: boolean
+  error: string
+  publicationPending: boolean
+}
+
 export function getVariablesDraft(drafts: Map<string, VariablesDraft>, moduleId: string, scope: ModuleVariableScope): VariablesDraft {
   const key = `${moduleId}:${scope}`
   let draft = drafts.get(key)

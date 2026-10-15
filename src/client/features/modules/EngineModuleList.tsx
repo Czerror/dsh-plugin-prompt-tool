@@ -2,7 +2,7 @@ import { useRef, useState, type ReactNode } from 'react'
 import { IconChevronDownOutlineRegular } from '../../ui/icons.tsx'
 import { Menu } from '../../ui/Menu.tsx'
 import { Button } from '../../ui/Button.tsx'
-import type { PromptToolStore } from '../../data/use-prompt-tool-store.ts'
+import type { ModuleActionsPort, ModuleFactsPort } from '../../data/store-ports.ts'
 import type { PromptToolTranslate } from '../../locales.ts'
 import { MODULE_CAPABILITIES, ENGINE_RECIPES, engineRecipe, isModuleCapabilityPresent } from '../../../shared/engine-capabilities.ts'
 import { canEditModule, moduleFactsOf } from '../../data/module-subject.ts'
@@ -47,7 +47,7 @@ export function EngineModuleActions(props: {
 
 /** 模块能力创建菜单：**主语＝调用方给的模块**（`moduleId`），没有归属模块就不出创建入口。 */
 export function ModuleCapabilityCreateMenu(props: {
-  store: Pick<PromptToolStore, 'fields' | 'meta' | 'createModuleCapability'>
+  store: ModuleFactsPort & ModuleActionsPort
   t: PromptToolTranslate
   moduleId: string
   layer?: string

@@ -1,6 +1,6 @@
 import clsx from 'clsx'
 import { useLayoutEffect, useRef, useSyncExternalStore, type ReactNode } from 'react'
-import type { PromptToolStore } from '../../data/use-prompt-tool-store.ts'
+import type { DraftsPort, ModuleFactsPort, NoticePort } from '../../data/store-ports.ts'
 import { useRuleDiagnostics } from '../../data/use-rule-diagnostics.ts'
 import type { PromptToolTranslate } from '../../locales.ts'
 import { WorkspaceNavigation } from './WorkspaceNavigation.tsx'
@@ -12,8 +12,7 @@ import ui from '../../ui/controls.module.css'
 import css from './PromptWorkspace.module.css'
 
 export function WorkspaceFrame(props: {
-  store: Pick<PromptToolStore,
-    'meta' | 'loading' | 'load' | 'notice' | 'noticeKind' | 'noticePill' | 'subscribeDrafts' | 'getDraftRevision'>
+  store: ModuleFactsPort & NoticePort & DraftsPort
   page: WorkspacePage
   t: PromptToolTranslate
   onPageChange: (page: WorkspacePage) => void

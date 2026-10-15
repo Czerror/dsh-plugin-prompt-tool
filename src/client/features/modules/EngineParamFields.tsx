@@ -5,7 +5,7 @@ import { ENGINE_PARAM_DEFINITIONS, validateEngineParamValues } from '../../../sh
 import { SHARED_PARAM_KEYS, type SharedParamKey } from '../../data/prompt-tool-fields.ts'
 import { engineGroupParamKeys } from '../../../shared/engine-capabilities.ts'
 import { moduleFactsOf } from '../../data/module-subject.ts'
-import type { PromptToolStore } from '../../data/use-prompt-tool-store.ts'
+import type { DraftsPort, ModuleFactsPort, ParamsPort } from '../../data/store-ports.ts'
 import type { FieldDraft } from '../../data/workspace-drafts.ts'
 import type { PromptToolTranslate } from '../../locales.ts'
 import { MenuSelect } from '../../ui/MenuSelect.tsx'
@@ -14,8 +14,8 @@ import { HintTooltip } from '../../ui/HintTooltip.tsx'
 import styles from '../../ui/controls.module.css'
 import { useAutosave } from '../../data/use-autosave.ts'
 
-/** 参数控件实际取用的能力面：读数、草稿池与写通道；其余成员与本文件无关。 */
-type EngineParamStore = Pick<PromptToolStore, 'editorDrafts' | 'fields' | 'getDraftRevision' | 'subscribeDrafts' | 'publishDrafts' | 'meta' | 'persistParamOverrides' | 'moduleParamsOf' | 'globalParams' | 'globalParamsLoaded' | 'setGlobalParam' | 'persistGlobalParams' | 'setModuleParam'>
+/** 参数控件实际取用的能力面：模块事实、草稿池与公共参数读写；其余端口与本文件无关。 */
+type EngineParamStore = DraftsPort & ModuleFactsPort & ParamsPort
 
 /** 未提供草稿通道的 store（单测桩）退化订阅：不广播，字段仍按当前草稿读一次。 */
 const subscribeNothing = (): (() => void) => () => {}

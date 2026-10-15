@@ -20,8 +20,8 @@ const { LayerSettingsContent, injectionPointSlots } = await withSsr([
 const { RulesWorkspace } = await withSsr([
   new URL('../../src/client/features/prompts/RulesWorkspace.tsx', import.meta.url).href,
 ])
-const { MainSessionPage } = await withSsr([
-  new URL('../../src/client/app/workspace/pages/MainSessionPage.tsx', import.meta.url).href,
+const { AudiencePage } = await withSsr([
+  new URL('../../src/client/app/workspace/pages/AudiencePage.tsx', import.meta.url).href,
 ])
 const { usePromptToolStore } = await withSsr([
   new URL('../../src/client/data/use-prompt-tool-store.ts', import.meta.url).href,
@@ -40,7 +40,8 @@ const twoModules = [
   { id: 'mod-b', name: 'B', enabled: true, facts: facts() },
 ]
 
-/** 卡只读 store 上的这几个面：事实来自 /meta 的 modules[].facts，草稿与读数按模块归属。 */
+/** 卡只读这些端口：`ModuleFactsPort & DraftsPort & RuleEditingPort & ParamsPort`
+ *  （端口之外的成员不再抄进桩；测试文件不参与 typecheck，缺成员会在渲染期暴露）。 */
 const stubStore = (drafts, modules = twoModules) => {
   const fields = { modulesEnabled: true, promptConfigs: [] }
   return {
@@ -53,7 +54,6 @@ const stubStore = (drafts, modules = twoModules) => {
     getDraftRevision: () => 0,
     subscribeDrafts: () => () => {},
     publishDrafts: () => {},
-    enqueueModuleTask: (_moduleId, task) => task(),
     enqueueRuleTask: (task) => task(),
     // 参数编辑器读回值：桩里没有按主语的读数，契约默认值就是「未读回」的视图。
     moduleParamsOf: () => EMPTY_PARAMS,
@@ -289,8 +289,8 @@ test('创建入口接线：页级「添加」下拉在场（主语不由菜单�
     ...twoModules,
     { id: 'mod-off', name: 'off', enabled: false, facts: facts() },
   ])
-  // 走真实页级编排：清单由页面自己算（`MainSessionPage` 不接受调用方传清单），这里只断言接线结果。
-  const html = renderElement(MainSessionPage, { store, t })
+  // 走真实页级编排：清单由页面自己算（`AudiencePage` 不接受调用方传清单），这里只断言接线结果。
+  const html = renderElement(AudiencePage, { store, t, audience: 'main' })
   assert.match(html, new RegExp(`aria-label="${t('modules.addTemplates')}"`), '页级创建入口的可访问名＝添加注入模板')
 })
 

@@ -1,5 +1,5 @@
 import { useState, useSyncExternalStore, type ReactNode } from 'react'
-import type { PromptToolStore } from '../../data/use-prompt-tool-store.ts'
+import type { HostApiPort, ModelsPort, NoticePort } from '../../data/store-ports.ts'
 import type { PromptToolTranslate } from '../../locales.ts'
 import { EngineModuleCard } from '../../ui/EngineModuleCard.tsx'
 import { MenuSelect } from '../../ui/MenuSelect.tsx'
@@ -7,7 +7,7 @@ import { buildEffortOptions, buildModelOptions, modelChoiceValue, parseModelChoi
 import styles from '../../ui/controls.module.css'
 
 /** 官方当前会话选择独立于模块规则；不再写旧的 layerSettings.model*。 */
-export function CurrentSessionModel(props: { store: Pick<PromptToolStore, 'api' | 'modelCatalog' | 'modelReasoning' | 'hostDefaultModel' | 'load' | 'showNotice'>; t: PromptToolTranslate }): ReactNode {
+export function CurrentSessionModel(props: { store: HostApiPort & ModelsPort & NoticePort; t: PromptToolTranslate }): ReactNode {
   const { store, t } = props, face = store.api.sessionModel
   const view = useSyncExternalStore(face.subscribe, face.snapshot)
   const [busy, setBusy] = useState(false)

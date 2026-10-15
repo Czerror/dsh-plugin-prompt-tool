@@ -10,7 +10,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { MODULE_CAPABILITIES, ENGINE_EDITOR_GROUP_MAP, moduleCapability, engineGroupParamKeys, isEditorGroupVisible, isModuleCapabilityPresent } from '../../../../shared/engine-capabilities.ts'
 import type { PromptConfigDraft } from '../../../prompt-tool-types.ts'
-import type { PromptToolStore } from '../../../data/use-prompt-tool-store.ts'
+import type { DraftsPort, HostApiPort, ModelsPort, ModuleActionsPort, ModuleFactsPort, NoticePort, ParamsPort, VariablesPort } from '../../../data/store-ports.ts'
 import { canEditModule, moduleDeclares, moduleFactsOf } from '../../../data/module-subject.ts'
 import type { PromptToolLocaleKey, PromptToolTranslate } from '../../../locales.ts'
 import { ConfirmDialog } from '../../../ui/ConfirmDialog.tsx'
@@ -44,17 +44,12 @@ const CARD_LABEL_KEYS: Record<string, PromptToolLocaleKey> = {
  * 纯读 helper 只要 `/meta` 的装配事实；能力行多要可编辑性与自己那张卡的移除端点；
  * 页面与层设置区还要承接子卡（参数控件、模型路由、诊断卡）已声明的能力面。
  */
-type MetaFactsStore = Pick<PromptToolStore, 'meta'>
+type MetaFactsStore = ModuleFactsPort
 
-type CapabilityRowStore = Pick<PromptToolStore, 'fields' | 'meta' | 'removeModuleCapability'>
+type CapabilityRowStore = ModuleFactsPort & ModuleActionsPort
 
-type PanelStore = Pick<PromptToolStore,
-  | 'api' | 'createModuleCapability' | 'editorDrafts' | 'ensureModuleParams' | 'ensureModuleVariables'
-  | 'fields' | 'getDraftRevision' | 'globalParams' | 'globalParamsLoaded' | 'hostDefaultModel'
-  | 'load' | 'meta' | 'modelCatalog' | 'modelReasoning' | 'moduleParamsOf' | 'moduleVariables'
-  | 'persistGlobalParams' | 'persistParamOverrides' | 'publishDrafts' | 'removeModuleCapability'
-  | 'retryModuleVariablesPublication' | 'saveModuleVariables' | 'setGlobalParam' | 'setModuleParam'
-  | 'setModuleVariables' | 'setModuleVariablesEnabled' | 'setModuleVariablesScope' | 'showNotice' | 'subscribeDrafts'>
+type PanelStore = ModuleFactsPort & DraftsPort & ParamsPort & VariablesPort
+  & ModuleActionsPort & NoticePort & ModelsPort & HostApiPort
 
 /**
  * 该层在共享契约里拥有扁平参数、且**该模块**确实可编辑的编辑组：

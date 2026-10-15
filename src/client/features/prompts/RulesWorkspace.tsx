@@ -3,7 +3,7 @@ import type { RuleDefinition } from '../../../shared/rules.ts'
 import type { RuleAction } from '../../../shared/rules.ts'
 import type { ModuleConfigOrderEntry } from '../../../shared/module-config-order.ts'
 import { configIdentityKey } from '../../../shared/module-config-order.ts'
-import type { PromptToolStore } from '../../data/use-prompt-tool-store.ts'
+import type { DraftsPort, InstructionFilesPort, ModuleActionsPort, ModuleFactsPort, NoticePort, RuleEditingPort } from '../../data/store-ports.ts'
 import { usePromptToolFields } from '../../data/use-prompt-tool-fields.ts'
 import { useModuleRuleEditors, type ModuleRuleEditor } from '../../data/use-rule-editor.ts'
 import { BLANK_MODULE_TEMPLATE, canEditModule, writableModuleTargets } from '../../data/module-subject.ts'
@@ -29,10 +29,7 @@ import ui from '../../ui/controls.module.css'
 import css from './rules.module.css'
 
 export interface RulesWorkspaceProps {
-  store: Pick<PromptToolStore,
-    'meta' | 'subscribeFields' | 'getFields' | 'subscribeDrafts' | 'getDraftRevision' | 'editorDrafts'
-    | 'enqueueRuleTask' | 'publishDrafts' | 'createTemplateRule' | 'showNotice' | 'createModule' | 'patch'
-    | 'persistInstructionFiles' | 'reloadInstructionFile' | 'instructionPolicy' | 'updateInstructionPolicy'>
+  store: ModuleFactsPort & DraftsPort & RuleEditingPort & InstructionFilesPort & NoticePort & ModuleActionsPort
   t: PromptToolTranslate; scope?: 'main' | 'subagent'
   browse?: { filter: string; expanded?: string }
   createdHidden?: boolean; onShowCreated?: () => void

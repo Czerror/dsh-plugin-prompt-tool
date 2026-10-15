@@ -84,10 +84,9 @@
     │     ├─ WorkspaceNavigation.tsx
     │     ├─ workspace-pages.ts
     │     └─ pages/
+    │        ├─ AudiencePage.tsx
     │        ├─ EngineLayersPanel.tsx
-    │        ├─ layer-settings.module.css
-    │        ├─ MainSessionPage.tsx
-    │        └─ SubagentPage.tsx
+    │        └─ layer-settings.module.css
     ├─ data/
     │  ├─ bridge-client.ts
     │  ├─ bridge-transport.ts
@@ -106,6 +105,7 @@
     │  ├─ save-queue.ts
     │  ├─ session-model-face.ts
     │  ├─ session-preset-face.ts
+    │  ├─ store-ports.ts
     │  ├─ use-import-preview-flow.ts
     │  ├─ use-module-config-order.ts
     │  ├─ use-prompt-tool-fields.ts
@@ -396,7 +396,7 @@ bootstrap 是首屏聚合请求，不因筛选或输入字符增加 bridge 请�
 
 use-prompt-tool-store.ts 是唯一工作台 facade，负责把 ConfigForms mirror、typed bridge、字段快照、保存队列和 feature actions 组合成 React 可消费状态。
 
-**消费方的依赖面按「能力面」声明**：每个消费方（组件 props、内部 helper 参数、hook 包装）用 `Pick<PromptToolStore, …>` 只列出它真正取用的成员，而不是拿整个 store——成员改名或删除会在编译期指到具体消费者，纯透传页则取子面并集。注意这是**依赖面收窄**，store 的成员数不因它变小（壳仍以原名转发）。判别力是单向的：`typecheck` 抓得住"少列"（漏了就报错），抓不住"多列"，所以"只列实际取用"靠逐处核对。
+**消费方的依赖面按「端口」声明**：端口定义在 `src/client/data/store-ports.ts`（按域切：模块事实、草稿池、参数、变量、技能、指令文件、规则编辑、模块动作、通知、模型、宿主面），每个端口对应一组同源成员。组件 props、内部 helper 参数与 hook 包装写**端口交叉**（如 `store: ModuleFactsPort & DraftsPort`），不再对 `PromptToolStore` 做 `Pick`——「这张卡需要哪些面」由端口名回答，测试桩也按端口写。判别力仍是单向的：`typecheck` 抓得住"少给端口"或"端口的成员没实现"，抓不住"多要一个端口"，所以只取实际用到的端口靠逐处核对。新增卡片时先在 `store-ports.ts` 找端口，找不到再考虑新端口（而不是回退到 Pick 大接口）。
 
 **切页与退出时保存**：`store.persistBeforeLeave()` 在切页（`PromptWorkspace.changePage`）与退出工作台（`onClose`）时调用，只覆盖 store 能触及的两个域——**全局开关与指令文件**。**规则草稿不在此列**：它的保存入口是各模块的 rule editor 实例（组件层按 moduleId 现建），store 拿不到；它按 moduleId 留在内存里、不会因离开而丢，且有自己的显式保存。失败只提示一次并保留脏标记，**不阻断**离开。Escape/backdrop 只是收起抽屉、不等于收工，不触发保存。
 
@@ -767,6 +767,7 @@ context-activation 视图只调整附加提示，不另设模块卡容器；能�
 新增客户端能力时按以下顺序检查：
 
 1. 先确定 owner：宿主适配放 index/data，跨页组合放 app，单领域行为放 feature，共享呈现放 ui。
+2. 若新卡要读 store，先在 `src/client/data/store-ports.ts` 挑端口并在 props 上写交叉；两个受众页是同一个参数化 `AudiencePage`，受众差异只加在它的参数表里。
 2. 若涉及 bridge，先修改 src/shared/bridge-contract.ts，再同步 host 注册、client 调用和契约测试。
 3. 若涉及 Fields、参数或保存，先核对 [architecture-params.md](architecture-params.md) 的空值、优先级和写盘语义。
 4. 若涉及引擎层或插入点，核对 [engine-reuse.md](engine-reuse.md)，不要用 UI 顺序推导运行时顺序。

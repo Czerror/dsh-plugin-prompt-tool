@@ -5,9 +5,9 @@
  */
 import { useRef, useSyncExternalStore } from 'react'
 import type { Fields } from './prompt-tool-fields.ts'
-import type { PromptToolStore } from './use-prompt-tool-store.ts'
+import type { ModuleFactsPort } from './store-ports.ts'
 
-export function usePromptToolFields<T>(store: Pick<PromptToolStore, 'subscribeFields' | 'getFields'>, selector: (fields: Fields) => T): T {
+export function usePromptToolFields<T>(store: ModuleFactsPort, selector: (fields: Fields) => T): T {
   const fields = useSyncExternalStore(store.subscribeFields, store.getFields, store.getFields)
   const cache = useRef<{ fields: Fields | undefined; value: T }>({ fields: undefined, value: undefined as unknown as T })
   if (cache.current.fields !== fields) {

@@ -3,9 +3,7 @@ import type { SettingsPathOpView } from '@deepseek-ai/dsh-api-remotes/client'
 import type { ConfigForm, ConfigFormSnapshot } from '@deepseek-ai/dsh-client-ui-settings/client'
 import type { EngineMeta, PromptConfigDraft } from '../prompt-tool-types.ts'
 import type { PromptToolHostApi } from './host-api.ts'
-import type { SkillCatalogEntry, SkillContentSnapshot, SkillPolicyChange } from '../../shared/skills.ts'
-import { bridgeCall, errorMessage, type BridgeResult } from './bridge-client.ts'
-import type { ConfirmSkillOverwrite } from './skill-import.ts'
+import { bridgeCall, errorMessage } from './bridge-client.ts'
 import {
   EMPTY_FIELDS,
   EMPTY_META,
@@ -51,16 +49,29 @@ import {
 import type { InstructionPolicyFileOverride, InstructionPolicyPatch, InstructionPolicySnapshot } from '../../shared/instructions.ts'
 import { buildParamOverrides, EMPTY_PARAMS, paramSnapshot, readParamOverridesPatch, updateLoadedParamKeys, type ParamSnapshot } from './param-overrides.ts'
 import { createSerialTaskQueue } from './save-queue.ts'
-import { createWorkspaceDrafts, type WorkspaceDrafts } from './workspace-drafts.ts'
+import { createWorkspaceDrafts } from './workspace-drafts.ts'
 import { rulesDirty } from './rule-drafts.ts'
 import { createTemplateRuleWriter } from './template-rule-writer.ts'
-import { createModuleActions, type ModuleActions } from './module-actions.ts'
+import { createModuleActions } from './module-actions.ts'
 import type { ModuleVariableRevisions, ModuleVariableScope } from '../../shared/module-variables.ts'
 import { createVariablesDraft, readVariablesDraft, retryModuleVariablesPublication as retryModuleVariablesPublicationRequest, saveModuleVariables as saveModuleVariablesRequest, type VariablesDraft } from './module-variables.ts'
 import { canEditModule, moduleDeclares, subjectDraftKey } from './module-subject.ts'
 import { modulesEnabledOps } from '../../shared/module-settings.ts'
 import { modelChoiceValue } from '../features/models/model-options.ts'
 import type { BridgeResponse, ModelReasoningView } from '../../shared/bridge-contract.ts'
+import type {
+  DraftsPort,
+  HostApiPort,
+  InstructionFilesPort,
+  ModelsPort,
+  ModuleActionsPort,
+  ModuleFactsPort,
+  NoticePort,
+  ParamsPort,
+  RuleEditingPort,
+  SkillsPort,
+  VariablesPort,
+} from './store-ports.ts'
 
 /** 官方 ConfigForms 共享镜像传输面：标准字段共用宿主读写队列。 */
 export interface PromptToolSettingsTransport {
@@ -80,16 +91,9 @@ const MODULE_PENDING_MESSAGE = '模块数据尚未加载完成，本次修改未
 /** 无主语（模块总闸关 / 该模块不可编辑 / 没有模块 id）：模块类改动一律不落盘、不发请求。 */
 const NO_SUBJECT_MESSAGE = '当前没有可编辑的模块主语，本次修改未保存'
 
-/** 某模块的模板变量读数：范围、值、开关与状态都按主语取；写路径是本 store 上的按主语动作。 */
-export interface ModuleVariablesView {
-  scope: ModuleVariableScope
-  values: Record<string, string>
-  inherited: Record<string, string>
-  enabled: boolean
-  loading: boolean
-  error: string
-  publicationPending: boolean
-}
+/** 某模块的模板变量读数（类型归域模块 `module-variables.ts`，store 只是它的返回方）。 */
+import type { ModuleVariablesView } from './module-variables.ts'
+export type { ModuleVariablesView }
 
 /**
  * 一个模块的参数快照与写入基线：`/param-overrides` 按主语读一次，层卡之间共享同一份。
@@ -102,113 +106,24 @@ interface ModuleParamEntry {
   loaded: boolean
 }
 
-export interface PromptToolStore {
-  editorDrafts: WorkspaceDrafts
-  api: PromptToolHostApi
-  fields: Fields
-  /** fields 外部订阅通道（usePromptToolFields）：patch/load 变更后通知。
-   *  getFields 返回引用稳定快照，selector 化的组件据此跳过无关重渲染。 */
-  getFields: () => Fields
-  subscribeFields: (listener: () => void) => () => void
-  /** 参数草稿外部订阅通道：同一参数的多个镜像渲染点据此同步未完成的数字输入与错误态。
-   *  草稿本身仍只有一份（`editorDrafts.fields`），这里只广播修订号，不引入第二份状态。 */
-  getDraftRevision: () => number
-  subscribeDrafts: (listener: () => void) => () => void
-  /** 草稿池写入后调用：镜像控件一起重渲染，读同一草稿键。 */
-  publishDrafts: () => void
-  meta: EngineMeta
-  loading: boolean
-  modelCatalog: Record<string, string[]>
-  /** provider/model 路由的推理档位元数据（按 modelChoiceValue 键）；未查到 = known:false。 */
-  modelReasoning: Record<string, ModelReasoningView>
-  hostDefaultModel?: HostDefaultModel
-  /** 指令文件草稿池读取（回调里读最新值，不依赖渲染快照）。 */
-  getInstructionPool: () => InstructionDraftPool
-  /** 显式保存指令文件（不传 fileIds = 保存全部可写文件）；只提交已改动、可写、上下文匹配的文件。 */
-  persistInstructionFiles: (fileIds?: readonly string[]) => Promise<boolean>
-  /**
-   * 离开前保存（切页、关抽屉）：只覆盖本 store 能触及的两个域——**全局开关与指令文件**。
-   *
-   * **规则草稿不在此列**：它的保存入口是各模块的 rule editor 实例（由 `useModuleRuleEditors`
-   * 在组件层按 moduleId 现建），store 拿不到。它按 moduleId 留在内存里、不会因离开而丢，
-   * 且有自己的显式保存——因此这里不替它落盘，返回值也只表示上述两个域是否都成功。
-   */
-  persistBeforeLeave: () => Promise<boolean>
-  /** 重新读取单个指令文件并丢弃本地草稿（版本冲突时使用）。 */
-  reloadInstructionFile: (fileId: string) => Promise<void>
-  /** 指令卡策略快照（独立存储）：error 非空时 UI 禁用策略编辑。 */
-  instructionPolicy: InstructionPolicySnapshot
-  /** 写单个文件的行为策略（null = 删除覆盖、恢复默认）；带 revision 乐观并发。 */
-  updateInstructionPolicy: (fileId: string, override: InstructionPolicyFileOverride | null) => Promise<boolean>
-  /** 技能资产写入忙碌态（复制导入 / 创建 / 删除）。 */
-  skillsBusy: boolean
-  notice: string
-  noticeKind: 'ok' | 'error'
-  /** 通知前导的绿色胶囊文本（会话名）；undefined 表示这条通知没有胶囊。 */
-  noticePill: string | undefined
-  load: (options?: { silent?: boolean }) => Promise<Fields>
-  showNotice: (kind: 'ok' | 'error', message: string, pill?: string) => void
-  patch: (partial: Partial<Fields>) => void
-  /** 保存全局开关与技能顺序/rank；返回两个通道是否都成功（失败字段保持 dirty）。 */
-  persistSwitches: (onSaved?: () => void) => Promise<boolean>
-  /** 保存某模块的公共参数（`/param-overrides` 写分支）：主语由调用方给出，绝不从全局兜底。 */
-  persistParamOverrides: (moduleId: string) => Promise<void>
-  /** 某模块的公共参数快照（按主语读回 + 本地编辑）；无读回时是契约默认值。 */
-  moduleParamsOf: (moduleId: string) => ParamSnapshot
-  /** 读一次该模块参数：每模块每轮加载一次，同模块的层卡共享同一份。 */
-  ensureModuleParams: (moduleId: string) => void
-  /** 改该模块某个参数（本地草稿；落盘经 persistParamOverrides）。 */
-  setModuleParam: (moduleId: string, key: SharedParamKey, value: unknown) => void
-  /** 全局层参数快照（存储根 `config.yml` 的 `layerSettings`）：固定卡（指令卡）设置区读它。 */
-  globalParams: ParamSnapshot
-  /** 全局层读回前不写盘（与模块参数同规：否则 UI 默认值会被固化成全局键）。 */
-  globalParamsLoaded: boolean
-  /** 改全局层某个参数（本地草稿；落盘经 persistGlobalParams）。 */
-  setGlobalParam: (key: SharedParamKey, value: unknown) => void
-  /** 保存全局层参数：`/param-overrides` **不带主语头**（空主语 = 全局层），影响所有启用模块。 */
-  persistGlobalParams: () => Promise<void>
-  /** 已绑定模块身份与独立草稿的规则事务，共用保存队列但不依赖当前 Fields。 */
-  enqueueRuleTask: <T>(task: () => Promise<T>) => Promise<T>
-  /** 某模块的模板变量读数（范围、值、开关与状态都按主语取）。 */
-  moduleVariables: (moduleId: string) => ModuleVariablesView
-  /** 读一次该模块模板变量：每模块每轮加载一次。 */
-  ensureModuleVariables: (moduleId: string) => void
-  setModuleVariablesScope: (moduleId: string, scope: ModuleVariableScope) => void
-  setModuleVariables: (moduleId: string, value: Record<string, string>) => void
-  /** 模板变量插值开关（module.yml 顶层 variablesEnabled，缺省 true）。 */
-  setModuleVariablesEnabled: (moduleId: string, value: boolean) => void
-  /** 保存模板变量；可显式传入下一份值与开关状态（避免 setState 未生效时的旧闭包）。 */
-  saveModuleVariables: (moduleId: string, next?: Record<string, string>, enabled?: boolean) => Promise<boolean>
-  retryModuleVariablesPublication: (moduleId: string) => Promise<boolean>
-  /** 模块运行总闸（全局设置，无主语）。 */
-  toggle: () => void
-  /** 能力变更的主语＝调用方给的模块 id；该模块不可编辑时不发请求。 */
-  createModuleCapability: (moduleId: string, action: 'create' | 'create-recipe', id: string) => Promise<boolean>
-  removeModuleCapability: (moduleId: string, id: string) => Promise<boolean>
-  /** 新建空白模块（走既有新建动作；名字由服务端定），返回新模块 id（失败 undefined）。 */
-  createModule: () => Promise<string | undefined>
-  moduleActions: ModuleActions
-  createTemplateRule: ReturnType<typeof createTemplateRuleWriter>
-  /** 从宿主机目录复制导入到用户技能根。 */
-  importSkillsDirectory: (path: string, confirm?: ConfirmSkillOverwrite) => Promise<boolean>
-  /** 只刷新技能事实，不重读模块或覆盖其它草稿。 */
-  refreshSkills: () => Promise<boolean>
-  /** 创建标准技能到用户技能根。 */
-  createSkill: (input: { name: string; description: string; content: string }) => Promise<boolean>
-  readSkill: (skill: SkillCatalogEntry, sessionId: string | undefined) => Promise<BridgeResult<SkillContentSnapshot>>
-  saveSkill: (skill: SkillCatalogEntry, content: string, description: string, expectedRevision: string, sessionId: string | undefined) => Promise<BridgeResult<SkillContentSnapshot>>
-  /** 按准确文件身份删除服务端允许管理的技能。 */
-  deleteSkill: (skill: Pick<SkillCatalogEntry, 'name' | 'path'>) => Promise<boolean>
-  /** 开关只提交 side/enabled；完整 scope 仅供明确的双端操作。失败保持已读取事实。 */
-  setSkillPolicy: (name: string, path: string, change: SkillPolicyChange) => Promise<boolean>
-  /** 添加 / 移除引用的技能文件夹（只记引用，不复制文件）。 */
-  patchSkillFolders: (folders: string[]) => Promise<boolean>
-  /** 打开用户技能根。 */
-  openSkillsDir: (path?: string) => Promise<void>
-  dirtySwitches: boolean
-  dirtyConfigs: boolean
-  dirty: boolean
-}
+/**
+ * 工作台 store 的完整类型：各**端口**的交叉（端口定义与用途见 `store-ports.ts`）。
+ *
+ * 这个别名只服务两类位置：编排层把整个 store 传下去，以及 `usePromptToolStore` 的返回值。
+ * **新代码不要对它做 `Pick`**——需要哪几个面，就在 props 上写哪几个端口。
+ */
+export type PromptToolStore =
+  ModuleFactsPort
+  & DraftsPort
+  & ParamsPort
+  & VariablesPort
+  & SkillsPort
+  & InstructionFilesPort
+  & RuleEditingPort
+  & ModuleActionsPort
+  & NoticePort
+  & ModelsPort
+  & HostApiPort
 
 
 /** 等待共享 mirror 的首次应答离开 loading（ready/idle/unavailable 都会返回）。 */

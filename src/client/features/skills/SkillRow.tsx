@@ -7,7 +7,7 @@ import { TextInput } from '../../ui/TextInput.tsx'
 import type { SkillCatalogEntry } from '../../data/prompt-tool-fields.ts'
 import type { SkillPolicyChange } from '../../../shared/skills.ts'
 import type { SkillEditorDraft } from '../../data/workspace-drafts.ts'
-import type { PromptToolStore } from '../../data/use-prompt-tool-store.ts'
+import type { DraftsPort, SkillsPort } from '../../data/store-ports.ts'
 import { HintTooltip } from '../../ui/HintTooltip.tsx'
 import { ConfirmDialog } from '../../ui/ConfirmDialog.tsx'
 import { FormField } from '../../ui/FormField.tsx'
@@ -23,7 +23,7 @@ export interface SkillRowProps {
   skill: SkillCatalogEntry
   t: PromptToolTranslate
   busy: boolean
-  store: Pick<PromptToolStore, 'editorDrafts' | 'readSkill' | 'saveSkill'>
+  store: DraftsPort & SkillsPort
   sessionId: string | undefined
   onSetPolicy: (name: string, path: string, change: SkillPolicyChange) => Promise<boolean>
   onDelete: (skill: SkillCatalogEntry) => void

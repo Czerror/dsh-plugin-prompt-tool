@@ -6,8 +6,7 @@ import type { PromptToolWorkspaceController } from '../workbench/workspace-contr
 import { ModulesPage } from '../../features/modules/ModulesPage.tsx'
 import { SkillsPage } from '../../features/skills/SkillsPage.tsx'
 import { ToolsPreviewPage } from '../../features/tools/ToolsPreviewPage.tsx'
-import { MainSessionPage } from './pages/MainSessionPage.tsx'
-import { SubagentPage } from './pages/SubagentPage.tsx'
+import { AudiencePage } from './pages/AudiencePage.tsx'
 import { WorkspaceFrame } from './WorkspaceFrame.tsx'
 import type { WorkspacePage } from './workspace-pages.ts'
 import { configPageBrowse, createWorkspaceBrowseState } from './workspace-browse-state.ts'
@@ -56,9 +55,9 @@ export function PromptWorkspace(props: PromptWorkspaceProps): ReactNode {
   }, [open, store.load])
 
   const content = page === 'features'
-    ? <MainSessionPage store={store} t={t} browse={configPageBrowse(browse, scrollKey)} onNavigate={navigate} />
+    ? <AudiencePage store={store} audience="main" t={t} browse={configPageBrowse(browse, scrollKey)} onNavigate={navigate} />
     : page === 'subagent'
-      ? <SubagentPage store={store} t={t} browse={configPageBrowse(browse, scrollKey)} onNavigate={navigate} />
+      ? <AudiencePage store={store} audience="subagent" t={t} browse={configPageBrowse(browse, scrollKey)} onNavigate={navigate} />
       : page === 'tools'
         ? <ToolsPreviewPage api={props.api} presetId={props.api.sessionPreset.snapshot()} t={t} browse={browse.tools} onNavigate={navigate} onReady={markReady} />
         : page === 'skills'

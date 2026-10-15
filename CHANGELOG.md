@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+### 客户端 store 端口化；两个受众页合一（2026-10-16）
+
+- **新增 `src/client/data/store-ports.ts`**：按域切十个端口（`ModuleFactsPort`／`DraftsPort`／`ParamsPort`／`VariablesPort`／`SkillsPort`／`InstructionFilesPort`／`RuleEditingPort`／`ModuleActionsPort`／`NoticePort`／`ModelsPort`／`HostApiPort`），每个端口一段注释说明它服务哪些卡。`PromptToolStore` 改成这些端口的**交叉类型别名**——运行期零变化：store 仍是同一个扁平对象，订阅时序与保存队列一字未改。
+- **18 个文件 / 19 处 `Pick<PromptToolStore, …>` 全部换成端口交叉**（主/子代理页、注入点面板三处切片、技能页与技能行、规则工作台与模板选择、参数控件、模块页与切换器、能力创建菜单、模型卡、诊断卡、工作台外框、`usePromptToolFields`／`useRuleEditor`）。「这张卡需要哪些面」现在由端口名回答，全仓 `Pick<PromptToolStore, …>` 零命中；`typecheck` 是安全网（端口成员少了或实现漏了都编译失败）。
+- **`ModuleVariablesView` 归位**到域模块 `data/module-variables.ts`（原在 store 文件里，端口类型定义要引用它）；store 仍按原名再导出。
+- **两个受众页合成一个参数化 `AudiencePage`**：`MainSessionPage.tsx`／`SubagentPage.tsx`（70／76 行、各自的 store 透传清单）删除，受众差异只剩参数表里四样——`scope`、`aria` 文案键、`excludeCapabilities`（子代理页排除 `main-model`）、`audience`。`PromptWorkspace` 按页传 `audience="main" | "subagent"`，SSR 用例断言不变。
+- **测试桩按端口写**：`module-asset-subject`／`instruction-card-settings` 两份手抄桩改成「按端口列出要用的面」，并删掉已退场的 `enqueueModuleTask`；**不做** `makeStoreStub` 之类的合并 helper（删除测试判定它是纯转发，只会变成第二份接口清单）。
+- **判废**：43 个测试文件仍用「先设 env 再动态 import」——上一轮根惰性化后该约束已消失，改成静态 import 是纯风格 churn、零行为收益，本轮不做。
+- **验证**：`typecheck`／`lint`（0 警告 0 错误）／`test`（**669 pass / 0 fail**，默认 4 路）／`build`／`git diff --check` 全绿。
+
 ### 部署根改成按调用求值；host 用例默认 4 路并行（2026-10-16）
 
 - **去掉「import 时冻结」**：`paths.ts` 的五个根派生量（`DSH_HOME`／`STORAGE_ROOT`／`MODULES_DIR`／`USER_SKILLS_DIR`／`GLOBAL_VARIABLES_FILE`）改成按调用求值的函数（`dshHome()`／`storageRoot()`／`modulesDir()`／`userSkillsDir()`／`globalVariablesFile()`）。部署根仍由平台层 `DSH_HOME` 决定（与官方 `resolveDshHome` 同口径），插件不另立配置项；`storageRootOf(home)` 仍是纯函数。

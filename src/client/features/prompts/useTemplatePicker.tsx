@@ -4,7 +4,7 @@ import { bridgeCall, errorMessage } from '../../data/bridge-client.ts'
 import type { PromptToolTranslate } from '../../locales.ts'
 import type { PromptConfigTemplateEntry } from '../../prompt-tool-types.ts'
 import type { RuleDefinition } from '../../../shared/rules.ts'
-import type { PromptToolStore } from '../../data/use-prompt-tool-store.ts'
+import type { DraftsPort, ModuleActionsPort, NoticePort, RuleEditingPort } from '../../data/store-ports.ts'
 import { BLANK_MODULE_TEMPLATE } from '../../data/module-subject.ts'
 import { EngineModuleActions, type ModuleCreateItem } from '../modules/EngineModuleList.tsx'
 import { insertToolTemplateIntoDraft } from '../tools/CustomToolsCard.tsx'
@@ -183,7 +183,7 @@ export function useTemplatePicker(
  * 只负责成功后的展示刷新，不是创建前置。这样未启用模块与空白模块都能直接接收首条模板。
  */
 export function useTemplateCreate(props: {
-  store: Pick<PromptToolStore, 'createTemplateRule' | 'showNotice' | 'editorDrafts' | 'createModule'>
+  store: RuleEditingPort & NoticePort & DraftsPort & ModuleActionsPort
   t: PromptToolTranslate
   /** 菜单项：注入模板的层清单（id 形如 `tpl:<layer>`）。 */
   items: readonly ModuleCreateItem[]
