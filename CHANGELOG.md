@@ -12,7 +12,7 @@
 - **过门知识收敛**：`module-subject-gate.ts` 新增静态策略表 `GATE_POLICY`（当前只有 `mutate`／`moduleDelete` 的 `format:false`）与两阶段门对象——`inspect(write?)` ＝读前闸（含声明面）、`authorize()` ＝写前闸（跳声明面、先判可写，逐字等于基线的 `{write:true}`）。26 处调用点全部改为 `runtime.gate(tx, key).inspect(...)`／`.authorize()`，`rg 'subjectGate\(' src/runtime` 只剩门模块自身 4 行（文档／工厂内两次调用／定义）。判据顺序、拒绝码与时机未动。
 - **两处如实登记的差异**：① `moduleCapability` 由最后注册改为随 definitions 域注册（路径全 exact 且无重复，观察不到差异）；② 服务重注入时 `pendingVariableSettings`／两条队列／`warnedOfficialOrders`／`assetSources` **现在保留**（基线会重置；descriptor 缓存仍在 attach 时显式清空以对齐基线）——保留这些状态更正确（待发布标记与暂存来源不该因服务重启而丢），但这是行为差异，非静默改动。
 - **7 个端点零测试覆盖**（models／modelReasoning／skillRead／skillWrite／templates／promptConfigs／contextActivationDiagnostics）：本轮只做逐行比对，**不为此专门补测**（避免为覆盖率而测）；真改到哪个端点时再补穿过接口的行为测试。
-- **未附并发回归测试**：`createSerialQueue()` 的等价性是逐行论证 ＋ 端点既有回归网（`settings-bridge.test.mjs` 的排序／能力用例），但**没有「两个并发写不得交错」的断言**——提取出的并发语义本身还缺一条 check，作为紧随其后的小项补上。
+- **并发语义有 check 了**：`test/host/settings-bridge.test.mjs` 新增「模块写队列：两个并发写不交错——后入队的写按先入队者已落盘的结果继续」——同一条 `moduleOrderQueue` 上并发两个 `/module-enable`（第一个卡在既有的重建闸门里），断言①第二个的响应 `value.enabled` 深等于 `[先入队, 后入队]`（第二个写看到了第一个的效果）、②两个 `module.yml` 的 `configOrder` 深等于 `[{card:0},{card:10}]`（append 是「读启用集算 used 再写」的读改写，交错就会碰号）。断言只落在公共接口（端点响应 ＋ 落盘 YAML），不 import `createSerialQueue`、不数 mock。**判别力已验证**：把 `createSerialQueue` 临时改成不串行，该用例两处断言都失败（`['queue-second-19']` vs `['queue-first-18','queue-second-19']`；`[{card:0},{card:0}]` vs `[{card:0},{card:10}]`），随后已还原。
 - **验证**：`typecheck`／`lint`（305 文件，0 警告 0 错误）／`test`（**670 pass / 0 fail**，默认 4 路）／`build`／`git diff --check` 全绿；归一化行级残差比对显示差异只来自门的调用形态、共享态落点与包装层收尾，无未解释的内容变化。
 
 ### 测试入口默认单用例超时 10s（2026-10-16）

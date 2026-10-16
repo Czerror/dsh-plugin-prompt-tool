@@ -715,6 +715,52 @@ test('模块配置排序端点：启用尾部追加、跨模块保存、冲突�
   })
 })
 
+test('模块写队列：两个并发写不交错——后入队的写按先入队者已落盘的结果继续', async (t) => {
+  const { setModuleEnabled } = await import('../../src/host/config-store.ts')
+  const dirs = ['queue-first-', 'queue-second-'].map(makeUserPresetDir)
+  const ids = dirs.map((dir) => basename(dir))
+  for (const [index, dir] of dirs.entries()) {
+    writeFileSync(join(dir, 'module.yml'), JSON.stringify({ id: ids[index], modules: ['rule-engine'], rules: [textRule('card', `BODY ${index}`)] }))
+  }
+  t.after(() => ids.forEach((id) => setModuleEnabled(userPresetRoot, id, false)))
+  const { ctx, handlers } = makeHarness({}, { modulesEnabled: false })
+  let beforeRebuild = async () => {}
+  registerSettingsBridge(ctx, { ns: 'prompt-tool', models: () => ({ available: true, providers: [] }),
+    skills: () => skillsStateStub(), moduleDirectory: () => dirs[0],
+    overridesChanged: async (id) => { await beforeRebuild(id) } })
+  const call = async (endpoint, body) => {
+    const handler = handlers.get(PREFIX + BRIDGE_ENDPOINTS[endpoint])
+    assert.equal(typeof handler, 'function', `${endpoint} 端点已注册`)
+    const res = fakeRes()
+    await handler(fakeReq({ async *[Symbol.asyncIterator]() { yield Buffer.from(JSON.stringify(body)) } }), res)
+    return { status: res.status, ...JSON.parse(res.body) }
+  }
+
+  // 闸门只卡第一个写：串行队列下第二个写根本进不到重建回调，也就绕不过这个闸门。
+  let entered, openGate
+  const parked = new Promise((resolve) => { entered = resolve })
+  const gate = new Promise((resolve) => { openGate = resolve })
+  let blocked = false
+  beforeRebuild = async () => { if (blocked) return; blocked = true; entered(); await gate }
+
+  const first = call('moduleEnable', { id: ids[0], enabled: true })
+  await parked
+  // 不 await 第一个就发第二个：同一队列上的两个并发写。
+  const second = call('moduleEnable', { id: ids[1], enabled: true })
+  // 不串行时第二个写会趁第一个卡在闸门里自己跑完（此刻它的效果只可能基于「第一个还没落地」的状态）。
+  // ponytail: 200ms 只是串行实现下放行闸门的兜底；两种实现下断言都不依赖这个时长。
+  await Promise.race([second.catch(() => {}), new Promise((resolve) => setTimeout(resolve, 200))])
+  openGate()
+  const [firstSaved, secondSaved] = await Promise.all([first, second])
+  assert.equal(firstSaved.status, 200, firstSaved.message)
+  assert.equal(secondSaved.status, 200, secondSaved.message)
+  // 规格「先入队的写先落地」：第二个写的响应里必须已经有第一个写的效果。
+  assert.deepEqual(secondSaved.value.enabled, ids, '第二个写必须看到第一个写已启用')
+  // 落盘产物同源：后入队的配置卡让开先入队者占用的槽位（同一读改写里没被交错覆盖）。
+  assert.deepEqual(dirs.map((dir) => parseYaml(readFileSync(join(dir, 'module.yml'), 'utf8')).configOrder),
+    [{ card: 0 }, { card: 10 }], '先入队者拿 0，后入队者接在尾部')
+})
+
 test('预设列表、导出、复制、删除、新建与导入都作用于官方预设根', async () => {
   const { ctx, handlers } = makeHarness()
   let registryRefreshes = 0
