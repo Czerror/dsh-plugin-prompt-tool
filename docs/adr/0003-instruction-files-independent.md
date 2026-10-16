@@ -1,6 +1,6 @@
 # 指令文件与预设配置分离
 
-状态：注入职责、总开关与策略字段条款已由 [ADR-0004](0004-official-instruction-filter.md) 替代；正文归原文件、指令策略跨预设共享且独立持久化的边界继续有效。以下保留原决策记录。
+状态：注入职责、总开关与策略字段条款已由 [ADR-0004](0004-official-instruction-filter.md) 替代；第 11 行 `true` / `false` / `null` 三态的表述已由 [ADR-0009](0009-instruction-owner-observed-only.md) 收口（无 `false` 生产者，`true` 亦暂无生产者）；正文归原文件、指令策略跨预设共享且独立持久化的边界继续有效。以下保留原决策记录。
 
 指令文件的正文（工作区与用户目录的 `AGENTS.md`、`CLAUDE.md` 及其 `.local` 变体）属于用户磁盘上的原文件，指令文件卡的行为策略属于插件独立的指令策略（`$DSH_HOME/.prompt-tool/instructions.yml`，同一 DSH_HOME 下所有预设共享一份），两者都不进入 module.yml，也不随预设复制、导出、删除或重建。ADR-0001「预设定义是行为配置的唯一来源」的适用范围由此限定为预设自身行为（参数、模块、提示词配置、变量、模型路由与工具策略）；指令正文的事实来源是原文件，策略的事实来源是插件自有状态，缺省 `enabled: false`，需在工作台显式开启。注入由宿主侧 pre-step 协调器按会话工作区现场探测执行（全局 `$DSH_HOME/AGENTS.md` + cwd→项目根链），与预设卡共用同一批执行算法，正文以 `Instructions from: <显示路径>` 头 literal 注入。
 
