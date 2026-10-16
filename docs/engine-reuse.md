@@ -188,6 +188,8 @@ assembly 负责呈现，sdk-strip 负责 SDK 文本，guard 负责最终执行�
 
 `ptc` 需要 `ctx.ptcRuntime`：本行用 `ctx.inject` 等它就绪再声明，等不到就停在 pending 并由预设注册表指名报告不可用的行，**不静默退回 native**；`ptcRuntime` 刻意不进 `inject`，否则 `native` 行会被绑死在「部署必须有 PTC 运行时」上。`presentAs` 自带 disposer，本行不另包一层。
 
+PTC 部署通常把本行与 `run-code-env` 装在同一模块里：PTC 下 `run_code` 程序里的 `process.env` 恒为空（官方安全设计），而 PATH／HOME 这类非敏感事实常被需要——`run-code-env` 在每个程序执行前注入一份冻结的 `env` 全局并注册 `## run_code environment` 提示段，且只在存在 `run_code` 传输的 scope 生效，对 native 会话零副作用。规则则不必加：模型收到的指引已由官方的 `PTC_ONLY` 段（只有 `run_code` 能直接调用）与生成的 `tools:sdk` 段提供。
+
 ## 自定义工具与宿主契约
 
 工具通过已安装 `@deepseek-ai/dsh-tools` 的 defineTool/官方转换器定义，使用真实 ToolExecution 的 agent、signal、调用身份；异步工作观察或转发 caller-owned signal。delegate 走 `ctx.tools.execute`，保留批准、拒绝和取消管线。
