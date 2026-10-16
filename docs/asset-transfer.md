@@ -30,7 +30,7 @@
 
 “完整 ZIP”包含权威定义、预设正文、图片、自有组合和本地模块，附 `prompt-tool-package.json` 的格式版本、兼容要求与文件摘要。导入检查清单与实际条目一致；ZIP 的上跳、绝对路径、链接、特殊文件、大小写／规范化冲突、加密、损坏及解压超限均拒绝。
 
-共享引擎由插件包提供，不从来源机器复制。旧 configs/、rules.yml、agent.cordis.yml、custom-tools/、subagent-tools/ 不再分发（`subagent-tools/` 随子代理工具策略退场，仅作历史保留名）；规则切片可从完整定义重建。memory.md 默认不随分享导出，技能库和工作区指令／策略也不属于模块交换包。根 agents.md 是已有模块内容资产，与工作区指令文件分开。
+旧 configs/、rules.yml、agent.cordis.yml、custom-tools/、subagent-tools/ 不再分发（`subagent-tools/` 随子代理工具策略退场，仅作历史保留名）；规则切片可从完整定义重建。memory.md 默认不随分享导出，技能库和工作区指令／策略也不属于模块交换包。根 agents.md 是已有模块内容资产，与工作区指令文件分开。
 
 > **导入不安装引擎**：完整模块包只含模块自身（定义、正文、附件、自有组合与本地模块）；组合里的共享引擎引用是插件包说明符，导入方由**自己安装的插件**提供引擎。包内若仍带 `engine/` 目录，导入后不再被使用——引擎版本只随插件更新。
 
@@ -38,10 +38,9 @@
 
 历史模块可能带自动同步的记忆规则及 meta.characterMemories 证明。分享出口继续在副本中排除可核验的历史自动记忆，不修改原模块；普通同名规则保留，无法确认的历史条目须明确选择。新记忆写入不再生成该类规则或登记，入站来源的生成证明不可信。
 
-模块复制保留本地行为与素材，不套用分享时的记忆过滤；新目录与完整定义同步新身份，规则切片重新生成。Web 和 CLI 共用当前 `.prompt-tool` 定位规则，不优先读取旧 `presets` 根。
+模块复制保留本地行为与素材，不套用分享时的记忆过滤；新目录与完整定义同步新身份，规则切片重新生成。Web 和 CLI 共用当前 `.prompt-tool` 定位规则，旧 `.agent-presets/` 根只读不删、插件不再读写它。
 
-导出走工作台与插件公开 API（`exportModulePackage` / `expandModuleSource`；模块命名的
-`exportModulePackage` / `expandModuleSource` 是同一实现）：ZIP、仅定义 YAML 与文件夹三种出口
+导出走工作台与插件公开 API（`exportModulePackage` / `expandModuleSource`）：ZIP、仅定义 YAML 与文件夹三种出口
 共用同一资源清单和分享规则，目标省略时下载为 `<id>.zip`，已存在目标拒绝覆盖。
 
 ## 模块归属

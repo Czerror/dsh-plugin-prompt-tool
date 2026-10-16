@@ -61,33 +61,28 @@
 以下树以当前源码为准；没有列出的目录不代表预留扩展点，新增目录必须先有真实 owner。
 
     src/client/
-    ├─ index.ts
-    ├─ locales.ts
-    ├─ locales-cards.ts
-    ├─ locales-params.ts
-    ├─ locales-prompts.ts
-    ├─ prompt-tool-types.ts
     ├─ app/
     │  ├─ workbench/
     │  │  ├─ FloatingTrigger.tsx
-    │  │  ├─ floating-trigger-position.ts
-    │  │  ├─ register-workbench.tsx
     │  │  ├─ Workbench.module.css
     │  │  ├─ WorkbenchOverlay.tsx
+    │  │  ├─ floating-trigger-position.ts
+    │  │  ├─ register-workbench.tsx
     │  │  ├─ workbench-face.ts
     │  │  └─ workspace-controller.ts
     │  └─ workspace/
     │     ├─ PromptWorkspace.module.css
     │     ├─ PromptWorkspace.tsx
-    │     ├─ workspace-browse-state.ts
     │     ├─ WorkspaceFrame.tsx
     │     ├─ WorkspaceNavigation.tsx
-    │     ├─ workspace-pages.ts
-    │     └─ pages/
-    │        ├─ AudiencePage.tsx
-    │        ├─ EngineLayersPanel.tsx
-    │        └─ layer-settings.module.css
+    │     ├─ pages/
+    │     │  ├─ AudiencePage.tsx
+    │     │  ├─ InjectionPointsPanel.tsx
+    │     │  └─ layer-settings.module.css
+    │     ├─ workspace-browse-state.ts
+    │     └─ workspace-pages.ts
     ├─ data/
+    │  ├─ asset-import.ts
     │  ├─ bridge-client.ts
     │  ├─ bridge-transport.ts
     │  ├─ dirty-state.ts
@@ -95,41 +90,51 @@
     │  ├─ import-files.ts
     │  ├─ instruction-drafts.ts
     │  ├─ instruction-policy.ts
-    │  ├─ model-sync-notice.ts
+    │  ├─ module-actions.ts
+    │  ├─ module-subject.ts
+    │  ├─ module-variables.ts
     │  ├─ param-overrides.ts
-    │  ├─ prompt-config-order.ts
+    │  ├─ persona-editor.ts
     │  ├─ prompt-config-content.ts
+    │  ├─ prompt-config-order.ts
     │  ├─ prompt-tool-fields.ts
     │  ├─ prompt-tool-view.ts
+    │  ├─ resource-track.ts
     │  ├─ rule-drafts.ts
     │  ├─ save-queue.ts
+    │  ├─ session-id-source.ts
     │  ├─ session-model-face.ts
     │  ├─ session-preset-face.ts
+    │  ├─ skill-editor.ts
+    │  ├─ skill-import.ts
     │  ├─ store-ports.ts
+    │  ├─ template-rule-writer.ts
+    │  ├─ tools-editor.ts
+    │  ├─ use-autosave.ts
     │  ├─ use-import-preview-flow.ts
     │  ├─ use-module-config-order.ts
     │  ├─ use-prompt-tool-fields.ts
     │  ├─ use-prompt-tool-store.ts
+    │  ├─ use-rule-diagnostics.ts
     │  ├─ use-rule-editor.ts
     │  └─ workspace-drafts.ts
     ├─ features/
     │  ├─ characters/
-    │  │  ├─ character-card.ts
-    │  │  └─ CharactersPage.tsx
+    │  │  └─ character-card.ts
     │  ├─ models/
-    │  │  ├─ model-options.ts
-    │  │  └─ CurrentSessionModel.tsx
+    │  │  ├─ CurrentSessionModel.tsx
+    │  │  └─ model-options.ts
     │  ├─ modules/
     │  │  ├─ EngineModuleList.tsx
     │  │  ├─ EngineParamFields.tsx
-    │  │  ├─ ModulesPage.tsx
     │  │  ├─ ModuleExportDialog.tsx
-    │  │  └─ ModuleSwitcher.tsx
+    │  │  ├─ ModuleSwitcher.tsx
+    │  │  └─ ModulesPage.tsx
     │  ├─ persona/
-    │  │  └─ ModulePersonaCard.tsx
+    │  │  ├─ ModulePersonaCard.tsx
+    │  │  └─ persona.module.css
     │  ├─ prompts/
-    │  │  ├─ prompt-config-policy.ts
-    │  │  ├─ prompts.module.css
+    │  │  ├─ ContextActivationDiagnosticsCard.tsx
     │  │  ├─ PromptConfigCard.tsx
     │  │  ├─ PromptConfigFields.tsx
     │  │  ├─ PromptConfigForm.tsx
@@ -137,55 +142,82 @@
     │  │  ├─ RuleCard.tsx
     │  │  ├─ RuleFields.tsx
     │  │  ├─ RuleJsonField.tsx
-    │  │  ├─ rule-labels.ts
-    │  │  ├─ rules.module.css
+    │  │  ├─ RuleStepCard.tsx
+    │  │  ├─ RuleSteps.tsx
+    │  │  ├─ RuleSurfaceFields.tsx
     │  │  ├─ RulesWorkspace.tsx
+    │  │  ├─ prompt-config-policy.ts
+    │  │  ├─ prompts.module.css
+    │  │  ├─ rule-labels.ts
+    │  │  ├─ rule-steps.ts
+    │  │  ├─ rules.module.css
     │  │  ├─ textarea-resize.ts
-    │  │  ├─ useTemplatePicker.ts
-    │  │  └─ ContextActivationDiagnosticsCard.tsx
+    │  │  └─ useTemplatePicker.tsx
     │  ├─ skills/
-    │  │  ├─ skill-status.ts
-    │  │  ├─ skills.module.css
     │  │  ├─ SkillRow.tsx
-    │  │  └─ SkillsPage.tsx
+    │  │  ├─ SkillsPage.tsx
+    │  │  ├─ skill-status.ts
+    │  │  └─ skills.module.css
     │  └─ tools/
-    │     ├─ custom-tool-parameters.ts
     │     ├─ CustomToolEditor.tsx
     │     ├─ CustomToolsCard.tsx
-    │     ├─ tools.module.css
+    │     ├─ ToolSurfaceView.tsx
     │     ├─ ToolsPreviewPage.tsx
+    │     ├─ custom-tool-parameters.ts
+    │     ├─ official-preset-sources.ts
     │     ├─ tool-surface-request.ts
-    │     └─ ToolSurfaceView.tsx
+    │     └─ tools.module.css
+    ├─ index.ts
+    ├─ locales-cards.ts
+    ├─ locales-params.ts
+    ├─ locales-prompts.ts
+    ├─ locales-rules.ts
+    ├─ locales-triggers.ts
+    ├─ locales.ts
+    ├─ prompt-tool-types.ts
+    ├─ styles.ts
     └─ ui/
-       ├─ anchored-popover-fit.ts
-       ├─ anchored-popover.ts
+       ├─ AutoSaveSelection.ts
+       ├─ Button.tsx
        ├─ CollapsibleCard.tsx
-       ├─ config-navigation.module.css
        ├─ ConfirmDialog.tsx
-       ├─ controls.module.css
-       ├─ dialog-focus.ts
        ├─ DialogSurface.tsx
        ├─ EngineModuleCard.tsx
        ├─ FormField.tsx
        ├─ HintTooltip.module.css
        ├─ HintTooltip.tsx
-       ├─ hint-tooltip-focus.ts
-       ├─ hint-tooltip-position.ts
+       ├─ ImportDialog.module.css
+       ├─ ImportDialog.tsx
        ├─ ImportFileButton.tsx
        ├─ ImportPreviewCard.tsx
+       ├─ Menu.module.css
+       ├─ Menu.tsx
        ├─ MenuSelect.tsx
        ├─ PromptConfigNavigation.tsx
-       ├─ reveal-card.ts
+       ├─ SearchInput.module.css
+       ├─ SearchInput.tsx
        ├─ SettingInputRow.tsx
        ├─ StatusBadge.module.css
        ├─ StatusBadge.tsx
        ├─ StatusDot.module.css
        ├─ StatusDot.tsx
-       ├─ tab-key.ts
+       ├─ Switch.tsx
        ├─ TagInput.tsx
        ├─ TemplatePicker.tsx
-       └─ ToggleRow.tsx
-
+       ├─ TextInput.tsx
+       ├─ ToggleRow.tsx
+       ├─ anchored-popover-fit.ts
+       ├─ anchored-popover.ts
+       ├─ config-navigation.module.css
+       ├─ controls.module.css
+       ├─ dialog-focus.ts
+       ├─ hint-tooltip-focus.ts
+       ├─ hint-tooltip-position.ts
+       ├─ icons.tsx
+       ├─ outside-pointer.ts
+       ├─ primitives.module.css
+       ├─ reveal-card.ts
+       └─ tab-key.ts
 共享控件还包括 `ui/Button.tsx`、`Switch.tsx`、`Menu.tsx`、`icons.tsx` 和 `outside-pointer.ts`。生成目录 lib/ 不属于源码 owner，不手工编辑。客户端样式已按 owner 分开。
 
 ## 4. 宿主接入与生命周期
@@ -309,7 +341,7 @@ workspace-pages.ts 是页面元数据的唯一来源。默认页为 features，�
 
 异步创建按最新模块事实验证目标；成功克隆得到的本次新建身份可以直接首写，仍由服务端执行主语、用户目录与可写校验。目录已创建但模板写入失败时保留 `moduleId` 供重试，不提前启用；规则已提交但模块启用失败时明确提示在模块页启用，不以重放创建作为重试。列表刷新失败与保存失败区分显示。模块目录事实刷新不因无关字段草稿正在输入而丢弃，字段本身仍保留原有版本保护。
 
-`module.yml` 已提交但运行刷新失败时保留 `persisted/publicationPending`。未启用目标不增加重试 UI，发布待处理状态只保留在当前工作台会话的共享规则草稿中；目标启用并挂载规则卡后沿用 `retryPublication`（经 `refreshOnly`）重试，刷新工作台不恢复该状态。
+`module.yml` 已提交但运行刷新失败时保留 `persisted/publicationPending`（重试规则见 §7.3）。
 
 模板持久化成功但本地已有未保存规则时，保留本地输入及远端完整响应，返回 `localConflict` 单独提示“模板已保存，先处理规则冲突”，不定位未接纳的新卡，也不伪报创建失败引导重复写入。
 
@@ -706,11 +738,17 @@ context-activation 视图只调整附加提示，不另设模块卡容器；能�
     app/workspace/PromptWorkspace.module.css
     ui/controls.module.css
     ui/HintTooltip.module.css
+    ui/ImportDialog.module.css
+    ui/Menu.module.css
+    ui/SearchInput.module.css
     ui/StatusBadge.module.css
     ui/StatusDot.module.css
+    ui/config-navigation.module.css
+    ui/primitives.module.css
     features/prompts/prompts.module.css
     features/prompts/rules.module.css
     app/workspace/pages/layer-settings.module.css
+    features/persona/persona.module.css
     features/skills/skills.module.css
     features/tools/tools.module.css
 
