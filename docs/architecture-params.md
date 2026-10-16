@@ -27,7 +27,7 @@
 
 读端点与写端点都由请求头 `x-module-id` **定位**目录（服务端只用它解析 `deps.moduleDirectory`；未声明即无目标，`required` 端点 400 `module-dir-unavailable`）。写端点另在本体里带 `expectedModuleId`／`expectedRevisions`，其中 `expectedModuleId` 只作**一致性校验**、不参与定位：与请求头声明不一致即 400 `module-subject-conflict`，与当次解析目录不符即 409 `module-changed`（处理期间目标被换掉）——载荷永远不能替请求头选路径。两条身份判据在任何端点、任何豁免下都执行（见 [ADR-0014](adr/0014-module-subject-declared-per-operation.md)）。声明只决定这次读写作用在哪个模块，不改变启用集合或官方预设。官方工具预览的 presetId 保留官方含义。
 
-模型工具用执行 Agent 的受控配装记录解析写入目标——该记录只含**已启用的规则模块**，人设来源由 personaSources 独立引用、可以指向未启用的模块，因此不参与写入目标；缺声明即无目标（模块类端点拒绝），启用表不再决定写入目标（阶段 4 把工具主语改为工具参数，见 [ADR-0014](adr/0014-module-subject-declared-per-operation.md)）。模板按自身 sourceModuleId 访问变量，与模型工具目标和 UI 卡片归属分开。
+模型工具的主语由这次调用显式声明的 `moduleId` 参数决定——该 Agent 这次启用了哪几层只作拒绝时的候选提示，绝不作为目标，缺声明即无目标（模块类端点拒绝）；人设来源由 personaSources 独立引用、可以指向未启用的模块，因此不参与写入目标（阶段 4 把工具主语改为工具参数，见 [ADR-0014](adr/0014-module-subject-declared-per-operation.md)）。模板按自身 sourceModuleId 访问变量，与模型工具目标和 UI 卡片归属分开。
 
 ## 磁盘格式：规则与共享参数各有所有者
 

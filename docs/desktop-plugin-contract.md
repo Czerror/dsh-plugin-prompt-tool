@@ -14,7 +14,7 @@
 | 事实 | 值 |
 |---|---|
 | 应用文档来源 | `dsh-app://app/`（本地静态文件，不走 Host） |
-| 默认端口 | `19387`（Web 版为 `3080`），可由 `webserver.config.port` patch 覆盖 |
+| 默认端口 | 由系统分配（`apps/desktop-host/src/index.ts:30` 的 `--port 0`），可由 `webserver.config.port` patch 覆盖 |
 | profile | `$DSH_HOME/profiles/desktop`，Electron 独占 |
 | 发布身份 | Electron 壳与 `@deepseek-ai/dsh` 恒为同一精确版本；升级 dsh 必须发布新 Desktop 版本 |
 
@@ -129,27 +129,30 @@
 - 所有插件状态读写走 `/api/prompt-tool/settings/*`，不新增任何 Electron IPC 依赖；桌面壳没有为插件预留这类通道。
 - bridge 的 loopback、Host/Origin 校验、请求体上限、统一 `{ ok, value }` 包装在两端一致，桌面版不额外放宽。
 - 桌面版多一层 Electron HTTP 转发，**插件侧不需要为之做任何特殊处理**；反向代理式的头改写由壳负责。
-- 诊断插件问题时，页面文档是 `dsh-app://app`，不要把 `http://127.0.0.1:19387/...` 的裸探测结果当成插件行为的证据：该端口需要 Host 认证 cookie，且 `/plugins/*` 与 `/api/prompt-tool/*` 的认证要求不同。
+- 诊断插件问题时，页面文档是 `dsh-app://app`，不要把 `http://127.0.0.1:<端口>/...` 的裸探测结果当成插件行为的证据：桌面版端口由系统分配，且该端口需要 Host 认证 cookie、`/plugins/*` 与 `/api/prompt-tool/*` 的认证要求不同。
 - **目录选择走官方原生抽象**：本插件用 `ctx.uiWorkspace.pickDirectory()`（`src/client/index.ts`），而不是直接调桌面桥 `__DSH_DIRECTORY_PICKER__`。2026-09-26 在 Windows 桌面版实测：技能导入/引用的目录选择入口**弹出原生资源管理器对话框**，功能正常。官方自身也是二选一（`ui-directory-picker-native` 在桥存在时用 `desktop.pick()`，否则回落到同一抽象），因此复用抽象即可，无需为桌面版特判。
 
 ### 7.1 窗口 chrome 让位（消费官方 CSS 变量）
 
-桌面版的窗口顶部有一段**原生** chrome 不参与网页布局；插件若把可交互控件画在那里，点击会被 Electron 判成拖窗口。官方为此在根元素发布三个变量，**插件只消费它们，不做运行时平台探测**：
+桌面版的窗口顶部有一段**原生** chrome 不参与网页布局；插件若把可交互控件画在那里，点击会被 Electron 判成拖窗口。官方为此在根元素发布四个变量，**插件只消费它们，不做运行时平台探测**：
 
 | 变量 | 桌面版取值 | Web 版 | 用途 |
 |---|---|---|---|
+| `--dsh-frame-chrome-top` | Windows 标题栏高度（`data-windows-titlebar` 时取 `--dsh-windows-titlebar-height`；全屏为 0） | 未定义 → 回退 0 | 原生 chrome 整层顶让位 |
 | `--dsh-windows-titlebar-height` | Windows 40px | 未定义 → 回退 0 | 精确的原生 caption 行高度 |
-| `--dsh-frame-top-clearance` | 固定 48px | 未定义 | 「窗口顶带下沉量」语义，含额外 8px |
+| `--dsh-frame-top-clearance` | macOS 固定 48px／Windows 同 caption 高度 | 未定义 | 「窗口顶带下沉量」语义，含额外 8px |
 | `--dsh-frame-leading-clearance` | macOS 收起侧栏时 160px / 全屏 84px | 未定义 | 左上角窗口 chrome 的行内带宽 |
 
-**为什么选 `--dsh-windows-titlebar-height`**：它是唯一精确的 caption 高度真源（`apps/desktop/src/preload-windows.ts:13` 设为 40px），而 `--dsh-frame-top-clearance` 面向「窗口顶带下沉」语义、会多让 8px。变量在 Web 版未定义即回退 0，因此叠加写法两端都对，**不需要任何 `data-platform` 分支**。
+**本插件只用其中三个，且分工不同**：整层让位一律用 `--dsh-frame-chrome-top`（它在 Web 下未定义即回退 0，全屏下被官方显式置 0，因此叠加写法两端都对，**不需要任何 `data-platform` 分支**）；`--dsh-frame-leading-clearance` 只用于抽屉左内边距（macOS 交通灯）；只有需要**精确 caption 行高度**做几何夹取的悬浮面板才读 `--dsh-windows-titlebar-height`——`--dsh-frame-top-clearance` 面向「窗口顶带下沉」语义、会多让 8px，不适合当 caption 真源。
 
 本插件消费这些变量的位置：
 
 | 位置 | 变量 | 解决的问题 |
 |---|---|---|
-| `src/client/app/workbench/Workbench.module.css`（抽屉面板四向 padding） | titlebar-height + leading-clearance | 抽屉内容顶到窗口边缘；macOS 交通灯压住品牌与标题 |
-| `src/client/ui/controls.module.css`（模态背板与最大高度） | titlebar-height | 矮窗口下居中模态的头部进入拖拽带 |
+| `src/client/app/workbench/Workbench.module.css`（抽屉整层 `inset`） | chrome-top | 抽屉内容顶到窗口边缘 |
+| `src/client/app/workbench/Workbench.module.css`（抽屉面板左内边距） | leading-clearance | macOS 交通灯压住品牌与标题 |
+| `src/client/ui/controls.module.css`（模态背板 `inset` 与模板模态 `max-height`） | chrome-top | 矮窗口下居中模态的头部进入拖拽带 |
+| `src/client/ui/anchored-popover.ts`（锚定面板顶边夹取） | windows-titlebar-height | 面板夹取上界要按 caption 行高算，不能用会多让 8px 的顶带值 |
 
 **让位只做一次**：工作台是 body portal 抽屉，不继承官方 `AppFrame` 的 `padding-top: var(--dsh-windows-titlebar-height)`（`packages/client/ui-layout/src/client/AppFrame.module.css:26-32`），所以这一次让位由抽屉面板承担；masthead 等内层**不再叠加**同一变量。叠加两次会把标题推到 caption 下沿的两倍处（实测约 90px），比官方内容起点低一整条 caption 行，页签行也跟着下移；masthead 自身只保留呼吸空间（总高 40px，与官方会话头持平），标题因此与会话标题同线、页签与官方「对话/轨迹」同线。
 

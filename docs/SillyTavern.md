@@ -1,6 +1,6 @@
 # SillyTavern 导入与兼容边界
 
-转换器把外部预设、角色卡与世界书变成普通模块。原始 ST 字段只在 `src/host/sillytavern.ts` 和 `st-template.ts` 识别；运行时使用规则、上下文激活和两级持久变量。转换成功不代表与 ST 全部行为等价，降级报告和生成规则应一起检查。
+转换器把外部预设、角色卡与世界书变成普通模块。原始 ST 字段的语义映射只在 `src/host/sillytavern.ts` 和 `st-template.ts`；来源判定与取卡另在 `src/host/import-source.ts`（`chara_card_v2/v3`、`first_mes`、`character_book` 等）与 `src/host/character-png.ts`（`ccv3`／`chara` chunk）。运行时使用规则、上下文激活和两级持久变量。转换成功不代表与 ST 全部行为等价，降级报告和生成规则应一起检查。
 
 本次映射核对的 ST 基线为 `ad29cbda62e92f145e44d7a10398a38af22ca986`。持久化与格式切换见 [参数框架](architecture-params.md#原生格式与持久状态) 和 [ADR-0013](adr/0013-native-context-module-state.md)。
 
@@ -24,9 +24,9 @@
 | ST 输入 | 生成行为 | 边界 |
 |---|---|---|
 | `prompts[].content` | 普通注入正文，启用原生模板求值 | 清洗后空白跳过；纯赋值模板保留 |
-| `prompt_order` | 按选中的顺序组保留启停和相对次序 | 优先全局组 `100001`，只有一组时使用该组；多组有歧义则先选择。名次写进 `module.yml` 顶层 `configOrder`（与工作台拖拽排序同一来源），不再写进卡内 `order` |
+| `prompt_order` | 按选中的顺序组保留启停和相对次序 | 选组顺序：请求显式选择 → 文件内 `character_id` → 全局组 `100001` → 只有一组时使用该组；显式选择不命中不回落，多组有歧义则先选择。名次写进 `module.yml` 顶层 `configOrder`（与工作台拖拽排序同一来源），不再写进卡内 `order` |
 | 顺序组 `enabled` | 优先于 prompt 自身开关 | 已选组未列出的 prompt 禁用 |
-| `role: system` | `system-section` | 系统段的顺序不等于跨插入点全序；导入的 `system-section` 卡统一官方档位 `100`（官方刻度里人设前缀与 `PLAN_POLICY` 之间的空档，不与任何官方档位同值），同档位内按 `configOrder` 排、可拖拽排序 |
+| `role: system` | `system-section` | 系统段的顺序不等于跨插入点全序；`prompts[].role === 'system'` 的卡统一官方档位 `100`（官方刻度里人设前缀与 `PLAN_POLICY` 之间的空档，不与任何官方档位同值），同档位内按 `configOrder` 排、可拖拽排序；角色卡正文生成三段（角色设定／系统提示／后续指令）在 `system-section`，分别用 `-30/-20/-10`（取负值使角色卡内容排在预设 `order ≥ 100` 之前），开场白另在 `pre-step` 用 `-40` |
 | `role: user/assistant/model` | `pre-step` 的 user 消息 | assistant/model 明确降级，原角色进入 `source.original`；卡内不写 `order`，先后只由 `configOrder` 表达 |
 | `marker`、`SPresetSettings` | 排除位置标记和扩展配置 dump | 不把脚本或设置 JSON 混入正文 |
 | `injection_position/depth` | 映射到当前可用投递位置 | 不宣称支持持久历史深度插入，报告原值与降级 |
