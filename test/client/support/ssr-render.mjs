@@ -42,6 +42,9 @@ const REACT_MODULES = ['react', 'react/jsx-runtime', 'react-dom', 'react-dom/ser
  * 解析（不是按调用方文件）—— 引用仓库源码请写 `'../../../src/client/ui/X.tsx'`；
  * 也可以直接传绝对 `file://` URL，那种写法不受基准影响。
  * loader 在本函数返回前注销，不污染后续用例；导出名冲突即抛错，避免静默取错组件。
+ *
+ * @param {string[]} specifiers
+ * @returns {Promise<Record<string, any>>}
  */
 export async function withSsr(specifiers) {
   const reactResolved = Object.fromEntries(REACT_MODULES.map((name) => [name, import.meta.resolve(name)]))
@@ -68,6 +71,8 @@ export async function withSsr(specifiers) {
     },
   })
   try {
+    // 扁平化的具名导出：值类型由被 import 的模块决定（组件/常量/辅助函数），harness 无法表达——用 any 承接。
+    /** @type {Record<string, any>} */
     const loaded = {}
     for (const specifier of specifiers) {
       const module = await import(specifier)
@@ -82,12 +87,20 @@ export async function withSsr(specifiers) {
   }
 }
 
-/** 渲染为静态 HTML 字符串（等价抽取前各文件各自的 `render` 辅助）。 */
+/**
+ * 渲染为静态 HTML 字符串（等价抽取前各文件各自的 `render` 辅助）。
+ * @param {import('react').ElementType} component
+ * @param {Record<string, unknown>} props
+ * @returns {string}
+ */
 export function renderElement(component, props) {
   return renderToStaticMarkup(createElement(component, props))
 }
 
-/** zh 字典翻译桩：`{name}` 插值，键缺失即抛错（与官方 Translate 调用面一致）。 */
+/**
+ * zh 字典翻译桩：`{name}` 插值，键缺失即抛错（与官方 Translate 调用面一致）。
+ * @returns {import('../../../src/client/locales.ts').PromptToolTranslate}
+ */
 export function makeTranslate() {
   return (key, params) => {
     const template = PROMPT_TOOL_DICTS.zh[key]
