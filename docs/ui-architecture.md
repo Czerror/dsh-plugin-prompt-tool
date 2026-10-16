@@ -661,7 +661,7 @@ fieldset 禁用时 MenuSelect 同时拒绝 portal 中的选择。Tooltip 的键�
 
 `InjectionPointsPanel#injectionPointSlots({ store, t, viewFilter, audience, keyword, … })` 是唯一的层装配入口，返回 `beforeCards`（当前受众的独立人设卡、页面级诊断卡与不占布局的定位 effect）以及 `renderLayerSettings`、`hasLayerSettings` 和 `matchesLayerSettings`。两个页面声明受众视图、创建编排并持有工具草稿所有者，不手写层名判断或重复资产布局。能力参数与其余资产编辑器由实例卡内的层设置区承载；人设复用 `CollapsibleCard` 卡壳，来源选择与折叠按钮互为兄弟。
 
-`LayerSettingsContent` 的参数、装配能力与资产都按共享契约派生：`layerParamCards` 只列当前层实际装配且拥有通用参数的组，`layerAssembledCapabilities` 列出该层已装配能力，资产按 `displayLayer` 归位并复用各自专用编辑器、草稿池与写端点。模型参数不重复生成通用控件。创建本层能力复用 `EngineCapabilityCreateMenu`，提示词模板仍从原九层模板菜单创建。无可编辑设置的层不生成设置页签，无实例不生成兜底卡。设置视图首次进入才挂载，卡片保持展开时切换视图不丢输入；外层折叠卸载视图，草稿仍由工作台持有。
+`LayerSettingsContent` 的参数、装配能力与资产都按共享契约派生：`layerParamCards` 只列当前层实际装配且拥有通用参数的组，`layerAssembledCapabilities` 列出该层已装配能力，资产按 `displayLayer` 归位并复用各自专用编辑器、草稿池与写端点。模型参数不重复生成通用控件。创建本层能力复用 `ModuleCapabilityCreateMenu`（`features/modules/EngineModuleList.tsx`），提示词模板仍从原九层模板菜单创建。无可编辑设置的层不生成设置页签，无实例不生成兜底卡。设置视图首次进入才挂载，卡片保持展开时切换视图不丢输入；外层折叠卸载视图，草稿仍由工作台持有。
 
 选中某个注入层且该层没有内容时，列表给「该层还没有内容」的空状态与新增入口，不自动创建九张空卡、也不谎称「无匹配」；`context-activation` 是策略筛选而非层，保持「无匹配 + 清除筛选」提示。
 
