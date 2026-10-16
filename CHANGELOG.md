@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+### 修 S6 留档的 L4：`/rules` 不再有两种 500 码（2026-10-16）
+
+- **同一端点的两种失败码（已修）**：`ruleSpec.mjs` 的动态 import 原抄三遍，其中 `refreshOnly` 分支那处**在外层 try 之外**——同一个「引擎编译器不可用」在 `refreshOnly` 请求下经 `bridge-transaction.ts` 冒泡成 **500 `bridge-handler-failed`**，而在写事务路径下是本端点的 **500 `rules-failed`**；`refreshOnly` 恰好是客户端刷新规则编辑器 meta 时走的路径。
+- **修法**：① 三处重复收成模块级 `ruleEditorMeta()`（动态 import 仍是一次构造期加载 ＋ ESM 自带缓存，不新增抽象）；② `refreshOnly` 分支把 meta 取值**推迟到组装响应时**，使该失败与其它路径一样落进本端点的 `rules-failed`。**为什么不把 import 挪进 `:165` 那个 try**：那个 catch 的语义是「运行刷新失败」⇒ 返回 **200 ＋ publicationPending**（＝已保存但发布失败），而「编译器不可用」不是可重试的发布问题，落进去会让客户端以为重试有意义。
+- **同轮核验并判定不做的**：`engine/rule-spec.d.mts:78` 的 `lifecycle` 必需 vs `src/shared/rules.ts:75` 可选——**看着像缺陷但不是**：三处内联断言导入的是 `src` 侧那份（`instructions.ts:12`），`src` 的消费面也按可选处理，**两边自洽**；引擎声明那份在这个动态路径上根本没被读（绝对 URL 动态 import 绕过 `.d.mts`），不产生可观察行为。按「不为安全而安全」不改。
+- **记账的覆盖缺口**：`rules-failed` 与 `meta-unavailable` 在 `test/` **各 0 处命中**，`bridge-handler-failed` 仅 1 处（`bridge-contract.test.mjs:238`，通用 handler 异常、非 rules 路径）。本轮**没补回归用例**——要构造需 mock `existsSync` 使 `packageEngineDir()` 的认领判据失败（`module-dirs.ts:44-49` 在模块内直接调用，hook 面大、还牵连 `module-storage` 的路径判据），成本与这条窄可达路径（`engine/rule-spec.mjs` 缺失或损坏）不成比例；**如实登记而非假装覆盖**。
+
 ### S6 复核：实测后判定「不统一加载接口」，顺手修三处文档漂移（2026-10-16）
 
 - **报告的两个前提被实测推翻**：① 「按模块 id 加载引擎模块」的生产点**只有 1 处**——`src/runtime/agent-assembly.ts:121-124`（`join(packageEngineDir(), '<id>.mjs')` ＋ `existsSync`）；`src/index.ts:200` 是**固定文件名** ＋ 相对 `import.meta.url`，不是按 id。② 报告里的「14」是 `engine/compositions/source/local/*.yml` 的文件数，不是 id 加载器能命中的模块数；引擎侧带 `apply` 的模块 **11** 个，其中 3 个的 composition 行由宿主包／cordis group 提供、加载时被静默跳过。

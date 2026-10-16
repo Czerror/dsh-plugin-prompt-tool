@@ -23,6 +23,15 @@ import {
 /** 本域用到的运行时面：只用这些，不加宽（新域照此声明自己的面）。 */
 type InstructionsRuntime = Pick<BridgeRuntime, 'deps' | 'scope' | 'register' | 'gate'>
 
+/**
+ * 规则编辑器元数据（谓词/动作/位置清单）：动态 import 而非静态——`rule-spec.mjs` 是纯 JS，
+ * 静态引入会把整个引擎拖进插件的模块图。ESM 自带缓存，这里每次取值不会重复解析。
+ */
+async function ruleEditorMeta(): Promise<RuleEditorMeta> {
+  const { getRuleEditorMeta } = await import(pathToFileURL(join(packageEngineDir(), 'rule-spec.mjs')).href) as { getRuleEditorMeta: () => RuleEditorMeta }
+  return getRuleEditorMeta()
+}
+
 export function registerInstructions(runtime: InstructionsRuntime): Array<() => void> {
   return [
     runtime.register(BRIDGE_ENDPOINTS.promptConfigs, { handle: async (tx) => {
@@ -161,15 +170,18 @@ export function registerInstructions(runtime: InstructionsRuntime): Array<() => 
       }
       if (record.refreshOnly === true) {
         if (runtime.gate(tx, 'rules').authorize() === undefined) return
-        const { getRuleEditorMeta } = await import(pathToFileURL(join(packageEngineDir(), 'rule-spec.mjs')).href) as { getRuleEditorMeta: () => RuleEditorMeta }
         try { await runtime.deps.overridesChanged?.(basename(dir)) }
         catch (error) {
           const committed = loadModuleDefinition(dir)
-          tx.write(200, { ok: true, value: { rules: committed.rules, revisions: committed.revisions, meta: getRuleEditorMeta(), persisted: true, publicationPending: true, publicationError: `运行刷新失败：${String(error)}` } })
+          const meta = await ruleEditorMeta()
+          tx.write(200, { ok: true, value: { rules: committed.rules, revisions: committed.revisions, meta, persisted: true, publicationPending: true, publicationError: `运行刷新失败：${String(error)}` } })
           return
         }
         const committed = loadModuleDefinition(dir)
-        tx.write(200, { ok: true, value: { rules: committed.rules, revisions: committed.revisions, meta: getRuleEditorMeta(), publicationPending: false } })
+        // meta 在组装响应时才取：编译器不可用时这里的失败与其它路径一样落进本端点的
+        // `rules-failed`，而不是冒泡成 `bridge-handler-failed`（同一端点不该有两种码）。
+        const meta = await ruleEditorMeta()
+        tx.write(200, { ok: true, value: { rules: committed.rules, revisions: committed.revisions, meta, publicationPending: false } })
         return
       }
       const editing = record.edits !== undefined || record.activateRuleId !== undefined
@@ -179,7 +191,6 @@ export function registerInstructions(runtime: InstructionsRuntime): Array<() => 
       }
       let createdRuleId: string | undefined
       try {
-        const { getRuleEditorMeta } = await import(pathToFileURL(join(packageEngineDir(), 'rule-spec.mjs')).href) as { getRuleEditorMeta: () => RuleEditorMeta }
         // 动态 import 之后的写前复检：可写 + 身份都在这里再判一次（豁免不适用，写端点默认核形状）。
         if (runtime.gate(tx, 'rules').inspect(writing) === undefined) return
         const candidate = record.createRule !== undefined
@@ -197,7 +208,7 @@ export function registerInstructions(runtime: InstructionsRuntime): Array<() => 
         if (writing) {
           try { await runtime.deps.overridesChanged?.(basename(dir)) }
           catch (error) {
-            tx.write(200, { ok: true, value: { rules: candidate.rules, revisions: candidate.revisions, meta: getRuleEditorMeta(), ...(createdRuleId === undefined ? {} : { createdRuleId }), persisted: true, publicationPending: true, publicationError: `规则已保存，但运行刷新失败：${String(error)}` } })
+            tx.write(200, { ok: true, value: { rules: candidate.rules, revisions: candidate.revisions, meta: await ruleEditorMeta(), ...(createdRuleId === undefined ? {} : { createdRuleId }), persisted: true, publicationPending: true, publicationError: `规则已保存，但运行刷新失败：${String(error)}` } })
             return
           }
         }
@@ -206,14 +217,13 @@ export function registerInstructions(runtime: InstructionsRuntime): Array<() => 
           tx.write(409, { ok: false, code: 'rules-conflict', message: '重建期间规则再次变化；请重新读取，当前草稿仍保留' })
           return
         }
-        tx.write(200, { ok: true, value: { rules: result.rules, revisions: result.revisions, meta: getRuleEditorMeta(), ...(createdRuleId === undefined ? {} : { createdRuleId }) } })
+        tx.write(200, { ok: true, value: { rules: result.rules, revisions: result.revisions, meta: await ruleEditorMeta(), ...(createdRuleId === undefined ? {} : { createdRuleId }) } })
       } catch (error) {
         if (error instanceof ModuleWriteError) {
           createdRuleId ??= error.createdRuleId
           if (error.persisted) {
             const committed = loadModuleDefinition(dir)
-            const { getRuleEditorMeta } = await import(pathToFileURL(join(packageEngineDir(), 'rule-spec.mjs')).href) as { getRuleEditorMeta: () => RuleEditorMeta }
-            tx.write(200, { ok: true, value: { rules: committed.rules, revisions: committed.revisions, meta: getRuleEditorMeta(), ...(createdRuleId === undefined ? {} : { createdRuleId }), persisted: true, publicationPending: true, publicationError: error.message } })
+            tx.write(200, { ok: true, value: { rules: committed.rules, revisions: committed.revisions, meta: await ruleEditorMeta(), ...(createdRuleId === undefined ? {} : { createdRuleId }), persisted: true, publicationPending: true, publicationError: error.message } })
             return
           }
           tx.write(error.status, { ok: false, code: error.code, message: error.message })
