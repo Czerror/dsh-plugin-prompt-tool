@@ -1,5 +1,13 @@
 # Changelog
 
+### 装配刻度表对齐实际宿主：context 档位补全 7 项、取值改容错口径；NOTE.md 目录说明改正（2026-10-16）
+
+- **触发是 PTC 对照**：用户问「PTC 模式启用是否完整对照官方」→ 逐项核对后，PTC 本身的契约四项全部对齐（`tools:sdk` 段名、`PTC_ONLY` 在 policy 组、`run_code` 保留名三处纪律、以及**不依赖预设的部署级启用路径** `tools` 行的 `config.mode`）；漂移出在两处外围，本轮修掉。
+- **`src/shared/official-orders.ts` 的 context 档位 3 → 7 项**：官方 `CONTEXT_ORDERS` 在安装的 `@deepseek-ai/dsh-system-prompt@0.2.1-alpha.3` 与 registry 最新的 `alpha.4` 都是 7 项（多 `WORKING_DIRECTORY` 100、`TEAM_IDENTITY` 125、`HARNESS_SOURCE` 200、`WEB_SURFACE` 210），本文件原声明 3 项、注释仍写「官方 `CONTEXT_ORDERS`（3 项）」——那是 `0.2.0-rc.1` 的旧基线。section 侧 32 项经逐项核对与 alpha.2／alpha.3／alpha.4 三版一致，未动。
+- **取值口径改为容错**（2026-10-16 用户拍板）：原实现「任一档位名取不到有限数即**整组**返回 undefined」会让旧宿主（`alpha.2` 的 `CONTEXT_ORDERS` 只有 4 项）的刻度**整体消失**——比区间偏窄更糟。改为「取得到值的档位参与 min/max 求界，**一个都取不到**才缺席」：`alpha.2` 得 100–120、`alpha.3+` 得 100–210，两者都是该宿主真实存在的档位区间。代价（已写进注释）：官方**改名**（而非新增）时那个名字会被静默跳过、区间变窄，不再整表缺席。
+- **`NOTE.md` 目录清单改正**：删掉不存在的 `preset/`（原文还列着 `pt-standard`/`pt-ptc`/… 五个预设，而仓库、`package.json#files`、用户 `.agent-presets/` 都没有）与已退役的 `engine/compositions/library/`；`skills/` 那条说反了（`skills/dsh-module/` 确实随包分发，技能**库**才由官方根或用户引用目录提供）；补 `modules/` 一行，并写明预设不随包分发与 PTC 的宿主侧启用归属。
+- **验证**：`typecheck`／`lint`（0/0）／全量 test（**687 pass / 0 fail**，容错口径在 alpha.2 测试依赖下仍正常下发刻度、测试零改动）／`build`／`git diff --check` 全绿。
+
 ### 工具面常驻集纳入 `bash`：Windows 走 `tool-git-bash` 行、POSIX 用官方持久 bash（2026-10-16）
 
 - **起因是用户在自己环境里手工改的模块副本**（`$DSH_HOME\.prompt-tool\modules\tool-surface\`）：它加了 `tool-git-bash` 行并把 `bash` 写进 `allow`，本轮把这份定制同步回随包内置模块与模板。
