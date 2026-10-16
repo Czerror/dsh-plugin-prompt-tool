@@ -1,5 +1,16 @@
 # Changelog
 
+### 工具面常驻集纳入 `bash`：Windows 走 `tool-git-bash` 行、POSIX 用官方持久 bash（2026-10-16）
+
+- **起因是用户在自己环境里手工改的模块副本**（`$DSH_HOME\.prompt-tool\modules\tool-surface\`）：它加了 `tool-git-bash` 行并把 `bash` 写进 `allow`，本轮把这份定制同步回随包内置模块与模板。
+- **内置 `tool-surface`**（`modules/tool-surface/module.yml`）：`modules` 增 `tool-git-bash`、`allow` 增 `bash`、`description` 与首轮 notice 正文同步。notice 新增：`bash` 跑 Git Bash（`bash -c`，每次新进程），命令执行优先用它、Windows 原生工作留 `pwsh`。
+- **刻意不同步 `layerSettings`**（用户拍板）：环境里那份还写了 `layerSettings.tool-pipeline.toolGitBashEnabled: true`，值与能力卡默认相同（组合源也显式 `enabled: true`），但声明它会让模块**覆盖全局开关**、并打破内置模块「只声明 rules/modules」的声明面契约（`test/host/settings-bridge.test.mjs` 断言四个包内模块都不含 `layerSettings`，本轮先被它拦下）。代价是全局关掉该能力时 `allow` 缺 `bash` → 收窄整体 fail-open，这条边界写进了模块注释。
+- **同名两条来源，两侧都不缺名**：`engine/compositions/source/local/tool-git-bash.yml` 自带 `disabled: process.platform !== 'win32'`（官方 PTY 后端在 win32 不可用，改用普通 subprocess 的 Git Bash），POSIX 上由官方持久 bash 提供同名 `bash`。`requireMatch` 因此不会因 `bash` 触发 fail-open。
+- **notice 正文按 Windows 事实写**：POSIX 上「Git Bash / 每命令新进程」不成立，模块注释标明要分平台改文案得另立分支——不为此引入按平台的注入分支。
+- **同步的另两处**：`templates/80-tool-surface.yml` 的 `allow` 与前提注释（模板只带规则、不带 `modules` 声明，用模板建模块要把提供方行自己带进装配）；`engine/tool-search.mjs` 的 `RESIDENT`（模型看到的常驻集清单）。根 `module.yml` 由 `rebuild:module-template` 重新生成。
+- **已启用该模块的用户不会自动拿到**：`ensureModuleSeed` 只补缺失目录，已有副本保持原样；要生效得从模板重建模块，或照改自己那份。
+- **验证**：`typecheck`／`lint`／全量 test（**687 pass / 0 fail**）／`build`／`git diff --check` 全绿，`rebuild:module-template -- --check` 生成物一致。
+
 ### 技能发现文案补两处缺口：空结果指向空参列举、`skill_load` 名字归一（2026-10-16）
 
 - **起因是上一提交的盲测**：两条子代理分别在隔离会话里实测（逐字返回记录已随本轮清理，结论如下），A 覆盖 `skill_load` 六种非法名与 `skill_search` 空结果/空查询共 8 例；B 覆盖四种空结果、空参列举与真名加载注入。**B 的关键发现推翻了「强化段在起作用」的假设**——拦住它「自己去翻技能目录」冲动的，是 `skill_search` 描述里 `call with NO arguments — list every visible skill` 这条**正向入口**；空结果文案本身只把它推向 `skill_load`（它恰恰没有名字）或「问用户」（子代理没有可问的用户）。这与上一提交的判断同向：起作用的是正向入口，不是反禁令。

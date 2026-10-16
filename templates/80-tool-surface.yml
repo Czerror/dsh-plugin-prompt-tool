@@ -17,8 +17,11 @@
 # 解锁的生效时机：`assembly` 在**每个 model step 前**重算，所以解锁在下一步的模型请求里
 # 已经可见，不需要等一整轮对话。首轮起就收窄不影响这一点，只影响第一轮是否先看到完整目录。
 #
-# 工具名必须与**实际装配名**一致。本项目 harness 是 `pwsh`（不是 `bash`）、
-# `edit` + `write`（不是 `str_replace_editor`）。写错名字有两个后果，都很隐蔽：
+# 工具名必须与**实际装配名**一致。本项目 harness 是 `pwsh`、`edit` + `write`（不是
+# `str_replace_editor`）；`bash` 由平台各自提供（Windows 是 `tool-git-bash` 行，POSIX 是
+# 官方持久 bash）。**本模板只带规则、不带 `modules` 声明**：装配里没有提供方时 `bash` 就是
+# 缺失名，`requireMatch` 反过来把整条收窄废掉——用模板建模块时要自己把提供方行带进装配。
+# 写错名字有两个后果，都很隐蔽：
 #   - 写进 allow 的名字不存在 → `requireMatch` 触发 fail-open，**静默暴露完整目录**；
 #   - 该在的没写进去 → 该工具被裁掉，模型只能用别的方式硬凑。
 #
@@ -59,6 +62,8 @@ then:
           - skill_search
           - skill_load
           - tool_search
+          # 平台各自的 bash 名（见上）：装配里没有提供方时这里就是缺失名，收窄整体失效。
+          - bash
         # 解锁项从 tool_search 的持久调用参数回收（{ tool, key } 精确匹配）。
         allowFrom: { tool: tool_search, key: toolNames }
         requireMatch: true

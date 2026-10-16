@@ -38,12 +38,12 @@ const DESC_LIMIT = 90
 const MAX_GROUPS = 24
 
 /** 常驻核心集：由工具面收窄模板声明，这里只在描述里如实告知模型。 */
-const RESIDENT = ['pwsh', 'read', 'write', 'edit', 'glob', 'grep', 'todo_write', 'skill_search', 'skill_load']
+const RESIDENT = ['bash', 'pwsh', 'read', 'write', 'edit', 'glob', 'grep', 'todo_write', 'skill_search', 'skill_load']
 
 /** 参数 schema 由 `shared.mjs` 的统一实现生成（与 `skill-search` 同一份）。 */
 
 /**
- * 能力索引：常驻核心集（pwsh / read / write / edit / glob / grep / todo_write /
+ * 能力索引：常驻核心集（bash / pwsh / read / write / edit / glob / grep / todo_write /
  * skill_search / skill_load）覆盖不到的能力。名字全部取自实测工具面。
  */
 

@@ -20,9 +20,12 @@
 # 就放弃裁剪、暴露完整目录。宁可多给上下文，也不静默裁成空目录——收窄错了会让当前
 # 工作流调不到工具，那是比多花 token 严重得多的故障。
 #
-# 工具名必须与**实际装配名**一致：本项目 harness 是 `pwsh`（不是 `bash`）、
-# `edit` + `write`（不是 `str_replace_editor`）。写错名字的后果很隐蔽——写进 allow 的
-# 名字不存在会触发 requireMatch 的 fail-open，表现为「收窄没生效」而不是报错。
+# 工具名必须与**实际装配名**一致：本项目 harness 是 `pwsh`、`edit` + `write`（不是
+# `str_replace_editor`）。`bash` 由平台各自提供——Windows 是本模块声明的 `tool-git-bash` 行
+# （Git Bash，`bash -c`，普通 subprocess），POSIX 是官方持久 bash；下面 notice 的正文按
+# Windows 事实写，POSIX 上「Git Bash / 每命令新进程」不成立，要分平台改文案得另立分支。
+# 写错名字的后果很隐蔽——写进 allow 的名字不存在会触发 requireMatch 的 fail-open，
+# 表现为「收窄没生效」而不是报错。
 #
 # 停用即回滚：本模块在 config.yml 的 enabled 里删掉即可，重启后工具面完全恢复。
 
@@ -30,12 +33,21 @@ id: tool-surface
 name: 工具面收窄（核心文件与任务集）
 version: 1.0.0
 engineCompat: ">=0.4.2"
-description: 把工具面收窄到常驻核心集（pwsh/read/write/edit/glob/grep/todo_write/skill_search/skill_load/tool_search），其余由 tool_search 按需解锁；解锁名经 allowFrom 从持久 tool/call 参数回收，跨请求与压缩保留。实测工具描述合计 46894 字符。
+description: 把工具面收窄到常驻核心集（bash/pwsh/read/write/edit/glob/grep/todo_write/skill_search/skill_load/tool_search），其余由 tool_search 按需解锁；解锁名经 allowFrom 从持久 tool/call 参数回收，跨请求与压缩保留。实测工具描述合计 46894 字符。
 meta:
   source: manual
 modules:
   - rule-engine
   - tool-search
+  # Windows Git Bash 适配行（engine/compositions/source/local/tool-git-bash.yml）：以 `bash`
+  # 之名注册工具、实际执行 Git Bash（`bash -c`，普通 subprocess，不用 PTY）。该行自带平台
+  # 条件（非 Windows 不装配），POSIX 上的同名 `bash` 由官方持久 bash 提供。
+  # 不声明 layerSettings 覆盖 `toolGitBashEnabled`：能力卡默认就是 true（组合源也显式
+  # enabled: true），写出来只会让本模块覆盖全局开关、并打破内置模块「只声明 rules/modules」
+  # 的声明面契约（test/host/settings-bridge.test.mjs 钉住）。全局关掉该能力时 allow 缺
+  # `bash` → 收窄整体 fail-open，届时恢复开关或把 bash 从 allow 去掉。
+  # timeoutMs(120000) / maxOutputBytes(64000) 取组合源默认；参数桥只覆盖 enabled。
+  - tool-git-bash
 order: 7
 rules:
   - id: tool-surface-resident
@@ -57,6 +69,9 @@ rules:
               - skill_search
               - skill_load
               - tool_search
+              # Git Bash（上面声明的 tool-git-bash 行注册的名字）。收窄器只放行这里列出的名字，
+              # 不写进 allow 的话这行装了也等于没装——这正是「写错名字 = 静默 fail-open」的同一处。
+              - bash
             # 解锁项从 tool_search 的持久调用参数回收（{ tool, key } 精确匹配）。
             allowFrom: { tool: tool_search, key: toolNames }
             requireMatch: true
@@ -88,12 +103,14 @@ rules:
           form: notice
           text: >-
             Tool catalog notice: this session only exposes a resident core set
-            (pwsh, read, write, edit, glob, grep, todo_write, skill_search,
-            skill_load, tool_search). The rest of the catalog is locked to
-            keep each request small. When a task needs a capability outside that
-            set — web search, subagents, task boards, MCP servers, anything not
-            listed — search for it with tool_search and unlock it by exact
-            name instead of making do with a resident tool. Unlocked tools become
+            (bash, pwsh, read, write, edit, glob, grep, todo_write, skill_search,
+            skill_load, tool_search). `bash` runs Git Bash (bash -c, a fresh
+            process); prefer it for command execution and keep pwsh for
+            Windows-native work. The rest of the catalog is locked to keep
+            each request small. When a task needs a capability outside that set
+            — web search, subagents, task boards, MCP servers, anything not
+            listed — search for it with tool_search and unlock it by exact name
+            instead of making do with a resident tool. Unlocked tools become
             callable from the next model request on.
 configOrder:
   tool-surface-resident: 90

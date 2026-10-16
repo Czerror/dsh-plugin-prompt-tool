@@ -112,7 +112,7 @@ test('tool-search：无 agent 照常搜索，目录抛错降级为一行说明�
 
 test('tool-search：描述如实告知常驻集与三种用法', () => {
   const description = recordingCtx(() => catalog).description
-  for (const name of ['pwsh', 'read', 'write', 'edit', 'glob', 'grep', 'todo_write', 'skill_search', 'skill_load']) {
+  for (const name of ['bash', 'pwsh', 'read', 'write', 'edit', 'glob', 'grep', 'todo_write', 'skill_search', 'skill_load']) {
     assert.ok(description.includes(name), `描述应告知常驻工具 ${name}`)
   }
   assert.match(description, /call with NO arguments/, '必须教「空查询看目录」这条路径')

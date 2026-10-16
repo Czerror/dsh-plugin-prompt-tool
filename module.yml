@@ -496,6 +496,7 @@ rules:
               - skill_search
               - skill_load
               - tool_search
+              - bash
             allowFrom:
               tool: tool_search
               key: toolNames
