@@ -449,6 +449,13 @@ src/shared/bridge-contract.ts 同时拥有：
 
 data/bridge-client.ts 提供泛型 bridgeCall(endpoint key, typed body, subject?) 和角色卡专用 bridgeUpload。主语是**每次调用显式携带的实参**（模块 id），没有会话级编辑目标，也不保留上次用到的主语；逐卡规则读写使用所属模块身份。业务组件不得拼接 /bootstrap、/module-delete 等原始路径。新增或改名端点必须同步 shared map、host 注册和契约测试。
 
+**契约字段集 ≠ 运行期接受集（2026-10-16 实测，45 个端点）**：`BridgeRequestMap` 是 **interface**（纯类型，运行期读不到），事务层 `runtime/bridge-transaction.ts` **不做字段校验**（只判「合法 HTTP ＋ JSON 对象」，载荷语义下放 handler）。因此请求顶层字段的实际拒绝面只有 **10/45** 个端点：
+
+- 内联白名单 8 处——`transfer.ts`（assetRelease 断言「恰好 1 键」；exportModule 用 Set）、`params.ts`（moduleVariables）、`lifecycle.ts`（moduleName 读分支；moduleConfigOrder 顶层＋entry 双层＋必填）、`instructions.ts`（rules 八项链）、`definitions.ts`（persona、personaSources）；逐字核对**7 处与契约等价**，唯一差异是 **moduleName 读分支更严**（白名单为空而契约三字段全可选 ⇒ 类型合法的 `{ expectedRevision }` 读请求会被 400 拒）。
+- 集中式 1 处——`bridge-runtime.ts` 的 `IMPORT_REQUEST_FIELDS`（`Record<keyof AssetImportRequest, true>`，与契约**双向绑定**，覆盖两个导入端点）。
+
+**其余 29 个 JSON 端点在运行期静默忽略多余字段**（6 个 `body:'none'` 不解析请求体）。⇒ 给契约加一个字段时：那 10 个端点回 400（白名单未同步）、其余 200 无声（多发的键被丢弃）；**同一次契约变更在不同端点行为相反**，这是已知状态而非缺陷路径——要收紧得先定「哪些端点该严」，故未改（详见 CHANGELOG 的同日条目）。另有两处契约与实现的错位留档：`paramOverrides` 契约声明 `expectedModuleId?` 而 handler 从不读它（只有归属门读）；`triggers` 契约声明 4 字段而端点恒 410。
+
 ### 7.1.1 模块主语策略
 
 `x-module-id` 是**唯一**的目标声明处，`src/shared/bridge-contract.ts` 的 `readSubjectHeader` 把它读成三态：`ok`（合法模块 id）／`absent`（请求头**完全没有**，`undefined`／`null`）／`invalid`（其余一切：空串、纯空白、重复头数组、非字符串、超长、非法字符）。`invalid` 由 `src/runtime/bridge-runtime.ts` 的注册通道（`register` 包装的 route 层）在事务边界之后显式 400 `module-identity-invalid`，**不**降级成「未声明」。以下名单与 `BRIDGE_SUBJECT_POLICY` 同源（`satisfies Record` 强制 46 个端点全覆盖；客户端类型约束与服务端的归属门共用这一张表，桥里不再有第二份端点名单）：

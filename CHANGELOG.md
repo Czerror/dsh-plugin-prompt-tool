@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+### S3／S4 复核：两项都判定不改代码，S4 补一条文档缺口（2026-10-16）
+
+- **S3（BridgeRuntime 按域归属）：实测后判定不改。** ① 23 个成员**没有一个只被 runtime 自己用**（单域直接引用 11／多域 10／仅装配层 2）⇒ 删掉它会分散到 11 个域，**通过 deletion test**；② 11 个域**全部**已声明 `Pick<BridgeRuntime, …>`，人工逐行核对**多声明 0、少声明 0**（「每个域只看到自己需要的面」已经做到）；③ 11 个单域成员里 `capabilityQueue`／`moduleOrderQueue`／`pendingVariableSettings` 是**有状态的真共享点**，搬动要动队列与可变 Map 的生命周期，而 runtime 接口并不缩小（只是换位置）。报告两处描述也不准：`/bootstrap` 实际穿 **4 个 runtime 文件 ＋ host 十个模块**（handler 直用 14 个 BR 出口），不是「两个文件六个 helper」；`params.ts` 直连 host 是 **10/11 个域的普遍形态**。
+- **顺带修掉 S3 取证挖出的一处真冗余**（`src/runtime/routes/params.ts`）：refreshOnly 分支先 `readModuleVariables(dir)` 再用 `{ ...state, ...runtime.variableView(dir) }`——而 `variableView`（`bridge-runtime.ts:767-771`）＝ `readModuleVariables(dir, { writable })` ＋ 两个 publication 字段，**两者返回同一类型、`state` 的每个字段都被整体覆盖**（`state` 比它少两个字段，所以也不可能是「保留 state 独有字段」的设计）。改为在**重试发布之后**取一次 `variableView`：行为等价（变量视图本就在发布重试之后取，那次读等于白读），少一次同步读盘、一次展开与一个只被它用的 import。
+- **S4（端点请求字段单一来源）：实测比报告更严重，判定不改代码、只补文档。** ① 有请求顶层白名单的不是 8 处而是 **9 处 / 10 个端点**（报告漏了 `bridge-runtime.ts:156` 的集中式 `IMPORT_REQUEST_FIELDS`，它是唯一与契约双向绑定的一处）；② 逐字段对照**7 处与契约逐字等价**，唯一差异是 `moduleName` **白名单更严**（读分支 `allowed=[]`，而契约三字段全可选 ⇒ 类型合法的 `{expectedRevision}` 读请求被 400 拒）；③ **35 个端点没有白名单**（6 个 `body:'none'` 不解析请求体，**29 个 JSON 端点静默接受任意多余字段**——实测 `moduleDelete {id:'ghost',bogus:1}` → 200 且模块真被删）。
+  - **为什么不改**：根因不是「双写」，而是**没有任何一层负责「契约字段集 = 运行期接受集」**（主语有 `BRIDGE_SUBJECT_POLICY`、声明面有 `DECLARED_SECTIONS`、形状豁免有 `GATE_POLICY`，请求字段**没有登记表**），事务层明文把载荷语义下放 handler。给 29 个端点补白名单＝新增一层契约 ＋ 把静默接受改成 400（行为变化，且契约没写哪种才对）；删掉那 10 处＝删校验器。两条都按「不为安全而安全」否掉。
+  - **补的文档**（`docs/ui-architecture.md` §7.1）：写明「契约字段集 ≠ 运行期接受集」——10/45 的具体位置、29 个端点静默忽略、以及「给契约加字段时同一次变更在不同端点行为相反」；并留档两处契约错位（`paramOverrides` 契约声明 `expectedModuleId?` 而 handler 从不读、`triggers` 契约声明 4 字段而端点恒 410）。
+- **验证**：`typecheck`（三项目）／`lint` 0/0（313 文件）／全量 **684 pass / 0 fail**／`build`／`git diff --check` 全绿。
+
 ### 修 S6 留档的 L4：`/rules` 不再有两种 500 码（2026-10-16）
 
 - **同一端点的两种失败码（已修）**：`ruleSpec.mjs` 的动态 import 原抄三遍，其中 `refreshOnly` 分支那处**在外层 try 之外**——同一个「引擎编译器不可用」在 `refreshOnly` 请求下经 `bridge-transaction.ts` 冒泡成 **500 `bridge-handler-failed`**，而在写事务路径下是本端点的 **500 `rules-failed`**；`refreshOnly` 恰好是客户端刷新规则编辑器 meta 时走的路径。
