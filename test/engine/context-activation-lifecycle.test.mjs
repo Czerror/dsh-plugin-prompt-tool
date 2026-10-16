@@ -16,7 +16,7 @@ import { isolatedHome } from '../fixtures/host-harness.mjs'
 // 隔离 DSH_HOME 用夹具完成，动态 import 只是本文件的既有写法（paths.ts 已不再 import 期冻结）。
 const { moduleRoot } = isolatedHome('pt-stwb-')
 const { prepareAssembly } = await import('../../src/runtime/agent-assembly.ts')
-const { validateModuleDefinitionText } = await import('../../src/host/module-storage.ts')
+const { validateModuleDefinitionText } = await import('../../src/host/module-slices.ts')
 /** 可见消息与完整日志分离；成功压缩只保留摘要节点。 */
 function visibleSession(id) {
   const log = []

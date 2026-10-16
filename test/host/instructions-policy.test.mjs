@@ -27,7 +27,7 @@ const {
 } = await import('../../src/host/instructions-policy.ts')
 
 /** 子进程持锁用：锁的实现与父进程同源（同一个模块 URL）。 */
-const storageUrl = new URL('../../src/host/module-storage.ts', import.meta.url).href
+const storageUrl = new URL('../../src/host/module-write.ts', import.meta.url).href
 
 let counter = 0
 const newFile = () => {

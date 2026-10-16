@@ -9,7 +9,7 @@
  * 所以写路径不查声明面（见 `module-subject-gate.ts` 的 `subjectGate`）。
  */
 import type { BridgeEndpointKey } from '../shared/bridge-contract.ts'
-import { loadModuleDefinition } from './module-storage.ts'
+import { loadModuleDefinition } from './module-slices.ts'
 
 /**
  * 声明面登记表：端点 → 该端点读写的 `module.yml` 节。数组表示「任一存在即算已声明」。

@@ -5,7 +5,8 @@ import { MODULE_TOOL_NAMES } from '../shared/engine-capabilities.ts'
 import type { InferValue } from '@deepseek-ai/dsh-tools'
 import { editModuleRules, readModuleRules } from '../host/module-rules.ts'
 import type { ModuleRuleEditRequest, ModuleRulesSnapshot } from '../host/module-rules.ts'
-import { loadModuleDefinition, ModuleRulesError } from '../host/module-storage.ts'
+import { loadModuleDefinition } from '../host/module-slices.ts'
+import { ModuleWriteError } from '../host/module-write.ts'
 import { MODULE_ID_PARAM } from '../host/module-tool-target.ts'
 import type { ModuleToolHost } from '../host/module-tool-target.ts'
 import { MAX_BRIDGE_BODY_BYTES } from '../shared/bridge-contract.ts'
@@ -23,8 +24,8 @@ const schema = {
 type Result = InferValue<typeof schema>
 const result = (moduleId: string, state: ModuleRulesSnapshot, status = {}): Result => ({ moduleId, ...state, meta: getRuleEditorMeta(), ...status }) as unknown as Result
 const allowed = (args: object, keys: string[]): void => {
-  if (Object.keys(args).some(key => !keys.includes(key))) throw new ModuleRulesError('规则工具含未知字段')
-  if (Buffer.byteLength(JSON.stringify(args)) > MAX_BRIDGE_BODY_BYTES) throw new ModuleRulesError('规则工具请求超过大小限制')
+  if (Object.keys(args).some(key => !keys.includes(key))) throw new ModuleWriteError('规则工具含未知字段')
+  if (Buffer.byteLength(JSON.stringify(args)) > MAX_BRIDGE_BODY_BYTES) throw new ModuleWriteError('规则工具请求超过大小限制')
 }
 
 export function registerModuleRuleTools(ctx: Context, host: ModuleToolHost): () => void {
@@ -53,8 +54,8 @@ export function registerModuleRuleTools(ctx: Context, host: ModuleToolHost): () 
       output: { schema, render: (_args, value) => [{ type: 'text', text: JSON.stringify(value) }] },
       execute: async (args, exec) => {
         allowed(args, ['moduleId', 'expectedRevisions', 'edits', 'activateRuleId', 'validateOnly', 'refreshOnly'])
-        if (args.refreshOnly === true && (args.edits !== undefined || args.activateRuleId !== undefined || args.validateOnly !== undefined)) throw new ModuleRulesError('refreshOnly 不能混用规则修改或候选校验')
-        if (args.refreshOnly !== true && args.edits === undefined && args.activateRuleId === undefined) throw new ModuleRulesError('规则事务需要 edits 或 activateRuleId')
+        if (args.refreshOnly === true && (args.edits !== undefined || args.activateRuleId !== undefined || args.validateOnly !== undefined)) throw new ModuleWriteError('refreshOnly 不能混用规则修改或候选校验')
+        if (args.refreshOnly !== true && args.edits === undefined && args.activateRuleId === undefined) throw new ModuleWriteError('规则事务需要 edits 或 activateRuleId')
         exec.signal.throwIfAborted()
         const target = host.target(exec, args.moduleId)
         const { moduleId: _id, refreshOnly: _refresh, ...request } = args
@@ -65,7 +66,7 @@ export function registerModuleRuleTools(ctx: Context, host: ModuleToolHost): () 
             : request as unknown as ModuleRuleEditRequest)
         }
         catch (error) {
-          if (!(error instanceof ModuleRulesError) || !error.persisted) throw error
+          if (!(error instanceof ModuleWriteError) || !error.persisted) throw error
           const saved = loadModuleDefinition(target.dir)
           return result(target.id, { rules: saved.rules, revisions: saved.revisions }, { persisted: true, publicationPending: true, publicationError: error.message })
         }

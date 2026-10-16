@@ -8,7 +8,8 @@ import { YAMLMap, parseDocument } from 'yaml'
 import { readPersonaSpec } from '../shared/persona-section.ts'
 import type { PersonaSnapshot, PersonaSpec } from '../shared/persona-section.ts'
 import { engineParamPath, readModuleLayerSettings } from './module-layer-settings.ts'
-import { ModuleRulesError, assertCanonicalRuleSource, commitModuleDefinition, deleteYamlPath, loadModuleDefinition, serializeWithoutSharedAlias, withModuleDefinition as commitDefinitionEdit } from './module-storage.ts'
+import { assertCanonicalRuleSource, commitModuleDefinition, loadModuleDefinition, withModuleDefinition as commitDefinitionEdit } from './module-slices.ts'
+import { ModuleWriteError, deleteYamlPath, serializeWithoutSharedAlias } from './module-write.ts'
 import { assertModuleDirectory } from './module-install.ts'
 import { invalidateModuleSpec } from './module-spec.ts'
 
@@ -52,7 +53,7 @@ export function readModulePersona(moduleDir: string): PersonaSnapshot {
 export function saveModulePersona(moduleRoot: string, templateName: string, persona: PersonaSpec | null, expectedRevision: string): PersonaSnapshot {
   const snapshot = loadModuleDefinition(assertModuleDirectory(moduleRoot, templateName))
   if (typeof expectedRevision !== 'string' || expectedRevision !== snapshot.revision) {
-    throw new ModuleRulesError('模块已更新，请重新读取人设后再保存', 409, 'module-persona-conflict')
+    throw new ModuleWriteError('模块已更新，请重新读取人设后再保存', 409, 'module-persona-conflict')
   }
   const parsed = persona === null ? null : readPersonaSpec(persona)
   if (parsed === undefined) throw new TypeError('persona 必须是对象或 null')
@@ -86,7 +87,7 @@ export function saveModulePersona(moduleRoot: string, templateName: string, pers
 /** 模块文件读-改-写（parseDocument 保留注释与未知键；mutate 内 setIn/deleteIn）。
  *  模块并入与模块管理共用此入口，避免
  *  各自实现 parseDocument 往返。写盘走原子替换，失败保留旧文件。
- *  `owns` 必填且含义见 `module-storage.ts#SHARED_ALIAS_CODE`：mutate 只许碰这些顶层键。 */
+ *  `owns` 必填且含义见 `module-write.ts#SHARED_ALIAS_CODE`：mutate 只许碰这些顶层键。 */
 export function withModuleDefinition(
   moduleDir: string,
   mutate: (doc: ReturnType<typeof parseDocument>, source: Record<string, unknown>) => void,

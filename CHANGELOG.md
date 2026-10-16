@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+### module-storage 按「写事务原语 / 切片投影」拆成两块（2026-10-16）
+
+- **525 行的 `src/host/module-storage.ts` 删除，不留转发层**：`src/host/module-write.ts`（169 行）拥有 **YAML 写事务原语**——跨进程/进程内锁、字节版本摘要（`revisionOf`）、共享引用守卫（`SHARED_ALIAS_CODE`／`serializeWithoutSharedAlias`／`assertUnownedUnchanged`）、`deleteYamlPath`、`withModuleLock` 与写错误协议；`src/host/module-slices.ts`（372 行）拥有**模块定义读写与规则切片投影**——`loadModuleDefinition`／`validateModuleDefinitionText`／`ensureModuleSlices`／`commitModuleDefinition`／`withModuleDefinition`／`readRulesDir`／`lastPublishedModuleDefinition` 与变量／规则标识校验。依赖单向：切片侧 import 事务侧，反向不行。
+- **两侧共用项落事务侧**（`record`、`assertPlain`、`canonicalDirectory`、`moduleLocation`、`directoryKey`、`active`、`processLocks`）：它们没有归属方，切片侧只 import；`module-write.ts` 因此有 14 个导出，其中 7 个是这轮为共用而开放的内部符号（`src/index.ts` 从未再导出本文件，公共面不变）。
+- **`ModuleRulesError` → `ModuleWriteError`**（`this.name` 同步改）：18 个文件改名（src 17、test 1）。**桥上的码名一律未动**——`rules-invalid`／`rules-conflict`／`shared-alias`／`rules-slices-invalid`／`rules-rebuild-failed` 是 wire 契约。
+- **锁目录后缀去 rules**：`lockDirectory` 由 `.<名>.rules-locks` 改为 `.<名>.locks`（如 `.instructions.locks`）；锁语义、token 形状与回收判据一律未动，测试里自拼的锁目录名与 `instructions-policy.ts` 的注释同步。
+- **三个死面删除（不搬）**：`decomposeModule`、`ruleSettingsPath`、`ruleVariablesPath`。核实结论：① `decomposeModule` 自 `29839094` 引入，唯一真实调用者是内置迁移器 `host/rules-migration.ts`，该文件在 `1bf1f679`（移除内置迁移器）整份删除，此后只剩定义与 `module-rules.ts` 的再导出——它是那次移除留下的残骸；② 两个路径函数自 `29839094` 引入起只有 `module-rules.ts` 那一行再导出、从未被调用（逐 revision `git grep` 核实），文件名真值源是 `host/paths.ts:77-78` 的 `RULES_SETTINGS_FILE`／`RULES_VARIABLES_FILE`。
+- **26 个 src 消费者 + 10 个测试文件改指**（跨两侧的 import 拆成两条；`--eval` 子进程里的模块 URL 字符串同步改）；`test/host/module-storage.test.mjs` 随旧文件名一起改为 `test/host/module-slices.test.mjs`（`ui-architecture.md` 测试表同步），注释与文档里指向旧文件名的引用一并改。行为零变化：投影文本、版本值、锁语义、错误码与文案、CAS 判据一字未动。
+- **记账不补的三处覆盖缺口**（本轮只搬家，不扩测试）：`rules-slices-invalid`／`rules-rebuild-failed` 两个码在 `test/` 零命中；`revisionOf` 无直接断言；别名守卫的两个异常分支（`serializeWithoutSharedAlias` 的序列化抛出、`assertUnownedUnchanged` 的 `doc.toJS()` 抛出）无专门用例——既有 `shared-alias` 用例走的都是「比对不等」主路径。
+- **验证**：`rg 'module-storage' src test docs scripts`、`rg 'ModuleRulesError' src test`、`rg 'rules-locks' src test docs`、`rg 'decomposeModule|ruleSettingsPath|ruleVariablesPath' src test` 均零命中；`typecheck`／`lint`（307 文件，0 警告 0 错误）／`git diff --check` 全绿。
+
 ### 服务名单一真值源：挪到引擎侧，两侧引用（2026-10-16）
 
 - **`engine/service-names.mjs` 是服务名唯一真值源**（配套手写 `engine/service-names.d.mts`，只导两个有名导出）：`PRE_STEP_COORDINATOR_SERVICE`（`'promptToolPreStep'`）与 `toolServiceName(engineModuleId)`（`pt-<引擎模块 id>`，前缀留在函数内部）。三处手抄全部收口：引擎侧 `executor.mjs`／`instruction-hint.mjs` 各 1 处 `getService`、四个 `module-{import,rule,memory,variable}-tools.mjs` 各 2 处（`inject` 依赖与 `get` 各一）；插件侧 `src/index.ts` 四个 `provide` 与 `agent-assembly.ts` 的私有服务名派生（原 `` `pt-${id}` ``）；测试侧 `tool-module-mount.test.mjs` 的「模块 id × 服务名」成对表改为用 `toolServiceName(id)` 派生。`pre-step-coordinator.ts` 的常量定义搬走后**原样 re-export**，`src/index.ts` 的公共面与既有消费者不变。

@@ -3,7 +3,8 @@ import { basename, dirname } from 'node:path'
 import { PARAM_KEYS } from '../../config.ts'
 import { readGlobalLayerSettingsSafe, writeGlobalLayerSettings } from '../../host/config-store.ts'
 import { userModulesDir } from '../../host/module-dirs.ts'
-import { loadModuleDefinition, ModuleRulesError } from '../../host/module-storage.ts'
+import { loadModuleDefinition } from '../../host/module-slices.ts'
+import { ModuleWriteError } from '../../host/module-write.ts'
 import { editModuleVariables, readModuleVariables } from '../../host/module-variables.ts'
 import { saveModuleParams } from '../../host/module-definition-edit.ts'
 import { validateEngineParamValues } from '../../shared/engine-params.ts'
@@ -122,7 +123,7 @@ export function registerParams(runtime: ParamsRuntime): Array<() => void> {
       try {
         if (record.refreshOnly === true) {
           if (runtime.gate(tx, 'moduleVariables').authorize() === undefined) return
-          if (typeof record.expectedModuleId !== 'string') throw new ModuleRulesError('刷新变量必须提供 expectedModuleId')
+          if (typeof record.expectedModuleId !== 'string') throw new ModuleWriteError('刷新变量必须提供 expectedModuleId')
           const state = readModuleVariables(dir)
           if (runtime.pendingVariableSettings.has(dir)) {
             try { await runtime.deps.overridesChanged?.(basename(dir)); runtime.pendingVariableSettings.delete(dir) }
@@ -132,17 +133,17 @@ export function registerParams(runtime: ParamsRuntime): Array<() => void> {
           return
         }
         if (record.variables === undefined && record.enabled === undefined) {
-          if (record.expectedRevisions !== undefined) throw new ModuleRulesError('读取变量不接受写入版本')
+          if (record.expectedRevisions !== undefined) throw new ModuleWriteError('读取变量不接受写入版本')
           tx.write(200, { ok: true, value: runtime.variableView(dir) })
           return
         }
         if (runtime.gate(tx, 'moduleVariables').authorize() === undefined) return
-        if (typeof record.expectedModuleId !== 'string') throw new ModuleRulesError('保存变量必须提供 expectedModuleId')
+        if (typeof record.expectedModuleId !== 'string') throw new ModuleWriteError('保存变量必须提供 expectedModuleId')
         // 未声明 variables／variablesEnabled 的模块首次写入＝**创建**：没有前状态就没有可冲突的对象，
         // 允许 `expectedRevisions` 整键缺席——按当次定义的版本补齐（写盘前仍逐键复核，冲突照旧 409）。
         const creating = record.scope === 'module' && record.expectedRevisions === undefined
           && !declaresAny(declarationsOf(dir), ['variables', 'variablesEnabled'])
-        if (!creating && !isRecord(record.expectedRevisions)) throw new ModuleRulesError('保存变量或开关必须提供对应 expectedRevisions')
+        if (!creating && !isRecord(record.expectedRevisions)) throw new ModuleWriteError('保存变量或开关必须提供对应 expectedRevisions')
         const definition = creating ? loadModuleDefinition(dir) : undefined
         const expectedRevisions = definition === undefined
           ? record.expectedRevisions as Partial<ModuleVariableRevisions>
@@ -169,7 +170,7 @@ export function registerParams(runtime: ParamsRuntime): Array<() => void> {
           ...(runtime.pendingVariableSettings.has(dir) ? { publicationError: runtime.pendingVariableSettings.get(dir)! } : {}) } })
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error)
-        tx.write(error instanceof ModuleRulesError ? error.status : 409, { ok: false, code: error instanceof ModuleRulesError ? error.code : 'module-variables-rejected', message: `变量读取或保存失败：${message}` })
+        tx.write(error instanceof ModuleWriteError ? error.status : 409, { ok: false, code: error instanceof ModuleWriteError ? error.code : 'module-variables-rejected', message: `变量读取或保存失败：${message}` })
       }
     } }),
   ]

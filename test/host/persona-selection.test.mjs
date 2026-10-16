@@ -116,7 +116,7 @@ test('人设来源边界：相同选择幂等，跨进程与启用表共享锁�
   writePersonaSources(manualRoot, unchanged.sources, unchanged.revision)
   setModuleEnabled(manualRoot, 'beta', false)
   assert.equal(readFileSync(manualFile, 'utf8'), manual, '相同语义保留手工空格与无末尾换行')
-  const owner = new URL('../../src/host/module-storage.ts', import.meta.url).href
+  const owner = new URL('../../src/host/module-write.ts', import.meta.url).href
   const child = spawn(process.execPath, ['--input-type=module', '--eval', `
     import fs from 'node:fs'; import { withModuleLock } from ${JSON.stringify(owner)};
     withModuleLock(process.argv[1], 'config', () => { fs.writeSync(1, 'locked'); fs.readSync(0, Buffer.alloc(1), 0, 1, null); });

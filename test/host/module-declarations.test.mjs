@@ -15,7 +15,7 @@ import { isolatedHome } from '../fixtures/host-harness.mjs'
 const { moduleRoot } = isolatedHome('pt-module-declarations-')
 const { moduleDeclarations, moduleDeclares, DECLARED_SECTIONS } =
   await import('../../src/host/module-declarations.ts')
-const { ModuleRulesError } = await import('../../src/host/module-storage.ts')
+const { ModuleWriteError } = await import('../../src/host/module-write.ts')
 
 function writeModule(id, body) {
   const dir = join(moduleRoot, id)
@@ -48,7 +48,7 @@ test('登记表：只有模块类端点登记声明面，全局类端点不登�
 test('非法 YAML 抛既有错误，不返回空声明集', () => {
   const broken = writeModule('declares-broken', 'rules: [unclosed\n')
   assert.throws(() => moduleDeclarations(broken), (error) => {
-    assert.ok(error instanceof ModuleRulesError, `既有错误类型，实际 ${error?.name}`)
+    assert.ok(error instanceof ModuleWriteError, `既有错误类型，实际 ${error?.name}`)
     assert.equal(error.code, 'rules-invalid', '用定义校验那条链的既有错误码')
     return true
   }, '解析失败必须是错误，不能当成「没声明」')

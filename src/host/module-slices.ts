@@ -1,13 +1,16 @@
-/** 完整定义是唯一提交点；切片仅从有效定义恢复，全部校验后才发布快照。 */
-import { createHash, randomUUID } from 'node:crypto'
-import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, realpathSync, rmdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
-import { basename, dirname, isAbsolute, join, resolve } from 'node:path'
+/**
+ * 本文件拥有**模块定义读写与规则切片投影**：完整定义是唯一提交点；切片仅从有效定义恢复，全部校验后才发布快照。
+ *
+ * 写事务原语（锁、版本摘要、共享引用守卫、错误协议）来自 `module-write.ts`。
+ */
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync } from 'node:fs'
+import { basename, dirname, isAbsolute, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { isDeepStrictEqual } from 'node:util'
 import { Document, parseDocument } from 'yaml'
 import type { RuleContent, RuleDefinition, RuleRevisions, RuleSettings } from '../shared/rules.ts'
 import { readPersonaSpec } from '../shared/persona-section.ts'
-import { assertModuleDirectory, assertModuleId, canonicalModulesRoot } from './module-install.ts'
+import { assertModuleDirectory } from './module-install.ts'
+import { active, assertPlain, assertUnownedUnchanged, canonicalDirectory, directoryKey, ModuleWriteError, moduleLocation, processLocks, record, revisionOf, withModuleLock } from './module-write.ts'
 import { MODULE_DEFINITION_FILE, RULES_DIR, RULES_SETTINGS_FILE, RULES_VARIABLES_FILE } from './paths.ts'
 import { atomicTemporaryTarget, atomicWriteTextFile } from './text-file.ts'
 import { readModuleLayerSettings } from './module-layer-settings.ts'
@@ -16,8 +19,6 @@ import { assertRuleId, compileRules } from '../../engine/rule-spec.mjs'
 // 保留名由插值器的内建与动态宏目录共同定义。
 import { isReservedInterpolationName } from '../../engine/interpolate.mjs'
 
-const record = (value: unknown): value is Record<string, unknown> => value !== null && typeof value === 'object' && !Array.isArray(value)
-export const revisionOf = (value: string | Uint8Array): string => createHash('sha256').update(value).digest('hex')
 function stable(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(stable)
   return record(value) ? Object.fromEntries(Object.keys(value).sort().map(key => [key, stable(value[key])])) : value
@@ -25,104 +26,28 @@ function stable(value: unknown): unknown {
 const digest = (value: unknown): string => revisionOf(JSON.stringify(stable(value)))
 const yaml = (value: unknown): string => new Document(value).toString()
 
-export class ModuleRulesError extends Error {
-  readonly status: 400 | 403 | 409 | 500
-  readonly code: string
-  readonly persisted: boolean
-  readonly revisions?: RuleRevisions
-  createdRuleId?: string
-  constructor(message: string, status: 400 | 403 | 409 | 500 = 400, code = 'rules-invalid', persisted = false, revisions?: RuleRevisions) {
-    super(message); this.name = 'ModuleRulesError'; this.status = status; this.code = code
-    this.persisted = persisted; this.revisions = revisions
-  }
-}
-
-/**
- * 共享引用被连带改写时的统一错误码。
- *
- * 不变量（本文件是它唯一的家）：**调用方只声明自己要改的键，其余字段必须逐字不变**——
- * YAML 的 anchor/alias 会让一次「只改 A」的编辑同时改掉 B，静默改掉用户没打算动的字段。
- * 两种写法见 {@link serializeWithoutSharedAlias}（声明完整候选）与
- * {@link assertUnownedUnchanged}（改-后-比对）。
- */
-export const SHARED_ALIAS_CODE = 'shared-alias'
-
-/** 未拥有且值真的变了的顶层键（新增与删除都算），供拒绝文案点名。 */
-function changedUnownedKeys(before: Record<string, unknown>, after: Record<string, unknown>, owns: readonly string[]): string[] {
-  const owned = new Set(owns)
-  const keys = new Set([...Object.keys(before), ...Object.keys(after)])
-  return [...keys].filter(key => !owned.has(key) && !isDeepStrictEqual(before[key], after[key]))
-}
-
-const sharedAliasError = (message: string, changed: readonly string[]): ModuleRulesError =>
-  new ModuleRulesError(changed.length === 0 ? message : `${message}（连带改了 ${changed.join('、')}）`, 400, SHARED_ALIAS_CODE)
-
-/**
- * 序列化并要求结果等于调用方声明的完整候选；不等即按共享引用拒绝。
- *
- * `doc.toString()` 与比对同包在一个 try 里是刻意的：别名锚点被移除时序列化本身就会抛，
- * 那同样属于「共享引用」，不能让它冒成 500。诊断（点名连带改动的键）自己也包在 try 里——
- * 文档已不可解析时只报固有文案。
- */
-export function serializeWithoutSharedAlias(doc: ReturnType<typeof parseDocument>, expected: unknown, message: string): string {
-  try {
-    const text = doc.toString()
-    if (!isDeepStrictEqual(doc.toJS(), expected)) throw new Error('shared alias changed')
-    return text
-  } catch {
-    let changed: string[] = []
-    try {
-      changed = changedUnownedKeys(record(expected) ? expected : {}, doc.toJS() as Record<string, unknown>, [])
-    } catch { /* 别名悬空：文档已不可解析，只报固有文案。 */ }
-    throw sharedAliasError(message, changed)
-  }
-}
-
-/**
- * 改-后-比对形态：`owns` 之外的顶层键必须逐字不变。
- *
- * `owns` 是调用方义务而不是类型能检查的东西——少声明的代价是**误拒**（fail-closed，用例会立刻红），
- * 多声明只是守卫变弱；拒绝文案点名被连带改动的键，让前者一眼可诊。`doc.toJS()` 的解析失败
- * （别名悬空）同样按共享引用拒绝。
- */
-export function assertUnownedUnchanged(before: unknown, doc: ReturnType<typeof parseDocument>, owns: readonly string[], message: string): void {
-  let after: Record<string, unknown>
-  try {
-    after = doc.toJS() as Record<string, unknown>
-  } catch {
-    throw sharedAliasError(message, [])
-  }
-  const changed = changedUnownedKeys(record(before) ? before : {}, after, owns)
-  if (changed.length > 0) throw sharedAliasError(message, changed)
-}
-
-/** 父集合缺失时不触发 `deleteIn` 对不存在集合的异常。 */
-export function deleteYamlPath(doc: ReturnType<typeof parseDocument>, path: string[]): void {
-  if (doc.hasIn(path)) doc.deleteIn(path)
-}
-
 /** 两级持久变量共用边界；错误只标识键，不输出变量内容。 */
 export function assertVariableValues(value: unknown): asserts value is Record<string, string> {
-  if (!record(value)) throw new ModuleRulesError('variables 必须是平铺字符串对象')
+  if (!record(value)) throw new ModuleWriteError('variables 必须是平铺字符串对象')
   const entries = Object.entries(value)
-  if (entries.length > 4096) throw new ModuleRulesError('variables 最多允许 4096 个键')
+  if (entries.length > 4096) throw new ModuleWriteError('variables 最多允许 4096 个键')
   let bytes = 0
   for (const [key, item] of entries) {
-    if (typeof item !== 'string') throw new ModuleRulesError('variables 必须是平铺字符串对象')
+    if (typeof item !== 'string') throw new ModuleWriteError('variables 必须是平铺字符串对象')
     if (key.length === 0 || key !== key.trim() || Buffer.byteLength(key) > 256
-      || ['__proto__', 'constructor', 'prototype'].includes(key) || isReservedInterpolationName(key)) throw new ModuleRulesError(`变量名非法或保留：${key}`)
+      || ['__proto__', 'constructor', 'prototype'].includes(key) || isReservedInterpolationName(key)) throw new ModuleWriteError(`变量名非法或保留：${key}`)
     const size = Buffer.byteLength(item)
-    if (size > 1024 * 1024) throw new ModuleRulesError(`变量值超过 1 MiB：${key}`)
+    if (size > 1024 * 1024) throw new ModuleWriteError(`变量值超过 1 MiB：${key}`)
     bytes += Buffer.byteLength(key) + size
   }
-  if (bytes > 4 * 1024 * 1024) throw new ModuleRulesError('variables 总量超过 4 MiB')
+  if (bytes > 4 * 1024 * 1024) throw new ModuleWriteError('variables 总量超过 4 MiB')
 }
 
 /** 文件身份校验不依赖操作系统是否区分大小写。 */
 export function assertRuleFileId(id: unknown): asserts id is string {
   assertRuleId(id)
   if (typeof id !== 'string' || id.startsWith('_') || id.toLowerCase() === 'variables'
-    || /^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i.test(id) || /[. ]$/.test(id)) throw new ModuleRulesError(`规则标识是保留文件名：${String(id)}`)
+    || /^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i.test(id) || /[. ]$/.test(id)) throw new ModuleWriteError(`规则标识是保留文件名：${String(id)}`)
 }
 
 /**
@@ -133,11 +58,11 @@ export function assertRuleFileId(id: unknown): asserts id is string {
  * 语法迁移不在产品内提供——用户自行改写 `rules`，或交给内置技能由模型完成。
  */
 export function assertCanonicalRuleSource(source: unknown): asserts source is Record<string, unknown> {
-  if (!record(source)) throw new ModuleRulesError('module.yml 必须是对象')
-  if (source.rules !== undefined && !Array.isArray(source.rules)) throw new ModuleRulesError('module.yml.rules 必须是数组')
+  if (!record(source)) throw new ModuleWriteError('module.yml 必须是对象')
+  if (source.rules !== undefined && !Array.isArray(source.rules)) throw new ModuleWriteError('module.yml.rules 必须是数组')
   const retired = ['character-tools', 'world-book-tools', 'session-var-tools']
   const names = [...(Array.isArray(source.modules) ? source.modules : []), ...Object.keys(record(source.moduleConfigs) ? source.moduleConfigs : {})]
-  if (names.some(name => retired.includes(String(name)))) throw new ModuleRulesError('旧角色/世界书/会话变量能力已退役；请重新导入或显式转换为模块工具')
+  if (names.some(name => retired.includes(String(name)))) throw new ModuleWriteError('旧角色/世界书/会话变量能力已退役；请重新导入或显式转换为模块工具')
 }
 
 export function rulePromptConfigOptions(directory: string, strategy?: unknown) {
@@ -178,22 +103,22 @@ function projection(source: Record<string, unknown>, directory: string, sourceRe
   const rules = (source.rules ?? []) as RuleDefinition[]
   const seen = new Set<string>()
   for (const rule of rules) {
-    if (!record(rule)) throw new ModuleRulesError('规则必须是对象')
+    if (!record(rule)) throw new ModuleWriteError('规则必须是对象')
     assertRuleFileId(rule.id)
     const key = rule.id.toLowerCase()
-    if (seen.has(key)) throw new ModuleRulesError(`规则文件名重复或大小写冲突：${rule.id}`)
+    if (seen.has(key)) throw new ModuleWriteError(`规则文件名重复或大小写冲突：${rule.id}`)
     seen.add(key)
   }
-  if (source.configOrder !== undefined && !record(source.configOrder)) throw new ModuleRulesError('configOrder 必须是对象')
+  if (source.configOrder !== undefined && !record(source.configOrder)) throw new ModuleWriteError('configOrder 必须是对象')
   const order = (source.configOrder ?? {}) as Record<string, number>
   for (const [id, sequence] of Object.entries(order)) {
     assertRuleFileId(id)
-    if (!Number.isSafeInteger(sequence) || sequence < 0) throw new ModuleRulesError(`规则 ${id} 的顺序必须是非负安全整数`)
+    if (!Number.isSafeInteger(sequence) || sequence < 0) throw new ModuleWriteError(`规则 ${id} 的顺序必须是非负安全整数`)
   }
   if (source.variables !== undefined) assertVariableValues(source.variables)
-  if (source.variablesEnabled !== undefined && typeof source.variablesEnabled !== 'boolean') throw new ModuleRulesError('variablesEnabled 必须是布尔值')
-  if (source.stWorldBookRecursive !== undefined) throw new ModuleRulesError('stWorldBookRecursive 已退役；请重新导入或显式转换为 contextActivationRecursive')
-  if (source.contextActivationRecursive !== undefined && typeof source.contextActivationRecursive !== 'boolean') throw new ModuleRulesError('contextActivationRecursive 必须是布尔值')
+  if (source.variablesEnabled !== undefined && typeof source.variablesEnabled !== 'boolean') throw new ModuleWriteError('variablesEnabled 必须是布尔值')
+  if (source.stWorldBookRecursive !== undefined) throw new ModuleWriteError('stWorldBookRecursive 已退役；请重新导入或显式转换为 contextActivationRecursive')
+  if (source.contextActivationRecursive !== undefined && typeof source.contextActivationRecursive !== 'boolean') throw new ModuleWriteError('contextActivationRecursive 必须是布尔值')
   const variables = structuredClone((source.variables ?? {}) as Record<string, string>)
   const variablesEnabled = source.variablesEnabled !== false
   const configs = record(source.moduleConfigs) ? source.moduleConfigs : {}
@@ -203,7 +128,7 @@ function projection(source: Record<string, unknown>, directory: string, sourceRe
     persona = readPersonaSpec(source.persona)
     compileRules(rules, { moduleId: basename(directory), configOrder: order, variables, variablesEnabled,
       promptConfigOptions: { ...rulePromptConfigOptions(directory, options.strategyDir), ...(validation.loadTemplate === undefined ? {} : { loadTemplate: validation.loadTemplate }) } })
-  } catch (error) { throw new ModuleRulesError(String((error as Error).message ?? error)) }
+  } catch (error) { throw new ModuleWriteError(String((error as Error).message ?? error)) }
   const contents: RuleContent[] = []
   const settings: Record<string, RuleSettings> = Object.create(null)
   const files: Record<string, string> = Object.create(null)
@@ -214,7 +139,7 @@ function projection(source: Record<string, unknown>, directory: string, sourceRe
     contents.push(content)
     const sequence = order[rule.id] ?? tail
     if (order[rule.id] === undefined) tail += 10
-    if (!Number.isSafeInteger(sequence)) throw new ModuleRulesError('规则顺序超出安全整数范围')
+    if (!Number.isSafeInteger(sequence)) throw new ModuleWriteError('规则顺序超出安全整数范围')
     settings[rule.id] = { order: sequence, ...(enabled === undefined ? {} : { enabled }), ...(group === undefined ? {} : { group }), ...(exclusive === undefined ? {} : { exclusive }) }
     files[`${rule.id}.yml`] = yaml(content)
     ruleRevisions[rule.id] = digest(content)
@@ -229,10 +154,10 @@ function projection(source: Record<string, unknown>, directory: string, sourceRe
 
 function snapshotFromText(dir: string, text: string, validation: ModuleDefinitionValidationOptions = {}): ModuleDefinitionSnapshot {
   const doc = parseDocument(text, { logLevel: 'silent' })
-  if (doc.errors.length > 0) throw new ModuleRulesError(`模块 YAML 无法解析：${doc.errors[0]!.message}`)
+  if (doc.errors.length > 0) throw new ModuleWriteError(`模块 YAML 无法解析：${doc.errors[0]!.message}`)
   const source: unknown = doc.toJS()
   assertCanonicalRuleSource(source)
-  if (source.id !== undefined && source.id !== basename(dir)) throw new ModuleRulesError('模块定义身份不匹配')
+  if (source.id !== undefined && source.id !== basename(dir)) throw new ModuleWriteError('模块定义身份不匹配')
   readModuleLayerSettings(source)
   const revision = revisionOf(text)
   const projected = projection(source, dir, revision, validation)
@@ -248,20 +173,13 @@ export const validateModuleDefinitionText = (directory: string, text: string, op
 export function loadModuleDefinition(directory: string): ModuleDefinitionSnapshot {
   let dir: string
   try { const canonical = canonicalDirectory(directory); dir = assertModuleDirectory(dirname(canonical), basename(canonical)) }
-  catch (error) { throw new ModuleRulesError(String((error as Error).message ?? error)) }
+  catch (error) { throw new ModuleWriteError(String((error as Error).message ?? error)) }
   const bytes = readFileSync(join(dir, MODULE_DEFINITION_FILE))
   return snapshotFromText(dir, new TextDecoder('utf-8', { fatal: true }).decode(bytes))
 }
 
-export const ruleSettingsPath = (directory: string): string => join(directory, RULES_DIR, RULES_SETTINGS_FILE)
-export const ruleVariablesPath = (directory: string): string => join(directory, RULES_DIR, RULES_VARIABLES_FILE)
-
-function assertPlain(path: string, directory = false): void {
-  const stat = lstatSync(path)
-  if (stat.isSymbolicLink() || (directory ? !stat.isDirectory() : !stat.isFile())) throw new ModuleRulesError(`规则切片路径不是普通${directory ? '目录' : '文件'}：${path}`)
-}
 function assertSource(snapshot: ModuleDefinitionSnapshot): void {
-  if (assertModuleDirectory(dirname(snapshot.dir), basename(snapshot.dir)) !== snapshot.dir || revisionOf(readFileSync(snapshot.file)) !== snapshot.revision) throw new ModuleRulesError('写入前模块再次变化，请重新读取', 409, 'rules-conflict')
+  if (assertModuleDirectory(dirname(snapshot.dir), basename(snapshot.dir)) !== snapshot.dir || revisionOf(readFileSync(snapshot.file)) !== snapshot.revision) throw new ModuleWriteError('写入前模块再次变化，请重新读取', 409, 'rules-conflict')
 }
 /** 与 removeInterruptedWrites 同源：只认 atomicWriteTextFile 的精确 UUID 临时名，不是用户素材。 */
 function isRulesTemporary(filename: string): boolean {
@@ -281,12 +199,12 @@ function readProjection(snapshot: ModuleDefinitionSnapshot): Projection {
   const files = readdirSync(dir)
   for (const file of Object.keys(expected.files)) {
     const path = join(dir, file)
-    if (!files.includes(file)) throw new ModuleRulesError(`规则切片缺失：${file}`, 409, 'rules-slices-invalid')
+    if (!files.includes(file)) throw new ModuleWriteError(`规则切片缺失：${file}`, 409, 'rules-slices-invalid')
     assertPlain(path)
-    if (readFileSync(path, 'utf8') !== expected.files[file]) throw new ModuleRulesError(`规则切片与完整定义失配：${file}`, 409, 'rules-slices-invalid')
+    if (readFileSync(path, 'utf8') !== expected.files[file]) throw new ModuleWriteError(`规则切片与完整定义失配：${file}`, 409, 'rules-slices-invalid')
   }
   // 中断写入残留的临时文件不是用户素材，仍触发恢复路径（清临时名 + 回收死锁目录）。
-  if (files.some(isRulesTemporary)) throw new ModuleRulesError('规则目录含中断写入残留', 409, 'rules-slices-invalid')
+  if (files.some(isRulesTemporary)) throw new ModuleWriteError('规则目录含中断写入残留', 409, 'rules-slices-invalid')
   assertSource(snapshot)
   return expected
 }
@@ -299,22 +217,6 @@ export function readRulesDir(directory: string) {
   return result
 }
 
-function canonicalDirectory(directory: string): string {
-  const absolute = resolve(directory)
-  assertPlain(dirname(absolute), true)
-  assertPlain(absolute, true)
-  return realpathSync(absolute)
-}
-function moduleLocation(directory: string): string {
-  const absolute = resolve(directory)
-  if (existsSync(absolute)) return canonicalDirectory(absolute)
-  const id = process.platform === 'win32' ? basename(absolute).toLowerCase() : basename(absolute)
-  assertModuleId(id)
-  return join(canonicalModulesRoot(dirname(absolute)), id)
-}
-const directoryKey = (directory: string): string => process.platform === 'win32' ? directory.toLowerCase() : directory
-const lockDirectory = (directory: string): string => join(dirname(directory), '.' + basename(directory) + '.rules-locks')
-const active = new Set<string>()
 // 仅保留不可变原文；调用方改动 doc/source/rules 不会污染最后已验证快照。
 const published = new Map<string, { dir: string; text: string }>()
 const publish = (snapshot: ModuleDefinitionSnapshot): void => { published.set(directoryKey(snapshot.dir), { dir: snapshot.dir, text: snapshot.text }) }
@@ -325,59 +227,6 @@ export function lastPublishedModuleDefinition(directory: string): ModuleDefiniti
   assertPlain(join(dir, MODULE_DEFINITION_FILE))
   const previous = published.get(directoryKey(dir))
   return previous === undefined ? undefined : snapshotFromText(previous.dir, previous.text)
-}
-const busy = (): ModuleRulesError => new ModuleRulesError('模块保存或恢复正在进行，请重试', 409, 'rules-conflict')
-
-/** 活 PID 永不按超时夺锁；每个进程文件有唯一 token，回收死锁不会误删新持有者。 */
-function processLocks(directory: string, own?: string, recover = false): boolean {
-  const locks = lockDirectory(directory)
-  let names: string[]
-  try { assertPlain(locks, true); names = readdirSync(locks) }
-  catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return false; throw error }
-  let occupied = false
-  for (const name of names) {
-    if (name === own) continue
-    const match = /^([1-9][0-9]*)-([a-f0-9-]{36})\.lock$/.exec(name)
-    if (!match) throw new ModuleRulesError('模块锁目录含未知文件，拒绝自动清理', 409, 'rules-conflict')
-    const path = join(locks, name)
-    try { assertPlain(path) } catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') continue; throw error }
-    let live = true
-    try { process.kill(Number(match[1]), 0) }
-    catch (error) { if ((error as NodeJS.ErrnoException).code === 'ESRCH') live = false }
-    if (live) occupied = true
-    else if (recover) rmSync(path, { force: true })
-  }
-  return occupied
-}
-
-/** 保存与目录安装共享 root/id 锁；目标可以尚未创建或暂时位于交换备份。 */
-export function withModuleLock<T>(root: string, id: string, action: () => T): T {
-  assertModuleId(id)
-  const dir = join(canonicalModulesRoot(root), id), key = directoryKey(dir)
-  if (active.has(key)) throw busy()
-  const locks = lockDirectory(dir)
-  const token = process.pid + '-' + randomUUID() + '.lock'
-  const file = join(locks, token)
-  for (let attempt = 0; ; attempt++) {
-    try {
-      mkdirSync(locks, { recursive: true })
-      assertPlain(locks, true)
-      writeFileSync(file, JSON.stringify({ pid: process.pid, token }), { flag: 'wx', encoding: 'utf8' })
-      break
-    } catch (error) {
-      // 其他持有者刚释放空目录；未创建 token 时安全重试，绝不递归删除锁目录。
-      if ((error as NodeJS.ErrnoException).code !== 'ENOENT' || attempt === 2) throw error
-    }
-  }
-  try {
-    if (processLocks(dir, token, true)) throw busy()
-    active.add(key)
-    return action()
-  } finally {
-    active.delete(key)
-    rmSync(file, { force: true })
-    try { rmdirSync(locks) } catch { /* 并发 token 或未知文件留下目录，不扩大清理范围。 */ }
-  }
 }
 
 function coordinated<T>(directory: string, action: () => T): T {
@@ -451,7 +300,7 @@ export function ensureModuleSlices(directory: string, options: { writable?: bool
     if (!active.has(key) && !processLocks(dir)) return undefined
     const previous = published.get(key)
     if (previous) return snapshotFromText(previous.dir, previous.text)
-    throw new ModuleRulesError('模块尚无已验证快照，保存或恢复正在进行', 409, 'rules-conflict')
+    throw new ModuleWriteError('模块尚无已验证快照，保存或恢复正在进行', 409, 'rules-conflict')
   }
   const running = inProgress()
   if (running) return running
@@ -467,20 +316,18 @@ export function ensureModuleSlices(directory: string, options: { writable?: bool
     } catch (error) {
       const writing = inProgress()
       if (writing) return writing
-      if (error instanceof ModuleRulesError && error.code === 'rules-conflict') throw error
+      if (error instanceof ModuleWriteError && error.code === 'rules-conflict') throw error
     }
   }
   return coordinated(snapshot.dir, () => {
     // 同步提交在进程内串行；外部源修改在发布前再次复核，最多重读一次。
     for (let attempt = 0; attempt < 2; attempt++) {
       try { return recoverCurrent(snapshot.dir) }
-      catch (error) { if (!(error instanceof ModuleRulesError) || error.code !== 'rules-conflict' || attempt === 1) throw error }
+      catch (error) { if (!(error instanceof ModuleWriteError) || error.code !== 'rules-conflict' || attempt === 1) throw error }
     }
-    throw new ModuleRulesError('规则切片恢复失败')
+    throw new ModuleWriteError('规则切片恢复失败')
   })
 }
-
-export const decomposeModule = (directory: string): ModuleDefinitionSnapshot => ensureModuleSlices(directory, { force: true })
 
 /** 唯一保存顺序：正文/变量 → module.yml 原子提交 → 状态清单 → 校验发布。 */
 export function commitModuleDefinition(snapshot: ModuleDefinitionSnapshot, next: string | ReturnType<typeof parseDocument>): ModuleDefinitionSnapshot {
@@ -501,8 +348,8 @@ export function commitModuleDefinition(snapshot: ModuleDefinitionSnapshot, next:
       let recovered: ModuleDefinitionSnapshot | undefined
       try { recovered = recoverCurrent(snapshot.dir) } catch { /* 保留最后已验证运行快照；下次 ensure 继续单向恢复。 */ }
       if (persisted && recovered) return recovered
-      if (error instanceof ModuleRulesError && !persisted) throw new ModuleRulesError(error.message, error.status, error.code, false, recovered?.revisions ?? snapshot.revisions)
-      throw new ModuleRulesError(`${persisted ? '模块已保存，但规则切片发布失败' : '模块未保存，规则切片写入失败'}：${String((error as Error).message ?? error)}`, 500, 'rules-rebuild-failed', persisted, recovered?.revisions ?? (persisted ? candidate.revisions : snapshot.revisions))
+      if (error instanceof ModuleWriteError && !persisted) throw new ModuleWriteError(error.message, error.status, error.code, false, recovered?.revisions ?? snapshot.revisions)
+      throw new ModuleWriteError(`${persisted ? '模块已保存，但规则切片发布失败' : '模块未保存，规则切片写入失败'}：${String((error as Error).message ?? error)}`, 500, 'rules-rebuild-failed', persisted, recovered?.revisions ?? (persisted ? candidate.revisions : snapshot.revisions))
     }
   })
 }

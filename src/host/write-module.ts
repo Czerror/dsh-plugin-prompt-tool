@@ -11,7 +11,8 @@ import { assertCompositionArray } from './module-composition.ts'
 import { resolveModuleDir } from './module-dirs.ts'
 import { renderComposition } from './module-params.ts'
 import type { ModuleSpec } from './module-spec.ts'
-import { ensureModuleSlices, loadModuleDefinition, validateModuleDefinitionText, withModuleLock, ModuleRulesError } from './module-storage.ts'
+import { ensureModuleSlices, loadModuleDefinition, validateModuleDefinitionText } from './module-slices.ts'
+import { ModuleWriteError, withModuleLock } from './module-write.ts'
 import { atomicWriteTextFile } from './text-file.ts'
 import { directoryVersionOf } from './preview-revision.ts'
 
@@ -119,7 +120,7 @@ export function writeModule(options: WriteModuleOptions): string {
     if (options.stageOnly) return candidate
     withModuleLock(root, targetId, () => {
       assertModuleDirectory(root, targetId, true)
-      if (directoryVersionOf(target) !== targetVersion) throw new ModuleRulesError('模块安装期间目标已变化，未覆盖', 409, 'rules-conflict')
+      if (directoryVersionOf(target) !== targetVersion) throw new ModuleWriteError('模块安装期间目标已变化，未覆盖', 409, 'rules-conflict')
       const backup = join(stageRoot, 'previous')
       const hadTarget = existsSync(target)
       if (hadTarget) renameSync(target, backup)

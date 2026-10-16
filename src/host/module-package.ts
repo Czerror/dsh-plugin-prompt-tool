@@ -16,7 +16,8 @@ import { projectCharacterMemories } from './characters.ts'
 import { writeModule } from './write-module.ts'
 import { assertModuleId, assertModuleTree, assertModuleDirectory, canonicalModulesRoot, modulePathExists, setModuleDefinitionId } from './module-install.ts'
 import { ruleInjections } from './rule-content.ts'
-import { validateModuleDefinitionText, withModuleLock } from './module-storage.ts'
+import { validateModuleDefinitionText } from './module-slices.ts'
+import { withModuleLock } from './module-write.ts'
 
 const MANIFEST = 'prompt-tool-package.json'
 const PACKAGE_VERSION = 1

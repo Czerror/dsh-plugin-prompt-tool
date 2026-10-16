@@ -4,7 +4,8 @@ import { readPersonaSources, writePersonaSources } from '../../host/persona-sele
 import { userModulesDir } from '../../host/module-dirs.ts'
 import { readModulePersona, saveModulePersona, withModuleDefinition } from '../../host/module-definition-edit.ts'
 import { loadModuleSpec } from '../../host/module-spec.ts'
-import { loadModuleDefinition, ModuleRulesError } from '../../host/module-storage.ts'
+import { loadModuleDefinition } from '../../host/module-slices.ts'
+import { ModuleWriteError } from '../../host/module-write.ts'
 import { appendModuleCapabilities, createModuleCapability, removeModuleCapability } from '../../host/module-capabilities.ts'
 import { validateCustomTools } from '../../host/custom-tools.ts'
 import { MODULE_ACTIVATION_FAILED, BRIDGE_ENDPOINTS } from '../../shared/bridge-contract.ts'
@@ -78,9 +79,9 @@ export function registerDefinitions(runtime: DefinitionsRuntime): Array<() => vo
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error)
         // 全桥统一规则：host 分类优先（如 shared-alias），端点码只兜底——与 /persona 同形。
-        tx.write(error instanceof ModuleRulesError ? error.status : 409, {
+        tx.write(error instanceof ModuleWriteError ? error.status : 409, {
           ok: false,
-          code: error instanceof ModuleRulesError ? error.code : 'custom-tools-rejected',
+          code: error instanceof ModuleWriteError ? error.code : 'custom-tools-rejected',
           message: `自定义工具保存失败：${message}`,
         })
       }
@@ -125,13 +126,13 @@ export function registerDefinitions(runtime: DefinitionsRuntime): Array<() => vo
         }
         tx.write(200, { ok: true, value: { ...saved, persisted: true, publicationPending: false } })
       } catch (error) {
-        if (error instanceof ModuleRulesError && error.persisted) {
+        if (error instanceof ModuleWriteError && error.persisted) {
           tx.write(200, { ok: true, value: { ...readModulePersona(dir), persisted: true, publicationPending: true, publicationError: error.message } })
           return
         }
         const message = error instanceof Error ? error.message : String(error)
-        tx.write(error instanceof ModuleRulesError ? error.status : error instanceof TypeError ? 400 : 409,
-          { ok: false, code: error instanceof ModuleRulesError ? error.code : 'module-persona-rejected', message: `人设读取或保存失败：${message}` })
+        tx.write(error instanceof ModuleWriteError ? error.status : error instanceof TypeError ? 400 : 409,
+          { ok: false, code: error instanceof ModuleWriteError ? error.code : 'module-persona-rejected', message: `人设读取或保存失败：${message}` })
       }
     } }),
     runtime.register(BRIDGE_ENDPOINTS.personaSources, { handle: async (tx) => {
@@ -162,8 +163,8 @@ export function registerDefinitions(runtime: DefinitionsRuntime): Array<() => vo
         }
         tx.write(200, { ok: true, value: { ...saved, persisted: true, publicationPending: false } })
       } catch (error) {
-        tx.write(error instanceof ModuleRulesError ? error.status : error instanceof TypeError ? 400 : 409,
-          { ok: false, code: error instanceof ModuleRulesError ? error.code : 'persona-sources-rejected', message: error instanceof Error ? error.message : String(error) })
+        tx.write(error instanceof ModuleWriteError ? error.status : error instanceof TypeError ? 400 : 409,
+          { ok: false, code: error instanceof ModuleWriteError ? error.code : 'persona-sources-rejected', message: error instanceof Error ? error.message : String(error) })
       }
     } }),
     runtime.register(BRIDGE_ENDPOINTS.moduleCapability, { handle: async (tx) => {
@@ -189,7 +190,7 @@ export function registerDefinitions(runtime: DefinitionsRuntime): Array<() => vo
           if (result.changed && !await runtime.finishModuleChange(tx.write, () => runtime.deps.capabilityChanged?.(basename(dir)))) return
           tx.write(200, { ok: true, value: result })
         } catch (error) {
-          if (error instanceof ModuleRulesError && error.persisted) {
+          if (error instanceof ModuleWriteError && error.persisted) {
             tx.write(500, { ok: false, code: MODULE_ACTIVATION_FAILED, message: `能力变更已保存，但切片未发布；请重试刷新：${error.message}` })
             return
           }

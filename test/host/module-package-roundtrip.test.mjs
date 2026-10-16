@@ -9,7 +9,7 @@ import { isolatedHome } from '../fixtures/host-harness.mjs'
 
 const { moduleRoot } = isolatedHome('pt-package-roundtrip-')
 const { moduleImportPreview, installModulePackage, exportModulePackage, expandModuleSource } = await import('../../src/host/module-package.ts')
-const { ensureModuleSlices, readRulesDir } = await import('../../src/host/module-storage.ts')
+const { ensureModuleSlices, readRulesDir } = await import('../../src/host/module-slices.ts')
 const { decodeAssetFile } = await import('../../src/host/import-source.ts')
 const { mergeModuleIntoModule, removeMergedModule } = await import('../../src/host/characters.ts')
 const { ruleInjections } = await import('../../src/host/rule-content.ts')

@@ -4,7 +4,8 @@ import { defineTool } from '@deepseek-ai/dsh-tools'
 import { MODULE_TOOL_NAMES } from '../shared/engine-capabilities.ts'
 import { editModuleVariables, readModuleVariables } from '../host/module-variables.ts'
 import type { ModuleVariableRevisions, ModuleVariablesResult } from '../host/module-variables.ts'
-import { assertVariableValues, ModuleRulesError } from '../host/module-storage.ts'
+import { assertVariableValues } from '../host/module-slices.ts'
+import { ModuleWriteError } from '../host/module-write.ts'
 import { MODULE_ID_PARAM } from '../host/module-tool-target.ts'
 import type { ModuleToolHost } from '../host/module-tool-target.ts'
 
@@ -37,16 +38,16 @@ export function registerModuleVariableTools(ctx: Context, host: Pick<ModuleToolH
       render: (_args, value) => [{ type: 'text', text: JSON.stringify(value) }],
     },
     execute: async (args, exec) => {
-      if (Object.keys(args).some(key => !['moduleId', 'scope', 'action', 'key', 'value', 'expectedRevisions'].includes(key))) throw new ModuleRulesError('变量工具含未知字段')
+      if (Object.keys(args).some(key => !['moduleId', 'scope', 'action', 'key', 'value', 'expectedRevisions'].includes(key))) throw new ModuleWriteError('变量工具含未知字段')
       const writing = args.action === 'set' || args.action === 'delete'
-      if (args.action === 'list' && args.key !== undefined || args.action !== 'set' && args.value !== undefined) throw new ModuleRulesError('该变量操作不接受 key 或 value')
-      if (!writing && args.expectedRevisions !== undefined) throw new ModuleRulesError('读取变量不接受写入版本')
+      if (args.action === 'list' && args.key !== undefined || args.action !== 'set' && args.value !== undefined) throw new ModuleWriteError('该变量操作不接受 key 或 value')
+      if (!writing && args.expectedRevisions !== undefined) throw new ModuleWriteError('读取变量不接受写入版本')
       if (args.action !== 'list') {
-        if (typeof args.key !== 'string') throw new ModuleRulesError('变量操作需要 key')
+        if (typeof args.key !== 'string') throw new ModuleWriteError('变量操作需要 key')
         assertVariableValues({ [args.key]: '' })
       }
-      if (args.action === 'set' && typeof args.value !== 'string') throw new ModuleRulesError('set 必须显式提供字符串 value；空串是有效值')
-      if (writing && args.expectedRevisions === undefined) throw new ModuleRulesError('写变量必须提供 expectedRevisions')
+      if (args.action === 'set' && typeof args.value !== 'string') throw new ModuleWriteError('set 必须显式提供字符串 value；空串是有效值')
+      if (writing && args.expectedRevisions === undefined) throw new ModuleWriteError('写变量必须提供 expectedRevisions')
       exec.signal.throwIfAborted()
       const target = host.target(exec, args.moduleId)
       let saved: ModuleVariablesResult | undefined

@@ -5,7 +5,7 @@ import { removeUserModule } from '../../host/module-capabilities.ts'
 import { moduleDirExists, userModulesDir } from '../../host/module-dirs.ts'
 import { appendModuleConfigOrder, readModuleConfigOrder, saveModuleConfigOrder } from '../../host/module-config-order.ts'
 import { ModuleNameError, readModuleName, writeModuleName } from '../../host/module-name.ts'
-import { ModuleRulesError } from '../../host/module-storage.ts'
+import { ModuleWriteError } from '../../host/module-write.ts'
 import { enabledModuleIds, setModuleEnabled } from '../../host/config-store.ts'
 import type { ModuleConfigIdentity } from '../../shared/module-config-order.ts'
 import { BRIDGE_ENDPOINTS, readEditTarget } from '../../shared/bridge-contract.ts'
@@ -104,11 +104,11 @@ export function registerLifecycle(runtime: LifecycleRuntime): Array<() => void> 
         catch (error) { publicationError = String(error) }
         tx.write(200, { ok: true, value: { ...value, persisted: true, ...(publicationError === undefined ? {} : { publicationError }) } })
       } catch (error) {
-        if (error instanceof ModuleRulesError && error.persisted) {
+        if (error instanceof ModuleWriteError && error.persisted) {
           tx.write(200, { ok: true, value: { ...readModuleName(dir), persisted: true, publicationError: error.message } })
           return
         }
-        const typed = error instanceof ModuleNameError || error instanceof ModuleRulesError ? error : undefined
+        const typed = error instanceof ModuleNameError || error instanceof ModuleWriteError ? error : undefined
         tx.write(typed?.status ?? 400, { ok: false, code: typed?.code ?? 'module-name-rejected', message: error instanceof Error ? error.message : String(error) })
       }
     } }),

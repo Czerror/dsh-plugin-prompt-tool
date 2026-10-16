@@ -290,7 +290,7 @@ test('SillyTavern 多源合并：导入期的 variablesEnabled 只过滤字面�
 
 test('模块并入：导入期的 variablesEnabled 只过滤字面变量，产物开关归目标模块的 rules/_settings.yml', async () => {
   const characters = await import('../../src/host/characters.ts')
-  const { ensureModuleSlices } = await import('../../src/host/module-storage.ts')
+  const { ensureModuleSlices } = await import('../../src/host/module-slices.ts')
   // 源开关只过滤本次并入的字面变量；产物落地成模块后，是否停用会话变量由目标模块自己的开关决定。
   const textRule = (id, text) => ({ id, then: [{ id: 'inject', kind: 'inject-text', config: { layer: 'pre-step', text } }] })
   for (const [id, extra] of [['card-source', { variablesEnabled: false }], ['target', { variablesEnabled: true }]]) {

@@ -31,7 +31,7 @@ import { readOfficialOrderSegments, type OfficialOrderLookup } from '../shared/o
 import { ModuleLayerSettingsError } from '../host/module-layer-settings.ts'
 import { listBuiltinTemplates, listModules } from '../host/module-catalog.ts'
 import { moduleDeclarations } from '../host/module-declarations.ts'
-import { ModuleRulesError } from '../host/module-storage.ts'
+import { ModuleWriteError } from '../host/module-write.ts'
 import { loadModuleSpec } from '../host/module-spec.ts'
 import { readModuleFacts, resolveModuleParams } from '../host/module-params.ts'
 import { readModuleVariables } from '../host/module-variables.ts'
@@ -724,7 +724,7 @@ export function createBridgeRuntime(options: BridgeRuntimeOptions): BridgeRuntim
         moduleFacts = moduleFactsView(facts)
         templatePreStepCount = (spec.rules ?? []).filter(rule => rule.layer === 'pre-step').length
       } catch (error) {
-        if (error instanceof ModuleLayerSettingsError || error instanceof ModuleRulesError) throw error
+        if (error instanceof ModuleLayerSettingsError || error instanceof ModuleWriteError) throw error
         templatePreStepCount = 0
       }
     }
@@ -759,7 +759,7 @@ export function createBridgeRuntime(options: BridgeRuntimeOptions): BridgeRuntim
       }
       return params
     } catch (error) {
-      if (error instanceof ModuleLayerSettingsError || error instanceof ModuleRulesError) throw error
+      if (error instanceof ModuleLayerSettingsError || error instanceof ModuleWriteError) throw error
       return {}
     }
   }

@@ -20,7 +20,7 @@ import { isMap, isSeq, parseDocument } from 'yaml'
 import { atomicWriteTextFile } from './text-file.ts'
 import { moduleDirExists } from './module-dirs.ts'
 import { assertModuleId, assertNoModuleLinks, modulePathExists } from './module-install.ts'
-import { ModuleRulesError, deleteYamlPath, revisionOf, serializeWithoutSharedAlias, withModuleLock } from './module-storage.ts'
+import { ModuleWriteError, deleteYamlPath, revisionOf, serializeWithoutSharedAlias, withModuleLock } from './module-write.ts'
 import { engineParamPath, readLayerSettings } from './module-layer-settings.ts'
 import { isModuleId } from '../shared/module-ids.ts'
 
@@ -57,11 +57,11 @@ export function readStorageConfig(moduleRoot: string): StorageConfigSnapshot {
     return { doc, source: doc.toJS() as Record<string, unknown>, text: null, revision: null }
   }
   const stat = lstatSync(file)
-  if (!stat.isFile()) throw new ModuleRulesError('存储配置必须是普通文件', 403, 'storage-config-path')
-  if (stat.size > 1024 * 1024) throw new ModuleRulesError('存储配置超过 1 MiB')
+  if (!stat.isFile()) throw new ModuleWriteError('存储配置必须是普通文件', 403, 'storage-config-path')
+  if (stat.size > 1024 * 1024) throw new ModuleWriteError('存储配置超过 1 MiB')
   const bytes = readFileSync(file), text = new TextDecoder('utf-8', { fatal: true }).decode(bytes)
   const doc = parseDocument(text, { logLevel: 'silent' })
-  if (doc.errors.length > 0 || !isMap(doc.contents)) throw new ModuleRulesError('存储配置 YAML 必须是有效对象')
+  if (doc.errors.length > 0 || !isMap(doc.contents)) throw new ModuleWriteError('存储配置 YAML 必须是有效对象')
   return { doc, source: doc.toJS() as Record<string, unknown>, text, revision: revisionOf(bytes), mode: stat.mode }
 }
 
@@ -74,13 +74,13 @@ export function updateStorageConfig(moduleRoot: string, expectedRevision: string
   mkdirSync(storageRoot, { recursive: true })
   return withModuleLock(storageRoot, 'config', () => {
     const current = readStorageConfig(moduleRoot)
-    if (expectedRevision !== undefined && expectedRevision !== current.revision) throw new ModuleRulesError('存储配置已变化，请重新读取', 409, 'storage-config-conflict')
+    if (expectedRevision !== undefined && expectedRevision !== current.revision) throw new ModuleWriteError('存储配置已变化，请重新读取', 409, 'storage-config-conflict')
     const expected = update(current.doc, current.source)
     const text = serializeWithoutSharedAlias(current.doc, expected, 'YAML 共享引用会改变其他配置；请先解除相关引用')
     if (text === current.text || isDeepStrictEqual(expected, current.source)) return current
-    if (Buffer.byteLength(text) > 1024 * 1024) throw new ModuleRulesError('存储配置超过 1 MiB')
+    if (Buffer.byteLength(text) > 1024 * 1024) throw new ModuleWriteError('存储配置超过 1 MiB')
     atomicWriteTextFile(file, text, { mode: current.mode, beforeReplace: () => {
-      if (readStorageConfig(moduleRoot).revision !== current.revision) throw new ModuleRulesError('存储配置已变化，请重新读取', 409, 'storage-config-conflict')
+      if (readStorageConfig(moduleRoot).revision !== current.revision) throw new ModuleWriteError('存储配置已变化，请重新读取', 409, 'storage-config-conflict')
     } })
     return { ...current, source: expected, text, revision: revisionOf(text) }
   })

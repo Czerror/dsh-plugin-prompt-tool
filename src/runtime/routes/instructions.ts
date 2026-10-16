@@ -3,7 +3,8 @@ import { basename, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { isDeepStrictEqual } from 'node:util'
 import { isEditableModuleDir, packageEngineDir } from '../../host/module-dirs.ts'
-import { ensureModuleSlices, loadModuleDefinition, ModuleRulesError } from '../../host/module-storage.ts'
+import { ensureModuleSlices, loadModuleDefinition } from '../../host/module-slices.ts'
+import { ModuleWriteError } from '../../host/module-write.ts'
 import { createModuleRule, editModuleRules, readModuleRules } from '../../host/module-rules.ts'
 import { writeAgentsFileChecked } from '../../host/agents-cards.ts'
 import { instructionPolicyPath, readInstructionPolicy, writeInstructionPolicy } from '../../host/instructions-policy.ts'
@@ -207,7 +208,7 @@ export function registerInstructions(runtime: InstructionsRuntime): Array<() => 
         }
         tx.write(200, { ok: true, value: { rules: result.rules, revisions: result.revisions, meta: getRuleEditorMeta(), ...(createdRuleId === undefined ? {} : { createdRuleId }) } })
       } catch (error) {
-        if (error instanceof ModuleRulesError) {
+        if (error instanceof ModuleWriteError) {
           createdRuleId ??= error.createdRuleId
           if (error.persisted) {
             const committed = loadModuleDefinition(dir)

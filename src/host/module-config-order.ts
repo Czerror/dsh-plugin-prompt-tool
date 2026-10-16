@@ -5,8 +5,9 @@ import { join } from 'node:path'
 import { enabledModuleIds } from './config-store.ts'
 import { assertModuleDirectory } from './module-install.ts'
 import { invalidateModuleSpec } from './module-spec.ts'
-import { commitModuleDefinition, ensureModuleSlices, loadModuleDefinition, ModuleRulesError } from './module-storage.ts'
-import type { ModuleDefinitionSnapshot } from './module-storage.ts'
+import { commitModuleDefinition, ensureModuleSlices, loadModuleDefinition } from './module-slices.ts'
+import type { ModuleDefinitionSnapshot } from './module-slices.ts'
+import { ModuleWriteError } from './module-write.ts'
 import { assertSafeConfigId } from './prompt-configs.ts'
 import { MODULE_DEFINITION_FILE } from './paths.ts'
 import { compareModuleConfigOrder, configIdentityKey } from '../shared/module-config-order.ts'
@@ -97,7 +98,7 @@ function writeOrders(root: string, inputs: ModuleOrderInput[], orders: Map<strin
     for (const change of changes) {
       try { commitModuleDefinition(change.snapshot, change.next) }
       catch (error) {
-        if (error instanceof ModuleRulesError && error.persisted) written.push(change)
+        if (error instanceof ModuleWriteError && error.persisted) written.push(change)
         throw error
       }
       invalidateModuleSpec(change.dir)

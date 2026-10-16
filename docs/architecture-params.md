@@ -62,7 +62,7 @@ module.yml 是完整定义、唯一提交点和恢复依据，支持直接手改
 
 每次事务使用 YAML Document 保留注释和未知元数据，提交前复核版本与目录。模块锁序列化保存和恢复；正文/变量切片先准备，module.yml 原子替换为提交点，再发布清单。多文件替换不宣称物理同时原子。提交前失败恢复旧投影；提交后发布失败返回 `persisted`、新版本和 publicationError，保留最后有效运行贡献。
 
-**共享引用守卫（`shared-alias`）**：YAML 的 anchor/alias 会让一次「只改 A」的编辑连带改掉 B，因此每次写事务都必须自证「只改了自己声明的字段」——声明完整候选的路径（规则编辑、人设保存、存储配置）走 `module-storage.ts#serializeWithoutSharedAlias`（序列化失败与候选不一致同判），改-后-比对的路径走 `assertUnownedUnchanged`，`withModuleDefinition` 的调用方必须用必填的 `{ owns }` 声明本次编辑拥有的顶层键。判定不通过一律 400 `shared-alias` 且零写盘，拒绝文案点名被连带改动的键。
+**共享引用守卫（`shared-alias`）**：YAML 的 anchor/alias 会让一次「只改 A」的编辑连带改掉 B，因此每次写事务都必须自证「只改了自己声明的字段」——声明完整候选的路径（规则编辑、人设保存、存储配置）走 `module-write.ts#serializeWithoutSharedAlias`（序列化失败与候选不一致同判），改-后-比对的路径走 `assertUnownedUnchanged`，`withModuleDefinition` 的调用方必须用必填的 `{ owns }` 声明本次编辑拥有的顶层键。判定不通过一律 400 `shared-alias` 且零写盘，拒绝文案点名被连带改动的键。
 
 ### 两级变量事务
 
@@ -190,7 +190,7 @@ AGENTS.md/CLAUDE.md 及 local 变体属于用户文件。正文就地保存；�
 
 | 所有者 | 文件 |
 |---|---|
-| 完整定义/切片 | host/module-storage.ts、module-rules.ts |
+| 完整定义/切片 | host/module-slices.ts、module-rules.ts |
 | 两级变量 | host/module-variables.ts、shared/module-variables.ts |
 | 模块合并/记忆 | host/characters.ts、module-memory.ts |
 | 导入/导出 | host/import-source.ts、module-package.ts、module-install.ts |

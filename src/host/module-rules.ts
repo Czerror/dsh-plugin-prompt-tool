@@ -2,8 +2,9 @@
 import { isMap, isSeq, isScalar, parseDocument } from 'yaml'
 import type { Node, Scalar, YAMLMap, YAMLSeq } from 'yaml'
 import type { RuleDefinition, RuleEdit, RuleRevisions } from '../shared/rules.ts'
-import { assertRuleFileId, commitModuleDefinition, ensureModuleSlices, ModuleRulesError, serializeWithoutSharedAlias, validateModuleDefinitionText } from './module-storage.ts'
-import type { ModuleDefinitionSnapshot } from './module-storage.ts'
+import { assertRuleFileId, commitModuleDefinition, ensureModuleSlices, validateModuleDefinitionText } from './module-slices.ts'
+import type { ModuleDefinitionSnapshot } from './module-slices.ts'
+import { ModuleWriteError, serializeWithoutSharedAlias } from './module-write.ts'
 import { invalidateModuleSpec } from './module-spec.ts'
 
 const record = (value: unknown): value is Record<string, unknown> => value !== null && typeof value === 'object' && !Array.isArray(value)
@@ -58,18 +59,18 @@ export interface ModuleRuleCreateRequest {
 export function createModuleRule(directory: string, request: ModuleRuleCreateRequest): { snapshot: ModuleRulesSnapshot; createdRuleId: string } {
   if (!record(request) || Object.keys(request).some(key => !['rule', 'expectedRulesAbsent'].includes(key))
     || !record(request.rule) || (request.expectedRulesAbsent !== undefined && request.expectedRulesAbsent !== true)) {
-    throw new ModuleRulesError('规则创建载荷不合法')
+    throw new ModuleWriteError('规则创建载荷不合法')
   }
-  if (typeof request.rule.id !== 'string') throw new ModuleRulesError('规则创建载荷不合法')
-  try { assertRuleFileId(request.rule.id) } catch (error) { throw new ModuleRulesError(String((error as Error).message ?? error)) }
+  if (typeof request.rule.id !== 'string') throw new ModuleWriteError('规则创建载荷不合法')
+  try { assertRuleFileId(request.rule.id) } catch (error) { throw new ModuleWriteError(String((error as Error).message ?? error)) }
   // shortcut: 最多重试三次并发追加；若宿主竞争持续，应进入显式冲突重试。
   for (let attempt = 0; attempt < 3; attempt++) {
     const current = ensureModuleSlices(directory, { writable: false })
     if (request.expectedRulesAbsent === true && Object.hasOwn(current.source, 'rules')) {
-      throw new ModuleRulesError('目标模块已声明 rules，请重新读取后保存', 409, 'rules-conflict')
+      throw new ModuleWriteError('目标模块已声明 rules，请重新读取后保存', 409, 'rules-conflict')
     }
     if (request.expectedRulesAbsent !== true && !Object.hasOwn(current.source, 'rules')) {
-      throw new ModuleRulesError('目标模块尚未声明 rules，请重新确认后创建', 409, 'rules-conflict')
+      throw new ModuleWriteError('目标模块尚未声明 rules，请重新确认后创建', 409, 'rules-conflict')
     }
     const base = request.rule.id
     const used = new Set(current.rules.map(rule => rule.id.toLowerCase()))
@@ -83,11 +84,11 @@ export function createModuleRule(directory: string, request: ModuleRuleCreateReq
       })
       return { snapshot, createdRuleId: id }
     } catch (error) {
-      if (error instanceof ModuleRulesError && error.persisted) error.createdRuleId = id
-      if (!(error instanceof ModuleRulesError) || error.code !== 'rules-conflict' || request.expectedRulesAbsent === true || attempt === 2) throw error
+      if (error instanceof ModuleWriteError && error.persisted) error.createdRuleId = id
+      if (!(error instanceof ModuleWriteError) || error.code !== 'rules-conflict' || request.expectedRulesAbsent === true || attempt === 2) throw error
     }
   }
-  throw new ModuleRulesError('规则创建冲突，请重试', 409, 'rules-conflict')
+  throw new ModuleWriteError('规则创建冲突，请重试', 409, 'rules-conflict')
 }
 
 export function editModuleRules(directory: string, request: ModuleRuleEditRequest): ModuleRulesSnapshot {
@@ -98,23 +99,23 @@ export function editModuleRules(directory: string, request: ModuleRuleEditReques
     || (request.expectedRulesAbsent !== undefined && request.expectedRulesAbsent !== true)
     || (request.validateOnly !== undefined && typeof request.validateOnly !== 'boolean')
     || (request.edits !== undefined && !Array.isArray(request.edits))
-    || (request.activateRuleId !== undefined && (typeof request.activateRuleId !== 'string' || request.activateRuleId.length === 0))) throw new ModuleRulesError('规则事务字段或版本格式不合法')
+    || (request.activateRuleId !== undefined && (typeof request.activateRuleId !== 'string' || request.activateRuleId.length === 0))) throw new ModuleWriteError('规则事务字段或版本格式不合法')
   if (Object.keys(request.expectedRevisions).some(key => !['rules', 'settings', 'variables'].includes(key))
     || (request.expectedRevisions.rules !== undefined && (!record(request.expectedRevisions.rules) || Object.values(request.expectedRevisions.rules).some(value => !hash(value))))
     || (request.expectedRevisions.settings !== undefined && !hash(request.expectedRevisions.settings))
-    || (request.expectedRevisions.variables !== undefined && !hash(request.expectedRevisions.variables))) throw new ModuleRulesError('规则版本对象不合法')
+    || (request.expectedRevisions.variables !== undefined && !hash(request.expectedRevisions.variables))) throw new ModuleWriteError('规则版本对象不合法')
   if (request.expectedRulesAbsent === true && (request.validateOnly === true || request.activateRuleId !== undefined
     || !Array.isArray(request.edits) || request.edits.length === 0
     || request.edits.some(edit => !record(edit) || edit.previousId !== null || edit.rule === null))) {
-    throw new ModuleRulesError('规则首写只允许新增规则编辑')
+    throw new ModuleWriteError('规则首写只允许新增规则编辑')
   }
   if (request.expectedRulesAbsent === true && Object.hasOwn(snapshot.source, 'rules')) {
-    throw new ModuleRulesError('目标模块已声明 rules，请重新读取后保存', 409, 'rules-conflict')
+    throw new ModuleWriteError('目标模块已声明 rules，请重新读取后保存', 409, 'rules-conflict')
   }
   const expectedRevisions = request.expectedRevisions
-  const checkSettings = () => { if (expectedRevisions.settings !== snapshot.revisions.settings) throw new ModuleRulesError('规则状态已变化，请重新读取', 409, 'rules-conflict') }
-  const checkRule = (id: string) => { if (expectedRevisions.rules?.[id] !== snapshot.revisions.rules[id]) throw new ModuleRulesError(`规则 ${id} 正文已变化，请重新读取`, 409, 'rules-conflict') }
-  if (!Array.isArray(snapshot.source.modules)) throw new ModuleRulesError('当前组合没有可编辑的 modules 清单')
+  const checkSettings = () => { if (expectedRevisions.settings !== snapshot.revisions.settings) throw new ModuleWriteError('规则状态已变化，请重新读取', 409, 'rules-conflict') }
+  const checkRule = (id: string) => { if (expectedRevisions.rules?.[id] !== snapshot.revisions.rules[id]) throw new ModuleWriteError(`规则 ${id} 正文已变化，请重新读取`, 409, 'rules-conflict') }
+  if (!Array.isArray(snapshot.source.modules)) throw new ModuleWriteError('当前组合没有可编辑的 modules 清单')
   const previous = (snapshot.source.rules ?? []) as RuleDefinition[]
   const rules = structuredClone(previous)
   const originalRules = snapshot.doc.get('rules', true)
@@ -122,16 +123,16 @@ export function editModuleRules(directory: string, request: ModuleRuleEditReques
   const originalOrder = snapshot.doc.get('configOrder', true)
   const orderNodes = (isMap(originalOrder) ? originalOrder.clone() : snapshot.doc.createNode({})) as YAMLMap
   const order = record(snapshot.source.configOrder) ? { ...snapshot.source.configOrder } : {}
-  if (snapshot.source.configOrder !== undefined && !record(snapshot.source.configOrder)) throw new ModuleRulesError('configOrder 必须是对象')
+  if (snapshot.source.configOrder !== undefined && !record(snapshot.source.configOrder)) throw new ModuleWriteError('configOrder 必须是对象')
   const touched = new Set<string>()
   for (const edit of request.edits ?? []) {
     if (!record(edit) || Object.keys(edit).some(key => !['previousId', 'rule', 'settingsChanged'].includes(key))
       || (edit.settingsChanged !== undefined && typeof edit.settingsChanged !== 'boolean')
       || (edit.previousId !== null && (typeof edit.previousId !== 'string' || edit.previousId.length === 0))
-      || (edit.rule !== null && !record(edit.rule)) || (edit.previousId === null && edit.rule === null)) throw new ModuleRulesError('规则修改项不合法')
-    if (edit.previousId !== null && touched.has(edit.previousId)) throw new ModuleRulesError('同一规则不能在一次事务中重复修改')
+      || (edit.rule !== null && !record(edit.rule)) || (edit.previousId === null && edit.rule === null)) throw new ModuleWriteError('规则修改项不合法')
+    if (edit.previousId !== null && touched.has(edit.previousId)) throw new ModuleWriteError('同一规则不能在一次事务中重复修改')
     const index = edit.previousId === null ? -1 : rules.findIndex(rule => rule.id === edit.previousId)
-    if (edit.previousId !== null && index < 0) throw new ModuleRulesError(`规则 ${edit.previousId} 已不存在`, 409, 'rules-conflict')
+    if (edit.previousId !== null && index < 0) throw new ModuleWriteError(`规则 ${edit.previousId} 已不存在`, 409, 'rules-conflict')
     if (edit.previousId !== null) { assertRuleFileId(edit.previousId); checkRule(edit.previousId); touched.add(edit.previousId) }
     if (edit.previousId === null || edit.rule === null || edit.previousId !== edit.rule.id || edit.settingsChanged === true) checkSettings()
     if (edit.rule === null) { rules.splice(index, 1); ruleNodes.items.splice(index, 1); delete order[edit.previousId!]; continue }
@@ -142,7 +143,7 @@ export function editModuleRules(directory: string, request: ModuleRuleEditReques
       delete replacement.enabled; delete replacement.group; delete replacement.exclusive
       for (const key of ['enabled', 'group', 'exclusive'] as const) if (Object.hasOwn(current, key)) Object.assign(replacement, { [key]: current[key] })
     }
-    if (rules.some((rule, at) => at !== index && rule.id === replacement.id)) throw new ModuleRulesError(`重复规则标识：${replacement.id}`)
+    if (rules.some((rule, at) => at !== index && rule.id === replacement.id)) throw new ModuleWriteError(`重复规则标识：${replacement.id}`)
     if (index < 0) { rules.push(replacement); ruleNodes.items.push(snapshot.doc.createNode(replacement)) }
     else {
       rules[index] = replacement
@@ -158,7 +159,7 @@ export function editModuleRules(directory: string, request: ModuleRuleEditReques
   if (request.activateRuleId !== undefined) {
     checkSettings()
     const target = rules.find(rule => rule.id === request.activateRuleId)
-    if (target === undefined) throw new ModuleRulesError('要启用的规则不存在')
+    if (target === undefined) throw new ModuleWriteError('要启用的规则不存在')
     target.enabled = true
     if (typeof target.group === 'string' && target.group.trim().length > 0) {
       const peers = rules.filter(rule => rule.group === target.group)

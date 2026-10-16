@@ -2,7 +2,7 @@ import { readModuleVariables, editModuleVariables } from '../host/module-variabl
 import type { ModuleVariablesEdit } from '../host/module-variables.ts'
 import { assertModuleDirectory, assertModuleId } from '../host/module-install.ts'
 import { join } from 'node:path'
-import { ensureModuleSlices } from '../host/module-storage.ts'
+import { ensureModuleSlices } from '../host/module-slices.ts'
 
 /** 引擎只收受控来源身份；读取新快照和发布切片均不重挂 Agent。 */
 export function createModuleVariableAdapter(moduleRoot: string) {

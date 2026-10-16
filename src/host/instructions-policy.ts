@@ -16,7 +16,7 @@ import { dirname, join } from 'node:path'
 import { Document, isMap, isScalar, parseDocument, visit } from 'yaml'
 import { dshHome, storageRootOf } from './paths.ts'
 import { atomicWriteTextFile } from './text-file.ts'
-import { ModuleRulesError, withModuleLock } from './module-storage.ts'
+import { ModuleWriteError, withModuleLock } from './module-write.ts'
 import type {
   InstructionPolicy,
   InstructionPolicyFileOverride,
@@ -31,7 +31,7 @@ const INSTRUCTIONS_POLICY_FILE = 'instructions.yml'
 
 /** 策略文件格式版本；不认识的值按损坏处理，不猜测迁移。 */
 export const INSTRUCTIONS_POLICY_VERSION = 1
-/** 跨进程锁的模块 id 形状（`withModuleLock` 的 id 与模块 id 同规则）；锁目录为存储根下的 `.instructions.rules-locks`。 */
+/** 跨进程锁的模块 id 形状（`withModuleLock` 的 id 与模块 id 同规则）；锁目录为存储根下的 `.instructions.locks`。 */
 const INSTRUCTIONS_POLICY_LOCK = 'instructions'
 
 export type InstructionPolicyWriteOutcome =
@@ -194,7 +194,7 @@ export function writeInstructionPolicy(options: {
     mkdirSync(dirname(file), { recursive: true })
     return withModuleLock(dirname(file), INSTRUCTIONS_POLICY_LOCK, () => writeInstructionPolicyLocked(file, options))
   } catch (error) {
-    if (error instanceof ModuleRulesError) {
+    if (error instanceof ModuleWriteError) {
       return { ok: false, status: 409, code: 'instructions-policy-busy', message: '指令策略正在被另一个进程写入，请稍后重试' }
     }
     throw error

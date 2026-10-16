@@ -41,14 +41,15 @@ import type { BridgeTransaction } from './bridge-transaction.ts'
 import { DECLARED_SECTIONS, moduleDeclarations } from '../host/module-declarations.ts'
 import { ModuleLayerSettingsError, readModuleLayerSettings } from '../host/module-layer-settings.ts'
 import { isEditableModuleDir } from '../host/module-dirs.ts'
-import { loadModuleDefinition, ModuleRulesError } from '../host/module-storage.ts'
+import { loadModuleDefinition } from '../host/module-slices.ts'
+import { ModuleWriteError } from '../host/module-write.ts'
 
 /** 写一次响应；事务的 `tx.write` 与门内判据共用这一个形态。 */
 type GateWrite = (status: number, body: unknown) => void
 
 /** 层配置/规则格式错误的统一反馈：读回时不得伪装成空配置。 */
 export function writeLayerSettingsError(write: GateWrite, error: unknown): boolean {
-  if (error instanceof ModuleRulesError) {
+  if (error instanceof ModuleWriteError) {
     write(error.status, { ok: false, code: error.code, message: error.message })
     return true
   }

@@ -6,8 +6,9 @@ import { isDeepStrictEqual } from 'node:util'
 import { isMap, isScalar, parseDocument } from 'yaml'
 import { dshHome, globalVariablesFile } from './paths.ts'
 import { atomicWriteTextFile } from './text-file.ts'
-import { assertUnownedUnchanged, assertVariableValues, commitModuleDefinition, ensureModuleSlices, lastPublishedModuleDefinition, loadModuleDefinition, ModuleRulesError, revisionOf, withModuleLock } from './module-storage.ts'
-import type { ModuleDefinitionSnapshot } from './module-storage.ts'
+import { assertVariableValues, commitModuleDefinition, ensureModuleSlices, lastPublishedModuleDefinition, loadModuleDefinition } from './module-slices.ts'
+import type { ModuleDefinitionSnapshot } from './module-slices.ts'
+import { ModuleWriteError, assertUnownedUnchanged, revisionOf, withModuleLock } from './module-write.ts'
 import type { ModuleVariableRevisions, ModuleVariablesSnapshot } from '../shared/module-variables.ts'
 export type { ModuleVariableRevisions, ModuleVariablesSnapshot } from '../shared/module-variables.ts'
 
@@ -30,12 +31,12 @@ interface GlobalSnapshot {
   mode?: number
 }
 const record = (value: unknown): value is Record<string, unknown> => value !== null && typeof value === 'object' && !Array.isArray(value)
-const conflict = (): ModuleRulesError => new ModuleRulesError('模块或全局变量已变化，请重新读取', 409, 'module-variables-conflict')
+const conflict = (): ModuleWriteError => new ModuleWriteError('模块或全局变量已变化，请重新读取', 409, 'module-variables-conflict')
 
 function plain(path: string, directory = false): Stats | undefined {
   try {
     const stat = lstatSync(path)
-    if (stat.isSymbolicLink() || (directory ? !stat.isDirectory() : !stat.isFile())) throw new ModuleRulesError(`变量路径不是普通${directory ? '目录' : '文件'}，拒绝链接：${path}`, 403, 'module-variables-path')
+    if (stat.isSymbolicLink() || (directory ? !stat.isDirectory() : !stat.isFile())) throw new ModuleWriteError(`变量路径不是普通${directory ? '目录' : '文件'}，拒绝链接：${path}`, 403, 'module-variables-path')
     return stat
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined
@@ -47,12 +48,12 @@ function readGlobal(): GlobalSnapshot {
   plain(dirname(globalVariablesFile()), true)
   const stat = plain(globalVariablesFile())
   if (!stat) return { doc: parseDocument('variables: {}\n'), values: {}, revision: null }
-  if (stat.size > 8 * 1024 * 1024) throw new ModuleRulesError('全局变量文件超过 8 MiB')
+  if (stat.size > 8 * 1024 * 1024) throw new ModuleWriteError('全局变量文件超过 8 MiB')
   const bytes = readFileSync(globalVariablesFile())
   const doc = parseDocument(new TextDecoder('utf-8', { fatal: true }).decode(bytes), { logLevel: 'silent' })
-  if (doc.errors.length || !isMap(doc.contents)) throw new ModuleRulesError('全局变量 YAML 必须是有效对象')
+  if (doc.errors.length || !isMap(doc.contents)) throw new ModuleWriteError('全局变量 YAML 必须是有效对象')
   const source: unknown = doc.toJS()
-  if (!record(source)) throw new ModuleRulesError('全局变量 YAML 必须是对象')
+  if (!record(source)) throw new ModuleWriteError('全局变量 YAML 必须是对象')
   const values = source.variables === undefined ? {} : source.variables
   assertVariableValues(values)
   return { doc, values, revision: revisionOf(bytes), mode: stat.mode }
@@ -75,20 +76,20 @@ export function readModuleVariables(directory: string, options: { writable?: boo
 
 function validateRequest(request: ModuleVariablesEdit): void {
   if (!record(request) || !['global', 'module'].includes(request.scope)
-    || Object.keys(request).some(key => !['scope', 'changes', 'values', 'enabled', 'expectedRevisions'].includes(key))) throw new ModuleRulesError('变量请求 scope 或字段非法')
+    || Object.keys(request).some(key => !['scope', 'changes', 'values', 'enabled', 'expectedRevisions'].includes(key))) throw new ModuleWriteError('变量请求 scope 或字段非法')
   if (request.changes !== undefined && request.values !== undefined
-    || request.changes === undefined && request.values === undefined && request.enabled === undefined) throw new ModuleRulesError('变量请求必须声明 changes、values 或模块开关，changes 与 values 不能混用')
-  if (request.enabled !== undefined && (request.scope !== 'module' || typeof request.enabled !== 'boolean')) throw new ModuleRulesError('enabled 只接受模块范围的布尔值')
+    || request.changes === undefined && request.values === undefined && request.enabled === undefined) throw new ModuleWriteError('变量请求必须声明 changes、values 或模块开关，changes 与 values 不能混用')
+  if (request.enabled !== undefined && (request.scope !== 'module' || typeof request.enabled !== 'boolean')) throw new ModuleWriteError('enabled 只接受模块范围的布尔值')
   if (request.values !== undefined) assertVariableValues(request.values)
   else if (request.changes !== undefined) {
-    if (!record(request.changes)) throw new ModuleRulesError('changes 必须是字符串或 null 的对象')
+    if (!record(request.changes)) throw new ModuleWriteError('changes 必须是字符串或 null 的对象')
     assertVariableValues(Object.fromEntries(Object.entries(request.changes).map(([key, value]) => [key, value === null ? '' : value])))
   }
   const revisions = request.expectedRevisions
   if (!record(revisions) || (request.values !== undefined || request.changes !== undefined) && !Object.hasOwn(revisions, request.scope)
     || request.enabled !== undefined && !Object.hasOwn(revisions, 'settings')
     || Object.entries(revisions).some(([key, value]) => !['global', 'module', 'settings'].includes(key)
-      || !(key === 'global' && value === null) && !(typeof value === 'string' && /^[a-f0-9]{64}$/.test(value)))) throw new ModuleRulesError('写变量必须提供有效的目标版本及读取依赖版本')
+      || !(key === 'global' && value === null) && !(typeof value === 'string' && /^[a-f0-9]{64}$/.test(value)))) throw new ModuleWriteError('写变量必须提供有效的目标版本及读取依赖版本')
 }
 function checkRevisions(request: ModuleVariablesEdit, module: ModuleDefinitionSnapshot, global: GlobalSnapshot): void {
   if (Object.hasOwn(request.expectedRevisions, 'global') && request.expectedRevisions.global !== global.revision
@@ -138,7 +139,7 @@ export function editModuleVariables(directory: string, request: ModuleVariablesE
       }
       try { return { ...snapshot(commitModuleDefinition(module, module.doc), global), persisted: true } }
       catch (error) {
-        if (!(error instanceof ModuleRulesError) || !error.persisted || !error.revisions) throw error
+        if (!(error instanceof ModuleWriteError) || !error.persisted || !error.revisions) throw error
         return { ...snapshot({ ...module, variables: values, variablesEnabled: enabled, revisions: error.revisions }, global), persisted: true, publicationPending: true, publicationError: error.message }
       }
     }
@@ -149,7 +150,7 @@ export function editModuleVariables(directory: string, request: ModuleVariablesE
       if (isDeepStrictEqual(values, global.values)) return { ...snapshot(module, global), persisted: true }
       replaceVariables(global.doc, values)
       const text = global.doc.toString()
-      if (Buffer.byteLength(text) > 8 * 1024 * 1024) throw new ModuleRulesError('全局变量文件超过 8 MiB')
+      if (Buffer.byteLength(text) > 8 * 1024 * 1024) throw new ModuleWriteError('全局变量文件超过 8 MiB')
       atomicWriteTextFile(globalVariablesFile(), text, { mode: global.mode, beforeReplace: () => {
         const current = readGlobal()
         if (current.revision !== global.revision) throw conflict()

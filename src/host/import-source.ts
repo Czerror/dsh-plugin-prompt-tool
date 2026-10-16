@@ -3,7 +3,7 @@ import { posix } from 'node:path'
 import { parseDocument, stringify, YAMLMap } from 'yaml'
 // 引擎 ESM 是权威校验实现，由构建器同源打包。
 import { compileRules } from '../../engine/rule-spec.mjs'
-import { assertCanonicalRuleSource } from './module-storage.ts'
+import { assertCanonicalRuleSource } from './module-slices.ts'
 import { ruleInjections } from './rule-content.ts'
 import { MODULE_DEFINITION_FILE } from './paths.ts'
 import type { AssetFile, ImportChoices, ImportKind } from '../shared/asset-transfer.ts'

@@ -1,5 +1,5 @@
 import { assertModuleId } from './module-install.ts'
-import { commitModuleDefinition, loadModuleDefinition } from './module-storage.ts'
+import { commitModuleDefinition, loadModuleDefinition } from './module-slices.ts'
 
 const MAX_MODULE_NAME_LENGTH = 128
 

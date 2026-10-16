@@ -9,8 +9,8 @@ import { tmpdir } from 'node:os'
 import { parse } from 'yaml'
 import { isolatedHome } from '../fixtures/host-harness.mjs'
 
-const { moduleRoot } = isolatedHome('pt-module-storage-')
-const { loadModuleDefinition, ensureModuleSlices, readRulesDir, commitModuleDefinition } = await import('../../src/host/module-storage.ts')
+const { moduleRoot } = isolatedHome('pt-module-slices-')
+const { loadModuleDefinition, ensureModuleSlices, readRulesDir, commitModuleDefinition } = await import('../../src/host/module-slices.ts')
 const { readModuleRules, editModuleRules } = await import('../../src/host/module-rules.ts')
 const { readModuleConfigOrder } = await import('../../src/host/module-config-order.ts')
 const { prepareAssembly } = await import('../../src/runtime/agent-assembly.ts')
@@ -239,7 +239,7 @@ test('提交点前后故障恢复旧或新定义；发布前只读者看不到�
 })
 
 test('不同进程互斥、异常退出死锁恢复与路径归一不发布混合快照', async () => {
-  const storage = new URL('../../src/host/module-storage.ts', import.meta.url).href
+  const storage = new URL('../../src/host/module-slices.ts', import.meta.url).href
   const childCode = `
     import fs from 'node:fs';
     import { basename } from 'node:path';
@@ -298,7 +298,7 @@ test('不同进程互斥、异常退出死锁恢复与路径归一不发布混�
     const restored = ensureModuleSlices(dir)
     assert.equal(restored.rules[0].then[0].config.text, ['finish', 'before-settings'].includes(mode) ? 'CHILD COMMIT' : 'first')
     assert.deepEqual(readRulesDir(dir).revisions, restored.revisions)
-    assert.equal(existsSync(join(dirname(dir), '.' + basename(dir) + '.rules-locks')), false, '死PID锁回收，空锁目录原子移除')
+    assert.equal(existsSync(join(dirname(dir), '.' + basename(dir) + '.locks')), false, '死PID锁回收，空锁目录原子移除')
     assert.equal(readdirSync(dir).some(file => file.startsWith('.module.yml.tmp-')), false)
     assert.equal(readdirSync(join(dir, 'rules')).some(file => file.includes('.tmp-')), false, 'rename前退出只清理精确插件临时名')
     assert.equal(readdirSync(dir).some(name => name.includes('lock')), false, '锁不进入模块资产目录')

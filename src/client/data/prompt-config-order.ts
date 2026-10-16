@@ -2,7 +2,7 @@
  * 配置卡在视图内的移动与同档位判据（**全仓唯一一份**）。
  *
  * 顺序的唯一权威是 `module.yml` 顶层的 `configOrder`（`src/host/module-config-order.ts` 写、
- * `src/host/module-storage.ts` 的 `order[rule.id] ?? tail` 读）：本模块只把「拖到哪」翻译成
+ * `src/host/module-slices.ts` 的 `order[rule.id] ?? tail` 读）：本模块只把「拖到哪」翻译成
  * 「身份的新顺序」，**不改卡定义、不碰官方档位 `order`**——那个值属于宿主
  * `systemPrompt.section({ order })` 的装配刻度，插件的排序通道不提交它。
  */

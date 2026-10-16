@@ -8,7 +8,7 @@ import { readPersonaSpec } from '../shared/persona-section.ts'
 import type { PersonaSpec } from '../shared/persona-section.ts'
 import type { RuleDefinition } from '../shared/rules.ts'
 import { enabledModuleIds, readGlobalLayerSettingsSafe } from './config-store.ts'
-import { ensureModuleSlices } from './module-storage.ts'
+import { ensureModuleSlices } from './module-slices.ts'
 import { readModuleLayerSettings } from './module-layer-settings.ts'
 import { packageModulesDir, userModulesDir } from './module-dirs.ts'
 

@@ -8,10 +8,10 @@ import { join } from 'node:path'
 import { isolatedHome } from '../fixtures/host-harness.mjs'
 
 const { moduleRoot } = isolatedHome('pt-install-lock-')
-const storage = new URL('../../src/host/module-storage.ts', import.meta.url).href
+const storage = new URL('../../src/host/module-slices.ts', import.meta.url).href
 const writer = new URL('../../src/host/write-module.ts', import.meta.url).href
 const packageApi = new URL('../../src/host/module-package.ts', import.meta.url).href
-const { ensureModuleSlices, readRulesDir } = await import('../../src/host/module-storage.ts')
+const { ensureModuleSlices, readRulesDir } = await import('../../src/host/module-slices.ts')
 const definition = (id, text) => ({ id, name: id, modules: [], rules: [{ id: 'body', then: [{ id: 'inject', kind: 'inject-text', config: { text } }] }] })
 function fixture(id, text) {
   const dir = join(moduleRoot, id)

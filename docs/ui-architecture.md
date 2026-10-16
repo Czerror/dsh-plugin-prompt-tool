@@ -745,7 +745,7 @@ context-activation 视图只调整附加提示，不另设模块卡容器；能�
 | seam | 覆盖位置 |
 |---|---|
 | 引擎注入行为（插入点 / 时机 / 次数 / 受众） | `test/engine/*.test.mjs` |
-| 写盘产物语义 | `test/host/write-module.test.mjs`、`test/host/module-*.test.mjs`、`test/host/module-storage.test.mjs`、`test/host/global-params.test.mjs`（全局层 `config.yml#layerSettings` 的写/删键/空层回收与优先级） |
+| 写盘产物语义 | `test/host/write-module.test.mjs`、`test/host/module-*.test.mjs`、`test/host/module-slices.test.mjs`、`test/host/global-params.test.mjs`（全局层 `config.yml#layerSettings` 的写/删键/空层回收与优先级） |
 | bridge 端点载荷 | `test/shared/bridge-contract.test.mjs`、`test/client/bridge-client.test.mjs`、`test/host/settings-bridge.test.mjs`、`test/host/*-bridge.test.mjs`、`test/client/*.test.mjs`（客户端侧的固定卡接线、请求主语与渲染链路） |
 | 安全与拒绝路径 | `test/host/instructions-policy.test.mjs`、`test/host/instruction-scope-guard.test.mjs`、`test/host/skill-policy.test.mjs`、`test/host/module-package-import.test.mjs`、`test/host/characters-protection.test.mjs`、`test/host/wave1-safety.test.mjs`、`test/host/text-file.test.mjs`、`test/engine/config-whitelist.test.mjs` |
 

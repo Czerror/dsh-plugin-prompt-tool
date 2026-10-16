@@ -4,18 +4,19 @@ import { isMap } from 'yaml'
 import type { PersonaAudience, PersonaSources, PersonaSourcesSnapshot, PersonaSpec } from '../shared/persona-section.ts'
 import { readPersonaSpec } from '../shared/persona-section.ts'
 import { assertModuleDirectory, assertModuleId, assertNoModuleLinks, modulePathExists } from './module-install.ts'
-import { ensureModuleSlices, loadModuleDefinition, ModuleRulesError } from './module-storage.ts'
+import { ensureModuleSlices, loadModuleDefinition } from './module-slices.ts'
+import { ModuleWriteError } from './module-write.ts'
 import { readStorageConfig, updateStorageConfig } from './config-store.ts'
 
 const AUDIENCES: PersonaAudience[] = ['main', 'subagent']
 function sourcesOf(raw: unknown, requireBoth = false): PersonaSources {
   if (raw === undefined && !requireBoth) return { main: null, subagent: null }
   if (raw === null || typeof raw !== 'object' || Array.isArray(raw)
-    || Object.keys(raw).some(key => !AUDIENCES.includes(key as PersonaAudience))) throw new ModuleRulesError('personaSources 只接受 main/subagent 对象')
+    || Object.keys(raw).some(key => !AUDIENCES.includes(key as PersonaAudience))) throw new ModuleWriteError('personaSources 只接受 main/subagent 对象')
   const source = raw as Record<string, unknown>, result: PersonaSources = { main: null, subagent: null }
   for (const audience of AUDIENCES) {
     const id = source[audience]
-    if (requireBoth && (!Object.hasOwn(source, audience) || id === undefined)) throw new ModuleRulesError('人设来源写入必须同时声明 main/subagent，null 表示官方')
+    if (requireBoth && (!Object.hasOwn(source, audience) || id === undefined)) throw new ModuleWriteError('人设来源写入必须同时声明 main/subagent，null 表示官方')
     if (id === null || id === undefined) continue
     assertModuleId(id)
     result[audience] = id
@@ -58,7 +59,7 @@ export function selectedPersonaModules(root: string, sources?: PersonaSources): 
 
 export function writePersonaSources(root: string, sources: PersonaSources, expectedRevision: string | null): PersonaSourcesSnapshot {
   const selection = sourcesOf(sources, true)
-  if (expectedRevision !== null && (typeof expectedRevision !== 'string' || !/^[a-f0-9]{64}$/.test(expectedRevision))) throw new ModuleRulesError('人设来源写入必须提供有效 expectedRevision')
+  if (expectedRevision !== null && (typeof expectedRevision !== 'string' || !/^[a-f0-9]{64}$/.test(expectedRevision))) throw new ModuleWriteError('人设来源写入必须提供有效 expectedRevision')
   updateStorageConfig(root, expectedRevision, (doc, source) => {
     selectedPersonaModules(root, selection)
     const value = Object.fromEntries(AUDIENCES.filter(audience => selection[audience] !== null).map(audience => [audience, selection[audience]]))

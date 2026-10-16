@@ -10,7 +10,8 @@ import { isModuleId } from '../shared/module-ids.ts'
 import { MODULE_DEFINITION_FILE } from './paths.ts'
 import { assertModuleDirectory, assertModuleId, assertModuleTree, modulePathExists, setModuleDefinitionId } from './module-install.ts'
 import { ModuleLayerSettingsError } from './module-layer-settings.ts'
-import { ModuleRulesError, ensureModuleSlices, withModuleLock } from './module-storage.ts'
+import { ensureModuleSlices } from './module-slices.ts'
+import { ModuleWriteError, withModuleLock } from './module-write.ts'
 import { findModuleDir, packageModulesDir, userModulesDir } from './module-dirs.ts'
 import { loadModuleSpec } from './module-spec.ts'
 
@@ -54,7 +55,7 @@ function isRenderableModuleDir(dir: string): boolean {
     if (Array.isArray(spec.modules)) return true
     if (typeof spec.composition === 'string' && spec.composition.length > 0) return true
   } catch (error) {
-    if (error instanceof ModuleLayerSettingsError || error instanceof ModuleRulesError) throw error
+    if (error instanceof ModuleLayerSettingsError || error instanceof ModuleWriteError) throw error
     return false
   }
   return false

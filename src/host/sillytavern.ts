@@ -96,7 +96,7 @@ export function mergeStModulesWithReport(specs: ModuleSpec[]): { spec: ModuleSpe
     if (spec.variablesEnabled !== false) mergeVariables(spec.variables)
     const perSource = new Map<number, string>()
     // 各来源的先后由它自己的 configOrder 表达（缺失项按数组顺序接在尾部，与
-    // `module-storage.ts` 的 `order[rule.id] ?? tail` 同口径），不能退回 rules 数组顺序。
+    // `module-slices.ts` 的 `order[rule.id] ?? tail` 同口径），不能退回 rules 数组顺序。
     // 排序携带原下标：报告的 targetIndex 是生成配置的下标，不随合并顺序改变。
     const sequenceOf = (config: unknown): number => {
       const id = config !== null && typeof config === 'object' ? String((config as RuleDefinition).id ?? '') : ''

@@ -9,7 +9,7 @@ import { readModuleMemory } from './module-memory.ts'
 import { MODULE_DEFINITION_FILE } from './paths.ts'
 import { appendModuleCapabilities } from './module-capabilities.ts'
 import { withModuleDefinition } from './module-definition-edit.ts'
-import { assertCanonicalRuleSource, rulePromptConfigOptions } from './module-storage.ts'
+import { assertCanonicalRuleSource, rulePromptConfigOptions } from './module-slices.ts'
 import { mapRuleInjections, ruleInjections } from './rule-content.ts'
 // 共享规则编译器校验模块并入候选。
 import { compileRules } from '../../engine/rule-spec.mjs'

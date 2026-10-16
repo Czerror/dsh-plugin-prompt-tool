@@ -13,7 +13,8 @@ const otherHome = tempDir('pt-module-variables-other-')
 const { readModuleVariables, editModuleVariables } = await import('../../src/host/module-variables.ts')
 const { globalVariablesFile } = await import('../../src/host/paths.ts')
 const entry = new URL('../../src/host/module-variables.ts', import.meta.url).href
-const storage = new URL('../../src/host/module-storage.ts', import.meta.url).href
+const storage = new URL('../../src/host/module-slices.ts', import.meta.url).href
+const write = new URL('../../src/host/module-write.ts', import.meta.url).href
 
 function fixture(t, id) {
   const dir = join(moduleRoot, id)
@@ -131,7 +132,7 @@ test('变量边界：相同整表幂等，跨进程锁阻止并行丢更新', as
   assert.equal(readFileSync(globalVariablesFile(), 'utf8'), before)
   const child = spawn(process.execPath, ['--input-type=module', '--eval', `
     import fs from 'node:fs';
-    import { withModuleLock } from ${JSON.stringify(storage)};
+    import { withModuleLock } from ${JSON.stringify(write)};
     withModuleLock(process.argv[1], 'variables', () => {
       fs.writeSync(1, 'locked\\n');
       fs.readSync(0, Buffer.alloc(1), 0, 1, null);
