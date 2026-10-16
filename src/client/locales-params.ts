@@ -20,7 +20,6 @@ export const PARAMS_ZH = {
   'param.instructionHint.hint': '关闭时保留官方全文注入；开启后将晋升后待注入的指令转为路径阅读提示，已有历史正文不变。默认主会话与子代理首轮均保留全文，成功压缩后重新开始。其他启用模块的设置独立生效。',
   'param.toolGitBashEnabled': '启用 Git Bash 工具',
   'param.customToolRequireApproval': '执行前需用户批准的工具种类',
-  'param.runCodeEnvKeys': '注入 run_code 程序的环境变量',
 
   // 参数卡通用文案。
   'param.hint': '{param}：{label}。空文本/列表回落模块默认；保存后用于后续 generation。',
@@ -39,7 +38,6 @@ export const PARAMS_ZH = {
   // 共享设置区的能力参数分组标题（按真实能力 card 分组，不另抄键表）。
   'modules.group.str-replace-editor': '编辑器',
   'modules.group.tool-config-engine': '工具配置',
-  'modules.group.run-code-env': 'run_code 环境',
   'modules.group.subagent-delegation': '子代理授权',
   // 层设置区：参数分组标题按 card 派生，能力装配状态与移除入口都在本层设置区内。
   'modules.group.prompt-defaults': '提示词生成默认值',
@@ -74,7 +72,6 @@ export const PARAMS_EN: Record<keyof typeof PARAMS_ZH, string> = {
   'param.instructionHint.hint': 'Off preserves full official instruction injection. On converts pending instructions to path hints after promotion, without rewriting history. By default, both main sessions and subagents retain full text on the first request and restart after successful compaction. Other enabled modules apply their own settings independently.',
   'param.toolGitBashEnabled': 'Enable Git Bash tool',
   'param.customToolRequireApproval': 'Tool kinds that need user approval before running',
-  'param.runCodeEnvKeys': 'Environment variables injected into run_code programs',
 
   'param.hint': '{param}: {label}. Empty text or list falls back to the module default; used for later generations once saved.',
   'param.inheritPresetDefault': 'Inherit module default',
@@ -90,7 +87,6 @@ export const PARAMS_EN: Record<keyof typeof PARAMS_ZH, string> = {
   'modules.createRecipeItem': 'Create chained modules · {id}',
   'modules.group.str-replace-editor': 'Editor',
   'modules.group.tool-config-engine': 'Tool config',
-  'modules.group.run-code-env': 'run_code environment',
   'modules.group.subagent-delegation': 'Subagent delegation',
   'modules.group.prompt-defaults': 'Prompt generation defaults',
   'modules.group.main-model': 'Main model',

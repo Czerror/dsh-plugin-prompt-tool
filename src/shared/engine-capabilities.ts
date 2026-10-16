@@ -87,9 +87,6 @@ export const MODULE_CAPABILITIES: readonly ModuleCapability[] = [
   // B2 T3：tool-git-bash 此前没有能力卡（开关只能靠「行在不在组合里」），补 `enabled` 键后登记卡片，
   // 否则 impliedModulesForParams 查不到 card，「参数在 ⇒ 装配在」对该行静默失效。
   { id: 'tool-git-bash', moduleKeys: ['tool-git-bash'], rowIds: ['tool-git-bash'], displayLayer: 'tool-pipeline' },
-  // run-code-env 同理：没有能力卡时 `envKeys` 只能由组合源默认值决定（工作台改不了），
-  // 且 impliedModulesForParams 查不到 card，「参数在 ⇒ 装配在」对该行静默失效。
-  { id: 'run-code-env', moduleKeys: ['run-code-env'], rowIds: ['run-code-env'], displayLayer: 'tool-pipeline' },
 ] as const
 
 /**

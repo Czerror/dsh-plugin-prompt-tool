@@ -60,7 +60,7 @@ rules:
           text: 请依据用户确认的项目约束执行。
 ```
 
-规则是唯一行为源；共享模型与能力参数保存于 layerSettings，人设、变量与自定义工具各有独立顶层段。根 [module.yml](module.yml) 从权威目录生成九层及14个共享参数参考，示例默认关闭。
+规则是唯一行为源；共享模型与能力参数保存于 layerSettings，人设、变量与自定义工具各有独立顶层段。根 [module.yml](module.yml) 从权威目录生成九层及13个共享参数参考，示例默认关闭。
 
 - 条件使用 if，动作用 then，另有 else；动作身份在完整规则树中唯一。
 - 注入正文策略为 static、placeholder、first-turn-anchor、guide-auto、anchor-notice、context-activation。

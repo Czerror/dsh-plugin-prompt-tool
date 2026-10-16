@@ -1,13 +1,5 @@
 # Changelog
 
-### 新增共享参数 `runCodeEnvKeys`：给 `run-code-env` 行的 `envKeys` 建能力卡（2026-10-16）
-
-- **动机**：`run-code-env` 此前没有能力卡，注入哪些环境变量只能由组合源默认值决定（工作台改不了）。用户要求把 run_code 注入的 env 内容做成可编辑的卡。
-- **实现**（与 `customToolRequireApproval` 同形）：`ENGINE_PARAM_DEFINITIONS` 登记 `runCodeEnvKeys`（`kind: 'string-list'`、`storageLayer: 'tool-pipeline'`、`module: { row: 'run-code-env', key: 'envKeys' }`）；`MODULE_CAPABILITIES` 登记能力卡 `run-code-env`（缺卡时 `impliedModulesForParams` 查不到 card，「参数在 ⇒ 装配在」对该行静默失效）；客户端补中英文字典（`param.runCodeEnvKeys`、`modules.group.run-code-env`）。渲染与保存链路是数据驱动的，无需改客户端表单。
-- **空值必须不写**：`run-code-env` 的 `envKeys` 在引擎侧是 `allowEmpty: false`——写 `envKeys: []` 会在**挂载期抛错并连带整个装配失败**。因此参数目录新增可选标记 `dropWhenEmpty`，只对该参数生效：空串／空数组时跳过写入、回落组合源的默认键集；**未标记者保持既有语义**（空列表照写，如 `customToolRequireApproval`）。两个方向都由新用例 `test/host/engine-param-bridge.test.mjs` 钉住。
-- **文档计数同步**（公开键 13 → 14）：`README.md`、`docs/architecture-params.md`、`docs/injection-point-contracts.md`；`skills/dsh-module/reference.md` 那句「共享参数14个」的清单把已退役的 `maxDepth` 换成 `runCodeEnvKeys`。
-- **验证**：`typecheck`／`lint`（0/0）／全量 test（**692 pass / 0 fail**，+1 新用例）／`build`／`git diff --check`／`rebuild:module-template -- --check` 全绿。
-
 ### 新增内置模块 `ptc-mode`：把工具面切成 PTC（`present-as` + `run-code-env`）（2026-10-16）
 
 - **模块内容**（`modules/ptc-mode/module.yml`，随包分发、默认不启用）：声明两行——`present-as`（在 **Agent scope** 调官方 `ctx.tools.presentAs('ptc')`，注册表只贡献保留的 `run_code` 传输与生成的 `tools:sdk` 段）与 `run-code-env`（PTC 下 run_code 程序里的 `process.env` 恒为空，该行注入冻结的 `env` 全局并注册 `## run_code environment` 提示段；只在存在 `run_code` 传输的 scope 生效，native 会话零副作用）。
