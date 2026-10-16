@@ -7,7 +7,7 @@
  * 与 `module.yml` 的 `layerSettings` 同形同校验。
  *
  * 全局层与模块层只有一条关系：**存在即覆盖**——模块对该参数有显式取值（`false` 也算）就用
- * 模块的，没有这个键才回退全局。判据与合并都收在 `manifest.ts#resolveModuleParams` 一处，
+ * 模块的，没有这个键才回退全局。判据与合并都收在 `module-params.ts#resolveModuleParams` 一处，
  * 读写端点与客户端都不重复判优先级。固定卡（指令卡）是全局段，它的参数设置区写这里；
  * 模块自己的覆盖仍旧写各自 module.yml。
  *

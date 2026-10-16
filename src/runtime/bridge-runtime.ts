@@ -594,7 +594,7 @@ export function createBridgeRuntime(options: BridgeRuntimeOptions): BridgeRuntim
     const meta = getEngineMeta() as Record<string, unknown> & EngineMetaLayerContract
     // 启用表是「参与运行时装配」的唯一事实来源；随每个模块下发，UI 的开关据此显示。
     const enabledSet = new Set(enabledModuleIds(userModulesDir()))
-    // 模块的 broken 只来自本插件自己的 module.yml 解析结果（manifest.ts#listModules）。
+    // 模块的 broken 只来自本插件自己的 module.yml 解析结果（module-catalog.ts#listModules）。
     // 模块不进入官方 agentPresets 注册表，故不叠加官方 roster 的同名诊断——那会把
     // 「与某官方预设同名」误报成模块损坏，并据此禁用它的启用开关。
     // 逐模块事实与 /bootstrap 的 moduleFacts 同源：装配集合视图一次全局读即可，

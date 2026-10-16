@@ -53,7 +53,7 @@ function warn(ctx: Context, message: string): void {
 export function apply(ctx: Context, configIn: Config): void {
   // 包内目录与输出目录同名；启动只复制缺失项，现有用户定义不被重新铺写。
   const seededModules = new Set(ensureModuleSeed(modulesDir()).created)
-  // 内置技能同一纪律：只补缺失项，用户改过或删过的技能保持原样。
+  // 内置技能同一纪律：只补缺失项，已有目录不碰；删掉的会被这次启动补回。
   ensureSkillSeed()
   const readConfig = () => ({
     modulesEnabled: readModulesEnabled({ modulesEnabled: configIn.modulesEnabled?.get() }),

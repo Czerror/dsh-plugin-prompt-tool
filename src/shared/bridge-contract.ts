@@ -127,7 +127,7 @@ export const BRIDGE_SUBJECT_POLICY = {
   /**
    * 空主语 = **全局层**（存储根 `config.yml` 的 `layerSettings`），不是「没有目标」：
    * 固定卡（指令卡）是全局段，它的参数设置区写全局层；有主语时读写该模块 `module.yml`。
-   * 优先级「模块显式键 ＞ 全局键」由服务端 `manifest.ts#resolveModuleParams` 一处判定，
+   * 优先级「模块显式键 ＞ 全局键」由服务端 `module-params.ts#resolveModuleParams` 一处判定，
    * 端点与客户端都不重复判。
    */
   paramOverrides: 'optional',

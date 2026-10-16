@@ -151,8 +151,9 @@ export function packageSkillsDir(): string {
 /**
  * 按包内同名目录补建缺失的内置技能；已有目录的正文、资源与调用策略保持原样。
  *
- * 与内置模块的种子化同一纪律：只补缺失项，用户改过或删过的技能不会被重新铺写；
- * 失败（包内无 `skills/`、目标不可写等）不阻断启动，用户仍可经 UI 创建或导入。
+ * 与内置模块的种子化同一纪律：只补缺失项，已有目录不碰；但没有删除墓碑，
+ * 用户删掉的内置技能会在下次启动被补回。失败（包内无 `skills/`、目标不可写等）
+ * 不阻断启动，用户仍可经 UI 创建或导入。
  */
 export function ensureSkillSeed(root = userSkillsDir()): { created: string[] } {
   const created: string[] = []
