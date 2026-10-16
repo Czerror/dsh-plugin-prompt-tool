@@ -5,7 +5,7 @@ import { readGlobalLayerSettingsSafe, writeGlobalLayerSettings } from '../../hos
 import { userModulesDir } from '../../host/module-dirs.ts'
 import { loadModuleDefinition } from '../../host/module-slices.ts'
 import { ModuleWriteError } from '../../host/module-write.ts'
-import { editModuleVariables, readModuleVariables } from '../../host/module-variables.ts'
+import { editModuleVariables } from '../../host/module-variables.ts'
 import { saveModuleParams } from '../../host/module-definition-edit.ts'
 import { validateEngineParamValues } from '../../shared/engine-params.ts'
 import type { ModuleVariableRevisions } from '../../shared/module-variables.ts'
@@ -124,12 +124,13 @@ export function registerParams(runtime: ParamsRuntime): Array<() => void> {
         if (record.refreshOnly === true) {
           if (runtime.gate(tx, 'moduleVariables').authorize() === undefined) return
           if (typeof record.expectedModuleId !== 'string') throw new ModuleWriteError('刷新变量必须提供 expectedModuleId')
-          const state = readModuleVariables(dir)
           if (runtime.pendingVariableSettings.has(dir)) {
             try { await runtime.deps.overridesChanged?.(basename(dir)); runtime.pendingVariableSettings.delete(dir) }
             catch (error) { runtime.pendingVariableSettings.set(dir, `变量开关已保存，但运行发布失败：${String(error)}`) }
           }
-          tx.write(200, { ok: true, value: { ...state, ...runtime.variableView(dir), persisted: true } })
+          // 变量视图在重试发布之后取一次：`variableView` 已含 `readModuleVariables` 的全部字段
+          // ＋ `publicationPending`／`publicationError`，先前那次读的字段会被它整体覆盖。
+          tx.write(200, { ok: true, value: { ...runtime.variableView(dir), persisted: true } })
           return
         }
         if (record.variables === undefined && record.enabled === undefined) {
