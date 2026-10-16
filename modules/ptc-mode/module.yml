@@ -42,4 +42,24 @@ modules:
   - present-as     # PTC 呈现：注册表只贡献 run_code + SDK 段（engine/present-as.mjs）
   - run-code-env   # run_code 的冻结 env 注入 + 环境提示段（engine/run-code-env.mjs）
 order: 9
-rules: []
+rules:
+  # 缺省层必须是 `tool-pipeline`：**层设置区只渲染在「带缺省层的规则卡」内部**
+  # （RulesWorkspace.tsx:232 的 `entry.value.layer !== undefined`），而 `run-code-env` 的能力卡与
+  # `runCodeEnvKeys` 参数组都属于 `tool-pipeline` 层——模块若没有该层的规则卡就没有容器可挂，
+  # 表现为「登记与下发全对，UI 里却看不到卡」。
+  #
+  # 规则本身也有真实作用：PTC 下 SDK 段列出的是**全部可见工具**，而按需发现工具
+  # （`tool_search`）在 PTC 里没有意义——SDK 本身就是全量目录——从 SDK 正文裁掉少一段声明。
+  # `sdk-strip` 只删不增、保守失败；native 下官方 `tools:sdk` 段本来就是空串，故零副作用。
+  #
+  # 刻意不用 `tool-narrow`（restrict）：它与「assembly + allowFrom 按需解锁」二选一
+  # （engine/actions/catalog.mjs 的 tool-narrow note），而 tool-surface 走的正是那条路。
+  - id: ptc-sdk-surface
+    name: PTC 的 SDK 暴露面（裁掉按需发现工具）
+    enabled: true
+    layer: tool-pipeline
+    then:
+      - id: strip-tool-search
+        kind: sdk-strip
+        mask:
+          deny: [tool_search]

@@ -1,5 +1,13 @@
 # Changelog
 
+### `ptc-mode` 补一条 `tool-pipeline` 缺省层的规则——能力卡与参数组才在 UI 里出现（2026-10-16）
+
+- **症状**：`runCodeEnvKeys` 参数与 `run-code-env` 能力卡的**登记与下发全对**（`/meta` 的 `editorGroups` 含 `run-code-env`、`ptc-mode.facts.effectiveModules = present-as,run-code-env,instruction-hint,rule-engine`），但工作台里看不到卡片。
+- **根因是 UI 结构、不是登记问题**：层设置区只渲染在**带缺省层的规则卡**内部——`RulesWorkspace.tsx:232` 的条件是 `entry.value.layer !== undefined && hasLayerSettings(layer, moduleId)`；`rules: []` 的模块一张卡都不产生（`InjectionPointsPanel` 的渲染入口还要求本层有内容），`tool-pipeline` 层因此没有容器可挂。附带结论：`tool-surface` 的规则都是**模块级（无 layer）**，所以 `tool-git-bash` 的能力卡同样一直看不到——这是既有结构，不是新参数特有。
+- **修法**：给模块补一条缺省层为 `tool-pipeline` 的规则。规则本身也有真实作用：PTC 下 SDK 段列出**全部可见工具**，而按需发现工具 `tool_search` 在 PTC 里没有意义（SDK 本身就是全量目录），用 `sdk-strip` 把它从 SDK 正文裁掉；native 下官方 `tools:sdk` 段本就是空串，故零副作用。
+- **刻意不用 `tool-narrow`**：它与「`assembly` + `allowFrom` 按需解锁」**二选一**（`engine/actions/catalog.mjs` 的 tool-narrow note，2026-10-10 用户拍板），而 `tool-surface` 走的正是那条路。
+- **验证**：`typecheck`／`lint`（0/0）／全量 test（**692 pass / 0 fail**）／`build`／`git diff --check`／`rebuild:module-template -- --check` 全绿；用户在工作台实测**已能看到卡片**。
+
 ### 新增共享参数 `runCodeEnvKeys`：给 `run-code-env` 行的 `envKeys` 建能力卡（2026-10-16）
 
 - **动机**：`run-code-env` 此前没有能力卡，注入哪些环境变量只能由组合源默认值决定（工作台改不了）。用户要求把 run_code 注入的 env 内容做成可编辑的卡。
