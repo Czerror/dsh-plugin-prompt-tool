@@ -16,7 +16,7 @@
 
 ## 产品边界
 
-项目是位置、时机与受众可配置的提示词注入引擎。promptConfigs 按自身声明的官方插入点按需注册，预设组合行为；不同插入点没有插件自定义的全局运行顺序。PTC、首轮锚定、router-guide、Flash 路由及其他模型增强保持可选或 opt-in。
+项目是位置、时机与受众可配置的提示词注入引擎。promptConfigs 按自身声明的官方插入点按需注册，预设组合行为；不同插入点没有插件自定义的全局运行顺序。PTC、首轮锚定、router-guide 及其他模型增强保持可选或 opt-in。
 
 ## 环境与验证
 
@@ -58,7 +58,7 @@
 - agentPresets 负责官方会话预设切换与同步；webServer 动态等待，ensureWebSurface() 只读诊断。安装和 profile 装配走官方插件管理流程，插件不修改 profile manifest 或包链接。
 - 监听器、工具、watcher 和动态服务挂在 ctx.effect 或 disposer 上；重挂前释放旧实例。
 - 仅依赖已发布的官方包和 node_modules 类型；相对 TypeScript import 保留显式扩展名，纯类型依赖使用 import type。
-- Skills、SillyTavern、角色卡、世界书和自定义工具复用既有 provider、host 工厂和 rebuildPreset()，不在 UI 复制转换或热装配通道。
+- Skills、SillyTavern、角色卡、世界书和自定义工具复用既有 provider、host 工厂与模块重建入口（ModuleToolHost.rebuild），不在 UI 复制转换或热装配通道。
 - 修改源文件后通过 package scripts 重新生成 `lib/` 与 `engine/vendor/yaml/`。`lib/` 是构建产物，已被忽略，不手工编辑也不提交。
 - `engine/vendor/yaml/`（`sync:yaml`）是版本化分发快照：不手工编辑，按任务范围提交；不得 git rm，也不得加入忽略。
 - 插件不分发预设：`engine/compositions/` 只有本地来源，官方工具由会话原有预设提供，模块不重新声明它们。
