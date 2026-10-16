@@ -6,7 +6,11 @@ import { expandModuleSource, installModulePackage, moduleImportPreview } from '.
 import { BRIDGE_ENDPOINTS } from '../../shared/bridge-contract.ts'
 import { readBridgeFiles, readImportRequestParams, type BridgeRuntime } from '../bridge-runtime.ts'
 
-export function registerCharacters(runtime: BridgeRuntime): Array<() => void> {
+/** 本域用到的运行时面：只用这些，不加宽（新域照此声明自己的面）。 */
+type CharactersRuntime = Pick<BridgeRuntime,
+  'deps' | 'register' | 'gate' | 'descriptor' | 'assetSources' | 'finishModuleChange' | 'runOverridesChange'>
+
+export function registerCharacters(runtime: CharactersRuntime): Array<() => void> {
   return [
     // 角色来源沿同一模块安装事务；不再维护独立角色库。
     runtime.register(BRIDGE_ENDPOINTS.charactersImport, { handle: async (tx) => {

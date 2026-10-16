@@ -24,7 +24,11 @@ function uploadFileName(req: IncomingMessage): string {
   }
 }
 
-export function registerTransfer(runtime: BridgeRuntime): Array<() => void> {
+/** 本域用到的运行时面：只用这些，不加宽（新域照此声明自己的面）。 */
+type TransferRuntime = Pick<BridgeRuntime,
+  'deps' | 'register' | 'descriptor' | 'assetSources' | 'finishModuleChange'>
+
+export function registerTransfer(runtime: TransferRuntime): Array<() => void> {
   return [
     runtime.register(BRIDGE_ENDPOINTS.assetUpload, { body: 'none', handle: async (tx) => {
       try {

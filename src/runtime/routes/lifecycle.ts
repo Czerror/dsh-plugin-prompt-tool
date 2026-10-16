@@ -11,7 +11,11 @@ import type { ModuleConfigIdentity } from '../../shared/module-config-order.ts'
 import { BRIDGE_ENDPOINTS, readEditTarget } from '../../shared/bridge-contract.ts'
 import { isRecord, SHA256_HEX_RE, type BridgeRuntime } from '../bridge-runtime.ts'
 
-export function registerLifecycle(runtime: BridgeRuntime): Array<() => void> {
+/** 本域用到的运行时面：只用这些，不加宽（新域照此声明自己的面）。 */
+type LifecycleRuntime = Pick<BridgeRuntime,
+  'deps' | 'register' | 'gate' | 'moduleOrderQueue' | 'runOverridesChange' | 'refreshModuleList' | 'writeModuleOrderError'>
+
+export function registerLifecycle(runtime: LifecycleRuntime): Array<() => void> {
   return [
     runtime.register(BRIDGE_ENDPOINTS.moduleDelete, { handle: async (tx) => {
       const record = tx.record
@@ -125,7 +129,7 @@ export function registerLifecycle(runtime: BridgeRuntime): Array<() => void> {
         return
       }
       const enabled = record.enabled
-      const run = runtime.moduleOrderQueue.then(async () => {
+      const run = runtime.moduleOrderQueue.run(async () => {
         try {
           if (enabled) {
             const changed = appendModuleConfigOrder(userModulesDir(), id)
@@ -143,7 +147,6 @@ export function registerLifecycle(runtime: BridgeRuntime): Array<() => void> {
           runtime.writeModuleOrderError(tx.write, error)
         }
       })
-      runtime.moduleOrderQueue = run.catch(() => {})
       await run
     } }),
     runtime.register(BRIDGE_ENDPOINTS.moduleConfigOrder, { handle: async (tx) => {
@@ -161,7 +164,7 @@ export function registerLifecycle(runtime: BridgeRuntime): Array<() => void> {
         tx.write(400, { ok: false, code: 'module-config-order-invalid', message: '排序只接受配置身份列表和读取时的版本' })
         return
       }
-      const run = runtime.moduleOrderQueue.then(async () => {
+      const run = runtime.moduleOrderQueue.run(async () => {
         try {
           const moduleId = body.moduleId as string | undefined
           if (writing) {
@@ -175,7 +178,6 @@ export function registerLifecycle(runtime: BridgeRuntime): Array<() => void> {
           runtime.writeModuleOrderError(tx.write, error)
         }
       })
-      runtime.moduleOrderQueue = run.catch(() => {})
       await run
     } }),
   ]

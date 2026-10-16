@@ -25,7 +25,10 @@ function projectToolSchemas(schemas: readonly ToolSchemaLike[]): Array<{ name: s
   return [...unique.values()].sort((a, b) => a.name < b.name ? -1 : a.name > b.name ? 1 : 0)
 }
 
-export function registerDiagnostics(runtime: BridgeRuntime): Array<() => void> {
+/** 本域用到的运行时面：只用这些，不加宽（新域照此声明自己的面）。 */
+type DiagnosticsRuntime = Pick<BridgeRuntime, 'agentScope' | 'registerAgentRoute'>
+
+export function registerDiagnostics(runtime: DiagnosticsRuntime): Array<() => void> {
   return [
     runtime.registerAgentRoute(BRIDGE_ENDPOINTS.toolSurface, { body: 'json', handle: async (tx) => {
       const record = tx.record

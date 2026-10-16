@@ -12,7 +12,11 @@ import { BRIDGE_ENDPOINTS } from '../../shared/bridge-contract.ts'
 import { writeLayerSettingsError } from '../module-subject-gate.ts'
 import { declarationsOf, declaresAny, isRecord, type BridgeRuntime } from '../bridge-runtime.ts'
 
-export function registerParams(runtime: BridgeRuntime): Array<() => void> {
+/** 本域用到的运行时面：只用这些，不加宽（新域照此声明自己的面）。 */
+type ParamsRuntime = Pick<BridgeRuntime,
+  'deps' | 'register' | 'gate' | 'pendingVariableSettings' | 'runOverridesChange' | 'readParamOverrides' | 'variableView'>
+
+export function registerParams(runtime: ParamsRuntime): Array<() => void> {
   return [
     runtime.register(BRIDGE_ENDPOINTS.paramOverrides, { handle: async (tx) => {
       const record = tx.record

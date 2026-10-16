@@ -31,7 +31,11 @@ function customToolModules(tools: unknown[]): string[] {
   return [...modules]
 }
 
-export function registerDefinitions(runtime: BridgeRuntime): Array<() => void> {
+/** 本域用到的运行时面：只用这些，不加宽（新域照此声明自己的面）。 */
+type DefinitionsRuntime = Pick<BridgeRuntime,
+  'deps' | 'register' | 'gate' | 'capabilityQueue' | 'finishModuleChange' | 'runOverridesChange'>
+
+export function registerDefinitions(runtime: DefinitionsRuntime): Array<() => void> {
   return [
     runtime.register(BRIDGE_ENDPOINTS.customTools, { handle: async (tx) => {
       const record = tx.record
@@ -173,7 +177,7 @@ export function registerDefinitions(runtime: BridgeRuntime): Array<() => void> {
         tx.write(400, { ok: false, code: 'engine-capability-invalid', message: '能力或 recipe 请求格式无效' })
         return
       }
-      const run = runtime.capabilityQueue.then(async () => {
+      const run = runtime.capabilityQueue.run(async () => {
         // 队列等待之后的写前复检：可写 + 身份一次判完（默认核形状）。
         if (runtime.gate(tx, 'moduleCapability').authorize() === undefined) return
         try {
@@ -193,7 +197,6 @@ export function registerDefinitions(runtime: BridgeRuntime): Array<() => void> {
           tx.write(409, { ok: false, code: 'engine-capability-rejected', message: `引擎能力变更失败：${message}` })
         }
       })
-      runtime.capabilityQueue = run.then(() => undefined, () => undefined)
       await run
     } }),
   ]

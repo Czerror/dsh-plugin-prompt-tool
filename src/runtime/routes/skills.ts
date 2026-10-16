@@ -15,7 +15,10 @@ function readSkillOverwrite(value: unknown): string[] | undefined {
     ? [...new Set(value as string[])] : undefined
 }
 
-export function registerSkills(runtime: BridgeRuntime): Array<() => void> {
+/** 本域用到的运行时面：只用这些，不加宽（新域照此声明自己的面）。 */
+type SkillsRuntime = Pick<BridgeRuntime, 'deps' | 'scope' | 'register' | 'collectSkills'>
+
+export function registerSkills(runtime: SkillsRuntime): Array<() => void> {
   return [
     runtime.register(BRIDGE_ENDPOINTS.skillsList, { handle: async (tx) => {
       const session = readSessionIdField(tx.record)

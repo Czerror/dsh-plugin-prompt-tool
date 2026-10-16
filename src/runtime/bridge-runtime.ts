@@ -404,6 +404,25 @@ export interface BridgeRuntimeOptions {
   ns: string
 }
 
+/**
+ * 串行队列：同一存储卷上的写入依次执行。两个使用者（能力提交 / 模块排序与启用）＝真 seam。
+ * 链尾只吞掉自己的错误（否则一次失败会毒化后面的排队者），任务的拒绝仍原样返回给调用方。
+ */
+export interface SerialQueue {
+  run<T>(task: () => Promise<T>): Promise<T>
+}
+
+export function createSerialQueue(): SerialQueue {
+  let tail: Promise<unknown> = Promise.resolve()
+  return {
+    run<T>(task: () => Promise<T>): Promise<T> {
+      const started = tail.then(task)
+      tail = started.then(() => undefined, () => undefined)
+      return started
+    },
+  }
+}
+
 /** 桥运行态：域文件从这里取全部共享态与共享 helper。 */
 export interface BridgeRuntime {
   /** 宿主依赖面（provider 与刷新回调）。 */
@@ -422,8 +441,6 @@ export interface BridgeRuntime {
   register(endpoint: string, spec: BridgeRouteSpec): () => void
   /** 第二个注入域的注册点：同一个事务入口，另一个作用域的 webServer；返回 disposer。 */
   registerAgentRoute(endpoint: string, spec: BridgeRouteSpec): () => void
-  /** 事务入口（唯一 handler 包装）；两个注入域共用。 */
-  route(spec: BridgeRouteSpec): ReturnType<typeof bridgeTransaction>
   /** 过门：`inspect` = 读前闸（含声明面），`authorize` = 写前闸（复检）。 */
   gate(tx: BridgeTransaction, key: BridgeEndpointKey): GateHandle
   /** descriptor 缓存（30s TTL）：读、按目标投影、失效。 */
@@ -435,9 +452,9 @@ export interface BridgeRuntime {
   /** 上传暂存源（settings 域建，随该域销毁）。 */
   readonly assetSources: ReturnType<typeof createAssetSources>
   /** 能力/recipe 写入队列：同一存储卷上的变更串行。 */
-  capabilityQueue: Promise<void>
+  readonly capabilityQueue: SerialQueue
   /** 模块排序与启用共用的写入队列。 */
-  moduleOrderQueue: Promise<void>
+  readonly moduleOrderQueue: SerialQueue
   /** 变量开关待运行发布的模块（目录 → 上次失败原因）。 */
   readonly pendingVariableSettings: Map<string, string>
   /** 写盘已完成：等重建，失败立即返回统一错误。 */
@@ -762,12 +779,11 @@ export function createBridgeRuntime(options: BridgeRuntimeOptions): BridgeRuntim
     attachAgentScope,
     register,
     registerAgentRoute,
-    route,
     gate: gateFor,
     descriptor: { find: findDescriptor, forTarget: descriptorForTarget, invalidate: invalidateDescriptor },
     get assetSources() { return attached(uploads, 'settings') },
-    capabilityQueue: Promise.resolve(),
-    moduleOrderQueue: Promise.resolve(),
+    capabilityQueue: createSerialQueue(),
+    moduleOrderQueue: createSerialQueue(),
     pendingVariableSettings,
     finishModuleChange,
     runOverridesChange,

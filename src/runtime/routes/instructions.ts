@@ -19,7 +19,10 @@ import {
   type BridgeRuntime,
 } from '../bridge-runtime.ts'
 
-export function registerInstructions(runtime: BridgeRuntime): Array<() => void> {
+/** 本域用到的运行时面：只用这些，不加宽（新域照此声明自己的面）。 */
+type InstructionsRuntime = Pick<BridgeRuntime, 'deps' | 'scope' | 'register' | 'gate'>
+
+export function registerInstructions(runtime: InstructionsRuntime): Array<() => void> {
   return [
     runtime.register(BRIDGE_ENDPOINTS.promptConfigs, { handle: async (tx) => {
       const session = readSessionIdField(tx.record)

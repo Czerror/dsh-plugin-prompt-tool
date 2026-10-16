@@ -14,7 +14,11 @@ import {
   type BridgeRuntime,
 } from '../bridge-runtime.ts'
 
-export function registerMeta(runtime: BridgeRuntime): Array<() => void> {
+/** 本域用到的运行时面：只用这些，不加宽（新域照此声明自己的面）。 */
+type MetaRuntime = Pick<BridgeRuntime,
+  'scope' | 'register' | 'gate' | 'descriptor' | 'loadEngineMeta' | 'collectDescribeExtras' | 'readParamOverrides' | 'variableView'>
+
+export function registerMeta(runtime: MetaRuntime): Array<() => void> {
   return [
     runtime.register(BRIDGE_ENDPOINTS.bootstrap, { handle: async (tx) => {
       // optional：空目标是合法状态，只回全局段（模块段缺席）。

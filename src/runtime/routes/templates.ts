@@ -3,7 +3,10 @@ import { loadPromptTemplates, loadToolTemplates } from '../../host/templates.ts'
 import { BRIDGE_ENDPOINTS } from '../../shared/bridge-contract.ts'
 import type { BridgeRuntime } from '../bridge-runtime.ts'
 
-export function registerTemplates(runtime: BridgeRuntime): Array<() => void> {
+/** 本域用到的运行时面：只用这些，不加宽（新域照此声明自己的面）。 */
+type TemplatesRuntime = Pick<BridgeRuntime, 'register'>
+
+export function registerTemplates(runtime: TemplatesRuntime): Array<() => void> {
   return [
     runtime.register(BRIDGE_ENDPOINTS.templates, { body: 'none', handle: async (tx) => {
       try {

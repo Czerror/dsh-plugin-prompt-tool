@@ -4,7 +4,10 @@ import { PARAM_KEYS, readModulesEnabled } from '../../config.ts'
 import { BRIDGE_ENDPOINTS } from '../../shared/bridge-contract.ts'
 import type { BridgeRuntime } from '../bridge-runtime.ts'
 
-export function registerSettingsDomain(runtime: BridgeRuntime): Array<() => void> {
+/** 本域用到的运行时面：只用这些，不加宽（新域照此声明自己的面）。 */
+type SettingsRuntime = Pick<BridgeRuntime, 'ns' | 'scope' | 'register' | 'gate' | 'descriptor'>
+
+export function registerSettingsDomain(runtime: SettingsRuntime): Array<() => void> {
   return [
     runtime.register(BRIDGE_ENDPOINTS.mutate, { handle: async (tx) => {
       // optional：空目标 = 只改全局键、descriptor 不投影 moduleId；目标只当身份用，

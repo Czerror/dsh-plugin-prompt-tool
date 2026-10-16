@@ -5,11 +5,14 @@
 ### settings-bridge 收门 ＋ 全拆十一域（2026-10-16）
 
 - **`src/runtime/settings-bridge.ts` 1996 → 73 行**：只剩装配——建一次运行时 → 两个 `ctx.inject` 作用域 → 调 11 个域的注册函数 → 返回逐个 dispose。45 个端点 key／路径、响应与错误码一字未变。
-- **新增 `src/runtime/bridge-runtime.ts`（782 行）**：共享运行态**只建一次**（descriptor 30s 缓存、`assetSources`、`capabilityQueue`、`moduleOrderQueue`、`pendingVariableSettings`、`warnedOfficialOrders`、change 回调、`route`／`register`／`gate`、跨域 helper）。各域**零自建状态**——这是拆分最容易出错处（各域自建＝缓存不失效／串行化失效）。
+- **新增 `src/runtime/bridge-runtime.ts`（782 行）**：共享运行态**只建一次**（descriptor 30s 缓存、`assetSources`、`capabilityQueue`、`moduleOrderQueue`、`pendingVariableSettings`、`warnedOfficialOrders`、change 回调、`register`／`gate`、跨域 helper；`route` 只归运行时内部的注册通道）。各域**零自建状态**——这是拆分最容易出错处（各域自建＝缓存不失效／串行化失效）。
+- **（收紧）每域窄依赖**：11 个域各自声明 `type XxxRuntime = Pick<BridgeRuntime, …>`，可见面从整个 runtime（24 项）降到 **1–8 项**；`typecheck` 会拒绝域碰到未声明的面，该域的接口边界因此可被检查。`route` 从域可见面撤出（只有运行时自己的 `register`／`registerAgentRoute` 用），接口成员 24 → 23。
+- **（收紧）串行闸成真模块**：`capabilityQueue`／`moduleOrderQueue` 三处形态逐字同构（`queue.then(task)` → 同步重赋链尾 → `await run`；链尾写法 `.then(()=>undefined,()=>undefined)` 与 `.catch(()=>{})` 语义等价；返回值三处都不消费；无状态耦合），因此提成 `createSerialQueue()`（`SerialQueue.run(task)`，注释标明「两个使用者＝真 seam」）；两条队列各一实例并转 `readonly`，三个调用点删掉重赋行、任务体一字未改。
 - **新增 `src/runtime/routes/*.ts` 11 个域（1455 行）**：meta／settings／skills／templates／instructions／params／definitions／transfer／lifecycle／characters／diagnostics，与 host 侧模块边界一致；改一个端点只需进一个域文件。
 - **过门知识收敛**：`module-subject-gate.ts` 新增静态策略表 `GATE_POLICY`（当前只有 `mutate`／`moduleDelete` 的 `format:false`）与两阶段门对象——`inspect(write?)` ＝读前闸（含声明面）、`authorize()` ＝写前闸（跳声明面、先判可写，逐字等于基线的 `{write:true}`）。26 处调用点全部改为 `runtime.gate(tx, key).inspect(...)`／`.authorize()`，`rg 'subjectGate\(' src/runtime` 只剩门模块自身 4 行（文档／工厂内两次调用／定义）。判据顺序、拒绝码与时机未动。
 - **两处如实登记的差异**：① `moduleCapability` 由最后注册改为随 definitions 域注册（路径全 exact 且无重复，观察不到差异）；② 服务重注入时 `pendingVariableSettings`／两条队列／`warnedOfficialOrders`／`assetSources` **现在保留**（基线会重置；descriptor 缓存仍在 attach 时显式清空以对齐基线）——保留这些状态更正确（待发布标记与暂存来源不该因服务重启而丢），但这是行为差异，非静默改动。
 - **7 个端点零测试覆盖**（models／modelReasoning／skillRead／skillWrite／templates／promptConfigs／contextActivationDiagnostics）：本轮只做逐行比对，**不为此专门补测**（避免为覆盖率而测）；真改到哪个端点时再补穿过接口的行为测试。
+- **未附并发回归测试**：`createSerialQueue()` 的等价性是逐行论证 ＋ 端点既有回归网（`settings-bridge.test.mjs` 的排序／能力用例），但**没有「两个并发写不得交错」的断言**——提取出的并发语义本身还缺一条 check，作为紧随其后的小项补上。
 - **验证**：`typecheck`／`lint`（305 文件，0 警告 0 错误）／`test`（**670 pass / 0 fail**，默认 4 路）／`build`／`git diff --check` 全绿；归一化行级残差比对显示差异只来自门的调用形态、共享态落点与包装层收尾，无未解释的内容变化。
 
 ### 测试入口默认单用例超时 10s（2026-10-16）
