@@ -144,7 +144,14 @@ test('旧扁平人设和非法新字段明确拒绝且不改盘', () => {
     const aliased = readModulePersona(dir)
     const bytes = readFileSync(file)
     for (const next of [{ main: { ...aliased.persona.main, prefix: 'AFTER' } }, null]) {
-      assert.throws(() => saveModulePersona(moduleRoot, 'persona-retired', next, aliased.revision), /YAML.*引用/)
+      assert.throws(() => saveModulePersona(moduleRoot, 'persona-retired', next, aliased.revision), error => {
+        // 主路径（改锚点标量、值不等）与异常分支（next=null 删 persona → `unknown: *shared` 悬空、
+        // 序列化与诊断双双抛，只给固有文案）都必须归到同一个 wire 码，不能冒成 500 或别的域码。
+        assert.equal(error.code, 'shared-alias')
+        assert.equal(error.status, 400)
+        assert.match(error.message, /YAML.*引用/)
+        return true
+      })
       assert.deepEqual(readFileSync(file), bytes, '共享别名拒绝后完整定义保持原字节')
     }
   }
