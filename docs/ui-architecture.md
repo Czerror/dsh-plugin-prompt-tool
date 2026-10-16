@@ -142,17 +142,12 @@
     │  │  ├─ RulesWorkspace.tsx
     │  │  ├─ textarea-resize.ts
     │  │  ├─ useTemplatePicker.ts
-    │  │  └─ WorldBookDiagnosticsCard.tsx
+    │  │  └─ ContextActivationDiagnosticsCard.tsx
     │  ├─ skills/
     │  │  ├─ skill-status.ts
     │  │  ├─ skills.module.css
     │  │  ├─ SkillRow.tsx
     │  │  └─ SkillsPage.tsx
-    │  ├─ subagents/
-    │  │  ├─ DelegationToolsCard.tsx
-    │  │  ├─ subagent-policy-draft.ts
-    │  │  ├─ subagents.module.css
-    │  │  └─ SubagentToolPolicyCard.tsx
     │  └─ tools/
     │     ├─ custom-tool-parameters.ts
     │     ├─ CustomToolEditor.tsx
@@ -278,7 +273,7 @@ workspace-pages.ts 是页面元数据的唯一来源。默认页为 features，�
 
 | id | 标题 | 主要组合 |
 |---|---|---|
-| features | 主会话 | `RulesWorkspace` 展示模块规则；原指令文件卡置于规则与诊断卡之前。页面负责模板创建和受众视图，`EngineLayersPanel#engineLayerSlots` 提供卡内共享设置 |
+| features | 主会话 | `RulesWorkspace` 展示模块规则；原指令文件卡置于规则与诊断卡之前。页面负责模板创建和受众视图，`InjectionPointsPanel#injectionPointSlots` 提供卡内共享设置 |
 | subagent | 子代理 | 同一 `RulesWorkspace` 和 `injectionPointSlots(audience: 'subagent')`，共用模块规则草稿与模板入口；显示同源指令文件卡及指令路径提示设置 |
 | tools | 工具预览 | 顶置统一搜索；当前会话／所选预设两个可折叠分组，预设选择位于分组标题右侧；双列展开详情卡，680px 以下单列 |
 | skills | 技能设置 | 技能根与资产卡（用户技能根、创建、复制导入、技能文件夹引用）、状态与来源筛选、单一列表的 SkillRow（三行摘要、文件编辑、调用策略开关、删除） |
@@ -717,7 +712,6 @@ context-activation 视图只调整附加提示，不另设模块卡容器；能�
     features/prompts/rules.module.css
     app/workspace/pages/layer-settings.module.css
     features/skills/skills.module.css
-    features/subagents/subagents.module.css
     features/tools/tools.module.css
 
 约束：

@@ -26,7 +26,7 @@
 | `session` 谓词的 `present` | 按 `type`：消息类 → 当前上下文；其余 → 完整历史 | 同上；非消息类型若读当前上下文会恒真或恒假 |
 | `condition#lastAssistantText`（`turn-stop` 的缺省匹配对象） | 当前上下文 | 模型现在看到的末条 |
 | `interpolate#lastMessageOf`（`{{lastusermessage}}` / `{{lastcharmessage}}`） | 当前上下文 | 这两个宏是官方按可见消息求值的运行时事实 |
-| `st-world-book#stChatMessages` | 当前上下文（按 `seq` 去重） | 关键词只由模型看得见的对话触发 |
+| `context-activation#conversationMessages` | 当前上下文（按 `seq` 去重） | 关键词只由模型看得见的对话触发 |
 | `st-render#generationKey` | **完整历史** | 帧边界与 `tool/call` 折叠都是 log-only 事件；用当前上下文会让那些分支变成死代码，且与降级路径结论不同 |
 | `compaction-epoch#scan`（门控冷启动） | **完整历史** | 「本会话曾经 tool/call 过」是状态性历史事实，压缩遮蔽不该抹掉它 |
 | `actions/assembly#fillUnlocked` | **完整历史** | 解锁名单不能因压缩而丢，否则已发现的工具被裁 |
