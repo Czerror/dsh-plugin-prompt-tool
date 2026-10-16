@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+### 人设的读改写收进 owner（C3 第二处，照 tools 样板）（2026-10-16）
+
+- **新增 `src/client/data/persona-editor.ts`**：`createPersonaEditors(drafts, deps)` → `editorOf(moduleId)`，动作 `load(audience, discard?)`／`patch`／`save(audience, remove?)`／`retryPublication`／`scheduleAutoSave`／`cancelAutoSave`。deps 显式：`request`／`getModuleId(audience)`／`isCurrentSubject`／`declares`／`isCurrent`／`isComposing`／`t`／`changed`／`onDeclared`。载体的实例跨渲染缓存（`owners` Map ＋ `sync`），因为它持有 600ms 续存定时器。
+- **卡片的三个手写协议动作移走**（`ModulePersonaCard.tsx`：`loadPersona`／`write`／`retryPublication` ＋ 自带的 `saveTimer`），只留两个薄包装 `save`／`retryPublication`——提示文案与「删除失败要抛错」留在 UI 层；`patch` 也改调 owner（字段合并与空受众回收在 owner 里）。
+- **两个纯函数一并下沉**：`personaWriteBody`／`readModulePersona` 移到 `data/persona-editor.ts`，**卡片按原路径转出**——它们此前定义在 features 层，而 owner 在 data 层，不搬就是又一处 data→features 反向依赖（与上一轮 `ToolDraft` 同类）。`readModulePersona` 的 `request` 第三参带默认实现，既有测试的两参调用零改动。
+- **测试抓到一处我自己的真差异**：owner 的 `load` 初版只判 `isLatest`，**漏了原实现里卡片 `mounted` ref 的判据** ⇒ 卸载后迟到的应答仍会落地。补成 `!deps.isCurrent() || !isLatest(...)`，并让 `cancelAutoSave()` 在卸载时推进序号（原实现用 `mounted` ref 表达同一件事）。
+- **新增 `test/client/persona-editor.test.mjs`（4 条直测）**：① 迟到应答不落地（**先落地一次才能造出迟到**——`loading` 守卫会挡住未完成时发起的第二次读，这条是我第一版测试写错、被实现纠正的）；② 读期间草稿被换过就不覆盖、卸载后不落地也不清 `loading`；③ 只改本次受众 ＋ **创建模式不带 `expectedRevision`**（未声明时那次读根本不构造请求）；④ 删除失败要抛错、`cancelAutoSave` 后续存不发请求、未取消时 600ms 自动续存一次、**输入法组合期间不落盘**。
+- **判别力实测（两处，先红后还原）**：去掉 `load` 的 `isLatest` 判据、把 `creating` 判据改成恒假 → 「创建模式不带 expectedRevision」用例红；还原后 4 pass。（还原用 Node 逆向替换——`git checkout` 对**未跟踪的新文件**无效，这一点踩过一次。）
+- **验证**：`typecheck`（三项目）／`lint` 0 warnings／全量 **684 pass / 0 fail**（改前 680 ＋ 新增 4）／`build`／`git diff --check` 全绿；相关 SSR 用例（`module-asset-subject` 28 条）零改动仍绿，含「未声明一个请求都不发」那条声明面用例。
+- **本轮明确不做**（与上一轮同口径）：① `personaSources` 槽仍是卡里的手写读改写——它是**单例**、`revision: string \| null`、读/写都**不带主语头**，与 persona 形状不同，硬塞进同一 owner 会得到浅接口；② 不为 `write`／`save`／`retryPublication` 补序号（入口有 `saving`／`loading`／`!loaded` 守卫，迟到覆盖**未验证**）；③ 不统一脏判定的三种粒度（`:243` 单受众 JSON 比较、`:316` 整 value、`:240` 引用比较各有消费点）；④ 不动 `DraftsPort` 收窄。
+
 ### 自定义工具的读改写收进 owner（2026-10-16）
 
 - **新增 `src/client/data/tools-editor.ts`**：`createToolsEditor(moduleId, draft, deps)`——deps 三项（`reader`／`request`／`isCurrent`）＋`changed`／`onDeclared`，动作 `load`／`mutate`／`applyPatch`／`save`／`insertTemplate`。形态照 `rule-drafts.ts` 的最小骨架（载体作位置参数、依赖显式、用 `resource-track.ts` 的 `beginLatest`／`isLatest`），比 rules 少的部分是刻意的：工具没有 CAS 版本、没有冲突分类、没有增量 patch，草稿就是整组工具。

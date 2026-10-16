@@ -1,5 +1,5 @@
 /** 独立主/子人设卡；字段省略、显式空文本与 false 分别保存。 */
-import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { Button } from '../../ui/Button.tsx'
 import { createWorkspaceDrafts, type PersonaEditorDraft, type WorkspaceDrafts } from '../../data/workspace-drafts.ts'
 import { beginLatest, isLatest } from '../../data/resource-track.ts'
@@ -10,36 +10,17 @@ import type { ModuleSummary } from '../../../shared/bridge-contract.ts'
 import { CollapsibleCard } from '../../ui/CollapsibleCard.tsx'
 import { PromptConfigNavigation } from '../../ui/PromptConfigNavigation.tsx'
 import { MenuSelect } from '../../ui/MenuSelect.tsx'
-import type { PersonaAudience, PersonaSources, PersonaSpec, PersonaTargetSpec } from '../../../shared/persona-section.ts'
-import type { BridgeRequestMap } from '../../../shared/bridge-contract.ts'
+import { createPersonaEditors, personaWriteBody, readModulePersona } from '../../data/persona-editor.ts'
+import type { PersonaAudience, PersonaSources, PersonaTargetSpec } from '../../../shared/persona-section.ts'
 import { ConfirmDialog } from '../../ui/ConfirmDialog.tsx'
 import { FormField } from '../../ui/FormField.tsx'
 import styles from '../../ui/controls.module.css'
 import css from './persona.module.css'
 
+// 读改写已搬进 `data/persona-editor.ts`；这两个纯函数仍从本模块转出（既有测试与调用方按此路径导入）。
+export { personaWriteBody, readModulePersona }
+
 type Notice = (kind: 'ok' | 'error', message: string) => void
-
-/**
- * 人设写请求载荷：**创建模式（该模块未声明 `persona`）不传 `expectedRevision`**——没有前状态就没有
- * 可冲突的对象（服务端据此走创建语义）；已声明时必须带读取到的模块版本。
- * `persona: null` 仍是「删除该段」的既有语义（只在已声明时有意义）。
- */
-export function personaWriteBody(moduleId: string, submitted: PersonaSpec, revision: string, creating: boolean): BridgeRequestMap['persona'] {
-  return {
-    persona: Object.keys(submitted).length ? submitted : null,
-    expectedModuleId: moduleId,
-    ...(creating ? {} : { expectedRevision: revision }),
-  }
-}
-
-/**
- * 人设读数请求（主语＝该模块）：**声明面明确未声明就不构造这次请求**（返回 `undefined`）——
- * 服务端读了也是 400 `module-not-declared`。这只决定「读不发」，不决定编辑器出不出：
- * 本卡是固定卡，未声明时按空内容渲染编辑器，保存即建立该节（写路径不查声明面）。
- */
-export const readModulePersona = (moduleId: string, undeclared: boolean) =>
-  undeclared ? undefined : bridgeCall('persona', { expectedModuleId: moduleId }, moduleId)
-const notify = (draft: { listeners?: Set<() => void> }): void => { for (const listener of draft.listeners ?? []) listener() }
 
 /** 独立主/子人设卡；字段省略、显式空文本与 false 分别保存。
  *  **主语由归属方给**：本卡的主语来自它自己读到的 `personaSources`（main／subagent 指向哪个模块）；
@@ -66,18 +47,10 @@ export function ModulePersonaCard(props: {
   const mounted = useRef(false)
   const [confirming, setConfirming] = useState<{ moduleId: string; audience: PersonaAudience; reload?: boolean }>()
   const [activeField, setActiveField] = useState<'prefix' | 'suffix'>('prefix')
-  const saveTimer = useRef<ReturnType<typeof setTimeout>>()
   const composing = useRef(false)
   const refresh = useCallback(() => { if (mounted.current) redraw(value => value + 1) }, [])
-  const editorOf = useCallback((moduleId: string): PersonaEditorDraft => {
-    let editor = drafts.persona.get(moduleId)
-    if (!editor) {
-      const empty = {}
-      editor = { value: empty, saved: empty, revision: '', declared: false, loaded: false, error: '', saving: false, latest: 0 }
-      drafts.persona.set(moduleId, editor)
-    }
-    return editor
-  }, [drafts])
+  // 人设的读改写归 owner（`data/persona-editor.ts`）；本卡只注册重画回调，并保留 selection（personaSources 仍在本卡）。
+  const notify = (draft: { listeners?: Set<() => void> }): void => { for (const listener of draft.listeners ?? []) listener() }
   const loadSources = useCallback(async (): Promise<void> => {
     if (selection.saving || selection.loading) return
     const sequence = beginLatest(selection)
@@ -121,39 +94,21 @@ export function ModulePersonaCard(props: {
   }
   /** 本卡的主语：人设来源指向的模块（没有来源就用调用方给的首选模块）。 */
   const moduleId = selection.value[audience] ?? props.moduleId
-  const currentOwner = useRef({ moduleId, audience })
-  currentOwner.current = { moduleId, audience }
   /** 该主语没声明 `persona`：**不读该节**（读了也是 400）、内容按空、保存即建立声明。
    *  本卡是固定卡——未声明也照常出编辑器，编辑器不随声明面出现或消失。未知（未下发）不当作未声明。 */
   const undeclared = moduleId !== undefined && moduleDeclares(props.modules, moduleId, 'persona') === false
-  const loadPersona = useCallback(async (moduleId: string, discard = false): Promise<void> => {
-    const editor = editorOf(moduleId)
-    if (editor.saving || editor.loading || (!discard && JSON.stringify(editor.value) !== JSON.stringify(editor.saved))) return
-    // 声明面明确未声明：创建模式——**不构造这次读**（读了也是 400）；空草稿就是真值，保存即建立该节。
-    const pending = readModulePersona(moduleId, undeclared)
-    if (pending === undefined) {
-      editor.loaded = true
-      editor.error = ''
-      notify(editor)
-      return
-    }
-    const sequence = beginLatest(editor)
-    editor.loading = true
-    const readingDraft = editor.value
-    editor.error = ''
-    notify(editor)
-    const result = await pending
-    if (!isLatest(editor, sequence)) return
-    editor.loading = false
-    if (editor.value !== readingDraft) { notify(editor); return }
-    if (result.ok) {
-      editor.value = editor.saved = result.value.persona ?? {}
-      editor.revision = result.value.revision
-      editor.declared = result.value.persona !== null
-      editor.loaded = true
-    } else editor.error = result.message ?? t('persona.notice.loadFailed')
-    notify(editor)
-  }, [editorOf, t, undeclared])
+  const owners = useMemo(() => createPersonaEditors(drafts, {
+    request: (body, moduleId) => bridgeCall('persona', body, moduleId),
+    // 主语＝该受众的人设来源；没选来源时用归属方给的首选模块（`undefined` 表示当前没有主语）。
+    getModuleId: target => selection.value[target] ?? props.moduleId,
+    isCurrentSubject: (target, id) => (selection.value[target] ?? props.moduleId) === id,
+    declares: id => moduleDeclares(props.modules, id, 'persona'),
+    isCurrent: () => mounted.current,
+    isComposing: () => composing.current,
+    t,
+    changed: refresh,
+    onDeclared: props.onDeclared,
+  }), [drafts, refresh, t, selection, props.modules, props.moduleId, props.onDeclared])
   useEffect(() => {
     mounted.current = true
     selection.listeners ??= new Set()
@@ -162,83 +117,43 @@ export function ModulePersonaCard(props: {
     return () => { mounted.current = false; selection.listeners?.delete(refresh) }
   }, [selection, refresh, loadSources])
   useEffect(() => {
+    mounted.current = true
+    selection.listeners ??= new Set()
+    selection.listeners.add(refresh)
+    void loadSources()
+    return () => { mounted.current = false; selection.listeners?.delete(refresh) }
+  }, [selection, refresh, loadSources])
+  const draftOf = (id: string): PersonaEditorDraft => owners.editorOf(id).draft
+  useEffect(() => {
     if (!selection.loaded || !moduleId) return
-    const editor = editorOf(moduleId)
+    const editor = draftOf(moduleId)
     editor.listeners ??= new Set()
     editor.listeners.add(refresh)
-    if (!editor.saving) void loadPersona(moduleId)
+    if (!editor.saving) void owners.editorOf(moduleId).load(audience)
     return () => { editor.listeners?.delete(refresh) }
-  }, [moduleId, selection.loaded, editorOf, loadPersona, refresh])
-
-  const patch = (moduleId: string, audience: PersonaAudience, field: keyof PersonaTargetSpec, value: string | boolean | undefined): void => {
-    const editor = editorOf(moduleId)
-    const target = { ...editor.value[audience] }
-    if (value === undefined) delete target[field]
-    else Object.assign(target, { [field]: value })
-    const next = { ...editor.value }
-    if (Object.keys(target).length === 0) delete next[audience]
-    else next[audience] = target
-    editor.value = next
-    notify(editor)
-    if (saveTimer.current !== undefined) clearTimeout(saveTimer.current)
-    saveTimer.current = setTimeout(() => {
-      saveTimer.current = undefined
-      if (!composing.current) void write(moduleId, audience)
-    }, 600)
-  }
-  const write = async (moduleId: string, audience: PersonaAudience, remove = false): Promise<void> => {
-    const editor = editorOf(moduleId)
-    if (editor.saving || !editor.loaded || editor.error || editor.loading) return
-    const target = editor.value[audience]
-    const submitted = { ...editor.saved }
-    if (remove || target === undefined) delete submitted[audience]
-    else submitted[audience] = target
-    editor.saving = true
-    notify(editor)
-    // 未声明 persona 的首次写入＝创建：不传 expectedRevision——没有前状态就没有可冲突的对象，
-    // 传空串会被服务端当成非法版本拒绝。已声明时仍带读取到的模块版本。
-    const creating = !editor.declared && moduleDeclares(props.modules, moduleId, 'persona') === false
-    const result = await bridgeCall('persona', personaWriteBody(moduleId, submitted, editor.revision, creating), moduleId)
-    editor.saving = false
-    if (result.ok) {
-      editor.saved = result.value.persona ?? {}
-      editor.revision = result.value.revision
-      editor.declared = result.value.persona !== null
-      editor.publicationPending = result.value.publicationPending === true
-      editor.publicationError = result.value.publicationError
-      // 创建模式下这次写盘建立了声明：重读 `/meta`，卡片随即按正常形态出现。
-      if (undeclared) props.onDeclared?.()
-      if (editor.value[audience] === target) {
-        editor.value = { ...editor.value }
-        if (editor.saved[audience] === undefined) delete editor.value[audience]
-        else editor.value[audience] = editor.saved[audience]
-      }
+  }, [audience, moduleId, selection.loaded, owners, refresh, draftOf])
+  const patch = (moduleId: string, audience: PersonaAudience, field: keyof PersonaTargetSpec, value: string | boolean | undefined): void =>
+    owners.editorOf(moduleId).patch(audience, field, value)
+  /** 保存／删除本次受众：协议在 owner，本卡只负责提示与删除失败的错误抛出。 */
+  const save = async (moduleId: string, audience: PersonaAudience, remove = false): Promise<void> => {
+    const editor = draftOf(moduleId)
+    try { await owners.editorOf(moduleId).save(audience, remove) } catch (error) {
+      if (mounted.current) onNotice('error', error instanceof Error ? error.message : t('persona.notice.saveFailed'))
+      return
     }
-    if (result.ok && mounted.current && currentOwner.current.moduleId === moduleId && currentOwner.current.audience === audience
-      && JSON.stringify(editor.value[audience]) !== JSON.stringify(editor.saved[audience]) && !composing.current) {
-      if (saveTimer.current !== undefined) clearTimeout(saveTimer.current)
-      saveTimer.current = setTimeout(() => { saveTimer.current = undefined; void write(moduleId, audience) }, 600)
-    }
-    notify(editor)
-    if (mounted.current) onNotice(result.ok && !editor.publicationPending ? 'ok' : 'error',
-      result.ok ? editor.publicationError ?? t(remove ? 'persona.notice.removed' : 'persona.notice.saved') : result.message ?? t('persona.notice.saveFailed'))
-    if (!result.ok && remove) throw new Error(result.message ?? t('persona.notice.saveFailed'))
+    if (!mounted.current) return
+    onNotice(editor.error || editor.publicationPending ? 'error' : 'ok',
+      editor.publicationError ?? (remove ? t('persona.notice.removed') : t('persona.notice.saved')))
   }
   const retryPublication = async (moduleId: string): Promise<void> => {
-    const editor = editorOf(moduleId)
-    if (editor.saving || !editor.publicationPending) return
-    editor.saving = true
-    notify(editor)
-    const result = await bridgeCall('persona', { expectedModuleId: moduleId, refreshOnly: true }, moduleId)
-    editor.saving = false
-    editor.publicationPending = !result.ok || result.value.publicationPending === true
-    editor.publicationError = result.ok ? result.value.publicationError : result.message ?? t('persona.notice.saveFailed')
-    notify(editor)
+    const editor = draftOf(moduleId)
+    await owners.editorOf(moduleId).retryPublication()
     if (mounted.current) onNotice(editor.publicationPending ? 'error' : 'ok', editor.publicationError ?? t('persona.notice.saved'))
   }
-  useEffect(() => () => { if (saveTimer.current !== undefined) clearTimeout(saveTimer.current) }, [moduleId, audience])
+  // 卸载时取消待发的自动续存；两受众共用同一份草稿，故按 owner 取消。
+  useEffect(() => () => { owners.editorOf(moduleId ?? '').cancelAutoSave() }, [audience, moduleId, owners])
   const sourcesDirty = selection.value.main !== selection.saved.main || selection.value.subagent !== selection.saved.subagent
-  const editor = moduleId ? editorOf(moduleId) : undefined
+  const editor = moduleId ? draftOf(moduleId) : undefined
   const target = editor?.value[audience]
   const dirty = JSON.stringify(target) !== JSON.stringify(editor?.saved[audience])
   const canEdit = !!moduleId && (selection.value[audience] !== null || props.disabled !== true)
@@ -270,7 +185,7 @@ export function ModulePersonaCard(props: {
       {confirming && <ConfirmDialog title={t(confirming.reload ? 'persona.reload' : 'persona.remove')}
         description={t(confirming.reload ? 'persona.sources.reloadDescription' : 'persona.sources.removeDescription', { module: confirming.moduleId, audience: t(`persona.${confirming.audience}`) })}
         confirmLabel={t(confirming.reload ? 'persona.reload' : 'persona.remove')} cancelLabel={t('toolEditor.cancel')}
-        onConfirm={() => confirming.reload ? loadPersona(confirming.moduleId, true) : write(confirming.moduleId, confirming.audience, true)}
+        onConfirm={() => confirming.reload ? owners.editorOf(confirming.moduleId).load(confirming.audience, true) : save(confirming.moduleId, confirming.audience, true)}
         onCancel={() => setConfirming(undefined)} />}
       {dirty && <p className={styles.configFieldHint} role="status">{t('card.unsaved')}</p>}
       {editor?.error && <p className={styles.noticeError} role="alert">{editor.error}</p>}
@@ -282,7 +197,7 @@ export function ModulePersonaCard(props: {
           <MenuSelect compact value={target?.[activeField] === undefined ? 'inherit' : 'custom'} disabled={busy}
             ariaLabel={`${t(`persona.${audience}`)} ${t(`persona.${activeField}.label`)}`}
             options={[{ value: 'inherit', label: t('persona.inherit') }, { value: 'custom', label: t('persona.custom') }]}
-            onChange={value => { if (moduleId) { patch(moduleId, audience, activeField, value === 'inherit' ? undefined : ''); if (saveTimer.current !== undefined) clearTimeout(saveTimer.current); void write(moduleId, audience) } }} />
+            onChange={value => { if (moduleId) { patch(moduleId, audience, activeField, value === 'inherit' ? undefined : ''); owners.editorOf(moduleId).cancelAutoSave(); void save(moduleId, audience) } }} />
         </FormField>
         {(['complete', 'includeRuntimeContext'] as const).map(option => {
           const key = option === 'complete' ? 'complete' : 'runtimeContext'
@@ -290,7 +205,7 @@ export function ModulePersonaCard(props: {
             <MenuSelect compact disabled={busy} value={target?.[option] === undefined ? 'inherit' : String(target?.[option])}
               ariaLabel={`${t(`persona.${audience}`)} ${t(`persona.${key}.label`)}`}
               options={[{ value: 'inherit', label: t('persona.inherit') }, { value: 'true', label: t('persona.on') }, { value: 'false', label: t('persona.off') }]}
-              onChange={value => { if (moduleId) { patch(moduleId, audience, option, value === 'inherit' ? undefined : value === 'true'); if (saveTimer.current !== undefined) clearTimeout(saveTimer.current); void write(moduleId, audience) } }} />
+              onChange={value => { if (moduleId) { patch(moduleId, audience, option, value === 'inherit' ? undefined : value === 'true'); owners.editorOf(moduleId).cancelAutoSave(); void save(moduleId, audience) } }} />
           </FormField>
         })}
       </div>
@@ -302,19 +217,19 @@ export function ModulePersonaCard(props: {
               aria-label={`${t(`persona.${audience}`)} ${t(`persona.${field}.aria`)}`} spellCheck={false}
               value={target?.[field] ?? ''} readOnly={busy || target?.[field] === undefined}
               placeholder={target?.[field] === undefined ? t('persona.inheritedText', { field: t(`persona.${field}.label`) }) : undefined}
-              onCompositionStart={() => { composing.current = true; if (saveTimer.current !== undefined) clearTimeout(saveTimer.current) }}
-              onCompositionEnd={() => { composing.current = false; if (moduleId) { if (saveTimer.current !== undefined) clearTimeout(saveTimer.current); saveTimer.current = setTimeout(() => { saveTimer.current = undefined; void write(moduleId, audience) }, 600) } }}
+              onCompositionStart={() => { composing.current = true; if (moduleId) owners.editorOf(moduleId).cancelAutoSave() }}
+              onCompositionEnd={() => { composing.current = false; if (moduleId) owners.editorOf(moduleId).scheduleAutoSave(audience) }}
               onChange={event => { if (moduleId) patch(moduleId, audience, field, event.target.value) }} />
             <p className={styles.configFieldHint}>{t(`persona.${field}.hint`)}</p>
           </section>
         ))}
       </PromptConfigNavigation>
       <div className={css.footer}>
-        <Button shape="pill" variant="outline" size="sm" disabled={busy || editor?.saving || !dirty} onClick={() => { if (moduleId) void write(moduleId, audience) }}>{editor?.saving ? t('persona.saving') : t('persona.save')}</Button>
+        <Button shape="pill" variant="outline" size="sm" disabled={busy || editor?.saving || !dirty} onClick={() => { if (moduleId) void save(moduleId, audience) }}>{editor?.saving ? t('persona.saving') : t('persona.save')}</Button>
         <Button shape="pill" variant="outline" size="sm" disabled={!moduleId || editor?.saving || editor?.loading} onClick={() => {
           if (!moduleId || !editor) return
           if (JSON.stringify(editor.value) !== JSON.stringify(editor.saved)) setConfirming({ moduleId, audience, reload: true })
-          else void loadPersona(moduleId)
+          else void owners.editorOf(moduleId).load(audience)
         }}>{t('persona.reload')}</Button>
         {editor?.saved[audience] && <Button shape="pill" variant="outline" data-danger disabled={busy || editor.saving} onClick={() => { if (moduleId) setConfirming({ moduleId, audience }) }}>{t('persona.remove')}</Button>}
       </div>

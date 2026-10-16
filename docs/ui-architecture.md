@@ -396,7 +396,7 @@ bootstrap 是首屏聚合请求，不因筛选或输入字符增加 bridge 请�
 
 use-prompt-tool-store.ts 是唯一工作台 facade，负责把 ConfigForms mirror、typed bridge、字段快照、保存队列和 feature actions 组合成 React 可消费状态。
 
-**资源编辑器的读改写协议**（owner 的共同形状；代码级原语只有 `data/resource-track.ts`，各 owner 分别在 `data/rule-drafts.ts`、`data/module-variables.ts`、`data/instruction-drafts.ts`、`data/skill-editor.ts` 与 `data/tools-editor.ts`）：
+**资源编辑器的读改写协议**（owner 的共同形状；代码级原语只有 `data/resource-track.ts`，各 owner 分别在 `data/rule-drafts.ts`、`data/module-variables.ts`、`data/instruction-drafts.ts`、`data/skill-editor.ts`、`data/tools-editor.ts` 与 `data/persona-editor.ts`）：
 
 - **版本捕获**：读时整份存快照，写时从快照取期望版本——rules 逐条 `rules[id]` ＋ `settings`、variables 按 `scope` ＋ `settings`、instructions 逐文件 `revision`、persona 两段各一（创建时整键不带版本）、config-order 整表一个、skills 由调用方卡片持有。**没有**统一的「版本对象」类型：各家请求形状不同，硬并会造出假共享。
 - **最新优先**：草稿/状态上的 `latest` 序号（`beginLatest` 开请求、`isLatest` 判落地）。**晚到应答既不写草稿也不清 `busy`/`loading`**——清理权归最新那次请求，否则界面会停在忙碌态。这也是为什么「迟到时不回滚」是对的，不是漏了清理。
