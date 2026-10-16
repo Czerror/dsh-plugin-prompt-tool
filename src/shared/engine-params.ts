@@ -42,6 +42,8 @@ export interface EngineParams {
   toolGitBashEnabled?: boolean
   /** 自定义模型工具在执行前需用户批准的执行器种类。 */
   customToolRequireApproval?: string[] | string
+  /** 注入 run_code 程序的环境变量键（run-code-env 行的 `envKeys`；PTC 下程序里 process.env 恒空）。 */
+  runCodeEnvKeys?: string[] | string
 }
 
 export type EngineParamKey = keyof EngineParams
@@ -100,6 +102,12 @@ export type EngineParamDefinition = ParamRule & {
   /** 未配置时的编辑草稿；不等于强制写入运行时默认值。 */
   defaultValue: string | number | boolean | undefined
   module?: { row: string; key?: string }
+  /**
+   * 空列表不写进行配置（回落该行的组合源/行默认）。专用于**空值会让行挂载失败**的参数：
+   * `run-code-env` 的 `envKeys` 是 `allowEmpty: false`，写 `envKeys: []` 会在挂载期抛错、
+   * 连带整个装配失败；不写则用组合源的默认键集。未标记者保持既有语义（空列表照写）。
+   */
+  dropWhenEmpty?: true
 }
 
 /** 类型、校验、卡片归属、草稿默认值和组合行映射的唯一运行时目录。 */
@@ -119,6 +127,9 @@ export const ENGINE_PARAM_DEFINITIONS: Record<EngineParamKey, EngineParamDefinit
   instructionHint: { kind: 'boolean', defaultValue: false, card: 'prompt-defaults', storageLayer: 'pre-step', module: { row: 'instruction-hint', key: 'enabled' } },
   toolGitBashEnabled: { kind: 'boolean', defaultValue: true, card: 'tool-git-bash', storageLayer: 'tool-pipeline', module: { row: 'tool-git-bash', key: 'enabled' } },
   customToolRequireApproval: { kind: 'string-list', options: ['shell', 'http', 'delegate', 'fs', 'ask-user'], defaultValue: '', card: 'tool-config-engine', storageLayer: 'tool-pipeline', module: { row: 'tool-config-engine', key: 'requireApproval' } },
+  // ptc-mode 的配套行 `run-code-env` 此前只能靠组合源默认值决定注入哪些键；登记成共享参数后
+  // 由能力卡 `run-code-env` 编辑，写进该行的 `envKeys`（空列表回落组合源默认，与列表键同语义）。
+  runCodeEnvKeys: { kind: 'string-list', defaultValue: '', card: 'run-code-env', storageLayer: 'tool-pipeline', dropWhenEmpty: true, module: { row: 'run-code-env', key: 'envKeys' } },
 }
 
 export const ENGINE_PARAM_KEYS = Object.keys(ENGINE_PARAM_DEFINITIONS) as EngineParamKey[]
@@ -148,7 +159,13 @@ export function buildEngineModuleParams(params: Record<string, unknown>): Record
     let value = params[key]
     if (value === undefined || value === null) continue
     if (definition.kind === 'boolean') value = value === true
-    else if (definition.kind === 'string-list') value = engineParamList(value)
+    else if (definition.kind === 'string-list') {
+      // 显式局部：`value` 声明为 unknown，赋值收窄在这里不被 TS 采纳（TS18046）。
+      const list = engineParamList(value)
+      // 空列表默认照写（既有语义）；标了 dropWhenEmpty 的参数例外——它的行不接受空列表。
+      if (list.length === 0 && definition.dropWhenEmpty === true) continue
+      value = list
+    }
     else if (definition.kind === 'string' && (typeof value !== 'string' || value.length === 0)) continue
     else if (definition.kind === 'number') {
       if (typeof value === 'string' && value.trim().length > 0) value = Number(value)

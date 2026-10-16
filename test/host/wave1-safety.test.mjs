@@ -28,6 +28,7 @@ test('validateEngineParamValues：全量类型校验（布尔/数值/字符串/�
     modelMaxTokens: 8192,
     subagentTemperature: '',
     customToolRequireApproval: ['shell', 'fs'],
+    runCodeEnvKeys: ['PATH', 'HOME'],
   }), [])
   // 布尔键收窄。
   assert.deepEqual(validateEngineParamValues({ instructionHint: 'yes' }).map((e) => e.key), ['instructionHint'])

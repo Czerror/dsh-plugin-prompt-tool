@@ -125,7 +125,7 @@ rules:
 
 能力目录以包内 engine/compositions/source/local 的实际文件为准；模块工具统一为 module-import-tools、module-rule-tools、module-memory-tools、module-variable-tools。官方工具、规划、压缩与普通委派由会话原有预设提供，空模块不自动获得这些能力。
 
-共享参数14个，由 ENGINE_PARAM_DEFINITIONS 的 storageLayer 决定磁盘路径：主/子模型各5个路由与采样键，以及 instructionHint、maxDepth、toolGitBashEnabled、customToolRequireApproval。模型卡在装配期合成 request-params 规则；未配置继承宿主。
+共享参数14个，由 ENGINE_PARAM_DEFINITIONS 的 storageLayer 决定磁盘路径：主/子模型各5个路由与采样键，以及 instructionHint、toolGitBashEnabled、customToolRequireApproval、runCodeEnvKeys。模型卡在装配期合成 request-params 规则；未配置继承宿主。
 
 - persona.main/subagent：各模块保存 prefix/suffix/complete/includeRuntimeContext，省略继承、空文本清空、false 明确值；rules/_settings.yml 只作校验投影。
 - config.yml.personaSources：main/subagent 各单选官方默认或一个模块 ID，不存正文、不自动启用 rules。只读取所选受众字段，不跨模块逐字段合并；有效官方人设与启用规则的 complete 仍预检，配装失败保留旧状态。

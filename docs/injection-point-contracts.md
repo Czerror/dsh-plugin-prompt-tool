@@ -104,7 +104,7 @@ rules:
           text: 先核实调用链，再开始修改。
 ```
 
-共享参数位置由参数目录的 `storageLayer` 固定，`card` 与编辑组 `displayLayer` 只决定 UI 展示；当前公开共享键为13个（含模型路由/采样参数）。模型键写在 `layerSettings` 的 `agent-request` / `subagent-start`，由 `modelRequestConfigs` 转成 `model-params` / `subagent-model-params` 请求规则（与规则动作 `request-params` 并存）；15个旧规则快捷键只被写入侧拒绝、加载时过滤。子模型路由作用于实际请求，不改普通官方 spawn 预检；子代理递归深度归宿主官方委派管理。persona、variables、customTools、moduleConfigs 保留独立所有者，不复制到每条规则。详情见 [参数框架](architecture-params.md)。
+共享参数位置由参数目录的 `storageLayer` 固定，`card` 与编辑组 `displayLayer` 只决定 UI 展示；当前公开共享键为14个（含模型路由/采样参数）。模型键写在 `layerSettings` 的 `agent-request` / `subagent-start`，由 `modelRequestConfigs` 转成 `model-params` / `subagent-model-params` 请求规则（与规则动作 `request-params` 并存）；15个旧规则快捷键只被写入侧拒绝、加载时过滤。子模型路由作用于实际请求，不改普通官方 spawn 预检；子代理递归深度归宿主官方委派管理。persona、variables、customTools、moduleConfigs 保留独立所有者，不复制到每条规则。详情见 [参数框架](architecture-params.md)。
 
 ## 官方依据
 

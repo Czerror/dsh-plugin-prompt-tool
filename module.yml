@@ -554,6 +554,7 @@ rules:
 #     # 工具管线层：共享参数，不属于该层某一条提示词规则。
 #     toolGitBashEnabled: true # 启用 Git Bash 工具；boolean
 #     customToolRequireApproval: "" # 执行前需用户批准的工具种类；string-list；shell | http | delegate | fs | ask-user
+#     runCodeEnvKeys: "" # 注入 run_code 程序的环境变量；string-list
 #   turn-stop:
 #     # 轮次停止层：共享参数，不属于该层某一条提示词规则。
 #     {}
