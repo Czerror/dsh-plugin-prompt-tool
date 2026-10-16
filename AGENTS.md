@@ -1,6 +1,6 @@
 # dsh-plugin-prompt-tool 仓库规则
 
-本文件只保留跨任务的仓库边界、工具约束、验证和交付规则。具体框架说明按任务路由到对应文档，不在这里复制。
+跨任务的仓库边界、验证与交付规则；框架细节按任务路由到对应文档，本文件不复述。
 
 ## 任务路由
 
@@ -10,7 +10,7 @@
 |---|---|
 | 修改 src/client、SlotRegistry、SettingsScope、工作台、客户端 bridge、状态、共享 UI、CSS 或 UI 测试 | [docs/ui-architecture.md](docs/ui-architecture.md) |
 | 修改 params、module.yml、预设存储、writePreset、迁移、空值或参数生成链路 | [docs/architecture-params.md](docs/architecture-params.md) |
-| 修改 engine、晋升门控、PTC、插入点、组合来源或重建 | [docs/engine-reuse.md](docs/engine-reuse.md)；组合编辑同时读 [skills/dsh-prompt-card/SKILL.md](skills/dsh-prompt-card/SKILL.md) |
+| 修改 engine、晋升门控、PTC、插入点、组合来源或重建 | [docs/engine-reuse.md](docs/engine-reuse.md)；组合编辑同时读 [skills/dsh-module/SKILL.md](skills/dsh-module/SKILL.md) |
 | 修改 SillyTavern、角色卡或世界书转换 | [docs/SillyTavern.md](docs/SillyTavern.md) |
 | 涉及宿主 API、Cordis 生命周期、Settings、Slot 或官方预设契约 | 先在 `D:\AI\GitHub\deepseek-harness\docs` 搜索对应服务或 API；本地文档缺失或与已安装包版本不符时，再查 [在线镜像](https://github.com/deepseek-ai/deepseek-harness/tree/master/docs) |
 
@@ -61,13 +61,13 @@
 - Skills、SillyTavern、角色卡、世界书和自定义工具复用既有 provider、host 工厂和 rebuildPreset()，不在 UI 复制转换或热装配通道。
 - 修改源文件后通过 package scripts 重新生成 `lib/` 与 `engine/vendor/yaml/`。`lib/` 是构建产物，已被忽略，不手工编辑也不提交。
 - `engine/vendor/yaml/`（`sync:yaml`）是版本化分发快照：不手工编辑，按任务范围提交；不得 git rm，也不得加入忽略。
-- `engine/compositions/` 现在只有 `source/local/`：官方切块（含 `tool-web`）已全部随「与预设彻底解耦」清理删除——插件不再分发任何预设，官方工具由会话原有预设提供，模块不需要也不应该重新声明它们。
+- 插件不分发预设：`engine/compositions/` 只有本地来源，官方工具由会话原有预设提供，模块不重新声明它们。
 
 ### 配置、写盘与安全
 
 - module.yml 是具体预设行为的单一来源；settings 只承载部署轴，复杂数据和大文本走文件或 loopback bridge。
 - 所有 YAML 修改使用 yaml Document API 保留注释和未知字段；写盘先完整生成临时目录，再原子 rename，system 目录保持只读。
-- 默认只写 DSH_HOME 下本插件拥有的状态、生成目录、.characters 和指令策略文件；不得清理其他用户或官方文件（共享引擎自阶段 2 起由插件包提供，不再物化 `.engine/`，也不写引擎指纹）。
+- 默认只写 DSH_HOME 下本插件拥有的状态、生成目录、.characters 和指令策略文件；不得清理其他用户或官方文件。共享引擎由插件包提供，不物化 `.engine/`，不写引擎指纹。
 - 预设定义只拥有预设行为；指令文件正文与指令策略是独立所有者。工作区指令文件（AGENTS.md、CLAUDE.md 及其 .local 变体）正文属于用户文件，只有用户授权编辑、目标命中当前会话上下文白名单且版本校验通过时才写入，且只替换该文件本身。
 - 写入指令文件不覆盖用户未知改动，不修改官方或只读目录中的文件；不得把指令正文复制进 module.yml、settings、生成目录或策略文件。
 - bridge 路径和载荷先改 src/shared/bridge-contract.ts，再同步 host、client 和契约测试；成功/失败载荷保持统一包装，写入端点先做白名单、类型、数值和大小校验。
@@ -89,7 +89,7 @@
 
 ## Git 与交付
 
-- **分支约定**：开发线唯一是 `dev`；`main` 只在发版（npm publish + tag + Release）时从 `dev` 快进同步。`beta` 与 `beta2` 两条并行重构线已于 1.0.0 发布时废弃并从本地与远端删除，不要再基于它们开工；旧 `beta` 线的末次提交保留在本地 `archive/beta` 引用里（不在远端）。
+- **分支约定**：开发线唯一是 `dev`；`main` 只在发版（npm publish + tag + Release）时从 `dev` 快进同步。`archive/beta` 是旧重构线的本地参照，不要基于它开工。
 - 保留用户已有改动和现有历史，不执行 reset --hard、clean、checkout 覆盖或其他破坏性操作。
 - 每次完成修改并通过验证后，在同一轮创建中文 Conventional Commit，并推送 origin/dev；未经明确要求不切换或推送 main，不创建 PR。
 - 提交前只暂存本次任务文件，检查 diff、验证结果和工作树。
