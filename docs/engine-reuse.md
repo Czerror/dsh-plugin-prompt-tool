@@ -69,11 +69,13 @@ AgentSetup 窗口内注册的同层同名段会被接住：装配时先撤销它
 
 `engine/*.mjs` 是纯 JS，`tsconfig.json` 不开 `allowJs`/`checkJs`。因此每个**被 `src/` 静态引入**的引擎模块都配一份手写 `.d.mts`（与 `.mjs` 同目录同名）：
 
-- 已有声明的：`rule-spec`／`shared`／`interpolate`／`executor`／`branch`／`tool-definition`／`order`／`rule-runtime`／`compaction-epoch`／`conditions/index`／`template-evaluation`／`template-frame`／`context-activation`（2026-10-16 起 `src/` 侧不再用 `@ts-expect-error` 引入）。
+- 已有声明的：`rule-spec`／`shared`／`interpolate`／`executor`／`branch`／`tool-definition`／`order`／`rule-runtime`／`compaction-epoch`／`conditions/index`／`template-evaluation`／`template-frame`／`context-activation`／`service-names`（2026-10-16 起 `src/` 侧不再用 `@ts-expect-error` 引入）。
 - **新增引擎导出时同步改声明**：`src/` 只用到的符号才声明（声明是「插件依赖面」而非引擎全貌）；跨引擎模块引用写成 `import type { X } from './y.mjs'`，**不要**引用 `src/` 的类型（声明文件与 `.mjs` 同目录，`src/` 不在它的解析面内）。
 - **声明文件只是类型面**：不进 `lib/` 打包，也不需要改 `package.json`／tsdown（`exports["./engine/*"]` 已覆盖；TS 按 `./x.mjs` → `./x.d.mts` 解析）。
 - **动态加载点保留内联结构断言**：按 id 加载（`agent-assembly.ts` 的 `engine/<id>.mjs`）与 URL 动态导入（`src/index.ts` 的 `skill-search.mjs`、`settings-bridge.ts` 的 `schema.mjs`／`rule-spec.mjs`）走运行期路径，声明不参与；要类型化得先定义「按 id 加载」的接口，属另一件事。
 - `engine/vendor/**` 的 `@ts-expect-error` 来自上游转译产物，随快照整体覆盖，**不手动改**。
+
+服务名绑定也在这条边界上：宿主与引擎共用的服务名（pre-step 协调服务、四个模块工具外壳）只有 `engine/service-names.mjs` 一个真值源，`src/` 与引擎侧的各引用点都从它取，**改名不得手抄**。手抄的失效方式是静默的——引擎查不到协调服务就回退自身的独立执行路径，模块工具外壳等不到 provider 就不挂工具，两边都不报错。这也是「引擎可单独复制」的一部分：名字随 `engine/` 一起走，复制方不必问宿主；`test/engine/service-names.test.mjs` 只作防下次手抄的源级守卫。
 
 ## 复制协议（跨项目复用）
 

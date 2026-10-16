@@ -8,13 +8,14 @@ import { createEpochPromotion } from '../../engine/compaction-epoch.mjs'
 import { PROMOTE_EVENTS, createWarnOnce } from '../../engine/shared.mjs'
 import { runPreStepBatch, confirmDelivered } from '../../engine/executor.mjs'
 import { compareConfigSequence } from '../../engine/order.mjs'
+import { PRE_STEP_COORDINATOR_SERVICE } from '../../engine/service-names.mjs'
 import { instructionFileIdFromDisplayPath } from '../host/agents-cards.ts'
 import { instructionPolicyPath, readInstructionPolicy, resolveInstructionPolicy } from '../host/instructions-policy.ts'
 import { filterOfficialInstructionMessages } from './official-instruction-filter.ts'
 import { recordRuleOutcome } from './rule-diagnostics.ts'
 import type { RuleOutcomeKind } from '../shared/bridge-contract.ts'
 
-export const PRE_STEP_COORDINATOR_SERVICE = 'promptToolPreStep'
+export { PRE_STEP_COORDINATOR_SERVICE }
 export const PRE_STEP_COORDINATOR_VERSION = 1
 const WARN_LABEL = 'prompt-tool:pre-step-coordinator'
 

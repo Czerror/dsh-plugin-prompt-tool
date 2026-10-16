@@ -44,12 +44,14 @@ import { mountRuleSources } from '../../engine/rule-runtime.mjs'
 import { identityOf } from '../../engine/executor.mjs'
 // 条件在真实挂载 scope 绑定；准备期只保留经过预检的定义快照。
 import { loadStandingMountFor } from '../../engine/conditions/index.mjs'
+// 私有工具适配器的服务名真值源（与引擎侧同一份）。
+import { toolServiceName } from '../../engine/service-names.mjs'
 
 /** 引擎模块的受管配置字段：值按历史语义相对模块根书写（如 `../<id>/custom-tools`）。 */
 const MANAGED_FIELDS = ['configsDir', 'strategyDir', 'policyFile', 'rulesFile'] as const
 
 /** 私有工具适配器依赖的服务；适配器仍复用包内引擎入口。 */
-const PRIVATE_SERVICES: Record<string, string> = Object.fromEntries(Object.values(MODULE_TOOL_CAPABILITIES).map(id => [id, `pt-${id}`]))
+const PRIVATE_SERVICES: Record<string, string> = Object.fromEntries(Object.values(MODULE_TOOL_CAPABILITIES).map(id => [id, toolServiceName(id)]))
 
 export interface AgentAssemblyRuntime {
   /** 等待当前排队的装配任务收敛（测试与诊断用；生产路径不依赖它）。 */

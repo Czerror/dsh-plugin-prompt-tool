@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### 服务名单一真值源：挪到引擎侧，两侧引用（2026-10-16）
+
+- **`engine/service-names.mjs` 是服务名唯一真值源**（配套手写 `engine/service-names.d.mts`，只导两个有名导出）：`PRE_STEP_COORDINATOR_SERVICE`（`'promptToolPreStep'`）与 `toolServiceName(engineModuleId)`（`pt-<引擎模块 id>`，前缀留在函数内部）。三处手抄全部收口：引擎侧 `executor.mjs`／`instruction-hint.mjs` 各 1 处 `getService`、四个 `module-{import,rule,memory,variable}-tools.mjs` 各 2 处（`inject` 依赖与 `get` 各一）；插件侧 `src/index.ts` 四个 `provide` 与 `agent-assembly.ts` 的私有服务名派生（原 `` `pt-${id}` ``）；测试侧 `tool-module-mount.test.mjs` 的「模块 id × 服务名」成对表改为用 `toolServiceName(id)` 派生。`pre-step-coordinator.ts` 的常量定义搬走后**原样 re-export**，`src/index.ts` 的公共面与既有消费者不变。
+- **为什么失败是静默的**：服务名对不上时引擎 `getService` 拿不到协调器 → 回退自身的独立执行路径（官方指令逐文件过滤与批协调整体不生效）；模块工具外壳 `inject` 等不到 provider → 工具不挂。两条路都不抛错、不告警，只表现为「功能没生效」，所以手抄必须由一条源级守卫挡住。
+- **`test/engine/service-names.test.mjs`（唯一新增守卫）**：扫 `engine/**/*.mjs`（排除 `engine/vendor/**`）与 `src/**`，断言这五个字面量除 `engine/service-names.mjs` 自身外零出现，失败消息带违规文件与行号。行为面仍由 `tool-module-mount` 用例覆盖。
+- **三处按原则收回**：① 服务名不做成对象、不引入新命名风格——两个有名导出够用；② 不加「两侧名字相等」的正向绑定断言——共享常量已结构性保证，再断言是冗余；③ `GLOSSARY.md` 只写术语定义，不写文件名／常量名／函数名／绑法（domain-modeling 要求词汇表不掺实现细节）。
+- **验证**：`typecheck`／`lint`（306 文件，0 警告 0 错误）／`node scripts/run-tests.mjs test/engine/service-names.test.mjs`（1 pass）／`node scripts/run-tests.mjs test/engine/tool-module-mount.test.mjs`（18 pass）／`git diff --check` 全绿。
+
 ### settings-bridge 收门 ＋ 全拆十一域（2026-10-16）
 
 - **`src/runtime/settings-bridge.ts` 1996 → 73 行**：只剩装配——建一次运行时 → 两个 `ctx.inject` 作用域 → 调 11 个域的注册函数 → 返回逐个 dispose。45 个端点 key／路径、响应与错误码一字未变。

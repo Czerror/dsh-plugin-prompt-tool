@@ -24,6 +24,7 @@ import { createEpochPromotion } from './compaction-epoch.mjs'
 import { machinePaths } from './machine-paths.mjs'
 import { interpolateStatic } from './interpolate.mjs'
 import { booleanOption, createWarnOnce, getService, parsePromoteOn, validateConfig } from './shared.mjs'
+import { PRE_STEP_COORDINATOR_SERVICE } from './service-names.mjs'
 
 export const name = 'instruction-hint'
 
@@ -285,7 +286,7 @@ export function apply(ctx, config) {
       if (!promotion.status(agent).promoted) return decision
       if (!Array.isArray(decision.messages)) return decision
       if (agent?.session === undefined) return decision
-      const coordinator = getService(ctx, 'promptToolPreStep')
+      const coordinator = getService(ctx, PRE_STEP_COORDINATOR_SERVICE)
       const messages = typeof coordinator?.filterInstructions === 'function'
         ? coordinator.filterInstructions(agent, decision.messages)
         : decision.messages

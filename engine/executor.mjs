@@ -4,7 +4,7 @@
  * 任一提示词配置失败只跳过该提示词配置并 warnOnce,绝不让注入 bug 卡死会话。
  *
  * 装配路径有两条，批执行算法只有一份（runPreStepBatch）：
- *   - 管理路径：宿主 prompt-tool 插件提供 `promptToolPreStep` 协调服务时，本来源
+ *   - 管理路径：宿主 prompt-tool 插件提供 pre-step 协调服务（服务名见 `service-names.mjs`）时，本来源
  *     （预设 mount）把配置注册给协调器，由协调器统一执行各预设来源；官方指令正文的
  *     逐文件过滤归协调器的 prepend 监听器，旧生成卡的 `agents-file-*` 按 id 前缀跳过；
  *   - 独立路径：没有协调服务（引擎被复制到无宿主的目录复用）时，本行 ctx 注册本地
@@ -34,6 +34,7 @@ import { compareConfigSequence } from './order.mjs'
 import { ruleFrame, actionMatches } from './conditions/evaluation.mjs'
 // 标记键名与「已登记进 config 白名单」同源（schema.mjs），此处不另写字面量。
 import { SESSION_VARIABLES_DISABLED } from './schema.mjs'
+import { PRE_STEP_COORDINATOR_SERVICE } from './service-names.mjs'
 
 const name = 'prompt-config-engine'
 
@@ -49,7 +50,7 @@ const MAX_MEMO_CONFIGS = 4096
  * 缺失/形状不符时返回 undefined：本行回退独立执行路径。
  */
 function coordinatorOf(ctx) {
-  const service = getService(ctx, 'promptToolPreStep')
+  const service = getService(ctx, PRE_STEP_COORDINATOR_SERVICE)
   return service !== null && typeof service === 'object' && typeof service.registerPreset === 'function'
     ? service
     : undefined

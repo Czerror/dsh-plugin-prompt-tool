@@ -5,6 +5,7 @@ import { Context } from '@deepseek-ai/cordis'
 import { SkillRegistry, renderSkillContent } from '@deepseek-ai/dsh-skill'
 import { createScope } from '@deepseek-ai/dsh-scope'
 import { apply as applySkillSearch } from '../../engine/skill-search.mjs'
+import { toolServiceName } from '../../engine/service-names.mjs'
 
 // —— 技能检索与加载（原 skill-search.test.mjs） ——
 
@@ -231,12 +232,13 @@ test('技能查找按 scope 隔离候选，scope 释放后候选消失', async (
 
 // —— 内置工具模块挂载（原 tool-modules.test.mjs） ——
 
+// 服务名从引擎真值源派生，不再手抄（源级守卫见 service-names.test.mjs）。
 const modules = [
-  ["module-import-tools", "pt-module-import-tools"],
-  ["module-rule-tools", "pt-module-rule-tools"],
-  ["module-memory-tools", "pt-module-memory-tools"],
-  ["module-variable-tools", "pt-module-variable-tools"],
-]
+  "module-import-tools",
+  "module-rule-tools",
+  "module-memory-tools",
+  "module-variable-tools",
+].map(id => [id, toolServiceName(id)])
 
 /** tool-modules 组专用桩 ctx（与上面的 makeCtx 同名不同责，故分开命名）。 */
 function makeToolModuleCtx(serviceKey, service) {

@@ -30,6 +30,8 @@ import { createAgentAssembly } from './runtime/agent-assembly.ts'
 import type { AgentAssemblyRuntime } from './runtime/agent-assembly.ts'
 import { resolveModuleToolTarget } from './host/module-tool-target.ts'
 import type { ModuleToolHost } from './host/module-tool-target.ts'
+// 服务名真值源在引擎侧：引擎可单独复制，名字随 `engine/` 一起走。
+import { toolServiceName } from '../engine/service-names.mjs'
 
 export const name = 'prompt-tool'
 // 内容走 user 层（AGENTS.md 常驻层 + skill 按需层），
@@ -174,16 +176,16 @@ registerTuiCommand(
     target: (exec, moduleId) => resolveModuleToolTarget(exec, modulesDir(), (sessionId) => assembly?.moduleIds(sessionId) ?? [], moduleId),
     rebuild: (id) => refreshModuleRuntime(id),
   }
-  ctx.provide('pt-module-import-tools', {
+  ctx.provide(toolServiceName('module-import-tools'), {
     mount: (scopeCtx: Context): (() => void) => registerModuleImportTools(scopeCtx, { ...moduleToolHost, rebuild: async id => { await assembly?.refresh(id) } }),
   })
-  ctx.provide('pt-module-rule-tools', {
+  ctx.provide(toolServiceName('module-rule-tools'), {
     mount: (scopeCtx: Context): (() => void) => registerModuleRuleTools(scopeCtx, moduleToolHost),
   })
-  ctx.provide('pt-module-memory-tools', {
+  ctx.provide(toolServiceName('module-memory-tools'), {
     mount: (scopeCtx: Context): (() => void) => registerModuleMemoryTools(scopeCtx, moduleToolHost),
   })
-  ctx.provide('pt-module-variable-tools', {
+  ctx.provide(toolServiceName('module-variable-tools'), {
     mount: (scopeCtx: Context): (() => void) => registerModuleVariableTools(scopeCtx, moduleToolHost),
   })
 
@@ -204,7 +206,7 @@ registerTuiCommand(
       warn(ctx, `prompt-tool: skill-search 未挂载（skill_search/skill_load 不可用）：${error instanceof Error ? error.message : String(error)}`)
     })
 
-  // pre-step 协调器：引擎在每次 pre-step 查询本服务（ctx.get('promptToolPreStep')），
+  // pre-step 协调器：引擎在每次 pre-step 用共享服务名（`engine/service-names.mjs`）查询本服务，
   // 不注册第二个 pre-step 监听器；旧生成目录的 `agents-file-*` 卡在这里按 id 前缀跳过。
   // 策略缺省 enabled=false；服务缺失时引擎只执行模块卡（独立引擎复制场景）。
   installPreStepCoordinator(ctx)
