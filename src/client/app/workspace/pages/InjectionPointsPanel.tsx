@@ -8,7 +8,7 @@
  * 展示归属只是导航：这里不新增第二份映射，也不改变任何运行时 hook、注册顺序或保存通道。
  */
 import { useEffect, useRef, useState, type ReactNode } from 'react'
-import { MODULE_CAPABILITIES, ENGINE_EDITOR_GROUP_MAP, moduleCapability, engineGroupParamKeys, isEditorGroupVisible, isModuleCapabilityPresent } from '../../../../shared/engine-capabilities.ts'
+import { MODULE_CAPABILITIES, ENGINE_EDITOR_GROUP_MAP, moduleCapability, engineGroupParamKeys, isModuleCapabilityPresent } from '../../../../shared/engine-capabilities.ts'
 import type { PromptConfigDraft } from '../../../prompt-tool-types.ts'
 import type { DraftsPort, HostApiPort, ModelsPort, ModuleActionsPort, ModuleFactsPort, NoticePort, ParamsPort, VariablesPort } from '../../../data/store-ports.ts'
 import { canEditModule, moduleDeclares, moduleFactsOf } from '../../../data/module-subject.ts'
@@ -26,8 +26,6 @@ import { cssEscapeId, scrollToCreatedCard } from '../../../ui/reveal-card.ts'
 import styles from '../../../ui/controls.module.css'
 import css from './layer-settings.module.css'
 
-export { isEditorGroupVisible }
-
 /** card → 参数分组标题词条：分组标题按 card 派生，不另抄一份参数归属。 */
 const CARD_LABEL_KEYS: Record<string, PromptToolLocaleKey> = {
   'variables': 'variables.title',
@@ -43,6 +41,10 @@ const CARD_LABEL_KEYS: Record<string, PromptToolLocaleKey> = {
  * 本页三个依赖面，按「谁真正读到什么」分，不共用一个更大的并集：
  * 纯读 helper 只要 `/meta` 的装配事实；能力行多要可编辑性与自己那张卡的移除端点；
  * 页面与层设置区还要承接子卡（参数控件、模型路由、诊断卡）已声明的能力面。
+ *
+ * 实测（Proxy 记运行期访问）：`hasLayerSettings`／`matchesLayerSettings` 运行时**只读
+ * `store.meta.modules`**；本文件直接触碰 store 的 14 个成员之外，其余成员都由子卡按自己的面取用。
+ * 收窄到成员级需要硬编码一长串成员名、并随子卡漂移，故仍按域相交。
  */
 type MetaFactsStore = ModuleFactsPort
 

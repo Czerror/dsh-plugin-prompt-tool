@@ -9,7 +9,11 @@ import ui from '../../../ui/controls.module.css'
 import type { ConfigPageBrowse } from '../workspace-browse-state.ts'
 import type { WorkspacePage } from '../workspace-pages.ts'
 
-/** 本页取用的 store 面：纯透传——面＝`RulesWorkspace` 与 `injectionPointSlots` 两张子面的并集。 */
+/**
+ * 本页取用的 store 面：本页自己零读取，面＝两张子面需求的并集
+ * （`injectionPointSlots` 的 `PanelStore` ＋ `RulesWorkspace` 要的 `RuleEditingPort` 等）。
+ * 不写成 `InjectionPointSlotsInput['store']`：后者**不含** `RulesWorkspace` 要的 `enqueueRuleTask`／`createTemplateRule`。
+ */
 type AudienceStore = ModuleFactsPort & DraftsPort & ParamsPort & VariablesPort & RuleEditingPort
   & InstructionFilesPort & ModuleActionsPort & NoticePort & ModelsPort & HostApiPort
 

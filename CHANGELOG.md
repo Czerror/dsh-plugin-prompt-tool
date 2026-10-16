@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+### C4／C5 复核：实测后判定「只落注释 ＋ 删一处死导出」，不做成员级收窄（2026-10-16）
+
+- **实测证据（Proxy 记运行期属性访问，只读探针）**：`injectionPointSlots` 构造时立即读 `store.fields`／`meta.modules`／`showNotice`／`editorDrafts`；而 `hasLayerSettings`／`matchesLayerSettings` 运行期**只读 `store.meta.modules` 一个属性**——类型面要 8 端口 41 成员（`PanelStore`）。`InjectionPointsPanel` 文件内直接触碰 store 的只有 **14 个成员**，其余 27 个零直接读取：**15 个是转发给子卡的**（`EngineParamField` 13、`CurrentSessionModel` 6、`ModuleCapabilityCreateMenu` 3、诊断卡 1），**12 个在整个面板渲染子树里没有任何消费者**（`ModuleActions` 5 ＋ `ModuleFacts` 的 `getFields`/`subscribeFields` ＋ `NoticePort` 5）。`RulesWorkspace` 同形：30 成员里 13 个零消费者。
+- **判定：不做成员级 `Pick`**。把 `PanelStore` 收窄成 41 → 14 个成员名，等于**硬编码一长串成员**、并随子卡声明的面漂移（子卡加一个成员就要回来补一次），而运行期零收益、现有「按域相交」的写法已经表达了归属。改的是**注释**：把上面这份实测依据写进 `InjectionPointsPanel.tsx` 的依赖面注释（并说明为什么仍按域相交）。
+- **C5 同样只落注释**：`AudiencePage` 的 `AudienceStore` 是 10 端口并集、本页零读取——但**不能**换成 `InjectionPointSlotsInput['store']`：后者**不含** `RulesWorkspace` 要的 `enqueueRuleTask`／`createTemplateRule`（实施中 typecheck 当场证伪）。注释改为写明「本页零读取 ＋ 面＝两张子面需求之并」，并留下这条反例。
+- **删一处死导出**：`InjectionPointsPanel.tsx` 的 `export { isEditorGroupVisible }`——`shared/engine-capabilities.ts` 里的定义仍在，但**全仓零消费者**（`src/index.ts` 也不再导出它）。
+- **「同组事实算三遍」的实情（记录，未改）**：`:200-207` 是渲染层自己要用元素（`cards`/`capabilities`/`addable`/`assets`），`:371-374` 与 `:382-386` 是布尔判定（`length > 0` vs `some(matchesLayerGroup)`，且后者**有意**不含 `undeclaredSections`——添加入口不受搜索过滤）。三者调用同一批 helper，但要收只能引入「四类键拼成一个列表」的中间产物：省一次计算、多一个接口，按「不因一处实现设计复杂逻辑」**不做**。
+- **验证**：`typecheck`（三项目）／`lint` 0 warnings（313 文件）／全量 **684 pass / 0 fail**／`build`／`git diff --check` 全绿；`rg isEditorGroupVisible` 只剩定义处。
+
 ### 人设的读改写收进 owner（C3 第二处，照 tools 样板）（2026-10-16）
 
 - **新增 `src/client/data/persona-editor.ts`**：`createPersonaEditors(drafts, deps)` → `editorOf(moduleId)`，动作 `load(audience, discard?)`／`patch`／`save(audience, remove?)`／`retryPublication`／`scheduleAutoSave`／`cancelAutoSave`。deps 显式：`request`／`getModuleId(audience)`／`isCurrentSubject`／`declares`／`isCurrent`／`isComposing`／`t`／`changed`／`onDeclared`。载体的实例跨渲染缓存（`owners` Map ＋ `sync`），因为它持有 600ms 续存定时器。
