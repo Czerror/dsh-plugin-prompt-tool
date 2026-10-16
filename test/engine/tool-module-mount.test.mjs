@@ -58,17 +58,26 @@ const SKILLS = [
   { name: 'obsidian-vault', description: 'Search Obsidian vault notes', whenToUse: 'notes' },
 ]
 
-const makeExec = () => {
+const makeExec = (session) => {
   const injected = []
   return {
     exec: {
       agent: {
-        session: { header: { cwd: '/ws' } },
+        session: session ?? { header: { cwd: '/ws' } },
         inject: (payload) => injected.push(payload),
       },
     },
     injected,
   }
+}
+
+/** 构造「某技能已注入」的会话现场：`log` 里一条 skill-invocation 事件 + surface 指向它。 */
+const loadedSession = (name) => {
+  const event = {
+    type: 'user/message',
+    data: { source: { kind: 'skill-invocation', name, form: 'instructions' } },
+  }
+  return { header: { cwd: '/ws' }, snapshotEvents: () => [event], surface: { nodes: [0] } }
 }
 
 test('apply 注册 skill_search + skill_load 两工具（schema 形状）', (t) => {
@@ -197,6 +206,43 @@ test('skill_search：中文关键词保持 AND 匹配，不能退化成空查询
   assert.doesNotMatch(result.text, /image-edit/)
   const missing = await registered[0].execute({ query: '不存在' }, makeExec().exec)
   assert.match(missing.text, /No skills match/)
+})
+
+test('skill_load：同一技能在当前上下文只注入一次（去重）', async (t) => {
+  // 桩按宿主语义把注入回流进会话 log：这样第二次加载才看得到第一次的正文事件。
+  const { ctx, registered } = makeCtx(t, [{ name: 'notes', description: 'notes', content: 'skill instructions' }])
+  applySkillSearch(ctx)
+  const log = []
+  const view = makeExec({ header: { cwd: '/ws' }, snapshotEvents: () => log, surface: { nodes: [0] } })
+  const hostInject = view.exec.agent.inject
+  view.exec.agent.inject = (payload) => {
+    hostInject(payload)
+    log.push({ type: 'user/message', data: { source: payload.source } })
+  }
+  const first = await registered[1].execute({ name: 'notes' }, view.exec)
+  assert.ok(first.text.includes('will be injected'))
+  assert.equal(view.injected.length, 1)
+  const second = await registered[1].execute({ name: 'notes' }, view.exec)
+  assert.match(second.text, /already loaded/)
+  assert.doesNotMatch(second.text, /will be injected/)
+  assert.equal(view.injected.length, 1, '第二次不得再注入正文')
+
+  // 已加载（本工具或官方 `/名字` 手势留下的 skill-invocation 事件）→ 直接跳过注入。
+  const loaded = makeExec(loadedSession('notes'))
+  const again = await registered[1].execute({ name: 'notes' }, loaded.exec)
+  assert.match(again.text, /already loaded/)
+  assert.equal(loaded.injected.length, 0)
+})
+
+test('skill_load：已加载但被压缩遮蔽（surface 不含该事件）→ 允许重新注入', async (t) => {
+  const { ctx, registered } = makeCtx(t, [{ name: 'notes', description: 'notes', content: 'skill instructions' }])
+  applySkillSearch(ctx)
+  const event = { type: 'user/message', data: { source: { kind: 'skill-invocation', name: 'notes', form: 'instructions' } } }
+  // 事件仍在完整历史里，但 surface 指向空上下文 ⇒ currentEvents() = [] ⇒ 视为未加载。
+  const view = makeExec({ header: { cwd: '/ws' }, snapshotEvents: () => [event], surface: { nodes: [] } })
+  const result = await registered[1].execute({ name: 'notes' }, view.exec)
+  assert.ok(result.text.includes('will be injected'))
+  assert.equal(view.injected.length, 1)
 })
 
 test('skill_load：加载期间策略关闭或请求取消都不能注入', async (t) => {

@@ -36,6 +36,7 @@
  */
 import { importHostPackage } from './host-package.mjs'
 import { toJsonSchema } from './shared.mjs'
+import { currentEvents } from './history.mjs'
 
 const { isModelInvocable, renderSkillContent } = await importHostPackage('@deepseek-ai/dsh-skill')
 
@@ -96,6 +97,17 @@ export function renderMatches(scored, query, complete = true) {
   if (!complete) lines.push('Skill discovery is incomplete; these results may be partial.')
   lines.push('Load one with skill_load({"name": "<exact name>"}).')
   return lines
+}
+
+/**
+ * 该技能是否已在本会话的**当前可见上下文**里注入过——去重按 `currentEvents()` 口径：
+ * 压缩/位置替换遮蔽掉的注入不算「已加载」，下次 `skill_load` 仍会重新注入正文。
+ * 官方 `/名字` 手势与 `skill_load` 写的是同一形状的 `skill-invocation` 事件，因此一并覆盖。
+ */
+export function skillLoadedInContext(session, name) {
+  return currentEvents(session).some(event => event?.type === 'user/message'
+    && event.data?.source?.kind === 'skill-invocation'
+    && event.data.source.name === name)
 }
 
 /** 注册两个按需技能工具。 */
@@ -182,6 +194,13 @@ export function apply(ctx) {
         options.signal?.throwIfAborted()
         if (skill === undefined) {
           return { text: `Skill "${args.name}" is no longer available — it was registered but its body could not be loaded. Retry once, then run skill_search to see what is still registered.` }
+        }
+        // 去重：正文已在当前可见上下文里就不再注入（少一份重复 token）。
+        // 只有「已加载且仍可见」才跳过——压缩遮蔽掉的注入不算已加载，见 skillLoadedInContext。
+        // ponytail: 同一批次内连调两次 `skill_load` 时，第一次的注入尚未落入会话，去重看不到，
+        // 会重复注入一份；跨批次重复才是常态，等真出现同批重复再按 step 消息判重。
+        if (skillLoadedInContext(agent.session, args.name)) {
+          return { text: `Skill "${args.name}" is already loaded in this context — its instructions are above (or earlier in this session), so nothing was injected again. Follow them without another load; if the user explicitly asks to reload it, let them re-send it as a /${args.name} gesture.` }
         }
         if (!isModelInvocable(skill)) return { text: `Skill "${args.name}" is not available for model invocation.` }
         if (skill.content.trim().length === 0) {

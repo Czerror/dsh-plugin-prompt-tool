@@ -2,11 +2,12 @@
 
 ## [Unreleased]
 
-### 技能侧按需发现对齐工具面：`skill_search` 打分、截断标注、空结果不否决（2026-10-16）
+### 技能侧按需发现对齐工具面：`skill_search` 打分、截断标注、空结果不否决、`skill_load` 去重（2026-10-16）
 
 - **病灶是提示层而非引擎**：`skill_load` 一直按注册表精确名加载（实测 `ponytail-help`／`dsh-shell-commands` 从未出现在任何一次搜索结果里，仍能加载），但 `engine/skill-search.mjs` 的三处文案把它写成搜索的从属——工具描述「call skill_search FIRST … then skill_load」、结果头 `Matching skills (88)` ＋ `…(68 more)`、未知名「No skill named "X". Run skill_search to list available skills.」。实测后果：模型搜不到就转去 `glob` 翻 `.dsh\skills` 猜名字。
 - **两处照搬 `tool-search.mjs` 的既有写法（技能侧此前是退化版）**：① 结果头改 `(显示数 of 命中总数)` ＋ `(truncated at 20 — add tokens to narrow the query)`；② 空结果/未知名文案写清契约——「空结果只说明关键词没命中，不代表技能不存在；已知精确名直接 `skill_load`」，`skill_load` 三种成因（名字不在注册表／发现不完整／不可模型调用）分别给应对。
 - **空查询形态刻意不改**：`skill_search` 无关键词时仍列出可见技能（截到 20 条）＋ 截断标注。工具面空查询折叠成分组计数是因为它覆盖 371 个长名工具，而技能是 88 个短名；`superpowers` 那套的 `references/dsh-tools.md` 也把「空查询列全部」写成了既有契约，两边保持一致、不引入隐性冲突。
+- **`skill_load` 去重（回答「不依赖搜索是否破坏设计初衷」）**：加载仍按注册表精确名（官方 `skill` 工具同样如此，搜索是发现途径而非准入），但**重复加载不再重复注入正文**——加载前用 `engine/history.mjs` 的 `currentEvents()` 判定该技能是否已在**当前可见上下文**里，命中就只回报「已加载」并跳过 `agent.inject`。口径要点：压缩/位置替换遮蔽掉的注入不算已加载，重新加载照常注入（否则模型会失去正文）；官方 `/名字` 手势写的是同一形状的 `skill-invocation` 事件，一并被去重覆盖。这是「不依赖搜索」唯一真实的 token 浪费路径——猜错名字拿不到正文，而同一技能重复加载会白付一份 1.6–23KB 的正文。
 - **匹配保持 AND 准入、只改排序**：`scoreSkills` 仍要求每个 token 都命中（`代码 中文` 这类中文多词查询是既有纪律），精确名命中最前，其次全命中者按命中数、名字序。**没有**采用工具面「命中任意 token 即入选」的口径——技能 description 很短，近似命中会把只沾一个词的无关技能一起倒出来。
 - **发现不完整不否决可用结果**：incomplete 读只加一行标注；只有「无命中」时才改措辞（不含「没有匹配」的断言形式），避免把「没读全」变成「搜不到」。
 - **测试**：`test/engine/tool-module-mount.test.mjs` 随语义更新（截断标注、空结果契约文案、AND 优先），并顺带修掉测试桩的一处失真——provider 摘要此前把 `description` 统一写成 `'test skill'`，导致按描述关键词搜索的用例名不副实。
