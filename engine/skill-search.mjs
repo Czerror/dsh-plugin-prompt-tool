@@ -25,8 +25,8 @@
  *  1. **打分而非 AND 过滤**：完整命中（命中全部 token）优先，其次近似命中；
  *     长自然语言查询不再全灭。精确名命中最前。中文与英文同口径——中文整句
  *     是一个 token，`includes` 仍是子串匹配。
- *  2. **空查询给目录概览**：按名字前缀折叠成分组计数，一行覆盖全部技能；
- *     此前的「列出前 20 条」是信息密度最低的形态，还会被读成全量清单。
+ *  2. **空查询列出全部（截到上限）**：`skill_load` 已有精确名时直接加载，空查询是
+ *     「先看看有什么」的入口——完整列表连同截断标注比分组摘要更好用。
  *  3. **截断与空结果都明说**：显示条数 / 命中总数分列，并写明「空结果只说明
  *     关键词没命中」——模型据此收窄查询或直接按精确名 `skill_load`，而不是
  *     转去翻文件系统猜名字。
@@ -45,46 +45,11 @@ export const name = 'skill-search'
 /** The agent, tools, and skills services must exist before these tools can register. */
 export const inject = ['agents', 'tools', 'skills']
 
-/** 单次搜索结果上限：再多就该让模型收窄关键词。与 `tool-search.mjs` 同量级。 */
-export const MAX_RESULTS = 20
-
-/** 概览里最多列出的分组数，超出则并入「其他」——按前缀折叠，未知技能名不必维护索引。 */
-const MAX_GROUPS = 24
-
 /** 参数 schema 由 `shared.mjs` 的统一实现生成（与 `tool-search` 同一份）。 */
 
 /** 把查询切成小写 token（Unicode 字母数字与下划线连字符，与 tool-search 同口径）。 */
 export function queryTokens(query) {
   return (typeof query === 'string' ? query : '').toLowerCase().split(/[^\p{L}\p{N}_-]+/u).filter(Boolean)
-}
-
-/**
- * 名字前缀分组键：首个连字符前的段（`ponytail-review` → `ponytail*`），
- * 单名自成一组。技能名是 kebab-case，没有工具面那种 MCP 双下划线层级。
- */
-export function groupKeyOf(name) {
-  if (typeof name !== 'string' || name.length === 0) return undefined
-  const cut = name.indexOf('-')
-  return cut <= 0 ? name : `${name.slice(0, cut)}*`
-}
-
-/**
- * 从候选目录折叠出分组摘要——名字、分组、数量全部来自注册表，技能增删不需要改本模块。
- * 超过 MAX_GROUPS 个分组时把长尾并成一行「其他」而不是无限增长。
- */
-export function summarizeCatalog(skills) {
-  const counts = new Map()
-  for (const skill of Array.isArray(skills) ? skills : []) {
-    const key = groupKeyOf(skill?.name)
-    if (key === undefined) continue
-    counts.set(key, (counts.get(key) ?? 0) + 1)
-  }
-  const sorted = [...counts.entries()].sort((a, b) => (b[1] - a[1]) || a[0].localeCompare(b[0]))
-  const head = sorted.slice(0, MAX_GROUPS)
-  const tail = sorted.slice(MAX_GROUPS)
-  const parts = head.map(([key, count]) => `${key}(${count})`)
-  if (tail.length > 0) parts.push(`其他 ${tail.length} 组(${tail.reduce((sum, [, n]) => sum + n, 0)})`)
-  return { total: [...counts.values()].reduce((sum, n) => sum + n, 0), text: parts.join(' ') }
 }
 
 /**
@@ -108,6 +73,9 @@ export function scoreSkills(skills, wanted) {
     .filter((entry) => entry.name.length > 0 && (entry.exact || entry.score === wanted.length))
     .sort((a, b) => (b.exact - a.exact) || (b.score - a.score) || a.name.localeCompare(b.name))
 }
+
+/** 搜索结果上限：再多就该让模型收窄关键词。 */
+const MAX_RESULTS = 20
 
 /** 把目录搜索结果渲染成给模型的文本（带截断提示与加载引导）。 */
 export function renderMatches(scored, query, complete = true) {
@@ -146,7 +114,7 @@ export function apply(ctx) {
       '',
       'Usage:',
       '- `query` — search skill names and descriptions (1-2 short words work best; Chinese keywords work).',
-      '- call with NO arguments — list the skill catalog as group counts (`<prefix>*(count) ...`), so you can see what exists before searching.',
+      '- call with NO arguments — list up to 20 registered skills (truncation is marked with the matching total).',
       '',
       'IMPORTANT: an empty search result does NOT mean a skill is unavailable — it only means no skill matched your keywords. Search results are discovery only; `skill_load` accepts ANY exact name in the registry, including one the user just named. Never conclude from an empty search that no skill exists.',
     ].join('\n'),
@@ -169,18 +137,12 @@ export function apply(ctx) {
         })
         exec?.signal?.throwIfAborted()
         const visible = snapshot.skills.filter(isModelInvocable)
-        // 空查询 = 要目录概览，不是要一份被截断的全量清单。
-        if (query.length === 0) {
-          const summary = summarizeCatalog(visible)
-          return { text: [
-            summary.total === 0
-              ? 'The skill catalog is empty — no skills are registered for this session.'
-              : `Skill catalog groups (${summary.total} skills): ${summary.text}`,
-            'Search with `query`, or load by exact name with skill_load.',
-          ].join('\n') }
-        }
-        // 不完整读只作标注、不作否决：可用的命中照常返回，避免把「没读全」变成「搜不到」。
-        return { text: renderMatches(scoreSkills(visible, queryTokens(query)), query, snapshot.complete).join('\n') }
+        // 空查询列出可见技能（`scoreSkills` 按契约对空 token 返回 `[]`，不能代表「列出全部」）；
+        // 不完整读只作标注、不作否决，避免把「没读全」变成「搜不到」。
+        const scored = query.length === 0
+          ? visible.map((skill) => ({ skill, name: skill.name, score: 0, exact: false }))
+          : scoreSkills(visible, queryTokens(query))
+        return { text: renderMatches(scored, query, snapshot.complete).join('\n') }
       } catch (error) {
         return { text: `skill_search unavailable: ${String((error && error.message) || error)}` }
       }

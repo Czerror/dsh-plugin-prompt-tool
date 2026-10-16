@@ -92,20 +92,21 @@ test('skill_search：query 大小写不敏感 + 完整命中优先于近似命�
   assert.ok(!r.text.includes('image-process'))
 })
 
-test('skill_search：空 query 给目录概览；命中超上限时截断并标注总数', async (t) => {
+test('skill_search：空 query 列出全部并标注截断总数；命中超上限同样截断', async (t) => {
   const many = Array.from({ length: 25 }, (_, i) => ({ name: `skill-${String(i).padStart(2, '0')}`, description: `desc ${i}` }))
   const { ctx, registered } = makeCtx(t, many)
   applySkillSearch(ctx)
-  // 空 query 是目录概览（同 tool_search），不再是被截断的全量清单。
+  // 空 query 列出全部（截到 20 条），截断标注给出「显示数 of 命中总数」——与 tool_search 同形。
   const overview = await registered[0].execute({ query: '' }, makeExec().exec)
-  assert.match(overview.text, /Skill catalog groups \(25 skills\): skill\*\(25\)/)
-  assert.ok(!overview.text.includes('skill-0'))
+  assert.ok(overview.text.includes('skill-00'))
+  assert.ok(overview.text.includes('skill-19'))
+  assert.ok(!overview.text.includes('skill-20'))
+  assert.ok(overview.text.includes('(20 of 25)'))
+  assert.ok(overview.text.includes('truncated at 20'))
   const r = await registered[0].execute({ query: 'desc' }, makeExec().exec)
   assert.ok(r.text.includes('skill-00'))
-  assert.ok(r.text.includes('skill-19'))
   assert.ok(!r.text.includes('skill-20'))
-  assert.ok(r.text.includes(`(20 of 25)`))
-  assert.ok(r.text.includes('truncated at 20'))
+  assert.ok(r.text.includes('(20 of 25)'))
 })
 
 test('skill_search：无匹配给出引导文案；发现不完整不声称没有技能', async (t) => {
@@ -170,11 +171,11 @@ test('skill_search / skill_load：四种调用策略均在模型边界生效，�
     ['user-only', false, true], ['disabled', false, false],
   ]
   const { ctx, registered, calls } = makeCtx(t, policies.map(([name, modelInvocable, userInvocable]) => ({
-    name, description: 'policy-word', invocation: { modelInvocable, userInvocable },
+    name, invocation: { modelInvocable, userInvocable },
   })))
   applySkillSearch(ctx)
   const { exec, injected } = makeExec()
-  const search = await registered[0].execute({ query: 'policy-word' }, exec)
+  const search = await registered[0].execute({ query: '' }, exec)
   for (const [name, modelInvocable] of policies) {
     assert.equal(search.text.includes(`- ${name}:`), modelInvocable, name)
     const before = injected.length
@@ -235,26 +236,18 @@ test('技能查找按 scope 隔离候选，scope 释放后候选消失', async (
   for (const [key, view] of [['main', main], ['child', child]]) {
     view.exec.agent.session.header.cwd = `/workspace/${key}`
     view.exec.signal = new AbortController().signal
-    // 空 query 是目录概览：main-only 与 global 同为整名（首段无连字符）→ main*(2)，
-    // child-only → child*(1)，分组计数仍然证明 scope 隔离。
-    // 空 query 是目录概览：main 与 global 同为整名 → main*(1) global(1)；
-    // child 再加 child-only → child*(1)。分组计数即可证明 scope 隔离。
+    // 空 query 列出可见技能：main 视图只有 main-only + global，child 视图多出 child-only。
     const searched = await registered[0].execute({ query: '' }, view.exec)
-    if (key === 'child') {
-      assert.match(searched.text, /Skill catalog groups \(3 skills\): child\*\(1\) global\(1\) main\*\(1\)/)
-    } else {
-      assert.match(searched.text, /Skill catalog groups \(2 skills\): global\(1\) main\*\(1\)/)
-      assert.ok(!searched.text.includes('child*'))
-    }
-    assert.equal(searched.text.includes('child*'), key === 'child')
+    assert.match(searched.text, /main-only/)
+    assert.equal(searched.text.includes('child-only'), key === 'child')
     await registered[1].execute({ name: 'global' }, view.exec)
     assert.equal(view.injected.length, 1)
   }
   await childScope.dispose()
-  // 释放的是 child 层：child-only 的层连同分组一起消失，父链的 main 与全局不受影响。
+  // 释放的是 child 层：child-only 从清单消失，父链的 main 与全局不受影响。
   const afterDispose = await registered[0].execute({ query: '' }, child.exec)
-  assert.match(afterDispose.text, /Skill catalog groups \(2 skills\): global\(1\) main\*\(1\)/)
-  assert.ok(!afterDispose.text.includes('child*'))
+  assert.doesNotMatch(afterDispose.text, /child-only/)
+  assert.match(afterDispose.text, /main-only/)
 })
 
 // —— 内置工具模块挂载（原 tool-modules.test.mjs） ——
