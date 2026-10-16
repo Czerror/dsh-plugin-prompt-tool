@@ -125,7 +125,7 @@ test('skill_search：无匹配给出引导文案；发现不完整不声称没�
   assert.ok(none.text.includes('No skills match'))
   assert.ok(none.text.includes('no skill matched'))
   assert.ok(none.text.includes('loads any exact name in the registry'))
-  assert.ok(none.text.includes('the user can name one'))
+  assert.ok(none.text.includes('skill_search with no arguments lists every visible skill'))
   const boom = makeCtx(t, [], { list: async () => { throw new Error('registry down') } })
   applySkillSearch(boom.ctx)
   const down = await boom.registered[0].execute({ query: 'x' }, makeExec().exec)
@@ -159,6 +159,24 @@ test('skill_load：官方资源与正文包装完整注入，空正文不注入'
   const empty = await registered[1].execute({ name: 'empty' }, exec)
   assert.ok(empty.text.includes('no loadable body'))
   assert.equal(injected.length, 1, '空 body 不产生注入')
+})
+
+test('skill_load：空名字与非字符串不落进「未注册」，名字归一后能命中注册表', async (t) => {
+  const { ctx, registered, calls } = makeCtx(t, SKILLS)
+  applySkillSearch(ctx)
+  const view = makeExec()
+  // 空串 / 纯空白 / 非字符串都算「没给名字」，给出专属文案而不是「未注册」。
+  for (const value of ['', '   ', 42, undefined]) {
+    const r = await registered[1].execute({ name: value }, view.exec)
+    assert.match(r.text, /needs an exact skill name/, `name=${JSON.stringify(value)}`)
+    assert.doesNotMatch(r.text, /No skill named/)
+  }
+  assert.equal(calls.get.length, 0, '没给名字就不该查注册表')
+  assert.equal(view.injected.length, 0)
+  // 名字归一：前后空白不该让一次合法加载落进「未注册」。
+  const spaced = await registered[1].execute({ name: '  pdf-tools  ' }, view.exec)
+  assert.ok(spaced.text.includes('Skill "pdf-tools" loaded'))
+  assert.equal(view.injected.length, 1)
 })
 
 test('skill_load：不存在 / 无 agent 上下文给出明确文案', async (t) => {

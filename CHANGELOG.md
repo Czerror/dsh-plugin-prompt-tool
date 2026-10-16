@@ -1,5 +1,13 @@
 # Changelog
 
+### 技能发现文案补两处缺口：空结果指向空参列举、`skill_load` 名字归一（2026-10-16）
+
+- **起因是上一提交的盲测**：两条子代理分别在隔离会话里实测（逐字返回记录已随本轮清理，结论如下），A 覆盖 `skill_load` 六种非法名与 `skill_search` 空结果/空查询共 8 例；B 覆盖四种空结果、空参列举与真名加载注入。**B 的关键发现推翻了「强化段在起作用」的假设**——拦住它「自己去翻技能目录」冲动的，是 `skill_search` 描述里 `call with NO arguments — list every visible skill` 这条**正向入口**；空结果文案本身只把它推向 `skill_load`（它恰恰没有名字）或「问用户」（子代理没有可问的用户）。这与上一提交的判断同向：起作用的是正向入口，不是反禁令。
+- **缺口一（空结果没有下一步）**：空结果文案补 `calling skill_search with no arguments lists every visible skill`；`skill_load` 未知名分支维持 `ask the user for it`，两条恢复路径互补。参考 `tool_search`——它的空结果文案自带精确名出路（`unlock it directly by exact name`），技能侧此前缺这一条。
+- **缺口二（参数校验缺失）**：A 实测空串 / 纯空白 / 通配符 / 路径分隔符与真正拼错返回**字符级同构**的「未注册」，调用方分不清「输入非法」与「技能不存在」。按 `tool_search` 的 `unlockNames()` 同口径做名字归一：非字符串与去空白后为空走专属返回 `skill_load needs an exact skill name …`；其余路径（注入事件 id、`source.name`、去重判定）一律改用归一后的 `name`，避免注入名与加载名不一致。
+- **测试**：空结果断言改为断言新的下一步指引；`skill_load` 空名字新增一例（`''` / `'   '` / `42` / `undefined` 都走专属文案且不查注册表），并覆盖「前后空白仍能命中注册表后正常注入」。
+- **验证**：`typecheck`／`lint`／全量 test／`build`／`git diff --check`。
+
 ### 技能发现文案改正向表述：删掉「空结果不决议」强化段、准入契约单源（2026-10-16）
 
 - **起因与措辞订正**：用户先纠正我把「模型搜不到就转去 `glob` 翻 `.dsh\skills` 猜名字」判断成可行兜底，明确该行为**绝对不能使用**；随后要求按 `writing-for-agents`／`writing-great-skills` 两条准则优化文案。准则的 negation 条与这两条判断同向：提示层写反禁令会先把被禁行为请进上下文、再用弱修饰符去压它，禁掉的念头反而更可得。

@@ -84,7 +84,7 @@ export function renderMatches(scored, query, complete = true) {
   if (matches.length === 0) {
     return [
       complete
-        ? `No skills match "${query}" — no skill matched your keywords; skill_load still loads any exact name in the registry, and the user can name one.`
+        ? `No skills match "${query}" — no skill matched your keywords; skill_load still loads any exact name in the registry, and calling skill_search with no arguments lists every visible skill.`
         // 没读全就不下结论：措辞上也不能出现「没有匹配」的断言形式。
         : `Skill discovery did not complete, so nothing can be concluded about "${query}". Retry skill_search before treating a skill as unavailable.`,
     ]
@@ -173,6 +173,13 @@ export function apply(ctx) {
       try {
         const agent = exec?.agent
         if (agent === undefined) return { text: 'skill_load requires an agent context.' }
+        // 名字归一：非字符串与去空白后为空都算「没给名字」，与 tool_search 的
+        // unlockNames 同口径。否则空串会落进「未注册」文案，调用方分不清是输入
+        // 非法还是名字拼错——这两件事该做的事不同。
+        const name = typeof args?.name === 'string' ? args.name.trim() : ''
+        if (name.length === 0) {
+          return { text: 'skill_load needs an exact skill name — call it with one, or run skill_search with no arguments to list every visible skill.' }
+        }
         const options = {
           scope: agent,
           cwd: agent.session.header.cwd,
@@ -180,39 +187,39 @@ export function apply(ctx) {
         }
         const snapshot = await ctx.skills.snapshot(options)
         options.signal?.throwIfAborted()
-        const summary = snapshot.skills.find((entry) => entry.name === args.name)
+        const summary = snapshot.skills.find((entry) => entry.name === name)
         if (summary === undefined) {
           // 名字错、发现没跑完、调用面缺 agent——三种成因的应对不同。
           return { text: snapshot.complete
-            ? `No skill named "${args.name}" is registered for this session. Check the exact name against what skill_search lists, or ask the user for it.`
+            ? `No skill named "${name}" is registered for this session. Check the exact name against what skill_search lists, or ask the user for it.`
             : 'Skill discovery is incomplete, so the name could not be confirmed. Retry skill_load before concluding the skill does not exist.' }
         }
-        if (!isModelInvocable(summary)) return { text: `Skill "${args.name}" is not available for model invocation.` }
-        const skill = await ctx.skills.get(args.name, options)
+        if (!isModelInvocable(summary)) return { text: `Skill "${name}" is not available for model invocation.` }
+        const skill = await ctx.skills.get(name, options)
         options.signal?.throwIfAborted()
         if (skill === undefined) {
-          return { text: `Skill "${args.name}" is no longer available — it was registered but its body could not be loaded. Retry once, then run skill_search to see what is still registered.` }
+          return { text: `Skill "${name}" is no longer available — it was registered but its body could not be loaded. Retry once, then run skill_search to see what is still registered.` }
         }
         // 去重：正文已在当前可见上下文里就不再注入（少一份重复 token）。
         // 只有「已加载且仍可见」才跳过——压缩遮蔽掉的注入不算已加载，见 skillLoadedInContext。
         // shortcut: 同一批次内连调两次 `skill_load` 时，第一次的注入尚未落入会话，去重看不到，
         // 会重复注入一份；跨批次重复才是常态，等真出现同批重复再按 step 消息判重。
-        if (skillLoadedInContext(agent.session, args.name)) {
-          return { text: `Skill "${args.name}" is already loaded in this context — its instructions are above (or earlier in this session), so nothing was injected again. Follow them without another load; if the user explicitly asks to reload it, let them re-send it as a /${args.name} gesture.` }
+        if (skillLoadedInContext(agent.session, name)) {
+          return { text: `Skill "${name}" is already loaded in this context — its instructions are above (or earlier in this session), so nothing was injected again. Follow them without another load; if the user explicitly asks to reload it, let them re-send it as a /${name} gesture.` }
         }
-        if (!isModelInvocable(skill)) return { text: `Skill "${args.name}" is not available for model invocation.` }
+        if (!isModelInvocable(skill)) return { text: `Skill "${name}" is not available for model invocation.` }
         if (skill.content.trim().length === 0) {
-          return { text: `Skill "${args.name}" has no loadable body.` }
+          return { text: `Skill "${name}" has no loadable body.` }
         }
         // Queue the skill content as a non-waking next-step context message,
         // exactly like dsh-tool-skill's invocation injection.
         agent.inject({
-          id: `skill-load-${args.name}-${Date.now()}`,
+          id: `skill-load-${name}-${Date.now()}`,
           role: 'user',
           content: [{ type: 'text', text: renderSkillContent(skill) }],
-          source: { kind: 'skill-invocation', name: args.name, form: 'instructions' },
+          source: { kind: 'skill-invocation', name, form: 'instructions' },
         })
-        return { text: `Skill "${args.name}" loaded; its instructions will be injected for the next request.` }
+        return { text: `Skill "${name}" loaded; its instructions will be injected for the next request.` }
       } catch (error) {
         return { text: `skill_load failed: ${String((error && error.message) || error)}` }
       }
