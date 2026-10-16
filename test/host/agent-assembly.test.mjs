@@ -24,7 +24,7 @@ const { installPreStepCoordinator, PRE_STEP_COORDINATOR_SERVICE } = await import
 const { ruleDiagnosticsSnapshot, resetRuleDiagnostics } = await import('../../src/runtime/rule-diagnostics.ts')
 const { mountRuleSources } = await import('../../engine/rule-runtime.mjs')
 const { installPersonaCapture } = await import('../../src/runtime/persona-registration.ts')
-const { loadModuleSpec } = await import('../../src/host/manifest.ts')
+const { loadModuleSpec } = await import('../../src/host/module-spec.ts')
 
 /** 装配能力探针：装配只问「宿主是否提供该服务」，这里全部视为提供。 */
 const hasEveryService = () => true

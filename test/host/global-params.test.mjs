@@ -15,7 +15,10 @@ const home = mkdtempSync(join(tmpdir(), 'pt-global-params-home-'))
 process.env.DSH_HOME = home
 const { storageRootOf } = await import('../../src/host/paths.ts')
 const { readGlobalLayerSettings, readGlobalLayerSettingsSafe, setModuleEnabled, writeGlobalLayerSettings } = await import('../../src/host/config-store.ts')
-const { listBuiltinTemplates, loadModuleSpec, packageModulesDir, resolveModuleDir, resolveModuleParams } = await import('../../src/host/manifest.ts')
+const { listBuiltinTemplates } = await import('../../src/host/module-catalog.ts')
+const { packageModulesDir, resolveModuleDir } = await import('../../src/host/module-dirs.ts')
+const { resolveModuleParams } = await import('../../src/host/module-params.ts')
+const { loadModuleSpec } = await import('../../src/host/module-spec.ts')
 
 after(() => {
   rmSync(home, { recursive: true, force: true })

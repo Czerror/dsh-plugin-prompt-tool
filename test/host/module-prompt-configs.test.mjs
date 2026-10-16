@@ -26,7 +26,7 @@ const { createPromptConfigs } = await import('../../engine/schema.mjs')
 const { writeModule } = await import('../../src/host/write-module.ts')
 // 模板定位契约以打包目录 lib/ 为锚；其余行为直接覆盖当前源码。
 const { loadPromptTemplates } = await import('../../lib/index.mjs')
-const { loadModuleSpec } = await import('../../src/host/manifest.ts')
+const { loadModuleSpec } = await import('../../src/host/module-spec.ts')
 const { injectionConfigSpec } = await import('../../engine/rule-spec.mjs')
 
 /** 夹具的 canonical 规则切片；传入 rules 时改写定义，验证 writer 的物化边界。 */

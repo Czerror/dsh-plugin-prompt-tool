@@ -7,13 +7,14 @@ import { prepareImport, validateCharacterSpec } from './import-source.ts'
 import { assertModuleDirectory, assertModuleId, assertNoModuleLinks as assertNoLinks, modulePathExists } from './module-install.ts'
 import { readModuleMemory } from './module-memory.ts'
 import { MODULE_DEFINITION_FILE } from './paths.ts'
-import { appendModuleCapabilities, withModuleDefinition } from './manifest.ts'
+import { appendModuleCapabilities } from './module-capabilities.ts'
+import { withModuleDefinition } from './module-definition-edit.ts'
 import { assertCanonicalRuleSource, rulePromptConfigOptions } from './module-storage.ts'
 import { mapRuleInjections, ruleInjections } from './rule-content.ts'
 // 共享规则编译器校验模块并入候选。
 import { compileRules } from '../../engine/rule-spec.mjs'
 import { engineParamPath, readModuleLayerSettings } from './module-layer-settings.ts'
-import type { ModuleSpec } from './manifest.ts'
+import type { ModuleSpec } from './module-spec.ts'
 import type { AssetFile, ImportChoices } from '../shared/asset-transfer.ts'
 
 function isRecord(value: unknown): value is Record<string, unknown> {

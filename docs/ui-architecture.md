@@ -640,7 +640,7 @@ context-activation 视图只调整附加提示，不另设模块卡容器；能�
 
 工具栏提供九层模板创建，其他创建操作内置对应层设置；过滤与受众规则见 §5.2.1。主会话与子代理均显示本会话上下文中的指令文件卡，共用同一文件正文草稿、版本、读取状态与逐文件开关；子代理页不探测另一份文件集合，也不创建独立正文副本。
 
-展开指令卡后，「本层设置」提供**一个全局**的 `instructionHint`（指令路径提示）开关——指令卡是全局段、不属于任何模块，该开关写存储根 `config.yml` 的 `layerSettings`（`/param-overrides` 不带主语头）。`injectionPointSlots.renderInstructionSettings` 只装配既有 `EngineParamField`（`global` 主语），不依赖普通 pre-step 规则卡存在、也不随启用模块数量变化。有效值的优先级是**模块显式键 ＞ 全局键 ＞ 引擎默认**（存在即覆盖，`false` 也算显式），判据与合并只在 `src/host/manifest.ts#resolveModuleParams` 一处；模块总闸关闭或全局值尚未读回时禁用。指令正文仍只允许原文件正文编辑，普通注入参数继续锁定，文件级启停仍写独立策略。
+展开指令卡后，「本层设置」提供**一个全局**的 `instructionHint`（指令路径提示）开关——指令卡是全局段、不属于任何模块，该开关写存储根 `config.yml` 的 `layerSettings`（`/param-overrides` 不带主语头）。`injectionPointSlots.renderInstructionSettings` 只装配既有 `EngineParamField`（`global` 主语），不依赖普通 pre-step 规则卡存在、也不随启用模块数量变化。有效值的优先级是**模块显式键 ＞ 全局键 ＞ 引擎默认**（存在即覆盖，`false` 也算显式），判据与合并只在 `src/host/module-params.ts#resolveModuleParams` 一处；模块总闸关闭或全局值尚未读回时禁用。指令正文仍只允许原文件正文编辑，普通注入参数继续锁定，文件级启停仍写独立策略。
 
 上下文激活是提示词策略筛选，不承载引擎设置（只读诊断卡只在 `context-activation` 视图显示）；自定义工具编辑器按 `custom-tools` 编辑组归位到 tool-pipeline 层。配置卡及设置内容可随筛选和折叠卸载，未保存资产与字段草稿由既有共享草稿池保留；工具读取与创建由页面所有者承载，保存失败保留原输入。
 

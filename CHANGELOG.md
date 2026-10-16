@@ -2,6 +2,26 @@
 
 ## [Unreleased]
 
+### manifest.ts 按簇拆成七个 host 模块（2026-10-16）
+
+- **`src/host/manifest.ts`（1106 行 / 34 导出）删除**，按「变更原因同源」拆成七个 owner，消费方直接 import owner（不留 re-export 桶、不加转发层）：
+
+  | 新模块 | 拥有的面 | 什么时候才改它 |
+  |---|---|---|
+  | `module-dirs.ts`（82） | `moduleDirExists`／`packageModulesDir`／`packageEngineDir`／`userModulesDir`／`resolveModuleDir`／`isEditableModuleDir` | 部署布局变了 |
+  | `module-spec.ts`（113） | `ModuleSpec`／`loadModuleSpec`／`invalidateModuleSpec` ＋ spec 缓存 | `module.yml` 形状变了 |
+  | `module-composition.ts`（174） | `applyModuleConfigs`／`assertCompositionArray` ＋ 文本装配（params 由入参给） | 装配规则变了 |
+  | `module-params.ts`（203） | `resolveModuleParams`／`buildModuleConfigsFromParams`／`resolveModuleFacts`／`readModuleFacts`／`renderComposition` | 参数语义与事实计算变了 |
+  | `module-catalog.ts`（267） | 列举、内置种子、复制/新建/删除、打开目录 | 模块目录操作变了 |
+  | `module-definition-edit.ts`（102） | `saveModuleParams`／`readModulePersona`／`saveModulePersona`／`withModuleDefinition` | YAML 事务纪律变了 |
+  | `module-capabilities.ts`（229） | 能力创建/移除/声明增删 ＋ 三个类型 | 能力声明模型变了 |
+
+- **依赖单向**：`dirs ← spec ← {params, catalog, definition-edit}`、`composition ← {params, capabilities}`、`params ← capabilities`；新模块之间的 import 全部朝下层，**无环**（第一回合破掉的 C↔D 环是这次能一刀切开的前提）。
+- **包公共面不变**：`src/index.ts` 的再导出块只换来源路径，**146 个再导出符号逐一相同**（`scripts/rematerialize-modules.mjs` 从 `lib/index.mjs` 取 `userModulesDir` 不受影响）；5 个跨簇 helper（`asString`／`findModuleDir`／`moduleFile`／`compositionModuleDirs`／`loadCompositionText`）只导出到 host 内部，不进包面。
+- **纯搬家**：新旧代码行数各 816 行，逐行比对差异只有 5 处——恰好是那 5 个 helper 多出的 `export` 关键字；逻辑、错误文案、校验顺序与写盘语义一字未改。
+- **文档**：`asset-transfer.md`／`architecture-params.md`／`ui-architecture.md` 中指向 `manifest.ts` 的结构性引用改指新 owner（`CHANGELOG`、`docs/adr/`、`docs/superpowers/specs/` 是历史记录，保留原样）。
+- **验证**：`typecheck`／`lint`（293 文件，0 警告 0 错误）／`test`（**670 pass / 0 fail**，默认 4 路）／`build`／`git diff --check` 全绿；`rg 'host/manifest' src test scripts` 零命中。
+
 ### 引擎接口进编译期；打破组合/参数循环（2026-10-16）
 
 - **`src/` 不再靠 `@ts-expect-error` 引入引擎**：给 10 个被 `src/` 静态引入的引擎模块补手写 `.d.mts`（`rule-spec`／`shared`／`interpolate`／`executor`／`branch`／`tool-definition`／`order`／`rule-runtime`／`compaction-epoch`／`conditions/index`），删掉 `src/` 的 23 条 pragma ＋ `test/host/bundled-assets.test.mjs` 那条（`test/` 本不在 tsc 项目内）。加上既有的三份（`template-evaluation`／`template-frame`／`context-activation`），插件侧现在只对**未被静态引入**的模块（如 `schema.mjs`，只经 URL 动态导入）留运行期断言。

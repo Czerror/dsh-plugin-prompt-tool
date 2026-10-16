@@ -56,7 +56,7 @@ export const isWritableTarget = (modules: readonly ModuleSummary[] | undefined, 
   (modules ?? []).some((module) => module.id === moduleId && isWritableTargetModule(module))
 
 /**
- * 「新建空白模块」的源：引擎内组装的空白模板（`src/host/manifest.ts` 的 `BLANK_MODULE_TEMPLATE`，
+ * 「新建空白模块」的源：引擎内组装的空白模板（`src/host/module-catalog.ts` 的 `BLANK_MODULE_TEMPLATE`，
  * 不落包内目录）；只声明身份，不预置任何节。
  *
  * 目录身份仍由服务端分配为 blank、blank-2 等；显示名称可编辑，不用于拼路径。

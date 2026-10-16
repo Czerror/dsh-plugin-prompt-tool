@@ -1,6 +1,6 @@
 import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-host-webserver'
-import { saveModuleParams } from './host/manifest.ts'
+import { saveModuleParams } from './host/module-definition-edit.ts'
 import { scheduleWebSurfaceRepair } from './web-surface.ts'
 import { detectModels, invalidateModelCatalog, listAdvertisedModels } from './runtime/models.ts'
 import type { ModelDetection } from './runtime/models.ts'
@@ -13,10 +13,8 @@ import { installPreStepCoordinator } from './runtime/pre-step-coordinator.ts'
 import { installPersonaCapture } from './runtime/persona-registration.ts'
 import { registerTuiCommand } from './runtime/tui.ts'
 import { ensureModuleReady } from './host/write-module.ts'
-import {
-  ensureModuleSeed,
-  moduleDirExists,
-} from './host/manifest.ts'
+import { ensureModuleSeed } from './host/module-catalog.ts'
+import { moduleDirExists } from './host/module-dirs.ts'
 import {
   Config,
   NS,
@@ -276,21 +274,26 @@ export type {
 } from './runtime/pre-step-coordinator.ts'
 export { mergeInstructionCards } from './runtime/settings-bridge.ts'
 export { convertStToModule, convertStToModuleWithReport, mergeStModules, mergeStModulesWithReport, stModuleId } from './host/sillytavern.ts'
-export { applyModuleConfigs, appendModuleCapabilities, buildModuleConfigsFromParams, removeModuleCapabilityDeclaration, saveModuleParams, saveModulePersona, withModuleDefinition } from './host/manifest.ts'
-export { createModuleCapability, loadModuleSpec, removeModuleCapability, renderComposition, resolveModuleFacts, resolveModuleParams } from './host/manifest.ts'
+export { appendModuleCapabilities, createModuleCapability, removeModuleCapability, removeModuleCapabilityDeclaration, removeUserModule } from './host/module-capabilities.ts'
+export { applyModuleConfigs } from './host/module-composition.ts'
+export { saveModuleParams, saveModulePersona, withModuleDefinition } from './host/module-definition-edit.ts'
+export { buildModuleConfigsFromParams, renderComposition, resolveModuleFacts, resolveModuleParams } from './host/module-params.ts'
+export { loadModuleSpec } from './host/module-spec.ts'
 export { ENGINE_PARAM_KEYS, WRITER_PARAM_KEYS, validateEngineParamValues } from './shared/engine-params.ts'
 export { assertSafeConfigId, configFileName } from './host/prompt-configs.ts'
-export type { ModuleCapabilityCreateRequest, ModuleCapabilityCreateResult, ModuleCapabilityRemoveResult, ModuleSpec } from './host/manifest.ts'
+export type { ModuleCapabilityCreateRequest, ModuleCapabilityCreateResult, ModuleCapabilityRemoveResult } from './host/module-capabilities.ts'
+export type { ModuleSpec } from './host/module-spec.ts'
 export {
   cloneBuiltinModule,
   ensureModuleSeed,
   listBuiltinTemplates,
   listModules,
+} from './host/module-catalog.ts'
+export {
   moduleDirExists,
-  removeUserModule,
   resolveModuleDir,
   userModulesDir,
-} from './host/manifest.ts'
+} from './host/module-dirs.ts'
 export { expandModuleSource, exportModulePackage, moduleImportPreview, installModulePackage } from './host/module-package.ts'
 export { ensureWebSurface, resolveProfileDir, scheduleWebSurfaceRepair } from './web-surface.ts'
 export { userSkillsDir } from './host/paths.ts'

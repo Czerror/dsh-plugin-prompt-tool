@@ -12,7 +12,7 @@ import { bindScopeParent, createScope, scopeOf, scopeTarget } from '@deepseek-ai
 import { isolatedHome } from '../fixtures/host-harness.mjs'
 
 const { moduleRoot } = isolatedHome('pt-persona-registration-')
-const { readModulePersona, saveModulePersona } = await import('../../src/host/manifest.ts')
+const { readModulePersona, saveModulePersona } = await import('../../src/host/module-definition-edit.ts')
 const { installPersonaCapture } = await import('../../src/runtime/persona-registration.ts')
 const { createAgentAssembly } = await import('../../src/runtime/agent-assembly.ts')
 const require = createRequire(import.meta.url)

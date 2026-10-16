@@ -4,7 +4,7 @@ import type { Node, Scalar, YAMLMap, YAMLSeq } from 'yaml'
 import type { RuleDefinition, RuleEdit, RuleRevisions } from '../shared/rules.ts'
 import { assertRuleFileId, commitModuleDefinition, ensureModuleSlices, ModuleRulesError, serializeWithoutSharedAlias, validateModuleDefinitionText } from './module-storage.ts'
 import type { ModuleDefinitionSnapshot } from './module-storage.ts'
-import { invalidateModuleSpec } from './manifest.ts'
+import { invalidateModuleSpec } from './module-spec.ts'
 
 const record = (value: unknown): value is Record<string, unknown> => value !== null && typeof value === 'object' && !Array.isArray(value)
 export interface ModuleRulesSnapshot { rules: RuleDefinition[]; revisions: RuleRevisions }

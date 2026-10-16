@@ -16,7 +16,7 @@ import { enabledModuleIds, readGlobalLayerSettingsSafe, setModuleEnabled, writeG
 import { readPersonaSources, writePersonaSources } from '../host/persona-selection.ts'
 import { appendModuleConfigOrder, ModuleConfigOrderError, readModuleConfigOrder, saveModuleConfigOrder } from '../host/module-config-order.ts'
 import type { ModuleConfigIdentity } from '../shared/module-config-order.ts'
-import { isEditableModuleDir, moduleDirExists, readModuleFacts } from '../host/manifest.ts'
+import { isEditableModuleDir, moduleDirExists } from '../host/module-dirs.ts'
 import { readOfficialOrderSegments, type OfficialOrderLookup } from '../shared/official-orders.ts'
 import { ModuleLayerSettingsError } from '../host/module-layer-settings.ts'
 import { readModuleRules, editModuleRules, createModuleRule } from '../host/module-rules.ts'
@@ -27,26 +27,12 @@ import { createSkill, type SkillActionResult } from '../host/skills-actions.ts'
 import type { SkillPolicyWrite } from '../host/skills-policy.ts'
 import type { SkillContentResult } from '../host/skills-content.ts'
 import { MAX_SKILL_CONTENT_BYTES } from '../shared/skills.ts'
-import {
-  appendModuleCapabilities,
-  cloneBuiltinModule,
-  createModuleCapability,
-  duplicateUserModule,
-  listBuiltinTemplates,
-  listModules,
-  loadModuleSpec,
-  openModuleLocation,
-  packageEngineDir,
-  removeModuleCapability,
-  removeUserModule,
-  resolveModuleParams,
-  resolveModuleDir,
-  saveModuleParams,
-  saveModulePersona,
-  readModulePersona,
-  userModulesDir,
-  withModuleDefinition,
-} from '../host/manifest.ts'
+import { appendModuleCapabilities, createModuleCapability, removeModuleCapability, removeUserModule } from '../host/module-capabilities.ts'
+import { cloneBuiltinModule, duplicateUserModule, listBuiltinTemplates, listModules, openModuleLocation } from '../host/module-catalog.ts'
+import { readModulePersona, saveModuleParams, saveModulePersona, withModuleDefinition } from '../host/module-definition-edit.ts'
+import { packageEngineDir, resolveModuleDir, userModulesDir } from '../host/module-dirs.ts'
+import { readModuleFacts, resolveModuleParams } from '../host/module-params.ts'
+import { loadModuleSpec } from '../host/module-spec.ts'
 import { mergeModuleIntoModule, removeMergedModule } from '../host/characters.ts'
 import { moduleDeclarations } from '../host/module-declarations.ts'
 import { ensureModuleSlices, loadModuleDefinition, ModuleRulesError } from '../host/module-storage.ts'

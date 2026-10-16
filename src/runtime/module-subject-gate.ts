@@ -40,7 +40,7 @@ import {
 import type { BridgeTransaction } from './bridge-transaction.ts'
 import { DECLARED_SECTIONS, moduleDeclarations } from '../host/module-declarations.ts'
 import { ModuleLayerSettingsError, readModuleLayerSettings } from '../host/module-layer-settings.ts'
-import { isEditableModuleDir } from '../host/manifest.ts'
+import { isEditableModuleDir } from '../host/module-dirs.ts'
 import { loadModuleDefinition, ModuleRulesError } from '../host/module-storage.ts'
 
 /** 写一次响应；事务的 `tx.write` 与门内判据共用这一个形态。 */

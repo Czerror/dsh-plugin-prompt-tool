@@ -7,7 +7,8 @@ import { isolatedHome } from '../fixtures/host-harness.mjs'
 
 const { moduleRoot } = isolatedHome('pt-module-rules-')
 const { readModuleRules, editModuleRules } = await import('../../src/host/module-rules.ts')
-const { loadModuleSpec, resolveModuleFacts } = await import('../../src/host/manifest.ts')
+const { resolveModuleFacts } = await import('../../src/host/module-params.ts')
+const { loadModuleSpec } = await import('../../src/host/module-spec.ts')
 const { readRulesDir } = await import('../../src/host/module-storage.ts')
 const rule = (id, extra = {}) => ({ id, layer: 'agent-request', then: [{ id: 'request', kind: 'request-params', patch: { maxTokens: 512 } }], ...extra })
 const completeRule = (id, audience, enabled = true) => ({ id, enabled, then: [{ id: 'section', kind: 'inject-text', config: {

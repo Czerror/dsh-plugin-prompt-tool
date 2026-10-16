@@ -11,7 +11,8 @@ import { join } from 'node:path'
 import { isolatedHome, fixtureRule } from '../fixtures/host-harness.mjs'
 
 const { moduleRoot } = isolatedHome('pt-module-facts-')
-const { packageModulesDir, readModuleFacts } = await import('../../src/host/manifest.ts')
+const { packageModulesDir } = await import('../../src/host/module-dirs.ts')
+const { readModuleFacts } = await import('../../src/host/module-params.ts')
 
 /** 用户模块：在隔离的模块根下写一份最小定义（与 `userModulesDir()` 同根）。 */
 function userModule(id, rules = []) {

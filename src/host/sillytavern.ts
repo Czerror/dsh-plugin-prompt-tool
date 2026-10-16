@@ -15,7 +15,7 @@
  *     persona（complete: false 允许 system-section 生效），上下文条目使用模块规则与记忆工具。
  */
 import { createHash } from 'node:crypto'
-import type { ModuleSpec } from './manifest.ts'
+import type { ModuleSpec } from './module-spec.ts'
 import type { RuleDefinition } from '../shared/rules.ts'
 import type { PromptConfigSpec } from './prompt-configs.ts'
 import { promptConfigToRule } from './rule-builder.ts'

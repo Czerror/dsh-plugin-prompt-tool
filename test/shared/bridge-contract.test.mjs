@@ -256,7 +256,7 @@ test('契约：载荷字段形状不进事务——端点保留自己的错误�
 })
 
 test('契约：moduleName 的公开主语与身份安全边界', async () => {
-  const { userModulesDir } = await import('../../src/host/manifest.ts')
+  const { userModulesDir } = await import('../../src/host/module-dirs.ts')
   const subjectDir = join(userModulesDir(), 'module-name-subject')
   mkdirSync(subjectDir, { recursive: true })
   writeFileSync(join(subjectDir, 'module.yml'), 'id: module-name-subject\nname: 原名\nmodules: []\nrules: []\n', 'utf8')

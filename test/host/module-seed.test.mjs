@@ -8,7 +8,8 @@ import { isolatedHome, tempDir } from '../fixtures/host-harness.mjs'
 // 种子化只发生在预设根内：隔离 DSH_HOME 验证补建、幂等与安全边界（清理与还原由夹具登记）。
 const { home } = isolatedHome('pt-seed-')
 const { storageRootOf } = await import('../../src/host/paths.ts')
-const { cloneBuiltinModule, ensureModuleSeed, packageModulesDir } = await import('../../src/host/manifest.ts')
+const { cloneBuiltinModule, ensureModuleSeed } = await import('../../src/host/module-catalog.ts')
+const { packageModulesDir } = await import('../../src/host/module-dirs.ts')
 
 const PRESETS_DIR = join(storageRootOf(home), 'modules')
 
