@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+### S5 复核：实测后判定「零漂移、零冗余」，只落文档（2026-10-16）
+
+- **按用户三条原则逐条量了这 14 份声明**（`engine/*.d.mts` ＋ `engine/conditions/index.d.mts`）：
+  - **deletion test**：删任一份 ⇒ `src` 的静态 `import { … } from '../../engine/x.mjs'` 立刻失去类型、退化为 `any` ⇒ 每份都挣饭。12 份只有单个消费者，但那是「一个 import 语句在语法上需要一个同名模块」，不是「一个使用者所以该合并的抽象」——判据在此不适用。
+  - **零冗余**：14 份共 **52 个声明符号**，逐个核实后**没有一个是纯冗余**。`src` 直接 import 的是**函数**（形如 `compileRules`／`mountRuleSources`／`isBranchNode`）；其余符号**支撑着被消费符号的签名**——`StandingMountFor` 是 `loadStandingMountFor` 的返回、`MountRuleSourcesOptions` 是 `mountRuleSources` 的参数、`PreStepBatchOptions` 是 `runPreStepBatch` 的参数、`WarnOnce` 是 `createWarnOnce` 的返回、`InjectionConfigSpec` 是 `injectionConfigSpec()` 的返回、`PreStepConfigLike` 是 `PreStepBatchOptions.configs` 的元素类型。**「无人 import 的类型」不等于冗余**，判据是「它是否支撑某个被消费符号的签名」。
+  - **零漂移**：动态 `import` 每个 `.mjs`，核对声明里的**值导出逐个存在** ⇒ 0 份漂移。**静态正则探针会误报**：它不跟 `export *` 链，把 `conditions/index.d.mts` 的 `loadStandingMountFor` 报成幽灵（实际由 `index.mjs` 的 `export * from './preset.mjs'` 转发）——要查这类漂移**必须走运行期**。
+- **唯一真实弱点**：声明与实现之间**没有机制校验**——`docs/engine-reuse.md:73` 的「新增引擎导出时同步改声明」是纪律不是守卫；签名文字（如 `rule-runtime.d.mts` 的 `ctx: unknown`）的宽化只能靠人看。**但拿不出当下缺陷路径**，故加运行期导出面断言属「为覆盖率而测」（用户判定不做，我原本推荐要加，实测后撤回）。
+- **落文档**：把上面两条判据写进 `docs/engine-reuse.md` 的声明段——「为什么有些符号 `src` 从不 import 却必要」与「声明的失效方式是静默的、当前无自动校验」，并记下 2026-10-16 的核对结论。
+- **验证**：`typecheck`（三项目）／`lint` 0 warnings／全量 **684 pass / 0 fail**／`git diff --check` 全绿（只改文档）。
+
 ### C4／C5 复核：实测后判定「只落注释 ＋ 删一处死导出」，不做成员级收窄（2026-10-16）
 
 - **实测证据（Proxy 记运行期属性访问，只读探针）**：`injectionPointSlots` 构造时立即读 `store.fields`／`meta.modules`／`showNotice`／`editorDrafts`；而 `hasLayerSettings`／`matchesLayerSettings` 运行期**只读 `store.meta.modules` 一个属性**——类型面要 8 端口 41 成员（`PanelStore`）。`InjectionPointsPanel` 文件内直接触碰 store 的只有 **14 个成员**，其余 27 个零直接读取：**15 个是转发给子卡的**（`EngineParamField` 13、`CurrentSessionModel` 6、`ModuleCapabilityCreateMenu` 3、诊断卡 1），**12 个在整个面板渲染子树里没有任何消费者**（`ModuleActions` 5 ＋ `ModuleFacts` 的 `getFields`/`subscribeFields` ＋ `NoticePort` 5）。`RulesWorkspace` 同形：30 成员里 13 个零消费者。

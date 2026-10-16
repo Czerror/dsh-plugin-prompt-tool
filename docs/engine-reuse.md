@@ -72,6 +72,8 @@ AgentSetup 窗口内注册的同层同名段会被接住：装配时先撤销它
 - 已有声明的：`rule-spec`／`shared`／`interpolate`／`executor`／`branch`／`tool-definition`／`order`／`rule-runtime`／`compaction-epoch`／`conditions/index`／`template-evaluation`／`template-frame`／`context-activation`／`service-names`（2026-10-16 起 `src/` 侧不再用 `@ts-expect-error` 引入）。
 - **新增引擎导出时同步改声明**：`src/` 只用到的符号才声明（声明是「插件依赖面」而非引擎全貌）；跨引擎模块引用写成 `import type { X } from './y.mjs'`，**不要**引用 `src/` 的类型（声明文件与 `.mjs` 同目录，`src/` 不在它的解析面内）。
 - **声明文件只是类型面**：不进 `lib/` 打包，也不需要改 `package.json`／tsdown（`exports["./engine/*"]` 已覆盖；TS 按 `./x.mjs` → `./x.d.mts` 解析）。
+- **为什么有些声明符号 `src/` 从不直接 import，却仍然必要**（别按「无人使用」删它们）：`src/` 消费的是**函数**，不是字段类型——`StandingMountFor` 被 `loadStandingMountFor` 的返回引用、`MountRuleSourcesOptions` 被 `mountRuleSources` 的参数引用、`PreStepBatchOptions` 被 `runPreStepBatch` 的参数引用、`WarnOnce` 被 `createWarnOnce` 的返回引用……它们是**签名的组成部分**。删掉会让签名退回 `unknown`。判据是「它是否支撑某个被消费符号的签名」，**不是**「它自己有没有被 import」。
+- **声明的失效方式是静默的，当前没有机制校验**：声明多于实现 ⇒ `src/` 编译通过、运行期拿到 `undefined`；签名写宽（如 `rule-runtime.d.mts` 的 `ctx: unknown`）⇒ 类型不再报错但也不再说实话。这两类都只能靠「新增／改名引擎导出时同步改声明」这条纪律 ＋ 人看。**已做的核对（2026-10-16）**：14 份声明的导出在运行期逐个 `import` 核对，**无漂移、无冗余**。
 - **动态加载点保留内联结构断言**：按 id 加载（`agent-assembly.ts` 的 `engine/<id>.mjs`）与 URL 动态导入（`src/index.ts` 的 `skill-search.mjs`、`settings-bridge.ts` 的 `schema.mjs`／`rule-spec.mjs`）走运行期路径，声明不参与；要类型化得先定义「按 id 加载」的接口，属另一件事。
 - `engine/vendor/**` 的 `@ts-expect-error` 来自上游转译产物，随快照整体覆盖，**不手动改**。
 
