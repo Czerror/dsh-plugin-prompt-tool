@@ -84,7 +84,7 @@ export function renderMatches(scored, query, complete = true) {
   if (matches.length === 0) {
     return [
       complete
-        ? `No skills match "${query}". An empty result only means no skill matched your keywords — it does NOT mean the skill is unavailable. If you know the exact name (the user named it, or you saw it earlier), load it directly with skill_load({"name":"<exact-name>"}).`
+        ? `No skills match "${query}" — no skill matched your keywords; skill_load still loads any exact name in the registry, and the user can name one.`
         // 没读全就不下结论：措辞上也不能出现「没有匹配」的断言形式。
         : `Skill discovery did not complete, so nothing can be concluded about "${query}". Retry skill_search before treating a skill as unavailable.`,
     ]
@@ -122,13 +122,11 @@ export function apply(ctx) {
     description: [
       'Search the available skills by keyword and return matching skill names with short descriptions.',
       '',
-      'This session keeps NO skill catalog in the prompt — call skill_search FIRST to find a skill, then skill_load to activate it. Do NOT assume skill names from memory.',
+      'skill_load loads any exact name in the registry, so a skill the search did not surface still loads by its name.',
       '',
       'Usage:',
-      '- `query` — search skill names and descriptions (1-2 short words work best; Chinese keywords work).',
-      '- call with NO arguments — list up to 20 registered skills (truncation is marked with the matching total).',
-      '',
-      'IMPORTANT: an empty search result does NOT mean a skill is unavailable — it only means no skill matched your keywords. Search results are discovery only; `skill_load` accepts ANY exact name in the registry, including one the user just named. Never conclude from an empty search that no skill exists.',
+      '- `query` — search skill names and descriptions (Chinese keywords work).',
+      '- call with NO arguments — list every visible skill (truncation is marked with the matching total).',
     ].join('\n'),
     parameters: toJsonSchema({
       query: { type: 'string', required: false, description: 'search keywords (e.g. "pdf", "obsidian", "代码审查")' },
@@ -163,7 +161,7 @@ export function apply(ctx) {
 
   ctx.tools.register({
     name: 'skill_load',
-    description: 'Load the full instructions of ONE skill by its exact name and inject them for the next request. Call this before acting on a task that matches the skill. The name may come from skill_search, from the catalog overview, or from the user — any exact name in the registry works.',
+    description: 'Load the full instructions of ONE skill by its exact registered name and inject them for the next request. Call this before acting on a task that matches the skill. The name may come from skill_search, from the skill list, or from the user — any exact name in the registry works, and when nothing matches, ask the user for it.',
     parameters: toJsonSchema({
       name: { type: 'string', required: true, description: 'exact skill name (kebab-case, as registered)' },
     }),
@@ -186,7 +184,7 @@ export function apply(ctx) {
         if (summary === undefined) {
           // 名字错、发现没跑完、调用面缺 agent——三种成因的应对不同。
           return { text: snapshot.complete
-            ? `No skill named "${args.name}" is registered for this session. Check the exact name (skill_search lists what is registered), then call skill_load again.`
+            ? `No skill named "${args.name}" is registered for this session. Check the exact name against what skill_search lists, or ask the user for it.`
             : 'Skill discovery is incomplete, so the name could not be confirmed. Retry skill_load before concluding the skill does not exist.' }
         }
         if (!isModelInvocable(summary)) return { text: `Skill "${args.name}" is not available for model invocation.` }

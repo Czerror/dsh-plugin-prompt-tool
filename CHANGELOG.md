@@ -1,5 +1,14 @@
 # Changelog
 
+### 技能发现文案改正向表述：删掉「空结果不决议」强化段、准入契约单源（2026-10-16）
+
+- **起因与措辞订正**：用户先纠正我把「模型搜不到就转去 `glob` 翻 `.dsh\skills` 猜名字」判断成可行兜底，明确该行为**绝对不能使用**；随后要求按 `writing-for-agents`／`writing-great-skills` 两条准则优化文案。准则的 negation 条与这两条判断同向：提示层写反禁令会先把被禁行为请进上下文、再用弱修饰符去压它，禁掉的念头反而更可得。
+- **删掉 299 字符的 `IMPORTANT` 强化段**（`engine/skill-search.mjs`）：它用 `does NOT mean` / `Never conclude` 讲「空结果 → 技能不存在」这条要防的推断，等于把那句话写进上下文；而 `glob` 类行为一个字不提，才是不给它任何可用措辞。
+- **准入契约收成单源**：`skill_load accepts ANY exact name in the registry` 原先在 `skill_search` 描述与 `skill_load` 描述各写一遍，现只在 `skill_load` 描述里陈述一次（`any exact name in the registry works`），并并入「没有命中时向用户确认精确名」这个正向入口。
+- **`skill_search` 描述 776 → 383 字符**：删掉 AND 过滤时代的 `1-2 short words work best`（实现早已改成打分排序、长查询不会全灭），空查询一项与 `renderMatches()` 的分支对齐；`skill_load` 因并入正向入口 281 → 326，两工具合计 1057 → 709 字符。
+- **运行时文案同向改**：空结果与未知名两份返回不再复述「不代表不存在」，改为正向陈述准入契约并给出下一步（`the user can name one` / `ask the user for it`）。三条测试断言随之更新；`docs/skills-management.md` 的同一句表述同步。
+- **验证**：`typecheck`／`lint`／全量 test／`build`／`git diff --check`；仓库内 `does NOT mean` 与 `Never conclude` 归零。
+
 ### 捷径注释标记改名：`ponytail:` → `shortcut:`（对齐上游 2a1fe84，2026-10-16）
 
 - **起因**：用户指出 `ponytail:` 注释格式已被上游抛弃，要求全清。**查上游本地源码 `D:\AI\GitHub\ponytail`（main，HEAD `84740e3`）后修正了结论**：上游没有废弃这个约定，而是做了品牌去名化——PR `2a1fe84`「neutral `shortcut:` marker instead of the `ponytail:` brand in code comments」一次改动 30+ 个文件，规则行变成 `- A shortcut with a known limit gets a code comment in this form: \`shortcut: <the limit>, <when to upgrade>\`.`；`ponytail-debt` 扫描器**保留并向后兼容**：`git grep --no-index --exclude-standard -nE '(#|//|/[*]) ?(shortcut|ponytail):'`，输出 `No shortcut debt. Clean ledger.`。
