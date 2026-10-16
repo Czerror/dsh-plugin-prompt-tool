@@ -95,7 +95,7 @@ export interface RuleEditingPort {
   createTemplateRule: ReturnType<typeof createTemplateRuleWriter>
 }
 
-/** 模块动作：总闸、能力增删、新建、脏标记与开关落盘（模块页／切换器／能力列表用）。 */
+/** 模块动作：总闸、能力增删、新建与开关落盘（模块页／切换器／能力列表用）。 */
 export interface ModuleActionsPort {
   moduleActions: ModuleActions
   createModule: () => Promise<string | undefined>
@@ -104,8 +104,6 @@ export interface ModuleActionsPort {
   removeModuleCapability: (moduleId: string, id: string) => Promise<boolean>
   persistSwitches: (onSaved?: () => void) => Promise<boolean>
   dirtySwitches: boolean
-  dirtyConfigs: boolean
-  dirty: boolean
 }
 
 /** 通知与加载：全局提示、重载与字段补丁。 */

@@ -50,7 +50,6 @@ import type { InstructionPolicyFileOverride, InstructionPolicyPatch, Instruction
 import { buildParamOverrides, EMPTY_PARAMS, paramSnapshot, readParamOverridesPatch, updateLoadedParamKeys, type ParamSnapshot } from './param-overrides.ts'
 import { createSerialTaskQueue } from './save-queue.ts'
 import { createWorkspaceDrafts } from './workspace-drafts.ts'
-import { rulesDirty } from './rule-drafts.ts'
 import { createTemplateRuleWriter } from './template-rule-writer.ts'
 import { createModuleActions } from './module-actions.ts'
 import type { ModuleVariableRevisions, ModuleVariableScope } from '../../shared/module-variables.ts'
@@ -1089,10 +1088,6 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
 
   const currentSwitches = snapshotSwitches(fields)
   const dirtySwitches = !switchesEqual(currentSwitches, savedSwitches)
-  // 规则草稿由订阅式 owner 更新；读取时计算，避免退出/切换守卫读到旧的脏状态。
-  const configsAreDirty = (): boolean => {
-    return unsavedInstructionDrafts(instructionPoolRef.current).length > 0 || [...editorDrafts.rules.values()].some(rulesDirty)
-  }
 
 
   /**
@@ -1166,8 +1161,6 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
     createTemplateRule: templateWriter.current,
     ...skillEditor,
     dirtySwitches,
-    get dirtyConfigs() { return configsAreDirty() },
-    get dirty() { return dirtySwitches || configsAreDirty() },
   }
   return storeRef.current
 }

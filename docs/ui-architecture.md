@@ -355,7 +355,7 @@ workspace-pages.ts 是页面元数据的唯一来源。默认页为 features，�
 | 两级变量草稿 | module-variables + 现有变量编辑卡 | 按模块ID+scope隔离；同名覆盖来源来自 effective 快照，迟到响应只回原草稿 |
 | 人设来源 | personaSources 共享契约与 host owner | main/subagent 各单选官方或模块 ID，config.yml 只存引用；独立于规则启用集合 |
 | 人设正文/发布状态 | ModulePersonaCard + workspace-drafts | 正文属于来源模块；保留完整定义 revision、继承/空串/false，refreshOnly 不重写 |
-| 工具、人设、策略、原始 JSON/数字草稿 | store.editorDrafts / workspace-drafts | 按预设和字段身份保留；未存草稿或保存中阻止预设切换；改名迁移、删除清理对应字段 |
+| 工具、人设、原始 JSON/数字草稿 | store.editorDrafts / workspace-drafts | 按预设和字段身份保留；未存草稿或保存中在覆盖导入时按模块拦截（`poolDirty`）；改名迁移、删除清理对应字段 |
 | 模块规则与条件/动作字段草稿 | rule-drafts + use-rule-editor | 每模块单一 owner、读取去重、稳定编辑 key；改名/删除保留 previousId；CAS 失败和请求期间的新编辑不丢失 |
 | 指令文件正文草稿 | instruction-drafts | 与预设保存队列分离；按指令上下文（`contextId`）隔离，旧上下文迟到响应不覆盖当前视图 |
 | 导入预览与提交阶段 | use-import-preview-flow | 每次 `run()` 独立生命周期；卸载结束等待、不悬挂 Promise |
@@ -374,7 +374,7 @@ workspace-pages.ts 是页面元数据的唯一来源。默认页为 features，�
 
 规则操作在入口校验当前编辑资格，用户已发起并进入队列的显式目标保存不因切页取消。已发起的读取、写入及发布响应按共享草稿序号接纳，视图卸载不丢结果，也不让新页面卡在过期的 busy 状态。发布重试同时接纳最新正文与版本：无本地编辑时更新基线，有本地编辑且远端变化时保留输入并进入冲突；不以旧整卡覆盖新输入。模板创建的声明事实、完整响应与发布状态归共享规则草稿，不另建视图级声明缓存；“本次新建”仍是每次选择意图，不跨失败或取消传播到随后选择的既有模块。
 
-业务草稿不写 localStorage，不靠常驻五页保留。工具、人设与策略只确认提交快照，保存途中继续编辑仍待存；同预设重挂共享在途状态，策略卸载清除未发送队列。干净重挂重新读取远端事实，脏草稿优先保留。技能批量作用于当前结果中合法已选项，固定目标快照，完成后刷新磁盘事实并保留失败选择。
+业务草稿不写 localStorage，不靠常驻五页保留。工具与人设只确认提交快照，保存途中继续编辑仍待存；同预设重挂共享在途状态。干净重挂重新读取远端事实，脏草稿优先保留。技能批量作用于当前结果中合法已选项，固定目标快照，完成后刷新磁盘事实并保留失败选择。
 
 ### 6.2 首屏读取与更新
 
@@ -425,7 +425,7 @@ use-prompt-tool-store.ts 是唯一工作台 facade，负责把 ConfigForms mirro
 | save-queue.ts | 串行保存任务的最小队列 |
 | import-files.ts | 浏览器文件导入的纯读取辅助 |
 | use-import-preview-flow.ts | 导入的预览→确认→提交流程状态机（预设包与角色卡共用） |
-| workspace-drafts.ts | 按预设身份的跨页草稿池：人设、工具、策略与展开状态 |
+| workspace-drafts.ts | 按预设身份的跨页草稿池：规则、人设、工具、变量、原始字段与展开状态；`poolDirty` 是「某模块有没有未保存输入」的唯一判据 |
 | instruction-drafts.ts | 指令文件正文的独立草稿池与版本基线 |
 | instruction-policy.ts | 指令策略的读写、默认值与单文件开关推导 |
 | session-model-face.ts | 官方会话模型 projection 与选择动作 |
@@ -488,7 +488,7 @@ JSON bridge 的统一上限为 32 MiB；角色卡原始文件流独立限制为 
 5. 普通规则通过 /rules 自动保存及显式提交，载荷携带 expectedModuleId、expectedRevisions 与 edits[{previousId, rule, settingsChanged?}]。正文编辑只拥有正文，状态改动显式校验 settings；新增、删除、改名也使用 settings 版本。非法 JSON／数字阻止提交，失败保留输入。
 6. 参数空字符串/空数组沿用删除键语义；variables 的空字符串仍是合法占位值。详细参数规则见 [architecture-params.md](architecture-params.md)。
 7. 模块写入携带 expectedModuleId，模块目标由既有请求上下文解析，载荷身份只作校验。读回失败的工具不降级为空列表供覆盖；跨模块旧草稿拒绝，切换等待保存队列。
-8. 模块类读写的目录一律由请求头 `x-module-id` 定位；写端点另在载荷带 `expectedModuleId` 作一致性校验（不一致 400、与当次目录不符 409），载荷不能替请求头选路径；缺头即不发该次请求（§7.1.1），不写 settings、不切换官方会话预设。主语不成立时依赖它的公共参数与模板变量不写盘。逐卡规则事务使用独立模块草稿、显式请求身份与版本，在同一保存队列执行，不受另一主语限制；工作台脏状态包含所有模块规则草稿。
+8. 模块类读写的目录一律由请求头 `x-module-id` 定位；写端点另在载荷带 `expectedModuleId` 作一致性校验（不一致 400、与当次目录不符 409），载荷不能替请求头选路径；缺头即不发该次请求（§7.1.1），不写 settings、不切换官方会话预设。主语不成立时依赖它的公共参数与模板变量不写盘。逐卡规则事务使用独立模块草稿、显式请求身份与版本，在同一保存队列执行，不受另一主语限制。
 
 9. 技能清单和策略均不进 settings：单端调用策略走 `/skill-policy`（`name/path/side/enabled/sessionId?`，服务器在同工作区重新校验身份；显式两端操作可用 `scope`），引用走 `/skills-folders`，清单走 `/skills-list`。快照保留 `complete`，空数组是权威空结果；调用声明和当前会话注册状态分别呈现。创建/导入走既有端点；删除提交 `name/path/sessionId?`，确认框与请求使用同一条目，用户根及显式引用根按服务器能力开放回收站删除。契约见 [skills-management.md](skills-management.md)。
 10. 指令文件正文走独立草稿池（`data/instruction-drafts.ts`），模块保存与装配集合变化不带文件正文。文本停顿 600ms、离开文件卡或折叠前提交 dirty 文件，输入法组合期间不提交；保存成功只确认请求时快照，在途新输入后续继续保存。冲突/失败保留草稿并显示「重新读取」。会话或工作区切换建立新的指令上下文：旧上下文的迟到响应不覆盖当前视图，旧 `contextId` 保存由服务端 409 拒绝。

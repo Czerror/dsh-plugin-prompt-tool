@@ -5,7 +5,7 @@ import clsx from 'clsx'
 import { IconCopyOutlineRegular, IconDownloadOutlineRegular, IconFolderOpenOutlineRegular, IconTrashOutlineRegular } from '../../ui/icons.tsx'
 import type { ModuleActions, ModuleActionResult } from '../../data/module-actions.ts'
 import { previewAsset, commitAsset } from '../../data/asset-import.ts'
-import { hasWorkspaceDrafts } from '../../data/workspace-drafts.ts'
+import { poolDirty } from '../../data/workspace-drafts.ts'
 import type { DraftsPort, ModuleActionsPort, ModuleFactsPort, NoticePort } from '../../data/store-ports.ts'
 import type { PromptToolTranslate } from '../../locales.ts'
 import type { ModuleSummary } from '../../../shared/bridge-contract.ts'
@@ -125,7 +125,7 @@ export const ModuleSwitcher = memo(function ModuleSwitcher(props: { store: Modul
       // 覆盖导入会替换目标模块的定义：该模块自己的草稿还在时先拦住（不问任何会话级目标）。
       const targetId = preview.summary?.targetId
       if (preview.overwrite && targetId !== undefined) {
-        if (hasWorkspaceDrafts(store.editorDrafts, targetId)) return { ok: false, message: t('assetImport.draftBlocked') }
+        if (poolDirty(store.editorDrafts, targetId)) return { ok: false, message: t('assetImport.draftBlocked') }
         if (store.dirtySwitches) return { ok: false, message: t('assetImport.draftBlocked') }
       }
       return commitAsset('importModulePackage', preview)

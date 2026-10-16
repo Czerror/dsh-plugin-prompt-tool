@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { createWorkspaceDrafts, hasWorkspaceDrafts } from '../../src/client/data/workspace-drafts.ts'
+import { createWorkspaceDrafts, poolDirty } from '../../src/client/data/workspace-drafts.ts'
 
 // 真值源是手算样例：逐槽构造「有/没有未保存输入」，期望值由人来定，不由实现算。
 // 这条判据是覆盖导入的最后一道数据保护（ModuleSwitcher 的覆盖导入守卫），此前全仓零测试。
@@ -23,7 +23,7 @@ function dirtyPool() {
 const only = (setup) => { const drafts = createWorkspaceDrafts(); setup(drafts); return drafts }
 
 test('草稿池自答「哪些没保存」：六类草稿各自都算，相同内容不算', () => {
-  assert.equal(hasWorkspaceDrafts(createWorkspaceDrafts(), MOD), false, '空池不脏')
+  assert.equal(poolDirty(createWorkspaceDrafts(), MOD), false, '空池不脏')
   // 逐类单独构造：每一类都必须**自己能**让守卫拦住——少判一类就是静默丢用户输入。
   const cases = [
     ['rules 正文改过', (d) => d.rules.set(MOD, dirtyPool().rules.get(MOD))],
@@ -33,13 +33,13 @@ test('草稿池自答「哪些没保存」：六类草稿各自都算，相同�
     ['fields 文本与源不同', (d) => d.fields.set(`${MOD}:param:temperature`, field('0.7', '1.0'))],
     ['fields 有校验错误', (d) => d.fields.set(`${MOD}:param:topP`, field('0.9', '0.9', 'bad'))],
   ]
-  for (const [title, setup] of cases) assert.equal(hasWorkspaceDrafts(only(setup), MOD), true, title)
+  for (const [title, setup] of cases) assert.equal(poolDirty(only(setup), MOD), true, title)
   // 反向：内容一致就不该拦（tools 的 JSON 比较是双向的，键顺序不同不算脏）。
-  assert.equal(hasWorkspaceDrafts(only((d) => d.tools.set(MOD, { tools: [{ id: 'shell' }], saved: [{ id: 'shell' }], expanded: new Set(), fields: new Map(), loaded: true, error: '', saving: false })), MOD), false, 'tools 内容一致不脏')
+  assert.equal(poolDirty(only((d) => d.tools.set(MOD, { tools: [{ id: 'shell' }], saved: [{ id: 'shell' }], expanded: new Set(), fields: new Map(), loaded: true, error: '', saving: false })), MOD), false, 'tools 内容一致不脏')
 })
 
 test('草稿的主语：无主语不阻塞，别的模块的草稿不阻塞本模块', () => {
-  assert.equal(hasWorkspaceDrafts(dirtyPool(), undefined), false, '无主语：草稿无法归属任何模块，既不阻塞也没有可写盘的内容')
-  assert.equal(hasWorkspaceDrafts(dirtyPool(), OTHER), false, '只有 `other:param:<名>` 的草稿时，别的模块不该被拦')
-  assert.equal(hasWorkspaceDrafts(dirtyPool(), MOD), true, '本模块的草稿照样拦住')
+  assert.equal(poolDirty(dirtyPool(), undefined), false, '无主语：草稿无法归属任何模块，既不阻塞也没有可写盘的内容')
+  assert.equal(poolDirty(dirtyPool(), OTHER), false, '只有 `other:param:<名>` 的草稿时，别的模块不该被拦')
+  assert.equal(poolDirty(dirtyPool(), MOD), true, '本模块的草稿照样拦住')
 })

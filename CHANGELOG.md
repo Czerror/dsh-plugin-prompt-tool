@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+### 草稿池自答「哪些没保存」：一处判据、删死槽与零消费者成员（2026-10-16）
+
+- **`workspace-drafts.ts` 的 `hasWorkspaceDrafts` 换成池自己的 `poolDirty(drafts, moduleId)`**：六分支判据原样搬进池（`rulesDirty`／`variablesDirty`＋`deepEqual`／tools 与 persona 的 `JSON.stringify` 双向比较／`fields` 的文本差异与校验错误），**「什么算脏」的结果一字未改**——由 Wave 1 新补的用例（`test/client/workspace-drafts.test.mjs`）在原实现上先跑绿、改完再跑仍绿来证明。唯一调用点 `ModuleSwitcher.tsx:128`（覆盖导入守卫）随之改指。
+- **删一个死槽**：`policies: Map<string, PolicyEditorDraft>` 零生产者零消费者（全仓只命中池自身的类型声明、初始化，与 `hasWorkspaceDrafts` 里那一行读取），连带其判据分支 `policy.saving || JSON.stringify(policy.draft) !== JSON.stringify(policy.saved)` 与 `PolicyDraft`／`PolicyEditorDraft` 两个类型一并删除。**行为不变**：该分支的 `policy` 恒为 `undefined`，从未参与过判断。
+- **删两个零消费者成员 ＋ 一个只服务它们的死函数**：`store.dirtyConfigs`／`store.dirty`（`use-prompt-tool-store.ts`）与 `ModuleActionsPort` 的对应声明零读取点（`test/` 也零命中）；它们唯一的使用者是 `configsAreDirty()`，而它自己也零消费者——三者一并删除。收口后 `rulesDirty` 在 store 里的 import 随之悬空删除；`dirtySwitches` 保留，它是开关快照域、池外，`ModuleSwitcher.tsx:129` 读它。
+- **实现中实测抓到一处自己的回归**：`poolDirty` 第一版把 `moduleId === undefined` 写成「扫描全部模块」，而原实现是 `undefined` 直接 `false`——Wave 1 的用例当场变红（`actual: true, expected: false`），补回早返回后复绿。**这条正是「先补行为网再收口」的收益**。
+- **核实后不加的守卫（用户判定）**：覆盖导入有草稿守卫，而**删除模块**（`ModuleSwitcher.tsx:145`）与**停用模块**（改启用表）没有——用户判定**不加**：删除是用户的显式操作，「删除就是删除」，为它加确认属「为安全而安全」。本轮只留档，不改行为。
+- **两处文档口径改正**（`docs/ui-architecture.md`）：① 草稿池表格原写「工具、人设、**策略**、原始 JSON/数字草稿……未存草稿或保存中**阻止预设切换**」——`policies` 既是死的、也确实从未阻止过任何操作，改成「覆盖导入时按模块拦截（`poolDirty`）」；② 同一处与「工具、人设与**策略**只确认提交快照……**策略卸载清除未发送队列**」并连同 `workspace-drafts.ts` 的模块表描述（补上规则／变量／原始字段与 `poolDirty`）、「工作台脏状态包含所有模块规则草稿」一句（随 `dirty` 的删除失效）一并改正。
+- **验证**：`typecheck`／`lint`（309 文件 0/0）／`test`（全量 **676 pass / 0 fail**）／`build`／`git diff --check` 全绿；Wave 1 用例在改实现前后各跑一次，均为 2 pass。
+
 ### 补 S2 记账的三个覆盖缺口（2026-10-16）
 
 - **`rules-slices-invalid` 从「`test/` 零命中」变为有行为断言**（新增 `test/host/module-slices.test.mjs` 用例）：先探针实测，首版设想的形态**不成立**——① `ensureModuleSlices({ writable: false })` 在切片校验**之前**就返回（`module-slices.ts:308`），永不抛该码；② `readModuleRules`／`readRulesDir` 都走 `ensureModuleSlices`，失败一律转 `recoverCurrent` 重建，**正常路径自愈且不报码**；③ 用**目录**占据切片位置得到的是 400 `rules-invalid`（`assertPlain` 在 `:203`，早于 `:204`）。唯一能稳定复现该码的形态是**恢复写入也修不好的失配**：大小写不敏感文件系统上把 `rules/first.yml` 改名为 `First.yml` —— `existsSync('first.yml')` 仍为**真**，`readdirSync` 给出 `First.yml` → `:202` 的逐字 `files.includes` 命中；恢复写入在 `:278` 因「存在且内容相等」而**跳过**、名字永不变 → `:202` 在恢复里再次抛出并逃逸。用例断言 409 ＋ 码名 ＋ 文案点名 `first.yml` ＋ 切片清单与两个文件字节逐字未变；非 Windows `skip`（大小写敏感盘上造不出该共存形态）。
