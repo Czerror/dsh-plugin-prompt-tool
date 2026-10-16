@@ -114,6 +114,36 @@ function guardModuleIdentity(tx: BridgeTransaction, dir: string): boolean {
 }
 
 /**
+ * 静态过门策略表：与载荷无关的选项收在这里，端点不再各自传（今天只有这两条）。
+ * `format: false` 只对「编辑目标只当身份用」的端点开放；`write` 与 `declaration`
+ * 依赖载荷，仍由调用点算好传进来。
+ */
+export const GATE_POLICY: Partial<Record<BridgeEndpointKey, { format?: false }>> = {
+  mutate: { format: false },
+  moduleDelete: { format: false },
+}
+
+/** 门对象：一次请求的早闸与写前复检共用同一个 `tx`／key。 */
+export interface GateHandle {
+  /** 读前闸（含声明面）：按载荷算的 `write` 决定查不查声明面，静态策略自动套用。 */
+  inspect(write?: boolean, extra?: { declaration?: string | false }): string | undefined
+  /** 写前闸（复检）：恒按写路径过门——先判可写、跳过声明面。 */
+  authorize(): string | undefined
+}
+
+/** 门对象工厂：key 只在这里给一次，判据与顺序仍全部由 `subjectGate` 决定。 */
+export function gateFor(tx: BridgeTransaction, key: BridgeEndpointKey): GateHandle {
+  return {
+    inspect: (write, extra) => subjectGate(tx, key, {
+      ...(write === undefined ? {} : { write }),
+      ...GATE_POLICY[key],
+      ...(extra?.declaration === undefined ? {} : { declaration: extra.declaration }),
+    }),
+    authorize: () => subjectGate(tx, key, { write: true }),
+  }
+}
+
+/**
  * 门。`needs.write` = 本次调用会把内容写进目标模块。
  *
  * `format` = 要不要核目标模块的形状（`loadModuleDefinition` + `readModuleLayerSettings`），
