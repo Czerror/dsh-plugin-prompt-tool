@@ -1,6 +1,6 @@
 import { test, mock } from 'node:test'
 import assert from 'node:assert/strict'
-import fs, { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import fs, { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { syncBuiltinESMExports } from 'node:module'
 import { spawn } from 'node:child_process'
 import { once } from 'node:events'
@@ -131,6 +131,33 @@ test('名单外文件不连坐读写、原地保留；名单内缺失仍从 modu
   assert.equal(readFileSync(join(dir, 'rules', 'lore.yml'), 'utf8'), 'id: lore\nthen: []\n', '重建不碰孤儿切片')
 })
 
+test('切片名与定义不符：恢复也修不了时按 409 rules-slices-invalid 拒绝且零写盘', { skip: process.platform === 'win32' ? false : '大小写敏感文件系统上无法造出「同名不同大小写」的共存形态，本形态只在 Windows/macOS 成立' }, () => {
+  const dir = fixture('slice-name-variant')
+  const file = join(dir, 'module.yml')
+  ensureModuleSlices(dir)
+  const source = readFileSync(file, 'utf8')
+  const slice = join(dir, 'rules', 'first.yml')
+  const renamed = join(dir, 'rules', 'First.yml')
+  const sliceBytes = readFileSync(slice, 'utf8')
+  // 大小写不敏感文件系统上这是改名（`existsSync('first.yml')` 仍为真），
+  // 于是恢复写入认定「文件已在」而跳过、名字永不变，失配无法自愈。
+  renameSync(slice, renamed)
+  const before = readdirSync(join(dir, 'rules')).sort()
+  assert.throws(
+    () => readModuleRules(dir),
+    (error) => {
+      assert.equal(error.code, 'rules-slices-invalid')
+      assert.equal(error.status, 409)
+      assert.match(error.message, /first\.yml/, '拒绝文案点名缺哪个切片')
+      return true
+    },
+    '切片名与定义逐字不符时拒绝读取，而不是静默用同名变体',
+  )
+  assert.deepEqual(readdirSync(join(dir, 'rules')).sort(), before, '拒绝时切片清单未被改写')
+  assert.equal(readFileSync(renamed, 'utf8'), sliceBytes, '拒绝时不覆盖同名变体文件')
+  assert.equal(readFileSync(file, 'utf8'), source, '拒绝时定义逐字节不变')
+})
+
 test('正文版本互不连坐；状态和变量独立，旧正文草稿不能回滚新状态', () => {
   const dir = fixture('revisions')
   const original = readModuleRules(dir)
@@ -200,7 +227,8 @@ test('提交点前后故障恢复旧或新定义；发布前只读者看不到�
     syncBuiltinESMExports()
     try {
       if (failedFile === '_settings.yml') assert.equal(commitModuleDefinition(candidate, candidate.doc).rules[0].then[0].config.text, 'COMMITTED BODY', '提交后恢复成功报告保存成功')
-      else assert.throws(() => commitModuleDefinition(candidate, candidate.doc), error => { assert.equal(error.persisted, false); assert.ok(error.revisions); return true })
+      // 注入的是普通 Error（非 ModuleWriteError）→ 落到「切片写入失败」分支的 500。
+      else assert.throws(() => commitModuleDefinition(candidate, candidate.doc), error => { assert.equal(error.persisted, false); assert.ok(error.revisions); assert.equal(error.code, 'rules-rebuild-failed'); assert.equal(error.status, 500); return true })
     } finally { mock.restoreAll(); syncBuiltinESMExports() }
     assert.equal(failed, true)
     const after = ensureModuleSlices(dir)
@@ -214,7 +242,7 @@ test('提交点前后故障恢复旧或新定义；发布前只读者看不到�
   persistent.doc.setIn(['rules', 0, 'then', 0, 'config', 'text'], 'SAVED')
   mock.method(fs, 'renameSync', (from, to) => { if (basename(to) === '_settings.yml') throw new Error('persistent failure'); return rename(from, to) })
   syncBuiltinESMExports()
-  try { assert.throws(() => commitModuleDefinition(persistent, persistent.doc), error => error.persisted === true && error.revisions !== undefined) }
+  try { assert.throws(() => commitModuleDefinition(persistent, persistent.doc), error => { assert.equal(error.persisted, true); assert.ok(error.revisions !== undefined); assert.equal(error.code, 'rules-rebuild-failed'); assert.equal(error.status, 500); return true }) }
   finally { mock.restoreAll(); syncBuiltinESMExports() }
   assert.equal(ensureModuleSlices(persistentDir).rules[0].then[0].config.text, 'SAVED', '持续发布故障结束后从已提交定义恢复')
   const dir = fixture('external-source-change')
