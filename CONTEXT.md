@@ -4,6 +4,8 @@ Prompt Tool 领域将提示词注入行为组织为可选模块。本词汇表�
 
 原生上下文、两级持久变量与人设继承的决策见 [ADR-0013](docs/adr/0013-native-context-module-state.md)。本词汇表描述当前源码的领域所有权，不代替发布验收记录。
 
+根目录另有一份 `GLOSSARY.md`（2026-10-16 新增，5 行），是外部技能契约（`domain-modeling` / `/setup-matt-pocock-skills`）命名的词汇表入口；**本文件才是项目自有的完整术语与排除词（`_Avoid_`）所在**。两者分工如此，`docs/agents/domain.md` 目前仍只指本文件。
+
 ## Language
 
 ### 模块与注入
