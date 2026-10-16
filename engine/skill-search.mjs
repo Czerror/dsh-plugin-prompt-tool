@@ -21,6 +21,16 @@
  * dsh-tool-skill. If skills are unavailable the tools answer with a short
  * message instead of throwing.
  *
+ * 与 `tool-search.mjs` 同形状的三条修正（2026-10-16，技能面照搬工具面）：
+ *  1. **打分而非 AND 过滤**：完整命中（命中全部 token）优先，其次近似命中；
+ *     长自然语言查询不再全灭。精确名命中最前。中文与英文同口径——中文整句
+ *     是一个 token，`includes` 仍是子串匹配。
+ *  2. **空查询给目录概览**：按名字前缀折叠成分组计数，一行覆盖全部技能；
+ *     此前的「列出前 20 条」是信息密度最低的形态，还会被读成全量清单。
+ *  3. **截断与空结果都明说**：显示条数 / 命中总数分列，并写明「空结果只说明
+ *     关键词没命中」——模型据此收窄查询或直接按精确名 `skill_load`，而不是
+ *     转去翻文件系统猜名字。
+ *
  * NOTE: this plugin REPLACES the `dsh-tool-skill` row in the composition —
  * the composition must NOT mount both, or the catalog injection returns.
  */
@@ -35,56 +45,142 @@ export const name = 'skill-search'
 /** The agent, tools, and skills services must exist before these tools can register. */
 export const inject = ['agents', 'tools', 'skills']
 
-const MAX_RESULTS = 20
+/** 单次搜索结果上限：再多就该让模型收窄关键词。与 `tool-search.mjs` 同量级。 */
+export const MAX_RESULTS = 20
+
+/** 概览里最多列出的分组数，超出则并入「其他」——按前缀折叠，未知技能名不必维护索引。 */
+const MAX_GROUPS = 24
 
 /** 参数 schema 由 `shared.mjs` 的统一实现生成（与 `tool-search` 同一份）。 */
 
-/** Register the two on-demand skill tools. */
+/** 把查询切成小写 token（Unicode 字母数字与下划线连字符，与 tool-search 同口径）。 */
+export function queryTokens(query) {
+  return (typeof query === 'string' ? query : '').toLowerCase().split(/[^\p{L}\p{N}_-]+/u).filter(Boolean)
+}
+
+/**
+ * 名字前缀分组键：首个连字符前的段（`ponytail-review` → `ponytail*`），
+ * 单名自成一组。技能名是 kebab-case，没有工具面那种 MCP 双下划线层级。
+ */
+export function groupKeyOf(name) {
+  if (typeof name !== 'string' || name.length === 0) return undefined
+  const cut = name.indexOf('-')
+  return cut <= 0 ? name : `${name.slice(0, cut)}*`
+}
+
+/**
+ * 从候选目录折叠出分组摘要——名字、分组、数量全部来自注册表，技能增删不需要改本模块。
+ * 超过 MAX_GROUPS 个分组时把长尾并成一行「其他」而不是无限增长。
+ */
+export function summarizeCatalog(skills) {
+  const counts = new Map()
+  for (const skill of Array.isArray(skills) ? skills : []) {
+    const key = groupKeyOf(skill?.name)
+    if (key === undefined) continue
+    counts.set(key, (counts.get(key) ?? 0) + 1)
+  }
+  const sorted = [...counts.entries()].sort((a, b) => (b[1] - a[1]) || a[0].localeCompare(b[0]))
+  const head = sorted.slice(0, MAX_GROUPS)
+  const tail = sorted.slice(MAX_GROUPS)
+  const parts = head.map(([key, count]) => `${key}(${count})`)
+  if (tail.length > 0) parts.push(`其他 ${tail.length} 组(${tail.reduce((sum, [, n]) => sum + n, 0)})`)
+  return { total: [...counts.values()].reduce((sum, n) => sum + n, 0), text: parts.join(' ') }
+}
+
+/**
+ * 对目录打分排序（纯函数，可单测）：
+ * **完整命中是准入条件**（每个 token 都命中），精确名命中排最前；同为准入者按命中数、
+ * 再按名字字典序。`wanted` 为空时返回空数组——调用方据此区分「没给查询」与「没搜到」。
+ *
+ * 准入用 AND 而不是「命中任意 token」：`代码 中文` 这类多词查询里，近似命中会把
+ * 只沾一个词的无关技能一起倒出来（技能 description 很短，噪声占比远高于工具面）。
+ */
+export function scoreSkills(skills, wanted) {
+  if (!Array.isArray(skills) || wanted.length === 0) return []
+  return skills
+    .map((skill) => {
+      const name = typeof skill?.name === 'string' ? skill.name : ''
+      const haystack = `${name} ${skill?.description ?? ''} ${skill?.whenToUse ?? ''}`.toLowerCase()
+      let score = 0
+      for (const token of wanted) if (haystack.includes(token)) score += 1
+      return { skill, name, score, exact: wanted.includes(name.toLowerCase()) }
+    })
+    .filter((entry) => entry.name.length > 0 && (entry.exact || entry.score === wanted.length))
+    .sort((a, b) => (b.exact - a.exact) || (b.score - a.score) || a.name.localeCompare(b.name))
+}
+
+/** 把目录搜索结果渲染成给模型的文本（带截断提示与加载引导）。 */
+export function renderMatches(scored, query, complete = true) {
+  const matches = scored.slice(0, MAX_RESULTS)
+  if (matches.length === 0) {
+    return [
+      complete
+        ? `No skills match "${query}". An empty result only means no skill matched your keywords — it does NOT mean the skill is unavailable. If you know the exact name (the user named it, or you saw it earlier), load it directly with skill_load({"name":"<exact-name>"}).`
+        // 没读全就不下结论：措辞上也不能出现「没有匹配」的断言形式。
+        : `Skill discovery did not complete, so nothing can be concluded about "${query}". Retry skill_search before treating a skill as unavailable.`,
+    ]
+  }
+  const lines = [`Matching skills (${matches.length}${scored.length > MAX_RESULTS ? ` of ${scored.length}` : ''}):`]
+  for (const { skill, name, exact } of matches) {
+    lines.push(`- ${name}${exact ? ' (exact)' : ''}: ${String(skill?.description ?? '').split('\n')[0]}`)
+  }
+  if (scored.length > MAX_RESULTS) lines.push(`(truncated at ${MAX_RESULTS} — add tokens to narrow the query)`)
+  if (!complete) lines.push('Skill discovery is incomplete; these results may be partial.')
+  lines.push('Load one with skill_load({"name": "<exact name>"}).')
+  return lines
+}
+
+/** 注册两个按需技能工具。 */
 /**
  * 本模块**刻意保持单参形态**：它不读任何 config 键，因此没有白名单可声明。
  * B2 T4 要求「四个无白名单插件行补字段声明与校验」，本行按 PLAN 的例外处理——
- * 若将来需要 config，先确认组合行与调用方确实都在传 config，再补 defineConfig 声明。
+ * 若将来需要 config，先确认组合行与调用方确实在传 config，再补 defineConfig 声明。
  */
 export function apply(ctx) {
-  /** Normalize a query into lowercase tokens for simple substring matching. */
-  const tokens = (text) => (text || '').toLowerCase().split(/[^\p{L}\p{N}_-]+/u).filter(Boolean)
-
   ctx.tools.register({
     name: 'skill_search',
-    description: 'Search the available skills by keyword and return matching skill names with short descriptions. This session keeps NO skill catalog in the prompt — if a task looks like it matches a skill (document conversion, image processing, game reviews, markdown, PDF, spreadsheets, …), call skill_search FIRST to find it, then skill_load to activate it. Do NOT assume skill names from memory.',
+    description: [
+      'Search the available skills by keyword and return matching skill names with short descriptions.',
+      '',
+      'This session keeps NO skill catalog in the prompt — call skill_search FIRST to find a skill, then skill_load to activate it. Do NOT assume skill names from memory.',
+      '',
+      'Usage:',
+      '- `query` — search skill names and descriptions (1-2 short words work best; Chinese keywords work).',
+      '- call with NO arguments — list the skill catalog as group counts (`<prefix>*(count) ...`), so you can see what exists before searching.',
+      '',
+      'IMPORTANT: an empty search result does NOT mean a skill is unavailable — it only means no skill matched your keywords. Search results are discovery only; `skill_load` accepts ANY exact name in the registry, including one the user just named. Never conclude from an empty search that no skill exists.',
+    ].join('\n'),
     parameters: toJsonSchema({
-      query: { type: 'string', required: true, description: 'search keywords (e.g. "pdf", "obsidian", "game review")' },
+      query: { type: 'string', required: false, description: 'search keywords (e.g. "pdf", "obsidian", "代码审查")' },
     }),
     output: {
       schema: { type: 'object', additionalProperties: false, properties: { text: { type: 'string' } }, required: ['text'] },
       render: (_a, v) => [{ type: 'text', text: v.text }],
     },
     async execute(args, exec) {
-      const wanted = tokens(args.query)
-      const scope = exec?.agent ?? ctx
+      const query = typeof args?.query === 'string' ? args.query.trim() : ''
       try {
+        // 执行中的 agent 就是观察作用域（同 tool-search）：preset 层注册的技能不带
+        // scope 时看不到；cwd 决定项目级技能根，两个入口共用同一组查询参数。
         const snapshot = await ctx.skills.snapshot({
-          scope,
+          scope: exec?.agent ?? ctx,
           cwd: exec?.agent?.session?.header?.cwd,
           signal: exec?.signal,
         })
         exec?.signal?.throwIfAborted()
-        const matches = snapshot.skills.filter(isModelInvocable).filter((skill) => {
-          if (wanted.length === 0) return true
-          const haystack = tokens(`${skill.name} ${skill.description ?? ''} ${skill.whenToUse ?? ''}`).join(' ')
-          return wanted.every((token) => haystack.includes(token))
-        })
-        const head = matches.slice(0, MAX_RESULTS)
-        const lines = head.map((skill) => {
-          const desc = (skill.description || '').split('\n')[0]
-          return `- ${skill.name}: ${desc}`
-        })
-        if (lines.length === 0) return { text: snapshot.complete
-          ? `No skills match "${args.query}". Use skill_search with other keywords.`
-          : 'Skill discovery is incomplete. Retry skill_search before concluding no skills match.' }
-        const extra = matches.length > MAX_RESULTS ? `\n…(${matches.length - MAX_RESULTS} more)` : ''
-        const incomplete = snapshot.complete ? '' : '\nSkill discovery is incomplete; these results may be partial.'
-        return { text: `Matching skills (${matches.length}):\n${lines.join('\n')}${extra}${incomplete}\n\nLoad one with skill_load (exact name).` }
+        const visible = snapshot.skills.filter(isModelInvocable)
+        // 空查询 = 要目录概览，不是要一份被截断的全量清单。
+        if (query.length === 0) {
+          const summary = summarizeCatalog(visible)
+          return { text: [
+            summary.total === 0
+              ? 'The skill catalog is empty — no skills are registered for this session.'
+              : `Skill catalog groups (${summary.total} skills): ${summary.text}`,
+            'Search with `query`, or load by exact name with skill_load.',
+          ].join('\n') }
+        }
+        // 不完整读只作标注、不作否决：可用的命中照常返回，避免把「没读全」变成「搜不到」。
+        return { text: renderMatches(scoreSkills(visible, queryTokens(query)), query, snapshot.complete).join('\n') }
       } catch (error) {
         return { text: `skill_search unavailable: ${String((error && error.message) || error)}` }
       }
@@ -93,9 +189,9 @@ export function apply(ctx) {
 
   ctx.tools.register({
     name: 'skill_load',
-    description: 'Load the full instructions of ONE skill by its exact name (from skill_search results) and inject them for the next request. Call this before acting on a task that matches the skill.',
+    description: 'Load the full instructions of ONE skill by its exact name and inject them for the next request. Call this before acting on a task that matches the skill. The name may come from skill_search, from the catalog overview, or from the user — any exact name in the registry works.',
     parameters: toJsonSchema({
-      name: { type: 'string', required: true, description: 'exact skill name (kebab-case, from skill_search)' },
+      name: { type: 'string', required: true, description: 'exact skill name (kebab-case, as registered)' },
     }),
     output: {
       schema: { type: 'object', additionalProperties: false, properties: { text: { type: 'string' } }, required: ['text'] },
@@ -114,15 +210,16 @@ export function apply(ctx) {
         options.signal?.throwIfAborted()
         const summary = snapshot.skills.find((entry) => entry.name === args.name)
         if (summary === undefined) {
+          // 名字错、发现没跑完、调用面缺 agent——三种成因的应对不同。
           return { text: snapshot.complete
-            ? `No skill named "${args.name}". Run skill_search to list available skills.`
-            : 'Skill discovery is incomplete. Retry skill_search before loading this skill.' }
+            ? `No skill named "${args.name}" is registered for this session. Check the exact name (skill_search lists what is registered), then call skill_load again.`
+            : 'Skill discovery is incomplete, so the name could not be confirmed. Retry skill_load before concluding the skill does not exist.' }
         }
         if (!isModelInvocable(summary)) return { text: `Skill "${args.name}" is not available for model invocation.` }
         const skill = await ctx.skills.get(args.name, options)
         options.signal?.throwIfAborted()
         if (skill === undefined) {
-          return { text: `Skill "${args.name}" is no longer available. Run skill_search again.` }
+          return { text: `Skill "${args.name}" is no longer available — it was registered but its body could not be loaded. Retry once, then run skill_search to see what is still registered.` }
         }
         if (!isModelInvocable(skill)) return { text: `Skill "${args.name}" is not available for model invocation.` }
         if (skill.content.trim().length === 0) {

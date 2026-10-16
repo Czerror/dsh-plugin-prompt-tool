@@ -19,16 +19,26 @@ function makeCtx(t, skills, provider = {}) {
     invocation: { modelInvocable: true, userInvocable: true }, ...skill,
   }))
   const calls = { list: [], get: [] }
+  const byName = new Map(definitions.map((entry) => [entry.name, entry]))
+  /** 摘要只保留 frontmatter 字段；正文走 get，与真实 provider 同形。 */
+  const summaryOf = (definition) => {
+    const { content: _content, ...summary } = definition
+    return summary
+  }
   const dispose = registry.registerProvider(() => ({
     name: 'test',
     list: async (options) => {
       calls.list.push(options)
-      const candidates = definitions.map(({ content: _content, ...summary }) => ({ ...summary, rank: 300, locator: summary.name }))
+      const candidates = definitions.map((entry) => ({
+        ...summaryOf(entry),
+        rank: 300,
+        locator: entry.name,
+      }))
       return provider.list ? provider.list(candidates, options) : candidates
     },
     get: async (candidate, options) => {
       calls.get.push(options)
-      const definition = definitions.find((entry) => entry.name === candidate.name)
+      const definition = byName.get(candidate.name)
       return provider.get ? provider.get(definition, options) : definition
     },
   }))
@@ -69,12 +79,12 @@ test('apply 注册 skill_search + skill_load 两工具（schema 形状）', (t) 
   assert.equal(search.name, 'skill_search')
   assert.equal(search.parameters.type, 'object')
   assert.equal(search.parameters.additionalProperties, false)
-  assert.deepEqual(search.parameters.required, ['query'])
+  assert.deepEqual(search.parameters.required, [])
   assert.equal(load.name, 'skill_load')
   assert.equal(load.output.schema.additionalProperties, false)
 })
 
-test('skill_search：query 大小写不敏感 + 多 token AND 匹配', async (t) => {
+test('skill_search：query 大小写不敏感 + 完整命中优先于近似命中', async (t) => {
   const { ctx, registered } = makeCtx(t, SKILLS)
   applySkillSearch(ctx)
   const r = await registered[0].execute({ query: 'PDF convert' }, makeExec().exec)
@@ -82,15 +92,20 @@ test('skill_search：query 大小写不敏感 + 多 token AND 匹配', async (t)
   assert.ok(!r.text.includes('image-process'))
 })
 
-test('skill_search：空 query 返回全部（超 20 截断并标注更多）', async (t) => {
+test('skill_search：空 query 给目录概览；命中超上限时截断并标注总数', async (t) => {
   const many = Array.from({ length: 25 }, (_, i) => ({ name: `skill-${String(i).padStart(2, '0')}`, description: `desc ${i}` }))
   const { ctx, registered } = makeCtx(t, many)
   applySkillSearch(ctx)
-  const r = await registered[0].execute({ query: '' }, makeExec().exec)
-  assert.ok(r.text.includes('skill-0'))
+  // 空 query 是目录概览（同 tool_search），不再是被截断的全量清单。
+  const overview = await registered[0].execute({ query: '' }, makeExec().exec)
+  assert.match(overview.text, /Skill catalog groups \(25 skills\): skill\*\(25\)/)
+  assert.ok(!overview.text.includes('skill-0'))
+  const r = await registered[0].execute({ query: 'desc' }, makeExec().exec)
+  assert.ok(r.text.includes('skill-00'))
   assert.ok(r.text.includes('skill-19'))
   assert.ok(!r.text.includes('skill-20'))
-  assert.ok(r.text.includes('5 more'))
+  assert.ok(r.text.includes(`(20 of 25)`))
+  assert.ok(r.text.includes('truncated at 20'))
 })
 
 test('skill_search：无匹配给出引导文案；发现不完整不声称没有技能', async (t) => {
@@ -98,6 +113,7 @@ test('skill_search：无匹配给出引导文案；发现不完整不声称没�
   applySkillSearch(ctx)
   const none = await registered[0].execute({ query: 'zzz-none' }, makeExec().exec)
   assert.ok(none.text.includes('No skills match'))
+  assert.ok(none.text.includes('does NOT mean the skill is unavailable'))
   const boom = makeCtx(t, [], { list: async () => { throw new Error('registry down') } })
   applySkillSearch(boom.ctx)
   const down = await boom.registered[0].execute({ query: 'x' }, makeExec().exec)
@@ -154,11 +170,11 @@ test('skill_search / skill_load：四种调用策略均在模型边界生效，�
     ['user-only', false, true], ['disabled', false, false],
   ]
   const { ctx, registered, calls } = makeCtx(t, policies.map(([name, modelInvocable, userInvocable]) => ({
-    name, invocation: { modelInvocable, userInvocable },
+    name, description: 'policy-word', invocation: { modelInvocable, userInvocable },
   })))
   applySkillSearch(ctx)
   const { exec, injected } = makeExec()
-  const search = await registered[0].execute({ query: '' }, exec)
+  const search = await registered[0].execute({ query: 'policy-word' }, exec)
   for (const [name, modelInvocable] of policies) {
     assert.equal(search.text.includes(`- ${name}:`), modelInvocable, name)
     const before = injected.length
@@ -219,15 +235,26 @@ test('技能查找按 scope 隔离候选，scope 释放后候选消失', async (
   for (const [key, view] of [['main', main], ['child', child]]) {
     view.exec.agent.session.header.cwd = `/workspace/${key}`
     view.exec.signal = new AbortController().signal
+    // 空 query 是目录概览：main-only 与 global 同为整名（首段无连字符）→ main*(2)，
+    // child-only → child*(1)，分组计数仍然证明 scope 隔离。
+    // 空 query 是目录概览：main 与 global 同为整名 → main*(1) global(1)；
+    // child 再加 child-only → child*(1)。分组计数即可证明 scope 隔离。
     const searched = await registered[0].execute({ query: '' }, view.exec)
-    assert.match(searched.text, /main-only/)
-    assert.equal(searched.text.includes('child-only'), key === 'child')
+    if (key === 'child') {
+      assert.match(searched.text, /Skill catalog groups \(3 skills\): child\*\(1\) global\(1\) main\*\(1\)/)
+    } else {
+      assert.match(searched.text, /Skill catalog groups \(2 skills\): global\(1\) main\*\(1\)/)
+      assert.ok(!searched.text.includes('child*'))
+    }
+    assert.equal(searched.text.includes('child*'), key === 'child')
     await registered[1].execute({ name: 'global' }, view.exec)
     assert.equal(view.injected.length, 1)
   }
   await childScope.dispose()
-  const afterDispose = await registered[0].execute({ query: 'child-only' }, child.exec)
-  assert.match(afterDispose.text, /No skills match/)
+  // 释放的是 child 层：child-only 的层连同分组一起消失，父链的 main 与全局不受影响。
+  const afterDispose = await registered[0].execute({ query: '' }, child.exec)
+  assert.match(afterDispose.text, /Skill catalog groups \(2 skills\): global\(1\) main\*\(1\)/)
+  assert.ok(!afterDispose.text.includes('child*'))
 })
 
 // —— 内置工具模块挂载（原 tool-modules.test.mjs） ——

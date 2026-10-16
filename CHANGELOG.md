@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+### 技能侧按需发现对齐工具面：`skill_search` 打分、目录概览、截断与空结果都明说（2026-10-16）
+
+- **病灶是提示层而非引擎**：`skill_load` 一直按注册表精确名加载（实测 `ponytail-help`／`dsh-shell-commands` 从未出现在任何一次搜索结果里，仍能加载），但 `engine/skill-search.mjs` 的三处文案把它写成搜索的从属——工具描述「call skill_search FIRST … then skill_load」、结果头 `Matching skills (88)` ＋ `…(68 more)`、未知名「No skill named "X". Run skill_search to list available skills.」。实测后果：模型搜不到就转去 `glob` 翻 `.dsh\skills` 猜名字。
+- **三处照搬 `tool-search.mjs` 的既有写法（同仓库同形状，技能侧此前是退化版）**：① 结果头改 `(显示数 of 命中总数)` ＋ `(truncated at 20 — add tokens to narrow the query)`；② 空查询改**目录概览**（按名字前缀折叠 `ponytail*(6) office*(8) …`，空查询不再返回被截断的全量清单）；③ 空结果/未知名文案写清契约——「空结果只说明关键词没命中，不代表技能不存在；已知精确名直接 `skill_load`」，`skill_load` 三种成因（名字不在注册表／发现不完整／不可模型调用）分别给应对。
+- **匹配保持 AND 准入、只改排序**：`scoreSkills` 仍要求每个 token 都命中（`代码 中文` 这类中文多词查询是既有纪律），精确名命中最前，其次全命中者按命中数、名字序。**没有**采用工具面「命中任意 token 即入选」的口径——技能 description 很短，近似命中会把只沾一个词的无关技能一起倒出来。
+- **发现不完整不否决可用结果**：incomplete 读只加一行标注；只有「无命中」时才改措辞（不含「没有匹配」的断言形式），避免把「没读全」变成「搜不到」。
+- **测试**：`test/engine/tool-module-mount.test.mjs` 的五处断言随语义更新（空查询概览、截断标注、AND 优先、scope 隔离改用分组计数验证），并顺带修掉测试桩的一处失真——provider 摘要此前把 `description` 统一写成 `'test skill'`，导致按描述关键词搜索的用例名不副实。
+- **验证**：`typecheck`（三项目）／`lint` 0/0／全量 **684 pass / 0 fail**／`build`／`git diff --check` 全绿。
+
 ### S3／S4 复核：两项都判定不改代码，S4 补一条文档缺口（2026-10-16）
 
 - **S3（BridgeRuntime 按域归属）：实测后判定不改。** ① 23 个成员**没有一个只被 runtime 自己用**（单域直接引用 11／多域 10／仅装配层 2）⇒ 删掉它会分散到 11 个域，**通过 deletion test**；② 11 个域**全部**已声明 `Pick<BridgeRuntime, …>`，人工逐行核对**多声明 0、少声明 0**（「每个域只看到自己需要的面」已经做到）；③ 11 个单域成员里 `capabilityQueue`／`moduleOrderQueue`／`pendingVariableSettings` 是**有状态的真共享点**，搬动要动队列与可变 Map 的生命周期，而 runtime 接口并不缩小（只是换位置）。报告两处描述也不准：`/bootstrap` 实际穿 **4 个 runtime 文件 ＋ host 十个模块**（handler 直用 14 个 BR 出口），不是「两个文件六个 helper」；`params.ts` 直连 host 是 **10/11 个域的普遍形态**。
