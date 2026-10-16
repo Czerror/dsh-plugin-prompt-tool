@@ -1,0 +1,26 @@
+# module: present-as
+# source: engine/compositions/source/local/present-as.yml (本地附加,非官方模块)
+# 让本模块覆盖的 Agent 以 `config.mode` 指定的形态呈现工具（官方 `ctx.tools.presentAs`）：
+# `ptc` 时注册表只贡献保留的 `run_code` 传输与生成的 SDK 段，其余可见能力由程序内绑定
+# （`tools.xxx()`）调用。
+#
+# **行名必须与引擎模块文件同名**：agent-assembly 按 `engine/<行 id>.mjs` 找实现
+# （src/runtime/agent-assembly.ts:186-188 的 engineModuleFile），找不到就**静默跳过这一行**
+# ——官方组合行没有 engine 文件属正常（由会话原有预设提供），所以这条跳过不告警；写错名字
+# 的后果是「行装了等于没装」而毫无提示。本文件因此叫 present-as.yml + id: present-as，
+# 与 engine/present-as.mjs 对齐。
+#
+# 为什么不用官方 `@deepseek-ai/dsh-agent-tool-presentation` 行：这是插件自己的实现
+# （engine/present-as.mjs 调的是同一个 `presentAs`），模块可经 `modules:` 声明它，因此
+# **不需要在预设侧再挂官方行**，也不需要动 `cordis.patch.yml`（那条只用于进程级默认呈现）。
+# 两者落在不同 scope——本行 = Agent scope、官方行 = 预设常驻 scope，`modeFor` 最近者优先；
+# 而**同一 scope 二次声明会被官方拒绝**（挂载期 fail loud，不静默覆盖）。
+#
+# 前置：`mode: ptc` 需要 `ctx.ptcRuntime`（宿主 base bundle 的 `ptc-runtime` 行提供）。缺它时
+# 本行停在 pending，由预设注册表指名报告不可用的行——不静默退回 native。
+
+- id: present-as
+  name: ./engine/present-as.mjs
+  config:
+    enabled: true
+    mode: ptc

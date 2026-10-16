@@ -1,5 +1,13 @@
 # Changelog
 
+### 修复 `present-as` 行名：组合源文件名必须与 `engine/<id>.mjs` 同名，否则被静默跳过（2026-10-16）
+
+- **上一提交的缺陷（自查发现）**：组合源原名 `present-as-ptc.yml`（行 id `present-as-ptc`），而引擎实现是 `engine/present-as.mjs` —— `agent-assembly` 按 **`engine/<行 id>.mjs`** 找实现（`src/runtime/agent-assembly.ts:186-188` 的 `engineModuleFile`），找不到就 `continue` **静默跳过整行**（官方组合行没有 engine 文件属正常，所以这条跳过不告警）。后果是「模块装了等于没装」而毫无提示：`prepareAssembly` 只装出隐含的 `instruction-hint`，`present-as` 从未进入装配。
+- **修复**：组合源改名 `engine/compositions/source/local/present-as.yml`、行 id 改 `present-as`，与 `engine/present-as.mjs` 对齐；模块定义声明 `present-as`；约定写进行内注释与模块注释（**行名 = 引擎文件名**）。根 `module.yml` 的可用模块清单由 `rebuild:module-template` 重新生成。
+- **三层验证（隔离，不碰运行实例）**：① 链路——模块定义 → 组合源 → 行 config `{enabled: true, mode: ptc}`；② **真实 ToolRuntime + SystemPrompt**：部署默认 native 下工具面 `[bash, read]`、无 SDK 段，跑 `present-as` 行后变 `[run_code]` + `tools:sdk` 段 2245 字符；③ `prepareAssembly` 装出 `[{present-as, mode: ptc}, {instruction-hint}]`（修复前只有后者）。
+- **一处记录**：这次是"静默跳过"第二次咬人（第一次是 `requireMatch` 的名字缺失 fail-open）；`engineModuleFile` 的跳过对官方行是正确设计，**故意不加告警**，改由注释与本文记录约定。
+- **验证**：`typecheck`／`lint`／全量 test／`build`／`git diff --check`／`rebuild:module-template -- --check`。
+
 ### 新增 `present-as` 行：模块可在 Agent scope 直接声明工具呈现（PTC），不必改预设或 profile patch（2026-10-16）
 
 - **起因**：用户问「PTC 能否运行时装配，而不是写进 `cordis.patch.yml`」→ 查证官方入口 `ctx.tools.presentAs` 只接受 **scoped ctx**（`core/tools/src/index.ts:985`：context-global 调用直接抛错，并把进程级呈现指回 `tools` 行的 `mode` 字段），而本插件的模块行恰好挂载在 **Agent scope**（`src/runtime/agent-assembly.ts:390` 的 `agent.ctx.plugin(...)` → `:436` `module.apply(scopeCtx, …)`）⇒ 模块有资格直接声明呈现，这一层此前空着。
