@@ -229,8 +229,8 @@ test('settings bridge /meta 下发声明面（顶层键名）：只声明 rules 
 
   assert.equal('declares' in byId.get(brokenId), false, '损坏模块的声明面与 facts 同口径缺席')
 
-  // 契约：包内四个真实模块的声明面（顶层键名）与设计文档 §7.4 实测一致。
-  for (const id of ['ponytail', 'tool-surface', 'skill-surface', 'superpowers']) {
+  // 契约：包内五个真实模块的声明面（顶层键名）与设计文档 §7.4 实测一致。
+  for (const id of ['ponytail', 'tool-surface', 'skill-surface', 'superpowers', 'ptc-mode']) {
     const real = moduleDeclarations(fileURLToPath(new URL(`../../modules/${id}`, import.meta.url)))
     for (const section of ['rules', 'modules']) assert.equal(real.has(section), true, `${id} 声明 ${section}`)
     for (const section of ['customTools', 'persona', 'variables', 'variablesEnabled', 'params', 'layerSettings']) {

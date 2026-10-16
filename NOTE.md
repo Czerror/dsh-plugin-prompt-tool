@@ -13,7 +13,7 @@
 - `src/`：宿主侧 TypeScript
 - `src/client/`：Web 客户端
 - `engine/compositions/source/local/`：本地组合模块唯一源（官方切块已退役，不再有 `library/`）
-- `modules/`：随包内置模块（工具面收窄、技能面、ponytail、superpowers）
+- `modules/`：随包内置模块（工具面收窄、技能面、ponytail、superpowers、PTC 呈现）
 - `templates/`：提示词配置模板
 - `skills/dsh-module/`：随包分发的模块编辑技能；技能库本体由官方根或用户引用目录提供
 - 预设不随包分发（无 `preset/`）：官方工具与预设由宿主 bundle 提供，插件不重新声明它们。PTC 模式是**宿主侧选择**——`tools` 行的 `config.mode`（部署级）或预设挂 `dsh-agent-tool-presentation`（per-preset）。

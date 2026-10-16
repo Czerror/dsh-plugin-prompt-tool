@@ -1,0 +1,45 @@
+# PTC 呈现模块 —— 把工具面切成「只暴露保留的 run_code + 生成的 SDK 段」。
+#
+# 形态：注册表只贡献 `run_code` 传输与 `tools:sdk` 段，其余可见能力由程序内绑定
+# （`tools.xxx()`）调用；模型直接调别的工具会失败。
+#
+# 怎么实现的：走插件自己的 `present-as` 行（engine/present-as.mjs → 官方
+# `ctx.tools.presentAs('ptc')`），因此**不需要**在会话预设里挂官方
+# `@deepseek-ai/dsh-agent-tool-presentation` 行，也不改 `cordis.patch.yml`（那条只用于
+# 进程级默认呈现）。模块行挂载在 Agent scope（agent-assembly 的
+# `agent.ctx.plugin(...)` → `module.apply(scopeCtx, …)`），拿到的正是 `presentAs`
+# 要求的 scoped ctx。
+#
+# 为什么带 `run-code-env`：PTC 下 run_code 程序里的 `process.env` 恒为空（官方安全设计），
+# 而 PATH / HOME 这类非敏感事实常被需要。该行在每个程序执行前注入一份**冻结的 `env` 全局**
+# （JSON 快照，凭据形态键始终拒绝），并注册 `## run_code environment` 提示段让模型从
+# `env.*` 取值；没有 `run_code` 传输的 scope 里它自动不生效，所以 native 会话零副作用。
+#
+# 为什么**不带规则**（`rules: []`）：PTC 下模型收到的指引已由官方两侧给足——dsh-tools 注册的
+# `PTC_ONLY` 段（「只有 run_code 能直接调用」）与生成的 `tools:sdk` 段（各能力的程序内签名），
+# 再加 run-code-env 的环境提示段；插件侧再叠提示只是重复。本模块也不声明 `rule-engine`
+# （没有规则要编译）。
+#
+# 前置：宿主必须装配 `ctx.ptcRuntime`（官方 base bundle 的 `ptc-runtime` 行始终在树里）。
+# 缺它时 `present-as` 停在 pending，由预设注册表指名报告不可用的行——不静默退回 native。
+#
+# 生效面：启用/停用会改动启用表（config.yml），而 agent-assembly 会 watch 启用表与各已启用
+# 模块的定义（src/runtime/agent-assembly.ts:467-475）并对**每个已知 agent**重挂——「在工作台
+# 启用」这个动作本身就会立刻把在跑的会话切成 PTC，不需要重启服务。要避免会话中途换工具面，
+# 请在新会话里启用。
+
+id: ptc-mode
+name: PTC 呈现（只暴露 run_code）
+version: 1.0.0
+engineCompat: ">=0.4.2"
+description: 工具面切成 PTC——注册表只贡献保留的 run_code 传输与生成的 SDK 段，其余能力由程序内绑定调用；并用 run-code-env 为 run_code 程序注入冻结的 env 快照与环境提示段。走插件自己的 present-as 行，不必在预设里挂官方 dsh-agent-tool-presentation 行，也不改 profile patch。
+meta:
+  source: manual
+modules:
+  # 行名必须与引擎模块文件同名（`engine/<行 id>.mjs`）：agent-assembly 按该路径找实现
+  # （src/runtime/agent-assembly.ts:186-188），找不到就**静默跳过这一行**（官方组合行没有
+  # engine 文件属正常）——写错名字的后果是「行装了等于没装」而毫无提示。
+  - present-as     # PTC 呈现：注册表只贡献 run_code + SDK 段（engine/present-as.mjs）
+  - run-code-env   # run_code 的冻结 env 注入 + 环境提示段（engine/run-code-env.mjs）
+order: 9
+rules: []

@@ -1,5 +1,14 @@
 # Changelog
 
+### 新增内置模块 `ptc-mode`：把工具面切成 PTC（`present-as` + `run-code-env`）（2026-10-16）
+
+- **模块内容**（`modules/ptc-mode/module.yml`，随包分发、默认不启用）：声明两行——`present-as`（在 **Agent scope** 调官方 `ctx.tools.presentAs('ptc')`，注册表只贡献保留的 `run_code` 传输与生成的 `tools:sdk` 段）与 `run-code-env`（PTC 下 run_code 程序里的 `process.env` 恒为空，该行注入冻结的 `env` 全局并注册 `## run_code environment` 提示段；只在存在 `run_code` 传输的 scope 生效，native 会话零副作用）。
+- **刻意不带规则**（`rules: []`，也不声明 `rule-engine`）：PTC 下模型收到的指引已由官方两侧给足——dsh-tools 的 `PTC_ONLY` 段与生成的 `tools:sdk` 段，加上 `run-code-env` 的环境提示段；插件侧再叠提示只是重复。
+- **为什么用插件自己的行而不是官方预设行**：`@deepseek-ai/dsh-agent-tool-presentation` 是官方组合行，而模块的 `modules:` 只能装 `engine/compositions/source/local/` 下的文件；`present-as` 调的是同一个 `presentAs`，语义等价而 scope 不同（本行 Agent scope vs 官方行预设常驻 scope，`modeFor` 沿链路最近者优先）⇒ 不必改会话预设、也不必改 `cordis.patch.yml`（那条只用于进程级默认呈现）。
+- **行名必须与引擎文件同名**：这条纪律写进模块注释（`agent-assembly.ts:186-188` 按 `engine/<行 id>.mjs` 找实现，找不到静默跳过）——上一轮 `present-as-ptc` 正是这样被丢掉的。
+- **测试与文档**：`test/host/settings-bridge.test.mjs` 的「包内真实模块声明面」循环加入 `ptc-mode`（四 → 五）；`docs/engine-reuse.md` 的 present-as 段指向本模块；`NOTE.md` 目录说明同步。种子化只补缺失目录，已有同名模块（含用户自建的同 id 副本）**不被覆盖**。
+- **验证**：`typecheck`／`lint`／全量 test／`build`／`git diff --check`／`rebuild:module-template -- --check`。
+
 ### 修复 `present-as` 行名：组合源文件名必须与 `engine/<id>.mjs` 同名，否则被静默跳过（2026-10-16）
 
 - **上一提交的缺陷（自查发现）**：组合源原名 `present-as-ptc.yml`（行 id `present-as-ptc`），而引擎实现是 `engine/present-as.mjs` —— `agent-assembly` 按 **`engine/<行 id>.mjs`** 找实现（`src/runtime/agent-assembly.ts:186-188` 的 `engineModuleFile`），找不到就 `continue` **静默跳过整行**（官方组合行没有 engine 文件属正常，所以这条跳过不告警）。后果是「模块装了等于没装」而毫无提示：`prepareAssembly` 只装出隐含的 `instruction-hint`，`present-as` 从未进入装配。
