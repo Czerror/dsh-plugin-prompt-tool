@@ -90,10 +90,18 @@ try {
     const flags = nodeFlags.some((flag) => flag.startsWith('--test-concurrency'))
       ? nodeFlags
       : [...nodeFlags, '--test-concurrency=4']
+    // 单用例超时默认 10s（2026-10-16）：`--test-timeout` 是**每用例**上限，不是整轮上限——
+    // 全量 4 路并行只有 ~6.6s，最长单用例远小于 10s，所以这个阈值不会误伤正常用例。
+    // 目的是让「挂住」变成带用例名的失败：沙箱里管道被禁的子进程用例、以及并发跑测试时
+    // tsdown `clean` 互删 lib/ 的空窗，此前都会表现为无限等待（子代理跑测试「假卡死」即此）。
+    // 需要更宽或更严时显式传 --test-timeout=N。
+    const withTimeout = flags.some((flag) => flag.startsWith('--test-timeout'))
+      ? flags
+      : [...flags, '--test-timeout=10000']
     // 测试进程不得写用户真实的 DSH_HOME：默认指到本次临时目录，忘记隔离的用例
     // 最多写进 runDir（用完即删），而不是 `~/.dsh`。自己隔离的用例照旧在文件顶部覆盖本值。
     // （2026-10-02 实测踩过：一个在 import 之后才设 DSH_HOME 的用例把夹具角色卡写进了真实 .dsh。）
-    code = run(process.execPath, ['--test', ...flags, ...runPatterns], { env: { DSH_HOME: join(runDir, 'dsh-home') } })
+    code = run(process.execPath, ['--test', ...withTimeout, ...runPatterns], { env: { DSH_HOME: join(runDir, 'dsh-home') } })
   }
 } finally {
   // 只清理本次创建、路径已确认的临时目录。

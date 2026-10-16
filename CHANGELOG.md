@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### 测试入口默认单用例超时 10s（2026-10-16）
+
+- **`run-tests.mjs` 默认传 `--test-timeout=10000`**（调用方显式传则不覆盖，与 `--test-concurrency` 同一写法）。`--test-timeout` 是**每用例**上限、不是整轮上限：全量 4 路并行 ~6.6s，最长单用例远小于 10s，阈值不误伤正常用例。
+- **为什么需要**：诊断「子代理跑测试假卡死」时查明**测试自身不死锁**——`withModuleLock` 拿不到锁立即 409、`processLocks(recover=true)` 按 PID 活性回收陈旧 token、runner 对 build 与 test 都用 `stdio: 'inherit'`。真正会假卡死的是三件外部事：① 用例内部 `stdio: ['pipe','pipe','pipe']` 的子进程（`module-storage`／`instructions-policy`／`module-install-lock`／`module-variables`／`persona-selection`）在受限沙箱里打不开管道或等审批；② 并发跑测试时 `tsdown` 的 `clean: true` 互删 `lib/`；③ 没有默认超时，于是 ①② 表现为无限等待。加了超时后它们会变成**带用例名的失败**。
+- **验证**：一次性探针（12s 的用例，跑完即删）经 `node scripts/run-tests.mjs <绝对路径>` 得到 `test timed out after 10000ms` 且退出码 1；随后 `pnpm --dir $Repo test` 仍 **670 pass / 0 fail**（6.5s）。探针文件已按精确路径删除。
+- **未做（本轮边界）**：不给 runner 加构建串行锁（并发跑测试仍可能互删 `lib/`，但会以失败而非挂住暴露）；不改那几处必须读子进程 stdout 的 pipe 用例；不启用 `--test-force-exit`（本机 Node 支持，若真挂住的句柄让进程不退出，可再加一行强制退出——但那样会掩盖用例泄漏的句柄，故留作备选）。
+- **流程约定**：全量 `test` 只在非受限会话跑，交给子代理的 brief 只要求 `typecheck`／`lint`。
+
 ### manifest.ts 按簇拆成七个 host 模块（2026-10-16）
 
 - **`src/host/manifest.ts`（1106 行 / 34 导出）删除**，按「变更原因同源」拆成七个 owner，消费方直接 import owner（不留 re-export 桶、不加转发层）：
