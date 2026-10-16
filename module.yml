@@ -15,7 +15,7 @@ version: 1.0.0
 engineCompat: ">=0.7.2"
 modules:
   # 仅启用规则引擎。其他能力保持 opt-in；写入其已登记参数后会自动补齐装配。
-  # 可用模块（engine/compositions 下的文件名）：filesystem-editor, instruction-hint, module-import-tools, module-memory-tools, module-rule-tools, module-variable-tools, persistent-shell-posix, rule-engine, run-code-env, skill-search, tool-bash-disabled, tool-config-engine, tool-git-bash, tool-search
+  # 可用模块（engine/compositions 下的文件名）：filesystem-editor, instruction-hint, module-import-tools, module-memory-tools, module-rule-tools, module-variable-tools, persistent-shell-posix, present-as-ptc, rule-engine, run-code-env, skill-search, tool-bash-disabled, tool-config-engine, tool-git-bash, tool-search
   # 已退役的引擎名：prompt-config-engine, declared-triggers；旧定义需显式转换。
   # 人设使用 persona.main / persona.subagent；未声明字段继承官方值。
   - rule-engine

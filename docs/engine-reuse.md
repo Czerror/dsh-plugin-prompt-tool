@@ -182,6 +182,12 @@ assembly 负责呈现，sdk-strip 负责 SDK 文本，guard 负责最终执行�
 
 内置 tool-surface 按其规则打开即收窄，tool_search 保持常驻并由首轮提示告知发现入口。需要晋升门时显式加规则条件；不由引擎偷偷恢复首轮全工具目录。
 
+## 工具呈现（present-as）
+
+`present-as` 行在 **Agent scope** 声明工具呈现（官方 `ctx.tools.presentAs`）：`mode: ptc` 让注册表只贡献保留的 `run_code` 传输与生成的 SDK 段，其余可见能力走程序内绑定；`native` 是部署默认，只有「PTC 部署里挑出个别 Agent 回 native」才需要显式声明。它调的是与官方 `@deepseek-ai/dsh-agent-tool-presentation` 行**同一个** `presentAs`，故两条路径语义等价、scope 不同（本行 = Agent scope，官方行 = 预设常驻 scope，`modeFor` 沿链路最近者优先）；**同一 scope 二次声明由官方拒绝**（挂载期 fail loud，不静默覆盖）。进程级默认呈现仍归宿主 `tools` 行的 `config.mode`，运行时改不了。
+
+`ptc` 需要 `ctx.ptcRuntime`：本行用 `ctx.inject` 等它就绪再声明，等不到就停在 pending 并由预设注册表指名报告不可用的行，**不静默退回 native**；`ptcRuntime` 刻意不进 `inject`，否则 `native` 行会被绑死在「部署必须有 PTC 运行时」上。`presentAs` 自带 disposer，本行不另包一层。
+
 ## 自定义工具与宿主契约
 
 工具通过已安装 `@deepseek-ai/dsh-tools` 的 defineTool/官方转换器定义，使用真实 ToolExecution 的 agent、signal、调用身份；异步工作观察或转发 caller-owned signal。delegate 走 `ctx.tools.execute`，保留批准、拒绝和取消管线。

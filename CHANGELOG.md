@@ -1,5 +1,15 @@
 # Changelog
 
+### 新增 `present-as` 行：模块可在 Agent scope 直接声明工具呈现（PTC），不必改预设或 profile patch（2026-10-16）
+
+- **起因**：用户问「PTC 能否运行时装配，而不是写进 `cordis.patch.yml`」→ 查证官方入口 `ctx.tools.presentAs` 只接受 **scoped ctx**（`core/tools/src/index.ts:985`：context-global 调用直接抛错，并把进程级呈现指回 `tools` 行的 `mode` 字段），而本插件的模块行恰好挂载在 **Agent scope**（`src/runtime/agent-assembly.ts:390` 的 `agent.ctx.plugin(...)` → `:436` `module.apply(scopeCtx, …)`）⇒ 模块有资格直接声明呈现，这一层此前空着。
+- **`engine/present-as.mjs`**（新行）：`inject: ['tools']`，配置契约 `{ enabled（默认 false）, mode: native | ptc（必填） }`。`native` 直接声明；`ptc` 用 `ctx.inject(['ptcRuntime'], …)` 等运行时再声明——等不到就停在 pending 由预设注册表指名报告，**不静默退回 native**（否则「开了 PTC」的部署会悄悄以 native 跑）。`presentAs` 本身就是 effect，本行不另包 disposer；`ptcRuntime` 刻意不进 `inject`（否则 `native` 行被绑死在「部署必须有 PTC 运行时」上，官方同一取舍）。
+- **`engine/compositions/source/local/present-as-ptc.yml`**：模块可经 `modules:` 声明它 ⇒ 这是**插件自己的实现**，不是搬官方 `@deepseek-ai/dsh-agent-tool-presentation` 行，因此不触碰「官方工具由会话原有预设提供、模块不重新声明它们」那条约束。与官方行 scope 不同（Agent scope vs 预设常驻 scope，`modeFor` 最近者优先），而**同一 scope 二次声明仍由官方 fail loud**（`module.apply` 抛错会让装配失败，`agent-assembly.ts:436-448` 不捕获、rethrow）。
+- **不搬 `skill-surface` 那套**：`skill-surface` 能只拦官方 `dsh-tool-skill` 的**注入产物流**（`source.kind = skill-catalog`），是因为技能目录只是一条消息；PTC 是**注册表呈现模式**，同时决定 tools 数组、`tools:sdk` 段与 `run_code` 程序里的绑定，而 native 下官方 `sdkSection().text` 直接返回空串（拣不到 SDK 正文）⇒ 改装配/拦注入到不了位，必须让 registry 的 mode 变 ptc。
+- **未做（留给后续）**：B7 T3 退役 `promoted-code-mode` 时记的净损失之一是「晋升后才呈现 PTC」的时机特性——本行只做**静态声明**，把它接回晋升时机需要「能调 presentAs 的规则动作」或按条件选择行，本轮未实现；两处已无消费者的 `presentAs` 测试桩（`promotion-gate.test.mjs`、`history-full-reads.test.mjs`）也未清。
+- **测试**：`test/engine/present-as.test.mjs` 四条——ptc 等运行时且等不到时不声明、native 不依赖运行时、未启用即关闭与非法配置（未知键/非布尔 enabled/缺 mode/非法 mode）挂载期拒绝、契约面（插件名 / `inject` / 配置键集）。
+- **验证**：`typecheck`／`lint`／全量 test（**691 pass / 0 fail**，本轮 +4）／`build`／`git diff --check`／`rebuild:module-template -- --check` 全绿。
+
 ### 装配刻度表对齐实际宿主：context 档位补全 7 项、取值改容错口径；NOTE.md 目录说明改正（2026-10-16）
 
 - **触发是 PTC 对照**：用户问「PTC 模式启用是否完整对照官方」→ 逐项核对后，PTC 本身的契约四项全部对齐（`tools:sdk` 段名、`PTC_ONLY` 在 policy 组、`run_code` 保留名三处纪律、以及**不依赖预设的部署级启用路径** `tools` 行的 `config.mode`）；漂移出在两处外围，本轮修掉。
