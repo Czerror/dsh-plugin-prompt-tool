@@ -124,7 +124,7 @@ test('rules workspace: 层筛选器用自己的可访问名，不借用「缺省
   const store = {
     editorDrafts: createWorkspaceDrafts(), getFields: () => fields, subscribeFields: () => () => {},
     getDraftRevision: () => 0, subscribeDrafts: () => () => {}, publishDrafts: () => {},
-    enqueueModuleTask: (_moduleId, task) => task(), enqueueRuleTask: task => task(),
+    showNotice: () => {}, enqueueRuleTask: task => task(),
     meta: { layers: ['pre-step'], modules: [] },
   }
   const labels = [...renderElement(RulesWorkspace, { store, t }).matchAll(/aria-label="([^"]*)"/g)].map(match => match[1])
@@ -140,12 +140,12 @@ test('rules workspace: 未启用模块不出规则卡（启用表先于 _setting
   const drafts = createWorkspaceDrafts()
   drafts.rules.set('module-off', {
     entries: [{ key: 'off-1', previousId: null, value: { id: 'rule-from-disabled-module', name: '来自未启用模块的卡', layer: 'pre-step', then: [] } }],
-    saved: [], fields: new Map(), loaded: true, validated: false, sequence: 0, nextKey: 2,
+    saved: [], fields: new Map(), loaded: true, validated: false, latest: 0, nextKey: 2,
   })
   const store = {
     editorDrafts: drafts, getFields: () => fields, subscribeFields: () => () => {},
     getDraftRevision: () => 0, subscribeDrafts: () => () => {}, publishDrafts: () => {},
-    enqueueModuleTask: (_moduleId, task) => task(), enqueueRuleTask: task => task(),
+    showNotice: () => {}, enqueueRuleTask: task => task(),
     meta: {
       layers: ['pre-step'],
       modules: [{ id: 'module-off', name: 'off', enabled: false }, { id: 'module-on', name: 'on', enabled: true }],

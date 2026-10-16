@@ -29,7 +29,6 @@ const stubStore = (declares) => {
     getDraftRevision: () => 0,
     subscribeDrafts: () => () => {},
     publishDrafts: () => {},
-    enqueueModuleTask: (_moduleId, task) => task(),
     enqueueRuleTask: (task) => task(),
     moduleParamsOf: () => ({ values: {}, baseline: {} }),
     moduleVariables: () => ({ scope: 'module', values: {}, inherited: {}, enabled: true, loading: false, error: '', publicationPending: false }),

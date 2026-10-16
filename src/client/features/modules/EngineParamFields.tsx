@@ -17,10 +17,6 @@ import { useAutosave } from '../../data/use-autosave.ts'
 /** 参数控件实际取用的能力面：模块事实、草稿池与公共参数读写；其余端口与本文件无关。 */
 type EngineParamStore = DraftsPort & ModuleFactsPort & ParamsPort
 
-/** 未提供草稿通道的 store（单测桩）退化订阅：不广播，字段仍按当前草稿读一次。 */
-const subscribeNothing = (): (() => void) => () => {}
-const getZero = (): number => 0
-
 /**
  * 编辑组 / 能力卡的搜索文本：能力 id（技术键）+ 该组参数键 + 参数中文标签。
  * 参数键来自 shared 派生（`engineGroupParamKeys`），中文标签来自 `param.<键>` 字典；
@@ -88,15 +84,15 @@ export function EngineParamField({ store, param, t, instanceId, ...subject }: {
   const disabled = !store.fields.modulesEnabled
     || (isGlobal ? store.globalParamsLoaded !== true : facts?.editable !== true)
   const draftKey = `${isGlobal ? 'global' : moduleId}:param:${param}`
-  const getDraftRevision = store.getDraftRevision ?? getZero
-  useSyncExternalStore(store.subscribeDrafts ?? subscribeNothing, getDraftRevision, getDraftRevision)
-  const draft = store.editorDrafts?.fields.get(draftKey)
+  const getDraftRevision = store.getDraftRevision
+  useSyncExternalStore(store.subscribeDrafts, getDraftRevision, getDraftRevision)
+  const draft = store.editorDrafts.fields.get(draftKey)
   const draftText = draft?.text
   const error = draft !== undefined && draft.error.length > 0 ? draft.error : undefined
   const writeDraft = (next: FieldDraft | undefined): void => {
-    if (next === undefined) store.editorDrafts?.fields.delete(draftKey)
-    else store.editorDrafts?.fields.set(draftKey, next)
-    store.publishDrafts?.()
+    if (next === undefined) store.editorDrafts.fields.delete(draftKey)
+    else store.editorDrafts.fields.set(draftKey, next)
+    store.publishDrafts()
   }
   const save = (): void => {
     const current = (isGlobal ? store.globalParams : store.moduleParamsOf(moduleId ?? ''))[param]
@@ -110,7 +106,7 @@ export function EngineParamField({ store, param, t, instanceId, ...subject }: {
   }
   const commitNumber = (): void => {
     if (definition.kind !== 'number') return
-    const text = store.editorDrafts?.fields.get(draftKey)?.text
+    const text = store.editorDrafts.fields.get(draftKey)?.text
     if (text === undefined || disabled) return
     const next = text.trim() === '' ? definition.defaultValue : Number(text)
     const reason = typeof next === 'number' ? definition.check(next) : undefined

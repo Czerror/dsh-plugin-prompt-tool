@@ -246,7 +246,7 @@ test('同一层两个模块的实例卡各自渲染自己模块的资产', () =>
 /** 规则卡草稿：一张 tool-pipeline 层的实例卡（展开态由 browse.expanded 指定）。 */
 const rulesDraft = (id) => ({
   entries: [{ key: id, previousId: null, value: { id, name: id, layer: 'tool-pipeline', then: [] } }],
-  saved: [], fields: new Map(), loaded: true, validated: true, sequence: 1, nextKey: 2,
+  saved: [], fields: new Map(), loaded: true, validated: true, latest: 1, nextKey: 2,
 })
 
 test('规则工作台：同一层两个模块的规则卡各自按自己模块的事实判层内设置（跨模块不串判据）', () => {
