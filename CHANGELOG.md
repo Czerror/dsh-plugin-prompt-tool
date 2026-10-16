@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### S6 复核：实测后判定「不统一加载接口」，顺手修三处文档漂移（2026-10-16）
+
+- **报告的两个前提被实测推翻**：① 「按模块 id 加载引擎模块」的生产点**只有 1 处**——`src/runtime/agent-assembly.ts:121-124`（`join(packageEngineDir(), '<id>.mjs')` ＋ `existsSync`）；`src/index.ts:200` 是**固定文件名** ＋ 相对 `import.meta.url`，不是按 id。② 报告里的「14」是 `engine/compositions/source/local/*.yml` 的文件数，不是 id 加载器能命中的模块数；引擎侧带 `apply` 的模块 **11** 个，其中 3 个的 composition 行由宿主包／cordis group 提供、加载时被静默跳过。
+- **判定：不抽「按 id 加载」的接口**。四处动态加载在**路径基准／失败语义／断言形状／缓存**上都不同：按 id 那处「缺件跳过、缺 `apply` 抛」；`index.ts` 那处「失败只 warn 降级」；`bridge-runtime.ts:590`（`schema.mjs`）与 `routes/instructions.ts:164/182/215`（`rule-spec.mjs`）同形（固定文件名 ＋ `packageEngineDir()`）；引擎侧另有 `actions/content.mjs`（按策略名）与 `host-package.mjs`（按宿主包名）。强行统一＝一个覆盖四种错误语义的宽 options ＝**浅接口**，按「不因一处实现设计复杂逻辑」保留内联断言。
+- **顺手修三处文档漂移**（`docs/engine-reuse.md`）：① `:92` 的 `read(moduleId) -> { module, global, effective, … }`——`effective` **既不在实现也不在声明里**（`template-frame.mjs:44-47` 读的是 `module`／`global`／`enabled`），删掉；② `:97` 让复制方「调用 `evaluateTemplate()`」——它**不被 `src` 直接使用**，是 `template-frame.mjs` 的 `renderTemplate()` 内部在用，改为指向 `renderTemplate()` 的返回；③ `:75` 的文件归属——`schema.mjs` 的加载点实际在 `bridge-runtime.ts:590`（不在 `settings-bridge.ts`，那是个 73 行纯装配壳、零 `import()`），`rule-spec.mjs` 在 `routes/instructions.ts`，并补上「这些点为何不收成一个接口」与「绝对 URL 动态 import 让 `.d.mts` 不参与、类型由手写断言承担」。
+- **留档未改（要动需另起一轮）**：`routes/instructions.ts` 的**同一行抄三遍**，且 `:164`（refreshOnly 分支）**不在 try 内**——同样的失败在那里经 `bridge-transaction.ts` 冒泡成 **500 `bridge-handler-failed`**，而 `:182`／`:215` 是 500 `rules-failed`。三处用的 `RuleEditorMeta` 还是 `src/shared/rules.ts:66` 的副本（`lifecycle` 可选），与 `engine/rule-spec.d.mts:78` 的必需不一致（这条同 S5 的「同名两份副本」）。
+- **与 S5 的边界**：S5 管**静态引入**那 14 份声明的准确性；S6 是它的另一半——**动态路径上声明不参与**，类型由手写断言承担。两者都落到了文档。
+
 ### S5 复核：实测后判定「零漂移、零冗余」，只落文档（2026-10-16）
 
 - **按用户三条原则逐条量了这 14 份声明**（`engine/*.d.mts` ＋ `engine/conditions/index.d.mts`）：
