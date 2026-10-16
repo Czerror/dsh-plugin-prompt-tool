@@ -396,13 +396,14 @@ bootstrap 是首屏聚合请求，不因筛选或输入字符增加 bridge 请�
 
 use-prompt-tool-store.ts 是唯一工作台 facade，负责把 ConfigForms mirror、typed bridge、字段快照、保存队列和 feature actions 组合成 React 可消费状态。
 
-**资源编辑器的读改写协议**（六个 owner 的共同形状；代码级原语只有 `data/resource-track.ts`）：
+**资源编辑器的读改写协议**（owner 的共同形状；代码级原语只有 `data/resource-track.ts`，各 owner 分别在 `data/rule-drafts.ts`、`data/module-variables.ts`、`data/instruction-drafts.ts`、`data/skill-editor.ts` 与 `data/tools-editor.ts`）：
 
 - **版本捕获**：读时整份存快照，写时从快照取期望版本——rules 逐条 `rules[id]` ＋ `settings`、variables 按 `scope` ＋ `settings`、instructions 逐文件 `revision`、persona 两段各一（创建时整键不带版本）、config-order 整表一个、skills 由调用方卡片持有。**没有**统一的「版本对象」类型：各家请求形状不同，硬并会造出假共享。
 - **最新优先**：草稿/状态上的 `latest` 序号（`beginLatest` 开请求、`isLatest` 判落地）。**晚到应答既不写草稿也不清 `busy`/`loading`**——清理权归最新那次请求，否则界面会停在忙碌态。这也是为什么「迟到时不回滚」是对的，不是漏了清理。
 - **发布态**：`publicationPending`/`publicationError` 两字段，rules／variables／persona 三家有；instructions／skills／config-order 没有这个概念（它们分别是重读、重写、失败后重读）。**语义有意不同**：rules 把「`publicationError` 非空」也算 pending，variables／persona 只看显式 `publicationPending`——不要在重构里顺手统一，那会改变重试入口何时出现。
 - **失败分类**：rules 有 `READ_FIRST_CODES`（rules-conflict／module-changed／shared-alias）＋ `retryKind` 三分类；instructions 有四个冲突码的布尔分类；其余四家不分类，按 message 落 error。
-- **两处例外保持原样**：skills 用 `writing` 布尔锁 ＋ session 字符串一致性替代版本/序号（其 `seq` 还与 store 的 bootstrap 覆盖保护耦合）；config-order 的 `generation` 是闭包变量、外部不可观测。改这两家要同时动 store 的覆盖保护，超出「统一命名」的范围。
+- **例外保持原样**：skills 用 `writing` 布尔锁 ＋ session 字符串一致性替代版本/序号（其 `seq` 还与 store 的 bootstrap 覆盖保护耦合）；config-order 的 `generation` 是闭包变量、外部不可观测；tools（`data/tools-editor.ts`）用序号但**没有** `busy`／`publication*`——它的草稿就是整组工具，没有 CAS 版本也没有发布态。改前两家要同时动 store 的覆盖保护，超出「统一命名」的范围。
+- **`DraftsPort.editorDrafts` 有意不收窄**：它是 6 个消费者的入口，为「不把整池递出去」造 6 套按族的读数面，代价与收益不成比例。需要改草稿的域各自归 owner（上列五个），新域照 tools 那份样板加一个 `data/<资产>-editor.ts`。
 
 **消费方的依赖面按「端口」声明**：端口定义在 `src/client/data/store-ports.ts`（按域切：模块事实、草稿池、参数、变量、技能、指令文件、规则编辑、模块动作、通知、模型、宿主面），每个端口对应一组同源成员。组件 props、内部 helper 参数与 hook 包装写**端口交叉**（如 `store: ModuleFactsPort & DraftsPort`），不再对 `PromptToolStore` 做 `Pick`——「这张卡需要哪些面」由端口名回答，测试桩也按端口写。判别力仍是单向的：`typecheck` 抓得住"少给端口"或"端口的成员没实现"，抓不住"多要一个端口"，所以只取实际用到的端口靠逐处核对。新增卡片时先在 `store-ports.ts` 找端口，找不到再考虑新端口（而不是回退到 Pick 大接口）。
 

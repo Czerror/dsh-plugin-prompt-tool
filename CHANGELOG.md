@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+### 自定义工具的读改写收进 owner（2026-10-16）
+
+- **新增 `src/client/data/tools-editor.ts`**：`createToolsEditor(moduleId, draft, deps)`——deps 三项（`reader`／`request`／`isCurrent`）＋`changed`／`onDeclared`，动作 `load`／`mutate`／`applyPatch`／`save`／`insertTemplate`。形态照 `rule-drafts.ts` 的最小骨架（载体作位置参数、依赖显式、用 `resource-track.ts` 的 `beginLatest`／`isLatest`），比 rules 少的部分是刻意的：工具没有 CAS 版本、没有冲突分类、没有增量 patch，草稿就是整组工具。
+- **目标形状的实测结论（写下来免得再试一次）**：仓库里**没有任何一份现成实现**同时是「显式 deps ＋ 自带载体 ＋ 用原语」——`rule-drafts` 三者齐（但载体走位置参数、deps 接口未导出）、`skill-editor` 缺原语（自己的最新优先是手写 `++state.current.seq`）、`instruction-drafts` 没有工厂（纯函数池 ＋ store 持 ref）。所以样板是「按最小骨架拼」出来的，不是照搬；`docs/ui-architecture.md` 的协议小节据此改为列出各 owner 的实际位置而不是说「一个共同形状」。
+- **卡片删掉手写的那一套**：`CustomToolsCard.tsx` 原来的本地 `revision` 计数、`active` 卸载标记、`activeEditor` 判应答过期、`readingTools` 读前快照 ＋ 落地前重算（**净 −63 行**）全部由 owner 承担；保留的是渲染本身——`useState` 镜像、展开态、`patchTool` 的字段键重命名、提示文案。**行为等价**：既有 SSR 用例（33 pass）零改动仍绿。
+- **`ToolDraft` 归属下沉**：它原在 `features/tools/CustomToolEditor.tsx`（`= Record<string, unknown>`），而 owner 在 data 层、草稿池的 `ToolsEditorDraft.tools` 本来就是它——改由 `data/workspace-drafts.ts` 拥有，`CustomToolEditor` 转发，**修掉一处 data→features 的反向依赖**。
+- **`ToolsEditorDraft` 加 `latest: number`**：原语要求 holder 有该字段；它替代了卡片里那个本地 `revision`。
+- **新增 `test/client/tools-editor.test.mjs`（4 条直测）**：读取落地与**迟到应答不落地**、**读期间用户输入优先**且读失败保草稿、保存前空 key 清理（并把它写回 `saved`，否则那行空 key 会让卡片永远是脏的）与失败**不污染 `error`**、卸载后应答不落地。**判别力实测**：去掉 `isLatest` 守卫 → 迟到用例红；还原后 4 pass。
+- **验证**：`typecheck`（三项目）／`lint` 0 warnings／全量 **680 pass / 0 fail**（改前 676 ＋ 新增 4）／`build`／`git diff --check` 全绿。
+- **本轮明确不做**（都按「不为安全而安全／不为一处不一致设计复杂逻辑」判掉）：① **不收窄 `DraftsPort.editorDrafts`**——它是 6 个消费者的入口，为「不把整池递出去」造 6 套按族的读数面，代价与收益不成比例；② **不动 persona 写路径**（`saveSources`／`write`／`retryPublication` 无序号属实，但入口有 `saving`／`loading` 守卫，能否真并发到「迟到响应覆盖」**未验证**，不为未验证的风险造逻辑）；③ **不动 skills 与原语的对齐**；④ **`EngineParamFields`／`PromptConfigFields` 两份字段草稿槽不動**（前者根本不是协议——没有请求生命周期；后者**当前未接线**：`RulesWorkspace.tsx` 未传 `fieldDrafts`，`fields?.set` 是空操作——这是独立发现，只记账）；⑤ `insertToolTemplateIntoDraft` 仍留在卡片（唯一调用者 `useTemplatePicker` 只持有 `store.editorDrafts`，把 owner 注进去要改它的接口或引入跨模块注册表）。
+
 ### 测试桩与端口契约漂移：修漂移、删桩让步、test 类型检查第一批（2026-10-16）
 
 - **三处桩的字段漂移修正**：`module-asset-subject.test.mjs:249`、`rule-steps.test.mjs:143`、`template-target.test.mjs:38` 仍写 `sequence: N`，而 `RulesDraft` 自 `a12a5be3`（`sequence` → `latest`）起只有 `latest`——测试是 `.mjs`、不在任何 tsc 项目内（`tsconfig.json:16-17` 与 `tsconfig.client.json:8` 的 include 都不含 `test/`），所以漂移无声。每处改 1 行。运行期后果（静态推理、未实测）：桩里 `latest === undefined` 会让 `beginLatest` 的 `++` 得 `NaN`、`isLatest` 恒假；当前不红是因为 SSR 渲染不跑 effect。
