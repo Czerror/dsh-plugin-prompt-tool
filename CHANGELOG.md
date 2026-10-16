@@ -9,6 +9,12 @@
   - **零冗余**：14 份共 **52 个声明符号**，逐个核实后**没有一个是纯冗余**。`src` 直接 import 的是**函数**（形如 `compileRules`／`mountRuleSources`／`isBranchNode`）；其余符号**支撑着被消费符号的签名**——`StandingMountFor` 是 `loadStandingMountFor` 的返回、`MountRuleSourcesOptions` 是 `mountRuleSources` 的参数、`PreStepBatchOptions` 是 `runPreStepBatch` 的参数、`WarnOnce` 是 `createWarnOnce` 的返回、`InjectionConfigSpec` 是 `injectionConfigSpec()` 的返回、`PreStepConfigLike` 是 `PreStepBatchOptions.configs` 的元素类型。**「无人 import 的类型」不等于冗余**，判据是「它是否支撑某个被消费符号的签名」。
   - **零漂移**：动态 `import` 每个 `.mjs`，核对声明里的**值导出逐个存在** ⇒ 0 份漂移。**静态正则探针会误报**：它不跟 `export *` 链，把 `conditions/index.d.mts` 的 `loadStandingMountFor` 报成幽灵（实际由 `index.mjs` 的 `export * from './preset.mjs'` 转发）——要查这类漂移**必须走运行期**。
 - **唯一真实弱点**：声明与实现之间**没有机制校验**——`docs/engine-reuse.md:73` 的「新增引擎导出时同步改声明」是纪律不是守卫；签名文字（如 `rule-runtime.d.mts` 的 `ctx: unknown`）的宽化只能靠人看。**但拿不出当下缺陷路径**，故加运行期导出面断言属「为覆盖率而测」（用户判定不做，我原本推荐要加，实测后撤回）。
+- **补充实测（同轮取证的后半段，结论要写准）**：名字面稳、**形状面有 4 处已量到的偏差**，且都是「宽化／少写」——`tsc` 一定放行，所以**编译通过不能作为声明正确的证据**：
+  - `rule-runtime.d.mts:17` 把 `outcome` 宽化成 `string`（`src` 侧是封闭并集 `RuleOutcomeKind`）⇒ 并集外的值 tsc 拦不住；实测喂 `outcome: 'skipped'` 时 `rule-diagnostics.ts:52` 的 `record[outcome] += 1` 在计数对象上**新增键 `skipped: NaN`**，`JSON.stringify` 成 `"skipped":null` 随端点出桥——**不抛错、不告警**。当下引擎只发并集内的 5 个值，所以没有活 bug；这条是「漂移会以什么方式爆发」的实证。
+  - `executor.d.mts:6` 声明 `identityOf(...): string`，实测可返回 `undefined`（调用方靠一句注释「schema 保证非空」活着）。
+  - `rule-runtime.d.mts:41` 的 `ctx: unknown` ⇒ 五种错误 ctx 全被 tsc 放行、运行期全炸在深处（好在 `:59` 的 try 会先按逆序释放订阅再抛，不漏资源）。
+  - `rule-spec.d.mts:33-38` 的 `PromptConfigCompileOptions`：实现 `schema.mjs:563` 还读一个声明里没有的 `templatePresetRoot`（按声明写就是 excess-property 报错），且 `loadTemplate` 实现按 3 参调用、声明只写 1 参。
+  - 另有两处**同名两份副本**：`RuleEditorMeta`（声明 `rule-spec.d.mts:78` 的 `lifecycle` 必需 vs `src/shared/rules.ts:75` 可选）、`RuleOutcomeReport`（声明宽成 `string` vs `src/runtime/rule-diagnostics.ts:19` 的并集），连接只靠注释。
 - **落文档**：把上面两条判据写进 `docs/engine-reuse.md` 的声明段——「为什么有些符号 `src` 从不 import 却必要」与「声明的失效方式是静默的、当前无自动校验」，并记下 2026-10-16 的核对结论。
 - **验证**：`typecheck`（三项目）／`lint` 0 warnings／全量 **684 pass / 0 fail**／`git diff --check` 全绿（只改文档）。
 
