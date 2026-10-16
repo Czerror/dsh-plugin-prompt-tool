@@ -42,7 +42,7 @@ const name = 'prompt-config-engine'
  * 「已确认投递」快路径的条目上限。真相是**当前上下文扫描**（见 injectedMessage）：
  * 这份 memo 只省一次扫描，丢了只是多扫一次，清空不改变任何判定结果，也不再需要淘汰策略。
  */
-// ponytail: 上限防无界增长（Map 按「身份 × 代次」累积）；若需精确淘汰改 LRU。
+// shortcut: 上限防无界增长（Map 按「身份 × 代次」累积）；若需精确淘汰改 LRU。
 const MAX_MEMO_CONFIGS = 4096
 
 /**
@@ -166,7 +166,7 @@ function hasInBatch(config, messages) {
  * 视图里移除/替换节点（`packages/core/session/src/surface.ts:563-585`），代次一变，此前
  * 记下的「已投递」就可能已不在当前上下文里 —— 键随之失效，判定退回当前上下文扫描。
  * 无 surface（降级到完整历史）时戳恒为 `-`：完整历史不会丢事件，条目一直有效。
- * ponytail: 只按 replace 代次失效；若将来出现**不推进代次**却让节点消失的 surface 变更，
+ * shortcut: 只按 replace 代次失效；若将来出现**不推进代次**却让节点消失的 surface 变更，
  * 快路径会多拦一次重新注入，届时改用宿主给出的权威信号。
  */
 function memoKey(field, moduleId, value, stamp) {

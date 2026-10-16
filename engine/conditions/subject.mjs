@@ -85,7 +85,7 @@ const SUBJECT_OF_FIELD = Object.fromEntries(Object.entries(SUBJECT_FIELDS).map((
  * 事实谓词 → 它读取的事实 subject：校验面与运行面的**唯一**登记处——新谓词还要在
  * `PREDICATE_FACTORIES` 与通道可用性表登记，但「谓词 → subject」只此一处，
  * `rule-spec.mjs#conditionSubjects` 直接消费本对象、`FACT_SUBJECTS` 也由它派生。
- * ponytail: 漂移断言靠运行时改写本对象；将来若 `Object.freeze`，需把判据换成「同一引用」。
+ * shortcut: 漂移断言靠运行时改写本对象；将来若 `Object.freeze`，需把判据换成「同一引用」。
  */
 export const FACT_PREDICATE_SUBJECTS = { names: 'name', source: 'source' }
 

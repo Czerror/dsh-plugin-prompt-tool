@@ -1,6 +1,12 @@
 # Changelog
 
-## [Unreleased]
+### 捷径注释标记改名：`ponytail:` → `shortcut:`（对齐上游 2a1fe84，2026-10-16）
+
+- **起因**：用户指出 `ponytail:` 注释格式已被上游抛弃，要求全清。**查上游本地源码 `D:\AI\GitHub\ponytail`（main，HEAD `84740e3`）后修正了结论**：上游没有废弃这个约定，而是做了品牌去名化——PR `2a1fe84`「neutral `shortcut:` marker instead of the `ponytail:` brand in code comments」一次改动 30+ 个文件，规则行变成 `- A shortcut with a known limit gets a code comment in this form: \`shortcut: <the limit>, <when to upgrade>\`.`；`ponytail-debt` 扫描器**保留并向后兼容**：`git grep --no-index --exclude-standard -nE '(#|//|/[*]) ?(shortcut|ponytail):'`，输出 `No shortcut debt. Clean ledger.`。
+- **仓库内清理（17 处代码注释 + 2 处规则正文 + 1 处 ADR 指向）**：`engine/{compaction-epoch,conditions/subject,executor×2,history×2,layers×2,sdk-strip×2,shared×2,skill-search}.mjs`、`src/host/{instructions-policy,module-layer-settings}.ts`、`src/client/data/use-prompt-tool-store.ts`、`test/host/settings-bridge.test.mjs` 的标记前缀统一改为 `shortcut:`（**保留注释内容**——它们是「为什么这样够用 + 什么时候升级」的说明，删掉就丢了信息）；`modules/ponytail/module.yml` 两处规则正文（主会话 + 子代理副本）按上游新措辞重写，`ponytail:` 债务扫描说明同步改名。
+- **技能库同步（`$DSH_HOME\skills`，4 个技能 6 处）**：`ponytail`、`ponytail-audit`、`ponytail-review`、`ponytail-help`、`ponytail-debt` 按上游逐行对齐（引用处改为「`shortcut:`（或较旧的 `ponytail:`）」以保留兼容读法）。本机副本另有中文 `description` 与 `argument-hint`，属本地定制，**未覆盖**。
+- **未改**：`CHANGELOG.md` 自身的历史条目（v5.0.0 那两条是当时的真实记录）与品牌名写法（如 `ponytail-debt`、`$ponytail:ponytail`、`No ponytail debt` 类文案）。
+- **验证**：`typecheck`／`lint` 0/0／全量 **686 pass / 0 fail**／`build`／`git diff --check` 全绿；仓库内 `ponytail:` 标记归零，5 个技能文件的 `shortcut:` 计数与上游逐文件一致。
 
 ### 技能侧按需发现对齐工具面：`skill_search` 打分、截断标注、空结果不否决、`skill_load` 去重（2026-10-16）
 

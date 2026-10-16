@@ -52,7 +52,7 @@ rules:
             - Code you move or merge keeps its error handling and validation.
             - Between options of equal size, take the one that is correct on edge cases.
             - Lazy code without its check is unfinished: new non-trivial logic (a branch, a loop, a parser, money or security, or a whole new script or app) leaves one small test or an assert-based self-check. Trivial changes need none.
-            - A shortcut with a known limit gets a `ponytail:` comment that names the limit and when to upgrade.
+            - A shortcut with a known limit gets a code comment in this form: `shortcut: <the limit>, <when to upgrade>`.
 
             Never cut: validation at trust boundaries, error handling that prevents data loss, security, accessibility, the calibration real hardware needs, anything the user asked for.
   # 档位卡同时服务两个受众：`system-section` 只进主会话——子代理有自己的 system prompt，
@@ -178,7 +178,7 @@ rules:
   #
   # 只读档只保留不变量（不得改文件）与观察面（把发现当交付物）：只读子代理没有可删的代码，
   # 完整规则集的执行层条目（根因修法、最短 diff、删除优先、留下可运行检查、
-  # 标记 ponytail: 债务）全部无关。
+  # 标记 shortcut: 债务）全部无关。
   #
   # `position: before-all` 保住原语义（规则排在任务文本之前），`dedupe: session` 保证每
   # 个子代理只付一次。想再细化就改这一条的 `if`：按模型筛用 `scope: { modelScope: pro }`；
@@ -274,7 +274,7 @@ rules:
                 - Code you move or merge keeps its error handling and validation.
                 - Between options of equal size, take the one that is correct on edge cases.
                 - Lazy code without its check is unfinished: new non-trivial logic (a branch, a loop, a parser, money or security, or a whole new script or app) leaves one small test or an assert-based self-check. Trivial changes need none.
-                - A shortcut with a known limit gets a `ponytail:` comment that names the limit and when to upgrade.
+                - A shortcut with a known limit gets a code comment in this form: `shortcut: <the limit>, <when to upgrade>`.
 
                 Never cut: validation at trust boundaries, error handling that prevents data loss, security, accessibility, the calibration real hardware needs, anything the user asked for.
 configOrder:

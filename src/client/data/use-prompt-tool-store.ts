@@ -268,7 +268,7 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
   const [noticePill, setNoticePill] = useState<string | undefined>(undefined)
   const fieldsRef = useRef<Fields>(EMPTY_FIELDS)
   /** fields 订阅者集合：patch/load 每次产生新 fields 引用时广播。
-   *  ponytail: 单订阅通道（无 selector 缓存层），selector 在消费侧 useRef 缓存。 */
+   *  shortcut: 单订阅通道（无 selector 缓存层），selector 在消费侧 useRef 缓存。 */
   const fieldsListenersRef = useRef(new Set<() => void>())
   const publishFields = useCallback((next: Fields) => {
     fieldsRef.current = next

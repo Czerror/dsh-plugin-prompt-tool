@@ -39,7 +39,7 @@
 
 ## 后续
 
-- 宿主扩大 `SURFACE_EVENT_TYPES` 时需同步 `SURFACE_MESSAGE_TYPES`（`engine/history.mjs` 有 `ponytail:` 升级条件标注）。
+- 宿主扩大 `SURFACE_EVENT_TYPES` 时需同步 `SURFACE_MESSAGE_TYPES`（`engine/history.mjs` 有 `shortcut:` 升级条件标注）。
 - `compaction-epoch` 的「压缩即重置」仍是**事件维近似**：用 surface 代次替换会改语义（非压缩 replace 也会推进代次、且代次只给整数、定不出边界 seq），升级条件写在 `isSuccessfulCompactionEnd` 的 JSDoc 里。
 - `engine/actions/content.mjs` 的 anchor-notice 解析器缓存接不到成功压缩的信号，压缩后其 `source.summary` 措辞可能滞后——只影响文案，不影响注入与否。
 

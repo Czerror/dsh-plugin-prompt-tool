@@ -73,7 +73,7 @@ const WARN_ONCE_SUPPRESSED = Symbol('warnOnceSuppressed')
  *
  * `key` 缺省取整条消息（内嵌错误文本，因此不同故障不同 key、重复故障同 key）。
  * 只有 logger 调用**成功之后**才登记，失败的告警不占名额；到上限时补一条抑制提示，此后静默。
- * ponytail: 消息全文当键 → 同一故障的变体文本（id/数值不同）各占一个 key；等出现这种刷屏源再抽结构化键。
+ * shortcut: 消息全文当键 → 同一故障的变体文本（id/数值不同）各占一个 key；等出现这种刷屏源再抽结构化键。
  */
 export function createWarnOnce(ctx, pluginName) {
   const seen = new Set()
@@ -220,7 +220,7 @@ export const MAX_TRACKED_SESSIONS = 4096
 export function sessionState(ctx, create, { weak = false, limit = MAX_TRACKED_SESSIONS, evict = 'clear', reset } = {}) {
   const store = weak ? new WeakMap() : new Map()
   const keyOf = (session) => (weak ? session : session?.id)
-  // ponytail: 无上限档（weak / limit: null / evict: null）与有上限档共用一条读写路径，
+  // shortcut: 无上限档（weak / limit: null / evict: null）与有上限档共用一条读写路径，
   // 只在上限判定处分支；未声明上限时不创建任何额外计数器。
   const finite = !weak && typeof limit === 'number' && limit > 0 && evict !== null
   /** 超限处理：`clear` 与 `oldest` 是**两档不同语义**，绝不互相降级。 */

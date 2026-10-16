@@ -614,7 +614,7 @@ function wireSubagentEvents(ctx, configs, warnOnce, on) {
       const session = child?.session ?? getService(ctx, 'sessions')?.get?.(info.id)
       if (session === undefined) return
       const mainId = mainSessionForChild(ctx, info.id)
-      // ponytail: 有界运行记录；极端并发超过上限时，结束事件仍可通过存活会话血缘定位。
+      // shortcut: 有界运行记录；极端并发超过上限时，结束事件仍可通过存活会话血缘定位。
       if (runs.size >= MAX_TRACKED_SESSIONS) runs.delete(runs.keys().next().value)
       runs.set(info.runId, { id: info.id, mainId, agent: child, session, model: child?.options?.model })
     }))
@@ -678,7 +678,7 @@ function wireSubagentEvents(ctx, configs, warnOnce, on) {
           if (delivered === undefined) { delivered = new Map(); subagentEndDeliveries.set(main.session, delivered) }
           const key = `${info.runId}:${config.id}`
           if (delivered.has(key)) continue
-          // ponytail: 会话内保留最近的投递记录；超大历史改用持久事件索引时可取消此上限。
+          // shortcut: 会话内保留最近的投递记录；超大历史改用持久事件索引时可取消此上限。
           if (delivered.size >= MAX_TRACKED_SESSIONS) delivered.delete(delivered.keys().next().value)
           delivered.set(key, true)
           main.inject(pluginMessage(`subagent-end-${config.id}`, text, `subagent-end ${config.id}`))

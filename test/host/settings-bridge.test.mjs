@@ -748,7 +748,7 @@ test('模块写队列：两个并发写不交错——后入队的写按先入�
   // 不 await 第一个就发第二个：同一队列上的两个并发写。
   const second = call('moduleEnable', { id: ids[1], enabled: true })
   // 不串行时第二个写会趁第一个卡在闸门里自己跑完（此刻它的效果只可能基于「第一个还没落地」的状态）。
-  // ponytail: 200ms 只是串行实现下放行闸门的兜底；两种实现下断言都不依赖这个时长。
+  // shortcut: 200ms 只是串行实现下放行闸门的兜底；两种实现下断言都不依赖这个时长。
   await Promise.race([second.catch(() => {}), new Promise((resolve) => setTimeout(resolve, 200))])
   openGate()
   const [firstSaved, secondSaved] = await Promise.all([first, second])

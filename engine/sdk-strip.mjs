@@ -125,7 +125,7 @@ function parseTsMembers(lines, block) {
 
 /** 行多重集包含：`after` 的每一行都能在 `before` 里找到未用尽的同款（= 只删不增）。 */
 function linesOnlyRemoved(before, after) {
-  // ponytail: O(行长) 计数表，够用；段文本是单次 assembly 的投影，不做字典序指纹。
+  // shortcut: O(行长) 计数表，够用；段文本是单次 assembly 的投影，不做字典序指纹。
   const pool = new Map()
   for (const line of before) pool.set(line, (pool.get(line) ?? 0) + 1)
   for (const line of after) {
@@ -256,7 +256,7 @@ function stripPython(lines, names) {
   }
   if (removed.size === 0) return undefined
   // 删空协议体（只剩注释）不是合法 Python，而补 pass 属于"新增"：保守放弃。
-  // ponytail: 这是刻意的保守上限，不是缺口——真要「一个工具都不给」应在名单/guard
+  // shortcut: 这是刻意的保守上限，不是缺口——真要「一个工具都不给」应在名单/guard
   // 层表达（执行边界），文本裁剪只做剩余呈现补救；若将来需要裁剪到空，改法是把
   // pruned 名单交回官方渲染器重生全文，而不是在这里补 pass。
   const body = lines.slice(header + 1, footer)

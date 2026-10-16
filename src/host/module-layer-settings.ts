@@ -34,7 +34,7 @@ export function readLayerSettings(value: unknown): Record<string, unknown> {
       if (!Object.prototype.hasOwnProperty.call(ENGINE_PARAM_LAYERS, key)) continue
       const expected = ENGINE_PARAM_LAYERS[key as EngineParamKey]
       if (expected !== layer) invalid(`${key} 必须位于 layerSettings.${expected}`)
-      // ponytail: YAML 空值键（`instructionHint:` = null / undefined）**归一为未声明**——null 不是
+      // shortcut: YAML 空值键（`instructionHint:` = null / undefined）**归一为未声明**——null 不是
       // 真实取值，不能遮蔽全局层；显式 true/false 照「存在即覆盖」。要真正关掉就用 false。
       if (entry === null || entry === undefined) continue
       params[key] = entry

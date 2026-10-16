@@ -197,7 +197,7 @@ export function apply(ctx) {
         }
         // 去重：正文已在当前可见上下文里就不再注入（少一份重复 token）。
         // 只有「已加载且仍可见」才跳过——压缩遮蔽掉的注入不算已加载，见 skillLoadedInContext。
-        // ponytail: 同一批次内连调两次 `skill_load` 时，第一次的注入尚未落入会话，去重看不到，
+        // shortcut: 同一批次内连调两次 `skill_load` 时，第一次的注入尚未落入会话，去重看不到，
         // 会重复注入一份；跨批次重复才是常态，等真出现同批重复再按 step 消息判重。
         if (skillLoadedInContext(agent.session, args.name)) {
           return { text: `Skill "${args.name}" is already loaded in this context — its instructions are above (or earlier in this session), so nothing was injected again. Follow them without another load; if the user explicitly asks to reload it, let them re-send it as a /${args.name} gesture.` }

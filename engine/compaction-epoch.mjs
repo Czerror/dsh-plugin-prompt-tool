@@ -82,7 +82,7 @@ export function hasAnchoredReasoning(content, options = {}) { return firstReason
  * 当成新 epoch 的事件重新晋升（5b）；③ 无 surface / 无代次（恢复、重放、其它宿主、既有桩）时
  * 代次恒 undefined，压缩重置永不触发。压缩的**权威判定**因此还得看事件：宿主只在压缩时写
  * 无 `error` 的 `compaction/end`，而成功压缩必然伴随一次 replace。
- * ponytail: 近似而非权威 —— 失效条件：既不写 `compaction/end`、又靠 replace 重写可见上下文，
+ * shortcut: 近似而非权威 —— 失效条件：既不写 `compaction/end`、又靠 replace 重写可见上下文，
  * 或写了成功 `compaction/end` 却没改变可见上下文时，该重置误触发/漏触发。宿主给出「这次 replace
  * 是否压缩 + 边界 seq」的显式信号时改用它。
  */

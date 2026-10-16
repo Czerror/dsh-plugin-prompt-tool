@@ -263,7 +263,7 @@ function writeInstructionPolicyLocked(file: string, options: {
         const created = doc.createNode({})
         doc.setIn(['files', fileId], created)
       } else if (isScalar(previous) && previous.value === null) {
-        // ponytail: 共享 null 锚点不自动展开；保值解引用需要独立的编辑协议。
+        // shortcut: 共享 null 锚点不自动展开；保值解引用需要独立的编辑协议。
         let referenced = false
         if (previous.anchor !== undefined) {
           visit(doc, { Alias(_key, alias) {
