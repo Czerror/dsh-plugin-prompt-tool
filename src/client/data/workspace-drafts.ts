@@ -53,6 +53,9 @@ export interface PersonaSourcesEditorDraft {
   publicationError?: string
 }
 
+/** 工具草稿的形状：`tools`／`saved` 的元素与 `ToolsEditorDraft.fields` 的键都按它算。 */
+export type ToolDraft = Record<string, unknown>
+
 export interface ToolsEditorDraft {
   refresh?: () => void
   tools: Record<string, unknown>[]
@@ -62,6 +65,8 @@ export interface ToolsEditorDraft {
   loaded: boolean
   error: string
   saving: boolean
+  /** 最新优先序号（见 resource-track.ts）：迟到响应不落地、不清 saving。 */
+  latest: number
 }
 
 export interface WorkspaceDrafts {

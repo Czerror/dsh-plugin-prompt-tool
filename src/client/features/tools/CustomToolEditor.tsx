@@ -39,7 +39,8 @@ const SHELLS = ['pwsh', 'powershell', 'cmd', 'sh', 'bash'] as const
  */
 export const SCHEMA_TYPES = ['string', 'number', 'integer', 'boolean', 'null', 'array', 'object', 'json', 'oneOf'] as const
 
-export type ToolDraft = Record<string, unknown>
+import type { ToolDraft } from '../../data/workspace-drafts.ts'
+export type { ToolDraft }
 
 export function asRecord(value: unknown): Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {}

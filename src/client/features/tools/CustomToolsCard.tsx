@@ -1,9 +1,10 @@
 /** 工具管理（tool-pipeline 层）：自定义工具定义。 */
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { Button } from '../../ui/Button.tsx'
 import { bridgeCall } from '../../data/bridge-client.ts'
 import type { PromptToolTranslate } from '../../locales.ts'
 import type { ToolsEditorDraft, WorkspaceDrafts } from '../../data/workspace-drafts.ts'
+import { createToolsEditor } from '../../data/tools-editor.ts'
 import { CustomToolCard, asRecord, type ToolDraft } from './CustomToolEditor.tsx'
 import sharedCss from '../../ui/controls.module.css'
 import featureCss from './tools.module.css'
@@ -15,7 +16,7 @@ export type ToolCreateIntent = { kind: 'blank' | 'template'; spec?: ToolDraft; m
 
 /** 工具草稿的唯一构造点：按模块的编辑区与「新建工具模板」入口共用同一份草稿。 */
 export const createToolsEditorDraft = (): ToolsEditorDraft => ({
-  tools: [], saved: [], expanded: new Set(), fields: new Map(), loaded: false, error: '', saving: false,
+  tools: [], saved: [], expanded: new Set(), fields: new Map(), loaded: false, error: '', saving: false, latest: 0,
 })
 
 /**
@@ -78,131 +79,61 @@ export function useCustomToolsEditor(props: {
     return next
   }, [props.drafts, moduleId])
   const [tools, renderTools] = useState<ToolDraft[]>(editor.tools)
-  const setTools = (next: ToolDraft[]): void => { editor.tools = next; renderTools(next) }
   const [expandedCards, renderExpanded] = useState(editor.expanded)
   const setExpandedCards = (next: Set<number>): void => { editor.expanded = next; renderExpanded(next) }
   const [hasPersistedTools, setHasPersistedTools] = useState(editor.saved.length > 0)
   const [saving, setSaving] = useState(false)
   const [loading, setLoading] = useState(!editor.loaded)
   const [loadError, setLoadError] = useState(editor.error)
-  const [revision, setRevision] = useState(0)
   const disabled = props.disabled === true || loading || loadError.length > 0
-  const activeEditor = useRef<ToolsEditorDraft | null>(editor)
-  useEffect(() => {
-    let active = true
-    activeEditor.current = editor
-    const refresh = (): void => {
-      renderTools(editor.tools)
-      renderExpanded(editor.expanded)
-      setHasPersistedTools(editor.saved.length > 0)
-      setSaving(editor.saving)
-    }
-    editor.refresh = refresh
-    refresh()
-    const cleanup = (): void => {
-      active = false
-      activeEditor.current = null
-      if (editor.refresh === refresh) editor.refresh = undefined
-    }
-    // 无主语：不发模块类请求（卡片由 canEditSubject 判定为只读）。
-    if (moduleId === undefined) { setLoading(false); setLoadError(''); return cleanup }
-    const dirty = JSON.stringify(editor.tools) !== JSON.stringify(editor.saved)
-      || [...editor.fields.values()].some((field) => field.text !== field.source || !!field.error)
-    if (editor.loaded && (dirty || editor.saving) && revision === 0) {
-      setLoading(false)
-      setLoadError(editor.error)
-      return cleanup
-    }
-    // 声明面明确未声明：本卡处于创建模式——**不构造这次读**（读了也是 400），
-    // 草稿从空集开始，保存即由服务端建立该节。
-    const customRequest = readCustomTools(moduleId, undeclared)
-    if (customRequest === undefined) {
-      editor.loaded = true
-      setLoading(false)
-      setLoadError('')
-      return cleanup
-    }
+  // 卸载标记：应答回来时已卸载就不再改状态（owner 的 `isCurrent`）。
+  const active = useRef(true)
+  // owner 在渲染期建，但它的 `changed` 要调渲染镜像；镜像每次渲染重建，故用 ref 取最新的那个。
+  const refreshRef = useRef<() => void>(() => {})
+  const owner = useMemo(() => createToolsEditor(moduleId ?? '', editor, {
+    // 第三个实参 = `x-module-id`：主语＝这张卡所属的模块。服务端**没有任何回退**
+    // （未声明就是没有目标，模块类端点按空目标拒绝），所以这个实参必须带，且只能带该模块的 id。
+    reader: { load: () => readCustomTools(moduleId ?? '', undeclared) },
+    request: (body) => bridgeCall('customTools', body, moduleId ?? ''),
+    isCurrent: () => active.current,
+    changed: refreshRef.current,
+    onDeclared: props.onDeclared,
+  }), [editor, moduleId, undeclared, props.onDeclared])
+  const refresh = useCallback((): void => {
+    renderTools(editor.tools)
+    renderExpanded(editor.expanded)
+    setHasPersistedTools(editor.saved.length > 0)
+    setSaving(editor.saving)
     setLoading(!editor.loaded)
-    setLoadError('')
-    const readingTools = editor.tools
-    void (async () => {
-      // 第三个实参 = `x-module-id`：主语＝这张卡所属的模块。服务端**没有任何回退**
-      // （未声明就是没有目标，模块类端点按空目标拒绝），所以这个实参必须带，且只能带该模块的 id。
-      const customResult = await customRequest
-      if (!active) return
-      if (!customResult.ok) {
-        editor.error = customResult.message ?? t('customTools.loadFailed')
-        setLoadError(editor.error)
-        setLoading(false)
-        return
-      }
-      if (dirty || editor.tools !== readingTools || [...editor.fields.values()].some((field) => field.text !== field.source || !!field.error)) {
-        editor.error = ''
-        setLoadError('')
-        setLoading(false)
-        return
-      }
-      const loadedTools = (customResult.ok ? customResult.value?.customTools ?? [] : []).map((tool) => asRecord(tool))
-      setTools(loadedTools)
-      editor.saved = loadedTools
-      editor.loaded = true
-      editor.error = ''
-      setHasPersistedTools(loadedTools.length > 0)
-      setLoading(false)
-    })()
+    setLoadError(editor.error)
+  }, [editor])
+  refreshRef.current = refresh
+  useEffect(() => {
+    active.current = true
+    refresh()
+    const cleanup = (): void => { active.current = false }
+    // 无主语：不发模块类请求（卡片由 canEditSubject 判定为只读）。
+    if (moduleId === undefined) return cleanup
+    void owner.load()
     return cleanup
-  }, [editor, moduleId, revision, undeclared])
-  const updateTools = (next: ToolDraft[]): void => {
-    if (!disabled) setTools(next)
-  }
+  }, [owner, refresh, moduleId])
+  /** 工具改动只在可编辑时落到草稿；owner 负责草稿与重渲染。 */
+  const updateTools = (next: ToolDraft[]): void => { if (!disabled) owner.mutate(next) }
   const save = (): void => {
-    if (moduleId === undefined || disabled || editor.saving) return
+    if (moduleId === undefined || disabled) return
     if ([...editor.fields.values()].some((field) => field.error || field.text !== field.source)) {
       props.onNotice('error', t('customTools.invalidDraft'))
       return
     }
-    // 保存前清理：工具 parameters 的空 key 待编辑行（与 moduleVariables 保存端清理对齐）。
-    const cleanTools = tools.map((tool) => {
-      const params = asRecord(tool.parameters)
-      const clean: ToolDraft = {}
-      for (const [key, value] of Object.entries(params)) {
-        if (key.trim().length === 0) continue
-        clean[key] = value
+    void owner.save().then((customResult) => {
+      if (customResult === undefined || !customResult.ok) {
+        props.onNotice('error', customResult === undefined ? t('customTools.saveFailed') : ('message' in customResult ? customResult.message : undefined) ?? t('customTools.saveFailed'))
+        return
       }
-      const next = { ...tool }
-      if (Object.keys(clean).length > 0) next.parameters = clean
-      else delete next.parameters
-      return next
-    })
-    setSaving(true)
-    editor.saving = true
-    void bridgeCall('customTools', { customTools: cleanTools, expectedModuleId: moduleId }, moduleId).then((customResult) => {
-      editor.saving = false
-      if (customResult.ok) editor.saved = tools
-      editor.refresh?.()
-      if (activeEditor.current !== editor) return
-      setSaving(false)
-      if (customResult.ok) {
-        setHasPersistedTools(cleanTools.length > 0)
-        props.onDeclared?.()
-        props.onNotice('ok', t('customTools.saved', { count: cleanTools.length }))
-      } else {
-        props.onNotice('error', ('message' in customResult ? customResult.message : undefined) ?? t('customTools.saveFailed'))
-      }
+      props.onNotice('ok', t('customTools.saved', { count: editor.saved.length }))
     })
   }
-  const patchTool = (index: number, patch: Partial<ToolDraft>): void => {
-    const previousId = String(tools[index]?.id ?? index)
-    if (patch.id !== undefined && String(patch.id) !== previousId) {
-      const prefix = `${previousId}:`
-      const previousFields = [...editor.fields] // 重命名会向Map写入，必须遍历快照以免再次遍历新键。
-      for (const [key, field] of previousFields) if (key.startsWith(prefix)) {
-        editor.fields.set(`${String(patch.id)}:${key.slice(prefix.length)}`, field)
-        editor.fields.delete(key)
-      }
-    }
-    updateTools(tools.map((tool, at) => at === index ? { ...tool, ...patch } : tool))
-  }
+  const patchTool = (index: number, patch: Partial<ToolDraft>): void => owner.applyPatch(index, patch)
   const toggleCard = (index: number): void => {
     const next = new Set(expandedCards)
     if (next.has(index)) next.delete(index)
@@ -246,7 +177,7 @@ export function useCustomToolsEditor(props: {
       {undeclared && <p className={styles.configFieldHint} role="status">{t('declare.createHint')}</p>}
       {props.disabled && <p className={styles.configFieldHint} role="status">{t('customTools.readonly')}</p>}
       {loading && <p className={styles.configFieldHint} role="status">{t('customTools.loading')}</p>}
-      {loadError && <p role="alert">{loadError} <Button shape="pill" size="md" variant="outline" type="button" onClick={() => setRevision((value) => value + 1)}>{t('customTools.retry')}</Button></p>}
+      {loadError && <p role="alert">{loadError} <Button shape="pill" size="md" variant="outline" type="button" onClick={() => { void owner.load() }}>{t('customTools.retry')}</Button></p>}
       <fieldset className={styles.customToolsFields} aria-label={t('customTools.fieldsAria')}>
         <div className={styles.configActions}>
           <Button shape="pill" size="sm" variant="outline" type="button" disabled={disabled} onClick={() => createTool({ kind: 'blank', moduleId })}>{t('main.newBlankTool')}</Button>
