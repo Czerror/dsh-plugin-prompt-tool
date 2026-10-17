@@ -42,7 +42,7 @@ export interface RulesWorkspaceProps {
   /** 指令文件卡的设置区：卡是全局段、没有归属模块，主语由装配层按启用模块逐个给出。 */
   renderInstructionSettings?: (config: PromptConfigDraft) => ReactNode
   hasLayerSettings?: (layer: string, moduleId: string) => boolean
-  matchesLayerSettings?: (layer: string, keyword: string, moduleId: string) => boolean
+  matchesLayerSettings?: (layer: string, keyword: string, moduleId: string, capabilitiesOnly?: boolean) => boolean
   renderModuleSettings?: (moduleId: string, layers: readonly string[]) => ReactNode
   /** 页级「添加」下拉的创建项（注入模板按层）：创建编排由本组件统一持有，两页只传清单。 */
   createItems?: readonly ModuleCreateItem[]
@@ -132,7 +132,7 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
       .filter(layer => view === 'all' || view === layer)
     if (missing.length === 0 || props.renderModuleSettings === undefined) return []
     const name = `${module.name ?? ''} ${module.id}`.toLowerCase()
-    const visible = missing.filter(layer => !query || name.includes(query) || props.matchesLayerSettings?.(layer, query, module.id))
+    const visible = missing.filter(layer => !query || name.includes(query) || props.matchesLayerSettings?.(layer, query, module.id, true))
     return visible.length === 0 ? [] : [{ moduleId: module.id, layers: visible }]
   })
   const batchDisabled = entries.length === 0 || entries.some(({ moduleId: id, draft }) => readOnly(id) || !draft.loaded || draft.busy !== undefined || hasRuleFields(draft) || draft.remote !== undefined)

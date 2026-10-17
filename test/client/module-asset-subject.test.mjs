@@ -281,6 +281,16 @@ test('受众页：无规则的已装配能力按受众补编辑卡，已有层�
   const searched = renderElement(AudiencePage, { store, t, audience: 'main', browse: { filter: 'mod-a', viewFilter: 'all' } })
   assert.match(searched, /data-param-key="ptcMainMode"/, '按模块身份搜索不隐藏卡内字段')
   assert.ok(!searched.includes(t('rules.noMatch')), '有能力结果不显示无匹配')
+  const searchStore = { ...store, meta: { ...store.meta, modules: modules.map(module => ({ ...module, declares: ['rules', 'modules', 'customTools'] })) } }
+  const byAsset = renderElement(AudiencePage, { store: searchStore, t, audience: 'main', browse: { filter: 'custom-tools', viewFilter: 'all' } })
+  assert.ok(!byAsset.includes('data-module-settings="mod-a"'), '普通资产搜索不能命中只显示能力的补卡')
+  assert.match(byAsset, /rule-b/, '普通规则卡仍可按其层内资产命中')
+  const onlySupplement = { ...searchStore, meta: { ...searchStore.meta, modules: [searchStore.meta.modules[0]] } }
+  const unmatched = renderElement(AudiencePage, { store: onlySupplement, t, audience: 'main', browse: { filter: 'custom-tools', viewFilter: 'all' } })
+  assert.ok(unmatched.includes(t('rules.noMatch')), '没有实际匹配内容时显示无匹配，不被空补卡抑制')
+  const byCapability = renderElement(AudiencePage, { store: searchStore, t, audience: 'main', browse: { filter: 'present-as', viewFilter: 'all' } })
+  assert.match(byCapability, /data-module-settings="mod-a"/, '能力关键词仍命中补卡')
+  assert.match(byCapability, /data-param-key="ptcMainMode"/, '匹配的能力参数保持在场')
   const subagent = renderElement(AudiencePage, { store, t, audience: 'subagent' })
   assert.match(subagent, /data-module-settings="mod-a"/, '子代理独立补卡')
   assert.match(subagent, /ptcSubagentMode/, '子代理字段出现')

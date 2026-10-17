@@ -320,7 +320,7 @@ export interface InjectionPointSlots {
   hasLayerSettings: (layer: string, moduleId: string) => boolean
   /** 指令文件卡的设置区：卡是全局段、没有归属模块，主语＝**全局层**（存储根 `config.yml`）。 */
   renderInstructionSettings?: (config: PromptConfigDraft) => ReactNode
-  matchesLayerSettings: (layer: string, keyword: string, moduleId: string) => boolean
+  matchesLayerSettings: (layer: string, keyword: string, moduleId: string, capabilitiesOnly?: boolean) => boolean
   renderModuleSettings: (moduleId: string, layers: readonly string[]) => ReactNode
 }
 
@@ -405,10 +405,10 @@ export function injectionPointSlots(input: InjectionPointSlotsInput): InjectionP
         <EngineParamField store={store} param="instructionHint" t={t} instanceId={`instruction-${audience}-${config.id}`} global />
       </div>
     ),
-    matchesLayerSettings: (layer, keyword, moduleId) => [
-      ...layerParamCards(store, layer, moduleId, excluded),
+    matchesLayerSettings: (layer, keyword, moduleId, capabilitiesOnly = false) => [
+      ...layerParamCards(store, layer, moduleId, excluded).filter(id => !capabilitiesOnly || moduleCapability(id) !== undefined),
       ...layerDeclaredCapabilities(store, layer, moduleId).filter((id) => !excluded.includes(id)),
-      ...layerAssets(store, layer, moduleId, excluded),
+      ...(capabilitiesOnly ? [] : layerAssets(store, layer, moduleId, excluded)),
     ].some((id) => matchesLayerGroup(id, keyword, t)),
   }
 }
