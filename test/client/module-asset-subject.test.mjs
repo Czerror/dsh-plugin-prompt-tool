@@ -115,7 +115,7 @@ test('声明面：声明面未下发（老载荷／损坏模块）＝未知，�
 
 test('能力参数：已声明能力不依赖 params 节，未声明能力不显示无效字段', () => {
   const modules = modulesDeclaring(['rules', 'modules'])
-  modules[0].facts.effectiveModules = ['instruction-hint']
+  modules[0].facts.declaredModules = modules[0].facts.effectiveModules = ['instruction-hint']
   const store = stubStore(createWorkspaceDrafts(), modules)
   const html = renderElement(LayerSettingsContent, { store, t, layer: 'pre-step', moduleId: 'mod-a' })
   for (const key of ['instructionHint', 'instructionHintPromoteOn', 'instructionHintIncludeSubagents', 'instructionHintProjectTemplate', 'instructionHintGlobalTemplate', 'instructionHintSuffixTemplate', 'instructionHintMessageTemplate']) {
@@ -123,7 +123,7 @@ test('能力参数：已声明能力不依赖 params 节，未声明能力不显
   }
   modules[0].declares.push('layerSettings')
   assert.match(renderElement(LayerSettingsContent, { store, t, layer: 'pre-step', moduleId: 'mod-a' }), /data-layer-param-group="instruction-hint"/)
-  modules[0].facts.effectiveModules = []
+  modules[0].facts.declaredModules = modules[0].facts.effectiveModules = []
   assert.equal(renderElement(LayerSettingsContent, { store, t, layer: 'pre-step', moduleId: 'mod-a' }), '', '没有能力不生成空参数编辑器')
 })
 
@@ -180,7 +180,7 @@ test('声明面：通用卡的读——未声明一个请求都不发，声明�
 
 test('声明面：逐层出卡——有参数组的层出参数编辑器，没有的层整块不出（不留死入口）', () => {
   const modules = modulesDeclaring(['rules', 'modules'])
-  modules[0].facts.effectiveModules = ['instruction-hint']
+  modules[0].facts.declaredModules = modules[0].facts.effectiveModules = ['instruction-hint']
   const store = stubStore(createWorkspaceDrafts(), modules)
   const render = (layer) => renderElement(LayerSettingsContent, { store, t, layer, moduleId: 'mod-a' })
 
@@ -250,7 +250,7 @@ test('规则工作台：同一层两个模块的规则卡各自按自己模块�
   drafts.rules.set('mod-b', rulesDraft('rule-b'))
   // 只有 A 的装配事实含 tool-git-bash：搜索该能力时只有 A 的卡命中它自己的层内设置。
   const store = stubStore(drafts, [
-    { id: 'mod-a', name: 'A', enabled: true, facts: { ...facts(), effectiveModules: ['tool-git-bash'] } },
+    { id: 'mod-a', name: 'A', enabled: true, facts: { ...facts(), declaredModules: ['tool-git-bash'], effectiveModules: ['tool-git-bash'] } },
     { id: 'mod-b', name: 'B', enabled: true, facts: facts() },
   ])
   const html = renderElement(RulesWorkspace, {
@@ -305,6 +305,27 @@ test('受众页：无规则的已装配能力按受众补编辑卡，已有层�
   store.fields.modulesEnabled = true
   modules[0].facts.sourceMode = 'unknown'
   assert.doesNotMatch(renderElement(AudiencePage, { store, t, audience: 'main' }), /data-module-settings="mod-a"/, '未知装配来源不补卡')
+})
+
+test('能力卡只由 modules 声明准入，全局默认派生的 instruction-hint 不变成模块编辑卡', () => {
+  const drafts = createWorkspaceDrafts()
+  const modules = [{ id: 'ptc-mode', name: 'PTC', enabled: true, declares: ['modules'], facts: {
+    ...facts(), declaredModules: ['present-as', 'run-code-env'], effectiveModules: ['present-as', 'run-code-env', 'instruction-hint'],
+  } }]
+  const store = stubStore(drafts, modules)
+  for (const audience of ['main', 'subagent']) {
+    drafts.expanded.set(`ptc-mode:module-settings:${audience}:pre-step`, true)
+    drafts.expanded.set(`ptc-mode:module-settings:${audience}:tool-pipeline`, true)
+    const html = renderElement(AudiencePage, { store, t, audience })
+    assert.match(html, /data-layer-param-group="present-as"/)
+    assert.doesNotMatch(html, /data-layer-param-group="instruction-hint"/, '继承全局默认不能伪装成该模块声明')
+    assert.doesNotMatch(html, /data-layer-capability="instruction-hint"/)
+  }
+  assert.equal(renderElement(LayerSettingsContent, { store, t, layer: 'pre-step', moduleId: 'ptc-mode' }), '', '内嵌路径也使用相同声明判据')
+  modules[0].facts.declaredModules.push('instruction-hint')
+  const declared = renderElement(AudiencePage, { store, t, audience: 'main' })
+  assert.match(declared, /data-layer-param-group="instruction-hint"/, '显式声明后才显示')
+  assert.match(declared, /data-param-key="instructionHintMessageTemplate"/)
 })
 
 test('展开规则的未完成条件及受众修改不让编辑卡消失；收起后恢复受众过滤', () => {

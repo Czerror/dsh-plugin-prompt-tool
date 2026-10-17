@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import type { RuleDefinition } from '../../../shared/rules.ts'
 import type { RuleAction } from '../../../shared/rules.ts'
-import { MODULE_CAPABILITIES, isModuleCapabilityPresent } from '../../../shared/engine-capabilities.ts'
+import { MODULE_CAPABILITIES, isModuleCapabilityDeclared } from '../../../shared/engine-capabilities.ts'
 import type { ModuleConfigOrderEntry } from '../../../shared/module-config-order.ts'
 import { configIdentityKey } from '../../../shared/module-config-order.ts'
 import type { DraftsPort, InstructionFilesPort, ModuleActionsPort, ModuleFactsPort, NoticePort, RuleEditingPort } from '../../data/store-ports.ts'
@@ -125,7 +125,7 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
     if (moduleDeclares(store.meta.modules, module.id, 'rules') !== false && (!owner?.draft.loaded || owner.draft.error)) return []
     const layers = new Set((owner?.draft.entries ?? []).filter(entry => !entry.deleted && scopeVisible(entry.value, props.scope ?? 'main'))
       .map(entry => entry.value.layer))
-    const missing = MODULE_CAPABILITIES.filter(capability => isModuleCapabilityPresent(capability.id, module.facts)
+    const missing = MODULE_CAPABILITIES.filter(capability => isModuleCapabilityDeclared(capability.id, module.facts)
       && !layers.has(capability.displayLayer))
       .map(capability => capability.displayLayer)
       .filter((layer, index, all) => all.indexOf(layer) === index)

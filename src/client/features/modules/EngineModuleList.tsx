@@ -4,7 +4,7 @@ import { Menu } from '../../ui/Menu.tsx'
 import { Button } from '../../ui/Button.tsx'
 import type { ModuleActionsPort, ModuleFactsPort } from '../../data/store-ports.ts'
 import type { PromptToolTranslate } from '../../locales.ts'
-import { MODULE_CAPABILITIES, ENGINE_RECIPES, engineRecipe, isModuleCapabilityPresent } from '../../../shared/engine-capabilities.ts'
+import { MODULE_CAPABILITIES, ENGINE_RECIPES, engineRecipe, isModuleCapabilityDeclared } from '../../../shared/engine-capabilities.ts'
 import { canEditModule, moduleFactsOf } from '../../data/module-subject.ts'
 
 /** 合并进页级「添加」菜单的创建项（注入模板按层分组）。 */
@@ -63,7 +63,7 @@ export function ModuleCapabilityCreateMenu(props: {
   const facts = moduleFactsOf(store.meta.modules, moduleId)
   const excluded = new Set(excludeCapabilities)
   const items = [
-    ...MODULE_CAPABILITIES.filter(({ id, displayLayer }) => !excluded.has(id) && !isModuleCapabilityPresent(id, facts)
+    ...MODULE_CAPABILITIES.filter(({ id, displayLayer }) => !excluded.has(id) && !isModuleCapabilityDeclared(id, facts)
       && (props.layer === undefined || displayLayer === props.layer))
       .map(({ id }) => ({ id: `cap:${id}`, label: t('modules.addCapabilityItem', { id }) })),
     ...ENGINE_RECIPES.filter(({ capabilities }) => !capabilities.some((id) => excluded.has(id))

@@ -6,7 +6,7 @@
 import { existsSync, rmSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { Scalar, YAMLSeq, parseDocument } from 'yaml'
-import { engineRecipe, isModuleCapabilityPresent, moduleCapability } from '../shared/engine-capabilities.ts'
+import { engineRecipe, isModuleCapabilityDeclared, moduleCapability } from '../shared/engine-capabilities.ts'
 import { isModuleId } from '../shared/module-ids.ts'
 import { ENGINE_PARAM_DEFINITIONS, ENGINE_PARAM_KEYS } from '../shared/engine-params.ts'
 import { MODULE_DEFINITION_FILE } from './paths.ts'
@@ -124,9 +124,8 @@ export function createModuleCapability(
   }
   const currentFacts = resolveModuleFacts(source, moduleDir, true)
   // 创建检查磁盘声明，而不是实际装配：历史策略虽然已经运行，仍需允许补齐 modules。
-  const declaredFacts = { ...currentFacts, effectiveModules: currentFacts.declaredModules }
   const additions = capabilityIds
-    .filter((id) => !isModuleCapabilityPresent(id, declaredFacts))
+    .filter((id) => !isModuleCapabilityDeclared(id, currentFacts))
     .flatMap((id) => moduleCapability(id)?.moduleKeys.slice(0, 1) ?? [])
   const modules = source.modules.filter((item): item is string => typeof item === 'string' && item.length > 0)
   const addedModules: string[] = []

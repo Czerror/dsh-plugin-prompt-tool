@@ -208,13 +208,20 @@ export function impliedModulesForParams(
   return [...implied]
 }
 
-/** 显式模块声明中的实际能力；包含当前参数与顶层策略所需的装配。
- *  创建补声明由 host 单独检查 declaredModules；官方组合行不伪装成可编辑能力。 */
+/** 运行时有效能力，保留隐式装配与已发布的事实查询语义。 */
 export function isModuleCapabilityPresent(id: string, facts: ModuleFacts | undefined): boolean {
   if (facts === undefined || facts.sourceMode !== 'explicit') return false
   const capability = moduleCapability(id)
-  if (capability === undefined) return false
   const modules = facts.effectiveModules ?? facts.declaredModules
+  return capability !== undefined && modules !== null && capability.moduleKeys.some(key => modules.includes(key))
+}
+
+/** 模块编辑面的能力准入只认 modules 声明；运行时派生能力不构成该模块的编辑声明。 */
+export function isModuleCapabilityDeclared(id: string, facts: ModuleFacts | undefined): boolean {
+  if (facts === undefined || facts.sourceMode !== 'explicit') return false
+  const capability = moduleCapability(id)
+  if (capability === undefined) return false
+  const modules = facts.declaredModules
   if (modules === null) return false
   return capability.moduleKeys.some((key) => modules.includes(key))
 }

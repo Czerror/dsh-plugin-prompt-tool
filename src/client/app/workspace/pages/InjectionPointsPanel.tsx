@@ -8,7 +8,7 @@
  * 展示归属只是导航：这里不新增第二份映射，也不改变任何运行时 hook、注册顺序或保存通道。
  */
 import { useEffect, useRef, useState, type ReactNode } from 'react'
-import { MODULE_CAPABILITIES, ENGINE_EDITOR_GROUP_MAP, moduleCapability, engineGroupParamKeys, isModuleCapabilityPresent } from '../../../../shared/engine-capabilities.ts'
+import { MODULE_CAPABILITIES, ENGINE_EDITOR_GROUP_MAP, moduleCapability, engineGroupParamKeys, isModuleCapabilityDeclared } from '../../../../shared/engine-capabilities.ts'
 import type { PromptConfigDraft } from '../../../prompt-tool-types.ts'
 import type { DraftsPort, HostApiPort, ModelsPort, ModuleActionsPort, ModuleFactsPort, NoticePort, ParamsPort, VariablesPort } from '../../../data/store-ports.ts'
 import { canEditModule, moduleDeclares, moduleFactsOf } from '../../../data/module-subject.ts'
@@ -61,7 +61,7 @@ type PanelStore = ModuleFactsPort & DraftsPort & ParamsPort & VariablesPort
 
 /**
  * 该层在共享契约里拥有扁平参数、且**该模块**确实可编辑的编辑组：
- * 能力组要求真实装配（未装配的能力参数写了不生效，不显示假入口）；
+ * 能力组要求模块显式声明，不把全局参数派生能力当作模块编辑入口；
  * 专用编辑组（提示词生成默认值等）不依赖模块装配，始终可编辑。
  * 参数键仍由 `ENGINE_PARAM_DEFINITIONS` 给出；modules 声明可提供默认读数，首次保存建立 layerSettings。
  */
@@ -74,19 +74,19 @@ export function layerParamCards(store: MetaFactsStore, layer: string, moduleId: 
       // 已有专属编辑器的组（模型路由卡、资产卡）不再进通用分组：同一批字段只留一个编辑入口。
       && !isLayerAsset(group.id)
       && engineGroupParamKeys(group.id).length > 0
-      && (moduleCapability(group.id) === undefined || isModuleCapabilityPresent(group.id, facts)))
+      && (moduleCapability(group.id) === undefined || isModuleCapabilityDeclared(group.id, facts)))
     .map((group) => group.id)
 }
 
-/** 该层**该模块**已装配的能力（装配事实来自 `/meta` 的逐模块 facts，不是前端开关）。 */
-export function layerAssembledCapabilities(store: MetaFactsStore, layer: string, moduleId: string | undefined): readonly string[] {
+/** 该层该模块显式声明、可由模块编辑器管理的能力；不含全局参数派生的运行时能力。 */
+export function layerDeclaredCapabilities(store: MetaFactsStore, layer: string, moduleId: string | undefined): readonly string[] {
   const facts = moduleId === undefined ? undefined : moduleFactsOf(store.meta.modules, moduleId)
   return MODULE_CAPABILITIES
-    .filter(({ id, displayLayer }) => displayLayer === layer && isModuleCapabilityPresent(id, facts))
+    .filter(({ id, displayLayer }) => displayLayer === layer && isModuleCapabilityDeclared(id, facts))
     .map(({ id }) => id)
 }
 
-/** 单个已装配能力：装配状态 + 移除入口（二次确认沿用统一对话框）。主语＝该卡的归属模块。 */
+/** 单个已声明能力及移除入口（二次确认沿用统一对话框）。主语＝该卡的归属模块。 */
 function LayerCapabilityRow(props: { store: CapabilityRowStore; t: PromptToolTranslate; moduleId: string; capabilityId: string }): ReactNode {
   const { store, t, moduleId, capabilityId } = props
   const [confirming, setConfirming] = useState(false)
@@ -163,7 +163,7 @@ function matchesLayerGroup(id: string, keyword: string, t: PromptToolTranslate):
 }
 
 /**
- * 本层引擎设置内容：参数分组（按共享契约派生）+ 已装配能力的装配状态与移除入口 +
+ * 本层引擎设置内容：参数分组（按共享契约派生）+ 已声明能力与移除入口 +
  * 该层归属的结构化资产编辑器。规则实例与能力补卡共用此实现；补卡只呈现能力内容，
  * 中；**主语＝该实例卡所属模块**（`moduleId`）：事实、参数读数、变量与写路径全部按它取，
  * 没有模块就没有卡（不进入「先渲染再禁用」的分支）。
@@ -205,7 +205,7 @@ export function LayerSettingsContent(props: {
   const inCreateMode = (id: string): boolean => creatingSection(id) && undeclaredNow(id)
   // 参数组由能力事实派生，不要求 layerSettings 已存在。
   const cards = moduleId === undefined ? [] : layerParamCards(store, layer, moduleId, excluded).filter(id => !props.capabilitiesOnly || moduleCapability(id) !== undefined)
-  const capabilities = moduleId === undefined ? [] : layerAssembledCapabilities(store, layer, moduleId).filter((id) => !excluded.includes(id))
+  const capabilities = moduleId === undefined ? [] : layerDeclaredCapabilities(store, layer, moduleId).filter((id) => !excluded.includes(id))
   const addable = props.capabilitiesOnly || moduleId === undefined ? [] : undeclaredSections(store, layer, moduleId, excluded)
   const pendingAdds = addable.filter((id) => !creatingSection(id))
   // 通用资产卡（不是固定卡）：声明面登记的节照旧出卡；未声明的节只在用户点了添加后出卡；未登记声明面的（模型路由等）不受影响。
@@ -395,7 +395,7 @@ export function injectionPointSlots(input: InjectionPointSlotsInput): InjectionP
     // 本层有可渲染内容就要有设置入口：参数组（固定设置区）不依赖声明面；
     // 通用资产节的「添加」只是它的创建入口，不是本层唯一的编辑器通路。
     hasLayerSettings: (layer: string, moduleId: string) => layerParamCards(store, layer, moduleId, excluded).length > 0
-      || layerAssembledCapabilities(store, layer, moduleId).some((id) => !excluded.includes(id))
+      || layerDeclaredCapabilities(store, layer, moduleId).some((id) => !excluded.includes(id))
       || layerAssets(store, layer, moduleId, excluded).length > 0
       || undeclaredSections(store, layer, moduleId, excluded).length > 0,
     // 指令卡是全局段：设置区主语＝全局层（存储根 config.yml 的 layerSettings），一个开关。
@@ -407,7 +407,7 @@ export function injectionPointSlots(input: InjectionPointSlotsInput): InjectionP
     ),
     matchesLayerSettings: (layer, keyword, moduleId) => [
       ...layerParamCards(store, layer, moduleId, excluded),
-      ...layerAssembledCapabilities(store, layer, moduleId).filter((id) => !excluded.includes(id)),
+      ...layerDeclaredCapabilities(store, layer, moduleId).filter((id) => !excluded.includes(id)),
       ...layerAssets(store, layer, moduleId, excluded),
     ].some((id) => matchesLayerGroup(id, keyword, t)),
   }
