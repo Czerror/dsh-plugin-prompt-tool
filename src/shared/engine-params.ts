@@ -16,6 +16,20 @@
 import type { InjectionPoint } from './engine-capabilities.ts'
 
 export interface EngineParams {
+  presentAsEnabled?: boolean
+  ptcMainMode?: string
+  ptcSubagentMode?: string
+  runCodeEnvEnabled?: boolean
+  runCodeEnvKeys?: string[] | string
+  toolGitBashPath?: string
+  toolGitBashTimeoutMs?: string
+  toolGitBashMaxOutputBytes?: string
+  instructionHintPromoteOn?: string
+  instructionHintIncludeSubagents?: boolean
+  instructionHintProjectTemplate?: string
+  instructionHintGlobalTemplate?: string
+  instructionHintSuffixTemplate?: string
+  instructionHintMessageTemplate?: string
   /** 主会话请求路由 provider；与模型名同时非空时生效。 */
   modelProvider?: string
   /** 模型名；与 provider 同时非空时生效。 */
@@ -100,10 +114,16 @@ export type EngineParamDefinition = ParamRule & {
   /** 未配置时的编辑草稿；不等于强制写入运行时默认值。 */
   defaultValue: string | number | boolean | undefined
   module?: { row: string; key?: string }
+  audience?: 'main' | 'subagent'
 }
 
 /** 类型、校验、卡片归属、草稿默认值和组合行映射的唯一运行时目录。 */
 export const ENGINE_PARAM_DEFINITIONS: Record<EngineParamKey, EngineParamDefinition> = {
+  presentAsEnabled: { kind: 'boolean', defaultValue: true, card: 'present-as', storageLayer: 'tool-pipeline', module: { row: 'present-as', key: 'enabled' } },
+  ptcMainMode: { kind: 'string', options: ['native', 'ptc'], defaultValue: '', card: 'present-as', storageLayer: 'tool-pipeline', audience: 'main', module: { row: 'present-as', key: 'mainMode' } },
+  ptcSubagentMode: { kind: 'string', options: ['native', 'ptc'], defaultValue: '', card: 'present-as', storageLayer: 'tool-pipeline', audience: 'subagent', module: { row: 'present-as', key: 'subagentMode' } },
+  runCodeEnvEnabled: { kind: 'boolean', defaultValue: true, card: 'run-code-env', storageLayer: 'tool-pipeline', module: { row: 'run-code-env', key: 'enabled' } },
+  runCodeEnvKeys: { kind: 'string-list', defaultValue: '', card: 'run-code-env', storageLayer: 'tool-pipeline', module: { row: 'run-code-env', key: 'envKeys' } },
   modelProvider: { kind: 'string', defaultValue: '', card: 'main-model', storageLayer: 'agent-request' },
   modelName: { kind: 'string', defaultValue: '', card: 'main-model', storageLayer: 'agent-request' },
   subagentModelProvider: { kind: 'string', defaultValue: '', card: 'subagent-model', storageLayer: 'subagent-start' },
@@ -114,11 +134,18 @@ export const ENGINE_PARAM_DEFINITIONS: Record<EngineParamKey, EngineParamDefinit
   subagentReasoningEffort: { kind: 'string', defaultValue: '', card: 'subagent-model', storageLayer: 'subagent-start' },
   subagentTemperature: { kind: 'number', check: FINITE_NUMBER, defaultValue: '', card: 'subagent-model', storageLayer: 'subagent-start' },
   subagentMaxTokens: { kind: 'number', check: POSITIVE_INTEGER, defaultValue: '', card: 'subagent-model', storageLayer: 'subagent-start' },
-  // B7 T3：card 随 `context-gate` 卡删除一并改到 prompt-defaults。`module.row` 早已绑定到
-  // `instruction-hint`（B7 T1），所以这条只改展示归属，不改它写进哪一行配置。
-  instructionHint: { kind: 'boolean', defaultValue: false, card: 'prompt-defaults', storageLayer: 'pre-step', module: { row: 'instruction-hint', key: 'enabled' } },
+  instructionHint: { kind: 'boolean', defaultValue: false, card: 'instruction-hint', storageLayer: 'pre-step', module: { row: 'instruction-hint', key: 'enabled' } },
   toolGitBashEnabled: { kind: 'boolean', defaultValue: true, card: 'tool-git-bash', storageLayer: 'tool-pipeline', module: { row: 'tool-git-bash', key: 'enabled' } },
   customToolRequireApproval: { kind: 'string-list', options: ['shell', 'http', 'delegate', 'fs', 'ask-user'], defaultValue: '', card: 'tool-config-engine', storageLayer: 'tool-pipeline', module: { row: 'tool-config-engine', key: 'requireApproval' } },
+  toolGitBashPath: { kind: 'string', defaultValue: '', card: 'tool-git-bash', storageLayer: 'tool-pipeline', module: { row: 'tool-git-bash', key: 'bashPath' } },
+  toolGitBashTimeoutMs: { kind: 'number', check: POSITIVE_INTEGER, defaultValue: '', card: 'tool-git-bash', storageLayer: 'tool-pipeline', module: { row: 'tool-git-bash', key: 'timeoutMs' } },
+  toolGitBashMaxOutputBytes: { kind: 'number', check: POSITIVE_INTEGER, defaultValue: '', card: 'tool-git-bash', storageLayer: 'tool-pipeline', module: { row: 'tool-git-bash', key: 'maxOutputBytes' } },
+  instructionHintPromoteOn: { kind: 'string', options: ['either', 'tool-call', 'assistant-message'], defaultValue: '', card: 'instruction-hint', storageLayer: 'pre-step', module: { row: 'instruction-hint', key: 'promoteOn' } },
+  instructionHintIncludeSubagents: { kind: 'boolean', defaultValue: true, card: 'instruction-hint', storageLayer: 'pre-step', module: { row: 'instruction-hint', key: 'includeSubagents' } },
+  instructionHintProjectTemplate: { kind: 'string', defaultValue: '', card: 'instruction-hint', storageLayer: 'pre-step', module: { row: 'instruction-hint', key: 'projectTemplate' } },
+  instructionHintGlobalTemplate: { kind: 'string', defaultValue: '', card: 'instruction-hint', storageLayer: 'pre-step', module: { row: 'instruction-hint', key: 'globalTemplate' } },
+  instructionHintSuffixTemplate: { kind: 'string', defaultValue: '', card: 'instruction-hint', storageLayer: 'pre-step', module: { row: 'instruction-hint', key: 'suffixTemplate' } },
+  instructionHintMessageTemplate: { kind: 'string', defaultValue: '', card: 'instruction-hint', storageLayer: 'pre-step', module: { row: 'instruction-hint', key: 'messageTemplate' } },
 }
 
 export const ENGINE_PARAM_KEYS = Object.keys(ENGINE_PARAM_DEFINITIONS) as EngineParamKey[]
@@ -168,6 +195,12 @@ export function moduleParamFallbacks(configs: Record<string, Record<string, unkn
     if (binding === undefined) continue
     const value = configs[binding.row]?.[binding.key ?? key]
     if (value !== undefined) result[key] = value
+  }
+  const present = configs['present-as']
+  if (present !== undefined) {
+    const mode = present.mode
+    if (result.ptcMainMode === undefined && typeof mode === 'string') result.ptcMainMode = mode
+    if (result.ptcSubagentMode === undefined && typeof mode === 'string') result.ptcSubagentMode = mode
   }
   return result
 }

@@ -1321,7 +1321,6 @@ test('声明面：读没声明 400 module-not-declared，写路径建立声明�
   const undeclaredSections = [
     ['customTools', 'customTools'],
     ['persona', 'persona'],
-    ['paramOverrides', 'params 或 layerSettings'],
   ]
   for (const [endpoint, sections] of undeclaredSections) {
     const denied = await call(handlers, endpoint)
@@ -1329,6 +1328,9 @@ test('声明面：读没声明 400 module-not-declared，写路径建立声明�
     assert.equal(denied.payload.code, 'module-not-declared', `${endpoint} 的错误码`)
     assert.match(denied.payload.message, new RegExp(sections), `${endpoint} 的 message 要点名缺的节`)
   }
+  const moduleDefaults = await call(handlers, 'paramOverrides')
+  assert.equal(moduleDefaults.status, 200, 'modules 声明可读取有效默认参数')
+  assert.deepEqual(moduleDefaults.payload.value.overrides, {})
   assert.equal(readFileSync(join(undeclared, 'module.yml'), 'utf8'), before, '逐节读拒绝都零写入')
 
   // 未登记声明面的端点照旧放行（「登记表不得过度登记」的行为面配对）。
@@ -1378,6 +1380,63 @@ test('声明面：paramOverrides 写路径建立 layerSettings 声明（读 200 
   const readBack = await call(handlers, 'paramOverrides')
   assert.equal(readBack.status, 200, `写后读应合法：${JSON.stringify(readBack.payload)}`)
   assert.deepEqual(readBack.payload.value.overrides, { modelTemperature: 0.3 })
+})
+
+test('能力参数桥：默认不落盘，主子独立保存回退，所有用户参数往返且非法值零写入', async () => {
+  const dir = makeUserPresetDir('pt-engine-fields-'), id = basename(dir), file = join(dir, 'module.yml')
+  writeFileSync(file, JSON.stringify({ id, modules: ['present-as', 'run-code-env', 'tool-git-bash', 'instruction-hint'], rules: [],
+    moduleConfigs: { 'present-as': { mode: 'ptc', privateField: 'do-not-expose' } } }), 'utf8')
+  const { ctx, handlers } = makeHarness()
+  registerSettingsBridge(ctx, { ns: 'prompt-tool', models: () => ({ available: true, providers: [] }),
+    skills: () => skillsStateStub(), moduleDirectory: () => dir })
+  const request = async overrides => {
+    const result = await call(handlers, 'paramOverrides', overrides === undefined ? {} : { overrides, expectedModuleId: id, rebuild: false })
+    assert.equal(result.status, 200, JSON.stringify(result.payload))
+    return result.payload.value
+  }
+  const initial = await request()
+  assert.deepEqual(initial.overrides, {})
+  assert.equal(initial.effective.ptcMainMode, 'ptc')
+  assert.equal(initial.effective.ptcSubagentMode, 'ptc')
+  assert.ok(initial.effective.runCodeEnvKeys.includes('PATH'))
+  assert.equal(initial.effective.toolGitBashTimeoutMs, 120000)
+  assert.equal(initial.effective.toolGitBashMaxOutputBytes, 64000)
+  assert.equal(initial.effective.instructionHintPromoteOn, 'either')
+  assert.equal(initial.effective.privateField, undefined, '未知行配置不出桥')
+  await request({ ptcMainMode: 'native' })
+  assert.equal((await request()).effective.ptcSubagentMode, 'ptc')
+  await request({ ptcSubagentMode: 'native' })
+  assert.deepEqual((await request()).overrides, { ptcMainMode: 'native', ptcSubagentMode: 'native' })
+  await request({ ptcMainMode: '' })
+  assert.equal((await request()).effective.ptcMainMode, 'ptc')
+  assert.equal((await request()).effective.ptcSubagentMode, 'native')
+  const fields = {
+    presentAsEnabled: false, runCodeEnvEnabled: false, runCodeEnvKeys: ['HOME'],
+    toolGitBashPath: 'D:/portable/Git/bin/bash.exe', toolGitBashTimeoutMs: 60000, toolGitBashMaxOutputBytes: 32000,
+    instructionHint: true, instructionHintPromoteOn: 'tool-call', instructionHintIncludeSubagents: false,
+    instructionHintProjectTemplate: 'Project {{ROOT}}: {{FILES}}', instructionHintGlobalTemplate: 'Global {{FILES}}',
+    instructionHintSuffixTemplate: 'Reference only.', instructionHintMessageTemplate: '{{FILES}} {{SUFFIX}}',
+  }
+  await request(fields)
+  const saved = await request()
+  for (const [key, value] of Object.entries(fields)) {
+    assert.deepEqual(saved.overrides[key], value, key)
+    assert.deepEqual(saved.effective[key], value, key)
+  }
+  const source = parseYaml(readFileSync(file, 'utf8'))
+  assert.deepEqual(source.rules, [], '能力编辑不伪造规则')
+  assert.equal(source.layerSettings['tool-pipeline'].ptcMainMode, undefined)
+  const before = readFileSync(file, 'utf8')
+  for (const overrides of [{ ptcMainMode: 'both' }, { toolGitBashTimeoutMs: 0 }, { toolGitBashMaxOutputBytes: 1.5 }, { instructionHintPromoteOn: 'unknown' }]) {
+    const result = await call(handlers, 'paramOverrides', { overrides, expectedModuleId: id })
+    assert.equal(result.status, 400, JSON.stringify(result.payload))
+    assert.equal(readFileSync(file, 'utf8'), before)
+  }
+  await request({ runCodeEnvKeys: [], toolGitBashTimeoutMs: '', instructionHintProjectTemplate: '' })
+  const restored = await request()
+  assert.ok(restored.effective.runCodeEnvKeys.includes('PATH'))
+  assert.equal(restored.effective.toolGitBashTimeoutMs, 120000)
+  assert.equal(restored.effective.instructionHintProjectTemplate, initial.effective.instructionHintProjectTemplate)
 })
 
 test('param-overrides：空主语＝全局层——写 config.yml 的 layerSettings，模块 module.yml 零改动', async () => {

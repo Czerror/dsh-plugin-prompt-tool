@@ -243,7 +243,8 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
    * （发过去也是 400 `module-not-declared`）。未下发/未知一律为真：不把「读不到」当「没声明」。
    */
   const sectionDeclared = useCallback((moduleId: string, ...sections: readonly string[]): boolean =>
-    moduleDeclares(metaRef.current.modules, moduleId, ...sections) !== false, [])
+    moduleDeclares(metaRef.current.modules, moduleId, ...sections,
+      ...(sections.includes('params') || sections.includes('layerSettings') ? ['modules', 'moduleConfigs'] : [])) !== false, [])
   /** 变量草稿只在有主语时建键：无主语返回 undefined（不建 `undefined:module` 之类的串模块键）。 */
   const variablesDraftFor = useCallback((moduleId: string | undefined, scope: ModuleVariableScope): VariablesDraft | undefined => {
     const key = subjectDraftKey(moduleId, scope)
@@ -391,7 +392,7 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
         return
       }
       const patch = readParamOverridesPatch(res.value.overrides ?? {})
-      const next = paramSnapshot(patch)
+      const next = paramSnapshot(readParamOverridesPatch(res.value.effective ?? res.value.overrides ?? {}))
       entry.baseline = { ...next }
       // 后台读回只更新未在请求期间编辑的字段。
       for (const key of SHARED_PARAM_KEYS) if (!deepEqual(entry.values[key], readingValues[key])) Object.assign(next, { [key]: entry.values[key] })

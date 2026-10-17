@@ -15,7 +15,7 @@ import { declarationsOf, declaresAny, isRecord, type BridgeRuntime } from '../br
 
 /** 本域用到的运行时面：只用这些，不加宽（新域照此声明自己的面）。 */
 type ParamsRuntime = Pick<BridgeRuntime,
-  'deps' | 'register' | 'gate' | 'pendingVariableSettings' | 'runOverridesChange' | 'readParamOverrides' | 'variableView'>
+  'deps' | 'register' | 'gate' | 'pendingVariableSettings' | 'runOverridesChange' | 'readParamOverrides' | 'readParamEffective' | 'variableView'>
 
 export function registerParams(runtime: ParamsRuntime): Array<() => void> {
   return [
@@ -47,7 +47,7 @@ export function registerParams(runtime: ParamsRuntime): Array<() => void> {
           return
         }
         // 全局层读同样软失败（坏文件按空读回；**写**仍然响亮拒绝，不覆盖用户内容）。
-        tx.write(200, { ok: true, value: { overrides: global ? readGlobalLayerSettingsSafe(userModulesDir()).params : runtime.readParamOverrides(dir) } })
+        tx.write(200, { ok: true, value: { overrides: global ? readGlobalLayerSettingsSafe(userModulesDir()).params : runtime.readParamOverrides(dir), ...(global ? {} : { effective: runtime.readParamEffective(dir) }) } })
         return
       }
       if (record.overrides !== undefined && !isRecord(record.overrides)) {

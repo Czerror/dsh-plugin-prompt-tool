@@ -113,7 +113,7 @@ null 或未配置表示官方默认。选择 project-persona 不自动启用它�
 
 ## 共享参数与保存链路
 
-`layerSettings.<层>.<键>` 是共享参数唯一磁盘路径。storageLayer 由参数目录固定，UI displayLayer/card 只影响展示。公开目录目前有13个键：主/子模型各5个，以及 instructionHint、toolGitBashEnabled、customToolRequireApproval。完整表与类型直接查 `ENGINE_PARAM_DEFINITIONS`，根 [module.yml](../module.yml) 由脚本生成参考。
+`layerSettings.<层>.<键>` 是共享参数唯一磁盘路径。storageLayer 由参数目录固定，UI displayLayer/card 只影响展示。公开目录覆盖主/子模型、PTC 呈现、run_code 环境白名单、Git Bash 配置、指令提示和自定义工具审批。完整表与类型直接查 `ENGINE_PARAM_DEFINITIONS`，根 [module.yml](../module.yml) 由脚本生成参考。运行时注入的资源根和规则/工具文件路径不进入通用编辑字段；规则与工具定义继续使用专用编辑器。
 
 同名键在两处存在：模块自己的 `module.yml`（模块层）与存储根 `config.yml` 的 `layerSettings`（**全局层**，固定卡指令卡的设置区写它）。有效值优先级是**模块显式键 ＞ 全局键 ＞ 引擎/行默认**——存在即覆盖，`false`/`0` 也算显式；判据与合并只在 `module-params.ts#resolveModuleParams` 一处，客户端与端点都不重复判。模块没有该键时回退全局值，因此全局开关对未声明它的模块同样生效。
 
@@ -128,6 +128,10 @@ null 或未配置表示官方默认。选择 project-persona 不自动启用它�
 ```
 
 共享参数的空字符串/空列表表示删键，false/0 保留。这个规则不适用于模板变量或规则正文；具名空变量和空正文都合法。只发送已存在或用户修改的参数，不把下拉默认项和能力行默认值固化进定义。
+
+`/param-overrides` 的 `overrides` 只返回模块显式持久键，`effective` 返回白名单内有效参数，包含全局回退及能力组合默认。客户端用有效读数作显示与比较基线，用显式键记录删除语义；未编辑默认值不写盘。声明 `modules` 或 `moduleConfigs` 的模块即使没有 `layerSettings`，也可读取能力默认参数。
+
+PTC 的 `ptcMainMode` 与 `ptcSubagentMode` 分别映射到 `present-as.mainMode/subagentMode`，两页各编辑对应字段；缺省继承该行原有 `mode`。`presentAsEnabled` 与 `runCodeEnvEnabled/runCodeEnvKeys` 仍为模块级共享参数，原模块无需迁移。
 
 组合配置优先级为已声明共享参数桥 > moduleConfigs > 行默认。模块目录仅 source/local，官方工具、规划和压缩来自会话原有预设。自定义能力的新增/删除都经服务端白名单与候选验证，不由客户端猜目录或递归清理用户文件。
 

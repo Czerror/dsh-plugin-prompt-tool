@@ -35,3 +35,12 @@ test('public params dirty state tracks model routes like any other field', () =>
   assert.equal(switchesEqual(baseline, snapshotSwitches({ ...EMPTY_FIELDS, toolGitBashEnabled: false })), false)
   assert.ok(switchesEqual(baseline, snapshotSwitches(EMPTY_FIELDS)), '未编辑的基线仍相等')
 })
+
+test('PTC and extended module parameters keep effective defaults separate from explicit overrides', () => {
+  const effective = { presentAsEnabled: true, ptcMainMode: 'ptc', ptcSubagentMode: 'ptc', toolGitBashTimeoutMs: '120000', instructionHintIncludeSubagents: true }
+  const baseline = { ...EMPTY_FIELDS, ...effective }
+  assert.deepEqual(buildParamOverrides(baseline, { loadedKeys: new Set(), baseline }), {}, '有效默认不固化')
+  assert.deepEqual(buildParamOverrides({ ...baseline, ptcMainMode: 'native' }, { loadedKeys: new Set(), baseline }), { ptcMainMode: 'native' }, '只写被改的受众')
+  assert.deepEqual(buildParamOverrides({ ...baseline, ptcMainMode: '' }, { loadedKeys: new Set(['ptcMainMode']), baseline: { ...baseline, ptcMainMode: 'native' } }), { ptcMainMode: '' })
+  assert.deepEqual(readParamOverridesPatch(effective), effective)
+})

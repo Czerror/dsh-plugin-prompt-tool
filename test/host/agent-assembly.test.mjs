@@ -754,6 +754,39 @@ test('热更新：空启用表到多模块、配置启停与拒绝后重试都�
   assert.deepEqual(h.runtime.moduleIds(agent.id), [])
 })
 
+test('PTC：主子模式独立进入工具面，刷新与压缩保留受众，释放恢复默认', async (t) => {
+  const id = 'audience-presentation'
+  const write = (mainMode, subagentMode) => writeModuleFixture(id, {
+    modules: ['present-as'], moduleConfigs: { 'present-as': { mainMode, subagentMode } },
+  })
+  write('ptc', 'native')
+  const h = await liveAssembly(t, () => [id])
+  h.root.provide('ptcRuntime', { language: 'typescript' })
+  h.root.tools.register({ name: 'visible_tool', description: 'visible',
+    parameters: { type: 'object', properties: {} }, output: { schema: { type: 'object' }, render: () => [] }, execute: async () => ({}),
+  })
+  const main = await h.makeAgent('presentation-main')
+  const child = await h.makeAgent('presentation-child', 1)
+  const names = agent => h.root.tools.wireSchemas(agent).schemas.map(tool => tool.name)
+  assert.deepEqual(names(main), ['run_code'])
+  assert.deepEqual(names(child), ['visible_tool'])
+  for (const agent of [main, child]) {
+    const event = { seq: 1, type: 'compaction/end', data: {} }
+    agent.session.snapshotEvents().push(event)
+    h.root.emit(scopeTarget(agent.session, agent), 'session/event', agent.session, event)
+  }
+  await h.runtime.refresh(id)
+  assert.deepEqual(names(main), ['run_code'])
+  assert.deepEqual(names(child), ['visible_tool'])
+  write('native', 'ptc')
+  await h.runtime.refresh(id)
+  assert.deepEqual(names(main), ['visible_tool'])
+  assert.deepEqual(names(child), ['run_code'])
+  assert.deepEqual(h.warnings, [])
+  await h.runtime.dispose()
+  for (const agent of [main, child]) assert.deepEqual(names(agent), ['visible_tool'])
+})
+
 test('能力注册：私有工具服务与内联工具接入官方注册表，禁用后释放', async (t) => {
   const dir = writeModuleFixture('live-tools', { modules: ['module-rule-tools', 'tool-config-engine'] })
   const { writeModule: materialize } = await import('../../src/host/write-module.ts')

@@ -28,7 +28,7 @@ doc.commentBefore = ` dsh-plugin-prompt-tool — 全参数 module.yml 模板（�
  重建：pnpm --dir $Repo rebuild:module-template；检查：pnpm --dir $Repo rebuild:module-template -- --check
  复制到 DSH_HOME/.prompt-tool/modules/<id>/module.yml，id 与目录名保持一致。
  rules 是唯一行为定义：if 判断树 → then 动作数组（另有 else）；提示词正文属于 inject-text 动作。
- 共享设置只内嵌真实配置卡；空层不自动创建 UI 卡或提示词规则。
+ 能力参数先按 modules 声明派生：有同层规则则内嵌，缺少承载规则则补能力卡；不生成提示词规则。
  九层是独立官方扩展点，没有插件定义的跨层执行顺序。详见 docs/injection-point-contracts.md。
  默认不启用锚定或模型增强；下方参考参数全部为注释，按需启用。
  指令文件正文和指令策略不放在本文件；不得将用户 AGENTS.md/CLAUDE.md 正文复制进来。`

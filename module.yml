@@ -3,7 +3,7 @@
 # 重建：pnpm --dir $Repo rebuild:module-template；检查：pnpm --dir $Repo rebuild:module-template -- --check
 # 复制到 DSH_HOME/.prompt-tool/modules/<id>/module.yml，id 与目录名保持一致。
 # rules 是唯一行为定义：if 判断树 → then 动作数组（另有 else）；提示词正文属于 inject-text 动作。
-# 共享设置只内嵌真实配置卡；空层不自动创建 UI 卡或提示词规则。
+# 能力参数先按 modules 声明派生：有同层规则则内嵌，缺少承载规则则补能力卡；不生成提示词规则。
 # 九层是独立官方扩展点，没有插件定义的跨层执行顺序。详见 docs/injection-point-contracts.md。
 # 默认不启用锚定或模型增强；下方参考参数全部为注释，按需启用。
 # 指令文件正文和指令策略不放在本文件；不得将用户 AGENTS.md/CLAUDE.md 正文复制进来。
@@ -534,6 +534,12 @@ rules:
 #   pre-step:
 #     # 消息批层：共享参数，不属于该层某一条提示词规则。
 #     instructionHint: false # 指令路径提示；boolean
+#     instructionHintPromoteOn: "" # 指令提示晋升触发；string；either | tool-call | assistant-message
+#     instructionHintIncludeSubagents: true # 指令提示包含子代理；boolean
+#     instructionHintProjectTemplate: "" # 项目文件提示模板；string
+#     instructionHintGlobalTemplate: "" # 全局文件提示模板；string
+#     instructionHintSuffixTemplate: "" # 附加提示模板；string
+#     instructionHintMessageTemplate: "" # 消息提示模板；string
 #   system-section:
 #     # 系统段层：共享参数，不属于该层某一条提示词规则。
 #     {}
@@ -552,8 +558,16 @@ rules:
 #     {}
 #   tool-pipeline:
 #     # 工具管线层：共享参数，不属于该层某一条提示词规则。
+#     presentAsEnabled: true # 启用工具呈现配置（主/子共用）；boolean
+#     ptcMainMode: "" # 主会话工具呈现模式；string；native | ptc
+#     ptcSubagentMode: "" # 子代理工具呈现模式；string；native | ptc
+#     runCodeEnvEnabled: true # 启用 run_code 环境变量；boolean
+#     runCodeEnvKeys: "" # run_code 环境变量白名单；string-list
 #     toolGitBashEnabled: true # 启用 Git Bash 工具；boolean
 #     customToolRequireApproval: "" # 执行前需用户批准的工具种类；string-list；shell | http | delegate | fs | ask-user
+#     toolGitBashPath: "" # Git Bash 可执行文件路径；string
+#     toolGitBashTimeoutMs: "" # Git Bash 超时毫秒数；number
+#     toolGitBashMaxOutputBytes: "" # Git Bash 最大输出字节数；number
 #   turn-stop:
 #     # 轮次停止层：共享参数，不属于该层某一条提示词规则。
 #     {}

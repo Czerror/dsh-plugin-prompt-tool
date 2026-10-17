@@ -53,7 +53,7 @@ export const AudiencePage = memo(function AudiencePage(props: {
   // 创建后只定位并展开新卡，不改动用户选定的列表筛选。
   const revealCapability = useCallback((id: string) => {
     setCreatedHidden(viewFilter !== 'all')
-    // 能力卡已退场：定位锚改到该层实例卡内的设置区（层从共享契约派生）。
+    // 创建入口位于规则卡设置区，仍按共享层归属定位。
     const layer = moduleCapability(id)?.displayLayer
     setFocusCapability((current) => ({ id, layer, token: (current?.token ?? 0) + 1 }))
   }, [viewFilter])
@@ -86,6 +86,7 @@ export const AudiencePage = memo(function AudiencePage(props: {
         renderInstructionSettings={layers.renderInstructionSettings}
         hasLayerSettings={layers.hasLayerSettings}
         matchesLayerSettings={layers.matchesLayerSettings}
+        renderModuleSettings={layers.renderModuleSettings}
         beforeCards={layers.beforeCards}
         createItems={createItems}
       />

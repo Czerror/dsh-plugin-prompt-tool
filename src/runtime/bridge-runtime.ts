@@ -466,6 +466,7 @@ export interface BridgeRuntime {
   collectSkills(sessionId?: string): Promise<SkillsCatalogSnapshot>
   collectDescribeExtras(activeDir: string, sessionId?: string): Promise<BridgeSessionExtras>
   readParamOverrides(dir: string): Record<string, unknown>
+  readParamEffective(dir: string): Record<string, unknown>
   variableView(dir: string): ModuleVariablesSnapshot
 }
 
@@ -707,7 +708,7 @@ export function createBridgeRuntime(options: BridgeRuntimeOptions): BridgeRuntim
     let templatePreStepCount = 0
     if (activeDir.length > 0) {
       // 只对声明面登记的节按声明填：`moduleFacts` 是身份与引擎事实（不是 module.yml 的节），不受声明面影响。
-      const paramsDeclared = declaresAny(declares, ['params', 'layerSettings'])
+      const paramsDeclared = declaresAny(declares, ['params', 'layerSettings', 'moduleConfigs'])
       if (paramsDeclared) moduleParams = {}
       try {
         // 聚合响应复用端点已解析的请求目录，与 overrides、配置卡和变量同源。
@@ -715,7 +716,7 @@ export function createBridgeRuntime(options: BridgeRuntimeOptions): BridgeRuntim
         // 定义另读一次：参数解析与 pre-step 计数要的是**定义**而不是事实，且这次读走
         // `loadModuleSpec` 的缓存（键 = module.yml 绝对路径），不重复读盘。
         const spec = loadModuleSpec(activeDir)
-        if (paramsDeclared) {
+        if (paramsDeclared || (facts.effectiveModules?.length ?? 0) > 0) {
           moduleParams = resolveModuleParams(spec, {})
           mergeModuleConfigFallbacks(moduleParams, facts)
         }
@@ -763,6 +764,13 @@ export function createBridgeRuntime(options: BridgeRuntimeOptions): BridgeRuntim
       return {}
     }
   }
+  const readParamEffective = (dir: string): Record<string, unknown> => {
+    const spec = loadModuleSpec(dir)
+    const facts = readModuleFacts(dir)
+    const params = resolveModuleParams(spec, {})
+    mergeModuleConfigFallbacks(params, facts)
+    return Object.fromEntries(Object.entries(params).filter(([key]) => PARAM_KEYS.has(key)))
+  }
 
   const variableView = (dir: string): ModuleVariablesSnapshot => ({
     ...readModuleVariables(dir, { writable: isEditableModuleDir(dir) }),
@@ -793,6 +801,7 @@ export function createBridgeRuntime(options: BridgeRuntimeOptions): BridgeRuntim
     collectSkills,
     collectDescribeExtras,
     readParamOverrides,
+    readParamEffective,
     variableView,
   }
 }

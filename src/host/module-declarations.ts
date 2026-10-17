@@ -22,7 +22,7 @@ export const DECLARED_SECTIONS: Partial<Record<BridgeEndpointKey, readonly strin
   customTools: ['customTools'],
   persona: ['persona'],
   moduleVariables: ['variables', 'variablesEnabled'],
-  paramOverrides: ['params', 'layerSettings'],
+  paramOverrides: ['params', 'layerSettings', 'modules', 'moduleConfigs'],
   rules: ['rules'],
   moduleCapability: ['modules'],
 }

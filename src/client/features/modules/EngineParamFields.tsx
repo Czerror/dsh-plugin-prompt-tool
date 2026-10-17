@@ -38,8 +38,9 @@ export function matchesEditorGroup(id: string, keyword: string, t: PromptToolTra
  * 显示标签不进 shared：shared 只给参数键，UI 按 `param.<键>` 查 prompt-tool 字典
  * （键类型由 ENGINE_PARAM_KEY 的模板字面量约束，新增参数缺词条即编译失败）。
  */
-export function EngineParamFields({ store, moduleId, card, t, instanceId }: { store: EngineParamStore; moduleId: string; card: string; t: PromptToolTranslate; instanceId?: string }): ReactNode {
-  const keys = SHARED_PARAM_KEYS.filter((key) => ENGINE_PARAM_DEFINITIONS[key].card === card)
+export function EngineParamFields({ store, moduleId, card, t, instanceId, audience }: { store: EngineParamStore; moduleId: string; card: string; t: PromptToolTranslate; instanceId?: string; audience?: 'main' | 'subagent' }): ReactNode {
+  const keys = SHARED_PARAM_KEYS.filter((key) => ENGINE_PARAM_DEFINITIONS[key].card === card
+    && (ENGINE_PARAM_DEFINITIONS[key].audience === undefined || ENGINE_PARAM_DEFINITIONS[key].audience === audience))
   const primary = keys.find((key) => ENGINE_PARAM_DEFINITIONS[key].module?.key === 'enabled')
   const subagents = keys.find((key) => ENGINE_PARAM_DEFINITIONS[key].module?.key === 'includeSubagents')
   const paired = primary !== undefined && subagents !== undefined ? [primary, subagents] : []
@@ -131,6 +132,8 @@ export function EngineParamField({ store, param, t, instanceId, ...subject }: {
     either: t('param.option.either'),
     'tool-call': t('param.option.tool-call'),
     'assistant-message': t('param.option.assistant-message'),
+    native: t('param.option.native'),
+    ptc: t('param.option.ptc'),
   }
   const menuField = definition.kind === 'string' && definition.options !== undefined
   if (definition.kind === 'string-list') {

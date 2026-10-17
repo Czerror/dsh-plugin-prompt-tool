@@ -41,6 +41,19 @@ test('present-as：native 不依赖 ptcRuntime，直接声明', () => {
   assert.deepEqual(h.calls, ['native'])
 })
 
+test('present-as：主子模式独立，缺省仍继承旧 mode', () => {
+  const config = { enabled: true, mode: 'ptc', mainMode: 'native', subagentMode: 'ptc' }
+  for (const [depth, expected] of [[0, 'native'], [1, 'ptc'], [2, 'ptc']]) {
+    const h = makeCtx()
+    apply(h.ctx, config, { agent: { session: { header: { delegationDepth: depth } } } })
+    assert.deepEqual(h.calls, [expected])
+  }
+  const legacy = makeCtx()
+  apply(legacy.ctx, { enabled: true, mode: 'native' }, { agent: { session: { header: { delegationDepth: 1 } } } })
+  assert.deepEqual(legacy.calls, ['native'])
+  assert.deepEqual(config, { enabled: true, mode: 'ptc', mainMode: 'native', subagentMode: 'ptc' }, '共享配置不得被某个受众改写')
+})
+
 test('present-as：未声明 enabled 即关闭；非法配置挂载期拒绝', () => {
   const off = makeCtx()
   apply(off.ctx, { mode: 'ptc' })
@@ -53,10 +66,11 @@ test('present-as：未声明 enabled 即关闭；非法配置挂载期拒绝', (
   assert.throws(() => apply(off.ctx, undefined), /mode must be one of/)
   assert.throws(() => apply(off.ctx, { enabled: 'yes', mode: 'ptc' }), /enabled must be a boolean/)
   assert.throws(() => apply(off.ctx, { enabled: true, mode: 'ptc', extra: 1 }), /unknown config key/)
+  assert.throws(() => apply(off.ctx, { enabled: true, mode: 'ptc', subagentMode: 'both' }), /subagentMode must be one of/)
 })
 
 test('present-as：契约面——插件名、inject 声明与配置键集', () => {
   assert.equal(pluginName, 'present-as')
   assert.deepEqual(inject, ['tools'], 'ptcRuntime 刻意不进 inject：native 行必须能在没有运行时的部署挂载')
-  assert.deepEqual([...configContract.allowedKeys].sort(), ['enabled', 'mode'])
+  assert.deepEqual([...configContract.allowedKeys].sort(), ['enabled', 'mainMode', 'mode', 'subagentMode'])
 })

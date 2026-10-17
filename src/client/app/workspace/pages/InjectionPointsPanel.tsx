@@ -16,6 +16,8 @@ import type { PromptToolLocaleKey, PromptToolTranslate } from '../../../locales.
 import { ConfirmDialog } from '../../../ui/ConfirmDialog.tsx'
 import { Button } from '../../../ui/Button.tsx'
 import { EngineParamField, EngineParamFields, matchesEditorGroup } from '../../../features/modules/EngineParamFields.tsx'
+import { EngineModuleCard } from '../../../ui/EngineModuleCard.tsx'
+import { LAYER_LABEL_KEYS, translateLabel } from '../../../features/prompts/prompt-config-policy.ts'
 import { ModuleCapabilityCreateMenu } from '../../../features/modules/EngineModuleList.tsx'
 import { CurrentSessionModel } from '../../../features/models/CurrentSessionModel.tsx'
 import { ModulePersonaCard } from '../../../features/persona/ModulePersonaCard.tsx'
@@ -35,6 +37,10 @@ const CARD_LABEL_KEYS: Record<string, PromptToolLocaleKey> = {
   'subagent-model': 'modules.group.subagent-model',
   'str-replace-editor': 'modules.group.str-replace-editor',
   'tool-config-engine': 'modules.group.tool-config-engine',
+  'present-as': 'modules.group.present-as',
+  'run-code-env': 'modules.group.run-code-env',
+  'instruction-hint': 'modules.group.instruction-hint',
+  'tool-git-bash': 'modules.group.tool-git-bash',
 }
 
 /**
@@ -57,10 +63,7 @@ type PanelStore = ModuleFactsPort & DraftsPort & ParamsPort & VariablesPort
  * 该层在共享契约里拥有扁平参数、且**该模块**确实可编辑的编辑组：
  * 能力组要求真实装配（未装配的能力参数写了不生效，不显示假入口）；
  * 专用编辑组（提示词生成默认值等）不依赖模块装配，始终可编辑。
- * 参数键仍由 `ENGINE_PARAM_DEFINITIONS` 给出，这里不另抄键表，也不按层硬编码。
- *
- * 声明面（ADR-0014）只决定**发不发这次参数读**（store 侧按 `/meta` 跳过未声明的读），
- * 不决定参数组出不出场：参数组是指令卡内的固定设置区，未声明时按空内容渲染、保存即建立声明。
+ * 参数键仍由 `ENGINE_PARAM_DEFINITIONS` 给出；modules 声明可提供默认读数，首次保存建立 layerSettings。
  */
 export function layerParamCards(store: MetaFactsStore, layer: string, moduleId: string | undefined, exclude: readonly string[] = []): readonly string[] {
   const excluded = new Set(exclude)
@@ -161,7 +164,7 @@ function matchesLayerGroup(id: string, keyword: string, t: PromptToolTranslate):
 
 /**
  * 本层引擎设置内容：参数分组（按共享契约派生）+ 已装配能力的装配状态与移除入口 +
- * 该层归属的结构化资产编辑器。由 `injectionPointSlots` 注入到每张本层实例卡的折叠区
+ * 该层归属的结构化资产编辑器。规则实例与能力补卡共用此实现；补卡只呈现能力内容，
  * 中；**主语＝该实例卡所属模块**（`moduleId`）：事实、参数读数、变量与写路径全部按它取，
  * 没有模块就没有卡（不进入「先渲染再禁用」的分支）。
  */
@@ -180,6 +183,8 @@ export function LayerSettingsContent(props: {
   keyword?: string
   /** 初始创建模式（外部装配／测试用；生产路径由「添加」按钮驱动）。参数组是固定设置区，不在此列。 */
   creatingSections?: readonly string[]
+  audience?: 'main' | 'subagent'
+  capabilitiesOnly?: boolean
 }): ReactNode {
   const { store, t, layer } = props
   const moduleId = props.moduleId
@@ -198,17 +203,17 @@ export function LayerSettingsContent(props: {
   }
   /** 创建模式＝「点了添加」且「此刻仍未声明」：写成功后快照刷新，创建模式自动退出，卡片恢复回读与正常形态。 */
   const inCreateMode = (id: string): boolean => creatingSection(id) && undeclaredNow(id)
-  // 参数组是指令卡内的固定设置区：只看该层有没有可渲染的参数组，不看声明面（未声明＝不发读 + 空内容）。
-  const cards = moduleId === undefined ? [] : layerParamCards(store, layer, moduleId, excluded)
+  // 参数组由能力事实派生，不要求 layerSettings 已存在。
+  const cards = moduleId === undefined ? [] : layerParamCards(store, layer, moduleId, excluded).filter(id => !props.capabilitiesOnly || moduleCapability(id) !== undefined)
   const capabilities = moduleId === undefined ? [] : layerAssembledCapabilities(store, layer, moduleId).filter((id) => !excluded.includes(id))
-  const addable = moduleId === undefined ? [] : undeclaredSections(store, layer, moduleId, excluded)
+  const addable = props.capabilitiesOnly || moduleId === undefined ? [] : undeclaredSections(store, layer, moduleId, excluded)
   const pendingAdds = addable.filter((id) => !creatingSection(id))
   // 通用资产卡（不是固定卡）：声明面登记的节照旧出卡；未声明的节只在用户点了添加后出卡；未登记声明面的（模型路由等）不受影响。
-  const assets = moduleId === undefined
+  const assets = props.capabilitiesOnly ? [] : moduleId === undefined
     ? []
     : assetCandidates(layer, excluded).filter((id) => declaredOrUnknown(store, moduleId, ASSET_SECTIONS[id]) || inCreateMode(id))
   // 同层每张实例卡各渲染一份设置内容：instanceId 带上卡身份，DOM id 才不会互相冲突。
-  const instanceId = `layer-${layer}-${props.configId ?? 'standalone'}`
+  const instanceId = `layer-${moduleId}-${layer}-${props.configId ?? 'standalone'}`
   const canEdit = moduleId !== undefined && canEditModule(store.fields, store.meta.modules, moduleId)
   const keyword = (props.keyword ?? '').trim().toLowerCase()
   const matches = (id: string): boolean => matchesLayerGroup(id, keyword, t)
@@ -227,9 +232,9 @@ export function LayerSettingsContent(props: {
   const afterDeclared = (): void => { void store.load({ silent: true }) }
   return (
     <div className={css.settings} data-layer-settings-content={layer}>
-      <div className={css.actions}>
+      {!props.capabilitiesOnly && <div className={css.actions}>
         <ModuleCapabilityCreateMenu store={store} t={t} layer={layer} moduleId={moduleId} excludeCapabilities={excluded} onCreated={props.onCreated} />
-      </div>
+      </div>}
       {pendingAdds.map((id) => (
         <section key={id} className={css.asset} data-layer-asset-add={id} aria-label={t(CARD_LABEL_KEYS[id] ?? 'modules.layer.asset')}>
           <h4 className={css.groupTitle}>{t(CARD_LABEL_KEYS[id] ?? 'modules.layer.asset')}</h4>
@@ -247,7 +252,7 @@ export function LayerSettingsContent(props: {
           aria-label={t(CARD_LABEL_KEYS[card] ?? 'modules.group.other')}>
           <h4 className={css.groupTitle}>{t(CARD_LABEL_KEYS[card] ?? 'modules.group.other')}</h4>
           <div className={css.paramFields} data-layer-param-fields={card}>
-            <EngineParamFields store={store} moduleId={moduleId} card={card} t={t} instanceId={`${instanceId}-${card}`} />
+            <EngineParamFields store={store} moduleId={moduleId} card={card} t={t} audience={props.audience} instanceId={`${instanceId}-${props.audience ?? 'shared'}-${card}`} />
           </div>
         </section>
       ))}
@@ -316,6 +321,7 @@ export interface InjectionPointSlots {
   /** 指令文件卡的设置区：卡是全局段、没有归属模块，主语＝**全局层**（存储根 `config.yml`）。 */
   renderInstructionSettings?: (config: PromptConfigDraft) => ReactNode
   matchesLayerSettings: (layer: string, keyword: string, moduleId: string) => boolean
+  renderModuleSettings: (moduleId: string, layers: readonly string[]) => ReactNode
 }
 
 export interface InjectionPointSlotsInput {
@@ -366,7 +372,25 @@ export function injectionPointSlots(input: InjectionPointSlotsInput): InjectionP
         onChooseToolTemplate={onChooseToolTemplate}
         onCreated={input.onCreated}
         keyword={input.keyword}
+        audience={audience}
       />
+    ),
+    renderModuleSettings: (moduleId, layers) => (
+      <>
+        {layers.map(layer => {
+          const key = `${moduleId}:module-settings:${audience}:${layer}`
+          const module = store.meta.modules?.find(item => item.id === moduleId)
+          const query = (input.keyword ?? '').trim().toLowerCase()
+          const matchesModule = `${module?.name ?? ''} ${moduleId}`.toLowerCase().includes(query)
+          return <EngineModuleCard key={key} name={module?.name ?? moduleId}
+            layer={translateLabel(t, LAYER_LABEL_KEYS, layer)} meta={`${t('rules.source', { module: moduleId })} · ${t(`audience.${audience}`)}`}
+            defaultExpanded={store.editorDrafts.expanded.get(key) === true}
+            onExpandedChange={next => { store.editorDrafts.expanded.set(key, next); store.publishDrafts() }}>
+            <LayerSettingsContent store={store} t={t} layer={layer} moduleId={moduleId} configId={`module-${audience}-${layer}`}
+              excludeCapabilities={excluded} keyword={matchesModule ? '' : input.keyword} audience={audience} capabilitiesOnly />
+          </EngineModuleCard>
+        })}
+      </>
     ),
     // 本层有可渲染内容就要有设置入口：参数组（固定设置区）不依赖声明面；
     // 通用资产节的「添加」只是它的创建入口，不是本层唯一的编辑器通路。

@@ -190,6 +190,8 @@ assembly 负责呈现，sdk-strip 负责 SDK 文本，guard 负责最终执行�
 
 随包内置模块 `ptc-mode` 就是这两行的组合（默认不启用；启用会重挂所有存活 agent）。PTC 部署通常把本行与 `run-code-env` 装在同一模块里：PTC 下 `run_code` 程序里的 `process.env` 恒为空（官方安全设计），而 PATH／HOME 这类非敏感事实常被需要——`run-code-env` 在每个程序执行前注入一份冻结的 `env` 全局并注册 `## run_code environment` 提示段，且只在存在 `run_code` 传输的 scope 生效，对 native 会话零副作用。规则则不必加：模型收到的指引已由官方的 `PTC_ONLY` 段（只有 `run_code` 能直接调用）与生成的 `tools:sdk` 段提供。
 
+`mode` 是兼容默认；可选 `mainMode` / `subagentMode` 分别覆盖主会话和子代理，省略仍继承 `mode`。配装通过引擎 `apply(ctx, config, { agent })` 传入真实 Agent，`present-as` 复用 `isDelegated(agent.session)` 选择模式，不从 Context 或页面状态猜测身份，也不修改共享配置。刷新为各 Agent 重挂独立贡献，压缩不改变受众，释放后恢复宿主默认。
+
 ## 自定义工具与宿主契约
 
 工具通过已安装 `@deepseek-ai/dsh-tools` 的 defineTool/官方转换器定义，使用真实 ToolExecution 的 agent、signal、调用身份；异步工作观察或转发 caller-owned signal。delegate 走 `ctx.tools.execute`，保留批准、拒绝和取消管线。

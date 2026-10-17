@@ -1,12 +1,13 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import type { RuleDefinition } from '../../../shared/rules.ts'
 import type { RuleAction } from '../../../shared/rules.ts'
+import { MODULE_CAPABILITIES, isModuleCapabilityPresent } from '../../../shared/engine-capabilities.ts'
 import type { ModuleConfigOrderEntry } from '../../../shared/module-config-order.ts'
 import { configIdentityKey } from '../../../shared/module-config-order.ts'
 import type { DraftsPort, InstructionFilesPort, ModuleActionsPort, ModuleFactsPort, NoticePort, RuleEditingPort } from '../../data/store-ports.ts'
 import { usePromptToolFields } from '../../data/use-prompt-tool-fields.ts'
 import { useModuleRuleEditors, type ModuleRuleEditor } from '../../data/use-rule-editor.ts'
-import { BLANK_MODULE_TEMPLATE, canEditModule, writableModuleTargets } from '../../data/module-subject.ts'
+import { BLANK_MODULE_TEMPLATE, canEditModule, moduleDeclares, writableModuleTargets } from '../../data/module-subject.ts'
 import { useModuleConfigOrder } from '../../data/use-module-config-order.ts'
 import { reorderToView, sameConfigPosition } from '../../data/prompt-config-order.ts'
 import { hasRuleFields, rulesDirty } from '../../data/rule-drafts.ts'
@@ -42,6 +43,7 @@ export interface RulesWorkspaceProps {
   renderInstructionSettings?: (config: PromptConfigDraft) => ReactNode
   hasLayerSettings?: (layer: string, moduleId: string) => boolean
   matchesLayerSettings?: (layer: string, keyword: string, moduleId: string) => boolean
+  renderModuleSettings?: (moduleId: string, layers: readonly string[]) => ReactNode
   /** 页级「添加」下拉的创建项（注入模板按层）：创建编排由本组件统一持有，两页只传清单。 */
   createItems?: readonly ModuleCreateItem[]
   /** SSR 可断言的入口：直接以「模板已选完、等选目标」的状态渲染目标选择浮层本身。 */
@@ -76,7 +78,8 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
   const [filter, setFilter] = useState(props.browse?.filter ?? '')
   // 卡片准入的第一优先级是存储根 config.yml 的启用表：未启用的模块不建编辑器、不读 rules/*.yml。
   // 排序快照与任何会话级目标都不参与准入（没有「当前编辑目标」）。
-  const ownerIds = (store.meta.modules ?? []).filter(module => module.enabled === true).map(module => module.id)
+  const enabledModules = (store.meta.modules ?? []).filter(module => module.enabled === true)
+  const ownerIds = enabledModules.filter(module => moduleDeclares(store.meta.modules, module.id, 'rules') !== false).map(module => module.id)
   // 排序请求生命周期归 useModuleConfigOrder（全仓唯一一份实现）；页面只提供「保存成功后要刷新哪些编辑器」。
   const ownersRef = useRef<ModuleRuleEditor[]>([])
   const order = useModuleConfigOrder(t, async () => (await Promise.all(ownersRef.current.map(owner => owner.editor.load(true)))).every(Boolean))
@@ -117,6 +120,21 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
     .filter(({ entry, moduleId: id, key }) => expanded === key || (view === 'all' || view === 'context-activation' && hasContextActivation([...entry.value.then, ...entry.value.else ?? []]) || entry.value.layer === view)
       && (!query || JSON.stringify(entry.value).toLowerCase().includes(query) || entry.value.layer !== undefined && props.matchesLayerSettings?.(entry.value.layer, query, id)))
     .sort((a, b) => (rank.get(a.identity) ?? Number.MAX_SAFE_INTEGER) - (rank.get(b.identity) ?? Number.MAX_SAFE_INTEGER))
+  const moduleSettings = enabledModules.flatMap(module => {
+    const owner = owners.find(item => item.moduleId === module.id)
+    if (moduleDeclares(store.meta.modules, module.id, 'rules') !== false && (!owner?.draft.loaded || owner.draft.error)) return []
+    const layers = new Set((owner?.draft.entries ?? []).filter(entry => !entry.deleted && scopeVisible(entry.value, props.scope ?? 'main'))
+      .map(entry => entry.value.layer))
+    const missing = MODULE_CAPABILITIES.filter(capability => isModuleCapabilityPresent(capability.id, module.facts)
+      && !layers.has(capability.displayLayer))
+      .map(capability => capability.displayLayer)
+      .filter((layer, index, all) => all.indexOf(layer) === index)
+      .filter(layer => view === 'all' || view === layer)
+    if (missing.length === 0 || props.renderModuleSettings === undefined) return []
+    const name = `${module.name ?? ''} ${module.id}`.toLowerCase()
+    const visible = missing.filter(layer => !query || name.includes(query) || props.matchesLayerSettings?.(layer, query, module.id))
+    return visible.length === 0 ? [] : [{ moduleId: module.id, layers: visible }]
+  })
   const batchDisabled = entries.length === 0 || entries.some(({ moduleId: id, draft }) => readOnly(id) || !draft.loaded || draft.busy !== undefined || hasRuleFields(draft) || draft.remote !== undefined)
   const batchSetEnabled = (enabled: boolean): void => {
     if (batchDisabled) return
@@ -199,6 +217,7 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
     {props.createdHidden && <Button variant="outline" shape="pill" onClick={props.onShowCreated}>{t('rules.showCreated')}</Button>}
     {instructionCards}
     {props.beforeCards}
+    {moduleSettings.map(item => <div key={`module-settings-${props.scope ?? 'main'}-${item.moduleId}`} className={css.workspace} data-module-settings={item.moduleId}>{props.renderModuleSettings!(item.moduleId, item.layers)}</div>)}
     {entries.map(row => {
         const { entry, draft, editor, moduleId: id, key } = row
         const orderEntry = order.snapshot?.entries.find(item => configIdentityKey(item) === row.identity)
@@ -232,7 +251,7 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
             renderSettings={entry.value.layer !== undefined && props.hasLayerSettings?.(entry.value.layer, id) && props.renderLayerSettings ? (rule, module) => props.renderLayerSettings!(rule.layer!, { id: rule.id, layer: rule.layer }, module, create.openToolsForModule) : undefined} />
         </div>
       })}
-    {entries.length === 0 && (query !== '' || view !== 'all') && owners.every(owner => owner.draft.loaded) && <p>{t('rules.noMatch')}</p>}
+    {entries.length === 0 && moduleSettings.length === 0 && (query !== '' || view !== 'all') && owners.every(owner => owner.draft.loaded) && <p>{t('rules.noMatch')}</p>}
     {discard && <ConfirmDialog title={t('triggers.discard')} description={t('triggers.discardHint')} confirmLabel={t('triggers.discard')} cancelLabel={t('triggers.cancel')} onCancel={() => setDiscard(undefined)} onConfirm={() => { owners.find(owner => owner.moduleId === discard)?.editor.discard(); setDiscard(undefined) }} />}
   </section>
 }

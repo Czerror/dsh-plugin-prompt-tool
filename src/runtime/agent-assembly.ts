@@ -125,7 +125,7 @@ function engineModuleFile(engineDir: string, id: string): string | undefined {
 
 export interface PreparedAssembly {
   rules: unknown[]
-  modules: Array<{ id: string; apply: (ctx: Context, config: Record<string, unknown>) => unknown; config: Record<string, unknown> }>
+  modules: Array<{ id: string; apply: (ctx: Context, config: Record<string, unknown>, options?: { agent: Agent }) => unknown; config: Record<string, unknown> }>
   services: Set<string>
   moduleId: string
   persona?: ModuleSpec['persona']
@@ -187,7 +187,7 @@ export async function prepareAssembly(
     // 官方组合行与能力 recipe（只有 library yml、没有 engine mjs）由会话原有预设提供。
     if (file === undefined) continue
     const module = await import(pathToFileURL(file).href) as {
-      apply?: (ctx: Context, config: Record<string, unknown>) => unknown
+      apply?: PreparedAssembly['modules'][number]['apply']
       inject?: readonly string[]
     }
     if (typeof module.apply !== 'function') throw new Error(`引擎能力缺少 apply：${id}`)
@@ -433,7 +433,7 @@ export function createAgentAssembly(ctx: Context, options: AgentAssemblyOptions)
             }
             // 引擎入口既有同步也有 async：先 await 再判
             // disposer，否则 Promise 会被当成清理函数存下来，永不被调用。
-            const result: unknown = await module.apply(scopeCtx, module.config)
+            const result: unknown = await module.apply(scopeCtx, module.config, { agent })
             if (typeof result === 'function') scopeCtx.effect(() => result as () => void, module.id)
           }
         }

@@ -567,7 +567,7 @@ export interface BridgeValueMap {
   agentsFile: InstructionFileWriteResult
   instructionsPolicy: { policy: InstructionPolicy; revision: string | null; exists: boolean; error?: string }
   /** 参数/提示词配置只保存当前模块，不同步宿主全局默认模型。 */
-  paramOverrides: { overrides?: Record<string, unknown>; promptConfigs?: unknown[] }
+  paramOverrides: { overrides?: Record<string, unknown>; effective?: Record<string, unknown>; promptConfigs?: unknown[] }
   triggers: { triggers: unknown[]; revision: string; meta: TriggerEditorMeta }
   rules: RulesSnapshot
   persona: PersonaSnapshot & { persisted?: boolean; publicationPending?: boolean; publicationError?: string }

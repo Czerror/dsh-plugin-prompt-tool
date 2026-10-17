@@ -113,23 +113,18 @@ test('声明面：声明面未下发（老载荷／损坏模块）＝未知，�
   assert.doesNotMatch(html, /data-declare-section="customTools"/)
 })
 
-test('声明面：params／layerSettings 未声明也照常渲染参数组（固定设置区，不是通用卡）', () => {
-  const store = stubStore(createWorkspaceDrafts(), modulesDeclaring(['rules']))
+test('能力参数：已声明能力不依赖 params 节，未声明能力不显示无效字段', () => {
+  const modules = modulesDeclaring(['rules', 'modules'])
+  modules[0].facts.effectiveModules = ['instruction-hint']
+  const store = stubStore(createWorkspaceDrafts(), modules)
   const html = renderElement(LayerSettingsContent, { store, t, layer: 'pre-step', moduleId: 'mod-a' })
-  assert.match(html, /data-layer-param-group="prompt-defaults"/, '未声明 params 也出参数组（不许 return []）')
-  assert.match(html, /data-layer-param-fields="prompt-defaults"/, '参数控件照旧渲染出来')
-  // 对照：声明了 params 的模块渲染形态一致（渲染不随声明面变）。
-  const declaredStore = stubStore(createWorkspaceDrafts(), modulesDeclaring(['rules', 'params']))
-  const declaredHtml = renderElement(LayerSettingsContent, { store: declaredStore, t, layer: 'pre-step', moduleId: 'mod-a' })
-  assert.match(declaredHtml, /data-layer-param-group="prompt-defaults"/, '已声明照旧出参数组')
-})
-
-test('声明面：未声明任何节的模块，参数组与添加入口同时在场（入口不是唯一通路）', () => {
-  const store = stubStore(createWorkspaceDrafts(), modulesDeclaring(['rules']))
-  const html = renderElement(LayerSettingsContent, { store, t, layer: 'pre-step', moduleId: 'mod-a' })
-  assert.match(html, /data-layer-param-group="prompt-defaults"/, '参数编辑器在场')
-  assert.match(html, /data-layer-param-fields="prompt-defaults"/, '参数控件（含路径指引设置）渲染出来')
-  assert.doesNotMatch(html, /data-declare-section="params"/, '参数组不走「添加入口」通路，没有多余的入口')
+  for (const key of ['instructionHint', 'instructionHintPromoteOn', 'instructionHintIncludeSubagents', 'instructionHintProjectTemplate', 'instructionHintGlobalTemplate', 'instructionHintSuffixTemplate', 'instructionHintMessageTemplate']) {
+    assert.ok(html.includes(`data-param-key="${key}"`), `${key} 可编辑`)
+  }
+  modules[0].declares.push('layerSettings')
+  assert.match(renderElement(LayerSettingsContent, { store, t, layer: 'pre-step', moduleId: 'mod-a' }), /data-layer-param-group="instruction-hint"/)
+  modules[0].facts.effectiveModules = []
+  assert.equal(renderElement(LayerSettingsContent, { store, t, layer: 'pre-step', moduleId: 'mod-a' }), '', '没有能力不生成空参数编辑器')
 })
 
 test('声明面：人设写载荷——创建模式不传 expectedRevision，已声明带读取版本', () => {
@@ -171,8 +166,6 @@ test('声明面：通用卡的读——未声明一个请求都不发，声明�
     drafts.expanded.set('mod-a:persona:main', true)
     const persona = renderElement(ModulePersonaCard, { t, audience: 'main', moduleId: 'mod-a', modules: modulesDeclaring(['rules']), drafts, onNotice: () => {} })
     assert.match(persona, /data-config-panel="prefix"/, '未声明的 persona 编辑器在场')
-    const params = renderElement(LayerSettingsContent, { store: stubStore(createWorkspaceDrafts(), modulesDeclaring(['rules'])), t, layer: 'pre-step', moduleId: 'mod-a' })
-    assert.match(params, /data-layer-param-group="prompt-defaults"/, '未声明的参数组在场')
 
     fetchStub.requests.length = 0
     await readCustomTools('mod-a', false)
@@ -186,10 +179,12 @@ test('声明面：通用卡的读——未声明一个请求都不发，声明�
 })
 
 test('声明面：逐层出卡——有参数组的层出参数编辑器，没有的层整块不出（不留死入口）', () => {
-  const store = stubStore(createWorkspaceDrafts(), modulesDeclaring(['rules']))
+  const modules = modulesDeclaring(['rules', 'modules'])
+  modules[0].facts.effectiveModules = ['instruction-hint']
+  const store = stubStore(createWorkspaceDrafts(), modules)
   const render = (layer) => renderElement(LayerSettingsContent, { store, t, layer, moduleId: 'mod-a' })
 
-  assert.match(render('pre-step'), /data-layer-param-group="prompt-defaults"/, 'pre-step 有参数组 → 渲染参数编辑器')
+  assert.match(render('pre-step'), /data-layer-param-group="instruction-hint"/, 'pre-step 有能力参数组 → 渲染参数编辑器')
   assert.doesNotMatch(render('pre-step'), /data-declare-section="params"/, '参数组不走「添加入口」通路（它始终渲染）')
 
   // 该层没有参数组时不凭空造组、也不给参数入口：整块不出。
@@ -267,6 +262,51 @@ test('规则工作台：同一层两个模块的规则卡各自按自己模块�
   assert.doesNotMatch(html, /rule-b/, 'B 的事实里没有该能力，不跟着 A 命中')
 })
 
+test('受众页：无规则的已装配能力按受众补编辑卡，已有层规则不重复', () => {
+  const drafts = createWorkspaceDrafts()
+  drafts.rules.set('mod-a', { ...rulesDraft('rule-a'), entries: [] })
+  drafts.rules.set('mod-b', rulesDraft('rule-b'))
+  const modules = [
+    { id: 'mod-a', name: 'A', enabled: true, facts: { ...facts(), effectiveModules: ['present-as'], declaredModules: ['present-as'] } },
+    { id: 'mod-b', name: 'B', enabled: true, facts: { ...facts(), effectiveModules: ['present-as'], declaredModules: ['present-as'] } },
+  ]
+  const store = stubStore(drafts, modules)
+  drafts.expanded.set('mod-a:module-settings:main:tool-pipeline', true)
+  drafts.expanded.set('mod-a:module-settings:subagent:tool-pipeline', true)
+  const html = renderElement(AudiencePage, { store, t, audience: 'main' })
+  assert.match(html, /data-module-settings="mod-a"/, '无规则模块补卡')
+  assert.doesNotMatch(html, /data-module-settings="mod-b"/, '已有 tool-pipeline 规则不重复补卡')
+  assert.match(html, /data-param-key="ptcMainMode"/, '主会话字段出现')
+  assert.doesNotMatch(html, /ptcSubagentMode/, '主会话不显示子代理模式字段')
+  const searched = renderElement(AudiencePage, { store, t, audience: 'main', browse: { filter: 'mod-a', viewFilter: 'all' } })
+  assert.match(searched, /data-param-key="ptcMainMode"/, '按模块身份搜索不隐藏卡内字段')
+  assert.ok(!searched.includes(t('rules.noMatch')), '有能力结果不显示无匹配')
+  const subagent = renderElement(AudiencePage, { store, t, audience: 'subagent' })
+  assert.match(subagent, /data-module-settings="mod-a"/, '子代理独立补卡')
+  assert.match(subagent, /ptcSubagentMode/, '子代理字段出现')
+  assert.doesNotMatch(subagent, /ptcMainMode/, '子代理不显示主会话字段')
+  assert.doesNotMatch(subagent, /data-declare-section="customTools"/, '能力补卡不带资产创建入口')
+  assert.doesNotMatch(renderElement(AudiencePage, { store, t, audience: 'main', browse: { viewFilter: 'pre-step' } }), /data-module-settings=/, '层筛选正常')
+  modules[0].enabled = false
+  assert.doesNotMatch(renderElement(AudiencePage, { store, t, audience: 'main' }), /data-module-settings="mod-a"/, '停用模块不补卡')
+  modules[0].enabled = true
+  drafts.rules.get('mod-a').loaded = false
+  assert.doesNotMatch(renderElement(AudiencePage, { store, t, audience: 'main' }), /data-module-settings="mod-a"/, '未加载不能推测无规则')
+  drafts.rules.get('mod-a').loaded = true
+  drafts.rules.get('mod-a').error = 'failed to read rules'
+  assert.doesNotMatch(renderElement(AudiencePage, { store, t, audience: 'main' }), /data-module-settings="mod-a"/, '读取失败不能视为空规则')
+  delete drafts.rules.get('mod-a').error
+  modules[0].declares = ['modules']
+  drafts.rules.delete('mod-a')
+  assert.match(renderElement(AudiencePage, { store, t, audience: 'main' }), /data-param-key="ptcMainMode"/, '明确没有 rules 节仍由 modules 生成能力编辑入口')
+  store.fields.modulesEnabled = false
+  const label = t('param.ptcMainMode')
+  assert.match(renderElement(AudiencePage, { store, t, audience: 'main' }), new RegExp(`aria-label="${label}"[^>]*disabled|disabled[^>]*aria-label="${label}"`), '总闸关闭时编辑字段只读')
+  store.fields.modulesEnabled = true
+  modules[0].facts.sourceMode = 'unknown'
+  assert.doesNotMatch(renderElement(AudiencePage, { store, t, audience: 'main' }), /data-module-settings="mod-a"/, '未知装配来源不补卡')
+})
+
 test('展开规则的未完成条件及受众修改不让编辑卡消失；收起后恢复受众过滤', () => {
   const drafts = createWorkspaceDrafts(), draft = rulesDraft('editing-condition')
   draft.entries[0].value.if = { any: [] }
@@ -336,6 +376,41 @@ function mountStore(api = { currentSessionId: () => undefined }) {
 }
 
 const tick = () => new Promise((resolve) => setImmediate(resolve))
+
+test('store：仅 modules 声明读取有效默认，保存与删除受众覆盖不固化其它字段', async () => {
+  const modules = [{ id: 'mod-a', name: 'A', enabled: true, declares: ['modules'], facts: { ...facts(), effectiveModules: ['present-as', 'run-code-env'] } }]
+  const defaults = { presentAsEnabled: true, ptcMainMode: 'ptc', ptcSubagentMode: 'ptc', runCodeEnvEnabled: true, runCodeEnvKeys: ['PATH', 'HOME'] }
+  const saved = {}
+  const fetchStub = withFetch(request => {
+    if (request.path.endsWith('/bootstrap')) return bootstrapPayload(modules)
+    if (request.path.endsWith('/param-overrides')) {
+      for (const [key, value] of Object.entries(request.body?.overrides ?? {})) {
+        if (value === '') delete saved[key]
+        else saved[key] = value
+      }
+      return { ok: true, value: { overrides: { ...saved }, effective: { ...defaults, ...saved } } }
+    }
+    return { ok: true, value: {} }
+  })
+  try {
+    const store = mountStore()
+    await store.load()
+    store.ensureModuleParams('mod-a'); await tick()
+    assert.equal(fetchStub.reads().length, 1)
+    assert.equal(store.moduleParamsOf('mod-a').ptcMainMode, 'ptc')
+    assert.equal(store.moduleParamsOf('mod-a').runCodeEnvKeys, 'PATH, HOME')
+    store.setModuleParam('mod-a', 'ptcMainMode', 'native')
+    await store.persistParamOverrides('mod-a'); await tick()
+    assert.deepEqual(fetchStub.writes().at(-1).body.overrides, { ptcMainMode: 'native' })
+    assert.equal(store.moduleParamsOf('mod-a').ptcSubagentMode, 'ptc')
+    store.setModuleParam('mod-a', 'ptcMainMode', '')
+    await store.persistParamOverrides('mod-a'); await tick()
+    assert.deepEqual(fetchStub.writes().at(-1).body.overrides, { ptcMainMode: '' })
+    assert.deepEqual(saved, {})
+    assert.equal(store.moduleParamsOf('mod-a').ptcMainMode, 'ptc', '清除后回显有效默认')
+    for (const request of [...fetchStub.reads(), ...fetchStub.writes()]) assert.equal(request.headers['x-module-id'], 'mod-a')
+  } finally { fetchStub.restore() }
+})
 
 test('store：空主语 bootstrap 不带 x-module-id；模块参数按主语读一次并在层卡之间共享', async () => {
   const fetchStub = withFetch((request) => {

@@ -23,6 +23,7 @@
  */
 
 import { bool, defineConfig, enumOf } from './fields.mjs'
+import { isDelegated } from './shared.mjs'
 
 /** Cordis plugin name used by loader diagnostics. */
 export const name = 'present-as'
@@ -41,19 +42,23 @@ export const inject = ['tools']
 export const configContract = defineConfig({
   enabled: bool({ default: false }),
   mode: enumOf(['native', 'ptc'], { required: true }),
+  mainMode: enumOf(['native', 'ptc']),
+  subagentMode: enumOf(['native', 'ptc']),
 })
 
 /**
  * 把本 scope 的工具呈现声明成 `config.mode`。
  *
  * @param ctx - 本模块行的挂载作用域（Agent scope）上下文。
- * @param config - `{ enabled, mode }`；`mode` 必填。
+ * @param config - `mode` 为必填兼容默认；主/子覆盖独立、缺省继承 mode。
+ * @param options - 配装方持有的 Agent；不从 Context 猜测会话身份。
  */
-export function apply(ctx, config) {
+export function apply(ctx, config, { agent } = {}) {
   // 校验入口：未知键 / enabled 非布尔 / mode 缺失或不在枚举内一律挂载期 fail loud。
   const source = configContract.parse(config, name)
   if (!source.enabled) return
-  if (source.mode === 'native') {
+  const mode = (isDelegated(agent?.session) ? source.subagentMode : source.mainMode) ?? source.mode
+  if (mode === 'native') {
     ctx.tools.presentAs('native')
     return
   }
