@@ -644,6 +644,41 @@ test('store：全局层参数读自 /bootstrap 的全局段，写不带主语头
   }
 })
 
+test('store：共享队列等待期间编辑，模块保存取执行时值而全局保存保留入队快照', async () => {
+  const fetchStub = withFetch(request => {
+    if (request.path.endsWith('/bootstrap')) return { ...bootstrapPayload(twoModules), globalParams: { instructionHint: true } }
+    if (request.path.endsWith('/param-overrides')) return { ok: true, value: { overrides: { modelTemperature: 9 } } }
+    return { ok: true, value: {} }
+  })
+  let release
+  try {
+    const store = mountStore()
+    await store.load()
+    store.ensureModuleParams('mod-a'); await tick()
+    const held = store.enqueueRuleTask(() => new Promise(resolve => { release = resolve }))
+    await tick()
+    store.setModuleParam('mod-a', 'modelTemperature', '3')
+    store.setGlobalParam('instructionHint', false)
+    const moduleSave = store.persistParamOverrides('mod-a')
+    const globalSave = store.persistGlobalParams()
+    await tick()
+    assert.equal(fetchStub.writes().length, 0, '规则任务占用的是真实共享队列，两种参数写都必须等待')
+    store.setModuleParam('mod-a', 'modelTemperature', '4')
+    store.setGlobalParam('instructionHint', true)
+    release()
+    await Promise.all([held, moduleSave, globalSave])
+    const writes = fetchStub.writes()
+    assert.equal(writes.length, 2)
+    assert.equal(writes[0].headers['x-module-id'], 'mod-a')
+    assert.deepEqual(writes[0].body, { overrides: { modelTemperature: '4' }, expectedModuleId: 'mod-a' })
+    assert.equal(writes[1].headers['x-module-id'], undefined)
+    assert.deepEqual(writes[1].body, { overrides: { instructionHint: false } })
+    assert.equal(store.moduleParamsOf('mod-a').modelTemperature, '4')
+    assert.equal(store.globalParams.instructionHint, true, '全局旧提交成功不覆盖入队后的新输入')
+    assert.equal(fetchStub.requests.filter(request => request.path.endsWith('/bootstrap')).length, 1, '等待期间的新输入阻止旧保存触发整轮刷新')
+  } finally { release?.(); fetchStub.restore() }
+})
+
 test('store：silent load 重读 /meta 快照（创建模式写后刷新声明面的触发点）', async () => {
   const modules = [{ id: 'mod-a', name: 'A', enabled: true, facts: facts(), declares: ['rules'] }]
   const fetchStub = withFetch((request) => {

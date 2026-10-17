@@ -93,6 +93,7 @@
     │  ├─ module-actions.ts
     │  ├─ module-subject.ts
     │  ├─ module-variables.ts
+    │  ├─ param-editor.ts
     │  ├─ param-overrides.ts
     │  ├─ persona-editor.ts
     │  ├─ prompt-config-content.ts
@@ -384,6 +385,7 @@ workspace-pages.ts 是页面元数据的唯一来源。默认页为 features，�
 | TUI 会话主语 | `/prompt-tool` 命令的用户显式声明 | `module <模块id>` 记在**发起命令的 Agent** 上，内存态、不持久化、不跨会话共享；单条命令的 `module <模块id> …` 前缀覆盖并成为新主语，既不带主语又未声明过即拒绝；插件不猜目标，`src/runtime/tui.ts` 的 `sessionSubjects` 是唯一持有处 |
 | filter、search、列表展开、页滚动 | workspace-browse-state | 工作台实例期，配置视图按页面/预设区分；异步资源就绪后一次恢复滚动 |
 | 两级变量草稿 | module-variables + 现有变量编辑卡 | 按模块ID+scope隔离；同名覆盖来源来自 effective 快照，迟到响应只回原草稿 |
+| 模块参数与全局参数 | param-editor | 工作台内共享 ParamsPort；条目、有效基线、已存键、读取去重与保存应答归同一 owner，原始数字/JSON 输入仍在 workspace-drafts |
 | 人设来源 | personaSources 共享契约与 host owner | main/subagent 各单选官方或模块 ID，config.yml 只存引用；独立于规则启用集合 |
 | 人设正文/发布状态 | ModulePersonaCard + workspace-drafts | 正文属于来源模块；保留完整定义 revision、继承/空串/false，refreshOnly 不重写 |
 | 工具、人设、原始 JSON/数字草稿 | store.editorDrafts / workspace-drafts | 按预设和字段身份保留；未存草稿或保存中在覆盖导入时按模块拦截（`poolDirty`）；改名迁移、删除清理对应字段 |
@@ -427,6 +429,8 @@ bootstrap 是首屏聚合请求，不因筛选或输入字符增加 bridge 请�
 
 use-prompt-tool-store.ts 是唯一工作台 facade，负责把 ConfigForms mirror、typed bridge、字段快照、保存队列和 feature actions 组合成 React 可消费状态。
 
+**参数编辑生命周期**由 `data/param-editor.ts` 的 `createParamEditor` 持有：模块条目、全局条目、读取集合及读改写协议留在闭包中，页面继续使用既有 `ParamsPort`。值转换复用 `param-overrides.ts`；store 提供当前主语/声明事实、共享保存队列、通知与跨域刷新资格。三个同步入口各保留原语义：bootstrap 快照更新全局参数；普通 load 失效并重读已保留的模块条目；模块操作后的 `/meta` 刷新只重读干净条目，保留参数值与原始输入草稿。模块参数在队列执行时取提交快照，全局参数在入队前取快照；两者均不让旧应答覆盖新编辑，不统一为其它资源的版本或发布协议。
+
 **资源编辑器的读改写协议**（owner 的共同形状；代码级原语只有 `data/resource-track.ts`，各 owner 分别在 `data/rule-drafts.ts`、`data/module-variables.ts`、`data/instruction-drafts.ts`、`data/skill-editor.ts`、`data/tools-editor.ts` 与 `data/persona-editor.ts`）：
 
 - **版本捕获**：读时整份存快照，写时从快照取期望版本——rules 逐条 `rules[id]` ＋ `settings`、variables 按 `scope` ＋ `settings`、instructions 逐文件 `revision`、persona 两段各一（创建时整键不带版本）、config-order 整表一个、skills 由调用方卡片持有。**没有**统一的「版本对象」类型：各家请求形状不同，硬并会造出假共享。
@@ -448,6 +452,7 @@ use-prompt-tool-store.ts 是唯一工作台 facade，负责把 ConfigForms mirro
 | prompt-tool-view.ts | bootstrap/view 到 Fields 的 shape guard 与映射 |
 | dirty-state.ts | snapshot、深比较和 reload 判定 |
 | param-overrides.ts | params 的列表拆分、条件发送和读回 patch |
+| param-editor.ts | 模块/全局参数的状态、读取去重、保存应答、基线与目录同步；store 不直接修改参数条目 |
 | rule-drafts.ts / use-rule-editor.ts | 规则单源、稳定身份、原始字段草稿、CAS、模块队列与互斥响应快照合并 |
 | template-rule-writer.ts | 模板创建的显式目标、首写和新模块启用编排；规则结果统一交回 rule-drafts |
 | module-actions.ts | 模块操作与事实刷新，保留成功结果和刷新失败区别；与规则保存共用队列 |

@@ -5,6 +5,10 @@ import type { ModuleVariableScope } from '../../shared/module-variables.ts'
 import { isModuleId } from '../../shared/module-ids.ts'
 import type { Fields } from './prompt-tool-fields.ts'
 
+/** 读回前禁止以 UI 默认值写盘。 */
+export const MODULE_PENDING_MESSAGE = '模块数据尚未加载完成，本次修改未保存；请稍后重试或重新打开工作台'
+export const NO_SUBJECT_MESSAGE = '当前没有可编辑的模块主语，本次修改未保存'
+
 /** 判据输入：模块总闸在 Fields 里，模块事实来自 `/meta` 的逐模块 `facts`（不是 Fields 字段）。 */
 type SubjectFields = Pick<Fields, 'modulesEnabled'> & { moduleFacts?: ModuleFacts }
 
