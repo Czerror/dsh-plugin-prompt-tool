@@ -1,5 +1,14 @@
 # Changelog
 
+### 修复 `sdk-strip` 的 `requireMatch` 空转，并补 Python SDK 裁剪回归（2026-10-17）
+
+- **问题**：`engine/actions/catalog.mjs` 把 `requireMatch` 列为 `sdk-strip` 的字段（因此进入规则编译白名单），`createMask` 也解析了它，但 `engine/actions/sdk-strip.mjs` 从未消费——规则写 `requireMatch: true` 既不生效也不报错；同名字段在 `assembly` 上却是 fail-open。两动作共用名单时，`assembly` 暴露完整目录后 `sdk-strip` 仍按名单裁正文，模型看到的目录与 SDK 正文不一致。
+- **修复**：`sdk-strip` 按与 `assembly` 相同的判据处理 `requireMatch`（只对白名单有意义）：`mask.allow` 中任一工具不在本段正文 → 放弃裁剪、保留完整正文，并沿用同一 warnOnce 方向（"keep the full SDK text (fail-open)"）。`deny` 模式与 `assembly` 的 `required === undefined` 一致，不触发。
+- **测试**：`test/engine/actions.test.mjs` 新增两条——(6b) 真实 PTC Python 段：异名工具 `# tools["my-tool"]` 注释保留、被剔工具及其 TypedDict 消失、保留方法仍在；(6c) `requireMatch` 命中时正文逐字节等于裁剪前，不写时照白名单裁剪。Python 分支此前零覆盖，真值源是官方 `renderToolsSdkPy` 经真实 assembly 生成的文本。
+- **对齐实测（只读探针，未入库）**：用宿主 HEAD 的 `renderToolsSdk` / `renderToolsSdkPy` 直连对拍，TS 的两张 interface、成员/JSDoc/引号键/`& Record<string, JsonValue>;` 与 Python 的 `class Tools(Protocol)`、`async def`、`# tools["x"]`、footer、TypedDict 可达性均可被当前解析器裁剪；16 项断言 PASS，Python 全裁按设计返回原文。
+- **文档**：`docs/engine-reuse.md` 的「工具面收窄」段与 `skills/dsh-module/reference.md` 的动作表补 `requireMatch` 语义。
+- **验证**：`typecheck`／`lint`（0/0，315 文件）／全量 test（**700 pass / 0 fail**，本轮 +2）／`build`／`git diff --check` 全绿。
+
 ### 新增内置模块 `ptc-mode`：把工具面切成 PTC（`present-as` + `run-code-env`）（2026-10-16）
 
 - **模块内容**（`modules/ptc-mode/module.yml`，随包分发、默认不启用）：声明两行——`present-as`（在 **Agent scope** 调官方 `ctx.tools.presentAs('ptc')`，注册表只贡献保留的 `run_code` 传输与生成的 `tools:sdk` 段）与 `run-code-env`（PTC 下 run_code 程序里的 `process.env` 恒为空，该行注入冻结的 `env` 全局并注册 `## run_code environment` 提示段；只在存在 `run_code` 传输的 scope 生效，native 会话零副作用）。

@@ -176,7 +176,7 @@ surface 缺失或非法时可见视图退回完整日志；合法空 nodes 就�
 
 ## 工具面收窄与按需解锁
 
-assembly 负责呈现，sdk-strip 负责 SDK 文本，guard 负责最终执行拒绝；呈现裁剪不等于授权。tool-narrow 调用官方 restrict，仅用于静态注册限制。
+assembly 负责呈现，sdk-strip 负责 SDK 文本，guard 负责最终执行拒绝；呈现裁剪不等于授权。`sdk-strip` 的 `requireMatch` 与 `assembly` 同判据（只对白名单有意义：名单工具在 SDK 正文缺失时保留全文，fail-open）。tool-narrow 调用官方 restrict，仅用于静态注册限制。
 
 按需发现必须同时保留发现工具、常驻集合和 allowFrom 回收：allowFrom 从本会话 durable tool/call 参数提取显式字符串名单，只做加法且不能越过 deny。工具名按真实注册名称匹配；坏参数逐条忽略，缺会话回落静态 allow。
 

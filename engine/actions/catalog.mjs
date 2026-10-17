@@ -82,7 +82,9 @@ export const ACTION_KINDS = Object.freeze({
     services: [],
     degrade: ACTION_DEGRADE.keep,
     timing: 'system-prompt/assemble 下游结算之后，改写名为 tools:sdk 的段文本。',
-    note: '只删不增、保守失败：形态异常/自校验失败一律原样返回；空名单零开销。仅是呈现补救，执行边界在 guard。',
+    note: '只删不增、保守失败：形态异常/自校验失败一律原样返回；空名单零开销。'
+      + '`requireMatch` 与 assembly 同判据（白名单工具在正文缺失 → 保留完整正文，fail-open）；'
+      + '仅是呈现补救，执行边界在 guard。',
   },
   'request-params': {
     title: '改模型请求参数',

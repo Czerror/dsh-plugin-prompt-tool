@@ -522,6 +522,64 @@ test('(6) 真实 PTC：SDK 正文里被剔工具的声明消失，且 guard 让�
   await h.root.fiber.dispose()
 })
 
+test('(6b) 真实 PTC（Python）：SDK 裁剪保留异名注释，只删被剔工具及其 TypedDict', async () => {
+  const h = await ptcHarness({ language: 'python' })
+  // 异名工具走 Python 渲染的下标注释分支，同时带嵌套输出以覆盖 TypedDict 可达性。
+  h.tools.register({
+    name: 'my-tool',
+    description: 'Exotic tool',
+    parameters: { type: 'object', properties: {} },
+    output: {
+      schema: {
+        type: 'object',
+        properties: {
+          inner: { type: 'object', properties: { x: { type: 'string' } }, required: ['x'] },
+        },
+        required: ['inner'],
+      },
+      render: () => [{ type: 'text', text: 'ok' }],
+    },
+    execute: async () => ({ inner: { x: 'ok' } }),
+  })
+  const before = await h.assemble(h.main)
+  const sdkBefore = before.sections.find(section => section.name === SDK_SECTION_NAME)
+  assert.ok(sdkBefore, 'PTC 下必须存在 tools:sdk 段')
+  assert.ok(sdkBefore.text.includes('class Tools(Protocol):'))
+  assert.ok(sdkBefore.text.includes('tools: Tools'))
+  assert.deepEqual(sdkToolNames(sdkBefore.text).sort(), ['bash', 'my-tool', 'own_tool', 'read'])
+
+  const dispose = registerAction(h.root, { kind: 'sdk-strip', id: 'py', mask: { deny: ['own_tool'] } })
+  const after = await h.assemble(h.main)
+  const sdkAfter = after.sections.find(section => section.name === SDK_SECTION_NAME)
+  assert.deepEqual(sdkToolNames(sdkAfter.text).sort(), ['bash', 'my-tool', 'read'], '被剔工具的协议成员必须消失')
+  assert.ok(sdkAfter.text.includes('# tools["my-tool"]'), '异名工具的下标注释必须保留')
+  assert.ok(!sdkAfter.text.includes('OwnTool') && !sdkAfter.text.includes('own_tool'), '被剔工具及其 TypedDict 必须消失')
+  assert.ok(sdkAfter.text.includes('async def bash('), '保留工具的协议方法必须存在')
+  dispose()
+  await h.root.fiber.dispose()
+})
+
+test('(6c) sdk-strip 的 requireMatch：白名单工具缺失时保留完整 SDK 正文（fail-open）', async () => {
+  const h = await ptcHarness({ language: 'typescript' })
+  const before = await h.assemble(h.main)
+  const sdkBefore = before.sections.find(section => section.name === SDK_SECTION_NAME)
+
+  // allow 名单里的 ghost 不在正文：requireMatch 与 assembly 同判据，放弃裁剪。
+  const disposeOpen = registerAction(h.root, { kind: 'sdk-strip', id: 'rm', mask: { allow: ['bash', 'ghost'], requireMatch: true } })
+  const opened = await h.assemble(h.main)
+  const openedText = opened.sections.find(section => section.name === SDK_SECTION_NAME).text
+  assert.equal(openedText, sdkBefore.text, 'requireMatch 触发时必须保留完整 SDK 正文')
+  disposeOpen()
+
+  // 不写 requireMatch：照白名单裁剪，只留 bash。
+  const disposeCut = registerAction(h.root, { kind: 'sdk-strip', id: 'no-rm', mask: { allow: ['bash'] } })
+  const cut = await h.assemble(h.main)
+  const cutText = cut.sections.find(section => section.name === SDK_SECTION_NAME).text
+  assert.deepEqual(sdkToolNames(cutText), ['bash'], '不带 requireMatch 时照白名单裁剪')
+  disposeCut()
+  await h.root.fiber.dispose()
+})
+
 // ───────────────────── 三之补：guard 受众矩阵（主会话 × 子代理） ─────────────────────
 
 test('guard 受众矩阵：注册次数与 restrict 调用随 audience × includeSubagents 组合确定', async () => {

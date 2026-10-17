@@ -12,9 +12,23 @@ export function prepareSdkStrip(action, plugin) {
       let changed = false
       const sections = assembled.sections.map((section) => {
         if (section?.name !== SDK_SECTION_NAME || typeof section.text !== 'string') return section
+        // 正文工具名只解析一次：白名单的裁剪目标与 requireMatch 的缺失判据同源。
+        let present
+        const presentNames = () => {
+          present ??= new Set(sdkToolNames(section.text))
+          return present
+        }
+        // 与 assembly 的 requireMatch 同判据、同方向（只对白名单有意义）：名单里任一工具不在
+        // 本段正文 → 放弃裁剪、保留完整正文。deny 模式没有“必需名单”，与 assembly 的
+        // required 一致地不触发。名单之外的现状不变：解析不出来就不裁。
+        if (mask.requireMatch && mask.allow !== undefined
+          && [...mask.allow].some((toolName) => !presentNames().has(toolName))) {
+          warnOnce(`${plugin}: sdk-strip action ${label}: a requireMatch tool is absent — keeping the full SDK text (fail-open)`)
+          return section
+        }
         const names = mask.allow === undefined
           ? mask.deny
-          : new Set([...sdkToolNames(section.text)].filter((toolName) => mask.blocks(toolName)))
+          : new Set([...presentNames()].filter((toolName) => mask.blocks(toolName)))
         if (names === undefined || names.size === 0) return section
         const stripped = stripSdkDeclarations(section.text, names)
         if (stripped === section.text) return section
