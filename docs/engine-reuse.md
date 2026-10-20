@@ -82,6 +82,25 @@ AgentSetup 窗口内注册的同层同名段会被接住：装配时先撤销它
 
 服务名绑定也在这条边界上：宿主与引擎共用的服务名（pre-step 协调服务、四个模块工具外壳）只有 `engine/service-names.mjs` 一个真值源，`src/` 与引擎侧的各引用点都从它取，**改名不得手抄**。手抄的失效方式是静默的——引擎查不到协调服务就回退自身的独立执行路径，模块工具外壳等不到 provider 就不挂工具，两边都不报错。这也是「引擎可单独复制」的一部分：名字随 `engine/` 一起走，复制方不必问宿主；`test/engine/service-names.test.mjs` 只作防下次手抄的源级守卫。
 
+### 引擎契约（加载器视角）
+
+组合源 `engine/compositions/source/local/*.yml` 里的行分两类，加载器（`src/runtime/agent-assembly.ts:186-204`）按 `name` 判断：
+
+- **本地引擎行**：`name: ./engine/<id>.mjs`。加载器按行 `id` 拼出同一路径 import，执行 `apply(ctx, config, { agent })`；`config` 是模块定义里解析后的行配置。
+- **官方 recipe 行**：`name` 是 `cordis:group` 或 `@deepseek-ai/dsh-*` 包名，没有本地 `.mjs`。这些行由会话原有预设提供，加载器在 `engine/<id>.mjs` 缺席时跳过，不校验引擎形状。
+
+一个**本地引擎模块**必须满足五条：
+
+1. **身份**：文件位于 `engine/<id>.mjs`，与行 `id` 一致；行 `name` 若存在应为 `./engine/<id>.mjs`（加载器不读 `name`，一致性由 `test/host/engine-contract.test.mjs` 校验）。
+2. **入口**：导出 `apply` 函数；缺 `apply` 在装配准备期抛错（`agent-assembly.ts:193`）。
+3. **依赖**：`inject` 缺省或为字符串数组；数组元素是宿主服务名（`tools`、`systemPrompt`、`llm`、`skills` 等）。
+4. **配置**：`configContract.parse(raw, plugin)` 缺省或为函数；装配准备期会调用一次做 fail-fast（`agent-assembly.ts:202-203`），引擎在 `apply` 内可以再解析以取得规范化配置——当前两边都保留，**这是有意为之的 fail-fast ＋ normalize 两段**，不是遗漏。
+5. **清理**：`apply` 返回函数时，装配 fiber 把它作为 disposer 收走（`agent-assembly.ts:436-437`）；不返回则依赖注册时自带的 effect。
+
+**不做通用能力注册表**：引擎之间按名调用目前只有发现引擎一个真实消费者（`promptToolDiscovery`，见 `discovery.mjs`）。等到出现第二个按能力解析的消费者（例如技能面成为可见面的发现来源），再按两个真实用例定接口；在此之前，新增引擎照抄 `discovery.mjs` 的「服务名 + 注册表 + 按 agent 键控」形状，而不是先建注册表。
+
+**触发式债务**：`apply` 内二次解析配置与加载器准备期解析并存（如上）；发现适配器的宿主挂载与行挂载不对称（宿主挂载的 `skill-search` 不登记 adapter，今天无消费者）。两者都等具体触发条件再动，不在本轮顺手改。
+
 ## 复制协议（跨项目复用）
 
 复制完整 `engine/` 可复用纯编译器、动作、条件、历史与模板求值。宿主接线仍需要相应官方服务，四个模块工具外壳还需要 Prompt Tool 的 provider。独立引擎不偷偷读取插件 DSH_HOME 或 session 变量表。

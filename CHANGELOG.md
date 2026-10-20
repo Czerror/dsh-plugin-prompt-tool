@@ -1,5 +1,12 @@
 # Changelog
 
+### 引擎契约文档与全行一致性测试（2026-10-20）
+
+- **文档**：`docs/engine-reuse.md` 新增「引擎契约（加载器视角）」：12 个本地引擎行（`./engine/<id>.mjs`，加载器 import + apply）与 3 个官方 recipe 行（`cordis:group` / `@deepseek-ai/*`，无本地文件、加载器跳过）的分类；五条契约（身份/入口/依赖/配置/清理）、失败模式与「不做通用能力注册表」的触发条件。
+- **测试**：新增 `test/host/engine-contract.test.mjs`，按 `name` 分类遍历组合源：本地行校验文件存在、`name` 与 id 对齐、导出 `apply`、`inject` 为字符串数组、`configContract.parse` 为函数；官方行校验 `name` 非空且无本地引擎文件。行数从目录读取，新增行自动纳管。
+- **清理**：删除 `engine/tool-config-engine.mjs` 中无消费方的 `engineProvider` 兼容导出，并同步 `tool-config-engine.yml` 的行注释（能力提供边界仍保留）。
+- **验证**：typecheck / lint（0 warning）/ test（708）/ build / git diff --check。
+
 ### 发现引擎：一份搜索实现，两个数据源；工具可见面只消费元数据（2026-10-20）
 
 - **共享实现**：新增 `engine/discovery.mjs`，统一分词（`queryTokens`）、打分（`scoreRows`）、准入排序（`rankRows`）与截断渲染（`renderRows`）。`tool-search` 与 `skill-search` 不再各写一份搜索；两者语义差异（工具 any-token、技能 all-token）由一行 `admit` 钩子决定。

@@ -36,8 +36,8 @@
  *     它自己的 effect disposer）；需要整组原子回滚或定向撤销句柄时才用 ctx.effect；
  *   - 降级告警统一 `${name}: <what>; <fallback>` 一个前缀格式。
  *
- * 登记入口：`engineProvider`（数据导出）；守卫已随测试收敛移除，导出仅为兼容面保留。
- * 提供者登记与声明式触发器声明（约定为 `engineTriggers`）**互斥**，同一模块不得同时导出两者。
+ * 能力提供：把 module.yml 的 customTools 段注册进官方 tools registry；模型可见工具名
+ * 在装配期决定，引擎侧无法静态枚举（本模块不导出 provider 登记）。
  *
  * 文件归属校正（PLAN T4）：第三个指定提供者 str-replace-editor 由
  * engine/compositions/source/local/filesystem-editor.yml:20 引用**官方**包
@@ -421,18 +421,6 @@ export const configContract = {
     } else delete source.tools
     return source
   },
-}
-
-/**
- * 能力提供者登记（守卫已随测试收敛移除，导出仅为兼容面保留）。
- * `provides.kind === 'dynamic'`：模型可见的工具名由 module.yml 的 customTools 段在
- * 装配期决定，引擎侧无法静态枚举。
- */
-export const engineProvider = {
-  kind: 'provider',
-  moduleId: name,
-  registers: 'tools',
-  provides: { kind: 'dynamic', source: 'module.yml#customTools → tools' },
 }
 
 /** 插件入口：优先注册内联 tools，缺字段时兼容 configsDir。 */
