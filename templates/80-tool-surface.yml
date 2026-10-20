@@ -8,7 +8,7 @@
 # 写错名字的后果很隐蔽：allow 里的名字不存在会触发 requireMatch 的 fail-open，
 # 表现为「收窄没生效」而不是报错。
 #
-# 发现工具由本动作在 agent scope 注册；解锁名从持久 `tool/call` 参数回收，
+# 发现适配器由 `tool-search` 行提供（模块必须列该行）；解锁名从持久 `tool/call` 参数回收，
 # 因此下一步请求即可见，压缩遮蔽后仍然保留。
 id: tool-surface-resident
 name: 工具面收窄（核心文件与任务集）
@@ -29,7 +29,7 @@ then:
       - tool_search
       # 平台各自的 bash 名：装配里没有提供方时这里就是缺失名，收窄整体失效。
       - bash
-    discovery: { tool: tool_search, key: toolNames }
+    discovery: { kind: tools }
     # 任一常驻工具缺失就放弃裁剪、暴露完整目录（fail-open），避免静默裁成空目录。
     requireMatch: true
     # 首轮提示：正文由引擎按常驻集与发现工具生成，无需手抄。

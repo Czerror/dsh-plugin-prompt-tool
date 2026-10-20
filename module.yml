@@ -460,8 +460,7 @@ rules:
           - tool_search
           - bash
         discovery:
-          tool: tool_search
-          key: toolNames
+          kind: tools
         requireMatch: true
         notice: true
   - id: example-context-activation

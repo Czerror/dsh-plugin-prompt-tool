@@ -37,6 +37,8 @@
 import { importHostPackage } from './host-package.mjs'
 import { toJsonSchema } from './shared.mjs'
 import { currentEvents } from './history.mjs'
+import { queryTokens, renderRows, rankRows, scoreRows } from './discovery.mjs'
+import { DISCOVERY_SERVICE } from './service-names.mjs'
 
 const { isModelInvocable, renderSkillContent } = await importHostPackage('@deepseek-ai/dsh-skill')
 
@@ -49,9 +51,7 @@ export const inject = ['agents', 'tools', 'skills']
 /** 参数 schema 由 `shared.mjs` 的统一实现生成（与 `tool-search` 同一份）。 */
 
 /** 把查询切成小写 token（Unicode 字母数字与下划线连字符，与 tool-search 同口径）。 */
-export function queryTokens(query) {
-  return (typeof query === 'string' ? query : '').toLowerCase().split(/[^\p{L}\p{N}_-]+/u).filter(Boolean)
-}
+export { queryTokens }
 
 /**
  * 对目录打分排序（纯函数，可单测）：
@@ -62,17 +62,10 @@ export function queryTokens(query) {
  * 只沾一个词的无关技能一起倒出来（技能 description 很短，噪声占比远高于工具面）。
  */
 export function scoreSkills(skills, wanted) {
-  if (!Array.isArray(skills) || wanted.length === 0) return []
-  return skills
-    .map((skill) => {
-      const name = typeof skill?.name === 'string' ? skill.name : ''
-      const haystack = `${name} ${skill?.description ?? ''} ${skill?.whenToUse ?? ''}`.toLowerCase()
-      let score = 0
-      for (const token of wanted) if (haystack.includes(token)) score += 1
-      return { skill, name, score, exact: wanted.includes(name.toLowerCase()) }
-    })
-    .filter((entry) => entry.name.length > 0 && (entry.exact || entry.score === wanted.length))
-    .sort((a, b) => (b.exact - a.exact) || (b.score - a.score) || a.name.localeCompare(b.name))
+  return rankRows(scoreRows(skills, wanted, {
+    nameOf: (skill) => skill?.name,
+    haystackOf: (skill) => `${skill?.name ?? ''} ${skill?.description ?? ''} ${skill?.whenToUse ?? ''}`,
+  }), (row) => row.exact || row.score === wanted.length).map((row) => ({ ...row, skill: row.item }))
 }
 
 /** 搜索结果上限：再多就该让模型收窄关键词。 */
@@ -80,23 +73,17 @@ const MAX_RESULTS = 20
 
 /** 把目录搜索结果渲染成给模型的文本（带截断提示与加载引导）。 */
 export function renderMatches(scored, query, complete = true) {
-  const matches = scored.slice(0, MAX_RESULTS)
-  if (matches.length === 0) {
-    return [
-      complete
-        ? `No skills match "${query}" — no skill matched your keywords; skill_load still loads any exact name in the registry, and calling skill_search with no arguments lists every visible skill.`
-        // 没读全就不下结论：措辞上也不能出现「没有匹配」的断言形式。
-        : `Skill discovery did not complete, so nothing can be concluded about "${query}". Retry skill_search before treating a skill as unavailable.`,
-    ]
-  }
-  const lines = [`Matching skills (${matches.length}${scored.length > MAX_RESULTS ? ` of ${scored.length}` : ''}):`]
-  for (const { skill, name, exact } of matches) {
-    lines.push(`- ${name}${exact ? ' (exact)' : ''}: ${String(skill?.description ?? '').split('\n')[0]}`)
-  }
-  if (scored.length > MAX_RESULTS) lines.push(`(truncated at ${MAX_RESULTS} — add tokens to narrow the query)`)
-  if (!complete) lines.push('Skill discovery is incomplete; these results may be partial.')
-  lines.push('Load one with skill_load({"name": "<exact name>"}).')
-  return lines
+  return renderRows(scored, {
+    query,
+    limit: MAX_RESULTS,
+    noun: 'skills',
+    emptyText: complete
+      ? `No skills match "${query}" — no skill matched your keywords; skill_load still loads any exact name in the registry, and calling skill_search with no arguments lists every visible skill.`
+      : `Skill discovery did not complete, so nothing can be concluded about "${query}". Retry skill_search before treating a skill as unavailable.`,
+    lineOf: ({ skill, name, exact }) => `- ${name}${exact ? ' (exact)' : ''}: ${String(skill?.description ?? '').split('\n')[0]}`,
+    warnings: complete ? [] : ['Skill discovery is incomplete; these results may be partial.'],
+    footer: 'Load one with skill_load({"name": "<exact name>"}).',
+  })
 }
 
 /**
@@ -116,8 +103,8 @@ export function skillLoadedInContext(session, name) {
  * B2 T4 要求「四个无白名单插件行补字段声明与校验」，本行按 PLAN 的例外处理——
  * 若将来需要 config，先确认组合行与调用方确实在传 config，再补 defineConfig 声明。
  */
-export function apply(ctx) {
-  ctx.tools.register({
+export function apply(ctx, _config, options = {}) {
+  const disposeSearch = ctx.tools.register({
     name: 'skill_search',
     description: [
       'Search the available skills by keyword and return matching skill names with short descriptions.',
@@ -159,7 +146,7 @@ export function apply(ctx) {
     },
   })
 
-  ctx.tools.register({
+  const disposeLoad = ctx.tools.register({
     name: 'skill_load',
     description: 'Load the full instructions of ONE skill by its exact registered name and inject them for the next request. Call this before acting on a task that matches the skill. The name may come from skill_search, from the skill list, or from the user — any exact name in the registry works, and when nothing matches, ask the user for it.',
     parameters: toJsonSchema({
@@ -225,4 +212,17 @@ export function apply(ctx) {
       }
     },
   })
+  const registry = typeof ctx.get === 'function' ? ctx.get(DISCOVERY_SERVICE) : undefined
+  const disposeAdapter = registry === undefined ? undefined : registry.register(options.agent, 'skills', discoveryAdapter)
+  return () => {
+    if (typeof disposeAdapter === 'function') disposeAdapter()
+    if (typeof disposeSearch === 'function') disposeSearch()
+    if (typeof disposeLoad === 'function') disposeLoad()
+  }
 }
+
+/** 本引擎向发现注册表提供的元数据：技能面没有「解锁名单」，只登记工具身份。 */
+export const discoveryAdapter = Object.freeze({
+  kind: 'skills',
+  tool: 'skill_search',
+})

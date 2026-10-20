@@ -46,6 +46,8 @@ import { identityOf } from '../../engine/executor.mjs'
 import { loadStandingMountFor } from '../../engine/conditions/index.mjs'
 // 私有工具适配器的服务名真值源（与引擎侧同一份）。
 import { toolServiceName } from '../../engine/service-names.mjs'
+// discovery 声明的 adapter 行依赖（kind → 引擎行 id）在准备期校验。
+import { assertDiscoveryRows } from '../../engine/discovery.mjs'
 
 /** 引擎模块的受管配置字段：值按历史语义相对模块根书写（如 `../<id>/custom-tools`）。 */
 const MANAGED_FIELDS = ['configsDir', 'strategyDir', 'policyFile', 'rulesFile'] as const
@@ -171,6 +173,8 @@ export async function prepareAssembly(
     contextActivationRecursive: spec.contextActivationRecursive,
     promptConfigOptions: rulePromptConfigOptions(moduleDir, ruleConfig.strategyDir),
   })
+  // 声明了 discovery 的规则必须把对应 adapter 行列进 modules；缺行在准备期就失败。
+  assertDiscoveryRows(rules, facts.effectiveModules, moduleId)
   const engineDir = packageEngineDir()
   const services = new Set<string>()
   const modules: PreparedAssembly['modules'] = []

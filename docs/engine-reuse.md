@@ -60,7 +60,8 @@ AgentSetup 窗口内注册的同层同名段会被接住：装配时先撤销它
 | `template-evaluation.mjs` | 有界模板解析与原生 module/global 操作 |
 | `template-frame.mjs` | 显式变量 adapter、执行凭据、持久提交和发布重试 |
 | `history.mjs`、`compaction-epoch.mjs` | 可见/完整历史与 epoch-aware 晋升 |
-| `tool-search.mjs`、`skill-search.mjs` | 工具与技能的按需发现/解锁/加载 |
+| `discovery.mjs` | 发现引擎：共享搜索/排序/截断渲染与按 agent 键控的适配器注册表 |
+| `tool-search.mjs`、`skill-search.mjs` | 工具与技能的发现适配器：注册元数据，并各自注册工具 |
 | `tool-config-engine.mjs` | 自定义工具定义到官方注册 |
 
 相对路径均基于包根的 `engine/`。`actions.mjs`、`predicates.mjs`、`strategies.mjs` 只是已有入口，不把实现堆回 barrel。`engine/vendor/yaml/` 是版本化分发快照，通过 package script 生成，不手改。
@@ -69,7 +70,7 @@ AgentSetup 窗口内注册的同层同名段会被接住：装配时先撤销它
 
 `engine/*.mjs` 是纯 JS，`tsconfig.json` 不开 `allowJs`/`checkJs`。因此每个**被 `src/` 静态引入**的引擎模块都配一份手写 `.d.mts`（与 `.mjs` 同目录同名）：
 
-- 已有声明的：`rule-spec`／`shared`／`interpolate`／`executor`／`branch`／`tool-definition`／`order`／`rule-runtime`／`compaction-epoch`／`conditions/index`／`template-evaluation`／`template-frame`／`context-activation`／`service-names`（2026-10-16 起 `src/` 侧不再用 `@ts-expect-error` 引入）。
+- 已有声明的：`rule-spec`／`shared`／`interpolate`／`executor`／`branch`／`tool-definition`／`order`／`rule-runtime`／`compaction-epoch`／`conditions/index`／`template-evaluation`／`template-frame`／`context-activation`／`service-names`／`discovery`（2026-10-16 起 `src/` 侧不再用 `@ts-expect-error` 引入）。
 - **新增引擎导出时同步改声明**：`src/` 只用到的符号才声明（声明是「插件依赖面」而非引擎全貌）；跨引擎模块引用写成 `import type { X } from './y.mjs'`，**不要**引用 `src/` 的类型（声明文件与 `.mjs` 同目录，`src/` 不在它的解析面内）。
 - **声明文件只是类型面**：不进 `lib/` 打包，也不需要改 `package.json`／tsdown（`exports["./engine/*"]` 已覆盖；TS 按 `./x.mjs` → `./x.d.mts` 解析）。
 - **为什么有些声明符号 `src/` 从不直接 import，却仍然必要**（别按「无人使用」删它们）：`src/` 消费的是**函数**，不是字段类型——`StandingMountFor` 被 `loadStandingMountFor` 的返回引用、`MountRuleSourcesOptions` 被 `mountRuleSources` 的参数引用、`PreStepBatchOptions` 被 `runPreStepBatch` 的参数引用、`WarnOnce` 被 `createWarnOnce` 的返回引用……它们是**签名的组成部分**。删掉会让签名退回 `unknown`。判据是「它是否支撑某个被消费符号的签名」，**不是**「它自己有没有被 import」。
@@ -179,9 +180,9 @@ surface 缺失或非法时可见视图退回完整日志；合法空 nodes 就�
 
 `tool-visibility` 是工具面的唯一声明：一份 allow/deny 名单同时投影到装配目录、`tools:sdk` 正文与执行闸（restrict + guard），并可声明发现工具与首轮提示。呈现裁剪不等于授权：deny 同时注册执行闸，allow 的执行面由 restrict 覆盖继承的全局工具（官方 restrict 不作用于 scope 本层注册）。`requireMatch` 只对白名单有意义：名单工具在目录或 SDK 正文缺失时放弃裁剪、暴露完整目录（fail-open）。条件由规则引擎逐轮求值，条件变假时撤销上一轮注册的执行闸。
 
-按需发现由同一份声明的 `discovery` 字段拥有：动作在 agent scope 注册发现工具，并从本会话 durable tool/call 参数提取显式字符串名单，只做加法且不能越过 deny。工具名按真实注册名称匹配；坏参数逐条忽略，缺会话回落静态 allow。首轮提示由 `notice` 声明：`notice: true` 时正文按常驻集与发现工具生成，`notice: { text }` 可用模块自己的措辞覆盖（引擎生成只是缺省值），最终都交给既有 prompt-config 引擎执行。
+按需发现由同一份声明的 `discovery` 字段拥有（`{ kind }`，工具名与解锁键由适配器元数据提供；可选写 `tool`/`key` 只作断言）：动作在首次装配时用 `ctx.get('promptToolDiscovery')` 按 agent 解析适配器，从本会话 durable tool/call 参数提取显式字符串名单，只做加法且不能越过 deny。工具本身由适配器行注册——声明了 `discovery` 的模块必须把对应行（`tools` → `tool-search`、`skills` → `skill-search`）列进 `modules`，缺行在装配准备期失败。工具名按真实注册名称匹配；坏参数逐条忽略，缺会话回落静态 allow；适配器未注册时告警一次并跳过解锁回收，不阻断装配。首轮提示由 `notice` 声明：`notice: true` 时正文按常驻集与发现工具生成，`notice: { text }` 可用模块自己的措辞覆盖（引擎生成只是缺省值），最终都交给既有 prompt-config 引擎执行。
 
-内置 tool-surface 的规则打开即收窄，发现工具与常驻集来自同一声明，首轮提示由引擎生成。需要晋升门时显式加规则条件；不由引擎偷偷恢复首轮全工具目录。
+内置 tool-surface 的规则打开即收窄；`modules` 同时列 `tool-search` 行，工具由该行注册、元数据由发现注册表按 agent 解析，常驻集来自同一声明，首轮提示由引擎生成。需要晋升门时显式加规则条件；不由引擎偷偷恢复首轮全工具目录。
 
 ## 工具呈现（present-as）
 

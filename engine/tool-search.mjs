@@ -27,6 +27,8 @@ export const name = 'tool-search'
 export const inject = ['tools']
 
 import { toJsonSchema } from './shared.mjs'
+import { renderRows, rankRows, scoreRows, queryTokens } from './discovery.mjs'
+import { DISCOVERY_SERVICE } from './service-names.mjs'
 
 /** 单次搜索结果上限：再多就该让模型收窄关键词。 */
 export const MAX_RESULTS = 25
@@ -47,10 +49,8 @@ const RESIDENT = ['bash', 'pwsh', 'read', 'write', 'edit', 'glob', 'grep', 'todo
  * skill_search / skill_load）覆盖不到的能力。名字全部取自实测工具面。
  */
 
-/** 把查询切成小写 token（Unicode 字母数字与下划线连字符，与 skill-search 同口径）。 */
-export function queryTokens(query) {
-  return (typeof query === 'string' ? query : '').toLowerCase().split(/[^\p{L}\p{N}_-]+/u).filter(Boolean)
-}
+/** 查询分词由发现引擎统一实现（与技能面同一口径）。 */
+export { queryTokens }
 
 /**
  * 一个工具名的分组键：MCP 工具折到服务级（`mcp__github__*`），其余折到首个下划线段
@@ -92,17 +92,10 @@ export function summarizeCatalog(schemas) {
  * `wanted` 为空时返回空数组——调用方据此区分「没给查询」与「没搜到」。
  */
 export function scoreTools(schemas, wanted) {
-  if (!Array.isArray(schemas) || wanted.length === 0) return []
-  return schemas
-    .map((schema) => {
-      const name = typeof schema?.name === 'string' ? schema.name : ''
-      const haystack = `${name} ${schema?.description ?? ''}`.toLowerCase()
-      let score = 0
-      for (const token of wanted) if (haystack.includes(token)) score += 1
-      return { schema, name, score, exact: wanted.includes(name.toLowerCase()) }
-    })
-    .filter((entry) => entry.name.length > 0 && (entry.exact || entry.score >= 1))
-    .sort((a, b) => (b.exact - a.exact) || (b.score - a.score) || a.name.localeCompare(b.name))
+  return rankRows(scoreRows(schemas, wanted, {
+    nameOf: (schema) => schema?.name,
+    haystackOf: (schema) => `${schema?.name ?? ''} ${schema?.description ?? ''}`,
+  })).map((row) => ({ ...row, schema: row.item }))
 }
 
 /** 解锁名单归一：只留非空字符串，去重保序。 */
@@ -119,24 +112,14 @@ export function unlockNames(value) {
 
 /** 把目录搜索结果渲染成给模型的文本（带截断提示与解锁引导）。 */
 export function renderMatches(scored, query) {
-  const lines = []
-  const matches = scored.slice(0, MAX_RESULTS)
-  if (matches.length === 0) {
-    lines.push(
-      `No tools match "${query}". An empty result only means no tool matched your keywords — if you need a specific tool, unlock it directly by exact name, e.g. tool_search({"toolNames":["web_search"]}).`,
-    )
-    return lines
-  }
-  lines.push(`Matching tools (${matches.length}${scored.length > MAX_RESULTS ? ` of ${scored.length}` : ''}):`)
-  for (const { schema, name, exact } of matches) {
-    const desc = String(schema?.description ?? '').split('\n')[0].slice(0, DESC_LIMIT)
-    lines.push(`- ${name}${exact ? ' (exact)' : ''}: ${desc}`)
-  }
-  if (scored.length > MAX_RESULTS) {
-    lines.push(`(truncated at ${MAX_RESULTS} — add tokens to narrow the query)`)
-  }
-  lines.push('Unlock with tool_search({"toolNames": ["<exact name>"]}).')
-  return lines
+  return renderRows(scored, {
+    query,
+    limit: MAX_RESULTS,
+    noun: 'tools',
+    emptyText: `No tools match "${query}". An empty result only means no tool matched your keywords — if you need a specific tool, unlock it directly by exact name, e.g. tool_search({"toolNames":["web_search"]}).`,
+    lineOf: ({ schema, name, exact }) => `- ${name}${exact ? ' (exact)' : ''}: ${String(schema?.description ?? '').split('\n')[0].slice(0, DESC_LIMIT)}`,
+    footer: 'Unlock with tool_search({"toolNames": ["<exact name>"]}).',
+  })
 }
 
 /** 注册模型可见的 `tool_search`。 */
@@ -204,7 +187,23 @@ export function createToolSearchDefinition(ctx, options = {}) {
   }
 }
 
-/** 组合源入口：默认常驻集与解锁键（退役前保持原行为）。 */
-export function apply(ctx) {
-  ctx.tools.register(createToolSearchDefinition(ctx))
+/** 本引擎向发现注册表提供的元数据：工具名与「解锁名单从哪个参数回收」。 */
+export const discoveryAdapter = Object.freeze({
+  kind: 'tools',
+  tool: 'tool_search',
+  unlock: Object.freeze({ tool: 'tool_search', key: 'toolNames' }),
+})
+
+/**
+ * 组合源入口：注册工具（行语义不变），并向发现注册表登记元数据。
+ * 注册表由宿主 root provide；引擎单独使用时它不存在，跳过登记即可。
+ */
+export function apply(ctx, _config, options = {}) {
+  const registered = ctx.tools.register(createToolSearchDefinition(ctx))
+  const registry = typeof ctx.get === 'function' ? ctx.get(DISCOVERY_SERVICE) : undefined
+  const disposeAdapter = registry === undefined ? undefined : registry.register(options.agent, 'tools', discoveryAdapter)
+  return () => {
+    if (typeof disposeAdapter === 'function') disposeAdapter()
+    if (typeof registered === 'function') registered()
+  }
 }

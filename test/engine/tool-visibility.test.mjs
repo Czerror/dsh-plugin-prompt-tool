@@ -11,9 +11,11 @@ import assert from 'node:assert/strict'
 import { registerAction } from '../../engine/actions.mjs'
 import { compileRules } from '../../engine/rule-spec.mjs'
 import { mountRuleSources } from '../../engine/rule-runtime.mjs'
+import { createDiscoveryRegistry } from '../../engine/discovery.mjs'
+import { DISCOVERY_SERVICE } from '../../engine/service-names.mjs'
 import { SDK_SECTION_NAME, sdkToolNames } from '../../engine/sdk-strip.mjs'
 
-function recordingCtx() {
+function recordingCtx(services = {}) {
   const events = []
   const warnings = []
   const ctx = {
@@ -23,7 +25,7 @@ function recordingCtx() {
       return () => {}
     },
     effect(callback) { const disposer = callback(); return typeof disposer === 'function' ? disposer : () => {} },
-    get: () => undefined,
+    get: (name) => services[name],
   }
   return { ctx, events, warnings }
 }
@@ -73,6 +75,12 @@ test('tool-visibility：未知字段、非法受众、allow 与 requireMatch 的
     /audience must be main, subagent or all/)
   assert.throws(() => compileRules([{ id: 'r', then: [{ id: 'v', kind: 'tool-visibility', deny: ['a'], requireMatch: true }] }]),
     /requireMatch only applies to allow/)
+  assert.throws(() => compileRules([{ id: 'r', then: [{ id: 'v', kind: 'tool-visibility', allow: ['a'], discovery: {} }] }]),
+    /discovery.kind is required/)
+  assert.throws(() => compileRules([{ id: 'r', then: [{ id: 'v', kind: 'tool-visibility', allow: ['a'], discovery: { kind: 'skills' } }] }]),
+    /has no unlock semantics/)
+  assert.throws(() => compileRules([{ id: 'r', then: [{ id: 'v', kind: 'tool-visibility', allow: ['a'], discovery: { kind: 'tools', tool: '' } }] }]),
+    /discovery.tool must be a non-empty string/)
 })
 
 // ───────────────────────── 二、目录与 SDK 正文 ─────────────────────────
@@ -128,8 +136,9 @@ test('tool-visibility：allow 的 requireMatch 缺工具时 fail-open 并告警'
 
 // ───────────────────────── 三、发现工具与提示 ─────────────────────────
 
-test('tool-visibility：discovery 注册发现工具，并从持久 tool/call 回收解锁名', async () => {
-  const rec = recordingCtx()
+test('tool-visibility：discovery 解析 adapter 元数据，并从持久 tool/call 回收解锁名', async () => {
+  const registry = createDiscoveryRegistry()
+  const rec = recordingCtx({ [DISCOVERY_SERVICE]: registry })
   const disposed = {}
   const scope = scopeOf({ disposed, names: ['alpha', 'beta', 'gamma'] })
   const session = {
@@ -138,22 +147,37 @@ test('tool-visibility：discovery 注册发现工具，并从持久 tool/call �
     snapshotEvents: () => [{ type: 'tool/call', data: { name: 'tool_search', arguments: JSON.stringify({ toolNames: ['gamma'] }) } }],
   }
   const agent = { session, ctx: scope }
+  registry.register(agent, 'tools', { kind: 'tools', tool: 'tool_search', unlock: { tool: 'tool_search', key: 'toolNames' } })
   registerAction(rec.ctx, {
     kind: 'tool-visibility',
     id: 'v',
     allow: ['alpha', 'beta'],
-    discovery: { tool: 'tool_search', key: 'toolNames' },
+    discovery: { kind: 'tools' },
   })
   const handler = only(rec, 'system-prompt/assemble')
   const input = assembled(toolList('alpha', 'beta', 'gamma'))
   const out = await handler(input, { agent }, async () => input)
-  assert.equal(disposed.registered.length, 1, '发现工具在本 scope 注册一次')
-  assert.equal(disposed.registered[0].name, 'tool_search')
-  assert.ok(disposed.registered[0].description.includes('alpha'), '描述里的常驻集来自声明')
   assert.deepEqual(out.tools.map((tool) => tool.name), ['alpha', 'beta', 'gamma'], '解锁名只做加法')
   assert.deepEqual(disposed.restrict.at(-1).allow, ['alpha', 'beta', 'gamma'], 'restrict 的 allow 含解锁项')
-  await handler(input, { agent }, async () => input)
-  assert.equal(disposed.registered.length, 1, '名单未变时不重复注册')
+  assert.deepEqual(rec.warnings, [], '元数据匹配时不得告警')
+})
+
+test('tool-visibility：adapter 未注册时告警一次并跳过解锁回收', async () => {
+  const registry = createDiscoveryRegistry()
+  const rec = recordingCtx({ [DISCOVERY_SERVICE]: registry })
+  const disposed = {}
+  const scope = scopeOf({ disposed, names: ['alpha', 'beta', 'gamma'] })
+  const session = {
+    id: 's-missing',
+    header: { delegationDepth: 0 },
+    snapshotEvents: () => [{ type: 'tool/call', data: { name: 'tool_search', arguments: JSON.stringify({ toolNames: ['gamma'] }) } }],
+  }
+  registerAction(rec.ctx, { kind: 'tool-visibility', id: 'v', allow: ['alpha', 'beta'], discovery: { kind: 'tools' } })
+  const handler = only(rec, 'system-prompt/assemble')
+  const input = assembled(toolList('alpha', 'beta', 'gamma'))
+  const out = await handler(input, { agent: { session, ctx: scope } }, async () => input)
+  assert.deepEqual(out.tools.map((tool) => tool.name), ['alpha', 'beta'], '没有 adapter 就没有解锁项')
+  assert.ok(rec.warnings.some((message) => /discovery adapter "tools" is not registered/.test(message)))
 })
 
 test('tool-visibility：notice 交给现有提示配置引擎，正文由声明派生', async () => {

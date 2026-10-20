@@ -24,10 +24,11 @@
 import { RUN_CODE, createMask, labelOf } from './shared.mjs'
 import { SDK_SECTION_NAME, stripSdkDeclarations, sdkToolNames } from '../sdk-strip.mjs'
 import { historyEvents } from '../history.mjs'
-import { createToolSearchDefinition } from '../tool-search.mjs'
 import { createPromptConfigs } from '../schema.mjs'
 import { applyPromptConfigs } from '../executor.mjs'
 import { compileWhen } from '../conditions/index.mjs'
+import { DISCOVERY_SERVICE } from '../service-names.mjs'
+import { UNLOCKABLE_DISCOVERY_KINDS } from '../discovery.mjs'
 
 const AUDIENCES = new Set([undefined, null, '', 'all', 'main', 'subagent'])
 const record = (value) => value !== null && typeof value === 'object' && !Array.isArray(value)
@@ -44,13 +45,25 @@ function parseAudience(action, label, plugin) {
 function parseDiscovery(action, label, plugin) {
   const discovery = action.discovery
   if (discovery === undefined) return undefined
-  if (!record(discovery)) throw new TypeError(`${plugin}: ${label}.discovery must be an object — { tool, key }`)
+  if (!record(discovery)) throw new TypeError(`${plugin}: ${label}.discovery must be an object — { kind, tool?, key? }`)
+  const kind = discovery.kind
+  if (typeof kind !== 'string' || kind.length === 0) {
+    throw new TypeError(`${plugin}: ${label}.discovery.kind is required`)
+  }
+  // 只有支持「按名解锁」的数据源才能被可见面消费：技能面没有解锁名单语义。
+  if (!UNLOCKABLE_DISCOVERY_KINDS.has(kind)) {
+    throw new TypeError(`${plugin}: ${label}.discovery.kind ${JSON.stringify(kind)} has no unlock semantics — 可用：${[...UNLOCKABLE_DISCOVERY_KINDS].join(', ')}`)
+  }
+  const result = { kind }
   for (const field of ['tool', 'key']) {
+    if (discovery[field] === undefined) continue
     if (typeof discovery[field] !== 'string' || discovery[field].length === 0) {
       throw new TypeError(`${plugin}: ${label}.discovery.${field} must be a non-empty string`)
     }
+    // 工具身份归 adapter 元数据；声明里写这两个键只作断言（不匹配时告警，不改变实际行为）。
+    result[field] = discovery[field]
   }
-  return { tool: discovery.tool, key: discovery.key }
+  return result
 }
 
 function parseNotice(action, label, plugin) {
@@ -184,20 +197,6 @@ export function prepareToolVisibility(action, plugin) {
           return deny.has(toolName) ? `${label}: tool ${JSON.stringify(toolName)} is denied by tool-visibility` : undefined
         }))
       }
-      if (discovery !== undefined && typeof tools.register === 'function') {
-        try {
-          const definition = createToolSearchDefinition(mountCtx, {
-            resident: [...(mask.allow ?? [])],
-            unlockKey: discovery.key,
-            tool: discovery.tool,
-          })
-          const disposeTool = tools.register(definition)
-          if (typeof disposeTool === 'function') state.disposers.push(disposeTool)
-        } catch (error) {
-          // 组合源或另一条声明已经注册同名工具：保留既有注册，解锁回收仍然生效。
-          warnOnce(`${plugin}: tool-visibility action ${label} could not register ${discovery.tool}: ${String(error?.message ?? error)}`)
-        }
-      }
       states.set(session, state)
       // 子代理与重绑都换 scope：父 mount 释放必须能撤销，scope 释放只移出自己。
       if (typeof scoped.effect === 'function') {
@@ -248,8 +247,23 @@ export function prepareToolVisibility(action, plugin) {
     collect(on('system-prompt/assemble', async (assembly, context, next) => {
       const assembled = await next()
       // 解锁名必须先回收：执行闸的 restrict allow 要包含本轮解锁项，否则解锁的工具看得见、调不动。
+      // 工具名与参数键来自发现注册表的 adapter 元数据；声明里的同名字段只作断言。
       if (allowExtra !== undefined) {
-        fillUnlocked(allowExtra, context?.session ?? context?.agent?.session, discovery.tool, discovery.key, warnOnce, plugin, label)
+        const registry = typeof mountCtx.get === 'function' ? mountCtx.get(DISCOVERY_SERVICE) : undefined
+        const adapter = typeof registry?.get === 'function' ? registry.get(context?.agent, discovery.kind) : undefined
+        const unlock = adapter?.unlock
+        if (unlock === undefined) {
+          allowExtra.clear()
+          warnOnce(`${plugin}: tool-visibility action ${label}: discovery adapter "${discovery.kind}" is not registered for this agent — unlock recovery skipped`)
+        } else {
+          if (discovery.tool !== undefined && discovery.tool !== unlock.tool) {
+            warnOnce(`${plugin}: tool-visibility action ${label}: discovery.tool ${JSON.stringify(discovery.tool)} does not match the "${discovery.kind}" adapter tool ${JSON.stringify(unlock.tool)}`)
+          }
+          if (discovery.key !== undefined && discovery.key !== unlock.key) {
+            warnOnce(`${plugin}: tool-visibility action ${label}: discovery.key ${JSON.stringify(discovery.key)} does not match the "${discovery.kind}" adapter key ${JSON.stringify(unlock.key)}`)
+          }
+          fillUnlocked(allowExtra, context?.session ?? context?.agent?.session, unlock.tool, unlock.key, warnOnce, plugin, label)
+        }
       }
       try {
         syncGate(context?.agent)

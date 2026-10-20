@@ -25,6 +25,7 @@ meta:
   source: manual
 modules:
   - rule-engine
+  - tool-search
   # Windows Git Bash 适配行：以 `bash` 之名注册工具、实际执行 Git Bash。
   # 不声明 layerSettings 覆盖 toolGitBashEnabled：能力卡默认就是 true，写出来只会让本模块
   # 覆盖全局开关（内置模块只声明 rules/modules 的声明面契约）。
@@ -50,7 +51,7 @@ rules:
           - tool_search
           # 平台各自的 bash 名：装配里没有提供方时这里就是缺失名，收窄整体失效。
           - bash
-        discovery: { tool: tool_search, key: toolNames }
+        discovery: { kind: tools }
         requireMatch: true
         # 首轮告诉模型「工具面被裁过、缺能力来这里解锁」；正文由引擎按常驻集与发现工具生成。
         notice: true

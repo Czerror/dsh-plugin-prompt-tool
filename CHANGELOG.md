@@ -1,5 +1,15 @@
 # Changelog
 
+### 发现引擎：一份搜索实现，两个数据源；工具可见面只消费元数据（2026-10-20）
+
+- **共享实现**：新增 `engine/discovery.mjs`，统一分词（`queryTokens`）、打分（`scoreRows`）、准入排序（`rankRows`）与截断渲染（`renderRows`）。`tool-search` 与 `skill-search` 不再各写一份搜索；两者语义差异（工具 any-token、技能 all-token）由一行 `admit` 钩子决定。
+- **互相调用走服务**：宿主 root provide `promptToolDiscovery`（`createDiscoveryRegistry`），adapter 行在 `apply(ctx, config, { agent })` 时按 agent 登记元数据；`tool-visibility` 在首次装配用 `ctx.get` 解析（cordis 的 `get` 不要求 inject），不再 import `createToolSearchDefinition`，也不再自己注册发现工具。
+- **声明收敛**：`discovery` 改为 `{ kind }`（`tool`/`key` 可选，只作断言）；工具名与解锁键来自 adapter 元数据。声明了 `discovery` 的模块必须把对应行（`tools` → `tool-search`、`skills` → `skill-search`）列进 `modules`，缺行在装配准备期 fail-loud；运行时解析不到只告警一次并跳过解锁回收，不阻断装配。
+- **行语义不变**：`tool-search` / `skill-search` 行仍自己注册工具（单独挂行行为不变），额外登记 adapter 元数据；`skill-search` 的宿主挂载路径不变。
+- **破坏性变更**：`discovery` 旧形状 `{ tool, key }`（无 `kind`）现在编译期拒绝；内置 `tool-surface`、模板 80 与根 `module.yml` 已迁移为 `{ kind: tools }` 并在 `modules` 列 `tool-search`。
+- **测试**：新增 `test/engine/discovery.test.mjs`（注册表按 agent 隔离/幂等/重复拒绝、准备期缺行校验、共享搜索与渲染）；可见面用例改为注册表元数据驱动，历史读取与模板用例同步迁移。
+- **验证**：typecheck / lint / test（707）/ build / git diff --check。
+
 ### 删除 tool-pipeline 层无法执行的参数声明（2026-10-20）
 
 - **问题**：该层没有注入通道，`toolNames` / `preDecision` / `denyReason` / `postAction` 没有任何消费者，却仍被声明、校验、归一化（`toolNames` 数组转 CSV），最终只换来一次「层不可注入」告警。

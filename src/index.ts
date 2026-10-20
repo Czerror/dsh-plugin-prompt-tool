@@ -31,7 +31,8 @@ import type { AgentAssemblyRuntime } from './runtime/agent-assembly.ts'
 import { resolveModuleToolTarget } from './host/module-tool-target.ts'
 import type { ModuleToolHost } from './host/module-tool-target.ts'
 // 服务名真值源在引擎侧：引擎可单独复制，名字随 `engine/` 一起走。
-import { toolServiceName } from '../engine/service-names.mjs'
+import { DISCOVERY_SERVICE, toolServiceName } from '../engine/service-names.mjs'
+import { createDiscoveryRegistry } from '../engine/discovery.mjs'
 
 export const name = 'prompt-tool'
 // 内容走 user 层（AGENTS.md 常驻层 + skill 按需层），
@@ -185,6 +186,7 @@ registerTuiCommand(
   ctx.provide(toolServiceName('module-memory-tools'), {
     mount: (scopeCtx: Context): (() => void) => registerModuleMemoryTools(scopeCtx, moduleToolHost),
   })
+  ctx.provide(DISCOVERY_SERVICE, createDiscoveryRegistry())
   ctx.provide(toolServiceName('module-variable-tools'), {
     mount: (scopeCtx: Context): (() => void) => registerModuleVariableTools(scopeCtx, moduleToolHost),
   })
@@ -200,7 +202,10 @@ registerTuiCommand(
   void import(new URL('../engine/skill-search.mjs', import.meta.url).href)
     .then((mod: { apply?: (ctx: Context) => unknown, inject?: readonly string[] }) => {
       if (typeof mod.apply !== 'function') return
-      ctx.inject(mod.inject ?? ['tools'], (skillCtx: Context) => { void mod.apply?.(skillCtx) })
+      ctx.inject(mod.inject ?? ['tools'], (skillCtx: Context) => {
+        const dispose = (mod as { apply?: (ctx: Context, config?: unknown, options?: { agent?: unknown }) => unknown }).apply?.(skillCtx)
+        if (typeof dispose === 'function') skillCtx.effect(() => dispose as () => void, 'skill-search')
+      })
     })
     .catch((error: unknown) => {
       warn(ctx, `prompt-tool: skill-search 未挂载（skill_search/skill_load 不可用）：${error instanceof Error ? error.message : String(error)}`)

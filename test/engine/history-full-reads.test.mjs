@@ -14,6 +14,8 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { registerAction } from '../../engine/actions.mjs'
 import { createEpochPromotion as rawCreateEpochPromotion } from '../../engine/compaction-epoch.mjs'
+import { createDiscoveryRegistry } from '../../engine/discovery.mjs'
+import { DISCOVERY_SERVICE } from '../../engine/service-names.mjs'
 
 const unlockCall = { type: 'tool/call', seq: 0, data: { name: 'tool_search', arguments: JSON.stringify({ toolNames: ['web_search'] }) } }
 const summary = { type: 'user/message', seq: 1, data: { message: { id: 'summary', role: 'user', content: [{ type: 'text', text: '摘要' }] } } }
@@ -27,7 +29,7 @@ const compactedSession = (id) => ({
 })
 
 /** 记录型 ctx 桩：assembly 动作只需要 `on` 与 `logger.warn`（同 actions.test.mjs 的最小面）。 */
-function recordingCtx() {
+function recordingCtx(services = {}) {
   const warnings = []
   const events = []
   return {
@@ -35,17 +37,21 @@ function recordingCtx() {
     ctx: {
       logger: { warn: (message) => warnings.push(String(message)) },
       on(event, handler) { events.push({ event, handler }); return () => {} },
+      get: (name) => services[name],
     },
     events,
   }
 }
 
 test('allowFrom 刻意读完整历史：解锁调用被压缩遮蔽后，已解锁的工具仍留在目录里', async () => {
-  const recorder = recordingCtx()
-  registerAction(recorder.ctx, { kind: 'tool-visibility', id: 'dyn', allow: ['pwsh', 'tool_search'], discovery: { tool: 'tool_search', key: 'toolNames' } })
+  const registry = createDiscoveryRegistry()
+  const agent = { session: compactedSession('s-unlock') }
+  registry.register(agent, 'tools', { kind: 'tools', tool: 'tool_search', unlock: { tool: 'tool_search', key: 'toolNames' } })
+  const recorder = recordingCtx({ [DISCOVERY_SERVICE]: registry })
+  registerAction(recorder.ctx, { kind: 'tool-visibility', id: 'dyn', allow: ['pwsh', 'tool_search'], discovery: { kind: 'tools' } })
   const handler = recorder.events.find((entry) => entry.event === 'system-prompt/assemble').handler
   const input = { sections: [], contexts: [], variables: {}, tools: ['pwsh', 'tool_search', 'web_search', 'memory_recall'].map((name) => ({ name, description: name, parameters: {} })) }
-  const output = await handler(input, { agent: { session: compactedSession('s-unlock') } }, async () => input)
+  const output = await handler(input, { agent }, async () => input)
   assert.deepEqual(output.tools.map((tool) => tool.name), ['pwsh', 'tool_search', 'web_search'],
     '解锁名单来自完整历史（当前上下文里那条 tool/call 已不可见）')
   assert.deepEqual(recorder.warnings, [], '正常路径不得告警')
