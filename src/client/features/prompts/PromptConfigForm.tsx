@@ -113,7 +113,7 @@ export function PromptConfigForm(props: {
   const contentKind = contract?.content ?? 'text'
   const showContent = locked || contentKind === 'text'
     || (contentKind === 'stream' && config.params?.mode === 'replace')
-    || (contentKind === 'tool-result' && ['replace', 'block'].includes(String(config.params?.postAction)))
+    || contentKind === 'tool-result'
     || (contentKind === 'subagent-result' && config.params?.action === 'inject-main')
   const contentLabel: PromptToolLocaleKey = contentKind === 'stream' ? 'form.text.stream'
     : contentKind === 'tool-result' ? 'form.text.toolResult'

@@ -148,8 +148,9 @@ const LAYER_DEFINITIONS = [
     layer: 'tool-pipeline',
     fields: { position: false, dedupe: false, promotion: false, audience: true, modelScope: true, merge: false, order: true, role: false, placeholder: false, subject: true, match: true },
     editing: { subjects: ['toolArgs', 'toolResult'], content: 'tool-result', variables: false, messageMetadata: false,
-      params: { toolNames: { type: 'string' }, preDecision: { type: 'enum', values: ['allow', 'deny', 'ask'] },
-        denyReason: { type: 'string' }, postAction: { type: 'enum', values: ['accept', 'replace', 'block'] } } },
+      // 该层没有注入通道：旧的四项工具链参数（toolNames / preDecision / denyReason / postAction）
+      // 没有任何消费者，已删除；工具链行为由 tool-gate / tool-result 动作承担。
+      params: {} },
     label: { title: '工具管线层', detail: '工具链层：只作规则级展示归属（无 inject-text 通道）——工具链的裁决与追加上下文由 tool-gate / tool-result / append-context 动作承担；subject / match 可选，命中才裁决。' },
     defaultSubject: 'toolArgs',
   },
@@ -366,11 +367,7 @@ export function assertReplacePatch(patch, replace, label) {
 function normalizeLayerParams(raw, layer, label) {
   if (raw === undefined || raw === null) return {}
   if (typeof raw !== 'object' || Array.isArray(raw)) throw new TypeError(`${label}.params must be an object`)
-  let params = raw
-  if (layer === 'tool-pipeline' && Array.isArray(raw.toolNames)) {
-    if (raw.toolNames.some(item => typeof item !== 'string')) throw new TypeError(`${label}.params.toolNames must contain only strings`)
-    params = { ...raw, toolNames: raw.toolNames.join(',') }
-  }
+  const params = raw
   for (const [key, rule] of Object.entries(LAYER_CONTRACTS[layer].params)) {
     const value = params[key]
     if (value === undefined) continue

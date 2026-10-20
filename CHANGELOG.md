@@ -1,5 +1,12 @@
 # Changelog
 
+### 删除 tool-pipeline 层无法执行的参数声明（2026-10-20）
+
+- **问题**：该层没有注入通道，`toolNames` / `preDecision` / `denyReason` / `postAction` 没有任何消费者，却仍被声明、校验、归一化（`toolNames` 数组转 CSV），最终只换来一次「层不可注入」告警。
+- **修复**：从 schema 的 `editing.params` 与 `normalizeLayerParams` 里删除这四项；客户端不再用 `params.postAction` 决定是否显示结果正文（`tool-result` 内容直接可编辑）。
+- **保留**：`agent-request` / `llm-stream` 的层参数仍是 `inject-text` 的真实实现，不动；工具链行为由 `tool-gate` / `tool-result` 动作承担。
+- **验证**：typecheck / lint / test / build / git diff --check。
+
 ### 工具链裁决拆成 `tool-gate` / `tool-result`，退役 `decision`（2026-10-20）
 
 - **一个动作两套字段表**：原 `decision` 的七个字段由 `phase` 决定哪半被读，另一半被白名单收下却静默忽略。现在拆成两个动作：`tool-gate`（pre：`decision`/`reason`/`toolNames`）与 `tool-result`（post：`action`/`text`/`toolNames`）。
