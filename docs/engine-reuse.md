@@ -178,7 +178,7 @@ surface 缺失或非法时可见视图退回完整日志；合法空 nodes 就�
 
 `tool-visibility` 是工具面的唯一声明：一份 allow/deny 名单同时投影到装配目录、`tools:sdk` 正文与执行闸（restrict + guard），并可声明发现工具与首轮提示。呈现裁剪不等于授权：deny 同时注册执行闸，allow 的执行面由 restrict 覆盖继承的全局工具（官方 restrict 不作用于 scope 本层注册）。`requireMatch` 只对白名单有意义：名单工具在目录或 SDK 正文缺失时放弃裁剪、暴露完整目录（fail-open）。条件由规则引擎逐轮求值，条件变假时撤销上一轮注册的执行闸。
 
-按需发现由同一份声明的 `discovery` 字段拥有：动作在 agent scope 注册发现工具，并从本会话 durable tool/call 参数提取显式字符串名单，只做加法且不能越过 deny。工具名按真实注册名称匹配；坏参数逐条忽略，缺会话回落静态 allow。首轮提示由 `notice` 声明，正文按常驻集与发现工具生成，交给既有 prompt-config 引擎执行。
+按需发现由同一份声明的 `discovery` 字段拥有：动作在 agent scope 注册发现工具，并从本会话 durable tool/call 参数提取显式字符串名单，只做加法且不能越过 deny。工具名按真实注册名称匹配；坏参数逐条忽略，缺会话回落静态 allow。首轮提示由 `notice` 声明：`notice: true` 时正文按常驻集与发现工具生成，`notice: { text }` 可用模块自己的措辞覆盖（引擎生成只是缺省值），最终都交给既有 prompt-config 引擎执行。
 
 内置 tool-surface 的规则打开即收窄，发现工具与常驻集来自同一声明，首轮提示由引擎生成。需要晋升门时显式加规则条件；不由引擎偷偷恢复首轮全工具目录。
 

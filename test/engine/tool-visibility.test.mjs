@@ -295,3 +295,20 @@ test('tool-visibility：条件由真变假时撤销上一轮的执行闸（未�
   assert.equal(disposed.guardDisposed, 1, '条件变假必须撤销 guard')
   assert.equal(disposed.restrictDisposed, 1, '条件变假必须撤销 restrict')
 })
+
+test('真实规则挂载：notice.text 覆盖引擎生成的缺省正文', async () => {
+  const h = ruleHarness()
+  const session = { id: 's-custom-notice', header: { delegationDepth: 0 }, snapshotEvents: () => [] }
+  const agent = { session, ctx: scopeOf({}) }
+  const rules = compileRules([{ id: 'notice', then: [
+    { id: 'v', kind: 'tool-visibility', allow: ['alpha'], notice: { text: 'CUSTOM-NOTICE' } },
+  ] }])
+  const dispose = mountRuleSources(h.ctx, [{ moduleId: 'module', rules }])
+  const input = assembled(toolList('alpha'))
+  await h.run('system-prompt/assemble', [input, { agent }], () => input)
+  const messages = [{ id: 'u', role: 'user', source: { kind: 'user' }, content: [{ type: 'text', text: 'hi' }] }]
+  const first = await h.run('agent/pre-step', [{ agent, messages }], () => ({ kind: 'enter', messages }))
+  assert.equal(first.messages.length, 2, '自定义提示照常投递')
+  assert.equal(first.messages[1].content[0].text, 'CUSTOM-NOTICE', '正文以声明为准，不是引擎措辞')
+  dispose()
+})

@@ -42,7 +42,7 @@
 |---|---|---|---|
 | `inject-text` | 由 `config.layer` 决定（**可注入八层**，见层表；`tool-pipeline` 无注入通道） | `layer`、`strategy`（`static`/`placeholder`/`first-turn-anchor`/`guide-auto`/`anchor-notice`/`context-activation`）、`position`、`dedupe`、`mergeMode`、`role`、`order`、`text`/`texts`、`params`、`templateFile`、`configKind` | 空正文不生成投递；变量赋值模板另按显式求值事务处理 |
 | `assembly` | `system-prompt/assemble` 下游 | `target.sections`（`add`/`remove` **或** `keep`）、`target.contexts`（`add`/`remove` **或** `clear`，二者互斥——并存编译期拒绝）；`target.tools` 已移除 | 返回未改动的装配 |
-| `tool-visibility` | `system-prompt/assemble` 下游 | `audience`（`main`/`subagent`/`all`）、`allow` 与/或 `deny`（同时给时先保留再剔除）、`requireMatch`（仅 allow）、`discovery`（`{tool, key}`：注册发现工具并回收解锁名）、`notice`（首轮提示） | 呈现面失败保留原装配；执行闸失败留痕，不静默放行 |
+| `tool-visibility` | `system-prompt/assemble` 下游 | `audience`（`main`/`subagent`/`all`）、`allow` 与/或 `deny`（同时给时先保留再剔除）、`requireMatch`（仅 allow）、`discovery`（`{tool, key}`：注册发现工具并回收解锁名）、`notice`（`true` = 引擎生成正文；`{ text }` = 模块自定义正文） | 呈现面失败保留原装配；执行闸失败留痕，不静默放行 |
 | `decision` | `tools/pre-execute` / `tools/post-execute` | `phase`（`pre`/`post`）、`decision`（`allow`/`deny`/`ask`）、`action`（`accept`/`replace`/`block`）、`toolNames`、`text`、`reason` | 一律放行／接受——裁决 bug 不卡死调用 |
 | `append-context` | `mode: context` → `tools/post-execute`；`mode: continue` → `agent/turn-stopping` | `mode`、`text` | 保持原结果 |
 | `request-params` | `agent/request` 下游 | `patch`（浅合并）、`unset`（`{键: 期望值}`）、`replace`（整体替换） | 保持原请求配置 |
@@ -85,7 +85,7 @@ rules:
   notice: true
 ```
 
-`discovery` 在 agent scope 注册发现工具，并从持久 `tool/call` 参数回收解锁名（只做加法、跨压缩保留）；`notice` 的首轮提示正文由引擎按常驻集与发现工具生成，不手抄。`requireMatch` 在任一常驻工具缺失时放弃裁剪、暴露完整目录（fail-open）。
+`discovery` 在 agent scope 注册发现工具，并从持久 `tool/call` 参数回收解锁名（只做加法、跨压缩保留）。`notice` 可写 `true`（正文由引擎按常驻集与发现工具生成，不手抄），也可写 `{ text: 你的正文 }` 覆盖为模块自己的措辞——引擎生成只是缺省值，不是强制。`requireMatch` 在任一常驻工具缺失时放弃裁剪、暴露完整目录（fail-open）。
 
 ## 三、九层与字段
 
