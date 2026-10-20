@@ -1,4 +1,4 @@
-import { labelOf, toolNameSet } from './shared.mjs'
+import { labelOf } from './shared.mjs'
 
 /**
  * tool-gate —— 工具执行前的裁决（pre 相）。
@@ -8,8 +8,6 @@ import { labelOf, toolNameSet } from './shared.mjs'
  */
 export function prepareToolGate(action, plugin) {
   const label = labelOf(action)
-  const names = toolNameSet(action.toolNames, plugin, `${label}.toolNames`)
-  const matches = (exec) => names === undefined || names.has(exec?.name)
   const decision = action.decision ?? 'allow'
   if (!['allow', 'deny', 'ask'].includes(decision)) {
     throw new TypeError(`${plugin}: ${label}.decision must be one of allow, deny, ask`)
@@ -19,7 +17,6 @@ export function prepareToolGate(action, plugin) {
   }
   return (_ctx, { warnOnce, on, collect, take }) => collect(on('tools/pre-execute', async (exec, next) => {
     try {
-      if (!matches(exec)) return next()
       if (decision === 'allow') return next()
       // `||` 而非 `??`：空串是「取引擎缺省」的中性值，不是「无解释的拒绝」。
       const outcome = decision === 'deny'

@@ -351,88 +351,6 @@ function wireRuntimeContexts(ctx, configs, registry, warnOnce, keep, on) {
   return disposers
 }
 
-/**
- * agent/request 载荷的唯一改写实现（B3 T2 第 (7) 类动作与既有 `agent-request`
- * 层**共用这一份**，不另写一套请求改写）。三种语义：
- *   - `patch`：对下游已解析的 LlmCallConfig 做浅合并；
- *   - `replace: true`：整体替换为 `patch`（不叠加 base，故 `unset` 无比较对象）；
- *   - `unset`：**按值条件删键** —— 仅当合并结果里的值**恰好等于**声明值时删除该键
- *     （`Object.is` 比较）。这来自原 `tool-bootstrap` 剥离 `bootstrapMaxTokens` 的语义
- *     （「仅当解析后的 maxTokens 恰好等于本声明注入的那个值时才删」），不是"存在即删"
- *     ——模型或其它插件设置的同名参数不会被删。
- *     浅合并做不到删键，故删键必须走显式通道。
- * @param params 提示词配置的 `params`（或动作的等价声明）。
- * @param base 下游 `next()` 已解析的请求配置。
- * @returns 改写后的请求配置；无 unset 命中时零额外分配。
- */
-export function applyAgentRequestParams(params, base) {
-  const patch = params?.patch !== null && typeof params?.patch === 'object' && !Array.isArray(params.patch)
-    ? params.patch
-    : {}
-  if (params?.replace === true) return { ...patch }
-  const merged = { ...base, ...patch }
-  const unset = params?.unset
-  if (unset === null || typeof unset !== 'object' || Array.isArray(unset)) return merged
-  let result
-  for (const [key, expected] of Object.entries(unset)) {
-    // 每个键都对着**合并结果**判定：一旦分配过副本，后续键不得跳过比较。
-    if (!Object.is(merged[key], expected)) continue
-    if (result === undefined) result = { ...merged }
-    delete result[key]
-  }
-  return result ?? merged
-}
-
-/** agent-request:对冻结的 LlmCallConfig 做浅合并 / 整体替换 / 按值条件删键。 */
-function wireAgentRequests(ctx, configs, warnOnce, on) {
-  if (configs.length === 0) return []
-  const ordered = configs.some(config => config.sequence !== undefined) ? configs : [...configs].reverse()
-  return [on('agent/request', async (payload, next, invocation) => {
-    let result = await next()
-    const frame = invocation ?? ruleFrame('agent/request', [payload], warnOnce)
-    // 模块请求在 next 返回后按序合并；无文件来源的独立调用保持原回栈顺序。
-    for (const config of ordered) {
-      try {
-        if (actionMatches(config, frame) && matchesAgentScope(config, payload?.agent)) result = applyAgentRequestParams(config.params, result)
-      } catch (error) {
-        warnOnce(`${name}: agent-request config ${config.id} failed: ${String(error?.message ?? error)}`)
-      }
-    }
-    return result
-  })]
-}
-
-/** 把流替换为提示词配置文本的最小合法 chunk 序列。 */
-async function* replacedStream(text) {
-  yield { type: 'block-start', index: 0, blockType: 'text' }
-  yield { type: 'text-delta', index: 0, text }
-  yield { type: 'block-end', index: 0, block: { type: 'text', text } }
-}
-
-/** llm-stream:pass 透传;replace 用提示词配置文本替代整个模型流。 */
-function wireLlmStreams(ctx, configs, warnOnce, on) {
-  const disposers = []
-  for (const config of configs) {
-    disposers.push(on('llm/stream', (options, next, invocation) => {
-      try {
-        const frame = invocation ?? ruleFrame('llm/stream', [options], warnOnce)
-        const agent = options?.sessionId === undefined ? undefined : getService(ctx, 'agents')?.get?.(options.sessionId)
-        frame.subject.agent = agent
-        if (!actionMatches(config, frame)) return next()
-        const mode = config.params?.mode ?? 'pass'
-        if (mode === 'replace' && config.texts.length > 0 && matchesModel(config.modelScope, options?.model)) {
-          return replacedStream(config.texts.join('\n\n'))
-        }
-        return next()
-      } catch (error) {
-        warnOnce(`${name}: llm-stream config ${config.id} failed: ${String(error?.message ?? error)}`)
-        return next()
-      }
-    }))
-  }
-  return disposers
-}
-
 /** 条件判定的匹配器与取文本逻辑由 condition.mjs 承载（pre-step 与其他层共用）。 */
 
 /**
@@ -480,10 +398,10 @@ export const TURN_STOP_MAX_PER_SESSION = 3
 export const TURN_STOP_MAX_TRACKED_TURNS = 8
 
 /**
- * 续跑预算（唯一实现）：B3 T2 第 (4) 类动作的「续跑」与既有 turn-stop 层共用它，
+ * 续跑预算（唯一实现）：所有 turn-stop 注入共用它，
  * 上限是引擎常量而不是配置——强制续跑失控会把会话卡在停不下来的循环里。
  * **一份预算覆盖一个来源模块**（规则运行时按模块传入同一份），因此同模块的多条
- * turn-stop / continue 动作合计每轮 1 次、每会话 3 次。
+ * turn-stop 动作合计每轮 1 次、每会话 3 次。
  * 三步语义刻意与迁移前逐行一致：
  *   entry(...)    取条目（含创建与超限轮次淘汰的副作用），在条件判定**之前**调用；
  *   available(...) 只读判定，不落账；
@@ -498,9 +416,8 @@ export function createTurnStopBudget() {
    * 不可从事件流重建的计数（与 `progress-reminder` 同档），丢失时机必须与迁移前逐字一致，
    * compaction 也不重置它。
    *
-   * 本函数**没有 ctx**：`createTurnStopBudget()` 是 B3 交付物的一部分，对外签名与
-   * `entry/available/claim` 三个方法逐字不变（调用方见 actions.mjs 的 append-context 与
-   * 本文件的 turn-stop 层）。`sessionState` 只在声明了 `reset` 时才读 ctx，因此这里传
+   * 本函数没有 ctx，只有 turn-stop 注入消费预算。
+   * `sessionState` 只在声明了 `reset` 时才读 ctx，因此这里传
    * `undefined` 合法且零开销（详见 shared.mjs 的 JSDoc 与 test/engine/session-state.test.mjs）。
    */
   const state = sessionState(undefined, () => ({ turns: new Map(), total: 0 }))
@@ -509,8 +426,7 @@ export function createTurnStopBudget() {
     // 对外仍是 `(sessionId, turn)`：按 id 造一次性键宿主，`keyOf` 取的就是 `.id`，与旧的
     // 记账写法写进同一个槽位、同一个 clear 时机。
     // 唯一差异在**无 id 的会话**（`sessionId === undefined`）：`sessionState` 刻意不记账
-    // （见 shared.mjs），旧写法把 `undefined` 当一个共享槽位。两个调用点（actions.mjs 的
-    // append-context 与下方 turn-stop 层）都在 `entry()` 之前守卫 `session?.id === undefined`，
+    // （见 shared.mjs），下方 turn-stop 层在 `entry()` 前守卫 `session?.id === undefined`，
     // 故该路径不可达；这里兜底一个新条目，避免将来误用时抛 TypeError。
     const entry = state.get({ id: sessionId }) ?? { turns: new Map(), total: 0 }
     if (!Number.isFinite(turn)) return entry
@@ -690,7 +606,7 @@ function wireSubagentEvents(ctx, configs, warnOnce, on) {
  * 把非 pre-step 提示词配置接入其声明的官方层级通道。
  * @param options.agent 当前 ctx 所属的真实 Agent；固定效果的受众在注册前匹配。
  * @param options.turnStopBudgets 可选的续跑预算映射（键 = 模块 id，来源缺失用空串兜底）；
- *   规则运行时按模块传入同一份，使同模块的 turn-stop 与 continue 动作共享上限。
+ *   规则运行时按模块传入同一份，使同模块的 turn-stop 动作共享上限。
  * @returns 聚合 disposer：回收监听器及段/上下文/变量注册；后者也绑定 ctx fiber，重复释放幂等。
  */
 export function wireLayers(ctx, configs, warnOnce, options = {}) {
@@ -728,8 +644,6 @@ export function wireLayers(ctx, configs, warnOnce, options = {}) {
     wireSystemSections(ctx, regular.filter((config) => config.layer === 'system-section'), registry, warnOnce, keep)
     wireRuntimeContexts(ctx, regular.filter((config) => config.layer === 'runtime-context'), registry, warnOnce, keep, on)
     wireRuleTextContributions(ctx, conditional, registry, warnOnce, keep, on)
-    wireAgentRequests(ctx, configs.filter((config) => config.layer === 'agent-request'), warnOnce, on)
-    wireLlmStreams(ctx, configs.filter((config) => config.layer === 'llm-stream'), warnOnce, on)
     wireTurnStops(ctx, configs.filter((config) => config.layer === 'turn-stop'), warnOnce, on, options.turnStopBudgets)
     wireSubagentEvents(ctx, configs.filter((config) => config.layer === 'subagent-start' || config.layer === 'subagent-end'), warnOnce, on)
     return dispose

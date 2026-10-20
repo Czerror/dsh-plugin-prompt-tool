@@ -69,7 +69,7 @@ function loadTemplate(file, baseUrl = import.meta.url, presetRootUrl) {
   return { text: raw }
 }
 
-export const KNOWN_STRATEGIES = new Set(['static', 'placeholder', 'guide-auto', 'context-activation'])
+export const KNOWN_STRATEGIES = new Set(['static', 'placeholder', 'context-activation'])
 /**
  * 策略 × 层支持矩阵：`config.resolve` 只在 pre-step（executor）与 runtime-context 的
  * placeholder（layers）被消费，其他层声明非 static 策略会绑定 resolver 却无人调用，
@@ -79,7 +79,6 @@ export const KNOWN_STRATEGIES = new Set(['static', 'placeholder', 'guide-auto', 
 export const STRATEGY_LAYER_SUPPORT = {
   static: null,
   placeholder: ['pre-step', 'runtime-context'],
-  'guide-auto': ['pre-step'],
   'context-activation': ['pre-step'],
 }
 /** 模板专属策略允许的层：resolver 同样只在 pre-step / runtime-context 被调用。 */
@@ -128,19 +127,15 @@ const LAYER_DEFINITIONS = [
   },
   {
     layer: 'agent-request',
-    channel: 'agent/request', phase: 'after-next',
     fields: { position: false, dedupe: false, promotion: false, audience: true, modelScope: true, merge: false, order: true, role: false, placeholder: false, subject: false, match: false },
-    editing: { subjects: [], content: 'request', variables: false, messageMetadata: false,
-      params: { patch: { type: 'object' }, replace: { type: 'boolean' } } },
-    label: { title: '调用配置层', detail: 'agent-request 层：按 order 注册，params.patch 改写请求配置。' },
+    editing: { subjects: [], content: 'request', variables: false, messageMetadata: false, params: {} },
+    label: { title: '调用配置层', detail: 'agent/request 的请求参数由 request-params 动作修改。' },
   },
   {
     layer: 'llm-stream',
-    channel: 'llm/stream', phase: 'before-next',
     fields: { position: false, dedupe: false, promotion: false, audience: false, modelScope: true, merge: false, order: true, role: false, placeholder: false, subject: false, match: false },
-    editing: { subjects: [], content: 'stream', variables: false, messageMetadata: false,
-      params: { mode: { type: 'enum', values: ['pass', 'replace'] } } },
-    label: { title: '模型流层', detail: 'llm/stream 层：按 order 注册，params.mode = pass | replace。' },
+    editing: { subjects: [], content: 'stream', variables: false, messageMetadata: false, params: {} },
+    label: { title: '模型流层', detail: 'llm/stream 的透传与替换由 stream-output 动作处理。' },
   },
   {
     layer: 'tool-pipeline',
@@ -195,7 +190,7 @@ export const KNOWN_LAYERS = new Set(LAYER_ORDER)
 /**
  * `inject-text` 可绑定的层与注册点（由 {@link LAYER_DEFINITIONS} 的 `channel` 派生，不另写层表）：
  * 没有通道的 `tool-pipeline` 不可注入——工具链的裁决与结果处理走 `tool-gate` / `tool-result` / `append-context` 动作。
- * 层清单因此有两份：`LAYER_ORDER` 九层供视图筛选、展示分组与规则级 `layer`；这里八层只给动作的 `config.layer`。
+ * `LAYER_ORDER` 九层供展示；六个注入层供 `config.layer`，其余由独立动作承担。
  */
 const INJECTION_DEFINITIONS = LAYER_DEFINITIONS.filter((definition) => definition.channel !== undefined)
 export const INJECTION_LAYERS = INJECTION_DEFINITIONS.map((definition) => definition.layer)
@@ -225,7 +220,7 @@ export const KNOWN_MODEL_SCOPES = new Set(['all', 'pro', 'flash'])
  * 自定义策略或模板 patch 的角色仍由 executor 在出口校验，避免写出非法事件。
  */
 export const KNOWN_ROLES = new Set(['user'])
-export const KNOWN_FILLS = new Set(['instruction-hint', 'env-facts', 'skill-catalog'])
+export const KNOWN_FILLS = new Set(['instruction-hint', 'env-facts', 'skill-catalog', 'tool-catalog'])
 
 /** 层能力矩阵：每个字段只在对应注入层生效。客户端表单据此动态渲染。 */
 export const LAYER_FIELD_POLICIES = Object.fromEntries(
@@ -251,7 +246,7 @@ export const LAYER_LABELS = Object.fromEntries(
 export function getEngineMeta() {
   return {
     // layerOrder = 固定九层顺序（UI 组织用）；layers = 合法层集合（校验与旧消费方用）；
-    // injectionLayers = 其中 inject-text 真正可注入的八层（tool-pipeline 只作规则级展示归属）。
+    // injectionLayers 只含实际文本注入层；请求、流与工具管线使用独立动作。
     layerOrder: [...LAYER_ORDER],
     layers: [...KNOWN_LAYERS].sort(),
     injectionLayers: [...INJECTION_LAYERS],
@@ -324,7 +319,7 @@ function normalizeMatch(raw, label) {
 
 /**
  * 官方 `LlmCallConfig` 允许被改写的键：不能把消息、工具或 system 塞进请求配置。
- * `agent-request` 层的 `params.patch` 与 `request-params` 动作的 `patch`/`unset` 共用这一份。
+ * `request-params` 动作的 `patch`/`unset` 共用这一份。
  *
  * 核对到 `@deepseek-ai/dsh-llm@0.2.1-alpha.2`（上游 `packages/llm/llm/src/call-config.ts`）：
  * `provider`/`model` 属 `LlmCallConfig`，其余四个自 0.2.1 起拆在 `LlmCallControls`，字段集未变。
@@ -334,8 +329,7 @@ function normalizeMatch(raw, label) {
 const LLM_CALL_FIELDS = new Set(['provider', 'model', 'reasoningEffort', 'temperature', 'maxTokens', 'stop'])
 
 /**
- * 校验一份请求配置补丁的子键与值（`agent-request` 层 `params.patch`、`request-params` 动作的
- * `patch`/`unset` 三处共用）：拼错的键与非法值都 fail loud——运行时静默忽略等于「配了没效果」。
+ * 校验请求配置补丁的子键与值；拼错的键与非法值在保存/挂载前拒绝。
  * @param label 已拼好的报错前缀（`<config label>.params.patch` 或 `action <id>.patch`）
  */
 export function assertLlmCallPatch(patch, label) {
@@ -352,8 +346,7 @@ export function assertLlmCallPatch(patch, label) {
 
 /**
  * `replace=true` 的不变量：整体替换会丢掉下游 provider/model，缺一即不可用。
- * **两个入口共用这一份**——`agent-request` 层的 `params`（{@link normalizeLayerParams}）与
- * `request-params` 动作（`actions/request-params.mjs`）；报错前缀由 `label` 承载。
+ * 由 request-params 动作消费；报错前缀由 label 承载。
  * @param label 已拼好的报错前缀（`<config label>.params.patch` 或 `action <id>.patch`）
  */
 export function assertReplacePatch(patch, replace, label) {
@@ -373,11 +366,6 @@ function normalizeLayerParams(raw, layer, label) {
       : rule.type === 'object' ? value !== null && typeof value === 'object' && !Array.isArray(value)
         : typeof value === rule.type
     if (!valid) throw new TypeError(`${label}.params.${key} must be ${rule.type === 'enum' ? rule.values.join(' | ') : rule.type}`)
-  }
-  if (layer === 'agent-request') {
-    const patch = params.patch ?? {}
-    assertLlmCallPatch(patch, `${label}.params.patch`)
-    assertReplacePatch(patch, params.replace, `${label}.params.patch`)
   }
   return params
 }
@@ -580,7 +568,7 @@ export function createPromptConfigs(specs, options = {}) {
     const rawStrategy = spec.strategy ?? 'static'
     const strategy = rawStrategy
     if (strategy === 'world-book') throw new TypeError(`${name}: world-book is retired; reimport or explicitly convert to context-activation`)
-    if (['custom-fallback', 'first-turn-anchor', 'anchor-notice'].includes(strategy)) throw new TypeError(`${name}: retired strategy ${strategy}; use rule conditions and static content`)
+    if (['custom-fallback', 'first-turn-anchor', 'anchor-notice', 'guide-auto'].includes(strategy)) throw new TypeError(`${name}: retired strategy ${strategy}; use rule conditions and static content`)
     if (!KNOWN_STRATEGIES.has(strategy)) {
       // 模板专属策略:声明了 strategyDir 时由 strategies.bindResolver 懒加载,
       // 否则视为未知策略 fail loud。
@@ -593,6 +581,7 @@ export function createPromptConfigs(specs, options = {}) {
       throw new TypeError(`${name}: ${label} unknown configKind ${JSON.stringify(configKind)}`)
     }
     const layer = spec.layer ?? 'pre-step'
+    if (layer === 'agent-request' || layer === 'llm-stream') throw new TypeError(`${name}: layer ${layer} is not an inject-text channel; use ${layer === 'agent-request' ? 'request-params' : 'stream-output'} action`)
     if (!KNOWN_LAYERS.has(layer)) {
       throw new TypeError(`${name}: ${label} unknown layer ${JSON.stringify(layer)} — known layers: ${[...KNOWN_LAYERS].sort().join(', ')}`)
     }
@@ -626,9 +615,7 @@ export function createPromptConfigs(specs, options = {}) {
     const templatePatch = template !== null && typeof template === 'object'
       ? { id: template.id, role: template.role, content: template.content, source: template.source }
       : undefined
-    // tool-pipeline 的 toolNames 是逗号分隔字符串（parseToolNames 只认字符串）：
-    // 数组写法会被静默解析为空 = 匹配所有工具，把一条定向门扩大成全工具门，
-    // 与条件判定叠加后危害更大，这里归一化而不是留给运行时。
+    // 内容和层参数保留各自验证，条件只由规则树负责。
     const params = normalizeLayerParams(spec.params, layer, `${name}: ${label}`)
     validateActivation(params, strategy, `${name}: ${label}`)
     const config = {

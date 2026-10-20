@@ -15,7 +15,7 @@ export function channelBinder(ctx, kind, plugin, prepend) {
   }
 }
 
-const ON_REGISTERED_KINDS = new Set(['assembly', 'tool-gate', 'tool-result', 'append-context', 'request-params', 'inbox-prepend', 'pre-step-filter', 'tool-visibility'])
+const ON_REGISTERED_KINDS = new Set(['assembly', 'tool-gate', 'tool-result', 'append-context', 'request-params', 'stream-output', 'inbox-prepend', 'pre-step-filter', 'tool-visibility'])
 
 /** 编辑目录与注册校验共用支持面；不另给客户端维护一份名单。 */
 export const actionSupportsWhen = (kind) => ON_REGISTERED_KINDS.has(kind)
@@ -26,10 +26,7 @@ export const actionSupportsWhen = (kind) => ON_REGISTERED_KINDS.has(kind)
  *
  * 依据（`@deepseek-ai/dsh-agent/lib/types/runtime-types.d.ts` 的逐事件 `@mode` 注释）：
  * **只有 `waterfall` 才有 `next`**；`agent/pre-step`／`agent/request` 是 waterfall，
- * 而 `agent/inbox/inserted`（B7 新增动作的通道）是 **emit**、
- * `agent/turn-stopping`（既有 append-context「续跑」的通道）是 **serial**——
- * 两者都没有 `next`。第三项此前是个隐患：`append-context(continue)` 一旦带 `when`，
- * 旧实现会把 `turn` 当成 `next` 调掉。
+ * 而 `agent/inbox/inserted` 是 **emit**，`agent/turn-stopping` 是 **serial**，两者没有 `next`。
  */
 export const NEXT_FREE_CHANNELS = new Set([
   'session/event',
@@ -41,11 +38,8 @@ export const NEXT_FREE_CHANNELS = new Set([
 export function actionExecutionPoint(action) {
   if (action.kind === 'tool-gate') return { channel: 'tools/pre-execute', phase: 'before-next' }
   if (action.kind === 'tool-result') return { channel: 'tools/post-execute', phase: 'before-next' }
-  if (action.kind === 'append-context') {
-    return action.mode === 'continue'
-      ? { channel: 'agent/turn-stopping', phase: 'before-next' }
-      : { channel: 'tools/post-execute', phase: 'after-next' }
-  }
+  if (action.kind === 'append-context') return { channel: 'tools/post-execute', phase: 'after-next' }
+  if (action.kind === 'stream-output') return { channel: 'llm/stream', phase: 'before-next' }
   if (action.kind === 'inject-text') {
     // 层→注册点由 schema 的 LAYER_DEFINITIONS 派生（`INJECTION_CHANNELS`），不在此另写层表。
     const layer = action.config?.layer

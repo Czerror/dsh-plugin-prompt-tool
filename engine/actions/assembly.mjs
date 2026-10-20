@@ -18,7 +18,7 @@ export function prepareAssembly(action, plugin) {
     throw new TypeError(`${plugin}: assembly requires a target object — { sections } / { contexts }`)
   }
   if (target.tools !== undefined) {
-    throw new TypeError(`${plugin}: assembly.target.tools 已移除 — 工具可见面改用 tool-visibility 动作（allow/deny/discovery/notice）`)
+    throw new TypeError(`${plugin}: assembly.target.tools 已移除 — 工具可见面改用 tool-visibility 动作（allow/deny/discovery）`)
   }
   const sectionsAdd = target.sections?.add
   const sectionsRemove = NAME_LIST.parse(target.sections?.remove, plugin, 'assembly.sections.remove')

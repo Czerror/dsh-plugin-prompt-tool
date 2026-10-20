@@ -102,8 +102,8 @@ test('rule-steps: 工具链动作卡按引擎种子渲染可编辑字段，match
   })
   const labels = [...html.matchAll(/aria-label="([^"]*)"/g)].map(match => match[1])
   // 手写期望值（真值源：引擎动作声明）：`match` 已取消（条件写 `rule.if`），不在卡片的可编辑面。
-  const expected = { 'tool-gate': ['decision', 'reason', 'toolNames'], 'tool-result': ['action', 'text', 'toolNames'], 'append-context': ['mode', 'text'] }
-  const fieldLabelKeys = { action: 'rules.actionField.action', decision: 'rules.actionField.decision', toolNames: 'rules.actionField.toolNames' }
+  const expected = { 'tool-gate': ['decision', 'reason'], 'tool-result': ['action', 'text'], 'append-context': ['text'] }
+  const fieldLabelKeys = { action: 'rules.actionField.action', decision: 'rules.actionField.decision' }
   const labelOf = field => t(fieldLabelKeys[field] ?? `triggers.label.${field}`)
   // 卡片操作（↑↓× 与类型选择）不是字段入口，但同在一个 aria-label 面上，按动作自己的 id 计入。
   const chromeOf = id => [t('rules.moveUp', { id }), t('rules.moveDown', { id }), t('rules.steps.remove', { id }), t('triggers.actionType')]

@@ -1,4 +1,4 @@
-import { labelOf, toolNameSet } from './shared.mjs'
+import { labelOf } from './shared.mjs'
 
 /**
  * tool-result —— 工具结果结算后的处理（post 相）。
@@ -8,8 +8,6 @@ import { labelOf, toolNameSet } from './shared.mjs'
  */
 export function prepareToolResult(action, plugin) {
   const label = labelOf(action)
-  const names = toolNameSet(action.toolNames, plugin, `${label}.toolNames`)
-  const matches = (exec) => names === undefined || names.has(exec?.name)
   const mode = action.action ?? 'accept'
   if (!['accept', 'replace', 'block'].includes(mode)) {
     throw new TypeError(`${plugin}: ${label}.action must be one of accept, replace, block`)
@@ -20,7 +18,6 @@ export function prepareToolResult(action, plugin) {
   const text = typeof action.text === 'string' ? action.text : ''
   return (_ctx, { warnOnce, on, collect, take }) => collect(on('tools/post-execute', async (exec, result, next) => {
     try {
-      if (!matches(exec)) return next()
       if (mode === 'accept') return next()
       if (mode === 'replace' && text.length > 0) {
         if (!take(exec)) return next()

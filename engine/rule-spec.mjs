@@ -53,6 +53,14 @@ function validateActionLinks(rule) {
   const actions = new Map(rule.actions.map(action => [action.id, action]))
   const edges = new Map()
   for (const action of rule.actions) {
+    const content = action.compiledConfig
+    if (content?.fill === 'tool-catalog') {
+      const source = actions.get(content.params.action)
+      if (source?.kind !== 'tool-visibility' || !Array.isArray(source.allow)) {
+        throw new TypeError(`rule ${rule.id}: tool-catalog action ${action.id} requires a same-rule tool-visibility action with allow`)
+      }
+      content.toolCatalogSource = { allow: source.allow, deny: source.deny, discovery: source.discovery }
+    }
     const refs = referencedActions(action.conditions, referencedActions(rule.conditionTrees.when))
     edges.set(action.id, refs)
     if (refs.size && action.compiledConfig) action.compiledConfig.linkedDelivery = true
@@ -211,9 +219,6 @@ function normalizeActionGates(action, execution) {
   }
 }
 
-/** 注册制层：内容在 agent 装配时注册一次，没有逐轮求值时机，因此不接受分支条件。 */
-const REGISTRATION_LAYERS = new Set(['system-section', 'runtime-context'])
-
 /** options.promptConfigOptions 拥有模板/策略路径；configOrder 使用规则 id，moduleId 只标记来源。 */
 export function compileRules(specs, options = {}) {
   if (!Array.isArray(specs)) throw new TypeError('rules must be an array')
@@ -332,9 +337,8 @@ export function compileRules(specs, options = {}) {
       }
       // 空条件数组经 conjunction → undefined → compileWhen 直接返回 undefined（无条件动作）。
       const actionWhen = compileWhen(actionConditions, conditionOptions)
-      const branchLayer = action.kind === 'inject-text' ? action.config.layer : spec.layer ?? 'pre-step'
-      if (actionWhen !== undefined && (REGISTRATION_LAYERS.has(branchLayer) || execution.lifecycle === 'registration')) {
-        throw new TypeError(`action ${action.id}: layer ${branchLayer} has no per-turn evaluation point — move the branch to pre-step / subagent-* / tool-pipeline / turn-stop`)
+      if (actionWhen !== undefined && execution.lifecycle === 'registration') {
+        throw new TypeError(`action ${action.id}: registration effects do not support conditional branches`)
       }
       return Object.assign(action, { execution, channelOrder, waterfallPosition, actionIndex, actionWhen, bypassRuleWhen: bypass, conditions: structuredClone(actionConditions) })
     })

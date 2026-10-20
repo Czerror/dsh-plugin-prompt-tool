@@ -24,23 +24,10 @@
 import { RUN_CODE, createMask, labelOf } from './shared.mjs'
 import { SDK_SECTION_NAME, stripSdkDeclarations, sdkToolNames } from '../sdk-strip.mjs'
 import { historyEvents } from '../history.mjs'
-import { createPromptConfigs } from '../schema.mjs'
-import { applyPromptConfigs } from '../executor.mjs'
-import { compileWhen } from '../conditions/index.mjs'
 import { DISCOVERY_SERVICE } from '../service-names.mjs'
 import { UNLOCKABLE_DISCOVERY_KINDS } from '../discovery.mjs'
 
-const AUDIENCES = new Set([undefined, null, '', 'all', 'main', 'subagent'])
 const record = (value) => value !== null && typeof value === 'object' && !Array.isArray(value)
-
-function parseAudience(action, label, plugin) {
-  const value = action.audience
-  if (!AUDIENCES.has(value)) {
-    throw new TypeError(`${plugin}: ${label}.audience must be main, subagent or all — got ${JSON.stringify(value)}`)
-  }
-  if (value === 'main' || value === 'subagent') return value
-  return 'all'
-}
 
 function parseDiscovery(action, label, plugin) {
   const discovery = action.discovery
@@ -66,16 +53,6 @@ function parseDiscovery(action, label, plugin) {
   return result
 }
 
-function parseNotice(action, label, plugin) {
-  const notice = action.notice
-  if (notice === undefined || notice === false) return undefined
-  if (notice === true) return { text: '' }
-  if (!record(notice)) throw new TypeError(`${plugin}: ${label}.notice must be true, false or { text }`)
-  if (notice.text !== undefined && typeof notice.text !== 'string') {
-    throw new TypeError(`${plugin}: ${label}.notice.text must be a string`)
-  }
-  return { text: typeof notice.text === 'string' ? notice.text : '' }
-}
 
 /** 同一份 mask 的稳定身份：名单变化必须重挂执行闸，不能沿用旧名单。 */
 function maskKey(mask) {
@@ -111,21 +88,9 @@ function fillUnlocked(into, session, tool, key, warnOnce, plugin, label) {
   }
 }
 
-/** 首轮提示的缺省正文：常驻集与发现入口都从声明派生，不在提示里手抄第二份。 */
-export function toolVisibilityNoticeText({ resident = [], discovery, text = '' } = {}) {
-  if (text.length > 0) return text
-  const listed = resident.length > 0 ? resident.join(', ') : '(empty)'
-  const base = `Tool catalog notice: this session exposes a resident core set (${listed}). `
-    + 'The rest of the catalog is hidden to keep each request small.'
-  if (discovery === undefined) return base
-  return base + ` Use ${discovery.tool} to search for a capability and unlock it by exact name.`
-}
-
 export function prepareToolVisibility(action, plugin) {
   const label = labelOf(action)
-  const audience = parseAudience(action, label, plugin)
   const discovery = parseDiscovery(action, label, plugin)
-  const notice = parseNotice(action, label, plugin)
   // 发现工具只解锁白名单里没点的名字：allowExtra 是「只做加法」的活集合，每轮从持久 tool/call 回收。
   if (discovery !== undefined && action.allow === undefined) {
     throw new TypeError(`${plugin}: ${label}.discovery requires allow — 解锁只对白名单有意义`)
@@ -150,18 +115,11 @@ export function prepareToolVisibility(action, plugin) {
     }
     const releaseAll = () => { for (const session of [...states.keys()]) release(session) }
 
-    const appliesTo = (session) => {
-      if (audience === 'all') return true
-      const depth = session?.header?.delegationDepth ?? 0
-      return depth > 0 ? audience === 'subagent' : audience === 'main'
-    }
-
     /** 执行面：restrict 覆盖继承的全局工具，guard 兜住本层与晚到工具。 */
     const syncGate = (agent) => {
       const session = agent?.session
       const scoped = agent?.ctx
       if (session === undefined || scoped === undefined) return
-      if (!appliesTo(session)) { release(session); return }
       const tools = scoped.tools
       if (tools === undefined) return
       const key = `${maskKey(mask)}|unlock:${allowExtra === undefined ? '' : [...allowExtra].sort().join(',')}`
@@ -205,37 +163,6 @@ export function prepareToolVisibility(action, plugin) {
     }
 
     collect(releaseAll)
-    /**
-     * 提示走既有 prompt-config 引擎（与锚定提示、晋升提示同一条通道）：本动作只构造一条
-     * 配置并交给它执行，不新开通道，也不在动作里再写一遍注入逻辑。
-     * 首轮由 count(user-message, max 1) 限定；条件通过时本 handler 才会被调用，所以提示
-     * 天然跟随规则条件。
-     */
-    let noticeInstalled = false
-    const installNotice = () => {
-      if (notice === undefined || noticeInstalled) return
-      noticeInstalled = true
-      try {
-        const text = toolVisibilityNoticeText({ resident: [...(mask.allow ?? [])], discovery, text: notice.text })
-        const [config] = createPromptConfigs([{
-          id: `tool-visibility:${action.id}:notice`,
-          layer: 'pre-step',
-          strategy: 'static',
-          position: 'after-user',
-          dedupe: 'session',
-          configKind: 'ordered',
-          order: 20,
-          role: 'user',
-          mergeMode: 'separate',
-          form: 'notice',
-          text,
-        }])
-        config.actionWhen = compileWhen({ count: { of: 'user-message', max: 1 } })
-        collect(applyPromptConfigs(mountCtx, [config], {}))
-      } catch (error) {
-        warnOnce(`${plugin}: tool-visibility action ${label} notice failed: ${String(error?.message ?? error)}`)
-      }
-    }
     // 条件为假时 rule-runtime 不进入 handler：未命中回调负责撤掉上一轮注册的执行闸。
     // 动作级 when 由 withWhen 调用时没有帧，只能撤当前已登记的全部会话。
     onMiss((frame) => {
@@ -272,10 +199,7 @@ export function prepareToolVisibility(action, plugin) {
         warnOnce(`${plugin}: tool-visibility action ${label} failed to sync execution gate: ${String(error?.message ?? error)}`)
       }
       try {
-        // 受众不在本次装配的目标内：不投影、也不挂闸（syncGate 已按同一判据释放旧闸）。
-        if (!appliesTo(context?.agent?.session)) return assembled
         let result = assembled
-        installNotice()
         if (Array.isArray(result.tools)) {
           const available = new Set(result.tools.map((tool) => tool?.name).filter((name) => typeof name === 'string'))
           // requireMatch 与旧 assembly 同判据：名单里任一工具缺失就 fail-open。

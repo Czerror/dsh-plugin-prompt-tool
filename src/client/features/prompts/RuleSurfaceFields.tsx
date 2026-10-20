@@ -73,7 +73,7 @@ function TextSurfaceFields(props: SurfaceProps & { target: 'sections' | 'context
 }
 
 /**
- * 工具可见面：一份声明拥有 allow/deny、发现工具、requireMatch 与首轮提示。
+ * 工具可见面：一份声明拥有 allow/deny、发现工具与 requireMatch。
  * 名单两种模式都保留（官方 ToolRestriction 的 and/or 语义）；选择模式只切换主名单，
  * 不删除作者已写的另一份。
  */
@@ -96,9 +96,7 @@ export function VisibilityFields(props: SurfaceProps): ReactNode {
     </FormField>)}</div>}
     <div className={css.surfaceSwitchRow}><span>{t('triggers.label.requireMatch')}</span><Switch label={t('triggers.label.requireMatch')} checked={value.requireMatch === true}
       disabled={props.disabled || mode === 'deny'} onChange={next => patch({ requireMatch: next })} /></div>
-    <div className={css.surfaceSwitchRow}><span>{t('triggers.label.notice')}</span><Switch label={t('triggers.label.notice')} checked={value.notice !== undefined && value.notice !== false}
-      disabled={props.disabled} onChange={next => patch({ notice: next ? true : undefined })} /></div>
-    <RuleParameterFields {...props} omit={['id', 'kind', 'allow', 'deny', 'discovery', 'requireMatch', 'notice']} />
+    <RuleParameterFields {...props} omit={['id', 'kind', 'allow', 'deny', 'discovery', 'requireMatch']} />
   </>
 }
 

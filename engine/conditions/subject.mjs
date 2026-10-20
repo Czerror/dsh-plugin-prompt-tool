@@ -19,6 +19,13 @@ const subagentAgent = (args, ctx) => {
   return ctx?.agents?.get?.(id) ?? undefined
 }
 
+const streamAgent = (args, ctx) => {
+  const call = args[0]
+  if (call?.agent !== undefined) return call.agent
+  if (typeof call?.sessionId !== 'string') return undefined
+  return (ctx?.get?.('agents') ?? ctx?.agents)?.get?.(call.sessionId)
+}
+
 /**
  * 子代理两层的事实。`name` = provider（`SubagentRunInfo` 里唯一稳定的分类事实：
  * spawn / fork / acp / codex / claude-code / dsh-sdk），`names` 谓词读的就是它，
@@ -73,7 +80,7 @@ const CHANNELS = {
     text: { argsText: args => toolArgsText(args[0]?.arguments), resultText: args => extractText(args[1]) },
   },
   'session/event': { facts: { session: args => args[0] } },
-  'llm/stream': { facts: { model: args => args[0]?.model } },
+  'llm/stream': { facts: { model: args => args[0]?.model, agent: streamAgent } },
   'subagent/start': { facts: SUBAGENT_FACTS, text: { subagentText: args => subagentTextOf(args[0]) } },
   'subagent/end': { facts: SUBAGENT_FACTS, text: { subagentText: args => subagentTextOf(args[0]) } },
 }

@@ -20,7 +20,7 @@
 
 | 谓词 | 字段 | 语义与边界 |
 |---|---|---|
-| `text` | `keys` / `secondaryKeys` 至少一个非空；`logic`（`any`/`all`/`not`/`notAny`，不能按名称当作 ST 数字逻辑）；`mode`（`scan` 全文 / `prefix` 词首）；`caseSensitive`；`wholeWords`；`useRegex`（`true` 强制正则 / `false` 强制字面 / 缺省＝只把 `/pattern/flags` 形态当正则）；`wordBoundary`（unicode/ascii-token）；`subject` | 文本匹配。动作级条件必须显式声明本通道可用的 subject；规则级条件缺事实时不执行 |
+| `text` | `keys` / `secondaryKeys`，或单独 `minChars` / `maxChars`（含端点的非负安全整数）；`logic`（any/all/not/notAny）；`mode`（scan/prefix）；`caseSensitive`；`wholeWords`；`useRegex`；`wordBoundary`；`subject` | 关键词与长度同时声明时取交集，minChars 不得大于 maxChars；userMessage 读取本批全部真实用户文本。动作级条件必须声明本通道可用的 subject；缺事实不执行 |
 | `phase` | `promoted`（缺省 `true`＝只匹配已晋升；`false`；`'ignore'` 必须同时写 `compacted`）；`compacted`；`promoteOn`（`either`/`tool-call`/`assistant-message`）；`includeSubagents`（缺省 false＝子代理视为已晋升）；`promoteGate` + `reasoningPattern`/`reasoningNegativePattern`/`reasoningFlags`；`maxPromoteSteps`；`promoteAfterFirstResponse` | 晋升相位。**单个节点表达不了「两个相位都命中」**，用 `any` 拼 `{promoted: true}` 与 `{compacted: true, promoted: false}` |
 | `source` | `kind` / `plugin`（字符串或字符串数组，两个都写是**合取**）；`caseSensitive`（缺省 true）；`match`（`exact` 缺省 / `prefix`） | 消息来源。列举多值要析取时用 `any` 显式写两支 |
 | `count` | `of`（`tool-call`/`tool-result`/`assistant-message`/`assistant-chars`/`user-message`/`turn`）；`per`（`session` 缺省 / `turn`）；`min` / `max` / `every`（**至少写一个**，否则恒真）；`includeCurrent`；`delegated` | 消息类信号按可见历史；tool-call/turn 按完整日志，冷启动按相同视图重建 |
@@ -40,19 +40,20 @@
 
 | 动作 | 执行点 | 主要字段 | 失败时 |
 |---|---|---|---|
-| `inject-text` | 由 `config.layer` 决定（**可注入八层**，见层表；`tool-pipeline` 无注入通道） | `layer`、`strategy`（`static`/`placeholder`/`guide-auto`/`context-activation`）、`position`、`dedupe`、`mergeMode`、`role`、`order`、`text`/`texts`、`params`、`templateFile`、`configKind` | 空正文不生成投递；变量赋值模板另按显式求值事务处理 |
+| `inject-text` | 由 config.layer 决定（**六层可注入**，agent-request/llm-stream/tool-pipeline 只作展示归属） | layer、strategy（static/placeholder/context-activation）、position、dedupe、mergeMode、role、order、text/texts、params、templateFile、configKind | 空正文不生成投递；变量赋值模板另按显式求值事务处理 |
 | `assembly` | `system-prompt/assemble` 下游 | `target.sections`（`add`/`remove` **或** `keep`）、`target.contexts`（`add`/`remove` **或** `clear`，二者互斥——并存编译期拒绝）；`target.tools` 已移除 | 返回未改动的装配 |
-| `tool-visibility` | `system-prompt/assemble` 下游 | `audience`（`main`/`subagent`/`all`）、`allow` 与/或 `deny`（同时给时先保留再剔除）、`requireMatch`（仅 allow）、`discovery`（`{ kind }`：按 agent 解析发现适配器并回收解锁名；`tool`/`key` 可选，只作断言）、`notice`（`true` = 引擎生成正文；`{ text }` = 模块自定义正文） | 呈现面失败保留原装配；执行闸失败留痕，不静默放行 |
-| `tool-gate` | `tools/pre-execute` | `decision`（`allow`/`deny`/`ask`）、`reason`、`toolNames` | 一律放行——裁决 bug 不卡死调用 |
-| `tool-result` | `tools/post-execute` | `action`（`accept`/`replace`/`block`）、`text`（仅 replace/block）、`toolNames` | 一律接受——结果处理 bug 不把调用变成失败 |
-| `append-context` | `mode: context` → `tools/post-execute`；`mode: continue` → `agent/turn-stopping` | `mode`、`text` | 保持原结果 |
+| `tool-visibility` | system-prompt/assemble 下游 | allow 与/或 deny（先保留再剔除）、requireMatch（仅 allow）、discovery（{ kind }；tool/key 可选，只作断言）；受众归 scope，提示归普通注入动作 | 呈现面失败保留原装配；执行闸失败留痕，不静默放行 |
+| `tool-gate` | tools/pre-execute | decision（allow/deny/ask）、reason；工具名归 names 条件 | 一律放行——裁决 bug 不卡死调用 |
+| `tool-result` | tools/post-execute | action（accept/replace/block）、text（仅 replace/block）；工具名归 names 条件 | 一律接受——结果处理 bug 不把调用变成失败 |
+| `append-context` | tools/post-execute | text；续跑用 inject-text 的 turn-stop 层 | 保持原结果 |
 | `request-params` | `agent/request` 下游 | `patch`（浅合并）、`unset`（`{键: 期望值}`）、`replace`（整体替换） | 保持原请求配置 |
+| `stream-output` | llm/stream | mode（pass 缺省 / replace）、text（替代正文） | 保持原流 |
 | `inbox-prepend` | `agent/inbox/inserted`（emit，无 next） | `target`（`next-turn` 缺省 / `next-step`）、`text` | 不命中即什么都不做 |
 | `pre-step-filter` | `agent/pre-step` 下游 | `sources` **或** `keepKinds`（互斥，未声明即不过滤）、`blockPlugins`（正交，空＝关闭） | 异常时保留全部消息 |
 
 通用规则：
 
-- 名单类参数（`allow`/`deny`/`sources`/`toolNames`）写成逗号分隔字符串或字符串数组都接受。
+- 名单类参数（allow/deny/sources）写成逗号分隔字符串或字符串数组都接受。
 - 工具可见面的 `allow` 与 `deny` 可以同时给：对齐官方 `ToolRestriction`，先按 `allow` 保留、再按 `deny` 剔除。
 - `maxPerTurn`（正整数）用在 `assembly` / `tool-gate` / `tool-result` / `append-context` / `request-params` /
   `inbox-prepend` / `pre-step-filter` 上；它数的是「本动作本轮生效几次」，
@@ -73,9 +74,9 @@ rules:
         reason: 本模块不开放联网工具
 ```
 
-一份 `deny` 名单同时裁装配目录、`tools:sdk` 正文，并在 agent scope 注册执行闸——会话原有预设装的行也归它裁决，经 `run_code` 的子调用同样被拒。要让禁用只作用于子代理，写 `audience: subagent`；省略即 `all`。
+一份 deny 名单同时裁装配目录、tools:sdk 正文，并在 agent scope 注册执行闸——会话原有预设装的行也归它裁决，经 run_code 的子调用同样被拒。要让禁用只作用于子代理，在规则或分支写 if.scope.audience: subagent；不设受众条件则两者都执行。
 
-要**收窄**而非禁用，用同一动作的 `allow` 白名单（范例见 `modules/tool-surface/module.yml`），并按需声明 `discovery` 与 `notice`：
+要收窄，用同一动作的 allow 白名单（范例见 modules/tool-surface/module.yml），并按需声明 discovery：
 
 ```yaml
 - id: narrow
@@ -83,10 +84,11 @@ rules:
   allow: [pwsh, read, write, edit, glob, grep, todo_write, skill_search, skill_load, tool_search, bash]
   discovery: { kind: tools }
   requireMatch: true
-  notice: true
 ```
 
-声明 `discovery` 的模块必须在 `modules` 里列出对应适配器行（`tools` → `tool-search`），缺行在装配准备期失败。`discovery` 在首次装配时按 agent 解析适配器，并从持久 `tool/call` 参数回收解锁名（只做加法、跨压缩保留）；工具由适配器行注册，`discovery.tool`/`key` 可选、只作断言。`notice` 可写 `true`（正文由引擎按常驻集与发现工具生成，不手抄），也可写 `{ text: 你的正文 }` 覆盖为模块自己的措辞——引擎生成只是缺省值，不是强制。`requireMatch` 在任一常驻工具缺失时放弃裁剪、暴露完整目录（fail-open）。
+声明 discovery 的模块必须在 modules 里列出对应适配器行（tools → tool-search），缺行在装配准备期失败。discovery 在首次装配时按 agent 解析适配器，并从持久 tool/call 参数回收解锁名（只做加法、跨压缩保留）；工具由适配器行注册，discovery.tool/key 可选、只作断言。提示用同规则普通 inject-text 组合 count（user-message，max: 1）与 session 去重，采用 strategy: placeholder、fill: tool-catalog、params: { action: narrow }。只读 RESIDENT_TOOLS 是引用动作 allow 去 deny 后的逗号名单，DISCOVERY_TOOL 是当前 Agent 的发现适配器工具名；模块 text 控制提示正文，保留自动名单而不复制声明。requireMatch 在任一常驻工具缺失时放弃裁剪、暴露完整目录（fail-open），声明名单不等同实时工具面。
+
+tool-catalog 引用目标必须有 allow；仅支持普通只读插值，`templateEvaluation: true` 拒绝。未知动作引用保存前拒绝，发现适配器不可用则跳过提示并告警。
 
 ## 三、九层与字段
 
@@ -95,11 +97,11 @@ rules:
 
 | 层 | 官方入口 | 层上合法字段 | 可用策略 | 层内 `params` |
 |---|---|---|---|---|
-| `pre-step` | `agent/pre-step` 消息批 | `position` `dedupe` `promotion` `audience` `modelScope` `mergeMode` `order` `role` `subject` `match` | 四种全支持 | — |
+| `pre-step` | `agent/pre-step` 消息批 | `position` `dedupe` `promotion` `audience` `modelScope` `mergeMode` `order` `role` `subject` `match` | static/placeholder/context-activation | — |
 | `system-section` | `ctx.systemPrompt.section` | `audience` `mergeMode` `order` | `static` | `sectionName` `complete` `suppressRuntimeContext` |
 | `runtime-context` | `ctx.systemPrompt.context` | `mergeMode` `order` | `static` `placeholder` | `contextName` |
-| `agent-request` | `agent/request` | `audience` `modelScope` `order` | `static` | `patch` `replace` |
-| `llm-stream` | `llm/stream` | `modelScope` `order` | `static` | `mode`（`pass`/`replace`） |
+| `agent-request` | `agent/request` | 仅动作展示归属 | — | request-params 动作的 patch/unset/replace |
+| `llm-stream` | `llm/stream` | 仅动作展示归属 | — | stream-output 动作的 mode/text |
 | `tool-pipeline` | 仅展示归属（**无注入通道**） | `audience` `modelScope` `order` `subject` `match` | — | 工具链的裁决 / 结果处理 / 追加上下文改用 `decision` / `append-context` 动作 |
 | `turn-stop` | `agent/turn-stopping` | `dedupe`（none/session） `modelScope` `order` `subject` `match` | `static` | — |
 | `subagent-start` | `subagent/start` | `modelScope` `order` `subject` `match` | `static` | — |
@@ -112,12 +114,12 @@ rules:
 2. 各层缺省的匹配对象：`pre-step` → `userMessage`、`tool-pipeline` → `toolArgs`、`turn-stop` →
    `assistantText`、`subagent-*` → `subagentInfo`。按任务内容分档放在 `pre-step`——`subagent/start`
    的事件里只有 provider 与 id，没有任务文本。
-3. 注册制层（`system-section`、`runtime-context`）的条件写在**规则级 `if`**：它在每次 assembly 走
-   条件文本贡献通道求值，`if.scope.audience` 是常见写法；动作级 `{ if, then, else }` 分支留给带逐轮
-   时机的层。`complete` 是「唯一 system 段」（同一 scope 一个）。
+3. system-section、runtime-context 的普通文本贡献支持规则级 if 和嵌套 `{ if, then, else }`，
+   每次 assembly 在条件文本贡献通道按当前事实求值，不动态重注册段；if.scope.audience 是常见写法。
+   complete / suppressRuntimeContext 属固定注册效果，仍拒绝动态条件分支；complete 表示同 scope 唯一 system 段。
 
-策略 × 层：`static` 全层；`placeholder` 在 `pre-step`、`runtime-context`；
-`guide-auto` / `context-activation` 在 `pre-step`。动态内容策略使用既有 resolver。
+策略 × 层：static 在六个可注入层；placeholder 在 pre-step、runtime-context；
+context-activation 在 pre-step。分类与正文用通用条件和分支组合（模板15），动态内容策略使用既有 resolver。
 
 ### 确认后注入
 

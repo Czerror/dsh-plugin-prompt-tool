@@ -58,7 +58,6 @@ export const LAYER_LABEL_KEYS: Record<InjectionPoint, PromptToolLocaleKey> = {
 export const STRATEGY_LABEL_KEYS: Record<string, PromptToolLocaleKey> = {
   static: 'strategy.static',
   placeholder: 'strategy.placeholder',
-  'guide-auto': 'strategy.guideAuto',
   'context-activation': 'strategy.worldBook',
 }
 export const SLOT_KIND_LABEL_KEYS: Record<string, PromptToolLocaleKey> = { ordered: 'slotKind.ordered', anchor: 'slotKind.anchor' }
@@ -80,7 +79,7 @@ export const OFFICIAL_ORDER_GROUP_LABEL_KEYS: Record<string, PromptToolLocaleKey
 }
 /** 只有把 order 原样交给官方 `section()` / `context()` 的两层才展示官方刻度。 */
 export const OFFICIAL_ORDER_LAYERS: readonly InjectionPoint[] = ['system-section', 'runtime-context']
-export const FILL_LABEL_KEYS: Record<string, PromptToolLocaleKey> = { '': 'fill.none', 'instruction-hint': 'fill.instructionHint', 'env-facts': 'fill.envFacts', 'skill-catalog': 'fill.skillCatalog' }
+export const FILL_LABEL_KEYS: Record<string, PromptToolLocaleKey> = { '': 'fill.none', 'instruction-hint': 'fill.instructionHint', 'env-facts': 'fill.envFacts', 'skill-catalog': 'fill.skillCatalog', 'tool-catalog': 'fill.toolCatalog' }
 /** 上述两个 UI 专有取值集的标签键：没有引擎值可对拍，只给本地下拉用。 */
 export const SOURCE_KIND_LABEL_KEYS: Record<string, PromptToolLocaleKey> = { '': 'sourceKind.default', plugin: 'sourceKind.plugin', 'instruction-hint': 'sourceKind.instructionHint', 'instruction-file': 'sourceKind.instructionFile', 'skill-catalog': 'sourceKind.skillCatalog', 'env-facts': 'sourceKind.envFacts' }
 export const SOURCE_FORM_LABEL_KEYS: Record<string, PromptToolLocaleKey> = { notice: 'sourceForm.notice', hint: 'sourceForm.hint', instructions: 'sourceForm.instructions', '': 'sourceForm.default' }

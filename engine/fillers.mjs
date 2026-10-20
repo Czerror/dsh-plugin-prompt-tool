@@ -6,12 +6,35 @@
 import { getService, parseToolNames } from './shared.mjs'
 import { machinePaths } from './machine-paths.mjs'
 import { createInstructionHintResolver } from './instruction-hint.mjs'
+import { DISCOVERY_SERVICE } from './service-names.mjs'
 
 const name = 'prompt-config-engine'
 
 function explicitTemplate(config) {
   const texts = Array.isArray(config.texts) ? config.texts : typeof config.text === 'string' ? [config.text] : []
   return texts.length > 0 ? texts.join('\n\n') : typeof config.params?.text === 'string' ? config.params.text : ''
+}
+
+/** 只读同规则工具面声明；文案、条件和投递仍归普通注入动作。 */
+function createToolCatalogResolver(config) {
+  if (config.params?.templateEvaluation === true) throw new TypeError('tool-catalog is read-only and does not support templateEvaluation')
+  if (typeof config.params?.action !== 'string' || config.params.action.trim().length === 0) {
+    throw new TypeError('tool-catalog requires params.action referencing a tool-visibility action')
+  }
+  const text = explicitTemplate(config)
+  return ({ ctx, agent }) => {
+    if (text.trim().length === 0) return null
+    const source = config.toolCatalogSource
+    if (source === undefined) throw new TypeError('tool-catalog requires a same-rule tool-visibility action')
+    const deny = new Set(source.deny ?? [])
+    const resident = [...new Set(source.allow)].filter(tool => !deny.has(tool))
+    const adapter = source.discovery === undefined ? undefined
+      : getService(ctx, DISCOVERY_SERVICE)?.get?.(agent, source.discovery.kind)
+    if (source.discovery !== undefined && typeof adapter?.tool !== 'string') {
+      throw new Error(`tool-catalog discovery adapter ${source.discovery.kind} is unavailable`)
+    }
+    return { text, variables: { RESIDENT_TOOLS: resident.join(', '), DISCOVERY_TOOL: adapter?.tool ?? '' } }
+  }
 }
 
 /**
@@ -140,6 +163,7 @@ export const FILLERS = {
   'instruction-hint': (config) => createInstructionHintResolver(config),
   'env-facts': (config) => createEnvFactsResolver(config),
   'skill-catalog': (config) => createSkillCatalogResolver(config),
+  'tool-catalog': (config) => createToolCatalogResolver(config),
 }
 
 export function createPlaceholderResolver(config) {

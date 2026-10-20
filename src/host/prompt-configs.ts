@@ -9,6 +9,7 @@
  */
 // 规则和文件身份使用引擎同一个边界校验。
 import { assertRuleId } from '../../engine/rule-spec.mjs'
+import type { RuleDefinition } from '../shared/rules.ts'
 
 /**
  * `PromptConfigSpec` 各枚举字段的**运行期值清单**。
@@ -88,7 +89,7 @@ export function configFileName(index: number, id: string): string {
   return `${String(index).padStart(4, '0')}-${id}.yml`
 }
 /** 模型采样参数生成与装配判定共用同一规则；空值不产生请求配置。 */
-export function modelRequestConfigs(params: Record<string, unknown>): PromptConfigSpec[] {
+export function modelRequestRules(params: Record<string, unknown>): RuleDefinition[] {
   const patchOf = (prefix: 'model' | 'subagent'): Record<string, unknown> => {
     const patch: Record<string, unknown> = {}
     const effort = params[`${prefix}ReasoningEffort`]
@@ -101,7 +102,13 @@ export function modelRequestConfigs(params: Record<string, unknown>): PromptConf
     if (typeof tokens === 'number' && Number.isSafeInteger(tokens) && tokens > 0 && String(maxTokens).trim().length > 0) patch.maxTokens = tokens
     return patch
   }
-  const configs: PromptConfigSpec[] = []
+  const rules: RuleDefinition[] = []
+  const add = (id: string, name: string, audience: 'main' | 'subagent', patch: Record<string, unknown>): void => {
+    if (Object.keys(patch).length > 0) rules.push({
+      id, name, layer: 'agent-request', if: { scope: { audience } },
+      then: [{ id: 'request', kind: 'request-params', patch }],
+    })
+  }
   const mainPatch = patchOf('model')
   // 固定主模型归当前预设的请求，不经全局默认模型服务回写。
   if (typeof params.modelProvider === 'string' && params.modelProvider.trim().length > 0
@@ -109,7 +116,7 @@ export function modelRequestConfigs(params: Record<string, unknown>): PromptConf
     mainPatch.provider = params.modelProvider.trim()
     mainPatch.model = params.modelName.trim()
   }
-  if (Object.keys(mainPatch).length > 0) configs.push({ id: 'model-params', name: '模型参数（主对话）', layer: 'agent-request', audience: 'main', order: -100, params: { patch: mainPatch } })
+  add('param-model-params', '模型参数（主对话）', 'main', mainPatch)
   const subagentPatch = patchOf('subagent')
   // 本地子代理请求路由；不改写官方委派工具的创建参数或外部子代理运行时。
   if (typeof params.subagentModelProvider === 'string' && params.subagentModelProvider.trim().length > 0
@@ -117,8 +124,8 @@ export function modelRequestConfigs(params: Record<string, unknown>): PromptConf
     subagentPatch.provider = params.subagentModelProvider.trim()
     subagentPatch.model = params.subagentModelName.trim()
   }
-  if (Object.keys(subagentPatch).length > 0) configs.push({ id: 'subagent-model-params', name: '模型参数（子代理）', layer: 'agent-request', audience: 'subagent', order: -100, params: { patch: subagentPatch } })
-  return configs
+  add('param-subagent-model-params', '模型参数（子代理）', 'subagent', subagentPatch)
+  return rules
 }
 
 /**

@@ -126,17 +126,18 @@ adapter 的目录、权限、原子写与版本责任归接入方。缺少 adapt
 
 | 动作 | 执行点与边界 |
 |---|---|
-| inject-text | config.layer 指定八个可注入层；tool-pipeline 只作展示归属 |
+| inject-text | config.layer 指定六个可注入层；agent-request、llm-stream、tool-pipeline 只作动作展示归属 |
 | assembly | system-prompt/assemble 的系统段 / 运行上下文投影（工具面不再由它承担） |
-| tool-visibility | system-prompt/assemble 下游：工具目录、SDK 正文、执行闸、发现工具与首轮提示，一份声明 |
+| tool-visibility | system-prompt/assemble 下游：一份名单拥有工具目录、SDK 正文、执行闸与发现来源；受众使用 scope 条件 |
 | request-params | agent/request；patch/unset 按官方 LlmCallConfig 校验 |
+| stream-output | llm/stream；pass 透传或 replace 替换为 text，不修改请求 |
 | tool-gate | tools/pre-execute 的裁决：allow / deny / ask |
 | tool-result | tools/post-execute 的结果处理：accept / replace / block |
-| append-context | 工具后追加或 turn-stopping 续跑 |
+| append-context | tools/post-execute 后追加上下文；续跑统一用 inject-text 的 turn-stop 层 |
 | pre-step-filter | 前置消息来源/插件过滤 |
 | inbox-prepend | inbox 通知补充上下文 |
 
-正文策略为 static、placeholder、guide-auto、context-activation。placeholder 仅 pre-step/runtime-context，其余动态内容策略仅 pre-step。普通规则无隐式业务正文、锚词、两轮兜底或长度阈值；空文本保持空。确认属于 `anchor` 条件，不再有专用首轮锚定或锚词正文策略；旧参数与入口直接替换，无兼容层。guide-auto 的复杂任务规则来自本动作参数，不从锚句配置派生。
+正文策略为 static、placeholder、context-activation。placeholder 仅 pre-step/runtime-context，context-activation 仅 pre-step。分类由通用 text 条件和分支选择普通静态正文；text 的 minChars/maxChars 为含端点的非负安全整数，可单独按长度判断，关键词与长度同时声明时取交集，minChars 不得大于 maxChars。userMessage 使用本批全部真实用户文本，不包括插件正文。普通规则无隐式业务正文、锚词、两轮兜底或长度阈值；空文本保持空。确认属于 anchor 条件；旧专用策略及重复动作入口直接替换，无兼容层。工具名只写 names 条件，不再由 tool-gate/tool-result 的参数重复过滤。
 
 ### 字词句确认与动作关联
 
@@ -185,7 +186,7 @@ then:
 - tools 通道有工具名、参数或结果；names/source/text 按动作的 channel 白名单校验。
 - subagent/start/end 有 provider/id/local 等事件事实，不含任务正文；文本 subject 用 subagentInfo。
 - llm/stream 自身无文本 subject；引擎可由 sessionId 查回 Agent，因此 phase/session/count/anchor 等依赖会话的条件可用，查不到为 UNAVAILABLE。
-- system-section/runtime-context 的规则级条件在 assembly 生效；动作分支不能假装有逐轮注册时机。complete/suppressRuntimeContext 属固定注册效果，动态 if 组合在编译期拒绝。
+- system-section/runtime-context 的普通文本贡献支持规则级条件及嵌套 if/then/else，在每次 assembly 按该执行点事实求值，不动态重注册段。complete/suppressRuntimeContext 属固定注册效果，动态 if 组合仍在编译期拒绝。
 
 固定系统段可通过 `config.audience: main/subagent` 限定受众；complete 和 suppressRuntimeContext 都在该 Agent 注册前筛选，非目标受众不注册这些效果。省略受众覆盖主/子两类。独占检查按受众分别聚合：主/子各一条可以同模块或跨模块共存，同受众重叠（包括未限定受众的段）在发布前拒绝；官方人设 complete 也只与该 Agent 的规则比较。
 
@@ -195,7 +196,7 @@ then:
 
 ## 提示词配置插入点与顺序
 
-九层展示序来自 `LAYER_ORDER`；八层可注入清单来自 `getEngineMeta().injectionLayers`。规则顶层 layer 是动作未写 config.layer 时的缺省及展示归属。详细载荷见 [九层契约](injection-point-contracts.md)。
+九层展示序来自 `LAYER_ORDER`；六层可注入清单来自 `getEngineMeta().injectionLayers`。agent-request、llm-stream、tool-pipeline 分别使用请求参数、流输出和工具动作，不能作为 inject-text 的 config.layer。规则顶层 layer 是动作未写 config.layer 时的缺省及展示归属。详细载荷见 [九层契约](injection-point-contracts.md)。
 
 跨模块同点顺序来自 module.yml.configOrder；同点动作按声明顺序，显式 channelOrder 冲突拒绝。order 只管所属官方插入点的位置，不建立跨层总顺序。pre-step 中注入和过滤可以交错 flush，后批继续排在仍存活的同位置消息之后。
 
@@ -236,11 +237,15 @@ surface 缺失或非法时可见视图退回完整日志；合法空 nodes 就�
 
 ## 工具面收窄与按需解锁
 
-`tool-visibility` 是工具面的唯一声明：一份 allow/deny 名单同时投影到装配目录、`tools:sdk` 正文与执行闸（restrict + guard），并可声明发现工具与首轮提示。呈现裁剪不等于授权：deny 同时注册执行闸，allow 的执行面由 restrict 覆盖继承的全局工具（官方 restrict 不作用于 scope 本层注册）。`requireMatch` 只对白名单有意义：名单工具在目录或 SDK 正文缺失时放弃裁剪、暴露完整目录（fail-open）。条件由规则引擎逐轮求值，条件变假时撤销上一轮注册的执行闸。
+`tool-visibility` 是工具面的唯一声明：一份 allow/deny 名单同时投影到装配目录、`tools:sdk` 正文与执行闸（restrict + guard），并可声明发现来源。受众统一写在规则或分支的 scope 条件。呈现裁剪不等于授权：deny 同时注册执行闸，allow 的执行面由 restrict 覆盖继承的全局工具（官方 restrict 不作用于 scope 本层注册）。`requireMatch` 只对白名单有意义：名单工具在目录或 SDK 正文缺失时放弃裁剪、暴露完整目录（fail-open）。条件由规则引擎逐轮求值，条件变假时撤销上一轮注册的执行闸。
 
-按需发现由同一份声明的 `discovery` 字段拥有（`{ kind }`，工具名与解锁键由适配器元数据提供；可选写 `tool`/`key` 只作断言）：动作在首次装配时用 `ctx.get('promptToolDiscovery')` 按 agent 解析适配器，从本会话 durable tool/call 参数提取显式字符串名单，只做加法且不能越过 deny。工具本身由适配器行注册——声明了 `discovery` 的模块必须把对应行（`tools` → `tool-search`、`skills` → `skill-search`）列进 `modules`，缺行在装配准备期失败。工具名按真实注册名称匹配；坏参数逐条忽略，缺会话回落静态 allow；适配器未注册时告警一次并跳过解锁回收，不阻断装配。首轮提示由 `notice` 声明：`notice: true` 时正文按常驻集与发现工具生成，`notice: { text }` 可用模块自己的措辞覆盖（引擎生成只是缺省值），最终都交给既有 prompt-config 引擎执行。
+按需发现由同一份声明的 `discovery` 字段拥有（`{ kind }`，工具名与解锁键由适配器元数据提供；可选写 `tool`/`key` 只作断言）：动作在首次装配时用 `ctx.get('promptToolDiscovery')` 按 agent 解析适配器，从本会话 durable tool/call 参数提取显式字符串名单，只做加法且不能越过 deny。工具本身由适配器行注册——声明了 `discovery` 的模块必须把对应行（`tools` → `tool-search`、`skills` → `skill-search`）列进 `modules`，缺行在装配准备期失败。工具名按真实注册名称匹配；坏参数逐条忽略，缺会话回落静态 allow；适配器未注册时告警一次并跳过解锁回收，不阻断装配。
 
-内置 tool-surface 的规则打开即收窄；`modules` 同时列 `tool-search` 行，工具由该行注册、元数据由发现注册表按 agent 解析，常驻集来自同一声明，首轮提示由引擎生成。需要晋升门时显式加规则条件；不由引擎偷偷恢复首轮全工具目录。
+首轮提示用同模板普通 inject-text 动作组合 count 条件与 session 去重；strategy: placeholder、fill: tool-catalog、params.action 引用同规则 tool-visibility 动作。只读变量 RESIDENT_TOOLS 来自该声明 allow 去 deny 后的逗号名单，DISCOVERY_TOOL 来自当前 Agent 的发现适配器工具名。提示正文由模块 text 控制，自动列名单，不复制配置，也不由工具可见面动作注册提示。
+
+tool-catalog 使用普通只读变量插值；`templateEvaluation: true` 在编译时拒绝，避免目录事实被持久变量求值覆盖。被引用动作须声明 allow，未知引用或错误动作种类拒绝；发现适配器不可用时跳过提示并告警。
+
+内置 tool-surface 的规则打开即收窄；`modules` 同时列 `tool-search` 行，工具由该行注册、元数据由发现注册表按 agent 解析，常驻集来自同一声明。普通提示动作在可见用户消息数不超过一条时自动列出声明常驻名单并提示发现解锁，按当前上下文去重；名单描述的是声明，不保证 requireMatch 退回完整目录后的实时工具面。需要晋升门时显式加规则条件；不由引擎偷偷恢复首轮全工具目录。
 
 ## 工具呈现（present-as）
 

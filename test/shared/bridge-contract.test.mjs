@@ -430,9 +430,9 @@ test('契约：/meta 与 /bootstrap 同源下发 layerOrder 与 editorGroups，�
   assert.deepEqual([...LAYER_ORDER], engineMeta.layerOrder, 'LAYER_ORDER 必须是九层固定顺序')
   assert.deepEqual([...INJECTION_POINT_ORDER], engineMeta.layerOrder, '前端退化默认必须与引擎层序同源')
   assert.deepEqual([...engineMeta.layers], [...LAYER_ORDER].sort(), 'layers 仍是排序后的合法集合（旧消费方不变）')
-  // 两份层清单：九层给视图筛选与规则级 layer，八层（去 tool-pipeline）才可注入。
-  assert.deepEqual([...engineMeta.injectionLayers], [...LAYER_ORDER].filter((layer) => layer !== 'tool-pipeline'))
-  assert.deepEqual([...engineMeta.layers].filter((layer) => !engineMeta.injectionLayers.includes(layer)), ['tool-pipeline'], '两份清单的差集只有工具链层')
+  // 九层供视图与动作归属筛选，只有六层承担文本注入。
+  assert.deepEqual([...engineMeta.injectionLayers], ['pre-step', 'system-section', 'runtime-context', 'turn-stop', 'subagent-start', 'subagent-end'])
+  assert.deepEqual([...engineMeta.layers].filter((layer) => !engineMeta.injectionLayers.includes(layer)), ['agent-request', 'llm-stream', 'tool-pipeline'], '请求参数、流控制与工具管线由独立动作承担')
 
   const handlers = register()
   const metaRes = fakeRes()

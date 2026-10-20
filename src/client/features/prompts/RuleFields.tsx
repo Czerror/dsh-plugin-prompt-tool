@@ -20,7 +20,7 @@ import css from './rules.module.css'
 export interface FieldContext { t: PromptToolTranslate; fields: Map<string, FieldDraft>; fieldKey: string; disabled?: boolean; engineMeta?: EngineMeta; onDraft: () => void }
 const FIELD_LABELS: Record<string, PromptToolLocaleKey> = { layer: 'form.layer.label', strategy: 'form.strategy.label', position: 'form.position.label', audience: 'form.audience.label', modelScope: 'form.modelScope.label', subject: 'form.subject.label', mergeMode: 'form.merge.label', dedupe: 'form.dedupe.label', promotion: 'form.promotion.label', configKind: 'form.kind.label', role: 'form.role.label', fill: 'form.fill.label', order: 'form.order.label',
   // 动作字段：tool-gate 的 `decision` 与 tool-result 的 `action` 是动作类型名之外的两份含义，不能借 triggerLabel。
-  action: 'rules.actionField.action', decision: 'rules.actionField.decision', toolNames: 'rules.actionField.toolNames' }
+  action: 'rules.actionField.action', decision: 'rules.actionField.decision' }
 /** 清掉某个字段前缀下的原始草稿（含嵌套键）。 */
 export const cleared = <T,>(fields: Map<string, T>, prefix: string): void => { for (const key of fields.keys()) if (key === prefix || key.startsWith(prefix + ':')) fields.delete(key) }
 function moveConditionDrafts<T>(fields: Map<string, T>, from: string, to: string): void {
@@ -52,7 +52,7 @@ export function RuleParameterFields(props: FieldContext & { value: Record<string
     const choices = ruleFieldOptions(t, String(props.value.id === undefined ? props.fieldKey.split(':').at(-1) ?? '' : props.value.kind ?? ''), key)
     if (choices !== undefined && typeof value === 'string') return <FormField key={key} label={label}><MenuSelect compact ariaLabel={label} value={value} disabled={props.disabled}
       options={choices.some(option => option.value === value) ? choices : [...choices, { value, label: value }]} onChange={patch} /></FormField>
-    // 动作的 config.layer 只能选引擎真正可注入的八层（tool-pipeline 只作规则级展示归属）；
+    // 动作的 config.layer 只能选引擎真正可注入的六层；
     // 其余 layer 下拉（视图筛选等）仍是九层。`:config` 前缀只有 inject-text 会产生。
     const layerOptions = props.fieldKey.endsWith(':config') ? props.engineMeta?.injectionLayers : props.engineMeta?.layers
     const enums = key === 'layer' ? layerOptions : key === 'strategy' ? props.engineMeta?.strategies
@@ -75,12 +75,13 @@ export function RuleParameterFields(props: FieldContext & { value: Record<string
       placeholder={t('rules.tokens.placeholder')} removeLabel={tag => t('rules.tokens.remove', { tag })} onChange={patch} /></div>
     if (typeof value === 'boolean') return <div key={key} className={css.toggle}><span>{label}</span><span className={css.switchLine}><Switch label={label} checked={value} disabled={props.disabled} onChange={patch} /></span></div>
     const fallbackNumber = key === 'fallbackAfter' && props.fieldKey.endsWith(':anchor')
+    const textLength = ['minChars', 'maxChars'].includes(key) && props.fieldKey.endsWith(':text')
     const optionalNumber = requestField && ['temperature', 'maxTokens'].includes(key)
     if (typeof value === 'number' || optionalNumber) {
       const retained = props.fields.get(fieldKey)
       const draft = retained && (retained.error || retained.text !== retained.source || retained.text === String(value ?? '') || typeof value === 'number' && Number(retained.text) === value) ? retained : undefined
       return <FormField key={key} label={label} error={draft?.error}><TextInput aria-label={label} inputMode="decimal" readOnly={props.disabled} value={draft?.text ?? String(value ?? '')}
-        onChange={event => { const text = event.target.value, empty = text.trim() === '', valid = optionalNumber && empty || !empty && Number.isFinite(Number(text)) && (!fallbackNumber || Number.isInteger(Number(text)) && Number(text) > 0); props.fields.set(fieldKey, { source: valid ? text : String(value ?? ''), text, error: valid ? '' : t('triggers.number') }); if (valid) patch(empty ? undefined : Number(text)); props.onDraft() }} /></FormField>
+        onChange={event => { const text = event.target.value, empty = text.trim() === '', valid = optionalNumber && empty || !empty && Number.isFinite(Number(text)) && (!fallbackNumber || Number.isInteger(Number(text)) && Number(text) > 0) && (!textLength || Number.isSafeInteger(Number(text)) && Number(text) >= 0); props.fields.set(fieldKey, { source: valid ? text : String(value ?? ''), text, error: valid ? '' : t('triggers.number') }); if (valid) patch(empty ? undefined : Number(text)); props.onDraft() }} /></FormField>
     }
     const multiline = ['text', 'prompt', 'prefix', 'suffix', 'template', 'description'].includes(key)
     const text = String(value ?? '')
@@ -175,16 +176,16 @@ export function RuleConditionFields(props: FieldContext & { expanded: Map<string
         </StepCard>
       })}
     </div> : entry && <div className={css.fields}>
-      {kind === 'anchor' && ['after', 'fallbackAfter'].map(key => {
+      {(kind === 'anchor' ? ['after', 'fallbackAfter'] : kind === 'text' ? ['minChars', 'maxChars'] : []).map(key => {
         const parameters = asTriggerRecord(value?.[kind]), present = Object.hasOwn(parameters, key)
         return <div key={key} className={css.toggle}><span>{triggerLabel(t, key)}</span><Switch label={triggerLabel(t, key)} checked={present} disabled={props.disabled} onChange={enabled => {
           const next = { ...parameters }
-          if (enabled) next[key] = key === 'after' ? { action: '' } : 1
+          if (enabled) next[key] = key === 'after' ? { action: '' } : key === 'fallbackAfter' ? 1 : 0
           else { delete next[key]; cleared(props.fields, props.fieldKey + ':' + kind + ':' + key) }
           props.onChange({ ...value, [kind]: next })
         }} /></div>
       })}
-      <RuleParameterFields {...props} value={asTriggerRecord(value?.[kind])} example={kind === 'anchor' ? Object.fromEntries(Object.entries(asTriggerRecord(entry.example[kind])).filter(([key]) => !['after', 'fallbackAfter'].includes(key))) : asTriggerRecord(entry.example[kind])} fieldKey={props.fieldKey + ':' + kind} onChange={next => props.onChange({ ...value, [kind]: next })} />
+      <RuleParameterFields {...props} value={asTriggerRecord(value?.[kind])} example={Object.fromEntries(Object.entries(asTriggerRecord(entry.example[kind])).filter(([key]) => !(kind === 'anchor' ? ['after', 'fallbackAfter'] : kind === 'text' ? ['minChars', 'maxChars'] : []).includes(key)))} fieldKey={props.fieldKey + ':' + kind} onChange={next => props.onChange({ ...value, [kind]: next })} />
     </div>}
     {add}
   </div>

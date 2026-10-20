@@ -22,12 +22,11 @@ after(() => {
 })
 const { FIXTURE_MODULE_ID, installFixtureModule } = await import('../fixtures/module-template.mjs')
 const { Config, readModulesEnabled } = await import('../../src/config.ts')
-const { createPromptConfigs } = await import('../../engine/schema.mjs')
 const { writeModule } = await import('../../src/host/write-module.ts')
 // 模板定位契约以打包目录 lib/ 为锚；其余行为直接覆盖当前源码。
 const { loadPromptTemplates } = await import('../../lib/index.mjs')
 const { loadModuleSpec } = await import('../../src/host/module-spec.ts')
-const { injectionConfigSpec } = await import('../../engine/rule-spec.mjs')
+const { injectionConfigSpec, compileRules } = await import('../../engine/rule-spec.mjs')
 
 /** 夹具的 canonical 规则切片；传入 rules 时改写定义，验证 writer 的物化边界。 */
 function generatedConfigs(rules) {
@@ -76,6 +75,6 @@ test('Config：部署设置仅保留模块运行总闸', () => {
 
 test('模板库全部条目通过引擎权威校验（模板即合法配置）', async () => {
   for (const template of loadPromptTemplates()) {
-    assert.doesNotThrow(() => createPromptConfigs([template.spec]), template.file)
+    assert.doesNotThrow(() => compileRules([template.spec]), template.file)
   }
 })

@@ -10,8 +10,20 @@ export function createTextPredicate(options = {}) {
   if (options.wordBoundary !== undefined && !['ascii-token', 'unicode'].includes(options.wordBoundary)) throw new TypeError('wordBoundary 必须是 ascii-token 或 unicode')
   const keys = keyList(options.keys, 'keys')
   const secondaryKeys = keyList(options.secondaryKeys, 'secondaryKeys')
-  if (keys.length === 0 && secondaryKeys.length === 0) {
-    throw new TypeError('predicates: a text predicate needs at least one non-empty key')
+  const bounds = ['minChars', 'maxChars'].map(field => {
+    const value = options[field]
+    if (value !== undefined && (!Number.isSafeInteger(value) || value < 0)) {
+      throw new TypeError(`predicates: ${field} must be a non-negative safe integer`)
+    }
+    return value
+  })
+  const [minChars, maxChars] = bounds
+  if (minChars !== undefined && maxChars !== undefined && minChars > maxChars) {
+    throw new TypeError('predicates: minChars cannot exceed maxChars')
+  }
+  const hasKeys = keys.length > 0 || secondaryKeys.length > 0
+  if (!hasKeys && minChars === undefined && maxChars === undefined) {
+    throw new TypeError('predicates: a text predicate needs a non-empty key or minChars/maxChars')
   }
   const logic = options.logic ?? MATCH_LOGIC.ANY
   if (!Object.values(MATCH_LOGIC).includes(logic)) {
@@ -38,9 +50,13 @@ export function createTextPredicate(options = {}) {
     wordBoundary: options.wordBoundary,
   })
   const subject = options.subject
-  const predicate = (payload) => conditionInputAvailable('text', options, payload)
-    ? matcher.scan(typeof payload === 'string' ? payload : subjectTextOf(subject, payload)).active === true
-    : UNAVAILABLE
+  const predicate = (payload) => {
+    if (!conditionInputAvailable('text', options, payload)) return UNAVAILABLE
+    const text = typeof payload === 'string' ? payload : subjectTextOf(subject, payload)
+    return (minChars === undefined || text.length >= minChars)
+      && (maxChars === undefined || text.length <= maxChars)
+      && (!hasKeys || matcher.scan(text).active === true)
+  }
   predicate.kind = 'text'
   return predicate
 }

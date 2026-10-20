@@ -1,43 +1,13 @@
 /**
  * strategies — 引擎内容策略绑定(config.resolve)。
- * 内容策略: static / placeholder / guide-auto / context-activation。
+ * 内容策略: static / placeholder / context-activation。
  * 策略参数全部来自 config.params（由 preset.yml 单一配置源下发），引擎只负责组装。
  * 仍支持 strategyDir 懒加载自定义模板策略。
  */
 
-import { extractText } from '../shared.mjs'
 import { createPlaceholderResolver } from '../fillers.mjs'
 
 const name = 'prompt-config-engine'
-
-/**
- * guide-auto:晋升后每轮用户消息后的弱/深度引导。
- * 正则与引导文本全部来自 config.params（由 preset.yml 单一配置源下发）。
- * complexPattern 由本配置提供。
- */
-function createGuideAutoResolver(config) {
-  const useCustom = config.params?.useCustom === true
-  const customText = typeof config.params?.text === 'string' ? config.params.text : ''
-  const complexPattern = typeof config.params?.complexPattern === 'string' ? config.params.complexPattern : ''
-  const guideWeak = typeof config.params?.guideWeak === 'string' ? config.params.guideWeak : ''
-  const guideDeep = typeof config.params?.guideDeep === 'string' ? config.params.guideDeep : ''
-  const rawMinChars = config.params?.complexMinChars
-  const complexMinChars = rawMinChars == null || rawMinChars === '' ? undefined : rawMinChars
-  if (complexMinChars !== undefined && (!Number.isSafeInteger(complexMinChars) || complexMinChars < 0)) throw new TypeError(`${name}: guide-auto complexMinChars must be a non-negative integer`)
-  const complex = complexPattern ? new RegExp(complexPattern, 'i') : undefined
-  return ({ messages }) => {
-    const userIndex = messages.findIndex((message) => message?.source?.kind === 'user')
-    if (userIndex < 0) return null
-    const text = extractText(messages[userIndex])
-    if (text.length === 0) return null
-    if (useCustom) {
-      const guide = customText.trim()
-      return guide.length > 0 ? { text: guide } : null
-    }
-    if (guideWeak.length === 0 && guideDeep.length === 0) return null
-    return { text: ((complexMinChars !== undefined && text.length > complexMinChars) || complex?.test(text)) ? guideDeep : guideWeak }
-  }
-}
 
 /**
  * 为归一化后的提示词配置绑定策略 resolve(策略状态随提示词配置对象,不随 apply)。
@@ -46,7 +16,7 @@ function createGuideAutoResolver(config) {
 export function bindResolver(config, strategyDir) {
   switch (config.strategy) {
     case 'placeholder': return createPlaceholderResolver(config)
-    case 'guide-auto': return createGuideAutoResolver(config)
+    case 'guide-auto':
     case 'custom-fallback':
     case 'first-turn-anchor':
     case 'anchor-notice':

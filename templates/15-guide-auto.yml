@@ -1,11 +1,5 @@
-# 复杂任务判定使用本动作的 complexPattern；长度判定仅使用显式 complexMinChars；未设置时不按长度分类
-# 简单任务自动引导句（留空 = 不注入该类别引导）
-# 复杂任务自动引导句（留空 = 不注入该类别引导）
-
-# 模板：每轮引导（strategy=guide-auto）
-# 晋升后每轮用户消息后按复杂度注入弱/深度引导；modelScope=flash 表示仅 flash 模型会话注入。
-# 纯净模板：参数全部留空，由用户自定义；引导句由模板或用户配置提供，留空不注入。
-# 提示：把本文件放入 模块规则模板目录，或把对象写入 module.yml.rules 数组。
+# 模板：按当前批次全部真实用户文本选择引导；正文留空，由用户填写后启用。
+# minChars/maxChars 含端点；复杂度由正则或长度分支表达，无专用策略参数。
 id: example-guide-auto
 name: 示例：每轮引导
 enabled: false
@@ -17,24 +11,34 @@ if:
     - phase:
         promoted: true
         includeSubagents: false
+    - text:
+        subject: userMessage
+        minChars: 1
 then:
-  - id: inject
-    kind: inject-text
-    config:
-      id: example-guide-auto
-      layer: pre-step
-      strategy: guide-auto
-      position: after-user
-      dedupe: batch
-      configKind: ordered
-      order: 10
-      role: user
-      mergeMode: separate
-      sourceKind: ''
-      form: notice
-      params:
-        useCustom: false
-        text: ""
-        guideWeak: ""
-        guideDeep: ""
-        complexMinChars: 120
+  - if:
+      any:
+        - text:
+            subject: userMessage
+            keys: ['复杂|重构|排查'] # 按需替换分类表达式
+            useRegex: true
+        - text:
+            subject: userMessage
+            minChars: 121
+    then:
+      - id: deep-guide
+        kind: inject-text
+        config:
+          layer: pre-step
+          strategy: static
+          position: after-user
+          dedupe: batch
+          text: "" # 复杂任务引导
+    else:
+      - id: weak-guide
+        kind: inject-text
+        config:
+          layer: pre-step
+          strategy: static
+          position: after-user
+          dedupe: batch
+          text: "" # 简单任务引导

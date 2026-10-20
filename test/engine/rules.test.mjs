@@ -6,7 +6,6 @@ import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import { compileRules, getRuleEditorMeta, isFixedRegistration } from '../../engine/rule-spec.mjs'
 import { INJECT_CONFIG_FIELDS, SESSION_VARIABLES_DISABLED } from '../../engine/schema.mjs'
 import { prepareAction } from '../../engine/actions.mjs'
-import { toolNameSet } from '../../engine/actions/shared.mjs'
 import { ACTION_EXAMPLES } from '../../engine/actions/examples.mjs'
 import { ACTION_KINDS } from '../../engine/actions/catalog.mjs'
 import { mountRuleSources } from '../../engine/rule-runtime.mjs'
@@ -315,7 +314,7 @@ test('统一规则：模型流与停止事件各自执行，子代理启动复�
   const h = harness({ agents })
   const rules = compileRules([
     { id: 'main-events', if: { scope: { audience: 'main' } }, then: [
-      { id: 'stream', kind: 'inject-text', config: { layer: 'llm-stream', text: 'STREAM', params: { mode: 'replace' } } },
+      { id: 'stream', kind: 'stream-output', text: 'STREAM', mode: 'replace' },
       { id: 'stop', kind: 'inject-text', config: { layer: 'turn-stop', text: 'CONTINUE' } },
     ] },
     { id: 'child-events', if: { scope: { audience: 'subagent' } }, then: [
@@ -342,9 +341,9 @@ test('统一规则：同模块多条续跑动作共享一份预算，每轮只�
   const agent = { ...actor(), steer: message => steered.push(message.content[0].text) }
   const h = harness()
   const dispose = mountRuleSources(h.ctx, [{ moduleId: 'module', rules: compileRules([
-    { id: 'continue-one', layer: 'turn-stop', then: [{ id: 'one', kind: 'append-context', mode: 'continue', text: 'ONE' }] },
-    { id: 'continue-two', layer: 'turn-stop', then: [{ id: 'two', kind: 'append-context', mode: 'continue', text: 'TWO' }] },
-    { id: 'continue-three', layer: 'turn-stop', then: [{ id: 'three', kind: 'append-context', mode: 'continue', text: 'THREE' }] },
+    { id: 'continue-one', layer: 'turn-stop', then: [{ id: 'one', kind: 'inject-text', config: { layer: 'turn-stop', text: 'ONE' } }] },
+    { id: 'continue-two', layer: 'turn-stop', then: [{ id: 'two', kind: 'inject-text', config: { layer: 'turn-stop', text: 'TWO' } }] },
+    { id: 'continue-three', layer: 'turn-stop', then: [{ id: 'three', kind: 'inject-text', config: { layer: 'turn-stop', text: 'THREE' } }] },
   ]) }])
   const stop = turn => h.emit('agent/turn-stopping', { agent, turn })
   // 同一轮三条 continue 只允许一次续跑：预算按来源模块一份，不按动作各建一份。
@@ -358,8 +357,8 @@ test('统一规则：同模块两动作续跑一次，跨模块各保留一份�
   const subject = () => ({ ...actor(), steer: message => steered.push(message.content[0].text) })
   const h = harness()
   const dispose = mountRuleSources(h.ctx, [{ moduleId: 'module', rules: compileRules([{ id: 'loop', layer: 'turn-stop', then: [
-    { id: 'one', kind: 'append-context', mode: 'continue', text: 'ONE' },
-    { id: 'two', kind: 'append-context', mode: 'continue', text: 'TWO' },
+    { id: 'one', kind: 'inject-text', config: { layer: 'turn-stop', text: 'ONE' } },
+    { id: 'two', kind: 'inject-text', config: { layer: 'turn-stop', text: 'TWO' } },
   ] }]) }])
   const single = subject()
   await h.emit('agent/turn-stopping', { agent: single, turn: 1 })
@@ -371,7 +370,7 @@ test('统一规则：同模块两动作续跑一次，跨模块各保留一份�
   const other = harness()
   const separate = subject()
   const disposeOther = mountRuleSources(other.ctx, [{ moduleId: 'other', rules: compileRules([
-    { id: 'other-loop', layer: 'turn-stop', then: [{ id: 'other-one', kind: 'append-context', mode: 'continue', text: 'OTHER' }] },
+    { id: 'other-loop', layer: 'turn-stop', then: [{ id: 'other-one', kind: 'inject-text', config: { layer: 'turn-stop', text: 'OTHER' } }] },
   ]) }])
   await other.emit('agent/turn-stopping', { agent: separate, turn: 1 })
   assert.deepEqual(steered, ['ONE', 'OTHER'])
@@ -383,7 +382,7 @@ test('统一规则：缺失真实会话的 not 保持未知，any 中已知 true
   for (const when of [...unknown.map(node => ({ not: node })), { notAny: unknown }, { any: [{ not: unknown[0] }, { scope: { modelScope: 'all' } }] }]) {
     const h = harness()
     const rules = compileRules([{ id: 'missing-context', if: when, then: [
-      { id: 'stream', kind: 'inject-text', config: { layer: 'llm-stream', text: 'REPLACED', params: { mode: 'replace' } } },
+      { id: 'stream', kind: 'stream-output', text: 'REPLACED', mode: 'replace' },
       { id: 'end', kind: 'inject-text', config: { layer: 'subagent-end', text: 'OBSERVED' } },
     ] }])
     const dispose = mountRuleSources(h.ctx, [{ moduleId: 'module', rules }])
@@ -559,17 +558,37 @@ test('if/then/else：旧 when/do 不再是兼容输入，一律显式拒绝并�
   assert.equal(typeof modern[0].when, 'function')
 })
 
-test('if/then/else：注册制层不接受动作级分支（该层没有逐轮求值时机）', () => {
-  assert.throws(() => compileRules([{
-    id: 'reg',
-    then: [{
-      if: { phase: { promoted: false } },
-      then: [{ id: 's', kind: 'inject-text', config: { id: 's', layer: 'system-section', text: 'X' } }],
-    }],
-  }]), /system-section/)
-  // 拒绝的是分支，不是这一层本身：同层不带分支照旧可用。
-  const ok = compileRules([{ id: 'reg-ok', then: [{ id: 's', kind: 'inject-text', config: { id: 's', layer: 'system-section', text: 'X' } }] }])
-  assert.equal(ok[0].actions.length, 1)
+test('if/then/else：普通装配正文逐次选择主子分支，固定注册效果拒绝动态分支', async () => {
+  const root = new Context()
+  await root.plugin(SystemPrompt)
+  const main = actor()
+  const child = { ...actor(), session: { ...actor().session, id: 'branch-child', header: { delegationDepth: 1 } } }
+  createScope(root, main)
+  createScope(root, child, { parent: main })
+  const content = (id, layer, text) => ({ id, kind: 'inject-text', config: { layer, text } })
+  const rules = compileRules([{ id: 'assembly-branches', then: [{
+    if: { scope: { audience: 'main' } },
+    then: [{ if: { scope: { audience: 'main' } }, then: [
+      content('main-section', 'system-section', 'MAIN SYSTEM'),
+      content('main-context', 'runtime-context', 'MAIN CONTEXT'),
+    ], else: [content('unreachable', 'system-section', 'WRONG')] }],
+    else: [content('child-section', 'system-section', 'CHILD SYSTEM'), content('child-context', 'runtime-context', 'CHILD CONTEXT')],
+  }] }])
+  const dispose = mountRuleSources(root, [{ moduleId: 'module', rules }])
+  const texts = entries => entries.filter(entry => entry.name.startsWith('prompt-tool:')).map(entry => entry.text).filter(Boolean)
+  try {
+    for (const [agent, expectedSection, expectedContext] of [[main, 'MAIN SYSTEM', 'MAIN CONTEXT'], [child, 'CHILD SYSTEM', 'CHILD CONTEXT'], [main, 'MAIN SYSTEM', 'MAIN CONTEXT']]) {
+      const assembly = await root.systemPrompt.assemble({ agent, scope: agent })
+      assert.deepEqual(texts(assembly.sections), [expectedSection])
+      assert.deepEqual(texts(assembly.contexts), [expectedContext])
+    }
+  } finally { dispose() }
+  for (const params of [{ complete: true }, { suppressRuntimeContext: true }]) {
+    assert.throws(() => compileRules([{ id: 'fixed', then: [{
+      if: { scope: { audience: 'main' } },
+      then: [{ id: 'fixed-section', kind: 'inject-text', config: { layer: 'system-section', text: 'FIXED', params } }],
+    }] }]), /registration|system-section/)
+  }
 })
 
 test('if/then/else：动作级 text 条件必须落在本执行点真实提供的 subject 上', () => {
@@ -631,7 +650,7 @@ test('动作级 names / source 条件必须落在本执行点真实提供的事�
 test('动作级死条件：llm/stream 拒 names/source/text，依赖 agent 补挂的会话六族不拒', () => {
   const streamOn = condition => ({
     if: condition,
-    then: [{ id: 'stream', kind: 'inject-text', config: { id: 'stream', layer: 'llm-stream', text: 'X', params: { mode: 'replace' } } }],
+    then: [{ id: 'stream', kind: 'stream-output', text: 'X', mode: 'replace' }],
   })
   // 本通道载荷只有 provider/model/sessionId 等请求字段：既没有 name/source，也没有任何文本
   // subject（两个白名单函数对本通道都返回空），三类死条件照常拒绝。
@@ -748,8 +767,8 @@ test('动作级分支：五层 inject-text 与默认位置 pre-step-filter 的 e
   const h2 = harness({ agents })
   const branch = (id, layer, thenConfig, elseConfig) => ({
     if: { scope: { modelScope: 'flash' } },
-    then: [{ id: `${id}-then`, kind: 'inject-text', config: { layer, ...thenConfig } }],
-    else: [{ id: `${id}-else`, kind: 'inject-text', config: { layer, ...elseConfig } }],
+    then: [{ id: `${id}-then`, ...(layer === 'agent-request' ? { kind: 'request-params', ...thenConfig.params } : layer === 'llm-stream' ? { kind: 'stream-output', text: thenConfig.text, ...thenConfig.params } : { kind: 'inject-text', config: { layer, ...thenConfig } }) }],
+    else: [{ id: `${id}-else`, ...(layer === 'agent-request' ? { kind: 'request-params', ...elseConfig.params } : layer === 'llm-stream' ? { kind: 'stream-output', text: elseConfig.text, ...elseConfig.params } : { kind: 'inject-text', config: { layer, ...elseConfig } }) }],
   })
   const rules = compileRules([{ id: 'action-branches', then: [
     branch('req', 'agent-request', { params: { patch: { maxTokens: 111 } } }, { params: { patch: { maxTokens: 222 } } }),
@@ -909,16 +928,15 @@ test('动作级分支：非 pre-step 层嵌套 if 恰好一支生效', async () 
   dispose()
 })
 
-test('挂载回滚：llm/stream 层路由与执行点不一致时错误上浮，agent/request 监听回到 0', () => {
+test('挂载回滚：流动作执行点与注册通道不一致时错误上浮，agent/request 监听回到 0', () => {
   const h = harness()
   const rules = compileRules([{ id: 'p5', then: [
     { id: 'req', kind: 'request-params', patch: { maxTokens: 1 } },
-    { id: 'stream', kind: 'inject-text', config: { layer: 'llm-stream', text: 'X', params: { mode: 'replace' } } },
+    { id: 'stream', kind: 'stream-output', text: 'X', mode: 'replace' },
   ] }])
-  // 把 llm-stream 动作的层改成 agent-request：执行点仍是 llm/stream，但 wireLayers 按层路由到
-  // agent/request，与 flushLayers 的通道判定不一致 → 抛错并回滚已注册的 agent/request 监听。
-  rules[0].actions[1].compiledConfig.layer = 'agent-request'
-  assert.throws(() => mountRuleSources(h.ctx, [{ moduleId: 'module', rules }]), /registered outside llm\/stream/)
+  // 损坏编译产物的执行点，真实流注册越出通道时必须回滚先前的请求监听。
+  rules[0].actions[1].execution.channel = 'agent/request'
+  assert.throws(() => mountRuleSources(h.ctx, [{ moduleId: 'module', rules }]), /registered outside agent\/request/)
   assert.equal((h.events.get('agent/request') ?? []).length, 0, '抛错后 agent/request 监听已回滚')
 })
 
@@ -1082,10 +1100,10 @@ test('variablesEnabled=false 在官方注册层也停读变量，重新装配仍
 })
 
 test('动作声明白名单：未知键、对象形态 match 与带 kind 的分支节点编译期拒绝', () => {
-  // 关键拒绝（fail-closed 反向）：tool-gate 的 toolNames 拼错今天会静默变成「对所有工具生效」。
+  // 拼错字段在编译期拒绝，不能静默扩大工具裁决范围。
   assert.throws(() => compileRules([{ id: 'gate', then: [
     { id: 'deny', kind: 'tool-gate', decision: 'deny', toolName: 'read' },
-  ] }]), /action deny: unknown config key\(s\) toolName — allowed keys: .*toolNames/)
+  ] }]), /action deny: unknown config key\(s\) toolName — allowed keys: .*reason/)
   // 关键拒绝：request-params 的动作级 when 今天被静默忽略（补丁无条件生效）。
   assert.throws(() => compileRules([{ id: 'req', then: [
     { id: 'patch', kind: 'request-params', patch: { maxTokens: 10 }, when: { scope: { modelScope: 'pro' } } },
@@ -1116,10 +1134,6 @@ test('动作声明白名单：未知键、对象形态 match 与带 kind 的分�
       { id: 'r', kind: 'request-params', replace: value, patch: { maxTokens: 10 } },
     ] }]), /r\.replace must be a boolean \(省略 = false\)/)
   }
-  // 同一份 `assertReplacePatch` 也服务 config 层：inject-text 的 agent-request 配置文案逐字不变。
-  assert.throws(() => compileRules([{ id: 'cfg', then: [
-    { id: 'a', kind: 'inject-text', config: { id: 'a', layer: 'agent-request', strategy: 'static', params: { replace: true, patch: {} } } },
-  ] }]), /configs\[0\]\.params\.patch requires provider and model when replace=true/)
   // 关键拒绝：inject-text.config 的未知键（同一份提示词配置白名单）。
   assert.throws(() => compileRules([{ id: 'r', then: [textAction('a', 'A', { typoKey: 1 })] }]),
     /action a config: unknown config key\(s\) typoKey — allowed keys: .*text/)
@@ -1215,14 +1229,9 @@ test('T31：规则卡的动作种子覆盖 catalog 声明的可编辑字段，�
     }
   }
   // 用户追加面：tool-gate / tool-result / append-context 的工具链参数在卡里结构化可编辑。
-  assert.deepEqual(ACTION_EXAMPLES['tool-gate'], { decision: 'allow', reason: '', toolNames: '' })
-  assert.deepEqual(ACTION_EXAMPLES['tool-result'], { action: 'accept', text: '', toolNames: '' })
-  assert.deepEqual(ACTION_EXAMPLES['append-context'], { mode: 'context', text: '' })
-  // 「匹配所有工具」的真实条件是**空串或空数组**（`names.size === 0` → `undefined`）——不是
-  // 「数组会被解析成空」：`toolNameSet` 对数组直接交 `NAME_LIST.parse`，定向名单照样成立。
-  assert.equal(toolNameSet('', 'probe', 'probe.toolNames'), undefined)
-  assert.equal(toolNameSet([], 'probe', 'probe.toolNames'), undefined)
-  assert.deepEqual(toolNameSet(['bash', 'run_code', 'bash'], 'probe', 'probe.toolNames'), new Set(['bash', 'run_code']))
+  assert.deepEqual(ACTION_EXAMPLES['tool-gate'], { decision: 'allow', reason: '' })
+  assert.deepEqual(ACTION_EXAMPLES['tool-result'], { action: 'accept', text: '' })
+  assert.deepEqual(ACTION_EXAMPLES['append-context'], { text: '' })
 })
 
 /**
@@ -1316,7 +1325,7 @@ test('T6a：turn-stop 只匹配当前可见的最后一条 assistant 正文', as
     id: 'stop',
     layer: 'turn-stop',
     if: { text: { subject: 'assistantText', keys: ['LATE'] } },
-    then: [{ id: 'stop', kind: 'append-context', mode: 'continue', text: 'GO' }],
+    then: [{ id: 'stop', kind: 'inject-text', config: { layer: 'turn-stop', text: 'GO' } }],
   }]) }])
   await h.emit('agent/turn-stopping', { agent, turn: 1 })
   assert.deepEqual(steered, [], '被移出可见节点的末条正文不再匹配')

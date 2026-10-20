@@ -1,7 +1,7 @@
 # 模板：工具面收窄（核心文件与任务集）+ 按需解锁
 #
-# 一份 `tool-visibility` 声明拥有全部：常驻集、目录与 SDK 正文的呈现、执行闸、
-# 发现工具与首轮提示。常驻集只写一次，提示正文由引擎按声明生成。
+# `tool-visibility` 声明常驻集、目录与 SDK 正文的呈现、执行闸和发现来源。
+# 首轮提示由同规则的普通注入动作组合；常驻名单只写一次。
 #
 # 本模板只带规则、不带 `modules` 声明：装配里没有提供方时 `bash` 就是缺失名，
 # `requireMatch` 反过来把整条收窄废掉——用模板建模块时要自己把提供方行带进装配。
@@ -32,5 +32,19 @@ then:
     discovery: { kind: tools }
     # 任一常驻工具缺失就放弃裁剪、暴露完整目录（fail-open），避免静默裁成空目录。
     requireMatch: true
-    # 首轮提示：正文由引擎按常驻集与发现工具生成，无需手抄。
-    notice: true
+  - if:
+      count:
+        of: user-message
+        max: 1
+    then:
+      - id: discovery-notice
+        kind: inject-text
+        config:
+          layer: pre-step
+          strategy: placeholder
+          fill: tool-catalog
+          position: after-all
+          dedupe: session
+          text: 常驻工具：{{RESIDENT_TOOLS}}。缺少所需工具时，先用 {{DISCOVERY_TOOL}} 搜索并解锁。
+          params:
+            action: narrow-tools

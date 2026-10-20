@@ -50,15 +50,14 @@ rules:
         kind: inject-text
         config:
           id: router-guide
-          strategy: guide-auto
+          strategy: static
+          text: Fixture guide.
           layer: pre-step
           configKind: ordered
           order: 10
           role: user
           position: after-user
           dedupe: batch
-          params:
-            complexMinChars: 120
   - id: prompt-injector
     name: preset.md 注入
     enabled: true

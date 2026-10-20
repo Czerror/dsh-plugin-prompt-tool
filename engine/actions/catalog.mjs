@@ -6,7 +6,7 @@ export const ACTION_DEGRADE = Object.freeze({
 })
 
 /**
- * 九类动作的声明：**合法事件通道** + **降级语义** + 触发时机 + **声明字段**。
+ * 十类动作的声明：**合法事件通道** + **降级语义** + 触发时机 + **声明字段**。
  * `events` 是动作允许注册的官方事件：经 `on(...)` 注册的动作（`channelBinder`）注册到声明外的
  * 事件在挂载期 fail loud；`inject-text` 不经 `channelBinder`，它的真实通道由
  * `actionExecutionPoint`（派生自 `schema.mjs` 每层的 `channel`）决定——下面那行 `events`
@@ -21,11 +21,11 @@ export const ACTION_KINDS = Object.freeze({
   'inject-text': {
     title: '注入文本',
     fields: ['config', 'options'],
-    events: ['agent/pre-step', 'session/event', 'system-prompt/assemble', 'agent/request', 'llm/stream', 'agent/turn-stopping', 'subagent/start', 'subagent/end'],
+    events: ['agent/pre-step', 'session/event', 'system-prompt/assemble', 'agent/turn-stopping', 'subagent/start', 'subagent/end'],
     services: ['systemPrompt.section', 'systemPrompt.context', 'systemPrompt.variable'],
     degrade: ACTION_DEGRADE.keep,
     timing: '按配置声明的 layer 落到该层官方通道；pre-step 在 agent/pre-step，system-section/runtime-context 在注册期 + 官方 assembly。',
-    note: '复用既有注入通道（八层，见 schema 的 `injectionLayers`），不新开通道；`tool-pipeline` 没有注入通道——工具链的裁决与追加上下文走 `tool-gate` / `tool-result` / `append-context` 动作。显式空正文 = 不注册（empty 情形）。`options` 原样交给该层的既有接线（pre-step 执行器的 `prepend` = 声明的位置策略）；`session/event` 是 pre-step 执行器自带的会话态旁听，不是第二条注入通道。',
+    note: '复用既有注入通道（见 schema 的 `injectionLayers`），不新开通道；工具链的裁决与追加上下文走 `tool-gate` / `tool-result` / `append-context`，请求参数走 `request-params`，模型流走 `stream-output`。显式空正文不注册；`session/event` 是 pre-step 执行器自带的会话态旁听，不是第二条注入通道。',
   },
   assembly: {
     title: '改装配',
@@ -38,7 +38,7 @@ export const ACTION_KINDS = Object.freeze({
   },
   'tool-gate': {
     title: '工具裁决',
-    fields: ['decision', 'reason', 'toolNames'],
+    fields: ['decision', 'reason'],
     events: ['tools/pre-execute'],
     services: [],
     degrade: ACTION_DEGRADE.keep,
@@ -47,7 +47,7 @@ export const ACTION_KINDS = Object.freeze({
   },
   'tool-result': {
     title: '工具结果处理',
-    fields: ['action', 'text', 'toolNames'],
+    fields: ['action', 'text'],
     events: ['tools/post-execute'],
     services: [],
     degrade: ACTION_DEGRADE.keep,
@@ -55,23 +55,23 @@ export const ACTION_KINDS = Object.freeze({
     note: '异常一律 `next()`（接受）；`text` 仅 replace / block 使用，accept 时被忽略。',
   },
   'append-context': {
-    title: '追加上下文与续跑',
-    fields: ['mode', 'text', 'match'],
-    events: ['tools/post-execute', 'agent/turn-stopping'],
+    title: '追加上下文',
+    fields: ['text', 'match'],
+    events: ['tools/post-execute'],
     services: [],
     degrade: ACTION_DEGRADE.keep,
-    timing: 'mode=context 在 post-execute 追加 durable user 通知；mode=continue 在 agent/turn-stopping steer 一步。',
-    note: '续跑共用引擎的续跑预算（每个来源（模块）每轮 1 次 / 每会话 3 次），无正文时不追加（empty 情形）；绝不伪造 assistant 角色。',
+    timing: '在 post-execute 追加 durable user 通知。',
+    note: '无正文时不追加；绝不伪造 assistant 角色。',
   },
 
   'tool-visibility': {
     title: '工具可见面',
-    fields: ['audience', 'allow', 'deny', 'requireMatch', 'discovery', 'notice'],
+    fields: ['allow', 'deny', 'requireMatch', 'discovery'],
     events: ['system-prompt/assemble'],
     services: ['tools.schemas', 'tools.restrict', 'tools.guard', 'tools.register'],
     degrade: ACTION_DEGRADE.keep,
     timing: 'system-prompt/assemble 的下游结算之后：按当前条件重算目录、SDK 正文与执行闸；条件翻转时撤销上一轮注册的闸。',
-    note: '一份声明拥有工具的可见面：allow/deny 名单、requireMatch、发现工具与提示。名单语义对齐官方 '
+    note: '一份声明拥有工具的可见面：allow/deny 名单、requireMatch、发现工具。名单语义对齐官方 '
       + 'ToolRestriction 的 and/or（同时给时先按 allow 保留、再按 deny 剔除）。deny 走 guard（本层与晚到工具）'
       + '与 restrict（继承的全局工具）；allow 只有 restrict 能覆盖全局工具，本层注册无法在执行层「只保留」——'
       + '这是官方 restrict 的边界，不是本动作的取舍。',
@@ -83,7 +83,16 @@ export const ACTION_KINDS = Object.freeze({
     services: [],
     degrade: ACTION_DEGRADE.keep,
     timing: 'agent/request 的下游结算之后（`await next()` 拿到已冻结的 LlmCallConfig 再改写）。',
-    note: '与既有 promptConfigs 的 agent-request 层共用 applyAgentRequestParams；只改命中 scope/agent 的请求，删键仅删"本声明注入的那个值"。',
+    note: '请求改写的唯一入口；删键仅删本声明指定的那个值。',
+  },
+  'stream-output': {
+    title: '控制模型输出流',
+    fields: ['mode', 'text'],
+    events: ['llm/stream'],
+    services: [],
+    degrade: ACTION_DEGRADE.keep,
+    timing: 'llm/stream 下游调用前决定透传或替换。',
+    note: '替换输出为合法文本 chunk，不改冻结的请求；空正文透传。',
   },
   'inbox-prepend': {
     title: '前置收件箱消息',
@@ -111,7 +120,7 @@ export const ACTION_KINDS = Object.freeze({
   },
 })
 
-/** 九类动作共用键：身份、同点定位与每轮预算。 */
+/** 十类动作共用键：身份、同点定位与每轮预算。 */
 const COMMON_ACTION_FIELDS = ['id', 'kind', 'channelOrder', 'waterfallPosition', 'maxPerTurn']
 
 /** 每类动作的允许键集合（通用键 + `ACTION_KINDS[kind].fields`）。 */

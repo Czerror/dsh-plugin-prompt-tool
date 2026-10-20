@@ -68,11 +68,9 @@ test('tool-visibility：合法声明编译到 assemble/after-next，事件类生
   assert.equal(rule.actions[0].execution.lifecycle, 'event')
 })
 
-test('tool-visibility：未知字段、非法受众、allow 与 requireMatch 的错误组合都在编译期拒绝', () => {
+test('tool-visibility：未知字段、allow 与 requireMatch 的错误组合都在编译期拒绝', () => {
   assert.throws(() => compileRules([{ id: 'r', then: [{ id: 'v', kind: 'tool-visibility', deny: ['a'], unknown: true }] }]),
     /unknown config key\(s\) unknown/)
-  assert.throws(() => compileRules([{ id: 'r', then: [{ id: 'v', kind: 'tool-visibility', deny: ['a'], audience: 'nobody' }] }]),
-    /audience must be main, subagent or all/)
   assert.throws(() => compileRules([{ id: 'r', then: [{ id: 'v', kind: 'tool-visibility', deny: ['a'], requireMatch: true }] }]),
     /requireMatch only applies to allow/)
   assert.throws(() => compileRules([{ id: 'r', then: [{ id: 'v', kind: 'tool-visibility', allow: ['a'], discovery: {} }] }]),
@@ -180,25 +178,6 @@ test('tool-visibility：adapter 未注册时告警一次并跳过解锁回收', 
   assert.ok(rec.warnings.some((message) => /discovery adapter "tools" is not registered/.test(message)))
 })
 
-test('tool-visibility：notice 交给现有提示配置引擎，正文由声明派生', async () => {
-  const rec = recordingCtx()
-  const scope = scopeOf({})
-  registerAction(rec.ctx, { kind: 'tool-visibility', id: 'v', allow: ['alpha', 'beta'], notice: true })
-  const handler = only(rec, 'system-prompt/assemble')
-  const input = assembled(toolList('alpha', 'beta'))
-  await handler(input, { agent: agentOf(scope) }, async () => input)
-  assert.ok(rec.events.some((entry) => entry.event === 'agent/pre-step'), '提示经既有 pre-step 引擎注册')
-  assert.ok(rec.warnings.length === 0, '正常路径不得告警')
-})
-
-test('tool-visibility：提示正文列出常驻集与发现入口', async () => {
-  const { toolVisibilityNoticeText } = await import('../../engine/actions/tool-visibility.mjs')
-  const text = toolVisibilityNoticeText({ resident: ['alpha', 'beta'], discovery: { tool: 'tool_search', key: 'toolNames' } })
-  assert.match(text, /resident core set \(alpha, beta\)/)
-  assert.match(text, /tool_search/)
-  assert.equal(toolVisibilityNoticeText({ resident: [], text: '自定义' }), '自定义', '显式正文优先')
-})
-
 // ───────────────────────── 四、真实规则挂载 ─────────────────────────
 
 /** 轻量 ctx：只记录 ctx.on / effect，够 mountRuleSources 跑瀑布与 pre-step。 */
@@ -220,6 +199,9 @@ function ruleHarness() {
   return {
     ctx,
     warnings,
+    emit(name, ...args) {
+      for (const handler of (events.get(name) ?? []).slice()) handler(...args)
+    },
     run(name, args, terminal) {
       const list = (events.get(name) ?? []).slice()
       const invoke = index => index === list.length ? terminal() : list[index](...args, () => invoke(index + 1))
@@ -227,6 +209,24 @@ function ruleHarness() {
     },
   }
 }
+
+test('普通文本条件：批内全部真实用户文本的长度与关键词共同选择注入分支', async () => {
+  const h = ruleHarness()
+  const agent = { session: { id: 'batch-length', header: { delegationDepth: 0 }, snapshotEvents: () => [] } }
+  const rules = compileRules([{
+    id: 'length',
+    if: { text: { subject: 'userMessage', keys: ['甲'], minChars: 5, maxChars: 5 } },
+    then: [{ id: 'long', kind: 'inject-text', config: { layer: 'pre-step', strategy: 'static', position: 'after-all', text: 'LONG' } }],
+    else: [{ id: 'short', kind: 'inject-text', config: { layer: 'pre-step', strategy: 'static', position: 'after-all', text: 'SHORT' } }],
+  }])
+  const dispose = mountRuleSources(h.ctx, [{ moduleId: 'module', rules }])
+  const message = text => ({ role: 'user', source: { kind: 'user' }, content: [{ type: 'text', text }] })
+  const run = messages => h.run('agent/pre-step', [{ agent, messages }], () => ({ kind: 'enter', messages }))
+  assert.equal((await run([message('甲乙'), message('丙丁')])).messages.at(-1).content[0].text, 'LONG')
+  assert.equal((await run([message('甲乙')])).messages.at(-1).content[0].text, 'SHORT')
+  assert.equal((await run([message('天地'), message('玄黄')])).messages.at(-1).content[0].text, 'SHORT')
+  dispose()
+})
 
 test('真实规则挂载：条件由真变假时撤销上一轮注册的执行闸', async () => {
   const h = ruleHarness()
@@ -261,9 +261,9 @@ test('真实规则挂载：受众三态各自只在自己的装配里生效', as
   const main = { session: { id: 's-main', header: { delegationDepth: 0 }, snapshotEvents: () => [] }, ctx: scopeOf({ disposed: mainDisposed }) }
   const child = { session: { id: 's-child', header: { delegationDepth: 1 }, snapshotEvents: () => [] }, ctx: scopeOf({ disposed: childDisposed }) }
   const rules = compileRules([{ id: 'aud', then: [
-    { id: 'main-only', kind: 'tool-visibility', audience: 'main', deny: ['alpha'] },
-    { id: 'sub-only', kind: 'tool-visibility', audience: 'subagent', deny: ['beta'] },
-    { id: 'everyone', kind: 'tool-visibility', audience: 'all', deny: ['gamma'] },
+    { if: { scope: { audience: 'main' } }, then: [{ id: 'main-only', kind: 'tool-visibility', deny: ['alpha'] }] },
+    { if: { scope: { audience: 'subagent' } }, then: [{ id: 'sub-only', kind: 'tool-visibility', deny: ['beta'] }] },
+    { id: 'everyone', kind: 'tool-visibility', deny: ['gamma'] },
   ] }])
   const dispose = mountRuleSources(h.ctx, [{ moduleId: 'module', rules }])
   const input = assembled(toolList('alpha', 'beta', 'gamma'))
@@ -284,7 +284,13 @@ test('真实规则挂载：首轮提示只注入一次', async () => {
   const sessionEvents = []
   const session = { id: 's-notice', header: { delegationDepth: 0 }, snapshotEvents: () => sessionEvents }
   const agent = { session, ctx: scopeOf({}) }
-  const rules = compileRules([{ id: 'notice', then: [{ id: 'v', kind: 'tool-visibility', allow: ['alpha'], notice: true }] }])
+  const rules = compileRules([{ id: 'notice', then: [
+    { id: 'v', kind: 'tool-visibility', allow: ['alpha'] },
+    { if: { count: { of: 'user-message', max: 1 } }, then: [{ id: 'hint', kind: 'inject-text', config: {
+      layer: 'pre-step', strategy: 'static', position: 'after-user', dedupe: 'session',
+      text: 'Use tool_search to search for a capability and unlock it by exact name.',
+    } }] },
+  ] }])
   const dispose = mountRuleSources(h.ctx, [{ moduleId: 'module', rules }])
   const input = assembled(toolList('alpha'))
   await h.run('system-prompt/assemble', [input, { agent }], () => input)
@@ -292,15 +298,61 @@ test('真实规则挂载：首轮提示只注入一次', async () => {
   const step = () => h.run('agent/pre-step', [{ agent, messages }], () => ({ kind: 'enter', messages }))
   const first = await step()
   assert.equal(first.messages.length, 2, '首轮注入一条提示')
-  assert.match(first.messages[1].content[0].text, /resident core set \(alpha\)/)
+  assert.match(first.messages[1].content[0].text, /Use tool_search/)
   // 真实会话里注入的消息会进入后续上下文：dedupe: session 据此不再投递同一条。
   const carried = first.messages
   // 宿主把接纳的注入写成 durable user/message 事件；dedupe: session 的真相是当前上下文。
   sessionEvents.push({ type: 'user/message', seq: 0, data: { message: first.messages[1] } })
   const second = await h.run('agent/pre-step', [{ agent, messages: carried }], () => ({ kind: 'enter', messages: carried }))
   assert.equal(second.messages.length, 2, '同一条提示不得重复注入')
-  assert.equal(second.messages.filter((message) => String(message?.content?.[0]?.text ?? '').includes('resident core set')).length, 1)
+  assert.equal(second.messages.filter((message) => String(message?.content?.[0]?.text ?? '').includes('Use tool_search')).length, 1)
   dispose()
+})
+
+test('工具目录正文：普通注入引用同规则名单，修改声明或复制规则后自动跟随', async () => {
+  const make = (id, allow) => ({ id, then: [
+    { id: 'tools', kind: 'tool-visibility', allow, deny: ['beta'], discovery: { kind: 'tools' } },
+    { id: 'hint', kind: 'inject-text', config: { layer: 'pre-step', strategy: 'placeholder', fill: 'tool-catalog',
+      position: 'after-all', text: 'Resident: {{RESIDENT_TOOLS}}. Search: {{DISCOVERY_TOOL}}.', params: { action: 'tools' } } },
+  ] })
+  const registry = createDiscoveryRegistry()
+  const agent = { session: { id: 'catalog', header: {}, snapshotEvents: () => [] }, ctx: scopeOf({}) }
+  registry.register(agent, 'tools', { tool: 'find_tools', unlock: { tool: 'find_tools', key: 'toolNames' } })
+  const h = ruleHarness()
+  h.ctx.get = key => key === DISCOVERY_SERVICE ? registry : undefined
+  const messages = [{ role: 'user', source: { kind: 'user' }, content: [{ type: 'text', text: 'task' }] }]
+  for (const [id, allow, expected] of [
+    ['original', ['alpha', 'beta'], 'Resident: alpha. Search: find_tools.'],
+    ['copied-rule', ['alpha', 'gamma'], 'Resident: alpha, gamma. Search: find_tools.'],
+  ]) {
+    const dispose = mountRuleSources(h.ctx, [{ moduleId: id, rules: compileRules([make(id, allow)]) }])
+    const result = await h.run('agent/pre-step', [{ agent, messages }], () => ({ kind: 'enter', messages }))
+    assert.equal(result.messages.at(-1).content[0].text, expected)
+    dispose()
+  }
+  const contexts = []
+  const runtime = make('runtime', ['alpha', 'beta'])
+  runtime.then[1].config.layer = 'runtime-context'
+  delete runtime.then[1].config.position
+  h.ctx.get = key => key === DISCOVERY_SERVICE ? registry : key === 'systemPrompt' ? {
+    variable() { return () => {} }, context(entry) { contexts.push(entry); return () => {} },
+  } : undefined
+  const release = mountRuleSources(h.ctx, [{ moduleId: 'runtime', rules: compileRules([runtime]) }])
+  const assembly = { ...assembled(toolList('alpha')), contexts: contexts.map(entry => ({ ...entry })) }
+  const rendered = await h.run('system-prompt/assemble', [assembly, { agent }], () => assembly)
+  assert.equal(rendered.contexts[0].text, 'Resident: alpha. Search: find_tools.', '运行上下文出口读取相同目录事实')
+  release()
+  h.ctx.get = () => undefined
+  const absent = mountRuleSources(h.ctx, [{ moduleId: 'unavailable', rules: compileRules([make('unavailable', ['alpha'])]) }])
+  const skipped = await h.run('agent/pre-step', [{ agent, messages }], () => ({ kind: 'enter', messages }))
+  assert.equal(skipped.messages.length, 1, '发现适配器不可用时跳过提示，不注入伪造工具名')
+  absent()
+  const missing = make('bad', ['alpha'])
+  missing.then[1].config.params.action = 'absent'
+  assert.throws(() => compileRules([missing]), /tool-catalog|action|reference/)
+  const writing = make('readonly', ['alpha'])
+  writing.then[1].config.params.templateEvaluation = true
+  assert.throws(() => compileRules([writing]), /tool-catalog.*templateEvaluation/, '只读目录填充不得静默丢失为持久变量求值')
 })
 
 test('tool-visibility：条件由真变假时撤销上一轮的执行闸（未命中回调）', async () => {
@@ -320,12 +372,16 @@ test('tool-visibility：条件由真变假时撤销上一轮的执行闸（未�
   assert.equal(disposed.restrictDisposed, 1, '条件变假必须撤销 restrict')
 })
 
-test('真实规则挂载：notice.text 覆盖引擎生成的缺省正文', async () => {
+test('真实规则挂载：工具面与自定义提示共用受众条件且提示仅首轮执行', async () => {
   const h = ruleHarness()
-  const session = { id: 's-custom-notice', header: { delegationDepth: 0 }, snapshotEvents: () => [] }
+  const events = []
+  const session = { id: 's-custom-notice', header: { delegationDepth: 0 }, snapshotEvents: () => events }
   const agent = { session, ctx: scopeOf({}) }
-  const rules = compileRules([{ id: 'notice', then: [
-    { id: 'v', kind: 'tool-visibility', allow: ['alpha'], notice: { text: 'CUSTOM-NOTICE' } },
+  const rules = compileRules([{ id: 'notice', if: { scope: { audience: 'main' } }, then: [
+    { id: 'v', kind: 'tool-visibility', allow: ['alpha'] },
+    { if: { count: { of: 'user-message', max: 1 } }, then: [{ id: 'hint', kind: 'inject-text', config: {
+      layer: 'pre-step', strategy: 'static', position: 'after-user', text: 'CUSTOM-NOTICE',
+    } }] },
   ] }])
   const dispose = mountRuleSources(h.ctx, [{ moduleId: 'module', rules }])
   const input = assembled(toolList('alpha'))
@@ -334,5 +390,17 @@ test('真实规则挂载：notice.text 覆盖引擎生成的缺省正文', async
   const first = await h.run('agent/pre-step', [{ agent, messages }], () => ({ kind: 'enter', messages }))
   assert.equal(first.messages.length, 2, '自定义提示照常投递')
   assert.equal(first.messages[1].content[0].text, 'CUSTOM-NOTICE', '正文以声明为准，不是引擎措辞')
+  for (const seq of [0, 1]) {
+    const event = { type: 'user/message', seq, data: { message: messages[0] } }
+    events.push(event)
+    h.emit('session/event', session, event)
+  }
+  const later = await h.run('agent/pre-step', [{ agent, messages }], () => ({ kind: 'enter', messages }))
+  assert.equal(later.messages.length, 1, '超过显式计数上限后不再注入提示')
+  const child = { session: { ...session, id: 'child', header: { delegationDepth: 1 } }, ctx: scopeOf({}) }
+  const childOut = await h.run('agent/pre-step', [{ agent: child, messages }], () => ({ kind: 'enter', messages }))
+  assert.equal(childOut.messages.length, 1, '同一受众条件阻止子代理提示')
+  const childAssembly = await h.run('system-prompt/assemble', [assembled(toolList('alpha', 'beta')), { agent: child }], () => assembled(toolList('alpha', 'beta')))
+  assert.deepEqual(childAssembly.tools.map(tool => tool.name), ['alpha', 'beta'], '同一受众条件阻止子代理工具裁剪')
   dispose()
 })

@@ -91,7 +91,8 @@ function ActionCard(props: {
   const config = asTriggerRecord(action.config), params = asTriggerRecord(config.params)
   const layer = String(config.layer ?? 'pre-step'), policy = context.engineMeta.layerFieldPolicies[layer]
   const staticAudience = layer === 'system-section' && (params.complete === true || params.suppressRuntimeContext === true)
-  const example = action.kind === 'request-params' ? { ...entry?.example, patch: { provider: '', model: '', reasoningEffort: '', temperature: undefined, maxTokens: undefined } }
+  const example = action.kind === 'stream-output' ? { ...entry?.example, mode: 'pass', text: '' }
+    : action.kind === 'request-params' ? { ...entry?.example, patch: { provider: '', model: '', reasoningEffort: '', temperature: undefined, maxTokens: undefined } }
     : action.kind === 'inject-text' ? { ...entry?.example, config: { strategy: 'static', configKind: 'ordered', ...(policy?.merge ? { mergeMode: 'separate' } : {}), ...(policy?.position ? { position: 'after-user' } : {}), ...(staticAudience ? { audience: '' } : {}), ...asTriggerRecord(entry?.example.config) } }
       : entry?.example
   const chainLabel = props.chain.length > 0 ? conditionChain(t, props.chain) : undefined

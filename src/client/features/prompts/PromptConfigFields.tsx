@@ -34,8 +34,6 @@ const SELECTIVE_LOGIC_LABEL_KEYS: Record<string, PromptToolLocaleKey> = {
  */
 const LAYER_PARAM_KEYS: Record<string, readonly string[]> = {
   'runtime-context': ['contextName'],
-  'agent-request': ['patch', 'replace'],
-  'llm-stream': ['mode'],
   'subagent-end': ['action'],
 }
 
@@ -46,10 +44,6 @@ const LAYER_READ_ONLY_NOTES: Record<string, PromptToolLocaleKey> = {
 }
 
 /** 引擎枚举 → 显示键：未知旧值仍由 OptionField 自己保留，避免旧配置无法编辑。 */
-const LLM_STREAM_MODE_LABEL_KEYS: Record<string, PromptToolLocaleKey> = {
-  pass: 'strategyParam.mode.pass',
-  replace: 'strategyParam.mode.replace',
-}
 const SUBAGENT_END_ACTION_LABEL_KEYS: Record<string, PromptToolLocaleKey> = {
   observe: 'strategyParam.endAction.observe',
   'inject-main': 'strategyParam.endAction.injectMain',
@@ -234,40 +228,10 @@ function ParamInput(props: { label: string; hint?: string; className?: string; v
   )
 }
 
-/** 官方 LlmCallConfig 的六个可写字段；实例 patch 与模块共享模型参数保持不同所有者。 */
-function RequestPatchFields(props: { t: PromptToolTranslate; value: Record<string, unknown>; onChange: (value: Record<string, unknown>) => void; fieldDrafts?: Map<string, FieldDraft>; draftScope?: string }): ReactNode {
-  const { t, value } = props
-  const set = (key: string, next: unknown): void => {
-    const patch = { ...value }
-    if (next === '' || next === undefined || (Array.isArray(next) && next.length === 0)) delete patch[key]
-    else patch[key] = next
-    props.onChange(patch)
-  }
-  const keys = ['provider', 'model', 'reasoningEffort', 'temperature', 'maxTokens', 'stop']
-  const extra = Object.fromEntries(Object.entries(value).filter(([key]) => !keys.includes(key)))
-  const covered = Object.fromEntries(Object.entries(value).filter(([key]) => keys.includes(key)))
-  return <>
-    <p className={clsx(styles.configFieldHint, styles.fieldFull)}>{t('strategyParam.request.hint')}</p>
-    {(['provider', 'model', 'reasoningEffort'] as const).map((key) => <ParamInput key={key} className={styles.fieldSpan4}
-      label={t(`strategyParam.request.${key}`)} value={typeof value[key] === 'string' ? value[key] : ''} onChange={(next) => set(key, next)} />)}
-    {(['temperature', 'maxTokens'] as const).map((key) => <NumberField key={key} t={t} className={styles.fieldSpan6}
-      label={t(`strategyParam.request.${key}`)} value={typeof value[key] === 'number' || typeof value[key] === 'string' ? value[key] : ''}
-      fallback="" integer={key === 'maxTokens'} min={key === 'maxTokens' ? 1 : undefined} fieldDrafts={props.fieldDrafts}
-      draftKey={`${props.draftScope}:params.patch.${key}`} onChange={(next) => set(key, next)} />)}
-    <ParamTextarea className={styles.fieldFull} label={t('strategyParam.request.stop')} hint={t('strategyParam.request.stopHint')}
-      value={Array.isArray(value.stop) ? value.stop.map(String).join('\n') : ''}
-      onChange={(next) => set('stop', next.split('\n').filter((item) => item.length > 0))} />
-    {Object.keys(extra).length > 0 && <JsonField t={t} label={t('field.json.advanced')} value={extra}
-      fieldDrafts={props.fieldDrafts} draftKey={`${props.draftScope}:params.patch.extra`}
-      onChange={(next) => props.onChange({ ...covered, ...next })} />}
-  </>
-}
-
 /**
  * 按 layer / strategy 拆解 params 为结构化编辑框（替代裸 JSON）：
  *   层专属 → system-section（段名/独占/动态抑制）、runtime-context（注册名）、
- *   agent-request（patch/replace）、llm-stream（mode）、subagent-end（结束动作）；
- *   guide-auto → router-guide 每轮引导参数（开关/文本/复杂正则/强弱引导句）；
+ *   subagent-end（结束动作）；
  *   placeholder → fill 模板参数（text/envKeys/limit/fields/providers/emptyBehavior/emptyText）；
  * 无固定字段的策略回退 JSON 编辑（保留任意 params 能力）。
  */
@@ -315,17 +279,6 @@ export function StrategyParamsFields(props: { t: PromptToolTranslate; strategy: 
   const layerFields: ReactNode = layer === 'runtime-context' ? (
     <ParamInput className={styles.fieldSpan3} label={t('strategyParam.contextName.label')} hint={t('strategyParam.contextName.hint')}
       value={str('contextName')} onChange={(next) => set('contextName', next)} />
-  ) : layer === 'agent-request' ? (
-    <>
-      <RequestPatchFields t={t} value={objectOf('patch') ?? {}} onChange={(next) => set('patch', next)}
-        fieldDrafts={props.fieldDrafts} draftScope={props.draftScope} />
-      <ParamToggle className={styles.fieldSpan3} label={t('strategyParam.replace.label')} hint={t('strategyParam.replace.hint')}
-        checked={bool('replace')} onChange={(next) => set('replace', next)} />
-    </>
-  ) : layer === 'llm-stream' ? (
-    <OptionField t={t} className={styles.fieldSpan3} label={t('strategyParam.mode.label')} hint={t('strategyParam.mode.hint')}
-      value={str('mode') || 'pass'} options={options('mode', ['pass', 'replace'])} fallback="pass" labelKeys={LLM_STREAM_MODE_LABEL_KEYS}
-      onChange={(next) => set('mode', next)} />
   ) : layer === 'subagent-end' ? (
     <OptionField t={t} className={styles.fieldSpan6} label={t('strategyParam.endAction.label')} hint={t('strategyParam.endAction.hint')}
       value={str('action') || 'observe'} options={options('action', ['observe', 'inject-main'])} fallback="observe" labelKeys={SUBAGENT_END_ACTION_LABEL_KEYS}
@@ -336,21 +289,6 @@ export function StrategyParamsFields(props: { t: PromptToolTranslate; strategy: 
   const covered = Object.fromEntries(Object.entries(value).filter(([key]) => known.includes(key)))
   const readOnlyNote = LAYER_READ_ONLY_NOTES[layer ?? '']
 
-  if (strategy === 'guide-auto') {
-    return (
-      <>
-        <ParamToggle className={styles.fieldSpan4} label={t('strategyParam.custom.label')} hint={t('strategyParam.custom.hint')}
-          checked={bool('useCustom')} onChange={(next) => set('useCustom', next)} />
-        <ParamTextarea className={styles.fieldFull} label={t('strategyParam.guideText.label')}
-          hint={t('strategyParam.guideText.hint')} value={str('text')} onChange={(next) => set('text', next)} />
-        <ParamInput className={styles.fieldSpan6} label={t('strategyParam.complexPattern.label')} hint={t('strategyParam.complexPattern.hint')}
-          value={str('complexPattern')} onChange={(next) => set('complexPattern', next)} />
-        <ParamTextarea className={styles.fieldFull} label={t('strategyParam.guideWeak')} value={str('guideWeak')} onChange={(next) => set('guideWeak', next)} />
-        <ParamTextarea className={styles.fieldFull} label={t('strategyParam.deepGuide')}
-          value={str('guideDeep')} onChange={(next) => set('guideDeep', next)} />
-      </>
-    )
-  }
   if (strategy === 'context-activation') {
     const activation = objectOf('activation') ?? { scan: 'batch' }
     const keys = ['constant', 'keys', 'secondaryKeys', 'caseSensitive', 'wholeWords', 'useRegex', 'selectiveLogic', 'activation']

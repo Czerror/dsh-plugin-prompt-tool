@@ -5,13 +5,7 @@ if:
   scope:
     modelScope: flash
 then:
-  - id: inject
-    kind: inject-text
-    config:
-      id: example-llm-stream
-      layer: llm-stream
-      strategy: static
-      order: 0
-      text: "" # mode=replace 时替代整个模型流的文本
-      params:
-        mode: pass
+  - id: output
+    kind: stream-output
+    mode: pass
+    text: "" # mode=replace 时替代整个模型流的文本

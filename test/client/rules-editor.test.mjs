@@ -85,6 +85,26 @@ test('rules bridge: 确认关联和兜底字段按草稿增删，不在提交时
   assert.deepEqual(h.calls.at(-1).edits[0].rule.if.anchor, { subject: 'assistantReasoning', keys: ['READY'] })
 })
 
+test('rules bridge: 文本长度增删与流动作完整提交，不把示例默认值写回', async () => {
+  let saved = { ...structuredClone(alpha), if: { text: { subject: 'userMessage', minChars: 0, maxChars: 120 } }, then: [{ id: 'output', kind: 'stream-output', mode: 'replace', text: '输出' }] }
+  const h = harness(async body => {
+    if (body.edits) saved = structuredClone(body.edits[0].rule)
+    return { ok: true, value: snapshot([saved], body.edits ? 'saved' : 'baseline') }
+  })
+  await h.editor.load()
+  const key = h.draft.entries[0].key
+  const next = structuredClone(saved)
+  delete next.if.text.maxChars
+  h.editor.patch(key, next)
+  assert.equal(await h.editor.submit(), true)
+  assert.deepEqual(h.calls.at(-1).edits[0].rule.if, { text: { subject: 'userMessage', minChars: 0 } })
+  assert.deepEqual(h.calls.at(-1).edits[0].rule.then, [{ id: 'output', kind: 'stream-output', mode: 'replace', text: '输出' }])
+  const withoutLength = { ...saved, if: { text: { subject: 'userMessage', keys: ['完成'] } } }
+  h.editor.patch(key, withoutLength)
+  assert.equal(await h.editor.submit(), true)
+  assert.deepEqual(h.calls.at(-1).edits[0].rule.if, { text: { subject: 'userMessage', keys: ['完成'] } })
+})
+
 test('rules bridge: 共享引用被拒后只许重新读取，不重放那一次写', async () => {
   const h = harness(async body => body.edits
     ? { ok: false, code: 'shared-alias', message: 'YAML 共享引用会改变其他定义；请先解除相关引用后再编辑（连带改了 persona）' }

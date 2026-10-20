@@ -1,6 +1,20 @@
 import { labelOf } from './shared.mjs'
-import { applyAgentRequestParams, matchesAgentScope } from '../layers.mjs'
+import { matchesAgentScope } from '../layers.mjs'
 import { assertReplacePatch } from '../schema.mjs'
+
+/** 浅合并或整体替换；unset 只删除值仍等于声明期望的键，保留其他来源的覆盖。 */
+function applyAgentRequestParams(params, base) {
+  const patch = params.patch ?? {}
+  if (params.replace === true) return { ...patch }
+  const merged = { ...base, ...patch }
+  let result
+  for (const [key, expected] of Object.entries(params.unset ?? {})) {
+    if (!Object.is(merged[key], expected)) continue
+    result ??= { ...merged }
+    delete result[key]
+  }
+  return result ?? merged
+}
 
 export function prepareRequestParams(action, plugin) {
   const label = labelOf(action)
@@ -12,9 +26,7 @@ export function prepareRequestParams(action, plugin) {
   if (unset !== undefined && (unset === null || typeof unset !== 'object' || Array.isArray(unset))) {
     throw new TypeError(`${plugin}: ${label}.unset must be an object of { key: expectedValue }`)
   }
-  // 信任边界：只接受布尔值（缺省 = false），显式 `'yes'` / `1` / `null` 一律拒绝，
-  // 与 config 层 `agent-request.params.replace` 的严格化对称——静默退化成「只合并 patch」
-  // （`applyAgentRequestParams` 只在 `=== true` 时整体替换）会让「写了却没生效」无法察觉。
+  // 只接受布尔值，避免错误配置静默退化为浅合并。
   if (action.replace !== undefined && typeof action.replace !== 'boolean') {
     throw new TypeError(`${plugin}: ${label}.replace must be a boolean (省略 = false) — got ${JSON.stringify(action.replace)}`)
   }

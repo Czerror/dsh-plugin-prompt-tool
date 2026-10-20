@@ -843,7 +843,7 @@ const LITERAL_SLICES = [
     id: 'router-guide',
     name: '每轮引导',
     enabled: true,
-    strategy: 'guide-auto',
+    strategy: 'static',
     layer: 'pre-step',
     order: 10,
     role: 'user',
@@ -860,7 +860,9 @@ function writeModuleFixture(id, { modules, promptConfigs = [], moduleConfigs, pe
   mkdirSync(dir, { recursive: true })
   writeFileSync(join(dir, 'module.yml'), `${JSON.stringify({
     id, name: id, modules: [...new Set(modules.map(name => ['prompt-config-engine', 'declared-triggers'].includes(name) ? 'rule-engine' : name))],
-    rules: promptConfigs.map(fixtureRule), ...(configOrder === undefined ? {} : { configOrder }),
+    rules: promptConfigs.map(config => config.layer === 'agent-request'
+      ? { id: config.id, layer: 'agent-request', then: [{ id: 'request', kind: 'request-params', patch: config.params.patch }] }
+      : fixtureRule(config)), ...(configOrder === undefined ? {} : { configOrder }),
     ...(moduleConfigs === undefined ? {} : { moduleConfigs }), ...(persona === undefined ? {} : { persona }),
     ...(variables === undefined ? {} : { variables }),
   }, null, 2)}\n`, 'utf8')

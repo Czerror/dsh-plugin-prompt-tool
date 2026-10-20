@@ -46,7 +46,7 @@ _Avoid_: 优先级组、首个命中
 _Avoid_: 行为规则、配置卡
 
 **工具可见面（Tool Visibility）**：
-一份声明拥有「模型看得见、调得动哪些工具」：allow/deny 名单同时投影到装配目录、`tools:sdk` 正文与执行闸，并可声明发现来源（`kind`）与首轮提示。名单语义对齐官方 `ToolRestriction` 的 allow 与 deny（可同时给，先保留再剔除）。
+一份声明拥有「模型看得见、调得动哪些工具」：allow/deny 名单同时投影到装配目录、`tools:sdk` 正文与执行闸，并可声明发现来源（`kind`）。面向模型的使用提示由独立注入动作组合。名单语义对齐官方 `ToolRestriction` 的 allow 与 deny（可同时给，先保留再剔除）。
 _Avoid_: 工具过滤链、三条规则、guard/sdk-strip 组合
 
 **发现（Discovery）**：

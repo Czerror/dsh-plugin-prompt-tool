@@ -79,8 +79,8 @@ function installWriterModule(id) {
         id: 'near-anchor', strategy: 'static', layer: 'pre-step', position: 'after-user',
         text: `PARAM-${id}`, params: { useCustom: true } } }] },
       { id: 'router-guide', layer: 'pre-step', then: [{ id: 'inject', kind: 'inject-text', config: {
-        id: 'router-guide', strategy: 'guide-auto', layer: 'pre-step', position: 'after-user',
-        text: `GUIDE-${id}`, params: { useCustom: true } } }] },
+        id: 'router-guide', strategy: 'static', layer: 'pre-step', position: 'after-user',
+        text: `GUIDE-${id}` } }] },
     ],
     configOrder: { 'near-anchor': 0, 'router-guide': 10 },
   }), 'utf8')
@@ -110,7 +110,7 @@ test('规则所有者：无旧快捷参数的同名规则保留自身字段，�
   mkdirSync(dir)
   const configs = [
     { id: 'near-anchor', strategy: 'static', enabled: true, params: { text: 'RULE ANCHOR' } },
-    { id: 'router-guide', strategy: 'guide-auto', enabled: true, params: { useCustom: true, text: 'RULE GUIDE' } },
+    { id: 'router-guide', strategy: 'static', enabled: true, params: { text: 'RULE GUIDE' } },
     { id: 'prompt-injector', strategy: 'static', enabled: false, params: { text: 'RULE BODY' } },
   ]
   writeFileSync(join(dir, 'module.yml'), JSON.stringify({ id: 'example', order: 91, modules: [], rules: configs.map(promptConfigToRule) }), 'utf8')
@@ -141,7 +141,7 @@ test('旧参数键不被读取，规则只由显式事务改写；含旧内容�
   const near = loaded.rules.find(rule => rule.id === 'near-anchor').then[0].config
   const guide = loaded.rules.find(rule => rule.id === 'router-guide').then[0].config
   assert.equal(near.strategy, 'static')
-  assert.equal(guide.strategy, 'guide-auto')
+  assert.equal(guide.strategy, 'static')
   const imported = writeModule({ modulesRoot: root, moduleId: FIXTURE_MODULE_ID, targetModuleId: 'imported', sourceDir: dir })
   assert.ok(existsSync(join(imported, 'module.yml')), '旧参数不影响重建')
   // 显式规则事务才是唯一改写入口。

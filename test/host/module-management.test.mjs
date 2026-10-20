@@ -218,7 +218,7 @@ test('并入的源模块优先：同名模块与角色卡并存时取模块定�
   const moduleRules = [
     { id: 'intro', strategy: 'static', layer: 'system-section', text: 'FROM-MODULE' },
     { id: 'near-anchor', strategy: 'static', enabled: false, layer: 'pre-step' },
-    { id: 'prompt-injector', strategy: 'guide-auto', layer: 'pre-step' },
+    { id: 'prompt-injector', strategy: 'static', layer: 'pre-step', text: 'FROM-INJECTOR' },
   ].map(promptConfigToRule)
   writeFileSync(join(moduleRoot, id, 'module.yml'), JSON.stringify({ id, name: '模块源', modules: [], rules: moduleRules, configOrder: Object.fromEntries(moduleRules.map((rule, index) => [rule.id, index * 10])) }), 'utf8')
   // 同名角色卡源：存储根下的 .characters/<id>/converted.yml（与模块根同级）
@@ -242,7 +242,7 @@ test('并入的源模块优先：同名模块与角色卡并存时取模块定�
   const anchor = configs.find(config => config.id === `module-${id}-near-anchor`)
   assert.equal(anchor.enabled, false, '并入保留源模块定义的启停')
   assert.equal(anchor.then[0].config.strategy, 'static')
-  assert.equal(configs.find(config => config.id === `module-${id}-prompt-injector`).then[0].config.strategy, 'guide-auto')
+  assert.equal(configs.find(config => config.id === `module-${id}-prompt-injector`).then[0].config.strategy, 'static')
 })
 
 test('普通模块之间的并入是往返且幂等的：重复并入不翻倍，移除后自有内容原样保留', async () => {

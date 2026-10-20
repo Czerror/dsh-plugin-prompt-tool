@@ -14,7 +14,6 @@ import ToolRuntime from '@deepseek-ai/dsh-tools'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import { registerAction } from '../../engine/actions.mjs'
 import { SDK_SECTION_NAME, sdkToolNames } from '../../engine/sdk-strip.mjs'
-import { applyAgentRequestParams } from '../../engine/layers.mjs'
 import { createPromptConfigs } from '../../engine/schema.mjs'
 
 /** 记录型 ctx 桩：记录 ctx.on 的通道、注册的服务调用与 effect 释放。 */
@@ -64,6 +63,28 @@ const session = (depth = 0, id = `s${depth}-${Math.random()}`) => ({ id, header:
 const agent = (depth = 0, extra = {}) => ({ session: session(depth), options: { model: 'deepseek-chat' }, ...extra })
 const assembled = (tools, extra = {}) => ({ sections: [], contexts: [], tools, variables: {}, ...extra })
 
+test('流输出动作：替换不调用下游，次数耗尽和条件不命中时透传', async () => {
+  const original = { original: true }
+  for (const spec of [{}, { mode: 'pass', text: 'IGNORED' }, { mode: 'replace', text: '' }]) {
+    const passthrough = recordingCtx()
+    registerAction(passthrough.ctx, { id: 'pass', kind: 'stream-output', ...spec })
+    assert.equal(only(passthrough.events, 'llm/stream')({}, () => original), original)
+  }
+  const recorder = recordingCtx()
+  registerAction(recorder.ctx, { id: 'stream', kind: 'stream-output', mode: 'replace', text: 'HI', maxPerTurn: 1 }, { when: payload => payload.model === 'flash' })
+  const stream = only(recorder.events, 'llm/stream')
+  const options = { model: 'flash', agent: agent() }
+  assert.equal(await stream({ ...options, model: 'other' }, () => original), original)
+  const chunks = []
+  for await (const chunk of stream(options, () => { throw new Error('replace 不得调用下游') })) chunks.push(chunk)
+  assert.deepEqual(chunks, [
+    { type: 'block-start', index: 0, blockType: 'text' },
+    { type: 'text-delta', index: 0, text: 'HI' },
+    { type: 'block-end', index: 0, block: { type: 'text', text: 'HI' } },
+  ])
+  assert.equal(await stream(options, () => original), original)
+})
+
 // ───────────────────────── 一、通道与降级语义声明 ─────────────────────────
 
 test('动作只在其合法通道注册：逐类记录 ctx.on 的通道并与声明对拍', async () => {
@@ -72,8 +93,8 @@ test('动作只在其合法通道注册：逐类记录 ctx.on 的通道并与声
     ['assembly', { kind: 'assembly', id: 'a1', target: { sections: { remove: ['x'] } } }, ['system-prompt/assemble']],
     ['tool-gate', { kind: 'tool-gate', id: 'd1', decision: 'deny', reason: 'no' }, ['tools/pre-execute']],
     ['tool-result', { kind: 'tool-result', id: 'd2', action: 'block', text: 'x' }, ['tools/post-execute']],
-    ['append-context', { kind: 'append-context', id: 'c1', mode: 'context', text: 'x' }, ['tools/post-execute']],
-    ['append-context continue', { kind: 'append-context', id: 'c2', mode: 'continue', text: 'x' }, ['agent/turn-stopping']],
+    ['append-context', { kind: 'append-context', id: 'c1', text: 'x' }, ['tools/post-execute']],
+    ['stream-output', { kind: 'stream-output', id: 'c2', mode: 'replace', text: 'x' }, ['llm/stream']],
     ['tool-visibility', { kind: 'tool-visibility', id: 'v1', deny: ['bash'] }, ['system-prompt/assemble']],
     ['request-params', { kind: 'request-params', id: 'r1', patch: { maxTokens: 64 } }, ['agent/request']],
     ['inbox-prepend', { kind: 'inbox-prepend', id: 'p1', text: 'ANCHOR' }, ['agent/inbox/inserted']],
@@ -91,7 +112,8 @@ test('动作声明 fail loud：名单形状错误、名单为空、名单命名 
   const { ctx } = recordingCtx()
   assert.throws(() => registerAction(ctx, { kind: 'tool-visibility', id: 'v', deny: ['run_code'] }), /must not name the reserved run_code/)
   assert.throws(() => registerAction(ctx, { kind: 'tool-visibility', id: 'v' }), /needs allow and\/or deny/)
-  assert.throws(() => registerAction(ctx, { kind: 'tool-visibility', id: 'v', deny: ['a'], audience: 'nobody' }), /audience must be main, subagent or all/)
+  assert.throws(() => registerAction(ctx, { kind: 'stream-output', id: 'v', mode: 'invalid' }), /mode must be pass or replace/)
+  assert.throws(() => registerAction(ctx, { kind: 'stream-output', id: 'v', mode: 'replace', text: 42 }), /text must be a string/)
   assert.throws(() => registerAction(ctx, { kind: 'tool-visibility', id: 'v', deny: ['a'], requireMatch: true }), /requireMatch only applies to allow/)
   assert.throws(() => registerAction(ctx, { kind: 'request-params', id: 'x', replace: true, unset: { maxTokens: 1 } }), /cannot combine replace with unset/)
   assert.throws(() => registerAction(ctx, { kind: 'tool-gate', id: 'x', decision: 'maybe' }), /must be one of allow, deny, ask/)
@@ -206,7 +228,7 @@ test('(4) 追加上下文：additionalContexts 形状（user 角色、plugin 来
   const exec = { name: 'bash', agent: agent(), arguments: {} }
   const decision = { kind: 'accept', content: [{ type: 'text', text: 'OUT' }] }
   const viaAction = recordingCtx()
-  registerAction(viaAction.ctx, { kind: 'append-context', id: 'beat', mode: 'context', text: 'BEAT' })
+  registerAction(viaAction.ctx, { kind: 'append-context', id: 'beat', text: 'BEAT' })
   const actual = await only(viaAction.events, 'tools/post-execute')(exec, decision, async () => ({ ...decision }))
   assert.equal(actual.additionalContexts.length, 1)
   assert.deepEqual(actual.additionalContexts[0].content, [{ type: 'text', text: 'BEAT' }])
@@ -222,7 +244,7 @@ test('(4) 续跑：steer 一次/轮、总量受引擎预算约束，且与 turn-
   const steered = []
   const target = { session: session(0), options: { model: 'deepseek-chat' }, steer: (message) => steered.push(message) }
   const recorder = recordingCtx()
-  registerAction(recorder.ctx, { kind: 'append-context', id: 'go', mode: 'continue', text: 'GO' })
+  registerAction(recorder.ctx, { kind: 'inject-text', id: 'go', config: createPromptConfigs([{ id: 'go', layer: 'turn-stop', text: 'GO' }])[0] })
   const handler = only(recorder.events, 'agent/turn-stopping')
   for (let index = 0; index < 5; index += 1) handler({ agent: target, turn: 1 })
   for (let turn = 2; turn <= 5; turn += 1) handler({ agent: target, turn })
@@ -232,32 +254,37 @@ test('(4) 续跑：steer 一次/轮、总量受引擎预算约束，且与 turn-
   assert.equal(steered[0].source.plugin, 'go')
 })
 
-test('(7) 按值条件删键：值相等才删、值不等保留、缺失键不动，且不得删别的插件设置的同名值', () => {
+test('(7) 按值条件删键：值相等才删、值不等保留、缺失键不动，且不得删别的插件设置的同名值', async () => {
+  const applyAgentRequestParams = async (params, base) => {
+    const recorder = recordingCtx()
+    registerAction(recorder.ctx, { id: 'request', kind: 'request-params', ...params })
+    return only(recorder.events, 'agent/request')({ agent: agent() }, async () => base)
+  }
   const injected = 2048
   // 相等 → 删除（bootstrapMaxTokens 的剥离语义）
-  assert.deepEqual(applyAgentRequestParams({ unset: { maxTokens: injected } }, { model: 'chat', maxTokens: injected }), { model: 'chat' })
+  assert.deepEqual(await applyAgentRequestParams({ unset: { maxTokens: injected } }, { model: 'chat', maxTokens: injected }), { model: 'chat' })
   // 不等 → 保留（模型或其它插件设置的值）
-  assert.deepEqual(applyAgentRequestParams({ unset: { maxTokens: injected } }, { model: 'chat', maxTokens: 4096 }), { model: 'chat', maxTokens: 4096 })
+  assert.deepEqual(await applyAgentRequestParams({ unset: { maxTokens: injected } }, { model: 'chat', maxTokens: 4096 }), { model: 'chat', maxTokens: 4096 })
   // 缺失 → 不动，且不产生键
-  const missing = applyAgentRequestParams({ unset: { maxTokens: injected } }, { model: 'chat' })
+  const missing = await applyAgentRequestParams({ unset: { maxTokens: injected } }, { model: 'chat' })
   assert.deepEqual(missing, { model: 'chat' })
   assert.equal(Object.hasOwn(missing, 'maxTokens'), false)
   // patch 与 unset 组合：合并结果的值等于声明值时才删
   assert.deepEqual(
-    applyAgentRequestParams({ patch: { maxTokens: injected }, unset: { maxTokens: injected } }, { model: 'chat', maxTokens: 4096 }),
+    await applyAgentRequestParams({ patch: { maxTokens: injected }, unset: { maxTokens: injected } }, { model: 'chat', maxTokens: 4096 }),
     { model: 'chat' },
   )
   assert.deepEqual(
-    applyAgentRequestParams({ patch: { maxTokens: injected }, unset: { maxTokens: 100 } }, { model: 'chat' }),
+    await applyAgentRequestParams({ patch: { maxTokens: injected }, unset: { maxTokens: 100 } }, { model: 'chat' }),
     { model: 'chat', maxTokens: injected },
   )
   // 多键：只删命中的那个
   assert.deepEqual(
-    applyAgentRequestParams({ unset: { maxTokens: injected, temperature: 0.5 } }, { model: 'chat', maxTokens: injected, temperature: 0.7 }),
+    await applyAgentRequestParams({ unset: { maxTokens: injected, temperature: 0.5 } }, { model: 'chat', maxTokens: injected, temperature: 0.7 }),
     { model: 'chat', temperature: 0.7 },
   )
   // 无 unset 时零额外分配（同一形状）
-  assert.deepEqual(applyAgentRequestParams({ patch: { temperature: 0.1 } }, { model: 'chat' }), { model: 'chat', temperature: 0.1 })
+  assert.deepEqual(await applyAgentRequestParams({ patch: { temperature: 0.1 } }, { model: 'chat' }), { model: 'chat', temperature: 0.1 })
 })
 
 // ───────────────────────── 三、第 (5)(6) 类：真实 PTC 子调用拒绝 ─────────────────────────

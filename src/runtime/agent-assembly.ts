@@ -25,7 +25,7 @@ import { packageEngineDir, resolveModuleDir } from '../host/module-dirs.ts'
 import { readModuleFacts, resolveModuleParams } from '../host/module-params.ts'
 import { loadModuleSpec } from '../host/module-spec.ts'
 import type { ModuleSpec } from '../host/module-spec.ts'
-import { modelRequestConfigs } from '../host/prompt-configs.ts'
+import { modelRequestRules } from '../host/prompt-configs.ts'
 import { assertModuleDirectory, assertModuleId } from '../host/module-install.ts'
 import { readConfigOrder } from '../host/module-config-order.ts'
 import { rulePromptConfigOptions } from '../host/module-slices.ts'
@@ -159,13 +159,8 @@ export async function prepareAssembly(
   // 合成规则与模块规则**一起编译**（不能事后推进已编译结果），只活在本次装配里，
   // 不进 module.yml / rules 切片；作者手写了同名 id 时让位给作者的定义。
   const declaredRules = spec.rules ?? []
-  const syntheticRules = modelRequestConfigs(resolveModuleParams(spec, {})).map(request => ({
-    id: `param-${request.id}`,
-    name: String(request.name ?? request.id),
-    layer: 'agent-request',
-    if: { scope: { audience: request.audience === 'subagent' ? 'subagent' : 'main' } },
-    then: [{ id: 'request', kind: 'request-params', ...request.params }],
-  })).filter(rule => !declaredRules.some(declared => declared.id === rule.id))
+  const syntheticRules = modelRequestRules(resolveModuleParams(spec, {}))
+    .filter(rule => !declaredRules.some(declared => declared.id === rule.id))
   const rules = compileRules([...declaredRules, ...syntheticRules], {
     moduleId,
     configOrder: readConfigOrder(spec.configOrder),

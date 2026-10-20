@@ -114,6 +114,18 @@ test('文本类：主键/副键/整词/大小写/正则/前缀/模式的命中�
 
 // ── 2. 相位（epoch）─────────────────────────────────────────────────────────
 
+test('文本长度：允许无关键词、包含边界，并保留未知事实的三值语义', () => {
+  const exact = compileWhen({ text: { subject: 'userMessage', minChars: 2, maxChars: 2 } })
+  assert.equal(exact({ userText: '甲乙' }), true)
+  assert.equal(exact({ userText: '甲' }), false)
+  assert.equal(exact({ userText: '甲乙丙' }), false)
+  assert.equal(compileWhen({ text: { subject: 'userMessage', maxChars: 0 } })({ userText: '' }), true)
+  assert.equal(compileWhen({ not: { text: { subject: 'userMessage', minChars: 0 } } })({}), UNAVAILABLE)
+  for (const options of [{ minChars: -1 }, { maxChars: 1.5 }, { minChars: Number.MAX_SAFE_INTEGER + 1 }, { maxChars: '2' }, { minChars: 3, maxChars: 2 }, {}]) {
+    assert.throws(() => compileWhen({ text: { subject: 'userMessage', ...options } }), /safe integer|cannot exceed|needs/)
+  }
+})
+
 test('相位类：订阅 / 不订阅两种复位语义分别可表达', () => {
   const events = [toolCall(1)]
   const session = makeSession(events)

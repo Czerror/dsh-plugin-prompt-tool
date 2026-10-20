@@ -8,6 +8,7 @@ import { prepareToolGate } from './tool-gate.mjs'
 import { prepareToolResult } from './tool-result.mjs'
 import { prepareAppendContext } from './append-context.mjs'
 import { prepareRequestParams } from './request-params.mjs'
+import { prepareStreamOutput } from './stream-output.mjs'
 import { prepareInboxPrepend } from './inbox-prepend.mjs'
 import { preparePreStepFilter } from './pre-step-filter.mjs'
 import { prepareToolVisibility } from './tool-visibility.mjs'
@@ -22,6 +23,7 @@ const PREPARERS = {
   'tool-result': prepareToolResult,
   'append-context': prepareAppendContext,
   'request-params': prepareRequestParams,
+  'stream-output': prepareStreamOutput,
   'inbox-prepend': prepareInboxPrepend,
   'pre-step-filter': preparePreStepFilter,
   'tool-visibility': prepareToolVisibility,
@@ -68,9 +70,7 @@ export function validateActionOptions(action, options = {}) {
 export function prepareAction(action, options = {}) {
   const { kind, plugin } = validateActionOptions(action, options)
   const max = action?.maxPerTurn
-  // 第 4 参是共享续跑预算：只有 append-context 的 continue 消费它（同模块一份），
-  // 其余准备器忽略。缺省 undefined 时该准备器自己新建，旧路径不变。
-  const bind = PREPARERS[kind](action, plugin, options.promptConfigOptions, options.turnStopBudget)
+  const bind = PREPARERS[kind](action, plugin, options.promptConfigOptions)
   const phase = actionSupportsWhen(kind) ? actionExecutionPoint(action).phase : undefined
   return (ctx) => {
     const warnOnce = options.warnOnce ?? createWarnOnce(ctx, plugin)

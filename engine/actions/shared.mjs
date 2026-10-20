@@ -1,5 +1,4 @@
 import { stringList } from '../fields.mjs'
-import { parseToolNames } from '../shared.mjs'
 export const RUN_CODE = 'run_code'
 
 export const NAME_LIST = stringList({ as: 'set', dedupe: true, allowEmpty: true })
@@ -60,10 +59,4 @@ export function createMask(source, label, plugin, allowExtra) {
 export function requireString(value, label, plugin) {
   if (typeof value !== 'string') throw new TypeError(`${plugin}: ${label} must be a string`)
   return value
-}
-
-export function toolNameSet(value, plugin, field) {
-  if (value === undefined) return undefined
-  const names = NAME_LIST.parse(typeof value === 'string' ? parseToolNames(value) : value, plugin, field)
-  return names !== undefined && names.size > 0 ? names : undefined
 }

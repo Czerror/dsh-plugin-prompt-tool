@@ -1,6 +1,6 @@
 # dsh-plugin-prompt-tool — 提示词注入引擎
 
-通过普通模块声明注入内容、插入点、时机、受众与动作。规则统一走 `compileRules → mountRuleSources`，对接九个独立官方插入点；八层可注入，tool-pipeline 使用工具裁决动作。模块与官方会话预设分开，不分发或替换官方预设。
+通过普通模块声明注入内容、插入点、时机、受众与动作。规则统一走 `compileRules → mountRuleSources`，对接九个独立官方插入点；六层可注入，agent-request、llm-stream、tool-pipeline 分别使用请求、流输出与工具动作。模块与官方会话预设分开，不分发或替换官方预设。
 
 能力来源包括 [dsh-anchored-standard](https://github.com/xiaobright/dsh-anchored-standard)（MIT）、[dsh-router-standard](https://github.com/yjh051108/dsh-router-standard) 与 [dsh-super-injector](https://github.com/yjh051108/dsh-super-injector)。锚定、晋升、PTC 与模型增强保持可选，不作为默认工作流。
 
@@ -63,7 +63,8 @@ rules:
 规则是唯一行为源；共享模型与能力参数保存于 layerSettings，人设、变量与自定义工具各有独立顶层段。根 [module.yml](module.yml) 从权威目录生成九层及13个共享参数参考，示例默认关闭。
 
 - 条件使用 if，动作用 then，另有 else；动作身份在完整规则树中唯一。
-- 注入正文策略为 static、placeholder、guide-auto、context-activation；确认由通用 `anchor` 条件承担，正文与位置由普通注入动作声明。
+- 注入正文策略为 static、placeholder、context-activation；文本与长度分类、确认、工具名和受众由通用条件承担，正文、投递、请求与流控制由动作组合。
+- 工具提示通过 tool-catalog 只读引用同规则工具可见面声明，自动列出常驻名单与发现工具；提示正文和投递由模块规则控制。
 - 九个插入点没有跨层全局顺序；order 属于该官方位置，configOrder 管同点跨模块顺序。
 - `dedupe: session` 看当前模型可见上下文，旧消息被压缩/替换遮蔽后可再次注入。
 - 主/子模型卡各有5个路由/采样参数，在装配时生成受众限定请求规则；也可显式编辑 request-params，不回写宿主全局默认。

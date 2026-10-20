@@ -6,6 +6,8 @@ import { identityHit, identityOf, identityStampOf } from '../../engine/delivery.
 import { wireLayers } from '../../engine/layers.mjs'
 import { createPromptConfigs as createPromptConfigsCore } from '../../engine/schema.mjs'
 import { registerAction } from '../../engine/actions.mjs'
+import { compileRules } from '../../engine/rule-spec.mjs'
+import { mountRuleSources } from '../../engine/rule-runtime.mjs'
 
 /** 引擎测试夹具使用包内 engine 目录作为自定义策略探测目录;内置策略不依赖 strategyDir。 */
 const STRATEGY_DIR = new URL('../../engine/', import.meta.url).href
@@ -63,17 +65,13 @@ test('同位置多配置默认按声明顺序插入：near-anchor 与 router-gui
     {
       id: 'router-guide',
       enabled: true,
-      strategy: 'guide-auto',
+      strategy: 'static',
+      text: 'WEAK',
       position: 'after-user',
       dedupe: 'batch',
       promotion: 'main',
       audience: 'main',
       modelScope: 'flash',
-      params: {
-        complexPattern: 'complex',
-        guideWeak: 'WEAK',
-        guideDeep: 'DEEP',
-      },
     },
   ]))
   const decision = await step(agent({ session: {
@@ -219,10 +217,10 @@ test('system-section 与 runtime-context 注册到 systemPrompt 服务', () => {
   assert.deepEqual(disposed, ['sys', 'ctx'])
 })
 
-test('agent-request 提示词配置浅合并 LlmCallConfig，并遵守 modelScope', async () => {
-  const { listeners } = makeWiredHarness([
-    { id: 'patch', layer: 'agent-request', strategy: 'static', params: { patch: { maxTokens: 2048, temperature: 0.5 } } },
-  ])
+test('request-params 动作浅合并 LlmCallConfig', async () => {
+  const listeners = new Map()
+  const ctx = { on(name, handler) { listeners.set(name, handler) }, logger: { warn() {} } }
+  registerAction(ctx, { id: 'patch', kind: 'request-params', patch: { maxTokens: 2048, temperature: 0.5 } })
   const handler = listeners.get('agent/request')
   assert.ok(handler)
   const pro = { agent: { session: { header: { delegationDepth: 0 } }, options: { model: 'deepseek-v4-pro-8013' } } }
@@ -230,10 +228,10 @@ test('agent-request 提示词配置浅合并 LlmCallConfig，并遵守 modelScop
   assert.deepEqual(await handler(pro, base), { provider: 'p', model: 'm', maxTokens: 2048, temperature: 0.5 })
 })
 
-test('llm-stream 提示词配置 replace 模式用提示词配置文本替代模型流，作用域外透传', async () => {
-  const { listeners } = makeWiredHarness([
-    { id: 'replace', layer: 'llm-stream', strategy: 'static', text: 'HI', modelScope: 'flash', params: { mode: 'replace' } },
-  ])
+test('stream-output replace 用文本替代模型流，条件不命中透传', async () => {
+  const listeners = new Map()
+  const ctx = { on(name, handler) { listeners.set(name, handler) }, logger: { warn() {} } }
+  registerAction(ctx, { id: 'replace', kind: 'stream-output', text: 'HI', mode: 'replace' }, { when: options => options.model.includes('flash') })
   const handler = listeners.get('llm/stream')
   assert.ok(handler)
   const flashOptions = { provider: 'p', model: 'deepseek-v4-flash-7013', messages: [] }
@@ -254,8 +252,8 @@ test('tool-gate / tool-result 承担工具链：pre 定向裁决、post 定向�
   // 一致拒绝，见 test/engine/rules.test.mjs），工具链行为由 tool-gate / tool-result 承担通道与定向。
   const listeners = new Map()
   const ctx = { on(name, handler) { listeners.set(name, handler); return () => listeners.delete(name) }, get() {}, logger: { warn() {} } }
-  registerAction(ctx, { id: 'tp', kind: 'tool-gate', decision: 'deny', reason: 'no bash', toolNames: 'bash' })
-  registerAction(ctx, { id: 'tp-post', kind: 'tool-result', action: 'replace', text: 'REPLACED', toolNames: 'bash' })
+  registerAction(ctx, { id: 'tp', kind: 'tool-gate', decision: 'deny', reason: 'no bash' }, { when: exec => exec.name === 'bash' })
+  registerAction(ctx, { id: 'tp-post', kind: 'tool-result', action: 'replace', text: 'REPLACED' }, { when: exec => exec.name === 'bash' })
   const exec = { name: 'bash', agent: { session: { header: { delegationDepth: 0 } }, options: { model: 'deepseek-v4-pro-8013' } }, arguments: { command: 'ls' } }
   const other = { name: 'read', agent: exec.agent }
 
@@ -747,17 +745,22 @@ test('上下文激活的 batch 只扫描本批真实对话消息：插件注入�
   assert.deepEqual(injected(await step(probe, [say('u3', '普通提问'), say('a3', '龙出现了', { kind: 'user' }, 'assistant')])), ['LORE'], '真实 assistant 消息同样在扫描范围内')
 })
 
-test('guide-auto：缺省不启用长度业务阈值，显式 complexMinChars 按严格大于判定', async () => {
-  const run = async (params, text) => {
-    const { step } = makeHarness(createPromptConfigs([{ id: 'guide', strategy: 'guide-auto', params }]))
-    return (await step(agent(), [{ ...userTask, content: [{ type: 'text', text }] }])).messages.slice(1).flatMap(message => message.content.map(block => block.text))
+test('通用文本分支：长度边界包含端点，批内全部真实用户文本决定唯一正文', async () => {
+  const run = async (texts) => {
+    const listeners = new Map()
+    const ctx = { on(name, handler) { listeners.set(name, handler); return () => listeners.delete(name) }, get() {}, logger: { warn() {} } }
+    const rules = compileRules([{ id: 'guide', if: { text: { subject: 'userMessage', minChars: 4 } },
+      then: [{ id: 'deep', kind: 'inject-text', config: { layer: 'pre-step', text: 'DEEP' } }],
+      else: [{ id: 'weak', kind: 'inject-text', config: { layer: 'pre-step', text: 'WEAK' } }],
+    }])
+    const dispose = mountRuleSources(ctx, [{ moduleId: 'guide', rules }])
+    try {
+      const messages = texts.map((text, index) => ({ ...userTask, id: `task-${index}`, content: [{ type: 'text', text }] }))
+      const decision = await listeners.get('agent/pre-step')({ agent: agent(), messages }, async () => ({ kind: 'enter', messages }))
+      return decision.messages.filter(message => message.source?.kind !== 'user').flatMap(message => message.content.map(block => block.text))
+    } finally { dispose() }
   }
-  assert.deepEqual(await run({}, 'long task '.repeat(30)), [])
-  const texts = { guideWeak: 'WEAK', guideDeep: 'DEEP' }
-  assert.deepEqual(await run(texts, 'long task '.repeat(30)), ['WEAK'])
-  assert.deepEqual(await run({ ...texts, complexMinChars: '' }, 'long task '.repeat(30)), ['WEAK'])
-  assert.deepEqual(await run({ ...texts, complexMinChars: 3 }, 'abc'), ['WEAK'])
-  assert.deepEqual(await run({ ...texts, complexMinChars: 3 }, 'abcd'), ['DEEP'])
-  assert.deepEqual(await run({ ...texts, complexPattern: 'complex' }, 'complex'), ['DEEP'])
-  assert.throws(() => createPromptConfigs([{ id: 'bad-guide', strategy: 'guide-auto', params: { complexMinChars: -1 } }]), /complexMinChars/)
+  assert.deepEqual(await run(['abc']), ['WEAK'])
+  assert.deepEqual(await run(['abcd']), ['DEEP'])
+  assert.deepEqual(await run(['ab', 'cd']), ['DEEP'])
 })
