@@ -1,5 +1,14 @@
 # Changelog
 
+### 工具可见面统一为 `tool-visibility`，退役 `guard` / `sdk-strip` / `tool-narrow`（2026-10-20）
+
+- **一份声明一个意图**：`tool-visibility` 同时拥有装配目录、`tools:sdk` 正文、执行闸（restrict + guard）、发现工具与首轮提示；`allow` 与 `deny` 对齐官方 `ToolRestriction` 的 and/or，`audience` 只保留 `main`/`subagent`/`all`。
+- **条件可撤销**：动作在条件不命中时经 `rule-runtime` 的未命中回调撤销上一轮注册的闸，修掉旧 `guard` 的跨轮粘性（首轮为真后永久留闸）。
+- **破坏性变更**：三种旧动作从 catalog 与引擎删除（编译期报 `unknown action`）；`assembly.target.tools` 编译期拒绝并指向新动作；ST 导入的 `enable_web_search: false` 由三条规则改为一条。
+- **发现工具与提示**：`tool-search` 改为参数化工厂，常驻集与解锁键来自声明；提示交给既有 prompt-config 引擎执行，正文按声明生成。
+- **测试**：新增 `test/engine/tool-visibility.test.mjs`（9 例），PTC 用例迁移到新动作。
+- **验证**：typecheck / lint / test / build / git diff --check。
+
 ### 修复 `sdk-strip` 的 `requireMatch` 空转，并补 Python SDK 裁剪回归（2026-10-17）
 
 - **问题**：`engine/actions/catalog.mjs` 把 `requireMatch` 列为 `sdk-strip` 的字段（因此进入规则编译白名单），`createMask` 也解析了它，但 `engine/actions/sdk-strip.mjs` 从未消费——规则写 `requireMatch: true` 既不生效也不报错；同名字段在 `assembly` 上却是 fail-open。两动作共用名单时，`assembly` 暴露完整目录后 `sdk-strip` 仍按名单裁正文，模型看到的目录与 SDK 正文不一致。

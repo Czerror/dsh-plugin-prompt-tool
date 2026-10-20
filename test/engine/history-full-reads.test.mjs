@@ -42,7 +42,7 @@ function recordingCtx() {
 
 test('allowFrom 刻意读完整历史：解锁调用被压缩遮蔽后，已解锁的工具仍留在目录里', async () => {
   const recorder = recordingCtx()
-  registerAction(recorder.ctx, { kind: 'assembly', id: 'dyn', target: { tools: { allow: ['pwsh', 'tool_search'], allowFrom: { tool: 'tool_search', key: 'toolNames' } } } })
+  registerAction(recorder.ctx, { kind: 'tool-visibility', id: 'dyn', allow: ['pwsh', 'tool_search'], discovery: { tool: 'tool_search', key: 'toolNames' } })
   const handler = recorder.events.find((entry) => entry.event === 'system-prompt/assemble').handler
   const input = { sections: [], contexts: [], variables: {}, tools: ['pwsh', 'tool_search', 'web_search', 'memory_recall'].map((name) => ({ name, description: name, parameters: {} })) }
   const output = await handler(input, { agent: { session: compactedSession('s-unlock') } }, async () => input)

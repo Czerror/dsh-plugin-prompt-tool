@@ -63,7 +63,7 @@ const SYSTEM_SECTION_SLOT = 100
 
 /**
  * `enable_web_search: false` 时被拒绝的 web 工具名。
- * 三个声明式触发器（assembly / sdk-strip / guard）共用这一份名单——呈现过滤与执行
+ * 一条 tool-visibility 声明承载这一份名单——目录、SDK 正文与执行面同时生效，
  * 边界必须同一判据，不得各写一份（见 engine/actions.mjs 的 (5) 类说明）。
  */
 const ST_WEB_TOOLS = ['web_search', 'web_fetch'] as const
@@ -305,7 +305,7 @@ export function convertStToModuleWithReport(
   const configs: Array<Record<string, unknown>> = []
   /** ST prompt 卡的顺序意图（prompt_order 名次 × 10）：出口写进顶层 configOrder，不留在卡里。 */
   const stSequences = new Map<string, number>()
-  /** `enable_web_search: false` 的三条 Web 防护规则（呈现裁剪 / SDK 正文裁剪 / 执行 guard）。 */
+  /** `enable_web_search: false` 的一条工具可见面规则（目录 + SDK 正文 + 执行面）。 */
   const webRules: RuleDefinition[] = []
   // 世界书配置 id → 来源条目 id：键宏诊断必须定位到源条目，不按 id 前缀反推。
   const worldBookSources = new Map<string, string>()
@@ -788,19 +788,16 @@ export function convertStToModuleWithReport(
   // 生效（宿主部署人设 complete: true 会抑制它们）。
   const persona: PersonaSpec | undefined = systemSectionCount > 0
     ? { main: { prefix: '', complete: false }, subagent: { prefix: '', complete: false } } : undefined
-  // enable_web_search 的落点（B7 T3「3+1 结合」，取代已删除的 tool-filter 专用模块）：
+  // enable_web_search 的落点：
   //   true  → **本插件不再组装任何 web 工具行**：`tool-web` 已随「与预设彻底解耦」从模块库
   //           退役，联网能力由会话原有的官方预设提供。这里只如实报告，不静默当作已启用。
-  //   false → 产出三条声明式触发器（共用同一份 deny 名单）兜住「宿主 / 其他模块仍装配了
-  //           web 工具」的情形：assembly 裁呈现、sdk-strip 裁 tools:sdk 正文、guard 落到
-  //           agent scope 的执行边界（旧 tool-filter 只有呈现这一层）。
+  //   false → 一条 tool-visibility 声明兜住「宿主 / 其他模块仍装配了 web 工具」的情形：
+  //           同一份 deny 名单同时裁目录、SDK 正文与执行面，不再拆成三条规则。
   if (record.enable_web_search === true) {
     noteInfo('st-web-search-preset-provided', 'enable_web_search: true —— web 工具行已从模块库退役，本插件不再组装；请确认会话预设装配了 web 工具', { field: 'enable_web_search' })
   } else if (record.enable_web_search === false) {
     webRules.push(
-      { id: 'st-web-assembly', then: [{ id: 'st-web-assembly', kind: 'assembly', target: { tools: { deny: [...ST_WEB_TOOLS] } } }] },
-      { id: 'st-web-sdk-strip', then: [{ id: 'st-web-sdk-strip', kind: 'sdk-strip', mask: { deny: [...ST_WEB_TOOLS] } }] },
-      { id: 'st-web-guard', then: [{ id: 'st-web-guard', kind: 'guard', mask: { deny: [...ST_WEB_TOOLS] } }] },
+      { id: 'st-web-visibility', then: [{ id: 'st-web-visibility', kind: 'tool-visibility', deny: [...ST_WEB_TOOLS] }] },
     )
   }
 

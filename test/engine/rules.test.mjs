@@ -223,7 +223,6 @@ test('统一规则：编译拒绝多启用互斥组、重复身份与动态 regi
     { id: 'second', kind: 'request-params', patch: { maxTokens: 20 }, channelOrder: 10 },
   ] }]), /channelOrder.*first.*second/)
   for (const action of [
-    { id: 'guard', kind: 'guard', mask: { deny: ['bash'] } },
     { id: 'complete', kind: 'inject-text', config: { id: 'complete', layer: 'system-section', text: 'ALL', params: { complete: true } } },
     { id: 'suppress', kind: 'inject-text', config: { id: 'suppress', layer: 'system-section', text: 'ALL', params: { suppressRuntimeContext: true } } },
   ]) assert.throws(() => compileRules([{ id: 'fixed', if: { phase: { promoted: false } }, then: [action] }]), /registration|when/)
@@ -812,13 +811,13 @@ test('动作级分支：五层 inject-text 与默认位置 pre-step-filter 的 e
   dispose()
 })
 
-test('动作级分支关键拒绝：规则级 else 无 if 与 guard 矛盾组合编译期拒绝', () => {
+test('动作级分支关键拒绝：规则级 else 无 if；工具可见面允许逐轮分支', () => {
   assert.throws(() => compileRules([{ id: 'else-no-if', then: [textAction('t', 'T')], else: [textAction('e', 'E')] }]), /else requires an if/)
   assert.throws(() => compileRules([{ id: 'else-null-if', if: null, then: [textAction('t', 'T')], else: [textAction('e', 'E')] }]), /else requires an if/)
-  // guard 是注册期动作，与动作级分支条件（逐轮求值）自相矛盾。
-  assert.throws(() => compileRules([{ id: 'guard-branch', then: [
-    { if: { scope: { modelScope: 'flash' } }, then: [{ id: 'g', kind: 'guard', mask: { deny: ['bash'] } }] },
-  ] }]), /no per-turn evaluation point/)
+  // tool-visibility 是逐轮求值的动作：分支条件合法，执行闸随条件重挂。
+  assert.equal(compileRules([{ id: 'visibility-branch', then: [
+    { if: { scope: { modelScope: 'flash' } }, then: [{ id: 'v', kind: 'tool-visibility', deny: ['bash'] }] },
+  ] }]).length, 1)
 })
 
 test('动作级分支边界：compaction/end 后分支回到初始支', async () => {
@@ -1130,7 +1129,7 @@ test('动作声明白名单：未知键、对象形态 match 与带 kind 的分�
     /action a config: unknown config key\(s\) typoKey — allowed keys: .*text/)
   // 关键拒绝：prepend 是未文档化的注册后门，动作层与 config 层都取消且无等价替代。
   assert.throws(() => compileRules([{ id: 'r', then: [
-    { id: 'a', kind: 'assembly', prepend: true, target: { tools: { deny: ['bash'] } } },
+    { id: 'a', kind: 'assembly', prepend: true, target: { sections: { remove: ['x'] } } },
   ] }]), /`prepend` 已取消.*waterfallPosition: outermost/)
   assert.throws(() => compileRules([{ id: 'r', then: [textAction('a', 'A', { prepend: true })] }]),
     /`prepend` 已取消.*waterfallPosition: outermost/)
@@ -1138,7 +1137,7 @@ test('动作声明白名单：未知键、对象形态 match 与带 kind 的分�
   // 对象/字符串形态恒命中，三种都指回规则级 `if`（声明路径写不了函数）。
   for (const value of [() => true, 'x', { keys: ['x'] }]) {
     assert.throws(() => compileRules([{ id: 'strip', then: [
-      { id: 'a', kind: 'assembly', match: value, target: { tools: { deny: ['bash'] } } },
+      { id: 'a', kind: 'assembly', match: value, target: { sections: { remove: ['x'] } } },
     ] }]), /action a\.match 已取消.*rule\.if/, `match=${typeof value} 也要拒绝并指回 rule.if`)
   }
   // 关键拒绝（F24）：动作级 enabled/group/exclusive 属于规则层，运行期会被逐条覆盖。

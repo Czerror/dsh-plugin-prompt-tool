@@ -1,52 +1,33 @@
 # 工具面收窄 —— 常驻核心集 + tool_search 按需解锁。
 #
-# 为什么：工具面实测 **156 个工具、描述合计 46894 字符（≈12K token）**，每个请求都付，
-# 而多数请求只用到其中几个。收窄到核心集后只剩 10 个左右。
+# 为什么：工具面实测 **156 个工具、描述合计 46894 字符（约 12K token）**，每个请求都付。
+# 收窄到核心集后只剩十来个，其余按需解锁。
 #
-# 三件东西互相依赖，缺一件就退化（详见 docs/engine-reuse.md 的「工具面收窄与按需解锁」）：
-#   1. 本模块的 `narrow-tools` 规则 —— 常驻白名单 `allow` + 动态白名单 `allowFrom`
-#   2. `tool-search` 组合源行 —— 唯一发现入口，模型靠它搜索并解锁
-#   3. `allowFrom` 读回 —— 解锁名写进持久 `tool/call` 参数，下次请求起生效
-# 只挂插件不配 allowFrom 的话，解锁是**一次性的**（当次请求用完即被裁）。
+# 一份 `tool-visibility` 声明拥有全部：目录与 SDK 正文的呈现、执行闸、发现工具与首轮提示。
+# 常驻集只在这里写一次；发现工具名与解锁键也在同一处声明，提示正文由引擎按声明生成。
 #
-# 打开就是收窄（2026-10-10 用户拍板「能否提前」）：规则**没有 `if`** = 无条件生效，首轮即收窄。
-# 旧的按相位渐进语义（首轮不收窄、晋升后与压缩后收窄）需要把 `if` 加回来：
-#   if: { any: [phase{promoted: true}, phase{compacted: true, promoted: false}] }
-# 单节点表达不了「已晋升 ∨ 压缩后未晋升」，必须 `any` 两支（见 docs/engine-reuse.md）。
-# 提前的取舍：晚收窄的那几轮要多付一次完整工具面（实测 46894 字符），且收窄生效的当轮
-# 会以「工具已更新 · 移除 N 个」出现在会话流里——工具面在会话中途变化。
+# 解锁的生效时机：声明在每个 model step 前重算，解锁在下一步的模型请求里已经可见。
+# `requireMatch: true` 是刻意的：任一常驻工具缺失（或模型解锁了不存在的名字）就放弃裁剪、
+# 暴露完整目录——收窄错了会让当前工作流调不到工具，比多花上下文严重。
 #
-# `requireMatch: true` 是刻意的：任一 allow 工具缺失（或模型解锁了一个不存在的名字）
-# 就放弃裁剪、暴露完整目录。宁可多给上下文，也不静默裁成空目录——收窄错了会让当前
-# 工作流调不到工具，那是比多花 token 严重得多的故障。
-#
-# 工具名必须与**实际装配名**一致：本项目 harness 是 `pwsh`、`edit` + `write`（不是
-# `str_replace_editor`）。`bash` 由平台各自提供——Windows 是本模块声明的 `tool-git-bash` 行
-# （Git Bash，`bash -c`，普通 subprocess），POSIX 是官方持久 bash；下面 notice 的正文按
-# Windows 事实写，POSIX 上「Git Bash / 每命令新进程」不成立，要分平台改文案得另立分支。
-# 写错名字的后果很隐蔽——写进 allow 的名字不存在会触发 requireMatch 的 fail-open，
-# 表现为「收窄没生效」而不是报错。
+# 工具名必须与**实际装配名**一致：本项目 harness 是 `pwsh`、`edit` + `write`；
+# `bash` 由平台各自提供——Windows 是本模块声明的 `tool-git-bash` 行（Git Bash，`bash -c`），
+# POSIX 是官方持久 bash。写错名字会触发 requireMatch 的 fail-open，表现为「收窄没生效」。
 #
 # 停用即回滚：本模块在 config.yml 的 enabled 里删掉即可，重启后工具面完全恢复。
 
 id: tool-surface
 name: 工具面收窄（核心文件与任务集）
-version: 1.0.0
-engineCompat: ">=0.4.2"
-description: 把工具面收窄到常驻核心集（bash/pwsh/read/write/edit/glob/grep/todo_write/skill_search/skill_load/tool_search），其余由 tool_search 按需解锁；解锁名经 allowFrom 从持久 tool/call 参数回收，跨请求与压缩保留。实测工具描述合计 46894 字符。
+version: 2.0.0
+engineCompat: ">=0.7.2"
+description: 把工具面收窄到常驻核心集（bash/pwsh/read/write/edit/glob/grep/todo_write/skill_search/skill_load/tool_search），其余由 tool_search 按需解锁；解锁名从持久 tool/call 参数回收，跨请求与压缩保留。
 meta:
   source: manual
 modules:
   - rule-engine
-  - tool-search
-  # Windows Git Bash 适配行（engine/compositions/source/local/tool-git-bash.yml）：以 `bash`
-  # 之名注册工具、实际执行 Git Bash（`bash -c`，普通 subprocess，不用 PTY）。该行自带平台
-  # 条件（非 Windows 不装配），POSIX 上的同名 `bash` 由官方持久 bash 提供。
-  # 不声明 layerSettings 覆盖 `toolGitBashEnabled`：能力卡默认就是 true（组合源也显式
-  # enabled: true），写出来只会让本模块覆盖全局开关、并打破内置模块「只声明 rules/modules」
-  # 的声明面契约（test/host/settings-bridge.test.mjs 钉住）。全局关掉该能力时 allow 缺
-  # `bash` → 收窄整体 fail-open，届时恢复开关或把 bash 从 allow 去掉。
-  # timeoutMs(120000) / maxOutputBytes(64000) 取组合源默认；参数桥只覆盖 enabled。
+  # Windows Git Bash 适配行：以 `bash` 之名注册工具、实际执行 Git Bash。
+  # 不声明 layerSettings 覆盖 toolGitBashEnabled：能力卡默认就是 true，写出来只会让本模块
+  # 覆盖全局开关（内置模块只声明 rules/modules 的声明面契约）。
   - tool-git-bash
 order: 7
 rules:
@@ -55,63 +36,21 @@ rules:
     enabled: true
     then:
       - id: narrow-tools
-        kind: assembly
-        target:
-          tools:
-            allow:
-              - pwsh
-              - read
-              - write
-              - edit
-              - glob
-              - grep
-              - todo_write
-              - skill_search
-              - skill_load
-              - tool_search
-              # Git Bash（上面声明的 tool-git-bash 行注册的名字）。收窄器只放行这里列出的名字，
-              # 不写进 allow 的话这行装了也等于没装——这正是「写错名字 = 静默 fail-open」的同一处。
-              - bash
-            # 解锁项从 tool_search 的持久调用参数回收（{ tool, key } 精确匹配）。
-            allowFrom: { tool: tool_search, key: toolNames }
-            requireMatch: true
-  # 首轮告诉模型「工具面被裁过、缺能力来这里解锁」。为什么必须由规则补这一句：
-  # tool_search 自己的描述只说「不在常驻集里的工具用它发现」——方向是「已经来了怎么用」，
-  # 模型看不到那 154 个工具、也就想不到该来。本条与收窄规则的 `dedupe`/`if` 双保险：
-  # `count{user-message,max:1}` 把它限制在会话最早阶段（中途启用模块时历史消息数已 >1，不会补注），
-  # `dedupe: session` 再按「每当前上下文一次」兜一层，正文被压缩遮蔽后不会重复出现。
-  - id: tool-surface-notice
-    name: 工具面收窄提示（首轮）
-    enabled: true
-    if:
-      count: { of: 'user-message', max: 1 }
-    then:
-      - id: notice
-        kind: inject-text
-        config:
-          id: tool-surface-notice
-          layer: pre-step
-          strategy: static
-          position: after-user
-          dedupe: session
-          configKind: ordered
-          order: 20
-          role: user
-          mergeMode: separate
-          # 刻意**不写** `sourceKind`：写裸 `plugin` 会被 schema 归一成 `plugin:plugin`，
-          # 身份撞车会让 `dedupe: session` 静默失效。缺省时引擎按 `plugin:<配置 id>` 生成。
-          form: notice
-          text: >-
-            Tool catalog notice: this session only exposes a resident core set
-            (bash, pwsh, read, write, edit, glob, grep, todo_write, skill_search,
-            skill_load, tool_search). `bash` runs Git Bash (bash -c, a fresh
-            process); prefer it for command execution and keep pwsh for
-            Windows-native work. The rest of the catalog is locked to keep
-            each request small. When a task needs a capability outside that set
-            — web search, subagents, task boards, MCP servers, anything not
-            listed — search for it with tool_search and unlock it by exact name
-            instead of making do with a resident tool. Unlocked tools become
-            callable from the next model request on.
-configOrder:
-  tool-surface-resident: 90
-  tool-surface-notice: 110
+        kind: tool-visibility
+        allow:
+          - pwsh
+          - read
+          - write
+          - edit
+          - glob
+          - grep
+          - todo_write
+          - skill_search
+          - skill_load
+          - tool_search
+          # 平台各自的 bash 名：装配里没有提供方时这里就是缺失名，收窄整体失效。
+          - bash
+        discovery: { tool: tool_search, key: toolNames }
+        requireMatch: true
+        # 首轮告诉模型「工具面被裁过、缺能力来这里解锁」；正文由引擎按常驻集与发现工具生成。
+        notice: true

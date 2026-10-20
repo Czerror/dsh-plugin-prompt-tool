@@ -9,13 +9,8 @@ export const ACTION_EXAMPLES = {
   // 解析成定向名单：字符串走 `parseToolNames`，数组直接进 `NAME_LIST.parse`（同 schema.mjs 的层参数归一）。
   decision: { phase: 'pre', decision: 'allow', action: 'accept', reason: '', text: '', toolNames: '' },
   'append-context': { mode: 'context', text: '' },
-  guard: { mask: { deny: [] } },
   // 种子给一个合法名单：空名单无法表达「剔哪些工具」（createMask 会拒绝）。
   'tool-visibility': { deny: ['web_search'] },
-  // `allow` 是 fail-closed 白名单，空数组等于「收窄到零个工具」，所以种子必须给一个真实名字
-  // （`deny` 的空数组是「什么都不拒」，语义不同——两者不能共用空值形态）。
-  'tool-narrow': { allow: ['pwsh'] },
-  'sdk-strip': { mask: { deny: [] } },
   'request-params': { patch: {} },
   'inbox-prepend': { target: 'next-turn', text: '' },
   'pre-step-filter': { blockPlugins: [] },

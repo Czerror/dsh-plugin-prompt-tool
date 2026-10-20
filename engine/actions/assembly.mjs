@@ -1,89 +1,30 @@
-import { NAME_LIST, createMask, labelOf, requireString } from './shared.mjs'
-import { historyEvents } from '../history.mjs'
-
 /**
- * 动态白名单：从**本会话已持久化的** `tool/call` 事件里回收解锁名单，填入 `into`。
+ * assembly —— 只改装配结果的 sections / contexts。
  *
- * 语义对齐原 `tool-bootstrap.mjs` 的 `unlockedFor(session)`：某个发现工具（如
- * `tool_search`）上一次调用时把要解锁的工具名写进了自己的调用参数，本函数把它读回来
- * 填入 allow，于是**解锁能跨请求保留**——没有它，解锁是一次性的（当次请求用完即被裁掉）。
+ * 工具可见面（目录、SDK 正文、执行闸）已收进 `tool-visibility`：同一个意图不再分散到
+ * 多个动作。`target.tools` 在这里显式拒绝，避免旧声明「编译通过但静默不生效」。
  *
- * 判据来源**刻意是完整历史**（`historyEvents`，不是 `currentEvents`）：语义是「本会话曾经
- * 调用过哪些发现工具」，压缩遮蔽掉那条 `tool/call` 后解锁名单仍须保留——否则已发现的工具
- * 会在压缩后被裁掉（用户可见的工具可用性变化）。
- *
- * 判据刻意保守，坏数据只影响该条、绝不上抛：
- *  - 只认 `event.type === 'tool/call'` 且 `event.data.name` **精确等于**声明里的 `tool`；
- *  - `arguments` 是模型产出的任意字符串，`JSON.parse` 必须 try/catch；解析出的必须是对象；
- *  - 只取 `key` 指向的**字符串数组**里的字符串项，非字符串项逐项丢弃，不展开对象、不 eval；
- *  - 任一步不成立就跳过该条事件，其余事件照常累积；全程无异常（读事件本身除外，由调用方兜）。
- *
- * `tool` / `key` **按参数传入**而不是向外层读取——这个模块会被多个 assembly 动作各挂一次，
- * 任何模块级可变状态都会让它们互相覆盖。
+ * 语义保持原样：同层 sections 的 keep 与 remove 互斥；contexts 的 clear 与 add/remove 互斥；
+ * 异常一律返回未改动的装配（装配失败不得让会话失去系统段或上下文）。
  */
-function fillUnlocked(into, session, tool, key, warnOnce, plugin, label) {
-  into.clear()
-  // 发现工具是解锁通道本身：它必须能被模型调用，所以恒在放行集里——白名单模式（allow 未点名
-  // 它）下若把它一并裁掉，解锁就永远不可能发生，那不是「收窄」而是自断通道。放在 clear 之后、
-  // 读事件之前：读历史失败时它同样要保留，否则模型连搜都搜不了。
-  into.add(tool)
-  let events
-  try {
-    events = historyEvents(session)
-  } catch (error) {
-    warnOnce(`${plugin}: assembly action ${label}: reading session events for allowFrom failed: ${String(error?.message ?? error)}`)
-    return
-  }
-  for (const event of events) {
-    if (event?.type !== 'tool/call' || event?.data?.name !== tool) continue
-    const raw = event.data.arguments
-    const parsed = typeof raw === 'string' ? safeParse(raw) : raw
-    if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) continue
-    const value = parsed[key]
-    if (!Array.isArray(value)) continue
-    for (const item of value) if (typeof item === 'string' && item.length > 0) into.add(item)
-  }
-}
 
-function safeParse(text) {
-  try {
-    return JSON.parse(text)
-  } catch {
-    return undefined
-  }
-}
+import { NAME_LIST, requireString } from './shared.mjs'
+
+const record = value => value !== null && typeof value === 'object' && !Array.isArray(value)
 
 export function prepareAssembly(action, plugin) {
   const target = action.target
-  if (target === null || typeof target !== 'object' || Array.isArray(target)) {
-    throw new TypeError(`${plugin}: assembly requires a target object — { tools } / { sections } / { contexts }`)
+  if (!record(target)) {
+    throw new TypeError(`${plugin}: assembly requires a target object — { sections } / { contexts }`)
   }
-  const toolsSource = target.tools
-  const allowFrom = toolsSource?.allowFrom
-  let allowExtra
-  if (allowFrom !== undefined) {
-    if (allowFrom === null || typeof allowFrom !== 'object' || Array.isArray(allowFrom)) {
-      throw new TypeError(`${plugin}: assembly.tools.allowFrom must be an object — { tool, key }`)
-    }
-    requireString(allowFrom.tool, 'assembly.tools.allowFrom.tool', plugin)
-    requireString(allowFrom.key, 'assembly.tools.allowFrom.key', plugin)
-    // deny 是黑名单、动态项只做加法，同声明的语义不可解释（且 allowFrom 已经覆盖不了 deny
-    // 的名字到底该不该出现），挂载期直接拒，而不是运行期猜。
-    if (Array.isArray(toolsSource.deny) && toolsSource.deny.length > 0) {
-      throw new TypeError(`${plugin}: assembly.tools cannot combine deny with allowFrom — 动态项只做加法，与黑名单语义冲突`)
-    }
-    allowExtra = new Set()
+  if (target.tools !== undefined) {
+    throw new TypeError(`${plugin}: assembly.target.tools 已移除 — 工具可见面改用 tool-visibility 动作（allow/deny/discovery/notice）`)
   }
-  const tools = toolsSource === undefined ? undefined : createMask(toolsSource, 'assembly.tools', plugin, allowExtra)
   const sectionsAdd = target.sections?.add
   const sectionsRemove = NAME_LIST.parse(target.sections?.remove, plugin, 'assembly.sections.remove')
-  // 白名单（2026-09-22 用户拍板「扩动作库」）：`personaSectionsOnly` 一类的语义是
-  // `filter(白名单)`，而 remove 是黑名单——未列名的第三方/晚到段不会被它删掉。
-  // 两种语义**互斥**：同时声明即挂载期 fail loud，而不是静默二选一。
   const sectionsKeep = NAME_LIST.parse(target.sections?.keep, plugin, 'assembly.sections.keep')
   const contextsAdd = target.contexts?.add
   const contextsRemove = NAME_LIST.parse(target.contexts?.remove, plugin, 'assembly.contexts.remove')
-  // 非布尔 clear 也一并拒：旧判据 `=== true` 会把 `'true'` / `1` 静默当 false，clear 整体失效。
   if (target.contexts?.clear !== undefined && typeof target.contexts.clear !== 'boolean') {
     throw new TypeError(`${plugin}: assembly.contexts.clear must be boolean`)
   }
@@ -92,58 +33,21 @@ export function prepareAssembly(action, plugin) {
     if (list === undefined) continue
     if (!Array.isArray(list)) throw new TypeError(`${plugin}: assembly.${key} must be an array of { name, text }`)
     for (const entry of list) {
-      if (entry === null || typeof entry !== 'object') throw new TypeError(`${plugin}: assembly.${key} entries must be objects`)
+      if (!record(entry)) throw new TypeError(`${plugin}: assembly.${key} entries must be objects`)
       requireString(entry.name, `assembly.${key}[].name`, plugin)
       requireString(entry.text, `assembly.${key}[].text`, plugin)
     }
   }
-  // clear 与 add/remove 并存时旧实现静默丢掉 add/remove（零告警）；与 sections 的 keep+remove
-  // 是同一类不可解释组合，同为挂载期 fail loud。**两处判定都在形状校验之后**：`add: {}` /
-  // `add: null` 报形状错而不是互斥错。
   if (contextsClear && (contextsAdd !== undefined || contextsRemove !== undefined)) {
     throw new TypeError(`${plugin}: assembly.contexts.clear cannot combine with add or remove — clear 已清空全部条目，同时声明语义不明`)
   }
   if (sectionsKeep !== undefined && sectionsRemove !== undefined) {
     throw new TypeError(`${plugin}: assembly.sections cannot combine keep with remove — 一种是白名单、一种是黑名单，同时声明语义不明`)
   }
-  return (_ctx, { warnOnce, on, collect, take }) => collect(on('system-prompt/assemble', async (assembly, context, next) => {
-    // Downstream errors propagate untouched; only this action's own logic is guarded.
+  return (_ctx, { warnOnce, on, collect, take }) => collect(on('system-prompt/assemble', async (assembly, _context, next) => {
     const assembled = await next()
     try {
-      if (typeof action.match === 'function' && action.match(context, assembled) !== true) return assembled
       let result = assembled
-      if (tools !== undefined && Array.isArray(result.tools)) {
-        // 每轮重算解锁名单：本轮装配要反映**本会话至今**的全部解锁调用。
-        if (allowExtra !== undefined) {
-          fillUnlocked(allowExtra, context?.session ?? context?.agent?.session, allowFrom.tool, allowFrom.key, warnOnce, plugin, labelOf(action))
-        }
-        // keep 名单兜底（2026-09-22 用户拍板，**可选**）：判据与原 `tool-bootstrap` 逐条对齐——
-        // 原模块是 `missing = required.filter(t => !available.has(t))`
-        // 且 `missing.length > 0` 即放弃裁剪，也就是「**任意一个** 名单工具缺失」而不是
-        // 「一个都不存在」（对拍实测：目录 `[bash,read]` + 名单 `[bash,str_replace_editor]` 时
-        // 原模块给完整目录，只判"全缺"会裁成 `[bash]`）。
-        // 声明写 `requireMatch: true` 才启用；**不写就照名单裁**（与 `tool-filter.mjs` 一致）。
-        const available = new Set(result.tools.map((tool) => tool?.name).filter((name) => typeof name === 'string'))
-        // 发现工具已被 fillUnlocked 恒放行，所以这里只剩引擎自己修不掉的一类：工具压根不在
-        // 目录里（改名后已有副本停在旧名、或把名字写错）。此时保留一个不存在的名字没有意义，
-        // 解锁名单永远读回空——原本毫无提示，这里补一条可观察告警。
-        // key 写错同理但判据不可得（模型产出的参数名没有 schema 可比对），属已知边界。
-        if (allowExtra !== undefined && !available.has(allowFrom.tool)) {
-          warnOnce(`${plugin}: assembly action ${labelOf(action)}: allowFrom.tool "${allowFrom.tool}" is not in the assembled tool set — unlocking can never take effect`)
-        }
-        // 必需名单 = 静态 allow ∪ 本轮解锁项：解锁项同样是「本该存在」的工具，缺了就 fail-open。
-        const required = tools.allow === undefined && allowExtra === undefined
-          ? undefined
-          : new Set([...(tools.allow ?? []), ...(allowExtra ?? [])])
-        const missingRequired = tools.requireMatch && required !== undefined
-          && [...required].some((name) => !available.has(name))
-        if (missingRequired) {
-          warnOnce(`${plugin}: assembly action ${labelOf(action)}: a requireMatch tool is absent — exposing the full tool set (fail-open)`)
-        } else {
-          const kept = result.tools.filter((tool) => !tools.blocks(tool?.name))
-          if (kept.length !== result.tools.length) result = { ...result, tools: kept }
-        }
-      }
       if (Array.isArray(result.sections) && (sectionsAdd !== undefined || sectionsRemove !== undefined || sectionsKeep !== undefined)) {
         const kept = sectionsKeep !== undefined
           ? result.sections.filter((section) => sectionsKeep.has(section?.name))
@@ -166,9 +70,9 @@ export function prepareAssembly(action, plugin) {
           }
         }
       }
-      return result !== assembled && take(context) ? result : assembled
+      return result !== assembled ? result : assembled
     } catch (error) {
-      warnOnce(`${plugin}: assembly action ${labelOf(action)} failed, exposing the full assembly: ${String(error?.message ?? error)}`)
+      warnOnce(`${plugin}: assembly action failed, keeping the assembled sections/contexts: ${String(error?.message ?? error)}`)
       return assembled
     }
   }))

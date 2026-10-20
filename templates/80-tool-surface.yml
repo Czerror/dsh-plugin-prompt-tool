@@ -1,69 +1,36 @@
 # 模板：工具面收窄（核心文件与任务集）+ 按需解锁
 #
-# 为什么：工具面实测 **156 个工具、描述合计 46894 字符（≈12K token）**，每个请求都付。
-# 收窄到核心集后只剩约 10 个工具，其余按需解锁。
+# 一份 `tool-visibility` 声明拥有全部：常驻集、目录与 SDK 正文的呈现、执行闸、
+# 发现工具与首轮提示。常驻集只写一次，提示正文由引擎按声明生成。
 #
-# 与已退场的 `tool-bootstrap` 原型的关键差别：那份**只在受控相位收窄**
-# （`promoted: false`），晋升后原样放开；本模板**覆盖全部相位**——晋升后放开等于白省，
-# 而工具描述是每请求的固定开销。若要旧语义，给 `phase` 加 `promoted: false` 并把
-# `compacted` 拆成两条即可。
+# 本模板只带规则、不带 `modules` 声明：装配里没有提供方时 `bash` 就是缺失名，
+# `requireMatch` 反过来把整条收窄废掉——用模板建模块时要自己把提供方行带进装配。
+# 写错名字的后果很隐蔽：allow 里的名字不存在会触发 requireMatch 的 fail-open，
+# 表现为「收窄没生效」而不是报错。
 #
-# 配套两件（缺一不可）：
-#   1. `tool_search` 工具（组合源 engine/compositions/source/local/tool-search.yml）
-#      ——唯一发现入口，模型靠它搜索并解锁。
-#   2. `allowFrom`（engine/actions/assembly.mjs）——从历史 `tool/call` 参数回收解锁名单。
-#      只挂插件不配 allowFrom 的话，解锁是**一次性的**（当次请求用完即被裁）。
-#
-# 解锁的生效时机：`assembly` 在**每个 model step 前**重算，所以解锁在下一步的模型请求里
-# 已经可见，不需要等一整轮对话。首轮起就收窄不影响这一点，只影响第一轮是否先看到完整目录。
-#
-# 工具名必须与**实际装配名**一致。本项目 harness 是 `pwsh`、`edit` + `write`（不是
-# `str_replace_editor`）；`bash` 由平台各自提供（Windows 是 `tool-git-bash` 行，POSIX 是
-# 官方持久 bash）。**本模板只带规则、不带 `modules` 声明**：装配里没有提供方时 `bash` 就是
-# 缺失名，`requireMatch` 反过来把整条收窄废掉——用模板建模块时要自己把提供方行带进装配。
-# 写错名字有两个后果，都很隐蔽：
-#   - 写进 allow 的名字不存在 → `requireMatch` 触发 fail-open，**静默暴露完整目录**；
-#   - 该在的没写进去 → 该工具被裁掉，模型只能用别的方式硬凑。
-#
-# `requireMatch: true` 是刻意的：任一 allow 工具缺失（或模型解锁了一个不存在的名字）
-# 就放弃裁剪、暴露完整目录。宁可多给上下文，也不静默裁成空目录——收窄错了会让当前
-# 工作流调不到工具，那是比多花 token 严重得多的故障。
-#
-# **本模板走规则路径**：规则动作可声明 `waterfallPosition: outermost`（除 inject-text 外的
-# 动作都接受该通用键，映射为 `prepend: true` 注册；`assembly` 也在其列），它只保证落在
-# **已存在的普通注册**之外，同点内声明之间仍按 `channelOrder` → 模块 id → 规则声明序排；
-# `assembly` 的改写发生在通道下游结算之后。模块层的出口已退役（写进 `modules` 或定义顶层
-# 即 409），需要本插件自己的最外层监听时只能回到插件侧声明。
-# 本模板只承载**核心收窄规则**（`templates/*.yml` 是单条规则对象）；首轮那条约 500 字符的
-# 「工具面已收窄」提示归内置模块 `modules/tool-surface/module.yml` 的 `tool-surface-notice`——
-# 那条只在模块形态里存在，两者因此**规则条数不同**，漂移由 test/host/surface-modules.test.mjs 钉住。
+# 发现工具由本动作在 agent scope 注册；解锁名从持久 `tool/call` 参数回收，
+# 因此下一步请求即可见，压缩遮蔽后仍然保留。
 id: tool-surface-resident
 name: 工具面收窄（核心文件与任务集）
 enabled: true
-# 没有 `if` = 规则无条件生效，**首轮就收窄**（2026-10-10 用户拍板「能否提前」）。
-# 需要旧的按相位渐进语义时把 `if` 加回来：
-#   `if: { any: [phase{promoted: true}, phase{compacted: true, promoted: false}] }`
-# 单节点表达不了「已晋升 ∨ 压缩后未晋升」，必须 `any` 两支（见 docs/engine-reuse.md）。
-# 提前的取舍：晚收窄的那几轮要多付一次完整工具面（实测 46894 字符），且收窄生效的当轮
-# 会以「工具已更新 · 移除 N 个」出现在会话流里——工具面在会话中途变化。
 then:
   - id: narrow-tools
-    kind: assembly
-    target:
-      tools:
-        allow:
-          - pwsh
-          - read
-          - write
-          - edit
-          - glob
-          - grep
-          - todo_write
-          - skill_search
-          - skill_load
-          - tool_search
-          # 平台各自的 bash 名（见上）：装配里没有提供方时这里就是缺失名，收窄整体失效。
-          - bash
-        # 解锁项从 tool_search 的持久调用参数回收（{ tool, key } 精确匹配）。
-        allowFrom: { tool: tool_search, key: toolNames }
-        requireMatch: true
+    kind: tool-visibility
+    allow:
+      - pwsh
+      - read
+      - write
+      - edit
+      - glob
+      - grep
+      - todo_write
+      - skill_search
+      - skill_load
+      - tool_search
+      # 平台各自的 bash 名：装配里没有提供方时这里就是缺失名，收窄整体失效。
+      - bash
+    discovery: { tool: tool_search, key: toolNames }
+    # 任一常驻工具缺失就放弃裁剪、暴露完整目录（fail-open），避免静默裁成空目录。
+    requireMatch: true
+    # 首轮提示：正文由引擎按常驻集与发现工具生成，无需手抄。
+    notice: true

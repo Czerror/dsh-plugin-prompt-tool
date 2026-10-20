@@ -63,20 +63,18 @@ const only = (events, name) => {
 const session = (depth = 0, id = `s${depth}-${Math.random()}`) => ({ id, header: { delegationDepth: depth } })
 const agent = (depth = 0, extra = {}) => ({ session: session(depth), options: { model: 'deepseek-chat' }, ...extra })
 const assembled = (tools, extra = {}) => ({ sections: [], contexts: [], tools, variables: {}, ...extra })
-const tool = (toolName) => ({ name: toolName, description: `tool ${toolName}`, parameters: { type: 'object', properties: {} } })
 
 // ───────────────────────── 一、通道与降级语义声明 ─────────────────────────
 
 test('动作只在其合法通道注册：逐类记录 ctx.on 的通道并与声明对拍', async () => {
   const cases = [
     ['inject-text pre-step', { kind: 'inject-text', id: 'i1', config: createPromptConfigs([{ id: 'i1', layer: 'pre-step', text: 'A' }])[0] }, ['agent/pre-step', 'session/event']],
-    ['assembly', { kind: 'assembly', id: 'a1', target: { tools: { deny: ['bash'] } } }, ['system-prompt/assemble']],
+    ['assembly', { kind: 'assembly', id: 'a1', target: { sections: { remove: ['x'] } } }, ['system-prompt/assemble']],
     ['decision pre', { kind: 'decision', id: 'd1', phase: 'pre', decision: 'deny', reason: 'no' }, ['tools/pre-execute']],
     ['decision post', { kind: 'decision', id: 'd2', phase: 'post', action: 'block', text: 'x' }, ['tools/post-execute']],
     ['append-context', { kind: 'append-context', id: 'c1', mode: 'context', text: 'x' }, ['tools/post-execute']],
     ['append-context continue', { kind: 'append-context', id: 'c2', mode: 'continue', text: 'x' }, ['agent/turn-stopping']],
-    ['guard', { kind: 'guard', id: 'g1', mask: { deny: ['bash'] } }, ['system-prompt/assemble']],
-    ['sdk-strip', { kind: 'sdk-strip', id: 's1', mask: { deny: ['bash'] } }, ['system-prompt/assemble']],
+    ['tool-visibility', { kind: 'tool-visibility', id: 'v1', deny: ['bash'] }, ['system-prompt/assemble']],
     ['request-params', { kind: 'request-params', id: 'r1', patch: { maxTokens: 64 } }, ['agent/request']],
     ['inbox-prepend', { kind: 'inbox-prepend', id: 'p1', text: 'ANCHOR' }, ['agent/inbox/inserted']],
     ['pre-step-filter', { kind: 'pre-step-filter', id: 'f1', sources: ['plugin'] }, ['agent/pre-step']],
@@ -91,21 +89,11 @@ test('动作只在其合法通道注册：逐类记录 ctx.on 的通道并与声
 
 test('动作声明 fail loud：名单形状错误、名单为空、名单命名 run_code 都在挂载期抛出', () => {
   const { ctx } = recordingCtx()
-  assert.throws(() => registerAction(ctx, { kind: 'assembly', id: 'x', target: { tools: { deny: 'bash' } } }), /deny must be an array/)
-  assert.throws(() => registerAction(ctx, { kind: 'assembly', id: 'x', target: { tools: {} } }), /needs allow and\/or deny/)
-  assert.throws(() => registerAction(ctx, { kind: 'guard', id: 'x', mask: { deny: ['run_code'] } }), /must not name the reserved run_code/)
-  // guard 的受众矛盾组合与非法 audience 取值在保存 / 导入即拒绝，不再静默不注册或静默退化。
-  assert.throws(() => registerAction(ctx, { kind: 'guard', id: 'g', audience: 'subagent', mask: { deny: ['bash'] } }), /g: audience:'subagent' 需配 includeSubagents:true/)
-  assert.throws(() => registerAction(ctx, { kind: 'guard', id: 'g', audience: 'subagent', includeSubagents: false, mask: { deny: ['bash'] } }), /includeSubagents:true/)
-  assert.throws(() => registerAction(ctx, { kind: 'guard', id: 'g', audience: 'submagent', mask: { deny: ['bash'] } }), /g\.audience must be main or subagent/)
-  // 'all' 是编辑器侧的通用档（Ruling 12）：运行期判据只看 `=== 'subagent'`，拒绝它会让
-  // 「编辑器当通用、保存即失败」重演。矩阵用例另有一行断言它在运行期等同通用。
-  assert.doesNotThrow(() => registerAction(ctx, { kind: 'guard', id: 'g', audience: 'all', mask: { deny: ['bash'] } }))
-  // includeSubagents 是信任边界（作者可写字段）：缺省视为 false，显式非布尔值编译期拒绝。
-  for (const value of ['yes', 1, null]) {
-    assert.throws(() => registerAction(ctx, { kind: 'guard', id: 'g', includeSubagents: value, mask: { deny: ['bash'] } }), /g\.includeSubagents must be a boolean/, `includeSubagents:${JSON.stringify(value)} 必须拒绝`)
-  }
-  assert.doesNotThrow(() => registerAction(ctx, { kind: 'guard', id: 'g', includeSubagents: false, mask: { deny: ['bash'] } }))
+  assert.throws(() => registerAction(ctx, { kind: 'assembly', id: 'x', target: { tools: { deny: ['bash'] } } }), /target\.tools 已移除/)
+  assert.throws(() => registerAction(ctx, { kind: 'tool-visibility', id: 'v', deny: ['run_code'] }), /must not name the reserved run_code/)
+  assert.throws(() => registerAction(ctx, { kind: 'tool-visibility', id: 'v' }), /needs allow and\/or deny/)
+  assert.throws(() => registerAction(ctx, { kind: 'tool-visibility', id: 'v', deny: ['a'], audience: 'nobody' }), /audience must be main, subagent or all/)
+  assert.throws(() => registerAction(ctx, { kind: 'tool-visibility', id: 'v', deny: ['a'], requireMatch: true }), /requireMatch only applies to allow/)
   assert.throws(() => registerAction(ctx, { kind: 'request-params', id: 'x', replace: true, unset: { maxTokens: 1 } }), /cannot combine replace with unset/)
   assert.throws(() => registerAction(ctx, { kind: 'decision', id: 'x', phase: 'pre', decision: 'maybe' }), /must be one of allow, deny, ask/)
   // 段/上下文增量的形状校验（含 label 与 plugin 一起拼出的消息）
@@ -124,169 +112,9 @@ test('动作声明 fail loud：名单形状错误、名单为空、名单命名 
   assert.throws(() => registerAction(ctx, { kind: 'assembly', id: 'x', target: { sections: { keep: ['a'], remove: ['b'] } } }), /assembly\.sections cannot combine keep with remove/)
   assert.throws(() => registerAction(ctx, { kind: 'assembly', id: 'x', target: { sections: { keep: ['a'], remove: ['b'], add: {} } } }), /assembly\.sections\.add must be an array/)
   assert.throws(() => registerAction(ctx, { kind: 'assembly', id: 'x', target: { sections: { keep: ['a'], remove: ['b'], add: null } } }), /assembly\.sections\.add must be an array/)
-  // allowFrom 的声明期形状校验（搬自 (2e)，语义不变）。
-  assert.throws(() => registerAction(ctx, { kind: 'assembly', id: 'x', target: { tools: { allow: ['a'], allowFrom: ['tool_search'] } } }), /allowFrom must be an object/)
-  assert.throws(() => registerAction(ctx, { kind: 'assembly', id: 'x', target: { tools: { allow: ['a'], allowFrom: { key: 'k' } } } }), /allowFrom\.tool must be a string/)
-  assert.throws(() => registerAction(ctx, { kind: 'assembly', id: 'x', target: { tools: { allow: ['a'], allowFrom: { tool: 't' } } } }), /allowFrom\.key must be a string/)
-  assert.throws(() => registerAction(ctx, { kind: 'assembly', id: 'x', target: { tools: { deny: ['x'], allowFrom: { tool: 't', key: 'k' } } } }), /cannot combine deny with allowFrom/)
   assert.throws(() => registerAction(ctx, { kind: 'append-context', id: 'x', mode: 'context', text: 5 }), /x\.text must be a string/)
   assert.throws(() => registerAction(ctx, { kind: 'inject-text', id: 'x', config: { layer: '' } }), /config\.layer is required/)
   assert.throws(() => registerAction(ctx, { kind: 'inject-text', id: 'x' }), /requires a config object/)
-})
-
-// ───────────────────────── 二、与既有实现逐条对拍 ─────────────────────────
-
-test('(2) 改装配 tools：名单裁剪（deny / allow / 空名单）', async () => {
-  // B7 T3：原 `tool-filter` 模块已删除，本用例不再与它逐条对拍；期望值是按名单语义
-  // 逐条算出的字面量 —— `createMask` 的剔出判据是「先看 deny、再看 allow 是否点名」
-  // （actions.mjs:191-192）。
-  const cases = [
-    [{ deny: ['web_search'] }, ['bash', 'read']],
-    [{ allow: ['bash', 'read'] }, ['bash', 'read']],
-  ]
-  for (const [mask, expected] of cases) {
-    const catalog = ['bash', 'read', 'web_search'].map(tool)
-    const viaAction = recordingCtx()
-    registerAction(viaAction.ctx, { kind: 'assembly', id: 'm', target: { tools: mask } })
-    const actual = await only(viaAction.events, 'system-prompt/assemble')(assembled(catalog.map((item) => ({ ...item }))), { agent: agent() }, async () => assembled(catalog.map((item) => ({ ...item }))))
-    assert.deepEqual(actual.tools.map((item) => item.name), expected, `mask ${JSON.stringify(mask)}`)
-  }
-  const empty = recordingCtx()
-  registerAction(empty.ctx, { kind: 'assembly', id: 'm2', target: { tools: { deny: [] } } })
-  const input = assembled([tool('bash')])
-  const output = await only(empty.events, 'system-prompt/assemble')(input, { agent: agent() }, async () => input)
-  assert.deepEqual(output.tools.map((item) => item.name), ['bash'], '空 deny = 不过滤')
-
-  const emptyAllow = recordingCtx()
-  registerAction(emptyAllow.ctx, { kind: 'assembly', id: 'm3', target: { tools: { allow: [] } } })
-  const none = await only(emptyAllow.events, 'system-prompt/assemble')(input, { agent: agent() }, async () => input)
-  assert.deepEqual(none.tools.map((item) => item.name), [], '显式空 allow = 一个都不通过')
-})
-
-// ───────────────────── 二之补：assembly 的动态白名单（allowFrom） ─────────────────────
-
-/** 带持久事件快照的 session（引擎经 `session.snapshotEvents()` 读事件）。 */
-const sessionWith = (events) => ({ id: `ev-${Math.random()}`, header: { delegationDepth: 0 }, snapshotEvents: () => events })
-const agentWith = (events) => ({ session: sessionWith(events), options: { model: 'deepseek-chat' } })
-/** 发现工具的调用记录：`arguments` 是字符串（模型产出的就是 JSON 文本）。 */
-const unlockCall = (toolNames) => ({ type: 'tool/call', data: { name: 'tool_search', arguments: JSON.stringify({ query: 'web', toolNames }) } })
-
-test('(2b) allowFrom：解锁名单从历史 tool/call 回收，未解锁的仍被裁掉', async () => {
-  // 发现工具自己必须在静态名单里：它被裁掉就没人能写解锁名（失配告警见 (2f)）。
-  const catalog = ['pwsh', 'read', 'tool_search', 'web_search', 'memory_recall'].map(tool)
-  const run = async (events, mask = { allow: ['pwsh', 'read', 'tool_search'] }) => {
-    const recorder = recordingCtx()
-    registerAction(recorder.ctx, { kind: 'assembly', id: 'dyn', target: { tools: { ...mask, allowFrom: { tool: 'tool_search', key: 'toolNames' } } } })
-    const handler = only(recorder.events, 'system-prompt/assemble')
-    const input = assembled(catalog.map((item) => ({ ...item })))
-    const output = await handler(input, { agent: agentWith(events) }, async () => input)
-    assert.deepEqual(recorder.warnings, [], '正常路径不得告警')
-    return output.tools.map((item) => item.name)
-  }
-  assert.deepEqual(await run([]), ['pwsh', 'read', 'tool_search'], '从未解锁过 → 只有静态名单')
-  assert.deepEqual(await run([unlockCall(['web_search'])]), ['pwsh', 'read', 'tool_search', 'web_search'], '解锁项并入静态名单')
-  assert.deepEqual(await run([unlockCall(['web_search']), unlockCall(['memory_recall'])]), ['pwsh', 'read', 'tool_search', 'web_search', 'memory_recall'], '多次调用累积')
-})
-
-test('(2c) allowFrom：坏数据逐条忽略且不上抛（非法 JSON / key 非数组 / tool 不匹配）', async () => {
-  const catalog = ['pwsh', 'tool_search', 'web_search', 'memory_recall'].map(tool)
-  const recorder = recordingCtx()
-  registerAction(recorder.ctx, {
-    kind: 'assembly',
-    id: 'dyn-bad',
-    target: { tools: { allow: ['pwsh', 'tool_search'], allowFrom: { tool: 'tool_search', key: 'toolNames' } } },
-  })
-  const events = [
-    { type: 'tool/call', data: { name: 'tool_search', arguments: '{ 这不是 JSON' } },           // 非法 JSON → 整条忽略
-    { type: 'tool/call', data: { name: 'tool_search', arguments: JSON.stringify({ toolNames: 'web_search' }) } }, // key 非数组 → 整条忽略（字符串不是数组）
-    { type: 'tool/call', data: { name: 'other_tool', arguments: JSON.stringify({ toolNames: ['memory_recall'] }) } },  // tool 名不匹配 → 忽略
-    { type: 'tool/call', data: { name: 'tool_search', arguments: JSON.stringify({ toolNames: [42, null, '', 'web_search'] }) } }, // 混入非字符串 → 只取合法项
-    { type: 'assistant/message', data: { message: 'x' } },                                          // 非 tool/call → 忽略
-    { type: 'tool/call', data: { name: 'tool_search' } },                                        // 无 arguments → 忽略
-    { type: 'tool/call', data: { name: 'tool_search', arguments: JSON.stringify(['web_search']) } }, // 解析成数组（非对象）→ 忽略
-    { type: 'tool/call', data: { name: 'tool_search', arguments: JSON.stringify({ toolNames: ['memory_recall'] }) } }, // 有效项
-  ]
-  const input = assembled(catalog.map((item) => ({ ...item })))
-  const output = await only(recorder.events, 'system-prompt/assemble')(input, { agent: agentWith(events) }, async () => input)
-  assert.deepEqual(output.tools.map((item) => item.name), ['pwsh', 'tool_search', 'web_search', 'memory_recall'], '只有合法字符串项生效，坏数据逐条忽略')
-  assert.deepEqual(recorder.warnings, [], '坏数据不得告警（它是模型产出的常态输入，不是故障）')
-  assert.deepEqual(input.tools.map((item) => item.name), catalog.map((item) => item.name), '输入不得被就地修改')
-})
-
-test('(2d) allowFrom：无 session / 事件不可用时不抛错，按静态名单裁', async () => {
-  const catalog = ['pwsh', 'tool_search', 'web_search'].map(tool)
-  const build = (recorder) => {
-    registerAction(recorder.ctx, { kind: 'assembly', id: 'dyn-none', target: { tools: { allow: ['pwsh', 'tool_search'], allowFrom: { tool: 'tool_search', key: 'toolNames' } } } })
-    return only(recorder.events, 'system-prompt/assemble')
-  }
-  // ① 完全没有 session
-  const plain = recordingCtx()
-  const handlerA = build(plain)
-  const inputA = assembled(catalog.map((item) => ({ ...item })))
-  const outA = await handlerA(inputA, { agent: {} }, async () => inputA)
-  assert.deepEqual(outA.tools.map((item) => item.name), ['pwsh', 'tool_search'], '无 session → 静态名单')
-  assert.deepEqual(plain.warnings, [])
-  // ② snapshotEvents 抛错 → 记一条告警、按静态名单继续，且**不上抛**
-  const boom = recordingCtx()
-  const handlerB = build(boom)
-  const throwing = { id: 't', header: { delegationDepth: 0 }, snapshotEvents: () => { throw new Error('snapshot unavailable') } }
-  const inputB = assembled(catalog.map((item) => ({ ...item })))
-  const outB = await handlerB(inputB, { agent: { session: throwing } }, async () => inputB)
-  assert.deepEqual(outB.tools.map((item) => item.name), ['pwsh', 'tool_search'], '读事件失败 → 退回静态名单')
-  assert.equal(boom.warnings.length, 1, '读事件失败应恰好告警一次')
-  assert.match(boom.warnings[0], /allowFrom failed/)
-})
-
-test('(2e) allowFrom：多个动作实例互不串味', async () => {
-  // 两个动作各读各自的发现工具**与各自的参数键**：任一被模块级状态覆盖，另一个必然解析失败。
-  // 各自的发现工具写进自己的静态名单，否则（2f）的失配告警会盖住这条例程的意图。
-  const catalog = ['pwsh', 'finder_a', 'finder_b', 'alpha_tool', 'beta_tool'].map(tool)
-  const two = recordingCtx()
-  registerAction(two.ctx, { kind: 'assembly', id: 'act-a', target: { tools: { allow: ['pwsh', 'finder_a', 'beta_tool'], allowFrom: { tool: 'finder_a', key: 'names' } } } })
-  registerAction(two.ctx, { kind: 'assembly', id: 'act-b', target: { tools: { allow: ['pwsh', 'finder_b'], allowFrom: { tool: 'finder_b', key: 'unlocks' } } } })
-  const events = [
-    { type: 'tool/call', data: { name: 'finder_a', arguments: JSON.stringify({ names: ['alpha_tool'] }) } },
-    { type: 'tool/call', data: { name: 'finder_b', arguments: JSON.stringify({ unlocks: ['beta_tool'] }) } },
-  ]
-  const input = assembled(catalog.map((item) => ({ ...item })))
-  // 两个动作各注册一个监听器，按注册顺序依次改写（与引擎的实际 waterfall 等价）。
-  const handlers = two.events.filter((entry) => entry.event === 'system-prompt/assemble').map((entry) => entry.handler)
-  assert.equal(handlers.length, 2, '两个 assembly 动作应各注册一个监听器')
-  // 链式下 alpha_tool 会被 B 裁掉，所以用 B 注册在前的顺序观察 A 的解锁结果。
-  const first = await handlers[1](input, { agent: agentWith(events) }, async () => input)
-  assert.deepEqual(first.tools.map((item) => item.name), ['pwsh', 'finder_b', 'beta_tool'], 'B 认自己的 tool+key（finder_b.unlocks）而非 A 的')
-  const thenA = await handlers[0](input, { agent: agentWith(events) }, async () => input)
-  assert.deepEqual(thenA.tools.map((item) => item.name), ['pwsh', 'finder_a', 'alpha_tool', 'beta_tool'], 'A 认自己的 tool+key（finder_a.names）而非 B 的')
-  assert.deepEqual(two.warnings, [])
-})
-
-test('(2f) allowFrom：发现工具不在装配目录里时告警，且裁切行为不变', async () => {
-  const catalog = ['pwsh', 'tool_search', 'web_search'].map(tool)
-  const run = async (recorder, tools, input, events) => {
-    registerAction(recorder.ctx, { kind: 'assembly', id: 'dyn-miss', target: { tools } })
-    return only(recorder.events, 'system-prompt/assemble')(input, { agent: agentWith(events) }, async () => input)
-  }
-  // ① 工具改名、已有副本停在旧名：旧名永远不可能被调用，解锁名单永远是空的。
-  const ghost = recordingCtx()
-  const inputA = assembled(catalog.map((item) => ({ ...item })))
-  const outA = await run(ghost, { allow: ['pwsh'], allowFrom: { tool: 'gone_finder', key: 'toolNames' } },
-    inputA, [unlockCall(['web_search'])])
-  assert.deepEqual(outA.tools.map((item) => item.name), ['pwsh'], '失配不影响裁切：仍按静态名单')
-  assert.equal(ghost.warnings.length, 1, '失配应恰好告警一次')
-  assert.match(ghost.warnings[0], /gone_finder.*not in the assembled tool set/)
-  // ② 白名单模式下发现工具被自动保留：它是解锁通道本身，引擎不该让它把自己裁掉。
-  const selfCut = recordingCtx()
-  const inputB = assembled(catalog.map((item) => ({ ...item })))
-  const outB = await run(selfCut, { allowFrom: { tool: 'tool_search', key: 'toolNames' } }, inputB, [])
-  assert.deepEqual(outB.tools.map((item) => item.name), ['tool_search'], '只配 allowFrom 且未解锁 → 只留发现工具自己')
-  assert.deepEqual(selfCut.warnings, [], '引擎自己修得掉的情况不告警')
-  // ③ 只配 allowFrom 且已解锁 → 仅解锁项（工具在目录里则无告警）。
-  const unlocked = recordingCtx()
-  const inputC = assembled(catalog.map((item) => ({ ...item })))
-  const outC = await run(unlocked, { allow: ['tool_search'], allowFrom: { tool: 'tool_search', key: 'toolNames' } },
-    inputC, [unlockCall(['web_search'])])
-  assert.deepEqual(outC.tools.map((item) => item.name), ['tool_search', 'web_search'], '解锁项并入')
-  assert.deepEqual(unlocked.warnings, [])
 })
 
 test('(2) 改装配 sections/contexts：增删改与既有形态一致，异常时返回未改装配', async () => {
@@ -309,14 +137,14 @@ test('(2) 改装配 sections/contexts：增删改与既有形态一致，异常�
   assert.deepEqual(input.sections.map((item) => item.name), ['tools:sdk', 'keep'], '输入不得被就地修改')
 
   const boom = recordingCtx()
-  registerAction(boom.ctx, { kind: 'assembly', id: 'boom', target: { tools: { deny: ['x'] } } })
+  registerAction(boom.ctx, { kind: 'assembly', id: 'boom', target: { sections: { remove: ['x'] } } })
   const broken = assembled([{ name: 'x' }])
   const survived = await only(boom.events, 'system-prompt/assemble')(broken, { agent: agent() }, async () => { throw new Error('downstream') }).catch(() => 'threw')
   assert.equal(survived, 'threw', '下游异常必须原样上抛，动作不得吞掉')
 
   const failing = recordingCtx()
-  registerAction(failing.ctx, { kind: 'assembly', id: 'f', target: { tools: { deny: ['x'] } } })
-  const hostile = { get tools() { throw new Error('assembly hook exploded') }, sections: [], contexts: [], variables: {} }
+  registerAction(failing.ctx, { kind: 'assembly', id: 'f', target: { sections: { remove: ['x'] } } })
+  const hostile = { get sections() { throw new Error('assembly hook exploded') }, tools: [], contexts: [], variables: {} }
   const kept = await only(failing.events, 'system-prompt/assemble')(hostile, { agent: agent() }, async () => hostile)
   assert.equal(kept, hostile, '装配改写失败时返回未改装配（expose-all）')
   assert.equal(failing.warnings.length, 1)
@@ -475,18 +303,25 @@ async function ptcHarness({ language = 'typescript', mode = 'ptc' } = {}) {
   return { root, tools: root.tools, main, makeAgent, bodyRuns, programs, runCode, assemble }
 }
 
-test('(5) 真实 PTC 子调用：guard 拦下本层工具（restrict 收不动）的调用，工具体一次都没执行（TS 载荷）', async () => {
+test('(5) 真实 PTC：工具可见面同时裁 SDK 正文与执行面，子调用建不出绑定', async () => {
   const h = await ptcHarness({ language: 'typescript' })
-  // 注册在真实 root ctx 上：动作的 assembly 监听由真实 waterfall 触发（含首个请求）。
-  const dispose = registerAction(h.root, { kind: 'guard', id: 'no-own', mask: { deny: ['own_tool'] }, reason: 'blocked by guard action' })
-  await h.assemble(h.main)
-  // agent 本层工具仍在 `registry.schemas(agent)` 里 → `run_code` 真的建出绑定 → 子调用真的发生
-  assert.ok(h.tools.schemas(h.main).some((schema) => schema.name === 'own_tool'), '绑定必须存在，否则测的不是 guard')
-  const result = await h.runCode(h.main, 'own_tool')
-  assert.equal(result.isError, true, '被剔工具的 PTC 子调用必须失败')
-  assert.match(result.content[0].text, /blocked by guard action/)
-  assert.deepEqual(h.bodyRuns, [], '工具体不得执行')
-  // 名单外的工具仍可正常调用
+  const before = await h.assemble(h.main)
+  const sdkBefore = before.sections.find((section) => section.name === SDK_SECTION_NAME)
+  assert.ok(sdkBefore, 'PTC 下必须存在 tools:sdk 段')
+  assert.deepEqual(sdkToolNames(sdkBefore.text).sort(), ['bash', 'own_tool', 'read'])
+
+  const dispose = registerAction(h.root, { kind: 'tool-visibility', id: 'v', deny: ['own_tool'] })
+  const after = await h.assemble(h.main)
+  const sdkAfter = after.sections.find((section) => section.name === SDK_SECTION_NAME)
+  assert.deepEqual(sdkToolNames(sdkAfter.text).sort(), ['bash', 'read'], '被剔工具的 SDK 声明必须从正文消失')
+  assert.ok(!sdkAfter.text.includes('own_tool'), '正文里不得残留被剔工具的声明')
+  assert.equal(sdkBefore.text.includes('own_tool'), true, '裁剪前正文确实带着被剔工具')
+
+  // 呈现裁剪不是执行边界：即便模型"知道"旧名字，子调用仍被 guard 拦下
+  const denied = await h.runCode(h.main, 'own_tool')
+  assert.equal(denied.isError, true)
+  assert.match(denied.content[0].text, /denied by tool-visibility/)
+  assert.deepEqual(h.bodyRuns, [])
   const allowed = await h.runCode(h.main, 'read')
   assert.equal(allowed.isError, false)
   assert.deepEqual(h.bodyRuns, ['read'])
@@ -494,37 +329,8 @@ test('(5) 真实 PTC 子调用：guard 拦下本层工具（restrict 收不动�
   await h.root.fiber.dispose()
 })
 
-test('(6) 真实 PTC：SDK 正文里被剔工具的声明消失，且 guard 让「知道旧名字」也调不动', async () => {
-  const h = await ptcHarness({ language: 'typescript' })
-  const before = await h.assemble(h.main)
-  const sdkBefore = before.sections.find((section) => section.name === SDK_SECTION_NAME)
-  assert.ok(sdkBefore, 'PTC 下必须存在 tools:sdk 段')
-  assert.deepEqual(sdkToolNames(sdkBefore.text).sort(), ['bash', 'own_tool', 'read'])
-
-  // 两个动作都注册在真实 root ctx：由真实 assembly 瀑布触发。
-  const disposeStrip = registerAction(h.root, { kind: 'sdk-strip', id: 's', mask: { deny: ['own_tool'] } })
-  const disposeGuard = registerAction(h.root, { kind: 'guard', id: 'g', mask: { deny: ['own_tool'] }, reason: 'no own tool' })
-
-  const after = await h.assemble(h.main)
-  const sdkAfter = after.sections.find((section) => section.name === SDK_SECTION_NAME)
-  assert.deepEqual(sdkToolNames(sdkAfter.text).sort(), ['bash', 'read'], '被剔工具的 SDK 声明必须从正文消失')
-  assert.ok(!sdkAfter.text.includes('own_tool'), '正文里不得残留被剔工具的声明')
-  assert.ok(sdkAfter.text.includes('bash'), '其它工具声明必须保留')
-  assert.equal(sdkBefore.text.includes('own_tool'), true, '裁剪前正文确实带着被剔工具')
-
-  // 文本裁剪不是执行边界：即便模型"知道"旧名字，子调用仍被 guard 拦下
-  const denied = await h.runCode(h.main, 'own_tool')
-  assert.equal(denied.isError, true)
-  assert.match(denied.content[0].text, /no own tool/)
-  assert.deepEqual(h.bodyRuns, [])
-  disposeStrip()
-  disposeGuard()
-  await h.root.fiber.dispose()
-})
-
-test('(6b) 真实 PTC（Python）：SDK 裁剪保留异名注释，只删被剔工具及其 TypedDict', async () => {
+test('(6) 真实 PTC（Python）：工具可见面裁剪保留异名注释，只删被剔工具及其 TypedDict', async () => {
   const h = await ptcHarness({ language: 'python' })
-  // 异名工具走 Python 渲染的下标注释分支，同时带嵌套输出以覆盖 TypedDict 可达性。
   h.tools.register({
     name: 'my-tool',
     description: 'Exotic tool',
@@ -532,9 +338,7 @@ test('(6b) 真实 PTC（Python）：SDK 裁剪保留异名注释，只删被剔�
     output: {
       schema: {
         type: 'object',
-        properties: {
-          inner: { type: 'object', properties: { x: { type: 'string' } }, required: ['x'] },
-        },
+        properties: { inner: { type: 'object', properties: { x: { type: 'string' } }, required: ['x'] } },
         required: ['inner'],
       },
       render: () => [{ type: 'text', text: 'ok' }],
@@ -544,131 +348,18 @@ test('(6b) 真实 PTC（Python）：SDK 裁剪保留异名注释，只删被剔�
   const before = await h.assemble(h.main)
   const sdkBefore = before.sections.find(section => section.name === SDK_SECTION_NAME)
   assert.ok(sdkBefore, 'PTC 下必须存在 tools:sdk 段')
-  assert.ok(sdkBefore.text.includes('class Tools(Protocol):'))
-  assert.ok(sdkBefore.text.includes('tools: Tools'))
   assert.deepEqual(sdkToolNames(sdkBefore.text).sort(), ['bash', 'my-tool', 'own_tool', 'read'])
 
-  const dispose = registerAction(h.root, { kind: 'sdk-strip', id: 'py', mask: { deny: ['own_tool'] } })
+  const dispose = registerAction(h.root, { kind: 'tool-visibility', id: 'py', deny: ['own_tool'] })
   const after = await h.assemble(h.main)
   const sdkAfter = after.sections.find(section => section.name === SDK_SECTION_NAME)
   assert.deepEqual(sdkToolNames(sdkAfter.text).sort(), ['bash', 'my-tool', 'read'], '被剔工具的协议成员必须消失')
   assert.ok(sdkAfter.text.includes('# tools["my-tool"]'), '异名工具的下标注释必须保留')
   assert.ok(!sdkAfter.text.includes('OwnTool') && !sdkAfter.text.includes('own_tool'), '被剔工具及其 TypedDict 必须消失')
-  assert.ok(sdkAfter.text.includes('async def bash('), '保留工具的协议方法必须存在')
   dispose()
   await h.root.fiber.dispose()
 })
 
-test('(6c) sdk-strip 的 requireMatch：白名单工具缺失时保留完整 SDK 正文（fail-open）', async () => {
-  const h = await ptcHarness({ language: 'typescript' })
-  const before = await h.assemble(h.main)
-  const sdkBefore = before.sections.find(section => section.name === SDK_SECTION_NAME)
-
-  // allow 名单里的 ghost 不在正文：requireMatch 与 assembly 同判据，放弃裁剪。
-  const disposeOpen = registerAction(h.root, { kind: 'sdk-strip', id: 'rm', mask: { allow: ['bash', 'ghost'], requireMatch: true } })
-  const opened = await h.assemble(h.main)
-  const openedText = opened.sections.find(section => section.name === SDK_SECTION_NAME).text
-  assert.equal(openedText, sdkBefore.text, 'requireMatch 触发时必须保留完整 SDK 正文')
-  disposeOpen()
-
-  // 不写 requireMatch：照白名单裁剪，只留 bash。
-  const disposeCut = registerAction(h.root, { kind: 'sdk-strip', id: 'no-rm', mask: { allow: ['bash'] } })
-  const cut = await h.assemble(h.main)
-  const cutText = cut.sections.find(section => section.name === SDK_SECTION_NAME).text
-  assert.deepEqual(sdkToolNames(cutText), ['bash'], '不带 requireMatch 时照白名单裁剪')
-  disposeCut()
-  await h.root.fiber.dispose()
-})
-
-// ───────────────────── 三之补：guard 受众矩阵（主会话 × 子代理） ─────────────────────
-
-test('guard 受众矩阵：注册次数与 restrict 调用随 audience × includeSubagents 组合确定', async () => {
-  // 复现 F19 探针的 A–H 行（B / D 的 audience:'subagent' 缺 includeSubagents 已改为编译期拒绝，
-  // 见「动作声明 fail loud」用例：该组合在主会话与子代理两侧都不注册，与 depth 无关）。
-  const rows = [
-    ['A 主会话 · 无 audience', 0, {}, 1, 0],
-    ['C 子代理 · 无 audience（includeSubagents 缺省）', 1, {}, 0, 0],
-    ['E 子代理 · audience:subagent + includeSubagents:true', 1, { audience: 'subagent', includeSubagents: true }, 1, 1],
-    ['F 子代理 · 无 audience + includeSubagents:true', 1, { includeSubagents: true }, 1, 1],
-    ['G 主会话 · audience:main', 0, { audience: 'main' }, 1, 0],
-    ['H 子代理 · audience:main + includeSubagents:true', 1, { audience: 'main', includeSubagents: true }, 1, 1],
-    ['边界 · 主会话 audience:null（中性值）', 0, { audience: null }, 1, 0],
-    ['边界 · 主会话 audience:""（中性值）', 0, { audience: '' }, 1, 0],
-    ['边界 · 主会话 audience:"all"（通用档，Ruling 12）', 0, { audience: 'all' }, 1, 0],
-    ['边界 · 子代理 audience:"all" + includeSubagents:true', 1, { audience: 'all', includeSubagents: true }, 1, 1],
-  ]
-  for (const [label, depth, fields, guards, restricts] of rows) {
-    const recorder = recordingCtx()
-    const calls = { guard: 0, restrict: 0 }
-    registerAction(recorder.ctx, { kind: 'guard', id: 'g', mask: { deny: ['bash'] }, reason: 'deny bash', ...fields })
-    const handler = only(recorder.events, 'system-prompt/assemble')
-    const agent = {
-      session: { id: `guard-${label}`, header: { delegationDepth: depth } },
-      ctx: { tools: {
-        guard: () => { calls.guard += 1; return () => {} },
-        restrict: () => { calls.restrict += 1; return () => {} },
-      } },
-    }
-    await handler(assembled({}), { agent, scope: agent }, async () => assembled({}))
-    assert.deepEqual(calls, { guard: guards, restrict: restricts }, label)
-    // H 行是相邻问题：子代理侧只看 includeSubagents，`audience:'main'` 被忽略（本轮只记录不改；
-    // 将来改这条语义时，本行的 1/1 会红）。
-    assert.deepEqual(recorder.warnings, [], `${label}：受众不适用是设计行为，不得告警`)
-  }
-})
-
-test('guard 注册抛错不留下已登记状态：同一 ctx 的下一次装配重试并最终注册（F29）', async () => {
-  const recorder = recordingCtx()
-  let attempts = 0
-  registerAction(recorder.ctx, { kind: 'guard', id: 'g', mask: { deny: ['bash'] } })
-  const handler = only(recorder.events, 'system-prompt/assemble')
-  const agent = {
-    session: { id: 'guard-retry', header: { delegationDepth: 0 } },
-    ctx: { tools: {
-      guard: () => {
-        attempts += 1
-        if (attempts === 1) throw new Error('tools service down')
-        return () => {}
-      },
-    } },
-  }
-  await handler(assembled({}), { agent, scope: agent }, async () => assembled({}))
-  assert.equal(attempts, 1)
-  assert.match(recorder.warnings.join('\n'), /failed to register: tools service down/, '首次失败必须告警而不是静默')
-  // 改前：state 在 tools.guard 抛错前已登记，第二次 assemble 因 existing.ctx === scoped 直接返回 → attempts 停在 1。
-  await handler(assembled({}), { agent, scope: agent }, async () => assembled({}))
-  assert.equal(attempts, 2, '注册失败后下一次装配必须重试，不得永久放弃')
-})
-
-test('guard 登记的撤销范围：父 mount 释放撤销子代理侧注册，scope 释放只移出自身（R06 收口）', async () => {
-  // 子代理排在前：R06 的真实差异只出现在它这一轮，行为断言要先跑（不被 scope 清理断言遮蔽）。
-  for (const [depth, label] of [[1, '子代理'], [0, '主会话']]) {
-    const recorder = recordingCtx()
-    const scopeEffects = []
-    let revoked = 0
-    const dispose = registerAction(recorder.ctx, { kind: 'guard', id: 'g', includeSubagents: true, mask: { deny: ['bash'] } })
-    const handler = only(recorder.events, 'system-prompt/assemble')
-    const agent = {
-      session: { id: `guard-revoke-${depth}`, header: { delegationDepth: depth } },
-      ctx: {
-        tools: { guard: () => () => { revoked += 1 } },
-        effect: (fn) => { scopeEffects.push(fn); return () => {} },
-      },
-    }
-    await handler(assembled({}), { agent, scope: agent }, async () => assembled({}))
-    assert.equal(revoked, 0, `${label}：装配后注册仍在`)
-    dispose()
-    // 改前（states 只登记 depth === 0）：子代理这一行是 0 —— 父 mount 释放不再撤销它的注册，
-    // 子代理余下生命周期会按旧 mask 继续拦截。
-    assert.equal(revoked, 1, `${label}：父 mount 释放必须撤销该注册`)
-    // R06 的意图：同一 state 在 scope 释放时经 effect 移出 states，父 mount 的集合不随子代理增长。
-    assert.equal(scopeEffects.length, 1, `${label}：登记了 scope 清理`)
-    scopeEffects[0]()()
-    assert.equal(revoked, 1, `${label}：scope 释放与父 mount 释放共用一条撤销路径，重复释放不再调用 disposer`)
-  }
-})
-
-// ───────────────────────── 四、when 门控与每轮预算 ─────────────────────────
 
 test('when：命中才执行动作，不命中放行下游', async () => {
   const recorder = recordingCtx()

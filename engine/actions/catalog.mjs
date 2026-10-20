@@ -54,38 +54,7 @@ export const ACTION_KINDS = Object.freeze({
     timing: 'mode=context 在 post-execute 追加 durable user 通知；mode=continue 在 agent/turn-stopping steer 一步。',
     note: '续跑共用引擎的续跑预算（每个来源（模块）每轮 1 次 / 每会话 3 次），无正文时不追加（empty 情形）；绝不伪造 assistant 角色。',
   },
-  guard: {
-    title: '执行层 guard',
-    fields: ['mask', 'allow', 'deny', 'requireMatch', 'audience', 'includeSubagents', 'reason'],
-    events: ['system-prompt/assemble'],
-    services: ['tools.guard', 'tools.restrict'],
-    degrade: ACTION_DEGRADE.silent,
-    timing: '首次 assembly 时按 agent scope 惰性注册一次（预设切换/重绑后按新的 agent.ctx 重注册）。',
-    note: '最终拒绝层：注册在 agent.ctx 上（工具本层与晚到工具也被裁决），命中返回拒绝原因；不注册全局 guard。guard 自身不吞异常——异常即失败，绝不退化成"放行"。',
-  },
-  'tool-narrow': {
-    title: '收窄工具面（restrict）',
-    fields: ['allow', 'includeSubagents'],
-    events: ['system-prompt/assemble'],
-    services: ['tools.restrict'],
-    degrade: ACTION_DEGRADE.silent,
-    timing: '首次 assembly 时按 agent scope 惰性注册一次（预设切换/重绑后按新的 agent.ctx 重注册）。',
-    note: '官方 `ctx.tools.restrict({ allow })` 的声明面：只收窄**继承的全局工具**，scope 自己注册的工具裁不掉；'
-      + '被过滤掉的工具在模型目录与执行层同时消失（`get(name, scope)` 读作不存在）。'
-      + '与本项目「按需解锁」（`assembly` 的 `allowFrom` + `tool_search`）**二选一**：restrict 会砍掉 '
-      + '`schemas(agent)` 的视野，两者同开会让 `tool_search` 只剩已解锁项可见。',
-  },
-  'sdk-strip': {
-    title: '裁 SDK 声明文本',
-    fields: ['mask', 'allow', 'deny', 'requireMatch'],
-    events: ['system-prompt/assemble'],
-    services: [],
-    degrade: ACTION_DEGRADE.keep,
-    timing: 'system-prompt/assemble 下游结算之后，改写名为 tools:sdk 的段文本。',
-    note: '只删不增、保守失败：形态异常/自校验失败一律原样返回；空名单零开销。'
-      + '`requireMatch` 与 assembly 同判据（白名单工具在正文缺失 → 保留完整正文，fail-open）；'
-      + '仅是呈现补救，执行边界在 guard。',
-  },
+
   'tool-visibility': {
     title: '工具可见面',
     fields: ['audience', 'allow', 'deny', 'requireMatch', 'discovery', 'notice'],

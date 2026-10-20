@@ -78,7 +78,7 @@ doc.get('rules', true).commentBefore = ` 每条规则默认 enabled:false；规�
  注入正文、内容策略、合并和去重属于 inject-text.config；变量由模块或全局持久表拥有。
  需要原生赋值时显式设置 params.templateEvaluation:true，使用 module.set/get/add/inc/dec 或 global 对应操作。
  config.identity 只允许 {field: plugin, value: 唯一值}；templateFile 相对模块 module.yml 且须在模块目录内。
- guard、complete、suppressRuntimeContext 是固定注册效果：不接受规则级 if，编译器明确拒绝非法组合。`
+ complete、suppressRuntimeContext 是固定注册效果：不接受规则级 if，编译器明确拒绝非法组合。`
 
 const reference = new Document({ layerSettings: Object.fromEntries(LAYER_ORDER.map(layer => [layer, {}])) })
 const notes = {

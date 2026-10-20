@@ -107,13 +107,13 @@ adapter 的目录、权限、原子写与版本责任归接入方。缺少 adapt
 | 动作 | 执行点与边界 |
 |---|---|
 | inject-text | config.layer 指定八个可注入层；tool-pipeline 只作展示归属 |
-| assembly / sdk-strip | system-prompt/assemble 的工具/系统文本/上下文投影 |
+| assembly | system-prompt/assemble 的系统段 / 运行上下文投影（工具面不再由它承担） |
+| tool-visibility | system-prompt/assemble 下游：工具目录、SDK 正文、执行闸、发现工具与首轮提示，一份声明 |
 | request-params | agent/request；patch/unset 按官方 LlmCallConfig 校验 |
 | decision | tools/pre-execute 或 post-execute 的裁决/结果处理 |
 | append-context | 工具后追加或 turn-stopping 续跑 |
 | pre-step-filter | 前置消息来源/插件过滤 |
 | inbox-prepend | inbox 通知补充上下文 |
-| guard / tool-narrow | 静态注册期授权限制，不支持动态条件 |
 
 正文策略为 static、placeholder、first-turn-anchor、guide-auto、anchor-notice、context-activation。placeholder 仅 pre-step/runtime-context，其余动态内容策略仅 pre-step。普通规则无隐式业务正文、锚词、两轮兜底或长度阈值；空文本保持空。
 
@@ -176,11 +176,11 @@ surface 缺失或非法时可见视图退回完整日志；合法空 nodes 就�
 
 ## 工具面收窄与按需解锁
 
-assembly 负责呈现，sdk-strip 负责 SDK 文本，guard 负责最终执行拒绝；呈现裁剪不等于授权。`sdk-strip` 的 `requireMatch` 与 `assembly` 同判据（只对白名单有意义：名单工具在 SDK 正文缺失时保留全文，fail-open）。tool-narrow 调用官方 restrict，仅用于静态注册限制。
+`tool-visibility` 是工具面的唯一声明：一份 allow/deny 名单同时投影到装配目录、`tools:sdk` 正文与执行闸（restrict + guard），并可声明发现工具与首轮提示。呈现裁剪不等于授权：deny 同时注册执行闸，allow 的执行面由 restrict 覆盖继承的全局工具（官方 restrict 不作用于 scope 本层注册）。`requireMatch` 只对白名单有意义：名单工具在目录或 SDK 正文缺失时放弃裁剪、暴露完整目录（fail-open）。条件由规则引擎逐轮求值，条件变假时撤销上一轮注册的执行闸。
 
-按需发现必须同时保留发现工具、常驻集合和 allowFrom 回收：allowFrom 从本会话 durable tool/call 参数提取显式字符串名单，只做加法且不能越过 deny。工具名按真实注册名称匹配；坏参数逐条忽略，缺会话回落静态 allow。
+按需发现由同一份声明的 `discovery` 字段拥有：动作在 agent scope 注册发现工具，并从本会话 durable tool/call 参数提取显式字符串名单，只做加法且不能越过 deny。工具名按真实注册名称匹配；坏参数逐条忽略，缺会话回落静态 allow。首轮提示由 `notice` 声明，正文按常驻集与发现工具生成，交给既有 prompt-config 引擎执行。
 
-内置 tool-surface 按其规则打开即收窄，tool_search 保持常驻并由首轮提示告知发现入口。需要晋升门时显式加规则条件；不由引擎偷偷恢复首轮全工具目录。
+内置 tool-surface 的规则打开即收窄，发现工具与常驻集来自同一声明，首轮提示由引擎生成。需要晋升门时显式加规则条件；不由引擎偷偷恢复首轮全工具目录。
 
 ## 工具呈现（present-as）
 

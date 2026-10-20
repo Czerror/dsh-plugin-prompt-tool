@@ -121,7 +121,7 @@ export function completeRuleSections(rules, audience) {
 }
 
 export function ruleActionExecution(action) {
-  const fixed = action.kind === 'guard' || (action.kind === 'inject-text' && isFixedRegistration(action.config))
+  const fixed = action.kind === 'inject-text' && isFixedRegistration(action.config)
   return { ...actionExecutionPoint(action), lifecycle: fixed ? 'registration' : 'event' }
 }
 

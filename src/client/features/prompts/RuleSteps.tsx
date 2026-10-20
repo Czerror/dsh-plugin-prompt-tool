@@ -18,7 +18,7 @@ import { HintTooltip } from '../../ui/HintTooltip.tsx'
 import { MenuSelect } from '../../ui/MenuSelect.tsx'
 import { StepCard, CloseButton, StepAdd, type StepCreation } from './RuleStepCard.tsx'
 import { RuleConditionFields, RuleParameterFields, cleared } from './RuleFields.tsx'
-import { AssemblyFields, MessageFilterFields } from './RuleSurfaceFields.tsx'
+import { AssemblyFields, MessageFilterFields, VisibilityFields } from './RuleSurfaceFields.tsx'
 import { TriggerJsonField, asTriggerRecord } from './RuleJsonField.tsx'
 import { triggerLabel } from './rule-labels.ts'
 import {
@@ -112,6 +112,7 @@ function ActionCard(props: {
             props.onChange({ ...structuredClone(next.example), id: action.id, kind } as unknown as RuleAction)
           }} /></div>
         {action.kind === 'assembly' ? <AssemblyFields {...context} fieldKey={fieldKey} value={action} onChange={next => props.onChange(next as RuleAction)} />
+          : action.kind === 'tool-visibility' ? <VisibilityFields {...context} fieldKey={fieldKey} value={action} onChange={next => props.onChange(next as RuleAction)} />
           : action.kind === 'pre-step-filter' ? <MessageFilterFields {...context} fieldKey={fieldKey} value={action} onChange={next => props.onChange(next as RuleAction)} />
           : <div className={css.fields}><RuleParameterFields {...context} fieldKey={fieldKey} value={action} requestPatch={action.kind === 'request-params'} example={example}
           omit={['id', 'kind', ...(action.kind === 'request-params' ? ['audience', 'modelScope'] : [])]}

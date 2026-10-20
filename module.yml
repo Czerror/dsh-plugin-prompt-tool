@@ -39,7 +39,7 @@ rules:
   # 注入正文、内容策略、合并和去重属于 inject-text.config；变量由模块或全局持久表拥有。
   # 需要原生赋值时显式设置 params.templateEvaluation:true，使用 module.set/get/add/inc/dec 或 global 对应操作。
   # config.identity 只允许 {field: plugin, value: 唯一值}；templateFile 相对模块 module.yml 且须在模块目录内。
-  # guard、complete、suppressRuntimeContext 是固定注册效果：不接受规则级 if，编译器明确拒绝非法组合。
+  # complete、suppressRuntimeContext 是固定注册效果：不接受规则级 if，编译器明确拒绝非法组合。
   # 10-pre-step.yml — 官方默认层：agent/pre-step 消息批。支持 position / dedupe / promotion / audience / mergeMode 与文本插值。
   # 规则条件放 if，动作放 then；动作执行点由引擎目录验证，不建立跨层全局顺序。
   # 注入动作内容策略：static, placeholder, first-turn-anchor, guide-auto, anchor-notice, context-activation。
@@ -294,40 +294,6 @@ rules:
         toolNames: bash,run_code
         text: ""
     enabled: false
-  # 61-deny-tools-presentation.yml — 动作自带执行点，顶层 layer 只是展示归属
-  # 规则条件放 if，动作放 then；动作执行点由引擎目录验证，不建立跨层全局顺序。
-  # 注入动作内容策略：按动作自身能力。
-  - id: example-deny-tools
-    name: 工具下架（呈现面）
-    enabled: false
-    then:
-      - id: drop-from-assembly
-        kind: assembly
-        target:
-          tools:
-            deny:
-              - web_search
-              - web_fetch
-      - id: strip-sdk-text
-        kind: sdk-strip
-        mask:
-          deny:
-            - web_search
-            - web_fetch
-  # 62-guard-deny-tools.yml — 动作自带执行点，顶层 layer 只是展示归属
-  # 规则条件放 if，动作放 then；动作执行点由引擎目录验证，不建立跨层全局顺序。
-  # 注入动作内容策略：按动作自身能力。
-  - id: example-deny-tools-guard
-    name: 工具下架（执行层）
-    enabled: false
-    then:
-      - id: deny-at-execution
-        kind: guard
-        mask:
-          deny:
-            - web_search
-            - web_fetch
-        reason: 当前模块不开放联网工具
   # 63-append-context.yml — 工具链层：只作规则级展示归属（无 inject-text 通道）——工具链的裁决与追加上下文由 decision / append-context 动作承担；subject / match 可选，命中才裁决。
   # 规则条件放 if，动作放 then；动作执行点由引擎目录验证，不建立跨层全局顺序。
   # 注入动作内容策略：static。
@@ -482,25 +448,24 @@ rules:
     enabled: false
     then:
       - id: narrow-tools
-        kind: assembly
-        target:
-          tools:
-            allow:
-              - pwsh
-              - read
-              - write
-              - edit
-              - glob
-              - grep
-              - todo_write
-              - skill_search
-              - skill_load
-              - tool_search
-              - bash
-            allowFrom:
-              tool: tool_search
-              key: toolNames
-            requireMatch: true
+        kind: tool-visibility
+        allow:
+          - pwsh
+          - read
+          - write
+          - edit
+          - glob
+          - grep
+          - todo_write
+          - skill_search
+          - skill_load
+          - tool_search
+          - bash
+        discovery:
+          tool: tool_search
+          key: toolNames
+        requireMatch: true
+        notice: true
   - id: example-context-activation
     name: 上下文激活条目
     enabled: false

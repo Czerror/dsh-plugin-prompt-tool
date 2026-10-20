@@ -41,54 +41,51 @@
 | 动作 | 执行点 | 主要字段 | 失败时 |
 |---|---|---|---|
 | `inject-text` | 由 `config.layer` 决定（**可注入八层**，见层表；`tool-pipeline` 无注入通道） | `layer`、`strategy`（`static`/`placeholder`/`first-turn-anchor`/`guide-auto`/`anchor-notice`/`context-activation`）、`position`、`dedupe`、`mergeMode`、`role`、`order`、`text`/`texts`、`params`、`templateFile`、`configKind` | 空正文不生成投递；变量赋值模板另按显式求值事务处理 |
-| `assembly` | `system-prompt/assemble` 下游 | `target.tools`（`allow` **或** `deny`，可加 `requireMatch`、`allowFrom`）、`target.sections`（`add`/`remove` **或** `keep`）、`target.contexts`（`add`/`remove` **或** `clear`，二者互斥——并存编译期拒绝） | 返回未改动的装配（对 tools 即暴露完整目录） |
+| `assembly` | `system-prompt/assemble` 下游 | `target.sections`（`add`/`remove` **或** `keep`）、`target.contexts`（`add`/`remove` **或** `clear`，二者互斥——并存编译期拒绝）；`target.tools` 已移除 | 返回未改动的装配 |
+| `tool-visibility` | `system-prompt/assemble` 下游 | `audience`（`main`/`subagent`/`all`）、`allow` 与/或 `deny`（同时给时先保留再剔除）、`requireMatch`（仅 allow）、`discovery`（`{tool, key}`：注册发现工具并回收解锁名）、`notice`（首轮提示） | 呈现面失败保留原装配；执行闸失败留痕，不静默放行 |
 | `decision` | `tools/pre-execute` / `tools/post-execute` | `phase`（`pre`/`post`）、`decision`（`allow`/`deny`/`ask`）、`action`（`accept`/`replace`/`block`）、`toolNames`、`text`、`reason` | 一律放行／接受——裁决 bug 不卡死调用 |
 | `append-context` | `mode: context` → `tools/post-execute`；`mode: continue` → `agent/turn-stopping` | `mode`、`text` | 保持原结果 |
-| `guard` | 注册期（agent scope） | `mask.allow` **或** `mask.deny`、`includeSubagents`（布尔，缺省 `false`）、`reason`、`audience`（只接受 `main`/`subagent`/`all`；省略、`null`、`''` 与 `all` 同为通用档；`'subagent'` 必须同时写 `includeSubagents: true`，否则编译期拒绝） | 静默不注册（**不**退化成放行以外的东西） |
-| `sdk-strip` | `system-prompt/assemble` 下游 | `mask.allow` **或** `mask.deny`；`allow` 可加 `requireMatch` | 原样返回；只删不增；`requireMatch` 名单工具在正文缺失时保留全文（fail-open） |
 | `request-params` | `agent/request` 下游 | `patch`（浅合并）、`unset`（`{键: 期望值}`）、`replace`（整体替换） | 保持原请求配置 |
 | `inbox-prepend` | `agent/inbox/inserted`（emit，无 next） | `target`（`next-turn` 缺省 / `next-step`）、`text` | 不命中即什么都不做 |
-| `tool-narrow` | 注册期 | `allow` 非空工具白名单 | 挂载前拒绝非法列表，作用于官方 restrict 能力 |
 | `pre-step-filter` | `agent/pre-step` 下游 | `sources` **或** `keepKinds`（互斥，未声明即不过滤）、`blockPlugins`（正交，空＝关闭） | 异常时保留全部消息 |
 
 通用规则：
 
 - 名单类参数（`allow`/`deny`/`sources`/`toolNames`）写成逗号分隔字符串或字符串数组都接受。
-- `allow` 与 `deny` **取一**（同一声明里二选一）。
-- `maxPerTurn`（正整数）用在 `assembly` / `decision` / `append-context` / `sdk-strip` /
-  `request-params` / `inbox-prepend` / `pre-step-filter` 上；它数的是「本动作本轮生效几次」，
+- 工具可见面的 `allow` 与 `deny` 可以同时给：对齐官方 `ToolRestriction`，先按 `allow` 保留、再按 `deny` 剔除。
+- `maxPerTurn`（正整数）用在 `assembly` / `decision` / `append-context` / `request-params` /
+  `inbox-prepend` / `pre-step-filter` 上；它数的是「本动作本轮生效几次」，
   与 `count` 谓词（数持久事件）是两回事。
-- `guard`、`tool-narrow`、`complete`、`suppressRuntimeContext` 是**固定注册效果**：所在规则不带 `if`（注册期即生效）。
+- `complete` 与 `suppressRuntimeContext` 是**固定注册效果**：所在规则不带 `if`（注册期即生效）。
 
 ### 禁用或收窄某个工具
 
-工具的装配面由**会话原有预设**与各模块共同决定，所以「禁用」要在三层同时下手，只做一层会留下可见痕迹：
-
-| 层次 | 动作 | 效果 |
-|---|---|---|
-| 呈现 | `assembly` + `target.tools.deny` | 本次请求的工具目录里没有它 |
-| 文本 | `sdk-strip` + `mask.deny` | `tools:sdk` 段里的声明正文消失 |
-| 执行 | `guard` + `mask.deny` | 真正调不动——经 `run_code` 的子调用同样被拒 |
+工具的装配面由**会话原有预设**与各模块共同决定，所以「禁用」必须同时落到呈现与执行两层——只做一层会留下可见痕迹：
 
 ```yaml
 rules:
-  - id: no-web-presentation
+  - id: no-web
     then:
-      - id: drop-from-assembly
-        kind: assembly
-        target: { tools: { deny: [web_search, web_fetch] } }
-      - id: strip-sdk-text
-        kind: sdk-strip
-        mask: { deny: [web_search, web_fetch] }
-  - id: no-web-execution   # 固定注册效果：自成一条不带 if 的规则
-    then:
-      - id: deny-at-execution
-        kind: guard
-        mask: { deny: [web_search, web_fetch] }
+      - id: hide-web
+        kind: tool-visibility
+        deny: [web_search, web_fetch]
         reason: 本模块不开放联网工具
 ```
 
-`guard` 注册在 **agent scope** 上，会话原有预设装的行也归它裁决——这是模块禁用官方工具的硬手段。要**收窄**而非禁用，用 `assembly.tools.allow` 白名单（范例见 `modules/tool-surface/module.yml`）；要让禁用传播到子代理，加 `guard.includeSubagents: true`。
+一份 `deny` 名单同时裁装配目录、`tools:sdk` 正文，并在 agent scope 注册执行闸——会话原有预设装的行也归它裁决，经 `run_code` 的子调用同样被拒。要让禁用只作用于子代理，写 `audience: subagent`；省略即 `all`。
+
+要**收窄**而非禁用，用同一动作的 `allow` 白名单（范例见 `modules/tool-surface/module.yml`），并按需声明 `discovery` 与 `notice`：
+
+```yaml
+- id: narrow
+  kind: tool-visibility
+  allow: [pwsh, read, write, edit, glob, grep, todo_write, skill_search, skill_load, tool_search, bash]
+  discovery: { tool: tool_search, key: toolNames }
+  requireMatch: true
+  notice: true
+```
+
+`discovery` 在 agent scope 注册发现工具，并从持久 `tool/call` 参数回收解锁名（只做加法、跨压缩保留）；`notice` 的首轮提示正文由引擎按常驻集与发现工具生成，不手抄。`requireMatch` 在任一常驻工具缺失时放弃裁剪、暴露完整目录（fail-open）。
 
 ## 三、九层与字段
 

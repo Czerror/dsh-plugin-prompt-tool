@@ -6,9 +6,6 @@ import { prepareInjectText } from './inject-text.mjs'
 import { prepareAssembly } from './assembly.mjs'
 import { prepareDecision } from './decision.mjs'
 import { prepareAppendContext } from './append-context.mjs'
-import { prepareGuard } from './guard.mjs'
-import { prepareToolNarrow } from './tool-narrow.mjs'
-import { prepareSdkStrip } from './sdk-strip.mjs'
 import { prepareRequestParams } from './request-params.mjs'
 import { prepareInboxPrepend } from './inbox-prepend.mjs'
 import { preparePreStepFilter } from './pre-step-filter.mjs'
@@ -22,9 +19,6 @@ const PREPARERS = {
   assembly: prepareAssembly,
   decision: prepareDecision,
   'append-context': prepareAppendContext,
-  guard: prepareGuard,
-  'tool-narrow': prepareToolNarrow,
-  'sdk-strip': prepareSdkStrip,
   'request-params': prepareRequestParams,
   'inbox-prepend': prepareInboxPrepend,
   'pre-step-filter': preparePreStepFilter,

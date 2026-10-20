@@ -13,27 +13,24 @@ const render = action => renderElement(RuleStepsPanel, {
 })
 const labels = html => [...html.matchAll(/aria-label="([^"]*)"/g)].map(match => match[1])
 
-test('装配动作：真实新建种子的空 target 仍提供全部装配区域入口', () => {
+test('装配动作：真实新建种子的空 target 仍提供 sections / contexts 入口', () => {
   const seed = { ...structuredClone(meta.actions.find(action => action.kind === 'assembly').example), id: 'new' }
   assert.deepEqual(seed.target, {}, '引擎用无副作用的空目标作为新建种子')
   const controls = labels(render(seed))
-  for (const target of ['tools', 'sections', 'contexts']) {
+  for (const target of ['sections', 'contexts']) {
     assert.ok(controls.includes(t('rules.surface.editTarget', { target: t(`rules.surface.${target}`) })))
   }
+  assert.ok(!controls.includes(t('rules.surface.editTarget', { target: t('rules.surface.tools') })), '工具面已迁到 tool-visibility')
   assert.deepEqual(seed.target, {}, '展示入口不隐式开启过滤')
 })
-test('装配动作：按已声明能力提供名单、动态来源与内容编辑入口', () => {
-  const action = { id: 'existing', kind: 'assembly', target: {
-    tools: { allow: ['pwsh', 'read'], allowFrom: { tool: 'tool_search', key: 'toolNames' }, requireMatch: true },
-    sections: { keep: ['identity'], add: [{ name: 'extra', text: 'EXTRA' }] },
-    contexts: { remove: ['catalog'] },
-  } }
+test('工具可见面：名单、发现工具、requireMatch 与首轮提示按声明渲染', () => {
+  const action = { id: 'existing', kind: 'tool-visibility', allow: ['pwsh', 'read'], discovery: { tool: 'tool_search', key: 'toolNames' }, requireMatch: true, notice: true }
   const before = structuredClone(action)
   const controls = labels(render(action))
-  for (const key of ['fixedTools', 'discoveryTool', 'argumentKey', 'requireMatch', 'keptNames', 'entryName', 'entryText', 'removedNames']) {
-    assert.ok(controls.includes(t(`rules.surface.${key}`)), key)
-  }
-  for (const tag of ['pwsh', 'read', 'identity', 'catalog']) assert.ok(controls.includes(t('rules.tokens.remove', { tag })))
+  for (const key of ['fixedTools', 'dynamic', 'discoveryTool', 'argumentKey']) assert.ok(controls.includes(t(`rules.surface.${key}`)), key)
+  assert.ok(controls.includes(t('triggers.label.requireMatch')))
+  assert.ok(controls.includes(t('triggers.label.notice')))
+  for (const tag of ['pwsh', 'read']) assert.ok(controls.includes(t('rules.tokens.remove', { tag })))
   assert.deepEqual(action, before)
 })
 

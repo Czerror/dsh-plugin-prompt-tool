@@ -35,33 +35,6 @@ function Mode(props: { t: SurfaceProps['t']; label: string; value: string; optio
     options={props.options.map(([value, label]) => ({ value, label: props.t(label) }))} onChange={props.onChange} /></FormField>
 }
 
-function ToolsFields(props: SurfaceProps): ReactNode {
-  const { t, value } = props
-  const dynamic = value.allowFrom !== undefined
-  const mode = value.deny !== undefined && !dynamic ? 'deny' : 'allow'
-  const patch = (change: RecordValue): void => props.onChange(patched(value, change))
-  return <>
-    <Mode {...props} label={t('rules.surface.toolMode')} value={mode} options={[[ 'allow', 'rules.surface.allow' ], [ 'deny', 'rules.surface.deny' ]]}
-      onChange={next => { cleared(props.fields, props.fieldKey); patch({ allow: undefined, deny: undefined, [next]: value[mode] ?? [], ...(next === 'deny' ? { allowFrom: undefined } : {}) }) }} />
-    <NameList {...props} fieldKey={`${props.fieldKey}:${mode}`} label={t(mode === 'allow' ? 'rules.surface.fixedTools' : 'rules.surface.deniedTools')}
-      value={value[mode]} onChange={next => patch({ [mode]: next, [mode === 'allow' ? 'deny' : 'allow']: undefined })} />
-    {(mode === 'allow' || dynamic) && <div className={css.surfaceGroup}>
-      <div className={css.surfaceSwitchRow}><span>{t('rules.surface.dynamic')}</span><Switch label={t('rules.surface.dynamic')} checked={dynamic} disabled={props.disabled}
-        onChange={enabled => { cleared(props.fields, `${props.fieldKey}:allowFrom`); patch({ allowFrom: enabled ? { tool: '', key: '' } : undefined, ...(enabled || value.allow !== undefined || value.deny !== undefined ? {} : { allow: [] }) }) }} /></div>
-      {dynamic && (record(value.allowFrom) ? <>
-        <div className={css.surfaceColumns}>{(['tool', 'key'] as const).map(key => <FormField key={key} label={t(key === 'tool' ? 'rules.surface.discoveryTool' : 'rules.surface.argumentKey')}>
-          <TextInput aria-label={t(key === 'tool' ? 'rules.surface.discoveryTool' : 'rules.surface.argumentKey')} readOnly={props.disabled}
-            placeholder={key === 'tool' ? 'tool_search' : 'toolNames'} value={String(asTriggerRecord(value.allowFrom)[key] ?? '')}
-            onChange={event => patch({ allowFrom: { ...asTriggerRecord(value.allowFrom), [key]: event.target.value } })} />
-        </FormField>)}</div>
-        <RuleParameterFields {...props} value={value.allowFrom} omit={['tool', 'key']} fieldKey={`${props.fieldKey}:allowFrom`} onChange={next => patch({ allowFrom: next })} />
-      </> : <TriggerJsonField {...props} label={t('rules.surface.dynamic')} value={value.allowFrom} shape="object" fieldKey={`${props.fieldKey}:allowFrom`} onChange={next => patch({ allowFrom: next })} />)}
-    </div>}
-    <div className={css.surfaceSwitchRow}><span>{t('rules.surface.requireMatch')}</span><Switch label={t('rules.surface.requireMatch')} checked={value.requireMatch === true}
-      disabled={props.disabled || mode === 'deny' && !dynamic} onChange={next => patch({ requireMatch: next })} /></div>
-    <RuleParameterFields {...props} omit={['allow', 'deny', 'allowFrom', 'requireMatch']} />
-  </>
-}
 
 function AddedEntries(props: SurfaceProps): ReactNode {
   const { t, value } = props
@@ -99,23 +72,53 @@ function TextSurfaceFields(props: SurfaceProps & { target: 'sections' | 'context
   </>
 }
 
+/**
+ * 工具可见面：一份声明拥有 allow/deny、发现工具、requireMatch 与首轮提示。
+ * 名单两种模式都保留（官方 ToolRestriction 的 and/or 语义）；选择模式只切换主名单，
+ * 不删除作者已写的另一份。
+ */
+export function VisibilityFields(props: SurfaceProps): ReactNode {
+  const { t, value } = props
+  const patch = (change: RecordValue): void => props.onChange(patched(value, change))
+  const mode = value.allow !== undefined ? 'allow' : 'deny'
+  const discovery = record(value.discovery) ? value.discovery : undefined
+  return <>
+    <Mode {...props} label={t('rules.surface.toolMode')} value={mode} options={[['allow', 'rules.surface.allow'], ['deny', 'rules.surface.deny']]}
+      onChange={next => { cleared(props.fields, `${props.fieldKey}:${next}`); patch({ [next]: value[next] ?? [] }) }} />
+    <NameList {...props} fieldKey={`${props.fieldKey}:${mode}`} label={t(mode === 'allow' ? 'rules.surface.fixedTools' : 'rules.surface.deniedTools')}
+      value={value[mode]} onChange={next => patch({ [mode]: next })} />
+    <div className={css.surfaceSwitchRow}><span>{t('rules.surface.dynamic')}</span><Switch label={t('rules.surface.dynamic')} checked={discovery !== undefined} disabled={props.disabled}
+      onChange={enabled => patch({ discovery: enabled ? { tool: '', key: '' } : undefined })} /></div>
+    {discovery !== undefined && <div className={css.surfaceColumns}>{(['tool', 'key'] as const).map(key => <FormField key={key} label={t(key === 'tool' ? 'rules.surface.discoveryTool' : 'rules.surface.argumentKey')}>
+      <TextInput aria-label={t(key === 'tool' ? 'rules.surface.discoveryTool' : 'rules.surface.argumentKey')} readOnly={props.disabled}
+        placeholder={key === 'tool' ? 'tool_search' : 'toolNames'} value={String(discovery[key] ?? '')}
+        onChange={event => patch({ discovery: { ...discovery, [key]: event.target.value } })} />
+    </FormField>)}</div>}
+    <div className={css.surfaceSwitchRow}><span>{t('triggers.label.requireMatch')}</span><Switch label={t('triggers.label.requireMatch')} checked={value.requireMatch === true}
+      disabled={props.disabled || mode === 'deny'} onChange={next => patch({ requireMatch: next })} /></div>
+    <div className={css.surfaceSwitchRow}><span>{t('triggers.label.notice')}</span><Switch label={t('triggers.label.notice')} checked={value.notice !== undefined && value.notice !== false}
+      disabled={props.disabled} onChange={next => patch({ notice: next ? true : undefined })} /></div>
+    <RuleParameterFields {...props} omit={['id', 'kind', 'allow', 'deny', 'discovery', 'requireMatch', 'notice']} />
+  </>
+}
+
 export function AssemblyFields(props: SurfaceProps): ReactNode {
   const { t, value } = props
   if (!record(value.target)) return <TriggerJsonField {...props} fieldKey={`${props.fieldKey}:target`} label={t('triggers.label.target')} value={value.target} shape="object" onChange={target => props.onChange({ ...value, target })} />
   const target = value.target
   const set = (key: string, next: unknown): void => props.onChange({ ...value, target: patched(target, { [key]: next }) })
   return <div className={css.surfaceFields}>
-    {(['tools', 'sections', 'contexts'] as const).map(key => {
+    {(['sections', 'contexts'] as const).map(key => {
       const enabled = target[key] !== undefined, fieldKey = `${props.fieldKey}:target:${key}`, label = t(`rules.surface.${key}`)
       const context = { ...props, value: asTriggerRecord(target[key]), fieldKey, onChange: (next: RecordValue) => set(key, next) }
       return <section key={key} className={css.surfaceSection} aria-label={label}>
         <div className={css.surfaceSwitchRow}><span>{label}</span><Switch label={t('rules.surface.editTarget', { target: label })} checked={enabled} disabled={props.disabled}
-          onChange={next => { cleared(props.fields, fieldKey); set(key, next ? key === 'tools' ? { deny: [] } : {} : undefined) }} /></div>
-        {enabled && (record(target[key]) ? key === 'tools' ? <ToolsFields {...context} /> : <TextSurfaceFields {...context} target={key} />
+          onChange={next => { cleared(props.fields, fieldKey); set(key, next ? {} : undefined) }} /></div>
+        {enabled && (record(target[key]) ? <TextSurfaceFields {...context} target={key} />
           : <TriggerJsonField {...props} label={label} value={target[key]} shape="object" fieldKey={fieldKey} onChange={next => set(key, next)} />)}
       </section>
     })}
-    <RuleParameterFields {...props} fieldKey={`${props.fieldKey}:target`} value={target} omit={['tools', 'sections', 'contexts']} onChange={next => props.onChange({ ...value, target: next })} />
+    <RuleParameterFields {...props} fieldKey={`${props.fieldKey}:target`} value={target} omit={['sections', 'contexts']} onChange={next => props.onChange({ ...value, target: next })} />
     <RuleParameterFields {...props} omit={['id', 'kind', 'target']} />
   </div>
 }

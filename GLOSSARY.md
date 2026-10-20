@@ -45,6 +45,10 @@ _Avoid_: 优先级组、首个命中
 注入动作中的内容与投递配置，定义正文、内容策略、插入点与投递选项；不是独立于规则的第二套行为源。
 _Avoid_: 行为规则、配置卡
 
+**工具可见面（Tool Visibility）**：
+一份声明拥有「模型看得见、调得动哪些工具」：allow/deny 名单同时投影到装配目录、`tools:sdk` 正文与执行闸，并可声明发现工具、解锁键与首轮提示。名单语义对齐官方 `ToolRestriction` 的 allow 与 deny（可同时给，先保留再剔除）。
+_Avoid_: 工具过滤链、三条规则、guard/sdk-strip 组合
+
 **指令文件（Instruction File）**：
 用户磁盘上的指令文本文件（AGENTS.md、CLAUDE.md 及其 .local 变体），按全局与项目范围被探测，正文不归属任何模块。
 _Avoid_: 受管块、模块正文、注入卡

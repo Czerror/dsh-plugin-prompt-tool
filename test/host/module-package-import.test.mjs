@@ -280,24 +280,21 @@ test('importPresetPackage：SillyTavern JSON 单文件经转换引擎导入（�
   ], 'ST 管理工具按固定集合装配；persona 行由顶层 persona 段渲染时自动前插')
   assert.deepEqual(converted.persona, { main: { prefix: '', complete: false }, subagent: { prefix: '', complete: false } }, '导入系统段时主子人设均显式解除独占')
   assert.equal(converted.modules.includes('tool-web'), false, 'enable_web_search: false 不组装 tool-web')
-  // B7 T3「3+1 结合」：`enable_web_search: false` 由三条声明式触发器
-  // （呈现裁剪 / SDK 正文裁剪 / 执行 guard）共用同一份 deny 名单表达。
+  // enable_web_search: false 由一条 tool-visibility 声明表达：一份 deny 名单同时裁目录、
+  // SDK 正文与执行面（不再拆成三条规则）。
   const webRules = converted.rules.filter(rule => rule.id.startsWith('st-web-'))
   assert.deepEqual(webRules.map((rule) => [rule.id, rule.then[0].kind]), [
-    ['st-web-assembly', 'assembly'],
-    ['st-web-sdk-strip', 'sdk-strip'],
-    ['st-web-guard', 'guard'],
+    ['st-web-visibility', 'tool-visibility'],
   ])
-  assert.deepEqual(webRules.map(rule => rule.then[0].id), ['st-web-assembly', 'st-web-sdk-strip', 'st-web-guard'],
+  assert.deepEqual(webRules.map(rule => rule.then[0].id), ['st-web-visibility'],
     '动作自带稳定 id：不再经旧声明路径被补成占位符 action-N')
   for (const rule of webRules) {
     assert.equal(rule.then.length, 1)
-    const mask = rule.then[0].target?.tools ?? rule.then[0].mask
-    assert.deepEqual(mask, { deny: ['web_search', 'web_fetch'] }, '三条声明共用同一份 deny 名单')
+    assert.deepEqual(rule.then[0].deny, ['web_search', 'web_fetch'], '一份 deny 名单')
   }
   const configs = contentEntries(converted)
   assert.equal(configs.length, 2)
-  assert.equal(converted.rules.length, 5, '只生成两条内容规则和三条 Web 防护规则')
+  assert.equal(converted.rules.length, 3, '只生成两条内容规则和一条 Web 防护规则')
   const main = converted.rules.find((rule) => rule.id === 'main')
   assert.deepEqual(main, {
     id: 'main', name: '主提示', enabled: true, layer: 'system-section',
