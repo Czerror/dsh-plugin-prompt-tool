@@ -1,8 +1,8 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
-import { join, basename } from 'node:path'
-import { isolatedHome } from '../fixtures/host-harness.mjs'
+import { join } from 'node:path'
+import { isolatedHome, tempDir } from '../fixtures/host-harness.mjs'
 
 const { moduleRoot } = isolatedHome('pt-module-write-')
 const writer = await import('../../src/host/write-module.ts')
@@ -31,17 +31,19 @@ test('重建只恢复 rules 并清理旧产物，资产与完整定义原字节�
   assert.equal(existsSync(join(directory, 'rules', '_settings.yml')), true)
 })
 
-test('writeModule 暂存候选保持目标身份，失败保留原目标且拒绝越界 id', () => {
+test('候选构建保持目标身份；writeModule 失败保留原目标且拒绝越界 id', () => {
   const source = moduleDirectory('source')
   const target = moduleDirectory('target')
   writeFileSync(join(source, 'memory.md'), 'SOURCE MEMORY')
   writeFileSync(join(target, 'memory.md'), 'TARGET MEMORY')
-  const staged = writer.writeModule({ modulesRoot: moduleRoot, moduleId: 'source', targetModuleId: 'target', sourceDir: source, stageOnly: true })
-  assert.equal(basename(staged), 'target')
+  const candidate = join(tempDir('pt-candidate-'), 'target')
+  mkdirSync(candidate)
+  writer.buildModuleCandidate(candidate, source, 'target')
+  assert.equal(JSON.parse(readFileSync(join(candidate, 'module.yml'), 'utf8')).id, 'target')
+  assert.equal(readFileSync(join(candidate, 'memory.md'), 'utf8'), 'SOURCE MEMORY')
+  assert.equal(existsSync(join(candidate, 'rules', '_settings.yml')), true)
   assert.equal(JSON.parse(readFileSync(join(target, 'module.yml'), 'utf8')).id, 'target')
   assert.equal(readFileSync(join(target, 'memory.md'), 'utf8'), 'TARGET MEMORY')
-  assert.equal(readFileSync(join(staged, 'memory.md'), 'utf8'), 'SOURCE MEMORY')
-  assert.equal(existsSync(join(staged, 'rules', '_settings.yml')), true)
   writeFileSync(join(source, 'module.yml'), JSON.stringify({ id: 'source', modules: [], customTools: [{}] }))
   assert.throws(() => writer.writeModule({ modulesRoot: moduleRoot, moduleId: 'source', targetModuleId: 'target', sourceDir: source }), /customTools/)
   assert.equal(readFileSync(join(target, 'memory.md'), 'utf8'), 'TARGET MEMORY')

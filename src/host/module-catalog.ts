@@ -2,16 +2,17 @@
  * 模块目录清单与管理：列举、种子化、从内置模板新建、复制、删除与在文件管理器中打开。
  * 从原 `manifest.ts` 按簇拆出；目录写通道只在这里，写盘纪律与原实现一致。
  */
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readdirSync, writeFileSync } from 'node:fs'
 import { spawn } from 'node:child_process'
 import { join, resolve, sep } from 'node:path'
-import { Document, YAMLMap, parseDocument } from 'yaml'
+import { Document } from 'yaml'
 import { isModuleId } from '../shared/module-ids.ts'
 import { MODULE_DEFINITION_FILE } from './paths.ts'
-import { assertModuleDirectory, assertModuleId, assertModuleTree, modulePathExists, setModuleDefinitionId } from './module-install.ts'
+import { assertModuleDirectory, assertModuleId, assertModuleTree, modulePathExists } from './module-install.ts'
 import { ModuleLayerSettingsError } from './module-layer-settings.ts'
-import { ensureModuleSlices } from './module-slices.ts'
-import { ModuleWriteError, withModuleLock } from './module-write.ts'
+import { ModuleWriteError } from './module-write.ts'
+import { buildModuleCandidate, finalizeModuleCandidate } from './write-module.ts'
+import { installModuleDirectory, type ModuleInstallOutcome } from './module-install-transaction.ts'
 import { findModuleDir, packageModulesDir, userModulesDir } from './module-dirs.ts'
 import { loadModuleSpec } from './module-spec.ts'
 
@@ -120,13 +121,23 @@ export function ensureModuleSeed(root = userModulesDir()): { created: string[] }
     for (const entry of readdirSync(packageModulesDir(), { withFileTypes: true })) {
       if (!entry.isDirectory() || entry.name.startsWith('.')) continue
       const target = join(root, entry.name)
+      // 硬约束：只补缺失。目标已存在（无论用户是否改过）一律不碰，不比较内容。
       if (existsSync(target)) continue
       const source = join(packageModulesDir(), entry.name)
-      cpSync(source, target, { recursive: true })
-      created.push(entry.name)
+      try {
+        const result = installModuleDirectory({
+          root,
+          id: entry.name,
+          expectedVersion: null,
+          build: (candidate) => buildModuleCandidate(candidate, source, entry.name, undefined, { validate: false }),
+        })
+        if (result.state === 'installed') created.push(entry.name)
+      } catch {
+        // 单个补建失败不阻断启动，也不删除任何用户数据。
+      }
     }
   } catch {
-    // 种子化失败（目录不可写等）不阻断启动，用户仍可经 UI 新建/导入。
+    // 种子化失败（目录不可读/不可写等）不阻断启动，用户仍可经 UI 新建/导入。
   }
   return { created }
 }
@@ -141,60 +152,39 @@ function nextModuleDirId(id: string, root: string, autoSuffix: boolean): { ok: t
   }
 }
 
+/** 把 create 事务的预期失败映射回模块管理既有文案。 */
+function requireInstalled(result: ModuleInstallOutcome, conflictMessage: string): void {
+  if (result.state === 'conflict') throw new Error(conflictMessage)
+  if (result.state === 'recovery-required') throw new Error(`模块安装失败且恢复失败；原目录保留在 ${result.backupPath}`)
+}
+
 /**
- * 引擎内组装内置空白模板：Document API 生成 `module.yml`，先写模块根下的临时目录再原子
- * rename，失败清理临时目录、不留半个模块（与 `writeModule` 同一写盘纪律）。
+ * 引擎内组装内置空白模板：Document API 生成 `module.yml`，由安装事务暂存并交换，
+ * 失败不留半个模块。
  */
 function writeBlankModule(root: string, targetId: string): void {
-  assertModuleId(targetId)
-  const target = assertModuleDirectory(root, targetId, true)
-  mkdirSync(root, { recursive: true })
-  const stage = mkdtempSync(join(root, `.${targetId}.assemble-`))
-  const candidate = join(stage, targetId)
-  try {
-    mkdirSync(candidate)
-    writeFileSync(join(candidate, MODULE_DEFINITION_FILE), blankModuleDefinitionText(targetId), 'utf8')
-    ensureModuleSlices(candidate)
-    withModuleLock(root, targetId, () => {
-      if (modulePathExists(target)) throw new Error(`目标模块已存在：${targetId}`)
-      renameSync(candidate, target)
-    })
-  } finally {
-    rmSync(stage, { recursive: true, force: true })
-  }
+  const result = installModuleDirectory({
+    root,
+    id: targetId,
+    expectedVersion: null,
+    build: (candidate) => {
+      writeFileSync(join(candidate, MODULE_DEFINITION_FILE), blankModuleDefinitionText(targetId), 'utf8')
+      finalizeModuleCandidate(candidate, targetId, undefined, { validate: false })
+    },
+  })
+  requireInstalled(result, `目标模块已存在：${targetId}`)
 }
 /** 完整复制到隐藏候选；只更新定义 ID 和已知共享引擎配置位置。 */
 function copyModuleDirectory(source: string, root: string, targetId: string): void {
   assertModuleTree(source)
   loadModuleSpec(source)
-  const target = assertModuleDirectory(root, targetId, true)
-  if (modulePathExists(target)) throw new Error(`目标预设已存在：${targetId}`)
-  mkdirSync(root, { recursive: true })
-  const stage = mkdtempSync(join(root, `.${targetId}.copy-`))
-  const candidate = join(stage, targetId)
-  try {
-    cpSync(source, candidate, { recursive: true })
-    const definition = join(candidate, MODULE_DEFINITION_FILE)
-    const doc = parseDocument(readFileSync(definition, 'utf8'), { logLevel: 'silent' })
-    if (doc.errors.length > 0 || !(doc.contents instanceof YAMLMap)) throw new Error('预设定义必须是合法 YAML 对象')
-    let changed = false
-    const oldId = doc.get('id')
-    if (oldId !== targetId) {
-      setModuleDefinitionId(doc, targetId)
-      changed = true
-    }
-    if (changed) writeFileSync(definition, doc.toString(), 'utf8')
-    ensureModuleSlices(candidate)
-    for (const legacy of ['configs', 'rules.yml', 'agent.cordis.yml', 'custom-tools', 'subagent-tools']) {
-      rmSync(join(candidate, legacy), { recursive: true, force: true })
-    }
-    withModuleLock(root, targetId, () => {
-      if (modulePathExists(target)) throw new Error(`目标模块已存在：${targetId}`)
-      renameSync(candidate, target)
-    })
-  } finally {
-    rmSync(stage, { recursive: true, force: true })
-  }
+  const result = installModuleDirectory({
+    root,
+    id: targetId,
+    expectedVersion: null,
+    build: (candidate) => buildModuleCandidate(candidate, source, targetId, undefined, { validate: false }),
+  })
+  requireInstalled(result, `目标预设已存在：${targetId}`)
 }
 
 /** 从包内同名目录复制模块；autoSuffix=true 时递增目录名并同步定义身份。

@@ -1,5 +1,13 @@
 # Changelog
 
+### 模块安装事务：五条目录创建路径收成一个 seam（2026-10-21）
+
+- **新事务**：`src/host/module-install-transaction.ts` 的 `installModuleDirectory` 拥有暂存、锁、版本复核、备份、交换、回滚与清理；`expectedVersion: null` 表示目标必须不存在，string 表示必须等于该目录版本。
+- **五条路径接入**：`writeModule`（整目录）、`installModulePackage`、blank、copy、`ensureModuleSeed`；`writeModule.stageOnly` 删除，包安装不再嵌套第二层暂存。内置模块仍只补缺失，用户副本不覆盖（ADR-0015）。
+- **失败语义**：冲突/目标已存在返回 typed outcome 并由调用方映射既有错误；交换失败恢复成功照抛原错误；恢复失败保留备份并返回 `recovery-required`；清理失败返回 `installed + leftoverStage`，不把已落盘说成失败。
+- **测试**：新增 `test/host/module-install-transaction.test.mjs`（create/replace/conflict/version-window/build 失败/取消/回滚/清理）；`module-seed.test.mjs` 补「用户改过的内置模块不被覆盖」；包安装装载窗口测试改用新暂存前缀。
+- **验证**：typecheck / lint / test（728）/ build / git diff --check / verify:host（39 项）/ verify:pack。
+
 ### 条件与动作统一编排（2026-10-21）
 
 - 移除 guide-auto；文本条件支持含端点的 minChars/maxChars，按本批全部真实用户文本分类，模板分支选择静态正文。

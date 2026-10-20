@@ -18,7 +18,7 @@
 
 来源摘要和预览版本由服务端计算，绑定内容、选择与当前目标版本。提交必须回传两者；读取失败不能当成目标不存在。过期返回冲突，UI 保留来源并提供重新预览。
 
-模块安装先在同文件系统暂存完整候选，使用 writeModule 的 sourceDir + stageOnly 完成定义、工具、模板和组合校验，并从完整定义重建 rules/。候选所在目录使用合法目标 id，确认目标版本仍一致后交换目录。候选失败不修改旧目标或兄弟模块；占用导致交换失败时保留原目标，恢复失败保留备份位置。普通重建只原地恢复切片，不复用整目录交换。
+模块安装先在同文件系统暂存完整候选，由共享候选构建完成定义、工具、模板和组合校验，并从完整定义重建 rules/。候选所在目录使用合法目标 id；安装事务在锁内确认目标版本仍一致后交换目录，成功清理暂存，冲突不碰旧目标，恢复失败保留备份位置。内置模块只在用户模块根缺失同名目录时补建，已有副本不覆盖（[ADR-0015](adr/0015-builtin-module-seed-missing-only.md)）。普通重建只原地恢复切片，不复用整目录交换。
 
 来源包可以附带 rules/，但预览、导入与运行都以完整 module.yml 为提交依据；不一致的切片在隔离候选中重建。预览保持只读；导出读取已提交定义，不将失配切片反向写入。
 
@@ -51,7 +51,7 @@
 | `host/import-source.ts`、`character-png.ts` | 内容判别、转换、来源报告、受限 PNG 解码 |
 | `host/asset-sources.ts`、`asset-archive.ts` | 生命周期暂存、ZIP 载体与边界校验 |
 | `host/module-package.ts` | 预览、严格候选、安装与导出 |
-| `host/module-dirs.ts`、`module-catalog.ts`、`module-capabilities.ts`、`module-install.ts`、`write-module.ts`、`module-write.ts`、`module-slices.ts` | 合法身份、根归属、复制、候选校验、完整定义提交与切片恢复 |
+| `host/module-dirs.ts`、`module-catalog.ts`、`module-capabilities.ts`、`module-install.ts`、`write-module.ts`、`module-install-transaction.ts`、`module-write.ts`、`module-slices.ts` | 合法身份、根归属、复制、候选校验、安装事务、完整定义提交与切片恢复 |
 | `host/characters.ts` | 普通模块合并／移除、模块记忆与历史分享证明兼容 |
 | `client/data/use-import-preview-flow.ts`、`ui/ImportDialog.tsx` | 读取到结果的统一生命周期与共享呈现 |
 

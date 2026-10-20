@@ -110,10 +110,10 @@ test('交换失败恢复原模块，恢复失败保留备份并返回实际位�
       assert.equal(result.ok, false)
       if (!breakRestore) assert.match(memory.readModuleMemory(dir), /PRIVATE/)
       else {
-        const stage = readdirSync(moduleRoot).find(name => name.startsWith('.import-'))
-        assert.ok(stage)
-        assert.ok(result.message.includes(stage))
-        assert.match(readFileSync(join(moduleRoot, stage, 'previous', 'memory.md'), 'utf8'), /PRIVATE/)
+        const backup = /原目录保留在 (.+)$/.exec(result.message)?.[1]
+        assert.ok(backup, result.message)
+        assert.ok(existsSync(backup), result.message)
+        assert.match(readFileSync(join(backup, 'memory.md'), 'utf8'), /PRIVATE/)
       }
     } finally { rename.mock.restore(); syncBuiltinESMExports() }
   }

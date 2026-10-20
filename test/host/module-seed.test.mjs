@@ -25,6 +25,23 @@ test('ensureModuleSeed：首次复制内置模板，二次幂等，删除后自�
   assert.ok(ensureModuleSeed().created.includes(id), '删除的内置预设应被补建恢复')
 })
 
+test('ensureModuleSeed：已存在的内置模块即使被用户改过也不覆盖', () => {
+  ensureModuleSeed()
+  const id = readdirSync(packageModulesDir()).find((name) => !name.startsWith('.'))
+  assert.ok(id, '包内至少应有一个内置模块')
+  const target = join(PRESETS_DIR, id)
+  assert.ok(existsSync(join(target, 'module.yml')), '前置：内置模块已补建')
+  const definition = join(target, 'module.yml')
+  const userFile = join(target, 'user.txt')
+  writeFileSync(definition, 'id: ' + id + '\nname: USER EDITED\nmodules: []\n', 'utf8')
+  writeFileSync(userFile, 'USER\n', 'utf8')
+  const before = readFileSync(definition, 'utf8')
+  const again = ensureModuleSeed()
+  assert.equal(again.created.includes(id), false, '已存在的模块不应被重新补建')
+  assert.equal(readFileSync(definition, 'utf8'), before, '用户改过的定义逐字节保留')
+  assert.equal(readFileSync(userFile, 'utf8'), 'USER\n', '用户资产保留')
+})
+
 test('种子化不写状态文件，也不改动 DSH_HOME 根下其他文件', () => {
   // 模拟 DSH_HOME 根下官方/用户文件（settings.yaml、AGENTS.md、profiles/ 等）。
   const settingsYaml = join(home, 'settings.yaml')

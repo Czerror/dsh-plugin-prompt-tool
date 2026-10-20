@@ -1,6 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import fs, { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import { syncBuiltinESMExports } from 'node:module'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -513,5 +514,47 @@ test('未知选项即抛：删掉旧选项后，写错的名字不能再被静�
     assert.equal(existsSync(join(dir, 'module.yml')), true, '合法调用照常恢复切片')
   } finally {
     rmSync(outputRoot, { recursive: true, force: true })
+  }
+})
+
+
+test('writeModule：安装期间目标版本变化映射为 409 rules-conflict，不覆盖外部改动', () => {
+  const root = mkdtempSync(join(tmpdir(), 'pt-wp-window-'))
+  try {
+    const source = join(root, 'source')
+    const target = join(root, 'target')
+    mkdirSync(source)
+    mkdirSync(target)
+    writeFileSync(join(source, 'module.yml'), JSON.stringify({ id: 'source', modules: [], rules: [] }))
+    writeFileSync(join(target, 'module.yml'), JSON.stringify({ id: 'target', modules: [], rules: [] }))
+    const original = fs.renameSync
+    let injected = false
+    fs.renameSync = (from, to) => {
+      if (!injected && String(to).endsWith('module.yml') && String(to).includes('.install-')) {
+        injected = true
+        writeFileSync(join(target, 'external.txt'), 'EXTERNAL')
+      }
+      return original(from, to)
+    }
+    syncBuiltinESMExports()
+    try {
+      assert.throws(() => writeModule({
+        modulesRoot: root,
+        moduleId: 'source',
+        targetModuleId: 'target',
+        sourceDir: source,
+      }), (error) => {
+        assert.equal(error.status, 409)
+        assert.equal(error.code, 'rules-conflict')
+        return true
+      })
+    } finally {
+      fs.renameSync = original
+      syncBuiltinESMExports()
+    }
+    assert.equal(readFileSync(join(target, 'external.txt'), 'utf8'), 'EXTERNAL')
+    assert.equal(JSON.parse(readFileSync(join(target, 'module.yml'), 'utf8')).id, 'target')
+  } finally {
+    rmSync(root, { recursive: true, force: true })
   }
 })

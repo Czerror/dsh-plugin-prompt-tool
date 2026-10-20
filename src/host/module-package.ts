@@ -1,6 +1,6 @@
 /** 模块交换：有界资源、完整候选与可恢复提交，Web 和 CLI 共用。 */
 import { createHash } from 'node:crypto'
-import { cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs'
+import { cpSync, existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
 import { basename, dirname, join, posix } from 'node:path'
 import { parseDocument } from 'yaml'
 import type { AssetFile, AssetImportRequest, AssetSummary, ModuleExportRequest, ModuleExportResult } from '../shared/asset-transfer.ts'
@@ -13,11 +13,11 @@ import { MODULE_DEFINITION_FILE } from './paths.ts'
 import { validateCustomTools } from './custom-tools.ts'
 import { readModuleLayerSettings } from './module-layer-settings.ts'
 import { projectCharacterMemories } from './characters.ts'
-import { writeModule } from './write-module.ts'
+import { LEGACY_ARTIFACTS, finalizeModuleCandidate } from './write-module.ts'
+import { installModuleDirectory } from './module-install-transaction.ts'
 import { assertModuleId, assertModuleTree, assertModuleDirectory, canonicalModulesRoot, modulePathExists, setModuleDefinitionId } from './module-install.ts'
 import { ruleInjections } from './rule-content.ts'
 import { validateModuleDefinitionText } from './module-slices.ts'
-import { withModuleLock } from './module-write.ts'
 
 const MANIFEST = 'prompt-tool-package.json'
 const PACKAGE_VERSION = 1
@@ -192,62 +192,43 @@ export async function installModulePackage(root: string, files: AssetFile[], req
       || request.expectedSourceDigest !== preview.sourceDigest) stale()
     const exists = version !== null
     if (exists && request.overwrite !== true) throw new Error('目标已存在，请明确选择更新或另存')
-    mkdirSync(root, { recursive: true })
-    const stage = mkdtempSync(join(root, '.import-'))
-    const source = join(stage, id)
-    mkdirSync(source)
-    let generated: string | undefined
-    let generatedRoot: string | undefined
-    let moved = false
-    const backup = join(stage, 'previous')
-    try {
-      if ((options.preserveAssets || preview.prepared.kind === 'st-character' || preview.prepared.kind === 'native-character') && exists) {
-        for (const entry of readdirSync(target)) {
-          if ([MODULE_DEFINITION_FILE, 'rules', 'configs', 'rules.yml', 'agent.cordis.yml', 'custom-tools', 'subagent-tools'].includes(entry)) continue
-          const path = join(target, entry)
-          assertModuleTree(path)
-          cpSync(path, join(source, entry), { recursive: true })
-        }
-      }
-      for (const file of preview.prepared.files.filter((file) => file.path !== MANIFEST && file.path !== MODULE_DEFINITION_FILE)) {
-        const path = join(source, safeAssetPath(file.path))
-        mkdirSync(dirname(path), { recursive: true })
-        if (file.path === 'memory.md' && existsSync(path)) continue
-        writeFileSync(path, decodeAssetFile(file))
-      }
-      const doc = parseDocument(preview.prepared.yaml)
-      setModuleDefinitionId(doc, id)
-      doc.set('name', preview.summary.targetName)
-      writeFileSync(join(source, MODULE_DEFINITION_FILE), doc.toString(), 'utf8')
-      // 正文归 module.yml；preset.md 随包作资源落盘（旧资产，保留不解析）。
-      generated = writeModule({
-        modulesRoot: root, moduleId: id, targetModuleId: id,
-        sourceDir: source, stageOnly: true,
-      })
-      generatedRoot = dirname(generated)
-      withModuleLock(root, id, () => {
-        options.signal?.throwIfAborted()
-        // 装载窗口：暂存期间目标被改过就拒绝。revision 的其余成分（源摘要、选组、目标身份）在本调用内不可能变。
-        if (directoryVersionOf(target) !== version) stale()
-        if (existsSync(target)) { renameSync(target, backup); moved = true }
-        try { renameSync(generated!, target); generated = undefined }
-        catch (error) {
-          if (moved) {
-            try { renameSync(backup, target); moved = false }
-            catch { throw new AssetTransferError('module-recovery-required', `安装失败且恢复未完成，原目录保留在 ${backup}`) }
+    const outcome = installModuleDirectory({
+      root,
+      id,
+      expectedVersion: version,
+      signal: options.signal,
+      build: (candidate) => {
+        if ((options.preserveAssets || preview.prepared.kind === 'st-character' || preview.prepared.kind === 'native-character') && exists) {
+          for (const entry of readdirSync(target)) {
+            if (entry === MODULE_DEFINITION_FILE || entry === 'rules' || LEGACY_ARTIFACTS.includes(entry)) continue
+            const path = join(target, entry)
+            assertModuleTree(path)
+            cpSync(path, join(candidate, entry), { recursive: true })
           }
-          throw error
         }
-      })
-      invalidateModuleSpec(target)
-      // 备份清理失败不会把已经成功的安装说成失败；保留路径供诊断。
-      try { rmSync(stage, { recursive: true, force: true }); moved = false } catch { return { id, backupPath: stage } }
-      return { id }
-    } finally {
-      if (generated !== undefined) rmSync(generated, { recursive: true, force: true })
-      if (generatedRoot !== undefined) rmSync(generatedRoot, { recursive: true, force: true })
-      if (!moved) rmSync(stage, { recursive: true, force: true })
+        for (const file of preview.prepared.files.filter((file) => file.path !== MANIFEST && file.path !== MODULE_DEFINITION_FILE)) {
+          const top = file.path.split('/')[0]!
+          if (top === 'rules' || LEGACY_ARTIFACTS.includes(top)) continue
+          const path = join(candidate, safeAssetPath(file.path))
+          mkdirSync(dirname(path), { recursive: true })
+          if (file.path === 'memory.md' && existsSync(path)) continue
+          writeFileSync(path, decodeAssetFile(file))
+        }
+        const doc = parseDocument(preview.prepared.yaml)
+        setModuleDefinitionId(doc, id)
+        doc.set('name', preview.summary.targetName)
+        writeFileSync(join(candidate, MODULE_DEFINITION_FILE), doc.toString(), 'utf8')
+        // 正文归 module.yml；preset.md 随包作资源落盘（旧资产，保留不解析）。
+        finalizeModuleCandidate(candidate, id)
+      },
+    })
+    if (outcome.state === 'conflict') stale()
+    if (outcome.state === 'recovery-required') {
+      throw new AssetTransferError('module-recovery-required', `安装失败且恢复未完成，原目录保留在 ${outcome.backupPath}`)
     }
+    invalidateModuleSpec(target)
+    // 备份清理失败不会把已经成功的安装说成失败；保留路径供诊断。
+    return outcome.leftoverStage === undefined ? { id } : { id, backupPath: outcome.leftoverStage }
   })
   installs.set(chainKey, run)
   try { return await run } finally { if (installs.get(chainKey) === run) installs.delete(chainKey) }

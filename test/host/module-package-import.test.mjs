@@ -166,7 +166,7 @@ test('装载窗口：暂存期间目标被外部改动即拒装，外部内容�
   let injected = false
   t.mock.method(fs, 'writeFileSync', (path, ...rest) => {
     real(path, ...rest)
-    if (!injected && typeof path === 'string' && path.includes('.import-') && path.endsWith('keep.txt')) {
+    if (!injected && typeof path === 'string' && path.endsWith('keep.txt')) {
       injected = true
       real(join(target, 'external.txt'), 'EXTERNAL\n')
     }

@@ -197,10 +197,13 @@ AGENTS.md/CLAUDE.md 及 local 变体属于用户文件。正文就地保存；�
 | 所有者 | 文件 |
 |---|---|
 | 完整定义/切片 | host/module-slices.ts、module-rules.ts |
+| 安装事务 | host/module-install-transaction.ts |
 | 两级变量 | host/module-variables.ts、shared/module-variables.ts |
 | 模块合并/记忆 | host/characters.ts、module-memory.ts |
 | 导入/导出 | host/import-source.ts、module-package.ts、module-install.ts |
 | 装配/人设 | runtime/agent-assembly.ts、persona-registration.ts；host 来源 owner 的 selectedPersonaModules |
 | 请求/草稿 | shared/bridge-contract.ts、client/data/、settings-bridge.ts |
+
+随包内置模块只在用户模块根缺失同名目录时补建；已有副本（含用户修改）不覆盖，也不比较内容。见 [ADR-0015](adr/0015-builtin-module-seed-missing-only.md)。
 
 长期测试只进入注入行为、写盘语义、bridge 载荷、安全拒绝 seam，期望来自独立规格/字面样例，断言公共接口。提交前跑完整 package gates，涉及宿主/包接入补对应验证；一次性探针放隔离临时目录，不能用仅检查旧符号消失的测试替代行为验收。
