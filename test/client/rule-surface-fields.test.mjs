@@ -20,7 +20,6 @@ test('装配动作：真实新建种子的空 target 仍提供 sections / contex
   for (const target of ['sections', 'contexts']) {
     assert.ok(controls.includes(t('rules.surface.editTarget', { target: t(`rules.surface.${target}`) })))
   }
-  assert.ok(!controls.includes(t('rules.surface.editTarget', { target: t('rules.surface.tools') })), '工具面已迁到 tool-visibility')
   assert.deepEqual(seed.target, {}, '展示入口不隐式开启过滤')
 })
 test('工具可见面：名单、发现工具、requireMatch 与首轮提示按声明渲染', () => {

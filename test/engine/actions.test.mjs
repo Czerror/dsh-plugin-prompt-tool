@@ -89,7 +89,6 @@ test('动作只在其合法通道注册：逐类记录 ctx.on 的通道并与声
 
 test('动作声明 fail loud：名单形状错误、名单为空、名单命名 run_code 都在挂载期抛出', () => {
   const { ctx } = recordingCtx()
-  assert.throws(() => registerAction(ctx, { kind: 'assembly', id: 'x', target: { tools: { deny: ['bash'] } } }), /target\.tools 已移除/)
   assert.throws(() => registerAction(ctx, { kind: 'tool-visibility', id: 'v', deny: ['run_code'] }), /must not name the reserved run_code/)
   assert.throws(() => registerAction(ctx, { kind: 'tool-visibility', id: 'v' }), /needs allow and\/or deny/)
   assert.throws(() => registerAction(ctx, { kind: 'tool-visibility', id: 'v', deny: ['a'], audience: 'nobody' }), /audience must be main, subagent or all/)

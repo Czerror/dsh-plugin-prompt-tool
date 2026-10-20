@@ -258,6 +258,8 @@ export function prepareToolVisibility(action, plugin) {
         warnOnce(`${plugin}: tool-visibility action ${label} failed to sync execution gate: ${String(error?.message ?? error)}`)
       }
       try {
+        // 受众不在本次装配的目标内：不投影、也不挂闸（syncGate 已按同一判据释放旧闸）。
+        if (!appliesTo(context?.agent?.session)) return assembled
         let result = assembled
         installNotice()
         if (Array.isArray(result.tools)) {
