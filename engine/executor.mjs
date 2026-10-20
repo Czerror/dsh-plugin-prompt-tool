@@ -23,7 +23,7 @@ import {
   newMessageId,
 } from './shared.mjs'
 // 去重判据读**当前模型可见上下文**（视图①），不读完整历史：被压缩遮蔽的注入要重新注入。
-import { currentEvents } from './history.mjs'
+import { eventMessage, moduleIdOf, moduleOf, pluginIdentityOf, identityOf, identityStampOf, identityHit, injectedMessage, actionStamp, findActionDelivery } from './delivery.mjs'
 import { interpolateVariables } from './interpolate.mjs'
 import { conditionHit, userMessagesText } from './condition.mjs'
 import { createEpochPromotion } from './compaction-epoch.mjs'
@@ -56,103 +56,6 @@ function coordinatorOf(ctx) {
     : undefined
 }
 
-/** 事件数据兼容两层形状:event.data 本身是消息,或 event.data.message 是消息。 */
-function eventMessage(event) {
-  const data = event?.data
-  if (data === null || typeof data !== 'object') return undefined
-  const message = data.message !== null && typeof data.message === 'object' ? data.message : data
-  return message?.source !== null && typeof message?.source === 'object' ? message : undefined
-}
-
-/** 合并身份:merged 模式按位置分组(merged:<position>);separate 模式保持自身身份。 */
-function mergedIdentity(config) {
-  if (config.mergeMode !== 'merged') return config.id
-  return `merged:${config.position}`
-}
-
-/**
- * 去重身份:merged 组用位置命名空间,独立配置用自身身份。
- * 消费方含宿主装配侧（跨模块重复身份诊断），故导出——同一事实只留这一份判据。
- */
-export function identityOf(config) {
-  return config.mergeMode === 'merged' ? mergedIdentity(config) : config.identity.value
-}
-
-/**
- * 模块维：**空串与缺失同等**（升级前格式 / 第三方消息可能带空串），非字符串也按缺失。
- * 判定（identityHit）、记账（confirmDelivered）与查询（alreadyDelivered）必须同源：任一处
- * 把空串当真实模块，快路径就会把「无模块维」的消息记成某模块的投递，判定随缓存改变。
- */
-function moduleIdOf(value, field) {
-  const moduleId = value?.[field]
-  return typeof moduleId === 'string' && moduleId.length > 0 ? moduleId : undefined
-}
-
-/**
- * 去重身份的**盖章**（`identityStampOf`）与**判定**（`identityHit`）是一对互逆函数：
- * 前者把配置编译成消息 `source` 里由身份契约决定的部分，后者认这份 source。
- * 消费方含宿主装配侧（见 agent-assembly 的跨模块重复身份诊断），故导出。
- *
- * 缺省 sourceKind 编成 `plugin:<身份>`：装配侧要靠这条推导判断「显式声明」与
- * 「自身 id 的编译产物」，所以这条规则只留这一份。
- * 新增通道/改字段名时，这两个函数紧邻，各添一行即成对（互逆性由测试锁住）。
- */
-export function identityStampOf(config) {
-  const plugin = identityOf(config)
-  const moduleId = moduleIdOf(config, 'sourceModuleId')
-  return {
-    // v4 要求 kind 是**生产者名**：声明了 sourceKind 就用它，否则用与 pluginMessage 同一形状的
-    // `plugin:<身份>`。裸 kind（undefined / 'plugin'）都会被 codec 拒绝，历史走的是同一个坑。
-    kind: typeof config.sourceKind === 'string' && config.sourceKind.length > 0 ? config.sourceKind : `plugin:${plugin}`,
-    plugin,
-    ...(moduleId === undefined ? {} : { moduleId }),
-  }
-}
-
-/**
- * 消息来源的插件身份（去重身份）。v4 起 `source.kind` 是生产者名（`plugin:<name>`），
- * `source.plugin` 只作为旧日志字段保留——两条通道都要认，否则去重记账会在格式换代后静默失效。
- */
-function pluginIdentityOf(source) {
-  if (source === null || typeof source !== 'object') return undefined
-  if (typeof source.plugin === 'string' && source.plugin.length > 0) return source.plugin
-  return typeof source.kind === 'string' && source.kind.startsWith('plugin:')
-    ? source.kind.slice('plugin:'.length)
-    : undefined
-}
-
-/** 消息的模块维（`source.moduleId`）；旧日志里的注入没有这个字段。 */
-function moduleOf(source) {
-  return moduleIdOf(source, 'moduleId')
-}
-
-/**
- * 身份命中判据（唯一实现，注入与批内去重共用）：**模块维 + 通道 + 身份**。
- * identityStampOf 的逆：它编译出的 source 必须被这里认下（互逆性由测试锁住）。
- *
- * - 两条通道：`kind`（外来/第三方消息，如 context-gate 的 instruction-hint）或
- *   `plugin`（本引擎注入的命名空间，merged 组用 merged:<position>）。
- * - 模块维：**整模块复制**的两个副本身份字符串逐字相同（rule id 与动作 id 都保留），
- *   只有模块能分开它们，所以身份键是 (模块, 通道, 身份) 三元组。
- * - 无模块维的消息按**保守命中**：升级前注入的那条仍在当前上下文里，不该因为新增一个
- *   字段就被判成「没投递过」而重复注入。
- */
-export function identityHit(source, config, value) {
-  if (source?.kind !== config.sourceKind && pluginIdentityOf(source) !== value) return false
-  const moduleId = moduleOf(source)
-  return moduleId === undefined || moduleId === moduleIdOf(config, 'sourceModuleId')
-}
-
-/** 去重真相在**当前上下文**：回到第一条命中该身份的消息（未命中 undefined），命中即止。 */
-function injectedMessage(config, session) {
-  const value = identityOf(config)
-  for (const event of currentEvents(session)) {
-    const message = eventMessage(event)
-    if (message !== undefined && identityHit(message.source, config, value)) return message
-  }
-  return undefined
-}
-
 /** 当前消息批内是否已有该提示词配置注入(每轮去重)。 */
 function hasInBatch(config, messages) {
   const value = identityOf(config)
@@ -162,22 +65,18 @@ function hasInBatch(config, messages) {
 /**
  * 快路径条目键：通道 + 模块维 + 有效期戳 + 值。分隔符用 NUL（身份值里可能带 `:`）。
  *
- * 戳是 surface 的 `replaceGeneration`：宿主只在 replace（压缩即一次 replace）时从可见
- * 视图里移除/替换节点（`packages/core/session/src/surface.ts:563-585`），代次一变，此前
- * 记下的「已投递」就可能已不在当前上下文里 —— 键随之失效，判定退回当前上下文扫描。
+ * 位置替换与内容投影的代次共同组成戳；任一变化都重新查询当前可见投递。
  * 无 surface（降级到完整历史）时戳恒为 `-`：完整历史不会丢事件，条目一直有效。
- * shortcut: 只按 replace 代次失效；若将来出现**不推进代次**却让节点消失的 surface 变更，
- * 快路径会多拦一次重新注入，届时改用宿主给出的权威信号。
  */
 function memoKey(field, moduleId, value, stamp) {
-  // 戳不可用（null）时调用方不查也不记（见 contextStamp），故这里必定是数字或 `-`。
+  // 戳不可用（null）时调用方不查也不记。
   return `${field}\u0000${moduleId ?? ''}\u0000${stamp}\u0000${value}`
 }
 
 /**
  * 本会话当前可见上下文的代次戳，也是 memo 键的失效维。
  *
- * - 数字：surface 的 `replaceGeneration`；
+ * - 代次对：surface 的 `replaceGeneration:contentGeneration`；
  * - `'-'`：无 surface（降级到完整历史），事件不会消失，条目一直有效；
  * - `null`：**有 `surface.nodes` 却没有数字代次** —— memo 此时不可用：代次是它唯一的失效
  *   信号，而真相（`currentEvents`）仍跟着 `nodes` 走，快路径会把被压缩移走的注入永久记成
@@ -187,7 +86,7 @@ function memoKey(field, moduleId, value, stamp) {
  */
 function contextStamp(session) {
   const generation = session?.surface?.replaceGeneration
-  if (typeof generation === 'number') return generation
+  if (typeof generation === 'number') return `${generation}:${session.surface.contentGeneration ?? 0}`
   return Array.isArray(session?.surface?.nodes) ? null : '-'
 }
 
@@ -238,6 +137,8 @@ export function confirmDelivered(memo, session, event) {
 
 /** dedupe=session：本会话**当前上下文**里是否已有该身份的已确认投递（快路径 + 当前上下文真相）。 */
 function alreadyDelivered(config, session, memo) {
+  if (config.linkedDelivery) return config.mergeMode === 'merged'
+    ? injectedMessage(config, session) !== undefined : findActionDelivery(session, config) !== undefined
   const stamp = contextStamp(session)
   // 模块维有两种命中：本模块的键，以及升级前注入（无模块维）那份的保守键。
   const modules = [moduleIdOf(config, 'sourceModuleId') ?? '', '']
@@ -271,7 +172,7 @@ function downgradeRole(config, requested, warnOnce) {
 }
 
 /** 构造默认 user 消息;策略返回完整 patch 时覆盖对应字段,但非法角色在出口兜底降级。 */
-function buildMessage(config, resolved, warnOnce) {
+function buildMessage(config, resolved, warnOnce, session) {
   const text = typeof resolved.text === 'string' ? resolved.text : ''
   const defaultContent = config.texts.length > 0
     ? config.texts.map((item) => ({ type: 'text', text: item }))
@@ -305,7 +206,7 @@ function buildMessage(config, resolved, warnOnce) {
     id: typeof resolved.id === 'string' && resolved.id.length > 0 ? resolved.id : newMessageId(config.id),
     role: PRE_STEP_ROLE,
     content: Array.isArray(resolved.content) ? resolved.content : defaultContent,
-    source: requested === undefined ? source : { ...source, requestedRole: requested },
+    source: { ...source, ...actionStamp(config, session), ...(requested === undefined ? {} : { requestedRole: requested }) },
   }
 }
 
@@ -479,7 +380,7 @@ async function runPromptConfigBatch(options) {
     const planned = []
     for (const group of orderedGroups) {
       const base = group[0]
-      const message = buildMessage(base.config, base.resolved, warnOnce)
+      const message = buildMessage(base.config, base.resolved, warnOnce, agent.session)
       if (group.length > 1) {
         message.content = group.flatMap((entry) => {
           if (Array.isArray(entry.resolved.content)) return entry.resolved.content
@@ -488,7 +389,7 @@ async function runPromptConfigBatch(options) {
             : []
         })
         if (message.source !== null && typeof message.source === 'object') {
-          message.source = { ...message.source, plugin: mergedIdentity(base.config) }
+          message.source = { ...message.source, plugin: identityOf(base.config) }
         }
         // 合并组的角色由首条配置决定;其余成员声明的非法角色同样要告警并留下降级事实。
         for (const entry of group.slice(1)) {

@@ -1,7 +1,8 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { fileURLToPath } from 'node:url'
-import { applyPromptConfigs, confirmDelivered, identityHit, identityOf, identityStampOf, runPreStepBatch } from '../../engine/executor.mjs'
+import { applyPromptConfigs, confirmDelivered, runPreStepBatch } from '../../engine/executor.mjs'
+import { identityHit, identityOf, identityStampOf } from '../../engine/delivery.mjs'
 import { wireLayers } from '../../engine/layers.mjs'
 import { createPromptConfigs as createPromptConfigsCore } from '../../engine/schema.mjs'
 import { registerAction } from '../../engine/actions.mjs'
@@ -52,18 +53,12 @@ test('同位置多配置默认按声明顺序插入：near-anchor 与 router-gui
     {
       id: 'near-anchor',
       enabled: true,
-      strategy: 'first-turn-anchor',
+      strategy: 'static',
+      text: 'BUILD',
       position: 'after-user',
       dedupe: 'session',
       promotion: 'none',
       audience: 'main',
-      params: {
-        buildPattern: 'build',
-        complexPattern: 'complex',
-        firstTurnBuild: 'BUILD',
-        firstTurnInspect: 'INSPECT',
-        firstTurnDeep: 'DEEP',
-      },
     },
     {
       id: 'router-guide',

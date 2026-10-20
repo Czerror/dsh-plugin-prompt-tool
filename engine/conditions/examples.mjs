@@ -7,5 +7,5 @@ export const PREDICATE_EXAMPLES = {
   session: { type: 'user/message', present: false },
   preset: { presetId: 'preset-id' },
   scope: { audience: 'main', modelScope: 'all' },
-  anchor: { keys: ['We'], fallbackAfter: 1 },
+  anchor: { subject: 'assistantReasoning', keys: ['确认'], mode: 'prefix' },
 }

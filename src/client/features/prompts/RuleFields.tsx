@@ -46,7 +46,7 @@ export function RuleParameterFields(props: FieldContext & { value: Record<string
   const { t } = props
   return Object.entries({ ...props.example, ...props.value }).map(([key, value]) => {
     if (props.omit?.includes(key)) return null
-    const fieldKey = props.fieldKey + ':' + key, label = FIELD_LABELS[key] === undefined ? triggerLabel(t, key) : t(FIELD_LABELS[key])
+    const fieldKey = props.fieldKey + ':' + key, label = key === 'action' && props.fieldKey.endsWith(':anchor:after') ? t('triggers.label.afterAction') : FIELD_LABELS[key] === undefined ? triggerLabel(t, key) : t(FIELD_LABELS[key])
     const patch = (next: unknown): void => { const value = { ...props.value }; if (next === undefined) delete value[key]; else value[key] = next; props.onChange(value) }
     const requestField = props.requestPatch && props.fieldKey.endsWith(':patch')
     const choices = ruleFieldOptions(t, String(props.value.id === undefined ? props.fieldKey.split(':').at(-1) ?? '' : props.value.kind ?? ''), key)
@@ -74,12 +74,13 @@ export function RuleParameterFields(props: FieldContext & { value: Record<string
     if (Array.isArray(value)) return <div key={key} className={css.full}><TagInput label={label} value={value} disabled={props.disabled}
       placeholder={t('rules.tokens.placeholder')} removeLabel={tag => t('rules.tokens.remove', { tag })} onChange={patch} /></div>
     if (typeof value === 'boolean') return <div key={key} className={css.toggle}><span>{label}</span><span className={css.switchLine}><Switch label={label} checked={value} disabled={props.disabled} onChange={patch} /></span></div>
+    const fallbackNumber = key === 'fallbackAfter' && props.fieldKey.endsWith(':anchor')
     const optionalNumber = requestField && ['temperature', 'maxTokens'].includes(key)
     if (typeof value === 'number' || optionalNumber) {
       const retained = props.fields.get(fieldKey)
       const draft = retained && (retained.error || retained.text !== retained.source || retained.text === String(value ?? '') || typeof value === 'number' && Number(retained.text) === value) ? retained : undefined
       return <FormField key={key} label={label} error={draft?.error}><TextInput aria-label={label} inputMode="decimal" readOnly={props.disabled} value={draft?.text ?? String(value ?? '')}
-        onChange={event => { const text = event.target.value, empty = text.trim() === '', valid = optionalNumber && empty || !empty && Number.isFinite(Number(text)); props.fields.set(fieldKey, { source: valid ? text : String(value ?? ''), text, error: valid ? '' : t('triggers.number') }); if (valid) patch(empty ? undefined : Number(text)); props.onDraft() }} /></FormField>
+        onChange={event => { const text = event.target.value, empty = text.trim() === '', valid = optionalNumber && empty || !empty && Number.isFinite(Number(text)) && (!fallbackNumber || Number.isInteger(Number(text)) && Number(text) > 0); props.fields.set(fieldKey, { source: valid ? text : String(value ?? ''), text, error: valid ? '' : t('triggers.number') }); if (valid) patch(empty ? undefined : Number(text)); props.onDraft() }} /></FormField>
     }
     const multiline = ['text', 'prompt', 'prefix', 'suffix', 'template', 'description'].includes(key)
     const text = String(value ?? '')
@@ -173,7 +174,18 @@ export function RuleConditionFields(props: FieldContext & { expanded: Map<string
           <RuleConditionFields {...props} value={child} nested heading={undefined} onRemove={undefined} fieldKey={path} onChange={next => updateChild(index, next)} />
         </StepCard>
       })}
-    </div> : entry && <div className={css.fields}><RuleParameterFields {...props} value={asTriggerRecord(value?.[kind])} example={asTriggerRecord(entry.example[kind])} fieldKey={props.fieldKey + ':' + kind} onChange={next => props.onChange({ ...value, [kind]: next })} /></div>}
+    </div> : entry && <div className={css.fields}>
+      {kind === 'anchor' && ['after', 'fallbackAfter'].map(key => {
+        const parameters = asTriggerRecord(value?.[kind]), present = Object.hasOwn(parameters, key)
+        return <div key={key} className={css.toggle}><span>{triggerLabel(t, key)}</span><Switch label={triggerLabel(t, key)} checked={present} disabled={props.disabled} onChange={enabled => {
+          const next = { ...parameters }
+          if (enabled) next[key] = key === 'after' ? { action: '' } : 1
+          else { delete next[key]; cleared(props.fields, props.fieldKey + ':' + kind + ':' + key) }
+          props.onChange({ ...value, [kind]: next })
+        }} /></div>
+      })}
+      <RuleParameterFields {...props} value={asTriggerRecord(value?.[kind])} example={kind === 'anchor' ? Object.fromEntries(Object.entries(asTriggerRecord(entry.example[kind])).filter(([key]) => !['after', 'fallbackAfter'].includes(key))) : asTriggerRecord(entry.example[kind])} fieldKey={props.fieldKey + ':' + kind} onChange={next => props.onChange({ ...value, [kind]: next })} />
+    </div>}
     {add}
   </div>
 }

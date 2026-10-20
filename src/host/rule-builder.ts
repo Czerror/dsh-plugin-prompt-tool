@@ -11,7 +11,7 @@ const RULE_LEVEL_KEYS = ['name', 'enabled', 'group', 'exclusive', 'sequence', 'f
 function assertConvertible(config: PromptConfigSpec): void {
   if (!record(config) || typeof config.id !== 'string' || config.id.length === 0) throw new TypeError('旧提示词配置必须有 id')
   if (config.strategy === 'custom-fallback') {
-    throw new TypeError(`规则 ${config.id} 的 custom-fallback 策略已退役：请改写为 anchor 条件 + anchor-notice 内容`)
+    throw new TypeError(`规则 ${config.id} 的 custom-fallback 策略已退役：请使用规则条件与 static 正文`)
   }
 }
 

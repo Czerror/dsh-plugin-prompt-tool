@@ -267,9 +267,7 @@ function RequestPatchFields(props: { t: PromptToolTranslate; value: Record<strin
  * 按 layer / strategy 拆解 params 为结构化编辑框（替代裸 JSON）：
  *   层专属 → system-section（段名/独占/动态抑制）、runtime-context（注册名）、
  *   agent-request（patch/replace）、llm-stream（mode）、subagent-end（结束动作）；
- *   first-turn-anchor → near-anchor 锚点参数（开关/锚文本/任务正则/引导句）；
  *   guide-auto → router-guide 每轮引导参数（开关/文本/复杂正则/强弱引导句）；
- *   custom-fallback → prompt-injector 锚定词（params.text 为运行时注入内容，不暴露编辑）；
  *   placeholder → fill 模板参数（text/envKeys/limit/fields/providers/emptyBehavior/emptyText）；
  * 无固定字段的策略回退 JSON 编辑（保留任意 params 能力）。
  */
@@ -338,23 +336,18 @@ export function StrategyParamsFields(props: { t: PromptToolTranslate; strategy: 
   const covered = Object.fromEntries(Object.entries(value).filter(([key]) => known.includes(key)))
   const readOnlyNote = LAYER_READ_ONLY_NOTES[layer ?? '']
 
-  if (strategy === 'first-turn-anchor' || strategy === 'guide-auto') {
-    const anchor = strategy === 'first-turn-anchor'
+  if (strategy === 'guide-auto') {
     return (
       <>
         <ParamToggle className={styles.fieldSpan4} label={t('strategyParam.custom.label')} hint={t('strategyParam.custom.hint')}
           checked={bool('useCustom')} onChange={(next) => set('useCustom', next)} />
-        <ParamTextarea className={styles.fieldFull} label={t(anchor ? 'strategyParam.anchorText.label' : 'strategyParam.guideText.label')}
-          hint={t(anchor ? 'strategyParam.anchorText.hint' : 'strategyParam.guideText.hint')} value={str('text')} onChange={(next) => set('text', next)} />
-        {anchor && <ParamInput className={styles.fieldSpan6} label={t('strategyParam.buildPattern.label')} hint={t('strategyParam.buildPattern.hint')}
-          value={str('buildPattern')} onChange={(next) => set('buildPattern', next)} />}
+        <ParamTextarea className={styles.fieldFull} label={t('strategyParam.guideText.label')}
+          hint={t('strategyParam.guideText.hint')} value={str('text')} onChange={(next) => set('text', next)} />
         <ParamInput className={styles.fieldSpan6} label={t('strategyParam.complexPattern.label')} hint={t('strategyParam.complexPattern.hint')}
           value={str('complexPattern')} onChange={(next) => set('complexPattern', next)} />
-        {anchor && <ParamTextarea className={styles.fieldFull} label={t('strategyParam.firstTurnBuild')} value={str('firstTurnBuild')} onChange={(next) => set('firstTurnBuild', next)} />}
-        {anchor && <ParamTextarea className={styles.fieldFull} label={t('strategyParam.firstTurnInspect')} value={str('firstTurnInspect')} onChange={(next) => set('firstTurnInspect', next)} />}
-        {!anchor && <ParamTextarea className={styles.fieldFull} label={t('strategyParam.guideWeak')} value={str('guideWeak')} onChange={(next) => set('guideWeak', next)} />}
+        <ParamTextarea className={styles.fieldFull} label={t('strategyParam.guideWeak')} value={str('guideWeak')} onChange={(next) => set('guideWeak', next)} />
         <ParamTextarea className={styles.fieldFull} label={t('strategyParam.deepGuide')}
-          value={str(anchor ? 'firstTurnDeep' : 'guideDeep')} onChange={(next) => set(anchor ? 'firstTurnDeep' : 'guideDeep', next)} />
+          value={str('guideDeep')} onChange={(next) => set('guideDeep', next)} />
       </>
     )
   }

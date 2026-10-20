@@ -417,10 +417,10 @@ test('统一规则：缺失真实会话的 not 保持未知，any 中已知 true
   assert.equal(ruleMatches(matchingRule({ not: { source: { plugin: 'blocked' } } }), ruleFrame('agent/inbox/inserted', [{ agent: actor(), message: { source: { kind: 'user' }, content: [] } }])), true, '已知source对象明确没有plugin可以判断')
 })
 
-test('统一规则：锚定资格由条件决定，确认与两轮兜底保留注入正文和来源说明', async () => {
+test('统一规则：锚定资格由条件决定，确认与两轮兜底注入普通正文', async () => {
   const h = harness()
-  const rules = compileRules([{ id: 'anchor', if: { anchor: { keys: ['We'], fallbackAfter: 1 } }, then: [
-    textAction('notice', 'NOTICE', { strategy: 'anchor-notice', params: { firstTurnWord: 'We' } }),
+  const rules = compileRules([{ id: 'anchor', if: { anchor: { subject: 'assistantReasoning', keys: ['We'], fallbackAfter: 2 } }, then: [
+    textAction('notice', 'NOTICE'),
   ] }])
   const dispose = mountRuleSources(h.ctx, [{ moduleId: 'module', rules }])
   const events = []
@@ -428,17 +428,17 @@ test('统一规则：锚定资格由条件决定，确认与两轮兜底保留�
   agent.session.snapshotEvents = () => events
   const run = () => h.run('agent/pre-step', [{ agent }], () => ({ kind: 'enter', messages: [{ role: 'user', source: { kind: 'user' }, content: [{ type: 'text', text: 'USER' }] }] }))
   assert.equal((await run()).messages.length, 1)
-  events.push({ type: 'assistant/message', data: { message: { content: [{ type: 'reasoning', text: 'We start.' }] } } })
-  assert.match((await run()).messages[1].source.summary, /锚定确认后注入/)
+  events.push({ type: 'assistant/message', data: { message: { source: { kind: 'model' }, content: [{ type: 'reasoning', text: 'We start.' }] } } })
+  assert.equal((await run()).messages[1].content[0].text, 'NOTICE')
   agent.session.id = 'fallback'
   events[0].data.message.content[0].text = 'Other reasoning'
   assert.equal((await run()).messages.length, 1)
-  events.push({ type: 'assistant/message', data: { message: { content: [] } } })
-  assert.match((await run()).messages[1].source.summary, /未确认,兜底注入/)
+  events.push({ type: 'assistant/message', data: { message: { source: { kind: 'model' }, content: [{ type: 'reasoning', text: '' }] } } })
+  assert.equal((await run()).messages[1].content[0].text, 'NOTICE')
   dispose()
 })
 
-test('T15：dedupe=session 慢路径命中后回填快路径，下一步不再整表扫描', async () => {
+test('T15：dedupe=session 从已投递历史恢复，后续请求仍保持去重', async () => {
   const h = harness()
   const rules = compileRules([{ id: 'persisted', then: [
     textAction('persisted', 'PERSISTED', { dedupe: 'session', position: 'before-all' }),
@@ -452,21 +452,17 @@ test('T15：dedupe=session 慢路径命中后回填快路径，下一步不再�
     seq: 1,
     data: { message: { id: 'm1', role: 'user', source: { kind: 'plugin:persisted' }, content: [{ type: 'text', text: 'PERSISTED' }] } },
   }]
-  let scans = 0
-  agent.session.snapshotEvents = () => { scans += 1; return events }
+  agent.session.snapshotEvents = () => events
   const step = async () => {
-    const before = scans
     const decision = await h.run('agent/pre-step', [{ agent }], () => ({
       kind: 'enter', messages: [{ id: 'u', role: 'user', source: { kind: 'user' }, content: [{ type: 'text', text: 'USER' }] }],
     }))
-    return { texts: decision.messages.flatMap(message => message.content.map(block => block.text)), scans: scans - before }
+    return { texts: decision.messages.flatMap(message => message.content.map(block => block.text)) }
   }
   const first = await step()
   assert.deepEqual(first.texts, ['SIBLING', 'USER'], '整表命中已投递的那条 → 不注入；同位置兄弟照常')
   const second = await step()
   assert.deepEqual(second.texts, first.texts, '第二步的注入层、次数与同位置兄弟都不变')
-  // 慢路径按既有入口回填 memo 之后，该配置在第二步不再读一次事件快照（兄弟仍走慢路径）。
-  assert.equal(second.scans, first.scans - 1, `回填后第二步少一次整表扫描（${first.scans} → ${second.scans}）`)
   dispose()
 })
 
@@ -1242,17 +1238,17 @@ const visibleSession = (id, state) => ({
   surface: { get nodes() { return state.nodes }, get replaceGeneration() { return state.generation } },
 })
 
-test('T6a：anchor 只认当前可见的首条 assistant 推理，兜底轮数按 seq 去重', () => {
+test('T6a：anchor 匹配当前可见推理，兜底轮数按 seq 去重', () => {
   const state = {
     log: [
-      { type: 'assistant/message', seq: 0, data: { message: { content: [{ type: 'reasoning', text: 'We start.' }] } } },
+      { type: 'assistant/message', seq: 0, data: { message: { source: { kind: 'model' }, content: [{ type: 'reasoning', text: 'We start.' }] } } },
       { type: 'compaction/end', seq: 1, data: {} },
       { type: 'assistant/message', seq: 2, data: { message: { content: [{ type: 'text', text: 'AFTER' }] } } },
     ],
     nodes: [0],
     generation: 0,
   }
-  const predicate = createAnchorPredicate({ keys: ['We'], fallbackAfter: 1 })
+  const predicate = createAnchorPredicate({ keys: ['We'], fallbackAfter: 2 })
   assert.equal(predicate(visibleSession('t6a-anchor-visible', state)), true, '可见的首条 assistant 推理带锚定词 → 确认')
   // 压缩把那条推理遮蔽掉：冷启动重建时可见首条 assistant 换成别的 → 不确认，兜底也只剩 1 轮。
   state.nodes = [2]
@@ -1261,13 +1257,13 @@ test('T6a：anchor 只认当前可见的首条 assistant 推理，兜底轮数�
   // 位置替换后同一 seq 可在 nodes 里占多个位置：按条数直数会把一轮算成两轮。
   const plain = {
     log: [
-      { type: 'assistant/message', seq: 0, data: { message: { content: [] } } },
-      { type: 'assistant/message', seq: 1, data: { message: { content: [] } } },
+      { type: 'assistant/message', seq: 0, data: { message: { source: { kind: 'model' }, content: [{ type: 'reasoning', text: '' }] } } },
+      { type: 'assistant/message', seq: 1, data: { message: { source: { kind: 'model' }, content: [{ type: 'reasoning', text: '' }] } } },
     ],
     nodes: [0, 0],
     generation: 1,
   }
-  assert.equal(predicate(visibleSession('t6a-anchor-dup', plain)), false, '同一 seq 重复出现只算一轮（fallbackAfter=1 未满）')
+  assert.equal(predicate(visibleSession('t6a-anchor-dup', plain)), false, '同一 seq 重复出现只算一轮（fallbackAfter=2 未满）')
   plain.nodes = [0, 1]
   assert.equal(predicate(visibleSession('t6a-anchor-two', plain)), true, '两条不同 seq 的可见 assistant 才凑满两轮')
 })
@@ -1438,7 +1434,7 @@ test('T6a：count 消息类信号按当前上下文，log-only 信号按完整�
 test('T36①：压缩遮蔽原首条推理后，锚定记忆随之作废（同一会话改判，不再被旧值钉住）', () => {
   const state = {
     log: [
-      { type: 'assistant/message', seq: 0, data: { message: { content: [{ type: 'reasoning', text: 'We start.' }] } } },
+      { type: 'assistant/message', seq: 0, data: { message: { source: { kind: 'model' }, content: [{ type: 'reasoning', text: 'We start.' }] } } },
       { type: 'compaction/end', seq: 1, data: {} },
       { type: 'assistant/message', seq: 2, data: { message: { content: [{ type: 'text', text: 'AFTER' }] } } },
     ],
@@ -1451,7 +1447,6 @@ test('T36①：压缩遮蔽原首条推理后，锚定记忆随之作废（同�
   assert.equal(predicate(session), true, '记忆命中给出同一结论')
   // 成功压缩遮蔽那条推理：可见首条换成 seq 2 的正文，宿主在 session/event 上通知压缩结束。
   state.nodes = [2]
-  predicate.observe(session, { type: 'compaction/end', seq: 3, data: {} })
   assert.equal(predicate(session), false, '压缩后记忆作废，按新的可见首条重判（全量日志仍能数到那条推理）')
 })
 
@@ -1491,21 +1486,21 @@ test('T36③：无 id 的消息在重复 seq 下只计一次（chat.length 不�
 test('A1①：非压缩的位置替换推进代次后，锚定记忆随之作废（兜底轮数按新上下文重数）', () => {
   const state = {
     log: [
-      { type: 'assistant/message', seq: 0, data: { message: { content: [{ type: 'reasoning', text: 'We start.' }] } } },
+      { type: 'assistant/message', seq: 0, data: { message: { source: { kind: 'model' }, content: [{ type: 'reasoning', text: 'We start.' }] } } },
       { type: 'assistant/message', seq: 1, data: { message: { content: [{ type: 'text', text: 'AFTER' }] } } },
     ],
     nodes: [0],
     generation: 0,
   }
   const session = visibleSession('a1-anchor-replace', state)
-  const predicate = createAnchorPredicate({ keys: ['We'], fallbackAfter: 1 })
+  const predicate = createAnchorPredicate({ keys: ['We'], fallbackAfter: 2 })
   assert.equal(predicate(session), true, '可见首条 assistant 推理带锚定词 → 确认并入记忆')
   // 位置替换把那条推理移出可见节点，代次 +1，**没有** compaction/end 事件。替代品只有一条
-  // 可见 assistant 消息（fallbackAfter=1 → 要 2 条才兜底），所以正确结论是 false。
+  // 可见 assistant 消息（fallbackAfter=2 → 要 2 条才兜底），所以正确结论是 false。
   state.nodes = [1]
   state.generation = 1
   assert.equal(predicate(session), false, '代次推进即失效：按新可见上下文重判，不被旧确认钉住')
-  assert.equal(predicate(session), createAnchorPredicate({ keys: ['We'], fallbackAfter: 1 })(session), '与重构谓词同结果')
+  assert.equal(predicate(session), createAnchorPredicate({ keys: ['We'], fallbackAfter: 2 })(session), '与重构谓词同结果')
 })
 
 /**

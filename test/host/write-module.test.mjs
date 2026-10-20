@@ -76,7 +76,7 @@ function installWriterModule(id) {
     content: { presetText: `BODY-${id}`, agentsText: `AGENTS-${id}` },
     rules: [
       { id: 'near-anchor', layer: 'pre-step', then: [{ id: 'inject', kind: 'inject-text', config: {
-        id: 'near-anchor', strategy: 'first-turn-anchor', layer: 'pre-step', position: 'after-user',
+        id: 'near-anchor', strategy: 'static', layer: 'pre-step', position: 'after-user',
         text: `PARAM-${id}`, params: { useCustom: true } } }] },
       { id: 'router-guide', layer: 'pre-step', then: [{ id: 'inject', kind: 'inject-text', config: {
         id: 'router-guide', strategy: 'guide-auto', layer: 'pre-step', position: 'after-user',
@@ -109,9 +109,9 @@ test('规则所有者：无旧快捷参数的同名规则保留自身字段，�
   const dir = join(root, 'example')
   mkdirSync(dir)
   const configs = [
-    { id: 'near-anchor', strategy: 'first-turn-anchor', enabled: true, params: { useCustom: true, text: 'RULE ANCHOR' } },
+    { id: 'near-anchor', strategy: 'static', enabled: true, params: { text: 'RULE ANCHOR' } },
     { id: 'router-guide', strategy: 'guide-auto', enabled: true, params: { useCustom: true, text: 'RULE GUIDE' } },
-    { id: 'prompt-injector', strategy: 'first-turn-anchor', enabled: false, params: { text: 'RULE BODY', firstTurnWord: 'custom' } },
+    { id: 'prompt-injector', strategy: 'static', enabled: false, params: { text: 'RULE BODY' } },
   ]
   writeFileSync(join(dir, 'module.yml'), JSON.stringify({ id: 'example', order: 91, modules: [], rules: configs.map(promptConfigToRule) }), 'utf8')
   writeModule({ modulesRoot: root, moduleId: 'example' })
@@ -140,7 +140,7 @@ test('旧参数键不被读取，规则只由显式事务改写；含旧内容�
   assert.equal(loaded.rules.find(rule => rule.id === 'router-guide').enabled, true, '旧快捷键不改变规则启停')
   const near = loaded.rules.find(rule => rule.id === 'near-anchor').then[0].config
   const guide = loaded.rules.find(rule => rule.id === 'router-guide').then[0].config
-  assert.equal(near.strategy, 'first-turn-anchor')
+  assert.equal(near.strategy, 'static')
   assert.equal(guide.strategy, 'guide-auto')
   const imported = writeModule({ modulesRoot: root, moduleId: FIXTURE_MODULE_ID, targetModuleId: 'imported', sourceDir: dir })
   assert.ok(existsSync(join(imported, 'module.yml')), '旧参数不影响重建')

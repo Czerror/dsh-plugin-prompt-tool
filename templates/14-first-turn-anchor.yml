@@ -1,31 +1,27 @@
-# 模板：首句锚点（strategy=first-turn-anchor）
-# 首条真实用户消息后按任务类型（build / inspect / deep）注入锚句，每会话一次。
-# 纯净模板：参数全部留空，由用户自定义；锚句与分类正则由模板或用户配置提供，引擎不提供默认正文。
-# 提示：把本文件放入 模块规则模板目录，或把对象写入 module.yml.rules 数组。
+# 直接匹配真实用户消息，再以普通动作注入自定义正文。
+# 确认词与正文由用户填写；复制分支可表达不同任务的注入规则。
 id: example-first-turn-anchor
-name: 示例：首句锚点
+name: 示例：匹配后注入
 enabled: false
 layer: pre-step
+if:
+  text:
+    subject: userMessage
+    keys: [自定义触发词]
 then:
   - id: inject
     kind: inject-text
     config:
       id: example-first-turn-anchor
       layer: pre-step
-      strategy: first-turn-anchor
+      strategy: static
       position: after-user
       dedupe: session
       configKind: ordered
       order: 0
       role: user
       mergeMode: separate
-      sourceKind: ''
+      sourceKind: plugin
       form: notice
       params:
-        useCustom: false
-        text: "" # 自定义锚文本（useCustom=true 时固定注入）
-        buildPattern: "" # 构建任务正则；留空 = 该分类不生效
-        complexPattern: "" # 复杂任务正则；留空 = 该分类不生效
-        firstTurnBuild: "" # 构建任务锚句（留空 = 不注入该类别锚句）
-        firstTurnInspect: "" # 排查任务锚句（留空 = 不注入该类别锚句）
-        firstTurnDeep: "" # 复杂设计锚句（留空 = 不注入该类别锚句）
+        text: "" # 自定义正文

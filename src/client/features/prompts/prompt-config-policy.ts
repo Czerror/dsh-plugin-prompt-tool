@@ -58,7 +58,6 @@ export const LAYER_LABEL_KEYS: Record<InjectionPoint, PromptToolLocaleKey> = {
 export const STRATEGY_LABEL_KEYS: Record<string, PromptToolLocaleKey> = {
   static: 'strategy.static',
   placeholder: 'strategy.placeholder',
-  'first-turn-anchor': 'strategy.firstTurnAnchor',
   'guide-auto': 'strategy.guideAuto',
   'context-activation': 'strategy.worldBook',
 }

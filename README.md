@@ -63,12 +63,14 @@ rules:
 规则是唯一行为源；共享模型与能力参数保存于 layerSettings，人设、变量与自定义工具各有独立顶层段。根 [module.yml](module.yml) 从权威目录生成九层及13个共享参数参考，示例默认关闭。
 
 - 条件使用 if，动作用 then，另有 else；动作身份在完整规则树中唯一。
-- 注入正文策略为 static、placeholder、first-turn-anchor、guide-auto、anchor-notice、context-activation。
+- 注入正文策略为 static、placeholder、guide-auto、context-activation；确认由通用 `anchor` 条件承担，正文与位置由普通注入动作声明。
 - 九个插入点没有跨层全局顺序；order 属于该官方位置，configOrder 管同点跨模块顺序。
 - `dedupe: session` 看当前模型可见上下文，旧消息被压缩/替换遮蔽后可再次注入。
 - 主/子模型卡各有5个路由/采样参数，在装配时生成受众限定请求规则；也可显式编辑 request-params，不回写宿主全局默认。
 
 字段、空值、保存和安全边界见 [参数框架](docs/architecture-params.md)，通道与生命周期见 [引擎指南](docs/engine-reuse.md) 和 [九层契约](docs/injection-point-contracts.md)。
+
+需要“先发锚句、确认后注入正文”时，在同规则中用 `anchor.after.action` 引用锚句动作；确认只读取实际投递后的当前可见输出。默认持续等待、下次正常请求再注入；兜底次数和续跑均须显式声明。示例见 [模板16](templates/16-custom-fallback.yml)，直接匹配本批用户消息见 [模板14](templates/14-first-turn-anchor.yml)。旧专用策略与参数已直接替换，不提供兼容入口，也不自动改写已有用户模块。
 
 ## 两级持久变量
 

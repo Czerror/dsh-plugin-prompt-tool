@@ -273,6 +273,40 @@ test('createRule 由服务端按目标模块分配规则 id，不依赖规则读
   assert.equal(third.value.createdRuleId, 'BUDGET-3')
   assert.deepEqual(parse(readFileSync(h.file, 'utf8')).rules.map(rule => rule.id), ['budget', 'budget-2', 'BUDGET-3'])
 
+  const template = { id: 'confirm-flow', then: [
+    { id: 'seed', kind: 'inject-text', config: { layer: 'pre-step', strategy: 'static', text: 'SEED', mergeMode: 'separate', dedupe: 'session' } },
+    { if: { anchor: { subject: 'assistantReasoning', keys: ['READY'], after: { action: 'seed' } } },
+      then: [{ id: 'body', kind: 'inject-text', config: { layer: 'pre-step', strategy: 'static', text: 'BODY', dedupe: 'session' } }] },
+  ] }
+  for (const id of ['confirm-flow', 'confirm-flow-2']) {
+    const created = await h.call({ createRule: template })
+    assert.equal(created.ok, true, created.message)
+    assert.equal(created.value.createdRuleId, id)
+    const expected = { ...template, id }
+    assert.deepEqual((await h.call()).value.rules.find(rule => rule.id === id), expected, '模板自动分配规则 ID 不改变同规则动作引用')
+    assert.deepEqual(parse(readFileSync(join(h.directory, 'rules', `${id}.yml`), 'utf8')), expected, '物化切片保留相对引用')
+  }
+  const snapshot = (await h.call()).value
+  const copied = snapshot.rules.find(rule => rule.id === 'confirm-flow-2')
+  const edited = { ...copied, name: 'Edited flow' }
+  const saved = await h.call({ expectedRevisions: snapshot.revisions, edits: [{ previousId: copied.id, rule: edited }] })
+  assert.equal(saved.ok, true, saved.message)
+  assert.deepEqual((await h.call()).value.rules.find(rule => rule.id === copied.id), edited, '完整规则事务写盘/读回仍保留 after.action')
+  assert.deepEqual(parse(readFileSync(h.file, 'utf8')).rules.find(rule => rule.id === copied.id), edited)
+  const beforeInvalid = readFileSync(h.file, 'utf8')
+  const beforeSlice = readFileSync(join(h.directory, 'rules', `${copied.id}.yml`), 'utf8')
+  const beforeRebuilds = h.rebuilds
+  const invalid = structuredClone(edited)
+  invalid.then[1].if.anchor.after.action = 'missing'
+  const refused = await h.call({ expectedRevisions: saved.value.revisions, edits: [{ previousId: copied.id, rule: invalid }] })
+  assert.equal(refused.status, 400)
+  assert.equal(readFileSync(h.file, 'utf8'), beforeInvalid, '非法目标拒绝保持完整定义原字节')
+  assert.equal(readFileSync(join(h.directory, 'rules', `${copied.id}.yml`), 'utf8'), beforeSlice, '非法目标不发布规则切片')
+  assert.equal(h.rebuilds, beforeRebuilds, '非法引用不触发重建')
+  assert.match(beforeInvalid, /用户注释/)
+  assert.match(beforeInvalid, /未知字段注释/)
+  assert.equal(parse(beforeInvalid).unknown, 'keep')
+
   const blank = harness({ declareRules: false })
   const absent = await blank.call({ createRule: rules[0], expectedRulesAbsent: true })
   assert.equal(absent.ok, true, absent.message)

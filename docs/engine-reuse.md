@@ -1,6 +1,6 @@
 # 统一规则引擎复用指南
 
-规则是唯一行为定义。插件读取模块定义、校验切片，再经 `compileRules → mountRuleSources` 装配到 Agent scope，这是一条**两段式**生命周期：`compileRules` 只编译与校验（产物每条规则携带 `conditionTrees`，选项里的 `ctx` / `standingMountFor` 会被显式剥掉），**条件绑定由 `mountRuleSources` 在注册前完成**（内部调 `rebindConditions`）。原因是 `preset` 谓词要挂载 scope 的 ctx（`conditions/preset.mjs` 把服务查询基准绑在构造期），准备期拿不到——那边绑出来的 `preset` 条件是恒 UNAVAILABLE 的**静默死条件**。需要官方模块导出的兜底时，由调用方通过 options 传 `standingMountFor`；只重绑含 `preset`、或含 `phase` 且未显式 `subscribe: false` 的树，其余谓词原样保留。模块不进入官方会话预设注册表；九个插入点各有生命周期，不形成插件自定义的全局管线。
+规则是唯一行为定义。插件读取模块定义、校验切片，再经 `compileRules → mountRuleSources` 装配到 Agent scope，这是一条**两段式**生命周期：`compileRules` 只编译与校验（产物每条规则携带 `conditionTrees`，选项里的 `ctx` / `standingMountFor` 会被显式剥掉），**条件绑定由 `mountRuleSources` 在注册前完成**（内部调 `rebindConditions`）。原因是 `preset` 谓词要挂载 scope 的 ctx（`conditions/preset.mjs` 把服务查询基准绑在构造期），准备期拿不到——那边绑出来的 `preset` 条件是恒 UNAVAILABLE 的**静默死条件**。需要官方模块导出的兜底时，由调用方通过 options 传 `standingMountFor`；重绑含 `preset`、含 `phase` 且未显式 `subscribe: false`、或含 `anchor.after` 动作引用的树，其余谓词原样保留。模块不进入官方会话预设注册表；九个插入点各有生命周期，不形成插件自定义的全局管线。
 
 编辑保存与运行注入分别负责：客户端只提交合法草稿；发送消息不等待自动保存，运行使用磁盘已保存的有效定义。官方 `systemPrompt.assemble()` 开始、同步 provider 求值之前，插件核对本地定义与人设来源；变化才复用现有配装更新注册，没有变化不重挂。变量值仍在模板求值时读取，不因值更新重挂规则。
 
@@ -136,7 +136,46 @@ adapter 的目录、权限、原子写与版本责任归接入方。缺少 adapt
 | pre-step-filter | 前置消息来源/插件过滤 |
 | inbox-prepend | inbox 通知补充上下文 |
 
-正文策略为 static、placeholder、first-turn-anchor、guide-auto、anchor-notice、context-activation。placeholder 仅 pre-step/runtime-context，其余动态内容策略仅 pre-step。普通规则无隐式业务正文、锚词、两轮兜底或长度阈值；空文本保持空。
+正文策略为 static、placeholder、guide-auto、context-activation。placeholder 仅 pre-step/runtime-context，其余动态内容策略仅 pre-step。普通规则无隐式业务正文、锚词、两轮兜底或长度阈值；空文本保持空。确认属于 `anchor` 条件，不再有专用首轮锚定或锚词正文策略；旧参数与入口直接替换，无兼容层。guide-auto 的复杂任务规则来自本动作参数，不从锚句配置派生。
+
+### 字词句确认与动作关联
+
+`anchor` 读取宿主内容投影后的当前可见、已结算消息。`subject` 可选 `userMessage`、`assistantReasoning`（缺省）、`assistantText`、`toolResult`；用户消息排除插件注入，推理与回答分别取块。它读取已接纳历史；要匹配本次 pre-step 批中的新用户文本，用 `text.subject: userMessage`。
+
+缺省 `mode: prefix` 只使用 `keys` 作字面前缀匹配（ASCII 忽略大小写）；其它匹配选项在该模式下拒绝。`mode: scan` 复用既有匹配器的 `secondaryKeys`、`logic`、`caseSensitive`、`wholeWords`、`useRegex`、`wordBoundary`。未配置 `fallbackAfter` 持续等待；正整数 N 表示第 N 个含所选内容块的完整输出仍未命中时放行。缺少该内容块的输出、流式片段和中断的模型消息不计数。
+
+```yaml
+id: confirm-then-inject
+enabled: false
+layer: pre-step
+then:
+  - id: seed
+    kind: inject-text
+    config:
+      strategy: static
+      position: before-all
+      dedupe: session
+      text: 请在推理开头写“已确认”，再处理任务。
+  - if:
+      anchor:
+        subject: assistantReasoning
+        keys: [已确认]
+        after: { action: seed }
+    then:
+      - id: body
+        kind: inject-text
+        config:
+          strategy: static
+          position: before-all
+          dedupe: session
+          text: 此处填写确认后要注入的正文。
+```
+
+`after.action` 只引用同一规则的稳定动作 id；规则复制或自动改名不需改内部引用。条件按事件 seq 只观察目标实际投递之后的输出，候选生成、入队或方法调用不算投递；目标未接纳或已不再可见时返回 UNAVAILABLE，不能经 not/else 提前放行。保存与编译拒绝缺引用、自引用、依赖环、同规则投递身份歧义，以及无法证明独立投递的 system-section 或 merged 目标；可引用 separate 模式的 pre-step、runtime-context、turn-stop 注入动作。
+
+被引用的 runtime-context 名称必须在完整编译及挂载来源集合中唯一，避免命名快照混淆实际贡献；注册失败中止本次装配并释放已经完成的注册，不带部分候选继续运行。
+
+关联与去重共用 `engine/delivery.mjs` 的身份及可见投递查询。当前会话的实际投递才是起点，fork 继承消息不能冒充新投递；压缩、裁剪或投影变化后重新判断，必要时重发锚句并重新确认。默认等待下一次正常请求；显式 turn-stop 注入可沿用有界续跑并设置 `dedupe: session`，取消或释放后不续跑。来源 `source.summary` 仍是用户声明的元数据，不自动生成确认或兜底说明；规则诊断沿用 hit/miss。
 
 ### 条件判定与事件载荷
 

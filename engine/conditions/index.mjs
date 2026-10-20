@@ -77,8 +77,10 @@ export function compileWhen(node, context = {}) {
     )
   }
   const options = objectOrUndefined(value, `when.${key}`) ?? {}
-  // 两个原语需要挂载期注入：`preset` 的取法（见 predicates.mjs 的三条硬约束）与 `phase` 的
-  // 追踪器池（见 promotion-pool.mjs——池是统一喂事件的那一处），其余原语只用节点选项。
+  // 条件上下文只补宿主查询、共享晋升池和同规则动作引用，不建立第二套运行状态。
+  if (key === 'anchor') {
+    return withAvailableInput(key, options, createAnchorPredicate(options, context))
+  }
   if (key === 'preset') {
     return withAvailableInput(key, options, createPresetPredicate({ ...options, ctx: context.ctx, standingMountFor: context.standingMountFor }))
   }

@@ -10,6 +10,7 @@ import { WATERFALL_POSITIONS } from './trigger.mjs'
 import { ACTION_EXAMPLES } from './actions/examples.mjs'
 import { PREDICATE_EXAMPLES } from './conditions/examples.mjs'
 import { conjunction, expandActions } from './branch.mjs'
+import { identityOf, textRegistrationName } from './delivery.mjs'
 
 /** 规则字段：只有 `if`/`then`/`else`；旧名 `when`/`do` 留在名单里，只为把 unknown fields 换成一句「已退役，改用 X」。 */
 const RULE_FIELDS = new Set(['id', 'name', 'enabled', 'layer', 'group', 'exclusive', 'if', 'then', 'else', 'when', 'do'])
@@ -36,6 +37,69 @@ function conditionSubjects(node, out = []) {
     }
   }
   return out
+}
+
+function referencedActions(node, out = new Set()) {
+  if (!record(node)) return out
+  if (node.anchor?.after) out.add(node.anchor.after.action)
+  for (const key of ['all', 'any', 'notAny']) {
+    if (Array.isArray(node[key])) for (const child of node[key]) referencedActions(child, out)
+  }
+  if (node.not) referencedActions(node.not, out)
+  return out
+}
+
+function validateActionLinks(rule) {
+  const actions = new Map(rule.actions.map(action => [action.id, action]))
+  const edges = new Map()
+  for (const action of rule.actions) {
+    const refs = referencedActions(action.conditions, referencedActions(rule.conditionTrees.when))
+    edges.set(action.id, refs)
+    if (refs.size && action.compiledConfig) action.compiledConfig.linkedDelivery = true
+    for (const id of refs) {
+      const target = actions.get(id)
+      if (target === undefined) throw new TypeError(`rule ${rule.id}: unknown after action ${id}`)
+      if (id === action.id) throw new TypeError(`rule ${rule.id}: action ${id} cannot reference itself in after`)
+      const config = target.compiledConfig
+      if (target.kind !== 'inject-text' || !['pre-step', 'runtime-context', 'turn-stop'].includes(config?.layer)
+        || config.mergeMode === 'merged') throw new TypeError(`rule ${rule.id}: after action ${id} requires an independently delivered message or runtime-context`)
+      for (const other of rule.actions) {
+        if (other === target || other.compiledConfig === undefined) continue
+        const conflict = config.layer === 'runtime-context'
+          ? other.compiledConfig.layer === config.layer && textRegistrationName(config, 'contextName') === textRegistrationName(other.compiledConfig, 'contextName')
+          : identityOf(config) === identityOf(other.compiledConfig)
+        if (conflict) throw new TypeError(`rule ${rule.id}: after action ${id} has an ambiguous delivery identity`)
+      }
+      config.linkedDelivery = true
+    }
+  }
+  const visiting = new Set(), visited = new Set()
+  const visit = id => {
+    if (visiting.has(id)) throw new TypeError(`rule ${rule.id}: cyclic after action reference at ${id}`)
+    if (visited.has(id)) return
+    visiting.add(id)
+    for (const target of edges.get(id) ?? []) visit(target)
+    visiting.delete(id); visited.add(id)
+  }
+  for (const id of actions.keys()) visit(id)
+}
+
+/** 命名快照在整个挂载 scope 内共享，关联目标不能借别的规则的同名贡献确认。 */
+export function validateDeliverySources(sources) {
+  const names = new Map()
+  for (const source of sources) for (const rule of source.rules) {
+    if (rule.enabled === false) continue
+    for (const action of rule.actions) {
+      if (action.compiledConfig?.layer !== 'runtime-context') continue
+      const config = { ...action.compiledConfig, sourceModuleId: source.moduleId }
+      const name = textRegistrationName(config, 'contextName')
+      const previous = names.get(name)
+      if (previous && (previous.linkedDelivery || config.linkedDelivery)) {
+        throw new TypeError(`ambiguous runtime-context delivery identity ${JSON.stringify(name)}`)
+      }
+      names.set(name, config)
+    }
+  }
 }
 
 /**
@@ -217,7 +281,6 @@ export function compileRules(specs, options = {}) {
       const action = structuredClone(source)
       if (action.kind === 'inject-text') {
         action.config = injectionConfigSpec(spec, action, options)
-        if (action.config.strategy === 'custom-fallback') throw new TypeError(`action ${action.id}: migrate custom-fallback to an anchor condition and anchor-notice content`)
       }
       const execution = ruleActionExecution(action)
       // 未知键检查必须在 normalizeActionGates **之后**：中性旧门由它删除、非中性旧门由它报
@@ -305,7 +368,7 @@ export function compileRules(specs, options = {}) {
     const byId = new Map(compiled.map(config => [config.id, config]))
     for (const item of pendingConfigs) {
       const config = byId.get(item.source.id)
-      Object.assign(config, { sequence: item.sequence, ruleId: item.ruleId, ruleActionIndex: item.actionIndex })
+      Object.assign(config, { sequence: item.sequence, ruleId: item.ruleId, ruleActionId: item.action.id, ruleActionIndex: item.actionIndex })
       // 停用标记在这里打，不在 `injectionConfigSpec`：那是校验**之前**，标记会变成作者可写的字段。
       // 校验之后打标，作者手写同名键按未知键 fail loud；执行期据此跳过会话变量合并。
       if (options.variablesEnabled === false) config[SESSION_VARIABLES_DISABLED] = true
@@ -314,16 +377,19 @@ export function compileRules(specs, options = {}) {
       item.action.compiledConfig = config
     }
   }
+  for (const rule of rules) validateActionLinks(rule)
+  validateDeliverySources([{ moduleId, rules }])
   return rules
 }
 
 /**
- * 树里是否需要挂载期的输入——两类：
+ * 树里是否需要挂载期的输入：
  * - `preset` 谓词：`conditions/preset.mjs` 把服务查询基准绑在**构造期**；
  * - `phase` 谓词（且未显式 `subscribe: false`）：订阅模式要从挂载缝的追踪器池里取实例
  *   （见 `promotion-pool.mjs`），否则每个编译出的谓词各建一份、各自订阅、各自喂事件。
+ * - `anchor.after`：引用目标需要挂载来源的真实模块身份。
  *
- * 其余原语只用节点选项。只重绑需要重绑的树：调用方对不含这两类节点的条件谓词做的包装/替换
+ * 其余原语只用节点选项。只重绑需要重绑的树：调用方对不含这些节点的条件谓词做的包装/替换
  * 不会被覆盖，「挂载缝接管绑定」与「调用方仍可注入自定义判定」两件事不冲突。
  */
 function needsMountContext(node) {
@@ -331,6 +397,7 @@ function needsMountContext(node) {
   if (Array.isArray(node)) return node.some(needsMountContext)
   if (Object.hasOwn(node, 'preset')) return true
   if (Object.hasOwn(node, 'phase') && node.phase?.subscribe !== false) return true
+  if (node.anchor?.after !== undefined) return true
   return Object.values(node).some(needsMountContext)
 }
 
@@ -348,10 +415,13 @@ export function rebindConditions(sources, context = {}) {
     for (const rule of source?.rules ?? []) {
       const trees = rule.conditionTrees
       if (trees === undefined) continue
-      if (trees.when !== undefined && needsMountContext(trees.when)) rule.when = compileWhen(trees.when, context)
+      const targets = new Map(rule.actions.filter(action => action.compiledConfig !== undefined)
+        .map(action => [action.id, { ...action.compiledConfig, sourceModuleId: source.moduleId }]))
+      const binding = { ...context, resolveAction: id => targets.get(id) }
+      if (trees.when !== undefined && needsMountContext(trees.when)) rule.when = compileWhen(trees.when, binding)
       for (const action of rule.actions ?? []) {
         const tree = trees.actions?.[action.id]
-        if (tree !== undefined && needsMountContext(tree)) action.actionWhen = compileWhen(tree, context)
+        if (tree !== undefined && needsMountContext(tree)) action.actionWhen = compileWhen(tree, binding)
       }
     }
   }

@@ -1,4 +1,4 @@
-# 复杂任务判定 fallback 复用锚定卡的 complexPattern；长度判定仅使用显式 complexMinChars；未设置时不按长度分类
+# 复杂任务判定使用本动作的 complexPattern；长度判定仅使用显式 complexMinChars；未设置时不按长度分类
 # 简单任务自动引导句（留空 = 不注入该类别引导）
 # 复杂任务自动引导句（留空 = 不注入该类别引导）
 

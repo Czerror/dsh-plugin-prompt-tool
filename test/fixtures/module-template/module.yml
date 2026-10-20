@@ -26,7 +26,8 @@ rules:
         kind: inject-text
         config:
           id: near-anchor
-          strategy: first-turn-anchor
+          strategy: static
+          text: We start.
           layer: pre-step
           configKind: ordered
           order: 0
@@ -68,14 +69,16 @@ rules:
             promoted: true
             includeSubagents: false
         - anchor:
-            keys: []
-            fallbackAfter: 1
+            subject: assistantReasoning
+            keys: [We]
+            fallbackAfter: 2
     then:
       - id: inject
         kind: inject-text
         config:
           id: prompt-injector
-          strategy: anchor-notice
+          strategy: static
+          text: Fixture body.
           layer: pre-step
           configKind: ordered
           order: 20

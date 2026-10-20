@@ -69,7 +69,7 @@ function loadTemplate(file, baseUrl = import.meta.url, presetRootUrl) {
   return { text: raw }
 }
 
-export const KNOWN_STRATEGIES = new Set(['static', 'placeholder', 'first-turn-anchor', 'guide-auto', 'anchor-notice', 'context-activation'])
+export const KNOWN_STRATEGIES = new Set(['static', 'placeholder', 'guide-auto', 'context-activation'])
 /**
  * 策略 × 层支持矩阵：`config.resolve` 只在 pre-step（executor）与 runtime-context 的
  * placeholder（layers）被消费，其他层声明非 static 策略会绑定 resolver 却无人调用，
@@ -79,9 +79,7 @@ export const KNOWN_STRATEGIES = new Set(['static', 'placeholder', 'first-turn-an
 export const STRATEGY_LAYER_SUPPORT = {
   static: null,
   placeholder: ['pre-step', 'runtime-context'],
-  'first-turn-anchor': ['pre-step'],
   'guide-auto': ['pre-step'],
-  'anchor-notice': ['pre-step'],
   'context-activation': ['pre-step'],
 }
 /** 模板专属策略允许的层：resolver 同样只在 pre-step / runtime-context 被调用。 */
@@ -157,7 +155,7 @@ const LAYER_DEFINITIONS = [
   {
     layer: 'turn-stop',
     channel: 'agent/turn-stopping', phase: 'before-next',
-    fields: { position: false, dedupe: false, promotion: false, audience: false, modelScope: true, merge: false, order: true, role: false, placeholder: false, subject: true, match: true },
+    fields: { position: false, dedupe: true, promotion: false, audience: false, modelScope: true, merge: false, order: true, role: false, placeholder: false, subject: true, match: true },
     editing: { subjects: ['assistantText'], content: 'text', variables: true, messageMetadata: false, params: {} },
     label: { title: '轮次停止层', detail: 'agent/turn-stopping 层：命中条件时强制续跑一步；引擎内置续跑上限，不可用配置关闭。' },
     defaultSubject: 'assistantText',
@@ -582,7 +580,7 @@ export function createPromptConfigs(specs, options = {}) {
     const rawStrategy = spec.strategy ?? 'static'
     const strategy = rawStrategy
     if (strategy === 'world-book') throw new TypeError(`${name}: world-book is retired; reimport or explicitly convert to context-activation`)
-    if (strategy === 'custom-fallback') throw new TypeError(`${name}: migrate custom-fallback to an anchor condition and anchor-notice content`)
+    if (['custom-fallback', 'first-turn-anchor', 'anchor-notice'].includes(strategy)) throw new TypeError(`${name}: retired strategy ${strategy}; use rule conditions and static content`)
     if (!KNOWN_STRATEGIES.has(strategy)) {
       // 模板专属策略:声明了 strategyDir 时由 strategies.bindResolver 懒加载,
       // 否则视为未知策略 fail loud。

@@ -1,7 +1,7 @@
 import { prepareAction } from './actions/index.mjs'
 import { applyPromptConfigSources } from './executor.mjs'
 import { createTurnStopBudget, wireLayers } from './layers.mjs'
-import { rebindConditions } from './rule-spec.mjs'
+import { rebindConditions, validateDeliverySources } from './rule-spec.mjs'
 import { wireTriggerObservers } from './trigger.mjs'
 import { ruleFrame, actionMatches } from './conditions/evaluation.mjs'
 import { createPromotionPool } from './promotion-pool.mjs'
@@ -16,6 +16,7 @@ const compare = (a, b) => a.action.channelOrder - b.action.channelOrder
 
 /** 所有来源只进入这个装配入口；受众限定固定效果要求 ctx 属于 options.agent 的 scope。 */
 export function mountRuleSources(ctx, sources, options = {}) {
+  validateDeliverySources(sources)
   // 晋升相位池先建：条件的挂载期绑定要用它（`phase` 的订阅模式从池取实例，见 promotion-pool.mjs）。
   // 池自己订阅 `session/event` 并统一喂事件；自建的随本挂载释放，注入的由创建者释放。
   const pool = options.promotionPool ?? createPromotionPool(ctx)

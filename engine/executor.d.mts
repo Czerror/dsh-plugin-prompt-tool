@@ -2,9 +2,6 @@
 import type { PromotionTracker } from './compaction-epoch.mjs'
 import type { WarnOnce } from './shared.mjs'
 
-/** 去重身份：merged 组按位置命名空间（`merged:<position>`），否则取 `identity.value`。 */
-export function identityOf(config: Record<string, unknown>): string
-
 /** pre-step 条目；仅覆盖插件依赖面（引擎按需读字段，未列出的字段不参与声明用途）。 */
 export interface PreStepConfigLike {
   id: string

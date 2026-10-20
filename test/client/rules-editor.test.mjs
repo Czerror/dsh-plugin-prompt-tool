@@ -61,6 +61,30 @@ test('rules bridge: CAS failure and switched module never discard local input', 
   assert.equal(h.calls.length, 3)
 })
 
+test('rules bridge: 确认关联和兜底字段按草稿增删，不在提交时补回默认值', async () => {
+  let saved = structuredClone(alpha)
+  const h = harness(async body => {
+    if (body.edits) saved = structuredClone(body.edits[0].rule)
+    return { ok: true, value: snapshot([saved], body.edits ? 'saved' : 'baseline') }
+  })
+  await h.editor.load()
+  const key = h.draft.entries[0].key
+  saved = { ...saved, if: { anchor: { subject: 'assistantReasoning', keys: ['READY'] } } }
+  h.editor.patch(key, saved)
+  assert.equal(await h.editor.submit(), true)
+  assert.deepEqual(h.calls.at(-1).edits[0].rule.if.anchor, { subject: 'assistantReasoning', keys: ['READY'] })
+  saved = { ...saved, if: { anchor: { ...saved.if.anchor, after: { action: 'seed' }, fallbackAfter: 2 } } }
+  h.editor.patch(key, saved)
+  assert.equal(await h.editor.submit(), true)
+  assert.deepEqual(h.calls.at(-1).edits[0].rule.if.anchor.after, { action: 'seed' })
+  assert.equal(h.calls.at(-1).edits[0].rule.if.anchor.fallbackAfter, 2)
+  delete saved.if.anchor.after
+  delete saved.if.anchor.fallbackAfter
+  h.editor.patch(key, saved)
+  assert.equal(await h.editor.submit(), true)
+  assert.deepEqual(h.calls.at(-1).edits[0].rule.if.anchor, { subject: 'assistantReasoning', keys: ['READY'] })
+})
+
 test('rules bridge: 共享引用被拒后只许重新读取，不重放那一次写', async () => {
   const h = harness(async body => body.edits
     ? { ok: false, code: 'shared-alias', message: 'YAML 共享引用会改变其他定义；请先解除相关引用后再编辑（连带改了 persona）' }

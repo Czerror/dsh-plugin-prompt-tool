@@ -28,7 +28,7 @@
 | `session` | `type`（事件类型，如 `user/message`）；`present`（缺省 `false`＝该事件还没有）；`delegated` | 会话态。判「首轮」用 `{type: user/message, present: false}` |
 | `preset` | `presetId` | 当前**挂载**的官方会话预设；取不到时返回 `UNAVAILABLE`（不乐观放行） |
 | `scope` | `audience`（`main`/`subagent`）；`modelScope`（`all` 缺省 / `pro` / `flash`） | 受众与模型范围。这是**唯一**该写这些门的地方 |
-| `anchor` | `keys`（前缀匹配确认词）；`fallbackAfter` | 锚定确认：首条 assistant reasoning 命中 `keys` 即确认；`fallbackAfter: N` 表示 assistant 消息超过 N 条后也放行 |
+| `anchor` | `subject`（userMessage/assistantReasoning/assistantText/toolResult，缺省 assistantReasoning）；`keys`；scan 模式可选既有匹配选项；`after: { action: seed }`；可选正整数 `fallbackAfter` | 当前可见已结算消息确认；缺省 prefix 只按 keys 作 ASCII 忽略大小写的字面前缀匹配，显式 secondaryKeys/caseSensitive/wholeWords/useRegex/logic/wordBoundary 一律拒绝，需这些选项时用 scan。关联只看同规则动作实际投递后的输出；第 N 个含所选内容块的完整输出仍未命中时兜底，中断模型消息不计，省略持续等待 |
 
 拿不到必要事实时谓词返回 `UNAVAILABLE`：只有严格 `true` 才执行；`any` 遇已知 `true`、`all` 遇已知
 `false` 仍可决断。
@@ -40,7 +40,7 @@
 
 | 动作 | 执行点 | 主要字段 | 失败时 |
 |---|---|---|---|
-| `inject-text` | 由 `config.layer` 决定（**可注入八层**，见层表；`tool-pipeline` 无注入通道） | `layer`、`strategy`（`static`/`placeholder`/`first-turn-anchor`/`guide-auto`/`anchor-notice`/`context-activation`）、`position`、`dedupe`、`mergeMode`、`role`、`order`、`text`/`texts`、`params`、`templateFile`、`configKind` | 空正文不生成投递；变量赋值模板另按显式求值事务处理 |
+| `inject-text` | 由 `config.layer` 决定（**可注入八层**，见层表；`tool-pipeline` 无注入通道） | `layer`、`strategy`（`static`/`placeholder`/`guide-auto`/`context-activation`）、`position`、`dedupe`、`mergeMode`、`role`、`order`、`text`/`texts`、`params`、`templateFile`、`configKind` | 空正文不生成投递；变量赋值模板另按显式求值事务处理 |
 | `assembly` | `system-prompt/assemble` 下游 | `target.sections`（`add`/`remove` **或** `keep`）、`target.contexts`（`add`/`remove` **或** `clear`，二者互斥——并存编译期拒绝）；`target.tools` 已移除 | 返回未改动的装配 |
 | `tool-visibility` | `system-prompt/assemble` 下游 | `audience`（`main`/`subagent`/`all`）、`allow` 与/或 `deny`（同时给时先保留再剔除）、`requireMatch`（仅 allow）、`discovery`（`{ kind }`：按 agent 解析发现适配器并回收解锁名；`tool`/`key` 可选，只作断言）、`notice`（`true` = 引擎生成正文；`{ text }` = 模块自定义正文） | 呈现面失败保留原装配；执行闸失败留痕，不静默放行 |
 | `tool-gate` | `tools/pre-execute` | `decision`（`allow`/`deny`/`ask`）、`reason`、`toolNames` | 一律放行——裁决 bug 不卡死调用 |
@@ -95,19 +95,19 @@ rules:
 
 | 层 | 官方入口 | 层上合法字段 | 可用策略 | 层内 `params` |
 |---|---|---|---|---|
-| `pre-step` | `agent/pre-step` 消息批 | `position` `dedupe` `promotion` `audience` `modelScope` `mergeMode` `order` `role` `subject` `match` | 六种全支持 | — |
+| `pre-step` | `agent/pre-step` 消息批 | `position` `dedupe` `promotion` `audience` `modelScope` `mergeMode` `order` `role` `subject` `match` | 四种全支持 | — |
 | `system-section` | `ctx.systemPrompt.section` | `audience` `mergeMode` `order` | `static` | `sectionName` `complete` `suppressRuntimeContext` |
 | `runtime-context` | `ctx.systemPrompt.context` | `mergeMode` `order` | `static` `placeholder` | `contextName` |
 | `agent-request` | `agent/request` | `audience` `modelScope` `order` | `static` | `patch` `replace` |
 | `llm-stream` | `llm/stream` | `modelScope` `order` | `static` | `mode`（`pass`/`replace`） |
 | `tool-pipeline` | 仅展示归属（**无注入通道**） | `audience` `modelScope` `order` `subject` `match` | — | 工具链的裁决 / 结果处理 / 追加上下文改用 `decision` / `append-context` 动作 |
-| `turn-stop` | `agent/turn-stopping` | `modelScope` `order` `subject` `match` | `static` | — |
+| `turn-stop` | `agent/turn-stopping` | `dedupe`（none/session） `modelScope` `order` `subject` `match` | `static` | — |
 | `subagent-start` | `subagent/start` | `modelScope` `order` `subject` `match` | `static` | — |
 | `subagent-end` | `subagent/end` | `modelScope` `order` `subject` `match` | `static` | `action`（`observe`/`inject-main`） |
 
 三条边界：
 
-1. 层字段按上表用：`position`/`dedupe`/`role`/`promotion` 在 `pre-step`；`subject`/`match` 在
+1. 层字段按上表用：`position`/`role`/`promotion` 在 `pre-step`，`dedupe` 另支持 `turn-stop` 的 none/session；`subject`/`match` 在
    `pre-step`、`turn-stop`、`subagent-start`、`subagent-end`——`tool-pipeline` 无注入通道，写上不生效。
 2. 各层缺省的匹配对象：`pre-step` → `userMessage`、`tool-pipeline` → `toolArgs`、`turn-stop` →
    `assistantText`、`subagent-*` → `subagentInfo`。按任务内容分档放在 `pre-step`——`subagent/start`
@@ -116,8 +116,16 @@ rules:
    条件文本贡献通道求值，`if.scope.audience` 是常见写法；动作级 `{ if, then, else }` 分支留给带逐轮
    时机的层。`complete` 是「唯一 system 段」（同一 scope 一个）。
 
-策略 × 层：`static` 全层；`placeholder` 在 `pre-step`、`runtime-context`；`first-turn-anchor` /
-`guide-auto` / `anchor-notice` / `context-activation` 在 `pre-step`——后五者都需要每轮求值的 resolver。
+策略 × 层：`static` 全层；`placeholder` 在 `pre-step`、`runtime-context`；
+`guide-auto` / `context-activation` 在 `pre-step`。动态内容策略使用既有 resolver。
+
+### 确认后注入
+
+先用普通 `inject-text` 动作投递自定义锚句，再在嵌套分支写 `if: { anchor: { keys: [已确认], after: { action: seed } } }`，then 使用另一个普通注入动作声明正文与位置。完整示例见包内 `templates/16-custom-fallback.yml`，运行边界见 [引擎指南](../../docs/engine-reuse.md#字词句确认与动作关联)。不要把等待条件放在锚句动作的父级，否则锚句也无法投递。
+
+`after.action` 仅引用同规则 separate 模式的 pre-step/runtime-context/turn-stop 注入动作；缺引用、自引用、循环、投递身份歧义、system-section 与 merged 目标在编译时拒绝。未实际接纳或已不再可见的起点返回 UNAVAILABLE，旧输出和 fork 继承不算当前会话的新投递。当前可见上下文变化后重判；默认等下次正常请求，显式 turn-stop 续跑仍受预算和取消信号约束。
+
+直接匹配当前 pre-step 用户消息用 `text.subject: userMessage`（模板14）；`anchor.subject: userMessage` 看已接纳历史。确认词只写条件，正文只写动作；source.summary 是用户元数据，不生成动态确认/兜底说明。旧 first-turn-anchor、anchor-notice 策略与专属参数已移除，不保留兼容入口，也不自动修改用户模块。
 
 ## 四、能力、参数与数据所有权
 

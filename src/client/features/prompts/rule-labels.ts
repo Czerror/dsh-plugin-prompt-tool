@@ -14,6 +14,7 @@ const FIELD_OPTIONS: Record<string, Record<string, readonly string[]>> = {
   'inbox-prepend': { target: ['next-turn', 'next-step'] },
   count: { per: ['session', 'turn'], of: ['tool-call', 'tool-result', 'assistant-message', 'assistant-chars', 'user-message', 'turn'] },
   text: { logic: ['any', 'all', 'not', 'notAny'], mode: ['scan', 'prefix'], wordBoundary: ['ascii-token', 'unicode'] },
+  anchor: { subject: ['userMessage', 'assistantReasoning', 'assistantText', 'toolResult'], logic: ['any', 'all', 'not', 'notAny'], mode: ['scan', 'prefix'], wordBoundary: ['ascii-token', 'unicode'] },
   source: { match: ['exact', 'prefix'] },
   phase: { promoteOn: ['tool-call', 'assistant-message', 'either'] },
 }

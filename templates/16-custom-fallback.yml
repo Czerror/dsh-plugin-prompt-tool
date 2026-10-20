@@ -1,35 +1,47 @@
-# 模板：自定义锚词兜底注入（anchor 条件 + strategy=anchor-notice）
-# 首轮推理命中锚定确认词后注入一次；未命中最多两轮兜底。确认词集合 anchorWords 由
-# writePreset 从锚句自动派生（firstTurnWord 空时）；显式 firstTurnWord 覆盖派生。
-# 两者都为空 = 不做词确认，只走未命中兜底注入（引擎不内置确认词）。
-# 提示：把本文件放入 模块规则模板目录，或把对象写入 module.yml.rules 数组。
+# 先投递锚句，仅确认该次投递后的模型推理，再注入正文。
+# 默认持续等待；需要兜底时在 anchor 下显式添加 fallbackAfter: N。
+# 默认等待下一次正常请求；续跑通过既有 turn-stop 规则显式配置。
 id: example-custom-fallback
-name: 示例：自定义锚词兜底注入
+name: 示例：锚句确认后注入
 enabled: false
 layer: pre-step
-if:
-  all:
-    - phase:
-        promoted: true
-        includeSubagents: false
-    - anchor:
-        keys: []
-        fallbackAfter: 1
 then:
-  - id: inject
+  - id: seed
     kind: inject-text
     config:
-      id: example-custom-fallback
+      id: example-custom-fallback-seed
       layer: pre-step
-      strategy: anchor-notice
-      position: before-all
+      strategy: static
+      position: after-user
       dedupe: session
       configKind: ordered
-      order: 20
+      order: 0
       role: user
       mergeMode: separate
       sourceKind: plugin
       form: notice
       params:
-        text: "" # 注入文本（如 preset.md 内容）；留空 = 不注入
-        firstTurnWord: "" # 锚定确认词（显式覆盖；空 = 自动派生）
+        text: "" # 自定义锚句，要求模型输出约定确认词
+  - if:
+      anchor:
+        subject: assistantReasoning
+        keys: [自定义确认词]
+        after:
+          action: seed
+    then:
+      - id: body
+        kind: inject-text
+        config:
+          id: example-custom-fallback-body
+          layer: pre-step
+          strategy: static
+          position: before-all
+          dedupe: session
+          configKind: ordered
+          order: 20
+          role: user
+          mergeMode: separate
+          sourceKind: plugin
+          form: notice
+          params:
+            text: "" # 自定义正文

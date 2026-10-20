@@ -41,7 +41,7 @@ import { compileRules, completeRuleSections } from '../../engine/rule-spec.mjs'
 import { isDelegated } from '../../engine/shared.mjs'
 import { mountRuleSources } from '../../engine/rule-runtime.mjs'
 // 去重身份判据的唯一来源。
-import { identityOf } from '../../engine/executor.mjs'
+import { identityOf } from '../../engine/delivery.mjs'
 // 条件在真实挂载 scope 绑定；准备期只保留经过预检的定义快照。
 import { loadStandingMountFor } from '../../engine/conditions/index.mjs'
 // 私有工具适配器的服务名真值源（与引擎侧同一份）。

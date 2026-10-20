@@ -217,7 +217,7 @@ test('并入的源模块优先：同名模块与角色卡并存时取模块定�
   mkdirSync(join(moduleRoot, id), { recursive: true })
   const moduleRules = [
     { id: 'intro', strategy: 'static', layer: 'system-section', text: 'FROM-MODULE' },
-    { id: 'near-anchor', strategy: 'first-turn-anchor', enabled: false, layer: 'pre-step' },
+    { id: 'near-anchor', strategy: 'static', enabled: false, layer: 'pre-step' },
     { id: 'prompt-injector', strategy: 'guide-auto', layer: 'pre-step' },
   ].map(promptConfigToRule)
   writeFileSync(join(moduleRoot, id, 'module.yml'), JSON.stringify({ id, name: '模块源', modules: [], rules: moduleRules, configOrder: Object.fromEntries(moduleRules.map((rule, index) => [rule.id, index * 10])) }), 'utf8')
@@ -241,7 +241,7 @@ test('并入的源模块优先：同名模块与角色卡并存时取模块定�
   const configs = parse(written).rules
   const anchor = configs.find(config => config.id === `module-${id}-near-anchor`)
   assert.equal(anchor.enabled, false, '并入保留源模块定义的启停')
-  assert.equal(anchor.then[0].config.strategy, 'first-turn-anchor')
+  assert.equal(anchor.then[0].config.strategy, 'static')
   assert.equal(configs.find(config => config.id === `module-${id}-prompt-injector`).then[0].config.strategy, 'guide-auto')
 })
 

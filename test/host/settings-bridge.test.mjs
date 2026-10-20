@@ -148,7 +148,7 @@ test('settings bridge /meta 返回引擎能力矩阵', async () => {
   const payload = JSON.parse(res.body)
   assert.equal(payload.ok, true)
   assert.ok(payload.value.meta.layers.includes('pre-step'))
-  assert.ok(payload.value.meta.strategies.includes('anchor-notice'))
+  assert.ok(payload.value.meta.strategies.includes('static'))
 })
 
 test('settings bridge /meta 逐模块下发同源事实：可编辑、算不出缺席、正文不外泄', async () => {

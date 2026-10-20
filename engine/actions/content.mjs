@@ -1,53 +1,19 @@
 /**
  * strategies — 引擎内容策略绑定(config.resolve)。
- * 内容策略: static / placeholder / first-turn-anchor / guide-auto / anchor-notice / context-activation。
+ * 内容策略: static / placeholder / guide-auto / context-activation。
  * 策略参数全部来自 config.params（由 preset.yml 单一配置源下发），引擎只负责组装。
  * 仍支持 strategyDir 懒加载自定义模板策略。
  */
 
 import { extractText } from '../shared.mjs'
-import { createTaskClassifier } from '../classify-task.mjs'
 import { createPlaceholderResolver } from '../fillers.mjs'
-import { createAnchorState } from '../conditions/anchor.mjs'
 
 const name = 'prompt-config-engine'
 
 /**
- * first-turn-anchor:首条真实用户消息后的一次性任务锚点。
- * 正则与锚句文本全部来自 config.params（由 preset.yml 单一配置源下发）。
- */
-function createFirstTurnAnchorResolver(config) {
-  const useCustom = config.params?.useCustom === true
-  const customText = typeof config.params?.text === 'string' ? config.params.text : ''
-  const buildPattern = typeof config.params?.buildPattern === 'string' ? config.params.buildPattern : ''
-  const complexPattern = typeof config.params?.complexPattern === 'string' ? config.params.complexPattern : ''
-  const firstTurnBuild = typeof config.params?.firstTurnBuild === 'string' ? config.params.firstTurnBuild : ''
-  const firstTurnInspect = typeof config.params?.firstTurnInspect === 'string' ? config.params.firstTurnInspect : ''
-  const firstTurnDeep = typeof config.params?.firstTurnDeep === 'string' ? config.params.firstTurnDeep : ''
-  const classifier = createTaskClassifier({ buildPattern, complexPattern })
-  return ({ messages }) => {
-    if (useCustom) {
-      const text = customText.trim()
-      return text.length > 0 ? { text } : null
-    }
-    if (!classifier.ready || (firstTurnBuild.length === 0 && firstTurnInspect.length === 0 && firstTurnDeep.length === 0)) {
-      return null
-    }
-    const userIndex = messages.findIndex((message) => message?.source?.kind === 'user')
-    if (userIndex < 0) return null
-    const taskText = extractText(messages[userIndex])
-    if (taskText.length === 0) return null
-    const kind = classifier.classify(taskText)
-    const anchor = kind === 'complex' ? firstTurnDeep : kind === 'build' ? firstTurnBuild : firstTurnInspect
-    return anchor.length > 0 ? { text: anchor } : null
-  }
-}
-
-/**
  * guide-auto:晋升后每轮用户消息后的弱/深度引导。
  * 正则与引导文本全部来自 config.params（由 preset.yml 单一配置源下发）。
- * 复杂任务判定 fallback 复用锚定功能的 complexPattern（guideComplexPattern
- * 冗余副本已移除）——锚定与引导是独立功能，仅分类器共用。
+ * complexPattern 由本配置提供。
  */
 function createGuideAutoResolver(config) {
   const useCustom = config.params?.useCustom === true
@@ -58,8 +24,7 @@ function createGuideAutoResolver(config) {
   const rawMinChars = config.params?.complexMinChars
   const complexMinChars = rawMinChars == null || rawMinChars === '' ? undefined : rawMinChars
   if (complexMinChars !== undefined && (!Number.isSafeInteger(complexMinChars) || complexMinChars < 0)) throw new TypeError(`${name}: guide-auto complexMinChars must be a non-negative integer`)
-  // 复杂判定 fallback 复用锚定分类器（buildPattern 不参与引导判定）。
-  const classifier = createTaskClassifier({ complexPattern })
+  const complex = complexPattern ? new RegExp(complexPattern, 'i') : undefined
   return ({ messages }) => {
     const userIndex = messages.findIndex((message) => message?.source?.kind === 'user')
     if (userIndex < 0) return null
@@ -70,41 +35,7 @@ function createGuideAutoResolver(config) {
       return guide.length > 0 ? { text: guide } : null
     }
     if (guideWeak.length === 0 && guideDeep.length === 0) return null
-    return { text: ((complexMinChars !== undefined && text.length > complexMinChars) || classifier.isComplex(text)) ? guideDeep : guideWeak }
-  }
-}
-
-/**
- * anchor-notice 只生成显式正文与来源说明；资格由规则条件单独负责。
- */
-function createAnchorNoticeResolver(config) {
-  const promptText = config.texts.length > 0
-    ? config.texts.join('\n\n')
-    : (typeof config.params?.text === 'string' && config.params.text.length > 0 ? config.params.text : undefined)
-  // 确认词无内置默认（默认值归模板/预设）：空 = 不做词确认，只走未命中兜底注入。
-  const firstTurnWord = typeof config.params?.firstTurnWord === 'string' ? config.params.firstTurnWord : ''
-  // 确认词集合：writeModule 派生的 anchorWords 优先（锚句信号词多词 prefix，任一命中即
-  // 确认——deep 档 Let…/自定义锚句首词都覆盖）；无 anchorWords 时用显式确认词。
-  const anchorWords = Array.isArray(config.params?.anchorWords) && config.params.anchorWords.length > 0
-    ? config.params.anchorWords.map(String).filter((word) => word.length > 0)
-    : (firstTurnWord.length > 0 ? [firstTurnWord] : [])
-  const inspect = createAnchorState({ keys: anchorWords })
-
-  return ({ agent }) => {
-    if (promptText === undefined) return null
-    const { confirmed } = inspect(agent.session)
-    return {
-      text: promptText,
-      source: {
-        // v4 要求 kind 是生产者名：裸 `plugin` 是退役包装，会被会话格式校验拒绝。
-        kind: `plugin:${config.id}`,
-        plugin: config.id,
-        form: 'notice',
-        summary: confirmed
-          ? (firstTurnWord.length > 0 ? `prompt-tool 提示词(「${firstTurnWord}」锚定确认后注入)` : 'prompt-tool 提示词(无确认词,锚定就绪后注入)')
-          : (firstTurnWord.length > 0 ? `prompt-tool 提示词(「${firstTurnWord}」未确认,兜底注入)` : 'prompt-tool 提示词(无确认词,兜底注入)'),
-      },
-    }
+    return { text: ((complexMinChars !== undefined && text.length > complexMinChars) || complex?.test(text)) ? guideDeep : guideWeak }
   }
 }
 
@@ -115,12 +46,11 @@ function createAnchorNoticeResolver(config) {
 export function bindResolver(config, strategyDir) {
   switch (config.strategy) {
     case 'placeholder': return createPlaceholderResolver(config)
-    case 'first-turn-anchor': return createFirstTurnAnchorResolver(config)
     case 'guide-auto': return createGuideAutoResolver(config)
     case 'custom-fallback':
-      throw new TypeError(`${name}: migrate custom-fallback to an anchor condition and anchor-notice content`)
+    case 'first-turn-anchor':
     case 'anchor-notice':
-      return createAnchorNoticeResolver(config)
+      throw new TypeError(`${name}: retired strategy ${config.strategy}; use rule conditions and static content`)
     case 'context-activation':
       return ({ contextActivationSelected }) => contextActivationSelected === true ? { text: config.texts.join('\n\n') } : null
     case 'static': {

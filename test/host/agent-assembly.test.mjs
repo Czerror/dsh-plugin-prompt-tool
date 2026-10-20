@@ -830,7 +830,7 @@ const LITERAL_SLICES = [
     id: 'near-anchor',
     name: '首句锚点',
     enabled: true,
-    strategy: 'first-turn-anchor',
+    strategy: 'static',
     layer: 'pre-step',
     order: 0,
     role: 'user',

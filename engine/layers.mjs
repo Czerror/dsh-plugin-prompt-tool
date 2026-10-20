@@ -19,6 +19,7 @@ import { renderTemplate } from './template-frame.mjs'
 import { conditionHit, lastAssistantText, subagentTextOf } from './condition.mjs'
 import { compareConfigSequence, compareTextPlacement } from './order.mjs'
 import { ruleFrame, actionMatches } from './conditions/evaluation.mjs'
+import { textRegistrationName, identityStampOf, actionStamp, injectedMessage, findActionDelivery } from './delivery.mjs'
 
 const name = 'prompt-config-engine'
 // 同一宿主会话共享投递账本，避免预设作用域重挂后重投同一次结束通知。
@@ -181,16 +182,6 @@ function textLayerGroups(configs) {
   return groups
 }
 
-/** 官方同 order 按 name 排序：默认名编码安全整数序号，显式名仍由作者拥有。 */
-function textRegistrationName(config, field) {
-  const explicit = config.params?.[field]
-  if (typeof explicit === 'string' && explicit.length > 0) return explicit
-  if (config.sourceModuleId === undefined) return config.id
-  // 非负安全整数最多 16 位，跨过四位文件前缀后仍保持数值顺序。
-  const sequence = String(config.sequence).padStart(16, '0')
-  return `prompt-tool:${sequence}:${config.sourceModuleId}:${config.id}`
-}
-
 /** system-section:注册静态 system prompt 段(支持官方 {{variable}} 渲染与 merged 拼接)。 */
 function wireSystemSections(ctx, configs, registry, warnOnce, keep) {
   const systemPrompt = getService(ctx, 'systemPrompt')
@@ -313,6 +304,7 @@ function wireRuntimeContexts(ctx, configs, registry, warnOnce, keep, on) {
         text,
       }), `${name}: context ${base.id}`)
     } catch (error) {
+      if (base.linkedDelivery) throw error
       warnOnce(`${name}: runtime-context config ${base.id} failed: ${String(error?.message ?? error)}`)
     }
   }
@@ -560,10 +552,12 @@ function wireTurnStops(ctx, configs, warnOnce, on, turnStopBudgets) {
     disposers.push(on('agent/turn-stopping', (payload = {}, _next, invocation) => {
       const { agent, turn } = payload
       try {
+        if (payload.signal?.aborted) return
         if (!actionMatches(config, invocation ?? ruleFrame('agent/turn-stopping', [payload], warnOnce))) return
         const session = agent?.session
         if (session?.id === undefined || typeof agent.steer !== 'function') return
         if (!matchesAgentScope(config, agent)) return
+        if (config.dedupe === 'session' && (config.linkedDelivery ? findActionDelivery(session, config) : injectedMessage(config, session))) return
         const entry = budget.entry(session.id, turn)
         if (!budget.available(entry, turn)) return
         // 未声明 match 时 conditionHit 恒真：不先读一次快照（本层每个 turn-stop 都走）。
@@ -572,7 +566,8 @@ function wireTurnStops(ctx, configs, warnOnce, on, turnStopBudgets) {
         if (text.length === 0) return
         // 计数在 steer 之前落账：steer 抛错也不允许下一步重试越过预算。
         budget.claim(entry, turn)
-        agent.steer(pluginMessage(`turn-stop-${config.id}`, text, `turn-stop ${config.id}`))
+        const message = pluginMessage(`turn-stop-${config.id}`, text, `turn-stop ${config.id}`)
+        agent.steer({ ...message, source: { ...message.source, ...identityStampOf(config), ...actionStamp(config, session) } })
       } catch (error) {
         warnOnce(`${name}: turn-stop config ${config.id} failed: ${String(error?.message ?? error)}`)
       }
@@ -717,35 +712,29 @@ export function wireLayers(ctx, configs, warnOnce, options = {}) {
     let active = true
     const release = () => { if (active) { active = false; dispose() } }
     owned.push(release); keepDisposer(ctx, release, label)
+    return release
   }
-  const on = options.on ?? ((...args) => ctx.on(...args))
-  // 官方插值两层共享一份变量注册：运行时事实按 assembly 求值，非法名走别名改写。
-  const registry = registerOfficialVariables(ctx, configs.filter((config) => config.layer === 'system-section' || config.layer === 'runtime-context'), warnOnce, keep)
-  // 有规则级 when 或动作级 actionWhen 才走条件化注册：只有动作级 if（无规则级 if）的配置
-  // 若落入 regular 的无条件注册路径，动作级分支会被整段忽略，与其余八层不一致。
-  // 声明路径上注册层的动作级分支已被编译期拒绝（rule-spec.mjs 的 REGISTRATION_LAYERS），
-  // 故这一项只剩公开 wireLayers 入口可达——删掉它，直供配置的分支就被无条件注册静默吞掉。
-  const conditional = configs.filter(config => ['system-section', 'runtime-context'].includes(config.layer)
-    && (typeof config.rule?.when === 'function' || typeof config.actionWhen === 'function'
-      || (config.rule !== undefined || config.params?.templateEvaluation === true) && config.params?.complete !== true && config.params?.suppressRuntimeContext !== true))
-  const regular = configs.filter(config => !conditional.includes(config))
-  const registered = [
-    wireSystemSections(ctx, regular.filter((config) => config.layer === 'system-section'), registry, warnOnce, keep),
-    wireRuntimeContexts(ctx, regular.filter((config) => config.layer === 'runtime-context'), registry, warnOnce, keep, on),
-    wireRuleTextContributions(ctx, conditional, registry, warnOnce, keep, on),
-    wireAgentRequests(ctx, configs.filter((config) => config.layer === 'agent-request'), warnOnce, on),
-    wireLlmStreams(ctx, configs.filter((config) => config.layer === 'llm-stream'), warnOnce, on),
-    wireTurnStops(ctx, configs.filter((config) => config.layer === 'turn-stop'), warnOnce, on, options.turnStopBudgets),
-    wireSubagentEvents(ctx, configs.filter((config) => config.layer === 'subagent-start' || config.layer === 'subagent-end'), warnOnce, on),
-    owned,
-  ].flat().filter((disposer) => typeof disposer === 'function')
-  return () => {
-    for (const dispose of registered.splice(0)) {
-      try {
-        dispose()
-      } catch {
-        // 释放失败不得反过来打断卸载流程。
-      }
-    }
+  const on = (...args) => keep((options.on ?? ((...values) => ctx.on(...values)))(...args), `${name}: ${args[0]}`)
+  const dispose = () => {
+    for (const release of owned.splice(0).reverse()) { try { release() } catch {} }
+  }
+  try {
+    // 注册即纳入 owned，后续注册失败也能释放已取得的变量和监听器。
+    const registry = registerOfficialVariables(ctx, configs.filter((config) => config.layer === 'system-section' || config.layer === 'runtime-context'), warnOnce, keep)
+    const conditional = configs.filter(config => ['system-section', 'runtime-context'].includes(config.layer)
+      && (typeof config.rule?.when === 'function' || typeof config.actionWhen === 'function'
+        || (config.rule !== undefined || config.params?.templateEvaluation === true) && config.params?.complete !== true && config.params?.suppressRuntimeContext !== true))
+    const regular = configs.filter(config => !conditional.includes(config))
+    wireSystemSections(ctx, regular.filter((config) => config.layer === 'system-section'), registry, warnOnce, keep)
+    wireRuntimeContexts(ctx, regular.filter((config) => config.layer === 'runtime-context'), registry, warnOnce, keep, on)
+    wireRuleTextContributions(ctx, conditional, registry, warnOnce, keep, on)
+    wireAgentRequests(ctx, configs.filter((config) => config.layer === 'agent-request'), warnOnce, on)
+    wireLlmStreams(ctx, configs.filter((config) => config.layer === 'llm-stream'), warnOnce, on)
+    wireTurnStops(ctx, configs.filter((config) => config.layer === 'turn-stop'), warnOnce, on, options.turnStopBudgets)
+    wireSubagentEvents(ctx, configs.filter((config) => config.layer === 'subagent-start' || config.layer === 'subagent-end'), warnOnce, on)
+    return dispose
+  } catch (error) {
+    dispose()
+    throw error
   }
 }
