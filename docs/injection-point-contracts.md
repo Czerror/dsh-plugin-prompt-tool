@@ -58,7 +58,7 @@ rules:
 | `runtime-context` | 同上；动态策略的 `resolve()` 只在 `system-prompt/assemble` 内调用 | 空值或异常只让该条为空并告警，取消或卸载丢弃本次填充 |
 | `agent-request` | `next()` 解析完成后合并（浅合并 / `replace` 整体替换 / `unset` 按值删键） | 只影响本次请求配置，不改消息正文 |
 | `llm-stream` | `next()` 之前决定 pass / replace；请求此时已深冻结 | 只能替换流，不能改写消息与调用配置 |
-| `tool-pipeline` | `pre-execute` 在执行前裁决；`post-execute` 在结果到手后——由 `decision` / `append-context` 动作承担 | arguments 不可改写；`toolResult` 条件只有后置入口有数据；`inject-text` 在本层没有通道 |
+| `tool-pipeline` | `pre-execute` 在执行前裁决；`post-execute` 在结果到手后——由 `tool-gate` / `tool-result` / `append-context` 动作承担 | arguments 不可改写；`toolResult` 条件只有后置入口有数据；`inject-text` 在本层没有通道 |
 | `turn-stop` | 停止被接受前触发；续跑经 `agent.steer` | 每个来源（模块）每轮 1 次 / 每会话 3 次上限固定在引擎内，配置改不掉；同模块多条续跑动作共享这一份预算 |
 | `subagent-start` | `subagent/start` emit 时（只读事件），注入另外调用 `Agent.inject` | 不唤醒 driver，赶不上已领取输入的首个请求 |
 | `subagent-end` | `subagent/end` emit 时（只读事件），投递到血缘主会话 | 不唤醒空闲主会话；同 runId + 配置去重 |

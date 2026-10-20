@@ -51,7 +51,7 @@ test('统一规则：同执行点共享一次条件，动作按 do 顺序，跨�
   const rules = compileRules([{ id: 'multi', if: { phase: { promoted: false } }, then: [
     { id: 'first', kind: 'request-params', patch: { maxTokens: 10 } },
     { id: 'second', kind: 'request-params', patch: { maxTokens: 20 } },
-    { id: 'pre', kind: 'decision', phase: 'pre', decision: 'deny', reason: 'blocked' },
+    { id: 'pre', kind: 'tool-gate', decision: 'deny', reason: 'blocked' },
   ] }])
   let reads = 0
   const h = harness()
@@ -590,7 +590,7 @@ test('if/then/else：动作级 text 条件必须落在本执行点真实提供�
     if: { text: { keys: ['x'], subject: 'userMessage' } },
     then: [{
       if: { text: { keys: ['x'], subject: 'userMessage' } },
-      then: [{ id: 'deny', kind: 'decision', phase: 'pre', decision: 'deny', reason: 'blocked' }],
+      then: [{ id: 'deny', kind: 'tool-gate', decision: 'deny', reason: 'blocked' }],
     }],
   }]), /action deny: text subject "userMessage".*可用 toolArgs/)
   // 边界：省略 subject 的判定恒为「缺事实」，同样是死路。
@@ -615,7 +615,7 @@ test('if/then/else：动作级 text 条件必须落在本执行点真实提供�
 
 test('动作级 names / source 条件必须落在本执行点真实提供的事实上', () => {
   const branchOn = (condition, action) => ({ if: condition, then: [action] })
-  const preDecision = { id: 'deny', kind: 'decision', phase: 'pre', decision: 'deny', reason: 'blocked' }
+  const preDecision = { id: 'deny', kind: 'tool-gate', decision: 'deny', reason: 'blocked' }
   const inboxPrepend = { id: 'ip', kind: 'inbox-prepend', target: 'next-turn', text: 'X' }
   // 主路径：工具执行点提供 name（exec.name），收件箱插入点提供 source（message.source）。
   assert.equal(compileRules([{ id: 'r', then: [branchOn({ names: { allow: ['bash'] } }, preDecision)] }])[0].actions.length, 1)
@@ -657,7 +657,7 @@ test('动作级死条件：llm/stream 拒 names/source/text，依赖 agent 补�
 
 test('事实谓词只有一处登记：rule-spec 的判据直接读谓词侧映射（漂移即红）', () => {
   const branchOn = (condition, action) => ({ if: condition, then: [action] })
-  const preDecision = { id: 'deny', kind: 'decision', phase: 'pre', decision: 'deny', reason: 'blocked' }
+  const preDecision = { id: 'deny', kind: 'tool-gate', decision: 'deny', reason: 'blocked' }
   const compileNames = () => compileRules([{ id: 'r', then: [branchOn({ names: { allow: ['bash'] } }, preDecision)] }])
   assert.equal(compileNames()[0].actions.length, 1, '主路径：工具执行点提供 name')
   // 改共享映射 = 改谓词侧唯一登记处，校验面必须当场跟着变。若 rule-spec 另有一张手抄表，
@@ -1086,9 +1086,9 @@ test('variablesEnabled=false 在官方注册层也停读变量，重新装配仍
 })
 
 test('动作声明白名单：未知键、对象形态 match 与带 kind 的分支节点编译期拒绝', () => {
-  // 关键拒绝（fail-closed 反向）：decision 的 toolNames 拼错今天会静默变成「对所有工具生效」。
+  // 关键拒绝（fail-closed 反向）：tool-gate 的 toolNames 拼错今天会静默变成「对所有工具生效」。
   assert.throws(() => compileRules([{ id: 'gate', then: [
-    { id: 'deny', kind: 'decision', phase: 'pre', decision: 'deny', toolName: 'read' },
+    { id: 'deny', kind: 'tool-gate', decision: 'deny', toolName: 'read' },
   ] }]), /action deny: unknown config key\(s\) toolName — allowed keys: .*toolNames/)
   // 关键拒绝：request-params 的动作级 when 今天被静默忽略（补丁无条件生效）。
   assert.throws(() => compileRules([{ id: 'req', then: [
@@ -1148,7 +1148,7 @@ test('动作声明白名单：未知键、对象形态 match 与带 kind 的分�
   assert.equal(compileRules([{ id: 'r', group: 'g', exclusive: true, then: [textAction('a', 'A')] }]).length, 1)
   // G07：带 kind 的动作写分支键时 expandActions 只认无 kind 的分支节点，分支被静默丢掉。
   for (const key of ['if', 'then', 'else']) {
-    const node = { id: 'a', kind: 'decision', phase: 'pre', decision: 'deny', [key]: key === 'if' ? { scope: { audience: 'main' } } : [] }
+    const node = { id: 'a', kind: 'tool-gate', decision: 'deny', [key]: key === 'if' ? { scope: { audience: 'main' } } : [] }
     assert.throws(() => compileRules([{ id: 'g', then: [node] }]), /action a 写了 .*分支必须写成无 `kind` 的节点/)
   }
 })
@@ -1167,7 +1167,7 @@ test('T16：inject-text 在 tool-pipeline 层不可注入——规则路径与�
   // 判据只有 `actionExecutionPoint` 一处（层清单派生自 schema 的 LAYER_DEFINITIONS）。
   const viaRules = messageOf(() => compileRules([{ id: 'rules-path', then: [action] }]))
   const viaAction = messageOf(() => prepareAction(action))
-  assert.match(viaRules ?? '', /inject-text layer "tool-pipeline" has no single trigger channel — 该层在工具链上不可注入，请改用 decision \/ append-context 动作/)
+  assert.match(viaRules ?? '', /inject-text layer "tool-pipeline" has no single trigger channel — 该层在工具链上不可注入，请改用 tool-gate \/ append-context 动作/)
   assert.equal(viaAction, viaRules, '两条公开路径共用 actionExecutionPoint 的同一句拒绝')
 })
 
@@ -1209,7 +1209,7 @@ test('T31：规则卡的动作种子覆盖 catalog 声明的可编辑字段，�
   for (const [kind, definition] of Object.entries(ACTION_KINDS)) {
     const keys = Object.keys(ACTION_EXAMPLES[kind])
     assert.deepEqual(keys.filter(key => !definition.fields.includes(key)), [], `${kind} 的种子不能有 catalog 未声明的键`)
-    // 每条种子都能编译（工具裁决要求 phase/decision/action 落在引擎既有枚举里）。
+    // 每条种子都能编译（工具链两个动作各自要求自己的枚举落在引擎既有取值里）。
     assert.doesNotThrow(() => compileRules([{ id: 'seed', then: [{ ...structuredClone(ACTION_EXAMPLES[kind]), id: 'a', kind }] }]), `${kind} 的种子不可编译`)
     assert.deepEqual(Object.keys(meta.actions.find(item => item.kind === kind).example).sort(),
       ['kind', ...keys].sort(), `${kind} 的下发种子就是 ACTION_EXAMPLES`)
@@ -1218,8 +1218,9 @@ test('T31：规则卡的动作种子覆盖 catalog 声明的可编辑字段，�
       assert.deepEqual(definition.fields.filter(field => !keys.includes(field)), ['match'], `${kind} 只允许 match 落在种子外`)
     }
   }
-  // 用户追加面：decision / append-context 的工具链参数在卡里结构化可编辑。
-  assert.deepEqual(ACTION_EXAMPLES.decision, { phase: 'pre', decision: 'allow', action: 'accept', reason: '', text: '', toolNames: '' })
+  // 用户追加面：tool-gate / tool-result / append-context 的工具链参数在卡里结构化可编辑。
+  assert.deepEqual(ACTION_EXAMPLES['tool-gate'], { decision: 'allow', reason: '', toolNames: '' })
+  assert.deepEqual(ACTION_EXAMPLES['tool-result'], { action: 'accept', text: '', toolNames: '' })
   assert.deepEqual(ACTION_EXAMPLES['append-context'], { mode: 'context', text: '' })
   // 「匹配所有工具」的真实条件是**空串或空数组**（`names.size === 0` → `undefined`）——不是
   // 「数组会被解析成空」：`toolNameSet` 对数组直接交 `NAME_LIST.parse`，定向名单照样成立。
@@ -1578,11 +1579,11 @@ test('A1③：压缩复位不落在 log-only 信号上（重建读完整历史�
   assert.equal(reads, 0, 'log-only 信号：压缩不复位、增量照收 → 一次快照都不读')
 })
 
-test('T36④：从种子出发把 decision 改成 deny，空串 reason 回退引擎缺省原因', async () => {
+test('T36④：从种子出发把 tool-gate 改成 deny，空串 reason 回退引擎缺省原因', async () => {
   const h = harness()
-  const seed = structuredClone(ACTION_EXAMPLES.decision)
+  const seed = structuredClone(ACTION_EXAMPLES['tool-gate'])
   assert.equal(seed.reason, '', '种子里的中性值就是空串（T31 的「不替用户选业务值」）')
-  const rules = compileRules([{ id: 'deny', then: [{ ...seed, id: 'denied', kind: 'decision', decision: 'deny' }] }])
+  const rules = compileRules([{ id: 'deny', then: [{ ...seed, id: 'denied', kind: 'tool-gate', decision: 'deny' }] }])
   const dispose = mountRuleSources(h.ctx, [{ moduleId: 'module', rules }])
   const outcome = await h.run('tools/pre-execute', [{ agent: actor(), name: 'bash' }], () => ({ kind: 'allow' }))
   assert.equal(outcome.kind, 'deny')

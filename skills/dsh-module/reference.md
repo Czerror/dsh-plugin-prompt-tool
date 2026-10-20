@@ -43,7 +43,8 @@
 | `inject-text` | 由 `config.layer` 决定（**可注入八层**，见层表；`tool-pipeline` 无注入通道） | `layer`、`strategy`（`static`/`placeholder`/`first-turn-anchor`/`guide-auto`/`anchor-notice`/`context-activation`）、`position`、`dedupe`、`mergeMode`、`role`、`order`、`text`/`texts`、`params`、`templateFile`、`configKind` | 空正文不生成投递；变量赋值模板另按显式求值事务处理 |
 | `assembly` | `system-prompt/assemble` 下游 | `target.sections`（`add`/`remove` **或** `keep`）、`target.contexts`（`add`/`remove` **或** `clear`，二者互斥——并存编译期拒绝）；`target.tools` 已移除 | 返回未改动的装配 |
 | `tool-visibility` | `system-prompt/assemble` 下游 | `audience`（`main`/`subagent`/`all`）、`allow` 与/或 `deny`（同时给时先保留再剔除）、`requireMatch`（仅 allow）、`discovery`（`{tool, key}`：注册发现工具并回收解锁名）、`notice`（`true` = 引擎生成正文；`{ text }` = 模块自定义正文） | 呈现面失败保留原装配；执行闸失败留痕，不静默放行 |
-| `decision` | `tools/pre-execute` / `tools/post-execute` | `phase`（`pre`/`post`）、`decision`（`allow`/`deny`/`ask`）、`action`（`accept`/`replace`/`block`）、`toolNames`、`text`、`reason` | 一律放行／接受——裁决 bug 不卡死调用 |
+| `tool-gate` | `tools/pre-execute` | `decision`（`allow`/`deny`/`ask`）、`reason`、`toolNames` | 一律放行——裁决 bug 不卡死调用 |
+| `tool-result` | `tools/post-execute` | `action`（`accept`/`replace`/`block`）、`text`（仅 replace/block）、`toolNames` | 一律接受——结果处理 bug 不把调用变成失败 |
 | `append-context` | `mode: context` → `tools/post-execute`；`mode: continue` → `agent/turn-stopping` | `mode`、`text` | 保持原结果 |
 | `request-params` | `agent/request` 下游 | `patch`（浅合并）、`unset`（`{键: 期望值}`）、`replace`（整体替换） | 保持原请求配置 |
 | `inbox-prepend` | `agent/inbox/inserted`（emit，无 next） | `target`（`next-turn` 缺省 / `next-step`）、`text` | 不命中即什么都不做 |
@@ -53,7 +54,7 @@
 
 - 名单类参数（`allow`/`deny`/`sources`/`toolNames`）写成逗号分隔字符串或字符串数组都接受。
 - 工具可见面的 `allow` 与 `deny` 可以同时给：对齐官方 `ToolRestriction`，先按 `allow` 保留、再按 `deny` 剔除。
-- `maxPerTurn`（正整数）用在 `assembly` / `decision` / `append-context` / `request-params` /
+- `maxPerTurn`（正整数）用在 `assembly` / `tool-gate` / `tool-result` / `append-context` / `request-params` /
   `inbox-prepend` / `pre-step-filter` 上；它数的是「本动作本轮生效几次」，
   与 `count` 谓词（数持久事件）是两回事。
 - `complete` 与 `suppressRuntimeContext` 是**固定注册效果**：所在规则不带 `if`（注册期即生效）。
@@ -99,7 +100,7 @@ rules:
 | `runtime-context` | `ctx.systemPrompt.context` | `mergeMode` `order` | `static` `placeholder` | `contextName` |
 | `agent-request` | `agent/request` | `audience` `modelScope` `order` | `static` | `patch` `replace` |
 | `llm-stream` | `llm/stream` | `modelScope` `order` | `static` | `mode`（`pass`/`replace`） |
-| `tool-pipeline` | 仅展示归属（**无注入通道**） | `audience` `modelScope` `order` `subject` `match` | — | 工具链的裁决 / 追加上下文改用 `decision` / `append-context` 动作 |
+| `tool-pipeline` | 仅展示归属（**无注入通道**） | `audience` `modelScope` `order` `subject` `match` | — | 工具链的裁决 / 结果处理 / 追加上下文改用 `decision` / `append-context` 动作 |
 | `turn-stop` | `agent/turn-stopping` | `modelScope` `order` `subject` `match` | `static` | — |
 | `subagent-start` | `subagent/start` | `modelScope` `order` `subject` `match` | `static` | — |
 | `subagent-end` | `subagent/end` | `modelScope` `order` `subject` `match` | `static` | `action`（`observe`/`inject-main`） |

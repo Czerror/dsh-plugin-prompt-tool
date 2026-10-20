@@ -1,5 +1,13 @@
 # Changelog
 
+### 工具链裁决拆成 `tool-gate` / `tool-result`，退役 `decision`（2026-10-20）
+
+- **一个动作两套字段表**：原 `decision` 的七个字段由 `phase` 决定哪半被读，另一半被白名单收下却静默忽略。现在拆成两个动作：`tool-gate`（pre：`decision`/`reason`/`toolNames`）与 `tool-result`（post：`action`/`text`/`toolNames`）。
+- **写错相位即编译期错误**：错相位字段从「收下不读」变成未知字段；编辑器元数据按 kind 生成，不再给出无效字段。
+- **破坏性变更**：`decision` 从 catalog 与引擎删除（编译期 `unknown action`）；模板 60 与根 `module.yml` 已迁移；仓库内没有用户模块使用它。
+- **测试**：动作通道、裁决三档、结果处理（replace/block/accept）、预算与规则编译断言全部迁移；新增结果处理主路径用例。
+- **验证**：typecheck / lint / test / build / git diff --check。
+
 ### 工具可见面统一为 `tool-visibility`，退役 `guard` / `sdk-strip` / `tool-narrow`（2026-10-20）
 
 - **一份声明一个意图**：`tool-visibility` 同时拥有装配目录、`tools:sdk` 正文、执行闸（restrict + guard）、发现工具与首轮提示；`allow` 与 `deny` 对齐官方 `ToolRestriction` 的 and/or，`audience` 只保留 `main`/`subagent`/`all`。

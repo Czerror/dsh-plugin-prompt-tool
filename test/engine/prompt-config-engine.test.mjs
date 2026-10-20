@@ -254,13 +254,13 @@ test('llm-stream 提示词配置 replace 模式用提示词配置文本替代模
   assert.deepEqual(passed, ['PASSED'])
 })
 
-test('decision 动作承担工具链：pre 定向裁决 allow/deny、post 定向替换结果', async () => {
+test('tool-gate / tool-result 承担工具链：pre 定向裁决、post 定向替换结果', async () => {
   // 原用例走 inject-text 的 tool-pipeline 配置；该层已无注入通道（规则路径与公开动作路径
-  // 一致拒绝，见 test/engine/rules.test.mjs），工具链行为由 decision 动作承担同一组通道与定向。
+  // 一致拒绝，见 test/engine/rules.test.mjs），工具链行为由 tool-gate / tool-result 承担通道与定向。
   const listeners = new Map()
   const ctx = { on(name, handler) { listeners.set(name, handler); return () => listeners.delete(name) }, get() {}, logger: { warn() {} } }
-  registerAction(ctx, { id: 'tp', kind: 'decision', phase: 'pre', decision: 'deny', reason: 'no bash', toolNames: 'bash' })
-  registerAction(ctx, { id: 'tp-post', kind: 'decision', phase: 'post', action: 'replace', text: 'REPLACED', toolNames: 'bash' })
+  registerAction(ctx, { id: 'tp', kind: 'tool-gate', decision: 'deny', reason: 'no bash', toolNames: 'bash' })
+  registerAction(ctx, { id: 'tp-post', kind: 'tool-result', action: 'replace', text: 'REPLACED', toolNames: 'bash' })
   const exec = { name: 'bash', agent: { session: { header: { delegationDepth: 0 } }, options: { model: 'deepseek-v4-pro-8013' } }, arguments: { command: 'ls' } }
   const other = { name: 'read', agent: exec.agent }
 

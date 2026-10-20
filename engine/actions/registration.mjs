@@ -15,7 +15,7 @@ export function channelBinder(ctx, kind, plugin, prepend) {
   }
 }
 
-const ON_REGISTERED_KINDS = new Set(['assembly', 'decision', 'append-context', 'request-params', 'inbox-prepend', 'pre-step-filter', 'tool-visibility'])
+const ON_REGISTERED_KINDS = new Set(['assembly', 'tool-gate', 'tool-result', 'append-context', 'request-params', 'inbox-prepend', 'pre-step-filter', 'tool-visibility'])
 
 /** 编辑目录与注册校验共用支持面；不另给客户端维护一份名单。 */
 export const actionSupportsWhen = (kind) => ON_REGISTERED_KINDS.has(kind)
@@ -39,9 +39,8 @@ export const NEXT_FREE_CHANNELS = new Set([
 
 /** 动作的固定执行点；声明编译与 when 接线共用，不能用声明字段改变注册器。 */
 export function actionExecutionPoint(action) {
-  if (action.kind === 'decision') {
-    return { channel: action.phase === 'post' ? 'tools/post-execute' : 'tools/pre-execute', phase: 'before-next' }
-  }
+  if (action.kind === 'tool-gate') return { channel: 'tools/pre-execute', phase: 'before-next' }
+  if (action.kind === 'tool-result') return { channel: 'tools/post-execute', phase: 'before-next' }
   if (action.kind === 'append-context') {
     return action.mode === 'continue'
       ? { channel: 'agent/turn-stopping', phase: 'before-next' }
@@ -52,7 +51,7 @@ export function actionExecutionPoint(action) {
     const layer = action.config?.layer
     const point = INJECTION_CHANNELS[layer]
     if (point === undefined) {
-      throw new TypeError(`inject-text layer ${JSON.stringify(layer)} has no single trigger channel — 该层在工具链上不可注入，请改用 decision / append-context 动作`)
+      throw new TypeError(`inject-text layer ${JSON.stringify(layer)} has no single trigger channel — 该层在工具链上不可注入，请改用 tool-gate / append-context 动作`)
     }
     return point
   }

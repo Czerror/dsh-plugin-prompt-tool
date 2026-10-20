@@ -93,16 +93,16 @@ test('rule-steps: 工具链动作卡按引擎种子渲染可编辑字段，match
   const { RuleStepsPanel } = await withSsr([new URL('../../src/client/features/prompts/RuleSteps.tsx', import.meta.url).href])
   const meta = getRuleEditorMeta()
   const action = (kind, id) => ({ id, kind, ...structuredClone(meta.actions.find(item => item.kind === kind).example) })
-  const rule = { id: 'tool-chain', layer: 'tool-pipeline', then: [action('decision', 'd1'), action('append-context', 'c1')] }
-  // 卡片默认收起（展开状态是独立 Map）；这里展开两张卡，读真实渲染出的控件标签。
-  const expanded = new Map(['rule-key:rule-key:then:0', 'rule-key:rule-key:then:1'].map(key => [key, true]))
+  const rule = { id: 'tool-chain', layer: 'tool-pipeline', then: [action('tool-gate', 'g1'), action('tool-result', 'r1'), action('append-context', 'c1')] }
+  // 卡片默认收起（展开状态是独立 Map）；这里展开三张卡，读真实渲染出的控件标签。
+  const expanded = new Map(['rule-key:rule-key:then:0', 'rule-key:rule-key:then:1', 'rule-key:rule-key:then:2'].map(key => [key, true]))
   const html = renderElement(RuleStepsPanel, {
     t, rule, meta, engineMeta: { layerFieldPolicies: {}, layers: [] },
     fields: new Map(), expanded, prefix: 'rule-key', fieldKey: 'rule-key', onDraft: () => {}, onChange: () => {},
   })
   const labels = [...html.matchAll(/aria-label="([^"]*)"/g)].map(match => match[1])
   // 手写期望值（真值源：引擎动作声明）：`match` 已取消（条件写 `rule.if`），不在卡片的可编辑面。
-  const expected = { decision: ['phase', 'decision', 'action', 'reason', 'text', 'toolNames'], 'append-context': ['mode', 'text'] }
+  const expected = { 'tool-gate': ['decision', 'reason', 'toolNames'], 'tool-result': ['action', 'text', 'toolNames'], 'append-context': ['mode', 'text'] }
   const fieldLabelKeys = { action: 'rules.actionField.action', decision: 'rules.actionField.decision', toolNames: 'rules.actionField.toolNames' }
   const labelOf = field => t(fieldLabelKeys[field] ?? `triggers.label.${field}`)
   // 卡片操作（↑↓× 与类型选择）不是字段入口，但同在一个 aria-label 面上，按动作自己的 id 计入。

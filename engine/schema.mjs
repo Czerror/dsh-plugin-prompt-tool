@@ -94,7 +94,7 @@ export const KNOWN_SLOT_KINDS = new Set(['ordered', 'anchor'])
  * 新增或改一层只动这里一处：
  *   - 数组顺序即 `layerOrder`（**产品定义**，改顺序等于改 UI 组织，不要只为排序调整）；
  *   - `channel` / `phase` 是该层 `inject-text` 的**唯一注册点**（缺 `channel` 的层不可注入：
- *     `tool-pipeline` 的工具链裁决改用 `decision` / `append-context` 动作）；
+ *     `tool-pipeline` 的工具链裁决改用 `tool-gate` / `append-context` 动作）；
  *   - `fields` 是层能力矩阵（11 项，客户端表单据此动态渲染）；
  *   - `editing` 是字段能力表（subjects / content / variables / messageMetadata / params）；
  *   - `label` 是由引擎统一下发给客户端的显示名与说明；
@@ -150,7 +150,7 @@ const LAYER_DEFINITIONS = [
     editing: { subjects: ['toolArgs', 'toolResult'], content: 'tool-result', variables: false, messageMetadata: false,
       params: { toolNames: { type: 'string' }, preDecision: { type: 'enum', values: ['allow', 'deny', 'ask'] },
         denyReason: { type: 'string' }, postAction: { type: 'enum', values: ['accept', 'replace', 'block'] } } },
-    label: { title: '工具管线层', detail: '工具链层：只作规则级展示归属（无 inject-text 通道）——工具链的裁决与追加上下文由 decision / append-context 动作承担；subject / match 可选，命中才裁决。' },
+    label: { title: '工具管线层', detail: '工具链层：只作规则级展示归属（无 inject-text 通道）——工具链的裁决与追加上下文由 tool-gate / tool-result / append-context 动作承担；subject / match 可选，命中才裁决。' },
     defaultSubject: 'toolArgs',
   },
   {
@@ -195,7 +195,7 @@ export const LAYER_ORDER = LAYER_DEFINITIONS.map((definition) => definition.laye
 export const KNOWN_LAYERS = new Set(LAYER_ORDER)
 /**
  * `inject-text` 可绑定的层与注册点（由 {@link LAYER_DEFINITIONS} 的 `channel` 派生，不另写层表）：
- * 没有通道的 `tool-pipeline` 不可注入——工具链的裁决与追加上下文走 `decision` / `append-context` 动作。
+ * 没有通道的 `tool-pipeline` 不可注入——工具链的裁决与结果处理走 `tool-gate` / `tool-result` / `append-context` 动作。
  * 层清单因此有两份：`LAYER_ORDER` 九层供视图筛选、展示分组与规则级 `layer`；这里八层只给动作的 `config.layer`。
  */
 const INJECTION_DEFINITIONS = LAYER_DEFINITIONS.filter((definition) => definition.channel !== undefined)

@@ -110,7 +110,8 @@ adapter 的目录、权限、原子写与版本责任归接入方。缺少 adapt
 | assembly | system-prompt/assemble 的系统段 / 运行上下文投影（工具面不再由它承担） |
 | tool-visibility | system-prompt/assemble 下游：工具目录、SDK 正文、执行闸、发现工具与首轮提示，一份声明 |
 | request-params | agent/request；patch/unset 按官方 LlmCallConfig 校验 |
-| decision | tools/pre-execute 或 post-execute 的裁决/结果处理 |
+| tool-gate | tools/pre-execute 的裁决：allow / deny / ask |
+| tool-result | tools/post-execute 的结果处理：accept / replace / block |
 | append-context | 工具后追加或 turn-stopping 续跑 |
 | pre-step-filter | 前置消息来源/插件过滤 |
 | inbox-prepend | inbox 通知补充上下文 |

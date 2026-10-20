@@ -4,7 +4,8 @@ import { ACTION_KINDS } from './catalog.mjs'
 import { actionSupportsWhen, actionExecutionPoint, createTurnBudget, withWhen, channelBinder } from './registration.mjs'
 import { prepareInjectText } from './inject-text.mjs'
 import { prepareAssembly } from './assembly.mjs'
-import { prepareDecision } from './decision.mjs'
+import { prepareToolGate } from './tool-gate.mjs'
+import { prepareToolResult } from './tool-result.mjs'
 import { prepareAppendContext } from './append-context.mjs'
 import { prepareRequestParams } from './request-params.mjs'
 import { prepareInboxPrepend } from './inbox-prepend.mjs'
@@ -17,7 +18,8 @@ const DEFAULT_PLUGIN = 'prompt-actions'
 const PREPARERS = {
   'inject-text': prepareInjectText,
   assembly: prepareAssembly,
-  decision: prepareDecision,
+  'tool-gate': prepareToolGate,
+  'tool-result': prepareToolResult,
   'append-context': prepareAppendContext,
   'request-params': prepareRequestParams,
   'inbox-prepend': prepareInboxPrepend,

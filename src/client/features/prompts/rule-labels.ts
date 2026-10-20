@@ -8,7 +8,8 @@ export function triggerLabel(t: PromptToolTranslate, name: string): string {
 }
 
 const FIELD_OPTIONS: Record<string, Record<string, readonly string[]>> = {
-  decision: { phase: ['pre', 'post'], decision: ['allow', 'deny', 'ask'], action: ['accept', 'replace', 'block'] },
+  'tool-gate': { decision: ['allow', 'deny', 'ask'] },
+  'tool-result': { action: ['accept', 'replace', 'block'] },
   'append-context': { mode: ['context', 'continue'] },
   'inbox-prepend': { target: ['next-turn', 'next-step'] },
   count: { per: ['session', 'turn'], of: ['tool-call', 'tool-result', 'assistant-message', 'assistant-chars', 'user-message', 'turn'] },

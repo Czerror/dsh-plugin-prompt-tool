@@ -1,7 +1,7 @@
 /**
  * B3 T2 —— engine/actions.mjs（九类动作）与 engine/sdk-strip.mjs 的行为验收（主路径）。
  *
- * 覆盖：每类动作的注册通道与触发时机；inject-text / assembly / decision /
+ * 覆盖：每类动作的注册通道与触发时机；inject-text / assembly / tool-gate / tool-result /
  * append-context / request-params / guard / sdk-strip / inbox-prepend /
  * pre-step-filter 的主路径副作用；真实 PTC 子调用拒绝；每轮预算与 when 门控。
  */
@@ -70,8 +70,8 @@ test('动作只在其合法通道注册：逐类记录 ctx.on 的通道并与声
   const cases = [
     ['inject-text pre-step', { kind: 'inject-text', id: 'i1', config: createPromptConfigs([{ id: 'i1', layer: 'pre-step', text: 'A' }])[0] }, ['agent/pre-step', 'session/event']],
     ['assembly', { kind: 'assembly', id: 'a1', target: { sections: { remove: ['x'] } } }, ['system-prompt/assemble']],
-    ['decision pre', { kind: 'decision', id: 'd1', phase: 'pre', decision: 'deny', reason: 'no' }, ['tools/pre-execute']],
-    ['decision post', { kind: 'decision', id: 'd2', phase: 'post', action: 'block', text: 'x' }, ['tools/post-execute']],
+    ['tool-gate', { kind: 'tool-gate', id: 'd1', decision: 'deny', reason: 'no' }, ['tools/pre-execute']],
+    ['tool-result', { kind: 'tool-result', id: 'd2', action: 'block', text: 'x' }, ['tools/post-execute']],
     ['append-context', { kind: 'append-context', id: 'c1', mode: 'context', text: 'x' }, ['tools/post-execute']],
     ['append-context continue', { kind: 'append-context', id: 'c2', mode: 'continue', text: 'x' }, ['agent/turn-stopping']],
     ['tool-visibility', { kind: 'tool-visibility', id: 'v1', deny: ['bash'] }, ['system-prompt/assemble']],
@@ -94,7 +94,8 @@ test('动作声明 fail loud：名单形状错误、名单为空、名单命名 
   assert.throws(() => registerAction(ctx, { kind: 'tool-visibility', id: 'v', deny: ['a'], audience: 'nobody' }), /audience must be main, subagent or all/)
   assert.throws(() => registerAction(ctx, { kind: 'tool-visibility', id: 'v', deny: ['a'], requireMatch: true }), /requireMatch only applies to allow/)
   assert.throws(() => registerAction(ctx, { kind: 'request-params', id: 'x', replace: true, unset: { maxTokens: 1 } }), /cannot combine replace with unset/)
-  assert.throws(() => registerAction(ctx, { kind: 'decision', id: 'x', phase: 'pre', decision: 'maybe' }), /must be one of allow, deny, ask/)
+  assert.throws(() => registerAction(ctx, { kind: 'tool-gate', id: 'x', decision: 'maybe' }), /must be one of allow, deny, ask/)
+  assert.throws(() => registerAction(ctx, { kind: 'tool-result', id: 'x', action: 'explode' }), /must be one of accept, replace, block/)
   // 段/上下文增量的形状校验（含 label 与 plugin 一起拼出的消息）
   assert.throws(() => registerAction(ctx, { kind: 'assembly', id: 'x', target: { sections: { add: [{ name: 1, text: 'a' }] } } }), /assembly\.sections\.add\[\]\.name must be a string/)
   assert.throws(() => registerAction(ctx, { kind: 'assembly', id: 'x', target: { contexts: { add: {} } } }), /assembly\.contexts\.add must be an array/)
@@ -162,22 +163,42 @@ test('(2f) contexts：clear 单独清空；跨动作拆分的 [clear, add] 仍�
   assert.deepEqual(added.contexts.map((entry) => entry.name), ['new'])
 })
 
-test('(3) 裁决动作：deny / ask / allow 三档返回各自的裁决对象', async () => {
+test('(3) 工具裁决：deny / ask / allow 三档返回各自的裁决对象', async () => {
   const action = (payload) => {
     const recorder = recordingCtx()
-    registerAction(recorder.ctx, { kind: 'decision', id: 'tp', phase: 'pre', ...payload })
+    registerAction(recorder.ctx, { kind: 'tool-gate', id: 'tp', ...payload })
     return only(recorder.events, 'tools/pre-execute')
   }
   const exec = { name: 'bash', agent: agent(), arguments: { command: 'ls' } }
   const cases = [
     [{ decision: 'deny', reason: 'R' }, { kind: 'deny', reason: 'R' }],
     [{ decision: 'ask' }, { kind: 'ask' }],
-    // allow 不是终局：原样放行下游，结果由下游给出（actions/decision.mjs:20）。
+    // allow 不是终局：原样放行下游，结果由下游给出。
     [{ decision: 'allow' }, 'PASS'],
   ]
   for (const [payload, expected] of cases) {
     assert.deepEqual(await action(payload)(exec, async () => 'PASS'), expected, `pre ${JSON.stringify(payload)}`)
   }
+})
+
+test('(3b) 工具结果：replace / block 产出，accept 与空正文放行下游', async () => {
+  const run = (payload) => {
+    const recorder = recordingCtx()
+    registerAction(recorder.ctx, { kind: 'tool-result', id: 'r', ...payload })
+    return only(recorder.events, 'tools/post-execute')
+  }
+  const exec = { name: 'bash', agent: agent() }
+  const base = { kind: 'accept', content: [{ type: 'text', text: 'REAL' }] }
+  const next = async () => base
+
+  assert.deepEqual(await run({ action: 'replace', text: 'REPLACED' })(exec, base, next),
+    { kind: 'accept', content: [{ type: 'text', text: 'REPLACED' }] }, 'replace 用正文替换结果')
+  assert.deepEqual(await run({ action: 'block', text: 'STOP' })(exec, base, next),
+    { kind: 'block', feedback: [{ type: 'text', text: 'STOP' }] }, 'block 返回反馈')
+  assert.equal(await run({ action: 'accept' })(exec, base, next), base, 'accept 放行下游结果')
+  assert.equal(await run({ action: 'replace', text: '' })(exec, base, next), base, '空正文不替换')
+  assert.equal(await run({ action: 'block' })(exec, base, next).then((value) => value.feedback[0].text),
+    'r: blocked by action', 'block 缺正文回退引擎缺省原因')
 })
 
 test('(4) 追加上下文：additionalContexts 形状（user 角色、plugin 来源）且只在 accept 裁决上追加', async () => {
@@ -381,7 +402,7 @@ test('每轮预算：maxPerTurn 命中后同步消耗，轮边界重置，无会
   const session = { id: 's-budget', header: {}, snapshotEvents: () => [] }
   const agent = { session }
   registerAction(recorder.ctx, {
-    kind: 'decision', id: 'gate', phase: 'pre', decision: 'deny', reason: 'go deeper', maxPerTurn: 2,
+    kind: 'tool-gate', id: 'gate', decision: 'deny', reason: 'go deeper', maxPerTurn: 2,
   })
   const handler = only(recorder.events, 'tools/pre-execute')
   const exec = () => ({ name: 'bash', agent })
@@ -399,7 +420,7 @@ test('每轮预算：maxPerTurn 命中后同步消耗，轮边界重置，无会
 
   // 无会话不设限：与原模块「取不到会话条目即放行」的降级一致。
   const anon = recordingCtx()
-  registerAction(anon.ctx, { kind: 'decision', id: 'g2', phase: 'pre', decision: 'deny', reason: 'r', maxPerTurn: 1 })
+  registerAction(anon.ctx, { kind: 'tool-gate', id: 'g2', decision: 'deny', reason: 'r', maxPerTurn: 1 })
   const anonHandler = only(anon.events, 'tools/pre-execute')
   for (let i = 0; i < 3; i += 1) {
     assert.deepEqual(await anonHandler({ name: 'bash' }, () => undefined), { kind: 'deny', reason: 'r' }, `无会话第 ${i + 1} 次仍生效`)

@@ -25,7 +25,7 @@ export const ACTION_KINDS = Object.freeze({
     services: ['systemPrompt.section', 'systemPrompt.context', 'systemPrompt.variable'],
     degrade: ACTION_DEGRADE.keep,
     timing: '按配置声明的 layer 落到该层官方通道；pre-step 在 agent/pre-step，system-section/runtime-context 在注册期 + 官方 assembly。',
-    note: '复用既有注入通道（八层，见 schema 的 `injectionLayers`），不新开通道；`tool-pipeline` 没有注入通道——工具链的裁决与追加上下文走 `decision` / `append-context` 动作。显式空正文 = 不注册（empty 情形）。`options` 原样交给该层的既有接线（pre-step 执行器的 `prepend` = 声明的位置策略）；`session/event` 是 pre-step 执行器自带的会话态旁听，不是第二条注入通道。',
+    note: '复用既有注入通道（八层，见 schema 的 `injectionLayers`），不新开通道；`tool-pipeline` 没有注入通道——工具链的裁决与追加上下文走 `tool-gate` / `tool-result` / `append-context` 动作。显式空正文 = 不注册（empty 情形）。`options` 原样交给该层的既有接线（pre-step 执行器的 `prepend` = 声明的位置策略）；`session/event` 是 pre-step 执行器自带的会话态旁听，不是第二条注入通道。',
   },
   assembly: {
     title: '改装配',
@@ -36,14 +36,23 @@ export const ACTION_KINDS = Object.freeze({
     timing: 'system-prompt/assemble 的下游结算之后（`await next()` 之后改，装配事实已就绪）。',
     note: '失败时返回未改动的装配 = 对 tools 即暴露完整目录；不改 global，只作用于本次 assembly。',
   },
-  decision: {
-    title: '裁决',
-    fields: ['phase', 'decision', 'action', 'reason', 'text', 'toolNames', 'match'],
-    events: ['tools/pre-execute', 'tools/post-execute'],
+  'tool-gate': {
+    title: '工具裁决',
+    fields: ['decision', 'reason', 'toolNames'],
+    events: ['tools/pre-execute'],
     services: [],
     degrade: ACTION_DEGRADE.keep,
-    timing: 'pre 相在工具执行之前返回 allow|deny|ask；post 相在结果结算之后返回 accept|replace|block。',
-    note: '异常与条件未命中一律 `next()`（放行/接受），绝不让裁决 bug 卡死调用。',
+    timing: 'pre 相在工具执行之前返回 allow|deny|ask。',
+    note: '异常与条件未命中一律 `next()`（放行），绝不让裁决 bug 卡死调用；判据只看本相真正读的字段。',
+  },
+  'tool-result': {
+    title: '工具结果处理',
+    fields: ['action', 'text', 'toolNames'],
+    events: ['tools/post-execute'],
+    services: [],
+    degrade: ACTION_DEGRADE.keep,
+    timing: 'post 相在结果结算之后返回 accept|replace|block。',
+    note: '异常一律 `next()`（接受）；`text` 仅 replace / block 使用，accept 时被忽略。',
   },
   'append-context': {
     title: '追加上下文与续跑',

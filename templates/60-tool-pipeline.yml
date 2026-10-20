@@ -1,19 +1,19 @@
-# postAction=replace/block 时使用的文本
-
-# 模板：tool-pipeline 工具行为策略（对已注册工具的 pre/post 改写；
-# 自定义工具定义见工具管理区块——tool-pipeline 层筛选可见）。
+# 模板：tool-pipeline 工具行为策略
+#
+# 工具链拆成两个动作、两个执行点：
+#   - `tool-gate`（tools/pre-execute）：allow / deny / ask，只读 decision / reason / toolNames；
+#   - `tool-result`（tools/post-execute）：accept / replace / block，只读 action / text / toolNames。
+# 写错相位的字段在编译期就是未知字段，不会静默失效。
 id: example-tool-pipeline
 layer: tool-pipeline
 then:
   - id: before
-    kind: decision
-    phase: pre
+    kind: tool-gate
     decision: allow
     toolNames: bash,run_code
     reason: 该工具被提示词配置禁用
   - id: after
-    kind: decision
-    phase: post
+    kind: tool-result
     action: accept
     toolNames: bash,run_code
     text: ""
