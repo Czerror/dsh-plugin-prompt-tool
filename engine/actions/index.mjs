@@ -12,6 +12,7 @@ import { prepareSdkStrip } from './sdk-strip.mjs'
 import { prepareRequestParams } from './request-params.mjs'
 import { prepareInboxPrepend } from './inbox-prepend.mjs'
 import { preparePreStepFilter } from './pre-step-filter.mjs'
+import { prepareToolVisibility } from './tool-visibility.mjs'
 export { ACTION_KINDS, ACTION_DEGRADE } from './catalog.mjs'
 export { actionSupportsWhen, actionExecutionPoint } from './registration.mjs'
 const DEFAULT_PLUGIN = 'prompt-actions'
@@ -27,6 +28,7 @@ const PREPARERS = {
   'request-params': prepareRequestParams,
   'inbox-prepend': prepareInboxPrepend,
   'pre-step-filter': preparePreStepFilter,
+  'tool-visibility': prepareToolVisibility,
 }
 
 /**
@@ -77,14 +79,17 @@ export function prepareAction(action, options = {}) {
   return (ctx) => {
     const warnOnce = options.warnOnce ?? createWarnOnce(ctx, plugin)
     const budget = createTurnBudget(max)
-    const on = withWhen(options.on ?? channelBinder(ctx, kind, plugin, options.prepend === true), options.when, warnOnce, phase)
     const disposers = []
     const collect = (disposer) => { if (typeof disposer === 'function') disposers.push(disposer) }
+    const missHandlers = []
+    const onMiss = (callback) => { if (typeof callback === 'function') missHandlers.push(callback) }
+    const missAll = (...args) => { for (const callback of missHandlers) { try { callback(...args) } catch { /* 撤销失败不得反过来打断装配 */ } } }
+    const on = withWhen(options.on ?? channelBinder(ctx, kind, plugin, options.prepend === true), options.when, warnOnce, phase, missAll)
     // 每轮预算的轮边界由 durable 事件驱动（与谓词的 observe 同一事件源，但**独立记账**：
     // 预算是「本动作生效次数」，不是 durable 事件计数）。
     if (budget !== undefined) collect(ctx.on('session/event', (session, event) => budget.observe(session, event)))
     const take = (subject) => budget?.take(subject) ?? true
-    bind?.(ctx, { warnOnce, on, collect, take, agent: options.agent })
+    bind?.(ctx, { warnOnce, on, collect, take, onMiss, agent: options.agent })
     const dispose = () => {
       for (const release of disposers.splice(0)) {
         try {
@@ -95,6 +100,8 @@ export function prepareAction(action, options = {}) {
       }
     }
     keepDisposer(ctx, dispose, `${plugin}: action ${labelOf(action)}`)
+    // 调用方（rule-runtime）把 miss 挂到该动作的条目上；没有回调时保持 undefined。
+    dispose.miss = missHandlers.length === 0 ? undefined : missAll
     return dispose
   }
 }

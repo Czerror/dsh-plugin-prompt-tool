@@ -15,7 +15,7 @@ export function channelBinder(ctx, kind, plugin, prepend) {
   }
 }
 
-const ON_REGISTERED_KINDS = new Set(['assembly', 'decision', 'append-context', 'sdk-strip', 'request-params', 'inbox-prepend', 'pre-step-filter'])
+const ON_REGISTERED_KINDS = new Set(['assembly', 'decision', 'append-context', 'sdk-strip', 'request-params', 'inbox-prepend', 'pre-step-filter', 'tool-visibility'])
 
 /** 编辑目录与注册校验共用支持面；不另给客户端维护一份名单。 */
 export const actionSupportsWhen = (kind) => ON_REGISTERED_KINDS.has(kind)
@@ -124,8 +124,9 @@ export function createTurnBudget(max) {
  * 并行调用不越过预算（见 `deliberation-gate.mjs` 的注释），无条件 `await` 会破坏它。
  * 返回 Promise 的谓词退回异步路径——声明编译出的谓词恒同步，这条兜底是给手写调用方的。
  */
-export function withWhen(on, when, warnOnce, phase) {
+export function withWhen(on, when, warnOnce, phase, onMiss) {
   if (typeof when !== 'function') return on
+  const miss = () => { if (typeof onMiss === 'function') onMiss() }
   // 注意参数个数：`on` 的签名是 `(event, handler, options)`——包装后的处理器必须占据
   // **第二个**位置，多传一个参数会把 options 挤到错位（首版就踩了这个，被测试抓出）。
   return (event, handler, options) => on(event, (...args) => {
@@ -136,7 +137,12 @@ export function withWhen(on, when, warnOnce, phase) {
     // 事件参数表：按通道归一后再交给谓词——否则除 `names` 外，各原语在真实载荷上都
     // 取不到它们要的域（`phase` 曾因此恒为「已晋升」、`count` 恒 0）。
     const evaluate = (invoke, fallback) => {
-      const decide = (decided) => decided === true ? invoke() : fallback()
+      const decide = (decided) => {
+        if (decided === true) return invoke()
+        // 动作级 when 为假也是「本轮没命中」：撤销型动作要在这里收手，不能留下上一轮的闸。
+        miss()
+        return fallback()
+      }
       const failed = (error) => {
         warnOnce(`when predicate failed: ${String(error?.message ?? error)}`)
         return fallback()

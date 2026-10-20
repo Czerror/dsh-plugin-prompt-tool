@@ -94,16 +94,24 @@ export function mountRuleSources(ctx, sources, options = {}) {
           continue
         }
         flushLayers()
+        const created = []
         const on = (channel, handler) => {
           if (channel !== point.channel) throw new TypeError(`rule action registered outside ${point.channel}: ${channel}`)
           const entry = { rule, handler, sequence: action.channelOrder, sourceModuleId: moduleId, ruleId: rule.id, ruleActionIndex: action.actionIndex, id: action.id, actionWhen: action.actionWhen, bypassRuleWhen: action.bypassRuleWhen }
           if (channel === 'agent/pre-step' && point.waterfallPosition === 'default') injections.get(moduleId).ruleActions.push(entry)
           else handlers.push(entry)
+          created.push(entry)
           // 显式放弃：handler 的存活期由下面唯一的 `ctx.on(point.channel, …)` 统一撤销，
           // 这里再返回一个真 disposer 会与它重复释放同一批 handler。
           return () => {}
         }
-        releases.push(bind(item, on))
+        const dispose = bind(item, on)
+        // 未命中通知：条件为假时动作不会进入 handler，撤销型动作（tool-visibility 的执行闸）
+        // 只能靠这条回调收手——否则第一轮为真后永久留闸。
+        if (typeof dispose?.miss === 'function') {
+          for (const entry of created) entry.miss = dispose.miss
+        }
+        releases.push(dispose)
       }
       flushLayers()
       if (!handlers.length) continue
@@ -124,7 +132,11 @@ export function mountRuleSources(ctx, sources, options = {}) {
         if (free) {
           let pending
           for (const entry of handlers) {
-            const invoke = () => active && actionMatches(entry, frame) ? entry.handler(...payload, undefined, frame) : undefined
+            const invoke = () => {
+              if (!active) return undefined
+              if (!actionMatches(entry, frame)) { entry.miss?.(frame); return undefined }
+              return entry.handler(...payload, undefined, frame)
+            }
             pending = pending?.then ? pending.then(invoke) : invoke()
           }
           return pending
@@ -132,7 +144,8 @@ export function mountRuleSources(ctx, sources, options = {}) {
         if (point.phase === 'after-next') return Promise.resolve(next()).then(async initial => {
           let result = initial
           for (const entry of handlers) {
-            if (!active || !actionMatches(entry, frame)) continue
+            if (!active) continue
+            if (!actionMatches(entry, frame)) { entry.miss?.(frame); continue }
             result = await entry.handler(...payload, () => result, frame)
           }
           return result
@@ -140,7 +153,11 @@ export function mountRuleSources(ctx, sources, options = {}) {
         const invoke = index => {
           if (!active || index === handlers.length) return next()
           const entry = handlers[index]
-          return actionMatches(entry, frame) ? entry.handler(...payload, () => invoke(index + 1), frame) : invoke(index + 1)
+          if (!actionMatches(entry, frame)) {
+            entry.miss?.(frame)
+            return invoke(index + 1)
+          }
+          return entry.handler(...payload, () => invoke(index + 1), frame)
         }
         return invoke(0)
       }, point.waterfallPosition === 'outermost' ? { prepend: true } : undefined))

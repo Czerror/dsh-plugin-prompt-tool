@@ -20,9 +20,8 @@ export const labelOf = (action) => (typeof action?.id === 'string' && action.id.
 export function createMask(source, label, plugin, allowExtra) {
   const allow = NAME_LIST.parse(source?.allow, plugin, `${label}.allow`)
   const deny = NAME_LIST.parse(source?.deny, plugin, `${label}.deny`)
-  if (allow !== undefined && deny !== undefined) {
-    throw new TypeError(`${plugin}: ${label} cannot combine allow with deny`)
-  }
+  // allow 与 deny 可以同时给：官方 ToolRestriction 就是 and/or，判据是「先按 allow 保留，
+  // 再按 deny 剔除」（deepseek-harness packages/core/tools/src/index.ts:701-706、759-765）。
   if (allow === undefined && deny === undefined && allowExtra === undefined) {
     throw new TypeError(`${plugin}: ${label} needs allow and/or deny — 空名单无法表达「剔哪些工具」`)
   }

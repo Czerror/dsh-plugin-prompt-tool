@@ -86,6 +86,18 @@ export const ACTION_KINDS = Object.freeze({
       + '`requireMatch` 与 assembly 同判据（白名单工具在正文缺失 → 保留完整正文，fail-open）；'
       + '仅是呈现补救，执行边界在 guard。',
   },
+  'tool-visibility': {
+    title: '工具可见面',
+    fields: ['audience', 'allow', 'deny', 'requireMatch', 'discovery', 'notice'],
+    events: ['system-prompt/assemble'],
+    services: ['tools.schemas', 'tools.restrict', 'tools.guard', 'tools.register'],
+    degrade: ACTION_DEGRADE.keep,
+    timing: 'system-prompt/assemble 的下游结算之后：按当前条件重算目录、SDK 正文与执行闸；条件翻转时撤销上一轮注册的闸。',
+    note: '一份声明拥有工具的可见面：allow/deny 名单、requireMatch、发现工具与提示。名单语义对齐官方 '
+      + 'ToolRestriction 的 and/or（同时给时先按 allow 保留、再按 deny 剔除）。deny 走 guard（本层与晚到工具）'
+      + '与 restrict（继承的全局工具）；allow 只有 restrict 能覆盖全局工具，本层注册无法在执行层「只保留」——'
+      + '这是官方 restrict 的边界，不是本动作的取舍。',
+  },
   'request-params': {
     title: '改模型请求参数',
     fields: ['patch', 'unset', 'replace'],

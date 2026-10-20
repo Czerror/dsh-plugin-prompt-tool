@@ -140,25 +140,27 @@ export function renderMatches(scored, query) {
 }
 
 /** 注册模型可见的 `tool_search`。 */
-export function apply(ctx) {
-  ctx.tools.register({
-    name: 'tool_search',
+export function createToolSearchDefinition(ctx, options = {}) {
+  const resident = options.resident ?? RESIDENT
+  const unlockKey = options.unlockKey ?? 'toolNames'
+  return {
+    name: options.tool ?? 'tool_search',
     description: [
       'Discover and unlock tools that are NOT currently available.',
       '',
-      `This session starts with a minimal resident set: ${RESIDENT.join(', ')}. Everything else is unlocked on demand through this tool.`,
+      `This session starts with a minimal resident set: ${resident.join(', ')}. Everything else is unlocked on demand through this tool.`,
       '',
       'Usage:',
       '- `query` — search the catalog by keyword (matches tool names AND descriptions, 1-2 short words work best).',
       '- call with NO arguments — list the catalog as group counts (`<prefix>_*(count) ...`), so you can see what exists before searching.',
-      '- `toolNames` — unlock exact names. Unlocked tools appear from the NEXT request on and stay unlocked for the session.',
+      `- \`${unlockKey}\` — unlock exact names. Unlocked tools appear from the NEXT request on and stay unlocked for the session.`,
       '',
-      'Example: tool_search({"query":"pull request","toolNames":["mcp__github__create_pull_request"]}) — search AND unlock in one call.',
+      `Example: ${options.tool ?? 'tool_search'}({"query":"pull request","${unlockKey}":["mcp__github__create_pull_request"]}) — search AND unlock in one call.`,
       'IMPORTANT: if the task needs a capability outside that resident set — web search, subagents, task boards, MCP servers, anything not listed above — search for it here and unlock it. Do NOT make do with a resident tool when the tool you actually need is merely locked; an empty search result does NOT mean the tool does not exist, it only means no tool matched your keywords. Call with no arguments to see the catalog groups, then unlock by exact name.',
     ].join('\n'),
     parameters: toJsonSchema({
       query: { type: 'string', required: false, description: 'search keywords (e.g. "web", "subagent", "github")' },
-      toolNames: {
+      [unlockKey]: {
         type: 'array',
         required: false,
         items: { type: 'string' },
@@ -171,7 +173,7 @@ export function apply(ctx) {
     },
     async execute(args, exec) {
       const query = typeof args?.query === 'string' ? args.query.trim() : ''
-      const unlock = unlockNames(args?.toolNames)
+      const unlock = unlockNames(args?.[unlockKey])
       const lines = []
       // 解锁动作本身不需要任何运行时服务：引擎的 allowFrom 只读本工具的持久调用参数，
       // 所以即便目录不可用（无 tools 服务/无 agent），解锁也必须照样回报成功。
@@ -199,5 +201,10 @@ export function apply(ctx) {
       lines.push(...renderMatches(scoreTools(schemas, queryTokens(query)), query))
       return { text: lines.join('\n') }
     },
-  })
+  }
+}
+
+/** 组合源入口：默认常驻集与解锁键（退役前保持原行为）。 */
+export function apply(ctx) {
+  ctx.tools.register(createToolSearchDefinition(ctx))
 }
