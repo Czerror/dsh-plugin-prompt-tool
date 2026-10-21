@@ -7,7 +7,7 @@ import { parseFrontmatter, parseSkillBoolean } from './skills-parse.ts'
 import { assertUnlinkedPath } from './skills-actions.ts'
 import { SKILL_NAME_PATTERN } from './skills-config.ts'
 import { skillWriteRestriction } from './skills-scan.ts'
-import { atomicWriteTextFile } from './text-file.ts'
+import { replaceVersionedText } from './versioned-text.ts'
 
 export type SkillContentResult =
   | ({ ok: true; changed?: boolean } & SkillContentSnapshot)
@@ -93,12 +93,19 @@ export function writeSkillContent(catalog: Catalog, name: string, path: string, 
     const raw = head + (content.length > 0 && parsed.separator === '' ? parsed.newline : '') + parsed.spacing + content
     if (Buffer.byteLength(raw, 'utf8') > MAX_SKILL_CONTENT_BYTES) throw new Error('技能文件不能超过 1 MiB')
     if (raw === before) return { ok: true, content, description, revision: expectedRevision, changed: false }
-    atomicWriteTextFile(path, raw, {
-      mode: lstatSync(path).mode & 0o777,
-      beforeReplace: () => {
+    replaceVersionedText({
+      file: path,
+      expectedRevision,
+      read: () => {
         assertTarget(catalog, name, path, true)
-        if (readContent(path) !== before) throw new Error('技能内容版本冲突，请重新读取后重试')
+        const current = readContent(path)
+        return { revision: revisionOf(current), value: current, text: current, mode: lstatSync(path).mode & 0o777 }
       },
+      prepare: () => raw,
+      recheck: current => {
+        if (current !== before) throw new Error('技能内容版本冲突，请重新读取后重试')
+      },
+      conflict: () => new Error('技能内容版本冲突，请重新读取后重试'),
     })
     return { ok: true, content, description, revision: revisionOf(raw), changed: true }
   } catch (error) { return failure(error) }

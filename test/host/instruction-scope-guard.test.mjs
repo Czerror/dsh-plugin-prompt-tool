@@ -219,6 +219,7 @@ test('写暂存期间目标被外部改写：rename 前复核拒绝，外部内�
     })
     assert.equal(write.status, 409)
     assert.equal(write.body.code, 'agents-file-conflict', '窗口内的外部改写必须在 rename 前被拒')
+    assert.match(write.body.message, /文件已被外部修改/)
     assert.equal(readFileSync(target, 'utf8'), 'EXTERNAL WRITE\n', '外部内容未被覆盖')
   } finally {
     t.mock.restoreAll()

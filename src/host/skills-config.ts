@@ -1,18 +1,20 @@
 /** 技能插件状态（v4）：只保存用户显式引用的技能文件夹。
  *
  *  调用策略（模型端 / 用户端是否可调用）写在技能文件自己的 frontmatter 里，不进状态文件。 */
+import { createHash } from 'node:crypto'
 import { existsSync, readFileSync } from 'node:fs'
 import { isAbsolute, join, resolve } from 'node:path'
 import { Document, isMap, parseDocument, visit } from 'yaml'
 import type { SkillsState } from '../shared/skills.ts'
 import { SKILLS_STATE_VERSION } from '../shared/skills.ts'
 import { dshHome } from './paths.ts'
-import { atomicWriteTextFile } from './text-file.ts'
+import { replaceVersionedText } from './versioned-text.ts'
 
 export const SKILLS_STATE_RELATIVE = join('skills', '.system', 'prompt-tool', 'skills.yml')
 /** 与官方 `SKILL_NAME` 同规则；技能目录名、引用校验与调用策略写入共用。 */
 export const SKILL_NAME_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
 const MAX_FOLDERS = 200
+const revisionOf = (value: string): string => createHash('sha256').update(value).digest('hex')
 
 export type SkillsStateRead =
   | { ok: true; state: SkillsState; exists: boolean }
@@ -90,10 +92,17 @@ export function writeSkillsState(
     }
     const content = doc.toString()
     if (content !== raw) {
-      // 替换机制归 helper；「比什么」是本域的版本语义：本次读取的原文逐字节。
-      atomicWriteTextFile(file, content, { mkdir: true, beforeReplace: () => {
-        if ((existsSync(file) ? readFileSync(file, 'utf8') : null) !== raw) throw new Error('技能状态内容版本冲突，请刷新后重试')
-      } })
+      replaceVersionedText({
+        file,
+        expectedRevision: raw === null ? null : revisionOf(raw),
+        read: () => {
+          const current = existsSync(file) ? readFileSync(file, 'utf8') : null
+          return { revision: current === null ? null : revisionOf(current), value: current, text: current ?? undefined }
+        },
+        prepare: () => content,
+        conflict: () => new Error('技能状态内容版本冲突，请刷新后重试'),
+        mkdir: true,
+      })
     }
     return { ok: true, state: next, exists: true }
   } catch (error) {

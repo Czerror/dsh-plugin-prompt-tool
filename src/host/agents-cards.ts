@@ -10,6 +10,7 @@ import { existsSync, readFileSync, realpathSync, statSync } from 'node:fs'
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { dshHome } from './paths.ts'
 import { atomicWriteTextFile } from './text-file.ts'
+import { replaceVersionedText } from './versioned-text.ts'
 import { createTargetQueue } from '../shared/target-queue.ts'
 import type { PromptConfigSpec } from './prompt-configs.ts'
 import {
@@ -241,7 +242,7 @@ export type AgentsFileWriteOutcome =
 /** 同一文件的写盘串行队列（进程内）：两个并发请求不得交错读写同一目标。 */
 const writeQueues = createTargetQueue()
 
-/** rename 前的复核失败：`writeAgentsFile` 只抛错，由写盘入口按这两个码映射成 409。 */
+/** rename 前的复核失败：`replaceVersionedText` 只抛错，由写盘入口按这两个码映射成 409。 */
 class AgentsFileRecheckError extends Error {
   readonly code: string
   constructor(code: string, message: string) {
@@ -305,15 +306,26 @@ export async function writeAgentsFileChecked(options: {
       return { ok: false, status: 409, code: 'agents-file-identity-changed', message: '目标文件身份已变化，未写盘' }
     }
     try {
-      writeAgentsFile(file.realPath, content, () => {
-        // 上面那次比对到 rename 之间仍可能被外部改写：替换前再核一次版本与身份。
-        const again = readAgentsFileSnapshot(file)
-        if (again.status !== 'ready' || again.revision !== expectedRevision) {
-          throw new AgentsFileRecheckError('agents-file-conflict', '文件已被外部修改，保存被拒绝；请重新读取后再保存')
-        }
-        if (realPathOf(file.path) !== file.realPath) {
-          throw new AgentsFileRecheckError('agents-file-identity-changed', '目标文件身份已变化，未写盘')
-        }
+      replaceVersionedText({
+        file: file.realPath,
+        expectedRevision,
+        read: () => {
+          const current = readAgentsFileSnapshot(file)
+          if (current.status !== 'ready' || current.revision === null) {
+            throw new AgentsFileRecheckError('agents-file-conflict', '文件已被外部修改，保存被拒绝；请重新读取后再保存')
+          }
+          // 不传 text：同文也必须走一次 rename 前身份复核，保持旧写盘语义。
+          return { revision: current.revision, value: current }
+        },
+        prepare: () => content,
+        recheck: () => {
+          // 版本比对到 rename 之间仍可能被外部改写：替换前再核身份。
+          if (realPathOf(file.path) !== file.realPath) {
+            throw new AgentsFileRecheckError('agents-file-identity-changed', '目标文件身份已变化，未写盘')
+          }
+        },
+        conflict: () => new AgentsFileRecheckError('agents-file-conflict', '文件已被外部修改，保存被拒绝；请重新读取后再保存'),
+        mkdir: true,
       })
     } catch (error) {
       if (error instanceof AgentsFileRecheckError) return { ok: false, status: 409, code: error.code, message: error.message }

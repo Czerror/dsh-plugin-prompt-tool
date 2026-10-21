@@ -6,7 +6,8 @@
  *
  *  写入纪律：只用 yaml Document API 改目标键，保留注释、未知字段、其余键与正文；
  *  内容无变化不落盘；写盘先同目录暂存再原子 rename；失败时原文件保持逐字节不变。
- *  替换机制（暂存命名、独占创建、写前复核调用点、失败清理、权限保留）归 `host/text-file.ts`。 */
+ *  替换与替换前再核归 `host/versioned-text.ts`；暂存/清理/权限仍归 `host/text-file.ts`。 */
+import { createHash } from 'node:crypto'
 import { lstatSync, readFileSync } from 'node:fs'
 import { basename, isAbsolute } from 'node:path'
 import { Document } from 'yaml'
@@ -14,7 +15,7 @@ import { SKILL_MARKER, invocationForScope, type SkillCatalogEntry, type SkillInv
 import { parseFrontmatter, parseSkillBoolean } from './skills-parse.ts'
 import { assertUnlinkedPath } from './skills-actions.ts'
 import { SKILL_NAME_PATTERN } from './skills-config.ts'
-import { atomicWriteTextFile } from './text-file.ts'
+import { replaceVersionedText } from './versioned-text.ts'
 
 export type SkillPolicyRead =
   | { ok: true; invocation: SkillInvocation; frontmatter?: string; body?: string }
@@ -23,6 +24,8 @@ export type SkillPolicyRead =
 export type SkillPolicyWrite =
   | { ok: true; changed: boolean; invocation: SkillInvocation }
   | { ok: false; message: string }
+
+const revisionOf = (value: string): string => createHash('sha256').update(value).digest('hex')
 
 interface ParsedMarker {
   raw: string
@@ -121,11 +124,20 @@ export function setSkillInvocation(file: string, change: SkillPolicyChange | Ski
     const userChanged = ('scope' in operation || operation.side === 'user') && writeKey(parsed.doc, 'user-invocable', target.userInvocable)
     if (!modelChanged && !userChanged) return { ok: true, changed: false, invocation: target }
     const content = `${parsed.bom}---\n${parsed.doc.toString()}---${parsed.rest}`
-    // 时序归 helper；「比什么」是本域的版本语义：清单身份 + 原文逐字节。
-    atomicWriteTextFile(file, content, { beforeReplace: () => {
-      assertWritableMarker(file, true)
-      if (readFileSync(file, 'utf8') !== parsed.raw) throw new Error('技能内容版本冲突，请刷新后重试')
-    } })
+    replaceVersionedText({
+      file,
+      expectedRevision: revisionOf(parsed.raw),
+      read: () => {
+        assertWritableMarker(file, true)
+        const current = readFileSync(file, 'utf8')
+        return { revision: revisionOf(current), value: current, text: current }
+      },
+      prepare: () => content,
+      recheck: current => {
+        if (current !== parsed.raw) throw new Error('技能内容版本冲突，请刷新后重试')
+      },
+      conflict: () => new Error('技能内容版本冲突，请刷新后重试'),
+    })
     return { ok: true, changed: true, invocation: target }
   } catch (error) {
     return { ok: false, message: error instanceof Error ? error.message : String(error) }
