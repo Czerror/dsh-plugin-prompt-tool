@@ -63,4 +63,3 @@ test('collectInstructionFiles：命中最近 marker 后不再探测更上层', a
   assert.equal(probedDirs.has(dirname(repo)), false, '根之上不再探测')
   assert.equal(probedDirs.has(dirname(dirname(repo))), false, '更上层也不再探测')
 })
-

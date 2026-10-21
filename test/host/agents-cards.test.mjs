@@ -42,20 +42,25 @@ test('detectAgentsFiles：projects:false 只留可确认的全局文件', () => 
 })
 
 test('detectAgentsFiles：宿主只认 .git，.hg 不进目录链', () => {
-  // 用 work/.git 固定项目根：不依赖 tmpdir 是否恰好落在某个 git 仓内。
-  mkdirSync(join(work, '.git'), { recursive: true })
-  const hgRepo = join(work, 'hg-repo')
-  const sub = join(hgRepo, 'pkg')
-  mkdirSync(sub, { recursive: true })
-  mkdirSync(join(hgRepo, '.hg'), { recursive: true })
-  writeFileSync(join(hgRepo, 'AGENTS.md'), 'HG ROOT RULES\n')
-  const home = join(work, 'home-hg')
-  mkdirSync(home, { recursive: true })
+  // 独立根：既固定项目根（不依赖 tmpdir 是否落在 git 仓内），也不给同文件其它用例留共享标记。
+  const hgWork = mkdtempSync(join(tmpdir(), 'pt-agents-hg-'))
+  try {
+    mkdirSync(join(hgWork, '.git'), { recursive: true })
+    const hgRepo = join(hgWork, 'hg-repo')
+    const sub = join(hgRepo, 'pkg')
+    mkdirSync(sub, { recursive: true })
+    mkdirSync(join(hgRepo, '.hg'), { recursive: true })
+    writeFileSync(join(hgRepo, 'AGENTS.md'), 'HG ROOT RULES\n')
+    const home = join(hgWork, 'home-hg')
+    mkdirSync(home, { recursive: true })
 
-  // .hg 不参与选根：root 固定在 work，hg-repo 只是链上目录，展示路径保留 hg-repo/。
-  // 若 .hg 被认作 marker，root 会变成 hg-repo，displayPath 塌缩成 AGENTS.md。
-  assert.deepEqual(
-    detectAgentsFiles({ cwd: sub, home }).map((card) => card.displayPath),
-    ['hg-repo/AGENTS.md'],
-  )
+    // .hg 不参与选根：root 固定在 hgWork，hg-repo 只是链上目录，展示路径保留 hg-repo/。
+    // 若 .hg 被认作 marker，root 会变成 hg-repo，displayPath 塌缩成 AGENTS.md。
+    assert.deepEqual(
+      detectAgentsFiles({ cwd: sub, home }).map((card) => card.displayPath),
+      ['hg-repo/AGENTS.md'],
+    )
+  } finally {
+    rmSync(hgWork, { recursive: true, force: true })
+  }
 })

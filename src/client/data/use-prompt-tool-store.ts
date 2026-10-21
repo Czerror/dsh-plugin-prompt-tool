@@ -514,9 +514,10 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
 
   /** 指令卡正文只经草稿池：其余字段由卡壳与投影持有，这条通道不接收。 */
   const patchInstructionText = useCallback((fileId: string, text: string) => {
-    draftVersionRef.current += 1
     const draft = instructionPoolRef.current.drafts.find((entry) => entry.fileId === fileId)
+    // 无改动不参与草稿版本：否则并发的静默重载会被误判成「用户在保存期间有编辑」。
     if (draft === undefined || draft.content === text) return
+    draftVersionRef.current += 1
     publishInstructions(setDraftContent(instructionPoolRef.current, fileId, text))
   }, [publishInstructions])
 

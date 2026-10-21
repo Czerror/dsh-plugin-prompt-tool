@@ -461,7 +461,7 @@ use-prompt-tool-store.ts 是唯一工作台 facade，负责把 ConfigForms mirro
 | rule-drafts.ts / use-rule-editor.ts | 规则单源、稳定身份、原始字段草稿、CAS、模块队列与互斥响应快照合并 |
 | template-rule-writer.ts | 模板创建的显式目标、首写和新模块启用编排；规则结果统一交回 rule-drafts |
 | module-actions.ts | 模块操作与事实刷新，保留成功结果和刷新失败区别；与规则保存共用队列 |
-| instruction-cards.ts | 指令文件卡的视图投影：卡壳 + 草稿池 + 指令策略 → 卡片；正文唯一来源是草稿池，卡壳里过期的 `params.text` / `params.revision` 在投影时剥离 |
+| instruction-cards.ts | 指令文件卡的视图投影：卡壳 + 草稿池 + 指令策略 → 卡片；正文唯一来源是草稿池，卡壳里过期的 `params.text` / `params.revision` / `params.readStatus` / `params.readMessage` 在投影时剥离，`contentDirty` / `contentConflict` / `contentSaving` 由投影显式覆盖 |
 | prompt-config-content.ts | 指令文件卡的 fileId 解析（`origin` 优先；`sourceKind === 'instruction-file'` 时才回退 `params.fileId`）；不再承担正文与写回分流 |
 | prompt-config-order.ts | 配置视图内的同档位判据（`sameConfigPosition`）与一步重排（`reorderToView`）：资格在可移动集合内判、插入位置在完整数组里算；拖拽、上移/下移按钮与拖拽手柄的键盘操作共用同一份实现 |
 | use-module-config-order.ts | 跨模块排序摘要、版本读写与请求生命周期（`createModuleConfigOrderSession` 是唯一实现，hook 只把它投影成 React state）；由规则工作台消费 |

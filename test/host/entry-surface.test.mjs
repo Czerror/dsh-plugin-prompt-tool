@@ -17,7 +17,7 @@ test('发布入口只暴露协议四符号与三个构建期符号', () => {
   assert.equal(plugin.name, 'prompt-tool')
   assert.equal(typeof plugin.apply, 'function')
   assert.equal(typeof plugin.Config, 'function')
-  assert.ok(Array.isArray(plugin.inject))
+  assert.deepEqual([...plugin.inject].sort(), ['commands', 'llm', 'skills', 'subagents'], 'inject 必须是四个必需服务')
   for (const symbol of ['loadPromptTemplates', 'writeModule', 'userModulesDir']) {
     assert.equal(typeof plugin[symbol], 'function', '发布入口缺少 ' + symbol)
   }

@@ -8,7 +8,7 @@
 - **客户端投影**：无草稿分支显式清 `contentDirty` / `contentConflict` / `contentSaving`，`params.readStatus` / `readMessage` 与正文、版本一起剥离；`applyView` 与发布路径共用一份投影。
 - **patch 契约**：`InstructionFilesPort` 新增 `patchInstructionText(fileId, text)`；`store.patch` 类型不再声明 `promptConfigs`，非正文卡字段不再被静默忽略。
 - **发布门**：`verify:pack` 精确断言 `inject` 必需集（`skills/commands/llm/subagents`）；新增 `test/host/entry-surface.test.mjs`（用户批准的准入破例）锁发布入口精确七导出。
-- **测试**：新增 allow∩deny、`run_code` 缺项、两面皆缺装配、告警去重、marker 提前停、无草稿清视图标记、过期读盘状态剥离、发布入口导出共 7 条；`.hg` 用例改为固定项目根。
+- **测试**：新增 allow∩deny、`run_code` 缺项、两面皆缺装配、告警去重、marker 提前停、发布入口导出共 6 条；补强无草稿清视图标记与过期读盘状态两条既有用例；`.hg` 用例改为固定项目根。
 - **验证**：见本轮提交与全量输出。需重启 DSH 后生效；`patchInstructionText` 是源码内 API 变化，发布入口不变。
 ### 发布入口收缩到真实消费（2026-10-21）
 
