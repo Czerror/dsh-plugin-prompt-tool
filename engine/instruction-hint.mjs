@@ -1,8 +1,8 @@
 /**
- * instruction-hint — 通用内置指令文件提示引擎（行 + 消息构造）。
+ * instruction-hint — 通用内置指令文件提示引擎（可挂载的行 + 消息构造）。
  *
  * 探测（候选清单、项目根、目录链）归 engine/instruction-files.mjs，本模块只消费它的
- * 异步执行器；下面两件事分别对应库面与行面：
+ * 异步执行器。两个入口：
  * - prompt-config 的 strategy=placeholder + fill=instruction-hint
  *   直接使用本模块的消息构造与 instruction-files 的探测结果；
  * - plugin 形态（见文件末尾 apply）：**挂本行 = 开启**「晋升后把
@@ -33,11 +33,7 @@ export const name = 'instruction-hint'
 /** 无 inject：监听器只在使用时触碰 ctx 服务（同 tool-bootstrap / context-gate 纪律）。 */
 export const inject = []
 
-
 const templateOf = (templates, key) => typeof templates?.[key] === 'string' ? templates[key] : ''
-
-
-
 
 /**
  * 用显式模板格式化探测结果；无文件或无正文模板时返回空字符串。

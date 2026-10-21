@@ -70,7 +70,6 @@ function within(rootDir: string, target: string): boolean {
   return candidate.startsWith(root.endsWith(sep) ? root : root + sep)
 }
 
-
 /** 官方展示路径 → 既有卡片身份；只解析路径，不读取正文，也不构成写入授权。 */
 export function instructionFileIdFromDisplayPath(displayPath: string, projectRoot?: string, home: string = dshHome()): string | undefined {
   const global = displayPath === '~/.dsh/' + USER_GLOBAL_INSTRUCTION_FILE || displayPath === '$DSH_HOME/' + USER_GLOBAL_INSTRUCTION_FILE
@@ -83,7 +82,6 @@ export function instructionFileIdFromDisplayPath(displayPath: string, projectRoo
   if (!within(realPathOf(root) ?? root, realPath)) return undefined
   return agentsFileId(realPath)
 }
-
 
 /** 显示路径：DSH_HOME 内用 `~/.dsh/…`，项目内用相对项目根路径，其余用绝对路径。 */
 function displayPathOf(path: string, home: string, projectRoot: string): string {

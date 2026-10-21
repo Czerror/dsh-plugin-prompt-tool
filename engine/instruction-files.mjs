@@ -1,9 +1,9 @@
 /**
- * instruction-files — 指令文件探测的判据库。
+ * instruction-files — 指令文件探测的判据。
  *
  * 探测判据（候选清单、项目根、目录链）是纯函数；读盘由两个消费者各自完成——
  * 引擎用本文件提供的异步执行器（collectInstructionFiles），宿主用 node:fs 同步 +
- * 信任根校验。库随 engine/ 一起复制；行 instruction-hint 只消费这里的执行器。
+ * 信任根校验。本文件随 engine/ 一起复制；行 instruction-hint 只消费这里的执行器。
  */
 import { dirname, join } from 'node:path'
 import { machinePaths } from './machine-paths.mjs'
@@ -40,7 +40,7 @@ function instructionDirs(cwd, root) {
 }
 
 /**
- * 一次给出项目根与目录链（广到窄）：调用方只需一次调用，不再自己排三步。
+ * 一次给出项目根与目录链（广到窄）；要「近者优先」的注入顺序由调用方自行反转。
  * markerDirs 的字符串必须取自 ancestorDirs（同一套规范化，UNC 共享名根带尾分隔符）。
  * root 不是 cwd 的祖先时 dirs 只含 cwd，不猜。
  */

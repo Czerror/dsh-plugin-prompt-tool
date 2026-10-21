@@ -5,13 +5,13 @@
 - **接口**：`resolveProjectRoot` + `instructionDirs` 合成为 `instructionPlan(cwd, markerDirs) → { root, dirs }`，`presentInDir` 收为内部；导出 7→5，宿主调用从三步降到两步，`.d.mts` 只声明 4 个宿主符号。
 - **单一判据**：`skills-scan.ts` 的第三份「最近 `.git` 祖先」走链并入同一判据；宿主 `~/.dsh/AGENTS.md` 的识别改用常量拼。
 - **文档**：`engine-reuse` 把「唯一判据」限定为候选清单与目录链算法（项目根标记仍由各消费者给）；复制协议段区分判据库与行；`ui-architecture` §12.1 补探测的 seam 覆盖位置；`instruction-hint` 头注释改为只消费执行器。
-- **测试**：引擎用例压到 4 条（含 UNC，仅 win32 运行）；宿主补 `.git`-only 回归。
-- **验证**：见 `.scratch/archive/2026-10-21-plan-instruction-files-review-fixes-a8ae11f1.md` 的验收记录。
+- **测试**：引擎判据用例压到 3 条（含 UNC，仅 win32 运行）；宿主补 `.git`-only 回归与精准边界断言。
+- **验证**：见本轮两个提交的 diff 与测试输出。
 
 ### 指令文件探测收成单一判据（2026-10-21）
 
-- **重构**：新增 `engine/instruction-files.mjs`（纯计划 + 引擎侧执行器），`instruction-hint.mjs` 的探测函数迁入；宿主 `agents-cards.ts` 改用同一份候选清单、目录链与选根判据，只保留自己的 `.git` 标记、真实路径校验与展示路径。
-- **行为**：宿主 marker 集合不变（仍只认 `.git`），写白名单边界不变。两处行为变化：根边界——`ancestorDirs` 会探到文件系统根，盘根表示由 `C:` 变为 `C:\`；UNC 前缀不再越级到服务器名。路径拼接由手写 helper 换成 `node:path.join`，Windows 下正斜杠 cwd 的分隔符会归一。
+- **重构**：新增 `engine/instruction-files.mjs`（探测判据 + 引擎侧执行器），`instruction-hint.mjs` 的探测函数迁入；宿主 `agents-cards.ts` 改用同一份候选清单、目录链与选根判据，只保留自己的 `.git` 标记、真实路径校验与展示路径。
+- **行为**：宿主 marker 集合不变（仍只认 `.git`），写白名单边界不变。行为变化：根边界——`ancestorDirs` 会探到文件系统根，盘根表示由 `C:` 变为 `C:\`；UNC 前缀不再越级到服务器名。路径拼接由手写 helper 换成 `node:path.join`，Windows 下正斜杠 cwd 的分隔符会归一。
 - **验证**：全量 test、typecheck、lint、build、diff --check、verify:host、verify:pack 全绿（见本轮提交）。
 
 ### Git Bash 长命令卡片可展开（2026-10-21）
