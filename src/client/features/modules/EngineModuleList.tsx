@@ -4,8 +4,9 @@ import { Menu } from '../../ui/Menu.tsx'
 import { Button } from '../../ui/Button.tsx'
 import type { ModuleActionsPort, ModuleFactsPort } from '../../data/store-ports.ts'
 import type { PromptToolTranslate } from '../../locales.ts'
-import { MODULE_CAPABILITIES, ENGINE_RECIPES, engineRecipe, isModuleCapabilityDeclared } from '../../../shared/engine-capabilities.ts'
-import { canEditModule, moduleFactsOf } from '../../data/module-subject.ts'
+import { MODULE_CAPABILITIES, ENGINE_RECIPES, engineRecipe } from '../../../shared/engine-capabilities.ts'
+import { canEditModule } from '../../data/module-subject.ts'
+import { layerCards } from '../../data/layer-cards.ts'
 
 /** 合并进页级「添加」菜单的创建项（注入模板按层分组）。 */
 export interface ModuleCreateItem {
@@ -50,7 +51,8 @@ export function ModuleCapabilityCreateMenu(props: {
   store: ModuleFactsPort & ModuleActionsPort
   t: PromptToolTranslate
   moduleId: string
-  layer?: string
+  /** 创建菜单归属的层；只列该层未声明的能力。 */
+  layer: string
   onCreated?: (capabilityId: string) => void
   /** 该页面不提供创建的能力（受众视图差异，如仅主对话生效的能力）。 */
   excludeCapabilities?: readonly string[]
@@ -60,14 +62,13 @@ export function ModuleCapabilityCreateMenu(props: {
   const fallbackAnchor = useRef<HTMLButtonElement>(null)
   const editable = canEditModule(store.fields, store.meta.modules, moduleId)
   if (!editable) return null
-  const facts = moduleFactsOf(store.meta.modules, moduleId)
   const excluded = new Set(excludeCapabilities)
   const items = [
-    ...MODULE_CAPABILITIES.filter(({ id, displayLayer }) => !excluded.has(id) && !isModuleCapabilityDeclared(id, facts)
-      && (props.layer === undefined || displayLayer === props.layer))
-      .map(({ id }) => ({ id: `cap:${id}`, label: t('modules.addCapabilityItem', { id }) })),
+    ...layerCards(store.meta.modules, props.layer, moduleId, excludeCapabilities)
+      .filter((card) => card.kind === 'missingCapability')
+      .map((card) => ({ id: `cap:${card.id}`, label: t('modules.addCapabilityItem', { id: card.id }) })),
     ...ENGINE_RECIPES.filter(({ capabilities }) => !capabilities.some((id) => excluded.has(id))
-      && (props.layer === undefined || MODULE_CAPABILITIES.find(({ id }) => id === capabilities[0])?.displayLayer === props.layer))
+      && MODULE_CAPABILITIES.find(({ id }) => id === capabilities[0])?.displayLayer === props.layer)
       .map(({ id }) => ({ id: `recipe:${id}`, label: t('modules.createRecipeItem', { id }) })),
   ]
   if (items.length === 0) return null

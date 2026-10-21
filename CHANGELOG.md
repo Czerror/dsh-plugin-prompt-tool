@@ -1,5 +1,13 @@
 # Changelog
 
+### 层卡片判据收成单一来源（2026-10-21）
+
+- **判据**：新增 `src/client/data/layer-cards.ts#layerCards`，一次给出某模块在某层的卡片（`param` / `capability` / `missingCapability` / `asset` / `add`）；页面层只负责标签、搜索文本与渲染。
+- **跨层接口**：`RulesWorkspace` 不再接收四参数谓词 `matchesLayerSettings`，改接卡片数据；`capabilitiesOnly` 由 `kind` 过滤取代，能力补卡按 `kind === 'capability'`。
+- **消费点**：渲染、`hasLayerSettings`、规则卡与补卡搜索、`ModuleCapabilityCreateMenu` 的创建项全部走同一判据。
+- **测试**：新增 `layer-cards.test.mjs` 5 条；客户端定向 53 条与全量 780 通过。
+- **验证**：见本轮提交与测试输出。
+
 ### 指令文件卡收成单一 owner（2026-10-21）
 
 - **状态**：正文只由草稿池拥有；`fields.promptConfigs` 改成 (卡壳, 池, 策略) 的投影，新增 `src/client/data/instruction-cards.ts`。

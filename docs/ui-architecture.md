@@ -91,6 +91,7 @@
     │  ├─ instruction-cards.ts
     │  ├─ instruction-drafts.ts
     │  ├─ instruction-policy.ts
+    │  ├─ layer-cards.ts
     │  ├─ module-actions.ts
     │  ├─ module-subject.ts
     │  ├─ module-variables.ts
@@ -337,7 +338,7 @@ workspace-pages.ts 是页面元数据的唯一来源。默认页为 features，�
 
 能力编辑路径只读取启用模块的显式 `modules` 声明（`facts.declaredModules`），再由共享能力目录确定编辑组和显示层；`effectiveModules` 含全局参数派生能力，不能作为模块编辑声明或补卡依据。规则只决定编辑器的承载位置。当前受众有同层规则时，能力参数继续内嵌在规则卡设置区；没有承载规则时，按模块与显示层补一张能力设置卡，复用同一编辑器，不生成规则、不参与规则排序。明确未声明 `rules` 节的模块不发规则读取，直接依据能力声明补卡；已声明规则但未加载、读取失败时不能当成空规则。未知能力事实或停用模块不补卡。搜索和层筛选只过滤已有编辑入口，不制造补卡。结构化资产仍走原有专用编辑入口。
 
-能力补卡的搜索只匹配其显示的能力及能力参数组，不因普通资产（如自定义工具）命中而留下空卡；普通规则卡仍可匹配层内资产。模块名或 ID 命中时，补卡继续展示完整能力内容。
+能力补卡的搜索只匹配 `LayerCard.kind === 'capability'` 的卡片（能力参数组与已声明能力行同源），不因普通资产（如自定义工具）命中而留下空卡；普通规则卡仍可匹配层内资产（搜索视图不含 `add` 与 `missingCapability`）。模块名或 ID 命中时，补卡继续展示完整能力内容。
 
 同一模块的多张补卡容器复用规则列表的 `workspace` 间距样式；模块内与模块间保持同一 `12px` 间距，不通过卡片额外 margin 补偿。展开状态按模块、受众与层保存在既有草稿池。
 
@@ -470,6 +471,7 @@ use-prompt-tool-store.ts 是唯一工作台 facade，负责把 ConfigForms mirro
 | workspace-drafts.ts | 按预设身份的跨页草稿池：规则、人设、工具、变量、原始字段与展开状态；`poolDirty` 是「某模块有没有未保存输入」的唯一判据 |
 | instruction-drafts.ts | 指令文件正文的独立草稿池与版本基线 |
 | instruction-policy.ts | 指令策略的读写、默认值与单文件开关推导 |
+| layer-cards.ts | 层卡片的唯一判据：某模块在某层下有哪些卡、各是什么 kind（`param` / `capability` / `missingCapability` / `asset` / `add`）；标签、搜索文本与渲染归页面层 |
 | session-model-face.ts | 官方会话模型 projection 与选择动作 |
 | session-preset-face.ts | 官方会话预设 projection `agentPreset` 与标题 projection `title` 的读取与订阅（当前会话真正运行的预设；标题只用于提示指名会话，缺失退回 id 短号） |
 

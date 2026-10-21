@@ -12,6 +12,7 @@ import { useModuleConfigOrder } from '../../data/use-module-config-order.ts'
 import { reorderToView, sameConfigPosition } from '../../data/prompt-config-order.ts'
 import { hasRuleFields, rulesDirty } from '../../data/rule-drafts.ts'
 import { instructionFileIdOf } from '../../data/prompt-config-content.ts'
+import type { LayerCard } from '../../data/layer-cards.ts'
 import type { PromptConfigDraft } from '../../prompt-tool-types.ts'
 import type { PromptToolTranslate } from '../../locales.ts'
 import { MenuSelect } from '../../ui/MenuSelect.tsx'
@@ -29,6 +30,11 @@ import type { ModuleCreateItem } from '../modules/EngineModuleList.tsx'
 import ui from '../../ui/controls.module.css'
 import css from './rules.module.css'
 
+/** 层卡片视图：id/kind 来自 data 层判据，searchText 由页面层用 t 生成（已小写）。 */
+export interface LayerCardView extends LayerCard {
+  searchText: string
+}
+
 export interface RulesWorkspaceProps {
   store: ModuleFactsPort & DraftsPort & RuleEditingPort & InstructionFilesPort & NoticePort & ModuleActionsPort
   t: PromptToolTranslate; scope?: 'main' | 'subagent'
@@ -42,7 +48,8 @@ export interface RulesWorkspaceProps {
   /** 指令文件卡的设置区：卡是全局段、没有归属模块，主语由装配层按启用模块逐个给出。 */
   renderInstructionSettings?: (config: PromptConfigDraft) => ReactNode
   hasLayerSettings?: (layer: string, moduleId: string) => boolean
-  matchesLayerSettings?: (layer: string, keyword: string, moduleId: string, capabilitiesOnly?: boolean) => boolean
+  /** 某层某模块的卡片（不含 add 与 missingCapability）：规则卡与能力补卡的搜索共用。 */
+  layerCards?: (layer: string, moduleId: string) => readonly LayerCardView[]
   renderModuleSettings?: (moduleId: string, layers: readonly string[]) => ReactNode
   /** 页级「添加」下拉的创建项（注入模板按层）：创建编排由本组件统一持有，两页只传清单。 */
   createItems?: readonly ModuleCreateItem[]
@@ -118,7 +125,7 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
     identity: configIdentityKey({ moduleId: owner.moduleId, configId: entry.previousId ?? entry.value.id }),
   }))).filter(({ entry, key }) => !entry.deleted && (expanded === key || scopeVisible(entry.value, props.scope ?? 'main')))
     .filter(({ entry, moduleId: id, key }) => expanded === key || (view === 'all' || view === 'context-activation' && hasContextActivation([...entry.value.then, ...entry.value.else ?? []]) || entry.value.layer === view)
-      && (!query || JSON.stringify(entry.value).toLowerCase().includes(query) || entry.value.layer !== undefined && props.matchesLayerSettings?.(entry.value.layer, query, id)))
+      && (!query || JSON.stringify(entry.value).toLowerCase().includes(query) || entry.value.layer !== undefined && props.layerCards?.(entry.value.layer, id)?.some((card) => card.searchText.includes(query))))
     .sort((a, b) => (rank.get(a.identity) ?? Number.MAX_SAFE_INTEGER) - (rank.get(b.identity) ?? Number.MAX_SAFE_INTEGER))
   const moduleSettings = enabledModules.flatMap(module => {
     const owner = owners.find(item => item.moduleId === module.id)
@@ -132,7 +139,8 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
       .filter(layer => view === 'all' || view === layer)
     if (missing.length === 0 || props.renderModuleSettings === undefined) return []
     const name = `${module.name ?? ''} ${module.id}`.toLowerCase()
-    const visible = missing.filter(layer => !query || name.includes(query) || props.matchesLayerSettings?.(layer, query, module.id, true))
+    const visible = missing.filter(layer => !query || name.includes(query)
+      || props.layerCards?.(layer, module.id)?.some((card) => card.kind === 'capability' && card.searchText.includes(query)))
     return visible.length === 0 ? [] : [{ moduleId: module.id, layers: visible }]
   })
   const batchDisabled = entries.length === 0 || entries.some(({ moduleId: id, draft }) => readOnly(id) || !draft.loaded || draft.busy !== undefined || hasRuleFields(draft) || draft.remote !== undefined)
