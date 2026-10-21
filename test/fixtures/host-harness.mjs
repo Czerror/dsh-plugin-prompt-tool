@@ -12,7 +12,7 @@
  *
  *     import { isolatedHome, fakeReq, fakeRes, readBridge } from '../fixtures/host-harness.mjs'
  *     const { home, moduleRoot } = isolatedHome('pt-xxx-')
- *     const { registerSettingsBridge } = await import('../../lib/index.mjs')
+ *     const { registerSettingsBridge } = await import('../../src/runtime/settings-bridge.ts')
  *
  * 为什么不在这里包 `registerSettingsBridge`：本文件被静态 import，包装会把「每个测试关心哪几个键」
  * 固化成第二份默认值清单，而 `test/` 下的 .mjs 不参与 typecheck——多写一个不存在的键也不会被发现。
@@ -216,9 +216,9 @@ export function handlerTable() {
  * 宿主 Context 桩：桥用例的共用脚手架（handlers ＋ settings ＋ webServer ＋ inject ＋ 一次调用）。
  *
  * 只放各文件真正共用的默认值；差异项（多 namespace 的 describe、晚到服务、带 disposer 的 effect）
- * 用选项覆盖，不在这里长成配置表。刻意**不**迁 `lib/index.mjs` 派系的用例（`wave1-safety`、
- * `instructions-policy-endpoint`、`instruction-scope-guard`、`module-prompt-configs`）：
- * 它们打的是构建产物面，与本夹具的 src 输入不是同一个 seam。
+ * 用选项覆盖，不在这里长成配置表。`wave1-safety`、`instructions-policy-endpoint`、
+ * `instruction-scope-guard` 已迁到 src 直连；仍刻意**不**迁 `lib/index.mjs` 派系的
+ * `module-prompt-configs`——它的 `loadPromptTemplates` 打的是构建产物的模板路径锚。
  *
  * @param {HostContextOptions} [options]
  */

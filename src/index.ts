@@ -260,8 +260,10 @@ registerTuiCommand(
   })
 }
 
-// 发布入口只留真实消费：插件协议（name/inject/apply）+ 从构建产物引导的符号——
+// 发布入口只留真实消费：插件协议（name/inject/Config/apply）+ 从构建产物引导的符号——
 // 测试的模板路径锚（loadPromptTemplates）与重物化脚本（writeModule/userModulesDir）。
+// Config 是 Cordis 的配置 schema：缺了它，原始 config 会原样传入 apply，modulesEnabled 不是 schema 实例。
+export { Config } from './config.ts'
 export { loadPromptTemplates } from './host/templates.ts'
 export { writeModule } from './host/write-module.ts'
 export { userModulesDir } from './host/module-dirs.ts'

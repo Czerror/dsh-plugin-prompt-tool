@@ -2,8 +2,9 @@
 
 ### 发布入口收缩到真实消费（2026-10-21）
 
-- **入口**：`src/index.ts` 的 re-export 从 146 个符号降到 6 个——`name` / `inject` / `apply`（插件协议）+ `loadPromptTemplates`（测试的模板路径锚：`../templates` 只在构建后的 `lib/` 下成立）+ `writeModule` / `userModulesDir`（重物化脚本）。
-- **测试**：`wave1-safety`、`instructions-policy-endpoint`、`instruction-scope-guard`、`settings-bridge`、`module-management` 改为从 src 直连；`module-prompt-configs` 的 `loadPromptTemplates` 保留 lib 导入（路径锚）。
+- **入口**：`src/index.ts` 的总导出从 149 个降到 7 个（re-export 146→4）——`name` / `inject` / `Config` / `apply`（Cordis 插件协议；`Config` 是配置 schema，缺了它原始 config 会原样传入）+ `loadPromptTemplates`（测试的模板路径锚：`../templates` 只在构建后的 `lib/` 下成立）+ `writeModule` / `userModulesDir`（重物化脚本）。
+- **破坏性**：包已发 2.1.0；外部若 import 已删除的符号会直接失败，没有兼容层。
+- **测试**：`wave1-safety`、`instructions-policy-endpoint`、`instruction-scope-guard`、`settings-bridge`、`module-management` 共 5 个改为从 src 直连；`module-prompt-configs` 的 `loadPromptTemplates` 保留 lib 导入（路径锚）。
 - **发布面**：`verify:pack` 的 smoke 仍通过（主入口 name/apply + 包内引擎编译）。
 - **验证**：全量 786 pass；typecheck / lint / build / git diff --check / verify:pack 通过。需重启 DSH 并重新安装/链接插件后生效。
 
