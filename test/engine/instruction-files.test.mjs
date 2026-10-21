@@ -5,7 +5,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { dirname, join, resolve, sep } from 'node:path'
-import { ancestorDirs, instructionPlan } from '../../engine/instruction-files.mjs'
+import { ancestorDirs, collectInstructionFiles, instructionPlan } from '../../engine/instruction-files.mjs'
 
 const workspace = resolve(sep + 'work')
 const repo = join(workspace, 'repo')
@@ -46,3 +46,21 @@ test('instructionPlan：UNC 前缀在 win32 下停在共享名根，不越过服
   assert.equal(dirname(shareRoot), shareRoot, '共享名根的父目录是它自己')
   assert.deepEqual(instructionPlan(nested, new Set([shareRoot])), { root: shareRoot, dirs: [shareRoot, nested] })
 })
+test('collectInstructionFiles：命中最近 marker 后不再探测更上层', async () => {
+  const base = resolve(sep + 'probe')
+  const repo = join(base, 'repo')
+  const deep = join(repo, 'pkg', 'src')
+  const home = join(base, 'home')
+  const files = new Map([[join(repo, '.git'), { type: 'directory' }]])
+  const probedDirs = new Set()
+  const fs = {
+    resolve: async (target) => target,
+    stat: async (target) => { probedDirs.add(dirname(target)); return files.get(target) },
+  }
+  const found = await collectInstructionFiles(fs, deep, undefined, home)
+  assert.equal(found.root, repo, '最近 marker 仍是项目根')
+  assert.ok(probedDirs.has(deep) && probedDirs.has(repo), 'cwd 与命中的根都探测过')
+  assert.equal(probedDirs.has(dirname(repo)), false, '根之上不再探测')
+  assert.equal(probedDirs.has(dirname(dirname(repo))), false, '更上层也不再探测')
+})
+

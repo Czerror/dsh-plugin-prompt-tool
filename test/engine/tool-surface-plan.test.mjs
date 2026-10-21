@@ -28,3 +28,11 @@ test('toolSurfacePlan：deny-only 或未声明 requireMatch 时不 fail-open', (
   assert.equal(toolSurfacePlan(createMask({ deny: ['beta'] }, 'v', 'p'), new Set()).failOpen, false)
   assert.equal(toolSurfacePlan(mask(['ghost'], undefined, false), new Set()).failOpen, false)
 })
+test('toolSurfacePlan：deny 覆盖的名字不算必需，不因它缺席 fail-open', () => {
+  const denied = createMask({ allow: ['read', 'bash'], deny: ['bash'], requireMatch: true }, 'v', 'p')
+  assert.deepEqual(toolSurfacePlan(denied, new Set(['read'])), { failOpen: false, missing: [] })
+})
+
+test('toolSurfacePlan：run_code 虽可点名但不计入 required', () => {
+  assert.deepEqual(toolSurfacePlan(mask(['alpha', 'run_code']), new Set(['alpha'])), { failOpen: false, missing: [] })
+})

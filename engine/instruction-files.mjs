@@ -31,18 +31,15 @@ function resolveProjectRoot(cwd, markerDirs) {
   return cwd
 }
 
-/** 项目根到 cwd 的目录链（广到窄）；root 不是 cwd 的祖先时只回落 cwd，不猜。 */
+/** 项目根到 cwd 的目录链（广到窄）；root 必来自 ancestorDirs(cwd)，因此一定在链上。 */
 function instructionDirs(cwd, root) {
   const dirs = ancestorDirs(cwd)
-  const index = dirs.indexOf(root)
-  if (index < 0) return [cwd]
-  return dirs.slice(0, index + 1).reverse()
+  return dirs.slice(0, dirs.indexOf(root) + 1).reverse()
 }
 
 /**
  * 一次给出项目根与目录链（广到窄）；要「近者优先」的注入顺序由调用方自行反转。
  * markerDirs 的字符串必须取自 ancestorDirs（同一套规范化，UNC 共享名根带尾分隔符）。
- * root 不是 cwd 的祖先时 dirs 只含 cwd，不猜。
  */
 export function instructionPlan(cwd, markerDirs) {
   const root = resolveProjectRoot(cwd, markerDirs)
@@ -79,6 +76,8 @@ export async function collectInstructionFiles(fs, cwd, signal, home) {
         // 标记不存在——继续看上一层。
       }
     }
+    // 最近 marker 即项目根：再向上的探测不会改变 instructionPlan 的结果。
+    if (markerDirs.has(dir)) break
   }
   const plan = instructionPlan(cwd, markerDirs)
   const projectFiles = []

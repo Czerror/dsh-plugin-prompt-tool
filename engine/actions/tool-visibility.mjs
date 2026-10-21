@@ -213,12 +213,16 @@ export function prepareToolVisibility(action, plugin) {
           ...(Array.isArray(result.tools) ? result.tools.map((tool) => tool?.name).filter((name) => typeof name === 'string') : []),
           ...(sdkNames ?? []),
         ])
+        // 没有工具面可观（既无目录也无 SDK 正文）时不裁剪、不告警、不动执行闸：
+        // 空 surface 不等于「名单全缺」；空目录（tools=[]）仍是真实观测，照旧 fail-open。
+        if (!Array.isArray(result.tools) && sdkSection === undefined) return result
         // 三面（目录 / 正文 / 执行闸）共用这一份判断：缺项就整体放宽，呈现与执行不得两套口径。
         const plan = toolSurfacePlan(mask, available)
         const gate = states.get(context?.session ?? context?.agent?.session)
         if (gate !== undefined) gate.failOpen = plan.failOpen
         if (plan.failOpen) {
-          warnOnce(`${plugin}: tool-visibility action ${label}: requireMatch tools absent (${plan.missing.join(', ')}) — exposing the full tool set (fail-open)`)
+          // 去重键固定到动作：缺项名随解锁历史变化，不能让每个新集合各占一条 warnOnce。
+          warnOnce(`${plugin}: tool-visibility action ${label}: requireMatch tools absent (${plan.missing.join(', ')}) — exposing the full tool set (fail-open)`, `${plugin}: tool-visibility action ${label}: requireMatch fail-open`)
         } else {
           if (Array.isArray(result.tools)) {
             const kept = result.tools.filter((tool) => !mask.blocks(tool?.name))

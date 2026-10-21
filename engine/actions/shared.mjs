@@ -60,13 +60,14 @@ export function createMask(source, label, plugin, allowExtra) {
 /**
  * 工具可见面的单一判据：装配目录、`tools:sdk` 正文与执行闸共用同一份 fail-open 决定。
  *
- * `available` = 目录名 ∪ SDK 正文名；`required` = 静态 allow ∪ 动态解锁项（`run_code`
- * 是保留传输，不进名单）。缺项时三面必须一起放宽——只放宽一面会让模型看到的与能调的不一致。
+ * `available` = 目录名 ∪ SDK 正文名；`required` = 静态 allow ∪ 动态解锁项，再剔掉
+ * `run_code`（保留传输）与 `mask.blocks()` 为真的名字（deny 覆盖者不该被要求存在）。
+ * 缺项时三面必须一起放宽——只放宽一面会让模型看到的与能调的不一致。
  */
 export function toolSurfacePlan(mask, available) {
-  // createMask 已拒绝 deny + requireMatch，因此 requireMatch 为真时 allow 必存在。
+  // 动作层的挂载期校验（prepareToolVisibility）已拒绝 requireMatch + 无 allow。
   const required = mask.requireMatch
-    ? [...new Set([...(mask.allow ?? []), ...(mask.allowExtra ?? [])])].filter((name) => name !== RUN_CODE)
+    ? [...new Set([...(mask.allow ?? []), ...(mask.allowExtra ?? [])])].filter((name) => name !== RUN_CODE && !mask.blocks(name))
     : []
   const missing = required.filter((name) => !available.has(name))
   return { failOpen: missing.length > 0, missing }

@@ -149,6 +149,33 @@ test('tool-visibility：tools 不是数组时执行闸也随正文缺项 fail-op
   assert.equal(disposed.guards[0]({ name: 'beta' }), undefined, 'fail-open 时执行闸同步放行')
   assert.ok(rec.warnings.some((message) => /requireMatch tools absent/.test(message)))
 })
+test('tool-visibility：装配没有工具面时不打开执行闸', async () => {
+  const rec = recordingCtx()
+  const disposed = {}
+  const scope = scopeOf({ disposed })
+  registerAction(rec.ctx, { kind: 'tool-visibility', id: 'v', allow: ['alpha'], requireMatch: true })
+  const handler = only(rec, 'system-prompt/assemble')
+  const input = { sections: [], contexts: [], variables: {} }
+  const out = await handler(input, { agent: agentOf(scope) }, async () => input)
+  assert.equal(out.tools, undefined, '没有目录就保持原样')
+  assert.deepEqual(rec.warnings, [], '没有观察到工具面就不该告警')
+  assert.equal(disposed.guards[0]({ name: 'beta' }), 'v: tool "beta" is not allowed by tool-visibility', '闸保持收窄')
+})
+
+test('tool-visibility：fail-open 告警按动作去重（缺项名变化不重复）', async () => {
+  const rec = recordingCtx()
+  const disposed = {}
+  const scope = scopeOf({ disposed })
+  registerAction(rec.ctx, { kind: 'tool-visibility', id: 'v', allow: ['alpha', 'beta'], requireMatch: true })
+  const handler = only(rec, 'system-prompt/assemble')
+  for (const surface of [toolList('alpha'), toolList()]) {
+    const input = assembled(surface)
+    await handler(input, { agent: agentOf(scope) }, async () => input)
+  }
+  assert.equal(rec.warnings.length, 1, '同一动作只告警一次')
+  assert.ok(rec.warnings[0].includes('beta'), '首次消息带出当时的缺项')
+})
+
 
 test('tool-visibility：run_code 是保留传输，allow 不点名也保留且不计入 requireMatch', async () => {
   for (const allow of [['alpha'], ['alpha', 'run_code']]) {
