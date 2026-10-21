@@ -13,6 +13,7 @@ import { assertModuleDirectory } from './module-install.ts'
 import { active, assertPlain, assertUnownedUnchanged, canonicalDirectory, directoryKey, ModuleWriteError, moduleLocation, processLocks, record, revisionOf, withModuleLock } from './module-write.ts'
 import { MODULE_DEFINITION_FILE, RULES_DIR, RULES_SETTINGS_FILE, RULES_VARIABLES_FILE } from './paths.ts'
 import { atomicTemporaryTarget, atomicWriteTextFile } from './text-file.ts'
+import { replaceVersionedText } from './versioned-text.ts'
 import { readModuleLayerSettings } from './module-layer-settings.ts'
 // 引擎是规则语义的唯一校验器。
 import { assertRuleId, compileRules } from '../../engine/rule-spec.mjs'
@@ -178,8 +179,10 @@ export function loadModuleDefinition(directory: string): ModuleDefinitionSnapsho
   return snapshotFromText(dir, new TextDecoder('utf-8', { fatal: true }).decode(bytes))
 }
 
+const sourceConflict = (): ModuleWriteError => new ModuleWriteError('写入前模块再次变化，请重新读取', 409, 'rules-conflict')
+
 function assertSource(snapshot: ModuleDefinitionSnapshot): void {
-  if (assertModuleDirectory(dirname(snapshot.dir), basename(snapshot.dir)) !== snapshot.dir || revisionOf(readFileSync(snapshot.file)) !== snapshot.revision) throw new ModuleWriteError('写入前模块再次变化，请重新读取', 409, 'rules-conflict')
+  if (assertModuleDirectory(dirname(snapshot.dir), basename(snapshot.dir)) !== snapshot.dir || revisionOf(readFileSync(snapshot.file)) !== snapshot.revision) throw sourceConflict()
 }
 /** 与 removeInterruptedWrites 同源：只认 atomicWriteTextFile 的精确 UUID 临时名，不是用户素材。 */
 function isRulesTemporary(filename: string): boolean {
@@ -338,7 +341,17 @@ export function commitModuleDefinition(snapshot: ModuleDefinitionSnapshot, next:
     try {
       assertSource(snapshot)
       writeProjection(candidate, 'contents')
-      atomicWriteTextFile(snapshot.file, candidate.text, { mode: statSync(snapshot.file).mode, beforeReplace: () => assertSource(snapshot) })
+      replaceVersionedText({
+        file: snapshot.file,
+        expectedRevision: snapshot.revision,
+        read: () => {
+          const bytes = readFileSync(snapshot.file)
+          return { revision: revisionOf(bytes), value: undefined, mode: statSync(snapshot.file).mode }
+        },
+        prepare: () => candidate.text,
+        recheck: () => assertSource(snapshot),
+        conflict: sourceConflict,
+      })
       persisted = true
       writeProjection(candidate, 'all')
       readProjection(candidate)

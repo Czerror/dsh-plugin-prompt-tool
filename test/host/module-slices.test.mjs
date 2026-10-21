@@ -332,3 +332,37 @@ test('不同进程互斥、异常退出死锁恢复与路径归一不发布混�
     assert.equal(readdirSync(dir).some(name => name.includes('lock')), false, '锁不进入模块资产目录')
   }
 })
+test('module.yml CAS：替换前外部改写 → rules-conflict 409，零覆盖', () => {
+  const dir = fixture('cas-window')
+  ensureModuleSlices(dir)
+  const candidate = loadModuleDefinition(dir)
+  candidate.doc.setIn(['rules', 0, 'then', 0, 'config', 'text'], 'STALE')
+  const external = parse(candidate.text)
+  external.rules[0].then[0].config.text = 'EXTERNAL'
+  const target = join(dir, 'module.yml')
+  const originalRead = fs.readFileSync.bind(fs)
+  let reads = 0
+  let altered = false
+  mock.method(fs, 'readFileSync', (path, ...args) => {
+    if (path === target) {
+      reads += 1
+      if (reads === 3) {
+        altered = true
+        const text = JSON.stringify(external)
+        writeFileSync(target, text)
+        return Buffer.from(text)
+      }
+    }
+    return originalRead(path, ...args)
+  })
+  syncBuiltinESMExports()
+  try {
+    assert.throws(() => commitModuleDefinition(candidate, candidate.doc),
+      error => error.code === 'rules-conflict' && error.status === 409 && error.persisted === false)
+  } finally {
+    mock.restoreAll()
+    syncBuiltinESMExports()
+  }
+  assert.equal(altered, true)
+  assert.equal(ensureModuleSlices(dir).rules[0].then[0].config.text, 'EXTERNAL', '外部内容保留')
+})
