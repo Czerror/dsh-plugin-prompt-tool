@@ -5,6 +5,7 @@
 
 import { getService, parseToolNames } from './shared.mjs'
 import { machinePaths } from './machine-paths.mjs'
+import { SAFE_ENV_KEYS } from './env-safety.mjs'
 import { createInstructionHintResolver } from './instruction-hint.mjs'
 import { DISCOVERY_SERVICE } from './service-names.mjs'
 
@@ -40,13 +41,17 @@ function createToolCatalogResolver(config) {
 /**
  * env-facts:机器事实动态填充器。
  * params.envKeys 逗号分隔环境变量白名单：取值归模板/预设，留空 = 不附加宿主环境
- * 变量（CWD/WORKSPACE 仍由会话事实提供）。
+ * 变量（CWD/WORKSPACE 仍由会话事实提供）。白名单外的键在构造期拒绝，不读取任意 process.env。
  * 只提供 facts 变量；正文必须由 text/params.text 显式模板声明。
  */
 function createEnvFactsResolver(config) {
   const template = explicitTemplate(config)
-  if (template.trim().length === 0) return () => null
   const keys = parseToolNames(typeof config.params?.envKeys === 'string' ? config.params.envKeys : '')
+  const rejected = keys.filter((key) => !SAFE_ENV_KEYS.has(key))
+  if (rejected.length > 0) {
+    throw new TypeError(`${name}: env-facts envKeys not in SAFE_ENV_KEYS: ${rejected.join(', ')} — safe keys: ${[...SAFE_ENV_KEYS].join(', ')}`)
+  }
+  if (template.trim().length === 0) return () => null
   return ({ agent }) => {
     const session = agent?.session
     // 路径类事实取唯一来源；白名单（envKeys）与「空串不算有值」是本处的策略，不外包。

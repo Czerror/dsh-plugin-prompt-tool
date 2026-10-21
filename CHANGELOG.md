@@ -1,5 +1,17 @@
 # Changelog
 
+### 全量审计修复：运行时装配、安全边界与 sections.append（2026-10-22）
+
+- **F1 组合行 disabled**：模块事实只接受布尔与 `process.platform ===/!==` 受控表达式；disabled 行从 `effectiveModules` 剔除并在装配期跳过，POSIX 不再错误挂载 `tool-git-bash`。
+- **F2 run-code-env**：移除首次 apply 固化的 `PATCHED` 闭包；共享 `run_code` 工具只包装一次，按 `exec.agent` 从 WeakMap 取该 Agent 的 keys/ctx；dispose 只撤自己，HMR/晚到工具可复用。官方 arguments 深冻结，未做参数中间件。
+- **F3/F4/F8 安全边界**：`env-facts` 只允许安全环境白名单；`instruction-hint` 的 `params.file` 只允许指令文件候选名且 realpath 必须落在 cwd→最近项目根或 DSH_HOME；custom `fs` 五个动作统一 realpath containment，symlink/junction 越界拒绝。
+- **F5/F6/F7 静默失效**：官方 recipe 行声明产生一次明确诊断；手改 `customTools` 自动隐含 `tool-config-engine`；`present-as` 缺 `ptcRuntime` 时显式告警，不再静默按 native 跑。
+- **F9 shell 执行器**：超时与输出超限给出可诊断 error，显式 1 MiB maxBuffer，正常输出字段不变；未杀整棵进程树仍是已知边界。
+- **K3 sections.append**：`assembly` 新增 `target.sections.append`，按段名追加、保留 `order`/`interpolate`、不设 `complete`，同装配 `once` 去重；同受众 known `complete` 在装配准备期拒绝，第三方不可观察 complete 由官方 `assemble` 还原并作为文档边界。
+- **测试与门禁**：全量 817 pass；`typecheck`、`lint`、`build`、`verify:host` 39/0、`verify:pack`、`rebuild:module-template -- --check`、`git diff --check` 全通过。`verify:pack` 在 Windows 下补 `tar --force-local`，避免盘符被当作远程主机。
+- **生效条件**：需用户重启 DSH 后生效；本轮未停止/重启当前服务，未改宿主源码或 profile。
+- **已知边界**：第三方 complete 不可观察；shell 超时未杀进程树；env-facts 白名单外键会在挂载期 fail loud。
+
 ### OCR 复核修复：fail-open 判据、指令卡投影与发布门（2026-10-22）
 
 - **工具面判据**：`toolSurfacePlan` 的 `required` 再剔除 `mask.blocks()` 为真的名字——allow∩deny 同名且该名缺席时不再误触 fail-open；`run_code` 排除补直测。

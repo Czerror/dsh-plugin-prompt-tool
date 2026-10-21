@@ -13,14 +13,17 @@ import { apply, configContract, inject, name as pluginName } from '../../engine/
 function makeCtx({ runtime = true } = {}) {
   const calls = []
   const waits = []
+  const warnings = []
   const ctx = {
     tools: { presentAs: (mode) => { calls.push(mode); return () => {} } },
+    get: (name) => name === 'ptcRuntime' && runtime ? {} : undefined,
+    logger: { warn: (message) => warnings.push(String(message)) },
     inject: (deps, callback) => {
       waits.push([...deps])
       if (runtime) callback(ctx)
     },
   }
-  return { ctx, calls, waits }
+  return { ctx, calls, waits, warnings }
 }
 
 test('present-as：ptc 等 ptcRuntime 就绪后才声明，等不到就不声明', () => {
@@ -39,6 +42,18 @@ test('present-as：native 不依赖 ptcRuntime，直接声明', () => {
   apply(h.ctx, { enabled: true, mode: 'native' })
   assert.deepEqual(h.waits, [], 'native 与运行时无关，不得等待')
   assert.deepEqual(h.calls, ['native'])
+})
+
+test('present-as：ptcRuntime 缺失时显式告警，native 不告警', () => {
+  const missing = makeCtx({ runtime: false })
+  apply(missing.ctx, { enabled: true, mode: 'ptc' })
+  assert.deepEqual(missing.waits, [['ptcRuntime']], '仍等待迟到服务')
+  assert.equal(missing.warnings.length, 1, '缺失不能静默')
+  assert.match(missing.warnings[0], /ptcRuntime/)
+
+  const native = makeCtx({ runtime: false })
+  apply(native.ctx, { enabled: true, mode: 'native' })
+  assert.equal(native.warnings.length, 0, 'native 不依赖运行时，不告警')
 })
 
 test('present-as：主子模式独立，缺省仍继承旧 mode', () => {

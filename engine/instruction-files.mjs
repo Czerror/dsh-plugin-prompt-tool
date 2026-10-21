@@ -13,7 +13,7 @@ export const PROJECT_INSTRUCTION_CANDIDATES = ['AGENTS.md', 'CLAUDE.md', 'AGENTS
 export const USER_GLOBAL_INSTRUCTION_FILE = 'AGENTS.md'
 
 /** 引擎侧的项目根标记；宿主有自己的集合（例如只要 .git），因此这里不做统一。 */
-const ENGINE_PROJECT_ROOT_MARKERS = ['.git', '.hg', '.svn']
+export const ENGINE_PROJECT_ROOT_MARKERS = ['.git', '.hg', '.svn']
 
 /** cwd 到文件系统根：含自身，父目录等于自身时停止。 */
 export function ancestorDirs(cwd) {

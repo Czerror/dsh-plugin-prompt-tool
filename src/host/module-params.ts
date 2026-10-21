@@ -76,6 +76,17 @@ export function buildModuleConfigsFromParams(params: Record<string, unknown>): R
   }
   return out
 }
+/** 组合行 disabled 的受控求值：只允许布尔和 process.platform 比较，不执行任意 JS。 */
+export function rowDisabled(value: unknown): boolean {
+  if (value === undefined || value === null || value === false) return false
+  if (value === true) return true
+  if (typeof value !== 'string') throw new TypeError(`组合行 disabled 必须是布尔或 process.platform 比较，收到 ${typeof value}`)
+  const text = value.trim()
+  const match = /^process\.platform\s*(===|!==)\s*['"]([^'"]+)['"]$/.exec(text)
+  if (match === null) throw new TypeError(`组合行 disabled 表达式不受支持：${JSON.stringify(text)}；只支持 true/false 与 process.platform ===/!==`)
+  return match[1] === '===' ? process.platform === match[2] : process.platform !== match[2]
+}
+
 /**
  * 解析模块的模块事实，供 UI 卡片存在性和受控创建共用。
  * 显式模块及当前参数/策略所需的装配是可编辑插件能力；官方组合 row 仅保留为运行事实。
@@ -97,7 +108,7 @@ export function resolveModuleFacts(
     ? [...(declaredModules ?? [])]
     : null
   if (sourceMode === 'unknown') {
-    return { declaredModules, effectiveModules: null, rowIds: [], sourceMode, editable: false }
+    return { declaredModules, effectiveModules: null, rowIds: [], disabledRows: [], sourceMode, editable: false }
   }
 
   let raw: string
@@ -109,9 +120,11 @@ export function resolveModuleFacts(
       : spec
     raw = loadCompositionText(factsSpec, resolveModuleParams(factsSpec, {}), templateDir)
   } catch {
-    return { declaredModules, effectiveModules: null, rowIds: [], sourceMode: 'unknown', editable: false }
+    return { declaredModules, effectiveModules: null, rowIds: [], disabledRows: [], sourceMode: 'unknown', editable: false }
   }
   const rowIds: string[] = []
+  const disabledRows: string[] = []
+  const disabledSet = new Set<string>()
   const seenRows = new Set<string>()
   const defaults = new Map<string, Record<string, unknown>>()
   const visit = (value: unknown): void => {
@@ -126,25 +139,39 @@ export function resolveModuleFacts(
         seenRows.add(record.id)
         rowIds.push(record.id)
       }
+      if (rowDisabled(record.disabled) && !disabledSet.has(record.id)) {
+        disabledSet.add(record.id)
+        disabledRows.push(record.id)
+      }
       if (record.config !== null && typeof record.config === 'object' && !Array.isArray(record.config)) {
         defaults.set(record.id, { ...(record.config as Record<string, unknown>) })
       }
     }
     for (const child of Object.values(record)) visit(child)
   }
+  // YAML 解析失败按「未知」软失败；disabled 求值失败必须冒出来（不静默启用平台行）。
+  let parsed: unknown
   try {
-    visit(parseYaml(raw, { logLevel: 'silent' }))
+    parsed = parseYaml(raw, { logLevel: 'silent' })
   } catch {
-    return { declaredModules, effectiveModules: null, rowIds: [], sourceMode: 'unknown', editable: false }
+    return { declaredModules, effectiveModules: null, rowIds: [], disabledRows: [], sourceMode: 'unknown', editable: false }
   }
+  visit(parsed)
   // 隐式装配如实进入 effectiveModules（declaredModules 保持磁盘事实）：参数在 ⇒ 装配在，
-  // 让编辑卡与「本层已装配的能力」展示真实运行状态。
+  // customTools 非空同样隐含 tool-config-engine；disabled 行从运行集合剔除。
   if (effectiveModules !== null) {
     for (const module of impliedModulesForParams(resolveModuleParams(spec, {}), spec.moduleConfigs)) {
       if (!effectiveModules.includes(module)) effectiveModules.push(module)
     }
     if (rowIds.includes('rule-engine') && !effectiveModules.includes('rule-engine')) {
       effectiveModules.push('rule-engine')
+    }
+    if (Array.isArray(spec.customTools) && spec.customTools.length > 0 && !effectiveModules.includes('tool-config-engine')) {
+      effectiveModules.push('tool-config-engine')
+    }
+    for (const id of disabledRows) {
+      const index = effectiveModules.indexOf(id)
+      if (index >= 0) effectiveModules.splice(index, 1)
     }
   }
   const effectiveConfigs: Record<string, Record<string, unknown>> = {}
@@ -156,7 +183,7 @@ export function resolveModuleFacts(
   for (const [id, config] of Object.entries(generated)) {
     effectiveConfigs[id] = { ...effectiveConfigs[id], ...config }
   }
-  return { declaredModules, effectiveModules, rowIds, sourceMode, editable: editable && sourceMode === 'explicit', effectiveConfigs }
+  return { declaredModules, effectiveModules, rowIds, disabledRows, sourceMode, editable: editable && sourceMode === 'explicit', effectiveConfigs }
 }
 
 /**

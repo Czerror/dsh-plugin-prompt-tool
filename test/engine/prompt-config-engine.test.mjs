@@ -1,6 +1,8 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { fileURLToPath } from 'node:url'
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { confirmDelivered, runPreStepBatch } from '../../engine/executor.mjs'
 import { createPreStepSource } from '../../engine/pre-step-source.mjs'
 import { mountPreStepConfigs, PROMOTION, presetSourceId } from '../fixtures/pre-step.mjs'
@@ -54,6 +56,13 @@ const agent = (overrides = {}) => ({
   options: { model: 'deepseek-v4-flash-7013' },
   ...overrides,
 })
+
+/** 文件分支用真实指令文件夹具：独立临时目录，用例结束清理。 */
+function tempRoot(t, prefix = 'pt-instruction-file-') {
+  const root = mkdtempSync(join(tmpdir(), prefix))
+  t.after(() => rmSync(root, { recursive: true, force: true }))
+  return root
+}
 
 test('同位置多配置默认按声明顺序插入：near-anchor 与 router-guide 依次紧跟用户消息', async () => {
   const { step } = makeHarness(createPromptConfigs([
@@ -291,15 +300,18 @@ test('inject-text 配置默认来源统一为生产者身份：注入消息的 k
   assert.notEqual(injected.source.kind, 'plugin', '不得写成已退役的裸 plugin')
 })
 
-test('解析器自带 source 的候选按身份盖章：dedupe=session 下多步只注入一次', async () => {
+test('解析器自带 source 的候选按身份盖章：dedupe=session 下多步只注入一次', async (t) => {
   // instruction-hint 的 text / file 两个分支都返回 source（{"kind":"instruction-hint"} /
   // {"kind":"instruction-file"}）且不带 plugin；resolved.source 直接当消息 source 用时，
   // 身份只落在 kind 通道，alreadyDelivered 永远查不到，于是每步重复注入。
-  for (const params of [{ text: '参考文件提示' }, { file: fileURLToPath(import.meta.url) }]) {
+  const cwd = join(tempRoot(t), 'cwd')
+  mkdirSync(cwd)
+  writeFileSync(join(cwd, 'AGENTS.md'), '工作区指令正文')
+  for (const params of [{ text: '参考文件提示' }, { file: join(cwd, 'AGENTS.md') }]) {
     const { step, admit } = makeHarness(createPromptConfigs([
       { id: 'hint', strategy: 'placeholder', fill: 'instruction-hint', dedupe: 'session', params, position: 'after-user' },
     ]))
-    const probe = agent({ session: { id: 's-hint-source', header: { delegationDepth: 0 }, snapshotEvents: () => [] } })
+    const probe = agent({ session: { id: 's-hint-source', header: { delegationDepth: 0, cwd }, snapshotEvents: () => [] } })
     const hintOf = (decision) => decision.messages.filter((message) => message.source?.kind?.startsWith('instruction-'))
     let injected = 0
     for (let round = 0; round < 4; round += 1) {
@@ -308,6 +320,73 @@ test('解析器自带 source 的候选按身份盖章：dedupe=session 下多步
       admit(probe, decision)
     }
     assert.equal(injected, 1, `声明解析器 source 的候选每会话只投递一次（${JSON.stringify(params)}）`)
+  }
+})
+
+test('params.file 只读受控指令文件：任意文件名、越界与链接逃逸在解析期拒绝并告警', async (t) => {
+  const root = tempRoot(t)
+  const project = join(root, 'project')
+  const cwd = join(project, 'cwd')
+  const outside = join(root, 'outside')
+  const home = join(root, 'dsh-home')
+  for (const dir of [project, cwd, outside, home]) mkdirSync(dir)
+  // 项目根标记：信任根向上就停在这里，再往上的 root 不算。
+  mkdirSync(join(project, '.git'))
+  writeFileSync(join(cwd, 'AGENTS.md'), 'CWD-INSTRUCTIONS')
+  writeFileSync(join(cwd, 'secret.mjs'), 'SECRET-MJS')
+  writeFileSync(join(root, 'AGENTS.md'), 'ABOVE-PROJECT-INSTRUCTIONS')
+  writeFileSync(join(project, 'AGENTS.md'), 'PROJECT-INSTRUCTIONS')
+  writeFileSync(join(project, 'secret.mjs'), 'PROJECT-SECRET')
+  writeFileSync(join(outside, 'AGENTS.md'), 'OUTSIDE-INSTRUCTIONS')
+  writeFileSync(join(home, 'AGENTS.md'), 'HOME-INSTRUCTIONS')
+  // Windows junction 不需要提权，POSIX 用目录符号链接；两条都是链接逃逸。
+  symlinkSync(outside, join(cwd, 'linked'), process.platform === 'win32' ? 'junction' : 'dir')
+
+  const run = async (file) => {
+    const { step, warnings } = makeHarness(createPromptConfigs([
+      { id: 'file-hint', strategy: 'placeholder', fill: 'instruction-hint', params: { file }, position: 'after-user' },
+    ]))
+    const probe = agent({ session: { id: 's-file-guard', header: { delegationDepth: 0, cwd }, snapshotEvents: () => [] } })
+    const decision = await step(probe)
+    return {
+      injected: decision.messages
+        .filter((message) => message.source?.kind === 'instruction-file')
+        .map((message) => message.content[0].text),
+      warnings,
+    }
+  }
+
+  const allowed = await run(join(cwd, 'AGENTS.md'))
+  assert.deepEqual(allowed.injected, [`Instructions from: ${join(cwd, 'AGENTS.md')}\n\nCWD-INSTRUCTIONS`], 'cwd 内的指令文件正常读取')
+  assert.deepEqual(allowed.warnings, [])
+
+  // 项目根探测向上看：cwd 祖先目录里的 AGENTS.md 是合法指令文件。
+  const parent = await run(join(project, 'AGENTS.md'))
+  assert.deepEqual(parent.injected, [`Instructions from: ${join(project, 'AGENTS.md')}\n\nPROJECT-INSTRUCTIONS`], '父目录（项目根）的 AGENTS.md 允许读取')
+  assert.deepEqual(parent.warnings, [])
+
+  const previousHome = process.env.DSH_HOME
+  process.env.DSH_HOME = home
+  try {
+    const global = await run(join(home, 'AGENTS.md'))
+    assert.deepEqual(global.injected, [`Instructions from: ${join(home, 'AGENTS.md')}\n\nHOME-INSTRUCTIONS`], 'DSH_HOME 内的用户级指令文件允许读取')
+    assert.deepEqual(global.warnings, [])
+  } finally {
+    if (previousHome === undefined) delete process.env.DSH_HOME
+    else process.env.DSH_HOME = previousHome
+  }
+
+  for (const [label, file, pattern] of [
+    ['未知 basename', join(cwd, 'secret.mjs'), /instruction file name/],
+    ['项目根里的任意文件', join(project, 'secret.mjs'), /instruction file name/],
+    ['项目根之上的 AGENTS.md', join(root, 'AGENTS.md'), /escapes the trust root/],
+    ['cwd 外路径', join(outside, 'AGENTS.md'), /escapes the trust root/],
+    ['链接逃逸', join(cwd, 'linked', 'AGENTS.md'), /escapes the trust root/],
+  ]) {
+    const rejected = await run(file)
+    assert.deepEqual(rejected.injected, [], `${label}不得注入正文`)
+    assert.equal(rejected.warnings.length, 1, `${label}告警一次`)
+    assert.match(rejected.warnings[0], pattern, `${label}: ${rejected.warnings[0]}`)
   }
 })
 

@@ -171,7 +171,7 @@ module.yml.configOrder 保存规则id→非负安全整数，身份仍是模块i
 
 customTools 独立于规则/变量。`compileCustomTool` 使用官方 DSL 转换再交 `tool-definition.mjs` 校验；身份、Schema、执行器和输出都在保存/装配前检查。保存保留作者 DSL，运行内联编译工具，不另写工具产物目录。
 
-支持 shell/http/delegate/fs/ask-user；delegate 通过官方工具调度保留批准与拒绝。customToolRequireApproval 只接受实际执行器名称。大文本、秘密与 token 不放 settings；shell 环境沿白名单处理。工具卡的参数行编辑不得丢嵌套 properties/items/oneOf/enum。
+支持 shell/http/delegate/fs/ask-user；delegate 通过官方工具调度保留批准与拒绝。customToolRequireApproval 只接受实际执行器名称。大文本、秘密与 token 不放 settings；shell 环境沿白名单处理，超时与输出上限有可诊断原因；fs 执行器按 realpath containment 限定 cwd，symlink/junction 不得越界。工具卡的参数行编辑不得丢嵌套 properties/items/oneOf/enum。
 
 ## 指令文件与逐文件过滤策略
 

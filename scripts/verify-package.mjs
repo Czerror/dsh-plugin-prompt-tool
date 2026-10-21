@@ -75,7 +75,8 @@ try {
 
   const unpacked = join(work, 'unpacked')
   mkdirSync(unpacked)
-  run(`tar -xzf ${quote(join(packDir, tarball))} -C ${quote(unpacked)}`)
+  // GNU tar on Windows treats `C:\...` as a remote host; `--force-local` keeps the path local.
+  run(`tar${process.platform === 'win32' ? ' --force-local' : ''} -xzf ${quote(join(packDir, tarball))} -C ${quote(unpacked)}`)
   const pkg = join(unpacked, 'package')
 
   for (const name of REQUIRED_DIRS) {

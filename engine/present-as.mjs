@@ -62,7 +62,16 @@ export function apply(ctx, config, { agent } = {}) {
     ctx.tools.presentAs('native')
     return
   }
+  // ptcRuntime 晚到也继续等待；缺失时先告警，避免“ptc 已启用却按 native 跑”没有任何痕迹。
+  let warnedPending = false
+  if (typeof ctx.get === 'function' && ctx.get('ptcRuntime') === undefined) {
+    warnedPending = true
+    try { ctx.logger?.warn?.('present-as: ptcRuntime 尚未就绪；本行保持 pending，不会声明 native；若宿主始终不提供，装配停在未呈现状态') } catch { /* logger 不可用不阻断装配 */ }
+  }
   ctx.inject(['ptcRuntime'], (runtimeCtx) => {
+    if (warnedPending) {
+      try { ctx.logger?.info?.('present-as: ptcRuntime 已就绪，声明 ptc') } catch { /* logger 不可用不阻断装配 */ }
+    }
     runtimeCtx.tools.presentAs('ptc')
   })
 }

@@ -54,10 +54,15 @@ export interface ModuleFacts {
   declaredModules: string[] | null
   effectiveModules: string[] | null
   rowIds: string[]
+  /** 组合行按 disabled 判定为关闭的行 id；effectiveModules 已剔除。仅服务端装配使用。 */
+  disabledRows?: string[]
   sourceMode: ModuleSourceMode
   editable: boolean
   effectiveConfigs?: Record<string, Record<string, unknown>>
 }
+
+/** 由会话原有预设提供、插件不自行挂载的官方 recipe 行。 */
+export const OFFICIAL_RECIPE_ROWS = Object.freeze(['filesystem-editor', 'persistent-shell-posix', 'tool-bash-disabled']) as readonly string[];
 
 export interface ModuleCapability {
   id: string
@@ -209,6 +214,12 @@ export function impliedModulesForParams(
 }
 
 /** 运行时有效能力，保留隐式装配与已发布的事实查询语义。 */
+/** 参与运行时装配的行：effectiveModules + rowIds，剔除 disabled。 */
+export function enabledRowIds(facts: ModuleFacts): string[] {
+  const disabled = new Set(facts.disabledRows ?? [])
+  return [...new Set([...(facts.effectiveModules ?? []), ...facts.rowIds])].filter(id => !disabled.has(id))
+}
+
 export function isModuleCapabilityPresent(id: string, facts: ModuleFacts | undefined): boolean {
   if (facts === undefined || facts.sourceMode !== 'explicit') return false
   const capability = moduleCapability(id)

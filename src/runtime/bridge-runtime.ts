@@ -326,7 +326,7 @@ export function declarationsOf(target: string, byModuleId = false): Set<string> 
 export const declaresAny = (declares: Set<string> | undefined, sections: readonly string[]): boolean =>
   declares === undefined || sections.some((section) => declares.has(section))
 
-/** 下发给客户端的 5 键投影：`effectiveConfigs` 是服务端兜底输入，绝不出桥。 */
+/** 下发给客户端的 5 键投影：`effectiveConfigs` 与服务端装配专用的 `disabledRows` 不出桥。 */
 const moduleFactsView = (facts: ModuleFacts): ModuleFacts => ({
   declaredModules: facts.declaredModules,
   effectiveModules: facts.effectiveModules,

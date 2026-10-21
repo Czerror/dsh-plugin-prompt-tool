@@ -34,6 +34,7 @@ doc.commentBefore = ` dsh-plugin-prompt-tool — 全参数 module.yml 模板（�
  指令文件正文和指令策略不放在本文件；不得将用户 AGENTS.md/CLAUDE.md 正文复制进来。`
 doc.get('modules', true).commentBefore = ` 仅启用规则引擎。其他能力保持 opt-in；写入其已登记参数后会自动补齐装配。
  可用模块（engine/compositions 下的文件名）：${moduleNames.join(', ')}
+ filesystem-editor / persistent-shell-posix / tool-bash-disabled 由会话原有预设提供；声明它们只会产生诊断，插件不挂载官方包。
  已退役的引擎名：${[...RETIRED_MODULE_NAMES].join(', ')}；旧定义需显式转换。
  人设使用 persona.main / persona.subagent；未声明字段继承官方值。`
 doc.get('layerSettings', true).commentBefore = ' 唯一共享参数磁盘位置。按下方参考取消所需注释，不要复制旧 params/model/subagentModel 段。'

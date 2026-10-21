@@ -63,8 +63,10 @@ AgentSetup 窗口内注册的同层同名段会被接住：装配时先撤销它
 | `history.mjs`、`compaction-epoch.mjs` | 可见/完整历史与 epoch-aware 晋升 |
 | `discovery.mjs` | 发现引擎：共享搜索/排序/截断渲染与按 agent 键控的适配器注册表 |
 | `tool-search.mjs`、`skill-search.mjs` | 工具与技能的发现适配器：注册元数据，并各自注册工具 |
-| `tool-config-engine.mjs` | 自定义工具定义到官方注册 |
-| `instruction-files.mjs` | 指令文件探测的判据：候选清单与目录链算法的单一来源（项目根标记由各消费者给）+ 引擎侧异步执行器 |
+| `tool-config-engine.mjs` | 自定义工具定义到官方注册；shell 超时/输出上限与 fs 真实路径 containment |
+| `instruction-files.mjs` | 指令文件探测的判据：候选清单、目录链与项目根标记的单一来源 + 引擎侧异步执行器 |
+| `env-safety.mjs` | `env-facts` 与 `run-code-env` 共用的敏感环境名与安全环境白名单 |
+| `path-safety.mjs` | `instruction-hint` 与 custom `fs` 共用的 realpath containment（symlink/junction 不越信任根） |
 
 相对路径均基于包根的 `engine/`。`actions.mjs`、`predicates.mjs`、`strategies.mjs` 只是已有入口，不把实现堆回 barrel。`engine/vendor/yaml/` 是版本化分发快照，通过 package script 生成，不手改。
 
@@ -77,7 +79,7 @@ AgentSetup 窗口内注册的同层同名段会被接住：装配时先撤销它
 - **声明文件只是类型面**：不进 `lib/` 打包，也不需要改 `package.json`／tsdown（`exports["./engine/*"]` 已覆盖；TS 按 `./x.mjs` → `./x.d.mts` 解析）。
 - **为什么有些声明符号 `src/` 从不直接 import，却仍然必要**（别按「无人使用」删它们）：`src/` 消费的是**函数**，不是字段类型——`StandingMountFor` 被 `loadStandingMountFor` 的返回引用、`MountRuleSourcesOptions` 被 `mountRuleSources` 的参数引用、`PreStepBatchOptions` 被 `runPreStepBatch` 的参数引用、`WarnOnce` 被 `createWarnOnce` 的返回引用……它们是**签名的组成部分**。删掉会让签名退回 `unknown`。判据是「它是否支撑某个被消费符号的签名」，**不是**「它自己有没有被 import」。
 - **声明的失效方式是静默的，当前没有机制校验**：声明多于实现 ⇒ `src/` 编译通过、运行期拿到 `undefined`；签名写宽（如 `rule-runtime.d.mts` 的 `ctx: unknown`）⇒ 类型不再报错但也不再说实话。这两类都只能靠「新增／改名引擎导出时同步改声明」这条纪律 ＋ 人看。**已做的核对（2026-10-16）**：14 份声明的导出在运行期逐个 `import` 核对，**无漂移、无冗余**。
-- **动态加载点的归属与断言**（2026-10-16 核实）：按 id 加载在 `runtime/agent-assembly.ts:121-124`（`join(packageEngineDir(), '<id>.mjs')` ＋ `existsSync`，缺文件静默跳过、缺 `apply` 抛）；固定文件名 URL 动态导入有三处——`runtime/bridge-runtime.ts:590`（`schema.mjs`，断言 `{ getEngineMeta }`）、`runtime/routes/instructions.ts:31`（`rule-spec.mjs`，收在 `ruleEditorMeta()` 里、被调 5 次，断言用的是 `src/shared/rules.ts` 的 `RuleEditorMeta` **副本**而非本目录的声明）、`src/index.ts:200`（`skill-search.mjs`，相对 `import.meta.url`，失败 warn 降级）。引擎内另有 `actions/content.mjs`（按策略名懒加载）与 `host-package.mjs`（按宿主包名，非引擎模块）。
+- **动态加载点的归属与断言**（2026-10-16 核实）：按 id 加载在 `runtime/agent-assembly.ts:126-145`（`join(packageEngineDir(), '<id>.mjs')` ＋ `existsSync`，缺文件静默跳过、缺 `apply` 抛）；固定文件名 URL 动态导入有三处——`runtime/bridge-runtime.ts:546`（`schema.mjs`，断言 `{ getEngineMeta }`）、`runtime/routes/instructions.ts:31`（`rule-spec.mjs`，收在 `ruleEditorMeta()` 里、被调 5 次，断言用的是 `src/shared/rules.ts` 的 `RuleEditorMeta` **副本**而非本目录的声明）、`src/index.ts:202-206`（`skill-search.mjs`，相对 `import.meta.url`，失败 warn 降级）。引擎内另有 `actions/content.mjs`（按策略名懒加载）与 `host-package.mjs`（按宿主包名，非引擎模块）。
 - **这些断言为什么不收成一个接口**：四处加载在**路径基准／失败语义／断言形状／缓存**上各不相同——按 id 那处要求「缺件跳过、缺 `apply` 抛」，`index.ts` 那处要求「失败只 warn」，只有 `bridge-runtime` 与 `instructions` 两处同形（固定文件名 ＋ `packageEngineDir()`）。强行统一会得到一个覆盖四种错误语义的宽 options ＝ 浅接口，故**有意保留内联断言**。
 - **`@ts-expect-error` 与「声明不参与」的边界**：上面静态引入的模块由同目录 `.d.mts` 供类型（见上一条）；**走绝对 URL 动态 import 的那几处，`.d.mts` 不参与解析**，类型完全由手写内联断言承担——`rule-spec.mjs` 因此同时有两条类型路径，`src/runtime/routes/instructions.ts` 用的还是 `src` 侧的同名副本。
 - `engine/vendor/**` 的 `@ts-expect-error` 来自上游转译产物，随快照整体覆盖，**不手动改**。
@@ -86,18 +88,20 @@ AgentSetup 窗口内注册的同层同名段会被接住：装配时先撤销它
 
 ### 引擎契约（加载器视角）
 
-组合源 `engine/compositions/source/local/*.yml` 里的行分两类，加载器（`src/runtime/agent-assembly.ts:186-204`）按 `name` 判断：
+组合源 `engine/compositions/source/local/*.yml` 里的行分两类，加载器（`src/runtime/agent-assembly.ts:147-220`）按 `name` 判断：
 
 - **本地引擎行**：`name: ./engine/<id>.mjs`。加载器按行 `id` 拼出同一路径 import，执行 `apply(ctx, config, { agent })`；`config` 是模块定义里解析后的行配置。
-- **官方 recipe 行**：`name` 是 `cordis:group` 或 `@deepseek-ai/dsh-*` 包名，没有本地 `.mjs`。这些行由会话原有预设提供，加载器在 `engine/<id>.mjs` 缺席时跳过，不校验引擎形状。
+- **官方 recipe 行**：`name` 是 `cordis:group` 或 `@deepseek-ai/dsh-*` 包名，没有本地 `.mjs`。这些行由会话原有预设提供，加载器在 `engine/<id>.mjs` 缺席时跳过并记录诊断，不校验引擎形状；声明它们不会让插件自行挂载官方包。
+
+行级 `disabled` 由模块事实的受控求值处理：只接受 `true`/`false` 和 `process.platform ===/!== '...'`；未知表达式 fail loud，disabled 行不进入运行集合。
 
 一个**本地引擎模块**必须满足五条：
 
 1. **身份**：文件位于 `engine/<id>.mjs`，与行 `id` 一致；行 `name` 若存在应为 `./engine/<id>.mjs`（加载器不读 `name`，一致性由 `test/host/engine-contract.test.mjs` 校验）。
-2. **入口**：导出 `apply` 函数；缺 `apply` 在装配准备期抛错（`agent-assembly.ts:193`）。
+2. **入口**：导出 `apply` 函数；缺 `apply` 在装配准备期抛错（`agent-assembly.ts:204`）。
 3. **依赖**：`inject` 缺省或为字符串数组；数组元素是宿主服务名（`tools`、`systemPrompt`、`llm`、`skills` 等）。
-4. **配置**：`configContract.parse(raw, plugin)` 缺省或为函数；装配准备期会调用一次做 fail-fast（`agent-assembly.ts:202-203`），引擎在 `apply` 内可以再解析以取得规范化配置——当前两边都保留，**这是有意为之的 fail-fast ＋ normalize 两段**，不是遗漏。
-5. **清理**：`apply` 返回函数时，装配 fiber 把它作为 disposer 收走（`agent-assembly.ts:436-437`）；不返回则依赖注册时自带的 effect。
+4. **配置**：`configContract.parse(raw, plugin)` 缺省或为函数；装配准备期会调用一次做 fail-fast（`agent-assembly.ts:213-214`），引擎在 `apply` 内可以再解析以取得规范化配置——当前两边都保留，**这是有意为之的 fail-fast ＋ normalize 两段**，不是遗漏。
+5. **清理**：`apply` 返回函数时，装配 fiber 把它作为 disposer 收走（`agent-assembly.ts:459-460`）；不返回则依赖注册时自带的 effect。
 
 **不做通用能力注册表**：引擎之间按名调用目前只有发现引擎一个真实消费者（`promptToolDiscovery`，见 `discovery.mjs`）。等到出现第二个按能力解析的消费者（例如技能面成为可见面的发现来源），再按两个真实用例定接口；在此之前，新增引擎照抄 `discovery.mjs` 的「服务名 + 注册表 + 按 agent 键控」形状，而不是先建注册表。
 
@@ -105,7 +109,7 @@ AgentSetup 窗口内注册的同层同名段会被接住：装配时先撤销它
 
 ## 复制协议（跨项目复用）
 
-复制完整 `engine/` 可复用纯编译器、动作、条件、历史与模板求值。宿主接线仍需要相应官方服务，四个模块工具外壳还需要 Prompt Tool 的 provider。独立引擎不偷偷读取插件 DSH_HOME 或 session 变量表。
+复制完整 `engine/` 可复用纯编译器、动作、条件、历史与模板求值。宿主接线仍需要相应官方服务，四个模块工具外壳还需要 Prompt Tool 的 provider。独立引擎不偷偷读取插件 DSH_HOME 或 session 变量表。`env-safety.mjs` 与 `path-safety.mjs` 是纯安全 helper，随复制协议一起带走；`env-facts` 白名单外键在构造期 fail loud，`instruction-hint` 的 `params.file` 只允许指令文件候选名且 realpath 必须落在 cwd→最近项目根或 DSH_HOME。
 
 `instruction-files.mjs` 只提供探测（纯函数 + 引擎侧执行器）；`instruction-hint.mjs` 既可挂载为行，也为 placeholder 填充器提供消息构造——复制方可以只要探测、不挂该行。执行器与宿主探测都只走到最近的项目根为止（marker 首命中即停），不继续向盘根探测。
 
@@ -140,6 +144,8 @@ adapter 的目录、权限、原子写与版本责任归接入方。缺少 adapt
 | append-context | tools/post-execute 后追加上下文；续跑统一用 inject-text 的 turn-stop 层 |
 | pre-step-filter | 前置消息来源/插件过滤 |
 | inbox-prepend | inbox 通知补充上下文 |
+
+`assembly` 的 `target.sections.append` 按段名在已有系统段正文后追加一次渲染文本，保留原 `order`/`interpolate`，不设置 `complete`；同一装配内 `once` 去重，目标缺失只告警。追加文本走内置插值/动态宏（至少 `{{CWD}}`），模块持久变量不在该动作的插值域。旧 `workspaceLine` 可用「`phase` 条件 + 追加 persona 段 + `\n当前工作目录：{{CWD}}`」表达；旧 `phase1FirstCallInstruction` 用受控相位条件 + 追加目标段名表达，二者都不恢复旧参数键。append 与同一受众的已知 `complete` 显式互斥：装配准备期拒绝，不依赖官方 assemble 在 waterfall 后静默还原。任意第三方 `complete` 不可由本插件观察，仍会被官方还原丢弃；这是明确边界。
 
 正文策略为 static、placeholder、context-activation。placeholder 仅 pre-step/runtime-context，context-activation 仅 pre-step。分类由通用 text 条件和分支选择普通静态正文；text 的 minChars/maxChars 为含端点的非负安全整数，可单独按长度判断，关键词与长度同时声明时取交集，minChars 不得大于 maxChars。userMessage 使用本批全部真实用户文本，不包括插件正文。普通规则无隐式业务正文、锚词、两轮兜底或长度阈值；空文本保持空。确认属于 anchor 条件；旧专用策略及重复动作入口直接替换，无兼容层。工具名只写 names 条件，不再由 tool-gate/tool-result 的参数重复过滤。
 
@@ -192,7 +198,7 @@ then:
 - llm/stream 自身无文本 subject；引擎可由 sessionId 查回 Agent，因此 phase/session/count/anchor 等依赖会话的条件可用，查不到为 UNAVAILABLE。
 - system-section/runtime-context 的普通文本贡献支持规则级条件及嵌套 if/then/else，在每次 assembly 按该执行点事实求值，不动态重注册段。complete/suppressRuntimeContext 属固定注册效果，动态 if 组合仍在编译期拒绝。
 
-固定系统段可通过 `config.audience: main/subagent` 限定受众；complete 和 suppressRuntimeContext 都在该 Agent 注册前筛选，非目标受众不注册这些效果。省略受众覆盖主/子两类。独占检查按受众分别聚合：主/子各一条可以同模块或跨模块共存，同受众重叠（包括未限定受众的段）在发布前拒绝；官方人设 complete 也只与该 Agent 的规则比较。
+固定系统段可通过 `config.audience: main/subagent` 限定受众；complete 和 suppressRuntimeContext 都在该 Agent 注册前筛选，非目标受众不注册这些效果。省略受众覆盖主/子两类。独占检查按受众分别聚合：主/子各一条可以同模块或跨模块共存，同受众重叠（包括未限定受众的段）在发布前拒绝；官方人设 complete 也只与该 Agent 的规则比较。`assembly.sections.append` 与 complete 使用同一受众聚合：同受众存在已知 complete 时拒绝 append，append 不会改写 complete 段。
 
 插件管理路径自动传递真实 Agent。独立代码调用 `mountRuleSources`、`applyPromptConfigSources`、`wireLayers` 或 `registerAction` 时，受众限定的固定系统段要求在目标 Agent scope 调用并传入 `options.agent`；共享 standing scope 的文件式入口无法确定受众，明确拒绝该组合。pre-step 来源由 `createPreStepSource` 构造，`applyPromptConfigSources(sources, options)` 从 `source.ctx` 取作用域，不再另收 ctx。普通正文与未限定受众的固定效果保持原注册方式，不能通过返回空正文解除独占或上下文抑制。
 
@@ -259,7 +265,7 @@ tool-catalog 使用普通只读变量插值；`templateEvaluation: true` 在编�
 
 `present-as` 行在 **Agent scope** 声明工具呈现（官方 `ctx.tools.presentAs`）：`mode: ptc` 让注册表只贡献保留的 `run_code` 传输与生成的 SDK 段，其余可见能力走程序内绑定；`native` 是部署默认，只有「PTC 部署里挑出个别 Agent 回 native」才需要显式声明。它调的是与官方 `@deepseek-ai/dsh-agent-tool-presentation` 行**同一个** `presentAs`，故两条路径语义等价、scope 不同（本行 = Agent scope，官方行 = 预设常驻 scope，`modeFor` 沿链路最近者优先）；**同一 scope 二次声明由官方拒绝**（挂载期 fail loud，不静默覆盖）。进程级默认呈现仍归宿主 `tools` 行的 `config.mode`，运行时改不了。
 
-`ptc` 需要 `ctx.ptcRuntime`：本行用 `ctx.inject` 等它就绪再声明，等不到就停在 pending 并由预设注册表指名报告不可用的行，**不静默退回 native**；`ptcRuntime` 刻意不进 `inject`，否则 `native` 行会被绑死在「部署必须有 PTC 运行时」上。`presentAs` 自带 disposer，本行不另包一层。
+`ptc` 需要 `ctx.ptcRuntime`：本行用 `ctx.inject` 等它就绪再声明，等不到就停在 pending 并先 warn 一次，迟到到达再记一次 info，**不静默退回 native**；`ptcRuntime` 刻意不进 `inject`，否则 `native` 行会被绑死在「部署必须有 PTC 运行时」上。`presentAs` 自带 disposer，本行不另包一层。
 
 随包内置模块 `ptc-mode` 就是这两行的组合（默认不启用；启用会重挂所有存活 agent）。PTC 部署通常把本行与 `run-code-env` 装在同一模块里：PTC 下 `run_code` 程序里的 `process.env` 恒为空（官方安全设计），而 PATH／HOME 这类非敏感事实常被需要——`run-code-env` 在每个程序执行前注入一份冻结的 `env` 全局并注册 `## run_code environment` 提示段，且只在存在 `run_code` 传输的 scope 生效，对 native 会话零副作用。规则则不必加：模型收到的指引已由官方的 `PTC_ONLY` 段（只有 `run_code` 能直接调用）与生成的 `tools:sdk` 段提供。
 
@@ -269,7 +275,7 @@ tool-catalog 使用普通只读变量插值；`templateEvaluation: true` 在编�
 
 工具通过已安装 `@deepseek-ai/dsh-tools` 的 defineTool/官方转换器定义，使用真实 ToolExecution 的 agent、signal、调用身份；异步工作观察或转发 caller-owned signal。delegate 走 `ctx.tools.execute`，保留批准、拒绝和取消管线。
 
-自定义执行器支持 shell/http/delegate/fs/ask-user。定义、参数 Schema、输出和路径在写入边界校验；不依赖工具描述来当权限。宿主 API 以安装包类型和官方文档为准，不复制旧版本行号作当前依据。
+自定义执行器支持 shell/http/delegate/fs/ask-user。定义、参数 Schema、输出和路径在写入边界校验；不依赖工具描述来当权限。fs 用真实路径 containment 限定 cwd，shell 超时与输出超限给出可诊断 error；宿主 API 以安装包类型和官方文档为准，不复制旧版本行号作当前依据。
 
 ## 重建与验证
 

@@ -14,7 +14,7 @@
  *   delegate — 委托已注册工具（经 ctx.tools.execute 的 nested dispatch 走
  *              完整官方管线：参数/输出校验、allow/deny/ask、pre/execute/post
  *              waterfall、timeout、nested token 与 durable result）
- *   fs       — 文件操作（read/write/append/list/delete，路径限定 cwd 内）
+ *   fs       — 文件操作（read/write/append/list/delete，真实路径限定 cwd 内）
  *   ask-user — approval 通道询问用户（结果文本化）
  *
  * 安全：行 config.requireApproval = [kind...] 时该执行器先过 approval 门
@@ -46,11 +46,12 @@
  */
 
 import { readFileSync, readdirSync, writeFileSync, appendFileSync, rmSync, statSync } from 'node:fs'
-import { execFile } from 'node:child_process'
+import { execFile, execFileSync } from 'node:child_process'
 import { isAbsolute, join, resolve, sep } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { parse as parseYaml } from './vendor/yaml/index.js'
 import { importHostPackage } from './host-package.mjs'
+import { resolveRealWithin } from './path-safety.mjs'
 import { validateDefinition } from './tool-definition.mjs'
 import { defineConfig, passthrough } from './fields.mjs'
 import { keepDisposer } from './shared.mjs'
@@ -67,6 +68,24 @@ const ENV_ALLOWLIST = [
   'PATH', 'PATHEXT', 'SystemRoot', 'COMSPEC', 'TEMP', 'TMP',
   'USERPROFILE', 'HOME', 'DSH_HOME', 'DSH_WORKSPACE', 'DSH_SESSION_ID',
 ]
+
+/**
+ * shell 输出上限（stdout/stderr 各自）：超限时 execFile 以
+ * ERR_CHILD_PROCESS_STDIO_MAXBUFFER 失败并保留截断输出，错误文本说明原因。
+ */
+const SHELL_MAX_OUTPUT_BYTES = 1024 * 1024
+
+/** 超时尽量结束整棵子进程树；Windows 用 taskkill /T，失败再退回 child.kill。 */
+function killShellTree(child) {
+  if (child === undefined || child.pid === undefined) return
+  if (process.platform === 'win32') {
+    try {
+      execFileSync('taskkill', ['/pid', String(child.pid), '/T', '/F'], { stdio: 'ignore', windowsHide: true })
+      return
+    } catch { /* taskkill 不可用时退回单进程 kill */ }
+  }
+  try { child.kill() } catch { /* 已退出 */ }
+}
 
 /** 插值 {{args.x.y}} → 参数深取值（缺失保留字面）。 */
 function interpolateArgs(text, args) {
@@ -163,16 +182,6 @@ async function approvalGate(ctx, exec, kind, reason) {
   return { ok: false, message: `approval for tool ${exec.name} was ${outcome}` }
 }
 
-/** cwd 内路径限定（防越界；resolve 后必须位于 cwd 之下）。 */
-function withinCwd(cwd, target) {
-  const resolved = resolve(cwd, target)
-  const root = resolve(cwd)
-  if (resolved !== root && !resolved.startsWith(root + sep)) {
-    throw new Error(`path ${JSON.stringify(target)} escapes the workspace`)
-  }
-  return resolved
-}
-
 /** delegate args 映射：完整引用（{{args.x}}）透传原始类型（数组/数字/布尔不字符串化）；
  *  部分引用（前缀-{{args.x}}）插值为字符串；非插值值原样。 */
 function mapDelegateArgs(execArgs, args) {
@@ -231,18 +240,25 @@ function createExecute(ctx, def, requireApproval) {
       const env = { ...Object.fromEntries(ENV_ALLOWLIST.filter((key) => process.env[key] !== undefined).map((key) => [key, process.env[key]])), ...(exec.env ?? {}) }
       const output = await new Promise((resolvePromise) => {
         let killTimer
-        const child = execFile(shell, argv, { cwd, env, windowsHide: true }, (error, stdout, stderr) => {
+        let timedOut = false
+        const child = execFile(shell, argv, { cwd, env, windowsHide: true, maxBuffer: SHELL_MAX_OUTPUT_BYTES }, (error, stdout, stderr) => {
           clearTimeout(killTimer)
+          // 超时被杀与输出超限都不是普通退出码：error 文本必须能区分二者（不新增输出字段）。
+          const reason = error === null ? undefined
+            : timedOut ? `shell command timed out after ${def.timeoutMs} ms and was killed`
+              : error.code === 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER'
+                ? `shell command output exceeded ${SHELL_MAX_OUTPUT_BYTES} bytes (truncated)`
+                : String(error.message)
           resolvePromise({
             exitCode: error === null ? 0 : (typeof error.code === 'number' ? error.code : 1),
             stdout: String(stdout ?? ''),
             stderr: String(stderr ?? ''),
-            ...(error === null ? {} : { error: String(error.message) }),
+            ...(reason === undefined ? {} : { error: reason }),
           })
         })
         const timeout = def.timeoutMs
         if (timeout !== undefined && Number.isSafeInteger(timeout) && timeout > 0) {
-          killTimer = setTimeout(() => child.kill(), timeout)
+          killTimer = setTimeout(() => { timedOut = true; killShellTree(child) }, timeout)
         }
       })
       return output
@@ -292,7 +308,8 @@ function createExecute(ctx, def, requireApproval) {
     if (exec.kind === 'fs') {
       const cwd = run.agent?.session?.header?.cwd ?? process.cwd()
       try {
-        const file = withinCwd(cwd, interpolateArgs(exec.path, args))
+        // 词法 resolve 挡不住 symlink/junction：统一用真实路径判定，不存在的目标按父目录解析。
+        const file = resolveRealWithin(resolve(cwd, interpolateArgs(exec.path, args)), [cwd])
         const action = interpolateArgs(exec.action, args)
         if (action === 'read') {
           const raw = readFileSync(file, 'utf8')

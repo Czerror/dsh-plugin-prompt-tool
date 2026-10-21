@@ -24,6 +24,7 @@ const { installPreStepCoordinator, PRE_STEP_COORDINATOR_SERVICE } = await import
 const { mountRuleSources } = await import('../../engine/rule-runtime.mjs')
 const { installPersonaCapture } = await import('../../src/runtime/persona-registration.ts')
 const { loadModuleSpec } = await import('../../src/host/module-spec.ts')
+const { readModuleFacts, rowDisabled } = await import('../../src/host/module-params.ts')
 const { mountPreStepConfigs: mountConfigs, applyPromptConfigSources } = await import('../fixtures/pre-step.mjs')
 
 /** 装配能力探针：装配只问「宿主是否提供该服务」，这里全部视为提供。 */
@@ -1441,4 +1442,109 @@ test('诊断账本随装配释放回空，不返回陈旧快照', async (t) => {
   await h.runtime.settled()
   await h.runtime.dispose()
   assert.deepEqual(h.runtime.ruleDiagnostics(), { records: [], dropped: 0 })
+})
+function writeRawRuleModule(id, rules) {
+  const dir = join(moduleRoot, id)
+  mkdirSync(dir, { recursive: true })
+  writeFileSync(join(dir, 'module.yml'), JSON.stringify({ id, name: id, modules: [], rules }, null, 2), 'utf8')
+  return dir
+}
+
+const appendRule = {
+  id: 'append-rule',
+  then: [{ id: 'append', kind: 'assembly', target: { sections: { append: [{ name: 'deployment:persona-prefix', text: 'APPENDED' }] } } }],
+}
+const completeRule = (audience) => ({
+  id: 'complete-rule',
+  then: [{
+    id: 'complete',
+    kind: 'inject-text',
+    config: {
+      id: 'complete-text', layer: 'system-section', strategy: 'static', text: 'COMPLETE',
+      params: { complete: true }, ...(audience === undefined ? {} : { audience }),
+    },
+  }],
+})
+
+test('sections.append：无 complete 时追加到既有段，输入不被就地修改', async (t) => {
+  writeRawRuleModule('append-live', [appendRule])
+  const h = await liveAssembly(t, () => ['append-live'])
+  const agent = await h.makeAgent('append-live-agent')
+  let read
+  await agent.ctx.plugin({
+    inject: ['systemPrompt'],
+    apply(ctx) {
+      ctx.systemPrompt.section({ name: 'deployment:persona-prefix', order: 0, text: 'BASE' })
+      read = () => ctx.systemPrompt.assemble({ agent, scope: agent })
+    },
+  })
+  const output = await read()
+  const section = output.sections.find(item => item.name === 'deployment:persona-prefix')
+  assert.equal(section.text, 'BASE\nAPPENDED')
+})
+
+test('sections.append 与同受众 complete 互斥，主/子受众分别判断', async (t) => {
+  writeRawRuleModule('append-live-main', [appendRule])
+  writeRawRuleModule('complete-main', [completeRule('main')])
+  const h = await liveAssembly(t, () => ['append-live-main', 'complete-main'])
+  const main = await h.makeAgent('append-complete-main')
+  assert.equal(h.runtime.hasMounted(main.id), false)
+  assert.ok(h.warnings.some(message => message.includes('sections.append') && message.includes('complete')))
+
+  writeRawRuleModule('append-live-sub', [appendRule])
+  writeRawRuleModule('complete-sub', [completeRule('subagent')])
+  const split = await liveAssembly(t, () => ['append-live-sub', 'complete-sub'])
+  const mainAgent = await split.makeAgent('append-sub-complete-main')
+  assert.equal(split.runtime.hasMounted(mainAgent.id), true, '子代理 complete 不影响主会话 append')
+  const child = await split.makeAgent('append-sub-complete-child', 1)
+  assert.equal(split.runtime.hasMounted(child.id), false, '子代理同受众 append + complete 被拒')
+  assert.ok(split.warnings.some(message => message.includes('sections.append') && message.includes('complete')))
+
+  writeRawRuleModule('append-main-only', [{ ...appendRule, if: { scope: { audience: 'main' } } }])
+  writeRawRuleModule('complete-sub-only', [completeRule('subagent')])
+  const split2 = await liveAssembly(t, () => ['append-main-only', 'complete-sub-only'])
+  const mainOnly = await split2.makeAgent('append-main-only-main')
+  const childOnly = await split2.makeAgent('append-main-only-child', 1)
+  assert.equal(split2.runtime.hasMounted(mainOnly.id), true, '主受众 append 不受子 complete 影响')
+  assert.equal(split2.runtime.hasMounted(childOnly.id), true, 'append 规则限定 main 时，子受众只装 complete')
+})
+
+test('组合行 disabled 受控求值，并从运行集合剔除', async () => {
+  assert.equal(rowDisabled(true), true)
+  assert.equal(rowDisabled(false), false)
+  assert.equal(rowDisabled(undefined), false)
+  assert.equal(rowDisabled(`process.platform === 'win32'`), process.platform === 'win32')
+  assert.equal(rowDisabled(`process.platform !== 'win32'`), process.platform !== 'win32')
+  assert.throws(() => rowDisabled('process.env.X'), /disabled 表达式不受支持/)
+  writeModuleFixture('official-disabled', { modules: ['tool-bash-disabled'] })
+  const facts = readModuleFacts(join(moduleRoot, 'official-disabled'))
+  assert.deepEqual(facts.disabledRows, ['tool-bash-disabled'])
+  assert.equal(facts.effectiveModules.includes('tool-bash-disabled'), false, 'disabled 行不进入运行集合')
+  const prepared = await prepareAssembly(moduleRoot, 'official-disabled', hasEveryService)
+  assert.equal(prepared.modules.some(module => module.id === 'tool-bash-disabled'), false)
+  assert.ok(prepared.skippedOfficialRows.includes('tool-bash-disabled'), '禁用的官方行也要有诊断')
+})
+
+test('customTools 未声明 tool-config-engine 时按事实自动装配', async () => {
+  const id = 'implied-tools'
+  const dir = join(moduleRoot, id)
+  mkdirSync(dir, { recursive: true })
+  const tool = {
+    id: 'echo', name: 'echo', description: 'echo',
+    output: { schema: { type: 'object', additionalProperties: false } },
+    execute: { kind: 'shell', command: 'echo' },
+  }
+  writeFileSync(join(dir, 'module.yml'), JSON.stringify({ id, name: id, modules: [], customTools: [tool], rules: [] }), 'utf8')
+  const facts = readModuleFacts(dir)
+  assert.ok(facts.effectiveModules.includes('tool-config-engine'), 'customTools 隐含 tool-config-engine')
+  const prepared = await prepareAssembly(moduleRoot, id, hasEveryService)
+  assert.deepEqual(prepared.modules.map(module => module.id), ['tool-config-engine'])
+  assert.equal(prepared.modules[0].config.tools.length, 1)
+})
+
+test('官方 recipe 行只声明时给出诊断，不静默假装已挂载', async t => {
+  writeModuleFixture('official-row', { modules: ['filesystem-editor'] })
+  const h = await liveAssembly(t, () => ['official-row'])
+  await h.makeAgent('official-row-agent')
+  assert.ok(h.warnings.some(message => message.includes('filesystem-editor')), '声明官方行必须可见')
 })

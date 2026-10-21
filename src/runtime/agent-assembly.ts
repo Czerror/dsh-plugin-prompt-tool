@@ -34,7 +34,7 @@ import { createRuleDiagnosticsLedger, emptyRuleDiagnostics, type RuleDiagnostics
 import { createTargetQueue } from '../shared/target-queue.ts'
 import { createModuleVariableAdapter } from './module-variable-adapter.ts'
 import { planPersonaSections, type PersonaCapture, type PersonaModule, type PersonaPlan } from './persona-registration.ts'
-import { MODULE_TOOL_CAPABILITIES } from '../shared/engine-capabilities.ts'
+import { MODULE_TOOL_CAPABILITIES, OFFICIAL_RECIPE_ROWS, enabledRowIds } from '../shared/engine-capabilities.ts'
 import { enableTablePath, readGlobalLayerSettings } from '../host/config-store.ts'
 
 import { compileRules, completeRuleSections } from '../../engine/rule-spec.mjs'
@@ -135,6 +135,8 @@ export interface PreparedAssembly {
   moduleId: string
   persona?: ModuleSpec['persona']
   variablesEnabled?: boolean
+  /** 模块声明了、但只能由会话原有预设挂载的官方 recipe 行。 */
+  skippedOfficialRows: string[]
 }
 
 /**
@@ -176,7 +178,10 @@ export async function prepareAssembly(
   const engineDir = packageEngineDir()
   const services = new Set<string>()
   const modules: PreparedAssembly['modules'] = []
-  for (const id of new Set([...facts.effectiveModules, ...facts.rowIds])) {
+  const skippedOfficialRows: string[] = []
+  const disabledRows = new Set(facts.disabledRows ?? [])
+  for (const id of disabledRows) if (OFFICIAL_RECIPE_ROWS.includes(id)) skippedOfficialRows.push(id)
+  for (const id of enabledRowIds(facts)) {
     if (id === 'rule-engine') continue
     // 退役引擎名按白名单过滤：不装配、不报错（它们承载的是旧格式规则，改写由用户或模型完成）。
     if (id === 'prompt-config-engine' || id === 'declared-triggers') continue
@@ -187,7 +192,11 @@ export async function prepareAssembly(
     }
     const file = engineModuleFile(engineDir, id)
     // 官方组合行与能力 recipe（只有 library yml、没有 engine mjs）由会话原有预设提供。
-    if (file === undefined) continue
+    // 仍声明它们时只记录诊断，不假装已挂载。
+    if (file === undefined) {
+      if (OFFICIAL_RECIPE_ROWS.includes(id)) skippedOfficialRows.push(id)
+      continue
+    }
     const module = await import(pathToFileURL(file).href) as {
       apply?: PreparedAssembly['modules'][number]['apply']
       inject?: readonly string[]
@@ -214,7 +223,7 @@ export async function prepareAssembly(
   for (const name of services) {
     if (!hasService(name)) throw new Error(`配装所需宿主能力不可用：${name}`)
   }
-  return { rules, modules, services, moduleId, persona: spec.persona, variablesEnabled: spec.variablesEnabled }
+  return { rules, modules, services, moduleId, persona: spec.persona, variablesEnabled: spec.variablesEnabled, skippedOfficialRows }
 }
 
 /** 上报点只读 message（本文件的 `warn`、settings-bridge 的 `String(error)`）：原因写进文本。 */
@@ -246,6 +255,64 @@ interface DuplicateIdentity { channel: 'plugin' | 'kind'; identity: string; susp
 
 function completeSectionsOf(prepared: PreparedAssembly[], audience: 'main' | 'subagent'): string[] {
   return prepared.flatMap(item => completeRuleSections(item.rules, audience).map((id: string) => `${item.moduleId}/${id}`))
+}
+
+type RuleAudience = 'main' | 'subagent'
+
+/** 从规则的静态条件树推导它可能作用的受众；undefined 表示无法静态收窄（按两者都算）。 */
+function conditionAudiences(tree: unknown): Set<RuleAudience> | undefined {
+  if (tree === null || typeof tree !== 'object' || Array.isArray(tree)) return undefined
+  const record = tree as Record<string, unknown>
+  const scope = record.scope
+  if (scope !== null && typeof scope === 'object' && !Array.isArray(scope)) {
+    const audience = (scope as Record<string, unknown>).audience
+    if (audience === 'main' || audience === 'subagent') return new Set([audience])
+  }
+  if (Array.isArray(record.all)) {
+    let result: Set<RuleAudience> | undefined = new Set(['main', 'subagent'])
+    for (const child of record.all) {
+      const childAudiences = conditionAudiences(child)
+      if (childAudiences === undefined) continue
+      result = new Set([...result].filter(audience => childAudiences.has(audience)))
+    }
+    return result
+  }
+  if (Array.isArray(record.any)) {
+    let result = new Set<RuleAudience>()
+    for (const child of record.any) {
+      const childAudiences = conditionAudiences(child)
+      if (childAudiences === undefined) return undefined
+      for (const audience of childAudiences) result.add(audience)
+    }
+    return result
+  }
+  if (record.not !== undefined) {
+    const childAudiences = conditionAudiences(record.not)
+    if (childAudiences === undefined) return undefined
+    return new Set(['main', 'subagent'].filter(audience => !childAudiences.has(audience as RuleAudience)) as RuleAudience[])
+  }
+  if (record.notAny !== undefined) {
+    const childAudiences = conditionAudiences({ any: record.notAny })
+    if (childAudiences === undefined) return undefined
+    return new Set(['main', 'subagent'].filter(audience => !childAudiences.has(audience as RuleAudience)) as RuleAudience[])
+  }
+  return undefined
+}
+
+/** 这份模块是否声明了某受众会执行的 assembly.sections.append（用于与 complete 的已知受众互斥）。 */
+function hasSectionAppend(rules: readonly unknown[], audience: RuleAudience): boolean {
+  return rules.some((rule) => {
+    const candidate = rule as {
+      enabled?: boolean
+      actions?: Array<{ kind?: string; target?: { sections?: { append?: unknown } } }>
+      conditionTrees?: { when?: unknown }
+    }
+    if (candidate.enabled === false) return false
+    const audiences = conditionAudiences(candidate.conditionTrees?.when)
+    if (audiences !== undefined && !audiences.has(audience)) return false
+    return (candidate.actions ?? []).some(action => action.kind === 'assembly'
+      && Array.isArray(action.target?.sections?.append) && action.target.sections.append.length > 0)
+  })
 }
 
 function dedupeConfigsOf(prepared: PreparedAssembly[]): Array<{ moduleId: string; config: Record<string, unknown> }> {
@@ -486,6 +553,11 @@ export function createAgentAssembly(ctx: Context, options: AgentAssemblyOptions)
     const live = targets.filter(agent => active && !disposed.has(agent))
     const prepared: PreparedAssembly[] = []
     for (const id of ids) prepared.push(await prepareAssembly(options.moduleRoot, id, name => live.every(agent => agent.ctx.get(name) !== undefined)))
+    for (const item of prepared) {
+      for (const id of item.skippedOfficialRows) {
+        warnOnce(`模块 ${item.moduleId} 声明官方 recipe 行 ${id}；该行只能由会话原有预设提供，本插件不挂载官方包`)
+      }
+    }
     const candidates = live.map(agent => ({ agent, prepared, previous: mounts.get(agent.id) }))
     if (!active) return
     const effectivePersonas = personaModules ?? prepared
@@ -495,11 +567,25 @@ export function createAgentAssembly(ctx: Context, options: AgentAssemblyOptions)
       if (complete.length > 1) throw new Error(`${audience} 有多个生效 complete 段：${complete.join('、')}`)
     }
     // 人设候选与独占冲突必须在撤旧之前算清：坏候选、同受众双 complete 都在这里拒绝。
+    const appendModules = {
+      main: prepared.filter(item => hasSectionAppend(item.rules, 'main')).map(item => item.moduleId),
+      subagent: prepared.filter(item => hasSectionAppend(item.rules, 'subagent')).map(item => item.moduleId),
+    }
     const plans = candidates.map(({ agent }) => {
       const plan = personaPlanFor(agent, effectivePersonas)
       const audience = isDelegated(agent.session) ? 'subagent' : 'main'
-      if (plan.sections.some(section => section.name === PERSONA_PREFIX_SECTION && section.complete === true) && sections[audience].length > 0) {
+      const plannedPrefix = plan.sections.find(section => section.name === PERSONA_PREFIX_SECTION)
+      // 已捕获的同层 preset persona complete 只在没有被本插件人设覆盖时生效。
+      const scope = scopeOf(agent.ctx)
+      const capturedComplete = plannedPrefix === undefined && options.personaCapture !== undefined && scope !== undefined
+        ? options.personaCapture.records(scope).some(record => record.name === PERSONA_PREFIX_SECTION && record.section.complete === true)
+        : false
+      const personaComplete = plannedPrefix === undefined ? capturedComplete : plannedPrefix.complete === true
+      if (personaComplete && sections[audience].length > 0) {
         throw new Error(`Agent ${agent.id} 的 ${audience} 有多个生效 complete 段：人设与 ${sections[audience].join('、')}`)
+      }
+      if (appendModules[audience].length > 0 && (personaComplete || sections[audience].length > 0)) {
+        throw new Error(`Agent ${agent.id} 的 ${audience} 同时声明了 sections.append（${appendModules[audience].join('、')}）与 complete；请在同一受众二选一`)
       }
       return plan
     })

@@ -20,6 +20,7 @@
 
 import { bool, defineConfig, stringList } from './fields.mjs'
 import { machinePaths } from './machine-paths.mjs'
+import { SENSITIVE_ENV_RE } from './env-safety.mjs'
 
 /** Cordis 插件名，供 loader 诊断使用。 */
 export const name = 'run-code-env'
@@ -27,11 +28,15 @@ export const name = 'run-code-env'
 /** 需要 tools 视图与 systemPrompt 段。shellEnv 为机会型读取，不写进 inject。 */
 export const inject = ['tools', 'systemPrompt']
 
-/** 任何疑似凭据的名字一律不放行。 */
-export const SENSITIVE_ENV_RE = /KEY|PASSWORD|SECRET|TOKEN/i
+/** 任何疑似凭据的名字一律不放行；判据与 env-facts 共用 env-safety。 */
+export { SENSITIVE_ENV_RE }
 
-/** run_code 定义对象只 patch 一次（跨 HMR 安全）。 */
-const PATCHED = new WeakSet()
+/**
+ * run_code 工具对象上的共享状态：官方 ToolRuntime 的 run_code 是进程内单例，多个 Agent
+ * 共用同一个定义对象。状态随对象走，跨模块实例/HMR 复用；配置在每次执行时按 Agent 查，
+ * 不能被某次 apply 的闭包固化。
+ */
+const STATE = Symbol.for('dsh-plugin-prompt-tool.run-code-env')
 
 /**
  * envKeys 字段：非空字符串数组，逐项 trim 后去重。
@@ -169,37 +174,83 @@ function envSectionText(ctx, keys) {
   ].join('\n')
 }
 
-/** 给 run_code 的 ToolDefinition 打补丁：execute 前注入 env 前缀。 */
-export function patchRunCodeTool(tool, ctx, keys) {
+/** 取或建立工具状态；`configs` 按真实调用 Agent 键控，default 服务无 agent 的 apply。 */
+function stateOf(tool) {
+  return (tool[STATE] ??= { configs: new WeakMap(), default: undefined, patched: false })
+}
+
+/**
+ * 给 run_code 的 ToolDefinition 打补丁：execute 前注入 env 前缀。
+ * 单例只包装一次；配置在每次执行时读取，不再固化首个 Agent 的 ctx/keys。
+ */
+export function patchRunCodeTool(tool) {
   if (tool === undefined || tool.name !== 'run_code') return false
-  if (PATCHED.has(tool)) return false
-  PATCHED.add(tool)
+  const state = stateOf(tool)
+  if (state.patched) return false
 
   const originalExecute = tool.execute.bind(tool)
   tool.execute = async (rawArgs, exec) => {
+    const agent = exec?.agent
+    // 具名 Agent 只用自己的注册；无 agent 的执行才回落到 default 配置。
+    const config = agent === undefined ? state.default : state.configs.get(agent)
+    if (config === undefined) return originalExecute(rawArgs, exec)
+    // 官方在策略前已深冻结 arguments，不能原地改写；spread 出新对象再交给原 execute。
     const args = rawArgs ?? {}
-    const env = buildEnv(ctx, keys, exec?.agent)
+    const env = buildEnv(config.ctx, config.keys, agent)
     const code = injectEnvPrefix(typeof args.code === 'string' ? args.code : '', env)
     return originalExecute({ ...args, code }, exec)
   }
+  state.patched = true
   return true
 }
 
+/**
+ * 登记一份 Agent 配置：同一 Agent 多次 apply（多个模块）时 keys 取并集、ctx 取最新。
+ * @returns 注销函数；只删除自己仍是当前配置的那份，后注册的并集不被先撤者抹掉。
+ */
+function configureRunCode(tool, ctx, keys, agent) {
+  const state = stateOf(tool)
+  const previous = agent === undefined ? state.default : state.configs.get(agent)
+  const entry = { ctx, keys: new Set([...(previous?.keys ?? []), ...keys]) }
+  if (agent === undefined) state.default = entry
+  else state.configs.set(agent, entry)
+  return () => {
+    const current = agent === undefined ? state.default : state.configs.get(agent)
+    if (current !== entry) return
+    if (agent === undefined) state.default = undefined
+    else state.configs.delete(agent)
+  }
+}
+
 /** 注册 PTC env 注入：只在目标 scope 出现 run_code 时生效。 */
-export function apply(ctx, config) {
+export function apply(ctx, config, options = {}) {
   // 校验入口：未知键 / enabled 非布尔 / envKeys 缺失或全空都在挂载期 fail loud。
   const source = configContract.parse(config, name)
   // 开关语义：未声明 = 关闭（组合源为本模块显式写 enabled: true）。
   const { enabled, envKeys: keys } = source
+  const agent = options?.agent
+  let disposeConfig
+  let configuredTool
 
   const tryPatch = (scope) => {
     if (!enabled) return
     try {
-      patchRunCodeTool(ctx.tools.get('run_code', scope), ctx, keys)
+      const tool = ctx.tools.get('run_code', scope)
+      if (tool === undefined || tool === null) return
+      patchRunCodeTool(tool)
+      // 同一工具只登记一次；若宿主替换了 transport 定义，旧配置让位给新工具。
+      if (tool !== configuredTool) {
+        disposeConfig?.()
+        disposeConfig = configureRunCode(tool, ctx, keys, agent)
+        configuredTool = tool
+      }
     } catch {
       // run_code 尚未物化或 registry 不可用：下一次 assemble/execute 再试。
     }
   }
+
+  // 当前 scope 已物化 run_code 时挂载期即可登记。
+  tryPatch(agent)
 
   // 动态工具变化后，新 scope 的 run_code transport 可能刚创建。
   ctx.on('tools/change', () => tryPatch())
@@ -228,4 +279,7 @@ export function apply(ctx, config) {
       },
     })
   }
+
+  // 释放时只撤本模块登记的配置；工具上的 wrapper 保留（单例、无配置即透传）。
+  return enabled ? () => { disposeConfig?.() } : undefined
 }

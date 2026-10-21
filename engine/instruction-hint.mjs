@@ -20,11 +20,19 @@
  */
 
 import { randomUUID } from 'node:crypto'
-import { readFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { existsSync, readFileSync } from 'node:fs'
+import { basename, join, resolve } from 'node:path'
 import { createEpochPromotion } from './compaction-epoch.mjs'
-import { collectInstructionFiles } from './instruction-files.mjs'
+import {
+  ancestorDirs,
+  collectInstructionFiles,
+  ENGINE_PROJECT_ROOT_MARKERS,
+  PROJECT_INSTRUCTION_CANDIDATES,
+  USER_GLOBAL_INSTRUCTION_FILE,
+} from './instruction-files.mjs'
 import { interpolateStatic } from './interpolate.mjs'
+import { machinePaths } from './machine-paths.mjs'
+import { resolveRealWithin } from './path-safety.mjs'
 import { booleanOption, createWarnOnce, getService, parsePromoteOn, validateConfig } from './shared.mjs'
 import { PRE_STEP_COORDINATOR_SERVICE } from './service-names.mjs'
 
@@ -64,13 +72,54 @@ function hintScope(value) {
   return typeof value === 'string' && HINT_SCOPES.has(value) ? value : 'all'
 }
 
+/** params.file 的白名单：与探测清单同源，只允许指令文件候选名。 */
+const INSTRUCTION_FILE_NAMES = new Set([...PROJECT_INSTRUCTION_CANDIDATES, USER_GLOBAL_INSTRUCTION_FILE])
+
+/**
+ * 指令文件的信任根：cwd 的目录链，向上到最近的项目根为止（与探测范围一致）；
+ * 没有 marker 时只有 cwd。不延伸到项目根之上——那会把同一卷上的任意路径都算进来。
+ */
+function instructionRoots(cwd) {
+  const dirs = ancestorDirs(cwd)
+  for (const [index, dir] of dirs.entries()) {
+    if (ENGINE_PROJECT_ROOT_MARKERS.some((marker) => existsSync(join(dir, marker)))) return dirs.slice(0, index + 1)
+  }
+  return [cwd]
+}
+
+/**
+ * 文件即真相：每次注入都重读绑定文件，外部编辑立即生效。
+ * 信任根 = cwd 的目录链到最近项目根（探测同一范围，故项目根 AGENTS.md 合法）+ DSH_HOME。
+ * 越界、链接逃逸与非法名字直接抛出（executor 会 warn/skip 该配置）；
+ * 目标或其父目录不存在时按缺失文件返回空串。
+ */
+function readBoundInstructionFile(file, cwd) {
+  if (!INSTRUCTION_FILE_NAMES.has(basename(file))) {
+    throw new Error(`instruction-hint: params.file must be an instruction file name (${[...INSTRUCTION_FILE_NAMES].join(', ')}), got ${JSON.stringify(file)}`)
+  }
+  let real
+  try {
+    real = resolveRealWithin(resolve(cwd, file), [...instructionRoots(cwd), machinePaths().DSH_HOME], 'instruction file')
+  } catch (error) {
+    if (error?.code === 'ENOENT') return ''
+    throw error
+  }
+  try {
+    return readFileSync(real, 'utf8').trim()
+  } catch {
+    return ''
+  }
+}
+
 /**
  * prompt-config placeholder fill=instruction-hint 的 resolver。
  * params.text（自定义提示）优先；params.file（文件卡绑定的单个指令文件）次之——
  * 运行时读该文件正文并加 `Instructions from:` 头注入；最后按 params.scope 探测来源
  * （all / global / project）按显式 projectTemplate/globalTemplate 生成提示。
  * 未配置提示模板时返回 null；引擎不提供默认引导文案。
- * 文件缺失、不可读或空内容时返回 null，不注入任何消息。
+ * params.file 不是任意文件读取：名字必须是指令文件候选名，真实路径必须在会话 cwd 到
+ * 项目根的目录链或 DSH_HOME 内；越界、链接逃逸与非法名字在解析期抛错（executor 按单配置
+ * 告警跳过）。文件缺失、不可读或空内容时返回 null。
  */
 export function createInstructionHintResolver(config = {}) {
   const customText = typeof config?.params?.text === 'string' ? config.params.text.trim()
@@ -82,14 +131,6 @@ export function createInstructionHintResolver(config = {}) {
   const fileLabel = typeof config?.params?.displayPath === 'string' && config.params.displayPath.trim().length > 0
     ? config.params.displayPath.trim()
     : file
-  /** 文件即真相：每次注入都重读绑定文件，外部编辑立即生效。 */
-  const readBoundFile = () => {
-    try {
-      return readFileSync(file, 'utf8').trim()
-    } catch {
-      return ''
-    }
-  }
 
   return async ({ ctx, agent, session }) => {
     const id = `instruction-hint-${session.id}-${randomUUID()}`
@@ -97,7 +138,7 @@ export function createInstructionHintResolver(config = {}) {
       return { id, text: customText, source: { kind: 'instruction-hint', form: 'hint' } }
     }
     if (file.length > 0) {
-      const content = readBoundFile()
+      const content = readBoundInstructionFile(file, session.header?.cwd ?? process.cwd())
       return content.length > 0
         ? { id, text: `Instructions from: ${fileLabel}\n\n${content}`, source: { kind: 'instruction-file', form: 'instructions' } }
         : null

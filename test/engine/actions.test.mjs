@@ -186,6 +186,40 @@ test('(2f) contexts：clear 单独清空；跨动作拆分的 [clear, add] 仍�
   assert.deepEqual(added.contexts.map((entry) => entry.name), ['new'])
 })
 
+test('(2g) sections.append：按名追加、保留原对象、once 去重、缺失告警', async () => {
+  const { ctx, events, warnings } = recordingCtx()
+  registerAction(ctx, {
+    kind: 'assembly',
+    id: 'append',
+    target: { sections: { append: [
+      { name: 'persona', text: 'CWD={{CWD}}' },
+      { name: 'persona', text: 'CWD={{CWD}}' },
+    ] } },
+  })
+  const input = assembled([], { sections: [{ name: 'persona', text: 'BASE' }] })
+  const context = { agent: agent(0, { session: { id: 'append-s', header: { delegationDepth: 0, cwd: 'D:/repo' } } }) }
+  const output = await only(events, 'system-prompt/assemble')(input, context, async () => input)
+  assert.equal(output.sections[0].text, 'BASE\nCWD=D:/repo', '追加在正文之后，重复条目只一次')
+  assert.equal(input.sections[0].text, 'BASE', '输入不得被就地修改')
+  assert.deepEqual(warnings, [])
+
+  const missing = recordingCtx()
+  registerAction(missing.ctx, { kind: 'assembly', id: 'missing', target: { sections: { append: [{ name: 'absent', text: 'X' }] } } })
+  const unchanged = assembled([], { sections: [{ name: 'persona', text: 'BASE' }] })
+  const kept = await only(missing.events, 'system-prompt/assemble')(unchanged, context, async () => unchanged)
+  assert.equal(kept, unchanged, '目标缺失返回原装配')
+  assert.equal(missing.warnings.length, 1)
+
+  assert.throws(
+    () => registerAction(recordingCtx().ctx, { kind: 'assembly', id: 'bad', target: { sections: { remove: ['x'], append: [{ name: 'x', text: 'T' }] } } }),
+    /cannot also be removed/,
+  )
+  assert.throws(
+    () => registerAction(recordingCtx().ctx, { kind: 'assembly', id: 'bad', target: { sections: { append: [{ name: 'x', text: 'T', extra: true }] } } }),
+    /unknown field/,
+  )
+})
+
 test('(3) 工具裁决：deny / ask / allow 三档返回各自的裁决对象', async () => {
   const action = (payload) => {
     const recorder = recordingCtx()
