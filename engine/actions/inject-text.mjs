@@ -1,4 +1,5 @@
-import { applyPromptConfigs } from '../executor.mjs'
+import { applyPromptConfigSources } from '../executor.mjs'
+import { createPreStepSource } from '../pre-step-source.mjs'
 import { wireLayers } from '../layers.mjs'
 import { createPromptConfigs } from '../schema.mjs'
 import { actionExecutionPoint } from './registration.mjs'
@@ -18,7 +19,22 @@ export function prepareInjectText(action, plugin, promptConfigOptions) {
   const config = typeof source.resolve === 'function' ? source : createPromptConfigs([source], promptConfigOptions)[0]
   return (ctx, { warnOnce, collect, agent }) => {
     if (config.layer === 'pre-step') {
-      collect(applyPromptConfigs(ctx, [config], action.options ?? {}))
+      const options = action.options ?? {}
+      const sourceId = typeof options.sourceId === 'string' && options.sourceId.length > 0
+        ? options.sourceId
+        : `preset:${config.id}`
+      const source = createPreStepSource({
+        sourceId,
+        ctx,
+        configs: [config],
+        onOutcome: options.onOutcome,
+        promotion: options.promotion,
+      })
+      collect(applyPromptConfigSources([source], {
+        agent,
+        ...(options.prepend === undefined ? {} : { prepend: options.prepend }),
+        ...(options.layers === undefined ? {} : { layers: options.layers }),
+      }))
       return
     }
     collect(wireLayers(ctx, [config], warnOnce, { agent }))

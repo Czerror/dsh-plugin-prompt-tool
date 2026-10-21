@@ -1,7 +1,8 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { fileURLToPath } from 'node:url'
-import { applyPromptConfigs, confirmDelivered, runPreStepBatch } from '../../engine/executor.mjs'
+import { applyPromptConfigSources, confirmDelivered, runPreStepBatch } from '../../engine/executor.mjs'
+import { createPreStepSource } from '../../engine/pre-step-source.mjs'
 import { identityHit, identityOf, identityStampOf } from '../../engine/delivery.mjs'
 import { wireLayers } from '../../engine/layers.mjs'
 import { createPromptConfigs as createPromptConfigsCore } from '../../engine/schema.mjs'
@@ -14,6 +15,24 @@ const STRATEGY_DIR = new URL('../../engine/', import.meta.url).href
 const createPromptConfigs = (specs, options = {}) =>
   createPromptConfigsCore(specs, { strategyDir: STRATEGY_DIR, ...options })
 
+function mountConfigs(ctx, configs, options = {}) {
+  const list = Array.isArray(configs) ? configs : createPromptConfigs(configs)
+  const source = createPreStepSource({
+    sourceId: options.sourceId ?? `preset:${list[0]?.id ?? 'unknown'}`,
+    ctx,
+    configs: list,
+    onOutcome: options.onOutcome,
+    promotion: options.promotion,
+  })
+  return applyPromptConfigSources([source], {
+    ...(options.agent === undefined ? {} : { agent: options.agent }),
+    ...(options.prepend === undefined ? {} : { prepend: options.prepend }),
+    ...(options.layers === undefined ? {} : { layers: options.layers }),
+  })
+}
+
+const PROMOTION = { main: { status: () => ({ promoted: true }) }, withSubagents: { status: () => ({ promoted: true }) } }
+
 const userTask = {
   id: 'task-1',
   role: 'user',
@@ -25,7 +44,7 @@ function makeHarness(configs, services = {}) {
   const listeners = new Map()
   const warnings = []
   const ctx = { on(name, handler) { listeners.set(name, handler) }, get(name) { return services[name] }, logger: { warn(message) { warnings.push(message) } } }
-  applyPromptConfigs(ctx, Array.isArray(configs) ? configs : createPromptConfigs(configs))
+  mountConfigs(ctx, configs)
   const handler = listeners.get('agent/pre-step')
   assert.ok(handler, 'pre-step listener registered')
   const step = async (agent, messages = [userTask], kind = 'ok') =>
@@ -177,7 +196,7 @@ function makeWiredHarness(configSpecs, services = {}, options = {}) {
     },
     logger: { warn() {} },
   }
-  applyPromptConfigs(ctx, createPromptConfigs(configSpecs, options))
+  mountConfigs(ctx, createPromptConfigs(configSpecs, options))
   return { listeners, sections, contexts, disposed }
 }
 
@@ -354,15 +373,17 @@ test('身份契约互逆：identityStampOf 盖出的 source 一律被 identityHi
   const memo = new Map()
   confirmDelivered(memo, store.session, { type: 'user/message', data: { message } })
   assert.ok(memo.size > 0, '快路径确实记了账')
-  const run = (injectedMemo) => runPreStepBatch({
-    ctx: {},
-    agent: agent({ session: store.session }),
-    decision: { kind: 'enter', messages: [userTask] },
-    configs: [target],
-    memo: injectedMemo,
-    promotion: { main: { status: () => ({ promoted: true }) }, withSubagents: { status: () => ({ promoted: true }) } },
-    warnOnce: () => {},
-  })
+  const run = (injectedMemo) => {
+    const source = createPreStepSource({ sourceId: 'preset:memo', ctx: {}, configs: [target], promotion: PROMOTION })
+    return runPreStepBatch({
+      ctx: {},
+      agent: agent({ session: store.session }),
+      decision: { kind: 'enter', messages: [userTask] },
+      sources: [source],
+      memo: injectedMemo,
+      warnOnce: () => {},
+    })
+  }
   assert.deepEqual(injectedOf(await run(memo)), [], '带 memo：空串模块维的消息算已投递，模块 A 不重复注入')
   assert.deepEqual(injectedOf(await run(new Map())), [], 'memo 清空后按当前上下文扫描：结论与快路径逐字相同')
 })
@@ -522,15 +543,17 @@ test('T5：memo 是纯性能缓存——清空后再判一次，两个方向的�
   const store = surfaceSession()
   const probe = agent({ session: store.session })
   const memo = new Map()
-  const run = () => runPreStepBatch({
-    ctx: {},
-    agent: probe,
-    decision: { kind: 'enter', messages: [userTask] },
-    configs,
-    memo,
-    promotion: { main: { status: () => ({ promoted: true }) }, withSubagents: { status: () => ({ promoted: true }) } },
-    warnOnce: () => {},
-  })
+  const run = () => {
+    const source = createPreStepSource({ sourceId: 'preset:memo', ctx: {}, configs, promotion: PROMOTION })
+    return runPreStepBatch({
+      ctx: {},
+      agent: probe,
+      decision: { kind: 'enter', messages: [userTask] },
+      sources: [source],
+      memo,
+      warnOnce: () => {},
+    })
+  }
 
   const first = await run()
   assert.equal(injectedOf(first).length, 1)
@@ -601,7 +624,7 @@ test('createPromptConfigs：templateFile 越出预设根 fail loud（防任意�
 })
 
 test('wireLayers 只装配实际声明的插入点：未声明 seam 无监听器', () => {
-  // 只声明 pre-step：applyPromptConfigs 应只注册 pre-step 相关监听，
+  // 只声明 pre-step：applyPromptConfigSources 应只注册 pre-step 相关监听，
   // 其余非 pre-step 层级（agent/request / llm/stream / tools/* / system-prompt）无监听器。
   // tools/* 的监听只可能来自 decision / append-context 动作，不由注入配置产生。
   const listeners = []
@@ -610,7 +633,7 @@ test('wireLayers 只装配实际声明的插入点：未声明 seam 无监听器
     get() { return undefined },
     logger: { warn() {} },
   }
-  applyPromptConfigs(ctx, createPromptConfigs([
+  mountConfigs(ctx, createPromptConfigs([
     { id: 'pre', strategy: 'static', layer: 'pre-step', text: 'A' },
   ]), { prepend: true })
   const declared = new Set(listeners)

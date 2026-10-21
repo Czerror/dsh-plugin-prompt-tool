@@ -1,5 +1,7 @@
 /** `rule-runtime.mjs` 的手写声明：只声明 `src/` 消费的导出。 */
 import type { StandingMountFor } from './conditions/index.mjs'
+import type { PromotionPool } from './promotion-pool.mjs'
+import type { PreStepPromotion } from './pre-step-source.mjs'
 import type { WarnOnce } from './shared.mjs'
 
 /** 变量读写通道（插件侧的模块变量适配器）；引擎只按这三个方法调用。 */
@@ -30,9 +32,9 @@ export interface MountRuleSourcesOptions {
   variableStore?: RuleVariableStore
   /** 官方预设兜底；缺省＝没有兜底（预设条件恒不命中）。 */
   standingMountFor?: StandingMountFor
-  /** 注入的晋升相位实例对；缺省从自建池取。 */
-  promotion?: { main: unknown; withSubagents: unknown }
-  promotionPool?: unknown
+  /** 注入的晋升相位实例对；缺省从协调器或自建池取。 */
+  promotion?: PreStepPromotion
+  promotionPool?: PromotionPool
   onOutcome?(report: RuleOutcomeReport): void
 }
 

@@ -9,6 +9,7 @@ import { compileRules } from '../../engine/rule-spec.mjs'
 import { conversationMessages, selectContextActivation, lastContextActivationDiagnostics } from '../../engine/context-activation.mjs'
 import { SURFACE_MESSAGE_TYPES } from '../../engine/history.mjs'
 import { runPreStepBatch } from '../../engine/executor.mjs'
+import { createPreStepSource } from '../../engine/pre-step-source.mjs'
 import { identityStampOf } from '../../engine/delivery.mjs'
 import { createPromptConfigs as createPromptConfigsCore } from '../../engine/schema.mjs'
 import { isolatedHome } from '../fixtures/host-harness.mjs'
@@ -211,15 +212,17 @@ const plainSession = id => ({ id, header: { delegationDepth: 0 }, snapshotEvents
 const USER_TASK = { id: 'task-1', role: 'user', content: [{ type: 'text', text: '写一个工具' }], source: { kind: 'user' } }
 // 晋升门控与本分片无关：批执行器只消费 status()。
 const PROMOTION = { main: { status: () => ({ promoted: true }) }, withSubagents: { status: () => ({ promoted: true }) } }
-const runBatch = (configs, session, memo = new Map()) => runPreStepBatch({
-  ctx: {},
-  agent: { session, options: { model: 'deepseek-chat' } },
-  decision: { kind: 'enter', messages: [USER_TASK] },
-  configs,
-  memo,
-  promotion: PROMOTION,
-  warnOnce: () => {},
-})
+const runBatch = (configs, session, memo = new Map()) => {
+  const source = createPreStepSource({ sourceId: 'preset:activation', ctx: {}, configs, promotion: PROMOTION })
+  return runPreStepBatch({
+    ctx: {},
+    agent: { session, options: { model: 'deepseek-chat' } },
+    decision: { kind: 'enter', messages: [USER_TASK] },
+    sources: [source],
+    memo,
+    warnOnce: () => {},
+  })
+}
 
 test('executor：resolved.source 分支与 identityStampOf 盖同一份模块维（空串 sourceModuleId 不写 moduleId）', async () => {
   // 真值源＝T33 的不变量「空串与缺失同等」（`prompt-config-engine.test.mjs` 钉了 identityStampOf 一侧）。

@@ -371,6 +371,27 @@ test('R14：旧生成卡的 agents-file-* 前缀在协调器层跳过，其余�
   assert.deepEqual(texts(await h.inject(agent)), ['USER', 'FILE', 'KEEP'])
 })
 
+test('协调器：受管规则与直接来源同批注入，释放直接来源后只留受管来源', async (t) => {
+  writeModuleFixture('mixed-source', {
+    modules: ['prompt-config-engine'],
+    promptConfigs: [{ id: 'a-managed', text: 'MANAGED', position: 'after-user' }],
+  })
+  const h = await liveAssembly(t, () => ['mixed-source'])
+  const agent = await h.makeAgent('mixed-source-agent')
+  await h.runtime.settled()
+  const { createPromptConfigs } = await import('../../engine/schema.mjs')
+  const { createPreStepSource } = await import('../../engine/pre-step-source.mjs')
+  const { applyPromptConfigSources } = await import('../../engine/executor.mjs')
+  const [config] = createPromptConfigs([{ id: 'z-direct', text: 'DIRECT', position: 'after-user' }])
+  config.sequence = 1000
+  const source = createPreStepSource({ sourceId: 'direct:mixed', ctx: agent.ctx, configs: [config] })
+  const release = applyPromptConfigSources([source], { agent })
+  const texts = async () => (await h.inject(agent)).messages.flatMap(message => message.content.map(block => block.text))
+  assert.deepEqual(await texts(), ['USER', 'MANAGED', 'DIRECT'], '同一协调器批里按配置序号合并两个来源')
+  release()
+  assert.deepEqual(await texts(), ['USER', 'MANAGED'], '释放直接来源不撤回受管来源')
+})
+
 test('创建边界：agent/created 返回时首条请求已经能注入，无需额外等待队列', async (t) => {
   writeModuleFixture('first-request', {
     modules: ['prompt-config-engine'],
@@ -1062,9 +1083,14 @@ test('固定系统段：独占和上下文抑制只作用目标受众，主子�
   standing.ctx.get('systemPrompt').context({ name: 'shared-context', order: 0, text: 'CONTEXT' })
   const { compileRules } = await import('../../engine/rule-spec.mjs')
   const { createPromptConfigs } = await import('../../engine/schema.mjs')
-  const { applyPromptConfigs, applyPromptConfigSources } = await import('../../engine/executor.mjs')
+  const { applyPromptConfigSources } = await import('../../engine/executor.mjs')
+  const { createPreStepSource } = await import('../../engine/pre-step-source.mjs')
   const config = (audience, extra = {}) => ({ id: 'fixed', layer: 'system-section', audience, text: audience.toUpperCase(), mergeMode: 'merged', params: { complete: true, suppressRuntimeContext: true }, ...extra })
   const compile = configs => compileRules(configs.map((item, index) => ({ id: `fixed-${index}`, then: [{ id: 'inject', kind: 'inject-text', config: item }] })))
+  const mountConfigs = (ctx, configs, options = {}) => {
+    const source = createPreStepSource({ sourceId: options.sourceId ?? `preset:${configs[0]?.id ?? 'unknown'}`, ctx, configs })
+    return applyPromptConfigSources([source], { agent: options.agent })
+  }
   let releases = []
   const release = () => { for (const off of releases.splice(0)) off() }
   const mount = configs => {
@@ -1100,17 +1126,17 @@ test('固定系统段：独占和上下文抑制只作用目标受众，主子�
   const independent = createPromptConfigs([config('main')])
   const mixed = createPromptConfigs([{ id: 'sentinel', layer: 'pre-step', text: 'NO LEAK', position: 'after-all' }, config('main')])
   const step = () => root.waterfall(scopeTarget(actors[0].agent, scopeOf(actors[0].agent.ctx)), 'agent/pre-step', { agent: actors[0].agent, signal: new AbortController().signal }, async () => ({ kind: 'enter', messages: [] }))
-  assert.throws(() => applyPromptConfigs(standing.ctx, mixed), /Agent|agent|受众/, '共享作用域缺少明确Agent时不能发布受众限定固定效果')
-  assert.throws(() => applyPromptConfigSources(standing.ctx, [{ sourceId: 'shared', configs: mixed }]), /Agent|agent|受众/)
+  assert.throws(() => mountConfigs(standing.ctx, mixed), /Agent|agent|受众/, '共享作用域缺少明确Agent时不能发布受众限定固定效果')
+  assert.throws(() => applyPromptConfigSources([createPreStepSource({ sourceId: 'shared', ctx: standing.ctx, configs: mixed })]), /Agent|agent|受众/)
   assert.deepEqual((await step()).messages, [], '被拒的混合来源没有遗留pre-step注入')
-  releases.push(applyPromptConfigs(actors[0].agent.ctx, mixed, { agent: actors[0].agent }))
+  releases.push(mountConfigs(actors[0].agent.ctx, mixed, { agent: actors[0].agent }))
   assert.deepEqual((await step()).messages.map(item => item.content[0].text), ['NO LEAK'], '同一输入有明确Agent时确实执行')
   release()
   const merged = createPromptConfigs([{ id: 'ordinary', layer: 'system-section', text: 'ORDINARY', mergeMode: 'merged' }, config('main')])
-  releases.push(applyPromptConfigs(actors[0].agent.ctx, merged, { agent: actors[0].agent }))
+  releases.push(mountConfigs(actors[0].agent.ctx, merged, { agent: actors[0].agent }))
   assert.deepEqual(sectionTexts(await assembly(actors[0])), ['MAIN'], '独立引擎入口可显式提供目标Agent')
   release()
-  releases.push(applyPromptConfigs(actors[0].agent.ctx, independent, { agent: actors[0].agent }))
+  releases.push(mountConfigs(actors[0].agent.ctx, independent, { agent: actors[0].agent }))
   assert.deepEqual(sectionTexts(await assembly(actors[0])), ['MAIN'], '重挂保持相同独占行为')
   assert.deepEqual((await assembly(actors[1])).sections, baseline[1].sections)
 })
@@ -1339,7 +1365,7 @@ test('启用即配装：启用表里的每个模块各贡献一份，清单为�
   await runtime.settled()
   assert.equal(host.mounts.length, 1, '启用表里的模块装配成功（发出了一次安装）')
   assert.equal(await host.mounts[0].definition.apply(host.ctx), undefined)
-  assert.equal(host.counts.get('agent/pre-step'), 2, '两个模块各贡献一份 pre-step 装配')
+  assert.equal(host.counts.get('agent/pre-step'), 1, '一份批执行监听器承载两个模块的 pre-step 来源')
 
   await runtime.dispose()
 
@@ -1361,8 +1387,8 @@ test('启用即配装：启用表里的每个模块各贡献一份，清单为�
   assert.equal(host3.mounts.length, 1, '追加后仍然只安装一次（一份装配承载 N 个模块）')
   await host3.mounts[0].definition.apply(host3.ctx)
   assert.equal(
-    host3.counts.get('agent/pre-step'), 3,
-    '追加一个模块后装配范围随之增加一份',
+    host3.counts.get('agent/pre-step'), 1,
+    '追加模块仍由同一份批执行监听器承载',
   )
   await runtime3.dispose()
 

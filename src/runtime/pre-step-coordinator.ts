@@ -4,51 +4,20 @@ import { resolve } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import type { PreStepDecision } from '@deepseek-ai/dsh-agent'
 import { NamedEntries, ScopedLayers, scopeOf } from '@deepseek-ai/dsh-scope'
-import { createEpochPromotion } from '../../engine/compaction-epoch.mjs'
+import { createPromotionPool, type PromotionPool } from '../../engine/promotion-pool.mjs'
 import { PROMOTE_EVENTS, createWarnOnce } from '../../engine/shared.mjs'
 import { runPreStepBatch, confirmDelivered } from '../../engine/executor.mjs'
-import { compareConfigSequence } from '../../engine/order.mjs'
+import type { PreStepPromotion, PreStepSource } from '../../engine/pre-step-source.mjs'
 import { PRE_STEP_COORDINATOR_SERVICE } from '../../engine/service-names.mjs'
 import { instructionFileIdFromDisplayPath } from '../host/agents-cards.ts'
 import { instructionPolicyPath, readInstructionPolicy, resolveInstructionPolicy } from '../host/instructions-policy.ts'
 import { filterOfficialInstructionMessages } from './official-instruction-filter.ts'
-import { recordRuleOutcome } from './rule-diagnostics.ts'
-import type { RuleOutcomeKind } from '../shared/bridge-contract.ts'
 
 export { PRE_STEP_COORDINATOR_SERVICE }
-export const PRE_STEP_COORDINATOR_VERSION = 1
+export const PRE_STEP_COORDINATOR_VERSION = 2
 const WARN_LABEL = 'prompt-tool:pre-step-coordinator'
 
-export interface PreStepPromptConfig {
-  id: string
-  layer: string
-  enabled?: boolean
-  order: number
-  sequence?: number
-  sourceModuleId?: string
-  /** 引擎在 pre-step 条目上回填的规则实例（只用于诊断上报时反查来源模块）。 */
-  rule?: unknown
-  position: string
-  promotion: string
-  audience: string | null
-  modelScope: string
-  role: string
-  dedupe: string
-  mergeMode: string
-  sourceKind: string
-  form?: string
-  texts: string[]
-  params: Record<string, unknown>
-  variables: Record<string, unknown>
-  identity: { field: 'plugin'; value: string }
-  resolve: (input: Record<string, unknown>) => unknown
-}
-
-export interface PreStepSource {
-  configs: readonly PreStepPromptConfig[]
-  /** 已编译的本地点规则动作；执行与配置叶子共享同一批次资格帧。 */
-  ruleActions?: readonly unknown[]
-}
+export type { PreStepSource }
 
 export interface PreStepCoordinatorOptions {
   policyFile?: string
@@ -57,7 +26,10 @@ export interface PreStepCoordinatorOptions {
 
 export interface PreStepCoordinatorService {
   readonly version: number
-  registerPreset(sourceCtx: Context, sourceId: string, source: PreStepSource): () => void
+  /** 唯一 promotion owner：source 生产者与批执行共用这一份。 */
+  readonly promotionPool: PromotionPool
+  readonly promotion: PreStepPromotion
+  registerPreset(sourceId: string, source: PreStepSource): () => void
   officialOwnerOf(sessionId: string): boolean | undefined
   /** hint 转换前也调用同一过滤器，保证监听器重挂顺序不让已关闭正文变成 hint。 */
   filterInstructions(agent: unknown, messages: unknown[]): unknown[]
@@ -96,9 +68,11 @@ export function installPreStepCoordinator(ctx: Context, options: PreStepCoordina
     const entries = new NamedEntries<PreStepSource>((key) => new Error(`prompt-tool: duplicate pre-step source ${key}`))
     return { entries, undoes: new Map(), isEmpty: () => entries.isEmpty() }
   }, () => {})
+  // 唯一 promotion owner：pool 自己订阅 session/event，source 生产者与批执行都复用它。
+  const promotionPool = createPromotionPool(ctx)
   const promotion = {
-    main: createEpochPromotion(PROMOTE_EVENTS.either, { includeSubagents: false }),
-    withSubagents: createEpochPromotion(PROMOTE_EVENTS.either, { includeSubagents: true }),
+    main: promotionPool.tracker(PROMOTE_EVENTS.either, { includeSubagents: false }),
+    withSubagents: promotionPool.tracker(PROMOTE_EVENTS.either, { includeSubagents: true }),
   }
   const memo = new Map<string, Set<string>>()
   // 负责人事实：全仓没有生产者写 `officialInstructions: true`，协调器不再把「有规则来源」
@@ -145,8 +119,6 @@ export function installPreStepCoordinator(ctx: Context, options: PreStepCoordina
   }
 
   ctx.on('session/event', (session: unknown, event: unknown) => {
-    promotion.main.observe(session, event)
-    promotion.withSubagents.observe(session, event)
     confirmDelivered(memo, session, event)
   })
 
@@ -161,27 +133,13 @@ export function installPreStepCoordinator(ctx: Context, options: PreStepCoordina
       const sources = [...layers.merge(scope, (layer) => layer.entries).values()]
       // 只按旧生成卡的 id 前缀跳过；编译后的 sourceKind 恒带 `plugin:` 前缀（见 schema.mjs），
       // 声明 `instruction-file` 的用户配置照常注入。
-      const configs = sources.flatMap(source => source.configs).filter(config =>
-        !config.id.startsWith('agents-file-'))
-        .sort(compareConfigSequence)
-      const ruleActions = sources.flatMap(source => source.ruleActions ?? [])
-      if (configs.length === 0 && ruleActions.length === 0) return decision
-      // 引擎以 (rule, channel, outcome) 三参调用帧回调（见 conditions/evaluation.mjs），
-      // 规则实例在这里反查回来源模块——直传记账函数会丢掉 moduleId 等身份。
-      const moduleOfRule = new Map<unknown, string | undefined>()
-      for (const entry of [...configs, ...ruleActions] as { rule?: unknown; sourceModuleId?: string }[]) {
-        if (entry.rule === undefined || entry.rule === null || moduleOfRule.has(entry.rule)) continue
-        moduleOfRule.set(entry.rule, entry.sourceModuleId)
-      }
+      const filtered = sources.map(source => ({
+        ...source,
+        configs: source.configs.filter(config => !config.id.startsWith('agents-file-')),
+      }))
       return await runPreStepBatch({
-        ctx, agent, payload, decision, configs, ruleActions, promotion, memo, warnOnce,
-        onOutcome: (rule: { id: string }, channel: string, outcome: RuleOutcomeKind) => {
-          try {
-            recordRuleOutcome({ moduleId: moduleOfRule.get(rule), ruleId: rule.id, channel, outcome })
-          } catch {
-            // 诊断只读：记账失败不得改变判定结果。
-          }
-        },
+        sources: filtered,
+        ctx, agent, payload, decision, memo, warnOnce,
       })
     } catch (error) {
       warnOnce(`${WARN_LABEL}: coordination failed, keeping decision: ${String((error as Error | undefined)?.message ?? error)}`)
@@ -199,15 +157,21 @@ export function installPreStepCoordinator(ctx: Context, options: PreStepCoordina
   ctx.effect(() => () => {
     active = false
     memo.clear()
+    promotionPool.dispose()
   })
   const service: PreStepCoordinatorService = {
     version: PRE_STEP_COORDINATOR_VERSION,
+    promotionPool,
+    promotion,
     filterInstructions,
-    registerPreset(sourceCtx, sourceId, source) {
-      const boundSource: PreStepSource = {
-        ...source,
-        configs: source.configs.map(config => ({ ...config, resolve: input => config.resolve({ ...input, ctx: sourceCtx }) })),
+    registerPreset(sourceId, source) {
+      if (source.configs.length > 0 || (source.ruleActions?.length ?? 0) > 0) {
+        if (source.promotion !== undefined && source.promotion !== promotion) {
+          throw new TypeError(`prompt-tool: pre-step source ${sourceId} must use the coordinator promotion owner`)
+        }
+        if (source.promotion === undefined) source = { ...source, promotion }
       }
+      const sourceCtx = source.ctx as Context
       return layers.effect(sourceCtx, layer => {
         const previous = layer.undoes.get(sourceId)
         if (previous !== undefined) {
@@ -215,7 +179,7 @@ export function installPreStepCoordinator(ctx: Context, options: PreStepCoordina
           layer.undoes.delete(sourceId)
           previous()
         }
-        const undo = layer.entries.insert(sourceId, boundSource)
+        const undo = layer.entries.insert(sourceId, source)
         layer.undoes.set(sourceId, undo)
         return () => {
           if (layer.undoes.get(sourceId) === undo) layer.undoes.delete(sourceId)

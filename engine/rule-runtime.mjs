@@ -1,11 +1,13 @@
 import { prepareAction } from './actions/index.mjs'
 import { applyPromptConfigSources } from './executor.mjs'
+import { createPreStepSource } from './pre-step-source.mjs'
 import { wireLayers } from './layers.mjs'
 import { rebindConditions, validateDeliverySources } from './rule-spec.mjs'
 import { wireTriggerObservers } from './trigger.mjs'
 import { ruleFrame, actionMatches } from './conditions/evaluation.mjs'
 import { createPromotionPool } from './promotion-pool.mjs'
-import { PROMOTE_EVENTS, createWarnOnce } from './shared.mjs'
+import { PROMOTE_EVENTS, createWarnOnce, getService } from './shared.mjs'
+import { PRE_STEP_COORDINATOR_SERVICE } from './service-names.mjs'
 
 const noNext = new Set(['agent/inbox/inserted', 'agent/turn-stopping', 'subagent/start', 'subagent/end'])
 // 判据与 `order.mjs#compareConfigSequence` 有意不同：这里在同通道同点内按 moduleId 字母序 +
@@ -19,27 +21,35 @@ export function mountRuleSources(ctx, sources, options = {}) {
   validateDeliverySources(sources)
   // 晋升相位池先建：条件的挂载期绑定要用它（`phase` 的订阅模式从池取实例，见 promotion-pool.mjs）。
   // 池自己订阅 `session/event` 并统一喂事件；自建的随本挂载释放，注入的由创建者释放。
-  const pool = options.promotionPool ?? createPromotionPool(ctx)
+  const coordinator = (() => {
+    const service = getService(ctx, PRE_STEP_COORDINATOR_SERVICE)
+    return service !== null && typeof service === 'object' && typeof service.registerPreset === 'function'
+      ? service
+      : undefined
+  })()
+  const pool = options.promotionPool ?? coordinator?.promotionPool ?? createPromotionPool(ctx)
+  const ownsPool = options.promotionPool === undefined && coordinator?.promotionPool === undefined
   // 条件绑定**在这里**发生：`compileRules` 编译期没有挂载 scope 的 ctx（preset 条件在那边恒
   // UNAVAILABLE 且静默）。必须早于事件订阅与动作注册——动作级 `actionWhen.observe` 是订阅通道，
   // 绑晚了那一类谓词会漏事件。`standingMountFor` 是可选兜底（官方包缺席＝没有兜底，不是错误）。
   rebindConditions(sources, { ctx, standingMountFor: options.standingMountFor, promotionPool: pool })
   const warnOnce = options.warnOnce ?? createWarnOnce(ctx, options.plugin ?? 'rule-engine')
-  // 诊断上报是只读旁路：把规则对象换回来源模块，供宿主区分跨模块同名 id；缺省不传即零开销。
+  // 非 pre-step 动作仍共享一次 ruleFrame；判定上报按规则反查来源模块（pre-step 来源自带 sink，
+  // 这里只服务其余动作，因此全局只有这一份 map）。
   const report = options.onOutcome === undefined ? undefined : (() => {
     const moduleOfRule = new Map()
     for (const source of sources) for (const rule of source.rules) if (!moduleOfRule.has(rule)) moduleOfRule.set(rule, source.moduleId)
     return (rule, channel, outcome) => options.onOutcome({ moduleId: moduleOfRule.get(rule), ruleId: rule.id, channel, outcome })
   })()
   const releases = []
-  // 自建池随本挂载释放；注入的池由创建者释放（生命周期随归属，不跨界代管）。
-  if (options.promotionPool === undefined) releases.push(() => pool.dispose())
+  // 自建池随本挂载释放；协调器/调用方注入的池由创建者释放（生命周期随归属，不跨界代管）。
+  if (ownsPool) releases.push(() => pool.dispose())
   const points = new Map()
   // 续跑预算按来源模块一份：同模块的 turn-stop 动作共享上限，
   // 不再按动作各建一份。本 mount 可能含多个模块（agent-assembly 一次装载全部启用模块），
   // 因此按 moduleId 分档；来源 id 缺失时落空串兜底键（与 wireTurnStops 同源）。
   const turnStopBudgets = new Map()
-  const injections = new Map(sources.map(source => [source.moduleId, { sourceId: `module:${source.moduleId}`, configs: [], ruleActions: [] }]))
+  const injections = new Map(sources.map(source => [source.moduleId, { moduleId: source.moduleId, sourceId: `module:${source.moduleId}`, configs: [], ruleActions: [] }]))
   const rules = sources.flatMap(source => source.rules.filter(rule => rule.enabled !== false))
   // 动作级分支条件（actionWhen）也要喂 session/event：否则 else / 嵌套 if 里的 phase / count
   // 谓词永远收不到事件，状态停在冷扫那一刻（规则级 when 已由 rules 覆盖，动作级单独补齐）。
@@ -158,12 +168,21 @@ export function mountRuleSources(ctx, sources, options = {}) {
     }
     // 晋升相位实例对：`options.promotion` 注入（托管路径传协调器那两份），否则从池里按配置取
     // ——池在挂载开头已建，条件绑定也用它。共用实例后事件由池统一喂，消费者一律不得再 observe。
-    const promotion = options.promotion ?? {
+    const promotion = options.promotion ?? coordinator?.promotion ?? {
       main: pool.tracker(PROMOTE_EVENTS.either, { includeSubagents: false }),
       withSubagents: pool.tracker(PROMOTE_EVENTS.either, { includeSubagents: true }),
     }
-    const preStep = [...injections.values()].filter(source => source.configs.length || source.ruleActions.length)
-    if (preStep.length) releases.push(applyPromptConfigSources(ctx, preStep, { layers: false, onOutcome: report, promotion, promotionPool: pool }))
+    const preStep = [...injections.values()]
+      .filter(source => source.configs.length || source.ruleActions.length)
+      .map(source => createPreStepSource({
+        sourceId: source.sourceId,
+        ctx,
+        configs: source.configs,
+        ruleActions: source.ruleActions,
+        onOutcome: options.onOutcome === undefined ? undefined : report => options.onOutcome({ moduleId: source.moduleId, ...report }),
+        promotion,
+      }))
+    if (preStep.length) releases.push(applyPromptConfigSources(preStep, { layers: false }))
   } catch (error) {
     active = false
     for (const dispose of releases.reverse()) { try { dispose?.() } catch {} }

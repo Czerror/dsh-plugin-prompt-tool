@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import { createPromptConfigs } from '../../engine/schema.mjs'
 import { compileRules } from '../../engine/rule-spec.mjs'
 import { runPreStepBatch } from '../../engine/executor.mjs'
+import { createPreStepSource } from '../../engine/pre-step-source.mjs'
 import { selectContextActivation, lastContextActivationDiagnostics } from '../../engine/context-activation.mjs'
 
 const say = (id, text, source = { kind: 'user' }) => ({ id, role: 'user', content: [{ type: 'text', text }], source })
@@ -37,9 +38,11 @@ test('上下文激活：显式扫描面、模块快照与四种副键逻辑使�
   assert.equal(spec.rules[1].enabled, false)
   const compiled = compileRules(spec.rules, { moduleId: 'activation-import' }).filter(rule => rule.enabled).flatMap(rule => rule.actions.map(action => action.compiledConfig))
   for (const item of compiled) item.variableStore = { read: () => ({ module: { key: 'DRAGON', name: 'Mia' }, global: {} }) }
+  const source = createPreStepSource({ sourceId: 'preset:activation', ctx: {},
+    configs: compiled,
+    promotion: { main: { status: () => ({ promoted: true }) }, withSubagents: { status: () => ({ promoted: true }) } } })
   const output = await runPreStepBatch({ ctx: {}, agent: { session: session('DRAGON'), options: { model: 'deepseek-chat' } },
-    decision: { kind: 'enter', messages: [say('pending', 'DRAGON')] }, configs: compiled, memo: new Map(),
-    promotion: { main: { status: () => ({ promoted: true }) }, withSubagents: { status: () => ({ promoted: true }) } },
+    decision: { kind: 'enter', messages: [say('pending', 'DRAGON')] }, sources: [source], memo: new Map(),
     warnOnce: message => assert.fail(message),
   })
   assert.deepEqual(output.messages.filter(message => message.source?.plugin).map(message => message.content.map(block => block.text).join('')), ['LORE Mia'])

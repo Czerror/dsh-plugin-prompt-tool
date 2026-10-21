@@ -31,6 +31,7 @@ import { renderTemplate } from './template-frame.mjs'
 import { selectContextActivation } from './context-activation.mjs'
 import { compareConfigSequence } from './order.mjs'
 import { ruleFrame, actionMatches } from './conditions/evaluation.mjs'
+import { composePreStepSources, promotionOwnerOf } from './pre-step-source.mjs'
 // 标记键名与「已登记进 config 白名单」同源（schema.mjs），此处不另写字面量。
 import { SESSION_VARIABLES_DISABLED } from './schema.mjs'
 import { PRE_STEP_COORDINATOR_SERVICE } from './service-names.mjs'
@@ -258,25 +259,37 @@ function batchScope(options, frame) {
  * @returns 注入后的 decision；reject、缺 agent/session、全部跳过或异常时原样返回。
  */
 export async function runPreStepBatch(options) {
-  const initialFrame = options.ruleFrame ?? ruleFrame('agent/pre-step', [{ agent: options.agent, messages: options.decision?.messages ?? [] }], options.warnOnce, options.ctx, options.onOutcome)
+  if (!Array.isArray(options.sources)) {
+    throw new TypeError('runPreStepBatch requires a sources array')
+  }
+  const sources = options.sources
+  const composed = composePreStepSources(sources)
+  if (composed.configs.length === 0 && composed.ruleActions.length === 0) return options.decision
+  const ctx = options.ctx ?? sources[0]?.ctx
+  const initialFrame = options.ruleFrame ?? ruleFrame('agent/pre-step', [{ agent: options.agent, messages: options.decision?.messages ?? [] }], options.warnOnce, ctx, composed.report)
   // 批级快照与单配置失败同款 fail-safe：资格判定或 ST 世界书选择抛错时只告警一次并跳过本步
   // 注入（scope 留空 → runPromptConfigBatch 原样返回 decision），绝不把异常抛进
   // agent/pre-step waterfall。世界书键的 `interpolateVariables` 在 selectStWorldBook 的
   // per-config try 之外，配置错误不得卡死会话。
+  const batchOptions = { ...options, ...composed, ctx }
   let scope
   try {
-    scope = batchScope(options, initialFrame)
+    scope = batchScope(batchOptions, initialFrame)
   } catch (error) {
     options.warnOnce?.(`${name}: prompt config failed, skipping: ${String((error && error.message) || error)}`)
   }
-  if (!options.ruleActions?.length) return runPromptConfigBatch({ ...options, ruleFrame: initialFrame, scope })
-  const entries = [...options.configs.map(config => ({ ...config, config })), ...options.ruleActions].sort(compareConfigSequence)
+  // 同一批的配置与动作按配置序号统一排序；没有规则动作时也必须排，不能依赖来源注册顺序。
+  const orderedConfigs = [...composed.configs].sort(compareConfigSequence)
+  if (composed.ruleActions.length === 0) {
+    return runPromptConfigBatch({ ...batchOptions, configs: orderedConfigs, ruleFrame: initialFrame, scope })
+  }
+  const entries = [...orderedConfigs.map(config => ({ ...config, config })), ...composed.ruleActions].sort(compareConfigSequence)
   let decision = options.decision
   if (decision?.kind === 'reject') return decision
   let pending = []
   const placement = { beforeAll: new Set(), afterUser: new Set() }
   const flush = async () => {
-    if (pending.length) decision = await runPromptConfigBatch({ ...options, decision, configs: pending, ruleFrame: initialFrame, placement, scope })
+    if (pending.length) decision = await runPromptConfigBatch({ ...batchOptions, decision, configs: pending, ruleFrame: initialFrame, placement, scope })
     pending = []
   }
   for (const entry of entries) {
@@ -457,137 +470,133 @@ function effectivePromptConfigs(configs) {
   })
 }
 
-/** 多模块仍各自拥有来源/互斥组；只有非 pre-step 层汇总接线，避免模块块状执行。 */
-export function applyPromptConfigSources(ctx, sources, options = {}) {
-  const selected = sources.map(source => ({ ...source, configs: effectivePromptConfigs(source.configs) }))
-  const releaseLayers = options.layers === false ? () => {} : wireLayers(ctx, selected.flatMap(source => source.configs)
-    .filter(config => config.layer !== 'pre-step'), createWarnOnce(ctx, name), { agent: options.agent })
-  const releases = selected.map(source => applyPromptConfigs(ctx, source.configs, { ...options, ...source, layers: false }))
-  return () => {
-    for (const release of releases) release()
-    releaseLayers()
-  }
-}
-
 /**
- * 把一组运行时提示词配置装配为注入执行器（独立模式 / 协调器管理模式的接线口）。
+ * 唯一的 pre-step 装配入口：来源自带 ctx/onOutcome/promotion，本函数只做固定效果接线、
+ * 协调器注册与（无协调器时的）单 listener 批执行。
  *
- * @param options.prepend 是否以 prepend 注册本地 pre-step(合并行恒 true;由参数决定)。
- * @param options.sourceId 协调器里的来源 id(默认取首条配置 id 派生)。
- * @param options.onOutcome 只读诊断回调，形状是**三参** `(rule, channel, outcome)`（协调器路径，
- *   见 `src/runtime/pre-step-coordinator.ts`）；`rule-runtime.mjs` 的 `report` 适配器收的是**单个
- *   report 对象**——两个同名形状不可互换，错配时记账键会静默变成 `\x00undefined\x00undefined`，
- *   改适配器时必须同步这一处。
+ * 所有来源必须共享同一个 ctx；没有 promotion 时由协调器或本次调用补一个 fallback owner，
+ * 已有 owner 不一致则 fail loud。
  */
-export function applyPromptConfigs(ctx, configs, options = {}) {
-  const list = configs.filter((config) => config !== undefined && config !== null)
-  const sourceId = typeof options.sourceId === 'string' && options.sourceId.length > 0
-    ? options.sourceId
-    : `preset:${String(list[0]?.id ?? 'unknown')}`
-  // 互斥组仍在本来源内筛选；空来源也保留协调器迟到/HMR 接管。
-  const effectiveList = effectivePromptConfigs(list)
-  const warnOnce = createWarnOnce(ctx, name)
-  // 先验证固定效果的注册目标，拒绝时不留下本执行器的监听或协调器来源。
-  const releaseLayers = options.layers === false ? () => {}
-    : wireLayers(ctx, effectiveList.filter((config) => config.layer !== 'pre-step'), warnOnce, { agent: options.agent })
-  const injectedMemo = new Map()
-  // 相位追踪器优先用调用方注入的实例对（挂载缝的池按配置复用一份，事件由池统一喂）；缺省自建，
-  // 让不经挂载缝的独立调用路径照常可跑——自建时由本执行器自己喂事件。共用实例时**不能**再喂：
-  // 门控模式下 `applyEvent` 的 `steps += 1` 不幂等，重复喂会让步数翻倍、晋升提前。
-  const promotion = options.promotion ?? {
-    main: createEpochPromotion(PROMOTE_EVENTS.either, { includeSubagents: false }),
-    withSubagents: createEpochPromotion(PROMOTE_EVENTS.either, { includeSubagents: true }),
+export function applyPromptConfigSources(sources, options = {}) {
+  if (!Array.isArray(sources) || sources.length === 0) return () => {}
+  const ctx = sources[0].ctx
+  if (sources.some(source => source.ctx !== ctx)) {
+    throw new TypeError('prompt-tool: all pre-step sources in one apply call must share the same ctx')
   }
-  const feedsPromotion = options.promotion === undefined
+  const warnOnce = createWarnOnce(ctx, name)
+  const selected = sources.map(source => ({ ...source, configs: effectivePromptConfigs(source.configs) }))
+  const owner = promotionOwnerOf(selected)
+  const coordinator = coordinatorOf(ctx)
+  const coordinatorPromotion = coordinator?.promotion
+  if (coordinator !== undefined && coordinatorPromotion === undefined) {
+    throw new TypeError('prompt-tool: pre-step coordinator v2 must expose a promotion owner')
+  }
+  if (coordinatorPromotion !== undefined && owner !== undefined && owner !== coordinatorPromotion) {
+    throw new TypeError('prompt-tool: pre-step sources must use the active coordinator promotion owner')
+  }
+  // 执行 owner 唯一：有来源 owner 就用它，否则由本次 apply 建 fallback pair；协调器存在时
+  // 批执行与注册统一用协调器 pair，协调器消失/替换时再切回 standalone/新 pair。
+  const fallbackBacked = owner === undefined
+  const fallbackPromotion = fallbackBacked
+    ? {
+      main: createEpochPromotion(PROMOTE_EVENTS.either, { includeSubagents: false }),
+      withSubagents: createEpochPromotion(PROMOTE_EVENTS.either, { includeSubagents: true }),
+    }
+    : undefined
+  const standalonePromotion = owner ?? fallbackPromotion
+  let activePromotion = coordinatorPromotion ?? standalonePromotion
+  let prepared = selected.map(source => ({ ...source, promotion: activePromotion }))
+  let feedsPromotion = fallbackBacked && activePromotion === fallbackPromotion
+  // 先验证固定效果的目标并完成 owner 解析；owner 不一致时不能留下 wireLayers 监听。
+  const releaseLayers = options.layers === false ? () => {} : wireLayers(ctx, selected.flatMap(source => source.configs)
+    .filter(config => config.layer !== 'pre-step'), warnOnce, { agent: options.agent })
+  const injectedMemo = new Map()
   const observerDisposer = ctx.on('session/event', (session, event) => {
     if (feedsPromotion) {
-      promotion.main.observe(session, event)
-      promotion.withSubagents.observe(session, event)
+      activePromotion.main.observe(session, event)
+      activePromotion.withSubagents.observe(session, event)
     }
-    // 独立路径的去重记账：只有宿主真正持久化的注入消息才确认投递（门控剥离的候选不算）；
-    // 只写快路径缓存，判定真相仍是当前上下文扫描。
     confirmDelivered(injectedMemo, session, event)
   })
-
-  const prepend = options.prepend === true || list.some((config) => config.prepend === true)
-  const source = {
-    configs: effectiveList,
-    ruleActions: options.ruleActions ?? [],
-  }
-  /** 已交给协调器的注册(仅管理路径非空)。 */
-  let registration = null
-  const releaseRegistration = () => {
-    if (registration === null) return
-    const dispose = registration
-    registration = null
-    try {
-      dispose()
-    } catch {
-      // 协调器自身已释放:忽略。
-    }
-  }
+  const prepend = options.prepend === true || prepared.some(source => source.configs.some(config => config.prepend === true))
+  const registrations = new Map()
   let active = true
-  /** 释放本执行器：失效来源不再注入，也不再向新协调器重新注册。 */
-  const release = () => {
-    active = false
-    releaseRegistration()
-    injectedMemo.clear()
-  }
-  keepDisposer(ctx, release)
-
-  // 协调器已在（正常装配顺序：插件先加载、预设后挂载）时立即登记来源；
-  // 迟到/消失由下面的监听器按「先撤旧再启新」处理。
-  let registeredCoordinator = coordinatorOf(ctx)
-  if (registeredCoordinator !== undefined) {
-    registration = registeredCoordinator.registerPreset(ctx, sourceId, source) ?? null
-  }
-
-  const preStepDisposer = ctx.on('agent/pre-step', async (payload, next) => {
-    // waterfall 可已捕获随后被释放的回调；失效来源不得向新协调器重新注册。
-    if (!active) return next()
-    const coordinator = coordinatorOf(ctx)
-    // HMR 可在相邻两步之间替换服务：旧句柄非空不代表仍向当前实例注册。
-    if (coordinator !== registeredCoordinator) {
-      releaseRegistration()
-      if (coordinator === undefined) {
-        warnOnce(`${name}: pre-step coordinator unavailable, resuming standalone execution`)
-      }
-      registeredCoordinator = coordinator
+  const releaseRegistrations = () => {
+    for (const dispose of registrations.values()) {
+      try { dispose() } catch {}
     }
-    if (coordinator !== undefined) {
-      // 管理路径:先登记本来源,再交出唯一执行权(本监听器不再注入)。
-      if (registration === null) registration = coordinator.registerPreset(ctx, sourceId, source) ?? null
+    registrations.clear()
+  }
+  const setOwner = (promotion) => {
+    activePromotion = promotion
+    feedsPromotion = fallbackBacked && promotion === fallbackPromotion
+    prepared = selected.map(source => ({ ...source, promotion }))
+  }
+  const registerAll = (target) => {
+    try {
+      for (const source of prepared) {
+        if (registrations.has(source.sourceId)) throw new TypeError(`prompt-tool: duplicate pre-step sourceId ${source.sourceId}`)
+        registrations.set(source.sourceId, target.registerPreset(source.sourceId, source) ?? (() => {}))
+      }
+    } catch (error) {
+      releaseRegistrations()
+      throw error
+    }
+  }
+  let registeredCoordinator = coordinator
+  if (coordinator !== undefined) {
+    try {
+      registerAll(coordinator)
+    } catch (error) {
+      try { observerDisposer() } catch {}
+      releaseLayers()
+      throw error
+    }
+  }
+  const preStepDisposer = ctx.on('agent/pre-step', async (payload, next) => {
+    if (!active) return next()
+    const current = coordinatorOf(ctx)
+    if (current !== registeredCoordinator) {
+      releaseRegistrations()
+      if (current === undefined) {
+        warnOnce(`${name}: pre-step coordinator unavailable, resuming standalone execution`)
+        setOwner(standalonePromotion)
+      } else {
+        if (current.promotion === undefined) {
+          warnOnce(`${name}: pre-step coordinator v2 owner unavailable, keeping standalone execution`)
+          setOwner(standalonePromotion)
+        } else {
+          setOwner(current.promotion)
+        }
+      }
+      registeredCoordinator = current
+    }
+    if (current !== undefined && current.promotion !== undefined) {
+      if (registrations.size === 0) registerAll(current)
       return next()
     }
     const decision = await next()
     if (!active) return decision
     return runPreStepBatch({
+      sources: prepared,
       ctx,
       payload,
       agent: payload?.agent,
       decision,
-      configs: effectiveList,
-      ruleActions: source.ruleActions,
-      promotion,
       memo: injectedMemo,
       warnOnce,
-      // 诊断上报是只读旁路，缺省 undefined 即零开销（见 ruleFrame 的 onOutcome）。
-      onOutcome: options.onOutcome,
     })
   }, { prepend })
-  // 释放边界：先摘监听器，再撤层级注册，最后丢弃去重快路径（顺序与 keepDisposer 内的 release 一致）。
+  const release = () => {
+    active = false
+    releaseRegistrations()
+    injectedMemo.clear()
+  }
+  keepDisposer(ctx, release)
   return () => {
     release()
-    try {
-      preStepDisposer()
-    } catch {
-      // 宿主已释放该 fiber 时监听器可能已不在：忽略。
-    }
-    try {
-      observerDisposer()
-    } catch {
-      // 同上。
-    }
+    try { preStepDisposer() } catch {}
+    try { observerDisposer() } catch {}
     releaseLayers()
   }
 }

@@ -1,6 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { applyPromptConfigs } from '../../engine/executor.mjs'
+import { applyPromptConfigSources } from '../../engine/executor.mjs'
+import { createPreStepSource } from '../../engine/pre-step-source.mjs'
 import { createPromptConfigs } from '../../engine/schema.mjs'
 import { instructionHintMessages, buildInstructionHintText } from '../../engine/instruction-hint.mjs'
 import { createEpochPromotion } from '../../engine/compaction-epoch.mjs'
@@ -9,7 +10,9 @@ import { compileWhen } from '../../engine/conditions/index.mjs'
 async function injected(spec, services = {}) {
   const handlers = new Map()
   const ctx = { get: key => services[key], on: (key, callback) => { handlers.set(key, callback); return () => handlers.delete(key) }, logger: { warn() {} } }
-  const dispose = applyPromptConfigs(ctx, createPromptConfigs([{ id: 'probe', ...spec }]))
+  const [config] = createPromptConfigs([{ id: 'probe', ...spec }])
+  const source = createPreStepSource({ sourceId: 'preset:probe', ctx, configs: [config] })
+  const dispose = applyPromptConfigSources([source])
   const agent = { options: {}, session: { id: 'probe', header: { cwd: '/repo' }, snapshotEvents: () => [] } }
   const messages = [{ role: 'user', source: { kind: 'user' }, content: [{ type: 'text', text: 'USER' }] }]
   const result = await handlers.get('agent/pre-step')({ agent, messages }, () => ({ kind: 'enter', messages }))

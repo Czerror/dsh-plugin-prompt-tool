@@ -3,7 +3,7 @@
  *
  * 为什么需要池：`createEpochPromotion` 自己不订阅任何事件（它的 ctx 参数完全用不到，
  * 见 `compaction-epoch.mjs` 的条目容器注释），初始相位靠 `status()` 触发的**全量冷扫**建立。
- * 此前 `executor` 每次 `applyPromptConfigs` 建两份、`phase` 每个编译谓词建一份、
+ * 此前 `executor` 每次 pre-step apply 建两份、`phase` 每个编译谓词建一份、
  * `instruction-hint` 每次 apply 建一份，各自订阅、各自喂——重复建的代价就是重复冷扫。
  *
  * **池自己订阅**：订阅随池的归属走（自建池随所在挂载释放，注入池由创建者释放），

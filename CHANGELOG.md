@@ -1,5 +1,14 @@
 # Changelog
 
+### pre-step 来源携带自己的事实（候选 02，2026-10-21）
+
+- **来源接口**：新增 `engine/pre-step-source.mjs`；`PreStepSource` 携带 sourceId/configs/ruleActions/ctx/onOutcome/promotion，`createPreStepSource` 绑定来源 ctx，`composePreStepSources` 检查唯一 promotion owner 并按 rule 分派对象上报。
+- **批执行**：`runPreStepBatch({ sources })` 合并来源、始终按配置序号排序；`applyPromptConfigSources(sources, options)` 成为唯一 apply 入口，`applyPromptConfigs` 删除；`inject-text` 动作构造单个来源。
+- **协调器 v2**：服务持有唯一 promotion pool/pair 并暴露给来源；`registerPreset(sourceId, source)` 不再改写 `config.resolve`、不再自建 rule→module 映射；`mountRuleSources` 按模块构造来源并复用协调器池。
+- **类型**：`PreStepSource`/`PreStepPromotion` 由 `engine/pre-step-source` 声明；协调器删除重复的 `PreStepPromptConfig`，服务版本升 2。
+- **破坏性变更**：`applyPromptConfigs` 与 `PreStepPromptConfig` 删除；`runPreStepBatch` 只收 `sources`，`registerPreset` 改收 `(sourceId, source)`，`applyPromptConfigSources` 不再收 ctx。复制引擎的调用方必须迁移到 source。
+- **测试**：新增来源合并/ctx 绑定/owner 不一致拒绝与协调器混合来源行为断言；无旧 API 墓碑测试。验证：typecheck / lint / test（731）/ build / git diff --check / verify:host / verify:pack / rebuild:module-template -- --check。
+
 ### 清理 03 遗留：condition-facts 与 subject 单一来源（2026-10-21）
 
 - **命名**：`engine/condition.mjs` → `engine/condition-facts.mjs`；更新 import、注释、ADR 与测试引用。它只做 live 条件的文本事实提取，条件判定归 `conditions/*`。
