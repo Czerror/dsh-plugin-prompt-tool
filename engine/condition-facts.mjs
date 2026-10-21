@@ -1,5 +1,5 @@
 /**
- * condition — live 规则条件的文本事实提取（if.text.subject / if.anchor.subject）。
+ * condition-facts — live 规则条件的文本事实提取（if.text.subject / if.anchor.subject）。
  *
  * 声明式 `config.subject` / `config.match` 执行链已退役；这里只保留：
  *   - subject → 载荷文本字段的映射（conditions/subject 与 availability 共用）；

@@ -654,7 +654,7 @@ test('wireLayers 公开入口：注册层的动作级分支走条件化注册，
 })
 
 test('上下文激活的 batch 只扫描本批真实对话消息：插件注入与指令文件正文都不触发', async () => {
-  // 与 userText / ST 世界书同一判据（condition.mjs#isConversationMessage）：扫描范围
+  // 与 userText / ST 世界书同一判据（condition-facts.mjs#isConversationMessage）：扫描范围
   // = 本批真实对话消息，不含任何插件来源（append-context / 子代理 inject / skill_load）
   // 与 agent-instructions 正文。
   const { step } = makeHarness(createPromptConfigs([{

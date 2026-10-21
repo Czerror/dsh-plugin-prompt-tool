@@ -113,7 +113,7 @@ export function validateDeliverySources(sources) {
 /**
  * **只用于动作级条件**：动作的判定绑定单一执行点，谓词要读的事实写错通道（或 `text` 省略
  * subject）等于该动作永不执行，而挂载与运行期都不报错（`availability.mjs` 对通道取不到的
- * 字段返回 UNAVAILABLE，`condition.mjs#subjectTextOf` 取不到一律空串）。规则级 `if` 相反：
+ * 字段返回 UNAVAILABLE，`condition-facts.mjs#subjectTextOf` 取不到一律空串）。规则级 `if` 相反：
  * 它在该规则每个动作的执行点上各自求值，「缺事实即不执行」是三值语义的设计意图（见
  * `test/engine/rules.test.mjs` 的缺事实用例），因此编译期不拒绝。
  */

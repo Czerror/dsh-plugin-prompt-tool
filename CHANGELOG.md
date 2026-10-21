@@ -1,8 +1,15 @@
 # Changelog
 
+### 清理 03 遗留：condition-facts 与 subject 单一来源（2026-10-21）
+
+- **命名**：`engine/condition.mjs` → `engine/condition-facts.mjs`；更新 import、注释、ADR 与测试引用。它只做 live 条件的文本事实提取，条件判定归 `conditions/*`。
+- **单一来源**：`KNOWN_SUBJECTS` 从 `condition-facts` 的 `SUBJECT_FIELDS` 派生，`/meta` 的 `subjects` 与 live 条件使用同一份名单。
+- **文档去重**：技能参考的层表不再抄字段矩阵，改为指向 `/meta` 的 `layerFieldPolicies` / `engine/schema.mjs`；保留层入口、策略与 params 语义。
+- **测试**：不新增墓碑测试；纯改名/单一来源/文档去重，既有 live 条件回归覆盖行为。验证：typecheck / lint / test（725）/ build / git diff --check / verify:host / verify:pack / rebuild:module-template -- --check。
+
 ### 退役声明式 config.subject/match，conditions/* 成为唯一条件模块（2026-10-21）
 
-- **引擎收口**：删除 conditionHit、normalizeMatch/matchScan、config.subject/match 与逐层 subjects/defaultSubject/layerDefaultSubjects；live 条件继续使用 conditions/* 与 condition.mjs 的 subjectTextOf/文本 helper。
+- **引擎收口**：删除 conditionHit、normalizeMatch/matchScan、config.subject/match 与逐层 subjects/defaultSubject/layerDefaultSubjects；live 条件继续使用 conditions/* 与 condition-facts.mjs（原 condition.mjs）的 subjectTextOf/文本 helper。
 - **客户端收口**：删除 MatchFields、PromptConfigMatch、表单条件块与旧 locale；保留 meta.subjects 供 live text.subject / anchor.subject 下拉。
 - **契约收窄**：层字段矩阵 9 项；共享 LayerContract 去掉 subjects；宿主 PromptConfigSpec 去掉 subject/match；ADR-0007 补实现状态。
 - **测试**：删除 match 专用用例；live text/anchor 条件测试保持绿色。验证：typecheck / lint / test（725）/ build / git diff --check / verify:host / verify:pack。

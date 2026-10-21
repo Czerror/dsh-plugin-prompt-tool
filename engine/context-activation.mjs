@@ -2,7 +2,7 @@
 import { createAnchorMatcher } from './anchor-match.mjs'
 import { currentEvents, historyEvents } from './history.mjs'
 import { evaluateTemplate } from './template-evaluation.mjs'
-import { isConversationMessage } from './condition.mjs'
+import { isConversationMessage } from './condition-facts.mjs'
 import { isSuccessfulCompactionEnd } from './compaction-epoch.mjs'
 
 /** 只扫描真实对话的可见文本，排除插件注入与思维块（判据与 userText / 关键词 haystack 同源）。 */

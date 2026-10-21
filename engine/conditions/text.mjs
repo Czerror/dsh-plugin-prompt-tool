@@ -1,5 +1,5 @@
 import { MATCH_LOGIC, createAnchorMatcher } from '../anchor-match.mjs'
-import { subjectTextOf } from '../condition.mjs'
+import { subjectTextOf } from '../condition-facts.mjs'
 import { keyList } from './values.mjs'
 import { conditionInputAvailable, UNAVAILABLE } from './availability.mjs'
 const MATCH_FLAGS = ['caseSensitive', 'wholeWords', 'useRegex']

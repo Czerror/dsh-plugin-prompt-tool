@@ -1,5 +1,5 @@
 import { agentOf, sessionOf } from './subject.mjs'
-import { SUBJECT_FIELDS } from '../condition.mjs'
+import { SUBJECT_FIELDS } from '../condition-facts.mjs'
 
 /** 缺少真实事件事实不是 false；尤其不能经 not 反转成允许。 */
 export const UNAVAILABLE = Symbol('condition-input-unavailable')

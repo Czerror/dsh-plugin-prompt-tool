@@ -46,7 +46,7 @@ export function agentPresetId(ctx, agent, standingMountFor) {
     const mount = typeof standingMountFor === 'function' ? standingMountFor(agent?.ctx) : undefined
     return mount?.presetId
   } catch {
-    // 判定不抛出：拿不到就是「没有预设」（不命中），与 condition.mjs 的降级纪律一致。
+    // 判定不抛出：拿不到就是「没有预设」（不命中），与 condition-facts.mjs 的降级纪律一致。
     return undefined
   }
 }

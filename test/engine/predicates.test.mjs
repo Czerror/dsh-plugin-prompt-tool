@@ -6,7 +6,7 @@ import { createScope, scopeOf, scopeParentOf } from '@deepseek-ai/dsh-scope'
 import { MATCH_LOGIC } from '../../engine/anchor-match.mjs'
 import { UNAVAILABLE } from '../../engine/conditions/availability.mjs'
 import { subjectOf } from '../../engine/conditions/subject.mjs'
-import { userMessagesText } from '../../engine/condition.mjs'
+import { userMessagesText } from '../../engine/condition-facts.mjs'
 import {
   agentPresetId,
   compileWhen,
@@ -104,7 +104,7 @@ test('文本类：主键/副键/整词/大小写/正则/前缀/模式的命中�
   assert.equal(secondary(MATCH_LOGIC.NOT_ANY)('anchor yes'), true, 'notAny：至少一个副键未命中')
   assert.equal(secondary(MATCH_LOGIC.NOT_ANY)('anchor skip'), false)
 
-  // subject 载荷：按 condition.mjs 的 subject 词汇取文本；未声明 subject 不猜字段
+  // subject 载荷：按 condition-facts.mjs 的 subject 词汇取文本；未声明 subject 不猜字段
   assert.equal(createTextPredicate({ keys: ['hello'], subject: 'userMessage' })({ userText: 'hello there' }), true)
   assert.equal(createTextPredicate({ keys: ['hello'], subject: 'userMessage' })({ userText: 'nope' }), false)
   assert.equal(createTextPredicate({ keys: ['hello'], subject: 'userMessage' })({ userText: '' }), false, '已知空文本仍可判定为不匹配')

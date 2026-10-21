@@ -24,7 +24,7 @@
 | 锚定确认与兜底轮数（`conditions/anchor`） | 当前上下文（轮数按 `seq` 去重） | 看**可见的**首条 assistant 推理；位置替换后同一事件可占多个节点 |
 | `count` 的重建 | 按信号：消息类 → 当前上下文；`tool-call` / `turn` → 完整历史 | surface 不承载后两者，一律迁会让它们冷启动重建恒为 0 |
 | `session` 谓词的 `present` | 按 `type`：消息类 → 当前上下文；其余 → 完整历史 | 同上；非消息类型若读当前上下文会恒真或恒假 |
-| `condition#lastAssistantText`（`turn-stop` 的当前可见末条 assistant 文本） | 当前上下文 | 模型现在看到的末条 |
+| `condition-facts#lastAssistantText`（`turn-stop` 的当前可见末条 assistant 文本） | 当前上下文 | 模型现在看到的末条 |
 | `interpolate#lastMessageOf`（`{{lastusermessage}}` / `{{lastcharmessage}}`） | 当前上下文 | 这两个宏是官方按可见消息求值的运行时事实 |
 | `context-activation#conversationMessages` | 当前上下文（按 `seq` 去重） | 关键词只由模型看得见的对话触发 |
 | `st-render#generationKey` | **完整历史** | 帧边界与 `tool/call` 折叠都是 log-only 事件；用当前上下文会让那些分支变成死代码，且与降级路径结论不同 |

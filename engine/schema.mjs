@@ -9,6 +9,7 @@ import { sep } from 'node:path'
 import { parse as parseYaml } from './vendor/yaml/index.js'
 import { bindResolver } from './strategies.mjs'
 import { compareConfigSequence } from './order.mjs'
+import { SUBJECT_FIELDS } from './condition-facts.mjs'
 
 const name = 'rule-engine'
 
@@ -180,9 +181,9 @@ export const INJECTION_CHANNELS = Object.fromEntries(
 )
 /**
  * live 规则条件的匹配对象（if.text.subject / if.anchor.subject）：
- * 与 condition.mjs 的 SUBJECT_FIELDS 同域；不再用于旧 config.subject。
+ * 由 condition-facts 的 SUBJECT_FIELDS 派生，单一来源；不再用于旧 config.subject。
  */
-export const KNOWN_SUBJECTS = new Set(['toolArgs', 'toolResult', 'userMessage', 'assistantText', 'subagentInfo'])
+export const KNOWN_SUBJECTS = new Set(Object.keys(SUBJECT_FIELDS))
 export const KNOWN_POSITIONS = new Set(['after-user', 'before-all', 'after-all'])
 export const KNOWN_DEDUPES = new Set(['session', 'batch', 'none'])
 export const KNOWN_PROMOTIONS = new Set(['none', 'main', 'include-subagents'])

@@ -1,4 +1,4 @@
-import { SUBJECT_FIELDS, lastAssistantText, subagentTextOf, toolArgsText, userMessagesText } from '../condition.mjs'
+import { SUBJECT_FIELDS, lastAssistantText, subagentTextOf, toolArgsText, userMessagesText } from '../condition-facts.mjs'
 import { extractText } from '../shared.mjs'
 
 /**
@@ -51,7 +51,7 @@ const SUBAGENT_FACTS = {
  * 通道 → 归一化载荷的字段与取值器：**唯一**的「该通道提供什么事实」真相。
  * `channelTextSubjects` 与 `channelFactSubjects` 都从这张表派生，不另立第二张手抄表。
  *
- * - `text[字段名] = args => value`：字段名取自 `condition.mjs#SUBJECT_FIELDS`，
+ * - `text[字段名] = args => value`：字段名取自 `condition-facts.mjs#SUBJECT_FIELDS`，
  *   经 `SUBJECT_OF_FIELD` 反查成文本 subject。
  * - `facts[字段名] = (args, ctx) => value`：字段名本身即 subject（`name` / `source` /
  *   `agent` / `session` / `model`）；返回 `undefined` 即不写键（判定退回 UNAVAILABLE）。

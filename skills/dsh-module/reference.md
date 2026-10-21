@@ -95,21 +95,23 @@ tool-catalog 引用目标必须有 allow；仅支持普通只读插值，`templa
 层是官方扩展点，彼此独立，没有跨层运行顺序。规则顶层 layer 是动作未声明 config.layer 时的缺省及展示归属；
 动作显式声明 config.layer 时优先使用动作值（工具、装配、请求类动作自带执行点）。
 
-| 层 | 官方入口 | 层上合法字段 | 可用策略 | 层内 `params` |
-|---|---|---|---|---|
-| `pre-step` | `agent/pre-step` 消息批 | `position` `dedupe` `promotion` `audience` `modelScope` `mergeMode` `order` `role` | static/placeholder/context-activation | — |
-| `system-section` | `ctx.systemPrompt.section` | `audience` `mergeMode` `order` | `static` | `sectionName` `complete` `suppressRuntimeContext` |
-| `runtime-context` | `ctx.systemPrompt.context` | `mergeMode` `order` | `static` `placeholder` | `contextName` |
-| `agent-request` | `agent/request` | 仅动作展示归属 | — | request-params 动作的 patch/unset/replace |
-| `llm-stream` | `llm/stream` | 仅动作展示归属 | — | stream-output 动作的 mode/text |
-| `tool-pipeline` | 仅展示归属（**无注入通道**） | `audience` `modelScope` `order` | — | 工具链的裁决 / 结果处理 / 追加上下文改用 `tool-gate` / `tool-result` / `append-context` 动作 |
-| `turn-stop` | `agent/turn-stopping` | `dedupe`（none/session） `modelScope` `order` | `static` | — |
-| `subagent-start` | `subagent/start` | `modelScope` `order` | `static` | — |
-| `subagent-end` | `subagent/end` | `modelScope` `order` | `static` | `action`（`observe`/`inject-main`） |
+层字段矩阵（`position` / `dedupe` / `promotion` / `audience` / `modelScope` / `merge` / `order` / `role` / `placeholder`；config 里写 `mergeMode`）由 `/meta` 的 `layerFieldPolicies` 下发，根 `module.yml` 也由同一份 `engine/schema.mjs` 生成；本文不再抄写，避免第三份副本漂移。
+
+| 层 | 官方入口 | 可用策略 | 层内 `params` |
+|---|---|---|---|
+| `pre-step` | `agent/pre-step` 消息批 | static/placeholder/context-activation | — |
+| `system-section` | `ctx.systemPrompt.section` | `static` | `sectionName` `complete` `suppressRuntimeContext` |
+| `runtime-context` | `ctx.systemPrompt.context` | `static` `placeholder` | `contextName` |
+| `agent-request` | `agent/request` | — | request-params 动作的 patch/unset/replace |
+| `llm-stream` | `llm/stream` | — | stream-output 动作的 mode/text |
+| `tool-pipeline` | 仅展示归属（**无注入通道**） | — | 工具链的裁决 / 结果处理 / 追加上下文改用 `tool-gate` / `tool-result` / `append-context` 动作 |
+| `turn-stop` | `agent/turn-stopping` | `static` | — |
+| `subagent-start` | `subagent/start` | `static` | — |
+| `subagent-end` | `subagent/end` | `static` | `action`（`observe`/`inject-main`） |
 
 三条边界：
 
-1. 层字段按上表用：`position`/`role`/`promotion` 在 `pre-step`，`dedupe` 另支持 `turn-stop` 的 none/session。
+1. 层字段以 `/meta` 的 `layerFieldPolicies` 为准：`position`/`role`/`promotion` 在 `pre-step`，`dedupe` 另支持 `turn-stop` 的 none/session。
 2. 声明式 `config.subject`/`config.match` 已删除；live 条件在规则 `if` 里写 `text.subject` / `anchor.subject`，
    可选值见 `/meta` 的 `subjects`。按任务内容分档放在 `pre-step`——`subagent/start` 的事件里只有
    provider 与 id，没有任务文本。
