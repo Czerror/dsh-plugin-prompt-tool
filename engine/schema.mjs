@@ -9,7 +9,6 @@ import { sep } from 'node:path'
 import { parse as parseYaml } from './vendor/yaml/index.js'
 import { bindResolver } from './strategies.mjs'
 import { compareConfigSequence } from './order.mjs'
-import { MATCH_LOGIC, createAnchorMatcher } from './anchor-match.mjs'
 
 const name = 'rule-engine'
 
@@ -86,103 +85,85 @@ const TEMPLATE_STRATEGY_LAYERS = ['pre-step', 'runtime-context']
 export const KNOWN_SLOT_KINDS = new Set(['ordered', 'anchor'])
 /**
  * 九个官方注入层的**唯一权威定义**（B5 T1：原 `LAYER_ORDER` / `LAYER_FIELD_POLICIES` /
- * `LAYER_EDITING` / `LAYER_LABELS` / `LAYER_DEFAULT_SUBJECT` 五处事实合一）。
+ * `LAYER_EDITING` / `LAYER_LABELS` 四处事实合一）。
  *
  * 新增或改一层只动这里一处：
  *   - 数组顺序即 `layerOrder`（**产品定义**，改顺序等于改 UI 组织，不要只为排序调整）；
  *   - `channel` / `phase` 是该层 `inject-text` 的**唯一注册点**（缺 `channel` 的层不可注入：
  *     `tool-pipeline` 的工具链裁决改用 `tool-gate` / `append-context` 动作）；
- *   - `fields` 是层能力矩阵（11 项，客户端表单据此动态渲染）；
- *   - `editing` 是字段能力表（subjects / content / variables / messageMetadata / params）；
- *   - `label` 是由引擎统一下发给客户端的显示名与说明；
- *   - `defaultSubject` 是该条件层的缺省匹配对象（不声明 = 该层没有匹配对象）。
+ *   - `fields` 是层能力矩阵（9 项，客户端表单据此动态渲染）；
+ *   - `editing` 是字段能力表（content / variables / messageMetadata / params）；
+ *   - `label` 是由引擎统一下发给客户端的显示名与说明。
  *
  * 下面所有导出都由本表**派生**，并保持既有名字与形状，外部消费方不受影响。
- * `defaultSubject` 必须落在本层 `editing.subjects` 内——就近声明 + 加载期断言，
- * 避免「缺省值不在允许集合里」这种只能靠运行期才发现的错配。
  */
 const LAYER_DEFINITIONS = [
   {
     layer: 'pre-step',
     channel: 'agent/pre-step', phase: 'after-next',
-    fields: { position: true, dedupe: true, promotion: true, audience: true, modelScope: true, merge: true, order: true, role: true, placeholder: true, subject: true, match: true },
-    editing: { subjects: ['userMessage'], content: 'text', variables: true, messageMetadata: true, params: {} },
+    fields: { position: true, dedupe: true, promotion: true, audience: true, modelScope: true, merge: true, order: true, role: true, placeholder: true },
+    editing: { content: 'text', variables: true, messageMetadata: true, params: {} },
     label: { title: '消息批层', detail: '官方默认层：agent/pre-step 消息批。支持 position / dedupe / promotion / audience / mergeMode 与文本插值。' },
-    defaultSubject: 'userMessage',
   },
   {
     layer: 'system-section',
     channel: 'system-prompt/assemble', phase: 'before-next',
-    fields: { position: false, dedupe: false, promotion: false, audience: true, modelScope: false, merge: true, order: true, role: false, placeholder: false, subject: false, match: false },
-    editing: { subjects: [], content: 'text', variables: true, messageMetadata: false,
+    fields: { position: false, dedupe: false, promotion: false, audience: true, modelScope: false, merge: true, order: true, role: false, placeholder: false },
+    editing: { content: 'text', variables: true, messageMetadata: false,
       params: { sectionName: { type: 'string' }, complete: { type: 'boolean' }, suppressRuntimeContext: { type: 'boolean' } } },
     label: { title: '系统段层', detail: 'system-section 静态层：注册即全局，由 order 与 params.complete / sectionName 控制。' },
   },
   {
     layer: 'runtime-context',
     channel: 'system-prompt/assemble', phase: 'before-next',
-    fields: { position: false, dedupe: false, promotion: false, audience: false, modelScope: false, merge: true, order: true, role: false, placeholder: true, subject: false, match: false },
-    editing: { subjects: [], content: 'text', variables: true, messageMetadata: false, params: { contextName: { type: 'string' } } },
+    fields: { position: false, dedupe: false, promotion: false, audience: false, modelScope: false, merge: true, order: true, role: false, placeholder: true },
+    editing: { content: 'text', variables: true, messageMetadata: false, params: { contextName: { type: 'string' } } },
     label: { title: '运行上下文', detail: 'runtime-context 层：static 按 order 注册，placeholder 单条生效，由 params.contextName 控制。' },
   },
   {
     layer: 'agent-request',
-    fields: { position: false, dedupe: false, promotion: false, audience: true, modelScope: true, merge: false, order: true, role: false, placeholder: false, subject: false, match: false },
-    editing: { subjects: [], content: 'request', variables: false, messageMetadata: false, params: {} },
+    fields: { position: false, dedupe: false, promotion: false, audience: true, modelScope: true, merge: false, order: true, role: false, placeholder: false },
+    editing: { content: 'request', variables: false, messageMetadata: false, params: {} },
     label: { title: '调用配置层', detail: 'agent/request 的请求参数由 request-params 动作修改。' },
   },
   {
     layer: 'llm-stream',
-    fields: { position: false, dedupe: false, promotion: false, audience: false, modelScope: true, merge: false, order: true, role: false, placeholder: false, subject: false, match: false },
-    editing: { subjects: [], content: 'stream', variables: false, messageMetadata: false, params: {} },
+    fields: { position: false, dedupe: false, promotion: false, audience: false, modelScope: true, merge: false, order: true, role: false, placeholder: false },
+    editing: { content: 'stream', variables: false, messageMetadata: false, params: {} },
     label: { title: '模型流层', detail: 'llm/stream 的透传与替换由 stream-output 动作处理。' },
   },
   {
     layer: 'tool-pipeline',
-    fields: { position: false, dedupe: false, promotion: false, audience: true, modelScope: true, merge: false, order: true, role: false, placeholder: false, subject: true, match: true },
-    editing: { subjects: ['toolArgs', 'toolResult'], content: 'tool-result', variables: false, messageMetadata: false,
+    fields: { position: false, dedupe: false, promotion: false, audience: true, modelScope: true, merge: false, order: true, role: false, placeholder: false },
+    editing: { content: 'tool-result', variables: false, messageMetadata: false,
       // 该层没有注入通道：旧的四项工具链参数（toolNames / preDecision / denyReason / postAction）
       // 没有任何消费者，已删除；工具链行为由 tool-gate / tool-result 动作承担。
       params: {} },
-    label: { title: '工具管线层', detail: '工具链层：只作规则级展示归属（无 inject-text 通道）——工具链的裁决与追加上下文由 tool-gate / tool-result / append-context 动作承担；subject / match 可选，命中才裁决。' },
-    defaultSubject: 'toolArgs',
+    label: { title: '工具管线层', detail: '工具链层：只作规则级展示归属（无 inject-text 通道）——工具链的裁决与追加上下文由 tool-gate / tool-result / append-context 动作承担。' },
   },
   {
     layer: 'turn-stop',
     channel: 'agent/turn-stopping', phase: 'before-next',
-    fields: { position: false, dedupe: true, promotion: false, audience: false, modelScope: true, merge: false, order: true, role: false, placeholder: false, subject: true, match: true },
-    editing: { subjects: ['assistantText'], content: 'text', variables: true, messageMetadata: false, params: {} },
+    fields: { position: false, dedupe: true, promotion: false, audience: false, modelScope: true, merge: false, order: true, role: false, placeholder: false },
+    editing: { content: 'text', variables: true, messageMetadata: false, params: {} },
     label: { title: '轮次停止层', detail: 'agent/turn-stopping 层：命中条件时强制续跑一步；引擎内置续跑上限，不可用配置关闭。' },
-    defaultSubject: 'assistantText',
   },
   {
     layer: 'subagent-start',
     channel: 'subagent/start', phase: 'before-next',
-    fields: { position: false, dedupe: false, promotion: false, audience: false, modelScope: true, merge: false, order: true, role: false, placeholder: false, subject: true, match: true },
-    editing: { subjects: ['subagentInfo'], content: 'text', variables: true, messageMetadata: false, params: {} },
+    fields: { position: false, dedupe: false, promotion: false, audience: false, modelScope: true, merge: false, order: true, role: false, placeholder: false },
+    editing: { content: 'text', variables: true, messageMetadata: false, params: {} },
     label: { title: '子代理启动层', detail: 'subagent/start 层：命中条件时向该子代理注入上下文。' },
-    defaultSubject: 'subagentInfo',
   },
   {
     layer: 'subagent-end',
     channel: 'subagent/end', phase: 'before-next',
-    fields: { position: false, dedupe: false, promotion: false, audience: false, modelScope: true, merge: false, order: true, role: false, placeholder: false, subject: true, match: true },
-    editing: { subjects: ['subagentInfo'], content: 'subagent-result', variables: true, messageMetadata: false,
+    fields: { position: false, dedupe: false, promotion: false, audience: false, modelScope: true, merge: false, order: true, role: false, placeholder: false },
+    editing: { content: 'subagent-result', variables: true, messageMetadata: false,
       params: { action: { type: 'enum', values: ['observe', 'inject-main'] } } },
     label: { title: '子代理结束层', detail: 'subagent/end 层：默认记录；action=inject-main 时向所属主会话注入配置文本，不改写子代理返回结果。' },
-    defaultSubject: 'subagentInfo',
   },
 ]
-
-/** 就近断言：缺省匹配对象必须在本层允许的 subjects 内（新增层时最先撞到这里）。 */
-for (const definition of LAYER_DEFINITIONS) {
-  if (definition.defaultSubject === undefined) continue
-  if (!definition.editing.subjects.includes(definition.defaultSubject)) {
-    throw new TypeError(
-      `schema: layer ${definition.layer} defaultSubject ${definition.defaultSubject} must be one of its subjects`,
-    )
-  }
-}
 
 /** 九个官方注入层的固定顺序：/meta 的 layerOrder、UI 层序与模板菜单共用这一份。 */
 export const LAYER_ORDER = LAYER_DEFINITIONS.map((definition) => definition.layer)
@@ -198,16 +179,10 @@ export const INJECTION_CHANNELS = Object.fromEntries(
   INJECTION_DEFINITIONS.map((definition) => [definition.layer, { channel: definition.channel, phase: definition.phase }]),
 )
 /**
- * 条件判定的匹配对象：决定把哪段文本交给 anchor-match 匹配器。
- * 取值与 DSH 扩展点一一对应，各层缺省值见 LAYER_DEFAULT_SUBJECT。
+ * live 规则条件的匹配对象（if.text.subject / if.anchor.subject）：
+ * 与 condition.mjs 的 SUBJECT_FIELDS 同域；不再用于旧 config.subject。
  */
 export const KNOWN_SUBJECTS = new Set(['toolArgs', 'toolResult', 'userMessage', 'assistantText', 'subagentInfo'])
-/** 各条件层的缺省匹配对象；不在此表的层没有匹配对象。 */
-export const LAYER_DEFAULT_SUBJECT = Object.fromEntries(
-  LAYER_DEFINITIONS
-    .filter((definition) => definition.defaultSubject !== undefined)
-    .map((definition) => [definition.layer, definition.defaultSubject]),
-)
 export const KNOWN_POSITIONS = new Set(['after-user', 'before-all', 'after-all'])
 export const KNOWN_DEDUPES = new Set(['session', 'batch', 'none'])
 export const KNOWN_PROMOTIONS = new Set(['none', 'main', 'include-subagents'])
@@ -261,60 +236,10 @@ export function getEngineMeta() {
     mergeModes: [...KNOWN_MERGE_MODES].sort(),
     fills: [...KNOWN_FILLS].sort(),
     subjects: [...KNOWN_SUBJECTS].sort(),
-    layerDefaultSubjects: { ...LAYER_DEFAULT_SUBJECT },
     layerFieldPolicies: LAYER_FIELD_POLICIES,
     layerLabels: LAYER_LABELS,
     layerContracts: structuredClone(LAYER_CONTRACTS),
   }
-}
-
-/**
- * 归一化并预编译条件判定的 match 段：键集合直接交给 anchor-match 的匹配器，
- * 非法 logic、非法正则与空键集合都在挂载期 fail loud——运行时静默不命中会让
- * "配了门却没拦住"变成不可见的失效。
- * @returns 归一化后的匹配参数；未声明 match 时返回 undefined（= 无条件）。
- */
-function normalizeMatch(raw, label) {
-  if (raw === undefined || raw === null) return undefined
-  if (typeof raw !== 'object' || Array.isArray(raw)) {
-    throw new TypeError(`${label}.match must be an object when present`)
-  }
-  const stringList = (value, field) => {
-    if (value === undefined || value === null) return []
-    if (!Array.isArray(value) || value.some((item) => typeof item !== 'string')) {
-      throw new TypeError(`${label}.match.${field} must be an array of strings when present`)
-    }
-    return value.map((item) => item.trim()).filter((item) => item.length > 0)
-  }
-  const keys = stringList(raw.keys, 'keys')
-  const secondaryKeys = stringList(raw.secondaryKeys, 'secondaryKeys')
-  if (keys.length === 0 && secondaryKeys.length === 0) {
-    throw new TypeError(`${label}.match needs at least one non-empty key`)
-  }
-  const logic = raw.logic ?? MATCH_LOGIC.ANY
-  if (!Object.values(MATCH_LOGIC).includes(logic)) {
-    throw new TypeError(`${label}.match.logic must be one of ${Object.values(MATCH_LOGIC).join(', ')}`)
-  }
-  for (const field of ['caseSensitive', 'wholeWords', 'useRegex']) {
-    if (raw[field] !== undefined && typeof raw[field] !== 'boolean') {
-      throw new TypeError(`${label}.match.${field} must be a boolean when present`)
-    }
-  }
-  const match = {
-    keys,
-    secondaryKeys,
-    logic,
-    caseSensitive: raw.caseSensitive === true,
-    wholeWords: raw.wholeWords === true,
-    useRegex: raw.useRegex,
-  }
-  // 预编译：useRegex、/pattern/flags 形态与整词包装里的正则错误在此暴露。
-  try {
-    createAnchorMatcher(match)
-  } catch (error) {
-    throw new TypeError(`${label}.match is not compilable: ${error instanceof Error ? error.message : String(error)}`)
-  }
-  return match
 }
 
 /**
@@ -385,12 +310,11 @@ const isNonEmptyString = (value) => typeof value === 'string' && value.length > 
  *     undefined 不是同一档）；
  *   - `optional`：缺失即不设置；一旦存在（**含 null**）就按 `validate` 校验形态。
  *
- * 表里需要额外上下文的项用 `resolve`（subject 有「全局集合 + 层内允许集」两条语义与层缺省
- * 回退）。**表顺序 = 报错顺序**：与手写版逐个检查的先后完全一致，同一组非法输入必须先报同一处。
+ * 表里需要额外上下文的项用 `resolve`。**表顺序 = 报错顺序**：与手写版逐个检查的先后完全一致，
+ * 同一组非法输入必须先报同一处。
  *
- * 不在此表（各自领域的权威，留在原处）：`params`（`normalizeLayerParams`）、`match`
- * （`normalizeMatch`）、`text`/`texts`（多来源合并）、`strategy`/`configKind`/`layer`
- * （各自带额外上下文校验）。
+ * 不在此表（各自领域的权威，留在原处）：`params`（`normalizeLayerParams`）、
+ * `text`/`texts`（多来源合并）、`strategy`/`configKind`/`layer`（各自带额外上下文校验）。
  */
 export const CONFIG_FIELDS = [
   { field: 'position', known: KNOWN_POSITIONS, default: 'after-user' },
@@ -399,19 +323,6 @@ export const CONFIG_FIELDS = [
   { field: 'audience', known: KNOWN_AUDIENCES, keepNull: true, keepMissing: true },
   { field: 'modelScope', known: KNOWN_MODEL_SCOPES, default: 'all' },
   { field: 'role', known: KNOWN_ROLES, default: 'user' },
-  {
-    field: 'subject',
-    resolve: (spec, { label, layer }) => {
-      // 条件判定：subject 决定把哪段文本交给匹配器（缺省由层决定），match 缺省 = 无条件。
-      if (spec.subject !== undefined && !KNOWN_SUBJECTS.has(spec.subject)) {
-        throw new TypeError(`${name}: ${label} unknown subject ${JSON.stringify(spec.subject)} — known subjects: ${[...KNOWN_SUBJECTS].sort().join(', ')}`)
-      }
-      if (spec.subject !== undefined && !LAYER_CONTRACTS[layer].subjects.includes(spec.subject)) {
-        throw new TypeError(`${name}: ${label}.subject ${JSON.stringify(spec.subject)} is unavailable on layer ${JSON.stringify(layer)}`)
-      }
-      return spec.subject ?? LAYER_DEFAULT_SUBJECT[layer]
-    },
-  },
   {
     field: 'identity',
     resolve: (spec, { label }) => {
@@ -592,7 +503,7 @@ export function createPromptConfigs(specs, options = {}) {
     }
     // 层能力矩阵同时是引擎校验源：矩阵标记 false 的字段在对应层不生效，
     // 显式提供时 fail loud（UI 表单已按矩阵隐藏，此处兜底手写配置）。
-    const restricted = ['position', 'dedupe', 'promotion', 'audience', 'modelScope', 'merge', 'role', 'subject', 'match']
+    const restricted = ['position', 'dedupe', 'promotion', 'audience', 'modelScope', 'merge', 'role']
       .filter((field) => LAYER_FIELD_POLICIES[layer][field] === false && spec[field === 'merge' ? 'mergeMode' : field] != null)
     if (restricted.length > 0) {
       throw new TypeError(`${name}: ${label} layer ${JSON.stringify(layer)} does not support field(s): ${restricted.join(', ')}`)
@@ -600,8 +511,6 @@ export function createPromptConfigs(specs, options = {}) {
     // 标量字段统一校验与归一（B5 T2：原 15 段同型校验收敛为一次遍历，表顺序即报错顺序）。
     // 传**裸 label**：前缀 `${name}: ` 由 resolveConfigFields 与各 resolve 自行补齐。
     const fields = resolveConfigFields(spec, label, layer)
-    // subject 已由 fields 归一（含「全局集合 + 层内允许集」两条语义与层缺省回退）。
-    const match = normalizeMatch(spec.match, `${name}: ${label}`)
     // placeholder 的层限制由上面的 STRATEGY_LAYER_SUPPORT 统一校验（此处不再重复）。
     let fill
     if (strategy === 'placeholder') {
@@ -635,8 +544,6 @@ export function createPromptConfigs(specs, options = {}) {
       promotion: fields.promotion,
       audience: fields.audience,
       modelScope: fields.modelScope,
-      subject: fields.subject,
-      match,
       // sourceKind 进的是消息 source.kind，必须是 **v4 的生产者身份**（`plugin:<owner>`）：
       // 裸规则 id 会被 `userMessagesText` 的注入过滤漏掉（它只认 `source.plugin` 与
       // `plugin:` 前缀），于是本引擎注入过的规则正文会回来参与下一轮 when 判定——实测
@@ -666,9 +573,6 @@ export function createPromptConfigs(specs, options = {}) {
       ?? (typeof options.sourceModuleId === 'string' ? index * 10 : undefined)
     if (sequence !== undefined) config.sequence = sequence
     if (typeof options.sourceModuleId === 'string') config.sourceModuleId = options.sourceModuleId
-    // 条件判定的匹配器在挂载期编译一次，执行侧（condition.mjs）直接复用：
-    // normalizeMatch 已用同一份参数试编译过，这里是同源的第二句（失败会抛出）。
-    config.matchScan = match === undefined ? undefined : createAnchorMatcher(match).scan
     config.resolve = bindResolver(config, options.strategyDir)
     return config
   })

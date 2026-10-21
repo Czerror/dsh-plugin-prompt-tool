@@ -666,7 +666,7 @@ fieldset 禁用时 MenuSelect 同时拒绝 portal 中的选择。Tooltip 的键�
 
 `request-params` 编辑调用字段，字符串清空删除 patch 键，数字清空删除键而 0 保留。未知动作或嵌套扩展可在 JSON 中编辑，服务端编译失败保留完整输入；改规则级 `layer` 会改「动作未声明 `config.layer` 时」的运行通道（动作自带 `config.layer` 时只改展示分组与筛选），不清除动作数据。
 
-动态判断在规则或分支的 `if` 编辑；条件树支持 all、any、not、notAny，转换组合保留叶子与未完成字段。组合内的“条件 1、条件 2”与动作复用同一摘要折叠卡，各自展开，新增条件立即展开；折叠不修改条件，删除和转换组合时字段草稿与展开状态一起迁移。每条规则的 then、else 和 if 条件组只展开当前所选层的一套创建控件，其他层保留添加入口；切换创建入口仅改变视图，添加仍归属该列表。普通注入动作不显示旧 audience/modelScope/promotion/subject/match，request-params 不显示旧 audience/modelScope。存量字段仍留在完整 JSON，客户端不静默删键或把条件提升到同卡其它动作；非中性旧 gate 由引擎拒绝。唯一例外是固定 system-section 的 complete/suppressRuntimeContext 注册，其 audience 是静态目标而非动态条件。
+动态判断在规则或分支的 `if` 编辑；条件树支持 all、any、not、notAny，转换组合保留叶子与未完成字段。组合内的“条件 1、条件 2”与动作复用同一摘要折叠卡，各自展开，新增条件立即展开；折叠不修改条件，删除和转换组合时字段草稿与展开状态一起迁移。每条规则的 then、else 和 if 条件组只展开当前所选层的一套创建控件，其他层保留添加入口；切换创建入口仅改变视图，添加仍归属该列表。普通注入动作不显示旧 audience/modelScope/promotion；声明式 `subject` / `match` 已随执行链删除，客户端不再渲染这两项。存量字段可能仍留在旧 JSON，客户端不静默删键或把条件提升到同卡其它动作；规则动作路径遇到旧字段按未知键拒绝。唯一例外是固定 system-section 的 complete/suppressRuntimeContext 注册，其 audience 是静态目标而非动态条件。
 
 主会话与子代理共用 `RuleCard`，每卡就是一条真实规则，不再存在模块级“编辑行为规则”二级编辑器。最外层折叠保留，收起只显示卡头，展开才挂载导航和表单；折叠前提交可保存草稿，非法输入保留供重开继续编辑。设置只承载共享参数与资产。原 `PromptConfigCard` 继续拥有指令文件编辑，主会话中置顶，子代理不显示重复文件卡。页面顺序不建立跨插入点的全局执行顺序。
 

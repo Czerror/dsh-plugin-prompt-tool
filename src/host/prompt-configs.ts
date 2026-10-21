@@ -27,7 +27,6 @@ export const PROMPT_CONFIG_SPEC_ENUMS = {
   dedupe: ['session', 'batch', 'none'],
   promotion: ['none', 'main', 'include-subagents'],
   audience: ['main', 'subagent'],
-  subject: ['toolArgs', 'toolResult', 'userMessage', 'assistantText', 'subagentInfo'],
   modelScope: ['all', 'pro', 'flash'],
   mergeMode: ['separate', 'merged'],
 } as const
@@ -51,10 +50,6 @@ export interface PromptConfigSpec {
   promotion?: SpecEnum<'promotion'>
   /** 消息受众：缺省（省略/null）= 公用（主会话+子代理）；main=仅主会话；subagent=仅子代理。 */
   audience?: SpecEnum<'audience'> | null
-  /** 条件判定的匹配对象；缺省由层决定（engine/schema.mjs 的 LAYER_DEFAULT_SUBJECT）。 */
-  subject?: SpecEnum<'subject'>
-  /** 条件判定的键集合；省略 = 无条件（旧行为）。 */
-  match?: PromptConfigMatch
   modelScope?: SpecEnum<'modelScope'>
   sourceKind?: string
   form?: string
@@ -126,18 +121,5 @@ export function modelRequestRules(params: Record<string, unknown>): RuleDefiniti
   }
   add('param-subagent-model-params', '模型参数（子代理）', 'subagent', subagentPatch)
   return rules
-}
-
-/**
- * 条件判定的键集合：与 `engine/anchor-match.mjs` 的匹配语义同构。
- * 键按字面文本匹配（正则元字符会被转义）；要写正则须用 `/pattern/flags` 形态或 `useRegex: true`。
- */
-export interface PromptConfigMatch {
-  keys?: string[]
-  secondaryKeys?: string[]
-  logic?: 'any' | 'all' | 'not' | 'notAny'
-  caseSensitive?: boolean
-  wholeWords?: boolean
-  useRegex?: boolean
 }
 

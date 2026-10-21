@@ -1,8 +1,8 @@
 # 模板：subagent-end 子代理结束层
 # 默认仅记录。将 params.action 改为 inject-main 并填写 text，
 # 通过官方 Agent.inject 向所属主会话投递上下文；不改写子代理结果、不唤醒空闲主会话。
-# 接入：subject 缺省 subagentInfo（事件载荷序列化文本，含子代理 id/runId）；不写 match
-#       即每个子代理结束都记录。载荷里没有稳定角色名，需要筛的时候按实际 runId 补 match。
+# 接入：条件写在规则 if；subagent-end 不再有 config.subject/match。
+#       载荷里没有稳定角色名，需要筛的时候按实际 runId 在 if 里写条件。
 # 默认关闭：它只写日志，需要审计子代理收尾时再打开。
 id: example-subagent-end
 name: 子代理结束记录（只观察）

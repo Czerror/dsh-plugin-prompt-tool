@@ -97,23 +97,22 @@ tool-catalog 引用目标必须有 allow；仅支持普通只读插值，`templa
 
 | 层 | 官方入口 | 层上合法字段 | 可用策略 | 层内 `params` |
 |---|---|---|---|---|
-| `pre-step` | `agent/pre-step` 消息批 | `position` `dedupe` `promotion` `audience` `modelScope` `mergeMode` `order` `role` `subject` `match` | static/placeholder/context-activation | — |
+| `pre-step` | `agent/pre-step` 消息批 | `position` `dedupe` `promotion` `audience` `modelScope` `mergeMode` `order` `role` | static/placeholder/context-activation | — |
 | `system-section` | `ctx.systemPrompt.section` | `audience` `mergeMode` `order` | `static` | `sectionName` `complete` `suppressRuntimeContext` |
 | `runtime-context` | `ctx.systemPrompt.context` | `mergeMode` `order` | `static` `placeholder` | `contextName` |
 | `agent-request` | `agent/request` | 仅动作展示归属 | — | request-params 动作的 patch/unset/replace |
 | `llm-stream` | `llm/stream` | 仅动作展示归属 | — | stream-output 动作的 mode/text |
-| `tool-pipeline` | 仅展示归属（**无注入通道**） | `audience` `modelScope` `order` `subject` `match` | — | 工具链的裁决 / 结果处理 / 追加上下文改用 `decision` / `append-context` 动作 |
-| `turn-stop` | `agent/turn-stopping` | `dedupe`（none/session） `modelScope` `order` `subject` `match` | `static` | — |
-| `subagent-start` | `subagent/start` | `modelScope` `order` `subject` `match` | `static` | — |
-| `subagent-end` | `subagent/end` | `modelScope` `order` `subject` `match` | `static` | `action`（`observe`/`inject-main`） |
+| `tool-pipeline` | 仅展示归属（**无注入通道**） | `audience` `modelScope` `order` | — | 工具链的裁决 / 结果处理 / 追加上下文改用 `tool-gate` / `tool-result` / `append-context` 动作 |
+| `turn-stop` | `agent/turn-stopping` | `dedupe`（none/session） `modelScope` `order` | `static` | — |
+| `subagent-start` | `subagent/start` | `modelScope` `order` | `static` | — |
+| `subagent-end` | `subagent/end` | `modelScope` `order` | `static` | `action`（`observe`/`inject-main`） |
 
 三条边界：
 
-1. 层字段按上表用：`position`/`role`/`promotion` 在 `pre-step`，`dedupe` 另支持 `turn-stop` 的 none/session；`subject`/`match` 在
-   `pre-step`、`turn-stop`、`subagent-start`、`subagent-end`——`tool-pipeline` 无注入通道，写上不生效。
-2. 各层缺省的匹配对象：`pre-step` → `userMessage`、`tool-pipeline` → `toolArgs`、`turn-stop` →
-   `assistantText`、`subagent-*` → `subagentInfo`。按任务内容分档放在 `pre-step`——`subagent/start`
-   的事件里只有 provider 与 id，没有任务文本。
+1. 层字段按上表用：`position`/`role`/`promotion` 在 `pre-step`，`dedupe` 另支持 `turn-stop` 的 none/session。
+2. 声明式 `config.subject`/`config.match` 已删除；live 条件在规则 `if` 里写 `text.subject` / `anchor.subject`，
+   可选值见 `/meta` 的 `subjects`。按任务内容分档放在 `pre-step`——`subagent/start` 的事件里只有
+   provider 与 id，没有任务文本。
 3. system-section、runtime-context 的普通文本贡献支持规则级 if 和嵌套 `{ if, then, else }`，
    每次 assembly 在条件文本贡献通道按当前事实求值，不动态重注册段；if.scope.audience 是常见写法。
    complete / suppressRuntimeContext 属固定注册效果，仍拒绝动态条件分支；complete 表示同 scope 唯一 system 段。

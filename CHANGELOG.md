@@ -1,5 +1,12 @@
 # Changelog
 
+### 退役声明式 config.subject/match，conditions/* 成为唯一条件模块（2026-10-21）
+
+- **引擎收口**：删除 conditionHit、normalizeMatch/matchScan、config.subject/match 与逐层 subjects/defaultSubject/layerDefaultSubjects；live 条件继续使用 conditions/* 与 condition.mjs 的 subjectTextOf/文本 helper。
+- **客户端收口**：删除 MatchFields、PromptConfigMatch、表单条件块与旧 locale；保留 meta.subjects 供 live text.subject / anchor.subject 下拉。
+- **契约收窄**：层字段矩阵 9 项；共享 LayerContract 去掉 subjects；宿主 PromptConfigSpec 去掉 subject/match；ADR-0007 补实现状态。
+- **测试**：删除 match 专用用例；live text/anchor 条件测试保持绿色。验证：typecheck / lint / test（725）/ build / git diff --check / verify:host / verify:pack。
+
 ### 模块安装事务：五条目录创建路径收成一个 seam（2026-10-21）
 
 - **新事务**：`src/host/module-install-transaction.ts` 的 `installModuleDirectory` 拥有暂存、锁、版本复核、备份、交换、回滚与清理；`expectedVersion: null` 表示目标必须不存在，string 表示必须等于该目录版本。

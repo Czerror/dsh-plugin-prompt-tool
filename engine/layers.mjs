@@ -16,7 +16,6 @@ import {
 import { INJECTION_LAYERS, KNOWN_STRATEGIES, SESSION_VARIABLES_DISABLED } from './schema.mjs'
 import { interpolateVariables, stripUnresolvedRefs, RUNTIME_FACTS, runtimeFactValue, isReservedInterpolationName } from './interpolate.mjs'
 import { renderTemplate } from './template-frame.mjs'
-import { conditionHit, lastAssistantText, subagentTextOf } from './condition.mjs'
 import { compareConfigSequence, compareTextPlacement } from './order.mjs'
 import { ruleFrame, actionMatches } from './conditions/evaluation.mjs'
 import { textRegistrationName, identityStampOf, actionStamp, injectedMessage, findActionDelivery } from './delivery.mjs'
@@ -351,8 +350,6 @@ function wireRuntimeContexts(ctx, configs, registry, warnOnce, keep, on) {
   return disposers
 }
 
-/** 条件判定的匹配器与取文本逻辑由 condition.mjs 承载（pre-step 与其他层共用）。 */
-
 /**
  * 插件来源的 user 消息：与 anchor-turn / progress-reminder 同一形状。
  *
@@ -476,8 +473,6 @@ function wireTurnStops(ctx, configs, warnOnce, on, turnStopBudgets) {
         if (config.dedupe === 'session' && (config.linkedDelivery ? findActionDelivery(session, config) : injectedMessage(config, session))) return
         const entry = budget.entry(session.id, turn)
         if (!budget.available(entry, turn)) return
-        // 未声明 match 时 conditionHit 恒真：不先读一次快照（本层每个 turn-stop 都走）。
-        if (config.match !== undefined && !conditionHit(config, { assistantText: lastAssistantText(session) })) return
         const text = layerText(config, agent, warnOnce)
         if (text.length === 0) return
         // 计数在 steer 之前落账：steer 抛错也不允许下一步重试越过预算。
@@ -540,11 +535,9 @@ function wireSubagentEvents(ctx, configs, warnOnce, on) {
         if (child === undefined) return
         const frame = invocation ?? ruleFrame('subagent/start', [info], warnOnce)
         frame.subject.agent = child
-        const subagentText = subagentTextOf(info)
         for (const config of startConfigs) {
           if (!actionMatches(config, frame)) continue
           if (!matchesAgentScope(config, child)) continue
-          if (!conditionHit(config, { subagentText })) continue
           if (typeof child.inject !== 'function') continue
           const text = layerText(config, child, warnOnce)
           if (text.length === 0) continue
@@ -562,7 +555,6 @@ function wireSubagentEvents(ctx, configs, warnOnce, on) {
         const recorded = runs.get(info?.runId)
         runs.delete(info?.runId)
         if (recorded !== undefined && recorded.id !== info?.id) return
-        const subagentText = subagentTextOf(info)
         const frame = invocation ?? ruleFrame('subagent/end', [info], warnOnce)
         frame.subject.agent = child ?? recorded?.agent
         frame.subject.session = child?.session ?? recorded?.session ?? getService(ctx, 'sessions')?.get?.(info?.id)
@@ -570,7 +562,6 @@ function wireSubagentEvents(ctx, configs, warnOnce, on) {
         for (const config of endConfigs) {
           if (!actionMatches(config, frame)) continue
           if (!matchesModel(config.modelScope, child?.options?.model ?? recorded?.model)) continue
-          if (!conditionHit(config, { subagentText })) continue
           if (config.params?.action !== 'inject-main') {
             // 模板本意是逐次记录；命中本身已由 recordRuleOutcome 记 hit，这里不占告警名额。
             ctx.logger?.info?.(`${name}: subagent-end ${config.id} matched (observe only)`)

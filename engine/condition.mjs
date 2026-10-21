@@ -1,18 +1,21 @@
 /**
- * condition — 声明式条件判定的共享实现（pre-step 与其余注入层共用）。
+ * condition — live 规则条件的文本事实提取（if.text.subject / if.anchor.subject）。
  *
- * 匹配语义来自 anchor-match.mjs：键集合由 schema.mjs 在挂载期归一化并预编译为
- * `config.matchScan`（非法 logic / 空键集合 / 非法正则在挂载期 fail loud）。
- * 本模块只负责「按 subject 取文本」与「是否命中」两件事。
- *
- * 语义约定：
- *   - 未声明 match 的配置是**无条件**的（与引入条件判定前逐字一致）；
- *   - 取不到匹配文本（字段缺失、类型不符、序列化失败）一律按空串处理，即不命中；
- *   - 判定异常不抛出：门配错不应该阻断正常链路。
+ * 声明式 `config.subject` / `config.match` 执行链已退役；这里只保留：
+ *   - subject → 载荷文本字段的映射（conditions/subject 与 availability 共用）；
+ *   - 真实对话消息判据与 pre-step / turn-stop / 子代理事件的文本提取。
+ * 条件判定本身归 conditions/*；本模块不做命中判断、不预编译匹配器。
  */
 
 import { currentEvents } from './history.mjs'
 import { extractText } from './shared.mjs'
+
+/** 按 subject 取参与匹配的文本；live 条件 conditions/text 消费。 */
+export function subjectTextOf(subject, payload) {
+  if (payload === undefined || payload === null) return ''
+  const field = SUBJECT_FIELDS[subject]
+  return field !== undefined && typeof payload[field] === 'string' ? payload[field] : ''
+}
 
 /** subject → 载荷字段名。改这里等于改所有层的匹配对象。 */
 export const SUBJECT_FIELDS = {
@@ -21,28 +24,6 @@ export const SUBJECT_FIELDS = {
   userMessage: 'userText',
   assistantText: 'assistantText',
   subagentInfo: 'subagentText',
-}
-
-/** 按 subject 取参与匹配的文本；取不到一律空串（不命中，不抛错）。 */
-export function subjectTextOf(subject, payload) {
-  if (payload === undefined || payload === null) return ''
-  const field = SUBJECT_FIELDS[subject]
-  return field !== undefined && typeof payload[field] === 'string' ? payload[field] : ''
-}
-
-/**
- * 条件判定：未声明 match 恒真。
- * 消费 schema 预编译的 `config.matchScan`；外部手工构造的 config 没有该函数时按无条件处理。
- */
-export function conditionHit(config, payload) {
-  if (config?.match === undefined) return true
-  const scan = config.matchScan
-  if (typeof scan !== 'function') return true
-  try {
-    return scan(subjectTextOf(config.subject, payload)).active === true
-  } catch {
-    return true
-  }
 }
 
 /** 工具参数的可匹配文本：对象按 JSON 序列化，字符串原样；序列化失败按空串。 */

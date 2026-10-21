@@ -28,37 +28,12 @@ export type CardOrigin =
   | { kind: 'module'; moduleId: string }
   | { kind: 'instruction-file'; fileId: string; contextId: string | null }
 
-/**
- * 条件判定的组合逻辑取值域：与 engine/anchor-match.mjs 的 MATCH_LOGIC 同域。
- * 下拉的取值与展示顺序表在 prompt-config-policy.ts 的 MATCH_LOGICS（同一取值域）；
- * 与引擎的逐值一致性由 test/engine/predicates.test.mjs 的行为断言覆盖（它 import MATCH_LOGIC）。
- */
-export type MatchLogic = 'any' | 'all' | 'not' | 'notAny'
-
-/**
- * 条件判定的匹配段（与引擎 match 同构，字段全部可选）：
- * 键默认按字面文本匹配（正则元字符自动转义），`/pattern/flags` 形态或 `useRegex` 才走正则；
- * 引擎要求主键与副键至少有一个非空，`logic` 缺省 any。
- */
-export interface PromptConfigMatch {
-  keys: string[]
-  secondaryKeys?: string[]
-  logic?: MatchLogic
-  caseSensitive?: boolean
-  wholeWords?: boolean
-  useRegex?: boolean
-}
-
 /** 客户端侧的提示词配置草稿：与宿主 PromptConfigSpec 同构，字段全部宽松。 */
 export interface PromptConfigDraft extends PromptConfigSourceView {
   id: string
   name?: string
   enabled?: boolean
   layer?: string
-  /** 条件判定的匹配对象（缺省由层决定）；仅条件层可写，其余层声明即引擎报错。 */
-  subject?: string
-  /** 条件判定的匹配段；缺省 = 无条件命中。仅条件层可写。 */
-  match?: PromptConfigMatch
   strategy?: string
   position?: string
   dedupe?: string
@@ -104,14 +79,14 @@ export interface PromptConfigTemplateEntry {
 }
 
 /**
- * 层字段能力矩阵（11 项）的**唯一常量表**：{@link LayerFieldPolicy} 与
+ * 层字段能力矩阵（9 项）的**唯一常量表**：{@link LayerFieldPolicy} 与
  * prompt-config-policy.ts 的 EMPTY_POLICY 都从本表派生，两处不再各自数一遍字段。
  * 取值与 engine/schema.mjs 每层 `fields` 的键集一致（对拍守卫见 test/shared/bridge-contract.test.mjs
  * 的「客户端层字段矩阵与 /meta 下发的逐层字段键集一致」）。
  */
 export const LAYER_FIELD_POLICY_KEYS = [
   'position', 'dedupe', 'promotion', 'audience', 'modelScope', 'merge',
-  'order', 'role', 'placeholder', 'subject', 'match',
+  'order', 'role', 'placeholder',
 ] as const
 export type LayerFieldPolicyKey = (typeof LAYER_FIELD_POLICY_KEYS)[number]
 
@@ -144,10 +119,8 @@ export interface EngineMeta extends EngineMetaLayerContract {
   roles: string[]
   mergeModes: string[]
   fills: string[]
-  /** 条件判定的匹配对象清单。 */
+  /** live 规则条件的匹配对象清单（if.text.subject / if.anchor.subject）。 */
   subjects: string[]
-  /** 层 → 缺省匹配对象映射（「层缺省」选项的说明文本）。 */
-  layerDefaultSubjects: Record<string, string>
   layerFieldPolicies: Record<string, LayerFieldPolicy>
   layerLabels: Record<string, { title: string; detail: string }>
 }

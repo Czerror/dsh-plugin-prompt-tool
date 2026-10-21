@@ -706,7 +706,7 @@ test('契约：失败载荷统一为 { ok: false, code?, message? }', async () =
 // 常量（engine 是 .mjs、shared 无单一来源、没有生成器），漏一个字段不会 typecheck 报错。
 // 断言停在两端的公共接口上：一端是 /meta 载荷，一端是客户端模块导出。
 
-test('契约：客户端层字段矩阵与 /meta 下发的逐层字段键集一致（9 层 × 11 字段）', async () => {
+test('契约：客户端层字段矩阵与 /meta 下发的逐层字段键集一致（9 层 × 9 字段）', async () => {
   const { LAYER_FIELD_POLICY_KEYS } = await import('../../src/client/prompt-tool-types.ts')
   const handlers = register()
   const res = fakeRes()

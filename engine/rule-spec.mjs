@@ -209,7 +209,7 @@ function normalizeActionGates(action, execution) {
       if (target[field] !== undefined) throw new TypeError(`action ${action.id}: config.${field} 属于规则层，移到 rule.${field}`)
     }
   }
-  const fields = inject ? ['audience', 'modelScope', 'promotion', 'subject', 'match'] : ['audience', 'modelScope']
+  const fields = inject ? ['audience', 'modelScope', 'promotion'] : ['audience', 'modelScope']
   for (const field of fields) {
     const value = target[field]
     if (inject && field === 'audience' && target.layer === 'system-section' && execution.lifecycle === 'registration' && ['main', 'subagent'].includes(value)) continue
@@ -288,8 +288,9 @@ export function compileRules(specs, options = {}) {
         action.config = injectionConfigSpec(spec, action, options)
       }
       const execution = ruleActionExecution(action)
-      // 未知键检查必须在 normalizeActionGates **之后**：中性旧门由它删除、非中性旧门由它报
-      // 「move it to rule.if」，那些键因此既不会落在未知键名单里，也不会被静默丢弃。
+      // 未知键检查必须在 normalizeActionGates **之后**：中性旧 audience/modelScope/promotion
+      // 由它删除、非中性旧门由它报「move it to rule.if」，那些键因此既不会落在未知键名单里，
+      // 也不会被静默丢弃。声明式 config.subject/match 已删除，不再进入这张旧门名单。
       normalizeActionGates(action, execution)
       validateConfig(`rule ${spec.id}: action ${action.id}`, action, ACTION_FIELDS[action.kind])
       if (action.kind === 'request-params') {

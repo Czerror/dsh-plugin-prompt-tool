@@ -25,7 +25,6 @@ import {
 // 去重判据读**当前模型可见上下文**（视图①），不读完整历史：被压缩遮蔽的注入要重新注入。
 import { eventMessage, moduleIdOf, moduleOf, pluginIdentityOf, identityOf, identityStampOf, identityHit, injectedMessage, actionStamp, findActionDelivery } from './delivery.mjs'
 import { interpolateVariables } from './interpolate.mjs'
-import { conditionHit, userMessagesText } from './condition.mjs'
 import { createEpochPromotion } from './compaction-epoch.mjs'
 import { wireLayers } from './layers.mjs'
 import { renderTemplate } from './template-frame.mjs'
@@ -223,12 +222,10 @@ function batchScope(options, frame) {
   const session = agent?.session
   if (decision === null || typeof decision !== 'object' || decision.kind === 'reject'
     || agent === undefined || session === undefined) return undefined
-  // 条件判定的匹配对象在本批进入时取定：批次内后续注入不改变本批的判定依据。
   const messages = Array.isArray(decision.messages) ? [...decision.messages] : []
-  const userText = userMessagesText(messages)
   const { main, withSubagents } = promotion
   const delegated = isDelegated(session)
-  // 本批资格判定（唯一实现）：层通道、受众、模型、晋升与声明式条件。
+  // 本批资格判定（唯一实现）：层通道、受众、模型、晋升与 live 规则条件。
   // 条件判定放在去重之前：未命中的配置不算「已注入」，条件恢复后仍应能注入。
   // ST 模板的跨配置变量帧按 order 预求值，但只有这里的获准集合才允许产生副作用
   // （未命中的 setter 提前 setvar 会污染同批 reader）——渲染器不再复制判定。
@@ -238,7 +235,6 @@ function batchScope(options, frame) {
     && matchesModel(config.modelScope, agent.options?.model)
     && (config.promotion !== 'main' || main.status(agent).promoted)
     && (config.promotion !== 'include-subagents' || withSubagents.status(agent).promoted)
-    && conditionHit(config, { userText })
     && actionMatches(config, frame))
   return {
     qualified: new Set(qualified),

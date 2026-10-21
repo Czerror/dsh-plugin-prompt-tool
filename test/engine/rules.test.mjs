@@ -72,21 +72,21 @@ test('统一规则：同执行点共享一次条件，动作按 do 顺序，跨�
 test('统一规则：通用条件只允许规则 when，中性旧字段不再参与动作判定', async () => {
   assert.throws(() => compileRules([{ id: 'disabled-action', then: [textAction('text', 'BODY', { enabled: false })] }]), /rule.enabled/, '内层停用不得被运行时静默重启')
   const when = { scope: { audience: 'subagent' } }
-  for (const [key, value] of [['audience', 'main'], ['audience', 'subagent'], ['modelScope', 'pro'], ['modelScope', 'flash'], ['promotion', 'main'], ['promotion', 'include-subagents'], ['subject', 'userMessage'], ['match', { keys: ['USER'] }], ['match', {}]]) {
+  for (const [key, value] of [['audience', 'main'], ['audience', 'subagent'], ['modelScope', 'pro'], ['modelScope', 'flash'], ['promotion', 'main'], ['promotion', 'include-subagents']]) {
     for (const enabled of [true, false]) assert.throws(() => compileRules([{ id: 'legacy-inject', enabled, if: when, then: [textAction('text', 'BODY', { [key]: value })] }]), /rule\.if/)
   }
   for (const [key, value] of [['audience', 'main'], ['audience', 'subagent'], ['modelScope', 'pro'], ['modelScope', 'flash']]) {
     assert.throws(() => compileRules([{ id: 'legacy-request', if: when, then: [{ id: 'request', kind: 'request-params', patch: { maxTokens: 64 }, [key]: value }] }]), /rule\.if/)
   }
   const source = [{ id: 'canonical', if: when, then: [
-    textAction('text', 'BODY', { audience: null, modelScope: 'all', promotion: 'none', subject: '', match: null }),
+    textAction('text', 'BODY', { audience: null, modelScope: 'all', promotion: 'none' }),
     { id: 'budget', kind: 'request-params', audience: '', modelScope: 'all', patch: { maxTokens: 64 } },
     { id: 'sampling', kind: 'request-params', patch: { temperature: 0.5 } },
   ] }]
   const original = structuredClone(source)
   const rules = compileRules(source)
   assert.deepEqual(source, original, '只规范编译副本，不隐式重写源定义')
-  for (const field of ['audience', 'modelScope', 'promotion', 'subject', 'match']) assert.equal(Object.hasOwn(rules[0].actions[0].config, field), false)
+  for (const field of ['audience', 'modelScope', 'promotion']) assert.equal(Object.hasOwn(rules[0].actions[0].config, field), false)
   for (const field of ['audience', 'modelScope']) assert.equal(Object.hasOwn(rules[0].actions[1], field), false)
   const predicate = rules[0].when
   let reads = 0
@@ -114,7 +114,7 @@ test('统一规则：通用条件只允许规则 when，中性旧字段不再参
   }
   for (const { example } of getRuleEditorMeta().actions) {
     const target = example.kind === 'inject-text' ? example.config : example.kind === 'request-params' ? example : undefined
-    if (target !== undefined) for (const field of ['audience', 'modelScope', 'promotion', 'subject', 'match']) assert.equal(Object.hasOwn(target, field), false)
+    if (target !== undefined) for (const field of ['audience', 'modelScope', 'promotion']) assert.equal(Object.hasOwn(target, field), false)
   }
 })
 
@@ -465,7 +465,7 @@ test('T15：dedupe=session 从已投递历史恢复，后续请求仍保持去�
   dispose()
 })
 
-test('T15：turn-stop 未声明 match 时不重复读事件快照', async () => {
+test('T15：turn-stop 不重复读事件快照', async () => {
   const steered = []
   let scans = 0
   const h = harness()
@@ -476,7 +476,7 @@ test('T15：turn-stop 未声明 match 时不重复读事件快照', async () => 
   ]) }])
   await h.emit('agent/turn-stopping', { agent, turn: 1 })
   assert.deepEqual(steered, ['GO'], '主路径：命中即续跑一次')
-  // 唯一一次读是本帧的 assistantText；无 match 时 conditionHit 恒真，不再先读一次快照。
+  // 唯一一次读是本帧的 assistantText；声明式 match 已退役，不再为它多读一次快照。
   assert.equal(scans, 1)
   dispose()
 })

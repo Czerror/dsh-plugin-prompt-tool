@@ -68,7 +68,6 @@ export const EMPTY_META: EngineMeta = {
   injectionLayers: [],
   ...emptyLists(META_LIST_KEYS),
   editorGroups: [],
-  layerDefaultSubjects: {},
   layerContracts: {} as EngineMeta['layerContracts'],
   layerFieldPolicies: {},
   layerLabels: {},

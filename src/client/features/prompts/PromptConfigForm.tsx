@@ -7,7 +7,7 @@ import { TextInput } from '../../ui/TextInput.tsx'
 import { HintTooltip } from '../../ui/HintTooltip.tsx'
 import type { PromptToolLocaleKey, PromptToolTranslate } from '../../locales.ts'
 import type { EngineMeta, PromptConfigDraft } from '../../prompt-tool-types.ts'
-import { MatchFields, NumberField, OptionField, StrategyParamsFields } from './PromptConfigFields.tsx'
+import { NumberField, OptionField, StrategyParamsFields } from './PromptConfigFields.tsx'
 import { autoResizeTextarea } from './textarea-resize.ts'
 import { PromptConfigNavigation } from '../../ui/PromptConfigNavigation.tsx'
 import { instructionFileIdOf } from '../../data/prompt-config-content.ts'
@@ -30,7 +30,6 @@ import {
   SOURCE_KIND_LABEL_KEYS,
   SOURCE_KINDS,
   STRATEGY_LABEL_KEYS,
-  SUBJECT_LABEL_KEYS,
   fieldPolicyFor,
   layerChangePatch,
   layerContractFor,
@@ -120,10 +119,6 @@ export function PromptConfigForm(props: {
       : contentKind === 'subagent-result' ? 'form.text.mainSession' : 'form.text.label'
   const showMetadata = !locked && contract?.messageMetadata !== false
   const strategies = contract?.strategies ?? meta.strategies
-  // 条件判定（subject / match）只在引擎字段矩阵允许的层可编辑；指令文件卡的绑定不可改，
-  // 且独立指令策略不承载这两项，故整块隐藏，避免做出被 onPatch 静默丢弃的假入口。
-  const conditional = !locked && (policy.subject || policy.match)
-  const defaultSubject = meta.layerDefaultSubjects?.[config.layer ?? 'pre-step']
   const strategy = config.strategy ?? 'static'
   const placeholder = strategy === 'placeholder' && policy.placeholder
   const fillOptions = ['', ...meta.fills]
@@ -145,19 +140,11 @@ export function PromptConfigForm(props: {
         {!locked && <p className={styles.configFieldHint}>{t('form.layerSettings.hint', { layer: translateLabel(t, LAYER_LABEL_KEYS, config.layer ?? 'pre-step') })}</p>}
         {props.renderLayerSettings?.(config.layer ?? 'pre-step', config)}
       </>}>
-      {!locked && (conditional || policy.promotion || policy.audience || policy.modelScope) && <section className={styles.configSection} data-config-panel="conditions" aria-label={t('form.navigation.conditions')}>
+      {!locked && (policy.promotion || policy.audience || policy.modelScope) && <section className={styles.configSection} data-config-panel="conditions" aria-label={t('form.navigation.conditions')}>
         <div className={styles.configGrid}>
           {policy.promotion && <OptionField t={t} className={styles.fieldSpan6} label={t('form.promotion.label')} hint={t('form.promotion.hint')} value={config.promotion} options={meta.promotions} fallback="none" labelKeys={PROMOTION_LABEL_KEYS} disabled={disabled} onChange={(value) => onPatch({ promotion: value })} />}
           {policy.audience && <OptionField t={t} className={styles.fieldSpan6} label={t('form.audience.label')} hint={t('form.audience.hint')} value={config.audience ?? undefined} options={['', ...meta.audienceModes]} fallback="" labelKeys={AUDIENCE_LABEL_KEYS} disabled={disabled} onChange={(value) => onPatch(value === '' ? { audience: null } : { audience: value })} />}
           {policy.modelScope && <OptionField t={t} className={styles.fieldSpan6} label={t('form.modelScope.label')} hint={t('form.modelScope.hint')} value={config.modelScope} options={meta.modelScopes} fallback="all" labelKeys={MODEL_SCOPE_LABEL_KEYS} disabled={disabled} onChange={(value) => onPatch({ modelScope: value })} />}
-          {conditional && <>
-            <p className={clsx(styles.configFieldLabel, styles.fieldFull)}>{t('form.match.group')}</p>
-            <OptionField t={t} className={styles.fieldSpan6} label={t('form.subject.label')} hint={t('form.subject.hint')}
-              value={config.subject} options={['', ...(contract?.subjects ?? meta.subjects ?? [])]} fallback="" labelKeys={SUBJECT_LABEL_KEYS} disabled={disabled}
-              onChange={(value) => onPatch({ subject: value === '' ? undefined : value })} />
-            {config.subject === undefined && defaultSubject !== undefined && <p className={clsx(styles.configFieldHint, styles.fieldFull)}>{t('form.subject.defaultHint', { value: translateLabel(t, SUBJECT_LABEL_KEYS, defaultSubject) })}</p>}
-            <MatchFields t={t} value={config.match} disabled={disabled} onChange={(value) => onPatch({ match: value })} />
-          </>}
         </div>
       </section>}
       {!locked && <section className={styles.configSection} data-config-panel="execution" aria-label={t('form.navigation.execution')}>

@@ -269,53 +269,6 @@ test('tool-gate / tool-result 承担工具链：pre 定向裁决、post 定向�
   assert.deepEqual(await post(other, { isError: false, content: [] }, async () => ({ kind: 'accept' })), { kind: 'accept' })
 })
 
-test('turn-stop：命中条件时强制续跑一次，同一轮不越过每轮上限', async () => {
-  const steered = []
-  const { listeners } = makeWiredHarness([{
-    id: 'keep-going', layer: 'turn-stop', strategy: 'static', text: '继续本轮',
-    match: { keys: ['还没做完'] },
-  }])
-  const listener = listeners.get('agent/turn-stopping')
-  assert.ok(listener)
-  const agentStub = {
-    session: {
-      id: 'session-turn-stop',
-      header: { delegationDepth: 0 },
-      snapshotEvents: () => [{ type: 'assistant/message', data: { message: { content: [{ type: 'text', text: '还没做完' }] } } }],
-    },
-    options: { model: 'deepseek-v4-pro-8013' },
-    steer(message) { steered.push(message) },
-  }
-  await listener({ agent: agentStub, turn: 1 })
-  assert.equal(steered.length, 1)
-  assert.equal(steered[0].role, 'user')
-  assert.equal(steered[0].content[0].text, '继续本轮')
-
-  await listener({ agent: agentStub, turn: 1 })
-  assert.equal(steered.length, 1, '同一轮第二次不再续跑')
-})
-
-test('subagent-start：命中条件时向子代理注入，未命中零注入', async () => {
-  const injected = []
-  const child = { session: { header: { delegationDepth: 1 } }, options: {}, inject(message) { injected.push(message) } }
-  const { listeners } = makeWiredHarness([{
-    id: 'sub-brief', layer: 'subagent-start', strategy: 'static', text: '先取证再动手',
-    match: { keys: ['child-1'] },
-  }], { agents: { get: () => child } })
-  const listener = listeners.get('subagent/start')
-  assert.ok(listener)
-  listener({ id: 'child-1', runId: 'r1' })
-  assert.equal(injected.length, 1)
-  assert.equal(injected[0].content[0].text, '先取证再动手')
-  // source.kind 必须是**生产者名**：会话格式 v4 把裸 `plugin` 列为退役包装，
-  // 写了它整条 `agent/inbox/spliced` 会被 codec 拒绝，子代理启动直接失败（真机踩过）。
-  assert.match(injected[0].source.kind, /^plugin:/, '注入消息的 kind 必须是生产者名而不是裸 plugin')
-  assert.notEqual(injected[0].source.kind, 'plugin')
-
-  listener({ id: 'child-2', runId: 'r2' })
-  assert.equal(injected.length, 1, '未命中条件不注入')
-})
-
 test('inject-text 配置默认来源统一为生产者身份：注入消息的 kind 带 plugin 前缀且不是裸 plugin', async () => {
   // 真机踩过：sourceKind 默认取裸规则 id，注入消息的 kind 因此没有 `plugin:` 前缀，
   // 会话格式 v4 把裸 `plugin` 列为退役包装，整条 `agent/inbox/spliced` 会被 codec 拒绝。
@@ -331,31 +284,6 @@ test('inject-text 配置默认来源统一为生产者身份：注入消息的 k
   assert.ok(injected !== undefined, '条件命中应注入')
   assert.match(injected.source.kind, /^plugin:/, '注入消息必须携带生产者身份前缀')
   assert.notEqual(injected.source.kind, 'plugin', '不得写成已退役的裸 plugin')
-})
-
-test('pre-step 条件判定：用户消息命中才注入，未命中不占用 session 去重', async () => {
-  const harness = makeHarness(createPromptConfigs([{
-    id: 'bug-only', layer: 'pre-step', strategy: 'static', dedupe: 'session', text: '先取证再动手',
-    match: { keys: ['报错'] },
-  }]))
-  const probe = agent({ session: { id: 's-condition', header: { delegationDepth: 0 }, snapshotEvents: () => [] } })
-  // after-user 的插入锚点是 source.kind === 'user' 的消息。
-  const say = (id, text) => [{ id, role: 'user', content: [{ type: 'text', text }], source: { kind: 'user' } }]
-
-  const miss = await harness.step(probe, say('u1', '帮我加个按钮'))
-  assert.equal(miss.messages.length, 1, '未命中时不注入')
-
-  const hit = await harness.step(probe, say('u2', '这东西报错了'))
-  assert.ok(
-    hit.messages.some((message) => JSON.stringify(message).includes('先取证再动手')),
-    '未命中不写入 session 去重，条件恢复后仍能注入',
-  )
-  const unconfirmed = await harness.step(probe, say('u3', '又报错了'))
-  assert.equal(unconfirmed.messages.length, 2, '宿主未确认接纳前不算已投递（候选可能被外层门控剥离）')
-
-  harness.admit(probe, hit)
-  const repeat = await harness.step(probe, say('u4', '还报错'))
-  assert.equal(repeat.messages.length, 1, '宿主接纳后 session 去重照常生效')
 })
 
 test('解析器自带 source 的候选按身份盖章：dedupe=session 下多步只注入一次', async () => {

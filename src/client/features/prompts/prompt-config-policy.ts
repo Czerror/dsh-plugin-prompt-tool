@@ -1,6 +1,6 @@
 import type { PromptToolLocaleKey, PromptToolTranslate } from '../../locales.ts'
 import { INJECTION_POINT_ORDER, engineGroupParamKeys, type InjectionPoint } from '../../../shared/engine-capabilities.ts'
-import { LAYER_FIELD_POLICY_KEYS, type EngineMeta, type LayerFieldPolicy, type LayerFieldPolicyKey, type MatchLogic, type PromptConfigDraft, type PromptConfigMatch } from '../../prompt-tool-types.ts'
+import { LAYER_FIELD_POLICY_KEYS, type EngineMeta, type LayerFieldPolicy, type LayerFieldPolicyKey, type PromptConfigDraft } from '../../prompt-tool-types.ts'
 import type { LayerContract } from '../../../shared/bridge-contract.ts'
 /**
  * sourceKind / form 是少量固定语义值，用下拉选择；**UI 专有，引擎无对应枚举**——
@@ -94,37 +94,13 @@ export const IDENTITY_FIELD_LABEL_KEYS: Record<string, PromptToolLocaleKey> = { 
  * schema 未声明枚举，因此这里同样不引用 /meta。
  */
 export const EMPTY_BEHAVIOR_LABEL_KEYS: Record<string, PromptToolLocaleKey> = { skip: 'emptyBehavior.skip', text: 'emptyBehavior.text' }
-/** 条件判定的匹配对象（''= 层缺省，不写 subject 字段）。 */
+/** live 规则条件的 subject 显示标签（if.text.subject / if.anchor.subject）。 */
 export const SUBJECT_LABEL_KEYS: Record<string, PromptToolLocaleKey> = {
-  '': 'subject.layerDefault',
   toolArgs: 'subject.toolArgs',
   toolResult: 'subject.toolResult',
   userMessage: 'subject.userMessage',
   assistantText: 'subject.assistantText',
   subagentInfo: 'subject.subagentInfo',
-}
-/**
- * 组合逻辑取值（引擎 MATCH_LOGIC 的四个值），顺序即下拉展示顺序；取值域由 {@link MatchLogic} 约束。
- * 不做运行期派生：产品代码不 import engine/*.mjs（无既有先例），
- * 与 engine/anchor-match.mjs 的逐值一致性由 test/engine/predicates.test.mjs 的行为断言覆盖（它 import MATCH_LOGIC）。
- */
-export const MATCH_LOGICS: readonly MatchLogic[] = ['any', 'all', 'not', 'notAny']
-export const MATCH_LOGIC_LABEL_KEYS: Record<MatchLogic, PromptToolLocaleKey> = {
-  any: 'match.any',
-  all: 'match.all',
-  not: 'match.not',
-  notAny: 'match.notAny',
-}
-/**
- * useRegex 是三态而非开关：缺省（自动识别 `/pattern/flags`）、强制正则、强制字面。
- * 做成开关会把用户手写的 `useRegex: false`（强制字面）在编辑后静默变成自动识别。
- * 这三态是 **UI 专有**编辑形态（引擎只收 useRegex 布尔值），无对应引擎枚举。
- */
-export const MATCH_REGEX_MODES = ['auto', 'force', 'literal'] as const
-export const MATCH_REGEX_MODE_LABEL_KEYS: Record<string, PromptToolLocaleKey> = {
-  auto: 'form.match.useRegex.auto',
-  force: 'form.match.useRegex.force',
-  literal: 'form.match.useRegex.literal',
 }
 
 /** 从引擎 /meta 中读取某层的字段能力；未知层回退 pre-step。空策略按键表派生，全 false。 */
@@ -145,51 +121,16 @@ export function layerContractFor(meta: EngineMeta, layer: string | undefined): L
 export function layerChangePatch(meta: EngineMeta, config: PromptConfigDraft, layer: string): Partial<PromptConfigDraft> {
   const policy = fieldPolicyFor(meta, layer)
   const contract = layerContractFor(meta, layer)
-  const patch: Partial<PromptConfigDraft> = { layer, ...clearedConditionPatch(meta, layer) }
+  const patch: Partial<PromptConfigDraft> = { layer }
   for (const field of ['position', 'dedupe', 'promotion', 'audience', 'modelScope', 'role'] as const) {
     if (!policy[field] && config[field] != null) Object.assign(patch, { [field]: undefined })
   }
   if (!policy.merge && config.mergeMode !== undefined) patch.mergeMode = undefined
-  if (config.subject !== undefined && contract !== undefined && !contract.subjects.includes(config.subject)) patch.subject = undefined
   if (contract !== undefined && !contract.strategies.includes(config.strategy ?? 'static')) {
     patch.strategy = 'static'
     patch.fill = undefined
   }
   return patch
-}
-
-/**
- * 切换注入层的补丁：目标层不支持 subject/match 时清空旧值。
- * 引擎对不支持这两个字段的层直接 fail loud（整个模块无法挂载），
- * 所以「切过去顺手清掉」是唯一安全的层切换语义。
- */
-export function clearedConditionPatch(meta: EngineMeta, layer: string): Pick<PromptConfigDraft, 'subject' | 'match'> {
-  const policy = fieldPolicyFor(meta, layer)
-  return {
-    ...(policy.subject ? {} : { subject: undefined }),
-    ...(policy.match ? {} : { match: undefined }),
-  }
-}
-
-/**
- * 归一化 match 草稿：去空白键、丢缺省值（logic=any 与未开启的开关不落盘）。
- * 没有任何有效主/副键时返回 undefined——引擎的 match 要求至少一个非空键，
- * 半成品（只填了逻辑或开关）写进配置会让挂载期直接失败，因此不落盘。
- */
-export function normalizeMatch(match: Partial<PromptConfigMatch> | undefined): PromptConfigMatch | undefined {
-  const keys = (match?.keys ?? []).map((key) => key.trim()).filter((key) => key.length > 0)
-  const secondaryKeys = (match?.secondaryKeys ?? []).map((key) => key.trim()).filter((key) => key.length > 0)
-  if (keys.length === 0 && secondaryKeys.length === 0) return undefined
-  // 非法 logic（手写 yml / 旧数据）回落缺省 any，而不是把非法值继续写回去。
-  const logic = MATCH_LOGICS.find((value) => value === match?.logic)
-  return {
-    keys,
-    ...(secondaryKeys.length > 0 ? { secondaryKeys } : {}),
-    ...(logic !== undefined && logic !== 'any' ? { logic } : {}),
-    ...(match?.caseSensitive === true ? { caseSensitive: true } : {}),
-    ...(match?.wholeWords === true ? { wholeWords: true } : {}),
-    ...(match?.useRegex !== undefined ? { useRegex: match.useRegex === true } : {}),
-  }
 }
 
 /**

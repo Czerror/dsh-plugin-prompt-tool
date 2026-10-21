@@ -51,7 +51,7 @@ test('启动时记录所属主会话，子代理结束后句柄撤销仍可准�
 })
 
 test('默认观察、未命中、空文本、缺少主会话、错误血缘与错误运行身份均不投递', () => {
-  for (const spec of [{ params: {} }, { match: { keys: ['不会命中'] } }, { text: '' }, { modelScope: 'pro' }]) {
+  for (const spec of [{ params: {} }, { text: '' }, { modelScope: 'pro' }]) {
     const h = harness(spec)
     h.end()
     assert.equal(h.injected.length, 0)
