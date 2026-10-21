@@ -40,3 +40,15 @@ test('detectAgentsFiles：projects:false 只留可确认的全局文件', () => 
   const cards = detectAgentsFiles({ cwd: work, home, projects: false })
   assert.deepEqual(cards.map((card) => [card.scope, card.displayPath]), [['global', '~/.dsh/AGENTS.md']])
 })
+
+test('detectAgentsFiles：宿主只认 .git，.hg 不进目录链', () => {
+  const hgRepo = join(work, 'hg-repo')
+  const sub = join(hgRepo, 'pkg')
+  mkdirSync(sub, { recursive: true })
+  mkdirSync(join(hgRepo, '.hg'), { recursive: true })
+  writeFileSync(join(hgRepo, 'AGENTS.md'), 'HG ROOT RULES\n')
+  const home = join(work, 'home-hg')
+  mkdirSync(home, { recursive: true })
+
+  assert.deepEqual(detectAgentsFiles({ cwd: sub, home }), [], '根落在 cwd，祖先的 .hg 不参与')
+})

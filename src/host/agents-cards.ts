@@ -22,8 +22,7 @@ import {
   PROJECT_INSTRUCTION_CANDIDATES,
   USER_GLOBAL_INSTRUCTION_FILE,
   ancestorDirs,
-  instructionDirs,
-  resolveProjectRoot,
+  instructionPlan,
 } from '../../engine/instruction-files.mjs'
 
 /** 宿主的项目根标记；候选清单与目录链来自 engine/instruction-files.mjs，不再本地抄一份。 */
@@ -74,7 +73,7 @@ function within(rootDir: string, target: string): boolean {
 
 /** 官方展示路径 → 既有卡片身份；只解析路径，不读取正文，也不构成写入授权。 */
 export function instructionFileIdFromDisplayPath(displayPath: string, projectRoot?: string, home: string = dshHome()): string | undefined {
-  const global = displayPath === '~/.dsh/AGENTS.md' || displayPath === '$DSH_HOME/AGENTS.md'
+  const global = displayPath === '~/.dsh/' + USER_GLOBAL_INSTRUCTION_FILE || displayPath === '$DSH_HOME/' + USER_GLOBAL_INSTRUCTION_FILE
   if (!global && (projectRoot === undefined || isAbsolute(displayPath) || displayPath.includes('\0'))) return undefined
   const root = global ? resolve(home) : resolve(projectRoot!)
   const path = global ? join(root, USER_GLOBAL_INSTRUCTION_FILE) : resolve(root, displayPath)
@@ -102,9 +101,10 @@ function displayPathOf(path: string, home: string, projectRoot: string): string 
 export function detectAgentsFiles(options: { cwd?: string; home?: string; projects?: boolean } = {}): AgentsFileCard[] {
   const home = resolve(options.home ?? dshHome())
   const cwd = resolve(options.cwd ?? process.cwd())
-  // 宿主只认自己的 marker 集合；选根与目录链由引擎探测库的纯函数给出。
+  // 宿主只认自己的 marker 集合；选根与目录链由引擎探测判据一次给出。
   const markerDirs = new Set(ancestorDirs(cwd).filter((dir) => PROJECT_ROOT_MARKERS.some((marker) => existsSync(join(dir, marker)))))
-  const root = resolveProjectRoot(cwd, markerDirs)
+  const plan = instructionPlan(cwd, markerDirs)
+  const root = plan.root
   const realHome = realPathOf(home)
   const realRoot = realPathOf(root)
   const found: AgentsFileCard[] = []
@@ -140,7 +140,7 @@ export function detectAgentsFiles(options: { cwd?: string; home?: string; projec
   // projects: false = 项目范围不可用（无可解析本地会话）：只保留可确认的全局文件，
   // 不拿部署进程 cwd 冒充当前工作区。
   if (options.projects === false) return found
-  for (const dir of instructionDirs(cwd, root)) {
+  for (const dir of plan.dirs) {
     for (const candidate of PROJECT_INSTRUCTION_CANDIDATES) push(join(dir, candidate), 'project')
   }
   return found

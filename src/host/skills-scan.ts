@@ -8,6 +8,7 @@ import { SKILL_MARKER, SKILL_SOURCES, type SkillCatalogEntry, type SkillSourceKi
 import { SKILL_NAME_PATTERN } from './skills-config.ts'
 import { readSkillInvocation } from './skills-policy.ts'
 import { assertUnlinkedPath } from './skills-actions.ts'
+import { ancestorDirs, instructionPlan } from '../../engine/instruction-files.mjs'
 
 export interface ScanRoot { kind: SkillSourceKind; path: string }
 
@@ -39,15 +40,11 @@ export function resolveBundledSkillsDir(): string | undefined {
   return configured === undefined || configured.length === 0 ? undefined : resolve(configured)
 }
 
+/** 技能扫描的项目根：只认 .git，与宿主指令文件探测同一份判据；无标记回落 cwd。 */
 export function resolveProjectRoot(cwd: string): string {
   const start = resolve(cwd)
-  let current = start
-  for (;;) {
-    if (existsSync(join(current, '.git'))) return current
-    const parent = dirname(current)
-    if (parent === current) return start
-    current = parent
-  }
+  const markerDirs = new Set(ancestorDirs(start).filter((dir) => existsSync(join(dir, '.git'))))
+  return instructionPlan(start, markerDirs).root
 }
 
 export function skillRoots(options: { cwd?: string; dshHome: string; folders: readonly string[] }): ScanRoot[] {

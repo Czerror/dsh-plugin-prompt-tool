@@ -1,9 +1,9 @@
 /**
- * instruction-files — 指令文件探测的唯一判据。
+ * instruction-files — 指令文件探测的判据库。
  *
- * 纯库，不挂载为行：计划函数不读盘，读盘由消费者各自完成——引擎走官方 fs 服务的
- * 异步 adapter，宿主用 node:fs 同步 + 信任根校验。库随 engine/ 一起复制，行
- * instruction-hint 与本模块共享候选清单与目录链。
+ * 探测判据（候选清单、项目根、目录链）是纯函数；读盘由两个消费者各自完成——
+ * 引擎用本文件提供的异步执行器（collectInstructionFiles），宿主用 node:fs 同步 +
+ * 信任根校验。库随 engine/ 一起复制；行 instruction-hint 只消费这里的执行器。
  */
 import { dirname, join } from 'node:path'
 import { machinePaths } from './machine-paths.mjs'
@@ -26,21 +26,31 @@ export function ancestorDirs(cwd) {
 }
 
 /** 最近的含 marker 祖先；没有 marker 或 marker 不在祖先链上时回落 cwd。 */
-export function resolveProjectRoot(cwd, markerDirs) {
+function resolveProjectRoot(cwd, markerDirs) {
   for (const dir of ancestorDirs(cwd)) if (markerDirs.has(dir)) return dir
   return cwd
 }
 
 /** 项目根到 cwd 的目录链（广到窄）；root 不是 cwd 的祖先时只回落 cwd，不猜。 */
-export function instructionDirs(cwd, root) {
+function instructionDirs(cwd, root) {
   const dirs = ancestorDirs(cwd)
   const index = dirs.indexOf(root)
   if (index < 0) return [cwd]
   return dirs.slice(0, index + 1).reverse()
 }
 
+/**
+ * 一次给出项目根与目录链（广到窄）：调用方只需一次调用，不再自己排三步。
+ * markerDirs 的字符串必须取自 ancestorDirs（同一套规范化，UNC 共享名根带尾分隔符）。
+ * root 不是 cwd 的祖先时 dirs 只含 cwd，不猜。
+ */
+export function instructionPlan(cwd, markerDirs) {
+  const root = resolveProjectRoot(cwd, markerDirs)
+  return { root, dirs: instructionDirs(cwd, root) }
+}
+
 /** 列出某目录里的候选文件（按候选顺序）；探测失败逐条跳过，不阻断会话。 */
-export async function presentInDir(fs, dir, candidates, signal) {
+async function presentInDir(fs, dir, candidates, signal) {
   const found = []
   for (const candidate of candidates) {
     try {
@@ -70,12 +80,12 @@ export async function collectInstructionFiles(fs, cwd, signal, home) {
       }
     }
   }
-  const root = resolveProjectRoot(cwd, markerDirs)
+  const plan = instructionPlan(cwd, markerDirs)
   const projectFiles = []
   // 注入顺序要求近者优先：cwd 先于项目根；根目录下的文件用裸候选名。
-  for (const dir of instructionDirs(cwd, root).reverse()) {
+  for (const dir of [...plan.dirs].reverse()) {
     for (const candidate of await presentInDir(fs, dir, PROJECT_INSTRUCTION_CANDIDATES, signal)) {
-      projectFiles.push(dir === root ? candidate : join(dir, candidate))
+      projectFiles.push(dir === plan.root ? candidate : join(dir, candidate))
     }
   }
   const userGlobalFiles = []
@@ -84,5 +94,5 @@ export async function collectInstructionFiles(fs, cwd, signal, home) {
   if (dshHome !== undefined) {
     userGlobalFiles.push(...await presentInDir(fs, dshHome, [USER_GLOBAL_INSTRUCTION_FILE], signal))
   }
-  return { root, projectFiles, userGlobalFiles, userGlobalHome: dshHome }
+  return { root: plan.root, projectFiles, userGlobalFiles, userGlobalHome: dshHome }
 }

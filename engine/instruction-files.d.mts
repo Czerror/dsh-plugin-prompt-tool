@@ -2,5 +2,4 @@
 export declare const PROJECT_INSTRUCTION_CANDIDATES: readonly string[]
 export declare const USER_GLOBAL_INSTRUCTION_FILE: string
 export declare function ancestorDirs(cwd: string): string[]
-export declare function resolveProjectRoot(cwd: string, markerDirs: ReadonlySet<string>): string
-export declare function instructionDirs(cwd: string, root: string): string[]
+export declare function instructionPlan(cwd: string, markerDirs: ReadonlySet<string>): { root: string; dirs: string[] }
