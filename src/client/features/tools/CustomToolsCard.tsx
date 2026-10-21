@@ -4,52 +4,15 @@ import { Button } from '../../ui/Button.tsx'
 import { bridgeCall } from '../../data/bridge-client.ts'
 import type { PromptToolTranslate } from '../../locales.ts'
 import type { ToolsEditorDraft, WorkspaceDrafts } from '../../data/workspace-drafts.ts'
-import { createToolsEditor } from '../../data/tools-editor.ts'
-import { CustomToolCard, asRecord, type ToolDraft } from './CustomToolEditor.tsx'
+import { createToolsEditor, createToolsEditorDraft, readCustomTools } from '../../data/tools-editor.ts'
+import { CustomToolCard, type ToolDraft } from './CustomToolEditor.tsx'
 import sharedCss from '../../ui/controls.module.css'
 import featureCss from './tools.module.css'
 
 const styles = { ...sharedCss, ...featureCss }
 
 /** 所属层按钮直接提交的创建请求；草稿由常驻页面立即建立。 */
-export type ToolCreateIntent = { kind: 'blank' | 'template'; spec?: ToolDraft; moduleId?: string }
-
-/** 工具草稿的唯一构造点：按模块的编辑区与「新建工具模板」入口共用同一份草稿。 */
-export const createToolsEditorDraft = (): ToolsEditorDraft => ({
-  tools: [], saved: [], expanded: new Set(), fields: new Map(), loaded: false, error: '', saving: false, latest: 0,
-})
-
-/**
- * 把工具模板插入该模块的工具草稿（主语＝调用方给的模块）。
- * 草稿还没读回时先按同一主语读一次（与卡内同一端点、同一载荷形状）；
- * 读回期间已有插入/编辑时只补基线，不覆盖草稿。
- */
-export async function insertToolTemplateIntoDraft(drafts: WorkspaceDrafts, moduleId: string, spec: Record<string, unknown>): Promise<'inserted' | 'duplicate' | 'failed'> {
-  const editor = drafts.tools.get(moduleId) ?? createToolsEditorDraft()
-  drafts.tools.set(moduleId, editor)
-  if (!editor.loaded) {
-    const readingTools = editor.tools
-    const result = await bridgeCall('customTools', { expectedModuleId: moduleId }, moduleId)
-    if (!result.ok) return 'failed'
-    const loaded = (result.value.customTools ?? []).map((tool) => asRecord(tool))
-    if (editor.tools === readingTools) editor.tools = loaded
-    editor.saved = loaded
-    editor.loaded = true
-    editor.error = ''
-    editor.refresh?.()
-  }
-  if (editor.tools.some((tool) => tool.id === spec.id)) return 'duplicate'
-  editor.tools = [...editor.tools, JSON.parse(JSON.stringify(spec)) as ToolDraft]
-  editor.refresh?.()
-  return 'inserted'
-}
-
-/**
- * 这张卡的读数请求（主语＝该模块）：**声明面明确未声明就不构造这次请求**（返回 `undefined`），
- * 卡片据此转创建模式——服务端读了也是 400 `module-not-declared`。抽成函数是为了让「不发这次读」可被请求计数断言。
- */
-export const readCustomTools = (moduleId: string, undeclared: boolean) =>
-  undeclared ? undefined : bridgeCall('customTools', { expectedModuleId: moduleId }, moduleId)
+export type ToolCreateIntent = { kind: 'blank'; moduleId?: string }
 
 /** 工具草稿与保存由常驻页面持有；设置区只渲染同一份编辑内容。 */
 export function useCustomToolsEditor(props: {
@@ -110,13 +73,18 @@ export function useCustomToolsEditor(props: {
   refreshRef.current = refresh
   useEffect(() => {
     active.current = true
+    // 模板入口由 data owner 写同一份草稿；它只能通过这里回到视图的渲染镜像。
+    editor.refresh = refresh
     refresh()
-    const cleanup = (): void => { active.current = false }
+    const cleanup = (): void => {
+      active.current = false
+      if (editor.refresh === refresh) editor.refresh = undefined
+    }
     // 无主语：不发模块类请求（卡片由 canEditSubject 判定为只读）。
     if (moduleId === undefined) return cleanup
     void owner.load()
     return cleanup
-  }, [owner, refresh, moduleId])
+  }, [editor, owner, refresh, moduleId])
   /** 工具改动只在可编辑时落到草稿；owner 负责草稿与重渲染。 */
   const updateTools = (next: ToolDraft[]): void => { if (!disabled) owner.mutate(next) }
   const save = (): void => {
@@ -148,18 +116,6 @@ export function useCustomToolsEditor(props: {
       return
     }
     const tools = editor.tools
-    if (intent.kind === 'template' && intent.spec !== undefined) {
-      const spec = intent.spec
-      if (tools.some((tool) => tool.id === spec.id)) {
-        props.onNotice('error', t('customTools.duplicateId', { id: String(spec.id) }))
-        return
-      }
-      const clone = JSON.parse(JSON.stringify(spec)) as ToolDraft
-      updateTools([...tools, clone])
-      setExpandedCards(new Set([...editor.expanded, tools.length]))
-      props.onNotice('ok', t('customTools.templateInserted', { id: String(spec.id) }))
-      return
-    }
     let suffix = 1
     while (tools.some((tool) => tool.id === `tool-${suffix}` || (tool.name ?? tool.id) === (suffix === 1 ? 'my_tool' : `my_tool_${suffix}`))) suffix += 1
     updateTools([...tools, {

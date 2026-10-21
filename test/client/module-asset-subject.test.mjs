@@ -29,9 +29,7 @@ const { usePromptToolStore } = await withSsr([
 const { ModulePersonaCard, personaWriteBody, readModulePersona } = await withSsr([
   new URL('../../src/client/features/persona/ModulePersonaCard.tsx', import.meta.url).href,
 ])
-const { readCustomTools } = await withSsr([
-  new URL('../../src/client/features/tools/CustomToolsCard.tsx', import.meta.url).href,
-])
+const { insertToolTemplateIntoDraft, readCustomTools } = await import('../../src/client/data/tools-editor.ts')
 const { saveModuleVariables: saveVariablesRequest } = await import('../../src/client/data/module-variables.ts')
 
 const facts = (editable = true) => ({ declaredModules: [], effectiveModules: [], rowIds: [], sourceMode: 'explicit', editable })
@@ -152,6 +150,19 @@ test('声明面：变量写载荷——没有前状态整键不带 expectedRevis
     { scope: 'module', variables: {}, enabled: true, revisions: { global: null, module: 'M1', settings: 'S1' } },
     { variables: { k: 'v2' }, enabled: true }, request)
   assert.deepEqual(bodies[1].expectedRevisions, { module: 'M1' }, '有前状态仍按既有并发校验')
+})
+
+test('模板插入走 tools owner：草稿未读时只读一次并落草稿', async () => {
+  const fetchStub = withFetch(() => ({ ok: true, value: { customTools: [] } }))
+  try {
+    const drafts = createWorkspaceDrafts()
+    assert.equal(await insertToolTemplateIntoDraft(drafts, 'mod-a', { id: 'tpl', name: 'tpl' }), 'inserted')
+    assert.equal(fetchStub.requests.length, 1, '读守卫只发一次 /customTools')
+    assert.equal(fetchStub.requests[0].headers['x-module-id'], 'mod-a')
+    assert.equal(drafts.tools.get('mod-a')?.tools[0]?.id, 'tpl', '插入落在该模块草稿')
+  } finally {
+    fetchStub.restore()
+  }
 })
 
 test('声明面：通用卡的读——未声明一个请求都不发，声明后各读一次（编辑器在场不受影响）', async () => {

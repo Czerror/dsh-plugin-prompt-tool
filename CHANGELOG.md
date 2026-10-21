@@ -1,5 +1,11 @@
 # Changelog
 
+### 工具草稿读改写归 tools-editor owner（候选 07，2026-10-21）
+
+- **owner 收口**：`createToolsEditorDraft`、`readCustomTools`、`insertToolTemplateIntoDraft` 搬进 `src/client/data/tools-editor.ts`；`CustomToolsCard` 只保留渲染/提示，`useTemplatePicker` 改 import data owner，删一条跨 feature import。
+- **一致错误落点**：`insertTemplate` 读失败写 `draft.error`（`result.message ?? customTools.loadFailed`），视图的 `editor.refresh` 接线让模板入口插入/失败后立即重渲染。
+- **测试**：新增 owner `insertTemplate` 读失败/成功/重复与 SSR 模板插入请求计数；验证 typecheck / lint / test（733）。
+
 ### pre-step 来源携带自己的事实（候选 02，2026-10-21）
 
 - **来源接口**：新增 `engine/pre-step-source.mjs`；`PreStepSource` 携带 sourceId/configs/ruleActions/ctx/onOutcome/promotion，`createPreStepSource` 绑定来源 ctx，`composePreStepSources` 检查唯一 promotion owner 并按 rule 分派对象上报。

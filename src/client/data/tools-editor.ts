@@ -7,10 +7,22 @@
  *
  * 留在卡片里的是渲染：`useState` 镜像、展开态、提示文案与 disabled 判定。
  */
-import type { ToolsEditorDraft, ToolDraft } from './workspace-drafts.ts'
+import type { ToolsEditorDraft, ToolDraft, WorkspaceDrafts } from './workspace-drafts.ts'
 import type { BridgeRequestMap, BridgeValueMap } from '../../shared/bridge-contract.ts'
-import type { BridgeResult } from './bridge-client.ts'
+import { bridgeCall, type BridgeResult } from './bridge-client.ts'
 import { beginLatest, isLatest } from './resource-track.ts'
+
+/** 工具草稿的唯一构造点；视图与模板入口共用。 */
+export const createToolsEditorDraft = (): ToolsEditorDraft => ({
+  tools: [], saved: [], expanded: new Set(), fields: new Map(), loaded: false, error: '', saving: false, latest: 0,
+})
+
+/** 这张卡的读数入口：**声明面明确未声明就不构造这次请求**（返回 undefined），卡片据此转创建模式。 */
+export const readCustomTools = (moduleId: string, undeclared: boolean) =>
+  undeclared ? undefined : bridgeCall('customTools', { expectedModuleId: moduleId }, moduleId)
+
+const asToolDraft = (value: unknown): ToolDraft =>
+  value !== null && typeof value === 'object' && !Array.isArray(value) ? value as ToolDraft : {}
 
 /** 这张卡的读数入口：**声明面明确未声明就不构造这次请求**（返回 `undefined`），卡片据此转创建模式。 */
 export interface ToolsReader {
@@ -50,15 +62,8 @@ const fieldsDiffer = (draft: ToolsEditorDraft): boolean =>
 
 export function createToolsEditor(moduleId: string, draft: ToolsEditorDraft, deps: ToolsEditorDependencies) {
   const isCurrentStep = (sequence: number): boolean => deps.isCurrent() && isLatest(draft, sequence)
-  const load = async (): Promise<boolean> => {
-    if (draft.loaded) return true
-    const request = deps.reader.load()
-    if (request === undefined) {
-      draft.loaded = true
-      draft.error = ''
-      deps.changed()
-      return true
-    }
+  /** 读取落地：load 与 insertTemplate 共用同一读守卫、迟到判定与错误落点。 */
+  const loadFrom = async (request: NonNullable<ReturnType<ToolsEditorDependencies['reader']['load']>>): Promise<boolean> => {
     const sequence = beginLatest(draft)
     const reading = draft.tools
     const result = await request
@@ -76,12 +81,23 @@ export function createToolsEditor(moduleId: string, draft: ToolsEditorDraft, dep
       deps.changed()
       return true
     }
-    draft.tools = (result.value.customTools ?? []).map((tool) => tool as ToolDraft)
+    draft.tools = (result.value.customTools ?? []).map(asToolDraft)
     draft.saved = draft.tools
     draft.loaded = true
     draft.error = ''
     deps.changed()
     return true
+  }
+  const load = async (): Promise<boolean> => {
+    if (draft.loaded) return true
+    const request = deps.reader.load()
+    if (request === undefined) {
+      draft.loaded = true
+      draft.error = ''
+      deps.changed()
+      return true
+    }
+    return loadFrom(request)
   }
   const mutate = (next: ToolDraft[]): void => {
     if (draft.saving) return
@@ -128,16 +144,7 @@ export function createToolsEditor(moduleId: string, draft: ToolsEditorDraft, dep
       const request = deps.reader.load()
       // 声明面未声明（＝创建模式）：这次读构造不出来，与原实现一样判为插入失败。
       if (request === undefined) return 'failed'
-      const sequence = beginLatest(draft)
-      const reading = draft.tools
-      const result = await request
-      if (!isCurrentStep(sequence) || !result.ok) return 'failed'
-      // 读回期间已有插入/编辑时只补基线，不覆盖草稿。
-      if (draft.tools === reading) draft.tools = (result.value.customTools ?? []) as ToolDraft[]
-      draft.saved = (result.value.customTools ?? []) as ToolDraft[]
-      draft.error = ''
-      draft.loaded = true
-      deps.changed()
+      if (!(await loadFrom(request))) return 'failed'
     }
     if (draft.tools.some((tool) => tool.id === spec.id)) return 'duplicate'
     draft.tools = [...draft.tools, JSON.parse(JSON.stringify(spec)) as ToolDraft]
@@ -145,6 +152,28 @@ export function createToolsEditor(moduleId: string, draft: ToolsEditorDraft, dep
     return 'inserted'
   }
   return { load, mutate, applyPatch, save, insertTemplate }
+}
+
+
+
+/**
+ * 模板入口：与卡内读/插入共用同一条 owner 读守卫；草稿未读时先按同一主语读一次，
+ * 失败写 draft.error，成功/重复返回明确的三种结果。视图只负责提示。
+ */
+export async function insertToolTemplateIntoDraft(
+  drafts: WorkspaceDrafts,
+  moduleId: string,
+  spec: Record<string, unknown>,
+): Promise<'inserted' | 'duplicate' | 'failed'> {
+  const draft = drafts.tools.get(moduleId) ?? createToolsEditorDraft()
+  drafts.tools.set(moduleId, draft)
+  const editor = createToolsEditor(moduleId, draft, {
+    reader: { load: () => readCustomTools(moduleId, false) },
+    request: body => bridgeCall('customTools', body, moduleId),
+    isCurrent: () => true,
+    changed: () => draft.refresh?.(),
+  })
+  return editor.insertTemplate(spec)
 }
 
 export type ToolsEditor = ReturnType<typeof createToolsEditor>

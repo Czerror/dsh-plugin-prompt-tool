@@ -7,7 +7,7 @@ import type { RuleDefinition } from '../../../shared/rules.ts'
 import type { DraftsPort, ModuleActionsPort, NoticePort, RuleEditingPort } from '../../data/store-ports.ts'
 import { BLANK_MODULE_TEMPLATE } from '../../data/module-subject.ts'
 import { EngineModuleActions, type ModuleCreateItem } from '../modules/EngineModuleList.tsx'
-import { insertToolTemplateIntoDraft } from '../tools/CustomToolsCard.tsx'
+import { insertToolTemplateIntoDraft } from '../../data/tools-editor.ts'
 import { TemplatePicker, TemplateTargetPicker, type TemplateTargetListEntry } from '../../ui/TemplatePicker.tsx'
 
 /** 自定义工具模板条目：与提示词模板同一次 /templates 返回。 */

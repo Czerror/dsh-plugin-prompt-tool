@@ -105,3 +105,30 @@ test('tools owner：已卸载（isCurrent 为假）时应答不落地', async ()
   assert.deepEqual(draft.tools, [], '卸载后应答不落地')
   assert.equal(draft.loaded, false, '卸载后不改 loaded')
 })
+test('tools owner：insertTemplate 走同一读守卫，失败写 error，重复不插入', async () => {
+  const failingDraft = draftOf('module-a')
+  let changed = 0
+  const failing = createToolsEditor('module-a', failingDraft, {
+    reader: { load: () => Promise.resolve(fail('读失败')) },
+    request: async () => fail('unused'),
+    isCurrent: () => true,
+    changed: () => { changed += 1 },
+  })
+  assert.equal(await failing.insertTemplate({ id: 'tpl' }), 'failed')
+  assert.equal(failingDraft.error, '读失败', '模板入口与卡内 load 共用错误落点')
+  assert.ok(changed > 0, '错误落点触发视图 refresh')
+
+  const draft = draftOf('module-a')
+  let reads = 0
+  const editor = createToolsEditor('module-a', draft, {
+    reader: { load: () => { reads += 1; return Promise.resolve(ok([tool('server')])) } },
+    request: async () => fail('unused'),
+    isCurrent: () => true,
+    changed: () => {},
+  })
+  assert.equal(await editor.insertTemplate({ id: 'tpl' }), 'inserted')
+  assert.deepEqual(draft.tools.map(item => item.id), ['server', 'tpl'])
+  assert.equal(await editor.insertTemplate({ id: 'tpl' }), 'duplicate')
+  assert.equal(reads, 1, '重复插入不再读')
+  assert.deepEqual(draft.tools.map(item => item.id), ['server', 'tpl'])
+})
