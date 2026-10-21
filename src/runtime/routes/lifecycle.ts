@@ -39,7 +39,7 @@ export function registerLifecycle(runtime: LifecycleRuntime): Array<() => void> 
         tx.write(400, { ok: false, code: 'module-delete-rejected', message: result.message })
         return
       }
-      if (!await runtime.refreshModuleList(tx.write, id)) return
+      if (!await runtime.refreshModuleList(tx.write)) return
       tx.write(200, { ok: true, value: { id } })
     } }),
     runtime.register(BRIDGE_ENDPOINTS.moduleClone, { handle: async (tx) => {
@@ -49,12 +49,12 @@ export function registerLifecycle(runtime: LifecycleRuntime): Array<() => void> 
         tx.write(400, { ok: false, code: 'module-clone-rejected', message: '缺少模块 id' })
         return
       }
-      const result = cloneBuiltinModule(id, record.autoSuffix === true)
+      const result = cloneBuiltinModule(id, record.autoSuffix === true, undefined, runtime.deps.warn)
       if (!result.ok) {
         tx.write(400, { ok: false, code: 'module-clone-rejected', message: result.message })
         return
       }
-      if (!await runtime.refreshModuleList(tx.write, result.id)) return
+      if (!await runtime.refreshModuleList(tx.write)) return
       tx.write(200, { ok: true, value: { id: result.id } })
     } }),
     runtime.register(BRIDGE_ENDPOINTS.moduleDuplicate, { handle: async (tx) => {
@@ -64,12 +64,12 @@ export function registerLifecycle(runtime: LifecycleRuntime): Array<() => void> 
         tx.write(400, { ok: false, code: 'module-duplicate-rejected', message: '缺少模块 id' })
         return
       }
-      const result = duplicateUserModule(id)
+      const result = duplicateUserModule(id, undefined, runtime.deps.warn)
       if (!result.ok) {
         tx.write(400, { ok: false, code: 'module-duplicate-rejected', message: result.message })
         return
       }
-      if (!await runtime.refreshModuleList(tx.write, result.id)) return
+      if (!await runtime.refreshModuleList(tx.write)) return
       tx.write(200, { ok: true, value: { id: result.id } })
     } }),
     runtime.register(BRIDGE_ENDPOINTS.moduleOpen, { handle: async (tx) => {

@@ -45,7 +45,6 @@ import { isModuleId } from '../shared/module-ids.ts'
 import { withGlobalSkillFallback, withSkillWinners } from '../host/skills-scan.ts'
 import {
   agentsFileCardSpecs,
-  agentsFileId,
   detectAgentsFiles,
   readAgentsFileSnapshot,
   type AgentsFileCard,
@@ -116,12 +115,14 @@ export interface BridgeDeps {
   moduleInstalled?: (id: string) => void | Promise<void>
   /** 能力/recipe 提交后刷新回调；失败保留已提交定义并明确报告。 */
   capabilityChanged?: (moduleId?: string) => void | Promise<void>
-  /** 新建、复制或删除模块后重建当前模块。 */
-  moduleListChanged?: (id: string) => void | Promise<void>
+  /** 新建、复制或删除模块后重建全部运行实例（目标可能已不存在）。 */
+  moduleListChanged?: () => void | Promise<void>
   /** 技能策略写入后的目录刷新回调。 */
   afterSkillsChange?: () => void
   /** 当前装配实例的规则判定账本；无装配时返回空账。 */
   ruleDiagnostics?: () => RuleDiagnosticsSnapshot
+  /** 非致命清理/重装告警（如安装成功但暂存目录清理失败）。 */
+  warn?: (message: string) => void
 }
 
 export const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -235,19 +236,6 @@ export function localAgentCwd(ctx: Context, sessionId: string): string | undefin
   return typeof cwd === 'string' && cwd.length > 0 ? cwd : undefined
 }
 
-/** 只识别插件保留的生成卡 ID（旧版 8 位 / 当前 16 位）；params.file 不是来源凭据。 */
-const isFileCardSpec = (card: unknown): card is Record<string, unknown> & { params: Record<string, unknown> } => {
-  if (!isRecord(card) || typeof card.id !== 'string' || !/^agents-file-(?:[0-9a-f]{8}|[0-9a-f]{16})$/.test(card.id)) return false
-  const params = card.params
-  return isRecord(params) && typeof params.file === 'string' && params.file.length > 0
-}
-
-/** 生成卡上的文件身份：优先 params.fileId，缺失时按路径派生（与新探测同源）。 */
-const cardFileId = (card: Record<string, unknown> & { params: Record<string, unknown> }): string =>
-  typeof card.params.fileId === 'string' && card.params.fileId.length > 0
-    ? card.params.fileId
-    : agentsFileId(card.params.file as string)
-
 /** 文件卡视图：正文/版本/读取状态来自本次一致读取，策略字段保留生成卡上的值。 */
 function withSnapshot(
   card: Record<string, unknown> & { params: Record<string, unknown> },
@@ -269,33 +257,15 @@ function withSnapshot(
   }
 }
 
-/**
- * 两类卡合并：模块卡原样保留，文件卡换成本次工作区的文件快照。
- * 生成目录里属于其他工作区的文件卡不再展示（写盘白名单也不含它们）；
- * 当前工作区里没有对应生成卡的文件按默认文件卡补齐。
- */
-export function mergeInstructionCards(
-  moduleCards: readonly unknown[],
-  files: readonly InstructionFileSnapshot[],
-): unknown[] {
-  const byId = new Map(files.map((file) => [file.fileId, file]))
-  const kept: unknown[] = []
-  for (const card of moduleCards) {
-    if (!isFileCardSpec(card)) {
-      kept.push(card)
-      continue
-    }
-    const file = byId.get(cardFileId(card))
-    if (file !== undefined) kept.push(withSnapshot(card, file))
-  }
-  const present = new Set(kept.filter(isFileCardSpec).map((card) => cardFileId(card)))
+/** 本次工作区的指令文件卡：正文/版本/读取状态来自同一次一致读取。 */
+export function mergeInstructionCards(files: readonly InstructionFileSnapshot[]): unknown[] {
   const defaults = agentsFileCardSpecs(files)
-  files.forEach((file, index) => {
-    if (present.has(file.fileId)) return
+  return files.flatMap((file, index) => {
     const fallback = defaults[index]
-    if (fallback !== undefined) kept.push(withSnapshot(fallback as unknown as Record<string, unknown> & { params: Record<string, unknown> }, file))
+    return fallback === undefined
+      ? []
+      : [withSnapshot(fallback as unknown as Record<string, unknown> & { params: Record<string, unknown> }, file)]
   })
-  return kept
 }
 
 /** 本次请求的指令文件读取范围（正文真相源：探测到的工作区文件）。 */
@@ -439,7 +409,7 @@ export interface BridgeRuntime {
   /** 写盘已完成：等重建，失败立即返回统一错误。 */
   finishModuleChange(write: BridgeWrite, activate: () => void | Promise<void>): Promise<boolean>
   runOverridesChange(write: BridgeWrite, moduleId?: string): Promise<boolean>
-  refreshModuleList(write: BridgeWrite, id: string): Promise<boolean>
+  refreshModuleList(write: BridgeWrite): Promise<boolean>
   writeModuleOrderError(write: BridgeWrite, error: unknown): void
   loadEngineMeta(): Promise<Record<string, unknown> & EngineMetaLayerContract>
   collectSkills(sessionId?: string): Promise<SkillsCatalogSnapshot>
@@ -496,7 +466,7 @@ export function createBridgeRuntime(options: BridgeRuntimeOptions): BridgeRuntim
     }
   }
   const runOverridesChange = (write: BridgeWrite, moduleId?: string): Promise<boolean> => finishModuleChange(write, () => deps.overridesChanged?.(moduleId))
-  const refreshModuleList = (write: BridgeWrite, id: string): Promise<boolean> => finishModuleChange(write, () => deps.moduleListChanged?.(id))
+  const refreshModuleList = (write: BridgeWrite): Promise<boolean> => finishModuleChange(write, () => deps.moduleListChanged?.())
   const writeModuleOrderError = (write: BridgeWrite, error: unknown): void => {
     const status = error instanceof ModuleConfigOrderError ? error.status : 500
     const code = error instanceof ModuleConfigOrderError ? error.code : 'module-config-order-failed'

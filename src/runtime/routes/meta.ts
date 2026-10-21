@@ -56,7 +56,7 @@ export function registerMeta(runtime: MetaRuntime): Array<() => void> {
           // 软失败：全局层坏掉只让这一段为空，首屏照常（诊断见 meta.moduleWarnings）。
           globalParams: readGlobalLayerSettingsSafe(userModulesDir()).params,
           ...(variables === undefined ? {} : { variables }),
-          promptConfigs: { promptConfigs: mergeInstructionCards([], scope.files) },
+          promptConfigs: { promptConfigs: mergeInstructionCards(scope.files) },
           instructions: { context: scope.context, files: scope.files, owner: instructionOwner() },
           ...extras,
         } satisfies { ok: true; value: unknown } & BridgeBootstrapExtras & BridgeSessionExtras)

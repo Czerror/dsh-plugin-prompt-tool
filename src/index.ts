@@ -54,7 +54,7 @@ function warn(ctx: Context, message: string): void {
 
 export function apply(ctx: Context, configIn: Config): void {
   // 包内目录与输出目录同名；启动只复制缺失项，现有用户定义不被重新铺写。
-  const seededModules = new Set(ensureModuleSeed(modulesDir()).created)
+  const seededModules = new Set(ensureModuleSeed(modulesDir(), message => warn(ctx, message)).created)
   // 内置技能同一纪律：只补缺失项，已有目录不碰；删掉的会被这次启动补回。
   ensureSkillSeed()
   const readConfig = () => ({
@@ -112,6 +112,7 @@ export function apply(ctx: Context, configIn: Config): void {
     moduleListChanged: () => assembly?.refresh(),
     // 账本随装配实例创建/释放；没有实例时回空账，不保留上一实例的计数。
     ruleDiagnostics: () => assembly?.ruleDiagnostics() ?? emptyRuleDiagnostics(),
+    warn: message => warn(ctx, message),
   })
 
   // 装配结束后只读诊断 Web 能力；插件卸载时取消任务，不编辑 profile。

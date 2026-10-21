@@ -116,13 +116,6 @@ export function ModulePersonaCard(props: {
     void loadSources()
     return () => { mounted.current = false; selection.listeners?.delete(refresh) }
   }, [selection, refresh, loadSources])
-  useEffect(() => {
-    mounted.current = true
-    selection.listeners ??= new Set()
-    selection.listeners.add(refresh)
-    void loadSources()
-    return () => { mounted.current = false; selection.listeners?.delete(refresh) }
-  }, [selection, refresh, loadSources])
   const draftOf = (id: string): PersonaEditorDraft => owners.editorOf(id).draft
   useEffect(() => {
     if (!selection.loaded || !moduleId) return

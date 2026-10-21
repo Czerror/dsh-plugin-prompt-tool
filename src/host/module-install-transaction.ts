@@ -13,6 +13,10 @@ import { withModuleLock } from './module-write.ts'
 
 export type ModuleInstallExpectation = string | null
 
+/** 安装成功但暂存目录清理失败时的统一告警文案；调用方决定日志落点。 */
+export const leftoverStageWarning = (path: string): string =>
+  `prompt-tool: 模块已安装，但暂存目录清理失败：${path}`
+
 export type ModuleInstallOutcome =
   | { state: 'installed'; leftoverStage?: string }
   | { state: 'conflict'; actualVersion: string | null }

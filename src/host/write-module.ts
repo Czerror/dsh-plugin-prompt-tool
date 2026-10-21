@@ -15,7 +15,7 @@ import { ensureModuleSlices, loadModuleDefinition, validateModuleDefinitionText 
 import { ModuleWriteError, withModuleLock } from './module-write.ts'
 import { atomicWriteTextFile } from './text-file.ts'
 import { directoryVersionOf } from './preview-revision.ts'
-import { installModuleDirectory } from './module-install-transaction.ts'
+import { installModuleDirectory, leftoverStageWarning } from './module-install-transaction.ts'
 
 export const LEGACY_ARTIFACTS = ['configs', 'rules.yml', 'agent.cordis.yml', 'custom-tools', 'subagent-tools', 'triggers.yml']
 
@@ -149,7 +149,7 @@ export function writeModule(options: WriteModuleOptions): string {
     throw new Error(`模块安装失败且恢复失败；原目录保留在 ${result.backupPath}: ${String(result.cause)}`)
   }
   if (result.leftoverStage !== undefined) {
-    options.warn?.(`prompt-tool: 模块已安装，但暂存目录清理失败：${result.leftoverStage}`)
+    options.warn?.(leftoverStageWarning(result.leftoverStage))
   }
   return target
 }

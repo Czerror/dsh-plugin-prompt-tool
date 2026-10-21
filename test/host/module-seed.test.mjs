@@ -1,14 +1,15 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
+import fs, { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import { syncBuiltinESMExports } from 'node:module'
+import { dirname, join } from 'node:path'
 import { parse as parseYaml } from 'yaml'
 import { isolatedHome, tempDir } from '../fixtures/host-harness.mjs'
 
 // 种子化只发生在预设根内：隔离 DSH_HOME 验证补建、幂等与安全边界（清理与还原由夹具登记）。
 const { home } = isolatedHome('pt-seed-')
 const { storageRootOf } = await import('../../src/host/paths.ts')
-const { cloneBuiltinModule, ensureModuleSeed } = await import('../../src/host/module-catalog.ts')
+const { cloneBuiltinModule, duplicateUserModule, ensureModuleSeed } = await import('../../src/host/module-catalog.ts')
 const { packageModulesDir } = await import('../../src/host/module-dirs.ts')
 
 const PRESETS_DIR = join(storageRootOf(home), 'modules')
@@ -84,6 +85,67 @@ test('新建空白模块：引擎内组装出 module.yml，目录名=id，冲突
   assert.equal(again.id, 'blank-2')
   assert.equal(parseYaml(readFileSync(join(root, 'blank-2', 'module.yml'), 'utf8')).id, 'blank-2')
   assert.equal(parseYaml(readFileSync(join(root, 'blank-2', 'module.yml'), 'utf8')).name, '默认模块')
+})
+
+test('新建空白模块：安装成功但清理失败时向调用方告警', (t) => {
+  const root = tempDir('pt-blank-leftover-')
+  const warnings = []
+  const original = fs.rmSync.bind(fs)
+  t.mock.method(fs, 'rmSync', (path, ...args) => {
+    if (dirname(String(path)) === root && String(path).includes('.install-')) throw new Error('cleanup failed')
+    return original(path, ...args)
+  })
+  syncBuiltinESMExports()
+  try {
+    const cloned = cloneBuiltinModule('blank', true, root, message => warnings.push(message))
+    assert.equal(cloned.ok, true, cloned.message)
+  } finally {
+    t.mock.restoreAll()
+    syncBuiltinESMExports()
+  }
+  assert.equal(warnings.length, 1)
+  assert.match(warnings[0], /暂存目录清理失败/)
+})
+
+test('复制模块：安装成功但清理失败时向调用方告警', (t) => {
+  const root = tempDir('pt-copy-leftover-')
+  assert.equal(cloneBuiltinModule('blank', false, root).ok, true)
+  const warnings = []
+  const original = fs.rmSync.bind(fs)
+  t.mock.method(fs, 'rmSync', (path, ...args) => {
+    if (dirname(String(path)) === root && String(path).includes('.install-')) throw new Error('cleanup failed')
+    return original(path, ...args)
+  })
+  syncBuiltinESMExports()
+  try {
+    const copied = duplicateUserModule('blank', root, message => warnings.push(message))
+    assert.equal(copied.ok, true, copied.message)
+  } finally {
+    t.mock.restoreAll()
+    syncBuiltinESMExports()
+  }
+  assert.equal(warnings.length, 1)
+  assert.match(warnings[0], /暂存目录清理失败/)
+})
+
+test('种子化：安装成功但清理失败时向调用方告警', (t) => {
+  const root = tempDir('pt-seed-leftover-')
+  const warnings = []
+  const original = fs.rmSync.bind(fs)
+  t.mock.method(fs, 'rmSync', (path, ...args) => {
+    if (dirname(String(path)) === root && String(path).includes('.install-')) throw new Error('cleanup failed')
+    return original(path, ...args)
+  })
+  syncBuiltinESMExports()
+  try {
+    const seeded = ensureModuleSeed(root, message => warnings.push(message))
+    assert.ok(seeded.created.length > 0)
+  } finally {
+    t.mock.restoreAll()
+    syncBuiltinESMExports()
+  }
+  assert.ok(warnings.length > 0)
+  assert.match(warnings[0], /暂存目录清理失败/)
 })
 
 test('新建空白模块：未知模板 id 仍被拒，模块根不留痕迹', () => {

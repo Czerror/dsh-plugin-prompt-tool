@@ -12,7 +12,7 @@ import { assertModuleDirectory, assertModuleId, assertModuleTree, modulePathExis
 import { ModuleLayerSettingsError } from './module-layer-settings.ts'
 import { ModuleWriteError } from './module-write.ts'
 import { buildModuleCandidate, finalizeModuleCandidate } from './write-module.ts'
-import { installModuleDirectory, type ModuleInstallOutcome } from './module-install-transaction.ts'
+import { installModuleDirectory, leftoverStageWarning, type ModuleInstallOutcome } from './module-install-transaction.ts'
 import { findModuleDir, packageModulesDir, userModulesDir } from './module-dirs.ts'
 import { loadModuleSpec } from './module-spec.ts'
 
@@ -114,7 +114,7 @@ export function listBuiltinTemplates(): Array<{ id: string; name: string }> {
   }
 }
 /** 按包内同名目录补建缺失的内置模块；已有目录的定义、生成物和资源保持原样。 */
-export function ensureModuleSeed(root = userModulesDir()): { created: string[] } {
+export function ensureModuleSeed(root = userModulesDir(), warn?: (message: string) => void): { created: string[] } {
   const created: string[] = []
   try {
     mkdirSync(root, { recursive: true })
@@ -131,7 +131,10 @@ export function ensureModuleSeed(root = userModulesDir()): { created: string[] }
           expectedVersion: null,
           build: (candidate) => buildModuleCandidate(candidate, source, entry.name, undefined, { validate: false }),
         })
-        if (result.state === 'installed') created.push(entry.name)
+        if (result.state === 'installed') {
+          created.push(entry.name)
+          if (result.leftoverStage !== undefined) warn?.(leftoverStageWarning(result.leftoverStage))
+        }
       } catch {
         // 单个补建失败不阻断启动，也不删除任何用户数据。
       }
@@ -153,16 +156,17 @@ function nextModuleDirId(id: string, root: string, autoSuffix: boolean): { ok: t
 }
 
 /** 把 create 事务的预期失败映射回模块管理既有文案。 */
-function requireInstalled(result: ModuleInstallOutcome, conflictMessage: string): void {
+function requireInstalled(result: ModuleInstallOutcome, conflictMessage: string, warn?: (message: string) => void): void {
   if (result.state === 'conflict') throw new Error(conflictMessage)
   if (result.state === 'recovery-required') throw new Error(`模块安装失败且恢复失败；原目录保留在 ${result.backupPath}`)
+  if (result.leftoverStage !== undefined) warn?.(leftoverStageWarning(result.leftoverStage))
 }
 
 /**
  * 引擎内组装内置空白模板：Document API 生成 `module.yml`，由安装事务暂存并交换，
  * 失败不留半个模块。
  */
-function writeBlankModule(root: string, targetId: string): void {
+function writeBlankModule(root: string, targetId: string, warn?: (message: string) => void): void {
   const result = installModuleDirectory({
     root,
     id: targetId,
@@ -172,10 +176,10 @@ function writeBlankModule(root: string, targetId: string): void {
       finalizeModuleCandidate(candidate, targetId, undefined, { validate: false })
     },
   })
-  requireInstalled(result, `目标模块已存在：${targetId}`)
+  requireInstalled(result, `目标模块已存在：${targetId}`, warn)
 }
 /** 完整复制到隐藏候选；只更新定义 ID 和已知共享引擎配置位置。 */
-function copyModuleDirectory(source: string, root: string, targetId: string): void {
+function copyModuleDirectory(source: string, root: string, targetId: string, warn?: (message: string) => void): void {
   assertModuleTree(source)
   loadModuleSpec(source)
   const result = installModuleDirectory({
@@ -184,12 +188,12 @@ function copyModuleDirectory(source: string, root: string, targetId: string): vo
     expectedVersion: null,
     build: (candidate) => buildModuleCandidate(candidate, source, targetId, undefined, { validate: false }),
   })
-  requireInstalled(result, `目标预设已存在：${targetId}`)
+  requireInstalled(result, `目标预设已存在：${targetId}`, warn)
 }
 
 /** 从包内同名目录复制模块；autoSuffix=true 时递增目录名并同步定义身份。
  *  `blank` 没有包内目录：它由 `BLANK_MODULE_TEMPLATE` 在引擎内组装（同一条目录名规则）。 */
-export function cloneBuiltinModule(id: string, autoSuffix = false, moduleRoot = userModulesDir()): { ok: true; id: string } | { ok: false; message: string } {
+export function cloneBuiltinModule(id: string, autoSuffix = false, moduleRoot = userModulesDir(), warn?: (message: string) => void): { ok: true; id: string } | { ok: false; message: string } {
   try {
     assertModuleId(id)
     const blank = id === BLANK_MODULE_TEMPLATE.id
@@ -200,8 +204,8 @@ export function cloneBuiltinModule(id: string, autoSuffix = false, moduleRoot = 
     const allocated = nextModuleDirId(id, moduleRoot, autoSuffix)
     if (!allocated.ok) return allocated
     assertModuleId(allocated.id)
-    if (blank) writeBlankModule(moduleRoot, allocated.id)
-    else copyModuleDirectory(builtin!, moduleRoot, allocated.id)
+    if (blank) writeBlankModule(moduleRoot, allocated.id, warn)
+    else copyModuleDirectory(builtin!, moduleRoot, allocated.id, warn)
     return { ok: true, id: allocated.id }
   } catch (error) {
     return { ok: false, message: `新建预设失败：${error instanceof Error ? error.message : String(error)}` }
@@ -211,7 +215,7 @@ export function cloneBuiltinModule(id: string, autoSuffix = false, moduleRoot = 
 /** 复制用户模块目录为新模块（id 自动递增：<id>-copy / <id>-copy-2 / …）。
  *  复制的是用户目录完整副本（module.yml / agent.cordis.yml / prompt-configs /
  *  内容资产 / 覆盖文件），与「从内置模板新建」互补：后者还原模板，前者备份现状。 */
-export function duplicateUserModule(id: string, moduleRoot = userModulesDir()): { ok: true; id: string } | { ok: false; message: string } {
+export function duplicateUserModule(id: string, moduleRoot = userModulesDir(), warn?: (message: string) => void): { ok: true; id: string } | { ok: false; message: string } {
   try {
     assertModuleId(id)
     const root = resolve(moduleRoot)
@@ -222,7 +226,7 @@ export function duplicateUserModule(id: string, moduleRoot = userModulesDir()): 
       targetId = `${id}-copy${suffix}`
       target = join(root, targetId)
     }
-    copyModuleDirectory(source, root, targetId)
+    copyModuleDirectory(source, root, targetId, warn)
     return { ok: true, id: targetId }
   } catch (error) {
     return { ok: false, message: `复制预设失败：${error instanceof Error ? error.message : String(error)}` }

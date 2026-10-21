@@ -1436,3 +1436,9 @@ test('配装记录报告本 Agent 的提示词层：顺序即启用表，装配�
 
   await runtime.dispose()
 })
+test('诊断账本随装配释放回空，不返回陈旧快照', async (t) => {
+  const h = await liveAssembly(t, () => [])
+  await h.runtime.settled()
+  await h.runtime.dispose()
+  assert.deepEqual(h.runtime.ruleDiagnostics(), { records: [], dropped: 0 })
+})

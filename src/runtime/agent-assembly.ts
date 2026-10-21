@@ -30,7 +30,7 @@ import { assertModuleDirectory, assertModuleId } from '../host/module-install.ts
 import { readConfigOrder } from '../host/module-config-order.ts'
 import { rulePromptConfigOptions } from '../host/module-slices.ts'
 import { compileCustomTool, validateCustomTools } from '../host/custom-tools.ts'
-import { createRuleDiagnosticsLedger, type RuleDiagnosticsSnapshot } from './rule-diagnostics.ts'
+import { createRuleDiagnosticsLedger, emptyRuleDiagnostics, type RuleDiagnosticsSnapshot } from './rule-diagnostics.ts'
 import { createTargetQueue } from '../shared/target-queue.ts'
 import { createModuleVariableAdapter } from './module-variable-adapter.ts'
 import { planPersonaSections, type PersonaCapture, type PersonaModule, type PersonaPlan } from './persona-registration.ts'
@@ -607,7 +607,7 @@ export function createAgentAssembly(ctx: Context, options: AgentAssemblyOptions)
     settled: () => pending,
     hasMounted: (sessionId) => mounts.has(sessionId),
     moduleIds: (sessionId) => mounts.get(sessionId)?.moduleIds ?? [],
-    ruleDiagnostics: () => ruleDiagnostics.snapshot(),
+    ruleDiagnostics: () => active ? ruleDiagnostics.snapshot() : emptyRuleDiagnostics(),
     refresh: async (moduleId) => {
       if (!active) throw new Error('运行时配装已释放')
       try {

@@ -49,7 +49,7 @@ export function registerInstructions(runtime: InstructionsRuntime): Array<() => 
       tx.write(200, {
         ok: true,
         value: {
-          promptConfigs: mergeInstructionCards([], scope.files),
+          promptConfigs: mergeInstructionCards(scope.files),
           instructions: { context: scope.context, files: scope.files, owner: instructionOwner() },
         },
       })

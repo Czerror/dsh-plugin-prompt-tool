@@ -12,8 +12,6 @@ import featureCss from './tools.module.css'
 const styles = { ...sharedCss, ...featureCss }
 
 /** 所属层按钮直接提交的创建请求；草稿由常驻页面立即建立。 */
-export type ToolCreateIntent = { kind: 'blank'; moduleId?: string }
-
 /** 工具草稿与保存由常驻页面持有；设置区只渲染同一份编辑内容。 */
 export function useCustomToolsEditor(props: {
   t: PromptToolTranslate
@@ -28,7 +26,7 @@ export function useCustomToolsEditor(props: {
   undeclared?: boolean
   /** 创建模式下首次成功写盘后回调：调用方据此重读 `/meta`，卡片随即按正常形态出现。 */
   onDeclared?: () => void
-}): { createTool: (intent: ToolCreateIntent) => void; content: ReactNode } {
+}): { content: ReactNode } {
   const { t } = props
   const moduleId = props.moduleId
   const undeclared = props.undeclared === true
@@ -109,8 +107,7 @@ export function useCustomToolsEditor(props: {
     setExpandedCards(next)
   }
   /** 创建使用草稿当前值，连续点击即使尚未重渲染也不会相互覆盖。 */
-  const createTool = (intent: ToolCreateIntent): void => {
-    if (intent.moduleId !== undefined && intent.moduleId !== moduleId) return
+  const createTool = (): void => {
     if (disabled || !editor.loaded) {
       props.onNotice('error', t(props.disabled ? 'customTools.readonly' : editor.error ? 'customTools.loadFailed' : 'customTools.loading'))
       return
@@ -127,7 +124,7 @@ export function useCustomToolsEditor(props: {
     }])
     setExpandedCards(new Set([...editor.expanded, tools.length]))
   }
-  return { createTool, content: (
+  return { content: (
     <section aria-label={t('customTools.aria')}>
       <p className={styles.configFieldHint}>{t('customTools.hint')}</p>
       {undeclared && <p className={styles.configFieldHint} role="status">{t('declare.createHint')}</p>}
@@ -136,7 +133,7 @@ export function useCustomToolsEditor(props: {
       {loadError && <p role="alert">{loadError} <Button shape="pill" size="md" variant="outline" type="button" onClick={() => { void owner.load() }}>{t('customTools.retry')}</Button></p>}
       <fieldset className={styles.customToolsFields} aria-label={t('customTools.fieldsAria')}>
         <div className={styles.configActions}>
-          <Button shape="pill" size="sm" variant="outline" type="button" disabled={disabled} onClick={() => createTool({ kind: 'blank', moduleId })}>{t('main.newBlankTool')}</Button>
+          <Button shape="pill" size="sm" variant="outline" type="button" disabled={disabled} onClick={() => createTool()}>{t('main.newBlankTool')}</Button>
           {props.onChooseTemplate !== undefined && <Button shape="pill" size="sm" variant="outline" type="button" disabled={disabled}
             onClick={(event) => { if (!disabled) props.onChooseTemplate?.(event.currentTarget) }}>{t('main.addToolTemplate')}</Button>}
           {(tools.length > 0 || hasPersistedTools) && (
