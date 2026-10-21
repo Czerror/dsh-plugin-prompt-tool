@@ -1,5 +1,11 @@
 # Changelog
 
+### 指令文件探测收成单一判据（2026-10-21）
+
+- **重构**：新增 `engine/instruction-files.mjs`（纯计划 + 引擎侧执行器），`instruction-hint.mjs` 的探测函数迁入；宿主 `agents-cards.ts` 改用同一份候选清单、目录链与选根判据，只保留自己的 `.git` 标记、真实路径校验与展示路径。
+- **行为**：宿主 marker 集合不变（仍只认 `.git`），写白名单边界不变；唯一变化是 UNC 路径的项目根停在共享名根（原手写路径爬升会切到服务器名一级）。
+- **验证**：全量 test、typecheck、lint、build、diff --check、verify:host、verify:pack 全绿（见本轮提交）。
+
 ### Git Bash 长命令卡片可展开（2026-10-21）
 
 - **根因**：`tool-git-bash` 的 schema 只要求 `command`，没有 `description`。宿主 Bash 卡片把“缺 description”识别成 persistent shell；PTC 嵌套调用带 `parentCallId` 时不走 generic persistent 兜底，于是 `expandable` 为 false。短命令还能从摘要看到，长命令被截断后就没有展开入口。

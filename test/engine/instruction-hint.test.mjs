@@ -8,11 +8,17 @@ import {
   apply,
   buildInstructionHint as rawBuildInstructionHint,
   buildInstructionHintText,
-  collectInstructionFiles,
   createInstructionHintResolver as rawCreateInstructionHintResolver,
   instructionHintMessages as rawInstructionHintMessages,
 } from '../../engine/instruction-hint.mjs'
+import { collectInstructionFiles } from '../../engine/instruction-files.mjs'
+import * as path from 'node:path'
 import { createPromptConfigs } from '../../engine/schema.mjs'
+
+// 目录夹具用 node:path 构造：探测计划统一走平台路径语义，字面量 POSIX 路径只在 POSIX 上成立。
+const projectDir = path.resolve(path.sep + 'repo')
+const nestedDir = path.join(projectDir, 'sub')
+const globalHome = path.resolve(path.sep + 'home', '.dsh')
 
 // 夹具内联：断言使用独立的已知良好文本，不依赖任何随包分发物。
 const templates = {
@@ -34,43 +40,43 @@ function makeFs(files) {
 
 test('instruction-hint 是通用引擎：探测 cwd 到项目根的完整链和用户级文件', async () => {
   const files = new Map([
-    ['/repo/.git', { type: 'directory' }],
-    ['/repo/AGENTS.md', { type: 'file' }],
-    ['/repo/sub/CLAUDE.md', { type: 'file' }],
-    ['/home/.dsh/AGENTS.md', { type: 'file' }],
+    [path.join(projectDir, '.git'), { type: 'directory' }],
+    [path.join(projectDir, 'AGENTS.md'), { type: 'file' }],
+    [path.join(nestedDir, 'CLAUDE.md'), { type: 'file' }],
+    [path.join(globalHome, 'AGENTS.md'), { type: 'file' }],
   ])
-  const found = await collectInstructionFiles(makeFs(files), '/repo/sub', undefined, '/home/.dsh')
+  const found = await collectInstructionFiles(makeFs(files), nestedDir, undefined, globalHome)
   assert.deepEqual(found, {
-    root: '/repo',
-    projectFiles: ['/repo/sub/CLAUDE.md', 'AGENTS.md'],
+    root: projectDir,
+    projectFiles: [path.join(nestedDir, 'CLAUDE.md'), 'AGENTS.md'],
     userGlobalFiles: ['AGENTS.md'],
-    userGlobalHome: '/home/.dsh',
+    userGlobalHome: globalHome,
   })
 })
 
 test('instruction-hint scope：project 只报项目链，global 只报 $DSH_HOME/AGENTS.md', async () => {
   const files = new Map([
-    ['/repo/.git', { type: 'directory' }],
-    ['/repo/AGENTS.md', { type: 'file' }],
-    ['/home/.dsh/AGENTS.md', { type: 'file' }],
+    [path.join(projectDir, '.git'), { type: 'directory' }],
+    [path.join(projectDir, 'AGENTS.md'), { type: 'file' }],
+    [path.join(globalHome, 'AGENTS.md'), { type: 'file' }],
   ])
   const fs = makeFs(files)
   const previousHome = process.env.DSH_HOME
-  process.env.DSH_HOME = '/home/.dsh'
+  process.env.DSH_HOME = globalHome
   try {
     const run = async (scope) => {
       const resolve = createInstructionHintResolver(scope === undefined ? {} : { params: { scope } })
       return resolve({
         ctx: { get: (name) => (name === 'fs' ? fs : undefined) },
         agent: {},
-        session: { id: 'scope-session', header: { cwd: '/repo/sub' } },
+        session: { id: 'scope-session', header: { cwd: nestedDir } },
       })
     }
     const project = await run('project')
-    assert.match(project.text, /Reference documents exist: AGENTS\.md \(project root: \/repo\)\./)
+    assert.ok(project.text.includes('Reference documents exist: AGENTS.md (project root: ' + projectDir + ').'))
     assert.doesNotMatch(project.text, /user reference document/)
     const global = await run('global')
-    assert.match(global.text, /A user reference document exists: \/home\/\.dsh\/AGENTS\.md\./)
+    assert.ok(global.text.includes('A user reference document exists: ' + path.join(globalHome, 'AGENTS.md') + '.'))
     assert.doesNotMatch(global.text, /Reference documents exist/)
     const all = await run(undefined)
     assert.match(all.text, /Reference documents exist/)
@@ -79,7 +85,7 @@ test('instruction-hint scope：project 只报项目链，global 只报 $DSH_HOME
     const empty = await none({
       ctx: { get: (name) => (name === 'fs' ? makeFs(new Map()) : undefined) },
       agent: {},
-      session: { id: 'empty-session', header: { cwd: '/repo' } },
+      session: { id: 'empty-session', header: { cwd: projectDir } },
     })
     assert.equal(empty, null, '探测不到文件时返回 null，不注入消息')
   } finally {

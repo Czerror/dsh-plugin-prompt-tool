@@ -20,8 +20,9 @@
 
 import { randomUUID } from 'node:crypto'
 import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { createEpochPromotion } from './compaction-epoch.mjs'
-import { machinePaths } from './machine-paths.mjs'
+import { collectInstructionFiles } from './instruction-files.mjs'
 import { interpolateStatic } from './interpolate.mjs'
 import { booleanOption, createWarnOnce, getService, parsePromoteOn, validateConfig } from './shared.mjs'
 import { PRE_STEP_COORDINATOR_SERVICE } from './service-names.mjs'
@@ -31,86 +32,11 @@ export const name = 'instruction-hint'
 /** 无 inject：监听器只在使用时触碰 ctx 服务（同 tool-bootstrap / context-gate 纪律）。 */
 export const inject = []
 
-/** 项目目录链中按优先级探测的指令文件名。 */
-export const PROJECT_INSTRUCTION_CANDIDATES = ['AGENTS.md', 'CLAUDE.md', 'AGENTS.local.md', 'CLAUDE.local.md']
-export const USER_GLOBAL_INSTRUCTION_CANDIDATE = 'AGENTS.md'
+
 const templateOf = (templates, key) => typeof templates?.[key] === 'string' ? templates[key] : ''
 
-/** Join one path segment onto a directory (platform-agnostic string join). */
-export function joinPath(dir, segment) {
-  if (dir.endsWith('/') || dir.endsWith('\\')) return dir + segment
-  const sep = dir.includes('\\') ? '\\' : '/'
-  return dir + sep + segment
-}
 
-/** Parent of an absolute Windows or POSIX path. */
-export function parentPath(path) {
-  const idx = Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\'))
-  if (idx <= 0) return path
-  const parent = path.slice(0, idx)
-  return parent.length === 0 ? path : parent
-}
 
-/** Find the project root: first ancestor containing any root marker. */
-export async function findProjectRoot(fs, cwd, signal) {
-  let current = cwd
-  for (;;) {
-    for (const marker of ['.git', '.hg', '.svn']) {
-      try {
-        const target = await fs.resolve(joinPath(current, marker), { cwd, signal })
-        const info = await fs.stat(target, signal)
-        if (info !== undefined) return current
-      } catch {
-        // Probe failure = marker absent; continue.
-      }
-    }
-    const parent = parentPath(current)
-    if (parent === current || parent.length === 0) return cwd
-    current = parent
-  }
-}
-
-/** List instruction files present in one directory. */
-export async function presentInDir(fs, dir, candidates, signal) {
-  const found = []
-  for (const candidate of candidates) {
-    try {
-      const target = await fs.resolve(joinPath(dir, candidate), { cwd: dir, signal })
-      const info = await fs.stat(target, signal)
-      if (info !== undefined && info.type === 'file') found.push(candidate)
-    } catch {
-      // Absent or unreadable — skip.
-    }
-  }
-  return found
-}
-
-/**
- * 探测 cwd 到项目根的完整目录链，以及 DSH_HOME 下的用户级 AGENTS.md。
- * home 未传时使用当前宿主的 DSH_HOME/USERPROFILE 推导值。
- */
-export async function collectInstructionFiles(fs, cwd, signal, home) {
-  const root = await findProjectRoot(fs, cwd, signal)
-  const projectFiles = []
-  let probed = cwd
-  for (;;) {
-    for (const candidate of await presentInDir(fs, probed, PROJECT_INSTRUCTION_CANDIDATES, signal)) {
-      projectFiles.push(probed === root ? candidate : joinPath(probed, candidate))
-    }
-    if (probed === root) break
-    const parent = parentPath(probed)
-    if (parent === probed || parent.length === 0) break
-    probed = parent
-  }
-
-  const userGlobalFiles = []
-  // 路径类事实取唯一来源；本处需要 `undefined` 表示「没有可探测的全局目录」，故把空串折回缺省。
-  const dshHome = home ?? (machinePaths().DSH_HOME || undefined)
-  if (dshHome !== undefined) {
-    userGlobalFiles.push(...await presentInDir(fs, dshHome, [USER_GLOBAL_INSTRUCTION_CANDIDATE], signal))
-  }
-  return { root, projectFiles, userGlobalFiles, userGlobalHome: dshHome }
-}
 
 /**
  * 用显式模板格式化探测结果；无文件或无正文模板时返回空字符串。
@@ -124,7 +50,7 @@ export function buildInstructionHintText({ root, projectFiles = [], userGlobalFi
   }
   if (scope !== 'project' && userGlobalFiles.length > 0) {
     const paths = typeof userGlobalHome === 'string' && userGlobalHome.length > 0
-      ? userGlobalFiles.map((name) => joinPath(userGlobalHome, name))
+      ? userGlobalFiles.map((name) => join(userGlobalHome, name))
       : userGlobalFiles
     const text = interpolateStatic(templateOf(templates, 'globalTemplate'), { FILES: paths.join(', '), ROOT: root ?? '' }, undefined, 'globalTemplate')
     if (text.trim().length > 0) sections.push(text)

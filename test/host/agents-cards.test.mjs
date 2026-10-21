@@ -1,0 +1,42 @@
+/**
+ * 指令文件卡的探测结果：项目根到 cwd 的目录链、scope 与展示路径。
+ * 夹具是独立临时目录，不碰真实 DSH_HOME；结束后清理本次创建的唯一根目录。
+ */
+import { after, test } from 'node:test'
+import assert from 'node:assert/strict'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { detectAgentsFiles } from '../../src/host/agents-cards.ts'
+
+const work = mkdtempSync(join(tmpdir(), 'pt-agents-cards-'))
+after(() => { rmSync(work, { recursive: true, force: true }) })
+
+test('detectAgentsFiles：项目根到 cwd 的链，广到窄，展示路径相对项目根', () => {
+  const repo = join(work, 'repo')
+  const packagesDir = join(repo, 'packages')
+  const sub = join(packagesDir, 'app')
+  mkdirSync(sub, { recursive: true })
+  mkdirSync(join(repo, '.git'), { recursive: true })
+  writeFileSync(join(repo, 'AGENTS.md'), 'ROOT RULES\n')
+  writeFileSync(join(packagesDir, 'AGENTS.md'), 'PKG RULES\n')
+  writeFileSync(join(sub, 'CLAUDE.md'), 'SUB RULES\n')
+  const home = join(work, 'home')
+  mkdirSync(home, { recursive: true })
+
+  const cards = detectAgentsFiles({ cwd: sub, home })
+  assert.deepEqual(cards.map((card) => [card.scope, card.displayPath]), [
+    ['project', 'AGENTS.md'],
+    ['project', 'packages/AGENTS.md'],
+    ['project', 'packages/app/CLAUDE.md'],
+  ])
+})
+
+test('detectAgentsFiles：projects:false 只留可确认的全局文件', () => {
+  const home = join(work, 'home-global')
+  mkdirSync(home, { recursive: true })
+  writeFileSync(join(home, 'AGENTS.md'), 'GLOBAL RULES\n')
+
+  const cards = detectAgentsFiles({ cwd: work, home, projects: false })
+  assert.deepEqual(cards.map((card) => [card.scope, card.displayPath]), [['global', '~/.dsh/AGENTS.md']])
+})

@@ -7,7 +7,7 @@
  */
 import { createHash } from 'node:crypto'
 import { existsSync, readFileSync, realpathSync, statSync } from 'node:fs'
-import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
+import { isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { dshHome } from './paths.ts'
 import { atomicWriteTextFile } from './text-file.ts'
 import { replaceVersionedText } from './versioned-text.ts'
@@ -18,10 +18,15 @@ import {
   type InstructionFileSnapshot,
   type InstructionFileStatus,
 } from '../shared/instructions.ts'
+import {
+  PROJECT_INSTRUCTION_CANDIDATES,
+  USER_GLOBAL_INSTRUCTION_FILE,
+  ancestorDirs,
+  instructionDirs,
+  resolveProjectRoot,
+} from '../../engine/instruction-files.mjs'
 
-/** 项目目录链候选文件（与 engine/instruction-hint.mjs 的探测候选同源）。 */
-export const AGENTS_PROJECT_CANDIDATES = ['AGENTS.md', 'CLAUDE.md', 'AGENTS.local.md', 'CLAUDE.local.md']
-export const AGENTS_USER_GLOBAL_FILE = 'AGENTS.md'
+/** 宿主的项目根标记；候选清单与目录链来自 engine/instruction-files.mjs，不再本地抄一份。 */
 const PROJECT_ROOT_MARKERS = ['.git']
 /** 大小写不敏感平台（Windows/macOS）：同一实际文件的不同写法必须映射到同一身份。 */
 const CASE_INSENSITIVE_PLATFORM = process.platform === 'win32' || process.platform === 'darwin'
@@ -66,23 +71,13 @@ function within(rootDir: string, target: string): boolean {
   return candidate.startsWith(root.endsWith(sep) ? root : root + sep)
 }
 
-function findProjectRoot(cwd: string): string {
-  const start = resolve(cwd)
-  let current = start
-  for (;;) {
-    if (PROJECT_ROOT_MARKERS.some((marker) => existsSync(join(current, marker)))) return current
-    const parent = dirname(current)
-    if (parent === current) return start
-    current = parent
-  }
-}
 
 /** 官方展示路径 → 既有卡片身份；只解析路径，不读取正文，也不构成写入授权。 */
 export function instructionFileIdFromDisplayPath(displayPath: string, projectRoot?: string, home: string = dshHome()): string | undefined {
   const global = displayPath === '~/.dsh/AGENTS.md' || displayPath === '$DSH_HOME/AGENTS.md'
   if (!global && (projectRoot === undefined || isAbsolute(displayPath) || displayPath.includes('\0'))) return undefined
   const root = global ? resolve(home) : resolve(projectRoot!)
-  const path = global ? join(root, AGENTS_USER_GLOBAL_FILE) : resolve(root, displayPath)
+  const path = global ? join(root, USER_GLOBAL_INSTRUCTION_FILE) : resolve(root, displayPath)
   if (!within(root, path)) return undefined
   // 文件已删除时仍按原普通路径匹配其关闭策略，允许过滤 remove 通知。
   const realPath = realPathOf(path) ?? path
@@ -90,20 +85,6 @@ export function instructionFileIdFromDisplayPath(displayPath: string, projectRoo
   return agentsFileId(realPath)
 }
 
-/** 项目根 → cwd 的目录链（broad→specific）。 */
-function ancestorChain(root: string, cwd: string): string[] {
-  const stop = resolve(root)
-  const chain: string[] = []
-  let current = resolve(cwd)
-  while (current !== stop) {
-    chain.push(current)
-    const parent = dirname(current)
-    if (parent === current) break
-    current = parent
-  }
-  chain.push(stop)
-  return chain.reverse()
-}
 
 /** 显示路径：DSH_HOME 内用 `~/.dsh/…`，项目内用相对项目根路径，其余用绝对路径。 */
 function displayPathOf(path: string, home: string, projectRoot: string): string {
@@ -121,7 +102,9 @@ function displayPathOf(path: string, home: string, projectRoot: string): string 
 export function detectAgentsFiles(options: { cwd?: string; home?: string; projects?: boolean } = {}): AgentsFileCard[] {
   const home = resolve(options.home ?? dshHome())
   const cwd = resolve(options.cwd ?? process.cwd())
-  const root = findProjectRoot(cwd)
+  // 宿主只认自己的 marker 集合；选根与目录链由引擎探测库的纯函数给出。
+  const markerDirs = new Set(ancestorDirs(cwd).filter((dir) => PROJECT_ROOT_MARKERS.some((marker) => existsSync(join(dir, marker)))))
+  const root = resolveProjectRoot(cwd, markerDirs)
   const realHome = realPathOf(home)
   const realRoot = realPathOf(root)
   const found: AgentsFileCard[] = []
@@ -153,12 +136,12 @@ export function detectAgentsFiles(options: { cwd?: string; home?: string; projec
       scope,
     })
   }
-  push(join(home, AGENTS_USER_GLOBAL_FILE), 'global')
+  push(join(home, USER_GLOBAL_INSTRUCTION_FILE), 'global')
   // projects: false = 项目范围不可用（无可解析本地会话）：只保留可确认的全局文件，
   // 不拿部署进程 cwd 冒充当前工作区。
   if (options.projects === false) return found
-  for (const dir of ancestorChain(root, cwd)) {
-    for (const candidate of AGENTS_PROJECT_CANDIDATES) push(join(dir, candidate), 'project')
+  for (const dir of instructionDirs(cwd, root)) {
+    for (const candidate of PROJECT_INSTRUCTION_CANDIDATES) push(join(dir, candidate), 'project')
   }
   return found
 }
