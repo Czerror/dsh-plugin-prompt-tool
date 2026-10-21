@@ -18,15 +18,8 @@ import {
   type InstructionFileSnapshot,
   type InstructionFileStatus,
 } from '../shared/instructions.ts'
-import {
-  PROJECT_INSTRUCTION_CANDIDATES,
-  USER_GLOBAL_INSTRUCTION_FILE,
-  ancestorDirs,
-  instructionPlan,
-} from '../../engine/instruction-files.mjs'
-
-/** 宿主的项目根标记；候选清单与目录链来自 engine/instruction-files.mjs，不再本地抄一份。 */
-const PROJECT_ROOT_MARKERS = ['.git']
+import { PROJECT_INSTRUCTION_CANDIDATES, USER_GLOBAL_INSTRUCTION_FILE } from '../../engine/instruction-files.mjs'
+import { hostInstructionPlan } from './project-root.ts'
 /** 大小写不敏感平台（Windows/macOS）：同一实际文件的不同写法必须映射到同一身份。 */
 const CASE_INSENSITIVE_PLATFORM = process.platform === 'win32' || process.platform === 'darwin'
 
@@ -100,8 +93,7 @@ export function detectAgentsFiles(options: { cwd?: string; home?: string; projec
   const home = resolve(options.home ?? dshHome())
   const cwd = resolve(options.cwd ?? process.cwd())
   // 宿主只认自己的 marker 集合；选根与目录链由引擎探测判据一次给出。
-  const markerDirs = new Set(ancestorDirs(cwd).filter((dir) => PROJECT_ROOT_MARKERS.some((marker) => existsSync(join(dir, marker)))))
-  const plan = instructionPlan(cwd, markerDirs)
+  const plan = hostInstructionPlan(cwd)
   const root = plan.root
   const realHome = realPathOf(home)
   const realRoot = realPathOf(root)

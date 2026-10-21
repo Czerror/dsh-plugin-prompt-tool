@@ -1,5 +1,5 @@
 /** 管理面只读扫描本地资产与诊断；模型候选、作用域和胜出关系属于官方注册表。 */
-import { accessSync, constants, existsSync, lstatSync, readFileSync, readdirSync, statSync } from 'node:fs'
+import { accessSync, constants, lstatSync, readFileSync, readdirSync, statSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { basename, dirname, join, resolve, sep } from 'node:path'
 import type { SkillSummary } from '@deepseek-ai/dsh-skill'
@@ -8,7 +8,7 @@ import { SKILL_MARKER, SKILL_SOURCES, type SkillCatalogEntry, type SkillSourceKi
 import { SKILL_NAME_PATTERN } from './skills-config.ts'
 import { readSkillInvocation } from './skills-policy.ts'
 import { assertUnlinkedPath } from './skills-actions.ts'
-import { ancestorDirs, instructionPlan } from '../../engine/instruction-files.mjs'
+import { hostInstructionPlan } from './project-root.ts'
 
 export interface ScanRoot { kind: SkillSourceKind; path: string }
 
@@ -42,9 +42,7 @@ export function resolveBundledSkillsDir(): string | undefined {
 
 /** 技能扫描的项目根：只认 .git，与宿主指令文件探测同一份判据；无标记回落 cwd。 */
 export function resolveProjectRoot(cwd: string): string {
-  const start = resolve(cwd)
-  const markerDirs = new Set(ancestorDirs(start).filter((dir) => existsSync(join(dir, '.git'))))
-  return instructionPlan(start, markerDirs).root
+  return hostInstructionPlan(resolve(cwd)).root
 }
 
 export function skillRoots(options: { cwd?: string; dshHome: string; folders: readonly string[] }): ScanRoot[] {

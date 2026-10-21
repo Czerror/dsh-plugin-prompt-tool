@@ -42,6 +42,8 @@ test('detectAgentsFiles：projects:false 只留可确认的全局文件', () => 
 })
 
 test('detectAgentsFiles：宿主只认 .git，.hg 不进目录链', () => {
+  // 用 work/.git 固定项目根：不依赖 tmpdir 是否恰好落在某个 git 仓内。
+  mkdirSync(join(work, '.git'), { recursive: true })
   const hgRepo = join(work, 'hg-repo')
   const sub = join(hgRepo, 'pkg')
   mkdirSync(sub, { recursive: true })
@@ -50,10 +52,10 @@ test('detectAgentsFiles：宿主只认 .git，.hg 不进目录链', () => {
   const home = join(work, 'home-hg')
   mkdirSync(home, { recursive: true })
 
-  // tmpdir 若落在某个 git 仓库下，root 可能在更外层；但 .hg 永远不参与，所以这条断言不依赖 tmpdir 的祖先链。
-  assert.equal(
-    detectAgentsFiles({ cwd: sub, home }).some((card) => card.displayPath.includes('hg-repo')),
-    false,
-    'hg-repo 不因 .hg 进入目录链',
+  // .hg 不参与选根：root 固定在 work，hg-repo 只是链上目录，展示路径保留 hg-repo/。
+  // 若 .hg 被认作 marker，root 会变成 hg-repo，displayPath 塌缩成 AGENTS.md。
+  assert.deepEqual(
+    detectAgentsFiles({ cwd: sub, home }).map((card) => card.displayPath),
+    ['hg-repo/AGENTS.md'],
   )
 })
