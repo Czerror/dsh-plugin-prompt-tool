@@ -9,7 +9,8 @@ import { join } from 'node:path'
 // 只断言行为：端点防护、目录/越界符号链接不进入白名单、两个会话/工作区互不串。
 const home = mkdtempSync(join(tmpdir(), 'pt-guard-home-'))
 process.env.DSH_HOME = home
-const { BRIDGE_ENDPOINTS, SETTINGS_BRIDGE_PREFIX, registerSettingsBridge } = await import('../../lib/index.mjs')
+const { BRIDGE_ENDPOINTS, SETTINGS_BRIDGE_PREFIX } = await import('../../src/shared/bridge-contract.ts')
+const { registerSettingsBridge } = await import('../../src/runtime/settings-bridge.ts')
 
 const rootA = mkdtempSync(join(tmpdir(), 'pt-guard-a-'))
 const rootB = mkdtempSync(join(tmpdir(), 'pt-guard-b-'))

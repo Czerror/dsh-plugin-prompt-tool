@@ -19,7 +19,9 @@ import { fakeReq, fakeRes, isolatedHome, makeHostContext } from '../fixtures/hos
 const { home, moduleRoot } = isolatedHome('pt-module-mgmt-')
 process.env.DSH_AGENTS_HOME = join(home, 'agents')
 
-const { registerSettingsBridge, BRIDGE_ENDPOINTS, withModuleDefinition } = await import('../../src/index.ts')
+const { registerSettingsBridge } = await import('../../src/runtime/settings-bridge.ts')
+const { BRIDGE_ENDPOINTS } = await import('../../src/shared/bridge-contract.ts')
+const { withModuleDefinition } = await import('../../src/host/module-definition-edit.ts')
 
 const PREFIX = '/api/prompt-tool/settings'
 

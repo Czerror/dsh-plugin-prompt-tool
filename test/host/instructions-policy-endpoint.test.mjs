@@ -16,7 +16,8 @@ after(() => {
   rmSync(home, { recursive: true, force: true })
 })
 
-const { BRIDGE_ENDPOINTS, SETTINGS_BRIDGE_PREFIX, registerSettingsBridge } = await import('../../lib/index.mjs')
+const { BRIDGE_ENDPOINTS, SETTINGS_BRIDGE_PREFIX } = await import('../../src/shared/bridge-contract.ts')
+const { registerSettingsBridge } = await import('../../src/runtime/settings-bridge.ts')
 const { storageRootOf } = await import('../../src/host/paths.ts')
 
 const policyPath = join(storageRootOf(home), 'instructions.yml')

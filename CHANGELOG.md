@@ -1,5 +1,12 @@
 # Changelog
 
+### 发布入口收缩到真实消费（2026-10-21）
+
+- **入口**：`src/index.ts` 的 re-export 从 146 个符号降到 6 个——`name` / `inject` / `apply`（插件协议）+ `loadPromptTemplates`（测试的模板路径锚：`../templates` 只在构建后的 `lib/` 下成立）+ `writeModule` / `userModulesDir`（重物化脚本）。
+- **测试**：`wave1-safety`、`instructions-policy-endpoint`、`instruction-scope-guard`、`settings-bridge`、`module-management` 改为从 src 直连；`module-prompt-configs` 的 `loadPromptTemplates` 保留 lib 导入（路径锚）。
+- **发布面**：`verify:pack` 的 smoke 仍通过（主入口 name/apply + 包内引擎编译）。
+- **验证**：全量 786 pass；typecheck / lint / build / git diff --check / verify:pack 通过。需重启 DSH 并重新安装/链接插件后生效。
+
 ### 工具可见面计划：三面共用 fail-open 判据（2026-10-21）
 
 - **判据**：新增 `engine/actions/shared.mjs#toolSurfacePlan`，`required` = 静态 allow ∪ 动态解锁项（去掉 `run_code`），`available` = 装配目录名 ∪ SDK 正文名；缺项即 fail-open。

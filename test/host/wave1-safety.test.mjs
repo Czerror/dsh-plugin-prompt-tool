@@ -8,14 +8,11 @@ import { parse } from 'yaml'
 // 隔离 DSH_HOME：writeModule 模板解析用户模块优先，测试必须隔离。
 const home = mkdtempSync(join(tmpdir(), 'pt-w1-home-'))
 process.env.DSH_HOME = home
-const {
-  validateEngineParamValues,
-  assertSafeConfigId,
-  configFileName,
-  loadModuleSpec,
-  renderComposition,
-  DEFAULT_MODULE_ID,
-} = await import('../../lib/index.mjs')
+const { validateEngineParamValues } = await import('../../src/shared/engine-params.ts')
+const { assertSafeConfigId, configFileName } = await import('../../src/host/prompt-configs.ts')
+const { loadModuleSpec } = await import('../../src/host/module-spec.ts')
+const { renderComposition } = await import('../../src/host/module-params.ts')
+const { DEFAULT_MODULE_ID } = await import('../../src/shared/module-ids.ts')
 const { writeModule } = await import('../../src/host/write-module.ts')
 
 test('validateEngineParamValues：全量类型校验（布尔/数值/字符串/列表/枚举）', () => {

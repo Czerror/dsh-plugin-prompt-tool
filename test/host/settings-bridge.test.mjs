@@ -12,10 +12,11 @@ process.env.DSH_HOME = bridgeHome
 // 技能扫描的其余来源一并隔离：不读到真实用户目录 / 真实内置技能目录。
 process.env.DSH_AGENTS_HOME = join(bridgeHome, 'agents')
 process.env.DSH_BUNDLED_SKILL_DIR = join(bridgeHome, 'bundled-skills')
-const {
-  BRIDGE_ENDPOINTS, MAX_BRIDGE_BODY_BYTES, MAX_CHARACTER_CARD_STREAM_BYTES, registerSettingsBridge,
-  catalogFromScan, readSkillInvocation, readSkillsState, scanRoots, setSkillInvocation, skillRoots, writeSkillsState,
-} = await import('../../src/index.ts')
+const { BRIDGE_ENDPOINTS, MAX_BRIDGE_BODY_BYTES, MAX_CHARACTER_CARD_STREAM_BYTES } = await import('../../src/shared/bridge-contract.ts')
+const { registerSettingsBridge } = await import('../../src/runtime/settings-bridge.ts')
+const { catalogFromScan, scanRoots, skillRoots } = await import('../../src/host/skills-scan.ts')
+const { readSkillInvocation, setSkillInvocation } = await import('../../src/host/skills-policy.ts')
+const { readSkillsState, writeSkillsState } = await import('../../src/host/skills-config.ts')
 const { deleteSkillTarget } = await import('../../src/host/skills-actions.ts')
 const { storageRootOf } = await import('../../src/host/paths.ts')
 const { moduleDeclares, moduleDeclarations } = await import('../../src/host/module-declarations.ts')
