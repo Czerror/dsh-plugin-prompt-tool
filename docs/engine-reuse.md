@@ -64,7 +64,7 @@ AgentSetup 窗口内注册的同层同名段会被接住：装配时先撤销它
 | `discovery.mjs` | 发现引擎：共享搜索/排序/截断渲染与按 agent 键控的适配器注册表 |
 | `tool-search.mjs`、`skill-search.mjs` | 工具与技能的发现适配器：注册元数据，并各自注册工具 |
 | `tool-config-engine.mjs` | 自定义工具定义到官方注册 |
-| `instruction-files.mjs` | 指令文件探测的唯一判据：候选清单、项目根与目录链（纯计划）+ 引擎侧异步执行器 |
+| `instruction-files.mjs` | 指令文件探测的判据库：候选清单与目录链算法的单一来源（项目根标记由各消费者给）+ 引擎侧异步执行器 |
 
 相对路径均基于包根的 `engine/`。`actions.mjs`、`predicates.mjs`、`strategies.mjs` 只是已有入口，不把实现堆回 barrel。`engine/vendor/yaml/` 是版本化分发快照，通过 package script 生成，不手改。
 
@@ -106,6 +106,8 @@ AgentSetup 窗口内注册的同层同名段会被接住：装配时先撤销它
 ## 复制协议（跨项目复用）
 
 复制完整 `engine/` 可复用纯编译器、动作、条件、历史与模板求值。宿主接线仍需要相应官方服务，四个模块工具外壳还需要 Prompt Tool 的 provider。独立引擎不偷偷读取插件 DSH_HOME 或 session 变量表。
+
+`instruction-files.mjs` 是判据库（纯函数 + 引擎侧执行器），`instruction-hint.mjs` 是行——复制方可以只取库面、不挂该行。
 
 优先内联 `rules`、自定义工具与策略；独立入口的文件方式按该入口参数声明使用。显式内联空值表示无贡献，非法值不能回退旧文件掩盖错误。模块生产路径不生成 rules.yml、agent.cordis.yml 或第二套工具目录。
 

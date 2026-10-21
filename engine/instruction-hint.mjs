@@ -1,9 +1,10 @@
 /**
- * instruction-hint — 通用内置指令文件提示引擎。
+ * instruction-hint — 通用内置指令文件提示引擎（行 + 消息构造）。
  *
- * 本模块同时是「可 import 的纯函数库」与「可被组合源挂载的 plugin」：
+ * 探测（候选清单、项目根、目录链）归 engine/instruction-files.mjs，本模块只消费它的
+ * 异步执行器；下面两件事分别对应库面与行面：
  * - prompt-config 的 strategy=placeholder + fill=instruction-hint
- *   直接使用本模块的探测与消息构造；
+ *   直接使用本模块的消息构造与 instruction-files 的探测结果；
  * - plugin 形态（见文件末尾 apply）：**挂本行 = 开启**「晋升后把
  *   agent-instructions 全文替换为一次性 hint，后续全文消息丢弃」的转换。
  *
