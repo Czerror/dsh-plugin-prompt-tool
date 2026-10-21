@@ -1,5 +1,4 @@
 /** 客户端脏检测、保存快照与保存后重载判定（纯逻辑）。 */
-import type { PromptConfigDraft } from '../prompt-tool-types.ts'
 import { EMPTY_FIELDS, SHARED_PARAM_KEYS, type Fields, type SharedParamKey } from './prompt-tool-fields.ts'
 
 const SETTINGS_SNAPSHOT_KEYS = [
@@ -15,14 +14,6 @@ export function snapshotSwitches(fields: Fields): SwitchSnapshot {
 
 export const EMPTY_SWITCHES = snapshotSwitches(EMPTY_FIELDS)
 
-/** 两个空数组不算脏，防止首屏自动保存清空已有提示词配置。 */
-export const promptConfigsDirty = (current: PromptConfigDraft[], saved: PromptConfigDraft[]): boolean =>
-  current !== saved && !(current.length === 0 && saved.length === 0)
-
-/** 配置卡内未填写变量名的「待编辑行」（空 key）。这类行由保存端（saveModuleParams）清理、
- *  不落盘；保存后静默重载会用服务端状态覆盖草稿，使刚点开的编辑行立即消失——重载前先排除。 */
-export const hasPendingVariableRows = (configs: PromptConfigDraft[]): boolean =>
-  configs.some((config) => Object.keys(config.variables ?? {}).some((key) => key.trim().length === 0))
 
 const isPlainRecord = (value: unknown): value is Record<string, unknown> =>
   value !== null && typeof value === 'object' && !Array.isArray(value)

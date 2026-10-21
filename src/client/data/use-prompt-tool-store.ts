@@ -14,8 +14,6 @@ import { bridgeViewFromBoot, fieldsFromView, skillFieldsFromSnapshot } from './p
 import { createSkillEditor } from './skill-editor.ts'
 import {
   EMPTY_SWITCHES,
-  hasPendingVariableRows,
-  promptConfigsDirty,
   shouldReloadAfterModuleSave,
   snapshotSwitches,
   switchesEqual,
@@ -41,9 +39,9 @@ import {
 import {
   EMPTY_INSTRUCTION_POLICY_SNAPSHOT,
   instructionPolicyPatchForFile,
-  resolveInstructionFilePolicy,
 } from './instruction-policy.ts'
 import type { InstructionPolicyFileOverride, InstructionPolicyPatch, InstructionPolicySnapshot } from '../../shared/instructions.ts'
+import { projectInstructionCards } from './instruction-cards.ts'
 import { createParamEditor, type ParamEditor, type ParamEditorDependencies } from './param-editor.ts'
 import { createSerialTaskQueue } from './save-queue.ts'
 import { createWorkspaceDrafts } from './workspace-drafts.ts'
@@ -133,51 +131,6 @@ function waitForScope(scope: ConfigForm<Record<string, unknown>>): Promise<Confi
  * 把文件草稿状态贴到指令文件卡上（视图元数据，不写进 module.yml）。
  * 卡片正文以草稿池为准：服务端附带的 params.text 不再是文件正文的来源。
  */
-function withInstructionState(
-  configs: PromptConfigDraft[],
-  pool: InstructionDraftPool,
-  policy: InstructionPolicySnapshot,
-): PromptConfigDraft[] {
-  return configs.map((config) => {
-    const fileId = instructionFileIdOf(config)
-    if (fileId === undefined) return config
-    // 文件卡只从独立策略读取开关和名称；注入位置与生命周期归官方所有。
-    const resolved = resolveInstructionFilePolicy(policy.policy, fileId)
-    const draft = pool.drafts.find((entry) => entry.fileId === fileId)
-    if (draft === undefined) {
-      // 卡存在但没有对应快照：不把未知正文当空文件，直接禁用保存。
-      return {
-        ...config,
-        ...policyFields(resolved),
-        text: '',
-        contentStatus: 'unreadable' as const,
-        contentMessage: '未读取到该文件正文，已禁用保存',
-      }
-    }
-    const message = draft.error ?? draft.message
-    return {
-      ...config,
-      ...policyFields(resolved),
-      text: draft.content,
-      contentStatus: draft.status,
-      // 视图字段显式覆盖：池里冲突/提示已清除时卡片不得留上一帧的旧标记。
-      contentMessage: message,
-      contentDirty: draft.content !== draft.savedContent,
-      contentConflict: draft.conflict === true ? true : undefined,
-      contentSaving: draft.saving === true ? true : undefined,
-    }
-  })
-}
-
-/** 策略值 → 卡片行为字段（文件卡的行为不来自 module.yml）。 */
-function policyFields(
-  resolved: { enabled: boolean; name?: string },
-): Partial<PromptConfigDraft> {
-  return {
-    enabled: resolved.enabled,
-    ...(resolved.name === undefined ? {} : { name: resolved.name }),
-  }
-}
 
 export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolSettingsTransport): PromptToolStore {
   const editorDrafts = useRef(createWorkspaceDrafts()).current
@@ -200,12 +153,7 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
       : candidate) })
   }, [publishMeta])
   const [savedSwitches, setSavedSwitches] = useState<SwitchSnapshot>(EMPTY_SWITCHES)
-  const [savedConfigs, setSavedConfigsState] = useState<PromptConfigDraft[]>([])
-  const savedConfigsRef = useRef<PromptConfigDraft[]>([])
-  const setSavedConfigs = useCallback((next: PromptConfigDraft[]) => {
-    savedConfigsRef.current = next
-    setSavedConfigsState(next)
-  }, [])
+
   // 池本体读 ref（`getInstructionPool` 回调式读取）；这里的 state 只承担触发重渲染。
   const [, setInstructionPool] = useState<InstructionDraftPool>(EMPTY_INSTRUCTION_POOL)
   const [instructionPolicy, setInstructionPolicy] = useState<InstructionPolicySnapshot>(EMPTY_INSTRUCTION_POLICY_SNAPSHOT)
@@ -278,22 +226,29 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
   /** 指令文件草稿池（独立于 fields）：patch/保存/重新读取都经此发布。 */
   const instructionPoolRef = useRef<InstructionDraftPool>(EMPTY_INSTRUCTION_POOL)
   const instructionPolicyRef = useRef<InstructionPolicySnapshot>(EMPTY_INSTRUCTION_POLICY_SNAPSHOT)
+  /** 服务端下发的卡壳：投影的卡片身份来源，只随快照更新，不因编辑改写。 */
+  const instructionShellsRef = useRef<PromptConfigDraft[]>([])
   const instructionSeqRef = useRef(0)
   /** 上一次指令上下文对应的会话 id：变化即建立新上下文（旧草稿保留但不可写）。 */
   const instructionSessionRef = useRef<string | undefined>(undefined)
+  /** 视图永远是 (壳, 池, 策略) 的投影：三份输入谁变了都调它，不再手工同步。 */
+  const refreshInstructionCards = useCallback(() => {
+    const current = fieldsRef.current
+    publishFields({
+      ...current,
+      promptConfigs: projectInstructionCards(instructionShellsRef.current, instructionPoolRef.current, instructionPolicyRef.current),
+    })
+  }, [publishFields])
   const publishInstructions = useCallback((next: InstructionDraftPool) => {
     instructionPoolRef.current = next
     setInstructionPool(next)
-  }, [])
-  /** 卡片是草稿池的派生视图：池变化后同步正文与状态，避免界面停留旧版本。 */
-  const syncInstructionCards = useCallback((pool: InstructionDraftPool) => {
-    const current = fieldsRef.current
-    publishFields({ ...current, promptConfigs: withInstructionState(current.promptConfigs, pool, instructionPolicyRef.current) })
-  }, [publishFields])
+    refreshInstructionCards()
+  }, [refreshInstructionCards])
   const publishInstructionPolicy = useCallback((next: InstructionPolicySnapshot) => {
     instructionPolicyRef.current = next
     setInstructionPolicy(next)
-  }, [])
+    refreshInstructionCards()
+  }, [refreshInstructionCards])
   const revisionRef = useRef<number | undefined>(undefined)
   const saveQueueRef = useRef(createSerialTaskQueue())
   const moduleSaveQueueRef = useRef(createSerialTaskQueue())
@@ -399,13 +354,15 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
       const current = fieldsRef.current
       Object.assign(next, { skillCatalog: current.skillCatalog, skillsComplete: current.skillsComplete, skillFolders: current.skillFolders, skillsRoot: current.skillsRoot })
     }
-    publishFields(next)
+    // 服务端快照只提供卡壳；视图由投影给出，不把服务端正文写进 fields。
+    instructionShellsRef.current = next.promptConfigs
+    const projected = { ...next, promptConfigs: projectInstructionCards(next.promptConfigs, instructionPoolRef.current, instructionPolicyRef.current) }
+    publishFields(projected)
     setSavedSwitches(snapshotSwitches(next))
-    setSavedConfigs(next.promptConfigs)
     // revision 只在首次建立，后续由 enqueueSave 的 mutate 应答维护——/bootstrap 的
     // descriptor 有 30s 服务端缓存，用其 revision 倒退会导致下一次保存 409。
     if (res.ok && revisionRef.current === undefined) revisionRef.current = res.value.revision
-    return next
+    return projected
   }, [])
 
   const load = useCallback(async (options?: { silent?: boolean }) => {
@@ -426,8 +383,9 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
       // 与版本在切换到新工作区后必须重新读取校验，防止把 A 的正文写进 B 的文件集。
       if (sessionId !== instructionSessionRef.current) {
         instructionSessionRef.current = sessionId
+        // 新上下文还没有卡壳：清空后由发布链重投影，旧卡不留在视图里。
+        instructionShellsRef.current = []
         publishInstructions(switchInstructionContext(instructionPoolRef.current, ++instructionSeqRef.current))
-        publishFields({ ...fieldsRef.current, promptConfigs: fieldsRef.current.promptConfigs.filter((config) => instructionFileIdOf(config) === undefined) })
       }
       const instructionSnapshot = instructionPoolRef.current
       const policySnapshot = instructionPolicyRef.current
@@ -488,10 +446,9 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
         const userConfigs = cards.filter((config) => !engineGenerated.has(config.id) && instructionFileIdOf(config) !== undefined)
         // 内容资产条目（prompt-injector / instruction-hint）：params.text（生成目录文件渲染产物）
         // 提升到 text 框显示，编辑入口统一为模块卡片。
-        const actual = withInstructionState(userConfigs, instructionPoolRef.current, instructionPolicyRef.current)
-        const next = { ...fieldsRef.current, promptConfigs: actual }
-        publishFields(next)
-        setSavedConfigs(actual)
+        // 服务端下发的卡壳是投影的身份来源；正文与状态由草稿池给。
+        instructionShellsRef.current = userConfigs
+        refreshInstructionCards()
       }
       if (fieldsChanged) return fieldsRef.current
       paramEditorRef.current!.editor.reloadModules()
@@ -559,11 +516,11 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
 
   const patch = useCallback((partial: Partial<Fields>) => {
     draftVersionRef.current += 1
-    let next = { ...fieldsRef.current, ...partial }
-    // 文件卡正文镜像进文件草稿池：模块保存不承载它们，文件只能经显式保存写盘。
-    if (Array.isArray(partial.promptConfigs)) {
+    // 文件卡正文是草稿池的输入：只镜像正文，视图由投影给出，卡壳不因编辑改写。
+    const { promptConfigs: patchedConfigs, ...rest } = partial
+    if (Array.isArray(patchedConfigs)) {
       let pool = instructionPoolRef.current
-      for (const config of partial.promptConfigs) {
+      for (const config of patchedConfigs) {
         const fileId = instructionFileIdOf(config)
         if (fileId === undefined || typeof config.text !== 'string') continue
         const draft = pool.drafts.find((entry) => entry.fileId === fileId)
@@ -571,9 +528,9 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
         pool = setDraftContent(pool, fileId, config.text)
       }
       if (pool !== instructionPoolRef.current) publishInstructions(pool)
-      // 卡片视图（状态徽标、正文）以草稿池为准，避免编辑后状态停在上一帧。
-      next = { ...next, promptConfigs: withInstructionState(next.promptConfigs, instructionPoolRef.current, instructionPolicyRef.current) }
     }
+    // 发布链之后 fieldsRef 已是新投影，其余字段以它为基合并。
+    let next: Fields = { ...fieldsRef.current, ...rest }
     // complete 互斥：官方 complete 段一个 scope 只能有一个，开启任一 enabled 配置的
     // complete 时自动关闭其他 enabled 配置的 complete。disabled 配置不参与（引擎
     // effectiveList 已过滤，不注册即不独占；重新启用时由本次收敛）。顶层人设的
@@ -665,8 +622,7 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
     prepareRefresh: scope => {
       if (scope === 'global') return async () => { await load({ silent: true }) }
       const draftVersion = draftVersionRef.current
-      const configsWereClean = !promptConfigsDirty(fieldsRef.current.promptConfigs, savedConfigs)
-        && !hasPendingVariableRows(fieldsRef.current.promptConfigs)
+      const configsWereClean = unsavedInstructionDrafts(instructionPoolRef.current).length === 0
       return async () => {
         if (shouldReloadAfterModuleSave(draftVersion, draftVersionRef.current, configsWereClean)) await load({ silent: true })
       }
@@ -699,7 +655,6 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
     for (const fileId of requests.keys()) {
       const saving = markDraftSaving(instructionPoolRef.current, fileId, true)
       publishInstructions(saving)
-      syncInstructionCards(saving)
     }
     const results: InstructionSaveOutcome[] = pending.filter((draft) => !requests.has(draft.fileId)).map((draft) => ({
       fileId: draft.fileId, ok: false, message: draft.error ?? draft.message ?? '文件尚不可写、存在冲突或正在保存',
@@ -726,7 +681,6 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
       // 已成功的文件立即确认；后续文件失败或切换上下文也不丢失成功基线。
       const settled = applySaveOutcomes(instructionPoolRef.current, [result], requests)
       publishInstructions(settled)
-      syncInstructionCards(settled)
     }
     const failures = results.filter((result) => !result.ok)
     if (failures.length > 0) {
@@ -736,7 +690,7 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
     }
     showNotice('ok', `已保存指令文件：${results.length} 个`)
     return true
-  }, [api, publishInstructions, showNotice, syncInstructionCards])
+  }, [api, publishInstructions, showNotice])
 
   /**
    * 写单个文件的开关与显示名（独立于模块）。
@@ -758,10 +712,9 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
       return false
     }
     publishInstructionPolicy({ policy: res.value.policy, revision: res.value.revision, exists: res.value.exists })
-    syncInstructionCards(instructionPoolRef.current)
     showNotice('ok', '指令策略已保存（影响后续注入，不撤回已进入会话的内容）')
     return true
-  }), [publishInstructionPolicy, showNotice, syncInstructionCards])
+  }), [publishInstructionPolicy, showNotice])
 
   const updateInstructionPolicy = useCallback((fileId: string, override: InstructionPolicyFileOverride | null): Promise<boolean> => (
     persistInstructionPolicy(instructionPolicyPatchForFile(fileId, override))
@@ -795,9 +748,8 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
     }
     const reset = resetDraftFromSnapshot(instructionPoolRef.current, file)
     publishInstructions(reset)
-    syncInstructionCards(reset)
     showNotice('ok', `已重新读取指令文件：${file.displayPath}`)
-  }, [api, publishInstructions, showNotice, syncInstructionCards])
+  }, [api, publishInstructions, showNotice])
 
   /** 每个模块/范围保留独立草稿（主语＝调用方给的模块 id）；响应只确认请求时捕获的值。 */
   const saveModuleVariables = useCallback(async (moduleId: string, next?: Record<string, string>, enabledOverride?: boolean): Promise<boolean> => {
