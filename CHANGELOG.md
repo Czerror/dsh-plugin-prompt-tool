@@ -1,5 +1,11 @@
 # Changelog
 
+### Git Bash 长命令卡片可展开（2026-10-21）
+
+- **根因**：`tool-git-bash` 的 schema 只要求 `command`，没有 `description`。宿主 Bash 卡片把“缺 description”识别成 persistent shell；PTC 嵌套调用带 `parentCallId` 时不走 generic persistent 兜底，于是 `expandable` 为 false。短命令还能从摘要看到，长命令被截断后就没有展开入口。
+- **修复**：schema 增加必填 `description`，与官方 bash/pwsh 契约对齐；宿主按标准 terminal card 渲染，长命令可展开查看原文。
+- **测试**：新增 `tool-git-bash` schema 契约测试。全量 test 764。
+
 ### 工具面作用域与调用事件契约（2026-10-21）
 
 - **作用域**：新增 `engine/tool-scope.mjs#toolScopeSnapshot`，明确区分 `globalNames`（全局层名字，仅供 restrict 的已知名过滤）与 `visible`（agent 可见，含预设/祖先/本层）；`tool-visibility` 与 `tool-search` 均改走该快照，不再各自直接读无 scope 的 `schemas()`。

@@ -133,12 +133,16 @@ const commandSchema = {
       type: 'string',
       description: 'The bash command to execute (`bash -c` string domain).',
     },
+    description: {
+      type: 'string',
+      description: 'Clear, concise description of what this command does, 5-10 words (shown in the UI).',
+    },
     workdir: {
       type: 'string',
       description: 'Optional working directory; defaults to the session cwd. On Windows, Git Bash paths like /e/foo are accepted and converted to E:\\foo.',
     },
   },
-  required: ['command'],
+  required: ['command', 'description'],
   additionalProperties: false,
 }
 
