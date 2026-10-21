@@ -135,7 +135,7 @@ export function prepareToolVisibility(action, plugin) {
         // restrict 对未知名/本层名直接抛错：只喂当前已知的全局名，其余丢弃并留痕。
         const allow = mask.allow === undefined
           ? undefined
-          : [...new Set([...mask.allow, ...(allowExtra ?? [])])].filter((name) => known.has(name))
+          : [...new Set([...mask.allow, ...(allowExtra ?? [])])].filter((name) => name !== RUN_CODE && known.has(name))
         const deny = mask.deny === undefined ? undefined : [...mask.deny].filter((name) => known.has(name))
         if ((allow?.length ?? 0) > 0 || (deny?.length ?? 0) > 0) {
           try {
@@ -200,12 +200,22 @@ export function prepareToolVisibility(action, plugin) {
       }
       try {
         let result = assembled
+        // PTC 的 tools 数组只有 run_code 传输；实际可见面在 SDK 正文里，requireMatch 必须
+        // 以两者并集为准，否则 native 的收窄名单会被误判成缺失并 fail-open。
+        const sdkSection = Array.isArray(result.sections)
+          ? result.sections.find((section) => section?.name === SDK_SECTION_NAME && typeof section.text === 'string')
+          : undefined
+        const sdkNames = sdkSection === undefined ? undefined : new Set(sdkToolNames(sdkSection.text))
         if (Array.isArray(result.tools)) {
-          const available = new Set(result.tools.map((tool) => tool?.name).filter((name) => typeof name === 'string'))
+          const available = new Set([
+            ...result.tools.map((tool) => tool?.name).filter((name) => typeof name === 'string'),
+            ...(sdkNames ?? []),
+          ])
           // requireMatch 与旧 assembly 同判据：名单里任一工具缺失就 fail-open。
           // 必需名单 = 静态 allow ∪ 本轮解锁项：解锁项同样是「本该存在」的工具。
+          // run_code 是保留传输，不进名单；它是否可调用不由这条声明决定。
           const required = mask.requireMatch && mask.allow !== undefined
-            ? [...mask.allow, ...(allowExtra ?? [])].some((name) => !available.has(name))
+            ? [...mask.allow, ...(allowExtra ?? [])].some((name) => name !== RUN_CODE && !available.has(name))
             : false
           if (required) {
             warnOnce(`${plugin}: tool-visibility action ${label}: a requireMatch tool is absent — exposing the full tool set (fail-open)`)
@@ -216,7 +226,7 @@ export function prepareToolVisibility(action, plugin) {
         }
         if (Array.isArray(result.sections)) {
           let changed = false
-          let present
+          let present = sdkNames
           const sections = result.sections.map((section) => {
             if (section?.name !== SDK_SECTION_NAME || typeof section.text !== 'string') return section
             const presentNames = () => {
@@ -224,7 +234,7 @@ export function prepareToolVisibility(action, plugin) {
               return present
             }
             if (mask.requireMatch && mask.allow !== undefined
-              && [...mask.allow].some((name) => !presentNames().has(name))) {
+              && [...mask.allow].some((name) => name !== RUN_CODE && !presentNames().has(name))) {
               return section
             }
             const names = mask.allow === undefined

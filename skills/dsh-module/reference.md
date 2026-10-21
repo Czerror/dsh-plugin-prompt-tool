@@ -86,7 +86,7 @@ rules:
   requireMatch: true
 ```
 
-声明 discovery 的模块必须在 modules 里列出对应适配器行（tools → tool-search），缺行在装配准备期失败。discovery 在首次装配时按 agent 解析适配器，并从持久 tool/call 参数回收解锁名（只做加法、跨压缩保留）；工具由适配器行注册，discovery.tool/key 可选、只作断言。提示用同规则普通 inject-text 组合 count（user-message，max: 1）与 session 去重，采用 strategy: placeholder、fill: tool-catalog、params: { action: narrow }。只读 RESIDENT_TOOLS 是引用动作 allow 去 deny 后的逗号名单，DISCOVERY_TOOL 是当前 Agent 的发现适配器工具名；模块 text 控制提示正文，保留自动名单而不复制声明。requireMatch 在任一常驻工具缺失时放弃裁剪、暴露完整目录（fail-open），声明名单不等同实时工具面。
+声明 discovery 的模块必须在 modules 里列出对应适配器行（tools → tool-search），缺行在装配准备期失败。discovery 在首次装配时按 agent 解析适配器，并从持久 tool/call 参数回收解锁名（只做加法、跨压缩保留）；工具由适配器行注册，discovery.tool/key 可选、只作断言。提示用同规则普通 inject-text 组合 count（user-message，max: 1）与 session 去重，采用 strategy: placeholder、fill: tool-catalog、params: { action: narrow }。只读 RESIDENT_TOOLS 是引用动作 allow 去 deny 后的逗号名单，DISCOVERY_TOOL 是当前 Agent 的发现适配器工具名；模块 text 控制提示正文，保留自动名单而不复制声明。requireMatch 在任一常驻工具缺失时放弃裁剪、暴露完整目录（fail-open），声明名单不等同实时工具面。PTC 下 tools 数组只有保留传输 `run_code`，实际可见面是 `tools:sdk` 正文；`run_code` 不写进 allow 也保留，且不参与 requireMatch，因此原生收窄声明可以直接与 PTC 共存。
 
 tool-catalog 引用目标必须有 allow；仅支持普通只读插值，`templateEvaluation: true` 拒绝。未知动作引用保存前拒绝，发现适配器不可用则跳过提示并告警。
 
@@ -134,7 +134,7 @@ context-activation 在 pre-step。分类与正文用通用条件和分支组合�
 
 能力目录以包内 engine/compositions/source/local 的实际文件为准；模块工具统一为 module-import-tools、module-rule-tools、module-memory-tools、module-variable-tools。官方工具、规划、压缩与普通委派由会话原有预设提供，空模块不自动获得这些能力。
 
-共享参数14个，由 ENGINE_PARAM_DEFINITIONS 的 storageLayer 决定磁盘路径：主/子模型各5个路由与采样键，以及 instructionHint、maxDepth、toolGitBashEnabled、customToolRequireApproval。模型卡在装配期合成 request-params 规则；未配置继承宿主。
+共享参数由 `ENGINE_PARAM_DEFINITIONS` 唯一登记，`storageLayer` 决定磁盘路径：主/子模型各有路由与采样键，另含 PTC 呈现（presentAsEnabled、ptcMainMode、ptcSubagentMode）、run_code 环境（runCodeEnvEnabled、runCodeEnvKeys）、Git Bash（toolGitBashEnabled、路径、超时、输出上限）、指令提示（instructionHint 及 promoteOn/includeSubagents/模板）和工具批准（customToolRequireApproval）；完整键、options 与默认值以源码为准，不在摘要抄数量。模型卡在装配期合成 request-params 规则；未配置继承宿主。子代理递归深度归官方 `subagent.maxDepth`，插件不提供。
 
 - persona.main/subagent：各模块保存 prefix/suffix/complete/includeRuntimeContext，省略继承、空文本清空、false 明确值；rules/_settings.yml 只作校验投影。
 - config.yml.personaSources：main/subagent 各单选官方默认或一个模块 ID，不存正文、不自动启用 rules。只读取所选受众字段，不跨模块逐字段合并；有效官方人设与启用规则的 complete 仍预检，配装失败保留旧状态。

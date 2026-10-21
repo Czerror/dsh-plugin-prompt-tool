@@ -376,6 +376,21 @@ test('(5) 真实 PTC：工具可见面同时裁 SDK 正文与执行面，子调�
   await h.root.fiber.dispose()
 })
 
+test('(5b) 真实 PTC：allow 未点名 run_code 仍保留传输，requireMatch 以 SDK 为可见面', async () => {
+  const h = await ptcHarness({ language: 'typescript' })
+  const dispose = registerAction(h.root, { kind: 'tool-visibility', id: 'ptc-allow', allow: ['read'], requireMatch: true })
+  const out = await h.assemble(h.main)
+  const sdk = out.sections.find(section => section.name === SDK_SECTION_NAME)
+  assert.ok(sdk, 'PTC 下必须存在 tools:sdk 段')
+  assert.deepEqual(out.tools.map(tool => tool.name), ['run_code'], 'allow 不点名 run_code，PTC 目录仍保留唯一传输')
+  assert.deepEqual(sdkToolNames(sdk.text).sort(), ['read'], 'requireMatch 按 SDK 可见面判定，不得 fail-open 回全量工具')
+  const allowed = await h.runCode(h.main, 'read')
+  assert.equal(allowed.isError, false)
+  assert.deepEqual(h.bodyRuns, ['read'])
+  dispose()
+  await h.root.fiber.dispose()
+})
+
 test('(6) 真实 PTC（Python）：工具可见面裁剪保留异名注释，只删被剔工具及其 TypedDict', async () => {
   const h = await ptcHarness({ language: 'python' })
   h.tools.register({

@@ -1,5 +1,12 @@
 # Changelog
 
+### PTC 与工具面收窄兼容（2026-10-21）
+
+- **保留传输**：`tool-visibility` 不再把 `run_code` 当作可裁剪工具。allow 未点名也保留，deny 仍在挂载期拒绝；`restrict` 的 allow 会过滤保留名，避免官方拒绝整条执行闸。
+- **可见面判定**：PTC 下 `requireMatch` 以 `tools:sdk` 正文明细与 `tools` 数组的并集为准，`run_code` 不计入缺失；native 行为不变。`tool-surface` 等原生收窄声明因此可直接与 `ptc-mode` 共存，仍由 `tool_search` 按需解锁。
+- **技能漂移**：`skills/dsh-module` 的共享参数说明改为以 `ENGINE_PARAM_DEFINITIONS` 为准，移除已退役的 `maxDepth` 与固定键数；补 PTC/run_code 共存语义。
+- **验证**：typecheck / lint / test（762）/ build / git diff --check / verify:host / verify:pack / rebuild:module-template -- --check。
+
 ### 写盘串行与 CAS 收口（候选 05，2026-10-21）
 
 - **串行原语**：新增 `src/shared/target-queue.ts#createTargetQueue`；agents-cards、module-package、bridge 的 capability/order 队列、client save-queue、agent-assembly、skills-runtime 统一为同 key 进程内串行（后四者是单 key 全链适配）；跨进程互斥只在模块类写路径由 `withModuleLock` 负责，skills/agents 文本无跨进程锁。

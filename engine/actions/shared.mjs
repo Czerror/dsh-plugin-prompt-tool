@@ -25,9 +25,8 @@ export function createMask(source, label, plugin, allowExtra) {
     throw new TypeError(`${plugin}: ${label} needs allow and/or deny — 空名单无法表达「剔哪些工具」`)
   }
   // `run_code` 是 PTC 呈现**唯一**的可调用入口（见本文件顶部）。把它写进 **deny** 名单会让
-  // 整个 PTC 面失效，一律挂载期拒绝。写进 **allow** 名单相反是**必需**的：allow 是
-  // fail-closed（未列出即剔出），不点名它就会被连带剔掉——PTC 预设因此失去唯一入口。
-  // 2026-09-22 用户拍板：allow 模式允许点名它（旧模块本就能把它写进白名单）。
+  // 整个 PTC 面失效，一律挂载期拒绝。allow 名单不必点名它：它是保留传输，不属于可裁剪的
+  // 工具面；旧模块、tool-surface 这类 native 收窄声明因此可以直接与 PTC 共存。
   if (deny?.has(RUN_CODE)) {
     throw new TypeError(`${plugin}: ${label}.deny must not name the reserved ${RUN_CODE} transport — it is the only callable entry of the PTC presentation`)
   }
@@ -48,6 +47,8 @@ export function createMask(source, label, plugin, allowExtra) {
     /** 与 tool-filter 的名单判据 / Layer.admits 同一判据（tool-filter 模块已删除，判据保留）。 */
     blocks: (toolName) => {
       if (typeof toolName !== 'string' || toolName.length === 0) return false
+      // 保留传输不参与任何名单：allow 没点名也必须留下，deny 已在挂载期拒绝。
+      if (toolName === RUN_CODE) return false
       if (deny !== undefined && deny.has(toolName)) return true
       if (allowExtra?.has(toolName) === true) return false
       // 声明了 allow、或声明了 allowFrom（= 白名单模式，静态名单视为空集），未点名即裁掉。

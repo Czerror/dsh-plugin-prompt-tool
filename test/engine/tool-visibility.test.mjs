@@ -132,6 +132,21 @@ test('tool-visibility：allow 的 requireMatch 缺工具时 fail-open 并告警'
   assert.ok(rec.warnings.some((message) => /requireMatch tool is absent/.test(message)))
 })
 
+test('tool-visibility：run_code 是保留传输，allow 不点名也保留且不计入 requireMatch', async () => {
+  for (const allow of [['alpha'], ['alpha', 'run_code']]) {
+    const rec = recordingCtx()
+    const disposed = {}
+    const scope = scopeOf({ disposed, names: ['alpha', 'beta', 'run_code'] })
+    registerAction(rec.ctx, { kind: 'tool-visibility', id: 'v', allow, requireMatch: true })
+    const handler = only(rec, 'system-prompt/assemble')
+    const input = assembled(toolList('alpha', 'beta', 'run_code'))
+    const out = await handler(input, { agent: agentOf(scope) }, async () => input)
+    assert.deepEqual(out.tools.map((tool) => tool.name), ['alpha', 'run_code'], `allow ${allow.join(',')} 仍保留传输`)
+    assert.deepEqual(disposed.restrict, [{ allow: ['alpha'] }], '官方 restrict 不得收到保留名 run_code')
+    assert.deepEqual(rec.warnings, [], 'run_code 不参与 requireMatch 的缺失判定')
+  }
+})
+
 // ───────────────────────── 三、发现工具与提示 ─────────────────────────
 
 test('tool-visibility：discovery 解析 adapter 元数据，并从持久 tool/call 回收解锁名', async () => {
