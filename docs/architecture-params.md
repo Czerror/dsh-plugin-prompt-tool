@@ -137,6 +137,8 @@ PTC 的 `ptcMainMode` 与 `ptcSubagentMode` 分别映射到 `present-as.mainMode
 
 组合配置优先级为已声明共享参数桥 > moduleConfigs > 行默认。模块目录仅 source/local，官方工具、规划和压缩来自会话原有预设。自定义能力的新增/删除都经服务端白名单与候选验证，不由客户端猜目录或递归清理用户文件。
 
+内容填充的安全边界：`env-facts` 只允许 `env-safety` 的安全环境白名单，白名单外的键在构造期 fail loud；`instruction-hint` 的 `params.file` 只允许指令文件候选名，realpath 必须落在会话 cwd→最近项目根或 DSH_HOME；custom `fs` 执行器用 realpath containment 限定 cwd，symlink/junction 越界拒绝。
+
 ## 配置序号与跨模块排序
 
 module.yml.configOrder 保存规则id→非负安全整数，身份仍是模块id+规则id。同执行点按序排列，启用没有序号的规则追加到尾部；碰号时保留该模块内部相对顺序整体追加。重复启用无冲突不改顺序。
