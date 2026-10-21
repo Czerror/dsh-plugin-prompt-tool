@@ -1,30 +1,16 @@
-# Superpowers 引导 —— 技能优先（上游 obra/superpowers 的 DSH 化 bootstrap）。
+# Superpowers 引导 —— 技能优先（上游 obra/superpowers v7.0.0 的 DSH bootstrap）。
 #
-# 为什么：superpowers 是「引导常驻 + 技能按需加载」两件套——15 个技能共 43.5 万字符，
-# 而引导本体（skills/using-superpowers/SKILL.md）只有 3.2 千字符；上游靠
-# hooks/session-start 在会话开始时把引导整体注入。本插件这一侧已经具备按需发现
-# （`skill_search` / `skill_load`，见 engine/skill-search.mjs），而官方的全量技能目录注入
-# 被 `skill-surface` 模块主动拦掉——结果是模型只看得到一句工具描述，不会主动去搜。
-# 本模块补的就是这一段：把上游引导翻译成 DSH 事实（真实工具名、按需发现语义），常驻注入。
+# 上游用 SessionStart hook 注入 using-superpowers 技能；DSH 没有该 hook 通道，
+# 本模块把引导放进常驻 system-section，技能正文仍由 $DSH_HOME/skills 提供。
 #
-# 为什么技能正文不进来：43.5 万字符不可能作为规则正文维护，而技能的正确归属是
-# `$DSH_HOME/skills`——走既有技能库通道（skill_search 发现、skill_load 载入、
-# 技能页启停/只读策略）。本模块只做引导与路由，不分发也不改写任何技能文件。
-#
-# 为什么用 system-section 而不是 pre-step：上游 using-superpowers 自己写着
-# `<SUBAGENT-STOP>分派来的子代理忽略本技能</SUBAGENT-STOP>`；而 `system-section` 只进主会话
-# （官方按 global + 确切作用域合并、不合并祖先链，父会话注册的段进不了子代理），
-# 与上游语义天然一致，也省掉一条 audience 门与每轮的 pre-step 扫描成本。
-#
-# 与 ponytail 的关系：本引导要求「先 brainstorm → 写计划 → TDD → 评审」的重流程，
-# ponytail 要求「最小改动、绝不加没人要的东西」，两者同时常驻会互相拉扯。上游本来就写明
-# 「用户指令优先于技能」，正文保留这一句；真要消歧就在工作台停用其中一个（停用即回滚）。
+# 只进主会话：上游 using-superpowers 自带 <SUBAGENT-STOP>，这里用 scope 门实现。
+# 与 ponytail 的冲突：用户指令优先；要消歧就在工作台停用一个，停用即回滚。
 
 id: superpowers
 name: Superpowers 技能优先引导（bootstrap）
-version: 1.0.0
+version: 1.1.0
 engineCompat: ">=0.4.2"
-description: 常驻注入 superpowers 的启动引导（上游 using-superpowers 的 DSH 化改写）：任何动作之前先 skill_search / skill_load，附流程技能优先级、常见路由表与红旗清单。技能正文留在技能库，本模块不分发技能文件。
+description: 常驻注入 superpowers 的启动引导（上游 using-superpowers 的 DSH 化改写）：先查技能再动手，附流程优先级、常见路由与红旗。技能正文留在技能库，本模块不分发技能文件。
 meta:
   source: manual
 modules:
@@ -34,9 +20,6 @@ rules:
   - id: superpowers-bootstrap
     name: Superpowers 引导（常驻）
     enabled: true
-    # 每个 Agent（含子代理）都各自装配启用表里的模块，所以 system-section 并不等于
-    # "只进主会话"——必须用 scope 门显式限定。上游 using-superpowers 自带
-    # <SUBAGENT-STOP>（子代理忽略该技能），这里是同一语义。
     if:
       scope:
         audience: main
@@ -52,41 +35,46 @@ rules:
           text: |-
             # Superpowers
 
-            你有一套可组合的软件开发方法论：技能（skills）。**本会话的提示里没有技能目录**——技能要按需发现，不要凭记忆假装加载过。
+            **技能优先**：任何回答或动作之前，先查有没有对应技能。
 
-            ## 铁律
+            ## 规则
 
-            - **任何回答或动作之前先查技能**：包括澄清提问、翻代码、看文件。路由表里已有名字的直接 `skill_load("名字")`；要搜就用**技能名或描述里出现过的原词**，一次一两个，**别堆同义词**——`skill_search` 是「每个词都得命中」的 AND 子串匹配，词堆多了整条查询直接返回空。
-            - 宣布「Using <skill> to <目的>」再开始；技能带检查清单就逐条建 todo，不靠记忆执行——技能会演进，读当前版本。
-            - 载入后发现确实不适用，说明理由再放弃；不要因为「这个技能太重」而不加载。
-            - 优先级：用户指令（AGENTS.md、用户当轮吩咐）> 技能 > 默认行为。
+            - **先查再动手**：澄清提问、翻代码、看文件之前，先 `skill_search` 或 `skill_load`。路由表里有名字的直接加载；没有就用技能名或描述里的原词搜，一次一两个。堆同义词会把结果搜空。
+            - **执行方式**：宣布「Using <skill> to <目的>」后开始，检查清单逐条建 todo。
+            - **不适用就说明理由**：载入后确认不匹配，说明原因再换路。
+            - **优先级**：用户指令（AGENTS.md、当轮吩咐）> 技能 > 默认行为。
 
             ## 优先级与路由
 
-            多个技能命中时，**流程技能先跑**（brainstorming、systematic-debugging），实现或领域技能随后。常见路由：
+            多个技能命中时，流程技能先跑（如 `brainstorming`、`systematic-debugging`），实现或领域技能随后。
 
-            - 「我们来做 X / 加个功能」→ `brainstorming`：先问清意图与设计，再动手。
-            - 「修这个 bug / 测试失败 / 行为异常」→ `systematic-debugging`：先定位根因，再改。
-            - 需求已定、动手之前 → `writing-plans`：拆成可逐条执行的任务。
-            - 要动实现代码 → `test-driven-development`：先写失败的测试，再写让它通过的最小代码。
-            - 手上已有计划 → 默认 `subagent-driven-development`（每任务一个子代理 + 两阶段评审）；人类伙伴选内联执行、或本会话没有子代理工具时用 `executing-plans`（自己动手，与前者共用同一套计划工作区与账本）。
-            - 需要与当前工作区隔离 → `using-git-worktrees`：先探测是否已在隔离工作区，再选原生工具或 git worktree。
-            - 多个互不依赖的任务或失败 → `dispatching-parallel-agents`：一个域一个子代理并行。
-            - 实现完成 → `verification-before-completion`（先跑验证命令、看输出，再声称成功）；要核对需求时 `requesting-code-review`。
-            - 收到评审意见 → `receiving-code-review`：先核实，不做表演式认同。
-            - 测试通过、要决定这份工作怎么合并 → `finishing-a-development-branch`。
+            进入计划模式或写计划之前，如果还没 brainstorm，先用 `brainstorming`。
 
-            上表按名字给方向，直接 `skill_load`。表里没有的主题（测试先行、worktree、并行派发、技能编写等）用技能名或描述原词搜一次；没命中就明说这个缺口、按默认流程做，不要反复换同义词试探。
+            | 任务信号 | 先加载 |
+            |---|---|
+            | 要做新功能 / 不确定需求 | `brainstorming` |
+            | 修 bug / 测试失败 / 行为异常 | `systematic-debugging` |
+            | 需求已定，准备动手 | `writing-plans` |
+            | 要改实现代码 | `test-driven-development` |
+            | 已有计划，准备执行 | 默认 `subagent-driven-development`；内联执行或没有子代理工具时用 `executing-plans` |
+            | 需要隔离工作区 | `using-git-worktrees` |
+            | 多个独立任务 / 失败要并行 | `dispatching-parallel-agents` |
+            | 实现完成，准备声称成功 | `verification-before-completion`；要核对需求时 `requesting-code-review` |
+            | 收到评审意见 | `receiving-code-review` |
+            | 准备合并 / 收尾 | `finishing-a-development-branch` |
+
+            表里没有的主题，用技能名或描述原词搜一次；没命中就说明这个缺口，按默认流程继续。已知精确名时直接 `skill_load`。
 
             本 harness 的工具名映射、技能目录与会话存储见 `using-superpowers` 技能的 `references/dsh-tools.md`。
 
-            ## 红旗——出现这些念头就停下查技能
+            ## 红旗
+
+            出现这些念头，先停下查技能：
 
             | 念头 | 事实 |
             |---|---|
-            | 「这只是个简单问题」 | 提问也是任务，先查。 |
-            | 「我先多了解点上下文」 | 查技能在澄清提问之前。 |
-            | 「我先翻一眼代码」 | 技能会告诉你怎么翻。 |
-            | 「这个不需要正式技能」 | 存在就用。 |
-            | 「我记得这个技能」 | 技能会变，读当前版本。 |
+            | 「这只是个简单问题」 | 提问也是任务。 |
+            | 「我先多了解上下文 / 翻一眼代码」 | 技能先于澄清和探索。 |
+            | 「我记得这个技能」 | 技能会变，读当前正文。 |
+            | 「这个技能太重 / 不需要」 | 存在就用。 |
             | 「我先做这一件事」 | 做任何事之前先查。 |

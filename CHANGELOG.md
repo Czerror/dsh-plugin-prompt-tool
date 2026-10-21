@@ -1,5 +1,11 @@
 # Changelog
 
+### superpowers 引导文案重建（2026-10-21）
+
+- **来源**：以 `D:/AI/GitHub/superpowers` v7.0.0 的 `skills/using-superpowers/SKILL.md` 与 `hooks/session-start` 为源，按 `writing-great-skills` / `writing-for-agents` 重写内置模块的常驻提示。
+- **文案**：保留 DSH 的 `skill_search` / `skill_load` 按需发现、流程技能优先、计划前 brainstorm、路由表与红旗；以“技能优先”“先查再动手”作 leading word，删掉重复解释与实现细节，保留用户指令优先。模块版本 1.1.0。
+- **验证**：YAML 解析、typecheck / lint / test（762）/ build / git diff --check / verify:host / verify:pack / rebuild:module-template -- --check。
+
 ### PTC 与工具面收窄兼容（2026-10-21）
 
 - **保留传输**：`tool-visibility` 不再把 `run_code` 当作可裁剪工具。allow 未点名也保留，deny 仍在挂载期拒绝；`restrict` 的 allow 会过滤保留名，避免官方拒绝整条执行闸。
