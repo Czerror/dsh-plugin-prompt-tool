@@ -50,5 +50,10 @@ test('detectAgentsFiles：宿主只认 .git，.hg 不进目录链', () => {
   const home = join(work, 'home-hg')
   mkdirSync(home, { recursive: true })
 
-  assert.deepEqual(detectAgentsFiles({ cwd: sub, home }), [], '根落在 cwd，祖先的 .hg 不参与')
+  // tmpdir 若落在某个 git 仓库下，root 可能在更外层；但 .hg 永远不参与，所以这条断言不依赖 tmpdir 的祖先链。
+  assert.equal(
+    detectAgentsFiles({ cwd: sub, home }).some((card) => card.displayPath.includes('hg-repo')),
+    false,
+    'hg-repo 不因 .hg 进入目录链',
+  )
 })
