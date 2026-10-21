@@ -61,9 +61,9 @@ function maskKey(mask) {
 }
 
 /**
- * 从完整历史回收解锁名（判据与旧 assembly.allowFrom 逐条对齐）：只认 `tool/call` 里
- * 精确等于发现工具的调用，参数解析失败逐条跳过；解锁只做加法，不能越过 deny。
- * 读完整历史而非可见面：压缩遮蔽那条调用后，已解锁的工具仍要留在目录里。
+ * 从完整历史回收解锁名（判据与旧 assembly.allowFrom 逐条对齐）：认顶层 `tool/call`
+ * 与 PTC 嵌套 `tool/ptc-dispatch` 里精确等于发现工具的调用，参数解析失败逐条跳过；
+ * 解锁只做加法，不能越过 deny。读完整历史而非可见面：压缩遮蔽那条调用后仍要保留。
  */
 function fillUnlocked(into, session, tool, key, warnOnce, plugin, label) {
   into.clear()
@@ -77,7 +77,8 @@ function fillUnlocked(into, session, tool, key, warnOnce, plugin, label) {
     return
   }
   for (const event of events) {
-    if (event?.type !== 'tool/call' || event?.data?.name !== tool) continue
+    // PTC 下 run_code 里的嵌套调用落为 tool/ptc-dispatch，不是顶层 tool/call。
+    if ((event?.type !== 'tool/call' && event?.type !== 'tool/ptc-dispatch') || event?.data?.name !== tool) continue
     const raw = event.data.arguments
     let parsed
     try { parsed = typeof raw === 'string' ? JSON.parse(raw) : raw } catch { continue }
@@ -91,7 +92,7 @@ function fillUnlocked(into, session, tool, key, warnOnce, plugin, label) {
 export function prepareToolVisibility(action, plugin) {
   const label = labelOf(action)
   const discovery = parseDiscovery(action, label, plugin)
-  // 发现工具只解锁白名单里没点的名字：allowExtra 是「只做加法」的活集合，每轮从持久 tool/call 回收。
+  // 发现工具只解锁白名单里没点的名字：allowExtra 是「只做加法」的活集合，每轮从持久调用记录回收。
   if (discovery !== undefined && action.allow === undefined) {
     throw new TypeError(`${plugin}: ${label}.discovery requires allow — 解锁只对白名单有意义`)
   }

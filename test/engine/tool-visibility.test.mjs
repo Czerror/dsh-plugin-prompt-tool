@@ -153,15 +153,18 @@ test('tool-visibility：run_code 是保留传输，allow 不点名也保留且�
 
 // ───────────────────────── 三、发现工具与提示 ─────────────────────────
 
-test('tool-visibility：discovery 解析 adapter 元数据，并从持久 tool/call 回收解锁名', async () => {
+test('tool-visibility：discovery 从持久调用记录回收解锁名（含 PTC 嵌套 dispatch）', async () => {
   const registry = createDiscoveryRegistry()
   const rec = recordingCtx({ [DISCOVERY_SERVICE]: registry })
   const disposed = {}
-  const scope = scopeOf({ disposed, names: ['alpha', 'beta', 'gamma'] })
+  const scope = scopeOf({ disposed, names: ['alpha', 'beta', 'gamma', 'delta'] })
   const session = {
     id: 's1',
     header: { delegationDepth: 0 },
-    snapshotEvents: () => [{ type: 'tool/call', data: { name: 'tool_search', arguments: JSON.stringify({ toolNames: ['gamma'] }) } }],
+    snapshotEvents: () => [
+      { type: 'tool/call', data: { name: 'tool_search', arguments: JSON.stringify({ toolNames: ['gamma'] }) } },
+      { type: 'tool/ptc-dispatch', data: { name: 'tool_search', arguments: { toolNames: ['delta'] } } },
+    ],
   }
   const agent = { session, ctx: scope }
   registry.register(agent, 'tools', { kind: 'tools', tool: 'tool_search', unlock: { tool: 'tool_search', key: 'toolNames' } })
@@ -172,12 +175,13 @@ test('tool-visibility：discovery 解析 adapter 元数据，并从持久 tool/c
     discovery: { kind: 'tools' },
   })
   const handler = only(rec, 'system-prompt/assemble')
-  const input = assembled(toolList('alpha', 'beta', 'gamma'))
+  const input = assembled(toolList('alpha', 'beta', 'gamma', 'delta'))
   const out = await handler(input, { agent }, async () => input)
-  assert.deepEqual(out.tools.map((tool) => tool.name), ['alpha', 'beta', 'gamma'], '解锁名只做加法')
+  assert.deepEqual(out.tools.map((tool) => tool.name), ['alpha', 'beta', 'gamma', 'delta'], '两种调用记录都只做加法')
   assert.equal(disposed.restrict, undefined, 'allow 模式不调用 restrict')
-  assert.equal(disposed.guards[0]({ name: 'gamma' }), undefined, '解锁项通过 allow guard')
-  assert.match(disposed.guards[0]({ name: 'delta' }), /not allowed by tool-visibility/)
+  assert.equal(disposed.guards[0]({ name: 'gamma' }), undefined, '顶层 tool/call 解锁项通过 allow guard')
+  assert.equal(disposed.guards[0]({ name: 'delta' }), undefined, 'PTC 嵌套 dispatch 解锁项通过 allow guard')
+  assert.match(disposed.guards[0]({ name: 'epsilon' }), /not allowed by tool-visibility/)
   assert.deepEqual(rec.warnings, [], '元数据匹配时不得告警')
 })
 
