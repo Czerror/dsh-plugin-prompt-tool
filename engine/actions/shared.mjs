@@ -63,9 +63,10 @@ export function createMask(source, label, plugin, allowExtra) {
  * `available` = 目录名 ∪ SDK 正文名；`required` = 静态 allow ∪ 动态解锁项（`run_code`
  * 是保留传输，不进名单）。缺项时三面必须一起放宽——只放宽一面会让模型看到的与能调的不一致。
  */
-export function toolSurfacePlan(mask, allowExtra, available) {
-  const required = mask.requireMatch && mask.allow !== undefined
-    ? [...mask.allow, ...(allowExtra ?? [])].filter((name) => name !== RUN_CODE)
+export function toolSurfacePlan(mask, available) {
+  // createMask 已拒绝 deny + requireMatch，因此 requireMatch 为真时 allow 必存在。
+  const required = mask.requireMatch
+    ? [...new Set([...(mask.allow ?? []), ...(mask.allowExtra ?? [])])].filter((name) => name !== RUN_CODE)
     : []
   const missing = required.filter((name) => !available.has(name))
   return { failOpen: missing.length > 0, missing }

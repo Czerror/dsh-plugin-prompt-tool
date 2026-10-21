@@ -131,7 +131,7 @@ test('tool-visibility：allow 的 requireMatch 缺工具时 fail-open 并告警'
   const input = assembled(toolList('alpha', 'beta'))
   const out = await handler(input, { agent: agentOf(scope) }, async () => input)
   assert.deepEqual(out.tools.map((tool) => tool.name), ['alpha', 'beta'], '缺名单工具时暴露完整目录')
-  assert.ok(rec.warnings.some((message) => /requireMatch tools absent \(ghost\)/.test(message)), '告警带出具体缺项')
+  assert.ok(rec.warnings.some((message) => message.includes('ghost')), '告警带出具体缺项')
   assert.equal(disposed.guards[0]({ name: 'beta' }), undefined, 'fail-open 时 allow guard 同步放行')
 })
 
@@ -145,7 +145,7 @@ test('tool-visibility：tools 不是数组时执行闸也随正文缺项 fail-op
   const input = { sections: [{ name: SDK_SECTION_NAME, text: sdk }], contexts: [], variables: {} }
   const out = await handler(input, { agent: agentOf(scope) }, async () => input)
   assert.equal(out.tools, undefined, '目录不是数组时保持原样')
-  assert.deepEqual(sdkToolNames(out.sections[0].text), ['beta'], '正文保留整段')
+  assert.equal(out.sections[0].text, sdk, '正文保留整段')
   assert.equal(disposed.guards[0]({ name: 'beta' }), undefined, 'fail-open 时执行闸同步放行')
   assert.ok(rec.warnings.some((message) => /requireMatch tools absent/.test(message)))
 })

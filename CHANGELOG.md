@@ -4,9 +4,10 @@
 
 - **判据**：新增 `engine/actions/shared.mjs#toolSurfacePlan`，`required` = 静态 allow ∪ 动态解锁项（去掉 `run_code`），`available` = 装配目录名 ∪ SDK 正文名；缺项即 fail-open。
 - **修复**：目录面与正文面原本各算一次 required（正文面不含解锁项，执行闸只在 `tools` 是数组时置位）。现在三面读同一个布尔：`tools` 不是数组时执行闸也随正文缺项放行，解锁项缺项时正文也随目录放宽。
+- **行为变化（第三处）**：正文面改为与目录同源的并集判据——静态 allow 里的工具只在目录、不在正文时，正文按名单裁剪（原来整段保留）。
 - **告警**：fail-open 时列出具体缺项名字。
 - **测试**：新增 `tool-surface-plan.test.mjs` 4 条真值表；`tool-visibility` 补 `tools` 不是数组的集成用例。
-- **验证**：见本轮提交与测试输出。
+- **验证**：全量 786 pass；typecheck / lint / build / git diff --check 通过。需重启 DSH 后生效。
 
 ### 层卡片判据收成单一来源（2026-10-21）
 

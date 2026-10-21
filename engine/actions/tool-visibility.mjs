@@ -13,7 +13,7 @@
  *
  * 名单语义对齐官方 ToolRestriction（deepseek-harness packages/core/tools/src/index.ts:701-706）：
  * allow 与 deny 可以同时给，判据是「先按 allow 保留，再按 deny 剔除」。requireMatch 只在
- * allow 模式有意义：名单里任一工具不在目录里就放弃裁剪、暴露完整目录（fail-open）并告警——
+ * allow 模式有意义：名单里任一工具在目录与 SDK 正文的并集里都找不到，就放弃裁剪、暴露完整目录（fail-open）并告警——
  * 收窄错了会让当前工作流调不到工具，比多花上下文严重。
  *
  * 执行边界：deny 同时用 restrict（继承面）与 guard（本层/晚到）；allow 不用 restrict——
@@ -214,7 +214,7 @@ export function prepareToolVisibility(action, plugin) {
           ...(sdkNames ?? []),
         ])
         // 三面（目录 / 正文 / 执行闸）共用这一份判断：缺项就整体放宽，呈现与执行不得两套口径。
-        const plan = toolSurfacePlan(mask, allowExtra, available)
+        const plan = toolSurfacePlan(mask, available)
         const gate = states.get(context?.session ?? context?.agent?.session)
         if (gate !== undefined) gate.failOpen = plan.failOpen
         if (plan.failOpen) {
