@@ -471,7 +471,7 @@ use-prompt-tool-store.ts 是唯一工作台 facade，负责把 ConfigForms mirro
 | workspace-drafts.ts | 按预设身份的跨页草稿池：规则、人设、工具、变量、原始字段与展开状态；`poolDirty` 是「某模块有没有未保存输入」的唯一判据 |
 | instruction-drafts.ts | 指令文件正文的独立草稿池与版本基线 |
 | instruction-policy.ts | 指令策略的读写、默认值与单文件开关推导 |
-| layer-cards.ts | 层卡片的唯一判据：某模块在某层下有哪些卡、各是什么 kind（`param` / `capability` / `missingCapability` / `asset` / `add`）；标签、搜索文本与渲染归页面层 |
+| layer-cards.ts | 层卡片的唯一判据：某模块在某层下有哪些卡、各是什么 kind（`param` / `capability` / `missingCapability` / `asset` / `add`）；kind 非互斥（同 id 可同时是参数组与能力行），`missingCapability` 是「未声明、可创建」而非能力补卡；标签、搜索文本与渲染归页面层 |
 | session-model-face.ts | 官方会话模型 projection 与选择动作 |
 | session-preset-face.ts | 官方会话预设 projection `agentPreset` 与标题 projection `title` 的读取与订阅（当前会话真正运行的预设；标题只用于提示指名会话，缺失退回 id 短号） |
 
@@ -680,9 +680,9 @@ fieldset 禁用时 MenuSelect 同时拒绝 portal 中的选择。Tooltip 的键�
 
 主会话与子代理共用 `RuleCard`，每卡就是一条真实规则，不再存在模块级“编辑行为规则”二级编辑器。最外层折叠保留，收起只显示卡头，展开才挂载导航和表单；折叠前提交可保存草稿，非法输入保留供重开继续编辑。设置只承载共享参数与资产。原 `PromptConfigCard` 继续拥有指令文件编辑，主会话中置顶，子代理不显示重复文件卡。页面顺序不建立跨插入点的全局执行顺序。
 
-`InjectionPointsPanel#injectionPointSlots({ store, t, viewFilter, audience, keyword, … })` 是唯一的层装配入口，返回 `beforeCards`（当前受众的独立人设卡、页面级诊断卡与不占布局的定位 effect）以及 `renderLayerSettings`、`hasLayerSettings` 和 `matchesLayerSettings`。两个页面声明受众视图、创建编排并持有工具草稿所有者，不手写层名判断或重复资产布局。能力参数与其余资产编辑器由实例卡内的层设置区承载；人设复用 `CollapsibleCard` 卡壳，来源选择与折叠按钮互为兄弟。
+`InjectionPointsPanel#injectionPointSlots({ store, t, viewFilter, audience, keyword, … })` 是唯一的层装配入口，返回 `beforeCards`（当前受众的独立人设卡、页面级诊断卡与不占布局的定位 effect）以及 `renderLayerSettings`、`hasLayerSettings` 和 `layerCards`（某层某模块的卡片数据，含 `id` / `kind` / `searchText`）。两个页面声明受众视图、创建编排并持有工具草稿所有者，不手写层名判断或重复资产布局。能力参数与其余资产编辑器由实例卡内的层设置区承载；人设复用 `CollapsibleCard` 卡壳，来源选择与折叠按钮互为兄弟。
 
-`LayerSettingsContent` 的参数、装配能力与资产都按共享契约派生：`layerParamCards` 只列当前层实际装配且拥有通用参数的组，`layerAssembledCapabilities` 列出该层已装配能力，资产按 `displayLayer` 归位并复用各自专用编辑器、草稿池与写端点。模型参数不重复生成通用控件。创建本层能力复用 `ModuleCapabilityCreateMenu`（`features/modules/EngineModuleList.tsx`），提示词模板仍从原九层模板菜单创建。无可编辑设置的层不生成设置页签，无实例不生成兜底卡。设置视图首次进入才挂载，卡片保持展开时切换视图不丢输入；外层折叠卸载视图，草稿仍由工作台持有。
+`LayerSettingsContent` 的参数、装配能力与资产都按共享契约派生：`data/layer-cards.ts#layerCards` 一次给出该层该模块的卡片（`param` / `capability` / `missingCapability` / `asset` / `add`），渲染只按 kind 分组，资产复用各自专用编辑器、草稿池与写端点。模型参数不重复生成通用控件。创建本层能力复用 `ModuleCapabilityCreateMenu`（`features/modules/EngineModuleList.tsx`），提示词模板仍从原九层模板菜单创建。无可编辑设置的层不生成设置页签，无实例不生成兜底卡。设置视图首次进入才挂载，卡片保持展开时切换视图不丢输入；外层折叠卸载视图，草稿仍由工作台持有。
 
 选中某个注入层且该层没有内容时，列表给「该层还没有内容」的空状态与新增入口，不自动创建九张空卡、也不谎称「无匹配」；`context-activation` 是策略筛选而非层，保持「无匹配 + 清除筛选」提示。
 
@@ -811,7 +811,7 @@ tool-catalog 填充来源沿现有普通注入表单编辑：params.action 引�
 |---|---|
 | 引擎注入行为（插入点 / 时机 / 次数 / 受众） | `test/engine/*.test.mjs` |
 | 写盘产物语义 | `test/host/write-module.test.mjs`、`test/host/module-*.test.mjs`、`test/host/module-slices.test.mjs`、`test/host/global-params.test.mjs`（全局层 `config.yml#layerSettings` 的写/删键/空层回收与优先级）、`test/host/target-queue.test.mjs`、`test/host/versioned-text.test.mjs`、`test/host/skills-cas.test.mjs` |
-| bridge 端点载荷 | `test/shared/bridge-contract.test.mjs`、`test/client/bridge-client.test.mjs`、`test/host/settings-bridge.test.mjs`、`test/host/*-bridge.test.mjs`、`test/client/*.test.mjs`（客户端侧的固定卡接线、请求主语与渲染链路） |
+| bridge 端点载荷 | `test/shared/bridge-contract.test.mjs`、`test/client/bridge-client.test.mjs`、`test/host/settings-bridge.test.mjs`、`test/host/*-bridge.test.mjs`、`test/client/*.test.mjs`（客户端侧的固定卡接线、请求主语与渲染链路；含 `layer-cards`、`instruction-cards` 这类渲染链路的前置纯判据） |
 | 安全与拒绝路径 | `test/host/instructions-policy.test.mjs`、`test/host/instruction-scope-guard.test.mjs`、`test/host/skill-policy.test.mjs`、`test/host/module-package-import.test.mjs`、`test/host/characters-protection.test.mjs`、`test/host/wave1-safety.test.mjs`、`test/host/text-file.test.mjs`、`test/engine/config-whitelist.test.mjs`、`test/host/agents-cards.test.mjs`、`test/engine/instruction-files.test.mjs`（写白名单来源的探测与目录链判据） |
 
 **安全边界的守护位置**：指令文件读写（授权、上下文白名单、内容版本冲突、读取失败）、导入回滚、路径穿越、大小上限、桥端点安全面、晋升门控与 epoch 这些不变量，由上面「安全与拒绝路径」一栏的文件覆盖；改动它们需要独立授权，不得顺带删减。

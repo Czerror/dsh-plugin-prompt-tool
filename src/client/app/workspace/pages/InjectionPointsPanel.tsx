@@ -8,7 +8,7 @@
  * 展示归属只是导航：这里不新增第二份映射，也不改变任何运行时 hook、注册顺序或保存通道。
  */
 import { useEffect, useRef, useState, type ReactNode } from 'react'
-import { LAYER_ASSET_SECTIONS, layerCards as cardsOfLayer, type LayerCardKind } from '../../../data/layer-cards.ts'
+import { LAYER_ASSET_SECTIONS, layerCards as cardsOfLayer, type LayerCardKind, type LayerCardView } from '../../../data/layer-cards.ts'
 import type { PromptConfigDraft } from '../../../prompt-tool-types.ts'
 import type { DraftsPort, HostApiPort, ModelsPort, ModuleActionsPort, ModuleFactsPort, NoticePort, ParamsPort, VariablesPort } from '../../../data/store-ports.ts'
 import { canEditModule, moduleDeclares } from '../../../data/module-subject.ts'
@@ -16,7 +16,6 @@ import type { PromptToolLocaleKey, PromptToolTranslate } from '../../../locales.
 import { ConfirmDialog } from '../../../ui/ConfirmDialog.tsx'
 import { Button } from '../../../ui/Button.tsx'
 import { EngineParamField, EngineParamFields, editorGroupSearchText } from '../../../features/modules/EngineParamFields.tsx'
-import type { LayerCardView } from '../../../features/prompts/RulesWorkspace.tsx'
 import { EngineModuleCard } from '../../../ui/EngineModuleCard.tsx'
 import { LAYER_LABEL_KEYS, translateLabel } from '../../../features/prompts/prompt-config-policy.ts'
 import { ModuleCapabilityCreateMenu } from '../../../features/modules/EngineModuleList.tsx'
@@ -117,7 +116,7 @@ export function LayerSettingsContent(props: {
   /** 初始创建模式（外部装配／测试用；生产路径由「添加」按钮驱动）。参数组是固定设置区，不在此列。 */
   creatingSections?: readonly string[]
   audience?: 'main' | 'subagent'
-  /** 只渲染这些 kind（能力补卡传 ['capability']）；省略＝全部。 */
+  /** 只渲染这些 kind（能力补卡传 ['param', 'capability']）；省略＝全部。 */
   kinds?: readonly LayerCardKind[]
 }): ReactNode {
   const { store, t, layer } = props

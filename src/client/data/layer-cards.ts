@@ -20,6 +20,11 @@ export interface LayerCard {
   kind: LayerCardKind
 }
 
+/** 页面层补上已小写的搜索文本；data 层不依赖 UI 文案。 */
+export interface LayerCardView extends LayerCard {
+  searchText: string
+}
+
 /** 结构化资产卡（有自己的编辑器，不再进通用参数分组）。 */
 export const LAYER_ASSET_IDS = ['variables', 'main-model', 'subagent-model', 'custom-tools'] as const
 

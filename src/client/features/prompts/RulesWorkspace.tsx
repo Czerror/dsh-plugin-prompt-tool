@@ -12,7 +12,7 @@ import { useModuleConfigOrder } from '../../data/use-module-config-order.ts'
 import { reorderToView, sameConfigPosition } from '../../data/prompt-config-order.ts'
 import { hasRuleFields, rulesDirty } from '../../data/rule-drafts.ts'
 import { instructionFileIdOf } from '../../data/prompt-config-content.ts'
-import type { LayerCard } from '../../data/layer-cards.ts'
+import type { LayerCardView } from '../../data/layer-cards.ts'
 import type { PromptConfigDraft } from '../../prompt-tool-types.ts'
 import type { PromptToolTranslate } from '../../locales.ts'
 import { MenuSelect } from '../../ui/MenuSelect.tsx'
@@ -29,11 +29,6 @@ import { TemplateTargetPicker } from '../../ui/TemplatePicker.tsx'
 import type { ModuleCreateItem } from '../modules/EngineModuleList.tsx'
 import ui from '../../ui/controls.module.css'
 import css from './rules.module.css'
-
-/** 层卡片视图：id/kind 来自 data 层判据，searchText 由页面层用 t 生成（已小写）。 */
-export interface LayerCardView extends LayerCard {
-  searchText: string
-}
 
 export interface RulesWorkspaceProps {
   store: ModuleFactsPort & DraftsPort & RuleEditingPort & InstructionFilesPort & NoticePort & ModuleActionsPort
