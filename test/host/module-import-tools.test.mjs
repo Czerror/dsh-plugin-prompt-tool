@@ -78,6 +78,10 @@ test('模块导入工具预览提交四种来源，保留空变量占位且不�
 test('模块导入工具拒绝陈旧预览、越界资源和取消，既有模块字节不变', async t => {
   const f = await setup(t)
   const files = [{ path: 'reject.json', content: JSON.stringify({ id: 'reject', name: 'Reject', modules: [], rules: [rule] }) }]
+  const unknown = await f.call({ files, extra: true })
+  assert.equal(unknown.isError, true, '工具拒绝未知字段')
+  const sourceId = await f.call({ sourceId: '00000000-0000-0000-0000-000000000000', preview: true })
+  assert.equal(sourceId.isError, true, '工具没有上传来源存储，不接受 sourceId')
   const preview = await f.success({ files })
   const before = readdirSync(moduleRoot).sort()
   assert.equal((await f.call({ files, preview: false, expectedSourceDigest: preview.sourceDigest, expectedPreviewRevision: '0'.repeat(64) })).isError, true)

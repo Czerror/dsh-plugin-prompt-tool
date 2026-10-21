@@ -487,12 +487,13 @@ src/shared/bridge-contract.ts 同时拥有：
 
 data/bridge-client.ts 提供泛型 bridgeCall(endpoint key, typed body, subject?) 和角色卡专用 bridgeUpload。主语是**每次调用显式携带的实参**（模块 id），没有会话级编辑目标，也不保留上次用到的主语；逐卡规则读写使用所属模块身份。业务组件不得拼接 /bootstrap、/module-delete 等原始路径。新增或改名端点必须同步 shared map、host 注册和契约测试。
 
-**契约字段集 ≠ 运行期接受集（2026-10-16 实测，45 个端点）**：`BridgeRequestMap` 是 **interface**（纯类型，运行期读不到），事务层 `runtime/bridge-transaction.ts` **不做字段校验**（只判「合法 HTTP ＋ JSON 对象」，载荷语义下放 handler）。因此请求顶层字段的实际拒绝面只有 **10/45** 个端点：
+**契约字段集 = 运行期顶层接受集（2026-10-21 收紧）**：`shared/bridge-request-shape.ts` 是 45 个端点顶层字段的唯一运行期表，与 `BRIDGE_ENDPOINTS` 编译期覆盖绑定；所有 JSON 端点带未知顶层字段一律 400，其中 29 个由统一表回 `bridge-request-invalid` 并点名多余字段。
 
-- 内联白名单 8 处——`transfer.ts`（assetRelease 断言「恰好 1 键」；exportModule 用 Set）、`params.ts`（moduleVariables）、`lifecycle.ts`（moduleName 读分支；moduleConfigOrder 顶层＋entry 双层＋必填）、`instructions.ts`（rules 八项链）、`definitions.ts`（persona、personaSources）；逐字核对**7 处与契约等价**，唯一差异是 **moduleName 读分支更严**（白名单为空而契约三字段全可选 ⇒ 类型合法的 `{ expectedRevision }` 读请求会被 400 拒）。
-- 集中式 1 处——`bridge-runtime.ts` 的 `IMPORT_REQUEST_FIELDS`（`Record<keyof AssetImportRequest, true>`，与契约**双向绑定**，覆盖两个导入端点）。
-
-**其余 29 个 JSON 端点在运行期静默忽略多余字段**（6 个 `body:'none'` 不解析请求体）。⇒ 给契约加一个字段时：那 10 个端点回 400（白名单未同步）、其余 200 无声（多发的键被丢弃）；**同一次契约变更在不同端点行为相反**，这是已知状态而非缺陷路径——要收紧得先定「哪些端点该严」，故未改（详见 CHANGELOG 的同日条目）。另有两处契约与实现的错位留档：`paramOverrides` 契约声明 `expectedModuleId?` 而 handler 从不读它（只有归属门读）；`triggers` 契约声明 4 字段而端点恒 410。
+- 例外显式登记：10 个 handler 已自带更具体拒绝码/消息的端点（assetRelease、exportModule、moduleVariables、moduleName、moduleConfigOrder、rules、persona、personaSources、importModulePackage、charactersImport）仍回原错误码，统一断言不重复拦截。moduleName 读分支仍比契约更严（白名单为空），属已登记差异。
+- 6 个 `body:'none'` 端点（meta、describe、templates、assetUpload、triggers、charactersImportStream）不解析请求体；其余 39 个 JSON 端点中 29 个由统一表拒绝、10 个由 handler 拒绝。`ruleDiagnostics` 是 JSON 端点但无字段，任何顶层字段都会被统一表拒绝。
+- 字段表只约束顶层字段；嵌套对象（rules edits、persona、import files 等）仍由域内校验。Agent 导入工具复用 `BRIDGE_REQUEST_FIELDS.importModulePackage`；TUI 是斜杠命令语法，不硬套 JSON decode。
+- 新增字段仍要同时改 `BridgeRequestMap` 与字段表；类型检查保证表里的键属于该端点，表测试保证 45 端点/6 none/10 handler-owned 全覆盖。导入端点的字段来源是 `shared/asset-transfer.ts#ASSET_IMPORT_FIELDS`，HTTP 与工具共用；工具显式排除它没有存储的 `sourceId`。
+- 另有两处契约与实现的错位留档：`paramOverrides` 契约声明 `expectedModuleId?` 而 handler 从不读它（只有归属门读）；`triggers` 契约声明 4 字段而端点恒 410。
 
 ### 7.1.1 模块主语策略
 

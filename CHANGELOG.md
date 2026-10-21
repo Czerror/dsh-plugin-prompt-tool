@@ -1,5 +1,12 @@
 # Changelog
 
+### bridge 请求形状统一严格（候选 04，2026-10-21）
+
+- **运行期接受面**：新增 `src/shared/bridge-request-shape.ts`，为 45 个端点声明顶层字段表；所有 JSON 端点未知字段 400 `bridge-request-invalid`。此前 29 个端点静默忽略多余字段。
+- **例外**：10 个 handler 已有更具体未知字段错误码/消息的端点保留域内拒绝；6 个 `body:'none'` 端点（含 triggers，不含 ruleDiagnostics）不读体；29 个由统一表拒绝的 JSON 端点里 `ruleDiagnostics` 无字段，任何顶层字段都拒绝。字段表与 `BridgeRequestMap` 通过类型约束和覆盖测试绑定。
+- **工具**：模块导入工具复用导入端点字段集；TUI 命令语法不在本轮 JSON decode 内。
+- **测试**：新增 45 端点表覆盖、6 none / 10 handler-owned 与宽松端点 400 断言；验证 typecheck / lint / test（738）。
+
 ### 规则判定账本归装配实例（候选 06，2026-10-21）
 
 - **owner**：`rule-diagnostics.ts` 改为 `createRuleDiagnosticsLedger()` 工厂；`AgentAssemblyRuntime` 创建时持有账本，`mountRuleSources` 的 `onOutcome` 直接写实例 sink；删模块级 Map、全局 snapshot/dropped 与测试专用 `resetRuleDiagnostics`。

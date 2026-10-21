@@ -38,7 +38,7 @@ import { readModuleVariables } from '../host/module-variables.ts'
 import { createAssetSources } from '../host/asset-sources.ts'
 import { modulePathExists } from '../host/module-install.ts'
 import { storageRoot } from '../host/paths.ts'
-import type { AssetFile, AssetImportRequest, ImportKind } from '../shared/asset-transfer.ts'
+import { ASSET_IMPORT_FIELDS, type AssetFile, type AssetImportRequest, type ImportKind } from '../shared/asset-transfer.ts'
 import { moduleParamFallbacks } from '../shared/engine-params.ts'
 import { ENGINE_EDITOR_GROUP_MAP, type ModuleFacts } from '../shared/engine-capabilities.ts'
 import { isModuleId } from '../shared/module-ids.ts'
@@ -57,6 +57,7 @@ import {
   type BridgeRouteSpec,
   type BridgeTransaction,
 } from './bridge-transaction.ts'
+import { assertBridgeRequest } from '../shared/bridge-request-shape.ts'
 import { gateFor, type GateHandle } from './module-subject-gate.ts'
 import type { RuleDiagnosticsSnapshot } from './rule-diagnostics.ts'
 import {
@@ -149,26 +150,6 @@ export const SHA256_HEX_RE = /^[0-9a-f]{64}$/i
 /** promptOrderCharacterId 上界：ST character_id 实际很短，超长一律按非法输入拒绝。 */
 export const MAX_ORDER_CHARACTER_ID_LENGTH = 128
 
-/**
- * 导入请求字段白名单：与契约**双向绑定**。
- *
- * `Record<keyof AssetImportRequest, true>` 让两个方向都在编译期受控：白名单里多一个键、
- * 或契约（含它所继承的 `ImportChoices`）新增/改名一个字段，`typecheck` 都会失败。
- * 原先是手写字面量数组，与 `AssetImportRequest` 之间只有人眼维持一致。
- */
-const IMPORT_REQUEST_FIELDS: Record<keyof AssetImportRequest, true> = {
-  files: true,
-  sourceId: true,
-  preview: true,
-  expectedSourceDigest: true,
-  expectedPreviewRevision: true,
-  targetId: true,
-  targetName: true,
-  overwrite: true,
-  sourceKind: true,
-  promptOrderCharacterId: true,
-}
-
 /** 导入端点（模块包 / 角色卡）的入口参数。 */
 export interface ImportRequestParams extends AssetImportRequest {
   /** 省略 / false = 显式提交；true = 只读预览（不落盘）。 */
@@ -188,7 +169,7 @@ export interface ImportRequestParams extends AssetImportRequest {
 export function readImportRequestParams(record: Record<string, unknown>):
   | { ok: true; params: ImportRequestParams }
   | { ok: false; message: string } {
-  const allowed = new Set(Object.keys(IMPORT_REQUEST_FIELDS))
+  const allowed = new Set(Object.keys(ASSET_IMPORT_FIELDS))
   if (Object.keys(record).some((key) => !allowed.has(key))) return { ok: false, message: '导入请求包含未知字段' }
   if ((record.files === undefined) === (record.sourceId === undefined)) return { ok: false, message: 'files 与 sourceId 必须且只能提供一个' }
   if (record.sourceId !== undefined && (typeof record.sourceId !== 'string' || !/^[0-9a-f-]{36}$/i.test(record.sourceId))) return { ok: false, message: 'sourceId 必须是有效上传来源标识' }
@@ -548,7 +529,7 @@ export function createBridgeRuntime(options: BridgeRuntimeOptions): BridgeRuntim
    * 主语头形状在事务边界**之后**判定：`invalid` 一律 400 并终止，与端点自身策略（required/optional/none）无关；
    * 放在 handler 内层是为了不把 403（非 loopback）/405（非 POST）挡在自守边界之前。
    */
-  const route = (spec: BridgeRouteSpec): ReturnType<typeof bridgeTransaction> => bridgeTransaction({
+  const route = (endpoint: string, spec: BridgeRouteSpec): ReturnType<typeof bridgeTransaction> => bridgeTransaction({
     ...spec,
     handle: async (tx) => {
       if (subjectHeader(tx.req).state === 'invalid') {
@@ -559,13 +540,19 @@ export function createBridgeRuntime(options: BridgeRuntimeOptions): BridgeRuntim
         })
         return
       }
+      try {
+        assertBridgeRequest(endpoint, tx.record)
+      } catch (error) {
+        tx.write(400, { ok: false, code: 'bridge-request-invalid', message: String((error as Error)?.message ?? error) })
+        return
+      }
       await spec.handle(tx)
     },
   }, { editDir })
   const register = (endpoint: string, spec: BridgeRouteSpec): (() => void) =>
-    settingsContext().webServer.register({ kind: 'exact', path: SETTINGS_BRIDGE_PREFIX + endpoint, handler: route(spec) })
+    settingsContext().webServer.register({ kind: 'exact', path: SETTINGS_BRIDGE_PREFIX + endpoint, handler: route(endpoint, spec) })
   const registerAgentRoute = (endpoint: string, spec: BridgeRouteSpec): (() => void) =>
-    agentContext().webServer.register({ kind: 'exact', path: SETTINGS_BRIDGE_PREFIX + endpoint, handler: route(spec) })
+    agentContext().webServer.register({ kind: 'exact', path: SETTINGS_BRIDGE_PREFIX + endpoint, handler: route(endpoint, spec) })
 
   const findDescriptor = (): SettingsDescriptor | undefined => {
     const now = Date.now()

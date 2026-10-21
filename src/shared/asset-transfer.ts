@@ -37,6 +37,22 @@ export interface AssetImportRequest extends ImportChoices {
   expectedPreviewRevision?: string
 }
 
+/** 导入请求顶层字段的唯一表；HTTP 与工具接受面从它派生（工具有意排除上传来源 `sourceId`）。 */
+export const ASSET_IMPORT_FIELDS = {
+  files: true,
+  sourceId: true,
+  preview: true,
+  expectedSourceDigest: true,
+  expectedPreviewRevision: true,
+  targetId: true,
+  targetName: true,
+  overwrite: true,
+  sourceKind: true,
+  promptOrderCharacterId: true,
+} satisfies Record<keyof AssetImportRequest, true>
+
+export const ASSET_IMPORT_FIELD_KEYS = Object.keys(ASSET_IMPORT_FIELDS) as ReadonlyArray<keyof AssetImportRequest>
+
 export interface ModuleExportRequest {
   id: string
   mode?: 'definition' | 'zip'

@@ -572,6 +572,19 @@ test('契约：/tool-surface 返回存活 Agent 的只读工具面摘要，未�
   assert.equal(unknownPayload.code, 'tool-surface-unknown-session')
 })
 
+test('契约：宽松 JSON 端点也拒绝未知字段——400 bridge-request-invalid', async () => {
+  const handlers = register()
+  const handler = handlers.get(SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.models)
+  assert.ok(handler, '/models 端点未注册')
+  const res = fakeRes()
+  await handler(fakeReq({ body: { refresh: true, extra: true } }), res)
+  assert.equal(res.status, 400)
+  const payload = JSON.parse(res.body)
+  assert.equal(payload.ok, false)
+  assert.equal(payload.code, 'bridge-request-invalid')
+  assert.match(payload.message, /extra/, '错误消息点名多余字段')
+})
+
 test('契约：/rule-diagnostics 只回判定计数，未启用不入账且读取不触发求值', async () => {
   const { createRuleDiagnosticsLedger } = await import('../../src/runtime/rule-diagnostics.ts')
   const ledger = createRuleDiagnosticsLedger()

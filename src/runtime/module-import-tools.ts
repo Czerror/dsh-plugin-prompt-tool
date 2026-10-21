@@ -6,6 +6,10 @@ import type { ModuleToolHost } from '../host/module-tool-target.ts'
 import { expandModuleSource, moduleImportPreview, installModulePackage } from '../host/module-package.ts'
 import type { AssetFile, AssetImportRequest } from '../shared/asset-transfer.ts'
 import { MODULE_TOOL_NAMES } from '../shared/engine-capabilities.ts'
+import { ASSET_IMPORT_FIELD_KEYS } from '../shared/asset-transfer.ts'
+
+/** 工具没有上传来源存储：HTTP 的 sourceId 有意不在工具接受面内。 */
+const IMPORT_TOOL_FIELDS = new Set<string>(ASSET_IMPORT_FIELD_KEYS.filter(key => key !== 'sourceId'))
 
 export function registerModuleImportTools(ctx: Context, host: Pick<ModuleToolHost, 'root' | 'rebuild'>): () => void {
   const fiber = ctx.inject(['tools'], toolsCtx => toolsCtx.tools.register(defineTool({
@@ -24,7 +28,7 @@ export function registerModuleImportTools(ctx: Context, host: Pick<ModuleToolHos
       render: (_args, value) => [{ type: 'text', text: JSON.stringify(value) }],
     },
     execute: async (args, exec) => {
-      if (Object.keys(args).some(key => !['files', 'preview', 'targetId', 'targetName', 'overwrite', 'sourceKind', 'promptOrderCharacterId', 'expectedSourceDigest', 'expectedPreviewRevision'].includes(key))) throw new TypeError('模块导入包含未知字段')
+      if (Object.keys(args).some(key => !IMPORT_TOOL_FIELDS.has(key))) throw new TypeError('模块导入包含未知字段')
       exec.signal.throwIfAborted()
       const files = await expandModuleSource(args.files as AssetFile[])
       exec.signal.throwIfAborted()
