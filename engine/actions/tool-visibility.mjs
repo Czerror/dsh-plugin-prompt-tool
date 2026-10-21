@@ -23,7 +23,8 @@
 
 import { RUN_CODE, createMask, labelOf } from './shared.mjs'
 import { SDK_SECTION_NAME, stripSdkDeclarations, sdkToolNames } from '../sdk-strip.mjs'
-import { historyEvents } from '../history.mjs'
+import { TOOL_INVOCATION_EVENT_TYPES, historyEvents } from '../history.mjs'
+import { toolScopeSnapshot } from '../tool-scope.mjs'
 import { DISCOVERY_SERVICE } from '../service-names.mjs'
 import { UNLOCKABLE_DISCOVERY_KINDS } from '../discovery.mjs'
 
@@ -78,7 +79,7 @@ function fillUnlocked(into, session, tool, key, warnOnce, plugin, label) {
   }
   for (const event of events) {
     // PTC 下 run_code 里的嵌套调用落为 tool/ptc-dispatch，不是顶层 tool/call。
-    if ((event?.type !== 'tool/call' && event?.type !== 'tool/ptc-dispatch') || event?.data?.name !== tool) continue
+    if (!TOOL_INVOCATION_EVENT_TYPES.includes(event?.type) || event?.data?.name !== tool) continue
     const raw = event.data.arguments
     let parsed
     try { parsed = typeof raw === 'string' ? JSON.parse(raw) : raw } catch { continue }
@@ -129,9 +130,7 @@ export function prepareToolVisibility(action, plugin) {
       // mask 或 scope 变了：先撤旧闸，避免第一轮为真后永久留闸。
       release(session)
       const state = { ctx: scoped, key, disposers: [], failOpen: false }
-      const known = typeof tools.schemas === 'function'
-        ? new Set((tools.schemas() ?? []).map((schema) => schema?.name).filter((name) => typeof name === 'string'))
-        : undefined
+      const known = toolScopeSnapshot(tools).globalNames
       if (mask.deny !== undefined && typeof tools.restrict === 'function' && known !== undefined) {
         // allow 模式不走 restrict：`schemas()` 是全局视图，过滤后的 allow 会漏掉预设/祖先层的
         // 工具，restrict 反而把它们裁掉；restrict 只接收继承面名字，无法安全区分本层工具。
@@ -147,20 +146,16 @@ export function prepareToolVisibility(action, plugin) {
           }
         }
       }
-      if (mask.deny !== undefined && typeof tools.guard === 'function') {
+      if ((mask.deny !== undefined || mask.allow !== undefined) && typeof tools.guard === 'function') {
         const deny = mask.deny
         state.disposers.push(tools.guard((exec) => {
           const toolName = exec?.name
           if (toolName === RUN_CODE || typeof toolName !== 'string' || toolName.length === 0) return undefined
-          return deny.has(toolName) ? `${label}: tool ${JSON.stringify(toolName)} is denied by tool-visibility` : undefined
-        }))
-      }
-      if (mask.allow !== undefined && typeof tools.guard === 'function') {
-        state.disposers.push(tools.guard((exec) => {
-          const toolName = exec?.name
-          if (toolName === RUN_CODE || typeof toolName !== 'string' || toolName.length === 0) return undefined
-          if (state.failOpen) return undefined
-          return mask.blocks(toolName) ? `${label}: tool ${JSON.stringify(toolName)} is not allowed by tool-visibility` : undefined
+          if (deny?.has(toolName)) return `${label}: tool ${JSON.stringify(toolName)} is denied by tool-visibility`
+          if (mask.allow !== undefined && !state.failOpen && mask.blocks(toolName)) {
+            return `${label}: tool ${JSON.stringify(toolName)} is not allowed by tool-visibility`
+          }
+          return undefined
         }))
       }
       states.set(session, state)

@@ -29,6 +29,7 @@ export const inject = ['tools']
 
 import { toJsonSchema } from './shared.mjs'
 import { renderRows, rankRows, scoreRows, queryTokens } from './discovery.mjs'
+import { toolScopeSnapshot } from './tool-scope.mjs'
 import { DISCOVERY_SERVICE } from './service-names.mjs'
 
 /** 单次搜索结果上限：再多就该让模型收窄关键词。 */
@@ -167,7 +168,7 @@ export function createToolSearchDefinition(ctx, options = {}) {
       try {
         // 执行中的 agent 就是观察作用域：preset 工具注册在 agent scope 层，
         // 不带 scope 的 schemas() 只看全局层，会漏掉它们。
-        schemas = ctx.tools.schemas(exec?.agent)
+        schemas = toolScopeSnapshot(ctx.tools, exec?.agent).visible
       } catch (error) {
         return { text: [...lines, `catalog search unavailable: ${String(error?.message ?? error)}`].join('\n') }
       }

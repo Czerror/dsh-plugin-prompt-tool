@@ -14,6 +14,7 @@ import ToolRuntime from '@deepseek-ai/dsh-tools'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import { registerAction } from '../../engine/actions.mjs'
 import { SDK_SECTION_NAME, sdkToolNames } from '../../engine/sdk-strip.mjs'
+import { toolScopeSnapshot } from '../../engine/tool-scope.mjs'
 import { createPromptConfigs } from '../../engine/schema.mjs'
 
 /** 记录型 ctx 桩：记录 ctx.on 的通道、注册的服务调用与 effect 释放。 */
@@ -399,6 +400,9 @@ test('(5b) 真实 PTC：allow 未点名 run_code 仍保留传输，requireMatch 
 
 test('(5c) 真实 PTC：allow 收窄保留祖先/预设层工具', async () => {
   const h = await ptcHarness({ ancestorTools: ['write'] })
+  const snapshot = toolScopeSnapshot(h.main.ctx.tools, h.main)
+  assert.equal(snapshot.globalNames.has('write'), false, 'write 只在祖先层，全局视图不应包含')
+  assert.ok(snapshot.scoped.some((schema) => schema?.name === 'write'), 'scope 快照必须暴露祖先层 write')
   const dispose = registerAction(h.root, { kind: 'tool-visibility', id: 'v', allow: ['bash', 'read', 'write'], requireMatch: true })
   const out = await h.assemble(h.main)
   const sdk = out.sections.find(section => section.name === SDK_SECTION_NAME)

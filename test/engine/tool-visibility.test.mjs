@@ -119,7 +119,7 @@ test('tool-visibility：allow 与 deny 同时给时先保留再剔除（对齐�
   assert.deepEqual(out.tools.map((tool) => tool.name), ['alpha'])
   assert.deepEqual(disposed.restrict, [{ deny: ['beta'] }], 'allow 不交给 restrict，避免漏掉预设/祖先层工具')
   assert.equal(disposed.guards[0]({ name: 'beta' }), 'v: tool "beta" is denied by tool-visibility')
-  assert.equal(disposed.guards[1]({ name: 'gamma' }), 'v: tool "gamma" is not allowed by tool-visibility')
+  assert.equal(disposed.guards[0]({ name: 'gamma' }), 'v: tool "gamma" is not allowed by tool-visibility')
 })
 
 test('tool-visibility：allow 的 requireMatch 缺工具时 fail-open 并告警', async () => {

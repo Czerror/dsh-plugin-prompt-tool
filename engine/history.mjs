@@ -18,6 +18,13 @@ export function historyEvents(session) {
 }
 
 /**
+ * 一次工具实际调用的 durable 事件：顶层 `tool/call`，以及 PTC `run_code` 内的
+ * `tool/ptc-dispatch`。只观察「执行了哪个工具」时读两者；观察「模型动作 / 相位晋升」
+ * 仍只看顶层 `tool/call`，不要把本集合直接替换过去。
+ */
+export const TOOL_INVOCATION_EVENT_TYPES = Object.freeze(['tool/call', 'tool/ptc-dispatch'])
+
+/**
  * 当前上下文是否**真的**受限：surface 在场（`nodes` 是数组）且每个节点都指向日志里的事件。
  * 判据只有这一处 —— `currentEvents()` 的降级与消费点的视图口径都由它回答，避免两边静默分叉。
  * 空 `nodes` 是受限（可见上下文为空），不是降级。
