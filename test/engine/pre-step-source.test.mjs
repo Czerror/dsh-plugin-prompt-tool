@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { composePreStepSources, createPreStepSource } from '../../engine/pre-step-source.mjs'
-import { applyPromptConfigSources } from '../../engine/executor.mjs'
+import { applyPromptConfigSources, moduleSourceId } from '../fixtures/pre-step.mjs'
 import { PRE_STEP_COORDINATOR_SERVICE } from '../../engine/service-names.mjs'
 
 const promotion = () => ({ main: {}, withSubagents: {} })
@@ -10,7 +10,7 @@ test('createPreStepSource：resolve 使用来源 ctx，而不是批 ctx', async 
   const sourceCtx = { scope: 'source' }
   let seen
   const source = createPreStepSource({
-    sourceId: 'module:alpha',
+    sourceId: moduleSourceId('alpha'),
     ctx: sourceCtx,
     configs: [{ id: 'alpha', resolve: async (input) => { seen = input.ctx; return { text: 'A' } } }],
     promotion: promotion(),

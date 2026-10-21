@@ -6,6 +6,10 @@
  * 本模块不做注入、不排序、不读会话。
  */
 
+/** 来源身份前缀的唯一出处；调用方不要再手写 `module:` / `preset:`。 */
+export const moduleSourceId = moduleId => `module:${moduleId}`
+export const presetSourceId = id => `preset:${id}`
+
 const isRecord = (value) => value !== null && typeof value === 'object' && !Array.isArray(value)
 
 /** 来源 ctx 绑定一次；批执行传入的 ctx 不覆盖来源自己的 scope。 */

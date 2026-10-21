@@ -25,6 +25,7 @@ const { ruleDiagnosticsSnapshot, resetRuleDiagnostics } = await import('../../sr
 const { mountRuleSources } = await import('../../engine/rule-runtime.mjs')
 const { installPersonaCapture } = await import('../../src/runtime/persona-registration.ts')
 const { loadModuleSpec } = await import('../../src/host/module-spec.ts')
+const { mountPreStepConfigs: mountConfigs, applyPromptConfigSources } = await import('../fixtures/pre-step.mjs')
 
 /** 装配能力探针：装配只问「宿主是否提供该服务」，这里全部视为提供。 */
 const hasEveryService = () => true
@@ -381,7 +382,6 @@ test('协调器：受管规则与直接来源同批注入，释放直接来源�
   await h.runtime.settled()
   const { createPromptConfigs } = await import('../../engine/schema.mjs')
   const { createPreStepSource } = await import('../../engine/pre-step-source.mjs')
-  const { applyPromptConfigSources } = await import('../../engine/executor.mjs')
   const [config] = createPromptConfigs([{ id: 'z-direct', text: 'DIRECT', position: 'after-user' }])
   config.sequence = 1000
   const source = createPreStepSource({ sourceId: 'direct:mixed', ctx: agent.ctx, configs: [config] })
@@ -1083,14 +1083,9 @@ test('固定系统段：独占和上下文抑制只作用目标受众，主子�
   standing.ctx.get('systemPrompt').context({ name: 'shared-context', order: 0, text: 'CONTEXT' })
   const { compileRules } = await import('../../engine/rule-spec.mjs')
   const { createPromptConfigs } = await import('../../engine/schema.mjs')
-  const { applyPromptConfigSources } = await import('../../engine/executor.mjs')
   const { createPreStepSource } = await import('../../engine/pre-step-source.mjs')
   const config = (audience, extra = {}) => ({ id: 'fixed', layer: 'system-section', audience, text: audience.toUpperCase(), mergeMode: 'merged', params: { complete: true, suppressRuntimeContext: true }, ...extra })
   const compile = configs => compileRules(configs.map((item, index) => ({ id: `fixed-${index}`, then: [{ id: 'inject', kind: 'inject-text', config: item }] })))
-  const mountConfigs = (ctx, configs, options = {}) => {
-    const source = createPreStepSource({ sourceId: options.sourceId ?? `preset:${configs[0]?.id ?? 'unknown'}`, ctx, configs })
-    return applyPromptConfigSources([source], { agent: options.agent })
-  }
   let releases = []
   const release = () => { for (const off of releases.splice(0)) off() }
   const mount = configs => {

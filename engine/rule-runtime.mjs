@@ -1,6 +1,6 @@
 import { prepareAction } from './actions/index.mjs'
 import { applyPromptConfigSources } from './executor.mjs'
-import { createPreStepSource } from './pre-step-source.mjs'
+import { createPreStepSource, moduleSourceId } from './pre-step-source.mjs'
 import { wireLayers } from './layers.mjs'
 import { rebindConditions, validateDeliverySources } from './rule-spec.mjs'
 import { wireTriggerObservers } from './trigger.mjs'
@@ -34,8 +34,8 @@ export function mountRuleSources(ctx, sources, options = {}) {
   // 绑晚了那一类谓词会漏事件。`standingMountFor` 是可选兜底（官方包缺席＝没有兜底，不是错误）。
   rebindConditions(sources, { ctx, standingMountFor: options.standingMountFor, promotionPool: pool })
   const warnOnce = options.warnOnce ?? createWarnOnce(ctx, options.plugin ?? 'rule-engine')
-  // 非 pre-step 动作仍共享一次 ruleFrame；判定上报按规则反查来源模块（pre-step 来源自带 sink，
-  // 这里只服务其余动作，因此全局只有这一份 map）。
+  // 非 pre-step 动作仍共享一次 ruleFrame；规则实例没有来源字段（RuleDefinition 不暴露 moduleId），
+  // 因此保留一份局部 rule→module 映射。它不是 pre-step 来源事实的重建，不参与 pre-step 的 source sink。
   const report = options.onOutcome === undefined ? undefined : (() => {
     const moduleOfRule = new Map()
     for (const source of sources) for (const rule of source.rules) if (!moduleOfRule.has(rule)) moduleOfRule.set(rule, source.moduleId)
@@ -49,7 +49,7 @@ export function mountRuleSources(ctx, sources, options = {}) {
   // 不再按动作各建一份。本 mount 可能含多个模块（agent-assembly 一次装载全部启用模块），
   // 因此按 moduleId 分档；来源 id 缺失时落空串兜底键（与 wireTurnStops 同源）。
   const turnStopBudgets = new Map()
-  const injections = new Map(sources.map(source => [source.moduleId, { moduleId: source.moduleId, sourceId: `module:${source.moduleId}`, configs: [], ruleActions: [] }]))
+  const injections = new Map(sources.map(source => [source.moduleId, { moduleId: source.moduleId, sourceId: moduleSourceId(source.moduleId), configs: [], ruleActions: [] }]))
   const rules = sources.flatMap(source => source.rules.filter(rule => rule.enabled !== false))
   // 动作级分支条件（actionWhen）也要喂 session/event：否则 else / 嵌套 if 里的 phase / count
   // 谓词永远收不到事件，状态停在冷扫那一刻（规则级 when 已由 rules 覆盖，动作级单独补齐）。

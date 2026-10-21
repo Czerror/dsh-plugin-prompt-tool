@@ -1,8 +1,9 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { fileURLToPath } from 'node:url'
-import { applyPromptConfigSources, confirmDelivered, runPreStepBatch } from '../../engine/executor.mjs'
+import { confirmDelivered, runPreStepBatch } from '../../engine/executor.mjs'
 import { createPreStepSource } from '../../engine/pre-step-source.mjs'
+import { mountPreStepConfigs, PROMOTION, presetSourceId } from '../fixtures/pre-step.mjs'
 import { identityHit, identityOf, identityStampOf } from '../../engine/delivery.mjs'
 import { wireLayers } from '../../engine/layers.mjs'
 import { createPromptConfigs as createPromptConfigsCore } from '../../engine/schema.mjs'
@@ -15,23 +16,8 @@ const STRATEGY_DIR = new URL('../../engine/', import.meta.url).href
 const createPromptConfigs = (specs, options = {}) =>
   createPromptConfigsCore(specs, { strategyDir: STRATEGY_DIR, ...options })
 
-function mountConfigs(ctx, configs, options = {}) {
-  const list = Array.isArray(configs) ? configs : createPromptConfigs(configs)
-  const source = createPreStepSource({
-    sourceId: options.sourceId ?? `preset:${list[0]?.id ?? 'unknown'}`,
-    ctx,
-    configs: list,
-    onOutcome: options.onOutcome,
-    promotion: options.promotion,
-  })
-  return applyPromptConfigSources([source], {
-    ...(options.agent === undefined ? {} : { agent: options.agent }),
-    ...(options.prepend === undefined ? {} : { prepend: options.prepend }),
-    ...(options.layers === undefined ? {} : { layers: options.layers }),
-  })
-}
-
-const PROMOTION = { main: { status: () => ({ promoted: true }) }, withSubagents: { status: () => ({ promoted: true }) } }
+const mountConfigs = (ctx, configs, options = {}) =>
+  mountPreStepConfigs(ctx, Array.isArray(configs) ? configs : createPromptConfigs(configs), options)
 
 const userTask = {
   id: 'task-1',
@@ -374,7 +360,7 @@ test('身份契约互逆：identityStampOf 盖出的 source 一律被 identityHi
   confirmDelivered(memo, store.session, { type: 'user/message', data: { message } })
   assert.ok(memo.size > 0, '快路径确实记了账')
   const run = (injectedMemo) => {
-    const source = createPreStepSource({ sourceId: 'preset:memo', ctx: {}, configs: [target], promotion: PROMOTION })
+    const source = createPreStepSource({ sourceId: presetSourceId('memo'), ctx: {}, configs: [target], promotion: PROMOTION })
     return runPreStepBatch({
       ctx: {},
       agent: agent({ session: store.session }),
@@ -544,7 +530,7 @@ test('T5：memo 是纯性能缓存——清空后再判一次，两个方向的�
   const probe = agent({ session: store.session })
   const memo = new Map()
   const run = () => {
-    const source = createPreStepSource({ sourceId: 'preset:memo', ctx: {}, configs, promotion: PROMOTION })
+    const source = createPreStepSource({ sourceId: presetSourceId('memo'), ctx: {}, configs, promotion: PROMOTION })
     return runPreStepBatch({
       ctx: {},
       agent: probe,

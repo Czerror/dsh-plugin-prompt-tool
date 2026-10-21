@@ -1,5 +1,5 @@
 import { applyPromptConfigSources } from '../executor.mjs'
-import { createPreStepSource } from '../pre-step-source.mjs'
+import { createPreStepSource, presetSourceId } from '../pre-step-source.mjs'
 import { wireLayers } from '../layers.mjs'
 import { createPromptConfigs } from '../schema.mjs'
 import { actionExecutionPoint } from './registration.mjs'
@@ -22,7 +22,7 @@ export function prepareInjectText(action, plugin, promptConfigOptions) {
       const options = action.options ?? {}
       const sourceId = typeof options.sourceId === 'string' && options.sourceId.length > 0
         ? options.sourceId
-        : `preset:${config.id}`
+        : presetSourceId(config.id)
       const source = createPreStepSource({
         sourceId,
         ctx,

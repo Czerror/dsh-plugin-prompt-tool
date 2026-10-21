@@ -10,6 +10,7 @@ import { conversationMessages, selectContextActivation, lastContextActivationDia
 import { SURFACE_MESSAGE_TYPES } from '../../engine/history.mjs'
 import { runPreStepBatch } from '../../engine/executor.mjs'
 import { createPreStepSource } from '../../engine/pre-step-source.mjs'
+import { PROMOTION, presetSourceId } from '../fixtures/pre-step.mjs'
 import { identityStampOf } from '../../engine/delivery.mjs'
 import { createPromptConfigs as createPromptConfigsCore } from '../../engine/schema.mjs'
 import { isolatedHome } from '../fixtures/host-harness.mjs'
@@ -210,10 +211,8 @@ const createPromptConfigs = (specs, options = {}) =>
   createPromptConfigsCore(specs, { strategyDir: new URL('../../engine/', import.meta.url).href, ...options })
 const plainSession = id => ({ id, header: { delegationDepth: 0 }, snapshotEvents: () => [] })
 const USER_TASK = { id: 'task-1', role: 'user', content: [{ type: 'text', text: '写一个工具' }], source: { kind: 'user' } }
-// 晋升门控与本分片无关：批执行器只消费 status()。
-const PROMOTION = { main: { status: () => ({ promoted: true }) }, withSubagents: { status: () => ({ promoted: true }) } }
 const runBatch = (configs, session, memo = new Map()) => {
-  const source = createPreStepSource({ sourceId: 'preset:activation', ctx: {}, configs, promotion: PROMOTION })
+  const source = createPreStepSource({ sourceId: presetSourceId('activation'), ctx: {}, configs, promotion: PROMOTION })
   return runPreStepBatch({
     ctx: {},
     agent: { session, options: { model: 'deepseek-chat' } },
