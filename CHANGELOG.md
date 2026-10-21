@@ -1,5 +1,15 @@
 # Changelog
 
+### OCR 复核修复：fail-open 判据、指令卡投影与发布门（2026-10-22）
+
+- **工具面判据**：`toolSurfacePlan` 的 `required` 再剔除 `mask.blocks()` 为真的名字——allow∩deny 同名且该名缺席时不再误触 fail-open；`run_code` 排除补直测。
+- **执行闸**：装配既无 `tools` 数组也无 `tools:sdk` 段时视为未观察到工具面，不改 `gate.failOpen`；fail-open 告警改用固定去重键，缺项名变化不再各占一条 64 键预算。
+- **指令文件探测**：marker 命中最近项目根即停（旧实现会探测到盘根）；删除 `instructionDirs` 不可达回落；宿主 `.git` 判据收进 `src/host/project-root.ts`，指令卡探测与技能扫描共用。
+- **客户端投影**：无草稿分支显式清 `contentDirty` / `contentConflict` / `contentSaving`，`params.readStatus` / `readMessage` 与正文、版本一起剥离；`applyView` 与发布路径共用一份投影。
+- **patch 契约**：`InstructionFilesPort` 新增 `patchInstructionText(fileId, text)`；`store.patch` 类型不再声明 `promptConfigs`，非正文卡字段不再被静默忽略。
+- **发布门**：`verify:pack` 精确断言 `inject` 必需集（`skills/commands/llm/subagents`）；新增 `test/host/entry-surface.test.mjs`（用户批准的准入破例）锁发布入口精确七导出。
+- **测试**：新增 allow∩deny、`run_code` 缺项、两面皆缺装配、告警去重、marker 提前停、无草稿清视图标记、过期读盘状态剥离、发布入口导出共 7 条；`.hg` 用例改为固定项目根。
+- **验证**：见本轮提交与全量输出。需重启 DSH 后生效；`patchInstructionText` 是源码内 API 变化，发布入口不变。
 ### 发布入口收缩到真实消费（2026-10-21）
 
 - **入口**：`src/index.ts` 的总导出从 149 个降到 7 个（re-export 146→4）——`name` / `inject` / `Config` / `apply`（Cordis 插件协议；`Config` 是配置 schema，缺了它原始 config 会原样传入）+ `loadPromptTemplates`（测试的模板路径锚：`../templates` 只在构建后的 `lib/` 下成立）+ `writeModule` / `userModulesDir`（重物化脚本）。
