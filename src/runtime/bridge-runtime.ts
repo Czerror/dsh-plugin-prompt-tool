@@ -58,6 +58,7 @@ import {
   type BridgeTransaction,
 } from './bridge-transaction.ts'
 import { gateFor, type GateHandle } from './module-subject-gate.ts'
+import type { RuleDiagnosticsSnapshot } from './rule-diagnostics.ts'
 import {
   EDIT_TARGET_HEADER,
   MODULE_ACTIVATION_FAILED,
@@ -117,6 +118,8 @@ export interface BridgeDeps {
   moduleListChanged?: (id: string) => void | Promise<void>
   /** 技能策略写入后的目录刷新回调。 */
   afterSkillsChange?: () => void
+  /** 当前装配实例的规则判定账本；无装配时返回空账。 */
+  ruleDiagnostics?: () => RuleDiagnosticsSnapshot
 }
 
 export const isRecord = (value: unknown): value is Record<string, unknown> =>

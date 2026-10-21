@@ -6,7 +6,7 @@ import { lastContextActivationDiagnostics } from '../../../engine/context-activa
 import { readModuleConfigOrder } from '../../host/module-config-order.ts'
 import { userModulesDir } from '../../host/module-dirs.ts'
 import { BRIDGE_ENDPOINTS } from '../../shared/bridge-contract.ts'
-import { ruleDiagnosticsDropped, ruleDiagnosticsSnapshot } from '../rule-diagnostics.ts'
+import { emptyRuleDiagnostics } from '../rule-diagnostics.ts'
 import { readSessionIdField, type BridgeRuntime } from '../bridge-runtime.ts'
 
 type ToolSchemaLike = { name?: unknown; description?: unknown }
@@ -26,7 +26,7 @@ function projectToolSchemas(schemas: readonly ToolSchemaLike[]): Array<{ name: s
 }
 
 /** 本域用到的运行时面：只用这些，不加宽（新域照此声明自己的面）。 */
-type DiagnosticsRuntime = Pick<BridgeRuntime, 'agentScope' | 'registerAgentRoute'>
+type DiagnosticsRuntime = Pick<BridgeRuntime, 'agentScope' | 'registerAgentRoute' | 'deps'>
 
 export function registerDiagnostics(runtime: DiagnosticsRuntime): Array<() => void> {
   return [
@@ -122,11 +122,11 @@ export function registerDiagnostics(runtime: DiagnosticsRuntime): Array<() => vo
     // 读取不触发求值，也不回规则正文或事件载荷。
     runtime.registerAgentRoute(BRIDGE_ENDPOINTS.ruleDiagnostics, { body: 'json', handle: async (tx) => {
       // 超限丢弃只在真的丢弃过时进载荷：未超限的响应与既有契约逐字不变。
-      const dropped = ruleDiagnosticsDropped()
+      const snapshot = runtime.deps.ruleDiagnostics?.() ?? emptyRuleDiagnostics()
       // 状态栏的「X/Y 规则」顺路带回全仓配置卡；配置读取失败只影响这一段，诊断照旧下发。
       let configs: ReturnType<typeof readModuleConfigOrder> | undefined
       try { configs = readModuleConfigOrder(userModulesDir()) } catch { configs = undefined }
-      tx.write(200, { ok: true, value: { records: ruleDiagnosticsSnapshot(), ...(dropped > 0 ? { dropped } : {}), ...(configs === undefined ? {} : { configs }) } })
+      tx.write(200, { ok: true, value: { records: snapshot.records, ...(snapshot.dropped > 0 ? { dropped: snapshot.dropped } : {}), ...(configs === undefined ? {} : { configs }) } })
     } }),
   ]
 }

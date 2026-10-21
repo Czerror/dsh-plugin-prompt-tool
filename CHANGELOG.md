@@ -1,5 +1,11 @@
 # Changelog
 
+### 规则判定账本归装配实例（候选 06，2026-10-21）
+
+- **owner**：`rule-diagnostics.ts` 改为 `createRuleDiagnosticsLedger()` 工厂；`AgentAssemblyRuntime` 创建时持有账本，`mountRuleSources` 的 `onOutcome` 直接写实例 sink；删模块级 Map、全局 snapshot/dropped 与测试专用 `resetRuleDiagnostics`。
+- **端点**：`BridgeDeps.ruleDiagnostics` 注入当前装配快照，`/rule-diagnostics` 只读该快照；无装配/已释放时回空账，不保留上一实例计数。
+- **测试**：新增双实例隔离与无账本空账测试；bridge 契约与装配诊断改用注入 ledger/实例快照，不再全局 reset。验证：typecheck / lint / test（735）。
+
 ### 工具草稿读改写归 tools-editor owner（候选 07，2026-10-21）
 
 - **owner 收口**：`createToolsEditorDraft`、`readCustomTools`、`insertToolTemplateIntoDraft` 搬进 `src/client/data/tools-editor.ts`；`CustomToolsCard` 只保留渲染/提示，`useTemplatePicker` 改 import data owner，删一条跨 feature import。

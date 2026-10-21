@@ -573,11 +573,11 @@ test('契约：/tool-surface 返回存活 Agent 的只读工具面摘要，未�
 })
 
 test('契约：/rule-diagnostics 只回判定计数，未启用不入账且读取不触发求值', async () => {
-  const { recordRuleOutcome, resetRuleDiagnostics } = await import('../../src/runtime/rule-diagnostics.ts')
-  const handlers = register()
+  const { createRuleDiagnosticsLedger } = await import('../../src/runtime/rule-diagnostics.ts')
+  const ledger = createRuleDiagnosticsLedger()
+  const handlers = register(undefined, { ruleDiagnostics: () => ledger.snapshot() })
   const handler = handlers.get(SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.ruleDiagnostics)
   assert.ok(handler, '/rule-diagnostics 端点未注册')
-  resetRuleDiagnostics()
   const empty = fakeRes()
   await handler(fakeReq({ body: {} }), empty)
   assert.equal(empty.status, 200)
@@ -586,35 +586,47 @@ test('契约：/rule-diagnostics 只回判定计数，未启用不入账且读�
   // 状态栏的「X/Y 规则」顺路带回全仓配置卡；本用例隔离 DSH_HOME，没有启用模块即为空清单。
   assert.deepEqual(emptyPayload.configs?.entries ?? [], [], '无启用模块时配置清单为空')
   assert.equal('dropped' in emptyPayload, false, '未超限不带 dropped')
-  recordRuleOutcome({ moduleId: 'm', ruleId: 'r', channel: 'agent/pre-step', outcome: 'unavailable' })
-  recordRuleOutcome({ moduleId: 'm', ruleId: 'r', channel: 'agent/pre-step', outcome: 'unavailable' })
-  recordRuleOutcome({ moduleId: 'm', ruleId: 'r', channel: 'agent/pre-step', outcome: 'disabled' })
+  ledger.record({ moduleId: 'm', ruleId: 'r', channel: 'agent/pre-step', outcome: 'unavailable' })
+  ledger.record({ moduleId: 'm', ruleId: 'r', channel: 'agent/pre-step', outcome: 'unavailable' })
+  ledger.record({ moduleId: 'm', ruleId: 'r', channel: 'agent/pre-step', outcome: 'disabled' })
   const filled = fakeRes()
   await handler(fakeReq({ body: {} }), filled)
   assert.deepEqual(JSON.parse(filled.body).value.records, [
     { moduleId: 'm', ruleId: 'r', channel: 'agent/pre-step', hit: 0, miss: 0, unavailable: 2, error: 0 },
   ])
-  resetRuleDiagnostics()
 })
 
-test('契约：/rule-diagnostics 身份上限溢出可见——512 条封顶并报 dropped', async (t) => {
-  const { recordRuleOutcome, resetRuleDiagnostics, ruleDiagnosticsSnapshot, RULE_DIAGNOSTIC_LIMIT } = await import('../../src/runtime/rule-diagnostics.ts')
+test('契约：/rule-diagnostics 没有账本注入时回空账，不保留旧计数', async () => {
   const handlers = register()
   const handler = handlers.get(SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.ruleDiagnostics)
-  resetRuleDiagnostics()
-  t.after(() => resetRuleDiagnostics())
+  assert.ok(handler, '/rule-diagnostics 端点未注册')
+  const res = fakeRes()
+  await handler(fakeReq({ body: {} }), res)
+  assert.equal(res.status, 200)
+  const payload = JSON.parse(res.body).value
+  assert.deepEqual(payload.records, [])
+  assert.equal('dropped' in payload, false, '空账不伪造 dropped')
+})
+
+test('契约：/rule-diagnostics 身份上限溢出可见——512 条封顶并报 dropped', async () => {
+  const { createRuleDiagnosticsLedger, RULE_DIAGNOSTIC_LIMIT } = await import('../../src/runtime/rule-diagnostics.ts')
+  const ledger = createRuleDiagnosticsLedger()
+  const handlers = register(undefined, { ruleDiagnostics: () => ledger.snapshot() })
+  const handler = handlers.get(SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.ruleDiagnostics)
   for (let index = 0; index <= RULE_DIAGNOSTIC_LIMIT; index += 1) {
-    recordRuleOutcome({ moduleId: 'm', ruleId: `r${index}`, channel: 'agent/pre-step', outcome: 'hit' })
+    ledger.record({ moduleId: 'm', ruleId: `r${index}`, channel: 'agent/pre-step', outcome: 'hit' })
   }
-  assert.equal(ruleDiagnosticsSnapshot().length, RULE_DIAGNOSTIC_LIMIT, '身份表封顶 512 条')
+  assert.equal(ledger.snapshot().records.length, RULE_DIAGNOSTIC_LIMIT, '身份表封顶 512 条')
   const overflow = fakeRes()
   await handler(fakeReq({ body: {} }), overflow)
   const payload = JSON.parse(overflow.body)
   assert.equal(payload.value.records.length, RULE_DIAGNOSTIC_LIMIT)
   assert.equal(payload.value.dropped, 1, '超限丢弃的判定次数随响应下发')
-  resetRuleDiagnostics()
+  const cleanLedger = createRuleDiagnosticsLedger()
+  const cleanHandlers = register(undefined, { ruleDiagnostics: () => cleanLedger.snapshot() })
+  const cleanHandler = cleanHandlers.get(SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.ruleDiagnostics)
   const clean = fakeRes()
-  await handler(fakeReq({ body: {} }), clean)
+  await cleanHandler(fakeReq({ body: {} }), clean)
   const cleanPayload = JSON.parse(clean.body).value
   assert.deepEqual(cleanPayload.records, [])
   assert.equal('dropped' in cleanPayload, false, '未超限的响应不带 dropped')

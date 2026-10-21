@@ -21,7 +21,6 @@ import { isolatedHome, fixtureRule } from '../fixtures/host-harness.mjs'
 const { moduleRoot } = isolatedHome('pt-assembly-')
 const { prepareAssembly, createAgentAssembly } = await import('../../src/runtime/agent-assembly.ts')
 const { installPreStepCoordinator, PRE_STEP_COORDINATOR_SERVICE } = await import('../../src/runtime/pre-step-coordinator.ts')
-const { ruleDiagnosticsSnapshot, resetRuleDiagnostics } = await import('../../src/runtime/rule-diagnostics.ts')
 const { mountRuleSources } = await import('../../engine/rule-runtime.mjs')
 const { installPersonaCapture } = await import('../../src/runtime/persona-registration.ts')
 const { loadModuleSpec } = await import('../../src/host/module-spec.ts')
@@ -327,15 +326,14 @@ test('规则诊断：协调器路径按模块/规则/通道分类入账，三类
       rule('unavailable', { preset: { presetId: 'target' } }),
     ],
   }))
-  resetRuleDiagnostics()
-  t.after(() => resetRuleDiagnostics())
   const h = await liveAssembly(t, () => ['diag-rules'])
   const main = await h.makeAgent('diag-main')
   await h.runtime.settled()
   const injected = (await h.inject(main)).messages.flatMap(message => message.content.map(block => block.text))
   assert.deepEqual(injected, ['USER', 'HIT'], '命中规则注入正文，其余两支不注入')
-  const byRule = new Map(ruleDiagnosticsSnapshot().map(record => [record.ruleId, record]))
-  assert.deepEqual([...byRule.keys()].sort(), ['hit', 'miss', 'unavailable'], JSON.stringify(ruleDiagnosticsSnapshot()))
+  const records = h.runtime.ruleDiagnostics().records
+  const byRule = new Map(records.map(record => [record.ruleId, record]))
+  assert.deepEqual([...byRule.keys()].sort(), ['hit', 'miss', 'unavailable'], JSON.stringify(records))
   const record = (ruleId, counts) => ({ moduleId: 'diag-rules', ruleId, channel: 'agent/pre-step', hit: 0, miss: 0, unavailable: 0, error: 0, ...counts })
   assert.deepEqual(byRule.get('hit'), record('hit', { hit: 1 }))
   assert.deepEqual(byRule.get('miss'), record('miss', { miss: 1 }))

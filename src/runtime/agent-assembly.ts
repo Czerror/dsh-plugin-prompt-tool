@@ -30,7 +30,7 @@ import { assertModuleDirectory, assertModuleId } from '../host/module-install.ts
 import { readConfigOrder } from '../host/module-config-order.ts'
 import { rulePromptConfigOptions } from '../host/module-slices.ts'
 import { compileCustomTool, validateCustomTools } from '../host/custom-tools.ts'
-import { recordRuleOutcome } from './rule-diagnostics.ts'
+import { createRuleDiagnosticsLedger, type RuleDiagnosticsSnapshot } from './rule-diagnostics.ts'
 import { createModuleVariableAdapter } from './module-variable-adapter.ts'
 import { planPersonaSections, type PersonaCapture, type PersonaModule, type PersonaPlan } from './persona-registration.ts'
 import { MODULE_TOOL_CAPABILITIES } from '../shared/engine-capabilities.ts'
@@ -69,6 +69,8 @@ export interface AgentAssemblyRuntime {
    * 取它而不是问宿主「这个会话绑定了哪个官方预设」，因为模块早已与官方预设解耦。
    */
   moduleIds(sessionId: string): readonly string[]
+  /** 当前装配实例的规则判定账本快照；释放后的读取由调用方（端点）按实例生命周期处理。 */
+  ruleDiagnostics(): RuleDiagnosticsSnapshot
   /** 保存完成后重装存活 Agent；省略 id 表示启用表或部署开关改变。 */
   refresh(moduleId?: string): Promise<void>
   dispose(): Promise<void>
@@ -288,6 +290,7 @@ function duplicateDedupeIdentities(prepared: PreparedAssembly[]): DuplicateIdent
 
 export function createAgentAssembly(ctx: Context, options: AgentAssemblyOptions): AgentAssemblyRuntime {
   const variableStore = createModuleVariableAdapter(options.moduleRoot)
+  const ruleDiagnostics = createRuleDiagnosticsLedger()
   const mounts = new Map<string, { agent: Agent; fiber: { dispose(): Promise<void> | void }; prepared: PreparedAssembly[]; moduleIds: readonly string[]; signature: string; plan: PersonaPlan }>()
   const knownAgents = new Set<Agent>()
   const watched = new Map<string, () => void>()
@@ -403,7 +406,7 @@ export function createAgentAssembly(ctx: Context, options: AgentAssemblyOptions)
         // ctx，preset 条件在那边恒 UNAVAILABLE。调用方只负责把可选的官方模块兜底取到手，不再复制规则对象。
         const standingMountFor = await loadStandingMountFor()
         const ruleSources = prepared.filter(item => item.rules.length > 0).map(item => ({ moduleId: item.moduleId, rules: item.rules }))
-        scopeCtx.effect(() => mountRuleSources(scopeCtx, ruleSources, { agent, onOutcome: recordRuleOutcome, variableStore, standingMountFor }))
+        scopeCtx.effect(() => mountRuleSources(scopeCtx, ruleSources, { agent, onOutcome: ruleDiagnostics.record, variableStore, standingMountFor }))
         // 人设：在 Agent 自己的 scope 注册同名段，遮蔽祖先的部署人设与预设 persona 行；
         // 同层已被注册时只能先撤后挂，撤销凭据来自 AgentSetup 窗口内的捕获。
         if (personaActive) {
@@ -602,6 +605,7 @@ export function createAgentAssembly(ctx: Context, options: AgentAssemblyOptions)
     settled: () => pending,
     hasMounted: (sessionId) => mounts.has(sessionId),
     moduleIds: (sessionId) => mounts.get(sessionId)?.moduleIds ?? [],
+    ruleDiagnostics: () => ruleDiagnostics.snapshot(),
     refresh: async (moduleId) => {
       if (!active) throw new Error('运行时配装已释放')
       try {

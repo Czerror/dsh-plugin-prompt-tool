@@ -563,7 +563,7 @@ function wireSubagentEvents(ctx, configs, warnOnce, on) {
           if (!actionMatches(config, frame)) continue
           if (!matchesModel(config.modelScope, child?.options?.model ?? recorded?.model)) continue
           if (config.params?.action !== 'inject-main') {
-            // 模板本意是逐次记录；命中本身已由 recordRuleOutcome 记 hit，这里不占告警名额。
+            // 模板本意是逐次记录；命中本身已由装配实例的判定账本记 hit，这里不占告警名额。
             ctx.logger?.info?.(`${name}: subagent-end ${config.id} matched (observe only)`)
             continue
           }

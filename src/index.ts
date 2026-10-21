@@ -28,6 +28,7 @@ import { ensureSkillSeed } from './host/skills-actions.ts'
 import { createSkillsRuntime } from './host/skills-runtime.ts'
 import { createAgentAssembly } from './runtime/agent-assembly.ts'
 import type { AgentAssemblyRuntime } from './runtime/agent-assembly.ts'
+import { emptyRuleDiagnostics } from './runtime/rule-diagnostics.ts'
 import { resolveModuleToolTarget } from './host/module-tool-target.ts'
 import type { ModuleToolHost } from './host/module-tool-target.ts'
 // 服务名真值源在引擎侧：引擎可单独复制，名字随 `engine/` 一起走。
@@ -109,6 +110,8 @@ export function apply(ctx: Context, configIn: Config): void {
     },
     capabilityChanged: (id) => id === undefined ? assembly?.refresh() : refreshModuleRuntime(id),
     moduleListChanged: () => assembly?.refresh(),
+    // 账本随装配实例创建/释放；没有实例时回空账，不保留上一实例的计数。
+    ruleDiagnostics: () => assembly?.ruleDiagnostics() ?? emptyRuleDiagnostics(),
   })
 
   // 装配结束后只读诊断 Web 能力；插件卸载时取消任务，不编辑 profile。
