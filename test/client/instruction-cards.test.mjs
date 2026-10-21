@@ -23,10 +23,14 @@ const pool = (drafts) => ({ contextId: 'ctx', cwd: '/repo', source: 'session', l
 const policy = (files = {}) => ({ policy: { files }, revision: null, exists: true })
 
 test('投影：没有草稿的卡不把未知正文当空文件，禁用保存', () => {
-  const cards = projectInstructionCards([shell('a')], pool([]), policy())
+  const stale = { ...shell('a'), contentDirty: true, contentConflict: true, contentSaving: true }
+  const cards = projectInstructionCards([stale], pool([]), policy())
   assert.equal(cards[0].text, '')
   assert.equal(cards[0].contentStatus, 'unreadable')
   assert.ok(typeof cards[0].contentMessage === 'string' && cards[0].contentMessage.length > 0, '给出可读的禁用原因')
+  assert.equal(cards[0].contentDirty, undefined, '无草稿：不保留上一帧的脏标记')
+  assert.equal(cards[0].contentConflict, undefined, '无草稿：不保留上一帧的冲突标记')
+  assert.equal(cards[0].contentSaving, undefined, '无草稿：不保留上一帧的保存中标记')
 })
 
 test('投影：正文取草稿池，脏标记由 content 与 savedContent 比较', () => {
@@ -49,16 +53,18 @@ test('投影：保存中与冲突映射到卡片字段，错误信息随池', ()
   assert.equal(cards[0].contentMessage, '写入冲突')
 })
 
-test('投影：剥离卡壳里过期的正文与版本副本，只留卡身份', () => {
+test('投影：剥离卡壳里过期的正文、版本与读取状态，只留卡身份', () => {
   const stale = {
     id: 'agents-file-a',
     origin: { kind: 'instruction-file', fileId: 'a' },
-    params: { fileId: 'a', scope: 'project', text: 'stale', revision: 'old' },
+    params: { fileId: 'a', scope: 'project', text: 'stale', revision: 'old', readStatus: 'missing', readMessage: 'gone' },
   }
   const cards = projectInstructionCards([stale], pool([draft('a', 'fresh', 'fresh')]), policy())
   assert.equal(cards[0].text, 'fresh', '正文只来自草稿池')
   assert.equal(cards[0].params.text, undefined)
   assert.equal(cards[0].params.revision, undefined)
+  assert.equal(cards[0].params.readStatus, undefined, '读盘结论同样过期')
+  assert.equal(cards[0].params.readMessage, undefined, '读盘消息同样过期')
   assert.equal(cards[0].params.fileId, 'a', '卡身份保留')
 })
 

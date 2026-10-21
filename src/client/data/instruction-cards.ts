@@ -21,12 +21,12 @@ function instructionPolicyFields(
 }
 
 /**
- * 卡壳里的正文与版本是服务端读取时的副本，编辑后立即过期：投影前剥掉，
- * 只留卡身份与策略输入。正文的唯一来源是草稿池。
+ * 卡壳里的正文、版本与读取结论都是服务端读取时的副本，编辑后立即过期：投影前剥掉，
+ * 只留卡身份与策略输入。正文与状态的唯一来源是草稿池。
  */
 function withoutSnapshotCopies(config: PromptConfigDraft): PromptConfigDraft {
   if (config.params === undefined) return config
-  const { text: _text, revision: _revision, ...params } = config.params
+  const { text: _text, revision: _revision, readStatus: _readStatus, readMessage: _readMessage, ...params } = config.params
   return { ...config, params }
 }
 
@@ -50,6 +50,10 @@ export function projectInstructionCards(
         text: '',
         contentStatus: 'unreadable' as const,
         contentMessage: '未读取到该文件正文，已禁用保存',
+        // 与有草稿分支对齐：视图字段全部显式覆盖，投影结果不得带上一帧的标记。
+        contentDirty: undefined,
+        contentConflict: undefined,
+        contentSaving: undefined,
       }
     }
     const message = draft.error ?? draft.message

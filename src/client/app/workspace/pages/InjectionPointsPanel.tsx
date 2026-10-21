@@ -138,7 +138,8 @@ export function LayerSettingsContent(props: {
   const inCreateMode = (id: string): boolean => creatingSection(id) && undeclaredNow(id)
   // 卡片一次算清，下面只按 kind 分组；kinds 只收窄渲染范围（能力补卡）。
   const allCards = moduleId === undefined ? [] : cardsOfLayer(store.meta.modules, layer, moduleId, excluded)
-  const cards = props.kinds === undefined ? allCards : allCards.filter((card) => props.kinds!.includes(card.kind))
+  const kinds = props.kinds
+  const cards = kinds === undefined ? allCards : allCards.filter((card) => kinds.includes(card.kind))
   const params = cards.filter((card) => card.kind === 'param').map((card) => card.id)
   const capabilities = cards.filter((card) => card.kind === 'capability').map((card) => card.id)
   // 未声明的节只在用户点了添加后出卡；未登记声明面的（模型路由等）不受影响。

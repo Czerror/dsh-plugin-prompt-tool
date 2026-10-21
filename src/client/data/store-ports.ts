@@ -81,6 +81,8 @@ export interface SkillsPort {
 /** 指令文件：草稿池读取、显式保存、离开前保存、重读与逐文件策略。 */
 export interface InstructionFilesPort {
   getInstructionPool: () => InstructionDraftPool
+  /** 指令卡正文镜像进草稿池：fileId 是身份，text 是这条通道唯一接受的字段。 */
+  patchInstructionText: (fileId: string, text: string) => void
   persistInstructionFiles: (fileIds?: readonly string[]) => Promise<boolean>
   /** 离开前保存：只管全局开关与指令文件两个域（规则草稿由各自的 rule editor 负责）。 */
   persistBeforeLeave: () => Promise<boolean>
@@ -113,7 +115,7 @@ export interface NoticePort {
   noticePill: string | undefined
   showNotice: (kind: 'ok' | 'error', message: string, pill?: string) => void
   load: (options?: { silent?: boolean }) => Promise<Fields>
-  patch: (partial: Partial<Fields>) => void
+  patch: (partial: Partial<Omit<Fields, 'promptConfigs'>>) => void
   loading: boolean
 }
 

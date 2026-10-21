@@ -225,14 +225,14 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
   const instructionSeqRef = useRef(0)
   /** 上一次指令上下文对应的会话 id：变化即建立新上下文（旧草稿保留但不可写）。 */
   const instructionSessionRef = useRef<string | undefined>(undefined)
-  /** 视图永远是 (壳, 池, 策略) 的投影：三份输入谁变了都调它，不再手工同步。 */
+  /** 视图永远是 (壳, 池, 策略) 的投影：所有发布路径都从这里取，不再各写一份。 */
+  const projectInstructionFields = useCallback((base: Fields): Fields => ({
+    ...base,
+    promptConfigs: projectInstructionCards(instructionShellsRef.current, instructionPoolRef.current, instructionPolicyRef.current),
+  }), [])
   const refreshInstructionCards = useCallback(() => {
-    const current = fieldsRef.current
-    publishFields({
-      ...current,
-      promptConfigs: projectInstructionCards(instructionShellsRef.current, instructionPoolRef.current, instructionPolicyRef.current),
-    })
-  }, [publishFields])
+    publishFields(projectInstructionFields(fieldsRef.current))
+  }, [projectInstructionFields, publishFields])
   const publishInstructions = useCallback((next: InstructionDraftPool) => {
     instructionPoolRef.current = next
     setInstructionPool(next)
@@ -350,7 +350,7 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
     }
     // 服务端快照只提供卡壳；视图由投影给出，不把服务端正文写进 fields。
     instructionShellsRef.current = next.promptConfigs
-    const projected = { ...next, promptConfigs: projectInstructionCards(next.promptConfigs, instructionPoolRef.current, instructionPolicyRef.current) }
+    const projected = projectInstructionFields(next)
     publishFields(projected)
     setSavedSwitches(snapshotSwitches(next))
     // revision 只在首次建立，后续由 enqueueSave 的 mutate 应答维护——/bootstrap 的
@@ -506,25 +506,19 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
     }
   }, [settings])
 
-  const patch = useCallback((partial: Partial<Fields>) => {
+  const patch = useCallback((partial: Partial<Omit<Fields, 'promptConfigs'>>) => {
     draftVersionRef.current += 1
-    // promptConfigs 只消费文件卡正文（其余字段由卡壳持有），其余字段原样合并。
-    const { promptConfigs: patchedConfigs, ...rest } = partial
-    if (Array.isArray(patchedConfigs)) {
-      let pool = instructionPoolRef.current
-      for (const config of patchedConfigs) {
-        const fileId = instructionFileIdOf(config)
-        if (fileId === undefined || typeof config.text !== 'string') continue
-        const draft = pool.drafts.find((entry) => entry.fileId === fileId)
-        if (draft === undefined || draft.content === config.text) continue
-        pool = setDraftContent(pool, fileId, config.text)
-      }
-      if (pool !== instructionPoolRef.current) publishInstructions(pool)
-    }
-    // 发布链之后 fieldsRef 已是新投影，其余字段以它为基合并。
-    let next: Fields = { ...fieldsRef.current, ...rest }
+    const next: Fields = { ...fieldsRef.current, ...partial }
     publishFields(next)
-  }, [publishFields, publishInstructions])
+  }, [publishFields])
+
+  /** 指令卡正文只经草稿池：其余字段由卡壳与投影持有，这条通道不接收。 */
+  const patchInstructionText = useCallback((fileId: string, text: string) => {
+    draftVersionRef.current += 1
+    const draft = instructionPoolRef.current.drafts.find((entry) => entry.fileId === fileId)
+    if (draft === undefined || draft.content === text) return
+    publishInstructions(setDraftContent(instructionPoolRef.current, fileId, text))
+  }, [publishInstructions])
 
   const enqueueSave = useCallback((ops: SettingsPathOpView[], okMessage: string | undefined, onSaved: () => void, setBusy?: (busy: boolean) => void): Promise<boolean> => {
     setBusy?.(true)
@@ -905,6 +899,7 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
     modelReasoning,
     hostDefaultModel,
     getInstructionPool: () => instructionPoolRef.current,
+    patchInstructionText,
     persistInstructionFiles,
     persistBeforeLeave,
     reloadInstructionFile,
