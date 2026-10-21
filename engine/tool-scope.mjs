@@ -1,9 +1,11 @@
 /**
  * tool-scope — 工具面的作用域快照，避免各消费方把全局视图当成模型可见面。
  *
- * - global：不带 scope 的 `tools.schemas()`，只有全局层；用于 `restrict` 的已知名与诊断。
- * - visible：带 agent 的 `tools.schemas(agent)`，包含预设/祖先/本层工具；模型真正能看到的范围。
- * - scoped：visible 中不在 global 的名字，即由 agent/祖先层补充的工具。
+ * 返回两个字段，各自只服务一个调用方：
+ * - visible：带 agent 的 `tools.schemas(agent)`，包含预设/祖先/本层工具；模型可见面。
+ * - globalNames：不带 scope 的 `tools.schemas()` 名字集合；只供 `restrict` 过滤已知名。
+ *
+ * 全局原始 schema 与 visible-only 差集不外露；等真实诊断消费方出现再加字段。
  */
 
 const schemaList = (tools, scope) => {
@@ -16,10 +18,5 @@ export function toolScopeSnapshot(tools, agent) {
   const global = schemaList(tools)
   const visible = agent === undefined ? global : schemaList(tools, agent)
   const globalNames = new Set(global.map((schema) => schema?.name).filter((name) => typeof name === 'string'))
-  return {
-    global,
-    visible,
-    globalNames,
-    scoped: visible.filter((schema) => !globalNames.has(schema?.name)),
-  }
+  return { visible, globalNames }
 }

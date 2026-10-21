@@ -2,7 +2,7 @@
 
 ### 工具面作用域与调用事件契约（2026-10-21）
 
-- **作用域**：新增 `engine/tool-scope.mjs#toolScopeSnapshot`，明确区分 `global`（全局层，仅供 restrict 的已知名与诊断）与 `visible`（agent 可见，含预设/祖先/本层）；`tool-visibility` 与 `tool-search` 均改走该快照，不再各自直接读无 scope 的 `schemas()`。
+- **作用域**：新增 `engine/tool-scope.mjs#toolScopeSnapshot`，明确区分 `globalNames`（全局层名字，仅供 restrict 的已知名过滤）与 `visible`（agent 可见，含预设/祖先/本层）；`tool-visibility` 与 `tool-search` 均改走该快照，不再各自直接读无 scope 的 `schemas()`。
 - **事件**：`engine/history.mjs#TOOL_INVOCATION_EVENT_TYPES` 统一 `tool/call` 与 PTC `tool/ptc-dispatch`；发现/解锁读两类，模型动作与相位晋升仍只看顶层 `tool/call`。
 - **执行闸**：allow/deny 合并为同一条 guard，deny 优先；allow 的 fail-open 状态仍由装配结果同步。
 - **验证**：全量 test 763 pass/0 fail；typecheck/lint/build/git diff --check/verify:host/verify:pack/rebuild:module-template -- --check 全绿。
