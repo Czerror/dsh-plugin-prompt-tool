@@ -20,7 +20,7 @@ id: tool-surface
 name: 工具面收窄（核心文件与任务集）
 version: 2.0.0
 engineCompat: ">=0.7.2"
-description: 把工具面收窄到常驻核心集（bash/pwsh/read/write/edit/glob/grep/todo_write/skill_search/skill_load/tool_search），其余由 tool_search 按需解锁；解锁名从持久 tool/call 参数回收，跨请求与压缩保留。
+description: 把工具面收窄到常驻核心集（bash/pwsh/read/write/edit/glob/grep/todo_write/skill_search/skill_load/tool_search），其余由 tool_search 按需解锁；解锁名从持久调用记录（顶层 tool/call 或 PTC tool/ptc-dispatch）参数回收，跨请求与压缩保留。
 meta:
   source: manual
 modules:

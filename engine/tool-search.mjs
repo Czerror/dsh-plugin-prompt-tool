@@ -6,8 +6,9 @@
  *
  * 两个动作合一：
  *  - `query` 关键词搜索**完整装配目录**（只回名字 + 一行截断描述，不回 parameters）；
- *  - `toolNames` 按**精确名**解锁。解锁名写进本次 `tool/call` 的持久参数，
- *    `assembly.target.tools.allowFrom` 从那里读回 → 下次请求起生效，且跨压缩保留。
+ *  - `toolNames` 按**精确名**解锁。解锁名写进本次调用的持久参数（顶层 `tool/call`；
+ *    PTC 嵌套为 `tool/ptc-dispatch`），发现消费方的 allowExtra 从那里读回 → 下次请求起
+ *    生效，且跨压缩保留。
  *
  * **能力摘要来自运行时截获，不手工维护**（2026-10-05 用户指出）：空查询时按前缀把
  * `ctx.tools.schemas()` 的可见目录折叠成分组摘要（`mcp__github__* ×46`，实测 433 字符
