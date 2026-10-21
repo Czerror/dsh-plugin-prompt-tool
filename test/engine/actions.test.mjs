@@ -290,7 +290,7 @@ test('(7) 按值条件删键：值相等才删、值不等保留、缺失键不�
 // ───────────────────────── 三、第 (5)(6) 类：真实 PTC 子调用拒绝 ─────────────────────────
 
 /** 真实 SystemPrompt + ToolRuntime 的 PTC 环境；只替换语言运行时（不替换工具管线）。 */
-async function ptcHarness({ language = 'typescript', mode = 'ptc' } = {}) {
+async function ptcHarness({ language = 'typescript', mode = 'ptc', ancestorTools = [] } = {}) {
   const root = new Context()
   await root.plugin(SystemPrompt)
   await root.plugin(ToolRuntime, { mode })
@@ -324,20 +324,23 @@ async function ptcHarness({ language = 'typescript', mode = 'ptc' } = {}) {
   // 见其 requireWorkingDirectory）；真实部署由 @deepseek-ai/dsh-working-directory 提供，
   // 这里给最小替身，避免为了一个服务把新包引进 devDependencies。
   root.provide('workingDirectory', { ensure: async () => process.cwd() })
-  const makeAgent = async (id, parentScope) => {
+  const makeAgent = async (id, parentScope, depth) => {
     const record = {
       id,
       options: { model: 'deepseek-chat' },
-      session: { id, header: { delegationDepth: parentScope === undefined ? 0 : 1 }, append() {}, snapshotEvents: () => [] },
+      session: { id, header: { delegationDepth: depth ?? (parentScope === undefined ? 0 : 1) }, append() {}, snapshotEvents: () => [] },
     }
     const scope = parentScope === undefined ? createScope(root, record) : createScope(root, record, { parent: parentScope })
     record.ctx = await new Promise((resolve) => { scope.ctx.inject(['tools'], (runtimeCtx) => resolve(runtimeCtx)) })
     // agent 本层工具：`restrict` 只收继承面、收不动它，因此它是执行 guard 的**唯一兜底面**
     // —— 只有它能在 `run_code` 里真正建出绑定并走到子调用裁决（PLAN 要求的"真实 PTC 拒绝"）。
     record.ctx.tools.register(definition('own_tool'))
+    record.scope = scope
     return record
   }
-  const main = await makeAgent('main')
+  const preset = ancestorTools.length > 0 ? await makeAgent('preset') : undefined
+  for (const name of ancestorTools) preset.ctx.tools.register(definition(name))
+  const main = await makeAgent('main', preset, 0)
   const runCode = async (target, program) => root.tools.execute({
     callId: `c-${programs.length}`,
     name: 'run_code',
@@ -388,6 +391,23 @@ test('(5b) 真实 PTC：allow 未点名 run_code 仍保留传输，requireMatch 
   assert.equal(allowed.isError, false)
   assert.deepEqual(h.bodyRuns, ['read'])
   const denied = await h.runCode(h.main, 'bash')
+  assert.equal(denied.isError, true)
+  assert.match(denied.content[0].text, /not allowed by tool-visibility/)
+  dispose()
+  await h.root.fiber.dispose()
+})
+
+test('(5c) 真实 PTC：allow 收窄保留祖先/预设层工具', async () => {
+  const h = await ptcHarness({ ancestorTools: ['write'] })
+  const dispose = registerAction(h.root, { kind: 'tool-visibility', id: 'v', allow: ['bash', 'read', 'write'], requireMatch: true })
+  const out = await h.assemble(h.main)
+  const sdk = out.sections.find(section => section.name === SDK_SECTION_NAME)
+  assert.ok(sdk, 'PTC 下必须存在 tools:sdk 段')
+  assert.deepEqual(sdkToolNames(sdk.text).sort(), ['bash', 'read', 'write'], '祖先层 write 不得被全局 schemas() 过滤掉')
+  const allowed = await h.runCode(h.main, 'write')
+  assert.equal(allowed.isError, false)
+  assert.deepEqual(h.bodyRuns, ['write'])
+  const denied = await h.runCode(h.main, 'own_tool')
   assert.equal(denied.isError, true)
   assert.match(denied.content[0].text, /not allowed by tool-visibility/)
   dispose()

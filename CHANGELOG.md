@@ -5,7 +5,7 @@
 - **根因**：`tool-visibility` 的 allow 先把 `tools.schemas()`（全局视图）过滤后的名单交给 `restrict`；PTC/预设把 `read`、`write`、`edit`、`glob`、`grep`、`pwsh`、`todo_write` 注册在祖先/agent 层，全局视图没有这些名字，`restrict` 的 allow 反而把它们裁掉，`tool_search` 目录只剩 6 个。
 - **修复**：allow 不再调用 `restrict`，执行面由 `guard` 兜底（含预设/祖先与本层工具）；deny 仍用 `restrict` + `guard`。`requireMatch` fail-open 时 allow guard 同步放行。`run_code` 继续作为保留传输豁免。
 - **解锁回收**：PTC 下 `tool_search` 的嵌套调用记录为 `tool/ptc-dispatch`，不是顶层 `tool/call`；`fillUnlocked` 同时读取两者，解锁名在下一请求进入 SDK 并通过 allow guard。
-- **测试**：真实 PTC allow 保留 `run_code`、拒绝未列 `bash`；tool-visibility allow guard、deny 消息、PTC dispatch 解锁与 fail-open 断言。全量 test 762。
+- **测试**：真实 PTC allow 保留 `run_code`、拒绝未列 `bash`；PTC harness 增加祖先/预设 scope 工具，锁住 allow/requireMatch/guard 不因全局视图再次裁掉它们。tool-visibility allow guard、deny 消息、PTC dispatch 解锁与 fail-open 断言。全量 test 763。
 
 ### superpowers 引导文案重建（2026-10-21）
 
