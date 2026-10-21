@@ -1,5 +1,13 @@
 # Changelog
 
+### 工具可见面计划：三面共用 fail-open 判据（2026-10-21）
+
+- **判据**：新增 `engine/actions/shared.mjs#toolSurfacePlan`，`required` = 静态 allow ∪ 动态解锁项（去掉 `run_code`），`available` = 装配目录名 ∪ SDK 正文名；缺项即 fail-open。
+- **修复**：目录面与正文面原本各算一次 required（正文面不含解锁项，执行闸只在 `tools` 是数组时置位）。现在三面读同一个布尔：`tools` 不是数组时执行闸也随正文缺项放行，解锁项缺项时正文也随目录放宽。
+- **告警**：fail-open 时列出具体缺项名字。
+- **测试**：新增 `tool-surface-plan.test.mjs` 4 条真值表；`tool-visibility` 补 `tools` 不是数组的集成用例。
+- **验证**：见本轮提交与测试输出。
+
 ### 层卡片判据收成单一来源（2026-10-21）
 
 - **判据**：新增 `src/client/data/layer-cards.ts#layerCards`，一次给出某模块在某层的卡片（`param` / `capability` / `missingCapability` / `asset` / `add`）；页面层只负责标签、搜索文本与渲染。

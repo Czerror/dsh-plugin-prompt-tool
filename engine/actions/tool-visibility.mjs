@@ -21,7 +21,7 @@
  * 把要保留的工具裁掉。allow 统一由 guard 裁决；requireMatch fail-open 时 guard 同步放行。
  */
 
-import { RUN_CODE, createMask, labelOf } from './shared.mjs'
+import { RUN_CODE, createMask, labelOf, toolSurfacePlan } from './shared.mjs'
 import { SDK_SECTION_NAME, stripSdkDeclarations, sdkToolNames } from '../sdk-strip.mjs'
 import { TOOL_INVOCATION_EVENT_TYPES, historyEvents } from '../history.mjs'
 import { toolScopeSnapshot } from '../tool-scope.mjs'
@@ -209,49 +209,41 @@ export function prepareToolVisibility(action, plugin) {
           ? result.sections.find((section) => section?.name === SDK_SECTION_NAME && typeof section.text === 'string')
           : undefined
         const sdkNames = sdkSection === undefined ? undefined : new Set(sdkToolNames(sdkSection.text))
-        if (Array.isArray(result.tools)) {
-          const available = new Set([
-            ...result.tools.map((tool) => tool?.name).filter((name) => typeof name === 'string'),
-            ...(sdkNames ?? []),
-          ])
-          // requireMatch 与旧 assembly 同判据：名单里任一工具缺失就 fail-open。
-          // 必需名单 = 静态 allow ∪ 本轮解锁项：解锁项同样是「本该存在」的工具。
-          // run_code 是保留传输，不进名单；它是否可调用不由这条声明决定。
-          const required = mask.requireMatch && mask.allow !== undefined
-            ? [...mask.allow, ...(allowExtra ?? [])].some((name) => name !== RUN_CODE && !available.has(name))
-            : false
-          const gate = states.get(context?.session ?? context?.agent?.session)
-          if (gate !== undefined) gate.failOpen = required
-          if (required) {
-            warnOnce(`${plugin}: tool-visibility action ${label}: a requireMatch tool is absent — exposing the full tool set (fail-open)`)
-          } else {
+        const available = new Set([
+          ...(Array.isArray(result.tools) ? result.tools.map((tool) => tool?.name).filter((name) => typeof name === 'string') : []),
+          ...(sdkNames ?? []),
+        ])
+        // 三面（目录 / 正文 / 执行闸）共用这一份判断：缺项就整体放宽，呈现与执行不得两套口径。
+        const plan = toolSurfacePlan(mask, allowExtra, available)
+        const gate = states.get(context?.session ?? context?.agent?.session)
+        if (gate !== undefined) gate.failOpen = plan.failOpen
+        if (plan.failOpen) {
+          warnOnce(`${plugin}: tool-visibility action ${label}: requireMatch tools absent (${plan.missing.join(', ')}) — exposing the full tool set (fail-open)`)
+        } else {
+          if (Array.isArray(result.tools)) {
             const kept = result.tools.filter((tool) => !mask.blocks(tool?.name))
             if (kept.length !== result.tools.length) result = { ...result, tools: kept }
           }
-        }
-        if (Array.isArray(result.sections)) {
-          let changed = false
-          let present = sdkNames
-          const sections = result.sections.map((section) => {
-            if (section?.name !== SDK_SECTION_NAME || typeof section.text !== 'string') return section
-            const presentNames = () => {
-              present ??= new Set(sdkToolNames(section.text))
-              return present
-            }
-            if (mask.requireMatch && mask.allow !== undefined
-              && [...mask.allow].some((name) => name !== RUN_CODE && !presentNames().has(name))) {
-              return section
-            }
-            const names = mask.allow === undefined
-              ? mask.deny
-              : new Set([...presentNames()].filter((name) => mask.blocks(name)))
-            if (names === undefined || names.size === 0) return section
-            const stripped = stripSdkDeclarations(section.text, names)
-            if (stripped === section.text) return section
-            changed = true
-            return { ...section, text: stripped }
-          })
-          if (changed) result = { ...result, sections }
+          if (Array.isArray(result.sections)) {
+            let changed = false
+            let present = sdkNames
+            const sections = result.sections.map((section) => {
+              if (section?.name !== SDK_SECTION_NAME || typeof section.text !== 'string') return section
+              const presentNames = () => {
+                present ??= new Set(sdkToolNames(section.text))
+                return present
+              }
+              const names = mask.allow === undefined
+                ? mask.deny
+                : new Set([...presentNames()].filter((name) => mask.blocks(name)))
+              if (names === undefined || names.size === 0) return section
+              const stripped = stripSdkDeclarations(section.text, names)
+              if (stripped === section.text) return section
+              changed = true
+              return { ...section, text: stripped }
+            })
+            if (changed) result = { ...result, sections }
+          }
         }
         return result
       } catch (error) {

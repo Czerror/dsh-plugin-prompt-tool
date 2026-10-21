@@ -57,6 +57,20 @@ export function createMask(source, label, plugin, allowExtra) {
   }
 }
 
+/**
+ * 工具可见面的单一判据：装配目录、`tools:sdk` 正文与执行闸共用同一份 fail-open 决定。
+ *
+ * `available` = 目录名 ∪ SDK 正文名；`required` = 静态 allow ∪ 动态解锁项（`run_code`
+ * 是保留传输，不进名单）。缺项时三面必须一起放宽——只放宽一面会让模型看到的与能调的不一致。
+ */
+export function toolSurfacePlan(mask, allowExtra, available) {
+  const required = mask.requireMatch && mask.allow !== undefined
+    ? [...mask.allow, ...(allowExtra ?? [])].filter((name) => name !== RUN_CODE)
+    : []
+  const missing = required.filter((name) => !available.has(name))
+  return { failOpen: missing.length > 0, missing }
+}
+
 export function requireString(value, label, plugin) {
   if (typeof value !== 'string') throw new TypeError(`${plugin}: ${label} must be a string`)
   return value
