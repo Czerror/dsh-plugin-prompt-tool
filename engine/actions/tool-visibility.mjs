@@ -4,7 +4,7 @@
  * 三面投影都在 system-prompt/assemble 的 after-next 之后完成：
  *  1. 装配目录（tools 数组）——本轮的呈现面；
  *  2. tools:sdk 段正文——模型读到的工具声明；
- *  3. 执行面：restrict（继承的全局工具）+ guard（本层注册与晚到工具）。
+ *  3. 执行面：deny 用 restrict + guard；allow 只登记 guard（restrict 无法安全覆盖预设/祖先层）。
  *
  * 旧实现把同一个意图拆成三条声明（assembly / sdk-strip / guard），其中 guard 属固定
  * 注册效果、不能带规则级 if，于是「有条件下架」被迫再复制一份名单。这里把名单收在
@@ -16,9 +16,9 @@
  * allow 模式有意义：名单里任一工具不在目录里就放弃裁剪、暴露完整目录（fail-open）并告警——
  * 收窄错了会让当前工作流调不到工具，比多花上下文严重。
  *
- * 执行边界的不对称是官方能力决定的：restrict 只作用于继承的全局工具，guard 只有 deny
- * 语义。所以 allow 模式下，scope 本层注册的工具无法在执行层被「只保留」——它们仍可能
- * 被按名调用，只是模型目录里看不到。deny 模式两种工具都拦得住。
+ * 执行边界：deny 同时用 restrict（继承面）与 guard（本层/晚到）；allow 不用 restrict——
+ * 它的 allow 只能收继承面名字，而 `schemas()` 全局视图会漏掉预设/祖先层，局部 allow 会
+ * 把要保留的工具裁掉。allow 统一由 guard 裁决；requireMatch fail-open 时 guard 同步放行。
  */
 
 import { RUN_CODE, createMask, labelOf } from './shared.mjs'
@@ -127,22 +127,21 @@ export function prepareToolVisibility(action, plugin) {
       if (existing !== undefined && existing.ctx === scoped && existing.key === key) return
       // mask 或 scope 变了：先撤旧闸，避免第一轮为真后永久留闸。
       release(session)
-      const state = { ctx: scoped, key, disposers: [] }
+      const state = { ctx: scoped, key, disposers: [], failOpen: false }
       const known = typeof tools.schemas === 'function'
         ? new Set((tools.schemas() ?? []).map((schema) => schema?.name).filter((name) => typeof name === 'string'))
         : undefined
-      if (typeof tools.restrict === 'function' && known !== undefined) {
-        // restrict 对未知名/本层名直接抛错：只喂当前已知的全局名，其余丢弃并留痕。
-        const allow = mask.allow === undefined
-          ? undefined
-          : [...new Set([...mask.allow, ...(allowExtra ?? [])])].filter((name) => name !== RUN_CODE && known.has(name))
-        const deny = mask.deny === undefined ? undefined : [...mask.deny].filter((name) => known.has(name))
-        if ((allow?.length ?? 0) > 0 || (deny?.length ?? 0) > 0) {
+      if (mask.deny !== undefined && typeof tools.restrict === 'function' && known !== undefined) {
+        // allow 模式不走 restrict：`schemas()` 是全局视图，过滤后的 allow 会漏掉预设/祖先层的
+        // 工具，restrict 反而把它们裁掉；restrict 只接收继承面名字，无法安全区分本层工具。
+        // allow 的执行面统一由下面的 guard 兜底。
+        const deny = [...mask.deny].filter((name) => known.has(name))
+        if (deny.length > 0) {
           try {
-            const dispose = tools.restrict({ ...(allow === undefined ? {} : { allow }), ...(deny === undefined ? {} : { deny }) })
+            const dispose = tools.restrict({ deny })
             if (typeof dispose === 'function') state.disposers.push(dispose)
           } catch (error) {
-            // restrict 失败不改变呈现面；执行面还有下面的 guard 兜底（deny 模式）。
+            // restrict 失败不改变呈现面；执行面还有 guard 兜底。
             warnOnce(`${plugin}: tool-visibility action ${label} restrict skipped: ${String(error?.message ?? error)}`)
           }
         }
@@ -153,6 +152,14 @@ export function prepareToolVisibility(action, plugin) {
           const toolName = exec?.name
           if (toolName === RUN_CODE || typeof toolName !== 'string' || toolName.length === 0) return undefined
           return deny.has(toolName) ? `${label}: tool ${JSON.stringify(toolName)} is denied by tool-visibility` : undefined
+        }))
+      }
+      if (mask.allow !== undefined && typeof tools.guard === 'function') {
+        state.disposers.push(tools.guard((exec) => {
+          const toolName = exec?.name
+          if (toolName === RUN_CODE || typeof toolName !== 'string' || toolName.length === 0) return undefined
+          if (state.failOpen) return undefined
+          return mask.blocks(toolName) ? `${label}: tool ${JSON.stringify(toolName)} is not allowed by tool-visibility` : undefined
         }))
       }
       states.set(session, state)
@@ -217,6 +224,8 @@ export function prepareToolVisibility(action, plugin) {
           const required = mask.requireMatch && mask.allow !== undefined
             ? [...mask.allow, ...(allowExtra ?? [])].some((name) => name !== RUN_CODE && !available.has(name))
             : false
+          const gate = states.get(context?.session ?? context?.agent?.session)
+          if (gate !== undefined) gate.failOpen = required
           if (required) {
             warnOnce(`${plugin}: tool-visibility action ${label}: a requireMatch tool is absent — exposing the full tool set (fail-open)`)
           } else {

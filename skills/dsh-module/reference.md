@@ -86,7 +86,7 @@ rules:
   requireMatch: true
 ```
 
-声明 discovery 的模块必须在 modules 里列出对应适配器行（tools → tool-search），缺行在装配准备期失败。discovery 在首次装配时按 agent 解析适配器，并从持久 tool/call 参数回收解锁名（只做加法、跨压缩保留）；工具由适配器行注册，discovery.tool/key 可选、只作断言。提示用同规则普通 inject-text 组合 count（user-message，max: 1）与 session 去重，采用 strategy: placeholder、fill: tool-catalog、params: { action: narrow }。只读 RESIDENT_TOOLS 是引用动作 allow 去 deny 后的逗号名单，DISCOVERY_TOOL 是当前 Agent 的发现适配器工具名；模块 text 控制提示正文，保留自动名单而不复制声明。requireMatch 在任一常驻工具缺失时放弃裁剪、暴露完整目录（fail-open），声明名单不等同实时工具面。PTC 下 tools 数组只有保留传输 `run_code`，实际可见面是 `tools:sdk` 正文；`run_code` 不写进 allow 也保留，且不参与 requireMatch，因此原生收窄声明可以直接与 PTC 共存。
+声明 discovery 的模块必须在 modules 里列出对应适配器行（tools → tool-search），缺行在装配准备期失败。discovery 在首次装配时按 agent 解析适配器，并从持久 tool/call 参数回收解锁名（只做加法、跨压缩保留）；工具由适配器行注册，discovery.tool/key 可选、只作断言。提示用同规则普通 inject-text 组合 count（user-message，max: 1）与 session 去重，采用 strategy: placeholder、fill: tool-catalog、params: { action: narrow }。只读 RESIDENT_TOOLS 是引用动作 allow 去 deny 后的逗号名单，DISCOVERY_TOOL 是当前 Agent 的发现适配器工具名；模块 text 控制提示正文，保留自动名单而不复制声明。requireMatch 在任一常驻工具缺失时放弃裁剪、暴露完整目录（fail-open），声明名单不等同实时工具面。allow 的执行面由 guard 兜底，不调用 restrict——restrict 的 allow 只收继承面名字，而全局 schemas 视图会漏预设/祖先层工具，局部 allow 反而会把它们裁掉；deny 才用 restrict + guard。PTC 下 tools 数组只有保留传输 `run_code`，实际可见面是 `tools:sdk` 正文；`run_code` 不写进 allow 也保留，且不参与 requireMatch，因此原生收窄声明可以直接与 PTC 共存。
 
 tool-catalog 引用目标必须有 allow；仅支持普通只读插值，`templateEvaluation: true` 拒绝。未知动作引用保存前拒绝，发现适配器不可用则跳过提示并告警。
 

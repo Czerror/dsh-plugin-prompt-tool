@@ -2,7 +2,7 @@
  * tool-visibility：一份声明拥有目录、SDK 正文与执行闸（T1–T3 的行为验收）。
  *
  * 真值源是官方 ToolRestriction 语义（deepseek-harness packages/core/tools/src/index.ts:701-706）：
- * allow 与 deny 可以同时给，判据是「先按 allow 保留、再按 deny 剔除」；guard 只有 deny 语义。
+ * allow 与 deny 可以同时给，判据是「先按 allow 保留、再按 deny 剔除」；allow 的执行面由 guard 兜底。
  * 这里用记录型 ctx 与假 agent scope 验证本动作的投影与撤销时机，宿主语义由 tool-narrow.test.mjs 覆盖。
  */
 
@@ -117,7 +117,9 @@ test('tool-visibility：allow 与 deny 同时给时先保留再剔除（对齐�
   const input = assembled(toolList('alpha', 'beta'))
   const out = await handler(input, { agent: agentOf(scope) }, async () => input)
   assert.deepEqual(out.tools.map((tool) => tool.name), ['alpha'])
-  assert.deepEqual(disposed.restrict, [{ allow: ['alpha', 'beta'], deny: ['beta'] }])
+  assert.deepEqual(disposed.restrict, [{ deny: ['beta'] }], 'allow 不交给 restrict，避免漏掉预设/祖先层工具')
+  assert.equal(disposed.guards[0]({ name: 'beta' }), 'v: tool "beta" is denied by tool-visibility')
+  assert.equal(disposed.guards[1]({ name: 'gamma' }), 'v: tool "gamma" is not allowed by tool-visibility')
 })
 
 test('tool-visibility：allow 的 requireMatch 缺工具时 fail-open 并告警', async () => {
@@ -130,6 +132,7 @@ test('tool-visibility：allow 的 requireMatch 缺工具时 fail-open 并告警'
   const out = await handler(input, { agent: agentOf(scope) }, async () => input)
   assert.deepEqual(out.tools.map((tool) => tool.name), ['alpha', 'beta'], '缺名单工具时暴露完整目录')
   assert.ok(rec.warnings.some((message) => /requireMatch tool is absent/.test(message)))
+  assert.equal(disposed.guards[0]({ name: 'beta' }), undefined, 'fail-open 时 allow guard 同步放行')
 })
 
 test('tool-visibility：run_code 是保留传输，allow 不点名也保留且不计入 requireMatch', async () => {
@@ -142,7 +145,8 @@ test('tool-visibility：run_code 是保留传输，allow 不点名也保留且�
     const input = assembled(toolList('alpha', 'beta', 'run_code'))
     const out = await handler(input, { agent: agentOf(scope) }, async () => input)
     assert.deepEqual(out.tools.map((tool) => tool.name), ['alpha', 'run_code'], `allow ${allow.join(',')} 仍保留传输`)
-    assert.deepEqual(disposed.restrict, [{ allow: ['alpha'] }], '官方 restrict 不得收到保留名 run_code')
+    assert.equal(disposed.restrict, undefined, 'allow 模式不调用 restrict')
+    assert.equal(disposed.guards[0]({ name: 'beta' }), 'v: tool "beta" is not allowed by tool-visibility')
     assert.deepEqual(rec.warnings, [], 'run_code 不参与 requireMatch 的缺失判定')
   }
 })
@@ -171,7 +175,9 @@ test('tool-visibility：discovery 解析 adapter 元数据，并从持久 tool/c
   const input = assembled(toolList('alpha', 'beta', 'gamma'))
   const out = await handler(input, { agent }, async () => input)
   assert.deepEqual(out.tools.map((tool) => tool.name), ['alpha', 'beta', 'gamma'], '解锁名只做加法')
-  assert.deepEqual(disposed.restrict.at(-1).allow, ['alpha', 'beta', 'gamma'], 'restrict 的 allow 含解锁项')
+  assert.equal(disposed.restrict, undefined, 'allow 模式不调用 restrict')
+  assert.equal(disposed.guards[0]({ name: 'gamma' }), undefined, '解锁项通过 allow guard')
+  assert.match(disposed.guards[0]({ name: 'delta' }), /not allowed by tool-visibility/)
   assert.deepEqual(rec.warnings, [], '元数据匹配时不得告警')
 })
 

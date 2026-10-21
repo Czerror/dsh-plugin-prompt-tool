@@ -1,5 +1,11 @@
 # Changelog
 
+### tool-surface allow 不再丢预设工具（2026-10-21）
+
+- **根因**：`tool-visibility` 的 allow 先把 `tools.schemas()`（全局视图）过滤后的名单交给 `restrict`；PTC/预设把 `read`、`write`、`edit`、`glob`、`grep`、`pwsh`、`todo_write` 注册在祖先/agent 层，全局视图没有这些名字，`restrict` 的 allow 反而把它们裁掉，`tool_search` 目录只剩 6 个。
+- **修复**：allow 不再调用 `restrict`，执行面由 `guard` 兜底（含预设/祖先与本层工具）；deny 仍用 `restrict` + `guard`。`requireMatch` fail-open 时 allow guard 同步放行。`run_code` 继续作为保留传输豁免。
+- **测试**：真实 PTC allow 保留 `run_code`、拒绝未列 `bash`；tool-visibility allow guard、deny 消息、discovery 解锁与 fail-open 断言。全量 test 762。
+
 ### superpowers 引导文案重建（2026-10-21）
 
 - **来源**：以 `D:/AI/GitHub/superpowers` v7.0.0 的 `skills/using-superpowers/SKILL.md` 与 `hooks/session-start` 为源，按 `writing-great-skills` / `writing-for-agents` 重写内置模块的常驻提示。

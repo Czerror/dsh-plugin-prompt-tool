@@ -240,9 +240,9 @@ surface 缺失或非法时可见视图退回完整日志；合法空 nodes 就�
 
 ## 工具面收窄与按需解锁
 
-`tool-visibility` 是工具面的唯一声明：一份 allow/deny 名单同时投影到装配目录、`tools:sdk` 正文与执行闸（restrict + guard），并可声明发现来源。受众统一写在规则或分支的 scope 条件。呈现裁剪不等于授权：deny 同时注册执行闸，allow 的执行面由 restrict 覆盖继承的全局工具（官方 restrict 不作用于 scope 本层注册）。`requireMatch` 只对白名单有意义：名单工具在目录或 SDK 正文缺失时放弃裁剪、暴露完整目录（fail-open）。条件由规则引擎逐轮求值，条件变假时撤销上一轮注册的执行闸。
+`tool-visibility` 是工具面的唯一声明：一份 allow/deny 名单同时投影到装配目录、`tools:sdk` 正文与执行闸，并可声明发现来源。受众统一写在规则或分支的 scope 条件。呈现裁剪不等于授权：deny 同时用 `restrict` 覆盖继承面并注册 `guard`；allow **不调用 restrict**，执行面统一由 `guard` 兜底——`restrict` 的 allow 只能收继承面名字，而 `tools.schemas()` 的全局视图不含预设/祖先层工具，局部 allow 反而会把要保留的工具裁掉。`requireMatch` 只对白名单有意义：名单工具在目录或 SDK 正文缺失时放弃裁剪、暴露完整目录（fail-open），allow guard 同步放行。条件由规则引擎逐轮求值，条件变假时撤销上一轮注册的执行闸。
 
-PTC 下装配目录只有保留传输 `run_code`，实际可见面是 `tools:sdk` 正文。`run_code` 不参与 allow/deny 名单：allow 不点名也会保留，`requireMatch` 不计它，官方 `restrict` 也不会收到它；可见面裁到空时也不影响这条唯一入口。因此 `tool-surface` 这类 native 收窄声明可以直接与 PTC 共存，`requireMatch` 在 PTC 下按 SDK 正文判定。
+PTC 下装配目录只有保留传输 `run_code`，实际可见面是 `tools:sdk` 正文。`run_code` 不参与 allow/deny 名单：allow 不点名也会保留，`requireMatch` 不计它；allow 不走 `restrict`，deny 的 `restrict` 也会过滤它。可见面裁到空时也不影响这条唯一入口。因此 `tool-surface` 这类 native 收窄声明可以直接与 PTC 共存，`requireMatch` 在 PTC 下按 SDK 正文判定。
 
 按需发现由同一份声明的 `discovery` 字段拥有（`{ kind }`，工具名与解锁键由适配器元数据提供；可选写 `tool`/`key` 只作断言）：动作在首次装配时用 `ctx.get('promptToolDiscovery')` 按 agent 解析适配器，从本会话 durable tool/call 参数提取显式字符串名单，只做加法且不能越过 deny。工具本身由适配器行注册——声明了 `discovery` 的模块必须把对应行（`tools` → `tool-search`、`skills` → `skill-search`）列进 `modules`，缺行在装配准备期失败。工具名按真实注册名称匹配；坏参数逐条忽略，缺会话回落静态 allow；适配器未注册时告警一次并跳过解锁回收，不阻断装配。
 
