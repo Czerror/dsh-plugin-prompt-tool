@@ -49,6 +49,19 @@ test('投影：保存中与冲突映射到卡片字段，错误信息随池', ()
   assert.equal(cards[0].contentMessage, '写入冲突')
 })
 
+test('投影：剥离卡壳里过期的正文与版本副本，只留卡身份', () => {
+  const stale = {
+    id: 'agents-file-a',
+    origin: { kind: 'instruction-file', fileId: 'a' },
+    params: { fileId: 'a', scope: 'project', text: 'stale', revision: 'old' },
+  }
+  const cards = projectInstructionCards([stale], pool([draft('a', 'fresh', 'fresh')]), policy())
+  assert.equal(cards[0].text, 'fresh', '正文只来自草稿池')
+  assert.equal(cards[0].params.text, undefined)
+  assert.equal(cards[0].params.revision, undefined)
+  assert.equal(cards[0].params.fileId, 'a', '卡身份保留')
+})
+
 test('投影：策略覆盖 enabled 与 name；非文件卡原样返回', () => {
   const cards = projectInstructionCards(
     [shell('a')],

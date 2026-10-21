@@ -1,5 +1,14 @@
 # Changelog
 
+### 指令文件卡收成单一 owner（2026-10-21）
+
+- **状态**：正文只由草稿池拥有；`fields.promptConfigs` 改成 (卡壳, 池, 策略) 的投影，新增 `src/client/data/instruction-cards.ts`。
+- **删除**：`savedConfigs` / `savedConfigsRef`、`promptConfigsDirty`、`hasPendingVariableRows`、`isAgentsFileCard`，以及 `patch` 里的 complete 互斥分支（卡壳只来自指令卡，卡里没有 complete 字段，分支不可达）。
+- **单向流**：`publishInstructions` 与 `publishInstructionPolicy` 内部重投影；`patch` 只把文件卡正文镜像进池；保存后的重载门改用池内未保存草稿数。
+- **投影**：剥离卡壳里过期的 `params.text` / `params.revision`，正文唯一来源是草稿池。
+- **测试**：新增投影纯函数 5 条（unreadable / 脏标记 / 保存中与冲突 / 过期副本剥离 / 策略覆盖）。
+- **验证**：见本轮提交与测试输出。
+
 ### 指令文件探测评审修复（2026-10-21）
 
 - **接口**：`resolveProjectRoot` + `instructionDirs` 合成为 `instructionPlan(cwd, markerDirs) → { root, dirs }`，`presentInDir` 收为内部；导出 7→5，宿主调用从三步降到两步，`.d.mts` 只声明 4 个宿主符号。

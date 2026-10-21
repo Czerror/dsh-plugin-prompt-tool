@@ -127,11 +127,6 @@ function waitForScope(scope: ConfigForm<Record<string, unknown>>): Promise<Confi
   })
 }
 
-/**
- * 把文件草稿状态贴到指令文件卡上（视图元数据，不写进 module.yml）。
- * 卡片正文以草稿池为准：服务端附带的 params.text 不再是文件正文的来源。
- */
-
 export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolSettingsTransport): PromptToolStore {
   const editorDrafts = useRef(createWorkspaceDrafts()).current
   const [modelCatalog, setModelCatalog] = useState<Record<string, string[]>>({})
@@ -444,9 +439,7 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
         // 契约只保证「这是一个数组」（卡片的完整形状是客户端视图 `PromptConfigDraft`）：按既有事实收窄一次。
         const cards = boot.promptConfigs.promptConfigs as PromptConfigDraft[]
         const userConfigs = cards.filter((config) => !engineGenerated.has(config.id) && instructionFileIdOf(config) !== undefined)
-        // 内容资产条目（prompt-injector / instruction-hint）：params.text（生成目录文件渲染产物）
-        // 提升到 text 框显示，编辑入口统一为模块卡片。
-        // 服务端下发的卡壳是投影的身份来源；正文与状态由草稿池给。
+        // 服务端下发的卡壳是投影的身份来源；正文与状态由草稿池给，params 里的读取副本在投影时剥离。
         instructionShellsRef.current = userConfigs
         refreshInstructionCards()
       }
@@ -531,24 +524,6 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
     }
     // 发布链之后 fieldsRef 已是新投影，其余字段以它为基合并。
     let next: Fields = { ...fieldsRef.current, ...rest }
-    // complete 互斥：官方 complete 段一个 scope 只能有一个，开启任一 enabled 配置的
-    // complete 时自动关闭其他 enabled 配置的 complete。disabled 配置不参与（引擎
-    // effectiveList 已过滤，不注册即不独占；重新启用时由本次收敛）。顶层人设的
-    // complete 不在本数组内，跨层冲突由 settings bridge 写盘前 fail loud。
-    if (Array.isArray(next.promptConfigs)) {
-      const activeComplete = (config: PromptConfigDraft): boolean => config.enabled !== false && config.params?.complete === true
-      const enabledComplete = next.promptConfigs.some(activeComplete)
-      if (enabledComplete) {
-        const kept = next.promptConfigs.findIndex(activeComplete)
-        next = {
-          ...next,
-          promptConfigs: next.promptConfigs.map((config, index) =>
-            index === kept || config.enabled === false
-              ? config
-              : { ...config, params: { ...config.params, complete: false } }),
-        }
-      }
-    }
     publishFields(next)
   }, [publishFields, publishInstructions])
 
@@ -622,9 +597,9 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
     prepareRefresh: scope => {
       if (scope === 'global') return async () => { await load({ silent: true }) }
       const draftVersion = draftVersionRef.current
-      const configsWereClean = unsavedInstructionDrafts(instructionPoolRef.current).length === 0
+      const noUnsavedDrafts = unsavedInstructionDrafts(instructionPoolRef.current).length === 0
       return async () => {
-        if (shouldReloadAfterModuleSave(draftVersion, draftVersionRef.current, configsWereClean)) await load({ silent: true })
+        if (shouldReloadAfterModuleSave(draftVersion, draftVersionRef.current, noUnsavedDrafts)) await load({ silent: true })
       }
     },
   }

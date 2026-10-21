@@ -11,13 +11,23 @@ import { instructionFileIdOf } from './prompt-config-content.ts'
 import { resolveInstructionFilePolicy } from './instruction-policy.ts'
 
 /** 策略值 → 卡片行为字段（文件卡的行为不来自 module.yml）。 */
-export function instructionPolicyFields(
+function instructionPolicyFields(
   resolved: { enabled: boolean; name?: string },
 ): Partial<PromptConfigDraft> {
   return {
     enabled: resolved.enabled,
     ...(resolved.name === undefined ? {} : { name: resolved.name }),
   }
+}
+
+/**
+ * 卡壳里的正文与版本是服务端读取时的副本，编辑后立即过期：投影前剥掉，
+ * 只留卡身份与策略输入。正文的唯一来源是草稿池。
+ */
+function withoutSnapshotCopies(config: PromptConfigDraft): PromptConfigDraft {
+  if (config.params === undefined) return config
+  const { text: _text, revision: _revision, ...params } = config.params
+  return { ...config, params }
 }
 
 /** 一次投影：服务端卡壳 + 草稿池 + 指令策略 → 卡片视图。 */
@@ -35,7 +45,7 @@ export function projectInstructionCards(
     if (draft === undefined) {
       // 卡存在但没有对应快照：不把未知正文当空文件，直接禁用保存。
       return {
-        ...config,
+        ...withoutSnapshotCopies(config),
         ...instructionPolicyFields(resolved),
         text: '',
         contentStatus: 'unreadable' as const,
@@ -44,7 +54,7 @@ export function projectInstructionCards(
     }
     const message = draft.error ?? draft.message
     return {
-      ...config,
+      ...withoutSnapshotCopies(config),
       ...instructionPolicyFields(resolved),
       text: draft.content,
       contentStatus: draft.status,
