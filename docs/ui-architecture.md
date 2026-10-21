@@ -394,6 +394,7 @@ workspace-pages.ts 是页面元数据的唯一来源。默认页为 features，�
 | 工具、人设、原始 JSON/数字草稿 | store.editorDrafts / workspace-drafts | 按预设和字段身份保留；未存草稿或保存中在覆盖导入时按模块拦截（`poolDirty`）；改名迁移、删除清理对应字段 |
 | 模块规则与条件/动作字段草稿 | rule-drafts + use-rule-editor | 每模块单一 owner、读取去重、稳定编辑 key；改名/删除保留 previousId；CAS 失败和请求期间的新编辑不丢失 |
 | 指令文件正文草稿 | instruction-drafts | 与预设保存队列分离；按指令上下文（`contextId`）隔离，旧上下文迟到响应不覆盖当前视图 |
+| 指令文件卡壳与视图 | instruction-cards 投影（`instructionShellsRef` + 池 + 策略） | 壳来自 `/bootstrap` 的指令卡快照，只随快照更新；`fields.promptConfigs` 永远是三者投影的结果，不是编辑源 |
 | 导入预览与提交阶段 | use-import-preview-flow | 每次 `run()` 独立生命周期；卸载结束等待、不悬挂 Promise |
 | 创建意图、菜单、删除/导入确认、拖拽 | 对应 feature | 仍随页面卸载失效；不恢复或重放危险操作 |
 | 模板创建目标与发布结果 | template-rule-writer + rule-drafts | 目标意图归视图，显式 moduleId 写入、声明与结果接纳归数据侧；不依赖 owner/readback。共享草稿保存完整成功响应和发布状态，离页只抑制提示／展开，不丢已提交事实；未启用目标的状态仍仅存工作台会话，启用后沿既有 refreshOnly 重试 |
@@ -460,7 +461,7 @@ use-prompt-tool-store.ts 是唯一工作台 facade，负责把 ConfigForms mirro
 | template-rule-writer.ts | 模板创建的显式目标、首写和新模块启用编排；规则结果统一交回 rule-drafts |
 | module-actions.ts | 模块操作与事实刷新，保留成功结果和刷新失败区别；与规则保存共用队列 |
 | instruction-cards.ts | 指令文件卡的视图投影：卡壳 + 草稿池 + 指令策略 → 卡片；正文唯一来源是草稿池，卡壳里过期的 `params.text` / `params.revision` 在投影时剥离 |
-| prompt-config-content.ts | 指令文件卡的 fileId 解析（`origin` 优先，`params.fileId` 回退）；不再承担正文与写回分流 |
+| prompt-config-content.ts | 指令文件卡的 fileId 解析（`origin` 优先；`sourceKind === 'instruction-file'` 时才回退 `params.fileId`）；不再承担正文与写回分流 |
 | prompt-config-order.ts | 配置视图内的同档位判据（`sameConfigPosition`）与一步重排（`reorderToView`）：资格在可移动集合内判、插入位置在完整数组里算；拖拽、上移/下移按钮与拖拽手柄的键盘操作共用同一份实现 |
 | use-module-config-order.ts | 跨模块排序摘要、版本读写与请求生命周期（`createModuleConfigOrderSession` 是唯一实现，hook 只把它投影成 React state）；由规则工作台消费 |
 | save-queue.ts | 串行保存任务的最小队列 |

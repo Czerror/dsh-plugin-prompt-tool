@@ -148,7 +148,6 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
       : candidate) })
   }, [publishMeta])
   const [savedSwitches, setSavedSwitches] = useState<SwitchSnapshot>(EMPTY_SWITCHES)
-
   // 池本体读 ref（`getInstructionPool` 回调式读取）；这里的 state 只承担触发重渲染。
   const [, setInstructionPool] = useState<InstructionDraftPool>(EMPTY_INSTRUCTION_POOL)
   const [instructionPolicy, setInstructionPolicy] = useState<InstructionPolicySnapshot>(EMPTY_INSTRUCTION_POLICY_SNAPSHOT)
@@ -430,7 +429,7 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
           ...(policyValue.error === undefined ? {} : { error: policyValue.error }),
         })
       // 实际生效配置（引擎从生成目录加载；settings.promptConfigs 仅为覆盖层，
-      // 默认为空不代表无配置）。非空时以实际配置为准，并同步已保存快照避免误判 dirty。
+      // 默认为空不代表无配置）。非空时以实际配置为卡壳，视图由投影重算。
       if (boot.ok && boot.promptConfigs !== undefined
         && Array.isArray(boot.promptConfigs.promptConfigs) && boot.promptConfigs.promptConfigs.length > 0) {
         // 引擎自动生成的模型参数配置（model-params / subagent-model-params）由
@@ -509,7 +508,7 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
 
   const patch = useCallback((partial: Partial<Fields>) => {
     draftVersionRef.current += 1
-    // 文件卡正文是草稿池的输入：只镜像正文，视图由投影给出，卡壳不因编辑改写。
+    // promptConfigs 只消费文件卡正文（其余字段由卡壳持有），其余字段原样合并。
     const { promptConfigs: patchedConfigs, ...rest } = partial
     if (Array.isArray(patchedConfigs)) {
       let pool = instructionPoolRef.current

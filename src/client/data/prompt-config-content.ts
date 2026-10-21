@@ -1,4 +1,4 @@
-/** promptConfigs 内容资产的文件载荷与 UI 草稿映射（纯逻辑）。 */
+/** 指令文件卡的 fileId 解析（纯逻辑）：origin 优先，params.fileId 回退。 */
 import type { PromptConfigDraft } from '../prompt-tool-types.ts'
 
 /**
