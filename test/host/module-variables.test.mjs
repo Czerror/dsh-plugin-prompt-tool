@@ -185,3 +185,35 @@ test('变量边界：相同整表幂等，跨进程锁阻止并行丢更新', as
   assert.deepEqual(recovered.revisions, pending.revisions)
   assert.equal(recovered.effective.count, '3', '已提交而发布失败仍报告新值，后续恢复不重放变更')
 })
+test('变量外部改写：替换前复核拒绝，原冲突 code 保留', (t) => {
+  const dir = fixture(t, 'cas-conflict')
+  const original = 'variables:\n  count: "1"\n'
+  const changed = 'variables:\n  count: "2"\n'
+  writeFileSync(globalVariablesFile(), original)
+  const revisions = readModuleVariables(dir).revisions
+  const originalRead = fs.readFileSync.bind(fs)
+  let reads = 0
+  let mutated = false
+  mock.method(fs, 'readFileSync', (path, ...args) => {
+    if (path === globalVariablesFile()) {
+      reads += 1
+      if (reads === 4) {
+        mutated = true
+        writeFileSync(globalVariablesFile(), changed)
+        return Buffer.from(changed)
+      }
+    }
+    return originalRead(path, ...args)
+  })
+  syncBuiltinESMExports()
+  try {
+    assert.throws(() => editModuleVariables(dir, {
+      scope: 'global', changes: { count: '3' }, expectedRevisions: revisions,
+    }), error => error.code === 'module-variables-conflict' && error.status === 409)
+  } finally {
+    mock.restoreAll()
+    syncBuiltinESMExports()
+  }
+  assert.equal(mutated, true)
+  assert.equal(readFileSync(globalVariablesFile(), 'utf8'), changed, '外部内容保留')
+})

@@ -5,7 +5,7 @@ import { basename, dirname } from 'node:path'
 import { isDeepStrictEqual } from 'node:util'
 import { isMap, isScalar, parseDocument } from 'yaml'
 import { dshHome, globalVariablesFile } from './paths.ts'
-import { atomicWriteTextFile } from './text-file.ts'
+import { replaceVersionedText } from './versioned-text.ts'
 import { assertVariableValues, commitModuleDefinition, ensureModuleSlices, lastPublishedModuleDefinition, loadModuleDefinition } from './module-slices.ts'
 import type { ModuleDefinitionSnapshot } from './module-slices.ts'
 import { ModuleWriteError, assertUnownedUnchanged, revisionOf, withModuleLock } from './module-write.ts'
@@ -151,11 +151,17 @@ export function editModuleVariables(directory: string, request: ModuleVariablesE
       replaceVariables(global.doc, values)
       const text = global.doc.toString()
       if (Buffer.byteLength(text) > 8 * 1024 * 1024) throw new ModuleWriteError('全局变量文件超过 8 MiB')
-      atomicWriteTextFile(globalVariablesFile(), text, { mode: global.mode, beforeReplace: () => {
-        const current = readGlobal()
-        if (current.revision !== global.revision) throw conflict()
-        checkRevisions(request, loadModuleDefinition(module.dir), current)
-      } })
+      replaceVersionedText({
+        file: globalVariablesFile(),
+        expectedRevision: global.revision,
+        read: () => {
+          const current = readGlobal()
+          return { revision: current.revision, value: current, mode: current.mode }
+        },
+        prepare: () => text,
+        recheck: current => checkRevisions(request, loadModuleDefinition(module.dir), current),
+        conflict,
+      })
       return { ...snapshot(module, { ...global, values, revision: revisionOf(text) }), persisted: true }
     })
   })

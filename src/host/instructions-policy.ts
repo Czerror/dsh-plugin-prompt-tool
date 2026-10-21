@@ -15,7 +15,7 @@ import { existsSync, mkdirSync, readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { Document, isMap, isScalar, parseDocument, visit } from 'yaml'
 import { dshHome, storageRootOf } from './paths.ts'
-import { atomicWriteTextFile } from './text-file.ts'
+import { replaceVersionedText } from './versioned-text.ts'
 import { ModuleWriteError, withModuleLock } from './module-write.ts'
 import type {
   InstructionPolicy,
@@ -42,6 +42,10 @@ export type InstructionPolicyWriteOutcome =
 export interface InstructionPolicyRead extends InstructionPolicySnapshot {
   path: string
 }
+
+/** 结果型协议内部的分类错误：只用于把 replaceVersionedText 的抛出转回 {ok:false}。 */
+class InstructionPolicyConflict extends Error {}
+class InstructionPolicyReadError extends Error {}
 
 const RETIRED_FILE_KEYS = ['order', 'position', 'promotion', 'audience', 'modelScope'] as const
 const OVERRIDE_KEYS = ['enabled', 'name'] as const
@@ -299,9 +303,32 @@ function writeInstructionPolicyLocked(file: string, options: {
   let content: string
   try {
     content = doc.toString()
-    // 替换机制归 helper（独占暂存、失败清理、权限精确保留）；revision 语义留在本函数上半段。
-    atomicWriteTextFile(file, content, { mkdir: true })
+    // 版本再核与替换机制归 helper；revision 语义留在本函数上半段。
+    // 跨进程锁已把同文件写入串行；原语 beforeReplace 再核是额外保护，锁外改写仍被拒。
+    replaceVersionedText({
+      file,
+      expectedRevision: current.revision,
+      read: () => {
+        const next = readInstructionPolicy(file)
+        if (next.error !== undefined) throw new InstructionPolicyReadError(next.error)
+        return { revision: next.revision, value: next.policy }
+      },
+      prepare: () => content,
+      conflict: () => new InstructionPolicyConflict(),
+      mkdir: true,
+    })
   } catch (error) {
+    if (error instanceof InstructionPolicyConflict) {
+      return {
+        ok: false,
+        status: 409,
+        code: 'instructions-policy-conflict',
+        message: '指令策略已被外部修改，保存被拒绝；请重新读取后再保存',
+      }
+    }
+    if (error instanceof InstructionPolicyReadError) {
+      return { ok: false, status: 409, code: 'instructions-policy-unreadable', message: error.message }
+    }
     return {
       ok: false,
       status: 409,

@@ -17,7 +17,7 @@ import { lstatSync, mkdirSync, readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { isDeepStrictEqual } from 'node:util'
 import { isMap, isSeq, parseDocument } from 'yaml'
-import { atomicWriteTextFile } from './text-file.ts'
+import { replaceVersionedText } from './versioned-text.ts'
 import { moduleDirExists } from './module-dirs.ts'
 import { assertModuleId, assertNoModuleLinks, modulePathExists } from './module-install.ts'
 import { ModuleWriteError, deleteYamlPath, revisionOf, serializeWithoutSharedAlias, withModuleLock } from './module-write.ts'
@@ -79,9 +79,16 @@ export function updateStorageConfig(moduleRoot: string, expectedRevision: string
     const text = serializeWithoutSharedAlias(current.doc, expected, 'YAML 共享引用会改变其他配置；请先解除相关引用')
     if (text === current.text || isDeepStrictEqual(expected, current.source)) return current
     if (Buffer.byteLength(text) > 1024 * 1024) throw new ModuleWriteError('存储配置超过 1 MiB')
-    atomicWriteTextFile(file, text, { mode: current.mode, beforeReplace: () => {
-      if (readStorageConfig(moduleRoot).revision !== current.revision) throw new ModuleWriteError('存储配置已变化，请重新读取', 409, 'storage-config-conflict')
-    } })
+    replaceVersionedText({
+      file,
+      expectedRevision: current.revision,
+      read: () => {
+        const next = readStorageConfig(moduleRoot)
+        return { revision: next.revision, value: next, text: next.text ?? undefined, mode: next.mode }
+      },
+      prepare: () => text,
+      conflict: () => new ModuleWriteError('存储配置已变化，请重新读取', 409, 'storage-config-conflict'),
+    })
     return { ...current, source: expected, text, revision: revisionOf(text) }
   })
 }

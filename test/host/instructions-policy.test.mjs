@@ -1,9 +1,11 @@
 // 指令文件卡策略（W2 host 叶子模块）：
 // 独立存储、默认放行官方内容、Document API 保留注释与未知字段、乐观并发。
-import { after, test } from 'node:test'
+import { after, mock, test } from 'node:test'
 import assert from 'node:assert/strict'
+import fs from 'node:fs'
 import { spawn } from 'node:child_process'
 import { once } from 'node:events'
+import { syncBuiltinESMExports } from 'node:module'
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
@@ -277,4 +279,41 @@ test('共享 null 锚点不能因局部更新改变其他字段，拒写时保�
   assert.equal(explicit.ok, true)
   assert.equal(explicit.policy.files.a46fcc520645f05a.enabled, false)
   assert.equal(explicit.policy.files.deadbeefdeadbeef, undefined, '只写了缺省态的空覆盖不留空壳')
+})
+
+test('替换前外部改写：结果型协议返回 instructions-policy-conflict，外部内容保留', () => {
+  const file = newFile()
+  const created = writeInstructionPolicy({ file, expectedRevision: null, patch: { files: { f1: { enabled: false } } } })
+  assert.equal(created.ok, true)
+  const changed = readFileSync(file, 'utf8') + '# external\n'
+  const originalRead = fs.readFileSync.bind(fs)
+  let reads = 0
+  let mutated = false
+  mock.method(fs, 'readFileSync', (path, ...args) => {
+    if (path === file) {
+      reads += 1
+      if (reads === 4) {
+        mutated = true
+        writeFileSync(file, changed)
+        return Buffer.from(changed)
+      }
+    }
+    return originalRead(path, ...args)
+  })
+  syncBuiltinESMExports()
+  try {
+    const result = writeInstructionPolicy({
+      file,
+      expectedRevision: created.revision,
+      patch: { files: { f1: { name: '外部改名' } } },
+    })
+    assert.equal(result.ok, false)
+    assert.equal(result.status, 409)
+    assert.equal(result.code, 'instructions-policy-conflict')
+  } finally {
+    mock.restoreAll()
+    syncBuiltinESMExports()
+  }
+  assert.equal(mutated, true)
+  assert.equal(readFileSync(file, 'utf8'), changed, '外部内容保留')
 })

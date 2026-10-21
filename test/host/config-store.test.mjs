@@ -12,7 +12,7 @@ import { join } from 'node:path'
 import { isolatedHome } from '../fixtures/host-harness.mjs'
 
 const { moduleRoot } = isolatedHome('pt-enable-')
-const { enabledModuleIds, setModuleEnabled, enableTablePath, ENABLE_TABLE_SCHEMA } =
+const { enabledModuleIds, setModuleEnabled, enableTablePath, ENABLE_TABLE_SCHEMA, readStorageConfig, updateStorageConfig } =
   await import('../../src/host/config-store.ts')
 
 /** 每个用例独立的存储根（上溯一级就是 home，故模块根随意命名但互不共用）。 */
@@ -65,4 +65,16 @@ test('启用表写盘保留用户注释与未知字段（Document API 契约）'
   assert.match(text, /# 我自己的注释/, '注释保留')
   assert.match(text, /myOwnKey: keep/, '未知字段保留')
   assert.deepEqual(enabledModuleIds(root), ['x', 'y'], '启用追加在末尾')
+})
+test('存储配置：读后外部改写被替换前复核拒绝，原外部内容不被覆盖', () => {
+  const root = freshRoot('cas-conflict')
+  writeFileSync(enableTablePath(root), 'schemaVersion: 3\nenabled:\n  - a\n', 'utf8')
+  const current = readStorageConfig(root)
+  const external = 'schemaVersion: 3\nenabled:\n  - b\n'
+  assert.throws(() => updateStorageConfig(root, current.revision, (doc, source) => {
+    writeFileSync(enableTablePath(root), external, 'utf8')
+    doc.set('enabled', ['c'])
+    return { ...source, enabled: ['c'] }
+  }), error => error.code === 'storage-config-conflict' && error.status === 409)
+  assert.equal(readFileSync(enableTablePath(root), 'utf8'), external, '外部内容保留')
 })
