@@ -58,6 +58,7 @@ import {
   type BridgeTransaction,
 } from './bridge-transaction.ts'
 import { assertBridgeRequest } from '../shared/bridge-request-shape.ts'
+import { createTargetQueue } from '../shared/target-queue.ts'
 import { gateFor, type GateHandle } from './module-subject-gate.ts'
 import type { RuleDiagnosticsSnapshot } from './rule-diagnostics.ts'
 import {
@@ -397,14 +398,8 @@ export interface SerialQueue {
 }
 
 export function createSerialQueue(): SerialQueue {
-  let tail: Promise<unknown> = Promise.resolve()
-  return {
-    run<T>(task: () => Promise<T>): Promise<T> {
-      const started = tail.then(task)
-      tail = started.then(() => undefined, () => undefined)
-      return started
-    },
-  }
+  const queue = createTargetQueue()
+  return { run: task => queue.run('global', task) }
 }
 
 /** 桥运行态：域文件从这里取全部共享态与共享 helper。 */

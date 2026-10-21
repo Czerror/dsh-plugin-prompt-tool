@@ -13,6 +13,7 @@ import { createSkillsProvider } from './skills-provider.ts'
 import { createSkillsReloader } from './skills-refresh.ts'
 import { catalogFromScan, resolveBundledSkillsDir, scanRoots, skillPathKey, skillRoots, skillWriteRestriction, withGlobalSkillFallback, withSkillWinners } from './skills-scan.ts'
 import { dshHome as resolveDshHome } from './paths.ts'
+import { createTargetQueue } from '../shared/target-queue.ts'
 
 export interface SkillsRuntime {
   readonly skillsRoot: string
@@ -41,6 +42,7 @@ export function createSkillsRuntime(ctx: Context, options: { dshHome?: string } 
   let stateSnapshot = JSON.stringify(state)
   let disposed = false
   let pending = Promise.resolve()
+  const reloadQueue = createTargetQueue()
   let mountFailed = false
 
   const mount = (folders: readonly string[]) => {
@@ -64,7 +66,7 @@ export function createSkillsRuntime(ctx: Context, options: { dshHome?: string } 
     if (snapshot === stateSnapshot || disposed) return
     stateSnapshot = snapshot
     const folders = [...next.folders]
-    pending = pending.then(async () => {
+    pending = reloadQueue.run('skills-runtime', async () => {
       mounted.unregister()
       await mounted.provider.dispose()
       if (disposed) return

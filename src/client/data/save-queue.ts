@@ -1,15 +1,10 @@
 /** 失败不阻断后续任务的最小串行队列。 */
+import { createTargetQueue } from '../../shared/target-queue.ts'
 export interface SerialTaskQueue {
   enqueue<T>(task: () => Promise<T>): Promise<T>
 }
 
 export function createSerialTaskQueue(): SerialTaskQueue {
-  let tail: Promise<unknown> = Promise.resolve()
-  return {
-    enqueue(task) {
-      const current = tail.then(task)
-      tail = current.catch(() => {})
-      return current
-    },
-  }
+  const queue = createTargetQueue()
+  return { enqueue: task => queue.run('global', task) }
 }

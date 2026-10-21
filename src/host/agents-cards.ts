@@ -10,6 +10,7 @@ import { existsSync, readFileSync, realpathSync, statSync } from 'node:fs'
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { dshHome } from './paths.ts'
 import { atomicWriteTextFile } from './text-file.ts'
+import { createTargetQueue } from '../shared/target-queue.ts'
 import type { PromptConfigSpec } from './prompt-configs.ts'
 import {
   MAX_INSTRUCTION_FILE_BYTES,
@@ -238,7 +239,7 @@ export type AgentsFileWriteOutcome =
   | { ok: false; status: 400 | 404 | 409 | 413; code: string; message: string }
 
 /** 同一文件的写盘串行队列（进程内）：两个并发请求不得交错读写同一目标。 */
-const writeQueues = new Map<string, Promise<unknown>>()
+const writeQueues = createTargetQueue()
 
 /** rename 前的复核失败：`writeAgentsFile` 只抛错，由写盘入口按这两个码映射成 409。 */
 class AgentsFileRecheckError extends Error {
@@ -268,19 +269,7 @@ export async function writeAgentsFileChecked(options: {
 }): Promise<AgentsFileWriteOutcome> {
   const { file, content, expectedRevision } = options
   const key = CASE_INSENSITIVE_PLATFORM ? file.realPath.toLowerCase() : file.realPath
-  const previous = writeQueues.get(key) ?? Promise.resolve()
-  const run = previous.then(
-    () => writeCheckedNow(),
-    () => writeCheckedNow(),
-  )
-  const entry = run.then(() => undefined, () => undefined)
-  writeQueues.set(key, entry)
-  try {
-    return await run
-  } finally {
-    // 只有队尾仍是本次写入时才清理；后续请求已把自己的链挂上时不动它。
-    if (writeQueues.get(key) === entry) writeQueues.delete(key)
-  }
+  return writeQueues.run(key, () => writeCheckedNow())
 
   async function writeCheckedNow(): Promise<AgentsFileWriteOutcome> {
     const bytes = Buffer.from(content, 'utf8')

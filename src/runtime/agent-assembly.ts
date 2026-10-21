@@ -31,6 +31,7 @@ import { readConfigOrder } from '../host/module-config-order.ts'
 import { rulePromptConfigOptions } from '../host/module-slices.ts'
 import { compileCustomTool, validateCustomTools } from '../host/custom-tools.ts'
 import { createRuleDiagnosticsLedger, type RuleDiagnosticsSnapshot } from './rule-diagnostics.ts'
+import { createTargetQueue } from '../shared/target-queue.ts'
 import { createModuleVariableAdapter } from './module-variable-adapter.ts'
 import { planPersonaSections, type PersonaCapture, type PersonaModule, type PersonaPlan } from './persona-registration.ts'
 import { MODULE_TOOL_CAPABILITIES } from '../shared/engine-capabilities.ts'
@@ -296,6 +297,7 @@ export function createAgentAssembly(ctx: Context, options: AgentAssemblyOptions)
   const watched = new Map<string, () => void>()
   const disposed = new WeakSet<Agent>()
   let pending: Promise<void> = Promise.resolve()
+  const serialQueue = createTargetQueue()
   let active = true
   const warn = (error: unknown): void => {
     const message = `prompt-tool: 运行时配装失败：${failureReason(error)}`
@@ -371,7 +373,7 @@ export function createAgentAssembly(ctx: Context, options: AgentAssemblyOptions)
     else ctx.logger?.warn?.(message)
   }
   const serial = (task: () => Promise<void>): Promise<void> => {
-    const next = pending.then(task)
+    const next = serialQueue.run('assembly', task)
     pending = next.then(() => {}, () => {})
     return next
   }

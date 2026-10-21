@@ -17,6 +17,7 @@ import { LEGACY_ARTIFACTS, finalizeModuleCandidate } from './write-module.ts'
 import { installModuleDirectory } from './module-install-transaction.ts'
 import { assertModuleId, assertModuleTree, assertModuleDirectory, canonicalModulesRoot, modulePathExists, setModuleDefinitionId } from './module-install.ts'
 import { ruleInjections } from './rule-content.ts'
+import { createTargetQueue } from '../shared/target-queue.ts'
 import { validateModuleDefinitionText } from './module-slices.ts'
 
 const MANIFEST = 'prompt-tool-package.json'
@@ -173,7 +174,7 @@ export function moduleImportPreview(root: string, files: AssetFile[], request: A
 }
 
 /** 同一进程的同目标安装串行；磁盘版本复检保护其他写入者。 */
-const installs = new Map<string, Promise<unknown>>()
+const installs = createTargetQueue()
 export async function installModulePackage(root: string, files: AssetFile[], request: AssetImportRequest, options: { preserveAssets?: boolean; signal?: AbortSignal } = {}): Promise<{ id: string; backupPath?: string }> {
   options.signal?.throwIfAborted()
   root = canonicalModulesRoot(root, true)
@@ -181,8 +182,7 @@ export async function installModulePackage(root: string, files: AssetFile[], req
   const preview = moduleImportPreview(root, files, request)
   if (!('prepared' in preview)) throw new Error('请先完成来源和顺序组选择')
   const chainKey = join(root, preview.summary.targetId)
-  const previous = installs.get(chainKey) ?? Promise.resolve()
-  const run = previous.catch(() => {}).then(() => {
+  return installs.run(chainKey, () => {
     options.signal?.throwIfAborted()
     // 目标事实在链内重解：上一个安装可能刚创建或改动了目标（-copy 后缀与目录版本都会变）。
     const id = targetId(root, request.targetId ?? preview.prepared.spec.id, request)
@@ -230,8 +230,6 @@ export async function installModulePackage(root: string, files: AssetFile[], req
     // 备份清理失败不会把已经成功的安装说成失败；保留路径供诊断。
     return outcome.leftoverStage === undefined ? { id } : { id, backupPath: outcome.leftoverStage }
   })
-  installs.set(chainKey, run)
-  try { return await run } finally { if (installs.get(chainKey) === run) installs.delete(chainKey) }
 }
 
 function collectFiles(dir: string): PackageFile[] {
