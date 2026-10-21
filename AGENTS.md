@@ -81,6 +81,18 @@
 - `.scratch/` 是本地作业区，已被 `.gitignore` 忽略：PLAN、归档、issue 与规格只留本地，不 `git add`、不提交、不推送，也不因它扩大本轮暂存范围。
 - `.scratch/archive/` 只收 plan 归档。
 
+### 候选修复的固定流程
+
+架构审查产出的每个候选，从选中到交付固定走五步，不跳步：
+
+1. **采访定案**：用 `/grilling` 逐轮问出取舍；`/grill-with-docs` 不可模型调用时，用 `/grilling` + `/domain-modeling` 代替，结论落 PLAN 而非 `GLOSSARY.md`（除非确实产生新术语）。
+2. **落 PLAN**：按 [PLAN 格式规范](docs/agents/plan-format.md) 建 `.scratch/plan/YYYY-MM-DD-plan-<主题>-<基线>.md`，把每一条已确认取舍写进「需求与授权」，任务按 Wave 拆到可单上下文完成。
+3. **实施**：单会话改动直接 `/implement`（多会话才先 `/to-spec` 再 `/to-tickets`）；新非平凡逻辑按 TDD 先红后绿，测试落四条 seam。
+4. **两轴评审**：交付前跑 `/code-review`，固定点取本轮起点；Standards 与 Spec 各派一个子代理并行，报告分节呈现、不合并不重排。
+5. **归档与记忆**：PLAN 填满「状态」「验收记录」后复制到 `.scratch/archive/` 并移除；`.ai-memory` 记一条决策、文件与验证。
+
+评审结论若要求修复，按新的一轮重新走 1–5；每一步的证据（测试命令、评审结论）写进 PLAN 的对应章节，不另建报告文件。
+
 ## 运行中的 DSH 服务
 
 - 会话期间不停止、重启或终止当前 dsh / dsh web，也不抢占其端口。
