@@ -549,6 +549,10 @@ JSON bridge 的统一上限为 32 MiB；角色卡原始文件流独立限制为 
 
 模板创建沿用同一规则事务，但使用 `createRule` 直接提交解析后的规则对象；不要求规则卡 owner 已加载或先读回 `/rules`。缺少 `rules` 的目标模块按空基线首写，重复创建在目标模块内按规则 id 自动加后缀。三位身份校验仍适用于首写和普通写入：头体冲突 400 `module-subject-conflict`、目标切换 409 `module-changed`、系统或只读目录 403 `module-readonly`。写盘成功而刷新失败时保留 `persisted/publicationPending`，不新增重试 UI；未启用目标的待发布状态只在当前工作台会话保留，启用并挂载规则卡后通过既有 `retryPublication` / `refreshOnly` 重试，不重放规则写入；刷新工作台不恢复该状态。
 
+**宿主写盘原语**：进程内同 key 串行由 `src/shared/target-queue.ts#createTargetQueue` 统一（agents-cards、module-package 按目标 key；bridge 两个队列、client save-queue、agent-assembly、skills-runtime 是单 key 全链适配；key 由调用方规范化，不同 key 互不阻塞，前一个失败不毒化后一个）。跨进程互斥只在模块类写路径由 `host/module-write.ts#withModuleLock` 提供；skills 文本、agents 文件与客户端队列没有跨进程锁，靠版本复核兜底。
+
+文本 CAS 由 `src/host/versioned-text.ts#replaceVersionedText` 统一「读版本 → 校验 expectedRevision → prepare → beforeReplace 再读并 recheck（可选）→ `host/text-file.ts#atomicWriteTextFile`」；prepare 返回 undefined 或原文相同则不写盘。错误码/status 由各域的 `conflict()` 与 prepare/recheck 提供；原语不接管锁、队列或 publication。承接域：config-store、module-variables、instructions-policy、agents-cards、skills-content、skills-policy、skills-config、module-slices（module.yml）；config-store/instructions-policy/skills-config 仅靠 revision 复核，不额外传 recheck。module-package 的目录安装与 module-config-order 的多文件排序回滚仍归各自域，后者继续走 module.yml 提交路径与 bridge 排序队列。
+
 ### 7.4 导入预览与提交
 
 预设与角色卡的文件读取、上传、预览、确认和结果共用 `data/use-import-preview-flow.ts`；`ui/ImportDialog.tsx` 只接 props/callback，业务入口注入各自的处理器。原始上传仅写暂存区，所有大小的 PNG/JSON/YAML 和预设 ZIP／文件夹都先预览，确认后才更新目标。协议和边界见 [资产交换](asset-transfer.md)。
@@ -801,7 +805,7 @@ tool-catalog 填充来源沿现有普通注入表单编辑：params.action 引�
 | seam | 覆盖位置 |
 |---|---|
 | 引擎注入行为（插入点 / 时机 / 次数 / 受众） | `test/engine/*.test.mjs` |
-| 写盘产物语义 | `test/host/write-module.test.mjs`、`test/host/module-*.test.mjs`、`test/host/module-slices.test.mjs`、`test/host/global-params.test.mjs`（全局层 `config.yml#layerSettings` 的写/删键/空层回收与优先级） |
+| 写盘产物语义 | `test/host/write-module.test.mjs`、`test/host/module-*.test.mjs`、`test/host/module-slices.test.mjs`、`test/host/global-params.test.mjs`（全局层 `config.yml#layerSettings` 的写/删键/空层回收与优先级）、`test/host/target-queue.test.mjs`、`test/host/versioned-text.test.mjs`、`test/host/skills-cas.test.mjs` |
 | bridge 端点载荷 | `test/shared/bridge-contract.test.mjs`、`test/client/bridge-client.test.mjs`、`test/host/settings-bridge.test.mjs`、`test/host/*-bridge.test.mjs`、`test/client/*.test.mjs`（客户端侧的固定卡接线、请求主语与渲染链路） |
 | 安全与拒绝路径 | `test/host/instructions-policy.test.mjs`、`test/host/instruction-scope-guard.test.mjs`、`test/host/skill-policy.test.mjs`、`test/host/module-package-import.test.mjs`、`test/host/characters-protection.test.mjs`、`test/host/wave1-safety.test.mjs`、`test/host/text-file.test.mjs`、`test/engine/config-whitelist.test.mjs` |
 

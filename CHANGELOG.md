@@ -1,5 +1,12 @@
 # Changelog
 
+### 写盘串行与 CAS 收口（候选 05，2026-10-21）
+
+- **串行原语**：新增 `src/shared/target-queue.ts#createTargetQueue`；agents-cards、module-package、bridge 的 capability/order 队列、client save-queue、agent-assembly、skills-runtime 统一为同 key 进程内串行（后四者是单 key 全链适配）；跨进程互斥只在模块类写路径由 `withModuleLock` 负责，skills/agents 文本无跨进程锁。
+- **文本 CAS**：新增 `src/host/versioned-text.ts#replaceVersionedText`；config-store、module-variables、instructions-policy、agents-cards、skills-content、skills-policy、skills-config、module-slices（module.yml）接入统一的「读版本 → prepare → beforeReplace 再核 → 原子替换」，错误码/status 仍由各域提供。
+- **边界**：module-package 目录安装、module-config-order 多文件排序回滚与所有 publication/重试语义留在域内；文档见 `docs/ui-architecture.md` §7.3 与 `docs/skills-management.md`。
+- **验证**：typecheck / lint / test（756）/ build / verify:host / verify:pack / rebuild:module-template --check 全绿。
+
 ### bridge 请求形状统一严格（候选 04，2026-10-21）
 
 - **运行期接受面**：新增 `src/shared/bridge-request-shape.ts`，为 45 个端点声明顶层字段表；所有 JSON 端点未知字段 400 `bridge-request-invalid`。此前 29 个端点静默忽略多余字段。
