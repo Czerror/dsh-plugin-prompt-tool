@@ -29,7 +29,8 @@ import { pathToFileURL } from 'node:url'
 const pluginRoot = 'node_modules/dsh-plugin-prompt-tool'
 const plugin = await import('dsh-plugin-prompt-tool')
 if (plugin.name !== 'prompt-tool' || typeof plugin.apply !== 'function') throw new Error('主入口导出不完整')
-if (plugin.Config === undefined) throw new Error('主入口缺少 Config（Cordis 配置 schema）')
+if (typeof plugin.Config !== 'function') throw new Error('主入口缺少 Config（Cordis 配置 schema）')
+if (!Array.isArray(plugin.inject)) throw new Error('主入口缺少 inject（可选服务等待）')
 for (const symbol of ['loadPromptTemplates', 'writeModule', 'userModulesDir']) {
   if (typeof plugin[symbol] !== 'function') throw new Error('主入口缺少 ' + symbol)
 }
