@@ -4,6 +4,7 @@
  */
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
+import { ENGINE_EDITOR_GROUP_MAP, MODULE_CAPABILITIES, moduleCapability } from '../../src/shared/engine-capabilities.ts'
 import { layerCards } from '../../src/client/data/layer-cards.ts'
 
 const facts = (declaredModules) => ({
@@ -44,6 +45,20 @@ test('layerCards：未声明且有登记节的资产给出 add 入口，声明�
   assert.deepEqual(kindsOf(undeclared, 'variables'), ['add'])
   const declared = layerCards(single({ declares: ['variables', 'variablesEnabled'] }), 'runtime-context', 'mod')
   assert.deepEqual(kindsOf(declared, 'variables'), ['asset'])
+})
+
+test('layerCards：参数卡全是能力组——能力补卡用 [param, capability] 的前提', () => {
+  // 守门：补卡渲染传 ['param','capability'] 依赖「有扁平参数的编辑组都是能力组」。
+  // 新增非能力参数组时这条会红，届时补卡要改成按能力标记过滤。
+  const declaredModules = MODULE_CAPABILITIES.flatMap((capability) => capability.moduleKeys)
+  const modules = single({ declaredModules })
+  const layers = [...new Set(ENGINE_EDITOR_GROUP_MAP.map((group) => group.displayLayer))]
+  for (const layer of layers) {
+    for (const card of layerCards(modules, layer, 'mod')) {
+      if (card.kind !== 'param') continue
+      assert.ok(moduleCapability(card.id) !== undefined, card.id + ' 是参数卡但不是能力组')
+    }
+  }
 })
 
 test('layerCards：exclude 命中的 id 不出卡', () => {

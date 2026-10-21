@@ -471,7 +471,7 @@ use-prompt-tool-store.ts 是唯一工作台 facade，负责把 ConfigForms mirro
 | workspace-drafts.ts | 按预设身份的跨页草稿池：规则、人设、工具、变量、原始字段与展开状态；`poolDirty` 是「某模块有没有未保存输入」的唯一判据 |
 | instruction-drafts.ts | 指令文件正文的独立草稿池与版本基线 |
 | instruction-policy.ts | 指令策略的读写、默认值与单文件开关推导 |
-| layer-cards.ts | 层卡片的唯一判据：某模块在某层下有哪些卡、各是什么 kind（`param` / `capability` / `missingCapability` / `asset` / `add`）；kind 非互斥（同 id 可同时是参数组与能力行），`missingCapability` 是「未声明、可创建」而非能力补卡；标签、搜索文本与渲染归页面层 |
+| layer-cards.ts | 层卡片的判据：某模块在某层下有哪些卡、各是什么 kind（`param` / `capability` / `missingCapability` / `asset` / `add`）；单卡 kind 互斥、同 id 可出多张卡（参数组与能力行），`missingCapability` 是「未声明、可创建」而非能力补卡；能力补卡层仍由 `RulesWorkspace` 按能力声明计算；标签、搜索文本与渲染归页面层 |
 | session-model-face.ts | 官方会话模型 projection 与选择动作 |
 | session-preset-face.ts | 官方会话预设 projection `agentPreset` 与标题 projection `title` 的读取与订阅（当前会话真正运行的预设；标题只用于提示指名会话，缺失退回 id 短号） |
 
