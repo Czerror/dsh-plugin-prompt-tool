@@ -31,6 +31,8 @@ export function createAgentCapability(mount) {
     const state = states.get(session)
     if (state === undefined) return
     states.delete(session)
+    // 重挂会留下新的 effect 注册；撤销本次的，避免长会话里累积旧 state 闭包。
+    state.effectDispose?.()
     for (const dispose of state.disposers.splice(0)) {
       try { dispose() } catch { /* 释放失败不得反过来打断卸载 */ }
     }
@@ -47,11 +49,11 @@ export function createAgentCapability(mount) {
     const mounted = mount(agent)
     if (mounted === undefined) return existing
     release(session)
-    const state = { scope, key, disposers: mounted.disposers ?? [], data: mounted.data }
+    const state = { scope, key, disposers: mounted.disposers ?? [], data: mounted.data ?? {}, effectDispose: undefined }
     states.set(session, state)
     // 子代理与重绑都换 scope：父 mount 释放必须能撤销，scope 释放只移出自己。
     if (typeof scope.effect === 'function') {
-      scope.effect(() => () => { if (states.get(session) === state) release(session) })
+      state.effectDispose = scope.effect(() => () => { if (states.get(session) === state) release(session) })
     }
     return state
   }

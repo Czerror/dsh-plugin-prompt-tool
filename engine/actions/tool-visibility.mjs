@@ -112,8 +112,9 @@ export function prepareToolVisibility(action, plugin) {
       if (tools === undefined) return undefined
       const state = { failOpen: false }
       const disposers = []
-      const known = toolScopeSnapshot(tools).globalNames
-      if (mask.deny !== undefined && typeof tools.restrict === 'function' && known !== undefined) {
+      try {
+        const known = toolScopeSnapshot(tools).globalNames
+        if (mask.deny !== undefined && typeof tools.restrict === 'function' && known !== undefined) {
         // allow 模式不走 restrict：`schemas()` 是全局视图，过滤后的 allow 会漏掉预设/祖先层的
         // 工具，restrict 反而把它们裁掉；restrict 只接收继承面名字，无法安全区分本层工具。
         // allow 的执行面统一由下面的 guard 兜底。
@@ -128,17 +129,21 @@ export function prepareToolVisibility(action, plugin) {
           }
         }
       }
-      if ((mask.deny !== undefined || mask.allow !== undefined) && typeof tools.guard === 'function') {
-        const deny = mask.deny
-        disposers.push(tools.guard((exec) => {
-          const toolName = exec?.name
-          if (toolName === RUN_CODE || typeof toolName !== 'string' || toolName.length === 0) return undefined
-          if (deny?.has(toolName)) return `${label}: tool ${JSON.stringify(toolName)} is denied by tool-visibility`
-          if (mask.allow !== undefined && !state.failOpen && mask.blocks(toolName)) {
-            return `${label}: tool ${JSON.stringify(toolName)} is not allowed by tool-visibility`
-          }
-          return undefined
-        }))
+        if ((mask.deny !== undefined || mask.allow !== undefined) && typeof tools.guard === 'function') {
+          const deny = mask.deny
+          disposers.push(tools.guard((exec) => {
+            const toolName = exec?.name
+            if (toolName === RUN_CODE || typeof toolName !== 'string' || toolName.length === 0) return undefined
+            if (deny?.has(toolName)) return `${label}: tool ${JSON.stringify(toolName)} is denied by tool-visibility`
+            if (mask.allow !== undefined && !state.failOpen && mask.blocks(toolName)) {
+              return `${label}: tool ${JSON.stringify(toolName)} is not allowed by tool-visibility`
+            }
+            return undefined
+          }))
+        }
+      } catch (error) {
+        // 声明失败不能丢已注册的 restrict：已收集的 disposer 仍交给声明表统一撤销。
+        warnOnce(`${plugin}: tool-visibility action ${label} failed to mount execution gate: ${String(error?.message ?? error)}`)
       }
       return { disposers, data: state }
     })

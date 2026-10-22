@@ -333,12 +333,11 @@ test('真实规则挂载：执行面依赖未就绪时保留上一轮的闸', as
   await assemble()
   const guard = disposed.guards.at(-1)
   assert.equal(guard({ name: 'beta' }), 'v: tool "beta" is denied by tool-visibility')
-  const tools = scope.tools
-  scope.tools = undefined
+  // 换一个 tools 未就绪的 scope：scope 变化会真正调用 mount，而不是同 key 短路。
+  agent.ctx = {}
   await assemble()
   assert.equal(guard({ name: 'beta' }), 'v: tool "beta" is denied by tool-visibility', '依赖缺失时旧闸保留')
   assert.equal(disposed.guardDisposed ?? 0, 0)
-  scope.tools = tools
   dispose()
   assert.equal(disposed.guardDisposed, 1, '父 mount 释放仍能撤销')
 })
