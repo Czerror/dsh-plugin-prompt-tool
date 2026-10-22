@@ -2,9 +2,10 @@
 
 ### superpowers 引导改用上游原文（2026-10-22）
 
-- 内置模块正文改为上游 `using-superpowers/SKILL.md` 英文原文（v7.0.0，与本地技能同源），删除此前中文改写自加的路由表与搜索技巧——上游 `SessionStart` hook 注入的就是整份技能原文，没有这些内容。
+- 内置模块正文改为上游 `using-superpowers/SKILL.md` 英文原文（v7.0.1，与本地技能同源），删除中文改写版自加的搜索技巧。
+- **Skill Routing 恢复为英文表**：按上游 README 的「The Basic Workflow」七步与「Skills Library」分类整理，技能名与一行描述保持英文原文；此前版本是中文翻译。
 - DSH 适配只保留三处：`skill_search` / `skill_load` 调用方式、`superpowers:<name>` 前缀映射、`references/dsh-tools.md` 路径；`SUBAGENT-STOP` 段落保留，同时仍有 `scope.audience: main` 门控。
-- 模块版本 1.1.0 → 1.2.0。
+- 模块版本 1.1.0 → 1.3.0。
 
 ### 技能搜索与工具面同口径：any-token 打分（2026-10-22）
 

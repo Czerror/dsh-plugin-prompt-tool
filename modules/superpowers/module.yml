@@ -1,19 +1,24 @@
 # Superpowers 引导 —— 上游 using-superpowers 的 DSH 常驻副本。
 #
-# 来源：obra/superpowers v7.0.0 的 `skills/using-superpowers/SKILL.md` 原文
+# 来源：obra/superpowers v7.0.1 的 `skills/using-superpowers/SKILL.md` 原文
 # （与 $DSH_HOME/skills/using-superpowers/SKILL.md 同源）。上游用 SessionStart
 # hook 注入整份技能正文；DSH 没有该 hook 通道，本模块把同一份正文放进常驻
 # system-section。DSH 适配只有三处：skill_search/skill_load 调用方式、
 # superpowers:<name> 前缀映射、DSH 平台适配参考文件的路径。
+#
+# Skill Routing 表按上游 README 的「The Basic Workflow」（brainstorming →
+# using-git-worktrees → writing-plans → subagent-driven-development/executing-plans
+# → test-driven-development → requesting-code-review → finishing-a-development-branch）
+# 与「Skills Library」分类整理，技能名与描述保持英文原文。
 #
 # 只进主会话：上游 <SUBAGENT-STOP> 段保留在正文里，这里再用 scope 门做硬保证。
 # 与 ponytail 的冲突：用户指令优先；要消歧就在工作台停用一个，停用即回滚。
 
 id: superpowers
 name: Superpowers 技能优先引导（bootstrap）
-version: 1.2.0
+version: 1.3.0
 engineCompat: ">=0.4.2"
-description: 常驻注入上游 using-superpowers 技能原文（v7.0.0）：任何回答或动作前先查技能，附技能优先级、红旗清单与用户指令优先级。技能正文留在技能库，本模块不分发技能文件。
+description: 常驻注入上游 using-superpowers 技能原文（v7.0.1）：任何回答或动作前先查技能，附技能优先级、英文路由表、红旗清单与用户指令优先级。技能正文留在技能库，本模块不分发技能文件。
 meta:
   source: manual
 modules:
@@ -66,6 +71,26 @@ rules:
 
             - "Let's build X" → superpowers:brainstorming first, then implementation skills.
             - "Fix this bug" → superpowers:systematic-debugging first, then domain skills.
+
+            ## Skill Routing
+
+            | Task signal | Load first |
+            |---|---|
+            | Building something new; requirements still forming | `brainstorming` |
+            | Design approved; need an isolated workspace | `using-git-worktrees` |
+            | Design approved; ready to break work into tasks | `writing-plans` |
+            | Plan ready; execute task by task | `subagent-driven-development` (fresh subagent per task, review after each); `executing-plans` when inline is cheaper or no subagent tool |
+            | About to write or change implementation code | `test-driven-development` (RED-GREEN-REFACTOR) |
+            | Task boundary reached; review against the plan | `requesting-code-review` |
+            | All tasks done; merge / PR / cleanup decision | `finishing-a-development-branch` |
+            | Bug, failing test, unexplained behavior | `systematic-debugging` |
+            | About to claim the work is complete | `verification-before-completion` |
+            | Review feedback received | `receiving-code-review` |
+            | Several independent tasks that can run in parallel | `dispatching-parallel-agents` |
+            | Session misbehaved; diagnose the process | `diagnosing-superpowers` |
+            | Creating or editing a skill | `writing-skills` |
+
+            If no row matches, search with words that literally appear in the skill's name or description; an empty query lists every visible skill. When the exact name is known, `skill_load` it directly.
 
             ## Red Flags
 
