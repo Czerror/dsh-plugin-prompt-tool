@@ -23,7 +23,7 @@
  */
 
 import { bool, defineConfig, enumOf } from './fields.mjs'
-import { isDelegated } from './shared.mjs'
+import { capabilityAudience } from './agent-capability.mjs'
 
 /** Cordis plugin name used by loader diagnostics. */
 export const name = 'present-as'
@@ -57,7 +57,7 @@ export function apply(ctx, config, { agent } = {}) {
   // 校验入口：未知键 / enabled 非布尔 / mode 缺失或不在枚举内一律挂载期 fail loud。
   const source = configContract.parse(config, name)
   if (!source.enabled) return
-  const mode = (isDelegated(agent?.session) ? source.subagentMode : source.mainMode) ?? source.mode
+  const mode = (capabilityAudience(agent) === 'subagent' ? source.subagentMode : source.mainMode) ?? source.mode
   if (mode === 'native') {
     ctx.tools.presentAs('native')
     return

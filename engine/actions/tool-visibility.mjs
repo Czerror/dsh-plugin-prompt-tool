@@ -22,6 +22,7 @@
  */
 
 import { RUN_CODE, createMask, labelOf, toolSurfacePlan } from './shared.mjs'
+import { createAgentCapability } from '../agent-capability.mjs'
 import { SDK_SECTION_NAME, stripSdkDeclarations, sdkToolNames } from '../sdk-strip.mjs'
 import { TOOL_INVOCATION_EVENT_TYPES, historyEvents } from '../history.mjs'
 import { toolScopeSnapshot } from '../tool-scope.mjs'
@@ -105,31 +106,12 @@ export function prepareToolVisibility(action, plugin) {
   }
 
   return (mountCtx, { warnOnce, on, collect, onMiss }) => {
-    /** session -> { ctx, key, disposers }：条件翻转或 mask 变化时先撤再挂。 */
-    const states = new Map()
-    const release = (session) => {
-      const state = states.get(session)
-      if (state === undefined) return
-      states.delete(session)
-      for (const dispose of state.disposers.splice(0)) {
-        try { dispose() } catch { /* 释放失败不得反过来打断卸载 */ }
-      }
-    }
-    const releaseAll = () => { for (const session of [...states.keys()]) release(session) }
-
     /** 执行面：restrict 覆盖继承的全局工具，guard 兜住本层与晚到工具。 */
-    const syncGate = (agent) => {
-      const session = agent?.session
-      const scoped = agent?.ctx
-      if (session === undefined || scoped === undefined) return
-      const tools = scoped.tools
-      if (tools === undefined) return
-      const key = `${maskKey(mask)}|unlock:${allowExtra === undefined ? '' : [...allowExtra].sort().join(',')}`
-      const existing = states.get(session)
-      if (existing !== undefined && existing.ctx === scoped && existing.key === key) return
-      // mask 或 scope 变了：先撤旧闸，避免第一轮为真后永久留闸。
-      release(session)
-      const state = { ctx: scoped, key, disposers: [], failOpen: false }
+    const capability = createAgentCapability((agent) => {
+      const tools = agent?.ctx?.tools
+      if (tools === undefined) return undefined
+      const state = { failOpen: false }
+      const disposers = []
       const known = toolScopeSnapshot(tools).globalNames
       if (mask.deny !== undefined && typeof tools.restrict === 'function' && known !== undefined) {
         // allow 模式不走 restrict：`schemas()` 是全局视图，过滤后的 allow 会漏掉预设/祖先层的
@@ -139,7 +121,7 @@ export function prepareToolVisibility(action, plugin) {
         if (deny.length > 0) {
           try {
             const dispose = tools.restrict({ deny })
-            if (typeof dispose === 'function') state.disposers.push(dispose)
+            if (typeof dispose === 'function') disposers.push(dispose)
           } catch (error) {
             // restrict 失败不改变呈现面；执行面还有 guard 兜底。
             warnOnce(`${plugin}: tool-visibility action ${label} restrict skipped: ${String(error?.message ?? error)}`)
@@ -148,7 +130,7 @@ export function prepareToolVisibility(action, plugin) {
       }
       if ((mask.deny !== undefined || mask.allow !== undefined) && typeof tools.guard === 'function') {
         const deny = mask.deny
-        state.disposers.push(tools.guard((exec) => {
+        disposers.push(tools.guard((exec) => {
           const toolName = exec?.name
           if (toolName === RUN_CODE || typeof toolName !== 'string' || toolName.length === 0) return undefined
           if (deny?.has(toolName)) return `${label}: tool ${JSON.stringify(toolName)} is denied by tool-visibility`
@@ -158,20 +140,21 @@ export function prepareToolVisibility(action, plugin) {
           return undefined
         }))
       }
-      states.set(session, state)
-      // 子代理与重绑都换 scope：父 mount 释放必须能撤销，scope 释放只移出自己。
-      if (typeof scoped.effect === 'function') {
-        scoped.effect(() => () => { if (states.get(session) === state) release(session) })
-      }
+      return { disposers, data: state }
+    })
+
+    const syncGate = (agent) => {
+      const key = `${maskKey(mask)}|unlock:${allowExtra === undefined ? '' : [...allowExtra].sort().join(',')}`
+      capability.sync(agent, key)
     }
 
-    collect(releaseAll)
+    collect(capability.releaseAll)
     // 条件为假时 rule-runtime 不进入 handler：未命中回调负责撤掉上一轮注册的执行闸。
     // 动作级 when 由 withWhen 调用时没有帧，只能撤当前已登记的全部会话。
     onMiss((frame) => {
       const session = frame?.subject?.agent?.session ?? frame?.args?.[1]?.agent?.session
-      if (session === undefined) releaseAll()
-      else release(session)
+      if (session === undefined) capability.releaseAll()
+      else capability.release(session)
     })
 
     collect(on('system-prompt/assemble', async (assembly, context, next) => {
@@ -218,8 +201,8 @@ export function prepareToolVisibility(action, plugin) {
         if (!Array.isArray(result.tools) && sdkSection === undefined) return result
         // 三面（目录 / 正文 / 执行闸）共用这一份判断：缺项就整体放宽，呈现与执行不得两套口径。
         const plan = toolSurfacePlan(mask, available)
-        const gate = states.get(context?.session ?? context?.agent?.session)
-        if (gate !== undefined) gate.failOpen = plan.failOpen
+        const state = capability.get(context?.session ?? context?.agent?.session)
+        if (state !== undefined) state.data.failOpen = plan.failOpen
         if (plan.failOpen) {
           // 去重键固定到动作：缺项名随解锁历史变化，不能让每个新集合各占一条 warnOnce。
           warnOnce(`${plugin}: tool-visibility action ${label}: requireMatch tools absent (${plan.missing.join(', ')}) — exposing the full tool set (fail-open)`, `${plugin}: tool-visibility action ${label}: requireMatch fail-open`)

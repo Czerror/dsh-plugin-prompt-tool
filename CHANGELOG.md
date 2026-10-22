@@ -1,5 +1,11 @@
 # Changelog
 
+### Agent 级能力声明原语（2026-10-22）
+
+- 新增 `engine/agent-capability.mjs`：受众判定、Agent scope 声明表、key/scope 变化时的先撤后挂；`mount` 返回 `undefined` 时下次装配重试。
+- `present-as` 改用 `capabilityAudience`；`tool-visibility` 的 states/重挂改用原语，restrict/guard 与 failOpen 语义不变。
+- 新增 `test/engine/agent-capability.test.mjs` 7 条；全量 830 pass。不新增动作、配置键或 bridge 端点。
+
 ### superpowers 引导改用上游原文（2026-10-22）
 
 - 内置模块正文改为上游 `using-superpowers/SKILL.md` 英文原文（v7.0.1，与本地技能同源），删除中文改写版自加的搜索技巧。

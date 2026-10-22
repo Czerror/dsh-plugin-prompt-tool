@@ -216,6 +216,10 @@ then:
 
 Cordis waterfall 普通注册先注册者在外；prepend 注册插到最外层，同为 prepend 时后注册者更外。非注入动作通过 `waterfallPosition: outermost` 表达该要求，同点仍按编译顺序接线。inject-text 的位置属于官方插入层，不接受这个注册后门。
 
+### Agent 级能力声明的公共原语（2026-10-22）
+
+`engine/agent-capability.mjs` 收三件事：受众判定（`capabilityAudience` / `matchesCapabilityAudience`）、Agent scope 的声明表（`createAgentCapability`：session → {scope, key, disposers, data}）、以及 key/scope 变化时的先撤后挂。`mount` 返回 `undefined` 表示依赖未就绪，不建状态、下次装配重试；`scope.effect` 负责 Agent 释放时摘除自己。冲突检测（`presentAs` 同 scope 二次声明由官方抛错）与晚到服务等待（`ptcRuntime`）仍由调用方各自处理，原语不引入模式开关。`present-as` 只复用受众判定；`tool-visibility` 复用声明表并把 restrict/guard 注册与 failOpen 状态放进 mount 返回值。
+
 ## 历史读取与去重
 
 | 入口 | 语义 | 主要消费者 |
