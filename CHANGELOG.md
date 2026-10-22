@@ -2,11 +2,11 @@
 
 ### 系统提示段跨模块排序：官方先排，configOrder 覆盖（2026-10-22）
 
-- **装配后回填**：`engine/layers.mjs` 在 `system-prompt/assemble` 之后按 `configOrder` 重排本插件注册的段/上下文，回填到官方顺序给出的原槽位；平台段与其他插件段位置不动。官方 `order` 仍决定初始槽位，「插入到官方位置」语义不变。
+- **瀑布内回填**：`engine/layers.mjs` 以最外层 prepend 监听 `system-prompt/assemble`，在 `next()` 之后按 `configOrder` 重排本插件注册的段/上下文，回填到官方顺序给出的原槽位；平台段与其他插件段位置不动。官方 `order` 仍决定初始槽位，「插入到官方位置」语义不变。
 - **判据放宽**：`sameConfigPosition` 对 `system-section` / `runtime-context` 不再要求同官方档位，跨档位可拖；pon 四张卡（order 190/200/201/202）不再被钉死。
 - **官方语义变化**：同 order 的共享段原先按段名（sections）或注册次序（contexts）排，现在统一按 `configOrder`；显式注册名与官方档位本身不变。
-- **边界**：`complete` 单段场景跳过；回填只在本插件注册段之间换位，无法越过平台段；与同层其他 prepend 监听器的相对顺序由宿主决定。
-- **验证**：新增 `test/engine/layer-order.test.mjs` 4 条；全量 test/typecheck/lint/build 待跑。
+- **边界**：`complete` 场景平台在瀑布之后才还原唯一段，重排不保证该场景顺序；回填只在本插件注册段之间换位，无法越过平台段；与同层其他 prepend 监听器的相对顺序由宿主决定。
+- **验证**：新增 `test/engine/layer-order.test.mjs` 5 条；全量 test/typecheck/lint/build 通过。
 
 ### 全量审计修复：运行时装配、安全边界与 sections.append（2026-10-22）
 

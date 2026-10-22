@@ -2,6 +2,11 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { compileRules } from '../../engine/rule-spec.mjs'
 import { mountRuleSources } from '../../engine/rule-runtime.mjs'
+import { wireLayers } from '../../engine/layers.mjs'
+import { createPromptConfigs as createPromptConfigsCore } from '../../engine/schema.mjs'
+
+const STRATEGY_DIR = new URL('../../engine/', import.meta.url).href
+const createPromptConfigs = (specs) => createPromptConfigsCore(specs, { strategyDir: STRATEGY_DIR })
 
 /** 最小 harness：记录监听器，prepend 插到最外层；run 按注册顺序串接 next。 */
 function harness(services = {}) {
@@ -79,6 +84,20 @@ test('运行上下文：同一套 configOrder 覆盖规则', async () => {
   const input = assembled([], [{ name: alpha, text: 'A' }, { name: bravo, text: 'B' }])
   const output = await h.run('system-prompt/assemble', [input, { agent: agent() }], () => Promise.resolve(input))
   assert.deepEqual(output.contexts.map((entry) => entry.name), [bravo, alpha])
+})
+
+test('直接挂载的静态段与实际注册名同源，按 configOrder 回填', async () => {
+  const registered = []
+  const h = harness({ systemPrompt: systemPromptService(registered) })
+  const configs = createPromptConfigs([
+    { id: 'alpha', layer: 'system-section', strategy: 'static', text: 'A', order: 0 },
+    { id: 'bravo', layer: 'system-section', strategy: 'static', text: 'B', order: 100 },
+  ]).map((config, index) => ({ ...config, sequence: index === 0 ? 20 : 10, sourceModuleId: index === 0 ? 'mod-a' : 'mod-b' }))
+  wireLayers(h.ctx, configs, () => {})
+  const [alpha, bravo] = registered
+  const input = assembled([{ name: alpha, text: 'A' }, { name: bravo, text: 'B' }])
+  const output = await h.run('system-prompt/assemble', [input, { agent: agent() }], () => Promise.resolve(input))
+  assert.deepEqual(output.sections.map((section) => section.name), [bravo, alpha])
 })
 
 test('顺序未变时返回原装配引用', async () => {

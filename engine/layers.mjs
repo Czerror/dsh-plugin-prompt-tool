@@ -182,7 +182,7 @@ function textLayerGroups(configs) {
 }
 
 /** system-section:注册静态 system prompt 段(支持官方 {{variable}} 渲染与 merged 拼接)。 */
-function wireSystemSections(ctx, configs, registry, warnOnce, keep) {
+function wireSystemSections(ctx, configs, registry, warnOnce, keep, ordered) {
   const systemPrompt = getService(ctx, 'systemPrompt')
   if (systemPrompt === undefined || typeof systemPrompt.section !== 'function') {
     if (configs.length > 0) warnOnce(`${name}: systemPrompt service unavailable — system-section configs skipped`)
@@ -204,12 +204,14 @@ function wireSystemSections(ctx, configs, registry, warnOnce, keep) {
               .filter((item) => item.length > 0)
               .join('\n\n')
         : groupText
+      const entryName = textRegistrationName(base, 'sectionName')
       keep(systemPrompt.section({
-        name: textRegistrationName(base, 'sectionName'),
+        name: entryName,
         order: base.order,
         text,
         ...(base.params?.complete === true ? { complete: true } : {}),
       }), `${name}: section ${base.id}`)
+      ordered.sections.push({ name: entryName, sequence: base.sequence ?? 0 })
       // suppressRuntimeContext 抑制该 scope 的动态 runtime-context 快照（多段重复调用幂等）。
       if (base.params?.suppressRuntimeContext === true) {
         keep(systemPrompt.suppressRuntimeContext(), `${name}: suppressRuntimeContext ${base.id}`)
@@ -237,7 +239,7 @@ async function resolvedContextText(ctx, config, context, registry, warnOnce) {
 }
 
 /** 条件化文本保留官方排序占位；仅在本次真实 assembly 填充，不缓存 context 身份。 */
-function wireRuleTextContributions(ctx, configs, registry, warnOnce, keep, on) {
+function wireRuleTextContributions(ctx, configs, registry, warnOnce, keep, on, ordered) {
   if (!configs.length) return []
   const systemPrompt = getService(ctx, 'systemPrompt')
   if (systemPrompt === undefined) { warnOnce(`${name}: systemPrompt unavailable`); return [] }
@@ -251,6 +253,7 @@ function wireRuleTextContributions(ctx, configs, registry, warnOnce, keep, on) {
     const entryName = textRegistrationName(base, section ? 'sectionName' : 'contextName')
     keep(systemPrompt[section ? 'section' : 'context']({ name: entryName, order: base.order, text: marker }), `${name}: conditional ${entryName}`)
     bindings.push({ group, name: entryName, collection: section ? 'sections' : 'contexts' })
+    ordered[section ? 'sections' : 'contexts'].push({ name: entryName, sequence: base.sequence ?? 0 })
   }
   let active = true
   keep(() => { active = false }, `${name}: conditional text lifecycle`)
@@ -278,7 +281,7 @@ function wireRuleTextContributions(ctx, configs, registry, warnOnce, keep, on) {
 }
 
 /** runtime-context:注册运行时上下文；静态文本支持 merged，动态策略在官方 assembly waterfall 中填充。 */
-function wireRuntimeContexts(ctx, configs, registry, warnOnce, keep, on) {
+function wireRuntimeContexts(ctx, configs, registry, warnOnce, keep, on, ordered) {
   const disposers = []
   const systemPrompt = getService(ctx, 'systemPrompt')
   if (systemPrompt === undefined || typeof systemPrompt.context !== 'function') {
@@ -297,11 +300,13 @@ function wireRuntimeContexts(ctx, configs, registry, warnOnce, keep, on) {
       const render = context => group.map(config => configText(config, registry, warnOnce, context)).filter(item => item.length > 0).join('\n\n')
       const text = dynamic ? render : render()
       if (!dynamic && text.length === 0) continue
+      const entryName = textRegistrationName(base, 'contextName')
       keep(systemPrompt.context({
-        name: textRegistrationName(base, 'contextName'),
+        name: entryName,
         order: base.order,
         text,
       }), `${name}: context ${base.id}`)
+      ordered.contexts.push({ name: entryName, sequence: base.sequence ?? 0 })
     } catch (error) {
       if (base.linkedDelivery) throw error
       warnOnce(`${name}: runtime-context config ${base.id} failed: ${String(error?.message ?? error)}`)
@@ -327,6 +332,7 @@ function wireRuntimeContexts(ctx, configs, registry, warnOnce, keep, on) {
         text: slotText,
       }), `${name}: context ${config.id}`)
       registered.set(contextName, config)
+      ordered.contexts.push({ name: contextName, sequence: config.sequence ?? 0 })
     } catch (error) {
       warnOnce(`${name}: runtime-context placeholder ${config.id} failed: ${String(error?.message ?? error)}`)
     }
@@ -594,20 +600,11 @@ function wireSubagentEvents(ctx, configs, warnOnce, on) {
 }
 
 /**
- * 本插件注册的段名，按 configOrder（sequence）排序；merged 组只记一次。
- * 官方 order 只决定初始槽位（`textLayerGroups` 已按档位分组），这里给出覆盖后的先后。
+ * 实际注册名按 configOrder（sequence）排序；同序号保持注册序，同名只留一次。
+ * 名字来自注册点而不是事后从 configs 推导，避免 regular/conditional/placeholder 三条路径漂移。
  */
-function deliveryOrderNames(configs, layer, field) {
-  const bases = textLayerGroups(configs.filter((config) => config.layer === layer))
-    .map((group) => group[0])
-    .filter((base) => base !== undefined)
-    .sort(compareConfigSequence)
-  const names = []
-  for (const base of bases) {
-    const entryName = textRegistrationName(base, field)
-    if (!names.includes(entryName)) names.push(entryName)
-  }
-  return names
+function orderedNamesOf(entries) {
+  return [...new Set([...entries].sort((left, right) => left.sequence - right.sequence).map((entry) => entry.name))]
 }
 
 /**
@@ -668,19 +665,21 @@ export function wireLayers(ctx, configs, warnOnce, options = {}) {
   }
   try {
     // 注册即纳入 owned，后续注册失败也能释放已取得的变量和监听器。
+    /** 实际注册名与序号：重排器只认这里，不从 configs 反推。 */
+    const ordered = { sections: [], contexts: [] }
     const registry = registerOfficialVariables(ctx, configs.filter((config) => config.layer === 'system-section' || config.layer === 'runtime-context'), warnOnce, keep)
     const conditional = configs.filter(config => ['system-section', 'runtime-context'].includes(config.layer)
       && (typeof config.rule?.when === 'function' || typeof config.actionWhen === 'function'
         || (config.rule !== undefined || config.params?.templateEvaluation === true) && config.params?.complete !== true && config.params?.suppressRuntimeContext !== true))
     const regular = configs.filter(config => !conditional.includes(config))
-    wireSystemSections(ctx, regular.filter((config) => config.layer === 'system-section'), registry, warnOnce, keep)
-    wireRuntimeContexts(ctx, regular.filter((config) => config.layer === 'runtime-context'), registry, warnOnce, keep, on)
-    wireRuleTextContributions(ctx, conditional, registry, warnOnce, keep, on)
+    wireSystemSections(ctx, regular.filter((config) => config.layer === 'system-section'), registry, warnOnce, keep, ordered)
+    wireRuntimeContexts(ctx, regular.filter((config) => config.layer === 'runtime-context'), registry, warnOnce, keep, on, ordered)
+    wireRuleTextContributions(ctx, conditional, registry, warnOnce, keep, on, ordered)
     wireTurnStops(ctx, configs.filter((config) => config.layer === 'turn-stop'), warnOnce, on, options.turnStopBudgets)
     wireSubagentEvents(ctx, configs.filter((config) => config.layer === 'subagent-start' || config.layer === 'subagent-end'), warnOnce, on)
     // 官方 order 只提供初始槽位；configOrder 覆盖段/上下文的先后（平台段与其他插件段不动）。
-    for (const [collection, layer, field] of [['sections', 'system-section', 'sectionName'], ['contexts', 'runtime-context', 'contextName']]) {
-      registerDeliveryOrder(ctx, keep, collection, deliveryOrderNames(configs, layer, field))
+    for (const collection of ['sections', 'contexts']) {
+      registerDeliveryOrder(ctx, keep, collection, orderedNamesOf(ordered[collection]))
     }
     return dispose
   } catch (error) {

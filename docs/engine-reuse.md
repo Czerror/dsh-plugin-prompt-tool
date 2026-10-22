@@ -210,7 +210,7 @@ then:
 
 跨模块同点顺序来自 module.yml.configOrder；同点动作按声明顺序，显式 channelOrder 冲突拒绝。order 只管所属官方插入点的位置，不建立跨层总顺序。pre-step 中注入和过滤可以交错 flush，后批继续排在仍存活的同位置消息之后。
 
-注册层的段/上下文顺序不靠官方 order 数值表达：官方先按 order 与名称排好初始槽位，`system-prompt/assemble` 之后本插件按 `configOrder`（`sequence`）把已注册的段/上下文回填到原槽位；未注册的平台段与其他插件段槽位不动。`complete` 生效时平台在瀑布后强制还原唯一段，单段场景由重排器直接跳过。跨档位拖动只改 `configOrder`，不改官方 `order`。
+注册层的段/上下文顺序不靠官方 order 数值表达：官方先按 order 与名称排好初始槽位，本插件以最外层 prepend 监听 `system-prompt/assemble`，在 `next()` 之后按 `configOrder`（`sequence`）把已注册的段/上下文回填到原槽位；未注册的平台段与其他插件段槽位不动。`complete` 生效时平台在瀑布**之后**才用预捕获的段替换 `sections`，重排器在瀑布内执行、最终输出仍由平台覆盖，该场景不保证顺序。跨档位拖动只改 `configOrder`，不改官方 `order`。
 
 ### 同 scope 内的注册顺序（2026-09-22）
 
