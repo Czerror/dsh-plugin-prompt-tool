@@ -55,17 +55,21 @@ export { queryTokens }
 
 /**
  * 对目录打分排序（纯函数，可单测）：
- * **完整命中是准入条件**（每个 token 都命中），精确名命中排最前；同为准入者按命中数、
- * 再按名字字典序。`wanted` 为空时返回空数组——调用方据此区分「没给查询」与「没搜到」。
+ * **完整命中优先**（每个 token 都命中），精确名排最前；一条完整命中都没有时退回
+ * 部分命中并按命中数排序——长自然语言查询带同义词/无关词时不再全灭。
+ * `wanted` 为空时返回空数组——调用方据此区分「没给查询」与「没搜到」。
  *
- * 准入用 AND 而不是「命中任意 token」：`代码 中文` 这类多词查询里，近似命中会把
- * 只沾一个词的无关技能一起倒出来（技能 description 很短，噪声占比远高于工具面）。
+ * 先 AND 后降级而不是一开始就 any-token：技能 description 很短，`代码 中文` 这类
+ * 多词查询里只沾一个词的无关技能容易被倒出来；完整命中存在时仍保持高置信过滤。
  */
 export function scoreSkills(skills, wanted) {
-  return rankRows(scoreRows(skills, wanted, {
+  const rows = scoreRows(skills, wanted, {
     nameOf: (skill) => skill?.name,
     haystackOf: (skill) => `${skill?.name ?? ''} ${skill?.description ?? ''} ${skill?.whenToUse ?? ''}`,
-  }), (row) => row.exact || row.score === wanted.length).map((row) => ({ ...row, skill: row.item }))
+  })
+  const full = rows.filter((row) => row.exact || row.score === wanted.length)
+  return rankRows(full.length > 0 ? full : rows)
+    .map((row) => ({ ...row, skill: row.item, partial: row.score < wanted.length }))
 }
 
 /** 搜索结果上限：再多就该让模型收窄关键词。 */
@@ -80,7 +84,7 @@ export function renderMatches(scored, query, complete = true) {
     emptyText: complete
       ? `No skills match "${query}" — no skill matched your keywords; skill_load still loads any exact name in the registry, and calling skill_search with no arguments lists every visible skill.`
       : `Skill discovery did not complete, so nothing can be concluded about "${query}". Retry skill_search before treating a skill as unavailable.`,
-    lineOf: ({ skill, name, exact }) => `- ${name}${exact ? ' (exact)' : ''}: ${String(skill?.description ?? '').split('\n')[0]}`,
+    lineOf: ({ skill, name, exact, partial }) => `- ${name}${exact ? ' (exact)' : partial ? ' (partial match)' : ''}: ${String(skill?.description ?? '').split('\n')[0]}`,
     warnings: complete ? [] : ['Skill discovery is incomplete; these results may be partial.'],
     footer: 'Load one with skill_load({"name": "<exact name>"}).',
   })

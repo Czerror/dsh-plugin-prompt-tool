@@ -229,6 +229,20 @@ test('skill_search：中文关键词保持 AND 匹配，不能退化成空查询
   assert.match(missing.text, /No skills match/)
 })
 
+test('skill_search：自然语言长查询无完整命中时退回部分命中并标注', async (t) => {
+  const { ctx, registered } = makeCtx(t, [
+    { name: 'code-review', description: '代码审查与缺陷定位', whenToUse: '中文说明' },
+    { name: 'image-edit', description: '图像处理' },
+  ])
+  applySkillSearch(ctx)
+  // 查询带「评审」「架构设计」这类描述里没有的词：完整命中为 0，不能直接回 No skills match。
+  const result = await registered[0].execute({ query: 'code review 评审 架构设计' }, makeExec().exec)
+  assert.match(result.text, /code-review/)
+  assert.match(result.text, /partial match/)
+  assert.doesNotMatch(result.text, /No skills match/)
+  assert.doesNotMatch(result.text, /image-edit/)
+})
+
 test('skill_load：同一技能在当前上下文只注入一次（去重）', async (t) => {
   // 桩按宿主语义把注入回流进会话 log：这样第二次加载才看得到第一次的正文事件。
   const { ctx, registered } = makeCtx(t, [{ name: 'notes', description: 'notes', content: 'skill instructions' }])

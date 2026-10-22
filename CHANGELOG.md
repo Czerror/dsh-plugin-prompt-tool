@@ -1,5 +1,10 @@
 # Changelog
 
+### 技能搜索：完整命中优先，全灭时退回部分命中（2026-10-22）
+
+- `scoreSkills` 先按完整命中（全部 token）准入；一条都没有时退回部分命中并按命中数排序，结果标注 `(partial match)`——长自然语言查询不再直接回 `No skills match`。
+- 新增回归：`code review 评审 架构设计` 命中 `code-review`，且不把无关技能带出。
+
 ### 系统提示段跨模块排序：官方先排，configOrder 覆盖（2026-10-22）
 
 - **瀑布内回填**：`engine/layers.mjs` 以最外层 prepend 监听 `system-prompt/assemble`，在 `next()` 之后按 `configOrder` 重排本插件注册的段/上下文，回填到官方顺序给出的原槽位；平台段与其他插件段位置不动。官方 `order` 仍决定初始槽位，「插入到官方位置」语义不变。
