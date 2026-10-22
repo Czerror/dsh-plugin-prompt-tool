@@ -321,6 +321,28 @@ test('真实规则挂载：条件由真变假时撤销上一轮注册的执行�
   dispose()
 })
 
+test('真实规则挂载：执行面依赖未就绪时保留上一轮的闸', async () => {
+  const h = ruleHarness()
+  const disposed = {}
+  const scope = scopeOf({ disposed })
+  const agent = { session: { id: 's-late', header: { delegationDepth: 0 }, snapshotEvents: () => [] }, ctx: scope }
+  const rules = compileRules([{ id: 'v', then: [{ id: 'v', kind: 'tool-visibility', deny: ['beta'] }] }])
+  const dispose = mountRuleSources(h.ctx, [{ moduleId: 'module', rules }])
+  const input = assembled(toolList('alpha', 'beta'))
+  const assemble = () => h.run('system-prompt/assemble', [input, { agent }], () => input)
+  await assemble()
+  const guard = disposed.guards.at(-1)
+  assert.equal(guard({ name: 'beta' }), 'v: tool "beta" is denied by tool-visibility')
+  const tools = scope.tools
+  scope.tools = undefined
+  await assemble()
+  assert.equal(guard({ name: 'beta' }), 'v: tool "beta" is denied by tool-visibility', '依赖缺失时旧闸保留')
+  assert.equal(disposed.guardDisposed ?? 0, 0)
+  scope.tools = tools
+  dispose()
+  assert.equal(disposed.guardDisposed, 1, '父 mount 释放仍能撤销')
+})
+
 test('真实规则挂载：受众三态各自只在自己的装配里生效', async () => {
   const h = ruleHarness()
   const mainDisposed = {}

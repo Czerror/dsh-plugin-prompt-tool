@@ -5,18 +5,15 @@
  * 官方抛错语义，ptcRuntime 的晚到等待是一次性声明；把它们塞进同一接口会逼出模式开关。
  *
  * 键是 session：同一个 session 可以换 scope（预设重绑），scope 或能力自己的 key 任一
- * 变化都先撤旧声明再挂新的；mount 返回 undefined 表示依赖尚未就绪，不建状态、下次重试。
+ * 变化都先挂新声明、成功后再撤旧的；mount 返回 undefined 表示依赖尚未就绪，保留旧声明、
+ * 下次装配重试（旧闸比无闸安全）。不用 shared.mjs 的 sessionState：闸必须确定性撤销，
+ * 不能按容量淘汰。
  */
 import { isDelegated } from './shared.mjs'
 
-/** 受众判定：delegationDepth > 0 即子代理。 */
+/** 受众判定：delegationDepth > 0 即子代理（与 shared.mjs 的 isDelegated 同一判据）。 */
 export function capabilityAudience(agent) {
   return isDelegated(agent?.session) ? 'subagent' : 'main'
-}
-
-/** 声明是否命中目标受众；undefined / 'both' 覆盖主与子两类。 */
-export function matchesCapabilityAudience(agent, audience) {
-  return audience == null || audience === 'both' || audience === capabilityAudience(agent)
 }
 
 /**
@@ -46,10 +43,10 @@ export function createAgentCapability(mount) {
     if (session === undefined || scope === undefined) return undefined
     const existing = states.get(session)
     if (existing !== undefined && existing.scope === scope && existing.key === key) return existing
-    // 条件或 scope 变了：先撤旧闸，避免第一轮为真后永久留闸。
-    release(session)
+    // 依赖未就绪时保留旧闸：先挂新声明，成功后再撤旧的；mount 返回 undefined 直接退出。
     const mounted = mount(agent)
-    if (mounted === undefined) return undefined
+    if (mounted === undefined) return existing
+    release(session)
     const state = { scope, key, disposers: mounted.disposers ?? [], data: mounted.data }
     states.set(session, state)
     // 子代理与重绑都换 scope：父 mount 释放必须能撤销，scope 释放只移出自己。

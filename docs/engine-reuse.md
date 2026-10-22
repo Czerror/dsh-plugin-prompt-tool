@@ -218,7 +218,7 @@ Cordis waterfall 普通注册先注册者在外；prepend 注册插到最外层�
 
 ### Agent 级能力声明的公共原语（2026-10-22）
 
-`engine/agent-capability.mjs` 收三件事：受众判定（`capabilityAudience` / `matchesCapabilityAudience`）、Agent scope 的声明表（`createAgentCapability`：session → {scope, key, disposers, data}）、以及 key/scope 变化时的先撤后挂。`mount` 返回 `undefined` 表示依赖未就绪，不建状态、下次装配重试；`scope.effect` 负责 Agent 释放时摘除自己。冲突检测（`presentAs` 同 scope 二次声明由官方抛错）与晚到服务等待（`ptcRuntime`）仍由调用方各自处理，原语不引入模式开关。`present-as` 只复用受众判定；`tool-visibility` 复用声明表并把 restrict/guard 注册与 failOpen 状态放进 mount 返回值。
+`engine/agent-capability.mjs` 收三件事：受众判定（`capabilityAudience`，与 `isDelegated` 同一判据）、Agent scope 的声明表（`createAgentCapability`：session → {scope, key, disposers, data}）、以及 key/scope 变化时先挂新声明、成功后再撤旧的。`mount` 返回 `undefined` 表示依赖未就绪：保留上一轮声明、下次装配重试——旧闸比无闸安全。`scope.effect` 负责 Agent 释放时摘除自己。冲突检测（`presentAs` 同 scope 二次声明由官方抛错）与晚到服务等待（`ptcRuntime`）仍由调用方各自处理，原语不引入模式开关。`present-as` 只复用受众判定；`tool-visibility` 复用声明表并把 restrict/guard 注册与 failOpen 状态放进 mount 返回值。装配层与注册层的受众判定仍用既有 `isDelegated`，本轮没有统一。
 
 ## 历史读取与去重
 

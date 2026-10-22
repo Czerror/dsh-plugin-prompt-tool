@@ -4,7 +4,8 @@
 
 - 新增 `engine/agent-capability.mjs`：受众判定、Agent scope 声明表、key/scope 变化时的先撤后挂；`mount` 返回 `undefined` 时下次装配重试。
 - `present-as` 改用 `capabilityAudience`；`tool-visibility` 的 states/重挂改用原语，restrict/guard 与 failOpen 语义不变。
-- 新增 `test/engine/agent-capability.test.mjs` 7 条；全量 830 pass。不新增动作、配置键或 bridge 端点。
+- 边界：`mount` 返回 `undefined`（执行面依赖未就绪）时保留上一轮声明，不先撤旧闸；原语只收受众判定与声明表，装配层/注册层的受众判定仍用既有 `isDelegated`。不新增动作、配置键或 bridge 端点。
+- 回归落在 `test/engine/tool-visibility.test.mjs` 的公共装配 seam（依赖缺失时旧闸保留），不测原语内部状态。
 
 ### superpowers 引导改用上游原文（2026-10-22）
 
