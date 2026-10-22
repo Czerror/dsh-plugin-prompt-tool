@@ -1,5 +1,11 @@
 # Changelog
 
+### superpowers 引导改用上游原文（2026-10-22）
+
+- 内置模块正文改为上游 `using-superpowers/SKILL.md` 英文原文（v7.0.0，与本地技能同源），删除此前中文改写自加的路由表与搜索技巧——上游 `SessionStart` hook 注入的就是整份技能原文，没有这些内容。
+- DSH 适配只保留三处：`skill_search` / `skill_load` 调用方式、`superpowers:<name>` 前缀映射、`references/dsh-tools.md` 路径；`SUBAGENT-STOP` 段落保留，同时仍有 `scope.audience: main` 门控。
+- 模块版本 1.1.0 → 1.2.0。
+
 ### 技能搜索与工具面同口径：any-token 打分（2026-10-22）
 
 - `scoreSkills` 恢复 2026-10-16 的打分制：命中任意 token 即返回，按命中数与精确名排序；长自然语言查询不再回 `No skills match`，与 `tool_search` 一致。`ef30a446` 统一发现引擎时曾回归为 AND 准入，测试已同步改回排序断言。
