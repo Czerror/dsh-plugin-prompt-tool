@@ -3,7 +3,7 @@
  *
  * 两个数据源（工具目录 / 技能目录）共用：
  *  - 分词与候选打分（queryTokens / scoreRows）；
- *  - 准入与排序（rankRows：工具面 any-token，技能面 all-token，由调用方给 admit）；
+ *  - 准入与排序（rankRows：默认 any-token，两个发现面同一口径；调用方可给更严的 admit）；
  *  - 截断、空结果与页脚（renderRows）。
  *
  * 引擎之间通过 **cordis 服务** 互相调用，而不是直接 import 实现：
@@ -121,7 +121,7 @@ export function scoreRows(items, tokens, { nameOf, haystackOf } = {}) {
 }
 
 /**
- * 准入与排序：admit 决定哪些行算命中（工具面 any-token，技能面 all-token）；
+ * 准入与排序：admit 决定哪些行算命中（默认 any-token，工具面与技能面同口径）；
  * 精确名优先，其次命中数，同分按名字字典序。
  */
 export function rankRows(rows, admit = (row) => row.exact || row.score >= 1) {

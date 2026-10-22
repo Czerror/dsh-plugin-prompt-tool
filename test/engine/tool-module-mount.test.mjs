@@ -93,12 +93,15 @@ test('apply 注册 skill_search + skill_load 两工具（schema 形状）', (t) 
   assert.equal(load.output.schema.additionalProperties, false)
 })
 
-test('skill_search：query 大小写不敏感 + 完整命中优先于近似命中', async (t) => {
+test('skill_search：query 大小写不敏感 + 完整命中排在近似命中之前', async (t) => {
   const { ctx, registered } = makeCtx(t, SKILLS)
   applySkillSearch(ctx)
   const r = await registered[0].execute({ query: 'PDF convert' }, makeExec().exec)
   assert.ok(r.text.includes('pdf-tools'))
-  assert.ok(!r.text.includes('image-process'))
+  // 打分制与 tool_search 同口径：近似命中可以出现（image-process 命中 convert），但完整命中排在前面。
+  const pdfAt = r.text.indexOf('pdf-tools')
+  const imageAt = r.text.indexOf('image-process')
+  assert.ok(imageAt < 0 || pdfAt < imageAt)
 })
 
 test('skill_search：空 query 列出全部并标注截断总数；命中超上限同样截断', async (t) => {
@@ -216,7 +219,7 @@ test('skill_search / skill_load：四种调用策略均在模型边界生效，�
   assert.equal(calls.get.length, 2, '被停用的摘要必须在加载正文前拒绝')
 })
 
-test('skill_search：中文关键词保持 AND 匹配，不能退化成空查询', async (t) => {
+test('skill_search：中文关键词按命中数返回，不退化', async (t) => {
   const { ctx, registered } = makeCtx(t, [
     { name: 'code-review', description: '代码审查与缺陷定位', whenToUse: '中文说明' },
     { name: 'image-edit', description: '图像处理' },
@@ -229,16 +232,15 @@ test('skill_search：中文关键词保持 AND 匹配，不能退化成空查询
   assert.match(missing.text, /No skills match/)
 })
 
-test('skill_search：自然语言长查询无完整命中时退回部分命中并标注', async (t) => {
+test('skill_search：自然语言长查询按命中数返回，不再全灭', async (t) => {
   const { ctx, registered } = makeCtx(t, [
     { name: 'code-review', description: '代码审查与缺陷定位', whenToUse: '中文说明' },
     { name: 'image-edit', description: '图像处理' },
   ])
   applySkillSearch(ctx)
-  // 查询带「评审」「架构设计」这类描述里没有的词：完整命中为 0，不能直接回 No skills match。
+  // 查询带「评审」「架构设计」这类描述里没有的词；命中任意 token 即返回，不能直接回 No skills match。
   const result = await registered[0].execute({ query: 'code review 评审 架构设计' }, makeExec().exec)
   assert.match(result.text, /code-review/)
-  assert.match(result.text, /partial match/)
   assert.doesNotMatch(result.text, /No skills match/)
   assert.doesNotMatch(result.text, /image-edit/)
 })

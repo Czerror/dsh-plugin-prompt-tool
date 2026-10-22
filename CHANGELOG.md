@@ -1,8 +1,9 @@
 # Changelog
 
-### 技能搜索：完整命中优先，全灭时退回部分命中（2026-10-22）
+### 技能搜索与工具面同口径：any-token 打分（2026-10-22）
 
-- `scoreSkills` 先按完整命中（全部 token）准入；一条都没有时退回部分命中并按命中数排序，结果标注 `(partial match)`——长自然语言查询不再直接回 `No skills match`。
+- `scoreSkills` 恢复 2026-10-16 的打分制：命中任意 token 即返回，按命中数与精确名排序；长自然语言查询不再回 `No skills match`，与 `tool_search` 一致。`ef30a446` 统一发现引擎时曾回归为 AND 准入，测试已同步改回排序断言。
+- `discovery.mjs` 的准入注释同步为「默认 any-token，两个发现面同一口径」。
 - 新增回归：`code review 评审 架构设计` 命中 `code-review`，且不把无关技能带出。
 
 ### 系统提示段跨模块排序：官方先排，configOrder 覆盖（2026-10-22）
