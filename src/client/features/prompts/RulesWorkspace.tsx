@@ -102,7 +102,7 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
   useEffect(() => { void order.load() }, [revisions, store.meta.modules, order.load])
   /**
    * 把源卡移到目标卡前/后：判据（`sameConfigPosition`）与重排（`reorderToView`）都在 data 层，
-   * 这里只算可移动集合、调一次保存。跨插入点与跨官方档位的目标不在集合里，重排原样返回。
+   * 这里只算可移动集合、调一次保存。跨插入点的目标不在集合里，重排原样返回。
    */
   const saveOrder = async (sourceId: string, targetId: string, before: boolean): Promise<void> => {
     const cards = order.configs
@@ -150,13 +150,11 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
     const visible = order.snapshot?.entries.filter(item => entries.some(row => row.identity === configIdentityKey(item))) ?? []
     return visible.filter(item => sameConfigPosition(entry, item))
   }
-  /** 独占官方档位的卡（system-section／runtime-context 每个档位只有一张）没有可交换的 peer：
-   *  跨档位先后由宿主装配顺序决定（引擎按 order 分组注册官方段），这里只说明原因，不假装能排。 */
-  const slotPinned = (entry: ModuleConfigOrderEntry): boolean =>
-    (entry.layer === 'system-section' || entry.layer === 'runtime-context') && orderPeers(entry).length <= 1
+  /** 同层同位置只有这一张卡时没有可交换的 peer。 */
+  const slotPinned = (entry: ModuleConfigOrderEntry): boolean => orderPeers(entry).length <= 1
   const moveButtons = (entry: ModuleConfigOrderEntry): ReactNode => {
     const peers = orderPeers(entry), index = peers.findIndex(item => configIdentityKey(item) === configIdentityKey(entry))
-    const pinned = slotPinned(entry)
+    const pinned = peers.length <= 1
     return <span className={css.row}>
       {[-1, 1].map(delta => <HintTooltip key={delta} label={pinned ? t('rules.orderPinnedHint') : t(delta < 0 ? 'rules.moveUp' : 'rules.moveDown', { id: entry.configId })}>
         <Button variant="outline" shape="pill" icon aria-label={t(delta < 0 ? 'rules.moveUp' : 'rules.moveDown', { id: entry.configId })}

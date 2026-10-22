@@ -347,7 +347,7 @@ test('一步重排：移到目标前/后按身份顺序写回 configOrder，卡�
   assert.deepEqual(spec.rules.map(rule => rule.then[0].config.text), ['a', 'b', 'c', 'd'])
 })
 
-test('一步重排：集合外的目标（跨插入点／跨官方档位）原样返回，集合外的卡引用不变', () => {
+test('一步重排：跨插入点的目标原样返回；跨官方档位由 configOrder 覆盖', () => {
   const root = fixture('reorder-guards', { a: [
     { id: 'P1', text: 'p1' }, { id: 'P2', text: 'p2' },
     { id: 'S1', text: 's1', layer: 'system-section', order: 100 },
@@ -365,17 +365,10 @@ test('一步重排：集合外的目标（跨插入点／跨官方档位）原�
   assert.deepEqual(preStep, [key('P1'), key('P2')])
   assert.equal(reorderToView(cards, key('P1'), key('S1'), true, preStep), cards)
 
-  // 跨官方档位：两张 system-section 卡 order 不同，互不在集合内
-  assert.deepEqual(movableView(key('S1')), [key('S1')])
-  assert.equal(reorderToView(cards, key('S1'), key('S2'), true, movableView(key('S1'))), cards)
-
-  // 同档位 system-section（导入统一档位后的形状）可以互排
-  const sameSlot = cards.map(card => card.id === key('S2') ? { ...card, order: 100 } : card)
-  const s1 = sameSlot.find(card => card.id === key('S1'))
-  const both = sameSlot.filter(card => sameConfigPosition(card, s1)).map(card => card.id)
-  assert.deepEqual(both, [key('S1'), key('S2')])
+  // 跨官方档位：order 不同不再拦住排序，configOrder 覆盖先后
+  assert.deepEqual(movableView(key('S1')), [key('S1'), key('S2')])
   // 资格在可移动集合里判，插入位置在完整数组里算：S2 落到 S1 紧前，P1/P2 的相对位置不变
-  const moved = reorderToView(sameSlot, key('S2'), key('S1'), true, both)
+  const moved = reorderToView(cards, key('S2'), key('S1'), true, movableView(key('S2')))
   assert.deepEqual(moved.map(card => card.id), [key('P1'), key('P2'), key('S2'), key('S1')])
   // 不可移动集合外的卡不被重建：引用逐字保留
   assert.equal(moved.find(card => card.id === key('P1')), cards[0])

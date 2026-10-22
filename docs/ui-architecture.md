@@ -320,7 +320,7 @@ workspace-pages.ts 是页面元数据的唯一来源。默认页为 features，�
 
 主会话与子代理的 `RulesWorkspace` 按受众展示**装配集合**内每张模块规则卡（按卡片所属模块分组），以模块 ID＋规则 ID 唯一定位并按配置序号统一排列；卡片标注所属模块，可就地编辑、复制、删除和启停。启用集合来自无参 `/module-config-order`，逐模块 `/rules` 读取正文，不从已访问过的草稿推测启用集合；工作台不保留单一「当前模块」，模板创建与本层共享设置由该卡所属模块承载，其他模块卡片不复用它。
 
-排序只在规则卡中呈现，模块页不另设排序区。卡内上下移动与拖拽可交换同插入点、位置与官方 order 档位中不同启用模块的可见规则，隐藏条目的槽位不变；工具栏不提供额外范围切换。`system-section`／`runtime-context` 的卡按官方 order 档位分组：同一档位内可互相排序（先后由本排序写入的序号决定），跨档位的先后由宿主装配顺序决定（引擎 `engine/layers.mjs#textLayerGroups` 按 order 分组并以该档位注册官方段），因此方向键与拖拽对独占档位的卡不生效——界面给的是「独占官方档位」说明，要改变相对顺序需先在卡内把两张卡的官方档位设成同一个值。排序走 `/module-config-order`，携带完整启用集合身份列表与版本，不限定单个声明的主语；读取或保存期间排序手柄与上下移禁用（读回来的是另一份快照，排序没有意义）；成功后刷新各模块规则版本，失败如实显示错误并自动重读一次（拖拽用的版本已过期，重读不得静默清掉那次失败），页面卸载或装配集合变化后丢弃迟到响应。排序不改规则正文或指令文件。
+排序只在规则卡中呈现，模块页不另设排序区。卡内上下移动与拖拽可交换同插入点、位置中不同启用模块的可见规则（官方 order 档位不再限制），隐藏条目的槽位不变；工具栏不提供额外范围切换。`system-section`／`runtime-context` 的卡可跨官方档位排序：官方 order 只决定装配初始槽位，先后由本排序写入的 `configOrder` 覆盖（引擎装配后回填，见 `docs/engine-reuse.md` 的「提示词配置插入点与顺序」）；同层同位置无其他卡时方向键与拖拽禁用。排序走 `/module-config-order`，携带完整启用集合身份列表与版本，不限定单个声明的主语；读取或保存期间排序手柄与上下移禁用（读回来的是另一份快照，排序没有意义）；成功后刷新各模块规则版本，失败如实显示错误并自动重读一次（拖拽用的版本已过期，重读不得静默清掉那次失败），页面卸载或装配集合变化后丢弃迟到响应。排序不改规则正文或指令文件。
 
 搜索卡片在宽屏按“搜索框 → 层筛选（缺省层／展示分组）→ 添加注入模板 → 启用／停用”的顺序保持同一行，批量按钮组位于最右侧，窄容器自然换行。新建只保留模板入口，不另放“新建规则”。批量启停仅变更当前受众、关键词和层筛选共同过滤出的规则启用状态，并立即通过既有规则事务提交；不修改隐藏规则的启用状态、指令文件或模板变量，保留服务端互斥校验，不自行选择互斥组赢家。从卡内字段移焦到批量按钮时跳过该次失焦保存，由批量操作统一提交，避免重复请求或先保存旧状态。只读、读取/保存中、无效字段、远端冲突和空结果时批量按钮禁用。
 
@@ -463,7 +463,7 @@ use-prompt-tool-store.ts 是唯一工作台 facade，负责把 ConfigForms mirro
 | module-actions.ts | 模块操作与事实刷新，保留成功结果和刷新失败区别；与规则保存共用队列 |
 | instruction-cards.ts | 指令文件卡的视图投影：卡壳 + 草稿池 + 指令策略 → 卡片；正文唯一来源是草稿池，卡壳里过期的 `params.text` / `params.revision` / `params.readStatus` / `params.readMessage` 在投影时剥离，`contentDirty` / `contentConflict` / `contentSaving` 由投影显式覆盖 |
 | prompt-config-content.ts | 指令文件卡的 fileId 解析（`origin` 优先；`sourceKind === 'instruction-file'` 时才回退 `params.fileId`）；不再承担正文与写回分流 |
-| prompt-config-order.ts | 配置视图内的同档位判据（`sameConfigPosition`）与一步重排（`reorderToView`）：资格在可移动集合内判、插入位置在完整数组里算；拖拽、上移/下移按钮与拖拽手柄的键盘操作共用同一份实现 |
+| prompt-config-order.ts | 配置视图内的同位置判据（`sameConfigPosition`）与一步重排（`reorderToView`）：资格在可移动集合内判、插入位置在完整数组里算；拖拽、上移/下移按钮与拖拽手柄的键盘操作共用同一份实现 |
 | use-module-config-order.ts | 跨模块排序摘要、版本读写与请求生命周期（`createModuleConfigOrderSession` 是唯一实现，hook 只把它投影成 React state）；由规则工作台消费 |
 | save-queue.ts | 串行保存任务的最小队列 |
 | import-files.ts | 浏览器文件导入的纯读取辅助 |
@@ -549,7 +549,7 @@ JSON bridge 的统一上限为 32 MiB；角色卡原始文件流独立限制为 
 12. 不再提供「独立指令文件来源」总开关。文件卡启停仅写独立策略 `files[fileId].enabled`，默认放行；关闭只拦截后续官方注入，不撤回历史，重新开启不强制重放。策略不可读时禁用策略编辑，保留诊断；应答成功前不乐观显示已保存。名称与开关跨预设共享，位置、顺序、晋升、受众和模型范围不属于文件卡控制项。
 13. bootstrap 与策略快照均读取完成后再应用，异步边界复核请求序号、会话与草稿状态。暂时离开工作区只暂停文件写资格，保留草稿与版本基线；返回并读取时，版本未变可继续保存，版本变化仍须解决冲突。
 14. 列表保存按钮等待真实 `Promise<boolean>` 结果；文件或预设部分失败时不显示整体成功、不以静默重载清除错误。已经成功保存的文件立即更新其基线，不因后续失败回滚或丢失确认。
-15. 配置排序走 typed `moduleConfigOrder` 端点，服务端校验身份集合与 revision，拒绝未知、重复身份及过期版本。顺序写回 `module.yml.configOrder`，客户端不提交正文、文件路径或序号；模块启用或停用均可保存自身排序，总闸关闭仍可改排序定义。拖拽落点用指针半高判据（`clientY` 对卡片中线）给出「插到目标前/后」，重排**不改卡定义**：可移动集合由 `sameConfigPosition` 过滤（跨插入点与跨官方档位的目标不在集合内、原样不写），`system-section` / `runtime-context` 卡的官方档位不参与排序请求。
+15. 配置排序走 typed `moduleConfigOrder` 端点，服务端校验身份集合与 revision，拒绝未知、重复身份及过期版本。顺序写回 `module.yml.configOrder`，客户端不提交正文、文件路径或序号；模块启用或停用均可保存自身排序，总闸关闭仍可改排序定义。拖拽落点用指针半高判据（`clientY` 对卡片中线）给出「插到目标前/后」，重排**不改卡定义**：可移动集合由 `sameConfigPosition` 过滤（跨插入点的目标不在集合内、原样不写），`system-section` / `runtime-context` 卡的官方档位不参与排序请求，只决定初始槽位。
 16. 两级变量内容校验所选 global/module 域，模块开关校验 settings。草稿按模块+scope分开，切范围不串输入；空字符串保存为值，删行才删除。后台读回和保存只确认对应请求快照，冲突保留编辑。persisted 且 publicationPending 时显示“已保存但未发布”，refreshOnly 只发布，不重放变量写入。存储边界见 [后端框架](architecture-params.md)。
 
 模板创建沿用同一规则事务，但使用 `createRule` 直接提交解析后的规则对象；不要求规则卡 owner 已加载或先读回 `/rules`。缺少 `rules` 的目标模块按空基线首写，重复创建在目标模块内按规则 id 自动加后缀。三位身份校验仍适用于首写和普通写入：头体冲突 400 `module-subject-conflict`、目标切换 409 `module-changed`、系统或只读目录 403 `module-readonly`。写盘成功而刷新失败时保留 `persisted/publicationPending`，不新增重试 UI；未启用目标的待发布状态只在当前工作台会话保留，启用并挂载规则卡后通过既有 `retryPublication` / `refreshOnly` 重试，不重放规则写入；刷新工作台不恢复该状态。
@@ -796,6 +796,7 @@ tool-catalog 填充来源沿现有普通注入表单编辑：params.action 引�
 - 首屏使用一次 bootstrap 聚合；模型目录惰性加载并缓存。
 - filter/search 只在客户端运行；不引入虚拟列表、dynamic import 或 code splitting 来解决尚未出现的规模问题。
 - UI 分组不建立九个插入点的全局执行顺序；配置序号控制对应插入点、位置内的次序，官方定位 `order` 独立保留。
+- `system-section` / `runtime-context` 卡可跨官方档位排序：`sameConfigPosition` 只要求同层同位置；跨档位先后由 `configOrder` 覆盖，装配后回填（见 `docs/engine-reuse.md` 的「提示词配置插入点与顺序」）。「插入到官方位置…」仍只改初始槽位。
 - order 的官方刻度只出现在 `system-section` 与 `runtime-context` 两层。数字输入与「插入到官方位置…」共用同一 NumberField 草稿和接受值路径；选择快捷位置同时更新数字、清除该字段错误，不改其他草稿。区段之前使用 `from - 1`，全部之后使用 `max(to) + 1`，避免同值按名称排序导致位置不符。边界来自 bridge 的 `meta.officialOrders`；缺席或空表时只保留数字输入。其余层只显示层内顺序说明。
 - 规则卡最外层折叠保留；内部使用条件、动作、JSON、设置导航。隐藏面板不进入 Tab 顺序，错误状态在页签提示；窄容器使用上方 tabs 和自然换行的紧凑字段，宽屏侧栏贴合文案宽度。
 - 当前会话模型始终读取官方 sessions projection，切换始终走 official session.selectModel。

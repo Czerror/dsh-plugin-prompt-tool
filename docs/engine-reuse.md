@@ -210,6 +210,8 @@ then:
 
 跨模块同点顺序来自 module.yml.configOrder；同点动作按声明顺序，显式 channelOrder 冲突拒绝。order 只管所属官方插入点的位置，不建立跨层总顺序。pre-step 中注入和过滤可以交错 flush，后批继续排在仍存活的同位置消息之后。
 
+注册层的段/上下文顺序不靠官方 order 数值表达：官方先按 order 与名称排好初始槽位，`system-prompt/assemble` 之后本插件按 `configOrder`（`sequence`）把已注册的段/上下文回填到原槽位；未注册的平台段与其他插件段槽位不动。`complete` 生效时平台在瀑布后强制还原唯一段，单段场景由重排器直接跳过。跨档位拖动只改 `configOrder`，不改官方 `order`。
+
 ### 同 scope 内的注册顺序（2026-09-22）
 
 Cordis waterfall 普通注册先注册者在外；prepend 注册插到最外层，同为 prepend 时后注册者更外。非注入动作通过 `waterfallPosition: outermost` 表达该要求，同点仍按编译顺序接线。inject-text 的位置属于官方插入层，不接受这个注册后门。

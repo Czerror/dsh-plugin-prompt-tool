@@ -435,8 +435,8 @@ test('跨模块配置按文件序号交错执行，后序请求覆盖且不受�
       request,
     }, { texts: ['USER', 'A10', 'B20', 'A30'], request: { temperature: 0.7, maxTokens: 512 } })
     const system = await h.root.systemPrompt.assemble({ agent, scope: agent })
-    assert.deepEqual(system.sections.filter(section => section.text.startsWith('SYS-')).map(section => section.text), ['SYS-B', 'SYS-A'],
-      '官方 system-section 定位仍由 order 决定')
+    assert.deepEqual(system.sections.filter(section => section.text.startsWith('SYS-')).map(section => section.text), ['SYS-A', 'SYS-B'],
+      '官方 order 只决定初始槽位，configOrder 覆盖跨档位先后')
     assert.deepEqual(h.runtime.moduleIds(agent.id), enabled, '配装记录报告本 Agent 装了哪几层：顺序即启用表顺序，不随配置执行序改写')
   }
   assert.deepEqual(h.warnings, [])
@@ -524,8 +524,8 @@ test('官方文本层同 order 的默认段按 sequence 排列，显式注册名
     assert.deepEqual(result[kind].filter(entry => entry.text.startsWith(`${prefix}-`)).map(entry => entry.text),
       [`${prefix}-text-order-z`, `${prefix}-text-order-a`])
     assert.deepEqual(result[kind].filter(entry => entry.text.startsWith('EXPLICIT-')).map(entry => entry.name),
-      kind === 'sections' ? ['explicit-a', 'explicit-z'] : ['explicit-z', 'explicit-a'],
-      '显式名字不被改写：sections 同 order 按名字，contexts 同 order 保留注册次序')
+      ['explicit-z', 'explicit-a'],
+      '显式名字不被改写；先后由 configOrder 覆盖（z 的序号更小）')
   }
   assert.deepEqual(h.warnings, [])
 })

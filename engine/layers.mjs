@@ -594,6 +594,47 @@ function wireSubagentEvents(ctx, configs, warnOnce, on) {
 }
 
 /**
+ * 本插件注册的段名，按 configOrder（sequence）排序；merged 组只记一次。
+ * 官方 order 只决定初始槽位（`textLayerGroups` 已按档位分组），这里给出覆盖后的先后。
+ */
+function deliveryOrderNames(configs, layer, field) {
+  const bases = textLayerGroups(configs.filter((config) => config.layer === layer))
+    .map((group) => group[0])
+    .filter((base) => base !== undefined)
+    .sort(compareConfigSequence)
+  const names = []
+  for (const base of bases) {
+    const entryName = textRegistrationName(base, field)
+    if (!names.includes(entryName)) names.push(entryName)
+  }
+  return names
+}
+
+/**
+ * 官方先按 order/段名排好投递顺序；这里按 configOrder 把本插件注册的段/上下文
+ * 回填到它们原来的槽位。只换本插件段之间的位置：平台段与其他插件段占住的槽位不动。
+ */
+function registerDeliveryOrder(ctx, keep, collection, names) {
+  if (names.length < 2) return
+  const rank = new Map(names.map((entryName, index) => [entryName, index]))
+  keep(ctx.on('system-prompt/assemble', async (assembly, context, next) => {
+    const result = await next()
+    const list = result?.[collection]
+    if (!Array.isArray(list)) return result
+    const slots = []
+    for (let index = 0; index < list.length; index++) {
+      if (rank.has(list[index]?.name)) slots.push(index)
+    }
+    if (slots.length < 2) return result
+    const ordered = slots.map((index) => list[index]).sort((left, right) => rank.get(left.name) - rank.get(right.name))
+    if (slots.every((slot, index) => list[slot] === ordered[index])) return result
+    const nextList = [...list]
+    slots.forEach((slot, index) => { nextList[slot] = ordered[index] })
+    return { ...result, [collection]: nextList }
+  }, { prepend: true }), `${name}: ${collection} order`)
+}
+
+/**
  * 把非 pre-step 提示词配置接入其声明的官方层级通道。
  * @param options.agent 当前 ctx 所属的真实 Agent；固定效果的受众在注册前匹配。
  * @param options.turnStopBudgets 可选的续跑预算映射（键 = 模块 id，来源缺失用空串兜底）；
@@ -637,6 +678,10 @@ export function wireLayers(ctx, configs, warnOnce, options = {}) {
     wireRuleTextContributions(ctx, conditional, registry, warnOnce, keep, on)
     wireTurnStops(ctx, configs.filter((config) => config.layer === 'turn-stop'), warnOnce, on, options.turnStopBudgets)
     wireSubagentEvents(ctx, configs.filter((config) => config.layer === 'subagent-start' || config.layer === 'subagent-end'), warnOnce, on)
+    // 官方 order 只提供初始槽位；configOrder 覆盖段/上下文的先后（平台段与其他插件段不动）。
+    for (const [collection, layer, field] of [['sections', 'system-section', 'sectionName'], ['contexts', 'runtime-context', 'contextName']]) {
+      registerDeliveryOrder(ctx, keep, collection, deliveryOrderNames(configs, layer, field))
+    }
     return dispose
   } catch (error) {
     dispose()
