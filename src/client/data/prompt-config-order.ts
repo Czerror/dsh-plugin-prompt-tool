@@ -25,7 +25,7 @@ type SortableConfig = Pick<PromptConfigDraft, 'layer' | 'position'>
 
 /**
  * 同位置判据：同插入点、同位置。`system-section` / `runtime-context` 的官方档位
- * 只决定装配初始槽位，先后由 `configOrder` 覆盖（引擎在装配后按它回填），
+ * 只决定装配初始槽位，先后由 `configOrder` 覆盖（引擎以 prepend 监听 `system-prompt/assemble`，在 `next()` 之后回填），
  * 因此跨档位也允许排序。
  *
  * 入参只要排序相关的字段：排序快照的条目（`ModuleConfigOrderEntry`）与视图草稿

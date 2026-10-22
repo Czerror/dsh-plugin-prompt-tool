@@ -100,6 +100,22 @@ test('直接挂载的静态段与实际注册名同源，按 configOrder 回填'
   assert.deepEqual(output.sections.map((section) => section.name), [bravo, alpha])
 })
 
+test('段排序：无 sequence 的配置回退官方 order，不会被排到有 sequence 的配置之前', async () => {
+  const registered = []
+  const h = harness({ systemPrompt: systemPromptService(registered) })
+  const configs = createPromptConfigs([
+    { id: 'alpha', layer: 'system-section', strategy: 'static', text: 'A', order: 100 },
+    { id: 'bravo', layer: 'system-section', strategy: 'static', text: 'B', order: 0 },
+  ])
+  // alpha 无 sequence（回退 order 100）；bravo 显式 sequence 10。旧实现把 alpha 当 0 提前。
+  configs[1].sequence = 10
+  wireLayers(h.ctx, configs, () => {})
+  const [bravo, alpha] = registered
+  const input = assembled([{ name: bravo, text: 'B' }, { name: alpha, text: 'A' }])
+  const output = await h.run('system-prompt/assemble', [input, { agent: agent() }], () => Promise.resolve(input))
+  assert.deepEqual(output.sections.map((section) => section.name), [bravo, alpha])
+})
+
 test('顺序未变时返回原装配引用', async () => {
   const registered = []
   const h = harness({ systemPrompt: systemPromptService(registered) })

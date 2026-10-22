@@ -211,7 +211,7 @@ function wireSystemSections(ctx, configs, registry, warnOnce, keep, ordered) {
         text,
         ...(base.params?.complete === true ? { complete: true } : {}),
       }), `${name}: section ${base.id}`)
-      ordered.sections.push({ name: entryName, sequence: base.sequence ?? 0 })
+      ordered.sections.push({ name: entryName, sequence: base.sequence ?? base.order ?? 0, order: base.order ?? 0 })
       // suppressRuntimeContext 抑制该 scope 的动态 runtime-context 快照（多段重复调用幂等）。
       if (base.params?.suppressRuntimeContext === true) {
         keep(systemPrompt.suppressRuntimeContext(), `${name}: suppressRuntimeContext ${base.id}`)
@@ -253,7 +253,7 @@ function wireRuleTextContributions(ctx, configs, registry, warnOnce, keep, on, o
     const entryName = textRegistrationName(base, section ? 'sectionName' : 'contextName')
     keep(systemPrompt[section ? 'section' : 'context']({ name: entryName, order: base.order, text: marker }), `${name}: conditional ${entryName}`)
     bindings.push({ group, name: entryName, collection: section ? 'sections' : 'contexts' })
-    ordered[section ? 'sections' : 'contexts'].push({ name: entryName, sequence: base.sequence ?? 0 })
+    ordered[section ? 'sections' : 'contexts'].push({ name: entryName, sequence: base.sequence ?? base.order ?? 0, order: base.order ?? 0 })
   }
   let active = true
   keep(() => { active = false }, `${name}: conditional text lifecycle`)
@@ -306,7 +306,7 @@ function wireRuntimeContexts(ctx, configs, registry, warnOnce, keep, on, ordered
         order: base.order,
         text,
       }), `${name}: context ${base.id}`)
-      ordered.contexts.push({ name: entryName, sequence: base.sequence ?? 0 })
+      ordered.contexts.push({ name: entryName, sequence: base.sequence ?? base.order ?? 0, order: base.order ?? 0 })
     } catch (error) {
       if (base.linkedDelivery) throw error
       warnOnce(`${name}: runtime-context config ${base.id} failed: ${String(error?.message ?? error)}`)
@@ -332,7 +332,7 @@ function wireRuntimeContexts(ctx, configs, registry, warnOnce, keep, on, ordered
         text: slotText,
       }), `${name}: context ${config.id}`)
       registered.set(contextName, config)
-      ordered.contexts.push({ name: contextName, sequence: config.sequence ?? 0 })
+      ordered.contexts.push({ name: contextName, sequence: config.sequence ?? config.order ?? 0, order: config.order ?? 0 })
     } catch (error) {
       warnOnce(`${name}: runtime-context placeholder ${config.id} failed: ${String(error?.message ?? error)}`)
     }
@@ -604,7 +604,10 @@ function wireSubagentEvents(ctx, configs, warnOnce, on) {
  * 名字来自注册点而不是事后从 configs 推导，避免 regular/conditional/placeholder 三条路径漂移。
  */
 function orderedNamesOf(entries) {
-  return [...new Set([...entries].sort((left, right) => left.sequence - right.sequence).map((entry) => entry.name))]
+  // configOrder 优先；同序号回到官方 order（而不是接线顺序），最后 stable 保留注册顺序。
+  return [...new Set([...entries]
+    .sort((left, right) => left.sequence - right.sequence || (left.order ?? 0) - (right.order ?? 0))
+    .map((entry) => entry.name))]
 }
 
 /**

@@ -504,7 +504,7 @@ test('交错来源只合并连续段，保留 merged 身份与独立续跑预算
   assert.equal(steered.length, 2)
 })
 
-test('官方文本层同 order 的默认段按 sequence 排列，显式注册名保留官方语义', async (t) => {
+test('官方文本层同 order 的默认段按 sequence 排列，显式注册名只保留名字', async (t) => {
   for (const [id, sequence, explicitName] of [['text-order-a', 10000, 'explicit-a'], ['text-order-z', 9990, 'explicit-z']]) {
     const dir = writeModuleFixture(id, {
       modules: ['prompt-config-engine'],
