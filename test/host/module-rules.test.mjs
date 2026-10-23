@@ -1,12 +1,14 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { parse } from 'yaml'
 import { isolatedHome } from '../fixtures/host-harness.mjs'
 
 const { moduleRoot } = isolatedHome('pt-module-rules-')
 const { readModuleRules, editModuleRules } = await import('../../src/host/module-rules.ts')
+const { setModuleEnabled } = await import('../../src/host/config-store.ts')
 const { resolveModuleFacts } = await import('../../src/host/module-params.ts')
 const { loadModuleSpec } = await import('../../src/host/module-spec.ts')
 const { readRulesDir } = await import('../../src/host/module-slices.ts')
@@ -129,4 +131,89 @@ test('规则边界：仅校验与无改动幂等；旧内容按白名单加载',
   writeFileSync(join(dir, 'module.yml'), 'id: check\nmodules: []\nrules: []\nlayerSettings:\n  agent-request:\n    modelTemperature: 0.5\n')
   assert.equal(readModuleRules(dir).rules.length, 0)
   assert.equal(loadModuleSpec(dir).params.modelTemperature, 0.5, '模型参数原样读回')
+})
+
+test('新建规则跨模块避碰：接在其他启用模块最大序号之后', (t) => {
+  const a = join(moduleRoot, 'order-a')
+  mkdirSync(a, { recursive: true })
+  writeFileSync(join(a, 'module.yml'), JSON.stringify({ id: 'order-a', modules: [], rules: [rule('a1')], configOrder: { a1: 100 } }))
+  const b = fixture('order-b', [])
+  setModuleEnabled(moduleRoot, 'order-a', true)
+  setModuleEnabled(moduleRoot, 'order-b', true)
+  t.after(() => {
+    setModuleEnabled(moduleRoot, 'order-a', false)
+    setModuleEnabled(moduleRoot, 'order-b', false)
+  })
+  const initial = readModuleRules(b)
+  const updated = editModuleRules(b, { expectedRevisions: initial.revisions, edits: [{ previousId: null, rule: rule('b1') }] })
+  assert.deepEqual(updated.rules.map(item => item.id), ['b1'])
+  assert.deepEqual(parse(readFileSync(join(b, 'module.yml'), 'utf8')).configOrder, { b1: 110 })
+})
+
+test('其他模块有未登记卡时按投影序号避碰', (t) => {
+  const a = join(moduleRoot, 'projected-order-a')
+  mkdirSync(a, { recursive: true })
+  // a1 显式 100；a2 未登记，projection 兜底为 110；新卡应接 120 而不是与 a2 撞号。
+  writeFileSync(join(a, 'module.yml'), JSON.stringify({ id: 'projected-order-a', modules: [], rules: [rule('a1'), rule('a2')], configOrder: { a1: 100 } }))
+  const b = fixture('projected-order-b', [])
+  setModuleEnabled(moduleRoot, 'projected-order-a', true)
+  setModuleEnabled(moduleRoot, 'projected-order-b', true)
+  t.after(() => {
+    setModuleEnabled(moduleRoot, 'projected-order-a', false)
+    setModuleEnabled(moduleRoot, 'projected-order-b', false)
+  })
+  const initial = readModuleRules(b)
+  editModuleRules(b, { expectedRevisions: initial.revisions, edits: [{ previousId: null, rule: rule('b1') }] })
+  assert.deepEqual(parse(readFileSync(join(b, 'module.yml'), 'utf8')).configOrder, { b1: 120 })
+})
+
+test('单模块新建规则从本模块尾部开始', () => {
+  const dir = fixture('solo-tail', [])
+  const initial = readModuleRules(dir)
+  editModuleRules(dir, { expectedRevisions: initial.revisions, edits: [{ previousId: null, rule: rule('s1') }] })
+  assert.deepEqual(parse(readFileSync(join(dir, 'module.yml'), 'utf8')).configOrder, { s1: 0 })
+})
+
+test('不在模块根下的目录：读不到启用表时退化', (t) => {
+  const standalone = mkdtempSync(join(tmpdir(), 'pt-rules-standalone-'))
+  t.after(() => rmSync(standalone, { recursive: true, force: true }))
+  const dir = join(standalone, 'solo')
+  mkdirSync(dir, { recursive: true })
+  writeFileSync(join(dir, 'module.yml'), JSON.stringify({ id: 'solo', modules: [], rules: [], configOrder: {} }))
+  const initial = readModuleRules(dir)
+  editModuleRules(dir, { expectedRevisions: initial.revisions, edits: [{ previousId: null, rule: rule('s1') }] })
+  assert.deepEqual(parse(readFileSync(join(dir, 'module.yml'), 'utf8')).configOrder, { s1: 0 })
+})
+
+test('不改号时不因其他模块损坏而失败', (t) => {
+  const bad = join(moduleRoot, 'bad-order-a')
+  mkdirSync(bad, { recursive: true })
+  writeFileSync(join(bad, 'module.yml'), 'not: [valid\n')
+  const dir = fixture('bad-order-b', [rule('b1')])
+  setModuleEnabled(moduleRoot, 'bad-order-a', true)
+  setModuleEnabled(moduleRoot, 'bad-order-b', true)
+  t.after(() => {
+    setModuleEnabled(moduleRoot, 'bad-order-a', false)
+    setModuleEnabled(moduleRoot, 'bad-order-b', false)
+  })
+  const initial = readModuleRules(dir)
+  const updated = editModuleRules(dir, { expectedRevisions: initial.revisions, edits: [{ previousId: 'b1', rule: { ...initial.rules[0], name: 'Renamed' } }] })
+  assert.equal(updated.rules[0].name, 'Renamed')
+  assert.deepEqual(parse(readFileSync(join(dir, 'module.yml'), 'utf8')).configOrder, { b1: 0 })
+})
+
+test('其他模块定义损坏时退化为本模块尾部', (t) => {
+  const bad = join(moduleRoot, 'bad-order-c')
+  mkdirSync(bad, { recursive: true })
+  writeFileSync(join(bad, 'module.yml'), 'not: [valid\n')
+  const dir = fixture('bad-order-d', [])
+  setModuleEnabled(moduleRoot, 'bad-order-c', true)
+  setModuleEnabled(moduleRoot, 'bad-order-d', true)
+  t.after(() => {
+    setModuleEnabled(moduleRoot, 'bad-order-c', false)
+    setModuleEnabled(moduleRoot, 'bad-order-d', false)
+  })
+  const initial = readModuleRules(dir)
+  editModuleRules(dir, { expectedRevisions: initial.revisions, edits: [{ previousId: null, rule: rule('d1') }] })
+  assert.deepEqual(parse(readFileSync(join(dir, 'module.yml'), 'utf8')).configOrder, { d1: 0 })
 })

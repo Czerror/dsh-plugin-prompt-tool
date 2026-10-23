@@ -141,7 +141,7 @@ PTC 的 `ptcMainMode` 与 `ptcSubagentMode` 分别映射到 `present-as.mainMode
 
 ## 配置序号与跨模块排序
 
-module.yml.configOrder 保存规则id→非负安全整数，身份仍是模块id+规则id。同执行点按序排列，启用没有序号的规则追加到尾部；碰号时保留该模块内部相对顺序整体追加。重复启用无冲突不改顺序。
+module.yml.configOrder 保存规则id→非负安全整数，身份仍是模块id+规则id。同执行点按序排列，启用没有序号的规则追加到尾部；碰号时保留该模块内部相对顺序整体追加。规则事务新建卡时也读其他启用模块的序号，直接接在全局尾部；尾部算法只在 `src/shared/module-config-order.ts#nextConfigSequence` 一份（切片恢复只传本模块）。重复启用无冲突不改顺序。
 
 排序接口提交完整身份集合与版本，包含 UI 过滤隐藏项。排序只改轻量映射，不复制正文、不改变互斥开关。官方 system/context 的 order 与 waterfall 注册顺序保持各自语义，见 [引擎顺序](engine-reuse.md#提示词配置插入点与顺序)。
 

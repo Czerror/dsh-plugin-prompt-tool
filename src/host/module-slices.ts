@@ -9,6 +9,12 @@ import { pathToFileURL } from 'node:url'
 import { Document, parseDocument } from 'yaml'
 import type { RuleContent, RuleDefinition, RuleRevisions, RuleSettings } from '../shared/rules.ts'
 import { readPersonaSpec } from '../shared/persona-section.ts'
+import { nextConfigSequence } from '../shared/module-config-order.ts'
+
+/** host 侧尾部序号：shared 抛普通 Error，这里转 ModuleWriteError（路由按 400/409 处理）。 */
+export function nextModuleConfigSequence(current: Record<string, number>, reserved: readonly number[] = []): number {
+  try { return nextConfigSequence(current, reserved) } catch (error) { throw new ModuleWriteError(error instanceof Error ? error.message : String(error)) }
+}
 import { assertModuleDirectory } from './module-install.ts'
 import { active, assertPlain, assertUnownedUnchanged, canonicalDirectory, directoryKey, ModuleWriteError, moduleLocation, processLocks, record, revisionOf, withModuleLock } from './module-write.ts'
 import { MODULE_DEFINITION_FILE, RULES_DIR, RULES_SETTINGS_FILE, RULES_VARIABLES_FILE } from './paths.ts'
@@ -134,12 +140,17 @@ function projection(source: Record<string, unknown>, directory: string, sourceRe
   const settings: Record<string, RuleSettings> = Object.create(null)
   const files: Record<string, string> = Object.create(null)
   const ruleRevisions: Record<string, string> = Object.create(null)
-  let tail = Math.max(-10, ...Object.values(order)) + 10
+  let tail: number | undefined
   for (const rule of rules) {
     const { enabled, group, exclusive, ...content } = structuredClone(rule)
     contents.push(content)
-    const sequence = order[rule.id] ?? tail
-    if (order[rule.id] === undefined) tail += 10
+    let sequence = order[rule.id]
+    if (sequence === undefined) {
+      // 只有真正需要分配时才计算；所有卡都有号时，MAX_SAFE_INTEGER 的既有序号不会触发上限检查。
+      tail ??= nextModuleConfigSequence(order)
+      sequence = tail
+      tail += 10
+    }
     if (!Number.isSafeInteger(sequence)) throw new ModuleWriteError('规则顺序超出安全整数范围')
     settings[rule.id] = { order: sequence, ...(enabled === undefined ? {} : { enabled }), ...(group === undefined ? {} : { group }), ...(exclusive === undefined ? {} : { exclusive }) }
     files[`${rule.id}.yml`] = yaml(content)

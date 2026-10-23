@@ -1,11 +1,13 @@
 /** 经验证规则切片的局部事务；正文和状态各有独立 CAS。 */
+import { basename, dirname } from 'node:path'
 import { isMap, isSeq, isScalar, parseDocument } from 'yaml'
 import type { Node, Scalar, YAMLMap, YAMLSeq } from 'yaml'
 import type { RuleDefinition, RuleEdit, RuleRevisions } from '../shared/rules.ts'
-import { assertRuleFileId, commitModuleDefinition, ensureModuleSlices, validateModuleDefinitionText } from './module-slices.ts'
+import { assertRuleFileId, commitModuleDefinition, ensureModuleSlices, nextModuleConfigSequence, validateModuleDefinitionText } from './module-slices.ts'
 import type { ModuleDefinitionSnapshot } from './module-slices.ts'
 import { ModuleWriteError, serializeWithoutSharedAlias } from './module-write.ts'
 import { invalidateModuleSpec } from './module-spec.ts'
+import { reservedConfigSequences } from './module-config-order.ts'
 
 const record = (value: unknown): value is Record<string, unknown> => value !== null && typeof value === 'object' && !Array.isArray(value)
 export interface ModuleRulesSnapshot { rules: RuleDefinition[]; revisions: RuleRevisions }
@@ -168,8 +170,18 @@ export function editModuleRules(directory: string, request: ModuleRuleEditReques
   }
   const ids = new Set(rules.map(rule => rule.id))
   for (const id of Object.keys(order)) if (!ids.has(id)) delete order[id]
-  let tail = Math.max(-10, ...Object.values(order).map(Number)) + 10
-  for (const rule of rules) if (order[rule.id] === undefined) { order[rule.id] = tail; tail += 10 }
+  // projection 已把 configOrder 校验为数字；这里只做 unknown → number 的类型收窄，不改写回值。
+  const current = Object.fromEntries(Object.entries(order).map(([id, value]) => [id, Number(value)]))
+  let tail: number | undefined
+  for (const rule of rules) {
+    if (order[rule.id] !== undefined) continue
+    if (tail === undefined) {
+      const reserved = reservedConfigSequences(dirname(snapshot.dir), basename(snapshot.dir))
+      tail = nextModuleConfigSequence(current, reserved)
+    }
+    order[rule.id] = tail
+    tail += 10
+  }
   if (JSON.stringify(previous) === JSON.stringify(rules) && JSON.stringify(snapshot.source.configOrder ?? {}) === JSON.stringify(order)) return publicSnapshot(snapshot)
   snapshot.doc.set('rules', replaceNode(snapshot.doc, ruleNodes, rules))
   if (Object.keys(order).length > 0) snapshot.doc.set('configOrder', replaceNode(snapshot.doc, orderNodes, order))

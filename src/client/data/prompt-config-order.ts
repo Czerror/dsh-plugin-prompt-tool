@@ -1,8 +1,10 @@
 /**
  * 配置卡在视图内的移动与同位置判据（**全仓唯一一份**）。
  *
- * 顺序的唯一权威是 `module.yml` 顶层的 `configOrder`（`src/host/module-config-order.ts` 写、
- * `src/host/module-slices.ts` 的 `order[rule.id] ?? tail` 读）：本模块只把「拖到哪」翻译成
+ * 顺序的唯一权威是 `module.yml` 顶层的 `configOrder`。写它的有两处：排序保存
+ * （`host/module-config-order.ts`）与规则事务新建卡（`host/module-rules.ts`）；切片恢复
+ * 只把缺号卡的 `order` 写进 `rules/_settings.yml`，不改 `module.yml.configOrder`。尾部算法
+ * 只有 `shared/module-config-order.ts#nextConfigSequence` 一份。本模块只把「拖到哪」翻译成
  * 「身份的新顺序」，**不改卡定义、不碰官方档位 `order`**——那个值属于宿主
  * `systemPrompt.section({ order })` 的装配刻度，插件的排序通道不提交它。
  */

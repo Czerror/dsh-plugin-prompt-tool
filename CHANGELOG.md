@@ -1,5 +1,12 @@
 # Changelog
 
+### 配置序号尾部分配收成一处（2026-10-23）
+
+- 新增 `shared/module-config-order.ts#nextConfigSequence`：合并现有与保留序号、+10、安全整数检查只此一份；切片恢复、规则事务与排序追加共用，只有缺号/碰号时才计算，已有卡序号与输出不变；host 侧转 `ModuleWriteError`，超限按 400 处理。
+- 规则事务新建卡改为跨模块避碰：`module-rules` 通过 `reservedConfigSequences` 读其他启用模块的 projection 序号（含未保存卡的兜底），新卡接全局尾部；任一其他模块定义读不到时跳过该模块，不阻塞当前事务。
+- 文档：architecture-params 的序号说明、client 排序注释。
+- 需重启 DSH 后生效。
+
 ### 桥请求字段表三态化（2026-10-23）
 
 - `BRIDGE_REQUEST_FIELDS` 从 `string[] | null` 改为三态判别联合：`{ body: 'none' }` / `{ fields }` / `{ handler: true, fields }`；删除 `BRIDGE_REQUEST_HANDLER_CHECKED`，表成为唯一登记。

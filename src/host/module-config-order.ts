@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { enabledModuleIds } from './config-store.ts'
 import { assertModuleDirectory } from './module-install.ts'
 import { invalidateModuleSpec } from './module-spec.ts'
-import { commitModuleDefinition, ensureModuleSlices, loadModuleDefinition } from './module-slices.ts'
+import { commitModuleDefinition, ensureModuleSlices, loadModuleDefinition, nextModuleConfigSequence } from './module-slices.ts'
 import type { ModuleDefinitionSnapshot } from './module-slices.ts'
 import { ModuleWriteError } from './module-write.ts'
 import { assertSafeConfigId } from './prompt-configs.ts'
@@ -126,16 +126,14 @@ export function appendModuleConfigOrder(root: string, moduleId: string): string[
   const others = readInputs(root, enabledModuleIds(root).filter(id => id !== moduleId))
   const input = readInput(root, moduleId)
   const used = new Set(others.flatMap(item => item.entries.map(entry => entry.sequence)))
-  let next = -10
-  for (const value of used) next = Math.max(next, value)
-  for (const value of Object.values(input.saved)) next = Math.max(next, value)
-  next += 10
+  let next: number | undefined
   const assigned: Record<string, number> = Object.create(null)
   const collision = input.entries.some(entry => input.saved[entry.configId] !== undefined && used.has(input.saved[entry.configId]!))
   for (const entry of [...input.entries].sort(compareModuleConfigOrder)) {
     let sequence = input.saved[entry.configId]
     if (collision || sequence === undefined || used.has(sequence)) {
-      if (!Number.isSafeInteger(next)) throw new Error('配置卡排序序号超出安全整数范围')
+      next ??= nextModuleConfigSequence(input.saved, [...used])
+      if (!Number.isSafeInteger(next)) throw new ModuleWriteError('配置卡排序序号超出安全整数范围')
       sequence = next
       next += 10
     }
@@ -143,6 +141,23 @@ export function appendModuleConfigOrder(root: string, moduleId: string): string[
     assigned[entry.configId] = sequence
   }
   return writeOrders(root, [input], new Map([[moduleId, assigned]]))
+}
+
+/**
+ * 其他启用模块的已用序号：读 projection 后的 configOrder（未登记卡已由 projection 兜底编号）。
+ * 规则事务用它跨模块避碰；任一模块定义读不到时跳过该模块，不阻塞当前模块。
+ */
+export function reservedConfigSequences(root: string, moduleId: string): number[] {
+  return enabledModuleIds(root)
+    .filter((id) => id !== moduleId)
+    .flatMap((id) => {
+      try {
+        // projection 已为每张卡生成序号；读不到定义的模块跳过，不阻塞当前模块。
+        return Object.values(loadModuleDefinition(assertModuleDirectory(root, id)).configOrder)
+      } catch {
+        return []
+      }
+    })
 }
 
 /** 默认重排启用集合；指定模块只交换其现有槽位，不接受客户端序号、正文或路径。 */
