@@ -303,7 +303,8 @@ function createExecute(ctx, def, requireApproval) {
         run.deferContext(context)
       }
       if (result.concludesTurn === true) run.concludeTurn()
-      return { ok: true, value: result.value }
+      // 成功值理论上必为 JsonValue；仍按边界数据形状收口，避免 undefined 自有属性让整份结果被判坏。
+      return result.value === undefined ? { ok: true } : { ok: true, value: result.value }
     }
     if (exec.kind === 'fs') {
       const cwd = run.agent?.session?.header?.cwd ?? process.cwd()
@@ -350,7 +351,8 @@ function createExecute(ctx, def, requireApproval) {
         reason: String(exec.question ?? `${def.name}: confirm?`),
         signal: run.signal,
       })
-      return { ok: true, answer: outcome }
+      // 同 delegate：approval 实现返回缺失值时省略 answer，不生成 undefined 键。
+      return outcome === undefined ? { ok: true } : { ok: true, answer: outcome }
     }
     return { ok: false, error: `unknown execute kind ${exec.kind}` }
   }
