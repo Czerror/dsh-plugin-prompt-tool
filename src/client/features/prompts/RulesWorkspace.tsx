@@ -183,7 +183,7 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
     onCreated: (moduleId, configKey) => setExpanded(configIdentityKey({ moduleId, configId: configKey })),
   })
   // 指令文件卡是全局段（不属于任何模块）：设置区的主语由装配层按每个启用模块给出（参数按模块存储）。
-  const instructionCards = fields.promptConfigs.filter(config => instructionFileIdOf(config) !== undefined).map(config => <PromptConfigCard key={config.id} t={t} meta={store.meta} config={config} expanded={expanded === config.id} canMoveUp={false} canMoveDown={false}
+  const instructionCards = fields.instructionCards.map(config => <PromptConfigCard key={config.id} t={t} meta={store.meta} config={config} expanded={expanded === config.id} canMoveUp={false} canMoveDown={false}
     renderLayerSettings={props.renderInstructionSettings === undefined ? undefined : (_layer, card) => props.renderInstructionSettings!(card)}
     onToggleExpanded={() => toggle(config.id)} onToggleEnabled={() => {}} onPatch={(_id, patch) => { const fileId = instructionFileIdOf(config); if (fileId !== undefined && typeof patch.text === 'string') store.patchInstructionText(fileId, patch.text) }}
     onMoveUp={() => {}} onMoveDown={() => {}} onDuplicate={() => {}} onDelete={() => {}}

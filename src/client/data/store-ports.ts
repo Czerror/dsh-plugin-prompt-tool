@@ -115,7 +115,7 @@ export interface NoticePort {
   noticePill: string | undefined
   showNotice: (kind: 'ok' | 'error', message: string, pill?: string) => void
   load: (options?: { silent?: boolean }) => Promise<Fields>
-  patch: (partial: Partial<Omit<Fields, 'promptConfigs'>>) => void
+  patch: (partial: Partial<Omit<Fields, 'instructionCards'>>) => void
   loading: boolean
 }
 

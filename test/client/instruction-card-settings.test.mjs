@@ -40,7 +40,7 @@ const instructionCard = {
 /** 指令卡只读这些端口：`ModuleFactsPort & DraftsPort & ParamsPort & InstructionFilesPort & NoticePort`
  *  （端口之外的成员不再抄；测试文件不参与 typecheck，缺成员会在渲染期暴露）。 */
 const stubStore = (modules = [moduleA], globalParamsLoaded = true) => {
-  const fields = { modulesEnabled: true, promptConfigs: [instructionCard] }
+  const fields = { modulesEnabled: true, instructionCards: [instructionCard] }
   return {
     fields,
     // 指令卡要渲染正文与页签，必须给齐 `fieldPolicyFor` 读的字段能力表（省了它＝渲染期抛错）。

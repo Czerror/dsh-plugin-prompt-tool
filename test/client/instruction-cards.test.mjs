@@ -4,7 +4,7 @@
  */
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { projectInstructionCards } from '../../src/client/data/instruction-cards.ts'
+import { instructionShellsFrom, projectInstructionCards } from '../../src/client/data/instruction-cards.ts'
 
 const shell = (fileId) => ({ id: 'agents-file-' + fileId, origin: { kind: 'instruction-file', fileId } })
 const draft = (fileId, content, savedContent, extra = {}) => ({
@@ -21,6 +21,21 @@ const draft = (fileId, content, savedContent, extra = {}) => ({
 })
 const pool = (drafts) => ({ contextId: 'ctx', cwd: '/repo', source: 'session', latest: 1, drafts, owner: {} })
 const policy = (files = {}) => ({ policy: { files }, revision: null, exists: true })
+
+test('壳来源：会话段是唯一输入，空数组或缺段都清空旧壳', () => {
+  assert.deepEqual(instructionShellsFrom([]), [])
+  assert.deepEqual(instructionShellsFrom(undefined), [])
+})
+
+test('壳来源：只认文件身份，非文件卡与非法元素被丢弃', () => {
+  const fileCard = { id: 'agents-file-a', origin: { kind: 'instruction-file', fileId: 'a' } }
+  const engineCard = { id: 'param-model-params' }
+  const plain = { id: 'plain' }
+  assert.deepEqual(
+    instructionShellsFrom([fileCard, engineCard, plain, null, 'nope']).map((card) => card.id),
+    ['agents-file-a'],
+  )
+})
 
 test('投影：没有草稿的卡不把未知正文当空文件，禁用保存', () => {
   const stale = { ...shell('a'), contentDirty: true, contentConflict: true, contentSaving: true }

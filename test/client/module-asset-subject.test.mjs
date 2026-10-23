@@ -41,7 +41,7 @@ const twoModules = [
 /** 卡只读这些端口：`ModuleFactsPort & DraftsPort & RuleEditingPort & ParamsPort`
  *  （端口之外的成员不再抄进桩；测试文件不参与 typecheck，缺成员会在渲染期暴露）。 */
 const stubStore = (drafts, modules = twoModules) => {
-  const fields = { modulesEnabled: true, promptConfigs: [] }
+  const fields = { modulesEnabled: true, instructionCards: [] }
   return {
     fields,
     meta: { layers: [], modules },
@@ -588,16 +588,16 @@ test('store：会话切换期间草稿变更仍回填全局与项目指令卡', 
     const api = { currentSessionId: () => session }
     const store = mountStore(api)
     await store.load()
-    assert.equal(store.getFields().promptConfigs.length, 3)
+    assert.equal(store.getFields().instructionCards.length, 3)
     session = 'session-b'
     const pending = store.load()
     await tick()
-    assert.equal(store.getFields().promptConfigs.length, 0, '切换期间先清空旧上下文指令卡')
+    assert.equal(store.getFields().instructionCards.length, 0, '切换期间先清空旧上下文指令卡')
     store.patch({ promptText: 'draft during session switch' })
     releaseBootstrap()
     await pending
     await tick()
-    const ids = store.getFields().promptConfigs.map(config => config.origin?.fileId)
+    const ids = store.getFields().instructionCards.map(config => config.origin?.fileId)
     assert.deepEqual(ids, files.map(file => file.fileId), '迟到响应不应丢失全局与项目指令卡')
     assert.equal(store.getFields().promptText, 'draft during session switch', '既有非指令草稿仍应保留')
     const older = store.load()
@@ -607,7 +607,35 @@ test('store：会话切换期间草稿变更仍回填全局与项目指令卡', 
     releaseBootstrap()
     await older
     assert.equal(store.getInstructionPool().contextId, 'session-c', '旧会话迟到响应不得覆盖当前文件上下文')
-    assert.deepEqual(store.getFields().promptConfigs.map(config => config.origin?.fileId), ids)
+    assert.deepEqual(store.getFields().instructionCards.map(config => config.origin?.fileId), ids)
+  } finally { globalThis.fetch = original }
+})
+
+test('store：空会话段清掉旧指令卡壳', async () => {
+  const original = globalThis.fetch
+  const card = {
+    id: 'agents-file-a',
+    origin: { kind: 'instruction-file', fileId: 'a' },
+    params: { fileId: 'a', scope: 'project', file: '/repo/AGENTS.md' },
+  }
+  let cards = [card]
+  globalThis.fetch = async (url) => {
+    const path = String(url)
+    if (path.endsWith('/bootstrap')) {
+      return { status: 200, text: async () => JSON.stringify({ ...bootstrapPayload(twoModules), promptConfigs: { promptConfigs: cards } }) }
+    }
+    if (path.endsWith('/instructions-policy')) {
+      return { status: 200, text: async () => JSON.stringify({ ok: true, value: { policy: { files: {} }, revision: null, exists: false } }) }
+    }
+    return { status: 200, text: async () => JSON.stringify({ ok: true, value: {} }) }
+  }
+  try {
+    const store = mountStore({ currentSessionId: () => 'session-a' })
+    await store.load()
+    assert.equal(store.getFields().instructionCards.length, 1)
+    cards = []
+    await store.load()
+    assert.equal(store.getFields().instructionCards.length, 0, '空会话段是权威结果，旧壳必须清掉')
   } finally { globalThis.fetch = original }
 })
 

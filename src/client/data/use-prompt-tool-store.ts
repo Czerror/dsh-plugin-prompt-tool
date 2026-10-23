@@ -19,7 +19,6 @@ import {
   switchesEqual,
   type SwitchSnapshot,
 } from './dirty-state.ts'
-import { instructionFileIdOf } from './prompt-config-content.ts'
 import {
   applySaveOutcomes,
   EMPTY_INSTRUCTION_POOL,
@@ -41,7 +40,7 @@ import {
   instructionPolicyPatchForFile,
 } from './instruction-policy.ts'
 import type { InstructionPolicyFileOverride, InstructionPolicyPatch, InstructionPolicySnapshot } from '../../shared/instructions.ts'
-import { projectInstructionCards } from './instruction-cards.ts'
+import { instructionShellsFrom, projectInstructionCards } from './instruction-cards.ts'
 import { createParamEditor, type ParamEditor, type ParamEditorDependencies } from './param-editor.ts'
 import { createSerialTaskQueue } from './save-queue.ts'
 import { createWorkspaceDrafts } from './workspace-drafts.ts'
@@ -228,7 +227,7 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
   /** 视图永远是 (壳, 池, 策略) 的投影：所有发布路径都从这里取，不再各写一份。 */
   const projectInstructionFields = useCallback((base: Fields): Fields => ({
     ...base,
-    promptConfigs: projectInstructionCards(instructionShellsRef.current, instructionPoolRef.current, instructionPolicyRef.current),
+    instructionCards: projectInstructionCards(instructionShellsRef.current, instructionPoolRef.current, instructionPolicyRef.current),
   }), [])
   const refreshInstructionCards = useCallback(() => {
     publishFields(projectInstructionFields(fieldsRef.current))
@@ -348,8 +347,8 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
       const current = fieldsRef.current
       Object.assign(next, { skillCatalog: current.skillCatalog, skillsComplete: current.skillsComplete, skillFolders: current.skillFolders, skillsRoot: current.skillsRoot })
     }
-    // 服务端快照只提供卡壳；视图由投影给出，不把服务端正文写进 fields。
-    instructionShellsRef.current = next.promptConfigs
+    // descriptor 不供卡；壳由同一次 load 的 /bootstrap 会话段写入。
+    instructionShellsRef.current = []
     const projected = projectInstructionFields(next)
     publishFields(projected)
     setSavedSwitches(snapshotSwitches(next))
@@ -428,18 +427,9 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
           exists: policyValue.exists === true,
           ...(policyValue.error === undefined ? {} : { error: policyValue.error }),
         })
-      // 实际生效配置（引擎从生成目录加载；settings.promptConfigs 仅为覆盖层，
-      // 默认为空不代表无配置）。非空时以实际配置为卡壳，视图由投影重算。
-      if (boot.ok && boot.promptConfigs !== undefined
-        && Array.isArray(boot.promptConfigs.promptConfigs) && boot.promptConfigs.promptConfigs.length > 0) {
-        // 引擎自动生成的模型参数配置（model-params / subagent-model-params）由
-        // 「模型设置」卡片管理，不进入模块列表（避免重复编辑入口）。
-        const engineGenerated = new Set(['model-params', 'subagent-model-params'])
-        // 契约只保证「这是一个数组」（卡片的完整形状是客户端视图 `PromptConfigDraft`）：按既有事实收窄一次。
-        const cards = boot.promptConfigs.promptConfigs as PromptConfigDraft[]
-        const userConfigs = cards.filter((config) => !engineGenerated.has(config.id) && instructionFileIdOf(config) !== undefined)
-        // 服务端下发的卡壳是投影的身份来源；正文与状态由草稿池给，params 里的读取副本在投影时剥离。
-        instructionShellsRef.current = userConfigs
+      // 指令卡只来自 /bootstrap 的会话段；空数组或缺段都是权威结果，会清掉旧壳。
+      if (boot.ok) {
+        instructionShellsRef.current = instructionShellsFrom(boot.promptConfigs?.promptConfigs)
         refreshInstructionCards()
       }
       if (fieldsChanged) return fieldsRef.current
@@ -506,7 +496,7 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
     }
   }, [settings])
 
-  const patch = useCallback((partial: Partial<Omit<Fields, 'promptConfigs'>>) => {
+  const patch = useCallback((partial: Partial<Omit<Fields, 'instructionCards'>>) => {
     draftVersionRef.current += 1
     const next: Fields = { ...fieldsRef.current, ...partial }
     publishFields(next)

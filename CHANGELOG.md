@@ -1,5 +1,13 @@
 # Changelog
 
+### 指令卡壳单一来源（2026-10-23）
+
+- **单一输入**：`instructionShellsRef` 只由 `/bootstrap` 会话段写入；删除 settings descriptor 的 `promptConfigs` 死通道与 `readPromptConfigs`（settings schema 只有 `modulesEnabled`，该值恒空）。
+- **字段改名**：`Fields.promptConfigs` → `Fields.instructionCards`，只作投影输出；`patch` 的 `Omit` 同步，`PromptConfigDraft` 类型不改名（仍服务模块卡）。
+- **空段清壳**：会话段只要是数组就覆盖（空数组或缺段都清旧壳）；抽 `instructionShellsFrom` 纯函数承载文件卡过滤（非文件身份与非法元素排除，不做 id 名单）。
+- **回归**：`test/client/instruction-cards.test.mjs` 新增壳来源两条；`test/client/prompt-tool-view.test.mjs` 锁 descriptor 不再供卡。
+- 需重启 DSH 并重建客户端后生效。
+
 ### 受众事实收回引擎（2026-10-23）
 
 - 新增 `engine/rule-spec.mjs#audienceOf` / `actionAudiences`：条件树 → 受众集合的唯一判据；`scope.audience` 精确收窄（同节点带 `modelScope: pro|flash` 不算精确），`all` 求交、`any` 保守、`not`/`notAny` 只对精确子节点取补，无法收窄时由调用方保守处理。算子集合从 `COMPOSITE_OPERATORS` 分派，新增算子时测试映射先红。

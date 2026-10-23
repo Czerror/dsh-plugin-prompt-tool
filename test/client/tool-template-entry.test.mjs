@@ -18,7 +18,7 @@ const facts = (editable = true) => ({ declaredModules: [], effectiveModules: [],
 
 /** 声明面未下发（老载荷／未知）＝照旧出卡；这里给「已声明 customTools」的对照用。 */
 const stubStore = (declares) => {
-  const fields = { modulesEnabled: true, promptConfigs: [] }
+  const fields = { modulesEnabled: true, instructionCards: [] }
   return {
     fields,
     meta: { layers: [], modules: [{ id: 'mod-a', name: 'A', enabled: true, facts: facts(), declares }] },

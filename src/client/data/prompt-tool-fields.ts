@@ -37,7 +37,8 @@ export interface Fields extends EngineParamDrafts {
   /** 用户技能根（创建、复制导入与回收站的落点）。 */
   skillsRoot: string
   modulesEnabled: boolean
-  promptConfigs: PromptConfigDraft[]
+  /** 指令文件卡投影输出；唯一输入是 /bootstrap 会话段，不是编辑源。 */
+  instructionCards: PromptConfigDraft[]
 }
 
 /**
@@ -83,7 +84,7 @@ export const EMPTY_FIELDS: Fields = {
   skillFolders: [],
   skillsRoot: '',
   modulesEnabled: true,
-  promptConfigs: [],
+  instructionCards: [],
 }
 /** 编译期契约：公共参数必须进入 Fields；规则所有的模型参数不得混入。 */
 type MissingEngineParamKeys = Exclude<SharedParamKey, keyof Fields>

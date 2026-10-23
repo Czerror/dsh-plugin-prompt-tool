@@ -120,7 +120,7 @@ test('rule-steps: 工具链动作卡按引擎种子渲染可编辑字段，match
 })
 
 test('rules workspace: 层筛选器用自己的可访问名，不借用「缺省层」字段标签', async () => {  const { RulesWorkspace } = await withSsr([new URL('../../src/client/features/prompts/RulesWorkspace.tsx', import.meta.url).href])
-  const fields = { moduleId: 'module-a', modulesEnabled: true, promptConfigs: [] }
+  const fields = { moduleId: 'module-a', modulesEnabled: true, instructionCards: [] }
   const store = {
     editorDrafts: createWorkspaceDrafts(), getFields: () => fields, subscribeFields: () => () => {},
     getDraftRevision: () => 0, subscribeDrafts: () => () => {}, publishDrafts: () => {},
@@ -136,7 +136,7 @@ test('rules workspace: 未启用模块不出规则卡（启用表先于 _setting
   const { RulesWorkspace } = await withSsr([new URL('../../src/client/features/prompts/RulesWorkspace.tsx', import.meta.url).href])
   // 当前编辑目标停在一个**未启用**的模块上，且它的草稿里确实有一张卡：
   // 卡片准入必须先问存储根 config.yml 的启用表，再谈草稿与 rules/ 正文。
-  const fields = { moduleId: 'module-off', modulesEnabled: true, promptConfigs: [] }
+  const fields = { moduleId: 'module-off', modulesEnabled: true, instructionCards: [] }
   const drafts = createWorkspaceDrafts()
   drafts.rules.set('module-off', {
     entries: [{ key: 'off-1', previousId: null, value: { id: 'rule-from-disabled-module', name: '来自未启用模块的卡', layer: 'pre-step', then: [] } }],

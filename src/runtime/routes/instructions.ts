@@ -40,8 +40,8 @@ export function registerInstructions(runtime: InstructionsRuntime): Array<() => 
         tx.write(400, { ok: false, code: 'settings-rejected', message: session.message })
         return
       }
-      // 实际生效配置 = 模块定义编译出的规则（`rules/` 切片）；
-      // settings.promptConfigs 仅是用户覆盖层，默认为空不代表无配置。
+      // 实际生效配置 = 模块定义编译出的规则（`rules/` 切片）与指令文件卡；
+      // settings 不再承载 promptConfigs（旧覆盖层已退役）。
       const dir = runtime.gate(tx, 'promptConfigs').inspect()
       if (dir === undefined) return
       // 独立文件来源：与 /bootstrap 共用同一读取入口，附正文、字节版本与读取状态。

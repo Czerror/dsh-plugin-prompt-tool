@@ -1,5 +1,4 @@
 /** settings/bootstrap 载荷到客户端 Fields 的纯映射。 */
-import type { PromptConfigDraft } from '../prompt-tool-types.ts'
 import { EMPTY_FIELDS, type Fields, type SkillCatalogEntry } from './prompt-tool-fields.ts'
 import { SKILL_SOURCES } from '../../shared/skills.ts'
 import type { BridgeResponse, BridgeValueMap } from '../../shared/bridge-contract.ts'
@@ -64,17 +63,6 @@ const readSkillCatalog = (source: Record<string, unknown>, key: string): SkillCa
   })
 }
 
-const readPromptConfigs = (source: Record<string, unknown>, key: string): PromptConfigDraft[] => {
-  const value = source[key]
-  if (!Array.isArray(value)) return []
-  return value.flatMap((entry) => {
-    if (entry === null || typeof entry !== 'object') return []
-    const record = entry as Record<string, unknown>
-    return typeof record.id === 'string' && record.id.length > 0 ? [entry as PromptConfigDraft] : []
-  })
-}
-
-
 /** 技能快照只更新自身字段，供首屏与局部刷新共用。空数组也是权威结果。 */
 export function skillFieldsFromSnapshot(snapshot: BridgeValueMap['skillsList']): Pick<Fields, 'skillCatalog' | 'skillsComplete' | 'skillFolders' | 'skillsRoot'> {
   const catalog = readSkillCatalog({ skills: snapshot.skills }, 'skills')
@@ -107,10 +95,6 @@ export function fieldsFromView(res: BridgeResponse<'bootstrap'>): Fields {
       roots: res.ok ? res.activeSkillsDirs ?? [] : [],
     }),
     modulesEnabled: readBoolean(value, 'modulesEnabled', readBoolean(base, 'modulesEnabled', true)),
-    // 没有会话级主语：主语由每张卡的归属模块给出，descriptor 里也不再有 moduleId。
-    promptConfigs: value.promptConfigs !== undefined
-      ? readPromptConfigs(value, 'promptConfigs')
-      : readPromptConfigs(base, 'promptConfigs'),
   }
   return next
 }

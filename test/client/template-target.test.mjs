@@ -32,7 +32,7 @@ const modules = [
 ]
 
 const stubStore = (modulesEnabled = true) => {
-  const fields = { modulesEnabled, promptConfigs: [] }
+  const fields = { modulesEnabled, instructionCards: [] }
   const editorDrafts = createWorkspaceDrafts()
   for (const { id } of modules) {
     editorDrafts.rules.set(id, { entries: [], saved: [], fields: new Map(), loaded: true, validated: false, latest: 0, nextKey: 0 })

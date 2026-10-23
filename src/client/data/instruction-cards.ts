@@ -30,6 +30,17 @@ function withoutSnapshotCopies(config: PromptConfigDraft): PromptConfigDraft {
   return { ...config, params }
 }
 
+/**
+ * /bootstrap 会话段 → 指令卡壳：唯一输入，空数组或缺段都是权威的「没有卡」。
+ * 只认文件身份；非文件卡与非法元素（null/原始值）一律丢弃，不猜。
+ */
+export function instructionShellsFrom(cards: readonly unknown[] | undefined): PromptConfigDraft[] {
+  if (!Array.isArray(cards)) return []
+  return cards.filter((config): config is PromptConfigDraft =>
+    config !== null && typeof config === 'object'
+    && instructionFileIdOf(config as PromptConfigDraft) !== undefined)
+}
+
 /** 一次投影：服务端卡壳 + 草稿池 + 指令策略 → 卡片视图。 */
 export function projectInstructionCards(
   shells: readonly PromptConfigDraft[],
@@ -37,6 +48,7 @@ export function projectInstructionCards(
   policy: InstructionPolicySnapshot,
 ): PromptConfigDraft[] {
   return shells.map((config) => {
+    // 防御：投影可被独立调用；装配路径的壳已由 instructionShellsFrom 过滤为文件卡。
     const fileId = instructionFileIdOf(config)
     if (fileId === undefined) return config
     // 文件卡只从独立策略读取开关和名称；注入位置与生命周期归官方所有。

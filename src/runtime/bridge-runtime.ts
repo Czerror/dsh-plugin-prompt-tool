@@ -654,7 +654,7 @@ export function createBridgeRuntime(options: BridgeRuntimeOptions): BridgeRuntim
     // 目录缓存按当前 bridge Context 隔离：另一个插件实例/测试 Context 不共享结果。
     const modelCatalog = peekModelCatalog(settingsContext())
     // 引擎参数按模块存储：/describe 附带激活模块参数（settings 已不承载；
-    // 客户端 fields 参数键由此合并，promptConfigs 仍以 /prompt-configs 实际配置为准）。
+    // 客户端 fields 参数键由此合并；指令卡只来自 /bootstrap 会话段）。
     // 空主语就没有模块段：不拿包内默认模块冒充当前模块，两个键整体缺席（不是空对象）。
     let moduleParams: Record<string, unknown> | undefined
     let moduleFacts: ModuleFacts | undefined
