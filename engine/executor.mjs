@@ -518,6 +518,8 @@ export function applyPromptConfigSources(sources, options = {}) {
     }
     confirmDelivered(injectedMemo, session, event)
   })
+  // shortcut: prepend 只认 options 与 configs；纯 ruleAction 的 pre-step-filter 在无协调器的
+  // standalone 路径拿不到。出现第二个无协调器的 pre-step 消费者时，把「需要最外层」上收到动作语义再统一。
   const prepend = options.prepend === true || prepared.some(source => source.configs.some(config => config.prepend === true))
   const registrations = new Map()
   let active = true
