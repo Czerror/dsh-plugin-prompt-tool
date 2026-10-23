@@ -1,6 +1,5 @@
 /** 模块 pre-step 批执行与官方指令逐文件过滤；正文发现、读取和重注入归官方所有。 */
 import { statSync } from 'node:fs'
-import { resolve } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import type { PreStepDecision } from '@deepseek-ai/dsh-agent'
 import { NamedEntries, ScopedLayers, scopeOf } from '@deepseek-ai/dsh-scope'
@@ -9,8 +8,7 @@ import { PROMOTE_EVENTS, createWarnOnce } from '../../engine/shared.mjs'
 import { runPreStepBatch, confirmDelivered } from '../../engine/executor.mjs'
 import type { PreStepPromotion, PreStepSource } from '../../engine/pre-step-source.mjs'
 import { PRE_STEP_COORDINATOR_SERVICE } from '../../engine/service-names.mjs'
-import { instructionFileIdFromDisplayPath } from '../host/agents-cards.ts'
-import { instructionPolicyPath, readInstructionPolicy, resolveInstructionPolicy } from '../host/instructions-policy.ts'
+import { instructionFileIdentityOf, instructionPolicyPath, readInstructionPolicy, resolveInstructionPolicy } from '../host/instructions-policy.ts'
 import { filterOfficialInstructionMessages } from './official-instruction-filter.ts'
 
 export { PRE_STEP_COORDINATOR_SERVICE }
@@ -101,18 +99,18 @@ export function installPreStepCoordinator(ctx: Context, options: PreStepCoordina
       }
     }
     const result = filterOfficialInstructionMessages(messages, (path, source) => {
-      const identity = source.baselineIdentity ?? (isRecord(baseline) ? baseline.source.baselineIdentity : undefined)
-      let projectRoot: string | undefined
-      if (cwd !== undefined && typeof identity === 'string') {
-        try {
-          const parsed: unknown = JSON.parse(identity)
-          if (isRecord(parsed) && typeof parsed.projectRoot === 'string' && !parsed.projectRoot.includes('\0')) projectRoot = resolve(cwd, parsed.projectRoot)
-        } catch {
-          // 不猜新版本的身份编码；无法定位的项目文件原样放行。
-        }
+      const identity = instructionFileIdentityOf(path, {
+        baselineIdentity: source.baselineIdentity,
+        batchBaselineIdentity: isRecord(baseline) ? baseline.source.baselineIdentity : undefined,
+        cwd,
+        home: options.home,
+      })
+      if ('problem' in identity) {
+        // 不猜新版本的身份编码：放行，但每种原因只告警一次，不再静默。
+        warnOnce(`${WARN_LABEL}: 无法确认官方指令身份（${identity.problem}），已放行：${path}`, identity.problem)
+        return false
       }
-      const id = instructionFileIdFromDisplayPath(path, projectRoot, options.home)
-      return id !== undefined && !resolveInstructionPolicy(snapshot.policy, id).enabled
+      return !resolveInstructionPolicy(snapshot.policy, identity.fileId).enabled
     })
     for (const diagnostic of result.diagnostics) warnOnce(`${WARN_LABEL}: ${diagnostic}`)
     return result.messages

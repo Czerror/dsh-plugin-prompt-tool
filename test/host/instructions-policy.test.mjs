@@ -9,6 +9,7 @@ import { syncBuiltinESMExports } from 'node:module'
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
+import { realpathSync } from 'node:fs'
 
 const root = mkdtempSync(join(tmpdir(), 'pt-instructions-policy-'))
 const previousHome = process.env.DSH_HOME
@@ -20,8 +21,10 @@ after(() => {
   rmSync(root, { recursive: true, force: true })
 })
 
+const { agentsFileId } = await import('../../src/host/agents-cards.ts')
 const {
   defaultInstructionPolicy,
+  instructionFileIdentityOf,
   readInstructionPolicy,
   resolveInstructionPolicy,
   validateInstructionPolicyPatch,
@@ -38,6 +41,63 @@ const newFile = () => {
   mkdirSync(dir, { recursive: true })
   return join(dir, 'instructions.yml')
 }
+
+const projectCwd = join(root, 'workspace')
+mkdirSync(join(projectCwd, 'nested'), { recursive: true })
+writeFileSync(join(projectCwd, 'AGENTS.md'), '# project\n')
+writeFileSync(join(projectCwd, 'nested', 'AGENTS.md'), '# nested\n')
+
+test('指令身份：全局路径不依赖基线', () => {
+  const identity = instructionFileIdentityOf('~/.dsh/AGENTS.md', { home: root })
+  assert.ok(identity.fileId, '全局文件在缺基线时仍能定位')
+})
+
+test('指令身份：项目相对路径用基线 projectRoot 解析', () => {
+  const viaNested = instructionFileIdentityOf('AGENTS.md', {
+    baselineIdentity: JSON.stringify({ projectRoot: 'nested' }),
+    cwd: projectCwd,
+    home: root,
+  })
+  const viaCwd = instructionFileIdentityOf('AGENTS.md', {
+    baselineIdentity: JSON.stringify({ projectRoot: '.' }),
+    cwd: projectCwd,
+    home: root,
+  })
+  assert.equal(viaNested.fileId, agentsFileId(realpathSync.native(join(projectCwd, 'nested', 'AGENTS.md'))), '与卡片身份同源')
+  assert.notEqual(viaNested.fileId, viaCwd.fileId, 'projectRoot 参与身份计算，不是只用 cwd')
+})
+
+test('指令身份：消息缺基线时回退批次基线', () => {
+  const identity = instructionFileIdentityOf('AGENTS.md', {
+    batchBaselineIdentity: JSON.stringify({ projectRoot: '.' }),
+    cwd: projectCwd,
+    home: root,
+  })
+  assert.ok(identity.fileId)
+})
+
+test('指令身份：绝对路径与越界返回 unknown-path', () => {
+  assert.equal(instructionFileIdentityOf(join(projectCwd, 'AGENTS.md'), { home: root }).problem, 'unknown-path')
+  assert.equal(instructionFileIdentityOf('../outside.md', {
+    baselineIdentity: JSON.stringify({ projectRoot: '.' }),
+    cwd: projectCwd,
+    home: root,
+  }).problem, 'unknown-path')
+})
+
+test('指令身份：缺基线、坏 JSON 与非字符串 projectRoot 按原因返回', () => {
+  assert.equal(instructionFileIdentityOf('AGENTS.md', { cwd: projectCwd, home: root }).problem, 'missing-baseline')
+  assert.equal(instructionFileIdentityOf('AGENTS.md', {
+    baselineIdentity: 'not-json',
+    cwd: projectCwd,
+    home: root,
+  }).problem, 'invalid-baseline')
+  assert.equal(instructionFileIdentityOf('AGENTS.md', {
+    baselineIdentity: JSON.stringify({ projectRoot: 7 }),
+    cwd: projectCwd,
+    home: root,
+  }).problem, 'invalid-baseline')
+})
 
 test('策略文件缺失：默认放行官方注入且不自动创建文件', () => {
   const file = newFile()

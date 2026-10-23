@@ -21,6 +21,7 @@ import { isolatedHome, fixtureRule } from '../fixtures/host-harness.mjs'
 const { moduleRoot } = isolatedHome('pt-assembly-')
 const { prepareAssembly, createAgentAssembly } = await import('../../src/runtime/agent-assembly.ts')
 const { installPreStepCoordinator, PRE_STEP_COORDINATOR_SERVICE } = await import('../../src/runtime/pre-step-coordinator.ts')
+const { instructionFileIdentityOf, readInstructionPolicy, writeInstructionPolicy } = await import('../../src/host/instructions-policy.ts')
 const { mountRuleSources } = await import('../../engine/rule-runtime.mjs')
 const { installPersonaCapture } = await import('../../src/runtime/persona-registration.ts')
 const { loadModuleSpec } = await import('../../src/host/module-spec.ts')
@@ -351,6 +352,60 @@ test('官方负责人事实：规则来源不再报 false，未观察到即 unde
   assert.equal(coordinator.officialOwnerOf('owner-session'), undefined, '没有官方装配事实时不猜')
   // bridge 载荷 = `observed ?? null`（settings-bridge 的 instructionOwner）。
   assert.equal(coordinator.officialOwnerOf('owner-session') ?? null, null)
+})
+
+test('指令身份：坏 baselineIdentity 的项目消息仍放行并告警', async (t) => {
+  const h = await liveAssembly(t, () => [])
+  const logs = []
+  Object.defineProperty(h.root, 'logger', { value: { warn: (message) => logs.push(message) }, configurable: true })
+  const current = readInstructionPolicy()
+  const written = writeInstructionPolicy({ expectedRevision: current.revision, patch: { files: { 'agents-file-demo': { enabled: false } } } })
+  assert.equal(written.ok, true)
+  const coordinator = h.root.get(PRE_STEP_COORDINATOR_SERVICE)
+  const agent = { session: { id: 'identity-agent', header: { cwd: moduleRoot, delegationDepth: 0 }, snapshotEvents: () => [] } }
+  const messages = [{
+    id: 'm1',
+    source: { kind: 'agent-instructions', changes: [{ path: 'AGENTS.md', action: 'set' }], baselineIdentity: 'not-json' },
+    content: [{ type: 'text', text: '<system-reminder>\nInstructions from: AGENTS.md\nBODY\n</system-reminder>' }],
+  }]
+  assert.equal(coordinator.filterInstructions(agent, messages).length, 1, '身份解析失败时原样放行')
+  assert.ok(logs.some(message => message.includes('invalid-baseline')), '按原因告警，不再静默')
+})
+
+test('指令身份：可定位且策略关闭时过滤项目消息', async (t) => {
+  const h = await liveAssembly(t, () => [])
+  const identity = instructionFileIdentityOf('~/.dsh/AGENTS.md')
+  assert.ok(identity.fileId)
+  const current = readInstructionPolicy()
+  const written = writeInstructionPolicy({ expectedRevision: current.revision, patch: { files: { [identity.fileId]: { enabled: false } } } })
+  assert.equal(written.ok, true)
+  const coordinator = h.root.get(PRE_STEP_COORDINATOR_SERVICE)
+  const agent = { session: { id: 'identity-positive', header: { delegationDepth: 0 }, snapshotEvents: () => [] } }
+  const messages = [{
+    id: 'm2',
+    source: { kind: 'agent-instructions', changes: [{ path: '~/.dsh/AGENTS.md', action: 'set' }] },
+    content: [{ type: 'text', text: '<system-reminder>\nInstructions from: ~/.dsh/AGENTS.md\nBODY\n</system-reminder>' }],
+  }]
+  assert.equal(coordinator.filterInstructions(agent, messages).length, 0, '策略关闭的可定位文件被过滤')
+})
+
+test('指令身份：项目基线 + cwd 能定位并过滤项目消息', async (t) => {
+  const h = await liveAssembly(t, () => [])
+  const cwd = moduleRoot
+  const baselineIdentity = JSON.stringify({ projectRoot: '.' })
+  const identity = instructionFileIdentityOf('AGENTS.md', { baselineIdentity, cwd })
+  assert.ok(identity.fileId)
+  const current = readInstructionPolicy()
+  const written = writeInstructionPolicy({ expectedRevision: current.revision, patch: { files: { [identity.fileId]: { enabled: false } } } })
+  assert.equal(written.ok, true)
+  const coordinator = h.root.get(PRE_STEP_COORDINATOR_SERVICE)
+  const agent = { session: { id: 'identity-project', header: { cwd, delegationDepth: 0 }, snapshotEvents: () => [] } }
+  const messages = [{
+    id: 'm3',
+    source: { kind: 'agent-instructions', changes: [{ path: 'AGENTS.md', action: 'set' }], baselineIdentity },
+    content: [{ type: 'text', text: '<system-reminder>\nInstructions from: AGENTS.md\nBODY\n</system-reminder>' }],
+  }]
+  assert.equal(coordinator.filterInstructions(agent, messages).length, 0, '项目路径按基线根定位后被策略关闭')
 })
 
 test('R14：旧生成卡的 agents-file-* 前缀在协调器层跳过，其余配置照常注入', async (t) => {

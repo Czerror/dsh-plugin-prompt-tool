@@ -12,9 +12,10 @@
  */
 import { createHash } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync } from 'node:fs'
-import { dirname, join } from 'node:path'
+import { dirname, isAbsolute, join, resolve } from 'node:path'
 import { Document, isMap, isScalar, parseDocument, visit } from 'yaml'
 import { dshHome, storageRootOf } from './paths.ts'
+import { instructionFileIdFromDisplayPath } from './agents-cards.ts'
 import { replaceVersionedText } from './versioned-text.ts'
 import { ModuleWriteError, withModuleLock } from './module-write.ts'
 import type {
@@ -60,6 +61,48 @@ export function instructionPolicyPath(home: string = dshHome()): string {
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   value !== null && typeof value === 'object' && !Array.isArray(value)
+
+type InstructionIdentityProblem = 'missing-baseline' | 'invalid-baseline' | 'unknown-path'
+type InstructionIdentity = { fileId: string } | { problem: InstructionIdentityProblem }
+
+interface InstructionIdentityContext {
+  /** 当前消息 source.baselineIdentity（官方 JSON 字符串）。 */
+  baselineIdentity?: unknown
+  /** 当前批/会话里找到的基线身份（消息自身缺失时回退）。 */
+  batchBaselineIdentity?: unknown
+  /** 会话 cwd；把 relative projectRoot 解析成绝对路径。 */
+  cwd?: string
+  home?: string
+}
+
+/**
+ * 官方指令消息 → 本插件的指令文件身份：身份与策略的同一 owner。
+ * 全局路径不依赖基线；项目路径要求可解析的 baselineIdentity.projectRoot。
+ * 失败返回 problem（不抛），由调用方决定放行与诊断。
+ */
+export function instructionFileIdentityOf(path: string, context: InstructionIdentityContext = {}): InstructionIdentity {
+  const global = instructionFileIdFromDisplayPath(path, undefined, context.home)
+  if (global !== undefined) return { fileId: global }
+  // 路径形状不需要基线就能判定：绝对路径与 NUL 不是合法的项目相对路径。
+  if (isAbsolute(path) || path.includes('\0')) return { problem: 'unknown-path' }
+  const identity = context.baselineIdentity ?? context.batchBaselineIdentity
+  if (identity === undefined || identity === null) return { problem: 'missing-baseline' }
+  if (typeof identity !== 'string') return { problem: 'invalid-baseline' }
+  // cwd 缺失是上下文问题，不是基线编码问题：先归 unknown-path，避免告警误报。
+  if (typeof context.cwd !== 'string') return { problem: 'unknown-path' }
+  let projectRoot: string | undefined
+  try {
+    const parsed: unknown = JSON.parse(identity)
+    if (isRecord(parsed) && typeof parsed.projectRoot === 'string' && !parsed.projectRoot.includes('\0')) {
+      projectRoot = resolve(context.cwd, parsed.projectRoot)
+    }
+  } catch {
+    return { problem: 'invalid-baseline' }
+  }
+  if (projectRoot === undefined) return { problem: 'invalid-baseline' }
+  const fileId = instructionFileIdFromDisplayPath(path, projectRoot, context.home)
+  return fileId === undefined ? { problem: 'unknown-path' } : { fileId }
+}
 
 const sha256 = (bytes: Buffer | string): string => createHash('sha256').update(bytes).digest('hex')
 

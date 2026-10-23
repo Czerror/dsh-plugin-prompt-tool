@@ -1,5 +1,12 @@
 # Changelog
 
+### 指令文件身份收进一个 owner（2026-10-23）
+
+- 新增 `host/instructions-policy.ts#instructionFileIdentityOf`：官方 `agent-instructions` 消息 → 本插件指令文件身份；全局路径不依赖基线，项目路径要求可解析的 `baselineIdentity.projectRoot` 与会话 `cwd`，失败返回 `missing-baseline` / `invalid-baseline` / `unknown-path`。
+- 协调器删除内联 JSON 解析与身份函数调用，只读 owner 结果；身份不明时按原因 `warnOnce` 一次并放行（不再静默）。
+- 回归：`instructions-policy.test.mjs` 身份矩阵；`agent-assembly.test.mjs` 坏基线放行。
+- 需重启 DSH 后生效。
+
 ### 配置序号尾部分配收成一处（2026-10-23）
 
 - 新增 `shared/module-config-order.ts#nextConfigSequence`：合并现有与保留序号、+10、安全整数检查只此一份；切片恢复、规则事务与排序追加共用，只有缺号/碰号时才计算，已有卡序号与输出不变；host 侧转 `ModuleWriteError`，超限按 400 处理。
