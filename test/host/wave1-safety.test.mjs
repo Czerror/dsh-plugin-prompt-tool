@@ -34,7 +34,7 @@ test('validateEngineParamValues：全量类型校验（布尔/数值/字符串/�
   assert.deepEqual(validateEngineParamValues({ subagentMaxTokens: 1.5 }).map((e) => e.key), ['subagentMaxTokens'])
   // 列表键收窄。
   assert.deepEqual(validateEngineParamValues({ customToolRequireApproval: [1, 2] }).map((e) => e.key), ['customToolRequireApproval'])
-  // 正则键结构校验（pattern kind）。
+  // 旧 pattern 类键已退役：按未知键响亮失败，不再有独立的结构校验。
   assert.deepEqual(validateEngineParamValues({ buildPattern: '(' }).map((e) => e.key), ['buildPattern'])
   assert.deepEqual(validateEngineParamValues({ complexPattern: 'a{2,1}' }).map((e) => e.key), ['complexPattern'])
   // 未知键（旧内容别名等不兼容键）响亮失败。

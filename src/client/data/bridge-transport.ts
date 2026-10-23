@@ -1,7 +1,6 @@
 /** settings bridge 的底层 HTTP/文件传输与统一结果解析。 */
 import {
   EDIT_TARGET_HEADER,
-  MAX_BRIDGE_BODY_BYTES,
   SETTINGS_BRIDGE_PREFIX,
   type BridgeErrorPayload,
 } from '../../shared/bridge-contract.ts'
@@ -76,9 +75,4 @@ export async function uploadBridge<T, E = unknown>(path: string, file: Blob, fil
   } catch (error) {
     return { ok: false, message: errorMessage(error) }
   }
-}
-
-/** JSON 包装字段和少量路径元数据预留 4KiB，避免临界文件刚好超限。 */
-export function shouldStreamJsonFile(file: Blob): boolean {
-  return file.size >= MAX_BRIDGE_BODY_BYTES - 4 * 1024
 }

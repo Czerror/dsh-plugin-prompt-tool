@@ -19,7 +19,8 @@ const { readSkillInvocation, setSkillInvocation } = await import('../../src/host
 const { readSkillsState, writeSkillsState } = await import('../../src/host/skills-config.ts')
 const { deleteSkillTarget } = await import('../../src/host/skills-actions.ts')
 const { storageRootOf } = await import('../../src/host/paths.ts')
-const { moduleDeclares, moduleDeclarations } = await import('../../src/host/module-declarations.ts')
+const { moduleDeclarations } = await import('../../src/host/module-declarations.ts')
+const declares = (dir, section) => moduleDeclarations(dir).has(section)
 after(() => {
   rmSync(bridgeHome, { recursive: true, force: true })
   delete process.env.DSH_HOME
@@ -255,11 +256,11 @@ test('声明面：五个节的首次写入＝创建（无版本期望也 200）�
   /** 判据与门的登记表同口径：该端点读写哪些节，任一「写前没有、写后存在」即算建立声明。 */
   const created = async (endpoint, sections, body) => {
     const before = readFileSync(file, 'utf8')
-    assert.equal(sections.some((section) => moduleDeclares(dir, section)), false, `${endpoint} 前置：未声明 ${sections.join('/')}`)
+    assert.equal(sections.some((section) => declares(dir, section)), false, `${endpoint} 前置：未声明 ${sections.join('/')}`)
     const write = await call(handlers, endpoint, body)
     assert.equal(write.status, 200, `${endpoint} 创建写应 200：${JSON.stringify(write.payload)}`)
     assert.notEqual(readFileSync(file, 'utf8'), before, `${endpoint} 创建写必须落盘`)
-    assert.equal(sections.some((section) => moduleDeclares(dir, section)), true, `${endpoint} 写后声明成立（${sections.join('/')}）`)
+    assert.equal(sections.some((section) => declares(dir, section)), true, `${endpoint} 写后声明成立（${sections.join('/')}）`)
     const read = await call(handlers, endpoint, endpoint === 'moduleVariables' ? { scope: 'module' } : {})
     assert.equal(read.status, 200, `${endpoint} 写后读应合法：${JSON.stringify(read.payload)}`)
   }
@@ -302,15 +303,15 @@ test('声明面：创建语义只认「版本期望整键缺席」——空串�
   assert.equal(personaEmpty.status, 400, `空串版本必须拒绝：${JSON.stringify(personaEmpty.payload)}`)
   const variablesEmpty = await call('moduleVariables', { scope: 'module', variables: { k: 'v' }, expectedModuleId: id, expectedRevisions: {} })
   assert.equal(variablesEmpty.status, 400, `空 expectedRevisions 必须拒绝：${JSON.stringify(variablesEmpty.payload)}`)
-  assert.equal(moduleDeclares(dir, 'persona'), false, '被拒的写不建立声明')
-  assert.equal(moduleDeclares(dir, 'variables'), false, '被拒的写不建立声明')
+  assert.equal(declares(dir, 'persona'), false, '被拒的写不建立声明')
+  assert.equal(declares(dir, 'variables'), false, '被拒的写不建立声明')
 
   // 对照（同一未声明模块）：整键缺席＝创建，照旧 200 并建立声明。
   const personaCreated = await call('persona', { persona: { main: { prefix: 'X' } }, expectedModuleId: id })
   assert.equal(personaCreated.status, 200, JSON.stringify(personaCreated.payload))
   const variablesCreated = await call('moduleVariables', { scope: 'module', variables: { k: 'v' }, expectedModuleId: id })
   assert.equal(variablesCreated.status, 200, JSON.stringify(variablesCreated.payload))
-  assert.equal(moduleDeclares(dir, 'variables'), true)
+  assert.equal(declares(dir, 'variables'), true)
 })
 
 test('settings bridge /bootstrap 的模块段按声明出现：未声明的节整键缺席，声明的节照旧下发', async () => {
@@ -1351,7 +1352,7 @@ test('声明面：读没声明 400 module-not-declared，写路径建立声明�
   const tool = { id: 'shell', description: '运行命令', output: { schema: { type: 'string' } }, execute: { kind: 'shell', command: 'echo' } }
   const write = await call(handlers, 'customTools', { customTools: [tool] })
   assert.equal(write.status, 200, `写路径应放行并建立声明：${JSON.stringify(write.payload)}`)
-  assert.equal(moduleDeclares(undeclared, 'customTools'), true, '写路径建立声明')
+  assert.equal(declares(undeclared, 'customTools'), true, '写路径建立声明')
   const readBack = await call(handlers, 'customTools')
   assert.equal(readBack.status, 200, `写后读应合法：${JSON.stringify(readBack.payload)}`)
   assert.deepEqual(readBack.payload.value.customTools, [tool])
@@ -1374,10 +1375,10 @@ test('声明面：paramOverrides 写路径建立 layerSettings 声明（读 200 
   registerSettingsBridge(ctx, { ns: 'prompt-tool', models: () => ({ available: true, providers: [] }),
     skills: () => skillsStateStub(), moduleDirectory: () => dir })
 
-  assert.equal(moduleDeclares(dir, 'layerSettings'), false, '前置：未声明 layerSettings')
+  assert.equal(declares(dir, 'layerSettings'), false, '前置：未声明 layerSettings')
   const write = await call(handlers, 'paramOverrides', { overrides: { modelTemperature: 0.3 } })
   assert.equal(write.status, 200, `写路径应放行：${JSON.stringify(write.payload)}`)
-  assert.equal(moduleDeclares(dir, 'layerSettings'), true, '写路径建立声明')
+  assert.equal(declares(dir, 'layerSettings'), true, '写路径建立声明')
   const readBack = await call(handlers, 'paramOverrides')
   assert.equal(readBack.status, 200, `写后读应合法：${JSON.stringify(readBack.payload)}`)
   assert.deepEqual(readBack.payload.value.overrides, { modelTemperature: 0.3 })

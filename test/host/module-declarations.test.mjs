@@ -4,7 +4,7 @@
  * 真值源：`docs/superpowers/specs/2026-10-12-module-subject-design.md` §7.4／ADR-0014
  * ——键整个不存在＝没声明（`customTools: []` 算已声明）；解析失败是错误，
  * 不得降级成「没声明」（那会让损坏的定义变成静默可用）。
- * 断言落在公共接口（`moduleDeclarations` / `moduleDeclares` / 登记表）上。
+ * 断言落在公共接口（`moduleDeclarations` / 登记表）上；`declares` 只是测试本地别名。
  */
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
@@ -13,8 +13,10 @@ import { join } from 'node:path'
 import { isolatedHome } from '../fixtures/host-harness.mjs'
 
 const { moduleRoot } = isolatedHome('pt-module-declarations-')
-const { moduleDeclarations, moduleDeclares, DECLARED_SECTIONS } =
+const { moduleDeclarations, DECLARED_SECTIONS } =
   await import('../../src/host/module-declarations.ts')
+/** 声明面判据只在 moduleDeclarations；这里保留测试可读的本地别名。 */
+const declares = (dir, section) => moduleDeclarations(dir).has(section)
 const { ModuleWriteError } = await import('../../src/host/module-write.ts')
 
 function writeModule(id, body) {
@@ -29,11 +31,11 @@ test('顶层键整个不存在才算没声明；空值键算已声明', () => {
   const emptyCustomTools = writeModule('declares-custom-tools', 'modules: []\ncustomTools: []\n')
 
   assert.deepEqual([...moduleDeclarations(onlyRules)].sort(), ['id', 'modules', 'rules'])
-  assert.equal(moduleDeclares(onlyRules, 'rules'), true)
-  assert.equal(moduleDeclares(onlyRules, 'customTools'), false, '键整个不存在＝没声明')
+  assert.equal(declares(onlyRules, 'rules'), true)
+  assert.equal(declares(onlyRules, 'customTools'), false, '键整个不存在＝没声明')
 
-  assert.equal(moduleDeclares(emptyCustomTools, 'customTools'), true, 'customTools: [] 算已声明')
-  assert.equal(moduleDeclares(emptyCustomTools, 'rules'), false, '没写的节照旧判没声明')
+  assert.equal(declares(emptyCustomTools, 'customTools'), true, 'customTools: [] 算已声明')
+  assert.equal(declares(emptyCustomTools, 'rules'), false, '没写的节照旧判没声明')
 })
 
 test('登记表：只有模块类端点登记声明面，全局类端点不登记', () => {

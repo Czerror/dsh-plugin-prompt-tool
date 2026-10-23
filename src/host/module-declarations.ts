@@ -31,6 +31,3 @@ export const DECLARED_SECTIONS: Partial<Record<BridgeEndpointKey, readonly strin
 export function moduleDeclarations(dir: string): Set<string> {
   return new Set(Object.keys(loadModuleDefinition(dir).source))
 }
-
-/** 薄封装：某节是否已声明。 */
-export const moduleDeclares = (dir: string, section: string): boolean => moduleDeclarations(dir).has(section)

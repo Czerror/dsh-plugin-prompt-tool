@@ -1,5 +1,13 @@
 # Changelog
 
+### 清理包：薄封装、零消费者导出与死模块（2026-10-23）
+
+- 删除 host `moduleDeclares`（薄封装；测试改调 `moduleDeclarations(dir).has`）与四个零消费者导出：`normalizeMaxDepth`、`isEditorGroupVisible`、`isModuleCapabilityPresent`、`shouldStreamJsonFile`（含 bridge-client re-export）。
+- 删除引擎死模块 `engine/classify-task.mjs` 与不可达的 `kind:'pattern'` 参数分支；`./engine/*` 发布面少一个文件，`./client` 的 `shouldStreamJsonFile` re-export 同时移除——仓外 import 这两处会失败。
+- 保留 `skills-provider` / `skills-watcher`（单 adapter，留将来替换官方实现的接缝）。
+- 回归：`pnpm test` 871 pass / 0 fail；`typecheck`、`lint`、`build`、`git diff --check` 通过。
+- 需重启 DSH 后生效。
+
 ### 指令文件身份收进一个 owner（2026-10-23）
 
 - 新增 `host/instructions-policy.ts#instructionFileIdentityOf`：官方 `agent-instructions` 消息 → 本插件指令文件身份；全局路径不依赖基线，项目路径要求可解析的 `baselineIdentity.projectRoot` 与会话 `cwd`，失败返回 `missing-baseline` / `invalid-baseline` / `unknown-path`。

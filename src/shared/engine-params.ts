@@ -94,8 +94,6 @@ type ParamRule =
   | { kind: 'boolean' }
   | { kind: 'number'; check: (value: number) => string | undefined }
   | { kind: 'string'; options?: readonly string[] }
-  /** 正则字符串：编译规则与 engine/classify-task.mjs 的 new RegExp(pattern, 'i') 同源。 */
-  | { kind: 'pattern' }
   | { kind: 'string-list'; options?: readonly string[] }
 
 const FINITE_NUMBER: (value: number) => string | undefined = (value) =>
@@ -205,13 +203,6 @@ export function moduleParamFallbacks(configs: Record<string, Record<string, unkn
   return result
 }
 
-/** 保存校验与参数桥共用深度解析；无效值在渲染时不覆盖行默认。 */
-export function normalizeMaxDepth(value: unknown): number | 'provider-managed' | undefined {
-  if (value === 'provider-managed') return value
-  const depth = typeof value === 'string' && value.trim().length > 0 ? Number(value) : value
-  return typeof depth === 'number' && Number.isSafeInteger(depth) && depth >= 0 ? depth : undefined
-}
-
 /** 校验单个键值；返回错误消息（undefined = 通过）。 */
 function validateParamValue(key: string, rule: ParamRule, value: unknown): string | undefined {
   if (value === '') return undefined
@@ -240,17 +231,6 @@ function validateParamValue(key: string, rule: ParamRule, value: unknown): strin
       if (typeof value !== 'string') return `${key}: 必须是字符串`
       return value === '' || rule.options === undefined || rule.options.includes(value)
         ? undefined : `${key}: 必须为 ${rule.options.join('/')} 或留空`
-    case 'pattern': {
-      if (typeof value !== 'string') return `${key}: 必须是字符串`
-      try {
-        // 与引擎消费同源：classify-task 按 flags=i 编译；非法正则会让锚定/引导静默失效，
-        // 因此这里在写盘前响亮拒绝，而不是先存下再让策略什么都不做。
-        new RegExp(value, 'i')
-      } catch (error) {
-        return `${key}: 不是合法正则（${error instanceof Error ? error.message : String(error)}；留空 = 不设置）`
-      }
-      return undefined
-    }
     case 'string-list':
       if (typeof value === 'string' || (Array.isArray(value) && value.every((item) => typeof item === 'string'))) {
         return rule.options !== undefined && engineParamList(value).some((item) => !rule.options!.includes(item))

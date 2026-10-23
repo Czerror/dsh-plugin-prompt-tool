@@ -139,18 +139,6 @@ export const ENGINE_EDITOR_GROUP_MAP: readonly EngineEditorGroup[] = [
   ...ENGINE_EDITOR_GROUPS,
 ]
 
-/**
- * 该编辑组在给定层筛选下是否可见：`all` / `context-activation` 视图恒可见（保持既有平铺位置），
- * 否则主归属或 `relatedLayers` 命中该层才显示。未登记的 id 不猜归属，一律可见——
- * 这样新增卡片忘登记时是「哪层都能看到」，而不是「哪层都看不到」。
- */
-export function isEditorGroupVisible(id: string, viewFilter: string): boolean {
-  if (viewFilter === 'all' || viewFilter === 'context-activation') return true
-  const group = ENGINE_EDITOR_GROUP_MAP.find((item) => item.id === id)
-  if (group === undefined) return true
-  return group.displayLayer === viewFilter || (group.relatedLayers ?? []).includes(viewFilter as InjectionPoint)
-}
-
 export interface EngineRecipe {
   id: string
   capabilities: readonly string[]
@@ -218,13 +206,6 @@ export function impliedModulesForParams(
 export function enabledRowIds(facts: ModuleFacts): string[] {
   const disabled = new Set(facts.disabledRows ?? [])
   return [...new Set([...(facts.effectiveModules ?? []), ...facts.rowIds])].filter(id => !disabled.has(id))
-}
-
-export function isModuleCapabilityPresent(id: string, facts: ModuleFacts | undefined): boolean {
-  if (facts === undefined || facts.sourceMode !== 'explicit') return false
-  const capability = moduleCapability(id)
-  const modules = facts.effectiveModules ?? facts.declaredModules
-  return capability !== undefined && modules !== null && capability.moduleKeys.some(key => modules.includes(key))
 }
 
 /** 模块编辑面的能力准入只认 modules 声明；运行时派生能力不构成该模块的编辑声明。 */
