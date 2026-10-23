@@ -14,8 +14,8 @@ import { loadModuleDefinition } from './module-slices.ts'
 /**
  * 声明面登记表：端点 → 该端点读写的 `module.yml` 节。数组表示「任一存在即算已声明」。
  *
- * 判据＝该端点读写哪个节；**不登记**创建或并入定义本身的端点（`charactersImport`／`moduleMerge`／
- * `moduleUnmerge`）与全局段端点（`bootstrap`／`describe`／`promptConfigs`／`moduleDelete`／`mutate`）。
+ * 判据＝该端点读写哪个节；**不登记**创建定义本身的端点（`importModulePackage`）与全局段端点
+ * （`bootstrap`／`describe`／`promptConfigs`／`moduleDelete`／`mutate`）。
  * 也不登记 `moduleConfigOrder`：它按全局存储根读写 `config.yml`、主语策略是 `none`，永不过归属门。
  */
 export const DECLARED_SECTIONS: Partial<Record<BridgeEndpointKey, readonly string[]>> = {

@@ -24,10 +24,10 @@ export interface PreviewFileEntry {
  * 本次提交是新建还是覆盖，也无法发现预览期间用户已改过目标。
  */
 export interface PreviewTargetIdentity {
-  kind: 'module-package' | 'character-card'
+  kind: 'module-package'
   targetId: string
   targetVersion: string | null
-  /** 目标归属（模块包 = 目标模块目录名；角色卡 = 角色库所属模块）。 */
+  /** 目标归属（目标模块目录名）。 */
   ownerModule: string
 }
 

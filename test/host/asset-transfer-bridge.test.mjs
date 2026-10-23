@@ -115,43 +115,43 @@ async function upload(h, bytes, name = 'card.png') {
   return res
 }
 
-test('PNG 原始上传只暂存；角色确认后字节一致，释放和卸载清理来源', async (t) => {
+test('PNG 原始上传只暂存；模块导入后字节一致，释放和卸载清理来源', async (t) => {
   const h = harness(t)
   const png = pngCard()
   const uploaded = await upload(h, png)
   assert.equal(uploaded.status, 200, JSON.stringify(uploaded.payload))
   assert.equal(existsSync(join(storageRoot, '.characters')), false)
   const { sourceId } = uploaded.payload.value
-  const preview = await call(h, 'charactersImport', { sourceId, preview: true, targetId: 'png-card' })
+  const preview = await call(h, 'importModulePackage', { sourceId, preview: true, targetId: 'png-card' })
   assert.equal(preview.status, 200, JSON.stringify(preview.payload))
   assert.equal(existsSync(join(storageRoot, '.characters')), false)
-  const result = await call(h, 'charactersImport', { sourceId, targetId: 'png-card', ...credentials(preview) })
+  const result = await call(h, 'importModulePackage', { sourceId, targetId: 'png-card', ...credentials(preview) })
   assert.equal(result.status, 200, JSON.stringify(result.payload))
   assert.deepEqual(readFileSync(join(root, 'png-card/avatar.png')), png)
   assert.equal((await call(h, 'assetRelease', { sourceId })).payload.value.released, true)
-  assert.equal((await call(h, 'charactersImport', { sourceId, preview: true })).status, 400)
+  assert.equal((await call(h, 'importModulePackage', { sourceId, preview: true })).status, 400)
   await upload(h, png)
   h.dispose()
   assert.deepEqual(readdirSync(join(storageRoot, 'uploads')), [])
 })
 
-test('角色预览绑定普通模块目标和覆盖选择；重导入保留记忆', async (t) => {
+test('导入预览绑定普通模块目标和覆盖选择；重导入保留记忆', async (t) => {
   const h = harness(t)
   const files = [{ path: 'converted.yml', content: 'id: native-role\nname: Native\nrules:\n  - id: text\n    then:\n      - id: inject\n        kind: inject-text\n        config:\n          id: text\n          layer: pre-step\n          text: HELLO\n' }]
-  const first = await call(h, 'charactersImport', { files, preview: true })
+  const first = await call(h, 'importModulePackage', { files, preview: true })
   assert.equal(first.status, 200, JSON.stringify(first.payload))
   writeFileSync(join(root, 'owner/change.txt'), 'OWNER CHANGED')
-  assert.equal((await call(h, 'charactersImport', { files, ...credentials(first) })).status, 200)
-  assert.equal((await call(h, 'charactersImport', { files, preview: true })).payload.value.summary.targetId, 'native-role-copy')
+  assert.equal((await call(h, 'importModulePackage', { files, ...credentials(first) })).status, 200)
+  assert.equal((await call(h, 'importModulePackage', { files, preview: true })).payload.value.summary.targetId, 'native-role-copy')
   writeFileSync(join(root, 'native-role/memory.md'), 'KEEP MEMORY')
   const update = { files, targetId: 'native-role', overwrite: true }
-  const preview = await call(h, 'charactersImport', { ...update, preview: true })
-  assert.equal((await call(h, 'charactersImport', { ...update, overwrite: false, ...credentials(preview) })).status, 409)
-  assert.equal((await call(h, 'charactersImport', { ...update, ...credentials(preview) })).status, 200)
+  const preview = await call(h, 'importModulePackage', { ...update, preview: true })
+  assert.equal((await call(h, 'importModulePackage', { ...update, overwrite: false, ...credentials(preview) })).status, 409)
+  assert.equal((await call(h, 'importModulePackage', { ...update, ...credentials(preview) })).status, 200)
   assert.equal(readFileSync(join(root, 'native-role/memory.md'), 'utf8'), 'KEEP MEMORY')
 })
 
-test('新参数、来源、载荷上限和回环边界均在写盘前拒绝；旧流接口仅提示升级', async (t) => {
+test('新参数、来源、载荷上限和回环边界均在写盘前拒绝', async (t) => {
   const h = harness(t)
   const files = filesFor('invalid-new')
   for (const extra of [{ preview: 'true' }, { overwrite: 1 }, { targetId: 'UPPER' }, { targetName: [] }, { sourceKind: 'unknown' }, { expectedSourceDigest: 'bad' }, { sourceId: 'wrong' }, { unknown: true }]) {
@@ -162,7 +162,6 @@ test('新参数、来源、载荷上限和回环边界均在写盘前拒绝；�
   assert.equal((await call(h, 'importModulePackage', { files, preview: true }, { headers: { host: 'localhost', origin: 'https://evil.invalid' } })).status, 403)
   assert.equal((await call(h, 'importModulePackage', { files, preview: true }, { method: 'GET' })).status, 405)
   assert.equal((await call(h, 'importModulePackage', { files: [{ path: 'module.yml', content: 'x'.repeat(MAX_BRIDGE_BODY_BYTES) }] })).status, 413)
-  assert.equal((await call(h, 'charactersImportStream', {})).status, 410)
   assert.equal(existsSync(join(root, 'invalid-new')), false)
 })
 
@@ -179,45 +178,4 @@ test('ZIP 与定义出口共用预览，来源改变使下载过期', async (t) 
   writeFileSync(join(root, 'roundtrip/extra.txt'), 'changed')
   assert.equal((await call(h, 'exportModule', { ...request, preview: false, expectedRevision: preview.payload.value.revision })).status, 409)
   assert.equal((await call(h, 'exportModule', { id: 'roundtrip', mode: 'invalid' })).status, 400)
-})
-
-test('旧角色库只报告迁移提示，不列库、读取正文或迁移文件', async t => {
-  const legacy = join(storageRoot, '.characters', 'old')
-  mkdirSync(legacy, { recursive: true })
-  writeFileSync(join(legacy, 'memory.md'), 'LEGACY PRIVATE')
-  const h = harness(t)
-  const result = await call(h, 'meta', {})
-  assert.equal(result.status, 200, JSON.stringify(result.payload))
-  assert.match(result.payload.value.meta.moduleWarnings.join(' '), /旧.*角色库.*不会自动迁移/)
-  assert.doesNotMatch(JSON.stringify(result.payload), /LEGACY PRIVATE/)
-  assert.equal(readFileSync(join(legacy, 'memory.md'), 'utf8'), 'LEGACY PRIVATE')
-  assert.equal(existsSync(join(root, 'old')), false)
-})
-
-test('/characters-import 未知字段当场拒绝：400 characters-rejected，且不展开上传', async (t) => {
-  const h = harness(t)
-  const before = readFileSync(join(root, 'owner/module.yml'))
-  const rejected = await call(h, 'charactersImport', { preview: true, files: [], bogus: 1 })
-  assert.equal(rejected.status, 400)
-  assert.equal(rejected.payload.code, 'characters-rejected')
-  assert.ok(readFileSync(join(root, 'owner/module.yml')).equals(before))
-})
-
-test('/characters-import 目标在同一请求内被换掉：409 characters-preview-stale 且原目标零写盘', async (t) => {
-  const dirA = join(root, 'owner')
-  const dirB = join(root, 'other')
-  mkdirSync(dirB, { recursive: true })
-  writeFileSync(join(dirB, 'module.yml'), 'id: other\nname: Other\nmodules: []\n')
-  const before = readFileSync(join(dirA, 'module.yml'))
-  // 计数式桩：两道 subjectGate 各含一次身份复核（第 1–4 次 editDir），第 5 次才是端点自己的陈旧性检查。
-  let calls = 0
-  const h = harness(t, () => {}, () => (++calls <= 4 ? dirA : dirB))
-  const res = await call(h, 'charactersImport', {
-    preview: true,
-    files: [{ path: 'alice.json', content: JSON.stringify({ data: { name: 'Alice', description: 'hello' } }) }],
-  })
-  assert.equal(res.status, 409, JSON.stringify(res.payload))
-  assert.equal(res.payload.code, 'characters-preview-stale')
-  assert.ok(readFileSync(join(dirA, 'module.yml')).equals(before), '换掉目标后不得再往原目标写')
-  assert.equal(existsSync(join(dirB, 'alice')), false, '也不得改写到新目标')
 })

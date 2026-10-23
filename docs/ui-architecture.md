@@ -268,7 +268,7 @@ slot 使用 ctx.slots.inject() 等待官方槽位声明，再调用 ctx.slots.re
 - 组件树很深，不逐层重建 i18n 上下文：入口组件用注入的 `t`，`PromptToolWorkbenchFace.t` 作为同一 bind 结果的稳定引用向下传递（页面与卡片按需加 `t` prop）。
 - 渲染时才求值（`t('key', params)`），不做模块级缓存；语言切换由 renderer 订阅 locale revision 后整体重渲染跟进。
 - 不进字典的内容：provider/model id、文件路径、用户内容、协议 code 与 bridge 错误码；动态拼接用 `{name}` 占位参数。
-- 已迁移：工作台外壳与悬浮入口、设置页、五页外壳、引擎参数卡与模块列表（标签按 shared 键推导成 `param.<键>` 词条）、提示词配置与人设区、模块页的角色卡素材区、子代理「工具与深度」模块卡与实例级工具策略、自定义工具卡、导入预览卡。子代理策略的档位显示名（首次启用写入 module.yml 的 seed 值）属于用户可改内容，保持原值不入字典。
+- 已迁移：工作台外壳与悬浮入口、设置页、五页外壳、引擎参数卡与模块列表（标签按 shared 键推导成 `param.<键>` 词条）、提示词配置与人设区、模块页的素材区、子代理「工具与深度」模块卡与实例级工具策略、自定义工具卡、导入预览卡。子代理策略的档位显示名（首次启用写入 module.yml 的 seed 值）属于用户可改内容，保持原值不入字典。
 - 仍未迁移：`ui/` 控件的回退文案（`MenuSelect` / `TagInput` / `DialogSurface`），以及 `features/models/**` 与 `data/**` 的状态提示（这两个目录属模型路由任务的文件边界）。
 
 ### 4.3 悬浮入口与关闭行为
@@ -283,7 +283,7 @@ slot 使用 ctx.slots.inject() 等待官方槽位声明，再调用 ctx.slots.re
 
 - 采用：shell.overlay 可拖动悬浮入口；Switch 与状态徽章由插件实现。
 - 已满足、无需接入：`host-open-in-app`。`PromptToolHostApi.openPath` 走 `remote.session.openWorkspacePath`，其契约就是宿主交给原生打开器；官方 `ui-open-in-app` 客户端包不提供跨插件服务，只是会话头部的分割按钮。
-- 不适用：`ctx.workspaceFiles` 只覆盖 workspace 根，插件的读写路径域是 DSH_HOME（预设、技能、角色卡）。
+- 不适用：`ctx.workspaceFiles` 只覆盖 workspace 根，插件的读写路径域是 DSH_HOME（模块、技能）。
 - 不采用：官方右侧栏（`ui-sidebar-right`）实测不适合本项目，已移除（决策见 §4.3）；`client-resources` 资源 tab 需要自建 provider 与第二个 tab 类型，而工作台已在抽屉内就地编辑这些文件，重复呈现没有收益。
 
 ## 5. 工作台与页面信息架构
@@ -312,7 +312,7 @@ workspace-pages.ts 是页面元数据的唯一来源。默认页为 features，�
 | subagent | 子代理 | 同一 `RulesWorkspace` 和 `injectionPointSlots(audience: 'subagent')`，共用模块规则草稿与模板入口；显示同源指令文件卡及指令路径提示设置 |
 | tools | 工具预览 | 顶置统一搜索；当前会话／所选预设两个可折叠分组，预设选择位于分组标题右侧；双列展开详情卡，680px 以下单列 |
 | skills | 技能设置 | 技能根与资产卡（用户技能根、创建、复制导入、技能文件夹引用）、状态与来源筛选、单一列表的 SkillRow（三行摘要、文件编辑、调用策略开关、删除） |
-| modules | 模块 | 统一模块列表（启用、新建、复制、导出、删除、打开目录、导入、并入与移除）及运行总闸；角色卡是导入来源 |
+| modules | 模块 | 统一模块列表（启用、新建、复制、导出、删除、打开目录、导入）及运行总闸；角色卡是导入来源 |
 
 模块页 id 为 modules，所有来源导入后都成为普通模块，统一读取模块列表。卡体只承载名称、描述、id 与状态徽章，动作放卡脚；任一模块被其他模块或 `personaSources` 引用、仍有依赖时都由同一删除守卫拦截。角色来源不维护第二份 charactersList 库存，不创建角色专属状态登记。
 
@@ -401,7 +401,7 @@ workspace-pages.ts 是页面元数据的唯一来源。默认页为 features，�
 | 模板创建目标与发布结果 | template-rule-writer + rule-drafts | 目标意图归视图，显式 moduleId 写入、声明与结果接纳归数据侧；不依赖 owner/readback。共享草稿保存完整成功响应和发布状态，离页只抑制提示／展开，不丢已提交事实；未启用目标的状态仍仅存工作台会话，启用后沿既有 refreshOnly 重试 |
 | 保存队列、revision、草稿版本 | save-queue + store | 工作台挂载期 |
 | 规则判定计数与配置计数（状态栏「X/Y 规则 · A/B 模块 · N 不可用」） | `/rule-diagnostics` 只读端点 + 局部 hook | 数据就绪后读一次；`revision`（模块 + 启用位）变化时重读，否则启停模块后计数停在旧值。**只有首次读取（模块列表尚未回来）才用「读取中」顶替计数**：重载期间计数照旧显示、加载由状态点变灰表达——切模块或启停模块不该让计数消失。规则数 = 已启用模块里启用/全部配置卡（同一次响应顺带下发的 `configs`，读取失败则整段缺席、只留模块段），模块数 = `meta.modules` 的启用/全部；判定计数按「模块+规则+通道」聚合，取每个动作的最终判定（不按动作拆分），身份上限 512，超出只累加已有身份并把丢弃次数作为 `dropped` 下发（该字段保留给外部消费者与后续 UI，当前工作台不渲染）；账本随装配实例持有，`/rule-diagnostics` 只读当前实例，无实例/已释放时回空库，不串账；该段读取失败按 0 处理（不显示） |
-| 大文本和角色卡原文件 | 文件通道/bridge | 不进入 settings descriptor |
+| 大文本和导入原文件 | 文件通道/bridge | 不进入 settings descriptor |
 | 技能调用策略 / 技能文件夹引用 | 技能文件（`SKILL.md` 的两个官方键）+ 插件状态文件（`$DSH_HOME/skills/.system/prompt-tool/skills.yml`，只存 `folders`） | 停用 = 改写该技能 frontmatter 的 `disable-model-invocation` / `user-invocable`（正文与其余字段逐字保留）；引用只登记路径。技能实体归官方各技能根所有，插件不搬迁。契约见 [skills-management.md](skills-management.md) |
 
 不新增 React Context 来广播整个 store。页面通过 usePromptToolFields selector 订阅窄切片，叶子组件接收显式值与 callback。
@@ -490,12 +490,12 @@ src/shared/bridge-contract.ts 同时拥有：
 - BridgeExtrasMap 端点级**顶层附加字段**映射——与 `value` 平铺的那些键（除 `ok`）**按端点声明**：`bootstrap` 与 `describe` 的字段集**不同**（后者不下发 `meta`／`promptConfigs` 等会话段）。`BridgeResponse<K>` 是「`value` ＋ 该端点顶层字段」的完整成功响应，条件是**条件存在的键标 `?` 并注明缺席条件**（如空主语时 `moduleParams`／`moduleFacts` 整键缺席）；某个键变为必有时去掉 `?`，编译器会指出 host 是否补齐；
 - 请求/响应覆盖的编译期断言。
 
-data/bridge-client.ts 提供泛型 bridgeCall(endpoint key, typed body, subject?) 和角色卡专用 bridgeUpload。主语是**每次调用显式携带的实参**（模块 id），没有会话级编辑目标，也不保留上次用到的主语；逐卡规则读写使用所属模块身份。业务组件不得拼接 /bootstrap、/module-delete 等原始路径。新增或改名端点必须同步 shared map、host 注册和契约测试。
+data/bridge-client.ts 提供泛型 bridgeCall(endpoint key, typed body, subject?) 和 bridgeUpload。主语是**每次调用显式携带的实参**（模块 id），没有会话级编辑目标，也不保留上次用到的主语；逐卡规则读写使用所属模块身份。业务组件不得拼接 /bootstrap、/module-delete 等原始路径。新增或改名端点必须同步 shared map、host 注册和契约测试。
 
 **契约字段集 = 运行期顶层接受集（2026-10-21 收紧）**：`shared/bridge-request-shape.ts` 是 45 个端点顶层字段的唯一运行期表，与 `BRIDGE_ENDPOINTS` 编译期覆盖绑定；表值三态：`{ body: 'none' }` / `{ fields }` / `{ handler: true, fields }`。所有 JSON 端点带未知顶层字段一律 400，其中 29 个由统一表回 `bridge-request-invalid` 并点名多余字段。
 
-- 例外显式登记：10 个 handler 已自带更具体拒绝码/消息的端点（assetRelease、exportModule、moduleVariables、moduleName、moduleConfigOrder、rules、persona、personaSources、importModulePackage、charactersImport）仍回原错误码，统一断言不重复拦截。moduleName 读分支仍比契约更严（白名单为空），属已登记差异。
-- 6 个 `body:'none'` 端点（meta、describe、templates、assetUpload、triggers、charactersImportStream）不解析请求体；其余 39 个 JSON 端点中 29 个由统一表拒绝、10 个由 handler 拒绝。`ruleDiagnostics` 是 JSON 端点但无字段，任何顶层字段都会被统一表拒绝。
+- 例外显式登记：9 个 handler 已自带更具体拒绝码/消息的端点（assetRelease、exportModule、moduleVariables、moduleName、moduleConfigOrder、rules、persona、personaSources、importModulePackage）仍回原错误码，统一断言不重复拦截。moduleName 读分支仍比契约更严（白名单为空），属已登记差异。
+- 5 个 `body:'none'` 端点（meta、describe、templates、assetUpload、triggers）不解析请求体；其余 36 个 JSON 端点中 27 个由统一表拒绝、9 个由 handler 拒绝。`ruleDiagnostics` 是 JSON 端点但无字段，任何顶层字段都会被统一表拒绝。
 - 字段表只约束顶层字段；嵌套对象（rules edits、persona、import files 等）仍由域内校验。Agent 导入工具复用 `shared/asset-transfer.ts#ASSET_IMPORT_FIELD_KEYS`（与表里 `importModulePackage` 的 `fields` 同源）；TUI 是斜杠命令语法，不硬套 JSON decode。
 - 新增字段仍要同时改 `BridgeRequestMap` 与字段表：fields 态双向对齐（表键 ⊆ 类型且类型键 ⊆ 表），handler 态单向（表键 ⊆ 类型），none 态要求请求类型为 `undefined`；漏改任一侧 typecheck 失败。表测试保证 45 端点/6 none/10 handler-owned 全覆盖，并用独立名单对拍 handler 标记。导入端点的字段来源是 `shared/asset-transfer.ts#ASSET_IMPORT_FIELDS`，HTTP 与工具共用；工具显式排除它没有存储的 `sourceId`。
 - 另有一处契约与实现的错位留档：`paramOverrides` 契约声明 `expectedModuleId?` 而 handler 从不读它（只有归属门读）；`triggers` 已退役（请求类型 `undefined`、410 路由保留）。
@@ -506,9 +506,9 @@ data/bridge-client.ts 提供泛型 bridgeCall(endpoint key, typed body, subject?
 
 | 类别 | 数量 | 端点 | 语义 |
 |---|---|---|---|
-| `required` | 10 | `rules`、`moduleVariables`、`customTools`、`persona`、`charactersImport`、`moduleMerge`、`moduleUnmerge`、`moduleCapability`、`moduleName`、`describe` | 没有主语的调用不成立；客户端类型层要求实参，缺主语不发请求直接失败 |
+| `required` | 7 | `rules`、`moduleVariables`、`customTools`、`persona`、`moduleCapability`、`moduleName`、`describe` | 没有主语的调用不成立；客户端类型层要求实参，缺主语不发请求直接失败 |
 | `optional` | 5 | `bootstrap`（空主语只回全局段）、`moduleDelete`（无声明＝没有在用模块）、`promptConfigs`、`mutate`、`paramOverrides`（空主语＝全局层） | 可省；省略时不带该头，端点按自己的无目标语义处理 |
-| `none` | 30 | `meta`、`models`、`modelReasoning`、`skillsList`、`skillPolicy`、`skillRead`、`skillWrite`、`skillsFolders`、`skillsImport`、`skillsImportDirectory`、`skillCreate`、`skillDelete`、`templates`、`agentsFile`、`instructionsPolicy`、`triggers`、`personaSources`、`assetUpload`、`assetRelease`、`exportModule`、`importModulePackage`、`moduleClone`、`moduleDuplicate`、`moduleOpen`、`moduleEnable`、`moduleConfigOrder`、`charactersImportStream`、`toolSurface`、`contextActivationDiagnostics`、`ruleDiagnostics` | 与模块无关，不接受该实参；带上也会被忽略 |
+| `none` | 29 | `meta`、`models`、`modelReasoning`、`skillsList`、`skillPolicy`、`skillRead`、`skillWrite`、`skillsFolders`、`skillsImport`、`skillsImportDirectory`、`skillCreate`、`skillDelete`、`templates`、`agentsFile`、`instructionsPolicy`、`triggers`、`personaSources`、`assetUpload`、`assetRelease`、`exportModule`、`importModulePackage`、`moduleClone`、`moduleDuplicate`、`moduleOpen`、`moduleEnable`、`moduleConfigOrder`、`toolSurface`、`contextActivationDiagnostics`、`ruleDiagnostics` | 与模块无关，不接受该实参；带上也会被忽略 |
 
 **空主语只有两条语义**：`bootstrap` 的空目标是合法状态，只回全局段（指令文件卡与 session／scope 事实）——`moduleParams`／`moduleFacts` 键整体缺席（不是空对象）、`variables` 缺席、`overrides` 为空、`templatePreStepCount` 保持 `0`；`paramOverrides` 的空主语是**全局层**（存储根 `config.yml` 的 `layerSettings`，固定卡指令卡的设置区写这里），不是「没有目标」——全局层解析失败是**可诊断软失败**：`/bootstrap` 与模块装配都按「无全局层」继续（诊断随 `meta.moduleWarnings` 下发、模块页可见），只有**写**路径仍响亮 400 拒绝，不覆盖用户内容；其余模块类端点没有主语即拒绝——`required` 一律 400 `module-dir-unavailable`（`describe` 也在其中，它的主体就是模块段）。拒绝路径统一用同一个码与同一条文案。服务端只按声明解析目标（`src/host/config-store.ts` 的 `resolveEditDir`／`resolveRequestedModuleDir`），没有声明就没有目标——不回退启用表首项，不替换成包内同名模块。声明面（「`module.yml` 顶层键是否存在」）的**服务端半边已落地**：归属门的第 4 步按 `src/host/module-declarations.ts` 的 `DECLARED_SECTIONS` 判这次要用的节——**读**没声明即 400 `module-not-declared`（定义不可解析时走既有错误码，不算「没声明」），**写**不查声明面（写一个不存在的节就是创建它，写完它就被声明了）。**阶段 3 已实施**：`/meta` 的 `meta.modules[].declares` 下发顶层键名，`/bootstrap` 的模块段按声明出现，客户端按快照只决定**两件事**——①**这次读发不发**（没声明就不发该节的读，发过去也是 400）；②**空内容从哪来**（未声明的节按空渲染，保存即建立该节）。声明面**不决定界面上的卡在不在**：固定卡（指令卡及其参数设置区、人设卡）永远在场、可展开、可编辑，未声明时按空内容渲染并给一行「保存即建立该节」的提示；通用资产卡（`customTools`／`variables`，按规则/配置存在）保持「没声明就不出卡、只给添加入口」的既有行为，写路径建立声明后重读 `/meta` 卡片随即出现。**阶段 4 已实施**：Agent 侧模块工具改吃显式 `moduleId`（`src/host/module-tool-target.ts` 的 `MODULE_ID_PARAM` 与 `resolveModuleToolTarget`），给不出目标即拒绝、不再取装配记录 `[0]`；TUI 的主语由**用户显式声明**（`/prompt-tool module <id>` 记进该 Agent 会话，单条命令的 `module <id> …` 前缀可覆盖并成为新主语，既不带主语又未声明过即拒绝），内存态、按 agent 隔离、不持久化。
 
@@ -521,13 +521,13 @@ bridge-transport.ts 只负责 HTTP/Blob 传输和结果 shape guard：
     成功：{ ok: true, value, ...可选扩展 }
     失败：{ ok: false, code?, message?, conflicts? }
 
-host 侧的边界只有一处：`src/runtime/bridge-transaction.ts` 的事务入口。全部桥端点经它注册，loopback／Origin 校验、只收 POST、32 MiB 上限与 JSON 对象形状在一次请求里由事务完成，端点的 handler 只写业务判断（`tx.record`／`tx.write`／`tx.editDir`）。主语头形状在事务边界**之后**判定（`src/runtime/bridge-runtime.ts` 的注册通道／route 层）：`invalid` 一律 400 `module-identity-invalid` 并终止，与端点自身的 `required`／`optional`／`none` 策略无关；放在 handler 内层是为了不把 403（非 loopback）／405（非 POST）挡在自守边界之前。声明 `body: 'none'` 的端点（`/meta`、`/describe`、`/templates`、`/triggers`、`/asset-upload`、`/characters-import-stream`）不消费请求流：它们在事务里既不解析也不排空，原始流由端点自己从 `tx.req` 读。新增端点默认继承完整边界，因此拒绝路径的测试面覆盖全部路径，而不是抽样两个端点。
+host 侧的边界只有一处：`src/runtime/bridge-transaction.ts` 的事务入口。全部桥端点经它注册，loopback／Origin 校验、只收 POST、32 MiB 上限与 JSON 对象形状在一次请求里由事务完成，端点的 handler 只写业务判断（`tx.record`／`tx.write`／`tx.editDir`）。主语头形状在事务边界**之后**判定（`src/runtime/bridge-runtime.ts` 的注册通道／route 层）：`invalid` 一律 400 `module-identity-invalid` 并终止，与端点自身的 `required`／`optional`／`none` 策略无关；放在 handler 内层是为了不把 403（非 loopback）／405（非 POST）挡在自守边界之前。声明 `body: 'none'` 的端点（`/meta`、`/describe`、`/templates`、`/triggers`、`/asset-upload`）不消费请求流：它们在事务里既不解析也不排空，原始流由端点自己从 `tx.req` 读。新增端点默认继承完整边界，因此拒绝路径的测试面覆盖全部路径，而不是抽样两个端点。
 
 技能导入同名时返回 `skills-overwrite-required` 与目录名单，由技能页复用 ConfirmDialog 等待用户选择。
 确认后以 `overwrite` 名单重发原载荷；取消或页面卸载结束等待，不发覆盖请求。两个导入入口共用
 `data/skill-import.ts` 的确认协议；该协议不使用内容版本或历史备份。
 
-JSON bridge 的统一上限为 32 MiB；角色卡原始文件流独立限制为 64 MiB，避免 base64 膨胀。transport 不解析 feature 数据，也不拥有 Fields。
+JSON bridge 的统一上限为 32 MiB；原始文件上传独立限制为 64 MiB，避免 base64 膨胀。transport 不解析 feature 数据，也不拥有 Fields。
 
 宿主尚未就绪或路由未注册时，HTTP 层可能返回空体或非 JSON 响应；transport 统一转成 `ok: false` 的可诊断桥接错误（含 HTTP 状态码），不把原生 `response.json()` 异常透传给 UI。
 
@@ -560,7 +560,7 @@ JSON bridge 的统一上限为 32 MiB；角色卡原始文件流独立限制为 
 
 ### 7.4 导入预览与提交
 
-预设与角色卡的文件读取、上传、预览、确认和结果共用 `data/use-import-preview-flow.ts`；`ui/ImportDialog.tsx` 只接 props/callback，业务入口注入各自的处理器。原始上传仅写暂存区，所有大小的 PNG/JSON/YAML 和预设 ZIP／文件夹都先预览，确认后才更新目标。协议和边界见 [资产交换](asset-transfer.md)。
+导入来源的文件读取、上传、预览、确认和结果共用 `data/use-import-preview-flow.ts`；`ui/ImportDialog.tsx` 只接 props/callback，业务入口注入各自的处理器。原始上传仅写暂存区，所有大小的 PNG/JSON/YAML 和预设 ZIP／文件夹都先预览，确认后才更新目标。协议和边界见 [资产交换](asset-transfer.md)。
 
 阶段与「按钮可用」是两件事：
 
@@ -584,7 +584,7 @@ JSON bridge 的统一上限为 32 MiB；角色卡原始文件流独立限制为 
 | 提交非过期失败 | 保留文件与预览：再次确认即重试，取消才跳过该文件 |
 | 目标预设切换、页面卸载 | 结束等待、让迟到响应失效，不继续写下一个文件；不悬挂 Promise |
 
-同一份预览只提交一次，读取与提交期间拒绝重复操作。角色卡逐张排队，“跳过这张”与“结束本次导入”分开；卸载释放暂存来源，不提交后续项。同名默认另存，覆盖使用现有 ConfirmDialog。导出范围是互斥单选：完整 ZIP／仅定义 YAML；显示资源清单、缺失依赖与需明确决定的历史记忆项。弹窗复用 DialogSurface 焦点逻辑，宽预览只增加 size 修饰，不建立第二套浮层系统。
+同一份预览只提交一次，读取与提交期间拒绝重复操作。导入逐份排队，“跳过这份”与“结束本次导入”分开；卸载释放暂存来源，不提交后续项。同名默认另存，覆盖使用现有 ConfirmDialog。导出范围是互斥单选：完整 ZIP／仅定义 YAML；显示资源清单、缺失依赖与需明确决定的历史记忆项。弹窗复用 DialogSurface 焦点逻辑，宽预览只增加 size 修饰，不建立第二套浮层系统。
 
 ## 8. 业务 Feature
 
@@ -600,7 +600,6 @@ feature 只拥有自己的视图、瞬时状态、领域纯 helper 和 CSS：
 | tools | 自定义工具编辑/保存、参数模板；独立工具预览页与只读工具面 |
 | skills | 按官方六类技能根分组展示清单、来源与遮蔽判定、调用策略开关、宿主目录选择导入与引用、创建、回收站删除；契约见 [skills-management.md](skills-management.md) |
 | modules | 模块页的模块列表：启停、编辑选择、新建/克隆、导入导出、复制/删除/打开（页面壳在 `features/modules/ModulesPage.tsx`） |
-| characters | 角色来源解析／展示兼容；安装、库存、并入与删除统一归模块流程 |
 
 业务 feature 直接使用 data/bridge-client.ts 的 endpoint key；共享控件从 ui/导入。跨 feature 组合由 app/workspace/pages/完成，不在 feature 内建立第二个工作台。
 
@@ -612,16 +611,16 @@ ui/ 只接收 props/callback，当前真实共享 seam 包括：
 
 - FormField：以非交互的字段名称和 `aria-labelledby` 关联控件，维护说明与错误关联；MenuSelect 转发 id 与 ARIA 到真实触发器，hint 可内联或使用 HintTooltip。名称及名称旁的空白不会聚焦编辑框或打开下拉，控件内部点击和键盘操作保持有效。
 - SettingInputRow、ToggleRow、TagInput：设置和字段编辑形态；ToggleRow 使用自有 Switch，保留 role、aria-checked 与键盘行为。
-- ImportPreviewCard：导入预览卡，展示服务端同源转换报告与有损信息（warning/info/被排除条目各自滚动容器）；预设包与角色卡 JSON 两处入口共用。
+- ImportPreviewCard：导入预览卡，展示服务端同源转换报告与有损信息（warning/info/被排除条目各自滚动容器）；导入预览共用。
 - reveal-card.ts：创建后的滚动定位与重试，层设置区与配置卡共用。
 - MenuSelect：封装自有 Menu 的单选控件；触发器直接使用共享 `Button shape="pill" variant="outline"`，与“添加注入模板”“刷新”具有相同描边、字号、留白、悬停与禁用态，不另写一套胶囊外观。支持连续选项的 `group` 分组标题；标准设置使用36px，模块卡内与列表过滤行使用28px，浮层统一portal。
 - SearchInput：主会话、子代理、技能设置、工具预览共用官方 plugin-inventory 搜索形态；自带图标、H36/R12、13px/20px、左右36/34px留位、主题描边与焦点环，查询不会改变宽度，不套用配置编辑框的内容估宽。`inline` 仅表达同行伸缩布局。
 - 列表过滤行：主会话、子代理与技能页的多组件区域共用 `.listFilterRow` 卡片（10px 14px内边距、0.5px描边、R12、`bg-layer-3`），搜索与筛选、胶囊操作在同一行，空间不足时换行。工具预览只有独立搜索框，不额外包卡；卡片属于页面组合而不是SearchInput。
 - CollapsibleCard、EngineModuleCard：具体可复用的折叠/模块卡形态，不是万能 Card。
 - StatusDot：6px实心状态点与3px柔和静态光晕，含success/neutral/danger/warning，语义由相邻文字表达，不使用循环动画。
-- StatusBadge：StatusDot 与自有胶囊；tone 同时驱动两者颜色，技能卡、工具预览、模块「已启用」与角色卡「已导入模块」共用。模块徽章由实际 `enabled` 且可用驱动，与卡脚开关同步；工作台不保留单一编辑目标，卡片归属由卡内文字表达，徽章不冒充启用状态。
+- StatusBadge：StatusDot 与自有胶囊；tone 同时驱动两者颜色，技能卡、工具预览与模块「已启用」共用。模块徽章由实际 `enabled` 且可用驱动，与卡脚开关同步；工作台不保留单一编辑目标，卡片归属由卡内文字表达，徽章不冒充启用状态。
 - 状态徽章与内部Tag均不参与flex收缩，短状态文字保持单行；模块/角色标题承担剩余宽度并允许换行，长名称不把「使用中」挤成竖排胶囊。
-- 卡体（`.moduleCardBody`，位于 `ui/controls.module.css`）只承载内容，没有点击语义；模块卡与角色卡共用同一形态，动作一律放卡脚（`.moduleCardFooter`）。需要整块可点的控件不要复用卡体。
+- 卡体（`.moduleCardBody`，位于 `ui/controls.module.css`）只承载内容，没有点击语义；模块卡共用同一形态，动作一律放卡脚（`.moduleCardFooter`）。需要整块可点的控件不要复用卡体。
 - ImportFileButton：隐藏原生 file input 的导入入口。
 - TemplatePicker、DialogSurface：模板和预设操作的 portal 浮层；ConfirmDialog 复用 DialogSurface 的警告对话、初始焦点与还焦能力。确认按钮沿用 `.pillButton[data-danger]`，取消按钮的 ref 承载初始焦点与 busy 还焦。
 - anchored-popover.ts / anchored-popover-fit.ts：锚点位置和窄视口适配。
@@ -813,7 +812,7 @@ tool-catalog 填充来源沿现有普通注入表单编辑：params.action 引�
 | 引擎注入行为（插入点 / 时机 / 次数 / 受众） | `test/engine/*.test.mjs` |
 | 写盘产物语义 | `test/host/write-module.test.mjs`、`test/host/module-*.test.mjs`、`test/host/module-slices.test.mjs`、`test/host/global-params.test.mjs`（全局层 `config.yml#layerSettings` 的写/删键/空层回收与优先级）、`test/host/target-queue.test.mjs`、`test/host/versioned-text.test.mjs`、`test/host/skills-cas.test.mjs` |
 | bridge 端点载荷 | `test/shared/bridge-contract.test.mjs`、`test/client/bridge-client.test.mjs`、`test/host/settings-bridge.test.mjs`、`test/host/*-bridge.test.mjs`、`test/client/*.test.mjs`（客户端侧的固定卡接线、请求主语与渲染链路；含 `layer-cards`、`instruction-cards` 这类渲染链路的前置纯判据） |
-| 安全与拒绝路径 | `test/host/instructions-policy.test.mjs`、`test/host/instruction-scope-guard.test.mjs`、`test/host/skill-policy.test.mjs`、`test/host/skills-marker.test.mjs`（技能文件读取前校验）、`test/host/module-package-import.test.mjs`、`test/host/characters-protection.test.mjs`、`test/host/wave1-safety.test.mjs`、`test/host/text-file.test.mjs`、`test/engine/config-whitelist.test.mjs`、`test/host/agents-cards.test.mjs`、`test/engine/instruction-files.test.mjs`（写白名单来源的探测与目录链判据） |
+| 安全与拒绝路径 | `test/host/instructions-policy.test.mjs`、`test/host/instruction-scope-guard.test.mjs`、`test/host/skill-policy.test.mjs`、`test/host/skills-marker.test.mjs`（技能文件读取前校验）、`test/host/module-package-import.test.mjs`、`test/host/wave1-safety.test.mjs`、`test/host/text-file.test.mjs`、`test/engine/config-whitelist.test.mjs`、`test/host/agents-cards.test.mjs`、`test/engine/instruction-files.test.mjs`（写白名单来源的探测与目录链判据） |
 
 **安全边界的守护位置**：指令文件读写（授权、上下文白名单、内容版本冲突、读取失败）、导入回滚、路径穿越、大小上限、桥端点安全面、晋升门控与 epoch 这些不变量，由上面「安全与拒绝路径」一栏的文件覆盖；改动它们需要独立授权，不得顺带删减。
 

@@ -222,7 +222,7 @@ export const ModuleSwitcher = memo(function ModuleSwitcher(props: { store: Modul
           </span>
         </span>
       </div>
-      {importOpen && <ImportDialog t={t} destination="module" {...flow} targets={modules}
+      {importOpen && <ImportDialog t={t} {...flow} targets={modules}
         onFiles={(files) => { void flow.run(files) }} onChoices={flow.updateChoices} onConfirm={() => { void flow.confirm() }}
         onClose={() => { flow.cancel(); setImportOpen(false) }} onReset={flow.cancel} onSkip={flow.skip} onEnd={flow.end}
         onRepreview={() => { void flow.repreview() }} onRefresh={() => { void flow.retryRefresh() }}

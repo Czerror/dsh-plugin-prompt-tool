@@ -832,9 +832,6 @@ test('settings bridge：system 预设拒绝全部当前预设写入', async () =
       [BRIDGE_ENDPOINTS.rules, { expectedModuleId: basename(dir), expectedRevisions: revisions, edits: [{ previousId: null, rule: textRule('readonly', 'FORBIDDEN') }] }],
       [BRIDGE_ENDPOINTS.moduleVariables, { scope: 'module', expectedModuleId: basename(dir), variables: { empty: '' }, enabled: true, expectedRevisions: { module: revisions.variables, settings: revisions.settings } }],
       [BRIDGE_ENDPOINTS.customTools, { customTools: [] }],
-      [BRIDGE_ENDPOINTS.charactersImport, { files: [{ path: 'card.json', content: '{}' }] }],
-      [BRIDGE_ENDPOINTS.moduleMerge, { id: 'card' }],
-      [BRIDGE_ENDPOINTS.moduleUnmerge, { id: 'card' }],
       [BRIDGE_ENDPOINTS.moduleCapability, { action: 'create', capabilityId: 'module-variable-tools' }],
     ]
     for (const [endpoint, body] of cases) {

@@ -159,7 +159,7 @@ test('无头删除没有在用模块：无声明不触发在用保护，删除�
 test('打开目录：越界与非法 id 一律被拒，不进入打开动作', async () => {
   const { ctx, handlers } = makeHarness()
   register(ctx)
-  // 白名单允许的是裸 id 与 `/.characters/<id>` 形式；下列都不属于任何一种。
+  // 白名单只允许裸模块 id；下列都不属于。
   for (const bad of ['../outside', '/absolute/path', 'a/b', '.hidden', '']) {
     const result = await call(handlers, 'moduleOpen', { id: bad })
     assert.equal(result.status, 400, `${JSON.stringify(bad)} 应被拒：${result.message}`)
@@ -212,74 +212,6 @@ test('导出：不存在的模块被拒，不回传任何定义内容', async ()
   assert.equal(result.value, undefined, '失败载荷不得携带定义内容')
 })
 
-test('并入的源模块优先：同名模块与角色卡并存时取模块定义', async () => {
-  const characters = await import('../../src/host/characters.ts')
-  const { promptConfigToRule } = await import('../../src/host/rule-builder.ts')
-  const id = 'dual-source'
-  // 模块源：modules/<id>/module.yml（canonical rules；正文归规则，正文资产不属于并入范围）
-  mkdirSync(join(moduleRoot, id), { recursive: true })
-  const moduleRules = [
-    { id: 'intro', strategy: 'static', layer: 'system-section', text: 'FROM-MODULE' },
-    { id: 'near-anchor', strategy: 'static', enabled: false, layer: 'pre-step' },
-    { id: 'prompt-injector', strategy: 'static', layer: 'pre-step', text: 'FROM-INJECTOR' },
-  ].map(promptConfigToRule)
-  writeFileSync(join(moduleRoot, id, 'module.yml'), JSON.stringify({ id, name: '模块源', modules: [], rules: moduleRules, configOrder: Object.fromEntries(moduleRules.map((rule, index) => [rule.id, index * 10])) }), 'utf8')
-  // 同名角色卡源：存储根下的 .characters/<id>/converted.yml（与模块根同级）
-  const legacyDir = join(dirname(moduleRoot), '.characters', id)
-  mkdirSync(legacyDir, { recursive: true })
-  writeFileSync(join(legacyDir, 'converted.yml'), JSON.stringify({
-    id, name: '卡片源',
-    rules: [promptConfigToRule({ id: 'intro', strategy: 'static', layer: 'system-section', text: 'FROM-CARD' })],
-  }), 'utf8')
-  // 目标模块
-  mkdirSync(join(moduleRoot, 'target'), { recursive: true })
-  writeFileSync(join(moduleRoot, 'target', 'module.yml'), 'id: target\nname: Target\nmodules: []\n', 'utf8')
-
-  const applied = characters.mergeModuleIntoModule(moduleRoot, 'target', id)
-  assert.equal(applied.ok, true, applied.message)
-  const written = readFileSync(join(moduleRoot, 'target', 'module.yml'), 'utf8')
-  assert.match(written, /FROM-MODULE/, '并入必须取模块定义（模块优先）')
-  assert.doesNotMatch(written, /FROM-CARD/, '不得取同名的角色卡定义')
-  assert.match(written, new RegExp(`module-${id}-intro`), '条目 id 用统一前缀')
-  const configs = parse(written).rules
-  const anchor = configs.find(config => config.id === `module-${id}-near-anchor`)
-  assert.equal(anchor.enabled, false, '并入保留源模块定义的启停')
-  assert.equal(anchor.then[0].config.strategy, 'static')
-  assert.equal(configs.find(config => config.id === `module-${id}-prompt-injector`).then[0].config.strategy, 'static')
-})
-
-test('普通模块之间的并入是往返且幂等的：重复并入不翻倍，移除后自有内容原样保留', async () => {
-  const characters = await import('../../src/host/characters.ts')
-  const rule = (id, text) => ({ id, layer: 'system-section', then: [{ id: 'inject', kind: 'inject-text', config: { id, layer: 'system-section', text } }] })
-  const src = 'roundtrip-src'
-  mkdirSync(join(moduleRoot, src), { recursive: true })
-  writeFileSync(join(moduleRoot, src, 'module.yml'), JSON.stringify({ id: src, name: '源', modules: [], rules: [rule('a', 'A'), rule('b', 'B')] }), 'utf8')
-  const target = 'roundtrip-target'
-  mkdirSync(join(moduleRoot, target), { recursive: true })
-  const targetFile = join(moduleRoot, target, 'module.yml')
-  writeFileSync(targetFile, JSON.stringify({ id: target, name: '目标', modules: [], rules: [rule('own', 'OWN')] }), 'utf8')
-
-  // 幂等判据用「条目 id 出现的次数」，不做字节级对齐：并入会按需补 variables 等字段，
-  // 字节相等不是这层语义的契约；PLAN 要的是不翻倍、撤得干净、自有内容不动。
-  const count = (text, token) => parse(text).rules.filter(rule => rule.id === token).length
-
-  assert.equal(characters.mergeModuleIntoModule(moduleRoot, target, src).ok, true)
-  const afterApply = readFileSync(targetFile, 'utf8')
-  assert.equal(count(afterApply, `module-${src}-a`), 1)
-  assert.equal(count(afterApply, `module-${src}-b`), 1)
-
-  assert.equal(characters.mergeModuleIntoModule(moduleRoot, target, src).ok, true, '重复并入应成功')
-  const afterTwice = readFileSync(targetFile, 'utf8')
-  assert.equal(count(afterTwice, `module-${src}-a`), 1, '重复并入不得产生重复条目')
-  assert.equal(count(afterTwice, `module-${src}-b`), 1)
-
-  assert.equal(characters.removeMergedModule(moduleRoot, target, src).ok, true)
-  const afterRemove = readFileSync(targetFile, 'utf8')
-  assert.equal(count(afterRemove, `module-${src}-a`), 0, '移除必须按前缀撤销干净')
-  assert.equal(count(afterRemove, `module-${src}-b`), 0)
-  assert.deepEqual(parse(afterRemove).rules, [rule('own', 'OWN')], '目标模块自带规则完整保留，不依赖 YAML 引号样式')
-})
-
 test('SillyTavern 多源合并：导入期的 variablesEnabled 只过滤字面变量并入', async () => {
   // 真值源是两份文档写明、用户拍板的「两件事」口径（docs/architecture-params.md §4、docs/SillyTavern.md）。
   const { mergeStModulesWithReport } = await import('../../src/host/sillytavern.ts')
@@ -289,30 +221,6 @@ test('SillyTavern 多源合并：导入期的 variablesEnabled 只过滤字面�
     { id: 'st-on', name: '启用', variables: { mood: 'calm' }, rules: [stRule('ON')] },
   ])
   assert.deepEqual(merged.variables, { mood: 'calm' }, '预设级 variables 按同一开关过滤')
-})
-
-test('模块并入：导入期的 variablesEnabled 只过滤字面变量，产物开关归目标模块的 rules/_settings.yml', async () => {
-  const characters = await import('../../src/host/characters.ts')
-  const { ensureModuleSlices } = await import('../../src/host/module-slices.ts')
-  // 源开关只过滤本次并入的字面变量；产物落地成模块后，是否停用会话变量由目标模块自己的开关决定。
-  const textRule = (id, text) => ({ id, then: [{ id: 'inject', kind: 'inject-text', config: { layer: 'pre-step', text } }] })
-  for (const [id, extra] of [['card-source', { variablesEnabled: false }], ['target', { variablesEnabled: true }]]) {
-    mkdirSync(join(moduleRoot, id), { recursive: true })
-    writeFileSync(join(moduleRoot, id, 'module.yml'), JSON.stringify({ id, name: id, modules: [], variables: { owner: 'Mia' }, rules: [textRule('intro', `${id.toUpperCase()} BODY`)], ...extra }), 'utf8')
-    ensureModuleSlices(join(moduleRoot, id), { force: true })
-  }
-  const sourceSettings = readFileSync(join(moduleRoot, 'card-source', 'rules', '_settings.yml'), 'utf8')
-  assert.equal(parse(sourceSettings).variablesEnabled, false)
-
-  const applied = characters.mergeModuleIntoModule(moduleRoot, 'target', 'card-source')
-  assert.equal(applied.ok, true, applied.message)
-  const merged = parse(readFileSync(join(moduleRoot, 'target', 'module.yml'), 'utf8'))
-  const configOf = id => merged.rules.find(rule => rule.id === id).then[0].config
-  assert.deepEqual(merged.variables, { owner: 'Mia' }, '目标模块变量保留，停用来源不另外建立局部表')
-  assert.equal(configOf('intro').text, 'TARGET BODY', '目标自带配置不并入来源变量')
-  assert.equal(merged.variablesEnabled, true, '导入不写目标模块的开关')
-  assert.equal(readFileSync(join(moduleRoot, 'card-source', 'rules', '_settings.yml'), 'utf8'), sourceSettings, '导入不回写源模块开关')
-  assert.equal(parse(readFileSync(join(moduleRoot, 'target', 'rules', '_settings.yml'), 'utf8')).variablesEnabled, true, '目标开关保持导入前语义')
 })
 
 // ── 删除事务：同卷 rename-aside（2026-10-23 PLAN） ──────────────────────

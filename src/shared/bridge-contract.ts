@@ -66,10 +66,6 @@ export const BRIDGE_ENDPOINTS = {
   moduleName: '/module-name',
   moduleEnable: '/module-enable',
   moduleConfigOrder: '/module-config-order',
-  charactersImport: '/characters-import',
-  charactersImportStream: '/characters-import-stream',
-  moduleMerge: '/module-merge',
-  moduleUnmerge: '/module-unmerge',
   toolSurface: '/tool-surface',
   moduleCapability: '/module-capability',
   contextActivationDiagnostics: '/context-activation-diagnostics',
@@ -149,10 +145,6 @@ export const BRIDGE_SUBJECT_POLICY = {
   moduleName: 'required',
   moduleEnable: 'none',
   moduleConfigOrder: 'none',
-  charactersImport: 'required',
-  charactersImportStream: 'none',
-  moduleMerge: 'required',
-  moduleUnmerge: 'required',
   toolSurface: 'none',
   moduleCapability: 'required',
   contextActivationDiagnostics: 'none',
@@ -284,11 +276,6 @@ export interface BridgeRequestMap {
   moduleName: { name?: string; expectedRevision?: string; expectedModuleId?: string }
   moduleEnable: { id: string; enabled: boolean }
   moduleConfigOrder: { moduleId: string } | { moduleId?: string; entries: ModuleConfigIdentity[]; expectedRevision: string } | undefined
-  /** 角色卡来源导入为普通模块；预览只读，提交与模块安装共用版本边界。 */
-  charactersImport: AssetImportRequest
-  charactersImportStream: undefined
-  moduleMerge: { id: string }
-  moduleUnmerge: { id: string }
   toolSurface: { sessionId: string; presetId?: never } | { presetId: string; sessionId?: never }
   moduleCapability: ({ action: 'create' | 'remove'; capabilityId: string } | { action: 'create-recipe'; recipeId: string }) & { expectedModuleId?: string }
   /** 只读世界书诊断：只回当前授权会话最近一次选择的观测记录。 */
@@ -599,21 +586,6 @@ export interface BridgeValueMap {
   moduleName: { name: string; revision: string; persisted?: boolean; publicationError?: string }
   moduleEnable: { enabled: string[] }
   moduleConfigOrder: ModuleConfigOrderSnapshot
-  charactersImport: {
-    id?: string
-    name?: string
-    preview?: boolean
-    state?: ImportPreviewState
-    candidates?: StOrderGroupCandidate[]
-    sourceDigest?: string
-    previewRevision?: string
-    report?: StConversionReport
-    summary?: AssetSummary
-    kinds?: ImportKind[]
-  }
-  charactersImportStream: { id: string; name: string }
-  moduleMerge: { id: string; count: number }
-  moduleUnmerge: { id: string; count: number }
   toolSurface: {
     source: 'session' | 'preset'
     sessionId?: string

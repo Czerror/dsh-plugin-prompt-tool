@@ -1,12 +1,10 @@
 /**
- * 自定义工具、角色卡与导入预览相关的 UI 文案分区（命名空间 `prompt-tool`）。
+ * 自定义工具与导入预览相关的 UI 文案分区（命名空间 `prompt-tool`）。
  *
  * 约定（与 locales.ts 相同）：zh 是键类型事实源，en 用 Record<keyof typeof zh, string>
  * 强制键集一致；只放用户可见文案，provider/model id、路径、用户内容、协议 code 不进字典。
  * 键前缀分区：`customTools.`（自定义工具列表容器）、`toolEditor.`（单张工具卡与字段编辑器）、
  * `importPreview.`／`assetImport.`（导入来源预览与安装）。
- * 角色卡页面（CharactersPage）文案在核心字典的 `characters.` 前缀；character-card.ts
- * 的解析错误不直接面向用户（PNG 走 host 上传），不进字典。
  */
 export const CARDS_ZH = {
   'modelRoute.idle.main': '未设置：选择模型（留空 = 继承当前会话）',
@@ -111,14 +109,13 @@ export const CARDS_ZH = {
   'importPreview.noReport': '该来源没有可转换的 SillyTavern 内容，确认后按原样导入',
   'importPreview.stale': '预览已过期（文件、顺序组或目标已变化），请重新预览后再导入',
   'assetImport.moduleTitle': '导入模块',
-  'assetImport.characterTitle': '导入角色卡',
   'assetImport.select': '选择来源',
   'assetImport.inspect': '检查内容',
   'assetImport.result': '导入结果',
   'assetImport.steps': '导入步骤',
   'assetImport.close': '关闭导入',
   'assetImport.formats': '支持 ZIP、JSON、PNG、YML、YAML，也可选择模块文件夹。',
-  'assetImport.noWrite': '选择后自动识别和预览；确认前不会写入模块或角色库。',
+  'assetImport.noWrite': '选择后自动识别和预览；确认前不会写入任何模块。',
   'assetImport.file': '选择文件',
   'assetImport.folder': '选择文件夹',
   'assetImport.queue': '第 {index} / {total} 张',
@@ -135,7 +132,6 @@ export const CARDS_ZH = {
   'assetImport.existing': '更新现有项目',
   'assetImport.newHint': '将新增一个项目；导入完成后可显式切换或应用。',
   'assetImport.moduleReplace': '替换：模块定义和此次提供的自有资源。保留：角色记忆和不归本次导入所有的文件。',
-  'assetImport.characterReplace': '替换：角色来源、转换配置和此次提供的头像。保留：角色记忆和其他文件。',
   'assetImport.summary': '{files} 个文件 · {bytes} 字节 · {configs} 条提示词配置',
   'assetImport.files': '文件与资源（{count}）',
   'assetImport.add': '新增',
@@ -150,7 +146,6 @@ export const CARDS_ZH = {
   'assetImport.chooseFirst': '请完成来源、顺序组或目标选择后再确认。',
   'assetImport.createModule': '创建模块',
   'assetImport.createFromCharacter': '从角色卡创建模块',
-  'assetImport.createCharacter': '保存为新角色',
   'assetImport.update': '更新项目',
   'assetImport.overwriteTitle': '确认更新“{name}”',
   'assetImport.back': '返回检查',
@@ -165,7 +160,6 @@ export const CARDS_ZH = {
   'assetImport.refreshFailed': '已导入，但列表刷新失败：{reason}。请重试刷新，无需重新导入。',
   'assetImport.refresh': '重试刷新',
   'assetImport.switch': '切换到该模块',
-  'assetImport.apply': '应用到当前模块',
   'assetImport.directoryTooLarge': '文件夹超过传输上限，请压缩为 ZIP 后导入。',
   'assetImport.draftBlocked': '有未保存的草稿或启停修改，请先保存或修正，再重新预览覆盖操作。',
   'assetExport.title': '导出模块 · {name}',
@@ -286,14 +280,13 @@ export const CARDS_EN: Record<keyof typeof CARDS_ZH, string> = {
   'importPreview.noReport': 'No SillyTavern content to convert in this source; confirm to import as-is',
   'importPreview.stale': 'Preview is stale (file, order group or target changed); preview again',
   'assetImport.moduleTitle': 'Import module',
-  'assetImport.characterTitle': 'Import character cards',
   'assetImport.select': 'Select source',
   'assetImport.inspect': 'Check contents',
   'assetImport.result': 'Import result',
   'assetImport.steps': 'Import steps',
   'assetImport.close': 'Close import',
   'assetImport.formats': 'Supports ZIP, JSON, PNG, YML, YAML and module folders.',
-  'assetImport.noWrite': 'Files are detected and previewed before confirmation. No module or character is written yet.',
+  'assetImport.noWrite': 'Files are detected and previewed before confirmation. No module is written yet.',
   'assetImport.file': 'Choose files',
   'assetImport.folder': 'Choose folder',
   'assetImport.queue': 'Card {index} / {total}',
@@ -310,7 +303,6 @@ export const CARDS_EN: Record<keyof typeof CARDS_ZH, string> = {
   'assetImport.existing': 'Update an existing item',
   'assetImport.newHint': 'Creates a new item. Switch or apply explicitly after importing.',
   'assetImport.moduleReplace': 'Replaces the module definition and supplied owned resources. Preserves character memory and files not owned by this import.',
-  'assetImport.characterReplace': 'Replaces the character source, converted configuration and supplied avatar. Preserves character memory and other files.',
   'assetImport.summary': '{files} files · {bytes} bytes · {configs} prompt configurations',
   'assetImport.files': 'Files and resources ({count})',
   'assetImport.add': 'Add',
@@ -325,7 +317,6 @@ export const CARDS_EN: Record<keyof typeof CARDS_ZH, string> = {
   'assetImport.chooseFirst': 'Finish choosing the source, order group or target before confirming.',
   'assetImport.createModule': 'Create module',
   'assetImport.createFromCharacter': 'Create module from character',
-  'assetImport.createCharacter': 'Save as new character',
   'assetImport.update': 'Update item',
   'assetImport.overwriteTitle': 'Confirm updating “{name}”',
   'assetImport.back': 'Back to review',
@@ -340,7 +331,6 @@ export const CARDS_EN: Record<keyof typeof CARDS_ZH, string> = {
   'assetImport.refreshFailed': 'Imported, but refreshing the list failed: {reason}. Retry refresh without importing again.',
   'assetImport.refresh': 'Retry refresh',
   'assetImport.switch': 'Switch to this module',
-  'assetImport.apply': 'Apply to current module',
   'assetImport.directoryTooLarge': 'The folder exceeds the transfer limit. Compress it as ZIP and import again.',
   'assetImport.draftBlocked': 'There are unsaved drafts or enable-state changes. Save or fix them, then preview the replacement again.',
   'assetExport.title': 'Export module · {name}',

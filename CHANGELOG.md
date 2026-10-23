@@ -1,5 +1,15 @@
 # Changelog
 
+### 删除 characters 兼容面与模块并入（2026-10-24）
+
+- 删除 `charactersImport`／`charactersImportStream`／`moduleMerge`／`moduleUnmerge` 四个 bridge 端点及请求、响应、主语策略与请求形状登记；角色卡导入只走 `importModulePackage`（客户端此前已改走该端点）。
+- 删除 host 的 `importCharacterCard`、`importCharacterCardFile`、`mergeModuleIntoModule`、`removeMergedModule`；`src/host/characters.ts` 收为只读的 `src/host/legacy-export.ts`，仅保留导出前的旧私有记忆来源核查。
+- 删除 `.characters` 旧库启动提示、`moduleOpen` 的 `/.characters/<id>` 路径分支、预览身份的 `character-card` 类型、客户端角色卡 PNG 解析器与 44 条 `characters.*` 文案；导入对话框去掉 `character` 目的地分支。
+- 回归：删除 `characters-protection` 与模块并入用例；角色重导入保留记忆的断言改走 `importModulePackage`；端点清单与契约计数同步（41 端点：required 7 / none 29）。
+- 验证：`pnpm typecheck`、`pnpm lint`、`pnpm test`、`pnpm build`、`git diff --check`。
+- 需重启 DSH 后生效。
+- 已知边界：既有模块中的 `meta.mergedModules` 与 `module-<id>-*` 规则不再有撤销入口；导出仍按旧来源核查拒绝无法证明的私有记忆条目。
+
 ### pre-step 批执行改在最外层注册（2026-10-23）
 
 - `src/runtime/pre-step-coordinator.ts` 的批执行监听器改为 `{ prepend: true }`：官方 `dsh-tool-skill` 在更内层注册、`await next()` 之后才 append 技能目录，内层过滤拿到的 decision 里没有它，随后外层再 append，`skill-surface` 的 `pre-step-filter` 永远删不掉（隔离 headless 复测 catalog=1）。

@@ -14,7 +14,7 @@ import { scopeOf } from '@deepseek-ai/dsh-scope'
 import type { SkillRegistry, SkillViewOptions } from '@deepseek-ai/dsh-skill'
 import type { IncomingMessage } from 'node:http'
 import { createHash } from 'node:crypto'
-import { basename, dirname, join } from 'node:path'
+import { basename, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import type { SettingsDescriptor } from '@deepseek-ai/dsh-settings'
 import { PARAM_KEYS, readModulesEnabled } from '../config.ts'
@@ -36,7 +36,6 @@ import { loadModuleSpec } from '../host/module-spec.ts'
 import { readModuleFacts, resolveModuleParams } from '../host/module-params.ts'
 import { readModuleVariables } from '../host/module-variables.ts'
 import { createAssetSources } from '../host/asset-sources.ts'
-import { modulePathExists } from '../host/module-install.ts'
 import { storageRoot } from '../host/paths.ts'
 import { ASSET_IMPORT_FIELDS, type AssetFile, type AssetImportRequest, type ImportKind } from '../shared/asset-transfer.ts'
 import { moduleParamFallbacks } from '../shared/engine-params.ts'
@@ -567,9 +566,6 @@ export function createBridgeRuntime(options: BridgeRuntimeOptions): BridgeRuntim
     })
     meta.builtinTemplates = listBuiltinTemplates()
     const warnings: string[] = []
-    if (modulePathExists(join(dirname(userModulesDir()), '.characters'))) {
-      warnings.push('检测到旧 .characters 角色库；其内容尚未作为模块导入。请通过模块导入入口显式导入，旧目录不会自动迁移或删除。')
-    }
     // 全局层（config.yml 的 layerSettings）解析失败是**可诊断软失败**：首屏与装配都照常，
     // 诊断随 /meta 与 /bootstrap 的 moduleWarnings 下发（模块页 role=alert 可见）。
     const globalLayerError = readGlobalLayerSettingsSafe(userModulesDir()).error

@@ -235,10 +235,8 @@ export function duplicateUserModule(id: string, moduleRoot = userModulesDir(), w
 
 /** 在系统文件管理器中打开模块目录（尽力而为：无桌面环境时打开失败也返回路径供 UI 展示）。 */
 export function openModuleLocation(id: string, moduleRoot = userModulesDir()): { ok: true; path: string } | { ok: false; message: string; path: string } {
-  // 普通模块 id（裸目录名）或角色卡库子路径（/.characters/<cardId>）两种形态。
   const isBareId = isModuleId(id)
-  const isCardPath = typeof id === 'string' && /^\/\.[a-zA-Z0-9_-]+\/[^/\\]+$/.test(id)
-  if (!isBareId && !isCardPath) {
+  if (!isBareId) {
     return { ok: false, message: `非法预设 id：${id}`, path: '' }
   }
   const dir = resolve(join(moduleRoot, id))
@@ -250,7 +248,7 @@ export function openModuleLocation(id: string, moduleRoot = userModulesDir()): {
     return { ok: false, message: `预设 ${id} 不存在`, path: dir }
   }
   try {
-    if (isBareId) assertModuleDirectory(moduleRoot, id)
+    assertModuleDirectory(moduleRoot, id)
     const command = process.platform === 'win32' ? 'explorer'
       : process.platform === 'darwin' ? 'open' : 'xdg-open'
     const child = spawn(command, [dir], { detached: true, stdio: 'ignore' })

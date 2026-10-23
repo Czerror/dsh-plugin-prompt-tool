@@ -8,7 +8,7 @@ const keysOf = (pick) => entries.filter(([, rule]) => pick(rule)).map(([key]) =>
 
 /** 独立真值源：handler 已自带域内拒绝的端点键名；与表里的 handler 标记对拍。 */
 const handlerChecked = [
-  'assetRelease', 'charactersImport', 'exportModule', 'importModulePackage',
+  'assetRelease', 'exportModule', 'importModulePackage',
   'moduleConfigOrder', 'moduleName', 'moduleVariables', 'persona', 'personaSources', 'rules',
 ].sort()
 
@@ -16,7 +16,7 @@ test('bridge request shape：端点全覆盖，none / fields / handler 三态由
   assert.deepEqual(Object.keys(BRIDGE_REQUEST_FIELDS).sort(), Object.keys(BRIDGE_ENDPOINTS).sort())
   const none = keysOf((rule) => rule.body === 'none')
   const handler = keysOf((rule) => rule.handler === true)
-  assert.deepEqual(none, ['assetUpload', 'charactersImportStream', 'describe', 'meta', 'templates', 'triggers'].sort())
+  assert.deepEqual(none, ['assetUpload', 'describe', 'meta', 'templates', 'triggers'].sort())
   assert.deepEqual(handler, handlerChecked, 'handler-owned 名单与独立真值源一致')
   for (const [key, rule] of entries) {
     if (!Array.isArray(rule.fields)) continue

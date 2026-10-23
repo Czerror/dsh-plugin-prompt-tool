@@ -1,13 +1,12 @@
 /**
  * 自建 loopback settings bridge：Web 设置页数据通道（提示词配置数组经此输出到 UI）。
  *
- * 本文件只做装配：建一次运行时 → 两个 `ctx.inject` 作用域 → 11 个域各注册自己的端点 →
+ * 本文件只做装配：建一次运行时 → 两个 `ctx.inject` 作用域 → 9 个域各注册自己的端点 →
  * 逐个收集 disposer。端点实现按域放在 `routes/<域>.ts`，共享态与共享 helper 在
  * `bridge-runtime.ts`（descriptor 缓存、上传暂存、两条队列、change 回调都在那里只建一次）。
  */
 import type { Context } from '@deepseek-ai/cordis'
 import { createBridgeRuntime, type BridgeDeps, type SkillsBridgeState } from './bridge-runtime.ts'
-import { registerCharacters } from './routes/characters.ts'
 import { registerDefinitions } from './routes/definitions.ts'
 import { registerDiagnostics } from './routes/diagnostics.ts'
 import { registerInstructions } from './routes/instructions.ts'
@@ -48,7 +47,6 @@ export function registerSettingsBridge(
         ...registerDefinitions(runtime),
         ...registerTransfer(runtime),
         ...registerLifecycle(runtime),
-        ...registerCharacters(runtime),
       ]
       return () => {
         for (const dispose of disposers) dispose()
