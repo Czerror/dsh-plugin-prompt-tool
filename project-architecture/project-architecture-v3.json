@@ -1,0 +1,399 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "dsh-plugin-prompt-tool 项目架构",
+    "locale": "zh-CN",
+    "output": "project-architecture/project-architecture-v3.html",
+    "quality_profile": "showcase",
+    "repository": {
+      "url": "https://github.com/Czerror/dsh-plugin-prompt-tool.git",
+      "revision": "47da88eedce4c6c2bab70edcf73370f937ee6aab"
+    },
+    "views": [
+      {
+        "id": "edit-save",
+        "label": "编辑与保存",
+        "focus": [
+          "operator",
+          "workbench",
+          "bridge",
+          "runtime",
+          "store",
+          "compiler"
+        ],
+        "note": "五页工作台经 typed bridge 提交完整模块定义，配置根与 module.yml 在此落盘。"
+      },
+      {
+        "id": "assembly-injection",
+        "label": "装配与注入",
+        "focus": [
+          "runtime",
+          "store",
+          "compiler",
+          "engine",
+          "host"
+        ],
+        "note": "按 config.yml 启用表读取模块，编译为规则并挂到每个 Agent 的九个官方插入点。"
+      },
+      {
+        "id": "skills-transfer",
+        "label": "技能与导入",
+        "focus": [
+          "workbench",
+          "bridge",
+          "runtime",
+          "skills",
+          "store"
+        ],
+        "note": "技能策略写官方 frontmatter；ST、角色卡与世界书先预览确认，再成为普通模块。"
+      },
+      {
+        "id": "authorization",
+        "label": "授权与工具面",
+        "focus": [
+          "bridge",
+          "runtime",
+          "store",
+          "host"
+        ],
+        "note": "loopback 事务、x-module-id 主语和工具显式 moduleId 共同限定可写范围。"
+      }
+    ]
+  },
+  "components": [
+    {
+      "id": "operator",
+      "type": "external",
+      "label": "使用者",
+      "sublabel": "编辑 · 导入 · 启停",
+      "pos": [
+        40,
+        92
+      ],
+      "size": [
+        160,
+        70
+      ],
+      "tag": "local"
+    },
+    {
+      "id": "workbench",
+      "type": "frontend",
+      "label": "Web 工作台",
+      "sublabel": "主会话 · 子代理 · 工具 · 技能 · 模块",
+      "pos": [
+        250,
+        84
+      ],
+      "size": [
+        220,
+        86
+      ],
+      "tag": "shell.overlay 悬浮入口",
+      "sources": [
+        {
+          "path": "src/client/app/workspace/PromptWorkspace.tsx",
+          "label": "五页壳与组合"
+        },
+        {
+          "path": "src/client/app/workbench/register-workbench.tsx",
+          "label": "壳层 slot 注册"
+        },
+        {
+          "path": "src/client/data/use-prompt-tool-store.ts",
+          "label": "工作台 facade"
+        }
+      ]
+    },
+    {
+      "id": "bridge",
+      "type": "security",
+      "label": "Loopback Bridge",
+      "sublabel": "/api/prompt-tool/settings",
+      "pos": [
+        530,
+        84
+      ],
+      "size": [
+        220,
+        86
+      ],
+      "tag": "45 端点 · 仅 127.0.0.1",
+      "sources": [
+        {
+          "path": "src/shared/bridge-contract.ts",
+          "label": "端点与载荷单源"
+        },
+        {
+          "path": "src/runtime/bridge-transaction.ts",
+          "label": "事务与请求边界"
+        },
+        {
+          "path": "src/runtime/bridge-runtime.ts",
+          "label": "主语与路由注册"
+        }
+      ]
+    },
+    {
+      "id": "runtime",
+      "type": "backend",
+      "label": "Plugin Runtime",
+      "sublabel": "配装 · 模块工具 · 技能",
+      "pos": [
+        810,
+        84
+      ],
+      "size": [
+        240,
+        86
+      ],
+      "tag": "Cordis apply",
+      "sources": [
+        {
+          "path": "src/index.ts",
+          "label": "插件入口与宿主接线"
+        },
+        {
+          "path": "src/runtime/agent-assembly.ts",
+          "label": "按 Agent 装配"
+        },
+        {
+          "path": "src/shared/engine-capabilities.ts",
+          "label": "工具能力目录"
+        }
+      ]
+    },
+    {
+      "id": "skills",
+      "type": "backend",
+      "label": "技能与资产导入",
+      "sublabel": "官方技能根 · ST / 角色卡",
+      "pos": [
+        1090,
+        84
+      ],
+      "size": [
+        240,
+        86
+      ],
+      "tag": "预览 → 确认 → 原子安装",
+      "sources": [
+        {
+          "path": "src/host/skills-provider.ts",
+          "label": "目录发现与快照"
+        },
+        {
+          "path": "src/host/sillytavern.ts",
+          "label": "ST 转换"
+        },
+        {
+          "path": "src/runtime/routes/skills.ts",
+          "label": "技能端点"
+        }
+      ]
+    },
+    {
+      "id": "store",
+      "type": "database",
+      "label": "模块存储",
+      "sublabel": "$DSH_HOME/.prompt-tool",
+      "pos": [
+        40,
+        360
+      ],
+      "size": [
+        230,
+        88
+      ],
+      "tag": "module.yml · rules/ · memory.md",
+      "sources": [
+        {
+          "path": "src/host/paths.ts",
+          "label": "存储根"
+        },
+        {
+          "path": "src/host/module-dirs.ts",
+          "label": "模块目录"
+        },
+        {
+          "path": "src/host/config-store.ts",
+          "label": "启用表 / 全局层"
+        }
+      ]
+    },
+    {
+      "id": "compiler",
+      "type": "backend",
+      "label": "定义校验与投影",
+      "sublabel": "module.yml → rules/ 切片",
+      "pos": [
+        330,
+        360
+      ],
+      "size": [
+        250,
+        88
+      ],
+      "tag": "YAML Document · 原子写",
+      "sources": [
+        {
+          "path": "src/host/module-spec.ts",
+          "label": "完整定义读取"
+        },
+        {
+          "path": "src/host/module-slices.ts",
+          "label": "切片投影与恢复"
+        },
+        {
+          "path": "src/host/write-module.ts",
+          "label": "候选与重建"
+        }
+      ]
+    },
+    {
+      "id": "engine",
+      "type": "backend",
+      "label": "统一规则引擎",
+      "sublabel": "compileRules · mountRuleSources",
+      "pos": [
+        640,
+        360
+      ],
+      "size": [
+        240,
+        88
+      ],
+      "tag": "九层 · 六层可注入文本",
+      "sources": [
+        {
+          "path": "engine/rule-spec.mjs",
+          "label": "规则编译与校验"
+        },
+        {
+          "path": "engine/rule-runtime.mjs",
+          "label": "资格 · 挂载 · 释放"
+        },
+        {
+          "path": "engine/executor.mjs",
+          "label": "pre-step 执行器"
+        }
+      ]
+    },
+    {
+      "id": "host",
+      "type": "cloud",
+      "label": "DSH Host",
+      "sublabel": "Cordis · agents · tools · llm",
+      "pos": [
+        1030,
+        360
+      ],
+      "size": [
+        290,
+        88
+      ],
+      "tag": "官方服务与插入点",
+      "sources": [
+        {
+          "path": "package.json",
+          "label": "peer 契约"
+        },
+        {
+          "path": "cordis.patch.yml",
+          "label": "bundle patch"
+        }
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "id": "operator-workbench",
+      "from": "operator",
+      "to": "workbench",
+      "label": "编辑 / 导入",
+      "variant": "emphasis",
+      "labelDy": 64
+    },
+    {
+      "id": "workbench-bridge",
+      "from": "workbench",
+      "to": "bridge",
+      "label": "bridgeCall",
+      "labelDy": 64
+    },
+    {
+      "id": "bridge-runtime",
+      "from": "bridge",
+      "to": "runtime",
+      "label": "loopback API",
+      "variant": "security",
+      "labelDy": 64
+    },
+    {
+      "id": "runtime-skills",
+      "from": "runtime",
+      "to": "skills",
+      "label": "技能目录 / 策略",
+      "labelDy": 64
+    },
+    {
+      "id": "runtime-compiler",
+      "from": "runtime",
+      "to": "compiler",
+      "label": "启用表 · 装配",
+      "variant": "emphasis",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "store-compiler",
+      "from": "store",
+      "to": "compiler",
+      "label": "module.yml"
+    },
+    {
+      "id": "compiler-engine",
+      "from": "compiler",
+      "to": "engine",
+      "label": "compileRules",
+      "labelDy": -45
+    },
+    {
+      "id": "engine-host",
+      "from": "engine",
+      "to": "host",
+      "label": "九层插入点",
+      "variant": "emphasis"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "主链路",
+      "items": [
+        "Cordis apply() 启动 Plugin Runtime；工作台由 shell.overlay 悬浮入口打开五页。",
+        "编辑经 typed bridge 到宿主端点，完整定义提交后由模块保存队列写盘并刷新装配。",
+        "技能、ST、角色卡与世界书导入共用预览、确认和原子候选安装。"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "定义与持久",
+      "items": [
+        "module.yml 是唯一完整定义；rules/ 是单向物化投影，无效定义拒绝加载。",
+        "共享参数在 layerSettings；启用表、全局层与人设来源在 config.yml，变量与记忆各归模块。",
+        "模块工具用本次调用的 moduleId 定主语，缺声明直接拒绝；x-module-id 只定位读写目录。"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "引擎与边界",
+      "items": [
+        "engine/ 的 compileRules → mountRuleSources 对接九个独立官方插入点，不建立跨层全局顺序。",
+        "bridge 事务统一 loopback 校验、仅 POST 与 32 MiB 上限；角色卡流独立限额。",
+        "技能保留在官方/用户来源目录，停用只改写 frontmatter 的调用策略键。"
+      ]
+    }
+  ]
+}
