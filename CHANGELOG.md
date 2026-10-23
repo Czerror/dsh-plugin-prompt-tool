@@ -1,5 +1,14 @@
 # Changelog
 
+### soul 转为本项目模块（2026-10-24）
+
+- 新增项目级引擎行 `soul-tools`（`engine/soul-tools.mjs` + `engine/compositions/source/local/soul-tools.yml`），原样移植 dsh-agent-soul 的 8 个工具、判据语料与 kit（MIT，见 `engine/soul/README.md`）；工具名保持 `agent_soul_*`。
+- 新增内置模块 `modules/soul`：四条判据常驻主会话、硬线进子代理、五层/ECHO/VITAL/账本按需激活、压缩后指针纪律与每 12 轮自检；正文在 `modules/soul/assets/`，运行源是模块。
+- `engine/soul/install.js` 的 profile 推断改为优先 `DSH_PROFILE_DIR`：移植后按插件位置反推会指到插件仓库本身。
+- 测试：新增 `test/engine/soul-tools.test.mjs`（8 工具注册与语料读取、roots 拒绝路径、内置模块装配与规则编译）。
+- 验证：`pnpm typecheck`、`pnpm lint`、`pnpm test`、`pnpm build`、`git diff --check`。
+- 需重启 DSH 后生效。同一 DSH 内不要再安装 dsh-agent-soul 插件（工具重名）；既有插件用户可先停用插件再启用本模块。
+
 ### 删除 characters 兼容面与模块并入（2026-10-24）
 
 - 删除 `charactersImport`／`charactersImportStream`／`moduleMerge`／`moduleUnmerge` 四个 bridge 端点及请求、响应、主语策略与请求形状登记；角色卡导入只走 `importModulePackage`（客户端此前已改走该端点）。

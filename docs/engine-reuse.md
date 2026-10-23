@@ -21,6 +21,7 @@
 | `module-memory-tools` | `module_memory_read`、`module_memory_append` | 当前受控模块 memory.md |
 | `module-import-tools` | `module_import` | 来源预览、选择、凭据和候选安装 |
 | `tool-config-engine` | 模块声明的自定义工具 | 官方工具注册、执行和批准管线 |
+| `soul-tools` | `agent_soul_layers`、`agent_soul_manifest`、`agent_soul_doctor`、`agent_soul_plan`、`agent_soul_scaffold`、`agent_soul_check`、`agent_soul_verify`、`agent_soul_install` | 灵魂判据语料（`engine/soul/soul`）与 kit（`engine/soul/kit`）；唯一写入入口是 scaffold 的显式 apply |
 
 未声明的工具能力不注册。四个模块工具外壳通过 `ctx.inject` 等待各自 `pt-module-*` provider，贡献随 disposer 撤回。来源模块内的模板变量按该来源读写；模型工具目标由执行 Agent 的配装记录确定（只含已启用的规则模块；人设来源是人设卡的独立引用，可以指向未启用的模块，正文写入走 persona 端点），`expectedModuleId` 只校验，不选择任意模块或目录。
 

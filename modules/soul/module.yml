@@ -1,0 +1,188 @@
+# 灵魂架构（推送层 + 判据 + 按需条目）
+# 工具面（plan/scaffold/check/verify/install/ledger）仍由 dsh-agent-soul 插件提供；本模块只补「推送」。
+# 正文放 assets/，用 templateFile 引用；运行源是本模块，soul 仓库是作者稿。
+id: soul
+name: 灵魂架构（判据与推送）
+version: 1.0.0
+engineCompat: ">=0.7.2"
+description: 灵魂架构模块：常驻四条判据与子代理硬线，按需注入五层/ECHO/VITAL/账本，压缩后与每 12 轮各提醒一次；并声明 soul-tools 能力提供 8 个 soul 工具（layers/manifest/doctor/plan/scaffold/check/verify/install）。
+meta:
+  source: manual
+modules:
+  - rule-engine
+  - soul-tools
+order: 10
+rules:
+  - id: soul-core
+    name: 四条判据（常驻）
+    enabled: true
+    layer: runtime-context
+    if:
+      scope:
+        audience: main
+    then:
+      - id: inject
+        kind: inject-text
+        config:
+          id: soul-core
+          strategy: static
+          layer: runtime-context
+          order: 132
+          params:
+            contextName: agent:soul-core
+          templateFile: ./assets/criteria.md
+
+  - id: soul-core-sub
+    name: 子代理硬线
+    enabled: true
+    layer: subagent-start
+    then:
+      - id: inject
+        kind: inject-text
+        config:
+          id: soul-core-sub
+          strategy: static
+          layer: subagent-start
+          order: 216
+          templateFile: ./assets/core-hard.md
+
+  - id: soul-layers
+    name: 五层（按需）
+    enabled: true
+    layer: pre-step
+    then:
+      - id: inject
+        kind: inject-text
+        config:
+          id: soul-layers
+          strategy: context-activation
+          layer: pre-step
+          order: 120
+          position: before-all
+          role: user
+          templateFile: ./assets/layers.md
+          params:
+            constant: false
+            keys: [灵魂, 五层, ECHO, VITAL, 架构]
+            secondaryKeys: []
+            selectiveLogic: AND_ANY
+            wordBoundary: ascii-token
+            activation:
+              scan: history
+              scanDepth: 6
+              selective: false
+
+  - id: soul-echo
+    name: ECHO 机制（按需）
+    enabled: true
+    layer: pre-step
+    then:
+      - id: inject
+        kind: inject-text
+        config:
+          id: soul-echo
+          strategy: context-activation
+          layer: pre-step
+          order: 121
+          position: before-all
+          role: user
+          templateFile: ./assets/echo.md
+          params:
+            constant: false
+            keys: [压缩, 上下文满, 摘要, 找不回, 退化]
+            secondaryKeys: []
+            selectiveLogic: AND_ANY
+            wordBoundary: ascii-token
+            activation:
+              scan: history
+              scanDepth: 8
+              selective: false
+
+  - id: soul-vital
+    name: VITAL 机制（按需）
+    enabled: true
+    layer: pre-step
+    then:
+      - id: inject
+        kind: inject-text
+        config:
+          id: soul-vital
+          strategy: context-activation
+          layer: pre-step
+          order: 122
+          position: before-all
+          role: user
+          templateFile: ./assets/vital.md
+          params:
+            constant: false
+            keys: [预算, 烧光, 打转, 空转, 该停, 阈值]
+            secondaryKeys: []
+            selectiveLogic: AND_ANY
+            wordBoundary: ascii-token
+            activation:
+              scan: history
+              scanDepth: 8
+              selective: false
+
+  - id: soul-ledger
+    name: 账本纪律（按需）
+    enabled: true
+    layer: pre-step
+    then:
+      - id: inject
+        kind: inject-text
+        config:
+          id: soul-ledger
+          strategy: context-activation
+          layer: pre-step
+          order: 123
+          position: before-all
+          role: user
+          templateFile: ./assets/ledger.md
+          params:
+            constant: false
+            keys: [账本, 未结, 承诺, 只追加]
+            secondaryKeys: []
+            selectiveLogic: AND_ANY
+            wordBoundary: ascii-token
+            activation:
+              scan: history
+              scanDepth: 6
+              selective: false
+
+  - id: soul-post-compaction
+    name: 压缩后指针纪律
+    enabled: true
+    layer: system-section
+    if:
+      phase:
+        compacted: true
+    then:
+      - id: inject
+        kind: inject-text
+        config:
+          id: soul-post-compaction
+          strategy: static
+          layer: system-section
+          order: 245
+          text: |-
+            压缩摘要里每条结论都要能回到原文；回不去的写成检索入口，不要写成断言。继续推理前先核对前提。
+
+  - id: soul-tick
+    name: 每 12 轮自检
+    enabled: true
+    layer: system-section
+    if:
+      count:
+        of: turn
+        every: 12
+    then:
+      - id: inject
+        kind: inject-text
+        config:
+          id: soul-tick
+          strategy: static
+          layer: system-section
+          order: 246
+          text: |-
+            自检三问：压缩后丢掉的东西还能按指针找回吗？现在是不是在错误的前提上继续推理？「还能更好」和「没做完」分得开吗？

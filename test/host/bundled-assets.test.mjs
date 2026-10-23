@@ -16,6 +16,7 @@ import { fileURLToPath } from 'node:url'
 import { parse as parseYaml } from 'yaml'
 import { compileRules } from '../../engine/rule-spec.mjs'
 import { validateCustomTools } from '../../src/host/custom-tools.ts'
+import { rulePromptConfigOptions } from '../../src/host/module-slices.ts'
 
 const repoRoot = fileURLToPath(new URL('../../', import.meta.url))
 const subdirectories = path => readdirSync(join(repoRoot, path), { withFileTypes: true })
@@ -35,15 +36,18 @@ test('随包模块：目录名即定义 id、name 非空，定义通过引擎权
     assert.equal(typeof spec.name, 'string', `${id}: name 必须是字符串`)
     assert.ok(spec.name.trim().length > 0, `${id}: name 不能为空`)
     // 只 parseYaml 会漏掉引擎侧不变量（真踩过：同规则内两个分支动作重名，YAML 合法、引擎拒绝）。
-    assert.doesNotThrow(() => compileRules(spec.rules ?? [], { configOrder: spec.configOrder ?? {} }),
-      `${id}: rules 必须被引擎接受`)
+    assert.doesNotThrow(() => compileRules(spec.rules ?? [], {
+      configOrder: spec.configOrder ?? {},
+      promptConfigOptions: rulePromptConfigOptions(join(repoRoot, 'modules', id)),
+    }), `${id}: rules 必须被引擎接受`)
   }
 })
 
-test('随包模块：包内目录只含 module.yml，运行时切片不随包分发', () => {
+test('随包模块：包内只有定义与素材，运行时切片不随包分发', () => {
   for (const id of moduleIds) {
-    assert.deepEqual(readdirSync(join(repoRoot, 'modules', id)).sort(), ['module.yml'],
-      `${id}: rules/ 与 configs/ 都是运行时产物，进工作区就会被打进 npm 包`)
+    const entries = readdirSync(join(repoRoot, 'modules', id)).sort()
+    assert.ok(entries.every(entry => entry === 'module.yml' || entry === 'assets'),
+      `${id}: 只允许 module.yml 与 assets/；rules/ 与 configs/ 是运行时产物，进工作区就会被打进 npm 包`)
   }
 })
 

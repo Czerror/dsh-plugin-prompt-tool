@@ -1,0 +1,7 @@
+# module: soul-tools
+# source: engine/compositions/source/local/soul-tools.yml（本地能力）
+# 灵魂架构工具：layers / manifest / doctor / plan / scaffold / check / verify / install。
+# 只提供可调用能力，不干预装配；模块声明本行才获得这 8 个工具。
+
+- id: soul-tools
+  name: ./engine/soul-tools.mjs
