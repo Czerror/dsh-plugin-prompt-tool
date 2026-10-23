@@ -813,7 +813,7 @@ tool-catalog 填充来源沿现有普通注入表单编辑：params.action 引�
 | 引擎注入行为（插入点 / 时机 / 次数 / 受众） | `test/engine/*.test.mjs` |
 | 写盘产物语义 | `test/host/write-module.test.mjs`、`test/host/module-*.test.mjs`、`test/host/module-slices.test.mjs`、`test/host/global-params.test.mjs`（全局层 `config.yml#layerSettings` 的写/删键/空层回收与优先级）、`test/host/target-queue.test.mjs`、`test/host/versioned-text.test.mjs`、`test/host/skills-cas.test.mjs` |
 | bridge 端点载荷 | `test/shared/bridge-contract.test.mjs`、`test/client/bridge-client.test.mjs`、`test/host/settings-bridge.test.mjs`、`test/host/*-bridge.test.mjs`、`test/client/*.test.mjs`（客户端侧的固定卡接线、请求主语与渲染链路；含 `layer-cards`、`instruction-cards` 这类渲染链路的前置纯判据） |
-| 安全与拒绝路径 | `test/host/instructions-policy.test.mjs`、`test/host/instruction-scope-guard.test.mjs`、`test/host/skill-policy.test.mjs`、`test/host/module-package-import.test.mjs`、`test/host/characters-protection.test.mjs`、`test/host/wave1-safety.test.mjs`、`test/host/text-file.test.mjs`、`test/engine/config-whitelist.test.mjs`、`test/host/agents-cards.test.mjs`、`test/engine/instruction-files.test.mjs`（写白名单来源的探测与目录链判据） |
+| 安全与拒绝路径 | `test/host/instructions-policy.test.mjs`、`test/host/instruction-scope-guard.test.mjs`、`test/host/skill-policy.test.mjs`、`test/host/skills-marker.test.mjs`（技能文件读取前校验）、`test/host/module-package-import.test.mjs`、`test/host/characters-protection.test.mjs`、`test/host/wave1-safety.test.mjs`、`test/host/text-file.test.mjs`、`test/engine/config-whitelist.test.mjs`、`test/host/agents-cards.test.mjs`、`test/engine/instruction-files.test.mjs`（写白名单来源的探测与目录链判据） |
 
 **安全边界的守护位置**：指令文件读写（授权、上下文白名单、内容版本冲突、读取失败）、导入回滚、路径穿越、大小上限、桥端点安全面、晋升门控与 epoch 这些不变量，由上面「安全与拒绝路径」一栏的文件覆盖；改动它们需要独立授权，不得顺带删减。
 

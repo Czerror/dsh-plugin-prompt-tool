@@ -116,7 +116,7 @@ folders:                      # 用户添加的技能文件夹（绝对路径，
 - 无效技能（缺 frontmatter、非法技能名、frontmatter 解析失败）：清单里标红并显示原因，不注册给模型；
   这类技能**不能写调用策略**（没有可解析的 frontmatter），管理页上的开关是禁用的。
 - 写入边界：目标必须是当前来源清单内的绝对路径，文件名为 `SKILL.md` 或合法 `<name>.md`，且是普通文件；目标与祖先中的符号链接均拒绝；
-  frontmatter 必须存在、是 YAML 映射且不含别名。只读目标（例如官方随包目录）写入失败会如实报错。
+  frontmatter 必须存在、是 YAML 映射且不含别名。`/skill-write` 与 `/skill-policy` 共用 `host/skills-marker.ts#readSkillMarker`：路径、文件名、链接、普通文件、完整文件上限 1 MiB 与只读位一次校验；写入前的 catalog 身份与 `skillWriteRestriction` 仍归各自领域。只读目标（例如官方随包目录）写入失败会如实报错。
 - 宿主机目录导入必须是**绝对路径**：空、纯空白与相对路径在端点与实现两层拒绝（400），且不读盘、不写盘。
   空串若落到 `path.resolve('')` 会退化成进程工作目录，等于把整个 cwd 当成技能导入。
 - 管理资产每次读取重新扫描；候选缓存由官方 provider 失效，根初始缺失、删除、重建均能恢复监听。
@@ -141,6 +141,7 @@ folders:                      # 用户添加的技能文件夹（绝对路径，
 | 行为 | 测试 |
 |---|---|
 | 文件写入（保留注释/正文、两端独立、无变化不落盘、各类拒绝） | `test/host/skill-policy.test.mjs` |
+| 技能文件读取前校验（路径/文件名/链接/普通文件/1 MiB/只读位） | `test/host/skills-marker.test.mjs` |
 | 六类来源扫描、同名裁决、清单条目 | `test/host/skills-catalog.test.mjs` |
 | 端点（真实 handler + 写盘 + 身份校验） | `test/host/settings-bridge.test.mjs` |
 

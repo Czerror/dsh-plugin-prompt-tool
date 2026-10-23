@@ -8,13 +8,10 @@
  *  内容无变化不落盘；写盘先同目录暂存再原子 rename；失败时原文件保持逐字节不变。
  *  替换与替换前再核归 `host/versioned-text.ts`；暂存/清理/权限仍归 `host/text-file.ts`。 */
 import { createHash } from 'node:crypto'
-import { lstatSync, readFileSync } from 'node:fs'
-import { basename, isAbsolute } from 'node:path'
 import { Document } from 'yaml'
-import { SKILL_MARKER, invocationForScope, type SkillCatalogEntry, type SkillInvocation, type SkillPolicyChange, type SkillPolicyScope } from '../shared/skills.ts'
-import { parseFrontmatter, parseSkillBoolean } from './skills-parse.ts'
-import { assertUnlinkedPath } from './skills-actions.ts'
-import { SKILL_NAME_PATTERN } from './skills-config.ts'
+import { MAX_SKILL_CONTENT_BYTES, invocationForScope, type SkillCatalogEntry, type SkillInvocation, type SkillPolicyChange, type SkillPolicyScope } from '../shared/skills.ts'
+import { parseSkillBoolean } from './skills-parse.ts'
+import { readSkillMarker } from './skills-marker.ts'
 import { replaceVersionedText } from './versioned-text.ts'
 
 export type SkillPolicyRead =
@@ -38,31 +35,15 @@ interface ParsedMarker {
   doc: Document
 }
 
-/** runtime 已核对根与身份；此处继续检查文件名、所有祖先和普通可写文件。 */
-function assertWritableMarker(file: string, writable = false): string {
-  if (typeof file !== 'string' || file.length === 0 || !isAbsolute(file)) throw new Error('技能文件必须是绝对路径')
-  const name = basename(file)
-  if (name !== SKILL_MARKER && !(name.endsWith('.md') && SKILL_NAME_PATTERN.test(name.slice(0, -3)))) throw new Error(`技能文件必须是 ${SKILL_MARKER} 或合法的 <name>.md：${file}`)
-  assertUnlinkedPath(file)
-  const info = lstatSync(file)
-  if (info.isSymbolicLink()) throw new Error(`拒绝改写符号链接技能：${file}`)
-  if (!info.isFile()) throw new Error(`技能文件不是普通文件：${file}`)
-  if (writable && (info.mode & 0o222) === 0) throw new Error(`技能文件只读：${file}`)
-  return file
-}
-
-/** 解析技能文件的 frontmatter；任何异常都以失败载荷返回，由调用方决定如何报告。 */
-function parseMarker(file: string): ParsedMarker {
-  assertWritableMarker(file)
-  const raw = readFileSync(file, 'utf8')
-  // 合法性判定走唯一一份解析：BOM 读时剥写回保留、YAML 别名一律拒绝、legacy 键文案统一，都在那里。
-  const parsed = parseFrontmatter(raw)
-  if (!parsed.ok) throw new Error(`${parsed.issue}：${file}`)
-  const { doc, bom, frontmatter, boundaries } = parsed.source
+/** runtime 已核对根与身份；文件级校验与解析走 `readSkillMarker` 同一份。 */
+function parseMarker(file: string, writable = false): ParsedMarker {
+  const { raw, parse } = readSkillMarker(file, { writable })
+  if (!parse.ok) throw new Error(`${parse.issue}：${file}`)
+  const parsed = parse.source
   return {
-    raw, frontmatter, bom, doc,
+    raw, frontmatter: parsed.frontmatter, bom: parsed.bom, doc: parsed.doc,
     // `---` 之后的全部原文（逐字保留）：写回时直接接在收尾 `---` 后。
-    rest: boundaries.tail,
+    rest: parsed.boundaries.tail,
   }
 }
 
@@ -108,8 +89,7 @@ export function policyTarget(
 /** 把技能文件的调用策略写到目标范围；返回是否发生写入。 */
 export function setSkillInvocation(file: string, change: SkillPolicyChange | SkillPolicyScope): SkillPolicyWrite {
   try {
-    const parsed = parseMarker(file)
-    assertWritableMarker(file, true)
+    const parsed = parseMarker(file, true)
     const operation = typeof change === 'string' ? { scope: change } : change
     if (operation === null || typeof operation !== 'object'
       || ('scope' in operation ? !['none', 'model', 'user', 'all'].includes(operation.scope)
@@ -124,13 +104,14 @@ export function setSkillInvocation(file: string, change: SkillPolicyChange | Ski
     const userChanged = ('scope' in operation || operation.side === 'user') && writeKey(parsed.doc, 'user-invocable', target.userInvocable)
     if (!modelChanged && !userChanged) return { ok: true, changed: false, invocation: target }
     const content = `${parsed.bom}---\n${parsed.doc.toString()}---${parsed.rest}`
+    // 读侧只保证原文件不超限；改写可能追加键，写产物必须再查一次，否则会写出自己读不了的文件。
+    if (Buffer.byteLength(content, 'utf8') > MAX_SKILL_CONTENT_BYTES) throw new Error('技能文件不能超过 1 MiB')
     replaceVersionedText({
       file,
       expectedRevision: revisionOf(parsed.raw),
       read: () => {
-        assertWritableMarker(file, true)
-        const current = readFileSync(file, 'utf8')
-        return { revision: revisionOf(current), value: current, text: current }
+        const current = readSkillMarker(file, { writable: true })
+        return { revision: revisionOf(current.raw), value: current.raw, text: current.raw }
       },
       prepare: () => content,
       recheck: current => {

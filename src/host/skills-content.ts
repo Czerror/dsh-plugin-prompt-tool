@@ -1,12 +1,11 @@
 /** 技能描述与正文编辑：保留其余 frontmatter，按完整原文摘要拒绝覆盖外部修改。 */
 import { createHash } from 'node:crypto'
-import { lstatSync, readFileSync } from 'node:fs'
-import { basename, isAbsolute } from 'node:path'
-import { MAX_SKILL_CONTENT_BYTES, SKILL_MARKER, type SkillCatalogEntry, type SkillContentSnapshot } from '../shared/skills.ts'
-import { parseFrontmatter, parseSkillBoolean } from './skills-parse.ts'
-import { assertUnlinkedPath } from './skills-actions.ts'
+import { isAbsolute } from 'node:path'
+import { MAX_SKILL_CONTENT_BYTES, type SkillCatalogEntry, type SkillContentSnapshot } from '../shared/skills.ts'
+import { parseSkillBoolean } from './skills-parse.ts'
 import { SKILL_NAME_PATTERN } from './skills-config.ts'
 import { skillWriteRestriction } from './skills-scan.ts'
+import { readSkillMarker, type SkillMarkerFile } from './skills-marker.ts'
 import { replaceVersionedText } from './versioned-text.ts'
 
 export type SkillContentResult =
@@ -17,34 +16,22 @@ type Catalog = () => readonly SkillCatalogEntry[]
 const revisionOf = (content: string): string => createHash('sha256').update(content).digest('hex')
 const failure = (error: unknown): SkillContentResult => ({ ok: false, message: error instanceof Error ? error.message : String(error) })
 
+/** catalog 身份与可编辑性；文件级校验与解析走 `readSkillMarker` 同一份。 */
 function assertTarget(catalog: Catalog, name: string, path: string, writable = false): void {
   if (typeof name !== 'string' || name.length === 0 || typeof path !== 'string' || !isAbsolute(path)) throw new Error('技能名与绝对路径必填')
   const entry = catalog().find((skill) => skill.name === name && skill.path === path)
   if (entry === undefined) throw new Error('技能或引用目录已变化，请刷新后重试')
   if (writable && entry.canEdit !== true) throw new Error(entry.readonlyReason ?? '该技能只读')
-  const filename = basename(path)
-  if (filename !== SKILL_MARKER && !(filename.endsWith('.md') && SKILL_NAME_PATTERN.test(filename.slice(0, -3)))) throw new Error('不是受支持的技能文件')
-  assertUnlinkedPath(path)
-  const info = lstatSync(path)
-  if (!info.isFile()) throw new Error('技能标记不是普通文件')
-  if (info.size > MAX_SKILL_CONTENT_BYTES) throw new Error('技能文件不能超过 1 MiB')
   if (writable) {
     const restriction = skillWriteRestriction(path)
     if (restriction !== undefined) throw new Error(restriction)
   }
 }
 
-function readContent(path: string): string {
-  const content = readFileSync(path, 'utf8')
-  if (Buffer.byteLength(content, 'utf8') > MAX_SKILL_CONTENT_BYTES) throw new Error('技能文件不能超过 1 MiB')
-  return content
-}
-
-function parseMarker(raw: string) {
-  // 合法性（边界／YAML 映射／YAML 别名／legacy 键）走唯一一份解析：BOM 宽容与文案统一都在那里。
-  const parsed = parseFrontmatter(raw)
-  if (!parsed.ok) throw new Error(parsed.issue)
-  const { doc, bom, body, boundaries } = parsed.source
+function parseMarker(marker: SkillMarkerFile) {
+  if (!marker.parse.ok) throw new Error(marker.parse.issue)
+  const { raw } = marker
+  const { doc, bom, body, boundaries } = marker.parse.source
   const declared = doc.get('name')
   if (typeof declared !== 'string' || !SKILL_NAME_PATTERN.test(declared)) throw new Error('技能名须为 kebab-case')
   // 缺描述的条目在清单中回退目录名；只修改描述，不重写原文里的合法 name。
@@ -69,9 +56,9 @@ function parseMarker(raw: string) {
 export function readSkillContent(catalog: Catalog, name: string, path: string): SkillContentResult {
   try {
     assertTarget(catalog, name, path)
-    const raw = readContent(path)
-    const { content, description } = parseMarker(raw)
-    return { ok: true, content, description, revision: revisionOf(raw) }
+    const marker = readSkillMarker(path)
+    const { content, description } = parseMarker(marker)
+    return { ok: true, content, description, revision: revisionOf(marker.raw) }
   } catch (error) { return failure(error) }
 }
 
@@ -81,9 +68,10 @@ export function writeSkillContent(catalog: Catalog, name: string, path: string, 
     if (typeof content !== 'string' || Buffer.byteLength(content, 'utf8') > MAX_SKILL_CONTENT_BYTES) throw new Error('技能内容必须是字符串且不能超过 1 MiB')
     if (typeof description !== 'string' || description.trim().length === 0 || description.length > 8192) throw new Error('技能描述必填且不能超过 8192 字符')
     assertTarget(catalog, name, path, true)
-    const before = readContent(path)
+    const beforeMarker = readSkillMarker(path, { writable: true })
+    const before = beforeMarker.raw
     if (revisionOf(before) !== expectedRevision) throw new Error('技能内容版本冲突，请重新读取后重试')
-    const parsed = parseMarker(before)
+    const parsed = parseMarker(beforeMarker)
     let head = parsed.head
     if (description !== parsed.description) {
       parsed.doc.set('description', description)
@@ -98,8 +86,8 @@ export function writeSkillContent(catalog: Catalog, name: string, path: string, 
       expectedRevision,
       read: () => {
         assertTarget(catalog, name, path, true)
-        const current = readContent(path)
-        return { revision: revisionOf(current), value: current, text: current, mode: lstatSync(path).mode & 0o777 }
+        const current = readSkillMarker(path, { writable: true })
+        return { revision: revisionOf(current.raw), value: current.raw, text: current.raw, mode: current.mode }
       },
       prepare: () => raw,
       recheck: current => {

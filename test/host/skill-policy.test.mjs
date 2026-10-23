@@ -25,7 +25,7 @@ process.env.DSH_HOME = sandbox
 after(() => { rmSync(sandbox, { recursive: true, force: true }) })
 
 const { policyTarget, readSkillInvocation, setSkillInvocation } = await import('../../src/host/skills-policy.ts')
-const { invocationForScope, scopeOfInvocation } = await import('../../src/shared/skills.ts')
+const { MAX_SKILL_CONTENT_BYTES, invocationForScope, scopeOfInvocation } = await import('../../src/shared/skills.ts')
 
 const BOM = '\ufeff'
 const MODEL_KEY = 'disable-model-invocation'
@@ -332,6 +332,28 @@ test('目标是符号链接时拒绝改写（不把写入带到根外）', (t) =
   assert.match(written.message, /符号链接/u)
   assert.equal(readFileSync(real, 'utf8'), before, '链接目标文件必须逐字节不变')
   assert.deepEqual(leftovers(link), [], '被拒绝不留暂存文件')
+})
+
+test('目标超过 1 MiB 时拒绝写入策略，文件逐字节不变', () => {
+  const file = write(makeMarker(), '---\nname: demo\ndescription: D\n---\n' + 'x'.repeat(1024 * 1024))
+  const before = readFileSync(file, 'utf8')
+  const written = setSkillInvocation(file, 'all')
+  assert.equal(written.ok, false, '超限必须拒绝')
+  assert.match(written.message, /不能超过 1 MiB/u)
+  assert.equal(readFileSync(file, 'utf8'), before, '拒绝时原件逐字节不变')
+  assert.deepEqual(leftovers(file), [], '被拒绝不留暂存文件')
+})
+
+test('改写后超过 1 MiB 时拒绝，原文不变', () => {
+  const head = '---\nname: demo\ndescription: D\n---\n'
+  // 读侧刚好不超限；改写会追加两个策略键，写侧必须再查一次产物大小。
+  const file = write(makeMarker(), head + 'x'.repeat(MAX_SKILL_CONTENT_BYTES - head.length - 5))
+  const before = readFileSync(file, 'utf8')
+  const written = setSkillInvocation(file, 'all')
+  assert.equal(written.ok, false, '写后超限必须拒绝')
+  assert.match(written.message, /不能超过 1 MiB/u)
+  assert.equal(readFileSync(file, 'utf8'), before, '拒绝时原件逐字节不变')
+  assert.deepEqual(leftovers(file), [], '被拒绝不留暂存文件')
 })
 
 test('身份校验（真实实现）：陈旧路径、无效技能与空清单一律拒绝，命中才放行', () => {

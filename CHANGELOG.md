@@ -1,5 +1,13 @@
 # Changelog
 
+### 技能文件写前校验统一（2026-10-23）
+
+- 新增 `src/host/skills-marker.ts#readSkillMarker`：路径、marker 名、祖先链、普通文件、读后字节与 1 MiB 上限、`writable` 只读位一次校验；frontmatter 解析结果随返回，调用方决定先报冲突还是先报解析。
+- `skills-content` 与 `skills-policy` 删除各自的文件级检查；policy 现在与 content 一样拒绝 >1 MiB 文件（此前 `/skill-policy` 能重写 content 拒绝打开的文件）。
+- marker 统一只读位检查；content 的既有 `skillWriteRestriction` 仍在前置拒绝，写入边界不变。
+- 回归：新增 `test/host/skills-marker.test.mjs`；`skill-policy.test.mjs` 补 >1 MiB 拒绝。文档同步 `docs/skills-management.md`。
+- 需重启 DSH 后生效。
+
 ### 指令卡壳单一来源（2026-10-23）
 
 - **单一输入**：`instructionShellsRef` 只由 `/bootstrap` 会话段写入；删除 settings descriptor 的 `promptConfigs` 死通道与 `readPromptConfigs`（settings schema 只有 `modulesEnabled`，该值恒空）。

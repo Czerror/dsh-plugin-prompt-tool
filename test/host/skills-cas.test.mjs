@@ -59,6 +59,22 @@ test('技能正文 CAS：成功替换后，替换前外部改写保留原文件�
   assert.equal(readFileSync(path, 'utf8'), changed)
 })
 
+test('技能正文写：陈旧版本 + 坏 frontmatter 先报版本冲突', (t) => {
+  const dir = fresh(t)
+  const path = join(dir, 'SKILL.md')
+  const catalog = () => [{ name: 'demo', path, valid: true, canEdit: true }]
+  writeFileSync(path, skill())
+  const read = readSkillContent(catalog, 'demo', path)
+  assert.equal(read.ok, true)
+  // 外部把文件改成坏 frontmatter；调用方手里的仍是旧 revision。
+  const broken = '没有 frontmatter 的正文\n'
+  writeFileSync(path, broken)
+  const result = writeSkillContent(catalog, 'demo', path, 'new body', 'new description', read.revision)
+  assert.equal(result.ok, false)
+  assert.match(result.message, /技能内容版本冲突/u, '先比版本，再解析')
+  assert.equal(readFileSync(path, 'utf8'), broken, '拒绝时原件不变')
+})
+
 test('技能调用策略 CAS：外部改写后保留冲突消息与原文件', (t) => {
   const dir = fresh(t)
   const path = join(dir, 'SKILL.md')
