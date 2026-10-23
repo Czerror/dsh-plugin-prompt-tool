@@ -1,5 +1,11 @@
 # Changelog
 
+### layers 注册登记收成一条（2026-10-23）
+
+- `engine/layers.mjs` 新增 `orderedEntry(name, config)`；system-section、conditional、runtime-context 与 placeholder 四处 `ordered` 登记改调它。
+- 排序行为不变；`test/engine/layer-order.test.mjs` 覆盖 system-section/runtime-context 两条排序主路径。
+- 需重启 DSH 后生效。
+
 ### 参数草稿键收进一个 owner（2026-10-23）
 
 - `module-subject` 新增 `paramDraftKey(owner, param)` 与 `ownsParamDraftKey(key, owner)`；UI 拼键与 store 的 `hasRawDraft` 前缀判断改调它。

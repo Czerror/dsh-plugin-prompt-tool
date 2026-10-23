@@ -212,7 +212,7 @@ function wireSystemSections(ctx, configs, registry, warnOnce, keep, ordered) {
         text,
         ...(base.params?.complete === true ? { complete: true } : {}),
       }), `${name}: section ${base.id}`)
-      ordered.sections.push({ name: entryName, sequence: base.sequence ?? base.order ?? 0, order: base.order ?? 0 })
+      ordered.sections.push(orderedEntry(entryName, base))
       // suppressRuntimeContext 抑制该 scope 的动态 runtime-context 快照（多段重复调用幂等）。
       if (base.params?.suppressRuntimeContext === true) {
         keep(systemPrompt.suppressRuntimeContext(), `${name}: suppressRuntimeContext ${base.id}`)
@@ -254,7 +254,7 @@ function wireRuleTextContributions(ctx, configs, registry, warnOnce, keep, on, o
     const entryName = textRegistrationName(base, section ? 'sectionName' : 'contextName')
     keep(systemPrompt[section ? 'section' : 'context']({ name: entryName, order: base.order, text: marker }), `${name}: conditional ${entryName}`)
     bindings.push({ group, name: entryName, collection: section ? 'sections' : 'contexts' })
-    ordered[section ? 'sections' : 'contexts'].push({ name: entryName, sequence: base.sequence ?? base.order ?? 0, order: base.order ?? 0 })
+    ordered[section ? 'sections' : 'contexts'].push(orderedEntry(entryName, base))
   }
   let active = true
   keep(() => { active = false }, `${name}: conditional text lifecycle`)
@@ -307,7 +307,7 @@ function wireRuntimeContexts(ctx, configs, registry, warnOnce, keep, on, ordered
         order: base.order,
         text,
       }), `${name}: context ${base.id}`)
-      ordered.contexts.push({ name: entryName, sequence: base.sequence ?? base.order ?? 0, order: base.order ?? 0 })
+      ordered.contexts.push(orderedEntry(entryName, base))
     } catch (error) {
       if (base.linkedDelivery) throw error
       warnOnce(`${name}: runtime-context config ${base.id} failed: ${String(error?.message ?? error)}`)
@@ -333,7 +333,7 @@ function wireRuntimeContexts(ctx, configs, registry, warnOnce, keep, on, ordered
         text: slotText,
       }), `${name}: context ${config.id}`)
       registered.set(contextName, config)
-      ordered.contexts.push({ name: contextName, sequence: config.sequence ?? config.order ?? 0, order: config.order ?? 0 })
+      ordered.contexts.push(orderedEntry(contextName, config))
     } catch (error) {
       warnOnce(`${name}: runtime-context placeholder ${config.id} failed: ${String(error?.message ?? error)}`)
     }
@@ -598,6 +598,11 @@ function wireSubagentEvents(ctx, configs, warnOnce, on) {
     }))
   }
   return disposers
+}
+
+/** 注册名与序号：字段只在注册点算一次，重排器只消费这里的结果。 */
+function orderedEntry(name, config) {
+  return { name, sequence: config.sequence ?? config.order ?? 0, order: config.order ?? 0 }
 }
 
 /**
