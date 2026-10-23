@@ -33,15 +33,18 @@ const hasEveryService = () => true
 
 /** 只替代 Agent/模型驱动；注册、scope 路由与注入执行器使用真实实现。 */
 async function liveAssembly(t, enabledModules, options = {}) {
+  // `beforeCoordinator` 只服务「模拟官方监听器先注册」的用例；不透传给装配。
+  const { beforeCoordinator, ...assemblyOptions } = options
   const root = new Context()
   await root.plugin(SystemPrompt)
   await root.plugin(ToolRuntime)
   root.provide('llm', {})
   const agents = []
   root.provide('agents', { list: () => agents })
+  beforeCoordinator?.(root)
   installPreStepCoordinator(root)
   const warnings = []
-  const runtime = createAgentAssembly(root, { moduleRoot, enabledModules, ...options, warn: (message) => warnings.push(message) })
+  const runtime = createAgentAssembly(root, { moduleRoot, enabledModules, ...assemblyOptions, warn: (message) => warnings.push(message) })
   t.after(async () => { await runtime.dispose(); await root.fiber.dispose() })
   const makeAgent = async (id, depth = 0, surface) => {
     const events = []
@@ -949,14 +952,14 @@ const LITERAL_SLICES = [
   },
 ]
 
-function writeModuleFixture(id, { modules, promptConfigs = [], moduleConfigs, persona, configOrder, variables }) {
+function writeModuleFixture(id, { modules, promptConfigs = [], rules = [], moduleConfigs, persona, configOrder, variables }) {
   const dir = join(moduleRoot, id)
   mkdirSync(dir, { recursive: true })
   writeFileSync(join(dir, 'module.yml'), `${JSON.stringify({
     id, name: id, modules: [...new Set(modules.map(name => ['prompt-config-engine', 'declared-triggers'].includes(name) ? 'rule-engine' : name))],
-    rules: promptConfigs.map(config => config.layer === 'agent-request'
+    rules: [...rules, ...promptConfigs.map(config => config.layer === 'agent-request'
       ? { id: config.id, layer: 'agent-request', then: [{ id: 'request', kind: 'request-params', patch: config.params.patch }] }
-      : fixtureRule(config)), ...(configOrder === undefined ? {} : { configOrder }),
+      : fixtureRule(config))], ...(configOrder === undefined ? {} : { configOrder }),
     ...(moduleConfigs === undefined ? {} : { moduleConfigs }), ...(persona === undefined ? {} : { persona }),
     ...(variables === undefined ? {} : { variables }),
   }, null, 2)}\n`, 'utf8')
@@ -1660,4 +1663,26 @@ test('官方 recipe 行只声明时给出诊断，不静默假装已挂载', asy
   const h = await liveAssembly(t, () => ['official-row'])
   await h.makeAgent('official-row-agent')
   assert.ok(h.warnings.some(message => message.includes('filesystem-editor')), '声明官方行必须可见')
+})
+
+// 回归：pre-step 批执行必须在最外层。官方 dsh-tool-skill 是更内层的监听器，`await next()`
+// 之后才 append 技能目录；协调器若在内层，过滤时目录还没出现，随后外层再 append → 删不掉。
+test('协调器批执行在最外层：先注册的监听器在 next() 之后追加的消息仍会被过滤', async (t) => {
+  writeModuleFixture('drop-catalog', {
+    modules: ['rule-engine'],
+    rules: [{ id: 'narrow', then: [{ id: 'drop', kind: 'pre-step-filter', sources: ['user'] }] }],
+  })
+  const h = await liveAssembly(t, () => ['drop-catalog'], {
+    beforeCoordinator: (root) => {
+      // 模拟官方 dsh-tool-skill：先注册（更内层），next() 之后才追加目录。
+      root.on('agent/pre-step', async (_payload, next) => {
+        const decision = await next()
+        return { ...decision, messages: [...decision.messages, { role: 'user', source: { kind: 'skill-catalog' }, content: [{ type: 'text', text: 'CATALOG' }] }] }
+      })
+    },
+  })
+  const agent = await h.makeAgent('drop-catalog-main')
+  const decision = await h.inject(agent)
+  assert.ok(!decision.messages.some(message => message.source?.kind === 'skill-catalog'), '外层追加的 skill-catalog 被过滤')
+  assert.ok(decision.messages.some(message => message.source?.kind === 'user'), '白名单内的 user 消息保留')
 })

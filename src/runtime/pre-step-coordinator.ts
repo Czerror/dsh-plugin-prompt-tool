@@ -120,6 +120,8 @@ export function installPreStepCoordinator(ctx: Context, options: PreStepCoordina
     confirmDelivered(memo, session, event)
   })
 
+  // prepend：必须在最外层。更内层的监听器（官方 dsh-tool-skill 的目录发布）是 `await next()`
+  // 之后才 append messages，内层过滤时看不到它们；只有本监听器先拿到完整 decision 才删得掉。
   ctx.on('agent/pre-step', async (payload: unknown, next: () => Promise<PreStepDecision>) => {
     const decision = await next()
     if (!active || !isRecord(decision) || decision.kind === 'reject') return decision
@@ -143,7 +145,7 @@ export function installPreStepCoordinator(ctx: Context, options: PreStepCoordina
       warnOnce(`${WARN_LABEL}: coordination failed, keeping decision: ${String((error as Error | undefined)?.message ?? error)}`)
       return decision
     }
-  })
+  }, { prepend: true })
   // prepend 让官方普通监听器先生成消息，再在进入历史之前过滤；普通配置仍用原执行顺序。
   ctx.on('agent/pre-step', async (payload: unknown, next: () => Promise<PreStepDecision>) => {
     const decision = await next()

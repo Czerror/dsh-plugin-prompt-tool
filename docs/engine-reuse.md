@@ -247,7 +247,7 @@ surface 缺失或非法时可见视图退回完整日志；合法空 nodes 就�
 
 ## pre-step 协调器与官方指令过滤
 
-宿主 `src/runtime/pre-step-coordinator.ts` 汇总模块规则与直接来源，先处理官方待注入指令，再执行规则。来源白名单过滤器使用真实已领取 payload，不将下游增量当原始消息。
+宿主 `src/runtime/pre-step-coordinator.ts` 汇总模块规则与直接来源，先处理官方待注入指令，再执行规则。来源白名单过滤器使用真实已领取 payload，不将下游增量当原始消息。批执行监听器以 `prepend` 注册在最外层：官方监听器（如 `dsh-tool-skill` 的技能目录）在 `await next()` 之后才 append messages，内层过滤看不到它们；只有先拿到完整 decision 才删得掉。
 
 协调器服务 v2 持有唯一的 promotion pool/pair，并把它暴露给来源生产者；`registerPreset(sourceId, source)` 消费 source 自带的 ctx/onOutcome/promotion，不再改写 `config.resolve`，也不再从 config 反推模块。批执行由 `runPreStepBatch({ sources })` 合并来源，判定上报使用对象形状；pre-step 来源的 `source.ctx` 绑定 `resolve`，条件帧使用批级 ctx。
 

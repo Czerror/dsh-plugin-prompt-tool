@@ -1,5 +1,13 @@
 # Changelog
 
+### pre-step 批执行改在最外层注册（2026-10-23）
+
+- `src/runtime/pre-step-coordinator.ts` 的批执行监听器改为 `{ prepend: true }`：官方 `dsh-tool-skill` 在更内层注册、`await next()` 之后才 append 技能目录，内层过滤拿到的 decision 里没有它，随后外层再 append，`skill-surface` 的 `pre-step-filter` 永远删不掉（隔离 headless 复测 catalog=1）。
+- 回归：`test/host/agent-assembly.test.mjs` 新增「先注册的监听器在 next() 之后追加的消息仍会被过滤」；夹具扩展 `beforeCoordinator` 与裸 `rules`。
+- 验证：定向用例先红后绿；全量门禁见 PLAN 验收记录。
+- 需重启 DSH 后生效。
+- 已知边界：无协调器的 standalone 路径（`applyPromptConfigSources` 的 prepend 判据只看 configs）仍不覆盖纯 ruleAction 的 pre-step-filter。
+
 ### 回滚契约外 undefined 死防御（2026-10-23）
 
 - 回滚未发布的 `cbf812e9`：`engine/tool-config-engine.mjs` 的 `delegate` / `ask-user` 成功返回值不再做 `undefined` 条件展开，净行为回到 `274a02b3`；删除两条基于契约外桩的测试。
