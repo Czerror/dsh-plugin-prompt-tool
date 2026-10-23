@@ -2,16 +2,8 @@
 import { ZipReader, ZipWriter, Uint8ArrayReader, Uint8ArrayWriter } from '@zip.js/zip.js'
 import type { AssetFile } from '../shared/asset-transfer.ts'
 import { MAX_ASSET_BYTES, MAX_ASSET_FILES } from '../shared/asset-transfer.ts'
+import { assertSafeRelativePath } from '../shared/asset-path.ts'
 export { MAX_ASSET_BYTES, MAX_ASSET_FILES } from '../shared/asset-transfer.ts'
-
-export function safeAssetPath(path: string): string {
-  if (typeof path !== 'string' || path.length === 0 || path.length > 1024
-    || path.includes('\\') || path.startsWith('/') || /[\p{Cc}<>:"|?*]/u.test(path)) throw new Error(`非法资源路径：${path}`)
-  const parts = path.split('/')
-  if (parts.some((part) => part === '' || part === '.' || part === '..' || /[. ]$/.test(part)
-    || /^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i.test(part))) throw new Error(`非法资源路径：${path}`)
-  return path
-}
 
 export async function unpackZip(bytes: Uint8Array): Promise<AssetFile[]> {
   if (bytes.length > MAX_ASSET_BYTES) throw new Error('ZIP 超过 64 MiB 上限')
@@ -23,7 +15,7 @@ export async function unpackZip(bytes: Uint8Array): Promise<AssetFile[]> {
   try {
     for await (const entry of reader.getEntriesGenerator()) {
       if (++entries > MAX_ASSET_FILES) throw new Error('ZIP 文件数超过上限')
-      const path = safeAssetPath(entry.filename.replace(/\/$/, ''))
+      const path = assertSafeRelativePath(entry.filename.replace(/\/$/, ''))
       const key = path.normalize('NFC').toLowerCase()
       if (seen.has(key)) throw new Error(`ZIP 路径重复：${path}`)
       seen.add(key)
@@ -51,6 +43,6 @@ export async function unpackZip(bytes: Uint8Array): Promise<AssetFile[]> {
 
 export async function packZip(files: Array<{ path: string; bytes: Uint8Array }>): Promise<Uint8Array> {
   const writer = new ZipWriter(new Uint8ArrayWriter(), { useWebWorkers: false })
-  for (const file of files) await writer.add(safeAssetPath(file.path), new Uint8ArrayReader(file.bytes))
+  for (const file of files) await writer.add(assertSafeRelativePath(file.path), new Uint8ArrayReader(file.bytes))
   return writer.close()
 }

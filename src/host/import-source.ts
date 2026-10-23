@@ -8,6 +8,7 @@ import { ruleInjections } from './rule-content.ts'
 import { MODULE_DEFINITION_FILE } from './paths.ts'
 import type { AssetFile, ImportChoices, ImportKind } from '../shared/asset-transfer.ts'
 import { MAX_ASSET_BYTES, MAX_ASSET_FILES } from '../shared/asset-transfer.ts'
+import { assertSafeRelativePath } from '../shared/asset-path.ts'
 import type { StConversionReport } from '../shared/bridge-contract.ts'
 import type { ModuleSpec } from './module-spec.ts'
 import { readModuleLayerSettings } from './module-layer-settings.ts'
@@ -44,9 +45,7 @@ export function normalizeAssetFiles(files: AssetFile[]): AssetFile[] {
   const normalized = files.map(file => {
     if (!isRecord(file) || typeof file.path !== 'string') throw new Error('文件路径必须是字符串')
     const path = file.path
-    const segments = path.split('/')
-    if (path.length > 1024 || path.includes('\\') || [...path].some(char => char.charCodeAt(0) < 32) || segments.some(segment => segment === '' || segment === '.' || segment === '..' || /[<>:"|?*]/.test(segment)
-      || /[. ]$/.test(segment) || /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i.test(segment))) throw new Error(`非法文件路径：${file.path}`)
+    assertSafeRelativePath(path)
     const key = path.normalize('NFC').toLowerCase()
     if (seen.has(key)) throw new Error(`文件路径重复或大小写冲突：${file.path}`)
     seen.add(key)

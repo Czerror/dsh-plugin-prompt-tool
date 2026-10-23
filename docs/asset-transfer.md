@@ -49,7 +49,7 @@
 |---|---|
 | `shared/asset-transfer.ts`、`bridge-contract.ts` | 字节、选择、摘要与响应契约 |
 | `host/import-source.ts`、`character-png.ts` | 内容判别、转换、来源报告、受限 PNG 解码 |
-| `host/asset-sources.ts`、`asset-archive.ts` | 生命周期暂存、ZIP 载体与边界校验 |
+| `host/asset-sources.ts`、`asset-archive.ts`、`shared/asset-path.ts` | 生命周期暂存、ZIP 载体；相对路径边界校验由 shared 原语承载（ZIP/上传/模块包/技能导入共用） |
 | `host/module-package.ts` | 预览、严格候选、安装与导出 |
 | `host/module-dirs.ts`、`module-catalog.ts`、`module-capabilities.ts`、`module-install.ts`、`write-module.ts`、`module-install-transaction.ts`、`module-write.ts`、`module-slices.ts` | 合法身份、根归属、复制、候选校验、安装事务、完整定义提交与切片恢复 |
 | `host/characters.ts` | 普通模块合并／移除、模块记忆与历史分享证明兼容 |

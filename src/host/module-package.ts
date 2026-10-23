@@ -4,7 +4,8 @@ import { cpSync, existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, wr
 import { basename, dirname, join, posix } from 'node:path'
 import { parseDocument } from 'yaml'
 import type { AssetFile, AssetImportRequest, AssetSummary, ModuleExportRequest, ModuleExportResult } from '../shared/asset-transfer.ts'
-import { MAX_ASSET_BYTES, MAX_ASSET_FILES, packZip, safeAssetPath, unpackZip } from './asset-archive.ts'
+import { MAX_ASSET_BYTES, MAX_ASSET_FILES, packZip, unpackZip } from './asset-archive.ts'
+import { assertSafeRelativePath } from '../shared/asset-path.ts'
 import { decodeAssetFile, normalizeAssetFiles, prepareImport, assetSourceDigest } from './import-source.ts'
 import { directoryVersionOf, computePreviewRevision } from './preview-revision.ts'
 import { resolveModuleDir, packageEngineDir } from './module-dirs.ts'
@@ -62,7 +63,7 @@ function packageTemplate(files: readonly PackageFile[], missing?: Set<string>): 
     const path = posix.normalize(file)
     if (file.includes('\\') || file.includes(':') || posix.isAbsolute(path) || path === '..' || path.startsWith('../')
       || path === 'rules' || path.startsWith('rules/')) throw new Error('非法或外部模板资源：' + file)
-    safeAssetPath(path)
+    assertSafeRelativePath(path)
     const bytes = entries.get(path)
     if (bytes === undefined) {
       if (missing) { missing.add('缺失资源：' + path); return undefined }
@@ -104,7 +105,7 @@ export async function expandModuleSource(input: AssetFile[]): Promise<AssetFile[
   const seen = new Set<string>()
   let size = 0
   for (const file of files) {
-    safeAssetPath(file.path)
+    assertSafeRelativePath(file.path)
     const key = file.path.normalize('NFC').toLowerCase()
     if (seen.has(key)) throw new Error(`重复资源路径：${file.path}`)
     seen.add(key)
@@ -209,7 +210,7 @@ export async function installModulePackage(root: string, files: AssetFile[], req
         for (const file of preview.prepared.files.filter((file) => file.path !== MANIFEST && file.path !== MODULE_DEFINITION_FILE)) {
           const top = file.path.split('/')[0]!
           if (top === 'rules' || LEGACY_ARTIFACTS.includes(top)) continue
-          const path = join(candidate, safeAssetPath(file.path))
+          const path = join(candidate, assertSafeRelativePath(file.path))
           mkdirSync(dirname(path), { recursive: true })
           if (file.path === 'memory.md' && existsSync(path)) continue
           writeFileSync(path, decodeAssetFile(file))
@@ -239,7 +240,7 @@ function collectFiles(dir: string): PackageFile[] {
   const walk = (current: string, prefix: string): void => {
     for (const entry of readdirSync(current, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
       if (!shareableFile(prefix + entry.name)) continue
-      const path = safeAssetPath(prefix + entry.name)
+      const path = assertSafeRelativePath(prefix + entry.name)
       const key = path.normalize('NFC').toLowerCase()
       if (seen.has(key)) throw new Error(`导出路径大小写或规范化冲突：${path}`)
       seen.add(key)

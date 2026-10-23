@@ -5,7 +5,8 @@ import { join } from 'node:path'
 import { Transform, type Readable } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
 import type { AssetFile } from '../shared/asset-transfer.ts'
-import { MAX_ASSET_BYTES, safeAssetPath } from './asset-archive.ts'
+import { MAX_ASSET_BYTES } from './asset-archive.ts'
+import { assertSafeRelativePath } from '../shared/asset-path.ts'
 
 const TTL = 15 * 60_000
 const OWNER = 'prompt-tool-upload/1'
@@ -43,7 +44,7 @@ export function createAssetSources(root: string): {
   return {
     async upload(name, input) {
       cleanup()
-      safeAssetPath(name)
+      assertSafeRelativePath(name)
       if (disposed || name.includes('/') || entries.size >= 4) throw new Error('上传暂存不可用或数量已达上限')
       mkdirSync(root, { recursive: true })
       const sourceId = randomUUID()

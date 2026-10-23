@@ -5,6 +5,7 @@ import { existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSyn
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { parseFrontmatter } from './skills-parse.ts'
 import { SKILL_NAME_PATTERN } from './skills-config.ts'
+import { assertSafeRelativePath } from '../shared/asset-path.ts'
 
 export interface SkillsImportFile { path?: unknown; content?: unknown }
 export type SkillsImportResult = { ok: true; path: string; count: number; overwritten: number; warning?: string }
@@ -14,14 +15,7 @@ const key = (path: string): string => process.platform === 'win32' ? path.toLowe
 const MAX_FILES = 10_000
 const MAX_BYTES = 64 * 1024 * 1024
 
-/** 技能包内的相对路径：禁止上跳、盘符、控制字符与保留管理目录。 */
-function safePath(path: string): boolean {
-  const parts = path.split('/')
-  return path.length > 0 && path.length <= 2048
-    && parts.every((part) => part.length > 0 && part !== '.' && part !== '..' && !/[<>:"|?*]/u.test(part) && !/[. ]$/.test(part)
-      && ![...part].some((character) => character.charCodeAt(0) < 32) && !/^(con|prn|aux|nul|com[0-9]|lpt[0-9])(?:\.|$)/i.test(part))
-    && !['.system', '.skills-migration'].includes(parts[0] ?? '')
-}
+const SKILL_PATH_OPTIONS = { maxLength: 2048, reservedRoots: ['.system', '.skills-migration'] } as const
 
 export function assertSkillDirectory(path: string): void {
   const info = lstatSync(path)
@@ -37,7 +31,7 @@ export function readSkillDirectory(directory: string): SkillFile[] {
     for (const entry of readdirSync(current, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
       const full = join(current, entry.name)
       const path = relative(directory, full).split(sep).join('/')
-      if (!safePath(path)) throw new Error(`非法技能资源路径：${path}`)
+      assertSafeRelativePath(path, SKILL_PATH_OPTIONS)
       const info = lstatSync(full)
       if (info.isSymbolicLink()) throw new Error(`技能资源不能是符号链接：${path}`)
       if (info.isDirectory()) walk(full)
@@ -77,7 +71,8 @@ function importFiles(root: string, files: SkillFile[], overwrite: readonly strin
     for (const file of files) {
       const path = file.path.replaceAll('\\', '/')
       file.path = path
-      if (!safePath(path) || !path.includes('/')) throw new Error(`非法技能文件路径：${path}`)
+      assertSafeRelativePath(path, SKILL_PATH_OPTIONS)
+      if (!path.includes('/')) throw new Error(`非法技能文件路径：${path}`)
     }
     if (!Array.isArray(overwrite) || overwrite.some((name) => typeof name !== 'string' || !SKILL_NAME_PATTERN.test(name))) throw new Error('覆盖确认名单必须是技能目录名数组')
     const confirmed = new Set(overwrite.map(key))
@@ -180,7 +175,7 @@ export function importSkillsPackage(root: string, files: SkillsImportFile[], ove
     const decoded = files.map((file) => {
       if (file === null || typeof file !== 'object' || typeof file.path !== 'string' || typeof file.content !== 'string') throw new Error('技能文件路径与内容必须为字符串')
       const path = file.path.replaceAll('\\', '/')
-      if (!safePath(path)) throw new Error(`非法技能文件路径：${path}`)
+      assertSafeRelativePath(path, SKILL_PATH_OPTIONS)
       if (!/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(file.content)) throw new Error(`技能文件不是合法 base64：${path}`)
       return { path, buffer: Buffer.from(file.content, 'base64') }
     })

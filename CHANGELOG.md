@@ -1,5 +1,13 @@
 # Changelog
 
+### 压缩包相对路径安全收成一份（2026-10-23）
+
+- 新增 `shared/asset-path.ts#assertSafeRelativePath`：控制字符（`\p{Cc}`）、反斜杠、开头斜杠、空段/./..、段尾空格或点、DOS 保留名、长度一次校验；`maxLength` 与 `reservedRoots` 由调用方声明。
+- `asset-archive`、`asset-sources`、`import-source`、`skills-import`、`module-package` 共 11 处调用改用它；删除 `safeAssetPath` 与技能私有 `safePath`。
+- 规则取三份的最严并集：`import-source` 与技能导入现在都拒 DEL/C1 控制字符；技能上传入口先把反斜杠归一为 `/`，宿主机目录读取在 POSIX 下新拒字面反斜杠；`com0`/`lpt0` 的旧拒绝面保留。
+- 回归：新增 `test/shared/asset-path.test.mjs`；全量 877 pass。
+- 需重启 DSH 后生效。
+
 ### 清理包：薄封装、零消费者导出与死模块（2026-10-23）
 
 - 删除 host `moduleDeclares`（薄封装；测试改调 `moduleDeclarations(dir).has`）与四个零消费者导出：`normalizeMaxDepth`、`isEditorGroupVisible`、`isModuleCapabilityPresent`、`shouldStreamJsonFile`（含 bridge-client re-export）。
