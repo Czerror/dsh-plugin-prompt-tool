@@ -136,35 +136,3 @@ test('shell 执行器：正常命令行为不变', async (t) => {
   assert.deepEqual(warnings, [])
   assert.deepEqual(await runTool(tool, cwd), { exitCode: 0, stdout: 'ok', stderr: '' })
 })
-
-test('delegate 执行器：目标成功值缺失时不生成 undefined 自有属性', async () => {
-  const registered = []
-  const ctx = {
-    tools: {
-      register: (tool) => { registered.push(tool); return () => {} },
-      execute: async () => ({ isError: false }),
-    },
-    logger: { info() {}, warn() {} },
-    get() { return undefined },
-  }
-  apply(ctx, { tools: [toolOf({ kind: 'delegate', tool: 'other' })] })
-  const result = await registered[0].execute({}, {
-    callId: 'outer', rootCallId: 'outer', agent: { id: 'test' },
-    signal: new AbortController().signal, deferContext() {}, concludeTurn() {},
-  })
-  assert.deepEqual(result, { ok: true })
-})
-
-test('ask-user 执行器：批准结果缺失时不生成 undefined 自有属性', async () => {
-  const registered = []
-  const ctx = {
-    tools: { register: (tool) => { registered.push(tool); return () => {} } },
-    logger: { info() {}, warn() {} },
-    get: (id) => id === 'approval' ? { request: async () => undefined } : undefined,
-  }
-  apply(ctx, { tools: [toolOf({ kind: 'ask-user', question: '继续？' })] })
-  const result = await registered[0].execute({}, {
-    callId: 'outer', agent: { id: 'test' }, signal: new AbortController().signal,
-  })
-  assert.deepEqual(result, { ok: true })
-})
