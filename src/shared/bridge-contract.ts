@@ -256,7 +256,8 @@ export interface BridgeRequestMap {
   /** 逐文件启停/名称；无 policy 时读取，写入仍校验原始字节版本。 */
   instructionsPolicy: { policy?: InstructionPolicyPatch; expectedRevision?: string | null } | undefined
   paramOverrides: { overrides?: Record<string, unknown>; promptConfigs?: unknown[]; rebuild?: boolean; expectedModuleId?: string }
-  triggers: { expectedModuleId: string; triggers?: unknown[]; expectedRevision?: string; validateOnly?: boolean }
+  /** 退役端点（410）：不再接受任何请求体。 */
+  triggers: undefined
   rules: RulesRequest
   /** 独立主/子人设卡；省略 persona 读取，写入必须携带读取时的完整定义版本。 */
   persona: { persona?: PersonaSpec | null; expectedModuleId?: string; expectedRevision?: string; refreshOnly?: boolean } | undefined

@@ -1,5 +1,12 @@
 # Changelog
 
+### 桥请求字段表三态化（2026-10-23）
+
+- `BRIDGE_REQUEST_FIELDS` 从 `string[] | null` 改为三态判别联合：`{ body: 'none' }` / `{ fields }` / `{ handler: true, fields }`；删除 `BRIDGE_REQUEST_HANDLER_CHECKED`，表成为唯一登记。
+- 新增编译期覆盖：fields 态与 `BridgeRequestMap` 双向对齐，handler 态单向（表键 ⊆ 类型），none 态要求请求类型为 `undefined`；失败分支用 `false` 而非 `never`，断言可真正失败。`triggers` 退役端点的请求类型改为 `undefined`，假契约消失（410 路由保留）。
+- 测试名单从表派生，不再手抄 none / handler 集合。
+- 需重启 DSH 后生效。
+
 ### 技能文件写前校验统一（2026-10-23）
 
 - 新增 `src/host/skills-marker.ts#readSkillMarker`：路径、marker 名、祖先链、普通文件、读后字节与 1 MiB 上限、`writable` 只读位一次校验；frontmatter 解析结果随返回，调用方决定先报冲突还是先报解析。

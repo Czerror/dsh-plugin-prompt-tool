@@ -1,33 +1,26 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { BRIDGE_ENDPOINTS } from '../../src/shared/bridge-contract.ts'
-import {
-  BRIDGE_REQUEST_FIELDS,
-  BRIDGE_REQUEST_HANDLER_CHECKED,
-  assertBridgeRequest,
-} from '../../src/shared/bridge-request-shape.ts'
+import { BRIDGE_REQUEST_FIELDS, assertBridgeRequest } from '../../src/shared/bridge-request-shape.ts'
 
+const entries = Object.entries(BRIDGE_REQUEST_FIELDS)
+const keysOf = (pick) => entries.filter(([, rule]) => pick(rule)).map(([key]) => key).sort()
+
+/** 独立真值源：handler 已自带域内拒绝的端点键名；与表里的 handler 标记对拍。 */
 const handlerChecked = [
-  BRIDGE_ENDPOINTS.assetRelease,
-  BRIDGE_ENDPOINTS.exportModule,
-  BRIDGE_ENDPOINTS.moduleVariables,
-  BRIDGE_ENDPOINTS.moduleName,
-  BRIDGE_ENDPOINTS.moduleConfigOrder,
-  BRIDGE_ENDPOINTS.rules,
-  BRIDGE_ENDPOINTS.persona,
-  BRIDGE_ENDPOINTS.personaSources,
-  BRIDGE_ENDPOINTS.importModulePackage,
-  BRIDGE_ENDPOINTS.charactersImport,
+  'assetRelease', 'charactersImport', 'exportModule', 'importModulePackage',
+  'moduleConfigOrder', 'moduleName', 'moduleVariables', 'persona', 'personaSources', 'rules',
 ].sort()
 
-test('bridge request shape：45 端点全覆盖，6 个 none，10 个 handler-owned', () => {
+test('bridge request shape：端点全覆盖，none / fields / handler 三态由表唯一登记', () => {
   assert.deepEqual(Object.keys(BRIDGE_REQUEST_FIELDS).sort(), Object.keys(BRIDGE_ENDPOINTS).sort())
-  const none = Object.entries(BRIDGE_REQUEST_FIELDS).filter(([, fields]) => fields === null).map(([key]) => key).sort()
+  const none = keysOf((rule) => rule.body === 'none')
+  const handler = keysOf((rule) => rule.handler === true)
   assert.deepEqual(none, ['assetUpload', 'charactersImportStream', 'describe', 'meta', 'templates', 'triggers'].sort())
-  assert.deepEqual([...BRIDGE_REQUEST_HANDLER_CHECKED].sort(), handlerChecked)
-  for (const [key, fields] of Object.entries(BRIDGE_REQUEST_FIELDS)) {
-    if (fields === null) continue
-    assert.equal(new Set(fields).size, fields.length, key + ' 字段不重复')
+  assert.deepEqual(handler, handlerChecked, 'handler-owned 名单与独立真值源一致')
+  for (const [key, rule] of entries) {
+    if (!Array.isArray(rule.fields)) continue
+    assert.equal(new Set(rule.fields).size, rule.fields.length, key + ' 字段不重复')
   }
 })
 

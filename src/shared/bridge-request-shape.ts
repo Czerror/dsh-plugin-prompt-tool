@@ -1,103 +1,113 @@
 /**
  * Bridge 请求体的运行期接受面：与 `BridgeRequestMap` 并列的唯一字段表。
  *
- * `BridgeRequestMap` 是 type，运行期读不到；本表把每个端点的**顶层**字段收敛到一处。
- * - `null`：`body:'none'`，不解析请求体；
- * - `BRIDGE_REQUEST_HANDLER_CHECKED`：handler 已自带更具体的未知字段错误码/消息，保留域内拒绝；
- * - 其余端点由 `assertBridgeRequest` 在 handler 前统一 400。
+ * 每个端点三态之一：
+ * - `{ body: 'none' }`：不解析请求体；
+ * - `{ fields }`：由 `assertBridgeRequest` 在 handler 前统一 400；
+ * - `{ handler: true, fields }`：handler 已自带更具体的错误码/消息，保留域内拒绝。
  *
- * 嵌套对象仍由域内校验；本表只回答「这个顶层键是否属于该端点」。
+ * 覆盖是双向的：fields 态的键集必须与 `BridgeRequestMap` 的字段互为子集；none 态要求
+ * 类型为 `undefined`。漏改任一侧在 typecheck 失败，不会有「表漏登记、运行期才 400」。
+ * handler 态的 `fields` 只作文档，不参与覆盖断言（域内拒归 handler）。
  */
 import {
   BRIDGE_ENDPOINTS,
-  type BridgeEndpoint,
   type BridgeEndpointKey,
   type BridgeRequestMap,
 } from './bridge-contract.ts'
 import { ASSET_IMPORT_FIELD_KEYS } from './asset-transfer.ts'
 
+type RequestFieldRule =
+  | { body: 'none' }
+  | { fields: readonly string[] }
+  | { handler: true; fields: readonly string[] }
+
 export const BRIDGE_REQUEST_FIELDS = {
-  meta: null,
-  bootstrap: ['sessionId'],
-  describe: null,
-  models: ['refresh'],
-  modelReasoning: ['provider', 'model'],
-  mutate: ['ops', 'expectedRevision'],
-  skillsList: ['sessionId'],
-  skillPolicy: ['name', 'path', 'sessionId', 'side', 'enabled', 'scope'],
-  skillRead: ['name', 'path', 'sessionId'],
-  skillWrite: ['name', 'path', 'sessionId', 'content', 'description', 'expectedRevision'],
-  skillsFolders: ['folders', 'sessionId'],
-  skillsImport: ['files', 'overwrite'],
-  skillsImportDirectory: ['path', 'overwrite'],
-  skillCreate: ['name', 'description', 'content'],
-  skillDelete: ['name', 'path', 'sessionId'],
-  templates: null,
-  promptConfigs: ['sessionId'],
-  agentsFile: ['sessionId', 'contextId', 'fileId', 'expectedRevision', 'content'],
-  instructionsPolicy: ['policy', 'expectedRevision'],
-  paramOverrides: ['overrides', 'promptConfigs', 'rebuild', 'expectedModuleId'],
-  triggers: null,
-  rules: ['expectedModuleId', 'expectedRevisions', 'expectedRulesAbsent', 'createRule', 'edits', 'activateRuleId', 'validateOnly', 'refreshOnly'],
-  persona: ['persona', 'expectedModuleId', 'expectedRevision', 'refreshOnly'],
-  personaSources: ['sources', 'expectedRevision', 'refreshOnly'],
-  moduleVariables: ['scope', 'variables', 'enabled', 'expectedModuleId', 'expectedRevisions', 'refreshOnly'],
-  customTools: ['customTools', 'expectedModuleId'],
-  importModulePackage: ASSET_IMPORT_FIELD_KEYS,
-  assetUpload: null,
-  assetRelease: ['sourceId'],
-  exportModule: ['id', 'mode', 'preview', 'expectedRevision', 'memoryChoices'],
-  moduleDelete: ['id'],
-  moduleClone: ['id', 'autoSuffix'],
-  moduleDuplicate: ['id'],
-  moduleOpen: ['id'],
-  moduleName: ['name', 'expectedRevision', 'expectedModuleId'],
-  moduleEnable: ['id', 'enabled'],
-  moduleConfigOrder: ['moduleId', 'entries', 'expectedRevision'],
-  charactersImport: ASSET_IMPORT_FIELD_KEYS,
-  charactersImportStream: null,
-  moduleMerge: ['id'],
-  moduleUnmerge: ['id'],
-  toolSurface: ['sessionId', 'presetId'],
-  moduleCapability: ['action', 'capabilityId', 'recipeId', 'expectedModuleId'],
-  contextActivationDiagnostics: ['sessionId'],
-  ruleDiagnostics: [],
-} as const satisfies Record<BridgeEndpointKey, readonly string[] | null>
+  meta: { body: 'none' },
+  bootstrap: { fields: ['sessionId'] },
+  describe: { body: 'none' },
+  models: { fields: ['refresh'] },
+  modelReasoning: { fields: ['provider', 'model'] },
+  mutate: { fields: ['ops', 'expectedRevision'] },
+  skillsList: { fields: ['sessionId'] },
+  skillPolicy: { fields: ['name', 'path', 'sessionId', 'side', 'enabled', 'scope'] },
+  skillRead: { fields: ['name', 'path', 'sessionId'] },
+  skillWrite: { fields: ['name', 'path', 'sessionId', 'content', 'description', 'expectedRevision'] },
+  skillsFolders: { fields: ['folders', 'sessionId'] },
+  skillsImport: { fields: ['files', 'overwrite'] },
+  skillsImportDirectory: { fields: ['path', 'overwrite'] },
+  skillCreate: { fields: ['name', 'description', 'content'] },
+  skillDelete: { fields: ['name', 'path', 'sessionId'] },
+  templates: { body: 'none' },
+  promptConfigs: { fields: ['sessionId'] },
+  agentsFile: { fields: ['sessionId', 'contextId', 'fileId', 'expectedRevision', 'content'] },
+  instructionsPolicy: { fields: ['policy', 'expectedRevision'] },
+  paramOverrides: { fields: ['overrides', 'promptConfigs', 'rebuild', 'expectedModuleId'] },
+  // 退役端点（410）：请求类型已改为 undefined，这里只有「无 body」这一事实。
+  triggers: { body: 'none' },
+  rules: { handler: true, fields: ['expectedModuleId', 'expectedRevisions', 'expectedRulesAbsent', 'createRule', 'edits', 'activateRuleId', 'validateOnly', 'refreshOnly'] },
+  persona: { handler: true, fields: ['persona', 'expectedModuleId', 'expectedRevision', 'refreshOnly'] },
+  personaSources: { handler: true, fields: ['sources', 'expectedRevision', 'refreshOnly'] },
+  moduleVariables: { handler: true, fields: ['scope', 'variables', 'enabled', 'expectedModuleId', 'expectedRevisions', 'refreshOnly'] },
+  customTools: { fields: ['customTools', 'expectedModuleId'] },
+  importModulePackage: { handler: true, fields: ASSET_IMPORT_FIELD_KEYS },
+  assetUpload: { body: 'none' },
+  assetRelease: { handler: true, fields: ['sourceId'] },
+  exportModule: { handler: true, fields: ['id', 'mode', 'preview', 'expectedRevision', 'memoryChoices'] },
+  moduleDelete: { fields: ['id'] },
+  moduleClone: { fields: ['id', 'autoSuffix'] },
+  moduleDuplicate: { fields: ['id'] },
+  moduleOpen: { fields: ['id'] },
+  moduleName: { handler: true, fields: ['name', 'expectedRevision', 'expectedModuleId'] },
+  moduleEnable: { fields: ['id', 'enabled'] },
+  moduleConfigOrder: { handler: true, fields: ['moduleId', 'entries', 'expectedRevision'] },
+  charactersImport: { handler: true, fields: ASSET_IMPORT_FIELD_KEYS },
+  charactersImportStream: { body: 'none' },
+  moduleMerge: { fields: ['id'] },
+  moduleUnmerge: { fields: ['id'] },
+  toolSurface: { fields: ['sessionId', 'presetId'] },
+  moduleCapability: { fields: ['action', 'capabilityId', 'recipeId', 'expectedModuleId'] },
+  contextActivationDiagnostics: { fields: ['sessionId'] },
+  ruleDiagnostics: { fields: [] },
+} as const satisfies Record<BridgeEndpointKey, RequestFieldRule>
 
-type RequestFieldKeys<T> = T extends unknown ? keyof NonNullable<T> : never
-type RequestFieldCheck = {
-  [K in BridgeEndpointKey]: (typeof BRIDGE_REQUEST_FIELDS)[K] extends null
-    ? null
-    : ReadonlyArray<Extract<RequestFieldKeys<BridgeRequestMap[K]>, string>>
-}
-const requestFieldCheck: RequestFieldCheck = BRIDGE_REQUEST_FIELDS
-void requestFieldCheck
+type FieldRuleOf<K extends BridgeEndpointKey> = (typeof BRIDGE_REQUEST_FIELDS)[K]
+/** 请求类型去掉 undefined 的键集；undefined 端点没有请求字段。 */
+type RequestKeysOf<T> = T extends undefined ? never : keyof NonNullable<T>
 
-/** handler 已拒绝未知字段的端点：保留它们的错误码/消息，统一断言不重复拦截。 */
-export const BRIDGE_REQUEST_HANDLER_CHECKED = new Set<BridgeEndpoint>([
-  BRIDGE_ENDPOINTS.assetRelease,
-  BRIDGE_ENDPOINTS.exportModule,
-  BRIDGE_ENDPOINTS.moduleVariables,
-  BRIDGE_ENDPOINTS.moduleName,
-  BRIDGE_ENDPOINTS.moduleConfigOrder,
-  BRIDGE_ENDPOINTS.rules,
-  BRIDGE_ENDPOINTS.persona,
-  BRIDGE_ENDPOINTS.personaSources,
-  BRIDGE_ENDPOINTS.importModulePackage,
-  BRIDGE_ENDPOINTS.charactersImport,
-])
+/** 失败用 `false` 而不是 `never`：`never extends true` 为真，会吞掉断言。 */
+type NoneCoverage<K extends BridgeEndpointKey> = FieldRuleOf<K> extends { body: 'none' }
+  ? [BridgeRequestMap[K]] extends [undefined] ? true : false
+  : true
 
-const FIELDS_BY_PATH = new Map<string, readonly string[] | null>(
-  (Object.entries(BRIDGE_REQUEST_FIELDS) as Array<[BridgeEndpointKey, readonly string[] | null]>)
-    .map(([key, fields]) => [BRIDGE_ENDPOINTS[key], fields]),
+/** 单向（表键 ⊆ 类型）对所有 fields 态成立；双向只对统一校验的 fields 态成立。 */
+type FieldsCoverage<K extends BridgeEndpointKey> = FieldRuleOf<K> extends { fields: readonly (infer F)[] }
+  ? [Exclude<F, RequestKeysOf<BridgeRequestMap[K]>>] extends [never]
+    ? FieldRuleOf<K> extends { handler: true }
+      ? true
+      : [Exclude<RequestKeysOf<BridgeRequestMap[K]>, F>] extends [never] ? true : false
+    : false
+  : true
+
+type CoverageOf<K extends BridgeEndpointKey> = [NoneCoverage<K>] extends [true] ? FieldsCoverage<K> : false
+type CoverageMap = { [K in BridgeEndpointKey]: CoverageOf<K> }
+type BadCoverage = Exclude<CoverageMap[BridgeEndpointKey], true>
+
+/** 编译期断言：任一端点的类型与表不一致时，这里的赋值失败。 */
+const _requestShapeCoverage: BadCoverage extends never ? true : false = true
+void _requestShapeCoverage
+
+const RULES_BY_PATH = new Map<string, RequestFieldRule>(
+  (Object.entries(BRIDGE_REQUEST_FIELDS) as Array<[BridgeEndpointKey, RequestFieldRule]>)
+    .map(([key, rule]) => [BRIDGE_ENDPOINTS[key], rule]),
 )
 
 /** 断言一次请求只带该端点的顶层字段；handler-owned 与 body:none 端点不在这里拒绝。 */
 export function assertBridgeRequest(endpoint: string, record: Record<string, unknown>): void {
-  if (BRIDGE_REQUEST_HANDLER_CHECKED.has(endpoint as BridgeEndpoint)) return
-  const fields = FIELDS_BY_PATH.get(endpoint)
-  if (fields === undefined) throw new Error('未登记请求字段：' + endpoint)
-  if (fields === null) return
-  const unknown = Object.keys(record).filter(key => !fields.includes(key))
+  const rule = RULES_BY_PATH.get(endpoint)
+  if (rule === undefined) throw new Error('未登记请求字段：' + endpoint)
+  if ('body' in rule) return
+  if ('handler' in rule) return
+  const unknown = Object.keys(record).filter((key) => !rule.fields.includes(key))
   if (unknown.length > 0) throw new TypeError('未知请求字段：' + unknown.join(', '))
 }

@@ -492,13 +492,13 @@ src/shared/bridge-contract.ts 同时拥有：
 
 data/bridge-client.ts 提供泛型 bridgeCall(endpoint key, typed body, subject?) 和角色卡专用 bridgeUpload。主语是**每次调用显式携带的实参**（模块 id），没有会话级编辑目标，也不保留上次用到的主语；逐卡规则读写使用所属模块身份。业务组件不得拼接 /bootstrap、/module-delete 等原始路径。新增或改名端点必须同步 shared map、host 注册和契约测试。
 
-**契约字段集 = 运行期顶层接受集（2026-10-21 收紧）**：`shared/bridge-request-shape.ts` 是 45 个端点顶层字段的唯一运行期表，与 `BRIDGE_ENDPOINTS` 编译期覆盖绑定；所有 JSON 端点带未知顶层字段一律 400，其中 29 个由统一表回 `bridge-request-invalid` 并点名多余字段。
+**契约字段集 = 运行期顶层接受集（2026-10-21 收紧）**：`shared/bridge-request-shape.ts` 是 45 个端点顶层字段的唯一运行期表，与 `BRIDGE_ENDPOINTS` 编译期覆盖绑定；表值三态：`{ body: 'none' }` / `{ fields }` / `{ handler: true, fields }`。所有 JSON 端点带未知顶层字段一律 400，其中 29 个由统一表回 `bridge-request-invalid` 并点名多余字段。
 
 - 例外显式登记：10 个 handler 已自带更具体拒绝码/消息的端点（assetRelease、exportModule、moduleVariables、moduleName、moduleConfigOrder、rules、persona、personaSources、importModulePackage、charactersImport）仍回原错误码，统一断言不重复拦截。moduleName 读分支仍比契约更严（白名单为空），属已登记差异。
 - 6 个 `body:'none'` 端点（meta、describe、templates、assetUpload、triggers、charactersImportStream）不解析请求体；其余 39 个 JSON 端点中 29 个由统一表拒绝、10 个由 handler 拒绝。`ruleDiagnostics` 是 JSON 端点但无字段，任何顶层字段都会被统一表拒绝。
-- 字段表只约束顶层字段；嵌套对象（rules edits、persona、import files 等）仍由域内校验。Agent 导入工具复用 `BRIDGE_REQUEST_FIELDS.importModulePackage`；TUI 是斜杠命令语法，不硬套 JSON decode。
-- 新增字段仍要同时改 `BridgeRequestMap` 与字段表；类型检查保证表里的键属于该端点，表测试保证 45 端点/6 none/10 handler-owned 全覆盖。导入端点的字段来源是 `shared/asset-transfer.ts#ASSET_IMPORT_FIELDS`，HTTP 与工具共用；工具显式排除它没有存储的 `sourceId`。
-- 另有两处契约与实现的错位留档：`paramOverrides` 契约声明 `expectedModuleId?` 而 handler 从不读它（只有归属门读）；`triggers` 契约声明 4 字段而端点恒 410。
+- 字段表只约束顶层字段；嵌套对象（rules edits、persona、import files 等）仍由域内校验。Agent 导入工具复用 `shared/asset-transfer.ts#ASSET_IMPORT_FIELD_KEYS`（与表里 `importModulePackage` 的 `fields` 同源）；TUI 是斜杠命令语法，不硬套 JSON decode。
+- 新增字段仍要同时改 `BridgeRequestMap` 与字段表：fields 态双向对齐（表键 ⊆ 类型且类型键 ⊆ 表），handler 态单向（表键 ⊆ 类型），none 态要求请求类型为 `undefined`；漏改任一侧 typecheck 失败。表测试保证 45 端点/6 none/10 handler-owned 全覆盖，并用独立名单对拍 handler 标记。导入端点的字段来源是 `shared/asset-transfer.ts#ASSET_IMPORT_FIELDS`，HTTP 与工具共用；工具显式排除它没有存储的 `sourceId`。
+- 另有一处契约与实现的错位留档：`paramOverrides` 契约声明 `expectedModuleId?` 而 handler 从不读它（只有归属门读）；`triggers` 已退役（请求类型 `undefined`、410 路由保留）。
 
 ### 7.1.1 模块主语策略
 
