@@ -4,7 +4,7 @@ import { TextInput } from '../../ui/TextInput.tsx'
 import { ENGINE_PARAM_DEFINITIONS, validateEngineParamValues } from '../../../shared/engine-params.ts'
 import { SHARED_PARAM_KEYS, type SharedParamKey } from '../../data/prompt-tool-fields.ts'
 import { engineGroupParamKeys } from '../../../shared/engine-capabilities.ts'
-import { moduleFactsOf } from '../../data/module-subject.ts'
+import { moduleFactsOf, paramDraftKey } from '../../data/module-subject.ts'
 import type { DraftsPort, ModuleFactsPort, ParamsPort } from '../../data/store-ports.ts'
 import type { FieldDraft } from '../../data/workspace-drafts.ts'
 import type { PromptToolTranslate } from '../../locales.ts'
@@ -84,7 +84,7 @@ export function EngineParamField({ store, param, t, instanceId, ...subject }: {
   const value = isGlobal ? store.globalParams[param] : store.moduleParamsOf(moduleId ?? '')[param]
   const disabled = !store.fields.modulesEnabled
     || (isGlobal ? store.globalParamsLoaded !== true : facts?.editable !== true)
-  const draftKey = `${isGlobal ? 'global' : moduleId}:param:${param}`
+  const draftKey = paramDraftKey(isGlobal ? 'global' : moduleId!, param)
   const getDraftRevision = store.getDraftRevision
   useSyncExternalStore(store.subscribeDrafts, getDraftRevision, getDraftRevision)
   const draft = store.editorDrafts.fields.get(draftKey)

@@ -1,5 +1,11 @@
 # Changelog
 
+### 参数草稿键收进一个 owner（2026-10-23）
+
+- `module-subject` 新增 `paramDraftKey(owner, param)` 与 `ownsParamDraftKey(key, owner)`；UI 拼键与 store 的 `hasRawDraft` 前缀判断改调它。
+- 键格式不变（`<owner>:param:<key>`），相似 moduleId 不误判；回归加归属判据用例。
+- 需重启 DSH 后生效。
+
 ### 指令块标题解析收成一份（2026-10-23）
 
 - 新增 `engine/instruction-blocks.mjs#instructionBlocks`：严格行首 4 种官方指令标题，返回 action/path/index。

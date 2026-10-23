@@ -20,6 +20,12 @@ export const canEditSubject = (fields: SubjectFields): boolean =>
 export const subjectDraftKey = (moduleId: string | undefined, scope: ModuleVariableScope): string | undefined =>
   moduleId === undefined ? undefined : `${moduleId}:${scope}`
 
+/** 引擎参数草稿键：`<owner>:param:<key>`；owner 是 `'global'` 或 moduleId。 */
+export const paramDraftKey = (owner: string, param: string): string => `${owner}:param:${param}`
+
+/** 该主语是否拥有某个参数草稿键（精确前缀，相似 id 不误判）。 */
+export const ownsParamDraftKey = (key: string, owner: string): boolean => key.startsWith(paramDraftKey(owner, ''))
+
 /** 该模块的逐模块事实（`/meta` 的 `modules[].facts`）：能力门控与可编辑判据的唯一来源。 */
 export const moduleFactsOf = (modules: readonly ModuleSummary[] | undefined, moduleId: string): ModuleFacts | undefined =>
   modules?.find((module) => module.id === moduleId)?.facts

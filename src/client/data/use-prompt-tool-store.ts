@@ -49,7 +49,7 @@ import { createTemplateRuleWriter } from './template-rule-writer.ts'
 import { createModuleActions } from './module-actions.ts'
 import type { ModuleVariableRevisions, ModuleVariableScope } from '../../shared/module-variables.ts'
 import { createVariablesDraft, readVariablesDraft, retryModuleVariablesPublication as retryModuleVariablesPublicationRequest, saveModuleVariables as saveModuleVariablesRequest, type VariablesDraft } from './module-variables.ts'
-import { canEditModule, moduleDeclares, subjectDraftKey, MODULE_PENDING_MESSAGE, NO_SUBJECT_MESSAGE } from './module-subject.ts'
+import { canEditModule, moduleDeclares, ownsParamDraftKey, subjectDraftKey, MODULE_PENDING_MESSAGE, NO_SUBJECT_MESSAGE } from './module-subject.ts'
 import { modulesEnabledOps } from '../../shared/module-settings.ts'
 import { modelChoiceValue } from '../features/models/model-options.ts'
 import type { BridgeResponse, ModelReasoningView } from '../../shared/bridge-contract.ts'
@@ -570,7 +570,7 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
     declares: moduleId => sectionDeclared(moduleId, 'params', 'layerSettings'),
     canEdit: editableSubject,
     globalEnabled: () => fieldsRef.current.modulesEnabled,
-    hasRawDraft: moduleId => [...editorDrafts.fields].some(([key, field]) => key.startsWith(moduleId + ':param:') && (field.text !== field.source || field.error !== '')),
+    hasRawDraft: moduleId => [...editorDrafts.fields].some(([key, field]) => ownsParamDraftKey(key, moduleId) && (field.text !== field.source || field.error !== '')),
     enqueue: task => moduleSaveQueueRef.current.enqueue(task),
     changed: () => publishSubject(version => version + 1),
     edited: () => {
