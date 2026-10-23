@@ -231,6 +231,17 @@ export function instructionSaveRequest(
   }
 }
 
+/**
+ * 这份请求是否仍对应当前草稿：发送前与迟到应答后共用。
+ * `saving` 必须在途（重读/切上下文/失败时池操作会清它），revision 与 contextId
+ * 必须与请求快照一致；字段与旧三连判据逐项相同。
+ */
+export function isCurrentSaveRequest(pool: InstructionDraftPool, request: InstructionSaveRequest): boolean {
+  const draft = pool.drafts.find((entry) => entry.fileId === request.fileId)
+  return draft !== undefined && draft.saving === true
+    && draft.revision === request.expectedRevision && draft.contextId === request.contextId
+}
+
 export function markDraftSaving(pool: InstructionDraftPool, fileId: string, saving: boolean): InstructionDraftPool {
   return {
     ...pool,
@@ -274,7 +285,8 @@ export function applySaveFailure(
   }
 }
 
-/** 保存全部：逐文件结果，成功项更新基线、失败项保留草稿，不宣称跨文件原子提交。 */
+/** 保存全部：逐文件结果，成功项更新基线、失败项保留草稿，不宣称跨文件原子提交。
+ * 过期结果整体丢弃（不写 error/conflict，也不改 saving）；request 缺失的结果保持原行为。 */
 export function applySaveOutcomes(
   pool: InstructionDraftPool,
   results: readonly InstructionSaveOutcome[],
@@ -282,8 +294,11 @@ export function applySaveOutcomes(
 ): InstructionDraftPool {
   let next = pool
   for (const result of results) {
+    const request = requests.get(result.fileId)
+    // 防御：草稿已重读/切上下文/保存标记已清时，迟到结果不应用。
+    // `saving` 的清理由池操作负责；这里只跳过，不补写状态。
+    if (request !== undefined && !isCurrentSaveRequest(next, request)) continue
     if (result.ok && result.revision !== undefined) {
-      const request = requests.get(result.fileId)
       if (request !== undefined) next = applySaveSuccess(next, result.fileId, request, result.revision)
       else next = markDraftSaving(next, result.fileId, false)
     } else {

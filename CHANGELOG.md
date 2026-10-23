@@ -1,5 +1,12 @@
 # Changelog
 
+### 指令保存请求身份收进草稿 owner（2026-10-23）
+
+- `instruction-drafts` 新增 `isCurrentSaveRequest(pool, request)`：`saving`/`revision`/`contextId` 一次判据；store 发送前与响应后改调它。
+- `applySaveOutcomes` 内部核身份：草稿已重读、切上下文或保存标记已清时，迟到结果不应用（request 缺失的既有行为不变）。
+- 回归：谓词矩阵（含手工构造 revision/contextId 不一致）、迟到成功与失败结果；部分成功用例补 saving 在途。
+- 需重启 DSH 后生效。
+
 ### 压缩包相对路径安全收成一份（2026-10-23）
 
 - 新增 `shared/asset-path.ts#assertSafeRelativePath`：控制字符（`\p{Cc}`）、反斜杠、开头斜杠、空段/./..、段尾空格或点、DOS 保留名、长度一次校验；`maxLength` 与 `reservedRoots` 由调用方声明。

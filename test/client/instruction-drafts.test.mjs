@@ -1,5 +1,5 @@
 /**
- * 指令文件草稿协议的行为回归（`src/client/data/instruction-drafts.ts`，294 行，此前零用例）。
+ * 指令文件草稿协议的行为回归（`src/client/data/instruction-drafts.ts`，此前零用例）。
  *
  * 真值源是协议语义本身：请求形状、冲突后「必须先重读」、上下文切换与迟到序号、多文件结果各归各。
  * 断言全部落在导出的公共函数上，不 mock 内部模块；真机交互（按钮、焦点、脏提示）不在这里。
@@ -14,7 +14,10 @@ import {
   canSaveDraft,
   instructionSaveRequest,
   isCurrentInstructionSeq,
+  isCurrentSaveRequest,
+  markDraftSaving,
   poolFromSnapshot,
+  resetDraftFromSnapshot,
   saveableInstructionDrafts,
   setDraftContent,
   switchInstructionContext,
@@ -93,6 +96,48 @@ test('边界·上下文：切上下文保住草稿但不可写，迟到序号不
   assert.equal(rebuilt.contextId, 'ctx-2')
 })
 
+test('保存请求身份：saving、revision、contextId 任一变化即过期', () => {
+  const edited = setDraftContent(poolFromSnapshot(snapshot([file('global', 'BASE\n')]), 1), 'global', 'NEW\n')
+  const request = instructionSaveRequest(edited, 'global')
+  assert.ok(request)
+  const inFlight = markDraftSaving(edited, 'global', true)
+  assert.equal(isCurrentSaveRequest(inFlight, request), true)
+  assert.equal(isCurrentSaveRequest(edited, request), false, 'saving 未置位即不是当前请求')
+  assert.equal(isCurrentSaveRequest(markDraftSaving(inFlight, 'global', false), request), false, 'saving 已清')
+  const reread = resetDraftFromSnapshot(inFlight, file('global', 'DISK\n', 'rev-2'))
+  assert.equal(isCurrentSaveRequest(reread, request), false, '重读后 saving 已清')
+  assert.equal(isCurrentSaveRequest(switchInstructionContext(inFlight, 2), request), false, '切上下文后 saving 已清')
+  // 字段级判别：saving 仍在途但 revision/contextId 与请求快照不同。
+  const forcedRevision = { ...inFlight, drafts: inFlight.drafts.map((draft) => draft.fileId === 'global' ? { ...draft, revision: 'rev-other' } : draft) }
+  assert.equal(isCurrentSaveRequest(forcedRevision, request), false, 'revision 与请求快照不同')
+  const forcedContext = { ...inFlight, drafts: inFlight.drafts.map((draft) => draft.fileId === 'global' ? { ...draft, contextId: 'ctx-other' } : draft) }
+  assert.equal(isCurrentSaveRequest(forcedContext, request), false, 'contextId 与请求快照不同')
+  assert.equal(isCurrentSaveRequest(inFlight, { ...request, fileId: 'missing' }), false, '草稿缺失')
+})
+
+test('迟到保存结果：草稿已重读时不写回基线', () => {
+  const edited = setDraftContent(poolFromSnapshot(snapshot([file('global', 'BASE\n')]), 1), 'global', 'NEW\n')
+  const request = instructionSaveRequest(edited, 'global')
+  assert.ok(request)
+  const inFlight = markDraftSaving(edited, 'global', true)
+  const reread = resetDraftFromSnapshot(inFlight, file('global', 'EDITED-ON-DISK\n', 'rev-2'))
+  const next = applySaveOutcomes(reread, [{ fileId: 'global', ok: true, revision: 'rev-3' }], new Map([['global', request]]))
+  assert.equal(next.drafts[0].revision, 'rev-2', '迟到结果不覆盖重读后的基线')
+  assert.equal(next.drafts[0].savedContent, 'EDITED-ON-DISK\n')
+})
+
+test('迟到失败结果：草稿已重读时不写冲突标记', () => {
+  const edited = setDraftContent(poolFromSnapshot(snapshot([file('global', 'BASE\n')]), 1), 'global', 'NEW\n')
+  const request = instructionSaveRequest(edited, 'global')
+  assert.ok(request)
+  const inFlight = markDraftSaving(edited, 'global', true)
+  const reread = resetDraftFromSnapshot(inFlight, file('global', 'EDITED-ON-DISK\n', 'rev-2'))
+  const next = applySaveOutcomes(reread, [{ fileId: 'global', ok: false, message: '409', conflict: true }], new Map([['global', request]]))
+  assert.equal(next.drafts[0].conflict, undefined, '迟到冲突不写回')
+  assert.equal(next.drafts[0].error, undefined)
+  assert.equal(next.drafts[0].revision, 'rev-2')
+})
+
 test('边界·部分成功：逐文件结果各归各，不宣称跨文件原子', () => {
   const pool = setDraftContent(
     setDraftContent(poolFromSnapshot(snapshot([file('global', 'G-BASE\n'), file('project', 'P-BASE\n')]), 2), 'global', 'G-NEW\n'),
@@ -102,7 +147,8 @@ test('边界·部分成功：逐文件结果各归各，不宣称跨文件原子
     ['global', instructionSaveRequest(pool, 'global')],
     ['project', instructionSaveRequest(pool, 'project')],
   ])
-  const next = applySaveOutcomes(pool, [
+  const inFlight = markDraftSaving(markDraftSaving(pool, 'global', true), 'project', true)
+  const next = applySaveOutcomes(inFlight, [
     { fileId: 'global', ok: true, revision: 'g-2' },
     { fileId: 'project', ok: false, message: '项目文件被外部修改', conflict: true },
   ], requests)

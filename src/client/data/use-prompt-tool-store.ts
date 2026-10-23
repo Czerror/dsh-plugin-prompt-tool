@@ -24,6 +24,7 @@ import {
   EMPTY_INSTRUCTION_POOL,
   instructionSaveRequest,
   isCurrentInstructionSeq,
+  isCurrentSaveRequest,
   isInstructionConflictCode,
   markDraftSaving,
   poolFromSnapshot,
@@ -621,15 +622,13 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
     for (const [fileId, request] of requests) {
       // 每次发送前和应答后都复核；切换工作区后不能继续提交批次中的旧文件。
       if (!isCurrent()) return false
-      const current = instructionPoolRef.current.drafts.find((draft) => draft.fileId === fileId)
-      if (current?.saving !== true || current.revision !== request.expectedRevision || current.contextId !== request.contextId) {
+      if (!isCurrentSaveRequest(instructionPoolRef.current, request)) {
         results.push({ fileId, ok: false, message: '文件已重新读取，本次旧草稿未继续保存' })
         continue
       }
       const res = await bridgeCall('agentsFile', request)
       if (!isCurrent()) return false
-      const latest = instructionPoolRef.current.drafts.find((draft) => draft.fileId === fileId)
-      if (latest?.saving !== true || latest.revision !== request.expectedRevision || latest.contextId !== request.contextId) {
+      if (!isCurrentSaveRequest(instructionPoolRef.current, request)) {
         results.push({ fileId, ok: false, message: '文件已重新读取，迟到保存结果未应用' })
         continue
       }
