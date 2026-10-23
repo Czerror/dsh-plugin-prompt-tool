@@ -3,7 +3,7 @@
  * 一起增删（`createModuleCapability` / `removeModuleCapability`）。从原 `manifest.ts` 按簇拆出；
  * 每次提交都过共享引用守卫，能力登记表是唯一事实源。
  */
-import { existsSync, rmSync } from 'node:fs'
+import { existsSync, mkdtempSync, renameSync, rmSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { Scalar, YAMLSeq, parseDocument } from 'yaml'
 import { engineRecipe, isModuleCapabilityDeclared, moduleCapability } from '../shared/engine-capabilities.ts'
@@ -57,10 +57,27 @@ export function appendModuleCapabilities(
   doc.set('modules', modules)
 }
 
+// shortcut: 清理失败只保证残留路径，不保证完整旧副本；恢复完整性成为硬要求时，
+// 改为保留 stage 并由启动/显式清理入口回收。
+/** 删除模块后清理隐藏 stage；失败时残留内容留在 stage 内（可能已被部分删除），路径交给调用方提示。 */
+function discardDeletedStage(stage: string, backupPath: string): { ok: true; backupPath?: string } {
+  try {
+    rmSync(stage, { recursive: true, force: true })
+    return { ok: true }
+  } catch {
+    return { ok: true, backupPath }
+  }
+}
+
 /** 删除具有合法身份的模块目录（模块根/<id>）；隐藏备份不经公共接口删除。
  *  仅作用于插件自有模块根，包内置模板不受影响；路径越界与非法 id 拒绝。
- *  模块不在宿主预设注册表里，删除后无需撤销官方登记；调用方按需重建当前模块。 */
-export function removeUserModule(id: string, moduleRoot = userModulesDir()): { ok: true } | { ok: false; message: string } {
+ *  模块不在宿主预设注册表里，删除后无需撤销官方登记；调用方按需重建当前模块。
+ *
+ *  先同卷 rename 到隐藏 stage、再清理：rename 失败时原目录完整不动；清理失败时
+ *  删除已提交（模块已从根目录移出），旧副本尽力留在隐藏目录并返回路径（可能不完整）。 */
+export function removeUserModule(id: string, moduleRoot = userModulesDir()): { ok: true; backupPath?: string } | { ok: false; message: string } {
+  let stage: string | undefined
+  let backupPath: string | undefined
   try {
     // 来源选择与删除共用配置锁，避免校验后又被选中而留下悬空引用。
     withModuleLock(dirname(moduleRoot), 'config', () => withModuleLock(moduleRoot, id, () => {
@@ -70,13 +87,27 @@ export function removeUserModule(id: string, moduleRoot = userModulesDir()): { o
       }
       const target = assertModuleDirectory(moduleRoot, id)
       assertModuleTree(target)
-      rmSync(target, { recursive: true, force: true })
+      // stage 与 target 同目录（同卷），rename 才是原子换位而不是跨卷复制。
+      stage = mkdtempSync(join(dirname(target), `.${id}.delete-`))
+      const trash = join(stage, id)
+      try {
+        renameSync(target, trash)
+      } catch (error) {
+        // rename 失败：原目录未动，清掉空 stage 后按原错误返回。
+        // shortcut: 空 stage 清理失败会留下空隐藏目录；不掩盖 rename 原错误，也不返回路径。
+        try { rmSync(stage, { recursive: true, force: true }) } catch { /* 空 stage 不掩盖原错误 */ }
+        throw error
+      }
+      backupPath = trash
       invalidateModuleSpec(target)
     }))
-    return { ok: true }
   } catch (error) {
+    // rename 已成功即删除已提交：锁释放等后续错误不能把已移出的目录报成失败。
+    if (stage !== undefined && backupPath !== undefined) return discardDeletedStage(stage, backupPath)
     return { ok: false, message: `删除失败：${error instanceof Error ? error.message : String(error)}` }
   }
+  if (stage === undefined || backupPath === undefined) return { ok: true }
+  return discardDeletedStage(stage, backupPath)
 }
 
 export type ModuleCapabilityCreateRequest =

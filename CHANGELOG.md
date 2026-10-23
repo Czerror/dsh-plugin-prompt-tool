@@ -1,5 +1,14 @@
 # Changelog
 
+### 删除模块改为同卷 rename-aside（2026-10-23）
+
+- 改前 `removeUserModule` 直接 `rmSync` 递归删除；Windows 资源管理器占用模块目录时，UI 报删除失败但目录内容已被清空（2026-10-23 实测）。
+- 改后锁内 `rename`，锁外尽力清理；清理失败返回 `backupPath`（清理未完成，残留内容可能不完整），刷新失败以 200 + 结构化 `refreshError` 返回；rename 失败原目录完整不动。删除已提交后不因刷新失败回滚。
+- `moduleDelete` 响应增加可选 `backupPath`/`refreshError`；客户端提示残留目录位置并本地化刷新失败。不做回收站、保留期或自动回滚。
+- 回归：`test/host/module-management.test.mjs` 覆盖主路径、rename 占用、清理占用、清理中途失败、刷新失败、刷新+备份、锁释放失败。
+- 验证：`pnpm --dir $Repo typecheck`、`pnpm --dir $Repo lint`、`pnpm --dir $Repo test`（895 pass / 0 fail）、`pnpm --dir $Repo build`、`git -C $Repo diff --check` 全过；模块删除回归 20 pass。
+- 需重启 DSH 后生效。
+
 ### layers 注册登记收成一条（2026-10-23）
 
 - `engine/layers.mjs` 新增 `orderedEntry(name, config)`；system-section、conditional、runtime-context 与 placeholder 四处 `ordered` 登记改调它。

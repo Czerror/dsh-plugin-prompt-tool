@@ -39,8 +39,22 @@ export function registerLifecycle(runtime: LifecycleRuntime): Array<() => void> 
         tx.write(400, { ok: false, code: 'module-delete-rejected', message: result.message })
         return
       }
-      if (!await runtime.refreshModuleList(tx.write)) return
-      tx.write(200, { ok: true, value: { id } })
+      // 删除已提交：刷新失败只影响列表，回 200 让客户端按已删除处理。
+      let refreshError: string | undefined
+      try {
+        await runtime.deps.moduleListChanged?.()
+      } catch (error) {
+        refreshError = 'module-refresh-failed'
+        runtime.deps.warn?.(`删除模块 ${id} 后刷新运行实例失败：${error instanceof Error ? error.message : String(error)}`)
+      }
+      tx.write(200, {
+        ok: true,
+        value: {
+          id,
+          ...(result.backupPath === undefined ? {} : { backupPath: result.backupPath }),
+          ...(refreshError === undefined ? {} : { refreshError }),
+        },
+      })
     } }),
     runtime.register(BRIDGE_ENDPOINTS.moduleClone, { handle: async (tx) => {
       const record = tx.record

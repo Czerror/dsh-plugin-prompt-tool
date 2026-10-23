@@ -10,8 +10,9 @@
  */
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
-import { join, dirname } from 'node:path'
+import fs, { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { syncBuiltinESMExports } from 'node:module'
+import { basename, dirname, join } from 'node:path'
 import { parse } from 'yaml'
 import { fakeReq, fakeRes, isolatedHome, makeHostContext } from '../fixtures/host-harness.mjs'
 
@@ -81,7 +82,7 @@ function makeHarness() {
   return { ctx, handlers }
 }
 
-function register(ctx, afterOverridesChange) {
+function register(ctx, afterOverridesChange, moduleListChanged = () => {}) {
   registerSettingsBridge(ctx, {
     ns: 'prompt-tool',
     models: () => ({ available: true, providers: [] }),
@@ -95,7 +96,7 @@ function register(ctx, afterOverridesChange) {
     // 只按请求声明解析（与生产接线同形）：未声明 = 无目标，不回退任何启用模块。
     moduleDirectory: (moduleId) => moduleId === undefined ? '' : join(moduleRoot, moduleId),
     overridesChanged: afterOverridesChange, // 写盘后重建（module-enable 等端点等它完成才回响应）
-    moduleListChanged: () => {},
+    moduleListChanged,
   })
 }
 
@@ -312,6 +313,195 @@ test('模块并入：导入期的 variablesEnabled 只过滤字面变量，产�
   assert.equal(merged.variablesEnabled, true, '导入不写目标模块的开关')
   assert.equal(readFileSync(join(moduleRoot, 'card-source', 'rules', '_settings.yml'), 'utf8'), sourceSettings, '导入不回写源模块开关')
   assert.equal(parse(readFileSync(join(moduleRoot, 'target', 'rules', '_settings.yml'), 'utf8')).variablesEnabled, true, '目标开关保持导入前语义')
+})
+
+// ── 删除事务：同卷 rename-aside（2026-10-23 PLAN） ──────────────────────
+
+const hidden = (root) => readdirSync(root).filter((name) => name.startsWith('.'))
+
+/** patch fs 命名导出；action 可能是异步，必须在 await 完成后才恢复。 */
+async function withPatchedFs({ rename, rm }, action) {
+  const originalRename = fs.renameSync
+  const originalRm = fs.rmSync
+  if (rename !== undefined) fs.renameSync = rename(originalRename)
+  if (rm !== undefined) fs.rmSync = rm(originalRm)
+  syncBuiltinESMExports()
+  try {
+    return await action()
+  } finally {
+    fs.renameSync = originalRename
+    fs.rmSync = originalRm
+    syncBuiltinESMExports()
+  }
+}
+
+test('删除主路径：目录移出且无隐藏残留', async () => {
+  const id = 'aside-ok'
+  const dir = writeModule(id)
+  writeFileSync(join(dir, 'user.txt'), 'USER')
+  const { ctx, handlers } = makeHarness()
+  register(ctx)
+
+  const result = await call(handlers, 'moduleDelete', { id })
+  assert.equal(result.status, 200, result.message)
+  assert.equal(result.ok, true)
+  assert.equal(existsSync(dir), false, '删除后目标目录不存在')
+  assert.deepEqual(result.value, { id }, '清理成功只回 id，不写 undefined 自有属性')
+  assert.deepEqual(hidden(moduleRoot), [], '清理成功不留隐藏 stage')
+})
+
+test('删除 rename 遇到占用：原目录完整保留，不半删', async () => {
+  const id = 'aside-rename-busy'
+  const dir = writeModule(id)
+  writeFileSync(join(dir, 'user.txt'), 'USER')
+  const before = readFileSync(join(dir, 'module.yml'), 'utf8')
+  const { ctx, handlers } = makeHarness()
+  register(ctx)
+
+  const result = await withPatchedFs({
+    rename: (original) => (from, to) => {
+      if (from === dir) throw new Error('EBUSY: resource busy or locked')
+      return original(from, to)
+    },
+  }, () => call(handlers, 'moduleDelete', { id }))
+
+  assert.equal(result.status, 400, result.message)
+  assert.equal(result.code, 'module-delete-rejected')
+  assert.equal(existsSync(dir), true, 'rename 失败时原目录不得被移走')
+  assert.equal(readFileSync(join(dir, 'module.yml'), 'utf8'), before, '定义逐字节不变')
+  assert.equal(readFileSync(join(dir, 'user.txt'), 'utf8'), 'USER', '用户文件逐字节不变')
+  assert.deepEqual(hidden(moduleRoot), [], 'rename 失败要清掉空 stage')
+})
+
+test('删除清理遇到占用：模块已移出，残留目录返回路径', async () => {
+  const id = 'aside-cleanup-busy'
+  const dir = writeModule(id)
+  writeFileSync(join(dir, 'user.txt'), 'USER')
+  const { ctx, handlers } = makeHarness()
+  register(ctx)
+
+  let stage
+  const result = await withPatchedFs({
+    rename: (original) => (from, to) => {
+      stage = dirname(to)
+      return original(from, to)
+    },
+    rm: (original) => (path, options) => {
+      if (String(path) === stage) throw new Error('EBUSY: backup busy')
+      return original(path, options)
+    },
+  }, () => call(handlers, 'moduleDelete', { id }))
+
+  assert.equal(result.status, 200, result.message)
+  assert.equal(existsSync(dir), false, '模块目录已移出')
+  assert.equal(typeof stage, 'string')
+  assert.equal(dirname(stage), moduleRoot, '备份 stage 在模块根下')
+  assert.equal(result.value.backupPath, join(stage, id))
+  assert.equal(existsSync(join(stage, id, 'module.yml')), true, '残留目录里定义还在')
+  assert.equal(readFileSync(join(stage, id, 'user.txt'), 'utf8'), 'USER')
+  const { listModules } = await import('../../src/host/module-catalog.ts')
+  assert.equal(listModules(moduleRoot).some((module) => module.id === basename(stage)), false, '隐藏 stage 不进模块列表')
+  rmSync(stage, { recursive: true, force: true })
+  assert.deepEqual(hidden(moduleRoot), [], '测试自己精确清理备份目录')
+})
+
+test('删除后刷新失败：模块已移出，返回结构化 refreshError', async () => {
+  const id = 'aside-refresh-fail'
+  const dir = writeModule(id)
+  const { ctx, handlers } = makeHarness()
+  register(ctx, undefined, () => { throw new Error('refresh failed') })
+
+  const result = await call(handlers, 'moduleDelete', { id })
+  assert.equal(result.status, 200, result.message)
+  assert.equal(result.value.refreshError, 'module-refresh-failed')
+  assert.equal(existsSync(dir), false, '删除已提交，不能因为刷新失败而恢复')
+})
+
+test('删除清理中途失败：残留目录可能不完整，仍返回路径', async () => {
+  const id = 'aside-cleanup-partial'
+  const dir = writeModule(id)
+  writeFileSync(join(dir, 'user.txt'), 'USER')
+  const { ctx, handlers } = makeHarness()
+  register(ctx)
+
+  let stage
+  const result = await withPatchedFs({
+    rename: (original) => (from, to) => {
+      stage = dirname(to)
+      return original(from, to)
+    },
+    rm: (original) => (path, options) => {
+      if (String(path) === stage) {
+        // 模拟删除到一半：先删掉一个文件，再抛出占用错误。
+        original(join(String(path), id, 'user.txt'), { force: true })
+        throw new Error('EBUSY: backup busy')
+      }
+      return original(path, options)
+    },
+  }, () => call(handlers, 'moduleDelete', { id }))
+
+  assert.equal(result.status, 200, result.message)
+  assert.equal(existsSync(dir), false)
+  assert.equal(typeof stage, 'string')
+  assert.equal(dirname(stage), moduleRoot, '备份 stage 在模块根下')
+  assert.equal(result.value.backupPath, join(stage, id))
+  assert.equal(existsSync(join(stage, id, 'module.yml')), true, '定义仍在')
+  assert.equal(existsSync(join(stage, id, 'user.txt')), false, '中途失败时残留目录可能不完整')
+  rmSync(stage, { recursive: true, force: true })
+})
+
+test('删除后刷新失败且清理未完成：200 同时带 refreshError 与 backupPath', async () => {
+  const id = 'aside-refresh-backup'
+  const dir = writeModule(id)
+  const { ctx, handlers } = makeHarness()
+  register(ctx, undefined, () => { throw new Error('refresh failed') })
+
+  let stage
+  const result = await withPatchedFs({
+    rename: (original) => (from, to) => {
+      stage = dirname(to)
+      return original(from, to)
+    },
+    rm: (original) => (path, options) => {
+      if (String(path) === stage) throw new Error('EBUSY: backup busy')
+      return original(path, options)
+    },
+  }, () => call(handlers, 'moduleDelete', { id }))
+
+  assert.equal(result.status, 200, result.message)
+  assert.equal(result.value.refreshError, 'module-refresh-failed')
+  assert.equal(existsSync(dir), false)
+  assert.equal(typeof stage, 'string')
+  assert.equal(dirname(stage), moduleRoot, '备份 stage 在模块根下')
+  assert.equal(result.value.backupPath, join(stage, id))
+  assert.equal(existsSync(join(stage, id, 'module.yml')), true)
+  rmSync(stage, { recursive: true, force: true })
+})
+
+test('删除后锁释放失败：删除已提交，不谎报失败', async () => {
+  const id = 'aside-lock-release'
+  const dir = writeModule(id)
+  const { ctx, handlers } = makeHarness()
+  register(ctx)
+
+  let lockRemovalInjected = false
+  const result = await withPatchedFs({
+    rm: (original) => (path, options) => {
+      if (String(path).includes('.' + id + '.locks') && String(path).endsWith('.lock')) {
+        lockRemovalInjected = true
+        throw new Error('EBUSY: lock file busy')
+      }
+      return original(path, options)
+    },
+  }, () => call(handlers, 'moduleDelete', { id }))
+
+  assert.equal(result.status, 200, result.message)
+  assert.equal(lockRemovalInjected, true, '锁文件清理注入已触发')
+  assert.equal(existsSync(dir), false, '删除已提交')
+  assert.deepEqual(result.value, { id })
+  // 锁文件清理被注入失败后残留；按精确路径清理，避免影响同文件后续用例。
+  rmSync(join(moduleRoot, '.' + id + '.locks'), { recursive: true, force: true })
+  assert.deepEqual(hidden(moduleRoot), [], '清理成功不留隐藏 stage')
 })
 
 test('module-enable：写启用表后等待装配，失败如实返回，非法载荷不落盘', async () => {

@@ -144,7 +144,18 @@ export const ModuleSwitcher = memo(function ModuleSwitcher(props: { store: Modul
     // 没有会话级「在用模块」：不带主语即无声明（「在用」保护在人设引用那一侧，服务端另有判据）。
     const res = await store.moduleActions.remove(id)
     if (res.ok || res.committed) {
-      report(res, t('moduleSwitcher.notice.deleted', { id }), res.ok ? '' : res.message ?? t('card.operationFailed'))
+      const backupPath = res.ok ? res.value.backupPath : undefined
+      // 服务端刷新失败也回 200（删除已提交）；客户端 refresh 失败则用顶层 refreshError。
+      const refreshError = res.ok ? (res.value.refreshError ?? res.refreshError) : res.refreshError
+      if (backupPath !== undefined || refreshError !== undefined) {
+        const message = backupPath === undefined
+          ? t('moduleSwitcher.notice.deleted', { id })
+          : t('moduleSwitcher.notice.deletedWithBackup', { id, path: backupPath })
+        store.showNotice(refreshError === undefined ? 'ok' : 'error',
+          refreshError === undefined ? message : `${t('moduleSwitcher.notice.refreshFailed')} ${message}`)
+      } else {
+        report(res, t('moduleSwitcher.notice.deleted', { id }), res.ok ? '' : res.message ?? t('card.operationFailed'))
+      }
       setConfirmingDelete((current) => current === id ? undefined : current)
     } else {
       throw new Error(t('moduleSwitcher.notice.deleteFailed', { reason: res.message ?? 'settings bridge unavailable' }))
