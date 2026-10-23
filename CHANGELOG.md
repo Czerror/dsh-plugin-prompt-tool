@@ -1,5 +1,13 @@
 # Changelog
 
+### soul 模块收敛为资产分发（2026-10-24，更正上一提交）
+
+- 撤回随包移植的 soul 引擎（`engine/soul/`、`engine/soul-tools.mjs`、`soul-tools` 组合行与能力登记）：本项目本身就是内置引擎，不为一个模块随包安装第二套引擎。
+- `modules/soul` 只分发必要资产与规则：`module.yml` + `assets/`（判据、硬线、五层、ECHO、VITAL、账本），执行、工具与写盘仍归项目内置引擎；需要 soul 的驱动器工具时，另行安装 dsh-agent-soul 插件。
+- 随包资产契约测试保留：模块目录允许 `assets/`，规则编译时按模块目录加载 `templateFile`。
+- 验证：`pnpm typecheck`、`pnpm lint`、`pnpm test`、`pnpm build`、`git diff --check`。
+- 需重启 DSH 后生效。
+
 ### soul 转为本项目模块（2026-10-24）
 
 - 新增项目级引擎行 `soul-tools`（`engine/soul-tools.mjs` + `engine/compositions/source/local/soul-tools.yml`），原样移植 dsh-agent-soul 的 8 个工具、判据语料与 kit（MIT，见 `engine/soul/README.md`）；工具名保持 `agent_soul_*`。

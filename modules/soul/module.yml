@@ -5,12 +5,11 @@ id: soul
 name: 灵魂架构（判据与推送）
 version: 1.0.0
 engineCompat: ">=0.7.2"
-description: 灵魂架构模块：常驻四条判据与子代理硬线，按需注入五层/ECHO/VITAL/账本，压缩后与每 12 轮各提醒一次；并声明 soul-tools 能力提供 8 个 soul 工具（layers/manifest/doctor/plan/scaffold/check/verify/install）。
+description: 灵魂架构模块（资产 + 规则）：常驻四条判据与子代理硬线，按需注入五层/ECHO/VITAL/账本，压缩后与每 12 轮各提醒一次。执行引擎由项目内置，工具与写盘不随本模块分发。
 meta:
   source: manual
 modules:
   - rule-engine
-  - soul-tools
 order: 10
 rules:
   - id: soul-core
