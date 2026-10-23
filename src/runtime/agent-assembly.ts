@@ -37,7 +37,8 @@ import { planPersonaSections, type PersonaCapture, type PersonaModule, type Pers
 import { MODULE_TOOL_CAPABILITIES, OFFICIAL_RECIPE_ROWS, enabledRowIds } from '../shared/engine-capabilities.ts'
 import { enableTablePath, readGlobalLayerSettings } from '../host/config-store.ts'
 
-import { compileRules, completeRuleSections } from '../../engine/rule-spec.mjs'
+import { actionAudiences, compileRules, completeRuleSections } from '../../engine/rule-spec.mjs'
+import type { RuleAudience } from '../../engine/rule-spec.mjs'
 // 与引擎注册侧共用主子身份判据。
 import { isDelegated } from '../../engine/shared.mjs'
 import { mountRuleSources } from '../../engine/rule-runtime.mjs'
@@ -253,50 +254,8 @@ function ruleKeyOf(config: Record<string, unknown>): string {
  */
 interface DuplicateIdentity { channel: 'plugin' | 'kind'; identity: string; suspectedCopy: boolean; moduleIds: string[] }
 
-function completeSectionsOf(prepared: PreparedAssembly[], audience: 'main' | 'subagent'): string[] {
+function completeSectionsOf(prepared: PreparedAssembly[], audience: RuleAudience): string[] {
   return prepared.flatMap(item => completeRuleSections(item.rules, audience).map((id: string) => `${item.moduleId}/${id}`))
-}
-
-type RuleAudience = 'main' | 'subagent'
-
-/** 从规则的静态条件树推导它可能作用的受众；undefined 表示无法静态收窄（按两者都算）。 */
-function conditionAudiences(tree: unknown): Set<RuleAudience> | undefined {
-  if (tree === null || typeof tree !== 'object' || Array.isArray(tree)) return undefined
-  const record = tree as Record<string, unknown>
-  const scope = record.scope
-  if (scope !== null && typeof scope === 'object' && !Array.isArray(scope)) {
-    const audience = (scope as Record<string, unknown>).audience
-    if (audience === 'main' || audience === 'subagent') return new Set([audience])
-  }
-  if (Array.isArray(record.all)) {
-    let result: Set<RuleAudience> | undefined = new Set(['main', 'subagent'])
-    for (const child of record.all) {
-      const childAudiences = conditionAudiences(child)
-      if (childAudiences === undefined) continue
-      result = new Set([...result].filter(audience => childAudiences.has(audience)))
-    }
-    return result
-  }
-  if (Array.isArray(record.any)) {
-    let result = new Set<RuleAudience>()
-    for (const child of record.any) {
-      const childAudiences = conditionAudiences(child)
-      if (childAudiences === undefined) return undefined
-      for (const audience of childAudiences) result.add(audience)
-    }
-    return result
-  }
-  if (record.not !== undefined) {
-    const childAudiences = conditionAudiences(record.not)
-    if (childAudiences === undefined) return undefined
-    return new Set(['main', 'subagent'].filter(audience => !childAudiences.has(audience as RuleAudience)) as RuleAudience[])
-  }
-  if (record.notAny !== undefined) {
-    const childAudiences = conditionAudiences({ any: record.notAny })
-    if (childAudiences === undefined) return undefined
-    return new Set(['main', 'subagent'].filter(audience => !childAudiences.has(audience as RuleAudience)) as RuleAudience[])
-  }
-  return undefined
 }
 
 /** 这份模块是否声明了某受众会执行的 assembly.sections.append（用于与 complete 的已知受众互斥）。 */
@@ -304,14 +263,12 @@ function hasSectionAppend(rules: readonly unknown[], audience: RuleAudience): bo
   return rules.some((rule) => {
     const candidate = rule as {
       enabled?: boolean
-      actions?: Array<{ kind?: string; target?: { sections?: { append?: unknown } } }>
-      conditionTrees?: { when?: unknown }
+      actions?: Array<{ id: string; kind?: string; target?: { sections?: { append?: unknown } } }>
     }
     if (candidate.enabled === false) return false
-    const audiences = conditionAudiences(candidate.conditionTrees?.when)
-    if (audiences !== undefined && !audiences.has(audience)) return false
     return (candidate.actions ?? []).some(action => action.kind === 'assembly'
-      && Array.isArray(action.target?.sections?.append) && action.target.sections.append.length > 0)
+      && Array.isArray(action.target?.sections?.append) && action.target.sections.append.length > 0
+      && actionAudiences(candidate, action.id).has(audience))
   })
 }
 

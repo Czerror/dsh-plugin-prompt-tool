@@ -109,6 +109,10 @@ _Avoid_: 位置、内容策略、消息受众
 提示词配置的注入对象：主会话、子代理或两者。
 _Avoid_: 模型范围、会话范围
 
+**受众事实（Audience Fact）**：
+由规则条件树推导出的、这条规则可能作用的受众集合（主会话 / 子代理）。它是 append 与 complete 同受众互斥判据的输入，由引擎的 `audienceOf` / `actionAudiences` 派生，宿主只读结果。
+_Avoid_: 受众猜测、全局受众、会话范围
+
 ### 配置值
 
 **模块参数（Module Parameter）**：

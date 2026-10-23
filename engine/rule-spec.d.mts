@@ -1,5 +1,5 @@
 /**
- * `rule-spec.mjs` 的手写声明：只声明 `src/` 消费的导出，形状按实现写实。
+ * `rule-spec.mjs` 的手写声明：只声明 `src/` 与 `test/engine/` 消费的导出，形状按实现写实。
  *
  * 这里不复用插件侧类型（声明文件与 `.mjs` 同目录，`src/` 不在引擎的类型解析面内），
  * 只用结构等价的本地形状；被消费的字段与 `engine/rule-spec.mjs` 的产物逐名对应。
@@ -87,8 +87,19 @@ export function assertRuleId(id: unknown): void
 
 export function compileRules(specs: readonly unknown[], options?: CompileRulesOptions): CompiledRule[]
 
+export type RuleAudience = 'main' | 'subagent'
+
 /** 该受众下独占的 `complete` 系统段，身份是 `rule.id/action.id`。 */
-export function completeRuleSections(rules: readonly unknown[], audience: 'main' | 'subagent'): string[]
+export function completeRuleSections(rules: readonly unknown[], audience: RuleAudience): string[]
+
+/**
+ * 条件树 → 受众事实；`undefined` = 无法静态收窄。
+ * 算子集合与 `compileWhen` / `composite` 同源（`COMPOSITE_OPERATORS`）。
+ */
+export function audienceOf(tree: unknown): Set<RuleAudience> | undefined
+
+/** 动作级受众事实：规则级 when 与动作级 conditions 的合取；else 动作（bypassRuleWhen）只读动作条件。 */
+export function actionAudiences(rule: unknown, actionId: string): Set<RuleAudience>
 
 export function injectionConfigSpec(
   rule: { id: string; layer?: string },

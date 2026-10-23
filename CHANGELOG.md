@@ -1,5 +1,14 @@
 # Changelog
 
+### 受众事实收回引擎（2026-10-23）
+
+- 新增 `engine/rule-spec.mjs#audienceOf` / `actionAudiences`：条件树 → 受众集合的唯一判据；`scope.audience` 精确收窄（同节点带 `modelScope: pro|flash` 不算精确），`all` 求交、`any` 保守、`not`/`notAny` 只对精确子节点取补，无法收窄时由调用方保守处理。算子集合从 `COMPOSITE_OPERATORS` 分派，新增算子时测试映射先红。
+- 修复（两轴评审）：`not`/`notAny` 对非精确子节点不再取补——`all` 跳过未知子条件、或 `scope` 带 `modelScope` 时，取补会反向排除受众并漏报 append/complete 冲突；现改为返回未知、按两个受众保守处理。
+- 宿主 `agent-assembly` 删除 `conditionAudiences` 条件树遍历，`hasSectionAppend` 改为按动作调用 `actionAudiences`：动作级分支条件与规则级 `if` 取交集，规则级 `else` 动作按自带的 `not(if)` 判定，不再叠加 `if`。
+- 修复：动作级 `if` 的 `assembly.sections.append` 此前被算作两个受众，与另一受众的 `complete` 误报冲突；`else` 分支的 append 则可能漏判，与同受众 complete 共存。
+- 回归：新增 `test/engine/rule-audiences.test.mjs`（13 条，含算子同源映射、非法形状守卫与非精确取补）；`test/host/agent-assembly.test.mjs` 新增动作级与 else 分支两条装配用例。
+- 边界：受众事实仍按需派生（纯函数），不写进编译产物；`completeRuleSections` 的 `config.audience` 语义不变。需重启 DSH 后生效。
+
 ### Agent 级能力声明原语（2026-10-22）
 
 - 新增 `engine/agent-capability.mjs`：受众判定、Agent scope 声明表、key/scope 变化时的先撤后挂；`mount` 返回 `undefined` 时下次装配重试。

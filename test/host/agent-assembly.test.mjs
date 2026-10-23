@@ -1509,6 +1509,45 @@ test('sections.append 与同受众 complete 互斥，主/子受众分别判断',
   assert.equal(split2.runtime.hasMounted(childOnly.id), true, 'append 规则限定 main 时，子受众只装 complete')
 })
 
+test('sections.append 的受众按动作级条件判定，else 分支按 not(if)', async (t) => {
+  const appendAction = {
+    id: 'append-action-rule',
+    then: [{
+      if: { scope: { audience: 'main' } },
+      then: [{ id: 'append', kind: 'assembly', target: { sections: { append: [{ name: 'deployment:persona-prefix', text: 'APPENDED' }] } } }],
+    }],
+  }
+  writeRawRuleModule('append-action-main', [appendAction])
+  writeRawRuleModule('complete-action-sub', [completeRule('subagent')])
+  const split = await liveAssembly(t, () => ['append-action-main', 'complete-action-sub'])
+  const main = await split.makeAgent('append-action-main-agent')
+  assert.equal(split.runtime.hasMounted(main.id), true, '动作级 main append 不影响主会话装配')
+  const child = await split.makeAgent('append-action-main-child', 1)
+  assert.equal(split.runtime.hasMounted(child.id), true, '动作级 main append 不与子代理 complete 冲突')
+
+  writeRawRuleModule('append-action-main-conflict', [appendAction])
+  writeRawRuleModule('complete-action-main', [completeRule('main')])
+  const same = await liveAssembly(t, () => ['append-action-main-conflict', 'complete-action-main'])
+  const sameMain = await same.makeAgent('append-action-main-conflict-agent')
+  assert.equal(same.runtime.hasMounted(sameMain.id), false, '动作级 main append 与 main complete 同受众被拒')
+  assert.ok(same.warnings.some(message => message.includes('sections.append') && message.includes('complete')))
+
+  const elseAppend = {
+    id: 'append-else-rule',
+    if: { scope: { audience: 'subagent' } },
+    then: [{ id: 'noop', kind: 'tool-gate', decision: 'allow' }],
+    else: [{ id: 'append', kind: 'assembly', target: { sections: { append: [{ name: 'deployment:persona-prefix', text: 'APPENDED' }] } } }],
+  }
+  writeRawRuleModule('append-else-main', [elseAppend])
+  writeRawRuleModule('complete-else-main', [completeRule('main')])
+  const conflict = await liveAssembly(t, () => ['append-else-main', 'complete-else-main'])
+  const mainAgent = await conflict.makeAgent('append-else-main-agent')
+  assert.equal(conflict.runtime.hasMounted(mainAgent.id), false, 'else 分支的 append 按 not(if) 判 main，与 main complete 同受众被拒')
+  assert.ok(conflict.warnings.some(message => message.includes('sections.append') && message.includes('complete')))
+  const childAgent = await conflict.makeAgent('append-else-main-child', 1)
+  assert.equal(conflict.runtime.hasMounted(childAgent.id), true, '两个声明都不作用于子代理时照常装配')
+})
+
 test('组合行 disabled 受控求值，并从运行集合剔除', async () => {
   assert.equal(rowDisabled(true), true)
   assert.equal(rowDisabled(false), false)
