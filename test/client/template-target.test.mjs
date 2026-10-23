@@ -9,7 +9,6 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { renderElement, withSsr, makeTranslate } from './support/ssr-render.mjs'
 import { createWorkspaceDrafts } from '../../src/client/data/workspace-drafts.ts'
-import { isWritableTarget } from '../../src/client/data/module-subject.ts'
 
 const t = makeTranslate()
 const { RulesWorkspace } = await withSsr([
@@ -78,14 +77,4 @@ test('目标候选不受总闸和启用状态影响，但过滤只读、非用�
   assert.doesNotMatch(html.slice(html.indexOf('data-template-new-module')), /<input/, '新建分支没有任何输入框（名字由服务端定）')
   // 预览文案的期望值取自 locales 词条（独立真值源）：blank-2 是场景事实，不在测试里重算预览算法。
   assert.match(html, new RegExp(t('rules.create.newHint', { id: 'blank-2' })), '预览按「已存在目录」判定：用户根下已有 blank → blank-2')
-})
-
-test('目标写判据（候选过滤与写前第二道闸共用同一实现）', () => {
-  assert.equal(isWritableTarget(modules, 'mod-a'), true)
-  assert.equal(isWritableTarget(modules, 'mod-z'), true, '未启用模块仍可显式写入准备定义')
-  assert.equal(isWritableTarget(modules, 'blank'), true, '尚无 rules 声明的空白模块仍是合法目标')
-  assert.equal(isWritableTarget(modules, 'mod-ro'), false, '只读不可写')
-  assert.equal(isWritableTarget(modules, 'builtin'), false, '非用户目录模块不可写')
-  assert.equal(isWritableTarget(modules, 'broken'), false, '损坏模块不可写')
-  assert.equal(isWritableTarget(modules, 'mod-missing'), false)
 })

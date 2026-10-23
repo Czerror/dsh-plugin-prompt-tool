@@ -52,11 +52,10 @@ test('候选构建保持目标身份；writeModule 失败保留原目标且拒�
 
 test('配装仅从定义内联工具，旧目录不再决定运行内容', async () => {
   const tool = { id: 'confirm', description: '确认', output: { schema: { type: 'json' } }, execute: { kind: 'ask-user' } }
-  const directory = moduleDirectory('inline', { modules: ['tool-config-engine'], customTools: [tool] })
+  moduleDirectory('inline', { modules: ['tool-config-engine'], customTools: [tool] })
   const prepared = await prepareAssembly(moduleRoot, 'inline', () => true)
   const custom = prepared.modules.find(module => module.id === 'tool-config-engine')
   assert.deepEqual(custom.config.tools.map(tool => tool.name), ['confirm'])
   assert.deepEqual(custom.config.tools[0].output.schema, {})
   assert.equal(typeof custom.config.resourceRoot, 'string')
-  assert.equal(existsSync(join(directory, 'custom-tools')), false)
 })

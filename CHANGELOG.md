@@ -1,5 +1,14 @@
 # Changelog
 
+### 测试面按 seam 清理（2026-10-23）
+
+- 按 AGENTS.md 测试准入与「不留墓碑」删除 13 条测试、2 个纯原语测试文件、约 13 处墓碑断言；全量测试 895 → 882。
+- 删除：`prompt-tool-view` 的 descriptor/base `promptConfigs` 墓碑 2 条；`instruction-card-settings` 重复变体 1 条；`module-declarations` 登记表快照 1 条；`bridge-contract` 前缀常量自证 1 条；`module-subject` 草稿键私有形状 1 条；`rule-steps` 纯 helper 4 条；`template-target` 谓词 1 条；`resource-track` / `official-preset-sources` 两个纯原语文件。
+- 收窄：`module-seed` 的 `meta.internal`/`blank` 目录墓碑、`write-module` 的 `.engine`/指纹/`agent.cordis.yml`/旧 `custom-tools` 目录断言、`module-engine-managed-paths` 的旧 `custom-tools` 目录断言。
+- 保留：四条 seam 上的主路径/拒绝/边界测试，以及 §12.1 允许的固定卡接线与渲染链路前置纯判据（`layer-cards`、`instruction-cards` 等）。
+- 验证：`pnpm --dir $Repo typecheck`、`lint`、`test`（882 pass / 0 fail）、`build`、`git -C $Repo diff --check` 全过。
+- 仅测试与变更记录，不需重启 DSH。
+
 ### 删除模块改为同卷 rename-aside（2026-10-23）
 
 - 改前 `removeUserModule` 直接 `rmSync` 递归删除；Windows 资源管理器占用模块目录时，UI 报删除失败但目录内容已被清空（2026-10-23 实测）。

@@ -8,19 +8,6 @@ import { fieldsFromView } from '../../src/client/data/prompt-tool-view.ts'
 
 const bootstrap = (value, base = {}) => ({ ok: true, value: { value, base, revision: 1 } })
 
-test('descriptor 的 promptConfigs 不再进入 Fields', () => {
-  const res = bootstrap({
-    modulesEnabled: true,
-    promptConfigs: [{ id: 'stale-card', origin: { kind: 'instruction-file', fileId: 'a' } }],
-  })
-  assert.deepEqual(fieldsFromView(res).instructionCards, [], '指令卡只来自 /bootstrap 会话段')
-})
-
-test('base 的 promptConfigs 同样不进入 Fields', () => {
-  const res = bootstrap({}, { promptConfigs: [{ id: 'legacy-base', origin: { kind: 'instruction-file', fileId: 'b' } }] })
-  assert.deepEqual(fieldsFromView(res).instructionCards, [])
-})
-
 test('缺省时指令卡为空，设置字段仍从 descriptor 读', () => {
   const res = bootstrap({ modulesEnabled: false })
   const fields = fieldsFromView(res)

@@ -72,13 +72,11 @@ test('新建空白模块：引擎内组装出 module.yml，目录名=id，冲突
   assert.equal(cloned.ok, true, cloned.message)
   assert.equal(cloned.id, 'blank', '目录名 = id')
   const definition = readFileSync(join(root, 'blank', 'module.yml'), 'utf8')
-  assert.doesNotMatch(definition, /internal/, 'meta.internal 机制随目录复制源退役，产物里不得再出现')
   const spec = parseYaml(definition)
   assert.equal(spec.id, 'blank')
   assert.equal(spec.name, '默认模块')
   assert.deepEqual(spec.modules, ['rule-engine'])
   assert.equal(spec.order, 9)
-  assert.equal(existsSync(join(packageModulesDir(), 'blank')), false, '包内不再有 blank 目录（源是内存常量）')
   // 同名已占用时按 id-2 / id-3 递增，定义身份跟着目录名走。
   const again = cloneBuiltinModule('blank', true, root)
   assert.equal(again.ok, true, again.message)

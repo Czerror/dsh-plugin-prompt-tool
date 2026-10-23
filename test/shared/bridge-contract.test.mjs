@@ -86,10 +86,6 @@ function assertMetaSameSource(boot, meta, keys) {
   for (const key of keys) assert.deepEqual(boot[key], meta[key], `/bootstrap 与 /meta 必须同源：${key}`)
 }
 
-test('契约：client 前缀与 server 注册前缀同源', () => {
-  assert.equal(SETTINGS_BRIDGE_PREFIX, '/api/prompt-tool/settings')
-})
-
 // ── 主语策略表：一次读写的主语是哪个模块 ─────────────────────────────────────────
 // 只守键集：漏标一个端点即失败。逐端点的**策略值**不在这里锁快照（加端点/改策略就要手改
 // 测试，且 typecheck 只保证键集），改由端点行为守——required 端点无主语 400 见

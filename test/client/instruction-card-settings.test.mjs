@@ -24,7 +24,6 @@ const { injectionPointSlots } = await withSsr([
 
 const facts = (editable = true) => ({ declaredModules: [], effectiveModules: [], rowIds: [], sourceMode: 'explicit', editable })
 const moduleA = { id: 'mod-a', name: 'A', enabled: true, declares: ['rules'], facts: facts() }
-const moduleB = { id: 'mod-b', name: 'B', enabled: true, declares: ['rules'], facts: facts() }
 const moduleOff = { id: 'mod-off', name: 'off', enabled: false, declares: ['rules'], facts: facts() }
 
 /** 指令文件卡：`origin.kind = 'instruction-file'` 即 `instructionFileIdOf` 认得的形态。 */
@@ -85,17 +84,10 @@ test('指令卡：设置页签在场，且与启用模块数量无关（没有�
   const html = renderWorkspace(stubStore([moduleOff]))
   assert.match(html, /data-config-tab="content"/, '内容页签照旧在场')
   assert.match(html, /data-config-tab="settings"/, '设置页签必须在场（全局层不属于任何模块：没有启用模块同样有可设置的内容）')
-  assert.equal((renderSettings(stubStore([moduleOff])).match(/data-param-key="instructionHint"/g) ?? []).length, 1,
+  const settings = renderSettings(stubStore([moduleOff]))
+  assert.equal((settings.match(/data-param-key="instructionHint"/g) ?? []).length, 1,
     '没有启用模块时仍是那一个全局开关')
-})
-
-test('指令卡设置区：只有**一个**全局开关，没有按模块分节（64a66174 的每模块一份已否掉）', () => {
-  const html = renderSettings(stubStore([moduleA, moduleB, moduleOff]))
-  assert.match(html, /data-param-key="instructionHint"/, '路径指引控件在场')
-  assert.equal((html.match(/data-param-key="instructionHint"/g) ?? []).length, 1, '一个开关，不按模块重复')
-  assert.doesNotMatch(html, /data-layer-param-group/, '不再借用按模块的层设置内容')
-  assert.doesNotMatch(html, /mod-a/, '没有模块名分节标题（卡片主语是全局层）')
-  assert.match(html, new RegExp(`aria-label="${t('param.instructionHint')}"`), 'labels 仍是既有词条')
+  assert.match(settings, new RegExp(`aria-label="${t('param.instructionHint')}"`), 'labels 仍是既有词条')
 })
 
 test('指令卡设置区：全局值读回前禁写（不把 UI 默认值固化成全局键）', () => {

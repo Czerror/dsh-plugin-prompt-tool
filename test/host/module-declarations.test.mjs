@@ -13,7 +13,7 @@ import { join } from 'node:path'
 import { isolatedHome } from '../fixtures/host-harness.mjs'
 
 const { moduleRoot } = isolatedHome('pt-module-declarations-')
-const { moduleDeclarations, DECLARED_SECTIONS } =
+const { moduleDeclarations } =
   await import('../../src/host/module-declarations.ts')
 /** 声明面判据只在 moduleDeclarations；这里保留测试可读的本地别名。 */
 const declares = (dir, section) => moduleDeclarations(dir).has(section)
@@ -36,15 +36,6 @@ test('顶层键整个不存在才算没声明；空值键算已声明', () => {
 
   assert.equal(declares(emptyCustomTools, 'customTools'), true, 'customTools: [] 算已声明')
   assert.equal(declares(emptyCustomTools, 'rules'), false, '没写的节照旧判没声明')
-})
-
-test('登记表：只有模块类端点登记声明面，全局类端点不登记', () => {
-  // 登记表逐条内容不在这里镜像（行为面由 settings-bridge 的六个节端到端守）；
-  // 这里只守「过度登记」：把定义本身或全局段端点拖进归属门会让它们凭空 400。
-  for (const key of ['charactersImport', 'moduleMerge', 'moduleUnmerge', 'bootstrap', 'describe',
-    'promptConfigs', 'moduleDelete', 'mutate', 'meta', 'moduleConfigOrder']) {
-    assert.equal(key in DECLARED_SECTIONS, false, `${key} 读写的是定义本身、全局段或不过归属门，不登记声明面`)
-  }
 })
 
 test('非法 YAML 抛既有错误，不返回空声明集', () => {

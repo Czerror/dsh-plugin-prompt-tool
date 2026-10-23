@@ -1,20 +1,11 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { canEditModule, moduleDeclares, ownsParamDraftKey, paramDraftKey, writableModuleTargets } from '../../src/client/data/module-subject.ts'
+import { canEditModule, moduleDeclares, writableModuleTargets } from '../../src/client/data/module-subject.ts'
 
 /** 判据只读「模块总闸 + 该模块自己的事实」两项；走生产同源入口 canEditModule（不直调内部 canEditSubject）。 */
 const gate = { modulesEnabled: true }
 const facts = (editable) => ({ declaredModules: [], effectiveModules: [], rowIds: [], sourceMode: 'explicit', editable })
 const moduleEntry = (id, editable = true, enabled = true) => ({ id, name: id, user: true, renderable: true, enabled, facts: facts(editable) })
-
-test('参数草稿键：归属只认精确 owner，相似 id 不误判', () => {
-  const key = paramDraftKey('mod-a', 'x')
-  assert.equal(ownsParamDraftKey(key, 'mod-a'), true)
-  assert.equal(ownsParamDraftKey(key, 'mod'), false, '相似 id 不误判')
-  assert.equal(ownsParamDraftKey(key, 'mod-a-2'), false)
-  assert.equal(ownsParamDraftKey(paramDraftKey('global', 'x'), 'global'), true)
-  assert.equal(ownsParamDraftKey(paramDraftKey('global', 'x'), 'mod-a'), false, 'global 与模块不串')
-})
 
 test('canEditModule：模块不在装配集合里（没有主语）时不可编辑', () => {
   assert.equal(canEditModule(gate, [moduleEntry('mod-a')], 'mod-missing'), false)

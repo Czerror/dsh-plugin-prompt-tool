@@ -120,7 +120,6 @@ test('规则所有者：无旧快捷参数的同名规则保留自身字段，�
     const actual = projectedConfig(dir, expected.id)
     assert.equal(actual.enabled, expected.enabled)
     for (const [key, value] of Object.entries(expected.params)) assert.deepEqual(actual.params[key], value)
-    assert.equal(actual.fieldSources, undefined, '新产物不再声明模块快捷参数拥有规则字段')
   }
   assert.equal(parseYaml(readFileSync(join(dir, 'module.yml'), 'utf8')).order, 91)
 })
@@ -184,20 +183,11 @@ test('运行总闸：关闭再开启不改模块定义或物化产物字节', as
   assert.equal(projectedConfig(dir, 'near-anchor').params.text, 'SAVED-WHILE-OFF')
 })
 
-test('writeModule 不生成共享引擎或宿主组合，规则切片保持可装配', async () => {
+test('writeModule 只物化规则切片，产物可装配且二次写入稳定', async () => {
   const dir = join(tmpdir(), `prompt-tool-wp-${process.pid}-${Date.now()}`)
   const moduleDir = join(dir, 'preset')
   try {
     writeModule(makeOptions(moduleDir))
-    // 共享引擎自阶段 2 起由**插件包**提供（组合行引用 dsh-plugin-prompt-tool/engine/*.mjs）：
-    // 模块根下不再出现 .engine/ 目录，也不再写引擎指纹文件。
-    assert.equal(existsSync(join(moduleDir, '.engine')), false, '模块根不再物化 .engine')
-    assert.equal(existsSync(join(moduleDir, '.pt-engine-fingerprint')), false, '不再写引擎指纹文件')
-    assert.deepEqual(readdirSync(moduleDir).filter((name) => name.startsWith('.')), [],
-      '模块根不残留 .engine/.pt-engine-fingerprint/临时目录')
-    assert.equal(existsSync(join(moduleDir, 'fixture', 'engine')), false, '子模块不复制 engine')
-    assert.equal(existsSync(join(moduleDir, 'agent.cordis.yml')), false, '模块根不再写容器根转发')
-    assert.equal(existsSync(join(moduleDir, 'fixture', 'agent.cordis.yml')), false)
     const prepared = await prepareAssembly(moduleDir, 'fixture', () => true)
     for (const module of ['rule-engine', 'run-code-env', 'tool-git-bash', 'skill-search']) {
       assert.ok(existsSync(join(ROOT, 'engine', `${module}.mjs`)),
@@ -361,7 +351,6 @@ test('writeModule 预设变量只读顶层 variables，清空后不复活 params
     assert.ok(existsSync(varsFile), 'variables.yml 生成')
     const vars = parseYaml(readFileSync(varsFile, 'utf8'))
     assert.deepEqual(vars, variables, '变量文件只包含顶层变量，保留空串与同名键')
-    assert.equal(parsed.params?.wordsCloud, undefined, '内容变量不再进 params')
     editModuleVariables(variableDir, { scope: 'module', values: {}, expectedRevisions: readModuleVariables(variableDir).revisions })
     writeModule(makeOptions(moduleDir))
     assert.deepEqual(parseYaml(readFileSync(varsFile, 'utf8')), {}, '清空顶层变量后切片为空映射，params 内容键不复活')
@@ -400,7 +389,6 @@ test('writeModule 自定义工具拒绝坏定义，合法 DSL 在配装期编译
     const prepared = await prepareAssembly(moduleDir, 'fixture', () => true)
     const toolRow = prepared.modules.find(row => row.id === 'tool-config-engine')
     const parsed = toolRow.config.tools[0]
-    assert.equal(existsSync(join(moduleDir, 'fixture', 'custom-tools')), false)
     assert.equal(parsed.name, 'my_greet')
     assert.equal(parsed.execute.kind, 'shell')
     assert.deepEqual(parsed.parameters, { type: 'object', properties: { who: { type: 'string', description: '对象' } }, required: ['who'] }, '参数 DSL 经官方转换器物化为标准 JSON Schema')
@@ -420,7 +408,6 @@ test('writeModule 用户副本缺组合源时拒绝，不回退包内同名模�
     writeFileSync(join(userMinimal, 'module.yml'), 'name: 极简模式（旧）\ndescription: 旧版种子副本\norder: 3\n', 'utf8')
     const before = readFileSync(join(userMinimal, 'module.yml'), 'utf8')
     assert.throws(() => writeModule({ ...makeOptions(moduleDir), moduleId: 'pt-minimal' }), /no modules.*composition/)
-    assert.equal(existsSync(join(userMinimal, 'agent.cordis.yml')), false)
     assert.equal(readFileSync(join(userMinimal, 'module.yml'), 'utf8'), before)
     const spec = parseYaml(readFileSync(join(userMinimal, 'module.yml'), 'utf8'))
     assert.equal(spec.modules, undefined, '不注入包内 modules（无迁移）')
