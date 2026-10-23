@@ -13,6 +13,7 @@ import {
   newMessageId,
   sessionState,
 } from './shared.mjs'
+import { pluginKind } from './source-kind.mjs'
 import { INJECTION_LAYERS, KNOWN_STRATEGIES, SESSION_VARIABLES_DISABLED } from './schema.mjs'
 import { interpolateVariables, stripUnresolvedRefs, RUNTIME_FACTS, runtimeFactValue, isReservedInterpolationName } from './interpolate.mjs'
 import { renderTemplate } from './template-frame.mjs'
@@ -370,7 +371,7 @@ export function pluginMessage(prefix, text, summary) {
     id: newMessageId(prefix),
     role: 'user',
     content: [{ type: 'text', text }],
-    source: { kind: `plugin:${name}`, plugin: name, form: 'notice', summary },
+    source: { kind: pluginKind(name), plugin: name, form: 'notice', summary },
   }
 }
 

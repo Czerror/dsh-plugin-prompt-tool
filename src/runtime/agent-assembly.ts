@@ -26,6 +26,7 @@ import { readModuleFacts, resolveModuleParams } from '../host/module-params.ts'
 import { loadModuleSpec, readModulesRevision } from '../host/module-spec.ts'
 import type { ModuleSpec } from '../host/module-spec.ts'
 import { modelRequestRules } from '../host/prompt-configs.ts'
+import { pluginKind, pluginOwner } from '../../engine/source-kind.mjs'
 import { assertModuleDirectory, assertModuleId } from '../host/module-install.ts'
 import { readConfigOrder } from '../host/module-config-order.ts'
 import { rulePromptConfigOptions } from '../host/module-slices.ts'
@@ -296,9 +297,9 @@ function duplicateDedupeIdentities(prepared: PreparedAssembly[]): DuplicateIdent
     // 只有显式声明的才与它不同。identityStampOf 的回退按去重身份编，真实链路不达（schema 总会填
     // kind），拿它当基线会把按 id 编出的缺省误判成显式声明（显式 identity / merged 组时）。
     // 「缺省不算一笔账」是本侧语义：只可见化显式声明，故与缺省比对后再决定要不要报 kind 通道。
-    const declaredKind = config.sourceKind !== `plugin:${String(config.id)}` ? config.sourceKind : undefined
+    const declaredKind = pluginOwner(config.sourceKind) !== String(config.id) ? config.sourceKind : undefined
     return [
-      { key: `plugin:${pluginIdentity}`, channel: 'plugin' as const, identity: pluginIdentity, copyKey: ruleKeyOf(config), moduleId },
+      { key: pluginKind(pluginIdentity), channel: 'plugin' as const, identity: pluginIdentity, copyKey: ruleKeyOf(config), moduleId },
       ...(typeof declaredKind === 'string' && declaredKind.length > 0 ? [{ key: `kind:${declaredKind}`, channel: 'kind' as const, identity: declaredKind, copyKey: ruleKeyOf(config), moduleId }] : []),
     ]
   })

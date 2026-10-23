@@ -1,5 +1,6 @@
 import { labelOf, requireString } from './shared.mjs'
 import { pluginMessage } from '../layers.mjs'
+import { pluginKind } from '../source-kind.mjs'
 
 export function prepareAppendContext(action, plugin) {
   const label = labelOf(action)
@@ -15,7 +16,7 @@ export function prepareAppendContext(action, plugin) {
       // 裸 `plugin` 会被会话格式校验拒绝，这条 durable user 通知就落不了盘。
       const notice = {
         ...pluginMessage(`action-${label}`, text, `${label} context`),
-        source: { kind: `plugin:${label}`, plugin: label, form: 'notice', summary: `${label} context` },
+        source: { kind: pluginKind(label), plugin: label, form: 'notice', summary: `${label} context` },
       }
       const updated = { ...decision, additionalContexts: [...(decision.additionalContexts ?? []), notice] }
       return take(exec) ? updated : decision

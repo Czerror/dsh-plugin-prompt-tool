@@ -1,5 +1,12 @@
 # Changelog
 
+### v4 来源 kind 收成一份（2026-10-23）
+
+- 新增 `engine/source-kind.mjs`：`pluginKind(owner)`、`pluginOwner(kind)`、`isPluginKind(kind)`；`pluginOwner` 只认 v4 `plugin:<owner>`，`isPluginKind` 兼容旧日志裸 `plugin`。
+- `delivery`、`inbox-prepend`、`pre-step-filter`、`append-context`、`layers`、`schema`、`agent-assembly` 共 10 处前缀拼接/owner 解析/旧形态判断改调原语；新增手写声明 `engine/source-kind.d.mts`（只声明 `src/` 消费的 `pluginKind`/`pluginOwner`）。
+- 行为逐字不变；回归由现有动作与装配测试承担。
+- 需重启 DSH 后生效。
+
 ### 每请求模块校验改为 stat 戳（2026-10-23）
 
 - 新增 `host/module-spec.ts#readModulesRevision`：只 stat 启用表/全局 `config.yml`、每模块 `module.yml`、`rules/` 下所有条目，返回源版本戳。

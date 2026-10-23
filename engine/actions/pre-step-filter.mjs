@@ -1,4 +1,5 @@
 import { NAME_LIST, labelOf } from './shared.mjs'
+import { isPluginKind } from '../source-kind.mjs'
 
 export function preparePreStepFilter(action, plugin) {
   const label = labelOf(action)
@@ -36,10 +37,8 @@ export function preparePreStepFilter(action, plugin) {
       if (blockPlugins !== undefined) {
         messages = messages.filter((message) => {
           const source = message?.source
-          // v4 起插件来源的 kind 是生产者名（`plugin:<name>`），旧日志才有裸 `plugin`：
-          // 只认其中一种，换代后这道「按 source.plugin 精确屏蔽」的逃生阀会静默失效。
-          const isPlugin = source?.kind === 'plugin'
-            || (typeof source?.kind === 'string' && source.kind.startsWith('plugin:'))
+          // 插件来源（v4 或旧日志）的判定收在 source-kind；漏掉会让 blockPlugins 逃生阀静默失效。
+          const isPlugin = isPluginKind(source?.kind)
           if (!isPlugin) return true
           const name = source?.plugin
           // 只认插件自报的字符串身份；非字符串一律不拦（宁可少拦，不可误删上下文）。

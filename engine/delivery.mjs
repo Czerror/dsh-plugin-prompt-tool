@@ -1,4 +1,5 @@
 import { historyEvents, viewRestricted } from './history.mjs'
+import { pluginKind, pluginOwner } from './source-kind.mjs'
 
 export function eventMessage(event) {
   const data = event?.data
@@ -17,14 +18,14 @@ export const identityOf = config => config.mergeMode === 'merged' ? `merged:${co
 
 export function pluginIdentityOf(source) {
   if (typeof source?.plugin === 'string' && source.plugin.length > 0) return source.plugin
-  return typeof source?.kind === 'string' && source.kind.startsWith('plugin:') ? source.kind.slice(7) : undefined
+  return pluginOwner(source?.kind)
 }
 
 export function identityStampOf(config) {
   const plugin = identityOf(config)
   const moduleId = moduleIdOf(config, 'sourceModuleId')
   return {
-    kind: typeof config.sourceKind === 'string' && config.sourceKind.length > 0 ? config.sourceKind : `plugin:${plugin}`,
+    kind: typeof config.sourceKind === 'string' && config.sourceKind.length > 0 ? config.sourceKind : pluginKind(plugin),
     plugin,
     ...(moduleId === undefined ? {} : { moduleId }),
   }

@@ -10,6 +10,7 @@ import { parse as parseYaml } from './vendor/yaml/index.js'
 import { bindResolver } from './strategies.mjs'
 import { compareConfigSequence } from './order.mjs'
 import { SUBJECT_FIELDS } from './condition-facts.mjs'
+import { pluginKind, pluginOwner } from './source-kind.mjs'
 
 const name = 'rule-engine'
 
@@ -551,7 +552,7 @@ export function createPromptConfigs(specs, options = {}) {
       // 后果是只读档正文里的「只读」二字让写档的 notAny 在第二轮翻转，同一子代理两档并注。
       sourceKind: (() => {
         const declared = typeof spec.sourceKind === 'string' && spec.sourceKind.length > 0 ? spec.sourceKind : spec.id
-        return declared.startsWith('plugin:') ? declared : `plugin:${declared}`
+        return pluginOwner(declared) !== undefined ? declared : pluginKind(declared)
       })(),
       form: typeof spec.form === 'string' ? spec.form : 'notice',
       summary: typeof spec.summary === 'string' ? spec.summary : '',
