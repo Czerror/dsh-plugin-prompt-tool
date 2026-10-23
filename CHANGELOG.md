@@ -2,10 +2,11 @@
 
 ### 回滚契约外 undefined 死防御（2026-10-23）
 
-- 回滚 `cbf812e9`：`engine/tool-config-engine.mjs` 的 `delegate` / `ask-user` 成功返回值不再做 `undefined` 条件展开，恢复 `274a02b3` 行为；删除两条基于契约外桩的测试。
-- 依据：`ToolExecutionSuccess.value: JsonValue` 必填（dsh-tools 类型），`ApprovalOutcome` 为闭合联合；两处在官方契约内不可达。全仓工具返回路径核对无遗漏：`module_rules` / `module_variables` / `module_import` / `module_memory` / `bash` / `tool_search` / `skill_search` 均已条件展开或字段必填；bridge 载荷走 `JSON.stringify`，undefined 静默丢键属另一类，未在本轮处理。
+- 回滚未发布的 `cbf812e9`：`engine/tool-config-engine.mjs` 的 `delegate` / `ask-user` 成功返回值不再做 `undefined` 条件展开，净行为回到 `274a02b3`；删除两条基于契约外桩的测试。
+- 依据：`ToolExecutionSuccess.value: JsonValue` 必填（dsh-tools 类型），`ApprovalOutcome` 为闭合联合；两处在官方契约内不可达，无线上触发点，真实运行态未触发。本仓已核对的工具返回路径（`module_rules_read` / `module_rules_edit` / `module_variables` / `module_import` / `module_memory_read` / `module_memory_append` / `bash` / `tool_search` / `skill_search`）均已条件展开或字段必填；bridge 载荷走 `JSON.stringify`，undefined 静默丢键属另一类，未在本轮处理。
+- 回归：`test/engine/tool-config-engine.test.mjs` 新增 `delegate` / `ask-user` 成功路径的真实 `Context + ToolRuntime` 主路径测试；契约外桩删除后仍有执行器覆盖。
 - 保留结论：本轮不新增守卫；若未来宿主放宽 `value` / `answer` 契约，再按真实触发点重新评估。
-- 验证：`pnpm test` 882 pass / 0 fail、`typecheck`、`lint`、`build`、`git diff --check` 全过。
+- 验证：`pnpm test` 884 pass / 0 fail、`typecheck`、`lint`、`build`、`git diff --check` 全过。
 - 需重启 DSH 后生效。
 
 ### 测试面按 seam 清理（2026-10-23）

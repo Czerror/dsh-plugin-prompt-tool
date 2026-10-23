@@ -3,6 +3,10 @@ import assert from 'node:assert/strict'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { Context } from '@deepseek-ai/cordis'
+import { createScope } from '@deepseek-ai/dsh-scope'
+import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
+import ToolRuntime from '@deepseek-ai/dsh-tools'
 import { apply } from '../../engine/tool-config-engine.mjs'
 
 /** 独立临时目录：不依赖共享状态，用例结束清理。 */
@@ -135,4 +139,64 @@ test('shell 执行器：正常命令行为不变', async (t) => {
   const { tool, warnings } = registerTool(toolOf({ kind: 'shell', command }, 30000))
   assert.deepEqual(warnings, [])
   assert.deepEqual(await runTool(tool, cwd), { exitCode: 0, stdout: 'ok', stderr: '' })
+})
+
+/** 真实 Context + ToolRuntime：让 createExecute 的成功返回值经过官方 snapshot/schema 管线。 */
+async function realHarness(t, approvals = false) {
+  const root = new Context()
+  await root.plugin(SystemPrompt)
+  await root.plugin(ToolRuntime)
+  if (approvals) root.provide('approval', { request: async () => 'allowed-once' })
+  t.after(() => root.fiber.dispose())
+  const agent = { id: 'agent-' + Math.random().toString(36).slice(2), session: { id: 'session', header: { cwd: process.cwd() } } }
+  const scope = createScope(root, agent)
+  agent.ctx = scope.ctx
+  return { root, agent, scope }
+}
+
+/** 在 scope 的 tools 注入回调里注册，避免直接读 scope.tools 触发 cordis inject 检查。 */
+function mountTools(scope, callback) {
+  return new Promise((resolve, reject) => {
+    scope.ctx.inject(['tools'], ctx => {
+      try { callback(ctx); resolve() } catch (error) { reject(error) }
+    })
+  })
+}
+
+test('delegate 执行器：成功值经真实工具管线透传', async (t) => {
+  const { root, agent, scope } = await realHarness(t)
+  let disposeEcho
+  await mountTools(scope, ctx => {
+    disposeEcho = ctx.tools.register({
+      name: 'delegated_echo',
+      description: 'delegated echo',
+      parameters: { type: 'object', additionalProperties: false, properties: {} },
+      output: {
+        schema: { type: 'object', additionalProperties: true },
+        render: (_args, value) => [{ type: 'text', text: JSON.stringify(value) }],
+      },
+      execute: async () => ({ text: 'from delegated' }),
+    })
+    apply(ctx, { tools: [toolOf({ kind: 'delegate', tool: 'delegated_echo' })] })
+  })
+  t.after(() => disposeEcho())
+  const result = await root.tools.execute({
+    callId: 'delegate-call', name: 'probe', arguments: {}, agent,
+    signal: new AbortController().signal,
+  })
+  assert.equal(result.isError, false, JSON.stringify(result))
+  assert.deepEqual(result.value, { ok: true, value: { text: 'from delegated' } })
+})
+
+test('ask-user 执行器：批准结果经真实工具管线透传', async (t) => {
+  const { root, agent, scope } = await realHarness(t, true)
+  await mountTools(scope, ctx => {
+    apply(ctx, { tools: [toolOf({ kind: 'ask-user', question: '继续？' })] })
+  })
+  const result = await root.tools.execute({
+    callId: 'ask-call', name: 'probe', arguments: {}, agent,
+    signal: new AbortController().signal,
+  })
+  assert.equal(result.isError, false, JSON.stringify(result))
+  assert.deepEqual(result.value, { ok: true, answer: 'allowed-once' })
 })
