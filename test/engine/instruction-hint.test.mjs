@@ -10,6 +10,7 @@ import {
   buildInstructionHintText,
   createInstructionHintResolver as rawCreateInstructionHintResolver,
   instructionHintMessages as rawInstructionHintMessages,
+  extractInstructionPaths,
 } from '../../engine/instruction-hint.mjs'
 import { collectInstructionFiles } from '../../engine/instruction-files.mjs'
 import * as path from 'node:path'
@@ -37,6 +38,11 @@ function makeFs(files) {
     stat: async (path) => files.get(path),
   }
 }
+
+test('extractInstructionPaths：4 种官方标题中 removed 不进参考文件列表', () => {
+  const message = { content: [{ type: 'text', text: 'Instructions from: A\n\nAdditional instructions from: B\n\nUpdated instructions from: C\n\nInstructions removed: D\n' }] }
+  assert.deepEqual(extractInstructionPaths(message), ['A', 'B', 'C'])
+})
 
 test('instruction-hint 是通用引擎：探测 cwd 到项目根的完整链和用户级文件', async () => {
   const files = new Map([

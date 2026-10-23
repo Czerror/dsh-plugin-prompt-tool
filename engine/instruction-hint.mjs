@@ -35,6 +35,7 @@ import { machinePaths } from './machine-paths.mjs'
 import { resolveRealWithin } from './path-safety.mjs'
 import { booleanOption, createWarnOnce, getService, parsePromoteOn, validateConfig } from './shared.mjs'
 import { PRE_STEP_COORDINATOR_SERVICE } from './service-names.mjs'
+import { instructionBlocks } from './instruction-blocks.mjs'
 
 export const name = 'instruction-hint'
 
@@ -155,16 +156,15 @@ export function createInstructionHintResolver(config = {}) {
   }
 }
 
-const INSTRUCTION_FROM_RE = /(?:^|\n) *(?:Additional |Updated )?Instructions from: ([^\n]+)/g
-
-/** 从 agent-instructions 注入消息提取参考文件路径。 */
+/** 从 agent-instructions 注入消息提取参考文件路径；removed 不是参考文件。 */
 export function extractInstructionPaths(message) {
   const paths = []
   const blocks = Array.isArray(message?.content) ? message.content : []
   for (const block of blocks) {
     if (block?.type !== 'text' || typeof block.text !== 'string') continue
-    for (const match of block.text.matchAll(INSTRUCTION_FROM_RE)) {
-      const path = match[1].trim()
+    for (const parsed of instructionBlocks(block.text)) {
+      if (parsed.action === 'remove') continue
+      const path = parsed.path.trim()
       if (path !== '' && !paths.includes(path)) paths.push(path)
     }
   }

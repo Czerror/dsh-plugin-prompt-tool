@@ -1,4 +1,6 @@
 /** 官方待注入消息的逐文件过滤；不读取或改写会话历史。 */
+import { instructionBlocks } from '../../engine/instruction-blocks.mjs'
+
 const isRecord = (value: unknown): value is Record<string, any> =>
   value !== null && typeof value === 'object' && !Array.isArray(value)
 
@@ -7,10 +9,6 @@ interface Change {
   action: 'set' | 'replace' | 'remove'
   [key: string]: unknown
 }
-
-const actionForHeading = (heading: string): Change['action'] =>
-  heading === 'Updated instructions from:' ? 'replace'
-    : heading === 'Instructions removed:' ? 'remove' : 'set'
 
 /**
  * 路径来自 source.changes；标题仅用于定位正文，不用于恢复官方加载状态。
@@ -55,23 +53,22 @@ export function filterOfficialInstructionMessages(
       if (!text.startsWith('<system-reminder>\n') || close < 0
         || text.slice(close) !== '\n</system-reminder>'
         || text.indexOf('</system-reminder>') !== close + 1) return keepOriginal()
-      const headings = [...text.matchAll(/^(Instructions from:|Additional instructions from:|Updated instructions from:|Instructions removed:) ([^\r\n]+)\r?$/gm)]
-        .filter(match => paths.has(match[2]!))
-      for (const heading of headings) {
-        const key = keyOf(heading[2]!, actionForHeading(heading[1]!))
+      const headings = instructionBlocks(text).filter(segment => paths.has(segment.path))
+      for (const segment of headings) {
+        const key = keyOf(segment.path, segment.action)
         const count = (observed.get(key) ?? 0) + 1
         if (count > (counts.get(key) ?? 0)) return keepOriginal()
         observed.set(key, count)
       }
-      if (!headings.some(heading => disabled.has(heading[2]!))) {
+      if (!headings.some(segment => disabled.has(segment.path))) {
         content.push(block)
         continue
       }
       const kept: string[] = []
-      for (const [index, heading] of headings.entries()) {
+      for (const [index, segment] of headings.entries()) {
         const next = headings[index + 1]?.index
         if (next !== undefined && text.slice(next - 2, next) !== '\n\n') return keepOriginal()
-        if (!disabled.has(heading[2]!)) kept.push(text.slice(heading.index, next === undefined ? close : next - 2))
+        if (!disabled.has(segment.path)) kept.push(text.slice(segment.index, next === undefined ? close : next - 2))
       }
       if (kept.length > 0) {
         const body = text.slice(0, headings[0]!.index) + kept.join('\n\n')

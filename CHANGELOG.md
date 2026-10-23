@@ -1,5 +1,13 @@
 # Changelog
 
+### 指令块标题解析收成一份（2026-10-23）
+
+- 新增 `engine/instruction-blocks.mjs#instructionBlocks`：严格行首 4 种官方指令标题，返回 action/path/index。
+- `official-instruction-filter` 改用它替代 matchAll + actionForHeading；`instruction-hint` 的路径提取改用它并排除 removed（顺带修复旧正则对 `Additional`/`Updated` 段大小写不匹配、只提取 `Instructions from:` 的旧问题）。
+- hint 不再接受标题前的行首空格；官方格式严格行首，记录为有意收紧。
+- 回归：新增 filter seam 测试；hint 补 4 种标题用例。
+- 需重启 DSH 后生效。
+
 ### v4 来源 kind 收成一份（2026-10-23）
 
 - 新增 `engine/source-kind.mjs`：`pluginKind(owner)`、`pluginOwner(kind)`、`isPluginKind(kind)`；`pluginOwner` 只认 v4 `plugin:<owner>`，`isPluginKind` 兼容旧日志裸 `plugin`。
