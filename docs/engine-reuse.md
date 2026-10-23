@@ -249,6 +249,8 @@ surface 缺失或非法时可见视图退回完整日志；合法空 nodes 就�
 
 宿主 `src/runtime/pre-step-coordinator.ts` 汇总模块规则与直接来源，先处理官方待注入指令，再执行规则。来源白名单过滤器使用真实已领取 payload，不将下游增量当原始消息。批执行监听器以 `prepend` 注册在最外层：官方监听器（如 `dsh-tool-skill` 的技能目录）在 `await next()` 之后才 append messages，内层过滤看不到它们；只有先拿到完整 decision 才删得掉。
 
+无协调器的 standalone 路径（`applyPromptConfigSources` 单独执行批）是例外：`prepend` 只由 `options.prepend` 与配置的 `prepend` 决定，纯 `ruleAction` 的 `pre-step-filter` 拿不到最外层，`skill-surface` 在那种部署里可能删不掉官方目录。出现第二个无协调器消费者时，把「需要最外层」上收到动作语义再统一，而不是给判据加更多特例。
+
 协调器服务 v2 持有唯一的 promotion pool/pair，并把它暴露给来源生产者；`registerPreset(sourceId, source)` 消费 source 自带的 ctx/onOutcome/promotion，不再改写 `config.resolve`，也不再从 config 反推模块。批执行由 `runPreStepBatch({ sources })` 合并来源，判定上报使用对象形状；pre-step 来源的 `source.ctx` 绑定 `resolve`，条件帧使用批级 ctx。
 
 逐文件关闭只过滤能够可靠识别的未来官方正文和 change 元数据；无法识别或无法分段时保留并报告。不撤回历史、不补回官方预算裁掉的内容，不以文件卡开关阻止官方磁盘读取。重新开启也不强制重放。
