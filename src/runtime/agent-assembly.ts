@@ -23,7 +23,7 @@ import type { AssembleContext, PromptSection, PromptSectionOrderName } from '@de
 import { scopeChainOf, scopeOf, type ScopeKey } from '@deepseek-ai/dsh-scope'
 import { packageEngineDir, resolveModuleDir } from '../host/module-dirs.ts'
 import { readModuleFacts, resolveModuleParams } from '../host/module-params.ts'
-import { loadModuleSpec } from '../host/module-spec.ts'
+import { loadModuleSpec, readModulesRevision } from '../host/module-spec.ts'
 import type { ModuleSpec } from '../host/module-spec.ts'
 import { modelRequestRules } from '../host/prompt-configs.ts'
 import { assertModuleDirectory, assertModuleId } from '../host/module-install.ts'
@@ -316,7 +316,7 @@ function duplicateDedupeIdentities(prepared: PreparedAssembly[]): DuplicateIdent
 export function createAgentAssembly(ctx: Context, options: AgentAssemblyOptions): AgentAssemblyRuntime {
   const variableStore = createModuleVariableAdapter(options.moduleRoot)
   const ruleDiagnostics = createRuleDiagnosticsLedger()
-  const mounts = new Map<string, { agent: Agent; fiber: { dispose(): Promise<void> | void }; prepared: PreparedAssembly[]; moduleIds: readonly string[]; signature: string; plan: PersonaPlan }>()
+  const mounts = new Map<string, { agent: Agent; fiber: { dispose(): Promise<void> | void }; prepared: PreparedAssembly[]; moduleIds: readonly string[]; stamp: string; content: string; plan: PersonaPlan }>()
   const knownAgents = new Set<Agent>()
   const watched = new Map<string, () => void>()
   const disposed = new WeakSet<Agent>()
@@ -409,7 +409,7 @@ export function createAgentAssembly(ctx: Context, options: AgentAssemblyOptions)
     await current.fiber.dispose()
   }
 
-  const mount = async (agent: Agent, prepared: PreparedAssembly[], plan: PersonaPlan, duplicateIdentities: DuplicateIdentity[] = [], signature = ''): Promise<void> => {
+  const mount = async (agent: Agent, prepared: PreparedAssembly[], plan: PersonaPlan, duplicateIdentities: DuplicateIdentity[] = [], stamp = '', content = ''): Promise<void> => {
     // 宿主能力取并集；模块身份独立保留，提示词配置在各自插入点按持久序号执行。
     const services = new Set<string>()
     for (const item of prepared) for (const name of item.services) services.add(name)
@@ -480,11 +480,14 @@ export function createAgentAssembly(ctx: Context, options: AgentAssemblyOptions)
       fiber: { dispose: async () => { await disposeFiber() } },
       prepared,
       moduleIds: prepared.map((item) => item.moduleId),
-      signature, plan,
+      stamp, content, plan,
     })
   }
 
-  const sourceSignature = (ids: readonly string[], personas: readonly PersonaModule[] | undefined): string => JSON.stringify([
+  // 每请求只 stat 源文件；戳变时再算内容签名（剔除变量值），变量自增不触发重挂。
+  const assemblyStamp = (ids: readonly string[], personas: readonly PersonaModule[] | undefined): string =>
+    JSON.stringify(personas) + readModulesRevision(options.moduleRoot, ids)
+  const contentSignature = (ids: readonly string[], personas: readonly PersonaModule[] | undefined): string => JSON.stringify([
     ids.map(id => {
       const { variables: _variables, ...definition } = loadModuleSpec(assertModuleDirectory(options.moduleRoot, id))
       // 变量值在求值时读取；自增不能让下一步重新注册规则。
@@ -506,10 +509,12 @@ export function createAgentAssembly(ctx: Context, options: AgentAssemblyOptions)
     const ids = [...options.enabledModules()]
     const personaModules = options.personaModules?.()
     watchSources(ids, personaModules)
-    const signature = sourceSignature(ids, personaModules)
     const live = targets.filter(agent => active && !disposed.has(agent))
     const prepared: PreparedAssembly[] = []
     for (const id of ids) prepared.push(await prepareAssembly(options.moduleRoot, id, name => live.every(agent => agent.ctx.get(name) !== undefined)))
+    // 签名必须在 prepare 之后算：重切规则切片会写文件，先算会让戳立即过期。
+    const stamp = assemblyStamp(ids, personaModules)
+    const content = contentSignature(ids, personaModules)
     for (const item of prepared) {
       for (const id of item.skippedOfficialRows) {
         warnOnce(`模块 ${item.moduleId} 声明官方 recipe 行 ${id}；该行只能由会话原有预设提供，本插件不挂载官方包`)
@@ -552,7 +557,7 @@ export function createAgentAssembly(ctx: Context, options: AgentAssemblyOptions)
         if (!active || disposed.has(candidate.agent)) continue
         changed.push(candidate)
         await release(candidate.agent.id)
-        await mount(candidate.agent, candidate.prepared, plans[index] as PersonaPlan, duplicateDedupeIdentities(candidate.prepared), signature)
+        await mount(candidate.agent, candidate.prepared, plans[index] as PersonaPlan, duplicateDedupeIdentities(candidate.prepared), stamp, content)
       }
     } catch (error) {
       const restoreErrors: unknown[] = []
@@ -560,7 +565,7 @@ export function createAgentAssembly(ctx: Context, options: AgentAssemblyOptions)
         if (!active || disposed.has(agent)) continue
         try {
           await release(agent.id)
-          if (previous?.agent === agent) await mount(agent, previous.prepared, previous.plan, [], previous.signature)
+          if (previous?.agent === agent) await mount(agent, previous.prepared, previous.plan, [], previous.stamp, previous.content)
         } catch (restoreError) { restoreErrors.push(restoreError) }
       }
       if (restoreErrors.length > 0) {
@@ -583,7 +588,13 @@ export function createAgentAssembly(ctx: Context, options: AgentAssemblyOptions)
       readGlobalLayerSettings(options.moduleRoot)
       const ids = options.enabledModules(), personas = options.personaModules?.()
       watchSources(ids, personas)
-      if (mounts.get(agent.id)?.signature !== sourceSignature(ids, personas)) await replace([agent])
+      const stamp = assemblyStamp(ids, personas)
+      const current = mounts.get(agent.id)
+      if (current?.stamp !== stamp) {
+        // 只改变量时戳变、内容签名不变：更新戳即可，不撤装重挂。
+        if (current?.content === contentSignature(ids, personas)) current.stamp = stamp
+        else await replace([agent])
+      }
       lastReadError = undefined
     } catch (error) {
       const message = failureReason(error)

@@ -126,6 +126,25 @@ test('官方 assemble 自动采用最新有效本地定义，坏定义保旧并�
   assert.deepEqual(messages(await h.inject(child)), ['USER'])
 })
 
+test('只改变量值不重挂规则：内容签名剔除 variables', async (t) => {
+  const id = 'variables-only'
+  const fixture = variables => writeModuleFixture(id, {
+    modules: ['prompt-config-engine'],
+    variables,
+    promptConfigs: [{ id: 'variable-rule', layer: 'system-section', text: 'TEXT' }],
+  })
+  fixture({ v: 'A' })
+  const h = await liveAssembly(t, () => [id])
+  const agent = await h.makeAgent('variables-only-agent')
+  await h.runtime.settled()
+  let registrations = 0
+  const off = h.root.on('system-prompt/change', () => { registrations++ })
+  fixture({ v: 'B' })
+  await h.inject(agent)
+  assert.equal(registrations, 0, '只改变量值不重挂')
+  off()
+})
+
 test('本地人设正文和来源下一次官方装配生效；坏来源保留两类受众的有效内容', async t => {
   const { selectedPersonaModules, writePersonaSources, readPersonaSources } = await import('../../src/host/persona-selection.ts')
   const first = 'live-persona-first', second = 'live-persona-second'

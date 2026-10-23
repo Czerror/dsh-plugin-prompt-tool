@@ -1,5 +1,14 @@
 # Changelog
 
+### 每请求模块校验改为 stat 戳（2026-10-23）
+
+- 新增 `host/module-spec.ts#readModulesRevision`：只 stat 启用表/全局 `config.yml`、每模块 `module.yml`、`rules/` 下所有条目，返回源版本戳。
+- `agent-assembly` 的模块源检测改为 stat 戳；戳变时再算内容签名（`loadModuleSpec` 剔除 `variables`），内容签名也变才重挂。变量自增/变量-only 编辑因此不触发规则重装配（与旧 `sourceSignature` 语义一致）。全局 `config.yml` 与人设选择仍每次读。
+- 签名在 prepare 之后计算，避免重切切片让戳立即过期。
+- 回归：`agent-assembly.test.mjs` 补「变量-only 编辑不重挂」；全量 883+ pass。
+- 已知边界：内容变但 mtime/size 不变会漏检（与既有 mtime 缓存同风险）；回落到包内模板时戳只覆盖 `<moduleRoot>/<id>`；`templateFile`/`strategyDir`/`configs/` 不在戳内（旧有边界）。
+- 需重启 DSH 后生效。
+
 ### 指令保存请求身份收进草稿 owner（2026-10-23）
 
 - `instruction-drafts` 新增 `isCurrentSaveRequest(pool, request)`：`saving`/`revision`/`contextId` 一次判据；store 发送前与响应后改调它。

@@ -2,12 +2,14 @@
  * module.yml 的加载：把单个模块定义读成 `ModuleSpec`（按 mtime+size 签名缓存），
  * 并把存储根的全局层引擎参数作为兜底输入挂上（`globalParams`）。从原 `manifest.ts` 按簇拆出。
  */
+import { readdirSync, statSync } from 'node:fs'
+import { assertModuleId } from './module-install.ts'
 import { basename, join, resolve, sep } from 'node:path'
-import { MODULE_DEFINITION_FILE } from './paths.ts'
+import { MODULE_DEFINITION_FILE, RULES_DIR } from './paths.ts'
 import { readPersonaSpec } from '../shared/persona-section.ts'
 import type { PersonaSpec } from '../shared/persona-section.ts'
 import type { RuleDefinition } from '../shared/rules.ts'
-import { enabledModuleIds, readGlobalLayerSettingsSafe } from './config-store.ts'
+import { enableTablePath, enabledModuleIds, readGlobalLayerSettingsSafe } from './config-store.ts'
 import { ensureModuleSlices } from './module-slices.ts'
 import { readModuleLayerSettings } from './module-layer-settings.ts'
 import { packageModulesDir, userModulesDir } from './module-dirs.ts'
@@ -104,6 +106,35 @@ export function loadModuleSpec(dir: string): ModuleSpec {
   // 缓存只存 module.yml 的事实：全局层每次现读，config.yml 改动不靠签名也能立即生效。
   moduleSpecCache.set(snapshot.file, { revision: snapshot.revision, spec: structuredClone(parsed) })
   return withGlobalParams(parsed, dir)
+}
+
+/** 模块源版本戳：只 stat 不解析；签名变化才触发一次完整装配。 */
+export function readModulesRevision(moduleRoot: string, ids: readonly string[]): string {
+  const parts: string[] = []
+  const stamp = (file: string): void => {
+    try {
+      const info = statSync(file)
+      parts.push(`${file}:${info.mtimeMs}:${info.size}`)
+    } catch {
+      parts.push(`${file}:missing`)
+    }
+  }
+  // 启用表与全局 layerSettings 是同一个存储根 config.yml。
+  stamp(enableTablePath(moduleRoot))
+  for (const id of ids) {
+    assertModuleId(id)
+    const dir = join(moduleRoot, id)
+    stamp(join(dir, MODULE_DEFINITION_FILE))
+    const rules = join(dir, RULES_DIR)
+    try {
+      for (const entry of readdirSync(rules, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
+        stamp(join(rules, entry.name))
+      }
+    } catch {
+      parts.push(`${rules}:missing`)
+    }
+  }
+  return parts.join('|')
 }
 
 export const asString = (value: unknown, fallback = ''): string => {
