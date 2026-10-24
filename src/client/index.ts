@@ -23,7 +23,6 @@ import { PROMPT_TOOL_NS } from '../shared/namespace.ts'
 export const inject = [
   'locale',
   'slots',
-  'layout',
   'configForms',
   'uiWorkspace',
   'uiSession',
