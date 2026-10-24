@@ -324,7 +324,7 @@ workspace-pages.ts 是页面元数据的唯一来源。默认页为 features，�
 
 模块页提供显示名称编辑与空白新建，不增加模块详情或第二套规则编辑器。点击模块名称原位输入，Enter 或失焦保存，Escape 取消；中文输入法确认不触发保存，不另设“改名”按钮或名称弹框。错误保留输入并就地显示；版本冲突先重新读取，再由用户确认保存。名称只修改 `module.yml.name`，不改变模块 ID、目录、规则身份、启用表或人设来源；保存使用显式主语与完整定义版本。空白模块的初始显示名称统一为“默认模块”，目录 ID 仍由服务端分配为 `blank`、`blank-2` 等；名称不代表隐式写入目标或默认装配成员，不批量改写已有模块。模块页独立新建或克隆保持未启用。
 
-主会话与子代理的 `RulesWorkspace` 按受众展示**装配集合**内每张模块规则卡（按卡片所属模块分组），以模块 ID＋规则 ID 唯一定位并按配置序号统一排列；卡片标注所属模块，可就地编辑、复制、删除和启停。启用集合来自无参 `/module-config-order`，逐模块 `/rules` 读取正文，不从已访问过的草稿推测启用集合；工作台不保留单一「当前模块」，模板创建与本层共享设置由该卡所属模块承载，其他模块卡片不复用它。受众可见性由 `data/rule-facts.ts` 的 `ruleFacts` 决定：then/else/嵌套动作的受众并集，未知时两个受众页都显示；页面不再自行遍历条件树。
+主会话与子代理的 `RulesWorkspace` 按受众展示**装配集合**内每张模块规则卡（按卡片所属模块分组），以模块 ID＋规则 ID 唯一定位并按配置序号统一排列；卡片标注所属模块，可就地编辑、复制、删除和启停。启用集合来自无参 `/module-config-order`，逐模块 `/rules` 读取正文，不从已访问过的草稿推测启用集合；工作台不保留单一「当前模块」，模板创建与本层共享设置由该卡所属模块承载，其他模块卡片不复用它。受众可见性由 `data/rule-facts.ts` 的 `ruleFacts` 决定：then/else/嵌套动作的受众并集，未知或空集时两个受众页都显示；页面不再自行遍历条件树。
 
 排序只在规则卡中呈现，模块页不另设排序区。卡内上下移动与拖拽可交换同插入点、位置中不同启用模块的可见规则（官方 order 档位不再限制），隐藏条目的槽位不变；工具栏不提供额外范围切换。`system-section`／`runtime-context` 的卡可跨官方档位排序：官方 order 只决定装配初始槽位，先后由本排序写入的 `configOrder` 覆盖（引擎装配后回填，见 `docs/engine-reuse.md` 的「提示词配置插入点与顺序」）；同层同位置无其他卡时方向键与拖拽禁用。排序走 `/module-config-order`，携带完整启用集合身份列表与版本，不限定单个声明的主语；读取或保存期间排序手柄与上下移禁用（读回来的是另一份快照，排序没有意义）；成功后刷新各模块规则版本，失败如实显示错误并自动重读一次（拖拽用的版本已过期，重读不得静默清掉那次失败），页面卸载或装配集合变化后丢弃迟到响应。排序不改规则正文或指令文件。
 
@@ -469,7 +469,7 @@ use-prompt-tool-store.ts 是唯一工作台 facade，负责把 ConfigForms mirro
 | module-actions.ts | 模块操作与事实刷新，保留成功结果和刷新失败区别；与规则保存共用队列 |
 | instruction-cards.ts | 指令文件卡的壳来源过滤（`instructionShellsFrom`：只认文件身份，非文件卡与非法元素丢弃，缺段按空壳）与视图投影：卡壳 + 草稿池 + 指令策略 → 卡片；正文唯一来源是草稿池，卡壳里过期的 `params.text` / `params.revision` / `params.readStatus` / `params.readMessage` 在投影时剥离，`contentDirty` / `contentConflict` / `contentSaving` 由投影显式覆盖 |
 | prompt-config-content.ts | 指令文件卡的 fileId 解析（`origin` 优先；`sourceKind === 'instruction-file'` 时才回退 `params.fileId`）；不再承担正文与写回分流 |
-| rule-facts.ts | 规则卡只读事实：typed `ruleFacts` 投影 `engine/rule-facts.mjs` 的受众与 context-activation；未知受众按两个页面都显示，页面不再遍历条件树 |
+| rule-facts.ts | 规则卡只读事实：typed `ruleFacts` 投影 `engine/rule-facts.mjs` 的受众与 context-activation；未知受众或空集按两个页面都显示，页面不再遍历条件树 |
 | prompt-config-order.ts | 配置视图内的同位置判据（`sameConfigPosition`）与一步重排（`reorderToView`）：资格在可移动集合内判、插入位置在完整数组里算；拖拽、上移/下移按钮与拖拽手柄的键盘操作共用同一份实现 |
 | use-module-config-order.ts | 跨模块排序摘要、版本读写与请求生命周期（`createModuleConfigOrderSession` 是唯一实现，hook 只把它投影成 React state）；由规则工作台消费 |
 | save-queue.ts | 串行保存任务的最小队列 |

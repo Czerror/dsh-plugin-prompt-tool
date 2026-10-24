@@ -6,17 +6,16 @@
  */
 import { audienceOf, intersectAudiences } from './audience.mjs'
 import { conjunction, expandActionsLenient } from './branch.mjs'
+import { isFixedRegistration } from './fixed-registration.mjs'
 import { record } from './record.mjs'
 import { CONTEXT_ACTIVATION_STRATEGY } from './strategy-ids.mjs'
 
-function targetAudiences(action) {
+function targetAudiences(action, ruleLayer) {
   // 文档只允许固定 system-section 的 registration target 用 config.audience 收窄；
-  // 其余动作/层上的 audience 是遗留或非法输入，展示层不据此把卡片藏掉。
+  // 与引擎共用 isFixedRegistration（含 config.layer ?? rule.layer 回退）。
   if (action.kind !== 'inject-text') return undefined
   const config = record(action.config) ? action.config : undefined
-  if (config?.layer !== 'system-section') return undefined
-  const params = record(config.params) ? config.params : undefined
-  if (params?.complete !== true && params?.suppressRuntimeContext !== true) return undefined
+  if (!isFixedRegistration(config, ruleLayer)) return undefined
   const raw = config.audience
   return raw === 'main' || raw === 'subagent' ? new Set([raw]) : undefined
 }
@@ -49,7 +48,7 @@ export function ruleFacts(rule) {
   let audiences
   for (const { node, conditions, bypass } of expanded) {
     const conditioned = intersectAudiences(bypass ? undefined : when, audienceOf(conjunction(conditions)))
-    const effective = intersectAudiences(conditioned, targetAudiences(node))
+    const effective = intersectAudiences(conditioned, targetAudiences(node, rule.layer))
     if (effective === undefined) {
       audiences = undefined
       break

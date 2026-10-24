@@ -12,7 +12,9 @@ import { PREDICATE_EXAMPLES } from './conditions/examples.mjs'
 import { conjunction, expandActions } from './branch.mjs'
 import { identityOf, textRegistrationName } from './delivery.mjs'
 import { AUDIENCE_ALL, audienceOf, intersectAudiences } from './audience.mjs'
+import { isFixedRegistration } from './fixed-registration.mjs'
 import { record } from './record.mjs'
+export { isFixedRegistration }
 
 /** 规则字段：只有 `if`/`then`/`else`；旧名 `when`/`do` 留在名单里，只为把 unknown fields 换成一句「已退役，改用 X」。 */
 const RULE_FIELDS = new Set(['id', 'name', 'enabled', 'layer', 'group', 'exclusive', 'if', 'then', 'else', 'when', 'do'])
@@ -168,20 +170,6 @@ export function validateRuleGroups(rules) {
       throw new TypeError(`rules: exclusive group ${JSON.stringify(name)} has multiple enabled rules`)
     }
   }
-}
-
-/**
- * 「固定注册效果」判据的**唯一实现**：只有 `system-section` 层的 `complete` /
- * `suppressRuntimeContext` 是注册期效果（无逐轮求值时机）。其他层写同名键是死配置
- * ——`params` 不做键白名单（pre-step 的 params 承载策略参数），所以在 `compileRules`
- * 的逐动作校验里点名拒绝；规则编译与导入转换共用本谓词。
- * 独占计数只认 `complete`：`suppressRuntimeContext` 不产生「多个 complete 段」冲突。
- * `layer` 是声明缺省层——导入转换的 config 可能省略 layer，回退规则与
- * `injectionConfigSpec` 的 `config.layer ?? rule.layer ?? 'pre-step'` 一致。
- */
-export function isFixedRegistration(config, layer) {
-  return record(config) && (config.layer ?? layer) === 'system-section'
-    && (config.params?.complete === true || config.params?.suppressRuntimeContext === true)
 }
 
 /** 编译与宿主聚合共用的受众独占清单，身份保留到规则和动作。 */

@@ -145,7 +145,7 @@ test('ruleFacts：受众并集覆盖 then/else、not/notAny、目标与嵌套空
     },
     {
       name: '动作目标',
-      rule: { id: 'r', then: [{ id: 't', kind: 'inject-text', config: { layer: 'system-section', audience: 'main', params: { complete: true }, text: 'x' } }] },
+      rule: { id: 'r', layer: 'system-section', then: [{ id: 't', kind: 'inject-text', config: { audience: 'main', params: { complete: true }, text: 'x' } }] },
       expected: set('main'),
     },
     {

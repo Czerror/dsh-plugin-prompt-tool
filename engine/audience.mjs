@@ -17,6 +17,9 @@ export function intersectAudiences(left, right) {
   return new Set([...left].filter(audience => right.has(audience)))
 }
 
+/** 精确受众集合的补集；只在 not/notAny 的精确子节点上使用。 */
+const complementAudiences = audiences => new Set(AUDIENCE_ALL.filter(audience => !audiences.has(audience)))
+
 /**
  * 条件树 → 受众上下界；`exact` 表示结果是否能安全取补。
  *
@@ -65,12 +68,12 @@ function audienceInfo(tree) {
       case 'not': {
         const childInfo = audienceInfo(value)
         if (childInfo === undefined || !childInfo.exact) return undefined
-        return { audiences: new Set(AUDIENCE_ALL.filter((audience) => !childInfo.audiences.has(audience))), exact: true }
+        return { audiences: complementAudiences(childInfo.audiences), exact: true }
       }
       case 'notAny': {
         const childInfo = audienceInfo({ any: value })
         if (childInfo === undefined || !childInfo.exact) return undefined
-        return { audiences: new Set(AUDIENCE_ALL.filter((audience) => !childInfo.audiences.has(audience))), exact: true }
+        return { audiences: complementAudiences(childInfo.audiences), exact: true }
       }
       default:
         // 新算子未声明受众语义：不收窄，交给调用方保守处理。

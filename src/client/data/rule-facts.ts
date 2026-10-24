@@ -5,7 +5,7 @@
  * 不引入 React、不持有状态、不参与执行门控。
  */
 import { ruleFacts as engineRuleFacts } from '../../../engine/rule-facts.mjs'
-import type { RuleFacts } from '../../../engine/rule-facts.mjs'
+import type { RuleAudience, RuleFacts } from '../../../engine/rule-facts.mjs'
 import type { RuleDefinition } from '../../shared/rules.ts'
 
 export type { RuleFacts }
@@ -21,11 +21,6 @@ export function ruleFacts(rule: RuleDefinition): RuleFacts {
 }
 
 /** RuleFacts 上的唯一可见性判据：未知或空受众按两个页面都显示。 */
-export function factsVisibleTo(facts: RuleFacts, audience: 'main' | 'subagent'): boolean {
+export function factsVisibleTo(facts: RuleFacts, audience: RuleAudience): boolean {
   return facts.audiences === undefined || facts.audiences.has(audience)
-}
-
-/** 页面按规则表达可见性；内部复用 factsVisibleTo，避免同一判据两份。 */
-export function ruleVisibleTo(rule: RuleDefinition, audience: 'main' | 'subagent'): boolean {
-  return factsVisibleTo(ruleFacts(rule), audience)
 }

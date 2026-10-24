@@ -37,14 +37,16 @@ function walkActions(list, { outer = [], bypass = false, lenient = false, label 
         if (node.then === undefined) throw new TypeError(`${at}: a branch needs then`)
       }
       const { then: thenOuter, else: elseOuter } = branchOuters(node, outer)
-      if (lenient ? Array.isArray(node.then) : true) {
-        out.push(...walkActions(node.then, {
+      const thenList = lenient && !Array.isArray(node.then) ? undefined : node.then
+      if (thenList !== undefined) {
+        out.push(...walkActions(thenList, {
           outer: thenOuter, bypass, lenient,
           ...(lenient ? {} : { label: `${at}.then` }),
         }))
       }
-      if (lenient ? Array.isArray(node.else) : node.else !== undefined) {
-        out.push(...walkActions(node.else, {
+      const elseList = lenient && !Array.isArray(node.else) ? undefined : node.else
+      if (elseList !== undefined) {
+        out.push(...walkActions(elseList, {
           outer: elseOuter, bypass, lenient,
           ...(lenient ? {} : { label: `${at}.else` }),
         }))

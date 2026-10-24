@@ -11,7 +11,7 @@ import { useModuleConfigOrder } from '../../data/use-module-config-order.ts'
 import { reorderToView, sameConfigPosition } from '../../data/prompt-config-order.ts'
 import { hasRuleFields, rulesDirty } from '../../data/rule-drafts.ts'
 import { instructionFileIdOf } from '../../data/prompt-config-content.ts'
-import { factsVisibleTo, ruleFacts, ruleVisibleTo } from '../../data/rule-facts.ts'
+import { factsVisibleTo, ruleFacts } from '../../data/rule-facts.ts'
 import type { LayerCardView } from '../../data/layer-cards.ts'
 import type { PromptConfigDraft } from '../../prompt-tool-types.ts'
 import type { PromptToolTranslate } from '../../locales.ts'
@@ -108,7 +108,7 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
   const moduleSettings = enabledModules.flatMap(module => {
     const owner = owners.find(item => item.moduleId === module.id)
     if (moduleDeclares(store.meta.modules, module.id, 'rules') !== false && (!owner?.draft.loaded || owner.draft.error)) return []
-    const layers = new Set((owner?.draft.entries ?? []).filter(entry => !entry.deleted && ruleVisibleTo(entry.value, scope))
+    const layers = new Set((owner?.draft.entries ?? []).filter(entry => !entry.deleted && factsVisibleTo(ruleFacts(entry.value), scope))
       .map(entry => entry.value.layer))
     const missing = MODULE_CAPABILITIES.filter(capability => isModuleCapabilityDeclared(capability.id, module.facts)
       && !layers.has(capability.displayLayer))
