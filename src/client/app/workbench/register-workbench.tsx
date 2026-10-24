@@ -26,6 +26,8 @@ export function registerWorkbenchSlots(ctx: ClientContext, face: PromptToolWorkb
     locale: PROMPT_TOOL_NS,
     inject: () => face,
   }, WorkbenchOverlay))
+  // 行点击由图标组件在冒泡前拦截；同一个稳定回调交给它。
+  const openDrawer = (): void => face.controller.open()
   const disposePanel = ctx.slots.inject('main', () => ctx.slots.inject('sidebar.panellist', () => {
     const disposeMain = ctx.slots.register({
       name: 'main', key: WORKBENCH_PANEL_ID,
@@ -40,6 +42,7 @@ export function registerWorkbenchSlots(ctx: ClientContext, face: PromptToolWorkb
         name: 'sidebar.panellist', id: WORKBENCH_PANEL_ID, order: 60,
         locale: PROMPT_TOOL_NS,
         label: () => face.t('app.title'),
+        inject: () => ({ open: openDrawer }),
       }, WorkbenchSidebarIcon)
     } catch (error) {
       disposeMain()

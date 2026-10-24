@@ -40,6 +40,7 @@ test('侧栏入口：按官方 Global panel entries 成对注册 main 与 sideba
   assert.equal(icon.options.id, WORKBENCH_PANEL_ID)
   assert.equal(icon.options.locale, 'prompt-tool')
   assert.equal(icon.options.label(), 't:app.title')
+  assert.equal(typeof icon.options.inject().open, 'function')
 
   // 主面板是重定向：持有常驻抽屉 controller，关闭走官方 selectPanel(null) 回对话。
   const injected = main.options.inject()
@@ -52,7 +53,7 @@ test('侧栏入口：按官方 Global panel entries 成对注册 main 与 sideba
 })
 
 test('侧栏图标：只画尺寸内的装饰图形，标签与可访问名归侧栏', () => {
-  const html = renderElement(WorkbenchSidebarIcon, { size: 16, active: false })
+  const html = renderElement(WorkbenchSidebarIcon, { size: 16, active: false, open: () => {} })
   assert.match(html, /width="16"/)
   assert.match(html, /height="16"/)
   assert.match(html, /aria-hidden="true"/)

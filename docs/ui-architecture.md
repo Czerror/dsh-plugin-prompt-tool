@@ -275,7 +275,7 @@ slot 使用 ctx.slots.inject() 等待官方槽位声明，再调用 ctx.slots.re
 
 ### 4.3 入口与关闭行为
 
-- 左侧栏 `sidebar.panellist` + `main` 是官方 Global panel entries：主面板是**重定向入口**——挂载时在绘制前打开常驻悬浮抽屉，下一帧再调 `ctx.layout.selectPanel(null)` 回对话。先开抽屉是因为官方切回 conversation 会整树重建，同步执行会把入口的首次绘制堵住（实测 2–3s）。工作台实例只有抽屉里那一份，因此从工作台返回只是关闭抽屉：不切换 main、不重建对话，也不重建工作台。
+- 左侧栏 `sidebar.panellist` + `main` 是官方 Global panel entries：**行点击由 `WorkbenchSidebarIcon` 在冒泡到 React 根之前用原生监听拦截**，直接打开常驻抽屉，不触发 `selectPanel`/对话卸载（官方切 main 会整树卸载对话，实测 2–3s）。拦截依赖「图标位于行 button 内」；结构变化时 `closest('button')` 取不到，退回 `main` 重定向入口——挂载时打开抽屉、下一帧再调 `ctx.layout.selectPanel(null)` 回对话。工作台实例只有抽屉里那一份，返回只是关闭抽屉，不切换 main、不重建对话或工作台。
 - `shell.overlay` 注册可拖动悬浮触发器：位置是纯客户端界面偏好（localStorage，`floating-trigger-position.ts`），窗口尺寸变化时按实际按钮尺寸夹回可见区；不读宿主 DOM 几何。
 - 拖动与单击以 4px 位移阈值区分：拖动结束吞掉尾随 click，单击与键盘仍开合；触发器打开 body portal 抽屉，抽屉与触发器分别用 fixed + z-index 1000 / 1100 置顶，不被宿主「对话/轨迹」顶部导航栏遮挡。
 - 关闭支持 Escape、点击背板与按钮切换，焦点在触发器与抽屉之间转移；抽屉打开时触发 PromptWorkspace.store.load()，关闭保留实例状态。
