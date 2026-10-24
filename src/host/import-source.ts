@@ -180,7 +180,7 @@ export function prepareImport(input: AssetFile[], target: 'preset' | 'character'
         if (spec.name === undefined) doc.set('name', String(doc.get('id')))
         if (kind === 'native-character' && spec.modules === undefined && spec.composition === undefined) {
           const hasActivation = ruleInjections(spec.rules).some(({ config }) => config.strategy === 'context-activation')
-          doc.set('modules', hasActivation ? ['module-rule-tools', 'module-memory-tools'] : [])
+          doc.set('modules', hasActivation ? ['module-rule-tools', 'module-file-tools'] : [])
         }
         if (['characterMemories', 'importedCharacters', 'characterModules'].some(key => doc.hasIn(['meta', key]))) throw new Error('旧私有记忆或角色来源标记需要先显式转换；拒绝丢弃标记后继续导入')
         spec = doc.toJS() as ModuleSpec

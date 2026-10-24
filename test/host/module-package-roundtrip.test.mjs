@@ -1,6 +1,6 @@
 import { test, mock } from 'node:test'
 import assert from 'node:assert/strict'
-import fs, { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
+import fs, { existsSync, mkdirSync, readFileSync, readdirSync, symlinkSync, writeFileSync } from 'node:fs'
 import { syncBuiltinESMExports } from 'node:module'
 import { createHash } from 'node:crypto'
 import { join } from 'node:path'
@@ -153,4 +153,37 @@ test('不分享的切片和记忆不读、不影响导出版本；定义模式�
   const original = readFileSync(privateFile, 'utf8')
   for (const mode of ['definition', 'zip']) await assert.rejects(exportModulePackage(moduleRoot, { id: 'provenance-owner', mode }), /私有记忆|显式转换/, '来源不明的私有记忆不得进入任何分享包')
   assert.equal(readFileSync(privateFile, 'utf8'), original, '拒绝导出不改用户定义')
+})
+
+test('模块私有 data/ 不随包导出；覆盖安装旧数据优先，包内只补缺失', async () => {
+  const id = 'data-keep', dir = fixture(id)
+  mkdirSync(join(dir, 'data'))
+  writeFileSync(join(dir, 'data', 'ledger.jsonl'), 'OLD LEDGER\n')
+
+  const preview = await exportModulePackage(moduleRoot, { id, mode: 'zip', preview: true })
+  const exported = await exportModulePackage(moduleRoot, { id, mode: 'zip', expectedRevision: preview.revision })
+  const files = await expandModuleSource([{ path: 'module.zip', content: exported.content, encoding: 'base64' }])
+  assert.deepEqual(files.map(file => file.path).sort(), ['module.yml'], 'data/ 不随包分享')
+
+  const packaged = [
+    { path: 'module.yml', content: JSON.stringify(source('data-keep')) },
+    { path: 'data/ledger.jsonl', content: '{"type":"packaged"}\n' },
+    { path: 'data/new.txt', content: 'PACKAGED NEW' },
+  ]
+  const overwritePreview = moduleImportPreview(moduleRoot, packaged, { targetId: 'data-keep', overwrite: true })
+  await installModulePackage(moduleRoot, packaged, { ...credentials(overwritePreview), overwrite: true })
+  assert.equal(readFileSync(join(moduleRoot, 'data-keep', 'data', 'ledger.jsonl'), 'utf8'), 'OLD LEDGER\n', '旧账本不被覆盖')
+  assert.equal(readFileSync(join(moduleRoot, 'data-keep', 'data', 'new.txt'), 'utf8'), 'PACKAGED NEW', '包内只补缺失')
+})
+
+test('覆盖安装拒绝 data/ 内的链接', async () => {
+  const id = 'data-link', dir = fixture(id)
+  mkdirSync(join(moduleRoot, '..', 'outside-data-link'), { recursive: true })
+  mkdirSync(join(dir, 'data'))
+  symlinkSync(join(moduleRoot, '..', 'outside-data-link'), join(dir, 'data', 'linked'), 'junction')
+  const files = [{ path: 'module.yml', content: JSON.stringify(source(id)) }]
+  await assert.rejects(async () => {
+    const preview = moduleImportPreview(moduleRoot, files, { targetId: id, overwrite: true })
+    await installModulePackage(moduleRoot, files, { ...credentials(preview), overwrite: true })
+  }, /链接|link/)
 })

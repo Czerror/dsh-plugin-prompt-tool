@@ -323,7 +323,8 @@ export function compileRules(specs, options = {}) {
   if (!Array.isArray(specs)) throw new TypeError('rules must be an array')
   // 条件的绑定**不在编译期**：`preset` 谓词的取法要挂载 scope 的 ctx（`conditions/preset.mjs`），
   // 准备期拿不到。这里显式剥掉挂载期选项——传了也不生效，免得调用方以为已经绑好。
-  const { ctx: _ctx, standingMountFor: _standingMountFor, ...conditionOptions } = options
+  // variableStore 与 ctx/standingMountFor 同理：绑定发生在挂载期，准备期传了也不生效。
+  const { ctx: _ctx, standingMountFor: _standingMountFor, variableStore: _variableStore, ...conditionOptions } = options
   const ids = new Set()
   const pendingConfigs = []
   const moduleId = options.moduleId ?? options.sourceModuleId
@@ -500,6 +501,8 @@ function needsMountContext(node) {
   if (node === null || typeof node !== 'object') return false
   if (Array.isArray(node)) return node.some(needsMountContext)
   if (Object.hasOwn(node, 'preset')) return true
+  // variable 要读挂载 scope 的变量适配器（准备期没有）。
+  if (Object.hasOwn(node, 'variable')) return true
   if (Object.hasOwn(node, 'phase') && node.phase?.subscribe !== false) return true
   if (node.anchor?.after !== undefined) return true
   return Object.values(node).some(needsMountContext)
@@ -521,7 +524,7 @@ export function rebindConditions(sources, context = {}) {
       if (trees === undefined) continue
       const targets = new Map(rule.actions.filter(action => action.compiledConfig !== undefined)
         .map(action => [action.id, { ...action.compiledConfig, sourceModuleId: source.moduleId }]))
-      const binding = { ...context, resolveAction: id => targets.get(id) }
+      const binding = { ...context, moduleId: source.moduleId, resolveAction: id => targets.get(id) }
       if (trees.when !== undefined && needsMountContext(trees.when)) rule.when = compileWhen(trees.when, binding)
       for (const action of rule.actions ?? []) {
         const tree = trees.actions?.[action.id]

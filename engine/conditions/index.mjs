@@ -7,6 +7,7 @@ import { createSessionStatePredicate } from './session.mjs'
 import { createPresetPredicate } from './preset.mjs'
 import { createScopePredicate } from './scope.mjs'
 import { createAnchorPredicate } from './anchor.mjs'
+import { createVariablePredicate } from './variable.mjs'
 import { withAvailableInput } from './availability.mjs'
 import { composite } from './composite.mjs'
 export * from './text.mjs'
@@ -18,6 +19,7 @@ export * from './session.mjs'
 export * from './preset.mjs'
 export * from './scope.mjs'
 export * from './anchor.mjs'
+export * from './variable.mjs'
 export { subjectOf, channelTextSubjects, channelFactSubjects, FACT_PREDICATE_SUBJECTS } from './subject.mjs'
 export { composite } from './composite.mjs'
 export const PREDICATE_FACTORIES = Object.freeze({
@@ -30,6 +32,7 @@ export const PREDICATE_FACTORIES = Object.freeze({
   preset: createPresetPredicate,
   scope: createScopePredicate,
   anchor: createAnchorPredicate,
+  variable: createVariablePredicate,
 })
 export const COMPOSITE_OPERATORS = Object.freeze(['any', 'all', 'not', 'notAny'])
 
@@ -86,6 +89,10 @@ export function compileWhen(node, context = {}) {
   }
   if (key === 'phase') {
     return withAvailableInput(key, options, createPhasePredicate({ ...options, promotionPool: context.promotionPool }))
+  }
+  // 变量谓词自带三值处理：适配器缺失返回 UNAVAILABLE，不走通道事实的 availableInput。
+  if (key === 'variable') {
+    return createVariablePredicate(options, { store: context.variableStore, moduleId: context.moduleId })
   }
   return withAvailableInput(key, options, factory(options))
 }

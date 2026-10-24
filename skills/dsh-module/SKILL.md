@@ -22,7 +22,7 @@ description: 新建、修改、审查 DSH Prompt Tool 模块，或把规则、�
 | 人设正文/选项 | 各模块 persona.main / persona.subagent；rules/_settings.yml 仅作投影 |
 | 主/子人设来源 | config.yml.personaSources 只存单选模块 ID，默认官方 |
 | 自定义工具/子代理授权 | customTools / subagentToolPolicy |
-| 模块记忆 | 当前模块 memory.md，经记忆工具显式 read/append |
+| 模块私有文件 | memory.md、assets/（只读）、data/（只追加），经 module_file_read/append 显式读写；装配清单走 module_manifest |
 | 用户指令文件 | 原文件与独立指令策略，独立授权通道 |
 
 完成判据：每处改动都有单一 owner，工具操作目标与 UI 编辑模块不混淆。
@@ -74,13 +74,14 @@ rules:
 |---|---|
 | module-rule-tools | module_rules_read / module_rules_edit |
 | module-variable-tools | module_variables |
-| module-memory-tools | module_memory_read / module_memory_append |
+| module-file-tools | module_file_read / module_file_append |
+| module-manifest-tools | module_manifest |
 | module-import-tools | module_import |
 | tool-config-engine | customTools 声明的工具 |
 
 规则先读完整树与 revisions，再携带 expectedModuleId/expectedRevisions 编辑完整合法规则；关闭标记 settingsChanged，显式启用用 activateRuleId，删除整规则用 rule:null。正文保存不覆盖并发状态，版本冲突先重读。
 
-变量先 list/get 取版本，再 set/delete；set 必须显式字符串，空串不是删除。global 写影响同一安装的所有模块。记忆 append 带当前目标身份，与规则事务分开。module_import 先预览并完成选择，提交原始 files 与两份预览凭据，默认另存且不自动启用。
+变量先 list/get 取版本，再 set/delete；set 必须显式字符串，空串不是删除。global 写影响同一安装的所有模块。文件 append 带当前目标身份与显式 path，与规则事务分开；module_manifest 按清单只写 data/、不覆盖。module_import 先预览并完成选择，提交原始 files 与两份预览凭据，默认另存且不自动启用。
 
 共享模型/能力参数以 `ENGINE_PARAM_DEFINITIONS` 为唯一目录，使用登记的 layerSettings 路径：主/子模型路由与采样、PTC 呈现、run_code 环境、Git Bash、指令提示和工具批准都在其中；数量与 options 以源码为准，不抄旧文档的固定键数。也可通过 request-params 动作按受众改请求。官方工具、规划、压缩和普通委派来自官方预设，模块不重声明它们。
 

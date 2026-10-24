@@ -28,7 +28,8 @@ $DSH_HOME/.prompt-tool/
 └─ modules/<id>/
    ├─ module.yml             # 唯一完整定义
    ├─ rules/                 # 已验证的物化切片
-   └─ memory.md              # 模块私有记忆，按需读取
+   ├─ memory.md              # 模块私有记忆，按需读取
+   └─ data/                  # 模块私有用户数据（账本等）：不导出、覆盖保留
 ```
 
 module.yml 支持 UI 保存与直接手改。rules/ 从完整定义分解，手改或失配会单向恢复；无效完整定义拒绝加载，不以切片反写。未知用户资产保留，模块关闭只撤回贡献。
@@ -104,13 +105,14 @@ persona:
 |---|---|
 | module-rule-tools | module_rules_read / module_rules_edit |
 | module-variable-tools | module_variables |
-| module-memory-tools | module_memory_read / module_memory_append |
+| module-file-tools | module_file_read / module_file_append |
+| module-manifest-tools | module_manifest |
 | module-import-tools | module_import |
 | tool-config-engine | customTools 中的实际工具 |
 
-完整规则工具先读原始树与版本，再提交合法完整候选；删除整规则需显式 rule:null。变量工具提供 global/module 的 list/get/set/delete，set 必须显式字符串。模块记忆独立 read/append，不自动注入，也不附带在规则 note 中。
+完整规则工具先读原始树与版本，再提交合法完整候选；删除整规则需显式 rule:null。变量工具提供 global/module 的 list/get/set/delete，set 必须显式字符串。模块私有文件（memory.md、assets/ 只读、data/ 只追加）由 module_file_read/append 读写，不自动注入；module_manifest 按 assets/manifest.yml 做 next/check/apply，只写 data/、不覆盖。
 
-工具目录仅注册已声明能力，晚到 provider 与 disposer 按原生命周期处理。模块工具的主语由**这次调用显式声明的 `moduleId`** 决定：不传即没有目标、直接拒绝，不回退装配记录首项或包内默认模块；执行 Agent 已启用的规则模块只作拒绝文案里的候选提示，不是目标（人设来源是独立引用，同样不决定写入目标）。`expectedModuleId` 是桥端对请求头声明的一致性复核，与工具侧的主语选择是两套独立判据。工具只能读写模块存储根下 `module.yml` 所在的既有模块，不访问任意文件。自定义工具继续支持 shell/http/delegate/fs/ask-user，并保留官方批准、拒绝与取消管线。
+工具目录仅注册已声明能力，晚到 provider 与 disposer 按原生命周期处理。模块工具的主语由**这次调用显式声明的 `moduleId`** 决定：不传即没有目标、直接拒绝，不回退装配记录首项或包内默认模块；执行 Agent 已启用的规则模块只作拒绝文案里的候选提示，不是目标（人设来源是独立引用，同样不决定写入目标）。`expectedModuleId` 是桥端对请求头声明的一致性复核，与工具侧的主语选择是两套独立判据。工具只能读写模块存储根下 `module.yml` 所在的既有模块；模块内文件限定 memory.md、assets/（只读）、data/（只追加），不访问任意路径。自定义工具继续支持 shell/http/delegate/fs/ask-user，并保留官方批准、拒绝与取消管线。
 
 ## SillyTavern 与资产交换
 

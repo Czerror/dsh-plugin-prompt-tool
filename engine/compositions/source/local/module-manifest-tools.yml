@@ -1,0 +1,2 @@
+- id: module-manifest-tools
+  name: ./engine/module-manifest-tools.mjs

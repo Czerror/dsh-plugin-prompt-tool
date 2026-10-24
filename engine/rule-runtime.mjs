@@ -32,7 +32,7 @@ export function mountRuleSources(ctx, sources, options = {}) {
   // 条件绑定**在这里**发生：`compileRules` 编译期没有挂载 scope 的 ctx（preset 条件在那边恒
   // UNAVAILABLE 且静默）。必须早于事件订阅与动作注册——动作级 `actionWhen.observe` 是订阅通道，
   // 绑晚了那一类谓词会漏事件。`standingMountFor` 是可选兜底（官方包缺席＝没有兜底，不是错误）。
-  rebindConditions(sources, { ctx, standingMountFor: options.standingMountFor, promotionPool: pool })
+  rebindConditions(sources, { ctx, standingMountFor: options.standingMountFor, promotionPool: pool, variableStore: options.variableStore })
   const warnOnce = options.warnOnce ?? createWarnOnce(ctx, options.plugin ?? 'rule-engine')
   // 非 pre-step 动作仍共享一次 ruleFrame；规则实例没有来源字段（RuleDefinition 不暴露 moduleId），
   // 因此保留一份局部 rule→module 映射。它不是 pre-step 来源事实的重建，不参与 pre-step 的 source sink。

@@ -11,12 +11,13 @@ export type ModuleSourceMode = 'explicit' | 'composition' | 'official' | 'unknow
 /** 实际注册工具与 opt-in 能力的唯一目录，供注册、委托建议与自动补装消费。 */
 export const MODULE_TOOL_NAMES = {
   import: 'module_import', rulesRead: 'module_rules_read', rulesEdit: 'module_rules_edit',
-  memoryRead: 'module_memory_read', memoryAppend: 'module_memory_append', variables: 'module_variables',
+  fileRead: 'module_file_read', fileAppend: 'module_file_append', manifest: 'module_manifest', variables: 'module_variables',
 } as const
 export const MODULE_TOOL_CAPABILITIES: Readonly<Record<string, string>> = {
   [MODULE_TOOL_NAMES.import]: 'module-import-tools',
   [MODULE_TOOL_NAMES.rulesRead]: 'module-rule-tools', [MODULE_TOOL_NAMES.rulesEdit]: 'module-rule-tools',
-  [MODULE_TOOL_NAMES.memoryRead]: 'module-memory-tools', [MODULE_TOOL_NAMES.memoryAppend]: 'module-memory-tools',
+  [MODULE_TOOL_NAMES.fileRead]: 'module-file-tools', [MODULE_TOOL_NAMES.fileAppend]: 'module-file-tools',
+  [MODULE_TOOL_NAMES.manifest]: 'module-manifest-tools',
   [MODULE_TOOL_NAMES.variables]: 'module-variable-tools',
 }
 

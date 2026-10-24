@@ -1,8 +1,8 @@
 # 模板：子代理状态 / 记忆维护（audience=subagent 专用注入）
 # 用途：把 ST 的「角色状态跟踪 + 关系记忆」委派给子代理完成——引擎保持确定性
 #       （插值/匹配/注入），智能判断（何时更新、更新成什么）交给委派子代理，
-#       写入经 module_variables 持久变量与 module_memory_append 记忆工具。
-# 接入：声明 module-variable-tools、module-memory-tools；默认关闭。
+#       写入经 module_variables 持久变量与 module_file_append 文件工具。
+# 接入：声明 module-variable-tools、module-file-tools；默认关闭。
 # 先在工作台的模块变量卡手动建立 stateKeys，例如「心情, 接受值, 关系进度」。
 id: subagent-maintenance
 name: 子代理状态/记忆维护
@@ -36,8 +36,8 @@ then:
           先用 module_variables 的 scope=module、action=list 读取身份与版本，
           再用 action=set 和显式字符串 value 更新下方清单中的变量；带回读取时
           的 expectedModuleId 与 expectedRevisions，冲突时重读，不覆盖未知修改。
-        - 记忆（当前模块 memory.md）：重要事实先用 module_memory_read 核对，
-          确有新增时用 module_memory_append 追加；记忆不会自动变成注入规则。
+        - 记忆（当前模块 memory.md）：重要事实先用 module_file_read 核对（path 为 memory.md），
+          确有新增时用 module_file_append 追加（path 为 memory.md）；记忆不会自动变成注入规则。
         - 克制：仅在状态确实变化时更新；不确定时保留原值；不编造未发生的内容。
         状态变量清单：{{stateKeys}}
       params: {}

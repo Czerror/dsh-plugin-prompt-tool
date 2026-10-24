@@ -15,6 +15,8 @@ const FIELD_OPTIONS: Record<string, Record<string, readonly string[]>> = {
   count: { per: ['session', 'turn'], of: ['tool-call', 'tool-result', 'assistant-message', 'assistant-chars', 'user-message', 'turn'] },
   text: { logic: ['any', 'all', 'not', 'notAny'], mode: ['scan', 'prefix'], wordBoundary: ['ascii-token', 'unicode'] },
   anchor: { subject: ['userMessage', 'assistantReasoning', 'assistantText', 'toolResult'], logic: ['any', 'all', 'not', 'notAny'], mode: ['scan', 'prefix'], wordBoundary: ['ascii-token', 'unicode'] },
+  // in 需要字符串数组，编辑器没有数组输入，只留在手写 YAML 能力里。
+  variable: { op: ['eq', 'ne', 'gt', 'gte', 'lt', 'lte', 'present', 'absent'], scope: ['effective', 'module', 'global'] },
   source: { match: ['exact', 'prefix'] },
   phase: { promoteOn: ['tool-call', 'assistant-message', 'either'] },
 }

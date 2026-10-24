@@ -8,4 +8,5 @@ export const PREDICATE_EXAMPLES = {
   preset: { presetId: 'preset-id' },
   scope: { audience: 'main', modelScope: 'all' },
   anchor: { subject: 'assistantReasoning', keys: ['确认'], mode: 'prefix' },
+  variable: { key: 'quota', op: 'lte', value: '0', scope: 'effective' },
 }

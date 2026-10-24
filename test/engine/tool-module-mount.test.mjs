@@ -339,7 +339,8 @@ test('技能查找按 scope 隔离候选，scope 释放后候选消失', async (
 const modules = [
   "module-import-tools",
   "module-rule-tools",
-  "module-memory-tools",
+  "module-file-tools",
+  "module-manifest-tools",
   "module-variable-tools",
 ].map(id => [id, toolServiceName(id)])
 

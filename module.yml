@@ -15,7 +15,7 @@ version: 1.0.0
 engineCompat: ">=0.7.2"
 modules:
   # 仅启用规则引擎。其他能力保持 opt-in；写入其已登记参数后会自动补齐装配。
-  # 可用模块（engine/compositions 下的文件名）：filesystem-editor, instruction-hint, module-import-tools, module-memory-tools, module-rule-tools, module-variable-tools, persistent-shell-posix, present-as, rule-engine, run-code-env, skill-search, tool-bash-disabled, tool-config-engine, tool-git-bash, tool-search
+  # 可用模块（engine/compositions 下的文件名）：filesystem-editor, instruction-hint, module-file-tools, module-import-tools, module-manifest-tools, module-rule-tools, module-variable-tools, persistent-shell-posix, present-as, rule-engine, run-code-env, skill-search, tool-bash-disabled, tool-config-engine, tool-git-bash, tool-search
   # filesystem-editor / persistent-shell-posix / tool-bash-disabled 由会话原有预设提供；声明它们只会产生诊断，插件不挂载官方包。
   # 已退役的引擎名：prompt-config-engine, declared-triggers；旧定义需显式转换。
   # 人设使用 persona.main / persona.subagent；未声明字段继承官方值。
@@ -438,8 +438,8 @@ rules:
               先用 module_variables 的 scope=module、action=list 读取身份与版本，
               再用 action=set 和显式字符串 value 更新下方清单中的变量；带回读取时
               的 expectedModuleId 与 expectedRevisions，冲突时重读，不覆盖未知修改。
-            - 记忆（当前模块 memory.md）：重要事实先用 module_memory_read 核对，
-              确有新增时用 module_memory_append 追加；记忆不会自动变成注入规则。
+            - 记忆（当前模块 memory.md）：重要事实先用 module_file_read 核对（path 为 memory.md），
+              确有新增时用 module_file_append 追加（path 为 memory.md）；记忆不会自动变成注入规则。
             - 克制：仅在状态确实变化时更新；不确定时保留原值；不编造未发生的内容。
             状态变量清单：{{stateKeys}}
           params: {}

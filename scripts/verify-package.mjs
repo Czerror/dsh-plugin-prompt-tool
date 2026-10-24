@@ -44,7 +44,7 @@ const rules = [{ id: 'smoke', then: [{ id: 's', kind: 'inject-text', config: { l
 const compiled = compileRules(rules)
 if (compiled.length !== 1 || compiled[0].actions.length !== 1) throw new Error('包内引擎编译规则失败')
 const modules = readdirSync(join(pluginRoot, 'engine/compositions/source/local')).filter((name) => name.endsWith('.yml'))
-for (const name of ['rule-engine', 'module-import-tools', 'module-rule-tools', 'module-memory-tools', 'module-variable-tools']) {
+for (const name of ['rule-engine', 'module-import-tools', 'module-rule-tools', 'module-file-tools', 'module-manifest-tools', 'module-variable-tools']) {
   if (!modules.includes(name + '.yml')) throw new Error('组合模块库缺少 ' + name)
 }
 if (!existsSync(join(pluginRoot, 'skills/dsh-module/SKILL.md'))) throw new Error('随包技能缺失')

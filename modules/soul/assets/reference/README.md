@@ -1,0 +1,10 @@
+# 13 份 soul 正文（外部来源）
+
+Source: `D:\AI\GitHub\dsh-agent-soul\soul\`（MIT，2026-10-24 导入）
+用途：模块文件工具按需读取的完整知识，例如 `module_file_read` 的 `path: assets/reference/05-doctor.md`。
+
+适配边界：
+
+- 本项目不安装 dsh-agent-soul 插件，也不分发它的 kit/CLI。正文里出现的 `ECHO_SOUL`、`kit/echo/*.mjs`、`plugins/*` 等路径与命令只描述原项目的运行时；在本模块里，用户数据根是模块目录的 `data/`，读写走 `module_file_read/append`，装配走 `module_manifest`。
+- `04-manifest.json` 与 `07-bundle.json` 是外部安装清单，本项目不使用，只作参考。
+- 正文保持原文，未逐份改写；与模块规则冲突时，以 `module.yml` 与 `assets/manifest.yml` 为准。

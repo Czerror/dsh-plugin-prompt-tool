@@ -132,7 +132,26 @@ context-activation 在 pre-step。分类与正文用通用条件和分支组合�
 
 ## 四、能力、参数与数据所有权
 
-能力目录以包内 engine/compositions/source/local 的实际文件为准；模块工具统一为 module-import-tools、module-rule-tools、module-memory-tools、module-variable-tools。官方工具、规划、压缩与普通委派由会话原有预设提供，空模块不自动获得这些能力。
+能力目录以包内 engine/compositions/source/local 的实际文件为准；模块工具统一为 module-file-tools、module-import-tools、module-manifest-tools、module-rule-tools、module-variable-tools。
+
+**模块装配清单**（固定 `assets/manifest.yml`，由 `module_manifest` 解释，工具不认业务字段）：
+
+```yaml
+dirs:
+  - data/10-宪章
+files:
+  - from: assets/templates/agents-template.md
+    to: data/AGENTS.md
+checks:
+  - path: data/02-墨.jsonl
+    kind: jsonl
+    maxBytes: 8388608
+```
+
+- `dirs` / `files.to` / `checks.path` 只允许 `data/`；`files.from` 只允许 `assets/`（必须存在，单文件 ≤ 1 MiB）。
+- `checks.kind` ∈ `file`/`text`/`json`/`jsonl`；`maxBytes` 缺省 1 MiB。
+- `action`：`next` 返回第一条缺失（`ok` = 是否已完成），`check` 返回全部检查结果（`ok` = 是否全部通过），`apply` 建目录并只落缺失文件（不覆盖、不删除）。
+- 未知键、未知 kind、越界路径与链接都 fail loud。官方工具、规划、压缩与普通委派由会话原有预设提供，空模块不自动获得这些能力。
 
 共享参数由 `ENGINE_PARAM_DEFINITIONS` 唯一登记，`storageLayer` 决定磁盘路径：主/子模型各有路由与采样键，另含 PTC 呈现（presentAsEnabled、ptcMainMode、ptcSubagentMode）、run_code 环境（runCodeEnvEnabled、runCodeEnvKeys）、Git Bash（toolGitBashEnabled、路径、超时、输出上限）、指令提示（instructionHint 及 promoteOn/includeSubagents/模板）和工具批准（customToolRequireApproval）；完整键、options 与默认值以源码为准，不在摘要抄数量。模型卡在装配期合成 request-params 规则；未配置继承宿主。子代理递归深度归官方 `subagent.maxDepth`，插件不提供。
 

@@ -18,7 +18,9 @@ import {
   createSessionStatePredicate,
   createSourcePredicate,
   createTextPredicate,
+  createVariablePredicate,
 } from '../../engine/predicates.mjs'
+import { compileRules, getRuleEditorMeta, rebindConditions } from '../../engine/rule-spec.mjs'
 
 // ── 测试夹具 ─────────────────────────────────────────────────────────────────
 
@@ -438,4 +440,86 @@ test('预设类：无 standing scope / 无挂载＝undefined，调用方不命�
   }
 
   assert.throws(() => createPresetPredicate({}), /needs a presetId/)
+})
+
+// ── 变量状态 ─────────────────────────────────────────────────────────────────
+
+const variableStore = (state) => {
+  const reads = []
+  return {
+    reads,
+    store: { read: (moduleId) => { reads.push(moduleId); return state } },
+  }
+}
+
+test('变量状态：真值表、作用域与缺失语义', () => {
+  const { store } = variableStore({
+    module: { quota: '5', empty: '', word: 'x' }, global: { quota: '1' },
+    effective: { quota: '5', empty: '', word: 'x' }, enabled: true,
+  })
+  const when = (options) => createVariablePredicate(options, { store, moduleId: 'alice' })({})
+
+  assert.equal(when({ key: 'quota', value: '5' }), true, 'eq 缺省')
+  assert.equal(when({ key: 'quota', op: 'ne', value: '1' }), true)
+  assert.equal(when({ key: 'quota', op: 'gt', value: '4' }), true, '按数字而不是字典序')
+  assert.equal(when({ key: 'quota', op: 'gte', value: '5' }), true)
+  assert.equal(when({ key: 'quota', op: 'lt', value: '6' }), true)
+  assert.equal(when({ key: 'quota', op: 'lte', value: '5' }), true)
+  assert.equal(when({ key: 'word', op: 'in', value: ['x', 'y'] }), true)
+  assert.equal(when({ key: 'empty', value: '' }), true, '空串是有效值')
+  assert.equal(when({ key: 'empty', op: 'present' }), true)
+  assert.equal(when({ key: 'missing', op: 'absent' }), true)
+  assert.equal(when({ key: 'missing', value: '5' }), false, '键缺失时比较类为假')
+  assert.equal(when({ key: 'missing', op: 'ne', value: '5' }), false, 'ne 也不因缺失为真')
+  assert.equal(when({ key: 'missing', op: 'present' }), false)
+  assert.equal(when({ key: 'empty', op: 'gt', value: '0' }), false, '空串不是数字')
+  assert.equal(when({ key: 'word', op: 'gt', value: '1' }), false, '非数字比较为假')
+
+  assert.equal(when({ key: 'quota', scope: 'effective', value: '5' }), true)
+  assert.equal(when({ key: 'quota', scope: 'global', value: '1' }), true)
+  assert.equal(when({ key: 'quota', scope: 'module', value: '1' }), false)
+})
+
+test('变量状态：适配器缺失、模块禁用与 moduleId 缺失是 UNAVAILABLE，not 不反转', () => {
+  assert.equal(createVariablePredicate({ key: 'quota', value: '1' })({}), UNAVAILABLE, '没有适配器')
+  const disabled = variableStore({ module: {}, global: {}, effective: {}, enabled: false })
+  assert.equal(createVariablePredicate({ key: 'quota', value: '1' }, { store: disabled.store, moduleId: 'alice' })({}), UNAVAILABLE, '模块禁用变量')
+  const enabled = variableStore({ module: {}, global: {}, effective: {}, enabled: true })
+  assert.equal(createVariablePredicate({ key: 'quota', value: '1' }, { store: enabled.store })({}), UNAVAILABLE, '缺 moduleId')
+  assert.equal(composite({ not: createVariablePredicate({ key: 'quota', value: '1' }, {}) })({}), UNAVAILABLE, 'not 不把缺事实变真')
+})
+
+test('变量状态：只读、编译期不可用、挂载后按来源模块绑定', () => {
+  const { store, reads } = variableStore({ module: { plan_step: '2' }, global: {}, effective: { plan_step: '2' }, enabled: true })
+
+  const compiled = compileWhen({ variable: { key: 'plan_step', value: '2' } })
+  assert.equal(compiled({}), UNAVAILABLE, '准备期没有适配器')
+  const compiledRules = compileRules(
+    [{ id: 'v', then: [{ id: 'i', kind: 'inject-text', config: { text: 'x' } }], if: { variable: { key: 'plan_step', value: '2' } } }],
+    { moduleId: 'alice', variableStore: store },
+  )
+  assert.equal(compiledRules[0].when({}), UNAVAILABLE, 'compileRules 剥掉调用方传入的 variableStore')
+
+  const sources = [{
+    moduleId: 'alice',
+    rules: [{
+      id: 'plan', actions: [],
+      conditionTrees: { when: { variable: { key: 'plan_step', value: '2' } } },
+    }],
+  }]
+  rebindConditions(sources, { variableStore: store })
+  assert.equal(sources[0].rules[0].when({}), true, '挂载期按 source.moduleId 绑定')
+  assert.deepEqual(reads, ['alice'])
+  assert.equal(store.write, undefined, '谓词只读')
+})
+
+test('变量状态：非法声明 fail loud，编辑器示例可编译', () => {
+  assert.throws(() => createVariablePredicate({}), /key/)
+  assert.throws(() => createVariablePredicate({ key: 'k', op: 'like' }), /op/)
+  assert.throws(() => createVariablePredicate({ key: 'k', op: 'in' }), /in needs/)
+  assert.throws(() => createVariablePredicate({ key: 'k', op: 'in', value: [] }), /in needs/)
+  assert.throws(() => createVariablePredicate({ key: 'k', op: 'present', value: 'x' }), /does not take value/)
+  assert.throws(() => createVariablePredicate({ key: 'k', value: 1 }), /must be a string/)
+  assert.throws(() => createVariablePredicate({ key: 'k', scope: 'session' }), /scope/)
+  assert.ok(getRuleEditorMeta().predicates.some((item) => item.kind === 'variable'), '编辑器 meta 含 variable')
 })

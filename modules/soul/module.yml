@@ -1,16 +1,30 @@
-# 灵魂架构（推送层 + 判据 + 按需条目）
-# 工具面（plan/scaffold/check/verify/install/ledger）仍由 dsh-agent-soul 插件提供；本模块只补「推送」。
+# 灵魂架构（推送层 + 判据 + 按需条目 + 状态规则）
+# 工具面由本项目通用能力提供：module_file_read/append 读写模块私有文件，module_manifest 执行 assets/manifest.yml，module_variables 读写状态；不提供 soul 专属工具。
 # 正文放 assets/，用 templateFile 引用；运行源是本模块，soul 仓库是作者稿。
 id: soul
 name: 灵魂架构（判据与推送）
 version: 1.0.0
 engineCompat: ">=0.7.2"
-description: 灵魂架构模块（资产 + 规则）：常驻四条判据与子代理硬线，按需注入五层/ECHO/VITAL/账本，压缩后与每 12 轮各提醒一次。执行引擎由项目内置，工具与写盘不随本模块分发。
+description: 灵魂架构模块（资产 + 规则）：常驻四条判据与子代理硬线，按需注入五层/ECHO/VITAL/账本，压缩后与每 12 轮各提醒一次；工具由项目内置引擎提供，本模块分发规则、资产与装配清单。
 meta:
   source: manual
 modules:
   - rule-engine
+  - module-file-tools
+  - module-manifest-tools
+  - module-variable-tools
 order: 10
+variables:
+  # 状态键由本模块声明；引擎只按普通模块变量处理，不认 soul 前缀。
+  plan_step: ''
+  plan_at: ''
+  check_verdict: ''
+  check_at: ''
+  check_failed: '0'
+  scaffold_done: ''
+  scaffold_root: data
+  ledger_seq: '0'
+  ledger_open: '0'
 rules:
   - id: soul-core
     name: 四条判据（常驻）
@@ -185,3 +199,113 @@ rules:
           order: 246
           text: |-
             自检三问：压缩后丢掉的东西还能按指针找回吗？现在是不是在错误的前提上继续推理？「还能更好」和「没做完」分得开吗？
+
+  # 状态规则：变量谓词在挂载期按来源模块（soul）读取有效值。
+  # 工具主语写死 moduleId: soul；模块被复制或改名后需要同步这些正文。
+  - id: soul-plan
+    name: 计划纪律（首轮，未写计划时）
+    enabled: true
+    layer: pre-step
+    if:
+      all:
+        - variable:
+            key: plan_step
+            op: eq
+            value: ''
+        - count:
+            of: user-message
+            per: session
+            max: 1
+    then:
+      - id: inject
+        kind: inject-text
+        config:
+          id: soul-plan
+          layer: pre-step
+          strategy: static
+          position: before-all
+          order: 124
+          role: user
+          text: |-
+            先定一步计划再动手：用 module_variables（moduleId: soul，scope: module）读取 plan_step 与 plan_at，
+            写入一行「下一步 + 判据」，带回 expectedRevisions；计划变了就覆盖，不要留旧计划当真相。
+            连续三步没有进展时停下来重写计划，而不是继续加动作。
+            需要看装配进度时先 module_manifest（moduleId: soul）action=next，再决定改计划还是先装配。
+
+  - id: soul-scaffold
+    name: 书房装配（首轮，未装配时）
+    enabled: true
+    layer: pre-step
+    if:
+      all:
+        - variable:
+            key: scaffold_done
+            op: eq
+            value: ''
+        - count:
+            of: user-message
+            per: session
+            max: 1
+    then:
+      - id: inject
+        kind: inject-text
+        config:
+          id: soul-scaffold
+          layer: pre-step
+          strategy: static
+          position: before-all
+          order: 125
+          role: user
+          text: |-
+            书房还没装配：先 module_manifest（moduleId: soul）action=next 看第一条缺失，
+            再 action=check 看已有文件的状况，最后由用户决定是否 action=apply。
+            AGENTS.md 落在 data/AGENTS.md（模板 assets/templates/agents-template.md），已存在不覆盖，
+            它不是工作区指令文件；apply 只建目录、只落缺失文件，已存在的一律不碰；
+            装配完成后把 scaffold_done 置为 true。
+
+  - id: soul-check
+    name: 检查失败处置
+    enabled: true
+    layer: system-section
+    if:
+      variable:
+        key: check_failed
+        op: gt
+        value: '0'
+    then:
+      - id: inject
+        kind: inject-text
+        config:
+          id: soul-check
+          layer: system-section
+          strategy: static
+          order: 247
+          text: |-
+            上一轮自检有失败项：先 module_manifest（moduleId: soul）action=check 重新核对，
+            把结论写进 check_verdict（ok/fail）、check_at（时间）与 check_failed（失败数），
+            再说清是哪一条、证据是什么、下一步改哪个文件或哪条规则；
+            不要用「已修复」代替重新检查，也不要把失败项藏进总结。
+
+  - id: soul-ledger-open
+    name: 未结账本提醒
+    enabled: true
+    layer: pre-step
+    if:
+      variable:
+        key: ledger_open
+        op: gt
+        value: '0'
+    then:
+      - id: inject
+        kind: inject-text
+        config:
+          id: soul-ledger-open
+          layer: pre-step
+          strategy: static
+          position: before-all
+          order: 126
+          role: user
+          text: |-
+            账本还有未结事项：回复里逐条收口，或说清为什么先放着。
+            需要追加时用 module_file_append（moduleId: soul，path: data/02-墨.jsonl，entry: {...}），
+            只往后加，不改旧行；收口后把 ledger_open 减到 0。

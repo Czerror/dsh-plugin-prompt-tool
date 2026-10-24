@@ -140,7 +140,7 @@ export function mergeStModulesWithReport(specs: ModuleSpec[]): { spec: ModuleSpe
   }
   const managementModules = [
     'module-import-tools',
-    ...(ruleInjections(rules).some(({ config }) => config.strategy === 'context-activation') ? ['module-rule-tools', 'module-memory-tools'] : []),
+    ...(ruleInjections(rules).some(({ config }) => config.strategy === 'context-activation') ? ['module-rule-tools', 'module-file-tools'] : []),
     'module-variable-tools',
     'tool-config-engine',
   ]
@@ -780,7 +780,7 @@ export function convertStToModuleWithReport(
 
   // modules 按需组装：prompt-config-engine 始终。
   const modules = ['rule-engine', 'module-import-tools']
-  if (configs.some((config) => config.strategy === 'context-activation')) modules.push('module-rule-tools', 'module-memory-tools')
+  if (configs.some((config) => config.strategy === 'context-activation')) modules.push('module-rule-tools', 'module-file-tools')
   modules.push('module-variable-tools', 'tool-config-engine')
   const moduleConfigs: Record<string, Record<string, unknown>> = {}
   // 含 system-section 段时用顶层 persona 段声明官方人设行：空 prefix 只做 scope

@@ -24,13 +24,13 @@
 
 安装成功与列表刷新分开报告，刷新失败不自动重复安装。导入不自动切换当前编辑模块；用户可在结果页显式切换。
 
-角色来源覆盖同一模块时保留 memory.md、未知用户资产与未替换头像；普通模块包覆盖仍以用户确认的完整候选为准。记忆只由 `module_memory_read` 按需读取，不因导入或更新自动注入。
+角色来源与 `module_import` 工具覆盖时保留 memory.md、未知用户资产与未替换头像；工作台 / bridge 的普通包覆盖只保留 `data/`（旧数据优先，包内同名文件只补缺失），其余以用户确认的完整候选为准。模块私有文件（memory.md、assets/、data/）只由 `module_file_read` 按需读取，不因导入或更新自动注入。
 
 ## 导出、复制与分享边界
 
 “完整 ZIP”包含权威定义、预设正文、图片、自有组合和本地模块，附 `prompt-tool-package.json` 的格式版本、兼容要求与文件摘要。导入检查清单与实际条目一致；ZIP 的上跳、绝对路径、链接、特殊文件、大小写／规范化冲突、加密、损坏及解压超限均拒绝。
 
-旧 configs/、rules.yml、agent.cordis.yml、custom-tools/、subagent-tools/ 不再分发（`subagent-tools/` 随子代理工具策略退场，仅作历史保留名）；规则切片可从完整定义重建。memory.md 默认不随分享导出，技能库和工作区指令／策略也不属于模块交换包。根 agents.md 是已有模块内容资产，与工作区指令文件分开。
+旧 configs/、rules.yml、agent.cordis.yml、custom-tools/、subagent-tools/ 不再分发（`subagent-tools/` 随子代理工具策略退场，仅作历史保留名）；规则切片可从完整定义重建。memory.md 与 data/ 默认不随分享导出，技能库和工作区指令／策略也不属于模块交换包。根 agents.md 是已有模块内容资产，与工作区指令文件分开。
 
 > **导入不安装引擎**：完整模块包只含模块自身（定义、正文、附件、自有组合与本地模块）；组合里的共享引擎引用是插件包说明符，导入方由**自己安装的插件**提供引擎。包内若仍带 `engine/` 目录，导入后不再被使用——引擎版本只随插件更新。
 
@@ -52,7 +52,7 @@
 | `host/asset-sources.ts`、`asset-archive.ts`、`shared/asset-path.ts` | 生命周期暂存、ZIP 载体；相对路径边界校验由 shared 原语承载（ZIP/上传/模块包/技能导入共用） |
 | `host/module-package.ts` | 预览、严格候选、安装与导出 |
 | `host/module-dirs.ts`、`module-catalog.ts`、`module-capabilities.ts`、`module-install.ts`、`write-module.ts`、`module-install-transaction.ts`、`module-write.ts`、`module-slices.ts` | 合法身份、根归属、复制、候选校验、安装事务、完整定义提交与切片恢复 |
-| `host/characters.ts` | 普通模块合并／移除、模块记忆与历史分享证明兼容 |
+| `host/module-files.ts`、`host/legacy-export.ts` | 模块私有文件（memory.md、assets/、data/）；历史分享证明兼容 |
 | `client/data/use-import-preview-flow.ts`、`ui/ImportDialog.tsx` | 读取到结果的统一生命周期与共享呈现 |
 
 安全与文件行为以 Node 回归验证；真实浏览器覆盖文件输入、确认、过期、批次取消、错误和键盘。所有测试使用隔离 cwd 和合成 DSH_HOME，不操作运行中服务。

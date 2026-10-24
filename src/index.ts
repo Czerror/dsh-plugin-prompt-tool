@@ -7,7 +7,8 @@ import type { ModelDetection } from './runtime/models.ts'
 import { registerSettingsBridge } from './runtime/settings-bridge.ts'
 import { registerModuleImportTools } from './runtime/module-import-tools.ts'
 import { registerModuleRuleTools } from './runtime/module-rule-tools.ts'
-import { registerModuleMemoryTools } from './runtime/module-memory-tools.ts'
+import { registerModuleFileTools } from './runtime/module-file-tools.ts'
+import { registerModuleManifestTools } from './runtime/module-manifest-tools.ts'
 import { registerModuleVariableTools } from './runtime/module-variable-tools.ts'
 import { installPreStepCoordinator } from './runtime/pre-step-coordinator.ts'
 import { installPersonaCapture } from './runtime/persona-registration.ts'
@@ -187,8 +188,11 @@ registerTuiCommand(
   ctx.provide(toolServiceName('module-rule-tools'), {
     mount: (scopeCtx: Context): (() => void) => registerModuleRuleTools(scopeCtx, moduleToolHost),
   })
-  ctx.provide(toolServiceName('module-memory-tools'), {
-    mount: (scopeCtx: Context): (() => void) => registerModuleMemoryTools(scopeCtx, moduleToolHost),
+  ctx.provide(toolServiceName('module-file-tools'), {
+    mount: (scopeCtx: Context): (() => void) => registerModuleFileTools(scopeCtx, moduleToolHost),
+  })
+  ctx.provide(toolServiceName('module-manifest-tools'), {
+    mount: (scopeCtx: Context): (() => void) => registerModuleManifestTools(scopeCtx, moduleToolHost),
   })
   ctx.provide(DISCOVERY_SERVICE, createDiscoveryRegistry())
   ctx.provide(toolServiceName('module-variable-tools'), {

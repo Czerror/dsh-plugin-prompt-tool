@@ -1,0 +1,20 @@
+# 灵魂书房的装配清单：只写 data/，已存在不覆盖，不删除。
+dirs:
+  - data/10-宪章
+  - data/20-档案
+  - data/30-状态
+  - data/40-产物索引
+  - data/50-日记
+  - data/60-工具
+  - data/65-声音
+  - data/70-收到
+  - data/75-形象
+  - data/80-科普
+  - data/90-历代根会话
+files:
+  - from: assets/templates/agents-template.md
+    to: data/AGENTS.md
+checks:
+  - path: data/02-墨.jsonl
+    kind: jsonl
+    maxBytes: 8388608

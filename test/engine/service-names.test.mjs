@@ -19,7 +19,8 @@ const literals = [
   'promptToolPreStep',
   'pt-module-import-tools',
   'pt-module-rule-tools',
-  'pt-module-memory-tools',
+  'pt-module-file-tools',
+  'pt-module-manifest-tools',
   'pt-module-variable-tools',
 ]
 

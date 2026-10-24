@@ -51,7 +51,8 @@ function ownedFile(path: string): boolean {
 /** 先筛选再读取：派生切片和不分享的私有资产不参与读取、配额或导出版本。 */
 function shareableFile(path: string): boolean {
   const root = path.split('/')[0]!.toLowerCase()
-  return !['rules', 'rules.yml', 'agent.cordis.yml', 'triggers.yml', 'memory.md'].includes(root) && ownedFile(path)
+  // data/ 是模块私有的用户数据（账本、SELF、AGENTS.md 等），与 memory.md 同规则：不随包分享。
+  return !['rules', 'rules.yml', 'agent.cordis.yml', 'triggers.yml', 'memory.md', 'data'].includes(root) && ownedFile(path)
 }
 
 type PackageFile = { path: string; bytes: Buffer }
@@ -199,9 +200,12 @@ export async function installModulePackage(root: string, files: AssetFile[], req
       expectedVersion: version,
       signal: options.signal,
       build: (candidate) => {
-        if ((options.preserveAssets || preview.prepared.kind === 'st-character' || preview.prepared.kind === 'native-character') && exists) {
+        if (exists) {
+          // 整树保留只发生在角色来源或显式 preserveAssets；普通包覆盖只保留 data/（与 memory.md 同规则）。
+          const preserveTree = options.preserveAssets || preview.prepared.kind === 'st-character' || preview.prepared.kind === 'native-character'
           for (const entry of readdirSync(target)) {
             if (entry === MODULE_DEFINITION_FILE || entry === 'rules' || LEGACY_ARTIFACTS.includes(entry)) continue
+            if (!preserveTree && entry !== 'data') continue
             const path = join(target, entry)
             assertModuleTree(path)
             cpSync(path, join(candidate, entry), { recursive: true })
@@ -213,6 +217,8 @@ export async function installModulePackage(root: string, files: AssetFile[], req
           const path = join(candidate, assertSafeRelativePath(file.path))
           mkdirSync(dirname(path), { recursive: true })
           if (file.path === 'memory.md' && existsSync(path)) continue
+          // 旧 data/ 优先：包内同名文件只补缺失，不覆盖用户账本。
+          if (file.path.startsWith('data/') && existsSync(path)) continue
           writeFileSync(path, decodeAssetFile(file))
         }
         const doc = parseDocument(preview.prepared.yaml)

@@ -11,6 +11,7 @@
 | 模块变量 | module.yml.variables | rules/variables.yml 与运行快照 |
 | 全局变量 | `$DSH_HOME/.prompt-tool/variables.yml` 的 variables 映射 | 两级有效值快照，不随模块导出 |
 | 模块记忆 | 当前受控模块 memory.md | 显式工具读取，不自动注入 |
+| 模块私有数据 | 当前受控模块 data/（账本、SELF、AGENTS.md 等） | 显式工具读取/追加；不导出，覆盖安装保留 |
 | 人设正文与选项 | 各模块 module.yml.persona.main / persona.subagent | rules/_settings.yml 的校验投影与官方有效声明 |
 | 人设来源选择 | config.yml.personaSources | main/subagent 各选一个模块 ID 或官方默认，不存正文 |
 | 自定义工具 | customTools | 经验证的内联运行输入 |
@@ -201,7 +202,7 @@ AGENTS.md/CLAUDE.md 及 local 变体属于用户文件。正文就地保存；�
 | 完整定义/切片 | host/module-slices.ts、module-rules.ts |
 | 安装事务 | host/module-install-transaction.ts |
 | 两级变量 | host/module-variables.ts、shared/module-variables.ts |
-| 模块合并/记忆 | host/characters.ts、module-memory.ts |
+| 模块私有文件 | host/module-files.ts、module-file-path.ts；装配清单 host/module-manifest.ts |
 | 导入/导出 | host/import-source.ts、module-package.ts、module-install.ts |
 | 装配/人设 | runtime/agent-assembly.ts、persona-registration.ts；host 来源 owner 的 selectedPersonaModules |
 | 请求/草稿 | shared/bridge-contract.ts、client/data/、settings-bridge.ts |

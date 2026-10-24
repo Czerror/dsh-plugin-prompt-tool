@@ -1,5 +1,16 @@
 # Changelog
 
+### soul V6：变量谓词 + 模块文件工具 + manifest 装配（2026-10-24）
+
+- 规则条件新增 `variable` 谓词（`engine/conditions/variable.mjs`）：op 为 eq/ne/in/gt/gte/lt/lte/present/absent，scope 为 effective/module/global；适配器由挂载期按来源模块绑定 `variableStore`，准备期编译的条件为 UNAVAILABLE。条件编辑器同步中英标签与枚举下拉。
+- **BREAKING**：`module_memory_read` / `module_memory_append` 更名为 `module_file_read` / `module_file_append`，能力 id 由 `module-memory-tools` 改为 `module-file-tools`。参数改为必填 `path`（读取允许 memory.md、assets/、data/；追写允许 memory.md 与 data/）；读取输出 `{ path, content, bytes }`；追加支持 `content` 文本或 `entry` JSON 对象，原样一行、不保留旧时间戳格式。已有规则正文与委托建议若引用旧工具名需更新。
+- 新增 `module_manifest`（能力 `module-manifest-tools`）：按模块 `assets/manifest.yml` 执行 next/check/apply，from 只读 assets/、其余只写 data/，不覆盖、不删除。
+- 模块目录新增私有 `data/`：导出排除；覆盖安装保留旧数据，包内同名文件只补缺失。
+- 内置 `modules/soul` 声明文件/清单/变量能力，带 13 份外部正文（`assets/reference/`）、装配清单与 4 条变量状态规则；工具主语写死 `moduleId: soul`。
+- 测试：变量真值表与三值语义、文件工具三根读取与拒绝矩阵、data/ 导出与覆盖保留、manifest next/check/apply、soul 模块规则编译。
+- 验证：`pnpm typecheck`、`pnpm lint`、`pnpm test`、`pnpm build`、`git diff --check`。
+- 需重启 DSH 后生效。
+
 ### soul 模块收敛为资产分发（2026-10-24，更正上一提交）
 
 - 撤回随包移植的 soul 引擎（`engine/soul/`、`engine/soul-tools.mjs`、`soul-tools` 组合行与能力登记）：本项目本身就是内置引擎，不为一个模块随包安装第二套引擎。
