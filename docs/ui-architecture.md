@@ -248,7 +248,7 @@ CSS 构建模块只收集样式数据；`styles.ts` 在入口 `ctx.effect` 中�
 3. prompt-tool ConfigForms transport：`configForms.get('prompt-tool')` 复用标准部署设置的镜像与写入队列；`mutate` 返回 false 必须显示保存失败，不推进保存基线。
 4. PromptToolHostApi，提供目录选择、打开路径与当前会话模型等宿主适配。`currentSessionId()` 经 `session-id-source.ts` 读 `ctx.uiSession.adapter.current` 的作用域绑定；当前会话模型经 `session-model-face` 读取并通过官方 `selectModel` 写回。官方会话预设投影与模块主语分离：模块主语由每次读写自己声明，不存在「切换模块」这个动作，因此不调用官方预设切换，也不订阅预设跟随。
 5. PromptToolWorkbenchFace：controller / api / settings / `t`。
-6. registerWorkbenchSlots(ctx, face)，唯一负责入口槽位的注册：`shell.overlay` 悬浮入口，以及左侧栏 `sidebar.panellist` + 同 key `main` 的全局面板入口。
+6. registerWorkbenchSlots(ctx, face)，唯一负责入口槽位的注册：`shell.overlay` 悬浮入口，以及左侧栏 `sidebar.panellist` 导航入口（行点击直接打开抽屉，不注册 `main`）。
 
 入口不直接导入页面、bridge endpoint 或业务卡片；需要新宿主能力时先扩展 data/host-api.ts 或 shared 契约。
 
@@ -257,10 +257,9 @@ CSS 构建模块只收集样式数据；`styles.ts` 在入口 `ctx.effect` 中�
 | 官方注册面 | id / key | 位置 | owner | 作用 |
 |---|---|---|---|---|
 | shell.overlay | prompt-tool-workbench | order 50 | WorkbenchOverlay | 可拖动悬浮触发器 + body portal 抽屉 |
-| sidebar.panellist | prompt-tool | order 60 | WorkbenchSidebarIcon | 左侧栏导航入口（官方 Global panel entries，与「插件」「自动化任务」「记忆系统」同一列表） |
-| main | prompt-tool | — | WorkbenchMainPanel | 同 key 主面板：重定向入口——选中即打开常驻悬浮抽屉并回对话（不渲染第二份工作台） |
+| sidebar.panellist | prompt-tool | order 60 | WorkbenchSidebarIcon | 左侧栏导航入口（官方 Global panel entries，与「插件」「自动化任务」「记忆系统」同一列表）；行点击直接打开抽屉 |
 
-slot 使用 ctx.slots.inject() 等待官方槽位声明，再调用 ctx.slots.register()；注册随注入声明生命周期由 Cordis 回收（register-workbench.tsx 的组合 disposer 目前未使用）。侧栏入口按官方 Global panel entries 成对注册：`sidebar.panellist` 的 `id` 与 `main` 的 `key` 同为 `prompt-tool`，缺一不可（选中没有 main 的 key 会抛错）。不要改变 id/key 或 inject face 的形状。宿主设置面板的 `settings.plugins.tab` 分区已移除：模块运行总闸只在工作台模块页设置（`modules.globalSwitch`）。
+slot 使用 ctx.slots.inject() 等待官方槽位声明，再调用 ctx.slots.register()；注册随注入声明生命周期由 Cordis 回收（register-workbench.tsx 的组合 disposer 目前未使用）。左侧栏入口只注册 `sidebar.panellist`，**不注册同 key 的 `main`**：行点击由图标组件在事件冒泡前拦截并打开抽屉，不会调用 `selectPanel`。代价是拦截失效（宿主行结构变化）时点击会触发 `selectPanel` 抛 `main panel "prompt-tool" is not registered`——这是有意保留的单一实现，不加重定向兜底。不要改变 id 或 inject face 的形状。宿主设置面板的 `settings.plugins.tab` 分区已移除：模块运行总闸只在工作台模块页设置（`modules.globalSwitch`）。
 
 悬浮入口声明 `locale: PROMPT_TOOL_NS`：slot 组件由此取得 typed `t` seat，并明确依赖官方 renderer 的 locale face。组件在渲染时取当前语言，不缓存模块级文案。
 
@@ -275,7 +274,7 @@ slot 使用 ctx.slots.inject() 等待官方槽位声明，再调用 ctx.slots.re
 
 ### 4.3 入口与关闭行为
 
-- 左侧栏 `sidebar.panellist` + `main` 是官方 Global panel entries：**行点击由 `WorkbenchSidebarIcon` 在冒泡到 React 根之前用原生监听拦截**，直接打开常驻抽屉，不触发 `selectPanel`/对话卸载（官方切 main 会整树卸载对话，实测 2–3s）。拦截依赖「图标位于行 button 内」；结构变化时 `closest('button')` 取不到，退回 `main` 重定向入口——挂载时打开抽屉、下一帧再调 `ctx.layout.selectPanel(null)` 回对话。工作台实例只有抽屉里那一份，返回只是关闭抽屉，不切换 main、不重建对话或工作台。
+- 左侧栏 `sidebar.panellist` 是官方 Global panel entries 的导航入口：**行点击由 `WorkbenchSidebarIcon` 在冒泡到 React 根之前用原生监听拦截**，直接打开常驻抽屉，不触发 `selectPanel`/对话卸载（官方切 main 会整树卸载对话，实测 2–3s）。不注册 `main` 面板；拦截依赖「图标位于行 button 内」，结构变化时 `closest('button')` 取不到，点击会由宿主 `selectPanel` 抛错（已知边界，不再做重定向兜底）。工作台实例只有抽屉里那一份，返回只是关闭抽屉，不切换 main、不重建对话或工作台。
 - `shell.overlay` 注册可拖动悬浮触发器：位置是纯客户端界面偏好（localStorage，`floating-trigger-position.ts`），窗口尺寸变化时按实际按钮尺寸夹回可见区；不读宿主 DOM 几何。
 - 拖动与单击以 4px 位移阈值区分：拖动结束吞掉尾随 click，单击与键盘仍开合；触发器打开 body portal 抽屉，抽屉与触发器分别用 fixed + z-index 1000 / 1100 置顶，不被宿主「对话/轨迹」顶部导航栏遮挡。
 - 关闭支持 Escape、点击背板与按钮切换，焦点在触发器与抽屉之间转移；抽屉打开时触发 PromptWorkspace.store.load()，关闭保留实例状态。
@@ -302,7 +301,7 @@ slot 使用 ctx.slots.inject() 等待官方槽位声明，再调用 ctx.slots.re
           └─ 模块
 
     左侧栏入口（sidebar.panellist「提示词工具」）
-      └─ 同一悬浮抽屉（main 重定向：打开抽屉并回对话，无第二份工作台）
+      └─ 同一悬浮抽屉（行点击直接打开，无 main 切换、无第二份工作台）
 
 模块运行总闸位于模块页，不另设 settings tab。完整工作台由 PromptWorkspace 创建 store、保存当前页，并在打开时触发一次 load；WorkspaceFrame 负责公共 header、导航、canvas、loading 和 notice。工作台只决定**参与装配**的集合，不保留单一「当前模块」目标；模块内容按卡片归属编辑（见 §7.1.1）。
 

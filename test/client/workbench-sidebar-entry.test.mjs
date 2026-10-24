@@ -11,9 +11,7 @@ const { WorkbenchSidebarIcon } = await withSsr([iconUrl])
 function fakeSlots() {
   const registrations = []
   const unregisters = []
-  const selections = []
   const ctx = {
-    layout: { selectPanel: panelId => { selections.push(panelId) } },
     slots: {
       inject: (_name, callback) => callback(),
       register: (options, component) => {
@@ -22,34 +20,24 @@ function fakeSlots() {
       },
     },
   }
-  return { ctx, registrations, unregisters, selections }
+  return { ctx, registrations, unregisters }
 }
 
-test('侧栏入口：按官方 Global panel entries 成对注册 main 与 sidebar.panellist，关闭回对话', () => {
+test('侧栏入口：只注册 sidebar.panellist，行点击直接打开抽屉（无 main 面板）', () => {
   const fake = fakeSlots()
   const face = { controller: {}, api: { marker: 'api' }, settings: { marker: 'settings' }, t: key => `t:${key}` }
   const dispose = registerWorkbenchSlots(fake.ctx, face)
 
   const names = fake.registrations.map(entry => entry.options.name).sort()
-  assert.deepEqual(names, ['main', 'shell.overlay', 'sidebar.panellist'])
-
-  const main = fake.registrations.find(entry => entry.options.name === 'main')
+  assert.deepEqual(names, ['shell.overlay', 'sidebar.panellist'])
   const icon = fake.registrations.find(entry => entry.options.name === 'sidebar.panellist')
-  // 官方契约：同 key 配对；main 缺入口或入口缺 main 都不可用。
-  assert.equal(main.options.key, WORKBENCH_PANEL_ID)
   assert.equal(icon.options.id, WORKBENCH_PANEL_ID)
   assert.equal(icon.options.locale, 'prompt-tool')
   assert.equal(icon.options.label(), 't:app.title')
   assert.equal(typeof icon.options.inject().open, 'function')
 
-  // 主面板是重定向：持有常驻抽屉 controller，关闭走官方 selectPanel(null) 回对话。
-  const injected = main.options.inject()
-  assert.equal(injected.controller, face.controller)
-  injected.closePanel()
-  assert.deepEqual(fake.selections, [null])
-
   dispose()
-  assert.deepEqual([...fake.unregisters].sort(), ['main', 'shell.overlay', 'sidebar.panellist'])
+  assert.deepEqual([...fake.unregisters].sort(), ['shell.overlay', 'sidebar.panellist'])
 })
 
 test('侧栏图标：只画尺寸内的装饰图形，标签与可访问名归侧栏', () => {
