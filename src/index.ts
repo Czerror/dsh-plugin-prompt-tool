@@ -12,7 +12,7 @@ import { registerModuleManifestTools } from './runtime/module-manifest-tools.ts'
 import { registerModuleVariableTools } from './runtime/module-variable-tools.ts'
 import { installPreStepCoordinator } from './runtime/pre-step-coordinator.ts'
 import { installPersonaCapture } from './runtime/persona-registration.ts'
-import { registerTuiCommand } from './runtime/tui.ts'
+import { registerTuiCommand, registerTuiSettingsSection } from './runtime/tui.ts'
 import { ensureModuleReady } from './host/write-module.ts'
 import { ensureModuleSeed } from './host/module-catalog.ts'
 import { moduleDirExists } from './host/module-dirs.ts'
@@ -127,6 +127,9 @@ export function apply(ctx: Context, configIn: Config): void {
     ...readConfig(),
     modelsAvailable: getModelsState().available,
   })
+
+  // dsh-tui 设置入口：/settings 的「常规」页一节，只暴露 settings 文档里的模块总开关。
+  registerTuiSettingsSection(ctx, NS)
 
   // dsh-tui 命令入口：/prompt-tool 查看或切换开关。
 registerTuiCommand(

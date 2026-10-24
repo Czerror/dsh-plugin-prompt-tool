@@ -113,6 +113,48 @@ export type SaveModuleParam = (moduleId: string, key: string, value: unknown) =>
 /** 技能启停回调：切换受管实体的根链接。 */
 export type ToggleSkillState = (folder: string, enabled: boolean) => { ok: boolean; message?: string }
 
+/** dsh-tui 设置区块（接缝六）的最小声明形状：渲染、草稿与 revision 栅栏写入都由宿主负责。 */
+interface TuiSettingsSectionDeclaration {
+  ns: string
+  title: string
+  descriptions?: { zh?: string }
+  fields: readonly {
+    path: readonly string[]
+    label: string
+    descriptions?: { zh?: string }
+    kind: 'boolean'
+  }[]
+}
+
+interface TuiSettingsSectionsLike {
+  register(section: TuiSettingsSectionDeclaration): () => void
+}
+
+/**
+ * dsh-tui 接缝六的注册方式：inject 等 'tuiSettingsSections'，register 返回的
+ * disposer 挂在注入子 fiber 上——服务重挂时旧注册先撤销，避免同 ns 重复注册。
+ * 形状对齐冻结的官方 TuiSettingsSection；不引 TUI 包，Web/headless profile 不受影响。
+ * 区块只覆盖 settings 文档里的模块总开关，模块参数/规则/技能仍走 /prompt-tool。
+ */
+export function registerTuiSettingsSection(ctx: Context, ns: 'prompt-tool'): void {
+  const host = ctx as unknown as {
+    inject(deps: readonly string[], callback: (child: Context & { tuiSettingsSections: TuiSettingsSectionsLike }) => void): unknown
+  }
+  host.inject(['tuiSettingsSections'], (sctx) => {
+    sctx.effect(() => sctx.tuiSettingsSections.register({
+      ns,
+      title: 'Prompt tool',
+      descriptions: { zh: '提示词工具' },
+      fields: [{
+        path: ['modulesEnabled'],
+        label: 'Modules enabled',
+        descriptions: { zh: '启用模块' },
+        kind: 'boolean',
+      }],
+    }))
+  })
+}
+
 /** 通过 DSH 命令注册表暴露 /prompt-tool，Web 与 dsh-tui 都能执行。 */
 export function registerTuiCommand(
   ctx: Context,
