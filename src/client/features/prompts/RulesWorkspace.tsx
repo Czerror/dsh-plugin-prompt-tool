@@ -11,7 +11,7 @@ import { useModuleConfigOrder } from '../../data/use-module-config-order.ts'
 import { reorderToView, sameConfigPosition } from '../../data/prompt-config-order.ts'
 import { hasRuleFields, rulesDirty } from '../../data/rule-drafts.ts'
 import { instructionFileIdOf } from '../../data/prompt-config-content.ts'
-import { ruleFacts, ruleVisibleTo, type RuleFacts } from '../../data/rule-facts.ts'
+import { factsVisibleTo, ruleFacts, ruleVisibleTo } from '../../data/rule-facts.ts'
 import type { LayerCardView } from '../../data/layer-cards.ts'
 import type { PromptConfigDraft } from '../../prompt-tool-types.ts'
 import type { PromptToolTranslate } from '../../locales.ts'
@@ -57,8 +57,7 @@ export interface RulesWorkspaceProps {
 export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
   const { store, t } = props, fields = usePromptToolFields(store, value => value)
   const scope = props.scope ?? 'main'
-  /** 受众可见性：未知/空受众两个页面都显示；其余由共享 ruleFacts 决定。 */
-  const visible = (facts: RuleFacts): boolean => facts.audiences === undefined || facts.audiences.has(scope)
+
   const [expanded, setExpanded] = useState<string | undefined>(props.browse?.expanded)
   const [filter, setFilter] = useState(props.browse?.filter ?? '')
   // 卡片准入的第一优先级是存储根 config.yml 的启用表：未启用的模块不建编辑器、不读 rules/*.yml。
@@ -102,7 +101,7 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
     key: configIdentityKey({ moduleId: owner.moduleId, configId: entry.key }),
     identity: configIdentityKey({ moduleId: owner.moduleId, configId: entry.previousId ?? entry.value.id }),
     facts: ruleFacts(entry.value),
-  }))).filter(({ entry, key, facts }) => !entry.deleted && (expanded === key || visible(facts)))
+  }))).filter(({ entry, key, facts }) => !entry.deleted && (expanded === key || factsVisibleTo(facts, scope)))
     .filter(({ entry, moduleId: id, key, facts }) => expanded === key || (view === 'all' || view === 'context-activation' && facts.contextActivation || entry.value.layer === view)
       && (!query || JSON.stringify(entry.value).toLowerCase().includes(query) || entry.value.layer !== undefined && props.layerCards?.(entry.value.layer, id)?.some((card) => card.searchText.includes(query))))
     .sort((a, b) => (rank.get(a.identity) ?? Number.MAX_SAFE_INTEGER) - (rank.get(b.identity) ?? Number.MAX_SAFE_INTEGER))

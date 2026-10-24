@@ -11,12 +11,11 @@ import { ACTION_EXAMPLES } from './actions/examples.mjs'
 import { PREDICATE_EXAMPLES } from './conditions/examples.mjs'
 import { conjunction, expandActions } from './branch.mjs'
 import { identityOf, textRegistrationName } from './delivery.mjs'
-import { AUDIENCE_ALL, audienceOf } from './audience.mjs'
-export { audienceOf }
+import { AUDIENCE_ALL, audienceOf, intersectAudiences } from './audience.mjs'
+import { record } from './record.mjs'
 
 /** 规则字段：只有 `if`/`then`/`else`；旧名 `when`/`do` 留在名单里，只为把 unknown fields 换成一句「已退役，改用 X」。 */
 const RULE_FIELDS = new Set(['id', 'name', 'enabled', 'layer', 'group', 'exclusive', 'if', 'then', 'else', 'when', 'do'])
-const record = value => value !== null && typeof value === 'object' && !Array.isArray(value)
 const nonempty = value => typeof value === 'string' && value.trim().length > 0
 
 /** `prepend` 退役文案（动作层与 `inject-text.config` 共用）：等价档只有「注册到最外层」一档，而 `inject-text` 连它也不接受。 */
@@ -210,7 +209,7 @@ export function actionAudiences(rule, actionId) {
   if (when === undefined && own === undefined) return new Set(AUDIENCE_ALL)
   if (when === undefined) return new Set(own)
   if (own === undefined) return new Set(when)
-  return new Set([...when].filter((audience) => own.has(audience)))
+  return intersectAudiences(when, own)
 }
 
 export function ruleActionExecution(action) {

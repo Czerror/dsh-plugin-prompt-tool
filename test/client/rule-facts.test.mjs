@@ -42,7 +42,6 @@ const rulesDraft = (id) => ({
 
 test('受众可见性：else / not / 空集 / 未知受众 / 动作目标', () => {
   const action = { id: 't', kind: 'tool-gate', decision: 'allow' }
-  const targetAction = { id: 'target', kind: 'inject-text', config: { layer: 'system-section', audience: 'main', text: 'TARGET' } }
   const cases = [
     {
       id: 'else-rule',
@@ -64,12 +63,6 @@ test('受众可见性：else / not / 空集 / 未知受众 / 动作目标', () =
       id: 'unknown-rule',
       value: { id: 'unknown-rule', name: 'unknown-rule', layer: 'tool-pipeline', if: { any: [{ scope: { audience: 'main' } }, { anchor: {} }] }, then: [action] },
       visible: { main: true, subagent: true },
-    },
-    {
-      id: 'target-rule',
-      value: { id: 'target-rule', name: 'target-rule', layer: 'system-section', then: [targetAction] },
-      visible: { main: true, subagent: false },
-      note: '动作级 audience 参与收窄',
     },
   ]
   for (const item of cases) {

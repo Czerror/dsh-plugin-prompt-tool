@@ -92,8 +92,7 @@ export function compileRules(specs: readonly unknown[], options?: CompileRulesOp
 /** 该受众下独占的 `complete` 系统段，身份是 `rule.id/action.id`。 */
 export function completeRuleSections(rules: readonly unknown[], audience: RuleAudience): string[]
 
-/** 受众事实的签名只声明在 audience.d.mts；这里只做 rule-spec 的公开转出口。 */
-export { audienceOf } from './audience.mjs'
+
 
 /** 动作级受众事实：规则级 when 与动作级 conditions 的合取；else 动作（bypassRuleWhen）只读动作条件。 */
 export function actionAudiences(rule: unknown, actionId: string): Set<RuleAudience>

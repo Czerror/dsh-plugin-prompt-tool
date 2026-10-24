@@ -20,8 +20,12 @@ export function ruleFacts(rule: RuleDefinition): RuleFacts {
     : facts
 }
 
-/** 页面表达可见性：未知或空受众按两个页面都显示。 */
-export function ruleVisibleTo(rule: RuleDefinition, audience: 'main' | 'subagent'): boolean {
-  const facts = ruleFacts(rule)
+/** RuleFacts 上的唯一可见性判据：未知或空受众按两个页面都显示。 */
+export function factsVisibleTo(facts: RuleFacts, audience: 'main' | 'subagent'): boolean {
   return facts.audiences === undefined || facts.audiences.has(audience)
+}
+
+/** 页面按规则表达可见性；内部复用 factsVisibleTo，避免同一判据两份。 */
+export function ruleVisibleTo(rule: RuleDefinition, audience: 'main' | 'subagent'): boolean {
+  return factsVisibleTo(ruleFacts(rule), audience)
 }

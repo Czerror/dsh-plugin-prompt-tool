@@ -10,7 +10,8 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 
 import { COMPOSITE_OPERATORS } from '../../engine/conditions/index.mjs'
-import { actionAudiences, audienceOf, compileRules } from '../../engine/rule-spec.mjs'
+import { audienceOf } from '../../engine/audience.mjs'
+import { actionAudiences, compileRules } from '../../engine/rule-spec.mjs'
 import { ruleFacts } from '../../engine/rule-facts.mjs'
 
 const set = (...values) => new Set(values)
@@ -144,7 +145,7 @@ test('ruleFacts：受众并集覆盖 then/else、not/notAny、目标与嵌套空
     },
     {
       name: '动作目标',
-      rule: { id: 'r', then: [{ id: 't', kind: 'inject-text', config: { layer: 'system-section', audience: 'main', text: 'x' } }] },
+      rule: { id: 'r', then: [{ id: 't', kind: 'inject-text', config: { layer: 'system-section', audience: 'main', params: { complete: true }, text: 'x' } }] },
       expected: set('main'),
     },
     {
@@ -156,6 +157,8 @@ test('ruleFacts：受众并集覆盖 then/else、not/notAny、目标与嵌套空
   for (const { name, rule, expected } of cases) {
     assert.deepEqual(ruleFacts(rule).audiences, expected, name)
   }
+  const target = cases.find(item => item.name === '动作目标').rule
+  assert.doesNotThrow(() => compileRules([target]), '动作目标夹具必须是 compileRules 接受的合法规则')
 })
 
 test('ruleFacts：未知算子、未知收窄与空动作按保守方向返回 undefined', () => {

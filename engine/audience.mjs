@@ -10,6 +10,13 @@ import { record } from './record.mjs'
 /** 全部受众；rule-spec 的 action 回退与 audienceInfo 共用这一份。 */
 export const AUDIENCE_ALL = Object.freeze(['main', 'subagent'])
 
+/** 两个受众集合求交；undefined = 无法收窄，取交集时让位于已知集合。 */
+export function intersectAudiences(left, right) {
+  if (left === undefined) return right
+  if (right === undefined) return left
+  return new Set([...left].filter(audience => right.has(audience)))
+}
+
 /**
  * 条件树 → 受众上下界；`exact` 表示结果是否能安全取补。
  *
@@ -41,7 +48,7 @@ function audienceInfo(tree) {
             exact = false
             continue
           }
-          audiences = new Set([...audiences].filter((audience) => childInfo.audiences.has(audience)))
+          audiences = intersectAudiences(audiences, childInfo.audiences)
           if (!childInfo.exact) exact = false
         }
         return { audiences, exact }

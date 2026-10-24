@@ -32,17 +32,23 @@ function walkActions(list, { outer = [], bypass = false, lenient = false, label 
   for (const [index, node] of list.entries()) {
     const at = `${label}[${index}]`
     if (isBranchNode(node)) {
-      if (lenient) {
-        const { then: thenOuter, else: elseOuter } = branchOuters(node, outer)
-        if (Array.isArray(node.then)) out.push(...walkActions(node.then, { outer: thenOuter, bypass, lenient: true }))
-        if (Array.isArray(node.else)) out.push(...walkActions(node.else, { outer: elseOuter, bypass, lenient: true }))
-        continue
+      if (!lenient) {
+        if (node.if === undefined) throw new TypeError(`${at}: a branch needs if`)
+        if (node.then === undefined) throw new TypeError(`${at}: a branch needs then`)
       }
-      if (node.if === undefined) throw new TypeError(`${at}: a branch needs if`)
-      if (node.then === undefined) throw new TypeError(`${at}: a branch needs then`)
       const { then: thenOuter, else: elseOuter } = branchOuters(node, outer)
-      out.push(...walkActions(node.then, { outer: thenOuter, bypass, lenient: false, label: `${at}.then` }))
-      if (node.else !== undefined) out.push(...walkActions(node.else, { outer: elseOuter, bypass, lenient: false, label: `${at}.else` }))
+      if (lenient ? Array.isArray(node.then) : true) {
+        out.push(...walkActions(node.then, {
+          outer: thenOuter, bypass, lenient,
+          ...(lenient ? {} : { label: `${at}.then` }),
+        }))
+      }
+      if (lenient ? Array.isArray(node.else) : node.else !== undefined) {
+        out.push(...walkActions(node.else, {
+          outer: elseOuter, bypass, lenient,
+          ...(lenient ? {} : { label: `${at}.else` }),
+        }))
+      }
       continue
     }
     if (lenient) {
