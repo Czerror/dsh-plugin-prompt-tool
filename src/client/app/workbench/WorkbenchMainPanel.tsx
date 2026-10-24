@@ -1,32 +1,26 @@
-import { useState, type ReactNode } from 'react'
+import { useLayoutEffect, type ReactNode } from 'react'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
-import type { PromptToolHostApi } from '../../data/host-api.ts'
-import type { PromptToolSettingsTransport } from '../../data/use-prompt-tool-store.ts'
-import { PromptWorkspace } from '../workspace/PromptWorkspace.tsx'
-import { PromptToolWorkspaceController } from './workspace-controller.ts'
-import css from './Workbench.module.css'
+import type { PromptToolWorkspaceController } from './workspace-controller.ts'
 
-/** Face the sidebar-entry panel needs from the workbench wiring; the translation comes from the slot locale. */
+/** Face the sidebar-entry redirect needs; the translation comes from the slot locale. */
 export interface WorkbenchMainPanelFace {
-  api: PromptToolHostApi
-  settings: PromptToolSettingsTransport
-  /** Close the main panel and return to the Conversation. */
+  /** 常驻的悬浮抽屉控制器：入口直接打开同一个工作台实例。 */
+  controller: PromptToolWorkspaceController
+  /** 回到对话（官方 selectPanel(null)）。 */
   closePanel: () => void
 }
 
 type WorkbenchMainPanelProps = PropsRuntime<'main'> & InjectFace<WorkbenchMainPanelFace> & PropsLocale<'prompt-tool'>
 
 /**
- * Main-column workbench page: the left sidebar's global panel entry selects this
- * key, so it reuses the drawer's workspace instead of a second implementation.
- * The drawer's controller is not reused or opened — the page states its own
- * display state through `active`, so no fake drawer-open state is needed.
+ * 左侧栏入口不是独立主面板：它打开常驻的悬浮抽屉（同一工作台实例）并立即回到
+ * 对话，在绘制前完成。这样从工作台返回只是关闭抽屉，不切换 main，也不会重建
+ * 对话或工作台——独立主面板会在每次切换时整树卸载/重建，正是卡顿的来源。
  */
-export function WorkbenchMainPanel({ api, settings, closePanel, t }: WorkbenchMainPanelProps): ReactNode {
-  const [controller] = useState(() => new PromptToolWorkspaceController())
-  return (
-    <div className={css.mainPanel} data-dsh-plugin="prompt-tool" data-dsh-part="main-panel">
-      <PromptWorkspace api={api} settings={settings} controller={controller} t={t} active onClose={closePanel} />
-    </div>
-  )
+export function WorkbenchMainPanel({ controller, closePanel }: WorkbenchMainPanelProps): ReactNode {
+  useLayoutEffect(() => {
+    controller.open()
+    closePanel()
+  }, [controller, closePanel])
+  return null
 }

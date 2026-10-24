@@ -3,9 +3,9 @@ import type { PromptToolSettingsTransport } from '../../data/use-prompt-tool-sto
 import type { PromptToolTranslate } from '../../locales.ts'
 import type { PromptToolWorkspaceController } from './workspace-controller.ts'
 
-/** 悬浮入口（shell.overlay）、右侧栏 tab 与 settings.plugins.tab 共享的稳定注入面。 */
+/** 悬浮入口、左侧栏重定向入口与抽屉共享的稳定注入面。 */
 export interface PromptToolWorkbenchFace {
-  /** 悬浮入口抽屉的开关；右侧栏 tab 入口不使用。 */
+  /** 常驻抽屉的开关：两个入口都打开同一个工作台实例。 */
   controller: PromptToolWorkspaceController
   api: PromptToolHostApi
   settings: PromptToolSettingsTransport

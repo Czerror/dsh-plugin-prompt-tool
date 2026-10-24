@@ -258,7 +258,7 @@ CSS 构建模块只收集样式数据；`styles.ts` 在入口 `ctx.effect` 中�
 |---|---|---|---|---|
 | shell.overlay | prompt-tool-workbench | order 50 | WorkbenchOverlay | 可拖动悬浮触发器 + body portal 抽屉 |
 | sidebar.panellist | prompt-tool | order 60 | WorkbenchSidebarIcon | 左侧栏导航入口（官方 Global panel entries，与「插件」「自动化任务」「记忆系统」同一列表） |
-| main | prompt-tool | — | WorkbenchMainPanel | 同 key 主面板：选中侧栏入口时渲染工作台（`active` 驱动加载，不借用抽屉 controller） |
+| main | prompt-tool | — | WorkbenchMainPanel | 同 key 主面板：重定向入口——选中即打开常驻悬浮抽屉并回对话（不渲染第二份工作台） |
 
 slot 使用 ctx.slots.inject() 等待官方槽位声明，再调用 ctx.slots.register()；注册随注入声明生命周期由 Cordis 回收（register-workbench.tsx 的组合 disposer 目前未使用）。侧栏入口按官方 Global panel entries 成对注册：`sidebar.panellist` 的 `id` 与 `main` 的 `key` 同为 `prompt-tool`，缺一不可（选中没有 main 的 key 会抛错）。不要改变 id/key 或 inject face 的形状。宿主设置面板的 `settings.plugins.tab` 分区已移除：模块运行总闸只在工作台模块页设置（`modules.globalSwitch`）。
 
@@ -275,7 +275,7 @@ slot 使用 ctx.slots.inject() 等待官方槽位声明，再调用 ctx.slots.re
 
 ### 4.3 入口与关闭行为
 
-- 左侧栏 `sidebar.panellist` + `main` 是官方 Global panel entries：点击导航项后主区渲染工作台，面板内关闭调 `ctx.layout.selectPanel(null)` 回对话。主面板通过 `PromptWorkspace` 的 `active` 显式表达展示状态，不借用抽屉 controller 的 open 状态；抽屉仍用自己的 controller。
+- 左侧栏 `sidebar.panellist` + `main` 是官方 Global panel entries：主面板是**重定向入口**——挂载时在绘制前打开常驻悬浮抽屉并调 `ctx.layout.selectPanel(null)` 回对话。工作台实例只有抽屉里那一份，因此从工作台返回只是关闭抽屉：不切换 main、不重建对话，也不重建工作台。官方按 key 切换 main 会整树卸载/重建面板，独立主面板正是卡顿来源。
 - `shell.overlay` 注册可拖动悬浮触发器：位置是纯客户端界面偏好（localStorage，`floating-trigger-position.ts`），窗口尺寸变化时按实际按钮尺寸夹回可见区；不读宿主 DOM 几何。
 - 拖动与单击以 4px 位移阈值区分：拖动结束吞掉尾随 click，单击与键盘仍开合；触发器打开 body portal 抽屉，抽屉与触发器分别用 fixed + z-index 1000 / 1100 置顶，不被宿主「对话/轨迹」顶部导航栏遮挡。
 - 关闭支持 Escape、点击背板与按钮切换，焦点在触发器与抽屉之间转移；抽屉打开时触发 PromptWorkspace.store.load()，关闭保留实例状态。
@@ -302,7 +302,7 @@ slot 使用 ctx.slots.inject() 等待官方槽位声明，再调用 ctx.slots.re
           └─ 模块
 
     左侧栏入口（sidebar.panellist「提示词工具」）
-      └─ 主区工作台页（main，关闭回对话）
+      └─ 同一悬浮抽屉（main 重定向：打开抽屉并回对话，无第二份工作台）
 
 模块运行总闸位于模块页，不另设 settings tab。完整工作台由 PromptWorkspace 创建 store、保存当前页，并在打开时触发一次 load；WorkspaceFrame 负责公共 header、导航、canvas、loading 和 notice。工作台只决定**参与装配**的集合，不保留单一「当前模块」目标；模块内容按卡片归属编辑（见 §7.1.1）。
 

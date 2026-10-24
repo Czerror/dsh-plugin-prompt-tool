@@ -15,8 +15,8 @@ export const WORKBENCH_PANEL_ID = PROMPT_TOOL_NS as MainPanelId
 /**
  * 注册官方槽位：
  * - shell.overlay：可拖动悬浮触发器 + body portal 抽屉（浮层入口）；
- * - sidebar.panellist + 同 key 的 main：左侧栏导航入口，选中时主区渲染工作台
- *   （官方 Global panel entries，与「插件」「自动化任务」「记忆系统」同一列表）。
+ * - sidebar.panellist + 同 key 的 main：左侧栏导航入口，选中即打开悬浮抽屉并回到
+ *   对话（官方 Global panel entries 要求成对注册，工作台只保留抽屉一个实例）。
  *
  * 入口位置由插件自己的位置偏好与视口夹取决定；不读宿主布局树。
  */
@@ -30,7 +30,7 @@ export function registerWorkbenchSlots(ctx: ClientContext, face: PromptToolWorkb
     const disposeMain = ctx.slots.register({
       name: 'main', key: WORKBENCH_PANEL_ID,
       locale: PROMPT_TOOL_NS,
-      inject: () => ({ api: face.api, settings: face.settings, closePanel: () => ctx.layout.selectPanel(null) }),
+      inject: () => ({ controller: face.controller, closePanel: () => ctx.layout.selectPanel(null) }),
     }, WorkbenchMainPanel)
     let disposeIcon: () => void
     try {

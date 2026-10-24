@@ -41,10 +41,9 @@ test('侧栏入口：按官方 Global panel entries 成对注册 main 与 sideba
   assert.equal(icon.options.locale, 'prompt-tool')
   assert.equal(icon.options.label(), 't:app.title')
 
-  // 主面板注入抽屉同一份 api/settings；关闭走官方 selectPanel(null) 回对话。
+  // 主面板是重定向：持有常驻抽屉 controller，关闭走官方 selectPanel(null) 回对话。
   const injected = main.options.inject()
-  assert.equal(injected.api, face.api)
-  assert.equal(injected.settings, face.settings)
+  assert.equal(injected.controller, face.controller)
   injected.closePanel()
   assert.deepEqual(fake.selections, [null])
 
