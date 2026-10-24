@@ -1,5 +1,5 @@
 /**
- * raw 规则的只读展示事实：受众与 context activation。
+ * raw 规则的规则事实（只读）：受众与 context activation。
  *
  * 这是 client 对 `engine/rule-facts.mjs` 的 typed 适配面；`features` 不直接 import engine。
  * 不引入 React、不持有状态、不参与执行门控。
@@ -18,4 +18,10 @@ export function ruleFacts(rule: RuleDefinition): RuleFacts {
   return facts.audiences !== undefined && facts.audiences.size === 0
     ? { ...facts, audiences: undefined }
     : facts
+}
+
+/** 页面表达可见性：未知或空受众按两个页面都显示。 */
+export function ruleVisibleTo(rule: RuleDefinition, audience: 'main' | 'subagent'): boolean {
+  const facts = ruleFacts(rule)
+  return facts.audiences === undefined || facts.audiences.has(audience)
 }

@@ -5,11 +5,10 @@
  * 返回值 undefined = 无法静态收窄，由调用方按保守方向处理。
  */
 import { COMPOSITE_OPERATORS } from './conditions/operators.mjs'
+import { record } from './record.mjs'
 
-const record = value => value !== null && typeof value === 'object' && !Array.isArray(value)
-
-/** 全部受众；只在本模块内部使用，避免把常量扩成第二个公共接口。 */
-const AUDIENCE_ALL = Object.freeze(['main', 'subagent'])
+/** 全部受众；rule-spec 的 action 回退与 audienceInfo 共用这一份。 */
+export const AUDIENCE_ALL = Object.freeze(['main', 'subagent'])
 
 /**
  * 条件树 → 受众上下界；`exact` 表示结果是否能安全取补。

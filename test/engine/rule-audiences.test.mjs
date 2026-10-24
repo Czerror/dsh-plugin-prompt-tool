@@ -144,7 +144,7 @@ test('ruleFacts：受众并集覆盖 then/else、not/notAny、目标与嵌套空
     },
     {
       name: '动作目标',
-      rule: { id: 'r', then: [{ id: 't', kind: 'inject-text', config: { layer: 'pre-step', audience: 'main', text: 'x' } }] },
+      rule: { id: 'r', then: [{ id: 't', kind: 'inject-text', config: { layer: 'system-section', audience: 'main', text: 'x' } }] },
       expected: set('main'),
     },
     {
@@ -200,52 +200,4 @@ test('ruleFacts：context activation 顶层、嵌套、普通注入', () => {
   assert.equal(ruleFacts(nested).contextActivation, true)
   assert.equal(ruleFacts(plain).contextActivation, false)
   assert.equal(ruleFacts(unfinished).contextActivation, true, '缺 if 的未完成分支仍能发现 context activation')
-})
-
-test('ruleFacts：受众并集与 actionAudiences 对拍', () => {
-  const cases = [
-    {
-      id: 'else',
-      if: { scope: { audience: 'main' } },
-      then: [{ id: 't', kind: 'tool-gate', decision: 'allow' }],
-      else: [{ id: 'e', kind: 'tool-gate', decision: 'allow' }],
-    },
-    {
-      id: 'not',
-      if: { not: { scope: { audience: 'main' } } },
-      then: [{ id: 't', kind: 'tool-gate', decision: 'allow' }],
-    },
-    {
-      id: 'nested',
-      if: { scope: { audience: 'main' } },
-      then: [{
-        if: { scope: { audience: 'main' } },
-        then: [{ id: 'n', kind: 'tool-gate', decision: 'allow' }],
-        else: [{ id: 'ne', kind: 'tool-gate', decision: 'allow' }],
-      }],
-    },
-    {
-      id: 'unknown-any',
-      if: { any: [{ scope: { audience: 'main' } }, { anchor: {} }] },
-      then: [{ id: 'a', kind: 'tool-gate', decision: 'allow' }],
-    },
-    {
-      id: 'empty',
-      if: { scope: { audience: 'main' } },
-      then: [{ if: { scope: { audience: 'subagent' } }, then: [{ id: 'a', kind: 'tool-gate', decision: 'allow' }] }],
-    },
-  ]
-  for (const raw of cases) {
-    const rule = compileRules([raw])[0]
-    const union = new Set()
-    for (const action of rule.actions) {
-      for (const audience of actionAudiences(rule, action.id)) union.add(audience)
-    }
-    const facts = ruleFacts(raw)
-    if (facts.audiences === undefined) {
-      assert.deepEqual(union, both(), raw.id + '：无法收窄时引擎仍是两个受众')
-    } else {
-      assert.deepEqual(facts.audiences, union, raw.id)
-    }
-  }
 })

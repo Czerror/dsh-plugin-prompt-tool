@@ -11,11 +11,8 @@ import { ACTION_EXAMPLES } from './actions/examples.mjs'
 import { PREDICATE_EXAMPLES } from './conditions/examples.mjs'
 import { conjunction, expandActions } from './branch.mjs'
 import { identityOf, textRegistrationName } from './delivery.mjs'
-import { audienceOf } from './audience.mjs'
+import { AUDIENCE_ALL, audienceOf } from './audience.mjs'
 export { audienceOf }
-
-/** 动作级事实的「两个受众」回退；与 RuleAudience 的取值同源，不扩大 audience 模块接口。 */
-const ALL_AUDIENCES = Object.freeze(['main', 'subagent'])
 
 /** 规则字段：只有 `if`/`then`/`else`；旧名 `when`/`do` 留在名单里，只为把 unknown fields 换成一句「已退役，改用 X」。 */
 const RULE_FIELDS = new Set(['id', 'name', 'enabled', 'layer', 'group', 'exclusive', 'if', 'then', 'else', 'when', 'do'])
@@ -207,10 +204,10 @@ export function completeRuleSections(rules, audience) {
 export function actionAudiences(rule, actionId) {
   const actions = Array.isArray(rule?.actions) ? rule.actions : []
   const action = actions.find((item) => record(item) && item.id === actionId)
-  if (action === undefined) return new Set(ALL_AUDIENCES)
+  if (action === undefined) return new Set(AUDIENCE_ALL)
   const own = audienceOf(action.conditions)
   const when = action.bypassRuleWhen === true ? undefined : audienceOf(rule?.conditionTrees?.when)
-  if (when === undefined && own === undefined) return new Set(ALL_AUDIENCES)
+  if (when === undefined && own === undefined) return new Set(AUDIENCE_ALL)
   if (when === undefined) return new Set(own)
   if (own === undefined) return new Set(when)
   return new Set([...when].filter((audience) => own.has(audience)))

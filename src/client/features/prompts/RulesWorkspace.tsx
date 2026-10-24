@@ -11,7 +11,7 @@ import { useModuleConfigOrder } from '../../data/use-module-config-order.ts'
 import { reorderToView, sameConfigPosition } from '../../data/prompt-config-order.ts'
 import { hasRuleFields, rulesDirty } from '../../data/rule-drafts.ts'
 import { instructionFileIdOf } from '../../data/prompt-config-content.ts'
-import { ruleFacts, type RuleFacts } from '../../data/rule-audience.ts'
+import { ruleFacts, ruleVisibleTo, type RuleFacts } from '../../data/rule-facts.ts'
 import type { LayerCardView } from '../../data/layer-cards.ts'
 import type { PromptConfigDraft } from '../../prompt-tool-types.ts'
 import type { PromptToolTranslate } from '../../locales.ts'
@@ -57,9 +57,8 @@ export interface RulesWorkspaceProps {
 export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
   const { store, t } = props, fields = usePromptToolFields(store, value => value)
   const scope = props.scope ?? 'main'
-  /** 受众可见性：未知受众两个页面都显示；其余由共享 ruleFacts 决定。 */
+  /** 受众可见性：未知/空受众两个页面都显示；其余由共享 ruleFacts 决定。 */
   const visible = (facts: RuleFacts): boolean => facts.audiences === undefined || facts.audiences.has(scope)
-  const visibleTo = (rule: RuleDefinition): boolean => visible(ruleFacts(rule))
   const [expanded, setExpanded] = useState<string | undefined>(props.browse?.expanded)
   const [filter, setFilter] = useState(props.browse?.filter ?? '')
   // 卡片准入的第一优先级是存储根 config.yml 的启用表：未启用的模块不建编辑器、不读 rules/*.yml。
@@ -110,7 +109,7 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
   const moduleSettings = enabledModules.flatMap(module => {
     const owner = owners.find(item => item.moduleId === module.id)
     if (moduleDeclares(store.meta.modules, module.id, 'rules') !== false && (!owner?.draft.loaded || owner.draft.error)) return []
-    const layers = new Set((owner?.draft.entries ?? []).filter(entry => !entry.deleted && visibleTo(entry.value))
+    const layers = new Set((owner?.draft.entries ?? []).filter(entry => !entry.deleted && ruleVisibleTo(entry.value, scope))
       .map(entry => entry.value.layer))
     const missing = MODULE_CAPABILITIES.filter(capability => isModuleCapabilityDeclared(capability.id, module.facts)
       && !layers.has(capability.displayLayer))

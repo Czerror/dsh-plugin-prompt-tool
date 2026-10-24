@@ -1,14 +1,13 @@
 /**
- * raw rule 的只读展示事实：可能受众 + 是否包含 context activation。
+ * raw rule 的规则事实（只读）：可能受众 + 是否包含 context activation。
  *
  * 只服务 UI/消费者，不参与执行、不替代 `rule-spec` 的编译与 `audienceOf` 的运行时判据。
  * 纯 ESM，无宿主 import；与 `expandActions` 同构地展开 then/else/嵌套分支，但不编译动作。
  */
 import { audienceOf } from './audience.mjs'
 import { conjunction, expandActionsLenient } from './branch.mjs'
+import { record } from './record.mjs'
 import { CONTEXT_ACTIVATION_STRATEGY } from './strategy-ids.mjs'
-
-const record = value => value !== null && typeof value === 'object' && !Array.isArray(value)
 
 function targetAudiences(action) {
   const raw = action.kind === 'inject-text'
@@ -30,7 +29,7 @@ function hasContextActivation(expanded) {
 }
 
 /**
- * 一条 raw rule 的展示事实。
+ * 一条 raw rule 的规则事实。
  *
  * `audiences` 是 then/else/嵌套分支动作可能受众的并集；任一动作无法收窄则整体
  * `undefined`（调用方按两个受众处理）。没有动作时回退到规则级 `if`，让正在编辑的

@@ -5,7 +5,7 @@
  * （`rule-facts.mjs`），两者共用 `isBranchNode` / `conjunction` 的分支语义。
  */
 
-const record = value => value !== null && typeof value === 'object' && !Array.isArray(value)
+import { record } from './record.mjs'
 
 /** 分支节点：占动作位、没有 `kind`，但带 `if`/`then`/`else` 之一。 */
 export const isBranchNode = node => record(node) && node.kind === undefined
@@ -17,6 +17,12 @@ export function conjunction(conditions) {
   return conditions.length === 1 ? conditions[0] : { all: [...conditions] }
 }
 
+/** 分支两支的 outer 条件：then 追加 if，else 追加 not(if)；缺 if 时保留父条件。 */
+const branchOuters = (node, outer) => ({
+  then: node.if === undefined ? outer : [...outer, node.if],
+  else: node.if === undefined ? outer : [...outer, { not: node.if }],
+})
+
 function walkActions(list, { outer = [], bypass = false, lenient = false, label } = {}) {
   if (!Array.isArray(list)) {
     if (!lenient) throw new TypeError(`${label} must be an array`)
@@ -27,16 +33,16 @@ function walkActions(list, { outer = [], bypass = false, lenient = false, label 
     const at = `${label}[${index}]`
     if (isBranchNode(node)) {
       if (lenient) {
-        const thenOuter = node.if === undefined ? outer : [...outer, node.if]
+        const { then: thenOuter, else: elseOuter } = branchOuters(node, outer)
         if (Array.isArray(node.then)) out.push(...walkActions(node.then, { outer: thenOuter, bypass, lenient: true }))
-        const elseOuter = node.if === undefined ? outer : [...outer, { not: node.if }]
         if (Array.isArray(node.else)) out.push(...walkActions(node.else, { outer: elseOuter, bypass, lenient: true }))
         continue
       }
       if (node.if === undefined) throw new TypeError(`${at}: a branch needs if`)
       if (node.then === undefined) throw new TypeError(`${at}: a branch needs then`)
-      out.push(...walkActions(node.then, { outer: [...outer, node.if], bypass, lenient: false, label: `${at}.then` }))
-      if (node.else !== undefined) out.push(...walkActions(node.else, { outer: [...outer, { not: node.if }], bypass, lenient: false, label: `${at}.else` }))
+      const { then: thenOuter, else: elseOuter } = branchOuters(node, outer)
+      out.push(...walkActions(node.then, { outer: thenOuter, bypass, lenient: false, label: `${at}.then` }))
+      if (node.else !== undefined) out.push(...walkActions(node.else, { outer: elseOuter, bypass, lenient: false, label: `${at}.else` }))
       continue
     }
     if (lenient) {
