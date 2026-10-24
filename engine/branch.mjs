@@ -1,7 +1,8 @@
 /**
  * 分支语法的唯一展开器：只认 `if`/`then`/`else`，旧名 `when`/`do` 由各入口显式拒绝。
  *
- * 只服务规则编译（`rule-spec.mjs`）：分支的展开语义在这里唯一实现。
+ * 严格版服务规则编译（`rule-spec.mjs`）；宽松版 `expandActionsLenient` 只服务展示投影
+ * （`rule-facts.mjs`），两者共用 `isBranchNode` / `conjunction` 的分支语义。
  */
 
 const record = value => value !== null && typeof value === 'object' && !Array.isArray(value)
@@ -40,6 +41,29 @@ export function expandActions(list, options = {}, label) {
       continue
     }
     out.push({ node, conditions: outer, bypass })
+  }
+  return out
+}
+
+/**
+ * 宽松展开：只服务展示投影（`rule-facts.mjs`）。
+ *
+ * 与 `expandActions` 共享分支节点判据，但遇到未完成的分支（缺 `if`/`then`）不抛错：
+ * 有 `then`/`else` 数组就继续下钻；缺 `if` 时两支都按父条件展开（保守，不伪造否定）。
+ */
+export function expandActionsLenient(list, options = {}) {
+  const { outer = [], bypass = false } = options
+  const out = []
+  if (!Array.isArray(list)) return out
+  for (const node of list) {
+    if (isBranchNode(node)) {
+      const thenOuter = node.if === undefined ? outer : [...outer, node.if]
+      if (Array.isArray(node.then)) out.push(...expandActionsLenient(node.then, { outer: thenOuter, bypass }))
+      const elseOuter = node.if === undefined ? outer : [...outer, { not: node.if }]
+      if (Array.isArray(node.else)) out.push(...expandActionsLenient(node.else, { outer: elseOuter, bypass }))
+      continue
+    }
+    if (record(node) && typeof node.kind === 'string') out.push({ node, conditions: outer, bypass })
   }
   return out
 }

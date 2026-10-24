@@ -11,6 +11,7 @@ import { bindResolver } from './strategies.mjs'
 import { compareConfigSequence } from './order.mjs'
 import { SUBJECT_FIELDS } from './condition-facts.mjs'
 import { pluginKind, pluginOwner } from './source-kind.mjs'
+import { CONTEXT_ACTIVATION_STRATEGY } from './strategy-ids.mjs'
 
 const name = 'rule-engine'
 
@@ -70,7 +71,7 @@ function loadTemplate(file, baseUrl = import.meta.url, presetRootUrl) {
   return { text: raw }
 }
 
-export const KNOWN_STRATEGIES = new Set(['static', 'placeholder', 'context-activation'])
+export const KNOWN_STRATEGIES = new Set(['static', 'placeholder', CONTEXT_ACTIVATION_STRATEGY])
 /**
  * 策略 × 层支持矩阵：`config.resolve` 只在 pre-step（executor）与 runtime-context 的
  * placeholder（layers）被消费，其他层声明非 static 策略会绑定 resolver 却无人调用，
@@ -80,7 +81,7 @@ export const KNOWN_STRATEGIES = new Set(['static', 'placeholder', 'context-activ
 export const STRATEGY_LAYER_SUPPORT = {
   static: null,
   placeholder: ['pre-step', 'runtime-context'],
-  'context-activation': ['pre-step'],
+  [CONTEXT_ACTIVATION_STRATEGY]: ['pre-step'],
 }
 /** 模板专属策略允许的层：resolver 同样只在 pre-step / runtime-context 被调用。 */
 const TEMPLATE_STRATEGY_LAYERS = ['pre-step', 'runtime-context']
@@ -421,8 +422,8 @@ function validateActivation(params, strategy, label) {
     if (Object.hasOwn(params, key)) throw new TypeError(`${label}.params.${key} is retired; reimport or explicitly convert to native context/template fields`)
   }
   if (params.templateEvaluation !== undefined && typeof params.templateEvaluation !== 'boolean') throw new TypeError(`${label}.params.templateEvaluation must be boolean`)
-  if (strategy !== 'context-activation') {
-    if (params.activation !== undefined) throw new TypeError(`${label}.params.activation requires strategy context-activation`)
+  if (strategy !== CONTEXT_ACTIVATION_STRATEGY) {
+    if (params.activation !== undefined) throw new TypeError(`${label}.params.activation requires strategy ${CONTEXT_ACTIVATION_STRATEGY}`)
     return
   }
   const activation = params.activation

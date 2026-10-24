@@ -4,6 +4,8 @@
  * 这里不复用插件侧类型（声明文件与 `.mjs` 同目录，`src/` 不在引擎的类型解析面内），
  * 只用结构等价的本地形状；被消费的字段与 `engine/rule-spec.mjs` 的产物逐名对应。
  */
+import type { RuleAudience } from './audience.mjs'
+export type { RuleAudience }
 
 /** 编译后的动作；仅覆盖插件依赖面（装配侧只读 id/kind/channelOrder/waterfallPosition/compiledConfig）。 */
 export interface CompiledRuleAction {
@@ -87,16 +89,11 @@ export function assertRuleId(id: unknown): void
 
 export function compileRules(specs: readonly unknown[], options?: CompileRulesOptions): CompiledRule[]
 
-export type RuleAudience = 'main' | 'subagent'
-
 /** 该受众下独占的 `complete` 系统段，身份是 `rule.id/action.id`。 */
 export function completeRuleSections(rules: readonly unknown[], audience: RuleAudience): string[]
 
-/**
- * 条件树 → 受众事实；`undefined` = 无法静态收窄。
- * 算子集合与 `compileWhen` / `composite` 同源（`COMPOSITE_OPERATORS`）。
- */
-export function audienceOf(tree: unknown): Set<RuleAudience> | undefined
+/** 受众事实的签名只声明在 audience.d.mts；这里只做 rule-spec 的公开转出口。 */
+export { audienceOf } from './audience.mjs'
 
 /** 动作级受众事实：规则级 when 与动作级 conditions 的合取；else 动作（bypassRuleWhen）只读动作条件。 */
 export function actionAudiences(rule: unknown, actionId: string): Set<RuleAudience>

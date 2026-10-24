@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import type { RuleDefinition } from '../../../shared/rules.ts'
-import type { RuleAction } from '../../../shared/rules.ts'
 import { MODULE_CAPABILITIES, isModuleCapabilityDeclared } from '../../../shared/engine-capabilities.ts'
 import type { ModuleConfigOrderEntry } from '../../../shared/module-config-order.ts'
 import { configIdentityKey } from '../../../shared/module-config-order.ts'
@@ -12,6 +11,7 @@ import { useModuleConfigOrder } from '../../data/use-module-config-order.ts'
 import { reorderToView, sameConfigPosition } from '../../data/prompt-config-order.ts'
 import { hasRuleFields, rulesDirty } from '../../data/rule-drafts.ts'
 import { instructionFileIdOf } from '../../data/prompt-config-content.ts'
+import { ruleFacts, type RuleFacts } from '../../data/rule-audience.ts'
 import type { LayerCardView } from '../../data/layer-cards.ts'
 import type { PromptConfigDraft } from '../../prompt-tool-types.ts'
 import type { PromptToolTranslate } from '../../locales.ts'
@@ -52,30 +52,14 @@ export interface RulesWorkspaceProps {
   addingTarget?: boolean
 }
 
-function hasContextActivation(actions: RuleAction[]): boolean {
-  return actions.some(action => asTriggerRecord(action.config).strategy === 'context-activation'
-    || Array.isArray(action.then) && hasContextActivation(action.then as RuleAction[])
-    || Array.isArray(action.else) && hasContextActivation(action.else as RuleAction[]))
-}
-function scopeVisible(rule: RuleDefinition, scope: 'main' | 'subagent'): boolean {
-  const possible = (value: unknown): boolean => {
-    const condition = asTriggerRecord(value), selection = asTriggerRecord(condition.scope)
-    if (condition.scope !== undefined) return selection.audience == null || selection.audience === 'all' || selection.audience === scope
-    if (Array.isArray(condition.all)) return condition.all.every(possible)
-    if (Array.isArray(condition.any)) return condition.any.some(possible)
-    return true
-  }
-  if (!possible(rule.if)) return false
-  return rule.then.length === 0 || rule.then.some(action => {
-    const audience = action.kind === 'inject-text' ? asTriggerRecord(action.config).audience : action.audience
-    return audience == null || audience === 'all' || audience === scope
-  })
-}
-
 /** 两个受众页共用各模块规则草稿；排序只写身份，指令文件只走原文件通道。
  *  **没有「当前模块」**：每张规则卡的主语是它自己所属的模块（`owners` 的 moduleId）。 */
 export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
   const { store, t } = props, fields = usePromptToolFields(store, value => value)
+  const scope = props.scope ?? 'main'
+  /** 受众可见性：未知受众两个页面都显示；其余由共享 ruleFacts 决定。 */
+  const visible = (facts: RuleFacts): boolean => facts.audiences === undefined || facts.audiences.has(scope)
+  const visibleTo = (rule: RuleDefinition): boolean => visible(ruleFacts(rule))
   const [expanded, setExpanded] = useState<string | undefined>(props.browse?.expanded)
   const [filter, setFilter] = useState(props.browse?.filter ?? '')
   // 卡片准入的第一优先级是存储根 config.yml 的启用表：未启用的模块不建编辑器、不读 rules/*.yml。
@@ -118,14 +102,15 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
   const entries = owners.flatMap(owner => owner.draft.entries.map(entry => ({ ...owner, entry,
     key: configIdentityKey({ moduleId: owner.moduleId, configId: entry.key }),
     identity: configIdentityKey({ moduleId: owner.moduleId, configId: entry.previousId ?? entry.value.id }),
-  }))).filter(({ entry, key }) => !entry.deleted && (expanded === key || scopeVisible(entry.value, props.scope ?? 'main')))
-    .filter(({ entry, moduleId: id, key }) => expanded === key || (view === 'all' || view === 'context-activation' && hasContextActivation([...entry.value.then, ...entry.value.else ?? []]) || entry.value.layer === view)
+    facts: ruleFacts(entry.value),
+  }))).filter(({ entry, key, facts }) => !entry.deleted && (expanded === key || visible(facts)))
+    .filter(({ entry, moduleId: id, key, facts }) => expanded === key || (view === 'all' || view === 'context-activation' && facts.contextActivation || entry.value.layer === view)
       && (!query || JSON.stringify(entry.value).toLowerCase().includes(query) || entry.value.layer !== undefined && props.layerCards?.(entry.value.layer, id)?.some((card) => card.searchText.includes(query))))
     .sort((a, b) => (rank.get(a.identity) ?? Number.MAX_SAFE_INTEGER) - (rank.get(b.identity) ?? Number.MAX_SAFE_INTEGER))
   const moduleSettings = enabledModules.flatMap(module => {
     const owner = owners.find(item => item.moduleId === module.id)
     if (moduleDeclares(store.meta.modules, module.id, 'rules') !== false && (!owner?.draft.loaded || owner.draft.error)) return []
-    const layers = new Set((owner?.draft.entries ?? []).filter(entry => !entry.deleted && scopeVisible(entry.value, props.scope ?? 'main'))
+    const layers = new Set((owner?.draft.entries ?? []).filter(entry => !entry.deleted && visibleTo(entry.value))
       .map(entry => entry.value.layer))
     const missing = MODULE_CAPABILITIES.filter(capability => isModuleCapabilityDeclared(capability.id, module.facts)
       && !layers.has(capability.displayLayer))
@@ -177,7 +162,7 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
     store,
     t,
     items: props.createItems ?? [],
-    scope: props.scope ?? 'main',
+    scope,
     targets: writableModuleTargets(store.meta.modules).sort((a, b) => a.id.localeCompare(b.id)),
     existingIds: (store.meta.modules ?? []).map(module => module.id),
     onCreated: (moduleId, configKey) => setExpanded(configIdentityKey({ moduleId, configId: configKey })),
@@ -218,7 +203,7 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
     {props.createdHidden && <Button variant="outline" shape="pill" onClick={props.onShowCreated}>{t('rules.showCreated')}</Button>}
     {instructionCards}
     {props.beforeCards}
-    {moduleSettings.map(item => <div key={`module-settings-${props.scope ?? 'main'}-${item.moduleId}`} className={css.workspace} data-module-settings={item.moduleId}>{props.renderModuleSettings!(item.moduleId, item.layers)}</div>)}
+    {moduleSettings.map(item => <div key={`module-settings-${scope}-${item.moduleId}`} className={css.workspace} data-module-settings={item.moduleId}>{props.renderModuleSettings!(item.moduleId, item.layers)}</div>)}
     {entries.map(row => {
         const { entry, draft, editor, moduleId: id, key } = row
         const orderEntry = order.snapshot?.entries.find(item => configIdentityKey(item) === row.identity)

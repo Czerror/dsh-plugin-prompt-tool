@@ -1,6 +1,6 @@
 import { MATCH_LOGIC } from '../anchor-match.mjs'
 import { UNAVAILABLE } from './availability.mjs'
-const COMPOSITE_OPERATORS = Object.values(MATCH_LOGIC)
+import { COMPOSITE_OPERATORS } from './operators.mjs'
 
 export function composite(node) {
   if (typeof node === 'function') return node

@@ -10,6 +10,7 @@ import { createAnchorPredicate } from './anchor.mjs'
 import { createVariablePredicate } from './variable.mjs'
 import { withAvailableInput } from './availability.mjs'
 import { composite } from './composite.mjs'
+import { COMPOSITE_OPERATORS } from './operators.mjs'
 export * from './text.mjs'
 export * from './phase.mjs'
 export * from './source.mjs'
@@ -34,7 +35,7 @@ export const PREDICATE_FACTORIES = Object.freeze({
   anchor: createAnchorPredicate,
   variable: createVariablePredicate,
 })
-export const COMPOSITE_OPERATORS = Object.freeze(['any', 'all', 'not', 'notAny'])
+export { COMPOSITE_OPERATORS }
 
 const objectOrUndefined = (value, label) => {
   if (value === undefined || value === null) return undefined
