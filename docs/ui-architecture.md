@@ -50,7 +50,7 @@
 | index.ts | 声明 inject、构造宿主适配面、注册工作台 | app/workbench、data、shared | 具体页面、业务卡片、CSS 细节 |
 | app/ | Slot owner、工作台壳、页面组合 | features、data、ui、官方槽位类型与注入面 | host 内部实现、另一套导航/状态框架 |
 | features/ | 单一业务领域的视图、瞬时状态和领域 helper | data、ui、自己的 CSS | 其他 feature 的内部文件、slot 注册 |
-| data/ | bridge、Fields、store facade、保存与纯逻辑 | shared contract、React hooks（仅 hook 文件） | React 业务视图、feature 组件 |
+| data/ | bridge、Fields、store facade、保存与纯逻辑 | shared contract、React hooks（仅 hook 文件）、纯 engine `.mjs`（无宿主 import；如 `rule-facts` / `audience`） | React 业务视图、feature 组件 |
 | ui/ | 只接收 props/callback 的共享呈现和交互 | React、同层 helper、插件 CSS | store、bridge、data、features、宿主 DOM |
 | shared/ | client/host 共用的字段、路径和载荷契约 | 标准 TypeScript | 任一具体 UI 实现 |
 
@@ -103,6 +103,7 @@
     │  ├─ prompt-tool-fields.ts
     │  ├─ prompt-tool-view.ts
     │  ├─ resource-track.ts
+    │  ├─ rule-audience.ts
     │  ├─ rule-drafts.ts
     │  ├─ save-queue.ts
     │  ├─ session-id-source.ts

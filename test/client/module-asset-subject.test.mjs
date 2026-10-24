@@ -1,5 +1,7 @@
 /**
- * 装配集合视图的资产卡主语回归（T6）：每张资产卡的主语只能来自它的归属模块。
+ * 装配集合视图的资产卡主语回归（T6）与规则受众可见性回归（rule facts）。
+ *
+ * 资产卡：每张资产卡的主语只能来自它的归属模块；文件后半段覆盖 rule facts 的受众/世界书筛选。
  *
  * 判据（RED 现场）：卡按归属取主语与读数（props / 逐模块事实），不从 store 全局兜底；
  * 缺主语时整块不渲染（`html === ''`，不在界面上出卡）；同一层两个模块的实例卡互不串读；
@@ -362,47 +364,44 @@ test('展开规则的未完成条件及受众修改不让编辑卡消失；收�
   assert.doesNotMatch(renderElement(RulesWorkspace, { ...props, browse: {} }), /editing-condition/, '收起后按实际受众过滤')
 })
 
-test('受众可见性：规则级 else 动作在子代理页仍可见', () => {
-  const drafts = createWorkspaceDrafts()
-  const draft = rulesDraft('else-rule')
-  draft.entries[0].value = {
-    id: 'else-rule', name: 'else-rule', layer: 'tool-pipeline',
-    if: { scope: { audience: 'main' } },
-    then: [{ id: 't', kind: 'tool-gate', decision: 'allow' }],
-    else: [{ id: 'e', kind: 'tool-gate', decision: 'allow' }],
+test('受众可见性：else / not / 空集 / 未知受众', () => {
+  const action = { id: 't', kind: 'tool-gate', decision: 'allow' }
+  const cases = [
+    {
+      id: 'else-rule',
+      value: { id: 'else-rule', name: 'else-rule', layer: 'tool-pipeline', if: { scope: { audience: 'main' } }, then: [action], else: [action] },
+      visible: { main: true, subagent: true },
+    },
+    {
+      id: 'not-rule',
+      value: { id: 'not-rule', name: 'not-rule', layer: 'tool-pipeline', if: { not: { scope: { audience: 'main' } } }, then: [action] },
+      visible: { main: false, subagent: true },
+    },
+    {
+      id: 'empty-rule',
+      value: { id: 'empty-rule', name: 'empty-rule', layer: 'tool-pipeline', if: { scope: { audience: 'main' } }, then: [{ if: { scope: { audience: 'subagent' } }, then: [action] }] },
+      visible: { main: true, subagent: true },
+      note: '空集按未知处理，不能把可编辑卡同时藏掉',
+    },
+    {
+      id: 'unknown-rule',
+      value: { id: 'unknown-rule', name: 'unknown-rule', layer: 'tool-pipeline', if: { any: [{ scope: { audience: 'main' } }, { anchor: {} }] }, then: [action] },
+      visible: { main: true, subagent: true },
+    },
+  ]
+  for (const item of cases) {
+    const drafts = createWorkspaceDrafts()
+    const draft = rulesDraft(item.id)
+    draft.entries[0].value = item.value
+    drafts.rules.set('mod-a', draft)
+    const store = stubStore(drafts, [twoModules[0]])
+    for (const scope of ['main', 'subagent']) {
+      const html = renderElement(RulesWorkspace, { store, t, scope })
+      const message = item.id + ' 在 ' + scope + ' 页' + (item.visible[scope] ? '可见' : '隐藏') + (item.note ? '：' + item.note : '')
+      if (item.visible[scope]) assert.match(html, new RegExp(item.id), message)
+      else assert.doesNotMatch(html, new RegExp(item.id), message)
+    }
   }
-  drafts.rules.set('mod-a', draft)
-  const store = stubStore(drafts, [twoModules[0]])
-  assert.match(renderElement(RulesWorkspace, { store, t, scope: 'main' }), /else-rule/)
-  assert.match(renderElement(RulesWorkspace, { store, t, scope: 'subagent' }), /else-rule/, 'else 动作只作用于子代理，整条规则不能隐藏')
-})
-
-test('受众可见性：not 条件在主会话页隐藏、子代理页可见', () => {
-  const drafts = createWorkspaceDrafts()
-  const draft = rulesDraft('not-rule')
-  draft.entries[0].value = {
-    id: 'not-rule', name: 'not-rule', layer: 'tool-pipeline',
-    if: { not: { scope: { audience: 'main' } } },
-    then: [{ id: 't', kind: 'tool-gate', decision: 'allow' }],
-  }
-  drafts.rules.set('mod-a', draft)
-  const store = stubStore(drafts, [twoModules[0]])
-  assert.doesNotMatch(renderElement(RulesWorkspace, { store, t, scope: 'main' }), /not-rule/)
-  assert.match(renderElement(RulesWorkspace, { store, t, scope: 'subagent' }), /not-rule/)
-})
-
-test('受众可见性：无法收窄的规则两个页面都显示', () => {
-  const drafts = createWorkspaceDrafts()
-  const draft = rulesDraft('unknown-rule')
-  draft.entries[0].value = {
-    id: 'unknown-rule', name: 'unknown-rule', layer: 'tool-pipeline',
-    if: { any: [{ scope: { audience: 'main' } }, { anchor: {} }] },
-    then: [{ id: 't', kind: 'tool-gate', decision: 'allow' }],
-  }
-  drafts.rules.set('mod-a', draft)
-  const store = stubStore(drafts, [twoModules[0]])
-  assert.match(renderElement(RulesWorkspace, { store, t, scope: 'main' }), /unknown-rule/)
-  assert.match(renderElement(RulesWorkspace, { store, t, scope: 'subagent' }), /unknown-rule/)
 })
 
 test('过滤：嵌套 context activation 动作进入世界书筛选', () => {

@@ -75,7 +75,7 @@ AgentSetup 窗口内注册的同层同名段会被接住：装配时先撤销它
 
 `engine/*.mjs` 是纯 JS，`tsconfig.json` 不开 `allowJs`/`checkJs`。因此每个**被 `src/` 静态引入**的引擎模块都配一份手写 `.d.mts`（与 `.mjs` 同目录同名）：
 
-- 已有声明的：`rule-spec`／`shared`／`interpolate`／`executor`／`pre-step-source`／`promotion-pool`／`branch`／`tool-definition`／`order`／`rule-runtime`／`compaction-epoch`／`conditions/index`／`template-evaluation`／`template-frame`／`context-activation`／`service-names`／`discovery`／`delivery`／`instruction-files`／`source-kind`／`instruction-blocks`（2026-10-16 起 `src/` 侧不再用 `@ts-expect-error` 引入）。
+- 已有声明的：`rule-spec`／`audience`／`rule-facts`／`shared`／`interpolate`／`executor`／`pre-step-source`／`promotion-pool`／`branch`／`tool-definition`／`order`／`rule-runtime`／`compaction-epoch`／`conditions/index`／`template-evaluation`／`template-frame`／`context-activation`／`service-names`／`discovery`／`delivery`／`instruction-files`／`source-kind`／`instruction-blocks`／`path-safety`（2026-10-16 起 `src/` 侧不再用 `@ts-expect-error` 引入）。
 - **新增引擎导出时同步改声明**：`src/` 只用到的符号才声明（声明是「插件依赖面」而非引擎全貌）；跨引擎模块引用写成 `import type { X } from './y.mjs'`，**不要**引用 `src/` 的类型（声明文件与 `.mjs` 同目录，`src/` 不在它的解析面内）。
 - **声明文件只是类型面**：不进 `lib/` 打包，也不需要改 `package.json`／tsdown（`exports["./engine/*"]` 已覆盖；TS 按 `./x.mjs` → `./x.d.mts` 解析）。
 - **为什么有些声明符号 `src/` 从不直接 import，却仍然必要**（别按「无人使用」删它们）：`src/` 消费的是**函数**，不是字段类型——`StandingMountFor` 被 `loadStandingMountFor` 的返回引用、`MountRuleSourcesOptions` 被 `mountRuleSources` 的参数引用、`PreStepBatchOptions` 被 `runPreStepBatch` 的参数引用、`WarnOnce` 被 `createWarnOnce` 的返回引用……它们是**签名的组成部分**。删掉会让签名退回 `unknown`。判据是「它是否支撑某个被消费符号的签名」，**不是**「它自己有没有被 import」。

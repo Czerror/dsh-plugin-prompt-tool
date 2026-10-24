@@ -12,5 +12,10 @@ export type { RuleFacts }
 
 /** 一条 raw 规则的只读事实；未知形状按保守方向返回 undefined / false。 */
 export function ruleFacts(rule: RuleDefinition): RuleFacts {
-  return engineRuleFacts(rule)
+  const facts = engineRuleFacts(rule)
+  // 展示上界：空集代表「没有可执行受众」，但编辑器不能因此把卡藏到无处可改；
+  // 与未知受众同口径，两个页面都显示。
+  return facts.audiences !== undefined && facts.audiences.size === 0
+    ? { ...facts, audiences: undefined }
+    : facts
 }
