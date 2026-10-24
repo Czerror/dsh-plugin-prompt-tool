@@ -248,7 +248,7 @@ CSS 构建模块只收集样式数据；`styles.ts` 在入口 `ctx.effect` 中�
 3. prompt-tool ConfigForms transport：`configForms.get('prompt-tool')` 复用标准部署设置的镜像与写入队列；`mutate` 返回 false 必须显示保存失败，不推进保存基线。
 4. PromptToolHostApi，提供目录选择、打开路径与当前会话模型等宿主适配。`currentSessionId()` 经 `session-id-source.ts` 读 `ctx.uiSession.adapter.current` 的作用域绑定；当前会话模型经 `session-model-face` 读取并通过官方 `selectModel` 写回。官方会话预设投影与模块主语分离：模块主语由每次读写自己声明，不存在「切换模块」这个动作，因此不调用官方预设切换，也不订阅预设跟随。
 5. PromptToolWorkbenchFace：controller / api / settings / `t`。
-6. registerWorkbenchSlots(ctx, face)，唯一负责 shell.overlay 悬浮入口的注册。
+6. registerWorkbenchSlots(ctx, face)，唯一负责入口槽位的注册：`shell.overlay` 悬浮入口，以及左侧栏 `sidebar.panellist` + 同 key `main` 的全局面板入口。
 
 入口不直接导入页面、bridge endpoint 或业务卡片；需要新宿主能力时先扩展 data/host-api.ts 或 shared 契约。
 
@@ -257,8 +257,10 @@ CSS 构建模块只收集样式数据；`styles.ts` 在入口 `ctx.effect` 中�
 | 官方注册面 | id / key | 位置 | owner | 作用 |
 |---|---|---|---|---|
 | shell.overlay | prompt-tool-workbench | order 50 | WorkbenchOverlay | 可拖动悬浮触发器 + body portal 抽屉 |
+| sidebar.panellist | prompt-tool | order 60 | WorkbenchSidebarIcon | 左侧栏导航入口（官方 Global panel entries，与「插件」「自动化任务」「记忆系统」同一列表） |
+| main | prompt-tool | — | WorkbenchMainPanel | 同 key 主面板：选中侧栏入口时渲染工作台 |
 
-slot 使用 ctx.slots.inject() 等待官方槽位声明，再调用 ctx.slots.register()。返回的 disposer 在 register-workbench.tsx 中释放。不要添加第二个注册入口，也不要改变 id 或 inject face 的形状。宿主设置面板的 `settings.plugins.tab` 分区已移除：模块运行总闸只在工作台模块页设置（`modules.globalSwitch`）。
+slot 使用 ctx.slots.inject() 等待官方槽位声明，再调用 ctx.slots.register()；返回的 disposer 统一在 register-workbench.tsx 释放。侧栏入口按官方 Global panel entries 成对注册：`sidebar.panellist` 的 `id` 与 `main` 的 `key` 同为 `prompt-tool`，缺一不可（选中没有 main 的 key 会抛错）。不要改变 id/key 或 inject face 的形状。宿主设置面板的 `settings.plugins.tab` 分区已移除：模块运行总闸只在工作台模块页设置（`modules.globalSwitch`）。
 
 悬浮入口声明 `locale: PROMPT_TOOL_NS`：slot 组件由此取得 typed `t` seat，并明确依赖官方 renderer 的 locale face。组件在渲染时取当前语言，不缓存模块级文案。
 
@@ -268,12 +270,13 @@ slot 使用 ctx.slots.inject() 等待官方槽位声明，再调用 ctx.slots.re
 - 组件树很深，不逐层重建 i18n 上下文：入口组件用注入的 `t`，`PromptToolWorkbenchFace.t` 作为同一 bind 结果的稳定引用向下传递（页面与卡片按需加 `t` prop）。
 - 渲染时才求值（`t('key', params)`），不做模块级缓存；语言切换由 renderer 订阅 locale revision 后整体重渲染跟进。
 - 不进字典的内容：provider/model id、文件路径、用户内容、协议 code 与 bridge 错误码；动态拼接用 `{name}` 占位参数。
-- 已迁移：工作台外壳与悬浮入口、设置页、五页外壳、引擎参数卡与模块列表（标签按 shared 键推导成 `param.<键>` 词条）、提示词配置与人设区、模块页的素材区、子代理「工具与深度」模块卡与实例级工具策略、自定义工具卡、导入预览卡。子代理策略的档位显示名（首次启用写入 module.yml 的 seed 值）属于用户可改内容，保持原值不入字典。
+- 已迁移：工作台外壳与悬浮入口、左侧栏入口（label 经 locale thunk）、设置页、五页外壳、引擎参数卡与模块列表（标签按 shared 键推导成 `param.<键>` 词条）、提示词配置与人设区、模块页的素材区、子代理「工具与深度」模块卡与实例级工具策略、自定义工具卡、导入预览卡。子代理策略的档位显示名（首次启用写入 module.yml 的 seed 值）属于用户可改内容，保持原值不入字典。
 - 仍未迁移：`ui/` 控件的回退文案（`MenuSelect` / `TagInput` / `DialogSurface`），以及 `features/models/**` 与 `data/**` 的状态提示（这两个目录属模型路由任务的文件边界）。
 
-### 4.3 悬浮入口与关闭行为
+### 4.3 入口与关闭行为
 
-- `shell.overlay` 注册可拖动悬浮触发器：位置是纯客户端界面偏好（localStorage，`floating-trigger-position.ts`），窗口尺寸变化时按实际按钮尺寸夹回可见区；不读宿主 DOM 几何，也不再占用 `sidebar.footer.action` 做 `--pt-sidebar-edge` 探针。
+- 左侧栏 `sidebar.panellist` + `main` 是官方 Global panel entries：点击导航项后主区渲染工作台，面板内关闭调 `ctx.layout.selectPanel(null)` 回对话。主面板与悬浮抽屉各用一份 controller——共享一份会在选中入口时顺带打开抽屉。
+- `shell.overlay` 注册可拖动悬浮触发器：位置是纯客户端界面偏好（localStorage，`floating-trigger-position.ts`），窗口尺寸变化时按实际按钮尺寸夹回可见区；不读宿主 DOM 几何。
 - 拖动与单击以 4px 位移阈值区分：拖动结束吞掉尾随 click，单击与键盘仍开合；触发器打开 body portal 抽屉，抽屉与触发器分别用 fixed + z-index 1000 / 1100 置顶，不被宿主「对话/轨迹」顶部导航栏遮挡。
 - 关闭支持 Escape、点击背板与按钮切换，焦点在触发器与抽屉之间转移；抽屉打开时触发 PromptWorkspace.store.load()，关闭保留实例状态。
 - 官方右侧栏（`@deepseek-ai/dsh-client-ui-sidebar-right`）实测不适合本项目：已移除 tab type / keyed body 两段注册、`PromptToolTab` 与 `sidebarRightTabs` inject。
@@ -281,7 +284,7 @@ slot 使用 ctx.slots.inject() 等待官方槽位声明，再调用 ctx.slots.re
 
 ### 4.4 0.1.5 新能力采用面
 
-- 采用：shell.overlay 可拖动悬浮入口；Switch 与状态徽章由插件实现。
+- 采用：shell.overlay 可拖动悬浮入口；左侧栏全局面板入口（`sidebar.panellist` + `main`）；Switch 与状态徽章由插件实现。
 - 已满足、无需接入：`host-open-in-app`。`PromptToolHostApi.openPath` 走 `remote.session.openWorkspacePath`，其契约就是宿主交给原生打开器；官方 `ui-open-in-app` 客户端包不提供跨插件服务，只是会话头部的分割按钮。
 - 不适用：`ctx.workspaceFiles` 只覆盖 workspace 根，插件的读写路径域是 DSH_HOME（模块、技能）。
 - 不采用：官方右侧栏（`ui-sidebar-right`）实测不适合本项目，已移除（决策见 §4.3）；`client-resources` 资源 tab 需要自建 provider 与第二个 tab 类型，而工作台已在抽屉内就地编辑这些文件，重复呈现没有收益。
@@ -297,6 +300,9 @@ slot 使用 ctx.slots.inject() 等待官方槽位声明，再调用 ctx.slots.re
           ├─ 工具预览
           ├─ 技能设置
           └─ 模块
+
+    左侧栏入口（sidebar.panellist「提示词工具」）
+      └─ 主区工作台页（main，关闭回对话）
 
 模块运行总闸位于模块页，不另设 settings tab。完整工作台由 PromptWorkspace 创建 store、保存当前页，并在打开时触发一次 load；WorkspaceFrame 负责公共 header、导航、canvas、loading 和 notice。工作台只决定**参与装配**的集合，不保留单一「当前模块」目标；模块内容按卡片归属编辑（见 §7.1.1）。
 

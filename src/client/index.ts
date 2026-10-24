@@ -22,6 +22,7 @@ import { PROMPT_TOOL_NS as LOCALE_NS, registerPromptToolLocale } from './locales
 export const inject = [
   'locale',
   'slots',
+  'layout',
   'configForms',
   'uiWorkspace',
   'uiSession',
