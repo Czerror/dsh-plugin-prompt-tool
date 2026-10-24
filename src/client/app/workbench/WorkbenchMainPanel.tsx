@@ -13,14 +13,16 @@ export interface WorkbenchMainPanelFace {
 type WorkbenchMainPanelProps = PropsRuntime<'main'> & InjectFace<WorkbenchMainPanelFace> & PropsLocale<'prompt-tool'>
 
 /**
- * 左侧栏入口不是独立主面板：它打开常驻的悬浮抽屉（同一工作台实例）并立即回到
- * 对话，在绘制前完成。这样从工作台返回只是关闭抽屉，不切换 main，也不会重建
- * 对话或工作台——独立主面板会在每次切换时整树卸载/重建，正是卡顿的来源。
+ * 左侧栏入口不是独立主面板：它打开常驻的悬浮抽屉（同一工作台实例）。抽屉先在
+ * 绘制前上屏，下一帧再回对话——官方切回 conversation 会整树重建，同步执行会把
+ * 入口的首次绘制一起堵住（实测 2–3s）。返回只关抽屉，不重建对话或工作台。
  */
 export function WorkbenchMainPanel({ controller, closePanel }: WorkbenchMainPanelProps): ReactNode {
   useLayoutEffect(() => {
     controller.open()
-    closePanel()
+    // 绘制前打开抽屉（layout effect 中的外部 store 更新同步 flush），对话重建让到下一帧。
+    const frame = requestAnimationFrame(() => closePanel())
+    return () => cancelAnimationFrame(frame)
   }, [controller, closePanel])
   return null
 }
