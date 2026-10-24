@@ -10,6 +10,9 @@ import { record } from './record.mjs'
 /** 全部受众；rule-spec 的 action 回退与 audienceInfo 共用这一份。 */
 export const AUDIENCE_ALL = Object.freeze(['main', 'subagent'])
 
+/** 受众成员判据；与 AUDIENCE_ALL 同源，避免各处手写两个字符串比较。 */
+export const isAudience = value => AUDIENCE_ALL.includes(value)
+
 /** 两个受众集合求交；undefined = 无法收窄，取交集时让位于已知集合。 */
 export function intersectAudiences(left, right) {
   if (left === undefined) return right
@@ -32,7 +35,7 @@ function audienceInfo(tree) {
   if (record(tree.scope)) {
     const { audience, modelScope } = tree.scope
     // 同节点带 pro/flash 时结果还依赖模型，不能取补；缺省与 all 只按受众收窄。
-    if (audience === 'main' || audience === 'subagent') {
+    if (isAudience(audience)) {
       return { audiences: new Set([audience]), exact: modelScope === undefined || modelScope === 'all' }
     }
   }

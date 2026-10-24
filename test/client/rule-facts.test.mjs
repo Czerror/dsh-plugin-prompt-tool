@@ -6,6 +6,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { renderElement, withSsr, makeTranslate } from './support/ssr-render.mjs'
+import { factsVisibleTo } from '../../src/client/data/rule-facts.ts'
 import { createWorkspaceDrafts } from '../../src/client/data/workspace-drafts.ts'
 import { EMPTY_PARAMS } from '../../src/client/data/param-overrides.ts'
 
@@ -40,8 +41,10 @@ const rulesDraft = (id) => ({
   saved: [], fields: new Map(), loaded: true, validated: true, latest: 1, nextKey: 2,
 })
 
-test('受众可见性：else / not / 空集 / 未知受众 / 动作目标', () => {
+test('受众可见性：else / not / 空集 / 未知算子', () => {
   const action = { id: 't', kind: 'tool-gate', decision: 'allow' }
+  assert.equal(factsVisibleTo({ audiences: new Set(), contextActivation: false }, 'main'), true)
+  assert.equal(factsVisibleTo({ audiences: new Set(), contextActivation: false }, 'subagent'), true)
   const cases = [
     {
       id: 'else-rule',
@@ -61,7 +64,7 @@ test('受众可见性：else / not / 空集 / 未知受众 / 动作目标', () =
     },
     {
       id: 'unknown-rule',
-      value: { id: 'unknown-rule', name: 'unknown-rule', layer: 'tool-pipeline', if: { any: [{ scope: { audience: 'main' } }, { anchor: {} }] }, then: [action] },
+      value: { id: 'unknown-rule', name: 'unknown-rule', layer: 'tool-pipeline', if: { xor: [{ scope: { audience: 'main' } }] }, then: [action] },
       visible: { main: true, subagent: true },
     },
   ]

@@ -22,5 +22,5 @@ export function ruleFacts(rule: RuleDefinition): RuleFacts {
 
 /** RuleFacts 上的唯一可见性判据：未知或空受众按两个页面都显示。 */
 export function factsVisibleTo(facts: RuleFacts, audience: RuleAudience): boolean {
-  return facts.audiences === undefined || facts.audiences.has(audience)
+  return facts.audiences === undefined || facts.audiences.size === 0 || facts.audiences.has(audience)
 }

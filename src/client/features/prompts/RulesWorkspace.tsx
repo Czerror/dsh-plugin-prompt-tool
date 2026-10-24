@@ -11,7 +11,7 @@ import { useModuleConfigOrder } from '../../data/use-module-config-order.ts'
 import { reorderToView, sameConfigPosition } from '../../data/prompt-config-order.ts'
 import { hasRuleFields, rulesDirty } from '../../data/rule-drafts.ts'
 import { instructionFileIdOf } from '../../data/prompt-config-content.ts'
-import { factsVisibleTo, ruleFacts } from '../../data/rule-facts.ts'
+import { factsVisibleTo, ruleFacts, type RuleFacts } from '../../data/rule-facts.ts'
 import type { LayerCardView } from '../../data/layer-cards.ts'
 import type { PromptConfigDraft } from '../../prompt-tool-types.ts'
 import type { PromptToolTranslate } from '../../locales.ts'
@@ -96,11 +96,17 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
     if (next === cards) return
     await order.save(next)
   }
+  const factsOf = new Map<RuleDefinition, RuleFacts>()
+  const factsFor = (rule: RuleDefinition): RuleFacts => {
+    let facts = factsOf.get(rule)
+    if (facts === undefined) { facts = ruleFacts(rule); factsOf.set(rule, facts) }
+    return facts
+  }
   const rank = new Map(order.snapshot?.entries.map(entry => [configIdentityKey(entry), entry.sequence]) ?? [])
   const entries = owners.flatMap(owner => owner.draft.entries.map(entry => ({ ...owner, entry,
     key: configIdentityKey({ moduleId: owner.moduleId, configId: entry.key }),
     identity: configIdentityKey({ moduleId: owner.moduleId, configId: entry.previousId ?? entry.value.id }),
-    facts: ruleFacts(entry.value),
+    facts: factsFor(entry.value),
   }))).filter(({ entry, key, facts }) => !entry.deleted && (expanded === key || factsVisibleTo(facts, scope)))
     .filter(({ entry, moduleId: id, key, facts }) => expanded === key || (view === 'all' || view === 'context-activation' && facts.contextActivation || entry.value.layer === view)
       && (!query || JSON.stringify(entry.value).toLowerCase().includes(query) || entry.value.layer !== undefined && props.layerCards?.(entry.value.layer, id)?.some((card) => card.searchText.includes(query))))
@@ -108,7 +114,7 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
   const moduleSettings = enabledModules.flatMap(module => {
     const owner = owners.find(item => item.moduleId === module.id)
     if (moduleDeclares(store.meta.modules, module.id, 'rules') !== false && (!owner?.draft.loaded || owner.draft.error)) return []
-    const layers = new Set((owner?.draft.entries ?? []).filter(entry => !entry.deleted && factsVisibleTo(ruleFacts(entry.value), scope))
+    const layers = new Set((owner?.draft.entries ?? []).filter(entry => !entry.deleted && factsVisibleTo(factsFor(entry.value), scope))
       .map(entry => entry.value.layer))
     const missing = MODULE_CAPABILITIES.filter(capability => isModuleCapabilityDeclared(capability.id, module.facts)
       && !layers.has(capability.displayLayer))

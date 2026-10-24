@@ -14,7 +14,6 @@ import { identityOf, textRegistrationName } from './delivery.mjs'
 import { AUDIENCE_ALL, audienceOf, intersectAudiences } from './audience.mjs'
 import { isFixedRegistration } from './fixed-registration.mjs'
 import { record } from './record.mjs'
-export { isFixedRegistration }
 
 /** 规则字段：只有 `if`/`then`/`else`；旧名 `when`/`do` 留在名单里，只为把 unknown fields 换成一句「已退役，改用 X」。 */
 const RULE_FIELDS = new Set(['id', 'name', 'enabled', 'layer', 'group', 'exclusive', 'if', 'then', 'else', 'when', 'do'])

@@ -43,7 +43,7 @@ export interface Fields extends EngineParamDrafts {
 
 /**
  * /meta 的**列表类事实键**（对应 getEngineMeta() 下发的列表）：EMPTY_META 按本表派生空表，
- * 新增列表键只改这一处。产品代码不 import engine/*.mjs（零引擎运行时依赖），故键名清单留在此处；
+ * 新增列表键只改这一处。产品代码不直接 import engine/*.mjs；唯一 typed 适配面是 data/rule-facts.ts。键名清单留在此处；
  * 漏掉必备键会在下面 EMPTY_META 的 `: EngineMeta` 赋值处直接编译报错（缺键会被列出）。
  * 对象型契约在 EMPTY_META 中单独初始化。
  */

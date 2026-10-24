@@ -4,7 +4,7 @@
  * 只服务 UI/消费者，不参与执行、不替代 `rule-spec` 的编译与 `audienceOf` 的运行时判据。
  * 纯 ESM，无宿主 import；与 `expandActions` 同构地展开 then/else/嵌套分支，但不编译动作。
  */
-import { audienceOf, intersectAudiences } from './audience.mjs'
+import { audienceOf, intersectAudiences, isAudience } from './audience.mjs'
 import { conjunction, expandActionsLenient } from './branch.mjs'
 import { isFixedRegistration } from './fixed-registration.mjs'
 import { record } from './record.mjs'
@@ -17,7 +17,7 @@ function targetAudiences(action, ruleLayer) {
   const config = record(action.config) ? action.config : undefined
   if (!isFixedRegistration(config, ruleLayer)) return undefined
   const raw = config.audience
-  return raw === 'main' || raw === 'subagent' ? new Set([raw]) : undefined
+  return isAudience(raw) ? new Set([raw]) : undefined
 }
 
 function hasContextActivation(expanded) {
