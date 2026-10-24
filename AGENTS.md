@@ -32,9 +32,9 @@
 
 ### 测试
 
-**准入**——四条 seam 上的非平凡逻辑必须有确定性回归测试，且新测试三条同时成立才写进 `test/`：
+**准入**——五条 seam 上的非平凡逻辑必须有确定性回归测试，且新测试三条同时成立才写进 `test/`：
 
-- **哪个 seam**：引擎注入行为、写盘产物语义、bridge 端点载荷、安全与拒绝路径之一。覆盖位置（全仓）见 [docs/ui-architecture.md](docs/ui-architecture.md) §12.1。
+- **哪个 seam**：引擎注入行为、写盘产物语义、bridge 端点载荷、安全与拒绝路径、UI slot / 入口注册之一。覆盖位置（全仓）见 [docs/ui-architecture.md](docs/ui-architecture.md) §12.1。
 - **真值源**：期望值来自独立真值源——规格、已知良好字面量、手算样例。
 - **公共接口**：断言落在调用方观察到的行为上，改实现时依然成立。
 
@@ -81,14 +81,14 @@
 - `.scratch/` 是本地作业区，已被 `.gitignore` 忽略：PLAN、归档、issue 与规格只留本地，不 `git add`、不提交、不推送，也不因它扩大本轮暂存范围。
 - `.scratch/archive/` 只收 plan 归档。
 
-### 候选修复的固定流程
+### 代码改动固定流程
 
-架构审查产出的每个候选，从选中到交付固定走六步，不跳步：
+固定走六步，不跳步：
 
 1. **采访定案**：用 `/grilling` 逐轮问出取舍；`/grill-with-docs` 不可模型调用时，用 `/grilling` + `/domain-modeling` 代替，结论落 PLAN 而非 `GLOSSARY.md`（除非确实产生新术语）。
 2. **设计评估**：用 `/codebase-design` 的词汇评审拟议模块的形状——接口是否比实现小、接缝是否落在真适配器之间（一个适配器只是假设接缝，两个才是真的）、删除测试是否成立（删掉它复杂性散回调用方而不是消失）。评估结论与放弃的方案写进 PLAN 的「实施取舍与已知边界」。
 3. **落 PLAN**：按 [PLAN 格式规范](docs/agents/plan-format.md) 建 `.scratch/plan/YYYY-MM-DD-plan-<主题>-<基线>.md`，把每一条已确认取舍写进「需求与授权」，任务按 Wave 拆到可单上下文完成。
-4. **实施**：单会话改动直接 `/implement`（多会话才先 `/to-spec` 再 `/to-tickets`）；新非平凡逻辑按 TDD 先红后绿，测试落四条 seam。
+4. **实施**：单会话改动直接 `/implement`（多会话才先 `/to-spec` 再 `/to-tickets`）；新非平凡逻辑按 TDD 先红后绿，测试落五条 seam。
 5. **两轴评审**：交付前跑 `/code-review`，固定点取本轮起点；Standards 与 Spec 各派一个子代理并行，报告分节呈现、不合并不重排。
 6. **归档与记忆**：PLAN 填满「状态」「验收记录」后复制到 `.scratch/archive/` 并移除；`.ai-memory` 记一条决策、文件与验证。
 

@@ -14,8 +14,10 @@ import { configPageBrowse, createWorkspaceBrowseState } from './workspace-browse
 export interface PromptWorkspaceProps {
   api: PromptToolHostApi
   settings: PromptToolSettingsTransport
-  /** 悬浮入口抽屉的开关。 */
+  /** 悬浮入口抽屉的开关；主面板没有抽屉，用 active 表达展示状态。 */
   controller: PromptToolWorkspaceController
+  /** 页面是否处于展示状态；缺省时跟随 controller.open（抽屉入口）。 */
+  active?: boolean
   /** 命名空间翻译函数（调用时读当前语言）。 */
   t: PromptToolTranslate
   onClose: () => void
@@ -50,9 +52,10 @@ export function PromptWorkspace(props: PromptWorkspaceProps): ReactNode {
     props.controller.getSnapshot,
   ).open
 
+  const active = props.active ?? open
   useEffect(() => {
-    if (open) void store.load()
-  }, [open, store.load])
+    if (active) void store.load()
+  }, [active, store.load])
 
   const content = page === 'features'
     ? <AudiencePage store={store} audience="main" t={t} browse={configPageBrowse(browse, scrollKey)} onNavigate={navigate} />

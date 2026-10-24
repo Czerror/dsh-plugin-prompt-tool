@@ -127,10 +127,3 @@
   overflow: clip;
   padding-block-start: var(--dsh-frame-top-clearance, 0px);
 }
-
-/* 覆盖上方留白，让窗口可从标题栏空白处拖动（留白本身没有高度时也成立）。 */
-.windowDragBand {
-  position: absolute;
-  inset: 0 0 auto;
-  height: var(--dsh-frame-top-clearance, 0px);
-}

@@ -13,9 +13,10 @@ import { PROMPTS_EN, PROMPTS_ZH } from './locales-prompts.ts'
 import { CARDS_EN, CARDS_ZH } from './locales-cards.ts'
 import { TRIGGERS_EN, TRIGGERS_ZH } from './locales-triggers.ts'
 import { RULES_EN, RULES_ZH } from './locales-rules.ts'
+import { PROMPT_TOOL_NS } from '../shared/namespace.ts'
 
-/** 官方 locale 服务注册用的命名空间。 */
-export const PROMPT_TOOL_NS = 'prompt-tool'
+/** 官方 locale 服务注册用的命名空间（与 settings 共用同一字面量真源）。 */
+export { PROMPT_TOOL_NS }
 
 const ZH_CORE = {
   'app.title': '提示词工具',

@@ -1,6 +1,7 @@
 /** settings/bootstrap 载荷到客户端 Fields 的纯映射。 */
 import { EMPTY_FIELDS, type Fields, type SkillCatalogEntry } from './prompt-tool-fields.ts'
 import { SKILL_SOURCES } from '../../shared/skills.ts'
+import { PROMPT_TOOL_NS } from '../../shared/namespace.ts'
 import type { BridgeResponse, BridgeValueMap } from '../../shared/bridge-contract.ts'
 
 const asRecord = (value: unknown): Record<string, unknown> =>
@@ -106,7 +107,8 @@ export function bridgeViewFromBoot(boot: BridgeResponse<'bootstrap'>): BridgeRes
   return {
     ...boot,
     value: {
-      ns: 'prompt-tool',
+      // 客户端没有 Loader 入口，settings ns 只能是编译期常量；换行 id 装配需同步（宿主侧已动态解析）。
+      ns: PROMPT_TOOL_NS,
       value: boot.value.value,
       base: boot.value.base,
       revision: boot.value.revision,

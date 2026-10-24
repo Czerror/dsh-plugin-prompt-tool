@@ -2,7 +2,9 @@
 import z from '@deepseek-ai/schemastery'
 import type { Volatile } from '@deepseek-ai/cordis'
 
-export const NS = 'prompt-tool' as const
+import { PROMPT_TOOL_NS } from './shared/namespace.ts'
+
+export const NS = PROMPT_TOOL_NS
 
 /** 引擎行为参数键：定义见 shared/param-keys.ts（write-module 合并过滤共用）。 */
 export { PARAM_KEYS } from './shared/param-keys.ts'

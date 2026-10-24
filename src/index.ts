@@ -12,13 +12,13 @@ import { registerModuleManifestTools } from './runtime/module-manifest-tools.ts'
 import { registerModuleVariableTools } from './runtime/module-variable-tools.ts'
 import { installPreStepCoordinator } from './runtime/pre-step-coordinator.ts'
 import { installPersonaCapture } from './runtime/persona-registration.ts'
-import { registerTuiCommand, registerTuiSettingsSection } from './runtime/tui.ts'
+import { registerTuiCommand } from './runtime/tui.ts'
+import { registerTuiSettingsSection, settingsNamespace } from './runtime/tui-settings.ts'
 import { ensureModuleReady } from './host/write-module.ts'
 import { ensureModuleSeed } from './host/module-catalog.ts'
 import { moduleDirExists } from './host/module-dirs.ts'
 import {
   Config,
-  NS,
   readModulesEnabled,
 } from './config.ts'
 import type { PromptSettings, RuntimeOptions } from './config.ts'
@@ -54,6 +54,8 @@ function warn(ctx: Context, message: string): void {
 }
 
 export function apply(ctx: Context, configIn: Config): void {
+  // settings 区块与命令都按 Config owner 的实际 Loader 行 id 寻址，换行 id 装配时不静默失配。
+  const settingsNs = settingsNamespace(ctx)
   // 包内目录与输出目录同名；启动只复制缺失项，现有用户定义不被重新铺写。
   const seededModules = new Set(ensureModuleSeed(modulesDir(), message => warn(ctx, message)).created)
   // 内置技能同一纪律：只补缺失项，已有目录不碰；删掉的会被这次启动补回。
@@ -87,7 +89,7 @@ export function apply(ctx: Context, configIn: Config): void {
   // 在线编辑不再经 ctx.llm 暴露 settings namespace：改为自建 loopback bridge，
   // 这样模型设置页不会出现「提示词工具」目录条目。
   const settingsBridge = registerSettingsBridge(ctx, {
-    ns: NS,
+    ns: settingsNs,
     models: getModelsState,
     skills: () => ({
       skillsRoot: skillsRuntime.skillsRoot,
@@ -129,12 +131,12 @@ export function apply(ctx: Context, configIn: Config): void {
   })
 
   // dsh-tui 设置入口：/settings 的「常规」页一节，只暴露 settings 文档里的模块总开关。
-  registerTuiSettingsSection(ctx, NS)
+  registerTuiSettingsSection(ctx, settingsNs)
 
   // dsh-tui 命令入口：/prompt-tool 查看或切换开关。
 registerTuiCommand(
   ctx,
-  NS,
+  settingsNs,
   () => ({ ...currentSource(), skillCatalog: skillsRuntime.listSkills(), activeSkillsDirs: [skillsRuntime.skillsRoot], enabledModules: enabledModuleIds(modulesDir()).filter((id) => moduleDirExists(modulesDir(), id)) }),
   getModelsState,
   () => listAdvertisedModels(ctx),
@@ -261,7 +263,7 @@ registerTuiCommand(
   ctx.inject(['settings'], (sctx: Context) => {
     sctx.effect(() => sctx.settings.configure({ auto: false }, ctx.fiber))
     sctx.effect(() => sctx.on('settings/document-updated', (ns) => {
-      if (String(ns) === NS) applyConfig()
+      if (String(ns) === settingsNs) applyConfig()
     }), 'prompt-tool: follow settings documents')
     settingsBridge.invalidateDescriptor()
   })

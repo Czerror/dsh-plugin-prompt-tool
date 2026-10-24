@@ -258,9 +258,9 @@ CSS 构建模块只收集样式数据；`styles.ts` 在入口 `ctx.effect` 中�
 |---|---|---|---|---|
 | shell.overlay | prompt-tool-workbench | order 50 | WorkbenchOverlay | 可拖动悬浮触发器 + body portal 抽屉 |
 | sidebar.panellist | prompt-tool | order 60 | WorkbenchSidebarIcon | 左侧栏导航入口（官方 Global panel entries，与「插件」「自动化任务」「记忆系统」同一列表） |
-| main | prompt-tool | — | WorkbenchMainPanel | 同 key 主面板：选中侧栏入口时渲染工作台 |
+| main | prompt-tool | — | WorkbenchMainPanel | 同 key 主面板：选中侧栏入口时渲染工作台（`active` 驱动加载，不借用抽屉 controller） |
 
-slot 使用 ctx.slots.inject() 等待官方槽位声明，再调用 ctx.slots.register()；返回的 disposer 统一在 register-workbench.tsx 释放。侧栏入口按官方 Global panel entries 成对注册：`sidebar.panellist` 的 `id` 与 `main` 的 `key` 同为 `prompt-tool`，缺一不可（选中没有 main 的 key 会抛错）。不要改变 id/key 或 inject face 的形状。宿主设置面板的 `settings.plugins.tab` 分区已移除：模块运行总闸只在工作台模块页设置（`modules.globalSwitch`）。
+slot 使用 ctx.slots.inject() 等待官方槽位声明，再调用 ctx.slots.register()；注册随注入声明生命周期由 Cordis 回收（register-workbench.tsx 的组合 disposer 目前未使用）。侧栏入口按官方 Global panel entries 成对注册：`sidebar.panellist` 的 `id` 与 `main` 的 `key` 同为 `prompt-tool`，缺一不可（选中没有 main 的 key 会抛错）。不要改变 id/key 或 inject face 的形状。宿主设置面板的 `settings.plugins.tab` 分区已移除：模块运行总闸只在工作台模块页设置（`modules.globalSwitch`）。
 
 悬浮入口声明 `locale: PROMPT_TOOL_NS`：slot 组件由此取得 typed `t` seat，并明确依赖官方 renderer 的 locale face。组件在渲染时取当前语言，不缓存模块级文案。
 
@@ -275,7 +275,7 @@ slot 使用 ctx.slots.inject() 等待官方槽位声明，再调用 ctx.slots.re
 
 ### 4.3 入口与关闭行为
 
-- 左侧栏 `sidebar.panellist` + `main` 是官方 Global panel entries：点击导航项后主区渲染工作台，面板内关闭调 `ctx.layout.selectPanel(null)` 回对话。主面板与悬浮抽屉各用一份 controller——共享一份会在选中入口时顺带打开抽屉。
+- 左侧栏 `sidebar.panellist` + `main` 是官方 Global panel entries：点击导航项后主区渲染工作台，面板内关闭调 `ctx.layout.selectPanel(null)` 回对话。主面板通过 `PromptWorkspace` 的 `active` 显式表达展示状态，不借用抽屉 controller 的 open 状态；抽屉仍用自己的 controller。
 - `shell.overlay` 注册可拖动悬浮触发器：位置是纯客户端界面偏好（localStorage，`floating-trigger-position.ts`），窗口尺寸变化时按实际按钮尺寸夹回可见区；不读宿主 DOM 几何。
 - 拖动与单击以 4px 位移阈值区分：拖动结束吞掉尾随 click，单击与键盘仍开合；触发器打开 body portal 抽屉，抽屉与触发器分别用 fixed + z-index 1000 / 1100 置顶，不被宿主「对话/轨迹」顶部导航栏遮挡。
 - 关闭支持 Escape、点击背板与按钮切换，焦点在触发器与抽屉之间转移；抽屉打开时触发 PromptWorkspace.store.load()，关闭保留实例状态。
@@ -284,7 +284,7 @@ slot 使用 ctx.slots.inject() 等待官方槽位声明，再调用 ctx.slots.re
 
 ### 4.4 0.1.5 新能力采用面
 
-- 采用：shell.overlay 可拖动悬浮入口；左侧栏全局面板入口（`sidebar.panellist` + `main`）；Switch 与状态徽章由插件实现。
+- 采用：shell.overlay 可拖动悬浮入口；Switch 与状态徽章由插件实现。
 - 已满足、无需接入：`host-open-in-app`。`PromptToolHostApi.openPath` 走 `remote.session.openWorkspacePath`，其契约就是宿主交给原生打开器；官方 `ui-open-in-app` 客户端包不提供跨插件服务，只是会话头部的分割按钮。
 - 不适用：`ctx.workspaceFiles` 只覆盖 workspace 根，插件的读写路径域是 DSH_HOME（模块、技能）。
 - 不采用：官方右侧栏（`ui-sidebar-right`）实测不适合本项目，已移除（决策见 §4.3）；`client-resources` 资源 tab 需要自建 provider 与第二个 tab 类型，而工作台已在抽屉内就地编辑这些文件，重复呈现没有收益。
@@ -819,6 +819,7 @@ tool-catalog 填充来源沿现有普通注入表单编辑：params.action 引�
 | 写盘产物语义 | `test/host/write-module.test.mjs`、`test/host/module-*.test.mjs`、`test/host/module-slices.test.mjs`、`test/host/global-params.test.mjs`（全局层 `config.yml#layerSettings` 的写/删键/空层回收与优先级）、`test/host/target-queue.test.mjs`、`test/host/versioned-text.test.mjs`、`test/host/skills-cas.test.mjs` |
 | bridge 端点载荷 | `test/shared/bridge-contract.test.mjs`、`test/client/bridge-client.test.mjs`、`test/host/settings-bridge.test.mjs`、`test/host/*-bridge.test.mjs`、`test/client/*.test.mjs`（客户端侧的固定卡接线、请求主语与渲染链路；含 `layer-cards`、`instruction-cards` 这类渲染链路的前置纯判据） |
 | 安全与拒绝路径 | `test/host/instructions-policy.test.mjs`、`test/host/instruction-scope-guard.test.mjs`、`test/host/skill-policy.test.mjs`、`test/host/skills-marker.test.mjs`（技能文件读取前校验）、`test/host/module-package-import.test.mjs`、`test/host/wave1-safety.test.mjs`、`test/host/text-file.test.mjs`、`test/engine/config-whitelist.test.mjs`、`test/host/agents-cards.test.mjs`、`test/engine/instruction-files.test.mjs`（写白名单来源的探测与目录链判据） |
+| UI slot / 入口注册 | `test/client/*.test.mjs`（宿主槽位观察到的注册选项与释放：id/key 配对、label、关闭回调；不锁注册顺序、数字常量或内部 inject 调用面）；`test/host/tui-settings-section.test.mjs`（接缝六区块的 ns/字段形状与 disposer 撤销） |
 
 **安全边界的守护位置**：指令文件读写（授权、上下文白名单、内容版本冲突、读取失败）、导入回滚、路径穿越、大小上限、桥端点安全面、晋升门控与 epoch 这些不变量，由上面「安全与拒绝路径」一栏的文件覆盖；改动它们需要独立授权，不得顺带删减。
 

@@ -17,7 +17,8 @@ import { registerWorkbenchSlots } from './app/workbench/register-workbench.tsx'
 import { PromptToolWorkspaceController } from './app/workbench/workspace-controller.ts'
 import type { PromptToolWorkbenchFace } from './app/workbench/workbench-face.ts'
 import type { PromptToolHostApi } from './data/host-api.ts'
-import { PROMPT_TOOL_NS as LOCALE_NS, registerPromptToolLocale } from './locales.ts'
+import { registerPromptToolLocale } from './locales.ts'
+import { PROMPT_TOOL_NS } from '../shared/namespace.ts'
 
 export const inject = [
   'locale',
@@ -32,15 +33,12 @@ export const inject = [
   'sessions',
 ]
 
-/** 与宿主 settings namespace 相同的字符串；client 侧不依赖 host 包，按契约字面拼写。 */
-const PROMPT_TOOL_NS = 'prompt-tool'
-
 export function apply(ctx: ClientContext): void {
   ctx.effect(installStyles)
   // 官方 locale 字典：注册挂 effect（卸载/重挂自动释放，不会重复注册同一命名空间）。
   // 命名空间在 locales.ts 里并入官方 LocaleNamespaceMap，slot 注册据此拿到 typed t。
   ctx.effect(() => registerPromptToolLocale(ctx.locale))
-  const t = ctx.locale.bind(LOCALE_NS)
+  const t = ctx.locale.bind(PROMPT_TOOL_NS)
   // 官方连接世代重建（connection/reset）后，宿主的模型目录缓存可能已过期：
   // 显式刷新一次（越过 10 分钟 TTL），下一次打开工作台即命中新目录。
   // 目录刷新不是关键路径，失败静默。
@@ -48,6 +46,7 @@ export function apply(ctx: ClientContext): void {
     void bridgeCall('models', { refresh: true }).catch(() => undefined)
   }))
   // 0.1.7 ui-settings：标准字段读写复用 ConfigForms 的共享镜像与写入队列。
+  // locale 与 settings 共用同一命名空间字面量；换 Loader 行 id 装配时 client transport 需同步（已知边界）。
   const scope = ctx.configForms.get<Record<string, unknown>>(PROMPT_TOOL_NS)
   const settings: PromptToolSettingsTransport = {
     scope,

@@ -9,8 +9,8 @@ import { WorkbenchSidebarIcon } from './WorkbenchSidebarIcon.tsx'
 import type { PromptToolWorkbenchFace } from './workbench-face.ts'
 import { PROMPT_TOOL_NS } from '../../locales.ts'
 
-/** 左侧栏全局面板 key：sidebar.panellist 的 id 与 main 的 key 必须相同。 */
-export const WORKBENCH_PANEL_ID = 'prompt-tool' as MainPanelId
+/** 左侧栏全局面板 key：sidebar.panellist 的 id 与 main 的 key 必须相同；与命名空间共用同一字面量。 */
+export const WORKBENCH_PANEL_ID = PROMPT_TOOL_NS as MainPanelId
 
 /**
  * 注册官方槽位：
@@ -32,9 +32,10 @@ export function registerWorkbenchSlots(ctx: ClientContext, face: PromptToolWorkb
       locale: PROMPT_TOOL_NS,
       inject: () => ({ api: face.api, settings: face.settings, closePanel: () => ctx.layout.selectPanel(null) }),
     }, WorkbenchMainPanel)
-    let disposeIcon: (() => void) | undefined
+    let disposeIcon: () => void
     try {
       // 先有主面板再有入口：注册图标失败时撤掉主面板，不留可抛错的孤儿 key。
+      // order 60：排在官方插件 0、自动化任务 10、记忆系统 30 之后。
       disposeIcon = ctx.slots.register({
         name: 'sidebar.panellist', id: WORKBENCH_PANEL_ID, order: 60,
         locale: PROMPT_TOOL_NS,
@@ -45,7 +46,7 @@ export function registerWorkbenchSlots(ctx: ClientContext, face: PromptToolWorkb
       throw error
     }
     return () => {
-      disposeIcon?.()
+      disposeIcon()
       disposeMain()
     }
   }))
