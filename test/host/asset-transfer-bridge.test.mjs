@@ -154,6 +154,8 @@ test('导入预览绑定普通模块目标和覆盖选择；重导入保留记�
 test('新参数、来源、载荷上限和回环边界均在写盘前拒绝', async (t) => {
   const h = harness(t)
   const files = filesFor('invalid-new')
+  // refreshOnly:false 是统一表允许的字段，不得被导入参数解析二次拒。
+  assert.equal((await call(h, 'importModulePackage', { files, preview: true, refreshOnly: false })).status, 200)
   for (const extra of [{ preview: 'true' }, { overwrite: 1 }, { targetId: 'UPPER' }, { targetName: [] }, { sourceKind: 'unknown' }, { expectedSourceDigest: 'bad' }, { sourceId: 'wrong' }, { unknown: true }]) {
     assert.equal((await call(h, 'importModulePackage', { files, ...extra })).status, 400, JSON.stringify(extra))
   }
