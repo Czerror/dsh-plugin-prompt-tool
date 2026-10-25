@@ -6,12 +6,10 @@ import { workbenchHostConventions } from './workbench-host-conventions.ts'
 type WorkbenchSidebarEntryProps = Pick<PropsRuntime<'sidebar.panellist'>, 'size'> & InjectFace<{ open: () => void }>
 
 /**
- * 侧栏导航入口的图标组件：行点击在冒泡阶段被截获，直接打开常驻抽屉。
+ * 侧栏导航入口的图标组件：只负责渲染。
  *
- * 行按钮自己的 onClick 会 selectPanel(id)，而官方切 main 会整树卸载对话（本机
- * 单次观测约 2–3s）。行按钮是宿主组件，只能在事件到达 React 根之前用原生监听
- * 拦下，因此依赖「图标位于行 button 内」这一当前结构：结构变化时 closest 取不到，
- * 点击会由宿主 selectPanel 抛 `main panel "prompt-tool" is not registered`。
+ * 行点击由 `workbench-host-conventions.ts` 的 adapter 在冒泡阶段截获并打开抽屉；
+ * 宿主行结构与事件名归 adapter，本组件不再依赖「图标位于行 button 内」。
  */
 export function WorkbenchSidebarEntry({ size, open }: WorkbenchSidebarEntryProps) {
   const ref = useRef<SVGSVGElement>(null)

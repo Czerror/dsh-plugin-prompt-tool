@@ -9,11 +9,15 @@ test('workbench-host-conventions：侧栏行点击打开抽屉，dispose 后失�
     addEventListener: (_type, listener) => { click = listener },
     removeEventListener: () => { click = undefined },
   }
-  const icon = { closest: () => row }
+  const selectors = []
+  const icon = { closest: (selector) => { selectors.push(selector); return row } }
   let opened = 0
+  let stopped = false
   const dispose = host.interceptSidebarRow(icon, () => { opened += 1 })
-  click({ stopPropagation: () => {} })
+  assert.deepEqual(selectors, ['button'])
+  click({ stopPropagation: () => { stopped = true } })
   assert.equal(opened, 1)
+  assert.equal(stopped, true)
   dispose()
   assert.equal(click, undefined)
 })
