@@ -7,12 +7,15 @@
 # 常驻集只在这里写一次；首轮提示由普通注入动作组合。
 #
 # 解锁的生效时机：声明在每个 model step 前重算，解锁在下一步的模型请求里已经可见。
-# `requireMatch: true` 是刻意的：任一常驻工具缺失（或模型解锁了不存在的名字）就放弃裁剪、
-# 暴露完整目录——收窄错了会让当前工作流调不到工具，比多花上下文严重。
+# `requireMatch: true` 是刻意的，但判据是「名单与装配面整体错位」：常驻名单里的名字
+# **一个都不在**当前装配面时才放弃裁剪、暴露完整目录；只缺一两个（提供方被替换或关闭）
+# 仍照常收窄，缺项只留一条诊断。解锁名不参与这个判定。
 #
 # 工具名必须与**实际装配名**一致：本项目 harness 是 `pwsh`、`edit` + `write`；
 # `bash` 由平台各自提供——Windows 是本模块声明的 `tool-git-bash` 行（Git Bash，`bash -c`），
-# POSIX 是官方持久 bash。写错名字会触发 requireMatch 的 fail-open，表现为「收窄没生效」。
+# POSIX 是官方持久 bash。替换提供方（如 dsh-ops 的 `ops_bash`）属于部署事实，不写进随包名单：
+# 加在部署层模块副本（`$DSH_HOME/.prompt-tool/modules/tool-surface/module.yml`）的 allow 即可；
+# 没装该插件的部署里这个名字不存在，不产生任何影响。
 #
 # 停用即回滚：本模块在 config.yml 的 enabled 里删掉即可，重启后工具面完全恢复。
 
@@ -49,7 +52,7 @@ rules:
           - skill_search
           - skill_load
           - tool_search
-          # 平台各自的 bash 名：装配里没有提供方时这里就是缺失名，收窄整体失效。
+          # 平台各自的 bash 名；替换提供方（如 ops_bash）由部署层名单登记，随包名单只写官方名。
           - bash
         discovery: { kind: tools }
         requireMatch: true

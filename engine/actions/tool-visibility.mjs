@@ -13,8 +13,10 @@
  *
  * 名单语义对齐官方 ToolRestriction（deepseek-harness packages/core/tools/src/index.ts:701-706）：
  * allow 与 deny 可以同时给，判据是「先按 allow 保留，再按 deny 剔除」。requireMatch 只在
- * allow 模式有意义：名单里任一工具在目录与 SDK 正文的并集里都找不到，就放弃裁剪、暴露完整目录（fail-open）并告警——
- * 收窄错了会让当前工作流调不到工具，比多花上下文严重。
+ * allow 模式有意义，判据是「这份名单与装配面整体错位」：名单里的名字**一个都不在**目录与
+ * SDK 正文的并集里，才放弃裁剪、暴露完整目录（fail-open）并告警。只缺一部分是提供方被
+ * 替换或关闭的正常部署差异，收窄照常生效、缺项只留一条诊断；解锁名是只做加法的提示，
+ * 不参与这个判定。
  *
  * 执行边界：deny 同时用 restrict（继承面）与 guard（本层/晚到）；allow 不用 restrict——
  * 它的 allow 只能收继承面名字，而 `schemas()` 全局视图会漏掉预设/祖先层，局部 allow 会
@@ -204,14 +206,18 @@ export function prepareToolVisibility(action, plugin) {
         // 没有工具面可观（既无目录也无 SDK 正文）时不裁剪、不告警、不动执行闸：
         // 空 surface 不等于「名单全缺」；空目录（tools=[]）仍是真实观测，照旧 fail-open。
         if (!Array.isArray(result.tools) && sdkSection === undefined) return result
-        // 三面（目录 / 正文 / 执行闸）共用这一份判断：缺项就整体放宽，呈现与执行不得两套口径。
+        // 三面（目录 / 正文 / 执行闸）共用这一份判断：名单全缺才整体放宽，呈现与执行不得两套口径。
         const plan = toolSurfacePlan(mask, available)
         const state = capability.get(context?.session ?? context?.agent?.session)
         if (state !== undefined) state.data.failOpen = plan.failOpen
         if (plan.failOpen) {
-          // 去重键固定到动作：缺项名随解锁历史变化，不能让每个新集合各占一条 warnOnce。
-          warnOnce(`${plugin}: tool-visibility action ${label}: requireMatch tools absent (${plan.missing.join(', ')}) — exposing the full tool set (fail-open)`, `${plugin}: tool-visibility action ${label}: requireMatch fail-open`)
+          // 去重键固定到动作：缺项名随部署变化，不能让每个新集合各占一条 warnOnce。
+          warnOnce(`${plugin}: tool-visibility action ${label}: none of the resident tools exist (${plan.missing.join(', ')}) — exposing the full tool set (fail-open)`, `${plugin}: tool-visibility action ${label}: requireMatch fail-open`)
         } else {
+          // 部分缺失不改变裁剪，但必须留痕：否则「某个常驻工具为什么不见了」只能靠猜。
+          if (plan.missing.length > 0) {
+            warnOnce(`${plugin}: tool-visibility action ${label}: resident tools absent (${plan.missing.join(', ')}) — narrowing continues; register replacement providers in the deployment allow list`, `${plugin}: tool-visibility action ${label}: resident tools absent`)
+          }
           if (Array.isArray(result.tools)) {
             const kept = result.tools.filter((tool) => !mask.blocks(tool?.name))
             if (kept.length !== result.tools.length) result = { ...result, tools: kept }

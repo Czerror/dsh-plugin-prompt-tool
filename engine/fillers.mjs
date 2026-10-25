@@ -4,6 +4,7 @@
  */
 
 import { getService, parseToolNames } from './shared.mjs'
+import { toolScopeSnapshot } from './tool-scope.mjs'
 import { machinePaths } from './machine-paths.mjs'
 import { SAFE_ENV_KEYS } from './env-safety.mjs'
 import { createInstructionHintResolver } from './instruction-hint.mjs'
@@ -16,7 +17,22 @@ function explicitTemplate(config) {
   return texts.length > 0 ? texts.join('\n\n') : typeof config.params?.text === 'string' ? config.params.text : ''
 }
 
-/** 只读同规则工具面声明；文案、条件和投递仍归普通注入动作。 */
+/**
+ * 只读同规则工具面声明；文案、条件和投递仍归普通注入动作。
+ * RESIDENT_TOOLS 只列**当前可见**的常驻工具：部署层名单可以登记替换提供方（如 dsh-ops 的
+ * ops_bash），但该插件未必安装；向模型宣告一个不存在的常驻工具会把「解锁」变成错误前提。
+ * 观测到工具面但一个常驻名都不在时（requireMatch 全缺/放宽场景）跳过提示；
+ * 观测不到工具面（服务缺失或读取失败）才回落声明名单——「没看到」不等于「都没有」。
+ */
+function visibleToolNames(ctx, agent) {
+  try {
+    const tools = getService(ctx, 'tools')
+    if (tools === undefined || typeof tools.schemas !== 'function') return undefined
+    return new Set(toolScopeSnapshot(tools, agent).visible.map((schema) => schema?.name))
+  } catch {
+    return undefined
+  }
+}
 function createToolCatalogResolver(config) {
   if (config.params?.templateEvaluation === true) throw new TypeError('tool-catalog is read-only and does not support templateEvaluation')
   if (typeof config.params?.action !== 'string' || config.params.action.trim().length === 0) {
@@ -28,11 +44,19 @@ function createToolCatalogResolver(config) {
     const source = config.toolCatalogSource
     if (source === undefined) throw new TypeError('tool-catalog requires a same-rule tool-visibility action')
     const deny = new Set(source.deny ?? [])
-    const resident = [...new Set(source.allow)].filter(tool => !deny.has(tool))
+    const declared = [...new Set(source.allow)].filter(tool => !deny.has(tool))
     const adapter = source.discovery === undefined ? undefined
       : getService(ctx, DISCOVERY_SERVICE)?.get?.(agent, source.discovery.kind)
     if (source.discovery !== undefined && typeof adapter?.tool !== 'string') {
       throw new Error(`tool-catalog discovery adapter ${source.discovery.kind} is unavailable`)
+    }
+    let resident = declared
+    const visible = visibleToolNames(ctx, agent)
+    if (visible !== undefined) {
+      const present = declared.filter((name) => visible.has(name))
+      // 观测到全缺时不宣告任何常驻工具：与 requireMatch 放宽同源，避免「解锁」建在错误前提上。
+      if (present.length === 0) return null
+      resident = present
     }
     return { text, variables: { RESIDENT_TOOLS: resident.join(', '), DISCOVERY_TOOL: adapter?.tool ?? '' } }
   }

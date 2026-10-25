@@ -260,17 +260,17 @@ surface 缺失或非法时可见视图退回完整日志；合法空 nodes 就�
 
 ## 工具面收窄与按需解锁
 
-`tool-visibility` 是工具面的唯一声明：一份 allow/deny 名单同时投影到装配目录、`tools:sdk` 正文与执行闸，并可声明发现来源。受众统一写在规则或分支的 scope 条件。呈现裁剪不等于授权：deny 同时用 `restrict` 覆盖继承面并注册 `guard`；allow **不调用 restrict**，执行面统一由 `guard` 兜底——`restrict` 的 allow 只能收继承面名字，而 `tools.schemas()` 的全局视图不含预设/祖先层工具，局部 allow 反而会把要保留的工具裁掉。作用域快照统一走 `engine/tool-scope.mjs#toolScopeSnapshot(tools, agent)`：`globalNames` 是全局层名字（只供 restrict 的已知名过滤），`visible` 是 agent 可见面（含预设/祖先/本层）；新消费方不得用无 scope 的 `schemas()` 当模型可见面。`requireMatch` 只对白名单有意义：名单工具在目录或 SDK 正文缺失时放弃裁剪、暴露完整目录（fail-open），allow guard 同步放行。三面（目录 / 正文 / 执行闸）共用 `engine/actions/shared.mjs#toolSurfacePlan` 这一份判断——`required` 是 allow ∪ 解锁项再剔除 `run_code` 与 deny 覆盖的名字；`available` 是目录名与正文名的并集，缺项时整体放宽。装配里既无目录也无 SDK 正文时视为没有观察到工具面，不据此改执行闸（保持上一轮状态）。呈现失败与 guard 未注册仍可能让三面不一致，那两条路径不改判据。条件由规则引擎逐轮求值，条件变假时撤销上一轮注册的执行闸。
+`tool-visibility` 是工具面的唯一声明：一份 allow/deny 名单同时投影到装配目录、`tools:sdk` 正文与执行闸，并可声明发现来源。受众统一写在规则或分支的 scope 条件。呈现裁剪不等于授权：deny 同时用 `restrict` 覆盖继承面并注册 `guard`；allow **不调用 restrict**，执行面统一由 `guard` 兜底——`restrict` 的 allow 只能收继承面名字，而 `tools.schemas()` 的全局视图不含预设/祖先层工具，局部 allow 反而会把要保留的工具裁掉。作用域快照统一走 `engine/tool-scope.mjs#toolScopeSnapshot(tools, agent)`：`globalNames` 是全局层名字（只供 restrict 的已知名过滤），`visible` 是 agent 可见面（含预设/祖先/本层）；新消费方不得用无 scope 的 `schemas()` 当模型可见面。`requireMatch` 只对白名单有意义，判据是「名单与装配面整体错位」：名单里的名字**一个都不在**目录与 SDK 正文的并集里时才放弃裁剪、暴露完整目录（fail-open），allow guard 同步放行；只缺一部分（提供方被替换或关闭）照常收窄，缺项只留一条诊断。三面（目录 / 正文 / 执行闸）共用 `engine/actions/shared.mjs#toolSurfacePlan` 这一份判断——`required` 只取静态 allow 再剔除 `run_code` 与 deny 覆盖的名字，解锁名不参与（否则模型解锁一个拼错或已改名的工具就能关掉收窄）；`available` 是目录名与正文名的并集。官方工具被替换插件取代时，把替换名（如 dsh-ops 的 `ops_bash`）写进部署层模块副本的 allow：随包模块只列官方名，未安装该插件的部署里这个名字不存在，不产生任何影响。装配里既无目录也无 SDK 正文时视为没有观察到工具面，不据此改执行闸（保持上一轮状态）。呈现失败与 guard 未注册仍可能让三面不一致，那两条路径不改判据。条件由规则引擎逐轮求值，条件变假时撤销上一轮注册的执行闸。
 
 PTC 下装配目录只有保留传输 `run_code`，实际可见面是 `tools:sdk` 正文。`run_code` 不参与 allow/deny 名单：allow 不点名也会保留，`requireMatch` 不计它；allow 不走 `restrict`，deny 的 `restrict` 也会过滤它。可见面裁到空时也不影响这条唯一入口。因此 `tool-surface` 这类 native 收窄声明可以直接与 PTC 共存，`requireMatch` 在 PTC 下按 SDK 正文判定。
 
 按需发现由同一份声明的 `discovery` 字段拥有（`{ kind }`，工具名与解锁键由适配器元数据提供；可选写 `tool`/`key` 只作断言）：动作在首次装配时用 `ctx.get('promptToolDiscovery')` 按 agent 解析适配器，从本会话 durable `tool/call` 与 PTC 嵌套 `tool/ptc-dispatch` 参数提取显式字符串名单，只做加法且不能越过 deny。两类事件名由 `engine/history.mjs` 的 `TOOL_INVOCATION_EVENT_TYPES` 统一；观察工具执行时读两类，观察模型动作/相位晋升仍只看顶层 `tool/call`。工具本身由适配器行注册——声明了 `discovery` 的模块必须把对应行（`tools` → `tool-search`、`skills` → `skill-search`）列进 `modules`，缺行在装配准备期失败。工具名按真实注册名称匹配；坏参数逐条忽略，缺会话回落静态 allow；适配器未注册时告警一次并跳过解锁回收，不阻断装配。
 
-首轮提示用同模板普通 inject-text 动作组合 count 条件与 session 去重；strategy: placeholder、fill: tool-catalog、params.action 引用同规则 tool-visibility 动作。只读变量 RESIDENT_TOOLS 来自该声明 allow 去 deny 后的逗号名单，DISCOVERY_TOOL 来自当前 Agent 的发现适配器工具名。提示正文由模块 text 控制，自动列名单，不复制配置，也不由工具可见面动作注册提示。
+首轮提示用同模板普通 inject-text 动作组合 count 条件与 session 去重；strategy: placeholder、fill: tool-catalog、params.action 引用同规则 tool-visibility 动作。只读变量 RESIDENT_TOOLS 来自该声明 allow 去 deny、再按当前可见面过滤后的逗号名单：观测不到工具面时回落声明名单，观测到工具面但一个常驻名都不在时跳过提示；DISCOVERY_TOOL 来自当前 Agent 的发现适配器工具名。提示正文由模块 text 控制，自动列名单，不复制配置，也不由工具可见面动作注册提示。
 
 tool-catalog 使用普通只读变量插值；`templateEvaluation: true` 在编译时拒绝，避免目录事实被持久变量求值覆盖。被引用动作须声明 allow，未知引用或错误动作种类拒绝；发现适配器不可用时跳过提示并告警。
 
-内置 tool-surface 的规则打开即收窄；`modules` 同时列 `tool-search` 行，工具由该行注册、元数据由发现注册表按 agent 解析，常驻集来自同一声明。普通提示动作在可见用户消息数不超过一条时自动列出声明常驻名单并提示发现解锁，按当前上下文去重；名单描述的是声明，不保证 requireMatch 退回完整目录后的实时工具面。需要晋升门时显式加规则条件；不由引擎偷偷恢复首轮全工具目录。
+内置 tool-surface 的规则打开即收窄；`modules` 同时列 `tool-search` 行，工具由该行注册、元数据由发现注册表按 agent 解析，常驻集来自同一声明。普通提示动作在可见用户消息数不超过一条时自动列出**当前可见**的常驻工具并提示发现解锁，按当前上下文去重；观测不到工具面时回落声明名单，观测到工具面但一个常驻名都不在时跳过提示，因此部署层登记的替换名若未安装就不会被宣告。需要晋升门时显式加规则条件；不由引擎偷偷恢复首轮全工具目录。
 
 ## 工具呈现（present-as）
 

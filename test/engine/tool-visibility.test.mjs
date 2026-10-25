@@ -122,7 +122,7 @@ test('tool-visibility：allow 与 deny 同时给时先保留再剔除（对齐�
   assert.equal(disposed.guards[0]({ name: 'gamma' }), 'v: tool "gamma" is not allowed by tool-visibility')
 })
 
-test('tool-visibility：allow 的 requireMatch 缺工具时 fail-open 并告警', async () => {
+test('tool-visibility：只缺部分常驻工具时照常收窄，缺项只留诊断', async () => {
   const rec = recordingCtx()
   const disposed = {}
   const scope = scopeOf({ disposed })
@@ -130,12 +130,25 @@ test('tool-visibility：allow 的 requireMatch 缺工具时 fail-open 并告警'
   const handler = only(rec, 'system-prompt/assemble')
   const input = assembled(toolList('alpha', 'beta'))
   const out = await handler(input, { agent: agentOf(scope) }, async () => input)
-  assert.deepEqual(out.tools.map((tool) => tool.name), ['alpha', 'beta'], '缺名单工具时暴露完整目录')
-  assert.ok(rec.warnings.some((message) => message.includes('ghost')), '告警带出具体缺项')
+  assert.deepEqual(out.tools.map((tool) => tool.name), ['alpha'], '缺一个名字不触发整面放宽')
+  assert.equal(disposed.guards[0]({ name: 'beta' }), 'v: tool "beta" is not allowed by tool-visibility', '执行闸保持收窄')
+  assert.ok(rec.warnings.some((message) => message.includes('ghost') && /narrowing continues/.test(message)), '诊断带出缺项')
+})
+
+test('tool-visibility：常驻名单全部缺失时 fail-open 并告警', async () => {
+  const rec = recordingCtx()
+  const disposed = {}
+  const scope = scopeOf({ disposed })
+  registerAction(rec.ctx, { kind: 'tool-visibility', id: 'v', allow: ['ghost', 'phantom'], requireMatch: true })
+  const handler = only(rec, 'system-prompt/assemble')
+  const input = assembled(toolList('alpha', 'beta'))
+  const out = await handler(input, { agent: agentOf(scope) }, async () => input)
+  assert.deepEqual(out.tools.map((tool) => tool.name), ['alpha', 'beta'], '名单全缺时暴露完整目录')
+  assert.ok(rec.warnings.some((message) => /none of the resident tools exist/.test(message) && message.includes('ghost')), '告警带出缺项')
   assert.equal(disposed.guards[0]({ name: 'beta' }), undefined, 'fail-open 时 allow guard 同步放行')
 })
 
-test('tool-visibility：tools 不是数组时执行闸也随正文缺项 fail-open', async () => {
+test('tool-visibility：tools 不是数组时以 SDK 正文判定名单全缺并 fail-open', async () => {
   const rec = recordingCtx()
   const disposed = {}
   const scope = scopeOf({ disposed })
@@ -147,7 +160,7 @@ test('tool-visibility：tools 不是数组时执行闸也随正文缺项 fail-op
   assert.equal(out.tools, undefined, '目录不是数组时保持原样')
   assert.equal(out.sections[0].text, sdk, '正文保留整段')
   assert.equal(disposed.guards[0]({ name: 'beta' }), undefined, 'fail-open 时执行闸同步放行')
-  assert.ok(rec.warnings.some((message) => /requireMatch tools absent/.test(message)))
+  assert.ok(rec.warnings.some((message) => /none of the resident tools exist/.test(message)))
 })
 test('tool-visibility：装配没有工具面时不打开执行闸', async () => {
   const rec = recordingCtx()
@@ -172,8 +185,11 @@ test('tool-visibility：fail-open 告警按动作去重（缺项名变化不重�
     const input = assembled(surface)
     await handler(input, { agent: agentOf(scope) }, async () => input)
   }
-  assert.equal(rec.warnings.length, 1, '同一动作只告警一次')
-  assert.ok(rec.warnings[0].includes('beta'), '首次消息带出当时的缺项')
+  const failOpenWarnings = rec.warnings.filter((message) => /none of the resident tools exist/.test(message))
+  const partialWarnings = rec.warnings.filter((message) => /narrowing continues/.test(message))
+  assert.equal(failOpenWarnings.length, 1, '全缺告警按动作去重')
+  assert.equal(partialWarnings.length, 1, '部分缺失同样只告警一次')
+  assert.ok(failOpenWarnings[0].includes('beta'), '全缺时带出当时的缺项')
 })
 
 
@@ -407,11 +423,13 @@ test('工具目录正文：普通注入引用同规则名单，修改声明或�
   const agent = { session: { id: 'catalog', header: {}, snapshotEvents: () => [] }, ctx: scopeOf({}) }
   registry.register(agent, 'tools', { tool: 'find_tools', unlock: { tool: 'find_tools', key: 'toolNames' } })
   const h = ruleHarness()
-  h.ctx.get = key => key === DISCOVERY_SERVICE ? registry : undefined
+  // 可见面里有 alpha/beta/gamma：delta 只出现在声明里，用来证明常驻名单按**在场**过滤。
+  const toolService = { schemas: () => toolList('alpha', 'beta', 'gamma') }
+  h.ctx.get = key => key === DISCOVERY_SERVICE ? registry : key === 'tools' ? toolService : undefined
   const messages = [{ role: 'user', source: { kind: 'user' }, content: [{ type: 'text', text: 'task' }] }]
   for (const [id, allow, expected] of [
     ['original', ['alpha', 'beta'], 'Resident: alpha. Search: find_tools.'],
-    ['copied-rule', ['alpha', 'gamma'], 'Resident: alpha, gamma. Search: find_tools.'],
+    ['copied-rule', ['alpha', 'gamma', 'delta'], 'Resident: alpha, gamma. Search: find_tools.'],
   ]) {
     const dispose = mountRuleSources(h.ctx, [{ moduleId: id, rules: compileRules([make(id, allow)]) }])
     const result = await h.run('agent/pre-step', [{ agent, messages }], () => ({ kind: 'enter', messages }))
@@ -441,6 +459,31 @@ test('工具目录正文：普通注入引用同规则名单，修改声明或�
   const writing = make('readonly', ['alpha'])
   writing.then[1].config.params.templateEvaluation = true
   assert.throws(() => compileRules([writing]), /tool-catalog.*templateEvaluation/, '只读目录填充不得静默丢失为持久变量求值')
+})
+
+test('工具目录正文：观测不到工具面时回落声明名单，观测到全缺时跳过提示', async () => {
+  const make = () => ({ id: 'hint', then: [
+    { id: 'tools', kind: 'tool-visibility', allow: ['alpha', 'ghost'], discovery: { kind: 'tools' } },
+    { id: 'hint', kind: 'inject-text', config: { layer: 'pre-step', strategy: 'placeholder', fill: 'tool-catalog',
+      position: 'after-all', text: 'Resident: {{RESIDENT_TOOLS}}.', params: { action: 'tools' } } },
+  ] })
+  const registry = createDiscoveryRegistry()
+  const agent = { session: { id: 'catalog-fallback', header: {}, snapshotEvents: () => [] }, ctx: scopeOf({}) }
+  registry.register(agent, 'tools', { tool: 'find_tools', unlock: { tool: 'find_tools', key: 'toolNames' } })
+  const messages = [{ role: 'user', source: { kind: 'user' }, content: [{ type: 'text', text: 'task' }] }]
+  const h = ruleHarness()
+  // ① 没有 tools 服务 = 未观测：回落声明名单，ghost 照旧列出。
+  h.ctx.get = key => key === DISCOVERY_SERVICE ? registry : undefined
+  let dispose = mountRuleSources(h.ctx, [{ moduleId: 'fallback', rules: compileRules([make()]) }])
+  let result = await h.run('agent/pre-step', [{ agent, messages }], () => ({ kind: 'enter', messages }))
+  assert.equal(result.messages.at(-1).content[0].text, 'Resident: alpha, ghost.')
+  dispose()
+  // ② 观测到工具面但常驻名一个都不在：跳过提示，不宣告不存在的名字。
+  h.ctx.get = key => key === DISCOVERY_SERVICE ? registry : key === 'tools' ? { schemas: () => toolList('beta') } : undefined
+  dispose = mountRuleSources(h.ctx, [{ moduleId: 'empty', rules: compileRules([make()]) }])
+  result = await h.run('agent/pre-step', [{ agent, messages }], () => ({ kind: 'enter', messages }))
+  assert.equal(result.messages.length, 1, '名单全缺时跳过提示')
+  dispose()
 })
 
 test('tool-visibility：条件由真变假时撤销上一轮的执行闸（未命中回调）', async () => {

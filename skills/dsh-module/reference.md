@@ -42,7 +42,7 @@
 |---|---|---|---|
 | `inject-text` | 由 config.layer 决定（**六层可注入**，agent-request/llm-stream/tool-pipeline 只作展示归属） | layer、strategy（static/placeholder/context-activation）、position、dedupe、mergeMode、role、order、text/texts、params、templateFile、configKind | 空正文不生成投递；变量赋值模板另按显式求值事务处理 |
 | `assembly` | `system-prompt/assemble` 下游 | `target.sections`（`add`/`remove` **或** `keep`）、`target.contexts`（`add`/`remove` **或** `clear`，二者互斥——并存编译期拒绝）；`target.tools` 已移除 | 返回未改动的装配 |
-| `tool-visibility` | system-prompt/assemble 下游 | allow 与/或 deny（先保留再剔除）、requireMatch（仅 allow）、discovery（{ kind }；tool/key 可选，只作断言）；受众归 scope，提示归普通注入动作 | 呈现面失败保留原装配；执行闸失败留痕，不静默放行 |
+| `tool-visibility` | system-prompt/assemble 下游 | allow 与/或 deny（先保留再剔除）、requireMatch（仅 allow；名单全缺才放宽）、discovery（{ kind }；tool/key 可选，只作断言）；受众归 scope，提示归普通注入动作 | 呈现面失败保留原装配；执行闸失败留痕，不静默放行 |
 | `tool-gate` | tools/pre-execute | decision（allow/deny/ask）、reason；工具名归 names 条件 | 一律放行——裁决 bug 不卡死调用 |
 | `tool-result` | tools/post-execute | action（accept/replace/block）、text（仅 replace/block）；工具名归 names 条件 | 一律接受——结果处理 bug 不把调用变成失败 |
 | `append-context` | tools/post-execute | text；续跑用 inject-text 的 turn-stop 层 | 保持原结果 |
@@ -86,7 +86,7 @@ rules:
   requireMatch: true
 ```
 
-声明 discovery 的模块必须在 modules 里列出对应适配器行（tools → tool-search），缺行在装配准备期失败。discovery 在首次装配时按 agent 解析适配器，并从持久 tool/call 与 PTC tool/ptc-dispatch 参数回收解锁名（只做加法、跨压缩保留）；工具由适配器行注册，discovery.tool/key 可选、只作断言。提示用同规则普通 inject-text 组合 count（user-message，max: 1）与 session 去重，采用 strategy: placeholder、fill: tool-catalog、params: { action: narrow }。只读 RESIDENT_TOOLS 是引用动作 allow 去 deny 后的逗号名单，DISCOVERY_TOOL 是当前 Agent 的发现适配器工具名；模块 text 控制提示正文，保留自动名单而不复制声明。requireMatch 在任一常驻工具缺失时放弃裁剪、暴露完整目录（fail-open），声明名单不等同实时工具面。allow 的执行面由 guard 兜底，不调用 restrict——restrict 的 allow 只收继承面名字，而全局 schemas 视图会漏预设/祖先层工具，局部 allow 反而会把它们裁掉；deny 才用 restrict + guard。PTC 下 tools 数组只有保留传输 `run_code`，实际可见面是 `tools:sdk` 正文；`run_code` 不写进 allow 也保留，且不参与 requireMatch，因此原生收窄声明可以直接与 PTC 共存。
+声明 discovery 的模块必须在 modules 里列出对应适配器行（tools → tool-search），缺行在装配准备期失败。discovery 在首次装配时按 agent 解析适配器，并从持久 tool/call 与 PTC tool/ptc-dispatch 参数回收解锁名（只做加法、跨压缩保留）；工具由适配器行注册，discovery.tool/key 可选、只作断言。提示用同规则普通 inject-text 组合 count（user-message，max: 1）与 session 去重，采用 strategy: placeholder、fill: tool-catalog、params: { action: narrow }。只读 RESIDENT_TOOLS 是引用动作 allow 去 deny、再按当前可见面过滤后的逗号名单（观测不到工具面时回落声明名单；观测到工具面但一个常驻名都不在时跳过提示），DISCOVERY_TOOL 是当前 Agent 的发现适配器工具名；模块 text 控制提示正文，保留自动名单而不复制声明。requireMatch 只在名单里的名字**一个都不存在**时放弃裁剪、暴露完整目录（fail-open）；缺一两个提供方只是少一个常驻工具，收窄照常生效，替换提供方（如 dsh-ops 的 ops_bash）写进部署层名单。解锁名不参与放宽判定。allow 的执行面由 guard 兜底，不调用 restrict——restrict 的 allow 只收继承面名字，而全局 schemas 视图会漏预设/祖先层工具，局部 allow 反而会把它们裁掉；deny 才用 restrict + guard。PTC 下 tools 数组只有保留传输 `run_code`，实际可见面是 `tools:sdk` 正文；`run_code` 不写进 allow 也保留，且不参与 requireMatch，因此原生收窄声明可以直接与 PTC 共存。
 
 tool-catalog 引用目标必须有 allow；仅支持普通只读插值，`templateEvaluation: true` 拒绝。未知动作引用保存前拒绝，发现适配器不可用则跳过提示并告警。
 

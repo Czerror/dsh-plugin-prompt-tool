@@ -727,7 +727,7 @@ context-activation 视图只调整附加提示，不另设模块卡容器；能�
 
 通用文本条件提供可选 minChars/maxChars 开关，启用后才写入含端点的非负安全整数；关闭删除键与该字段草稿。展示示例不会固化长度默认值。关键词与长度可独立或合取使用，分类正文通过普通分支与静态注入编辑；stream-output 使用 pass/replace 选择器及正文输入。工具可见面的受众归 scope 条件，首轮提示用普通注入动作，不提供专用 notice 开关。
 
-tool-catalog 填充来源沿现有普通注入表单编辑：params.action 引用同规则工具可见面动作，text 使用只读 RESIDENT_TOOLS / DISCOVERY_TOOL 自动列出声明常驻名单和发现工具。名单仍由被引用动作拥有，不在提示卡维护第二份。
+tool-catalog 填充来源沿现有普通注入表单编辑：params.action 引用同规则工具可见面动作，text 使用只读 RESIDENT_TOOLS / DISCOVERY_TOOL 自动列出**当前可见**的常驻工具与发现工具；观测不到工具面时回落声明名单，观测到工具面但一个常驻名都不在时跳过提示。名单仍由被引用动作拥有，不在提示卡维护第二份。
 
 `ToolSurfaceView` 的 `sessionId` 分支表示当前存活 Agent；`presetId` 分支表示官方预设后续 generation 的只读能力。工具预览保持独立只读页面，只有用户显式打开时请求，不因主会话模块列表的筛选或渲染遍历所有预设。
 

@@ -37,11 +37,13 @@ export function createMask(source, label, plugin, allowExtra) {
     /** 动态白名单的落点（活集合，由调用方每轮重填）；未声明 allowFrom 时不存在。 */
     allowExtra,
     /**
-     * fail-open 兜底开关（**可选**，缺省 false）：原 `tool-bootstrap` 的语义是
-     * 「keep 名单里的工具在本次装配目录里一个都不存在 → 放弃裁剪、暴露完整目录」，而原
-     * `tool-filter` 的同名场景是**照名单裁成空目录**。两种语义都真实存在，所以这里
-     * **不设默认**——要兜底的声明自己写 `requireMatch: true`。把某一个模块的特有语义当成
-     * 通用默认，会让另一个声明路径的行为被悄悄改掉（这正是对拍抓出来的）。
+     * fail-open 兜底开关（**可选**，缺省 false）：判据是「这份名单与装配面整体错位」——
+     * 名单里的名字**一个都不存在**时放弃裁剪、暴露完整目录；部分缺失只留诊断，收窄照常
+     * 生效（提供方被替换或关闭是正常部署差异，见 {@link toolSurfacePlan}）。原
+     * `tool-bootstrap` 的同名语义就是「一个都不存在 → 放弃裁剪」，而原 `tool-filter` 是
+     * 「永远照名单裁」；两种语义都真实存在，所以这里**不设默认**——要兜底的声明自己写
+     * `requireMatch: true`。把某一个模块的特有语义当成通用默认，会让另一个声明路径的行为
+     * 被悄悄改掉（这正是对拍抓出来的）。
      */
     requireMatch: source?.requireMatch === true,
     /** 与 tool-filter 的名单判据 / Layer.admits 同一判据（tool-filter 模块已删除，判据保留）。 */
@@ -60,17 +62,23 @@ export function createMask(source, label, plugin, allowExtra) {
 /**
  * 工具可见面的单一判据：装配目录、`tools:sdk` 正文与执行闸共用同一份 fail-open 决定。
  *
- * `available` = 目录名 ∪ SDK 正文名；`required` = 静态 allow ∪ 动态解锁项，再剔掉
+ * `available` = 目录名 ∪ SDK 正文名；`required` 只取**静态 allow**，再剔掉
  * `run_code`（保留传输）与 `mask.blocks()` 为真的名字（deny 覆盖者不该被要求存在）。
- * 缺项时三面必须一起放宽——只放宽一面会让模型看到的与能调的不一致。
+ *
+ * 放宽条件是「名单里的名字**一个都不存在**」：那才说明装配面与声明整体错位（换了一套
+ * 部署/平台）。只缺一部分是提供方被替换或关掉的正常部署差异——照常收窄，缺的工具由发现
+ * 通道补位，替换提供方的名字由部署层名单登记。解锁名（allowExtra）**不参与判定**：它是只做
+ * 加法的提示，若参与，模型解锁一个拼错或已改名的工具就能关掉收窄。
+ *
+ * 放宽时三面必须一起放宽——只放宽一面会让模型看到的与能调的不一致。
  */
 export function toolSurfacePlan(mask, available) {
   // 动作层的挂载期校验（prepareToolVisibility）已拒绝 requireMatch + 无 allow。
   const required = mask.requireMatch
-    ? [...new Set([...(mask.allow ?? []), ...(mask.allowExtra ?? [])])].filter((name) => name !== RUN_CODE && !mask.blocks(name))
+    ? [...new Set(mask.allow ?? [])].filter((name) => name !== RUN_CODE && !mask.blocks(name))
     : []
   const missing = required.filter((name) => !available.has(name))
-  return { failOpen: missing.length > 0, missing }
+  return { failOpen: required.length > 0 && missing.length === required.length, missing }
 }
 
 export function requireString(value, label, plugin) {

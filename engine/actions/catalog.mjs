@@ -74,7 +74,8 @@ export const ACTION_KINDS = Object.freeze({
     note: '一份声明拥有工具的可见面：allow/deny 名单、requireMatch、发现工具。名单语义对齐官方 '
       + 'ToolRestriction 的 and/or（同时给时先按 allow 保留、再按 deny 剔除）。deny 走 guard（本层与晚到工具）'
       + '与 restrict（继承的全局工具）；allow 只有 restrict 能覆盖全局工具，本层注册无法在执行层「只保留」——'
-      + '这是官方 restrict 的边界，不是本动作的取舍。',
+      + '这是官方 restrict 的边界，不是本动作的取舍。requireMatch 表达「名单与装配面整体错位」：'
+      + '名单里的名字一个都不存在才整面放宽，部分缺失只留诊断；解锁名不参与判定。',
   },
   'request-params': {
     title: '改模型请求参数',

@@ -1,5 +1,17 @@
 # Changelog
 
+## [Unreleased] - 2026-10-25
+
+### 工具面收窄：名单全缺才 fail-open（替换提供方不再整面放宽）
+
+- **判据**（`engine/actions/shared.mjs#toolSurfacePlan`）：放宽条件从「任一常驻名缺失」改为「静态 allow 里的名字**一个都不在**装配面」。装 dsh-ops 后关掉 Git Bash 导致 `bash` 缺席时，旧判据会整面放宽（目录与 `tools:sdk` 正文回到全量）；现在收窄照常生效，缺项只留一条诊断。
+- **解锁名退出判定**：`allowExtra` 不再并入 required。此前模型用 `tool_search` 解锁一个拼错或已被替换的名字（如 `web_search`），就会整面放宽，且该名字随持久调用记录跨请求保留。
+- **部分缺失留诊断**（`engine/actions/tool-visibility.mjs`）：新增按动作去重的 `resident tools absent (…)` 告警；全缺告警文案改为 `none of the resident tools exist (…)`。
+- **RESIDENT_TOOLS 只列在场工具**（`engine/fillers.mjs`）：常驻名单按当前可见面过滤：观测不到工具面时回落声明名单，观测到工具面但一个常驻名都不在时跳过提示——部署层登记了替换提供方而该插件未安装时，不再向模型宣告不存在的工具名。
+- **随包模块不写第三方名字**：`modules/tool-surface` 与 `templates/80-tool-surface` 仍只列官方名；替换提供方（如 dsh-ops 的 `ops_bash`）由部署层模块副本的 `allow` 登记，缺席名字在新判据下是惰性的。文档（`docs/engine-reuse.md`、`skills/dsh-module/reference.md`）同步。
+- **BREAKING（声明层面）**：`requireMatch: true` 的老声明从「缺任一即放宽」变为「全缺才放宽」。依赖旧兜底来发现名单错位的部署需自行核对；同层有 `tool_search` 等发现通道时，缺项仍可解锁。
+- **验证**：typecheck、lint（0 warning）、test **927 passed**（0 失败 0 跳过）、build、`git diff --check` 全绿。
+
 ## [3.0.1] - 2026-10-25
 
 ### 主要变化
