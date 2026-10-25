@@ -26,7 +26,10 @@ test('bridge request shape：所有 fields 态统一拒绝未知顶层字段，n
   for (const key of formerlyHandlerOwned) {
     assert.throws(() => assertBridgeRequest(BRIDGE_ENDPOINTS[key], { extra: 1 }), /未知请求字段：extra/, key)
   }
-  assert.throws(() => assertBridgeRequest('/models', { refresh: true, extra: 1 }), /未知请求字段：extra/, 'bridge-owned')
+  for (const [key, rule] of entries) {
+    if (!Array.isArray(rule.fields)) continue
+    assert.throws(() => assertBridgeRequest(BRIDGE_ENDPOINTS[key], { extra: 1 }), /未知请求字段：extra/, key)
+  }
   for (const key of ['assetUpload', 'describe', 'meta', 'templates', 'triggers']) {
     assert.doesNotThrow(() => assertBridgeRequest(BRIDGE_ENDPOINTS[key], { extra: 1 }), key + ' 不解析体')
   }

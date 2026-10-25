@@ -116,6 +116,9 @@ test('坏声明、错误类型、未知载荷与缺少写入版本均不改盘',
     assert.equal(result.status, 400)
     assert.equal(readFileSync(h.file, 'utf8'), h.original)
   }
+  const unknown = await h.call({ expectedRevisions: revisions, edits: createEdits(rules), unknown: true })
+  assert.equal(unknown.status, 400)
+  assert.equal(unknown.code, 'bridge-request-invalid', '顶层未知字段统一由字段表拒绝')
   assert.equal(h.rebuilds, 0)
 })
 

@@ -157,6 +157,9 @@ test('新参数、来源、载荷上限和回环边界均在写盘前拒绝', as
   for (const extra of [{ preview: 'true' }, { overwrite: 1 }, { targetId: 'UPPER' }, { targetName: [] }, { sourceKind: 'unknown' }, { expectedSourceDigest: 'bad' }, { sourceId: 'wrong' }, { unknown: true }]) {
     assert.equal((await call(h, 'importModulePackage', { files, ...extra })).status, 400, JSON.stringify(extra))
   }
+  const unknown = await call(h, 'importModulePackage', { files, unknown: true })
+  assert.equal(unknown.status, 400)
+  assert.equal(unknown.payload.code, 'bridge-request-invalid', '顶层未知字段统一由字段表拒绝')
   assert.equal((await call(h, 'importModulePackage', { files: [{ path: 'module.yml', content: 'x', encoding: 'binary' }], preview: true })).status, 400)
   assert.equal((await call(h, 'importModulePackage', { files, preview: true }, { socket: { remoteAddress: '192.0.2.1' } })).status, 403)
   assert.equal((await call(h, 'importModulePackage', { files, preview: true }, { headers: { host: 'localhost', origin: 'https://evil.invalid' } })).status, 403)

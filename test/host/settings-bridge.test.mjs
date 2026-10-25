@@ -692,6 +692,9 @@ test('模块配置排序端点：启用尾部追加、跨模块保存、冲突�
       [{ entries }, 400], [{ expectedRevision: snapshot.revision }, 400],
       [{ text: 'FORBIDDEN' }, 400], [null, 400], [[], 400],
     ]) assert.equal((await call('moduleConfigOrder', body)).status, status, JSON.stringify(body))
+    const unknownField = await call('moduleConfigOrder', { expectedRevision: snapshot.revision, entries, text: 'FORBIDDEN' })
+    assert.equal(unknownField.status, 400)
+    assert.equal(unknownField.code, 'bridge-request-invalid', '顶层未知字段统一由字段表拒绝')
     assert.deepEqual(dirs.map((dir) => readFileSync(join(dir, 'module.yml'), 'utf8')), before)
     assert.equal(rebuilt.length, count)
   })
