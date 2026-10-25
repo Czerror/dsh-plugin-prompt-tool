@@ -25,6 +25,12 @@ test('soul 模块：规则编译、模板存在与变量声明', () => {
   for (const file of ['criteria.md', 'core-hard.md', 'layers.md', 'echo.md', 'vital.md', 'ledger.md']) {
     assert.ok(readFileSync(join(moduleDir, 'assets', file), 'utf8').length > 0)
   }
+  const layers = readFileSync(join(moduleDir, 'assets', 'layers.md'), 'utf8')
+  assert.match(layers, /L0–L5/)
+  assert.doesNotMatch(layers, /L1–L6/)
+  for (const file of ['ECHO-权威口径.md', 'ECHO六层与mnemon协同说明书.md']) {
+    assert.ok(readFileSync(join(moduleDir, 'assets', 'reference', file), 'utf8').length > 0)
+  }
   assert.ok(Object.values(spec.variables).every(value => typeof value === 'string'))
   for (const name of ['module-file-tools', 'module-manifest-tools', 'module-variable-tools']) {
     assert.ok(spec.modules.includes(name), name)
