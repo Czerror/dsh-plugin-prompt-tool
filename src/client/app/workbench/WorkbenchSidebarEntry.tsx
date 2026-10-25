@@ -6,10 +6,10 @@ import { workbenchHostConventions } from './workbench-host-conventions.ts'
 type WorkbenchSidebarEntryProps = Pick<PropsRuntime<'sidebar.panellist'>, 'size'> & InjectFace<{ open: () => void }>
 
 /**
- * 侧栏导航入口的图标组件：只负责渲染。
+ * 侧栏导航入口的图标组件：渲染图标，并在 effect 里让 adapter 把行点击接到 open。
  *
- * 行点击由 `workbench-host-conventions.ts` 的 adapter 在冒泡阶段截获并打开抽屉；
- * 宿主行结构与事件名归 adapter，本组件不再依赖「图标位于行 button 内」。
+ * 宿主行结构与事件名归 `workbench-host-conventions.ts`；本组件只提供图标 ref 与 open，
+ * 不解释「图标位于哪个宿主按钮内」。
  */
 export function WorkbenchSidebarEntry({ size, open }: WorkbenchSidebarEntryProps) {
   const ref = useRef<SVGSVGElement>(null)

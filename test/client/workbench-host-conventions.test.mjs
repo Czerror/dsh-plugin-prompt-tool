@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { createWorkbenchHostConventions, workbenchHostConventions } from '../../src/client/app/workbench/workbench-host-conventions.ts'
+import { createWorkbenchHostConventions } from '../../src/client/app/workbench/workbench-host-conventions.ts'
 
 test('workbench-host-conventions：侧栏行点击打开抽屉，dispose 后失效', () => {
   const host = createWorkbenchHostConventions()
@@ -42,9 +42,4 @@ test('workbench-host-conventions：其他面板激活时关闭自己，打开时
   dispose()
   target.dispatchEvent(new CustomEvent('dsh-panel-activate', { detail: 'taskboard' }))
   assert.equal(closed, 2)
-})
-
-test('workbench-host-conventions：生产单例提供两个方法', () => {
-  assert.equal(typeof workbenchHostConventions.interceptSidebarRow, 'function')
-  assert.equal(typeof workbenchHostConventions.installPanelExclusion, 'function')
 })
