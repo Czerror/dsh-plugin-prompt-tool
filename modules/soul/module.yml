@@ -307,5 +307,5 @@ rules:
           role: user
           text: |-
             账本还有未结事项：回复里逐条收口，或说清为什么先放着。
-            需要追加时用 module_file_append（moduleId: soul，path: data/02-墨.jsonl，entry: {...}），
+            需要追加时用 module_file_append（moduleId: soul，path: data/02-soul.jsonl，entry: {...}），
             只往后加，不改旧行；收口后把 ledger_open 减到 0。

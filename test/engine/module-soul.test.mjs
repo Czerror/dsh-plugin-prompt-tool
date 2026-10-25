@@ -40,6 +40,6 @@ test('soul 模块：manifest 的 next/check 只读，不建目录', () => {
   assert.deepEqual(next.entries, [{ kind: 'dir', path: 'data/10-宪章' }])
   const checked = runModuleManifest(moduleDir, 'check')
   assert.equal(checked.ok, false)
-  assert.equal(checked.entries[0].path, 'data/02-墨.jsonl')
+  assert.equal(checked.entries[0].path, 'data/02-soul.jsonl')
   assert.equal(checked.entries[0].error, '文件不存在')
 })

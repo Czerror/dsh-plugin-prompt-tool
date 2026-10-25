@@ -143,7 +143,7 @@ files:
   - from: assets/templates/agents-template.md
     to: data/AGENTS.md
 checks:
-  - path: data/02-墨.jsonl
+  - path: data/02-soul.jsonl
     kind: jsonl
     maxBytes: 8388608
 ```
