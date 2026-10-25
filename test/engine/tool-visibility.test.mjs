@@ -261,6 +261,37 @@ test('tool-visibility：adapter 未注册时告警一次并跳过解锁回收', 
   assert.ok(rec.warnings.some((message) => /discovery adapter "tools" is not registered/.test(message)))
 })
 
+test('tool-visibility：解锁名按会话冻结——别的会话装配不得抹掉本会话的解锁', async () => {
+  const registry = createDiscoveryRegistry()
+  const rec = recordingCtx({ [DISCOVERY_SERVICE]: registry })
+  const guards = new Map()
+  const taggedScope = (tag) => ({ tools: {
+    schemas: () => toolList('alpha', 'gamma'),
+    register: () => () => {},
+    restrict: () => () => {},
+    guard: (fn) => { guards.set(tag, fn); return () => {} },
+  } })
+  const sessionOf = (id, events) => ({ id, header: { delegationDepth: 0 }, snapshotEvents: () => events })
+  const agentA = {
+    session: sessionOf('A', [{ type: 'tool/call', data: { name: 'tool_search', arguments: JSON.stringify({ toolNames: ['gamma'] }) } }]),
+    ctx: taggedScope('A'),
+  }
+  const agentB = { session: sessionOf('B', []), ctx: taggedScope('B') }
+  for (const agent of [agentA, agentB]) {
+    registry.register(agent, 'tools', { tool: 'tool_search', unlock: { tool: 'tool_search', key: 'toolNames' } })
+  }
+  registerAction(rec.ctx, { kind: 'tool-visibility', id: 'v', allow: ['alpha'], discovery: { kind: 'tools' } })
+  const handler = only(rec, 'system-prompt/assemble')
+  const inA = assembled(toolList('alpha', 'gamma'))
+  const outA = await handler(inA, { agent: agentA }, async () => inA)
+  assert.deepEqual(outA.tools.map((tool) => tool.name), ['alpha', 'gamma'], 'A 的解锁项在裁剪里保留')
+  // B 没有解锁记录：共享的活集合会被 clear 后重填。
+  const inB = assembled(toolList('alpha'))
+  await handler(inB, { agent: agentB }, async () => inB)
+  assert.equal(guards.get('A')({ name: 'gamma' }), undefined, 'B 的装配不得抹掉 A 的解锁名')
+  assert.equal(guards.get('B')({ name: 'gamma' }), 'v: tool "gamma" is not allowed by tool-visibility', 'B 仍拒绝自己没解锁的工具')
+})
+
 // ───────────────────────── 四、真实规则挂载 ─────────────────────────
 
 /** 轻量 ctx：只记录 ctx.on / effect，够 mountRuleSources 跑瀑布与 pre-step。 */

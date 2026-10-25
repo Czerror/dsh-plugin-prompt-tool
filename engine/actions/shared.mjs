@@ -46,13 +46,19 @@ export function createMask(source, label, plugin, allowExtra) {
      * 被悄悄改掉（这正是对拍抓出来的）。
      */
     requireMatch: source?.requireMatch === true,
-    /** 与 tool-filter 的名单判据 / Layer.admits 同一判据（tool-filter 模块已删除，判据保留）。 */
-    blocks: (toolName) => {
+    /**
+     * 与 tool-filter 的名单判据 / Layer.admits 同一判据（tool-filter 模块已删除，判据保留）。
+     *
+     * 第二个参数是**解锁项快照**：allowExtra 是跨 agent 共享的活集合，每次装配都会 clear 后
+     * 按当前会话重填；执行闸在该装配之后才被调用，必须读自己会话的冻结快照，否则别的会话
+     * （或探针装配）会把本会话的解锁名抹掉。缺省仍是活集合，供同一次装配内的裁剪使用。
+     */
+    blocks: (toolName, extra = allowExtra) => {
       if (typeof toolName !== 'string' || toolName.length === 0) return false
       // 保留传输不参与任何名单：allow 没点名也必须留下，deny 已在挂载期拒绝。
       if (toolName === RUN_CODE) return false
       if (deny !== undefined && deny.has(toolName)) return true
-      if (allowExtra?.has(toolName) === true) return false
+      if (extra?.has(toolName) === true) return false
       // 声明了 allow、或声明了 allowFrom（= 白名单模式，静态名单视为空集），未点名即裁掉。
       return (allow !== undefined || allowExtra !== undefined) && allow?.has(toolName) !== true
     },

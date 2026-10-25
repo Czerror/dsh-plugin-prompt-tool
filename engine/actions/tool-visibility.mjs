@@ -112,7 +112,8 @@ export function prepareToolVisibility(action, plugin) {
     const capability = createAgentCapability((agent) => {
       const tools = agent?.ctx?.tools
       if (tools === undefined) return undefined
-      const state = { failOpen: false }
+      // unlocked：本会话装配时冻结的解锁名快照（await next() 期间别的装配会重填共享集合）。
+      const state = { failOpen: false, unlocked: undefined }
       const disposers = []
       try {
         const known = toolScopeSnapshot(tools).globalNames
@@ -137,7 +138,7 @@ export function prepareToolVisibility(action, plugin) {
             const toolName = exec?.name
             if (toolName === RUN_CODE || typeof toolName !== 'string' || toolName.length === 0) return undefined
             if (deny?.has(toolName)) return `${label}: tool ${JSON.stringify(toolName)} is denied by tool-visibility`
-            if (mask.allow !== undefined && !state.failOpen && mask.blocks(toolName)) {
+            if (mask.allow !== undefined && !state.failOpen && mask.blocks(toolName, state.unlocked)) {
               return `${label}: tool ${JSON.stringify(toolName)} is not allowed by tool-visibility`
             }
             return undefined
@@ -150,8 +151,9 @@ export function prepareToolVisibility(action, plugin) {
       return { disposers, data: state }
     })
 
-    const syncGate = (agent) => {
-      const key = `${maskKey(mask)}|unlock:${allowExtra === undefined ? '' : [...allowExtra].sort().join(',')}`
+    // 重挂判定用**本会话的快照**：共享集合在别的装配里会被重填，不能当身份。
+    const syncGate = (agent, unlocked) => {
+      const key = `${maskKey(mask)}|unlock:${unlocked === undefined ? '' : [...unlocked].sort().join(',')}`
       capability.sync(agent, key)
     }
 
@@ -185,8 +187,11 @@ export function prepareToolVisibility(action, plugin) {
           fillUnlocked(allowExtra, context?.session ?? context?.agent?.session, unlock.tool, unlock.key, warnOnce, plugin, label)
         }
       }
+      // 在 await next() 之前冻结本会话的解锁名：之后的裁剪与执行闸都读这一份，
+      // 共享的 allowExtra 可能被并发的另一次装配（别的会话 / 探针）清空重填。
+      const unlocked = allowExtra === undefined ? undefined : new Set(allowExtra)
       try {
-        syncGate(context?.agent)
+        syncGate(context?.agent, unlocked)
       } catch (error) {
         // 闸注册失败必须留痕；呈现面照常结算，绝不把异常抛给装配。
         warnOnce(`${plugin}: tool-visibility action ${label} failed to sync execution gate: ${String(error?.message ?? error)}`)
@@ -209,7 +214,10 @@ export function prepareToolVisibility(action, plugin) {
         // 三面（目录 / 正文 / 执行闸）共用这一份判断：名单全缺才整体放宽，呈现与执行不得两套口径。
         const plan = toolSurfacePlan(mask, available)
         const state = capability.get(context?.session ?? context?.agent?.session)
-        if (state !== undefined) state.data.failOpen = plan.failOpen
+        if (state !== undefined) {
+          state.data.failOpen = plan.failOpen
+          state.data.unlocked = unlocked
+        }
         if (plan.failOpen) {
           // 去重键固定到动作：缺项名随部署变化，不能让每个新集合各占一条 warnOnce。
           warnOnce(`${plugin}: tool-visibility action ${label}: none of the resident tools exist (${plan.missing.join(', ')}) — exposing the full tool set (fail-open)`, `${plugin}: tool-visibility action ${label}: requireMatch fail-open`)
@@ -219,7 +227,7 @@ export function prepareToolVisibility(action, plugin) {
             warnOnce(`${plugin}: tool-visibility action ${label}: resident tools absent (${plan.missing.join(', ')}) — narrowing continues; register replacement providers in the deployment allow list`, `${plugin}: tool-visibility action ${label}: resident tools absent`)
           }
           if (Array.isArray(result.tools)) {
-            const kept = result.tools.filter((tool) => !mask.blocks(tool?.name))
+            const kept = result.tools.filter((tool) => !mask.blocks(tool?.name, unlocked))
             if (kept.length !== result.tools.length) result = { ...result, tools: kept }
           }
           if (Array.isArray(result.sections)) {
@@ -233,7 +241,7 @@ export function prepareToolVisibility(action, plugin) {
               }
               const names = mask.allow === undefined
                 ? mask.deny
-                : new Set([...presentNames()].filter((name) => mask.blocks(name)))
+                : new Set([...presentNames()].filter((name) => mask.blocks(name, unlocked)))
               if (names === undefined || names.size === 0) return section
               const stripped = stripSdkDeclarations(section.text, names)
               if (stripped === section.text) return section

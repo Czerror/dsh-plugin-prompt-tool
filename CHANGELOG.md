@@ -9,8 +9,9 @@
 - **部分缺失留诊断**（`engine/actions/tool-visibility.mjs`）：新增按动作去重的 `resident tools absent (…)` 告警；全缺告警文案改为 `none of the resident tools exist (…)`。
 - **RESIDENT_TOOLS 只列在场工具**（`engine/fillers.mjs`）：常驻名单按当前可见面过滤：观测不到工具面时回落声明名单，观测到工具面但一个常驻名都不在时跳过提示——部署层登记了替换提供方而该插件未安装时，不再向模型宣告不存在的工具名。
 - **随包模块不写第三方名字**：`modules/tool-surface` 与 `templates/80-tool-surface` 仍只列官方名；替换提供方（如 dsh-ops 的 `ops_bash`）由部署层模块副本的 `allow` 登记，缺席名字在新判据下是惰性的。文档（`docs/engine-reuse.md`、`skills/dsh-module/reference.md`）同步。
+- **解锁名按会话冻结**（`engine/actions/tool-visibility.mjs`、`engine/actions/shared.mjs#createMask`）：`allowExtra` 是跨 agent 共享的活集合，每次装配 clear 后重填；裁剪与执行闸此前都读它，于是别的会话（或探针装配）一跑就会抹掉本会话的解锁名——表现为工具在 `tools:sdk` 正文里可见、调用却被执行闸拒绝。现在装配时冻结本会话快照，裁剪、重挂判定与 guard 都读快照。
 - **BREAKING（声明层面）**：`requireMatch: true` 的老声明从「缺任一即放宽」变为「全缺才放宽」。依赖旧兜底来发现名单错位的部署需自行核对；同层有 `tool_search` 等发现通道时，缺项仍可解锁。
-- **验证**：typecheck、lint（0 warning）、test **927 passed**（0 失败 0 跳过）、build、`git diff --check` 全绿。
+- **验证**：typecheck、lint（0 warning）、test **928 passed**（0 失败 0 跳过）、build、`git diff --check` 全绿。
 
 ## [3.0.1] - 2026-10-25
 
