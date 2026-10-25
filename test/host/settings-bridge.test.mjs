@@ -721,7 +721,7 @@ test('模块配置排序端点：启用尾部追加、跨模块保存、冲突�
   })
 })
 
-test('契约：所有端点（含 handler-owned）统一拒绝未知顶层字段', async () => {
+test('契约：9 个曾由 handler 拒绝的端点统一拒绝未知顶层字段', async () => {
   const dir = makeUserPresetDir('pt-unknown-fields-')
   writeFileSync(join(dir, 'module.yml'), `id: ${basename(dir)}\nmodules: []\n`, 'utf8')
   const { ctx, handlers } = makeHarness()

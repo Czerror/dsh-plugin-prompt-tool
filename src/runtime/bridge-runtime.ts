@@ -37,7 +37,7 @@ import { readModuleFacts, resolveModuleParams } from '../host/module-params.ts'
 import { readModuleVariables } from '../host/module-variables.ts'
 import { createAssetSources } from '../host/asset-sources.ts'
 import { storageRoot } from '../host/paths.ts'
-import { ASSET_IMPORT_FIELDS, type AssetFile, type AssetImportRequest, type ImportKind } from '../shared/asset-transfer.ts'
+import type { AssetFile, AssetImportRequest, ImportKind } from '../shared/asset-transfer.ts'
 import { moduleParamFallbacks } from '../shared/engine-params.ts'
 import { ENGINE_EDITOR_GROUP_MAP, type ModuleFacts } from '../shared/engine-capabilities.ts'
 import { isModuleId } from '../shared/module-ids.ts'
@@ -170,9 +170,6 @@ export interface ImportRequestParams extends AssetImportRequest {
 export function readImportRequestParams(record: Record<string, unknown>):
   | { ok: true; params: ImportRequestParams }
   | { ok: false; message: string } {
-  // HTTP 端点已由统一字段表在 handler 前拒绝；这里保留给导入工具复用。
-  const allowed = new Set(Object.keys(ASSET_IMPORT_FIELDS))
-  if (Object.keys(record).some((key) => !allowed.has(key))) return { ok: false, message: '导入请求包含未知字段' }
   if ((record.files === undefined) === (record.sourceId === undefined)) return { ok: false, message: 'files 与 sourceId 必须且只能提供一个' }
   if (record.sourceId !== undefined && (typeof record.sourceId !== 'string' || !/^[0-9a-f-]{36}$/i.test(record.sourceId))) return { ok: false, message: 'sourceId 必须是有效上传来源标识' }
   if (record.overwrite !== undefined && typeof record.overwrite !== 'boolean') return { ok: false, message: 'overwrite 必须是布尔值' }
