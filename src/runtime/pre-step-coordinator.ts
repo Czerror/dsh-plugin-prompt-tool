@@ -64,17 +64,15 @@ function createPolicyReader(policyFile?: string) {
 /**
  * pre-step 的显式管线：先过滤官方指令，再执行规则批。
  *
- * 顺序不能交给 Cordis 的 `prepend` 注册栈——两个监听器的相对次序只由注册先后决定；
- * batch 必须收到已过滤的 messages，规则帧才不会把即将删除的官方指令当成输入。
+ * 监听器已排除 reject/非对象；这里只处理 messages 数组。顺序是代码事实，
+ * 不交给 Cordis 的 `prepend` 注册栈——否则顺序只由两个监听器的注册先后决定。
  */
-export async function runPreStepPipeline(
-  decision: PreStepDecision,
+async function runPreStepPipeline(
+  messages: unknown[] | undefined,
   filter: (messages: unknown[]) => unknown[],
-  batch: (decision: PreStepDecision) => Promise<PreStepDecision>,
+  batch: (messages: unknown[] | undefined) => Promise<PreStepDecision>,
 ): Promise<PreStepDecision> {
-  if (!isRecord(decision) || decision.kind === 'reject' || !Array.isArray(decision.messages)) return batch(decision)
-  const messages = filter(decision.messages)
-  return batch(messages === decision.messages ? decision : { ...decision, messages: messages as typeof decision.messages })
+  return batch(Array.isArray(messages) ? filter(messages) : undefined)
 }
 
 export function installPreStepCoordinator(ctx: Context, options: PreStepCoordinatorOptions = {}): PreStepCoordinatorService {
@@ -136,15 +134,17 @@ export function installPreStepCoordinator(ctx: Context, options: PreStepCoordina
     confirmDelivered(memo, session, event)
   })
 
-  // 一个 prepend 监听器显式排定「过滤官方指令 → 规则批」；顺序在实现里，不在 Cordis 的注册栈里。
-  // 官方监听器（如 dsh-tool-skill 的目录发布）在 `await next()` 之后才 append messages，
-  // 所以这里先拿到完整 decision，过滤完再交给 batch；batch 异常时仍返回已过滤的 decision。
+  // 一个 prepend 监听器显式排定「过滤官方指令 → 规则批」；官方监听器在 `await next()`
+  // 之后才 append messages，所以先拿完整 decision、过滤，再交给 batch。
   ctx.on('agent/pre-step', async (payload: unknown, next: () => Promise<PreStepDecision>) => {
     const decision = await next()
     if (!active || !isRecord(decision) || decision.kind === 'reject') return decision
     const agent = isRecord(payload) ? payload.agent : undefined
     const session = isRecord(agent) ? agent.session : undefined
-    const batch = async (filteredDecision: PreStepDecision): Promise<PreStepDecision> => {
+    const batch = async (nextMessages: unknown[] | undefined): Promise<PreStepDecision> => {
+      const filteredDecision = nextMessages === undefined || nextMessages === decision.messages
+        ? decision
+        : { ...decision, messages: nextMessages as typeof decision.messages }
       if (agent === undefined || session === undefined) return filteredDecision
       try {
         const scope = isRecord(agent) && agent.ctx !== undefined ? scopeOf(agent.ctx as Context) : undefined
@@ -164,7 +164,15 @@ export function installPreStepCoordinator(ctx: Context, options: PreStepCoordina
         return filteredDecision
       }
     }
-    return runPreStepPipeline(decision, messages => filterInstructions(agent, messages), batch)
+    const filter = (messages: unknown[]): unknown[] => {
+      try { return filterInstructions(agent, messages) }
+      catch (error) {
+        // 过滤失败不阻断规则批：保留原消息并告警一次。
+        warnOnce(`${WARN_LABEL}: instruction filter failed, keeping messages: ${String((error as Error | undefined)?.message ?? error)}`)
+        return messages
+      }
+    }
+    return runPreStepPipeline(Array.isArray(decision.messages) ? decision.messages : undefined, filter, batch)
   }, { prepend: true })
 
   ctx.effect(() => () => {

@@ -248,7 +248,7 @@ surface 缺失或非法时可见视图退回完整日志；合法空 nodes 就�
 
 ## pre-step 协调器与官方指令过滤
 
-宿主 `src/runtime/pre-step-coordinator.ts` 汇总模块规则与直接来源，在**一个** `prepend` 监听器里显式先过滤官方待注入指令、再执行规则批；顺序是代码事实，不依赖监听器注册先后。来源白名单过滤器使用真实已领取 payload，不将下游增量当原始消息。官方监听器（如 `dsh-tool-skill` 的技能目录）在 `await next()` 之后才 append messages，协调器拿到完整 decision 后先删再跑批；batch 的规则帧使用过滤后的 messages，batch 异常时仍返回已过滤的 decision。
+宿主 `src/runtime/pre-step-coordinator.ts` 汇总模块规则与直接来源，在**一个** `prepend` 监听器里显式先过滤官方待注入指令、再执行规则批；顺序是代码事实，不依赖监听器注册先后。来源白名单过滤器使用真实已领取 payload，不将下游增量当原始消息。官方监听器（如 `dsh-tool-skill` 的技能目录）在 `await next()` 之后才 append messages，协调器拿到完整 decision 后先删再跑批；batch 的规则帧使用过滤后的 messages，batch 异常时仍返回已过滤的 decision。协调器自身仍是 `prepend` 监听器，只有这样才能看到官方监听器在 `await next()` 之后追加的消息；「不依赖注册先后」只指 filter 与 batch 的相对顺序。
 
 无协调器的 standalone 路径（`applyPromptConfigSources` 单独执行批）是例外：`prepend` 只由 `options.prepend` 与配置的 `prepend` 决定，纯 `ruleAction` 的 `pre-step-filter` 拿不到最外层，`skill-surface` 在那种部署里可能删不掉官方目录。出现第二个无协调器消费者时，把「需要最外层」上收到动作语义再统一，而不是给判据加更多特例。
 

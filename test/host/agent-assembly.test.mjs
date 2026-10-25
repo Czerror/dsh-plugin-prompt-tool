@@ -1665,8 +1665,39 @@ test('官方 recipe 行只声明时给出诊断，不静默假装已挂载', asy
   assert.ok(h.warnings.some(message => message.includes('filesystem-editor')), '声明官方行必须可见')
 })
 
-// 回归：pre-step 批执行必须在最外层。官方 dsh-tool-skill 是更内层的监听器，`await next()`
-// 之后才 append 技能目录；协调器若在内层，过滤时目录还没出现，随后外层再 append → 删不掉。
+// 回归：协调器的单个 prepend 监听器必须在最外层。官方 dsh-tool-skill 是更内层的监听器，
+// `await next()` 之后才 append 技能目录；协调器若在内层，过滤时目录还没出现，随后外层再 append → 删不掉。
+// 回归：filter 必须先于规则批——规则批的规则帧只应看到过滤后的 messages。
+test('协调器管线：规则批收到过滤后的官方指令', async (t) => {
+  writeModuleFixture('sees-filtered', {
+    modules: ['rule-engine'],
+    rules: [{
+      id: 'sees-official',
+      if: { text: { subject: 'userMessage', keys: ['OFFICIAL'] } },
+      then: [{ id: 'inject', kind: 'inject-text', config: { id: 'inject', layer: 'pre-step', text: 'LEAKED' } }],
+    }],
+  })
+  const identity = instructionFileIdentityOf('~/.dsh/AGENTS.md')
+  assert.ok(identity.fileId)
+  const current = readInstructionPolicy()
+  assert.equal(writeInstructionPolicy({ expectedRevision: current.revision, patch: { files: { [identity.fileId]: { enabled: false } } } }).ok, true)
+  const h = await liveAssembly(t, () => ['sees-filtered'], {
+    beforeCoordinator: (root) => {
+      root.on('agent/pre-step', async (_payload, next) => {
+        const decision = await next()
+        return { ...decision, messages: [...decision.messages, {
+          id: 'official', role: 'user',
+          source: { kind: 'agent-instructions', changes: [{ path: '~/.dsh/AGENTS.md', action: 'set' }] },
+          content: [{ type: 'text', text: 'OFFICIAL' }],
+        }] }
+      })
+    },
+  })
+  const agent = await h.makeAgent('sees-filtered-main')
+  const decision = await h.inject(agent)
+  assert.ok(!decision.messages.some(message => message.content?.some(content => content.text === 'LEAKED')), '规则批不得把已过滤的官方指令当成输入')
+})
+
 test('协调器批执行在最外层：先注册的监听器在 next() 之后追加的消息仍会被过滤', async (t) => {
   writeModuleFixture('drop-catalog', {
     modules: ['rule-engine'],
