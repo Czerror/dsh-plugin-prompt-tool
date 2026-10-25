@@ -18,7 +18,7 @@ id: superpowers
 name: Superpowers 技能优先引导（bootstrap）
 version: 1.3.0
 engineCompat: ">=0.4.2"
-description: 常驻注入上游 using-superpowers 技能原文（v7.0.1）：任何回答或动作前先查技能，附技能优先级、英文路由表、红旗清单与用户指令优先级。技能正文留在技能库，本模块不分发技能文件。
+description: 常驻注入上游 using-superpowers 技能原文（v7.0.1）：任何回答或动作前先查技能，附技能优先级、英文路由表、红旗清单与用户指令优先级。技能正文留在技能库，本模块不分发技能文件。原项目：https://github.com/obra/superpowers
 meta:
   source: manual
 modules:

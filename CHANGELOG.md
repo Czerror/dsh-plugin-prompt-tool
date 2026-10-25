@@ -1,5 +1,15 @@
 # Changelog
 
+## [3.0.1] - 2026-10-25
+
+### 主要变化
+
+- **内置模块说明补原项目地址**：`modules/ponytail`、`modules/superpowers`、`modules/soul` 的 description 分别加入原项目远程地址（DietrichGebert/ponytail、obra/superpowers、cyanwell/dsh-agent-soul）。
+- **soul 账本文件更名**：`data/02-墨.jsonl` → `data/02-soul.jsonl`；同步 manifest、规则、模板与已部署模块的 `data/AGENTS.md`；当前没有实体账本，首次追加时按新名创建。
+- **soul 同步 ECHO 权威口径**：功能 `layers.md` 由 L1–L6 改为 L0–L5；同步源仓库 `b3606be` 的 4 份 reference，新增 `ECHO-权威口径.md` 与 `ECHO六层与mnemon协同说明书.md`。
+- **验证**：typecheck、lint、test **924 passed**、build、`pnpm verify:pack`、`git diff --check` 全绿。
+- 本次为元数据/内容发布，无破坏性变更。
+
 ## [3.0.0] - 2026-10-25
 
 ### 主要变化

@@ -3,7 +3,7 @@ name: Ponytail 懒惰资深工程师模式
 version: 5.3.2
 engineCompat: ">=0.4.2"
 description: 把 ponytail 的行为规则注入当前模块，正文对齐上游 v5.3.2，并附 lite / full / ultra 三档强度。
-  互斥组 ponytail-level 默认 full；启用任一档即关闭同组其他档，与卡片排序无关。
+  互斥组 ponytail-level 默认 full；启用任一档即关闭同组其他档，与卡片排序无关。原项目：https://github.com/DietrichGebert/ponytail
 meta:
   source: manual
 modules:
