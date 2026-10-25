@@ -568,7 +568,7 @@ test('契约：/tool-surface 返回存活 Agent 的只读工具面摘要，未�
   assert.equal(unknownPayload.code, 'tool-surface-unknown-session')
 })
 
-test('契约：宽松 JSON 端点也拒绝未知字段——400 bridge-request-invalid', async () => {
+test('契约：JSON 端点拒绝未知字段——400 bridge-request-invalid', async () => {
   const handlers = register()
   const handler = handlers.get(SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.models)
   assert.ok(handler, '/models 端点未注册')

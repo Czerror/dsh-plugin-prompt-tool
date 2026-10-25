@@ -170,6 +170,7 @@ export interface ImportRequestParams extends AssetImportRequest {
 export function readImportRequestParams(record: Record<string, unknown>):
   | { ok: true; params: ImportRequestParams }
   | { ok: false; message: string } {
+  // HTTP 端点已由统一字段表在 handler 前拒绝；这里保留给导入工具复用。
   const allowed = new Set(Object.keys(ASSET_IMPORT_FIELDS))
   if (Object.keys(record).some((key) => !allowed.has(key))) return { ok: false, message: '导入请求包含未知字段' }
   if ((record.files === undefined) === (record.sourceId === undefined)) return { ok: false, message: 'files 与 sourceId 必须且只能提供一个' }

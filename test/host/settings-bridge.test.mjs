@@ -718,6 +718,19 @@ test('模块配置排序端点：启用尾部追加、跨模块保存、冲突�
   })
 })
 
+test('契约：所有端点（含 handler-owned）统一拒绝未知顶层字段', async () => {
+  const dir = makeUserPresetDir('pt-unknown-fields-')
+  writeFileSync(join(dir, 'module.yml'), `id: ${basename(dir)}\nmodules: []\n`, 'utf8')
+  const { ctx, handlers } = makeHarness()
+  registerSettingsBridge(ctx, { ns: 'prompt-tool', models: () => ({ available: true, providers: [] }), skills: () => skillsStateStub(), moduleDirectory: () => dir })
+  for (const endpoint of ['assetRelease', 'exportModule', 'importModulePackage', 'moduleConfigOrder', 'moduleName', 'moduleVariables', 'persona', 'personaSources', 'rules']) {
+    const result = await call(handlers, endpoint, { extra: 1 })
+    assert.equal(result.status, 400, endpoint)
+    assert.equal(result.payload.code, 'bridge-request-invalid', endpoint)
+    assert.match(result.payload.message, /未知请求字段：extra/, endpoint)
+  }
+})
+
 test('模块写队列：两个并发写不交错——后入队的写按先入队者已落盘的结果继续', async (t) => {
   const { setModuleEnabled } = await import('../../src/host/config-store.ts')
   const dirs = ['queue-first-', 'queue-second-'].map(makeUserPresetDir)

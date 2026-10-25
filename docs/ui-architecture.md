@@ -497,14 +497,14 @@ src/shared/bridge-contract.ts 同时拥有：
 - BridgeExtrasMap 端点级**顶层附加字段**映射——与 `value` 平铺的那些键（除 `ok`）**按端点声明**：`bootstrap` 与 `describe` 的字段集**不同**（后者不下发 `meta`／`promptConfigs` 等会话段）。`BridgeResponse<K>` 是「`value` ＋ 该端点顶层字段」的完整成功响应，条件是**条件存在的键标 `?` 并注明缺席条件**（如空主语时 `moduleParams`／`moduleFacts` 整键缺席）；某个键变为必有时去掉 `?`，编译器会指出 host 是否补齐；
 - 请求/响应覆盖的编译期断言。
 
-data/bridge-client.ts 提供泛型 bridgeCall(endpoint key, typed body, subject?) 和 bridgeUpload。主语是**每次调用显式携带的实参**（模块 id），没有会话级编辑目标，也不保留上次用到的主语；逐卡规则读写使用所属模块身份。业务组件不得拼接 /bootstrap、/module-delete 等原始路径。新增或改名端点必须同步 shared map、host 注册和契约测试。请求体顶层字段由 `shared/bridge-request-shape.ts` 的 `BRIDGE_REQUEST_FIELDS` 统一拒绝（400 `bridge-request-invalid`）；handler 只保留类型、枚举、互斥、身份、版本与读写组合校验，不再手抄字段名单。
+data/bridge-client.ts 提供泛型 bridgeCall(endpoint key, typed body, subject?) 和 bridgeUpload。主语是**每次调用显式携带的实参**（模块 id），没有会话级编辑目标，也不保留上次用到的主语；逐卡规则读写使用所属模块身份。业务组件不得拼接 /bootstrap、/module-delete 等原始路径。新增或改名端点必须同步 shared map、host 注册和契约测试。请求体顶层字段由 `shared/bridge-request-shape.ts` 的 `BRIDGE_REQUEST_FIELDS` 统一拒绝（400 `bridge-request-invalid`，`body:'none'` 端点不读体）；handler 只保留类型、枚举、互斥、身份、版本与读写组合校验，不再手抄字段名单。
 
-**契约字段集 = 运行期顶层接受集（2026-10-21 收紧）**：`shared/bridge-request-shape.ts` 是 45 个端点顶层字段的唯一运行期表，与 `BRIDGE_ENDPOINTS` 编译期覆盖绑定；表值三态：`{ body: 'none' }` / `{ fields }` / `{ handler: true, fields }`。所有 JSON 端点带未知顶层字段一律 400，其中 29 个由统一表回 `bridge-request-invalid` 并点名多余字段。
+**契约字段集 = 运行期顶层接受集（2026-10-25 统一）**：`shared/bridge-request-shape.ts` 是 41 个端点顶层字段的唯一运行期表，与 `BRIDGE_ENDPOINTS` 编译期覆盖绑定；表值两态：`{ body: 'none' }` / `{ fields }`。所有 36 个 JSON 端点带未知顶层字段一律 400 `bridge-request-invalid` 并点名多余字段，handler 不再保留第二份字段名单。
 
-- 例外显式登记：9 个 handler 已自带更具体拒绝码/消息的端点（assetRelease、exportModule、moduleVariables、moduleName、moduleConfigOrder、rules、persona、personaSources、importModulePackage）仍回原错误码，统一断言不重复拦截。moduleName 读分支仍比契约更严（白名单为空），属已登记差异。
-- 5 个 `body:'none'` 端点（meta、describe、templates、assetUpload、triggers）不解析请求体；其余 36 个 JSON 端点中 27 个由统一表拒绝、9 个由 handler 拒绝。`ruleDiagnostics` 是 JSON 端点但无字段，任何顶层字段都会被统一表拒绝。
-- 字段表只约束顶层字段；嵌套对象（rules edits、persona、import files 等）仍由域内校验。Agent 导入工具复用 `shared/asset-transfer.ts#ASSET_IMPORT_FIELD_KEYS`（与表里 `importModulePackage` 的 `fields` 同源）；TUI 是斜杠命令语法，不硬套 JSON decode。
-- 新增字段仍要同时改 `BridgeRequestMap` 与字段表：fields 态双向对齐（表键 ⊆ 类型且类型键 ⊆ 表），handler 态单向（表键 ⊆ 类型），none 态要求请求类型为 `undefined`；漏改任一侧 typecheck 失败。表测试保证 45 端点/6 none/10 handler-owned 全覆盖，并用独立名单对拍 handler 标记。导入端点的字段来源是 `shared/asset-transfer.ts#ASSET_IMPORT_FIELDS`，HTTP 与工具共用；工具显式排除它没有存储的 `sourceId`。
+- 5 个 `body:'none'` 端点（meta、describe、templates、assetUpload、triggers）不解析请求体；其余 36 个 JSON 端点全部由统一表拒绝。`ruleDiagnostics` 是 JSON 端点但无字段，任何顶层字段都会被统一表拒绝。
+- handler 只保留类型、枚举、互斥、身份、版本与读写组合校验（如 moduleName 读分支不收写入版本、`refreshOnly` 与写字段互斥、moduleConfigOrder 读写组合）；这些不是「未知字段」，不能交给静态表。
+- 字段表只约束顶层字段；嵌套对象（rules edits、persona、import files 等）仍由域内校验。Agent 导入工具复用 `shared/asset-transfer.ts#ASSET_IMPORT_FIELD_KEYS`，HTTP 端点由统一表拒绝；`readImportRequestParams` 仍保留自己的未知字段防御供工具复用。TUI 是斜杠命令语法，不硬套 JSON decode。
+- 新增字段仍要同时改 `BridgeRequestMap` 与字段表：fields 态双向对齐（表键 ⊆ 类型且类型键 ⊆ 表），none 态要求请求类型为 `undefined`；漏改任一侧 typecheck 失败。表测试保证 41 端点 / 5 none / 36 fields 全覆盖。
 - 另有一处契约与实现的错位留档：`paramOverrides` 契约声明 `expectedModuleId?` 而 handler 从不读它（只有归属门读）；`triggers` 已退役（请求类型 `undefined`、410 路由保留）。
 
 ### 7.1.1 模块主语策略
