@@ -166,7 +166,8 @@ module.yml.configOrder 保存规则id→非负安全整数，身份仍是模块i
 2. 参数保存的快照时机分别保留：模块参数在共享队列任务开始执行时取值，全局参数在入队前取值；成功只确认实际提交的快照，请求期间的新输入继续保持 dirty。模块参数的跨域刷新资格仍在入队前捕获，等待期间的新编辑也会阻止该次保存触发整轮刷新。
 3. 切模块先处理未存草稿并等待队列，迟到响应只能更新原目标草稿。
 4. 变量草稿按模块+scope 隔离，内容和开关分别保留版本；CAS 失败保留编辑。
-5. 已持久化但发布失败显示实际状态，重试只刷新；不重复导入、改名或自增。
+5. 所有已写盘端点的运行发布失败统一回 200 + `persisted` + `publicationPending` + `publicationError`；500 只留给没有写盘的失败。端点覆盖 params、rules、persona、personaSources、moduleVariables、customTools、moduleName、moduleCapability、importModulePackage、moduleClone、moduleDuplicate、moduleEnable、moduleConfigOrder、moduleDelete。
+6. 已持久化但发布失败显示实际状态，重试只发 `refreshOnly` 重建运行实例：不重复导入、改名、自增、安装、创建或删除。`refreshOnly` 与同端点的写字段混用一律 400。
 
 空键行属于 UI 草稿，保存载荷不发空键；保存或后台读取不因空行清理用户输入。UI 只在对应草稿版本仍一致时刷新。客户端使用共享 request/value map，服务端仍完整复检类型、大小、目标与版本。
 

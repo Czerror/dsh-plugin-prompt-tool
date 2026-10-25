@@ -5,6 +5,7 @@ import { MAX_BRIDGE_BODY_BYTES } from '../../shared/bridge-contract.ts'
 import type { AssetFile, AssetImportRequest, AssetSummary, ImportChoices, ImportKind } from '../../shared/asset-transfer.ts'
 import type { ImportOrderCandidates, ImportPreviewState } from '../prompt-tool-types.ts'
 import { bridgeCall, bridgeUpload, errorMessage } from './bridge-client.ts'
+import { readPublication } from '../../shared/publication.ts'
 import { readImportFiles } from './import-files.ts'
 
 export type ImportFlowPhase = 'idle' | 'reading' | 'confirming' | 'submitting' | 'stale' | 'error' | 'complete'
@@ -13,7 +14,13 @@ export type ImportPreviewOutcome =
   | { kind: 'candidates'; candidates: StOrderGroupCandidate[]; sourceName?: string }
   | { kind: 'kinds'; kinds: ImportKind[] }
   | { kind: 'error'; message: string; stale?: boolean }
-export interface ImportCommitResult { ok: boolean; stale?: boolean; message?: string; label?: string }
+export interface ImportCommitResult {
+  ok: boolean
+  stale?: boolean
+  message?: string
+  label?: string
+  publication?: { pending: boolean; error?: string }
+}
 export interface ImportFlowHandlers {
   preview: (request: AssetImportRequest) => Promise<ImportPreviewOutcome>
   commit: (preview: ImportPreviewState) => Promise<ImportCommitResult>
@@ -36,6 +43,7 @@ export function useImportPreviewFlow(handlers: ImportFlowHandlers) {
   const [progress, setProgress] = useState(emptyProgress)
   const [resultLabel, setResultLabel] = useState<string>()
   const [refreshError, setRefreshError] = useState('')
+  const [publication, setPublication] = useState<{ pending: boolean; error?: string }>()
   const api = useRef(handlers)
   api.current = handlers
   const alive = useRef(true)
@@ -186,6 +194,7 @@ export function useImportPreviewFlow(handlers: ImportFlowHandlers) {
       }
       result.current = committed.label
       setResultLabel(committed.label)
+      setPublication(committed.publication)
       setProgress((previous) => ({ ...previous, imported: previous.imported + 1 }))
       try {
         await api.current.onCommitted?.(committed.label)
@@ -227,6 +236,21 @@ export function useImportPreviewFlow(handlers: ImportFlowHandlers) {
     setError('')
     setPhase('idle')
   }, [release])
+  /** 只重试已安装模块的运行发布；不重新导入。 */
+  const retryPublication = useCallback(async (): Promise<void> => {
+    if (submitting.current || result.current === undefined) return
+    submitting.current = true
+    try {
+      const response = await bridgeCall('importModulePackage', { targetId: result.current, refreshOnly: true })
+      if (!alive.current) return
+      if (!response.ok) { setRefreshError(response.message ?? ''); return }
+      const next = readPublication(response.value)
+      setPublication(next)
+      if (!next.pending) setRefreshError('')
+    } catch (reason) {
+      if (alive.current) setRefreshError(errorMessage(reason))
+    } finally { submitting.current = false }
+  }, [])
   const retryRefresh = useCallback(async (): Promise<void> => {
     if (submitting.current) return
     submitting.current = true
@@ -245,5 +269,5 @@ export function useImportPreviewFlow(handlers: ImportFlowHandlers) {
     setPreview(undefined)
     setPhase('complete')
   }, [error, release, sourceName])
-  return { phase, preview, candidates, kinds, choices, error, sourceName, sourceImage, progress, resultLabel, refreshError, run, updateChoices, chooseGroup: (characterId: string) => updateChoices({ promptOrderCharacterId: characterId }), confirm, cancel, end, skip, repreview: inspect, retryRefresh }
+  return { phase, preview, candidates, kinds, choices, error, sourceName, sourceImage, progress, resultLabel, refreshError, publication, run, updateChoices, chooseGroup: (characterId: string) => updateChoices({ promptOrderCharacterId: characterId }), confirm, cancel, end, skip, repreview: inspect, retryRefresh, retryPublication }
 }

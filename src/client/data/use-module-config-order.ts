@@ -4,6 +4,8 @@ import type { PromptConfigDraft } from '../prompt-tool-types.ts'
 import type { PromptToolTranslate } from '../locales.ts'
 import { bridgeCall, errorMessage, type BridgeResult } from './bridge-client.ts'
 import { moduleOrderConfigs } from './prompt-config-order.ts'
+import { readPublication, type PublicationFields } from '../../shared/publication.ts'
+import type { BridgeRequestMap } from '../../shared/bridge-contract.ts'
 
 /** 排序载荷：完整身份列表 + 读取时的版本；正文、路径与序号都不进排序请求。 */
 export interface ModuleConfigOrderRequest {
@@ -17,6 +19,7 @@ export interface ModuleConfigOrderState {
   configs: PromptConfigDraft[]
   busy: boolean
   error: string
+  publication?: { pending: boolean; error?: string }
 }
 
 /** 会随渲染变化的依赖：`update` 刷新它们，每次调用读最新值。 */
@@ -27,8 +30,8 @@ export interface ModuleConfigOrderRuntime {
 }
 
 export interface ModuleConfigOrderDeps extends ModuleConfigOrderRuntime {
-  /** 发一次排序请求：无载荷 = 读取，带载荷 = 保存。请求实现固定，不随渲染更换。 */
-  request: (body?: ModuleConfigOrderRequest) => Promise<BridgeResult<ModuleConfigOrderSnapshot>>
+  /** 发一次排序请求：无载荷 = 读取，带载荷 = 保存，refreshOnly = 只重试运行发布。请求实现固定，不随渲染更换。 */
+  request: (body?: ModuleConfigOrderRequest | { refreshOnly: true }) => Promise<BridgeResult<ModuleConfigOrderSnapshot>>
 }
 
 export interface ModuleConfigOrderSession {
@@ -39,6 +42,7 @@ export interface ModuleConfigOrderSession {
   update(runtime: ModuleConfigOrderRuntime): void
   load(): Promise<boolean>
   save(next: PromptConfigDraft[]): Promise<void>
+  retryPublication(): Promise<boolean>
   reset(): void
   dispose(): void
 }
@@ -117,6 +121,7 @@ export function createModuleConfigOrderSession(deps: ModuleConfigOrderDeps): Mod
         snapshot: result.value,
         configs: moduleOrderConfigs(result.value.entries),
         error: refreshed === false ? runtime.t('moduleOrder.refreshFailed') : '',
+        publication: readPublication(result.value as ModuleConfigOrderSnapshot & PublicationFields),
         busy: false,
       })
     } catch (cause) {
@@ -125,6 +130,31 @@ export function createModuleConfigOrderSession(deps: ModuleConfigOrderDeps): Mod
       commit({ busy: false, error: runtime.t('moduleOrder.saveFailed', { reason: errorMessage(cause) }) })
       // 失败后重读：拖拽用的 revision 已过期，不重读会反复 409；重读不静默清掉这次失败。
       await read(true)
+    }
+  }
+  /** 只重试运行发布：不重写排序。 */
+  const retryPublication = async (): Promise<boolean> => {
+    if (busy) return false
+    busy = true
+    const request = generation
+    commit({ busy: true })
+    try {
+      const result = await deps.request({ refreshOnly: true })
+      if (request !== generation) return false
+      if (!result.ok) throw new Error(result.message ?? runtime.t('moduleOrder.unavailable'))
+      const publication = readPublication(result.value as ModuleConfigOrderSnapshot & PublicationFields)
+      commit({
+        snapshot: result.value,
+        configs: moduleOrderConfigs(result.value.entries),
+        publication,
+        ...(publication.error === undefined ? { error: '' } : {}),
+      })
+      return !publication.pending
+    } catch (cause) {
+      if (request === generation) commit({ error: runtime.t('moduleOrder.saveFailed', { reason: errorMessage(cause) }) })
+      return false
+    } finally {
+      if (request === generation) { busy = false; commit({ busy: false }) }
     }
   }
   const invalidate = (): void => { generation += 1; busy = false }
@@ -137,7 +167,8 @@ export function createModuleConfigOrderSession(deps: ModuleConfigOrderDeps): Mod
     update(next) { runtime = { t: next.t, reloadConfigs: next.reloadConfigs } },
     load,
     save,
-    reset() { invalidate(); commit({ snapshot: undefined, configs: [], busy: false, error: '' }) },
+    retryPublication,
+    reset() { invalidate(); commit({ snapshot: undefined, configs: [], busy: false, error: '', publication: undefined }) },
     dispose() { invalidate() },
   }
 }
@@ -153,11 +184,11 @@ export function useModuleConfigOrder(t: PromptToolTranslate, reloadConfigs?: () 
   const [session] = useState(() => createModuleConfigOrderSession({
     t,
     reloadConfigs,
-    request: (body) => bridgeCall('moduleConfigOrder', body),
+    request: (body) => bridgeCall('moduleConfigOrder', body as BridgeRequestMap['moduleConfigOrder']),
   }))
   // 每次提交后刷新依赖：会话在调用时读最新值，不把首次渲染的 t／回调闭包进会话。
   useEffect(() => { session.update({ t, reloadConfigs }) })
   useEffect(() => () => { session.dispose() }, [session])
   const state = useSyncExternalStore(session.subscribe, () => session.state, () => session.state)
-  return { ...state, load: session.load, save: session.save, reset: session.reset }
+  return { ...state, load: session.load, save: session.save, retryPublication: session.retryPublication, reset: session.reset }
 }

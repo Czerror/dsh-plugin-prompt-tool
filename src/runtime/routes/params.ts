@@ -10,6 +10,7 @@ import { saveModuleParams } from '../../host/module-definition-edit.ts'
 import { validateEngineParamValues } from '../../shared/engine-params.ts'
 import type { ModuleVariableRevisions } from '../../shared/module-variables.ts'
 import { BRIDGE_ENDPOINTS } from '../../shared/bridge-contract.ts'
+import { published } from '../../shared/publication.ts'
 import { writeLayerSettingsError } from '../module-subject-gate.ts'
 import { declarationsOf, declaresAny, isRecord, type BridgeRuntime } from '../bridge-runtime.ts'
 
@@ -39,6 +40,18 @@ export function registerParams(runtime: ParamsRuntime): Array<() => void> {
       // 无载荷 = 读取当前 layerSettings 展平后的参数子集。
       if (record.promptConfigs !== undefined) {
         tx.write(410, { ok: false, code: 'rules-route-retired', message: '提示词配置已统一为 rules，请使用带版本的 /rules 事务编辑。' })
+        return
+      }
+      // refreshOnly：只重试运行发布，不重写参数。
+      if (record.refreshOnly === true) {
+        if (record.overrides !== undefined || record.rebuild !== undefined) {
+          tx.write(400, { ok: false, code: 'overrides-invalid-shape', message: 'refreshOnly 不能与参数写入混用' })
+          return
+        }
+        if (!global && runtime.gate(tx, 'paramOverrides').authorize() === undefined) return
+        const publication = await runtime.runOverridesChange(global ? undefined : basename(dir))
+        const overrides = global ? readGlobalLayerSettingsSafe(userModulesDir()).params : runtime.readParamOverrides(dir)
+        tx.write(200, { ok: true, value: { overrides, ...publication } })
         return
       }
       if (record.overrides === undefined) {
@@ -90,10 +103,12 @@ export function registerParams(runtime: ParamsRuntime): Array<() => void> {
         )
         // 模块切换前保存当前配置卡时只需落盘，不立即重建；
         // 后续运行刷新按目标模块执行。全局层影响所有已启用模块：主语缺席即整轮刷新。
-        if (record.rebuild !== false && !await runtime.runOverridesChange(tx.write, global ? undefined : basename(dir))) return
+        const publication = record.rebuild === false
+          ? published()
+          : await runtime.runOverridesChange(global ? undefined : basename(dir))
         tx.write(200, {
           ok: true,
-          value: { overrides: record.overrides },
+          value: { overrides: record.overrides, ...publication },
         })
       } catch (error) {
         if (writeLayerSettingsError(tx.write, error)) return
@@ -130,7 +145,7 @@ export function registerParams(runtime: ParamsRuntime): Array<() => void> {
           }
           // 变量视图在重试发布之后取一次：`variableView` 已含 `readModuleVariables` 的全部字段
           // ＋ `publicationPending`／`publicationError`，先前那次读的字段会被它整体覆盖。
-          tx.write(200, { ok: true, value: { ...runtime.variableView(dir), persisted: true } })
+          tx.write(200, { ok: true, value: { ...runtime.variableView(dir), ...published(runtime.pendingVariableSettings.get(dir)) } })
           return
         }
         if (record.variables === undefined && record.enabled === undefined) {
@@ -160,15 +175,14 @@ export function registerParams(runtime: ParamsRuntime): Array<() => void> {
         })
         if (settingsChanged) runtime.pendingVariableSettings.set(dir, '变量开关已保存，等待运行发布')
         if (committed.publicationPending) {
-          tx.write(200, { ok: true, value: committed })
+          tx.write(200, { ok: true, value: { ...committed, ...published(committed.publicationError ?? '变量已保存，等待运行发布') } })
           return
         }
         if (settingsChanged) {
           try { await runtime.deps.overridesChanged?.(basename(dir)); runtime.pendingVariableSettings.delete(dir) }
           catch (error) { runtime.pendingVariableSettings.set(dir, `变量开关已保存，但运行发布失败：${String(error)}`) }
         }
-        tx.write(200, { ok: true, value: { ...committed, publicationPending: runtime.pendingVariableSettings.has(dir),
-          ...(runtime.pendingVariableSettings.has(dir) ? { publicationError: runtime.pendingVariableSettings.get(dir)! } : {}) } })
+        tx.write(200, { ok: true, value: { ...committed, ...published(runtime.pendingVariableSettings.get(dir)) } })
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error)
         tx.write(error instanceof ModuleWriteError ? error.status : 409, { ok: false, code: error instanceof ModuleWriteError ? error.code : 'module-variables-rejected', message: `变量读取或保存失败：${message}` })

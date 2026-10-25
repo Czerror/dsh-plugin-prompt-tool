@@ -58,10 +58,10 @@ test('预设保存等待宿主采用；异步拒绝保留定义并可重试；�
 
     rebuild = async () => { await Promise.resolve(); throw new Error('REGISTRATION_FAILED') }
     const failed = await save({ modelTemperature: 0.5 })
-    assert.equal(failed.status, 500)
-    assert.equal(failed.ok, false)
-    assert.equal(failed.code, 'module-activation-failed')
-    assert.match(failed.message, /已保存.*REGISTRATION_FAILED/)
+    assert.equal(failed.status, 200)
+    assert.equal(failed.ok, true)
+    assert.equal(failed.value.publicationPending, true)
+    assert.match(failed.value.publicationError, /已保存.*REGISTRATION_FAILED/)
     assert.equal(parse(readFileSync(file, 'utf8')).layerSettings['agent-request'].modelTemperature, 0.5)
 
     rebuild = async () => {}

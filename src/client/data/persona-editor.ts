@@ -15,6 +15,7 @@ import type { PersonaDraft, PersonaEditorDraft, WorkspaceDrafts } from './worksp
 import type { PromptToolTranslate } from '../locales.ts'
 import { bridgeCall } from './bridge-client.ts'
 import { beginLatest, isLatest } from './resource-track.ts'
+import { readPublication } from '../../shared/publication.ts'
 
 /** 人设写载荷：**创建模式（该模块未声明 `persona`）不传 `expectedRevision`**——没有前状态就没有可冲突的对象；已声明时必须带读取到的模块版本。`persona: null` 仍是「删除该段」。 */
 export function personaWriteBody(moduleId: string, submitted: PersonaSpec, revision: string, creating: boolean): BridgeRequestMap['persona'] {
@@ -159,9 +160,10 @@ function createPersonaEditor(moduleId: string, drafts: WorkspaceDrafts, deps: Pe
       editor.saved = result.value.persona ?? {}
       editor.revision = result.value.revision
       editor.declared = result.value.persona !== null
-      editor.publicationPending = result.value.publicationPending === true
-      editor.publicationError = result.value.publicationError
-      editor.error = editor.publicationError ?? ''
+      const publication = readPublication(result.value)
+      editor.publicationPending = publication.pending
+      editor.publicationError = publication.error
+      editor.error = publication.error ?? ''
       // 创建模式下这次写盘建立了声明：调用方据此重读 `/meta`。
       if (result.value.persona !== null) deps.onDeclared?.()
       // 写盘期间本受众没被再改：把服务端值回填进草稿（改过就保留用户输入）。
@@ -187,9 +189,10 @@ function createPersonaEditor(moduleId: string, drafts: WorkspaceDrafts, deps: Pe
     const result = await deps.request({ expectedModuleId: moduleId, refreshOnly: true }, moduleId)
     editor.saving = false
     if (result.ok) {
-      editor.publicationPending = result.value.publicationPending === true
-      editor.publicationError = result.value.publicationError
-      editor.error = editor.publicationError ?? ''
+      const publication = readPublication(result.value)
+      editor.publicationPending = publication.pending
+      editor.publicationError = publication.error
+      editor.error = publication.error ?? ''
     } else editor.error = result.message ?? deps.t('persona.notice.saveFailed')
     notify()
   }

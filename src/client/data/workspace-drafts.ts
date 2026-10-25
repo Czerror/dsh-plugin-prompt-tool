@@ -65,6 +65,8 @@ export interface ToolsEditorDraft {
   loaded: boolean
   error: string
   saving: boolean
+  publicationPending?: boolean
+  publicationError?: string
   /** 最新优先序号（见 resource-track.ts）：迟到响应不落地、不清 saving。 */
   latest: number
 }

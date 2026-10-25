@@ -1,4 +1,5 @@
 import type { InjectionPoint } from './engine-capabilities.ts'
+import type { PublicationFields } from './publication.ts'
 
 /** 一张独立配置卡的判断树；原语与组合的合法形状由引擎唯一校验。 */
 export type RuleCondition = Record<string, unknown>
@@ -77,12 +78,9 @@ export interface RuleEditorMeta {
   waterfallPositions: string[]
 }
 
-export interface RulesSnapshot {
+export interface RulesSnapshot extends PublicationFields {
   rules: RuleDefinition[]
   revisions: RuleRevisions
   meta: RuleEditorMeta
-  persisted?: boolean
-  publicationPending?: boolean
-  publicationError?: string
   createdRuleId?: string
 }

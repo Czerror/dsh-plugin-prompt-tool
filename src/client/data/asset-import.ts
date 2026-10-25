@@ -2,6 +2,7 @@ import type { AssetImportRequest } from '../../shared/asset-transfer.ts'
 import type { ImportPreviewState } from '../prompt-tool-types.ts'
 import type { ImportCommitResult, ImportPreviewOutcome } from './use-import-preview-flow.ts'
 import { bridgeCall } from './bridge-client.ts'
+import { readPublication } from '../../shared/publication.ts'
 
 type ImportEndpoint = 'importModulePackage'
 export async function previewAsset(endpoint: ImportEndpoint, request: AssetImportRequest): Promise<ImportPreviewOutcome> {
@@ -15,5 +16,7 @@ export async function previewAsset(endpoint: ImportEndpoint, request: AssetImpor
 export async function commitAsset(endpoint: ImportEndpoint, preview: ImportPreviewState): Promise<ImportCommitResult> {
   const { files, sourceId, targetId, targetName, overwrite, sourceKind, promptOrderCharacterId, sourceDigest, previewRevision } = preview
   const response = await bridgeCall(endpoint, { files, sourceId, targetId, targetName, overwrite, sourceKind, promptOrderCharacterId, expectedSourceDigest: sourceDigest, expectedPreviewRevision: previewRevision })
-  return response.ok ? { ok: true, label: response.value.id } : { ok: false, stale: response.code?.endsWith('preview-stale'), message: response.message ?? 'settings bridge unavailable' }
+  return response.ok
+    ? { ok: true, label: response.value.id, publication: readPublication(response.value) }
+    : { ok: false, stale: response.code?.endsWith('preview-stale'), message: response.message ?? 'settings bridge unavailable' }
 }

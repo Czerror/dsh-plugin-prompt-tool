@@ -56,12 +56,12 @@ import {
   type BridgeTransaction,
 } from './bridge-transaction.ts'
 import { assertBridgeRequest } from '../shared/bridge-request-shape.ts'
+import { published, type PublicationState } from '../shared/publication.ts'
 import { createTargetQueue } from '../shared/target-queue.ts'
 import { gateFor, type GateHandle } from './module-subject-gate.ts'
 import type { RuleDiagnosticsSnapshot } from './rule-diagnostics.ts'
 import {
   EDIT_TARGET_HEADER,
-  MODULE_ACTIVATION_FAILED,
   MODULE_IDENTITY_INVALID,
   SETTINGS_BRIDGE_PREFIX,
   readSubjectHeader,
@@ -405,10 +405,10 @@ export interface BridgeRuntime {
   readonly moduleOrderQueue: SerialQueue
   /** 变量开关待运行发布的模块（目录 → 上次失败原因）。 */
   readonly pendingVariableSettings: Map<string, string>
-  /** 写盘已完成：等重建，失败立即返回统一错误。 */
-  finishModuleChange(write: BridgeWrite, activate: () => void | Promise<void>): Promise<boolean>
-  runOverridesChange(write: BridgeWrite, moduleId?: string): Promise<boolean>
-  refreshModuleList(write: BridgeWrite): Promise<boolean>
+  /** 写盘已完成：执行运行发布并返回统一结果，不写响应。 */
+  finishModuleChange(activate: () => void | Promise<void>): Promise<PublicationState>
+  runOverridesChange(moduleId?: string): Promise<PublicationState>
+  refreshModuleList(): Promise<PublicationState>
   writeModuleOrderError(write: BridgeWrite, error: unknown): void
   loadEngineMeta(): Promise<Record<string, unknown> & EngineMetaLayerContract>
   collectSkills(sessionId?: string): Promise<SkillsCatalogSnapshot>
@@ -454,18 +454,17 @@ export function createBridgeRuntime(options: BridgeRuntimeOptions): BridgeRuntim
     agentScopeRef = scope
   }
 
-  /** 写盘已完成：等待重建，失败立即返回统一错误，不覆盖持久化结果。 */
-  const finishModuleChange = async (write: BridgeWrite, activate: () => void | Promise<void>): Promise<boolean> => {
+  /** 写盘已完成：等待重建；失败不覆盖持久化结果，只把它报成待发布。 */
+  const finishModuleChange = async (activate: () => void | Promise<void>): Promise<PublicationState> => {
     try {
       await activate()
-      return true
+      return published()
     } catch (error) {
-      write(500, { ok: false, code: MODULE_ACTIVATION_FAILED, message: `更改已保存，但模块未生效；请重试：${String(error)}` })
-      return false
+      return published(`更改已保存，但模块未生效；请重试：${String(error)}`)
     }
   }
-  const runOverridesChange = (write: BridgeWrite, moduleId?: string): Promise<boolean> => finishModuleChange(write, () => deps.overridesChanged?.(moduleId))
-  const refreshModuleList = (write: BridgeWrite): Promise<boolean> => finishModuleChange(write, () => deps.moduleListChanged?.())
+  const runOverridesChange = (moduleId?: string): Promise<PublicationState> => finishModuleChange(() => deps.overridesChanged?.(moduleId))
+  const refreshModuleList = (): Promise<PublicationState> => finishModuleChange(() => deps.moduleListChanged?.())
   const writeModuleOrderError = (write: BridgeWrite, error: unknown): void => {
     const status = error instanceof ModuleConfigOrderError ? error.status : 500
     const code = error instanceof ModuleConfigOrderError ? error.code : 'module-config-order-failed'

@@ -50,6 +50,21 @@ export function registerTransfer(runtime: TransferRuntime): Array<() => void> {
     } }),
     runtime.register(BRIDGE_ENDPOINTS.importModulePackage, { handle: async (tx) => {
       const record = tx.record
+      // refreshOnly：只重建已安装模块，不读取来源、不重新安装。
+      if (record.refreshOnly === true) {
+        const targetId = typeof record.targetId === 'string' ? record.targetId : ''
+        if (targetId.length === 0 || Object.keys(record).some(key => key !== 'targetId' && key !== 'refreshOnly')) {
+          tx.write(400, { ok: false, code: 'module-package-invalid', message: 'refreshOnly 只接受已安装模块 id' })
+          return
+        }
+        try { assertModuleId(targetId) } catch (error) {
+          tx.write(400, { ok: false, code: 'module-package-invalid', message: error instanceof Error ? error.message : String(error) })
+          return
+        }
+        const publication = await runtime.finishModuleChange(() => runtime.deps.moduleInstalled?.(targetId))
+        tx.write(200, { ok: true, value: { id: targetId, ...publication } })
+        return
+      }
       // 入口校验先于任何转换与写盘：非法 preview/摘要/顺序组类型一律 400，
       // 不静默回落到"直接写入"，也不在拒绝前创建目录或备份。
       const request = readImportRequestParams(record)
@@ -72,8 +87,8 @@ export function registerTransfer(runtime: TransferRuntime): Array<() => void> {
         }
         const installed = await installModulePackage(userModulesDir(), files, request.params)
         runtime.descriptor.invalidate()
-        if (!await runtime.finishModuleChange(tx.write, () => runtime.deps.moduleInstalled?.(installed.id))) return
-        tx.write(200, { ok: true, value: { ...installed, sourceDigest, ...(prepared.report === undefined ? {} : { report: prepared.report }) } })
+        const publication = await runtime.finishModuleChange(() => runtime.deps.moduleInstalled?.(installed.id))
+        tx.write(200, { ok: true, value: { ...installed, sourceDigest, ...(prepared.report === undefined ? {} : { report: prepared.report }), ...publication } })
       } catch (error) {
         const code = typeof (error as { code?: unknown }).code === 'string' ? String((error as { code: string }).code) : 'module-package-invalid'
         tx.write(code === 'module-preview-stale' ? 409 : 400, { ok: false, code, message: error instanceof Error ? error.message : String(error) })

@@ -254,7 +254,9 @@ test('删除主路径：目录移出且无隐藏残留', async () => {
   assert.equal(result.status, 200, result.message)
   assert.equal(result.ok, true)
   assert.equal(existsSync(dir), false, '删除后目标目录不存在')
-  assert.deepEqual(result.value, { id }, '清理成功只回 id，不写 undefined 自有属性')
+  assert.equal(result.value.id, id, '清理成功回 id')
+  assert.equal(result.value.persisted, true)
+  assert.equal(result.value.publicationPending, false)
   assert.deepEqual(hidden(moduleRoot), [], '清理成功不留隐藏 stage')
 })
 
@@ -313,7 +315,7 @@ test('删除清理遇到占用：模块已移出，残留目录返回路径', as
   assert.deepEqual(hidden(moduleRoot), [], '测试自己精确清理备份目录')
 })
 
-test('删除后刷新失败：模块已移出，返回结构化 refreshError', async () => {
+test('删除后刷新失败：模块已移出，返回待发布错误', async () => {
   const id = 'aside-refresh-fail'
   const dir = writeModule(id)
   const { ctx, handlers } = makeHarness()
@@ -321,7 +323,8 @@ test('删除后刷新失败：模块已移出，返回结构化 refreshError', a
 
   const result = await call(handlers, 'moduleDelete', { id })
   assert.equal(result.status, 200, result.message)
-  assert.equal(result.value.refreshError, 'module-refresh-failed')
+  assert.equal(result.value.publicationPending, true)
+  assert.match(result.value.publicationError, /refresh failed/)
   assert.equal(existsSync(dir), false, '删除已提交，不能因为刷新失败而恢复')
 })
 
@@ -358,7 +361,7 @@ test('删除清理中途失败：残留目录可能不完整，仍返回路径',
   rmSync(stage, { recursive: true, force: true })
 })
 
-test('删除后刷新失败且清理未完成：200 同时带 refreshError 与 backupPath', async () => {
+test('删除后刷新失败且清理未完成：200 同时带待发布错误与 backupPath', async () => {
   const id = 'aside-refresh-backup'
   const dir = writeModule(id)
   const { ctx, handlers } = makeHarness()
@@ -377,7 +380,8 @@ test('删除后刷新失败且清理未完成：200 同时带 refreshError 与 b
   }, () => call(handlers, 'moduleDelete', { id }))
 
   assert.equal(result.status, 200, result.message)
-  assert.equal(result.value.refreshError, 'module-refresh-failed')
+  assert.equal(result.value.publicationPending, true)
+  assert.match(result.value.publicationError, /refresh failed/)
   assert.equal(existsSync(dir), false)
   assert.equal(typeof stage, 'string')
   assert.equal(dirname(stage), moduleRoot, '备份 stage 在模块根下')
@@ -406,7 +410,9 @@ test('删除后锁释放失败：删除已提交，不谎报失败', async () =>
   assert.equal(result.status, 200, result.message)
   assert.equal(lockRemovalInjected, true, '锁文件清理注入已触发')
   assert.equal(existsSync(dir), false, '删除已提交')
-  assert.deepEqual(result.value, { id })
+  assert.equal(result.value.id, id)
+  assert.equal(result.value.persisted, true)
+  assert.equal(result.value.publicationPending, false)
   // 锁文件清理被注入失败后残留；按精确路径清理，避免影响同文件后续用例。
   rmSync(join(moduleRoot, '.' + id + '.locks'), { recursive: true, force: true })
   assert.deepEqual(hidden(moduleRoot), [], '清理成功不留隐藏 stage')
@@ -452,16 +458,16 @@ test('module-enable：写启用表后等待装配，失败如实返回，非法�
   }
   const on = await enabling
   assert.equal(on.status, 200, on.message)
-  assert.deepEqual(on.value, { enabled: [id] })
+  assert.deepEqual(on.value, { enabled: [id], persisted: true, publicationPending: false })
   assert.deepEqual(refreshed, [undefined], '启用表改变需刷新全部实例，不只重装已包含该模块的实例')
   assert.deepEqual(parse(readEnabled()).enabled, [id])
   const again = await call(handlers, 'moduleEnable', { id, enabled: true })
-  assert.deepEqual(again.value, { enabled: [id] }, '重复启用幂等')
+  assert.deepEqual(again.value, { enabled: [id], persisted: true, publicationPending: false }, '重复启用幂等')
 
   // 停用：从表里摘除；幂等重复停用不报错。
   const off = await call(handlers, 'moduleEnable', { id, enabled: false })
-  assert.deepEqual(off.value, { enabled: [] })
-  assert.deepEqual((await call(handlers, 'moduleEnable', { id, enabled: false })).value, { enabled: [] }, '重复停用幂等')
+  assert.deepEqual(off.value, { enabled: [], persisted: true, publicationPending: false })
+  assert.deepEqual((await call(handlers, 'moduleEnable', { id, enabled: false })).value, { enabled: [], persisted: true, publicationPending: false }, '重复停用幂等')
 
   // 拒绝路径一：缺 id。
   const noId = await call(handlers, 'moduleEnable', { enabled: true })
@@ -484,8 +490,9 @@ test('module-enable：写启用表后等待装配，失败如实返回，非法�
 
   failRefresh = true
   const failed = await call(handlers, 'moduleEnable', { id, enabled: true })
-  assert.equal(failed.status, 500)
+  assert.equal(failed.status, 200)
+  assert.equal(failed.value.publicationPending, true)
   assert.deepEqual(parse(readEnabled()).enabled, [id], '装配失败保留已保存的启用表，便于重试')
   failRefresh = false
-  assert.deepEqual((await call(handlers, 'moduleEnable', { id, enabled: false })).value, { enabled: [] })
+  assert.deepEqual((await call(handlers, 'moduleEnable', { id, enabled: false })).value, { enabled: [], persisted: true, publicationPending: false })
 })

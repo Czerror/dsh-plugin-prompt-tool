@@ -1,3 +1,5 @@
+import type { PublicationFields } from './publication.ts'
+
 /** 独立人设卡：按受众和字段覆盖；省略继承，空文本和 false 都是显式值。 */
 export interface PersonaTargetSpec {
   prefix?: string
@@ -20,13 +22,10 @@ export interface PersonaSnapshot {
 
 export type PersonaAudience = 'main' | 'subagent'
 export interface PersonaSources { main: string | null; subagent: string | null }
-export interface PersonaSourcesSnapshot {
+export interface PersonaSourcesSnapshot extends PublicationFields {
   sources: PersonaSources
   revision: string | null
   candidates: Array<{ id: string; name: string }>
-  persisted?: boolean
-  publicationPending?: boolean
-  publicationError?: string
 }
 export interface PersonaSourcesRequest {
   sources?: PersonaSources

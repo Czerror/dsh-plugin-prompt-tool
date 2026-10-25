@@ -6,12 +6,15 @@ import { SHARED_PARAM_KEYS } from './prompt-tool-fields.ts'
 import type { ParamsPort } from './store-ports.ts'
 import type { SerialTaskQueue } from './save-queue.ts'
 import { MODULE_PENDING_MESSAGE, NO_SUBJECT_MESSAGE } from './module-subject.ts'
+import { readPublication } from '../../shared/publication.ts'
 
 interface ParamEntry {
   values: ParamSnapshot
   baseline: ParamSnapshot
   loadedKeys: Set<string>
   loaded: boolean
+  publicationPending?: boolean
+  publicationError?: string
 }
 
 export interface ParamEditorDependencies {
@@ -87,6 +90,9 @@ export function createParamEditor(deps: ParamEditorDependencies): ParamEditor {
       if (result.ok) {
         updateLoadedParamKeys(entry.loadedKeys, overrides)
         entry.baseline = submitted
+        const publication = readPublication(result.value)
+        entry.publicationPending = publication.pending
+        entry.publicationError = publication.error
         await refresh()
       } else deps.showNotice('error', '参数保存失败：' + (result.message ?? 'settings bridge unavailable'))
     })
@@ -104,11 +110,41 @@ export function createParamEditor(deps: ParamEditorDependencies): ParamEditor {
       if (result.ok) {
         updateLoadedParamKeys(global.loadedKeys, overrides)
         global.baseline = submitted
+        const publication = readPublication(result.value)
+        global.publicationPending = publication.pending
+        global.publicationError = publication.error
         await refresh()
       } else deps.showNotice('error', '参数保存失败：' + (result.message ?? 'settings bridge unavailable'))
     })
   }
 
+  /** 参数发布态：组件据此显示「已保存，待发布」与重试入口。 */
+  const publicationOf = (scope: 'module' | 'global', moduleId?: string): { pending: boolean; error?: string } => {
+    const entry = scope === 'global' ? global : entryOf(moduleId ?? '')
+    return { pending: entry.publicationPending === true, ...(entry.publicationError === undefined ? {} : { error: entry.publicationError }) }
+  }
+  /** 只重试运行发布：不重写参数，重试与保存共用同一队列。 */
+  const retryParamPublication = async (scope: 'module' | 'global', moduleId?: string): Promise<void> => {
+    if (scope === 'module' && (moduleId === undefined || !deps.canEdit(moduleId))) {
+      deps.showNotice('error', NO_SUBJECT_MESSAGE)
+      return
+    }
+    const entry = scope === 'global' ? global : entryOf(moduleId ?? '')
+    await deps.enqueue(async () => {
+      const result = scope === 'global'
+        ? await bridgeCall('paramOverrides', { refreshOnly: true })
+        : await bridgeCall('paramOverrides', { refreshOnly: true, expectedModuleId: moduleId }, moduleId)
+      if (!result.ok) {
+        deps.showNotice('error', '参数发布重试失败：' + (result.message ?? 'settings bridge unavailable'))
+        return
+      }
+      const publication = readPublication(result.value)
+      entry.publicationPending = publication.pending
+      entry.publicationError = publication.error
+      deps.showNotice(publication.pending ? 'error' : 'ok', publication.error ?? '参数发布已完成')
+      deps.changed()
+    })
+  }
   return {
     moduleParamsOf: moduleId => entryOf(moduleId).values,
     ensureModuleParams: moduleId => { if (!entryOf(moduleId).loaded) void read(moduleId) },
@@ -125,6 +161,8 @@ export function createParamEditor(deps: ParamEditorDependencies): ParamEditor {
       deps.edited()
     },
     persistGlobalParams,
+    publicationOf,
+    retryParamPublication,
     applyGlobal: patch => {
       global.values = paramSnapshot(readParamOverridesPatch(patch))
       global.baseline = { ...global.values }

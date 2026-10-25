@@ -652,7 +652,7 @@ test('模块配置排序端点：启用尾部追加、跨模块保存、冲突�
     assert.deepEqual(sorted.value.entries.map((entry) => entry.configId), ['second', 'card'])
     assert.equal(rebuilt.at(-1), ids[3], '停用模块排序也等待自身重建')
     assert.deepEqual(dirs.slice(0, 2).map((dir) => readFileSync(join(dir, 'module.yml'), 'utf8')), enabledBefore)
-    assert.deepEqual((await call('moduleConfigOrder')).value, snapshot, '默认全局列表仍只含启用模块')
+    assert.deepEqual((await call('moduleConfigOrder')).value.entries, snapshot.entries, '默认全局列表仍只含启用模块')
   })
 
   await t.test('真实客户端无参数读取全局排序，不写定义或触发重建', async (t) => {
@@ -671,7 +671,7 @@ test('模块配置排序端点：启用尾部追加、跨模块保存、冲突�
     })
     const result = await bridgeCall('moduleConfigOrder')
     assert.equal(result.ok, true, result.message)
-    assert.deepEqual(result.value, snapshot)
+    assert.deepEqual(result.value.entries, snapshot.entries)
     assert.deepEqual(dirs.map((dir) => readFileSync(join(dir, 'module.yml'), 'utf8')), before)
     assert.equal(rebuilt.length, count)
   })
@@ -696,13 +696,14 @@ test('模块配置排序端点：启用尾部追加、跨模块保存、冲突�
     assert.equal(rebuilt.length, count)
   })
 
-  await t.test('追加失败不启用；定义已保存而重建失败返回明确500', async () => {
+  await t.test('追加失败不启用；定义已保存而重建失败回 200 + 待发布', async () => {
     assert.equal((await call('moduleEnable', { id: ids[2], enabled: true })).ok, false)
     assert.equal(enabledModuleIds(userPresetRoot).includes(ids[2]), false)
     beforeRebuild = async () => { throw new Error('MATERIALIZE_FAILED') }
     const rebuildCount = rebuilt.filter(id => id === ids[3]).length
     const failedEnable = await call('moduleEnable', { id: ids[3], enabled: true })
-    assert.equal(failedEnable.status, 500)
+    assert.equal(failedEnable.status, 200)
+    assert.equal(failedEnable.value.publicationPending, true)
     assert.equal(enabledModuleIds(userPresetRoot).includes(ids[3]), false)
     beforeRebuild = async () => {}
     assert.equal((await call('moduleEnable', { id: ids[3], enabled: true })).status, 200)
@@ -710,10 +711,10 @@ test('模块配置排序端点：启用尾部追加、跨模块保存、冲突�
     await call('moduleEnable', { id: ids[3], enabled: false })
     beforeRebuild = async () => { throw new Error('MATERIALIZE_FAILED') }
     const result = await call('moduleConfigOrder', { expectedRevision: snapshot.revision, entries: identities(snapshot).reverse() })
-    assert.equal(result.status, 500)
-    assert.equal(result.code, 'module-activation-failed')
-    assert.match(result.message, /已保存/)
-    assert.deepEqual((await call('moduleConfigOrder')).value.entries.map((entry) => entry.moduleId), [ids[0], ids[1]])
+    assert.equal(result.status, 200)
+    assert.equal(result.value.publicationPending, true)
+    assert.match(result.value.publicationError, /已保存/)
+    assert.deepEqual(result.value.entries.map((entry) => entry.moduleId), [ids[0], ids[1]])
   })
 })
 

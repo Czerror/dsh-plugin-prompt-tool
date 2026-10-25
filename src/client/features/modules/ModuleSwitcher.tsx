@@ -17,13 +17,14 @@ import { ModuleExportDialog } from './ModuleExportDialog.tsx'
 import { useImportPreviewFlow } from '../../data/use-import-preview-flow.ts'
 import { Switch } from '../../ui/Switch.tsx'
 import { Button } from '../../ui/Button.tsx'
+import { PublicationNotice } from '../../ui/PublicationNotice.tsx'
 import { TextInput } from '../../ui/TextInput.tsx'
 import { StatusBadge } from '../../ui/StatusBadge.tsx'
 import sharedCss from '../../ui/controls.module.css'
 
 const styles = sharedCss
 
-function ModuleNameEditor(props: { module: ModuleSummary; actions: ModuleActions; t: PromptToolTranslate; onClose: () => void; onSaved: (publicationError?: string) => void }): ReactNode {
+function ModuleNameEditor(props: { module: ModuleSummary; actions: ModuleActions; t: PromptToolTranslate; onClose: () => void; onSaved: (publication?: { pending: boolean; error?: string }) => void }): ReactNode {
   const { module, t } = props
   const [name, setName] = useState(module.name)
   const [revision, setRevision] = useState<string>()
@@ -55,7 +56,7 @@ function ModuleNameEditor(props: { module: ModuleSummary; actions: ModuleActions
     const result = await props.actions.rename(module.id, name, revision)
     if (result.ok) {
       activeRef.current = false
-      props.onSaved(result.value.publicationError ?? (result.refreshError === undefined ? undefined : t('moduleSwitcher.notice.refreshFailed')))
+      props.onSaved(result.publication ?? (result.refreshError === undefined ? undefined : { pending: true, error: t('moduleSwitcher.notice.refreshFailed') }))
     } else if (activeRef.current) {
       if (result.code === 'module-name-conflict' || result.code === 'rules-conflict') setRevision(undefined)
       setError(result.message ?? t('moduleSwitcher.name.saveFailed'))
@@ -110,11 +111,17 @@ export const ModuleSwitcher = memo(function ModuleSwitcher(props: { store: Modul
   const [exportTarget, setExportTarget] = useState<{ id: string; name: string }>()
   const [nameTarget, setNameTarget] = useState<ModuleSummary | undefined>()
   const [creating, setCreating] = useState(false)
+  const [publicationRetry, setPublicationRetry] = useState<{ error?: string; run: () => Promise<ModuleActionResult<unknown>> }>()
   const creatingRef = useRef(false)
   const pickerAnchorRef = useRef<HTMLButtonElement>(null)
-  const report = (result: ModuleActionResult<unknown>, success: string, failure: string): void => {
-    if (!result.ok) store.showNotice('error', result.committed ? result.message ?? failure : failure)
-    else store.showNotice(result.refreshError === undefined ? 'ok' : 'error', result.refreshError === undefined ? success : t('moduleSwitcher.notice.refreshFailed'))
+  const report = (result: ModuleActionResult<unknown>, success: string, failure: string, retry?: () => Promise<ModuleActionResult<unknown>>): void => {
+    if (!result.ok) { store.showNotice('error', failure); return }
+    if (result.publication?.pending) {
+      setPublicationRetry(retry === undefined ? undefined : { error: result.publication.error, run: retry })
+      store.showNotice('error', result.publication.error ?? t('publication.pending'))
+      return
+    }
+    store.showNotice(result.refreshError === undefined ? 'ok' : 'error', result.refreshError === undefined ? success : t('moduleSwitcher.notice.refreshFailed'))
   }
 
   // 预览流程（与角色卡 JSON 导入共用同一状态机）：确认回传来源摘要 + 预览版本。
@@ -143,10 +150,16 @@ export const ModuleSwitcher = memo(function ModuleSwitcher(props: { store: Modul
   const deleteModule = async (id: string): Promise<void> => {
     // 没有会话级「在用模块」：不带主语即无声明（「在用」保护在人设引用那一侧，服务端另有判据）。
     const res = await store.moduleActions.remove(id)
-    if (res.ok || res.committed) {
-      const backupPath = res.ok ? res.value.backupPath : undefined
+    if (res.ok) {
+      if (res.publication?.pending) {
+        setPublicationRetry({ error: res.publication.error, run: () => store.moduleActions.retryDelete(id) })
+        store.showNotice('error', res.publication.error ?? t('publication.pending'))
+        setConfirmingDelete((current) => current === id ? undefined : current)
+        return
+      }
+      const backupPath = res.value.backupPath
       // 服务端刷新失败也回 200（删除已提交）；客户端 refresh 失败则用顶层 refreshError。
-      const refreshError = res.ok ? (res.value.refreshError ?? res.refreshError) : res.refreshError
+      const refreshError = res.value.refreshError ?? res.refreshError
       if (backupPath !== undefined || refreshError !== undefined) {
         const message = backupPath === undefined
           ? t('moduleSwitcher.notice.deleted', { id })
@@ -154,7 +167,7 @@ export const ModuleSwitcher = memo(function ModuleSwitcher(props: { store: Modul
         store.showNotice(refreshError === undefined ? 'ok' : 'error',
           refreshError === undefined ? message : `${t('moduleSwitcher.notice.refreshFailed')} ${message}`)
       } else {
-        report(res, t('moduleSwitcher.notice.deleted', { id }), res.ok ? '' : res.message ?? t('card.operationFailed'))
+        report(res, t('moduleSwitcher.notice.deleted', { id }), '')
       }
       setConfirmingDelete((current) => current === id ? undefined : current)
     } else {
@@ -166,7 +179,8 @@ export const ModuleSwitcher = memo(function ModuleSwitcher(props: { store: Modul
   const duplicateModule = async (id: string): Promise<void> => {
     const res = await store.moduleActions.duplicate(id)
     report(res, res.ok ? t('moduleSwitcher.notice.duplicated', { id: res.value.id }) : '',
-      res.ok ? '' : t('moduleSwitcher.notice.duplicateFailed', { reason: res.message ?? 'settings bridge unavailable' }))
+      res.ok ? '' : t('moduleSwitcher.notice.duplicateFailed', { reason: res.message ?? 'settings bridge unavailable' }),
+      () => store.moduleActions.retryDuplicate(id))
   }
 
   /** 打开模块文件夹（宿主系统文件管理器；失败时提示路径）。 */
@@ -182,9 +196,10 @@ export const ModuleSwitcher = memo(function ModuleSwitcher(props: { store: Modul
   /** 新建：从插件目录模板复制到用户目录（还原/自定义起点）；自定义入口重名自动递增。 */
   const cloneModule = async (id: string, autoSuffix = false): Promise<void> => {
     const res = await store.moduleActions.clone(id, autoSuffix)
-    if (res.ok || res.committed) setPickerOpen(false)
+    if (res.ok) setPickerOpen(false)
     report(res, res.ok ? t('moduleSwitcher.notice.cloned', { id: res.value.id }) : '',
-      res.ok ? '' : t('moduleSwitcher.notice.cloneFailed', { reason: res.message ?? 'settings bridge unavailable' }))
+      res.ok ? '' : t('moduleSwitcher.notice.cloneFailed', { reason: res.message ?? 'settings bridge unavailable' }),
+      () => store.moduleActions.retryClone(res.ok ? res.value.id : id))
   }
 
   const createBlankModule = async (): Promise<void> => {
@@ -205,11 +220,24 @@ export const ModuleSwitcher = memo(function ModuleSwitcher(props: { store: Modul
   const setModuleEnabled = async (id: string, enabled: boolean): Promise<void> => {
     const res = await store.moduleActions.enable(id, enabled)
     report(res, t(enabled ? 'moduleSwitcher.notice.enabled' : 'moduleSwitcher.notice.disabled', { id }),
-      res.ok ? '' : t('moduleSwitcher.notice.enableFailed', { reason: res.message ?? 'settings bridge unavailable' }))
+      res.ok ? '' : t('moduleSwitcher.notice.enableFailed', { reason: res.message ?? 'settings bridge unavailable' }),
+      () => store.moduleActions.retryEnable())
   }
 
   return (
     <div className={styles.rowGroup}>
+      {publicationRetry && <PublicationNotice publication={{ pending: true, error: publicationRetry.error }}
+        pendingLabel={t('publication.pending')} retryLabel={t('publication.retry')}
+        onRetry={() => { void publicationRetry.run().then((result) => {
+          if (result.ok && result.publication?.pending !== true) {
+            setPublicationRetry(undefined)
+            store.showNotice('ok', t('publication.done'))
+            return
+          }
+          const error = result.ok ? result.publication?.error : result.message
+          setPublicationRetry({ error, run: publicationRetry.run })
+          store.showNotice('error', error ?? t('publication.pending'))
+        }) }} />}
       <div className={styles.settingRowStack}>
         <span className={styles.inlineControls}>
           <Button ref={pickerAnchorRef} shape="pill" variant="primary" size="md" onClick={() => setPickerOpen(true)}>{t('moduleSwitcher.new')}</Button>
@@ -226,6 +254,7 @@ export const ModuleSwitcher = memo(function ModuleSwitcher(props: { store: Modul
         onFiles={(files) => { void flow.run(files) }} onChoices={flow.updateChoices} onConfirm={() => { void flow.confirm() }}
         onClose={() => { flow.cancel(); setImportOpen(false) }} onReset={flow.cancel} onSkip={flow.skip} onEnd={flow.end}
         onRepreview={() => { void flow.repreview() }} onRefresh={() => { void flow.retryRefresh() }}
+        publication={flow.publication} onRetryPublication={() => { void flow.retryPublication() }}
         onUse={flow.resultLabel === undefined ? undefined : () => { void setModuleEnabled(flow.resultLabel!, true); flow.cancel(); setImportOpen(false) }} />}
       {exportTarget && <ModuleExportDialog t={t} module={exportTarget} onClose={() => setExportTarget(undefined)} />}
       <div className={styles.moduleGrid}>
@@ -263,10 +292,12 @@ export const ModuleSwitcher = memo(function ModuleSwitcher(props: { store: Modul
         <div className={styles.moduleCardBody}>
           <span className={styles.moduleCardHead}>
             {nameTarget?.id === module.id ? <ModuleNameEditor key={module.id} module={nameTarget} actions={store.moduleActions} t={t}
-              onClose={() => setNameTarget(current => current?.id === module.id ? undefined : current)} onSaved={(publicationError) => {
+              onClose={() => setNameTarget(current => current?.id === module.id ? undefined : current)} onSaved={(publication) => {
                 setNameTarget(current => current?.id === module.id ? undefined : current)
-                if (publicationError !== undefined) store.showNotice('error', t('moduleSwitcher.name.savedPending', { reason: publicationError }))
-                else store.showNotice('ok', t('moduleSwitcher.name.saved'))
+                if (publication?.pending) {
+                  setPublicationRetry({ error: publication.error, run: () => store.moduleActions.retryName(module.id) })
+                  store.showNotice('error', publication.error ?? t('publication.pending'))
+                } else store.showNotice('ok', t('moduleSwitcher.name.saved'))
               }} /> : <button type="button" className={clsx(styles.moduleCardName, styles.moduleNameTrigger)}
               disabled={nameTarget !== undefined || blocked || module.user !== true || module.facts?.editable !== true}
               aria-label={t('moduleSwitcher.name.editAria', { name: module.name })} onClick={() => setNameTarget(module)}>{module.name}</button>}

@@ -20,6 +20,7 @@ import { SearchInput } from '../../ui/SearchInput.tsx'
 import { Button } from '../../ui/Button.tsx'
 import { ConfirmDialog } from '../../ui/ConfirmDialog.tsx'
 import { HintTooltip } from '../../ui/HintTooltip.tsx'
+import { PublicationNotice } from '../../ui/PublicationNotice.tsx'
 import { PromptConfigCard } from './PromptConfigCard.tsx'
 import { LAYER_LABEL_KEYS, translateLabel } from './prompt-config-policy.ts'
 import { asTriggerRecord } from './RuleJsonField.tsx'
@@ -204,6 +205,8 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
       </div>
     })}
     {order.error && <p role="alert" className={css.error}>{order.error}</p>}
+    <PublicationNotice publication={order.publication} pendingLabel={t('publication.pending')} retryLabel={t('publication.retry')}
+      onRetry={() => { void order.retryPublication() }} />
     {props.createdHidden && <Button variant="outline" shape="pill" onClick={props.onShowCreated}>{t('rules.showCreated')}</Button>}
     {instructionCards}
     {props.beforeCards}

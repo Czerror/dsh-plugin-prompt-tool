@@ -6,6 +6,7 @@ import type { PromptToolTranslate } from '../../locales.ts'
 import type { ToolsEditorDraft, WorkspaceDrafts } from '../../data/workspace-drafts.ts'
 import { createToolsEditor, createToolsEditorDraft, readCustomTools } from '../../data/tools-editor.ts'
 import { CustomToolCard, type ToolDraft } from './CustomToolEditor.tsx'
+import { PublicationNotice } from '../../ui/PublicationNotice.tsx'
 import sharedCss from '../../ui/controls.module.css'
 import featureCss from './tools.module.css'
 
@@ -46,6 +47,7 @@ export function useCustomToolsEditor(props: {
   const [saving, setSaving] = useState(false)
   const [loading, setLoading] = useState(!editor.loaded)
   const [loadError, setLoadError] = useState(editor.error)
+  const [publication, setPublication] = useState({ pending: editor.publicationPending === true, error: editor.publicationError })
   const disabled = props.disabled === true || loading || loadError.length > 0
   // 卸载标记：应答回来时已卸载就不再改状态（owner 的 `isCurrent`）。
   const active = useRef(true)
@@ -67,6 +69,7 @@ export function useCustomToolsEditor(props: {
     setSaving(editor.saving)
     setLoading(!editor.loaded)
     setLoadError(editor.error)
+    setPublication({ pending: editor.publicationPending === true, error: editor.publicationError })
   }, [editor])
   refreshRef.current = refresh
   useEffect(() => {
@@ -96,7 +99,7 @@ export function useCustomToolsEditor(props: {
         props.onNotice('error', customResult === undefined ? t('customTools.saveFailed') : ('message' in customResult ? customResult.message : undefined) ?? t('customTools.saveFailed'))
         return
       }
-      props.onNotice('ok', t('customTools.saved', { count: editor.saved.length }))
+      props.onNotice(editor.publicationPending ? 'error' : 'ok', editor.publicationError ?? (editor.publicationPending ? t('publication.pending') : t('customTools.saved', { count: editor.saved.length })))
     })
   }
   const patchTool = (index: number, patch: Partial<ToolDraft>): void => owner.applyPatch(index, patch)
@@ -131,6 +134,13 @@ export function useCustomToolsEditor(props: {
       {props.disabled && <p className={styles.configFieldHint} role="status">{t('customTools.readonly')}</p>}
       {loading && <p className={styles.configFieldHint} role="status">{t('customTools.loading')}</p>}
       {loadError && <p role="alert">{loadError} <Button shape="pill" size="md" variant="outline" type="button" onClick={() => { void owner.load() }}>{t('customTools.retry')}</Button></p>}
+      <PublicationNotice publication={publication} pendingLabel={t('publication.pending')} retryLabel={t('publication.retry')}
+        disabled={saving}
+        onRetry={() => { void owner.retryPublication().then((result) => {
+          if (result === undefined) return
+          if (!result.ok) { props.onNotice('error', result.message ?? t('customTools.saveFailed')); return }
+          props.onNotice(editor.publicationPending ? 'error' : 'ok', editor.publicationError ?? (editor.publicationPending ? t('publication.pending') : t('publication.done')))
+        }) }} />
       <fieldset className={styles.customToolsFields} aria-label={t('customTools.fieldsAria')}>
         <div className={styles.configActions}>
           <Button shape="pill" size="sm" variant="outline" type="button" disabled={disabled} onClick={() => createTool()}>{t('main.newBlankTool')}</Button>

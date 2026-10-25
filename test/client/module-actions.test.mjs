@@ -53,17 +53,33 @@ test('模块操作：已写入但刷新失败保留成功结果，不能重复�
     assert.equal(created.value.id, 'blank')
     assert.equal(typeof created.refreshError, 'string')
     assert.equal(calls.length, 1)
-    respond({ ok: true, value: { name: '新名', revision: 'v2', persisted: true, publicationError: 'pending' } })
+    respond({ ok: true, value: { name: '新名', revision: 'v2', persisted: true, publicationPending: true, publicationError: 'pending' } })
     const renamed = await actions.rename('blank', '新名', 'v1')
     assert.equal(renamed.ok, true)
-    assert.equal(renamed.value.publicationError, 'pending')
+    assert.deepEqual(renamed.publication, { pending: true, error: 'pending' })
     assert.equal(typeof renamed.refreshError, 'string')
     assert.equal(calls.length, 2)
-    respond({ ok: false, code: 'module-activation-failed', message: '更改已保存，但发布失败' })
+    respond({ ok: true, value: { id: 'blank', enabled: ['blank'], persisted: true, publicationPending: true, publicationError: '更改已保存，但发布失败' } })
     const pending = await actions.enable('blank', true)
-    assert.equal(pending.ok, false)
-    assert.equal(pending.committed, true, '不得把持久化后的发布失败当作未保存')
+    assert.equal(pending.ok, true, '已写盘的发布失败不再伪装成整体失败')
+    assert.deepEqual(pending.publication, { pending: true, error: '更改已保存，但发布失败' })
     assert.equal(typeof pending.refreshError, 'string')
     assert.equal(calls.length, 3)
   }, false)
+})
+
+test('模块操作：refreshOnly 重试只发重建意图，不重跑写入', async () => {
+  await harness(async ({ actions, calls }) => {
+    await actions.retryEnable()
+    await actions.retryClone('source')
+    await actions.retryDelete('source')
+    await actions.retryName('source')
+    assert.deepEqual(calls.map(call => call.body), [
+      { refreshOnly: true },
+      { id: 'source', refreshOnly: true },
+      { id: 'source', refreshOnly: true },
+      { refreshOnly: true, expectedModuleId: 'source' },
+    ])
+    assert.equal(calls[3].headers[EDIT_TARGET_HEADER], 'source')
+  })
 })

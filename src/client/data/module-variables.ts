@@ -3,6 +3,7 @@ import type { ModuleVariableRevisions, ModuleVariableScope, ModuleVariablesSnaps
 import type { BridgeResult } from './bridge-client.ts'
 import { deepEqual } from './dirty-state.ts'
 import { beginLatest, isLatest } from './resource-track.ts'
+import { readPublication } from '../../shared/publication.ts'
 
 export interface VariablesBaseline {
   scope: ModuleVariableScope
@@ -92,9 +93,10 @@ export async function retryModuleVariablesPublication(moduleId: string, baseline
   const result = await request({ scope: baseline.scope, expectedModuleId: moduleId, refreshOnly: true })
   if (!result.ok) throw new Error(result.message ?? result.code ?? '模板变量刷新失败')
   const { publicationPending: _pending, publicationError: _error, ...saved } = baseline
-  return result.value.publicationError
-    ? { baseline: { ...saved, publicationPending: true, publicationError: result.value.publicationError }, publicationError: result.value.publicationError }
-    : { baseline: saved }
+  const publication = readPublication(result.value)
+  if (!publication.pending) return { baseline: saved }
+  const baselineWithPending = { ...saved, publicationPending: true, ...(publication.error === undefined ? {} : { publicationError: publication.error }) }
+  return { baseline: baselineWithPending, ...(publication.error === undefined ? {} : { publicationError: publication.error }) }
 }
 
 /** 变量值与开关各自提交版本；成功只确认请求快照，不接管调用方的新草稿。 */
@@ -120,6 +122,7 @@ export async function saveModuleVariables(moduleId: string, baseline: VariablesB
     ...(valuesChanged ? { variables } : {}), ...(enabledChanged ? { enabled } : {}),
   })
   if (!result.ok) throw new Error(result.message ?? result.code ?? '模板变量保存失败')
+  const publication = readPublication(result.value)
   return { baseline: {
     scope: baseline.scope,
     variables: valuesChanged ? variables : baseline.variables,
@@ -127,6 +130,6 @@ export async function saveModuleVariables(moduleId: string, baseline: VariablesB
     revisions: { ...baseline.revisions,
       ...(valuesChanged ? { [baseline.scope]: result.value.revisions[baseline.scope] } : {}),
       ...(enabledChanged ? { settings: result.value.revisions.settings } : {}) },
-    ...(result.value.publicationError ? { publicationPending: true, publicationError: result.value.publicationError } : {}),
-  }, ...(result.value.publicationError ? { publicationError: result.value.publicationError } : {}) }
+    ...(publication.pending ? { publicationPending: true, ...(publication.error === undefined ? {} : { publicationError: publication.error }) } : {}),
+  }, ...(publication.error === undefined ? {} : { publicationError: publication.error }) }
 }

@@ -11,10 +11,12 @@ import type { ToolsEditorDraft, ToolDraft, WorkspaceDrafts } from './workspace-d
 import type { BridgeRequestMap, BridgeValueMap } from '../../shared/bridge-contract.ts'
 import { bridgeCall, type BridgeResult } from './bridge-client.ts'
 import { beginLatest, isLatest } from './resource-track.ts'
+import { readPublication } from '../../shared/publication.ts'
 
 /** 工具草稿的唯一构造点；视图与模板入口共用。 */
 export const createToolsEditorDraft = (): ToolsEditorDraft => ({
   tools: [], saved: [], expanded: new Set(), fields: new Map(), loaded: false, error: '', saving: false, latest: 0,
+  publicationPending: false,
 })
 
 /** 这张卡的读数入口：**声明面明确未声明就不构造这次请求**（返回 undefined），卡片据此转创建模式。 */
@@ -129,8 +131,35 @@ export function createToolsEditor(moduleId: string, draft: ToolsEditorDraft, dep
       const result = await deps.request({ customTools: submitted, expectedModuleId: moduleId })
       if (!isCurrentStep(sequence)) return undefined
       // 保存失败只把结果交给调用方去提示：草稿的 `error` 属读取态，不被写失败污染（与原实现一致）。
-      if (result.ok) draft.saved = submitted
+      if (result.ok) {
+        draft.saved = submitted
+        const publication = readPublication(result.value)
+        draft.publicationPending = publication.pending
+        draft.publicationError = publication.error
+      }
       deps.onDeclared?.()
+      return result
+    } finally {
+      if (isCurrentStep(sequence)) {
+        draft.saving = false
+        deps.changed()
+      }
+    }
+  }
+  /** 只重试运行发布：不重写工具定义。 */
+  const retryPublication = async (): Promise<BridgeResult<BridgeValueMap['customTools']> | undefined> => {
+    if (draft.saving) return undefined
+    const sequence = beginLatest(draft)
+    draft.saving = true
+    deps.changed()
+    try {
+      const result = await deps.request({ expectedModuleId: moduleId, refreshOnly: true })
+      if (!isCurrentStep(sequence)) return undefined
+      if (result.ok) {
+        const publication = readPublication(result.value)
+        draft.publicationPending = publication.pending
+        draft.publicationError = publication.error
+      }
       return result
     } finally {
       if (isCurrentStep(sequence)) {
@@ -151,7 +180,7 @@ export function createToolsEditor(moduleId: string, draft: ToolsEditorDraft, dep
     deps.changed()
     return 'inserted'
   }
-  return { load, mutate, applyPatch, save, insertTemplate }
+  return { load, mutate, applyPatch, save, retryPublication, insertTemplate }
 }
 
 

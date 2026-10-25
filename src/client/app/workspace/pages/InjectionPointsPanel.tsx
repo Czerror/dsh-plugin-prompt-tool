@@ -15,6 +15,7 @@ import { canEditModule, moduleDeclares } from '../../../data/module-subject.ts'
 import type { PromptToolLocaleKey, PromptToolTranslate } from '../../../locales.ts'
 import { ConfirmDialog } from '../../../ui/ConfirmDialog.tsx'
 import { Button } from '../../../ui/Button.tsx'
+import { PublicationNotice } from '../../../ui/PublicationNotice.tsx'
 import { EngineParamField, EngineParamFields, editorGroupSearchText } from '../../../features/modules/EngineParamFields.tsx'
 import { EngineModuleCard } from '../../../ui/EngineModuleCard.tsx'
 import { LAYER_LABEL_KEYS, translateLabel } from '../../../features/prompts/prompt-config-policy.ts'
@@ -62,6 +63,7 @@ type PanelStore = ModuleFactsPort & DraftsPort & ParamsPort & VariablesPort
 function LayerCapabilityRow(props: { store: CapabilityRowStore; t: PromptToolTranslate; moduleId: string; capabilityId: string }): ReactNode {
   const { store, t, moduleId, capabilityId } = props
   const [confirming, setConfirming] = useState(false)
+  const [publication, setPublication] = useState<{ pending: boolean; error?: string }>()
   const buttonRef = useRef<HTMLButtonElement>(null)
   const editable = canEditModule(store.fields, store.meta.modules, moduleId)
   return (
@@ -72,6 +74,8 @@ function LayerCapabilityRow(props: { store: CapabilityRowStore; t: PromptToolTra
           {t('modules.layer.remove')}
         </Button>
       )}
+      <PublicationNotice publication={publication} pendingLabel={t('publication.pending')} retryLabel={t('publication.retry')}
+        onRetry={() => { void store.retryModuleCapability(moduleId).then((result) => setPublication(result.publication)) }} />
       {confirming && (
         <ConfirmDialog
           title={t('modules.layer.removeTitle', { id: capabilityId })}
@@ -80,7 +84,11 @@ function LayerCapabilityRow(props: { store: CapabilityRowStore; t: PromptToolTra
           cancelLabel={t('toolEditor.cancel')}
           failureMessage={t('card.operationFailed')}
           returnFocusRef={buttonRef}
-          onConfirm={async () => { if (!await store.removeModuleCapability(moduleId, capabilityId)) throw new Error(t('card.operationFailed')) }}
+          onConfirm={async () => {
+            const result = await store.removeModuleCapability(moduleId, capabilityId)
+            if (!result.ok) throw new Error(t('card.operationFailed'))
+            setPublication(result.publication)
+          }}
           onCancel={() => setConfirming(false)}
         />
       )}

@@ -11,6 +11,7 @@ import { MenuSelect } from './MenuSelect.tsx'
 import { ConfirmDialog } from './ConfirmDialog.tsx'
 import { ImportFileButton } from './ImportFileButton.tsx'
 import { ImportPreviewCard } from './ImportPreviewCard.tsx'
+import { PublicationNotice } from './PublicationNotice.tsx'
 import sharedCss from './controls.module.css'
 import css from './ImportDialog.module.css'
 
@@ -25,6 +26,8 @@ export function ImportDialog(props: {
   sourceImage?: string
   error: string
   refreshError: string
+  publication?: { pending: boolean; error?: string }
+  onRetryPublication?: () => void
   progress: { index: number; total: number; imported: number; skipped: number; failed: number; failures: string[] }
   targets: Array<{ id: string; name: string }>
   onFiles: (files: File[], directory: boolean) => void
@@ -89,6 +92,8 @@ export function ImportDialog(props: {
       </> : complete ? <>
         <p role="status">{t('assetImport.counts', { imported: progress.imported, skipped: progress.skipped, failed: progress.failed })}</p>
         {progress.failures.length > 0 && <ul>{progress.failures.map((failure, index) => <li key={index}>{failure}</li>)}</ul>}
+        <PublicationNotice publication={props.publication} onRetry={props.onRetryPublication}
+          pendingLabel={t('publication.pending')} retryLabel={t('publication.retry')} />
         {props.refreshError && <p role="alert">{t('assetImport.refreshFailed', { reason: props.refreshError })}</p>}
       </> : <>
         <p>{t('assetImport.source', { name: summary?.sourceName ?? props.sourceName })}</p>

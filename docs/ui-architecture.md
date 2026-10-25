@@ -440,15 +440,15 @@ bootstrap 是首屏聚合请求，不因筛选或输入字符增加 bridge 请�
 
 use-prompt-tool-store.ts 是唯一工作台 facade，负责把 ConfigForms mirror、typed bridge、字段快照、保存队列和 feature actions 组合成 React 可消费状态。
 
-**参数编辑生命周期**由 `data/param-editor.ts` 的 `createParamEditor` 持有：模块条目、全局条目、读取集合及读改写协议留在闭包中，页面继续使用既有 `ParamsPort`。值转换复用 `param-overrides.ts`；store 提供当前主语/声明事实、共享保存队列、通知与跨域刷新资格。三个同步入口各保留原语义：bootstrap 快照更新全局参数；普通 load 失效并重读已保留的模块条目；模块操作后的 `/meta` 刷新只重读干净条目，保留参数值与原始输入草稿。模块参数在队列执行时取提交快照，全局参数在入队前取快照；两者均不让旧应答覆盖新编辑，不统一为其它资源的版本或发布协议。
+**参数编辑生命周期**由 `data/param-editor.ts` 的 `createParamEditor` 持有：模块条目、全局条目、读取集合及读改写协议留在闭包中，页面继续使用既有 `ParamsPort`。值转换复用 `param-overrides.ts`；store 提供当前主语/声明事实、共享保存队列、通知与跨域刷新资格。三个同步入口各保留原语义：bootstrap 快照更新全局参数；普通 load 失效并重读已保留的模块条目；模块操作后的 `/meta` 刷新只重读干净条目，保留参数值与原始输入草稿。模块参数在队列执行时取提交快照，全局参数在入队前取快照；两者均不让旧应答覆盖新编辑。发布失败与其它写端点同形：读共享 `shared/publication.ts` 的 `readPublication`，`refreshOnly` 只重试运行发布。
 
 **资源编辑器的读改写协议**（owner 的共同形状；代码级原语只有 `data/resource-track.ts`，各 owner 分别在 `data/rule-drafts.ts`、`data/module-variables.ts`、`data/instruction-drafts.ts`、`data/skill-editor.ts`、`data/tools-editor.ts` 与 `data/persona-editor.ts`）：
 
 - **版本捕获**：读时整份存快照，写时从快照取期望版本——rules 逐条 `rules[id]` ＋ `settings`、variables 按 `scope` ＋ `settings`、instructions 逐文件 `revision`、persona 两段各一（创建时整键不带版本）、config-order 整表一个、skills 由调用方卡片持有。**没有**统一的「版本对象」类型：各家请求形状不同，硬并会造出假共享。
 - **最新优先**：草稿/状态上的 `latest` 序号（`beginLatest` 开请求、`isLatest` 判落地）。**晚到应答既不写草稿也不清 `busy`/`loading`**——清理权归最新那次请求，否则界面会停在忙碌态。这也是为什么「迟到时不回滚」是对的，不是漏了清理。
-- **发布态**：`publicationPending`/`publicationError` 两字段，rules／variables／persona 三家有；instructions／skills／config-order 没有这个概念（它们分别是重读、重写、失败后重读）。**语义有意不同**：rules 把「`publicationError` 非空」也算 pending，variables／persona 只看显式 `publicationPending`——不要在重构里顺手统一，那会改变重试入口何时出现。
+- **发布态**：所有已写盘端点统一读 `shared/publication.ts#readPublication`——显式 `publicationPending` 或任意 `publicationError` 都算待发布；`PublicationNotice` 负责提示与重试按钮。rules／variables／persona／params／customTools／capability／name／install／clone×2／enable／config-order／delete 使用它；instructions 与 skills 不触发运行发布，仍分别是重读与重写。
 - **失败分类**：rules 有 `READ_FIRST_CODES`（rules-conflict／module-changed／shared-alias）＋ `retryKind` 三分类；instructions 有四个冲突码的布尔分类；其余四家不分类，按 message 落 error。
-- **例外保持原样**：skills 用 `writing` 布尔锁 ＋ session 字符串一致性替代版本/序号（其 `seq` 还与 store 的 bootstrap 覆盖保护耦合）；config-order 的 `generation` 是闭包变量、外部不可观测；tools（`data/tools-editor.ts`）用序号但**没有** `busy`／`publication*`——它的草稿就是整组工具，没有 CAS 版本也没有发布态。改前两家要同时动 store 的覆盖保护，超出「统一命名」的范围。
+- **例外保持原样**：skills 用 `writing` 布尔锁 ＋ session 字符串一致性替代版本/序号（其 `seq` 还与 store 的 bootstrap 覆盖保护耦合）；config-order 的 `generation` 是闭包变量、外部不可观测。tools（`data/tools-editor.ts`）的草稿是整组工具，没有 CAS 版本，但已按统一判据记录发布态并支持 `refreshOnly` 重试。改前两家要同时动 store 的覆盖保护，仍超出「统一命名」的范围。
 - **`DraftsPort.editorDrafts` 有意不收窄**：它是 6 个消费者的入口，为「不把整池递出去」造 6 套按族的读数面，代价与收益不成比例。需要改草稿的域各自归 owner（上列五个），新域照 tools 那份样板加一个 `data/<资产>-editor.ts`。
 
 **消费方的依赖面按「端口」声明**：端口定义在 `src/client/data/store-ports.ts`（按域切：模块事实、草稿池、参数、变量、技能、指令文件、规则编辑、模块动作、通知、模型、宿主面），每个端口对应一组同源成员。组件 props、内部 helper 参数与 hook 包装写**端口交叉**（如 `store: ModuleFactsPort & DraftsPort`），不再对 `PromptToolStore` 做 `Pick`——「这张卡需要哪些面」由端口名回答，测试桩也按端口写。判别力仍是单向的：`typecheck` 抓得住"少给端口"或"端口的成员没实现"，抓不住"多要一个端口"，所以只取实际用到的端口靠逐处核对。新增卡片时先在 `store-ports.ts` 找端口，找不到再考虑新端口（而不是回退到 Pick 大接口）。
@@ -559,7 +559,7 @@ JSON bridge 的统一上限为 32 MiB；原始文件上传独立限制为 64 MiB
 15. 配置排序走 typed `moduleConfigOrder` 端点，服务端校验身份集合与 revision，拒绝未知、重复身份及过期版本。顺序写回 `module.yml.configOrder`，客户端不提交正文、文件路径或序号；模块启用或停用均可保存自身排序，总闸关闭仍可改排序定义。拖拽落点用指针半高判据（`clientY` 对卡片中线）给出「插到目标前/后」，重排**不改卡定义**：可移动集合由 `sameConfigPosition` 过滤（跨插入点的目标不在集合内、原样不写），`system-section` / `runtime-context` 卡的官方档位不参与排序请求，只决定初始槽位。
 16. 两级变量内容校验所选 global/module 域，模块开关校验 settings。草稿按模块+scope分开，切范围不串输入；空字符串保存为值，删行才删除。后台读回和保存只确认对应请求快照，冲突保留编辑。persisted 且 publicationPending 时显示“已保存但未发布”，refreshOnly 只发布，不重放变量写入。存储边界见 [后端框架](architecture-params.md)。
 
-模板创建沿用同一规则事务，但使用 `createRule` 直接提交解析后的规则对象；不要求规则卡 owner 已加载或先读回 `/rules`。缺少 `rules` 的目标模块按空基线首写，重复创建在目标模块内按规则 id 自动加后缀。三位身份校验仍适用于首写和普通写入：头体冲突 400 `module-subject-conflict`、目标切换 409 `module-changed`、系统或只读目录 403 `module-readonly`。写盘成功而刷新失败时保留 `persisted/publicationPending`，不新增重试 UI；未启用目标的待发布状态只在当前工作台会话保留，启用并挂载规则卡后通过既有 `retryPublication` / `refreshOnly` 重试，不重放规则写入；刷新工作台不恢复该状态。
+模板创建沿用同一规则事务，但使用 `createRule` 直接提交解析后的规则对象；不要求规则卡 owner 已加载或先读回 `/rules`。缺少 `rules` 的目标模块按空基线首写，重复创建在目标模块内按规则 id 自动加后缀。三位身份校验仍适用于首写和普通写入：头体冲突 400 `module-subject-conflict`、目标切换 409 `module-changed`、系统或只读目录 403 `module-readonly`。写盘成功而刷新失败时回 200 + `persisted/publicationPending`，规则卡与模块页都通过 `refreshOnly` 重试，不重放规则写入；未启用目标的待发布状态只在当前工作台会话保留，启用并挂载规则卡后重试；刷新工作台不恢复该状态。
 
 **宿主写盘原语**：进程内同 key 串行由 `src/shared/target-queue.ts#createTargetQueue` 统一（agents-cards、module-package 按目标 key；bridge 两个队列、client save-queue、agent-assembly、skills-runtime 是单 key 全链适配；key 由调用方规范化，不同 key 互不阻塞，前一个失败不毒化后一个）。跨进程互斥只在模块类写路径由 `host/module-write.ts#withModuleLock` 提供；skills 文本、agents 文件与客户端队列没有跨进程锁，靠版本复核兜底。
 
@@ -818,7 +818,7 @@ tool-catalog 填充来源沿现有普通注入表单编辑：params.action 引�
 |---|---|
 | 引擎注入行为（插入点 / 时机 / 次数 / 受众） | `test/engine/*.test.mjs` |
 | 写盘产物语义 | `test/host/write-module.test.mjs`、`test/host/module-*.test.mjs`、`test/host/module-slices.test.mjs`、`test/host/global-params.test.mjs`（全局层 `config.yml#layerSettings` 的写/删键/空层回收与优先级）、`test/host/target-queue.test.mjs`、`test/host/versioned-text.test.mjs`、`test/host/skills-cas.test.mjs` |
-| bridge 端点载荷 | `test/shared/bridge-contract.test.mjs`、`test/client/bridge-client.test.mjs`、`test/host/settings-bridge.test.mjs`、`test/host/*-bridge.test.mjs`、`test/client/*.test.mjs`（客户端侧的固定卡接线、请求主语与渲染链路；含 `layer-cards`、`instruction-cards` 这类渲染链路的前置纯判据） |
+| bridge 端点载荷 | `test/shared/bridge-contract.test.mjs`、`test/shared/publication.test.mjs`、`test/client/bridge-client.test.mjs`、`test/host/settings-bridge.test.mjs`、`test/host/publication-state.test.mjs`、`test/host/*-bridge.test.mjs`、`test/client/*.test.mjs`（客户端侧的固定卡接线、请求主语与渲染链路；含 `layer-cards`、`instruction-cards` 这类渲染链路的前置纯判据） |
 | 安全与拒绝路径 | `test/host/instructions-policy.test.mjs`、`test/host/instruction-scope-guard.test.mjs`、`test/host/skill-policy.test.mjs`、`test/host/skills-marker.test.mjs`（技能文件读取前校验）、`test/host/module-package-import.test.mjs`、`test/host/wave1-safety.test.mjs`、`test/host/text-file.test.mjs`、`test/engine/config-whitelist.test.mjs`、`test/host/agents-cards.test.mjs`、`test/engine/instruction-files.test.mjs`（写白名单来源的探测与目录链判据） |
 | UI slot / 入口注册 | `test/client/*.test.mjs`（宿主槽位观察到的注册选项与释放：id/key 配对、label、关闭回调；不锁注册顺序、数字常量；入口行为依赖的 inject 回调（如 `open`）可断言，其余内部 inject 调用面不锁）；`test/host/tui-settings-section.test.mjs`（接缝六区块的 ns/字段形状与 disposer 撤销） |
 | 规则受众可见性 | `test/client/rule-facts.test.mjs`（规则卡在 else/not/空集/未知算子下的出现与隐藏；属于规则卡渲染链路的入口行为，不锁具体 `data-*` 形态） |

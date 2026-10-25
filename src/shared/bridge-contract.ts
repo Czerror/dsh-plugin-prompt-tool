@@ -8,7 +8,8 @@ import type { PersonaSnapshot, PersonaSpec, PersonaSourcesRequest, PersonaSource
 import type { ModuleVariablesRequest, ModuleVariablesSnapshot } from './module-variables.ts'
 import type { RulesRequest, RulesSnapshot } from './rules.ts'
 import type { ModuleConfigIdentity, ModuleConfigOrderSnapshot } from './module-config-order.ts'
-import type { AssetImportRequest, AssetSummary, ImportKind, ModuleExportRequest, ModuleExportResult } from './asset-transfer.ts'
+import type { AssetSummary, BridgeAssetImportRequest, ImportKind, ModuleExportRequest, ModuleExportResult } from './asset-transfer.ts'
+import type { PublicationFields } from './publication.ts'
 import type { EngineEditorGroup, InjectionPoint, ModuleFacts } from './engine-capabilities.ts'
 import type { OfficialOrdersView } from './official-orders.ts'
 import { isModuleId } from './module-ids.ts'
@@ -78,9 +79,6 @@ export type BridgeEndpointKey = keyof typeof BRIDGE_ENDPOINTS
 
 /** 失败载荷：两端共用。 */
 export type BridgeErrorPayload = { ok: false; code?: string; message?: string; conflicts?: string[] }
-
-/** 文件已保存，但宿主未采用新定义；调用方保留草稿并显示失败，不宣称已生效。 */
-export const MODULE_ACTIVATION_FAILED = 'module-activation-failed'
 
 /**
  * **编辑目标**只在请求头里声明：body 是各端点自己的载荷形状，不掺公共键。
@@ -247,7 +245,7 @@ export interface BridgeRequestMap {
    */
   /** 逐文件启停/名称；无 policy 时读取，写入仍校验原始字节版本。 */
   instructionsPolicy: { policy?: InstructionPolicyPatch; expectedRevision?: string | null } | undefined
-  paramOverrides: { overrides?: Record<string, unknown>; promptConfigs?: unknown[]; rebuild?: boolean; expectedModuleId?: string }
+  paramOverrides: { overrides?: Record<string, unknown>; promptConfigs?: unknown[]; rebuild?: boolean; expectedModuleId?: string; refreshOnly?: boolean }
   /** 退役端点（410）：不再接受任何请求体。 */
   triggers: undefined
   rules: RulesRequest
@@ -255,7 +253,7 @@ export interface BridgeRequestMap {
   persona: { persona?: PersonaSpec | null; expectedModuleId?: string; expectedRevision?: string; refreshOnly?: boolean } | undefined
   personaSources: PersonaSourcesRequest | undefined
   moduleVariables: ModuleVariablesRequest
-  customTools: { customTools?: unknown[]; expectedModuleId?: string } | undefined
+  customTools: { customTools?: unknown[]; expectedModuleId?: string; refreshOnly?: boolean } | undefined
   /**
    * 模块包导入（原生/ST/PNG/ZIP）。`preview: true` 只转换并返回报告，不写目标；
    * 提交必须携带 expectedSourceDigest 和 expectedPreviewRevision，服务端重算并拒绝过期预览。
@@ -265,19 +263,23 @@ export interface BridgeRequestMap {
    * （`state: 'needs-order-selection'`），提交时仍无法明确对应则拒绝。
    * 上述参数只接受声明的类型，其它类型一律 400（见 docs/SillyTavern.md）。
    */
-  importModulePackage: AssetImportRequest
+  importModulePackage: BridgeAssetImportRequest
   assetUpload: undefined
   assetRelease: { sourceId: string }
   exportModule: ModuleExportRequest
-  moduleDelete: { id: string }
-  moduleClone: { id: string; autoSuffix?: boolean }
-  moduleDuplicate: { id: string }
+  moduleDelete: { id: string; refreshOnly?: boolean }
+  moduleClone: { id: string; autoSuffix?: boolean; refreshOnly?: boolean }
+  moduleDuplicate: { id: string; refreshOnly?: boolean }
   moduleOpen: { id: string }
-  moduleName: { name?: string; expectedRevision?: string; expectedModuleId?: string }
-  moduleEnable: { id: string; enabled: boolean }
-  moduleConfigOrder: { moduleId: string } | { moduleId?: string; entries: ModuleConfigIdentity[]; expectedRevision: string } | undefined
+  moduleName: { name?: string; expectedRevision?: string; expectedModuleId?: string; refreshOnly?: boolean }
+  moduleEnable: { id: string; enabled: boolean; refreshOnly?: false } | { refreshOnly: true; id?: never; enabled?: never }
+  moduleConfigOrder: ({ moduleId: string } | { moduleId?: string; entries: ModuleConfigIdentity[]; expectedRevision: string }) & { refreshOnly?: boolean } | undefined
   toolSurface: { sessionId: string; presetId?: never } | { presetId: string; sessionId?: never }
-  moduleCapability: ({ action: 'create' | 'remove'; capabilityId: string } | { action: 'create-recipe'; recipeId: string }) & { expectedModuleId?: string }
+  moduleCapability: (
+    | { action: 'create' | 'remove'; capabilityId: string }
+    | { action: 'create-recipe'; recipeId: string }
+    | { action?: undefined }
+  ) & { expectedModuleId?: string; refreshOnly?: boolean }
   /** 只读世界书诊断：只回当前授权会话最近一次选择的观测记录。 */
   contextActivationDiagnostics: { sessionId?: string } | undefined
   /** 只读规则判定计数：无请求体，读取不触发求值。 */
@@ -554,13 +556,13 @@ export interface BridgeValueMap {
   agentsFile: InstructionFileWriteResult
   instructionsPolicy: { policy: InstructionPolicy; revision: string | null; exists: boolean; error?: string }
   /** 参数/提示词配置只保存当前模块，不同步宿主全局默认模型。 */
-  paramOverrides: { overrides?: Record<string, unknown>; effective?: Record<string, unknown>; promptConfigs?: unknown[] }
+  paramOverrides: { overrides?: Record<string, unknown>; effective?: Record<string, unknown>; promptConfigs?: unknown[] } & PublicationFields
   triggers: { triggers: unknown[]; revision: string; meta: TriggerEditorMeta }
   rules: RulesSnapshot
-  persona: PersonaSnapshot & { persisted?: boolean; publicationPending?: boolean; publicationError?: string }
+  persona: PersonaSnapshot & PublicationFields
   personaSources: PersonaSourcesSnapshot
   moduleVariables: ModuleVariablesSnapshot
-  customTools: { customTools?: unknown[] }
+  customTools: { customTools?: unknown[] } & PublicationFields
   importModulePackage: {
     id?: string
     backupPath?: string
@@ -574,25 +576,25 @@ export interface BridgeValueMap {
     report?: StConversionReport
     summary?: AssetSummary
     kinds?: ImportKind[]
-  }
+  } & PublicationFields
   assetUpload: { sourceId: string; name: string; bytes: number }
   assetRelease: { released: boolean }
   exportModule: ModuleExportResult
   /** 删除成功但旧副本清理失败时，隐藏目录的绝对路径（清理未完成，内容可能不完整）。 */
-  moduleDelete: { id: string; backupPath?: string; refreshError?: string }
-  moduleClone: { id: string }
-  moduleDuplicate: { id: string }
+  moduleDelete: { id: string; backupPath?: string; refreshError?: string } & PublicationFields
+  moduleClone: { id: string } & PublicationFields
+  moduleDuplicate: { id: string } & PublicationFields
   moduleOpen: { path: string }
-  moduleName: { name: string; revision: string; persisted?: boolean; publicationError?: string }
-  moduleEnable: { enabled: string[] }
-  moduleConfigOrder: ModuleConfigOrderSnapshot
+  moduleName: { name: string; revision: string } & PublicationFields
+  moduleEnable: { enabled: string[] } & PublicationFields
+  moduleConfigOrder: ModuleConfigOrderSnapshot & PublicationFields
   toolSurface: {
     source: 'session' | 'preset'
     sessionId?: string
     presetId?: string
     tools: Array<{ name: string; description: string }>
   }
-  moduleCapability: { changed: boolean; addedModules?: string[]; removedModules?: string[]; capabilityIds: string[] }
+  moduleCapability: { changed: boolean; addedModules?: string[]; removedModules?: string[]; capabilityIds: string[] } & PublicationFields
   /** 只读世界书诊断：只回当前授权会话最近一次选择的观测记录（读取不重新求值）。 */
   contextActivationDiagnostics: { records: ContextActivationDiagnosticRecord[]; truncated: boolean; step: number; evaluated: boolean }
   /** 只读规则判定计数：按「模块 + 规则 + 通道」聚合，读取不重新求值；`dropped` 仅在超出 512 身份上限时出现，该字段保留给外部消费者与后续 UI，当前工作台不渲染。状态栏另用 `configs` 报全仓启用/总配置卡数，配置读取失败时该字段缺席。 */

@@ -37,6 +37,11 @@ export interface AssetImportRequest extends ImportChoices {
   expectedPreviewRevision?: string
 }
 
+/** bridge 写端点额外接受 refreshOnly（只重建已安装模块）；模型工具接受面不含它。 */
+export interface BridgeAssetImportRequest extends AssetImportRequest {
+  refreshOnly?: boolean
+}
+
 /** 导入请求顶层字段的唯一表；HTTP 与工具接受面从它派生（工具有意排除上传来源 `sourceId`）。 */
 export const ASSET_IMPORT_FIELDS = {
   files: true,

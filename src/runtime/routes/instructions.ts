@@ -9,6 +9,7 @@ import { createModuleRule, editModuleRules, readModuleRules } from '../../host/m
 import { writeAgentsFileChecked } from '../../host/agents-cards.ts'
 import { instructionPolicyPath, readInstructionPolicy, writeInstructionPolicy } from '../../host/instructions-policy.ts'
 import { BRIDGE_ENDPOINTS } from '../../shared/bridge-contract.ts'
+import { published } from '../../shared/publication.ts'
 import type { RuleDefinition, RuleEdit, RuleEditorMeta, RuleRevisions } from '../../shared/rules.ts'
 import { writeLayerSettingsError } from '../module-subject-gate.ts'
 import {
@@ -174,14 +175,14 @@ export function registerInstructions(runtime: InstructionsRuntime): Array<() => 
         catch (error) {
           const committed = loadModuleDefinition(dir)
           const meta = await ruleEditorMeta()
-          tx.write(200, { ok: true, value: { rules: committed.rules, revisions: committed.revisions, meta, persisted: true, publicationPending: true, publicationError: `运行刷新失败：${String(error)}` } })
+          tx.write(200, { ok: true, value: { rules: committed.rules, revisions: committed.revisions, meta, ...published(`运行刷新失败：${String(error)}`) } })
           return
         }
         const committed = loadModuleDefinition(dir)
         // meta 在组装响应时才取：编译器不可用时这里的失败与其它路径一样落进本端点的
         // `rules-failed`，而不是冒泡成 `bridge-handler-failed`（同一端点不该有两种码）。
         const meta = await ruleEditorMeta()
-        tx.write(200, { ok: true, value: { rules: committed.rules, revisions: committed.revisions, meta, publicationPending: false } })
+        tx.write(200, { ok: true, value: { rules: committed.rules, revisions: committed.revisions, meta, ...published() } })
         return
       }
       const editing = record.edits !== undefined || record.activateRuleId !== undefined
@@ -208,7 +209,7 @@ export function registerInstructions(runtime: InstructionsRuntime): Array<() => 
         if (writing) {
           try { await runtime.deps.overridesChanged?.(basename(dir)) }
           catch (error) {
-            tx.write(200, { ok: true, value: { rules: candidate.rules, revisions: candidate.revisions, meta: await ruleEditorMeta(), ...(createdRuleId === undefined ? {} : { createdRuleId }), persisted: true, publicationPending: true, publicationError: `规则已保存，但运行刷新失败：${String(error)}` } })
+            tx.write(200, { ok: true, value: { rules: candidate.rules, revisions: candidate.revisions, meta: await ruleEditorMeta(), ...(createdRuleId === undefined ? {} : { createdRuleId }), ...published(`规则已保存，但运行刷新失败：${String(error)}`) } })
             return
           }
         }
@@ -217,13 +218,13 @@ export function registerInstructions(runtime: InstructionsRuntime): Array<() => 
           tx.write(409, { ok: false, code: 'rules-conflict', message: '重建期间规则再次变化；请重新读取，当前草稿仍保留' })
           return
         }
-        tx.write(200, { ok: true, value: { rules: result.rules, revisions: result.revisions, meta: await ruleEditorMeta(), ...(createdRuleId === undefined ? {} : { createdRuleId }) } })
+        tx.write(200, { ok: true, value: { rules: result.rules, revisions: result.revisions, meta: await ruleEditorMeta(), ...(createdRuleId === undefined ? {} : { createdRuleId }), ...(writing ? published() : {}) } })
       } catch (error) {
         if (error instanceof ModuleWriteError) {
           createdRuleId ??= error.createdRuleId
           if (error.persisted) {
             const committed = loadModuleDefinition(dir)
-            tx.write(200, { ok: true, value: { rules: committed.rules, revisions: committed.revisions, meta: await ruleEditorMeta(), ...(createdRuleId === undefined ? {} : { createdRuleId }), persisted: true, publicationPending: true, publicationError: error.message } })
+            tx.write(200, { ok: true, value: { rules: committed.rules, revisions: committed.revisions, meta: await ruleEditorMeta(), ...(createdRuleId === undefined ? {} : { createdRuleId }), ...published(error.message) } })
             return
           }
           tx.write(error.status, { ok: false, code: error.code, message: error.message })

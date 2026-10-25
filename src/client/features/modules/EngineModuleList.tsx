@@ -7,6 +7,7 @@ import type { PromptToolTranslate } from '../../locales.ts'
 import { MODULE_CAPABILITIES, ENGINE_RECIPES, engineRecipe } from '../../../shared/engine-capabilities.ts'
 import { canEditModule } from '../../data/module-subject.ts'
 import { layerCards } from '../../data/layer-cards.ts'
+import { PublicationNotice } from '../../ui/PublicationNotice.tsx'
 
 /** 合并进页级「添加」菜单的创建项（注入模板按层分组）。 */
 export interface ModuleCreateItem {
@@ -59,6 +60,7 @@ export function ModuleCapabilityCreateMenu(props: {
 }): ReactNode {
   const { store, t, moduleId, excludeCapabilities = [] } = props
   const [open, setOpen] = useState(false)
+  const [publication, setPublication] = useState<{ pending: boolean; error?: string }>()
   const fallbackAnchor = useRef<HTMLButtonElement>(null)
   const editable = canEditModule(store.fields, store.meta.modules, moduleId)
   if (!editable) return null
@@ -79,12 +81,16 @@ export function ModuleCapabilityCreateMenu(props: {
       if (!items.some((item) => item.id === id)) return
       const [kind, value] = id.split(':', 2)
       if (value === undefined) return
-      void store.createModuleCapability(moduleId, kind === 'recipe' ? 'create-recipe' : 'create', value).then((created) => {
+      void store.createModuleCapability(moduleId, kind === 'recipe' ? 'create-recipe' : 'create', value).then((result) => {
         const capabilityId = kind === 'recipe' ? engineRecipe(value)?.capabilities[0] : value
-        if (created && capabilityId !== undefined) props.onCreated?.(capabilityId)
+        setPublication(result.publication)
+        if (result.ok && capabilityId !== undefined) props.onCreated?.(capabilityId)
       })
     }}
     anchor={<Button ref={fallbackAnchor} shape="pill" variant="outline" aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen(!open)}>
       {t('modules.addCapability')}<IconChevronDownOutlineRegular />
-    </Button>} /></span>
+    </Button>} />
+      <PublicationNotice publication={publication} pendingLabel={t('publication.pending')} retryLabel={t('publication.retry')}
+        onRetry={() => { void store.retryModuleCapability(moduleId).then((result) => setPublication(result.publication)) }} />
+    </span>
 }

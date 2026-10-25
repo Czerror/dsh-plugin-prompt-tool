@@ -60,6 +60,8 @@ const stubStore = (modules = [moduleA], globalParamsLoaded = true) => {
     globalParamsLoaded,
     setGlobalParam: () => {},
     persistGlobalParams: async () => {},
+    publicationOf: () => ({ pending: false }),
+    retryParamPublication: async () => {},
     persistInstructionFiles: async () => true,
     reloadInstructionFile: async () => {},
     updateInstructionPolicy: async () => {},

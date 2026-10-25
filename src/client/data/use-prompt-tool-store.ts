@@ -4,6 +4,7 @@ import type { ConfigForm, ConfigFormSnapshot } from '@deepseek-ai/dsh-client-ui-
 import type { EngineMeta, PromptConfigDraft } from '../prompt-tool-types.ts'
 import type { PromptToolHostApi } from './host-api.ts'
 import { bridgeCall, errorMessage } from './bridge-client.ts'
+import { readPublication } from '../../shared/publication.ts'
 import {
   EMPTY_FIELDS,
   EMPTY_META,
@@ -791,21 +792,40 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
   }, [patch, persistSwitches, load])
 
   /** 能力变更的主语＝调用方给的模块 id；与参数保存共用模块队列。 */
-  const changeModuleCapability = useCallback((moduleId: string, action: 'create' | 'create-recipe' | 'remove', id: string): Promise<boolean> => {
+  const changeModuleCapability = useCallback((moduleId: string, action: 'create' | 'create-recipe' | 'remove', id: string): Promise<{ ok: boolean; publication?: { pending: boolean; error?: string } }> => {
     if (!editableSubject(moduleId)) {
       showNotice('error', NO_SUBJECT_MESSAGE)
-      return Promise.resolve(false)
+      return Promise.resolve({ ok: false })
     }
     return moduleSaveQueueRef.current.enqueue(async () => {
       const request = action === 'create-recipe' ? { action, recipeId: id } : { action, capabilityId: id }
       const result = await bridgeCall('moduleCapability', { ...request, expectedModuleId: moduleId }, moduleId)
       if (!result.ok) {
         showNotice('error', '引擎能力变更失败：' + (result.message ?? 'settings bridge unavailable'))
-        return false
+        return { ok: false }
       }
+      const publication = readPublication(result.value)
       await load({ silent: true })
-      showNotice('ok', action === 'remove' ? `已移除引擎能力：${id}` : `已装配引擎能力：${id}`)
-      return true
+      showNotice(publication.pending ? 'error' : 'ok', publication.error ?? (action === 'remove' ? '已移除引擎能力：' + id : '已装配引擎能力：' + id))
+      return { ok: true, publication }
+    })
+  }, [editableSubject, load, showNotice])
+  /** 只重试能力变更后的运行发布，不重复 create/remove。 */
+  const retryModuleCapability = useCallback((moduleId: string): Promise<{ ok: boolean; publication?: { pending: boolean; error?: string } }> => {
+    if (!editableSubject(moduleId)) {
+      showNotice('error', NO_SUBJECT_MESSAGE)
+      return Promise.resolve({ ok: false })
+    }
+    return moduleSaveQueueRef.current.enqueue(async () => {
+      const result = await bridgeCall('moduleCapability', { refreshOnly: true, expectedModuleId: moduleId }, moduleId)
+      if (!result.ok) {
+        showNotice('error', '能力发布重试失败：' + (result.message ?? 'settings bridge unavailable'))
+        return { ok: false }
+      }
+      const publication = readPublication(result.value)
+      showNotice(publication.pending ? 'error' : 'ok', publication.error ?? '能力发布已完成')
+      await load({ silent: true })
+      return { ok: true, publication }
     })
   }, [editableSubject, load, showNotice])
   const createModuleCapability = useCallback((moduleId: string, action: 'create' | 'create-recipe', id: string) => changeModuleCapability(moduleId, action, id), [changeModuleCapability])
@@ -912,6 +932,8 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
     get globalParamsLoaded() { return paramEditor.globalParamsLoaded },
     setGlobalParam: paramEditor.setGlobalParam,
     persistGlobalParams: paramEditor.persistGlobalParams,
+    publicationOf: paramEditor.publicationOf,
+    retryParamPublication: paramEditor.retryParamPublication,
     enqueueRuleTask,
     moduleVariables,
     ensureModuleVariables,
@@ -923,6 +945,7 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
     toggle,
     createModuleCapability,
     removeModuleCapability,
+    retryModuleCapability,
     createModule,
     moduleActions,
     createTemplateRule: templateWriter.current,

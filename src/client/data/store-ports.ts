@@ -51,6 +51,8 @@ export interface ParamsPort {
   globalParamsLoaded: boolean
   setGlobalParam: (key: SharedParamKey, value: unknown) => void
   persistGlobalParams: () => Promise<void>
+  publicationOf: (scope: 'module' | 'global', moduleId?: string) => { pending: boolean; error?: string }
+  retryParamPublication: (scope: 'module' | 'global', moduleId?: string) => Promise<void>
 }
 
 /** 模板变量：按主语的读数、草稿写入与保存／发布重试。 */
@@ -97,13 +99,20 @@ export interface RuleEditingPort {
   createTemplateRule: ReturnType<typeof createTemplateRuleWriter>
 }
 
+/** 能力写入的发布结果：成功但运行发布失败时 `publication.pending` 为真。 */
+export interface ModuleCapabilityResult {
+  ok: boolean
+  publication?: { pending: boolean; error?: string }
+}
+
 /** 模块动作：总闸、能力增删、新建与开关落盘（模块页／切换器／能力列表用）。 */
 export interface ModuleActionsPort {
   moduleActions: ModuleActions
   createModule: () => Promise<string | undefined>
   toggle: () => void
-  createModuleCapability: (moduleId: string, action: 'create' | 'create-recipe', id: string) => Promise<boolean>
-  removeModuleCapability: (moduleId: string, id: string) => Promise<boolean>
+  createModuleCapability: (moduleId: string, action: 'create' | 'create-recipe', id: string) => Promise<ModuleCapabilityResult>
+  removeModuleCapability: (moduleId: string, id: string) => Promise<ModuleCapabilityResult>
+  retryModuleCapability: (moduleId: string) => Promise<ModuleCapabilityResult>
   persistSwitches: (onSaved?: () => void) => Promise<boolean>
   dirtySwitches: boolean
 }

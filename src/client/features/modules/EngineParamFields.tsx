@@ -11,6 +11,7 @@ import type { PromptToolTranslate } from '../../locales.ts'
 import { MenuSelect } from '../../ui/MenuSelect.tsx'
 import { TagInput } from '../../ui/TagInput.tsx'
 import { HintTooltip } from '../../ui/HintTooltip.tsx'
+import { PublicationNotice } from '../../ui/PublicationNotice.tsx'
 import styles from '../../ui/controls.module.css'
 import { useAutosave } from '../../data/use-autosave.ts'
 
@@ -50,6 +51,9 @@ export function EngineParamFields({ store, moduleId, card, t, instanceId, audien
   return <>
     {paired.length > 0 && <fieldset data-param-pair={primary} aria-label={t(`param.${primary!}`)}>{paired.map(renderField)}</fieldset>}
     {keys.filter((key) => !paired.includes(key)).map(renderField)}
+    <PublicationNotice publication={store.publicationOf('module', moduleId)}
+      onRetry={() => { void store.retryParamPublication('module', moduleId) }}
+      pendingLabel={t('publication.pending')} retryLabel={t('publication.retry')} />
   </>
 }
 
@@ -169,5 +173,8 @@ export function EngineParamField({ store, param, t, instanceId, ...subject }: {
     </span></HintTooltip>
     {control}
     {error !== undefined && <small id={`${id}-error`} role="alert">{error}</small>}
+    {isGlobal && <PublicationNotice publication={store.publicationOf('global')}
+      onRetry={() => { void store.retryParamPublication('global') }}
+      pendingLabel={t('publication.pending')} retryLabel={t('publication.retry')} />}
   </div>
 }

@@ -166,6 +166,10 @@ _Avoid_: 会话、轮次
 同一 epoch 内从受限的初始阶段进入完整能力阶段的状态转换。
 _Avoid_: 模型升级、权限扩张、会话初始化
 
+**发布结果（Publication Result）**：
+一次已写盘操作的运行发布结果：`persisted`、`publicationPending`、`publicationError` 三字段。发布失败不是写入失败；host 与客户端共用同一判据读取它，客户端据此决定是否显示重试入口。
+_Avoid_: 保存结果、写盘结果、错误码
+
 **pre-step 来源（Pre-step Source）**：
 向 `agent/pre-step` 登记的一组提示词配置与规则动作，连同它的来源身份、作用域 ctx、判定上报和晋升所有者。协调器只合并来源并按批执行，不从配置反推模块。
 _Avoid_: 模块来源、预设法、全局管线

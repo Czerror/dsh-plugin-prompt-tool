@@ -8,9 +8,10 @@ import { loadModuleDefinition } from '../../host/module-slices.ts'
 import { ModuleWriteError } from '../../host/module-write.ts'
 import { appendModuleCapabilities, createModuleCapability, removeModuleCapability } from '../../host/module-capabilities.ts'
 import { validateCustomTools } from '../../host/custom-tools.ts'
-import { MODULE_ACTIVATION_FAILED, BRIDGE_ENDPOINTS } from '../../shared/bridge-contract.ts'
+import { BRIDGE_ENDPOINTS } from '../../shared/bridge-contract.ts'
 import { readPersonaSpec, type PersonaSources } from '../../shared/persona-section.ts'
-import { MODULE_TOOL_CAPABILITIES } from '../../shared/engine-capabilities.ts'
+import { MODULE_TOOL_CAPABILITIES, moduleCapability } from '../../shared/engine-capabilities.ts'
+import { published } from '../../shared/publication.ts'
 import { writeLayerSettingsError } from '../module-subject-gate.ts'
 import { SHA256_HEX_RE, type BridgeRuntime } from '../bridge-runtime.ts'
 
@@ -43,6 +44,26 @@ export function registerDefinitions(runtime: DefinitionsRuntime): Array<() => vo
       // 声明面只在读侧拦：写自定义工具是给模块添加第一节，放行。
       const dir = runtime.gate(tx, 'customTools').inspect(record.customTools !== undefined)
       if (dir === undefined) return
+      // refreshOnly：只重试运行发布，不重写定义；快照读回失败按未执行处理。
+      if (record.refreshOnly === true) {
+        if (record.customTools !== undefined) {
+          tx.write(400, { ok: false, code: 'custom-tools-invalid', message: 'refreshOnly 不能与 customTools 写入混用' })
+          return
+        }
+        if (runtime.gate(tx, 'customTools').authorize() === undefined) return
+        let customTools: unknown[] = []
+        try {
+          const spec = loadModuleSpec(dir)
+          customTools = Array.isArray(spec.customTools) ? spec.customTools : []
+        } catch (error) {
+          if (writeLayerSettingsError(tx.write, error)) return
+          tx.write(409, { ok: false, code: 'custom-tools-unavailable', message: '自定义工具读取失败，未触发运行发布' })
+          return
+        }
+        const publication = await runtime.runOverridesChange(basename(dir))
+        tx.write(200, { ok: true, value: { customTools, ...publication } })
+        return
+      }
       // 无载荷 = 读取（module.yml 顶层 customTools 段）。
       if (record.customTools === undefined) {
         try {
@@ -74,9 +95,13 @@ export function registerDefinitions(runtime: DefinitionsRuntime): Array<() => vo
             appendModuleCapabilities(doc, customToolModules(customTools))
           }
         }, { owns: ['customTools', 'modules'] })
-        if (!await runtime.runOverridesChange(tx.write, basename(dir))) return
-        tx.write(200, { ok: true, value: { customTools } })
+        const publication = await runtime.runOverridesChange(basename(dir))
+        tx.write(200, { ok: true, value: { customTools, ...publication } })
       } catch (error) {
+        if (error instanceof ModuleWriteError && error.persisted) {
+          tx.write(200, { ok: true, value: { customTools: record.customTools as unknown[], ...published(error.message) } })
+          return
+        }
         const message = error instanceof Error ? error.message : String(error)
         // 全桥统一规则：host 分类优先（如 shared-alias），端点码只兜底——与 /persona 同形。
         tx.write(error instanceof ModuleWriteError ? error.status : 409, {
@@ -119,15 +144,11 @@ export function registerDefinitions(runtime: DefinitionsRuntime): Array<() => vo
           }
           saved = saveModulePersona(root, id, persona, creating ? readModulePersona(dir).revision : record.expectedRevision as string)
         }
-        try { await runtime.deps.overridesChanged?.(basename(dir)) }
-        catch (error) {
-          tx.write(200, { ok: true, value: { ...saved, persisted: true, publicationPending: true, publicationError: `人设已保存，但运行发布失败：${String(error)}` } })
-          return
-        }
-        tx.write(200, { ok: true, value: { ...saved, persisted: true, publicationPending: false } })
+        const publication = await runtime.runOverridesChange(basename(dir))
+        tx.write(200, { ok: true, value: { ...saved, ...publication } })
       } catch (error) {
         if (error instanceof ModuleWriteError && error.persisted) {
-          tx.write(200, { ok: true, value: { ...readModulePersona(dir), persisted: true, publicationPending: true, publicationError: error.message } })
+          tx.write(200, { ok: true, value: { ...readModulePersona(dir), ...published(error.message) } })
           return
         }
         const message = error instanceof Error ? error.message : String(error)
@@ -156,13 +177,13 @@ export function registerDefinitions(runtime: DefinitionsRuntime): Array<() => vo
         }
         const saved = record.refreshOnly === true ? readPersonaSources(root)
           : writePersonaSources(root, record.sources as PersonaSources, record.expectedRevision as string | null)
-        try { await runtime.deps.overridesChanged?.() }
-        catch (error) {
-          tx.write(200, { ok: true, value: { ...saved, persisted: true, publicationPending: true, publicationError: `人设来源已保存，但运行发布失败：${String(error)}` } })
+        const publication = await runtime.runOverridesChange()
+        tx.write(200, { ok: true, value: { ...saved, ...publication } })
+      } catch (error) {
+        if (error instanceof ModuleWriteError && error.persisted) {
+          tx.write(200, { ok: true, value: { ...readPersonaSources(userModulesDir()), ...published(error.message) } })
           return
         }
-        tx.write(200, { ok: true, value: { ...saved, persisted: true, publicationPending: false } })
-      } catch (error) {
         tx.write(error instanceof ModuleWriteError ? error.status : error instanceof TypeError ? 400 : 409,
           { ok: false, code: error instanceof ModuleWriteError ? error.code : 'persona-sources-rejected', message: error instanceof Error ? error.message : String(error) })
       }
@@ -172,6 +193,29 @@ export function registerDefinitions(runtime: DefinitionsRuntime): Array<() => vo
       const dir = runtime.gate(tx, 'moduleCapability').authorize()
       if (dir === undefined) return
       const body = tx.record
+      // refreshOnly：只重试运行发布，不执行 create/remove。
+      if (body.refreshOnly === true) {
+        if (body.action !== undefined || body.capabilityId !== undefined || body.recipeId !== undefined) {
+          tx.write(400, { ok: false, code: 'engine-capability-invalid', message: 'refreshOnly 不能与能力写入混用' })
+          return
+        }
+        const run = runtime.capabilityQueue.run(async () => {
+          if (runtime.gate(tx, 'moduleCapability').authorize() === undefined) return
+          let capabilityIds: string[] = []
+          try {
+            const spec = loadModuleSpec(dir)
+            capabilityIds = (Array.isArray(spec.modules) ? spec.modules : []).filter((id): id is string => typeof id === 'string' && moduleCapability(id) !== undefined)
+          } catch (error) {
+            if (writeLayerSettingsError(tx.write, error)) return
+            tx.write(409, { ok: false, code: 'engine-capability-invalid', message: '能力读取失败，未触发运行发布' })
+            return
+          }
+          const publication = await runtime.finishModuleChange(() => runtime.deps.capabilityChanged?.(basename(dir)))
+          tx.write(200, { ok: true, value: { changed: false, capabilityIds, ...publication } })
+        })
+        await run
+        return
+      }
       const action = body.action
       const id = action === 'create' || action === 'remove' ? body.capabilityId : action === 'create-recipe' ? body.recipeId : undefined
       if ((action !== 'create' && action !== 'remove' && action !== 'create-recipe') || typeof id !== 'string' || id.trim().length === 0 || id.length > 128) {
@@ -187,11 +231,13 @@ export function registerDefinitions(runtime: DefinitionsRuntime): Array<() => vo
             : createModuleCapability(dir, action === 'create'
               ? { action: 'create', capabilityId: id.trim() }
               : { action: 'create-recipe', recipeId: id.trim() })
-          if (result.changed && !await runtime.finishModuleChange(tx.write, () => runtime.deps.capabilityChanged?.(basename(dir)))) return
-          tx.write(200, { ok: true, value: result })
+          const publication = result.changed
+            ? await runtime.finishModuleChange(() => runtime.deps.capabilityChanged?.(basename(dir)))
+            : published()
+          tx.write(200, { ok: true, value: { ...result, ...publication } })
         } catch (error) {
           if (error instanceof ModuleWriteError && error.persisted) {
-            tx.write(500, { ok: false, code: MODULE_ACTIVATION_FAILED, message: `能力变更已保存，但切片未发布；请重试刷新：${error.message}` })
+            tx.write(200, { ok: true, value: { changed: true, capabilityIds: [id], ...published(error.message) } })
             return
           }
           const message = error instanceof Error ? error.message : String(error)

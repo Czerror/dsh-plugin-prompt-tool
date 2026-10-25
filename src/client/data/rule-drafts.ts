@@ -3,6 +3,7 @@ import type { BridgeResult } from './bridge-client.ts'
 import type { FieldDraft, WorkspaceDrafts } from './workspace-drafts.ts'
 import { deepEqual } from './dirty-state.ts'
 import { beginLatest, isLatest } from './resource-track.ts'
+import { readPublication } from '../../shared/publication.ts'
 
 /**
  * 需要「先重新读取」才能继续的拒绝码：这些失败重放保存只会重复同一次拒绝。
@@ -73,8 +74,9 @@ interface RuleEditorDependencies {
 export function createRuleEditor(moduleId: string, draft: RulesDraft, deps: RuleEditorDependencies) {
   const changed = (): void => { draft.validated = false; deps.changed() }
   const publication = (snapshot: RulesSnapshot): void => {
-    draft.publicationPending = snapshot.publicationPending === true || !!snapshot.publicationError
-    draft.publicationError = snapshot.publicationError ?? (snapshot.publicationPending === true ? 'rules-refresh-pending' : undefined)
+    const state = readPublication(snapshot)
+    draft.publicationPending = state.pending
+    draft.publicationError = state.error ?? (state.pending ? 'rules-refresh-pending' : undefined)
     draft.error = draft.retry === 'read' ? 'rules-conflict' : draft.publicationError
   }
   const receive = (snapshot: RulesSnapshot): boolean => {

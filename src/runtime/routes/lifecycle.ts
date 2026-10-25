@@ -9,6 +9,7 @@ import { ModuleWriteError } from '../../host/module-write.ts'
 import { enabledModuleIds, setModuleEnabled } from '../../host/config-store.ts'
 import type { ModuleConfigIdentity } from '../../shared/module-config-order.ts'
 import { BRIDGE_ENDPOINTS, readEditTarget } from '../../shared/bridge-contract.ts'
+import { published } from '../../shared/publication.ts'
 import { isRecord, SHA256_HEX_RE, type BridgeRuntime } from '../bridge-runtime.ts'
 
 /** 本域用到的运行时面：只用这些，不加宽（新域照此声明自己的面）。 */
@@ -28,6 +29,11 @@ export function registerLifecycle(runtime: LifecycleRuntime): Array<() => void> 
       // 不核形状——损坏的模块必须仍能删掉；声明不存在即没有在用模块。
       const activeDir = runtime.gate(tx, 'moduleDelete').inspect()
       if (activeDir === undefined) return
+      if (record.refreshOnly === true) {
+        const publication = await runtime.refreshModuleList()
+        tx.write(200, { ok: true, value: { id, ...publication } })
+        return
+      }
       if (activeDir.length > 0 && basename(activeDir) === id) {
         tx.write(400, { ok: false, code: 'module-in-use', message: `模块「${id}」正在使用中，请先切换其他模块再删除` })
         return
@@ -39,20 +45,15 @@ export function registerLifecycle(runtime: LifecycleRuntime): Array<() => void> 
         tx.write(400, { ok: false, code: 'module-delete-rejected', message: result.message })
         return
       }
-      // 删除已提交：刷新失败只影响列表，回 200 让客户端按已删除处理。
-      let refreshError: string | undefined
-      try {
-        await runtime.deps.moduleListChanged?.()
-      } catch (error) {
-        refreshError = 'module-refresh-failed'
-        runtime.deps.warn?.(`删除模块 ${id} 后刷新运行实例失败：${error instanceof Error ? error.message : String(error)}`)
-      }
+      // 删除已提交：运行发布失败回 200 + 待发布，客户端按已删除处理并保留重试。
+      const publication = await runtime.refreshModuleList()
+      if (publication.publicationPending) runtime.deps.warn?.(`删除模块 ${id} 后刷新运行实例失败：${publication.publicationError}`)
       tx.write(200, {
         ok: true,
         value: {
           id,
           ...(result.backupPath === undefined ? {} : { backupPath: result.backupPath }),
-          ...(refreshError === undefined ? {} : { refreshError }),
+          ...publication,
         },
       })
     } }),
@@ -63,13 +64,18 @@ export function registerLifecycle(runtime: LifecycleRuntime): Array<() => void> 
         tx.write(400, { ok: false, code: 'module-clone-rejected', message: '缺少模块 id' })
         return
       }
+      if (record.refreshOnly === true) {
+        const publication = await runtime.refreshModuleList()
+        tx.write(200, { ok: true, value: { id, ...publication } })
+        return
+      }
       const result = cloneBuiltinModule(id, record.autoSuffix === true, undefined, runtime.deps.warn)
       if (!result.ok) {
         tx.write(400, { ok: false, code: 'module-clone-rejected', message: result.message })
         return
       }
-      if (!await runtime.refreshModuleList(tx.write)) return
-      tx.write(200, { ok: true, value: { id: result.id } })
+      const publication = await runtime.refreshModuleList()
+      tx.write(200, { ok: true, value: { id: result.id, ...publication } })
     } }),
     runtime.register(BRIDGE_ENDPOINTS.moduleDuplicate, { handle: async (tx) => {
       const record = tx.record
@@ -78,13 +84,18 @@ export function registerLifecycle(runtime: LifecycleRuntime): Array<() => void> 
         tx.write(400, { ok: false, code: 'module-duplicate-rejected', message: '缺少模块 id' })
         return
       }
+      if (record.refreshOnly === true) {
+        const publication = await runtime.refreshModuleList()
+        tx.write(200, { ok: true, value: { id, ...publication } })
+        return
+      }
       const result = duplicateUserModule(id, undefined, runtime.deps.warn)
       if (!result.ok) {
         tx.write(400, { ok: false, code: 'module-duplicate-rejected', message: result.message })
         return
       }
-      if (!await runtime.refreshModuleList(tx.write)) return
-      tx.write(200, { ok: true, value: { id: result.id } })
+      const publication = await runtime.refreshModuleList()
+      tx.write(200, { ok: true, value: { id: result.id, ...publication } })
     } }),
     runtime.register(BRIDGE_ENDPOINTS.moduleOpen, { handle: async (tx) => {
       const record = tx.record
@@ -105,21 +116,27 @@ export function registerLifecycle(runtime: LifecycleRuntime): Array<() => void> 
       if (dir === undefined) return
       try {
         const record = tx.record
-        const allowed = record.name === undefined ? [] : ['name', 'expectedRevision', 'expectedModuleId']
+        const allowed = record.name === undefined ? ['refreshOnly'] : ['name', 'expectedRevision', 'expectedModuleId', 'refreshOnly']
         if (Object.keys(record).some((key) => !allowed.includes(key))) throw new ModuleNameError('名称请求包含未知字段')
+        if (record.refreshOnly === true) {
+          if (record.name !== undefined) throw new ModuleNameError('refreshOnly 不能与改名混用')
+          if (record.expectedRevision !== undefined || record.expectedModuleId !== undefined) throw new ModuleNameError('refreshOnly 不接受写入版本')
+          if (runtime.gate(tx, 'moduleName').authorize() === undefined) return
+          const publication = await runtime.runOverridesChange(basename(dir))
+          tx.write(200, { ok: true, value: { ...readModuleName(dir), ...publication } })
+          return
+        }
         if (record.name === undefined) {
           tx.write(200, { ok: true, value: readModuleName(dir) })
           return
         }
         if (record.expectedRevision === undefined || record.expectedModuleId === undefined) throw new ModuleNameError('保存名称必须提供 expectedRevision 和 expectedModuleId')
         const value = writeModuleName(dir, record as { name: unknown; expectedRevision: unknown; expectedModuleId: unknown })
-        let publicationError: string | undefined
-        try { await runtime.deps.overridesChanged?.(basename(dir)) }
-        catch (error) { publicationError = String(error) }
-        tx.write(200, { ok: true, value: { ...value, persisted: true, ...(publicationError === undefined ? {} : { publicationError }) } })
+        const publication = await runtime.runOverridesChange(basename(dir))
+        tx.write(200, { ok: true, value: { ...value, ...publication } })
       } catch (error) {
         if (error instanceof ModuleWriteError && error.persisted) {
-          tx.write(200, { ok: true, value: { ...readModuleName(dir), persisted: true, publicationError: error.message } })
+          tx.write(200, { ok: true, value: { ...readModuleName(dir), ...published(error.message) } })
           return
         }
         const typed = error instanceof ModuleNameError || error instanceof ModuleWriteError ? error : undefined
@@ -128,6 +145,18 @@ export function registerLifecycle(runtime: LifecycleRuntime): Array<() => void> 
     } }),
     runtime.register(BRIDGE_ENDPOINTS.moduleEnable, { handle: async (tx) => {
       const record = tx.record
+      if (record.refreshOnly === true) {
+        if (record.id !== undefined || record.enabled !== undefined) {
+          tx.write(400, { ok: false, code: 'module-enable-rejected', message: 'refreshOnly 不能与启用写入混用' })
+          return
+        }
+        const run = runtime.moduleOrderQueue.run(async () => {
+          const publication = await runtime.runOverridesChange()
+          tx.write(200, { ok: true, value: { enabled: enabledModuleIds(userModulesDir()), ...publication } })
+        })
+        await run
+        return
+      }
       const id = typeof record.id === 'string' ? record.id.trim() : ''
       if (id.length === 0) {
         tx.write(400, { ok: false, code: 'module-enable-rejected', message: '缺少模块 id' })
@@ -145,18 +174,23 @@ export function registerLifecycle(runtime: LifecycleRuntime): Array<() => void> 
       const enabled = record.enabled
       const run = runtime.moduleOrderQueue.run(async () => {
         try {
+          let publication = published()
           if (enabled) {
             const changed = appendModuleConfigOrder(userModulesDir(), id)
             // 上次可能已保存序号却未物化成功；从停用态启用有卡模块时仍须重建。
             if (!changed.includes(id) && !enabledModuleIds(userModulesDir()).includes(id)
               && readModuleConfigOrder(userModulesDir(), id).entries.length > 0) changed.push(id)
             for (const changedId of changed) {
-              if (!await runtime.runOverridesChange(tx.write, changedId)) return
+              publication = await runtime.runOverridesChange(changedId)
+              if (publication.publicationPending) {
+                tx.write(200, { ok: true, value: { enabled: enabledModuleIds(userModulesDir()), ...publication } })
+                return
+              }
             }
           }
           setModuleEnabled(userModulesDir(), id, enabled)
-          if (!await runtime.runOverridesChange(tx.write)) return
-          tx.write(200, { ok: true, value: { enabled: enabledModuleIds(userModulesDir()) } })
+          publication = await runtime.runOverridesChange()
+          tx.write(200, { ok: true, value: { enabled: enabledModuleIds(userModulesDir()), ...publication } })
         } catch (error) {
           runtime.writeModuleOrderError(tx.write, error)
         }
@@ -165,9 +199,26 @@ export function registerLifecycle(runtime: LifecycleRuntime): Array<() => void> 
     } }),
     runtime.register(BRIDGE_ENDPOINTS.moduleConfigOrder, { handle: async (tx) => {
       const body = tx.record
+      if (body.refreshOnly === true) {
+        if (body.entries !== undefined || body.expectedRevision !== undefined) {
+          tx.write(400, { ok: false, code: 'module-config-order-invalid', message: 'refreshOnly 不能与排序写入混用' })
+          return
+        }
+        if (body.moduleId !== undefined && (typeof body.moduleId !== 'string' || readEditTarget(body.moduleId) !== body.moduleId)) {
+          tx.write(400, { ok: false, code: 'module-config-order-invalid', message: 'moduleId 形状非法' })
+          return
+        }
+        const moduleId = typeof body.moduleId === 'string' ? body.moduleId : undefined
+        const run = runtime.moduleOrderQueue.run(async () => {
+          const publication = await runtime.runOverridesChange()
+          tx.write(200, { ok: true, value: { ...readModuleConfigOrder(userModulesDir(), moduleId), ...publication } })
+        })
+        await run
+        return
+      }
       // 客户端无参数读取序列化为 {}；与空请求体一样读取全局排序。
       const writing = body.entries !== undefined || body.expectedRevision !== undefined
-      if (Object.keys(body).some((key) => key !== 'moduleId' && key !== 'entries' && key !== 'expectedRevision')
+      if (Object.keys(body).some((key) => key !== 'moduleId' && key !== 'entries' && key !== 'expectedRevision' && key !== 'refreshOnly')
         || (body.moduleId !== undefined && (typeof body.moduleId !== 'string' || readEditTarget(body.moduleId) !== body.moduleId))
         || (writing && (typeof body.expectedRevision !== 'string' || !SHA256_HEX_RE.test(body.expectedRevision)
           || !Array.isArray(body.entries)
@@ -181,13 +232,15 @@ export function registerLifecycle(runtime: LifecycleRuntime): Array<() => void> 
       const run = runtime.moduleOrderQueue.run(async () => {
         try {
           const moduleId = body.moduleId as string | undefined
+          let publication = published()
           if (writing) {
             const changedIds = saveModuleConfigOrder(userModulesDir(), body.expectedRevision as string, body.entries as ModuleConfigIdentity[], moduleId)
             for (const id of changedIds) {
-              if (!await runtime.runOverridesChange(tx.write, id)) return
+              publication = await runtime.runOverridesChange(id)
+              if (publication.publicationPending) break
             }
           }
-          tx.write(200, { ok: true, value: readModuleConfigOrder(userModulesDir(), moduleId) })
+          tx.write(200, { ok: true, value: { ...readModuleConfigOrder(userModulesDir(), moduleId), ...publication } })
         } catch (error) {
           runtime.writeModuleOrderError(tx.write, error)
         }

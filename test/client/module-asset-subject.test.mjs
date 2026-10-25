@@ -55,6 +55,8 @@ const stubStore = (drafts, modules = twoModules) => {
     enqueueRuleTask: (task) => task(),
     // 参数编辑器读回值：桩里没有按主语的读数，契约默认值就是「未读回」的视图。
     moduleParamsOf: () => EMPTY_PARAMS,
+    publicationOf: () => ({ pending: false }),
+    retryParamPublication: async () => {},
   }
 }
 
