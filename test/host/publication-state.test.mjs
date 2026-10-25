@@ -1,6 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import fs, { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { syncBuiltinESMExports } from 'node:module'
 import { join } from 'node:path'
 import { fakeReq, fakeRes, isolatedHome, makeHostContext, readBridge } from '../fixtures/host-harness.mjs'
 
@@ -44,6 +45,36 @@ async function call(handlers, endpoint, body, id) {
   await handler(fakeReq({ body, headers: { host: 'localhost', ...(id === undefined ? {} : { 'x-module-id': id }) } }), res)
   return readBridge(res)
 }
+
+test('paramOverrides：写盘后切片重建失败仍回 200 + 待发布', async () => {
+  const { target, handlers } = harness()
+  // 先读一次，让模块已有切片，避免在 ensure 阶段触发注入。
+  assert.equal((await call(handlers, 'paramOverrides', {}, target.id)).status, 200)
+  const originalRename = fs.renameSync
+  const originalRead = fs.readFileSync
+  let persistedWritten = false
+  fs.renameSync = (from, to) => {
+    const result = originalRename(from, to)
+    if (String(to).endsWith('module.yml')) persistedWritten = true
+    return result
+  }
+  fs.readFileSync = (path, ...args) => {
+    if (persistedWritten && String(path).includes('rules')) throw new Error('SLICE_READ_FAILED')
+    return originalRead(path, ...args)
+  }
+  syncBuiltinESMExports()
+  try {
+    const saved = await call(handlers, 'paramOverrides', { expectedModuleId: target.id, overrides: { modelTemperature: 0.5 } }, target.id)
+    assert.equal(saved.status, 200, saved.message)
+    assert.equal(saved.value.persisted, true)
+    assert.equal(saved.value.publicationPending, true)
+    assert.match(saved.value.publicationError, /SLICE_READ_FAILED/)
+  } finally {
+    fs.renameSync = originalRename
+    fs.readFileSync = originalRead
+    syncBuiltinESMExports()
+  }
+})
 
 test('paramOverrides：写盘成功、发布失败回 200 + 待发布；refreshOnly 只重试不重写', async () => {
   const { target, handlers, state } = harness()
