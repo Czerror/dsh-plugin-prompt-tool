@@ -1694,9 +1694,10 @@ test('协调器管线：规则批收到过滤后的官方指令', async (t) => {
     configs: [],
     ruleActions: [{
       id: 'probe',
-      handler: async (_payload, next, frame) => {
-        seen.push(frame.args[0].messages.map(message => message.source?.kind))
-        return next()
+      handler: async (_payload, next) => {
+        const current = await next()
+        seen.push((current.messages ?? []).map(message => message.source?.kind))
+        return current
       },
     }],
   })
@@ -1724,13 +1725,15 @@ test('协调器管线：规则批抛错仍返回已过滤的 decision', async (t
   assert.equal(writeInstructionPolicy({ expectedRevision: current.revision, patch: { files: { [identity.fileId]: { enabled: false } } } }).ok, true)
   const coordinator = h.root.get(PRE_STEP_COORDINATOR_SERVICE)
   const agent = await h.makeAgent('boom-main')
+  let boomCount = 0
   coordinator.registerPreset('boom', {
     sourceId: 'boom',
     ctx: agent.ctx,
     configs: [],
-    ruleActions: [{ id: 'boom', handler: async () => { throw new Error('BATCH_BOOM') } }],
+    ruleActions: [{ id: 'boom', handler: async () => { boomCount += 1; throw new Error('BATCH_BOOM') } }],
   })
   const decision = await h.inject(agent)
+  assert.ok(boomCount > 0, '规则批至少执行一次')
   assert.ok(!decision.messages.some(message => message.source?.kind === 'agent-instructions'), 'batch 抛错后仍返回已过滤 decision')
 })
 

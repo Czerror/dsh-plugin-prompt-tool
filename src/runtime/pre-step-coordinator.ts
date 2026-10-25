@@ -61,19 +61,6 @@ function createPolicyReader(policyFile?: string) {
   }
 }
 
-/**
- * pre-step 的显式管线：先过滤官方指令，再执行规则批。
- *
- * 监听器已排除 reject/非对象；这里只处理 messages 数组。顺序是代码事实，
- * 不交给 Cordis 的 `prepend` 注册栈——否则顺序只由两个监听器的注册先后决定。
- */
-async function runPreStepPipeline(
-  messages: unknown[] | undefined,
-  filter: (messages: unknown[]) => unknown[],
-  batch: (messages: unknown[] | undefined) => Promise<PreStepDecision>,
-): Promise<PreStepDecision> {
-  return batch(Array.isArray(messages) ? filter(messages) : undefined)
-}
 
 export function installPreStepCoordinator(ctx: Context, options: PreStepCoordinatorOptions = {}): PreStepCoordinatorService {
   const layers = new ScopedLayers<SourceLayer>(() => {
@@ -141,38 +128,29 @@ export function installPreStepCoordinator(ctx: Context, options: PreStepCoordina
     if (!active || !isRecord(decision) || decision.kind === 'reject') return decision
     const agent = isRecord(payload) ? payload.agent : undefined
     const session = isRecord(agent) ? agent.session : undefined
-    const batch = async (nextMessages: unknown[] | undefined): Promise<PreStepDecision> => {
-      const filteredDecision = nextMessages === undefined || nextMessages === decision.messages
-        ? decision
-        : { ...decision, messages: nextMessages as typeof decision.messages }
-      if (agent === undefined || session === undefined) return filteredDecision
-      try {
-        const scope = isRecord(agent) && agent.ctx !== undefined ? scopeOf(agent.ctx as Context) : undefined
-        const sources = [...layers.merge(scope, (layer) => layer.entries).values()]
-        // 只按旧生成卡的 id 前缀跳过；编译后的 sourceKind 恒带 `plugin:` 前缀（见 schema.mjs），
-        // 声明 `instruction-file` 的用户配置照常注入。
-        const filtered = sources.map(source => ({
-          ...source,
-          configs: source.configs.filter(config => !config.id.startsWith('agents-file-')),
-        }))
-        return await runPreStepBatch({
-          sources: filtered,
-          ctx, agent, payload, decision: filteredDecision, memo, warnOnce,
-        })
-      } catch (error) {
-        warnOnce(`${WARN_LABEL}: coordination failed, keeping decision: ${String((error as Error | undefined)?.message ?? error)}`)
-        return filteredDecision
-      }
+    const messages = Array.isArray(decision.messages) ? decision.messages : undefined
+    const filteredMessages = messages === undefined ? undefined : filterInstructions(agent, messages)
+    const filteredDecision = filteredMessages === undefined || filteredMessages === messages
+      ? decision
+      : { ...decision, messages: filteredMessages as typeof decision.messages }
+    if (agent === undefined || session === undefined) return filteredDecision
+    try {
+      const scope = isRecord(agent) && agent.ctx !== undefined ? scopeOf(agent.ctx as Context) : undefined
+      const sources = [...layers.merge(scope, (layer) => layer.entries).values()]
+      // 只按旧生成卡的 id 前缀跳过；编译后的 sourceKind 恒带 `plugin:` 前缀（见 schema.mjs），
+      // 声明 `instruction-file` 的用户配置照常注入。
+      const filtered = sources.map(source => ({
+        ...source,
+        configs: source.configs.filter(config => !config.id.startsWith('agents-file-')),
+      }))
+      return await runPreStepBatch({
+        sources: filtered,
+        ctx, agent, payload, decision: filteredDecision, memo, warnOnce,
+      })
+    } catch (error) {
+      warnOnce(`${WARN_LABEL}: coordination failed, keeping decision: ${String((error as Error | undefined)?.message ?? error)}`)
+      return filteredDecision
     }
-    const filter = (messages: unknown[]): unknown[] => {
-      try { return filterInstructions(agent, messages) }
-      catch (error) {
-        // 过滤失败不阻断规则批：保留原消息并告警一次。
-        warnOnce(`${WARN_LABEL}: instruction filter failed, keeping messages: ${String((error as Error | undefined)?.message ?? error)}`)
-        return messages
-      }
-    }
-    return runPreStepPipeline(Array.isArray(decision.messages) ? decision.messages : undefined, filter, batch)
   }, { prepend: true })
 
   ctx.effect(() => () => {
