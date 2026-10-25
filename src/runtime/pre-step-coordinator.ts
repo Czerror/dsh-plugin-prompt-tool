@@ -61,6 +61,22 @@ function createPolicyReader(policyFile?: string) {
   }
 }
 
+/**
+ * pre-step 的显式管线：先过滤官方指令，再执行规则批。
+ *
+ * 顺序不能交给 Cordis 的 `prepend` 注册栈——两个监听器的相对次序只由注册先后决定；
+ * batch 必须收到已过滤的 messages，规则帧才不会把即将删除的官方指令当成输入。
+ */
+export async function runPreStepPipeline(
+  decision: PreStepDecision,
+  filter: (messages: unknown[]) => unknown[],
+  batch: (decision: PreStepDecision) => Promise<PreStepDecision>,
+): Promise<PreStepDecision> {
+  if (!isRecord(decision) || decision.kind === 'reject' || !Array.isArray(decision.messages)) return batch(decision)
+  const messages = filter(decision.messages)
+  return batch(messages === decision.messages ? decision : { ...decision, messages: messages as typeof decision.messages })
+}
+
 export function installPreStepCoordinator(ctx: Context, options: PreStepCoordinatorOptions = {}): PreStepCoordinatorService {
   const layers = new ScopedLayers<SourceLayer>(() => {
     const entries = new NamedEntries<PreStepSource>((key) => new Error(`prompt-tool: duplicate pre-step source ${key}`))
@@ -120,38 +136,35 @@ export function installPreStepCoordinator(ctx: Context, options: PreStepCoordina
     confirmDelivered(memo, session, event)
   })
 
-  // prepend：必须在最外层。更内层的监听器（官方 dsh-tool-skill 的目录发布）是 `await next()`
-  // 之后才 append messages，内层过滤时看不到它们；只有本监听器先拿到完整 decision 才删得掉。
+  // 一个 prepend 监听器显式排定「过滤官方指令 → 规则批」；顺序在实现里，不在 Cordis 的注册栈里。
+  // 官方监听器（如 dsh-tool-skill 的目录发布）在 `await next()` 之后才 append messages，
+  // 所以这里先拿到完整 decision，过滤完再交给 batch；batch 异常时仍返回已过滤的 decision。
   ctx.on('agent/pre-step', async (payload: unknown, next: () => Promise<PreStepDecision>) => {
     const decision = await next()
     if (!active || !isRecord(decision) || decision.kind === 'reject') return decision
     const agent = isRecord(payload) ? payload.agent : undefined
     const session = isRecord(agent) ? agent.session : undefined
-    if (agent === undefined || session === undefined) return decision
-    try {
-      const scope = isRecord(agent) && agent.ctx !== undefined ? scopeOf(agent.ctx as Context) : undefined
-      const sources = [...layers.merge(scope, (layer) => layer.entries).values()]
-      // 只按旧生成卡的 id 前缀跳过；编译后的 sourceKind 恒带 `plugin:` 前缀（见 schema.mjs），
-      // 声明 `instruction-file` 的用户配置照常注入。
-      const filtered = sources.map(source => ({
-        ...source,
-        configs: source.configs.filter(config => !config.id.startsWith('agents-file-')),
-      }))
-      return await runPreStepBatch({
-        sources: filtered,
-        ctx, agent, payload, decision, memo, warnOnce,
-      })
-    } catch (error) {
-      warnOnce(`${WARN_LABEL}: coordination failed, keeping decision: ${String((error as Error | undefined)?.message ?? error)}`)
-      return decision
+    const batch = async (filteredDecision: PreStepDecision): Promise<PreStepDecision> => {
+      if (agent === undefined || session === undefined) return filteredDecision
+      try {
+        const scope = isRecord(agent) && agent.ctx !== undefined ? scopeOf(agent.ctx as Context) : undefined
+        const sources = [...layers.merge(scope, (layer) => layer.entries).values()]
+        // 只按旧生成卡的 id 前缀跳过；编译后的 sourceKind 恒带 `plugin:` 前缀（见 schema.mjs），
+        // 声明 `instruction-file` 的用户配置照常注入。
+        const filtered = sources.map(source => ({
+          ...source,
+          configs: source.configs.filter(config => !config.id.startsWith('agents-file-')),
+        }))
+        return await runPreStepBatch({
+          sources: filtered,
+          ctx, agent, payload, decision: filteredDecision, memo, warnOnce,
+        })
+      } catch (error) {
+        warnOnce(`${WARN_LABEL}: coordination failed, keeping decision: ${String((error as Error | undefined)?.message ?? error)}`)
+        return filteredDecision
+      }
     }
-  }, { prepend: true })
-  // prepend 让官方普通监听器先生成消息，再在进入历史之前过滤；普通配置仍用原执行顺序。
-  ctx.on('agent/pre-step', async (payload: unknown, next: () => Promise<PreStepDecision>) => {
-    const decision = await next()
-    if (!active || !isRecord(decision) || decision.kind === 'reject' || !Array.isArray(decision.messages)) return decision
-    const messages = filterInstructions(isRecord(payload) ? payload.agent : undefined, decision.messages)
-    return messages === decision.messages ? decision : { ...decision, messages: messages as typeof decision.messages }
+    return runPreStepPipeline(decision, messages => filterInstructions(agent, messages), batch)
   }, { prepend: true })
 
   ctx.effect(() => () => {
