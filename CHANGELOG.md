@@ -1,5 +1,27 @@
 # Changelog
 
+## [3.0.0] - 2026-10-25
+
+### 主要变化
+
+- **发布结果单一 owner**：新增 `src/shared/publication.ts`；14 个已写盘端点统一回 `200 + persisted + publicationPending + publicationError`，发布失败不再伪装成未写盘；全部纳入端点接受 `refreshOnly` 只重建运行实例（不重复导入、创建、改名、启用或删除）；客户端收成 `readPublication` 单一判据，删除 `MODULE_ACTIVATION_FAILED` 与 `committed` 兼容。
+- **pre-step 管线顺序归实现**：两个 `prepend` 监听器合并为一个，显式「过滤官方指令 → 规则批」；规则帧只看到过滤后的 messages，batch 异常仍返回已过滤的 decision。
+- **端点顶层字段表统一**：删除 `handler: true` 标记与 5 个路由的字段名单；41 个端点顶层字段由 `BRIDGE_REQUEST_FIELDS` 统一拒绝（36 JSON 端点回 400 `bridge-request-invalid`，5 个 `body:'none'` 不读体）；表与 `BridgeRequestMap` 双向覆盖；handler 只保留类型/枚举/互斥/身份/版本/读写组合校验。
+- **workbench 宿主约定收进 adapter**：`src/client/app/workbench/workbench-host-conventions.ts` 拥有侧栏行拦截与 `dsh-panel-activate` 面板互斥；官方 slot 注册与 portal/焦点循环不动，仍不注册 `main`。
+- **受众判据收回引擎**：`engine/rule-spec.mjs#audienceOf` / `actionAudiences` 成为规则受众的唯一判据，客户端 `ruleFacts` 只做展示投影（详见下方「受众事实收回引擎」）。
+- **soul V6**：变量谓词、模块文件工具与 manifest 装配，`data/` 私有目录（详见下方「soul V6」）。
+
+### 破坏性变更（升级前必读）
+
+- **`module_memory_read` / `module_memory_append` 更名**为 `module_file_read` / `module_file_append`，能力 id 改为 `module-file-tools`；参数改为必填 `path`，读取允许 `memory.md` / `assets/` / `data/`，追写允许 `memory.md` 与 `data/`；引用旧工具名的规则正文需更新。
+- **「已保存、未发布」统一回 200**：不再出现 `module-activation-failed` 500；客户端把 `persisted` / `publicationPending` / `publicationError` 读成同一形状，旧客户端对该码的兼容分支删除。
+- **所有端点顶层未知字段统一 400 `bridge-request-invalid`**：原 9 个 handler-owned 端点不再回域内错误码。
+- **pre-step 顺序反转**：规则批先收到过滤后的 messages；依赖「规则条件看到官方指令」的模块需要调整。
+- 其余破坏性变更（`inject-text` 的 `config.prepend` 取消、`tool-pipeline` 注入通道移除、`else` 缺 `if` 编译期拒绝、世界书递归改为模块级开关等）见下方各小节。
+
+### 验证
+
+typecheck、lint（0 warning）、test **924 passed**（0 失败 0 跳过）、build、`pnpm verify:pack`、`git diff --check` 全绿。
 ### soul V6：变量谓词 + 模块文件工具 + manifest 装配（2026-10-24）
 
 - 规则条件新增 `variable` 谓词（`engine/conditions/variable.mjs`）：op 为 eq/ne/in/gt/gte/lt/lte/present/absent，scope 为 effective/module/global；适配器由挂载期按来源模块绑定 `variableStore`，准备期编译的条件为 UNAVAILABLE。条件编辑器同步中英标签与枚举下拉。
