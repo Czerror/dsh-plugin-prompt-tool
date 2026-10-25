@@ -167,7 +167,7 @@ module.yml.configOrder 保存规则id→非负安全整数，身份仍是模块i
 3. 切模块先处理未存草稿并等待队列，迟到响应只能更新原目标草稿。
 4. 变量草稿按模块+scope 隔离，内容和开关分别保留版本；CAS 失败保留编辑。
 5. 所有已写盘端点的运行发布失败统一回 200 + `persisted` + `publicationPending` + `publicationError`；500 只留给没有写盘的失败。端点覆盖 params、rules、persona、personaSources、moduleVariables、customTools、moduleName、moduleCapability、importModulePackage、moduleClone、moduleDuplicate、moduleEnable、moduleConfigOrder、moduleDelete。
-6. 已持久化但发布失败显示实际状态，重试只发 `refreshOnly` 重建运行实例：不重复导入、改名、自增、安装、创建或删除。`refreshOnly` 与同端点的写字段混用一律 400。
+6. 已持久化但发布失败显示实际状态，重试只发 `refreshOnly` 重建运行实例：不重复导入、改名、自增、安装、创建或删除。`refreshOnly` 与同端点的写载荷（name/customTools/overrides/action/entries/enabled 等）混用一律 400；定位身份（id/targetId/expectedModuleId/主语头）仍按端点保留。
 
 空键行属于 UI 草稿，保存载荷不发空键；保存或后台读取不因空行清理用户输入。UI 只在对应草稿版本仍一致时刷新。客户端使用共享 request/value map，服务端仍完整复检类型、大小、目标与版本。
 

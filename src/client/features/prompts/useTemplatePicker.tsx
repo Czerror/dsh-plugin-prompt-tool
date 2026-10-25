@@ -4,6 +4,7 @@ import { bridgeCall, errorMessage } from '../../data/bridge-client.ts'
 import type { PromptToolTranslate } from '../../locales.ts'
 import type { PromptConfigTemplateEntry } from '../../prompt-tool-types.ts'
 import type { RuleDefinition } from '../../../shared/rules.ts'
+import { readPublication } from '../../../shared/publication.ts'
 import type { DraftsPort, ModuleActionsPort, NoticePort, RuleEditingPort } from '../../data/store-ports.ts'
 import { BLANK_MODULE_TEMPLATE } from '../../data/module-subject.ts'
 import { EngineModuleActions, type ModuleCreateItem } from '../modules/EngineModuleList.tsx'
@@ -215,6 +216,7 @@ export function useTemplateCreate(props: {
       return
     }
     const createdRuleId = result.value.createdRuleId ?? config.id
+    const publication = readPublication(result.value)
     if (writeGeneration.current !== generation) return
     if (!result.localConflict) onCreated(moduleId, createdRuleId)
     if (result.moduleEnableError !== undefined) {
@@ -223,8 +225,8 @@ export function useTemplateCreate(props: {
       store.showNotice('error', t('rules.create.refreshFailed', { id: moduleId }))
     } else if (result.localConflict) {
       store.showNotice('error', t('rules.create.localConflict', { id: moduleId }))
-    } else if (result.value.publicationPending === true || result.value.publicationError !== undefined) {
-      store.showNotice('error', `${t('persona.sources.publicationPending')}：${result.value.publicationError ?? '请重试'}`)
+    } else if (publication.pending) {
+      store.showNotice('error', `${t('persona.sources.publicationPending')}：${publication.error ?? '请重试'}`)
     } else {
       store.showNotice('ok', t('templates.inserted', { file, id: createdRuleId }))
     }

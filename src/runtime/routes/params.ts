@@ -112,6 +112,11 @@ export function registerParams(runtime: ParamsRuntime): Array<() => void> {
         })
       } catch (error) {
         if (writeLayerSettingsError(tx.write, error)) return
+        // 写盘后切片重建失败：定义已在磁盘上，只报待发布，不再伪装成未写盘。
+        if (error instanceof ModuleWriteError && error.persisted) {
+          tx.write(200, { ok: true, value: { overrides: record.overrides, ...published(error.message) } })
+          return
+        }
         const message = error instanceof Error ? error.message : String(error)
         tx.write(500, { ok: false, code: 'overrides-write-failed', message })
       }
@@ -184,6 +189,10 @@ export function registerParams(runtime: ParamsRuntime): Array<() => void> {
         }
         tx.write(200, { ok: true, value: { ...committed, ...published(runtime.pendingVariableSettings.get(dir)) } })
       } catch (error) {
+        if (error instanceof ModuleWriteError && error.persisted) {
+          tx.write(200, { ok: true, value: { ...runtime.variableView(dir), ...published(error.message) } })
+          return
+        }
         const message = error instanceof Error ? error.message : String(error)
         tx.write(error instanceof ModuleWriteError ? error.status : 409, { ok: false, code: error instanceof ModuleWriteError ? error.code : 'module-variables-rejected', message: `变量读取或保存失败：${message}` })
       }

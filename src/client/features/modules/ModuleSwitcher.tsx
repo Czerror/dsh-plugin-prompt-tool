@@ -159,7 +159,7 @@ export const ModuleSwitcher = memo(function ModuleSwitcher(props: { store: Modul
       }
       const backupPath = res.value.backupPath
       // 服务端刷新失败也回 200（删除已提交）；客户端 refresh 失败则用顶层 refreshError。
-      const refreshError = res.value.refreshError ?? res.refreshError
+      const refreshError = res.refreshError
       if (backupPath !== undefined || refreshError !== undefined) {
         const message = backupPath === undefined
           ? t('moduleSwitcher.notice.deleted', { id })

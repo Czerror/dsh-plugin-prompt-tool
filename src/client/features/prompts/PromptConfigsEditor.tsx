@@ -3,6 +3,7 @@ import clsx from 'clsx'
 import { IconChevronDownOutlineRegular } from '../../ui/icons.tsx'
 import { Switch } from '../../ui/Switch.tsx'
 import { Button } from '../../ui/Button.tsx'
+import { PublicationNotice } from '../../ui/PublicationNotice.tsx'
 import { MenuSelect } from '../../ui/MenuSelect.tsx'
 import type { ModuleVariableScope } from '../../../shared/module-variables.ts'
 import type { PromptToolTranslate } from '../../locales.ts'
@@ -97,8 +98,10 @@ export function TemplateVariablesModuleCard(props: {
           </span>
         </span>
       </header>
-      {props.error && <p role="alert" className={styles.configFieldHint}>{props.error}</p>}
-      {(props.publicationPending || props.error) && props.retryPublication && <Button variant="outline" shape="pill" disabled={props.disabled} onClick={() => { void props.retryPublication?.() }}>{t('workspace.retry')}</Button>}
+      {props.error && !props.publicationPending && <p role="alert" className={styles.configFieldHint}>{props.error}</p>}
+      <PublicationNotice publication={{ pending: props.publicationPending === true, error: props.publicationPending ? props.error : undefined }}
+        pendingLabel={t('publication.pending')} retryLabel={t('workspace.retry')} disabled={props.disabled}
+        onRetry={props.retryPublication === undefined ? undefined : () => { void props.retryPublication?.() }} />
       {expanded && (
         <div id={panelId} className={props.embedded ? styles.moduleEmbeddedBody : styles.configForm}>
           {props.scope === 'global' ? <p className={styles.configFieldHint}>{t('variables.globalHint')}</p> : <>

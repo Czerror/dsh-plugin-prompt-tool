@@ -7,8 +7,8 @@
  *
  * 只有这一件被抽出来，是因为其余部分各家确实不同（对照见 docs/ui-architecture.md 的协议小节）：
  * 请求形状与分域粒度（rules 逐条 + settings、variables 按 scope、persona 两段）、失败分类
- * （rules 有 `READ_FIRST_CODES` 三分类、instructions 有 4 个冲突码、其余无）、发布态语义
- * （rules 把「有 error」也算 pending，persona/variables 只看显式 `publicationPending`）。
+ * （rules 有 `READ_FIRST_CODES` 三分类、instructions 有 4 个冲突码、其余无）、发布态
+ * （统一读 `shared/publication.ts#readPublication`，不在各 owner 复制判据）。
  * 硬包一个通用轨道需要 ~9 个回调，接口比它替换的代码还长——那是浅模块，不做。
  */
 

@@ -33,6 +33,19 @@ function customToolModules(tools: unknown[]): string[] {
   return [...modules]
 }
 
+/** module.yml 顶层的自定义工具段；定义损坏时抛错，不静默当空。 */
+function readCustomToolsSection(dir: string): unknown[] {
+  const spec = loadModuleSpec(dir)
+  return Array.isArray(spec.customTools) ? spec.customTools : []
+}
+
+/** 模块当前声明的引擎能力 id（modules 段中已知的能力）；定义损坏时抛错。 */
+function declaredCapabilityIds(dir: string): string[] {
+  const spec = loadModuleSpec(dir)
+  return (Array.isArray(spec.modules) ? spec.modules : [])
+    .filter((id): id is string => typeof id === 'string' && moduleCapability(id) !== undefined)
+}
+
 /** 本域用到的运行时面：只用这些，不加宽（新域照此声明自己的面）。 */
 type DefinitionsRuntime = Pick<BridgeRuntime,
   'deps' | 'register' | 'gate' | 'capabilityQueue' | 'finishModuleChange' | 'runOverridesChange'>
@@ -53,8 +66,7 @@ export function registerDefinitions(runtime: DefinitionsRuntime): Array<() => vo
         if (runtime.gate(tx, 'customTools').authorize() === undefined) return
         let customTools: unknown[] = []
         try {
-          const spec = loadModuleSpec(dir)
-          customTools = Array.isArray(spec.customTools) ? spec.customTools : []
+          customTools = readCustomToolsSection(dir)
         } catch (error) {
           if (writeLayerSettingsError(tx.write, error)) return
           tx.write(409, { ok: false, code: 'custom-tools-unavailable', message: '自定义工具读取失败，未触发运行发布' })
@@ -67,9 +79,7 @@ export function registerDefinitions(runtime: DefinitionsRuntime): Array<() => vo
       // 无载荷 = 读取（module.yml 顶层 customTools 段）。
       if (record.customTools === undefined) {
         try {
-          const spec = loadModuleSpec(dir)
-          const customTools = Array.isArray(spec.customTools) ? spec.customTools : []
-          tx.write(200, { ok: true, value: { customTools } })
+          tx.write(200, { ok: true, value: { customTools: readCustomToolsSection(dir) } })
         } catch (error) {
           if (writeLayerSettingsError(tx.write, error)) return
           tx.write(409, { ok: false, code: 'custom-tools-unavailable', message: '自定义工具读取失败，原文件保持不变' })
@@ -203,8 +213,7 @@ export function registerDefinitions(runtime: DefinitionsRuntime): Array<() => vo
           if (runtime.gate(tx, 'moduleCapability').authorize() === undefined) return
           let capabilityIds: string[] = []
           try {
-            const spec = loadModuleSpec(dir)
-            capabilityIds = (Array.isArray(spec.modules) ? spec.modules : []).filter((id): id is string => typeof id === 'string' && moduleCapability(id) !== undefined)
+            capabilityIds = declaredCapabilityIds(dir)
           } catch (error) {
             if (writeLayerSettingsError(tx.write, error)) return
             tx.write(409, { ok: false, code: 'engine-capability-invalid', message: '能力读取失败，未触发运行发布' })
@@ -237,7 +246,9 @@ export function registerDefinitions(runtime: DefinitionsRuntime): Array<() => vo
           tx.write(200, { ok: true, value: { ...result, ...publication } })
         } catch (error) {
           if (error instanceof ModuleWriteError && error.persisted) {
-            tx.write(200, { ok: true, value: { changed: true, capabilityIds: [id], ...published(error.message) } })
+            let capabilityIds: string[] = [id]
+            try { capabilityIds = declaredCapabilityIds(dir) } catch { /* 读回失败时保留本次触碰的 id，不隐藏已写盘事实 */ }
+            tx.write(200, { ok: true, value: { changed: true, capabilityIds, ...published(error.message) } })
             return
           }
           const message = error instanceof Error ? error.message : String(error)

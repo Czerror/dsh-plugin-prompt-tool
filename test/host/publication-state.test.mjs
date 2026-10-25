@@ -20,8 +20,8 @@ function makeModule(extra = '') {
 }
 
 /** 发布回调按开关抛错：同一个 harness 覆盖「已写盘但发布失败」与「重试只重建」。 */
-function harness() {
-  const target = makeModule()
+function harness(extra = '') {
+  const target = makeModule(extra)
   const { ctx, handlers } = makeHostContext({})
   const state = { failOverrides: false, failCapability: false, failInstall: false, failList: false }
   registerSettingsBridge(ctx, {
@@ -110,4 +110,88 @@ test('其余纳入端点：refreshOnly 只重建，不重复创建/删除/安装
   }
   assert.equal(existsSync(target.dir), true, 'refreshOnly 不删除目标模块')
   assert.equal(existsSync(join(moduleRoot, target.id + '-copy')), false, 'refreshOnly 不复制模块')
+})
+test('persona：写盘成功、发布失败回 200 + 待发布', async () => {
+  const { target, handlers, state } = harness()
+  state.failOverrides = true
+  const saved = await call(handlers, 'persona', { expectedModuleId: target.id, persona: { main: { prefix: 'x' } } }, target.id)
+  assert.equal(saved.status, 200, saved.message)
+  assert.equal(saved.value.publicationPending, true)
+  assert.equal(saved.value.persona.main.prefix, 'x')
+})
+
+test('personaSources：写盘成功、发布失败回 200 + 待发布', async () => {
+  const { handlers, state } = harness()
+  state.failOverrides = true
+  const saved = await call(handlers, 'personaSources', { sources: { main: null, subagent: null }, expectedRevision: null })
+  assert.equal(saved.status, 200, saved.message)
+  assert.equal(saved.value.publicationPending, true)
+})
+
+test('rules：写盘成功、发布失败回 200 + 待发布', async () => {
+  const { target, handlers, state } = harness()
+  state.failOverrides = true
+  const rule = { id: 'r1', then: [{ id: 'a1', kind: 'inject-text', config: { id: 'a1', layer: 'pre-step', text: 'x' } }] }
+  const saved = await call(handlers, 'rules', { expectedModuleId: target.id, expectedRulesAbsent: true, createRule: rule }, target.id)
+  assert.equal(saved.status, 200, saved.message)
+  assert.equal(saved.value.publicationPending, true)
+})
+
+test('moduleVariables：写盘成功、发布失败回 200 + 待发布', async () => {
+  const { target, handlers, state } = harness('variables: {}\nvariablesEnabled: true\n')
+  const initial = await call(handlers, 'moduleVariables', { scope: 'module', expectedModuleId: target.id }, target.id)
+  assert.equal(initial.status, 200, initial.message)
+  state.failOverrides = true
+  const saved = await call(handlers, 'moduleVariables', {
+    scope: 'module', variables: { k: 'v' }, enabled: false, expectedModuleId: target.id,
+    expectedRevisions: { module: initial.value.revisions.module, settings: initial.value.revisions.settings },
+  }, target.id)
+  assert.equal(saved.status, 200, saved.message)
+  assert.equal(saved.value.publicationPending, true)
+})
+
+test('moduleName：写盘成功、发布失败回 200 + 待发布；refreshOnly 只重试', async () => {
+  const { target, handlers, state } = harness()
+  const current = await call(handlers, 'moduleName', {}, target.id)
+  assert.equal(current.status, 200, current.message)
+  const before = readFileSync(join(target.dir, 'module.yml'), 'utf8')
+  state.failOverrides = true
+  const saved = await call(handlers, 'moduleName', { name: '新名', expectedRevision: current.value.revision, expectedModuleId: target.id }, target.id)
+  assert.equal(saved.status, 200, saved.message)
+  assert.equal(saved.value.publicationPending, true)
+  const written = readFileSync(join(target.dir, 'module.yml'), 'utf8')
+  assert.notEqual(written, before)
+  state.failOverrides = false
+  const retried = await call(handlers, 'moduleName', { refreshOnly: true }, target.id)
+  assert.equal(retried.status, 200, retried.message)
+  assert.equal(retried.value.publicationPending, false)
+  assert.equal(readFileSync(join(target.dir, 'module.yml'), 'utf8'), written, 'refreshOnly 不重写名称')
+})
+test('moduleClone/moduleDuplicate：写盘成功、发布失败回 200 + 待发布', async () => {
+  const { target, handlers, state } = harness()
+  state.failList = true
+  const duplicated = await call(handlers, 'moduleDuplicate', { id: target.id })
+  assert.equal(duplicated.status, 200, duplicated.message)
+  assert.equal(duplicated.value.publicationPending, true)
+  const cloned = await call(handlers, 'moduleClone', { id: 'blank' })
+  assert.equal(cloned.status, 200, cloned.message)
+  assert.equal(cloned.value.publicationPending, true)
+  state.failList = false
+  const retried = await call(handlers, 'moduleDuplicate', { id: target.id, refreshOnly: true })
+  assert.equal(retried.status, 200, retried.message)
+  assert.equal(retried.value.publicationPending, false)
+  const mixed = await call(handlers, 'moduleClone', { id: 'blank', refreshOnly: true, autoSuffix: true })
+  assert.equal(mixed.status, 400, 'refreshOnly 与 autoSuffix 混用必须拒绝')
+})
+
+test('moduleConfigOrder：读响应不带发布字段，refreshOnly 才带', async () => {
+  const { handlers } = harness()
+  const read = await call(handlers, 'moduleConfigOrder')
+  assert.equal(read.status, 200, read.message)
+  assert.equal(read.value.persisted, undefined)
+  assert.equal(read.value.publicationPending, undefined)
+  const retried = await call(handlers, 'moduleConfigOrder', { refreshOnly: true })
+  assert.equal(retried.status, 200, retried.message)
+  assert.equal(retried.value.persisted, true)
+  assert.equal(retried.value.publicationPending, false)
 })

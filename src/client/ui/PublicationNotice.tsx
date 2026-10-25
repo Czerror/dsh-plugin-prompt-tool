@@ -13,10 +13,11 @@ export function PublicationNotice(props: {
   pendingLabel: string
   retryLabel: string
   disabled?: boolean
+  className?: string
 }): ReactNode {
-  const { publication, onRetry, pendingLabel, retryLabel, disabled } = props
+  const { publication, onRetry, pendingLabel, retryLabel, disabled, className } = props
   if (publication === undefined || !publication.pending) return null
-  return <p role="alert">
+  return <p role="alert" className={className}>
     {publication.error ?? pendingLabel}
     {onRetry !== undefined && <Button variant="outline" shape="pill" size="sm" disabled={disabled} onClick={() => onRetry()}>{retryLabel}</Button>}
   </p>

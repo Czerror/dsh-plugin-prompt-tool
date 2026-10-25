@@ -12,6 +12,8 @@ import { PromptConfigNavigation } from '../../ui/PromptConfigNavigation.tsx'
 import { MenuSelect } from '../../ui/MenuSelect.tsx'
 import { createPersonaEditors, personaWriteBody, readModulePersona } from '../../data/persona-editor.ts'
 import type { PersonaAudience, PersonaSources, PersonaTargetSpec } from '../../../shared/persona-section.ts'
+import { readPublication } from '../../../shared/publication.ts'
+import { PublicationNotice } from '../../ui/PublicationNotice.tsx'
 import { ConfirmDialog } from '../../ui/ConfirmDialog.tsx'
 import { FormField } from '../../ui/FormField.tsx'
 import styles from '../../ui/controls.module.css'
@@ -85,8 +87,9 @@ export function ModulePersonaCard(props: {
       selection.saved = result.value.sources
       selection.revision = result.value.revision
       selection.candidates = result.value.candidates
-      selection.publicationPending = result.value.publicationPending === true
-      selection.publicationError = result.value.publicationError
+      const publication = readPublication(result.value)
+      selection.publicationPending = publication.pending
+      selection.publicationError = publication.error
     } else selection.error = result.message ?? t('persona.sources.saveFailed')
     notify(selection)
     if (mounted.current) onNotice(result.ok && !selection.publicationPending ? 'ok' : 'error',
@@ -173,7 +176,7 @@ export function ModulePersonaCard(props: {
         onChange={value => { void saveSources({ ...selection.value, [audience]: value || null }) }} />}
     >
       {selection.error && <p className={styles.noticeError} role="alert">{selection.error} <Button shape="pill" variant="outline" size="sm" disabled={selection.loading || selection.saving} onClick={() => { void loadSources() }}>{t('persona.sources.reload')}</Button></p>}
-      {selection.publicationPending && <p className={styles.noticeError} role="alert">{selection.publicationError ?? t('persona.sources.publicationPending')} <Button shape="pill" variant="outline" size="sm" disabled={selection.saving || selection.loading} onClick={() => { void saveSources(selection.value, true) }}>{t('workspace.retry')}</Button></p>}
+      <PublicationNotice className={styles.noticeError} publication={{ pending: selection.publicationPending === true, error: selection.publicationError }} pendingLabel={t('persona.sources.publicationPending')} retryLabel={t('workspace.retry')} disabled={selection.saving || selection.loading} onRetry={() => { void saveSources(selection.value, true) }} />
       {sourcesDirty && <p className={styles.configFieldHint} role="status">{t('persona.sources.unsaved')} <Button shape="pill" variant="outline" size="sm" disabled={selection.saving || selection.loading || !selection.loaded} onClick={() => { void saveSources(selection.value) }}>{t('workspace.retry')}</Button></p>}
       {confirming && <ConfirmDialog title={t(confirming.reload ? 'persona.reload' : 'persona.remove')}
         description={t(confirming.reload ? 'persona.sources.reloadDescription' : 'persona.sources.removeDescription', { module: confirming.moduleId, audience: t(`persona.${confirming.audience}`) })}
@@ -182,7 +185,7 @@ export function ModulePersonaCard(props: {
         onCancel={() => setConfirming(undefined)} />}
       {dirty && <p className={styles.configFieldHint} role="status">{t('card.unsaved')}</p>}
       {editor?.error && <p className={styles.noticeError} role="alert">{editor.error}</p>}
-      {editor?.publicationPending && <p className={styles.noticeError} role="alert">{editor.publicationError ?? t('persona.sources.publicationPending')} <Button shape="pill" variant="outline" size="sm" disabled={editor.saving} onClick={() => { if (moduleId) void retryPublication(moduleId) }}>{t('workspace.retry')}</Button></p>}
+      <PublicationNotice className={styles.noticeError} publication={{ pending: editor?.publicationPending === true, error: editor?.publicationError }} pendingLabel={t('persona.sources.publicationPending')} retryLabel={t('workspace.retry')} disabled={editor?.saving} onRetry={() => { if (moduleId) void retryPublication(moduleId) }} />
       {/* 固定卡：未声明 `persona` 也照常出编辑器（读请求不发、内容按空、保存即建立声明）。 */}
       {undeclared && <p className={styles.configFieldHint} role="status">{t('declare.createHint')}</p>}
       <div className={css.options}>

@@ -145,9 +145,9 @@ export function createRuleEditor(moduleId: string, draft: RulesDraft, deps: Rule
       const result = await deps.enqueue(moduleId, async () => isLatest(draft, sequence)
         ? deps.request({ expectedModuleId: moduleId, refreshOnly: true }) : undefined)
       if (!isLatest(draft, sequence) || result === undefined) return false
-      if (result.ok) receive(result.value)
-      if (!result.ok || result.value.publicationError || result.value.publicationPending === true) {
-        draft.publicationError = result.ok ? result.value.publicationError ?? 'rules-refresh-pending' : result.message ?? result.code ?? 'rules-refresh-failed'
+      if (result.ok) { receive(result.value); publication(result.value) }
+      if (!result.ok || draft.publicationPending) {
+        draft.publicationError = result.ok ? draft.publicationError ?? 'rules-refresh-pending' : result.message ?? result.code ?? 'rules-refresh-failed'
         draft.error = draft.publicationError
         return false
       }

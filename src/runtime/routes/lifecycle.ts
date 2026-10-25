@@ -65,6 +65,10 @@ export function registerLifecycle(runtime: LifecycleRuntime): Array<() => void> 
         return
       }
       if (record.refreshOnly === true) {
+        if (record.autoSuffix !== undefined) {
+          tx.write(400, { ok: false, code: 'module-clone-rejected', message: 'refreshOnly 不能与 autoSuffix 混用' })
+          return
+        }
         const publication = await runtime.refreshModuleList()
         tx.write(200, { ok: true, value: { id, ...publication } })
         return
@@ -240,7 +244,9 @@ export function registerLifecycle(runtime: LifecycleRuntime): Array<() => void> 
               if (publication.publicationPending) break
             }
           }
-          tx.write(200, { ok: true, value: { ...readModuleConfigOrder(userModulesDir(), moduleId), ...publication } })
+          const snapshot = readModuleConfigOrder(userModulesDir(), moduleId)
+          // 读响应不带发布字段：没有写盘时 published() 只是占位，不能被当成「已持久化」事实。
+          tx.write(200, { ok: true, value: writing ? { ...snapshot, ...publication } : snapshot })
         } catch (error) {
           runtime.writeModuleOrderError(tx.write, error)
         }

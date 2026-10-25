@@ -78,7 +78,7 @@ test('模块操作：refreshOnly 重试只发重建意图，不重跑写入', as
       { refreshOnly: true },
       { id: 'source', refreshOnly: true },
       { id: 'source', refreshOnly: true },
-      { refreshOnly: true, expectedModuleId: 'source' },
+      { refreshOnly: true },
     ])
     assert.equal(calls[3].headers[EDIT_TARGET_HEADER], 'source')
   })

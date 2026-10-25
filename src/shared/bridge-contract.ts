@@ -581,7 +581,7 @@ export interface BridgeValueMap {
   assetRelease: { released: boolean }
   exportModule: ModuleExportResult
   /** 删除成功但旧副本清理失败时，隐藏目录的绝对路径（清理未完成，内容可能不完整）。 */
-  moduleDelete: { id: string; backupPath?: string; refreshError?: string } & PublicationFields
+  moduleDelete: { id: string; backupPath?: string } & PublicationFields
   moduleClone: { id: string } & PublicationFields
   moduleDuplicate: { id: string } & PublicationFields
   moduleOpen: { path: string }

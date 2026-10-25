@@ -34,7 +34,7 @@ export function createModuleActions(deps: {
     rename: (id: string, name: string, expectedRevision: string) => write(() => bridgeCall('moduleName', { name, expectedRevision, expectedModuleId: id }, id)),
     open: (id: string) => bridgeCall('moduleOpen', { id }),
     /** 下列 refreshOnly 只重建运行实例，不重跑创建/改名/启用/删除。 */
-    retryName: (id: string) => write(() => bridgeCall('moduleName', { refreshOnly: true, expectedModuleId: id }, id)),
+    retryName: (id: string) => write(() => bridgeCall('moduleName', { refreshOnly: true }, id)),
     retryEnable: () => write(() => bridgeCall('moduleEnable', { refreshOnly: true })),
     retryClone: (id: string) => write(() => bridgeCall('moduleClone', { id, refreshOnly: true })),
     retryDuplicate: (id: string) => write(() => bridgeCall('moduleDuplicate', { id, refreshOnly: true })),
