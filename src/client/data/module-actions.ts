@@ -2,6 +2,9 @@ import { bridgeCall, errorMessage, type BridgeResult } from './bridge-client.ts'
 import { BLANK_MODULE_TEMPLATE } from './module-subject.ts'
 import { readPublication, type PublicationFields } from '../../shared/publication.ts'
 
+/** 能力变更后的发布重试请求：只重建，不重复 create/remove。 */
+export const capabilityRefreshBody = (moduleId: string): { refreshOnly: true; expectedModuleId: string } => ({ refreshOnly: true, expectedModuleId: moduleId })
+
 export type ModuleActionResult<T> = BridgeResult<T> & {
   refreshError?: string
   publication?: { pending: boolean; error?: string }

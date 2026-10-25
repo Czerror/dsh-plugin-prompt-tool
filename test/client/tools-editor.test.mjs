@@ -105,6 +105,16 @@ test('tools owner：已卸载（isCurrent 为假）时应答不落地', async ()
   assert.deepEqual(draft.tools, [], '卸载后应答不落地')
   assert.equal(draft.loaded, false, '卸载后不改 loaded')
 })
+test('tools owner：发布重试只发 refreshOnly，不重写工具定义', async () => {
+  const h = harness(async () => ok([]))
+  h.draft.loaded = true
+  h.draft.publicationPending = true
+  const result = await h.editor.retryPublication()
+  assert.equal(result.ok, true)
+  assert.deepEqual(h.calls.at(-1), { expectedModuleId: 'module-a', refreshOnly: true })
+  assert.equal(h.draft.publicationPending, false)
+})
+
 test('tools owner：insertTemplate 走同一读守卫，失败写 error，重复不插入', async () => {
   const failingDraft = draftOf('module-a')
   let changed = 0

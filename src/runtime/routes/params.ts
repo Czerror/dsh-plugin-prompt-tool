@@ -111,12 +111,13 @@ export function registerParams(runtime: ParamsRuntime): Array<() => void> {
           value: { overrides: record.overrides, ...publication },
         })
       } catch (error) {
-        if (writeLayerSettingsError(tx.write, error)) return
         // 写盘后切片重建失败：定义已在磁盘上，只报待发布，不再伪装成未写盘。
+        // 必须先于 writeLayerSettingsError：后者会接收任意 ModuleWriteError 并按 status 写响应。
         if (error instanceof ModuleWriteError && error.persisted) {
           tx.write(200, { ok: true, value: { overrides: record.overrides, ...published(error.message) } })
           return
         }
+        if (writeLayerSettingsError(tx.write, error)) return
         const message = error instanceof Error ? error.message : String(error)
         tx.write(500, { ok: false, code: 'overrides-write-failed', message })
       }

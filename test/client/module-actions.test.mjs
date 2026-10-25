@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { createModuleActions } from '../../src/client/data/module-actions.ts'
+import { capabilityRefreshBody, createModuleActions } from '../../src/client/data/module-actions.ts'
 import { createSerialTaskQueue } from '../../src/client/data/save-queue.ts'
 import { EDIT_TARGET_HEADER } from '../../src/shared/bridge-contract.ts'
 
@@ -66,6 +66,10 @@ test('模块操作：已写入但刷新失败保留成功结果，不能重复�
     assert.equal(typeof pending.refreshError, 'string')
     assert.equal(calls.length, 3)
   }, false)
+})
+
+test('能力发布重试请求只带 refreshOnly 与目标身份', () => {
+  assert.deepEqual(capabilityRefreshBody('mod-a'), { refreshOnly: true, expectedModuleId: 'mod-a' })
 })
 
 test('模块操作：refreshOnly 重试只发重建意图，不重跑写入', async () => {

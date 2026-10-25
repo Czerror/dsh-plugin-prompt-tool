@@ -5,6 +5,9 @@ import { bridgeCall } from './bridge-client.ts'
 import { readPublication } from '../../shared/publication.ts'
 
 type ImportEndpoint = 'importModulePackage'
+
+/** 导入完成后的发布重试请求：只重建已安装模块，不重新导入。 */
+export const importPublicationRequest = (targetId: string): { targetId: string; refreshOnly: true } => ({ targetId, refreshOnly: true })
 export async function previewAsset(endpoint: ImportEndpoint, request: AssetImportRequest): Promise<ImportPreviewOutcome> {
   const response = await bridgeCall(endpoint, { ...request, preview: true })
   if (!response.ok) return { kind: 'error', message: response.message ?? 'settings bridge unavailable' }

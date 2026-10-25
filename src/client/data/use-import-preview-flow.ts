@@ -6,6 +6,7 @@ import type { AssetFile, AssetImportRequest, AssetSummary, ImportChoices, Import
 import type { ImportOrderCandidates, ImportPreviewState } from '../prompt-tool-types.ts'
 import { bridgeCall, bridgeUpload, errorMessage } from './bridge-client.ts'
 import { readPublication } from '../../shared/publication.ts'
+import { importPublicationRequest } from './asset-import.ts'
 import { readImportFiles } from './import-files.ts'
 
 export type ImportFlowPhase = 'idle' | 'reading' | 'confirming' | 'submitting' | 'stale' | 'error' | 'complete'
@@ -241,7 +242,7 @@ export function useImportPreviewFlow(handlers: ImportFlowHandlers) {
     if (submitting.current || result.current === undefined) return
     submitting.current = true
     try {
-      const response = await bridgeCall('importModulePackage', { targetId: result.current, refreshOnly: true })
+      const response = await bridgeCall('importModulePackage', importPublicationRequest(result.current))
       if (!alive.current) return
       if (!response.ok) { setRefreshError(response.message ?? ''); return }
       const next = readPublication(response.value)

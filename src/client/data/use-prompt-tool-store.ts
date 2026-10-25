@@ -47,7 +47,7 @@ import { createParamEditor, type ParamEditor, type ParamEditorDependencies } fro
 import { createSerialTaskQueue } from './save-queue.ts'
 import { createWorkspaceDrafts } from './workspace-drafts.ts'
 import { createTemplateRuleWriter } from './template-rule-writer.ts'
-import { createModuleActions } from './module-actions.ts'
+import { capabilityRefreshBody, createModuleActions } from './module-actions.ts'
 import type { ModuleVariableRevisions, ModuleVariableScope } from '../../shared/module-variables.ts'
 import { createVariablesDraft, readVariablesDraft, retryModuleVariablesPublication as retryModuleVariablesPublicationRequest, saveModuleVariables as saveModuleVariablesRequest, type VariablesDraft } from './module-variables.ts'
 import { canEditModule, moduleDeclares, ownsParamDraftKey, subjectDraftKey, MODULE_PENDING_MESSAGE, NO_SUBJECT_MESSAGE } from './module-subject.ts'
@@ -817,7 +817,7 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
       return Promise.resolve({ ok: false })
     }
     return moduleSaveQueueRef.current.enqueue(async () => {
-      const result = await bridgeCall('moduleCapability', { refreshOnly: true, expectedModuleId: moduleId }, moduleId)
+      const result = await bridgeCall('moduleCapability', capabilityRefreshBody(moduleId), moduleId)
       if (!result.ok) {
         showNotice('error', '能力发布重试失败：' + (result.message ?? 'settings bridge unavailable'))
         return { ok: false }
