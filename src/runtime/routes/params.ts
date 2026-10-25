@@ -131,9 +131,8 @@ export function registerParams(runtime: ParamsRuntime): Array<() => void> {
         { declaration: record.scope === 'global' ? false : undefined },
       )
       if (dir === undefined) return
-      if ((record.scope !== 'global' && record.scope !== 'module')
-        || Object.keys(record).some(key => !['scope', 'variables', 'enabled', 'expectedModuleId', 'expectedRevisions', 'refreshOnly'].includes(key))) {
-        tx.write(400, { ok: false, code: 'module-variables-invalid', message: '变量请求必须声明 global/module 范围，且只包含已声明字段' })
+      if (record.scope !== 'global' && record.scope !== 'module') {
+        tx.write(400, { ok: false, code: 'module-variables-invalid', message: '变量请求必须声明 global/module 范围' })
         return
       }
       if (record.refreshOnly !== undefined && (typeof record.refreshOnly !== 'boolean'

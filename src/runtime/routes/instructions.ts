@@ -155,8 +155,7 @@ export function registerInstructions(runtime: InstructionsRuntime): Array<() => 
         || ((record.edits !== undefined || record.activateRuleId !== undefined) && record.validateOnly !== true)
       const dir = runtime.gate(tx, 'rules').inspect(writing)
       if (dir === undefined) return
-      if (Object.keys(record).some(key => !['expectedModuleId', 'expectedRevisions', 'expectedRulesAbsent', 'createRule', 'edits', 'activateRuleId', 'validateOnly', 'refreshOnly'].includes(key))
-        || typeof record.expectedModuleId !== 'string' || record.expectedModuleId === ''
+      if (typeof record.expectedModuleId !== 'string' || record.expectedModuleId === ''
         || (record.edits !== undefined && !Array.isArray(record.edits))
         || (record.activateRuleId !== undefined && (typeof record.activateRuleId !== 'string' || record.activateRuleId.length === 0))
         || (record.validateOnly !== undefined && typeof record.validateOnly !== 'boolean')

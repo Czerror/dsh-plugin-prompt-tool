@@ -126,10 +126,9 @@ export function registerDefinitions(runtime: DefinitionsRuntime): Array<() => vo
       // 声明面只在读侧拦：保存/刷新人设是给模块添加第一节，放行。
       const dir = runtime.gate(tx, 'persona').inspect(record.persona !== undefined || record.refreshOnly === true)
       if (dir === undefined) return
-      if (Object.keys(record).some(key => !['persona', 'expectedModuleId', 'expectedRevision', 'refreshOnly'].includes(key))
-        || record.refreshOnly !== undefined && (typeof record.refreshOnly !== 'boolean'
-          || record.refreshOnly === true && (record.persona !== undefined || record.expectedRevision !== undefined))) {
-        tx.write(400, { ok: false, code: 'module-persona-invalid', message: '人设请求包含非法字段或混合了刷新与写入' })
+      if (record.refreshOnly !== undefined && (typeof record.refreshOnly !== 'boolean'
+        || (record.refreshOnly === true && (record.persona !== undefined || record.expectedRevision !== undefined)))) {
+        tx.write(400, { ok: false, code: 'module-persona-invalid', message: '人设请求混合了刷新与写入' })
         return
       }
       try {
@@ -168,10 +167,9 @@ export function registerDefinitions(runtime: DefinitionsRuntime): Array<() => vo
     } }),
     runtime.register(BRIDGE_ENDPOINTS.personaSources, { handle: async (tx) => {
       const record = tx.record
-      if (Object.keys(record).some(key => !['sources', 'expectedRevision', 'refreshOnly'].includes(key))
-        || record.refreshOnly !== undefined && typeof record.refreshOnly !== 'boolean'
+      if (record.refreshOnly !== undefined && typeof record.refreshOnly !== 'boolean'
         || record.refreshOnly === true && (record.sources !== undefined || record.expectedRevision !== undefined)) {
-        tx.write(400, { ok: false, code: 'persona-sources-invalid', message: '人设来源请求包含非法字段或混合了刷新与写入' })
+        tx.write(400, { ok: false, code: 'persona-sources-invalid', message: '人设来源请求混合了刷新与写入' })
         return
       }
       try {

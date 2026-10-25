@@ -41,7 +41,7 @@ export function registerTransfer(runtime: TransferRuntime): Array<() => void> {
     } }),
     runtime.register(BRIDGE_ENDPOINTS.assetRelease, { handle: async (tx) => {
       const record = tx.record
-      if (Object.keys(record).length !== 1 || typeof record.sourceId !== 'string' || !/^[0-9a-f-]{36}$/i.test(record.sourceId)) {
+      if (typeof record.sourceId !== 'string' || !/^[0-9a-f-]{36}$/i.test(record.sourceId)) {
         tx.write(400, { ok: false, code: 'asset-release-rejected', message: 'sourceId 必须是有效上传来源标识' })
         return
       }
@@ -97,8 +97,6 @@ export function registerTransfer(runtime: TransferRuntime): Array<() => void> {
     runtime.register(BRIDGE_ENDPOINTS.exportModule, { handle: async (tx) => {
       const record = tx.record
       try {
-        const allowed = new Set(['id', 'mode', 'preview', 'expectedRevision', 'memoryChoices'])
-        if (Object.keys(record).some((key) => !allowed.has(key))) throw new Error('导出请求包含未知字段')
         assertModuleId(record.id)
         if (record.id.length > 128) throw new Error('模块 ID 过长')
         if (record.mode !== undefined && record.mode !== 'definition' && record.mode !== 'zip') throw new Error('mode 必须是 definition 或 zip')

@@ -1,14 +1,13 @@
 /**
  * Bridge 请求体的运行期接受面：与 `BridgeRequestMap` 并列的唯一字段表。
  *
- * 每个端点三态之一：
+ * 每个端点两态之一：
  * - `{ body: 'none' }`：不解析请求体；
- * - `{ fields }`：由 `assertBridgeRequest` 在 handler 前统一 400；
- * - `{ handler: true, fields }`：handler 已自带更具体的错误码/消息，保留域内拒绝。
+ * - `{ fields }`：由 `assertBridgeRequest` 在 handler 前统一 400。
  *
  * 覆盖是双向的：fields 态的键集必须与 `BridgeRequestMap` 的字段互为子集；none 态要求
  * 类型为 `undefined`。漏改任一侧在 typecheck 失败，不会有「表漏登记、运行期才 400」。
- * handler 态的 `fields` 只作文档，不参与覆盖断言（域内拒归 handler）。
+ * handler 只保留类型/枚举/互斥/身份/版本/读写组合等语义校验，不再手抄字段名单。
  */
 import {
   BRIDGE_ENDPOINTS,
@@ -20,7 +19,6 @@ import { ASSET_IMPORT_FIELD_KEYS } from './asset-transfer.ts'
 type RequestFieldRule =
   | { body: 'none' }
   | { fields: readonly string[] }
-  | { handler: true; fields: readonly string[] }
 
 export const BRIDGE_REQUEST_FIELDS = {
   meta: { body: 'none' },
@@ -45,22 +43,22 @@ export const BRIDGE_REQUEST_FIELDS = {
   paramOverrides: { fields: ['overrides', 'promptConfigs', 'rebuild', 'expectedModuleId', 'refreshOnly'] },
   // 退役端点（410）：请求类型已改为 undefined，这里只有「无 body」这一事实。
   triggers: { body: 'none' },
-  rules: { handler: true, fields: ['expectedModuleId', 'expectedRevisions', 'expectedRulesAbsent', 'createRule', 'edits', 'activateRuleId', 'validateOnly', 'refreshOnly'] },
-  persona: { handler: true, fields: ['persona', 'expectedModuleId', 'expectedRevision', 'refreshOnly'] },
-  personaSources: { handler: true, fields: ['sources', 'expectedRevision', 'refreshOnly'] },
-  moduleVariables: { handler: true, fields: ['scope', 'variables', 'enabled', 'expectedModuleId', 'expectedRevisions', 'refreshOnly'] },
+  rules: { fields: ['expectedModuleId', 'expectedRevisions', 'expectedRulesAbsent', 'createRule', 'edits', 'activateRuleId', 'validateOnly', 'refreshOnly'] },
+  persona: { fields: ['persona', 'expectedModuleId', 'expectedRevision', 'refreshOnly'] },
+  personaSources: { fields: ['sources', 'expectedRevision', 'refreshOnly'] },
+  moduleVariables: { fields: ['scope', 'variables', 'enabled', 'expectedModuleId', 'expectedRevisions', 'refreshOnly'] },
   customTools: { fields: ['customTools', 'expectedModuleId', 'refreshOnly'] },
-  importModulePackage: { handler: true, fields: [...ASSET_IMPORT_FIELD_KEYS, 'refreshOnly'] },
+  importModulePackage: { fields: [...ASSET_IMPORT_FIELD_KEYS, 'refreshOnly'] },
   assetUpload: { body: 'none' },
-  assetRelease: { handler: true, fields: ['sourceId'] },
-  exportModule: { handler: true, fields: ['id', 'mode', 'preview', 'expectedRevision', 'memoryChoices'] },
+  assetRelease: { fields: ['sourceId'] },
+  exportModule: { fields: ['id', 'mode', 'preview', 'expectedRevision', 'memoryChoices'] },
   moduleDelete: { fields: ['id', 'refreshOnly'] },
   moduleClone: { fields: ['id', 'autoSuffix', 'refreshOnly'] },
   moduleDuplicate: { fields: ['id', 'refreshOnly'] },
   moduleOpen: { fields: ['id'] },
-  moduleName: { handler: true, fields: ['name', 'expectedRevision', 'expectedModuleId', 'refreshOnly'] },
+  moduleName: { fields: ['name', 'expectedRevision', 'expectedModuleId', 'refreshOnly'] },
   moduleEnable: { fields: ['id', 'enabled', 'refreshOnly'] },
-  moduleConfigOrder: { handler: true, fields: ['moduleId', 'entries', 'expectedRevision', 'refreshOnly'] },
+  moduleConfigOrder: { fields: ['moduleId', 'entries', 'expectedRevision', 'refreshOnly'] },
   toolSurface: { fields: ['sessionId', 'presetId'] },
   moduleCapability: { fields: ['action', 'capabilityId', 'recipeId', 'expectedModuleId', 'refreshOnly'] },
   contextActivationDiagnostics: { fields: ['sessionId'] },
@@ -76,12 +74,10 @@ type NoneCoverage<K extends BridgeEndpointKey> = FieldRuleOf<K> extends { body: 
   ? [BridgeRequestMap[K]] extends [undefined] ? true : false
   : true
 
-/** 单向（表键 ⊆ 类型）对所有 fields 态成立；双向只对统一校验的 fields 态成立。 */
+/** 双向：表键集与请求类型的字段互为子集。 */
 type FieldsCoverage<K extends BridgeEndpointKey> = FieldRuleOf<K> extends { fields: readonly (infer F)[] }
   ? [Exclude<F, RequestKeysOf<BridgeRequestMap[K]>>] extends [never]
-    ? FieldRuleOf<K> extends { handler: true }
-      ? true
-      : [Exclude<RequestKeysOf<BridgeRequestMap[K]>, F>] extends [never] ? true : false
+    ? [Exclude<RequestKeysOf<BridgeRequestMap[K]>, F>] extends [never] ? true : false
     : false
   : true
 
@@ -98,12 +94,11 @@ const RULES_BY_PATH = new Map<string, RequestFieldRule>(
     .map(([key, rule]) => [BRIDGE_ENDPOINTS[key], rule]),
 )
 
-/** 断言一次请求只带该端点的顶层字段；handler-owned 与 body:none 端点不在这里拒绝。 */
+/** 断言一次请求只带该端点的顶层字段；body:none 端点不在这里拒绝。 */
 export function assertBridgeRequest(endpoint: string, record: Record<string, unknown>): void {
   const rule = RULES_BY_PATH.get(endpoint)
   if (rule === undefined) throw new Error('未登记请求字段：' + endpoint)
   if ('body' in rule) return
-  if ('handler' in rule) return
   const unknown = Object.keys(record).filter((key) => !rule.fields.includes(key))
   if (unknown.length > 0) throw new TypeError('未知请求字段：' + unknown.join(', '))
 }

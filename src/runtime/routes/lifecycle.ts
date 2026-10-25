@@ -120,8 +120,7 @@ export function registerLifecycle(runtime: LifecycleRuntime): Array<() => void> 
       if (dir === undefined) return
       try {
         const record = tx.record
-        const allowed = record.name === undefined ? ['refreshOnly'] : ['name', 'expectedRevision', 'expectedModuleId', 'refreshOnly']
-        if (Object.keys(record).some((key) => !allowed.includes(key))) throw new ModuleNameError('名称请求包含未知字段')
+
         if (record.refreshOnly === true) {
           if (record.name !== undefined) throw new ModuleNameError('refreshOnly 不能与改名混用')
           if (record.expectedRevision !== undefined || record.expectedModuleId !== undefined) throw new ModuleNameError('refreshOnly 不接受写入版本')
@@ -131,6 +130,7 @@ export function registerLifecycle(runtime: LifecycleRuntime): Array<() => void> 
           return
         }
         if (record.name === undefined) {
+          if (record.expectedRevision !== undefined || record.expectedModuleId !== undefined) throw new ModuleNameError('读取名称不接受写入版本')
           tx.write(200, { ok: true, value: readModuleName(dir) })
           return
         }
@@ -222,8 +222,7 @@ export function registerLifecycle(runtime: LifecycleRuntime): Array<() => void> 
       }
       // 客户端无参数读取序列化为 {}；与空请求体一样读取全局排序。
       const writing = body.entries !== undefined || body.expectedRevision !== undefined
-      if (Object.keys(body).some((key) => key !== 'moduleId' && key !== 'entries' && key !== 'expectedRevision' && key !== 'refreshOnly')
-        || (body.moduleId !== undefined && (typeof body.moduleId !== 'string' || readEditTarget(body.moduleId) !== body.moduleId))
+      if ((body.moduleId !== undefined && (typeof body.moduleId !== 'string' || readEditTarget(body.moduleId) !== body.moduleId))
         || (writing && (typeof body.expectedRevision !== 'string' || !SHA256_HEX_RE.test(body.expectedRevision)
           || !Array.isArray(body.entries)
           || body.entries.some((entry) => !isRecord(entry)
