@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useSyncExternalStore, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react'
+import { useEffect, useRef, useSyncExternalStore, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
@@ -6,14 +6,13 @@ import { PromptWorkspace } from '../workspace/PromptWorkspace.tsx'
 import { FloatingTrigger } from './FloatingTrigger.tsx'
 import type { PromptToolWorkbenchFace } from './workbench-face.ts'
 import { FOCUSABLE, nextDialogFocusIndex } from '../../ui/dialog-focus.ts'
-import { createWorkbenchHost } from './workbench-host.ts'
+import { workbenchHostConventions } from './workbench-host-conventions.ts'
 import css from './Workbench.module.css'
 
 type OverlayProps = PropsRuntime<'shell.overlay'> & InjectFace<PromptToolWorkbenchFace> & PropsLocale<'prompt-tool'>
 /** shell.overlay：顶层触发器 + 右侧抽屉工作台；store 状态跨开关保留。 */
 export function WorkbenchOverlay(props: OverlayProps): ReactNode {
   const { controller, api, settings, t } = props
-  const host = useMemo(createWorkbenchHost, [])
   const open = useSyncExternalStore(controller.subscribe, controller.getSnapshot, controller.getSnapshot).open
   useEffect(() => {
     if (!open) return
@@ -21,12 +20,12 @@ export function WorkbenchOverlay(props: OverlayProps): ReactNode {
       if (event.key === 'Escape' && !event.defaultPrevented) { event.preventDefault(); controller.close() }
     }
     document.addEventListener('keydown', onKey)
-    const disposePanel = host.installPanelExclusion(controller)
+    const disposePanel = workbenchHostConventions.installPanelExclusion(controller)
     return () => {
       document.removeEventListener('keydown', onKey)
       disposePanel()
     }
-  }, [open, controller, host])
+  }, [open, controller])
   // 关闭后焦点还给触发器（可访问性：焦点不得悬空在 body 上；经 ref 拿自己的按钮，
   // 只拿自己的按钮 ref，不触达宿主 DOM 结构。
   const triggerRef = useRef<HTMLButtonElement>(null)
