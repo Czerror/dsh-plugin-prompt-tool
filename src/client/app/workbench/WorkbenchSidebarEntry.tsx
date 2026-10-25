@@ -1,6 +1,7 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
 import type { InjectFace, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar/client'
+import { createWorkbenchHost } from './workbench-host.ts'
 
 type WorkbenchSidebarEntryProps = Pick<PropsRuntime<'sidebar.panellist'>, 'size'> & InjectFace<{ open: () => void }>
 
@@ -14,16 +15,8 @@ type WorkbenchSidebarEntryProps = Pick<PropsRuntime<'sidebar.panellist'>, 'size'
  */
 export function WorkbenchSidebarEntry({ size, open }: WorkbenchSidebarEntryProps) {
   const ref = useRef<SVGSVGElement>(null)
-  useEffect(() => {
-    const row = ref.current?.closest('button')
-    if (row === null || row === undefined) return
-    const onClick = (event: MouseEvent): void => {
-      event.stopPropagation()
-      open()
-    }
-    row.addEventListener('click', onClick)
-    return () => { row.removeEventListener('click', onClick) }
-  }, [open])
+  const host = useMemo(createWorkbenchHost, [])
+  useEffect(() => host.interceptSidebarRow(ref.current, open), [host, open])
   return (
     <svg
       ref={ref}

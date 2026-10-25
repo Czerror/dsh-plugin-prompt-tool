@@ -1,4 +1,4 @@
-import { useEffect, useRef, useSyncExternalStore, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useSyncExternalStore, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
@@ -6,31 +6,27 @@ import { PromptWorkspace } from '../workspace/PromptWorkspace.tsx'
 import { FloatingTrigger } from './FloatingTrigger.tsx'
 import type { PromptToolWorkbenchFace } from './workbench-face.ts'
 import { FOCUSABLE, nextDialogFocusIndex } from '../../ui/dialog-focus.ts'
+import { createWorkbenchHost } from './workbench-host.ts'
 import css from './Workbench.module.css'
 
 type OverlayProps = PropsRuntime<'shell.overlay'> & InjectFace<PromptToolWorkbenchFace> & PropsLocale<'prompt-tool'>
 /** shell.overlay：顶层触发器 + 右侧抽屉工作台；store 状态跨开关保留。 */
 export function WorkbenchOverlay(props: OverlayProps): ReactNode {
   const { controller, api, settings, t } = props
+  const host = useMemo(createWorkbenchHost, [])
   const open = useSyncExternalStore(controller.subscribe, controller.getSnapshot, controller.getSnapshot).open
   useEffect(() => {
     if (!open) return
     const onKey = (event: KeyboardEvent): void => {
       if (event.key === 'Escape' && !event.defaultPrevented) { event.preventDefault(); controller.close() }
     }
-    // 与其他面板互斥：兼容仍在 DOM 面板上的 taskboard / ssh 事件总线。
-    const onOther = (event: Event): void => {
-      const detail = (event as CustomEvent<unknown>).detail
-      if (detail === 'taskboard' || detail === 'ssh') controller.close()
-    }
     document.addEventListener('keydown', onKey)
-    document.addEventListener('dsh-panel-activate', onOther)
-    document.dispatchEvent(new CustomEvent('dsh-panel-activate', { detail: 'prompt-tool' }))
+    const disposePanel = host.installPanelExclusion(controller)
     return () => {
       document.removeEventListener('keydown', onKey)
-      document.removeEventListener('dsh-panel-activate', onOther)
+      disposePanel()
     }
-  }, [open, controller])
+  }, [open, controller, host])
   // 关闭后焦点还给触发器（可访问性：焦点不得悬空在 body 上；经 ref 拿自己的按钮，
   // 只拿自己的按钮 ref，不触达宿主 DOM 结构。
   const triggerRef = useRef<HTMLButtonElement>(null)
