@@ -2,6 +2,7 @@ import { bool, defineConfig, stringList } from './fields.mjs'
 import { toolServiceName } from './service-names.mjs'
 
 export const name = 'retrieval'
+export const inject = ['tools']
 export const configContract = defineConfig({
   enabled: bool({ default: false }),
   paths: stringList({ default: () => [], allowEmpty: true, dedupe: true }),

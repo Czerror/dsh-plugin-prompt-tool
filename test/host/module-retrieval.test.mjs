@@ -2,12 +2,38 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { mkdirSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { Context } from '@deepseek-ai/cordis'
+import { createScope } from '@deepseek-ai/dsh-scope'
+import ToolRuntime, { defineTool } from '@deepseek-ai/dsh-tools'
+import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import { isolatedHome } from '../fixtures/host-harness.mjs'
 import { createModuleRetrieval } from '../../src/host/module-retrieval.ts'
 import { createModuleRetrievalProvider } from '../../src/runtime/module-retrieval-tools.ts'
 import { makeSessionReference } from '../../engine/retrieval-reference.mjs'
 
 const { moduleRoot } = isolatedHome('pt-retrieval-')
+
+test('检索工具初始化第二项失败同步上报，撤回第一项且重试没有遗留授权', async t => {
+  const root = new Context()
+  await root.plugin(SystemPrompt)
+  await root.plugin(ToolRuntime)
+  t.after(() => root.fiber.dispose())
+  const agent = { id: 'retrieval-registration', session: { id: 'retrieval-registration', header: {}, snapshotEvents: () => [] } }
+  await createScope(root, agent).ctx.plugin({ name: 'retrieval-test-agent', inject: ['tools'], apply(ctx) { agent.ctx = ctx } })
+  const occupied = agent.ctx.tools.register(defineTool({ name: 'module_open', description: 'occupied', parameters: {}, output: { schema: { type: 'object', additionalProperties: true }, render: () => [] }, execute: async () => ({}) }))
+  const dir = join(moduleRoot, 'registration')
+  const provider = createModuleRetrievalProvider({ target: (_exec, id) => ({ id, dir }) })
+  const options = { agent, sourceModuleId: 'registration', sourceModuleDir: dir }
+  assert.throws(() => provider.mount(agent.ctx, { paths: [], sessions: [] }, options), /module_open/)
+  assert.deepEqual(root.tools.schemas(agent).map(tool => tool.name), ['module_open'], '第一项检索工具已撤销，宿主原工具保留')
+  await assert.rejects(provider.refresh(agent, 'registration'), /未授权/)
+  occupied()
+  const off = provider.mount(agent.ctx, { paths: [], sessions: [] }, options)
+  assert.deepEqual(root.tools.schemas(agent).map(tool => tool.name).sort(), ['module_open', 'module_search'])
+  off()
+  assert.deepEqual(root.tools.schemas(agent), [])
+  await assert.rejects(provider.refresh(agent, 'registration'), /未授权/)
+})
 
 test('检索已授权模块文件和账本的每种引用均可回取，查询不改原文件', async () => {
   const dir = join(moduleRoot, 'soul')
@@ -65,10 +91,10 @@ test('正式检索工具按Agent合并模块声明，重复挂载不重复注册
   mkdirSync(join(dir, 'data'), { recursive: true })
   writeFileSync(join(dir, 'data', 'notes.md'), 'TOOL FACT')
   let registrations = 0
-  const ctx = { inject: (_deps, cb) => ({ dispose: cb({ tools: { register: tool => {
+  const ctx = { get: () => ({ register: tool => {
     registrations++; tools.set(tool.name, tool)
     return () => tools.delete(tool.name)
-  } } }) }) }
+  } }) }
   const agent = { ctx, session: { id: 'current', snapshotEvents: () => [] } }
   let finishLoad
   const provider = createModuleRetrievalProvider({ target: (_exec, moduleId) => {

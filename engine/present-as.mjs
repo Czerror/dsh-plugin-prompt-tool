@@ -13,8 +13,8 @@
  * declared for this scope`）——本行不捕获、不降级，让它响亮失败（装配失败优于静默换形态）。
  *
  * `ptc` 需要 `ctx.ptcRuntime`（宿主 base bundle 的 `ptc-runtime` 行提供）：用 `ctx.inject`
- * 等它就绪再声明；等不到本行停在 pending，由预设注册表指名报告**不可用的行**——刻意不静默
- * 退回 native，否则「开了 PTC」的部署会悄悄以 native 跑。`native` 不需要运行时，直接声明。
+ * 等它就绪再声明；等不到本行停在 pending。受管装配观察初始化结果，声明失败时按来源
+ * 回退或撤销模块；本行不自行改成 native。`native` 不需要运行时，直接声明。
  *
  * disposer：`presentAs` 本身就是 effect（它用调用方的 ctx 注册、并把那个 disposer 还回来），
  * 本行不再包一层，随 fiber 释放即撤销。

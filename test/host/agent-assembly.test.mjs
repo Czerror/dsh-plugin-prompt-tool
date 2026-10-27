@@ -934,6 +934,177 @@ test('PTC：主子模式独立进入工具面，刷新与压缩保留受众，�
   for (const agent of [main, child]) assert.deepEqual(names(agent), ['visible_tool'])
 })
 
+test('晚到能力初始化失败只撤所属模块，健康模块继续且显式重试可恢复', async (t) => {
+  const writeHealthy = text => writeModuleFixture('late-healthy', {
+    modules: ['rule-engine'], promptConfigs: [{ id: 'late-healthy', text, position: 'after-user' }],
+  })
+  writeModuleFixture('late-failed', {
+    modules: ['tool-config-engine', 'present-as'], moduleConfigs: { 'present-as': { enabled: true, mode: 'ptc' } },
+    customTools: [{ id: 'late_partial_tool', description: 'temporary', output: { schema: { type: 'json' } }, execute: { kind: 'delegate', tool: 'known_tool' } }],
+    promptConfigs: [{ id: 'late-failed', text: 'LATE-RULE', position: 'after-user' }],
+  })
+  writeHealthy('HEALTHY')
+  const h = await liveAssembly(t, () => ['late-failed', 'late-healthy'])
+  let rejected = true
+  let attempts = 0
+  const presentAs = h.root.tools.presentAs
+  t.mock.method(h.root.tools, 'presentAs', function (mode, ...args) {
+    if (mode === 'ptc') { attempts++; if (rejected) throw new Error('LATE-INITIALIZATION-REJECTED') }
+    return presentAs.call(this, mode, ...args)
+  })
+  const agents = [await h.makeAgent('late-main'), await h.makeAgent('late-child', 1)]
+  const assemble = new Map()
+  for (const agent of agents) await agent.ctx.plugin({ inject: ['systemPrompt'], apply(ctx) {
+    assemble.set(agent, () => ctx.systemPrompt.assemble({ agent, scope: agent }))
+  } })
+  const texts = async agent => (await h.inject(agent)).messages.flatMap(message => message.content.map(block => block.text))
+  for (const agent of agents) assert.deepEqual(await texts(agent), ['USER', 'LATE-RULE', 'HEALTHY'], '正常等待服务不误判失败')
+  assert.equal(attempts, 0)
+  const removePtc = h.root.provide('ptcRuntime', { language: 'typescript' })
+  await h.runtime.settled()
+  for (const agent of agents) {
+    assert.deepEqual(await texts(agent), ['USER', 'HEALTHY'])
+    assert.deepEqual(h.runtime.moduleIds(agent.id), ['late-healthy'])
+    assert.equal(h.root.tools.schemas(agent).some(tool => tool.name === 'late_partial_tool'), false)
+  }
+  assert.ok(h.warnings.some(message => message.includes('late-failed') && message.includes('LATE-INITIALIZATION-REJECTED')))
+  const rejectedAttempts = attempts
+  writeHealthy('HEALTHY-UPDATED')
+  for (const agent of agents) {
+    await assemble.get(agent)()
+    assert.deepEqual(await texts(agent), ['USER', 'HEALTHY-UPDATED'])
+  }
+  await h.runtime.settled()
+  assert.equal(attempts, rejectedAttempts, '其他模块更新不重试同一失败定义')
+  rejected = false
+  await removePtc()
+  await h.runtime.refresh('late-failed')
+  h.root.provide('ptcRuntime', { language: 'typescript' })
+  await h.runtime.settled()
+  for (const agent of agents) {
+    assert.deepEqual(await texts(agent), ['USER', 'LATE-RULE', 'HEALTHY-UPDATED'])
+    assert.deepEqual(h.runtime.moduleIds(agent.id), ['late-failed', 'late-healthy'])
+    assert.deepEqual(h.root.tools.wireSchemas(agent).schemas.map(tool => tool.name), ['run_code'], '晚到服务成功后真实PTC呈现已生效')
+  }
+  await h.runtime.dispose()
+  for (const agent of agents) {
+    assert.deepEqual(await texts(agent), ['USER'])
+    assert.deepEqual(h.root.tools.schemas(agent), [])
+  }
+})
+
+test('连续等待中的新版本失败时回退最后完成初始化的旧模块', async (t) => {
+  const write = (text, mode) => writeModuleFixture('late-version', {
+    modules: ['present-as'], moduleConfigs: { 'present-as': { enabled: true, mode } },
+    promptConfigs: [{ id: 'late-version', text, position: 'after-user' }],
+  })
+  write('READY-OLD', 'native')
+  const h = await liveAssembly(t, () => ['late-version'])
+  const agents = [await h.makeAgent('late-version-main'), await h.makeAgent('late-version-child', 1)]
+  const texts = async agent => (await h.inject(agent)).messages.flatMap(message => message.content.map(block => block.text))
+  for (const agent of agents) assert.deepEqual(await texts(agent), ['USER', 'READY-OLD'])
+  write('PENDING-ONE', 'ptc')
+  await h.runtime.refresh('late-version')
+  write('PENDING-TWO', 'ptc')
+  await h.runtime.refresh('late-version')
+  const originalCtx = agents[1].ctx
+  let failOnce = true
+  agents[1].ctx = new Proxy(originalCtx, { get(target, key) {
+    if (key === 'plugin') return (...args) => {
+      if (failOnce && args[0]?.name === 'prompt-tool-assembly') { failOnce = false; throw new Error('PUBLIC-ROOT-REJECTED') }
+      return originalCtx.plugin(...args)
+    }
+    return Reflect.get(target, key)
+  } })
+  write('ABORTED-NEW', 'native')
+  await assert.rejects(h.runtime.refresh('late-version'), /PUBLIC-ROOT-REJECTED/)
+  for (const agent of agents) assert.deepEqual(await texts(agent), ['USER', 'PENDING-TWO'])
+  write('PENDING-TWO', 'ptc')
+  const presentAs = h.root.tools.presentAs
+  t.mock.method(h.root.tools, 'presentAs', function (mode, ...args) {
+    if (mode === 'ptc') throw new Error('LATE-VERSION-REJECTED')
+    return presentAs.call(this, mode, ...args)
+  })
+  h.root.provide('ptcRuntime', { language: 'typescript' })
+  await h.runtime.settled()
+  for (const agent of agents) {
+    assert.deepEqual(await texts(agent), ['USER', 'READY-OLD'])
+    assert.deepEqual(h.runtime.moduleIds(agent.id), ['late-version'])
+  }
+})
+
+test('共享初始化失败只影响声明来源，已替换实例和无关插件的迟到错误失效', async (t) => {
+  const write = (id, text, modules = ['module-rule-tools']) => writeModuleFixture(id, {
+    modules, promptConfigs: [{ id, text, position: 'after-user' }],
+  })
+  for (const id of ['shared-late-a', 'shared-late-b']) write(id, id)
+  write('shared-late-healthy', 'HEALTHY', ['rule-engine'])
+  let enabled = ['shared-late-a', 'shared-late-b', 'shared-late-healthy']
+  const h = await liveAssembly(t, () => enabled)
+  let rejection = true
+  let waitForRelease
+  let started
+  h.root.provide('pt-module-rule-tools', { mount: ctx => {
+    const fiber = ctx.inject(['lateSharedService'], async toolsCtx => {
+      toolsCtx.tools.register({ name: 'late_shared_tool', description: 'shared', parameters: { type: 'object', properties: {} },
+        output: { schema: { type: 'object' }, render: () => [] }, execute: async () => ({}),
+      })
+      started?.()
+      if (waitForRelease) await waitForRelease
+      if (rejection) throw new Error('SHARED-INITIALIZATION-REJECTED')
+    })
+    return () => { void fiber.dispose() }
+  } })
+  const agent = await h.makeAgent('shared-late-agent')
+  const texts = async () => (await h.inject(agent)).messages.flatMap(message => message.content.map(block => block.text))
+  h.root.provide('lateSharedService', {})
+  await h.runtime.settled()
+  assert.deepEqual(await texts(), ['USER', 'HEALTHY'])
+  assert.deepEqual(h.runtime.moduleIds(agent.id), ['shared-late-healthy'])
+  assert.deepEqual(h.root.tools.schemas(agent), [])
+  assert.ok(h.warnings.some(message => message.includes('shared-late-a')))
+  assert.ok(h.warnings.some(message => message.includes('shared-late-b')))
+
+  rejection = false
+  await h.runtime.refresh()
+  assert.equal(h.root.tools.schemas(agent).filter(tool => tool.name === 'late_shared_tool').length, 1)
+  let finishLate
+  waitForRelease = new Promise(resolve => { finishLate = resolve })
+  const entered = new Promise(resolve => { started = resolve })
+  // 新来源在加载中；下一次更新排队后，旧初始化才拒绝。
+  write('shared-late-a', 'WAITING-OLD')
+  const loading = h.runtime.refresh('shared-late-a')
+  await entered
+  write('shared-late-a', 'CURRENT', ['rule-engine'])
+  enabled = ['shared-late-a', 'shared-late-healthy']
+  const replacing = h.runtime.refresh('shared-late-a')
+  rejection = true
+  finishLate()
+  await assert.rejects(loading, /SHARED-INITIALIZATION-REJECTED/)
+  await replacing
+  await h.runtime.settled()
+  assert.deepEqual(await texts(), ['USER', 'CURRENT', 'HEALTHY'])
+  assert.deepEqual(h.runtime.moduleIds(agent.id), ['shared-late-a', 'shared-late-healthy'])
+  const unrelated = agent.ctx.plugin({ name: 'unrelated-late', apply(ctx) {
+    ctx.inject(['lateSharedService'], () => { throw new Error('UNRELATED-INITIALIZATION-REJECTED') })
+  } })
+  await unrelated
+  await h.runtime.settled()
+  assert.deepEqual(await texts(), ['USER', 'CURRENT', 'HEALTHY'])
+  assert.equal(h.warnings.some(message => message.includes('UNRELATED-INITIALIZATION-REJECTED')), false)
+  writeModuleFixture('shared-late-a', {
+    modules: ['present-as'], moduleConfigs: { 'present-as': { enabled: true, mode: 'ptc' } },
+    promptConfigs: [{ id: 'shared-late-a', text: 'PENDING-DISPOSE', position: 'after-user' }],
+  })
+  await h.runtime.refresh('shared-late-a')
+  await h.runtime.dispose()
+  h.root.provide('ptcRuntime', { language: 'typescript' })
+  await h.runtime.settled()
+  await unrelated.dispose()
+  assert.deepEqual(await texts(), ['USER'])
+  assert.deepEqual(h.root.tools.schemas(agent), [])
+})
+
 test('能力挂载失败按模块回退，半注册工具撤销且健康来源共享工具保留', async (t) => {
   const tool = id => ({ id, description: id, output: { schema: { type: 'json' } }, execute: { kind: 'delegate', tool: 'shared_tool' } })
   const writeBroken = (text, mode, toolId) => writeModuleFixture('mount-broken', {

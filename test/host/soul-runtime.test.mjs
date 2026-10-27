@@ -26,6 +26,7 @@ function fixture(t, id) {
     on: () => () => {},
     tools: { register: tool => { tools.set(tool.name, tool); return () => tools.delete(tool.name) } },
   }
+  services.set('tools', ctx.tools)
   const history = [{ seq: 0, type: 'user/message', data: { text: 'HISTORY KNOWN LITERAL' } }]
   services.set('sessionPersistence', { open: async (sessionId, access) => {
     calls.push(['open', sessionId, access])

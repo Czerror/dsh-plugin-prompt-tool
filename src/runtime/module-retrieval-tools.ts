@@ -12,10 +12,14 @@ import { MODULE_TOOL_NAMES } from '../shared/engine-capabilities.ts'
 export interface RetrievalConfig { paths: readonly string[]; sessions: readonly string[] }
 export interface RetrievalMount { agent: Agent; sourceModuleId: string; sourceModuleDir: string }
 
+/** 调用方已确认 tools 就绪；同步注册使初始化错误回到当前能力的挂载路径。 */
 export function registerModuleRetrievalTools(ctx: Context, retrievalOf: (exec: ToolExecution, moduleId: string | undefined) => ReturnType<typeof createModuleRetrieval>): () => void {
-  const fiber = ctx.inject(['tools'], toolsCtx => {
-    const disposers = [
-      toolsCtx.tools.register(defineTool({
+  const tools = ctx.get('tools')
+  if (tools === undefined) throw new Error('检索工具注册需要 tools 服务')
+  const disposers: Array<() => void> = []
+  const dispose = (): void => { for (const off of disposers.splice(0).reverse()) off() }
+  try {
+    disposers.push(tools.register(defineTool({
         name: MODULE_TOOL_NAMES.search,
         description: '搜索 moduleId 声明模块已授权的文件、账本或历史会话。结果中的 reference 可交 module_open 回取相同原文。',
         parameters: { moduleId: MODULE_ID_PARAM, query: { type: 'string', required: true }, limit: { type: 'number' } },
@@ -28,8 +32,8 @@ export function registerModuleRetrievalTools(ctx: Context, retrievalOf: (exec: T
           retrievalOf(exec, args.moduleId)
           return value
         },
-      })),
-      toolsCtx.tools.register(defineTool({
+      })))
+    disposers.push(tools.register(defineTool({
         name: MODULE_TOOL_NAMES.open,
         description: '回取 module_search 返回的引用。每次重新检查来源授权与版本；引用不是访问凭据。',
         parameters: { moduleId: MODULE_ID_PARAM, reference: { type: 'object', additionalProperties: true, required: true } },
@@ -42,11 +46,9 @@ export function registerModuleRetrievalTools(ctx: Context, retrievalOf: (exec: T
           retrievalOf(exec, args.moduleId)
           return value
         },
-      })),
-    ]
-    return () => { for (const dispose of disposers) dispose() }
-  })
-  return () => { void fiber.dispose() }
+      })))
+  } catch (error) { dispose(); throw error }
+  return dispose
 }
 
 export function createModuleRetrievalProvider(host: Pick<ModuleToolHost, 'target'>, loadSession?: LoadRetrievalSession) {
