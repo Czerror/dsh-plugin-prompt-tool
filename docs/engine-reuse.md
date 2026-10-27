@@ -325,7 +325,23 @@ Basic的范围接口只适用于打开的turn。idle程序式范围与恢复局�
 
 可选官方包由 `importHostCapability` 在启用时从宿主解析，并按 `HOST_CAPABILITY_VERSIONS` 核对完整版本（当前0.2.1-alpha.2）；不随插件新增依赖。`verify:host` 只对这一显式入口允许已登记的宿主能力，普通静态／动态导入仍执行peer与dev双声明检查。真实官方行为在隔离环境验证，仓库回归测试覆盖公开适配器、流、写盘与拒绝契约。官方framing快照升级时须重新核验。
 
-## SELF维护心跳
+## SELF动态内容与维护心跳
+
+SELF 注入由 `modules: [rule-engine]` 承载，在普通 `inject-text` 动作中声明：
+
+```yaml
+config:
+  strategy: placeholder
+  fill: soul-self
+  layer: runtime-context
+  order: 133
+  params:
+    contextName: agent:soul-self
+```
+
+`soul-self` 是已有 `fill` 字段的内置取值，不是独立能力行。引擎在实际求值时把来源模块、当前 Agent 与取消信号交给插件的 SELF owner；条件、受众、启停、排序和卸载沿用规则引擎。未声明规则时不注入，不需要模块 JS 资产或服务名参数。此内容源也支持 `pre-step`，遵循 placeholder 的插入点限制。
+
+已有用户副本若仍声明 `strategy: self` 并保留自己的策略资产，继续由既有自定义策略加载器执行。包升级不覆盖用户副本；显式更新为内置声明后才去掉对应 `strategyDir` 与服务名参数。私有 `data/` 不随此变更迁移。
 
 `soul-maintenance` 按来源模块只保留一个owner和一个定时器，维护串行，不因两个Agent或重挂并发写SELF。`intervalMs` 默认60000，`wake` 默认false，`audience` 默认all，`budgetBytes` 默认12288。每次先通过既有检索provider刷新授权索引，再CAS更新SELF；实际Agent的idle维护窗口提供用户取消信号，busy或失败保留旧快照，下次定时重试。
 

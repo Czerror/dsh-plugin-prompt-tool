@@ -130,11 +130,13 @@ outlet/vectorized/triggers 不能等价执行，相关规则禁用并报告；�
 
 书房数据通过 `/prompt-tool data-import <JSON>` 显式导入。先指定 `moduleId`、来源书房根 `sourceDirectory` 和相对文件列表 `paths`，预览创建、跳过与冲突项；确认后在相同 JSON 中加上返回的 `expectedRevision`（值取预览的 `revision`）应用。只补缺失文件，冲突项保留目标，源文件不动；旧 `02-墨.jsonl` 映射到 `data/02-soul.jsonl`。新建书房用 `{"moduleId":"soul","initialize":true}` 预览模块自己的清单，也须带预览版本应用。完整例子与限制见 [数据导入](docs/architecture-params.md#书房数据预览与导入)。
 
-Soul 模块包含结构化账本、授权文件／历史检索、每步动态 SELF、上下文压缩与裁剪溯源、生成恢复和维护心跳。先用上述初始化预览补齐 `SELF.src.md` 骨架；已有模块副本须显式更新，包升级不会覆盖用户定义或私有数据。
+Soul 模块包含结构化账本、授权文件／历史检索、每步动态 SELF、上下文压缩与裁剪溯源、生成恢复和维护心跳。SELF 由 `rule-engine` 的内置动态内容源提供（`strategy: placeholder`、`fill: soul-self`），无需模块附带策略 JS。先用上述初始化预览补齐 `SELF.src.md` 骨架；已有模块副本须显式更新，包升级不会覆盖用户定义或私有数据，旧副本仍可使用自身保留的自定义策略。
 
 `soul_ledger` 自动署名真实会话，`lead` 需宿主审批，只有最后主导会话可追加 `promise`；通用文件追加拒绝新旧账本名。`module_search` 返回的引用交给 `module_open` 回取，历史会话只读取声明的白名单。SELF 的当前身份在每步读取时加入，维护默认每分钟只更新索引与快照，`wake` 独立且默认关闭。
 
 `generation-recovery` 的通用默认只截断；Soul 显式启用空回合检测和有界恢复，主会话额度 3、子代理 1，每会话独立且重挂不清零。维护压缩和扩大范围默认关闭。配置与边界见 [引擎运行时](docs/engine-reuse.md#重复输出安全截断)、[账本与SELF](docs/architecture-params.md#soul账本与派生快照)。
+
+这些运行能力由本插件实现，不需要源项目 `dsh-agent-soul` 的仓库、插件或后台服务；上下文治理仍要求宿主提供[已验证版本的官方能力](docs/engine-reuse.md#上下文运行时与溯源)。本模块不等价于源项目的全部功能：检索采用授权范围内的字面匹配，未提供源近义检索、上下文水位提醒、完整 doctor/诊断工具或附属面板；恢复判据与额度策略也有差异。`assets/reference/` 保留的源文档用于背景参考，其中的源 CLI 和第三方工具不表示本插件已提供对应能力。
 
 上下文能力从 DSH 自带包解析，不增加插件依赖；当前核验版本为官方 `0.2.1-alpha.2`。缺包或版本不同会明确拒绝该能力装配。包代码更新需要用户重启 DSH 加载；加载后修改模块启停／参数沿运行时刷新，不改官方 preset 或 profile patch。
 

@@ -19,8 +19,6 @@ modules:
   - generation-recovery
   - soul-maintenance
 moduleConfigs:
-  rule-engine:
-    strategyDir: ./assets/strategies/
   retrieval:
     enabled: true
     paths:
@@ -101,12 +99,12 @@ rules:
       - id: inject
         kind: inject-text
         config:
-          strategy: self
+          strategy: placeholder
+          fill: soul-self
           layer: runtime-context
           order: 133
           params:
             contextName: agent:soul-self
-            service: promptToolSoulSelf
 
   - id: soul-core-sub
     name: 子代理硬线

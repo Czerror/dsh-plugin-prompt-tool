@@ -5,7 +5,8 @@ import { join } from 'node:path'
 import { syncBuiltinESMExports } from 'node:module'
 import { isolatedHome } from '../fixtures/host-harness.mjs'
 import { readSoulSelfSnapshot, refreshSoulSelf, renderSoulSelf } from '../../src/host/soul-self.ts'
-import { bindResolver } from '../../engine/actions/content.mjs'
+import { createPromptConfigs } from '../../engine/schema.mjs'
+import { SOUL_SELF_SERVICE } from '../../engine/service-names.mjs'
 
 const { moduleRoot } = isolatedHome('pt-soul-self-')
 const index = { state: 'ready', files: 3, sessions: 2, events: 7 }
@@ -27,10 +28,10 @@ test('SELF写盘产物只含预算内骨架、账本与索引事实，真实模�
   assert.match(snapshot.content, /3.*2.*7/)
   assert.doesNotMatch(snapshot.content, /never-show-this|old-container/)
   const service = { render: (_id, agent, signal) => renderSoulSelf(dir, agent, signal) }
-  const config = { strategy: 'self', params: { service: 'testSelf' }, sourceModuleId: 'self-main' }
-  const resolve = bindResolver(config, new URL('../../modules/soul/assets/strategies/', import.meta.url).href)
-  const first = await resolve({ ctx: { get: () => service }, agent: { session: { id: 'session-A', header: { delegationDepth: 0 } } } })
-  const second = await resolve({ ctx: { get: () => service }, agent: { session: { id: 'session-B', header: { delegationDepth: 1 } } } })
+  const [{ resolve }] = createPromptConfigs([{ id: 'self', strategy: 'placeholder', fill: 'soul-self', layer: 'runtime-context' }], { sourceModuleId: 'self-main' })
+  const ctx = { get: name => name === SOUL_SELF_SERVICE ? service : undefined }
+  const first = await resolve({ ctx, agent: { session: { id: 'session-A', header: { delegationDepth: 0 } } } })
+  const second = await resolve({ ctx, agent: { session: { id: 'session-B', header: { delegationDepth: 1 } } } })
   assert.match(first.text, /session-A/)
   assert.doesNotMatch(first.text, /session-B/)
   assert.match(second.text, /session-B/)

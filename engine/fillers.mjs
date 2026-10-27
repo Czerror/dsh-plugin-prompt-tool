@@ -1,6 +1,6 @@
 /**
  * fillers — 引擎内置的动态填充器(strategy=placeholder 的数据源)。
- * 全部遵循同一铁律:服务缺失或列表失败时返回 null(跳过该配置),绝不伤及会话。
+ * 按本次求值读取宿主能力；失败由填充器或调用方诊断并跳过该配置。
  */
 
 import { getService, parseToolNames } from './shared.mjs'
@@ -8,7 +8,7 @@ import { toolScopeSnapshot } from './tool-scope.mjs'
 import { machinePaths } from './machine-paths.mjs'
 import { SAFE_ENV_KEYS } from './env-safety.mjs'
 import { createInstructionHintResolver } from './instruction-hint.mjs'
-import { DISCOVERY_SERVICE } from './service-names.mjs'
+import { DISCOVERY_SERVICE, SOUL_SELF_SERVICE } from './service-names.mjs'
 
 const name = 'prompt-config-engine'
 
@@ -187,12 +187,21 @@ function createSkillCatalogResolver(config) {
   }
 }
 
+function createSoulSelfResolver(config) {
+  return ({ ctx, agent, signal }) => {
+    const service = getService(ctx, SOUL_SELF_SERVICE)
+    if (typeof service?.render !== 'function') throw new Error('SELF dependency missing')
+    return { text: service.render(config.sourceModuleId, agent, signal) }
+  }
+}
+
 /** 动态填充器:strategy=placeholder 时按 fill 键在注入点填充内容。 */
 export const FILLERS = {
   'instruction-hint': (config) => createInstructionHintResolver(config),
   'env-facts': (config) => createEnvFactsResolver(config),
   'skill-catalog': (config) => createSkillCatalogResolver(config),
   'tool-catalog': (config) => createToolCatalogResolver(config),
+  'soul-self': (config) => createSoulSelfResolver(config),
 }
 
 export function createPlaceholderResolver(config) {

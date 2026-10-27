@@ -7,6 +7,7 @@ import { installSoulRuntime } from '../../src/runtime/soul-runtime.ts'
 import { registerSoulLedgerTools } from '../../src/runtime/soul-ledger-tools.ts'
 import { resolveModuleToolTarget } from '../../src/host/module-tool-target.ts'
 import { SOUL_MAINTENANCE_SERVICE, SOUL_SELF_SERVICE, toolServiceName } from '../../engine/service-names.mjs'
+import { createPromptConfigs } from '../../engine/schema.mjs'
 
 const { moduleRoot } = isolatedHome('pt-soul-runtime-')
 
@@ -62,12 +63,15 @@ test('Soul实际宿主接线贯通账本append→search/open，SELF和默认维�
   t.after(off)
   await maintenance.tick(f.id)
   assert.deepEqual(maintenance.status(f.id), { state: 'ready' })
-  const self = f.services.get(SOUL_SELF_SERVICE)
-  const rendered = self.render(f.id, f.agent)
+  const [self] = createPromptConfigs([{ id: 'self', strategy: 'placeholder', fill: 'soul-self', layer: 'runtime-context' }], { sourceModuleId: f.id })
+  const rendered = (await self.resolve({ ctx: f.ctx, agent: f.agent, signal: exec.signal })).text
   assert.match(rendered, /SHARED SELF/)
   assert.match(rendered, /文件 2；会话 2；事件 1/)
   assert.match(rendered, new RegExp(f.agent.session.id))
-  assert.throws(() => self.render(f.id, { ...f.agent, id: 'unrelated-agent' }), /未参与/)
+  assert.throws(() => self.resolve({ ctx: f.ctx, agent: { ...f.agent, id: 'unrelated-agent' } }), /未参与/)
+  assert.throws(() => self.resolve({ ctx: f.ctx, agent: f.agent, signal: AbortSignal.abort() }), /abort/i)
+  f.services.delete(SOUL_SELF_SERVICE)
+  assert.throws(() => self.resolve({ ctx: f.ctx, agent: f.agent }), /SELF dependency missing/)
   assert.equal(f.calls.filter(call => call[0] === 'open').length, 1, '维护确实刷新同一授权历史来源')
   assert.ok(f.calls.every(call => call[0] !== 'open' || call[2] === 'read'))
 })

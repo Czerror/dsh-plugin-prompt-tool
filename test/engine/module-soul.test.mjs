@@ -24,7 +24,7 @@ const spec = parse(readFileSync(join(moduleDir, 'module.yml'), 'utf8'))
 test('soul 模块：规则编译、模板存在与变量声明', () => {
   const rules = compileRules(spec.rules, {
     moduleId: 'soul', variables: spec.variables, variablesEnabled: spec.variablesEnabled,
-    promptConfigOptions: rulePromptConfigOptions(moduleDir, spec.moduleConfigs['rule-engine'].strategyDir),
+    promptConfigOptions: rulePromptConfigOptions(moduleDir),
   })
   assert.deepEqual(rules.map(rule => rule.id).sort(), [
     'soul-check', 'soul-core', 'soul-core-sub', 'soul-echo', 'soul-layers', 'soul-ledger',
@@ -73,7 +73,7 @@ test('soul完整模块初始化后可用SELF策略与授权检索，默认维护
   refreshSoulSelf(dir, { state: 'ready', files: 2, sessions: 1, events: 3 }, { expectedRevision: null })
   const source = loadModuleSpec(dir)
   const compiled = compileRules(source.rules, { moduleId: source.id, variables: source.variables,
-    promptConfigOptions: rulePromptConfigOptions(dir, source.moduleConfigs['rule-engine'].strategyDir) })
+    promptConfigOptions: rulePromptConfigOptions(dir) })
   const self = compiled.find(rule => rule.id === 'soul-self').actions[0].compiledConfig
   const resolver = await self.resolve({ ctx: { get: name => name === 'promptToolSoulSelf' ? { render: (_moduleId, agent, signal) => renderSoulSelf(dir, agent, signal) } : undefined }, agent: { session: { id: 'actual-session', header: {} } } })
   assert.match(resolver.text, /actual-session/)

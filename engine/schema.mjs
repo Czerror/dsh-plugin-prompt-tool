@@ -198,7 +198,7 @@ export const KNOWN_MODEL_SCOPES = new Set(['all', 'pro', 'flash'])
  * 自定义策略或模板 patch 的角色仍由 executor 在出口校验，避免写出非法事件。
  */
 export const KNOWN_ROLES = new Set(['user'])
-export const KNOWN_FILLS = new Set(['instruction-hint', 'env-facts', 'skill-catalog', 'tool-catalog'])
+export const KNOWN_FILLS = new Set(['instruction-hint', 'env-facts', 'skill-catalog', 'tool-catalog', 'soul-self'])
 
 /** 层能力矩阵：每个字段只在对应注入层生效。客户端表单据此动态渲染。 */
 export const LAYER_FIELD_POLICIES = Object.fromEntries(
