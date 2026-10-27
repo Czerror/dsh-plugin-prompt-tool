@@ -38,7 +38,7 @@ test('随包模块：目录名即定义 id、name 非空，定义通过引擎权
     // 只 parseYaml 会漏掉引擎侧不变量（真踩过：同规则内两个分支动作重名，YAML 合法、引擎拒绝）。
     assert.doesNotThrow(() => compileRules(spec.rules ?? [], {
       configOrder: spec.configOrder ?? {},
-      promptConfigOptions: rulePromptConfigOptions(join(repoRoot, 'modules', id)),
+      promptConfigOptions: rulePromptConfigOptions(join(repoRoot, 'modules', id), spec.moduleConfigs?.['rule-engine']?.strategyDir),
     }), `${id}: rules 必须被引擎接受`)
   }
 })

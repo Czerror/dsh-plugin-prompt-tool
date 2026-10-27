@@ -32,6 +32,7 @@ export function readModuleFile(moduleDir: string, path: string): ModuleFileConte
  * data/ 目录缺失时只建这一级；单次 1 MiB、账本文件 8 MiB。
  */
 export function appendModuleLine(moduleDir: string, path: string, line: string): void {
+  if (['data/02-soul.jsonl', 'data/02-墨.jsonl'].includes(path.normalize('NFC').toLowerCase())) throw new Error('账本只能通过 soul_ledger 追加，不能使用通用文件接口')
   if (typeof line !== 'string') throw new TypeError('追加内容必须是字符串')
   const isMemory = path === 'memory.md'
   if (!isMemory && !path.startsWith('data/')) {

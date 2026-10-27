@@ -6,7 +6,7 @@
  * createRequire(process.argv[1]) 解析会得到 Cannot find module '@deepseek-ai/dsh-tools'。
  * 入口先取 realpath，再回退原路径与引擎自身，两种安装形态都能解析到同一份宿主依赖。
  */
-import { realpathSync } from 'node:fs'
+import { readFileSync, realpathSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
@@ -48,4 +48,20 @@ export function resolveHostPackage(id, entry, self) {
 /** 动态 import 宿主侧包，返回其命名空间。 */
 export async function importHostPackage(id, entry, self) {
   return import(pathToFileURL(resolveHostPackage(id, entry, self)).href)
+}
+
+/** 按用户选择不随插件安装；启用时必须由宿主提供的已验证能力。 */
+export const HOST_CAPABILITY_VERSIONS = Object.freeze({
+  '@deepseek-ai/dsh-compaction-basic': '0.2.1-alpha.2',
+  '@deepseek-ai/dsh-compaction-tool-result-pruner': '0.2.1-alpha.2',
+  '@deepseek-ai/dsh-compaction': '0.2.1-alpha.2',
+  '@deepseek-ai/dsh-llm': '0.2.1-alpha.2',
+})
+
+export async function importHostCapability(id) {
+  if (!Object.hasOwn(HOST_CAPABILITY_VERSIONS, id)) throw new Error(`host capability not declared: ${id}`)
+  const manifestPath = resolveHostPackage(id + '/package.json')
+  const version = JSON.parse(readFileSync(manifestPath, 'utf8')).version
+  if (version !== HOST_CAPABILITY_VERSIONS[id]) throw new Error(`host capability ${id}: expected ${HOST_CAPABILITY_VERSIONS[id]}, got ${version}`)
+  return importHostPackage(id)
 }

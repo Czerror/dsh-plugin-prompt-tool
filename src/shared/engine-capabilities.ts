@@ -12,6 +12,7 @@ export type ModuleSourceMode = 'explicit' | 'composition' | 'official' | 'unknow
 export const MODULE_TOOL_NAMES = {
   import: 'module_import', rulesRead: 'module_rules_read', rulesEdit: 'module_rules_edit',
   fileRead: 'module_file_read', fileAppend: 'module_file_append', manifest: 'module_manifest', variables: 'module_variables',
+  soulLedger: 'soul_ledger', search: 'module_search', open: 'module_open',
 } as const
 export const MODULE_TOOL_CAPABILITIES: Readonly<Record<string, string>> = {
   [MODULE_TOOL_NAMES.import]: 'module-import-tools',
@@ -19,6 +20,8 @@ export const MODULE_TOOL_CAPABILITIES: Readonly<Record<string, string>> = {
   [MODULE_TOOL_NAMES.fileRead]: 'module-file-tools', [MODULE_TOOL_NAMES.fileAppend]: 'module-file-tools',
   [MODULE_TOOL_NAMES.manifest]: 'module-manifest-tools',
   [MODULE_TOOL_NAMES.variables]: 'module-variable-tools',
+  [MODULE_TOOL_NAMES.soulLedger]: 'soul-ledger',
+  [MODULE_TOOL_NAMES.search]: 'retrieval', [MODULE_TOOL_NAMES.open]: 'retrieval',
 }
 
 /** 官方九个注入层：与 engine/schema.mjs 的 LAYER_ORDER 同源，改一处必须同步另一处。 */

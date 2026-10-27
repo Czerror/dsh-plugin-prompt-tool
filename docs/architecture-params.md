@@ -214,6 +214,16 @@ AGENTS.md/CLAUDE.md 及 local 变体属于用户文件。正文就地保存；�
 
 ## 模块归属与验证
 
+### Soul账本与派生快照
+
+`soul-ledger` 提供正式工具 `soul_ledger`，每次显式传 `moduleId`；`action: list` 可按 `type` 和 `limit` 读取，`action: append` 接收 `type` 与 `概要` 或旧 `text` 之一，以及可选 `ref`／`feel`。支持 lead、promise、fact、shelved、gain、loss、persona、container；作者和时间由真实执行会话与宿主生成，不接受调用方覆盖。lead 通过官方 `tools/pre-execute` 请求审批；promise 必须由最后一条 lead 的署名会话追加。读旧 text 时投影为概要，不重写原行。
+
+追加沿模块锁串行，账本总量 8 MiB、单字段 8 KiB；读取默认30条、最多100条和64 KiB输出。坏历史、链接、取消和超限都拒绝，不重置为新账本。通用 `module_file_append` 对 `data/02-soul.jsonl` 与旧名 `data/02-墨.jsonl`（含大小写变体）拒绝追加；显式用户数据导入仍按预览权限保留原件与目标冲突。
+
+用户骨架在 `data/SELF.src.md`，派生快照在 `data/.soul/SELF.md`。SELF owner 从骨架、账本摘要与检索状态计数生成快照，屏蔽已识别的凭据格式，预算默认12288字节；超限要求精简输入，不截掉未知数据后伪称完整。快照按字节版本检查并临时文件+rename，失败保留旧版。当前会话身份只由 custom 内容策略在每次求值时加入，不写入共享快照；未参与该 Agent 装配的模块不能读取该动态出口。缺骨架、缺快照、超限和服务缺失均有明确状态或错误。
+
+`generation-recovery` 额度保存在插件存储根的 `generation-recovery/<会话ID摘要>.json`，保存已消费 turn/step 身份及累计 used；锁内去重后原子替换，重挂与重启不清零，损坏文件拒绝重置。它不进入模块导出，也不修改会话日志。索引是可重建的派生内存状态，原账本与宿主日志仍为权威来源。
+
 | 所有者 | 文件 |
 |---|---|
 | 完整定义/切片 | host/module-slices.ts、module-rules.ts |

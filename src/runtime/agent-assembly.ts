@@ -14,7 +14,7 @@
  * 与官方挂载并存时不会重复：官方树里没有引擎行，引擎贡献只由本通道提供。
  */
 import { existsSync, unwatchFile, watchFile } from 'node:fs'
-import { basename, join, resolve, sep } from 'node:path'
+import { basename, dirname, join, resolve, sep } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import type { Context, Fiber, Plugin } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
@@ -37,6 +37,8 @@ import { createModuleVariableAdapter } from './module-variable-adapter.ts'
 import { planPersonaSections, type PersonaCapture, type PersonaModule, type PersonaPlan } from './persona-registration.ts'
 import { MODULE_TOOL_CAPABILITIES, OFFICIAL_RECIPE_ROWS, enabledRowIds } from '../shared/engine-capabilities.ts'
 import { enableTablePath, readGlobalLayerSettings } from '../host/config-store.ts'
+import { createGenerationRecoveryState } from '../host/generation-recovery-state.ts'
+import { contextRuntimeOf } from '../../engine/context-provenance.mjs'
 
 import { actionAudiences, compileRules, completeRuleSections } from '../../engine/rule-spec.mjs'
 import type { RuleAudience } from '../../engine/rule-spec.mjs'
@@ -132,7 +134,7 @@ function engineModuleFile(engineDir: string, id: string): string | undefined {
 
 export interface PreparedAssembly {
   rules: unknown[]
-  modules: Array<{ id: string; apply: (ctx: Context, config: Record<string, unknown>, options?: { agent: Agent }) => unknown; config: Record<string, unknown> }>
+  modules: Array<{ id: string; apply: (ctx: Context, config: Record<string, unknown>, options?: { agent: Agent; sourceModuleId: string; sourceModuleDir: string; recoveryState: ReturnType<typeof createGenerationRecoveryState>; contextRuntimeOf: typeof contextRuntimeOf }) => unknown; config: Record<string, unknown> }>
   services: Set<string>
   moduleId: string
   persona?: ModuleSpec['persona']
@@ -316,6 +318,7 @@ function duplicateDedupeIdentities(prepared: PreparedAssembly[]): DuplicateIdent
 
 export function createAgentAssembly(ctx: Context, options: AgentAssemblyOptions): AgentAssemblyRuntime {
   const variableStore = createModuleVariableAdapter(options.moduleRoot)
+  const recoveryState = createGenerationRecoveryState(join(dirname(options.moduleRoot), 'generation-recovery'))
   const ruleDiagnostics = createRuleDiagnosticsLedger()
   const mounts = new Map<string, { agent: Agent; fiber: { dispose(): Promise<void> | void }; prepared: PreparedAssembly[]; moduleIds: readonly string[]; stamp: string; content: string; plan: PersonaPlan }>()
   const knownAgents = new Set<Agent>()
@@ -456,13 +459,16 @@ export function createAgentAssembly(ctx: Context, options: AgentAssemblyOptions)
         const privateMounted = new Set<string>()
         for (const item of prepared) {
           for (const module of item.modules) {
-            if (PRIVATE_SERVICES[module.id] !== undefined) {
+            if (PRIVATE_SERVICES[module.id] !== undefined && module.id !== 'retrieval') {
               if (privateMounted.has(module.id)) continue
               privateMounted.add(module.id)
             }
             // 引擎入口既有同步也有 async：先 await 再判
             // disposer，否则 Promise 会被当成清理函数存下来，永不被调用。
-            const result: unknown = await module.apply(scopeCtx, module.config, { agent })
+            const result: unknown = await module.apply(scopeCtx, module.config, {
+              agent, sourceModuleId: item.moduleId,
+              sourceModuleDir: resolveModuleDir(item.moduleId, options.moduleRoot), recoveryState, contextRuntimeOf,
+            })
             if (typeof result === 'function') scopeCtx.effect(() => result as () => void, module.id)
           }
         }

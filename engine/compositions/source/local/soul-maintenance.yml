@@ -1,0 +1,9 @@
+# module: soul-maintenance
+- id: soul-maintenance
+  name: ./engine/soul-maintenance.mjs
+  config:
+    enabled: true
+    intervalMs: 60000
+    wake: false
+    audience: all
+    budgetBytes: 12288

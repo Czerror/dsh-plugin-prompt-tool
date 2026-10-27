@@ -21,6 +21,8 @@
 | `module-file-tools` | `module_file_read`、`module_file_append` | 模块私有文件：memory.md、assets/（只读）、data/（只追加） |
 | `module-manifest-tools` | `module_manifest` | `assets/manifest.yml` 的 next/check/apply，只写 data/、不覆盖 |
 | `module-import-tools` | `module_import` | 来源预览、选择、凭据和候选安装 |
+| `soul-ledger` | `soul_ledger` | 真实身份、主导资格与结构化追加 |
+| `retrieval` | `module_search`、`module_open` | 来源白名单、版本引用和原文回取 |
 | `tool-config-engine` | 模块声明的自定义工具 | 官方工具注册、执行和批准管线 |
 
 未声明的工具能力不注册。五个模块工具外壳通过 `ctx.inject` 等待各自 `pt-module-*` provider，贡献随 disposer 撤回。来源模块内的模板变量按该来源读写；模型工具目标由执行 Agent 的配装记录确定（只含已启用的规则模块；人设来源是人设卡的独立引用，可以指向未启用的模块，正文写入走 persona 端点），`expectedModuleId` 只校验，不选择任意模块或目录。模块规则正文要调模块工具时，必须把来源模块 id 写死（例如 `moduleId: soul`）；引擎不提供模块身份插值宏，模块复制或改名后需同步正文。
@@ -301,7 +303,33 @@ moduleConfigs:
 
 正常输出原样通过。触发时闭合开放的文本／推理块，完整流只产生一个 `stop` finish，并关闭上游迭代器。出现过工具调用的本次流保留原行为，即使工具块已经闭合也不截成 `stop`；开放未知块同样不强行闭合。辅助压缩与标题调用、其它会话和未选受众不参与检测。取消或释放后停止本项目检测，不把取消改成正常完成。
 
-当前能力只截断重复，不自动续跑、不处理空回合、不调用维护压缩；不会修改官方 preset、共享服务或 profile patch。阈值仍可能命中用户有意要求的重复文本，可在模块配置中调整或关闭。
+通用默认只截断。`silentReasoningChars`（默认0关闭）限制没有正文时的长推理，`recoverEmpty`（默认false）识别回合最后一步仅推理／空输出；前面出现过工具调用不会掩盖最后一步。流与结算沿官方 turn/step 形成同一候选，直到 durable turn/end 后才决定恢复，原流已有 terminal 不重复补发。
+
+`mainRecoveryLimit`／`subagentRecoveryLimit` 默认0，可设0–1000；非零才开启对应受众的自动恢复。额度按会话持久，重挂不清零，同一执行只能消费一次。扣额后等待 `whenIdle`，检查取消、卸载和是否已进入新turn，再发送非空纠正消息。额度耗尽或持久owner不可用明确报告，取消后迟到Promise不会唤醒。
+
+`maintenanceCompression` 默认false；开启时在同一上下文运行时做 idle 局部压缩。null表示无操作并停止此次恢复；失败默认停止，只有 `allowFullFallback: true` 才允许升级完整压缩，取消绝不升级。维护窗口只领取一次，恢复消息引用实际成功结果，失败与普通工具裁剪不推进成功压缩epoch。Soul模块显式选择主3／子1额度，维护压缩保持关闭。有意重复的文本仍可能命中检测，可调阈值或关闭。
+
+## 授权检索与来源引用
+
+`retrieval` 的 `paths` 声明模块相对文件或以 `/` 结尾的目录白名单，`sessions` 显式列出可读历史会话ID；当前Agent自己的会话自动可读，默认不扫描其它会话。目录枚举拒绝链接／越界，受现有资产数量和64 MiB预算约束。额外历史通过宿主只读句柄读取，成功或失败均关闭；异步返回前重验授权。
+
+search/open 工具只注册一次，多个来源模块按Agent聚合授权，释放来源即撤权。文件引用包含模块、路径、字节版本与字符范围；会话引用包含真实sessionId、实际seq数组、所选事件摘要与范围，不把非单调surface当连续seq区间。open重新校验授权与原文；追加新事件不使旧日志引用失效，修改已引用原文则拒绝。长原文按8192字符分页，返回nextReference；每种search引用均有对应open。派生索引只做增量读取，可清空重建，不写第二账本。
+
+## 上下文运行时与溯源
+
+`context-provenance` 行显式启用，受众为all/main/subagent；`basic` 与 `pruner` 分别传官方策略配置，`auto`、`modelSwitch`、`prune` 默认true。每个Agent只允许一个上下文owner。实例位于插件内部私有Context，原宿主provider保持运行；通过公开依赖快照识别其fiber，只为选中Agent过滤原自动监听，并为属性消费者选择本项目实现。手动命令、程序式范围、自动压力、换模型、请求溢出与裁剪共用选择，不改preset、patch或共享服务方法。显式 `ctx.get`、预先缓存的第三方实例与不经受管消费者的root调用不在属性路由保证内。
+
+摘要来源按实际message身份与surface位置匹配，保存每次调用的局部快照；门牌包含可open的真实seq列表，不按相同正文猜范围。门牌连同官方checkpoint framing计入shrink预算，预算不足或来源无法唯一识别时保留原摘要并告警。裁剪仅在本次新生成marker位置加引用，不替换原文中的同字面marker；引用放不下时保留官方裁剪并报告降级。
+
+Basic的范围接口只适用于打开的turn。idle程序式范围与恢复局部压缩经独立维护事务，使用公开Session事件和同一摘要／计价owner；范围验证、取消、版本与shrink检查通过才提交替换。手动compactNow直接复用官方维护入口，不嵌套维护。换模型使用目标 `EpochHeader.config` 计价，失败不提交目标路由；溢出仅在surface已实际推进时重试，次数由官方策略限制，取消不重试。
+
+可选官方包由 `importHostCapability` 在启用时从宿主解析，并按 `HOST_CAPABILITY_VERSIONS` 核对完整版本（当前0.2.1-alpha.2）；不随插件新增依赖。`verify:host` 只对这一显式入口允许已登记的宿主能力，普通静态／动态导入仍执行peer与dev双声明检查。真实官方行为在隔离环境验证，仓库回归测试覆盖公开适配器、流、写盘与拒绝契约。官方framing快照升级时须重新核验。
+
+## SELF维护心跳
+
+`soul-maintenance` 按来源模块只保留一个owner和一个定时器，维护串行，不因两个Agent或重挂并发写SELF。`intervalMs` 默认60000，`wake` 默认false，`audience` 默认all，`budgetBytes` 默认12288。每次先通过既有检索provider刷新授权索引，再CAS更新SELF；实际Agent的idle维护窗口提供用户取消信号，busy或失败保留旧快照，下次定时重试。
+
+显式wake才在维护成功退出后发送一次非空followup；取消、关闭、卸载或失去成员资格使迟到结果失效。心跳不改变恢复额度。provider状态区分disabled、idle、running、ready、failed和cancelled；上下文runtime状态区分ready、running、success、no-op、failed、cancelled和disabled。依赖缺失在装配时明确报错，保留上一份有效贡献。SELF缺失通过动态注入标记可见。
 
 ## 自定义工具与宿主契约
 

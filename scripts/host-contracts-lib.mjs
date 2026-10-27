@@ -4,6 +4,7 @@
 import { readFileSync } from 'node:fs'
 import semver from 'semver'
 import ts from 'typescript'
+import { HOST_CAPABILITY_VERSIONS } from '../engine/host-package.mjs'
 
 const manifest = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'))
 
@@ -108,9 +109,9 @@ export function moduleImportEdges(source, filename = 'source.ts') {
   const file = ts.createSourceFile(filename, source, ts.ScriptTarget.Latest, true)
   const constants = new Map()
   const edges = []
-  const add = (specifier, typeOnly) => {
+  const add = (specifier, typeOnly, hostCapability = false) => {
     if (typeof specifier !== 'string' || specifier.startsWith('.') || specifier.startsWith('/') || specifier.startsWith('node:')) return
-    edges.push({ name: packageNameOf(specifier), specifier, typeOnly })
+    edges.push({ name: packageNameOf(specifier), specifier, typeOnly, ...(hostCapability ? { hostCapability: true } : {}) })
   }
   const collectConstants = (node) => {
     if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && node.initializer && ts.isStringLiteralLike(node.initializer)) {
@@ -133,10 +134,11 @@ export function moduleImportEdges(source, filename = 'source.ts') {
     } else if (ts.isImportTypeNode(node) && ts.isLiteralTypeNode(node.argument) && ts.isStringLiteralLike(node.argument.literal)) {
       add(node.argument.literal.text, true)
     } else if (ts.isCallExpression(node) && (node.expression.kind === ts.SyntaxKind.ImportKeyword
-      || (ts.isIdentifier(node.expression) && ['require', 'importHostPackage'].includes(node.expression.text)))) {
+      || (ts.isIdentifier(node.expression) && ['require', 'importHostPackage', 'importHostCapability'].includes(node.expression.text)))) {
       const argument = node.arguments[0]
-      if (argument && ts.isStringLiteralLike(argument)) add(argument.text, false)
-      else if (argument && ts.isIdentifier(argument)) add(constants.get(argument.text), false)
+      const hostCapability = ts.isIdentifier(node.expression) && node.expression.text === 'importHostCapability'
+      if (argument && ts.isStringLiteralLike(argument)) add(argument.text, false, hostCapability)
+      else if (argument && ts.isIdentifier(argument)) add(constants.get(argument.text), false, hostCapability)
     }
     ts.forEachChild(node, visit)
   }
@@ -157,6 +159,8 @@ export function officialImports(source) {
 export function importContractProblems(edge, client, selectedManifest = manifest) {
   if (!edge.name.startsWith(OFFICIAL_SCOPE)) return []
   const { name, specifier, typeOnly } = edge
+  if (edge.hostCapability && !client && !typeOnly) return Object.hasOwn(HOST_CAPABILITY_VERSIONS, name) ? []
+    : [`${specifier}: 未登记的可选宿主能力；不能绕过依赖声明`]
   const dev = selectedManifest.devDependencies?.[name]
   if (client || typeOnly) {
     const problems = dev === undefined ? [`${specifier}: 类型或浏览器输入缺少 devDependencies 声明`] : []

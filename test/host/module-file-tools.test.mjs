@@ -45,14 +45,14 @@ test('模块文件工具：读三处根、缺失为空、追加文本与 JSON �
   assert.deepEqual(await read.execute({ moduleId: 'alice', path: 'memory.md' }, {}),
     { path: 'memory.md', content: 'UPDATED MEMORY', bytes: 14 }, '每次读最新内容')
 
-  await append.execute({ moduleId: 'alice', path: 'data/02-墨.jsonl', entry: { type: 'fact', text: 'a' } }, {})
-  await append.execute({ moduleId: 'alice', path: 'data/02-墨.jsonl', entry: { type: 'gain', text: 'b' } }, {})
-  const lines = readFileSync(join(f.dir, 'data', '02-墨.jsonl'), 'utf8').trim().split('\n')
+  await append.execute({ moduleId: 'alice', path: 'data/events.jsonl', entry: { type: 'fact', text: 'a' } }, {})
+  await append.execute({ moduleId: 'alice', path: 'data/events.jsonl', entry: { type: 'gain', text: 'b' } }, {})
+  const lines = readFileSync(join(f.dir, 'data', 'events.jsonl'), 'utf8').trim().split('\n')
   assert.equal(lines.length, 2, 'entry 一次一行')
   assert.deepEqual(JSON.parse(lines[0]), { type: 'fact', text: 'a' })
   assert.deepEqual(JSON.parse(lines[1]), { type: 'gain', text: 'b' })
-  assert.deepEqual(await read.execute({ moduleId: 'alice', path: 'data/02-墨.jsonl' }, {}),
-    { path: 'data/02-墨.jsonl', content: '{"type":"fact","text":"a"}\n{"type":"gain","text":"b"}\n', bytes: Buffer.byteLength('{"type":"fact","text":"a"}\n{"type":"gain","text":"b"}\n') })
+  assert.deepEqual(await read.execute({ moduleId: 'alice', path: 'data/events.jsonl' }, {}),
+    { path: 'data/events.jsonl', content: '{"type":"fact","text":"a"}\n{"type":"gain","text":"b"}\n', bytes: Buffer.byteLength('{"type":"fact","text":"a"}\n{"type":"gain","text":"b"}\n') })
 
   assert.deepEqual(await append.execute({ moduleId: 'alice', path: 'memory.md', content: '   ' }, {}), { appended: false, path: 'memory.md' })
   assert.equal(readFileSync(join(f.dir, 'memory.md'), 'utf8'), 'UPDATED MEMORY', '空白不写')

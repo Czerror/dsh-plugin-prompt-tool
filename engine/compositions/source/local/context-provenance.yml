@@ -1,0 +1,9 @@
+- id: context-provenance
+  name: ./engine/context-provenance.mjs
+  config:
+    enabled: true
+    audience: all
+    auto: true
+    modelSwitch: true
+    prune: true
+    recoveryRetainTokens: 1024

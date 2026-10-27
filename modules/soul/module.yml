@@ -1,11 +1,11 @@
 # 灵魂架构（推送层 + 判据 + 按需条目 + 状态规则）
-# 工具面由本项目通用能力提供：module_file_read/append 读写模块私有文件，module_manifest 执行 assets/manifest.yml，module_variables 读写状态；不提供 soul 专属工具。
+# 工具面复用本项目能力：soul_ledger 写账本，module_search/open 回取，module_file_read/append 处理其它私有文件。
 # 正文放 assets/，用 templateFile 引用；运行源是本模块，soul 仓库是作者稿。
 id: soul
 name: 灵魂架构（判据与推送）
 version: 1.0.0
 engineCompat: ">=0.7.2"
-description: 灵魂架构模块（资产 + 规则）：常驻四条判据与子代理硬线，按需注入五层/ECHO/VITAL/账本，压缩后与每 12 轮各提醒一次；工具由项目内置引擎提供，本模块分发规则、资产与装配清单。原项目：https://github.com/cyanwell/dsh-agent-soul
+description: 灵魂架构完整核心：判据、结构化账本、授权检索、动态 SELF、上下文溯源、生成恢复与默认不唤醒的维护心跳；能力按 Agent 运行时装配，不依赖预设改装。原项目：https://github.com/cyanwell/dsh-agent-soul
 meta:
   source: manual
 modules:
@@ -13,6 +13,54 @@ modules:
   - module-file-tools
   - module-manifest-tools
   - module-variable-tools
+  - soul-ledger
+  - retrieval
+  - context-provenance
+  - generation-recovery
+  - soul-maintenance
+moduleConfigs:
+  rule-engine:
+    strategyDir: ./assets/strategies/
+  retrieval:
+    enabled: true
+    paths:
+      - data/02-soul.jsonl
+      - data/SELF.src.md
+      - data/AGENTS.md
+      - data/10-宪章/
+      - data/20-档案/
+      - data/30-状态/
+      - data/40-产物索引/
+      - data/50-日记/
+      - data/60-工具/
+      - data/65-声音/
+      - data/70-收到/
+      - data/75-形象/
+      - data/80-科普/
+      - data/90-历代根会话/
+    sessions: []
+  context-provenance:
+    enabled: true
+    audience: all
+    auto: true
+    modelSwitch: true
+    prune: true
+    basic: {}
+  generation-recovery:
+    enabled: true
+    audience: all
+    recoverEmpty: true
+    silentReasoningChars: 32768
+    mainRecoveryLimit: 3
+    subagentRecoveryLimit: 1
+    maintenanceCompression: false
+    allowFullFallback: false
+  soul-maintenance:
+    enabled: true
+    intervalMs: 60000
+    wake: false
+    audience: all
+    budgetBytes: 12288
 order: 10
 variables:
   # 状态键由本模块声明；引擎只按普通模块变量处理，不认 soul 前缀。
@@ -44,6 +92,21 @@ rules:
           params:
             contextName: agent:soul-core
           templateFile: ./assets/criteria.md
+
+  - id: soul-self
+    name: SELF（每步动态身份）
+    enabled: true
+    layer: runtime-context
+    then:
+      - id: inject
+        kind: inject-text
+        config:
+          strategy: self
+          layer: runtime-context
+          order: 133
+          params:
+            contextName: agent:soul-self
+            service: promptToolSoulSelf
 
   - id: soul-core-sub
     name: 子代理硬线
@@ -307,5 +370,7 @@ rules:
           role: user
           text: |-
             账本还有未结事项：回复里逐条收口，或说清为什么先放着。
-            需要追加时用 module_file_append（moduleId: soul，path: data/02-soul.jsonl，entry: {...}），
+            先用 soul_ledger（moduleId: soul，action: list）核对原始未结记录；
+            需要追加时用 soul_ledger（moduleId: soul，action: append，type: fact/shelved/promise，概要: 一句话，ref: 出处），
+            作者和时间由宿主提供，promise 只允许最后 lead 署名的主导会话；lead 需用户指定并经审批。
             只往后加，不改旧行；收口后把 ledger_open 减到 0。

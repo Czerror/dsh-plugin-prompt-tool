@@ -110,6 +110,8 @@ persona:
 | module-file-tools | module_file_read / module_file_append |
 | module-manifest-tools | module_manifest |
 | module-import-tools | module_import |
+| soul-ledger | soul_ledger |
+| retrieval | module_search / module_open |
 | tool-config-engine | customTools 中的实际工具 |
 
 完整规则工具先读原始树与版本，再提交合法完整候选；删除整规则需显式 rule:null。变量工具提供 global/module 的 list/get/set/delete，set 必须显式字符串。模块私有文件（memory.md、assets/ 只读、data/ 只追加）由 module_file_read/append 读写，不自动注入；module_manifest 按 assets/manifest.yml 做 next/check/apply，只写 data/、不覆盖。
@@ -128,7 +130,13 @@ outlet/vectorized/triggers 不能等价执行，相关规则禁用并报告；�
 
 书房数据通过 `/prompt-tool data-import <JSON>` 显式导入。先指定 `moduleId`、来源书房根 `sourceDirectory` 和相对文件列表 `paths`，预览创建、跳过与冲突项；确认后在相同 JSON 中加上返回的 `expectedRevision`（值取预览的 `revision`）应用。只补缺失文件，冲突项保留目标，源文件不动；旧 `02-墨.jsonl` 映射到 `data/02-soul.jsonl`。新建书房用 `{"moduleId":"soul","initialize":true}` 预览模块自己的清单，也须带预览版本应用。完整例子与限制见 [数据导入](docs/architecture-params.md#书房数据预览与导入)。
 
-可选能力 `generation-recovery` 可按主会话或子代理受众截断正文、推理中的连续精确重复，当前只结束这次输出，不自动续跑。声明方式、阈值及工具调用保护见 [重复输出截断](docs/engine-reuse.md#重复输出安全截断)。
+Soul 模块包含结构化账本、授权文件／历史检索、每步动态 SELF、上下文压缩与裁剪溯源、生成恢复和维护心跳。先用上述初始化预览补齐 `SELF.src.md` 骨架；已有模块副本须显式更新，包升级不会覆盖用户定义或私有数据。
+
+`soul_ledger` 自动署名真实会话，`lead` 需宿主审批，只有最后主导会话可追加 `promise`；通用文件追加拒绝新旧账本名。`module_search` 返回的引用交给 `module_open` 回取，历史会话只读取声明的白名单。SELF 的当前身份在每步读取时加入，维护默认每分钟只更新索引与快照，`wake` 独立且默认关闭。
+
+`generation-recovery` 的通用默认只截断；Soul 显式启用空回合检测和有界恢复，主会话额度 3、子代理 1，每会话独立且重挂不清零。维护压缩和扩大范围默认关闭。配置与边界见 [引擎运行时](docs/engine-reuse.md#重复输出安全截断)、[账本与SELF](docs/architecture-params.md#soul账本与派生快照)。
+
+上下文能力从 DSH 自带包解析，不增加插件依赖；当前核验版本为官方 `0.2.1-alpha.2`。缺包或版本不同会明确拒绝该能力装配。包代码更新需要用户重启 DSH 加载；加载后修改模块启停／参数沿运行时刷新，不改官方 preset 或 profile patch。
 
 ## 升级与旧格式
 

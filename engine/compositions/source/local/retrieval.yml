@@ -1,0 +1,7 @@
+# module: retrieval
+- id: retrieval
+  name: ./engine/retrieval.mjs
+  config:
+    enabled: true
+    paths: []
+    sessions: []
