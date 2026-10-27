@@ -282,6 +282,27 @@ tool-catalog 使用普通只读变量插值；`templateEvaluation: true` 在编�
 
 `mode` 是兼容默认；可选 `mainMode` / `subagentMode` 分别覆盖主会话和子代理，省略仍继承 `mode`。配装通过引擎 `apply(ctx, config, { agent })` 传入真实 Agent，`present-as` 复用 `isDelegated(agent.session)` 选择模式，不从 Context 或页面状态猜测身份，也不修改共享配置。刷新为各 Agent 重挂独立贡献，压缩不改变受众，释放后恢复宿主默认。
 
+## 重复输出安全截断
+
+`generation-recovery` 是显式选用的本地能力行，通过既有 Agent 装配与 `llm/stream` 接缝工作。模块可这样声明：
+
+```yaml
+modules: [generation-recovery]
+moduleConfigs:
+  generation-recovery:
+    enabled: true
+    audience: all
+    textRepeatChars: 4096
+    reasoningRepeatChars: 8192
+    maxCycleChars: 256
+```
+
+`audience` 可为 `all`、`main`、`subagent`，缺省为 `all`。正文和推理各自检测连续精确重复：至少三个完整周期，并达到各自字符阈值才截断。阈值最小为 3；周期上限默认 256，允许 1–1024 个 Unicode 字符。检测按字符推进，大 delta 内达到阈值就切到该处，不依赖提供方如何分块。引擎直接调用的 `enabled` 缺省关闭，选择组合行后由该行显式开启。
+
+正常输出原样通过。触发时闭合开放的文本／推理块，完整流只产生一个 `stop` finish，并关闭上游迭代器。出现过工具调用的本次流保留原行为，即使工具块已经闭合也不截成 `stop`；开放未知块同样不强行闭合。辅助压缩与标题调用、其它会话和未选受众不参与检测。取消或释放后停止本项目检测，不把取消改成正常完成。
+
+当前能力只截断重复，不自动续跑、不处理空回合、不调用维护压缩；不会修改官方 preset、共享服务或 profile patch。阈值仍可能命中用户有意要求的重复文本，可在模块配置中调整或关闭。
+
 ## 自定义工具与宿主契约
 
 工具通过已安装 `@deepseek-ai/dsh-tools` 的 defineTool/官方转换器定义，使用真实 ToolExecution 的 agent、signal、调用身份；异步工作观察或转发 caller-owned signal。delegate 走 `ctx.tools.execute`，保留批准、拒绝和取消管线。

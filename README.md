@@ -124,7 +124,11 @@ ST JSON 预设、PNG/JSON 角色卡和独立世界书，经统一预览/确认/�
 
 outlet/vectorized/triggers 不能等价执行，相关规则禁用并报告；角色过滤、自动化、深度插入、预算、群聊和脚本都有明确限制。完整映射及报告边界见 [SillyTavern 导入](docs/SillyTavern.md)。
 
-模块导出分享完整定义和允许的附件，不分享全局变量或私有 memory.md。旧私有记忆标记必须显式处理，不靠删除标记继续导出。路径、链接、体积、覆盖和备份边界见 [资产交换](docs/asset-transfer.md)。
+模块导出分享完整定义和允许的附件，不分享全局变量、私有 memory.md 或 data/。旧私有记忆标记必须显式处理，不靠删除标记继续导出。路径、链接、体积、覆盖和备份边界见 [资产交换](docs/asset-transfer.md)。
+
+书房数据通过 `/prompt-tool data-import <JSON>` 显式导入。先指定 `moduleId`、来源书房根 `sourceDirectory` 和相对文件列表 `paths`，预览创建、跳过与冲突项；确认后在相同 JSON 中加上返回的 `expectedRevision`（值取预览的 `revision`）应用。只补缺失文件，冲突项保留目标，源文件不动；旧 `02-墨.jsonl` 映射到 `data/02-soul.jsonl`。新建书房用 `{"moduleId":"soul","initialize":true}` 预览模块自己的清单，也须带预览版本应用。完整例子与限制见 [数据导入](docs/architecture-params.md#书房数据预览与导入)。
+
+可选能力 `generation-recovery` 可按主会话或子代理受众截断正文、推理中的连续精确重复，当前只结束这次输出，不自动续跑。声明方式、阈值及工具调用保护见 [重复输出截断](docs/engine-reuse.md#重复输出安全截断)。
 
 ## 升级与旧格式
 

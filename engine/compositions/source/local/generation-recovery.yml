@@ -1,0 +1,10 @@
+# module: generation-recovery
+# 精确重复安全截断；不自动续跑，不处理压缩或标题等辅助模型调用。
+- id: generation-recovery
+  name: ./engine/generation-recovery.mjs
+  config:
+    enabled: true
+    audience: all
+    textRepeatChars: 4096
+    reasoningRepeatChars: 8192
+    maxCycleChars: 256

@@ -24,7 +24,7 @@ function stringList(value: unknown, label: string): string[] {
   return value as string[]
 }
 
-function parseManifest(moduleDir: string): Manifest {
+export function readModuleManifest(moduleDir: string): Manifest {
   const file = resolveModuleFilePath(moduleDir, MANIFEST_PATH, ['assets'])
   if (!modulePathExists(file)) throw new Error('模块缺少 assets/manifest.yml')
   const doc = parseDocument(readFileSync(file, 'utf8'), { logLevel: 'silent' })
@@ -140,7 +140,7 @@ export interface ManifestResult {
  * shortcut: 装配无锁且逐文件写入，并发调用可能留下部分结果；等需要回滚或并发保证时升级成事务。
  */
 export function runModuleManifest(moduleDir: string, action: ManifestAction): ManifestResult {
-  const manifest = parseManifest(moduleDir)
+  const manifest = readModuleManifest(moduleDir)
   if (action === 'next') {
     const entry = nextEntry(moduleDir, manifest)
     return { action, ok: entry === null, entries: entry === null ? [] : [{ kind: entry.kind, path: entry.path }] }
