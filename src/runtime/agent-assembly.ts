@@ -416,7 +416,13 @@ export function createAgentAssembly(ctx: Context, options: AgentAssemblyOptions)
   const mount = async (agent: Agent, prepared: PreparedAssembly[], plan: PersonaPlan, duplicateIdentities: DuplicateIdentity[] = [], stamp = '', content = ''): Promise<void> => {
     // 宿主能力取并集；模块身份独立保留，提示词配置在各自插入点按持久序号执行。
     const services = new Set<string>()
-    for (const item of prepared) for (const name of item.services) services.add(name)
+    for (const item of prepared) for (const name of item.services) {
+      // Cordis 缺依赖的 fiber await 不抛错；旧候选也必须重新检查，避免全体停在 pending。
+      if (agent.ctx.get(name) === undefined) {
+        throw Object.assign(new Error(`模块 ${item.moduleId} 挂载所需宿主能力不可用：${name}`), { sourceModuleId: item.moduleId })
+      }
+      services.add(name)
+    }
     const personaActive = plan.sections.length > 0 || plan.suppressRuntimeContext
     if (personaActive) services.add('systemPrompt')
     const fiber = agent.ctx.plugin({
@@ -456,21 +462,33 @@ export function createAgentAssembly(ctx: Context, options: AgentAssemblyOptions)
             return rollback
           }, 'prompt-tool persona')
         }
-        const privateMounted = new Set<string>()
+        const applyCapability = async (capabilityCtx: Context, item: PreparedAssembly, module: PreparedAssembly['modules'][number]): Promise<void> => {
+          const result: unknown = await module.apply(capabilityCtx, module.config, {
+            agent, sourceModuleId: item.moduleId,
+            sourceModuleDir: resolveModuleDir(item.moduleId, options.moduleRoot), recoveryState, contextRuntimeOf,
+          })
+          if (typeof result === 'function') capabilityCtx.effect(() => result as () => void, module.id)
+        }
         for (const item of prepared) {
-          for (const module of item.modules) {
-            if (PRIVATE_SERVICES[module.id] !== undefined && module.id !== 'retrieval') {
-              if (privateMounted.has(module.id)) continue
-              privateMounted.add(module.id)
-            }
-            // 引擎入口既有同步也有 async：先 await 再判
-            // disposer，否则 Promise 会被当成清理函数存下来，永不被调用。
-            const result: unknown = await module.apply(scopeCtx, module.config, {
-              agent, sourceModuleId: item.moduleId,
-              sourceModuleDir: resolveModuleDir(item.moduleId, options.moduleRoot), recoveryState, contextRuntimeOf,
-            })
-            if (typeof result === 'function') scopeCtx.effect(() => result as () => void, module.id)
+          const capabilities = item.modules.filter(module => PRIVATE_SERVICES[module.id] === undefined || module.id === 'retrieval')
+          if (capabilities.length === 0) continue
+          const child = scopeCtx.plugin({
+            name: `prompt-tool-module:${item.moduleId}`,
+            apply: async (moduleCtx: Context) => {
+              for (const module of capabilities) await applyCapability(moduleCtx, item, module)
+            },
+          })
+          try { await child }
+          catch (error) {
+            await child.dispose()
+            throw Object.assign(new Error(`模块 ${item.moduleId} 挂载失败：${failureReason(error)}`, { cause: error }), { sourceModuleId: item.moduleId })
           }
+        }
+        const privateMounted = new Set<string>()
+        for (const item of prepared) for (const module of item.modules) {
+          if (PRIVATE_SERVICES[module.id] === undefined || module.id === 'retrieval' || privateMounted.has(module.id)) continue
+          await applyCapability(scopeCtx, item, module)
+          privateMounted.add(module.id)
         }
       },
     })
@@ -494,11 +512,17 @@ export function createAgentAssembly(ctx: Context, options: AgentAssemblyOptions)
   // 每请求只 stat 源文件；戳变时再算内容签名（剔除变量值），变量自增不触发重挂。
   const assemblyStamp = (ids: readonly string[], personas: readonly PersonaModule[] | undefined): string =>
     JSON.stringify(personas) + readModulesRevision(options.moduleRoot, ids)
-  const contentSignature = (ids: readonly string[], personas: readonly PersonaModule[] | undefined): string => JSON.stringify([
+  const contentSignature = (ids: readonly string[], personas: readonly PersonaModule[] | undefined, previous = ''): string => JSON.stringify([
     ids.map(id => {
-      const { variables: _variables, ...definition } = loadModuleSpec(assertModuleDirectory(options.moduleRoot, id))
-      // 变量值在求值时读取；自增不能让下一步重新注册规则。
-      return [id, definition]
+      try {
+        const { variables: _variables, ...definition } = loadModuleSpec(assertModuleDirectory(options.moduleRoot, id))
+        // 变量值在求值时读取；自增不能让下一步重新注册规则。
+        return [id, definition]
+      } catch (error) {
+        warnOnce(`模块 ${id} 读取失败：${failureReason(error)}`)
+        const old = previous === '' ? undefined : (JSON.parse(previous)[0] as Array<[string, unknown]>).find(entry => entry[0] === id)
+        return old ?? [id, { readError: failureReason(error) }]
+      }
     }),
     personas,
   ])
@@ -513,35 +537,46 @@ export function createAgentAssembly(ctx: Context, options: AgentAssemblyOptions)
     }
   }
   const replace = async (targets: readonly Agent[]): Promise<void> => {
+    // 部署配置属于整份装配，读取失败不能伪装成每个模块各自失败。
+    readGlobalLayerSettings(options.moduleRoot)
     const ids = [...options.enabledModules()]
     const personaModules = options.personaModules?.()
     watchSources(ids, personaModules)
     const live = targets.filter(agent => active && !disposed.has(agent))
-    const prepared: PreparedAssembly[] = []
-    for (const id of ids) prepared.push(await prepareAssembly(options.moduleRoot, id, name => live.every(agent => agent.ctx.get(name) !== undefined)))
+    const failures: Error[] = []
+    const candidates = []
+    for (const agent of live) {
+      const previous = mounts.get(agent.id)
+      const prepared: PreparedAssembly[] = []
+      for (const id of ids) {
+        try { prepared.push(await prepareAssembly(options.moduleRoot, id, name => agent.ctx.get(name) !== undefined)) }
+        catch (error) {
+          failures.push(new Error(`模块 ${id}（Agent ${agent.id}）准备失败：${failureReason(error)}`, { cause: error }))
+          const fallback = previous?.prepared.find(item => item.moduleId === id)
+          if (fallback !== undefined) prepared.push(fallback)
+        }
+      }
+      candidates.push({ agent, prepared, previous })
+    }
     // 签名必须在 prepare 之后算：重切规则切片会写文件，先算会让戳立即过期。
     const stamp = assemblyStamp(ids, personaModules)
-    const content = contentSignature(ids, personaModules)
-    for (const item of prepared) {
+    for (const item of candidates.flatMap(candidate => candidate.prepared)) {
       for (const id of item.skippedOfficialRows) {
         warnOnce(`模块 ${item.moduleId} 声明官方 recipe 行 ${id}；该行只能由会话原有预设提供，本插件不挂载官方包`)
       }
     }
-    const candidates = live.map(agent => ({ agent, prepared, previous: mounts.get(agent.id) }))
     if (!active) return
-    const effectivePersonas = personaModules ?? prepared
     if (options.personaModules !== undefined) await readPersonaKnowledge()
-    const sections = { main: completeSectionsOf(prepared, 'main'), subagent: completeSectionsOf(prepared, 'subagent') }
-    for (const [audience, complete] of Object.entries(sections)) {
-      if (complete.length > 1) throw new Error(`${audience} 有多个生效 complete 段：${complete.join('、')}`)
-    }
-    // 人设候选与独占冲突必须在撤旧之前算清：坏候选、同受众双 complete 都在这里拒绝。
-    const appendModules = {
-      main: prepared.filter(item => hasSectionAppend(item.rules, 'main')).map(item => item.moduleId),
-      subagent: prepared.filter(item => hasSectionAppend(item.rules, 'subagent')).map(item => item.moduleId),
-    }
-    const plans = candidates.map(({ agent }) => {
-      const plan = personaPlanFor(agent, effectivePersonas)
+    const planFor = (agent: Agent, prepared: PreparedAssembly[]): PersonaPlan => {
+      const sections = { main: completeSectionsOf(prepared, 'main'), subagent: completeSectionsOf(prepared, 'subagent') }
+      for (const [audience, complete] of Object.entries(sections)) {
+        if (complete.length > 1) throw new Error(`${audience} 有多个生效 complete 段：${complete.join('、')}`)
+      }
+      const appendModules = {
+        main: prepared.filter(item => hasSectionAppend(item.rules, 'main')).map(item => item.moduleId),
+        subagent: prepared.filter(item => hasSectionAppend(item.rules, 'subagent')).map(item => item.moduleId),
+      }
+      const plan = personaPlanFor(agent, personaModules ?? prepared)
       const audience = isDelegated(agent.session) ? 'subagent' : 'main'
       const plannedPrefix = plan.sections.find(section => section.name === PERSONA_PREFIX_SECTION)
       // 已捕获的同层 preset persona complete 只在没有被本插件人设覆盖时生效。
@@ -557,14 +592,31 @@ export function createAgentAssembly(ctx: Context, options: AgentAssemblyOptions)
         throw new Error(`Agent ${agent.id} 的 ${audience} 同时声明了 sections.append（${appendModules[audience].join('、')}）与 complete；请在同一受众二选一`)
       }
       return plan
-    })
+    }
+    // 跨来源冲突仍在撤旧之前拒绝，不替用户选择赢家。
+    const plans = candidates.map(({ agent, prepared }) => planFor(agent, prepared))
     const changed: typeof candidates = []
     try {
       for (const [index, candidate] of candidates.entries()) {
         if (!active || disposed.has(candidate.agent)) continue
         changed.push(candidate)
         await release(candidate.agent.id)
-        await mount(candidate.agent, candidate.prepared, plans[index] as PersonaPlan, duplicateDedupeIdentities(candidate.prepared), stamp, content)
+        const content = contentSignature(ids, personaModules, candidate.previous?.content)
+        let plan = plans[index] as PersonaPlan
+        while (true) {
+          try {
+            await mount(candidate.agent, candidate.prepared, plan, duplicateDedupeIdentities(candidate.prepared), stamp, content)
+            break
+          } catch (error) {
+            const id = error !== null && typeof error === 'object' && 'sourceModuleId' in error ? error.sourceModuleId : undefined
+            const failed = candidate.prepared.find(item => item.moduleId === id)
+            if (failed === undefined) throw error
+            failures.push(new Error(`模块 ${failed.moduleId}（Agent ${candidate.agent.id}）发布失败：${failureReason(error)}`, { cause: error }))
+            const fallback = candidate.previous?.prepared.find(item => item.moduleId === id)
+            candidate.prepared = candidate.prepared.flatMap(item => item !== failed ? [item] : fallback !== undefined && fallback !== failed ? [fallback] : [])
+            plan = planFor(candidate.agent, candidate.prepared)
+          }
+        }
       }
     } catch (error) {
       const restoreErrors: unknown[] = []
@@ -581,6 +633,7 @@ export function createAgentAssembly(ctx: Context, options: AgentAssemblyOptions)
       }
       throw error
     }
+    if (failures.length > 0) throw new AggregateError(failures, failures.map(failureReason).join('；'))
   }
   const install = async (agent: Agent): Promise<void> => {
     knownAgents.add(agent)
@@ -599,7 +652,7 @@ export function createAgentAssembly(ctx: Context, options: AgentAssemblyOptions)
       const current = mounts.get(agent.id)
       if (current?.stamp !== stamp) {
         // 只改变量时戳变、内容签名不变：更新戳即可，不撤装重挂。
-        if (current?.content === contentSignature(ids, personas)) current.stamp = stamp
+        if (current?.content === contentSignature(ids, personas, current?.content)) current.stamp = stamp
         else await replace([agent])
       }
       lastReadError = undefined

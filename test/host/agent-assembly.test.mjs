@@ -806,6 +806,47 @@ test('端到端：真实装配下「注入 → 压缩 → 再判」按当前上�
   assert.deepEqual(texts(after), ['USER', 'E2E-NOTICE'])
 })
 
+test('首次装配跳过坏模块，健康模块在主子会话继续注入，修复后恢复且释放干净', async (t) => {
+  const write = (id, text, strategy = 'static') => writeModuleFixture(id, {
+    modules: ['rule-engine'], promptConfigs: [{ id, text, strategy, position: 'after-user' }],
+  })
+  write('isolated-broken', 'RECOVERED', 'invalid')
+  write('isolated-healthy', 'HEALTHY')
+  const h = await liveAssembly(t, () => ['isolated-broken', 'isolated-healthy'])
+  const agents = [await h.makeAgent('isolated-main'), await h.makeAgent('isolated-child', 1)]
+  const texts = async agent => (await h.inject(agent)).messages.flatMap(message => message.content.map(block => block.text))
+  for (const agent of agents) {
+    assert.deepEqual(await texts(agent), ['USER', 'HEALTHY'])
+    assert.deepEqual(h.runtime.moduleIds(agent.id), ['isolated-healthy'])
+  }
+  assert.ok(h.warnings.some(message => message.includes('isolated-broken')), '诊断标识故障模块')
+  write('isolated-broken', 'RECOVERED')
+  await h.runtime.refresh('isolated-broken')
+  await h.runtime.refresh('isolated-broken')
+  for (const agent of agents) {
+    assert.deepEqual(await texts(agent), ['USER', 'RECOVERED', 'HEALTHY'])
+    assert.deepEqual(h.runtime.moduleIds(agent.id), ['isolated-broken', 'isolated-healthy'])
+  }
+  const section = h.root.systemPrompt.section
+  t.mock.method(h.root.systemPrompt, 'section', function (config) {
+    if (config.name.includes('isolated-broken')) throw new Error('HOST-SECTION-REJECTED')
+    return section.call(this, config)
+  })
+  writeModuleFixture('isolated-broken', { modules: ['rule-engine'], promptConfigs: [
+    { id: 'isolated-broken-section', layer: 'system-section', text: 'REJECTED' },
+  ] })
+  write('isolated-healthy', 'HEALTHY-AFTER-RULE-FAILURE')
+  await assert.rejects(h.runtime.refresh('isolated-broken'), /HOST-SECTION-REJECTED/)
+  for (const agent of agents) {
+    assert.deepEqual(await texts(agent), ['USER', 'RECOVERED', 'HEALTHY-AFTER-RULE-FAILURE'], '规则注册失败也只回退所属模块')
+  }
+  await h.runtime.dispose()
+  for (const agent of agents) {
+    assert.deepEqual(await texts(agent), ['USER'])
+    assert.deepEqual(h.runtime.moduleIds(agent.id), [])
+  }
+})
+
 test('热更新：空启用表到多模块、配置启停与拒绝后重试都更新同一个 Agent，重复刷新不重复注入', async (t) => {
   const { setModuleEnabled, enabledModuleIds } = await import('../../src/host/config-store.ts')
   for (const id of ['hot-a', 'hot-b']) writeModuleFixture(id, {
@@ -840,11 +881,20 @@ test('热更新：空启用表到多模块、配置启停与拒绝后重试都�
     modules: ['prompt-config-engine'],
     promptConfigs: [{ id: 'hot-b', strategy: 'invalid', text: 'BROKEN' }],
   })
+  writeModuleFixture('hot-a', {
+    modules: ['rule-engine'], promptConfigs: [{ id: 'hot-a', text: 'HEALTHY-UPDATE', position: 'after-user' }],
+  })
   await assert.rejects(h.runtime.refresh('hot-b'), /运行时配装更新失败/)
-  assert.deepEqual(await injected(), ['USER', 'CHANGED', 'hot-b'], '准备失败保留旧贡献')
+  assert.deepEqual(await injected(), ['USER', 'HEALTHY-UPDATE', 'hot-b'], '仅故障模块保旧，健康模块更新')
+  writeFileSync(join(moduleRoot, 'hot-b', 'module.yml'), 'rules: [')
+  writeModuleFixture('hot-a', {
+    modules: ['rule-engine'], promptConfigs: [{ id: 'hot-a', text: 'HEALTHY-AFTER-PARSE-ERROR', position: 'after-user' }],
+  })
+  await assert.rejects(h.runtime.refresh('hot-b'), /运行时配装更新失败/)
+  assert.deepEqual(await injected(), ['USER', 'HEALTHY-AFTER-PARSE-ERROR', 'hot-b'], '坏文件不通过签名读取阻止其他模块更新')
   setModuleEnabled(moduleRoot, 'hot-b', false)
   await h.runtime.refresh()
-  assert.deepEqual(await injected(), ['USER', 'CHANGED'])
+  assert.deepEqual(await injected(), ['USER', 'HEALTHY-AFTER-PARSE-ERROR'])
   setModuleEnabled(moduleRoot, 'hot-a', false)
   await h.runtime.refresh()
   assert.deepEqual(await injected(), ['USER'])
@@ -882,6 +932,73 @@ test('PTC：主子模式独立进入工具面，刷新与压缩保留受众，�
   assert.deepEqual(h.warnings, [])
   await h.runtime.dispose()
   for (const agent of [main, child]) assert.deepEqual(names(agent), ['visible_tool'])
+})
+
+test('能力挂载失败按模块回退，半注册工具撤销且健康来源共享工具保留', async (t) => {
+  const tool = id => ({ id, description: id, output: { schema: { type: 'json' } }, execute: { kind: 'delegate', tool: 'shared_tool' } })
+  const writeBroken = (text, mode, toolId) => writeModuleFixture('mount-broken', {
+    modules: ['module-rule-tools', 'tool-config-engine', 'present-as'],
+    customTools: [tool(toolId)], moduleConfigs: { 'present-as': { enabled: true, mode } },
+    promptConfigs: [{ id: 'mount-broken', text, position: 'after-user' }],
+  })
+  const writeHealthy = text => writeModuleFixture('mount-healthy', {
+    modules: ['module-rule-tools'], promptConfigs: [{ id: 'mount-healthy', text, position: 'after-user' }],
+  })
+  writeBroken('BAD-INITIAL', 'native', 'partial_tool')
+  writeHealthy('HEALTHY-INITIAL')
+  const h = await liveAssembly(t, () => ['mount-broken', 'mount-healthy'])
+  h.root.provide('ptcRuntime', { language: 'typescript' })
+  h.root.provide('pt-module-rule-tools', { mount: ctx => ctx.tools.register({
+    name: 'shared_tool', description: 'shared', parameters: { type: 'object', properties: {} },
+    output: { schema: { type: 'object' }, render: () => [] }, execute: async () => ({}),
+  }) })
+  const presentAs = h.root.tools.presentAs
+  t.mock.method(h.root.tools, 'presentAs', function (mode, ...args) {
+    if (mode === 'native') throw new Error('HOST-PRESENTATION-REJECTED')
+    return presentAs.call(this, mode, ...args)
+  })
+  const agents = [await h.makeAgent('mount-isolation-main'), await h.makeAgent('mount-isolation-child', 1)]
+  const texts = async agent => (await h.inject(agent)).messages.flatMap(message => message.content.map(block => block.text))
+  const names = agent => h.root.tools.schemas(agent).map(schema => schema.name)
+  for (const agent of agents) {
+    assert.deepEqual(await texts(agent), ['USER', 'HEALTHY-INITIAL'])
+    assert.deepEqual(h.runtime.moduleIds(agent.id), ['mount-healthy'])
+    assert.deepEqual(names(agent), ['shared_tool'], '失败模块的半注册工具撤销，共享工具仍有健康使用者')
+  }
+  assert.ok(h.warnings.some(message => message.includes('mount-broken') && message.includes('HOST-PRESENTATION-REJECTED')))
+  writeBroken('OLD-BROKEN', 'ptc', 'old_tool')
+  await h.runtime.refresh('mount-broken')
+  writeBroken('REJECTED-NEW', 'native', 'rejected_tool')
+  writeHealthy('HEALTHY-UPDATED')
+  await assert.rejects(h.runtime.refresh('mount-broken'), /HOST-PRESENTATION-REJECTED/)
+  for (const agent of agents) {
+    assert.deepEqual(await texts(agent), ['USER', 'OLD-BROKEN', 'HEALTHY-UPDATED'])
+    assert.deepEqual(names(agent).sort(), ['old_tool', 'run_code', 'shared_tool'])
+    assert.deepEqual(h.runtime.moduleIds(agent.id), ['mount-broken', 'mount-healthy'])
+  }
+  let registrations = 0
+  const off = h.root.on('system-prompt/change', () => { registrations++ })
+  for (const agent of agents) await texts(agent)
+  assert.equal(registrations, 0, '同一失败版本不会每请求反复撤装')
+  off()
+  const mainCtx = agents[0].ctx
+  agents[0].ctx = new Proxy(mainCtx, { get(target, key) {
+    if (key === 'get') return (name, ...args) => name === 'pt-module-rule-tools' ? undefined : mainCtx.get(name, ...args)
+    return Reflect.get(target, key)
+  } })
+  writeModuleFixture('mount-healthy', {
+    modules: ['rule-engine'], promptConfigs: [{ id: 'mount-healthy', text: 'HEALTHY-WITHOUT-SERVICE', position: 'after-user' }],
+  })
+  await assert.rejects(h.runtime.refresh(), /pt-module-rule-tools/)
+  assert.deepEqual(await texts(agents[0]), ['USER', 'HEALTHY-WITHOUT-SERVICE'], '旧版本依赖也缺失时跳过故障模块，健康模块不被挂起')
+  assert.deepEqual(h.runtime.moduleIds(agents[0].id), ['mount-healthy'])
+  assert.deepEqual(names(agents[0]), [])
+  assert.deepEqual(await texts(agents[1]), ['USER', 'OLD-BROKEN', 'HEALTHY-WITHOUT-SERVICE'], '子代理仍有服务，继续保留其有效旧模块')
+  await h.runtime.dispose()
+  for (const agent of agents) {
+    assert.deepEqual(names(agent), [])
+    assert.deepEqual(await texts(agent), ['USER'])
+  }
 })
 
 test('能力注册：私有工具服务与内联工具接入官方注册表，禁用后释放', async (t) => {
@@ -952,7 +1069,7 @@ const LITERAL_SLICES = [
   },
 ]
 
-function writeModuleFixture(id, { modules, promptConfigs = [], rules = [], moduleConfigs, persona, configOrder, variables }) {
+function writeModuleFixture(id, { modules, promptConfigs = [], rules = [], moduleConfigs, persona, configOrder, variables, customTools }) {
   const dir = join(moduleRoot, id)
   mkdirSync(dir, { recursive: true })
   writeFileSync(join(dir, 'module.yml'), `${JSON.stringify({
@@ -962,6 +1079,7 @@ function writeModuleFixture(id, { modules, promptConfigs = [], rules = [], modul
       : fixtureRule(config))], ...(configOrder === undefined ? {} : { configOrder }),
     ...(moduleConfigs === undefined ? {} : { moduleConfigs }), ...(persona === undefined ? {} : { persona }),
     ...(variables === undefined ? {} : { variables }),
+    ...(customTools === undefined ? {} : { customTools }),
   }, null, 2)}\n`, 'utf8')
   if (promptConfigs.length > 0) {
     const configsDir = join(dir, 'configs')

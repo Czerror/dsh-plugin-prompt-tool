@@ -38,7 +38,7 @@ export interface MountRuleSourcesOptions {
   onOutcome?(report: RuleOutcomeReport): void
 }
 
-/** 所有规则来源的唯一装配入口；返回释放本次挂载的 disposer。 */
+/** 所有规则来源的唯一装配入口；返回 disposer。可归因挂载错误携带 sourceModuleId，原错误保留在 cause。 */
 export function mountRuleSources(
   ctx: unknown,
   sources: ReadonlyArray<RuleSourceLike>,

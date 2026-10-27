@@ -16,6 +16,8 @@ const noNext = new Set(['agent/inbox/inserted', 'agent/turn-stopping', 'subagent
 const compare = (a, b) => a.action.channelOrder - b.action.channelOrder
   || a.moduleId.localeCompare(b.moduleId) || a.ruleIndex - b.ruleIndex || a.action.actionIndex - b.action.actionIndex
 
+const sourceError = (error, moduleId) => Object.assign(new Error(String(error?.message ?? error), { cause: error }), { sourceModuleId: moduleId })
+
 /** 所有来源只进入这个装配入口；受众限定固定效果要求 ctx 属于 options.agent 的 scope。 */
 export function mountRuleSources(ctx, sources, options = {}) {
   validateDeliverySources(sources)
@@ -32,7 +34,6 @@ export function mountRuleSources(ctx, sources, options = {}) {
   // 条件绑定**在这里**发生：`compileRules` 编译期没有挂载 scope 的 ctx（preset 条件在那边恒
   // UNAVAILABLE 且静默）。必须早于事件订阅与动作注册——动作级 `actionWhen.observe` 是订阅通道，
   // 绑晚了那一类谓词会漏事件。`standingMountFor` 是可选兜底（官方包缺席＝没有兜底，不是错误）。
-  rebindConditions(sources, { ctx, standingMountFor: options.standingMountFor, promotionPool: pool, variableStore: options.variableStore })
   const warnOnce = options.warnOnce ?? createWarnOnce(ctx, options.plugin ?? 'rule-engine')
   // 非 pre-step 动作仍共享一次 ruleFrame；规则实例没有来源字段（RuleDefinition 不暴露 moduleId），
   // 因此保留一份局部 rule→module 映射。它不是 pre-step 来源事实的重建，不参与 pre-step 的 source sink。
@@ -50,19 +51,23 @@ export function mountRuleSources(ctx, sources, options = {}) {
   // 因此按 moduleId 分档；来源 id 缺失时落空串兜底键（与 wireTurnStops 同源）。
   const turnStopBudgets = new Map()
   const injections = new Map(sources.map(source => [source.moduleId, { moduleId: source.moduleId, sourceId: moduleSourceId(source.moduleId), configs: [], ruleActions: [] }]))
-  const rules = sources.flatMap(source => source.rules.filter(rule => rule.enabled !== false))
   // 动作级分支条件（actionWhen）也要喂 session/event：否则 else / 嵌套 if 里的 phase / count
   // 谓词永远收不到事件，状态停在冷扫那一刻（规则级 when 已由 rules 覆盖，动作级单独补齐）。
-  const observer = wireTriggerObservers(ctx, [
-    ...rules,
-    ...rules.flatMap(rule => (rule.actions ?? [])
-      .filter(action => typeof action.actionWhen?.observe === 'function')
-      .map(action => ({ id: action.id, when: action.actionWhen }))),
-  ], { plugin: options.plugin ?? 'rule-engine', warnOnce })
-  if (observer) releases.push(observer)
   let active = true
   const bind = (item, on) => prepareAction(item.action, { plugin: options.plugin, warnOnce, promptConfigOptions: item.rule.promptConfigOptions, on })(ctx)
   try {
+    for (const source of sources) {
+      try { rebindConditions([source], { ctx, standingMountFor: options.standingMountFor, promotionPool: pool, variableStore: options.variableStore }) }
+      catch (error) { throw sourceError(error, source.moduleId) }
+    }
+    const rules = sources.flatMap(source => source.rules.filter(rule => rule.enabled !== false))
+    const observer = wireTriggerObservers(ctx, [
+      ...rules,
+      ...rules.flatMap(rule => (rule.actions ?? [])
+        .filter(action => typeof action.actionWhen?.observe === 'function')
+        .map(action => ({ id: action.id, when: action.actionWhen }))),
+    ], { plugin: options.plugin ?? 'rule-engine', warnOnce })
+    if (observer) releases.push(observer)
     for (const source of sources) for (const [ruleIndex, rule] of source.rules.entries()) {
       if (rule.enabled === false) continue
       for (const action of rule.actions) {
@@ -82,6 +87,7 @@ export function mountRuleSources(ctx, sources, options = {}) {
         releases.push(wireLayers(ctx, textConfigs, warnOnce, {
           agent: options.agent,
           turnStopBudgets,
+          sourceError,
           on: (channel, handler) => {
             if (channel !== point.channel) throw new TypeError(`rule action registered outside ${point.channel}: ${channel}`)
             handlers.push({ handler }); return () => {}
@@ -109,7 +115,9 @@ export function mountRuleSources(ctx, sources, options = {}) {
           // 这里再返回一个真 disposer 会与它重复释放同一批 handler。
           return () => {}
         }
-        const dispose = bind(item, on)
+        let dispose
+        try { dispose = bind(item, on) }
+        catch (error) { throw sourceError(error, moduleId) }
         // 未命中通知：条件为假时动作不会进入 handler，撤销型动作（tool-visibility 的执行闸）
         // 只能靠这条回调收手——否则第一轮为真后永久留闸。
         if (typeof dispose?.miss === 'function') {

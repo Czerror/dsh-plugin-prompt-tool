@@ -933,12 +933,55 @@ test('挂载回滚：流动作执行点与注册通道不一致时错误上浮�
   const h = harness()
   const rules = compileRules([{ id: 'p5', then: [
     { id: 'req', kind: 'request-params', patch: { maxTokens: 1 } },
-    { id: 'stream', kind: 'stream-output', text: 'X', mode: 'replace' },
+    { id: 'stream', kind: 'stream-output', text: 'X', mode: 'replace', maxPerTurn: 1 },
   ] }])
   // 损坏编译产物的执行点，真实流注册越出通道时必须回滚先前的请求监听。
   rules[0].actions[1].execution.channel = 'agent/request'
-  assert.throws(() => mountRuleSources(h.ctx, [{ moduleId: 'module', rules }]), /registered outside agent\/request/)
+  assert.throws(() => mountRuleSources(h.ctx, [{ moduleId: 'module', rules }]), error => {
+    assert.match(error.message, /registered outside agent\/request/)
+    assert.equal(error.sourceModuleId, 'module')
+    assert.equal(error.cause.message, error.message)
+    return true
+  })
   assert.equal((h.events.get('agent/request') ?? []).length, 0, '抛错后 agent/request 监听已回滚')
+  assert.equal((h.events.get('session/event') ?? []).length, 0, '抛错前注册的动作预算订阅也已回滚')
+})
+
+test('规则来源挂载失败携带模块身份，并撤回此前的段、变量和订阅', () => {
+  const registrations = new Set()
+  const rejection = new Error('宿主拒绝第二个规则段')
+  let sections = 0
+  const register = (name) => { registrations.add(name); return () => registrations.delete(name) }
+  const h = harness({ systemPrompt: {
+    variable: name => register(name),
+    section: ({ name }) => { if (++sections === 2) throw rejection; return register(name) },
+  } })
+  const sources = ['a-healthy', 'z-broken'].map(moduleId => ({ moduleId, rules: compileRules([
+    { id: `${moduleId}-rule`, then: [textAction(`${moduleId}-text`, 'BODY', { layer: 'system-section' })] },
+  ], { moduleId }) }))
+  assert.throws(() => mountRuleSources(h.ctx, sources), error => {
+    assert.equal(error.sourceModuleId, 'z-broken')
+    assert.equal(error.message, rejection.message)
+    assert.equal(error.cause, rejection)
+    return true
+  })
+  assert.equal(registrations.size, 0, '已取得的官方段和占位变量全部撤回')
+  assert.ok([...h.events.values()].every(list => list.length === 0), '自建晋升池和规则订阅全部撤回')
+
+  const shared = harness()
+  const on = shared.ctx.on
+  let subscriptions = 0
+  shared.ctx.on = (...args) => {
+    if (args[0] === 'session/event' && ++subscriptions === 2) throw rejection
+    return on(...args)
+  }
+  const observed = compileRules([{ id: 'count', if: { count: { of: 'tool-call', min: 1 } }, then: [textAction('count-text', 'BODY')] }])
+  assert.throws(() => mountRuleSources(shared.ctx, [{ moduleId: 'observed', rules: observed }]), error => {
+    assert.equal(error, rejection, '公共观察订阅失败保留原错误，不猜测某个模块')
+    assert.equal(error.sourceModuleId, undefined)
+    return true
+  })
+  assert.ok([...shared.events.values()].every(list => list.length === 0), '观察订阅失败也撤回此前自建池的订阅')
 })
 
 test('after-next 动作读取 next 之后的下游结果：unset 命中下游值才删键', async () => {
