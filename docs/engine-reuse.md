@@ -323,7 +323,7 @@ search/open 工具只注册一次，多个来源模块按Agent聚合授权，释
 
 Basic的范围接口只适用于打开的turn。idle程序式范围与恢复局部压缩经独立维护事务，使用公开Session事件和同一摘要／计价owner；范围验证、取消、版本与shrink检查通过才提交替换。手动compactNow直接复用官方维护入口，不嵌套维护。换模型使用目标 `EpochHeader.config` 计价，失败不提交目标路由；溢出仅在surface已实际推进时重试，次数由官方策略限制，取消不重试。
 
-可选官方包由 `importHostCapability` 在启用时从宿主解析，并按 `HOST_CAPABILITY_VERSIONS` 核对完整版本（当前0.2.1-alpha.2）；不随插件新增依赖。`verify:host` 只对这一显式入口允许已登记的宿主能力，普通静态／动态导入仍执行peer与dev双声明检查。真实官方行为在隔离环境验证，仓库回归测试覆盖公开适配器、流、写盘与拒绝契约。官方framing快照升级时须重新核验。
+可选官方包由 `importHostCapability` 在启用时从宿主解析；白名单 `HOST_CAPABILITY_PACKAGES` 只限制可导入的包集合，运行期不比对版本（安装期仍受 `engines.dsh` 与 peer 范围约束）。宿主 API 不兼容以装配期真实错误暴露，不作前置版本诊断；三个 `dsh-compaction*` 包不声明为插件依赖；仓库顶层 `node_modules` 未链接它们，引擎解析路径不可达，只能由真实宿主的隔离验证核对，仓库回归只覆盖白名单拒绝与 `dsh-llm` 路径。`verify:host` 只对这一显式入口允许已登记的宿主能力，普通静态／动态导入仍执行 peer 与 dev 双声明检查。真实官方行为在隔离环境验证，仓库回归测试覆盖公开适配器、流、写盘与拒绝契约。官方 framing 快照升级时须重新核验。
 
 ## SELF动态内容与维护心跳
 

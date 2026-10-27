@@ -4,7 +4,7 @@
 import { readFileSync } from 'node:fs'
 import semver from 'semver'
 import ts from 'typescript'
-import { HOST_CAPABILITY_VERSIONS } from '../engine/host-package.mjs'
+import { HOST_CAPABILITY_PACKAGES } from '../engine/host-package.mjs'
 
 const manifest = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'))
 
@@ -159,7 +159,7 @@ export function officialImports(source) {
 export function importContractProblems(edge, client, selectedManifest = manifest) {
   if (!edge.name.startsWith(OFFICIAL_SCOPE)) return []
   const { name, specifier, typeOnly } = edge
-  if (edge.hostCapability && !client && !typeOnly) return Object.hasOwn(HOST_CAPABILITY_VERSIONS, name) ? []
+  if (edge.hostCapability && !client && !typeOnly) return HOST_CAPABILITY_PACKAGES.includes(name) ? []
     : [`${specifier}: 未登记的可选宿主能力；不能绕过依赖声明`]
   const dev = selectedManifest.devDependencies?.[name]
   if (client || typeOnly) {
