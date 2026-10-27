@@ -2,7 +2,7 @@
  * 桥运行态：一次 `registerSettingsBridge` 的共享态与共享 helper 只在这里建一次。
  *
  * 域文件（`routes/*.ts`）只写端点自己的业务判断；注册通道、descriptor 缓存、上传暂存、
- * 两条串行队列（能力 / 排序）、变量开关待发布表、change 回调，以及 meta/describe 聚合、
+ * 两条串行队列（能力 / 排序）、变量保存与运行发布、change 回调，以及 meta/describe 聚合、
  * 指令作用域解析、导入参数校验这些跨域基建全从这里取，域里不自建状态。
  *
  * 两个注入域（`settings+webServer` 与 `agents+tools+webServer`）共用同一个运行时：
@@ -34,7 +34,9 @@ import { moduleDeclarations } from '../host/module-declarations.ts'
 import { ModuleWriteError } from '../host/module-write.ts'
 import { loadModuleSpec } from '../host/module-spec.ts'
 import { readModuleFacts, resolveModuleParams } from '../host/module-params.ts'
-import { readModuleVariables } from '../host/module-variables.ts'
+import { editModuleVariables, readModuleVariables } from '../host/module-variables.ts'
+import type { ModuleVariablesEdit, ModuleVariablesResult } from '../host/module-variables.ts'
+import { loadModuleDefinition } from '../host/module-slices.ts'
 import { createAssetSources } from '../host/asset-sources.ts'
 import { storageRoot } from '../host/paths.ts'
 import type { AssetFile, AssetImportRequest, ImportKind } from '../shared/asset-transfer.ts'
@@ -401,8 +403,6 @@ export interface BridgeRuntime {
   readonly capabilityQueue: SerialQueue
   /** 模块排序与启用共用的写入队列。 */
   readonly moduleOrderQueue: SerialQueue
-  /** 变量开关待运行发布的模块（目录 → 上次失败原因）。 */
-  readonly pendingVariableSettings: Map<string, string>
   /** 写盘已完成：执行运行发布并返回统一结果，不写响应。 */
   finishModuleChange(activate: () => void | Promise<void>): Promise<PublicationState>
   runOverridesChange(moduleId?: string): Promise<PublicationState>
@@ -414,6 +414,10 @@ export interface BridgeRuntime {
   readParamOverrides(dir: string): Record<string, unknown>
   readParamEffective(dir: string): Record<string, unknown>
   variableView(dir: string): ModuleVariablesSnapshot
+  /** 提交变量与开关；仅实际改变开关时刷新运行实例。 */
+  saveVariables(dir: string, request: ModuleVariablesEdit): Promise<ModuleVariablesResult>
+  /** 仅重试待发布的开关并读回变量，不重放写入。 */
+  refreshVariables(dir: string): Promise<ModuleVariablesResult>
 }
 
 export function createBridgeRuntime(options: BridgeRuntimeOptions): BridgeRuntime {
@@ -726,6 +730,27 @@ export function createBridgeRuntime(options: BridgeRuntimeOptions): BridgeRuntim
     ...(pendingVariableSettings.has(dir) ? { publicationError: pendingVariableSettings.get(dir)! } : {}),
   })
 
+  const refreshVariableSettings = async (dir: string): Promise<void> => {
+    if (!pendingVariableSettings.has(dir)) return
+    try { await deps.overridesChanged?.(basename(dir)); pendingVariableSettings.delete(dir) }
+    catch (error) { pendingVariableSettings.set(dir, `变量开关已保存，但运行发布失败：${String(error)}`) }
+  }
+  const saveVariables = async (dir: string, request: ModuleVariablesEdit): Promise<ModuleVariablesResult> => {
+    const settingsChanged = request.enabled !== undefined && request.enabled !== loadModuleDefinition(dir).variablesEnabled
+    const committed = editModuleVariables(dir, request)
+    if (settingsChanged) pendingVariableSettings.set(dir, '变量开关已保存，等待运行发布')
+    if (committed.publicationPending) {
+      return { ...committed, ...published(committed.publicationError ?? '变量已保存，等待运行发布') }
+    }
+    if (settingsChanged) await refreshVariableSettings(dir)
+    return { ...committed, ...published(pendingVariableSettings.get(dir)) }
+  }
+  const refreshVariables = async (dir: string): Promise<ModuleVariablesResult> => {
+    await refreshVariableSettings(dir)
+    // 先重试运行发布，再读视图恢复切片，保持已保存定义的发布顺序。
+    return { ...variableView(dir), ...published(pendingVariableSettings.get(dir)) }
+  }
+
   return {
     deps,
     ns,
@@ -740,7 +765,6 @@ export function createBridgeRuntime(options: BridgeRuntimeOptions): BridgeRuntim
     get assetSources() { return attached(uploads, 'settings') },
     capabilityQueue: createSerialQueue(),
     moduleOrderQueue: createSerialQueue(),
-    pendingVariableSettings,
     finishModuleChange,
     runOverridesChange,
     refreshModuleList,
@@ -751,5 +775,7 @@ export function createBridgeRuntime(options: BridgeRuntimeOptions): BridgeRuntim
     readParamOverrides,
     readParamEffective,
     variableView,
+    saveVariables,
+    refreshVariables,
   }
 }

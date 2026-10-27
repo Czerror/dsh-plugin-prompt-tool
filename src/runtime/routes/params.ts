@@ -5,7 +5,6 @@ import { readGlobalLayerSettingsSafe, writeGlobalLayerSettings } from '../../hos
 import { userModulesDir } from '../../host/module-dirs.ts'
 import { loadModuleDefinition } from '../../host/module-slices.ts'
 import { ModuleWriteError } from '../../host/module-write.ts'
-import { editModuleVariables } from '../../host/module-variables.ts'
 import { saveModuleParams } from '../../host/module-definition-edit.ts'
 import { validateEngineParamValues } from '../../shared/engine-params.ts'
 import type { ModuleVariableRevisions } from '../../shared/module-variables.ts'
@@ -16,7 +15,7 @@ import { declarationsOf, declaresAny, isRecord, type BridgeRuntime } from '../br
 
 /** 本域用到的运行时面：只用这些，不加宽（新域照此声明自己的面）。 */
 type ParamsRuntime = Pick<BridgeRuntime,
-  'deps' | 'register' | 'gate' | 'pendingVariableSettings' | 'runOverridesChange' | 'readParamOverrides' | 'readParamEffective' | 'variableView'>
+  'register' | 'gate' | 'runOverridesChange' | 'readParamOverrides' | 'readParamEffective' | 'variableView' | 'saveVariables' | 'refreshVariables'>
 
 export function registerParams(runtime: ParamsRuntime): Array<() => void> {
   return [
@@ -144,13 +143,7 @@ export function registerParams(runtime: ParamsRuntime): Array<() => void> {
         if (record.refreshOnly === true) {
           if (runtime.gate(tx, 'moduleVariables').authorize() === undefined) return
           if (typeof record.expectedModuleId !== 'string') throw new ModuleWriteError('刷新变量必须提供 expectedModuleId')
-          if (runtime.pendingVariableSettings.has(dir)) {
-            try { await runtime.deps.overridesChanged?.(basename(dir)); runtime.pendingVariableSettings.delete(dir) }
-            catch (error) { runtime.pendingVariableSettings.set(dir, `变量开关已保存，但运行发布失败：${String(error)}`) }
-          }
-          // 变量视图在重试发布之后取一次：`variableView` 已含 `readModuleVariables` 的全部字段
-          // ＋ `publicationPending`／`publicationError`，先前那次读的字段会被它整体覆盖。
-          tx.write(200, { ok: true, value: { ...runtime.variableView(dir), ...published(runtime.pendingVariableSettings.get(dir)) } })
+          tx.write(200, { ok: true, value: await runtime.refreshVariables(dir) })
           return
         }
         if (record.variables === undefined && record.enabled === undefined) {
@@ -172,22 +165,12 @@ export function registerParams(runtime: ParamsRuntime): Array<() => void> {
             module: definition.revisions.variables,
             ...(record.enabled === undefined ? {} : { settings: definition.revisions.settings }),
           }
-        const settingsChanged = record.enabled !== undefined && record.enabled !== loadModuleDefinition(dir).variablesEnabled
-        const committed = editModuleVariables(dir, {
+        const committed = await runtime.saveVariables(dir, {
           scope: record.scope as 'global' | 'module', expectedRevisions,
           ...(record.variables === undefined ? {} : { values: record.variables as Record<string, string> }),
           ...(record.enabled === undefined ? {} : { enabled: record.enabled as boolean }),
         })
-        if (settingsChanged) runtime.pendingVariableSettings.set(dir, '变量开关已保存，等待运行发布')
-        if (committed.publicationPending) {
-          tx.write(200, { ok: true, value: { ...committed, ...published(committed.publicationError ?? '变量已保存，等待运行发布') } })
-          return
-        }
-        if (settingsChanged) {
-          try { await runtime.deps.overridesChanged?.(basename(dir)); runtime.pendingVariableSettings.delete(dir) }
-          catch (error) { runtime.pendingVariableSettings.set(dir, `变量开关已保存，但运行发布失败：${String(error)}`) }
-        }
-        tx.write(200, { ok: true, value: { ...committed, ...published(runtime.pendingVariableSettings.get(dir)) } })
+        tx.write(200, { ok: true, value: committed })
       } catch (error) {
         if (error instanceof ModuleWriteError && error.persisted) {
           tx.write(200, { ok: true, value: { ...runtime.variableView(dir), ...published(error.message) } })
