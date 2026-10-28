@@ -1,7 +1,7 @@
 /**
- * manifest 谓词：规则直接读来源模块 `assets/manifest.yml` 的 checks 当前事实。
+ * manifest 谓词：规则读取来源模块 `assets/manifest.yml` 的 checks 事实。
  *
- * 读取器由挂载期绑定（宿主 `module-manifest-check` 服务，按 mtime/size 缓存）；
+ * 读取器由宿主装配经 options 在挂载期绑定，结果缓存 1000ms，清单戳变化提前失效；
  * 读取器缺失、清单缺失/损坏都判 UNAVAILABLE——不能经 not 反转，也不能当「检查失败」。
  */
 import { UNAVAILABLE } from './availability.mjs'

@@ -212,7 +212,7 @@ AGENTS.md/CLAUDE.md 及 local 变体属于用户文件。正文就地保存；�
 
 新建书房使用 `{"moduleId":"soul","initialize":true}` 选择该模块 `assets/manifest.yml` 的目录与模板文件，同样先预览再带 `expectedRevision` 应用，不能同时给外部来源。初始化只补缺失，不覆盖已修改模板；它不凭空创建清单 `checks` 中的账本，也不把检查通过等同于初始化完成。这里的 `data/AGENTS.md` 是模块私有资产，不是工作区指令文件。
 
-`host/module-data-import.ts` 统一拥有预览与应用；完整候选在现有模块目录事务中生成，锁内复核版本后交换，准备失败保留原目录。默认模块导出仍排除整个 `data/`。这条显式命令不会改变 `module_manifest` 既有的 next/check/apply 语义。check 本身保持只读；检查结果另外作为规则条件 `manifest: { ok: boolean }` 暴露（`src/host/module-manifest-check.ts` 按 mtime/size 缓存），需要「检查失败就提醒」的模块在自己的规则里声明条件，不必写变量。
+`host/module-data-import.ts` 统一拥有预览与应用；完整候选在现有模块目录事务中生成，锁内复核版本后交换，准备失败保留原目录。默认模块导出仍排除整个 `data/`。这条显式命令不会改变 `module_manifest` 既有的 next/check/apply 语义。check 本身保持只读且实时检查；规则条件 `manifest: { ok: boolean }` 通过 `src/host/module-manifest-check.ts` 单独缓存结果 1000ms，manifest 的 mtime/size 变化提前失效，到期后首次求值完整重检。显式 check 不刷新规则缓存，也不写变量。独立 rule-engine 入口不提供该读取器；三值与入口契约见 [引擎复用](engine-reuse.md#规则条件与动作边界)。
 
 ## 模块归属与验证
 
@@ -223,6 +223,8 @@ AGENTS.md/CLAUDE.md 及 local 变体属于用户文件。正文就地保存；�
 追加沿模块锁串行，账本总量 8 MiB、单字段 8 KiB；读取默认30条、最多100条和64 KiB输出。坏历史、链接、取消和超限都拒绝，不重置为新账本。通用 `module_file_append` 对 `data/02-soul.jsonl` 与旧名 `data/02-墨.jsonl`（含大小写变体）拒绝追加；显式用户数据导入仍按预览权限保留原件与目标冲突。
 
 用户骨架在 `data/SELF.src.md`，派生快照在 `data/.soul/SELF.md`。SELF owner 从骨架、账本摘要与检索状态计数生成快照，屏蔽已识别的凭据格式，预算默认12288字节；超限要求精简输入，不截掉未知数据后伪称完整。快照按字节版本检查并临时文件+rename，失败保留旧版。当前会话身份由 `rule-engine` 的内置动态填充器（`strategy: placeholder`、`fill: soul-self`）在每次求值时加入，不写入共享快照；未参与该 Agent 装配的模块不能读取该动态出口。模块不需要策略 JS、`strategyDir` 或服务名参数。缺骨架、缺快照、超限和服务缺失均有明确状态或错误。
+
+注入预算从模块事实读取，mtime/size 变化提前更新，最长缓存1000ms；读取或校验失败沿用最近有效值，无历史值回默认。定义内容暂时损坏不阻断旧快照读取，但路径、文件种类和可读声明 ID 仍逐次校验，最终输出仍受预算限制。维护与注入共用预算校验，回退与刷新口径见 [SELF动态内容与维护心跳](engine-reuse.md#self动态内容与维护心跳)。
 
 `generation-recovery` 额度保存在插件存储根的 `generation-recovery/<会话ID摘要>.json`，保存已消费 turn/step 身份及累计 used；锁内去重后原子替换，重挂与重启不清零，损坏文件拒绝重置。它不进入模块导出，也不修改会话日志。索引是可重建的派生内存状态，原账本与宿主日志仍为权威来源。
 

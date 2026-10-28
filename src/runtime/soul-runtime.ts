@@ -4,24 +4,29 @@ import { join } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { ModuleToolHost } from '../host/module-tool-target.ts'
-import { assertModuleDirectory } from '../host/module-install.ts'
+import { assertModuleSnapshotSource } from '../host/module-install.ts'
 import { readModuleFacts } from '../host/module-params.ts'
-import { renderSoulSelf } from '../host/soul-self.ts'
+import { renderSoulSelf, validateSelfBudget } from '../host/soul-self.ts'
 import { createModuleRetrievalProvider } from './module-retrieval-tools.ts'
 import type { RetrievalEvent } from '../../engine/retrieval-reference.mjs'
 import { createSoulMaintenanceProvider } from './soul-maintenance.ts'
 import { SOUL_MAINTENANCE_SERVICE, SOUL_SELF_SERVICE, toolServiceName } from '../../engine/service-names.mjs'
 
 export function installSoulRuntime(ctx: Context, host: ModuleToolHost, moduleIds: (id: string) => readonly string[]): void {
-  // 注入预算与维护同源：按 module.yml mtime 缓存装配事实里的 soul-maintenance.budgetBytes。
-  const budgets = new Map<string, { stamp: number; value: number | undefined }>()
-  const budgetOf = (dir: string): number | undefined => {
-    const stamp = statSync(join(dir, 'module.yml'), { throwIfNoEntry: false })?.mtimeMs ?? 0
+  // 定义暂时损坏时保留最近有效预算，不降低可用快照的注入上限。
+  const budgets = new Map<string, { stamp: string; checkedAt: number; value: number }>()
+  const readSelfBudget = (dir: string): number => {
+    const stat = statSync(join(dir, 'module.yml'), { throwIfNoEntry: false })
+    const stamp = stat ? `${stat.mtimeMs}:${stat.size}` : 'missing'
     const hit = budgets.get(dir)
-    if (hit !== undefined && hit.stamp === stamp) return hit.value
-    const raw = readModuleFacts(dir).effectiveConfigs?.['soul-maintenance']?.budgetBytes
-    const value = typeof raw === 'number' ? raw : undefined
-    budgets.set(dir, { stamp, value })
+    if (hit !== undefined && hit.stamp === stamp && performance.now() - hit.checkedAt < 1000) return hit.value
+    let value = hit?.value ?? validateSelfBudget()
+    try {
+      const facts = readModuleFacts(dir)
+      if (facts.sourceMode !== 'unknown') value = validateSelfBudget(facts.effectiveConfigs?.['soul-maintenance']?.budgetBytes)
+    }
+    catch { /* 定义内容读取与预算校验失败不覆盖最近有效值。 */ }
+    budgets.set(dir, { stamp, checkedAt: performance.now(), value })
     return value
   }
   const retrieval = createModuleRetrievalProvider(host, async id => {
@@ -46,9 +51,9 @@ export function installSoulRuntime(ctx: Context, host: ModuleToolHost, moduleIds
     render: (id: string, agent: Agent, signal?: AbortSignal): string => {
       signal?.throwIfAborted()
       if (!moduleIds(agent.id).includes(id)) throw new Error('SELF来源模块未参与本Agent装配')
-      const dir = assertModuleDirectory(host.root, id)
-      return renderSoulSelf(dir, agent, signal, budgetOf(dir))
+      const dir = assertModuleSnapshotSource(host.root, id)
+      return renderSoulSelf(dir, agent, signal, readSelfBudget(dir))
     },
   })
-  ctx.effect(() => () => maintenance.dispose())
+  ctx.effect(() => () => { maintenance.dispose(); budgets.clear() })
 }

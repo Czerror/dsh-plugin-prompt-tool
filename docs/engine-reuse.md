@@ -137,7 +137,11 @@ adapter 的目录、权限、原子写与版本责任归接入方。缺少 adapt
 
 规则含 `id/name/enabled/layer/group/exclusive/if/then/else`。动作有稳定 id 和 kind；then/else 与嵌套分支内的所有动作 id 在同一规则中唯一。读取投影可生成配置身份，编辑映射保留原始条件和载荷，不把编译默认值写回。
 
-`if` 是单键谓词或 all/any/not/notAny 组合。必要事实缺失为 UNAVAILABLE，不会因 not 变成 true。新增的 `variable` 谓词写成 `{ key, op, value, scope }`：op ∈ eq/ne/in/gt/gte/lt/lte/present/absent（缺省 eq），scope ∈ effective/module/global（缺省 effective）；`in` 的 value 是非空字符串数组，其余比较 op 的 value 是字符串，`present`/`absent` 不收 value；比较类在键缺失或任一侧非数字时为假；模块关闭变量或适配器未绑定时判定为 UNAVAILABLE。适配器由挂载期按来源模块绑定（`variableStore`），准备期编译出的条件恒不可用。`manifest` 谓词写成 `{ ok: boolean }`：读取来源模块 `assets/manifest.yml` 的 `checks` 当前事实（宿主读取器按 manifest 的 mtime/size 与各检查文件的 mtime/size 缓存，只读）；检查项失败为 false，清单缺失或坏 YAML 为 UNAVAILABLE；同样在挂载期绑定 `manifestCheck`，准备期恒不可用。规则级 else 要有同一规则的 if；事实未知时可能两支都不执行。分支节点不写 kind，不能把 if/then/else 塞进动作对象。
+`if` 是单键谓词或 all/any/not/notAny 组合。必要事实缺失为 UNAVAILABLE，不会因 not 变成 true。新增的 `variable` 谓词写成 `{ key, op, value, scope }`：op ∈ eq/ne/in/gt/gte/lt/lte/present/absent（缺省 eq），scope ∈ effective/module/global（缺省 effective）；`in` 的 value 是非空字符串数组，其余比较 op 的 value 是字符串，`present`/`absent` 不收 value；比较类在键缺失或任一侧非数字时为假；模块关闭变量或适配器未绑定时判定为 UNAVAILABLE。适配器由挂载期按来源模块绑定（`variableStore`），准备期编译出的条件恒不可用。规则级 else 要有同一规则的 if；事实未知时可能两支都不执行。分支节点不写 kind，不能把 if/then/else 塞进动作对象。
+
+`manifest` 谓词写成 `{ ok: boolean }`，只读来源模块 `assets/manifest.yml` 的 `checks`。检查项失败为 false，清单缺失、损坏或不可读为 UNAVAILABLE。宿主装配取得读取器后，经挂载 options 绑定 `manifestCheck`；准备期不可用。独立 `engine/rule-engine.mjs#apply` 不接入该宿主读取器，因此该路径的 manifest 条件恒 UNAVAILABLE，包括 `not` 也不成立；嵌入调用方可以显式向 `mountRuleSources` 提供读取器。
+
+规则读取器缓存检查结果 1000ms，通过、失败和不可用结果均不因命中续期。账本追加不会提前触发全量解析；到期后的首次求值重新检查。清单本身的 mtime/size 变化会提前失效，清单缺失立即不可用；同戳等长改写在到期时重读识别。显式 `module_manifest check` 始终实时检查，不写变量，也不刷新规则缓存，所以显式结果与自动提示可在剩余 TTL 内不同。首次和到期检查仍同步解析文件，这个缓存只限制重复检查频率。
 
 受众事实由纯模块 `engine/audience.mjs#audienceOf`（条件树）与 `engine/rule-spec.mjs#actionAudiences`（编译后动作）派生：`scope.audience` 精确收窄（同节点带 `modelScope: pro|flash` 时不算精确），`all` 求交、`any` 保守、`not`/`notAny` 只对精确子节点取补，无法收窄的条件按两个受众处理。规则级 `else` 的动作自带 `not(if)`，不再叠加规则级 `if`。宿主装配只读这个结果，不自行遍历条件树。raw rule（编辑器/UI）的只读投影走 `engine/rule-facts.mjs#ruleFacts`：受众是 then/else/嵌套分支动作可能受众的并集，未知时按两个受众处理；空集由 client 展示层按未知处理（见 `docs/ui-architecture.md` 的 `rule-facts.ts`）；它同时回答是否包含 context activation。`ruleFacts` 是展示上界，不参与执行门控。
 
@@ -347,7 +351,11 @@ config:
 
 已有用户副本若仍声明 `strategy: self` 并保留自己的策略资产，继续由既有自定义策略加载器执行。包升级不覆盖用户副本；显式更新为内置声明后才去掉对应 `strategyDir` 与服务名参数。私有 `data/` 不随此变更迁移。
 
-`soul-maintenance` 按来源模块只保留一个owner和一个定时器，维护串行，不因两个Agent或重挂并发写SELF。`intervalMs` 默认60000，`wake` 默认false，`audience` 默认all，`budgetBytes` 默认12288。每次先通过既有检索provider刷新授权索引，再CAS更新SELF；实际Agent的idle维护窗口提供用户取消信号，busy或失败保留旧快照，下次定时重试。注入渲染按来源模块的装配事实读取同一个 `budgetBytes`（按 `module.yml` mtime 缓存），调大预算后 SELF 段不会因固定默认上限被跳过。
+`soul-maintenance` 按来源模块只保留一个owner和一个定时器，维护串行，不因两个Agent或重挂并发写SELF。`intervalMs` 默认60000，`wake` 默认false，`audience` 默认all，`budgetBytes` 默认12288。每次先通过既有检索provider刷新授权索引，再CAS更新SELF；实际Agent的idle维护窗口提供用户取消信号，busy或失败保留旧快照，下次定时重试。
+
+SELF 注入从同一来源模块事实读取 `soul-maintenance.budgetBytes`，维护未启用时显式预算仍有效。缓存最长 1000ms；`module.yml` 的 mtime 或 size 改变立即重读，同戳等长改写及组合依赖变化在到期后的下一次求值重读，命中不续期。定义缺失、内容读取/解析失败或预算非法时沿用最近有效预算，没有历史值才用 12288；失败尝试也按期限重试。恢复为省略预算的有效定义会重新采用默认值。此路径可能与当前装配短暂不同步，不是装配快照接口。
+
+每次 SELF 求值仍校验参与授权、目录与定义文件种类；链接、越界、元数据检查失败、可读定义的 ID 不匹配继续拒绝。容错仅限定义内容，最终快照读取、取消和输出超预算错误不被吞掉。原严格模块目录入口保留其拒绝契约；运行时释放后预算缓存清空。
 
 显式wake才在维护成功退出后发送一次非空followup；取消、关闭、卸载或失去成员资格使迟到结果失效。心跳不改变恢复额度。provider状态区分disabled、idle、running、ready、failed和cancelled；上下文runtime状态区分ready、running、success、no-op、failed、cancelled和disabled。依赖缺失在装配时明确报错，保留上一份有效贡献。SELF缺失通过动态注入标记可见。
 

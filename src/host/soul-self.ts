@@ -18,8 +18,8 @@ function seal(text: string): string {
     .split('\n').map(line => /sk-[A-Za-z0-9_-]{16,}|gh[pousr]_[A-Za-z0-9]{20,}|AKIA[0-9A-Z]{16}|Bearer\s+\S+|(?:api[_-]?key|token|secret|password|passwd|pwd|cookie)["']?\s*[:=]/i.test(line) ? '[凭据已屏蔽]' : line).join('\n')
 }
 
-function budgetOf(value = 12288): number {
-  if (!Number.isSafeInteger(value) || value < 1024 || value > 65536) throw new Error('SELF 预算必须为 1024–65536 字节')
+export function validateSelfBudget(value: unknown = 12288): number {
+  if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 1024 || value > 65536) throw new Error('SELF 预算必须为 1024–65536 字节')
   return value
 }
 
@@ -32,7 +32,7 @@ export function readSoulSelfSnapshot(moduleDir: string): { content: string; revi
 }
 
 export function refreshSoulSelf(moduleDir: string, index: SoulIndexStatus, options: { expectedRevision: string | null; signal?: AbortSignal; budgetBytes?: number }) {
-  const budget = budgetOf(options.budgetBytes)
+  const budget = validateSelfBudget(options.budgetBytes)
   options.signal?.throwIfAborted()
   const source = readModuleFile(moduleDir, SOUL_SELF_SOURCE).content
   if (!source.trim()) throw new Error('SELF 骨架缺失：data/SELF.src.md')
@@ -77,6 +77,6 @@ export function renderSoulSelf(moduleDir: string, agent: SoulSelfAgent, signal?:
   const snapshot = readSoulSelfSnapshot(moduleDir)
   const prefix = snapshot.revision === null ? '[SELF missing：等待骨架初始化与维护]' : seal(snapshot.content)
   const text = `${prefix}\n## 当前运行身份\n- 本会话：${agent.session.id}\n- 受众：${(agent.session.header?.delegationDepth ?? 0) > 0 ? '子代理' : '主会话'}\n`
-  if (Buffer.byteLength(text) > budgetOf(budgetBytes)) throw new Error('SELF 动态上下文超预算')
+  if (Buffer.byteLength(text) > validateSelfBudget(budgetBytes)) throw new Error('SELF 动态上下文超预算')
   return seal(text)
 }

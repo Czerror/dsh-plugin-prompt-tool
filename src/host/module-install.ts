@@ -44,8 +44,7 @@ export function canonicalModulesRoot(root: string, allowMissing = false): string
   return realpathSync(absoluteRoot)
 }
 
-/** 根与目标先解析真实路径，拒绝链接目录及定义身份不一致。 */
-export function assertModuleDirectory(root: string, id: string, allowMissing = false): string {
+function assertModuleDirectoryPath(root: string, id: string, allowMissing = false): string {
   assertModuleId(id)
   const canonicalRoot = canonicalModulesRoot(root, allowMissing)
   const target = join(canonicalRoot, id)
@@ -59,11 +58,34 @@ export function assertModuleDirectory(root: string, id: string, allowMissing = f
   }
   // Windows 的文件查找不区分大小写，宿主发现规则区分大小写。
   if (!readdirSync(canonicalRoot).includes(id)) throw new Error(`预设目录身份不匹配：${id}`)
+  return target
+}
+
+/** 根与目标先解析真实路径，拒绝链接目录及定义身份不一致。 */
+export function assertModuleDirectory(root: string, id: string, allowMissing = false): string {
+  const target = assertModuleDirectoryPath(root, id, allowMissing)
+  if (allowMissing && !modulePathExists(target)) return target
   const definition = join(target, MODULE_DEFINITION_FILE)
   const fileStat = lstatSync(definition)
   if (fileStat.isSymbolicLink() || !fileStat.isFile()) throw new Error(`预设定义不是普通文件：${id}`)
   const doc = parseDocument(readFileSync(definition, 'utf8'), { logLevel: 'silent' })
   if (doc.errors.length > 0 || !(doc.contents instanceof YAMLMap)) throw new Error(`预设定义无效：${id}`)
+  const declared = doc.get('id')
+  if (declared !== undefined && declared !== id) throw new Error(`预设定义身份不匹配：${id}`)
+  return target
+}
+
+/** 派生快照允许定义暂时损坏；路径、文件类型与可读的声明身份仍须可信。 */
+export function assertModuleSnapshotSource(root: string, id: string): string {
+  const target = assertModuleDirectoryPath(root, id)
+  const definition = join(target, MODULE_DEFINITION_FILE)
+  const fileStat = lstatSync(definition, { throwIfNoEntry: false })
+  if (!fileStat) return target
+  if (fileStat.isSymbolicLink() || !fileStat.isFile()) throw new Error(`预设定义不是普通文件：${id}`)
+  let doc: ReturnType<typeof parseDocument>
+  try { doc = parseDocument(readFileSync(definition, 'utf8'), { logLevel: 'silent' }) }
+  catch { return target }
+  if (doc.errors.length > 0 || !(doc.contents instanceof YAMLMap)) return target
   const declared = doc.get('id')
   if (declared !== undefined && declared !== id) throw new Error(`预设定义身份不匹配：${id}`)
   return target

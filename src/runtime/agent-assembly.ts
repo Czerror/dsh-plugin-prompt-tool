@@ -35,7 +35,7 @@ import { compileCustomTool, validateCustomTools } from '../host/custom-tools.ts'
 import { createRuleDiagnosticsLedger, emptyRuleDiagnostics, type RuleDiagnosticsSnapshot } from './rule-diagnostics.ts'
 import { createTargetQueue } from '../shared/target-queue.ts'
 import { createModuleVariableAdapter } from './module-variable-adapter.ts'
-import type { ManifestCheckReader } from '../host/module-manifest-check.ts'
+import type {} from '../host/module-manifest-check.ts'
 import { createModuleInitialization } from './module-initialization.ts'
 import { planPersonaSections, type PersonaCapture, type PersonaModule, type PersonaPlan } from './persona-registration.ts'
 import { MODULE_TOOL_CAPABILITIES, OFFICIAL_RECIPE_ROWS, enabledRowIds } from '../shared/engine-capabilities.ts'
@@ -321,7 +321,7 @@ function duplicateDedupeIdentities(prepared: PreparedAssembly[]): DuplicateIdent
 
 export function createAgentAssembly(ctx: Context, options: AgentAssemblyOptions): AgentAssemblyRuntime {
   const variableStore = createModuleVariableAdapter(options.moduleRoot)
-  const manifestCheck = ctx.get(MANIFEST_CHECK_SERVICE) as ManifestCheckReader | undefined
+  const manifestCheck = ctx.get(MANIFEST_CHECK_SERVICE)
   const recoveryState = createGenerationRecoveryState(join(dirname(options.moduleRoot), 'generation-recovery'))
   const ruleDiagnostics = createRuleDiagnosticsLedger()
   const initialization = createModuleInitialization(ctx)

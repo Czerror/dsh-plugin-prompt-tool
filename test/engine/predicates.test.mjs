@@ -523,3 +523,38 @@ test('变量状态：非法声明 fail loud，编辑器示例可编译', () => {
   assert.throws(() => createVariablePredicate({ key: 'k', scope: 'session' }), /scope/)
   assert.ok(getRuleEditorMeta().predicates.some((item) => item.kind === 'variable'), '编辑器 meta 含 variable')
 })
+
+test('清单条件：准备期不可用，挂载后按来源模块读取三值事实', () => {
+  let value = false
+  const reads = []
+  const manifestCheck = { read: id => { reads.push(id); return value } }
+  const rules = compileRules([{
+    id: 'check', layer: 'system-section', if: { manifest: { ok: false } },
+    then: [{ id: 'inject', kind: 'inject-text', config: { text: 'FAILED' } }],
+  }], { moduleId: 'soul', manifestCheck })
+  assert.equal(rules[0].when(), UNAVAILABLE, '编译期剥离读取器')
+  assert.deepEqual(reads, [])
+  rebindConditions([{ moduleId: 'soul', rules }], { manifestCheck })
+  assert.equal(rules[0].when(), true)
+  value = true
+  assert.equal(rules[0].when(), false)
+  assert.deepEqual(reads, ['soul', 'soul'])
+  assert.equal(compileWhen({ manifest: { ok: true } }, { moduleId: 'soul', manifestCheck })(), true)
+})
+
+test('清单条件：缺少读取器、模块身份或事实时不可用，not 不反转', () => {
+  for (const context of [
+    { moduleId: 'soul' },
+    { manifestCheck: { read: () => false } },
+    { moduleId: 'soul', manifestCheck: { read: () => undefined } },
+  ]) {
+    assert.equal(compileWhen({ manifest: { ok: false } }, context)(), UNAVAILABLE)
+    assert.equal(compileWhen({ not: { manifest: { ok: false } } }, context)(), UNAVAILABLE)
+  }
+})
+
+test('清单条件：非法 ok 和未知字段拒绝', () => {
+  assert.throws(() => compileWhen({ manifest: { ok: 'yes' } }), /ok must be a boolean/)
+  assert.throws(() => compileWhen({ manifest: {} }), /ok must be a boolean/)
+  assert.throws(() => compileWhen({ manifest: { ok: false, failedMin: 1 } }), /does not take failedMin/)
+})

@@ -242,7 +242,7 @@ registerTuiCommand(
   const personaCapture = installPersonaCapture(ctx)
   ctx.effect(function* () {
     yield () => personaCapture.dispose()
-    const agentsFiber = ctx.inject(['agents'], (actx: Context) => {
+    const agentsFiber = ctx.inject(['agents', MANIFEST_CHECK_SERVICE], (actx: Context) => {
       const mounted = createAgentAssembly(actx, {
         moduleRoot: modulesDir(),
         enabledModules: () => runtime.modulesEnabled

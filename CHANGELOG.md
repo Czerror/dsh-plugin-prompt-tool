@@ -7,8 +7,9 @@
 - 生成恢复扩展为可选空回合／长推理检测、每会话持久额度和去重恢复；局部维护失败默认不扩大范围，取消与卸载阻止迟到唤醒。Soul默认主3／子1额度，维护压缩关闭。
 - 新增书房数据命令 `/prompt-tool data-import`：显式选文件或初始化清单，先预览再凭版本应用；只补缺失，保留原件与冲突目标，旧账本映射到 `02-soul.jsonl`，私有 `data/` 不进入默认导出。
 - 新增可选 `generation-recovery` 能力：分别检测正文与推理重复，在阈值处合法收尾；保护工具调用与取消，按主／子受众启用，通用默认只截断。
-- SELF 注入预算与维护 `soul-maintenance.budgetBytes` 同源：此前注入侧固定按 12288 校验，调大维护预算后 SELF 段会因超预算被跳过且只告警一次；现在按模块装配事实取同一预算。
-- 新增规则条件 `manifest: { ok: boolean }`：直接读取模块 `assets/manifest.yml` 的 checks 当前事实（宿主按 mtime/size 缓存，只读），清单缺失为 UNAVAILABLE；soul 的 `soul-check` 改为消费该条件，不再依赖手写 `check_failed` 变量。
+- SELF 注入读取与维护相同来源的 `soul-maintenance.budgetBytes`：mtime/size 变化提前刷新，缓存到1000ms重读；定义损坏或预算非法时沿用最近有效值，无历史值回12288。路径、身份和最终输出预算仍校验，未启用维护的显式预算仍有效。
+- 新增规则条件 `manifest: { ok: boolean }`：只读模块清单 checks，检查结果缓存1000ms，账本连续追加不再每次触发完整解析；清单配置戳变化提前失效，显式 `module_manifest check` 始终实时。清单缺失/损坏及独立 rule-engine 无读取器时为 UNAVAILABLE，否定不会把未知当失败。soul 的 `soul-check` 消费该条件，不再依赖手写 `check_failed` 变量。
+- 修复插件初始化时过早获取 manifest 读取器：Agent 装配现在等待该服务激活，避免实际插件入口的条件永久不可用；真实入口测试覆盖主/子 Agent、压缩、卸载和重挂。
 
 ## [3.0.2] - 2026-10-25
 
