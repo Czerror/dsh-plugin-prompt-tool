@@ -28,9 +28,9 @@ test('soul 模块：规则编译、模板存在与变量声明', () => {
   })
   assert.deepEqual(rules.map(rule => rule.id).sort(), [
     'soul-check', 'soul-core', 'soul-core-sub', 'soul-echo', 'soul-layers', 'soul-ledger',
-    'soul-ledger-open', 'soul-plan', 'soul-post-compaction', 'soul-scaffold', 'soul-self', 'soul-tick', 'soul-vital',
+    'soul-ledger-open', 'soul-plan', 'soul-post-compaction', 'soul-scaffold', 'soul-self', 'soul-tick', 'soul-tools', 'soul-vital',
   ])
-  for (const file of ['criteria.md', 'core-hard.md', 'layers.md', 'echo.md', 'vital.md', 'ledger.md']) {
+  for (const file of ['criteria.md', 'core-hard.md', 'layers.md', 'echo.md', 'vital.md', 'ledger.md', 'tools.md']) {
     assert.ok(readFileSync(join(moduleDir, 'assets', file), 'utf8').length > 0)
   }
   const layers = readFileSync(join(moduleDir, 'assets', 'layers.md'), 'utf8')

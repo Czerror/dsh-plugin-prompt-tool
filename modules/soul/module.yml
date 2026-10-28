@@ -103,6 +103,22 @@ rules:
           params:
             contextName: agent:soul-self
 
+  - id: soul-tools
+    name: soul 工具速查
+    enabled: true
+    layer: runtime-context
+    then:
+      - id: inject
+        kind: inject-text
+        config:
+          id: soul-tools
+          strategy: static
+          layer: runtime-context
+          order: 134
+          params:
+            contextName: agent:soul-tools
+          templateFile: ./assets/tools.md
+
   - id: soul-core-sub
     name: 子代理硬线
     enabled: true
