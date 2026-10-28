@@ -728,6 +728,34 @@ test('conditional runtime-context：条件不命中时 assemble 与 refreshConte
   assert.equal(refreshed.contexts[0].text, '')
 })
 
+test('conditional runtime-context：同一挂载条件 true→false 跨轮不残留', async () => {
+  const contexts = []
+  const listeners = new Map()
+  let allow = true
+  const ctx = {
+    on(name, handler) { listeners.set(name, handler); return () => listeners.delete(name) },
+    get: (name) => (name === 'systemPrompt'
+      ? { variable: () => () => {}, section: () => () => {}, context(def) { contexts.push(def); return () => {} } }
+      : undefined),
+    logger: { warn() {} },
+  }
+  const config = { ...createPromptConfigs([{ id: 'gated-ctx', layer: 'runtime-context', strategy: 'static', text: 'GATED', order: 7 }])[0], actionWhen: () => allow }
+  wireLayers(ctx, [config], () => {})
+  const current = agent()
+  const run = async () => {
+    const assembly = { contexts: contexts.map(def => ({ name: def.name, text: typeof def.text === 'function' ? def.text({ agent: current }) : def.text })) }
+    const filled = await listeners.get('system-prompt/assemble')(assembly, { agent: current }, async () => assembly)
+    return { filled, refreshed: refreshRuntimeContexts(contexts, filled, current) }
+  }
+  const on = await run()
+  assert.equal(on.filled.contexts[0].text, 'GATED')
+  assert.equal(on.refreshed.contexts[0].text, 'GATED')
+  allow = false
+  const off = await run()
+  assert.equal(off.filled.contexts[0].text, '')
+  assert.equal(off.refreshed.contexts[0].text, '', '条件翻转后 refreshContext 不得残留上一轮正文')
+})
+
 test('createPromptConfigs：templateFile 越出预设根 fail loud（防任意文件进入模型上下文）', () => {
   assert.throws(
     () => createPromptConfigs([{ id: 'bad', strategy: 'static', templateFile: 'D:/Windows/win.ini' }]),
