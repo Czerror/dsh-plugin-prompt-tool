@@ -15,7 +15,7 @@ version: 1.0.0
 engineCompat: ">=0.7.2"
 modules:
   # 仅启用规则引擎。其他能力保持 opt-in；写入其已登记参数后会自动补齐装配。
-  # 可用模块（engine/compositions 下的文件名）：filesystem-editor, instruction-hint, module-file-tools, module-import-tools, module-manifest-tools, module-rule-tools, module-variable-tools, persistent-shell-posix, present-as, rule-engine, run-code-env, skill-search, tool-bash-disabled, tool-config-engine, tool-git-bash, tool-search
+  # 可用模块（engine/compositions 下的文件名）：context-provenance, filesystem-editor, generation-recovery, instruction-hint, module-file-tools, module-import-tools, module-manifest-tools, module-rule-tools, module-variable-tools, persistent-shell-posix, present-as, retrieval, rule-engine, run-code-env, skill-search, soul-ledger, soul-maintenance, tool-bash-disabled, tool-config-engine, tool-git-bash, tool-search
   # filesystem-editor / persistent-shell-posix / tool-bash-disabled 由会话原有预设提供；声明它们只会产生诊断，插件不挂载官方包。
   # 已退役的引擎名：prompt-config-engine, declared-triggers；旧定义需显式转换。
   # 人设使用 persona.main / persona.subagent；未声明字段继承官方值。
@@ -497,7 +497,8 @@ rules:
               fill: tool-catalog
               position: after-all
               dedupe: session
-              text: 常驻工具：{{RESIDENT_TOOLS}}。缺少所需工具时，先用 {{DISCOVERY_TOOL}} 搜索并解锁。
+              text: 常驻工具：{{RESIDENT_TOOLS}}。缺少所需工具时，先用 {{DISCOVERY_TOOL}} 搜索；要用某个工具，先以
+                {"toolNames":["<工具名>"]} 解锁——解锁从下一次请求起生效，之后才可调用。
               params:
                 action: narrow-tools
   - id: example-context-activation

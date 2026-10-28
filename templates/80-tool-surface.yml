@@ -46,6 +46,6 @@ then:
           fill: tool-catalog
           position: after-all
           dedupe: session
-          text: 常驻工具：{{RESIDENT_TOOLS}}。缺少所需工具时，先用 {{DISCOVERY_TOOL}} 搜索并解锁。
+          text: 常驻工具：{{RESIDENT_TOOLS}}。缺少所需工具时，先用 {{DISCOVERY_TOOL}} 搜索；要用某个工具，先以 {"toolNames":["<工具名>"]} 解锁——解锁从下一次请求起生效，之后才可调用。
           params:
             action: narrow-tools
