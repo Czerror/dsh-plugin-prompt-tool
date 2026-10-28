@@ -285,8 +285,8 @@ rules:
           order: 124
           role: user
           text: |-
-            先定一步计划再动手：用 module_variables（moduleId: soul，scope: module）读取 plan_step 与 plan_at，
-            写入一行「下一步 + 判据」，带回 expectedRevisions；计划变了就覆盖，不要留旧计划当真相。
+            先定一步计划再动手：用 module_variables（moduleId: soul，scope: module，action: list）读取 plan_step 与 plan_at，
+            写入时 action: set，key 为 plan_step 或 plan_at，value 为一行「下一步 + 判据」，带回读取到的 expectedRevisions；计划变了就覆盖，不要留旧计划当真相。
             连续三步没有进展时停下来重写计划，而不是继续加动作。
             需要看装配进度时先 module_manifest（moduleId: soul）action=next，再决定改计划还是先装配。
 
@@ -364,6 +364,6 @@ rules:
           text: |-
             账本还有未结事项：回复里逐条收口，或说清为什么先放着。
             先用 soul_ledger（moduleId: soul，action: list）核对原始未结记录；
-            需要追加时用 soul_ledger（moduleId: soul，action: append，type: fact/shelved/promise，概要: 一句话，ref: 出处），
+            需要追加时用 soul_ledger（moduleId: soul，action: append，type: fact/shelved/gain/loss/persona/container 之一，概要: 一句话，ref: 出处），
             作者和时间由宿主提供，promise 只允许最后 lead 署名的主导会话；lead 需用户指定并经审批。
             只往后加，不改旧行；收口后把 ledger_open 减到 0。
