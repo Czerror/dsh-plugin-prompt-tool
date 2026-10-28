@@ -77,9 +77,9 @@
 
 - 审查完成后，由用户指定本轮修复任务；审查发现本身不等于修复授权，其结论写入 PLAN 的「审查结论」章节，不另行落盘。
 - 每个修复轮次在 `.scratch/plan/` 下创建唯一一份 PLAN，文件名用 `YYYY-MM-DD-plan-<主题>-<基线>.md`，章节骨架与验收标准见 [PLAN 格式规范](docs/agents/plan-format.md)。
-- PLAN 完成即归档：收尾时填满 `## 状态`，把 PLAN 原样复制到 `.scratch/archive/`（保留其中的历史互链）后从 `.scratch/plan/` 移除。
+- PLAN 完成即归档：收尾时填满 `## 状态`，把 PLAN 原样复制到 `.scratch/archive/<分类>/`（保留其中的历史互链；分类沿用现有主题目录，清单见 `INDEX.md`）后从 `.scratch/plan/` 移除，并同步在 `INDEX.md` 登记。
 - `.scratch/` 是本地作业区，已被 `.gitignore` 忽略：PLAN、归档、issue 与规格只留本地，不 `git add`、不提交、不推送，也不因它扩大本轮暂存范围。
-- `.scratch/archive/` 只收 plan 归档。
+- `.scratch/archive/` 只收 plan 归档，按分类目录存放；现有分类、条目清单与回滚说明见 `.scratch/archive/INDEX.md`。
 
 ### 代码改动固定流程
 
@@ -90,7 +90,7 @@
 3. **落 PLAN**：按 [PLAN 格式规范](docs/agents/plan-format.md) 建 `.scratch/plan/YYYY-MM-DD-plan-<主题>-<基线>.md`，把每一条已确认取舍写进「需求与授权」，任务按 Wave 拆到可单上下文完成。
 4. **实施**：单会话改动直接 `/implement`（多会话才先 `/to-spec` 再 `/to-tickets`）；新非平凡逻辑按 TDD 先红后绿，测试落五条 seam。
 5. **两轴评审**：交付前跑 `/code-review`，固定点取本轮起点；Standards 与 Spec 各派一个子代理并行，报告分节呈现、不合并不重排。
-6. **归档与记忆**：PLAN 填满「状态」「验收记录」后复制到 `.scratch/archive/` 并移除；`.ai-memory` 记一条决策、文件与验证。
+6. **归档与记忆**：PLAN 填满「状态」「验收记录」后按分类复制到 `.scratch/archive/<分类>/`、同步 `INDEX.md` 并移除；`.ai-memory` 记一条决策、文件与验证。
 
 评审结论若要求修复，按新的一轮重新走 1–6；每一步的证据（测试命令、评审结论）写进 PLAN 的对应章节，不另建报告文件。
 
