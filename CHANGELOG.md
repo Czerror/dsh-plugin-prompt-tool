@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [3.1.0] - 2026-10-28
+
 - Soul完整核心：正式账本工具与主导审批、授权文件／历史search-open、动态SELF和默认不唤醒的维护心跳；通用追加不再接受新旧Soul账本名。
 - 新增按Agent的上下文运行时：六入口统一选择，摘要与工具裁剪带可验证来源，取消／失败保留正确epoch和路由；可选官方能力按包名白名单从宿主解析，运行期不比对版本，不增加仓库依赖。
 - 生成恢复扩展为可选空回合／长推理检测、每会话持久额度和去重恢复；局部维护失败默认不扩大范围，取消与卸载阻止迟到唤醒。Soul默认主3／子1额度，维护压缩关闭。
@@ -11,6 +13,7 @@
 - 新增规则条件 `manifest: { ok: boolean }`：只读模块清单 checks，检查结果缓存1000ms，账本连续追加不再每次触发完整解析；清单配置戳变化提前失效，显式 `module_manifest check` 始终实时。清单缺失/损坏及独立 rule-engine 无读取器时为 UNAVAILABLE，否定不会把未知当失败。soul 的 `soul-check` 消费该条件，不再依赖手写 `check_failed` 变量。
 - 修复插件初始化时过早获取 manifest 读取器：Agent 装配现在等待该服务激活，避免实际插件入口的条件永久不可用；真实入口测试覆盖主/子 Agent、压缩、卸载和重挂。
 - 修复 runtime-context 注入被请求前刷新清空：条件化与 placeholder 两条注册路径改为同步 provider 读取挂载内 holder，assemble 填充后 `systemPrompt.refreshContext` 重算仍保留正文；此前 marker 占位会在 refreshContext 时被重算回空，导致 `soul-core`/`soul-self` 配了不生效。补 refresh 行为回归。
+- **验证**：typecheck、lint（0 warning）、test **985 passed**（0 失败 0 跳过）、build、`git diff --check` 全绿；`npm pack` 产物解包逐文件 SHA256 比对与临时项目安装 smoke 通过。
 
 ## [3.0.2] - 2026-10-25
 
