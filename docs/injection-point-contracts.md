@@ -59,7 +59,7 @@ rules:
 |---|---|---|
 | `pre-step` | 每次 `agent/pre-step` 调用（每步）：条件在 handler 判定，正文在返回消息批前拼装 | 改配置后下一步即生效 |
 | `system-section` | 注册发生在挂载期；静态正文注册时物化，动态正文与条件段先注册**同步占位**，再由 `system-prompt/assemble` 内的 waterfall 填充本次装配 | 正文可在装配内决定，但段本身必须在装配开始前已注册 |
-| `runtime-context` | 同上；动态策略的 `resolve()` 只在 `system-prompt/assemble` 内调用 | 空值或异常只让该条为空并告警，取消或卸载丢弃本次填充 |
+| `runtime-context` | 同上；动态策略的 `resolve()` 只在 `system-prompt/assemble` 内调用，注册 provider 按当前 assembly 的 Agent 读取文本槽 | 空值或异常只让该条为空并告警，取消或卸载丢弃本次填充 |
 | `agent-request` | `next()` 解析完成后合并（浅合并 / `replace` 整体替换 / `unset` 按值删键） | 只影响本次请求配置，不改消息正文 |
 | `llm-stream` | `next()` 之前决定 pass / replace；请求此时已深冻结 | 只能替换流，不能改写消息与调用配置 |
 | `tool-pipeline` | `pre-execute` 在执行前裁决；`post-execute` 在结果到手后——由 `tool-gate` / `tool-result` / `append-context` 动作承担 | arguments 不可改写；`toolResult` 条件只有后置入口有数据；`inject-text` 在本层没有通道 |
@@ -120,4 +120,4 @@ rules:
 - [Tools：各工具阶段及不可修改的参数](https://github.com/deepseek-ai/deepseek-harness/blob/ddefc45fbc/docs/subsystems/tools.md)
 - [Subagent：只读生命周期与投递接口](https://github.com/deepseek-ai/deepseek-harness/blob/ddefc45fbc/docs/subsystems/subagent.md)
 
-运行时动态上下文在官方异步 waterfall 内完成填充，随后继续 `next()`，保留作用域遮蔽、顺序、上下文抑制与晋升门控。同步占位由私有空变量承载；空值、异常、取消或卸载不会复用旧正文。
+运行时动态上下文在官方异步 waterfall 内完成填充，随后继续 `next()`，保留作用域遮蔽、顺序、上下文抑制与晋升门控。动态策略的 provider 契约见上表 `runtime-context` 行；文本槽按 Agent 分区，空值、异常、取消或卸载只让本次条目为空。

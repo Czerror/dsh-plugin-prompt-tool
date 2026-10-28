@@ -139,7 +139,10 @@ export function prepareToolVisibility(action, plugin) {
             if (toolName === RUN_CODE || typeof toolName !== 'string' || toolName.length === 0) return undefined
             if (deny?.has(toolName)) return `${label}: tool ${JSON.stringify(toolName)} is denied by tool-visibility`
             if (mask.allow !== undefined && !state.failOpen && mask.blocks(toolName, state.unlocked)) {
-              return `${label}: tool ${JSON.stringify(toolName)} is not allowed by tool-visibility`
+              const hint = discovery === undefined
+                ? 'the allow list is the only path; this action has no discovery source'
+                : `unlock it with tool_search({"toolNames":[${JSON.stringify(toolName)}]}); the gate allows unlocked tools from the next request on`
+              return `${label}: tool ${JSON.stringify(toolName)} is not allowed by tool-visibility; ${hint}`
             }
             return undefined
           }))

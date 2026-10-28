@@ -119,7 +119,7 @@ test('tool-visibility：allow 与 deny 同时给时先保留再剔除（对齐�
   assert.deepEqual(out.tools.map((tool) => tool.name), ['alpha'])
   assert.deepEqual(disposed.restrict, [{ deny: ['beta'] }], 'allow 不交给 restrict，避免漏掉预设/祖先层工具')
   assert.equal(disposed.guards[0]({ name: 'beta' }), 'v: tool "beta" is denied by tool-visibility')
-  assert.equal(disposed.guards[0]({ name: 'gamma' }), 'v: tool "gamma" is not allowed by tool-visibility')
+  assert.equal(disposed.guards[0]({ name: 'gamma' }), 'v: tool "gamma" is not allowed by tool-visibility; the allow list is the only path; this action has no discovery source')
 })
 
 test('tool-visibility：只缺部分常驻工具时照常收窄，缺项只留诊断', async () => {
@@ -131,7 +131,7 @@ test('tool-visibility：只缺部分常驻工具时照常收窄，缺项只留�
   const input = assembled(toolList('alpha', 'beta'))
   const out = await handler(input, { agent: agentOf(scope) }, async () => input)
   assert.deepEqual(out.tools.map((tool) => tool.name), ['alpha'], '缺一个名字不触发整面放宽')
-  assert.equal(disposed.guards[0]({ name: 'beta' }), 'v: tool "beta" is not allowed by tool-visibility', '执行闸保持收窄')
+  assert.equal(disposed.guards[0]({ name: 'beta' }), 'v: tool "beta" is not allowed by tool-visibility; the allow list is the only path; this action has no discovery source', '执行闸保持收窄')
   assert.ok(rec.warnings.some((message) => message.includes('ghost') && /narrowing continues/.test(message)), '诊断带出缺项')
 })
 
@@ -172,7 +172,7 @@ test('tool-visibility：装配没有工具面时不打开执行闸', async () =>
   const out = await handler(input, { agent: agentOf(scope) }, async () => input)
   assert.equal(out.tools, undefined, '没有目录就保持原样')
   assert.deepEqual(rec.warnings, [], '没有观察到工具面就不该告警')
-  assert.equal(disposed.guards[0]({ name: 'beta' }), 'v: tool "beta" is not allowed by tool-visibility', '闸保持收窄')
+  assert.equal(disposed.guards[0]({ name: 'beta' }), 'v: tool "beta" is not allowed by tool-visibility; the allow list is the only path; this action has no discovery source', '闸保持收窄')
 })
 
 test('tool-visibility：fail-open 告警按动作去重（缺项名变化不重复）', async () => {
@@ -204,7 +204,7 @@ test('tool-visibility：run_code 是保留传输，allow 不点名也保留且�
     const out = await handler(input, { agent: agentOf(scope) }, async () => input)
     assert.deepEqual(out.tools.map((tool) => tool.name), ['alpha', 'run_code'], `allow ${allow.join(',')} 仍保留传输`)
     assert.equal(disposed.restrict, undefined, 'allow 模式不调用 restrict')
-    assert.equal(disposed.guards[0]({ name: 'beta' }), 'v: tool "beta" is not allowed by tool-visibility')
+    assert.equal(disposed.guards[0]({ name: 'beta' }), 'v: tool "beta" is not allowed by tool-visibility; the allow list is the only path; this action has no discovery source')
     assert.deepEqual(rec.warnings, [], 'run_code 不参与 requireMatch 的缺失判定')
   }
 })
@@ -289,7 +289,7 @@ test('tool-visibility：解锁名按会话冻结——别的会话装配不得�
   const inB = assembled(toolList('alpha'))
   await handler(inB, { agent: agentB }, async () => inB)
   assert.equal(guards.get('A')({ name: 'gamma' }), undefined, 'B 的装配不得抹掉 A 的解锁名')
-  assert.equal(guards.get('B')({ name: 'gamma' }), 'v: tool "gamma" is not allowed by tool-visibility', 'B 仍拒绝自己没解锁的工具')
+  assert.equal(guards.get('B')({ name: 'gamma' }), 'v: tool "gamma" is not allowed by tool-visibility; unlock it with tool_search({"toolNames":["gamma"]}); the gate allows unlocked tools from the next request on', 'B 仍拒绝自己没解锁的工具')
 })
 
 // ───────────────────────── 四、真实规则挂载 ─────────────────────────

@@ -255,15 +255,24 @@ function wireRuleTextContributions(ctx, configs, registry, warnOnce, keep, on, o
     const entryName = textRegistrationName(base, section ? 'sectionName' : 'contextName')
     // runtime-context 在官方 refreshContext 里按注册 provider 重算：provider 必须返回当前文本，
     // 否则 assemble 钩子的填充会在请求前被 marker 覆盖。system-section 不重算，仍用 marker 占位。
-    const holder = section ? undefined : { text: '' }
+    // 文本槽按 Agent 分区：同一挂载服务多个 Agent，交错装配时不能互相读到对方的正文。
+    const holders = section ? undefined : new WeakMap()
+    const sharedHolder = section ? undefined : { text: '' }
+    const holderOf = section ? undefined : (context) => {
+      const key = context?.agent
+      if (key === undefined || key === null) return sharedHolder
+      let holder = holders.get(key)
+      if (holder === undefined) { holder = { text: '' }; holders.set(key, holder) }
+      return holder
+    }
     try {
       keep(systemPrompt[section ? 'section' : 'context']({
         name: entryName,
         order: base.order,
-        text: section ? marker : () => holder.text,
+        text: section ? marker : (context) => holderOf(context).text,
       }), `${name}: conditional ${entryName}`)
     } catch (error) { throw sourceError === undefined ? error : sourceError(error, base.sourceModuleId) }
-    bindings.push({ group, name: entryName, collection: section ? 'sections' : 'contexts', holder })
+    bindings.push({ group, name: entryName, collection: section ? 'sections' : 'contexts', holderOf })
     ordered[section ? 'sections' : 'contexts'].push(orderedEntry(entryName, base))
   }
   let active = true
@@ -275,8 +284,9 @@ function wireRuleTextContributions(ctx, configs, registry, warnOnce, keep, on, o
         ? assembly.sections.find(item => item.name === binding.name && item.text === marker)
         : assembly.contexts.find(item => item.name === binding.name)
       if (entry === undefined) continue
+      const holder = binding.holderOf === undefined ? undefined : binding.holderOf(context)
       entry.text = ''
-      if (binding.holder !== undefined) binding.holder.text = ''
+      if (holder !== undefined) holder.text = ''
       const blocks = []
       for (const config of binding.group) {
         if (!active || context.signal?.aborted || !actionMatches(config, frame) || !matchesAgentScope(config, context.agent)) continue
@@ -289,7 +299,7 @@ function wireRuleTextContributions(ctx, configs, registry, warnOnce, keep, on, o
       }
       if (active && !context.signal?.aborted) {
         entry.text = blocks.join('\n\n')
-        if (binding.holder !== undefined) binding.holder.text = entry.text
+        if (holder !== undefined) holder.text = entry.text
       }
     }
     return next()
@@ -341,13 +351,22 @@ function wireRuntimeContexts(ctx, configs, registry, warnOnce, keep, on, ordered
   for (const config of placeholders) {
     try {
       const contextName = textRegistrationName(config, 'contextName')
-      const holder = { text: '' }
+      // 文本槽按 Agent 分区：交错装配时 A 的 refresh 不得读到 B 的正文。
+      const holders = new WeakMap()
+      const sharedHolder = { text: '' }
+      const holderOf = (context) => {
+        const key = context?.agent
+        if (key === undefined || key === null) return sharedHolder
+        let holder = holders.get(key)
+        if (holder === undefined) { holder = { text: '' }; holders.set(key, holder) }
+        return holder
+      }
       keep(systemPrompt.context({
         name: contextName,
         order: config.order,
-        text: () => holder.text,
+        text: (context) => holderOf(context).text,
       }), `${name}: context ${config.id}`)
-      registered.set(contextName, { config, holder })
+      registered.set(contextName, { config, holderOf })
       ordered.contexts.push(orderedEntry(contextName, config))
     } catch (error) {
       if (sourceError !== undefined) throw sourceError(error, config.sourceModuleId)
@@ -357,7 +376,8 @@ function wireRuntimeContexts(ctx, configs, registry, warnOnce, keep, on, ordered
   disposers.push(on('system-prompt/assemble', async (assembly, context, next) => {
     const entries = assembly.contexts.filter(entry => registered.has(entry.name))
     for (const entry of entries) {
-      const { config, holder } = registered.get(entry.name)
+      const { config, holderOf } = registered.get(entry.name)
+      const holder = holderOf(context)
       entry.text = ''
       holder.text = ''
       if (!active || context.signal?.aborted) continue

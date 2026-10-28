@@ -202,7 +202,7 @@ async function assembleRuntimeContexts(definitions, listeners, currentAgent = ag
   return (await listeners.get('system-prompt/assemble')(assembly, context, async () => assembly)).contexts
 }
 
-/** 模拟官方 refreshContext：请求前按注册 provider 重新解析 contexts（agent-loop/src/agent.ts:446）。 */
+/** 模拟官方 refreshContext：请求前按注册 provider 重新解析 contexts（宿主请求前刷新）。 */
 function refreshRuntimeContexts(definitions, assembly, currentAgent = agent()) {
   const context = { agent: currentAgent }
   return { ...assembly, contexts: definitions.map(def => ({ name: def.name, text: typeof def.text === 'function' ? def.text(context) : def.text })) }
@@ -685,6 +685,30 @@ test('runtime-context placeholder：注册同步占位，assembly 时动态填�
   assert.equal(result[0].text, '工作区=D:/repo')
   const refreshed = refreshRuntimeContexts(contexts, { contexts: result }, current)
   assert.equal(refreshed.contexts[0].text, '工作区=D:/repo', '请求前 refreshContext 重算后不得退回空文本')
+})
+
+test('runtime-context placeholder：多 Agent 交错装配不串值', async () => {
+  const contexts = []
+  const { listeners } = makeWiredHarness([
+    { id: 'ctx-env', layer: 'runtime-context', strategy: 'placeholder', fill: 'env-facts', order: 5,
+      text: '工作区={{WORKSPACE}}' },
+  ], {
+    systemPrompt: {
+      variable() { return () => {} },
+      section() { return () => {} },
+      context(def) { contexts.push(def); return () => {} },
+    },
+  })
+  const a = agent({ session: { id: 'agent-a', header: { delegationDepth: 0, cwd: 'D:/a' }, snapshotEvents: () => [] } })
+  const b = agent({ session: { id: 'agent-b', header: { delegationDepth: 0, cwd: 'D:/b' }, snapshotEvents: () => [] } })
+  const run = async (who) => {
+    const assembly = { contexts: contexts.map(def => ({ name: def.name, text: typeof def.text === 'function' ? def.text({ agent: who }) : def.text })) }
+    const filled = await listeners.get('system-prompt/assemble')(assembly, { agent: who }, async () => assembly)
+    return refreshRuntimeContexts(contexts, filled, who).contexts[0].text
+  }
+  assert.equal(await run(a), '工作区=D:/a')
+  assert.equal(await run(b), '工作区=D:/b')
+  assert.equal(await run(a), '工作区=D:/a', 'A 的装配与 refresh 不得读到 B 的槽')
 })
 
 test('conditional runtime-context：assemble 填充后 refreshContext 仍保留正文', async () => {
