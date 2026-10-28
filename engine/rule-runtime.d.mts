@@ -11,6 +11,11 @@ export interface RuleVariableStore {
   publish(moduleId: string): void
 }
 
+/** 清单检查事实通道（宿主读取器）；引擎只调用 read，undefined 表示不可用。 */
+export interface RuleManifestCheck {
+  read(moduleId: string): boolean | undefined
+}
+
 /** 判定上报载荷；仅覆盖插件依赖面（宿主按 `RuleOutcomeReport` 消费它）。 */
 export interface RuleOutcomeReport {
   moduleId?: string
@@ -30,6 +35,8 @@ export interface MountRuleSourcesOptions {
   plugin?: string
   warnOnce?: WarnOnce
   variableStore?: RuleVariableStore
+  /** 清单 checks 事实；缺省＝manifest 条件恒不可用。 */
+  manifestCheck?: RuleManifestCheck
   /** 官方预设兜底；缺省＝没有兜底（预设条件恒不命中）。 */
   standingMountFor?: StandingMountFor
   /** 注入的晋升相位实例对；缺省从协调器或自建池取。 */

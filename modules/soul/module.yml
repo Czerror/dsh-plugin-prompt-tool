@@ -64,9 +64,6 @@ variables:
   # 状态键由本模块声明；引擎只按普通模块变量处理，不认 soul 前缀。
   plan_step: ''
   plan_at: ''
-  check_verdict: ''
-  check_at: ''
-  check_failed: '0'
   scaffold_done: ''
   scaffold_root: data
   ledger_seq: '0'
@@ -329,10 +326,8 @@ rules:
     enabled: true
     layer: system-section
     if:
-      variable:
-        key: check_failed
-        op: gt
-        value: '0'
+      manifest:
+        ok: false
     then:
       - id: inject
         kind: inject-text
@@ -342,10 +337,10 @@ rules:
           strategy: static
           order: 247
           text: |-
-            上一轮自检有失败项：先 module_manifest（moduleId: soul）action=check 重新核对，
-            把结论写进 check_verdict（ok/fail）、check_at（时间）与 check_failed（失败数），
+            清单检查当前有未通过项（由引擎按装配事实求值，不需要手写变量）：
+            先 module_manifest（moduleId: soul）action=check 看全部明细，
             再说清是哪一条、证据是什么、下一步改哪个文件或哪条规则；
-            不要用「已修复」代替重新检查，也不要把失败项藏进总结。
+            修完要重新 check，不要用「已修复」代替重新检查，也不要把失败项藏进总结。
 
   - id: soul-ledger-open
     name: 未结账本提醒

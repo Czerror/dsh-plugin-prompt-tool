@@ -33,9 +33,10 @@ import { createAgentAssembly } from './runtime/agent-assembly.ts'
 import type { AgentAssemblyRuntime } from './runtime/agent-assembly.ts'
 import { emptyRuleDiagnostics } from './runtime/rule-diagnostics.ts'
 import { resolveModuleToolTarget } from './host/module-tool-target.ts'
+import { createManifestCheckReader } from './host/module-manifest-check.ts'
 import type { ModuleToolHost } from './host/module-tool-target.ts'
 // 服务名真值源在引擎侧：引擎可单独复制，名字随 `engine/` 一起走。
-import { DISCOVERY_SERVICE, toolServiceName } from '../engine/service-names.mjs'
+import { DISCOVERY_SERVICE, MANIFEST_CHECK_SERVICE, toolServiceName } from '../engine/service-names.mjs'
 import { createDiscoveryRegistry } from '../engine/discovery.mjs'
 
 export const name = 'prompt-tool'
@@ -206,6 +207,7 @@ registerTuiCommand(
     mount: (scopeCtx: Context): (() => void) => registerSoulLedgerTools(scopeCtx, moduleToolHost),
   })
   ctx.provide(DISCOVERY_SERVICE, createDiscoveryRegistry())
+  ctx.provide(MANIFEST_CHECK_SERVICE, createManifestCheckReader(modulesDir()))
   ctx.provide(toolServiceName('module-variable-tools'), {
     mount: (scopeCtx: Context): (() => void) => registerModuleVariableTools(scopeCtx, moduleToolHost),
   })

@@ -212,7 +212,7 @@ AGENTS.md/CLAUDE.md 及 local 变体属于用户文件。正文就地保存；�
 
 新建书房使用 `{"moduleId":"soul","initialize":true}` 选择该模块 `assets/manifest.yml` 的目录与模板文件，同样先预览再带 `expectedRevision` 应用，不能同时给外部来源。初始化只补缺失，不覆盖已修改模板；它不凭空创建清单 `checks` 中的账本，也不把检查通过等同于初始化完成。这里的 `data/AGENTS.md` 是模块私有资产，不是工作区指令文件。
 
-`host/module-data-import.ts` 统一拥有预览与应用；完整候选在现有模块目录事务中生成，锁内复核版本后交换，准备失败保留原目录。默认模块导出仍排除整个 `data/`。这条显式命令不会改变 `module_manifest` 既有的 next/check/apply 语义。
+`host/module-data-import.ts` 统一拥有预览与应用；完整候选在现有模块目录事务中生成，锁内复核版本后交换，准备失败保留原目录。默认模块导出仍排除整个 `data/`。这条显式命令不会改变 `module_manifest` 既有的 next/check/apply 语义。check 本身保持只读；检查结果另外作为规则条件 `manifest: { ok: boolean }` 暴露（`src/host/module-manifest-check.ts` 按 mtime/size 缓存），需要「检查失败就提醒」的模块在自己的规则里声明条件，不必写变量。
 
 ## 模块归属与验证
 

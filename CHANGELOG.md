@@ -8,6 +8,7 @@
 - 新增书房数据命令 `/prompt-tool data-import`：显式选文件或初始化清单，先预览再凭版本应用；只补缺失，保留原件与冲突目标，旧账本映射到 `02-soul.jsonl`，私有 `data/` 不进入默认导出。
 - 新增可选 `generation-recovery` 能力：分别检测正文与推理重复，在阈值处合法收尾；保护工具调用与取消，按主／子受众启用，通用默认只截断。
 - SELF 注入预算与维护 `soul-maintenance.budgetBytes` 同源：此前注入侧固定按 12288 校验，调大维护预算后 SELF 段会因超预算被跳过且只告警一次；现在按模块装配事实取同一预算。
+- 新增规则条件 `manifest: { ok: boolean }`：直接读取模块 `assets/manifest.yml` 的 checks 当前事实（宿主按 mtime/size 缓存，只读），清单缺失为 UNAVAILABLE；soul 的 `soul-check` 改为消费该条件，不再依赖手写 `check_failed` 变量。
 
 ## [3.0.2] - 2026-10-25
 

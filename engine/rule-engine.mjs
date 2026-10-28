@@ -37,5 +37,6 @@ export async function apply(ctx, config) {
   const moduleId = typeof packet.moduleId === 'string' ? packet.moduleId : basename(dirname(file))
   const rules = compileRules(packet.rules, { moduleId, variables: packet.variables, variablesEnabled: packet.variablesEnabled, configOrder: packet.configOrder, promptConfigOptions: { templateBaseUrl, templateModuleRoot, strategyDir } })
   // 条件在挂载缝绑定（preset 需要挂载 scope 的 ctx）；官方模块导出只作可选兜底。
+  // 独立装配路径没有插件侧服务，manifest 条件在这个入口恒不可用（见 docs/engine-reuse.md）。
   return mountRuleSources(ctx, [{ moduleId, rules }], { standingMountFor: await loadStandingMountFor() })
 }

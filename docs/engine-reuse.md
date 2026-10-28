@@ -1,6 +1,6 @@
 # 统一规则引擎复用指南
 
-规则是唯一行为定义。插件读取模块定义、校验切片，再经 `compileRules → mountRuleSources` 装配到 Agent scope，这是一条**两段式**生命周期：`compileRules` 只编译与校验（产物每条规则携带 `conditionTrees`，选项里的 `ctx` / `standingMountFor` 会被显式剥掉），**条件绑定由 `mountRuleSources` 在注册前完成**（内部调 `rebindConditions`）。原因是 `preset` 谓词要挂载 scope 的 ctx（`conditions/preset.mjs` 把服务查询基准绑在构造期），准备期拿不到——那边绑出来的 `preset` 条件是恒 UNAVAILABLE 的**静默死条件**。需要官方模块导出的兜底时，由调用方通过 options 传 `standingMountFor`；重绑含 `preset`、含 `phase` 且未显式 `subscribe: false`、或含 `anchor.after` 动作引用的树，其余谓词原样保留。模块不进入官方会话预设注册表；九个插入点各有生命周期，不形成插件自定义的全局管线。
+规则是唯一行为定义。插件读取模块定义、校验切片，再经 `compileRules → mountRuleSources` 装配到 Agent scope，这是一条**两段式**生命周期：`compileRules` 只编译与校验（产物每条规则携带 `conditionTrees`，选项里的 `ctx` / `standingMountFor` / `variableStore` / `manifestCheck` 会被显式剥掉），**条件绑定由 `mountRuleSources` 在注册前完成**（内部调 `rebindConditions`）。原因是 `preset` 谓词要挂载 scope 的 ctx（`conditions/preset.mjs` 把服务查询基准绑在构造期），准备期拿不到——那边绑出来的 `preset` 条件是恒 UNAVAILABLE 的**静默死条件**。需要官方模块导出的兜底时，由调用方通过 options 传 `standingMountFor`；重绑含 `preset`、含 `variable`、含 `manifest`、含 `phase` 且未显式 `subscribe: false`、或含 `anchor.after` 动作引用的树，其余谓词原样保留。模块不进入官方会话预设注册表；九个插入点各有生命周期，不形成插件自定义的全局管线。
 
 编辑保存与运行注入分别负责：客户端只提交合法草稿；发送消息不等待自动保存，运行使用磁盘已保存的有效定义。官方 `systemPrompt.assemble()` 开始、同步 provider 求值之前，插件核对本地定义与人设来源；变化才复用现有配装更新注册，没有变化不重挂。变量值仍在模板求值时读取，不因值更新重挂规则。
 
@@ -137,7 +137,7 @@ adapter 的目录、权限、原子写与版本责任归接入方。缺少 adapt
 
 规则含 `id/name/enabled/layer/group/exclusive/if/then/else`。动作有稳定 id 和 kind；then/else 与嵌套分支内的所有动作 id 在同一规则中唯一。读取投影可生成配置身份，编辑映射保留原始条件和载荷，不把编译默认值写回。
 
-`if` 是单键谓词或 all/any/not/notAny 组合。必要事实缺失为 UNAVAILABLE，不会因 not 变成 true。新增的 `variable` 谓词写成 `{ key, op, value, scope }`：op ∈ eq/ne/in/gt/gte/lt/lte/present/absent（缺省 eq），scope ∈ effective/module/global（缺省 effective）；`in` 的 value 是非空字符串数组，其余比较 op 的 value 是字符串，`present`/`absent` 不收 value；比较类在键缺失或任一侧非数字时为假；模块关闭变量或适配器未绑定时判定为 UNAVAILABLE。适配器由挂载期按来源模块绑定（`variableStore`），准备期编译出的条件恒不可用。规则级 else 要有同一规则的 if；事实未知时可能两支都不执行。分支节点不写 kind，不能把 if/then/else 塞进动作对象。
+`if` 是单键谓词或 all/any/not/notAny 组合。必要事实缺失为 UNAVAILABLE，不会因 not 变成 true。新增的 `variable` 谓词写成 `{ key, op, value, scope }`：op ∈ eq/ne/in/gt/gte/lt/lte/present/absent（缺省 eq），scope ∈ effective/module/global（缺省 effective）；`in` 的 value 是非空字符串数组，其余比较 op 的 value 是字符串，`present`/`absent` 不收 value；比较类在键缺失或任一侧非数字时为假；模块关闭变量或适配器未绑定时判定为 UNAVAILABLE。适配器由挂载期按来源模块绑定（`variableStore`），准备期编译出的条件恒不可用。`manifest` 谓词写成 `{ ok: boolean }`：读取来源模块 `assets/manifest.yml` 的 `checks` 当前事实（宿主读取器按 manifest 的 mtime/size 与各检查文件的 mtime/size 缓存，只读）；检查项失败为 false，清单缺失或坏 YAML 为 UNAVAILABLE；同样在挂载期绑定 `manifestCheck`，准备期恒不可用。规则级 else 要有同一规则的 if；事实未知时可能两支都不执行。分支节点不写 kind，不能把 if/then/else 塞进动作对象。
 
 受众事实由纯模块 `engine/audience.mjs#audienceOf`（条件树）与 `engine/rule-spec.mjs#actionAudiences`（编译后动作）派生：`scope.audience` 精确收窄（同节点带 `modelScope: pro|flash` 时不算精确），`all` 求交、`any` 保守、`not`/`notAny` 只对精确子节点取补，无法收窄的条件按两个受众处理。规则级 `else` 的动作自带 `not(if)`，不再叠加规则级 `if`。宿主装配只读这个结果，不自行遍历条件树。raw rule（编辑器/UI）的只读投影走 `engine/rule-facts.mjs#ruleFacts`：受众是 then/else/嵌套分支动作可能受众的并集，未知时按两个受众处理；空集由 client 展示层按未知处理（见 `docs/ui-architecture.md` 的 `rule-facts.ts`）；它同时回答是否包含 context activation。`ruleFacts` 是展示上界，不参与执行门控。
 

@@ -8,6 +8,7 @@ import { createPresetPredicate } from './preset.mjs'
 import { createScopePredicate } from './scope.mjs'
 import { createAnchorPredicate } from './anchor.mjs'
 import { createVariablePredicate } from './variable.mjs'
+import { createManifestPredicate } from './manifest.mjs'
 import { withAvailableInput } from './availability.mjs'
 import { composite } from './composite.mjs'
 import { COMPOSITE_OPERATORS } from './operators.mjs'
@@ -21,6 +22,7 @@ export * from './preset.mjs'
 export * from './scope.mjs'
 export * from './anchor.mjs'
 export * from './variable.mjs'
+export * from './manifest.mjs'
 export { subjectOf, channelTextSubjects, channelFactSubjects, FACT_PREDICATE_SUBJECTS } from './subject.mjs'
 export { composite } from './composite.mjs'
 export const PREDICATE_FACTORIES = Object.freeze({
@@ -34,6 +36,7 @@ export const PREDICATE_FACTORIES = Object.freeze({
   scope: createScopePredicate,
   anchor: createAnchorPredicate,
   variable: createVariablePredicate,
+  manifest: createManifestPredicate,
 })
 export { COMPOSITE_OPERATORS }
 
@@ -94,6 +97,10 @@ export function compileWhen(node, context = {}) {
   // 变量谓词自带三值处理：适配器缺失返回 UNAVAILABLE，不走通道事实的 availableInput。
   if (key === 'variable') {
     return createVariablePredicate(options, { store: context.variableStore, moduleId: context.moduleId })
+  }
+  // manifest 谓词同样自带三值：读取器未绑定或清单不可读时为 UNAVAILABLE。
+  if (key === 'manifest') {
+    return createManifestPredicate(options, { manifestCheck: context.manifestCheck, moduleId: context.moduleId })
   }
   return withAvailableInput(key, options, factory(options))
 }

@@ -6,6 +6,9 @@ export const DISCOVERY_SERVICE = 'promptToolDiscovery'
 export const SOUL_SELF_SERVICE = 'promptToolSoulSelf'
 export const SOUL_MAINTENANCE_SERVICE = 'promptToolSoulMaintenance'
 
+/** 模块清单 checks 事实：宿主 provide，规则的 manifest 谓词读取。 */
+export const MANIFEST_CHECK_SERVICE = 'promptToolManifestCheck'
+
 /** 五个模块工具外壳的服务名：`pt-<引擎模块 id>`。前缀是本函数的内部细节。 */
 export function toolServiceName(engineModuleId) {
   return `pt-${engineModuleId}`

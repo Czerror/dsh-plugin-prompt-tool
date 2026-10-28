@@ -21,6 +21,7 @@ import type { Agent } from '@deepseek-ai/dsh-agent'
 import SystemPrompt, { PERSONA_PREFIX_SECTION } from '@deepseek-ai/dsh-system-prompt'
 import type { AssembleContext, PromptSection, PromptSectionOrderName } from '@deepseek-ai/dsh-system-prompt'
 import { scopeChainOf, scopeOf, type ScopeKey } from '@deepseek-ai/dsh-scope'
+import { MANIFEST_CHECK_SERVICE } from '../../engine/service-names.mjs'
 import { packageEngineDir, resolveModuleDir } from '../host/module-dirs.ts'
 import { readModuleFacts, resolveModuleParams } from '../host/module-params.ts'
 import { loadModuleSpec, readModulesRevision } from '../host/module-spec.ts'
@@ -34,6 +35,7 @@ import { compileCustomTool, validateCustomTools } from '../host/custom-tools.ts'
 import { createRuleDiagnosticsLedger, emptyRuleDiagnostics, type RuleDiagnosticsSnapshot } from './rule-diagnostics.ts'
 import { createTargetQueue } from '../shared/target-queue.ts'
 import { createModuleVariableAdapter } from './module-variable-adapter.ts'
+import type { ManifestCheckReader } from '../host/module-manifest-check.ts'
 import { createModuleInitialization } from './module-initialization.ts'
 import { planPersonaSections, type PersonaCapture, type PersonaModule, type PersonaPlan } from './persona-registration.ts'
 import { MODULE_TOOL_CAPABILITIES, OFFICIAL_RECIPE_ROWS, enabledRowIds } from '../shared/engine-capabilities.ts'
@@ -319,6 +321,7 @@ function duplicateDedupeIdentities(prepared: PreparedAssembly[]): DuplicateIdent
 
 export function createAgentAssembly(ctx: Context, options: AgentAssemblyOptions): AgentAssemblyRuntime {
   const variableStore = createModuleVariableAdapter(options.moduleRoot)
+  const manifestCheck = ctx.get(MANIFEST_CHECK_SERVICE) as ManifestCheckReader | undefined
   const recoveryState = createGenerationRecoveryState(join(dirname(options.moduleRoot), 'generation-recovery'))
   const ruleDiagnostics = createRuleDiagnosticsLedger()
   const initialization = createModuleInitialization(ctx)
@@ -489,7 +492,7 @@ export function createAgentAssembly(ctx: Context, options: AgentAssemblyOptions)
         // ctx，preset 条件在那边恒 UNAVAILABLE。调用方只负责把可选的官方模块兜底取到手，不再复制规则对象。
         const standingMountFor = await loadStandingMountFor()
         const ruleSources = prepared.filter(item => item.rules.length > 0).map(item => ({ moduleId: item.moduleId, rules: item.rules }))
-        scopeCtx.effect(() => mountRuleSources(scopeCtx, ruleSources, { agent, onOutcome: ruleDiagnostics.record, variableStore, standingMountFor }))
+        scopeCtx.effect(() => mountRuleSources(scopeCtx, ruleSources, { agent, onOutcome: ruleDiagnostics.record, variableStore, standingMountFor, manifestCheck }))
         // 人设：在 Agent 自己的 scope 注册同名段，遮蔽祖先的部署人设与预设 persona 行；
         // 同层已被注册时只能先撤后挂，撤销凭据来自 AgentSetup 窗口内的捕获。
         if (personaActive) {

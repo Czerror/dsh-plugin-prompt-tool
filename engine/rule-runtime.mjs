@@ -57,7 +57,7 @@ export function mountRuleSources(ctx, sources, options = {}) {
   const bind = (item, on) => prepareAction(item.action, { plugin: options.plugin, warnOnce, promptConfigOptions: item.rule.promptConfigOptions, on })(ctx)
   try {
     for (const source of sources) {
-      try { rebindConditions([source], { ctx, standingMountFor: options.standingMountFor, promotionPool: pool, variableStore: options.variableStore }) }
+      try { rebindConditions([source], { ctx, standingMountFor: options.standingMountFor, promotionPool: pool, variableStore: options.variableStore, manifestCheck: options.manifestCheck }) }
       catch (error) { throw sourceError(error, source.moduleId) }
     }
     const rules = sources.flatMap(source => source.rules.filter(rule => rule.enabled !== false))
