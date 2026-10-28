@@ -202,6 +202,12 @@ async function assembleRuntimeContexts(definitions, listeners, currentAgent = ag
   return (await listeners.get('system-prompt/assemble')(assembly, context, async () => assembly)).contexts
 }
 
+/** 模拟官方 refreshContext：请求前按注册 provider 重新解析 contexts（agent-loop/src/agent.ts:446）。 */
+function refreshRuntimeContexts(definitions, assembly, currentAgent = agent()) {
+  const context = { agent: currentAgent }
+  return { ...assembly, contexts: definitions.map(def => ({ name: def.name, text: typeof def.text === 'function' ? def.text(context) : def.text })) }
+}
+
 test('system-section 与 runtime-context 注册到 systemPrompt 服务', () => {
   const sections = []
   const contexts = []
@@ -673,8 +679,53 @@ test('runtime-context placeholder：注册同步占位，assembly 时动态填�
     },
   })
   assert.equal(contexts.length, 1)
-  const result = await assembleRuntimeContexts(contexts, listeners, agent({ session: { id: 'ctx1', header: { delegationDepth: 0, cwd: 'D:/repo' }, snapshotEvents: () => [] } }))
+  assert.equal(typeof contexts[0].text, 'function', 'refreshContext 会重算 provider，注册的必须是函数')
+  const current = agent({ session: { id: 'ctx1', header: { delegationDepth: 0, cwd: 'D:/repo' }, snapshotEvents: () => [] } })
+  const result = await assembleRuntimeContexts(contexts, listeners, current)
   assert.equal(result[0].text, '工作区=D:/repo')
+  const refreshed = refreshRuntimeContexts(contexts, { contexts: result }, current)
+  assert.equal(refreshed.contexts[0].text, '工作区=D:/repo', '请求前 refreshContext 重算后不得退回空文本')
+})
+
+test('conditional runtime-context：assemble 填充后 refreshContext 仍保留正文', async () => {
+  const contexts = []
+  const listeners = new Map()
+  const ctx = {
+    on(name, handler) { listeners.set(name, handler); return () => listeners.delete(name) },
+    get: (name) => (name === 'systemPrompt'
+      ? { variable: () => () => {}, section: () => () => {}, context(def) { contexts.push(def); return () => {} } }
+      : undefined),
+    logger: { warn() {} },
+  }
+  const config = { ...createPromptConfigs([{ id: 'gated-ctx', layer: 'runtime-context', strategy: 'static', text: 'GATED', order: 7 }])[0], actionWhen: () => true }
+  wireLayers(ctx, [config], () => {})
+  assert.equal(typeof contexts[0].text, 'function')
+  const current = agent()
+  const assembly = { contexts: contexts.map(def => ({ name: def.name, text: typeof def.text === 'function' ? def.text({ agent: current }) : def.text })) }
+  const filled = await listeners.get('system-prompt/assemble')(assembly, { agent: current }, async () => assembly)
+  assert.equal(filled.contexts[0].text, 'GATED')
+  const refreshed = refreshRuntimeContexts(contexts, filled, current)
+  assert.equal(refreshed.contexts[0].text, 'GATED', 'refreshContext 重算不得覆盖已填充正文')
+})
+
+test('conditional runtime-context：条件不命中时 assemble 与 refreshContext 都不残留正文', async () => {
+  const contexts = []
+  const listeners = new Map()
+  const ctx = {
+    on(name, handler) { listeners.set(name, handler); return () => listeners.delete(name) },
+    get: (name) => (name === 'systemPrompt'
+      ? { variable: () => () => {}, section: () => () => {}, context(def) { contexts.push(def); return () => {} } }
+      : undefined),
+    logger: { warn() {} },
+  }
+  const config = { ...createPromptConfigs([{ id: 'gated-ctx', layer: 'runtime-context', strategy: 'static', text: 'GATED', order: 7 }])[0], actionWhen: () => false }
+  wireLayers(ctx, [config], () => {})
+  const current = agent()
+  const assembly = { contexts: contexts.map(def => ({ name: def.name, text: typeof def.text === 'function' ? def.text({ agent: current }) : def.text })) }
+  const filled = await listeners.get('system-prompt/assemble')(assembly, { agent: current }, async () => assembly)
+  assert.equal(filled.contexts[0].text, '')
+  const refreshed = refreshRuntimeContexts(contexts, filled, current)
+  assert.equal(refreshed.contexts[0].text, '')
 })
 
 test('createPromptConfigs：templateFile 越出预设根 fail loud（防任意文件进入模型上下文）', () => {

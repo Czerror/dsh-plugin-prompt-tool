@@ -253,10 +253,17 @@ function wireRuleTextContributions(ctx, configs, registry, warnOnce, keep, on, o
     const section = layer === 'system-section'
     const base = group[0]
     const entryName = textRegistrationName(base, section ? 'sectionName' : 'contextName')
+    // runtime-context 在官方 refreshContext 里按注册 provider 重算：provider 必须返回当前文本，
+    // 否则 assemble 钩子的填充会在请求前被 marker 覆盖。system-section 不重算，仍用 marker 占位。
+    const holder = section ? undefined : { text: '' }
     try {
-      keep(systemPrompt[section ? 'section' : 'context']({ name: entryName, order: base.order, text: marker }), `${name}: conditional ${entryName}`)
+      keep(systemPrompt[section ? 'section' : 'context']({
+        name: entryName,
+        order: base.order,
+        text: section ? marker : () => holder.text,
+      }), `${name}: conditional ${entryName}`)
     } catch (error) { throw sourceError === undefined ? error : sourceError(error, base.sourceModuleId) }
-    bindings.push({ group, name: entryName, collection: section ? 'sections' : 'contexts' })
+    bindings.push({ group, name: entryName, collection: section ? 'sections' : 'contexts', holder })
     ordered[section ? 'sections' : 'contexts'].push(orderedEntry(entryName, base))
   }
   let active = true
@@ -264,9 +271,12 @@ function wireRuleTextContributions(ctx, configs, registry, warnOnce, keep, on, o
   return [on('system-prompt/assemble', async (assembly, context, next, invocation) => {
     const frame = invocation ?? ruleFrame('system-prompt/assemble', [assembly, context], warnOnce)
     for (const binding of bindings) {
-      const entry = assembly[binding.collection].find(item => item.name === binding.name && item.text === marker)
+      const entry = binding.collection === 'sections'
+        ? assembly.sections.find(item => item.name === binding.name && item.text === marker)
+        : assembly.contexts.find(item => item.name === binding.name)
       if (entry === undefined) continue
       entry.text = ''
+      if (binding.holder !== undefined) binding.holder.text = ''
       const blocks = []
       for (const config of binding.group) {
         if (!active || context.signal?.aborted || !actionMatches(config, frame) || !matchesAgentScope(config, context.agent)) continue
@@ -277,7 +287,10 @@ function wireRuleTextContributions(ctx, configs, registry, warnOnce, keep, on, o
           if (text.length) blocks.push(text)
         } catch (error) { warnOnce(`${name}: rule text ${config.id} failed: ${String(error?.message ?? error)}`) }
       }
-      if (active && !context.signal?.aborted) entry.text = blocks.join('\n\n')
+      if (active && !context.signal?.aborted) {
+        entry.text = blocks.join('\n\n')
+        if (binding.holder !== undefined) binding.holder.text = entry.text
+      }
     }
     return next()
   })]
@@ -317,26 +330,24 @@ function wireRuntimeContexts(ctx, configs, registry, warnOnce, keep, on, ordered
       warnOnce(`${name}: runtime-context config ${base.id} failed: ${String(error?.message ?? error)}`)
     }
   }
-  // 官方 provider 必须同步：先注册可渲染为空的私有变量占位，再在 waterfall 中填充。
-  // 标记随官方排序/遮蔽进入本次 assembly，无会话缓存，也不依赖调用方 context 的对象身份。
+  // 官方 provider 必须同步：注册函数 provider 读取 holder，再在 waterfall 中填充。
+  // 官方 refreshContext 会用注册 provider 重算 contexts；返回 holder 当前值，填充才不会被 reset。
   const placeholders = configs.filter(needsResolver)
     .sort(compareTextPlacement)
   if (placeholders.length === 0) return disposers
-  const slotVariable = `pt_runtime_${newMessageId('context').replace(/[^a-z0-9_]/gi, '_').toLowerCase()}`
-  const slotText = `{{${slotVariable}}}`
   const registered = new Map()
   let active = true
   keep(() => { active = false }, `${name}: runtime-context lifecycle`)
-  keep(systemPrompt.variable(slotVariable, () => ''), `${name}: runtime-context placeholder`)
   for (const config of placeholders) {
     try {
       const contextName = textRegistrationName(config, 'contextName')
+      const holder = { text: '' }
       keep(systemPrompt.context({
         name: contextName,
         order: config.order,
-        text: slotText,
+        text: () => holder.text,
       }), `${name}: context ${config.id}`)
-      registered.set(contextName, config)
+      registered.set(contextName, { config, holder })
       ordered.contexts.push(orderedEntry(contextName, config))
     } catch (error) {
       if (sourceError !== undefined) throw sourceError(error, config.sourceModuleId)
@@ -344,14 +355,15 @@ function wireRuntimeContexts(ctx, configs, registry, warnOnce, keep, on, ordered
     }
   }
   disposers.push(on('system-prompt/assemble', async (assembly, context, next) => {
-    const entries = assembly.contexts.filter(entry => registered.has(entry.name) && entry.text === slotText)
+    const entries = assembly.contexts.filter(entry => registered.has(entry.name))
     for (const entry of entries) {
-      const config = registered.get(entry.name)
+      const { config, holder } = registered.get(entry.name)
       entry.text = ''
+      holder.text = ''
       if (!active || context.signal?.aborted) continue
       try {
         const text = await resolvedContextText(ctx, config, context, registry.get(config), warnOnce)
-        if (active && !context.signal?.aborted) entry.text = text
+        if (active && !context.signal?.aborted) { entry.text = text; holder.text = text }
       } catch (error) {
         warnOnce(`${name}: runtime-context ${config.id} resolve failed: ${String(error?.message ?? error)}`)
       }

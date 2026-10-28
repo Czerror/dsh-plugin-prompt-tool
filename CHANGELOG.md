@@ -10,6 +10,7 @@
 - SELF 注入读取与维护相同来源的 `soul-maintenance.budgetBytes`：mtime/size 变化提前刷新，缓存到1000ms重读；定义损坏或预算非法时沿用最近有效值，无历史值回12288。路径、身份和最终输出预算仍校验，未启用维护的显式预算仍有效。
 - 新增规则条件 `manifest: { ok: boolean }`：只读模块清单 checks，检查结果缓存1000ms，账本连续追加不再每次触发完整解析；清单配置戳变化提前失效，显式 `module_manifest check` 始终实时。清单缺失/损坏及独立 rule-engine 无读取器时为 UNAVAILABLE，否定不会把未知当失败。soul 的 `soul-check` 消费该条件，不再依赖手写 `check_failed` 变量。
 - 修复插件初始化时过早获取 manifest 读取器：Agent 装配现在等待该服务激活，避免实际插件入口的条件永久不可用；真实入口测试覆盖主/子 Agent、压缩、卸载和重挂。
+- 修复 runtime-context 注入被请求前刷新清空：条件化与 placeholder 两条注册路径改为同步 provider 读取挂载内 holder，assemble 填充后 `systemPrompt.refreshContext` 重算仍保留正文；此前 marker 占位会在 refreshContext 时被重算回空，导致 `soul-core`/`soul-self` 配了不生效。补 refresh 行为回归。
 
 ## [3.0.2] - 2026-10-25
 

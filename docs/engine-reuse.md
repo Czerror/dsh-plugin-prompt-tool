@@ -359,6 +359,8 @@ SELF 注入从同一来源模块事实读取 `soul-maintenance.budgetBytes`，�
 
 显式wake才在维护成功退出后发送一次非空followup；取消、关闭、卸载或失去成员资格使迟到结果失效。心跳不改变恢复额度。provider状态区分disabled、idle、running、ready、failed和cancelled；上下文runtime状态区分ready、running、success、no-op、failed、cancelled和disabled。依赖缺失在装配时明确报错，保留上一份有效贡献。SELF缺失通过动态注入标记可见。
 
+runtime-context 的注册文本必须是同步 provider，不能只在 assemble 钩子里改 accepted 文本：官方请求前还会用 `systemPrompt.refreshContext` 按注册 provider 重算 contexts，字符串占位会被重算回空。引擎为条件化 runtime-context 与 placeholder 注册读取挂载内 holder 的函数，assemble 填充时同步更新 holder；同一份正文在装配与请求前刷新两条路径上一致。system-section 不参与该重算，其条件文本仍用官方占位标记。
+
 ## 自定义工具与宿主契约
 
 工具通过已安装 `@deepseek-ai/dsh-tools` 的 defineTool/官方转换器定义，使用真实 ToolExecution 的 agent、signal、调用身份；异步工作观察或转发 caller-owned signal。delegate 走 `ctx.tools.execute`，保留批准、拒绝和取消管线。
