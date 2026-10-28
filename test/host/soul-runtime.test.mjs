@@ -97,3 +97,21 @@ test('历史loader仅对授权sid打开只读句柄，成功和读取失败均cl
   assert.equal(f.calls.filter(call => call[0] === 'close').length, 3)
   assert.ok(f.calls.every(call => call[0] !== 'open' || call[2] === 'read'))
 })
+
+test('SELF注入预算与维护budgetBytes同源，调大后长快照不再被固定上限拒绝', async t => {
+  const body = 'X'.repeat(13000)
+  const defaults = fixture(t, 'runtime-budget-default')
+  mkdirSync(join(defaults.dir, 'data', '.soul'), { recursive: true })
+  writeFileSync(join(defaults.dir, 'data', '.soul', 'SELF.md'), body)
+  const [plain] = createPromptConfigs([{ id: 'self', strategy: 'placeholder', fill: 'soul-self', layer: 'runtime-context' }], { sourceModuleId: defaults.id })
+  assert.throws(() => plain.resolve({ ctx: defaults.ctx, agent: defaults.agent, signal: new AbortController().signal }), /超预算/)
+
+  const raised = fixture(t, 'runtime-budget-raised')
+  writeFileSync(join(raised.dir, 'module.yml'),
+    readFileSync(join(raised.dir, 'module.yml'), 'utf8') + 'moduleConfigs:\n  soul-maintenance:\n    budgetBytes: 16384\n')
+  mkdirSync(join(raised.dir, 'data', '.soul'), { recursive: true })
+  writeFileSync(join(raised.dir, 'data', '.soul', 'SELF.md'), body)
+  const [shared] = createPromptConfigs([{ id: 'self', strategy: 'placeholder', fill: 'soul-self', layer: 'runtime-context' }], { sourceModuleId: raised.id })
+  const rendered = (await shared.resolve({ ctx: raised.ctx, agent: raised.agent, signal: new AbortController().signal })).text
+  assert.ok(Buffer.byteLength(rendered) > 12288, '超过旧固定上限仍可注入')
+})

@@ -347,7 +347,7 @@ config:
 
 已有用户副本若仍声明 `strategy: self` 并保留自己的策略资产，继续由既有自定义策略加载器执行。包升级不覆盖用户副本；显式更新为内置声明后才去掉对应 `strategyDir` 与服务名参数。私有 `data/` 不随此变更迁移。
 
-`soul-maintenance` 按来源模块只保留一个owner和一个定时器，维护串行，不因两个Agent或重挂并发写SELF。`intervalMs` 默认60000，`wake` 默认false，`audience` 默认all，`budgetBytes` 默认12288。每次先通过既有检索provider刷新授权索引，再CAS更新SELF；实际Agent的idle维护窗口提供用户取消信号，busy或失败保留旧快照，下次定时重试。
+`soul-maintenance` 按来源模块只保留一个owner和一个定时器，维护串行，不因两个Agent或重挂并发写SELF。`intervalMs` 默认60000，`wake` 默认false，`audience` 默认all，`budgetBytes` 默认12288。每次先通过既有检索provider刷新授权索引，再CAS更新SELF；实际Agent的idle维护窗口提供用户取消信号，busy或失败保留旧快照，下次定时重试。注入渲染按来源模块的装配事实读取同一个 `budgetBytes`（按 `module.yml` mtime 缓存），调大预算后 SELF 段不会因固定默认上限被跳过。
 
 显式wake才在维护成功退出后发送一次非空followup；取消、关闭、卸载或失去成员资格使迟到结果失效。心跳不改变恢复额度。provider状态区分disabled、idle、running、ready、failed和cancelled；上下文runtime状态区分ready、running、success、no-op、failed、cancelled和disabled。依赖缺失在装配时明确报错，保留上一份有效贡献。SELF缺失通过动态注入标记可见。
 
