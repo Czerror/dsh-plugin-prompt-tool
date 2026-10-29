@@ -901,6 +901,59 @@ test('热更新：空启用表到多模块、配置启停与拒绝后重试都�
   assert.deepEqual(h.runtime.moduleIds(agent.id), [])
 })
 
+test('模块增量发布：修改 B 只替换 B 的能力和规则，未改 A/C 保持原贡献', async (t) => {
+  const ids = ['increment-a', 'increment-b', 'increment-c']
+  const write = (id, text) => writeModuleFixture(id, {
+    modules: ['rule-engine', 'retrieval'],
+    moduleConfigs: { retrieval: { enabled: true } },
+    promptConfigs: [{ id: `${id}-text`, layer: 'system-section', text }],
+  })
+  for (const id of ids) write(id, `${id}-OLD`)
+  const applied = [], released = []
+  const h = await liveAssembly(t, () => ids, {
+    beforeCoordinator: root => root.provide('pt-retrieval', {
+      mount(_ctx, _config, options) {
+        applied.push(options.sourceModuleId)
+        return () => released.push(options.sourceModuleId)
+      },
+    }),
+  })
+  const agents = [await h.makeAgent('increment-main'), await h.makeAgent('increment-child', 1)]
+  applied.length = released.length = 0
+  write('increment-b', 'increment-b-UPDATED')
+  await h.runtime.refresh('increment-b')
+  assert.deepEqual(applied, ['increment-b', 'increment-b'])
+  assert.deepEqual(released, ['increment-b', 'increment-b'])
+  for (const agent of agents) {
+    const system = await h.root.systemPrompt.assemble({ agent, scope: agent })
+    assert.deepEqual(system.sections.filter(section => section.text.startsWith('increment-')).map(section => section.text),
+      ['increment-a-OLD', 'increment-b-UPDATED', 'increment-c-OLD'])
+  }
+  const readers = new Map()
+  for (const agent of agents) await agent.ctx.plugin({ inject: ['systemPrompt'], apply(ctx) {
+    readers.set(agent, () => ctx.systemPrompt.assemble({ agent, scope: agent }))
+  } })
+  applied.length = released.length = 0
+  write('increment-b', 'increment-b-COALESCED')
+  h.runtime.schedule('increment-b')
+  h.runtime.schedule('increment-b')
+  const system = await readers.get(agents[0])()
+  assert.ok(system.sections.some(section => section.text === 'increment-b-COALESCED'), '官方装配提前消费同一待发布集合')
+  await h.runtime.settled()
+  assert.deepEqual(applied, ['increment-b', 'increment-b'], '提前消费后定时器不重复重挂')
+  applied.length = released.length = 0
+  write('increment-disabled', 'DISABLED')
+  h.runtime.schedule('increment-disabled')
+  await readers.get(agents[0])()
+  assert.deepEqual(applied, [], '未启用且非人设来源的保存不重挂')
+  write('increment-b', 'CANCELED')
+  h.runtime.schedule('increment-b')
+  await h.runtime.dispose()
+  await h.runtime.settled()
+  assert.deepEqual(applied, [], '释放取消尚未开始的发布')
+  assert.deepEqual(h.warnings, [])
+})
+
 test('PTC：主子模式独立进入工具面，刷新与压缩保留受众，释放恢复默认', async (t) => {
   const id = 'audience-presentation'
   const write = (mainMode, subagentMode) => writeModuleFixture(id, {
@@ -968,6 +1021,7 @@ test('晚到能力初始化失败只撤所属模块，健康模块继续且显�
     assert.equal(h.root.tools.schemas(agent).some(tool => tool.name === 'late_partial_tool'), false)
   }
   assert.ok(h.warnings.some(message => message.includes('late-failed') && message.includes('LATE-INITIALIZATION-REJECTED')))
+  assert.ok(h.runtime.publicationFailures().some(failure => failure.message.includes('LATE-INITIALIZATION-REJECTED')), '晚到失败进入同一发布诊断')
   const rejectedAttempts = attempts
   writeHealthy('HEALTHY-UPDATED')
   for (const agent of agents) {
@@ -999,7 +1053,11 @@ test('连续等待中的新版本失败时回退最后完成初始化的旧模�
     promptConfigs: [{ id: 'late-version', text, position: 'after-user' }],
   })
   write('READY-OLD', 'native')
-  const h = await liveAssembly(t, () => ['late-version'])
+  writeModuleFixture('late-version-persona', { modules: [] })
+  let personaPrefix = 'ORIGINAL-PERSONA'
+  const h = await liveAssembly(t, () => ['late-version'], { personaModules: () => [{
+    moduleId: 'late-version-persona', persona: { main: { prefix: personaPrefix }, subagent: { prefix: personaPrefix } },
+  }] })
   const agents = [await h.makeAgent('late-version-main'), await h.makeAgent('late-version-child', 1)]
   const texts = async agent => (await h.inject(agent)).messages.flatMap(message => message.content.map(block => block.text))
   for (const agent of agents) assert.deepEqual(await texts(agent), ['USER', 'READY-OLD'])
@@ -1007,18 +1065,17 @@ test('连续等待中的新版本失败时回退最后完成初始化的旧模�
   await h.runtime.refresh('late-version')
   write('PENDING-TWO', 'ptc')
   await h.runtime.refresh('late-version')
-  const originalCtx = agents[1].ctx
   let failOnce = true
-  agents[1].ctx = new Proxy(originalCtx, { get(target, key) {
-    if (key === 'plugin') return (...args) => {
-      if (failOnce && args[0]?.name === 'prompt-tool-assembly') { failOnce = false; throw new Error('PUBLIC-ROOT-REJECTED') }
-      return originalCtx.plugin(...args)
-    }
-    return Reflect.get(target, key)
-  } })
+  const section = h.root.systemPrompt.section
+  t.mock.method(h.root.systemPrompt, 'section', function (value) {
+    if (failOnce && scopeOf(this.ctx) === agents[1]) { failOnce = false; throw new Error('PUBLIC-PERSONA-REJECTED') }
+    return section.call(this, value)
+  })
   write('ABORTED-NEW', 'native')
-  await assert.rejects(h.runtime.refresh('late-version'), /PUBLIC-ROOT-REJECTED/)
+  personaPrefix = 'ABORTED-PERSONA'
+  await assert.rejects(h.runtime.refresh('late-version'), /PUBLIC-PERSONA-REJECTED/)
   for (const agent of agents) assert.deepEqual(await texts(agent), ['USER', 'PENDING-TWO'])
+  personaPrefix = 'ORIGINAL-PERSONA'
   write('PENDING-TWO', 'ptc')
   const presentAs = h.root.tools.presentAs
   t.mock.method(h.root.tools, 'presentAs', function (mode, ...args) {
@@ -1073,6 +1130,7 @@ test('共享初始化失败只影响声明来源，已替换实例和无关插�
   const entered = new Promise(resolve => { started = resolve })
   // 新来源在加载中；下一次更新排队后，旧初始化才拒绝。
   write('shared-late-a', 'WAITING-OLD')
+  enabled = ['shared-late-a', 'shared-late-healthy']
   const loading = h.runtime.refresh('shared-late-a')
   await entered
   write('shared-late-a', 'CURRENT', ['rule-engine'])
@@ -1532,276 +1590,71 @@ test('导入候选与运行配装同源：完整定义经过 rules 切片后保�
   }
 })
 
-/**
- * 装配失败**不得冒泡**：`agent/created` 的监听器被 await，抛错会让会话创建整个失败。
- * 这里用最小桩上下文走完挂载路径，断言「只告警、不抛、不留半挂状态」。
- */
-function stubHostContext(options = {}) {
-  const listeners = new Map()
-  const counts = new Map()
-  const mounts = []
-  const warnings = []
-  const disposers = []
-  const agents = []
-  // 宿主能力探针：默认全不可用（与「装配失败与恢复」那条用例的前提一致）；
-  // 传 `services` 时才视为可用——带切片的模块要求 systemPrompt/tools/llm。
-  const services = new Set(options.services ?? [])
-  return {
-    warnings,
-    counts,
-    mounts,
-    agents,
-    /**
-     * 假 Agent：真实 Agent 的 ctx 是可安装插件的 scope 上下文；这里只记下安装请求。
-     * `options.fault(第几次挂载)` 注入故障：`mount` 让这次挂载失败，`dispose` 让这次撤销失败。
-     */
-    makeAgent: (id) => {
-      const agent = {
-        id,
-        ctx: {
-          get: (name) => services.has(name) ? {} : undefined,
-          plugin: (definition) => {
-            mounts.push({ id, definition })
-            const fault = options.fault?.(mounts.length) ?? {}
-            // 真实 ctx.plugin 的返回值既能 await 也能 dispose（挂载失败时要撤），桩必须同形。
-            const fiber = fault.mount === undefined ? Promise.resolve() : Promise.reject(fault.mount)
-            return Object.assign(fiber, { dispose: async () => { await fault.dispose?.() } })
-          },
-        },
-      }
-      agents.push(agent)
-      return agent
-    },
-    fire: async (name, payload) => {
-      const handler = listeners.get(name)
-      if (handler === undefined) throw new Error(`no listener for ${name}`)
-      return handler(payload)
-    },
-    ctx: {
-      // 同名监听按事件语义可以注册多份（每个模块各一份贡献），所以除最新处理器外还记次数。
-      on: (name, handler) => {
-        listeners.set(name, handler)
-        counts.set(name, (counts.get(name) ?? 0) + 1)
-        return () => { listeners.delete(name); counts.set(name, (counts.get(name) ?? 1) - 1) }
-      },
-      // 真实 effect 返回它的 disposer：装配失败时要靠它撤掉半挂的 fiber。
-      effect: (register) => { const remove = register(); disposers.push(remove); return async () => { await remove?.() } },
-      get: (name) => services.has(name) ? {} : undefined,
-      // 构造期会枚举存量 Agent；由 index.ts 的 ctx.inject(['agents']) 保证真实可用。
-      agents: { list: () => agents },
-      logger: { warn: (message) => { warnings.push(message) } },
-    },
+test('公共人设发布失败恢复整批旧贡献，恢复失败保留原因且不留半挂', async t => {
+  writeModuleFixture('assembly-restore', { modules: ['rule-engine'], promptConfigs: [{ id: 'restore', text: 'RESTORE', position: 'after-user' }] })
+  writeModuleFixture('assembly-persona', { modules: [] })
+  let prefix = 'OLD-PERSONA'
+  const h = await liveAssembly(t, () => ['assembly-restore'], { personaModules: () => [{
+    moduleId: 'assembly-persona', persona: { main: { prefix }, subagent: { prefix } },
+  }] })
+  const agents = [await h.makeAgent('batch-first'), await h.makeAgent('batch-second', 1)]
+  const section = h.root.systemPrompt.section
+  let remaining = 1
+  t.mock.method(h.root.systemPrompt, 'section', function (value) {
+    if (remaining > 0 && scopeOf(this.ctx) === agents[1]) {
+      remaining--
+      throw new Error(remaining === 0 ? 'PUBLIC-PERSONA-FAIL' : 'RESTORE-FAIL')
+    }
+    return section.call(this, value)
+  })
+  prefix = 'NEW-PERSONA'
+  await assert.rejects(h.runtime.refresh(), /PUBLIC-PERSONA-FAIL/)
+  for (const agent of agents) {
+    const system = await h.root.systemPrompt.assemble({ agent, scope: agent })
+    assert.equal(system.sections.find(value => value.name === 'deployment:persona-prefix').text, 'OLD-PERSONA')
+    assert.deepEqual(h.runtime.moduleIds(agent.id), ['assembly-restore'])
   }
-}
-
-test('装配失败与恢复：准备期失败只告警，撤旧失败仍尝试恢复，恢复也失败保留两层原因', async () => {
-  // ① 准备期失败：启用表里有一项非法 id ⇒ prepareAssembly 在准备期就抛（与真实坏定义同一条路径）。
-  writeModuleFixture('assembly-target', { modules: ['tool-config-engine'] })
-  const host = stubHostContext()
-  const runtime = createAgentAssembly(host.ctx, {
-    moduleRoot,
-    enabledModules: () => ['Not_An_Id'],
-    warn: (message) => { host.warnings.push(message) },
-  })
-  const agent = { id: 'session-broken', ctx: { get: () => undefined } }
-
-  // 监听器返回 undefined（不是 Promise），事件派发不会因它失败。
-  await host.fire('agent/created', { agent, source: 'startup' })
-  await runtime.settled()
-
-  assert.equal(runtime.hasMounted(agent.id), false, '失败的装配不留下已挂载状态')
-  assert.equal(host.warnings.some((line) => line.includes('运行时配装失败')), true, '失败被降级为告警')
-  assert.equal(host.mounts.length, 0, '准备期失败连挂载都不尝试')
-  await runtime.dispose()
-
-  // ② 撤旧失败：它和挂新在同一个 try 里，所以旧装配照样被装回去——装回的必须是**旧准备**
-  // 而不是这次刷新准备的那份。刷新前把启用表清空，两份准备因此贡献不同，回滚装错就红。
-  const disposeFail = new Error('DISPOSE-FAIL')
-  writeModuleFixture('assembly-restore', {
-    modules: ['prompt-config-engine'],
-    promptConfigs: [{ id: 'restore', text: 'RESTORE', position: 'after-user' }],
-  })
-  let enabled2 = ['assembly-restore']
-  const host2 = stubHostContext({ services: ['systemPrompt', 'tools', 'llm'], fault: (attempt) => attempt === 1 ? { dispose: async () => { throw disposeFail } } : {} })
-  const runtime2 = createAgentAssembly(host2.ctx, {
-    moduleRoot, enabledModules: () => enabled2, warn: (message) => { host2.warnings.push(message) },
-  })
-  const agent2 = host2.makeAgent('session-release-failure')
-  await host2.fire('agent/created', { agent: agent2, source: 'startup' })
-  await runtime2.settled()
-  assert.equal(runtime2.hasMounted(agent2.id), true, '首次装配成功')
-  enabled2 = []
-  await assert.rejects(runtime2.refresh(), (error) => {
-    assert.equal(error.errors[0], disposeFail, '撤旧失败的原因原样上报')
+  assert.equal(h.runtime.publicationFailures().length, 1)
+  await h.runtime.refresh()
+  assert.deepEqual(h.runtime.publicationFailures(), [])
+  prefix = 'ANOTHER-PERSONA'
+  remaining = 2
+  await assert.rejects(h.runtime.refresh(), error => {
+    assert.match(String(error), /PUBLIC-PERSONA-FAIL.*RESTORE-FAIL|RESTORE-FAIL.*PUBLIC-PERSONA-FAIL/s)
+    assert.doesNotMatch(String(error), /已保存/)
     return true
   })
-  assert.equal(host2.mounts.length, 2, '撤旧失败后仍重新挂载旧装配')
-  assert.equal(await host2.mounts[1].definition.apply(host2.ctx), undefined)
-  assert.equal(host2.counts.get('agent/pre-step'), 1, '装回的是旧准备（本次刷新的准备是空装配）')
-  assert.equal(runtime2.hasMounted(agent2.id), true, '恢复成功：旧贡献还在')
-  await runtime2.dispose()
-
-  // ③ 恢复也失败：两个原因都要留下，且 message 自带两段——上报点只读 message。
-  const mountFail = new Error('MOUNT-FAIL')
-  const restoreFail = new Error('RESTORE-FAIL')
-  const faults = new Map([[2, mountFail], [3, restoreFail]])
-  const host3 = stubHostContext({ fault: (attempt) => faults.has(attempt) ? { mount: faults.get(attempt) } : {} })
-  const runtime3 = createAgentAssembly(host3.ctx, {
-    moduleRoot, enabledModules: () => [], warn: (message) => { host3.warnings.push(message) },
-  })
-  const agent3 = host3.makeAgent('session-double-failure')
-  await host3.fire('agent/created', { agent: agent3, source: 'startup' })
-  await runtime3.settled()
-  assert.equal(runtime3.hasMounted(agent3.id), true, '首次装配成功')
-  await assert.rejects(runtime3.refresh(), (error) => {
-    const inner = error.errors[0]
-    assert.ok(inner instanceof AggregateError, '两层原因合成一个 AggregateError')
-    assert.equal(inner.errors[0], mountFail, 'errors 保留新挂载失败的原因')
-    assert.equal(inner.errors[1], restoreFail, 'errors 保留恢复失败的原因')
-    assert.match(inner.message, /MOUNT-FAIL/, 'AggregateError 的 message 自带新挂载原因')
-    assert.match(inner.message, /RESTORE-FAIL/, 'AggregateError 的 message 自带恢复原因')
-    // settings-bridge 的上报只把 error 交给 String()：包装层的 message 也得带出两段原因。
-    assert.match(String(error), /运行时配装更新失败.*MOUNT-FAIL.*RESTORE-FAIL/s, '只读 message 的上报点读到两段原因')
-    // 「已保存」由写盘的那一层声明：本层再声明一次，同一条用户消息就会说两遍同一件事。
-    assert.doesNotMatch(String(error), /已保存/, '本层不抢写盘层的「已保存」')
-    return true
-  })
-  assert.equal(runtime3.hasMounted(agent3.id), false, '恢复失败不留半挂状态')
-  await runtime3.dispose()
-
-  // ④ 边界：挂新失败但恢复成功 ⇒ 与改动前一致：原错误直传、不新增包装、旧贡献复原。
-  const mountFailOnly = new Error('MOUNT-FAIL-ONLY')
-  const host4 = stubHostContext({ fault: (attempt) => attempt === 2 ? { mount: mountFailOnly } : {} })
-  const runtime4 = createAgentAssembly(host4.ctx, {
-    moduleRoot, enabledModules: () => [], warn: (message) => { host4.warnings.push(message) },
-  })
-  const agent4 = host4.makeAgent('session-restore-success')
-  await host4.fire('agent/created', { agent: agent4, source: 'startup' })
-  await runtime4.settled()
-  await assert.rejects(runtime4.refresh(), (error) => {
-    assert.equal(error.errors[0], mountFailOnly, '单次失败不新增包装，原错误直传')
-    return true
-  })
-  assert.equal(runtime4.hasMounted(agent4.id), true, '恢复成功：旧贡献复原')
-  await runtime4.dispose()
-
-  // 第二个 Agent 挂载失败时，第一个已成功的新配装也必须撤回。
-  let enabled5 = ['assembly-restore']
-  const batchFailure = new Error('SECOND-AGENT-FAIL')
-  const host5 = stubHostContext({ services: ['systemPrompt', 'tools', 'llm'], fault: attempt => attempt === 4 ? { mount: batchFailure } : {} })
-  const runtime5 = createAgentAssembly(host5.ctx, { moduleRoot, enabledModules: () => enabled5 })
-  const first = host5.makeAgent('batch-first'), second = host5.makeAgent('batch-second')
-  await host5.fire('agent/created', { agent: first, source: 'startup' })
-  await host5.fire('agent/created', { agent: second, source: 'startup' })
-  enabled5 = []
-  await assert.rejects(runtime5.refresh(), /SECOND-AGENT-FAIL/)
-  assert.deepEqual(runtime5.moduleIds(first.id), ['assembly-restore'])
-  assert.deepEqual(runtime5.moduleIds(second.id), ['assembly-restore'])
-  assert.equal(host5.mounts.length, 6, '两份旧准备均重新挂回，没有半数 Agent 留在新配装')
-  await runtime5.dispose()
+  assert.equal(h.runtime.hasMounted(agents[1].id), false)
 })
 
-test('启用即配装：启用表里的每个模块各贡献一份，清单为空则不装配', async () => {
-  // 两个模块各有自己的提示词配置与引擎模块声明：合起来应当两份都进装配输入。
-  writeModuleFixture('enabled-a', {
-    modules: ['prompt-config-engine'],
-    promptConfigs: [{ id: 'from-a', strategy: 'static', text: 'A', position: 'after-user' }],
-  })
-  writeModuleFixture('enabled-b', {
-    modules: ['prompt-config-engine'],
-    promptConfigs: [{ id: 'from-b', strategy: 'static', text: 'B', position: 'after-user' }],
-  })
-
-  const host = stubHostContext({ services: ['systemPrompt', 'tools', 'llm'] })
+test('启用表增删直接更新真实贡献，空启用表零贡献', async t => {
+  for (const [id, text] of [['enabled-a', 'A'], ['enabled-b', 'B'], ['enabled-c', 'C']]) {
+    writeModuleFixture(id, { modules: ['rule-engine'], promptConfigs: [{ id, text, position: 'after-user' }] })
+  }
   let enabled = ['enabled-a', 'enabled-b']
-  const runtime = createAgentAssembly(host.ctx, {
-    moduleRoot,
-    enabledModules: () => enabled,
-    warn: (message) => { host.warnings.push(message) },
-  })
-  const agent = host.makeAgent('session-enabled')
-
-  await host.fire('agent/created', { agent, source: 'startup' })
-  await runtime.settled()
-  assert.equal(host.mounts.length, 1, '启用表里的模块装配成功（发出了一次安装）')
-  assert.equal(await host.mounts[0].definition.apply(host.ctx), undefined)
-  assert.equal(host.counts.get('agent/pre-step'), 1, '一份批执行监听器承载两个模块的 pre-step 来源')
-
-  await runtime.dispose()
-
-  // 追加 C：装配范围随之变成三项（启用即配装，无需别的指针）。
-  writeModuleFixture('enabled-c', {
-    modules: ['prompt-config-engine'],
-    promptConfigs: [{ id: 'from-c', strategy: 'static', text: 'C', position: 'after-user' }],
-  })
+  const h = await liveAssembly(t, () => enabled)
+  const agent = await h.makeAgent('session-enabled')
+  const texts = async () => (await h.inject(agent)).messages.flatMap(message => message.content.map(block => block.text))
+  assert.deepEqual(await texts(), ['USER', 'A', 'B'])
   enabled = ['enabled-a', 'enabled-b', 'enabled-c']
-  const host3 = stubHostContext({ services: ['systemPrompt', 'tools', 'llm'] })
-  const runtime3 = createAgentAssembly(host3.ctx, {
-    moduleRoot,
-    enabledModules: () => enabled,
-    warn: (message) => { host3.warnings.push(message) },
-  })
-  const agent3 = host3.makeAgent('session-three')
-  await host3.fire('agent/created', { agent: agent3, source: 'startup' })
-  await runtime3.settled()
-  assert.equal(host3.mounts.length, 1, '追加后仍然只安装一次（一份装配承载 N 个模块）')
-  await host3.mounts[0].definition.apply(host3.ctx)
-  assert.equal(
-    host3.counts.get('agent/pre-step'), 1,
-    '追加模块仍由同一份批执行监听器承载',
-  )
-  await runtime3.dispose()
-
-  // 空启用表：不注册任何贡献（写盘关闭时上层就是这么返回的）。
-  const host0 = stubHostContext({ services: ['systemPrompt', 'tools', 'llm'] })
-  const runtime0 = createAgentAssembly(host0.ctx, {
-    moduleRoot,
-    enabledModules: () => [],
-    warn: (message) => { host0.warnings.push(message) },
-  })
-  const agent0 = host0.makeAgent('session-empty')
-  await host0.fire('agent/created', { agent: agent0, source: 'startup' })
-  await runtime0.settled()
-  assert.equal(host0.mounts.length, 1, '空启用表仍然成功装配（零贡献，但装配生效）')
-  await host0.mounts[0].definition.apply(host0.ctx)
-  assert.equal(host0.counts.get('agent/pre-step') ?? 0, 0, '空启用表零贡献')
-  await runtime0.dispose()
+  await h.runtime.refresh()
+  assert.deepEqual(await texts(), ['USER', 'A', 'B', 'C'])
+  enabled = []
+  await h.runtime.refresh()
+  assert.deepEqual(await texts(), ['USER'])
+  assert.deepEqual(h.warnings, [])
 })
 
-/**
- * 配装记录是「这个 Agent 到底装了哪几层提示词」的唯一运行时答案。
- * 真值源是**启用表的字面量顺序**，不是实现自己算出的另一份结果。
- */
-test('配装记录报告本 Agent 的提示词层：顺序即启用表，装配前与释放后为空', async () => {
-  writeModuleFixture('layer-a', {
-    modules: ['prompt-config-engine'],
-    promptConfigs: [{ id: 'from-a', strategy: 'static', text: 'A', position: 'after-user' }],
-  })
-  writeModuleFixture('layer-b', {
-    modules: ['prompt-config-engine'],
-    promptConfigs: [{ id: 'from-b', strategy: 'static', text: 'B', position: 'after-user' }],
-  })
-
-  const host = stubHostContext({ services: ['systemPrompt', 'tools', 'llm'] })
-  const runtime = createAgentAssembly(host.ctx, {
-    moduleRoot,
-    enabledModules: () => ['layer-a', 'layer-b'],
-    warn: (message) => { host.warnings.push(message) },
-  })
-  const agent = host.makeAgent('session-layers')
-
-  assert.deepEqual(runtime.moduleIds(agent.id), [], '装配前没有提示词层')
-  assert.deepEqual(runtime.moduleIds('session-unknown'), [], '从未装过的会话为空')
-
-  await host.fire('agent/created', { agent, source: 'startup' })
-  await runtime.settled()
-  assert.deepEqual(runtime.moduleIds(agent.id), ['layer-a', 'layer-b'], '顺序与启用表一致')
-
-  await host.fire('agent/disposed', { agent })
-  await runtime.settled()
-  assert.deepEqual(runtime.moduleIds(agent.id), [], '释放后不再声明提示词层')
-
-  await runtime.dispose()
+test('配装记录报告本 Agent 的提示词层：顺序即启用表，装配前与释放后为空', async t => {
+  for (const id of ['layer-a', 'layer-b']) writeModuleFixture(id, { modules: ['rule-engine'], promptConfigs: [{ id, text: id, position: 'after-user' }] })
+  const h = await liveAssembly(t, () => ['layer-a', 'layer-b'])
+  assert.deepEqual(h.runtime.moduleIds('session-layers'), [])
+  assert.deepEqual(h.runtime.moduleIds('session-unknown'), [])
+  const agent = await h.makeAgent('session-layers')
+  assert.deepEqual(h.runtime.moduleIds(agent.id), ['layer-a', 'layer-b'])
+  await h.root.serial(scopeTarget(agent, agent), 'agent/disposed', { agent })
+  await h.runtime.settled()
+  assert.deepEqual(h.runtime.moduleIds(agent.id), [])
 })
 test('诊断账本随装配释放回空，不返回陈旧快照', async (t) => {
   const h = await liveAssembly(t, () => [])

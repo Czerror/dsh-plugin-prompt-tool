@@ -116,6 +116,11 @@ export function apply(ctx: Context, configIn: Config): void {
     },
     capabilityChanged: (id) => id === undefined ? assembly?.refresh() : refreshModuleRuntime(id),
     moduleListChanged: () => assembly?.refresh(),
+    schedulePublication: (id, reason) => {
+      if (reason === 'installed') skillsRuntime.invalidate()
+      assembly?.schedule(reason === 'list' ? undefined : id)
+    },
+    publicationFailures: () => assembly?.publicationFailures() ?? [],
     // 账本随装配实例创建/释放；没有实例时回空账，不保留上一实例的计数。
     ruleDiagnostics: () => assembly?.ruleDiagnostics() ?? emptyRuleDiagnostics(),
     warn: message => warn(ctx, message),

@@ -37,6 +37,8 @@ import { createTargetQueue } from '../shared/target-queue.ts'
 import { createModuleVariableAdapter } from './module-variable-adapter.ts'
 import type {} from '../host/module-manifest-check.ts'
 import { createModuleInitialization } from './module-initialization.ts'
+import { createPublicationQueue } from './publication-queue.ts'
+import type { PublicationFailure } from '../shared/publication.ts'
 import { planPersonaSections, type PersonaCapture, type PersonaModule, type PersonaPlan } from './persona-registration.ts'
 import { MODULE_TOOL_CAPABILITIES, OFFICIAL_RECIPE_ROWS, enabledRowIds } from '../shared/engine-capabilities.ts'
 import { enableTablePath, readGlobalLayerSettings } from '../host/config-store.ts'
@@ -47,7 +49,7 @@ import { actionAudiences, compileRules, completeRuleSections } from '../../engin
 import type { RuleAudience } from '../../engine/rule-spec.mjs'
 // 与引擎注册侧共用主子身份判据。
 import { isDelegated } from '../../engine/shared.mjs'
-import { mountRuleSources } from '../../engine/rule-runtime.mjs'
+import { createRuleRuntime } from '../../engine/rule-runtime.mjs'
 // 去重身份判据的唯一来源。
 import { identityOf } from '../../engine/delivery.mjs'
 // 条件在真实挂载 scope 绑定；准备期只保留经过预检的定义快照。
@@ -81,6 +83,9 @@ export interface AgentAssemblyRuntime {
   ruleDiagnostics(): RuleDiagnosticsSnapshot
   /** 保存完成后重装存活 Agent；省略 id 表示启用表或部署开关改变。 */
   refresh(moduleId?: string): Promise<void>
+  /** 写盘后合并发布；显式 refresh 与请求前读取会消费同一队列。 */
+  schedule(moduleId?: string): void
+  publicationFailures(): PublicationFailure[]
   dispose(): Promise<void>
 }
 
@@ -327,12 +332,20 @@ export function createAgentAssembly(ctx: Context, options: AgentAssemblyOptions)
   const initialization = createModuleInitialization(ctx)
   const lastGood = new WeakMap<Agent, Map<string, PreparedAssembly>>()
   const sourceVersions = new WeakMap<PreparedAssembly, string>()
-  const rejectedVersions = new WeakMap<Agent, Map<string, Set<string>>>()
-  const mounts = new Map<string, { agent: Agent; fiber: { dispose(): Promise<void> | void }; prepared: PreparedAssembly[]; moduleIds: readonly string[]; stamp: string; content: string; plan: PersonaPlan }>()
+  const rejectedVersions = new WeakMap<Agent, Map<string, Map<string, string>>>()
+  type Slot = { fiber: Fiber; owners: PreparedAssembly[]; ready: boolean; failed?: unknown; live: boolean; off(): void; signature?: string }
+  type Mounted = {
+    agent: Agent; scope: Context; fiber: { dispose(): Promise<void> | void }; rules: ReturnType<typeof createRuleRuntime>
+    modules: Map<string, Slot>; shared: Map<string, Slot>; persona?: { fiber: Fiber; signature: string }
+    prepared: PreparedAssembly[]; moduleIds: readonly string[]; stamp: string; content: string; plan: PersonaPlan; personaSignature: string
+    live: boolean; committed: boolean; mutating: boolean
+  }
+  const mounts = new Map<string, Mounted>()
   const knownAgents = new Set<Agent>()
   const watched = new Map<string, () => void>()
   const disposed = new WeakSet<Agent>()
   let pending: Promise<void> = Promise.resolve()
+  let publishingContent: string | undefined
   const serialQueue = createTargetQueue()
   let active = true
   const warn = (error: unknown): void => {
@@ -421,169 +434,138 @@ export function createAgentAssembly(ctx: Context, options: AgentAssemblyOptions)
     await current.fiber.dispose()
   }
 
-  const reject = (agent: Agent, item: PreparedAssembly): void => {
+  const reject = (agent: Agent, item: PreparedAssembly, error: unknown): void => {
     let rejected = rejectedVersions.get(agent)
     if (rejected === undefined) { rejected = new Map(); rejectedVersions.set(agent, rejected) }
     let versions = rejected.get(item.moduleId)
-    if (versions === undefined) { versions = new Set(); rejected.set(item.moduleId, versions) }
-    versions.add(sourceVersions.get(item) ?? '')
+    if (versions === undefined) { versions = new Map(); rejected.set(item.moduleId, versions) }
+    versions.set(sourceVersions.get(item) ?? '', failureReason(error))
     if (lastGood.get(agent)?.get(item.moduleId) === item) lastGood.get(agent)?.delete(item.moduleId)
   }
 
-  const mount = async (agent: Agent, prepared: PreparedAssembly[], plan: PersonaPlan, duplicateIdentities: DuplicateIdentity[] = [], stamp = '', content = ''): Promise<void> => {
-    let mounted = false, live = true
-    const initializationErrors: Array<{ owners: PreparedAssembly[]; error: unknown }> = []
-    const waiting = new Map(prepared.map(item => [item, new Set<object>()]))
-    const observers: Array<() => void> = []
-    const initializationRoots: Fiber[] = []
+  const mount = async (agent: Agent, prepared: PreparedAssembly[], plan: PersonaPlan, duplicateIdentities: DuplicateIdentity[] = [], stamp = '', content = '', personaSignature = ''): Promise<void> => {
+    for (const item of prepared) for (const name of item.services) {
+      if (agent.ctx.get(name) === undefined) throw Object.assign(new Error(`模块 ${item.moduleId} 挂载所需宿主能力不可用：${name}`), { sourceModuleId: item.moduleId })
+    }
+    let current = mounts.get(agent.id)
+    if (current === undefined) {
+      let scope: Context | undefined
+      const root = agent.ctx.plugin({ name: 'prompt-tool-assembly', apply: (scopeCtx: Context) => { scope = scopeCtx } })
+      try { await root } catch (error) { await root.dispose(); throw error }
+      if (scope === undefined) { await root.dispose(); throw new Error('运行时配装作用域未初始化') }
+      let rules: ReturnType<typeof createRuleRuntime>
+      try { rules = createRuleRuntime(scope, { agent, onOutcome: ruleDiagnostics.record, variableStore, standingMountFor: await loadStandingMountFor(), manifestCheck }) }
+      catch (error) { await root.dispose(); throw error }
+      const record: Mounted = { agent, scope, rules, modules: new Map(), shared: new Map(), prepared: [], moduleIds: [],
+        stamp: '', content: '', personaSignature: '', plan: { sections: [], suppressRuntimeContext: false }, live: true, committed: false, mutating: false,
+        fiber: { dispose: () => {} } }
+      const disposeFiber = ctx.effect(() => () => {
+        record.live = false
+        for (const slot of [...record.modules.values(), ...record.shared.values()]) { slot.live = false; slot.off() }
+        rules.dispose()
+        return root.dispose()
+      }, `prompt-tool assembly ${agent.id}`)
+      record.fiber = { dispose: async () => { await disposeFiber() } }
+      mounts.set(agent.id, record)
+      current = record
+    }
+    const record = current
     const promote = (): void => {
-      if (!live || !mounted || !active || disposed.has(agent)) return
+      if (!record.live || !record.committed || record.mutating || !active || disposed.has(agent)) return
       let good = lastGood.get(agent)
       if (good === undefined) { good = new Map(); lastGood.set(agent, good) }
-      for (const item of prepared) if (waiting.get(item)?.size === 0 && !initializationErrors.some(failure => failure.owners.includes(item))) good.set(item.moduleId, item)
-    }
-    const observe = (child: Fiber, owners: PreparedAssembly[]): void => {
-      initializationRoots.push(child)
-      const token = {}
-      for (const item of owners) waiting.get(item)?.add(token)
-      observers.push(initialization.observe(child, {
-        ready: () => {
-          for (const item of owners) waiting.get(item)?.delete(token)
-          promote()
-        },
-        failed: error => {
-          if (!live || !active || disposed.has(agent)) return
-          initializationErrors.push({ owners, error })
-          if (!mounted) return
-          for (const item of owners) reject(agent, item)
-          void serial(async () => {
-            if (!live || !active || disposed.has(agent)) return
-            try { await replace([agent]) } catch (failure) { warn(failure) }
-          })
-          warn(new Error(`模块 ${owners.map(item => item.moduleId).join('、')} 初始化失败：${failureReason(error)}`, { cause: error }))
-        },
-      }))
-    }
-    // 宿主能力取并集；模块身份独立保留，提示词配置在各自插入点按持久序号执行。
-    const services = new Set<string>()
-    for (const item of prepared) for (const name of item.services) {
-      // Cordis 缺依赖的 fiber await 不抛错；旧候选也必须重新检查，避免全体停在 pending。
-      if (agent.ctx.get(name) === undefined) {
-        throw Object.assign(new Error(`模块 ${item.moduleId} 挂载所需宿主能力不可用：${name}`), { sourceModuleId: item.moduleId })
+      for (const item of record.prepared) {
+        const slots = [...record.modules.values(), ...record.shared.values()].filter(slot => slot.owners.includes(item))
+        if (slots.every(slot => slot.ready && slot.failed === undefined)) good.set(item.moduleId, item)
       }
-      services.add(name)
     }
-    const personaActive = plan.sections.length > 0 || plan.suppressRuntimeContext
-    if (personaActive) services.add('systemPrompt')
-    const fiber = agent.ctx.plugin({
-      name: 'prompt-tool-assembly',
-      inject: [...services],
-      apply: async (scopeCtx: Context) => {
-        // 跨模块重复身份：装配照常成功，只把可诊断的后果上报一次（此处才 warnOnce 是因为
-        // 试装/回滚会走两次 mount）。同一份 rule/action 身份被两个模块各带一份 = 疑似复制，
-        // 提示改 id；否则是有意共享同一身份去重，措辞不劝改。
-        for (const item of duplicateIdentities) {
-          const where = item.channel === 'kind' ? `显式 sourceKind ${JSON.stringify(item.identity)}` : `去重身份 ${JSON.stringify(item.identity)}`
-          warnOnce(item.suspectedCopy
-            ? `模块 ${item.moduleIds.join('、')} 疑似由复制产生同一个${where}（dedupe: session/batch）：去重按模块各记一份，两份正文都会注入，请改 rule id 或显式 identity 以区分`
-            : `模块 ${item.moduleIds.join('、')} 声明了同一个${where}（dedupe: session/batch）：去重按模块各记一份，两模块各自注入；同一模块内才共享这份去重`)
-        }
-        // 条件由挂载缝绑定（`mountRuleSources` 内部调 `rebindConditions`）：编译期没有挂载 scope 的
-        // ctx，preset 条件在那边恒 UNAVAILABLE。调用方只负责把可选的官方模块兜底取到手，不再复制规则对象。
-        const standingMountFor = await loadStandingMountFor()
-        const ruleSources = prepared.filter(item => item.rules.length > 0).map(item => ({ moduleId: item.moduleId, rules: item.rules }))
-        scopeCtx.effect(() => mountRuleSources(scopeCtx, ruleSources, { agent, onOutcome: ruleDiagnostics.record, variableStore, standingMountFor, manifestCheck }))
-        // 人设：在 Agent 自己的 scope 注册同名段，遮蔽祖先的部署人设与预设 persona 行；
-        // 同层已被注册时只能先撤后挂，撤销凭据来自 AgentSetup 窗口内的捕获。
-        if (personaActive) {
-          const capture = options.personaCapture
-          const scope = scopeOf(scopeCtx)
-          scopeCtx.effect(() => {
-            const applied: Array<() => void> = []
+    const disposeSlot = async (slot: Slot): Promise<void> => { slot.live = false; slot.off(); await slot.fiber.dispose() }
+    const applyCapability = async (scopeCtx: Context, item: PreparedAssembly, module: PreparedAssembly['modules'][number]): Promise<void> => {
+      const result = await module.apply(scopeCtx, module.config, { agent, sourceModuleId: item.moduleId,
+        sourceModuleDir: resolveModuleDir(item.moduleId, options.moduleRoot), recoveryState, contextRuntimeOf })
+      if (typeof result === 'function') scopeCtx.effect(() => result as () => void, module.id)
+    }
+    const createSlot = async (map: Map<string, Slot>, key: string, owners: PreparedAssembly[], apply: (scopeCtx: Context) => Promise<void>, signature?: string): Promise<void> => {
+      const fiber = record.scope.plugin({ name: `prompt-tool-${map === record.modules ? 'module' : 'shared'}:${key}`,
+        inject: [...new Set(owners.flatMap(item => [...item.services]))], apply })
+      const slot: Slot = { fiber, owners, ready: false, live: true, off: () => {}, ...(signature === undefined ? {} : { signature }) }
+      map.set(key, slot)
+      slot.off = initialization.observe(fiber, {
+        ready: () => { if (slot.live) { slot.ready = true; promote() } },
+        failed: error => {
+          if (!slot.live || !record.live || !active || disposed.has(agent) || map.get(key) !== slot) return
+          slot.failed = error
+          if (record.mutating || !record.committed) return
+          for (const item of slot.owners) { reject(agent, item, error); publication.schedule(item.moduleId) }
+          warn(new Error(`模块 ${slot.owners.map(item => item.moduleId).join('、')} 初始化失败：${failureReason(error)}`, { cause: error }))
+        },
+      })
+      try {
+        await fiber
+        await initialization.settled([fiber])
+        if (slot.failed !== undefined) throw slot.failed
+      } catch (error) {
+        await disposeSlot(slot)
+        map.delete(key)
+        throw Object.assign(new Error(`模块 ${owners.map(item => item.moduleId).join('、')} 挂载失败：${failureReason(error)}`, { cause: error }), { sourceModuleIds: owners.map(item => item.moduleId) })
+      }
+    }
+    record.mutating = true
+    try {
+      record.rules.replace(prepared.filter(item => item.rules.length > 0).map(item => ({ moduleId: item.moduleId, rules: item.rules })))
+      const desired = new Set(prepared.map(item => item.moduleId))
+      for (const [id, slot] of record.modules) if (!desired.has(id) || !prepared.includes(slot.owners[0]!) || !slot.live || slot.failed !== undefined) {
+        await disposeSlot(slot); record.modules.delete(id)
+      }
+      for (const item of prepared) {
+        const capabilities = item.modules.filter(module => PRIVATE_SERVICES[module.id] === undefined || module.id === 'retrieval')
+        if (capabilities.length > 0 && !record.modules.has(item.moduleId)) await createSlot(record.modules, item.moduleId, [item], async scopeCtx => {
+          for (const module of capabilities) await applyCapability(scopeCtx, item, module)
+        })
+      }
+      const shared = new Map<string, { owners: PreparedAssembly[]; item: PreparedAssembly; module: PreparedAssembly['modules'][number]; signature: string }>()
+      for (const item of prepared) for (const module of item.modules) {
+        if (PRIVATE_SERVICES[module.id] === undefined || module.id === 'retrieval' || shared.has(module.id)) continue
+        const owners = prepared.filter(source => source.modules.some(candidate => candidate.id === module.id))
+        shared.set(module.id, { owners, item, module, signature: JSON.stringify([owners.map(owner => owner.moduleId), item.moduleId, module.config]) })
+      }
+      for (const [id, slot] of record.shared) if (shared.get(id)?.signature !== slot.signature || !slot.live || slot.failed !== undefined) { await disposeSlot(slot); record.shared.delete(id) }
+      for (const [id, entry] of shared) {
+        const old = record.shared.get(id)
+        if (old !== undefined) old.owners = entry.owners
+        else await createSlot(record.shared, id, entry.owners, scopeCtx => applyCapability(scopeCtx, entry.item, entry.module), entry.signature)
+      }
+      const personaKey = JSON.stringify([personaSignature, plan.suppressRuntimeContext, plan.sections.map(section => ({ ...section, text: String(section.text) }))])
+      if (record.persona?.signature !== personaKey) {
+        if (record.persona !== undefined) { await record.persona.fiber.dispose(); delete record.persona }
+        if (plan.sections.length > 0 || plan.suppressRuntimeContext) {
+          const fiber = record.scope.plugin({ name: 'prompt-tool-persona', inject: ['systemPrompt'], apply: (scopeCtx: Context) => {
+            const applied: Array<() => void> = [], scope = scopeOf(scopeCtx)
             const rollback = (): void => { while (applied.length > 0) applied.pop()?.() }
             try {
               for (const section of plan.sections) {
-                const taken = scope === undefined ? undefined : capture?.records(scope).find(record => record.name === section.name)
-                taken?.off()
+                if (scope !== undefined) options.personaCapture?.records(scope).find(record => record.name === section.name)?.off()
                 applied.push(scopeCtx.systemPrompt.section(section))
               }
               if (plan.suppressRuntimeContext) applied.push(scopeCtx.systemPrompt.suppressRuntimeContext())
             } catch (error) { rollback(); throw error }
-            return rollback
-          }, 'prompt-tool persona')
-        }
-        const applyCapability = async (capabilityCtx: Context, item: PreparedAssembly, module: PreparedAssembly['modules'][number]): Promise<void> => {
-          const result: unknown = await module.apply(capabilityCtx, module.config, {
-            agent, sourceModuleId: item.moduleId,
-            sourceModuleDir: resolveModuleDir(item.moduleId, options.moduleRoot), recoveryState, contextRuntimeOf,
-          })
-          if (typeof result === 'function') capabilityCtx.effect(() => result as () => void, module.id)
-        }
-        // 所有 root 的等待凭据先建好，不能让首个 root 就绪提前晋升整个模块。
-        const ownTokens = new Map(prepared.map(item => [item, {}]))
-        for (const item of prepared) waiting.get(item)?.add(ownTokens.get(item)!)
-        for (const item of prepared) {
-          const capabilities = item.modules.filter(module => PRIVATE_SERVICES[module.id] === undefined || module.id === 'retrieval')
-          if (capabilities.length === 0) continue
-          const child = scopeCtx.plugin({
-            name: `prompt-tool-module:${item.moduleId}`,
-            apply: async (moduleCtx: Context) => {
-              for (const module of capabilities) await applyCapability(moduleCtx, item, module)
-            },
-          })
-          observe(child, [item])
-          try { await child }
-          catch (error) {
-            await child.dispose()
-            throw Object.assign(new Error(`模块 ${item.moduleId} 挂载失败：${failureReason(error)}`, { cause: error }), { sourceModuleId: item.moduleId })
-          }
-        }
-        const privateMounted = new Set<string>()
-        for (const item of prepared) for (const module of item.modules) {
-          if (PRIVATE_SERVICES[module.id] === undefined || module.id === 'retrieval' || privateMounted.has(module.id)) continue
-          const owners = prepared.filter(source => source.modules.some(candidate => candidate.id === module.id))
-          const child = scopeCtx.plugin({ name: `prompt-tool-shared:${module.id}`, apply: async (sharedCtx: Context) => {
-            await applyCapability(sharedCtx, item, module)
+            scopeCtx.effect(() => rollback, 'prompt-tool persona')
           } })
-          observe(child, owners)
-          try { await child }
-          catch (error) {
-            throw Object.assign(new Error(`模块 ${owners.map(owner => owner.moduleId).join('、')} 共享能力 ${module.id} 初始化失败：${failureReason(error)}`, { cause: error }), {
-              sourceModuleIds: owners.map(owner => owner.moduleId),
-            })
-          }
-          privateMounted.add(module.id)
+          try { await fiber } catch (error) { await fiber.dispose(); throw error }
+          record.persona = { fiber, signature: personaKey }
         }
-        for (const item of prepared) waiting.get(item)?.delete(ownTokens.get(item)!)
-      },
-    })
-    const disposeFiber = ctx.effect(() => () => {
-      live = false
-      for (const off of observers) off()
-      return fiber.dispose()
-    }, `prompt-tool assembly ${agent.id}`)
-    try {
-      await fiber
-      await initialization.settled(initializationRoots)
-      if (initializationErrors.length > 0) {
-        const failure = initializationErrors[0]!
-        throw Object.assign(new Error(`模块 ${failure.owners.map(item => item.moduleId).join('、')} 初始化失败：${failureReason(failure.error)}`, { cause: failure.error }), {
-          sourceModuleIds: failure.owners.map(item => item.moduleId),
-        })
       }
-    } catch (error) {
-      await disposeFiber()
-      throw error
-    }
-    if (!active || disposed.has(agent)) { await disposeFiber(); return }
-    mounts.set(agent.id, {
-      agent,
-      fiber: { dispose: async () => { await disposeFiber() } },
-      prepared,
-      moduleIds: prepared.map((item) => item.moduleId),
-      stamp, content, plan,
-    })
-    mounted = true
+      if (!active || disposed.has(agent)) { await release(agent.id, agent); return }
+      record.prepared = prepared
+      record.moduleIds = prepared.map(item => item.moduleId)
+      record.stamp = stamp; record.content = content; record.plan = plan; record.personaSignature = personaSignature; record.committed = true
+      for (const item of duplicateIdentities) {
+        const where = item.channel === 'kind' ? `显式 sourceKind ${JSON.stringify(item.identity)}` : `去重身份 ${JSON.stringify(item.identity)}`
+        warnOnce(item.suspectedCopy
+          ? `模块 ${item.moduleIds.join('、')} 疑似由复制产生同一个${where}（dedupe: session/batch）：去重按模块各记一份，两份正文都会注入，请改 rule id 或显式 identity 以区分`
+          : `模块 ${item.moduleIds.join('、')} 声明了同一个${where}（dedupe: session/batch）：去重按模块各记一份，两模块各自注入；同一模块内才共享这份去重`)
+      }
+    } finally { record.mutating = false }
     promote()
   }
 
@@ -609,12 +591,28 @@ export function createAgentAssembly(ctx: Context, options: AgentAssemblyOptions)
       .map(id => { assertModuleId(id); return join(options.moduleRoot, id, 'module.yml') })])
     for (const [file, listener] of watched) if (!files.has(file)) { unwatchFile(file, listener); watched.delete(file) }
     for (const file of files) if (!watched.has(file)) {
-      const listener = (): void => { if (active) for (const agent of knownAgents) void ensureFresh(agent) }
+      const listener = (): void => {
+        if (!active) return
+        try {
+          const ids = options.enabledModules(), personas = options.personaModules?.(), stamp = assemblyStamp(ids, personas)
+          if (publishingContent !== undefined && contentSignature(ids, personas) === publishingContent) return
+          const agents = new Set([...knownAgents, ...(ctx.get('agents')?.list() ?? [])])
+          let changed = false
+          for (const agent of agents) {
+            if (disposed.has(agent)) continue
+            const current = mounts.get(agent.id)
+            if (current?.stamp === stamp) continue
+            if (current !== undefined && current.content === contentSignature(ids, personas, current.content)) current.stamp = stamp
+            else changed = true
+          }
+          if (changed) publication.schedule()
+        } catch { publication.schedule() }
+      }
       watched.set(file, listener)
       watchFile(file, { persistent: false, interval: 200 }, listener)
     }
   }
-  const replace = async (targets: readonly Agent[], retry: boolean | string = false): Promise<void> => {
+  const replace = async (targets: readonly Agent[], retry: readonly string[] | boolean = false, attempt = 0): Promise<void> => {
     // 部署配置属于整份装配，读取失败不能伪装成每个模块各自失败。
     readGlobalLayerSettings(options.moduleRoot)
     const ids = [...options.enabledModules()]
@@ -623,19 +621,24 @@ export function createAgentAssembly(ctx: Context, options: AgentAssemblyOptions)
     const live = targets.filter(agent => active && !disposed.has(agent))
     const failures: Error[] = []
     const candidates = []
+    const signatureSnapshot = contentSignature(ids, personaModules)
+    const versions = new Map(ids.map(id => [id, contentSignature([id], undefined)]))
     for (const agent of live) {
       const previous = mounts.get(agent.id)
       if (retry === true) rejectedVersions.delete(agent)
-      else if (typeof retry === 'string') rejectedVersions.get(agent)?.delete(retry)
+      else if (Array.isArray(retry)) for (const id of retry) rejectedVersions.get(agent)?.delete(id)
       const good = lastGood.get(agent)
       const goodSnapshot = good === undefined ? undefined : new Map(good)
       const prepared: PreparedAssembly[] = []
       for (const id of ids) {
         try {
-          const item = await prepareAssembly(options.moduleRoot, id, name => agent.ctx.get(name) !== undefined)
-          const version = contentSignature([id], undefined)
+          const version = versions.get(id)!
+          const old = previous?.prepared.find(item => item.moduleId === id)
+          const item = old !== undefined && sourceVersions.get(old) === version
+            ? old : await prepareAssembly(options.moduleRoot, id, name => agent.ctx.get(name) !== undefined)
           sourceVersions.set(item, version)
           if (rejectedVersions.get(agent)?.get(id)?.has(version)) {
+            failures.push(new Error(`模块 ${id}（Agent ${agent.id}）上次发布失败：${rejectedVersions.get(agent)!.get(id)!.get(version)}`))
             const fallback = good?.get(id)
             if (fallback !== undefined) prepared.push(fallback)
           } else {
@@ -648,10 +651,18 @@ export function createAgentAssembly(ctx: Context, options: AgentAssemblyOptions)
           const fallback = good?.get(id)
           if (fallback !== undefined) prepared.push(fallback)
         }
+        await new Promise<void>(resolve => setImmediate(resolve))
       }
-      candidates.push({ agent, prepared, previous, goodSnapshot })
+      candidates.push({ agent, prepared, previous: previous === undefined ? undefined : { ...previous }, goodSnapshot })
     }
-    // 签名必须在 prepare 之后算：重切规则切片会写文件，先算会让戳立即过期。
+    // 准备期会让出事件循环；变更中的候选不得盖上较新定义的版本戳。
+    if (JSON.stringify(options.enabledModules()) !== JSON.stringify(ids)
+      || contentSignature(ids, options.personaModules?.()) !== signatureSnapshot) {
+      if (attempt < 3) return replace(targets, retry, attempt + 1)
+      publication.schedule()
+      throw new Error('模块定义在准备期间持续变化，已安排重新发布')
+    }
+    // 重切规则切片会写文件，戳只在已复核的准备结束后捕获。
     const stamp = assemblyStamp(ids, personaModules)
     for (const item of candidates.flatMap(candidate => candidate.prepared)) {
       for (const id of item.skippedOfficialRows) {
@@ -693,12 +704,12 @@ export function createAgentAssembly(ctx: Context, options: AgentAssemblyOptions)
       for (const [index, candidate] of candidates.entries()) {
         if (!active || disposed.has(candidate.agent)) continue
         changed.push(candidate)
-        await release(candidate.agent.id)
-        const content = contentSignature(ids, personaModules, candidate.previous?.content)
+        const content = signatureSnapshot
+        const personaSignature = JSON.stringify(personaModules ?? candidate.prepared.map(({ moduleId, persona, variablesEnabled }) => ({ moduleId, persona, variablesEnabled })))
         let plan = plans[index] as PersonaPlan
         while (true) {
           try {
-            await mount(candidate.agent, candidate.prepared, plan, duplicateDedupeIdentities(candidate.prepared), stamp, content)
+            await mount(candidate.agent, candidate.prepared, plan, duplicateDedupeIdentities(candidate.prepared), stamp, content, personaSignature)
             break
           } catch (error) {
             const sourceIds = error !== null && typeof error === 'object'
@@ -708,7 +719,7 @@ export function createAgentAssembly(ctx: Context, options: AgentAssemblyOptions)
             if (failed.length === 0) throw error
             for (const item of failed) {
               failures.push(new Error(`模块 ${item.moduleId}（Agent ${candidate.agent.id}）发布失败：${failureReason(error)}`, { cause: error }))
-              reject(candidate.agent, item)
+              reject(candidate.agent, item, error)
             }
             candidate.prepared = candidate.prepared.flatMap(item => {
               if (!failed.includes(item)) return [item]
@@ -718,18 +729,22 @@ export function createAgentAssembly(ctx: Context, options: AgentAssemblyOptions)
             plan = planFor(candidate.agent, candidate.prepared)
           }
         }
+        await new Promise<void>(resolve => setImmediate(resolve))
       }
     } catch (error) {
       const restoreErrors: unknown[] = []
       for (const { agent, previous, goodSnapshot } of changed.reverse()) {
         if (!active || disposed.has(agent)) continue
         try {
-          await release(agent.id)
           // 候选初始化成功不等于整批提交成功，回滚不能留下已撤候选的成功快照。
           if (goodSnapshot === undefined) lastGood.delete(agent)
           else lastGood.set(agent, new Map(goodSnapshot))
-          if (previous?.agent === agent) await mount(agent, previous.prepared, previous.plan, [], previous.stamp, previous.content)
-        } catch (restoreError) { restoreErrors.push(restoreError) }
+          if (previous?.agent === agent) await mount(agent, previous.prepared, previous.plan, [], previous.stamp, previous.content, previous.personaSignature)
+          else await release(agent.id, agent)
+        } catch (restoreError) {
+          restoreErrors.push(restoreError)
+          try { await release(agent.id, agent) } catch (cleanupError) { restoreErrors.push(cleanupError) }
+        }
       }
       if (restoreErrors.length > 0) {
         throw new AggregateError([error, ...restoreErrors],
@@ -746,12 +761,29 @@ export function createAgentAssembly(ctx: Context, options: AgentAssemblyOptions)
   const install = async (agent: Agent): Promise<void> => {
     knownAgents.add(agent)
     if (!active || disposed.has(agent) || mounts.get(agent.id)?.agent === agent) return
-    await replace([agent])
+    publishingContent = contentSignature(options.enabledModules(), options.personaModules?.())
+    try { await replace([agent]) } finally { publishingContent = undefined }
   }
+  const publication = createPublicationQueue({
+    warn: message => warn(message),
+    publish: (moduleIds, retry) => serial(async () => {
+      if (!active) return
+      const enabled = options.enabledModules()
+      const personas = options.personaModules?.()
+      const known = new Set<Agent>([...(ctx.get('agents')?.list() ?? []), ...knownAgents, ...[...mounts.values()].map(mount => mount.agent)])
+      const targets = [...known].filter(agent => !disposed.has(agent) && (moduleIds === undefined || moduleIds.some(id =>
+        enabled.includes(id) || mounts.get(agent.id)?.moduleIds.includes(id)
+        || (personas ?? []).some(item => item.moduleId === id && item.persona?.[isDelegated(agent.session) ? 'subagent' : 'main'] !== undefined))))
+      publishingContent = contentSignature(enabled, personas)
+      try { await replace(targets, retry) } finally { publishingContent = undefined }
+    }),
+  })
   let lastReadError: string | undefined
-  const ensureFresh = (agent: Agent): Promise<void> => serial(async () => {
+  const ensureFresh = async (agent: Agent): Promise<void> => {
     if (!active || disposed.has(agent) || !knownAgents.has(agent)) return
     try {
+      await publication.flush(undefined, false)
+      await pending
       // 热读失败保留旧贡献；初次装配仍按 manifest 的全局参数软失败约定处理。
       readGlobalLayerSettings(options.moduleRoot)
       const ids = options.enabledModules(), personas = options.personaModules?.()
@@ -761,7 +793,7 @@ export function createAgentAssembly(ctx: Context, options: AgentAssemblyOptions)
       if (current?.stamp !== stamp) {
         // 只改变量时戳变、内容签名不变：更新戳即可，不撤装重挂。
         if (current?.content === contentSignature(ids, personas, current?.content)) current.stamp = stamp
-        else await replace([agent])
+        else { publication.schedule(); await publication.flush(undefined, false) }
       }
       lastReadError = undefined
     } catch (error) {
@@ -769,7 +801,7 @@ export function createAgentAssembly(ctx: Context, options: AgentAssemblyOptions)
       if (message !== lastReadError) warn(error)
       lastReadError = message
     }
-  })
+  }
 
     const listeners = [
       // section provider 在 assemble waterfall 前求值，必须在原方法进入前准备注册。
@@ -812,7 +844,7 @@ export function createAgentAssembly(ctx: Context, options: AgentAssemblyOptions)
     for (const [file, listener] of watched) unwatchFile(file, listener)
     watched.clear()
     knownAgents.clear()
-    return pending.then(async () => {
+    return publication.dispose().then(() => pending).then(async () => {
       for (const id of mounts.keys()) await release(id)
     })
   }, 'prompt-tool assembly runtime')
@@ -830,26 +862,20 @@ export function createAgentAssembly(ctx: Context, options: AgentAssemblyOptions)
       let previous: Promise<void>
       do {
         await initialization.settled()
+        await publication.settled()
         previous = pending
         await previous
       } while (previous !== pending)
     },
-    hasMounted: (sessionId) => mounts.has(sessionId),
+    hasMounted: (sessionId) => mounts.get(sessionId)?.committed === true,
     moduleIds: (sessionId) => mounts.get(sessionId)?.moduleIds ?? [],
     ruleDiagnostics: () => active ? ruleDiagnostics.snapshot() : emptyRuleDiagnostics(),
+    schedule: moduleId => { if (active) publication.schedule(moduleId) },
+    publicationFailures: () => publication.failures(),
     refresh: async (moduleId) => {
       if (!active) throw new Error('运行时配装已释放')
       try {
-        await serial(async () => {
-          const enabled = options.enabledModules()
-          // 宿主 registry 未必列出全部存活 Agent（嵌入运行时、测试替身），已挂载的一并纳入。
-          const known = new Set<Agent>([...(ctx.get('agents')?.list() ?? []), ...[...mounts.values()].map(mount => mount.agent)])
-          const targets = [...known].filter(agent => {
-            const current = mounts.get(agent.id)
-            return options.personaModules !== undefined || moduleId === undefined || current === undefined || current.moduleIds.includes(moduleId) || enabled.includes(moduleId)
-          })
-          await replace(targets, moduleId ?? true)
-        })
+        await publication.flush(moduleId, true)
       } catch (error) {
         throw new AggregateError([error], `运行时配装更新失败：${failureReason(error)}`)
       }
@@ -860,6 +886,7 @@ export function createAgentAssembly(ctx: Context, options: AgentAssemblyOptions)
       for (const [file, listener] of watched) unwatchFile(file, listener)
       watched.clear()
       knownAgents.clear()
+      await publication.dispose()
       await pending
       for (const id of mounts.keys()) await release(id)
     },
