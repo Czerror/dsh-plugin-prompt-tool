@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [3.1.1] - 2026-10-29
+
 ### 工具面收窄：随包模块登记 dsh-ops 替换名
 
 - **随包名单**：`modules/tool-surface` 与 `templates/80-tool-surface` 的 `allow` 追加 dsh-ops 0.4.4 的全量公开工具名（21 个：`ops_bash`、`ops_read_files`、`ops_inspect_local_file`、`ops_glob`、`ops_grep`、`ops_result`、`ops_replace`、`ops_write_file`、`ops_edit_file`、`ops_diff`、`ops_stat`、`ops_copy`、`ops_move`、`ops_remove`、`ops_read_table`、`ops_read_docx`、`ops_read_pdf`、`ops_batch`、`ops_load_sdk`、`ops_discover_tools`、`ops_status`）。部署层副本与随包同口径。
