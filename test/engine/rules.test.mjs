@@ -47,6 +47,95 @@ function harness(services = {}) {
 const actor = () => ({ session: { id: 'session', header: {}, snapshotEvents: () => [] }, options: { model: 'deepseek-chat' } })
 const textAction = (id, text, extra = {}) => ({ id, kind: 'inject-text', config: { id, layer: 'pre-step', text, ...extra } })
 
+test('规则来源增量替换保留未变观察器、跨来源顺序与失败前贡献', async () => {
+  const { createRuleRuntime } = await import('../../engine/rule-runtime.mjs')
+  assert.equal(typeof createRuleRuntime, 'function')
+  const h = harness()
+  const a = compileRules([
+    { id: 'a10', then: [{ id: 'first', kind: 'request-params', patch: { maxTokens: 10 } }] },
+    { id: 'a30', then: [{ id: 'last', kind: 'request-params', patch: { maxTokens: 30 } }] },
+  ], { configOrder: { a10: 10, a30: 30 } })
+  let observed = 0
+  a[0].when = Object.assign(() => true, { observe() { observed++ } })
+  const b = value => compileRules([{ id: 'b20', then: [{ id: 'middle', kind: 'request-params', patch: { maxTokens: 20, temperature: value } }] }], { configOrder: { b20: 20 } })
+  const runtime = createRuleRuntime(h.ctx)
+  const firstB = b(0.2)
+  runtime.replace([{ moduleId: 'a', rules: a }, { moduleId: 'b', rules: firstB }])
+  const before = new Set(h.events.get('session/event'))
+  const request = () => h.run('agent/request', [{ agent: actor() }], () => ({}))
+  assert.deepEqual(await request(), { maxTokens: 30, temperature: 0.2 })
+  runtime.replace([{ moduleId: 'b', rules: b(0.4) }, { moduleId: 'a', rules: a }])
+  assert.deepEqual(await request(), { maxTokens: 30, temperature: 0.4 })
+  for (const observer of before) assert.ok(h.events.get('session/event').includes(observer), '未变化来源与共享相位池的观察器原样保留')
+  await h.emit('session/event', actor().session, { type: 'assistant/message' })
+  assert.equal(observed, 1)
+  const broken = b(0.8)
+  broken[0].actions[0].kind = 'unknown-action'
+  assert.throws(() => runtime.replace([{ moduleId: 'a', rules: a }, { moduleId: 'b', rules: broken }]), error => error.sourceModuleId === 'b')
+  assert.deepEqual(await request(), { maxTokens: 30, temperature: 0.4 }, '候选失败保留旧来源贡献')
+  let resume
+  const waiting = h.run('agent/request', [{ agent: actor() }], () => new Promise(resolve => { resume = resolve }))
+  runtime.replace([{ moduleId: 'a', rules: a }, { moduleId: 'b', rules: b(0.6) }])
+  resume({})
+  assert.deepEqual(await waiting, { maxTokens: 30, temperature: 0.4 }, '在途请求使用进入时的完整有序快照')
+  assert.deepEqual(await request(), { maxTokens: 30, temperature: 0.6 })
+  runtime.dispose()
+  assert.deepEqual(await request(), {})
+  assert.ok([...h.events.values()].every(list => list.length === 0))
+})
+
+test('规则来源增量保留独立上下文注册，交错 merged 组随顺序变化重算', async t => {
+  const { createRuleRuntime } = await import('../../engine/rule-runtime.mjs')
+  const root = new Context()
+  await root.plugin(SystemPrompt)
+  const agent = actor()
+  createScope(root, agent)
+  let mounted = 0, disposed = 0
+  const context = root.systemPrompt.context
+  t.mock.method(root.systemPrompt, 'context', function (config) {
+    const release = context.call(this, config)
+    if (!config.name.includes('a-owned')) return release
+    mounted++
+    return () => { disposed++; release() }
+  })
+  const source = (moduleId, entries) => ({ moduleId, rules: compileRules(entries.map(([id, text, , layer = 'system-section']) => ({
+    id, then: [textAction(`${id}-text`, text, { layer, mergeMode: 'merged', order: 5 })],
+  })), { moduleId, configOrder: Object.fromEntries(entries.map(([id, , sequence]) => [id, sequence])) }) })
+  const a = source('a', [['a10', 'A10', 10], ['a30', 'A30', 30], ['a-owned', 'CONTEXT', 50, 'runtime-context']])
+  const b = sequence => source('b', [['b-first', 'B-FIRST', sequence], ['b-second', 'B-SECOND', sequence + 1]])
+  const runtime = createRuleRuntime(root, { agent })
+  runtime.replace([a, b(20)])
+  const render = async () => {
+    const result = await root.systemPrompt.assemble({ agent, scope: agent })
+    return { sections: result.sections.filter(entry => entry.name.startsWith('prompt-tool:')).map(entry => entry.text),
+      contexts: result.contexts.filter(entry => entry.name.startsWith('prompt-tool:')).map(entry => entry.text) }
+  }
+  assert.deepEqual(await render(), { sections: ['A10', 'B-FIRST\n\nB-SECOND', 'A30'], contexts: ['CONTEXT'] })
+  runtime.replace([b(40), a])
+  assert.deepEqual(await render(), { sections: ['A10\n\nA30', 'B-FIRST\n\nB-SECOND'], contexts: ['CONTEXT'] })
+  assert.deepEqual({ mounted, disposed }, { mounted: 1, disposed: 0 }, 'A独立上下文不因B改变而撤回或注册')
+  runtime.dispose()
+  assert.deepEqual({ mounted, disposed }, { mounted: 1, disposed: 1 })
+  assert.deepEqual(await render(), { sections: [], contexts: [] })
+})
+
+test('规则来源增量保持子代理启动配置跨模块交错顺序', async () => {
+  const { createRuleRuntime } = await import('../../engine/rule-runtime.mjs')
+  const injected = []
+  const child = { ...actor(), inject: message => injected.push(message.content[0].text) }
+  const h = harness({ agents: new Map([['child', child]]) })
+  const source = (moduleId, entries) => ({ moduleId, rules: compileRules(entries.map(([id]) => ({
+    id, then: [textAction(`${id}-text`, id.toUpperCase(), { layer: 'subagent-start' })],
+  })), { moduleId, configOrder: Object.fromEntries(entries) }) })
+  const a = source('a', [['a10', 10], ['a30', 30]])
+  const b = source('b', [['b20', 20]])
+  const runtime = createRuleRuntime(h.ctx)
+  runtime.replace([a, b])
+  await h.emit('subagent/start', { id: 'child', runId: 'run' })
+  assert.deepEqual(injected, ['A10', 'B20', 'A30'])
+  runtime.dispose()
+})
+
 test('统一规则：同执行点共享一次条件，动作按 do 顺序，跨执行点不复用结果', async () => {
   const rules = compileRules([{ id: 'multi', if: { phase: { promoted: false } }, then: [
     { id: 'first', kind: 'request-params', patch: { maxTokens: 10 } },

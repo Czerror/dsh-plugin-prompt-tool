@@ -71,7 +71,7 @@ function officialAliasOf(name) {
  * 非法官方名（中文/大写/连字符）改写成确定性别名并改写文本引用；注册失败的名字退回静态解析。
  * @returns 各配置独立的引用白名单与别名；同一作用域内等价绑定只注册一次。
  */
-function registerOfficialVariables(ctx, configs, warnOnce, keep) {
+function registerOfficialVariables(ctx, configs, warnOnce, keep, shared) {
   const registries = new Map(configs.map((config) => [config, { protect: new Set(), alias: new Map(), registered: new Set() }]))
   const systemPrompt = getService(ctx, 'systemPrompt')
   if (systemPrompt === undefined || typeof systemPrompt.variable !== 'function') return registries
@@ -92,8 +92,9 @@ function registerOfficialVariables(ctx, configs, warnOnce, keep) {
     }
   }
   for (const fact of facts) reserved.add(fact)
-  const bindings = new Map()
-  const usedNames = new Set()
+  const bindings = shared?.bindings ?? new Map()
+  const usedNames = shared?.usedNames ?? new Set()
+  const retained = new Set()
   for (const [config, referenced] of references) {
     const registry = registries.get(config)
     for (const name of referenced) {
@@ -115,20 +116,30 @@ function registerOfficialVariables(ctx, configs, warnOnce, keep) {
           usedNames.add(official)
           const source = isFact ? name.toLowerCase() : name
           const variablesDisabled = config[SESSION_VARIABLES_DISABLED] === true
-          keep(systemPrompt.variable(official, (context) => {
+          const release = systemPrompt.variable(official, (context) => {
             const session = context?.agent?.session
             const variables = variablesDisabled ? {} : config.variableStore?.read(config.sourceModuleId).effective ?? config.variables
             const value = Object.hasOwn(variables, source) ? String(variables[source]) : runtimeFactValue(source, session) ?? ''
             // 变量值内的 {{pick}} 同样要有位置身份（配置 id + 声明名），否则同会话下多个变量的首个 pick 撞值。
             const expanded = interpolateVariables(value, variables, session, undefined, `variable:${config.sourceModuleId}:${config.id}:${name}`)
             return officialChannelText(expanded, `variable ${official}`, { alias: new Map(), registered: new Set() }, warnOnce)
-          }), `${name}: official prompt variable ${official}`)
-          binding = official
+          })
+          binding = { name: official, release, refs: 0 }
           bindings.set(signature, binding)
         }
-        registry.registered.add(binding)
+        if (!retained.has(signature)) {
+          retained.add(signature)
+          binding.refs++
+          keep(() => {
+            if (--binding.refs > 0) return
+            bindings.delete(signature)
+            usedNames.delete(binding.name)
+            binding.release?.()
+          }, `${name}: official prompt variable ${binding.name}`)
+        }
+        registry.registered.add(binding.name)
         registry.protect.add(name)
-        if (binding !== name) registry.alias.set(name, binding)
+        if (binding.name !== name) registry.alias.set(name, binding.name)
       } catch (error) {
         warnOnce(`${name}: 官方 prompt 变量 ${official} 注册失败，该引用退回静态解析：${String(error?.message ?? error)}`)
       }
@@ -176,6 +187,7 @@ function textLayerGroups(configs) {
       && config.sourceModuleId === base.sourceModuleId
       && (config.params?.complete === true) === (base.params?.complete === true)
       && (config.params?.suppressRuntimeContext === true) === (base.params?.suppressRuntimeContext === true)
+      && config.runtimePoint?.waterfallPosition === base.runtimePoint?.waterfallPosition
       && config.position === base.position && config.order === base.order) previous.push(config)
     else groups.push([config])
   }
@@ -658,9 +670,9 @@ function orderedNamesOf(entries) {
  * 回填到它们原来的槽位。只换本插件段之间的位置：平台段与其他插件段占住的槽位不动。
  */
 function registerDeliveryOrder(ctx, keep, collection, names) {
-  if (names.length < 2) return
-  const rank = new Map(names.map((entryName, index) => [entryName, index]))
+  if (typeof names !== 'function' && names.length < 2) return
   keep(ctx.on('system-prompt/assemble', async (assembly, context, next) => {
+    const rank = new Map((typeof names === 'function' ? names() : names).map((entryName, index) => [entryName, index]))
     const result = await next()
     const list = result?.[collection]
     if (!Array.isArray(list)) return result
@@ -712,8 +724,8 @@ export function wireLayers(ctx, configs, warnOnce, options = {}) {
   try {
     // 注册即纳入 owned，后续注册失败也能释放已取得的变量和监听器。
     /** 实际注册名与序号：重排器只认这里，不从 configs 反推。 */
-    const ordered = { sections: [], contexts: [] }
-    const registry = registerOfficialVariables(ctx, configs.filter((config) => config.layer === 'system-section' || config.layer === 'runtime-context'), warnOnce, keep)
+    const ordered = options.ordered ?? { sections: [], contexts: [] }
+    const registry = registerOfficialVariables(ctx, configs.filter((config) => config.layer === 'system-section' || config.layer === 'runtime-context'), warnOnce, keep, options.sharedVariables)
     const conditional = configs.filter(config => ['system-section', 'runtime-context'].includes(config.layer)
       && (typeof config.rule?.when === 'function' || typeof config.actionWhen === 'function'
         || (config.rule !== undefined || config.params?.templateEvaluation === true) && config.params?.complete !== true && config.params?.suppressRuntimeContext !== true))
@@ -724,12 +736,95 @@ export function wireLayers(ctx, configs, warnOnce, options = {}) {
     wireTurnStops(ctx, configs.filter((config) => config.layer === 'turn-stop'), warnOnce, on, options.turnStopBudgets)
     wireSubagentEvents(ctx, configs.filter((config) => config.layer === 'subagent-start' || config.layer === 'subagent-end'), warnOnce, on)
     // 官方 order 只提供初始槽位；configOrder 覆盖段/上下文的先后（平台段与其他插件段不动）。
-    for (const collection of ['sections', 'contexts']) {
+    for (const collection of options.deliveryOrder === false ? [] : ['sections', 'contexts']) {
       registerDeliveryOrder(ctx, keep, collection, orderedNamesOf(ordered[collection]))
     }
     return dispose
   } catch (error) {
     dispose()
     throw error
+  }
+}
+
+/** 按实际文本组保留注册；共享排序投影变化不撤销未变化组的 provider。 */
+export function createLayerRuntime(ctx, warnOnce, options = {}) {
+  let records = []
+  let active = true
+  const listeners = []
+  const sharedVariables = { bindings: new Map(), usedNames: new Set() }
+  const keep = release => { listeners.push(release) }
+  try {
+    for (const collection of ['sections', 'contexts']) {
+      registerDeliveryOrder(ctx, keep, collection, () => orderedNamesOf(records.flatMap(record => record.ordered[collection])))
+    }
+  } catch (error) {
+    for (const release of listeners.reverse()) release()
+    throw error
+  }
+  const groupsOf = configs => {
+    const groups = []
+    for (const layer of ['system-section', 'runtime-context']) {
+      const selected = configs.filter(config => config.layer === layer)
+      const conditional = selected.filter(config => typeof config.rule?.when === 'function' || typeof config.actionWhen === 'function'
+        || (config.rule !== undefined || config.params?.templateEvaluation === true) && config.params?.complete !== true && config.params?.suppressRuntimeContext !== true)
+      const conditionalSet = new Set(conditional)
+      const regular = selected.filter(config => !conditionalSet.has(config))
+      groups.push(...textLayerGroups(conditional))
+      if (layer === 'system-section') groups.push(...textLayerGroups(regular))
+      else {
+        const resolver = regular.filter(config => config.strategy === 'placeholder' || !KNOWN_STRATEGIES.has(config.strategy))
+        const resolverSet = new Set(resolver)
+        groups.push(...textLayerGroups(regular.filter(config => !resolverSet.has(config))), ...resolver.map(config => [config]))
+      }
+    }
+    const other = configs.filter(config => !['system-section', 'runtime-context'].includes(config.layer))
+    return [...groups, ...other.map(config => [config])]
+  }
+  const mount = configs => {
+    const ordered = { sections: [], contexts: [] }
+    const handlers = []
+    const dispose = wireLayers(ctx, configs, warnOnce, {
+      ...options, sharedVariables, ordered, deliveryOrder: false,
+      on(channel, handler) { handlers.push({ channel, handler, config: configs[0] }); return () => {} },
+    })
+    return { configs, ordered, handlers, dispose }
+  }
+  return {
+    replace(configs) {
+      if (!active) throw new Error('rule text runtime disposed')
+      const groups = groupsOf(configs)
+      const byFirst = new Map(records.map(record => [record.configs[0], record]))
+      const retained = groups.map(group => {
+        const record = byFirst.get(group[0])
+        return record?.configs.length === group.length && group.every((config, index) => record.configs[index] === config) ? record : undefined
+      })
+      const retainedSet = new Set(retained)
+      const removed = records.filter(record => !retainedSet.has(record))
+      for (const record of removed) record.dispose()
+      const created = []
+      try {
+        records = groups.map((group, index) => {
+          if (retained[index] !== undefined) return retained[index]
+          const record = mount(group)
+          created.push(record)
+          return record
+        })
+        const owners = new Set(configs.map(config => config.sourceModuleId ?? ''))
+        for (const owner of options.turnStopBudgets?.keys() ?? []) if (!owners.has(owner)) options.turnStopBudgets.delete(owner)
+      } catch (error) {
+        for (const record of created.reverse()) record.dispose()
+        const old = records
+        records = old.filter(record => !removed.includes(record))
+        for (const record of removed) records.push(mount(record.configs))
+        throw error
+      }
+    },
+    entries: () => records.flatMap(record => record.handlers),
+    dispose() {
+      if (!active) return
+      active = false
+      for (const record of records.splice(0).reverse()) record.dispose()
+      for (const release of listeners.splice(0).reverse()) release()
+    },
   }
 }

@@ -51,3 +51,9 @@ export function mountRuleSources(
   sources: ReadonlyArray<RuleSourceLike>,
   options?: MountRuleSourcesOptions,
 ): () => void
+
+/** 同 moduleId 与 rules 引用保持未变来源；候选拒绝时恢复受影响来源的旧贡献。 */
+export function createRuleRuntime(ctx: unknown, options?: MountRuleSourcesOptions): {
+  replace(sources: ReadonlyArray<RuleSourceLike>): void
+  dispose(): void
+}
