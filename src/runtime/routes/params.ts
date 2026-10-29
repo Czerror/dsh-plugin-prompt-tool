@@ -15,7 +15,7 @@ import { declarationsOf, declaresAny, isRecord, type BridgeRuntime } from '../br
 
 /** 本域用到的运行时面：只用这些，不加宽（新域照此声明自己的面）。 */
 type ParamsRuntime = Pick<BridgeRuntime,
-  'register' | 'gate' | 'runOverridesChange' | 'readParamOverrides' | 'readParamEffective' | 'variableView' | 'saveVariables' | 'refreshVariables'>
+  'register' | 'gate' | 'runOverridesChange' | 'schedulePublication' | 'readParamOverrides' | 'readParamEffective' | 'variableView' | 'saveVariables' | 'refreshVariables'>
 
 export function registerParams(runtime: ParamsRuntime): Array<() => void> {
   return [
@@ -104,7 +104,7 @@ export function registerParams(runtime: ParamsRuntime): Array<() => void> {
         // 后续运行刷新按目标模块执行。全局层影响所有已启用模块：主语缺席即整轮刷新。
         const publication = record.rebuild === false
           ? published()
-          : await runtime.runOverridesChange(global ? undefined : basename(dir))
+          : await runtime.schedulePublication(global ? undefined : basename(dir))
         tx.write(200, {
           ok: true,
           value: { overrides: record.overrides, ...publication },

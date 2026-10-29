@@ -9,7 +9,7 @@ import type { ModuleVariablesRequest, ModuleVariablesSnapshot } from './module-v
 import type { RulesRequest, RulesSnapshot } from './rules.ts'
 import type { ModuleConfigIdentity, ModuleConfigOrderSnapshot } from './module-config-order.ts'
 import type { AssetSummary, BridgeAssetImportRequest, ImportKind, ModuleExportRequest, ModuleExportResult } from './asset-transfer.ts'
-import type { PublicationFields } from './publication.ts'
+import type { PublicationFailure, PublicationFields } from './publication.ts'
 import type { EngineEditorGroup, InjectionPoint, ModuleFacts } from './engine-capabilities.ts'
 import type { OfficialOrdersView } from './official-orders.ts'
 import { isModuleId } from './module-ids.ts'
@@ -458,7 +458,7 @@ export interface PromptConfigSourceView {
 
 /** `/meta` 与 `/bootstrap` 的 meta 段：层契约 + 官方装配刻度。`officialOrders` 缺席＝服务降级或档位名不匹配，消费方必须退化。 */
 export interface BridgeMetaSection {
-  meta: Record<string, unknown> & EngineMetaLayerContract & { officialOrders?: OfficialOrdersView }
+  meta: Record<string, unknown> & EngineMetaLayerContract & { officialOrders?: OfficialOrdersView; publicationFailures?: readonly PublicationFailure[] }
 }
 
 /**

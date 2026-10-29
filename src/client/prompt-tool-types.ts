@@ -1,5 +1,6 @@
 /** 客户端共享类型：提示词配置草稿、层能力矩阵与引擎 /meta 载荷。 */
 import type { EngineMetaLayerContract, ModuleSummary, PromptConfigSourceView, StConversionReport, StOrderGroupCandidate } from '../shared/bridge-contract.ts'
+import type { PublicationFailure } from '../shared/publication.ts'
 import type { OfficialOrdersView } from '../shared/official-orders.ts'
 import type { AssetImportRequest, AssetSummary } from '../shared/asset-transfer.ts'
 import type { RuleDefinition } from '../shared/rules.ts'
@@ -105,6 +106,8 @@ export interface EngineMeta extends EngineMetaLayerContract {
   /** 可用模块模板清单（UI 模块切换器）。 */
   modules?: ModuleSummary[]
   moduleWarnings?: string[]
+  /** 只读后台发布诊断；工作台不渲染。 */
+  publicationFailures?: readonly PublicationFailure[]
   /** 插件目录内置模板清单（「新建模块」选择器数据源）。 */
   builtinTemplates?: Array<{ id: string; name: string }>
   layers: string[]

@@ -699,18 +699,19 @@ test('模块配置排序端点：启用尾部追加、跨模块保存、冲突�
     assert.equal(rebuilt.length, count)
   })
 
-  await t.test('追加失败不启用；定义已保存而重建失败回 200 + 待发布', async () => {
+  await t.test('追加失败不启用；运行发布失败保留已提交启用表并可重试', async () => {
     assert.equal((await call('moduleEnable', { id: ids[2], enabled: true })).ok, false)
     assert.equal(enabledModuleIds(userPresetRoot).includes(ids[2]), false)
     beforeRebuild = async () => { throw new Error('MATERIALIZE_FAILED') }
-    const rebuildCount = rebuilt.filter(id => id === ids[3]).length
+    const rebuildCount = rebuilt.length
     const failedEnable = await call('moduleEnable', { id: ids[3], enabled: true })
     assert.equal(failedEnable.status, 200)
     assert.equal(failedEnable.value.publicationPending, true)
-    assert.equal(enabledModuleIds(userPresetRoot).includes(ids[3]), false)
+    assert.equal(enabledModuleIds(userPresetRoot).includes(ids[3]), true)
     beforeRebuild = async () => {}
     assert.equal((await call('moduleEnable', { id: ids[3], enabled: true })).status, 200)
-    assert.equal(rebuilt.filter(id => id === ids[3]).length, rebuildCount + 1, '上次已分配序号但物化失败，重试仍必须成功物化目标')
+    assert.equal(rebuilt.length, rebuildCount + 1, '重试只发布最终启用集合一次')
+    assert.equal(rebuilt.at(-1), undefined)
     await call('moduleEnable', { id: ids[3], enabled: false })
     beforeRebuild = async () => { throw new Error('MATERIALIZE_FAILED') }
     const result = await call('moduleConfigOrder', { expectedRevision: snapshot.revision, entries: identities(snapshot).reverse() })

@@ -26,7 +26,7 @@ function uploadFileName(req: IncomingMessage): string {
 
 /** 本域用到的运行时面：只用这些，不加宽（新域照此声明自己的面）。 */
 type TransferRuntime = Pick<BridgeRuntime,
-  'deps' | 'register' | 'descriptor' | 'assetSources' | 'finishModuleChange'>
+  'deps' | 'register' | 'descriptor' | 'assetSources' | 'finishModuleChange' | 'schedulePublication'>
 
 export function registerTransfer(runtime: TransferRuntime): Array<() => void> {
   return [
@@ -87,7 +87,7 @@ export function registerTransfer(runtime: TransferRuntime): Array<() => void> {
         }
         const installed = await installModulePackage(userModulesDir(), files, request.params)
         runtime.descriptor.invalidate()
-        const publication = await runtime.finishModuleChange(() => runtime.deps.moduleInstalled?.(installed.id))
+        const publication = await runtime.schedulePublication(installed.id, 'installed')
         tx.write(200, { ok: true, value: { ...installed, sourceDigest, ...(prepared.report === undefined ? {} : { report: prepared.report }), ...publication } })
       } catch (error) {
         const code = typeof (error as { code?: unknown }).code === 'string' ? String((error as { code: string }).code) : 'module-package-invalid'

@@ -58,7 +58,7 @@ import {
   type BridgeTransaction,
 } from './bridge-transaction.ts'
 import { assertBridgeRequest } from '../shared/bridge-request-shape.ts'
-import { published, type PublicationState } from '../shared/publication.ts'
+import { published, type PublicationFailure, type PublicationFields, type PublicationState } from '../shared/publication.ts'
 import { createTargetQueue } from '../shared/target-queue.ts'
 import { gateFor, type GateHandle } from './module-subject-gate.ts'
 import type { RuleDiagnosticsSnapshot } from './rule-diagnostics.ts'
@@ -118,6 +118,10 @@ export interface BridgeDeps {
   capabilityChanged?: (moduleId?: string) => void | Promise<void>
   /** 新建、复制或删除模块后重建全部运行实例（目标可能已不存在）。 */
   moduleListChanged?: () => void | Promise<void>
+  /** 写盘后只登记后台发布；安装提交仍先失效技能目录，重试继续走上述同步回调。 */
+  schedulePublication?: (moduleId?: string, reason?: 'installed' | 'capability' | 'list') => void
+  /** 当前后台发布失败，不投影到模块页的 moduleWarnings。 */
+  publicationFailures?: () => readonly PublicationFailure[]
   /** 技能策略写入后的目录刷新回调。 */
   afterSkillsChange?: () => void
   /** 当前装配实例的规则判定账本；无装配时返回空账。 */
@@ -407,6 +411,7 @@ export interface BridgeRuntime {
   finishModuleChange(activate: () => void | Promise<void>): Promise<PublicationState>
   runOverridesChange(moduleId?: string): Promise<PublicationState>
   refreshModuleList(): Promise<PublicationState>
+  schedulePublication(moduleId?: string, reason?: 'installed' | 'capability' | 'list'): Promise<PublicationFields>
   writeModuleOrderError(write: BridgeWrite, error: unknown): void
   loadEngineMeta(): Promise<Record<string, unknown> & EngineMetaLayerContract>
   collectSkills(sessionId?: string): Promise<SkillsCatalogSnapshot>
@@ -467,6 +472,17 @@ export function createBridgeRuntime(options: BridgeRuntimeOptions): BridgeRuntim
   }
   const runOverridesChange = (moduleId?: string): Promise<PublicationState> => finishModuleChange(() => deps.overridesChanged?.(moduleId))
   const refreshModuleList = (): Promise<PublicationState> => finishModuleChange(() => deps.moduleListChanged?.())
+  const schedulePublication = async (moduleId?: string, reason?: 'installed' | 'capability' | 'list'): Promise<PublicationFields> => {
+    const schedule = deps.schedulePublication
+    if (schedule !== undefined) {
+      const result = await finishModuleChange(() => schedule(moduleId, reason))
+      return result.publicationPending ? result : { persisted: true }
+    }
+    // 兼容只提供同步发布回调的嵌入宿主；生产宿主总是接入统一调度器。
+    return reason === 'installed' ? finishModuleChange(() => deps.moduleInstalled?.(moduleId!))
+      : reason === 'capability' ? finishModuleChange(() => deps.capabilityChanged?.(moduleId))
+        : reason === 'list' ? refreshModuleList() : runOverridesChange(moduleId)
+  }
   const writeModuleOrderError = (write: BridgeWrite, error: unknown): void => {
     const status = error instanceof ModuleConfigOrderError ? error.status : 500
     const code = error instanceof ModuleConfigOrderError ? error.code : 'module-config-order-failed'
@@ -574,6 +590,8 @@ export function createBridgeRuntime(options: BridgeRuntimeOptions): BridgeRuntim
       warnings.push(`全局层 layerSettings 解析失败，已按「无全局层」继续（指令卡的全局开关暂不可用）：${globalLayerError}`)
     }
     if (warnings.length > 0) meta.moduleWarnings = warnings
+    const publicationFailures = deps.publicationFailures?.()
+    if (publicationFailures !== undefined && publicationFailures.length > 0) meta.publicationFailures = publicationFailures
     // 编辑组主归属与引擎 meta 同源组合下发：layerOrder 由引擎 schema 提供（不另写层序清单），
     // editorGroups 来自共享契约。逐条挑白名单字段，避免将来给契约加字段就顺带泄漏到浏览器。
     meta.editorGroups = ENGINE_EDITOR_GROUP_MAP.map(({ id, displayLayer, relatedLayers, hook }) => ({
@@ -731,7 +749,7 @@ export function createBridgeRuntime(options: BridgeRuntimeOptions): BridgeRuntim
   })
 
   const refreshVariableSettings = async (dir: string): Promise<void> => {
-    if (!pendingVariableSettings.has(dir)) return
+    if (!pendingVariableSettings.has(dir) && deps.schedulePublication === undefined) return
     try { await deps.overridesChanged?.(basename(dir)); pendingVariableSettings.delete(dir) }
     catch (error) { pendingVariableSettings.set(dir, `变量开关已保存，但运行发布失败：${String(error)}`) }
   }
@@ -741,6 +759,12 @@ export function createBridgeRuntime(options: BridgeRuntimeOptions): BridgeRuntim
     if (settingsChanged) pendingVariableSettings.set(dir, '变量开关已保存，等待运行发布')
     if (committed.publicationPending) {
       return { ...committed, ...published(committed.publicationError ?? '变量已保存，等待运行发布') }
+    }
+    if (settingsChanged && deps.schedulePublication !== undefined) {
+      const publication = await schedulePublication(basename(dir))
+      if (publication.publicationPending) pendingVariableSettings.set(dir, publication.publicationError ?? '变量开关已保存，等待运行发布')
+      else pendingVariableSettings.delete(dir)
+      return { ...committed, ...publication }
     }
     if (settingsChanged) await refreshVariableSettings(dir)
     return { ...committed, ...published(pendingVariableSettings.get(dir)) }
@@ -768,6 +792,7 @@ export function createBridgeRuntime(options: BridgeRuntimeOptions): BridgeRuntim
     finishModuleChange,
     runOverridesChange,
     refreshModuleList,
+    schedulePublication,
     writeModuleOrderError,
     loadEngineMeta,
     collectSkills,

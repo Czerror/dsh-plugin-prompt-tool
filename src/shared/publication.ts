@@ -1,8 +1,9 @@
 /**
- * 一次已写盘操作的运行发布结果：host 生成、client 读取的唯一形状。
+ * 一次已写盘操作的确认与运行发布结果：host 生成、client 读取的唯一形状。
  *
  * 发布失败不是写入失败——定义已经提交到磁盘，只是运行实例还没跟上。它必须与
  * 4xx/5xx 的「没有写盘」区分开，由 `persisted` 与 `publicationPending` 表达。
+ * 普通后台发布只确认 persisted；未完成的发布不提前发送 pending:false。
  */
 export interface PublicationFields {
   /** 写响应恒为 true；读响应不出现。 */
@@ -11,6 +12,13 @@ export interface PublicationFields {
   publicationPending?: boolean
   /** 给人读的发布失败原因；没有失败时缺席。 */
   publicationError?: string
+}
+
+/** 当前仍未恢复的后台运行发布失败；仅用于只读诊断。 */
+export interface PublicationFailure {
+  moduleId?: string
+  message: string
+  at: number
 }
 
 export interface PublicationState extends PublicationFields {

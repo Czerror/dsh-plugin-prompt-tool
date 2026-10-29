@@ -48,7 +48,7 @@ function declaredCapabilityIds(dir: string): string[] {
 
 /** 本域用到的运行时面：只用这些，不加宽（新域照此声明自己的面）。 */
 type DefinitionsRuntime = Pick<BridgeRuntime,
-  'deps' | 'register' | 'gate' | 'capabilityQueue' | 'finishModuleChange' | 'runOverridesChange'>
+  'deps' | 'register' | 'gate' | 'capabilityQueue' | 'finishModuleChange' | 'runOverridesChange' | 'schedulePublication'>
 
 export function registerDefinitions(runtime: DefinitionsRuntime): Array<() => void> {
   return [
@@ -105,7 +105,7 @@ export function registerDefinitions(runtime: DefinitionsRuntime): Array<() => vo
             appendModuleCapabilities(doc, customToolModules(customTools))
           }
         }, { owns: ['customTools', 'modules'] })
-        const publication = await runtime.runOverridesChange(basename(dir))
+        const publication = await runtime.schedulePublication(basename(dir))
         tx.write(200, { ok: true, value: { customTools, ...publication } })
       } catch (error) {
         if (error instanceof ModuleWriteError && error.persisted) {
@@ -153,7 +153,9 @@ export function registerDefinitions(runtime: DefinitionsRuntime): Array<() => vo
           }
           saved = saveModulePersona(root, id, persona, creating ? readModulePersona(dir).revision : record.expectedRevision as string)
         }
-        const publication = await runtime.runOverridesChange(basename(dir))
+        const publication = record.refreshOnly === true
+          ? await runtime.runOverridesChange(basename(dir))
+          : await runtime.schedulePublication(basename(dir))
         tx.write(200, { ok: true, value: { ...saved, ...publication } })
       } catch (error) {
         if (error instanceof ModuleWriteError && error.persisted) {
@@ -185,7 +187,9 @@ export function registerDefinitions(runtime: DefinitionsRuntime): Array<() => vo
         }
         const saved = record.refreshOnly === true ? readPersonaSources(root)
           : writePersonaSources(root, record.sources as PersonaSources, record.expectedRevision as string | null)
-        const publication = await runtime.runOverridesChange()
+        const publication = record.refreshOnly === true
+          ? await runtime.runOverridesChange()
+          : await runtime.schedulePublication()
         tx.write(200, { ok: true, value: { ...saved, ...publication } })
       } catch (error) {
         if (error instanceof ModuleWriteError && error.persisted) {
@@ -239,7 +243,7 @@ export function registerDefinitions(runtime: DefinitionsRuntime): Array<() => vo
               ? { action: 'create', capabilityId: id.trim() }
               : { action: 'create-recipe', recipeId: id.trim() })
           const publication = result.changed
-            ? await runtime.finishModuleChange(() => runtime.deps.capabilityChanged?.(basename(dir)))
+            ? await runtime.schedulePublication(basename(dir), 'capability')
             : published()
           tx.write(200, { ok: true, value: { ...result, ...publication } })
         } catch (error) {

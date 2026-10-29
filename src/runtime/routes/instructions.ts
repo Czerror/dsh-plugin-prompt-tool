@@ -22,7 +22,7 @@ import {
 } from '../bridge-runtime.ts'
 
 /** 本域用到的运行时面：只用这些，不加宽（新域照此声明自己的面）。 */
-type InstructionsRuntime = Pick<BridgeRuntime, 'deps' | 'scope' | 'register' | 'gate'>
+type InstructionsRuntime = Pick<BridgeRuntime, 'deps' | 'scope' | 'register' | 'gate' | 'schedulePublication'>
 
 /**
  * 规则编辑器元数据（谓词/动作/位置清单）：动态 import 而非静态——`rule-spec.mjs` 是纯 JS，
@@ -205,19 +205,17 @@ export function registerInstructions(runtime: InstructionsRuntime): Array<() => 
           ...(record.activateRuleId === undefined ? {} : { activateRuleId: record.activateRuleId as string }),
           ...(record.validateOnly === undefined ? {} : { validateOnly: record.validateOnly as boolean }),
         }) : isEditableModuleDir(dir) ? readModuleRules(dir) : ensureModuleSlices(dir, { writable: false })
-        if (writing) {
-          try { await runtime.deps.overridesChanged?.(basename(dir)) }
-          catch (error) {
-            tx.write(200, { ok: true, value: { rules: candidate.rules, revisions: candidate.revisions, meta: await ruleEditorMeta(), ...(createdRuleId === undefined ? {} : { createdRuleId }), ...published(`规则已保存，但运行刷新失败：${String(error)}`) } })
-            return
-          }
+        const publication = writing ? await runtime.schedulePublication(basename(dir)) : undefined
+        if (publication?.publicationPending) {
+          tx.write(200, { ok: true, value: { rules: candidate.rules, revisions: candidate.revisions, meta: await ruleEditorMeta(), ...(createdRuleId === undefined ? {} : { createdRuleId }), ...publication } })
+          return
         }
         const result = writing ? readModuleRules(dir) : candidate
         if (writing && !isDeepStrictEqual(result.rules, candidate.rules)) {
           tx.write(409, { ok: false, code: 'rules-conflict', message: '重建期间规则再次变化；请重新读取，当前草稿仍保留' })
           return
         }
-        tx.write(200, { ok: true, value: { rules: result.rules, revisions: result.revisions, meta: await ruleEditorMeta(), ...(createdRuleId === undefined ? {} : { createdRuleId }), ...(writing ? published() : {}) } })
+        tx.write(200, { ok: true, value: { rules: result.rules, revisions: result.revisions, meta: await ruleEditorMeta(), ...(createdRuleId === undefined ? {} : { createdRuleId }), ...publication } })
       } catch (error) {
         if (error instanceof ModuleWriteError) {
           createdRuleId ??= error.createdRuleId

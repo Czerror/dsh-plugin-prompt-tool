@@ -342,7 +342,7 @@ test('重建失败如实反馈，已保存定义可重新读取，不报告全�
   assert.equal(result.ok, true)
   assert.equal(result.value.persisted, true)
   // 真值源：用户看到的那一整句——写盘层说一次「已保存」，下游刷新失败不再自称已保存。
-  assert.equal(result.value.publicationError, '规则已保存，但运行刷新失败：Error: REBUILD_FAILED')
+  assert.equal(result.value.publicationError, '更改已保存，但模块未生效；请重试：Error: REBUILD_FAILED')
   assert.deepEqual(parse(readFileSync(h.file, 'utf8')).rules, rules)
 })
 

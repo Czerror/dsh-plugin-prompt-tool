@@ -9,12 +9,12 @@ import { ModuleWriteError } from '../../host/module-write.ts'
 import { enabledModuleIds, setModuleEnabled } from '../../host/config-store.ts'
 import type { ModuleConfigIdentity } from '../../shared/module-config-order.ts'
 import { BRIDGE_ENDPOINTS, readEditTarget } from '../../shared/bridge-contract.ts'
-import { published } from '../../shared/publication.ts'
+import { published, type PublicationFields } from '../../shared/publication.ts'
 import { isRecord, SHA256_HEX_RE, type BridgeRuntime } from '../bridge-runtime.ts'
 
 /** 本域用到的运行时面：只用这些，不加宽（新域照此声明自己的面）。 */
 type LifecycleRuntime = Pick<BridgeRuntime,
-  'deps' | 'register' | 'gate' | 'moduleOrderQueue' | 'runOverridesChange' | 'refreshModuleList' | 'writeModuleOrderError'>
+  'deps' | 'register' | 'gate' | 'moduleOrderQueue' | 'runOverridesChange' | 'refreshModuleList' | 'schedulePublication' | 'writeModuleOrderError'>
 
 export function registerLifecycle(runtime: LifecycleRuntime): Array<() => void> {
   return [
@@ -46,7 +46,7 @@ export function registerLifecycle(runtime: LifecycleRuntime): Array<() => void> 
         return
       }
       // 删除已提交：运行发布失败回 200 + 待发布，客户端按已删除处理并保留重试。
-      const publication = await runtime.refreshModuleList()
+      const publication = await runtime.schedulePublication(undefined, 'list')
       if (publication.publicationPending) runtime.deps.warn?.(`删除模块 ${id} 后刷新运行实例失败：${publication.publicationError}`)
       tx.write(200, {
         ok: true,
@@ -78,7 +78,7 @@ export function registerLifecycle(runtime: LifecycleRuntime): Array<() => void> 
         tx.write(400, { ok: false, code: 'module-clone-rejected', message: result.message })
         return
       }
-      const publication = await runtime.refreshModuleList()
+      const publication = await runtime.schedulePublication(undefined, 'list')
       tx.write(200, { ok: true, value: { id: result.id, ...publication } })
     } }),
     runtime.register(BRIDGE_ENDPOINTS.moduleDuplicate, { handle: async (tx) => {
@@ -98,7 +98,7 @@ export function registerLifecycle(runtime: LifecycleRuntime): Array<() => void> 
         tx.write(400, { ok: false, code: 'module-duplicate-rejected', message: result.message })
         return
       }
-      const publication = await runtime.refreshModuleList()
+      const publication = await runtime.schedulePublication(undefined, 'list')
       tx.write(200, { ok: true, value: { id: result.id, ...publication } })
     } }),
     runtime.register(BRIDGE_ENDPOINTS.moduleOpen, { handle: async (tx) => {
@@ -136,7 +136,7 @@ export function registerLifecycle(runtime: LifecycleRuntime): Array<() => void> 
         }
         if (record.expectedRevision === undefined || record.expectedModuleId === undefined) throw new ModuleNameError('保存名称必须提供 expectedRevision 和 expectedModuleId')
         const value = writeModuleName(dir, record as { name: unknown; expectedRevision: unknown; expectedModuleId: unknown })
-        const publication = await runtime.runOverridesChange(basename(dir))
+        const publication = await runtime.schedulePublication(basename(dir))
         tx.write(200, { ok: true, value: { ...value, ...publication } })
       } catch (error) {
         if (error instanceof ModuleWriteError && error.persisted) {
@@ -178,22 +178,11 @@ export function registerLifecycle(runtime: LifecycleRuntime): Array<() => void> 
       const enabled = record.enabled
       const run = runtime.moduleOrderQueue.run(async () => {
         try {
-          let publication = published()
           if (enabled) {
-            const changed = appendModuleConfigOrder(userModulesDir(), id)
-            // 上次可能已保存序号却未物化成功；从停用态启用有卡模块时仍须重建。
-            if (!changed.includes(id) && !enabledModuleIds(userModulesDir()).includes(id)
-              && readModuleConfigOrder(userModulesDir(), id).entries.length > 0) changed.push(id)
-            for (const changedId of changed) {
-              publication = await runtime.runOverridesChange(changedId)
-              if (publication.publicationPending) {
-                tx.write(200, { ok: true, value: { enabled: enabledModuleIds(userModulesDir()), ...publication } })
-                return
-              }
-            }
+            appendModuleConfigOrder(userModulesDir(), id)
           }
           setModuleEnabled(userModulesDir(), id, enabled)
-          publication = await runtime.runOverridesChange()
+          const publication = await runtime.schedulePublication()
           tx.write(200, { ok: true, value: { enabled: enabledModuleIds(userModulesDir()), ...publication } })
         } catch (error) {
           runtime.writeModuleOrderError(tx.write, error)
@@ -235,11 +224,11 @@ export function registerLifecycle(runtime: LifecycleRuntime): Array<() => void> 
       const run = runtime.moduleOrderQueue.run(async () => {
         try {
           const moduleId = body.moduleId as string | undefined
-          let publication = published()
+          let publication: PublicationFields = published()
           if (writing) {
             const changedIds = saveModuleConfigOrder(userModulesDir(), body.expectedRevision as string, body.entries as ModuleConfigIdentity[], moduleId)
             for (const id of changedIds) {
-              publication = await runtime.runOverridesChange(id)
+              publication = await runtime.schedulePublication(id)
               if (publication.publicationPending) break
             }
           }
