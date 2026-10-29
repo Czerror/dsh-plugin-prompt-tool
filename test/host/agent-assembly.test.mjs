@@ -890,8 +890,15 @@ test('热更新：空启用表到多模块、配置启停与拒绝后重试都�
   writeModuleFixture('hot-a', {
     modules: ['rule-engine'], promptConfigs: [{ id: 'hot-a', text: 'HEALTHY-AFTER-PARSE-ERROR', position: 'after-user' }],
   })
-  await assert.rejects(h.runtime.refresh('hot-b'), /运行时配装更新失败/)
+  await assert.rejects(h.runtime.refresh(), /运行时配装更新失败/)
   assert.deepEqual(await injected(), ['USER', 'HEALTHY-AFTER-PARSE-ERROR', 'hot-b'], '坏文件不通过签名读取阻止其他模块更新')
+  assert.ok(h.runtime.publicationFailures().some(failure => failure.moduleId === undefined), '全量失败有诊断')
+  writeModuleFixture('hot-b', {
+    modules: ['rule-engine'], promptConfigs: [{ id: 'hot-b', text: 'RECOVERED-B', position: 'after-user' }],
+  })
+  await h.runtime.refresh('hot-b')
+  assert.deepEqual(await injected(), ['USER', 'HEALTHY-AFTER-PARSE-ERROR', 'RECOVERED-B'])
+  assert.deepEqual(h.runtime.publicationFailures(), [], '定向重试验证全部存活 Agent 后清除旧全量诊断')
   setModuleEnabled(moduleRoot, 'hot-b', false)
   await h.runtime.refresh()
   assert.deepEqual(await injected(), ['USER', 'HEALTHY-AFTER-PARSE-ERROR'])

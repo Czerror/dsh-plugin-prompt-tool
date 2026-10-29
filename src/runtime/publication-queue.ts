@@ -2,7 +2,8 @@ import { createTargetQueue } from '../shared/target-queue.ts'
 import type { PublicationFailure } from '../shared/publication.ts'
 
 interface PublicationQueueOptions {
-  publish(moduleIds: readonly string[] | undefined, retry: readonly string[] | true): Promise<void>
+  /** 返回 true 表示本次成功验证了全部存活 Agent，可清除此前全量失败。 */
+  publish(moduleIds: readonly string[] | undefined, retry: readonly string[] | true): Promise<boolean | void>
   warn(message: string): void
 }
 
@@ -41,8 +42,8 @@ export function createPublicationQueue(options: PublicationQueueOptions) {
     all = false; retryAll = false; ids.clear(); retries.clear()
     const task = serial.run('publication', async () => {
       try {
-        await options.publish(modules, retry)
-        if (modules === undefined) errors.clear()
+        const complete = await options.publish(modules, retry)
+        if (modules === undefined || complete === true) errors.clear()
         else for (const id of modules) errors.delete(id)
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error)

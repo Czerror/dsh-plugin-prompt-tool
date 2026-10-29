@@ -421,7 +421,7 @@ export function createAgentAssembly(ctx: Context, options: AgentAssemblyOptions)
     if (options.warn !== undefined) options.warn(message)
     else ctx.logger?.warn?.(message)
   }
-  const serial = (task: () => Promise<void>): Promise<void> => {
+  const serial = <T>(task: () => Promise<T>): Promise<T> => {
     const next = serialQueue.run('assembly', task)
     pending = next.then(() => {}, () => {})
     return next
@@ -771,11 +771,13 @@ export function createAgentAssembly(ctx: Context, options: AgentAssemblyOptions)
       const enabled = options.enabledModules()
       const personas = options.personaModules?.()
       const known = new Set<Agent>([...(ctx.get('agents')?.list() ?? []), ...knownAgents, ...[...mounts.values()].map(mount => mount.agent)])
-      const targets = [...known].filter(agent => !disposed.has(agent) && (moduleIds === undefined || moduleIds.some(id =>
+      const live = [...known].filter(agent => !disposed.has(agent))
+      const targets = live.filter(agent => moduleIds === undefined || moduleIds.some(id =>
         enabled.includes(id) || mounts.get(agent.id)?.moduleIds.includes(id)
-        || (personas ?? []).some(item => item.moduleId === id && item.persona?.[isDelegated(agent.session) ? 'subagent' : 'main'] !== undefined))))
+        || (personas ?? []).some(item => item.moduleId === id && item.persona?.[isDelegated(agent.session) ? 'subagent' : 'main'] !== undefined)))
       publishingContent = contentSignature(enabled, personas)
       try { await replace(targets, retry) } finally { publishingContent = undefined }
+      return targets.length === live.length
     }),
   })
   let lastReadError: string | undefined
