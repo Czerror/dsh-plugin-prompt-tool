@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### 工具面收窄：随包模块登记 dsh-ops 替换名
+
+- **随包名单**：`modules/tool-surface` 与 `templates/80-tool-surface` 的 `allow` 追加 dsh-ops 0.4.4 的全量公开工具名（21 个：`ops_bash`、`ops_read_files`、`ops_inspect_local_file`、`ops_glob`、`ops_grep`、`ops_result`、`ops_replace`、`ops_write_file`、`ops_edit_file`、`ops_diff`、`ops_stat`、`ops_copy`、`ops_move`、`ops_remove`、`ops_read_table`、`ops_read_docx`、`ops_read_pdf`、`ops_batch`、`ops_load_sdk`、`ops_discover_tools`、`ops_status`）。部署层副本与随包同口径。
+- **为什么**：dsh-ops 0.4.4 会隐藏官方 `read`/`glob`/`grep` 与 Windows `pwsh`，改用 `ops_*` 替换名；随包模块只列官方名时，新部署收窄后没有常驻文件工具，发现解锁的高级工具也会被名单挡住。
+- **边界**：未安装 dsh-ops 的部署里这些名字缺席，`requireMatch` 下仍是惰性缺项，收窄照常生效。
+- **验证**：typecheck、lint（0 warning）、test **985 passed**（0 失败 0 跳过）、build、`git diff --check` 全绿。
+
+
 ## [3.1.0] - 2026-10-28
 
 - Soul完整核心：正式账本工具与主导审批、授权文件／历史search-open、动态SELF和默认不唤醒的维护心跳；通用追加不再接受新旧Soul账本名。
