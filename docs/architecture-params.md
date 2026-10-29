@@ -20,7 +20,7 @@
 
 当前格式的决策见 [ADR-0013](adr/0013-native-context-module-state.md)。模块不注册为官方会话预设、不保存会话绑定，不通过 settings 携带规则正文或大文本。
 
-`/module-name` 通过显式 `x-module-id` 读取 `{ name, revision }`；保存仅接受 `name`、`expectedModuleId`、`expectedRevision`，名称修剪后为 1–128 个字符。写入先校验用户可写目录、身份和完整定义版本，再用 YAML Document 与既有原子提交只修改 `name`，保留注释、未知字段与规则。过期版本返回 409；已保存但刷新失败返回 `persisted` 与 `publicationError`，不伪报保存失败。模块显示名称不代表默认主语，空白创建名为“默认模块”也不会建立隐式写入目标。
+`/module-name` 通过显式 `x-module-id` 读取 `{ name, revision }`；保存仅接受 `name`、`expectedModuleId`、`expectedRevision`，名称修剪后为 1–128 个字符。写入先校验用户可写目录、身份和完整定义版本，再用 YAML Document 与既有原子提交只修改 `name`，保留注释、未知字段与规则。过期版本返回 409；普通保存只确认 `persisted` 并登记后台发布，切片发布失败仍返回 `publicationPending` 与 `publicationError`，不伪报未写盘。模块显示名称不代表默认主语，空白创建名为“默认模块”也不会建立隐式写入目标。
 
 ## 部署设置与编辑目标
 
@@ -63,7 +63,7 @@ module.yml 是完整定义、唯一提交点和恢复依据，支持直接手改
 
 确认条件的 `after: { action: seed }` 保存相对动作 id，编译与挂载时补全模块/规则身份；模板复制与规则自动改名不重写内部引用。完整候选在写盘前校验目标存在、独立投递能力、身份唯一和依赖无环。工作台可添加/清除 `after` 与 `fallbackAfter`，清除即删键；示例默认值不因展示而写入，省略兜底表示持续等待。旧专用锚定策略和参数不作兼容或自动迁移。
 
-每次事务使用 YAML Document 保留注释和未知元数据，提交前复核版本与目录。模块锁序列化保存和恢复；正文/变量切片先准备，module.yml 原子替换为提交点，再发布清单。多文件替换不宣称物理同时原子。提交前失败恢复旧投影；提交后发布失败返回 `persisted`、新版本和 publicationError，保留最后有效运行贡献。
+每次事务使用 YAML Document 保留注释和未知元数据，提交前复核版本与目录。模块锁序列化保存和恢复；正文/变量切片先准备，module.yml 原子替换为提交点，再发布清单。多文件替换不宣称物理同时原子。提交前失败恢复旧投影；提交后切片发布失败返回 `persisted`、新版本、`publicationPending` 和 `publicationError`，保留最后有效运行贡献。切片验证完成后，普通保存登记后台运行发布，不等待 Agent 重挂。
 
 **共享引用守卫（`shared-alias`）**：YAML 的 anchor/alias 会让一次「只改 A」的编辑连带改掉 B，因此每次写事务都必须自证「只改了自己声明的字段」——声明完整候选的路径（规则编辑、人设保存、存储配置）走 `module-write.ts#serializeWithoutSharedAlias`（序列化失败与候选不一致同判），改-后-比对的路径走 `assertUnownedUnchanged`，`withModuleDefinition` 的调用方必须用必填的 `{ owns }` 声明本次编辑拥有的顶层键。判定不通过一律 400 `shared-alias` 且零写盘，拒绝文案点名被连带改动的键。
 
@@ -79,9 +79,9 @@ module.yml 是完整定义、唯一提交点和恢复依据，支持直接手改
 
 `/module-variables` 接受 scope、完整 variables、enabled、expectedModuleId、expectedRevisions。工具 `module_variables` 提供 list/get/set/delete；set 必须显式字符串 value，delete 只删除指定域键。全局写同样需要实际装配工具权限和受控目标。
 
-值更新发布新快照，不重挂 Agent；新增键和不同模块同名键按来源动态读取。变量开关只控制该模块求值和模板写入，不关闭其它模块，也不删除持久值。发布失败只重试 `refreshOnly`，不重放内容写入。
+值更新发布新快照，不重挂 Agent；新增键和不同模块同名键按来源动态读取。变量开关只控制该模块求值和模板写入，不关闭其它模块，也不删除持久值；开关变化登记后台运行发布。切片失败或显式发布重试失败时保留 `publicationPending`，重试只发 `refreshOnly`，不重放内容写入。
 
-bridge 的变量保存、开关运行发布与重试由 `BridgeRuntime` 统一持有，待发布状态不暴露给路由；路由只负责授权、载荷校验与响应。普通读取和 bootstrap 共享变量视图，读取不触发开关重试，也不新增 `persisted`；仅值更新不顺带重试此前失败的开关发布。
+bridge 的变量保存与重试由 `BridgeRuntime` 统一组织，开关变化进入装配通道的同一后台调度器；路由只负责授权、载荷校验与响应。普通读取和 bootstrap 共享变量视图，读取不触发开关重试，也不新增 `persisted`；仅值更新不顺带重试此前失败的开关发布。后台运行失败归入 `/meta` 的 `publicationFailures`，不写入变量草稿的待发布状态。
 
 ## 独立人设卡与继承
 
@@ -128,7 +128,7 @@ null 或未配置表示官方默认。选择 project-persona 不自动启用它�
 共享参数草稿 → /param-overrides → saveModuleParams → 完整定义提交
 规则草稿 → /rules → editModuleRules → 完整候选校验与提交
 两级变量草稿 → /module-variables → editModuleVariables → 单域提交
-规则/参数保存 → ensureModuleReady → 刷新受影响 Agent
+规则/参数保存 → 验证规则切片 → 登记后台发布 → 更新受影响 Agent
 变量内容更新 → 发布快照 → 下一求值读取，不重新配装
 ```
 
@@ -168,8 +168,9 @@ module.yml.configOrder 保存规则id→非负安全整数，身份仍是模块i
 2. 参数保存的快照时机分别保留：模块参数在共享队列任务开始执行时取值，全局参数在入队前取值；成功只确认实际提交的快照，请求期间的新输入继续保持 dirty。模块参数的跨域刷新资格仍在入队前捕获，等待期间的新编辑也会阻止该次保存触发整轮刷新。
 3. 切模块先处理未存草稿并等待队列，迟到响应只能更新原目标草稿。
 4. 变量草稿按模块+scope 隔离，内容和开关分别保留版本；CAS 失败保留编辑。
-5. 所有已写盘端点的运行发布失败统一回 200 + `persisted` + `publicationPending` + `publicationError`；500 只留给没有写盘的失败。端点覆盖 params、rules、persona、personaSources、moduleVariables、customTools、moduleName、moduleCapability、importModulePackage、moduleClone、moduleDuplicate、moduleEnable、moduleConfigOrder、moduleDelete。
-6. 已持久化但发布失败显示实际状态，重试只发 `refreshOnly` 重建运行实例：不重复导入、改名、自增、安装、创建或删除。`refreshOnly` 与同端点的写载荷（name/customTools/overrides/action/entries/enabled 等）混用一律 400；定位身份（id/targetId/expectedModuleId/主语头）仍按端点保留。
+5. 普通模块写端点在写盘与切片验证后回 200 + `persisted:true`，不等待 Agent 发布，也不提前返回 `publicationPending:false`。装配通道统一合并同模块 300ms 内的连续保存；启用先提交排序和启用表，再登记一次发布。端点覆盖 params、rules、persona、personaSources、moduleVariables 的开关、customTools、moduleName、moduleCapability、importModulePackage、moduleClone、moduleDuplicate、moduleEnable、moduleConfigOrder、moduleDelete。
+6. 后台运行失败只写日志与 `/meta.publicationFailures`，不进入 `moduleWarnings`，任何工作台 UI 都不显示它。切片提交后失败仍回 200 + `persisted` + `publicationPending` + `publicationError`，客户端保留草稿与恢复入口；未提交失败按原错误返回，不把已提交修改伪报为未写盘。
+7. `refreshOnly` 提前执行对应待发布更改并同步等待真实结果，成功才返回 `publicationPending:false`；同版本已生效时不重复重挂。重试不重复导入、改名、自增、安装、创建或删除。`refreshOnly` 与同端点的写载荷（name/customTools/overrides/action/entries/enabled 等）混用一律 400；定位身份（id/targetId/expectedModuleId/主语头）仍按端点保留。发送请求前的 freshness 检查也可提前发布磁盘定义，不等待尚未提交的草稿。
 
 空键行属于 UI 草稿，保存载荷不发空键；保存或后台读取不因空行清理用户输入。UI 只在对应草稿版本仍一致时刷新。客户端使用共享 request/value map，服务端仍完整复检类型、大小、目标与版本。
 

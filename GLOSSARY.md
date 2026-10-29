@@ -167,7 +167,7 @@ _Avoid_: 会话、轮次
 _Avoid_: 模型升级、权限扩张、会话初始化
 
 **发布结果（Publication Result）**：
-一次已写盘操作的运行发布结果：`persisted`、`publicationPending`、`publicationError` 三字段。发布失败不是写入失败；host 与客户端共用同一判据读取它，客户端据此决定是否显示重试入口。
+一次已写盘操作的确认与运行发布结果。`persisted` 只确认持久化；后台发布尚未完成时不声明发布成功。需要报告尚未发布或失败时，用 `publicationPending`、`publicationError` 表达；发布失败不等于写入失败，重试不重放已提交的修改。
 _Avoid_: 保存结果、写盘结果、错误码
 
 **pre-step 来源（Pre-step Source）**：

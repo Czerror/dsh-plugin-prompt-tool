@@ -337,7 +337,7 @@ workspace-pages.ts 是页面元数据的唯一来源。默认页为 features，�
 
 卡头两行显示人设名称与“来源：官方／所选模块”，不重复编辑模块说明。内部头部仿照规则卡基础字段区，紧凑横排内容模式、独占、动态运行时上下文；内容模式跟随当前前缀／后缀页签，仅修改对应字段，说明复用 FormField/HintTooltip。分隔线下复用 `ui/PromptConfigNavigation.tsx`：宽屏左侧“前缀 / 后缀”，窄容器改为上方 tabs，键盘与 ARIA 方向同步。正文使用全宽编辑框，继承时只读并提示切换自定义，显式空串仍可保存。保存、重新读取与重试统一使用共享 Button 的胶囊样式，底部操作组左对齐。两受众展开状态分别保留，来源与正文草稿继续共享现有草稿池。
 
-正文仍编辑对应模块的 persona.main/subagent：prefix/suffix 使用“继承/自定义”，complete/includeRuntimeContext 保留继承/true/false；空文本清空，删键继承。读写走 `/persona` 并携带完整定义字节 expectedRevision；来源选择和正文保存各自保留版本、未存草稿及迟到响应。人设不进入规则排序，rules/_settings.yml 仅保存校验投影。完整配装仍预检官方人设与启用规则的 complete 冲突，失败保持旧配装；persisted/publicationPending 如实显示，refreshOnly 只重试发布。这些是状态与交互契约，不代表已完成浏览器实测。
+正文仍编辑对应模块的 persona.main/subagent：prefix/suffix 使用“继承/自定义”，complete/includeRuntimeContext 保留继承/true/false；空文本清空，删键继承。读写走 `/persona` 并携带完整定义字节 expectedRevision；来源选择和正文保存各自保留版本、未存草稿及迟到响应。人设不进入规则排序，rules/_settings.yml 仅保存校验投影。完整配装仍预检官方人设与启用规则的 complete 冲突，失败保持旧配装。普通保存只确认 persisted；切片失败或同步重试失败返回的 publicationPending 仍显示恢复入口，refreshOnly 不重写正文。后台运行失败不显示在卡片或其它工作台 UI。这些是状态与交互契约，不代表已完成浏览器实测。
 
 ### 5.2.1 创建入口与过滤的分工
 
@@ -357,7 +357,7 @@ workspace-pages.ts 是页面元数据的唯一来源。默认页为 features，�
 
 异步创建按最新模块事实验证目标；成功克隆得到的本次新建身份可以直接首写，仍由服务端执行主语、用户目录与可写校验。目录已创建但模板写入失败时保留 `moduleId` 供重试，不提前启用；规则已提交但模块启用失败时明确提示在模块页启用，不以重放创建作为重试。列表刷新失败与保存失败区分显示。模块目录事实刷新不因无关字段草稿正在输入而丢弃，字段本身仍保留原有版本保护。
 
-`module.yml` 已提交但运行刷新失败时保留 `persisted/publicationPending`（重试规则见 §7.3）。
+`module.yml` 与切片提交成功即确认 `persisted`，运行发布在后台合并；切片发布失败仍保留 `persisted/publicationPending`（重试规则见 §7.3）。
 
 模板持久化成功但本地已有未保存规则时，保留本地输入及远端完整响应，返回 `localConflict` 单独提示“模板已保存，先处理规则冲突”，不定位未接纳的新卡，也不伪报创建失败引导重复写入。
 
@@ -447,7 +447,7 @@ use-prompt-tool-store.ts 是唯一工作台 facade，负责把 ConfigForms mirro
 
 - **版本捕获**：读时整份存快照，写时从快照取期望版本——rules 逐条 `rules[id]` ＋ `settings`、variables 按 `scope` ＋ `settings`、instructions 逐文件 `revision`、persona 两段各一（创建时整键不带版本）、config-order 整表一个、skills 由调用方卡片持有。**没有**统一的「版本对象」类型：各家请求形状不同，硬并会造出假共享。
 - **最新优先**：草稿/状态上的 `latest` 序号（`beginLatest` 开请求、`isLatest` 判落地）。**晚到应答既不写草稿也不清 `busy`/`loading`**——清理权归最新那次请求，否则界面会停在忙碌态。这也是为什么「迟到时不回滚」是对的，不是漏了清理。
-- **发布态**：所有已写盘端点统一读 `shared/publication.ts#readPublication`——显式 `publicationPending` 或任意 `publicationError` 都算待发布；`PublicationNotice` 负责提示与重试按钮。rules／variables／persona／params／customTools／capability／name／install／clone×2／enable／config-order／delete 使用它；instructions 与 skills 不触发运行发布，仍分别是重读与重写。
+- **发布态**：所有已写盘端点统一读 `shared/publication.ts#readPublication`。普通模块保存只返回 `persisted:true`，确认提交快照后即可继续编辑，不显示待发布提示，也不据此宣称 Agent 已生效；后台发布按同模块 300ms 合并。切片失败或同步 `refreshOnly` 失败返回的显式 `publicationPending`／`publicationError` 仍由 `PublicationNotice` 提示并保留重试。rules／variables／persona／params／customTools／capability／name／install／clone×2／enable／config-order／delete 使用它；instructions 与 skills 不触发运行发布，仍分别是重读与重写。后台失败仅写日志与 `meta.publicationFailures`，工作台不渲染该字段，也不把它并入模块页会显示的 `moduleWarnings`。
 - **失败分类**：rules 有 `READ_FIRST_CODES`（rules-conflict／module-changed／shared-alias）＋ `retryKind` 三分类；instructions 有四个冲突码的布尔分类；其余四家不分类，按 message 落 error。
 - **例外保持原样**：skills 用 `writing` 布尔锁 ＋ session 字符串一致性替代版本/序号（其 `seq` 还与 store 的 bootstrap 覆盖保护耦合）；config-order 的 `generation` 是闭包变量、外部不可观测。tools（`data/tools-editor.ts`）的草稿是整组工具，没有 CAS 版本，但已按统一判据记录发布态并支持 `refreshOnly` 重试。改前两家要同时动 store 的覆盖保护，仍超出「统一命名」的范围。
 - **`DraftsPort.editorDrafts` 有意不收窄**：它是 6 个消费者的入口，为「不把整池递出去」造 6 套按族的读数面，代价与收益不成比例。需要改草稿的域各自归 owner（上列五个），新域照 tools 那份样板加一个 `data/<资产>-editor.ts`。
@@ -558,9 +558,9 @@ JSON bridge 的统一上限为 32 MiB；原始文件上传独立限制为 64 MiB
 13. bootstrap 与策略快照均读取完成后再应用，异步边界复核请求序号、会话与草稿状态。暂时离开工作区只暂停文件写资格，保留草稿与版本基线；返回并读取时，版本未变可继续保存，版本变化仍须解决冲突。
 14. 列表保存按钮等待真实 `Promise<boolean>` 结果；文件或预设部分失败时不显示整体成功、不以静默重载清除错误。已经成功保存的文件立即更新其基线，不因后续失败回滚或丢失确认。
 15. 配置排序走 typed `moduleConfigOrder` 端点，服务端校验身份集合与 revision，拒绝未知、重复身份及过期版本。顺序写回 `module.yml.configOrder`，客户端不提交正文、文件路径或序号；模块启用或停用均可保存自身排序，总闸关闭仍可改排序定义。拖拽落点用指针半高判据（`clientY` 对卡片中线）给出「插到目标前/后」，重排**不改卡定义**：可移动集合由 `sameConfigPosition` 过滤（跨插入点的目标不在集合内、原样不写），`system-section` / `runtime-context` 卡的官方档位不参与排序请求，只决定初始槽位。
-16. 两级变量内容校验所选 global/module 域，模块开关校验 settings。草稿按模块+scope分开，切范围不串输入；空字符串保存为值，删行才删除。后台读回和保存只确认对应请求快照，冲突保留编辑。persisted 且 publicationPending 时显示“已保存但未发布”，refreshOnly 只发布，不重放变量写入。存储边界见 [后端框架](architecture-params.md)。
+16. 两级变量内容校验所选 global/module 域，模块开关校验 settings。草稿按模块+scope分开，切范围不串输入；空字符串保存为值，删行才删除。后台读回和保存只确认对应请求快照，冲突保留编辑。变量值更新不重挂，开关变化只登记后台发布；切片失败或同步重试失败仍可返回 persisted 与 publicationPending，显示“已保存但未发布”。refreshOnly 等待真实发布结果，不重放变量写入；后台运行失败不写入草稿提示。存储边界见 [后端框架](architecture-params.md)。
 
-模板创建沿用同一规则事务，但使用 `createRule` 直接提交解析后的规则对象；不要求规则卡 owner 已加载或先读回 `/rules`。缺少 `rules` 的目标模块按空基线首写，重复创建在目标模块内按规则 id 自动加后缀。三位身份校验仍适用于首写和普通写入：头体冲突 400 `module-subject-conflict`、目标切换 409 `module-changed`、系统或只读目录 403 `module-readonly`。写盘成功而刷新失败时回 200 + `persisted/publicationPending`，规则卡与模块页都通过 `refreshOnly` 重试，不重放规则写入；未启用目标的待发布状态只在当前工作台会话保留，启用并挂载规则卡后重试；刷新工作台不恢复该状态。
+模板创建沿用同一规则事务，但使用 `createRule` 直接提交解析后的规则对象；不要求规则卡 owner 已加载或先读回 `/rules`。缺少 `rules` 的目标模块按空基线首写，重复创建在目标模块内按规则 id 自动加后缀。三位身份校验仍适用于首写和普通写入：头体冲突 400 `module-subject-conflict`、目标切换 409 `module-changed`、系统或只读目录 403 `module-readonly`。普通保存写盘与切片验证后即回 200 + `persisted`；提交后切片失败仍回 `persisted/publicationPending`，规则卡与模块页通过同步 `refreshOnly` 恢复，不重放规则写入。未启用目标的该状态只在当前工作台会话保留，启用并挂载规则卡后重试；刷新工作台不恢复该状态。后台运行失败不触发这些提示。
 
 **宿主写盘原语**：进程内同 key 串行由 `src/shared/target-queue.ts#createTargetQueue` 统一（agents-cards、module-package 按目标 key；bridge 两个队列、client save-queue、agent-assembly、skills-runtime 是单 key 全链适配；key 由调用方规范化，不同 key 互不阻塞，前一个失败不毒化后一个）。跨进程互斥只在模块类写路径由 `host/module-write.ts#withModuleLock` 提供；skills 文本、agents 文件与客户端队列没有跨进程锁，靠版本复核兜底。
 
@@ -717,7 +717,7 @@ context-activation 视图只调整附加提示，不另设模块卡容器；能�
 
 指令文件正文的自动保存同样采用停顿策略，没有保存按钮。
 
-层设置区展示当前预设实际装配的能力（`modules` 声明、参数与行配置隐含补齐、以及实际运行的历史子代理策略），按主归属层分组：清单里每项是能力 id 与「移除能力」入口（二次确认），没有「编辑行为」这类选择控件（能力编辑统一走各卡自己的编辑区，归属由卡片决定，不选模块）；能力自身的参数在同一设置区的参数分组里编辑，新能力从本层创建入口添加。`modules: []` 不展开默认骨架，官方组合行不生成插件能力条目。二次确认移除是完整移除：模块声明、该能力的显式参数与行配置（拥有顶层段的能力连数据段）一起删除，成功后重建一次并刷新模块事实。
+层设置区展示当前预设实际装配的能力（`modules` 声明、参数与行配置隐含补齐、以及实际运行的历史子代理策略），按主归属层分组：清单里每项是能力 id 与「移除能力」入口（二次确认），没有「编辑行为」这类选择控件（能力编辑统一走各卡自己的编辑区，归属由卡片决定，不选模块）；能力自身的参数在同一设置区的参数分组里编辑，新能力从本层创建入口添加。`modules: []` 不展开默认骨架，官方组合行不生成插件能力条目。二次确认移除是完整移除：模块声明、该能力的显式参数与行配置（拥有顶层段的能力连数据段）一起删除，提交后登记后台发布并刷新模块事实。
 
 子代理页的筛选值与变更回调一起传到提示词列表；能力卡按同一层级过滤，工具管线包含子代理工具策略等本层能力。模板创建与列表展开共用页面持有的创建 ID，子组件不维护第二份无入口 picker。创建不改变筛选或搜索值。
 
