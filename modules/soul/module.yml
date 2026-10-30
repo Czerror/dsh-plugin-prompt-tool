@@ -5,7 +5,8 @@ id: soul
 name: 灵魂架构（判据与推送）
 version: 1.0.0
 engineCompat: ">=0.7.2"
-description: 灵魂架构完整核心：判据、结构化账本、授权检索、动态 SELF、上下文溯源、生成恢复与默认不唤醒的维护心跳；能力按 Agent 运行时装配，不依赖预设改装。原项目：https://github.com/cyanwell/dsh-agent-soul
+description: 灵魂架构完整核心：判据、结构化账本、授权检索、动态 SELF、上下文溯源、生成恢复与默认不唤醒的维护心跳；能力按 Agent
+  运行时装配，不依赖预设改装。原项目：https://github.com/cyanwell/dsh-agent-soul
 meta:
   source: manual
 modules:
@@ -37,6 +38,7 @@ moduleConfigs:
       - data/80-科普/
       - data/90-历代根会话/
     sessions: []
+    synonymsFile: assets/retrieval-synonyms.json
   context-provenance:
     enabled: true
     audience: all
@@ -53,12 +55,19 @@ moduleConfigs:
     subagentRecoveryLimit: 1
     maintenanceCompression: false
     allowFullFallback: false
+    lineRepeatChars: 2048
+    crossCallRepeatChars: 2048
+    maxCycleChars: 512
   soul-maintenance:
     enabled: true
     intervalMs: 60000
     wake: false
     audience: all
     budgetBytes: 12288
+    pressureThresholds:
+      - 0.45
+      - 0.6
+      - 0.8
 order: 10
 variables:
   # 状态键由本模块声明；引擎只按普通模块变量处理，不认 soul 前缀。
@@ -66,8 +75,6 @@ variables:
   plan_at: ''
   scaffold_done: ''
   scaffold_root: data
-  ledger_seq: '0'
-  ledger_open: '0'
 rules:
   - id: soul-core
     name: 四条判据（常驻）
@@ -89,7 +96,7 @@ rules:
           templateFile: ./assets/criteria.md
 
   - id: soul-self
-    name: SELF（每步动态身份）
+    name: SELF（每步当前事实）
     enabled: true
     layer: runtime-context
     then:
@@ -150,7 +157,7 @@ rules:
           templateFile: ./assets/layers.md
           params:
             constant: false
-            keys: [灵魂, 五层, ECHO, VITAL, 架构]
+            keys: [ 灵魂, 五层, ECHO, VITAL, 架构 ]
             secondaryKeys: []
             selectiveLogic: AND_ANY
             wordBoundary: ascii-token
@@ -176,7 +183,7 @@ rules:
           templateFile: ./assets/echo.md
           params:
             constant: false
-            keys: [压缩, 上下文满, 摘要, 找不回, 退化]
+            keys: [ 压缩, 上下文满, 摘要, 找不回, 退化 ]
             secondaryKeys: []
             selectiveLogic: AND_ANY
             wordBoundary: ascii-token
@@ -202,7 +209,7 @@ rules:
           templateFile: ./assets/vital.md
           params:
             constant: false
-            keys: [预算, 烧光, 打转, 空转, 该停, 阈值]
+            keys: [ 预算, 烧光, 打转, 空转, 该停, 阈值 ]
             secondaryKeys: []
             selectiveLogic: AND_ANY
             wordBoundary: ascii-token
@@ -228,7 +235,7 @@ rules:
           templateFile: ./assets/ledger.md
           params:
             constant: false
-            keys: [账本, 未结, 承诺, 只追加]
+            keys: [ 账本, 未结, 承诺, 只追加 ]
             secondaryKeys: []
             selectiveLogic: AND_ANY
             wordBoundary: ascii-token
@@ -353,20 +360,19 @@ rules:
           strategy: static
           order: 247
           text: |-
-            清单检查当前有未通过项（由引擎按装配事实求值，不需要手写变量）：
-            先 module_manifest（moduleId: soul）action=check 看全部明细，
-            再说清是哪一条、证据是什么、下一步改哪个文件或哪条规则；
-            修完要重新 check，不要用「已修复」代替重新检查，也不要把失败项藏进总结。
+            清单检查当前有未通过项：先 module_manifest（moduleId: soul）action=check 看文件明细，再 soul_state（moduleId: soul）action=check 看SELF、索引和运行证据。
+            文件齐全不代表SELF已投递或能力已运行；明确哪项失败、证据和下一步，修复后重查，不以手写变量替代检查。
 
   - id: soul-ledger-open
     name: 未结账本提醒
     enabled: true
     layer: pre-step
     if:
-      variable:
-        key: ledger_open
-        op: gt
-        value: '0'
+      all:
+        - scope:
+            audience: main
+        - soul:
+            pending: true
     then:
       - id: inject
         kind: inject-text
@@ -378,8 +384,8 @@ rules:
           order: 126
           role: user
           text: |-
-            账本还有未结事项：回复里逐条收口，或说清为什么先放着。
-            先用 soul_ledger（moduleId: soul，action: list）核对原始未结记录；
-            需要追加时用 soul_ledger（moduleId: soul，action: append，type: fact/shelved/gain/loss/persona/container 之一，概要: 一句话，ref: 出处），
-            作者和时间由宿主提供，promise 只允许最后 lead 署名的主导会话；lead 需用户指定并经审批。
-            只往后加，不改旧行；收口后把 ledger_open 减到 0。
+            账本有未结或历史待核对事项：先用 soul_ledger（moduleId: soul，action: list，view: pending）分页核对稳定 id。
+            明确完成或取消时，action: close，targetId: 该 id，outcome: completed/cancelled，reason: 非空依据；ref 仍表示出处。
+            promise 仅当前 lead 收口；shelved 允许原作者或当前 lead。执行者可提交证据，不替主导确认承诺。
+            暂时搁置仍是未结，不猜测历史已完成，不手工修改计数。仅主会话按集合变化或成功压缩提醒一次。
+          dedupe: batch

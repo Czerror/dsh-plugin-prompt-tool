@@ -10,4 +10,5 @@ export const PREDICATE_EXAMPLES = {
   anchor: { subject: 'assistantReasoning', keys: ['确认'], mode: 'prefix' },
   variable: { key: 'quota', op: 'lte', value: '0', scope: 'effective' },
   manifest: { ok: true },
+  soul: { pending: true },
 }

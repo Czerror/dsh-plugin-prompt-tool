@@ -25,7 +25,7 @@
 | `module-file-tools` | `module_file_read`、`module_file_append` | 模块私有文件：memory.md、assets/（只读）、data/（只追加） |
 | `module-manifest-tools` | `module_manifest` | `assets/manifest.yml` 的 next/check/apply，只写 data/、不覆盖 |
 | `module-import-tools` | `module_import` | 来源预览、选择、凭据和候选安装 |
-| `soul-ledger` | `soul_ledger` | 真实身份、主导资格与结构化追加 |
+| `soul-ledger` | `soul_ledger`、`soul_state` | 真实身份、主导资格、逐项收口与会话短状态/只读诊断 |
 | `retrieval` | `module_search`、`module_open` | 来源白名单、版本引用和原文回取 |
 | `tool-config-engine` | 模块声明的自定义工具 | 官方工具注册、执行和批准管线 |
 
@@ -317,7 +317,13 @@ moduleConfigs:
 
 `maintenanceCompression` 默认false；开启时在同一上下文运行时做 idle 局部压缩。null表示无操作并停止此次恢复；失败默认停止，只有 `allowFullFallback: true` 才允许升级完整压缩，取消绝不升级。维护窗口只领取一次，恢复消息引用实际成功结果，失败与普通工具裁剪不推进成功压缩epoch。Soul模块显式选择主3／子1额度，维护压缩保持关闭。有意重复的文本仍可能命中检测，可调阈值或关闭。
 
+`lineRepeatChars/crossCallRepeatChars` 通用默认0关闭，Soul显式2048/2048，`maxCycleChars` 为512以覆盖409字符周期。重复行至少6行、覆盖80%且主导行集中50%；跨调用与此前两次合格调用各达到90%行材料覆盖时才判第三次重复。每类只保128行摘要、单行1024字符，跳过引用和围栏代码，取消/卸载清理。固定校准集3类异常检出、3类正常材料无误报，不能外推生产误报率；这是有界行材料相似度，不是语义向量。仍由原coordinator去重和扣额，不补额、不增加恢复执行者。
+
 ## 授权检索与来源引用
+
+普通 `module_search` 保持 query 调用，匹配副本支持大小写、NFKC 全半角与规范数字千分位，返回 `match: exact/normalized/synonym`；引用偏移与 `module_open` 始终是原文。可选 `synonymsFile` 仅读模块 assets/data 的本地二维词组表（64 KiB、128组、每组2–16词、每词128字符，扩展最多32词）。少于3条直接命中时只扩展一次、精确优先、不递归；Soul 显式配置，通用默认不扩展。
+
+`mode: timeline` 合并已授权账本的可信 `t` 与会话事件 `time`；支持含时区的 ISO `since/until`、limit 和版本 cursor。未知时间明确标 unknown，时间过滤排除未知项；相同时刻按来源与记录位置稳定排序。游标绑定来源声明/内容与过滤条件，追加/收口或撤权后失效。只读查询不写 mark、不扫描未授权会话。
 
 `retrieval` 的 `paths` 声明模块相对文件或以 `/` 结尾的目录白名单，`sessions` 显式列出可读历史会话ID；当前Agent自己的会话自动可读，默认不扫描其它会话。目录枚举拒绝链接／越界，受现有资产数量和64 MiB预算约束。额外历史通过宿主只读句柄读取，成功或失败均关闭；异步返回前重验授权。
 
@@ -349,9 +355,15 @@ config:
 
 `soul-self` 是已有 `fill` 字段的内置取值，不是独立能力行。引擎在实际求值时把来源模块、当前 Agent 与取消信号交给插件的 SELF owner；条件、受众、启停、排序和卸载沿用规则引擎。未声明规则时不注入，不需要模块 JS 资产或服务名参数。此内容源也支持 `pre-step`，遵循 placeholder 的插入点限制。
 
+SELF每步直接派生骨架、账本未结/历史待核对、身份与活时钟。索引状态同步读取provider，不触发历史loader；unbuilt/refreshing/ready/stale/failed/unauthorized分别报告，最近成功观测不代表尚未扫描的外部变化。写入成功立即失效派生观测，索引或快照失败不能把已提交账本报成未写；实时SELF不等后台ready。可恢复失败仅安全快照降级，显示时间与原因；同戳等长改写也按内容版本识别。
+
+`soul: { pending: true }` 是窄事实条件，缺来源为UNAVAILABLE，not不反转。Soul `soul-ledger-open` 默认主会话，在需处理集合或成功压缩epoch变化后提醒一次；只消费真实持久投递，A→B→A按最后确认态判断，预览/取消/未投递不消费。可用pre-step与runtime-context；无确认通道的其他层编译时拒绝。runtime-context在官方snapshot内携带不含事项正文的确认标记；重挂从真实会话事件恢复。
+
+`pressureThresholds: [0.45, 0.6, 0.8]` 由Soul在soul-maintenance配置显式选择，维护enabled=false也可读取。使用当前会话 `tokenMeter.measure` 与路由匹配的 `requestContext.contextWindow`，无可靠分母/换模型信息未对齐时显示未知；仅提示整理和先落盘，不新增压缩、唤醒或模型调用。
+
 已有用户副本若仍声明 `strategy: self` 并保留自己的策略资产，继续由既有自定义策略加载器执行。包升级不覆盖用户副本；显式更新为内置声明后才去掉对应 `strategyDir` 与服务名参数。私有 `data/` 不随此变更迁移。
 
-`soul-maintenance` 按来源模块只保留一个owner和一个定时器，维护串行，不因两个Agent或重挂并发写SELF。`intervalMs` 默认60000，`wake` 默认false，`audience` 默认all，`budgetBytes` 默认12288。每次先通过既有检索provider刷新授权索引，再CAS更新SELF；实际Agent的idle维护窗口提供用户取消信号，busy或失败保留旧快照，下次定时重试。
+`soul-maintenance` 按来源模块只保留一个owner和一个定时器，维护串行。`intervalMs` 默认60000，`wake` 默认false，`audience` 默认all，`budgetBytes` 默认12288。可取消地等待空闲，再领取实际Agent维护窗口刷新授权索引和CAS诊断快照；owner释放及时交接，正常占用竞争为waiting并按间隔重试，业务失败保留旧快照。
 
 SELF 注入从同一来源模块事实读取 `soul-maintenance.budgetBytes`，维护未启用时显式预算仍有效。缓存最长 1000ms；`module.yml` 的 mtime 或 size 改变立即重读，同戳等长改写及组合依赖变化在到期后的下一次求值重读，命中不续期。定义缺失、内容读取/解析失败或预算非法时沿用最近有效预算，没有历史值才用 12288；失败尝试也按期限重试。恢复为省略预算的有效定义会重新采用默认值。此路径可能与当前装配短暂不同步，不是装配快照接口。
 

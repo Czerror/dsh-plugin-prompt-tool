@@ -2,7 +2,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { Context } from '@deepseek-ai/cordis'
 import { BlockAssembler } from '@deepseek-ai/dsh-llm'
-import { apply } from '../../engine/generation-recovery.mjs'
+import { apply, recoveryObservationOf } from '../../engine/generation-recovery.mjs'
 
 const config = { enabled: true, textRepeatChars: 12, reasoningRepeatChars: 12, maxCycleChars: 3 }
 const agent = { session: { id: 'main', header: { delegationDepth: 0 } } }
@@ -25,6 +25,53 @@ async function collect(ctx, chunks, options = {}) {
   assert.equal(open.size, 0, '成功流必须闭合所有内容块')
   return { out, blocks: assembler.blocks(), reason: assembler.finish }
 }
+
+test('generation-recovery：行覆盖和跨调用相似材料，正常引用代码与进展不截断', async t => {
+  const stream = text => [{ type: 'block-start', index: 0, blockType: 'reasoning' }, { type: 'reasoning-delta', index: 0, text }, { type: 'block-end', index: 0, block: { type: 'reasoning', text } }, finish]
+  const ctx = new Context()
+  t.after(apply(ctx, { enabled: true, textRepeatChars: 100000, reasoningRepeatChars: 100000, lineRepeatChars: 200, crossCallRepeatChars: 200 }, { agent }))
+  const line = '重复检查已经完成的相同材料但没有任何进展。'
+  const looping = Array.from({ length: 20 }, (_, i) => line + ' '.repeat(i % 3) + '\n').join('')
+  assert.ok((await collect(ctx, stream(looping))).blocks[0].text.length < looping.length)
+  const material = Array.from({ length: 12 }, (_, i) => `材料${i}：这些不同的事实需要重新核对，但当前没有新增结果。`).join('\n') + '\n'
+  assert.deepEqual((await collect(ctx, stream(material))).out, stream(material))
+  assert.deepEqual((await collect(ctx, stream(material))).out, stream(material))
+  const similar = material.replace('材料11：', '更新11：')
+  assert.ok((await collect(ctx, stream(similar))).blocks[0].text.length < similar.length)
+  for (const normal of [Array.from({ length: 30 }, () => '> ' + line).join('\n'), '```js\n' + Array.from({ length: 30 }, () => 'console.log("same");').join('\n') + '\n```', Array.from({ length: 30 }, (_, i) => `步骤${i}已完成，得到了此前没有的新结果与测量${i * 17}。`).join('\n')]) {
+    assert.deepEqual((await collect(ctx, stream(normal))).out, stream(normal))
+  }
+  const fresh = new Context()
+  t.after(apply(fresh, { enabled: true, textRepeatChars: 100000, reasoningRepeatChars: 100000, crossCallRepeatChars: 200 }, { agent: { session: { id: 'main', header: {} } } }))
+  assert.deepEqual((await collect(fresh, stream(material))).out, stream(material), '其他Agent对象不继承跨调用特征')
+  const cancelled = new AbortController()
+  cancelled.abort()
+  await collect(fresh, stream(material))
+  await collect(fresh, stream(material), { signal: cancelled.signal })
+  assert.deepEqual((await collect(fresh, stream(material))).out, stream(material), '取消清除跨调用观察状态')
+})
+
+test('generation-recovery：512周期窗覆盖409字符周期', async t => {
+  const ctx = new Context()
+  t.after(apply(ctx, { enabled: true, maxCycleChars: 512 }, { agent }))
+  const cycle = Array.from({ length: 409 }, (_, i) => String.fromCodePoint(0x4e00 + i)).join('')
+  const text = cycle.repeat(24) + 'TAIL'
+  const chunks = [{ type: 'block-start', index: 0, blockType: 'reasoning' }, { type: 'reasoning-delta', index: 0, text }, { type: 'block-end', index: 0, block: { type: 'reasoning', text } }, finish]
+  assert.ok((await collect(ctx, chunks)).blocks[0].text.length < text.length)
+})
+
+test('generation-recovery：运行观测只在真实候选产生并随卸载撤回', async () => {
+  const ctx = new Context()
+  const observedAgent = { session: { id: 'main', header: {}, snapshotEvents: () => [] } }
+  const off = apply(ctx, { enabled: true, recoverEmpty: true }, { agent: observedAgent })
+  assert.equal(recoveryObservationOf(observedAgent), undefined)
+  await ctx.waterfall('agent/request', { agent: observedAgent, turn: 1, step: 1, signal: new AbortController().signal }, async () => ({}))
+  ctx.emit('session/event', observedAgent.session, { type: 'turn/end', data: { turn: 1, reason: { kind: 'completed' } } })
+  assert.equal(recoveryObservationOf(observedAgent).state, 'candidate')
+  assert.deepEqual(Object.keys(recoveryObservationOf(observedAgent)).sort(), ['observedAt', 'state'])
+  off()
+  assert.equal(recoveryObservationOf(observedAgent), undefined)
+})
 
 test('generation-recovery：正文和推理在声明阈值截断，大delta的尾文不进入最终块', async t => {
   const ctx = new Context()

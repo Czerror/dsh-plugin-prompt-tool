@@ -82,7 +82,7 @@ function mountSources(ctx, sources, options = {}) {
   const bind = (item, on) => prepareAction(item.action, { plugin: options.plugin, warnOnce, promptConfigOptions: item.rule.promptConfigOptions, on })(ctx)
   try {
     for (const source of sources) {
-      try { rebindConditions([source], { ctx, standingMountFor: options.standingMountFor, promotionPool: pool, variableStore: options.variableStore, manifestCheck: options.manifestCheck }) }
+      try { rebindConditions([source], { ctx, standingMountFor: options.standingMountFor, promotionPool: pool, variableStore: options.variableStore, manifestCheck: options.manifestCheck, soulReminder: options.soulReminder }) }
       catch (error) { throw sourceError(error, source.moduleId) }
     }
     const rules = sources.flatMap(source => source.rules.filter(rule => rule.enabled !== false))
@@ -115,7 +115,8 @@ function mountSources(ctx, sources, options = {}) {
       for (const item of point.items) {
         const { action, rule, moduleId } = item
         if (action.kind === 'inject-text') {
-          const config = { ...action.compiledConfig, rule, sourceModuleId: moduleId, variableStore: options.variableStore, group: undefined, exclusive: false, enabled: true, actionWhen: action.actionWhen, bypassRuleWhen: action.bypassRuleWhen, runtimeOrder: action.channelOrder, runtimeRuleIndex: item.ruleIndex }
+          const config = { ...action.compiledConfig, rule, sourceModuleId: moduleId, variableStore: options.variableStore,
+            group: undefined, exclusive: false, enabled: true, actionWhen: action.actionWhen, bypassRuleWhen: action.bypassRuleWhen, runtimeOrder: action.channelOrder, runtimeRuleIndex: item.ruleIndex }
           if (config.layer === 'pre-step') injections.get(moduleId).configs.push(config)
           else textConfigs.push(config)
           continue

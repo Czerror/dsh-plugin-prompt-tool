@@ -30,7 +30,7 @@ import { wireLayers } from './layers.mjs'
 import { renderTemplate } from './template-frame.mjs'
 import { selectContextActivation } from './context-activation.mjs'
 import { compareConfigSequence } from './order.mjs'
-import { ruleFrame, actionMatches } from './conditions/evaluation.mjs'
+import { ruleFrame, actionMatches, actionSoulReminder, recheckSoulReminder } from './conditions/evaluation.mjs'
 import { composePreStepSources, promotionOwnerOf } from './pre-step-source.mjs'
 // 标记键名与「已登记进 config 白名单」同源（schema.mjs），此处不另写字面量。
 import { SESSION_VARIABLES_DISABLED } from './schema.mjs'
@@ -329,12 +329,15 @@ async function runPromptConfigBatch(options) {
           continue
         }
 
+        const reminder = actionSoulReminder(config, options.ruleFrame)
         const signal = options.payload?.signal
         if (signal?.aborted) continue
         const resolved = await config.resolve({ ctx, agent, session, signal, decision, messages, contextActivationSelected: scope.contextActivation.has(config) })
         if (signal?.aborted) continue
         if (resolved === null || resolved === undefined) continue
+        if (!recheckSoulReminder(config, options.ruleFrame, reminder)) continue
         const patched = { ...resolved }
+        if (reminder !== undefined) patched.source = { ...patched.source, soulReminder: { pendingVersion: reminder.pendingVersion, epoch: reminder.epoch } }
         // 按来源读取最新持久值；无变量正文不因另一个坏候选的读盘失败撤回。
         const mergedVars = {
           ...(config[SESSION_VARIABLES_DISABLED] === true ? {} : config.params?.templateEvaluation !== true && [patched.text, ...config.texts].some(text => typeof text === 'string' && text.includes('{{'))

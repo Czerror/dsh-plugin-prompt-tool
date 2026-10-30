@@ -1,4 +1,4 @@
-export type RetrievalEvent = { readonly seq: number; readonly type: string }
+export type RetrievalEvent = { readonly seq: number; readonly type: string; readonly time?: number }
 export type SessionReference = { kind: 'session'; moduleId: string; sessionId: string; seqs: number[]; revision: string; start: number; end: number }
 export const MAX_REFERENCE_CHARS: number
 export function sessionReferenceText(events: readonly RetrievalEvent[], seqs: readonly number[]): string

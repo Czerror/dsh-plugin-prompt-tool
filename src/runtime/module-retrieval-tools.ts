@@ -9,8 +9,15 @@ import { createModuleRetrieval } from '../host/module-retrieval.ts'
 import type { LoadRetrievalSession, RetrievalReference } from '../host/module-retrieval.ts'
 import { MODULE_TOOL_NAMES } from '../shared/engine-capabilities.ts'
 
-export interface RetrievalConfig { paths: readonly string[]; sessions: readonly string[] }
+export interface RetrievalConfig { paths: readonly string[]; sessions: readonly string[]; synonymsFile?: string }
 export interface RetrievalMount { agent: Agent; sourceModuleId: string; sourceModuleDir: string }
+export interface RetrievalStatus {
+  state: 'unauthorized' | 'unbuilt' | 'refreshing' | 'ready' | 'stale' | 'failed'
+  observedAt?: string
+  files?: number
+  sessions?: number
+  events?: number
+}
 
 /** 调用方已确认 tools 就绪；同步注册使初始化错误回到当前能力的挂载路径。 */
 export function registerModuleRetrievalTools(ctx: Context, retrievalOf: (exec: ToolExecution, moduleId: string | undefined) => ReturnType<typeof createModuleRetrieval>): () => void {
@@ -22,12 +29,12 @@ export function registerModuleRetrievalTools(ctx: Context, retrievalOf: (exec: T
     disposers.push(tools.register(defineTool({
         name: MODULE_TOOL_NAMES.search,
         description: '搜索 moduleId 声明模块已授权的文件、账本或历史会话。结果中的 reference 可交 module_open 回取相同原文。',
-        parameters: { moduleId: MODULE_ID_PARAM, query: { type: 'string', required: true }, limit: { type: 'number' } },
+        parameters: { moduleId: MODULE_ID_PARAM, query: { type: 'string' }, mode: { type: 'string', enum: ['search', 'timeline'] }, since: { type: 'string' }, until: { type: 'string' }, cursor: { type: 'string' }, limit: { type: 'number' } },
         output: { schema: { type: 'object', additionalProperties: true }, render: (_args, value) => [{ type: 'text', text: JSON.stringify(value) }] },
         execute: async (args, exec) => {
-          if (Object.keys(args).some(key => !['moduleId', 'query', 'limit'].includes(key))) throw new Error('检索请求含未知字段')
+          if (Object.keys(args).some(key => !['moduleId', 'query', 'mode', 'since', 'until', 'cursor', 'limit'].includes(key))) throw new Error('检索请求含未知字段')
           exec.signal?.throwIfAborted()
-          const value = await retrievalOf(exec, args.moduleId).search({ query: args.query, limit: args.limit })
+          const value = await retrievalOf(exec, args.moduleId).search({ query: args.query, mode: args.mode, since: args.since, until: args.until, cursor: args.cursor, limit: args.limit })
           exec.signal?.throwIfAborted()
           retrievalOf(exec, args.moduleId)
           return value
@@ -53,57 +60,102 @@ export function registerModuleRetrievalTools(ctx: Context, retrievalOf: (exec: T
 
 export function createModuleRetrievalProvider(host: Pick<ModuleToolHost, 'target'>, loadSession?: LoadRetrievalSession) {
   type Declaration = { config: RetrievalConfig; dir: string }
-  type State = { modules: Map<string, Map<symbol, Declaration>>; indexes: Map<string, ReturnType<typeof createModuleRetrieval>>; dispose: () => void }
+  type State = { modules: Map<string, Map<symbol, Declaration>>; indexes: Map<string, ReturnType<typeof createModuleRetrieval>>; observations: Map<string, RetrievalStatus>; dispose: () => void }
   const agents = new WeakMap<Agent, State>()
-  const retrievalFor = (state: State, moduleId: string, agent: Agent) => {
+  const moduleStates = new Map<string, Set<State>>()
+  const declarationOf = (state: State, moduleId: string) => [...(state.modules.get(moduleId)?.values() ?? [])].at(-1)
+  const invalidate = (state: State, moduleId: string): void => {
+    const previous = state.observations.get(moduleId)
+    state.observations.set(moduleId, { ...previous, state: previous ? 'stale' : 'unbuilt' })
+  }
+  const retrievalFor = (state: Pick<State, 'modules' | 'indexes'>, moduleId: string, agent: Agent) => {
     let retrieval = state.indexes.get(moduleId)
     if (retrieval === undefined) {
       retrieval = createModuleRetrieval(() => {
         const current = [...(state.modules.get(moduleId)?.values() ?? [])].at(-1)
         if (!current) throw new Error('检索模块未授权')
-        return { moduleId, dir: current.dir, paths: current.config.paths, sessions: current.config.sessions, session: agent.session }
+        return { moduleId, dir: current.dir, paths: current.config.paths, sessions: current.config.sessions, synonymsFile: current.config.synonymsFile, session: agent.session }
       }, loadSession)
       state.indexes.set(moduleId, retrieval)
     }
     return retrieval
   }
   return {
+    status(agent: Agent, moduleId: string): RetrievalStatus {
+      const state = agents.get(agent)
+      if (!state?.modules.has(moduleId)) return { state: 'unauthorized' }
+      return { ...state.observations.get(moduleId)! }
+    },
+    invalidate(agent: Agent, moduleId: string): void {
+      const state = agents.get(agent)
+      if (state?.modules.has(moduleId)) invalidate(state, moduleId)
+    },
+    invalidateModule(moduleId: string): void {
+      for (const state of moduleStates.get(moduleId) ?? []) invalidate(state, moduleId)
+    },
     async refresh(agent: Agent, moduleId: string, signal?: AbortSignal) {
       signal?.throwIfAborted()
       const state = agents.get(agent)
       if (!state?.modules.has(moduleId)) throw new Error('检索模块未授权')
-      const result = await retrievalFor(state, moduleId, agent).refresh()
-      signal?.throwIfAborted()
-      if (!state.modules.has(moduleId)) throw new Error('检索模块未授权')
-      return result
+      const declaration = declarationOf(state, moduleId)
+      const observation: RetrievalStatus = { ...state.observations.get(moduleId), state: 'refreshing' }
+      state.observations.set(moduleId, observation)
+      try {
+        const result = await retrievalFor(state, moduleId, agent).refresh()
+        signal?.throwIfAborted()
+        if (agents.get(agent) !== state || declarationOf(state, moduleId) !== declaration) throw new Error('检索来源声明已变化或未授权')
+        if (state.observations.get(moduleId) !== observation) throw new Error('检索来源状态已变化，请重新刷新')
+        state.observations.set(moduleId, { ...result, observedAt: new Date().toISOString() })
+        return result
+      } catch (error) {
+        if (agents.get(agent) === state && state.observations.get(moduleId) === observation) {
+          state.observations.set(moduleId, { ...observation, state: 'failed' })
+        }
+        throw error
+      }
     },
     mount(_ctx: Context, config: RetrievalConfig, options: RetrievalMount): () => void {
       const { agent, sourceModuleId, sourceModuleDir } = options
       if (!agent?.ctx || !sourceModuleId || !sourceModuleDir) throw new Error('检索缺少宿主来源模块身份')
       if (!Array.isArray(config.paths) || config.paths.length > 2048 || config.paths.some(path => typeof path !== 'string')
         || !Array.isArray(config.sessions) || config.sessions.length > 128 || config.sessions.some(id => typeof id !== 'string' || !id || id.length > 256)) throw new Error('检索来源白名单无效或超限')
+      if (config.synonymsFile !== undefined && (typeof config.synonymsFile !== 'string' || !config.synonymsFile || config.synonymsFile.length > 1024)) throw new Error('检索近义表路径无效')
       let state = agents.get(agent)
       if (state === undefined) {
         const modules = new Map<string, Map<symbol, Declaration>>()
         const indexes = new Map<string, ReturnType<typeof createModuleRetrieval>>()
+        const observations = new Map<string, RetrievalStatus>()
         const dispose = registerModuleRetrievalTools(agent.ctx, (exec, moduleId) => {
           if (exec.agent !== agent) throw new Error('检索 Agent 未授权')
           const target = host.target(exec, moduleId)
           const declaration = [...(modules.get(target.id)?.values() ?? [])].at(-1)
           if (!declaration || declaration.dir !== target.dir) throw new Error('检索模块未授权')
-          return retrievalFor({ modules, indexes, dispose }, target.id, agent)
+          return retrievalFor({ modules, indexes }, target.id, agent)
         })
-        state = { modules, indexes, dispose }
+        state = { modules, indexes, observations, dispose }
         agents.set(agent, state)
       }
       let declarations = state.modules.get(sourceModuleId)
-      if (declarations === undefined) { declarations = new Map(); state.modules.set(sourceModuleId, declarations) }
+      if (declarations === undefined) {
+        declarations = new Map(); state.modules.set(sourceModuleId, declarations)
+        let members = moduleStates.get(sourceModuleId)
+        if (!members) { members = new Set(); moduleStates.set(sourceModuleId, members) }
+        members.add(state)
+      }
       const token = Symbol(sourceModuleId)
       declarations.set(token, { config, dir: sourceModuleDir })
+      invalidate(state, sourceModuleId)
       const owner = state
       return () => {
+        const wasCurrent = [...declarations.keys()].at(-1) === token
         if (!declarations.delete(token)) return
-        if (declarations.size === 0) { owner.modules.delete(sourceModuleId); owner.indexes.delete(sourceModuleId) }
+        if (declarations.size === 0) {
+          owner.modules.delete(sourceModuleId); owner.indexes.delete(sourceModuleId); owner.observations.delete(sourceModuleId)
+          const members = moduleStates.get(sourceModuleId)
+          members?.delete(owner)
+          if (!members?.size) moduleStates.delete(sourceModuleId)
+        }
+        else if (wasCurrent) invalidate(owner, sourceModuleId)
         if (owner.modules.size === 0) { owner.dispose(); agents.delete(agent) }
       }
     },

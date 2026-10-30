@@ -18,6 +18,8 @@ import { record } from './record.mjs'
 /** 规则字段：只有 `if`/`then`/`else`；旧名 `when`/`do` 留在名单里，只为把 unknown fields 换成一句「已退役，改用 X」。 */
 const RULE_FIELDS = new Set(['id', 'name', 'enabled', 'layer', 'group', 'exclusive', 'if', 'then', 'else', 'when', 'do'])
 const nonempty = value => typeof value === 'string' && value.trim().length > 0
+const hasSoulCondition = node => node !== null && typeof node === 'object'
+  && (Object.hasOwn(node, 'soul') || Object.values(node).some(hasSoulCondition))
 
 /** `prepend` 退役文案（动作层与 `inject-text.config` 共用）：等价档只有「注册到最外层」一档，而 `inject-text` 连它也不接受。 */
 const PREPEND_RETIRED = '`prepend` 已取消 — 它是未文档化的注册后门（executor 直读 config.prepend），作用只有「注册到最外层」一档：非 inject-text 动作改用 `waterfallPosition: outermost`；`inject-text` 不接受该字段，没有等价写法'
@@ -232,7 +234,7 @@ export function compileRules(specs, options = {}) {
   // 条件的绑定**不在编译期**：`preset` 谓词的取法要挂载 scope 的 ctx（`conditions/preset.mjs`），
   // 准备期拿不到。这里显式剥掉挂载期选项——传了也不生效，免得调用方以为已经绑好。
   // variableStore / manifestCheck 与 ctx/standingMountFor 同理：绑定发生在挂载期，准备期传了也不生效。
-  const { ctx: _ctx, standingMountFor: _standingMountFor, variableStore: _variableStore, manifestCheck: _manifestCheck, ...conditionOptions } = options
+  const { ctx: _ctx, standingMountFor: _standingMountFor, variableStore: _variableStore, manifestCheck: _manifestCheck, soulReminder: _soulReminder, ...conditionOptions } = options
   const ids = new Set()
   const pendingConfigs = []
   const moduleId = options.moduleId ?? options.sourceModuleId
@@ -294,6 +296,9 @@ export function compileRules(specs, options = {}) {
       const action = structuredClone(source)
       if (action.kind === 'inject-text') {
         action.config = injectionConfigSpec(spec, action, options)
+        if ((hasSoulCondition(ruleIf) || conditions.some(hasSoulCondition)) && !['pre-step', 'runtime-context'].includes(action.config.layer)) {
+          throw new TypeError('soul reminder conditions support only pre-step or runtime-context delivery')
+        }
       }
       const execution = ruleActionExecution(action)
       // 未知键检查必须在 normalizeActionGates **之后**：中性旧 audience/modelScope/promotion
@@ -413,6 +418,7 @@ function needsMountContext(node) {
   if (Object.hasOwn(node, 'variable')) return true
   // manifest 要读挂载 scope 的清单检查服务（准备期没有）。
   if (Object.hasOwn(node, 'manifest')) return true
+  if (Object.hasOwn(node, 'soul')) return true
   if (Object.hasOwn(node, 'phase') && node.phase?.subscribe !== false) return true
   if (node.anchor?.after !== undefined) return true
   return Object.values(node).some(needsMountContext)

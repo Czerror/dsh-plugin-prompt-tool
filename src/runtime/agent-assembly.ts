@@ -50,6 +50,7 @@ import type { RuleAudience } from '../../engine/rule-spec.mjs'
 // 与引擎注册侧共用主子身份判据。
 import { isDelegated } from '../../engine/shared.mjs'
 import { createRuleRuntime } from '../../engine/rule-runtime.mjs'
+import { soulReminderOf } from './soul-runtime.ts'
 // 去重身份判据的唯一来源。
 import { identityOf } from '../../engine/delivery.mjs'
 // 条件在真实挂载 scope 绑定；准备期只保留经过预检的定义快照。
@@ -454,7 +455,7 @@ export function createAgentAssembly(ctx: Context, options: AgentAssemblyOptions)
       try { await root } catch (error) { await root.dispose(); throw error }
       if (scope === undefined) { await root.dispose(); throw new Error('运行时配装作用域未初始化') }
       let rules: ReturnType<typeof createRuleRuntime>
-      try { rules = createRuleRuntime(scope, { agent, onOutcome: ruleDiagnostics.record, variableStore, standingMountFor: await loadStandingMountFor(), manifestCheck }) }
+      try { rules = createRuleRuntime(scope, { agent, onOutcome: ruleDiagnostics.record, variableStore, standingMountFor: await loadStandingMountFor(), manifestCheck, soulReminder: soulReminderOf(ctx) }) }
       catch (error) { await root.dispose(); throw error }
       const record: Mounted = { agent, scope, rules, modules: new Map(), shared: new Map(), prepared: [], moduleIds: [],
         stamp: '', content: '', personaSignature: '', plan: { sections: [], suppressRuntimeContext: false }, live: true, committed: false, mutating: false,

@@ -112,7 +112,7 @@ persona:
 | module-file-tools | module_file_read / module_file_append |
 | module-manifest-tools | module_manifest |
 | module-import-tools | module_import |
-| soul-ledger | soul_ledger |
+| soul-ledger | soul_ledger / soul_state |
 | retrieval | module_search / module_open |
 | tool-config-engine | customTools 中的实际工具 |
 
@@ -134,11 +134,17 @@ outlet/vectorized/triggers 不能等价执行，相关规则禁用并报告；�
 
 Soul 模块包含结构化账本、授权文件／历史检索、每步动态 SELF、上下文压缩与裁剪溯源、生成恢复和维护心跳。SELF 由 `rule-engine` 的内置动态内容源提供（`strategy: placeholder`、`fill: soul-self`），无需模块附带策略 JS。先用上述初始化预览补齐 `SELF.src.md` 骨架；已有模块副本须显式更新，包升级不会覆盖用户定义或私有数据，旧副本仍可使用自身保留的自定义策略。
 
-`soul_ledger` 自动署名真实会话，`lead` 需宿主审批，只有最后主导会话可追加 `promise`；通用文件追加拒绝新旧账本名。`module_search` 返回的引用交给 `module_open` 回取，历史会话只读取声明的白名单。SELF 的当前身份在每步读取时加入，维护默认每分钟只更新索引与快照，`wake` 独立且默认关闭。
+`soul_ledger` 自动署名真实会话；`lead` 需宿主审批，`promise` 仅当前主导会话追加/收口，`shelved` 可由原作者或当前主导收口。`close` 通过稳定 `targetId` 追加完成/取消及依据，保留历史原行；`list` 的 `pending/open/pending-review` 视图提供版本分页。升级前历史事项标为待核对，不猜测已完成。
+
+SELF 每步读取当前骨架、账本投影和身份/时钟，维护关闭或诊断快照陈旧也能呈现；索引只报告最近成功观测，不逐步扫描历史。`soul_state status/mark/check` 提供当前会话状态、带版本的短标记及只读运行诊断。未结提醒默认仅主会话，在集合变化或成功压缩后实际投递一次；候选装配不消费提醒。Soul 显式开启 45/60/80% 水位提示，只提示，不自动压缩。
+
+`module_search` 支持全半角/大小写/千分位归一化、Soul 声明的有界近义表及 `mode: timeline` 时间线；命中标注方式，引用交给 `module_open` 重验授权与原文。历史会话仍只读白名单。维护默认每分钟更新索引与诊断快照，等待可取消，`wake` 独立且默认关闭。
 
 `generation-recovery` 的通用默认只截断；Soul 显式启用空回合检测和有界恢复，主会话额度 3、子代理 1，每会话独立且重挂不清零。维护压缩和扩大范围默认关闭。配置与边界见 [引擎运行时](docs/engine-reuse.md#重复输出安全截断)、[账本与SELF](docs/architecture-params.md#soul账本与派生快照)。
 
-这些运行能力由本插件实现，不需要源项目 `dsh-agent-soul` 的仓库、插件或后台服务；上下文治理仍要求宿主提供[官方能力包](docs/engine-reuse.md#上下文运行时与溯源)（按包名白名单从 DSH 自带包解析，运行期不比对版本）。本模块不等价于源项目的全部功能：检索采用授权范围内的字面匹配，未提供源近义检索、上下文水位提醒、完整 doctor/诊断工具或附属面板；恢复判据与额度策略也有差异。`assets/reference/` 保留的源文档用于背景参考，其中的源 CLI 和第三方工具不表示本插件已提供对应能力。
+这些运行能力由本插件实现，不需要源项目 `dsh-agent-soul` 的仓库、插件或后台服务；上下文治理仍要求宿主提供[官方能力包](docs/engine-reuse.md#上下文运行时与溯源)。未提供向量库、规模持久索引、压缩帧直取、附属面板、源安装体系或恢复补额/惩罚。`assets/reference/` 保留源背景文档，其 CLI 不代表本插件接口。
+
+已有 Soul 定义通过 `soul_state check` 显式传 `includeUpgrade: true` 查看定向升级候选及冲突；完整 `files` 含必要配置、近义词表和现有可交换资产，再交 `module_import` 模型工具预览确认及重建，该入口保留私有数据、记忆和技能资产。包内种子不覆盖用户副本。包含 `close` 的账本要求支持账本 v2 的程序：旧版会忽略收口且仍能写入，回滚前必须撤写能力及旧 SELF/提醒贡献，不能删除 close 行迁就旧版。
 
 上下文能力按包名白名单从 DSH 自带包解析，不增加插件依赖，运行期不校验版本；仅包缺失或未登记时拒绝该能力装配。包代码更新需要用户重启 DSH 加载；加载后修改模块启停／参数沿运行时刷新，不改官方 preset 或 profile patch。
 

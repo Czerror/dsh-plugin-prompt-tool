@@ -10,12 +10,43 @@ import type { RetrievalEvent, SessionReference } from '../../engine/retrieval-re
 
 export interface RetrievalSession { id: string; snapshotEvents: () => readonly RetrievalEvent[] }
 export type LoadRetrievalSession = (id: string) => Promise<RetrievalSession | undefined>
-export interface RetrievalScope { moduleId: string; dir: string; paths: readonly string[]; sessions?: readonly string[]; session?: RetrievalSession }
+export interface RetrievalScope { moduleId: string; dir: string; paths: readonly string[]; sessions?: readonly string[]; session?: RetrievalSession; synonymsFile?: string }
 export type FileReference = { kind: 'file'; moduleId: string; path: string; revision: string; start: number; end: number }
 export type RetrievalReference = FileReference | SessionReference
-export type RetrievalHit = { reference: RetrievalReference; content: string }
+export type RetrievalHit = { reference: RetrievalReference; content: string; match?: 'exact' | 'normalized' | 'synonym'; time?: string | null; timeState?: 'known' | 'unknown' }
+export interface RetrievalQuery { query?: string; mode?: 'search' | 'timeline'; since?: string; until?: string; limit?: number; cursor?: string }
 const digest = (value: string): string => createHash('sha256').update(value).digest('hex')
 const MAX_CHUNK = MAX_REFERENCE_CHARS
+const normalize = (text: string): string => text.normalize('NFKC').toLowerCase().replace(/(?<![0-9,])[0-9]{1,3}(?:,[0-9]{3})+(?![0-9,])/g, value => value.replaceAll(',', ''))
+function includesQuery(text: string, query: string): boolean {
+  let start = text.indexOf(query)
+  while (start >= 0) {
+    if (!/^[0-9]+$/.test(query) || (!/[0-9]/.test(text[start - 1] ?? '') && !/[0-9]/.test(text[start + query.length] ?? ''))) return true
+    start = text.indexOf(query, start + 1)
+  }
+  return false
+}
+function matchKind(text: string, query: string): 'exact' | 'normalized' | undefined {
+  if (includesQuery(text.toLowerCase(), query.toLowerCase())) return 'exact'
+  if (includesQuery(normalize(text), normalize(query))) return 'normalized'
+}
+function synonymTerms(scope: RetrievalScope, query: string): { terms: string[]; content?: string } {
+  if (!scope.synonymsFile) return { terms: [] }
+  resolveModuleFilePath(scope.dir, scope.synonymsFile, ['assets', 'data'])
+  const content = readModuleFile(scope.dir, scope.synonymsFile).content
+  if (Buffer.byteLength(content) > 65536) throw new Error('检索近义表超过64 KiB')
+  let groups: unknown
+  try { groups = JSON.parse(content) } catch { throw new Error('检索近义表必须为JSON词组数组') }
+  if (!Array.isArray(groups) || groups.length > 128 || groups.some(group => !Array.isArray(group) || group.length < 2 || group.length > 16 || group.some(term => typeof term !== 'string' || !term.trim() || term.length > 128))) throw new Error('检索近义表词组无效或超限')
+  const needle = normalize(query), terms = new Set<string>()
+  for (const group of groups as string[][]) if (group.some(term => normalize(term) === needle)) for (const term of group) if (normalize(term) !== needle) terms.add(term)
+  if (terms.size > 32) throw new Error('检索近义扩展超过32项')
+  return { terms: [...terms], content }
+}
+function timeOf(value: unknown): number | undefined {
+  const time = typeof value === 'number' ? value : typeof value === 'string' && /^\d{4}-\d\d-\d\dT.*(?:Z|[+-]\d\d:\d\d)$/.test(value) ? Date.parse(value) : NaN
+  return Number.isSafeInteger(time) && time >= 0 && time <= 8640000000000000 ? time : undefined
+}
 
 function fileContent(scope: RetrievalScope, path: string): string {
   if (!scope.paths.some(allowed => allowed === path || (allowed.endsWith('/') && path.startsWith(allowed)))) throw new Error('检索来源未授权')
@@ -53,7 +84,7 @@ export function createModuleRetrieval(scopeOf: () => RetrievalScope, loadSession
   const indexes = new Map<string, { events: readonly RetrievalEvent[]; rows: { seq: number; content: string }[] }>()
   const assertSessionAuthorized = (scope: RetrievalScope, id: string): void => {
     const current = scopeOf()
-    if (current.moduleId !== scope.moduleId || (current.session?.id !== id && !current.sessions?.includes(id))) throw new Error('检索会话未授权')
+    if (current.moduleId !== scope.moduleId || current.dir !== scope.dir || (current.session?.id !== id && !current.sessions?.includes(id))) throw new Error('检索会话未授权')
   }
   async function authorizedSession(scope: RetrievalScope, id: string): Promise<RetrievalSession> {
     assertSessionAuthorized(scope, id)
@@ -79,7 +110,7 @@ export function createModuleRetrieval(scopeOf: () => RetrievalScope, loadSession
     if (new Set(rows.map(row => row.seq)).size !== rows.length) throw new Error('授权会话事件身份重复')
     if (rows.reduce((bytes, row) => bytes + Buffer.byteLength(row.content), 0) > MAX_ASSET_BYTES) throw new Error('授权会话检索超过64 MiB上限')
     indexes.set(id, { events, rows })
-    return { events, rows }
+    return { events, rows, session }
   }
   const sessionIds = (scope: RetrievalScope) => new Set([...(scope.session ? [scope.session.id] : []), ...(scope.sessions ?? [])])
   const resultOf = (scope: RetrievalScope, hits: RetrievalHit[]) => {
@@ -90,23 +121,111 @@ export function createModuleRetrieval(scopeOf: () => RetrievalScope, loadSession
       if (reference.kind === 'session') assertSessionAuthorized(current, reference.sessionId)
       else if (digest(fileContent(current, reference.path)) !== reference.revision) throw new Error('检索引用已失效，请重新搜索')
     }
-    return { hits }
+    const selected: RetrievalHit[] = []
+    let bytes = 0
+    for (const hit of hits) {
+      bytes += Buffer.byteLength(JSON.stringify(hit))
+      if (bytes > 65536) break
+      selected.push(hit)
+    }
+    return { hits: selected }
+  }
+  const timeline = async (input: RetrievalQuery, limit: number) => {
+    const scope = scopeOf(), hits: RetrievalHit[] = [], versions: unknown[] = [], revalidate: Array<() => void> = []
+    const since = input.since === undefined ? undefined : timeOf(input.since), until = input.until === undefined ? undefined : timeOf(input.until)
+    if ((input.since !== undefined && since === undefined) || (input.until !== undefined && until === undefined) || (since !== undefined && until !== undefined && since > until)) throw new Error('时间线需要明确有效的since/until时间')
+    let bytes = 0
+    const add = (reference: RetrievalReference, content: string, value: unknown): void => {
+      bytes += Buffer.byteLength(content)
+      if (bytes > MAX_ASSET_BYTES) throw new Error('时间线来源超过64 MiB')
+      const time = timeOf(value)
+      if ((since !== undefined || until !== undefined) && (time === undefined || (since !== undefined && time < since) || (until !== undefined && time > until))) return
+      if (input.query !== undefined && !matchKind(content, input.query)) return
+      hits.push({ reference, content, time: time === undefined ? null : new Date(time).toISOString(), timeState: time === undefined ? 'unknown' : 'known' })
+    }
+    for (const path of filePaths(scope)) {
+      if (!['02-soul.jsonl', '02-墨.jsonl'].includes(path.split('/').at(-1)!)) continue
+      const content = fileContent(scope, path), revision = digest(content)
+      versions.push(['file', path, revision])
+      revalidate.push(() => { if (digest(fileContent(scopeOf(), path)) !== revision) throw new Error('时间线来源已变化，请重新查询') })
+      let offset = 0
+      for (const line of content.split('\n')) {
+        if (line.trim()) {
+          let row: { t?: unknown }
+          try { row = JSON.parse(line) } catch { throw new Error('时间线账本含无效记录') }
+          if (!row || typeof row !== 'object' || Array.isArray(row)) throw new Error('时间线账本含无效记录')
+          for (let part = 0; part < line.length; part += MAX_CHUNK) add({ kind: 'file', moduleId: scope.moduleId, path, revision, start: offset + part, end: offset + Math.min(line.length, part + MAX_CHUNK) }, line.slice(part, part + MAX_CHUNK), row.t)
+        }
+        offset += line.length + 1
+      }
+    }
+    for (const id of sessionIds(scope)) {
+      const { events, rows, session } = await indexSession(scope, id)
+      const revision = digest(JSON.stringify(events))
+      versions.push(['session', id, revision])
+      revalidate.push(() => {
+        assertSessionAuthorized(scope, id)
+        if (digest(JSON.stringify(session.snapshotEvents())) !== revision) throw new Error('时间线来源已变化，请重新查询')
+      })
+      const times = new Map(events.map(event => [event.seq, event.time]))
+      for (const row of rows) {
+        for (let start = 0; start < row.content.length; start += MAX_CHUNK) {
+          const end = Math.min(row.content.length, start + MAX_CHUNK)
+          add(makeSessionReference(scope.moduleId, id, events, [row.seq], { start, end }), row.content.slice(start, end), times.get(row.seq))
+        }
+      }
+    }
+    resultOf(scope, hits)
+    const current = scopeOf()
+    if (JSON.stringify([current.moduleId, current.dir, current.paths, [...sessionIds(current)]]) !== JSON.stringify([scope.moduleId, scope.dir, scope.paths, [...sessionIds(scope)]])) throw new Error('时间线来源声明已变化')
+    for (const check of revalidate) check()
+    const sourceKey = (hit: RetrievalHit): string => hit.reference.kind === 'file' ? '0:' + hit.reference.path + ':' + String(hit.reference.start).padStart(12, '0') : '1:' + hit.reference.sessionId + ':' + String(hit.reference.seqs[0]).padStart(16, '0') + ':' + hit.reference.start
+    hits.sort((a, b) => (a.time === b.time ? 0 : a.time === null ? 1 : b.time === null ? -1 : a.time!.localeCompare(b.time!)) || sourceKey(a).localeCompare(sourceKey(b)))
+    const version = digest(JSON.stringify([scope.moduleId, scope.dir, scope.paths, [...sessionIds(scope)], versions, input.query ?? null, since ?? null, until ?? null, limit]))
+    let offset = 0
+    if (input.cursor !== undefined) {
+      let cursor: { version: string; offset: number }
+      try { cursor = JSON.parse(Buffer.from(input.cursor, 'base64url').toString('utf8')) } catch { throw new Error('时间线游标无效') }
+      if (!cursor || Object.keys(cursor).sort().join(',') !== 'offset,version' || cursor.version !== version || !Number.isSafeInteger(cursor.offset) || cursor.offset < 0 || cursor.offset >= hits.length) throw new Error('时间线游标已失效，请重新查询')
+      offset = cursor.offset
+    }
+    const selected: RetrievalHit[] = []
+    let outputBytes = 0
+    for (const hit of hits.slice(offset, offset + limit)) {
+      outputBytes += Buffer.byteLength(JSON.stringify(hit))
+      if (outputBytes > 65536) break
+      selected.push(hit)
+    }
+    const next = offset + selected.length
+    return { hits: selected, ...(next < hits.length ? { nextCursor: Buffer.from(JSON.stringify({ version, offset: next })).toString('base64url') } : {}) }
   }
   return {
-    async search(input: { query: string; limit?: number }) {
-      if (typeof input.query !== 'string' || input.query.trim().length === 0 || input.query.length > 1024) throw new Error('检索 query 必须为1–1024字符')
+    async search(input: RetrievalQuery) {
+      if (input.mode !== undefined && input.mode !== 'search' && input.mode !== 'timeline') throw new Error('检索模式无效')
+      if ((input.query !== undefined || input.mode !== 'timeline') && (typeof input.query !== 'string' || input.query.trim().length === 0 || input.query.length > 1024)) throw new Error('检索 query 必须为1–1024字符')
       const limit = input.limit ?? 20
       if (!Number.isSafeInteger(limit) || limit < 1 || limit > 50) throw new Error('检索 limit 必须为1–50')
-      const scope = scopeOf(), query = input.query.toLowerCase(), hits: RetrievalHit[] = []
+      if (input.cursor !== undefined && (typeof input.cursor !== 'string' || input.cursor.length > 2048)) throw new Error('时间线游标无效')
+      if (input.mode === 'timeline') return timeline(input, limit)
+      if (input.since !== undefined || input.until !== undefined || input.cursor !== undefined) throw new Error('时间过滤和游标只用于时间线')
+      const scope = scopeOf(), query = input.query!, candidates: RetrievalHit[] = []
+      const synonyms = synonymTerms(scope, query)
+      let candidateBytes = 0
+      const add = (hit: RetrievalHit): void => {
+        const match = matchKind(hit.content, query)
+        if (!match && !scope.synonymsFile) return
+        candidateBytes += Buffer.byteLength(hit.content)
+        if (candidateBytes > MAX_ASSET_BYTES) throw new Error('检索候选超过64 MiB')
+        candidates.push({ ...hit, ...(match ? { match } : {}) })
+      }
       for (const path of filePaths(scope)) {
         const content = fileContent(scope, path), revision = digest(content)
         let offset = 0
         for (const line of content.split('\n')) {
           for (let part = 0; part < line.length; part += MAX_CHUNK) {
             const text = line.slice(part, part + MAX_CHUNK)
-            if (!text.toLowerCase().includes(query)) continue
-            hits.push({ reference: { kind: 'file', moduleId: scope.moduleId, path, revision, start: offset + part, end: offset + part + text.length }, content: text })
-            if (hits.length === limit) return resultOf(scope, hits)
+            add({ reference: { kind: 'file', moduleId: scope.moduleId, path, revision, start: offset + part, end: offset + part + text.length }, content: text })
+            if (!scope.synonymsFile && candidates.length === limit) return resultOf(scope, candidates)
           }
           offset += line.length + 1
         }
@@ -114,15 +233,33 @@ export function createModuleRetrieval(scopeOf: () => RetrievalScope, loadSession
       for (const id of sessionIds(scope)) {
         const { events, rows } = await indexSession(scope, id)
         for (const row of rows) {
-          const match = row.content.toLowerCase().indexOf(query)
-          if (match < 0) continue
-          const start = Math.max(0, match - 128), end = Math.min(row.content.length, start + MAX_CHUNK)
-          const reference = makeSessionReference(scope.moduleId, id, events, [row.seq], { start, end })
-          hits.push({ reference, content: row.content.slice(start, end) })
-          if (hits.length === limit) return resultOf(scope, hits)
+          for (let start = 0; start < row.content.length; start += MAX_CHUNK) {
+            const end = Math.min(row.content.length, start + MAX_CHUNK), text = row.content.slice(start, end)
+            const reference = makeSessionReference(scope.moduleId, id, events, [row.seq], { start, end })
+            add({ reference, content: text })
+            if (!scope.synonymsFile && candidates.length === limit) return resultOf(scope, candidates)
+          }
         }
       }
-      return resultOf(scope, hits)
+      const hits: RetrievalHit[] = []
+      for (const candidate of candidates) {
+        const match = matchKind(candidate.content, query)
+        if (match) hits.push({ ...candidate, match })
+      }
+      hits.sort((a, b) => Number(a.match === 'normalized') - Number(b.match === 'normalized'))
+      if (hits.length < 3 && synonyms.terms.length) for (const candidate of candidates) {
+        if (!matchKind(candidate.content, query) && synonyms.terms.some(term => matchKind(candidate.content, term))) hits.push({ ...candidate, match: 'synonym' })
+      }
+      const current = scopeOf()
+      if (current.synonymsFile !== scope.synonymsFile || (scope.synonymsFile && readModuleFile(current.dir, scope.synonymsFile).content !== synonyms.content)) throw new Error('检索近义表已变化，请重新搜索')
+      const selected: RetrievalHit[] = []
+      let bytes = 0
+      for (const hit of hits.slice(0, limit)) {
+        const size = Buffer.byteLength(JSON.stringify(hit))
+        if (bytes + size > 65536) break
+        bytes += size; selected.push(hit)
+      }
+      return resultOf(scope, selected)
     },
     async open(reference: RetrievalReference) {
       const scope = scopeOf()

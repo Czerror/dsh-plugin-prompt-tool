@@ -9,7 +9,7 @@ import { UNAVAILABLE } from './availability.mjs'
  * 缺省不传即零开销，也不改变任何判定结果。
  */
 export function ruleFrame(channel, args, warnOnce = () => {}, ctx, onOutcome) {
-  return { channel, args, subject: subjectOf(channel, args, warnOnce, ctx), decisions: new Map(), actionDecisions: new Set(), warnOnce, onOutcome }
+  return { channel, args, subject: subjectOf(channel, args, warnOnce, ctx), decisions: new Map(), actionDecisions: new Set(), reminders: new Map(), warnOnce, onOutcome }
 }
 
 /** 条件返回值的三值归一：词表与 bridge 的 `RuleOutcomeKind` 共享，故只此一处定义。 */
@@ -42,7 +42,7 @@ function decideRule(rule, frame) {
       frame.warnOnce(`rule ${rule.id} condition failed: ${String(error?.message ?? error)}`)
     }
   }
-  const decided = { hit, outcome }
+  const decided = { hit, outcome, reminders: hit ? rule.when?.soulReminders ?? [] : [] }
   frame.decisions.set(rule, decided)
   return decided
 }
@@ -70,7 +70,11 @@ export function ruleMatches(rule, frame) {
  */
 export function actionMatches(entry, frame) {
   const branched = entry.actionWhen !== undefined || entry.bypassRuleWhen === true
-  if (!branched) return ruleMatches(entry.rule, frame)
+  if (!branched) {
+    const hit = ruleMatches(entry.rule, frame)
+    frame.reminders.set(entry, hit ? decideRule(entry.rule, frame).reminders ?? [] : [])
+    return hit
+  }
   // `else`（bypassRuleWhen）自带 not(if)，不叠加规则级判定；其余带分支的动作自判
   // 规则级（不发上报），判定仍走同一份帧内缓存，同帧同规则依旧只判一次。
   const ruled = entry.bypassRuleWhen === true ? { hit: true, outcome: 'hit' } : decideRule(entry.rule, frame)
@@ -92,5 +96,20 @@ export function actionMatches(entry, frame) {
     frame.actionDecisions.add(entry)
     report(frame, entry.rule, outcome)
   }
+  frame.reminders.set(entry, hit ? [...(ruled.reminders ?? []), ...(entry.actionWhen?.soulReminders ?? [])] : [])
   return hit
+}
+
+/** 只关联实际命中路径的正向Soul事实；普通分支没有提醒戳。 */
+export function actionSoulReminder(entry, frame) {
+  return frame.reminders.get(entry)?.[0]
+}
+
+export function recheckSoulReminder(entry, frame, expected) {
+  if (expected === undefined) return true
+  const current = ruleFrame(frame.channel, frame.args, frame.warnOnce, undefined)
+  if (!actionMatches(entry, current)) return false
+  const fact = actionSoulReminder(entry, current)
+  return fact?.predicate === expected.predicate && fact.moduleId === expected.moduleId
+    && fact.pendingVersion === expected.pendingVersion && fact.epoch === expected.epoch
 }

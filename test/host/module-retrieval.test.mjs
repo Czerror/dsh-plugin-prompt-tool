@@ -13,6 +13,173 @@ import { makeSessionReference } from '../../engine/retrieval-reference.mjs'
 
 const { moduleRoot } = isolatedHome('pt-retrieval-')
 
+test('归一化命中保留原始文件和会话偏移，数字不吞边界', async () => {
+  const dir = join(moduleRoot, 'normalized')
+  mkdirSync(join(dir, 'data'), { recursive: true })
+  writeFileSync(join(dir, 'data/notes.md'), ['ＡＢＣ 62,829 中文', '162829', '12,34'].join('\n'))
+  const events = [{ seq: 0, type: 'user/message', data: { text: '前缀 ＡＢＣ 62,829 中文' } }]
+  const retrieval = createModuleRetrieval(() => ({ moduleId: 'normalized', dir, paths: ['data/notes.md'], session: { id: 'current', snapshotEvents: () => events } }))
+  const found = await retrieval.search({ query: 'abc 62829 中文' })
+  assert.equal(found.hits.length, 2)
+  assert.ok(found.hits.every(hit => hit.match === 'normalized'))
+  for (const hit of found.hits) assert.equal((await retrieval.open(hit.reference)).content, hit.content)
+  assert.equal((await retrieval.search({ query: '62829' })).hits.length, 2)
+  assert.equal((await retrieval.search({ query: '1234' })).hits.length, 0)
+})
+
+test('声明近义表只扩展一次且精确优先，原文回取不变', async () => {
+  const dir = join(moduleRoot, 'synonyms')
+  mkdirSync(join(dir, 'data'), { recursive: true })
+  mkdirSync(join(dir, 'assets'), { recursive: true })
+  writeFileSync(join(dir, 'assets/terms.json'), JSON.stringify([['压缩', '整理'], ['整理', '归档']]))
+  writeFileSync(join(dir, 'data/notes.md'), ['整理资料', '归档资料', '压缩资料', '再整理'].join('\n'))
+  const base = { moduleId: 'synonyms', dir, paths: ['data/notes.md'] }
+  const retrieval = createModuleRetrieval(() => ({ ...base, synonymsFile: 'assets/terms.json' }))
+  const found = await retrieval.search({ query: '压缩' })
+  assert.deepEqual(found.hits.map(hit => [hit.content, hit.match]), [['压缩资料', 'exact'], ['整理资料', 'synonym'], ['再整理', 'synonym']])
+  for (const hit of found.hits) assert.equal((await retrieval.open(hit.reference)).content, hit.content)
+  assert.equal((await retrieval.search({ query: '整理' })).hits.length, 4, '同一组双向，直接相邻组可用但不递归')
+  assert.equal((await createModuleRetrieval(() => base).search({ query: '压缩' })).hits.length, 1)
+  writeFileSync(join(dir, 'data/notes.md'), ['压缩一', '压缩二', '压缩三', '整理'].join('\n'))
+  assert.equal((await retrieval.search({ query: '压缩' })).hits.length, 3, '三条精确命中不再扩展')
+  writeFileSync(join(dir, 'assets/terms.json'), JSON.stringify([['压缩', '整理'], ['']]))
+  await assert.rejects(retrieval.search({ query: '压缩' }), /近义表/)
+  const { configContract } = await import('../../engine/retrieval.mjs')
+  assert.equal(configContract.parse({ synonymsFile: 'assets/terms.json' }, 'retrieval').synonymsFile, 'assets/terms.json')
+  assert.equal(configContract.parse({}, 'retrieval').synonymsFile, undefined)
+})
+
+test('时间线按可信时刻稳定合并，未知时间明确标记且版本变化拒绝旧游标', async () => {
+  const dir = join(moduleRoot, 'timeline')
+  mkdirSync(join(dir, 'data'), { recursive: true })
+  const line = JSON.stringify({ t: '2026-10-31T08:00:00+08:00', type: 'fact', text: 'FIRST' })
+  writeFileSync(join(dir, 'data/02-soul.jsonl'), line + '\n')
+  const events = [{ seq: 0, type: 'user/message', time: Date.parse('2026-10-31T00:00:00Z') }, { seq: 1, type: 'user/message' }]
+  const scope = { moduleId: 'timeline', dir, paths: ['data/02-soul.jsonl'], session: { id: 'current', snapshotEvents: () => events } }
+  const retrieval = createModuleRetrieval(() => scope)
+  const page = await retrieval.search({ mode: 'timeline', limit: 1 })
+  assert.equal(page.hits[0].reference.kind, 'file')
+  assert.equal(page.hits[0].time, '2026-10-31T00:00:00.000Z')
+  assert.ok(page.nextCursor)
+  const next = await retrieval.search({ mode: 'timeline', limit: 1, cursor: page.nextCursor })
+  assert.equal(next.hits[0].reference.kind, 'session')
+  const last = await retrieval.search({ mode: 'timeline', limit: 1, cursor: next.nextCursor })
+  assert.equal(last.hits[0].time, null)
+  assert.equal(last.hits[0].timeState, 'unknown')
+  for (const hit of [...page.hits, ...next.hits, ...last.hits]) assert.equal((await retrieval.open(hit.reference)).content, hit.content)
+  const filtered = await retrieval.search({ mode: 'timeline', since: '2026-10-31T08:00:00+08:00', until: '2026-10-31T00:00:00Z' })
+  assert.equal(filtered.hits.length, 2, '时间过滤不把未知时间猜进窗口')
+  events.push({ seq: 2, type: 'user/message', time: Date.parse('2026-10-31T01:00:00Z') })
+  await assert.rejects(retrieval.search({ mode: 'timeline', limit: 1, cursor: page.nextCursor }), /游标.*失效/)
+  await assert.rejects(retrieval.search({ mode: 'timeline', since: 'yesterday' }), /时间/)
+  let finishLoad, authorized = ['history']
+  const guarded = createModuleRetrieval(() => ({ ...scope, sessions: authorized }), async () => new Promise(resolve => { finishLoad = resolve }))
+  const waiting = guarded.search({ mode: 'timeline' })
+  while (!finishLoad) await Promise.resolve()
+  authorized = []
+  finishLoad({ id: 'history', snapshotEvents: () => [{ seq: 0, type: 'user/message', time: 1 }] })
+  await assert.rejects(waiting, /未授权/)
+})
+
+test('索引状态只读且按Agent隔离，刷新、失效和失败保留最后成功观测', async t => {
+  const tools = new Map(), dir = join(moduleRoot, 'observations')
+  let loads = 0, fail = false
+  const ctx = { get: () => ({ register: tool => { tools.set(tool.name, tool); return () => tools.delete(tool.name) } }) }
+  const agent = { ctx, session: { id: 'current', snapshotEvents: () => [] } }
+  const provider = createModuleRetrievalProvider({ target: () => ({ id: 'observations', dir }) }, async id => {
+    loads++
+    if (fail) throw new Error('PRIVATE STORAGE FAILURE')
+    return { id, snapshotEvents: () => [{ seq: 0, type: 'user/message' }] }
+  })
+  assert.deepEqual(provider.status(agent, 'observations'), { state: 'unauthorized' })
+  const off = provider.mount(ctx, { paths: [], sessions: ['history'] }, { agent, sourceModuleId: 'observations', sourceModuleDir: dir })
+  t.after(off)
+  assert.deepEqual(provider.status(agent, 'observations'), { state: 'unbuilt' })
+  assert.deepEqual(provider.status({ ...agent }, 'observations'), { state: 'unauthorized' })
+  assert.equal(loads, 0, 'status不加载历史，也不要求目录存在')
+  await provider.refresh(agent, 'observations')
+  const ready = provider.status(agent, 'observations')
+  assert.equal(ready.state, 'ready')
+  assert.equal(ready.events, 1)
+  assert.ok(Number.isFinite(Date.parse(ready.observedAt)))
+  provider.invalidate(agent, 'observations')
+  assert.deepEqual(provider.status(agent, 'observations'), { ...ready, state: 'stale' })
+  fail = true
+  await assert.rejects(provider.refresh(agent, 'observations'), /不可读取/)
+  assert.deepEqual(provider.status(agent, 'observations'), { ...ready, state: 'failed' })
+  assert.equal(loads, 2)
+  off()
+  assert.deepEqual(provider.status(agent, 'observations'), { state: 'unauthorized' })
+})
+
+test('同模块提交使所有Agent观测过期，卸载后不再持有状态且迟到刷新不能ready', async t => {
+  const ctx = { get: () => ({ register: () => () => {} }) }
+  const first = { ctx, session: { id: 'one', snapshotEvents: () => [] } }, second = { ctx, session: { id: 'two', snapshotEvents: () => [] } }
+  const dir = join(moduleRoot, 'module-observations')
+  let finishLoad
+  const provider = createModuleRetrievalProvider({ target: () => ({ id: 'shared', dir }) }, id => new Promise(resolve => { finishLoad = () => resolve({ id, snapshotEvents: () => [] }) }))
+  const config = { paths: [], sessions: [] }
+  const off1 = provider.mount(ctx, config, { agent: first, sourceModuleId: 'shared', sourceModuleDir: dir })
+  const off2 = provider.mount(ctx, config, { agent: second, sourceModuleId: 'shared', sourceModuleDir: dir })
+  t.after(off1); t.after(off2)
+  await provider.refresh(first, 'shared'); await provider.refresh(second, 'shared')
+  const one = provider.status(first, 'shared'), two = provider.status(second, 'shared')
+  provider.invalidateModule('shared')
+  assert.deepEqual(provider.status(first, 'shared'), { ...one, state: 'stale' })
+  assert.deepEqual(provider.status(second, 'shared'), { ...two, state: 'stale' })
+  const off3 = provider.mount(ctx, { paths: [], sessions: ['history'] }, { agent: first, sourceModuleId: 'shared', sourceModuleDir: dir })
+  t.after(off3)
+  const pending = provider.refresh(first, 'shared')
+  while (!finishLoad) await Promise.resolve()
+  provider.invalidateModule('shared')
+  finishLoad()
+  await assert.rejects(pending, /状态已变化/)
+  off1(); off3(); off2()
+  provider.invalidateModule('shared')
+  assert.deepEqual(provider.status(first, 'shared'), { state: 'unauthorized' })
+  assert.deepEqual(provider.status(second, 'shared'), { state: 'unauthorized' })
+})
+
+test('刷新期间声明变更或显式失效拒绝迟到ready，释放旧挂载不扰动当前声明', async t => {
+  const ctx = { get: () => ({ register: () => () => {} }) }
+  const agent = { ctx, session: { id: 'current', snapshotEvents: () => [] } }
+  const dir = join(moduleRoot, 'observation-race'), pending = []
+  const provider = createModuleRetrievalProvider({ target: () => ({ id: 'race', dir }) }, id => new Promise(resolve => {
+    pending.push(() => resolve({ id, snapshotEvents: () => [] }))
+  }))
+  const options = { agent, sourceModuleId: 'race', sourceModuleDir: dir }
+  const off1 = provider.mount(ctx, { paths: [], sessions: ['history'] }, options)
+  t.after(off1)
+  const old = provider.refresh(agent, 'race')
+  while (!pending.length) await Promise.resolve()
+  assert.equal(provider.status(agent, 'race').state, 'refreshing')
+  const off2 = provider.mount(ctx, { paths: [], sessions: ['history'] }, options)
+  t.after(off2)
+  assert.equal(provider.status(agent, 'race').state, 'stale')
+  pending.shift()()
+  await assert.rejects(old, /声明已变化/)
+  assert.equal(provider.status(agent, 'race').state, 'stale')
+  const fresh = provider.refresh(agent, 'race')
+  while (!pending.length) await Promise.resolve()
+  off1()
+  pending.shift()()
+  await fresh
+  const ready = provider.status(agent, 'race')
+  assert.equal(ready.state, 'ready')
+  const invalidated = provider.refresh(agent, 'race')
+  while (!pending.length) await Promise.resolve()
+  provider.invalidate(agent, 'race')
+  pending.shift()()
+  await assert.rejects(invalidated, /状态已变化/)
+  assert.deepEqual(provider.status(agent, 'race'), { ...ready, state: 'stale' })
+  const removed = provider.refresh(agent, 'race')
+  while (!pending.length) await Promise.resolve()
+  off2()
+  pending.shift()()
+  await assert.rejects(removed, /未授权/)
+  assert.deepEqual(provider.status(agent, 'race'), { state: 'unauthorized' })
+})
+
 test('检索工具初始化第二项失败同步上报，撤回第一项且重试没有遗留授权', async t => {
   const root = new Context()
   await root.plugin(SystemPrompt)
@@ -47,6 +214,15 @@ test('检索已授权模块文件和账本的每种引用均可回取，查询�
   for (const hit of found.hits) assert.equal((await retrieval.open(hit.reference)).content, hit.content)
   assert.deepEqual(await retrieval.search({ query: 'Known' }), found)
   assert.deepEqual(readFileSync(join(dir, 'data', '02-soul.jsonl')), before)
+  const ctx = { get: () => ({ register: tool => { registered.set(tool.name, tool); return () => registered.delete(tool.name) } }) }
+  const registered = new Map(), agent = { ctx, session: { id: 'current', snapshotEvents: () => [] } }
+  const provider = createModuleRetrievalProvider({ target: () => ({ id: 'soul', dir }) })
+  const off = provider.mount(ctx, { paths: ['data/02-soul.jsonl'], sessions: [] }, { agent, sourceModuleId: 'soul', sourceModuleDir: dir })
+  try {
+    const timeline = await registered.get('module_search').execute({ moduleId: 'soul', mode: 'timeline' }, { agent })
+    assert.equal(timeline.hits.length, 2)
+    assert.ok(timeline.hits.every(hit => hit.timeState === 'unknown'))
+  } finally { off() }
 })
 
 test('文件引用重新校验授权与版本；目录白名单只检索其内部，链接与越界拒绝', async () => {

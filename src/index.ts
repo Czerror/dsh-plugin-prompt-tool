@@ -11,6 +11,7 @@ import { registerModuleFileTools } from './runtime/module-file-tools.ts'
 import { registerModuleManifestTools } from './runtime/module-manifest-tools.ts'
 import { registerModuleVariableTools } from './runtime/module-variable-tools.ts'
 import { registerSoulLedgerTools } from './runtime/soul-ledger-tools.ts'
+import { registerSoulStateTools } from './runtime/soul-state-tools.ts'
 import { installSoulRuntime } from './runtime/soul-runtime.ts'
 import { installPreStepCoordinator } from './runtime/pre-step-coordinator.ts'
 import { installPersonaCapture } from './runtime/persona-registration.ts'
@@ -195,7 +196,7 @@ registerTuiCommand(
     target: (exec, moduleId) => resolveModuleToolTarget(exec, modulesDir(), (sessionId) => assembly?.moduleIds(sessionId) ?? [], moduleId),
     rebuild: (id) => refreshModuleRuntime(id),
   }
-  installSoulRuntime(ctx, moduleToolHost, id => assembly?.moduleIds(id) ?? [])
+  const soulRuntime = installSoulRuntime(ctx, moduleToolHost, id => assembly?.moduleIds(id) ?? [])
   ctx.provide(toolServiceName('module-import-tools'), {
     mount: (scopeCtx: Context): (() => void) => registerModuleImportTools(scopeCtx, { ...moduleToolHost, rebuild: async id => { await assembly?.refresh(id) } }),
   })
@@ -209,7 +210,13 @@ registerTuiCommand(
     mount: (scopeCtx: Context): (() => void) => registerModuleManifestTools(scopeCtx, moduleToolHost),
   })
   ctx.provide(toolServiceName('soul-ledger'), {
-    mount: (scopeCtx: Context): (() => void) => registerSoulLedgerTools(scopeCtx, moduleToolHost),
+    mount: (scopeCtx: Context): (() => void) => {
+      const ledger = registerSoulLedgerTools(scopeCtx, moduleToolHost)
+      try {
+        const state = registerSoulStateTools(scopeCtx, moduleToolHost, soulRuntime)
+        return () => { state(); ledger() }
+      } catch (error) { ledger(); throw error }
+    },
   })
   ctx.provide(DISCOVERY_SERVICE, createDiscoveryRegistry())
   ctx.provide(MANIFEST_CHECK_SERVICE, createManifestCheckReader(modulesDir()))

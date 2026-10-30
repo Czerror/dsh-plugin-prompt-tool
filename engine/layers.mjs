@@ -18,7 +18,7 @@ import { INJECTION_LAYERS, KNOWN_STRATEGIES, SESSION_VARIABLES_DISABLED } from '
 import { interpolateVariables, stripUnresolvedRefs, RUNTIME_FACTS, runtimeFactValue, isReservedInterpolationName } from './interpolate.mjs'
 import { renderTemplate } from './template-frame.mjs'
 import { compareConfigSequence, compareTextPlacement } from './order.mjs'
-import { ruleFrame, actionMatches } from './conditions/evaluation.mjs'
+import { ruleFrame, actionMatches, actionSoulReminder, recheckSoulReminder } from './conditions/evaluation.mjs'
 import { textRegistrationName, identityStampOf, actionStamp, injectedMessage, findActionDelivery } from './delivery.mjs'
 
 const name = 'prompt-config-engine'
@@ -303,10 +303,15 @@ function wireRuleTextContributions(ctx, configs, registry, warnOnce, keep, on, o
       for (const config of binding.group) {
         if (!active || context.signal?.aborted || !actionMatches(config, frame) || !matchesAgentScope(config, context.agent)) continue
         try {
+          const reminder = actionSoulReminder(config, frame)
           const text = config.layer === 'runtime-context' && (config.strategy === 'placeholder' || !KNOWN_STRATEGIES.has(config.strategy))
             ? await resolvedContextText(ctx, config, context, registry.get(config), warnOnce)
             : configText(config, registry, warnOnce, context)
-          if (text.length) blocks.push(text)
+          if (!recheckSoulReminder(config, frame, reminder)) continue
+          if (text.length) {
+            const stamp = reminder === undefined ? '' : `\n<!-- soul-reminder:${Buffer.from(JSON.stringify({ moduleId: config.sourceModuleId, sessionId: context.agent.session.id, pendingVersion: reminder.pendingVersion, epoch: reminder.epoch })).toString('base64')} -->`
+            blocks.push(text + stamp)
+          }
         } catch (error) { warnOnce(`${name}: rule text ${config.id} failed: ${String(error?.message ?? error)}`) }
       }
       if (active && !context.signal?.aborted) {

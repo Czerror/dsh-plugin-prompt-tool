@@ -1,4 +1,4 @@
-import { bool, defineConfig, stringList } from './fields.mjs'
+import { bool, defineConfig, stringList, text } from './fields.mjs'
 import { toolServiceName } from './service-names.mjs'
 
 export const name = 'retrieval'
@@ -7,6 +7,7 @@ export const configContract = defineConfig({
   enabled: bool({ default: false }),
   paths: stringList({ default: () => [], allowEmpty: true, dedupe: true }),
   sessions: stringList({ default: () => [], allowEmpty: true, dedupe: true }),
+  synonymsFile: text({ default: undefined, allowEmpty: false }),
 })
 
 export function apply(ctx, raw, options) {

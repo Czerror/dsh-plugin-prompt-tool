@@ -23,3 +23,4 @@ export interface EpochPromotionOptions {
 
 /** 建一份相位追踪器；`promoteEvents` 是 durable 事件类型集合（见 `shared.mjs#PROMOTE_EVENTS`）。 */
 export function createEpochPromotion(promoteEvents: Iterable<string>, options?: EpochPromotionOptions): PromotionTracker
+export function isSuccessfulCompactionEnd(event: unknown): boolean

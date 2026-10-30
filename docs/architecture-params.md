@@ -223,9 +223,17 @@ AGENTS.md/CLAUDE.md 及 local 变体属于用户文件。正文就地保存；�
 
 追加沿模块锁串行，账本总量 8 MiB、单字段 8 KiB；读取默认30条、最多100条和64 KiB输出。坏历史、链接、取消和超限都拒绝，不重置为新账本。通用 `module_file_append` 对 `data/02-soul.jsonl` 与旧名 `data/02-墨.jsonl`（含大小写变体）拒绝追加；显式用户数据导入仍按预览权限保留原件与目标冲突。
 
-用户骨架在 `data/SELF.src.md`，派生快照在 `data/.soul/SELF.md`。SELF owner 从骨架、账本摘要与检索状态计数生成快照，屏蔽已识别的凭据格式，预算默认12288字节；超限要求精简输入，不截掉未知数据后伪称完整。快照按字节版本检查并临时文件+rename，失败保留旧版。当前会话身份由 `rule-engine` 的内置动态填充器（`strategy: placeholder`、`fill: soul-self`）在每次求值时加入，不写入共享快照；未参与该 Agent 装配的模块不能读取该动态出口。模块不需要策略 JS、`strategyDir` 或服务名参数。缺骨架、缺快照、超限和服务缺失均有明确状态或错误。
+用户骨架在 `data/SELF.src.md`，诊断快照在 `data/.soul/SELF.md`。每步 SELF 直接读取当前骨架、账本投影、真实会话身份/时钟和索引最近观测；维护关闭或快照缺失/陈旧不阻断当前事实。读取内容版本及历史分界最多重验三次，持续变动报告不可用。快照仅作诊断或明确带来源时间与安全原因的降级，不作为当前事实；权限、路径或身份拒绝不允许借旧快照绕过。
 
-注入预算从模块事实读取，mtime/size 变化提前更新，最长缓存1000ms；读取或校验失败沿用最近有效值，无历史值回默认。定义内容暂时损坏不阻断旧快照读取，但路径、文件种类和可读声明 ID 仍逐次校验，最终输出仍受预算限制。维护与注入共用预算校验，回退与刷新口径见 [SELF动态内容与维护心跳](engine-reuse.md#self动态内容与维护心跳)。
+派生与快照复用同一正文实现，屏蔽已识别的凭据格式后按 UTF-8 字节预算（默认12288）；骨架与身份不静默截断，事项只给有界摘要、精确总数和未展示数。快照使用 CAS、临时文件和 rename，最终发布前重验来源，失败保留旧版。`rule-engine` 内置 `strategy: placeholder, fill: soul-self` 负责实际异步装配，模块无需策略 JS；候选渲染和真实投递分开观测。
+
+`soul_ledger list` 增加 `view: pending/open/pending-review` 和 `cursor`，游标绑定内容版本及过滤条件。条目 `id` 由模块规范路径、元数据固化的逻辑身份和原行内容链派生，追加及同路径正式导入复制不改变旧引用；inode不是持久身份。模块改名或部署根迁移不保证旧引用，不能把跨模块复制当同一账本。首次合法写入前在锁内建立 `data/.soul-ledger-v2.json` 历史分界与身份；读取不初始化，历史 promise/shelved 明确待核对。`close` 接受 `targetId/outcome/reason/ref?`，outcome 为 completed/cancelled，reason 非空；promise 仅当前 lead，shelved 原作者或当前 lead 可关闭，同结果重复幂等、冲突结果拒绝。收口只追加，旧行不改，暂时搁置仍未结。
+
+`soul-ledger` 同时挂载 `soul_state`。status 读取真实当前会话；mark 写 1–512 字符、最多2048字节的短状态，携 `expectedRevision`（首次 null），按模块与真实会话隔离并原子保存，卸载不删除。check 只读报告文件、账本、SELF 候选/投递、索引、维护/恢复证据；unknown/not-observed 不冒充全绿。标记时刻、系统活动时刻和快照时刻分别呈现。check 显式 `includeUpgrade: true` 才展开 upgrade：完整规则与新增能力配置、近义资产、现有可交换文件；内部注释/未知字段保持，共享alias连带变化或用户不同配置明确拒绝。完整files须交 `module_import` 模型工具预览确认（保留data/memory/skills），携新凭据应用并重建，不用普通覆盖导入替代。
+
+新 close 数据需要账本 v2 读取器；旧 `9007bf28` 仍会累计原 promise 且允许写入，兼容标记不能保护旧二进制。回滚先撤 `soul-ledger` 写能力及旧 SELF/提醒贡献，确认后再退代码；保留全部 close 行。内置种子只补缺失，不自动改用户副本、活变量或私有数据。
+
+注入预算从模块事实读取，mtime/size 变化提前更新，最长缓存1000ms；读取或校验失败沿用最近有效值，无历史值回默认。这只缓存预算，不缓存当前骨架/账本事实。定义内容暂时损坏不阻断安全只读来源，但路径、文件种类和可读声明 ID 仍逐次校验，最终输出仍受预算限制。维护与注入共用预算校验，回退与刷新口径见 [SELF动态内容与维护心跳](engine-reuse.md#self动态内容与维护心跳)。
 
 `generation-recovery` 额度保存在插件存储根的 `generation-recovery/<会话ID摘要>.json`，保存已消费 turn/step 身份及累计 used；锁内去重后原子替换，重挂与重启不清零，损坏文件拒绝重置。它不进入模块导出，也不修改会话日志。索引是可重建的派生内存状态，原账本与宿主日志仍为权威来源。
 

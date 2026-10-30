@@ -11,3 +11,7 @@
 `lead` 必须附用户指定主导的 ref，并经正式审批。`promise` 仅最后 lead 署名的会话可写；通用 `module_file_append` 不允许写新旧账本名。读取用 action: list，检索与原文回取用 `module_search`／`module_open`；默认不读取其他历史会话。
 
 没有 ref 的 fact，三个月后读到只能选择相信或不信——两条都不对。
+
+**逐项收口**：`action: list, view: pending` 包含新未结与历史待核对，条目 `id` 是宿主稳定引用；分页游标随账本变化失效，失效后重读。`action: close` 必填 `targetId`、`outcome: completed/cancelled` 和非空 `reason`；`ref` 仍是证据出处。完成与取消均追加 close 事件，不改原行。promise 仅当前 lead 收口，shelved 原作者或当前 lead 可收口；同结果重复不追加，换结果拒绝。执行者只能给依据，不能替主导确认承诺。
+
+历史分界在首个合法写操作前固定，普通读取不创建元数据。历史 promise/shelved 逐条待核对，不按摘要猜测完成。SELF 与提醒读取同一投影，无需手工 ledger_open。含 close 后不能把旧程序当安全可写版本；回滚先停写及旧投影贡献，保留全部历史。

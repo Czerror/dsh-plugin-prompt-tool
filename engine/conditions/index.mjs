@@ -9,6 +9,7 @@ import { createScopePredicate } from './scope.mjs'
 import { createAnchorPredicate } from './anchor.mjs'
 import { createVariablePredicate } from './variable.mjs'
 import { createManifestPredicate } from './manifest.mjs'
+import { createSoulPredicate } from './soul.mjs'
 import { withAvailableInput } from './availability.mjs'
 import { composite } from './composite.mjs'
 import { COMPOSITE_OPERATORS } from './operators.mjs'
@@ -23,6 +24,7 @@ export * from './scope.mjs'
 export * from './anchor.mjs'
 export * from './variable.mjs'
 export * from './manifest.mjs'
+export * from './soul.mjs'
 export { subjectOf, channelTextSubjects, channelFactSubjects, FACT_PREDICATE_SUBJECTS } from './subject.mjs'
 export { composite } from './composite.mjs'
 export const PREDICATE_FACTORIES = Object.freeze({
@@ -37,6 +39,7 @@ export const PREDICATE_FACTORIES = Object.freeze({
   anchor: createAnchorPredicate,
   variable: createVariablePredicate,
   manifest: createManifestPredicate,
+  soul: createSoulPredicate,
 })
 export { COMPOSITE_OPERATORS }
 
@@ -102,5 +105,6 @@ export function compileWhen(node, context = {}) {
   if (key === 'manifest') {
     return createManifestPredicate(options, { manifestCheck: context.manifestCheck, moduleId: context.moduleId })
   }
+  if (key === 'soul') return createSoulPredicate(options, context)
   return withAvailableInput(key, options, factory(options))
 }

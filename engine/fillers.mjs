@@ -191,7 +191,8 @@ function createSoulSelfResolver(config) {
   return ({ ctx, agent, signal }) => {
     const service = getService(ctx, SOUL_SELF_SERVICE)
     if (typeof service?.render !== 'function') throw new Error('SELF dependency missing')
-    return { text: service.render(config.sourceModuleId, agent, signal) }
+    const text = service.render(config.sourceModuleId, agent, signal)
+    return typeof text?.then === 'function' ? text.then(value => ({ text: value })) : { text }
   }
 }
 

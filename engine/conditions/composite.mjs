@@ -35,21 +35,26 @@ export function composite(node) {
   const children = list.map(composite)
   const predicates = {
     [MATCH_LOGIC.ANY]: (payload) => {
+      predicate.soulReminders = []
       let unknown = false
       for (const child of children) {
         const result = child(payload)
         if (result === UNAVAILABLE) unknown = true
-        else if (result) return true
+        else if (result) { predicate.soulReminders = child.soulReminders ?? []; return true }
       }
       return unknown ? UNAVAILABLE : false
     },
     [MATCH_LOGIC.ALL]: (payload) => {
+      predicate.soulReminders = []
+      const reminders = []
       let unknown = false
       for (const child of children) {
         const result = child(payload)
         if (result === UNAVAILABLE) unknown = true
         else if (!result) return false
+        if (result === true) reminders.push(...(child.soulReminders ?? []))
       }
+      if (!unknown) predicate.soulReminders = reminders
       return unknown ? UNAVAILABLE : true
     },
     [MATCH_LOGIC.NOT_ANY]: (payload) => {

@@ -16,6 +16,9 @@ export interface RuleManifestCheck {
   read(moduleId: string): boolean | undefined
 }
 
+export interface SoulReminderFact { count: number; pendingVersion: string; epoch: number; due: boolean }
+export interface RuleSoulReminder { read(moduleId: string, agent: unknown): SoulReminderFact | undefined }
+
 /** 判定上报载荷；仅覆盖插件依赖面（宿主按 `RuleOutcomeReport` 消费它）。 */
 export interface RuleOutcomeReport {
   moduleId?: string
@@ -37,6 +40,7 @@ export interface MountRuleSourcesOptions {
   variableStore?: RuleVariableStore
   /** 清单 checks 事实；缺省＝manifest 条件恒不可用。 */
   manifestCheck?: RuleManifestCheck
+  soulReminder?: RuleSoulReminder
   /** 官方预设兜底；缺省＝没有兜底（预设条件恒不命中）。 */
   standingMountFor?: StandingMountFor
   /** 注入的晋升相位实例对；缺省从协调器或自建池取。 */
