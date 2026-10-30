@@ -240,12 +240,13 @@ test('writeModule：module.yml 的模块行参数经参数桥进入内存配装'
     mkdirSync(join(moduleDir, FIXTURE_MODULE_ID), { recursive: true })
     writeFileSync(join(moduleDir, FIXTURE_MODULE_ID, 'module.yml'),
       'id: fixture\nname: fixture\nversion: "1"\nengineCompat: ">=0.4.2"\n'
-      + 'modules: [tool-git-bash]\nlayerSettings:\n  tool-pipeline:\n    toolGitBashEnabled: false\n', 'utf8')
+      // run-code-env 行没有平台条件（tool-git-bash 只在 Windows 装配，Linux CI 上会缺席）。
+      + 'modules: [run-code-env]\nlayerSettings:\n  tool-pipeline:\n    runCodeEnvEnabled: false\n', 'utf8')
     writeModule(makeOptions(moduleDir))
     const rows = (await prepareAssembly(moduleDir, FIXTURE_MODULE_ID, () => true)).modules
-    const toolGitBash = rows.find((row) => row?.id === 'tool-git-bash')
-    assert.ok(toolGitBash, '内存配装应含 tool-git-bash 行')
-    assert.equal(toolGitBash.config.enabled, false, '参数桥把 layerSettings 参数写进该行的 config')
+    const runCodeEnv = rows.find((row) => row?.id === 'run-code-env')
+    assert.ok(runCodeEnv, '内存配装应含 run-code-env 行')
+    assert.equal(runCodeEnv.config.enabled, false, '参数桥把 layerSettings 参数写进该行的 config')
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }
