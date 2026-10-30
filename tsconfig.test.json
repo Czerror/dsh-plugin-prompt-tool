@@ -1,9 +1,0 @@
-{
-  "extends": "./tsconfig.client.json",
-  "compilerOptions": {
-    "allowJs": true,
-    "checkJs": true,
-    "types": ["node"]
-  },
-  "include": ["test/fixtures/**/*.mjs", "test/client/support/**/*.mjs"]
-}

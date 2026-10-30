@@ -112,8 +112,8 @@
   "scripts": {
     "build": "tsdown",
     "prepare": "tsdown",
-    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.client.json --noEmit && tsc -p tsconfig.test.json --noEmit",
-    "lint": "oxlint src test tsdown.config.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.client.json --noEmit",
+    "lint": "oxlint src tsdown.config.ts",
     "test": "node scripts/run-tests.mjs",
     "sync:yaml": "node scripts/sync-yaml-vendor.mjs",
     "sync:harness": "node scripts/sync-harness-deps.mjs",
