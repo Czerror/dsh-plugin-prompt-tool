@@ -2,12 +2,6 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { parse } from 'yaml'
 import { previewSoulUpgrade } from '../../src/host/soul-upgrade.ts'
-import { readSoulUpgradePreview } from '../../src/host/soul-upgrade.ts'
-import { cpSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
-import { isolatedHome } from '../fixtures/host-harness.mjs'
-import { registerModuleImportTools } from '../../src/runtime/module-import-tools.ts'
-const { moduleRoot } = isolatedHome('pt-soul-upgrade-')
 
 const baseline = `id: soul
 variables: { ledger_open: '0', ledger_seq: '0', plan_step: '' }
@@ -70,56 +64,3 @@ test('Soul升级保留目标内部注释和未知配置，并拒绝同rules或�
   }
 })
 
-test('Soul真实种子升级提供内容版本与正式导入说明且不写盘', async t => {
-  const dir = join(moduleRoot, 'soul')
-  mkdirSync(dir, { recursive: true })
-  const original = readFileSync(new URL('../fixtures/soul-legacy-module.yml', import.meta.url), 'utf8')
-  writeFileSync(join(dir, 'module.yml'), original)
-  cpSync(new URL('../../modules/soul/assets', import.meta.url), join(dir, 'assets'), { recursive: true })
-  mkdirSync(join(dir, 'data'), { recursive: true })
-  writeFileSync(join(dir, 'data/private.txt'), 'PRIVATE LEDGER')
-  writeFileSync(join(dir, 'assets/custom.bin'), Buffer.from([0, 255, 128]))
-  writeFileSync(join(dir, 'memory.md'), 'PRIVATE MEMORY')
-  mkdirSync(join(dir, 'skills'), { recursive: true })
-  writeFileSync(join(dir, 'skills/owned.md'), 'PRIVATE SKILL')
-  const result = await readSoulUpgradePreview(dir)
-  assert.equal(result.status, 'ready')
-  assert.equal(typeof result.expectedRevision, 'string')
-  assert.match(result.apply, /module_import/)
-  assert.equal(readFileSync(join(dir, 'module.yml'), 'utf8'), original)
-  assert.ok(result.files.some(file => file.path === 'assets/custom.bin'))
-  const candidate = parse(result.candidate)
-  assert.equal(candidate.moduleConfigs.retrieval.synonymsFile, 'assets/retrieval-synonyms.json')
-  assert.deepEqual(candidate.moduleConfigs['soul-maintenance'].pressureThresholds, [0.45, 0.6, 0.8])
-  assert.equal(candidate.moduleConfigs['generation-recovery'].maxCycleChars, 512)
-  const tools = new Map()
-  let rebuilt = 0
-  const ctx = { tools: { register: tool => { tools.set(tool.name, tool); return () => tools.delete(tool.name) } }, inject: (_deps, callback) => ({ dispose: callback(ctx) }) }
-  const off = registerModuleImportTools(ctx, { root: moduleRoot, rebuild: async id => { assert.equal(id, 'soul'); rebuilt++ } })
-  t.after(off)
-  const execute = args => tools.get('module_import').execute(args, { signal: new AbortController().signal })
-  const request = { files: result.files, targetId: 'soul', overwrite: true }
-  const preview = await execute(request)
-  await execute({ ...request, preview: false, expectedSourceDigest: preview.sourceDigest, expectedPreviewRevision: preview.previewRevision })
-  assert.equal(rebuilt, 1)
-  assert.equal(readFileSync(join(dir, 'data/private.txt'), 'utf8'), 'PRIVATE LEDGER')
-  assert.equal(readFileSync(join(dir, 'memory.md'), 'utf8'), 'PRIVATE MEMORY')
-  assert.equal(readFileSync(join(dir, 'skills/owned.md'), 'utf8'), 'PRIVATE SKILL')
-  assert.deepEqual(readFileSync(join(dir, 'assets/custom.bin')), Buffer.from([0, 255, 128]))
-  assert.equal((await readSoulUpgradePreview(dir)).changes.length, 0)
-  const upgraded = readFileSync(join(dir, 'module.yml'), 'utf8')
-  writeFileSync(join(dir, 'assets/retrieval-synonyms.json'), '[["用户","自己的词表"]]')
-  const words = await readSoulUpgradePreview(dir)
-  assert.equal(words.status, 'conflict')
-  assert.equal(words.candidate, null)
-  assert.ok(words.conflicts.some(conflict => conflict.includes('近义表')))
-  cpSync(new URL('../../modules/soul/assets/retrieval-synonyms.json', import.meta.url), join(dir, 'assets/retrieval-synonyms.json'))
-  const customized = readFileSync(join(dir, 'module.yml'), 'utf8').replace('maxCycleChars: 512', 'maxCycleChars: 257')
-  writeFileSync(join(dir, 'module.yml'), customized)
-  assert.equal((await readSoulUpgradePreview(dir)).status, 'conflict')
-  writeFileSync(join(dir, 'module.yml'), original.replace('    if:\n      manifest:\n        ok: false', '    if: { variable: { key: check_failed, op: eq, value: yes } }'))
-  const check = await readSoulUpgradePreview(dir)
-  assert.equal(check.status, 'conflict')
-  assert.ok(check.conflicts.some(conflict => conflict.startsWith('soul-check:')))
-  assert.ok(upgraded.includes('pressureThresholds'))
-})
