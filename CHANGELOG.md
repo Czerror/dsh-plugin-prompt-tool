@@ -1,5 +1,10 @@
 # Changelog
 
+## [3.1.4] - 2026-10-30
+
+- 发布成功后自动创建 GitHub Release：`release.yml` 在 publish 工作流成功后提取 CHANGELOG 对应版本段作为正文，标题沿用 `v` 前缀；Release 已存在时跳过，重跑不会重发 npm。
+- **验证**：typecheck、lint（0 warning）、test 992 passed、build、`verify:pack`、`git diff --check` 全绿。
+
 ## [3.1.3] - 2026-10-30
 
 - 新增 `v*` tag 触发的 npm 自动发布：GitHub Actions 以 OIDC 可信发布身份执行 typecheck、lint、test、build、`verify:pack` 后发布，无需 `NPM_TOKEN`，并自动生成 provenance。
