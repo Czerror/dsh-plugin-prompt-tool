@@ -28,7 +28,7 @@
     pnpm --dir $Repo build
     git -C $Repo diff --check
 
-只改文档时运行 `git -C $Repo diff --check`，并核对文档中的路径、链接和命令。仓库不提交测试，`pnpm test` 在无 `test/` 时空通过；本地测试见「测试」章节从 `.scratch/tests/` 取回。
+只改文档时运行 `git -C $Repo diff --check`，并核对文档中的路径、链接和命令。
 
 ### 测试
 
@@ -40,7 +40,7 @@
 
 三条全过 → 写 `test/<域>/<主题>.test.mjs`，用 Node 内置 test runner 与现有 helper，新框架或依赖需用户确认。任一条不过 → 脚本写在临时目录，跑完删除：一次性复现、探针、性能对比、外部工具验证都归这里。
 
-仓库不提交测试：完整测试归档在本地 `.scratch/tests/`（边缘与历史移出项在 `.scratch/tests-moved/`，均 gitignored）；需要时复制回 `test/` 原路径运行，不提交回仓库。新增测试仍须满足上面的 seam 准入。
+仓库 `test/` 只保留五条 seam 的核心回归；边缘、工具与版本化测试归档在本地 `.scratch/tests-moved/`（gitignored），需要时从该目录取回并放回原路径运行，不提交回仓库。新增测试仍须满足上面的 seam 准入。
 
 **既有要求**：
 

@@ -1,0 +1,389 @@
+// 由 skill-search.test.mjs 与 tool-modules.test.mjs 并入（2026-09-17 测试归一精简）。
+import { test } from 'node:test'
+import assert from 'node:assert/strict'
+import { Context } from '@deepseek-ai/cordis'
+import { SkillRegistry, renderSkillContent } from '@deepseek-ai/dsh-skill'
+import { createScope } from '@deepseek-ai/dsh-scope'
+import { apply as applySkillSearch } from '../../engine/skill-search.mjs'
+import { toolServiceName } from '../../engine/service-names.mjs'
+
+// —— 技能检索与加载（原 skill-search.test.mjs） ——
+
+/** 只替代工具注册出口；目录裁决、调用策略与定义校验均走真实官方注册表。 */
+function makeCtx(t, skills, provider = {}) {
+  const registered = []
+  const app = new Context()
+  const registry = new SkillRegistry(app)
+  const definitions = skills.map((skill) => ({
+    description: 'test skill', content: 'skill instructions', source: 'custom', provider: 'test',
+    invocation: { modelInvocable: true, userInvocable: true }, ...skill,
+  }))
+  const calls = { list: [], get: [] }
+  const byName = new Map(definitions.map((entry) => [entry.name, entry]))
+  /** 摘要只保留 frontmatter 字段；正文走 get，与真实 provider 同形。 */
+  const summaryOf = (definition) => {
+    const { content: _content, ...summary } = definition
+    return summary
+  }
+  const dispose = registry.registerProvider(() => ({
+    name: 'test',
+    list: async (options) => {
+      calls.list.push(options)
+      const candidates = definitions.map((entry) => ({
+        ...summaryOf(entry),
+        rank: 300,
+        locator: entry.name,
+      }))
+      return provider.list ? provider.list(candidates, options) : candidates
+    },
+    get: async (candidate, options) => {
+      calls.get.push(options)
+      const definition = byName.get(candidate.name)
+      return provider.get ? provider.get(definition, options) : definition
+    },
+  }))
+  t.after(dispose)
+  return {
+    ctx: {
+      tools: { register: (tool) => registered.push(tool) },
+      skills: registry,
+    },
+    registered, app, registry, calls, definitions, dispose,
+  }
+}
+
+const SKILLS = [
+  { name: 'pdf-tools', description: 'Convert PDF files to markdown', whenToUse: 'document conversion' },
+  { name: 'image-process', description: 'Resize and convert images', whenToUse: 'image editing' },
+  { name: 'obsidian-vault', description: 'Search Obsidian vault notes', whenToUse: 'notes' },
+]
+
+const makeExec = (session) => {
+  const injected = []
+  return {
+    exec: {
+      agent: {
+        session: session ?? { header: { cwd: '/ws' } },
+        inject: (payload) => injected.push(payload),
+      },
+    },
+    injected,
+  }
+}
+
+/** 构造「某技能已注入」的会话现场：`log` 里一条 skill-invocation 事件 + surface 指向它。 */
+const loadedSession = (name) => {
+  const event = {
+    type: 'user/message',
+    data: { source: { kind: 'skill-invocation', name, form: 'instructions' } },
+  }
+  return { header: { cwd: '/ws' }, snapshotEvents: () => [event], surface: { nodes: [0] } }
+}
+
+test('apply 注册 skill_search + skill_load 两工具（schema 形状）', (t) => {
+  const { ctx, registered } = makeCtx(t, SKILLS)
+  applySkillSearch(ctx)
+  assert.equal(registered.length, 2)
+  const [search, load] = registered
+  assert.equal(search.name, 'skill_search')
+  assert.equal(search.parameters.type, 'object')
+  assert.equal(search.parameters.additionalProperties, false)
+  assert.deepEqual(search.parameters.required, [])
+  assert.equal(load.name, 'skill_load')
+  assert.equal(load.output.schema.additionalProperties, false)
+})
+
+test('skill_search：query 大小写不敏感 + 完整命中排在近似命中之前', async (t) => {
+  const { ctx, registered } = makeCtx(t, SKILLS)
+  applySkillSearch(ctx)
+  const r = await registered[0].execute({ query: 'PDF convert' }, makeExec().exec)
+  assert.ok(r.text.includes('pdf-tools'))
+  // 打分制与 tool_search 同口径：近似命中可以出现（image-process 命中 convert），但完整命中排在前面。
+  const pdfAt = r.text.indexOf('pdf-tools')
+  const imageAt = r.text.indexOf('image-process')
+  assert.ok(imageAt < 0 || pdfAt < imageAt)
+})
+
+test('skill_search：空 query 列出全部并标注截断总数；命中超上限同样截断', async (t) => {
+  const many = Array.from({ length: 25 }, (_, i) => ({ name: `skill-${String(i).padStart(2, '0')}`, description: `desc ${i}` }))
+  const { ctx, registered } = makeCtx(t, many)
+  applySkillSearch(ctx)
+  // 空 query 列出全部（截到 20 条），截断标注给出「显示数 of 命中总数」——与 tool_search 同形。
+  const overview = await registered[0].execute({ query: '' }, makeExec().exec)
+  assert.ok(overview.text.includes('skill-00'))
+  assert.ok(overview.text.includes('skill-19'))
+  assert.ok(!overview.text.includes('skill-20'))
+  assert.ok(overview.text.includes('(20 of 25)'))
+  assert.ok(overview.text.includes('truncated at 20'))
+  const r = await registered[0].execute({ query: 'desc' }, makeExec().exec)
+  assert.ok(r.text.includes('skill-00'))
+  assert.ok(!r.text.includes('skill-20'))
+  assert.ok(r.text.includes('(20 of 25)'))
+})
+
+test('skill_search：无匹配给出引导文案；发现不完整不声称没有技能', async (t) => {
+  const { ctx, registered } = makeCtx(t, SKILLS)
+  applySkillSearch(ctx)
+  const none = await registered[0].execute({ query: 'zzz-none' }, makeExec().exec)
+  assert.ok(none.text.includes('No skills match'))
+  assert.ok(none.text.includes('no skill matched'))
+  assert.ok(none.text.includes('loads any exact name in the registry'))
+  assert.ok(none.text.includes('skill_search with no arguments lists every visible skill'))
+  const boom = makeCtx(t, [], { list: async () => { throw new Error('registry down') } })
+  applySkillSearch(boom.ctx)
+  const down = await boom.registered[0].execute({ query: 'x' }, makeExec().exec)
+  assert.match(down.text, /incomplete|unavailable/)
+  assert.doesNotMatch(down.text, /No skills match/)
+  const unknown = await boom.registered[1].execute({ name: 'missing' }, makeExec().exec)
+  assert.match(unknown.text, /incomplete/)
+  assert.doesNotMatch(unknown.text, /No skill named/)
+  const partial = makeCtx(t, SKILLS, { list: (candidates) => ({ candidates, complete: false }) })
+  applySkillSearch(partial.ctx)
+  const found = await partial.registered[0].execute({ query: 'pdf' }, makeExec().exec)
+  assert.match(found.text, /pdf-tools/)
+  assert.match(found.text, /incomplete/)
+})
+
+test('skill_load：官方资源与正文包装完整注入，空正文不注入', async (t) => {
+  const skills = [
+    { name: 'pdf-tools', content: 'Read references/guide.md before scripts/convert.py.', resourceBase: { kind: 'directory', path: 'D:/skills/pdf-tools' } },
+    { name: 'empty', content: '' },
+  ]
+  const { ctx, registered, definitions } = makeCtx(t, skills)
+  applySkillSearch(ctx)
+  const { exec, injected } = makeExec()
+  const ok = await registered[1].execute({ name: 'pdf-tools' }, exec)
+  assert.ok(ok.text.includes('Skill "pdf-tools" loaded'))
+  assert.equal(injected.length, 1)
+  assert.equal(injected[0].source.kind, 'skill-invocation')
+  assert.equal(injected[0].content[0].text, renderSkillContent(definitions[0]))
+  assert.match(injected[0].content[0].text, /Base directory for this skill: D:\/skills\/pdf-tools/)
+  // 无内容 body → 不注入。
+  const empty = await registered[1].execute({ name: 'empty' }, exec)
+  assert.ok(empty.text.includes('no loadable body'))
+  assert.equal(injected.length, 1, '空 body 不产生注入')
+})
+
+test('skill_load：空名字与非字符串不落进「未注册」，名字归一后能命中注册表', async (t) => {
+  const { ctx, registered, calls } = makeCtx(t, SKILLS)
+  applySkillSearch(ctx)
+  const view = makeExec()
+  // 空串 / 纯空白 / 非字符串都算「没给名字」，给出专属文案而不是「未注册」。
+  for (const value of ['', '   ', 42, undefined]) {
+    const r = await registered[1].execute({ name: value }, view.exec)
+    assert.match(r.text, /needs an exact skill name/, `name=${JSON.stringify(value)}`)
+    assert.doesNotMatch(r.text, /No skill named/)
+  }
+  assert.equal(calls.get.length, 0, '没给名字就不该查注册表')
+  assert.equal(view.injected.length, 0)
+  // 名字归一：前后空白不该让一次合法加载落进「未注册」。
+  const spaced = await registered[1].execute({ name: '  pdf-tools  ' }, view.exec)
+  assert.ok(spaced.text.includes('Skill "pdf-tools" loaded'))
+  assert.equal(view.injected.length, 1)
+})
+
+test('skill_load：不存在 / 无 agent 上下文给出明确文案', async (t) => {
+  const { ctx, registered } = makeCtx(t, SKILLS)
+  applySkillSearch(ctx)
+  const missing = await registered[1].execute({ name: 'nope' }, makeExec().exec)
+  assert.ok(missing.text.includes('No skill named "nope"'))
+  assert.ok(missing.text.includes('ask the user for it'))
+  const noAgent = await registered[1].execute({ name: 'pdf-tools' }, {})
+  assert.ok(noAgent.text.includes('requires an agent context'))
+  const disappeared = makeCtx(t, SKILLS, { get: async () => undefined })
+  applySkillSearch(disappeared.ctx)
+  const view = makeExec()
+  const stale = await disappeared.registered[1].execute({ name: 'pdf-tools' }, view.exec)
+  assert.match(stale.text, /no longer available/)
+  assert.equal(view.injected.length, 0)
+})
+
+test('skill_search / skill_load：四种调用策略均在模型边界生效，直呼不能绕过', async (t) => {
+  const policies = [
+    ['both', true, true], ['model-only', true, false],
+    ['user-only', false, true], ['disabled', false, false],
+  ]
+  const { ctx, registered, calls } = makeCtx(t, policies.map(([name, modelInvocable, userInvocable]) => ({
+    name, invocation: { modelInvocable, userInvocable },
+  })))
+  applySkillSearch(ctx)
+  const { exec, injected } = makeExec()
+  const search = await registered[0].execute({ query: '' }, exec)
+  for (const [name, modelInvocable] of policies) {
+    assert.equal(search.text.includes(`- ${name}:`), modelInvocable, name)
+    const before = injected.length
+    const loaded = await registered[1].execute({ name }, exec)
+    assert.equal(injected.length - before, modelInvocable ? 1 : 0, name)
+    if (!modelInvocable) assert.doesNotMatch(loaded.text, /loaded;/)
+  }
+  assert.equal(calls.get.length, 2, '被停用的摘要必须在加载正文前拒绝')
+})
+
+test('skill_search：中文关键词按命中数返回，不退化', async (t) => {
+  const { ctx, registered } = makeCtx(t, [
+    { name: 'code-review', description: '代码审查与缺陷定位', whenToUse: '中文说明' },
+    { name: 'image-edit', description: '图像处理' },
+  ])
+  applySkillSearch(ctx)
+  const result = await registered[0].execute({ query: '代码 中文' }, makeExec().exec)
+  assert.match(result.text, /code-review/)
+  assert.doesNotMatch(result.text, /image-edit/)
+  const missing = await registered[0].execute({ query: '不存在' }, makeExec().exec)
+  assert.match(missing.text, /No skills match/)
+})
+
+test('skill_search：自然语言长查询按命中数返回，不再全灭', async (t) => {
+  const { ctx, registered } = makeCtx(t, [
+    { name: 'code-review', description: '代码审查与缺陷定位', whenToUse: '中文说明' },
+    { name: 'image-edit', description: '图像处理' },
+  ])
+  applySkillSearch(ctx)
+  // 查询带「评审」「架构设计」这类描述里没有的词；命中任意 token 即返回，不能直接回 No skills match。
+  const result = await registered[0].execute({ query: 'code review 评审 架构设计' }, makeExec().exec)
+  assert.match(result.text, /code-review/)
+  assert.doesNotMatch(result.text, /No skills match/)
+  assert.doesNotMatch(result.text, /image-edit/)
+})
+
+test('skill_load：同一技能在当前上下文只注入一次（去重）', async (t) => {
+  // 桩按宿主语义把注入回流进会话 log：这样第二次加载才看得到第一次的正文事件。
+  const { ctx, registered } = makeCtx(t, [{ name: 'notes', description: 'notes', content: 'skill instructions' }])
+  applySkillSearch(ctx)
+  const log = []
+  const view = makeExec({ header: { cwd: '/ws' }, snapshotEvents: () => log, surface: { nodes: [0] } })
+  const hostInject = view.exec.agent.inject
+  view.exec.agent.inject = (payload) => {
+    hostInject(payload)
+    log.push({ type: 'user/message', data: { source: payload.source } })
+  }
+  const first = await registered[1].execute({ name: 'notes' }, view.exec)
+  assert.ok(first.text.includes('will be injected'))
+  assert.equal(view.injected.length, 1)
+  const second = await registered[1].execute({ name: 'notes' }, view.exec)
+  assert.match(second.text, /already loaded/)
+  assert.doesNotMatch(second.text, /will be injected/)
+  assert.equal(view.injected.length, 1, '第二次不得再注入正文')
+
+  // 已加载（本工具或官方 `/名字` 手势留下的 skill-invocation 事件）→ 直接跳过注入。
+  const loaded = makeExec(loadedSession('notes'))
+  const again = await registered[1].execute({ name: 'notes' }, loaded.exec)
+  assert.match(again.text, /already loaded/)
+  assert.equal(loaded.injected.length, 0)
+})
+
+test('skill_load：已加载但被压缩遮蔽（surface 不含该事件）→ 允许重新注入', async (t) => {
+  const { ctx, registered } = makeCtx(t, [{ name: 'notes', description: 'notes', content: 'skill instructions' }])
+  applySkillSearch(ctx)
+  const event = { type: 'user/message', data: { source: { kind: 'skill-invocation', name: 'notes', form: 'instructions' } } }
+  // 事件仍在完整历史里，但 surface 指向空上下文 ⇒ currentEvents() = [] ⇒ 视为未加载。
+  const view = makeExec({ header: { cwd: '/ws' }, snapshotEvents: () => [event], surface: { nodes: [] } })
+  const result = await registered[1].execute({ name: 'notes' }, view.exec)
+  assert.ok(result.text.includes('will be injected'))
+  assert.equal(view.injected.length, 1)
+})
+
+test('skill_load：加载期间策略关闭或请求取消都不能注入', async (t) => {
+  for (const mode of ['disabled', 'aborted']) {
+    const entered = Promise.withResolvers()
+    const finish = Promise.withResolvers()
+    const { ctx, registered } = makeCtx(t, [{ name: 'changing' }], {
+      get: async (definition) => { entered.resolve(); await finish.promise; return mode === 'disabled'
+        ? { ...definition, invocation: { modelInvocable: false, userInvocable: true } }
+        : definition },
+    })
+    applySkillSearch(ctx)
+    const { exec, injected } = makeExec()
+    const controller = new AbortController()
+    exec.signal = controller.signal
+    const pending = registered[1].execute({ name: 'changing' }, exec)
+    await entered.promise
+    if (mode === 'aborted') controller.abort(new Error('cancelled'))
+    finish.resolve()
+    const result = await pending
+    assert.equal(injected.length, 0, mode)
+    assert.doesNotMatch(result.text, /loaded;/)
+  }
+})
+
+test('技能查找按 scope 隔离候选，scope 释放后候选消失', async (t) => {
+  const { ctx, registered, app } = makeCtx(t, [{ name: 'global' }])
+  applySkillSearch(ctx)
+  const main = makeExec()
+  const child = makeExec()
+  const mainScope = createScope(app, main.exec.agent)
+  const childScope = createScope(app, child.exec.agent, { parent: main.exec.agent })
+  t.after(() => childScope.dispose())
+  t.after(() => mainScope.dispose())
+  mainScope.ctx.skills.register({ name: 'main-only', description: 'main', content: 'main body', source: 'runtime' })
+  childScope.ctx.skills.register({ name: 'child-only', description: 'child', content: 'child body', source: 'runtime' })
+  for (const [key, view] of [['main', main], ['child', child]]) {
+    view.exec.agent.session.header.cwd = `/workspace/${key}`
+    view.exec.signal = new AbortController().signal
+    // 空 query 列出可见技能：main 视图只有 main-only + global，child 视图多出 child-only。
+    const searched = await registered[0].execute({ query: '' }, view.exec)
+    assert.match(searched.text, /main-only/)
+    assert.equal(searched.text.includes('child-only'), key === 'child')
+    await registered[1].execute({ name: 'global' }, view.exec)
+    assert.equal(view.injected.length, 1)
+  }
+  await childScope.dispose()
+  // 释放的是 child 层：child-only 从清单消失，父链的 main 与全局不受影响。
+  const afterDispose = await registered[0].execute({ query: '' }, child.exec)
+  assert.doesNotMatch(afterDispose.text, /child-only/)
+  assert.match(afterDispose.text, /main-only/)
+})
+
+// —— 内置工具模块挂载（原 tool-modules.test.mjs） ——
+
+// 服务名从引擎真值源派生，不再手抄（源级守卫见 service-names.test.mjs）。
+const modules = [
+  "module-import-tools",
+  "module-rule-tools",
+  "module-file-tools",
+  "module-manifest-tools",
+  "module-variable-tools",
+].map(id => [id, toolServiceName(id)])
+
+/** tool-modules 组专用桩 ctx（与上面的 makeCtx 同名不同责，故分开命名）。 */
+function makeToolModuleCtx(serviceKey, service) {
+  const state = { disposers: [], pending: undefined }
+  state.ctx = {
+    get: (key) => key === serviceKey ? service : undefined,
+    inject: (deps, callback) => {
+      assert.deepEqual(deps, [serviceKey])
+      state.pending = callback
+      if (service !== undefined) callback(state.ctx)
+    },
+    effect: (fn) => {
+      const dispose = fn()
+      if (typeof dispose === "function") state.disposers.push(dispose)
+      return dispose
+    },
+  }
+  state.provide = (value) => { service = value; state.pending(state.ctx) }
+  return state
+}
+
+for (const [id, serviceKey] of modules) {
+  const mod = await import("../../engine/" + id + ".mjs")
+  test(id + "：按模块挂载对应工具服务", () => {
+    const calls = []
+    const state = makeToolModuleCtx(serviceKey, { mount: (ctx) => { calls.push(ctx); return () => calls.push("disposed") } })
+    mod.apply(state.ctx)
+    assert.deepEqual(calls, [state.ctx])
+    assert.equal(state.disposers.length, 1)
+    state.disposers[0]()
+    assert.deepEqual(calls, [state.ctx, "disposed"])
+  })
+
+  test(id + "：等待晚到服务后挂载并释放", () => {
+    const state = makeToolModuleCtx(serviceKey, undefined)
+    mod.apply(state.ctx)
+    assert.equal(state.disposers.length, 0)
+    let mounts = 0
+    state.provide({ mount: () => { mounts++; return () => { mounts-- } } })
+    assert.equal(mounts, 1)
+    state.disposers[0]()
+    assert.equal(mounts, 0)
+  })
+}

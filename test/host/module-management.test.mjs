@@ -1,0 +1,498 @@
+/**
+ * 模块管理四件套的**拒绝路径**回归（PLAN T7 的缺口）。
+ *
+ * 现有 `settings-bridge.test.mjs:341-381` 已覆盖新建/复制/删除的主路径与磁盘产物；
+ * 本文件只补 PLAN 点名的拒绝面：使用中禁删、打开目录路径越界、新建同名、复制源不存在，
+ * 外加导出对不存在模块的拒绝。
+ *
+ * 真值源是 PLAN 的安全项与端点载荷的错误码，不是实现自己算出的值。
+ * 不测 `moduleOpen` 的成功路径：它会真的拉起系统文件管理器，越界拒绝在 spawn 之前发生。
+ */
+import { test } from 'node:test'
+import assert from 'node:assert/strict'
+import fs, { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { syncBuiltinESMExports } from 'node:module'
+import { basename, dirname, join } from 'node:path'
+import { parse } from 'yaml'
+import { fakeReq, fakeRes, isolatedHome, makeHostContext } from '../fixtures/host-harness.mjs'
+
+// 隔离 HOME 必须在动态 import 之前（仓库约定，见 host-harness 注释）。
+const { home, moduleRoot } = isolatedHome('pt-module-mgmt-')
+process.env.DSH_AGENTS_HOME = join(home, 'agents')
+
+const { registerSettingsBridge } = await import('../../src/runtime/settings-bridge.ts')
+const { BRIDGE_ENDPOINTS } = await import('../../src/shared/bridge-contract.ts')
+const { withModuleDefinition } = await import('../../src/host/module-definition-edit.ts')
+
+const PREFIX = '/api/prompt-tool/settings'
+
+/** 共用头：合法模块定义（一条真实规则），各行再追加自己的共享引用声明。 */
+const moduleHead = (id) => `id: ${id}\nname: ${id}\nmodules: []\nrules:\n  - id: body\n    then:\n      - id: inject\n        kind: inject-text\n        config: { id: inject, layer: pre-step, text: GUARD }\n`
+const personaAlias = (id) => moduleHead(id) + 'persona:\n  main:\n    prefix: &shared BEFORE\ndescription: *shared\n'
+const toolsAlias = (id) => moduleHead(id) + 'customTools: &tools\n  - id: shell\n    description: 运行命令\n    output: { schema: { type: string } }\n    execute: { kind: shell, command: echo }\nunknownTools: *tools\n'
+
+test('共享引用守卫：owns 之外的顶层键被连带改写一律拒绝（三条 owns ＋ 一条主路径）', () => {
+  // owns 取自三个真实调用点（characters 并入／移除、/customTools），不另编一份。
+  const mergeOwns = ['rules', 'configOrder', 'variables', 'layerSettings', 'modules', 'meta', 'persona']
+  const unmergeOwns = ['rules', 'configOrder', 'variables', 'layerSettings', 'modules', 'meta']
+  const toolsOwns = ['customTools', 'modules']
+  const inPlacePersona = (doc) => { doc.getIn(['persona', 'main', 'prefix'], true).value = 'AFTER' }
+  const rows = [
+    { title: '并入 owns 含 persona：改 persona 连带改了 description', owns: mergeOwns, body: personaAlias, mutate: inPlacePersona, names: /description/ },
+    { title: '移除 owns 不含 persona：persona 本身即越界', owns: unmergeOwns, body: personaAlias, mutate: inPlacePersona, names: /persona/ },
+    { title: '自定义工具 owns：改 customTools 连带改了 unknownTools', owns: toolsOwns, body: toolsAlias, mutate: (doc) => { doc.setIn(['customTools', 0, 'description'], '改过') }, names: /unknownTools/ },
+  ]
+  let sequence = 0
+  for (const row of rows) {
+    const id = `guard-${++sequence}`
+    const dir = join(moduleRoot, id)
+    mkdirSync(dir, { recursive: true })
+    const file = join(dir, 'module.yml')
+    const text = row.body(id)
+    writeFileSync(file, text)
+    // 真值源：错误码与失败方向（拒绝而非静默写盘），不是实现自己算出的值。
+    assert.throws(
+      () => withModuleDefinition(dir, row.mutate, { owns: row.owns }),
+      (error) => {
+        assert.equal(error.code, 'shared-alias', row.title)
+        assert.equal(error.status, 400, row.title)
+        assert.match(error.message, /YAML.*引用/, row.title)
+        assert.match(error.message, row.names, `${row.title}：拒绝文案点名被连带改动的键`)
+        return true
+      },
+      row.title,
+    )
+    assert.equal(readFileSync(file, 'utf8'), text, `${row.title}：拒绝时定义逐字节不变`)
+  }
+
+  // 主路径：没有共享引用时同一类编辑照常落盘——守卫不是「一律拒绝」。
+  const okDir = join(moduleRoot, 'guard-ok')
+  mkdirSync(okDir, { recursive: true })
+  const okFile = join(okDir, 'module.yml')
+  writeFileSync(okFile, moduleHead('guard-ok'))
+  withModuleDefinition(okDir, (doc) => {
+    doc.setIn(['customTools'], [{ id: 'shell', description: '运行命令', output: { schema: { type: 'string' } }, execute: { kind: 'shell', command: 'echo' } }])
+  }, { owns: toolsOwns })
+  assert.match(readFileSync(okFile, 'utf8'), /customTools/, '无共享引用时编辑正常提交')
+})
+
+/** 最小宿主桩：编辑目标由请求目录解析器提供，不再存入 settings（共用 harness 的实现）。 */
+function makeHarness() {
+  const { ctx, handlers } = makeHostContext()
+  return { ctx, handlers }
+}
+
+function register(ctx, afterOverridesChange, moduleListChanged = () => {}) {
+  registerSettingsBridge(ctx, {
+    ns: 'prompt-tool',
+    models: () => ({ available: true, providers: [] }),
+    skills: () => ({
+      skillsRoot: join(home, 'skills'),
+      folders: [],
+      listSkills: () => [],
+      setSkillPolicy: () => ({ ok: true, changed: false }),
+      patchSkillFolders: () => ({ ok: true, state: { version: 4, folders: [] }, exists: true }),
+    }),
+    // 只按请求声明解析（与生产接线同形）：未声明 = 无目标，不回退任何启用模块。
+    moduleDirectory: (moduleId) => moduleId === undefined ? '' : join(moduleRoot, moduleId),
+    overridesChanged: afterOverridesChange, // 写盘后重建（module-enable 等端点等它完成才回响应）
+    moduleListChanged,
+  })
+}
+
+/** 调端点；不假定成功，原样返回状态与错误载荷。`options.target` 给出 `x-module-id` 头。 */
+async function call(handlers, endpoint, payload = {}, options = {}) {
+  const handler = handlers.get(PREFIX + BRIDGE_ENDPOINTS[endpoint])
+  assert.ok(handler !== undefined, `${endpoint} 端点应注册`)
+  const res = fakeRes()
+  // 本文件用的是 host-harness 的 fakeReq：它只解构 { body, raw, method, remoteAddress, headers }，
+  // 因此只认 `body` 形态。注意 settings-bridge.test.mjs 里另有一个**同名但不同实现**的本地
+  // fakeReq（`(overrides = {})`，`...overrides` 展开在最后），那边传 Symbol.asyncIterator 才是对的。
+  // 两者别互抄：抄错就会得到空请求流，端点以「缺少 id」拒绝，拒绝路径用例随即假通过。
+  await handler(fakeReq({
+    body: payload,
+    headers: options.target === undefined ? {} : { 'x-module-id': options.target },
+  }), res)
+  const body = JSON.parse(res.body)
+  // 判别性保护：若 payload 没送达，端点会以「id 未定义」拒绝，而多个端点用的错误码与
+  // 「真实业务拒绝」是同一个（例如缺 id 与同名都用 preset-clone-rejected），断言就会假通过。
+  // 这里把「id 未解析」这种退化情形直接判为测试自身失败。
+  if (payload.id !== undefined && typeof body.message === 'string' && body.message.includes('undefined')) {
+    throw new Error(`${endpoint} 未收到 payload.id（发出 ${JSON.stringify(payload)}）：${body.message}`)
+  }
+  return { status: res.status, ok: body.ok, code: body.code, message: body.message, value: body.value }
+}
+
+function writeModule(id, content = `id: ${id}\nname: ${id}\nmodules: []\n`) {
+  const dir = join(moduleRoot, id)
+  mkdirSync(dir, { recursive: true })
+  writeFileSync(join(dir, 'module.yml'), content, 'utf8')
+  return dir
+}
+
+test('使用中禁删：带该模块身份的删除被拒，目录与定义保持原样', async () => {
+  const id = 'in-use-module'
+  const dir = writeModule(id)
+  const before = readFileSync(join(dir, 'module.yml'), 'utf8')
+  const { ctx, handlers } = makeHarness()
+  register(ctx)
+
+  const result = await call(handlers, 'moduleDelete', { id }, { target: id })
+  assert.equal(result.status, 400, result.message)
+  assert.equal(result.code, 'module-in-use')
+  assert.equal(existsSync(dir), true, '被拒的删除不得移除目录')
+  assert.equal(readFileSync(join(dir, 'module.yml'), 'utf8'), before, '被拒的删除不得改动定义')
+})
+
+test('无头删除没有在用模块：无声明不触发在用保护，删除成功', async () => {
+  // 裁定见 ADR-0011/Q7：没有 x-module-id 就是没有在用模块，不得由服务端猜一个。
+  const id = 'no-header-module'
+  const dir = writeModule(id)
+  const { ctx, handlers } = makeHarness()
+  register(ctx)
+
+  const result = await call(handlers, 'moduleDelete', { id })
+  assert.equal(result.status, 200, result.message)
+  assert.equal(existsSync(dir), false, '无声明时删除照常执行，不触发在用保护')
+})
+
+test('打开目录：越界与非法 id 一律被拒，不进入打开动作', async () => {
+  const { ctx, handlers } = makeHarness()
+  register(ctx)
+  // 白名单只允许裸模块 id；下列都不属于。
+  for (const bad of ['../outside', '/absolute/path', 'a/b', '.hidden', '']) {
+    const result = await call(handlers, 'moduleOpen', { id: bad })
+    assert.equal(result.status, 400, `${JSON.stringify(bad)} 应被拒：${result.message}`)
+    assert.equal(result.code, 'module-open-rejected', `${JSON.stringify(bad)} 的错误码`)
+  }
+})
+
+test('新建：同名且未要求递增时被拒，既有模块不被覆盖', async () => {
+  const id = 'pt-custom'
+  const dir = writeModule(id, `id: ${id}\nname: 已存在的模块\nmodules: []\n`)
+  const before = readFileSync(join(dir, 'module.yml'), 'utf8')
+  const { ctx, handlers } = makeHarness()
+  register(ctx)
+
+  const result = await call(handlers, 'moduleClone', { id })
+  assert.equal(result.status, 400, result.message)
+  assert.equal(result.code, 'module-clone-rejected')
+  assert.equal(readFileSync(join(dir, 'module.yml'), 'utf8'), before, '被拒的克隆不得覆盖既有定义')
+})
+
+test('新建：未知模板 id 被拒，模块根不留候选目录', async () => {
+  const { ctx, handlers } = makeHarness()
+  register(ctx)
+  const before = readdirSync(moduleRoot).sort()
+
+  const result = await call(handlers, 'moduleClone', { id: 'no-such-template', autoSuffix: true })
+  assert.equal(result.status, 400, result.message)
+  assert.equal(result.code, 'module-clone-rejected')
+  assert.deepEqual(readdirSync(moduleRoot).sort(), before, '被拒的新建不得留下候选目录')
+})
+
+test('复制：源不存在时被拒，模块根不留残留目录', async () => {
+  const { ctx, handlers } = makeHarness()
+  register(ctx)
+  const before = readdirSync(moduleRoot).sort()
+
+  const result = await call(handlers, 'moduleDuplicate', { id: 'no-such-module' })
+  assert.equal(result.status, 400, result.message)
+  assert.equal(result.code, 'module-duplicate-rejected')
+  assert.deepEqual(readdirSync(moduleRoot).sort(), before, '被拒的复制不得留下候选目录')
+})
+
+test('导出：不存在的模块被拒，不回传任何定义内容', async () => {
+  const { ctx, handlers } = makeHarness()
+  register(ctx)
+
+  const result = await call(handlers, 'exportModule', { id: 'no-such-module', mode: 'definition' })
+  assert.equal(result.status, 400, result.message)
+  assert.equal(result.ok, false)
+  assert.equal(result.value, undefined, '失败载荷不得携带定义内容')
+})
+
+test('SillyTavern 多源合并：导入期的 variablesEnabled 只过滤字面变量并入', async () => {
+  // 真值源是两份文档写明、用户拍板的「两件事」口径（docs/architecture-params.md §4、docs/SillyTavern.md）。
+  const { mergeStModulesWithReport } = await import('../../src/host/sillytavern.ts')
+  const stRule = text => ({ id: 'intro', then: [{ id: 'inject', kind: 'inject-text', config: { layer: 'pre-step', text } }] })
+  const { spec: merged } = mergeStModulesWithReport([
+    { id: 'st-off', name: '停用', variables: { owner: 'Mia' }, variablesEnabled: false, rules: [stRule('OFF')] },
+    { id: 'st-on', name: '启用', variables: { mood: 'calm' }, rules: [stRule('ON')] },
+  ])
+  assert.deepEqual(merged.variables, { mood: 'calm' }, '预设级 variables 按同一开关过滤')
+})
+
+// ── 删除事务：同卷 rename-aside（2026-10-23 PLAN） ──────────────────────
+
+const hidden = (root) => readdirSync(root).filter((name) => name.startsWith('.'))
+
+/** patch fs 命名导出；action 可能是异步，必须在 await 完成后才恢复。 */
+async function withPatchedFs({ rename, rm }, action) {
+  const originalRename = fs.renameSync
+  const originalRm = fs.rmSync
+  if (rename !== undefined) fs.renameSync = rename(originalRename)
+  if (rm !== undefined) fs.rmSync = rm(originalRm)
+  syncBuiltinESMExports()
+  try {
+    return await action()
+  } finally {
+    fs.renameSync = originalRename
+    fs.rmSync = originalRm
+    syncBuiltinESMExports()
+  }
+}
+
+test('删除主路径：目录移出且无隐藏残留', async () => {
+  const id = 'aside-ok'
+  const dir = writeModule(id)
+  writeFileSync(join(dir, 'user.txt'), 'USER')
+  const { ctx, handlers } = makeHarness()
+  register(ctx)
+
+  const result = await call(handlers, 'moduleDelete', { id })
+  assert.equal(result.status, 200, result.message)
+  assert.equal(result.ok, true)
+  assert.equal(existsSync(dir), false, '删除后目标目录不存在')
+  assert.equal(result.value.id, id, '清理成功回 id')
+  assert.equal(result.value.persisted, true)
+  assert.equal(result.value.publicationPending, false)
+  assert.deepEqual(hidden(moduleRoot), [], '清理成功不留隐藏 stage')
+})
+
+test('删除 rename 遇到占用：原目录完整保留，不半删', async () => {
+  const id = 'aside-rename-busy'
+  const dir = writeModule(id)
+  writeFileSync(join(dir, 'user.txt'), 'USER')
+  const before = readFileSync(join(dir, 'module.yml'), 'utf8')
+  const { ctx, handlers } = makeHarness()
+  register(ctx)
+
+  const result = await withPatchedFs({
+    rename: (original) => (from, to) => {
+      if (from === dir) throw new Error('EBUSY: resource busy or locked')
+      return original(from, to)
+    },
+  }, () => call(handlers, 'moduleDelete', { id }))
+
+  assert.equal(result.status, 400, result.message)
+  assert.equal(result.code, 'module-delete-rejected')
+  assert.equal(existsSync(dir), true, 'rename 失败时原目录不得被移走')
+  assert.equal(readFileSync(join(dir, 'module.yml'), 'utf8'), before, '定义逐字节不变')
+  assert.equal(readFileSync(join(dir, 'user.txt'), 'utf8'), 'USER', '用户文件逐字节不变')
+  assert.deepEqual(hidden(moduleRoot), [], 'rename 失败要清掉空 stage')
+})
+
+test('删除清理遇到占用：模块已移出，残留目录返回路径', async () => {
+  const id = 'aside-cleanup-busy'
+  const dir = writeModule(id)
+  writeFileSync(join(dir, 'user.txt'), 'USER')
+  const { ctx, handlers } = makeHarness()
+  register(ctx)
+
+  let stage
+  const result = await withPatchedFs({
+    rename: (original) => (from, to) => {
+      stage = dirname(to)
+      return original(from, to)
+    },
+    rm: (original) => (path, options) => {
+      if (String(path) === stage) throw new Error('EBUSY: backup busy')
+      return original(path, options)
+    },
+  }, () => call(handlers, 'moduleDelete', { id }))
+
+  assert.equal(result.status, 200, result.message)
+  assert.equal(existsSync(dir), false, '模块目录已移出')
+  assert.equal(typeof stage, 'string')
+  assert.equal(dirname(stage), moduleRoot, '备份 stage 在模块根下')
+  assert.equal(result.value.backupPath, join(stage, id))
+  assert.equal(existsSync(join(stage, id, 'module.yml')), true, '残留目录里定义还在')
+  assert.equal(readFileSync(join(stage, id, 'user.txt'), 'utf8'), 'USER')
+  const { listModules } = await import('../../src/host/module-catalog.ts')
+  assert.equal(listModules(moduleRoot).some((module) => module.id === basename(stage)), false, '隐藏 stage 不进模块列表')
+  rmSync(stage, { recursive: true, force: true })
+  assert.deepEqual(hidden(moduleRoot), [], '测试自己精确清理备份目录')
+})
+
+test('删除后刷新失败：模块已移出，返回待发布错误', async () => {
+  const id = 'aside-refresh-fail'
+  const dir = writeModule(id)
+  const { ctx, handlers } = makeHarness()
+  register(ctx, undefined, () => { throw new Error('refresh failed') })
+
+  const result = await call(handlers, 'moduleDelete', { id })
+  assert.equal(result.status, 200, result.message)
+  assert.equal(result.value.publicationPending, true)
+  assert.match(result.value.publicationError, /refresh failed/)
+  assert.equal(existsSync(dir), false, '删除已提交，不能因为刷新失败而恢复')
+})
+
+test('删除清理中途失败：残留目录可能不完整，仍返回路径', async () => {
+  const id = 'aside-cleanup-partial'
+  const dir = writeModule(id)
+  writeFileSync(join(dir, 'user.txt'), 'USER')
+  const { ctx, handlers } = makeHarness()
+  register(ctx)
+
+  let stage
+  const result = await withPatchedFs({
+    rename: (original) => (from, to) => {
+      stage = dirname(to)
+      return original(from, to)
+    },
+    rm: (original) => (path, options) => {
+      if (String(path) === stage) {
+        // 模拟删除到一半：先删掉一个文件，再抛出占用错误。
+        original(join(String(path), id, 'user.txt'), { force: true })
+        throw new Error('EBUSY: backup busy')
+      }
+      return original(path, options)
+    },
+  }, () => call(handlers, 'moduleDelete', { id }))
+
+  assert.equal(result.status, 200, result.message)
+  assert.equal(existsSync(dir), false)
+  assert.equal(typeof stage, 'string')
+  assert.equal(dirname(stage), moduleRoot, '备份 stage 在模块根下')
+  assert.equal(result.value.backupPath, join(stage, id))
+  assert.equal(existsSync(join(stage, id, 'module.yml')), true, '定义仍在')
+  assert.equal(existsSync(join(stage, id, 'user.txt')), false, '中途失败时残留目录可能不完整')
+  rmSync(stage, { recursive: true, force: true })
+})
+
+test('删除后刷新失败且清理未完成：200 同时带待发布错误与 backupPath', async () => {
+  const id = 'aside-refresh-backup'
+  const dir = writeModule(id)
+  const { ctx, handlers } = makeHarness()
+  register(ctx, undefined, () => { throw new Error('refresh failed') })
+
+  let stage
+  const result = await withPatchedFs({
+    rename: (original) => (from, to) => {
+      stage = dirname(to)
+      return original(from, to)
+    },
+    rm: (original) => (path, options) => {
+      if (String(path) === stage) throw new Error('EBUSY: backup busy')
+      return original(path, options)
+    },
+  }, () => call(handlers, 'moduleDelete', { id }))
+
+  assert.equal(result.status, 200, result.message)
+  assert.equal(result.value.publicationPending, true)
+  assert.match(result.value.publicationError, /refresh failed/)
+  assert.equal(existsSync(dir), false)
+  assert.equal(typeof stage, 'string')
+  assert.equal(dirname(stage), moduleRoot, '备份 stage 在模块根下')
+  assert.equal(result.value.backupPath, join(stage, id))
+  assert.equal(existsSync(join(stage, id, 'module.yml')), true)
+  rmSync(stage, { recursive: true, force: true })
+})
+
+test('删除后锁释放失败：删除已提交，不谎报失败', async () => {
+  const id = 'aside-lock-release'
+  const dir = writeModule(id)
+  const { ctx, handlers } = makeHarness()
+  register(ctx)
+
+  let lockRemovalInjected = false
+  const result = await withPatchedFs({
+    rm: (original) => (path, options) => {
+      if (String(path).includes('.' + id + '.locks') && String(path).endsWith('.lock')) {
+        lockRemovalInjected = true
+        throw new Error('EBUSY: lock file busy')
+      }
+      return original(path, options)
+    },
+  }, () => call(handlers, 'moduleDelete', { id }))
+
+  assert.equal(result.status, 200, result.message)
+  assert.equal(lockRemovalInjected, true, '锁文件清理注入已触发')
+  assert.equal(existsSync(dir), false, '删除已提交')
+  assert.equal(result.value.id, id)
+  assert.equal(result.value.persisted, true)
+  assert.equal(result.value.publicationPending, false)
+  // 锁文件清理被注入失败后残留；按精确路径清理，避免影响同文件后续用例。
+  rmSync(join(moduleRoot, '.' + id + '.locks'), { recursive: true, force: true })
+  assert.deepEqual(hidden(moduleRoot), [], '清理成功不留隐藏 stage')
+})
+
+test('module-enable：写启用表后等待装配，失败如实返回，非法载荷不落盘', async () => {
+  // 真值源是「模块页唯一改变装配范围的动作」这一契约：启用即写启用表，停用即摘除。
+  const { ctx, handlers } = makeHarness(undefined)
+  const entered = Promise.withResolvers()
+  const resume = Promise.withResolvers()
+  const refreshed = []
+  let hold = true
+  let failRefresh = false
+  register(ctx, async (moduleId) => {
+    refreshed.push(moduleId)
+    entered.resolve()
+    if (hold) await resume.promise
+    if (failRefresh) throw new Error('runtime refresh failed')
+  })
+  const configFile = join(dirname(moduleRoot), 'config.yml')
+  const readEnabled = () => readFileSync(configFile, 'utf8')
+
+  const id = 'enable-target'
+  writeModule(id)
+
+  // 主路径：启用 → 写进表；幂等重复启用不产生第二条。
+  let responded = false
+  const enabling = call(handlers, 'moduleEnable', { id, enabled: true }).then(result => {
+    responded = true
+    return result
+  })
+  try {
+    assert.equal(await Promise.race([
+      entered.promise.then(() => 'refresh'),
+      enabling.then(() => 'response'),
+    ]), 'refresh', '成功响应必须等到启用表对应的运行时装配完成')
+    assert.deepEqual(parse(readEnabled()).enabled, [id], '先写盘，再等待装配')
+    await new Promise(setImmediate)
+    assert.equal(responded, false, '装配尚未完成时不能提前报告启用成功')
+  } finally {
+    hold = false
+    resume.resolve()
+  }
+  const on = await enabling
+  assert.equal(on.status, 200, on.message)
+  assert.deepEqual(on.value, { enabled: [id], persisted: true, publicationPending: false })
+  assert.deepEqual(refreshed, [undefined], '启用表改变需刷新全部实例，不只重装已包含该模块的实例')
+  assert.deepEqual(parse(readEnabled()).enabled, [id])
+  const again = await call(handlers, 'moduleEnable', { id, enabled: true })
+  assert.deepEqual(again.value, { enabled: [id], persisted: true, publicationPending: false }, '重复启用幂等')
+
+  // 停用：从表里摘除；幂等重复停用不报错。
+  const off = await call(handlers, 'moduleEnable', { id, enabled: false })
+  assert.deepEqual(off.value, { enabled: [], persisted: true, publicationPending: false })
+  assert.deepEqual((await call(handlers, 'moduleEnable', { id, enabled: false })).value, { enabled: [], persisted: true, publicationPending: false }, '重复停用幂等')
+
+  // 拒绝路径一：缺 id。
+  const noId = await call(handlers, 'moduleEnable', { enabled: true })
+  assert.equal(noId.status, 400)
+  assert.equal(noId.code, 'module-enable-rejected')
+
+  // 拒绝路径二：enabled 不是布尔值。
+  const badFlag = await call(handlers, 'moduleEnable', { id, enabled: 'yes' })
+  assert.equal(badFlag.status, 400)
+  assert.equal(badFlag.code, 'module-enable-rejected')
+
+  // 拒绝路径三：启用一个磁盘上不存在的模块——写进表会让装配静默少装一个。
+  const before = readEnabled()
+  const missing = await call(handlers, 'moduleEnable', { id: 'no-such-module', enabled: true })
+  assert.equal(missing.status, 400)
+  assert.equal(missing.code, 'module-enable-rejected')
+  assert.equal(readEnabled(), before, '被拒的启用不得改动启用表')
+  assert.deepEqual((await call(handlers, 'moduleEnable', { id, enabled: false })).value.enabled.includes('no-such-module'), false)
+  assert.equal(refreshed.length, 5, '非法请求不得触发装配')
+
+  failRefresh = true
+  const failed = await call(handlers, 'moduleEnable', { id, enabled: true })
+  assert.equal(failed.status, 200)
+  assert.equal(failed.value.publicationPending, true)
+  assert.deepEqual(parse(readEnabled()).enabled, [id], '装配失败保留已保存的启用表，便于重试')
+  failRefresh = false
+  assert.deepEqual((await call(handlers, 'moduleEnable', { id, enabled: false })).value, { enabled: [], persisted: true, publicationPending: false })
+})

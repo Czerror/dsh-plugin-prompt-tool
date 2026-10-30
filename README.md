@@ -167,13 +167,14 @@ $Repo = 'D:\AI\GitHub\dsh-plugin-prompt-tool'
 Set-Location 'D:\AI\workspase\_temp'
 pnpm --dir $Repo typecheck
 pnpm --dir $Repo lint
+pnpm --dir $Repo test
 pnpm --dir $Repo build
 git -C $Repo diff --check
 ```
 
-涉及分发或宿主接入另执行 verify:host、verify:pack；参考模板用 rebuild:module-template，追加 `-- --check` 检查漂移。仓库不提交测试：完整测试归档在本地 `.scratch/tests/`，需要时复制回 `test/` 后运行 `pnpm --dir $Repo test`（脚本先 build，再以独立 cwd/TEMP/TMP/DSH_HOME 运行 Node 测试）。
+涉及分发或宿主接入另执行 verify:host、verify:pack；参考模板用 rebuild:module-template，追加 `-- --check` 检查漂移。test 脚本先 build，再以独立 cwd/TEMP/TMP/DSH_HOME 运行 Node 测试。
 
-源文件通过 package scripts 生成 lib 和 YAML vendor 快照，不手改构建产物。测试只在本地保留（注入行为、写盘语义、bridge 载荷、安全拒绝的公共接口回归，期望来自独立真值），不随仓库或包分发。
+源文件通过 package scripts 生成 lib 和 YAML vendor 快照，不手改构建产物。永久测试仅保留注入行为、写盘语义、bridge 载荷、安全拒绝的公共接口回归，期望来自独立真值；临时探针及纯旧名消失检查不进入测试套件。
 
 ## 排障
 

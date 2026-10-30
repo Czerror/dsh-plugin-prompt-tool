@@ -1,0 +1,73 @@
+import test from 'node:test'
+import assert from 'node:assert/strict'
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
+import { parse } from 'yaml'
+import { isolatedHome, fakeReq, fakeRes, makeHostContext, readBridge } from '../fixtures/host-harness.mjs'
+
+const { moduleRoot } = isolatedHome('pt-activation-bridge-')
+const { registerSettingsBridge } = await import('../../src/runtime/settings-bridge.ts')
+const dir = join(moduleRoot, 'editable')
+mkdirSync(dir, { recursive: true })
+const file = join(dir, 'module.yml')
+// 声明面：顶层 `params` 键存在，参数端点才可用（键整个不存在＝没声明）。
+writeFileSync(file, 'id: editable\nmodules: []\nparams: {}\n')
+
+async function bounded(promise, label) {
+  let timer
+  try {
+    return await Promise.race([promise, new Promise((_, reject) => { timer = setTimeout(() => reject(new Error(`等待超时：${label}`)), 1500) })])
+  } finally { clearTimeout(timer) }
+}
+
+test('预设保存等待宿主采用；异步拒绝保留定义并可重试；只保存不触发注册', async () => {
+  const disposers = []
+  let rebuild = async () => {}
+  let calls = 0
+  // 差异项：本文件的 effect 收集 disposer；其余走 harness 默认值。
+  const { ctx, handlers } = makeHostContext({
+    describe: () => [],
+    effect: fn => { const dispose = fn(); if (dispose) disposers.push(dispose) },
+  })
+  registerSettingsBridge(ctx, {
+    ns: 'prompt-tool',
+    models: () => ({}),
+    skills: () => ({}),
+    moduleDirectory: () => dir,
+    overridesChanged: async () => { calls++; await rebuild() },
+  })
+  const handler = handlers.get('/api/prompt-tool/settings/param-overrides')
+  const save = async (overrides, extra = {}) => {
+    const res = fakeRes()
+    await bounded(handler(fakeReq({ body: { expectedModuleId: 'editable', overrides, ...extra } }), res), '参数写入完成')
+    return readBridge(res)
+  }
+  try {
+    let entered
+    const started = new Promise(resolve => { entered = resolve })
+    let release
+    const pending = new Promise(resolve => { release = resolve })
+    rebuild = async () => { entered(); await pending }
+    let settled = false
+    const saving = save({ modelTemperature: 0.3 }).then(value => { settled = true; return value })
+    await bounded(started, '重建开始')
+    await new Promise(resolve => setImmediate(resolve))
+    assert.equal(settled, false, '注册尚未完成不能发送成功响应')
+    release()
+    assert.equal((await saving).ok, true)
+
+    rebuild = async () => { await Promise.resolve(); throw new Error('REGISTRATION_FAILED') }
+    const failed = await save({ modelTemperature: 0.5 })
+    assert.equal(failed.status, 200)
+    assert.equal(failed.ok, true)
+    assert.equal(failed.value.publicationPending, true)
+    assert.match(failed.value.publicationError, /已保存.*REGISTRATION_FAILED/)
+    assert.equal(parse(readFileSync(file, 'utf8')).layerSettings['agent-request'].modelTemperature, 0.5)
+
+    rebuild = async () => {}
+    assert.equal((await save({ modelTemperature: 0.5 })).ok, true)
+    const before = calls
+    assert.equal((await save({ modelTemperature: 0.8 }, { rebuild: false })).ok, true)
+    assert.equal(calls, before)
+  } finally { for (const dispose of disposers) dispose() }
+})

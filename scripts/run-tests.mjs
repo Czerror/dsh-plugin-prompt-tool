@@ -14,11 +14,6 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const root = fileURLToPath(new URL('..', import.meta.url))
-// 仓库不提交测试；完整测试归档在本地 .scratch/tests（见 AGENTS.md），无 test/ 时直接通过。
-if (!existsSync(join(root, 'test'))) {
-  console.log('[run-tests] 仓库不含 test/；本地测试归档在 .scratch/tests，需要时复制回 test/ 后重跑。')
-  process.exit(0)
-}
 const runDir = mkdtempSync(join(tmpdir(), 'pt-test-run-'))
 // pnpm 会把额外参数合成一个逗号分隔的字符串转发进来，这里按逗号/空白拆开，
 // 让 `pnpm test a.test.mjs b.test.mjs` 与直接 `node scripts/run-tests.mjs a b` 等价。

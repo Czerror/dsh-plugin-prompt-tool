@@ -1,0 +1,186 @@
+import test from 'node:test'
+import assert from 'node:assert/strict'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
+import { Readable } from 'node:stream'
+import { parse } from 'yaml'
+import { makeHostContext } from '../fixtures/host-harness.mjs'
+
+const home = mkdtempSync(join(process.cwd(), 'pt-assets-bridge-'))
+process.env.DSH_HOME = home
+const { registerSettingsBridge } = await import('../../src/runtime/settings-bridge.ts')
+const { BRIDGE_ENDPOINTS, MAX_BRIDGE_BODY_BYTES, SETTINGS_BRIDGE_PREFIX } = await import('../../src/shared/bridge-contract.ts')
+const { storageRootOf } = await import('../../src/host/paths.ts')
+const storageRoot = storageRootOf(home)
+const root = join(storageRoot, 'modules')
+mkdirSync(join(root, 'owner'), { recursive: true })
+writeFileSync(join(root, 'owner/module.yml'), 'id: owner\nname: Owner\nmodules: []\n')
+test.after(() => rmSync(home, { recursive: true, force: true }))
+
+function harness(t, refresh = () => {}, resolveDirectory) {
+  const disposers = []
+  let active = join(root, 'owner')
+  // 默认解析器必须在函数体内构造：参数默认值的作用域看不到 body 的 `let active`。
+  const directoryOf = resolveDirectory ?? (() => active)
+  // 差异项：本文件的 effect 收集 disposer、register 的 disposer 由用例统一释放；其余走 harness 默认值。
+  const { ctx, handlers } = makeHostContext({
+    describe: () => [],
+    effect: (fn) => { const dispose = fn(); if (dispose) disposers.push(dispose) },
+  })
+  registerSettingsBridge(ctx, {
+    ns: 'prompt-tool',
+    models: () => ({}),
+    skills: () => ({}),
+    moduleDirectory: () => directoryOf(),
+    moduleInstalled: async (id) => { await refresh(id) },
+  })
+  const dispose = () => { for (const fn of disposers.splice(0)) fn() }
+  t.after(dispose)
+  return { handlers, dispose, setActive: (dir) => { active = dir } }
+}
+
+function response() {
+  let status
+  let payload
+  return { writeHead: (code) => { status = code }, end: (body) => { payload = JSON.parse(body) }, get status() { return status }, get payload() { return payload } }
+}
+
+async function call(h, endpoint, body, overrides = {}) {
+  const req = Readable.from([Buffer.from(JSON.stringify(body))])
+  Object.assign(req, { method: 'POST', headers: { host: 'localhost' }, socket: { remoteAddress: '127.0.0.1' } }, overrides)
+  const res = response()
+  await h.handlers.get(SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS[endpoint])(req, res)
+  return res
+}
+
+const filesFor = (id, extra = []) => [{ path: 'module.yml', encoding: 'utf8', content: `# SOURCE\nid: ${id}\nname: ${id}\nmodules: []\n` }, ...extra]
+const credentials = (preview) => ({ expectedSourceDigest: preview.payload.value.sourceDigest, expectedPreviewRevision: preview.payload.value.previewRevision })
+
+test('预设真实安装保留自有资源；刷新失败只刷新一次且不影响安装产物', async (t) => {
+  let refreshed = 0
+  const h = harness(t, (id) => { refreshed++; assert.ok(existsSync(join(root, id, 'rules/_settings.yml'))); throw new Error('refresh failed') })
+  const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0xff, 0])
+  const files = filesFor('roundtrip', [
+    { path: 'preset.md', content: 'BODY\r\n' },
+    { path: 'cover.png', content: png.toString('base64'), encoding: 'base64' },
+    { path: 'engine/private.mjs', content: 'export default {}' },
+  ])
+  const preview = await call(h, 'importModulePackage', { files, preview: true })
+  assert.equal(preview.status, 200, JSON.stringify(preview.payload))
+  assert.equal(preview.payload.value.summary.targetId, 'roundtrip')
+  assert.equal(existsSync(join(root, 'roundtrip')), false)
+  await call(h, 'importModulePackage', { files, ...credentials(preview) })
+  assert.equal(refreshed, 1)
+  assert.equal(readFileSync(join(root, 'roundtrip/preset.md'), 'utf8'), 'BODY\r\n')
+  assert.deepEqual(readFileSync(join(root, 'roundtrip/cover.png')), png)
+  assert.equal(readFileSync(join(root, 'roundtrip/engine/private.mjs'), 'utf8'), 'export default {}')
+  assert.equal(existsSync(join(root, 'owner/module.yml')), true)
+})
+
+test('提交必须匹配预览；默认重名另存、明确更新及目标版本复检', async (t) => {
+  const h = harness(t)
+  const files = filesFor('versioned')
+  assert.equal((await call(h, 'importModulePackage', { files })).status, 409)
+  assert.equal(existsSync(join(root, 'versioned')), false)
+  const preview = await call(h, 'importModulePackage', { files, preview: true })
+  assert.equal((await call(h, 'importModulePackage', { files: filesFor('changed'), ...credentials(preview) })).status, 409)
+  assert.equal((await call(h, 'importModulePackage', { files, ...credentials(preview) })).status, 200)
+  const copy = await call(h, 'importModulePackage', { files, preview: true })
+  assert.equal(copy.payload.value.summary.targetId, 'versioned-copy')
+  const update = { files, targetId: 'versioned', overwrite: true }
+  const updatePreview = await call(h, 'importModulePackage', { ...update, preview: true })
+  writeFileSync(join(root, 'versioned/changed.txt'), 'EXTERNAL')
+  assert.equal((await call(h, 'importModulePackage', { ...update, ...credentials(updatePreview) })).status, 409)
+  assert.equal(readFileSync(join(root, 'versioned/changed.txt'), 'utf8'), 'EXTERNAL')
+  const fresh = await call(h, 'importModulePackage', { ...update, preview: true })
+  assert.equal((await call(h, 'importModulePackage', { ...update, ...credentials(fresh) })).status, 200)
+  assert.equal(existsSync(join(root, 'versioned/changed.txt')), false)
+})
+
+function pngCard() {
+  const chunk = (type, data) => {
+    const size = Buffer.alloc(4)
+    size.writeUInt32BE(data.length)
+    return Buffer.concat([size, Buffer.from(type), data, Buffer.alloc(4)])
+  }
+  const json = JSON.stringify({ spec: 'chara_card_v3', data: { name: 'PNG角色', description: 'PNG BODY' } })
+  return Buffer.concat([Buffer.from('89504e470d0a1a0a', 'hex'), chunk('tEXt', Buffer.from('chara\0' + Buffer.from(json).toString('base64'))), chunk('IEND', Buffer.alloc(0))])
+}
+
+async function upload(h, bytes, name = 'card.png') {
+  const req = Readable.from([bytes])
+  Object.assign(req, { method: 'POST', headers: { host: 'localhost', 'x-file-name': encodeURIComponent(name) }, socket: { remoteAddress: '127.0.0.1' } })
+  const res = response()
+  await h.handlers.get(SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.assetUpload)(req, res)
+  return res
+}
+
+test('PNG 原始上传只暂存；模块导入后字节一致，释放和卸载清理来源', async (t) => {
+  const h = harness(t)
+  const png = pngCard()
+  const uploaded = await upload(h, png)
+  assert.equal(uploaded.status, 200, JSON.stringify(uploaded.payload))
+  assert.equal(existsSync(join(storageRoot, '.characters')), false)
+  const { sourceId } = uploaded.payload.value
+  const preview = await call(h, 'importModulePackage', { sourceId, preview: true, targetId: 'png-card' })
+  assert.equal(preview.status, 200, JSON.stringify(preview.payload))
+  assert.equal(existsSync(join(storageRoot, '.characters')), false)
+  const result = await call(h, 'importModulePackage', { sourceId, targetId: 'png-card', ...credentials(preview) })
+  assert.equal(result.status, 200, JSON.stringify(result.payload))
+  assert.deepEqual(readFileSync(join(root, 'png-card/avatar.png')), png)
+  assert.equal((await call(h, 'assetRelease', { sourceId })).payload.value.released, true)
+  assert.equal((await call(h, 'importModulePackage', { sourceId, preview: true })).status, 400)
+  await upload(h, png)
+  h.dispose()
+  assert.deepEqual(readdirSync(join(storageRoot, 'uploads')), [])
+})
+
+test('导入预览绑定普通模块目标和覆盖选择；重导入保留记忆', async (t) => {
+  const h = harness(t)
+  const files = [{ path: 'converted.yml', content: 'id: native-role\nname: Native\nrules:\n  - id: text\n    then:\n      - id: inject\n        kind: inject-text\n        config:\n          id: text\n          layer: pre-step\n          text: HELLO\n' }]
+  const first = await call(h, 'importModulePackage', { files, preview: true })
+  assert.equal(first.status, 200, JSON.stringify(first.payload))
+  writeFileSync(join(root, 'owner/change.txt'), 'OWNER CHANGED')
+  assert.equal((await call(h, 'importModulePackage', { files, ...credentials(first) })).status, 200)
+  assert.equal((await call(h, 'importModulePackage', { files, preview: true })).payload.value.summary.targetId, 'native-role-copy')
+  writeFileSync(join(root, 'native-role/memory.md'), 'KEEP MEMORY')
+  const update = { files, targetId: 'native-role', overwrite: true }
+  const preview = await call(h, 'importModulePackage', { ...update, preview: true })
+  assert.equal((await call(h, 'importModulePackage', { ...update, overwrite: false, ...credentials(preview) })).status, 409)
+  assert.equal((await call(h, 'importModulePackage', { ...update, ...credentials(preview) })).status, 200)
+  assert.equal(readFileSync(join(root, 'native-role/memory.md'), 'utf8'), 'KEEP MEMORY')
+})
+
+test('新参数、来源、载荷上限和回环边界均在写盘前拒绝', async (t) => {
+  const h = harness(t)
+  const files = filesFor('invalid-new')
+  // refreshOnly:false 是统一表允许的字段，不得被导入参数解析二次拒。
+  assert.equal((await call(h, 'importModulePackage', { files, preview: true, refreshOnly: false })).status, 200)
+  for (const extra of [{ preview: 'true' }, { overwrite: 1 }, { targetId: 'UPPER' }, { targetName: [] }, { sourceKind: 'unknown' }, { expectedSourceDigest: 'bad' }, { sourceId: 'wrong' }, { unknown: true }]) {
+    assert.equal((await call(h, 'importModulePackage', { files, ...extra })).status, 400, JSON.stringify(extra))
+  }
+  const unknown = await call(h, 'importModulePackage', { files, unknown: true })
+  assert.equal(unknown.status, 400)
+  assert.equal(unknown.payload.code, 'bridge-request-invalid', '顶层未知字段统一由字段表拒绝')
+  assert.equal((await call(h, 'importModulePackage', { files: [{ path: 'module.yml', content: 'x', encoding: 'binary' }], preview: true })).status, 400)
+  assert.equal((await call(h, 'importModulePackage', { files, preview: true }, { socket: { remoteAddress: '192.0.2.1' } })).status, 403)
+  assert.equal((await call(h, 'importModulePackage', { files, preview: true }, { headers: { host: 'localhost', origin: 'https://evil.invalid' } })).status, 403)
+  assert.equal((await call(h, 'importModulePackage', { files, preview: true }, { method: 'GET' })).status, 405)
+  assert.equal((await call(h, 'importModulePackage', { files: [{ path: 'module.yml', content: 'x'.repeat(MAX_BRIDGE_BODY_BYTES) }] })).status, 413)
+  assert.equal(existsSync(join(root, 'invalid-new')), false)
+})
+
+test('ZIP 与定义出口共用预览，来源改变使下载过期', async (t) => {
+  const h = harness(t)
+  const request = { id: 'roundtrip', mode: 'zip', preview: true }
+  const preview = await call(h, 'exportModule', request)
+  assert.equal(preview.status, 200, JSON.stringify(preview.payload))
+  const zip = await call(h, 'exportModule', { ...request, preview: false, expectedRevision: preview.payload.value.revision })
+  assert.equal(zip.status, 200, JSON.stringify(zip.payload))
+  assert.equal(Buffer.from(zip.payload.value.content, 'base64').subarray(0, 2).toString(), 'PK')
+  const definition = await call(h, 'exportModule', { id: 'roundtrip', mode: 'definition' })
+  assert.equal(parse(definition.payload.value.content).id, 'roundtrip')
+  writeFileSync(join(root, 'roundtrip/extra.txt'), 'changed')
+  assert.equal((await call(h, 'exportModule', { ...request, preview: false, expectedRevision: preview.payload.value.revision })).status, 409)
+  assert.equal((await call(h, 'exportModule', { id: 'roundtrip', mode: 'invalid' })).status, 400)
+})
