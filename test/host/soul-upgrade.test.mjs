@@ -4,7 +4,6 @@ import { parse } from 'yaml'
 import { previewSoulUpgrade } from '../../src/host/soul-upgrade.ts'
 import { readSoulUpgradePreview } from '../../src/host/soul-upgrade.ts'
 import { cpSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
-import { execFileSync } from 'node:child_process'
 import { join } from 'node:path'
 import { isolatedHome } from '../fixtures/host-harness.mjs'
 import { registerModuleImportTools } from '../../src/runtime/module-import-tools.ts'
@@ -74,8 +73,7 @@ test('Soul升级保留目标内部注释和未知配置，并拒绝同rules或�
 test('Soul真实种子升级提供内容版本与正式导入说明且不写盘', async t => {
   const dir = join(moduleRoot, 'soul')
   mkdirSync(dir, { recursive: true })
-  const repo = new URL('../../', import.meta.url)
-  const original = execFileSync('git', ['-C', decodeURIComponent(repo.pathname).replace(/^\/([A-Za-z]:)/, '$1'), 'show', '9007bf28:modules/soul/module.yml'], { encoding: 'utf8' })
+  const original = readFileSync(new URL('../fixtures/soul-legacy-module.yml', import.meta.url), 'utf8')
   writeFileSync(join(dir, 'module.yml'), original)
   cpSync(new URL('../../modules/soul/assets', import.meta.url), join(dir, 'assets'), { recursive: true })
   mkdirSync(join(dir, 'data'), { recursive: true })
