@@ -8,7 +8,7 @@
 //
 // 不改变用例发现范围：默认仍是 test/**/*.test.mjs。
 import { spawnSync } from 'node:child_process'
-import { existsSync, mkdtempSync, rmSync } from 'node:fs'
+import { closeSync, existsSync, mkdtempSync, openSync, readSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -64,11 +64,29 @@ function run(command, args, options = {}) {
   return result.status ?? 1
 }
 
+/** pnpm 12 的入口可能是无扩展名原生二进制（Linux ELF / macOS Mach-O），不能当 JS 脚本执行。 */
+function isNativeBinary(path) {
+  const fd = openSync(path, 'r')
+  try {
+    const head = Buffer.alloc(4)
+    if (readSync(fd, head, 0, 4, 0) < 4) return false
+    const magic = head.readUInt32BE(0)
+    return magic === 0x7f454c46 // ELF
+      || magic === 0xfeedface || magic === 0xfeedfacf // Mach-O
+      || magic === 0xcafebabe || magic === 0xcffaedfe // fat Mach-O
+      || (head[0] === 0x4d && head[1] === 0x5a) // PE
+  } finally {
+    closeSync(fd)
+  }
+}
+
 /** 优先使用包管理器入口；pnpm 12可提供原生exe，而非Node脚本。 */
 function buildInvocation() {
   const execPath = process.env.npm_execpath
   if (typeof execPath === 'string' && execPath.length > 0 && existsSync(execPath)) {
-    if (/\.exe$/i.test(execPath)) return { command: execPath, args: ['--dir', root, 'build'], shell: false }
+    if (/\.exe$/i.test(execPath) || isNativeBinary(execPath)) {
+      return { command: execPath, args: ['--dir', root, 'build'], shell: false }
+    }
     return { command: process.execPath, args: [execPath, '--dir', root, 'build'], shell: false }
   }
   return { command: 'pnpm', args: ['--dir', root, 'build'], shell: true }
