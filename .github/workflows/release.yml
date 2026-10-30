@@ -1,0 +1,30 @@
+name: release
+
+# publish 成功后才建 Release；发布失败不产生 Release，重跑 release 也不会重发 npm
+on:
+  workflow_run:
+    workflows: [publish]
+    types: [completed]
+
+permissions:
+  contents: write
+
+jobs:
+  create-release:
+    if: github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+      - id: meta
+        run: echo "TAG=v$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
+      - run: node scripts/release-notes.mjs > "$RUNNER_TEMP/notes.md"
+      - env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "${{ steps.meta.outputs.TAG }}" >/dev/null 2>&1; then
+            echo "release ${{ steps.meta.outputs.TAG }} already exists"
+          else
+            gh release create "${{ steps.meta.outputs.TAG }}" --title "${{ steps.meta.outputs.TAG }}" --notes-file "$RUNNER_TEMP/notes.md"
+          fi
