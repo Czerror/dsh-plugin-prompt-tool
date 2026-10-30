@@ -1,5 +1,10 @@
 # Changelog
 
+## [3.1.3] - 2026-10-30
+
+- 新增 `v*` tag 触发的 npm 自动发布：GitHub Actions 以 OIDC 可信发布身份执行 typecheck、lint、test、build、`verify:pack` 后发布，无需 `NPM_TOKEN`，并自动生成 provenance。
+- **验证**：typecheck、lint（0 warning）、test 992 passed、build、`verify:pack`、`git diff --check` 全绿。
+
 ## [3.1.2] - 2026-10-30
 
 - 模块普通保存写盘后立即确认，Agent 发布在后台按 300ms 合并；启用先提交排序和启用表，只登记一次发布。请求前检查与 `refreshOnly` 可提前发布，同版本不重复重挂。
