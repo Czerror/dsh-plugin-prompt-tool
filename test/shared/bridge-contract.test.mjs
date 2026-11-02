@@ -667,17 +667,6 @@ test('契约：/tool-surface 支持官方 preset scope 且只读有效 schema', 
   assert.equal(JSON.parse(invalid.body).code, 'tool-surface-invalid')
 })
 
-test('契约：/persona 未配置 moduleDir 时稳定拒绝', async () => {
-  const handlers = register()
-  const handler = handlers.get(SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.persona)
-  assert.ok(handler, '/persona 端点未注册')
-  const res = fakeRes()
-  await handler(fakeReq({ body: {} }), res)
-  assert.equal(res.status, 400)
-  const payload = JSON.parse(res.body)
-  assert.equal(payload.ok, false)
-  assert.equal(payload.code, 'module-dir-unavailable')
-})
 
 test('契约：工具预览在 schema 成功或抛错时均释放 revision lease', async () => {
   for (const fail of [false, true]) {

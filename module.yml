@@ -18,7 +18,7 @@ modules:
   # 可用模块（engine/compositions 下的文件名）：context-provenance, filesystem-editor, generation-recovery, instruction-hint, module-file-tools, module-import-tools, module-manifest-tools, module-rule-tools, module-variable-tools, persistent-shell-posix, present-as, retrieval, rule-engine, run-code-env, skill-search, soul-ledger, soul-maintenance, tool-bash-disabled, tool-config-engine, tool-git-bash, tool-search
   # filesystem-editor / persistent-shell-posix / tool-bash-disabled 由会话原有预设提供；声明它们只会产生诊断，插件不挂载官方包。
   # 已退役的引擎名：prompt-config-engine, declared-triggers；旧定义需显式转换。
-  # 人设使用 persona.main / persona.subagent；未声明字段继承官方值。
+  # 人设使用普通 persona 动作；启用模块内命中规则按配置序号拼接，字段全省略才继承官方。
   - rule-engine
 layerSettings:
   # 唯一共享参数磁盘位置。按下方参考取消所需注释，不要复制旧 params/model/subagentModel 段。
@@ -40,7 +40,7 @@ rules:
   # 注入正文、内容策略、合并和去重属于 inject-text.config；变量由模块或全局持久表拥有。
   # 需要原生赋值时显式设置 params.templateEvaluation:true，使用 module.set/get/add/inc/dec 或 global 对应操作。
   # config.identity 只允许 {field: plugin, value: 唯一值}；templateFile 相对模块 module.yml 且须在模块目录内。
-  # complete、suppressRuntimeContext 是固定注册效果：不接受规则级 if，编译器明确拒绝非法组合。
+  # inject-text 的 complete、suppressRuntimeContext 是固定注册效果，不接受规则级 if；persona 动作支持动态条件。
   # 10-pre-step.yml — 官方默认层：agent/pre-step 消息批。支持 position / dedupe / promotion / audience / mergeMode 与文本插值。
   # 规则条件放 if，动作放 then；动作执行点由引擎目录验证，不建立跨层全局顺序。
   # 注入动作内容策略：static, placeholder, context-activation。
@@ -481,6 +481,27 @@ rules:
           - skill_load
           - tool_search
           - bash
+          - ops_bash
+          - ops_read_files
+          - ops_inspect_local_file
+          - ops_glob
+          - ops_grep
+          - ops_result
+          - ops_replace
+          - ops_write_file
+          - ops_edit_file
+          - ops_diff
+          - ops_stat
+          - ops_copy
+          - ops_move
+          - ops_remove
+          - ops_read_table
+          - ops_read_docx
+          - ops_read_pdf
+          - ops_batch
+          - ops_load_sdk
+          - ops_discover_tools
+          - ops_status
         discovery:
           kind: tools
         requireMatch: true
@@ -526,6 +547,19 @@ rules:
             activation:
               scan: batch
               selective: true
+  - id: example-persona
+    name: 示例：动态人设
+    enabled: false
+    layer: system-section
+    if:
+      scope:
+        audience: main
+    then:
+      - id: identity
+        kind: persona
+        prefix: You are a helpful assistant.
+        suffix: "Working directory: {{CWD}}."
+        complete: false
 
 # BEGIN SHARED PARAMETER REFERENCE
 # 以下穷举全部登记键；值是编辑器示例，不承诺等于模块运行时默认值。
@@ -584,15 +618,8 @@ rules:
 # END SHARED PARAMETER REFERENCE
 
 # 其他领域资产参考（按需合并；moduleConfigs 低于已声明共享参数，不能绕过权限）
-# persona 的省略字段继承官方；空文本清空，complete:false 解除人设独占。
-# 多模块重复定义同一受众的同一字段会拒绝，不按顺序挑选赢家。
-# persona:
-#   main:
-#     prefix: You are a helpful assistant.
-#     suffix: "Working directory: {{CWD}}."
-#     complete: false
-#   subagent:
-#     suffix: 返回可核验的执行结果。
+# persona 动作字段全省略才继承；显式空串阻止继承，但不清除其他规则正文。
+# complete/includeRuntimeContext 显式布尔冲突拒绝候选并保留旧贡献。
 # variablesEnabled: true
 # contextActivationRecursive: false
 # moduleConfigs:

@@ -13,7 +13,6 @@ const { registerSettingsBridge } = await import('../../src/runtime/settings-brid
 const { writeModule } = await import('../../src/host/write-module.ts')
 const { compileRules } = await import('../../engine/rule-spec.mjs')
 const { ACTION_KINDS } = await import('../../engine/actions/catalog.mjs')
-const { setModuleEnabled } = await import('../../src/host/config-store.ts')
 let sequence = 0
 
 function harness({ readonly = false, rebuildFails = false, afterRebuild, onResolveTarget, declareRules = true } = {}) {
@@ -22,7 +21,7 @@ function harness({ readonly = false, rebuildFails = false, afterRebuild, onResol
   mkdirSync(directory, { recursive: true })
   const file = join(directory, 'module.yml')
   // 声明面：这个夹具建模的是「有规则、有变量的模块」，所以顶层 `rules` 与 `variables` 必须声明
-  // （键整个不存在＝没声明，端点会被 400 `module-not-declared` 拒）。人设按用例各自追加声明。
+  // （键整个不存在＝没声明，端点会被 400 `module-not-declared` 拒）。
   const original = `# 用户注释\nid: ${id}\nmodules: []\n${declareRules ? 'rules: []\n' : ''}variables: {}\nunknown: keep # 未知字段注释\n`
   writeFileSync(file, original)
   let activeDirectory = directory
@@ -570,71 +569,5 @@ test('变量端点拒绝越权/非法范围/过期域；切片发布失败后的
   assert.deepEqual(refreshed.value.module, { keep: 'SAVED', placeholder: '' })
   assert.equal(refreshed.value.publicationPending, false)
   assert.equal(h.rebuilds, 0)
-  assert.equal(readFileSync(h.file, 'utf8'), committed)
-})
-
-test('人设 bridge 保留主子三态与定义版本；删除覆盖恢复继承且不改变规则排序', async () => {
-  const h = harness()
-  // 声明 `persona` 才可用该端点；初始值非空，故下面不再断言「未声明人设读成 null」
-  // （那条在新语义下不可能成立，由 T10 的 `module-not-declared` 用例覆盖）。
-  writeFileSync(h.file, h.original + 'persona:\n  main:\n    prefix: INITIAL\n')
-  const before = await h.call({}, {}, 'persona')
-  assert.equal(before.ok, true)
-  assert.deepEqual(before.value.persona, { main: { prefix: 'INITIAL' } })
-  assert.match(before.value.revision, /^[a-f0-9]{64}$/)
-  const persona = { main: { prefix: '', complete: false }, subagent: { suffix: 'CHILD' } }
-  const saved = await h.call({ persona, expectedRevision: before.value.revision }, {}, 'persona')
-  assert.equal(saved.ok, true, saved.message)
-  assert.deepEqual(saved.value.persona, persona)
-  assert.deepEqual((await h.call({}, {}, 'persona')).value.persona, persona)
-  assert.equal(parse(readFileSync(h.file, 'utf8')).configOrder, undefined)
-  const removed = await h.call({ persona: null, expectedRevision: saved.value.revision }, {}, 'persona')
-  assert.equal(removed.ok, true, removed.message)
-  assert.equal(removed.value.persona, null)
-})
-
-test('人设 bridge 保存未选中模块不与其他定义冲突，陈旧版本和非法输入零写入', async t => {
-  const h = harness(), peer = harness()
-  writeFileSync(h.file, h.original + 'persona:\n  main:\n    prefix: INITIAL\n')
-  writeFileSync(peer.file, peer.original + 'persona:\n  main:\n    prefix: PEER\n')
-  for (const id of [h.id, peer.id]) setModuleEnabled(moduleRoot, id, true)
-  t.after(() => { for (const id of [h.id, peer.id]) setModuleEnabled(moduleRoot, id, false) })
-  const before = await h.call({}, {}, 'persona')
-  const peerBytes = readFileSync(peer.file)
-  const saved = await h.call({ persona: { main: { prefix: 'OWN' } }, expectedRevision: before.value.revision }, {}, 'persona')
-  assert.equal(saved.ok, true, saved.message)
-  assert.deepEqual(saved.value.persona, { main: { prefix: 'OWN' } })
-  assert.deepEqual(readFileSync(peer.file), peerBytes)
-  const bytes = readFileSync(h.file, 'utf8')
-  for (const body of [
-    { persona: { main: { prefix: false } }, expectedRevision: saved.value.revision },
-    { persona: null, expectedRevision: before.value.revision },
-    { persona: null, expectedRevision: saved.value.revision, path: 'outside' },
-    { persona: null, expectedRevision: saved.value.revision, expectedModuleId: peer.id },
-  ]) {
-    assert.equal((await h.call(body, {}, 'persona')).ok, false)
-    assert.equal(readFileSync(h.file, 'utf8'), bytes)
-  }
-  writeFileSync(h.file, 'id: [broken\n')
-  assert.equal((await h.call({}, {}, 'persona')).ok, false)
-  assert.equal(readFileSync(h.file, 'utf8'), 'id: [broken\n')
-})
-
-test('人设 bridge 发布失败返回已提交值与版本，仅发布重试不重放写入', async () => {
-  let fail = true
-  const h = harness({ rebuildFails: () => fail })
-  writeFileSync(h.file, h.original + 'persona:\n  main:\n    prefix: INITIAL\n')
-  const before = await h.call({}, {}, 'persona')
-  const persona = { main: { suffix: '', complete: false } }
-  const saved = await h.call({ persona, expectedRevision: before.value.revision }, {}, 'persona')
-  assert.equal(saved.ok, true, saved.message)
-  assert.equal(saved.value.persisted, true)
-  assert.equal(saved.value.publicationPending, true)
-  assert.deepEqual(saved.value.persona, persona)
-  const committed = readFileSync(h.file, 'utf8')
-  fail = false
-  const refreshed = await h.call({ refreshOnly: true }, {}, 'persona')
-  assert.equal(refreshed.ok, true, refreshed.message)
-  assert.equal(refreshed.value.publicationPending, false)
   assert.equal(readFileSync(h.file, 'utf8'), committed)
 })

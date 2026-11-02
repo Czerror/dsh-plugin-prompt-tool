@@ -14,5 +14,6 @@ export interface TemplateConfig {
   variableStore?: TemplateVariableStore
 }
 export function templateExecutionKey(agent: unknown, signal?: AbortSignal): string | undefined
-export function renderTemplate(config: TemplateConfig, context?: { agent?: unknown; signal?: AbortSignal }, options?: { variableStore?: TemplateVariableStore; enabled?: boolean; warn?: (message: string) => void }): string
+/** preview 仅供挂载预检：副本求值，不提交变量或消费执行凭据；session 赋值仍拒绝。 */
+export function renderTemplate(config: TemplateConfig, context?: { agent?: unknown; signal?: AbortSignal }, options?: { variableStore?: TemplateVariableStore; enabled?: boolean; warn?: (message: string) => void; preview?: boolean }): string
 export function renderTemplateAsync(config: TemplateConfig, context?: { agent?: unknown; signal?: AbortSignal }, options?: { variableStore?: TemplateVariableStore; enabled?: boolean; warn?: (message: string) => void }): Promise<string>

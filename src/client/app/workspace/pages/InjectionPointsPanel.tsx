@@ -21,7 +21,6 @@ import { EngineModuleCard } from '../../../ui/EngineModuleCard.tsx'
 import { LAYER_LABEL_KEYS, translateLabel } from '../../../features/prompts/prompt-config-policy.ts'
 import { ModuleCapabilityCreateMenu } from '../../../features/modules/EngineModuleList.tsx'
 import { CurrentSessionModel } from '../../../features/models/CurrentSessionModel.tsx'
-import { ModulePersonaCard } from '../../../features/persona/ModulePersonaCard.tsx'
 import { ContextActivationDiagnosticsCard } from '../../../features/prompts/ContextActivationDiagnosticsCard.tsx'
 import { TemplateVariablesModuleCard } from '../../../features/prompts/PromptConfigsEditor.tsx'
 import { CustomToolsCard } from '../../../features/tools/CustomToolsCard.tsx'
@@ -286,16 +285,8 @@ export interface InjectionPointSlotsInput {
 export function injectionPointSlots(input: InjectionPointSlotsInput): InjectionPointSlots {
   const { store, t, viewFilter, audience } = input
   const excluded = input.excludeCapabilities ?? []
-  // 人设来源跨模块且不依赖规则实例，按页面受众独立装配：人设卡的主语来自它自己读到的来源
-  // （`personaSources` 的 main／subagent 指向哪个模块），页面不给它兜底主语。
   const beforeCards = (
     <>
-      <ModulePersonaCard t={t} audience={audience}
-        disabled={!store.fields.modulesEnabled}
-        modules={store.meta.modules}
-        canEditModule={moduleId => canEditModule(store.fields, store.meta.modules, moduleId)}
-        onDeclared={() => { void store.load({ silent: true }) }}
-        onNotice={store.showNotice} drafts={store.editorDrafts} />
       {audience === 'main' && <div hidden={viewFilter !== 'context-activation'}><ContextActivationDiagnosticsCard store={store} t={t} /></div>}
       <LayerSettingsFocus layer={input.focusCapability?.layer} token={input.focusCapability?.token ?? 0} />
     </>

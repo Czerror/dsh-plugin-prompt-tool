@@ -46,8 +46,6 @@ export interface CompileRulesOptions {
   variables?: Record<string, string>
   variablesEnabled?: boolean
   contextActivationRecursive?: boolean
-  /** 人设已独占 complete 段时拒绝第二条（宿主聚合用）。 */
-  personaComplete?: boolean
   promptConfigOptions?: PromptConfigCompileOptions
   /** 挂载期输入：编译期显式剥掉，绑定由 `rule-runtime.mjs` 完成。 */
   ctx?: unknown

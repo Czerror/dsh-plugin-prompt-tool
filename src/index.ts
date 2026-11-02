@@ -28,7 +28,6 @@ import {
 import type { PromptSettings, RuntimeOptions } from './config.ts'
 import { modulesDir } from './host/paths.ts'
 import { enabledModuleIds, resolveRequestedModuleDir } from './host/config-store.ts'
-import { selectedPersonaModules } from './host/persona-selection.ts'
 import { ensureSkillSeed } from './host/skills-actions.ts'
 import { createSkillsRuntime } from './host/skills-runtime.ts'
 import { createAgentAssembly } from './runtime/agent-assembly.ts'
@@ -251,8 +250,7 @@ registerTuiCommand(
   // 策略缺省 enabled=false；服务缺失时引擎只执行模块卡（独立引擎复制场景）。
   installPreStepCoordinator(ctx)
 
-  // 人设适配属于主插件运行态，不作为官方服务的启动依赖；来源选择不隐式启用其普通规则。
-  const personaModules = () => runtime.modulesEnabled ? selectedPersonaModules(modulesDir()) : []
+  // 官方人设捕获属于主插件运行态，不作为官方服务的启动依赖。
   const personaCapture = installPersonaCapture(ctx)
   ctx.effect(function* () {
     yield () => personaCapture.dispose()
@@ -263,7 +261,6 @@ registerTuiCommand(
         enabledModules: () => runtime.modulesEnabled
           ? enabledModuleIds(modulesDir())
           : [],
-        personaModules,
         personaCapture,
         warn: (message) => warn(ctx, message),
       })

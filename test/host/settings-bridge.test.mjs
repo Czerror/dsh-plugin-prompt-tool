@@ -168,7 +168,6 @@ test('settings bridge /meta 逐模块下发同源事实：可编辑、算不出�
     name: '可编辑副本',
     modules: ['rule-engine', 'tool-search'],
     rules: [textRule('body-row', 'TOP-SECRET-BODY')],
-    persona: { main: { prefix: 'TOP-SECRET-PERSONA' } },
   }), 'utf8')
   // 场景二：组合源解析不到 ⇒ facts 在、editable 假（/meta 只列存储根，包内回退模块不在此列）。
   const unresolvedDir = makeUserPresetDir('facts-unresolved-')
@@ -241,7 +240,7 @@ test('settings bridge /meta 下发声明面（顶层键名）：只声明 rules 
   }
 })
 
-test('声明面：五个节的首次写入＝创建（无版本期望也 200），写后声明成立、读合法；已声明则仍要版本', async () => {
+test('声明面：节首次写入＝创建（无版本期望也 200），写后声明成立、读合法；已声明则仍要版本', async () => {
   const dir = makeUserPresetDir('create-first-')
   const id = basename(dir)
   const file = join(dir, 'module.yml')
@@ -268,16 +267,12 @@ test('声明面：五个节的首次写入＝创建（无版本期望也 200）�
   const tool = { id: 'shell', description: '运行命令', output: { schema: { type: 'string' } }, execute: { kind: 'shell', command: 'echo' } }
   await created('customTools', ['customTools'], { customTools: [tool] })
   // 人设与变量：创建语义＝**不传版本期望**（客户端创建模式就该这么发；传空串会被当非法版本拒绝）。
-  await created('persona', ['persona'], { persona: { main: { prefix: 'CREATED' } }, expectedModuleId: id })
   await created('moduleVariables', ['variables'], { scope: 'module', variables: { owner: 'created' }, expectedModuleId: id })
   // 引擎参数写的是 `layerSettings`（`engineParamPath`），登记表里 `params` 与 `layerSettings` 任一存在即算已声明。
   await created('paramOverrides', ['params', 'layerSettings'], { overrides: { modelTemperature: 0.3 } })
 
   // 有前状态就仍要版本期望：声明之后再省略版本必须被拒（创建语义不放宽并发校验）。
   // 拒法与写区外的校验同源，所以这里连状态码与 code 一起锁住——只断「不是 200」会漏掉状态码分类退化。
-  const personaNoRevision = await call(handlers, 'persona', { persona: { main: { prefix: 'AGAIN' } }, expectedModuleId: id })
-  assert.equal(personaNoRevision.status, 400, `已声明 persona 的写必须带读取版本：${JSON.stringify(personaNoRevision.payload)}`)
-  assert.equal(personaNoRevision.payload.code, 'module-persona-rejected')
   const variablesNoRevisions = await call(handlers, 'moduleVariables', { scope: 'module', variables: { owner: 'again' }, expectedModuleId: id })
   assert.equal(variablesNoRevisions.status, 400, `已声明 variables 的写必须带读取版本：${JSON.stringify(variablesNoRevisions.payload)}`)
   assert.equal(variablesNoRevisions.payload.code, 'rules-invalid')
@@ -299,16 +294,11 @@ test('声明面：创建语义只认「版本期望整键缺席」——空串�
   }
 
   // 客户端创建模式曾经发出的两种形状都必须被拒：空串版本、空的 expectedRevisions 对象。
-  const personaEmpty = await call('persona', { persona: { main: { prefix: 'X' } }, expectedModuleId: id, expectedRevision: '' })
-  assert.equal(personaEmpty.status, 400, `空串版本必须拒绝：${JSON.stringify(personaEmpty.payload)}`)
   const variablesEmpty = await call('moduleVariables', { scope: 'module', variables: { k: 'v' }, expectedModuleId: id, expectedRevisions: {} })
   assert.equal(variablesEmpty.status, 400, `空 expectedRevisions 必须拒绝：${JSON.stringify(variablesEmpty.payload)}`)
-  assert.equal(declares(dir, 'persona'), false, '被拒的写不建立声明')
   assert.equal(declares(dir, 'variables'), false, '被拒的写不建立声明')
 
   // 对照（同一未声明模块）：整键缺席＝创建，照旧 200 并建立声明。
-  const personaCreated = await call('persona', { persona: { main: { prefix: 'X' } }, expectedModuleId: id })
-  assert.equal(personaCreated.status, 200, JSON.stringify(personaCreated.payload))
   const variablesCreated = await call('moduleVariables', { scope: 'module', variables: { k: 'v' }, expectedModuleId: id })
   assert.equal(variablesCreated.status, 200, JSON.stringify(variablesCreated.payload))
   assert.equal(declares(dir, 'variables'), true)
@@ -722,12 +712,12 @@ test('模块配置排序端点：启用尾部追加、跨模块保存、冲突�
   })
 })
 
-test('契约：9 个曾由 handler 拒绝的端点统一拒绝未知顶层字段', async () => {
+test('契约：曾由 handler 拒绝的端点统一拒绝未知顶层字段', async () => {
   const dir = makeUserPresetDir('pt-unknown-fields-')
   writeFileSync(join(dir, 'module.yml'), `id: ${basename(dir)}\nmodules: []\n`, 'utf8')
   const { ctx, handlers } = makeHarness()
   registerSettingsBridge(ctx, { ns: 'prompt-tool', models: () => ({ available: true, providers: [] }), skills: () => skillsStateStub(), moduleDirectory: () => dir })
-  for (const endpoint of ['assetRelease', 'exportModule', 'importModulePackage', 'moduleConfigOrder', 'moduleName', 'moduleVariables', 'persona', 'personaSources', 'rules']) {
+  for (const endpoint of ['assetRelease', 'exportModule', 'importModulePackage', 'moduleConfigOrder', 'moduleName', 'moduleVariables', 'rules']) {
     const result = await call(handlers, endpoint, { extra: 1 })
     assert.equal(result.status, 400, endpoint)
     assert.equal(result.payload.code, 'bridge-request-invalid', endpoint)
@@ -911,168 +901,9 @@ test('settings bridge /custom-tools 保存时自动追加工具模块', async ()
   }
 })
 
-test('settings bridge /persona 读写顶层 persona 段并按实际模块身份重建', async () => {
-  const { ctx, handlers } = makeHarness()
-  const dir = makeUserPresetDir('pt-persona-')
-  // 声明面：顶层 `persona` 键存在，读通道才可用（键整个不存在＝没声明）。
-  writeFileSync(join(dir, 'module.yml'), `id: ${basename(dir)}\nname: beta\nunknown: keep\npersona: ${JSON.stringify({ main: { prefix: 'INITIAL' } })}\n`, 'utf8')
-  const rebuilds = []
-  try {
-    registerSettingsBridge(ctx, {
-      ns: 'prompt-tool',
-      models: () => ({ available: true, providers: [] }),
-      skills: () => skillsStateStub(),
-        moduleDirectory: () => dir,
-      overridesChanged: (id) => { rebuilds.push(id) },
-    })
-    const handler = handlers.get(PREFIX + BRIDGE_ENDPOINTS.persona)
-    assert.ok(handler, '/persona 端点应注册')
-    const initial = fakeRes()
-    await handler(fakeReq(), initial)
-    const expectedRevision = JSON.parse(initial.body).value.revision
-    const write = fakeRes()
-    await handler(fakeReq({ [Symbol.asyncIterator]: async function* () {
-      yield Buffer.from(JSON.stringify({ expectedModuleId: basename(dir), expectedRevision, persona: { main: { prefix: '', suffix: 'SUFFIX', complete: false }, subagent: { complete: true, includeRuntimeContext: false } } }))
-    } }), write)
-    assert.equal(write.status, 200)
-    const written = parseYaml(readFileSync(join(dir, 'module.yml'), 'utf8'))
-    assert.deepEqual(written.persona, { main: { prefix: '', suffix: 'SUFFIX', complete: false }, subagent: { complete: true, includeRuntimeContext: false } })
-    assert.equal(written.unknown, 'keep', '未知字段保留')
-    assert.deepEqual(rebuilds, [basename(dir)], '写盘后把实际模块身份交给运行时')
-    const stale = fakeRes()
-    const savedBytes = readFileSync(join(dir, 'module.yml'))
-    await handler(fakeReq({ [Symbol.asyncIterator]: async function* () {
-      yield Buffer.from(JSON.stringify({ expectedModuleId: basename(dir), persona: null, expectedRevision }))
-    } }), stale)
-    assert.equal(stale.status, 409)
-    assert.deepEqual(readFileSync(join(dir, 'module.yml')), savedBytes)
-    // 无 persona 载荷 = 读取。
-    const read = fakeRes()
-    await handler(fakeReq(), read)
-    assert.equal(read.status, 200)
-    assert.deepEqual(JSON.parse(read.body).value.persona, written.persona)
-    // persona: null = 移除顶层段。
-    const remove = fakeRes()
-    await handler(fakeReq({ [Symbol.asyncIterator]: async function* () {
-      yield Buffer.from(JSON.stringify({ expectedModuleId: basename(dir), persona: null, expectedRevision: JSON.parse(read.body).value.revision }))
-    } }), remove)
-    assert.equal(remove.status, 200)
-    assert.equal(parseYaml(readFileSync(join(dir, 'module.yml'), 'utf8')).persona, undefined)
-    assert.deepEqual(rebuilds, [basename(dir), basename(dir)])
-  } finally {
-    rmSync(dir, { recursive: true, force: true })
-  }
-})
 
-test('/persona：未选人设可以保存独占字段，发布失败保留定义且只重试刷新', async () => {
-  const { ctx, handlers } = makeHarness()
-  const dir = makeUserPresetDir('pt-persona-complete-')
-  let rebuilds = 0, failPublication = false
-  const file = join(dir, 'module.yml')
-  const writeModule = enabled => writeFileSync(file, JSON.stringify({ id: basename(dir), modules: ['rule-engine'], persona: { main: { prefix: 'INITIAL' } }, rules: [textRule('exclusive-section', '独占段', { enabled, layer: 'system-section', params: { complete: true } })] }))
-  try {
-    registerSettingsBridge(ctx, { ns: 'prompt-tool', models: () => ({ available: true, providers: [] }), skills: () => skillsStateStub(), moduleDirectory: () => dir, overridesChanged: () => { rebuilds++; if (failPublication) throw new Error('publication unavailable') } })
-    const handler = handlers.get(PREFIX + BRIDGE_ENDPOINTS.persona)
-    const post = async () => {
-      const read = fakeRes()
-      await handler(fakeReq(), read)
-      const res = fakeRes()
-      await handler(fakeReq({ async *[Symbol.asyncIterator]() { yield Buffer.from(JSON.stringify({ expectedModuleId: basename(dir), expectedRevision: JSON.parse(read.body).value.revision, persona: { main: { prefix: 'PREFIX', complete: true } } })) } }), res)
-      return res
-    }
-    writeModule(true)
-    assert.equal((await post()).status, 200)
-    assert.equal(rebuilds, 1, '写盘成功后按实际模块身份重建')
-    assert.equal(parseYaml(readFileSync(file, 'utf8')).persona.main.complete, true)
-    failPublication = true
-    const pending = JSON.parse((await post()).body).value
-    assert.equal(pending.persisted, true)
-    assert.equal(pending.publicationPending, true)
-    assert.match(pending.publicationError, /publication unavailable/)
-    const saved = readFileSync(file)
-    failPublication = false
-    const refreshed = fakeRes()
-    await handler(fakeReq({ async *[Symbol.asyncIterator]() { yield Buffer.from(JSON.stringify({ expectedModuleId: basename(dir), refreshOnly: true })) } }), refreshed)
-    assert.equal(JSON.parse(refreshed.body).value.publicationPending, false)
-    assert.deepEqual(readFileSync(file), saved, '刷新不重写已提交正文')
-  } finally { rmSync(dir, { recursive: true, force: true }) }
-})
 
-test('/persona-sources：主子来源独立于编辑模块，保存不启用规则，发布失败可只重试', async () => {
-  const { ctx, handlers } = makeHarness()
-  const alpha = makeUserPresetDir('pt-source-main-'), beta = makeUserPresetDir('pt-source-child-')
-  const { readPersonaSources, writePersonaSources, selectedPersonaModules } = await import('../../src/host/persona-selection.ts')
-  const { enabledModuleIds, enableTablePath } = await import('../../src/host/config-store.ts')
-  const original = readPersonaSources(userPresetRoot).sources, enabled = enabledModuleIds(userPresetRoot)
-  const rebuilds = []
-  let failPublication = false
-  for (const [dir, prefix] of [[alpha, 'ALPHA'], [beta, 'BETA']]) writeFileSync(join(dir, 'module.yml'), JSON.stringify({ id: basename(dir), modules: [], rules: [], persona: { main: { prefix: prefix + '-MAIN' }, subagent: { prefix: prefix + '-CHILD' } } }))
-  try {
-    registerSettingsBridge(ctx, { ns: 'prompt-tool', models: () => ({ available: true, providers: [] }), skills: () => skillsStateStub(), moduleDirectory: () => '', overridesChanged: target => { rebuilds.push(target); if (failPublication) throw new Error('runtime unavailable') } })
-    const post = skillsPost(handlers, 'personaSources')
-    const initial = await post({})
-    assert.equal(initial.status, 200)
-    const sources = { main: basename(alpha), subagent: basename(beta) }
-    failPublication = true
-    const saved = await post({ sources, expectedRevision: initial.body.value.revision })
-    assert.equal(saved.status, 200)
-    assert.deepEqual(saved.body.value.sources, sources)
-    assert.equal(saved.body.value.persisted, true)
-    assert.equal(saved.body.value.publicationPending, true)
-    assert.deepEqual(enabledModuleIds(userPresetRoot), enabled)
-    assert.deepEqual(selectedPersonaModules(userPresetRoot).map(item => item.persona), [{ main: { prefix: 'ALPHA-MAIN' } }, { subagent: { prefix: 'BETA-CHILD' } }])
-    const file = enableTablePath(userPresetRoot), bytes = readFileSync(file)
-    assert.equal((await post({ sources, expectedRevision: initial.body.value.revision })).status, 409)
-    assert.deepEqual(readFileSync(file), bytes)
-    failPublication = false
-    const refreshed = await post({ refreshOnly: true })
-    assert.equal(refreshed.body.value.publicationPending, false)
-    assert.equal(refreshed.body.value.revision, saved.body.value.revision)
-    assert.deepEqual(rebuilds, [undefined, undefined], '来源变化刷新全部 Agent')
-    assert.deepEqual(readFileSync(file), bytes, '发布重试不重写来源配置')
-    const cleared = await post({ sources: { main: null, subagent: null }, expectedRevision: saved.body.value.revision })
-    assert.equal(cleared.status, 200)
-    assert.deepEqual(cleared.body.value.sources, { main: null, subagent: null })
-    assert.deepEqual(enabledModuleIds(userPresetRoot), enabled)
-  } finally {
-    writePersonaSources(userPresetRoot, original, readPersonaSources(userPresetRoot).revision)
-    for (const dir of [alpha, beta]) rmSync(dir, { recursive: true, force: true })
-  }
-})
 
-test('/persona-sources：非法载荷和远端请求零写入，在用人设模块不能删除', async () => {
-  const { ctx, handlers } = makeHarness()
-  const dir = makeUserPresetDir('pt-source-protected-'), id = basename(dir)
-  const { readPersonaSources, writePersonaSources } = await import('../../src/host/persona-selection.ts')
-  const { enableTablePath } = await import('../../src/host/config-store.ts')
-  const original = readPersonaSources(userPresetRoot).sources
-  writeFileSync(join(dir, 'module.yml'), JSON.stringify({ id, modules: [], rules: [], persona: { main: { prefix: 'PRESERVE' } } }))
-  try {
-    registerSettingsBridge(ctx, { ns: 'prompt-tool', models: () => ({ available: true, providers: [] }), skills: () => skillsStateStub(), moduleDirectory: () => '' })
-    const post = skillsPost(handlers, 'personaSources')
-    const selection = writePersonaSources(userPresetRoot, { main: id, subagent: null }, readPersonaSources(userPresetRoot).revision)
-    const bytes = readFileSync(enableTablePath(userPresetRoot))
-    for (const body of [
-      { sources: { main: id, subagent: null } },
-      { sources: { main: '../escape', subagent: null }, expectedRevision: selection.revision },
-      { sources: { main: 'missing-source', subagent: null }, expectedRevision: selection.revision },
-      { sources: { main: id }, expectedRevision: selection.revision },
-      { sources: { main: null, subagent: null }, expectedRevision: selection.revision, refreshOnly: true },
-      { sources: { main: null, subagent: null }, expectedRevision: selection.revision, extra: true },
-    ]) assert.notEqual((await post(body)).status, 200)
-    const remote = fakeRes()
-    await handlers.get(PREFIX + BRIDGE_ENDPOINTS.personaSources)(fakeReq({ socket: { remoteAddress: '192.168.1.4' } }), remote)
-    assert.equal(remote.status, 403)
-    assert.deepEqual(readFileSync(enableTablePath(userPresetRoot)), bytes)
-    const removed = await skillsPost(handlers, 'moduleDelete')({ id })
-    assert.equal(removed.status, 400)
-    assert.match(removed.body.message, /人设|persona/)
-    assert.equal(existsSync(join(dir, 'module.yml')), true)
-  } finally {
-    writePersonaSources(userPresetRoot, original, readPersonaSources(userPresetRoot).revision)
-    rmSync(dir, { recursive: true, force: true })
-  }
-})
 
 /** 用户技能根（技能实体的落点）：创建、复制导入与回收站都落在这里。 */
 function makeSkillsRoot() {
@@ -1337,7 +1168,6 @@ test('声明面：读没声明 400 module-not-declared，写路径建立声明�
   // 缺哪一节就红在哪一节；端点的策略值/登记表不再由 shared 快照守，这里就是它们的行为面判据。
   const undeclaredSections = [
     ['customTools', 'customTools'],
-    ['persona', 'persona'],
   ]
   for (const [endpoint, sections] of undeclaredSections) {
     const denied = await call(handlers, endpoint)

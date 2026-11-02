@@ -8,7 +8,6 @@ import { basename, dirname, isAbsolute, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { Document, parseDocument } from 'yaml'
 import type { RuleContent, RuleDefinition, RuleRevisions, RuleSettings } from '../shared/rules.ts'
-import { readPersonaSpec } from '../shared/persona-section.ts'
 import { nextConfigSequence } from '../shared/module-config-order.ts'
 
 /** host 侧尾部序号：shared 抛普通 Error，这里转 ModuleWriteError（路由按 400/409 处理）。 */
@@ -66,6 +65,7 @@ export function assertRuleFileId(id: unknown): asserts id is string {
  */
 export function assertCanonicalRuleSource(source: unknown): asserts source is Record<string, unknown> {
   if (!record(source)) throw new ModuleWriteError('module.yml 必须是对象')
+  if (Object.hasOwn(source, 'persona')) throw new ModuleWriteError('顶层 persona 已退役；请手工重建为 rules 中的 persona 动作', 400, 'persona-format-retired')
   if (source.rules !== undefined && !Array.isArray(source.rules)) throw new ModuleWriteError('module.yml.rules 必须是数组')
   const retired = ['character-tools', 'world-book-tools', 'session-var-tools']
   const names = [...(Array.isArray(source.modules) ? source.modules : []), ...Object.keys(record(source.moduleConfigs) ? source.moduleConfigs : {})]
@@ -130,9 +130,7 @@ function projection(source: Record<string, unknown>, directory: string, sourceRe
   const variablesEnabled = source.variablesEnabled !== false
   const configs = record(source.moduleConfigs) ? source.moduleConfigs : {}
   const options = record(configs['rule-engine']) ? configs['rule-engine'] : {}
-  let persona: ReturnType<typeof readPersonaSpec>
   try {
-    persona = readPersonaSpec(source.persona)
     compileRules(rules, { moduleId: basename(directory), configOrder: order, variables, variablesEnabled,
       promptConfigOptions: { ...rulePromptConfigOptions(directory, options.strategyDir), ...(validation.loadTemplate === undefined ? {} : { loadTemplate: validation.loadTemplate }) } })
   } catch (error) { throw new ModuleWriteError(String((error as Error).message ?? error)) }
@@ -159,8 +157,7 @@ function projection(source: Record<string, unknown>, directory: string, sourceRe
   files[RULES_VARIABLES_FILE] = yaml(variables)
   const state = { rules: settings, variablesEnabled }
   const revisions: RuleRevisions = { rules: ruleRevisions, settings: digest(state), variables: digest(variables) }
-  // 人设投影受完整源版本与文件一致性校验保护，不占用规则状态的 CAS 版本。
-  files[RULES_SETTINGS_FILE] = yaml({ ...state, ...(persona === undefined ? {} : { persona }), _integrity: { version: 1, module: sourceRevision, files: Object.fromEntries(Object.entries(files).map(([file, text]) => [file, revisionOf(text)])), settings: revisions.settings } })
+  files[RULES_SETTINGS_FILE] = yaml({ ...state, _integrity: { version: 1, module: sourceRevision, files: Object.fromEntries(Object.entries(files).map(([file, text]) => [file, revisionOf(text)])), settings: revisions.settings } })
   return { contents, settings, variables, variablesEnabled, revisions, files }
 }
 

@@ -50,7 +50,7 @@ test('moduleDeclares：显式下发时按声明面回答（多节 = 任一存在
   const modules = declared(['rules', 'customTools'])
   assert.equal(moduleDeclares(modules, 'mod-a', 'rules'), true)
   assert.equal(moduleDeclares(modules, 'mod-a', 'customTools'), true)
-  assert.equal(moduleDeclares(modules, 'mod-a', 'persona'), false)
+  assert.equal(moduleDeclares(modules, 'mod-a', 'variables'), false)
   assert.equal(moduleDeclares(modules, 'mod-a', 'params', 'layerSettings'), false, '两节都不存在＝未声明')
   assert.equal(moduleDeclares(modules, 'mod-a', 'params', 'rules'), true, '任一存在即已声明')
   assert.equal(moduleDeclares(declared([]), 'mod-a', 'customTools'), false, '空数组＝什么都没声明')

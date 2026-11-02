@@ -226,7 +226,7 @@ export function useTemplateCreate(props: {
     } else if (result.localConflict) {
       store.showNotice('error', t('rules.create.localConflict', { id: moduleId }))
     } else if (publication.pending) {
-      store.showNotice('error', `${t('persona.sources.publicationPending')}：${publication.error ?? '请重试'}`)
+      store.showNotice('error', `${t('publication.pending')}：${publication.error ?? '请重试'}`)
     } else {
       store.showNotice('ok', t('templates.inserted', { file, id: createdRuleId }))
     }

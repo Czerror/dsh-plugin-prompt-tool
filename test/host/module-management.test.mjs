@@ -28,18 +28,16 @@ const PREFIX = '/api/prompt-tool/settings'
 
 /** 共用头：合法模块定义（一条真实规则），各行再追加自己的共享引用声明。 */
 const moduleHead = (id) => `id: ${id}\nname: ${id}\nmodules: []\nrules:\n  - id: body\n    then:\n      - id: inject\n        kind: inject-text\n        config: { id: inject, layer: pre-step, text: GUARD }\n`
-const personaAlias = (id) => moduleHead(id) + 'persona:\n  main:\n    prefix: &shared BEFORE\ndescription: *shared\n'
+const personaAlias = (id) => `id: ${id}\nname: ${id}\nmodules: []\nrules:\n  - id: persona\n    then:\n      - { id: identity, kind: persona, prefix: &shared BEFORE }\ndescription: *shared\n`
 const toolsAlias = (id) => moduleHead(id) + 'customTools: &tools\n  - id: shell\n    description: 运行命令\n    output: { schema: { type: string } }\n    execute: { kind: shell, command: echo }\nunknownTools: *tools\n'
 
 test('共享引用守卫：owns 之外的顶层键被连带改写一律拒绝（三条 owns ＋ 一条主路径）', () => {
   // owns 取自三个真实调用点（characters 并入／移除、/customTools），不另编一份。
-  const mergeOwns = ['rules', 'configOrder', 'variables', 'layerSettings', 'modules', 'meta', 'persona']
-  const unmergeOwns = ['rules', 'configOrder', 'variables', 'layerSettings', 'modules', 'meta']
+  const mergeOwns = ['rules', 'configOrder', 'variables', 'layerSettings', 'modules', 'meta']
   const toolsOwns = ['customTools', 'modules']
-  const inPlacePersona = (doc) => { doc.getIn(['persona', 'main', 'prefix'], true).value = 'AFTER' }
+  const inPlacePersona = (doc) => { doc.getIn(['rules', 0, 'then', 0, 'prefix'], true).value = 'AFTER' }
   const rows = [
-    { title: '并入 owns 含 persona：改 persona 连带改了 description', owns: mergeOwns, body: personaAlias, mutate: inPlacePersona, names: /description/ },
-    { title: '移除 owns 不含 persona：persona 本身即越界', owns: unmergeOwns, body: personaAlias, mutate: inPlacePersona, names: /persona/ },
+    { title: '并入 owns：改人设动作连带改了 description', owns: mergeOwns, body: personaAlias, mutate: inPlacePersona, names: /description/ },
     { title: '自定义工具 owns：改 customTools 连带改了 unknownTools', owns: toolsOwns, body: toolsAlias, mutate: (doc) => { doc.setIn(['customTools', 0, 'description'], '改过') }, names: /unknownTools/ },
   ]
   let sequence = 0

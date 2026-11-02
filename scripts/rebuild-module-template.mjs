@@ -36,7 +36,7 @@ doc.get('modules', true).commentBefore = ` 仅启用规则引擎。其他能力�
  可用模块（engine/compositions 下的文件名）：${moduleNames.join(', ')}
  filesystem-editor / persistent-shell-posix / tool-bash-disabled 由会话原有预设提供；声明它们只会产生诊断，插件不挂载官方包。
  已退役的引擎名：${[...RETIRED_MODULE_NAMES].join(', ')}；旧定义需显式转换。
- 人设使用 persona.main / persona.subagent；未声明字段继承官方值。`
+ 人设使用普通 persona 动作；启用模块内命中规则按配置序号拼接，字段全省略才继承官方。`
 doc.get('layerSettings', true).commentBefore = ' 唯一共享参数磁盘位置。按下方参考取消所需注释，不要复制旧 params/model/subagentModel 段。'
 doc.get('variables', true).commentBefore = ` 当前模块的持久变量；同名模块值覆盖全局，空字符串保留，删除才回落全局。
  全局变量位于 DSH_HOME/.prompt-tool/variables.yml，不随模块导出。
@@ -71,6 +71,9 @@ specs.push(doc.createNode({ id: 'example-context-activation', name: '上下文�
   then: [{ id: 'inject', kind: 'inject-text', config: { layer: 'pre-step', strategy: 'context-activation', text: '这里是触发后注入的背景知识。',
     params: { constant: false, keys: ['项目'], secondaryKeys: ['规范'], selectiveLogic: 'AND_ANY', caseSensitive: false, wholeWords: false, useRegex: false, wordBoundary: 'unicode',
       activation: { scan: 'batch', selective: true } } } }] }))
+specs.push(doc.createNode({ id: 'example-persona', name: '示例：动态人设', enabled: false, layer: 'system-section',
+  if: { scope: { audience: 'main' } },
+  then: [{ id: 'identity', kind: 'persona', prefix: 'You are a helpful assistant.', suffix: 'Working directory: {{CWD}}.', complete: false }] }))
 doc.set('rules', doc.createNode(specs))
 doc.get('rules', true).commentBefore = ` 每条规则默认 enabled:false；规则与动作的 id 必填、各自唯一。
  if 可组合 all/any/not/notAny；then 中动作在同一执行点按数组相对顺序执行，条件只求值一次。
@@ -79,7 +82,7 @@ doc.get('rules', true).commentBefore = ` 每条规则默认 enabled:false；规�
  注入正文、内容策略、合并和去重属于 inject-text.config；变量由模块或全局持久表拥有。
  需要原生赋值时显式设置 params.templateEvaluation:true，使用 module.set/get/add/inc/dec 或 global 对应操作。
  config.identity 只允许 {field: plugin, value: 唯一值}；templateFile 相对模块 module.yml 且须在模块目录内。
- complete、suppressRuntimeContext 是固定注册效果：不接受规则级 if，编译器明确拒绝非法组合。`
+ inject-text 的 complete、suppressRuntimeContext 是固定注册效果，不接受规则级 if；persona 动作支持动态条件。`
 
 const reference = new Document({ layerSettings: Object.fromEntries(LAYER_ORDER.map(layer => [layer, {}])) })
 const notes = {
@@ -97,13 +100,12 @@ for (const key of sharedParamKeys) {
   reference.getIn(path, true).comment = ` ${PARAMS_ZH[`param.${key}`]}；${rule.kind}${rule.options ? `；${rule.options.join(' | ')}` : ''}${notes[key] ? `；${notes[key]}` : ''}`
 }
 const assets = new Document({
-  persona: { main: { prefix: 'You are a helpful assistant.', suffix: 'Working directory: {{CWD}}.', complete: false }, subagent: { suffix: '返回可核验的执行结果。' } },
   variablesEnabled: true,
   contextActivationRecursive: false,
   moduleConfigs: { 'instruction-hint': { messageTemplate: 'Instructions from: {{FILES}}' } },
 })
 const commented = value => value.toString().trimEnd().split('\n').map(line => `# ${line}`).join('\n')
-const text = doc.toString() + `\n# BEGIN SHARED PARAMETER REFERENCE\n# 以下穷举全部登记键；值是编辑器示例，不承诺等于模块运行时默认值。\n# '' / [] 保存时删键；false / 0 保留。按需合并到上方 layerSettings，勿保留重复顶层键。\n${commented(reference)}\n# END SHARED PARAMETER REFERENCE\n\n# 其他领域资产参考（按需合并；moduleConfigs 低于已声明共享参数，不能绕过权限）\n# persona 的省略字段继承官方；空文本清空，complete:false 解除人设独占。\n# 多模块重复定义同一受众的同一字段会拒绝，不按顺序挑选赢家。\n${commented(assets)}\n`
+const text = doc.toString() + `\n# BEGIN SHARED PARAMETER REFERENCE\n# 以下穷举全部登记键；值是编辑器示例，不承诺等于模块运行时默认值。\n# '' / [] 保存时删键；false / 0 保留。按需合并到上方 layerSettings，勿保留重复顶层键。\n${commented(reference)}\n# END SHARED PARAMETER REFERENCE\n\n# 其他领域资产参考（按需合并；moduleConfigs 低于已声明共享参数，不能绕过权限）\n# persona 动作字段全省略才继承；显式空串阻止继承，但不清除其他规则正文。\n# complete/includeRuntimeContext 显式布尔冲突拒绝候选并保留旧贡献。\n${commented(assets)}\n`
 compileRules(parseDocument(text).toJS().rules)
 if (process.argv.includes('--check')) {
   if (readFileSync(output, 'utf8') !== text) throw new Error('根 module.yml 已偏离参数契约，请运行 pnpm rebuild:module-template')

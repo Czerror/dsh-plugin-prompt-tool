@@ -24,7 +24,6 @@ const { installPreStepCoordinator, PRE_STEP_COORDINATOR_SERVICE } = await import
 const { instructionFileIdentityOf, readInstructionPolicy, writeInstructionPolicy } = await import('../../src/host/instructions-policy.ts')
 const { mountRuleSources } = await import('../../engine/rule-runtime.mjs')
 const { installPersonaCapture } = await import('../../src/runtime/persona-registration.ts')
-const { loadModuleSpec } = await import('../../src/host/module-spec.ts')
 const { readModuleFacts, rowDisabled } = await import('../../src/host/module-params.ts')
 const { mountPreStepConfigs: mountConfigs, applyPromptConfigSources } = await import('../fixtures/pre-step.mjs')
 
@@ -148,13 +147,12 @@ test('只改变量值不重挂规则：内容签名剔除 variables', async (t) 
   off()
 })
 
-test('本地人设正文和来源下一次官方装配生效；坏来源保留两类受众的有效内容', async t => {
-  const { selectedPersonaModules, writePersonaSources, readPersonaSources } = await import('../../src/host/persona-selection.ts')
+test('人设规则正文与启用来源下一次官方装配生效，坏定义保留两类受众有效内容', async t => {
   const first = 'live-persona-first', second = 'live-persona-second'
   const write = (id, main, child) => writeModuleFixture(id, { modules: [], persona: { main: { prefix: main }, subagent: { prefix: child } } })
   write(first, 'MAIN-A', 'CHILD-A'); write(second, 'MAIN-B', 'CHILD-B')
-  writePersonaSources(moduleRoot, { main: first, subagent: first }, readPersonaSources(moduleRoot).revision)
-  const h = await liveAssembly(t, () => [], { personaModules: () => selectedPersonaModules(moduleRoot) })
+  let enabled = [first]
+  const h = await liveAssembly(t, () => enabled)
   const actors = [await h.makeAgent('live-persona-main'), await h.makeAgent('live-persona-child', 1)]
   const readers = []
   for (const agent of actors) await agent.ctx.plugin({ inject: ['systemPrompt'], apply(ctx) {
@@ -165,7 +163,8 @@ test('本地人设正文和来源下一次官方装配生效；坏来源保留�
   write(first, 'MAIN-A2', 'CHILD-A2')
   assert.ok((await readers[0]()).includes('MAIN-A2'))
   assert.ok((await readers[1]()).includes('CHILD-A2'))
-  writePersonaSources(moduleRoot, { main: second, subagent: first }, readPersonaSources(moduleRoot).revision)
+  write(second, 'MAIN-B', 'CHILD-A2')
+  enabled = [second]
   assert.ok((await readers[0]()).includes('MAIN-B'))
   assert.ok((await readers[1]()).includes('CHILD-A2'))
   writeFileSync(join(moduleRoot, second, 'module.yml'), 'persona: [')
@@ -174,8 +173,8 @@ test('本地人设正文和来源下一次官方装配生效；坏来源保留�
   assert.ok(h.warnings.length > 0)
   write(second, 'MAIN-C', 'CHILD-C')
   assert.ok((await readers[0]()).includes('MAIN-C'))
-  assert.deepEqual(h.runtime.moduleIds(actors[0].id), [], '人设来源不启用该模块规则')
-  writePersonaSources(moduleRoot, { main: null, subagent: null }, readPersonaSources(moduleRoot).revision)
+  assert.deepEqual(h.runtime.moduleIds(actors[0].id), [second], '人设规则与其他规则使用同一来源授权')
+  enabled = []
 })
 
 test('真实注入：启用配置进入主/子会话正确位置，关闭项不注入，释放后不再贡献', async (t) => {
@@ -1062,9 +1061,9 @@ test('连续等待中的新版本失败时回退最后完成初始化的旧模�
   write('READY-OLD', 'native')
   writeModuleFixture('late-version-persona', { modules: [] })
   let personaPrefix = 'ORIGINAL-PERSONA'
-  const h = await liveAssembly(t, () => ['late-version'], { personaModules: () => [{
-    moduleId: 'late-version-persona', persona: { main: { prefix: personaPrefix }, subagent: { prefix: personaPrefix } },
-  }] })
+  const writePersona = () => writeModuleFixture('late-version-persona', { modules: [], persona: { main: { prefix: personaPrefix }, subagent: { prefix: personaPrefix } } })
+  writePersona()
+  const h = await liveAssembly(t, () => ['late-version', 'late-version-persona'])
   const agents = [await h.makeAgent('late-version-main'), await h.makeAgent('late-version-child', 1)]
   const texts = async agent => (await h.inject(agent)).messages.flatMap(message => message.content.map(block => block.text))
   for (const agent of agents) assert.deepEqual(await texts(agent), ['USER', 'READY-OLD'])
@@ -1080,9 +1079,11 @@ test('连续等待中的新版本失败时回退最后完成初始化的旧模�
   })
   write('ABORTED-NEW', 'native')
   personaPrefix = 'ABORTED-PERSONA'
+  writePersona()
   await assert.rejects(h.runtime.refresh('late-version'), /PUBLIC-PERSONA-REJECTED/)
   for (const agent of agents) assert.deepEqual(await texts(agent), ['USER', 'PENDING-TWO'])
   personaPrefix = 'ORIGINAL-PERSONA'
+  writePersona()
   write('PENDING-TWO', 'ptc')
   const presentAs = h.root.tools.presentAs
   t.mock.method(h.root.tools, 'presentAs', function (mode, ...args) {
@@ -1093,7 +1094,7 @@ test('连续等待中的新版本失败时回退最后完成初始化的旧模�
   await h.runtime.settled()
   for (const agent of agents) {
     assert.deepEqual(await texts(agent), ['USER', 'READY-OLD'])
-    assert.deepEqual(h.runtime.moduleIds(agent.id), ['late-version'])
+    assert.deepEqual(h.runtime.moduleIds(agent.id), ['late-version', 'late-version-persona'])
   }
 })
 
@@ -1310,10 +1311,10 @@ function writeModuleFixture(id, { modules, promptConfigs = [], rules = [], modul
   mkdirSync(dir, { recursive: true })
   writeFileSync(join(dir, 'module.yml'), `${JSON.stringify({
     id, name: id, modules: [...new Set(modules.map(name => ['prompt-config-engine', 'declared-triggers'].includes(name) ? 'rule-engine' : name))],
-    rules: [...rules, ...promptConfigs.map(config => config.layer === 'agent-request'
+    rules: [...rules, ...Object.entries(persona ?? {}).map(([audience, fields]) => ({ id: `persona-${audience}`, then: [{ id: 'identity', kind: 'persona', audience, ...fields }] })), ...promptConfigs.map(config => config.layer === 'agent-request'
       ? { id: config.id, layer: 'agent-request', then: [{ id: 'request', kind: 'request-params', patch: config.params.patch }] }
       : fixtureRule(config))], ...(configOrder === undefined ? {} : { configOrder }),
-    ...(moduleConfigs === undefined ? {} : { moduleConfigs }), ...(persona === undefined ? {} : { persona }),
+    ...(moduleConfigs === undefined ? {} : { moduleConfigs }),
     ...(variables === undefined ? {} : { variables }),
     ...(customTools === undefined ? {} : { customTools }),
   }, null, 2)}\n`, 'utf8')
@@ -1384,7 +1385,7 @@ test('拒绝路径：非法 id、无效模块声明、缺失宿主能力都在�
   )
 })
 
-test('「独占」段唯一性：聚合选中人设及跨模块规则，准备拒绝保留所有 Agent 的旧贡献', async t => {
+test('「独占」段唯一性：聚合人设动作及跨模块规则，准备拒绝保留所有 Agent 的旧贡献', async t => {
   // 真值源：宿主 system-prompt 对「多于一个生效 complete 段」直接抛错
   // （packages/core/system-prompt/src/index.ts:597-600）。写门控只覆盖两个 bridge 端点，
   // 手改 YAML / 还原备份 / 导入包能绕过，这里钉住装配期的那道兜底。
@@ -1409,13 +1410,13 @@ test('「独占」段唯一性：聚合选中人设及跨模块规则，准备�
     '两个启用 complete 必须被拒',
   )
 
-  // 未选中的人设只是定义；不能在单模块准备阶段限制其普通规则。
+  // 动态人设完整候选在真实 Agent 装配时预检。
   writeModuleFixture('persona-complete', {
     modules: ['prompt-config-engine'],
     promptConfigs: [exclusive('excl-a')],
     persona: { main: { prefix: 'PREFIX', complete: true } },
   })
-  assert.equal((await prepareAssembly(moduleRoot, 'persona-complete', hasEveryService)).rules.length, 1)
+  assert.equal((await prepareAssembly(moduleRoot, 'persona-complete', hasEveryService)).rules.length, 2)
 
   // ③ 边界一：第二个独占被 `enabled: false` 关掉 → 不算冲突。
   writeModuleFixture('one-complete-disabled', {
@@ -1432,7 +1433,7 @@ test('「独占」段唯一性：聚合选中人设及跨模块规则，准备�
     persona: { main: { prefix: 'PREFIX' } },
   })
   const single = await prepareAssembly(moduleRoot, 'single-complete', hasEveryService)
-  assert.equal(single.rules.length, 1, '单个独占段正常装配')
+  assert.equal(single.rules.length, 2, '普通人设与独占段在运行时一并预检')
 
   writeModuleFixture('exclusive-live', { modules: [], promptConfigs: [{ id: 'old', text: 'OLD', position: 'after-all' }] })
   writeModuleFixture('selected-persona', { modules: [], persona: { main: { prefix: 'SELECTED', complete: false }, subagent: { prefix: 'CHILD', complete: false } } })
@@ -1461,9 +1462,8 @@ test('「独占」段唯一性：聚合选中人设及跨模块规则，准备�
   const standing = createScope(driver, {})
   scopes.push(standing)
   await standing.ctx.plugin(OfficialPersona, { prefix: 'OFFICIAL', complete: true })
-  let selected = 'selected-persona', enabled = ['exclusive-live']
-  const selectedModules = () => selected === undefined ? [] : [{ moduleId: selected, persona: loadModuleSpec(join(moduleRoot, selected)).persona }]
-  const runtime = createAgentAssembly(root, { moduleRoot, enabledModules: () => enabled, personaModules: selectedModules, personaCapture: persona, warn: message => warnings.push(message) })
+  const enabled = ['exclusive-live', 'selected-persona']
+  const runtime = createAgentAssembly(root, { moduleRoot, enabledModules: () => enabled, personaCapture: persona, warn: message => warnings.push(message) })
   t.after(async () => { await runtime.dispose(); for (const scope of scopes.reverse()) await scope.dispose(); await root.fiber.dispose() })
   const main = await driver.agents.create({ sessionId: 'exclusive-main' })
   const child = await driver.agents.create({ sessionId: 'exclusive-child', meta: { origin: 'subagent', delegationDepth: 1 } })
@@ -1472,7 +1472,7 @@ test('「独占」段唯一性：聚合选中人设及跨模块规则，准备�
   for (const agent of [main, child]) assert.deepEqual(await stepTexts(agent), ['OLD'])
   assert.ok((await sectionTexts(main)).includes('SELECTED'))
   assert.ok((await sectionTexts(child)).includes('CHILD'))
-  assert.deepEqual(runtime.moduleIds(main.id), ['exclusive-live'], '选择人设不启用来源模块的普通规则')
+  assert.deepEqual(runtime.moduleIds(main.id), enabled, '人设进入普通规则来源集合')
 
   // 人设 complete:false 遮蔽官方 complete：规则独占与它不再互相误报，规则段成为唯一系统段。
   writeModuleFixture('exclusive-live', { modules: [], promptConfigs: [{ ...exclusive('one'), audience: 'main' }] })
@@ -1482,10 +1482,10 @@ test('「独占」段唯一性：聚合选中人设及跨模块规则，准备�
 
   // 人设显式 complete:true 与同受众规则 complete 冲突：撤旧之前拒绝，旧装配原样保留。
   writeModuleFixture('selected-persona', { modules: [], persona: { main: { prefix: 'NEW', complete: true }, subagent: { prefix: 'CHILD', complete: false } } })
-  await assert.rejects(runtime.refresh(), /多个生效 complete/)
+  await assert.rejects(runtime.refresh(), /多个生效 complete|multiple complete/)
   assert.deepEqual(await sectionTexts(main), ['one 正文'])
   assert.ok((await sectionTexts(child)).includes('CHILD'))
-  assert.deepEqual(runtime.moduleIds(main.id), ['exclusive-live'])
+  assert.deepEqual(runtime.moduleIds(main.id), enabled)
 
   // 不同受众的独占可跨来源共存：主会话由规则独占，子代理由人设独占。
   writeModuleFixture('selected-persona', { modules: [], persona: { main: { prefix: 'NEW', complete: false }, subagent: { prefix: 'CHILD', complete: true } } })
@@ -1601,9 +1601,9 @@ test('公共人设发布失败恢复整批旧贡献，恢复失败保留原因�
   writeModuleFixture('assembly-restore', { modules: ['rule-engine'], promptConfigs: [{ id: 'restore', text: 'RESTORE', position: 'after-user' }] })
   writeModuleFixture('assembly-persona', { modules: [] })
   let prefix = 'OLD-PERSONA'
-  const h = await liveAssembly(t, () => ['assembly-restore'], { personaModules: () => [{
-    moduleId: 'assembly-persona', persona: { main: { prefix }, subagent: { prefix } },
-  }] })
+  const writePersona = () => writeModuleFixture('assembly-persona', { modules: [], persona: { main: { prefix }, subagent: { prefix } } })
+  writePersona()
+  const h = await liveAssembly(t, () => ['assembly-restore', 'assembly-persona'])
   const agents = [await h.makeAgent('batch-first'), await h.makeAgent('batch-second', 1)]
   const section = h.root.systemPrompt.section
   let remaining = 1
@@ -1615,16 +1615,18 @@ test('公共人设发布失败恢复整批旧贡献，恢复失败保留原因�
     return section.call(this, value)
   })
   prefix = 'NEW-PERSONA'
+  writePersona()
   await assert.rejects(h.runtime.refresh(), /PUBLIC-PERSONA-FAIL/)
   for (const agent of agents) {
     const system = await h.root.systemPrompt.assemble({ agent, scope: agent })
     assert.equal(system.sections.find(value => value.name === 'deployment:persona-prefix').text, 'OLD-PERSONA')
-    assert.deepEqual(h.runtime.moduleIds(agent.id), ['assembly-restore'])
+    assert.deepEqual(h.runtime.moduleIds(agent.id), ['assembly-restore', 'assembly-persona'])
   }
   assert.equal(h.runtime.publicationFailures().length, 1)
   await h.runtime.refresh()
   assert.deepEqual(h.runtime.publicationFailures(), [])
   prefix = 'ANOTHER-PERSONA'
+  writePersona()
   remaining = 2
   await assert.rejects(h.runtime.refresh(), error => {
     assert.match(String(error), /PUBLIC-PERSONA-FAIL.*RESTORE-FAIL|RESTORE-FAIL.*PUBLIC-PERSONA-FAIL/s)

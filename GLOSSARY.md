@@ -2,7 +2,7 @@
 
 Prompt Tool 领域将提示词注入行为组织为可选模块。本词汇表区分配置结构、运行时阶段和持久上下文。
 
-原生上下文、两级持久变量与人设继承的决策见 [ADR-0013](docs/adr/0013-native-context-module-state.md)。本词汇表描述当前源码的领域所有权，不代替发布验收记录。
+原生上下文、持久变量与动态人设规则的决策见 [ADR-0013](docs/adr/0013-native-context-module-state.md)。本词汇表描述当前源码的领域所有权，不代替发布验收记录。
 
 ## Language
 
@@ -193,13 +193,12 @@ _Avoid_: 插件 API、宿主服务、导入路径
 ### 角色与上下文
 
 **人设（Persona）**：
-模块定义中对官方系统身份的独立覆盖，主会话与子代理分别声明；每个受众仅消费一个所选来源，未设置字段继承官方值，显式空文本清空对应段。
-complete 的省略、false、true 分别表示继承、解除与启用 prefix 独占；人设不参加规则排序。
-_Avoid_: 角色卡、SillyTavern 预设卡片、可排序行为规则
+普通规则中 kind:persona 动作声明的官方系统身份贡献，支持动态条件与真实受众。所有命中动作按既有规则顺序分别拼接 prefix/suffix；某字段全省略才继承官方，显式空串阻止继承但不清除其它片段。complete/includeRuntimeContext 的显式值冲突拒绝候选并保旧；全部失配或事实不可用回官方。
+_Avoid_: 角色卡、SillyTavern 预设卡片、独立顶层正文
 
-**人设来源（Persona Source）**：
-主会话和子代理各自单选的官方默认或模块 ID，保存于 config.yml.personaSources；正文留在所选模块定义中。来源选择不启用该模块的规则，也不跨模块逐字段合并。
-_Avoid_: 规则启用集合、配置序号、多来源字段合并
+**人设卡（Persona Card）**：
+普通规则中 persona 动作的编辑视图；正文和选项归该动作，条件、启停、排序及保存版本归原规则，不持有独立来源选择或正文副本。
+_Avoid_: 人设来源下拉、独立正文所有者
 
 **SillyTavern 预设卡片（SillyTavern Preset）**：
 包含提示词列表、可转换为 Prompt Tool 模块的外部配置资产。

@@ -44,8 +44,6 @@ export const BRIDGE_REQUEST_FIELDS = {
   // 退役端点（410）：请求类型已改为 undefined，这里只有「无 body」这一事实。
   triggers: { body: 'none' },
   rules: { fields: ['expectedModuleId', 'expectedRevisions', 'expectedRulesAbsent', 'createRule', 'edits', 'activateRuleId', 'validateOnly', 'refreshOnly'] },
-  persona: { fields: ['persona', 'expectedModuleId', 'expectedRevision', 'refreshOnly'] },
-  personaSources: { fields: ['sources', 'expectedRevision', 'refreshOnly'] },
   moduleVariables: { fields: ['scope', 'variables', 'enabled', 'expectedModuleId', 'expectedRevisions', 'refreshOnly'] },
   customTools: { fields: ['customTools', 'expectedModuleId', 'refreshOnly'] },
   importModulePackage: { fields: [...ASSET_IMPORT_FIELD_KEYS, 'refreshOnly'] },

@@ -19,6 +19,7 @@ import { MenuSelect } from '../../ui/MenuSelect.tsx'
 import { StepCard, CloseButton, StepAdd, type StepCreation } from './RuleStepCard.tsx'
 import { RuleConditionFields, RuleParameterFields, cleared } from './RuleFields.tsx'
 import { AssemblyFields, MessageFilterFields, VisibilityFields } from './RuleSurfaceFields.tsx'
+import { ModulePersonaCard } from './ModulePersonaCard.tsx'
 import { TriggerJsonField, asTriggerRecord } from './RuleJsonField.tsx'
 import { triggerLabel } from './rule-labels.ts'
 import {
@@ -26,9 +27,6 @@ import {
   isActionNode, isBranchNode, nodeList, type RuleBranch, type RuleNode,
 } from './rule-steps.ts'
 import css from './rules.module.css'
-
-/** 注册制层没有逐轮求值时机，引擎拒绝带条件的动作（engine/rule-spec.mjs:79,143）。 */
-const REGISTRATION_LAYERS: readonly string[] = ['system-section', 'runtime-context']
 
 /** 作用域头：只声明「下面这批动作属于哪个条件」，本身没有可编辑内容。 */
 function ScopeHead(props: { kindLabel: string; summary: string; disabled?: boolean; removeLabel?: string; onRemove?: () => void }): ReactNode {
@@ -112,7 +110,8 @@ function ActionCard(props: {
             cleared(context.fields, fieldKey)
             props.onChange({ ...structuredClone(next.example), id: action.id, kind } as unknown as RuleAction)
           }} /></div>
-        {action.kind === 'assembly' ? <AssemblyFields {...context} fieldKey={fieldKey} value={action} onChange={next => props.onChange(next as RuleAction)} />
+        {action.kind === 'persona' ? <ModulePersonaCard t={t} action={action} disabled={context.disabled} onChange={props.onChange} />
+          : action.kind === 'assembly' ? <AssemblyFields {...context} fieldKey={fieldKey} value={action} onChange={next => props.onChange(next as RuleAction)} />
           : action.kind === 'tool-visibility' ? <VisibilityFields {...context} fieldKey={fieldKey} value={action} onChange={next => props.onChange(next as RuleAction)} />
           : action.kind === 'pre-step-filter' ? <MessageFilterFields {...context} fieldKey={fieldKey} value={action} onChange={next => props.onChange(next as RuleAction)} />
           : <div className={css.fields}><RuleParameterFields {...context} fieldKey={fieldKey} value={action} requestPatch={action.kind === 'request-params'} example={example}
@@ -180,7 +179,6 @@ export function RuleStepsPanel(props: {
   const then = nodeList(rule.then), otherwise = nodeList(rule.else)
   const usedIds = collectActionIds([...then, ...otherwise])
   const conditional = rule.if !== undefined
-  const branchAllowed = !REGISTRATION_LAYERS.includes(rule.layer ?? 'pre-step')
   const context: StepContext = {
     t, meta, engineMeta: props.engineMeta, fields: props.fields, expanded: props.expanded,
     prefix: props.prefix, disabled, onDraft: props.onDraft,
@@ -234,9 +232,8 @@ export function RuleStepsPanel(props: {
           onChange={setAddConditionKind} />
         <MenuSelect compact ariaLabel={t('rules.steps.addActionType')} value={selected?.kind ?? ''} disabled={disabled || candidates.length === 0}
           options={candidates.map(item => ({ value: item.kind, label: triggerLabel(t, item.kind) }))} onChange={setAddActionKind} />
-        <Button shape="pill" variant="outline" disabled={disabled || !branchAllowed || addConditionKind.length === 0 || candidates.length === 0} onClick={addBranch}>{t('rules.steps.addBranch')}</Button>
+        <Button shape="pill" variant="outline" disabled={disabled || addConditionKind.length === 0 || candidates.length === 0} onClick={addBranch}>{t('rules.steps.addBranch')}</Button>
         <Button shape="pill" variant="outline" disabled={disabled || selected === undefined} onClick={addAction}>{t('rules.addAction')}</Button>
-        {!branchAllowed && <span className={css.stepHint}>{t('rules.steps.branchUnsupported')}</span>}
       </StepAdd>
     </>
   }

@@ -17,7 +17,6 @@ import { parse as parseYaml } from 'yaml'
 import { impliedModulesForParams } from '../shared/engine-capabilities.ts'
 import type { ModuleFacts, ModuleSourceMode } from '../shared/engine-capabilities.ts'
 import { buildEngineModuleParams } from '../shared/engine-params.ts'
-import { readPersonaSpec } from '../shared/persona-section.ts'
 import { readModuleLayerSettings } from './module-layer-settings.ts'
 import { isEditableModuleDir, resolveModuleDir } from './module-dirs.ts'
 import { asString, loadModuleSpec } from './module-spec.ts'
@@ -224,7 +223,5 @@ export function renderComposition(spec: ModuleSpec, runtime: Record<string, unkn
   // 文本层按**声明**装配：runtime 覆盖只进参数桥，不改模块清单——所以这里显式给空 runtime 的
   // 解析结果（旧实现把 runtime 传进 loadCompositionText 但内部同样用空 runtime，行为不变）。
   const raw = loadCompositionText(spec, resolveModuleParams(spec, {}), templateDir)
-  // 人设由注册前适配器按 Agent 配装，不再生成另一份官方 persona 行。
-  readPersonaSpec(spec.persona)
   return applyModuleConfigs(raw, merged)
 }

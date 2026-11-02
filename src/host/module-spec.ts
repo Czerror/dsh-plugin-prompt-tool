@@ -6,8 +6,6 @@ import { readdirSync, statSync } from 'node:fs'
 import { assertModuleId } from './module-install.ts'
 import { basename, join, resolve, sep } from 'node:path'
 import { MODULE_DEFINITION_FILE, RULES_DIR } from './paths.ts'
-import { readPersonaSpec } from '../shared/persona-section.ts'
-import type { PersonaSpec } from '../shared/persona-section.ts'
 import type { RuleDefinition } from '../shared/rules.ts'
 import { enableTablePath, enabledModuleIds, readGlobalLayerSettingsSafe } from './config-store.ts'
 import { ensureModuleSlices } from './module-slices.ts'
@@ -41,8 +39,6 @@ export interface ModuleSpec {
    * 优先级（用户裁定 2026-10-12）：模块显式键（`false` 也算）＞ 全局键 ＞ 引擎/行默认。
    */
   globalParams?: Record<string, unknown>
-  /** 独立人设卡，按主会话与子代理逐字段覆盖官方声明。 */
-  persona?: PersonaSpec
   /** 模块级模板变量（{{key}} 插值源；与 layerSettings 分离，顶层 variables 段）。 */
   variables?: Record<string, string>
   /** 自定义工具定义（tool-config-engine 渲染进 custom-tools/ 后运行时注册）。 */
@@ -96,7 +92,6 @@ function withGlobalParams(spec: ModuleSpec, dir: string): ModuleSpec {
 export function loadModuleSpec(dir: string): ModuleSpec {
   // 完整性检查先于缓存；mtime/size 不能掩盖手改切片或伪造清单。
   const snapshot = ensureModuleSlices(dir, { writable: !resolve(dir).startsWith(resolve(packageModulesDir()) + sep) })
-  readPersonaSpec(snapshot.source.persona)
   const cached = moduleSpecCache.get(snapshot.file)
   if (cached?.revision === snapshot.revision) return withGlobalParams(structuredClone(cached.spec), dir)
   const parsed = { ...snapshot.source, id: snapshot.source.id ?? basename(dir), rules: snapshot.rules,

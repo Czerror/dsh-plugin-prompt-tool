@@ -17,12 +17,13 @@ export function templateExecutionKey(agent, signal) {
   return `${turn.seq}:${step?.seq ?? -1}`
 }
 
-function* templateExecution(config, context = {}, { variableStore = config.variableStore, enabled = true, warn = () => {} } = {}, asynchronous = false) {
+function* templateExecution(config, context = {}, { variableStore = config.variableStore, enabled = true, warn = () => {}, preview = false } = {}, asynchronous = false) {
   const text = config.texts.join('\n\n'), agent = context.agent, signal = context.signal
   signal?.throwIfAborted()
   const disabledText = () => stripUnresolvedRefs(interpolateVariables(text, {}, agent?.session, undefined, config.id)).text
   if (!enabled) return disabledText()
-  const execution = templateExecutionKey(agent, signal)
+  // 挂载预检只在副本求值，不读取或消费真实执行的提交凭据。
+  const execution = preview ? undefined : templateExecutionKey(agent, signal)
   let frame
   if (execution !== undefined) {
     frame = frames.get(agent)
@@ -53,10 +54,10 @@ function* templateExecution(config, context = {}, { variableStore = config.varia
     if (snapshot.enabled === false) return disabledText()
     const result = evaluateTemplate(text, { module: snapshot.module, global: snapshot.global, sessionVariables: snapshot.session,
       readRuntime: key => variableStore?.readRuntime?.(config.sourceModuleId, key, context), session: agent?.session,
-      sourceId: `${config.sourceModuleId ?? ''}:${config.id}`, readOnly: execution === undefined, samples })
+      sourceId: `${config.sourceModuleId ?? ''}:${config.id}`, readOnly: execution === undefined && !preview, samples })
     const entry = { text: stripUnresolvedRefs(result.text).text, pending: false, assertCurrent: snapshot.assertCurrent }
-    if (result.changes) {
-      if (!asynchronous && result.changes.scope === 'session') throw new TypeError('Session template writes require an asynchronous rule or tool')
+    if (result.changes?.scope === 'session' && (!asynchronous || preview)) throw new TypeError('Session template writes require an asynchronous rule or tool')
+    if (result.changes && !preview) {
       if (!variableStore?.commit) throw new Error('Persistent template writes require a variable adapter')
       signal?.throwIfAborted()
       const domains = new Set([...result.reads, result.changes.scope])

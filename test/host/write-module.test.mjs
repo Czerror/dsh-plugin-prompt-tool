@@ -427,8 +427,8 @@ test('R3 规则保留作者定义，只有显式规则事务才能改写', () =>
     const file = join(moduleDir, FIXTURE_MODULE_ID, 'module.yml')
     const doc = parseDocument(readFileSync(file, 'utf8'))
     doc.setIn(['rules', 2, 'enabled'], false)
-    if (!doc.hasIn(['rules', 3])) {
-      doc.setIn(['rules', 3], doc.createNode({
+    if (!doc.toJS().rules.some(rule => rule.id === 'subagent-model-params')) {
+      doc.setIn(['rules', doc.toJS().rules.length], doc.createNode({
         id: 'subagent-model-params',
         layer: 'agent-request',
         if: { scope: { audience: 'subagent' } },

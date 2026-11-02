@@ -201,9 +201,7 @@ export function StrategyParamsFields(props: { t: PromptToolTranslate; strategy: 
   const set = (key: string, next: unknown): void => onPatch({ ...value, [key]: next })
   const options = (key: string, fallback: readonly string[]): readonly string[] => props.contract?.params[key]?.values ?? fallback
   if (layer === 'system-section') {
-    // system-section 层参数：段名（空则引擎回退 id 注册为普通段）与 complete（独占
-    // system prompt）。人设不走本层：module.yml 顶层 persona 段（官方
-    // @deepseek-ai/dsh-persona 行同构）由「人设」卡编辑。
+    // 普通系统段参数；官方身份字段由规则中的 persona 动作编辑。
     // 未结构化的键仍走高级 JSON：手写/导入的其它 params（例如 templateEvaluation）不被吞掉，
     // 提交时把结构化值并回，避免保存一次丢掉段名与 complete。
     const sectionKeys = ['sectionName', 'complete', 'suppressRuntimeContext']

@@ -22,7 +22,7 @@
 
 **模块目录身份不是一张登记表，而是写死的路径结构**：`<modulesRoot>/<id>/` 加上 `module.yml` 的 `id`，由 `assertModuleDirectory` 强制两者一致（并拒绝符号链接、越界与大小写混淆）——它是那个约定的**执行者**，不是身份的载体。全仓没有 id→路径 的映射：定位一律 `join(root, id)`，唯一的 `moduleSpecCache` 也以**定义文件路径**为键。因此**身份含根**——不同根下的同一个 id 是**两个身份**（包内模板与用户副本一直如此），不构成冲突；反过来，「根传错」得到的是「操作到另一个身份」，属参数归属问题，不是身份冲突。
 
-**入口表随实现更新（2026-10-12 核对）**：同一个问题「这次读写/装配属于哪个模块」在阶段 1／2 之后有 **6 个现存入口**，它们问的不是同一个问题，故不合并：
+**入口表随实现更新（Issue 37 核对）**：同一个问题「这次读写/装配属于哪个模块」有以下现存入口，它们问的不是同一个问题，故不合并：
 
 | # | 侧 | 入口 | 判据 | 它问的问题 |
 |---|---|---|---|---|
@@ -30,15 +30,15 @@
 | 2 | 请求 | `src/runtime/settings-bridge.ts` 的 `editDir()` + `src/index.ts` 的 `moduleDirectory` 接线（`resolveRequestedModuleDir`）；TUI 侧的调用点是 `src/runtime/tui.ts` 的 `getModuleDirectory(moduleId)` | 声明存在且 `<root>/<id>/module.yml` 存在（TUI 的 `moduleId` 来自用户显式声明，未声明即传 `undefined`、解析为空） | 声明的主语**能不能解析成目录** |
 | 3 | 请求 | `src/runtime/module-subject-gate.ts` 的 `subjectGate(tx, key, { write?, format?, declaration? })` | 请求头声明的目录 + 载荷主语 + `BRIDGE_SUBJECT_POLICY[key]` + `DECLARED_SECTIONS[key]`（`module.yml` 顶层键存在性） | 目标**是谁**／这次调用**凭什么成立**（门统一拒绝；未声明时回退启用表 `[0]` **已删**；**读**模块没声明该节 400 `module-not-declared`，**写**不查声明面并建立该节） |
 | 4 | 请求 | `src/host/module-config-order.ts` 的 `readInputs` | `enabledModuleIds()` 后 `.sort()` 字典序 | 跨模块排序**按什么取输入与定序**（排序首项与声明顺序首项不是同一个） |
-| 5 | 请求 | `src/host/persona-selection.ts` 的 `personaSources` | `config.yml.personaSources` 的 main／subagent 引用 | 人设正文**读哪个模块**（与启用表正交） |
-| 6 | Agent | `src/host/module-tool-target.ts` 的 `resolveModuleToolTarget` + `MODULE_ID_PARAM` | 这次调用显式声明的 `moduleId`（`<root>/<id>/module.yml` 存在性由 `assertModuleDirectory` 复核；该 Agent 的装配记录只作拒绝提示） | 模块工具**这次读写哪个模块**（**无声明即拒绝**，不再默认落到任何模块） |
+| 5 | Agent | `src/host/module-tool-target.ts` 的 `resolveModuleToolTarget` + `MODULE_ID_PARAM` | 这次调用显式声明的 `moduleId`（`<root>/<id>/module.yml` 存在性由 `assertModuleDirectory` 复核；该 Agent 的装配记录只作拒绝提示） | 模块工具**这次读写哪个模块**（**无声明即拒绝**，不再默认落到任何模块） |
 
-**已删入口（登记备查，不计入上面的 6 个）**：
+**已删入口（登记备查，不计入现存入口）**：
 
 - 客户端传输层的**模块级可变全局目标**（`src/client/data/bridge-transport.ts` 的 `editTarget` 与默认头，随 `c8fc22ae` 删除）——`postBridge` / `bridgeCall` 的 `subject` 实参仍在，但它每次调用显式传入、不持有状态。
 - 客户端 store 的目标写入点（`src/client/data/use-prompt-tool-store.ts` 的 `setModuleId` 与单主语事实镜像）——`rg 'setModuleId' src test` 现已零命中，主语由卡片归属决定。
+- Issue 37 移除独立人设来源选择。人设由已启用模块的普通规则动作声明，复用规则来源与保存事务；旧顶层人设和来源配置在读取根拒绝，用户手工重建。当前决定见 [ADR-0013 的 Issue 37 修订](0013-native-context-module-state.md)。
 
-「表随实现更新」：本表按落地时的 `rg` 结果登记，不承诺入口数长期不变——阶段 1 删掉两处猜目标的入口、阶段 2 把归属判据收进 `subjectGate`（入口 3，见 [ADR-0014](0014-module-subject-declared-per-operation.md)），阶段 3 的声明面与阶段 4 的 Agent 侧／TUI 已落地（入口 2 与入口 6 已按下述口径更新，未新增入口行：TUI 的会话主语是「用户声明」的状态，仍走入口 2 的目录解析，不另立判据）；新增消费者时先回答它问的是上表哪一类问题，再登记。
+「表随实现更新」：本表按落地时的 `rg` 结果登记，不承诺入口数长期不变——阶段 1 删掉两处猜目标的入口、阶段 2 把归属判据收进 `subjectGate`（入口 3，见 [ADR-0014](0014-module-subject-declared-per-operation.md)），阶段 3 的声明面与阶段 4 的 Agent 侧／TUI 已落地（入口 2 与入口 5 已按下述口径更新：TUI 的会话主语是「用户声明」的状态，仍走入口 2 的目录解析，不另立判据）；新增消费者时先回答它问的是上表哪一类问题，再登记。
 
 ## 取舍
 

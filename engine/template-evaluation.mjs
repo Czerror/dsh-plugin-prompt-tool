@@ -146,7 +146,7 @@ export function evaluateTemplate(text, { module = {}, global = {}, sessionVariab
       if (domain === 'runtime') {
         if (action !== 'get' || rawValue !== undefined) throw new TypeError('Runtime facts are read-only and cannot use a fallback')
         const value = readRuntime(key)
-        if (typeof value !== 'string') throw new TypeError(`Runtime fact unavailable: ${key}`)
+        if (typeof value !== 'string') throw Object.assign(new TypeError(`Runtime fact unavailable: ${key}`), { code: 'template-fact-unavailable' })
         return value
       }
       if (domain === 'session' && sessionVariables === undefined) throw new TypeError('Session variables unavailable')

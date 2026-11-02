@@ -48,9 +48,8 @@ test('typed bridge client：主语只来自每次调用的实参，不保留会�
 test('typed bridge client：optional／none endpoint 不带主语头', async () => {
   await withFetch(okResponse, async (calls) => {
     await bridgeCall('bootstrap', { sessionId: 's1' })
-    await bridgeCall('personaSources')
     await bridgeCall('moduleConfigOrder')
-    assert.deepEqual(calls.map(call => EDIT_TARGET_HEADER in call.init.headers), [false, false, false])
+    assert.deepEqual(calls.map(call => EDIT_TARGET_HEADER in call.init.headers), [false, false])
   })
 })
 
@@ -75,7 +74,7 @@ test('typed bridge client：moduleDelete 带主语时带头，主语为空串时
 test('typed bridge client：required endpoint 的单实参形状在运行时响亮失败', async () => {
   await withFetch(okResponse, async (calls) => {
     // 类型已不允许这个形状（单实参无法区分 body 与主语）；JS／as any 路径必须停在客户端，不静默当 body。
-    const result = await bridgeCall('persona', 'mod-a')
+    const result = await bridgeCall('rules', 'mod-a')
     assert.equal(result.ok, false)
     assert.match(result.message, /主语/)
     assert.equal(calls.length, 0, '单实参不得被当作主语，请求不得发出')

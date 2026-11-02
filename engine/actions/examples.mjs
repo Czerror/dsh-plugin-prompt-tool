@@ -1,4 +1,5 @@
 export const ACTION_EXAMPLES = {
+  persona: { prefix: '' },
   'inject-text': { config: { id: 'notice', layer: 'pre-step', text: '' } },
   assembly: { target: {} },
   // 工具链拆成两个动作：pre 相的 tool-gate 与 post 相的 tool-result。种子取引擎缺省，

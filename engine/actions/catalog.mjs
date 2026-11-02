@@ -18,6 +18,15 @@ export const ACTION_DEGRADE = Object.freeze({
  * 的动作写分支键会被编译期点名拒绝（`expandActions` 只认无 `kind` 的分支节点）。
  */
 export const ACTION_KINDS = Object.freeze({
+  persona: {
+    title: '人设',
+    fields: ['audience', 'prefix', 'suffix', 'complete', 'includeRuntimeContext'],
+    events: ['system-prompt/assemble'],
+    services: ['systemPrompt.section', 'systemPrompt.suppressRuntimeContext'],
+    degrade: ACTION_DEGRADE.keep,
+    timing: '原官方 assemble 之前按普通规则条件聚合，同一受众按配置序号拼接。',
+    note: '省略继承、空串阻止继承；布尔冲突拒绝候选并保留旧贡献，全部失配撤回贡献。',
+  },
   'inject-text': {
     title: '注入文本',
     fields: ['config', 'options'],

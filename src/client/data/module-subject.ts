@@ -32,7 +32,7 @@ export const moduleFactsOf = (modules: readonly ModuleSummary[] | undefined, mod
 
 /**
  * 声明面准入：判据是 `/meta` 下发的 `declares`（`module.yml` 顶层键名），只回答「这一步发不发读」
- * ——固定卡（指令卡参数组、人设卡）照常渲染、按空内容起步；通用资产卡未声明时改出添加入口。
+ * ——固定指令卡参数组照常渲染、按空内容起步；通用资产卡未声明时改出添加入口。
  * 多节＝**任一存在**即已声明（与 `DECLARED_SECTIONS` 同口径，如 `params` 或 `layerSettings`）。
  * 返回 `undefined`＝**未知**（模块不在快照里／声明面未下发）：不把「读不到」当「没声明」，调用方保守放行。
  */

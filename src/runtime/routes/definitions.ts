@@ -1,19 +1,15 @@
-/** definitions 域端点：自定义工具、人设与人设来源、引擎能力/recipe。 */
-import { basename, dirname } from 'node:path'
-import { readPersonaSources, writePersonaSources } from '../../host/persona-selection.ts'
-import { userModulesDir } from '../../host/module-dirs.ts'
-import { readModulePersona, saveModulePersona, withModuleDefinition } from '../../host/module-definition-edit.ts'
+/** definitions 域端点：自定义工具与引擎能力/recipe。 */
+import { basename } from 'node:path'
+import { withModuleDefinition } from '../../host/module-definition-edit.ts'
 import { loadModuleSpec } from '../../host/module-spec.ts'
-import { loadModuleDefinition } from '../../host/module-slices.ts'
 import { ModuleWriteError } from '../../host/module-write.ts'
 import { appendModuleCapabilities, createModuleCapability, removeModuleCapability } from '../../host/module-capabilities.ts'
 import { validateCustomTools } from '../../host/custom-tools.ts'
 import { BRIDGE_ENDPOINTS } from '../../shared/bridge-contract.ts'
-import { readPersonaSpec, type PersonaSources } from '../../shared/persona-section.ts'
 import { MODULE_TOOL_CAPABILITIES, moduleCapability } from '../../shared/engine-capabilities.ts'
 import { published } from '../../shared/publication.ts'
 import { writeLayerSettingsError } from '../module-subject-gate.ts'
-import { SHA256_HEX_RE, type BridgeRuntime } from '../bridge-runtime.ts'
+import type { BridgeRuntime } from '../bridge-runtime.ts'
 
 /** 自定义工具声明需要的模块（模块缺失时保存动作自动补齐）。 */
 function customToolModules(tools: unknown[]): string[] {
@@ -113,91 +109,12 @@ export function registerDefinitions(runtime: DefinitionsRuntime): Array<() => vo
           return
         }
         const message = error instanceof Error ? error.message : String(error)
-        // 全桥统一规则：host 分类优先（如 shared-alias），端点码只兜底——与 /persona 同形。
+        // 全桥统一规则：host 分类优先（如 shared-alias），端点码只兜底。
         tx.write(error instanceof ModuleWriteError ? error.status : 409, {
           ok: false,
           code: error instanceof ModuleWriteError ? error.code : 'custom-tools-rejected',
           message: `自定义工具保存失败：${message}`,
         })
-      }
-    } }),
-    runtime.register(BRIDGE_ENDPOINTS.persona, { handle: async (tx) => {
-      const record = tx.record
-      // 声明面只在读侧拦：保存/刷新人设是给模块添加第一节，放行。
-      const dir = runtime.gate(tx, 'persona').inspect(record.persona !== undefined || record.refreshOnly === true)
-      if (dir === undefined) return
-      if (record.refreshOnly !== undefined && (typeof record.refreshOnly !== 'boolean'
-        || (record.refreshOnly === true && (record.persona !== undefined || record.expectedRevision !== undefined)))) {
-        tx.write(400, { ok: false, code: 'module-persona-invalid', message: '人设请求混合了刷新与写入' })
-        return
-      }
-      try {
-        if (record.persona === undefined && record.refreshOnly !== true) {
-          if (record.expectedRevision !== undefined) throw new TypeError('读取人设不接受写入版本')
-          tx.write(200, { ok: true, value: readModulePersona(dir) })
-          return
-        }
-        if (runtime.gate(tx, 'persona').authorize() === undefined) return
-        if (typeof record.expectedModuleId !== 'string') throw new TypeError('保存或刷新人设必须提供 expectedModuleId')
-        let saved
-        if (record.refreshOnly === true) saved = readModulePersona(dir)
-        else {
-          const persona = record.persona === null ? null : readPersonaSpec(record.persona)
-          if (persona === undefined) throw new TypeError('persona 必须是主/子覆盖对象或 null')
-          const root = dirname(dir), id = basename(dir)
-          // 未声明 persona 的模块首次写入＝**创建**：没有前状态就没有可冲突的对象，允许 `expectedRevision`
-          // 缺席（用当次读取的版本即可，saveModulePersona 仍会在写盘前复核它）；已声明时仍必须是读取时的 64 位 hex。
-          const creating = record.expectedRevision === undefined && !Object.hasOwn(loadModuleDefinition(dir).source, 'persona')
-          if (!creating && (typeof record.expectedRevision !== 'string' || !SHA256_HEX_RE.test(record.expectedRevision))) {
-            throw new TypeError('保存人设必须提供读取时的 expectedRevision')
-          }
-          saved = saveModulePersona(root, id, persona, creating ? readModulePersona(dir).revision : record.expectedRevision as string)
-        }
-        const publication = record.refreshOnly === true
-          ? await runtime.runOverridesChange(basename(dir))
-          : await runtime.schedulePublication(basename(dir))
-        tx.write(200, { ok: true, value: { ...saved, ...publication } })
-      } catch (error) {
-        if (error instanceof ModuleWriteError && error.persisted) {
-          tx.write(200, { ok: true, value: { ...readModulePersona(dir), ...published(error.message) } })
-          return
-        }
-        const message = error instanceof Error ? error.message : String(error)
-        tx.write(error instanceof ModuleWriteError ? error.status : error instanceof TypeError ? 400 : 409,
-          { ok: false, code: error instanceof ModuleWriteError ? error.code : 'module-persona-rejected', message: `人设读取或保存失败：${message}` })
-      }
-    } }),
-    runtime.register(BRIDGE_ENDPOINTS.personaSources, { handle: async (tx) => {
-      const record = tx.record
-      if (record.refreshOnly !== undefined && typeof record.refreshOnly !== 'boolean'
-        || record.refreshOnly === true && (record.sources !== undefined || record.expectedRevision !== undefined)) {
-        tx.write(400, { ok: false, code: 'persona-sources-invalid', message: '人设来源请求混合了刷新与写入' })
-        return
-      }
-      try {
-        const root = userModulesDir()
-        if (record.sources === undefined && record.refreshOnly !== true) {
-          if (record.expectedRevision !== undefined) throw new TypeError('读取人设来源不接受写入版本')
-          tx.write(200, { ok: true, value: readPersonaSources(root) })
-          return
-        }
-        if (record.refreshOnly !== true && record.expectedRevision !== null
-          && (typeof record.expectedRevision !== 'string' || !SHA256_HEX_RE.test(record.expectedRevision))) {
-          throw new TypeError('保存人设来源必须提供读取时的 expectedRevision')
-        }
-        const saved = record.refreshOnly === true ? readPersonaSources(root)
-          : writePersonaSources(root, record.sources as PersonaSources, record.expectedRevision as string | null)
-        const publication = record.refreshOnly === true
-          ? await runtime.runOverridesChange()
-          : await runtime.schedulePublication()
-        tx.write(200, { ok: true, value: { ...saved, ...publication } })
-      } catch (error) {
-        if (error instanceof ModuleWriteError && error.persisted) {
-          tx.write(200, { ok: true, value: { ...readPersonaSources(userModulesDir()), ...published(error.message) } })
-          return
-        }
-        tx.write(error instanceof ModuleWriteError ? error.status : error instanceof TypeError ? 400 : 409,
-          { ok: false, code: error instanceof ModuleWriteError ? error.code : 'persona-sources-rejected', message: error instanceof Error ? error.message : String(error) })
       }
     } }),
     runtime.register(BRIDGE_ENDPOINTS.moduleCapability, { handle: async (tx) => {

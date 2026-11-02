@@ -2,11 +2,12 @@ import { prepareAction } from './actions/index.mjs'
 import { confirmDelivered, runPreStepBatch } from './executor.mjs'
 import { createPreStepSource, moduleSourceId } from './pre-step-source.mjs'
 import { createLayerRuntime } from './layers.mjs'
-import { rebindConditions, validateDeliverySources } from './rule-spec.mjs'
+import { actionAudiences, completeRuleSections, rebindConditions, validateDeliverySources } from './rule-spec.mjs'
 import { wireTriggerObservers } from './trigger.mjs'
 import { ruleFrame, actionMatches } from './conditions/evaluation.mjs'
 import { createPromotionPool } from './promotion-pool.mjs'
-import { PROMOTE_EVENTS, createWarnOnce, getService } from './shared.mjs'
+import { PROMOTE_EVENTS, createWarnOnce, getService, isDelegated, matchesAudience } from './shared.mjs'
+import { PERSONA_PREFIX, planPersonaActions } from './actions/persona.mjs'
 import { PRE_STEP_COORDINATOR_SERVICE } from './service-names.mjs'
 
 const noNext = new Set(['agent/inbox/inserted', 'agent/turn-stopping', 'subagent/start', 'subagent/end'])
@@ -114,6 +115,11 @@ function mountSources(ctx, sources, options = {}) {
       }
       for (const item of point.items) {
         const { action, rule, moduleId } = item
+        if (action.kind === 'persona') {
+          options.collectPersona({ action, rule, id: action.id, sequence: action.channelOrder, sourceModuleId: moduleId,
+            ruleIndex: item.ruleIndex, ruleActionIndex: action.actionIndex, actionWhen: action.actionWhen, bypassRuleWhen: action.bypassRuleWhen })
+          continue
+        }
         if (action.kind === 'inject-text') {
           const config = { ...action.compiledConfig, rule, sourceModuleId: moduleId, variableStore: options.variableStore,
             group: undefined, exclusive: false, enabled: true, actionWhen: action.actionWhen, bypassRuleWhen: action.bypassRuleWhen, runtimeOrder: action.channelOrder, runtimeRuleIndex: item.ruleIndex }
@@ -219,7 +225,7 @@ export function createRuleRuntime(ctx, options = {}) {
     } catch (error) { releaseMemo(); releaseMemo = undefined; throw error }
   }
   const mount = source => {
-    const record = { source, points: [], text: [], dispose: undefined }
+    const record = { source, points: [], text: [], personas: [], dispose: undefined }
     for (const rule of source.rules) ruleOwners.set(rule, source.moduleId)
     record.dispose = mountSources(ctx, [source], {
       ...options, warnOnce, promotionPool: pool, promotion,
@@ -248,6 +254,7 @@ export function createRuleRuntime(ctx, options = {}) {
         } catch (error) { dispose(); throw error }
       },
       collectPoint(point, handlers) { record.points.push({ point, handlers }) },
+      collectPersona(entry) { record.personas.push(entry) },
       collectText(point, configs) {
         for (const config of configs) { config.runtimePoint = point; record.text.push(config) }
       },
@@ -275,6 +282,75 @@ export function createRuleRuntime(ctx, options = {}) {
     }
     points = next
   }
+  let persona
+  const releasePersona = current => {
+    if (current === undefined) return
+    for (const off of current.releases.splice(0).reverse()) off()
+    for (const restore of current.restores.splice(0).reverse()) restore()
+  }
+  const installPersona = plan => {
+    const current = { plan, releases: [], restores: [] }
+    try {
+      const prompt = getService(ctx, 'systemPrompt')
+      for (const section of plan.sections) {
+        const restore = options.persona?.suspend?.(section.name)
+        if (restore !== undefined) current.restores.push(restore)
+        current.releases.push(prompt.section(section))
+      }
+      if (plan.suppressRuntimeContext) current.releases.push(prompt.suppressRuntimeContext())
+      return current
+    } catch (error) {
+      try { releasePersona(current) } catch (cleanupError) {
+        throw Object.assign(new AggregateError([error, cleanupError], `persona registration and cleanup failed: ${String(error.message)}; ${String(cleanupError.message)}`), { recoveryFailed: true })
+      }
+      throw error
+    }
+  }
+  const commitPersona = plan => {
+    const old = persona?.plan
+    if (old?.suppressRuntimeContext === plan.suppressRuntimeContext && old.sections.length === plan.sections.length
+      && old.sections.every((section, index) => ['name', 'text', 'order', 'complete', 'interpolate'].every(key => section[key] === plan.sections[index][key]))) return
+    releasePersona(persona)
+    persona = undefined
+    try { persona = installPersona(plan) }
+    catch (error) {
+      if (old !== undefined) {
+        try { persona = installPersona(old) }
+        catch (restoreError) {
+          throw Object.assign(new AggregateError([error, restoreError], `persona replacement and recovery failed: ${String(error.message)}; ${String(restoreError.message)}`), { recoveryFailed: true })
+        }
+      }
+      throw error
+    }
+  }
+  const preparePersona = (context = {}, preview = false) => {
+    const entries = [...records.values()].flatMap(record => record.personas).sort(compareEntries)
+    if (entries.length === 0 && persona === undefined && options.persona === undefined) return undefined
+    context = { agent: options.agent, ...context }
+    context.signal?.throwIfAborted()
+    if (entries.length > 0 && context.agent === undefined) throw new TypeError('persona rules require the real Agent')
+    const audience = isDelegated(context.agent?.session) ? 'subagent' : 'main'
+    let failed = false
+    const frame = ruleFrame('system-prompt/assemble', [{}, context], warnOnce, ctx, (rule, channel, outcome) => {
+      if (outcome === 'error') failed = true
+      report?.(rule, channel, outcome)
+    })
+    const selected = entries.filter(entry => matchesAudience(entry.action.audience, audience) && actionMatches(entry, frame))
+    if (failed) throw new Error('persona condition evaluation failed; keeping previous contribution')
+    const prompt = getService(ctx, 'systemPrompt')
+    const plan = planPersonaActions(selected, context, prompt, options.persona, options.variableStore, warnOnce, preview)
+    const rules = [...records.values()].flatMap(record => record.source.rules)
+    const complete = completeRuleSections(rules, audience)
+    const prefix = plan.sections.find(section => section.name === PERSONA_PREFIX) ?? options.persona?.inherited?.(PERSONA_PREFIX)
+    if (prefix?.complete === true && complete.length > 0) throw new TypeError(`persona and rules have multiple complete sections for ${audience}`)
+    if (prefix?.complete === true || complete.length > 0) {
+      const append = rules.some(rule => rule.enabled !== false && rule.actions.some(action => action.kind === 'assembly'
+        && action.target?.sections?.append?.length > 0 && actionAudiences(rule, action.id).has(audience)))
+      if (append) throw new TypeError(`persona/rules complete conflicts with sections.append for ${audience}`)
+    }
+    context.signal?.throwIfAborted()
+    return plan
+  }
   return {
     replace(sources) {
       if (!active) throw new Error('rule runtime disposed')
@@ -300,10 +376,12 @@ export function createRuleRuntime(ctx, options = {}) {
           next.set(source.moduleId, record)
         }
         records = next
+        const personaPlan = preparePersona({}, true)
         const text = [...records.values()].flatMap(record => record.text)
         if (text.length > 0) layers ??= createLayerRuntime(ctx, warnOnce, { agent: options.agent, turnStopBudgets: new Map(), sourceError })
         layers?.replace(text)
         publishPoints()
+        if (personaPlan !== undefined) commitPersona(personaPlan)
       } catch (error) {
         for (const record of created.reverse()) record.dispose()
         records = new Map(old)
@@ -317,9 +395,16 @@ export function createRuleRuntime(ctx, options = {}) {
         throw error
       }
     },
+    prepareAssembly(context) {
+      if (!active) return
+      const plan = preparePersona(context)
+      if (plan !== undefined) commitPersona(plan)
+    },
     dispose() {
       if (!active) return
       active = false
+      releasePersona(persona)
+      persona = undefined
       for (const record of records.values()) record.dispose()
       records.clear()
       layers?.dispose()

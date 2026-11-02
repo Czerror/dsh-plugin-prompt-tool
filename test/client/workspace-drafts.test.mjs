@@ -14,7 +14,6 @@ function dirtyPool() {
   const drafts = createWorkspaceDrafts()
   drafts.rules.set(MOD, { entries: [{ key: 'rule-0', previousId: 'first', value: rule('first', 'EDITED') }], saved: [rule('first', 'FIRST')], fields: new Map(), loaded: true, validated: true, latest: 0, nextKey: 1 })
   drafts.tools.set(MOD, { tools: [{ id: 'shell' }], saved: [], expanded: new Set(), fields: new Map(), loaded: true, error: '', saving: false })
-  drafts.persona.set(MOD, { latest: 0, value: { main: { prefix: 'A' } }, saved: { main: { prefix: 'B' } }, revision: 'r1', declared: true, loaded: true, error: '', saving: false })
   drafts.variables.set(`${MOD}:module`, { scope: 'module', variables: { owner: 'Mia' }, enabled: true, baseline: { scope: 'module', variables: { owner: 'Bob' }, enabled: true, revisions: {} }, loading: false, saving: false, error: '', latest: 0 })
   drafts.fields.set(`${MOD}:param:temperature`, field('0.7', '1.0'))
   return drafts
@@ -22,13 +21,12 @@ function dirtyPool() {
 
 const only = (setup) => { const drafts = createWorkspaceDrafts(); setup(drafts); return drafts }
 
-test('草稿池自答「哪些没保存」：六类草稿各自都算，相同内容不算', () => {
+test('草稿池自答「哪些没保存」：规则、工具、变量和字段各自都算，相同内容不算', () => {
   assert.equal(poolDirty(createWorkspaceDrafts(), MOD), false, '空池不脏')
   // 逐类单独构造：每一类都必须**自己能**让守卫拦住——少判一类就是静默丢用户输入。
   const cases = [
     ['rules 正文改过', (d) => d.rules.set(MOD, dirtyPool().rules.get(MOD))],
     ['tools 与 saved 不同', (d) => d.tools.set(MOD, dirtyPool().tools.get(MOD))],
-    ['persona 与 saved 不同', (d) => d.persona.set(MOD, dirtyPool().persona.get(MOD))],
     ['variables 与 baseline 不同', (d) => d.variables.set(`${MOD}:module`, dirtyPool().variables.get(`${MOD}:module`))],
     ['fields 文本与源不同', (d) => d.fields.set(`${MOD}:param:temperature`, field('0.7', '1.0'))],
     ['fields 有校验错误', (d) => d.fields.set(`${MOD}:param:topP`, field('0.9', '0.9', 'bad'))],

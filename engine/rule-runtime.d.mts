@@ -3,6 +3,7 @@ import type { StandingMountFor } from './conditions/index.mjs'
 import type { PromotionPool } from './promotion-pool.mjs'
 import type { PreStepPromotion } from './pre-step-source.mjs'
 import type { WarnOnce } from './shared.mjs'
+import type { PromptSection } from '@deepseek-ai/dsh-system-prompt'
 
 /** 变量读写通道（插件侧的模块变量适配器）；引擎只按这三个方法调用。 */
 export interface RuleVariableStore {
@@ -35,6 +36,10 @@ export interface RuleSourceLike {
 }
 
 export interface MountRuleSourcesOptions {
+  persona?: {
+    inherited(name: string): PromptSection | undefined
+    suspend?(name: string): (() => void) | undefined
+  }
   agent?: unknown
   plugin?: string
   warnOnce?: WarnOnce
@@ -60,5 +65,6 @@ export function mountRuleSources(
 /** 同 moduleId 与 rules 引用保持未变来源；候选拒绝时恢复受影响来源的旧贡献。 */
 export function createRuleRuntime(ctx: unknown, options?: MountRuleSourcesOptions): {
   replace(sources: ReadonlyArray<RuleSourceLike>): void
+  prepareAssembly(context?: { agent?: unknown; signal?: AbortSignal; scope?: unknown }): void
   dispose(): void
 }

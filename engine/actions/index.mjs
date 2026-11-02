@@ -12,6 +12,7 @@ import { prepareStreamOutput } from './stream-output.mjs'
 import { prepareInboxPrepend } from './inbox-prepend.mjs'
 import { preparePreStepFilter } from './pre-step-filter.mjs'
 import { prepareToolVisibility } from './tool-visibility.mjs'
+import { validatePersonaAction } from './persona.mjs'
 export { ACTION_KINDS, ACTION_DEGRADE } from './catalog.mjs'
 export { actionSupportsWhen, actionExecutionPoint } from './registration.mjs'
 const DEFAULT_PLUGIN = 'prompt-actions'
@@ -69,6 +70,10 @@ export function validateActionOptions(action, options = {}) {
 /** 纯准备阶段返回真实 ctx 的绑定函数；options.on 可由统一规则收集实际执行点。 */
 export function prepareAction(action, options = {}) {
   const { kind, plugin } = validateActionOptions(action, options)
+  if (kind === 'persona') {
+    validatePersonaAction(action)
+    return () => { throw new TypeError('persona requires createRuleRuntime.prepareAssembly') }
+  }
   const max = action?.maxPerTurn
   const bind = PREPARERS[kind](action, plugin, options.promptConfigOptions)
   const phase = actionSupportsWhen(kind) ? actionExecutionPoint(action).phase : undefined

@@ -13,6 +13,16 @@ const render = action => renderElement(RuleStepsPanel, {
 })
 const labels = html => [...html.matchAll(/aria-label="([^"]*)"/g)].map(match => match[1])
 
+test('人设动作：普通规则卡接入受控人设字段，保留空串与 false', () => {
+  const action = { id: 'persona', kind: 'persona', prefix: '', complete: false }
+  const before = structuredClone(action), html = render(action)
+  assert.ok(html.includes('data-persona-action="persona"'))
+  for (const key of ['audience', 'prefix.aria', 'suffix.aria', 'complete.label', 'runtimeContext.label']) {
+    assert.ok(labels(html).includes(t(`persona.${key}`)))
+  }
+  assert.deepEqual(action, before, '渲染不补入省略字段')
+})
+
 test('装配动作：真实新建种子的空 target 仍提供 sections / contexts 入口', () => {
   const seed = { ...structuredClone(meta.actions.find(action => action.kind === 'assembly').example), id: 'new' }
   assert.deepEqual(seed.target, {}, '引擎用无副作用的空目标作为新建种子')

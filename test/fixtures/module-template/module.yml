@@ -3,11 +3,6 @@ name: Fixture Template
 description: 测试夹具：锚定/门控链路装配与三条提示词配置模板。
 version: 1.0.0
 engineCompat: ">=0.4.2"
-persona:
-  main:
-    prefix: You are a helpful assistant.
-    complete: true
-    includeRuntimeContext: false
 modules:
   - rule-engine
   - run-code-env
@@ -85,6 +80,14 @@ rules:
           position: before-all
           dedupe: session
           sourceKind: plugin
+  - id: fixture-persona
+    then:
+      - id: persona
+        kind: persona
+        audience: main
+        prefix: You are a helpful assistant.
+        complete: true
+        includeRuntimeContext: false
 configOrder:
   near-anchor: 0
   router-guide: 10

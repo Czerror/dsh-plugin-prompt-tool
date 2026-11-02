@@ -15,7 +15,6 @@ import { commitModuleDefinition, loadModuleDefinition } from './module-slices.ts
 import { assertUnownedUnchanged, withModuleLock } from './module-write.ts'
 import { assertCompositionArray } from './module-composition.ts'
 import { assertModuleDirectory, assertModuleTree } from './module-install.ts'
-import { readStorageConfig } from './config-store.ts'
 import { userModulesDir } from './module-dirs.ts'
 import { renderComposition, resolveModuleFacts } from './module-params.ts'
 import { invalidateModuleSpec } from './module-spec.ts'
@@ -79,12 +78,7 @@ export function removeUserModule(id: string, moduleRoot = userModulesDir()): { o
   let stage: string | undefined
   let backupPath: string | undefined
   try {
-    // 来源选择与删除共用配置锁，避免校验后又被选中而留下悬空引用。
     withModuleLock(dirname(moduleRoot), 'config', () => withModuleLock(moduleRoot, id, () => {
-      const sources = readStorageConfig(moduleRoot).source.personaSources
-      if (sources !== null && typeof sources === 'object' && Object.values(sources).includes(id)) {
-        throw new Error(`模块「${id}」正在作为人设来源，请先切换对应受众的人设`)
-      }
       const target = assertModuleDirectory(moduleRoot, id)
       assertModuleTree(target)
       // stage 与 target 同目录（同卷），rename 才是原子换位而不是跨卷复制。

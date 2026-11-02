@@ -366,6 +366,7 @@ export function compileRules(specs, options = {}) {
     return {
       id: spec.id, name: spec.name, layer: spec.layer, group: spec.group, exclusive: spec.exclusive === true, enabled: spec.enabled !== false,
       sequence, when, actions, promptConfigOptions: options.promptConfigOptions,
+      variables: options.variables, variablesEnabled: options.variablesEnabled,
       // 绑定所需的树：规则级 `if` + 每个动作展开后的条件（动作那半与 `action.conditions` 同一引用）。
       // **只有引擎内部读它**（`rebindConditions` 绑定、`actionAudiences` 推导受众）——调用方与挂载缝都不需要知道这个形状。
       conditionTrees: {
@@ -377,7 +378,7 @@ export function compileRules(specs, options = {}) {
   validateRuleGroups(rules)
   for (const audience of ['main', 'subagent']) {
     const complete = completeRuleSections(rules, audience)
-    if (complete.length > 1 || (complete.length > 0 && options.personaComplete === true)) {
+    if (complete.length > 1) {
       throw new TypeError(`rules: multiple complete system sections are active for ${audience}: ${complete.join(', ')}`)
     }
   }

@@ -1,8 +1,8 @@
 /**
- * 存储根配置：模块启用表、独立主/子人设来源与**全局层引擎参数**。
+ * 存储根配置：模块启用表与**全局层引擎参数**。
  *
- * `<存储根>/config.yml` 保存 schemaVersion、enabled、personaSources 与 layerSettings。
- * enabled 决定普通模块配装，personaSources 单独选择主/子人设来源，不互相启用；
+ * `<存储根>/config.yml` 保存 schemaVersion、enabled 与 layerSettings。
+ * enabled 决定普通模块配装；
  * `layerSettings` 是**全局层**引擎参数（用户裁定 2026-10-12：「模块未声明 ⇒ 回退为全局」），
  * 与 `module.yml` 的 `layerSettings` 同形同校验。
  *
@@ -47,7 +47,7 @@ export interface StorageConfigSnapshot {
   mode?: number
 }
 
-/** 人设选择等新 owner 必须看到读取失败，不能用空配置覆盖损坏文件。 */
+/** 配置 owner 必须看到读取失败，不能用空配置覆盖损坏文件。 */
 export function readStorageConfig(moduleRoot: string): StorageConfigSnapshot {
   const file = enableTablePath(moduleRoot)
   assertNoModuleLinks(moduleRoot)
@@ -62,10 +62,12 @@ export function readStorageConfig(moduleRoot: string): StorageConfigSnapshot {
   const bytes = readFileSync(file), text = new TextDecoder('utf-8', { fatal: true }).decode(bytes)
   const doc = parseDocument(text, { logLevel: 'silent' })
   if (doc.errors.length > 0 || !isMap(doc.contents)) throw new ModuleWriteError('存储配置 YAML 必须是有效对象')
-  return { doc, source: doc.toJS() as Record<string, unknown>, text, revision: revisionOf(bytes), mode: stat.mode }
+  const source = doc.toJS() as Record<string, unknown>
+  if (Object.hasOwn(source, 'personaSources')) throw new ModuleWriteError('personaSources 已退役；请手工重建人设规则并移除旧来源配置', 400, 'persona-sources-retired')
+  return { doc, source, text, revision: revisionOf(bytes), mode: stat.mode }
 }
 
-/** 启用表与人设选择共用跨进程锁；回调声明完整候选以拒绝共享别名连带修改。 */
+/** 配置更新共用跨进程锁；回调声明完整候选以拒绝共享别名连带修改。 */
 export function updateStorageConfig(moduleRoot: string, expectedRevision: string | null | undefined,
   update: (doc: ReturnType<typeof parseDocument>, source: Record<string, unknown>) => Record<string, unknown>,
 ): StorageConfigSnapshot {
@@ -178,7 +180,7 @@ export function readGlobalLayerSettingsSafe(moduleRoot: string): { params: Recor
 /**
  * 写全局层引擎参数（固定卡指令卡的设置区）。
  *
- * 只动 `layerSettings.<层>.<参数键>`，其余内容（注释、未知字段、enabled、personaSources）
+ * 只动 `layerSettings.<层>.<参数键>`，其余内容（注释、未知字段、enabled）
  * 原样保留；空值（`''` / `[]`）删除键，`false` 与 `0` 是显式值照常写入。
  *
  * 删键要连**空的父层**一起回收：`deleteIn` 不会清掉 `pre-step: {}`，而 `expected` 是按

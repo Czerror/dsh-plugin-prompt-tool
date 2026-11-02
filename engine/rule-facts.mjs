@@ -11,6 +11,7 @@ import { record } from './record.mjs'
 import { CONTEXT_ACTIVATION_STRATEGY } from './strategy-ids.mjs'
 
 function targetAudiences(action, ruleLayer) {
+  if (action.kind === 'persona') return isAudience(action.audience) ? new Set([action.audience]) : undefined
   // 文档只允许固定 system-section 的 registration target 用 config.audience 收窄；
   // 与引擎共用 isFixedRegistration（含 config.layer ?? rule.layer 回退）。
   if (action.kind !== 'inject-text') return undefined

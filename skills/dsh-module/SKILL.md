@@ -19,8 +19,7 @@ description: 新建、修改、审查 DSH Prompt Tool 模块，或把规则、�
 | 共享模型/能力参数 | layerSettings 的登记层 |
 | 持久模块变量 | 顶层 variables |
 | 全局变量 | 同一 DSH_HOME 的插件 variables.yml，经变量 owner 读写 |
-| 人设正文/选项 | 各模块 persona.main / persona.subagent；rules/_settings.yml 仅作投影 |
-| 主/子人设来源 | config.yml.personaSources 只存单选模块 ID，默认官方 |
+| 人设正文/选项 | rules 中的 persona 动作，与普通规则共用条件、启停、排序和 CAS |
 | 自定义工具/子代理授权 | customTools / subagentToolPolicy |
 | 模块私有文件 | memory.md、assets/（只读）、data/（只追加），经 module_file_read/append 显式读写；装配清单走 module_manifest |
 | 用户指令文件 | 原文件与独立指令策略，独立授权通道 |
@@ -60,7 +59,7 @@ rules:
 
 需要赋值才声明 `params.templateEvaluation: true`，使用 `{{module.set::key::value}}` 或 module/global 的 get/add/inc/dec。一张模板只能写一个域，扫描与预览只读；禁止用 session 表或执行重挂伪装持久事务。
 
-人设正文使用模块内 persona.main/subagent；主会话和子代理各自单选来源，默认官方。来源由独立人设卡下拉选择，config.yml.personaSources 只存模块 ID，不能放正文；选择不自动启用来源模块 rules。仅取所选模块对应受众的字段，不跨模块逐字段合并。省略字段继承、空文本清空、complete:false 解除人设独占；有效官方人设与启用规则的 complete 冲突仍需配装预检。人设不进入规则数组或排序，rules/_settings.yml 的校验投影保持只读。
+人设使用 kind:persona 动作，支持普通 if/then/else；audience 可为 main/subagent，省略覆盖两类。所有启用模块的命中动作按现有规则排序分别拼接 prefix/suffix；字段全省略才继承，显式空串阻止继承但不清除其它规则正文。complete/includeRuntimeContext 显式值冲突拒绝候选并保旧；完全失配或事实不可用回官方。人设卡复用规则事务，不保存顶层正文或来源选择。includeRuntimeContext:true 只撤本插件抑制，不能强开祖先 scope 上下文。正文可读 session/runtime，session setter 仍拒绝。
 
 上下文激活使用 `strategy: context-activation`、`params.activation.scan: batch|history`。关键词、候选组和副键约束的语义查 reference；启停与受众仍归规则。记忆不自动生成常驻规则。
 
@@ -98,7 +97,7 @@ ST 预设、角色卡、世界书优先经工作台或 module_import 转换。**
 3. 将 stWorldBook 执行字段拆为 activation，把角色/位置/不支持控制项移至 source.original；模块递归声明 contextActivationRecursive。
 4. 将 set/get/add/inc/decvar 经 parser 转为 module/global 操作，启用 templateEvaluation。局部变量无冲突提升到顶层 variables，同名不同值先报告并解决；不建立第三层变量。
 5. 将旧工具与能力改为上表名称；完整规则替换保留分支与未改字段，记忆从 note 副作用分离。
-6. 将扁平 persona 明确分配到 main/subagent，保留省略/空串/false；由用户为两类受众各选择官方或一个模块来源，不因转换自动启用规则或切换来源。
+6. 旧顶层 persona 与 config.yml.personaSources 均已退役。按用户明确要求手工重建为 persona 规则动作，保留省略/空串/false 和受众含义；展示新规则启停与排序供核对，不自动迁移或启用。
 7. 旧私有记忆标记先核实并把私有内容归回 memory.md；不能单删标记后导出。
 8. 在隔离候选校验与读回，再按授权提交；失败保留原定义。
 
@@ -116,4 +115,4 @@ ST 预设、角色卡、世界书优先经工作台或 module_import 转换。**
 
 ## 审查已有模块
 
-按身份、完整规则树、执行点、受众、变量 owner、共享参数归属、能力授权、人设单选来源与 complete 冲突、排序、保存版本逐项核对。纯审查只给事实与改法，不自动把发现转成修复授权。
+按身份、完整规则树、执行点、受众、变量 owner、共享参数归属、能力授权、人设规则聚合、官方回退与布尔冲突、排序、保存版本逐项核对。纯审查只给事实与改法，不自动把发现转成修复授权。

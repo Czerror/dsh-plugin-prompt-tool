@@ -27,7 +27,7 @@
 | `names` | `allow` / `deny`；`caseSensitive`（缺省 true） | 名称名单：工具名（工具通道）、子代理 provider（`subagent/start`、`subagent/end`） |
 | `session` | `type`（事件类型，如 `user/message`）；`present`（缺省 `false`＝该事件还没有）；`delegated` | 会话态。判「首轮」用 `{type: user/message, present: false}` |
 | `preset` | `presetId` | 当前**挂载**的官方会话预设；取不到时返回 `UNAVAILABLE`（不乐观放行） |
-| `scope` | `audience`（`main`/`subagent`）；`modelScope`（`all` 缺省 / `pro` / `flash`） | 受众与模型范围。这是**唯一**该写这些门的地方 |
+| `scope` | `audience`（`main`/`subagent`）；`modelScope`（`all` 缺省 / `pro` / `flash`） | 动态受众与模型范围条件；persona 的可选 audience 另限定动作目标 |
 | `anchor` | `subject`（userMessage/assistantReasoning/assistantText/toolResult，缺省 assistantReasoning）；`keys`；scan 模式可选既有匹配选项；`after: { action: seed }`；可选正整数 `fallbackAfter` | 当前可见已结算消息确认；缺省 prefix 只按 keys 作 ASCII 忽略大小写的字面前缀匹配，显式 secondaryKeys/caseSensitive/wholeWords/useRegex/logic/wordBoundary 一律拒绝，需这些选项时用 scan。关联只看同规则动作实际投递后的输出；第 N 个含所选内容块的完整输出仍未命中时兜底，中断模型消息不计，省略持续等待 |
 
 拿不到必要事实时谓词返回 `UNAVAILABLE`：只有严格 `true` 才执行；`any` 遇已知 `true`、`all` 遇已知
@@ -41,6 +41,7 @@
 | 动作 | 执行点 | 主要字段 | 失败时 |
 |---|---|---|---|
 | `inject-text` | 由 config.layer 决定（**六层可注入**，agent-request/llm-stream/tool-pipeline 只作展示归属） | layer、strategy（static/placeholder/context-activation）、position、dedupe、mergeMode、role、order、text/texts、params、templateFile、configKind | 空正文不生成投递；变量赋值模板另按显式求值事务处理 |
+| `persona` | 原官方 assemble 前准备 | audience（main/subagent；省略两类）、prefix/suffix、complete/includeRuntimeContext；支持动态 if/else | 全失配或事实不可用回官方；配置/求值/注册错误保最后有效组 |
 | `assembly` | `system-prompt/assemble` 下游 | `target.sections`（`add`/`remove` **或** `keep`）、`target.contexts`（`add`/`remove` **或** `clear`，二者互斥——并存编译期拒绝）；`target.tools` 已移除 | 返回未改动的装配 |
 | `tool-visibility` | system-prompt/assemble 下游 | allow 与/或 deny（先保留再剔除）、requireMatch（仅 allow；名单全缺才放宽）、discovery（{ kind }；tool/key 可选，只作断言）；受众归 scope，提示归普通注入动作 | 呈现面失败保留原装配；执行闸失败留痕，不静默放行 |
 | `tool-gate` | tools/pre-execute | decision（allow/deny/ask）、reason；工具名归 names 条件 | 一律放行——裁决 bug 不卡死调用 |
@@ -58,7 +59,7 @@
 - `maxPerTurn`（正整数）用在 `assembly` / `tool-gate` / `tool-result` / `append-context` / `request-params` /
   `inbox-prepend` / `pre-step-filter` 上；它数的是「本动作本轮生效几次」，
   与 `count` 谓词（数持久事件）是两回事。
-- `complete` 与 `suppressRuntimeContext` 是**固定注册效果**：所在规则不带 `if`（注册期即生效）。
+- inject-text 的 `complete` 与 `suppressRuntimeContext` 是固定注册效果，仍拒绝动态条件；persona 的布尔选项在原官方 assemble 前随条件候选准备。
 
 ### 禁用或收窄某个工具
 
@@ -117,7 +118,7 @@ tool-catalog 引用目标必须有 allow；仅支持普通只读插值，`templa
    provider 与 id，没有任务文本。
 3. system-section、runtime-context 的普通文本贡献支持规则级 if 和嵌套 `{ if, then, else }`，
    每次 assembly 在条件文本贡献通道按当前事实求值，不动态重注册段；if.scope.audience 是常见写法。
-   complete / suppressRuntimeContext 属固定注册效果，仍拒绝动态条件分支；complete 表示同 scope 唯一 system 段。
+   inject-text 的 complete / suppressRuntimeContext 属固定注册效果，仍拒绝动态条件分支；persona 动作支持动态条件并在原 assemble 前提交，complete 表示同 scope 唯一 system 段。
 
 策略 × 层：static 在六个可注入层；placeholder 在 pre-step、runtime-context；
 context-activation 在 pre-step。分类与正文用通用条件和分支组合（模板15），动态内容策略使用既有 resolver。
@@ -155,8 +156,7 @@ checks:
 
 共享参数由 `ENGINE_PARAM_DEFINITIONS` 唯一登记，`storageLayer` 决定磁盘路径：主/子模型各有路由与采样键，另含 PTC 呈现（presentAsEnabled、ptcMainMode、ptcSubagentMode）、run_code 环境（runCodeEnvEnabled、runCodeEnvKeys）、Git Bash（toolGitBashEnabled、路径、超时、输出上限）、指令提示（instructionHint 及 promoteOn/includeSubagents/模板）和工具批准（customToolRequireApproval）；完整键、options 与默认值以源码为准，不在摘要抄数量。模型卡在装配期合成 request-params 规则；未配置继承宿主。子代理递归深度归官方 `subagent.maxDepth`，插件不提供。
 
-- persona.main/subagent：各模块保存 prefix/suffix/complete/includeRuntimeContext，省略继承、空文本清空、false 明确值；rules/_settings.yml 只作校验投影。
-- config.yml.personaSources：main/subagent 各单选官方默认或一个模块 ID，不存正文、不自动启用 rules。只读取所选受众字段，不跨模块逐字段合并；有效官方人设与启用规则的 complete 仍预检，配装失败保留旧状态。
+- persona 动作：普通规则拥有 prefix/suffix/complete/includeRuntimeContext 与可选 audience。命中动作按既有规则序分别拼接非空片段，两个换行分隔；全省略才继承，显式空串阻止继承但不清其它片段。布尔显式值冲突整组保旧；失配/事实不可用回官方，错误保最后有效组。includeRuntimeContext:true 只撤本插件抑制，祖先 scope 抑制保持。
 - variables：模块持久值，覆盖同安装 global；空串保留，删键才回落。普通规则手动建立变量，ST 导入自动登记缺失裸引用为空占位。
 - customTools：shell/http/delegate/fs/ask-user，定义见包内 templates/tools。delegate 走官方工具管线。
 - subagentToolPolicy：授权上限、工具档、角色绑定、任务规则与受控扩权；缺省官方委派。
@@ -182,4 +182,4 @@ checks:
 
 ## 六、退役输入的显式转换
 
-旧 world-book/stWorldBook/stWorldBookRecursive/stMacros/stSource、动作 config.variables、扁平 persona 和旧工具能力不作为运行兼容面。重新导入标准 ST 或按 SKILL.md 的转换步骤改写；保留原件和私有记忆，不能靠删来源标记绕过分享保护。旧 API 别名不等于新工具授权。
+旧 world-book/stWorldBook/stWorldBookRecursive/stMacros/stSource、动作 config.variables、全部顶层 persona、config.yml.personaSources 和旧工具能力不作为运行兼容面；读取根明确拒绝，用户手工重建人设规则并移除旧字段，插件不自动迁移。重新导入标准 ST 或按 SKILL.md 的转换步骤改写；保留原件和私有记忆，不能靠删来源标记绕过分享保护。旧 API 别名不等于新工具授权。

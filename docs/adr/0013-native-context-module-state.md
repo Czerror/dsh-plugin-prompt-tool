@@ -20,6 +20,10 @@
 
 会话短状态统一为 soul.mark；旧状态文件首读不迁移、首次合法写一次提交到官方域且保留原件。宿主维护逐键时间戳，所有写入口统一限长和CAS。会话域不自动随 fork 或日志导出，官方持久化开始后取消不代表回滚。变量总闸覆盖新求值域；工作台与bridge仍只编辑模块/全局，不增加指定他人会话入口。此修订只替代本ADR的“两级所有者、裸引用覆盖顺序”限制，其余原生上下文、人设与单域提交决定保持。
 
+2026-11-02 修订（Issue 37）：人设改为普通规则中的 persona 动作，取代前文的顶层 persona.main/subagent、config.yml.personaSources 单选、独立正文保存与 settings 投影。正文、资格、排序和生命周期统一归 ruleRuntime；所有启用模块的命中动作按既有规则序与动作声明序分别拼接 prefix/suffix，主子按真实 Agent 分别聚合。字段全省略才继承，显式空串阻止该字段继承但不清除其它片段；complete/includeRuntimeContext 显式值冲突拒绝整组并保旧。全部失配或必要事实不可用撤回本插件人设、恢复官方；配置、求值或注册错误报告并保留最后有效贡献。旧格式在读取根拒绝，由用户手工重建规则并移除旧键，不自动迁移、不双读、不改用户文件。
+
+动态候选在原官方 assemble 前准备并提交，因为官方在 waterfall 前保存 complete 副本。同 Agent 的准备与原装配串行、每次固定候选；不同 Agent 可并发，全局刷新事务等待各 Agent 锁。官方继承与 AgentSetup 同层捕获保留为 adapter：暂撤的原声明在回退/卸载时恢复，但原 owner 释放后不得复活。includeRuntimeContext:true 只撤本插件抑制，祖先 scope 的抑制保持。自定义片段沿各自规则来源读取变量与 runtime，继承官方正文不重新求模板；同步人设 session setter 仍拒绝。此修订替代本 ADR 先前的人设单选与释放降级决定，保留官方服务启动依赖、scope 隔离和单域变量事务约束。
+
 本决策取代 [ADR-0008](0008-module-slices-memory-assembly.md) 的公开旧名兼容和世界书 note 记忆入口，并替代此前文档中的会话变量及 ST local/global 所有权。继续保留该 ADR 的完整定义、切片恢复、提交后发布失败语义；[ADR-0006](0006-module-config-order.md) 的配置排序、[ADR-0007](0007-unified-condition-action-rules.md) 的规则与显式互斥、[ADR-0010](0010-two-history-views.md) 的历史视图分工均不变。
 
 字段和事务所有权见 [后端框架](../architecture-params.md#原生格式与持久状态)，外部字段映射见 [SillyTavern 导入](../SillyTavern.md#原生转换映射)，工具与执行边界见 [引擎复用](../engine-reuse.md#原生运行与工具面)。这些文档解释权威 schema 与契约，不增加第二套校验定义。

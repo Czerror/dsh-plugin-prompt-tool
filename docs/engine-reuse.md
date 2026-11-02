@@ -2,11 +2,11 @@
 
 规则是唯一行为定义。插件读取模块定义、校验切片，再经 `compileRules → createRuleRuntime(...).replace` 装配到 Agent scope；一次性调用仍可使用 `mountRuleSources`。这是两段式生命周期：`compileRules` 只编译与校验（产物每条规则携带 `conditionTrees`，选项里的 `ctx` / `standingMountFor` / `variableStore` / `manifestCheck` 会被显式剥掉），条件在来源注册前由 `rebindConditions` 绑定。原因是 `preset` 谓词要挂载 scope 的 ctx（`conditions/preset.mjs` 把服务查询基准绑在构造期），准备期拿不到——那边绑出来的 `preset` 条件是恒 UNAVAILABLE 的静默死条件。需要官方模块导出的兜底时，由调用方通过 options 传 `standingMountFor`；重绑含 `preset`、含 `variable`、含 `manifest`、含 `phase` 且未显式 `subscribe: false`、或含 `anchor.after` 动作引用的树，其余谓词原样保留。规则实例、条件绑定和运行状态按 Agent 私有，不跨 Agent 复用可变的准备产物。模块不进入官方会话预设注册表；九个插入点各有生命周期，不形成插件自定义的全局管线。
 
-编辑保存与运行注入分别负责：客户端只提交合法草稿，普通保存完成写盘与切片验证后立即确认 `persisted`，运行发布由装配通道按 300ms 合并。发送消息不等待自动保存；官方 `systemPrompt.assemble()` 开始、同步 provider 求值之前，插件提前处理已保存定义与人设来源的变化。`refreshOnly` 同样提前发布并等待真实结果；显式发布、文件观察与请求前检查使用同一调度通道，同版本不会重复重挂。变量值仍在模板求值时读取，不因值更新重挂规则。
+编辑保存与运行注入分别负责：客户端只提交合法草稿，普通保存完成写盘与切片验证后立即确认 `persisted`，运行发布由装配通道按 300ms 合并。发送消息不等待自动保存；官方 `systemPrompt.assemble()` 开始、同步 provider 求值之前，插件提前处理已保存规则定义的变化。`refreshOnly` 同样提前发布并等待真实结果；显式发布、文件观察与请求前检查使用同一调度通道，同版本不会重复重挂。变量值仍在模板求值时读取，不因值更新重挂规则。
 
 插件同时观察启用表与已参与模块的 `module.yml`（200ms 文件检查），使直接修改文件也能更新后续事件的注册。正文、参数、启停、增删、条件、受众和插入点修改从后续实际发生的官方入口生效；不会重跑进行中的请求，也不补执行已经过去的入口。单个模块读取、校验或挂载失败时，首次加载跳过该模块；已有有效版本则恢复该模块的旧贡献，健康模块继续更新。旧版本也无法挂载时撤销该模块并报告两次失败。文件变化或显式刷新可以重试，同一坏版本不在每次请求时重复撤装。监听与文件观察随插件释放，不修改官方 Loader 或 profile。
 
-装配记录只包含实际参与贡献的模块。未变化的普通规则来源与模块能力保留注册；未启用且不是人设来源的模块保存不重挂 Agent。规则的跨模块排序仍聚合计算，共享派生组在成员或有效内容变化时可以更新；共享工具仍由成功来源共同使用。失败尝试的工具和监听器不会保留。显式刷新在发布健康模块后仍返回故障诊断；普通保存不等待这个结果，后台失败只写日志与 `/meta` 的 `publicationFailures`，不进入 `moduleWarnings`，也不在工作台显示。切片提交后失败和显式重试失败仍保留 `persisted/publicationPending`。全局部署配置、独立人设来源、跨模块 `complete`／`sections.append` 冲突，以及无法归属单个模块的公共注册错误仍整体拒绝并尝试恢复原装配，不自动选择赢家。
+装配记录只包含实际参与贡献的模块。未变化的普通规则来源与模块能力保留注册；未启用模块保存不重挂 Agent。规则的跨模块排序仍聚合计算，共享派生组在成员或有效内容变化时可以更新；共享工具仍由成功来源共同使用。失败尝试的工具和监听器不会保留。显式刷新在发布健康模块后仍返回故障诊断；普通保存不等待这个结果，后台失败只写日志与 `/meta` 的 `publicationFailures`，不进入 `moduleWarnings`，也不在工作台显示。切片提交后失败和显式重试失败仍保留 `persisted/publicationPending`。全局部署配置、跨模块 `complete`／`sections.append` 冲突，以及无法归属单个模块的公共注册错误仍整体拒绝并尝试恢复原装配，不自动选择赢家。
 
 晚到服务的初始化同样受模块装配管理。依赖尚未到达是正常等待，已有规则贡献可以继续；只有模块及其共享能力的初始化全部成功后，才更新该 Agent 上该模块的最后有效快照（`lastGood`）。未变化来源保留原初始化所有者，增量更新不把一次准备成功当作初始化成功。初始化回调随后失败时，撤销所属模块的贡献并尝试恢复该快照，无有效快照则跳过；共享能力失败影响当前声明它的来源集合。故障诊断保留来源与原因。同一失败定义不会因其他模块更新而自动重试，修改该模块定义或显式刷新可以重试。来源已替换、Agent已结束或插件已卸载后，迟到状态不能撤销新贡献或重新启用旧模块。检索工具在依赖就绪后同步注册，第二项注册失败先清理第一项，不留逃离模块初始化链路的工具fiber。运行期单次维护、检索或动作错误仍由各自业务处理，不因此触发模块回退。
 
@@ -29,28 +29,28 @@
 | `retrieval` | `module_search`、`module_open` | 来源白名单、版本引用和原文回取 |
 | `tool-config-engine` | 模块声明的自定义工具 | 官方工具注册、执行和批准管线 |
 
-未声明的工具能力不注册。五个模块工具外壳通过 `ctx.inject` 等待各自 `pt-module-*` provider，贡献随 disposer 撤回。来源模块内的模板变量按该来源读写；模型工具目标由执行 Agent 的配装记录确定（只含已启用的规则模块；人设来源是人设卡的独立引用，可以指向未启用的模块，正文写入走 persona 端点），`expectedModuleId` 只校验，不选择任意模块或目录。模块规则正文要调模块工具时，必须把来源模块 id 写死（例如 `moduleId: soul`）；引擎不提供模块身份插值宏，模块复制或改名后需同步正文。
+未声明的工具能力不注册。五个模块工具外壳通过 `ctx.inject` 等待各自 `pt-module-*` provider，贡献随 disposer 撤回。来源模块内的模板变量按该来源读写；模型工具目标由调用方显式 moduleId 声明，缺声明拒绝，执行 Agent 的配装记录只作候选提示。`expectedModuleId` 仅作身份一致性校验，不选择模块或目录。模块规则正文要调模块工具时，必须把来源模块 id 写死（例如 `moduleId: soul`）；引擎不提供模块身份插值宏，模块复制或改名后需同步正文。
 
 旧 character/world_book/session_var 工具、对应能力与 ST 运行文件退出公开面；外部标准中的世界书名称仍可出现在导入类型和来源记录中。没有新旧双读、角色专属存储，也没有任意路径工具：模块私有文件只允许 memory.md、assets/（只读）与 data/（只追加）。
 
-### 执行、状态与接入
+### 执行状态与接入
 
 - 普通规则按真实执行点判定。条件/动作资格先于模板求值，禁用或受众不符的 setter 不影响 reader。
 - `template-evaluation.mjs` 返回正文、读取域和单域变更集；`template-frame.mjs` 通过显式变量 adapter 读取、CAS 提交和发布。
 - 执行身份由运行 Agent、取消信号与官方 turn/step durable 边界确定；assembly 与其后的 pre-step 共用同一次执行。账本独立于 mount，提交后重挂或重复出口只重用结果。
 - 同执行后续卡读取前卡提交的值；变量 revision 只作 CAS，不成为重放键。冲突最多重试当前未提交卡，保留其随机抽样。
-- 发布失败返回/记录已持久化状态，只重试发布；不重复自增。预览或无法确认真实执行身份时只读，赋值拒绝。
+- 发布失败返回/记录已持久化状态，只重试发布；不重复自增。普通预览或无法确认真实执行身份时只读，赋值拒绝。人设挂载预检通过模板 owner 在副本中验证 module/global 变更集，不提交、不重试发布、不读取或消费执行凭据；真正带执行身份的装配仍走原 CAS 与单次提交。同步人设的 session 赋值在预检和执行两阶段都拒绝。
 - 账本有界且在进程内；不承诺任意崩溃后的跨进程 exactly-once。
 
 人设适配器归主插件运行态。包补丁只注册 `dsh-plugin-prompt-tool`，不覆盖官方 system-prompt 的 inject/intercept，不要求它等待 Loader 或本插件服务。独立人设早入口已移除。
 
-人设策略来源由 host 的 `selectedPersonaModules(root)` 提供：config.yml.personaSources 为 main/subagent 各保存一个模块 ID 或官方默认，仅读取所选模块的对应受众字段。正文仍归模块定义，rules/_settings.yml 只作校验投影；选择来源不启用模块 rules，不进行多模块逐字段合并。
+persona 动作与普通规则共用来源、if/then/else、启停和 configOrder，由统一 ruleRuntime 持有资格、最后有效贡献、替换与 disposer。所有启用模块的命中动作按既有顺序分别聚合 prefix/suffix；非空片段用两个换行连接，显式空串阻止继承但不清除其它片段，字段全省略才读取官方。主子按真实 Agent 分别聚合；complete/includeRuntimeContext 显式值冲突拒绝整组。旧顶层 persona、config.yml.personaSources 与独立正文 bridge 已退役，读取根拒绝且不自动迁移，需用户手工重建。
 
-人设段由装配通道在**每个 Agent 自己的 scope** 注册同名 `deployment:persona-prefix` / `deployment:persona-suffix`。同名段按 scope 链遮蔽、近者胜（`@deepseek-ai/dsh-scope` 的 `ScopedLayers.merge`），所以全局部署人设与预设挂在祖先 scope 的 persona 行都被替换，不需要接管任何人的 fiber。段落位置取 `getSectionOrder()`；未声明的字段、位置与 `complete` 从最近的已有声明继承（同层被接住的声明优先，其次是祖先的官方 persona 行，最后是根部署人设），找不到继承源也照常注册——遮蔽一个不存在的声明本身无害，不再因为「未观察」拒绝配装。继承的官方正文直接沿用原 `text`，不被当作本插件模板重执行；自定义正文继续读取来源模块变量。
+官方 SystemPrompt 在 waterfall 前读取同步 provider 并保存 complete 副本，因此动态人设在原 `systemPrompt.assemble()` 之前由统一准备阶段求条件、预检普通 complete/sections.append 并提交完整注册；不能靠 waterfall 末尾修改 complete 生效。同一次原 assemble 固定已接受候选。同 Agent 的准备和原 assemble 串行，不同 Agent 可并发；全局 refresh 事务等待各 Agent 的锁，避免定义替换交错进行中的装配。
 
-单选来源不代替独占校验：人设的 `complete` 与同受众规则的 `complete` 仍在撤旧之前预检，冲突时保留上次有效配装。人设是装配通道里的一段普通贡献，随装配 fiber 一同挂载与释放——没有独立的人设事务、维护锁，也不重载任何官方 fiber；不操作私有 layers，不替换 Agent scope，不在截断后拼回系统段。
+人设在每个 Agent 自己的 scope 注册同名 deployment:persona-prefix/suffix，以 scope 链遮蔽祖先声明。未声明字段、位置与 complete 继承最近有效官方声明；继承正文直接沿用原 text，不重新执行模板，自定义片段仍按各自来源模块读取变量与只读 runtime。includeRuntimeContext:false 增加本插件抑制；true 仅撤本插件抑制，不能撤销祖先 scope 的抑制或强开上下文。
 
-AgentSetup 窗口内注册的同层同名段会被接住：装配时先撤销它、再注册我们的段落，撤销凭据保留原 `PromptSection`，因此本插件人设优先于 `@deepseek-ai/dsh-subagent` 的 per-child persona 这类直接声明。窗口之外出现的同层声明撤不掉，装配失败并保留旧装配，由告警说明；释放后回落祖先声明，不回装被撤段落。升级代码、patch 或 bundle 后需要用户重启服务，插件不自行重启。
+AgentSetup 捕获的同层声明保留原 PromptSection 与 owner 生存状态：命中时暂撤，完全失配、事实不可用或卸载时恢复；原 owner 已释放则不复活。窗口之外的同层声明无法安全撤换时报告错误并保旧。条件失配与错误不同：失配撤回插件贡献、真实回到官方；配置、求值或注册失败保留最后有效组，不半提交。来源停用、规则删除及 Agent 释放均沿 ruleRuntime 清理，不保留第二条 persona fiber/signature。升级代码、patch 或 bundle 后需要用户重启服务，插件不自行重启。
 
 ## 统一入口与模块职责
 
@@ -136,7 +136,7 @@ adapter 的目录、权限、原子写与版本责任归接入方。缺少 adapt
 
 `renderTemplateAsync` 在规则的 assembly/pre-step 出口等待异步 session 提交；同步 `renderTemplate` 保留旧域赋值并在提交前拒绝 session setter。执行凭据保存进行中的 Promise，重入/重挂不重复提交；已提交后取消只阻止正文发布。裸引用按 session→module→global，session 值为字面数据；runtime.get 只读权威值，禁止写入与回退。官方 PromptContext 仍是动态内容出口，不另造上下文管线。
 
-当前 runtime 事实授权按实际启用的规则来源校验；仅被选为人设、未启用规则的模块尚不能读取 runtime，不能把选择人设当作已启用规则。该限制不影响其 module/global/session 读取。
+runtime 事实授权按真实 Agent 的有效规则来源校验；persona 动作使用同一来源身份读取，条件候选只读，正文同步出口仍拒绝 session setter。不存在独立人设来源授权旁路。
 
 ## 规则条件与动作边界
 
@@ -152,6 +152,7 @@ adapter 的目录、权限、原子写与版本责任归接入方。缺少 adapt
 
 | 动作 | 执行点与边界 |
 |---|---|
+| persona | 原官方 assemble 前准备并聚合身份；audience 可限定 main/subagent，省略覆盖两类，支持动态条件 |
 | inject-text | config.layer 指定六个可注入层；agent-request、llm-stream、tool-pipeline 只作动作展示归属 |
 | assembly | system-prompt/assemble 的系统段 / 运行上下文投影（工具面不再由它承担） |
 | tool-visibility | system-prompt/assemble 下游：一份名单拥有工具目录、SDK 正文、执行闸与发现来源；受众使用 scope 条件 |
@@ -214,7 +215,7 @@ then:
 - tools 通道有工具名、参数或结果；names/source/text 按动作的 channel 白名单校验。
 - subagent/start/end 有 provider/id/local 等事件事实，不含任务正文；文本 subject 用 subagentInfo。
 - llm/stream 自身无文本 subject；引擎可由 sessionId 查回 Agent，因此 phase/session/count/anchor 等依赖会话的条件可用，查不到为 UNAVAILABLE。
-- system-section/runtime-context 的普通文本贡献支持规则级条件及嵌套 if/then/else，在每次 assembly 按该执行点事实求值，不动态重注册段。complete/suppressRuntimeContext 属固定注册效果，动态 if 组合仍在编译期拒绝。
+- system-section/runtime-context 的普通文本贡献支持规则级条件及嵌套 if/then/else，在每次 assembly 按该执行点事实求值，不动态重注册段。inject-text 的 complete/suppressRuntimeContext 属固定注册效果，动态 if 组合仍在编译期拒绝；persona 动作由 assemble 前准备阶段支持动态选项。
 
 固定系统段可通过 `config.audience: main/subagent` 限定受众；complete 和 suppressRuntimeContext 都在该 Agent 注册前筛选，非目标受众不注册这些效果。省略受众覆盖主/子两类。独占检查按受众分别聚合：主/子各一条可以同模块或跨模块共存，同受众重叠（包括未限定受众的段）在发布前拒绝；官方人设 complete 也只与该 Agent 的规则比较。`assembly.sections.append` 与 complete 使用同一受众聚合：同受众存在已知 complete 时拒绝 append，append 不会改写 complete 段。
 

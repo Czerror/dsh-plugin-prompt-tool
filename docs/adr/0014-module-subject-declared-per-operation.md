@@ -1,6 +1,8 @@
 # 模块主语由这次操作声明：装配成员资格与写入目标解耦
 
-状态：已采纳（阶段 1／2／3／4 均已实施）。阶段 3 的服务端声明面与客户端声明下发／「没声明就不发读」的界面形态已落地（客户端只把快照当**读的准入**：固定卡永远渲染、未声明按空内容；通用资产卡未声明时只给添加入口）；阶段 4 的 Agent 侧（工具主语改为显式 `moduleId`）与 TUI（用户显式声明会话主语）已落地。桥侧唯一保留的例外是 `resolveModuleDir()`（`src/host/module-dirs.ts`）的「用户目录缺失时回退包内同名模板」，见下文。
+状态：已采纳（阶段 1／2／3／4 均已实施）。阶段 3 的服务端声明面与客户端声明下发／「没声明就不发读」的界面形态已落地（客户端只把快照当**读的准入**：固定指令卡永远渲染、未声明按空内容；通用资产卡未声明时只给添加入口）；阶段 4 的 Agent 侧（工具主语改为显式 `moduleId`）与 TUI（用户显式声明会话主语）已落地。桥侧唯一保留的例外是 `resolveModuleDir()`（`src/host/module-dirs.ts`）的「用户目录缺失时回退包内同名模板」，见下文。
+
+Issue 37 修订：人设改为普通规则动作，复用规则的编辑主语、草稿与 `/rules` 版本事务；独立来源选择、正文端点、固定人设卡与来源删除保护均退役。本 ADR 的显式操作主语原则保持，当前人设契约见 [ADR-0013](0013-native-context-module-state.md) 的 Issue 37 修订。
 
 「这次读写属于哪个模块」曾由两处**猜**回答：客户端 `src/client/data/bridge-transport.ts` 的模块级可变 `editTarget`（首帧未初始化即发请求），以及服务端 `src/host/config-store.ts` 的目标解析在请求未声明时回退**启用表首项**。两者的不同步产生两种后果——响亮的 409 `module-changed`，以及沉默的落到回退目标。根源是「当前模块」不在领域里：模块是可自由组装的多份，真正存在的只是**这次操作的主语**。本决策把主语还给操作本身：**读与写都由请求头 `x-module-id` 定位目录**，写端点另在载荷带 `expectedModuleId` 作**一致性校验**；服务端**只按声明解析**——缺声明即无目标（`required` 端点 400 `module-dir-unavailable`），不回退启用表首项，不替换成包内同名模块；**非法声明显式拒绝**而不是静默当「未声明」（三态：`ok` / `absent` / `invalid`，`absent` 只认请求头完全没有）。**实现的实际语义比设计文档的 Q14 措辞更严**：设计文档 §六 Q14 写「写以载荷主语为准」，而实现是「头定位 + 载荷只做一致性校验」（`src/runtime/settings-bridge.ts` 的 `editDir` 只读请求头，`src/runtime/module-subject-gate.ts` 的 `guardModuleIdentity` 只比对载荷）；两者对真实调用方等价（客户端都带且一致），以本节为准。
 
@@ -11,14 +13,14 @@
 ## 代价与边界
 
 - **空主语分两类**：`bootstrap` 空目标是合法状态，只回全局段（指令文件卡与 session／scope 事实）——`moduleParams`／`moduleFacts` 键整体**缺席**（不是空对象）、`variables` 缺席、`overrides` 为空、`templatePreStepCount` 保持 `0`；`describe` 空目标拒绝（400 `module-dir-unavailable`）——它的主体就是模块段。两者都不再拿包内默认模块 `ponytail` 兜底（`src/runtime/settings-bridge.ts` 的 `collectDescribeExtras` 只在 `activeDir.length > 0` 时填模块段）。拒绝路径统一同一个码与同一条文案。
-- **`moduleDelete` 用它声明的编辑目标做「在用」判据**：无声明＝没有在用模块（不拒绝）；「被 `personaSources` 引用」的删除保护在 `src/host/module-capabilities.ts` 内、与编辑目标无关，不动。
+- **`moduleDelete` 用它声明的编辑目标做「在用」判据**：无声明＝没有在用模块（不拒绝）；人设动作随普通规则来源释放，不保留独立来源引用或来源删除保护。
 - **跨模块排序不因此改变**：排序携带完整启用集合身份列表与版本，本来就不限定单个模块（`src/host/module-config-order.ts` 的 `readInputs` 按启用表取输入），本轮只改「写入目标从哪来」。
 - 主语由**操作**声明，带来的是可预期的请求与拒绝语义，也带来必须显式传参的成本；单用户本地插件下，多一次 loopback 往返与一次读盘是可接受代价，一致性优先于省请求。
 
 ## 后续
 
 - **阶段 2 归属门（已实施）**：各端点的空目标早退与三件套判据已收进 `src/runtime/module-subject-gate.ts` 的 `subjectGate`，`BRIDGE_SUBJECT_POLICY`（10 `required`／5 `optional`／30 `none`）就是门的名单与接口；门由 16 个端点调用（28 个调用点，写端点分别核读写两侧），30 个未解析目录的 `none` 端点不调用。`paramOverrides` 后来由 `required` 改为 `optional`（用户裁定 2026-10-12）：空主语＝**全局层**（存储根 `config.yml` 的 `layerSettings`），不是「没有目标」——固定卡指令卡是全局段，它的设置区写这里；模块自己的值仍然优先（存在即覆盖）。
-- **阶段 3 声明面（已实施）**：服务端判据已落地（`src/host/module-declarations.ts` 的 `moduleDeclarations`／`DECLARED_SECTIONS` 与门的声明面检查：**读**端点要的节没声明即 400 `module-not-declared`，**写**路径不查并建立该节）；客户端声明下发也已落地——`/meta` 的 `meta.modules[].declares` 下发顶层键名（`/bootstrap` 的模块段同口径按声明出现）。客户端拿这个快照只决定**两件事**：①**这次读发不发**（没声明就不发该端点的读，发过去也是 400）；②**空内容从哪来**（未声明的节按空内容渲染，保存即建立该节、写成功后重读 `/meta`）。它**不决定卡在不在**：固定卡（指令卡及其参数设置区、人设卡）永远在场、可展开、可编辑，未声明时按空内容渲染并给一行「保存即建立该节」的提示；通用资产卡（`customTools`／`variables`，按规则/配置存在）保持既有行为——没声明就不出卡、只给添加入口（沿用该节既有的创建动作），写成功后重读 `/meta`，卡片随即出现。客户端那张「资产卡要哪个节」的小表与 `DECLARED_SECTIONS` **同口径**（节名就是 `module.yml` 的键名，「任一存在即已声明」的语义也一致），它只回答「这张卡读写哪个节」，判据仍只有服务端那张登记表 + `/meta` 下发的 `declares`。
+- **阶段 3 声明面（已实施）**：服务端判据已落地（`src/host/module-declarations.ts` 的 `moduleDeclarations`／`DECLARED_SECTIONS` 与门的声明面检查：**读**端点要的节没声明即 400 `module-not-declared`，**写**路径不查并建立该节）；客户端声明下发也已落地——`/meta` 的 `meta.modules[].declares` 下发顶层键名（`/bootstrap` 的模块段同口径按声明出现）。客户端拿这个快照只决定**两件事**：①**这次读发不发**（没声明就不发该端点的读，发过去也是 400）；②**空内容从哪来**（未声明的节按空内容渲染，保存即建立该节、写成功后重读 `/meta`）。它**不决定卡在不在**：固定指令卡及其参数设置区永远在场、可展开、可编辑，未声明时按空内容渲染并给一行「保存即建立该节」的提示；通用资产卡（`customTools`／`variables`，按规则/配置存在）保持既有行为——没声明就不出卡、只给添加入口（沿用该节既有的创建动作），写成功后重读 `/meta`，卡片随即出现。客户端那张「资产卡要哪个节」的小表与 `DECLARED_SECTIONS` **同口径**（节名就是 `module.yml` 的键名，「任一存在即已声明」的语义也一致），它只回答「这张卡读写哪个节」，判据仍只有服务端那张登记表 + `/meta` 下发的 `declares`。
 - **阶段 4 Agent 侧与 TUI（已实施）**：`src/host/module-tool-target.ts` 的 `MODULE_ID_PARAM` 让 5 个模块工具（`module_rules_read`／`module_rules_edit`／`module_memory_read`／`module_memory_append`／`module_variables`）的主语改为显式工具参数，`resolveModuleToolTarget` 不再取装配记录 `[0]`（该 Agent 的已启用模块只作拒绝提示），未声明即拒绝；`module_import` 的主语是它自己的 `targetId`／`targetName`，不经此处。TUI 同样显式声明（`src/runtime/tui.ts` 的 `sessionSubjects` + `getModuleDirectory(moduleId)`），`src/index.ts` 的 `activeModuleDir()` 与 `DEFAULT_MODULE_ID` 接线已删。
 - **阶段 5 显式创建与首写（2026-10-12，已实施）**：规则/模板写入只接受本次显式 `moduleId`，不依赖启用表、默认模块、规则卡 owner 或先读 `/rules`；目标必须是用户根下有效、可写的模块（含未启用）。缺少 `rules` 的空白模块在目标锁内按空基线首写，模板解析后的 `RuleDefinition` 直接走 `/rules` `createRule`，服务端按目标内已有规则 id 分配后缀。三位身份校验贯穿首写和普通写入：头体冲突为 400 `module-subject-conflict`，目标变化为 409 `module-changed`，系统或只读目标为 403 `module-readonly`。clone 新模块不自动启用；写盘成功但运行刷新失败时保留 `persisted/publicationPending`，只用 `refreshOnly` 重试。
 - **2026-10-13 创建后可见性补充**：用户确认仅“添加注入模板 → 新建空白模块”在规则提交成功后启用本次新模块；规则自身仍关闭。模块页独立新建/克隆、向既有未启用模块写入均不自动启用。主会话／子代理继续只展示启用集合，不增加未启用模块详情页。空白新建的显示名称为“默认模块”，ID 仍由服务端分配；显示名不具备默认主语语义。模块页只增加显示名称编辑与空白新建；名称修改不影响身份与装配成员。

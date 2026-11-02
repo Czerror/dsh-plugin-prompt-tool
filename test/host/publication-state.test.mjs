@@ -246,23 +246,7 @@ test('其余纳入端点：refreshOnly 只重建，不重复创建/删除/安装
   assert.equal(existsSync(target.dir), true, 'refreshOnly 不删除目标模块')
   assert.equal(existsSync(join(moduleRoot, target.id + '-copy')), false, 'refreshOnly 不复制模块')
 })
-test('persona：写盘成功、发布失败回 200 + 待发布', async () => {
-  const { target, handlers, state } = harness()
-  state.failOverrides = true
-  const saved = await call(handlers, 'persona', { expectedModuleId: target.id, persona: { main: { prefix: 'x' } } }, target.id)
-  assert.equal(saved.status, 200, saved.message)
-  assert.equal(saved.value.publicationPending, true)
-  assert.equal(saved.value.persona.main.prefix, 'x')
-})
 
-test('personaSources：写盘成功、发布失败回 200 + 待发布', async () => {
-  const { handlers, state } = harness()
-  const initial = await call(handlers, 'personaSources')
-  state.failOverrides = true
-  const saved = await call(handlers, 'personaSources', { sources: { main: null, subagent: null }, expectedRevision: initial.value.revision })
-  assert.equal(saved.status, 200, saved.message)
-  assert.equal(saved.value.publicationPending, true)
-})
 
 test('rules：写盘成功、发布失败回 200 + 待发布', async () => {
   const { target, handlers, state } = harness()

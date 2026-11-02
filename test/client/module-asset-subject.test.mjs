@@ -26,9 +26,6 @@ const { AudiencePage } = await withSsr([
 const { usePromptToolStore } = await withSsr([
   new URL('../../src/client/data/use-prompt-tool-store.ts', import.meta.url).href,
 ])
-const { ModulePersonaCard, personaWriteBody, readModulePersona } = await withSsr([
-  new URL('../../src/client/features/persona/ModulePersonaCard.tsx', import.meta.url).href,
-])
 const { insertToolTemplateIntoDraft, readCustomTools } = await import('../../src/client/data/tools-editor.ts')
 const { saveModuleVariables: saveVariablesRequest } = await import('../../src/client/data/module-variables.ts')
 
@@ -73,7 +70,7 @@ test('无主语：资产卡整块不渲染（装配集合为空即无卡）', ()
 })
 
 /** 声明面来自 `/meta` 的 `declares`：只决定「这一步发不发读」与「空内容从哪来」。
- *  固定卡（指令卡的参数组、人设卡）不受它影响；通用资产卡未声明时仍改出添加入口（既有行为不变）。 */
+ *  指令卡的参数组不受它影响；通用资产卡未声明时仍改出添加入口（既有行为不变）。 */
 const modulesDeclaring = (declares) => [
   { id: 'mod-a', name: 'A', enabled: true, facts: facts(), declares },
 ]
@@ -127,15 +124,6 @@ test('能力参数：已声明能力不依赖 params 节，未声明能力不显
   assert.equal(renderElement(LayerSettingsContent, { store, t, layer: 'pre-step', moduleId: 'mod-a' }), '', '没有能力不生成空参数编辑器')
 })
 
-test('声明面：人设写载荷——创建模式不传 expectedRevision，已声明带读取版本', () => {
-  const creating = personaWriteBody('mod-a', { main: { prefix: 'P' } }, '', true)
-  assert.deepEqual(creating, { persona: { main: { prefix: 'P' } }, expectedModuleId: 'mod-a' }, '创建模式不带版本期望（空串会被服务端当非法版本拒绝）')
-  assert.equal('expectedRevision' in creating, false)
-  const declared = personaWriteBody('mod-a', { main: { prefix: 'P' } }, 'a'.repeat(64), false)
-  assert.equal(declared.expectedRevision, 'a'.repeat(64), '已声明带读取时的模块版本')
-  assert.equal(personaWriteBody('mod-a', {}, '', true).persona, null, '空对象仍是删除语义')
-})
-
 test('声明面：变量写载荷——没有前状态整键不带 expectedRevisions，有前状态照旧带版本', async () => {
   const bodies = []
   const request = async (body) => {
@@ -171,20 +159,11 @@ test('声明面：通用卡的读——未声明一个请求都不发，声明�
   const fetchStub = withFetch(() => ({ ok: true, value: {} }))
   try {
     await readCustomTools('mod-a', true)
-    await readModulePersona('mod-a', true)
     assert.equal(fetchStub.requests.length, 0, '未声明时一个请求都没发出去')
-    // 同一未声明主语：固定卡（人设编辑器、指令卡参数组）照常渲染——「不读」不等于「不出编辑器」。
-    const drafts = createWorkspaceDrafts()
-    drafts.personaSources.value = { main: 'mod-a', subagent: null }
-    drafts.expanded.set('mod-a:persona:main', true)
-    const persona = renderElement(ModulePersonaCard, { t, audience: 'main', moduleId: 'mod-a', modules: modulesDeclaring(['rules']), drafts, onNotice: () => {} })
-    assert.match(persona, /data-config-panel="prefix"/, '未声明的 persona 编辑器在场')
-
     fetchStub.requests.length = 0
     await readCustomTools('mod-a', false)
-    await readModulePersona('mod-a', false)
     assert.deepEqual(fetchStub.requests.map((request) => request.path.split('/api/prompt-tool/settings')[1]),
-      ['/custom-tools', '/persona'], '声明的节照旧各读一次')
+      ['/custom-tools'], '声明的节照旧各读一次')
     for (const request of fetchStub.requests) assert.equal(request.headers['x-module-id'], 'mod-a', '读的主语＝该模块')
   } finally {
     fetchStub.restore()
@@ -221,21 +200,6 @@ test('声明面：通用资产卡进入创建模式后，声明一建立就退�
   // 未声明时同一创建态才是创建模式（卡内提示在场）。
   assert.match(html(['rules']), /data-layer-asset="custom-tools"/, '未声明 + 创建态仍渲染该卡')
   assert.match(html(['rules']), cardHint, '未声明 + 创建态 ⇒ 卡以创建模式渲染')
-})
-
-test('声明面：人设卡按主语的声明面渲染——未声明也照常出编辑器，空态带建立声明提示', () => {
-  const html = (declares) => {
-    const drafts = createWorkspaceDrafts()
-    drafts.personaSources.value = { main: 'mod-a', subagent: null }
-    drafts.expanded.set('mod-a:persona:main', true)
-    return renderElement(ModulePersonaCard, { t, audience: 'main', moduleId: 'mod-a', modules: modulesDeclaring(declares), drafts, onNotice: () => {} })
-  }
-  const undeclared = html(['rules'])
-  assert.match(undeclared, /data-config-panel="prefix"/, '未声明也出编辑器（不许只给入口/按钮）')
-  assert.match(undeclared, new RegExp(`role="status">${t('declare.createHint')}`), '空态带「保存即建立该节」提示')
-  const declaredHtml = html(['rules', 'persona'])
-  assert.match(declaredHtml, /data-config-panel="prefix"/, '声明了 persona 照旧出编辑器')
-  assert.doesNotMatch(declaredHtml, new RegExp(`role="status">${t('declare.createHint')}`), '已声明没有「尚未声明」提示')
 })
 
 test('同一层两个模块的实例卡各自渲染自己模块的资产', () => {
@@ -857,20 +821,4 @@ test('store：读在飞的模块被剪枝后，迟到的读数不落地、也不
   } finally {
     globalThis.fetch = original
   }
-})
-
-test('人设卡接线：来源＝官方（没有模块主语）时也能展开，界面与模块主语态同形（只接线）', () => {
-  // 修复前：展开键在无模块主语时是 `undefined` ⇒ 卡头点不动、整个设计好的卡体看不见
-  // （浏览器实测：#persona-main 点击后 aria-expanded 仍 false、textarea 数 0）。
-  const drafts = createWorkspaceDrafts()
-  drafts.personaSources.value = { main: null, subagent: null }
-  drafts.expanded.set(':persona:main', true)
-  const html = renderElement(ModulePersonaCard, { t, audience: 'main', modules: modulesDeclaring(['rules']), drafts, onNotice: () => {} })
-  assert.match(html, /data-config-panel="prefix"/, '继承官方态照常展开')
-  assert.match(html, /data-config-panel="suffix"/, '后置面板同样在场')
-  assert.match(html, new RegExp(t('persona.sources.label', { audience: t('persona.main') })), '来源选择器在场')
-  assert.match(html, new RegExp(t('persona.inherit')), '选项区仍有「继承官方」')
-  assert.match(html, new RegExp(t('persona.complete.label')), '独占选项在场')
-  assert.match(html, new RegExp(t('persona.runtimeContext.label')), '动态运行时上下文选项在场')
-  assert.match(html, new RegExp(t('persona.reload')), '页脚「重新读取人设」在场')
 })

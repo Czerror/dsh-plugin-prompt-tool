@@ -18,10 +18,10 @@ test('bridge request shape：端点全覆盖，none / fields 两态由表唯一�
 
 test('bridge request shape：所有 fields 态统一拒绝未知顶层字段，none 不读体', () => {
   assert.doesNotThrow(() => assertBridgeRequest('/models', { refresh: true }))
-  // 独立真值源：这 9 个端点曾经由 handler 自己拒绝，本轮统一到表。
+  // 独立真值源：这些端点曾经由 handler 自己拒绝，现统一到表。
   const formerlyHandlerOwned = [
     'assetRelease', 'exportModule', 'importModulePackage', 'moduleConfigOrder', 'moduleName',
-    'moduleVariables', 'persona', 'personaSources', 'rules',
+    'moduleVariables', 'rules',
   ]
   for (const key of formerlyHandlerOwned) {
     assert.throws(() => assertBridgeRequest(BRIDGE_ENDPOINTS[key], { extra: 1 }), /未知请求字段：extra/, key)

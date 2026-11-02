@@ -4,7 +4,6 @@
  * 端点附加字段只能以 value 旁的可选扩展字段出现（describe）。
  * 改路径或载荷形状必须同步更新 test/shared/bridge-contract.test.mjs。
  */
-import type { PersonaSnapshot, PersonaSpec, PersonaSourcesRequest, PersonaSourcesSnapshot } from './persona-section.ts'
 import type { ModuleVariablesRequest, ModuleVariablesSnapshot } from './module-variables.ts'
 import type { RulesRequest, RulesSnapshot } from './rules.ts'
 import type { ModuleConfigIdentity, ModuleConfigOrderSnapshot } from './module-config-order.ts'
@@ -52,8 +51,6 @@ export const BRIDGE_ENDPOINTS = {
   paramOverrides: '/param-overrides',
   triggers: '/triggers',
   rules: '/rules',
-  persona: '/persona',
-  personaSources: '/persona-sources',
   moduleVariables: '/module-variables',
   customTools: '/custom-tools',
   importModulePackage: '/import-module-package',
@@ -127,8 +124,6 @@ export const BRIDGE_SUBJECT_POLICY = {
   paramOverrides: 'optional',
   triggers: 'none',
   rules: 'required',
-  persona: 'required',
-  personaSources: 'none',
   moduleVariables: 'required',
   customTools: 'required',
   importModulePackage: 'none',
@@ -249,9 +244,6 @@ export interface BridgeRequestMap {
   /** 退役端点（410）：不再接受任何请求体。 */
   triggers: undefined
   rules: RulesRequest
-  /** 独立主/子人设卡；省略 persona 读取，写入必须携带读取时的完整定义版本。 */
-  persona: { persona?: PersonaSpec | null; expectedModuleId?: string; expectedRevision?: string; refreshOnly?: boolean } | undefined
-  personaSources: PersonaSourcesRequest | undefined
   moduleVariables: ModuleVariablesRequest
   customTools: { customTools?: unknown[]; expectedModuleId?: string; refreshOnly?: boolean } | undefined
   /**
@@ -559,8 +551,6 @@ export interface BridgeValueMap {
   paramOverrides: { overrides?: Record<string, unknown>; effective?: Record<string, unknown>; promptConfigs?: unknown[] } & PublicationFields
   triggers: { triggers: unknown[]; revision: string; meta: TriggerEditorMeta }
   rules: RulesSnapshot
-  persona: PersonaSnapshot & PublicationFields
-  personaSources: PersonaSourcesSnapshot
   moduleVariables: ModuleVariablesSnapshot
   customTools: { customTools?: unknown[] } & PublicationFields
   importModulePackage: {

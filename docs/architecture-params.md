@@ -13,11 +13,10 @@
 | 会话变量 | 官方 storageDomain 的 `prompt_tool_session_variables` 域 | 按来源模块目录与真实会话隔离，运行有效值优先覆盖模块与全局 |
 | 模块记忆 | 当前受控模块 memory.md | 显式工具读取，不自动注入 |
 | 模块私有数据 | 当前受控模块 data/（账本、SELF、AGENTS.md 等） | 显式工具读取/追加；不导出，覆盖安装保留 |
-| 人设正文与选项 | 各模块 module.yml.persona.main / persona.subagent | rules/_settings.yml 的校验投影与官方有效声明 |
-| 人设来源选择 | config.yml.personaSources | main/subagent 各选一个模块 ID 或官方默认，不存正文 |
+| 人设正文与选项 | module.yml.rules 中的 persona 动作 | 按真实受众聚合的官方有效声明 |
 | 自定义工具 | customTools | 经验证的内联运行输入 |
 | 外部来源事实 | 注入动作 params.source | 导入报告与导出元数据 |
-| 模块显示名称 | module.yml.name | 模块卡、目标选择与人设来源目录；不改变模块 ID 或目录 |
+| 模块显示名称 | module.yml.name | 模块卡与编辑目标选择；不改变模块 ID 或目录 |
 
 当前格式的决策见 [ADR-0013](adr/0013-native-context-module-state.md)。模块不注册为官方会话预设、不保存会话绑定，不通过 settings 携带规则正文或大文本。
 
@@ -25,18 +24,18 @@
 
 ## 部署设置与编辑目标
 
-唯一部署开关 `modulesEnabled` 控制模块运行总闸。关闭只撤回贡献，定义、资产与持久变量保留。规则启用成员来自插件存储根 config.yml.enabled；人设来源来自独立的 config.yml.personaSources，主/子各自单选且默认官方。排序另归模块 configOrder。
+唯一部署开关 `modulesEnabled` 控制模块运行总闸。关闭只撤回贡献，定义、资产与持久变量保留。规则启用成员来自插件存储根 config.yml.enabled，人设动作与其他规则共同参与；排序归模块 configOrder。
 
 读端点与写端点都由请求头 `x-module-id` **定位**目录（服务端只用它解析 `deps.moduleDirectory`；未声明即无目标，`required` 端点 400 `module-dir-unavailable`）。写端点另在本体里带 `expectedModuleId`／`expectedRevisions`，其中 `expectedModuleId` 只作**一致性校验**、不参与定位：与请求头声明不一致即 400 `module-subject-conflict`，与当次解析目录不符即 409 `module-changed`（处理期间目标被换掉）——载荷永远不能替请求头选路径。两条身份判据在任何端点、任何豁免下都执行（见 [ADR-0014](adr/0014-module-subject-declared-per-operation.md)）。声明只决定这次读写作用在哪个模块，不改变启用集合或官方预设。官方工具预览的 presetId 保留官方含义。
 
-模型工具的主语由这次调用显式声明的 `moduleId` 参数决定——该 Agent 这次启用了哪几层只作拒绝时的候选提示，绝不作为目标，缺声明即无目标（模块类端点拒绝）；人设来源由 personaSources 独立引用、可以指向未启用的模块，因此不参与写入目标（阶段 4 把工具主语改为工具参数，见 [ADR-0014](adr/0014-module-subject-declared-per-operation.md)）。模板按自身 sourceModuleId 访问变量，与模型工具目标和 UI 卡片归属分开。
+模型工具的主语由这次调用显式声明的 `moduleId` 参数决定——该 Agent 这次启用了哪几层只作拒绝时的候选提示，绝不作为目标，缺声明即拒绝；工具主语约定见 [ADR-0014](adr/0014-module-subject-declared-per-operation.md)。模板按自身 sourceModuleId 访问变量，与模型工具目标和 UI 卡片归属分开。
 
 ## 磁盘格式：规则与共享参数各有所有者
 
 module.yml 是完整定义、唯一提交点和恢复依据，支持直接手改。rules/ 是物化投影：
 
 - `<ruleId>.yml`：id/name/layer/if/then/else 正文。
-- `_settings.yml`：规则启停、group、exclusive、order、模块变量开关、人设校验投影与完整性元数据。人设正文的唯一真值仍为 module.yml，不能编辑投影反写。
+- `_settings.yml`：规则启停、group、exclusive、order、模块变量开关与完整性元数据；人设正文留在对应规则切片。
 - `variables.yml`：模块变量投影。
 
 读取只认清单内切片，名单外备份、同步副本等由用户拥有，不读、不改、不删。清单内缺失或失配从有效完整定义单向恢复；完整定义非法则报错，不能用切片反向修复。规则文件名拒绝保留名、大小写冲突、设备名和路径字符。
@@ -66,7 +65,7 @@ module.yml 是完整定义、唯一提交点和恢复依据，支持直接手改
 
 每次事务使用 YAML Document 保留注释和未知元数据，提交前复核版本与目录。模块锁序列化保存和恢复；正文/变量切片先准备，module.yml 原子替换为提交点，再发布清单。多文件替换不宣称物理同时原子。提交前失败恢复旧投影；提交后切片发布失败返回 `persisted`、新版本、`publicationPending` 和 `publicationError`，保留最后有效运行贡献。切片验证完成后，普通保存登记后台运行发布，不等待 Agent 重挂。
 
-**共享引用守卫（`shared-alias`）**：YAML 的 anchor/alias 会让一次「只改 A」的编辑连带改掉 B，因此每次写事务都必须自证「只改了自己声明的字段」——声明完整候选的路径（规则编辑、人设保存、存储配置）走 `module-write.ts#serializeWithoutSharedAlias`（序列化失败与候选不一致同判），改-后-比对的路径走 `assertUnownedUnchanged`，`withModuleDefinition` 的调用方必须用必填的 `{ owns }` 声明本次编辑拥有的顶层键。判定不通过一律 400 `shared-alias` 且零写盘，拒绝文案点名被连带改动的键。
+**共享引用守卫（`shared-alias`）**：YAML 的 anchor/alias 会让一次「只改 A」的编辑连带改掉 B，因此每次写事务都必须自证「只改了自己声明的字段」——声明完整候选的路径（规则编辑、存储配置）走 `module-write.ts#serializeWithoutSharedAlias`（序列化失败与候选不一致同判），改-后-比对的路径走 `assertUnownedUnchanged`，`withModuleDefinition` 的调用方必须用必填的 `{ owns }` 声明本次编辑拥有的顶层键。判定不通过一律 400 `shared-alias` 且零写盘，拒绝文案点名被连带改动的键。
 
 ### 持久变量事务
 
@@ -92,38 +91,29 @@ session 的唯一 owner 使用官方 `storageDomain`（`@deepseek-ai/dsh-storage
 
 bridge 的变量保存与重试由 `BridgeRuntime` 统一组织，开关变化进入装配通道的同一后台调度器；路由只负责授权、载荷校验与响应。普通读取和 bootstrap 共享变量视图，读取不触发开关重试，也不新增 `persisted`；仅值更新不顺带重试此前失败的开关发布。后台运行失败归入 `/meta` 的 `publicationFailures`，不写入变量草稿的待发布状态。
 
-## 独立人设卡与继承
+## 动态人设规则与继承
 
 ```yaml
-persona:
-  main:
-    prefix: 你是项目助手。
-    complete: false
-  subagent:
-    suffix: 返回可核验的结果。
+rules:
+  - id: project-persona
+    if: { variable: { key: mode, value: coding } }
+    then:
+      - id: identity
+        kind: persona
+        audience: main
+        prefix: 你是项目助手。
+        complete: false
 ```
 
-每个模块可定义主/子受众的 prefix、suffix、complete、includeRuntimeContext。独立人设卡为两类受众各提供一个来源下拉，默认官方，也可分别选模块；同一受众在状态中只有一个来源。所选模块缺少对应目标或字段时继承官方，prefix/suffix 的空串清空对应段，删除键恢复继承；complete 的 false 解除人设独占，true 只标记目标 prefix。includeRuntimeContext:false 额外抑制运行上下文，true 不撤销宿主的抑制。
+persona 动作复用规则 if/then/else、嵌套分支、enabled、configOrder 与稳定动作 id；可声明 audience:main/subagent，省略覆盖两类。所有启用模块按既有规则顺序和动作声明顺序参与，主子按真实 Agent 分别判定。prefix/suffix 各自拼接非空片段，以两个换行分隔；空片段不增加分隔符，但仍是显式声明。
 
-config.yml 只保存来源引用，不复制人设正文：
+某字段全省略才继承官方，显式空串阻止该字段继承而不清除其他规则正文。complete/includeRuntimeContext 的显式值须一致，同值幂等、省略继承；冲突拒绝整组，不部分替换。complete:false 解除人设 prefix 独占。includeRuntimeContext:false 增加本插件抑制，true 只撤本插件抑制，祖先 scope 的抑制仍生效。
 
-```yaml
-personaSources:
-  main: project-persona
-  subagent: null
-```
+规则是唯一正文所有者；人设卡编辑具体规则动作，读写共用 `/rules` 的逐规则 CAS、保存队列、草稿保留与发布重试。没有独立正文端点、来源下拉或 settings 正文投影。旧顶层 persona（含 main/subagent）及 config.yml.personaSources 在读取根明确拒绝，用户手工重建规则并移除旧键；插件不双读、不迁移、不自动改用户文件。
 
-null 或未配置表示官方默认。选择 project-persona 不自动启用它的 rules；模块规则启用和人设来源是两个独立状态。运行时由 `selectedPersonaModules(root)` 读取所选模块的对应受众字段，不遍历启用模块合并人设，也不按排序补齐字段。
+统一 ruleRuntime 在原官方 assemble 之前求值、聚合、预检并事务化替换本 Agent 的完整人设贡献；同时预检同受众普通 complete 与 sections.append。全部失配或必要事实不可用撤回插件贡献并恢复官方；配置、解析、注册错误报告并保留最后有效组。自定义正文按来源模块读取会话→模块→全局变量和只读 runtime，继承官方正文原样保留，不重新求模板。同步人设出口拒绝 session setter。
 
-所选来源缺失或定义无效时拒绝发布并保留上次有效配装；运行读取从完整定义补建或恢复人设投影。删除仍被任一受众选择的模块会被拒绝，须先切换该受众来源。
-
-正文不进入 rules 数组或 configOrder，`rules/_settings.yml` 仅含可恢复投影。`/persona` 返回正文与完整定义字节 revision，保存携带 expectedRevision；来源选择由 `/persona-sources` 及独立来源版本处理。两类请求都保留并发草稿，不以切换来源覆盖未提交正文。
-
-单选避免了同受众多模块字段合并，但没有取消 complete 冲突检查：装配仍在撤旧之前预检人设与同受众规则的独占声明，冲突时保留上次有效配装。人设与最终有效规则集合在同一次装配中发布；单个规则模块更新失败时，该集合可以保留它的旧贡献，同时采用新的人设和健康模块，并返回部分发布诊断。所选人设来源本身无效仍整体拒绝发布。
-
-规则独占按 main/subagent 分别校验，互不重叠的两类独占允许共存；官方人设只与当前受众生效的规则比较。受众限定规则的 complete 与上下文抑制在注册前筛选，不能仅把非目标受众正文置空。
-
-会话运行期由装配通道在每个 Agent 自己的 scope 注册 prefix/suffix 同名段，不改变官方服务启动依赖，也不重载任何官方 fiber。AgentSetup 窗口内注册的同层声明被接住并撤换；窗口外的同层声明撤不掉时装配失败保旧。自定义正文使用所属模块的两级变量与原生模板，继承的官方文本不重复执行。生命周期边界见 [引擎接线](engine-reuse.md#执行状态与接入)。更改代码或 patch 后需用户重启 DSH。
+同一 Agent 的准备与原 assemble 串行，每次固定候选；不同 Agent 可并发，全局刷新事务等待各 Agent 锁。AgentSetup 捕获的同层官方声明只暂撤，失配或卸载恢复；原 owner 已释放时不复活其声明。边界见 [引擎接线](engine-reuse.md#执行状态与接入)。代码更新仍须用户重启 DSH。
 
 ## 共享参数与保存链路
 
@@ -177,7 +167,7 @@ module.yml.configOrder 保存规则id→非负安全整数，身份仍是模块i
 2. 参数保存的快照时机分别保留：模块参数在共享队列任务开始执行时取值，全局参数在入队前取值；成功只确认实际提交的快照，请求期间的新输入继续保持 dirty。模块参数的跨域刷新资格仍在入队前捕获，等待期间的新编辑也会阻止该次保存触发整轮刷新。
 3. 切模块先处理未存草稿并等待队列，迟到响应只能更新原目标草稿。
 4. 变量草稿按模块+scope 隔离，内容和开关分别保留版本；CAS 失败保留编辑。
-5. 普通模块写端点在写盘与切片验证后回 200 + `persisted:true`，不等待 Agent 发布，也不提前返回 `publicationPending:false`。装配通道统一合并同模块 300ms 内的连续保存；启用先提交排序和启用表，再登记一次发布。端点覆盖 params、rules、persona、personaSources、moduleVariables 的开关、customTools、moduleName、moduleCapability、importModulePackage、moduleClone、moduleDuplicate、moduleEnable、moduleConfigOrder、moduleDelete。
+5. 普通模块写端点在写盘与切片验证后回 200 + `persisted:true`，不等待 Agent 发布，也不提前返回 `publicationPending:false`。装配通道统一合并同模块 300ms 内的连续保存；启用先提交排序和启用表，再登记一次发布。端点覆盖 params、rules、moduleVariables 的开关、customTools、moduleName、moduleCapability、importModulePackage、moduleClone、moduleDuplicate、moduleEnable、moduleConfigOrder、moduleDelete。
 6. 后台运行失败只写日志与 `/meta.publicationFailures`，不进入 `moduleWarnings`，任何工作台 UI 都不显示它。切片提交后失败仍回 200 + `persisted` + `publicationPending` + `publicationError`，客户端保留草稿与恢复入口；未提交失败按原错误返回，不把已提交修改伪报为未写盘。
 7. `refreshOnly` 提前执行对应待发布更改并同步等待真实结果，成功才返回 `publicationPending:false`；同版本已生效时不重复重挂。重试不重复导入、改名、自增、安装、创建或删除。`refreshOnly` 与同端点的写载荷（name/customTools/overrides/action/entries/enabled 等）混用一律 400；定位身份（id/targetId/expectedModuleId/主语头）仍按端点保留。发送请求前的 freshness 检查也可提前发布磁盘定义，不等待尚未提交的草稿。
 
@@ -202,7 +192,7 @@ AGENTS.md/CLAUDE.md 及 local 变体属于用户文件。正文就地保存；�
 细节与理由见 [ADR-0003](adr/0003-instruction-files-independent.md)、[ADR-0004](adr/0004-official-instruction-filter.md)、[引擎过滤](engine-reuse.md#pre-step-协调器与官方指令过滤)。
 
 ## 旧格式与显式转换
-新内部上下文、变量、工具和人设字段不双读：world-book/stWorldBook/stWorldBookRecursive/stMacros/stSource、动作局部变量、旧工具能力和扁平 persona 均需明确转换。外部 ST 标准别名仍由 adapter 识别。
+新内部上下文、变量、工具和人设字段不双读：world-book/stWorldBook/stWorldBookRecursive/stMacros/stSource、动作局部变量、旧工具能力以及全部顶层 persona、config.yml.personaSources 均在读取根拒绝，需用户手工重建人设规则并移除旧字段。外部 ST 标准别名仍由 adapter 识别。
 
 其它历史快捷参数按共享白名单读取，未登记值不参与执行；旧快捷键写入拒绝。不能因此推断任意旧模块可运行，更不能把被拒绝的本次退役字段当普通未知元数据略过。完整边界以 load/compile/save 的实际错误为准。
 
@@ -255,7 +245,7 @@ mark 现在是通用会话键 `soul.mark`，`soul_state` 保留兼容接口并�
 | 两级变量 | host/module-variables.ts、shared/module-variables.ts |
 | 模块私有文件 | host/module-files.ts、module-file-path.ts；装配清单 host/module-manifest.ts |
 | 导入/导出 | host/import-source.ts、module-package.ts、module-install.ts |
-| 装配/人设 | runtime/agent-assembly.ts、persona-registration.ts；host 来源 owner 的 selectedPersonaModules |
+| 装配/人设 | engine/rule-runtime.mjs；runtime/agent-assembly.ts、persona-registration.ts 官方适配 |
 | 请求/草稿 | shared/bridge-contract.ts、client/data/、settings-bridge.ts |
 
 随包内置模块只在用户模块根缺失同名目录时补建；已有副本（含用户修改）不覆盖，也不比较内容。见 [ADR-0015](adr/0015-builtin-module-seed-missing-only.md)。

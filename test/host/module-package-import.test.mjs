@@ -191,7 +191,7 @@ test('装载窗口：暂存期间目标被外部改动即拒装，外部内容�
 test('原生片段歧义：预览回 needs-kind-selection，选定类型后进入 ready 且全程不落盘', async () => {
   const handler = register().get(`${PREFIX}/import-module-package`)
   assert.ok(handler, '/import-module-package 端点应注册')
-  // 片段特征：顶层只有 id/name/rules，没有 version/engineCompat/modules/composition/customTools/persona/content，
+  // 片段特征：顶层只有 id/name/rules，没有 version/engineCompat/modules/composition/customTools/content，
   // 且通过角色片段校验——正是 import-source 要求用户二选一的那种输入。
   const fragment = 'id: fragment\nname: Fragment\nrules:\n  - id: body\n    then:\n      - { id: inject, kind: inject-text, config: { id: text, layer: pre-step, text: FRAGMENT } }\n'
   const files = [{ path: 'fragment.yml', content: fragment }]
@@ -277,8 +277,8 @@ test('importPresetPackage：SillyTavern JSON 单文件经转换引擎导入（�
   assert.deepEqual(converted.modules, [
     'rule-engine', 'module-import-tools',
     'module-variable-tools', 'tool-config-engine',
-  ], 'ST 管理工具按固定集合装配；persona 行由顶层 persona 段渲染时自动前插')
-  assert.deepEqual(converted.persona, { main: { prefix: '', complete: false }, subagent: { prefix: '', complete: false } }, '导入系统段时主子人设均显式解除独占')
+  ], 'ST 管理工具按固定集合装配，人设由普通规则动作承接')
+  assert.deepEqual(converted.rules.find(rule => rule.id === 'st-persona').then, [{ id: 'persona', kind: 'persona', prefix: '', complete: false }], '导入系统段时普通人设规则为主子显式解除独占')
   assert.equal(converted.modules.includes('tool-web'), false, 'enable_web_search: false 不组装 tool-web')
   // enable_web_search: false 由一条 tool-visibility 声明表达：一份 deny 名单同时裁目录、
   // SDK 正文与执行面（不再拆成三条规则）。
@@ -294,7 +294,11 @@ test('importPresetPackage：SillyTavern JSON 单文件经转换引擎导入（�
   }
   const configs = contentEntries(converted)
   assert.equal(configs.length, 2)
-  assert.equal(converted.rules.length, 3, '只生成两条内容规则和一条 Web 防护规则')
+  assert.equal(converted.rules.length, 4, '生成两条内容规则、一条人设规则和一条 Web 防护规则')
+  const collision = convertStToModuleWithReport({ prompts: [{ identifier: 'st-persona', content: 'BODY', role: 'system', enabled: true }] }, 'collision')
+  assert.deepEqual(collision.spec.rules.map(rule => rule.id), ['st-persona', 'st-persona-2'])
+  assert.equal(collision.report.entries[0].targetIndex, 0, '补充人设规则不改变既有来源报告下标')
+  assert.equal(collision.spec.rules[1].then[0].kind, 'persona')
   const main = converted.rules.find((rule) => rule.id === 'main')
   assert.deepEqual(main, {
     id: 'main', name: '主提示', enabled: true, layer: 'system-section',

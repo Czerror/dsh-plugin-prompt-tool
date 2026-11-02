@@ -22,7 +22,7 @@ dsh --profile prompt-tool
 
 ```text
 $DSH_HOME/.prompt-tool/
-├─ config.yml                # 规则模块启用集合与主/子人设来源 ID
+├─ config.yml                # 规则模块启用集合与全局层参数
 ├─ variables.yml             # 全局变量，variables 映射
 ├─ instructions.yml          # 独立指令策略
 └─ modules/<id>/
@@ -42,7 +42,7 @@ module.yml 支持 UI 保存与直接手改。rules/ 从完整定义分解，手�
 
 每张规则卡编辑完整条件树与动作；then/else 可嵌套，未知事实不当成否定成立。正文、状态分别做 CAS，后台刷新和请求期间的新输入保留。跨模块规则按配置序号排列，同组互斥由显式启用事务决定，排序不替作者选赢家。
 
-工具、人设、变量、策略沿用各自的共享草稿与保存边界。布局、无障碍、locale 和 typed bridge 规范见 [UI 框架](docs/ui-architecture.md)。
+人设与其他规则共用规则草稿和保存事务；工具、变量与指令策略保留各自的保存边界。布局、无障碍、locale 和 typed bridge 规范见 [UI 框架](docs/ui-architecture.md)。
 
 ## 原生模块格式
 
@@ -65,7 +65,7 @@ rules:
           text: 请依据用户确认的项目约束执行。
 ```
 
-规则是唯一行为源；共享模型与能力参数保存于 layerSettings，人设、变量与自定义工具各有独立顶层段。根 [module.yml](module.yml) 从权威目录生成九层及27个共享参数参考，示例默认关闭。
+规则是唯一行为源；人设使用 persona 动作，共享模型与能力参数保存于 layerSettings，变量与自定义工具各有独立顶层段。根 [module.yml](module.yml) 从权威目录生成九层及27个共享参数参考，示例默认关闭。
 
 单个模块装配失败时，首次加载跳过它，更新时恢复它的上次有效贡献；其他正常模块继续加载和更新。晚到服务的初始化失败也按此处理，等待中的新版本不会覆盖最后成功版本。故障仍会报告，修正该模块定义或显式刷新后重试。全局配置和跨模块独占冲突仍明确拒绝，不自动选择赢家；完整边界见[运行时装配](docs/engine-reuse.md)。
 
@@ -92,20 +92,25 @@ rules:
 
 SELF骨架支持普通变量和 `{{runtime.get::soul.open}}` 等只读事实；runtime 不可被同名用户值覆盖，失败保持不可用。会话键 `soul.mark` 与旧 `soul_state mark` 共用限长、版本和宿主时间戳；旧 mark 首读零写、首次合法写自动迁入且保留原件。详见 [变量事务](docs/architecture-params.md#持久变量事务) 和 [SELF](docs/engine-reuse.md#self动态内容与维护心跳)。
 
-## 独立人设
+## 动态人设规则
 
 ```yaml
-persona:
-  main:
-    prefix: 你是项目助手。
-    complete: false
-  subagent:
-    suffix: 返回可核验的结果。
+rules:
+  - id: project-persona
+    if: { variable: { key: mode, value: coding } }
+    then:
+      - id: identity
+        kind: persona
+        audience: main
+        prefix: 你是项目助手。
+        complete: false
 ```
 
-人设卡为主会话和子代理各提供一个来源下拉，默认“官方”，也可分别选择一个模块。正文仍保存在各模块的 persona.main/subagent；config.yml 的 personaSources 只保存两个来源模块 ID，选择人设不自动启用该模块的 rules。
+所有启用模块的命中人设按既有规则排序、动作声明顺序分别拼接 prefix 与 suffix，非空片段以两个换行连接。动作 audience 可为 main/subagent，省略作用于两者；主子按真实 Agent 分别判定条件。人设卡是普通规则中 persona 动作的编辑视图，正文、条件、启停和排序共用规则草稿与 `/rules` 事务。
 
-运行时只读取所选模块对应受众的字段，不跨模块逐字段合并。选中字段省略时继承已有声明（同层被接住的声明、祖先的官方 persona 行，最后是根部署人设），显式空文本清空，complete:false 解除人设独占；includeRuntimeContext:false 单独抑制动态上下文。人设不进入 rules 数组或排序，rules/_settings.yml 只保存其校验投影。人设与启用规则的 complete 冲突仍在撤旧之前检查，失败保留上次有效配装。自定义文本读取所选来源模块的变量，继承官方正文不重新执行为模板。
+某字段所有命中动作都省略时才继承官方；显式空串阻止该字段继承，但不清空其他动作已提供的正文。complete/includeRuntimeContext 的显式布尔值必须一致，冲突拒绝候选并保留旧贡献。includeRuntimeContext:false 增加本插件抑制；true 只撤回本插件抑制，不能强开祖先 scope 的上下文。
+
+原官方 assemble 前准备并提交完整候选，同一次装配固定该候选。全部失配或事实不可用撤回本插件人设并回官方；配置、解析或注册错误保留最后有效贡献并报告。自定义正文按所属规则模块读取变量与 runtime，继承官方正文不重新求模板；session setter 仍拒绝。旧顶层 persona 和 personaSources 已退役，读取根明确拒绝，用户须手工重建规则并移除旧字段，插件不自动迁移。
 
 ## 按需工具
 
@@ -122,7 +127,7 @@ persona:
 
 完整规则工具先读原始树与版本，再提交合法完整候选；删除整规则需显式 rule:null。变量工具提供 global/module/session 的 list/get/set/delete，set 必须显式字符串；session 只能访问真实当前会话，写入携带 revisions.session。模块私有文件（memory.md、assets/ 只读、data/ 只追加）由 module_file_read/append 读写，不自动注入；module_manifest 按 assets/manifest.yml 做 next/check/apply，只写 data/、不覆盖。
 
-工具目录仅注册已声明能力，晚到 provider 与 disposer 按原生命周期处理。模块工具的主语由**这次调用显式声明的 `moduleId`** 决定：不传即没有目标、直接拒绝，不回退装配记录首项或包内默认模块；执行 Agent 已启用的规则模块只作拒绝文案里的候选提示，不是目标（人设来源是独立引用，同样不决定写入目标）。`expectedModuleId` 是桥端对请求头声明的一致性复核，与工具侧的主语选择是两套独立判据。工具只能读写模块存储根下 `module.yml` 所在的既有模块；模块内文件限定 memory.md、assets/（只读）、data/（只追加），不访问任意路径。自定义工具继续支持 shell/http/delegate/fs/ask-user，并保留官方批准、拒绝与取消管线。
+工具目录仅注册已声明能力，晚到 provider 与 disposer 按原生命周期处理。模块工具的主语由**这次调用显式声明的 `moduleId`** 决定：不传即没有目标、直接拒绝，不回退装配记录首项或包内默认模块；执行 Agent 已启用的规则模块只作拒绝文案里的候选提示，不是目标。`expectedModuleId` 是桥端对请求头声明的一致性复核，与工具侧的主语选择是两套独立判据。工具只能读写模块存储根下 `module.yml` 所在的既有模块；模块内文件限定 memory.md、assets/（只读）、data/（只追加），不访问任意路径。自定义工具继续支持 shell/http/delegate/fs/ask-user，并保留官方批准、拒绝与取消管线。
 
 ## SillyTavern 与资产交换
 
@@ -154,7 +159,7 @@ SELF 每步读取当前骨架、账本投影和身份/时钟，维护关闭或�
 
 ## 升级与旧格式
 
-原生格式是破坏性切换：旧 world-book/ST 运行字段、动作局部变量、旧工具能力和扁平 persona 明确拒绝。重新导入原始标准来源，或使用内置 [dsh-module 技能](skills/dsh-module/SKILL.md) 在用户授权下显式转换。插件不扫描改写用户目录、不恢复历史ST会话变量；旧Soul mark仅按上述首次合法写契约迁移。其它历史参数的白名单边界见 [旧格式与显式转换](docs/architecture-params.md#旧格式与显式转换)。
+原生格式是破坏性切换：旧 world-book/ST 运行字段、动作局部变量、旧工具能力以及全部顶层 persona 和 config.yml.personaSources 明确拒绝。重新导入原始标准来源，或使用内置 [dsh-module 技能](skills/dsh-module/SKILL.md) 在用户授权下显式转换。插件不扫描改写用户目录、不恢复历史ST会话变量；旧Soul mark仅按上述首次合法写契约迁移。其它历史参数的白名单边界见 [旧格式与显式转换](docs/architecture-params.md#旧格式与显式转换)。
 
 ## 技能与指令文件
 

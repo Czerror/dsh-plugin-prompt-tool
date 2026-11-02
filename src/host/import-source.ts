@@ -80,7 +80,6 @@ export function validateCharacterSpec(spec: ModuleSpec): void {
       throw new Error(`角色片段不支持 ${field}；请从预设页导入完整预设`)
     }
   }
-  if (spec.persona !== undefined && Object.values(spec.persona).some(target => target.prefix || target.suffix || target.complete === true)) throw new Error('片段的人设请从模块页作为完整模块导入')
   for (const rule of spec.rules ?? []) assertSafeConfigId(rule.id)
   for (const { config } of ruleInjections(spec.rules)) {
     if (config.templateFile !== undefined) throw new Error(`角色配置 ${String(config.id)} 的 templateFile 外部文件不受支持`)
@@ -153,7 +152,7 @@ export function prepareImport(input: AssetFile[], target: 'preset' | 'character'
       const raw: unknown = doc.toJS({ maxAliasCount: 100 })
       let kind = classify(raw, target)
       if (kind === 'native-preset' && isRecord(raw)) {
-        const fragment = Array.isArray(raw.rules) && !['version', 'engineCompat', 'modules', 'composition', 'customTools', 'persona', 'content'].some(key => key in raw)
+        const fragment = Array.isArray(raw.rules) && !['version', 'engineCompat', 'modules', 'composition', 'customTools', 'content'].some(key => key in raw)
         let selfContained = false
         try { validateCharacterSpec(raw as unknown as ModuleSpec); selfContained = true } catch { /* 完整预设仍可由候选物化校验其附件与模块。 */ }
         if (selfContained && fragment && !/^(?:module|preset)\.ya?ml$/i.test(file.path) && !/^converted\.ya?ml$/i.test(file.path) && choices.sourceKind === undefined) {

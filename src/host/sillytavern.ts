@@ -23,7 +23,6 @@ import { promptConfigToRule } from './rule-builder.ts'
 import { compileRules } from '../../engine/rule-spec.mjs'
 import { mapRuleInjections, ruleInjections } from './rule-content.ts'
 import { readModuleLayerSettings } from './module-layer-settings.ts'
-import type { PersonaSpec } from '../shared/persona-section.ts'
 import type {
   StConversionDiagnostic,
   StConversionEntryReport,
@@ -36,7 +35,7 @@ import { isReservedInterpolationName } from '../../engine/interpolate.mjs'
 /** 转换器版本：报告用它解释本次生成使用了哪一版语义（语义调整时同步递增）。
  *  v2：pre-step 角色统一降级为 user（原角色只作来源元数据）+ 选组优先级修正常量事实。
  *  v3：世界书触发键（keys/secondaryKeys）的未定义宏登记为空占位并产出可见诊断。 */
-export const ST_CONVERTER_VERSION = 'st-to-native-rules/5'
+export const ST_CONVERTER_VERSION = 'st-to-native-rules/6'
 
 /** 报告的展示上限：只截断观测数据，不改变转换结果。 */
 const REPORT_ENTRY_LIMIT = 500
@@ -151,9 +150,6 @@ export function mergeStModulesWithReport(specs: ModuleSpec[]): { spec: ModuleSpe
       moduleConfigs[key] = { ...moduleConfigs[key], ...value }
     }
   }
-  // 顶层 persona 段（ST 转换只在含 system-section 时声明）合并保留：丢失会让
-  // 合并预设回落宿主部署人设，导入的 system-section 被 complete 人设抑制。
-  const persona = specs.find((spec) => spec.persona !== undefined)?.persona
   const stripSuffix = (name: string): string => name.replace(/（SillyTavern 转换）$/, '')
   const spec: ModuleSpec = {
     // 多源合并：id 拼接（2 + beta-2-42 → 2-beta-2-42），避免与任一源预设冲突。
@@ -165,7 +161,6 @@ export function mergeStModulesWithReport(specs: ModuleSpec[]): { spec: ModuleSpe
     ...(Object.keys(params).length > 0 ? { params } : {}),
     ...(Object.keys(layerSettings).length > 0 ? { layerSettings } : {}),
     ...(Object.keys(variables).length > 0 ? { variables } : {}),
-    ...(persona === undefined ? {} : { persona }),
     modules,
     moduleConfigs,
     // 合并后的顺序仍是配置序号：按拼接顺序编号，与各来源自己的 configOrder 口径一致。
@@ -783,11 +778,6 @@ export function convertStToModuleWithReport(
   if (configs.some((config) => config.strategy === 'context-activation')) modules.push('module-rule-tools', 'module-file-tools')
   modules.push('module-variable-tools', 'tool-config-engine')
   const moduleConfigs: Record<string, Record<string, unknown>> = {}
-  // 含 system-section 段时用顶层 persona 段声明官方人设行：空 prefix 只做 scope
-  // shadow（不注入标准编码 Agent 人设），complete: false 允许导入的 system-section
-  // 生效（宿主部署人设 complete: true 会抑制它们）。
-  const persona: PersonaSpec | undefined = systemSectionCount > 0
-    ? { main: { prefix: '', complete: false }, subagent: { prefix: '', complete: false } } : undefined
   // enable_web_search 的落点：
   //   true  → **本插件不再组装任何 web 工具行**：`tool-web` 已随「与预设彻底解耦」从模块库
   //           退役，联网能力由会话原有的官方预设提供。这里只如实报告，不静默当作已启用。
@@ -887,7 +877,14 @@ export function convertStToModuleWithReport(
       .map((config, index) => [String(config.id), index * 10]),
   )
   // 规则在出口一次成型：每条内容的注入动作 payload + 三条 Web 防护规则，直接就是 rules[]。
-  const rules = [...configs.map(config => promptConfigToRule(config as unknown as PromptConfigSpec)), ...webRules]
+  const rules: RuleDefinition[] = [
+    ...configs.map(config => promptConfigToRule(config as unknown as PromptConfigSpec)), ...webRules,
+  ]
+  if (systemSectionCount > 0) {
+    let id = 'st-persona'
+    for (let suffix = 2; rules.some(rule => rule.id === id); suffix++) id = `st-persona-${suffix}`
+    rules.push({ id, then: [{ id: 'persona', kind: 'persona', prefix: '', complete: false }] })
+  }
   // 与写盘链路同一道校验：不合法在这里失败，不留给物化阶段。
   compileRules(rules)
   // 预设名优先取卡片 name 字段；缺失/空白时回退文件名（去 .json 的 baseName）。
@@ -904,7 +901,6 @@ export function convertStToModuleWithReport(
       ...(droppedMarkers.length > 0 ? { stDroppedMarkers: droppedMarkers } : {}),
     },
     ...(Object.keys(variables).length > 0 ? { variables } : {}),
-    ...(persona === undefined ? {} : { persona }),
     modules: [...new Set(modules.map(name => name === 'prompt-config-engine' || name === 'declared-triggers' ? 'rule-engine' : name))],
     moduleConfigs,
     configOrder,

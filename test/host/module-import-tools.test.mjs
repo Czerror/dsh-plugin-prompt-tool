@@ -105,7 +105,7 @@ test('模块导入工具把顺序歧义返回为候选，选择后重新预览�
   const preview = await f.success({ files, promptOrderCharacterId: '20' })
   const saved = await f.success({ files, promptOrderCharacterId: '20', preview: false, expectedSourceDigest: preview.sourceDigest, expectedPreviewRevision: preview.previewRevision })
   const module = parse(readFileSync(join(moduleRoot, saved.id, 'module.yml'), 'utf8'))
-  assert.deepEqual(module.rules.filter(item => item.enabled !== false).map(item => item.then[0].config.text), ['B'])
+  assert.deepEqual(module.rules.filter(item => item.enabled !== false && item.then[0].kind === 'inject-text').map(item => item.then[0].config.text), ['B'])
 })
 
 test('导入工具与装配记录解耦：没有启用模块时显式目标的导入照常落盘', async t => {

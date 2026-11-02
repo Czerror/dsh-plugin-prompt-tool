@@ -1,15 +1,11 @@
 /**
- * module.yml 的写入事务：共享能力参数（`saveModuleParams`）、人设段
- * （`readModulePersona` / `saveModulePersona`）与通用读-改-写入口（`withModuleDefinition`）。
- * 从原 `manifest.ts` 按簇拆出；三者共用同一条提交与缓存失效纪律。
+ * module.yml 的共享能力参数与通用读-改-写入口，共用提交与缓存失效纪律。
  */
 import { join } from 'node:path'
-import { YAMLMap, parseDocument } from 'yaml'
-import { readPersonaSpec } from '../shared/persona-section.ts'
-import type { PersonaSnapshot, PersonaSpec } from '../shared/persona-section.ts'
+import { parseDocument } from 'yaml'
 import { engineParamPath, readModuleLayerSettings } from './module-layer-settings.ts'
 import { assertCanonicalRuleSource, commitModuleDefinition, loadModuleDefinition, withModuleDefinition as commitDefinitionEdit } from './module-slices.ts'
-import { ModuleWriteError, deleteYamlPath, serializeWithoutSharedAlias } from './module-write.ts'
+import { deleteYamlPath } from './module-write.ts'
 import { assertModuleDirectory } from './module-install.ts'
 import { invalidateModuleSpec } from './module-spec.ts'
 
@@ -43,45 +39,6 @@ export function saveModuleParams(
   }
   commitModuleDefinition(snapshot, doc)
   invalidateModuleSpec(join(moduleRoot, templateName))
-}
-
-export function readModulePersona(moduleDir: string): PersonaSnapshot {
-  const snapshot = loadModuleDefinition(moduleDir)
-  return { persona: readPersonaSpec(snapshot.source.persona) ?? null, revision: snapshot.revision }
-}
-/** 人设与模块共用唯一写盘事务；空串/false 保留，删段恢复继承。 */
-export function saveModulePersona(moduleRoot: string, templateName: string, persona: PersonaSpec | null, expectedRevision: string): PersonaSnapshot {
-  const snapshot = loadModuleDefinition(assertModuleDirectory(moduleRoot, templateName))
-  if (typeof expectedRevision !== 'string' || expectedRevision !== snapshot.revision) {
-    throw new ModuleWriteError('模块已更新，请重新读取人设后再保存', 409, 'module-persona-conflict')
-  }
-  const parsed = persona === null ? null : readPersonaSpec(persona)
-  if (parsed === undefined) throw new TypeError('persona 必须是对象或 null')
-  const doc = snapshot.doc
-  readModuleLayerSettings(doc.toJS())
-  const expected = { ...snapshot.source }
-  if (parsed === null || Object.keys(parsed).length === 0) {
-    doc.delete('persona')
-    delete expected.persona
-  } else {
-    expected.persona = parsed
-    const section = doc.get('persona', true)
-    if (!(section instanceof YAMLMap)) doc.set('persona', parsed)
-    else for (const audience of ['main', 'subagent'] as const) {
-      const fields = parsed[audience]
-      if (fields === undefined) { section.delete(audience); continue }
-      const target = section.get(audience, true)
-      if (!(target instanceof YAMLMap)) section.set(audience, fields)
-      else {
-        for (const key of target.items.map(pair => String(pair.key))) if (!Object.hasOwn(fields, key)) target.delete(key)
-        for (const [key, value] of Object.entries(fields)) target.set(key, value)
-      }
-    }
-  }
-  const next = serializeWithoutSharedAlias(doc, expected, 'YAML 共享引用会改变其他定义；请先解除相关引用后再编辑人设')
-  const committed = commitModuleDefinition(snapshot, next)
-  invalidateModuleSpec(join(moduleRoot, templateName))
-  return { persona: readPersonaSpec(committed.source.persona) ?? null, revision: committed.revision }
 }
 
 /** 模块文件读-改-写（parseDocument 保留注释与未知键；mutate 内 setIn/deleteIn）。

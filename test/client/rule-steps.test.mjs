@@ -40,8 +40,8 @@ test('rule-steps: 含分支的真实规则渲染不抛错，卡默认收起且�
   assert.match(html, /data-step="if"/)
   assert.match(html, /data-step="branch"/, '分支节点成为一等公民，不再落到未知动作')
   assert.match(html, /hidden=""/)
-  const unsupported = render({ ...branchFixture, layer: 'system-section' })
-  assert.match(unsupported, /不能使用条件分支/, '注册制层禁用条件分支并说明原因')
+  const system = render({ ...branchFixture, layer: 'system-section' })
+  assert.match(system, /data-step="branch"/, '条件能力由动作目录决定，缺省层不禁用整个规则的分支')
 })
 
 test('rule-steps: 工具链动作卡按引擎种子渲染可编辑字段，match 不造假入口', async () => {
