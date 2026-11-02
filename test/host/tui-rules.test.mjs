@@ -9,7 +9,6 @@ const { moduleRoot } = isolatedHome('pt-tui-rules-')
 const { registerTuiCommand } = await import('../../src/runtime/tui.ts')
 const { readModulesEnabled } = await import('../../src/shared/module-settings.ts')
 const { resolveRequestedModuleDir } = await import('../../src/host/config-store.ts')
-const { DEFAULT_MODULE_ID } = await import('../../src/shared/module-ids.ts')
 
 test('TUI 主语由用户声明：会话声明后随后命令都作用在它上面，单条前缀可覆盖，未声明即拒', async () => {
   const dir = join(moduleRoot, 'tui-rules')
@@ -80,7 +79,7 @@ test('TUI 主语由用户声明：会话声明后随后命令都作用在它上�
   const paramSwitch = await call('toggle instructionHint')
   assert.equal(paramSwitch.kind, 'success', paramSwitch.text)
   assert.deepEqual(savedParams, [['tui-rules', 'instructionHint', true]])
-  assert.equal(existsSync(join(moduleRoot, DEFAULT_MODULE_ID)), false)
+  assert.equal(existsSync(join(moduleRoot, 'ponytail')), false)
   // 声明不跨会话共享：另一个 Agent 没声明过，照样拒绝。
   const peerWrite = await call('config second off', peer)
   assert.equal(peerWrite.kind, 'error')

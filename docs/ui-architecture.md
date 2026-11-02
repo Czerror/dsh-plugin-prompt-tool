@@ -4,7 +4,7 @@
 > 本文描述当前实现，不是实施计划；与代码不一致时以代码为准。
 > 相关代码：src/client/index.ts、src/client/app/、src/client/data/、src/client/features/、src/client/ui/、src/shared/bridge-contract.ts。
 
-本文记录客户端维护契约。module.yml 的 rules、公共 params、variables、customTools、角色卡和子代理策略的存储及生成语义以 host/engine 文档为准；promptConfigs 仅保留运行时投影和指令文件视图，不再是普通规则的编辑源。
+本文记录客户端维护契约。module.yml 的 rules、公共 params、variables、customTools 和角色卡的存储及生成语义以 host/engine 文档为准；promptConfigs 仅保留运行时投影和指令文件视图，不再是普通规则的编辑源。
 
 ## 1. 定位与边界
 
@@ -198,7 +198,6 @@
        ├─ PromptConfigNavigation.tsx
        ├─ SearchInput.module.css
        ├─ SearchInput.tsx
-       ├─ SettingInputRow.tsx
        ├─ StatusBadge.module.css
        ├─ StatusBadge.tsx
        ├─ StatusDot.module.css
@@ -207,7 +206,6 @@
        ├─ TagInput.tsx
        ├─ TemplatePicker.tsx
        ├─ TextInput.tsx
-       ├─ ToggleRow.tsx
        ├─ anchored-popover-fit.ts
        ├─ anchored-popover.ts
        ├─ config-navigation.module.css
@@ -268,7 +266,7 @@ slot 使用 ctx.slots.inject() 等待官方槽位声明，再调用 ctx.slots.re
 - 组件树很深，不逐层重建 i18n 上下文：入口组件用注入的 `t`，`PromptToolWorkbenchFace.t` 作为同一 bind 结果的稳定引用向下传递（页面与卡片按需加 `t` prop）。
 - 渲染时才求值（`t('key', params)`），不做模块级缓存；语言切换由 renderer 订阅 locale revision 后整体重渲染跟进。
 - 不进字典的内容：provider/model id、文件路径、用户内容、协议 code 与 bridge 错误码；动态拼接用 `{name}` 占位参数。
-- 已迁移：工作台外壳与悬浮入口、左侧栏入口（label 经 locale thunk）、设置页、五页外壳、引擎参数卡与模块列表（标签按 shared 键推导成 `param.<键>` 词条）、提示词配置与人设区、模块页的素材区、子代理「工具与深度」模块卡与实例级工具策略、自定义工具卡、导入预览卡。子代理策略的档位显示名（首次启用写入 module.yml 的 seed 值）属于用户可改内容，保持原值不入字典。
+- 已迁移：工作台外壳与悬浮入口、左侧栏入口（label 经 locale thunk）、五页外壳、引擎参数卡与模块列表（标签按 shared 键推导成 `param.<键>` 词条）、规则与人设区、模块页的素材区、自定义工具卡、导入预览卡。用户定义的规则与模块名称保持原值，不作为词条翻译。
 - 仍未迁移：`ui/` 控件的回退文案（`MenuSelect` / `TagInput` / `DialogSurface`），以及 `features/models/**` 与 `data/**` 的状态提示（这两个目录属模型路由任务的文件边界）。
 
 ### 4.3 入口与关闭行为
@@ -429,7 +427,7 @@ workspace-pages.ts 是页面元数据的唯一来源。默认页为 features，�
 
 bootstrap 是首屏聚合请求，不因筛选或输入字符增加 bridge 请求。模型目录保持惰性加载；技能筛选、状态筛选和搜索在客户端完成。技能写入后局部刷新 `/skills-list`，不重载预设或指令草稿；技能页仅提供“导入技能”和“引用文件夹”两个宿主目录选择按钮，不保留浏览器上传与手动路径输入。复制导入继续经过数据层的覆盖确认与写入流程，引用只登记目录；取消、选择器失败或离页后的迟到结果不提交。
 
-同一 bootstrap 请求只解析一次模块目录，描述身份、参数、能力事实、变量与配置卡均来自该目录。未带目标请求头时，响应身份也投影实际默认目录，不从已退役的部署选择字段推断。
+同一 bootstrap 请求只解析一次声明的模块目录，描述身份、参数、能力事实、变量与配置卡均来自该目录。未带目标请求头时只返回全局段，moduleParams/moduleFacts/variables 缺席，overrides 为空、templatePreStepCount 为0；不投影默认模块目录。
 
 同一预设的后台刷新同时保护请求开始前已有的未保存提示词配置与模板变量草稿，以及请求期间新增的编辑。保存后同步元数据时，已确认写入的提示词定义不被暂时为空的生成快照覆盖。未填写名称的变量行只在写入载荷中清理，本地编辑行保留；预设身份切换仍按原保存与上下文边界处理。
 
@@ -562,6 +560,8 @@ JSON bridge 的统一上限为 32 MiB；原始文件上传独立限制为 64 MiB
 
 文本 CAS 由 `src/host/versioned-text.ts#replaceVersionedText` 统一「读版本 → 校验 expectedRevision → prepare → beforeReplace 再读并 recheck（可选）→ `host/text-file.ts#atomicWriteTextFile`」；prepare 返回 undefined 或原文相同则不写盘。错误码/status 由各域的 `conflict()` 与 prepare/recheck 提供；原语不接管锁、队列或 publication。承接域：config-store、module-variables、instructions-policy、agents-cards、skills-content、skills-policy、skills-config、module-slices（module.yml）；config-store/instructions-policy/skills-config 仅靠 revision 复核，不额外传 recheck。module-package 的目录安装与 module-config-order 的多文件排序回滚仍归各自域，后者继续走 module.yml 提交路径与 bridge 排序队列。
 
+规则卡复用 `data/use-autosave.ts` 的600ms停顿、最新回调、输入法与身份清理，identity 绑定模块主语和稳定条目key。离卡、折叠、手动保存及选项提交在已加载且不忙时取消旧计时并尝试保存；未加载或忙态保留已有计时机会，不额外自动重试。完整写资格与模块级dirty edits仍归规则编辑器，未完成字段/远端冲突继续拒写。长读超过原计时不保证自动续存，草稿继续保留；变量卡不新增失焦提交，后台300ms发布队列不变。
+
 ### 7.4 导入预览与提交
 
 导入来源的文件读取、上传、预览、确认和结果共用 `data/use-import-preview-flow.ts`；`ui/ImportDialog.tsx` 只接 props/callback，业务入口注入各自的处理器。原始上传仅写暂存区，所有大小的 PNG/JSON/YAML 和预设 ZIP／文件夹都先预览，确认后才更新目标。协议和边界见 [资产交换](asset-transfer.md)。
@@ -613,7 +613,7 @@ feature 只拥有自己的视图、瞬时状态、领域纯 helper 和 CSS：
 ui/ 只接收 props/callback，当前真实共享 seam 包括：
 
 - FormField：以非交互的字段名称和 `aria-labelledby` 关联控件，维护说明与错误关联；MenuSelect 转发 id 与 ARIA 到真实触发器，hint 可内联或使用 HintTooltip。名称及名称旁的空白不会聚焦编辑框或打开下拉，控件内部点击和键盘操作保持有效。
-- SettingInputRow、ToggleRow、TagInput：设置和字段编辑形态；ToggleRow 使用自有 Switch，保留 role、aria-checked 与键盘行为。
+- FormField、TextInput、TagInput：设置和字段编辑形态；开关直接复用 Switch，保留 role、aria-checked 与键盘行为。
 - ImportPreviewCard：导入预览卡，展示服务端同源转换报告与有损信息（warning/info/被排除条目各自滚动容器）；导入预览共用。
 - reveal-card.ts：创建后的滚动定位与重试，层设置区与配置卡共用。
 - MenuSelect：封装自有 Menu 的单选控件；触发器直接使用共享 `Button shape="pill" variant="outline"`，与“添加注入模板”“刷新”具有相同描边、字号、留白、悬停与禁用态，不另写一套胶囊外观。支持连续选项的 `group` 分组标题；标准设置使用36px，模块卡内与列表过滤行使用28px，浮层统一portal。
@@ -708,13 +708,13 @@ context-activation 视图只调整附加提示，不另设模块卡容器；能�
 
 引擎参数采用 600ms 停顿自动保存，数字先按共享参数定义校验，无效值保持原始草稿。人设正文与选项由所属规则的保存队列、CAS 和草稿生命周期管理，没有独立续存或来源写入。输入法组合结束后才安排提交，切换编辑身份或卸载取消未发送定时器。指令文件正文也采用停顿保存，保留离卡与折叠时提交作为补充；文件读取失败、版本冲突和上下文失效继续拒写。发送消息不等待自动保存；运行时使用已落盘有效内容，不将输入框草稿直接注入。
 
-子代理工具策略卡（`subagent-tool-policy`）已随上游 alpha.3 的 API 变更退场（官方删除 `SubagentStartRequest.toolFilter` 与 `SubagentCapabilities.toolFilter`，迁移指南明确 preset 不提供逐子级工具名过滤器）：能力菜单、tool-pipeline 层设置区的资产分区、策略端点与本地草稿一并移除，见 [PLAN](.scratch/archive/) 归档。子代理页排除「仅主对话」能力：它们的参数与装配条目不进本页设置区。能力卡的组织方式见前端实现（待 UI 重构时补充）。
+子代理工具策略卡（`subagent-tool-policy`）及其端点、草稿已退役，原因见 [ADR-0008 的退役注记](adr/0008-module-slices-memory-assembly.md)。子代理页排除「仅主对话」能力：它们的参数与装配条目不进本页设置区。能力卡的组织方式见前端实现。
 
 指令文件正文的自动保存同样采用停顿策略，没有保存按钮。
 
-层设置区展示当前预设实际装配的能力（`modules` 声明、参数与行配置隐含补齐、以及实际运行的历史子代理策略），按主归属层分组：清单里每项是能力 id 与「移除能力」入口（二次确认），没有「编辑行为」这类选择控件（能力编辑统一走各卡自己的编辑区，归属由卡片决定，不选模块）；能力自身的参数在同一设置区的参数分组里编辑，新能力从本层创建入口添加。`modules: []` 不展开默认骨架，官方组合行不生成插件能力条目。二次确认移除是完整移除：模块声明、该能力的显式参数与行配置（拥有顶层段的能力连数据段）一起删除，提交后登记后台发布并刷新模块事实。
+层设置区展示模块实际装配的能力（`modules` 声明、参数与行配置隐含补齐），按主归属层分组：清单里每项是能力 id 与「移除能力」入口（二次确认），没有「编辑行为」这类选择控件（能力编辑统一走各卡自己的编辑区，归属由卡片决定，不选模块）；能力自身的参数在同一设置区的参数分组里编辑，新能力从本层创建入口添加。`modules: []` 不展开默认骨架，官方组合行不生成插件能力条目。二次确认移除是完整移除：模块声明、该能力的显式参数与行配置（拥有顶层段的能力连数据段）一起删除，提交后登记后台发布并刷新模块事实。
 
-子代理页的筛选值与变更回调一起传到提示词列表；能力卡按同一层级过滤，工具管线包含子代理工具策略等本层能力。模板创建与列表展开共用页面持有的创建 ID，子组件不维护第二份无入口 picker。创建不改变筛选或搜索值。
+子代理页的筛选值与变更回调一起传到提示词列表；能力卡按同一层级过滤，工具管线只展示当前声明的本层能力。模板创建与列表展开共用页面持有的创建 ID，子组件不维护第二份无入口 picker。创建不改变筛选或搜索值。
 
 指令文件（AGENTS.md / CLAUDE.md 及其 .local 变体）复用 `PromptConfigCard` 呈现在配置列表中，卡头显示文件路径、启停与读取／保存状态，不显示普通配置的位置、策略或受众标记，不提供移动、复制与删除配置菜单。展开后复用 `PromptConfigForm` 的正文编辑，只留正文输入；ID／名称／注入层基础身份区与「内容」分区标题都不渲染（卡头与页签已给出身份和分区名，编辑器不再重复名称、路径与策略说明），上方没有身份区可分隔，导航改用 `.configNavigationFlat` 去掉分区横线与顶部留白；注入规则、作用范围、高级消息元数据与层设置同样隐藏；这些行为归官方指令来源所有。名称与启停写入 `$DSH_HOME/.prompt-tool/instructions.yml`，正文写文件草稿，**焦点离开卡片即自动写回原文件**（没有单独的保存按钮；版本冲突时保留草稿并显示「重新读取」）。文件卡不参与普通配置的层内排序；现有文件授权、上下文白名单、版本校验与读取失败保护继续生效。
 
@@ -807,22 +807,21 @@ tool-catalog 填充来源沿现有普通注入表单编辑：params.action 引�
 
 ### 12.1 契约测试
 
-四条 seam 的覆盖位置（定义与准入见 [AGENTS.md](../AGENTS.md#测试)）：
+五条 seam 的覆盖位置（定义与准入见 [AGENTS.md](../AGENTS.md#测试)）：
 
 | seam | 覆盖位置 |
 |---|---|
 | 引擎注入行为（插入点 / 时机 / 次数 / 受众） | `test/engine/*.test.mjs` |
-| 写盘产物语义 | `test/host/write-module.test.mjs`、`test/host/module-*.test.mjs`、`test/host/module-slices.test.mjs`、`test/host/global-params.test.mjs`（全局层 `config.yml#layerSettings` 的写/删键/空层回收与优先级）、`test/host/target-queue.test.mjs`、`test/host/versioned-text.test.mjs`、`test/host/skills-cas.test.mjs` |
-| bridge 端点载荷 | `test/shared/bridge-contract.test.mjs`、`test/shared/publication.test.mjs`、`test/client/bridge-client.test.mjs`、`test/host/settings-bridge.test.mjs`、`test/host/publication-state.test.mjs`、`test/host/*-bridge.test.mjs`、`test/client/*.test.mjs`（客户端侧的固定卡接线、请求主语与渲染链路；含 `layer-cards`、`instruction-cards` 这类渲染链路的前置纯判据） |
-| 安全与拒绝路径 | `test/host/instructions-policy.test.mjs`、`test/host/instruction-scope-guard.test.mjs`、`test/host/skill-policy.test.mjs`、`test/host/skills-marker.test.mjs`（技能文件读取前校验）、`test/host/module-package-import.test.mjs`、`test/host/wave1-safety.test.mjs`、`test/host/text-file.test.mjs`、`test/engine/config-whitelist.test.mjs`、`test/host/agents-cards.test.mjs`、`test/engine/instruction-files.test.mjs`（写白名单来源的探测与目录链判据） |
-| UI slot / 入口注册 | `test/client/*.test.mjs`（宿主槽位观察到的注册选项与释放：id/key 配对、label、关闭回调；不锁注册顺序、数字常量；入口行为依赖的 inject 回调（如 `open`）可断言，其余内部 inject 调用面不锁）；`test/host/tui-settings-section.test.mjs`（接缝六区块的 ns/字段形状与 disposer 撤销） |
-| 规则受众可见性 | `test/client/rule-facts.test.mjs`（规则卡在 else/not/空集/未知算子下的出现与隐藏；属于规则卡渲染链路的入口行为，不锁具体 `data-*` 形态） |
+| 写盘产物语义 | `test/host/write-module.test.mjs`、`test/host/module-*.test.mjs`、`test/host/module-slices.test.mjs`、`test/host/global-params.test.mjs`（全局层写/删键/空层回收与优先级）、`test/host/skill-policy.test.mjs` |
+| bridge 端点载荷 | `test/shared/bridge-contract.test.mjs`、`test/client/bridge-client.test.mjs`、`test/host/settings-bridge.test.mjs`、`test/host/publication-state.test.mjs`、`test/host/*-bridge.test.mjs`、`test/client/*.test.mjs`（固定卡接线、请求主语与渲染链路，含 layer-cards、instruction-cards） |
+| 安全与拒绝路径 | `test/host/instructions-policy.test.mjs`、`test/host/instruction-scope-guard.test.mjs`、`test/host/skill-policy.test.mjs`、`test/host/skills-marker.test.mjs`、`test/host/module-package-import.test.mjs`、`test/host/wave1-safety.test.mjs`、`test/host/agents-cards.test.mjs`、`test/engine/instruction-files.test.mjs` |
+| UI slot / 入口注册 | `test/client/workbench-sidebar-entry.test.mjs`、`test/client/workbench-host-conventions.test.mjs`（槽位注册与释放）、`test/host/entry-surface.test.mjs`（发布导出与真实依赖门）、`test/host/tui-settings-section.test.mjs`（字段与disposer）；`test/client/rule-facts.test.mjs` 覆盖受众可见性这一渲染入口行为，不锁具体data-*形态 |
 
 **安全边界的守护位置**：指令文件读写（授权、上下文白名单、内容版本冲突、读取失败）、导入回滚、路径穿越、大小上限、桥端点安全面、晋升门控与 epoch 这些不变量，由上面「安全与拒绝路径」一栏的文件覆盖；改动它们需要独立授权，不得顺带删减。
 
 **类型检查范围分三个项目**：`tsconfig.json`（`src` 非 client）、`tsconfig.client.json`（`src/client`）与 `tsconfig.test.json`（`test/fixtures/**` 与 `test/client/support/**`）。第三个是**白名单式的分阶段纳入**——它 `extends` client 配置并开 `allowJs`/`checkJs`，**加一个测试文件＝往 `include` 加一行**；之所以分批，是因为 `test/` 整体纳入 `checkJs` 时实测有 458 个缺类型标注的错误（隐式 any 与可能 undefined 占多数），而**纳入一个文件会连带检查它 import 的文件**，所以顺序只能是「先基础层（被所有 client 测试引用）→ 再逐个测试文件」。给测试桩补类型不是额外纪律：桩与端口是否一致由这条 tsc 边界直接抓，漂移不再无声。当前白名单命中 3 个文件（`host-harness.mjs`、`module-template.mjs`、`ssr-render.mjs`）；将来把客户端用例加进来时会连带引入 `.tsx`，届时 `include` 需一并加入 `src/css-modules.d.ts`（CSS import 的类型声明）。
 
-不再引入 Jest、Vitest、jsdom 或 happy-dom。客户端渲染断言**只**覆盖两类：固定卡（指令卡）的**接线**——卡在场、可展开、设置区页签在场、缺主语时不写不发；通用规则卡（含人设动作字段、参数组、变量、自定义工具、子代理策略、资产卡）的**渲染链路**——按声明出卡/不出卡、添加入口在场、参数组按事实渲染、请求主语正确。内部 `data-*` 属性**可以**作为在场/缺席的见证（选择器锚点），但不得锁它的形态、拼法与结构；文案断言必须经 `t()` 词条取值，不写死正文；排除式断言只禁止**为已删除的实现或产物写的墓碑**（`doesNotMatch(已删标记)`），不禁止「按声明不出卡」这类行为性缺席。交互、真实 CSS 计算值与 portal 内容一律不做断言——它们留**真机浏览器核对（Edge smoke）**；`§12.2` 的命令门禁只覆盖可自动化的部分（typecheck／lint／test／build／`git diff --check`）。
+不再引入 Jest、Vitest、jsdom 或 happy-dom。客户端渲染断言**只**覆盖两类：固定卡（指令卡）的**接线**——卡在场、可展开、设置区页签在场、缺主语时不写不发；通用规则卡（含人设动作字段、参数组、变量、自定义工具、资产卡）的**渲染链路**——按声明出卡/不出卡、添加入口在场、参数组按事实渲染、请求主语正确。内部 `data-*` 属性**可以**作为在场/缺席的见证（选择器锚点），但不得锁它的形态、拼法与结构；文案断言必须经 `t()` 词条取值，不写死正文；排除式断言只禁止**为已删除的实现或产物写的墓碑**（`doesNotMatch(已删标记)`），不禁止「按声明不出卡」这类行为性缺席。交互、真实 CSS 计算值与 portal 内容一律不做断言——它们留**真机浏览器核对（Edge smoke）**；`§12.2` 的命令门禁只覆盖可自动化的部分（typecheck／lint／test／build／`git diff --check`）。
 
 ### 12.2 验证命令
 

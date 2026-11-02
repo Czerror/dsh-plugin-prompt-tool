@@ -70,13 +70,6 @@ export function invocationForScope(scope: SkillPolicyScope): SkillInvocation {
   }
 }
 
-/** 当前两端状态 → 范围（两端都可调用时为 'none'）。 */
-export function scopeOfInvocation(invocation: SkillInvocation): SkillPolicyScope {
-  if (invocation.modelInvocable && invocation.userInvocable) return 'none'
-  if (!invocation.modelInvocable && !invocation.userInvocable) return 'all'
-  return invocation.modelInvocable ? 'user' : 'model'
-}
-
 /** 插件技能状态：只剩用户显式引用的技能文件夹（绝对路径，按引用顺序）。
  *  技能是否可调用由技能文件自己声明，不再进状态文件。 */
 export interface SkillsState {

@@ -183,9 +183,11 @@ git -C $Repo diff --check
 
 涉及分发或宿主接入另执行 verify:host、verify:pack；参考模板用 rebuild:module-template，追加 `-- --check` 检查漂移。test 脚本先 build，再以独立 cwd/TEMP/TMP/DSH_HOME 运行 Node 测试。
 
-源文件通过 package scripts 生成 lib 和 YAML vendor 快照，不手改构建产物。永久测试仅保留注入行为、写盘语义、bridge 载荷、安全拒绝的公共接口回归，期望来自独立真值；临时探针及纯旧名消失检查不进入测试套件。
+源文件通过 package scripts 生成 lib 和 YAML vendor 快照，不手改构建产物。永久测试仅保留注入行为、写盘语义、bridge 载荷、安全拒绝、UI slot / 入口注册五条 seam 的公共接口回归，期望来自独立真值；临时探针及纯旧名消失检查不进入测试套件。
 
 ## 排障
+
+随包委托模板只影响后续插入，不覆盖已保存到用户 `customTools` 的副本。旧规则读取/变量读取工具需要在 parameters 声明必填字符串 `moduleId`，并在 execute.args 传入 `'{{args.moduleId}}'`；旧规则编辑工具应将 execute.args 的 `expectedModuleId` 键改为 `moduleId`，保留 `expectedRevisions` 和 `edits`。可在自定义工具编辑器显式修改后保存，或保留自定义内容后删除旧条目并重新插入对应模板；读取规则取得新版本再编辑。不要同时给模型工具传两个主语键，bridge 的 `expectedModuleId` 不受此修正影响。
 
 `skipping profile bundle` 表示插件未加载，补建和工作台也不会运行。先检查官方插件清单与依赖解析；`pnpm --dir $Repo repair:profile -- --profile <name> --dry-run` 只做体检，修复走官方插件管理器。插件不会自行改 manifest、包链接、停止或重启服务。
 

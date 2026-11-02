@@ -201,13 +201,6 @@ export function readAgentsFileSnapshot(file: AgentsFileCard): InstructionFileSna
   return { ...base, status: 'ready', text, revision: sha256(bytes) }
 }
 
-/** 探测 + 读取：同一套探测规则下每个文件一份快照。 */
-export function detectAgentsFileSnapshots(
-  options: { cwd?: string; home?: string; projects?: boolean } = {},
-): InstructionFileSnapshot[] {
-  return detectAgentsFiles(options).map(readAgentsFileSnapshot)
-}
-
 export type AgentsFileWriteOutcome =
   | { ok: true; fileId: string; revision: string }
   | { ok: false; status: 400 | 404 | 409 | 413; code: string; message: string }

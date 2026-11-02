@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { getVariablesDraft, readVariablesDraft, retryModuleVariablesPublication, saveModuleVariables } from '../../src/client/data/module-variables.ts'
+import { createVariablesDraft, readVariablesDraft, retryModuleVariablesPublication, saveModuleVariables } from '../../src/client/data/module-variables.ts'
 
 const baseline = (scope = 'module') => ({ scope, variables: { name: 'before' }, enabled: true, revisions: { global: 'global-1', module: 'module-1', settings: 'settings-1' } })
 const result = (variables = { name: 'sent' }, extra = {}) => ({ ok: true, value: { module: variables, global: { common: 'GLOBAL' }, effective: { common: 'GLOBAL', ...variables }, enabled: false,
@@ -50,11 +50,11 @@ test('变量 bridge 拒绝保留旧基线；已保存但发布失败只确认请
   assert.equal(desired.variables.name, 'typed during refresh')
 })
 
-test('变量读取按模块和范围隔离草稿，迟到响应不能覆盖新读取或未保存空行', async () => {
-  const drafts = new Map(), calls = []
-  const module = getVariablesDraft(drafts, 'module-a', 'module')
-  const global = getVariablesDraft(drafts, 'module-a', 'global')
-  const other = getVariablesDraft(drafts, 'module-b', 'module')
+test('不同变量草稿读取互不覆盖，迟到响应保留新读取和未保存空行', async () => {
+  const calls = []
+  const module = createVariablesDraft('module')
+  const global = createVariablesDraft('global')
+  const other = createVariablesDraft('module')
   let late
   const pending = readVariablesDraft('module-a', module, body => { calls.push(body); return new Promise(resolve => { late = resolve }) })
   await readVariablesDraft('module-a', module, async body => { calls.push(body); return result({ name: 'sent', empty: '' }) })

@@ -2,6 +2,11 @@
 id: delegate-module-variables
 name: my_module_variables
 description: 列出当前模块的有效持久变量、覆盖来源和版本
+parameters:
+  moduleId:
+    type: string
+    required: true
+    description: 本次读取的模块 id
 output:
   schema:
     type: object
@@ -13,5 +18,6 @@ execute:
   kind: delegate
   tool: module_variables
   args:
+    moduleId: '{{args.moduleId}}'
     scope: module
     action: list

@@ -5,7 +5,7 @@
  */
 import { existsSync, mkdtempSync, renameSync, rmSync } from 'node:fs'
 import { dirname, join } from 'node:path'
-import { Scalar, YAMLSeq, parseDocument } from 'yaml'
+import { parseDocument } from 'yaml'
 import { engineRecipe, isModuleCapabilityDeclared, moduleCapability } from '../shared/engine-capabilities.ts'
 import { isModuleId } from '../shared/module-ids.ts'
 import { ENGINE_PARAM_DEFINITIONS, ENGINE_PARAM_KEYS } from '../shared/engine-params.ts'
@@ -20,25 +20,6 @@ import { renderComposition, resolveModuleFacts } from './module-params.ts'
 import { invalidateModuleSpec } from './module-spec.ts'
 import type { ModuleSpec } from './module-spec.ts'
 
-/**
- * 从模块 module.yml 的 modules 清单移除一个模块 id（YAML Document 保留注释
- * 与其余字段）。返回是否发生修改；文件缺失或没有该模块时返回 false。
- */
-export function removeModuleCapabilityDeclaration(dir: string, moduleId: string): boolean {
-  const file = join(dir, MODULE_DEFINITION_FILE)
-  if (!existsSync(file)) return false
-  const snapshot = loadModuleDefinition(dir)
-  const doc = snapshot.doc
-  readModuleLayerSettings(doc.toJS())
-  const modules = doc.getIn(['modules'])
-  if (!(modules instanceof YAMLSeq)) return false
-  const kept = modules.items.filter((item) => !(item instanceof Scalar) || item.value !== moduleId)
-  if (kept.length === modules.items.length) return false
-  modules.items = kept
-  commitModuleDefinition(snapshot, doc)
-  invalidateModuleSpec(dir)
-  return true
-}
 /** 向 module.yml 的 modules 追加功能模块；空数组保持按需装配语义。 */
 export function appendModuleCapabilities(
   doc: ReturnType<typeof parseDocument>,

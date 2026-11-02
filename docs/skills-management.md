@@ -142,7 +142,7 @@ folders:                      # 用户添加的技能文件夹（绝对路径，
 |---|---|
 | 文件写入（保留注释/正文、两端独立、无变化不落盘、各类拒绝） | `test/host/skill-policy.test.mjs` |
 | 技能文件读取前校验（路径/文件名/链接/普通文件/1 MiB/只读位） | `test/host/skills-marker.test.mjs` |
-| 六类来源扫描、同名裁决、清单条目 | `test/host/skills-catalog.test.mjs` |
+| 技能清单与工作区事实接入 | `test/host/settings-bridge.test.mjs`（实际端点与扫描结果） |
 | 端点（真实 handler + 写盘 + 身份校验） | `test/host/settings-bridge.test.mjs` |
 
 ```powershell

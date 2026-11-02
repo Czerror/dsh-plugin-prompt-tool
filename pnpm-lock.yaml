@@ -54,9 +54,6 @@ importers:
       '@deepseek-ai/dsh-client-ui-settings':
         specifier: 0.2.1-alpha.2
         version: 0.2.1-alpha.2(@deepseek-ai/cordis@4.0.5-alpha.1)
-      '@deepseek-ai/dsh-client-ui-settings-plugins':
-        specifier: 0.2.1-alpha.2
-        version: 0.2.1-alpha.2(@deepseek-ai/cordis@4.0.5-alpha.1)
       '@deepseek-ai/dsh-client-ui-sidebar':
         specifier: 0.2.1-alpha.2
         version: 0.2.1-alpha.2(@deepseek-ai/cordis@4.0.5-alpha.1)
@@ -99,9 +96,6 @@ importers:
       '@deepseek-ai/dsh-storage-json':
         specifier: 0.2.1-alpha.2
         version: 0.2.1-alpha.2(@deepseek-ai/cordis@4.0.5-alpha.1)(@deepseek-ai/dsh-storage@0.2.1-alpha.2(@deepseek-ai/cordis@4.0.5-alpha.1))
-      '@deepseek-ai/dsh-subagent':
-        specifier: 0.2.1-alpha.2
-        version: 0.2.1-alpha.2(4ff5bc567b8adfbb62d0eb6d36c23da7)
       '@deepseek-ai/dsh-system-prompt':
         specifier: 0.2.1-alpha.2
         version: 0.2.1-alpha.2(@deepseek-ai/cordis@4.0.5-alpha.1)(@deepseek-ai/dsh-llm@0.2.1-alpha.2(@deepseek-ai/cordis@4.0.5-alpha.1))(@deepseek-ai/dsh-scope@0.2.1-alpha.2(@deepseek-ai/cordis@4.0.5-alpha.1))
@@ -335,11 +329,6 @@ packages:
 
   '@deepseek-ai/dsh-client-ui-session@0.2.1-alpha.2':
     resolution: {integrity: sha512-T4aXGhQWQkHdtdhe8Yp5O6FHcD74ys5Q8QcXhq1IjYlTN65sjqPieU4ADsB/iOXcvzP3CXGHeTUyBHJjfIuUcw==}
-    peerDependencies:
-      '@deepseek-ai/cordis': ~4.0.5-alpha.1
-
-  '@deepseek-ai/dsh-client-ui-settings-plugins@0.2.1-alpha.2':
-    resolution: {integrity: sha512-VdGUtlI8RVDis40zM7FRNdfNbYUZ7N3qgAFsW5d8i3vVzXN4NX3kcS4fJJiM02on2uTjCaTXpOz1kOB9fOnh5A==}
     peerDependencies:
       '@deepseek-ai/cordis': ~4.0.5-alpha.1
 
@@ -1797,10 +1786,6 @@ snapshots:
       '@deepseek-ai/cordis': 4.0.5-alpha.1(@deepseek-ai/cordis-plugin-include@1.0.10-alpha.1)(@deepseek-ai/cordis-plugin-loader@1.0.6-alpha.1)
 
   '@deepseek-ai/dsh-client-ui-session@0.2.1-alpha.2(@deepseek-ai/cordis@4.0.5-alpha.1)':
-    dependencies:
-      '@deepseek-ai/cordis': 4.0.5-alpha.1(@deepseek-ai/cordis-plugin-include@1.0.10-alpha.1)(@deepseek-ai/cordis-plugin-loader@1.0.6-alpha.1)
-
-  '@deepseek-ai/dsh-client-ui-settings-plugins@0.2.1-alpha.2(@deepseek-ai/cordis@4.0.5-alpha.1)':
     dependencies:
       '@deepseek-ai/cordis': 4.0.5-alpha.1(@deepseek-ai/cordis-plugin-include@1.0.10-alpha.1)(@deepseek-ai/cordis-plugin-loader@1.0.6-alpha.1)
 

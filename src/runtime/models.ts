@@ -1,16 +1,6 @@
-/** 模型服务商/模型名检测与子代理固定模型路由（宿主侧运行时工具）。 */
+/** 模型服务商与模型目录检测（宿主侧运行时工具）。 */
 import type { Context } from '@deepseek-ai/cordis'
-import type { AgentOptions } from '@deepseek-ai/dsh-agent'
-import type { ReasoningEffortId } from '@deepseek-ai/dsh-llm'
-import type { SubagentRuntime } from '@deepseek-ai/dsh-subagent'
 import type { ModelReasoningView } from '../shared/bridge-contract.ts'
-
-/**
- * 官方子代理 seam 的类型锚点：本插件只读 `list()` / `getProvider()` 并显式传参，
- * 不替换 {@link SubagentRuntime.start} 或 `startContinuable`；这里保留类型引用是为了
- * 让「不碰 registry 方法」这条边界在类型层随 rc.2 契约一起编译校验。
- */
-export type PluginSubagentSeam = Pick<SubagentRuntime, 'list' | 'getProvider'>
 
 /** 模型服务商检测结果（含诊断信息，供 Web/TUI 展示）。 */
 export interface ModelDetection {
@@ -258,30 +248,5 @@ async function refreshModelCatalog(ctx: Context): Promise<Record<string, string[
     }
   }))
   return catalog
-}
-
-/**
- * 本插件子代理入口的显式模型路由（subagentModelProvider + subagentModelName 同时非空时生效）。
- *
- * 只产出要传给 {@link SubagentRuntime.start} 的 `agentOptions`，由调用方显式传入；
- * 不修改 registry 上的 `start` / `startContinuable` 方法，也不在根 scope 强加默认值——
- * 官方 API 的替换会让第三方直派调用也带上本插件的模型，超出插件授权范围。
- */
-export function resolveSubagentStartOptions(
-  isEnabled: () => boolean,
-  provider: () => string,
-  model: () => string,
-  getReasoningEffort?: () => string,
-): AgentOptions | undefined {
-  if (!isEnabled()) return undefined
-  const providerId = provider()
-  const modelId = model()
-  if (providerId.length === 0 || modelId.length === 0) return undefined
-  const effort = (getReasoningEffort?.() ?? '').trim()
-  return {
-    provider: providerId,
-    model: modelId,
-    ...(effort.length > 0 ? { reasoningEffort: effort as ReasoningEffortId } : {}),
-  }
 }
 

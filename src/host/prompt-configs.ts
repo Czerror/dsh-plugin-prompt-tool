@@ -77,11 +77,6 @@ export function assertSafeConfigId(id: string): void {
   if (id.startsWith('_')) throw new Error('规则 id 不得以下划线开头（保留命名空间）')
 }
 
-/** 生成文件名统一 4 位零填充前缀（0000-…），超过 10 条后字典序仍稳定。 */
-export function configFileName(index: number, id: string): string {
-  assertSafeConfigId(id)
-  return `${String(index).padStart(4, '0')}-${id}.yml`
-}
 /** 模型采样参数生成与装配判定共用同一规则；空值不产生请求配置。 */
 export function modelRequestRules(params: Record<string, unknown>): RuleDefinition[] {
   const patchOf = (prefix: 'model' | 'subagent'): Record<string, unknown> => {

@@ -97,7 +97,7 @@ export function apply(ctx: ClientContext): void {
   }
 
   // 悬浮入口：shell.overlay（可拖动触发器 + body portal 抽屉）；
-  // settings.plugins.tab 基础设置共享同一注入面。
+  // sidebar.panellist 与悬浮入口共享工作台状态。
   // 位置由插件自己的位置偏好 + 视口夹取决定，不读宿主布局树。
   // 注册全部走官方 SlotRegistry，不手工挂载 DOM。
   const face: PromptToolWorkbenchFace = { controller: new PromptToolWorkspaceController(), api: hostApi, settings, t }

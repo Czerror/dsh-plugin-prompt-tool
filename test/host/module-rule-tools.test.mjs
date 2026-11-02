@@ -48,8 +48,52 @@ async function setup(t, id, { late = false, rebuild = async () => {} } = {}) {
   let calls = 0
   const call = (name, args = {}, signal = new AbortController().signal) => root.tools.execute({ callId: 'call-' + ++calls, name, arguments: args, agent, signal })
   const success = async (name, args) => { const result = await call(name, args); assert.equal(result.isError, false, JSON.stringify(result)); return result.value }
-  return { root, scope, agent, targets, wrapper, install, call, success, file, dir }
+  return { root, scope, agent, targets, wrapper, install, call, success, file, dir, host }
 }
+
+test('随包委托模板：显式主语读取规则与变量、版本编辑往返，缺主语和旧版本零提交', async t => {
+  const f = await setup(t, 'template-target')
+  const otherDir = join(moduleRoot, 'template-other'), otherFile = join(otherDir, 'module.yml')
+  mkdirSync(otherDir, { recursive: true })
+  writeFileSync(otherFile, 'id: template-other\nmodules: []\nrules: [{ id: body, then: [{ id: text, kind: inject-text, config: { text: OTHER } }] }]\n')
+  const otherBytes = readFileSync(otherFile, 'utf8')
+  f.targets.ids = ['template-other', 'template-target']
+  const { registerModuleVariableTools } = await import('../../src/runtime/module-variable-tools.ts')
+  const variables = await import('../../engine/module-variable-tools.mjs')
+  await f.root.plugin(ctx => { ctx.provide('pt-module-variable-tools', { mount: context => registerModuleVariableTools(context, f.host) }) })
+  await f.scope.ctx.plugin(variables)
+  const { compileCustomTool } = await import('../../src/host/custom-tools.ts')
+  const { apply } = await import('../../engine/tool-config-engine.mjs')
+  const templates = ['50-delegate-module-rules.yml', '60-delegate-module-variables.yml', '70-delegate-module-rules-edit.yml']
+    .map(file => compileCustomTool(parse(readFileSync(new URL('../../templates/tools/' + file, import.meta.url), 'utf8'))))
+  await f.scope.ctx.plugin({ inject: ['tools'], apply: ctx => apply(ctx, { tools: templates }) })
+  await tick()
+  const delegate = async (name, args) => {
+    const result = await f.success(name, args)
+    assert.equal(result.ok, true, JSON.stringify(result))
+    return result.value
+  }
+  const before = await delegate('my_module_rules_read', { moduleId: 'template-target' })
+  assert.equal(before.moduleId, 'template-target')
+  assert.deepEqual(before.rules, [original])
+  const values = await delegate('my_module_variables', { moduleId: 'template-target' })
+  assert.equal(values.moduleId, 'template-target')
+  assert.deepEqual(values.variables, { owner: 'KEEP', empty: '' })
+  const changed = { ...before.rules[0], name: 'TEMPLATE-UPDATED' }
+  const edit = { moduleId: 'template-target', revisions: before.revisions, edits: [{ previousId: 'mixed', rule: changed }] }
+  const saved = await delegate('my_module_rules_edit', edit)
+  assert.equal(saved.persisted, true)
+  assert.deepEqual((await delegate('my_module_rules_read', { moduleId: 'template-target' })).rules, [changed])
+  const savedBytes = readFileSync(f.file, 'utf8')
+  const stale = await f.call('my_module_rules_edit', edit)
+  assert.equal(stale.isError || stale.value?.ok === false, true, JSON.stringify(stale))
+  for (const [name, args] of [['my_module_rules_read', {}], ['my_module_variables', {}], ['my_module_rules_edit', { revisions: saved.revisions, edits: [] }]]) {
+    const missing = await f.call(name, args)
+    assert.equal(missing.isError || missing.value?.ok === false, true, JSON.stringify(missing))
+  }
+  assert.equal(readFileSync(f.file, 'utf8'), savedBytes)
+  assert.equal(readFileSync(otherFile, 'utf8'), otherBytes)
+})
 
 test('规则工具完整往返：嵌套/else/来源参数和注释保留，开关与显式删除只作用目标规则', async t => {
   const rebuilt = []

@@ -42,16 +42,6 @@ export interface ModuleVariablesView {
   publicationPending: boolean
 }
 
-export function getVariablesDraft(drafts: Map<string, VariablesDraft>, moduleId: string, scope: ModuleVariableScope): VariablesDraft {
-  const key = `${moduleId}:${scope}`
-  let draft = drafts.get(key)
-  if (!draft) {
-    draft = createVariablesDraft(scope)
-    drafts.set(key, draft)
-  }
-  return draft
-}
-
 export const variablesDirty = (draft: VariablesDraft): boolean => draft.saving
   || draft.baseline !== undefined && (!deepEqual(draft.variables, draft.baseline.variables)
     || draft.scope === 'module' && draft.enabled !== draft.baseline.enabled)

@@ -17,13 +17,6 @@ export const SOURCE_FORMS = ['notice', 'hint', 'instructions', ''] as const
 export const INSERTION_LAYERS = INJECTION_POINT_ORDER
 
 /**
- * 宿主层序在前，配置中的其他层追加在末尾，便于展示校验错误。
- */
-export function displayLayers(layerOrder: readonly string[], layers: readonly string[]): string[] {
-  return [...layerOrder, ...layers.filter((layer) => !layerOrder.includes(layer))]
-}
-
-/**
  * 枚举显示标签只存字典键（文案归 `prompt-tool` 字典）：
  * 值 → 键映射 + {@link translateLabel} 求值，未知值回退原始值（旧配置仍可读）。
  */
@@ -131,48 +124,6 @@ export function layerChangePatch(meta: EngineMeta, config: PromptConfigDraft, la
     patch.fill = undefined
   }
   return patch
-}
-
-/**
- * 统一搜索：同时覆盖「中文名」与「技术键」，只拼可搜索文本，不改变过滤语义
- * （过滤仍然只影响展示，不写盘、不改变保存载荷，也不把匹配结果合并成一张层结果）。
- */
-function matchesKeyword(text: string, keyword: string): boolean {
-  return keyword.length === 0 || text.toLowerCase().includes(keyword)
-}
-
-/** 配置实例的搜索文本：标识、名称、枚举技术值与其中文标签、局部参数键。 */
-export function configSearchText(config: PromptConfigDraft, t: PromptToolTranslate): string {
-  const params = Object.keys(config.params ?? {})
-  return [
-    config.id,
-    config.name ?? '',
-    config.layer ?? '',
-    config.strategy ?? '',
-    config.position ?? '',
-    config.dedupe ?? '',
-    config.mergeMode ?? '',
-    config.fill ?? '',
-    config.sourceKind ?? '',
-    config.form ?? '',
-    config.role ?? '',
-    config.audience ?? '',
-    config.modelScope ?? '',
-    ...params,
-    translateLabel(t, LAYER_LABEL_KEYS, config.layer ?? 'pre-step'),
-    translateLabel(t, STRATEGY_LABEL_KEYS, config.strategy ?? ''),
-    translateLabel(t, POSITION_LABEL_KEYS, config.position ?? ''),
-    translateLabel(t, FILL_LABEL_KEYS, config.fill ?? ''),
-    translateLabel(t, SOURCE_KIND_LABEL_KEYS, config.sourceKind ?? ''),
-    translateLabel(t, SOURCE_FORM_LABEL_KEYS, config.form ?? ''),
-    translateLabel(t, AUDIENCE_LABEL_KEYS, config.audience ?? ''),
-    translateLabel(t, MODEL_SCOPE_LABEL_KEYS, config.modelScope ?? ''),
-  ].join(' ')
-}
-
-/** 该配置实例是否命中搜索词（配置名、标识、注入层与参数名）。 */
-export function matchesConfigKeyword(config: PromptConfigDraft, keyword: string, t: PromptToolTranslate): boolean {
-  return matchesKeyword(configSearchText(config, t), keyword)
 }
 
 /**

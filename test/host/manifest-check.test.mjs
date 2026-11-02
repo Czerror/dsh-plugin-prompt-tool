@@ -11,7 +11,7 @@ import { createManifestCheckReader } from '../../src/host/module-manifest-check.
 import { runModuleManifest } from '../../src/host/module-manifest.ts'
 
 const { moduleRoot } = isolatedHome('pt-manifest-check-')
-const { apply } = await import('../../src/index.ts')
+const { apply, inject } = await import('../../src/index.ts')
 const { setModuleEnabled } = await import('../../src/host/config-store.ts')
 
 function fixture(id) {
@@ -142,7 +142,6 @@ test('实际插件接线：主子 Agent 自检注入遵守 TTL，压缩与重挂
   await root.plugin(SystemPrompt)
   await root.plugin(ToolRuntime)
   root.provide('llm', {})
-  root.provide('subagents', {})
   root.provide('commands', { register: () => () => {} })
   root.provide('skills', { registerProvider: factory => {
     factory({ invalidate() {}, signal: new AbortController().signal })
@@ -153,7 +152,7 @@ test('实际插件接线：主子 Agent 自检注入遵守 TTL，压缩与重挂
   root.provide('agents', { list: () => agents })
   root.systemPrompt.section({ name: 'test:official', order: 0, text: 'OFFICIAL' })
   const mount = () => root.plugin({
-    name: 'test:prompt-tool', inject: ['skills', 'commands', 'llm', 'subagents'],
+    name: 'test:prompt-tool', inject,
     apply: ctx => apply(ctx, { modulesEnabled: { get: () => true } }),
   })
   let plugin = mount()

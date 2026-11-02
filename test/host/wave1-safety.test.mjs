@@ -9,10 +9,9 @@ import { parse } from 'yaml'
 const home = mkdtempSync(join(tmpdir(), 'pt-w1-home-'))
 process.env.DSH_HOME = home
 const { validateEngineParamValues } = await import('../../src/shared/engine-params.ts')
-const { assertSafeConfigId, configFileName } = await import('../../src/host/prompt-configs.ts')
+const { assertSafeConfigId } = await import('../../src/host/prompt-configs.ts')
 const { loadModuleSpec } = await import('../../src/host/module-spec.ts')
 const { renderComposition } = await import('../../src/host/module-params.ts')
-const { DEFAULT_MODULE_ID } = await import('../../src/shared/module-ids.ts')
 const { writeModule } = await import('../../src/host/write-module.ts')
 
 test('validateEngineParamValues：全量类型校验（布尔/数值/字符串/列表/枚举）', () => {
@@ -43,17 +42,13 @@ test('validateEngineParamValues：全量类型校验（布尔/数值/字符串/�
   assert.match(unknown[0].message, /guideComplexPattern/)
 })
 
-test('assertSafeConfigId / configFileName：路径穿越与 Windows 保留字符拒绝，4 位零填充前缀', () => {
-  assert.equal(configFileName(0, 'near-anchor'), '0000-near-anchor.yml')
-  assert.equal(configFileName(12, 'x'), '0012-x.yml')
-  assert.equal(configFileName(120, 'x'), '0120-x.yml')
+test('assertSafeConfigId：路径穿越与 Windows 保留字符拒绝', () => {
   for (const bad of ['', '.', '..', '../../evil', 'a/b', 'a\\b', 'a:b', 'a*b', 'a?b', 'a|b', 'a\0b']) {
     assert.throws(() => assertSafeConfigId(bad), TypeError, `应拒绝非法 id: ${JSON.stringify(bad)}`)
-    assert.throws(() => configFileName(1, bad), TypeError)
   }
   // 多字节（ST 导入 id 含中文）与点号小写组合允许。
-  assert.equal(configFileName(1, 'beta-2.42'), '0001-beta-2.42.yml')
-  assert.equal(configFileName(1, '夏瑾'), '0001-夏瑾.yml')
+  assert.doesNotThrow(() => assertSafeConfigId('beta-2.42'))
+  assert.doesNotThrow(() => assertSafeConfigId('夏瑾'))
 })
 
 test('loadModuleSpec：坏 YAML fail loud 且带文件上下文', () => {
@@ -98,17 +93,17 @@ test('writeModule：恶意规则身份经统一编译器拒绝，不留半成品
   const dir = mkdtempSync(join(tmpdir(), 'pt-w1-malid-'))
   try {
     const moduleDir = join(dir, 'preset')
-    const sourceDir = join(moduleDir, DEFAULT_MODULE_ID)
+    const sourceDir = join(moduleDir, 'fixture-module')
     mkdirSync(sourceDir, { recursive: true })
-    writeFileSync(join(sourceDir, 'module.yml'), JSON.stringify({ id: DEFAULT_MODULE_ID, modules: [], rules: [{ id: '../../evil', then: [{ id: 'inject', kind: 'inject-text', config: { text: 'x' } }] }] }))
+    writeFileSync(join(sourceDir, 'module.yml'), JSON.stringify({ id: 'fixture-module', modules: [], rules: [{ id: '../../evil', then: [{ id: 'inject', kind: 'inject-text', config: { text: 'x' } }] }] }))
     assert.throws(
-      () => writeModule({ modulesRoot: moduleDir, moduleId: DEFAULT_MODULE_ID, targetModuleId: 'safe-output' }),
+      () => writeModule({ modulesRoot: moduleDir, moduleId: 'fixture-module', targetModuleId: 'safe-output' }),
       /rule id/,
     )
     // 原子物化失败：目标目录不存在（tmp 已清理）。
     assert.equal(existsSync(join(moduleDir, 'safe-output')), false)
     assert.equal(existsSync(join(dir, 'evil')), false)
-    assert.deepEqual(readdirSync(moduleDir), [DEFAULT_MODULE_ID], '源保留且无临时半成品')
+    assert.deepEqual(readdirSync(moduleDir), ['fixture-module'], '源保留且无临时半成品')
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }
@@ -124,17 +119,17 @@ test('writeModule：规则裸文件名与状态清单序号独立', () => {
       layer: 'system-section',
       text: `内容 ${index}`,
     }))
-    mkdirSync(join(moduleDir, DEFAULT_MODULE_ID), { recursive: true })
-    writeFileSync(join(moduleDir, DEFAULT_MODULE_ID, 'module.yml'), JSON.stringify({ id: DEFAULT_MODULE_ID, modules: [], rules: many.map(config => ({ id: config.id, layer: config.layer, then: [{ id: 'inject', kind: 'inject-text', config }] })) }))
-    writeModule({ modulesRoot: moduleDir, moduleId: DEFAULT_MODULE_ID })
-    const rulesDir = join(moduleDir, DEFAULT_MODULE_ID, 'rules')
+    mkdirSync(join(moduleDir, 'fixture-module'), { recursive: true })
+    writeFileSync(join(moduleDir, 'fixture-module', 'module.yml'), JSON.stringify({ id: 'fixture-module', modules: [], rules: many.map(config => ({ id: config.id, layer: config.layer, then: [{ id: 'inject', kind: 'inject-text', config }] })) }))
+    writeModule({ modulesRoot: moduleDir, moduleId: 'fixture-module' })
+    const rulesDir = join(moduleDir, 'fixture-module', 'rules')
     const files = readdirSync(rulesDir).filter(name => name.startsWith('cfg-')).sort()
     assert.deepEqual(files, many.map(config => `${config.id}.yml`))
     const settingsFile = join(rulesDir, '_settings.yml')
     const before = readFileSync(settingsFile, 'utf8')
     const settings = parse(before)
     assert.deepEqual(Object.entries(settings.rules).map(([id, state]) => [id, state.order]), many.map((config, index) => [config.id, index * 10]))
-    assert.equal(existsSync(join(moduleDir, DEFAULT_MODULE_ID, 'configs')), false)
+    assert.equal(existsSync(join(moduleDir, 'fixture-module', 'configs')), false)
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }

@@ -47,7 +47,7 @@ export const name = 'prompt-tool'
 // @deepseek-ai/dsh-base（没有 @deepseek-ai/dsh-web-app），硬注入会让插件
 // pending 并导致启动失败。Web 表面动态等待 webServer，缺失时仅诊断；
 // profile 装配交给官方插件管理流程。
-export const inject = ['skills', 'commands', 'llm', 'subagents']
+export const inject = ['skills', 'commands', 'llm']
 
 function warn(ctx: Context, message: string): void {
   try {

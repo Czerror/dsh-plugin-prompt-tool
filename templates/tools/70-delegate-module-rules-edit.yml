@@ -26,6 +26,6 @@ execute:
   kind: delegate
   tool: module_rules_edit
   args:
-    expectedModuleId: '{{args.moduleId}}'
+    moduleId: '{{args.moduleId}}'
     expectedRevisions: '{{args.revisions}}'
     edits: '{{args.edits}}'

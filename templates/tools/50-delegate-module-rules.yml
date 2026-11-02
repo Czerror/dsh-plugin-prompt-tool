@@ -2,6 +2,11 @@
 id: delegate-module-rules-read
 name: my_module_rules_read
 description: 读取当前模块的完整规则树和版本
+parameters:
+  moduleId:
+    type: string
+    required: true
+    description: 本次读取的模块 id
 output:
   schema:
     type: object
@@ -12,3 +17,5 @@ output:
 execute:
   kind: delegate
   tool: module_rules_read
+  args:
+    moduleId: '{{args.moduleId}}'

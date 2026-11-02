@@ -31,7 +31,7 @@ const plugin = await import('dsh-plugin-prompt-tool')
 if (plugin.name !== 'prompt-tool' || typeof plugin.apply !== 'function') throw new Error('主入口导出不完整')
 if (typeof plugin.Config !== 'function') throw new Error('主入口缺少 Config（Cordis 配置 schema）')
 // 数组 inject 声明的是**必需**服务；webServer 这类可选服务只能动态等待，不能写进静态表。
-const REQUIRED_INJECT = ['skills', 'commands', 'llm', 'subagents']
+const REQUIRED_INJECT = ['skills', 'commands', 'llm']
 const inject = Array.isArray(plugin.inject) ? [...plugin.inject].sort() : []
 if (inject.join(',') !== [...REQUIRED_INJECT].sort().join(',')) {
   throw new Error('主入口 inject 必须恰好是 ' + REQUIRED_INJECT.join('/') + '（可选服务不得写进静态表）')

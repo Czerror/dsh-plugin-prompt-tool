@@ -29,7 +29,6 @@ const ZH_CORE = {
   'app.close': '关闭提示词工具',
   'app.panelAria': '提示词工具',
   'nav.aria': '提示词工具页面',
-  'tab.label': '提示词工具',
 
   'settings.saveRejected': '设置未保存，请检查当前权限或重新读取后重试。',
 
@@ -42,11 +41,9 @@ const ZH_CORE = {
   'main.aria': '主会话与全局',
   'main.addTemplate': '添加模板 · {layer}',
   'main.addToolTemplate': '添加工具模板…',
-  'main.addVariables': '添加模板变量',
   'main.newBlankTool': '新建空白工具',
   'subagent.aria': '子代理',
   'configList.create': '新建',
-  'configList.emptyPreStep': '当前模块模板消息批层无配置；可新建自定义配置（写入激活模块 module.yml，随模块走）。',
 
   'tools.aria': '工具预览',
   'tools.search.aria': '搜索工具',
@@ -279,7 +276,6 @@ const EN_CORE: Record<keyof typeof ZH_CORE, string> = {
   'app.close': 'Close prompt tool',
   'app.panelAria': 'Prompt tool',
   'nav.aria': 'Prompt tool pages',
-  'tab.label': 'Prompt Tool',
 
   'settings.saveRejected': 'Settings were not saved. Check your permissions or reload and retry.',
 
@@ -292,11 +288,9 @@ const EN_CORE: Record<keyof typeof ZH_CORE, string> = {
   'main.aria': 'Main session and global',
   'main.addTemplate': 'Add template · {layer}',
   'main.addToolTemplate': 'Add tool template…',
-  'main.addVariables': 'Add template variables',
   'main.newBlankTool': 'New blank tool',
   'subagent.aria': 'Subagent',
   'configList.create': 'New',
-  'configList.emptyPreStep': 'The current module template has no message-batch configs; you can create a custom config (written into the active module.yml, so it travels with that module).',
 
   'tools.aria': 'Tool preview',
   'tools.search.aria': 'Search tools',

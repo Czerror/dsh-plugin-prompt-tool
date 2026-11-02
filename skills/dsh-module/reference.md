@@ -157,9 +157,8 @@ checks:
 共享参数由 `ENGINE_PARAM_DEFINITIONS` 唯一登记，`storageLayer` 决定磁盘路径：主/子模型各有路由与采样键，另含 PTC 呈现（presentAsEnabled、ptcMainMode、ptcSubagentMode）、run_code 环境（runCodeEnvEnabled、runCodeEnvKeys）、Git Bash（toolGitBashEnabled、路径、超时、输出上限）、指令提示（instructionHint 及 promoteOn/includeSubagents/模板）和工具批准（customToolRequireApproval）；完整键、options 与默认值以源码为准，不在摘要抄数量。模型卡在装配期合成 request-params 规则；未配置继承宿主。子代理递归深度归官方 `subagent.maxDepth`，插件不提供。
 
 - persona 动作：普通规则拥有 prefix/suffix/complete/includeRuntimeContext 与可选 audience。命中动作按既有规则序分别拼接非空片段，两个换行分隔；全省略才继承，显式空串阻止继承但不清其它片段。布尔显式值冲突整组保旧；失配/事实不可用回官方，错误保最后有效组。includeRuntimeContext:true 只撤本插件抑制，祖先 scope 抑制保持。
-- variables：模块持久值，覆盖同安装 global；空串保留，删键才回落。普通规则手动建立变量，ST 导入自动登记缺失裸引用为空占位。
+- variables：模块持久值，覆盖同安装 global；运行时 session 域按来源模块＋真实会话持久隔离，裸引用依次取 session→module→global。空串保留，删键才回落。工作台只编辑 module/global；普通规则手动建立变量，ST 导入自动登记缺失裸引用为空占位，不自动转成 session。
 - customTools：shell/http/delegate/fs/ask-user，定义见包内 templates/tools。delegate 走官方工具管线。
-- subagentToolPolicy：授权上限、工具档、角色绑定、任务规则与受控扩权；缺省官方委派。
 - moduleConfigs：已声明共享参数优先于行级配置，不能绕过工具批准。
 - configOrder：模块内规则id→非负序号，排序不修改正文和启停。
 
@@ -178,7 +177,7 @@ checks:
 
 未开 selective 或无副键只要求 P>0；空主键不自动常驻。求值为空的副键仍占一项。activation 还拥有 scanVariables、概率、selectionGroup、评分、sticky/cooldown/delay、递归排除与延迟层级；它的候选组与规则 group/exclusive 不同。模块递归用 contextActivationRecursive，默认 false，池跨模块共享。
 
-原生模板显式设置 params.templateEvaluation:true。module/global 的 set/get/add/inc/dec 在暂存变更集求值；同卡读到先前写入，单卡只写一个域，所有读取域都参与 CAS。扫描/预览只读。真实执行提交后跨出口和重挂不重放；跨进程崩溃不保证 exactly-once。
+原生模板显式设置 params.templateEvaluation:true。module/global/session 的 set/get/add/inc/dec 在暂存变更集求值；同卡读到先前写入，单卡只写一个持久域，所有实际读取域都参与 CAS。session 唯一 owner 使用官方 storageDomain，同步读快照、异步写等待持久化；主/子会话隔离，不用内存表替代。session 赋值只在可等待的规则执行和模型工具中提交，人设同步出口只读 session、拒绝其 setter。runtime 是只读权威事实，SELF、扫描与预览只读。真实执行提交后跨出口和重挂不重放；跨进程崩溃不保证 exactly-once。
 
 ## 六、退役输入的显式转换
 

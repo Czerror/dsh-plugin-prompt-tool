@@ -19,8 +19,9 @@ description: 新建、修改、审查 DSH Prompt Tool 模块，或把规则、�
 | 共享模型/能力参数 | layerSettings 的登记层 |
 | 持久模块变量 | 顶层 variables |
 | 全局变量 | 同一 DSH_HOME 的插件 variables.yml，经变量 owner 读写 |
+| 会话变量 | 官方 storageDomain，按来源模块＋真实会话隔离，经 session owner 异步写入 |
 | 人设正文/选项 | rules 中的 persona 动作，与普通规则共用条件、启停、排序和 CAS |
-| 自定义工具/子代理授权 | customTools / subagentToolPolicy |
+| 自定义工具 | customTools；普通子代理委派由官方预设提供 |
 | 模块私有文件 | memory.md、assets/（只读）、data/（只追加），经 module_file_read/append 显式读写；装配清单走 module_manifest |
 | 用户指令文件 | 原文件与独立指令策略，独立授权通道 |
 
@@ -55,9 +56,9 @@ rules:
 
 ## 3. 变量、人设和上下文激活
 
-普通规则引用的变量需手动在模块变量卡建立；不要扫描正文偷偷登记。空字符串是有效占位，会遮住同名全局值；删除模块键才回落全局。动作 config.variables 已退役。
+普通规则引用的变量需手动建立；不要扫描正文偷偷登记。运行时裸引用按 session→module→global 取值；空字符串是有效值，删除覆盖才回落。工作台和 bridge 仍只编辑 module/global，不提供任意他人会话入口。动作 config.variables 已退役。
 
-需要赋值才声明 `params.templateEvaluation: true`，使用 `{{module.set::key::value}}` 或 module/global 的 get/add/inc/dec。一张模板只能写一个域，扫描与预览只读；禁止用 session 表或执行重挂伪装持久事务。
+需要赋值才声明 `params.templateEvaluation: true`，使用 module/global/session 的 set/get/add/inc/dec。一张模板可读多域但只写一个持久域，实际读取域参与版本校验；session 写由异步规则和模型工具等待官方 owner 持久化。扫描、预览和 SELF 只读，runtime 是只读权威事实；禁止用内存 session 表或执行重挂伪装持久事务。
 
 人设使用 kind:persona 动作，支持普通 if/then/else；audience 可为 main/subagent，省略覆盖两类。所有启用模块的命中动作按现有规则排序分别拼接 prefix/suffix；字段全省略才继承，显式空串阻止继承但不清除其它规则正文。complete/includeRuntimeContext 显式值冲突拒绝候选并保旧；完全失配或事实不可用回官方。人设卡复用规则事务，不保存顶层正文或来源选择。includeRuntimeContext:true 只撤本插件抑制，不能强开祖先 scope 上下文。正文可读 session/runtime，session setter 仍拒绝。
 
@@ -78,9 +79,9 @@ rules:
 | module-import-tools | module_import |
 | tool-config-engine | customTools 声明的工具 |
 
-规则先读完整树与 revisions，再携带 expectedModuleId/expectedRevisions 编辑完整合法规则；关闭标记 settingsChanged，显式启用用 activateRuleId，删除整规则用 rule:null。正文保存不覆盖并发状态，版本冲突先重读。
+规则模型工具先用显式 moduleId 读完整树与 revisions，再携带 moduleId/expectedRevisions 编辑完整合法规则；关闭标记 settingsChanged，显式启用用 activateRuleId，删除整规则用 rule:null。正文保存不覆盖并发状态，版本冲突先重读。expectedModuleId 只用于 bridge 对请求头主语的一致性校验，不是模型工具参数。
 
-变量先 list/get 取版本，再 set/delete；set 必须显式字符串，空串不是删除。global 写影响同一安装的所有模块。文件 append 带当前目标身份与显式 path，与规则事务分开；module_manifest 按清单只写 data/、不覆盖。module_import 先预览并完成选择，提交原始 files 与两份预览凭据，默认另存且不自动启用。
+变量先 list/get 取版本，再 set/delete；set 必须显式字符串，空串不是删除。global 写影响同一安装的所有模块；session 只访问真实当前会话，写入携 revisions.session 并等待持久化。文件 append 带当前目标身份与显式 path，与规则事务分开；module_manifest 按清单只写 data/、不覆盖。module_import 先预览并完成选择，提交原始 files 与两份预览凭据，默认另存且不自动启用。
 
 共享模型/能力参数以 `ENGINE_PARAM_DEFINITIONS` 为唯一目录，使用登记的 layerSettings 路径：主/子模型路由与采样、PTC 呈现、run_code 环境、Git Bash、指令提示和工具批准都在其中；数量与 options 以源码为准，不抄旧文档的固定键数。也可通过 request-params 动作按受众改请求。官方工具、规划、压缩和普通委派来自官方预设，模块不重声明它们。
 
@@ -95,7 +96,7 @@ ST 预设、角色卡、世界书优先经工作台或 module_import 转换。**
 1. 读取完整定义并保存用户同意范围内的备份；保留未知资产、记忆与来源证明。
 2. 将旧上下文策略转换为 context-activation，明确 scan；ST 数字副键映射为具名真值逻辑，不能照抄旧 any/not 注释。
 3. 将 stWorldBook 执行字段拆为 activation，把角色/位置/不支持控制项移至 source.original；模块递归声明 contextActivationRecursive。
-4. 将 set/get/add/inc/decvar 经 parser 转为 module/global 操作，启用 templateEvaluation。局部变量无冲突提升到顶层 variables，同名不同值先报告并解决；不建立第三层变量。
+4. 将 set/get/add/inc/decvar 经 parser 转为 module/global 操作，启用 templateEvaluation。局部变量无冲突提升到顶层 variables，同名不同值先报告并解决；ST 局部变量不自动映射到 session 持久域。
 5. 将旧工具与能力改为上表名称；完整规则替换保留分支与未改字段，记忆从 note 副作用分离。
 6. 旧顶层 persona 与 config.yml.personaSources 均已退役。按用户明确要求手工重建为 persona 规则动作，保留省略/空串/false 和受众含义；展示新规则启停与排序供核对，不自动迁移或启用。
 7. 旧私有记忆标记先核实并把私有内容归回 memory.md；不能单删标记后导出。

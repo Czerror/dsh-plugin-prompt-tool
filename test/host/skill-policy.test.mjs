@@ -25,7 +25,7 @@ process.env.DSH_HOME = sandbox
 after(() => { rmSync(sandbox, { recursive: true, force: true }) })
 
 const { policyTarget, readSkillInvocation, setSkillInvocation } = await import('../../src/host/skills-policy.ts')
-const { MAX_SKILL_CONTENT_BYTES, invocationForScope, scopeOfInvocation } = await import('../../src/shared/skills.ts')
+const { MAX_SKILL_CONTENT_BYTES, invocationForScope } = await import('../../src/shared/skills.ts')
 
 const BOM = '\ufeff'
 const MODEL_KEY = 'disable-model-invocation'
@@ -217,8 +217,6 @@ test('两端独立：scope 只关对应的一端，none 两端恢复且写显式
     const flags = flagsOf(readFileSync(file, 'utf8'))
     assert.deepEqual([flags.modelInvocable, flags.userInvocable], expected.invocation, `${scope} 的落盘值按真值表解读`)
     assert.deepEqual([flags.rawModel, flags.rawUser], expected.raw, `${scope} 的落盘原始键值`)
-    // 契约回环：落盘状态解释回同一个范围。
-    assert.equal(scopeOfInvocation(result.invocation), scope)
     assert.deepEqual(result.invocation, invocationForScope(scope))
     // 语义与原始值必须互相印证，避免"两处一起写反"还能同时通过。
     assert.equal(flags.rawModel !== true, expected.invocation[0], 'disable-model-invocation 为 true 即模型端不可调用')

@@ -91,7 +91,7 @@ AgentSetup 捕获的同层声明保留原 PromptSection 与 owner 生存状态�
 - **`@ts-expect-error` 与「声明不参与」的边界**：上面静态引入的模块由同目录 `.d.mts` 供类型（见上一条）；**走绝对 URL 动态 import 的那几处，`.d.mts` 不参与解析**，类型完全由手写内联断言承担——`rule-spec.mjs` 因此同时有两条类型路径，`src/runtime/routes/instructions.ts` 用的还是 `src` 侧的同名副本。
 - `engine/vendor/**` 的 `@ts-expect-error` 来自上游转译产物，随快照整体覆盖，**不手动改**。
 
-服务名绑定也在这条边界上：宿主与引擎共用的服务名（pre-step 协调服务、五个模块工具外壳）只有 `engine/service-names.mjs` 一个真值源，`src/` 与引擎侧的各引用点都从它取，**改名不得手抄**。手抄的失效方式是静默的——引擎查不到协调服务就回退自身的独立执行路径，模块工具外壳等不到 provider 就不挂工具，两边都不报错。这也是「引擎可单独复制」的一部分：名字随 `engine/` 一起走，复制方不必问宿主；`test/engine/service-names.test.mjs` 只作防下次手抄的源级守卫。
+服务名绑定也在这条边界上：宿主与引擎共用的服务名只有 `engine/service-names.mjs` 一个真值源，`src/` 与引擎侧的各引用点都从它取，**改名不得手抄**。手抄的失效方式是静默的——引擎查不到协调服务就回退自身的独立执行路径，模块工具外壳等不到 provider 就不挂工具，两边都不报错。这也是「引擎可单独复制」的一部分：名字随 `engine/` 一起走，复制方不必问宿主。回归通过 `test/host/agent-assembly.test.mjs` 与模块工具行为测试验证实际挂载、调用和释放。
 
 ### 引擎契约（加载器视角）
 
@@ -104,7 +104,7 @@ AgentSetup 捕获的同层声明保留原 PromptSection 与 owner 生存状态�
 
 一个**本地引擎模块**必须满足五条：
 
-1. **身份**：文件位于 `engine/<id>.mjs`，与行 `id` 一致；行 `name` 若存在应为 `./engine/<id>.mjs`（加载器不读 `name`，一致性由 `test/host/engine-contract.test.mjs` 校验）。
+1. **身份**：文件位于 `engine/<id>.mjs`，与行 `id` 一致；行 `name` 若存在应为 `./engine/<id>.mjs`（加载器不读 `name`）。以实际组合加载和 `verify:pack` 的包内引擎执行验证可用性。
 2. **入口**：导出 `apply` 函数；缺 `apply` 在装配准备期抛错（`agent-assembly.ts:204`）。
 3. **依赖**：`inject` 缺省或为字符串数组；数组元素是宿主服务名（`tools`、`systemPrompt`、`llm`、`skills` 等）。
 4. **配置**：`configContract.parse(raw, plugin)` 缺省或为函数；装配准备期会调用一次做 fail-fast（`agent-assembly.ts:213-214`），引擎在 `apply` 内可以再解析以取得规范化配置——当前两边都保留，**这是有意为之的 fail-fast ＋ normalize 两段**，不是遗漏。
@@ -393,4 +393,4 @@ runtime-context 的注册文本必须是同步 provider，不能只在 assemble 
 
 只在本插件仓库修改源文件；使用 package scripts 重建 lib 与 YAML vendor 快照，不手改产物或宿主源码。根 module.yml 由 rebuild:module-template 生成，示例默认关闭，普通规则变量需手动建立。
 
-交付从隔离 cwd 执行 typecheck、lint、test、build、diff --check；宿主/包接入另核对 verify:host、verify:pack。永久测试只进入注入行为、写盘语义、bridge 载荷、安全拒绝四条 seam，期望来自独立规格或字面样例，断言公共行为。退役接口不留仅证明旧名字不存在的测试。
+交付从隔离 cwd 执行 typecheck、lint、test、build、diff --check；宿主/包接入另核对 verify:host、verify:pack。永久测试只进入注入行为、写盘语义、bridge 载荷、安全拒绝、UI slot / 入口注册五条 seam，期望来自独立规格或字面样例，断言公共行为。退役接口不留仅证明旧名字不存在的测试。
