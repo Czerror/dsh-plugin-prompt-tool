@@ -29,7 +29,11 @@ async function sessionOwner(t, id) {
   return owner
 }
 
-function fixture(t, id, sessions) {
+async function fixture(t, id, sessions) {
+  if (sessions === undefined) {
+    const owner = await sessionOwner(t, id)
+    sessions = () => owner
+  }
   const dir = join(moduleRoot, id)
   mkdirSync(join(dir, 'data'), { recursive: true })
   writeFileSync(join(dir, 'module.yml'), `id: ${id}\nmodules: []\nrules: []\n`)
@@ -68,7 +72,7 @@ function fixture(t, id, sessions) {
 
 test('SELF骨架复用普通变量与只读runtime事实，账本原文保留字面且预览零写', async t => {
   const sessions = await sessionOwner(t, 'runtime-template')
-  const f = fixture(t, 'runtime-template', () => sessions), exec = { agent: f.agent, signal: new AbortController().signal }
+  const f = await fixture(t, 'runtime-template', () => sessions), exec = { agent: f.agent, signal: new AbortController().signal }
   writeFileSync(join(f.dir, 'module.yml'), `id: ${f.id}\nmodules: []\nrules: []\nvariables: { owner: MODULE, blank: '' }\n`)
   writeFileSync(join(f.dir, 'data', 'SELF.src.md'), '# {{owner}}|{{blank}}|{{runtime.get::session.id}}|{{runtime.get::soul.pendingReview}}')
   await sessions.edit(f.dir, f.agent.session.id, { expectedRevision: null, changes: { owner: 'SESSION' } })
@@ -96,7 +100,7 @@ test('SELF骨架复用普通变量与只读runtime事实，账本原文保留字
 test('已迁移mark在官方会话存储不可用后拒绝读取，不回读旧文件冒充当前事实', async t => {
   const sessions = await sessionOwner(t, 'runtime-owner-unloaded')
   let live = sessions
-  const f = fixture(t, 'runtime-owner-unloaded', () => live), exec = { agent: f.agent, signal: new AbortController().signal }
+  const f = await fixture(t, 'runtime-owner-unloaded', () => live), exec = { agent: f.agent, signal: new AbortController().signal }
   mkdirSync(join(f.dir, 'data/.soul'), { recursive: true })
   const legacyPath = join(f.dir, 'data/.soul', `state-${revisionOf(f.agent.session.id)}.json`)
   writeFileSync(legacyPath, JSON.stringify({ version: 1, sessionId: f.agent.session.id, mark: { text: 'OLD MARK', recordedAt: '2026-11-01T00:00:00Z' } }))
@@ -112,7 +116,7 @@ test('已迁移mark在官方会话存储不可用后拒绝读取，不回读旧�
 })
 
 test('Soul实际宿主接线贯通账本append→search/open，SELF和默认维护使用相同授权来源', async t => {
-  const f = fixture(t, 'runtime-flow'), exec = { agent: f.agent, signal: new AbortController().signal }
+  const f = await fixture(t, 'runtime-flow'), exec = { agent: f.agent, signal: new AbortController().signal }
   const written = await f.tools.get('soul_ledger').execute({ moduleId: f.id, action: 'append', type: 'fact', text: 'PUBLIC LITERAL FACT' }, exec)
   assert.equal(written.entry.by, f.agent.session.id)
   const found = await f.tools.get('module_search').execute({ moduleId: f.id, query: 'PUBLIC LITERAL FACT', limit: 1 }, exec)
@@ -143,7 +147,7 @@ test('Soul实际宿主接线贯通账本append→search/open，SELF和默认维�
 
 test('账本提交使索引已知过期，维护关闭仍实时呈现，mark与实际投递分开观测', async t => {
   const sessions = await sessionOwner(t, 'runtime-commit')
-  const f = fixture(t, 'runtime-commit', () => sessions), exec = { agent: f.agent, signal: new AbortController().signal }
+  const f = await fixture(t, 'runtime-commit', () => sessions), exec = { agent: f.agent, signal: new AbortController().signal }
   const retrieval = f.services.get(toolServiceName('retrieval'))
   await retrieval.refresh(f.agent, f.id)
   const ledger = f.tools.get('soul_ledger'), state = f.tools.get('soul_state')
@@ -177,7 +181,7 @@ test('账本提交使索引已知过期，维护关闭仍实时呈现，mark与�
 })
 
 test('历史loader仅对授权sid打开只读句柄，成功和读取失败均close且拒绝不泄正文', async t => {
-  const f = fixture(t, 'runtime-history'), exec = { agent: f.agent, signal: new AbortController().signal }
+  const f = await fixture(t, 'runtime-history'), exec = { agent: f.agent, signal: new AbortController().signal }
   const search = f.tools.get('module_search'), open = f.tools.get('module_open')
   const found = await search.execute({ moduleId: f.id, query: 'HISTORY KNOWN' }, exec)
   assert.equal(found.hits.length, 1)
@@ -199,7 +203,7 @@ test('历史loader仅对授权sid打开只读句柄，成功和读取失败均cl
 
 test('SELF注入预算与维护budgetBytes同源，调大后长快照不再被固定上限拒绝', async t => {
   const body = 'SHARED BUDGET BODY\n' + 'X'.repeat(13000)
-  const defaults = fixture(t, 'runtime-budget-default')
+  const defaults = await fixture(t, 'runtime-budget-default')
   const defaultMaintenance = defaults.services.get(SOUL_MAINTENANCE_SERVICE)
   const defaultOff = defaultMaintenance.mount(defaults.ctx,
     { enabled: true, intervalMs: 60000, wake: false, audience: 'main', ...readModuleFacts(defaults.dir).effectiveConfigs['soul-maintenance'] },
@@ -215,7 +219,7 @@ test('SELF注入预算与维护budgetBytes同源，调大后长快照不再被�
   assert.match(defaultMaintenance.status(defaults.id).error, /超预算/)
   assert.equal(readFileSync(snapshot, 'utf8'), previous, '默认预算维护失败保留旧快照')
 
-  const raised = fixture(t, 'runtime-budget-raised')
+  const raised = await fixture(t, 'runtime-budget-raised')
   writeFileSync(join(raised.dir, 'module.yml'),
     readFileSync(join(raised.dir, 'module.yml'), 'utf8') + 'moduleConfigs:\n  soul-maintenance:\n    budgetBytes: 16384\n')
   writeFileSync(join(raised.dir, 'data', 'SELF.src.md'), body)
@@ -236,7 +240,7 @@ test('SELF注入预算与维护budgetBytes同源，调大后长快照不再被�
 
 test('SELF完整求值在定义损坏后沿用最近有效预算并保留可用快照', async t => {
   t.mock.timers.enable({ apis: ['Date'], now: new Date('2026-10-31T00:00:00Z') })
-  const f = fixture(t, 'runtime-budget-last-good')
+  const f = await fixture(t, 'runtime-budget-last-good')
   const definition = join(f.dir, 'module.yml')
   const source = `id: ${f.id}\nmodules: []\nrules: []\nmoduleConfigs:\n  soul-maintenance:\n    budgetBytes: 16384\n`
   writeFileSync(definition, source)
@@ -291,7 +295,7 @@ test('SELF完整求值在定义损坏后沿用最近有效预算并保留可用�
   symlinkSync(f.dir, definition, 'junction')
   assert.throws(resolve, /定义不是普通文件/, '定义链接不能软化为读取失败')
 
-  const fresh = fixture(t, 'runtime-budget-first-bad')
+  const fresh = await fixture(t, 'runtime-budget-first-bad')
   writeFileSync(join(fresh.dir, 'module.yml'), 'id: [broken YAML\n')
   mkdirSync(join(fresh.dir, 'data', '.soul'), { recursive: true })
   const freshSnapshot = join(fresh.dir, 'data', '.soul', 'SELF.md')
@@ -307,7 +311,7 @@ test('SELF完整求值在定义损坏后沿用最近有效预算并保留可用�
 test('SELF预算以mtime和size提前刷新，同戳等长修改与失败尝试在1000ms到期且命中不续期', async t => {
   let now = 0
   t.mock.method(performance, 'now', () => now)
-  const f = fixture(t, 'runtime-budget-expiry')
+  const f = await fixture(t, 'runtime-budget-expiry')
   const definition = join(f.dir, 'module.yml'), fixedTime = new Date('2026-01-01T00:00:00Z')
   const source = `id: ${f.id}\nmodules: []\nrules: []\nmoduleConfigs:\n  soul-maintenance:\n    budgetBytes: 16384\n`
   const replaceBudget = (budget, suffix = '') => {
@@ -351,7 +355,7 @@ test('SELF预算以mtime和size提前刷新，同戳等长修改与失败尝试�
 })
 
 test('SELF实际resolver在等待后读取最新事实，撤权时不发布，且不扫描历史', async t => {
-  const f = fixture(t, 'runtime-realtime'), signal = new AbortController()
+  const f = await fixture(t, 'runtime-realtime'), signal = new AbortController()
   const [self] = createPromptConfigs([{ id: 'self', strategy: 'placeholder', fill: 'soul-self', layer: 'runtime-context' }], { sourceModuleId: f.id })
   const pending = self.resolve({ ctx: f.ctx, agent: f.agent, signal: signal.signal })
   writeFileSync(join(f.dir, 'data', 'SELF.src.md'), '# NEW CURRENT SELF')

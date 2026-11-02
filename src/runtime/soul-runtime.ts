@@ -29,11 +29,11 @@ import type { RetrievalEvent } from '../../engine/retrieval-reference.mjs'
 import { createSoulMaintenanceProvider } from './soul-maintenance.ts'
 import { SOUL_MAINTENANCE_SERVICE, SOUL_SELF_SERVICE, toolServiceName } from '../../engine/service-names.mjs'
 
-export function installSoulRuntime(ctx: Context, host: ModuleToolHost, moduleIds: (id: string) => readonly string[], sessions?: () => SessionVariableOwner | undefined): SoulStateObservation {
+export function installSoulRuntime(ctx: Context, host: ModuleToolHost, moduleIds: (id: string) => readonly string[], sessions: () => SessionVariableOwner | undefined): SoulStateObservation {
   let active = true
-  const sessionOwner = (): SessionVariableOwner | undefined => {
+  const sessionOwner = (): SessionVariableOwner => {
     const owner = sessions?.()
-    if (sessions !== undefined && owner === undefined) throw new Error('会话变量持久化依赖不可用，不能读取当前状态')
+    if (owner === undefined) throw new Error('会话变量持久化依赖不可用，不能读取当前状态')
     return owner
   }
   const rendered = new Map<string, { at: string; candidates: string[]; sessionId: string }>()
@@ -159,10 +159,10 @@ export function installSoulRuntime(ctx: Context, host: ModuleToolHost, moduleIds
           if (!sourceText.includes('{{')) return { text: sourceText, revision: '' }
           const snapshot = readModuleVariables(dir, { runtime: true })
           if (!snapshot.enabled) return { text: stripUnresolvedRefs(interpolateVariables(sourceText, {}, agent.session)).text, revision: snapshot.revisions.settings }
-          const session = sessionOwner()?.read(dir, agent.session.id)
-          const result = evaluateTemplate(sourceText, { module: snapshot.module, global: snapshot.global, sessionVariables: session?.variables,
+          const session = sessionOwner().read(dir, agent.session.id)
+          const result = evaluateTemplate(sourceText, { module: snapshot.module, global: snapshot.global, sessionVariables: session.variables,
             session: agent.session, readOnly: true, sourceId: `${id}:self`, readRuntime: key => readValue(id, key, agent, signal) })
-          return { text: result.text, revision: JSON.stringify([snapshot.revisions, session?.revision]) }
+          return { text: result.text, revision: JSON.stringify([snapshot.revisions, session.revision]) }
         })
         source(id, agent, signal)
         if (rendered.size > 1024) rendered.delete(rendered.keys().next().value!)

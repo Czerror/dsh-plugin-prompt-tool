@@ -33,8 +33,7 @@ export function readLegacySoulState(moduleDir: string, sessionId: string): SoulS
   return { mark: { text: value.mark.text, recordedAt: value.mark.recordedAt }, revision: revisionOf(source.content) }
 }
 
-export function readSoulState(moduleDir: string, sessionId: string, owner?: SessionVariableOwner): SoulState {
-  if (!owner) return readLegacySoulState(moduleDir, sessionId)
+export function readSoulState(moduleDir: string, sessionId: string, owner: SessionVariableOwner): SoulState {
   const state = owner.read(moduleDir, sessionId), text = state.variables['soul.mark']
   return { revision: state.revision, mark: text === undefined ? null : { text, recordedAt: state.updatedAt['soul.mark']! } }
 }

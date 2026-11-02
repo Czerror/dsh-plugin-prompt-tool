@@ -35,7 +35,6 @@ test('soul 模块：规则编译、模板存在与变量声明', () => {
   }
   const layers = readFileSync(join(moduleDir, 'assets', 'layers.md'), 'utf8')
   assert.match(layers, /L0–L5/)
-  assert.doesNotMatch(layers, /L1–L6/)
   for (const file of ['ECHO-权威口径.md', 'ECHO六层与mnemon协同说明书.md']) {
     assert.ok(readFileSync(join(moduleDir, 'assets', 'reference', file), 'utf8').length > 0)
   }

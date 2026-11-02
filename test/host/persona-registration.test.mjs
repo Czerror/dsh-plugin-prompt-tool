@@ -7,6 +7,10 @@ import { pathToFileURL } from 'node:url'
 import { stringify } from 'yaml'
 import { Context } from '@deepseek-ai/cordis'
 import AgentRegistry from '@deepseek-ai/dsh-agent'
+import Storage from '@deepseek-ai/dsh-storage'
+import { JsonStorageBackend } from '@deepseek-ai/dsh-storage-json'
+import { DomainFacility } from '@deepseek-ai/dsh-storage-domain'
+import { openSessionVariables } from '../../src/host/session-variables.ts'
 import SystemPrompt, { renderPrompt } from '@deepseek-ai/dsh-system-prompt'
 import { bindScopeParent, createScope, scopeOf, scopeTarget } from '@deepseek-ai/dsh-scope'
 import { isolatedHome } from '../fixtures/host-harness.mjs'
@@ -31,6 +35,10 @@ function writeModule(id, rules, variables) {
 }
 async function personaWorld(t, enabled) {
   const root = new Context(), handles = []
+  const storage = new Storage(root), backend = new JsonStorageBackend(join(moduleRoot, 'persona-storage'))
+  storage.backend.register('json', backend)
+  const facility = new DomainFacility(root, { backend: 'json' }), sessions = await openSessionVariables(facility)
+  t.after(async () => { await sessions.dispose(); await facility.closeAll(); await backend.close() })
   let driver, capture, standing
   await root.plugin(Loader)
   Object.assign(root.loader.builtins, {
@@ -64,7 +72,7 @@ async function personaWorld(t, enabled) {
   const runtime = createAgentAssembly(root, { moduleRoot, enabledModules: enabled, personaCapture: capture, warn: text => warnings.push(text) })
   const moduleIds = id => runtime.moduleIds(id)
   installSoulRuntime(root, { root: moduleRoot, target: (exec, id) => resolveModuleToolTarget(exec, moduleRoot, moduleIds, id),
-    rebuild: id => runtime.refresh(id) }, moduleIds)
+    rebuild: id => runtime.refresh(id) }, moduleIds, () => sessions)
   t.after(async () => { await runtime.dispose(); for (const handle of handles.reverse()) await handle.dispose(); await standing.dispose(); await root.fiber.dispose() })
   const assembly = agent => agent.ctx.systemPrompt.assemble({ scope: scopeOf(agent.ctx), agent })
   return { root, runtime, warnings, assembly, texts: async agent => (await assembly(agent)).sections.map(section => section.text),

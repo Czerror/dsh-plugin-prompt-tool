@@ -12,7 +12,7 @@ import { DomainFacility } from '@deepseek-ai/dsh-storage-domain'
 import { openSessionVariables } from '../../src/host/session-variables.ts'
 
 const { moduleRoot } = isolatedHome('pt-soul-state-')
-async function fixture(t, id) {
+async function fixture(t, id, withSessions = true) {
   const dir = join(moduleRoot, id)
   mkdirSync(dir, { recursive: true })
   writeFileSync(join(dir, 'module.yml'), `id: ${id}\nmodules: []\nrules: []\n`)
@@ -33,7 +33,7 @@ async function fixture(t, id) {
   storage.backend.register('json', backend)
   const facility = new DomainFacility(root, { backend: 'json' }), owner = await openSessionVariables(facility)
   let available = owner
-  let off = registerSoulStateTools(ctx, host, observe, () => available)
+  let off = registerSoulStateTools(ctx, host, observe, withSessions ? () => available : undefined)
   t.after(async () => { off(); await owner.dispose(); await facility.closeAll(); await backend.close(); await root.fiber.dispose() })
   const call = (args, sessionId = 'session-a', signal = new AbortController().signal) => tools.get('soul_state').execute({ moduleId: id, ...args }, { agent: { session: { id: sessionId } }, signal })
   return { dir, call, tools, owner, withdraw: () => { available = undefined }, pause: () => {
@@ -68,6 +68,8 @@ test('soul_state以真实会话隔离mark，状态只读且重挂后保留显式
 })
 
 test('soul_state拒绝伪造会话、旧版本和取消，重复同值不改版本或记录时间', async t => {
+  const missing = await fixture(t, 'state-missing-owner', false)
+  await assert.rejects(missing.call({ action: 'status' }), /会话变量.*不可用/)
   const f = await fixture(t, 'state-cas')
   const first = await f.call({ action: 'mark', text: '处理中', expectedRevision: null })
   const second = await f.call({ action: 'mark', text: '处理中', expectedRevision: first.revision })

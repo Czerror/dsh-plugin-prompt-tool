@@ -14,10 +14,10 @@ export interface SoulStateObservation {
   check: (exec: ToolExecution, moduleId: string, includeUpgrade?: boolean) => Observation | Promise<Observation>
 }
 
-export function registerSoulStateTools(ctx: Context, host: Pick<ModuleToolHost, 'target'>, observe?: SoulStateObservation, sessions?: () => SessionVariableOwner | undefined): () => void {
-  const sessionOwner = (): SessionVariableOwner | undefined => {
+export function registerSoulStateTools(ctx: Context, host: Pick<ModuleToolHost, 'target'>, observe: SoulStateObservation | undefined, sessions: () => SessionVariableOwner | undefined): () => void {
+  const sessionOwner = (): SessionVariableOwner => {
     const owner = sessions?.()
-    if (sessions !== undefined && owner === undefined) throw new Error('会话变量持久化依赖不可用，不能读取当前状态')
+    if (owner === undefined) throw new Error('会话变量持久化依赖不可用，不能读取当前状态')
     return owner
   }
   const fiber = ctx.inject(['tools'], toolsCtx => toolsCtx.tools.register(defineTool({
