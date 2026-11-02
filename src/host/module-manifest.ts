@@ -2,7 +2,7 @@
 import { mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { parseDocument } from 'yaml'
-import { ensureDataDirectory, moduleFilePath, resolveModuleFilePath } from './module-file-path.ts'
+import { ensureDataDirectory, moduleFilePath, resolveModuleFilePath, resolveModuleReadPath } from './module-file-path.ts'
 import { assertNoModuleLinks, modulePathExists } from './module-install.ts'
 
 const MANIFEST_PATH = 'assets/manifest.yml'
@@ -25,7 +25,7 @@ function stringList(value: unknown, label: string): string[] {
 }
 
 export function readModuleManifest(moduleDir: string): Manifest {
-  const file = resolveModuleFilePath(moduleDir, MANIFEST_PATH, ['assets'])
+  const file = resolveModuleReadPath(moduleDir, MANIFEST_PATH, ['assets'])
   if (!modulePathExists(file)) throw new Error('模块缺少 assets/manifest.yml')
   const doc = parseDocument(readFileSync(file, 'utf8'), { logLevel: 'silent' })
   if (doc.errors.length > 0) throw new Error('assets/manifest.yml 不是有效 YAML')
@@ -42,7 +42,7 @@ export function readModuleManifest(moduleDir: string): Manifest {
       if (!['from', 'to'].includes(key)) throw new Error(`assets/manifest.yml files[${index}] 未知字段：${key}`)
     }
     if (!nonempty(item.from) || !nonempty(item.to)) throw new Error(`assets/manifest.yml files[${index}] 需要 from 与 to`)
-    resolveModuleFilePath(moduleDir, item.from, ['assets'])
+    resolveModuleReadPath(moduleDir, item.from, ['assets'])
     moduleFilePath(moduleDir, item.to, ['data'])
     return { from: item.from, to: item.to }
   })
@@ -170,7 +170,7 @@ export function runModuleManifest(moduleDir: string, action: ManifestAction): Ma
       entries.push({ kind: 'file', path: entry.to, skipped: true })
       continue
     }
-    const source = resolveModuleFilePath(moduleDir, entry.from, ['assets'])
+    const source = resolveModuleReadPath(moduleDir, entry.from, ['assets'])
     const stat = statSync(source)
     if (!stat.isFile()) throw new Error(`清单来源不是普通文件：${entry.from}`)
     if (stat.size > DEFAULT_MAX_BYTES) throw new Error(`清单来源超过 1 MiB：${entry.from}`)

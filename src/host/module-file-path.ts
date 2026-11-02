@@ -1,9 +1,10 @@
 /** 模块私有文件的唯一路径语言：memory.md 根文件、assets/ 只读、data/ 只追加。 */
 import { mkdirSync } from 'node:fs'
-import { join } from 'node:path'
+import { basename, join } from 'node:path'
 import { assertSafeRelativePath } from '../shared/asset-path.ts'
 import { resolveRealWithin } from '../../engine/path-safety.mjs'
 import { assertNoModuleLinks, modulePathExists } from './module-install.ts'
+import { findModuleDir, packageModulesDir } from './module-dirs.ts'
 
 export type ModuleFileRoot = 'assets' | 'data'
 
@@ -44,6 +45,24 @@ export function resolveModuleFilePath(
   const { file } = moduleFilePath(moduleDir, path, roots, options)
   assertNoModuleLinks(file)
   return resolveRealWithin(file, [moduleDir], '模块文件路径')
+}
+
+/** 只读资产按同名模块回退；空文件、链接和读取失败都不是缺失。 */
+export function resolveModuleReadPath(
+  moduleDir: string, path: string, roots: readonly ModuleFileRoot[], options: ModuleFilePathOptions = {},
+): string {
+  const { file } = moduleFilePath(moduleDir, path, roots, options)
+  assertNoModuleLinks(file)
+  if (modulePathExists(file)) return resolveModuleFilePath(moduleDir, path, roots, options)
+  if (path === 'assets' || path.startsWith('assets/')) {
+    const builtin = findModuleDir(packageModulesDir(), basename(moduleDir))
+    if (builtin !== undefined) {
+      const fallback = moduleFilePath(builtin, path, roots, options).file
+      assertNoModuleLinks(fallback)
+      if (modulePathExists(fallback)) return resolveModuleFilePath(builtin, path, roots, options)
+    }
+  }
+  return file
 }
 
 /** 只创建一级 data/；中间目录不替调用方发明，缺失时由真实路径解析报错。 */

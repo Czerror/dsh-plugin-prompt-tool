@@ -113,7 +113,7 @@ export function listBuiltinTemplates(): Array<{ id: string; name: string }> {
     return []
   }
 }
-/** 按包内同名目录补建缺失的内置模块；已有目录的定义、生成物和资源保持原样。 */
+/** 按包内同名定义补建缺失的内置模块；资产留在包内，已有用户目录保持原样。 */
 export function ensureModuleSeed(root = userModulesDir(), warn?: (message: string) => void): { created: string[] } {
   const created: string[] = []
   try {
@@ -191,7 +191,8 @@ function copyModuleDirectory(source: string, root: string, targetId: string, war
   requireInstalled(result, `目标预设已存在：${targetId}`, warn)
 }
 
-/** 从包内同名目录复制模块；autoSuffix=true 时递增目录名并同步定义身份。
+/** 从包内同名目录创建模块；同 ID 只复制定义，改名时复制资产独立维护。
+ *  autoSuffix=true 时递增目录名并同步定义身份。
  *  `blank` 没有包内目录：它由 `BLANK_MODULE_TEMPLATE` 在引擎内组装（同一条目录名规则）。 */
 export function cloneBuiltinModule(id: string, autoSuffix = false, moduleRoot = userModulesDir(), warn?: (message: string) => void): { ok: true; id: string } | { ok: false; message: string } {
   try {

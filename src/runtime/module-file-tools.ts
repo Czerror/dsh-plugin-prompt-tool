@@ -17,7 +17,7 @@ export function registerModuleFileTools(ctx: Context, host: Pick<ModuleToolHost,
     const disposers = [
       toolsCtx.tools.register(defineTool({
         name: MODULE_TOOL_NAMES.fileRead,
-        description: '读取 moduleId 声明模块的私有文件：memory.md、assets/ 知识资产、data/ 账本。每次读取最新内容，缺失为空，超过 1 MiB 或非 UTF-8 明确报错。文件不会自动注入规则。',
+        description: '读取 moduleId 声明模块的私有文件：memory.md、assets/ 知识资产、data/ 账本。assets/ 优先用户文件，缺失才读同名内置模块。每次读取最新内容，缺失为空，超过 1 MiB 或非 UTF-8 明确报错。文件不会自动注入规则。',
         parameters: { moduleId: MODULE_ID_PARAM, path: PATH_PARAM },
         output: {
           schema: {

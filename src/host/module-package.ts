@@ -8,7 +8,7 @@ import { MAX_ASSET_BYTES, MAX_ASSET_FILES, packZip, unpackZip } from './asset-ar
 import { assertSafeRelativePath } from '../shared/asset-path.ts'
 import { decodeAssetFile, normalizeAssetFiles, prepareImport, assetSourceDigest } from './import-source.ts'
 import { directoryVersionOf, computePreviewRevision } from './preview-revision.ts'
-import { resolveModuleDir, packageEngineDir } from './module-dirs.ts'
+import { findModuleDir, packageModulesDir, resolveModuleDir, packageEngineDir } from './module-dirs.ts'
 import { invalidateModuleSpec, type ModuleSpec } from './module-spec.ts'
 import { MODULE_DEFINITION_FILE } from './paths.ts'
 import { validateCustomTools } from './custom-tools.ts'
@@ -144,9 +144,10 @@ type ReadyImport = Extract<ReturnType<typeof prepareImport>, { state: 'ready' }>
  * 预览与提交共用这一个函数——提交端因此可以只重读目标事实（目录版本）就重算出同一个 revision，
  * 不必为校验凭据再跑一次全量转换；将来加一项成分也只改这里。
  */
-function revisionOf(sourceDigest: string, request: AssetImportRequest, id: string, targetVersion: string | null, root: string): string {
+function revisionOf(sourceDigest: string, request: AssetImportRequest, id: string, targetVersion: string | null, root: string, builtinFiles: readonly PackageFile[]): string {
   return computePreviewRevision({
-    files: [{ path: 'source', content: sourceDigest }, { path: 'choices', content: JSON.stringify([id, request.targetName ?? '', request.overwrite === true, request.sourceKind ?? null]) }],
+    files: [{ path: 'source', content: sourceDigest }, { path: 'choices', content: JSON.stringify([id, request.targetName ?? '', request.overwrite === true, request.sourceKind ?? null]) },
+      { path: 'builtin-assets', content: JSON.stringify(builtinFiles.map(file => [file.path, sha(file.bytes)])) }],
     ...(request.promptOrderCharacterId === undefined ? {} : { orderCharacterId: request.promptOrderCharacterId }),
     converter: 'asset-import/1',
     target: { kind: 'module-package', targetId: id, targetVersion, ownerModule: root },
@@ -161,16 +162,21 @@ export function moduleImportPreview(root: string, files: AssetFile[], request: A
 } | Exclude<ReturnType<typeof prepareImport>, { state: 'ready' }> {
   const prepared = prepareImport(files, 'preset', { ...request, targetId: undefined, targetName: undefined })
   if (prepared.state !== 'ready') return prepared
-  validatePackageDefinition(join(root, prepared.spec.id), prepared.yaml, prepared.files.map(file => ({ path: file.path, bytes: decodeAssetFile(file) })))
+  const builtinFiles = builtinAssets(prepared.spec.id)
+  const provided = prepared.files.map(file => ({ path: file.path, bytes: decodeAssetFile(file) }))
+  validatePackageDefinition(join(root, prepared.spec.id), prepared.yaml, withBuiltinAssets(provided, builtinFiles))
   const id = targetId(root, request.targetId ?? prepared.spec.id, request)
+  // 改名后没有同名包内回退，把缺失的资产快照纳入安装候选。
+  const installedFiles = id !== prepared.spec.id ? withBuiltinAssets(provided, builtinFiles) : provided
+  prepared.files = installedFiles.map(file => ({ path: file.path, content: file.bytes.toString('base64'), encoding: 'base64' }))
   const target = assertModuleDirectory(root, id, true)
   const version = directoryVersionOf(target)
   const sourceDigest = assetSourceDigest(files)
-  const previewRevision = revisionOf(sourceDigest, request, id, version, root)
+  const previewRevision = revisionOf(sourceDigest, request, id, version, root, builtinFiles)
   return {
     prepared, sourceDigest, previewRevision,
     summary: { sourceName: prepared.sourceName, kind: prepared.kind, targetId: id, targetName: request.targetName ?? prepared.spec.name,
-      exists: version !== null, files: files.map((file) => ({ path: file.path, bytes: decodeAssetFile(file).length })),
+      exists: version !== null, files: installedFiles.map((file) => ({ path: file.path, bytes: file.bytes.length })),
       configCount: prepared.spec.rules?.length ?? 0, warnings: [] },
   }
 }
@@ -190,7 +196,7 @@ export async function installModulePackage(root: string, files: AssetFile[], req
     const id = targetId(root, request.targetId ?? preview.prepared.spec.id, request)
     const target = assertModuleDirectory(root, id, true)
     const version = directoryVersionOf(target)
-    if (!request.expectedPreviewRevision || request.expectedPreviewRevision !== revisionOf(preview.sourceDigest, request, id, version, root)
+    if (!request.expectedPreviewRevision || request.expectedPreviewRevision !== revisionOf(preview.sourceDigest, request, id, version, root, builtinAssets(preview.prepared.spec.id))
       || request.expectedSourceDigest !== preview.sourceDigest) stale()
     const exists = version !== null
     if (exists && request.overwrite !== true) throw new Error('目标已存在，请明确选择更新或另存')
@@ -239,12 +245,13 @@ export async function installModulePackage(root: string, files: AssetFile[], req
   })
 }
 
-function collectFiles(dir: string): PackageFile[] {
+function collectFiles(dir: string, assetsOnly = false): PackageFile[] {
   const files: PackageFile[] = []
   const seen = new Set<string>()
   let total = 0
   const walk = (current: string, prefix: string): void => {
     for (const entry of readdirSync(current, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
+      if (assetsOnly && prefix === '' && entry.name !== 'assets') continue
       if (!shareableFile(prefix + entry.name)) continue
       const path = assertSafeRelativePath(prefix + entry.name)
       const key = path.normalize('NFC').toLowerCase()
@@ -264,6 +271,20 @@ function collectFiles(dir: string): PackageFile[] {
   }
   walk(dir, '')
   return files
+}
+
+function builtinAssets(id: string): PackageFile[] {
+  const builtin = findModuleDir(packageModulesDir(), id)
+  return builtin === undefined ? [] : collectFiles(builtin, true)
+}
+
+/** 上传或用户文件优先；包内资产只补缺失，不读取真实导入目标。 */
+function withBuiltinAssets(files: readonly PackageFile[], builtin: readonly PackageFile[]): PackageFile[] {
+  const entries = new Map(builtin.map(file => [file.path, file]))
+  for (const file of files) entries.set(file.path, file)
+  const merged = [...entries.values()]
+  normalizeAssetFiles(merged.map(file => ({ path: file.path, content: file.bytes.toString('base64'), encoding: 'base64' })))
+  return merged
 }
 
 function dependencyErrors(files: PackageFile[], spec: ModuleSpec): string[] {
@@ -311,21 +332,23 @@ function dependencyErrors(files: PackageFile[], spec: ModuleSpec): string[] {
 }
 
 function sharingSnapshot(dir: string, id: string, root: string, choices: Record<string, 'include' | 'exclude'>) {
+  const builtinFiles = builtinAssets(id)
   const files = collectFiles(dir)
   const definition = files.find(file => file.path === MODULE_DEFINITION_FILE)
   if (!definition) throw new Error('缺少模块定义')
   const originalText = new TextDecoder('utf-8', { fatal: true }).decode(definition.bytes)
   const missing = new Set<string>()
-  const original = validatePackageDefinition(dir, originalText, files, missing).doc
+  const original = validatePackageDefinition(dir, originalText, withBuiltinAssets(files, builtinFiles), missing).doc
   if (original.get('id') === undefined) original.set('id', id)
   // 原始完整源先校验；分享投影不能把无效规则隐藏掉后伪装成有效源。
   const source = files.map(file => [file.path, sha(file.bytes)])
   const projection = projectCharacterMemories(original, choices, root)
   definition.bytes = Buffer.from(projection.doc.toString())
-  const spec = validatePackageDefinition(dir, definition.bytes.toString('utf8'), files, missing).source as unknown as ModuleSpec
+  const effectiveFiles = withBuiltinAssets(files, builtinFiles)
+  const spec = validatePackageDefinition(dir, definition.bytes.toString('utf8'), effectiveFiles, missing).source as unknown as ModuleSpec
   // 分享过滤会读取历史来源证明；投影结果也进版本，证明变化影响输出时必须重新确认。
-  const revision = sha(JSON.stringify([source, definition.bytes.toString('utf8'), projection.memoryConflicts, projection.excludedMemoryCount]))
-  return { files, definition, spec, projection, missing: [...missing], revision }
+  const revision = sha(JSON.stringify([source, effectiveFiles.map(file => [file.path, sha(file.bytes)]), definition.bytes.toString('utf8'), projection.memoryConflicts, projection.excludedMemoryCount]))
+  return { files, effectiveFiles, definition, spec, projection, missing: [...missing], revision }
 }
 
 export async function exportModulePackage(root: string, request: ModuleExportRequest): Promise<ModuleExportResult> {
@@ -335,8 +358,8 @@ export async function exportModulePackage(root: string, request: ModuleExportReq
   if (!modulePathExists(dir)) throw new Error('模块不存在')
   // 包只携带完整定义和用户资产，切片由安装方确定性重建。预览不修复源目录。
   const choices = request.memoryChoices ?? {}
-  const { files, definition, spec, projection, missing, revision: before } = sharingSnapshot(dir, request.id, root, choices)
-  const blockers = [...new Set([...missing, ...dependencyErrors(files, spec)])]
+  const { files, effectiveFiles, definition, spec, projection, missing, revision: before } = sharingSnapshot(dir, request.id, root, choices)
+  const blockers = [...new Set([...missing, ...dependencyErrors(effectiveFiles, spec)])]
   if (projection.memoryConflicts.length > 0) blockers.push('请明确选择来源不明的记忆条目是否分享')
   const mode = request.mode ?? 'definition'
   const revision = sha(JSON.stringify([before, mode, request.memoryChoices ?? {}]))

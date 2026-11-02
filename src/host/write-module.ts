@@ -8,7 +8,7 @@ import { enabledModuleIds } from './config-store.ts'
 import { assertModuleDirectory, assertModuleId, assertModuleTree } from './module-install.ts'
 import { validateCustomTools } from './custom-tools.ts'
 import { assertCompositionArray } from './module-composition.ts'
-import { resolveModuleDir } from './module-dirs.ts'
+import { findModuleDir, packageModulesDir, resolveModuleDir } from './module-dirs.ts'
 import { renderComposition } from './module-params.ts'
 import type { ModuleSpec } from './module-spec.ts'
 import { ensureModuleSlices, loadModuleDefinition, validateModuleDefinitionText } from './module-slices.ts'
@@ -65,11 +65,24 @@ export function buildModuleCandidate(
   agentsText?: string,
   options: { validate?: boolean } = {},
 ): void {
+  const builtin = findModuleDir(packageModulesDir(), basename(source))
+  const definitionOnly = builtin !== undefined && resolve(source) === resolve(builtin) && targetId === basename(source)
+  if (targetId !== basename(source)) copyBuiltinModuleAssets(candidate, basename(source))
   for (const entry of readdirSync(source, { withFileTypes: true })) {
+    if (definitionOnly && entry.name !== MODULE_DEFINITION_FILE) continue
     if (LEGACY_ARTIFACTS.includes(entry.name) || entry.name === 'rules') continue
     cpSync(join(source, entry.name), join(candidate, entry.name), { recursive: entry.isDirectory(), force: true })
   }
   finalizeModuleCandidate(candidate, targetId, agentsText, options)
+}
+
+/** 改名后不再共享原 ID 的内置资产；先补包内快照，再由用户文件覆盖。 */
+function copyBuiltinModuleAssets(candidate: string, sourceId: string): void {
+  const builtin = findModuleDir(packageModulesDir(), sourceId)
+  if (builtin === undefined || !existsSync(join(builtin, 'assets'))) return
+  const assets = join(builtin, 'assets')
+  assertModuleTree(assets)
+  cpSync(assets, join(candidate, 'assets'), { recursive: true })
 }
 
 /**

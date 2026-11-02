@@ -23,6 +23,17 @@ function fixture(id) {
   return dir
 }
 
+test('内置清单事实从包内读取，用户清单出现后立即切换', () => {
+  const dir = join(moduleRoot, 'soul')
+  mkdirSync(dir, { recursive: true })
+  writeFileSync(join(dir, 'module.yml'), 'id: soul\nmodules: []\nrules: []\n')
+  const reader = createManifestCheckReader(moduleRoot)
+  assert.equal(reader.read('soul'), false, '包内清单存在且私有数据未初始化')
+  mkdirSync(join(dir, 'assets'))
+  writeFileSync(join(dir, 'assets', 'manifest.yml'), 'checks: []\n')
+  assert.equal(reader.read('soul'), true, '覆盖清单出现立即切换来源')
+})
+
 test('清单规则事实缓存 1000ms，命中不续期，显式检查始终实时', (t) => {
   const dir = fixture('facts')
   const file = join(dir, 'data', 'x.jsonl')

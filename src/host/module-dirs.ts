@@ -20,7 +20,7 @@ export function moduleDirExists(root: string, id: string): boolean {
 }
 
 /**
- * 包根 `modules/` 目录：随包分发的**内置模块库**（模块目录形态与存储根同构）。
+ * 包根 `modules/` 目录：随包分发的定义与只读资产；用户目录只补建定义。
  *
  * 兼容源码运行（`src/host/`）与打包运行（`lib/`）。旧的内置预设目录 `preset/` 已整体
  * 退场——那些是官方预设形态的遗留，重构后不再读取也不再维护。

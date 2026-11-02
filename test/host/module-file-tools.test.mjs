@@ -5,6 +5,9 @@ import { join } from 'node:path'
 import { tempDir } from '../fixtures/host-harness.mjs'
 import { registerModuleFileTools } from '../../src/runtime/module-file-tools.ts'
 import { resolveModuleToolTarget } from '../../src/host/module-tool-target.ts'
+import { packageModulesDir } from '../../src/host/module-dirs.ts'
+import { compileRules } from '../../engine/rule-spec.mjs'
+import { rulePromptConfigOptions } from '../../src/host/module-slices.ts'
 
 function fixture(t) {
   const root = tempDir('pt-module-file-')
@@ -105,4 +108,49 @@ test('模块文件工具：大小、编码与目录边界', async t => {
   assert.ok(big.bytes > 1024 * 1024, 'data 读上限与 8 MiB 写上限对齐')
   writeFileSync(join(f.dir, 'data', 'full.jsonl'), Buffer.alloc(8 * 1024 * 1024, 0x0a))
   await assert.rejects(append.execute({ moduleId: 'alice', path: 'data/full.jsonl', content: 'x' }, {}), /8 MiB/)
+})
+
+test('模块文件工具：同名内置资产回退，用户覆盖与空文件优先', async t => {
+  const f = fixture(t)
+  const dir = join(f.root, 'modules', 'soul')
+  mkdirSync(dir)
+  writeFileSync(join(dir, 'module.yml'), 'id: soul\nname: Soul\nmodules: []\n')
+  const read = f.tools.get('module_file_read')
+  const path = 'assets/criteria.md'
+  const content = readFileSync(join(packageModulesDir(), 'soul', path), 'utf8')
+  assert.deepEqual(await read.execute({ moduleId: 'soul', path }, {}), { path, content, bytes: Buffer.byteLength(content) })
+  mkdirSync(join(dir, 'assets'))
+  writeFileSync(join(dir, path), 'USER')
+  assert.equal((await read.execute({ moduleId: 'soul', path }, {})).content, 'USER')
+  writeFileSync(join(dir, path), '')
+  assert.equal((await read.execute({ moduleId: 'soul', path }, {})).content, '')
+  writeFileSync(join(dir, path), Buffer.from([0xff]))
+  await assert.rejects(read.execute({ moduleId: 'soul', path }, {}), /UTF-8|utf-8|encoded/i)
+  assert.deepEqual(await read.execute({ moduleId: 'soul', path: 'assets/absent/deep.md' }, {}), { path: 'assets/absent/deep.md', content: '', bytes: 0 })
+  const outside = join(f.root, 'reference-outside')
+  mkdirSync(outside)
+  symlinkSync(outside, join(dir, 'assets', 'reference'), 'junction')
+  await assert.rejects(read.execute({ moduleId: 'soul', path: 'assets/reference/README.md' }, {}), /链接|link/, '链接下文件缺失也不能绕到包内')
+  await assert.rejects(f.tools.get('module_file_append').execute({ moduleId: 'soul', path, content: 'BAD' }, {}), /只能追加到/)
+  await assert.rejects(read.execute({ moduleId: 'soul-copy', path }, {}), /不存在/)
+})
+
+test('模块模板：注入编译读取内置资产并遵守用户覆盖与链接拒绝', t => {
+  const f = fixture(t)
+  const dir = join(f.root, 'modules', 'soul')
+  mkdirSync(dir)
+  writeFileSync(join(dir, 'module.yml'), 'id: soul\nname: Soul\nmodules: []\n')
+  const rules = [{ id: 'knowledge', then: [{ id: 'inject', kind: 'inject-text', config: { templateFile: './assets/criteria.md' } }] }]
+  const texts = () => compileRules(rules, { moduleId: 'soul', promptConfigOptions: rulePromptConfigOptions(dir) })[0].actions[0].compiledConfig.texts
+  assert.match(texts()[0], /^# 灵魂判据/)
+  mkdirSync(join(dir, 'assets'))
+  writeFileSync(join(dir, 'assets', 'criteria.md'), 'USER TEMPLATE')
+  assert.deepEqual(texts(), ['USER TEMPLATE'])
+  writeFileSync(join(dir, 'assets', 'criteria.md'), '')
+  assert.deepEqual(texts(), [])
+  const outside = join(f.root, 'template-outside')
+  mkdirSync(outside)
+  symlinkSync(outside, join(dir, 'assets', 'reference'), 'junction')
+  rules[0].then[0].config.templateFile = './assets/reference/README.md'
+  assert.throws(texts, /链接|link/)
 })

@@ -17,6 +17,8 @@ const PRESETS_DIR = join(storageRootOf(home), 'modules')
 test('ensureModuleSeed：首次复制内置模板，二次幂等，删除后自动补建', () => {
   const first = ensureModuleSeed()
   assert.ok(first.created.length > 0, '首次应复制内置模板')
+  assert.equal(existsSync(join(PRESETS_DIR, 'soul', 'assets')), false, '内置资产不随定义物化')
+  assert.ok(existsSync(join(PRESETS_DIR, 'soul', 'rules')), '规则切片照常生成')
   // 二次调用幂等：全部存在时不重复复制。
   assert.deepEqual(ensureModuleSeed().created, [])
   // 删除某个内置预设后，种子化自动补建（无「永不恢复」闸门）。
@@ -83,6 +85,26 @@ test('新建空白模块：引擎内组装出 module.yml，目录名=id，冲突
   assert.equal(again.id, 'blank-2')
   assert.equal(parseYaml(readFileSync(join(root, 'blank-2', 'module.yml'), 'utf8')).id, 'blank-2')
   assert.equal(parseYaml(readFileSync(join(root, 'blank-2', 'module.yml'), 'utf8')).name, '默认模块')
+})
+
+test('内置同名只建定义，改名复制合并有效资产，自建模块独立复制', () => {
+  const root = tempDir('pt-builtin-assets-')
+  assert.deepEqual(cloneBuiltinModule('soul', false, root), { ok: true, id: 'soul' })
+  assert.equal(existsSync(join(root, 'soul', 'assets')), false)
+  mkdirSync(join(root, 'soul', 'assets'))
+  writeFileSync(join(root, 'soul', 'assets', 'criteria.md'), 'USER CRITERIA')
+  assert.deepEqual(duplicateUserModule('soul', root), { ok: true, id: 'soul-copy' })
+  assert.equal(readFileSync(join(root, 'soul-copy', 'assets', 'criteria.md'), 'utf8'), 'USER CRITERIA')
+  assert.ok(existsSync(join(root, 'soul-copy', 'assets', 'reference', 'README.md')), '复制补齐包内资产')
+  assert.deepEqual(cloneBuiltinModule('soul', true, root), { ok: true, id: 'soul-2' })
+  assert.ok(existsSync(join(root, 'soul-2', 'assets', 'manifest.yml')))
+  assert.deepEqual(duplicateUserModule('soul-copy', root), { ok: true, id: 'soul-copy-copy' })
+  assert.equal(readFileSync(join(root, 'soul-copy-copy', 'assets', 'criteria.md'), 'utf8'), 'USER CRITERIA')
+  assert.deepEqual(cloneBuiltinModule('blank', false, root), { ok: true, id: 'blank' })
+  mkdirSync(join(root, 'blank', 'assets'))
+  writeFileSync(join(root, 'blank', 'assets', 'custom.md'), 'CUSTOM')
+  assert.deepEqual(duplicateUserModule('blank', root), { ok: true, id: 'blank-copy' })
+  assert.equal(readFileSync(join(root, 'blank-copy', 'assets', 'custom.md'), 'utf8'), 'CUSTOM')
 })
 
 test('新建空白模块：安装成功但清理失败时向调用方告警', (t) => {

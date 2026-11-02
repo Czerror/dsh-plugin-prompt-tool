@@ -4,8 +4,8 @@
  * 写事务原语（锁、版本摘要、共享引用守卫、错误协议）来自 `module-write.ts`。
  */
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync } from 'node:fs'
-import { basename, dirname, isAbsolute, join } from 'node:path'
-import { pathToFileURL } from 'node:url'
+import { basename, dirname, isAbsolute, join, relative, sep } from 'node:path'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import { Document, parseDocument } from 'yaml'
 import type { RuleContent, RuleDefinition, RuleRevisions, RuleSettings } from '../shared/rules.ts'
 import { nextConfigSequence } from '../shared/module-config-order.ts'
@@ -24,6 +24,9 @@ import { readModuleLayerSettings } from './module-layer-settings.ts'
 import { assertRuleId, compileRules } from '../../engine/rule-spec.mjs'
 // 保留名由插值器的内建与动态宏目录共同定义。
 import { isReservedInterpolationName } from '../../engine/interpolate.mjs'
+import { loadTemplate } from '../../engine/schema.mjs'
+import { resolveModuleReadPath } from './module-file-path.ts'
+import { assertNoModuleLinks } from './module-install.ts'
 
 function stable(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(stable)
@@ -76,7 +79,18 @@ export function rulePromptConfigOptions(directory: string, strategy?: unknown) {
   const templateBaseUrl = pathToFileURL(join(directory, MODULE_DEFINITION_FILE))
   const strategyDir = typeof strategy !== 'string' || strategy.length === 0 ? undefined
     : isAbsolute(strategy) ? pathToFileURL(strategy).href : new URL(strategy, templateBaseUrl).href
-  return { templateBaseUrl, templateModuleRoot: pathToFileURL(directory.replace(/[\\/]?$/, '/')), strategyDir }
+  const templateModuleRoot = pathToFileURL(directory.replace(/[\\/]?$/, '/'))
+  return { templateBaseUrl, templateModuleRoot, strategyDir, loadTemplate: (file: unknown): unknown => {
+    if (typeof file !== 'string' || file.length === 0) return undefined
+    const target = fileURLToPath(new URL(file, templateBaseUrl))
+    const path = relative(directory, target).split(sep).join('/')
+    if (path.startsWith('assets/')) {
+      const resolved = resolveModuleReadPath(directory, path, ['assets'])
+      return loadTemplate(pathToFileURL(resolved).href, templateBaseUrl, pathToFileURL(dirname(resolved) + '/'))
+    }
+    assertNoModuleLinks(target)
+    return loadTemplate(file, templateBaseUrl, templateModuleRoot)
+  } }
 }
 
 export interface ModuleDefinitionSnapshot {
@@ -101,7 +115,7 @@ interface Projection {
   files: Record<string, string>
 }
 export interface ModuleDefinitionValidationOptions {
-  /** 交换预览只从已提供的文件集合读取模板，禁止回退访问真实目标目录。 */
+  /** 交换预览只从上传文件与可信包内资产读取模板，禁止访问真实用户目标目录。 */
   loadTemplate?: (file: unknown) => unknown
 }
 

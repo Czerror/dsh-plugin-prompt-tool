@@ -1,9 +1,11 @@
 /** 检索只读权威来源；引用携定位和版本，不携访问权限。 */
 import { createHash } from 'node:crypto'
 import { lstatSync, readdirSync } from 'node:fs'
+import { basename } from 'node:path'
 import { readModuleFile } from './module-files.ts'
-import { resolveModuleFilePath } from './module-file-path.ts'
+import { resolveModuleReadPath } from './module-file-path.ts'
 import { modulePathExists } from './module-install.ts'
+import { findModuleDir, packageModulesDir } from './module-dirs.ts'
 import { MAX_ASSET_BYTES, MAX_ASSET_FILES } from '../shared/asset-transfer.ts'
 import { makeSessionReference, sessionReferenceText, MAX_REFERENCE_CHARS } from '../../engine/retrieval-reference.mjs'
 import type { RetrievalEvent, SessionReference } from '../../engine/retrieval-reference.mjs'
@@ -32,7 +34,7 @@ function matchKind(text: string, query: string): 'exact' | 'normalized' | undefi
 }
 function synonymTerms(scope: RetrievalScope, query: string): { terms: string[]; content?: string } {
   if (!scope.synonymsFile) return { terms: [] }
-  resolveModuleFilePath(scope.dir, scope.synonymsFile, ['assets', 'data'])
+  resolveModuleReadPath(scope.dir, scope.synonymsFile, ['assets', 'data'])
   const content = readModuleFile(scope.dir, scope.synonymsFile).content
   if (Buffer.byteLength(content) > 65536) throw new Error('检索近义表超过64 KiB')
   let groups: unknown
@@ -50,19 +52,28 @@ function timeOf(value: unknown): number | undefined {
 
 function fileContent(scope: RetrievalScope, path: string): string {
   if (!scope.paths.some(allowed => allowed === path || (allowed.endsWith('/') && path.startsWith(allowed)))) throw new Error('检索来源未授权')
-  resolveModuleFilePath(scope.dir, path, ['assets', 'data'], { allowRootMemory: true })
+  resolveModuleReadPath(scope.dir, path, ['assets', 'data'], { allowRootMemory: true })
   return readModuleFile(scope.dir, path).content
 }
 
 function filePaths(scope: RetrievalScope): string[] {
   const paths = new Set<string>()
+  const builtin = scope.paths.some(path => path === 'assets' || path.startsWith('assets/'))
+    ? findModuleDir(packageModulesDir(), basename(scope.dir)) : undefined
   let total = 0
   const walk = (path: string): void => {
-    const resolved = resolveModuleFilePath(scope.dir, path, ['assets', 'data'], { allowRootMemory: true })
+    const resolved = resolveModuleReadPath(scope.dir, path, ['assets', 'data'], { allowRootMemory: true })
     if (!modulePathExists(resolved)) return
     const stat = lstatSync(resolved)
     if (stat.isDirectory()) {
-      for (const entry of readdirSync(resolved).sort()) walk(path + '/' + entry)
+      const entries = new Set(readdirSync(resolved))
+      if (builtin !== undefined && (path === 'assets' || path.startsWith('assets/'))) {
+        const fallback = resolveModuleReadPath(builtin, path, ['assets'])
+        if (modulePathExists(fallback) && lstatSync(fallback).isDirectory()) {
+          for (const entry of readdirSync(fallback)) entries.add(entry)
+        }
+      }
+      for (const entry of [...entries].sort()) walk(path + '/' + entry)
     } else {
       if (!stat.isFile()) throw new Error('检索来源不是普通文件')
       if (!paths.has(path)) total += stat.size
@@ -72,7 +83,7 @@ function filePaths(scope: RetrievalScope): string[] {
   }
   for (const path of scope.paths) {
     const selected = path.endsWith('/') ? path.slice(0, -1) : path
-    const resolved = resolveModuleFilePath(scope.dir, selected, ['assets', 'data'], { allowRootMemory: true })
+    const resolved = resolveModuleReadPath(scope.dir, selected, ['assets', 'data'], { allowRootMemory: true })
     if (!modulePathExists(resolved)) continue
     if (lstatSync(resolved).isDirectory() && !path.endsWith('/')) throw new Error('检索目录白名单必须以 / 结尾')
     walk(selected)

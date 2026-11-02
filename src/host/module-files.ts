@@ -1,6 +1,6 @@
 /** 模块私有文件的唯一 owner：memory.md、assets/ 只读、data/ 只追加。 */
 import { appendFileSync, readFileSync, statSync } from 'node:fs'
-import { ensureDataDirectory, moduleFilePath, resolveModuleFilePath } from './module-file-path.ts'
+import { ensureDataDirectory, resolveModuleFilePath, resolveModuleReadPath } from './module-file-path.ts'
 
 /** 单次读写上限；与变量文件的 8 MiB 账本上限分开。 */
 export const MAX_FILE_BYTES = 1024 * 1024
@@ -14,11 +14,9 @@ export interface ModuleFileContent {
 }
 
 export function readModuleFile(moduleDir: string, path: string): ModuleFileContent {
-  const { file } = moduleFilePath(moduleDir, path, ['assets', 'data'], { allowRootMemory: true })
-  // 缺失（含上级目录尚未装配）按空处理；存在时才做链接与真实路径校验。
-  if (statSync(file, { throwIfNoEntry: false }) === undefined) return { path, content: '', bytes: 0 }
-  const resolved = resolveModuleFilePath(moduleDir, path, ['assets', 'data'], { allowRootMemory: true })
-  const stat = statSync(resolved)
+  const resolved = resolveModuleReadPath(moduleDir, path, ['assets', 'data'], { allowRootMemory: true })
+  const stat = statSync(resolved, { throwIfNoEntry: false })
+  if (stat === undefined) return { path, content: '', bytes: 0 }
   if (!stat.isFile()) throw new Error(`模块文件不是普通文件：${path}`)
   // data/ 的写上限是 8 MiB，读上限必须对齐，否则账本长大后读不出来。
   const limit = path.startsWith('data/') ? MAX_DATA_FILE_BYTES : MAX_FILE_BYTES

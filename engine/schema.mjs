@@ -26,7 +26,7 @@ function readTextFile(url) {
   return readFileSync(url, 'utf8')
 }
 
-function loadTemplate(file, baseUrl = import.meta.url, presetRootUrl) {
+export function loadTemplate(file, baseUrl = import.meta.url, presetRootUrl) {
   if (typeof file !== 'string' || file.length === 0) return undefined
   // 预设根基准：显式注入优先（引擎由插件包提供、不再位于 <预设根>/.engine/ 时必需），
   // 缺省沿用「引擎文件的上一级目录」这一历史布局推导；加载与边界检查复用同一基准。

@@ -49,6 +49,22 @@ test('声明近义表只扩展一次且精确优先，原文回取不变', async
   assert.equal(configContract.parse({}, 'retrieval').synonymsFile, undefined)
 })
 
+test('内置资产目录逐文件回退，用户新增与空文件覆盖都保留', async () => {
+  const dir = join(moduleRoot, 'soul')
+  mkdirSync(join(dir, 'assets'), { recursive: true })
+  writeFileSync(join(dir, 'assets', 'local.md'), 'LOCAL OVERRIDE FACT')
+  const retrieval = createModuleRetrieval(() => ({ moduleId: 'soul', dir, paths: ['assets/'] }))
+  const local = await retrieval.search({ query: 'LOCAL OVERRIDE FACT' })
+  assert.deepEqual(local.hits.map(hit => hit.content), ['LOCAL OVERRIDE FACT'])
+  const builtin = await retrieval.search({ query: 'L0–L5' })
+  const layers = builtin.hits.find(hit => hit.reference.path === 'assets/layers.md')
+  assert.ok(layers, '用户 assets/ 已存在仍发现包内缺失文件')
+  assert.equal((await retrieval.open(layers.reference)).content, layers.content)
+  writeFileSync(join(dir, 'assets', 'layers.md'), '')
+  await assert.rejects(retrieval.open(layers.reference), /失效/)
+  assert.equal((await retrieval.search({ query: 'L0–L5' })).hits.some(hit => hit.reference.path === 'assets/layers.md'), false, '用户空文件不回退')
+})
+
 test('时间线按可信时刻稳定合并，未知时间明确标记且版本变化拒绝旧游标', async () => {
   const dir = join(moduleRoot, 'timeline')
   mkdirSync(join(dir, 'data'), { recursive: true })

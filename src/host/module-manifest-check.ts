@@ -1,9 +1,9 @@
 /** 清单 checks 的运行期事实：只读，缓存 1000ms，manifest 戳变化提前失效。 */
 import { statSync } from 'node:fs'
-import { join } from 'node:path'
 import type { RuleManifestCheck } from '../../engine/rule-runtime.mjs'
 import { assertModuleDirectory } from './module-install.ts'
 import { runModuleManifest } from './module-manifest.ts'
+import { resolveModuleReadPath } from './module-file-path.ts'
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
@@ -38,7 +38,11 @@ export function createManifestCheckReader(moduleRoot: string): RuleManifestCheck
     const dir = dirOf(moduleId)
     if (dir === undefined) return undefined
     let stamp: string | undefined
-    try { stamp = stampOf(join(dir, 'assets', 'manifest.yml')) } catch { results.delete(dir); return undefined }
+    try {
+      const file = resolveModuleReadPath(dir, 'assets/manifest.yml', ['assets'])
+      const version = stampOf(file)
+      stamp = version === undefined ? undefined : `${file}:${version}`
+    } catch { results.delete(dir); return undefined }
     if (stamp === undefined) { results.delete(dir); return undefined }
     const hit = results.get(dir)
     if (hit !== undefined && hit.stamp === stamp && performance.now() - hit.checkedAt < 1000) return hit.ok

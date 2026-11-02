@@ -127,6 +127,8 @@ rules:
 
 完整规则工具先读原始树与版本，再提交合法完整候选；删除整规则需显式 rule:null。变量工具提供 global/module/session 的 list/get/set/delete，set 必须显式字符串；session 只能访问真实当前会话，写入携带 revisions.session。模块私有文件（memory.md、assets/ 只读、data/ 只追加）由 module_file_read/append 读写，不自动注入；module_manifest 按 assets/manifest.yml 做 next/check/apply，只写 data/、不覆盖。
 
+内置模块首次补建或同 ID 新建只复制 `module.yml`，`rules/` 照常派生；`assets/` 留在插件包内。资产逐文件按完整 `moduleId` 查找：用户目录优先，缺失才读包内同名模块；空文件是有效覆盖，读取错误或链接不回退。注入模板、工具读取、初始化清单/模板与检索共用此规则，`memory.md`、`data/` 不回退。改名复制/另存会补齐包内资产并保留用户覆盖，成为独立用户模块；不从 `-copy` 名称推断来源。已有资产不自动清理，移除本地覆盖后才使用包内版本。
+
 工具目录仅注册已声明能力，晚到 provider 与 disposer 按原生命周期处理。模块工具的主语由**这次调用显式声明的 `moduleId`** 决定：不传即没有目标、直接拒绝，不回退装配记录首项或包内默认模块；执行 Agent 已启用的规则模块只作拒绝文案里的候选提示，不是目标。`expectedModuleId` 是桥端对请求头声明的一致性复核，与工具侧的主语选择是两套独立判据。工具只能读写模块存储根下 `module.yml` 所在的既有模块；模块内文件限定 memory.md、assets/（只读）、data/（只追加），不访问任意路径。自定义工具继续支持 shell/http/delegate/fs/ask-user，并保留官方批准、拒绝与取消管线。
 
 ## SillyTavern 与资产交换
@@ -144,6 +146,8 @@ outlet/vectorized/triggers 不能等价执行，相关规则禁用并报告；�
 Soul 模块包含结构化账本、授权文件／历史检索、每步动态 SELF、上下文压缩与裁剪溯源、生成恢复和维护心跳。SELF 由 `rule-engine` 的内置动态内容源提供（`strategy: placeholder`、`fill: soul-self`），无需模块附带策略 JS。先用上述初始化预览补齐 `SELF.src.md` 骨架；已有模块副本须显式更新，包升级不会覆盖用户定义或私有数据，旧副本仍可使用自身保留的自定义策略。
 
 `soul_ledger` 自动署名真实会话；`lead` 需宿主审批，`promise` 仅当前主导会话追加/收口，`shelved` 可由原作者或当前主导收口。`close` 通过稳定 `targetId` 追加完成/取消及依据，保留历史原行；`list` 的 `pending/open/pending-review` 视图提供版本分页。升级前历史事项标为待核对，不猜测已完成。
+
+常驻 Soul 工具速查要求在完成重要任务、重要定案、踩坑和退场时主动判断是否记账，周期自检每 12 轮核对遗漏；不等用户专门提醒。只记有依据的一句话索引，排除过程流水、可重建事实与无出处断言，遵守唯一记录归属和现有写入权限。这是模型指令，不是后台自动写账本。
 
 SELF 每步读取当前骨架、账本投影和身份/时钟，维护关闭或诊断快照陈旧也能呈现；索引只报告最近成功观测，不逐步扫描历史。`soul_state status/mark/check` 提供当前会话状态、带版本的短标记及只读运行诊断。未结提醒默认仅主会话，在集合变化或成功压缩后实际投递一次；候选装配不消费提醒。Soul 显式开启 45/60/80% 水位提示，只提示，不自动压缩。
 

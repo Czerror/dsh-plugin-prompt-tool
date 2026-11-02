@@ -10,6 +10,7 @@ import { installModuleDirectory } from './module-install-transaction.ts'
 import { directoryVersionOf } from './preview-revision.ts'
 import { MAX_DATA_FILE_BYTES } from './module-files.ts'
 import { readModuleManifest } from './module-manifest.ts'
+import { resolveModuleReadPath } from './module-file-path.ts'
 
 export interface ModuleDataImportRequest {
   moduleId: string
@@ -59,7 +60,8 @@ function prepare(moduleDir: string, input: ModuleDataImportRequest) {
     const key = targetPath.normalize('NFC').toLowerCase()
     if (seen.has(key)) throw new Error('重复或冲突的目标路径：' + targetPath)
     seen.add(key)
-    const source = join(sourceDirectory, path)
+    const source = input.initialize && kind === 'file'
+      ? resolveModuleReadPath(dir, path, ['assets']) : join(sourceDirectory, path)
     let bytes = Buffer.alloc(0)
     if (kind === 'file') {
       assertNoModuleLinks(source)

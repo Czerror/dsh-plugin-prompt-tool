@@ -11,6 +11,7 @@ const { moduleRoot } = isolatedHome('pt-package-roundtrip-')
 const { moduleImportPreview, installModulePackage, exportModulePackage, expandModuleSource } = await import('../../src/host/module-package.ts')
 const { ensureModuleSlices, readRulesDir } = await import('../../src/host/module-slices.ts')
 const { decodeAssetFile } = await import('../../src/host/import-source.ts')
+const { packageModulesDir } = await import('../../src/host/module-dirs.ts')
 const rule = (id, text, extra = {}) => ({ id, enabled: false, then: [{ id: 'inject', kind: 'inject-text', config: { text, ...extra } }] })
 const source = (id, extra = {}) => ({ id, name: id, modules: [], rules: [rule('hello', 'SOURCE')], variables: { owner: 'Mia' }, variablesEnabled: false, configOrder: { hello: 40 }, ...extra })
 function fixture(id, value = source(id)) {
@@ -174,6 +175,45 @@ test('模块私有 data/ 不随包导出；覆盖安装旧数据优先，包内�
   await installModulePackage(moduleRoot, packaged, { ...credentials(overwritePreview), overwrite: true })
   assert.equal(readFileSync(join(moduleRoot, 'data-keep', 'data', 'ledger.jsonl'), 'utf8'), 'OLD LEDGER\n', '旧账本不被覆盖')
   assert.equal(readFileSync(join(moduleRoot, 'data-keep', 'data', 'new.txt'), 'utf8'), 'PACKAGED NEW', '包内只补缺失')
+})
+
+test('内置定义包无资产也能安装导出，另存补齐资产并保留用户覆盖', async () => {
+  const definition = readFileSync(join(packageModulesDir(), 'soul', 'module.yml'), 'utf8')
+  const files = [{ path: 'module.yml', content: definition }]
+  const installed = await install(files, 'soul')
+  assert.equal(installed.id, 'soul')
+  const dir = join(moduleRoot, 'soul')
+  assert.equal(existsSync(join(dir, 'assets')), false)
+  const exported = await exportModulePackage(moduleRoot, { id: 'soul', mode: 'zip' })
+  const packaged = await expandModuleSource([{ path: 'soul.zip', content: exported.content, encoding: 'base64' }])
+  assert.deepEqual(packaged.map(file => file.path), ['module.yml'])
+  assert.equal(existsSync(join(dir, 'assets')), false, '导出不物化隐式依赖')
+  const renamed = await install(packaged, 'independent-soul')
+  assert.ok(existsSync(join(moduleRoot, renamed.id, 'assets', 'reference', 'README.md')))
+  assert.ok(existsSync(join(moduleRoot, renamed.id, 'assets', 'manifest.yml')))
+  const independent = await exportModulePackage(moduleRoot, { id: renamed.id, mode: 'zip' })
+  assert.ok(independent.files.some(file => file.path === 'assets/criteria.md'))
+
+  mkdirSync(join(dir, 'assets'))
+  writeFileSync(join(dir, 'assets', 'criteria.md'), 'USER OVERRIDE')
+  const override = await exportModulePackage(moduleRoot, { id: 'soul', mode: 'zip' })
+  const overrideFiles = await expandModuleSource([{ path: 'soul.zip', content: override.content, encoding: 'base64' }])
+  assert.deepEqual(overrideFiles.map(file => file.path).sort(), ['assets/criteria.md', 'module.yml'])
+  await install(overrideFiles, 'override-copy')
+  assert.equal(readFileSync(join(moduleRoot, 'override-copy', 'assets', 'criteria.md'), 'utf8'), 'USER OVERRIDE')
+  assert.ok(existsSync(join(moduleRoot, 'override-copy', 'assets', 'tools.md')))
+
+  writeFileSync(join(dir, 'assets', 'private.md'), 'TARGET ONLY')
+  const invalid = [{ path: 'module.yml', content: JSON.stringify(source('soul', { rules: [rule('hello', undefined, { templateFile: './assets/private.md' })] })) }]
+  assert.throws(() => moduleImportPreview(moduleRoot, invalid, { targetId: 'soul', overwrite: true }), /缺失/, '入站校验不得回读用户目标补附件')
+  const restore = [...files, { path: 'assets/criteria.md', content: readFileSync(join(packageModulesDir(), 'soul', 'assets', 'criteria.md'), 'utf8') }]
+  const reset = moduleImportPreview(moduleRoot, restore, { targetId: 'soul', overwrite: true })
+  await installModulePackage(moduleRoot, restore, credentials(reset), { preserveAssets: true })
+  assert.equal(readFileSync(join(dir, 'assets', 'criteria.md'), 'utf8'), restore[1].content, '显式上传保留为用户资产，不自动去重删除')
+  assert.equal(readFileSync(join(dir, 'assets', 'private.md'), 'utf8'), 'TARGET ONLY', '未上传的用户资产仍保留')
+  for (const path of ['assets/Criteria.md', 'assets/templates']) {
+    assert.throws(() => moduleImportPreview(moduleRoot, [...files, { path, content: 'CONFLICT' }], { targetId: 'conflict-copy' }), /冲突/, '合并后的路径冲突也须拒绝')
+  }
 })
 
 test('覆盖安装拒绝 data/ 内的链接', async () => {

@@ -14,7 +14,7 @@ Prompt Tool 领域将提示词注入行为组织为可选模块。本词汇表�
 _Avoid_: 预设、profile、配置包、角色卡
 
 **内置模块（Built-in Module）**：
-随插件包分发的模块，作为用户模块根中的初始副本。用户根中一旦存在同名目录，就以用户副本为准；包内副本只在该目录缺失时补建。补建规则见 [ADR-0015](docs/adr/0015-builtin-module-seed-missing-only.md)。
+随插件包分发的模块。用户根只补建初始定义，已有定义不覆盖；资产逐文件优先用户覆盖，缺失才使用同 ID 的包内来源。改名复制形成带完整资产的独立用户模块。补建规则见 [ADR-0015](docs/adr/0015-builtin-module-seed-missing-only.md)。
 _Avoid_: 内置预设、包内预设、官方预设
 
 **模块定义（Module Definition）**：
