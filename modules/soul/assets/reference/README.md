@@ -1,6 +1,6 @@
 # 13 份 soul 正文 + 2 份 ECHO 权威文档（外部来源）
 
-Source: `D:\AI\GitHub\dsh-agent-soul\soul\` 与 `docs\`（MIT；soul 正文 2026-10-24 导入，2026-10-25 同步 ECHO 权威口径，源提交 `b3606be`）
+Source: `D:\AI\GitHub\dsh-agent-soul\soul\` 与 `docs\`（MIT；soul 正文 2026-10-24 导入，2026-10-25 同步 ECHO 权威口径，2026-11-02 同步 04/05/06/07，源提交 `cd58d6d`）
 用途：模块文件工具按需读取的完整知识，例如 `module_file_read` 的 `path: assets/reference/05-doctor.md`。
 
 适配边界：
@@ -9,4 +9,5 @@ Source: `D:\AI\GitHub\dsh-agent-soul\soul\` 与 `docs\`（MIT；soul 正文 2026
 - `04-manifest.json` 与 `07-bundle.json` 是外部安装清单，本项目不使用，只作参考。
 - 正文保持原文，未逐份改写；与模块规则冲突时，以 `module.yml` 与 `assets/manifest.yml` 为准。
 - 2026-10-25 同步：更新 `00-layers`、`02-echo`、`05-doctor`、`10-echo-anatomy`，新增 `ECHO-权威口径.md`（L0–L5 唯一权威）与 `ECHO六层与mnemon协同说明书.md`；源仓库当天删除的错误版《记忆三层联用说明书》不收录。
+- 2026-11-02 同步：更新 `04-manifest`（2.0.0，补「身份面 / 自我层」一格）、`05-doctor`（换气治疗层）、`06-reference`（能力关系声明）、`07-bundle`（2.0.0，仓库地址、MCP hub 与全局必装）；其余 9 份正文与上游一致。
 - 模块内路径对照：源正文的 `../docs/ECHO-权威口径.md` 对应 `assets/reference/ECHO-权威口径.md`；源账本名 `02-墨.jsonl` 在模块内为 `data/02-soul.jsonl`，以 `module.yml` 与 `assets/manifest.yml` 为准。
