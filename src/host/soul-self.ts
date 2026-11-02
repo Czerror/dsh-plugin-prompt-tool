@@ -12,6 +12,7 @@ export const SOUL_SELF_SOURCE = 'data/SELF.src.md'
 export const SOUL_SELF_SNAPSHOT = 'data/.soul/SELF.md'
 export interface SoulIndexStatus { state: string; files?: number; sessions?: number; events?: number; observedAt?: string; error?: string }
 export interface SoulSelfAgent { session: { id: string; header?: { delegationDepth?: number } } }
+export type SoulSelfTemplate = (source: string) => { text: string; revision: string }
 
 function seal(text: string): string {
   return text.replace(/-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?(?:-----END [A-Z ]*PRIVATE KEY-----|$)/g, '[凭据已屏蔽]')
@@ -31,22 +32,25 @@ export function readSoulSelfSnapshot(moduleDir: string): { content: string; revi
   return { content, revision: revisionOf(content) }
 }
 
-function selfInputs(moduleDir: string) {
+function selfInputs(moduleDir: string, template?: SoulSelfTemplate) {
   const source = readModuleFile(moduleDir, SOUL_SELF_SOURCE).content
   const ledger = readSoulLedgerProjection(moduleDir)
-  return { source, ledger, version: revisionOf(source) + ':' + ledger.revision + ':' + ledger.pendingVersion + ':' + ledger.initialized }
+  let rendered
+  try { rendered = template?.(source) }
+  catch (error) { throw Object.assign(new Error(`SELF只读模板不可用：${String((error as Error).message)}`), { code: 'SELF_TEMPLATE' }) }
+  return { source, renderedSource: rendered?.text ?? source, ledger, version: revisionOf(source) + ':' + ledger.revision + ':' + ledger.pendingVersion + ':' + ledger.initialized + ':' + (rendered?.revision ?? '') }
 }
 
-export function deriveSoulSelf(moduleDir: string, index: SoulIndexStatus = { state: 'unbuilt（未建）' }, budgetBytes = 12288) {
+export function deriveSoulSelf(moduleDir: string, index: SoulIndexStatus = { state: 'unbuilt（未建）' }, budgetBytes = 12288, template?: SoulSelfTemplate) {
   for (let attempt = 0; attempt < 3; attempt++) {
-    const input = selfInputs(moduleDir)
+    const input = selfInputs(moduleDir, template)
     const candidate = renderSelfFacts(input, index, budgetBytes)
-    if (selfInputs(moduleDir).version === input.version) return candidate
+    if (selfInputs(moduleDir, template).version === input.version) return candidate
   }
   throw new Error('SELF 来源持续变化，无法形成一致候选')
 }
 
-function renderSelfFacts({ source, ledger }: ReturnType<typeof selfInputs>, index: SoulIndexStatus, budgetBytes: number) {
+function renderSelfFacts({ source, renderedSource, ledger }: ReturnType<typeof selfInputs>, index: SoulIndexStatus, budgetBytes: number) {
   const budget = validateSelfBudget(budgetBytes)
   if (!source.trim()) throw new Error('SELF 骨架缺失：data/SELF.src.md')
   const count = (key: 'files' | 'sessions' | 'events'): number => {
@@ -55,7 +59,7 @@ function renderSelfFacts({ source, ledger }: ReturnType<typeof selfInputs>, inde
     return value
   }
   const now = new Date().toISOString()
-  const lines = [seal(source), '', '## 活体（当前权威事实）',
+  const lines = [seal(renderedSource), '', '## 活体（当前权威事实）',
     `- 当前时钟：${now}；时区：${Intl.DateTimeFormat().resolvedOptions().timeZone}`,
     `- 账本：共 ${ledger.total} 条；未结 ${ledger.open} 条；历史待核对 ${ledger.pendingReview} 条${ledger.initialized ? '' : '；历史分界待初始化'}`,
     `- 主导：${ledger.lead ? seal(ledger.lead['概要']).slice(0, 160) : '尚无 lead 记录'}`,
@@ -104,15 +108,15 @@ export function refreshSoulSelf(moduleDir: string, index: SoulIndexStatus, optio
   })
 }
 
-export function renderSoulSelf(moduleDir: string, agent: SoulSelfAgent, signal?: AbortSignal, budgetBytes = 12288, index?: SoulIndexStatus, runtimeLines: readonly string[] = []): string {
+export function renderSoulSelf(moduleDir: string, agent: SoulSelfAgent, signal?: AbortSignal, budgetBytes = 12288, index?: SoulIndexStatus, runtimeLines: readonly string[] = [], template?: SoulSelfTemplate): string {
   signal?.throwIfAborted()
   if (!agent?.session?.id) throw new Error('SELF 缺少实际 Agent 身份')
   for (const path of [SOUL_SELF_SOURCE, 'data/02-soul.jsonl', 'data/02-墨.jsonl']) assertNoModuleLinks(join(moduleDir, path))
   let prefix: string
-  try { prefix = deriveSoulSelf(moduleDir, index, budgetBytes).content }
+  try { prefix = deriveSoulSelf(moduleDir, index, budgetBytes, template).content }
   catch (error) {
     const code = (error as NodeJS.ErrnoException).code
-    if (code === 'EACCES' || code === 'EPERM' || /链接|越界|超预算|不是普通文件/.test(String((error as Error).message))) throw error
+    if (code === 'EACCES' || code === 'EPERM' || code === 'SELF_TEMPLATE' || /链接|越界|超预算|不是普通文件/.test(String((error as Error).message))) throw error
     const reason = /持续变化/.test(String((error as Error).message)) ? '来源持续变化，无法形成一致候选' : '账本或骨架数据不可读取'
     const snapshot = readSoulSelfSnapshot(moduleDir)
     const stamp = /^- (?:快照时刻|装配时刻)：([^\n]+)/m.exec(snapshot.content)?.[1]

@@ -7,13 +7,16 @@ import { Context } from '@deepseek-ai/cordis'
 import { createScope } from '@deepseek-ai/dsh-scope'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime from '@deepseek-ai/dsh-tools'
+import Storage from '@deepseek-ai/dsh-storage'
+import { JsonStorageBackend } from '@deepseek-ai/dsh-storage-json'
+import { DomainFacility } from '@deepseek-ai/dsh-storage-domain'
 import { isolatedHome } from '../fixtures/host-harness.mjs'
 
 const { moduleRoot } = isolatedHome('pt-module-variable-tools-')
 const { globalVariablesFile } = await import('../../src/host/paths.ts')
 const { resolveModuleToolTarget } = await import('../../src/host/module-tool-target.ts')
 const tick = () => new Promise(resolve => setImmediate(resolve))
-async function setup(t, id, late = false) {
+async function setup(t, id, late = false, sessionStorage = false) {
   const dir = join(moduleRoot, id), file = join(dir, 'module.yml')
   mkdirSync(dir, { recursive: true })
   writeFileSync(file, `id: ${id}\nmodules: []\nrules: []\nvariables: { keep: KEEP, blank: "" }\n`)
@@ -23,11 +26,34 @@ async function setup(t, id, late = false) {
   const shell = await import('../../engine/module-variable-tools.mjs')
   const root = new Context()
   await root.plugin(SystemPrompt)
+  let sessionOwner, pauseWrite, withdrawOwner
+  if (sessionStorage) {
+    const storage = new Storage(root), backend = new JsonStorageBackend(join(dir, 'official-storage'))
+    const open = backend.kv.open
+    let gate
+    backend.kv.open = async descriptor => {
+      const unit = await open(descriptor), put = unit.putRecord.bind(unit)
+      unit.putRecord = async (...args) => { if (gate) { const waiting = gate; gate = undefined; waiting.started(); await waiting.wait } return put(...args) }
+      return unit
+    }
+    pauseWrite = () => {
+      let resume, started
+      const wait = new Promise(resolve => { resume = resolve }), entered = new Promise(resolve => { started = resolve })
+      gate = { wait, started }; return { resume, entered }
+    }
+    storage.backend.register('json', backend)
+    const facility = new DomainFacility(root, { backend: 'json' })
+    const { openSessionVariables } = await import('../../src/host/session-variables.ts')
+    sessionOwner = await openSessionVariables(facility)
+    const owned = sessionOwner
+    withdrawOwner = () => { sessionOwner = undefined; return owned }
+    t.after(async () => { await owned.dispose(); await facility.closeAll(); await backend.close() })
+  }
   if (!late) await root.plugin(ToolRuntime)
   t.after(() => root.fiber.dispose())
   const targets = { ids: [id] }
   const host = { target: (exec, moduleId) => resolveModuleToolTarget(exec, moduleRoot, () => targets.ids, moduleId), rebuild: async () => { assert.fail('变量内容更新不能重新装配 Agent') } }
-  root.provide('pt-module-variable-tools', { mount: ctx => registerModuleVariableTools(ctx, host) })
+  root.provide('pt-module-variable-tools', { mount: ctx => registerModuleVariableTools(ctx, host, () => sessionOwner) })
   const agent = { id: 'agent-' + id, session: { id: 'session-' + id, header: {} } }
   const scope = createScope(root, agent)
   agent.ctx = scope.ctx
@@ -36,7 +62,7 @@ async function setup(t, id, late = false) {
   let calls = 0
   const call = (args, signal = new AbortController().signal, caller = agent) => root.tools.execute({ callId: 'call-' + ++calls, name: 'module_variables', arguments: args, agent: caller, signal })
   const success = async args => { const result = await call(args); assert.equal(result.isError, false, JSON.stringify(result)); return result.value }
-  return { root, scope, agent, targets, wrapper, call, success, file, dir }
+  return { root, scope, agent, targets, wrapper, call, success, file, dir, sessionOwner, pauseWrite, withdrawOwner }
 }
 
 test('变量工具主路径：两级持久值、空占位、来源与显式删除回落在真实工具管线往返', async t => {
@@ -61,6 +87,41 @@ test('变量工具主路径：两级持久值、空占位、来源与显式删�
   assert.equal(deleted.value, 'calm')
   assert.equal(deleted.source, 'global')
   assert.equal((await f.success({ action: 'get', scope: 'module', moduleId: 'values', key: 'keep' })).value, 'KEEP')
+})
+
+test('会话变量工具在真实执行会话内持久覆盖，拒绝伪造会话和过期版本', async t => {
+  const f = await setup(t, 'session-tool', false, true)
+  const before = await f.success({ action: 'list', scope: 'session', moduleId: 'session-tool' })
+  assert.equal(before.variables.keep, 'KEEP')
+  assert.equal(before.revisions.session, null)
+  const saved = await f.success({ action: 'set', scope: 'session', moduleId: 'session-tool', key: 'keep', value: '', expectedRevisions: before.revisions })
+  assert.equal(saved.value, '')
+  assert.equal(saved.source, 'session')
+  assert.equal(saved.persisted, true)
+  assert.equal(f.sessionOwner.read(f.dir, f.agent.session.id).variables.keep, '')
+  assert.equal(parse(readFileSync(f.file, 'utf8')).variables.keep, 'KEEP')
+  const child = { id: 'session-tool-child', session: { id: 'session-tool-child', header: { delegationDepth: 1 } } }
+  child.ctx = createScope(f.root, child, { parent: f.agent }).ctx
+  const childRead = await f.call({ action: 'get', scope: 'session', moduleId: 'session-tool', key: 'keep' }, undefined, child)
+  assert.equal(childRead.isError, false)
+  assert.equal(childRead.value.value, 'KEEP')
+  assert.equal((await f.call({ action: 'set', scope: 'session', moduleId: 'session-tool', key: 'keep', value: 'STALE', expectedRevisions: before.revisions })).isError, true)
+  assert.equal((await f.call({ action: 'set', scope: 'session', moduleId: 'session-tool', key: 'keep', value: 'FORGED', expectedRevisions: saved.revisions, sessionId: child.session.id })).isError, true)
+  const removed = await f.success({ action: 'delete', scope: 'session', moduleId: 'session-tool', key: 'keep', expectedRevisions: saved.revisions })
+  assert.equal(removed.value, 'KEEP')
+  assert.equal(removed.source, 'module')
+  const paused = f.pauseWrite()
+  const pending = f.call({ action: 'set', scope: 'session', moduleId: 'session-tool', key: 'keep', value: 'WITHDRAWN BODY', expectedRevisions: removed.revisions })
+  await paused.entered
+  const owned = f.withdrawOwner()
+  paused.resume()
+  const finished = await pending
+  assert.equal(finished.isError, false, '已持久写不能冒充失败而诱发重试')
+  assert.equal(finished.value.persisted, true)
+  assert.equal(finished.value.publicationSuppressed, true)
+  assert.equal(Object.hasOwn(finished.value, 'value'), false)
+  assert.doesNotMatch(JSON.stringify(finished.content), /WITHDRAWN BODY/)
+  assert.equal(owned.read(f.dir, f.agent.session.id).variables.keep, 'WITHDRAWN BODY')
 })
 
 test('变量工具拒绝：缺 value 不清 KEEP，过期版本/未知域/越权目标/取消和批准拒绝均不写盘', async t => {

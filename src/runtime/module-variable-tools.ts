@@ -8,14 +8,15 @@ import { assertVariableValues } from '../host/module-slices.ts'
 import { ModuleWriteError } from '../host/module-write.ts'
 import { MODULE_ID_PARAM } from '../host/module-tool-target.ts'
 import type { ModuleToolHost } from '../host/module-tool-target.ts'
+import type { SessionVariableOwner } from '../host/session-variables.ts'
 
-export function registerModuleVariableTools(ctx: Context, host: Pick<ModuleToolHost, 'target'>): () => void {
+export function registerModuleVariableTools(ctx: Context, host: Pick<ModuleToolHost, 'target'>, sessions?: () => SessionVariableOwner | undefined): () => void {
   const fiber = ctx.inject(['tools'], toolsCtx => toolsCtx.tools.register(defineTool({
     name: MODULE_TOOL_NAMES.variables,
-    description: '读写跨会话持久变量：scope=module 使用 moduleId 声明的模块并回落全局，scope=global 影响同一 DSH_HOME 的所有模块。list/get 返回有效来源和版本；set 必须显式 value，空字符串保留；delete 只删目标范围的键，模块删除后回落全局。写入带读取时的 expectedRevisions；不使用会话内变量表。',
+    description: '读写持久变量：scope=session 按来源模块和真实当前会话隔离，读取按会话→模块→全局回落；scope=module 按模块→全局；scope=global 仅全局。list/get 返回来源与版本；set 必须显式 value，空串保留，delete 删除后回落。写入携 expectedRevisions。session 需要宿主 storageDomain，不接受指定其他会话；soul.mark 是限长短状态，更新时间由宿主记录。',
     parameters: {
       moduleId: MODULE_ID_PARAM,
-      scope: { type: 'string', enum: ['global', 'module'], required: true },
+      scope: { type: 'string', enum: ['global', 'module', 'session'], required: true },
       action: { type: 'string', enum: ['list', 'get', 'set', 'delete'], required: true },
       key: { type: 'string' }, value: { type: 'string' },
       expectedRevisions: { type: 'object', additionalProperties: true },
@@ -24,15 +25,16 @@ export function registerModuleVariableTools(ctx: Context, host: Pick<ModuleToolH
       schema: {
         type: 'object', additionalProperties: false,
         properties: {
-          moduleId: { type: 'string', required: true }, scope: { type: 'string', enum: ['global', 'module'], required: true },
+          moduleId: { type: 'string', required: true }, scope: { type: 'string', enum: ['global', 'module', 'session'], required: true },
           revisions: { type: 'object', additionalProperties: false, required: true, properties: {
             global: { oneOf: [{ type: 'string' }, { type: 'null' }], required: true }, module: { type: 'string', required: true }, settings: { type: 'string', required: true },
+            session: { oneOf: [{ type: 'string' }, { type: 'null' }] },
           } },
           enabled: { type: 'boolean', required: true },
           variables: { type: 'object', additionalProperties: true }, sources: { type: 'object', additionalProperties: true },
           key: { type: 'string' }, value: { oneOf: [{ type: 'string' }, { type: 'null' }] },
-          source: { oneOf: [{ type: 'string', enum: ['global', 'module'] }, { type: 'null' }] },
-          persisted: { type: 'boolean' }, publicationPending: { type: 'boolean' }, publicationError: { type: 'string' },
+          source: { oneOf: [{ type: 'string', enum: ['global', 'module', 'session'] }, { type: 'null' }] },
+          persisted: { type: 'boolean' }, publicationSuppressed: { type: 'boolean' }, publicationPending: { type: 'boolean' }, publicationError: { type: 'string' },
         },
       },
       render: (_args, value) => [{ type: 'text', text: JSON.stringify(value) }],
@@ -50,6 +52,35 @@ export function registerModuleVariableTools(ctx: Context, host: Pick<ModuleToolH
       if (writing && args.expectedRevisions === undefined) throw new ModuleWriteError('写变量必须提供 expectedRevisions')
       exec.signal.throwIfAborted()
       const target = host.target(exec, args.moduleId)
+      if (args.scope === 'session') {
+        const sessionId = exec.agent?.session.id, owner = sessions?.()
+        if (!sessionId || !owner) throw new ModuleWriteError('会话变量需要真实会话与宿主 storageDomain')
+        const state = readModuleVariables(target.dir)
+        if (!state.enabled) throw new ModuleWriteError('变量求值已关闭')
+        const revisions = args.expectedRevisions as (Partial<ModuleVariableRevisions> & { session?: string | null }) | undefined
+        if (writing && (!revisions || !Object.hasOwn(revisions, 'session'))) throw new ModuleWriteError('会话写入需要 session 版本')
+        const { session: expectedRevision, ...expectedDependencies } = revisions ?? {}
+        const assertAuthorized = () => {
+          exec.signal.throwIfAborted()
+          if (sessions?.() !== owner || exec.agent?.session.id !== sessionId || host.target(exec, args.moduleId).dir !== target.dir) throw new ModuleWriteError('会话变量来源或身份已变化')
+          if (!readModuleVariables(target.dir).enabled) throw new ModuleWriteError('变量求值已关闭')
+        }
+        const result = writing ? await owner.edit(target.dir, sessionId, {
+          changes: { [args.key!]: args.action === 'delete' ? null : args.value! }, expectedRevision: expectedRevision!, expectedDependencies,
+        }, { signal: exec.signal, assertAuthorized }) : owner.read(target.dir, sessionId)
+        if (writing) {
+          try { assertAuthorized() }
+          catch { return { moduleId: target.id, scope: args.scope, revisions: { ...state.revisions, session: result.revision }, enabled: false, persisted: true, publicationSuppressed: true } }
+        }
+        const current = state, variables = { ...current.effective, ...result.variables }
+        const source = (key: string): 'session' | 'module' | 'global' | null => Object.hasOwn(result.variables, key) ? 'session'
+          : Object.hasOwn(current.module, key) ? 'module' : Object.hasOwn(current.global, key) ? 'global' : null
+        return { moduleId: target.id, scope: args.scope, revisions: { ...current.revisions, session: result.revision }, enabled: current.enabled,
+          ...(args.action === 'list' ? { variables, sources: Object.fromEntries(Object.keys(variables).map(key => [key, source(key)])) }
+            : { key: args.key!, value: Object.hasOwn(variables, args.key!) ? variables[args.key!]! : null, source: source(args.key!) }),
+          ...(writing ? { persisted: true } : {}),
+        }
+      }
       let saved: ModuleVariablesResult | undefined
       const state = writing ? (saved = editModuleVariables(target.dir, {
         scope: args.scope, changes: { [args.key!]: args.action === 'delete' ? null : args.value! },

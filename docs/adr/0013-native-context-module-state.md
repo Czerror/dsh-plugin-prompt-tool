@@ -16,6 +16,10 @@
 
 普通规则只引用手动建立的变量，不自动扫描登记；ST 导入负责把缺失裸引用登记为空占位。空串属于显式值，不能与删除或未声明混同。工具更新变量与模板赋值共用同一存储 owner。
 
+2026-11-02 修订（Issue 35）：按用户确认新增来源模块＋真实会话隔离的 session 持久域，裸引用优先级变为 session→module→global；module.get/global.get 保持原范围，空串及删除语义不变。会话数据使用官方 storageDomain，不另建文件存储引擎；session setter 由异步规则和模型工具等待持久化，人设同步出口仅读取该域。通用模板、条件及 SELF 共用既有求值链，runtime 是显式只读权威事实域，不存第二份账本计数。SELF 只读；close、投递确认与恢复额度仍归原业务事务。
+
+会话短状态统一为 soul.mark；旧状态文件首读不迁移、首次合法写一次提交到官方域且保留原件。宿主维护逐键时间戳，所有写入口统一限长和CAS。会话域不自动随 fork 或日志导出，官方持久化开始后取消不代表回滚。变量总闸覆盖新求值域；工作台与bridge仍只编辑模块/全局，不增加指定他人会话入口。此修订只替代本ADR的“两级所有者、裸引用覆盖顺序”限制，其余原生上下文、人设与单域提交决定保持。
+
 本决策取代 [ADR-0008](0008-module-slices-memory-assembly.md) 的公开旧名兼容和世界书 note 记忆入口，并替代此前文档中的会话变量及 ST local/global 所有权。继续保留该 ADR 的完整定义、切片恢复、提交后发布失败语义；[ADR-0006](0006-module-config-order.md) 的配置排序、[ADR-0007](0007-unified-condition-action-rules.md) 的规则与显式互斥、[ADR-0010](0010-two-history-views.md) 的历史视图分工均不变。
 
 字段和事务所有权见 [后端框架](../architecture-params.md#原生格式与持久状态)，外部字段映射见 [SillyTavern 导入](../SillyTavern.md#原生转换映射)，工具与执行边界见 [引擎复用](../engine-reuse.md#原生运行与工具面)。这些文档解释权威 schema 与契约，不增加第二套校验定义。

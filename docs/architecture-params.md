@@ -10,6 +10,7 @@
 | 共享引擎参数 | module.yml.layerSettings | `loadModuleSpec().params` 内部平铺适配 |
 | 模块变量 | module.yml.variables | rules/variables.yml 与运行快照 |
 | 全局变量 | `$DSH_HOME/.prompt-tool/variables.yml` 的 variables 映射 | 两级有效值快照，不随模块导出 |
+| 会话变量 | 官方 storageDomain 的 `prompt_tool_session_variables` 域 | 按来源模块目录与真实会话隔离，运行有效值优先覆盖模块与全局 |
 | 模块记忆 | 当前受控模块 memory.md | 显式工具读取，不自动注入 |
 | 模块私有数据 | 当前受控模块 data/（账本、SELF、AGENTS.md 等） | 显式工具读取/追加；不导出，覆盖安装保留 |
 | 人设正文与选项 | 各模块 module.yml.persona.main / persona.subagent | rules/_settings.yml 的校验投影与官方有效声明 |
@@ -67,9 +68,17 @@ module.yml 是完整定义、唯一提交点和恢复依据，支持直接手改
 
 **共享引用守卫（`shared-alias`）**：YAML 的 anchor/alias 会让一次「只改 A」的编辑连带改掉 B，因此每次写事务都必须自证「只改了自己声明的字段」——声明完整候选的路径（规则编辑、人设保存、存储配置）走 `module-write.ts#serializeWithoutSharedAlias`（序列化失败与候选不一致同判），改-后-比对的路径走 `assertUnownedUnchanged`，`withModuleDefinition` 的调用方必须用必填的 `{ owns }` 声明本次编辑拥有的顶层键。判定不通过一律 400 `shared-alias` 且零写盘，拒绝文案点名被连带改动的键。
 
-### 两级变量事务
+### 持久变量事务
 
 变量是扁平字符串。module 覆盖 global；模块值 `''` 是有效覆盖，删除模块键才回落全局。global 只在同一 DSH_HOME 共享；不同安装隔离。`variables` 与共享参数允许同名但互不清理。
+
+运行时新增 session 域：裸引用与 `effective` 条件按 session→module→global 取值，空串保留、删除才回落；显式 module/global 仍保持原范围。session 按模块规范目录与真实 sessionId 隔离，主子与不同会话不共享。工作台和 bridge 仍只编辑 module/global，不接受任意会话 ID。
+
+session 的唯一 owner 使用官方 `storageDomain`（`@deepseek-ai/dsh-storage-domain`），同步读已校验快照，异步写等待持久化。一条记录拥有完整变量表、CAS revision 与逐键更新时间；首次写复用目标队列，跨域依赖仍按全局→模块锁顺序持锁至写入完成。同步 module/global 提交也校验实际读取的 session 版本。域不随模块导出或 Session 日志导出，不自动从父会话继承；官方后端不承诺多进程同时写同一域。
+
+宿主须提供 storageDomain 及其后端；插件通过可选注入等待，不自行更改 profile。缺失时 session 写入明确拒绝，旧 module/global 继续工作。卸载拒绝新写并等待已开始的持久写；提交开始后取消不能回滚已持久结果，不重放已提交赋值。
+
+模板缓存复用与异步提交完成后均重核变量总闸和原owner身份；成功凭据保留，撤权只抑制正文。变量／mark工具已持久但失去发布资格时返回 `persisted: true, publicationSuppressed: true` 与版本，不附变量或mark正文，也不伪报未写入。
 
 `readModuleVariables` 返回 `{ module, global, effective, revisions, enabled }`；版本域是 global、module、settings。全局文件缺失为空且 revision:null，损坏 YAML、非法 UTF-8、链接或读取错误必须报告，不能当成空表覆盖。模块值仍通过完整定义事务提交。
 
@@ -152,13 +161,13 @@ module.yml.configOrder 保存规则id→非负安全整数，身份仍是模块i
 
 普通规则只引用作者已建立的变量，不自动扫描创建；工作台变量卡手动添加空占位。ST 导入是自动登记的独立入口：正文/触发键的缺失裸引用登记为 `''`，不猜测业务值。原动作 config.variables 已退役，无冲突值可在显式转换时提升到模块 variables；同名不同值必须先解决。
 
-`params.templateEvaluation: true` 启用原生 module/global 的 set/get/add/inc/dec。set/add 不输出，inc/dec 输出结果；裸引用模块优先，显式 global 只访问全局。带非空默认值的 get 保留缺值写回扩展。
+`params.templateEvaluation: true` 启用原生 module/global/session 的 set/get/add/inc/dec。set/add 不输出，inc/dec 输出结果；裸引用与 session.get 按会话→模块→全局，module.get 按模块→全局，global.get 只访问全局。带非空默认值的 get 保留缺值写回扩展。session 值作为字面数据读取，不递归执行值中的模板；旧 module/global 的递归展开保持。
 
-求值先得到正文和变更集，同卡读取看到暂存写入。一张模板可读两域但只写一域；双域赋值、非法解析、循环、保留名、原型键或展开预算错误整卡零提交。扫描/预览只读，不能执行赋值。输入/输出和嵌套工作量有界。
+求值先得到正文和变更集，同卡读取看到暂存写入。一张模板可读多个域但只写一个持久域；双域赋值、非法解析、循环、保留名、原型键或展开预算错误整卡零提交。扫描/预览/SELF只读，不能执行赋值。session 赋值仅用于可等待持久化的规则执行和模型工具；官方同步人设 provider 支持读取新域，但拒绝 session 赋值，旧 module/global 赋值不变。输入/输出和嵌套工作量有界。
 
 真实执行先判规则及动作资格。执行帧按运行 Agent、取消信号、turn/step 边界识别，assembly→pre-step→同执行重挂只提交一次；版本改变不触发同执行重放。成功前可有界重试当前卡且保留随机样本；提交后发布失败只重试发布。跨卡不承诺原子，跨进程任意崩溃不承诺 exactly-once。
 
-同模块的主/子会话共享持久值，结束会话、压缩、卸载或重挂不清空。普通前后缀不改变 pick 的稳定选择；运行事实仍从会话读取。未知引用的出口清洗不创建变量，具名空值则直接替换为空。
+同模块的主/子会话共享 module/global，session 独立；结束会话、压缩、卸载或重挂不清空。普通前后缀不改变 pick 的稳定选择。`runtime.get` 只读同源运行事实，不回落用户同名值，不接受赋值或写回默认值；不可用不冒充空串或零。未知普通引用的出口清洗不创建变量，具名空值则直接替换为空。
 
 ## 保存状态机
 
@@ -232,6 +241,8 @@ AGENTS.md/CLAUDE.md 及 local 变体属于用户文件。正文就地保存；�
 `soul-ledger` 同时挂载 `soul_state`。status 读取真实当前会话；mark 写 1–512 字符、最多2048字节的短状态，携 `expectedRevision`（首次 null），按模块与真实会话隔离并原子保存，卸载不删除。check 只读报告文件、账本、SELF 候选/投递、索引、维护/恢复证据；unknown/not-observed 不冒充全绿。标记时刻、系统活动时刻和快照时刻分别呈现。check 显式 `includeUpgrade: true` 才展开 upgrade：完整规则与新增能力配置、近义资产、现有可交换文件；内部注释/未知字段保持，共享alias连带变化或用户不同配置明确拒绝。完整files须交 `module_import` 模型工具预览确认（保留data/memory/skills），携新凭据应用并重建，不用普通覆盖导入替代。
 
 新 close 数据需要账本 v2 读取器；旧 `9007bf28` 仍会累计原 promise 且允许写入，兼容标记不能保护旧二进制。回滚先撤 `soul-ledger` 写能力及旧 SELF/提醒贡献，确认后再退代码；保留全部 close 行。内置种子只补缺失，不自动改用户副本、活变量或私有数据。
+
+mark 现在是通用会话键 `soul.mark`，`soul_state` 保留兼容接口并复用同一 owner；通过 module_variables 或模板写该键也执行同一限长。recordedAt 来自该键的宿主更新时间，同值写不刷新，其他键变化不改变 mark 时刻，但会使整个会话表的旧 revision 失效。旧 `data/.soul/state-<hash>.json` 仅读取兼容，首次合法会话写将旧 mark 与本次变更一次提交到官方域并保留原件；新记录存在后不再读取旧值。旧文件损坏或版本变化拒绝迁移，不以空表覆盖。
 
 注入预算从模块事实读取，mtime/size 变化提前更新，最长缓存1000ms；读取或校验失败沿用最近有效值，无历史值回默认。这只缓存预算，不缓存当前骨架/账本事实。定义内容暂时损坏不阻断安全只读来源，但路径、文件种类和可读声明 ID 仍逐次校验，最终输出仍受预算限制。维护与注入共用预算校验，回退与刷新口径见 [SELF动态内容与维护心跳](engine-reuse.md#self动态内容与维护心跳)。
 

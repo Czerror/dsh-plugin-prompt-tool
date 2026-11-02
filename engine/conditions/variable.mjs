@@ -1,13 +1,14 @@
 /**
- * variable 谓词：把模块级持久变量接进规则条件。
+ * variable 谓词：把来源变量及受控运行事实接进规则条件。
  *
  * 适配器由挂载期绑定（`variableStore.read(moduleId)` → { module, global, effective, enabled }），
  * 与模板求值共用同一个 owner；编译期没有适配器，判定为 UNAVAILABLE（三值语义，不能经 not 反转）。
  */
 import { UNAVAILABLE } from './availability.mjs'
+import { agentOf } from './subject.mjs'
 
 const OPS = new Set(['eq', 'ne', 'in', 'gt', 'gte', 'lt', 'lte', 'present', 'absent'])
-const SCOPES = new Set(['effective', 'module', 'global'])
+const SCOPES = new Set(['effective', 'session', 'module', 'global', 'runtime'])
 
 /** 严格数字：空串与空白不算数字（`Number('')` 是 0，是陷阱）；非有限数不算数字。 */
 function numeric(text) {
@@ -21,7 +22,7 @@ function numeric(text) {
  * @param {string} options.key 变量名（模块声明，引擎不认前缀）
  * @param {'eq'|'ne'|'in'|'gt'|'gte'|'lt'|'lte'|'present'|'absent'} [options.op] 缺省 eq
  * @param {string|string[]} [options.value] in 用数组；present/absent 不收
- * @param {'effective'|'module'|'global'} [options.scope] 缺省 effective（模块覆盖全局）
+ * @param {'effective'|'session'|'module'|'global'|'runtime'} [options.scope] 缺省 effective（会话覆盖模块再覆盖全局）
  * @param {{ store?: { read: (moduleId: string) => { module?: Record<string, string>, global?: Record<string, string>, effective?: Record<string, string>, enabled?: boolean } }, moduleId?: string }} [context]
  */
 export function createVariablePredicate(options = {}, context = {}) {
@@ -52,13 +53,19 @@ export function createVariablePredicate(options = {}, context = {}) {
   }
   const store = context.store
   const moduleId = context.moduleId
-  const predicate = () => {
+  const predicate = payload => {
     // 适配器缺失（准备期、复制协议未接）是「缺事实」，不是「变量为假」。
     if (store === undefined || typeof store.read !== 'function') return UNAVAILABLE
     if (typeof moduleId !== 'string' || moduleId.length === 0) return UNAVAILABLE
-    const state = store.read(moduleId)
+    const readContext = { agent: agentOf(payload), signal: payload?.signal }
+    let state, runtimeValue
+    try {
+      state = store.read(moduleId, readContext)
+      if (scope === 'runtime') runtimeValue = store.readRuntime?.(moduleId, key, readContext)
+    } catch { return UNAVAILABLE }
     if (state === null || typeof state !== 'object' || state.enabled === false) return UNAVAILABLE
-    const values = scope === 'global' ? state.global : scope === 'module' ? state.module : state.effective
+    if (scope === 'runtime' && typeof runtimeValue !== 'string') return UNAVAILABLE
+    const values = scope === 'runtime' ? { [key]: runtimeValue } : scope === 'session' ? state.session : scope === 'global' ? state.global : scope === 'module' ? state.module : state.effective
     if (values === null || typeof values !== 'object' || Array.isArray(values)) return UNAVAILABLE
     const present = Object.hasOwn(values, key)
     if (op === 'present') return present

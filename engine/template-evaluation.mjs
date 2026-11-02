@@ -44,7 +44,7 @@ function isLiteralFragment(text) {
   if (!match) return false
   const key = match[1]
   return !FORBIDDEN_KEYS.has(key) && !isReservedInterpolationName(key)
-    && !/^(?:(?:module|global)(?:\.|$)|(?:set|add|get|inc|dec)(?:global)?var$|char$|charifnotgroup$|user$|trim$|ERA$)/i.test(key)
+    && !/^(?:(?:session|module|global|runtime)(?:\.|$)|(?:set|add|get|inc|dec)(?:global)?var$|char$|charifnotgroup$|user$|trim$|ERA$)/i.test(key)
 }
 
 /** 转换端和求值端共用边界与预算；出现身份不含正文字符偏移。 */
@@ -101,8 +101,8 @@ function addValue(value, increment) {
   return String(result)
 }
 
-export function evaluateTemplate(text, { module = {}, global = {}, session, sourceId = '', readOnly = false, samples = new Map() } = {}) {
-  const tables = { module: { ...module }, global: { ...global } }
+export function evaluateTemplate(text, { module = {}, global = {}, sessionVariables, runtime, readRuntime = key => runtime?.[key], session, sourceId = '', readOnly = false, samples = new Map() } = {}) {
+  const tables = { module: { ...module }, global: { ...global }, session: { ...sessionVariables } }
   const reads = new Set(), resolving = new Set(), values = {}
   let scope, pick = 0
   const keyOf = key => {
@@ -110,8 +110,10 @@ export function evaluateTemplate(text, { module = {}, global = {}, session, sour
     return key
   }
   const raw = (domain, key) => {
+    if (domain === 'session' && sessionVariables === undefined) throw new TypeError('Session variables unavailable')
     reads.add(domain)
     if (Object.hasOwn(tables[domain], key)) return { domain, value: tables[domain][key] }
+    if (domain === 'session') return raw('module', key)
     if (domain === 'module') {
       reads.add('global')
       if (Object.hasOwn(tables.global, key)) return { domain: 'global', value: tables.global[key] }
@@ -120,6 +122,7 @@ export function evaluateTemplate(text, { module = {}, global = {}, session, sour
   }
   const read = (found, key, expand) => {
     if (!found) return ''
+    if (found.domain === 'session') return String(found.value)
     const id = `${found.domain}:${key}`
     if (resolving.has(id)) throw new RangeError(`Template variable cycle: ${id}`)
     resolving.add(id)
@@ -135,11 +138,18 @@ export function evaluateTemplate(text, { module = {}, global = {}, session, sour
   }
   const output = transformTemplate(text, (body, expand, occurrence) => {
     const [name, args] = splitTemplateArgument(body)
-    const operation = /^(module|global)\.(set|get|add|inc|dec)$/.exec(name.trim())
+    const operation = /^(session|module|global|runtime)\.(set|get|add|inc|dec)$/.exec(name.trim())
     if (operation) {
       if (args === undefined) throw new TypeError(`Missing arguments for ${name}`)
       const [rawKey, rawValue] = splitTemplateArgument(args)
       const key = keyOf(expand(rawKey).trim()), domain = operation[1], action = operation[2]
+      if (domain === 'runtime') {
+        if (action !== 'get' || rawValue !== undefined) throw new TypeError('Runtime facts are read-only and cannot use a fallback')
+        const value = readRuntime(key)
+        if (typeof value !== 'string') throw new TypeError(`Runtime fact unavailable: ${key}`)
+        return value
+      }
+      if (domain === 'session' && sessionVariables === undefined) throw new TypeError('Session variables unavailable')
       if (readOnly && (action !== 'get' || rawValue !== undefined)) throw new TypeError('Read-only template cannot write variables')
       if (action === 'get') {
         const found = raw(domain, key)
@@ -160,12 +170,13 @@ export function evaluateTemplate(text, { module = {}, global = {}, session, sour
       }
       throw new TypeError(`Invalid arguments for ${name}`)
     }
+    if (/^(session|runtime)\./.test(name.trim())) throw new TypeError(`Unknown template operation: ${name}`)
     if (/^(set|add|get|inc|dec)(global)?var$/i.test(name.trim())) throw new TypeError('ST variable operations are retired; reimport or explicitly convert to module/global operations')
     const whole = normalizeMacroSyntax(`{{${expand(body)}}}`)
     const [key] = splitTemplateArgument(whole.slice(2, -2))
     if (FORBIDDEN_KEYS.has(key)) throw new TypeError(`Template variable key blocked: ${key}`)
     if (args === undefined && !isReservedInterpolationName(key)) {
-      const found = raw('module', key)
+      const found = raw(sessionVariables === undefined ? 'module' : 'session', key)
       if (found) return read(found, key, expand)
     }
     if (whole.slice(2, -2).includes('{{')) return whole

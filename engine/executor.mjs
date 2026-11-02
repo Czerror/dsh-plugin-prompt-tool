@@ -27,7 +27,7 @@ import { eventMessage, moduleIdOf, moduleOf, pluginIdentityOf, identityOf, ident
 import { interpolateVariables } from './interpolate.mjs'
 import { createEpochPromotion } from './compaction-epoch.mjs'
 import { wireLayers } from './layers.mjs'
-import { renderTemplate } from './template-frame.mjs'
+import { renderTemplateAsync } from './template-frame.mjs'
 import { selectContextActivation } from './context-activation.mjs'
 import { compareConfigSequence } from './order.mjs'
 import { ruleFrame, actionMatches, actionSoulReminder, recheckSoulReminder } from './conditions/evaluation.mjs'
@@ -240,7 +240,11 @@ function batchScope(options, frame) {
   return {
     qualified: new Set(qualified),
     contextActivation: selectContextActivation(qualified, session, messages, warnOnce, config => config[SESSION_VARIABLES_DISABLED] === true
-      ? { module: {}, global: {} } : config.variableStore?.read(config.sourceModuleId) ?? { module: config.variables, global: {} }),
+      ? { module: {}, global: {} } : (() => {
+        const context = { agent, signal: options.payload?.signal }
+        const snapshot = config.variableStore?.read(config.sourceModuleId, context) ?? { module: config.variables, global: {} }
+        return { ...snapshot, sessionVariables: snapshot.session, readRuntime: key => config.variableStore?.readRuntime?.(config.sourceModuleId, key, context) }
+      })()),
   }
 }
 
@@ -339,23 +343,29 @@ async function runPromptConfigBatch(options) {
         const patched = { ...resolved }
         if (reminder !== undefined) patched.source = { ...patched.source, soulReminder: { pendingVersion: reminder.pendingVersion, epoch: reminder.epoch } }
         // 按来源读取最新持久值；无变量正文不因另一个坏候选的读盘失败撤回。
+        const snapshot = config[SESSION_VARIABLES_DISABLED] !== true && config.fill !== 'soul-self' && config.params?.templateEvaluation !== true
+          && [patched.text, ...config.texts].some(text => typeof text === 'string' && text.includes('{{'))
+          ? config.variableStore?.read(config.sourceModuleId, { agent, signal }) : undefined
         const mergedVars = {
-          ...(config[SESSION_VARIABLES_DISABLED] === true ? {} : config.params?.templateEvaluation !== true && [patched.text, ...config.texts].some(text => typeof text === 'string' && text.includes('{{'))
-            ? config.variableStore?.read(config.sourceModuleId).effective ?? config.variables : config.variables),
+          ...(config[SESSION_VARIABLES_DISABLED] === true ? {} : snapshot?.effective ?? config.variables),
           ...(resolved.variables !== null && typeof resolved.variables === 'object' ? resolved.variables : {}),
         }
-        if (config.params?.templateEvaluation === true) {
-          patched.text = renderTemplate({ ...config, texts: config.texts.length ? config.texts : [patched.text ?? ''] }, { agent, signal }, { enabled: config[SESSION_VARIABLES_DISABLED] !== true, warn: warnOnce })
+        const literalKeys = new Set(Object.keys(snapshot?.session ?? {}).filter(key => !Object.hasOwn(resolved.variables ?? {}, key)))
+        if (config.fill === 'soul-self') {
+          patched.content = typeof patched.text === 'string' && patched.text.length > 0 ? [{ type: 'text', text: patched.text }] : []
+        } else if (config.params?.templateEvaluation === true) {
+          patched.text = await renderTemplateAsync({ ...config, texts: config.texts.length ? config.texts : [patched.text ?? ''] }, { agent, signal }, { enabled: config[SESSION_VARIABLES_DISABLED] !== true, warn: warnOnce })
+          if (signal?.aborted || !recheckSoulReminder(config, options.ruleFrame, reminder)) continue
           patched.content = patched.text.length > 0 ? [{ type: 'text', text: patched.text }] : []
         } else if (typeof patched.text === 'string') {
           // 提示词配置级模板变量 + filler 变量 + 内置环境变量插值。
           // 第 5 参是模板位置身份（本配置的 id）：{{pick}} 的 seed 只认「同会话 + 同模板位置 + 同一次出现」，
           // 缺省空串会让不同配置的首个 pick 退化成同一个 seed。
-          patched.text = interpolateVariables(patched.text, mergedVars, session, undefined, config.id)
+          patched.text = interpolateVariables(patched.text, mergedVars, session, undefined, config.id, literalKeys)
         }
-        if (config.texts.length > 0 && config.params?.templateEvaluation !== true) {
+        if (config.texts.length > 0 && config.params?.templateEvaluation !== true && config.fill !== 'soul-self') {
           const blocks = config.texts
-            .map((item, index) => interpolateVariables(item, mergedVars, session, undefined, `${config.id}#${index}`))
+            .map((item, index) => interpolateVariables(item, mergedVars, session, undefined, `${config.id}#${index}`, literalKeys))
             .filter((item) => item.length > 0)
             .map((item) => ({ type: 'text', text: item }))
           patched.content = blocks

@@ -143,8 +143,9 @@ export function selectContextActivation(configs, session, messages, warn = () =>
       const variables = readVariables(config)
       const render = (text, source) => evaluateTemplate(text, { ...variables, session, sourceId: `${config.sourceModuleId ?? ''}:${config.id}:${source}`, readOnly: true }).text
       for (const key of activation.scanVariables ?? []) {
-        const value = Object.hasOwn(variables.module, key) ? variables.module[key] : Object.hasOwn(variables.global, key) ? variables.global[key] : undefined
-        if (depth > 0 && typeof value === 'string') parts.push(render(value, `scan:${key}`))
+        const literal = Object.hasOwn(variables.sessionVariables ?? {}, key)
+        const value = literal ? variables.sessionVariables[key] : Object.hasOwn(variables.module, key) ? variables.module[key] : Object.hasOwn(variables.global, key) ? variables.global[key] : undefined
+        if (depth > 0 && typeof value === 'string') parts.push(literal ? value : render(value, `scan:${key}`))
       }
       // 池是全批共享的；开关没开的模块靠下面的 pass 门控不参与重扫（隔离不靠分池）。
       if (pass > 0 && depth > 0) parts.push(...recursiveText)

@@ -5,8 +5,14 @@ import { join } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
 import { createScope, scopeTarget } from '@deepseek-ai/dsh-scope'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
+import Storage from '@deepseek-ai/dsh-storage'
+import { JsonStorageBackend } from '@deepseek-ai/dsh-storage-json'
+import { DomainFacility } from '@deepseek-ai/dsh-storage-domain'
+import { openSessionVariables } from '../../src/host/session-variables.ts'
 import { compileRules } from '../../engine/rule-spec.mjs'
 import { mountRuleSources } from '../../engine/rule-runtime.mjs'
+import { renderTemplate, renderTemplateAsync } from '../../engine/template-frame.mjs'
+import { evaluateTemplate } from '../../engine/template-evaluation.mjs'
 import { isolatedHome } from '../fixtures/host-harness.mjs'
 
 const { moduleRoot } = isolatedHome('pt-native-template-')
@@ -15,13 +21,13 @@ const { createModuleVariableAdapter } = await import('../../src/runtime/module-v
 const { prepareStText } = await import('../../src/host/st-template.ts')
 const rule = (id, text, extra = {}, config = {}) => ({ id, ...extra, then: [{ id: 'text', kind: 'inject-text', config: { layer: 'system-section', text, params: { templateEvaluation: true }, ...config } }] })
 let sequence = 0
-async function fixture(t, rules, values = {}) {
+async function fixture(t, rules, values = {}, options = {}) {
   const id = `template-${++sequence}`, dir = join(moduleRoot, id)
   mkdirSync(dir, { recursive: true })
   writeFileSync(join(dir, 'module.yml'), JSON.stringify({ id, modules: [], variables: values }))
   const root = new Context()
   await root.plugin(SystemPrompt)
-  const store = createModuleVariableAdapter(moduleRoot)
+  const store = createModuleVariableAdapter(moduleRoot, options)
   const warnings = []
   const actors = []
   const make = (depth = 0) => {
@@ -42,6 +48,96 @@ async function fixture(t, rules, values = {}) {
   return { id, dir, root, store, warnings, make }
 }
 const texts = assembly => assembly.sections.map(entry => entry.text)
+
+test('会话变量注入按真实Agent覆盖并等待单次异步提交，运行事实不可被持久值伪造', async t => {
+  const h = await fixture(t, [
+    rule('counter', '{{session.inc::n}}'),
+    rule('reader', 'READ={{n}}|{{module.get::n}}|{{global.get::n}}|{{runtime.get::clock}}'),
+    rule('ordinary', 'PLAIN={{n}}', {}, { params: {} }),
+    rule('ordinary-step', 'STEP={{n}}', {}, { layer: 'pre-step', position: 'after-all', params: {} }),
+  ], { n: 'MODULE' })
+  const states = new Map(), commits = []
+  h.store.read = (_id, { agent } = {}) => {
+    const session = states.get(agent?.session.id) ?? { n: '0' }
+    return { module: { n: 'MODULE', clock: 'FAKE' }, global: { n: 'GLOBAL' }, session, effective: { n: session.n }, revisions: { module: 'm', global: 'g', session: String(session.n) } }
+  }
+  h.store.readRuntime = (_id, key) => key === 'clock' ? 'CURRENT' : undefined
+  h.store.commit = async (_id, request, { agent }) => {
+    commits.push(request)
+    await Promise.resolve()
+    states.set(agent.session.id, request.changes)
+    return {}
+  }
+  const main = h.make()
+  const results = await Promise.all([main.assemble(), main.assemble()])
+  for (const result of results) assert.ok(texts(result).includes('READ=1|MODULE|GLOBAL|CURRENT'), texts(result).join('\n'))
+  assert.equal(commits.length, 1, '并发装配共享进行中提交凭据')
+  assert.equal(commits[0].scope, 'session')
+  states.set(main.agent.session.id, { n: '8' })
+  assert.ok(texts(await main.assemble()).includes('READ=8|MODULE|GLOBAL|CURRENT'), '无赋值的模板不冻结事实')
+  assert.ok(texts(await main.assemble()).includes('PLAIN=8'))
+  states.set(main.agent.session.id, { n: '{{date}}' })
+  assert.ok(!texts(await main.assemble()).some(text => /^PLAIN=\d{4}-/.test(text)), '普通正文不得执行会话值中的时间宏')
+  const step = await h.root.waterfall(scopeTarget(main.agent, main.agent), 'agent/pre-step', { agent: main.agent, signal: main.signal }, async () => ({ kind: 'enter', messages: [] }))
+  assert.ok(step.messages.some(message => message.content.some(block => block.text === 'STEP={{date}}')), 'pre-step保留会话值字面')
+  assert.ok(texts(await h.make(1).assemble()).includes('READ=1|MODULE|GLOBAL|CURRENT'))
+})
+
+test('运行事实只作字面数据且不可赋值，缺失事实与会话条件保持不可用', async t => {
+  const h = await fixture(t, [
+    rule('literal', 'FACT={{runtime.get::literal}}'),
+    rule('bad', '{{module.set::leak::DIRTY}}{{runtime.get::missing}}'),
+    rule('write-runtime', '{{runtime.set::clock::FAKE}}'),
+    rule('session-condition', 'SESSION', { if: { variable: { scope: 'session', key: 'status', value: 'READY' } } }),
+    rule('unavailable-not', 'LEAK', { if: { not: { variable: { scope: 'runtime', key: 'missing', op: 'present' } } } }),
+  ])
+  h.store.read = () => ({ module: {}, global: {}, session: { status: 'READY' }, effective: { status: 'READY' }, revisions: { module: 'm', global: null, session: null } })
+  h.store.readRuntime = (_id, key) => key === 'literal' ? '{{module.set::leak::DIRTY}}' : undefined
+  let commits = 0
+  h.store.commit = () => { commits++; return {} }
+  const result = texts(await h.make().assemble())
+  assert.ok(result.includes('SESSION'))
+  assert.ok(!result.includes('LEAK'))
+  assert.equal(commits, 0)
+  assert.equal(evaluateTemplate('{{runtime.get::literal}}', { readRuntime: () => '{{module.set::leak::DIRTY}}' }).text, '{{module.set::leak::DIRTY}}')
+  const literal = '{{module.set::leak::DIRTY}}'
+  assert.deepEqual(evaluateTemplate('{{status}}|{{session.get::status}}', { sessionVariables: { status: literal } }), { text: `${literal}|${literal}`, reads: ['session'] })
+  assert.throws(() => evaluateTemplate('{{runtime.get::clock::fallback}}'), /read-only/)
+  assert.throws(() => evaluateTemplate('{{module.set::leak::DIRTY}}{{runtime.delete::clock}}'), /Unknown template operation/)
+})
+
+test('同步人设出口拒绝session赋值且零提交，异步已提交取消不重放，冲突重试保留单域CAS', async () => {
+  const events = [{ type: 'turn/start', seq: 0, data: {} }]
+  const agent = { status: 'running', session: { id: 'template-cancel', snapshotEvents: () => events } }
+  const control = new AbortController(), context = { agent, signal: control.signal }
+  let values = { n: '0' }, attempts = 0
+  let finish
+  const store = {
+    read: () => ({ module: { old: 'M' }, global: {}, session: values, revisions: { module: 'm', global: null, session: values.n } }),
+    commit: async (_id, request) => {
+      attempts++
+      if (attempts === 1) { values = { n: '9' }; throw Object.assign(new Error('conflict'), { status: 409 }) }
+      assert.equal(request.expectedRevisions.session, '9')
+      await new Promise(resolve => { finish = resolve })
+      values = request.changes
+      return {}
+    },
+    publish() {},
+  }
+  const config = { sourceModuleId: 'module', id: 'session', texts: ['{{session.inc::n}}'], variableStore: store }
+  assert.throws(() => renderTemplate(config, context), /asynchronous rule or tool/)
+  assert.equal(attempts, 0)
+  const pending = renderTemplateAsync(config, context)
+  await Promise.resolve()
+  control.abort()
+  finish()
+  await assert.rejects(pending, /abort/i)
+  const next = { agent, signal: new AbortController().signal }
+  assert.equal(await renderTemplateAsync(config, next), '10')
+  assert.equal(attempts, 2, '已提交后取消不能删除成功凭据')
+  assert.equal(values.n, '10')
+  assert.equal(renderTemplate({ ...config, id: 'reader', texts: ['{{session.get::old}}|{{module.get::old}}'] }, next), 'M|M')
+})
 
 test('原生模板资格与空占位：禁用和不匹配受众不赋值，后卡读新值，普通变量动态更新无需重挂', async t => {
   const h = await fixture(t, [
@@ -84,9 +180,57 @@ test('原生模板资格与空占位：禁用和不匹配受众不赋值，后�
   assert.ok(texts(await child.assemble()).includes('READ=2|CHILD|'))
   const latest = readModuleVariables(h.dir)
   editModuleVariables(h.dir, { scope: 'module', enabled: false, expectedRevisions: { settings: latest.revisions.settings } })
+  assert.ok(!texts(await main.assemble()).some(text => text.startsWith('NUM=6,5,5')), '同执行缓存不能绕过动态变量总闸')
   await h.make().assemble()
   assert.deepEqual(readModuleVariables(h.dir).module, latest.module, '关闭变量求值后，新 Agent 的模板不写持久值')
   assert.deepEqual(readModuleVariables(h.dir).global, latest.global)
+})
+
+test('异步提交期间关闭变量时首调用与并发均抑制正文，重新开启不重放', async t => {
+  const h = await fixture(t, [rule('counter', 'SENSITIVE={{session.inc::n}}')])
+  let enabled = true, commits = 0, finish
+  const wait = new Promise(resolve => { finish = resolve })
+  h.store.read = () => ({ module: {}, global: {}, session: { n: '0' }, enabled, revisions: { module: 'm', global: null, session: null } })
+  h.store.commit = async () => { commits++; await wait; return { persisted: true } }
+  const main = h.make(), pending = Promise.all([main.assemble(), main.assemble()])
+  while (commits === 0) await Promise.resolve()
+  enabled = false
+  finish()
+  for (const assembly of await pending) assert.ok(!texts(assembly).includes('SENSITIVE=1'), '每次调用返回已获准正文而非提交缓存正文')
+  enabled = true
+  assert.ok(texts(await main.assemble()).includes('SENSITIVE=1'))
+  assert.equal(commits, 1)
+})
+
+test('官方会话持久提交期间撤下owner阻止正文，恢复owner不重放已提交模板', async t => {
+  const root = new Context(), storage = new Storage(root), backend = new JsonStorageBackend(join(moduleRoot, 'publication-storage'))
+  storage.backend.register('json', backend)
+  const facility = new DomainFacility(root, { backend: 'json' })
+  const open = backend.kv.open
+  let started, finish, puts = 0
+  const entered = new Promise(resolve => { started = resolve }), wait = new Promise(resolve => { finish = resolve })
+  backend.kv.open = async descriptor => {
+    const unit = await open(descriptor), put = unit.putRecord.bind(unit)
+    unit.putRecord = async (...args) => { puts++; started(); await wait; return put(...args) }
+    return unit
+  }
+  const owner = await openSessionVariables(facility)
+  let current = owner
+  t.after(async () => { await owner.dispose(); await facility.closeAll(); await backend.close(); await root.fiber.dispose() })
+  const h = await fixture(t, [rule('counter', 'SAVED={{session.inc::n}}')], {}, { sessionVariables: () => current })
+  const main = h.make(), pending = Promise.all([main.assemble(), main.assemble()])
+  await entered
+  current = undefined
+  finish()
+  for (const assembly of await pending) assert.ok(!texts(assembly).includes('SAVED=1'), '持久成功后撤权不能发布迟到正文')
+  assert.equal(owner.read(h.dir, main.agent.session.id).variables.n, '1')
+  assert.equal(puts, 1)
+  current = owner
+  assert.ok(texts(await main.assemble()).includes('SAVED=1'))
+  assert.equal(puts, 1, '恢复原owner后复用提交凭据')
+  current = { ...owner }
+  assert.ok(!texts(await main.assemble()).includes('SAVED=1'), '替换owner后不能借旧缓存发布正文')
+  assert.equal(puts, 1)
 })
 
 test('原生模板重入：装配、重挂和已保存发布失败不重复提交，另一个 Agent 独立执行', async t => {

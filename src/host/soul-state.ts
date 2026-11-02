@@ -1,11 +1,9 @@
 /** 显式会话短状态；真实会话选路径，正文与账本事件分开持久。 */
-import { randomUUID } from 'node:crypto'
-import { mkdirSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { basename, dirname, join } from 'node:path'
-import { assertModuleDirectory, assertModuleSnapshotSource, assertNoModuleLinks, modulePathExists } from './module-install.ts'
-import { ensureDataDirectory, resolveModuleFilePath } from './module-file-path.ts'
+import { assertModuleSnapshotSource, assertNoModuleLinks, modulePathExists } from './module-install.ts'
 import { readModuleFile } from './module-files.ts'
-import { record, revisionOf, withModuleLock } from './module-write.ts'
+import { record, revisionOf } from './module-write.ts'
+import type { SessionVariableOwner } from './session-variables.ts'
 
 export interface SoulMark { text: string; recordedAt: string }
 export interface SoulState { mark: SoulMark | null; revision: string | null }
@@ -16,7 +14,7 @@ function statePath(moduleDir: string, sessionId: string): string {
   return `data/.soul/state-${revisionOf(sessionId)}.json`
 }
 
-export function readSoulState(moduleDir: string, sessionId: string): SoulState {
+export function readLegacySoulState(moduleDir: string, sessionId: string): SoulState {
   const path = statePath(moduleDir, sessionId)
   const target = join(moduleDir, path)
   assertNoModuleLinks(target)
@@ -35,31 +33,16 @@ export function readSoulState(moduleDir: string, sessionId: string): SoulState {
   return { mark: { text: value.mark.text, recordedAt: value.mark.recordedAt }, revision: revisionOf(source.content) }
 }
 
-export function markSoulState(moduleDir: string, sessionId: string, input: { text: unknown; expectedRevision: unknown }, signal?: AbortSignal): SoulState {
+export function readSoulState(moduleDir: string, sessionId: string, owner?: SessionVariableOwner): SoulState {
+  if (!owner) return readLegacySoulState(moduleDir, sessionId)
+  const state = owner.read(moduleDir, sessionId), text = state.variables['soul.mark']
+  return { revision: state.revision, mark: text === undefined ? null : { text, recordedAt: state.updatedAt['soul.mark']! } }
+}
+
+export async function markSoulState(moduleDir: string, sessionId: string, input: { text: unknown; expectedRevision: unknown }, signal?: AbortSignal, owner?: SessionVariableOwner, assertAuthorized?: () => void): Promise<SoulState> {
   if (typeof input.text !== 'string' || !input.text.trim() || input.text.length > 512 || Buffer.byteLength(input.text) > 2048) throw new Error('mark长度须为1–512字符且不超过2048字节')
   if (input.expectedRevision !== null && (typeof input.expectedRevision !== 'string' || !/^[a-f0-9]{64}$/.test(input.expectedRevision))) throw new Error('mark需要当前expectedRevision，首次为null')
-  const text = input.text, expected = input.expectedRevision
-  assertModuleDirectory(dirname(moduleDir), basename(moduleDir))
-  const path = statePath(moduleDir, sessionId)
-  signal?.throwIfAborted()
-  return withModuleLock(dirname(moduleDir), basename(moduleDir), () => {
-    signal?.throwIfAborted()
-    assertModuleDirectory(dirname(moduleDir), basename(moduleDir))
-    const before = readSoulState(moduleDir, sessionId)
-    if (before.revision !== expected) throw new Error('mark版本冲突，请重读当前状态')
-    if (before.mark?.text === text) return before
-    const data = ensureDataDirectory(moduleDir), stateDir = join(data, '.soul')
-    assertNoModuleLinks(stateDir)
-    mkdirSync(stateDir, { recursive: true })
-    const target = resolveModuleFilePath(moduleDir, path, ['data'])
-    const temporary = join(stateDir, '.mark-' + randomUUID() + '.tmp')
-    const content = JSON.stringify({ version: 1, sessionId, mark: { text, recordedAt: new Date().toISOString() } }) + '\n'
-    try {
-      writeFileSync(temporary, content, { flag: 'wx', encoding: 'utf8' })
-      signal?.throwIfAborted()
-      if (readSoulState(moduleDir, sessionId).revision !== expected) throw new Error('mark版本冲突，请重读当前状态')
-      renameSync(temporary, target)
-    } finally { rmSync(temporary, { force: true }) }
-    return readSoulState(moduleDir, sessionId)
-  })
+  if (!owner) throw new Error('会话变量持久化依赖不可用，不能写入mark')
+  const state = await owner.edit(moduleDir, sessionId, { changes: { 'soul.mark': input.text }, expectedRevision: input.expectedRevision }, { signal, assertAuthorized })
+  return { revision: state.revision, mark: { text: state.variables['soul.mark']!, recordedAt: state.updatedAt['soul.mark']! } }
 }

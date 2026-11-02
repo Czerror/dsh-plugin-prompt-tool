@@ -96,6 +96,19 @@ function checkRevisions(request: ModuleVariablesEdit, module: ModuleDefinitionSn
     || Object.hasOwn(request.expectedRevisions, 'module') && request.expectedRevisions.module !== module.revisions.variables
     || Object.hasOwn(request.expectedRevisions, 'settings') && request.expectedRevisions.settings !== module.revisions.settings) throw conflict()
 }
+
+/** 会话域提交沿用全局→模块锁，跨异步持久化保留实际读取域的版本。 */
+export function withVariableDependencies<T>(directory: string, expected: Partial<ModuleVariableRevisions>, action: () => T): T {
+  const initial = loadModuleDefinition(directory)
+  readGlobal()
+  mkdirSync(dirname(globalVariablesFile()), { recursive: true })
+  plain(dirname(globalVariablesFile()), true)
+  return withModuleLock(dirname(globalVariablesFile()), 'variables', () =>
+    withModuleLock(dirname(initial.dir), basename(initial.dir), () => {
+      checkRevisions({ scope: 'module', expectedRevisions: expected }, loadModuleDefinition(initial.dir), readGlobal())
+      return action()
+    }))
+}
 function changedValues(previous: Record<string, string>, request: ModuleVariablesEdit): Record<string, string> {
   const values = { ...(request.values ?? previous) }
   for (const [key, value] of Object.entries(request.changes ?? {})) {
@@ -119,7 +132,7 @@ function replaceVariables(doc: ReturnType<typeof parseDocument>, values: Record<
   assertUnownedUnchanged(before, doc, ['variables'], '变量 YAML 引用会改变其他字段，拒绝写入')
 }
 
-export function editModuleVariables(directory: string, request: ModuleVariablesEdit): ModuleVariablesResult {
+export function editModuleVariables(directory: string, request: ModuleVariablesEdit, options: { checkSession?: () => void } = {}): ModuleVariablesResult {
   validateRequest(request)
   const initial = loadModuleDefinition(directory)
   readGlobal()
@@ -129,6 +142,7 @@ export function editModuleVariables(directory: string, request: ModuleVariablesE
     if (request.scope === 'module') {
       const module = loadModuleDefinition(initial.dir), global = readGlobal()
       checkRevisions(request, module, global)
+      options.checkSession?.()
       const values = changedValues(module.variables, request)
       const enabled = request.enabled ?? module.variablesEnabled
       if (isDeepStrictEqual(values, module.variables) && enabled === module.variablesEnabled) return { ...snapshot(module, global), persisted: true }
@@ -146,6 +160,7 @@ export function editModuleVariables(directory: string, request: ModuleVariablesE
     return withModuleLock(dirname(initial.dir), basename(initial.dir), () => {
       const module = loadModuleDefinition(initial.dir), global = readGlobal()
       checkRevisions(request, module, global)
+      options.checkSession?.()
       const values = changedValues(global.values, request)
       if (isDeepStrictEqual(values, global.values)) return { ...snapshot(module, global), persisted: true }
       replaceVariables(global.doc, values)
@@ -159,7 +174,7 @@ export function editModuleVariables(directory: string, request: ModuleVariablesE
           return { revision: current.revision, value: current, mode: current.mode }
         },
         prepare: () => text,
-        recheck: current => checkRevisions(request, loadModuleDefinition(module.dir), current),
+        recheck: current => { checkRevisions(request, loadModuleDefinition(module.dir), current); options.checkSession?.() },
         conflict,
       })
       return { ...snapshot(module, { ...global, values, revision: revisionOf(text) }), persisted: true }

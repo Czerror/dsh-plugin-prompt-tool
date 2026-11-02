@@ -13,6 +13,7 @@ import { registerModuleVariableTools } from './runtime/module-variable-tools.ts'
 import { registerSoulLedgerTools } from './runtime/soul-ledger-tools.ts'
 import { registerSoulStateTools } from './runtime/soul-state-tools.ts'
 import { installSoulRuntime } from './runtime/soul-runtime.ts'
+import { installSessionVariables } from './runtime/session-variables.ts'
 import { installPreStepCoordinator } from './runtime/pre-step-coordinator.ts'
 import { installPersonaCapture } from './runtime/persona-registration.ts'
 import { registerTuiCommand } from './runtime/tui.ts'
@@ -196,7 +197,8 @@ registerTuiCommand(
     target: (exec, moduleId) => resolveModuleToolTarget(exec, modulesDir(), (sessionId) => assembly?.moduleIds(sessionId) ?? [], moduleId),
     rebuild: (id) => refreshModuleRuntime(id),
   }
-  const soulRuntime = installSoulRuntime(ctx, moduleToolHost, id => assembly?.moduleIds(id) ?? [])
+  const sessionVariables = installSessionVariables(ctx)
+  const soulRuntime = installSoulRuntime(ctx, moduleToolHost, id => assembly?.moduleIds(id) ?? [], sessionVariables)
   ctx.provide(toolServiceName('module-import-tools'), {
     mount: (scopeCtx: Context): (() => void) => registerModuleImportTools(scopeCtx, { ...moduleToolHost, rebuild: async id => { await assembly?.refresh(id) } }),
   })
@@ -213,7 +215,7 @@ registerTuiCommand(
     mount: (scopeCtx: Context): (() => void) => {
       const ledger = registerSoulLedgerTools(scopeCtx, moduleToolHost)
       try {
-        const state = registerSoulStateTools(scopeCtx, moduleToolHost, soulRuntime)
+        const state = registerSoulStateTools(scopeCtx, moduleToolHost, soulRuntime, sessionVariables)
         return () => { state(); ledger() }
       } catch (error) { ledger(); throw error }
     },
@@ -221,7 +223,7 @@ registerTuiCommand(
   ctx.provide(DISCOVERY_SERVICE, createDiscoveryRegistry())
   ctx.provide(MANIFEST_CHECK_SERVICE, createManifestCheckReader(modulesDir()))
   ctx.provide(toolServiceName('module-variable-tools'), {
-    mount: (scopeCtx: Context): (() => void) => registerModuleVariableTools(scopeCtx, moduleToolHost),
+    mount: (scopeCtx: Context): (() => void) => registerModuleVariableTools(scopeCtx, moduleToolHost, sessionVariables),
   })
 
   // 技能按需发现：`skill_search` / `skill_load` 注册到宿主侧（不是模块路径），
@@ -257,6 +259,7 @@ registerTuiCommand(
     const agentsFiber = ctx.inject(['agents', MANIFEST_CHECK_SERVICE], (actx: Context) => {
       const mounted = createAgentAssembly(actx, {
         moduleRoot: modulesDir(),
+        sessionVariables,
         enabledModules: () => runtime.modulesEnabled
           ? enabledModuleIds(modulesDir())
           : [],

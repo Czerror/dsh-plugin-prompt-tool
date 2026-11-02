@@ -56,6 +56,7 @@
     "@deepseek-ai/dsh-skill": ">=0.2.0-rc.1",
     "@deepseek-ai/dsh-skill-filesystem": ">=0.2.0-rc.1",
     "@deepseek-ai/dsh-subagent": ">=0.2.0-rc.1",
+    "@deepseek-ai/dsh-storage-domain": ">=0.2.1-alpha.2",
     "@deepseek-ai/dsh-system-prompt": ">=0.2.0-rc.1",
     "@deepseek-ai/dsh-tools": ">=0.2.0-rc.1",
     "react": "^18.2.0"
@@ -85,6 +86,9 @@
     "@deepseek-ai/dsh-skill": "0.2.1-alpha.2",
     "@deepseek-ai/dsh-skill-filesystem": "0.2.1-alpha.2",
     "@deepseek-ai/dsh-subagent": "0.2.1-alpha.2",
+    "@deepseek-ai/dsh-storage": "0.2.1-alpha.2",
+    "@deepseek-ai/dsh-storage-domain": "0.2.1-alpha.2",
+    "@deepseek-ai/dsh-storage-json": "0.2.1-alpha.2",
     "@deepseek-ai/dsh-system-prompt": "0.2.1-alpha.2",
     "@deepseek-ai/dsh-tools": "0.2.1-alpha.2",
     "@types/node": "^26.2.0",
@@ -127,6 +131,7 @@
   "dependencies": {
     "@deepseek-ai/schemastery": "^3.18.4",
     "@zip.js/zip.js": "2.15.0",
-    "yaml": "^2.9.1"
+    "yaml": "^2.9.1",
+    "zod": "^4.4.3"
   }
 }

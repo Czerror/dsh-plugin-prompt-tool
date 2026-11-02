@@ -35,6 +35,7 @@ import { compileCustomTool, validateCustomTools } from '../host/custom-tools.ts'
 import { createRuleDiagnosticsLedger, emptyRuleDiagnostics, type RuleDiagnosticsSnapshot } from './rule-diagnostics.ts'
 import { createTargetQueue } from '../shared/target-queue.ts'
 import { createModuleVariableAdapter } from './module-variable-adapter.ts'
+import type { SessionVariableOwner } from '../host/session-variables.ts'
 import type {} from '../host/module-manifest-check.ts'
 import { createModuleInitialization } from './module-initialization.ts'
 import { createPublicationQueue } from './publication-queue.ts'
@@ -50,7 +51,7 @@ import type { RuleAudience } from '../../engine/rule-spec.mjs'
 // 与引擎注册侧共用主子身份判据。
 import { isDelegated } from '../../engine/shared.mjs'
 import { createRuleRuntime } from '../../engine/rule-runtime.mjs'
-import { soulReminderOf } from './soul-runtime.ts'
+import { soulReminderOf, soulRuntimeValueOf } from './soul-runtime.ts'
 // 去重身份判据的唯一来源。
 import { identityOf } from '../../engine/delivery.mjs'
 // 条件在真实挂载 scope 绑定；准备期只保留经过预检的定义快照。
@@ -91,6 +92,7 @@ export interface AgentAssemblyRuntime {
 }
 
 export interface AgentAssemblyOptions {
+  sessionVariables?: () => SessionVariableOwner | undefined
   moduleRoot: string
   /**
    * 参与装配的模块 id 列表（= 存储根 `config.yml` 启用表）。
@@ -326,7 +328,10 @@ function duplicateDedupeIdentities(prepared: PreparedAssembly[]): DuplicateIdent
 }
 
 export function createAgentAssembly(ctx: Context, options: AgentAssemblyOptions): AgentAssemblyRuntime {
-  const variableStore = createModuleVariableAdapter(options.moduleRoot)
+  const variableStore = createModuleVariableAdapter(options.moduleRoot, {
+    sessionVariables: options.sessionVariables,
+    runtimeValue: (id, key, agent, signal) => soulRuntimeValueOf(ctx, id, key, agent, signal),
+  })
   const manifestCheck = ctx.get(MANIFEST_CHECK_SERVICE)
   const recoveryState = createGenerationRecoveryState(join(dirname(options.moduleRoot), 'generation-recovery'))
   const ruleDiagnostics = createRuleDiagnosticsLedger()

@@ -6,8 +6,9 @@ import type { WarnOnce } from './shared.mjs'
 
 /** 变量读写通道（插件侧的模块变量适配器）；引擎只按这三个方法调用。 */
 export interface RuleVariableStore {
-  read(moduleId: string): unknown
-  commit(moduleId: string, request: unknown): unknown
+  read(moduleId: string, context?: { agent?: unknown; signal?: AbortSignal }): unknown
+  readRuntime?(moduleId: string, key: string, context?: { agent?: unknown; signal?: AbortSignal }): string | undefined
+  commit(moduleId: string, request: unknown, context?: { agent?: unknown; signal?: AbortSignal }): unknown
   publish(moduleId: string): void
 }
 

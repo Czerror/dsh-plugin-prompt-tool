@@ -21,7 +21,7 @@
 | 能力 | 实际模型工具 | 所有者 |
 |---|---|---|
 | `module-rule-tools` | `module_rules_read`、`module_rules_edit` | 完整原始规则与按域 revisions |
-| `module-variable-tools` | `module_variables` | global/module 两级持久变量 |
+| `module-variable-tools` | `module_variables` | global/module/session 持久变量 |
 | `module-file-tools` | `module_file_read`、`module_file_append` | 模块私有文件：memory.md、assets/（只读）、data/（只追加） |
 | `module-manifest-tools` | `module_manifest` | `assets/manifest.yml` 的 next/check/apply，只写 data/、不覆盖 |
 | `module-import-tools` | `module_import` | 来源预览、选择、凭据和候选安装 |
@@ -126,18 +126,23 @@ AgentSetup 窗口内注册的同层同名段会被接住：装配时先撤销它
 
 ```js
 const dispose = mountRuleSources(ctx, sources, { variableStore })
-// read(moduleId) -> { module, global, revisions, enabled }
-// commit(moduleId, { scope, changes, expectedRevisions }) -> persisted/publication 状态
+// read(moduleId, { agent, signal }) -> { module, global, session?, effective, revisions, enabled }
+// readRuntime(moduleId, key, { agent, signal }) -> string | undefined
+// commit(moduleId, { scope, changes, expectedRevisions }, { agent, signal }) -> 状态或 Promise<状态>
 // publish(moduleId) -> 仅重试已提交快照发布
 ```
 
 adapter 的目录、权限、原子写与版本责任归接入方。缺少 adapter 不能完成持久赋值；要观察模板求值的读取与变更，走 `renderTemplate()` 的返回（`engine/template-frame.mjs`），不经 `mountRuleSources` 的 `variableStore` 时模板按未解析处理。复制验收应在隔离目录通过显式 adapter 测公共注入行为，而非依赖开发机变量或原仓库路径。
 
+`renderTemplateAsync` 在规则的 assembly/pre-step 出口等待异步 session 提交；同步 `renderTemplate` 保留旧域赋值并在提交前拒绝 session setter。执行凭据保存进行中的 Promise，重入/重挂不重复提交；已提交后取消只阻止正文发布。裸引用按 session→module→global，session 值为字面数据；runtime.get 只读权威值，禁止写入与回退。官方 PromptContext 仍是动态内容出口，不另造上下文管线。
+
+当前 runtime 事实授权按实际启用的规则来源校验；仅被选为人设、未启用规则的模块尚不能读取 runtime，不能把选择人设当作已启用规则。该限制不影响其 module/global/session 读取。
+
 ## 规则条件与动作边界
 
 规则含 `id/name/enabled/layer/group/exclusive/if/then/else`。动作有稳定 id 和 kind；then/else 与嵌套分支内的所有动作 id 在同一规则中唯一。读取投影可生成配置身份，编辑映射保留原始条件和载荷，不把编译默认值写回。
 
-`if` 是单键谓词或 all/any/not/notAny 组合。必要事实缺失为 UNAVAILABLE，不会因 not 变成 true。新增的 `variable` 谓词写成 `{ key, op, value, scope }`：op ∈ eq/ne/in/gt/gte/lt/lte/present/absent（缺省 eq），scope ∈ effective/module/global（缺省 effective）；`in` 的 value 是非空字符串数组，其余比较 op 的 value 是字符串，`present`/`absent` 不收 value；比较类在键缺失或任一侧非数字时为假；模块关闭变量或适配器未绑定时判定为 UNAVAILABLE。适配器由挂载期按来源模块绑定（`variableStore`），准备期编译出的条件恒不可用。规则级 else 要有同一规则的 if；事实未知时可能两支都不执行。分支节点不写 kind，不能把 if/then/else 塞进动作对象。
+`if` 是单键谓词或 all/any/not/notAny 组合。必要事实缺失为 UNAVAILABLE，不会因 not 变成 true。`variable` 谓词写成 `{ key, op, value, scope }`：op ∈ eq/ne/in/gt/gte/lt/lte/present/absent（缺省 eq），scope ∈ effective/session/module/global/runtime（缺省 effective）；effective 按会话→模块→全局，显式 session 条件只看会话域。`in` 的 value 是非空字符串数组，其余比较 op 的 value 是字符串，`present`/`absent` 不收 value；普通键缺失或非数字比较为假；runtime 事实缺失、读取失败、变量关闭或适配器未绑定为 UNAVAILABLE。适配器按真实 Agent 与来源模块绑定，不能由普通变量伪造 runtime。规则级 else 要有同一规则的 if；事实未知时可能两支都不执行。分支节点不写 kind，不能把 if/then/else 塞进动作对象。
 
 `manifest` 谓词写成 `{ ok: boolean }`，只读来源模块 `assets/manifest.yml` 的 `checks`。检查项失败为 false，清单缺失、损坏或不可读为 UNAVAILABLE。宿主装配取得读取器后，经挂载 options 绑定 `manifestCheck`；准备期不可用。独立 `engine/rule-engine.mjs#apply` 不接入该宿主读取器，因此该路径的 manifest 条件恒 UNAVAILABLE，包括 `not` 也不成立；嵌入调用方可以显式向 `mountRuleSources` 提供读取器。
 
@@ -356,6 +361,10 @@ config:
 `soul-self` 是已有 `fill` 字段的内置取值，不是独立能力行。引擎在实际求值时把来源模块、当前 Agent 与取消信号交给插件的 SELF owner；条件、受众、启停、排序和卸载沿用规则引擎。未声明规则时不注入，不需要模块 JS 资产或服务名参数。此内容源也支持 `pre-step`，遵循 placeholder 的插入点限制。
 
 SELF每步直接派生骨架、账本未结/历史待核对、身份与活时钟。索引状态同步读取provider，不触发历史loader；unbuilt/refreshing/ready/stale/failed/unauthorized分别报告，最近成功观测不代表尚未扫描的外部变化。写入成功立即失效派生观测，索引或快照失败不能把已提交账本报成未写；实时SELF不等后台ready。可恢复失败仅安全快照降级，显示时间与原因；同戳等长改写也按内容版本识别。
+
+`data/SELF.src.md` 的骨架使用通用只读模板，支持自定义变量、会话覆盖和 `{{runtime.get::soul.open}}`。仅骨架作为模板执行；账本、mark 和派生正文不再次展开。SELF 的setter与写回默认值明确拒绝，预览不产生持久写，完整骨架和真实身份仍受原UTF-8预算与脱敏保护。
+
+runtime 可读键：`session.id`、`session.audience`（main/subagent）、`clock.iso`、`clock.timeZone`、`soul.total`、`soul.open`、`soul.pendingReview`、`soul.lead`、`soul.leadSessionId`、`soul.mark`、`soul.markAt`、`index.state`、`index.observedAt`、`pressure.state`、`pressure.ratio`。缺少 lead/mark/观测或可靠水位时对应值不可用，不伪造空串或零。条件示例：`variable: { scope: runtime, key: soul.open, op: gt, value: '0' }`；这只比较事实，不替代下述提醒投递协议。
 
 `soul: { pending: true }` 是窄事实条件，缺来源为UNAVAILABLE，not不反转。Soul `soul-ledger-open` 默认主会话，在需处理集合或成功压缩epoch变化后提醒一次；只消费真实持久投递，A→B→A按最后确认态判断，预览/取消/未投递不消费。可用pre-step与runtime-context；无确认通道的其他层编译时拒绝。runtime-context在官方snapshot内携带不含事项正文的确认标记；重挂从真实会话事件恢复。
 

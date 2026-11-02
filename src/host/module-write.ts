@@ -162,13 +162,20 @@ export function withModuleLock<T>(root: string, id: string, action: () => T): T 
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT' || attempt === 2) throw error
     }
   }
-  try {
-    if (processLocks(dir, token, true)) throw busy()
-    activeKeys.add(key)
-    return action()
-  } finally {
+  const release = () => {
     activeKeys.delete(key)
     rmSync(file, { force: true })
     try { rmdirSync(locks) } catch { /* 并发 token 或未知文件留下目录，不扩大清理范围。 */ }
+  }
+  try {
+    if (processLocks(dir, token, true)) throw busy()
+    activeKeys.add(key)
+    const result = action()
+    if (result instanceof Promise) return result.finally(release) as T
+    release()
+    return result
+  } catch (error) {
+    release()
+    throw error
   }
 }

@@ -119,7 +119,7 @@ export function isReservedInterpolationName(key) {
 }
 
 /** 模板变量插值：配置 variables 优先，ST 运行时宏次之，内置 {{DSH_HOME}} / {{WORKSPACE}} / {{CWD}} 兜底。 */
-export function interpolateVariables(text, variables, session, keep, sourceId = '') {
+export function interpolateVariables(text, variables, session, keep, sourceId = '', literalKeys) {
   const builtins = builtinVariables(session)
   const active = new Set()
   // pick 只为「同会话、同模板、同一次出现」稳定：整段正文 input 不进 seed，
@@ -140,7 +140,7 @@ export function interpolateVariables(text, variables, session, keep, sourceId = 
       else if (Object.hasOwn(builtins, key)) value = builtins[key]
       else return whole
       const growth = Math.max(0, value.length - whole.length)
-      const nested = value.includes('{{')
+      const nested = value.includes('{{') && !(Object.hasOwn(variables, key) && literalKeys?.has(key))
       if (growth > remainingChars || (nested && (depth >= 32 || remainingExpansions <= 0))) return whole
       remainingChars -= growth
       if (!nested) return value

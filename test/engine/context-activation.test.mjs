@@ -20,7 +20,7 @@ test('上下文激活：显式扫描面、模块快照与四种副键逻辑使�
     config('empty', { scan: 'history' }, { keys: [] }),
     ...['AND_ANY', 'NOT_ALL', 'NOT_ANY', 'AND_ALL'].map(logic => config(logic, { scan: 'history', selective: true }, { selectiveLogic: logic, secondaryKeys: ['RED', '{{missing}}'] })),
   ])
-  const readVariables = () => ({ module: { key: 'SECRET', description: 'SECRET' }, global: { key: 'GLOBAL' } })
+  const readVariables = () => ({ sessionVariables: { description: 'SECRET' }, module: { key: 'SECRET', description: 'WRONG' }, global: { key: 'GLOBAL' } })
   const selected = selectContextActivation(entries, session('DRAGON RED'), [say('plugin', 'DRAGON', { kind: 'plugin:injected' }), say('batch', 'OTHER')], undefined, readVariables)
   assert.deepEqual([...selected].map(item => item.id), ['history', 'variables', 'constant', 'AND_ANY', 'NOT_ALL'])
   assert.deepEqual(entries.find(item => item.id === 'history').resolve({ contextActivationSelected: true }), { text: 'history' })
@@ -38,7 +38,10 @@ test('上下文激活：显式扫描面、模块快照与四种副键逻辑使�
   ] }, 'activation-import')
   assert.equal(spec.rules[1].enabled, false)
   const compiled = compileRules(spec.rules, { moduleId: 'activation-import' }).filter(rule => rule.enabled).flatMap(rule => rule.actions.map(action => action.compiledConfig))
-  for (const item of compiled) item.variableStore = { read: () => ({ module: { key: 'DRAGON', name: 'Mia' }, global: {} }) }
+  for (const item of compiled) item.variableStore = { read: (_id, context) => {
+    assert.equal(context.agent.session.id, 'native-activation')
+    return { session: { key: 'DRAGON', name: 'Mia' }, module: { key: 'DRAGON', name: 'Mia' }, global: {}, effective: { key: 'DRAGON', name: 'Mia' } }
+  } }
   const source = createPreStepSource({ sourceId: presetSourceId('activation'), ctx: {}, configs: compiled, promotion: PROMOTION })
   const output = await runPreStepBatch({ ctx: {}, agent: { session: session('DRAGON'), options: { model: 'deepseek-chat' } },
     decision: { kind: 'enter', messages: [say('pending', 'DRAGON')] }, sources: [source], memo: new Map(),
@@ -62,6 +65,9 @@ test('上下文激活：退役和非法声明拒绝，只读扫描不执行变�
   assert.equal(selected.size, 0)
   assert.deepEqual(values, { module: { key: 'KEEP' }, global: {} })
   assert.ok(selected.diagnostics.records.some(record => record.id === 'setter-key' && record.reason === 'match-error'))
+  const literalEntries = createPromptConfigs([config('literal-scan', { scan: 'history', scanVariables: ['description'] }, { keys: ['DRAGON'] })])
+  const literalValues = { module: { nested: 'DRAGON' }, global: {}, sessionVariables: { description: '{{module.get::nested}}' } }
+  assert.equal(selectContextActivation(literalEntries, session('EMPTY'), [], undefined, () => literalValues).size, 0, 'session扫描值不作为宏执行')
 })
 
 test('上下文激活：候选概率与评分同源，实际投递才提交且 sticky 重发不延期', () => {

@@ -16,7 +16,7 @@ import {
 import { pluginKind } from './source-kind.mjs'
 import { INJECTION_LAYERS, KNOWN_STRATEGIES, SESSION_VARIABLES_DISABLED } from './schema.mjs'
 import { interpolateVariables, stripUnresolvedRefs, RUNTIME_FACTS, runtimeFactValue, isReservedInterpolationName } from './interpolate.mjs'
-import { renderTemplate } from './template-frame.mjs'
+import { renderTemplate, renderTemplateAsync } from './template-frame.mjs'
 import { compareConfigSequence, compareTextPlacement } from './order.mjs'
 import { ruleFrame, actionMatches, actionSoulReminder, recheckSoulReminder } from './conditions/evaluation.mjs'
 import { textRegistrationName, identityStampOf, actionStamp, injectedMessage, findActionDelivery } from './delivery.mjs'
@@ -31,16 +31,20 @@ const subagentEndDeliveries = new WeakMap()
 
 /** 单条文本型配置的完整文本:texts 数组按空行拼接（单一文本字段）。
  *  keep=官方变量通道按 assembly 求值的名字，静态 pass 命中即原样保留引用。 */
-function configText(config, registries, warnOnce, context) {
+function configText(config, registries, warnOnce, context, asynchronous = false) {
   const registry = registries.get(config)
   if (config.params?.templateEvaluation === true) {
+    if (asynchronous) return renderTemplateAsync(config, context, { enabled: config[SESSION_VARIABLES_DISABLED] !== true, warn: warnOnce })
+      .then(text => officialChannelText(text, `${config.layer} ${config.id}`, registry, warnOnce))
     try { return officialChannelText(renderTemplate(config, context, { enabled: config[SESSION_VARIABLES_DISABLED] !== true, warn: warnOnce }), `${config.layer} ${config.id}`, registry, warnOnce) }
     catch (error) { warnOnce(`${name}: template ${config.id} failed: ${String(error?.message ?? error)}`); return '' }
   }
-  const variables = config[SESSION_VARIABLES_DISABLED] === true ? {} : config.texts.some(text => text.includes('{{'))
-    ? config.variableStore?.read(config.sourceModuleId).effective ?? config.variables : config.variables
+  const snapshot = config[SESSION_VARIABLES_DISABLED] !== true && config.texts.some(text => text.includes('{{'))
+    ? config.variableStore?.read(config.sourceModuleId, context) : undefined
+  const variables = config[SESSION_VARIABLES_DISABLED] === true ? {} : snapshot?.effective ?? config.variables
+  const literalKeys = new Set(Object.keys(snapshot?.session ?? {}))
   const text = config.texts
-    .map((item, index) => interpolateVariables(item, variables, context?.agent?.session, registry?.protect, `${config.id}#${index}`))
+    .map((item, index) => interpolateVariables(item, variables, context?.agent?.session, registry?.protect, `${config.id}#${index}`, literalKeys))
     .filter((item) => item.length > 0)
     .join('\n\n')
   return officialChannelText(text, `${config.layer} ${config.id}`, registry, warnOnce)
@@ -118,10 +122,12 @@ function registerOfficialVariables(ctx, configs, warnOnce, keep, shared) {
           const variablesDisabled = config[SESSION_VARIABLES_DISABLED] === true
           const release = systemPrompt.variable(official, (context) => {
             const session = context?.agent?.session
-            const variables = variablesDisabled ? {} : config.variableStore?.read(config.sourceModuleId).effective ?? config.variables
+            const snapshot = variablesDisabled ? undefined : config.variableStore?.read(config.sourceModuleId, context)
+            const variables = variablesDisabled ? {} : snapshot?.effective ?? config.variables
             const value = Object.hasOwn(variables, source) ? String(variables[source]) : runtimeFactValue(source, session) ?? ''
             // 变量值内的 {{pick}} 同样要有位置身份（配置 id + 声明名），否则同会话下多个变量的首个 pick 撞值。
-            const expanded = interpolateVariables(value, variables, session, undefined, `variable:${config.sourceModuleId}:${config.id}:${name}`)
+            const expanded = Object.hasOwn(snapshot?.session ?? {}, source) ? value
+              : interpolateVariables(value, variables, session, undefined, `variable:${config.sourceModuleId}:${config.id}:${name}`, new Set(Object.keys(snapshot?.session ?? {})))
             return officialChannelText(expanded, `variable ${official}`, { alias: new Map(), registered: new Set() }, warnOnce)
           })
           binding = { name: official, release, refs: 0 }
@@ -241,14 +247,17 @@ async function resolvedContextText(ctx, config, context, registry, warnOnce) {
   const session = agent?.session
   const resolved = await config.resolve({ ctx, agent, session, signal: context.signal, decision: { kind: 'ok', messages: [] }, messages: [] })
   if (context.signal?.aborted || resolved == null) return ''
-  const variables = { ...(config[SESSION_VARIABLES_DISABLED] === true ? {} : config.variableStore?.read(config.sourceModuleId).effective ?? config.variables), ...(resolved.variables !== null && typeof resolved.variables === 'object' ? resolved.variables : {}) }
+  if (config.fill === 'soul-self') return resolved.text ?? ''
+  const snapshot = config[SESSION_VARIABLES_DISABLED] === true ? undefined : config.variableStore?.read(config.sourceModuleId, context)
+  const variables = { ...(config[SESSION_VARIABLES_DISABLED] === true ? {} : snapshot?.effective ?? config.variables), ...(resolved.variables !== null && typeof resolved.variables === 'object' ? resolved.variables : {}) }
+  const literalKeys = new Set(Object.keys(snapshot?.session ?? {}).filter(key => !Object.hasOwn(resolved.variables ?? {}, key)))
   if (config.params?.templateEvaluation === true) {
     const texts = config.texts.length ? config.texts : [resolved.text ?? '']
-    return officialChannelText(renderTemplate({ ...config, texts }, context, { enabled: config[SESSION_VARIABLES_DISABLED] !== true, warn: warnOnce }), `runtime-context ${config.id}`, registry, warnOnce)
+    return officialChannelText(await renderTemplateAsync({ ...config, texts }, context, { enabled: config[SESSION_VARIABLES_DISABLED] !== true, warn: warnOnce }), `runtime-context ${config.id}`, registry, warnOnce)
   }
   // 模板位置身份 = 配置 id（texts 合并与 resolved.text 是同一位置的两个互斥分支）；缺省会退化成 [会话, 出现序号]。
-  const rendered = config.texts.length > 0 ? interpolateVariables(config.texts.join('\n\n'), variables, session, undefined, config.id)
-    : typeof resolved.text === 'string' ? interpolateVariables(resolved.text, variables, session, undefined, config.id) : ''
+  const rendered = config.texts.length > 0 ? interpolateVariables(config.texts.join('\n\n'), variables, session, undefined, config.id, literalKeys)
+    : typeof resolved.text === 'string' ? interpolateVariables(resolved.text, variables, session, undefined, config.id, literalKeys) : ''
   return officialChannelText(rendered, `runtime-context ${config.id}`, registry, warnOnce)
 }
 
@@ -282,6 +291,7 @@ function wireRuleTextContributions(ctx, configs, registry, warnOnce, keep, on, o
         name: entryName,
         order: base.order,
         text: section ? marker : (context) => holderOf(context).text,
+        ...group.some(config => config.fill === 'soul-self') ? { interpolate: false } : {},
       }), `${name}: conditional ${entryName}`)
     } catch (error) { throw sourceError === undefined ? error : sourceError(error, base.sourceModuleId) }
     bindings.push({ group, name: entryName, collection: section ? 'sections' : 'contexts', holderOf })
@@ -306,7 +316,7 @@ function wireRuleTextContributions(ctx, configs, registry, warnOnce, keep, on, o
           const reminder = actionSoulReminder(config, frame)
           const text = config.layer === 'runtime-context' && (config.strategy === 'placeholder' || !KNOWN_STRATEGIES.has(config.strategy))
             ? await resolvedContextText(ctx, config, context, registry.get(config), warnOnce)
-            : configText(config, registry, warnOnce, context)
+            : await configText(config, registry, warnOnce, context, true)
           if (!recheckSoulReminder(config, frame, reminder)) continue
           if (text.length) {
             const stamp = reminder === undefined ? '' : `\n<!-- soul-reminder:${Buffer.from(JSON.stringify({ moduleId: config.sourceModuleId, sessionId: context.agent.session.id, pendingVersion: reminder.pendingVersion, epoch: reminder.epoch })).toString('base64')} -->`
@@ -382,6 +392,7 @@ function wireRuntimeContexts(ctx, configs, registry, warnOnce, keep, on, ordered
         name: contextName,
         order: config.order,
         text: (context) => holderOf(context).text,
+        ...config.fill === 'soul-self' ? { interpolate: false } : {},
       }), `${name}: context ${config.id}`)
       registered.set(contextName, { config, holderOf })
       ordered.contexts.push(orderedEntry(contextName, config))
@@ -433,9 +444,11 @@ export function pluginMessage(prefix, text, summary) {
 function layerText(config, agent, warnOnce) {
   try {
     if (config.params?.templateEvaluation === true) return renderTemplate(config, { agent }, { enabled: config[SESSION_VARIABLES_DISABLED] !== true, warn: warnOnce })
-    const variables = config[SESSION_VARIABLES_DISABLED] === true ? {} : config.variableStore?.read(config.sourceModuleId).effective ?? config.variables
+    const snapshot = config[SESSION_VARIABLES_DISABLED] === true ? undefined : config.variableStore?.read(config.sourceModuleId, { agent })
+    const variables = config[SESSION_VARIABLES_DISABLED] === true ? {} : snapshot?.effective ?? config.variables
+    const literalKeys = new Set(Object.keys(snapshot?.session ?? {}))
     return config.texts
-      .map((item, index) => interpolateVariables(item, variables, agent?.session, undefined, `${config.sourceModuleId}:${config.id}#${index}`))
+      .map((item, index) => interpolateVariables(item, variables, agent?.session, undefined, `${config.sourceModuleId}:${config.id}#${index}`, literalKeys))
       .filter((item) => item.length > 0)
       .join('\n\n')
   } catch (error) {

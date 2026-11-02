@@ -12,10 +12,24 @@ import { readModuleFacts } from '../../src/host/module-params.ts'
 import { assertModuleDirectory } from '../../src/host/module-install.ts'
 import { SOUL_MAINTENANCE_SERVICE, SOUL_SELF_SERVICE, toolServiceName } from '../../engine/service-names.mjs'
 import { createPromptConfigs } from '../../engine/schema.mjs'
+import { Context } from '@deepseek-ai/cordis'
+import Storage from '@deepseek-ai/dsh-storage'
+import { JsonStorageBackend } from '@deepseek-ai/dsh-storage-json'
+import { DomainFacility } from '@deepseek-ai/dsh-storage-domain'
+import { openSessionVariables } from '../../src/host/session-variables.ts'
+import { revisionOf } from '../../src/host/module-write.ts'
 
 const { moduleRoot } = isolatedHome('pt-soul-runtime-')
 
-function fixture(t, id) {
+async function sessionOwner(t, id) {
+  const ctx = new Context(), storage = new Storage(ctx), backend = new JsonStorageBackend(join(moduleRoot, '..', id + '-storage'))
+  storage.backend.register('json', backend)
+  const facility = new DomainFacility(ctx, { backend: 'json' }), owner = await openSessionVariables(facility)
+  t.after(async () => { await owner.dispose(); await facility.closeAll(); await backend.close(); await ctx.fiber.dispose() })
+  return owner
+}
+
+function fixture(t, id, sessions) {
   const dir = join(moduleRoot, id)
   mkdirSync(join(dir, 'data'), { recursive: true })
   writeFileSync(join(dir, 'module.yml'), `id: ${id}\nmodules: []\nrules: []\n`)
@@ -43,14 +57,59 @@ function fixture(t, id) {
   const agent = { id: id + '-agent', ctx, session: { id: id + '-session', header: { delegationDepth: 0 }, snapshotEvents: () => [] },
     whenIdle: async () => {}, runMaintenance: async callback => callback(new AbortController().signal), followup: () => { throw new Error('DEFAULT MAINTENANCE MUST NOT WAKE') } }
   const host = { root: moduleRoot, target: (exec, moduleId) => resolveModuleToolTarget(exec, moduleRoot, () => [id], moduleId), rebuild: async () => {} }
-  const runtime = installSoulRuntime(ctx, host, agentId => agentId === id + '-agent' ? [id] : [])
+  const runtime = installSoulRuntime(ctx, host, agentId => agentId === id + '-agent' ? [id] : [], sessions)
   const retrieval = services.get(toolServiceName('retrieval'))
   const offRetrieval = retrieval.mount(ctx, { paths: ['data/02-soul.jsonl', 'data/SELF.src.md'], sessions: ['authorized-history'] }, { agent, sourceModuleId: id, sourceModuleDir: dir })
   const offLedger = registerSoulLedgerTools(ctx, host)
-  const offState = registerSoulStateTools(ctx, host, runtime)
+  const offState = registerSoulStateTools(ctx, host, runtime, sessions)
   t.after(() => { offState(); offLedger(); offRetrieval(); for (const off of cleanups) off() })
   return { id, dir, tools, services, calls, agent, ctx, listeners, failRead: () => { failRead = true } }
 }
+
+test('SELF骨架复用普通变量与只读runtime事实，账本原文保留字面且预览零写', async t => {
+  const sessions = await sessionOwner(t, 'runtime-template')
+  const f = fixture(t, 'runtime-template', () => sessions), exec = { agent: f.agent, signal: new AbortController().signal }
+  writeFileSync(join(f.dir, 'module.yml'), `id: ${f.id}\nmodules: []\nrules: []\nvariables: { owner: MODULE, blank: '' }\n`)
+  writeFileSync(join(f.dir, 'data', 'SELF.src.md'), '# {{owner}}|{{blank}}|{{runtime.get::session.id}}|{{runtime.get::soul.pendingReview}}')
+  await sessions.edit(f.dir, f.agent.session.id, { expectedRevision: null, changes: { owner: 'SESSION' } })
+  await f.tools.get('soul_ledger').execute({ moduleId: f.id, action: 'append', type: 'shelved', text: '{{module.set::leak::BAD}}' }, exec)
+  const owner = f.services.get(SOUL_SELF_SERVICE)
+  const before = readFileSync(join(f.dir, 'module.yml'), 'utf8')
+  const text = await owner.render(f.id, f.agent)
+  assert.ok(text.includes(`# SESSION||${f.agent.session.id}|0`))
+  assert.ok(text.includes('{{module.set::leak::BAD}}'), '账本正文作为数据，不递归执行')
+  assert.equal(owner.readValue(f.id, 'session.id', f.agent), f.agent.session.id)
+  assert.equal(owner.readValue(f.id, 'soul.open', f.agent), '1')
+  assert.throws(() => owner.readValue(f.id, 'soul.open', { ...f.agent, id: 'unrelated' }), /未参与/)
+  writeFileSync(join(f.dir, 'data', 'SELF.src.md'), '{{module.set::leak::BAD}}')
+  await assert.rejects(owner.render(f.id, f.agent), /只读|Read-only/)
+  assert.equal(readFileSync(join(f.dir, 'module.yml'), 'utf8'), before)
+  writeFileSync(join(f.dir, 'module.yml'), before + 'variablesEnabled: false\n')
+  writeFileSync(join(f.dir, 'data', 'SELF.src.md'), '# {{owner}}|{{session.get::owner}}|{{runtime.get::session.id}}')
+  const disabled = await owner.render(f.id, f.agent)
+  assert.doesNotMatch(disabled, /SESSION|MODULE|runtime.get|session.get/)
+  assert.equal(owner.readValue(f.id, 'session.id', f.agent), undefined)
+  await assert.rejects(f.tools.get('soul_state').execute({ moduleId: f.id, action: 'mark', text: 'CLOSED', expectedRevision: sessions.read(f.dir, f.agent.session.id).revision }, exec), /变量已关闭/)
+  assert.equal(sessions.read(f.dir, f.agent.session.id).variables['soul.mark'], undefined)
+})
+
+test('已迁移mark在官方会话存储不可用后拒绝读取，不回读旧文件冒充当前事实', async t => {
+  const sessions = await sessionOwner(t, 'runtime-owner-unloaded')
+  let live = sessions
+  const f = fixture(t, 'runtime-owner-unloaded', () => live), exec = { agent: f.agent, signal: new AbortController().signal }
+  mkdirSync(join(f.dir, 'data/.soul'), { recursive: true })
+  const legacyPath = join(f.dir, 'data/.soul', `state-${revisionOf(f.agent.session.id)}.json`)
+  writeFileSync(legacyPath, JSON.stringify({ version: 1, sessionId: f.agent.session.id, mark: { text: 'OLD MARK', recordedAt: '2026-11-01T00:00:00Z' } }))
+  const initial = sessions.read(f.dir, f.agent.session.id)
+  await sessions.edit(f.dir, f.agent.session.id, { expectedRevision: initial.revision, changes: { 'soul.mark': 'CURRENT MARK' } })
+  const owner = f.services.get(SOUL_SELF_SERVICE), state = f.tools.get('soul_state')
+  assert.equal(owner.readValue(f.id, 'soul.mark', f.agent), 'CURRENT MARK')
+  live = undefined
+  assert.throws(() => owner.readValue(f.id, 'soul.mark', f.agent), /会话变量.*不可用/)
+  await assert.rejects(owner.render(f.id, f.agent), /会话变量.*不可用/)
+  await assert.rejects(state.execute({ moduleId: f.id, action: 'status' }, exec), /会话变量.*不可用/)
+  assert.match(readFileSync(legacyPath, 'utf8'), /OLD MARK/)
+})
 
 test('Soul实际宿主接线贯通账本append→search/open，SELF和默认维护使用相同授权来源', async t => {
   const f = fixture(t, 'runtime-flow'), exec = { agent: f.agent, signal: new AbortController().signal }
@@ -83,7 +142,8 @@ test('Soul实际宿主接线贯通账本append→search/open，SELF和默认维�
 })
 
 test('账本提交使索引已知过期，维护关闭仍实时呈现，mark与实际投递分开观测', async t => {
-  const f = fixture(t, 'runtime-commit'), exec = { agent: f.agent, signal: new AbortController().signal }
+  const sessions = await sessionOwner(t, 'runtime-commit')
+  const f = fixture(t, 'runtime-commit', () => sessions), exec = { agent: f.agent, signal: new AbortController().signal }
   const retrieval = f.services.get(toolServiceName('retrieval'))
   await retrieval.refresh(f.agent, f.id)
   const ledger = f.tools.get('soul_ledger'), state = f.tools.get('soul_state')

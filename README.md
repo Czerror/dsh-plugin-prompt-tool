@@ -80,13 +80,17 @@ rules:
 
 需要“先发锚句、确认后注入正文”时，在同规则中用 `anchor.after.action` 引用锚句动作；确认只读取实际投递后的当前可见输出。默认持续等待、下次正常请求再注入；兜底次数和续跑均须显式声明。示例见 [模板16](templates/16-custom-fallback.yml)，直接匹配本批用户消息见 [模板14](templates/14-first-turn-anchor.yml)。旧专用策略与参数已直接替换，不提供兼容入口，也不自动改写已有用户模块。
 
-## 两级持久变量
+## 持久变量与运行事实
 
 模块 variables 覆盖同一 DSH_HOME 的全局变量。空字符串是有效值，删除模块键才回落全局。同模块的主会话与子代理共享，结束会话、压缩、卸载或重挂不清空。变量内容更新不重挂 Agent，下一求值读取新快照。
 
+会话变量按来源模块＋真实当前会话隔离，裸引用优先级为会话→模块→全局。它们使用官方 `storageDomain` 持久化，需宿主提供该能力及后端；插件不另建存储引擎或修改 profile。会话数据不随 fork 或会话日志导出，工作台仍只编辑模块/全局。
+
 **普通规则手动建立变量；ST 导入才自动登记缺失裸引用为空占位。** 模板 WHO、stateKeys 等需在变量卡建立；动作 config.variables 已退役。全局值不随模块导出。
 
-需要赋值时显式设置 `params.templateEvaluation: true`，使用 module/global 的 set/get/add/inc/dec。一张模板可读两域但只写一域，所有实际读取域都校验版本。资格、解析和预算检查先于提交；同一次真实执行跨 assembly/pre-step/重挂不重复自增。发布失败只重试发布，不承诺任意跨进程崩溃后的 exactly-once。
+需要赋值时显式设置 `params.templateEvaluation: true`，使用 module/global/session 的 set/get/add/inc/dec。一张模板可读多域但只写一域，实际读取的持久域都校验版本。session 赋值仅在异步规则和模型工具中提交，人设同步出口可读取但不能赋值 session。资格、解析和预算检查先于提交；同一次真实执行跨 assembly/pre-step/重挂不重复自增。发布失败只重试发布，不承诺任意跨进程崩溃后的 exactly-once。
+
+SELF骨架支持普通变量和 `{{runtime.get::soul.open}}` 等只读事实；runtime 不可被同名用户值覆盖，失败保持不可用。会话键 `soul.mark` 与旧 `soul_state mark` 共用限长、版本和宿主时间戳；旧 mark 首读零写、首次合法写自动迁入且保留原件。详见 [变量事务](docs/architecture-params.md#持久变量事务) 和 [SELF](docs/engine-reuse.md#self动态内容与维护心跳)。
 
 ## 独立人设
 
@@ -116,7 +120,7 @@ persona:
 | retrieval | module_search / module_open |
 | tool-config-engine | customTools 中的实际工具 |
 
-完整规则工具先读原始树与版本，再提交合法完整候选；删除整规则需显式 rule:null。变量工具提供 global/module 的 list/get/set/delete，set 必须显式字符串。模块私有文件（memory.md、assets/ 只读、data/ 只追加）由 module_file_read/append 读写，不自动注入；module_manifest 按 assets/manifest.yml 做 next/check/apply，只写 data/、不覆盖。
+完整规则工具先读原始树与版本，再提交合法完整候选；删除整规则需显式 rule:null。变量工具提供 global/module/session 的 list/get/set/delete，set 必须显式字符串；session 只能访问真实当前会话，写入携带 revisions.session。模块私有文件（memory.md、assets/ 只读、data/ 只追加）由 module_file_read/append 读写，不自动注入；module_manifest 按 assets/manifest.yml 做 next/check/apply，只写 data/、不覆盖。
 
 工具目录仅注册已声明能力，晚到 provider 与 disposer 按原生命周期处理。模块工具的主语由**这次调用显式声明的 `moduleId`** 决定：不传即没有目标、直接拒绝，不回退装配记录首项或包内默认模块；执行 Agent 已启用的规则模块只作拒绝文案里的候选提示，不是目标（人设来源是独立引用，同样不决定写入目标）。`expectedModuleId` 是桥端对请求头声明的一致性复核，与工具侧的主语选择是两套独立判据。工具只能读写模块存储根下 `module.yml` 所在的既有模块；模块内文件限定 memory.md、assets/（只读）、data/（只追加），不访问任意路径。自定义工具继续支持 shell/http/delegate/fs/ask-user，并保留官方批准、拒绝与取消管线。
 
@@ -150,7 +154,7 @@ SELF 每步读取当前骨架、账本投影和身份/时钟，维护关闭或�
 
 ## 升级与旧格式
 
-原生格式是破坏性切换：旧 world-book/ST 运行字段、动作局部变量、旧工具能力和扁平 persona 明确拒绝。重新导入原始标准来源，或使用内置 [dsh-module 技能](skills/dsh-module/SKILL.md) 在用户授权下显式转换。插件不扫描改写用户目录、不恢复旧会话变量、不提供自动迁移器。其它历史参数的白名单边界见 [旧格式与显式转换](docs/architecture-params.md#旧格式与显式转换)。
+原生格式是破坏性切换：旧 world-book/ST 运行字段、动作局部变量、旧工具能力和扁平 persona 明确拒绝。重新导入原始标准来源，或使用内置 [dsh-module 技能](skills/dsh-module/SKILL.md) 在用户授权下显式转换。插件不扫描改写用户目录、不恢复历史ST会话变量；旧Soul mark仅按上述首次合法写契约迁移。其它历史参数的白名单边界见 [旧格式与显式转换](docs/architecture-params.md#旧格式与显式转换)。
 
 ## 技能与指令文件
 

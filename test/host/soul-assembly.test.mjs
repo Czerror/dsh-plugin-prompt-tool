@@ -10,6 +10,11 @@ import { resolveModuleToolTarget } from '../../src/host/module-tool-target.ts'
 import { compileRules } from '../../engine/rule-spec.mjs'
 import { mountRuleSources } from '../../engine/rule-runtime.mjs'
 import { SOUL_MAINTENANCE_SERVICE } from '../../engine/service-names.mjs'
+import { Context } from '@deepseek-ai/cordis'
+import Storage from '@deepseek-ai/dsh-storage'
+import { JsonStorageBackend } from '@deepseek-ai/dsh-storage-json'
+import { DomainFacility } from '@deepseek-ai/dsh-storage-domain'
+import { openSessionVariables } from '../../src/host/session-variables.ts'
 
 const { moduleRoot } = isolatedHome('pt-soul-assembly-')
 
@@ -42,9 +47,13 @@ test('真实Soul装配贯通lead/promise/close与下一步SELF，陈旧快照不
   services.set('sessionPersistence', { open: () => { historyReads++; throw new Error('NO HISTORY ACCESS') } })
   services.set('llm', { invoke: () => { modelCalls++; throw new Error('NO MODEL CALL') } })
   const host = { root: moduleRoot, target: (exec, moduleId) => resolveModuleToolTarget(exec, moduleRoot, () => [id], moduleId), rebuild: async () => {} }
-  const runtime = installSoulRuntime(ctx, host, agentId => ['main', 'child'].includes(agentId) ? [id] : [])
+  const storageCtx = new Context(), storage = new Storage(storageCtx), backend = new JsonStorageBackend(join(moduleRoot, '..', 'assembly-storage'))
+  storage.backend.register('json', backend)
+  const facility = new DomainFacility(storageCtx, { backend: 'json' }), sessions = await openSessionVariables(facility)
+  t.after(async () => { await sessions.dispose(); await facility.closeAll(); await backend.close(); await storageCtx.fiber.dispose() })
+  const runtime = installSoulRuntime(ctx, host, agentId => ['main', 'child'].includes(agentId) ? [id] : [], () => sessions)
   const offLedger = registerSoulLedgerTools(ctx, host)
-  const offState = registerSoulStateTools(ctx, host, runtime)
+  const offState = registerSoulStateTools(ctx, host, runtime, () => sessions)
   const rules = compileRules([{ id: 'self', then: [{ id: 'inject', kind: 'inject-text', config: { strategy: 'placeholder', fill: 'soul-self', layer: 'runtime-context', params: { contextName: 'agent:soul-self' } } }] }], { moduleId: id })
   let offRules = mountRuleSources(ctx, [{ moduleId: id, rules }])
   t.after(() => { offRules(); offState(); offLedger(); for (const off of cleanups.reverse()) off() })

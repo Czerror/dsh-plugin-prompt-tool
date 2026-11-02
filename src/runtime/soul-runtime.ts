@@ -14,6 +14,10 @@ import { readSoulState } from '../host/soul-state.ts'
 import { readSoulLedgerProjection } from '../host/soul-ledger.ts'
 import { readSoulDiagnostics } from '../host/soul-diagnostics.ts'
 import { readSoulUpgradePreview } from '../host/soul-upgrade.ts'
+import { readModuleVariables } from '../host/module-variables.ts'
+import type { SessionVariableOwner } from '../host/session-variables.ts'
+import { evaluateTemplate } from '../../engine/template-evaluation.mjs'
+import { interpolateVariables, stripUnresolvedRefs } from '../../engine/interpolate.mjs'
 import { readSoulPressure } from './soul-pressure.ts'
 import type { SoulPressure } from './soul-pressure.ts'
 import { createSoulReminder } from './soul-reminder.ts'
@@ -25,8 +29,13 @@ import type { RetrievalEvent } from '../../engine/retrieval-reference.mjs'
 import { createSoulMaintenanceProvider } from './soul-maintenance.ts'
 import { SOUL_MAINTENANCE_SERVICE, SOUL_SELF_SERVICE, toolServiceName } from '../../engine/service-names.mjs'
 
-export function installSoulRuntime(ctx: Context, host: ModuleToolHost, moduleIds: (id: string) => readonly string[]): SoulStateObservation {
+export function installSoulRuntime(ctx: Context, host: ModuleToolHost, moduleIds: (id: string) => readonly string[], sessions?: () => SessionVariableOwner | undefined): SoulStateObservation {
   let active = true
+  const sessionOwner = (): SessionVariableOwner | undefined => {
+    const owner = sessions?.()
+    if (sessions !== undefined && owner === undefined) throw new Error('会话变量持久化依赖不可用，不能读取当前状态')
+    return owner
+  }
   const rendered = new Map<string, { at: string; candidates: string[]; sessionId: string }>()
   const digest = (text: string): string => createHash('sha256').update(text).digest('hex')
   const delivered = new Map<string, string>()
@@ -87,15 +96,45 @@ export function installSoulRuntime(ctx: Context, host: ModuleToolHost, moduleIds
   ctx.provide(toolServiceName('retrieval'), retrieval)
   ctx.provide(SOUL_MAINTENANCE_SERVICE, maintenance)
   const status = (id: string, agent: Agent) => {
-    const dir = source(id, agent), ledger = readSoulLedgerProjection(dir), state = readSoulState(dir, agent.session.id)
+    const dir = source(id, agent), ledger = readSoulLedgerProjection(dir), state = readSoulState(dir, agent.session.id, sessionOwner())
     return { clock: new Date().toISOString(), timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
       sessionId: agent.session.id, revision: state.revision, mark: state.mark ? { ...state.mark } : null, activityAt: activityOf(agent),
       ledger: { total: ledger.total, open: ledger.open, pendingReview: ledger.pendingReview, initialized: ledger.initialized, pendingVersion: ledger.pendingVersion },
       index: { ...retrieval.status(agent, id) }, pressure: pressure(dir, agent),
       renderedAt: rendered.get(keyOf(id, agent))?.at ?? null, deliveredAt: delivered.get(keyOf(id, agent)) ?? null }
   }
+  const readValue = (id: string, key: string, agent: Agent, signal?: AbortSignal): string | undefined => {
+    const dir = source(id, agent, signal)
+    if (!readModuleVariables(dir, { runtime: true }).enabled) return undefined
+    if (key === 'session.id') return agent.session.id
+    if (key === 'session.audience') return (agent.session.header.delegationDepth ?? 0) > 0 ? 'subagent' : 'main'
+    if (key === 'clock.iso') return new Date().toISOString()
+    if (key === 'clock.timeZone') return Intl.DateTimeFormat().resolvedOptions().timeZone
+    if (key.startsWith('soul.')) {
+      if (key === 'soul.mark' || key === 'soul.markAt') {
+        const mark = readSoulState(dir, agent.session.id, sessionOwner()).mark
+        return key === 'soul.mark' ? mark?.text : mark?.recordedAt
+      }
+      const ledger = readSoulLedgerProjection(dir)
+      if (key === 'soul.open') return String(ledger.open)
+      if (key === 'soul.pendingReview') return String(ledger.pendingReview)
+      if (key === 'soul.total') return String(ledger.total)
+      if (key === 'soul.lead') return ledger.lead?.['概要']
+      if (key === 'soul.leadSessionId') return ledger.lead?.by
+    }
+    if (key === 'index.state' || key === 'index.observedAt') {
+      const index = retrieval.status(agent, id)
+      return key === 'index.state' ? index.state : index.observedAt
+    }
+    if (key === 'pressure.state' || key === 'pressure.ratio') {
+      const water = pressure(dir, agent)
+      return key === 'pressure.state' ? water.state : water.state === 'known' ? String(water.ratio) : undefined
+    }
+    return undefined
+  }
   ctx.provide(SOUL_SELF_SERVICE, {
     status,
+    readValue,
     reminder,
     committed: (id: string, agent: Agent) => {
       source(id, agent)
@@ -107,7 +146,7 @@ export function installSoulRuntime(ctx: Context, host: ModuleToolHost, moduleIds
       const dir = source(id, agent, signal), budget = readSelfBudget(dir)
       return Promise.resolve().then(() => {
         if (source(id, agent, signal) !== dir) throw new Error('SELF来源发生变化')
-        const state = readSoulState(dir, agent.session.id)
+        const state = readSoulState(dir, agent.session.id, sessionOwner())
         const water = pressure(dir, agent)
         const text = renderSoulSelf(dir, agent, signal, budget, retrieval.status(agent, id), [
           `- 显式状态：${state.mark?.text ?? '尚未标记'}；标记时刻：${state.mark?.recordedAt ?? '无'}`,
@@ -116,7 +155,15 @@ export function installSoulRuntime(ctx: Context, host: ModuleToolHost, moduleIds
           ...(water.state === 'disabled' ? [] : [water.state === 'known'
             ? `- 上下文水位：${(water.ratio * 100).toFixed(1)}%（${water.tokens}/${water.capacity}；${water.source}）；${water.guidance}。此为提示，不自动压缩。`
             : `- 上下文水位：未知；${water.reason}`]),
-        ])
+        ], sourceText => {
+          if (!sourceText.includes('{{')) return { text: sourceText, revision: '' }
+          const snapshot = readModuleVariables(dir, { runtime: true })
+          if (!snapshot.enabled) return { text: stripUnresolvedRefs(interpolateVariables(sourceText, {}, agent.session)).text, revision: snapshot.revisions.settings }
+          const session = sessionOwner()?.read(dir, agent.session.id)
+          const result = evaluateTemplate(sourceText, { module: snapshot.module, global: snapshot.global, sessionVariables: session?.variables,
+            session: agent.session, readOnly: true, sourceId: `${id}:self`, readRuntime: key => readValue(id, key, agent, signal) })
+          return { text: result.text, revision: JSON.stringify([snapshot.revisions, session?.revision]) }
+        })
         source(id, agent, signal)
         if (rendered.size > 1024) rendered.delete(rendered.keys().next().value!)
         const key = keyOf(id, agent), candidates = [...(rendered.get(key)?.candidates ?? []), digest(text)].slice(-16)
@@ -157,4 +204,8 @@ export function installSoulRuntime(ctx: Context, host: ModuleToolHost, moduleIds
 
 export function soulReminderOf(ctx: Context): RuleSoulReminder | undefined {
   return (ctx.get(SOUL_SELF_SERVICE) as { reminder?: RuleSoulReminder } | undefined)?.reminder
+}
+
+export function soulRuntimeValueOf(ctx: Context, id: string, key: string, agent: Agent, signal?: AbortSignal): string | undefined {
+  return (ctx.get(SOUL_SELF_SERVICE) as { readValue?: (id: string, key: string, agent: Agent, signal?: AbortSignal) => string | undefined } | undefined)?.readValue?.(id, key, agent, signal)
 }
