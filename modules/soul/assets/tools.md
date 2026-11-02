@@ -11,8 +11,9 @@
 - `module_file_read` / `module_file_append`（moduleId: soul）：读取允许 `memory.md`、`assets/`、`data/`；追写只允许 `memory.md` 与 `data/`，一次一行。账本 `data/02-soul.jsonl` 只能走 `soul_ledger`，通用文件接口会被拒。
 - `module_manifest`（moduleId: soul）：`action: next` 看第一条缺失，`check` 看全部检查结果，`apply` 只建缺失文件、不覆盖不删除。
 - `module_variables`（moduleId: soul，scope: module）：`action: list` 读全部并返回 revisions；`get` 读单键；`set` 必须 `key` + `value` + 读取时的 `expectedRevisions`；`delete` 只删本模块键，删除后回落全局。
+- 变量是状态不是流水：计划变化或完成时覆盖 plan_step/plan_at（两者清空后，下个会话首轮会重新提醒写计划），装配完成后 scaffold_done 置 true；check_* 由检查流程维护，模型不手写。
 - 会话短状态可用 `module_variables` 的 `scope: session` 操作 `soul.mark`，或继续用 `soul_state mark`；两者共用版本、限长和宿主时间戳。session 按真实当前会话隔离，需要官方 storageDomain；不能指定别人的会话。旧 mark 首次合法写自动迁入，旧文件保留。
-- SELF骨架支持 `{{plan_step}}`、`{{session.get::soul.mark}}`、`{{runtime.get::soul.open}}` 等只读模板；缺运行事实不冒充零。session赋值仅由规则动作或工具执行，SELF不执行赋值。
+- SELF骨架支持只读模板占位（plan_step、session.get::soul.mark、runtime.get::soul.open 这类写成双花括号）；缺运行事实不冒充零。session赋值仅由规则动作或工具执行，SELF不执行赋值。
 - 记录落点：事件/承诺/未结→账本；可复用判据→mnemon；项目变更为什么→工作区 `.ai-memory`（只留指针）；可重建事实→读磁盘。同一件事只写一处。
 - 账本写入时机：完成跨回合任务、做出重要且难以回头的决定、踩坑后，及时用 `soul_ledger` 记录可核实的事件、决策依据或坑的形状与检测法，选择合适的 `fact` / `gain` / `loss`；不必等用户专门要求。退场前集中写一次 `container`，交接做了什么、产物在哪、下一步由谁接手。
 - 写前先判断唯一归属并核对已有记录：已归 mnemon 或 `.ai-memory` 的内容不重复入账；已有事项不再追加一份，状态变化走既有收口流程。只留一句话索引与可回取的 `ref`；过程流水、可重建事实、无出处断言不入账。自主记录不授予 `lead` 或 `promise` 的额外权限。
