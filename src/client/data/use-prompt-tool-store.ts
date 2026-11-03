@@ -52,7 +52,7 @@ import type { ModuleVariableRevisions, ModuleVariableScope } from '../../shared/
 import { createVariablesDraft, readVariablesDraft, retryModuleVariablesPublication as retryModuleVariablesPublicationRequest, saveModuleVariables as saveModuleVariablesRequest, type VariablesDraft } from './module-variables.ts'
 import { canEditModule, moduleDeclares, ownsParamDraftKey, subjectDraftKey, MODULE_PENDING_MESSAGE, NO_SUBJECT_MESSAGE } from './module-subject.ts'
 import { modulesEnabledOps } from '../../shared/module-settings.ts'
-import { modelChoiceValue } from '../features/models/model-options.ts'
+import { modelChoiceValue } from './model-choice.ts'
 import type { BridgeResponse, ModelReasoningView } from '../../shared/bridge-contract.ts'
 import type {
   DraftsPort,

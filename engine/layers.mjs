@@ -249,7 +249,9 @@ async function resolvedContextText(ctx, config, context, registry, warnOnce) {
   if (context.signal?.aborted || resolved == null) return ''
   if (config.fill === 'soul-self') return resolved.text ?? ''
   const snapshot = config[SESSION_VARIABLES_DISABLED] === true ? undefined : config.variableStore?.read(config.sourceModuleId, context)
-  const variables = { ...(config[SESSION_VARIABLES_DISABLED] === true ? {} : snapshot?.effective ?? config.variables), ...(resolved.variables !== null && typeof resolved.variables === 'object' ? resolved.variables : {}) }
+  // 声明值是默认层：variableStore 的 effective 只覆盖同名键，不能把未覆盖的声明整体吞掉。
+  const declared = config[SESSION_VARIABLES_DISABLED] === true ? {} : config.variables ?? {}
+  const variables = { ...declared, ...(snapshot?.effective ?? {}), ...(resolved.variables !== null && typeof resolved.variables === 'object' ? resolved.variables : {}) }
   const literalKeys = new Set(Object.keys(snapshot?.session ?? {}).filter(key => !Object.hasOwn(resolved.variables ?? {}, key)))
   if (config.params?.templateEvaluation === true) {
     const texts = config.texts.length ? config.texts : [resolved.text ?? '']

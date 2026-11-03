@@ -35,7 +35,7 @@
  * the composition must NOT mount both, or the catalog injection returns.
  */
 import { importHostPackage } from './host-package.mjs'
-import { toJsonSchema } from './shared.mjs'
+import { keepDisposer, toJsonSchema } from './shared.mjs'
 import { currentEvents } from './history.mjs'
 import { queryTokens, renderRows, rankRows, scoreRows } from './discovery.mjs'
 import { DISCOVERY_SERVICE } from './service-names.mjs'
@@ -145,6 +145,8 @@ export function apply(ctx, _config, options = {}) {
     },
   })
 
+  keepDisposer(ctx, disposeSearch, 'skill-search: skill_search')
+
   const disposeLoad = ctx.tools.register({
     name: 'skill_load',
     description: 'Load the full instructions of ONE skill by its exact registered name and inject them for the next request. Call this before acting on a task that matches the skill. The name may come from skill_search, from the skill list, or from the user — any exact name in the registry works, and when nothing matches, ask the user for it.',
@@ -211,6 +213,8 @@ export function apply(ctx, _config, options = {}) {
       }
     },
   })
+  keepDisposer(ctx, disposeLoad, 'skill-search: skill_load')
+
   const registry = typeof ctx.get === 'function' ? ctx.get(DISCOVERY_SERVICE) : undefined
   const disposeAdapter = registry === undefined ? undefined : registry.register(options.agent, 'skills', discoveryAdapter)
   return () => {

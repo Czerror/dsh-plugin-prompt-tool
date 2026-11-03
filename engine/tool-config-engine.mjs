@@ -222,6 +222,8 @@ function sessionCwdOf(run) {
 /** 执行器分发：返回成功值（registry 按 output.schema 校验）。 */
 function createExecute(ctx, def, requireApproval) {
   const exec = def.execute
+  // 同一外层调用里重复 delegate 同名工具时，序号保证调用身份不塌缩。
+  let delegateSeq = 0
   return async (args, run) => {
     if (def.parameters !== undefined) {
       const violations = validateJsonSchemaValue(def.parameters, args)
@@ -279,7 +281,7 @@ function createExecute(ctx, def, requireApproval) {
       const body = rawBody === undefined ? undefined : JSON.stringify(JSON.parse(interpolateArgs(JSON.stringify(rawBody), args)))
       const timeout = def.timeoutMs ?? 15000
       const response = await fetch(url, {
-        method: String(exec.method ?? 'GET').toUpperCase(),
+        method: interpolateArgs(String(exec.method ?? 'GET'), args).toUpperCase(),
         headers,
         ...(body !== undefined ? { body } : {}),
         signal: AbortSignal.timeout(timeout),
@@ -297,7 +299,7 @@ function createExecute(ctx, def, requireApproval) {
       // timeout/nested token/durable result），调用身份由外层 callId 稳定派生，
       // 禁止 Date.now() 生成调用身份。
       const result = await tools.execute({
-        callId: `${run.callId}:delegate:${exec.tool}`,
+        callId: `${run.callId}:delegate:${exec.tool}:${++delegateSeq}`,
         rootCallId: run.rootCallId,
         name: exec.tool,
         agent: run.agent,

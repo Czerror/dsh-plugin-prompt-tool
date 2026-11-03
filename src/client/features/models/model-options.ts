@@ -1,14 +1,13 @@
 import type { MenuSelectOption } from '../../ui/MenuSelect.tsx'
 import type { ModelReasoningView } from '../../../shared/bridge-contract.ts'
+import { modelChoiceValue } from '../../data/model-choice.ts'
+
+export { modelChoiceValue }
 
 export interface ModelSelection {
   provider: string
   model: string
 }
-
-/** 用无歧义的复合值承载 provider + model；同名模型可跨服务商共存。 */
-export const modelChoiceValue = (provider: string, model: string): string =>
-  JSON.stringify([provider, model])
 
 export function parseModelChoice(value: string): ModelSelection | undefined {
   if (value.length === 0) return undefined

@@ -44,6 +44,7 @@
 import { access } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { bool, defineConfig, int } from './fields.mjs'
+import { keepDisposer } from './shared.mjs'
 
 /** Cordis plugin name used by loader diagnostics. */
 export const name = 'tool-git-bash'
@@ -200,7 +201,7 @@ export function apply(ctx, config) {
     }
   }
 
-  ctx.tools.register({
+  keepDisposer(ctx, ctx.tools.register({
     name: 'bash',
     description: [
       'Run commands in a bash shell (Git Bash on Windows)',
@@ -320,5 +321,5 @@ export function apply(ctx, config) {
         exec?.signal?.removeEventListener('abort', onExecAbort)
       }
     },
-  })
+  }), 'tool-git-bash: bash')
 }
