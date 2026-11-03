@@ -595,5 +595,5 @@ type AssertCoverage<K extends string, M extends object> =
   Exclude<K, keyof M> extends never
     ? Exclude<keyof M, K> extends never ? true : false
     : false
-type _requestCoverage = AssertCoverage<keyof typeof BRIDGE_ENDPOINTS, BridgeRequestMap>
-type _responseCoverage = AssertCoverage<keyof typeof BRIDGE_ENDPOINTS, BridgeValueMap>
+const _requestCoverage: AssertCoverage<keyof typeof BRIDGE_ENDPOINTS, BridgeRequestMap> = true
+const _responseCoverage: AssertCoverage<keyof typeof BRIDGE_ENDPOINTS, BridgeValueMap> = true
