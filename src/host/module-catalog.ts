@@ -235,7 +235,11 @@ export function duplicateUserModule(id: string, moduleRoot = userModulesDir(), w
 }
 
 /** 在系统文件管理器中打开模块目录（尽力而为：无桌面环境时打开失败也返回路径供 UI 展示）。 */
-export function openModuleLocation(id: string, moduleRoot = userModulesDir()): { ok: true; path: string } | { ok: false; message: string; path: string } {
+export async function openModuleLocation(
+  id: string,
+  moduleRoot = userModulesDir(),
+  spawnImpl: typeof spawn = spawn,
+): Promise<{ ok: true; path: string } | { ok: false; message: string; path: string }> {
   const isBareId = isModuleId(id)
   if (!isBareId) {
     return { ok: false, message: `非法预设 id：${id}`, path: '' }
@@ -252,7 +256,13 @@ export function openModuleLocation(id: string, moduleRoot = userModulesDir()): {
     assertModuleDirectory(moduleRoot, id)
     const command = process.platform === 'win32' ? 'explorer'
       : process.platform === 'darwin' ? 'open' : 'xdg-open'
-    const child = spawn(command, [dir], { detached: true, stdio: 'ignore' })
+    const child = spawnImpl(command, [dir], { detached: true, stdio: 'ignore' })
+    // 无桌面环境时 spawn 只发 error 事件；等它落定再决定返回值，避免谎报成功。
+    const failure = await new Promise<string | null>((resolveFailure) => {
+      child.once('spawn', () => resolveFailure(null))
+      child.once('error', (error) => resolveFailure(error instanceof Error ? error.message : String(error)))
+    })
+    if (failure !== null) return { ok: false, message: `打开目录失败：${failure}`, path: dir }
     child.unref()
     return { ok: true, path: dir }
   } catch (error) {

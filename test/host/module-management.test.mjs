@@ -165,6 +165,38 @@ test('打开目录：越界与非法 id 一律被拒，不进入打开动作', a
   }
 })
 
+test('打开目录：spawn 失败时据实返回失败，不抛未捕获异常', async () => {
+  const id = 'pt-open-fail'
+  writeModule(id)
+  const { EventEmitter } = await import('node:events')
+  const { openModuleLocation } = await import('../../src/host/module-catalog.ts')
+  const spawnError = () => {
+    const child = new EventEmitter()
+    child.unref = () => {}
+    setImmediate(() => child.emit('error', new Error('no desktop')))
+    return child
+  }
+  const result = await openModuleLocation(id, moduleRoot, spawnError)
+  assert.equal(result.ok, false, 'spawn 失败必须返回 ok:false')
+  assert.match(result.message, /no desktop/, '失败文案带底层原因')
+  assert.equal(result.path, join(moduleRoot, id))
+})
+
+test('打开目录：spawn 成功后才返回 ok:true', async () => {
+  const id = 'pt-open-ok'
+  writeModule(id)
+  const { EventEmitter } = await import('node:events')
+  const { openModuleLocation } = await import('../../src/host/module-catalog.ts')
+  const spawnOk = () => {
+    const child = new EventEmitter()
+    child.unref = () => {}
+    setImmediate(() => child.emit('spawn'))
+    return child
+  }
+  const result = await openModuleLocation(id, moduleRoot, spawnOk)
+  assert.deepEqual(result, { ok: true, path: join(moduleRoot, id) })
+})
+
 test('新建：同名且未要求递增时被拒，既有模块不被覆盖', async () => {
   const id = 'pt-custom'
   const dir = writeModule(id, `id: ${id}\nname: 已存在的模块\nmodules: []\n`)

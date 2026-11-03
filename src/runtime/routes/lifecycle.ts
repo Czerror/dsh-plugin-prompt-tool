@@ -108,7 +108,7 @@ export function registerLifecycle(runtime: LifecycleRuntime): Array<() => void> 
         tx.write(400, { ok: false, code: 'module-open-rejected', message: '缺少模块 id' })
         return
       }
-      const result = openModuleLocation(id)
+      const result = await openModuleLocation(id)
       if (!result.ok) {
         tx.write(400, { ok: false, code: 'module-open-rejected', message: `${result.message}（${result.path}）` })
         return
