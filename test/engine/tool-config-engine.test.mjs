@@ -200,3 +200,21 @@ test('ask-user 执行器：批准结果经真实工具管线透传', async (t) =
   assert.equal(result.isError, false, JSON.stringify(result))
   assert.deepEqual(result.value, { ok: true, answer: 'allowed-once' })
 })
+
+test('shell 执行器：无会话 cwd 时拒绝执行，不回退宿主进程目录', async () => {
+  const { tool } = registerTool(toolOf({ kind: 'shell', command: 'echo SHELL_RAN' }))
+  const result = await tool.execute({}, { signal: new AbortController().signal })
+  assert.equal(result.exitCode, 1, '无 cwd 必须返回失败')
+  assert.match(String(result.error), /no session cwd/, '失败文案点明缺会话 cwd')
+  assert.equal(result.stdout, '', '命令不得执行')
+})
+
+test('fs 执行器：无会话 cwd 时拒绝读写，不回退宿主进程目录', async (t) => {
+  const root = tempRoot(t)
+  const marker = join(root, 'should-not-exist.txt')
+  const { tool } = registerTool(toolOf({ kind: 'fs', action: 'write', path: marker, content: 'x' }))
+  const result = await tool.execute({}, { signal: new AbortController().signal })
+  assert.equal(result.ok, false, '无 cwd 必须返回失败')
+  assert.match(String(result.error), /no session cwd/, '失败文案点明缺会话 cwd')
+  assert.equal(existsSync(marker), false, '不得写入进程目录')
+})

@@ -213,6 +213,12 @@ function mapDelegateArgs(execArgs, args) {
     : args
 }
 
+/** 工具只能在调用者会话的 cwd 里工作；无会话时拒绝猜宿主进程目录。 */
+function sessionCwdOf(run) {
+  const cwd = run?.agent?.session?.header?.cwd
+  return typeof cwd === 'string' && cwd.length > 0 ? cwd : undefined
+}
+
 /** 执行器分发：返回成功值（registry 按 output.schema 校验）。 */
 function createExecute(ctx, def, requireApproval) {
   const exec = def.execute
@@ -229,7 +235,10 @@ function createExecute(ctx, def, requireApproval) {
     }
     if (exec.kind === 'shell') {
       const command = interpolateArgs(exec.command, args)
-      const cwd = run.agent?.session?.header?.cwd ?? process.cwd()
+      const cwd = sessionCwdOf(run)
+      if (cwd === undefined) {
+        return { exitCode: 1, stdout: '', stderr: '', error: 'no session cwd; custom tool refuses to guess the host process directory' }
+      }
       const shell = exec.shell ?? (process.platform === 'win32' ? 'pwsh' : 'sh')
       // pwsh/powershell：重定向输出时强制 UTF-8（默认随控制台代码页，中文会乱码）。
       const psPrefix = '[Console]::OutputEncoding=[System.Text.UTF8Encoding]::new();$OutputEncoding=[System.Text.UTF8Encoding]::new();'
@@ -306,7 +315,10 @@ function createExecute(ctx, def, requireApproval) {
       return { ok: true, value: result.value }
     }
     if (exec.kind === 'fs') {
-      const cwd = run.agent?.session?.header?.cwd ?? process.cwd()
+      const cwd = sessionCwdOf(run)
+      if (cwd === undefined) {
+        return { ok: false, error: 'no session cwd; custom tool refuses to guess the host process directory' }
+      }
       try {
         // 词法 resolve 挡不住 symlink/junction：统一用真实路径判定，不存在的目标按父目录解析。
         const file = resolveRealWithin(resolve(cwd, interpolateArgs(exec.path, args)), [cwd])
