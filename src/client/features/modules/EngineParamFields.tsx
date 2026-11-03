@@ -158,13 +158,15 @@ export function EngineParamField({ store, param, t, instanceId, ...subject }: {
     control = <TextInput id={id} inputMode="decimal" aria-label={label}
       aria-invalid={error !== undefined} aria-describedby={error === undefined ? undefined : `${id}-error`}
       value={draftText ?? String(value ?? '')} readOnly={disabled}
+      onFocus={composition.onFocus}
       onCompositionStart={composition.onCompositionStart} onCompositionEnd={composition.onCompositionEnd}
-      onChange={(event) => { writeDraft({ source: String(value ?? ''), text: event.target.value, error: '' }); composition.schedule() }}
-      onBlur={composition.flush} />
+      onChange={(event) => { writeDraft({ source: String(value ?? ''), text: event.target.value, error: '' }) }}
+      onBlur={composition.onBlur} />
   } else {
     control = <textarea id={id} className={styles.configTextarea} rows={2} aria-label={label} value={String(value ?? '')}
+      onFocus={composition.onFocus} onBlur={composition.onBlur}
       onCompositionStart={composition.onCompositionStart} onCompositionEnd={composition.onCompositionEnd}
-      readOnly={disabled} onChange={(event) => { patch(event.target.value); composition.schedule() }} />
+      readOnly={disabled} onChange={(event) => patch(event.target.value)} />
   }
   return <div className={styles.settingRowStack} data-param-key={param} data-param-kind={definition.kind}
     data-control={menuField ? 'select' : definition.kind === 'boolean' ? 'switch' : definition.kind === 'number' ? 'number' : 'text'}>

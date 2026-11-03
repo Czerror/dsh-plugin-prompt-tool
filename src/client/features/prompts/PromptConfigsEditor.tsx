@@ -64,12 +64,14 @@ export function TemplateVariablesModuleCard(props: {
   }
   return (
     <article ref={cardRef} className={props.embedded ? styles.moduleEmbedded : styles.configCard}
-      onInput={autosave.schedule} onCompositionStart={autosave.onCompositionStart} onCompositionEnd={autosave.onCompositionEnd}>
+      onFocus={autosave.onFocus} onBlur={autosave.onBlur}
+      onCompositionStart={autosave.onCompositionStart} onCompositionEnd={autosave.onCompositionEnd}>
       <header className={props.embedded ? styles.moduleEmbeddedHeader : styles.configHeader}>
         {props.embedded ? <>
           <h4 className={styles.moduleEmbeddedTitle}>{t('variables.title')}</h4>
           <span className={styles.configMeta}>{t('variables.cardMeta', { count })}</span>
-        </> : <button type="button" className={styles.configToggle} aria-expanded={expanded} aria-controls={expanded ? panelId : undefined} onClick={props.onToggleExpanded}>
+        </> : <button type="button" className={styles.configToggle} aria-expanded={expanded} aria-controls={expanded ? panelId : undefined}
+          onClick={() => { if (expanded) autosave.flush(); props.onToggleExpanded?.() }}>
           <span className={styles.configTitle}>
             <span className={styles.configName}>{t('variables.title')}</span>
             <span className={styles.configMeta}>{t('variables.cardMeta', { count })}</span>
@@ -79,7 +81,7 @@ export function TemplateVariablesModuleCard(props: {
         <span className={styles.configHeaderActions}>
           <MenuSelect value={props.scope} ariaLabel={t('form.section.scope')} compact
             options={[{ value: 'module', label: t('variables.scope.module') }, { value: 'global', label: t('variables.scope.global') }]}
-            disabled={props.disabled || confirmingDelete} onChange={value => props.onScopeChange(value as ModuleVariableScope)} />
+            disabled={props.disabled || confirmingDelete} onChange={value => { autosave.flush(); props.onScopeChange(value as ModuleVariableScope) }} />
           {props.scope === 'module' && <HintTooltip label={enabled ? t('variables.toggleDisable') : t('variables.toggleEnable')}>
             <Switch label={t('variables.enableAria')} checked={enabled} disabled={disabled} onChange={(value) => {
               if (disabled) return
@@ -111,7 +113,7 @@ export function TemplateVariablesModuleCard(props: {
           </>}
           {props.loading ? (!props.error && <p className={styles.configFieldHint}>{t('variables.loading')}</p>)
             : count === 0 ? <p className={styles.configFieldHint}>{t('variables.empty')}</p>
-              : <VariablesEditor t={t} value={props.templateVariables} disabled={disabled} hideHeading={props.embedded} onChange={(next) => { if (!disabled) { props.setTemplateVariables(next ?? {}); autosave.schedule() } }} />}
+              : <VariablesEditor t={t} value={props.templateVariables} disabled={disabled} hideHeading={props.embedded} onChange={(next) => { if (!disabled) props.setTemplateVariables(next ?? {}) }} />}
         </div>
       )}
       {confirmingDelete && <ConfirmDialog title={t('variables.deleteTitle')} description={props.scope === 'global' ? t('variables.globalDeleteDescription') : t('variables.deleteDescription')}

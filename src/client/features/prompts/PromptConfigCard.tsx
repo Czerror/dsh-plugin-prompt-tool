@@ -64,7 +64,6 @@ export const PromptConfigCard = memo(function PromptConfigCard(props: {
   const cardRef = useRef<HTMLElement>(null)
   const actionRef = useRef<HTMLSpanElement>(null)
   const reloadRef = useRef<HTMLSpanElement>(null)
-  const ownsFocus = useRef(false)
   const panelId = useId()
   const enabled = config.enabled !== false
   const name = config.name || config.id
@@ -110,7 +109,7 @@ export const PromptConfigCard = memo(function PromptConfigCard(props: {
   useEffect(() => {
     const finished = wasSaving.current && config.contentSaving !== true
     wasSaving.current = config.contentSaving === true
-    if (finished && config.contentDirty && !config.contentConflict && !config.contentMessage) autosave.schedule()
+    if (finished && !autosave.isFocused() && config.contentDirty && !config.contentConflict && !config.contentMessage) autosave.flush()
   }, [config.contentSaving, config.contentDirty, config.contentConflict, config.contentMessage])
   const title = <span className={styles.configTitle}>
     <span className={styles.configTitleRow}><span className={styles.configName}>{name}</span></span>
@@ -118,17 +117,14 @@ export const PromptConfigCard = memo(function PromptConfigCard(props: {
     <span className={styles.configMeta}>{chips.join(' · ')}</span>
   </span>
   return <article ref={cardRef} className={clsx(styles.configCard, props.expanded && styles.configCardOpen)}
-    onInput={instructionFileId === undefined ? undefined : autosave.schedule}
     onCompositionStart={autosave.onCompositionStart} onCompositionEnd={instructionFileId === undefined ? undefined : autosave.onCompositionEnd}
     data-config-id={config.id} data-dragging={props.dragging ? '' : undefined}
     data-drop-before={props.dropBefore ? '' : undefined} data-drop-after={props.dropAfter ? '' : undefined}
-    onFocus={() => { ownsFocus.current = true }}
+    onFocus={autosave.onFocus}
     onBlur={() => {
-      ownsFocus.current = false
+      autosave.onBlur()
       requestAnimationFrame(() => {
-        if (ownsFocus.current) return
-        setMenuOpen(false)
-        autosave.flush()
+        if (!autosave.isFocused()) setMenuOpen(false)
       })
     }}
     onDragOver={props.onDragOver === undefined ? undefined : (event) => props.onDragOver!(config.id, event)}

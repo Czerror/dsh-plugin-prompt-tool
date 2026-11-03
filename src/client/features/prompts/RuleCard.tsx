@@ -1,4 +1,4 @@
-import { useId, useRef, useState, type ReactNode } from 'react'
+import { useId, useState, type ReactNode } from 'react'
 import { AutoSaveSelection } from '../../ui/AutoSaveSelection.ts'
 import type { RuleDefinition } from '../../../shared/rules.ts'
 import type { RuleEditor, RuleEntry, RulesDraft } from '../../data/rule-drafts.ts'
@@ -33,7 +33,7 @@ export function RuleCard(props: {
   renderSettings?: (rule: RuleDefinition, moduleId: string) => ReactNode
 }): ReactNode {
   const { t, entry, editor, draft } = props, rule = entry.value
-  const panelId = useId(), ownsFocus = useRef(false)
+  const panelId = useId()
   const [confirming, setConfirming] = useState(false)
   const disabled = props.disabled === true || draft.busy === 'save'
   const nodes = [...nodeList(rule.then), ...nodeList(rule.else)]
@@ -44,24 +44,23 @@ export function RuleCard(props: {
   const summary = totals.branches === 0
     ? t('rules.summary', { conditions: countConditions(rule.if), actions: totals.actions })
     : t('rules.summary.branches', { conditions: countConditions(rule.if), actions: totals.actions, branches: totals.branches })
-  const patch = (next: Partial<RuleDefinition>): void => { if (!disabled) { editor.patch(entry.key, { ...entry.value, ...next }); autosave.schedule() } }
+  const patch = (next: Partial<RuleDefinition>): void => { if (!disabled) editor.patch(entry.key, { ...entry.value, ...next }) }
   const autosave = useAutosave(props.moduleId + ':' + entry.key, () => {
     if (!disabled && !unsupported && rulesDirty(draft) && !hasRuleFields(draft)) void editor.submit()
   })
-  // 重读期间保留原计时机会；完整提交资格仍由 editor 判定。
+  // 完整提交资格与未完成草稿仍由 editor 判定。
   const save = (): void => { if (draft.loaded && draft.busy === undefined) autosave.flush() }
-  const onDraft = (): void => { editor.changed(); autosave.schedule() }
+  const onDraft = (): void => { editor.changed() }
   const fieldContext = { t, fields: draft.fields, disabled, engineMeta: props.meta, onDraft }
   return <AutoSaveSelection.Provider value={save}><CollapsibleCard id={panelId} title={rule.name || rule.id} meta={(props.source ? t('rules.source', { module: props.source }) + ' · ' : '') + (rule.layer === undefined ? t('rules.module') : translateLabel(t, LAYER_LABEL_KEYS, rule.layer)) + ' · ' + summary}
     expanded={props.expanded} onToggle={() => { if (props.expanded) save(); props.onToggle() }} bodyClassName={`${ui.configForm} ${css.cardPanel}`}
     data-rule-id={rule.id} data-rule-key={entry.key}
     onCompositionStart={autosave.onCompositionStart}
     onCompositionEnd={autosave.onCompositionEnd}
-    onFocus={() => { ownsFocus.current = true }} onBlur={(event) => {
-      ownsFocus.current = false
+    onFocus={autosave.onFocus} onBlur={(event) => {
       // 批量开关自行提交，避免离卡自动保存抢先发出旧状态。
       if (event.relatedTarget instanceof Element && event.relatedTarget.closest('[data-batch]')) return
-      requestAnimationFrame(() => { if (!ownsFocus.current) save() })
+      autosave.onBlur()
     }}
     actions={<span className={css.headerActions} data-rule-header-actions>{props.headerActions}<span className={css.switchLine}>
       <AutoSaveSelection.Provider value={undefined}><Switch label={t('rules.enable', { name: rule.name || rule.id })} checked={rule.enabled !== false} disabled={disabled || draft.busy !== undefined || hasRuleFields(draft)} onChange={enabled => {

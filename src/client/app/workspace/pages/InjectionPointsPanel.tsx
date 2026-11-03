@@ -206,6 +206,7 @@ export function LayerSettingsContent(props: {
         <section key={id} hidden={!matches(id)} className={css.asset} data-layer-asset={id} aria-label={t(CARD_LABEL_KEYS[id] ?? 'modules.layer.asset')}>
           {id === 'variables' && variables !== undefined && (
             <TemplateVariablesModuleCard
+              key={moduleId}
               t={t}
               scope={variables.scope}
               onScopeChange={scope => store.setModuleVariablesScope(moduleId, scope)}

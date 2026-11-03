@@ -1,4 +1,4 @@
-import { useEffect, useId, useMemo, useState, type ReactNode } from 'react'
+import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react'
 import clsx from 'clsx'
 import { Switch } from '../../ui/Switch.tsx'
 import type { FieldDraft } from '../../data/workspace-drafts.ts'
@@ -338,10 +338,15 @@ export function StrategyParamsFields(props: { t: PromptToolTranslate; strategy: 
 /** 模板变量键值对编辑器（替代 JSON）：每行 key + value，可增删。工作台「模板变量」卡片复用。 */
 export function VariablesEditor(props: { t: PromptToolTranslate; value: Record<string, string> | undefined; disabled?: boolean; hideHeading?: boolean; onChange: (value: Record<string, string> | undefined) => void }): ReactNode {
   const t = props.t
-  const entries = Object.entries(props.value ?? {})
+  const values = props.value ?? {}
+  const order = useRef(Object.keys(values))
+  // 数字名称会被对象枚举移到最前；显示顺序只随本编辑器的行操作变化。
+  order.current = [...order.current.filter(key => Object.hasOwn(values, key)), ...Object.keys(values).filter(key => !order.current.includes(key))]
+  const entries = order.current.map((key): [string, string] => [key, values[key]!])
   const commit = (next: Array<[string, string]>) => {
     // 保留空 key 行（「添加变量」新增的待编辑行）；空 key 由保存端（saveModuleParams）
     // 统一清理，避免新增行被立即过滤导致按钮失效。
+    order.current = [...new Set(next.map(([key]) => key))]
     props.onChange(next.length > 0 ? Object.fromEntries(next) : undefined)
   }
   const setEntry = (index: number, key: string, value: string) => {
@@ -357,7 +362,7 @@ export function VariablesEditor(props: { t: PromptToolTranslate; value: Record<s
         <Button shape="pill" variant="outline" size="md" disabled={props.disabled} onClick={() => commit([...entries, ['', '']])}>{t('variables.add')}</Button>
       </span>
       {entries.map(([key, value], index) => (
-        <span key={`${key}-${index}`} className={styles.variableRow}>
+        <span key={index} className={styles.variableRow}>
           <TextInput aria-label={t('variables.nameAria')} value={key} spellCheck={false} placeholder={t('variables.namePlaceholder')} readOnly={props.disabled}
             onChange={(e) => setEntry(index, e.target.value, value)} />
           <TextInput aria-label={t('variables.valueAria')} value={value} spellCheck={false} placeholder={t('variables.valuePlaceholder')} readOnly={props.disabled}
