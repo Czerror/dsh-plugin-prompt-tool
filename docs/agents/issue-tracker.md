@@ -4,8 +4,8 @@
 
 ## 约定
 
-- 规格文件为 `.scratch/spec.md`
-- 任务与子任务存放于 `.scratch/issues/<NN>-<slug>.md`，编号在该目录内全局递增
+- 规格文件为 `.scratch/<feature-slug>/spec.md`
+- 任务与子任务存放于 `.scratch/<feature-slug>/issues/<NN>-<slug>.md`，编号在该目录内全局递增
 - 普通 Issue 的 triage 状态记录在文件顶部附近的 `Status:` 行，取值见 `triage-labels.md`；Wayfinding 子任务则使用下文的 `claimed` 和 `resolved`
 - 评论和讨论追加到文件底部的 `## Comments` 标题下
 
@@ -19,8 +19,8 @@
 
 ## Wayfinding 操作
 
-- Map：`.scratch/map.md`
-- 子任务：`.scratch/issues/NN-<slug>.md`
+- Map：`.scratch/<effort>/map.md`
+- 子任务：`.scratch/<effort>/issues/NN-<slug>.md`
 - `Type:` 记录 `research`、`prototype`、`grilling` 或 `task`
 - `Status:` 记录 `claimed` 或 `resolved`
 - `Blocked by: NN, NN` 记录依赖
