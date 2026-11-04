@@ -1,5 +1,5 @@
 import { isDelegated, matchesModel } from '../shared.mjs'
-import { agentOf } from './subject.mjs'
+import { agentOf, modelOf } from './subject.mjs'
 
 export function createScopePredicate(options = {}) {
   if (options.audience !== undefined && !['main', 'subagent'].includes(options.audience)) throw new TypeError('scope.audience must be main or subagent')
@@ -11,7 +11,7 @@ export function createScopePredicate(options = {}) {
       if (session === undefined) return false
       if ((options.audience === 'subagent') !== isDelegated(session)) return false
     }
-    return matchesModel(options.modelScope ?? 'all', payload?.model ?? agent?.options?.model)
+    return matchesModel(options.modelScope ?? 'all', modelOf(payload, agent))
   }
   predicate.kind = 'scope'
   return predicate

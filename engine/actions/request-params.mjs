@@ -38,7 +38,7 @@ export function prepareRequestParams(action, plugin) {
   return (_ctx, { warnOnce, on, collect, take }) => collect(on('agent/request', async (payload, next) => {
     const base = await next()
     try {
-      if (!matchesAgentScope(action, payload?.agent)) return base
+      if (!matchesAgentScope(action, payload?.agent, payload)) return base
       const result = applyAgentRequestParams(params, base)
       const keys = Object.keys(result)
       const changed = base == null || keys.length !== Object.keys(base).length

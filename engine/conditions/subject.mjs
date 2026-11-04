@@ -16,7 +16,7 @@ import { extractText } from '../shared.mjs'
 const subagentAgent = (args, ctx) => {
   const id = args[0]?.id
   if (typeof id !== 'string' || id.length === 0) return undefined
-  return ctx?.agents?.get?.(id) ?? undefined
+  return (ctx?.get?.('agents') ?? ctx?.agents)?.get?.(id) ?? undefined
 }
 
 const streamAgent = (args, ctx) => {
@@ -24,6 +24,24 @@ const streamAgent = (args, ctx) => {
   if (call?.agent !== undefined) return call.agent
   if (typeof call?.sessionId !== 'string') return undefined
   return (ctx?.get?.('agents') ?? ctx?.agents)?.get?.(call.sessionId)
+}
+
+const modelString = value => typeof value === 'string' && value.trim().length > 0 ? value : undefined
+
+/**
+ * 当前步骤只读捕获事实；current() 代表下一步，只允许无步骤的通道回退。
+ * @param {unknown} payload 真实载荷或 subjectOf 的归一化事实帧
+ * @param {unknown} [agent] 通道已经解析的 Agent
+ * @param {boolean} [allowFallback] 无步骤时是否允许 current/options 字段回退
+ * @returns {string|undefined} 可用模型 id；缺失或非法为 undefined
+ */
+export function modelOf(payload, agent = payload?.agent ?? payload, allowFallback = true) {
+  if (payload?.[SUBJECT_MARK] === true) return modelString(payload.model)
+  if (payload?.modelSelection?.model !== undefined) return modelString(payload.modelSelection.model)
+  if (Object.hasOwn(payload ?? {}, 'model') && (payload !== agent || typeof payload.model?.current !== 'function')) return modelString(payload.model)
+  if (payload != null && (Object.hasOwn(payload, 'modelSelection') || payload.toolSet != null || payload.step !== undefined)) return undefined
+  if (!allowFallback) return undefined
+  return modelString(agent?.model?.current?.()?.model) ?? modelString(agent?.options?.model)
 }
 
 /**
@@ -41,10 +59,7 @@ const SUBAGENT_FACTS = {
   },
   agent: subagentAgent,
   session: (args, ctx) => subagentAgent(args, ctx)?.session,
-  model: (args, ctx) => {
-    const model = subagentAgent(args, ctx)?.options?.model
-    return typeof model === 'string' && model.length > 0 ? model : undefined
-  },
+  model: (args, ctx) => modelOf(args[0], subagentAgent(args, ctx)),
 }
 
 /**
@@ -54,7 +69,8 @@ const SUBAGENT_FACTS = {
  * - `text[字段名] = args => value`：字段名取自 `condition-facts.mjs#SUBJECT_FIELDS`，
  *   经 `SUBJECT_OF_FIELD` 反查成文本 subject。
  * - `facts[字段名] = (args, ctx) => value`：字段名本身即 subject（`name` / `source` /
- *   `agent` / `session` / `model`）；返回 `undefined` 即不写键（判定退回 UNAVAILABLE）。
+ *   `agent` / `session` / `model`）；缺值判定退回 UNAVAILABLE。model 始终显式投影，
+ *   禁止归一化帧因缺模型而再次读取下一步骤的 current/options。
  */
 const CHANNELS = {
   'system-prompt/assemble': { facts: { agent: args => args[1]?.agent } },
@@ -80,7 +96,7 @@ const CHANNELS = {
     text: { argsText: args => toolArgsText(args[0]?.arguments), resultText: args => extractText(args[1]) },
   },
   'session/event': { facts: { session: args => args[0] } },
-  'llm/stream': { facts: { model: args => args[0]?.model, agent: streamAgent } },
+  'llm/stream': { facts: { model: args => modelOf(args[0], undefined, false), agent: streamAgent } },
   'subagent/start': { facts: SUBAGENT_FACTS, text: { subagentText: args => subagentTextOf(args[0]) } },
   'subagent/end': { facts: SUBAGENT_FACTS, text: { subagentText: args => subagentTextOf(args[0]) } },
 }
@@ -169,9 +185,14 @@ export function subjectOf(channel, args, warn, ctx) {
     }
     return { ...base, [SUBJECT_MARK]: true, channel, args }
   }
+  const facts = pickFields(spec.facts, args, ctx)
+  const payload = channel === 'system-prompt/assemble' ? args[1] : first
+  const model = Object.hasOwn(spec.facts ?? {}, 'model') ? facts.model
+    : modelOf(payload, facts.agent, !['llm/stream', 'tools/pre-execute', 'tools/post-execute'].includes(channel))
   return {
     ...base,
-    ...pickFields(spec.facts, args, ctx),
+    ...facts,
+    model,
     ...pickFields(spec.text, args, ctx),
     [SUBJECT_MARK]: true,
     channel,

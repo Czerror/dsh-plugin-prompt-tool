@@ -19,6 +19,7 @@ import { interpolateVariables, stripUnresolvedRefs, RUNTIME_FACTS, runtimeFactVa
 import { renderTemplate, renderTemplateAsync } from './template-frame.mjs'
 import { compareConfigSequence, compareTextPlacement } from './order.mjs'
 import { ruleFrame, actionMatches, actionSoulReminder, recheckSoulReminder } from './conditions/evaluation.mjs'
+import { modelOf } from './conditions/subject.mjs'
 import { textRegistrationName, identityStampOf, actionStamp, injectedMessage, findActionDelivery } from './delivery.mjs'
 
 const name = 'prompt-config-engine'
@@ -161,10 +162,10 @@ function rewriteOfficialAliases(text, alias) {
 }
 
 /** agent/request 与 tools/* 层的作用域过滤。 */
-export function matchesAgentScope(config, agent) {
-  if (agent === undefined) return true
-  if (!matchesAudience(config.audience, isDelegated(agent.session) ? 'subagent' : 'main')) return false
-  return matchesModel(config.modelScope, agent.options?.model)
+export function matchesAgentScope(config, agent, payload) {
+  if (config.audience != null && agent?.session == null) return false
+  if (!matchesAudience(config.audience, isDelegated(agent?.session) ? 'subagent' : 'main')) return false
+  return matchesModel(config.modelScope, modelOf(payload, agent))
 }
 
 /**
@@ -212,13 +213,13 @@ function wireSystemSections(ctx, configs, registry, warnOnce, keep, ordered, sou
   for (const group of textLayerGroups(configs)) {
     const base = group[0]
     try {
-      const dynamic = group.some((config) => config.audience != null || config.params?.templateEvaluation === true || config.variableStore !== undefined
+      const dynamic = group.some((config) => config.audience != null || config.modelScope != null && config.modelScope !== 'all' || config.params?.templateEvaluation === true || config.variableStore !== undefined
         || config.texts.some(text => /\{\{\s*(?:random|pick|roll|chance)(?=\s|:|\})/i.test(text)))
       const groupText = dynamic ? '' : group.map((config) => configText(config, registry, warnOnce)).filter((item) => item.length > 0).join('\n\n')
       if (!dynamic && groupText.length === 0) continue
       const text = dynamic
         ? (context) => group
-              .filter((config) => matchesAgentScope(config, context?.agent))
+              .filter((config) => matchesAgentScope(config, context?.agent, context))
               .map((config) => configText(config, registry, warnOnce, context))
               .filter((item) => item.length > 0)
               .join('\n\n')
@@ -313,7 +314,7 @@ function wireRuleTextContributions(ctx, configs, registry, warnOnce, keep, on, o
       if (holder !== undefined) holder.text = ''
       const blocks = []
       for (const config of binding.group) {
-        if (!active || context.signal?.aborted || !actionMatches(config, frame) || !matchesAgentScope(config, context.agent)) continue
+        if (!active || context.signal?.aborted || !actionMatches(config, frame) || !matchesAgentScope(config, context.agent, frame.subject)) continue
         try {
           const reminder = actionSoulReminder(config, frame)
           const text = config.layer === 'runtime-context' && (config.strategy === 'placeholder' || !KNOWN_STRATEGIES.has(config.strategy))
@@ -351,9 +352,10 @@ function wireRuntimeContexts(ctx, configs, registry, warnOnce, keep, on, ordered
   for (const group of textLayerGroups(staticConfigs)) {
     const base = group[0]
     try {
-      const dynamic = group.some(config => config.params?.templateEvaluation === true || config.variableStore !== undefined
+      const dynamic = group.some(config => config.audience != null || config.modelScope != null && config.modelScope !== 'all' || config.params?.templateEvaluation === true || config.variableStore !== undefined
         || config.texts.some(text => /\{\{\s*(?:random|pick|roll|chance)(?=\s|:|\})/i.test(text)))
-      const render = context => group.map(config => configText(config, registry, warnOnce, context)).filter(item => item.length > 0).join('\n\n')
+      const render = context => group.filter(config => matchesAgentScope(config, context?.agent, context))
+        .map(config => configText(config, registry, warnOnce, context)).filter(item => item.length > 0).join('\n\n')
       const text = dynamic ? render : render()
       if (!dynamic && text.length === 0) continue
       const entryName = textRegistrationName(base, 'contextName')
@@ -410,7 +412,7 @@ function wireRuntimeContexts(ctx, configs, registry, warnOnce, keep, on, ordered
       const holder = holderOf(context)
       entry.text = ''
       holder.text = ''
-      if (!active || context.signal?.aborted) continue
+      if (!active || context.signal?.aborted || !matchesAgentScope(config, context.agent, context)) continue
       try {
         const text = await resolvedContextText(ctx, config, context, registry.get(config), warnOnce)
         if (active && !context.signal?.aborted) { entry.text = text; holder.text = text }
@@ -545,7 +547,7 @@ function wireTurnStops(ctx, configs, warnOnce, on, turnStopBudgets) {
         if (!actionMatches(config, invocation ?? ruleFrame('agent/turn-stopping', [payload], warnOnce))) return
         const session = agent?.session
         if (session?.id === undefined || typeof agent.steer !== 'function') return
-        if (!matchesAgentScope(config, agent)) return
+        if (!matchesAgentScope(config, agent, payload)) return
         if (config.dedupe === 'session' && (config.linkedDelivery ? findActionDelivery(session, config) : injectedMessage(config, session))) return
         const entry = budget.entry(session.id, turn)
         if (!budget.available(entry, turn)) return
@@ -598,7 +600,7 @@ function wireSubagentEvents(ctx, configs, warnOnce, on) {
       const mainId = mainSessionForChild(ctx, info.id)
       // shortcut: 有界运行记录；极端并发超过上限时，结束事件仍可通过存活会话血缘定位。
       if (runs.size >= MAX_TRACKED_SESSIONS) runs.delete(runs.keys().next().value)
-      runs.set(info.runId, { id: info.id, mainId, agent: child, session, model: child?.options?.model })
+      runs.set(info.runId, { id: info.id, mainId, agent: child, session, model: modelOf(info, child) })
     }))
     const clearRuns = () => runs.clear()
     disposers.push(clearRuns)
@@ -609,11 +611,11 @@ function wireSubagentEvents(ctx, configs, warnOnce, on) {
       try {
         const child = getService(ctx, 'agents')?.get?.(info?.id)
         if (child === undefined) return
-        const frame = invocation ?? ruleFrame('subagent/start', [info], warnOnce)
+        const frame = invocation ?? ruleFrame('subagent/start', [info], warnOnce, ctx)
         frame.subject.agent = child
         for (const config of startConfigs) {
           if (!actionMatches(config, frame)) continue
-          if (!matchesAgentScope(config, child)) continue
+          if (!matchesAgentScope(config, child, frame.subject)) continue
           if (typeof child.inject !== 'function') continue
           const text = layerText(config, child, warnOnce)
           if (text.length === 0) continue
@@ -631,13 +633,13 @@ function wireSubagentEvents(ctx, configs, warnOnce, on) {
         const recorded = runs.get(info?.runId)
         runs.delete(info?.runId)
         if (recorded !== undefined && recorded.id !== info?.id) return
-        const frame = invocation ?? ruleFrame('subagent/end', [info], warnOnce)
+        const frame = invocation ?? ruleFrame('subagent/end', [info], warnOnce, ctx)
         frame.subject.agent = child ?? recorded?.agent
         frame.subject.session = child?.session ?? recorded?.session ?? getService(ctx, 'sessions')?.get?.(info?.id)
-        frame.subject.model = child?.options?.model ?? recorded?.model
+        if (child === undefined) frame.subject.model = modelOf(info, { options: { model: recorded?.model } })
         for (const config of endConfigs) {
           if (!actionMatches(config, frame)) continue
-          if (!matchesModel(config.modelScope, child?.options?.model ?? recorded?.model)) continue
+          if (!matchesModel(config.modelScope, modelOf(frame.subject))) continue
           if (config.params?.action !== 'inject-main') {
             // 模板本意是逐次记录；命中本身已由装配实例的判定账本记 hit，这里不占告警名额。
             ctx.logger?.info?.(`${name}: subagent-end ${config.id} matched (observe only)`)

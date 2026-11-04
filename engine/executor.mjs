@@ -31,6 +31,7 @@ import { renderTemplateAsync } from './template-frame.mjs'
 import { selectContextActivation } from './context-activation.mjs'
 import { compareConfigSequence } from './order.mjs'
 import { ruleFrame, actionMatches, actionSoulReminder, recheckSoulReminder } from './conditions/evaluation.mjs'
+import { modelOf } from './conditions/subject.mjs'
 import { composePreStepSources, promotionOwnerOf } from './pre-step-source.mjs'
 // 标记键名与「已登记进 config 白名单」同源（schema.mjs），此处不另写字面量。
 import { SESSION_VARIABLES_DISABLED } from './schema.mjs'
@@ -233,7 +234,7 @@ function batchScope(options, frame) {
   const qualified = configs.filter((config) => config.layer === 'pre-step'
     && !(config.audience === 'main' && delegated)
     && !(config.audience === 'subagent' && !delegated)
-    && matchesModel(config.modelScope, agent.options?.model)
+    && matchesModel(config.modelScope, modelOf(frame.subject, agent))
     && (config.promotion !== 'main' || main.status(agent).promoted)
     && (config.promotion !== 'include-subagents' || withSubagents.status(agent).promoted)
     && actionMatches(config, frame))
@@ -270,7 +271,7 @@ export async function runPreStepBatch(options) {
   const composed = composePreStepSources(sources)
   if (composed.configs.length === 0 && composed.ruleActions.length === 0) return options.decision
   const ctx = options.ctx ?? sources[0]?.ctx
-  const initialFrame = options.ruleFrame ?? ruleFrame('agent/pre-step', [{ agent: options.agent, messages: options.decision?.messages ?? [] }], options.warnOnce, ctx, composed.report)
+  const initialFrame = options.ruleFrame ?? ruleFrame('agent/pre-step', [{ ...options.payload, agent: options.agent, messages: options.decision?.messages ?? [] }], options.warnOnce, ctx, composed.report)
   // 批级快照与单配置失败同款 fail-safe：资格判定或 ST 世界书选择抛错时只告警一次并跳过本步
   // 注入（scope 留空 → runPromptConfigBatch 原样返回 decision），绝不把异常抛进
   // agent/pre-step waterfall。世界书键的 `interpolateVariables` 在 selectStWorldBook 的

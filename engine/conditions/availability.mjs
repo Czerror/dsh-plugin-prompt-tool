@@ -1,4 +1,4 @@
-import { agentOf, sessionOf } from './subject.mjs'
+import { agentOf, sessionOf, modelOf } from './subject.mjs'
 import { SUBJECT_FIELDS } from '../condition-facts.mjs'
 
 /** 缺少真实事件事实不是 false；尤其不能经 not 反转成允许。 */
@@ -33,7 +33,7 @@ export function conditionInputAvailable(kind, options, payload) {
   }
   if (kind === 'scope') {
     if (options.audience !== undefined && session == null) return false
-    const model = payload?.model ?? agent?.options?.model
+    const model = modelOf(payload, agent)
     if (options.modelScope !== undefined && options.modelScope !== 'all' && (typeof model !== 'string' || model.length === 0)) return false
   }
   return true
