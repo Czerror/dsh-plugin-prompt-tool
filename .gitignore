@@ -4,3 +4,5 @@ lib/
 *.zip
 
 .scratch/
+docs/agents/label-colors.yaml
+docs/agents/workspace.yaml
