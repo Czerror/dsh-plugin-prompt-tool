@@ -26,7 +26,7 @@ class ProgramRuntime extends PtcRuntime {
   }
 }
 
-async function harness(t) {
+async function harness(t, beforeEcho) {
   const root = new Context()
   await root.plugin(SystemPrompt)
   await root.plugin(Tools)
@@ -35,7 +35,7 @@ async function harness(t) {
   root.tools.register({
     name: 'echo', description: 'echo', parameters: { type: 'object', properties: {} },
     output: { schema: { type: 'object' }, render: value => [{ type: 'text', text: JSON.stringify(value) }] },
-    execute: async () => { calls++; return { answer: 42 } },
+    execute: async () => { calls++; await beforeEcho?.(calls); return { answer: 42 } },
   })
   const agent = (id, depth = 0) => {
     const session = Session.create(id, [], { id, version: 4, createdAt: Date.now(), isSeeded: false, delegationDepth: depth })
@@ -46,22 +46,51 @@ async function harness(t) {
   const mount = (value, config) => value.ctx.plugin({
     inject: presentAs.inject, apply: ctx => presentAs.apply(ctx, config, { agent: value }),
   })
-  const execute = (value, name = 'echo', args = {}) => root.tools.execute({
+  const execute = (value, name = 'echo', args = {}, batch = {}) => root.tools.execute({
     agent: value, signal: new AbortController().signal,
     calls: [{ type: 'tool_call', id: 'call-1', name, arguments: JSON.stringify(args) }],
+    ...batch,
   })
   return { root, agent, mount, execute, calls: () => calls }
 }
 
-test('present-as native 等待官方执行器挂载后可真实调用，不依赖 PTC runtime', async t => {
-  const h = await harness(t)
+test('present-as native 卸载失败关闭，已接受批次排空并显式重挂恢复', { timeout: 5000 }, async t => {
+  const entered = Promise.withResolvers()
+  const release = Promise.withResolvers()
+  t.after(() => release.resolve())
+  const h = await harness(t, async count => {
+    if (count === 1) { entered.resolve(); await release.promise }
+  })
+  await assert.rejects(h.execute(h.agent('without-executor')), { code: 'TOOL_EXECUTOR_UNAVAILABLE' })
+  await h.root.plugin(native)
   const agent = h.agent('native-main')
-  await h.mount(agent, { enabled: true, mode: 'native' })
+  const child = h.agent('native-child', 1)
+  const mounted = await h.mount(agent, { enabled: true, mode: 'native' })
+  await h.mount(child, { enabled: true, mode: 'native' })
   const assembled = await h.root.systemPrompt.assemble({ agent, scope: agent })
   assert.deepEqual(assembled.tools.map(tool => tool.name), ['echo'])
-  const batch = await h.execute(agent)
-  assert.deepEqual(batch.results[0].result.value, { answer: 42 })
-  assert.equal(h.calls(), 1)
+  const accepted = h.execute(agent, 'echo', {}, { maxParallelToolCalls: 1, calls: [
+    { type: 'tool_call', id: 'accepted-1', name: 'echo', arguments: '{}' },
+    { type: 'tool_call', id: 'accepted-2', name: 'echo', arguments: '{}' },
+  ] })
+  await entered.promise
+  await mounted.dispose()
+  await mounted.dispose()
+  await assert.rejects(h.execute(agent), { code: 'TOOL_EXECUTOR_UNAVAILABLE' })
+  assert.equal(h.calls(), 1, '卸载后不回退部署 native，也不提前执行排队调用')
+  assert.deepEqual((await h.execute(child)).results[0].result.value, { answer: 42 })
+  release.resolve()
+  const batch = await accepted
+  assert.deepEqual(batch.results.map(result => [result.callId, result.result.value]), [
+    ['accepted-1', { answer: 42 }], ['accepted-2', { answer: 42 }],
+  ])
+  assert.equal(h.calls(), 3, '已接受的两项调用各完成一次，子 Agent 一次')
+  const replacement = await h.mount(agent, { enabled: true, mode: 'native' })
+  await mounted.dispose()
+  assert.deepEqual((await h.execute(agent)).results[0].result.value, { answer: 42 })
+  assert.equal(h.calls(), 4, '旧 disposer 不撤销重挂实例，也不重复执行')
+  await replacement.dispose()
+  await assert.rejects(h.execute(agent), { code: 'TOOL_EXECUTOR_UNAVAILABLE' })
 })
 
 test('未启用 present-as 保留宿主执行器，同 scope 冲突由官方拒绝', async t => {
@@ -75,8 +104,13 @@ test('未启用 present-as 保留宿主执行器，同 scope 冲突由官方拒�
   assert.equal(h.calls(), 2)
 })
 
-test('present-as 主子模式独立，PTC runtime 晚到后真实调用绑定，直呼工具被拒绝', async t => {
-  const h = await harness(t)
+test('present-as 主子模式独立，PTC runtime 晚到、撤回排空与恢复均走官方绑定', { timeout: 5000 }, async t => {
+  const entered = Promise.withResolvers()
+  const release = Promise.withResolvers()
+  t.after(() => release.resolve())
+  const h = await harness(t, async count => {
+    if (count === 3) { entered.resolve(); await release.promise }
+  })
   h.root.provide('workingDirectory', { ensure: async () => process.cwd() })
   const main = h.agent('main-ptc')
   const child = h.agent('child-native', 1)
@@ -85,7 +119,7 @@ test('present-as 主子模式独立，PTC runtime 晚到后真实调用绑定，
   await h.mount(child, config)
   await assert.rejects(h.execute(main), { code: 'TOOL_EXECUTOR_UNAVAILABLE' })
   assert.deepEqual((await h.execute(child)).results[0].result.value, { answer: 42 })
-  await h.root.plugin(ProgramRuntime)
+  const runtime = await h.root.plugin(ProgramRuntime)
   // 动态注入后等公开 fiber 就绪，不以延时猜测初始化已完成。
   const executor = await import('@deepseek-ai/dsh-tool-executor-ptc')
   for (const fiber of h.root.registry.get(executor)?.fibers ?? []) await fiber
@@ -99,4 +133,22 @@ test('present-as 主子模式独立，PTC runtime 晚到后真实调用绑定，
   const batch = await h.execute(main, 'run_code', { code: 'return await tools.echo({})', description: 'Read the known answer' })
   assert.deepEqual(batch.results[0].result.value, { logs: [], result: { answer: 42 } })
   assert.equal(h.calls(), 2)
+  const accepted = h.execute(main, 'run_code', { code: 'return await tools.echo({})', description: 'Finish the accepted program' })
+  await entered.promise
+  await runtime.dispose()
+  await runtime.dispose()
+  await assert.rejects(h.execute(main, 'run_code', { code: 'return await tools.echo({})', description: 'Read after runtime withdrawal' }), { code: 'TOOL_EXECUTOR_UNAVAILABLE' })
+  const resumed = h.agent('new-without-runtime')
+  await h.mount(resumed, { enabled: true, mode: 'ptc' })
+  await assert.rejects(h.execute(resumed), { code: 'TOOL_EXECUTOR_UNAVAILABLE' })
+  assert.equal(h.calls(), 3, 'runtime 撤回后不启动新程序')
+  assert.deepEqual((await h.execute(child)).results[0].result.value, { answer: 42 })
+  release.resolve()
+  assert.deepEqual((await accepted).results[0].result.value, { logs: [], result: { answer: 42 } })
+  assert.equal(h.calls(), 4, '已接受程序仍返回原绑定的真实结果，子 Agent 不受撤回影响')
+  await h.root.plugin(ProgramRuntime)
+  for (const fiber of h.root.registry.get(executor)?.fibers ?? []) await fiber
+  assert.deepEqual((await h.execute(main, 'run_code', { code: 'return await tools.echo({})', description: 'Read after runtime recovery' })).results[0].result.value, { logs: [], result: { answer: 42 } })
+  assert.deepEqual((await h.execute(resumed, 'run_code', { code: 'return await tools.echo({})', description: 'Read in the new session' })).results[0].result.value, { logs: [], result: { answer: 42 } })
+  assert.equal(h.calls(), 6, '新会话与旧会话都只在有效执行器恢复后各执行一次')
 })

@@ -963,22 +963,34 @@ test('模块增量发布：修改 B 只替换 B 的能力和规则，未改 A/C 
   assert.deepEqual(h.warnings, [])
 })
 
-test('PTC：主子模式独立进入官方工具面，刷新与压缩保留受众', async (t) => {
+test('PTC：主子模式与压缩保留受众，模块禁用排空后失败关闭并可重挂', { timeout: 5000 }, async (t) => {
   const id = 'audience-presentation'
   const write = (mainMode, subagentMode) => writeModuleFixture(id, {
     modules: ['present-as'], moduleConfigs: { 'present-as': { mainMode, subagentMode } },
   })
   write('ptc', 'native')
-  const h = await liveAssembly(t, () => [id])
+  let enabled = [id]
+  const entered = Promise.withResolvers()
+  const release = Promise.withResolvers()
+  t.after(() => release.resolve())
+  const h = await liveAssembly(t, () => enabled)
   h.root.provide('ptcRuntime', { language: 'typescript' })
+  let calls = 0
+  let pause = false
   h.root.tools.register({ name: 'visible_tool', description: 'visible',
-    parameters: { type: 'object', properties: {} }, output: { schema: { type: 'object' }, render: () => [] }, execute: async () => ({}),
+    parameters: { type: 'object', properties: {} }, output: { schema: { type: 'object' }, render: () => [] },
+    execute: async () => { calls++; if (pause) { entered.resolve(); await release.promise } return { answer: 42 } },
   })
   const main = await h.makeAgent('presentation-main')
   const child = await h.makeAgent('presentation-child', 1)
   const names = async agent => (await h.root.systemPrompt.assemble({ agent, scope: agent })).tools.map(tool => tool.name)
+  const execute = agent => h.root.tools.execute({ agent, signal: new AbortController().signal,
+    calls: [{ type: 'tool_call', id: 'presentation-call', name: 'visible_tool', arguments: '{}' }],
+  })
   assert.deepEqual(await names(main), ['run_code'])
   assert.deepEqual(await names(child), ['visible_tool'])
+  assert.equal((await execute(main)).results[0].result.error.info.code, 'UNKNOWN_TOOL')
+  assert.deepEqual((await execute(child)).results[0].result.value, { answer: 42 })
   for (const agent of [main, child]) {
     const event = { seq: 1, type: 'compaction/end', data: {} }
     agent.session.snapshotEvents().push(event)
@@ -991,9 +1003,30 @@ test('PTC：主子模式独立进入官方工具面，刷新与压缩保留受�
   await h.runtime.refresh(id)
   assert.deepEqual(await names(main), ['visible_tool'])
   assert.deepEqual(await names(child), ['run_code'])
+  pause = true
+  const accepted = execute(main)
+  await entered.promise
+  enabled = []
+  await h.runtime.refresh(id)
+  for (const agent of [main, child]) await assert.rejects(execute(agent), { code: 'TOOL_EXECUTOR_UNAVAILABLE' })
+  assert.equal(calls, 2, '模块禁用后不回退部署 native，已接受调用尚未完成')
+  release.resolve()
+  assert.deepEqual((await accepted).results[0].result.value, { answer: 42 })
+  assert.equal(calls, 2, '模块禁用只撤新批次资格，已接受调用完成一次')
+  enabled = [id]
+  await h.runtime.refresh(id)
+  assert.deepEqual(await names(main), ['visible_tool'])
+  assert.deepEqual(await names(child), ['run_code'])
+  assert.deepEqual((await execute(main)).results[0].result.value, { answer: 42 })
+  assert.equal(calls, 3, '显式重新启用后新批次恢复且不重复执行')
   assert.deepEqual(h.warnings, [])
   await h.runtime.dispose()
-  for (const agent of [main, child]) await assert.rejects(names(agent), { code: 'TOOL_EXECUTOR_UNAVAILABLE' })
+  await h.runtime.dispose()
+  for (const agent of [main, child]) {
+    await assert.rejects(names(agent), { code: 'TOOL_EXECUTOR_UNAVAILABLE' })
+    await assert.rejects(execute(agent), { code: 'TOOL_EXECUTOR_UNAVAILABLE' })
+  }
+  assert.equal(calls, 3, '重复释放不重复执行，也不留下可执行实例')
 })
 
 test('晚到能力初始化失败只撤所属模块，健康模块继续且显式重试可恢复', async (t) => {
