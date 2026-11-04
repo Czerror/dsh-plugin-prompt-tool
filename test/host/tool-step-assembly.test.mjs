@@ -12,23 +12,25 @@ import { apply as applyCustomTools } from '../../engine/tool-config-engine.mjs'
 import { sdkToolNames } from '../../engine/sdk-strip.mjs'
 import { compileRules } from '../../engine/rule-spec.mjs'
 import { mountRuleSources } from '../../engine/rule-runtime.mjs'
+import { createDiscoveryRegistry } from '../../engine/discovery.mjs'
 import { isolatedHome } from '../fixtures/host-harness.mjs'
 
 const { moduleRoot } = isolatedHome('pt-tool-step-')
 const { createAgentAssembly } = await import('../../src/runtime/agent-assembly.ts')
 
-async function harness(t, rules = [{ id: 'narrow', then: [{ id: 'allow', kind: 'tool-visibility', allow: ['keep'] }] }]) {
+async function harness(t, rules = [{ id: 'narrow', then: [{ id: 'allow', kind: 'tool-visibility', allow: ['keep'] }] }], modules = ['rule-engine']) {
   const root = new Context()
   await root.plugin(SystemPrompt)
   await root.plugin(Tools)
   await root.plugin(native)
   const rawTools = root.get('tools')
   root.provide('llm', {})
+  root.provide('promptToolDiscovery', createDiscoveryRegistry())
   const agents = []
   root.provide('agents', { list: () => agents })
   const id = 'step-surface'
   mkdirSync(join(moduleRoot, id), { recursive: true })
-  const write = (modules = ['rule-engine']) => writeFileSync(join(moduleRoot, id, 'module.yml'), JSON.stringify({ id, name: id, modules, rules }))
+  const write = (rows = modules) => writeFileSync(join(moduleRoot, id, 'module.yml'), JSON.stringify({ id, name: id, modules: rows, rules }))
   write()
   const warnings = []
   const runtime = createAgentAssembly(root, { moduleRoot, enabledModules: () => [id], warn: error => warnings.push(String(error)) })
@@ -216,7 +218,8 @@ test('独立规则入口在官方返回后组合多个来源，官方准入始�
 
 test('同一步骤在官方 PTC 绑定与 delegate 管线按同一多层名单执行，正文不决定权限', async t => {
   const h = await harness(t, [{ id: 'multi', then: [{ id: 'allow', kind: 'tool-visibility',
-    allow: ['keep', 'preset', 'own', 'probe'], deny: ['hidden', 'own'], requireMatch: true }] }])
+    allow: ['keep', 'preset', 'own', 'probe'], deny: ['hidden', 'own'], requireMatch: true },
+  { id: 'catalog', kind: 'inject-text', config: { layer: 'runtime-context', strategy: 'placeholder', fill: 'tool-catalog', text: '{{RESIDENT_TOOLS}}', params: { action: 'allow' } } }] }])
   const bodies = [], bindings = []
   h.root.provide('workingDirectory', { ensure: async () => process.cwd() })
   h.root.provide('ptcRuntime', { language: 'typescript', resolve: spec => spec, run: async spec => {
@@ -236,6 +239,10 @@ test('同一步骤在官方 PTC 绑定与 delegate 管线按同一多层名单�
   const assembly = await h.services.prompt.assemble({ ...h.context, toolSet })
   assert.deepEqual(assembly.tools.map(tool => tool.name), ['run_code'])
   assert.deepEqual(sdkToolNames(assembly.sections.find(section => section.name === 'tools:sdk').text).sort(), ['keep', 'probe'])
+  assert.equal(assembly.contexts[0].text, 'keep, probe')
+  const bare = await h.services.prompt.assemble({ agent: h.agent, scope: h.agent, signal: h.context.signal })
+  assert.equal(bare.contexts[0].text, 'keep, probe', '裸 PTC 装配按最终 SDK 展示信息回填，不据此生成步骤权限')
+  assert.equal(h.services.prompt.refreshContext(assembly, { agent: h.agent, scope: h.agent }).contexts[0].text, 'keep, probe')
   assert.deepEqual([...toolSet.view(h.agent).keys()].sort(), ['keep', 'probe'])
   const run = async code => (await h.services.tools.execute({ ...h.context, toolSet, calls: [{ type: 'tool-call', id: code, name: 'run_code', arguments: JSON.stringify({ code, description: code }) }] })).results[0].result
   assert.deepEqual((await run('keep')).value, { logs: [], result: { name: 'keep' } })
@@ -260,4 +267,90 @@ test('requireMatch 全缺只放宽插件 allow，deny 与官方 when 在实际�
   for (const name of ['hidden', 'unavailable']) assert.equal((await h.execute(toolSet, name)).results[0].result.isError, true)
   assert.deepEqual(h.counts(), { calls: 1, conditions: 3 })
   toolSet.dispose()
+})
+
+test('最终目录指引与发现候选分离，真实搜索解锁仅改变下一集合及其正文', async t => {
+  const notice = layer => ({ id: layer, kind: 'inject-text', config: { layer, ...(layer === 'pre-step' ? { position: 'after-all' } : {}), strategy: 'placeholder', fill: 'tool-catalog',
+    text: 'resident={{RESIDENT_TOOLS}}; search={{DISCOVERY_TOOL}}', params: { action: 'allow' } } })
+  const h = await harness(t, [
+    { id: 'resident', then: [{ id: 'allow', kind: 'tool-visibility', allow: ['keep', 'hidden'], discovery: { kind: 'tools' } }, notice('runtime-context'), notice('pre-step')] },
+    { id: 'deny', then: [{ id: 'deny', kind: 'tool-visibility', deny: ['hidden'] }] },
+  ], ['rule-engine', 'tool-search'])
+  const events = []
+  h.agent.session.snapshotEvents = () => events
+  const off = h.root.tools.register({ name: 'gamma', description: 'locked gamma', parameters: { type: 'object', properties: {} },
+    output: { schema: { type: 'string' }, render: () => [] }, execute: () => 'gamma' })
+  t.after(off)
+  const first = await h.services.tools.resolve(h.context)
+  const accepted = await h.services.prompt.assemble({ ...h.context, toolSet: first })
+  assert.equal(accepted.contexts[0].text, 'resident=keep; search=tool_search', JSON.stringify({ accepted, warnings: h.warnings }))
+  const preStep = await h.root.waterfall(scopeTarget(h.agent, h.agent), 'agent/pre-step', { ...h.context, step: 1, turn: 1 }, async () => ({ kind: 'enter', messages: [] }))
+  assert.equal(preStep.messages[0].content[0].text, 'resident=keep; search=tool_search')
+  const args = JSON.stringify({ query: 'gamma', toolNames: ['gamma', 'hidden'] })
+  const found = (await h.services.tools.execute({ ...h.context, toolSet: first, calls: [{ type: 'tool-call', id: 'search', name: 'tool_search', arguments: args }] })).results[0].result
+  assert.equal(found.isError, false)
+  assert.match(found.value.text, /gamma \(exact\)/)
+  events.push({ type: 'tool/call', seq: 1, data: { name: 'tool_search', arguments: args } })
+  assert.equal((await h.execute(first, 'gamma')).results[0].result.isError, true)
+  const nextContext = { ...h.context, modelSelection: { model: 'deepseek-flash' } }
+  const second = await h.services.tools.resolve(nextContext)
+  const next = await h.services.prompt.assemble({ ...nextContext, toolSet: second })
+  assert.deepEqual(next.tools.map(tool => tool.name).sort(), ['gamma', 'keep', 'tool_search'])
+  assert.equal((await h.execute(second, 'gamma')).results[0].result.value, 'gamma')
+  assert.equal((await h.execute(second, 'hidden')).results[0].result.isError, true)
+  assert.equal(await h.services.prompt.assemble({ ...h.context, toolSet: first }), accepted)
+  assert.equal(h.services.prompt.refreshContext(accepted, h.context).contexts[0].text, 'resident=keep; search=tool_search')
+  first.dispose(); second.dispose()
+})
+
+test('同 Agent 交错装配及 refresh 按集合隔离正文，pre-step 读取捕获选择且歧义拒绝', async t => {
+  const resident = (id, modelScope, tool) => ({ id, if: { scope: { modelScope } }, then: [
+    { id: 'allow', kind: 'tool-visibility', allow: [tool] },
+    ...['runtime-context', 'pre-step'].map(layer => ({ id: layer, kind: 'inject-text', config: { layer, ...(layer === 'pre-step' ? { position: 'after-all' } : {}), strategy: 'placeholder', fill: 'tool-catalog', text: '{{RESIDENT_TOOLS}}', params: { action: 'allow' } } })),
+  ] })
+  const rules = [resident('pro', 'pro', 'keep'), resident('flash', 'flash', 'hidden')]
+  const h = await harness(t, rules)
+  await h.runtime.dispose()
+  const release = mountRuleSources(h.root, [{ moduleId: 'concurrent', rules: compileRules(rules) }])
+  t.after(release)
+  await h.agent.ctx.plugin({ inject: ['tools', 'systemPrompt'], apply(ctx) { h.services = { tools: ctx.tools, prompt: ctx.systemPrompt } } })
+  const pro = { ...h.context, modelSelection: { model: 'deepseek-pro' } }
+  const flash = { ...h.context, modelSelection: { model: 'deepseek-flash' } }
+  const first = await h.services.tools.resolve(pro)
+  const second = await h.services.tools.resolve(flash)
+  let entered, resume
+  const waiting = new Promise(resolve => { entered = resolve })
+  const gate = new Promise(resolve => { resume = resolve })
+  const off = h.root.on('system-prompt/assemble', async (_assembly, context, next) => {
+    const result = await next()
+    if (context.toolSet === first) { entered(); await gate }
+    return result
+  })
+  const a = h.services.prompt.assemble({ ...pro, toolSet: first })
+  await waiting
+  const b = await h.services.prompt.assemble({ ...flash, toolSet: second })
+  resume()
+  const accepted = await a
+  off()
+  const text = assembly => assembly.contexts.map(context => context.text).filter(Boolean)
+  assert.deepEqual(text(accepted), ['keep'])
+  assert.deepEqual(text(b), ['hidden'])
+  assert.deepEqual(text(h.services.prompt.refreshContext(accepted, { agent: h.agent, scope: h.agent, signal: h.context.signal })), ['keep'])
+  assert.deepEqual(text(h.services.prompt.refreshContext(b, { agent: h.agent, scope: h.agent, signal: h.context.signal })), ['hidden'])
+  const child = { id: 'child', session: { id: 'child', header: { delegationDepth: 1 }, snapshotEvents: () => [] } }
+  child.ctx = createScope(h.root, child, { parent: h.agent }).ctx
+  const childContext = { ...pro, agent: child, scope: child }
+  const childSet = await h.services.tools.resolve(childContext)
+  const childAssembly = await h.services.prompt.assemble({ ...childContext, toolSet: childSet })
+  assert.deepEqual(text(childAssembly), ['keep'])
+  assert.equal((await h.services.tools.execute({ ...childContext, toolSet: childSet, calls: [{ type: 'tool-call', id: 'child-denied', name: 'hidden', arguments: '{}' }] })).results[0].result.isError, true)
+  assert.throws(() => h.services.prompt.refreshContext(accepted, childContext), { code: 'TOOL_STEP_UNAVAILABLE' })
+  pro.modelSelection.model = 'deepseek-flash'
+  const step = context => h.root.waterfall(scopeTarget(h.agent, h.agent), 'agent/pre-step', { ...context, step: 1, turn: 1 }, async () => ({ kind: 'enter', messages: [] }))
+  assert.equal((await step(pro)).messages[0].content[0].text, 'keep')
+  const duplicate = await h.services.tools.resolve(pro)
+  assert.deepEqual((await step(pro)).messages, [], '同选择关联多个集合不猜最新一步')
+  first.dispose(); second.dispose(); duplicate.dispose(); childSet.dispose()
+  assert.throws(() => h.services.prompt.refreshContext(accepted, pro), { code: 'TOOL_STEP_UNAVAILABLE' })
+  assert.deepEqual((await step(pro)).messages, [], 'closed/歧义选择不恢复成另一步')
 })

@@ -1,4 +1,4 @@
-import { associateToolStep, hasToolStep, toolStepOf } from './tool-scope.mjs'
+import { associateToolStep, associateToolSelection, associateToolAssembly, beginToolCatalog, settleToolCatalog, toolAssemblyContext, hasToolStep, toolStepOf } from './tool-scope.mjs'
 
 const installations = new WeakMap()
 const unavailable = () => Object.assign(new Error('prompt-tool: tool step is pending or closed'), { code: 'TOOL_STEP_UNAVAILABLE' })
@@ -51,6 +51,7 @@ function createInstallation(ctx) {
     })
     wrappers.set(original, wrapped)
     wrappers.set(wrapped, wrapped)
+    step.toolSet = wrapped
     associateToolStep(original, wrapped, context.agent, step)
     closes.add(wrapped.dispose)
     return wrapped
@@ -80,13 +81,23 @@ function createInstallation(ctx) {
         try {
           context.signal.throwIfAborted()
           if (!active) throw unavailable()
-          return wrap(original, captured)
+          const wrapped = wrap(original, captured)
+          associateToolSelection(context.modelSelection, context.agent, toolStepOf(wrapped, context.agent))
+          return wrapped
         } catch (error) { original.dispose(); throw error }
       }
       if (name === 'tools' && property === 'execute') return async input => {
         const step = toolStepOf(input.toolSet, input.agent)
         if (hasToolStep(input.toolSet) && step?.status !== 'sealed') throw unavailable()
         return Reflect.apply(value, target, [input])
+      }
+      if (name === 'systemPrompt' && property === 'refreshContext') return (assembly, context = {}) => {
+        const captured = toolAssemblyContext(assembly, context)
+        if (captured === undefined) throw unavailable()
+        const refreshed = Reflect.apply(value, target, [assembly, captured])
+        const step = toolStepOf(captured.toolSet, captured.agent)
+        if (step !== undefined) associateToolAssembly(refreshed, captured.agent, step)
+        return refreshed
       }
       if (name !== 'systemPrompt' || property !== 'assemble') return value
       return async (context = {}) => {
@@ -106,6 +117,7 @@ function createInstallation(ctx) {
             context.signal?.throwIfAborted()
             if (step === undefined) for (const owner of current) await owner.ensureFresh(agent)
             const captured = { ...context, ...(step === undefined ? {} : { toolSet: wrapped, modelSelection: step.modelSelection }) }
+            beginToolCatalog(captured)
             const invoke = index => index === current.length
               ? Reflect.apply(value, target, [captured]) : current[index].assemble(captured, () => invoke(index + 1))
             let final = await invoke(0)
@@ -114,11 +126,14 @@ function createInstallation(ctx) {
               final = await owner.settle(final, captured)
             }
             captured.signal?.throwIfAborted()
+            await settleToolCatalog(final, captured)
+            captured.signal?.throwIfAborted()
             if (step !== undefined) {
               if (step.status === 'closed') throw unavailable()
               step.allowed ??= new Set(wrapped.view(agent).keys())
               step.status = 'sealed'
               snapshots.set(step, final)
+              associateToolAssembly(final, agent, step)
             }
             return final
           } catch (error) { wrapped?.dispose(); throw error }

@@ -20,6 +20,7 @@ import { renderTemplate, renderTemplateAsync } from './template-frame.mjs'
 import { compareConfigSequence, compareTextPlacement } from './order.mjs'
 import { ruleFrame, actionMatches, actionSoulReminder, recheckSoulReminder } from './conditions/evaluation.mjs'
 import { modelOf } from './conditions/subject.mjs'
+import { deferToolCatalog, toolCatalogNames, toolStepFor } from './tool-scope.mjs'
 import { textRegistrationName, identityStampOf, actionStamp, injectedMessage, findActionDelivery } from './delivery.mjs'
 
 const name = 'prompt-config-engine'
@@ -246,7 +247,7 @@ function wireSystemSections(ctx, configs, registry, warnOnce, keep, ordered, sou
 async function resolvedContextText(ctx, config, context, registry, warnOnce) {
   const agent = context.agent
   const session = agent?.session
-  const resolved = await config.resolve({ ctx, agent, session, signal: context.signal, decision: { kind: 'ok', messages: [] }, messages: [] })
+  const resolved = await config.resolve({ ...context, ctx, agent, session, toolCatalogNames: toolCatalogNames(context), signal: context.signal, decision: { kind: 'ok', messages: [] }, messages: [] })
   if (context.signal?.aborted || resolved == null) return ''
   if (config.fill === 'soul-self') return resolved.text ?? ''
   const snapshot = config[SESSION_VARIABLES_DISABLED] === true ? undefined : config.variableStore?.read(config.sourceModuleId, context)
@@ -264,6 +265,20 @@ async function resolvedContextText(ctx, config, context, registry, warnOnce) {
   return officialChannelText(rendered, `runtime-context ${config.id}`, registry, warnOnce)
 }
 
+function contextHolder() {
+  const holders = new WeakMap()
+  const shared = { text: '' }
+  return context => {
+    const step = toolStepFor(context)
+    if (step === null) return { text: '' }
+    const key = step ?? context?.agent
+    if (key == null) return shared
+    let holder = holders.get(key)
+    if (holder === undefined) holders.set(key, holder = { text: '' })
+    return holder
+  }
+}
+
 /** 条件化文本保留官方排序占位；仅在本次真实 assembly 填充，不缓存 context 身份。 */
 function wireRuleTextContributions(ctx, configs, registry, warnOnce, keep, on, ordered, sourceError) {
   if (!configs.length) return []
@@ -279,16 +294,8 @@ function wireRuleTextContributions(ctx, configs, registry, warnOnce, keep, on, o
     const entryName = textRegistrationName(base, section ? 'sectionName' : 'contextName')
     // runtime-context 在官方 refreshContext 里按注册 provider 重算：provider 必须返回当前文本，
     // 否则 assemble 钩子的填充会在请求前被 marker 覆盖。system-section 不重算，仍用 marker 占位。
-    // 文本槽按 Agent 分区：同一挂载服务多个 Agent，交错装配时不能互相读到对方的正文。
-    const holders = section ? undefined : new WeakMap()
-    const sharedHolder = section ? undefined : { text: '' }
-    const holderOf = section ? undefined : (context) => {
-      const key = context?.agent
-      if (key === undefined || key === null) return sharedHolder
-      let holder = holders.get(key)
-      if (holder === undefined) { holder = { text: '' }; holders.set(key, holder) }
-      return holder
-    }
+    // 步骤优先分区；裸装配才按 Agent，refresh 由适配器投影原装配的步骤。
+    const holderOf = section ? undefined : contextHolder()
     try {
       keep(systemPrompt[section ? 'section' : 'context']({
         name: entryName,
@@ -313,24 +320,35 @@ function wireRuleTextContributions(ctx, configs, registry, warnOnce, keep, on, o
       entry.text = ''
       if (holder !== undefined) holder.text = ''
       const blocks = []
+      const publish = (final = assembly) => {
+        if (!active || context.signal?.aborted) return
+        const target = final[binding.collection].find(item => item.name === binding.name)
+        if (target === undefined) return
+        target.text = blocks.map(block => block.text).filter(Boolean).join('\n\n')
+        if (holder !== undefined) holder.text = target.text
+      }
       for (const config of binding.group) {
         if (!active || context.signal?.aborted || !actionMatches(config, frame) || !matchesAgentScope(config, context.agent, frame.subject)) continue
-        try {
-          const reminder = actionSoulReminder(config, frame)
-          const text = config.layer === 'runtime-context' && (config.strategy === 'placeholder' || !KNOWN_STRATEGIES.has(config.strategy))
-            ? await resolvedContextText(ctx, config, context, registry.get(config), warnOnce)
-            : await configText(config, registry, warnOnce, context, true)
-          if (!recheckSoulReminder(config, frame, reminder)) continue
-          if (text.length) {
-            const stamp = reminder === undefined ? '' : `\n<!-- soul-reminder:${Buffer.from(JSON.stringify({ moduleId: config.sourceModuleId, sessionId: context.agent.session.id, pendingVersion: reminder.pendingVersion, epoch: reminder.epoch })).toString('base64')} -->`
-            blocks.push(text + stamp)
-          }
-        } catch (error) { warnOnce(`${name}: rule text ${config.id} failed: ${String(error?.message ?? error)}`) }
+        const block = { text: '' }
+        blocks.push(block)
+        const render = async (final) => {
+          try {
+            const reminder = actionSoulReminder(config, frame)
+            const text = config.layer === 'runtime-context' && (config.strategy === 'placeholder' || !KNOWN_STRATEGIES.has(config.strategy))
+              ? await resolvedContextText(ctx, config, context, registry.get(config), warnOnce)
+              : await configText(config, registry, warnOnce, context, true)
+            if (!recheckSoulReminder(config, frame, reminder)) return
+            if (text.length) {
+              const stamp = reminder === undefined ? '' : `\n<!-- soul-reminder:${Buffer.from(JSON.stringify({ moduleId: config.sourceModuleId, sessionId: context.agent.session.id, pendingVersion: reminder.pendingVersion, epoch: reminder.epoch })).toString('base64')} -->`
+              block.text = text + stamp
+            }
+          } catch (error) { warnOnce(`${name}: rule text ${config.id} failed: ${String(error?.message ?? error)}`) }
+          publish(final)
+        }
+        if (config.fill === 'tool-catalog' && deferToolCatalog(context, render)) continue
+        await render()
       }
-      if (active && !context.signal?.aborted) {
-        entry.text = blocks.join('\n\n')
-        if (holder !== undefined) holder.text = entry.text
-      }
+      publish()
     }
     return next()
   })]
@@ -382,16 +400,8 @@ function wireRuntimeContexts(ctx, configs, registry, warnOnce, keep, on, ordered
   for (const config of placeholders) {
     try {
       const contextName = textRegistrationName(config, 'contextName')
-      // 文本槽按 Agent 分区：交错装配时 A 的 refresh 不得读到 B 的正文。
-      const holders = new WeakMap()
-      const sharedHolder = { text: '' }
-      const holderOf = (context) => {
-        const key = context?.agent
-        if (key === undefined || key === null) return sharedHolder
-        let holder = holders.get(key)
-        if (holder === undefined) { holder = { text: '' }; holders.set(key, holder) }
-        return holder
-      }
+      // 同 Agent 的不同步骤也各有文本槽，不能用最新一次正文覆盖重试。
+      const holderOf = contextHolder()
       keep(systemPrompt.context({
         name: contextName,
         order: config.order,
@@ -413,12 +423,15 @@ function wireRuntimeContexts(ctx, configs, registry, warnOnce, keep, on, ordered
       entry.text = ''
       holder.text = ''
       if (!active || context.signal?.aborted || !matchesAgentScope(config, context.agent, context)) continue
-      try {
+      const render = async (final = assembly) => { try {
         const text = await resolvedContextText(ctx, config, context, registry.get(config), warnOnce)
-        if (active && !context.signal?.aborted) { entry.text = text; holder.text = text }
+        const target = final.contexts.find(item => item.name === entry.name)
+        if (active && !context.signal?.aborted && target !== undefined) { target.text = text; holder.text = text }
       } catch (error) {
         warnOnce(`${name}: runtime-context ${config.id} resolve failed: ${String(error?.message ?? error)}`)
-      }
+      } }
+      if (config.fill === 'tool-catalog' && deferToolCatalog(context, render)) continue
+      await render()
     }
     if (!active || context.signal?.aborted) for (const entry of entries) entry.text = ''
     return next()

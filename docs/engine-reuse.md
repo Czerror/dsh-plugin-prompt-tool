@@ -284,13 +284,21 @@ surface 缺失或非法时可见视图退回完整日志；合法空 nodes 就�
 
 ## 工具面收窄与按需解锁
 
-`tool-visibility` 是工具面的唯一声明：一份 allow/deny 名单同时投影到装配目录、`tools:sdk` 正文与执行闸，并可声明发现来源。受众统一写在规则或分支的 scope 条件。呈现裁剪不等于授权：deny 同时用 `restrict` 覆盖继承面并注册 `guard`；allow **不调用 restrict**，执行面统一由 `guard` 兜底——`restrict` 的 allow 只能收继承面名字，而 `tools.schemas()` 的全局视图不含预设/祖先层工具，局部 allow 反而会把要保留的工具裁掉。作用域快照统一走 `engine/tool-scope.mjs#toolScopeSnapshot(tools, agent)`：`globalNames` 是全局层名字（只供 restrict 的已知名过滤），`visible` 是 agent 可见面（含预设/祖先/本层）；新消费方不得用无 scope 的 `schemas()` 当模型可见面。`requireMatch` 只对白名单有意义，判据是「名单与装配面整体错位」：名单里的名字**一个都不在**目录与 SDK 正文的并集里时才放弃裁剪、暴露完整目录（fail-open），allow guard 同步放行；只缺一部分（提供方被替换或关闭）照常收窄，缺项只留一条诊断。三面（目录 / 正文 / 执行闸）共用 `engine/actions/shared.mjs#toolSurfacePlan` 这一份判断——`required` 只取静态 allow 再剔除 `run_code` 与 deny 覆盖的名字，解锁名不参与（否则模型解锁一个拼错或已改名的工具就能关掉收窄）；`available` 是目录名与正文名的并集。官方工具被替换插件取代时，把替换名（如 dsh-ops 的 `ops_*` 全量）登记进 allow：随包模块与部署层副本同口径，未安装该插件的部署里这些名字缺席（惰性缺项），不产生任何影响。装配里既无目录也无 SDK 正文时视为没有观察到工具面，不据此改执行闸（保持上一轮状态）。呈现失败与 guard 未注册仍可能让三面不一致，那两条路径不改判据。条件由规则引擎逐轮求值，条件变假时撤销上一轮注册的执行闸。
+`tool-visibility` 是工具面的唯一声明：一份 allow/deny 名单同时投影到装配目录、`tools:sdk` 正文与执行闸，并可声明发现来源。受众统一写在规则或分支的 scope 条件。宿主与独立规则入口共用 root 上的一份公开服务适配器：先等待来源准备，再调用原 `tools.resolve`；原 `systemPrompt.assemble` 完整返回后依次结算所有来源的工具面动作，最后封存步骤。allow 与 deny 都不注册额外 `restrict`，避免继承工具与本层工具口径不同，也不破坏发现候选。
 
-PTC 下装配目录只有保留传输 `run_code`，实际可见面是 `tools:sdk` 正文。`run_code` 不参与 allow/deny 名单：allow 不点名也会保留，`requireMatch` 不计它；allow 不走 `restrict`，deny 的 `restrict` 也会过滤它。可见面裁到空时也不影响这条唯一入口。因此 `tool-surface` 这类 native 收窄声明可以直接与 PTC 共存，`requireMatch` 在 PTC 下按 SDK 正文判定。
+包装的 `ResolvedToolSet` 只暴露 `view` 与 `dispose`；每次 view 先委托原集合，官方 scope、when、替换与移除始终是上限。状态为 pending / sealed / closed，pending 的透明 view 只供装配读取，执行入口与 guard 拒绝 pending 和 closed。原集合与包装集合按同一 Agent 关联同一步骤；native、PTC 和 delegate 都传递该集合，执行只读封存名单。失败、取消与最后一个 owner 释放都会关闭集合，原资源仅释放一次；重试复用封存装配，不重算规则或放宽准入。
+
+三面共用 `engine/actions/shared.mjs#toolSurfacePlan`：`required` 只取静态 allow 再剔除 `run_code` 与 deny 覆盖的名字，解锁名不参与。步骤的 `available` 来自官方集合的当前 view，多个动作依序取交集；裸装配只以目录与 SDK 的并集判断展示。`requireMatch` 只对白名单有意义：静态常驻名一个都不在时仅放宽插件 allow，deny 与官方准入继续生效；只缺一部分照常收窄并留一条诊断。官方工具被替换插件取代时，把实际替换名登记进 allow；未安装的替换名不被宣告，也不会单独触发放宽。无集合的程序调用保留独立保守 guard，不冒充模型步骤。
+
+适配覆盖官方调用路径和安装后取得的服务代理引用；Cordis `internal/get` 不保证拦截任意 `ctx.get` 或安装前缓存的原服务。外部持有原服务时应显式传已包装集合，原服务执行仍受已有 guard 约束；未传集合不自动猜出步骤。直接/裸装配不自动 resolve、不猜模型或 signal，传入未知集合时明确拒绝。
+
+PTC 下装配目录只有保留传输 `run_code`，实际工具声明位于 `tools:sdk` 正文。`run_code` 不参与 allow/deny 名单：allow 不点名也保留，`requireMatch` 不计它，deny 不得声明它。SDK 正文裁剪与实际程序绑定读取同一封存准入；SDK 文本不能反过来授予工具权限。可见面裁到空时保留传输仍存在，因此 native 收窄声明可以直接与 PTC 共存。
 
 按需发现由同一份声明的 `discovery` 字段拥有（`{ kind }`，工具名与解锁键由适配器元数据提供；可选写 `tool`/`key` 只作断言）：动作在首次装配时用 `ctx.get('promptToolDiscovery')` 按 agent 解析适配器，从本会话 durable `tool/call` 与 PTC 嵌套 `tool/ptc-dispatch` 参数提取显式字符串名单，只做加法且不能越过 deny。两类事件名由 `engine/history.mjs` 的 `TOOL_INVOCATION_EVENT_TYPES` 统一；观察工具执行时读两类，观察模型动作/相位晋升仍只看顶层 `tool/call`。工具本身由适配器行注册——声明了 `discovery` 的模块必须把对应行（`tools` → `tool-search`、`skills` → `skill-search`）列进 `modules`，缺行在装配准备期失败。工具名按真实注册名称匹配；坏参数逐条忽略，缺会话回落静态 allow；适配器未注册时告警一次并跳过解锁回收，不阻断装配。
 
-首轮提示用同模板普通 inject-text 动作组合 count 条件与 session 去重；strategy: placeholder、fill: tool-catalog、params.action 引用同规则 tool-visibility 动作。只读变量 RESIDENT_TOOLS 来自该声明 allow 去 deny、再按当前可见面过滤后的逗号名单：观测不到工具面时回落声明名单，观测到工具面但一个常驻名都不在时跳过提示；DISCOVERY_TOOL 来自当前 Agent 的发现适配器工具名。提示正文由模块 text 控制，自动列名单，不复制配置，也不由工具可见面动作注册提示。
+首轮提示用同模板普通 inject-text 动作组合 count 条件与 session 去重；strategy: placeholder、fill: tool-catalog、params.action 引用同规则 tool-visibility 动作。只读变量 RESIDENT_TOOLS 取引用声明的静态 allow 去 deny，再按所有工具面动作结算后的最终准入过滤；另一动作的 deny 也会移除该名字。runtime-context 的目录 resolver 延迟到全部来源结算后回填，普通带副作用模板不重复求值；pre-step 位于 resolve → assemble 之后，按原 `modelSelection` 对象与 Agent 的唯一关联读取 sealed 步骤。关联歧义、pending 或 closed 时跳过目录指引，不按模型字符串或 Agent 最新一步猜测。裸装配按最终目录与 SDK 展示信息回填；没有步骤且观测不到工具面时才保留声明名单回退。DISCOVERY_TOOL 来自当前 Agent 的发现适配器工具名。
+
+发现搜索仍通过 `toolScopeSnapshot(tools, agent).visible` 读取原注册候选，包含尚未解锁的工具，不改读封存集合。解锁只影响下一次 resolve/assemble，新集合准入不能反写旧集合或其重试，deny 始终优先。此方案取代 [ADR-0012](adr/0012-progressive-disclosure-restrict.md) 的 restrict 与「当场刷新」历史方向；ADR 保留当时理由，当前采用步骤封存与下一请求生效。
 
 tool-catalog 使用普通只读变量插值；`templateEvaluation: true` 在编译时拒绝，避免目录事实被持久变量求值覆盖。被引用动作须声明 allow，未知引用或错误动作种类拒绝；发现适配器不可用时跳过提示并告警。
 
@@ -391,7 +399,7 @@ SELF 注入从同一来源模块事实读取 `soul-maintenance.budgetBytes`，�
 
 显式wake才在维护成功退出后发送一次非空followup；取消、关闭、卸载或失去成员资格使迟到结果失效。心跳不改变恢复额度。provider状态区分disabled、idle、running、ready、failed和cancelled；上下文runtime状态区分ready、running、success、no-op、failed、cancelled和disabled。依赖缺失在装配时明确报错，保留上一份有效贡献。SELF缺失通过动态注入标记可见。
 
-runtime-context 的注册文本必须是同步 provider，不能只在 assemble 钩子里改 accepted 文本：官方请求前还会用 `systemPrompt.refreshContext` 按注册 provider 重算 contexts，字符串占位会被重算回空。引擎为条件化 runtime-context 与 placeholder 注册读取挂载内 holder 的函数，assemble 填充时同步更新 holder；同一份正文在装配与请求前刷新两条路径上一致。system-section 不参与该重算，其条件文本仍用官方占位标记。
+runtime-context 的注册文本必须是同步 provider，不能只在 assemble 钩子里改 accepted 文本：官方请求前还会用 `systemPrompt.refreshContext` 按注册 provider 重算 contexts，字符串占位会被重算回空。引擎为条件化 runtime-context 与 placeholder 注册读取 holder 的函数，优先按具体步骤分区，裸装配才按 Agent 分区。公开 refresh 适配根据 accepted assembly 对象身份投影原步骤，不依赖调用者提供 toolSet；刷新结果继续关联同一步骤。同 Agent 并发装配、主子 Agent 与旧步骤重试因此不互相覆盖正文。system-section 不参与该重算，其条件文本仍用官方占位标记。
 
 ## 自定义工具与宿主契约
 

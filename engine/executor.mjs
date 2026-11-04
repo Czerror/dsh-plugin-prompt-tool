@@ -32,6 +32,7 @@ import { selectContextActivation } from './context-activation.mjs'
 import { compareConfigSequence } from './order.mjs'
 import { ruleFrame, actionMatches, actionSoulReminder, recheckSoulReminder } from './conditions/evaluation.mjs'
 import { modelOf } from './conditions/subject.mjs'
+import { toolStepContext } from './tool-scope.mjs'
 import { composePreStepSources, promotionOwnerOf } from './pre-step-source.mjs'
 // 标记键名与「已登记进 config 白名单」同源（schema.mjs），此处不另写字面量。
 import { SESSION_VARIABLES_DISABLED } from './schema.mjs'
@@ -337,7 +338,7 @@ async function runPromptConfigBatch(options) {
         const reminder = actionSoulReminder(config, options.ruleFrame)
         const signal = options.payload?.signal
         if (signal?.aborted) continue
-        const resolved = await config.resolve({ ctx, agent, session, signal, decision, messages, contextActivationSelected: scope.contextActivation.has(config) })
+        const resolved = await config.resolve({ ...toolStepContext(options.payload), ctx, agent, session, signal, decision, messages, contextActivationSelected: scope.contextActivation.has(config) })
         if (signal?.aborted) continue
         if (resolved === null || resolved === undefined) continue
         if (!recheckSoulReminder(config, options.ruleFrame, reminder)) continue

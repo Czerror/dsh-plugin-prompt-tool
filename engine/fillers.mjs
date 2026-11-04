@@ -4,7 +4,7 @@
  */
 
 import { getService, parseToolNames } from './shared.mjs'
-import { toolScopeSnapshot } from './tool-scope.mjs'
+import { toolScopeSnapshot, toolCatalogNames } from './tool-scope.mjs'
 import { machinePaths } from './machine-paths.mjs'
 import { SAFE_ENV_KEYS } from './env-safety.mjs'
 import { createInstructionHintResolver } from './instruction-hint.mjs'
@@ -39,7 +39,8 @@ function createToolCatalogResolver(config) {
     throw new TypeError('tool-catalog requires params.action referencing a tool-visibility action')
   }
   const text = explicitTemplate(config)
-  return ({ ctx, agent }) => {
+  return (context) => {
+    const { ctx, agent } = context
     if (text.trim().length === 0) return null
     const source = config.toolCatalogSource
     if (source === undefined) throw new TypeError('tool-catalog requires a same-rule tool-visibility action')
@@ -51,7 +52,9 @@ function createToolCatalogResolver(config) {
       throw new Error(`tool-catalog discovery adapter ${source.discovery.kind} is unavailable`)
     }
     let resident = declared
-    const visible = visibleToolNames(ctx, agent)
+    const final = toolCatalogNames(context)
+    if (final === null) return null
+    const visible = final ?? visibleToolNames(ctx, agent)
     if (visible !== undefined) {
       const present = declared.filter((name) => visible.has(name))
       // 观测到全缺时不宣告任何常驻工具：与 requireMatch 放宽同源，避免「解锁」建在错误前提上。
