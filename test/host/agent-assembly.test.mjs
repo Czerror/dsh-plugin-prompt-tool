@@ -16,6 +16,8 @@ import { Context } from '@deepseek-ai/cordis'
 import { bindScopeParent, createScope, scopeOf, scopeTarget } from '@deepseek-ai/dsh-scope'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime from '@deepseek-ai/dsh-tools'
+import * as nativeExecutor from '@deepseek-ai/dsh-tool-executor-native'
+import { PtcExecutor } from '@deepseek-ai/dsh-tool-executor-ptc'
 import { isolatedHome, fixtureRule } from '../fixtures/host-harness.mjs'
 
 const { moduleRoot } = isolatedHome('pt-assembly-')
@@ -37,6 +39,7 @@ async function liveAssembly(t, enabledModules, options = {}) {
   const root = new Context()
   await root.plugin(SystemPrompt)
   await root.plugin(ToolRuntime)
+  await root.plugin(nativeExecutor)
   root.provide('llm', {})
   const agents = []
   root.provide('agents', { list: () => agents })
@@ -960,7 +963,7 @@ test('模块增量发布：修改 B 只替换 B 的能力和规则，未改 A/C 
   assert.deepEqual(h.warnings, [])
 })
 
-test('PTC：主子模式独立进入工具面，刷新与压缩保留受众，释放恢复默认', async (t) => {
+test('PTC：主子模式独立进入官方工具面，刷新与压缩保留受众', async (t) => {
   const id = 'audience-presentation'
   const write = (mainMode, subagentMode) => writeModuleFixture(id, {
     modules: ['present-as'], moduleConfigs: { 'present-as': { mainMode, subagentMode } },
@@ -973,24 +976,24 @@ test('PTC：主子模式独立进入工具面，刷新与压缩保留受众，�
   })
   const main = await h.makeAgent('presentation-main')
   const child = await h.makeAgent('presentation-child', 1)
-  const names = agent => h.root.tools.wireSchemas(agent).schemas.map(tool => tool.name)
-  assert.deepEqual(names(main), ['run_code'])
-  assert.deepEqual(names(child), ['visible_tool'])
+  const names = async agent => (await h.root.systemPrompt.assemble({ agent, scope: agent })).tools.map(tool => tool.name)
+  assert.deepEqual(await names(main), ['run_code'])
+  assert.deepEqual(await names(child), ['visible_tool'])
   for (const agent of [main, child]) {
     const event = { seq: 1, type: 'compaction/end', data: {} }
     agent.session.snapshotEvents().push(event)
     h.root.emit(scopeTarget(agent.session, agent), 'session/event', agent.session, event)
   }
   await h.runtime.refresh(id)
-  assert.deepEqual(names(main), ['run_code'])
-  assert.deepEqual(names(child), ['visible_tool'])
+  assert.deepEqual(await names(main), ['run_code'])
+  assert.deepEqual(await names(child), ['visible_tool'])
   write('native', 'ptc')
   await h.runtime.refresh(id)
-  assert.deepEqual(names(main), ['visible_tool'])
-  assert.deepEqual(names(child), ['run_code'])
+  assert.deepEqual(await names(main), ['visible_tool'])
+  assert.deepEqual(await names(child), ['run_code'])
   assert.deepEqual(h.warnings, [])
   await h.runtime.dispose()
-  for (const agent of [main, child]) assert.deepEqual(names(agent), ['visible_tool'])
+  for (const agent of [main, child]) await assert.rejects(names(agent), { code: 'TOOL_EXECUTOR_UNAVAILABLE' })
 })
 
 test('晚到能力初始化失败只撤所属模块，健康模块继续且显式重试可恢复', async (t) => {
@@ -1006,10 +1009,10 @@ test('晚到能力初始化失败只撤所属模块，健康模块继续且显�
   const h = await liveAssembly(t, () => ['late-failed', 'late-healthy'])
   let rejected = true
   let attempts = 0
-  const presentAs = h.root.tools.presentAs
-  t.mock.method(h.root.tools, 'presentAs', function (mode, ...args) {
-    if (mode === 'ptc') { attempts++; if (rejected) throw new Error('LATE-INITIALIZATION-REJECTED') }
-    return presentAs.call(this, mode, ...args)
+  const setExecutor = h.root.tools.setExecutor
+  t.mock.method(h.root.tools, 'setExecutor', function (executor) {
+    if (executor instanceof PtcExecutor) { attempts++; if (rejected) throw new Error('LATE-INITIALIZATION-REJECTED') }
+    return setExecutor.call(this, executor)
   })
   const agents = [await h.makeAgent('late-main'), await h.makeAgent('late-child', 1)]
   const assemble = new Map()
@@ -1044,7 +1047,7 @@ test('晚到能力初始化失败只撤所属模块，健康模块继续且显�
   for (const agent of agents) {
     assert.deepEqual(await texts(agent), ['USER', 'LATE-RULE', 'HEALTHY-UPDATED'])
     assert.deepEqual(h.runtime.moduleIds(agent.id), ['late-failed', 'late-healthy'])
-    assert.deepEqual(h.root.tools.wireSchemas(agent).schemas.map(tool => tool.name), ['run_code'], '晚到服务成功后真实PTC呈现已生效')
+    assert.deepEqual((await assemble.get(agent)()).tools.map(tool => tool.name), ['run_code'], '晚到服务成功后真实PTC呈现已生效')
   }
   await h.runtime.dispose()
   for (const agent of agents) {
@@ -1085,10 +1088,10 @@ test('连续等待中的新版本失败时回退最后完成初始化的旧模�
   personaPrefix = 'ORIGINAL-PERSONA'
   writePersona()
   write('PENDING-TWO', 'ptc')
-  const presentAs = h.root.tools.presentAs
-  t.mock.method(h.root.tools, 'presentAs', function (mode, ...args) {
-    if (mode === 'ptc') throw new Error('LATE-VERSION-REJECTED')
-    return presentAs.call(this, mode, ...args)
+  const setExecutor = h.root.tools.setExecutor
+  t.mock.method(h.root.tools, 'setExecutor', function (executor) {
+    if (executor instanceof PtcExecutor) throw new Error('LATE-VERSION-REJECTED')
+    return setExecutor.call(this, executor)
   })
   h.root.provide('ptcRuntime', { language: 'typescript' })
   await h.runtime.settled()
@@ -1189,10 +1192,10 @@ test('能力挂载失败按模块回退，半注册工具撤销且健康来源�
     name: 'shared_tool', description: 'shared', parameters: { type: 'object', properties: {} },
     output: { schema: { type: 'object' }, render: () => [] }, execute: async () => ({}),
   }) })
-  const presentAs = h.root.tools.presentAs
-  t.mock.method(h.root.tools, 'presentAs', function (mode, ...args) {
-    if (mode === 'native') throw new Error('HOST-PRESENTATION-REJECTED')
-    return presentAs.call(this, mode, ...args)
+  const setExecutor = h.root.tools.setExecutor
+  t.mock.method(h.root.tools, 'setExecutor', function (executor) {
+    if (executor instanceof nativeExecutor.NativeToolExecutor) throw new Error('HOST-PRESENTATION-REJECTED')
+    return setExecutor.call(this, executor)
   })
   const agents = [await h.makeAgent('mount-isolation-main'), await h.makeAgent('mount-isolation-child', 1)]
   const texts = async agent => (await h.inject(agent)).messages.flatMap(message => message.content.map(block => block.text))
@@ -1210,7 +1213,7 @@ test('能力挂载失败按模块回退，半注册工具撤销且健康来源�
   await assert.rejects(h.runtime.refresh('mount-broken'), /HOST-PRESENTATION-REJECTED/)
   for (const agent of agents) {
     assert.deepEqual(await texts(agent), ['USER', 'OLD-BROKEN', 'HEALTHY-UPDATED'])
-    assert.deepEqual(names(agent).sort(), ['old_tool', 'run_code', 'shared_tool'])
+    assert.deepEqual(names(agent).sort(), ['old_tool', 'shared_tool'])
     assert.deepEqual(h.runtime.moduleIds(agent.id), ['mount-broken', 'mount-healthy'])
   }
   let registrations = 0

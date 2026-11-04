@@ -372,7 +372,8 @@ export function createAgentAssembly(ctx: Context, options: AgentAssemblyOptions)
     }).catch((error: unknown) => { warn(error) })
     return personaKnowledge
   }
-  const liveFiber = (fiber: Fiber): boolean => fiber.uid !== null && fiber.store !== undefined && fiber.inertia === undefined
+  // 官方 FiberState.ACTIVE 是 const enum，没有运行期导出。
+  const liveFiber = (fiber: Fiber): boolean => fiber.uid !== null && fiber.state === 2
   const officialAt = (scope: ScopeKey): Fiber | undefined => {
     const fibers = [...(personaPlugin ? ctx.registry.get(personaPlugin)?.fibers ?? [] : [])].filter(fiber => liveFiber(fiber) && scopeOf(fiber.ctx) === scope)
     if (fibers.length > 1) throw new Error('同作用域存在多个官方人设实例，拒绝猜测所有者')
@@ -383,8 +384,8 @@ export function createAgentAssembly(ctx: Context, options: AgentAssemblyOptions)
     const field = root ? prefix ? 'personaPrefix' : 'personaSuffix' : prefix ? 'prefix' : 'suffix'
     const prompt = fiber.ctx.get('systemPrompt')
     if (prompt === undefined) throw new Error('官方人设需要 systemPrompt 服务')
-    return { name, text: String(fiber.config[field] ?? ''), order: prompt.getSectionOrder(prefix ? 'DEPLOYMENT_PERSONA_PREFIX' : 'DEPLOYMENT_PERSONA_SUFFIX'),
-      ...(!root && prefix && fiber.config.complete === true ? { complete: true } : {}) }
+    return { name, text: String(fiber.config?.[field] ?? ''), order: prompt.getSectionOrder(prefix ? 'DEPLOYMENT_PERSONA_PREFIX' : 'DEPLOYMENT_PERSONA_SUFFIX'),
+      ...(!root && prefix && fiber.config?.complete === true ? { complete: true } : {}) }
   }
   /**
    * 同名段的继承源：同层被接住的声明优先，其次沿 scope 链找最近的官方 persona 行，最后是根部署人设。
