@@ -12,7 +12,60 @@ const manifest = JSON.parse(readFileSync(new URL('../package.json', import.meta.
 export const OFFICIAL_SCOPE = '@deepseek-ai/'
 
 /** 已验证的最低宿主契约；范围可以开放上界，锁文件固定本地验证输入。 */
-export const DSH_BASELINE = '0.2.0-rc.1'
+export const DSH_BASELINE = '0.2.2-rc.1'
+
+/** 比较发布类型的档位键与插件分组；只解析声明，不执行宿主包或手抄数值。 */
+export function officialOrderContractProblems(officialSource, pluginSource) {
+  const parse = (source, filename) => {
+    const file = ts.createSourceFile(filename, source, ts.ScriptTarget.Latest, true)
+    if (file.parseDiagnostics.length > 0) throw new Error(filename + ': 无法解析档位声明')
+    return file
+  }
+  const official = parse(officialSource, 'dsh-system-prompt.d.ts')
+  const plugin = parse(pluginSource, 'official-orders.ts')
+  const declaration = (file, name) => {
+    const matches = file.statements.filter(ts.isVariableStatement)
+      .flatMap((statement) => [...statement.declarationList.declarations])
+      .filter((node) => ts.isIdentifier(node.name) && node.name.text === name)
+    if (matches.length !== 1) throw new Error(name + ': 应有唯一档位声明')
+    return matches[0]
+  }
+  const nameOf = (node) => {
+    if (node && (ts.isIdentifier(node) || ts.isStringLiteralLike(node))) return node.text
+    throw new Error('档位声明包含非字面量键')
+  }
+  const unwrap = (node) => {
+    while (node && (ts.isAsExpression(node) || ts.isSatisfiesExpression(node) || ts.isParenthesizedExpression(node))) node = node.expression
+    return node
+  }
+  const problems = []
+  for (const [table, groups] of [
+    ['SECTION_ORDERS', 'OFFICIAL_SECTION_ORDER_GROUPS'],
+    ['CONTEXT_ORDERS', 'OFFICIAL_CONTEXT_ORDER_GROUPS'],
+  ]) {
+    const type = declaration(official, table).type
+    if (!type || !ts.isTypeLiteralNode(type)) throw new Error(table + ': 应为档位键类型声明')
+    const expected = new Set(type.members.map((member) => nameOf(member.name)))
+    const array = unwrap(declaration(plugin, groups).initializer)
+    if (!array || !ts.isArrayLiteralExpression(array)) throw new Error(groups + ': 应为分组数组')
+    const names = array.elements.flatMap((group) => {
+      if (!ts.isObjectLiteralExpression(group)) throw new Error(groups + ': 应为分组对象')
+      const property = group.properties.find((entry) => entry.name && nameOf(entry.name) === 'names')
+      const values = property && ts.isPropertyAssignment(property) ? unwrap(property.initializer) : undefined
+      if (!values || !ts.isArrayLiteralExpression(values)) throw new Error(groups + ': 缺少 names 字面量数组')
+      return values.elements.map((value) => {
+        if (!ts.isStringLiteralLike(value)) throw new Error(groups + ': 档位名应为字符串字面量')
+        return value.text
+      })
+    })
+    const actual = new Set(names)
+    const missing = [...expected].filter((name) => !actual.has(name)).sort()
+    const extra = [...actual].filter((name) => !expected.has(name)).sort()
+    if (missing.length > 0) problems.push(table + ': 插件分组缺少官方档位 ' + missing.join(', '))
+    if (extra.length > 0) problems.push(table + ': 插件分组多出非官方档位 ' + extra.join(', '))
+  }
+  return problems
+}
 
 /**
  * peer 范围是否接受某个实际安装版本。

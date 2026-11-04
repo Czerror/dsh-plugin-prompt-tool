@@ -9,6 +9,7 @@
 //   4. src/engine 的类型、Client 值或 Host 值导入不符合各自依赖契约；
 //   5. `dsh.client.inject` 声明的包没有对应的开发依赖；
 //   6. `engines.dsh` 不接受某个已安装官方 dsh 包的版本，或下限低于已验证的宿主基线。
+//   7. 插件官方档位分组与已安装发布类型的键集合不一致。
 //
 // 只读：不写盘、不安装、不触碰当前运行中的 DSH。
 import { existsSync, readFileSync, realpathSync } from 'node:fs'
@@ -23,6 +24,7 @@ import {
   isRepoLocalResolution,
   moduleImportEdges,
   importContractProblems,
+  officialOrderContractProblems,
 } from './host-contracts-lib.mjs'
 
 const root = fileURLToPath(new URL('..', import.meta.url))
@@ -116,6 +118,24 @@ for (const [name] of Object.entries(manifest.devDependencies ?? {})) {
 }
 for (const problem of enginesDshProblems(manifest.engines?.dsh, dshVersions)) {
   failures.push(`engines.dsh: ${problem}`)
+}
+
+// 以已安装发布类型为真值，不读取同版本号的源码 checkout，也不执行宿主运行时。
+const promptPackage = installedPackage('@deepseek-ai/dsh-system-prompt')
+if (promptPackage !== undefined) {
+  try {
+    const promptManifest = JSON.parse(readFileSync(join(promptPackage.dir, 'package.json'), 'utf8'))
+    const typesFile = promptManifest.types
+    if (typeof typesFile !== 'string') throw new Error('发布包缺少 types 入口')
+    const officialSource = readFileSync(join(promptPackage.dir, typesFile), 'utf8')
+    const pluginSource = readFileSync(join(root, 'src/shared/official-orders.ts'), 'utf8')
+    for (const problem of officialOrderContractProblems(officialSource, pluginSource)) {
+      failures.push(`official-orders: ${problem}`)
+    }
+    console.log(`官方档位来源：@deepseek-ai/dsh-system-prompt@${promptPackage.version} ${shortTarget(realpathSync(join(promptPackage.dir, typesFile)))}`)
+  } catch (error) {
+    failures.push(`official-orders: 无法验证发布类型（${String(error?.message ?? error)}）`)
+  }
 }
 
 const width = (values) => values.reduce((max, value) => Math.max(max, value.length), 0)

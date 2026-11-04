@@ -3,9 +3,9 @@
  *
  * ## 来源与同源纪律
  *
- * 抄录自已安装的 `@deepseek-ai/dsh-system-prompt@0.2.1-alpha.3`：
- * 官方源码 `packages/core/system-prompt/src/index.ts` 的 `SECTION_ORDERS`（32 项）与
- * `CONTEXT_ORDERS`（7 项），与安装包 `lib/index.js` 的两张表逐项核对。
+ * 抄录自已安装的 `@deepseek-ai/dsh-system-prompt@0.2.2-rc.1` 发布类型：
+ * `lib/types/index.d.ts` 的 `SECTION_ORDERS`（34 项）与 `CONTEXT_ORDERS`（7 项）。
+ * `verify:host` 使用 AST 比较发布类型与本文件分组的键集合，缺项或多项都会失败。
  *
  * 官方**新增、改名或删除**档位时必须同步本文件——本文件与官方包同源，不构成第二权威。
  * 数值一律**不抄**：运行时用官方 `getSectionOrder(name)` / `getContextOrder(name)` 求值，
@@ -31,6 +31,7 @@ export type OfficialSectionOrderName =
   | 'TOOL_READ'
   | 'TOOL_WRITE'
   | 'TOOL_EDIT'
+  | 'TOOL_APPLY_PATCH'
   | 'TOOL_GLOB'
   | 'TOOL_GREP'
   | 'TOOL_JOBS'
@@ -40,6 +41,7 @@ export type OfficialSectionOrderName =
   | 'TOOL_LSP'
   | 'TOOL_SESSION_QUERY'
   | 'TOOL_GOAL'
+  | 'TOOL_SCHEDULE'
   | 'TOOL_WORKFLOW'
   | 'TOOL_RALPH'
   | 'TOOL_SUBAGENT'
@@ -69,16 +71,16 @@ export interface OfficialOrderGroup<Name extends string> {
   readonly names: readonly Name[]
 }
 
-/** section 侧 6 组，覆盖官方 32 个档位名（顺序即官方数值升序）。 */
+/** section 侧 6 组，覆盖官方 34 个档位名（顺序即官方数值升序）。 */
 export const OFFICIAL_SECTION_ORDER_GROUPS: readonly OfficialOrderGroup<OfficialSectionOrderName>[] = [
   { id: 'identity', names: ['HARNESS_IDENTITY', 'DEPLOYMENT_PERSONA_PREFIX'] },
   { id: 'policy', names: ['PLAN_POLICY', 'TEAM_POLICY', 'PTC_ONLY', 'FILE_REFERENCE'] },
   {
     id: 'tools',
     names: [
-      'TOOL_BASH', 'TOOL_PWSH', 'TOOL_READ', 'TOOL_WRITE', 'TOOL_EDIT', 'TOOL_GLOB', 'TOOL_GREP',
+      'TOOL_BASH', 'TOOL_PWSH', 'TOOL_READ', 'TOOL_WRITE', 'TOOL_EDIT', 'TOOL_APPLY_PATCH', 'TOOL_GLOB', 'TOOL_GREP',
       'TOOL_JOBS', 'TOOL_PTY', 'TOOL_WEB_SEARCH', 'TOOL_WEB_FETCH', 'TOOL_LSP', 'TOOL_SESSION_QUERY',
-      'TOOL_GOAL', 'TOOL_WORKFLOW', 'TOOL_RALPH', 'TOOL_SUBAGENT', 'TOOL_REPORT',
+      'TOOL_GOAL', 'TOOL_SCHEDULE', 'TOOL_WORKFLOW', 'TOOL_RALPH', 'TOOL_SUBAGENT', 'TOOL_REPORT',
       'TOOL_COMPUTER_USE', 'MCP_SERVERS',
     ],
   },
