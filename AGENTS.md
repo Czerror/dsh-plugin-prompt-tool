@@ -75,26 +75,18 @@
 - bridge 路径和载荷先改 src/shared/bridge-contract.ts，再同步 host、client 和契约测试；成功/失败载荷保持统一包装，写入端点先做白名单、类型、数值和大小校验。
 - secrets、token 和大文本不进入 settings descriptor；保留 loopback、Host/Origin 校验和请求体上限。
 
-### 审查后的决策
+### 变更流程
 
-- 审查完成后，由用户指定本轮修复任务；审查发现本身不等于修复授权，其结论写入 PLAN 的「审查结论」章节，不另行落盘。
-- 每个修复轮次在 `.scratch/plan/` 下创建唯一一份 PLAN，文件名用 `YYYY-MM-DD-plan-<主题>-<基线>.md`，章节骨架与验收标准见 [PLAN 格式规范](docs/agents/plan-format.md)。
-- PLAN 完成即归档：收尾时填满 `## 状态`，把 PLAN 原样复制到 `.scratch/archive/<分类>/`（保留其中的历史互链；分类沿用现有主题目录，清单见 `INDEX.md`）后从 `.scratch/plan/` 移除，并同步在 `INDEX.md` 登记。
-- `.scratch/` 是本地作业区，已被 `.gitignore` 忽略：PLAN、归档、issue 与规格只留本地，不 `git add`、不提交、不推送，也不因它扩大本轮暂存范围。
-- `.scratch/archive/` 只收 plan 归档，按分类目录存放；现有分类、条目清单与回滚说明见 `.scratch/archive/INDEX.md`。
+按 matt 系列技能推进；取舍已定就直接实施，未定才先采访或落规格：
 
-### 代码改动固定流程
-
-固定走六步，绝不进行任何简略或跳过：
-
-1. **采访定案**：用 `/grilling` 逐轮问出取舍；`/grill-with-docs` 不可模型调用时，用 `/grilling` + `/domain-modeling` 代替，结论落 PLAN 而非 `GLOSSARY.md`（除非确实产生新术语）。
-2. **设计评估**：用 `/codebase-design` 的词汇评审拟议模块的形状——接口是否比实现小、接缝是否落在真适配器之间（一个适配器只是假设接缝，两个才是真的）、删除测试是否成立（删掉它复杂性散回调用方而不是消失）。评估结论与放弃的方案写进 PLAN 的「实施取舍与已知边界」。
-3. **落 PLAN**：按 [PLAN 格式规范](docs/agents/plan-format.md) 建 `.scratch/plan/YYYY-MM-DD-plan-<主题>-<基线>.md`，把每一条已确认取舍写进「需求与授权」，任务按 Wave 拆到可单上下文完成。
-4. **实施**：单会话改动直接 `/implement`（多会话才先 `/to-spec` 再 `/to-tickets`）；新非平凡逻辑按 TDD 先红后绿，测试落五条 seam。
-5. **两轴评审**：交付前跑 `/code-review`，固定点取本轮起点；Standards 与 Spec 各派一个子代理并行，报告分节呈现、不合并不重排。
-6. **归档与记忆**：PLAN 填满「状态」「验收记录」后按分类复制到 `.scratch/archive/<分类>/`、同步 `INDEX.md` 并移除；`.ai-memory` 记一条决策、文件与验证。
-
-评审结论若要求修复，按新的一轮重新走 1–6；每一步的证据（测试命令、评审结论）写进 PLAN 的对应章节，不另建报告文件。
+- **取舍未定**：用 `/grilling` 逐轮问出决定，涉及领域词汇或 ADR 时加 `/domain-modeling`；结论落本次的规格或票据，不写回 `GLOSSARY.md`，除非确实产生新术语。
+- **单会话小改动**：直接 `/implement`，跳过规格与拆票。
+- **多会话或需先定规格**：`/to-spec` 写 `.scratch/<feature>/spec.md`，`/to-tickets` 拆成 `.scratch/<feature>/issues/<NN>-<slug>.md`，再按 frontier 逐票 `/implement`；一次会话装不下时先 `/wayfinder` 画地图。
+- **实施**：新非平凡逻辑按 TDD 先红后绿，测试落五条 seam；用 `/codebase-design` 的词汇评审模块形状——接口比实现小、接缝落在真适配器之间、删除测试成立。
+- **收尾评审**：`/code-review`，固定点取本轮起点；Standards 与 Spec 两轴各派一个子代理并行，报告分节呈现、不合并不重排。
+- **审查发现不是修复授权**：评审结论由用户指定本轮修复范围，再重新走本流程。
+- **本地作业区**：`.scratch/` 已被 `.gitignore` 忽略，规格、票据与地图只留本地，不 `git add`、不提交、不推送，也不因它扩大本轮暂存范围。
+- **长任务的 PLAN 卷宗**：需要跨会话状态账本时按 [PLAN 格式规范](docs/agents/plan-format.md) 在 `.scratch/plan/` 记一份；它不是默认流程。
 
 ## 运行中的 DSH 服务
 

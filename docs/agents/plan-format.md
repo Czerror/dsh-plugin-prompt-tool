@@ -1,8 +1,14 @@
 # PLAN 格式规范
 
-本仓库每轮修复的 PLAN 按此格式编写。骨架源自 `dev-expert` 的「任务拆解与执行」，此处固化为本项目的创建与验收基准；PLAN 的位置、命名与归档动作见 `AGENTS.md` 的「审查后的决策」。
+跨会话长任务的 PLAN 按此格式编写。骨架源自 `dev-expert` 的「任务拆解与执行」；它不是默认流程（默认见 `AGENTS.md` 的「变更流程」），只在需要一份能跨会话恢复的状态账本时使用。位置、命名与归档见下节。
 
 完整实例：本地作业区 `.scratch/archive/` 下的任一份 plan 归档（按主题分类存放，该目录被 `.gitignore` 忽略，只在本地存在），如 `review/2026-10-22-plan-ocr-review-fixes-569e1a43.md`。
+
+## 位置与归档
+
+- 每轮一份：`.scratch/plan/YYYY-MM-DD-plan-<主题>-<基线>.md`。
+- 完成即归档：填满 `## 状态` 后原样复制到 `.scratch/archive/<分类>/`（保留历史互链；分类沿用现有主题目录，清单见 `INDEX.md`），从 `.scratch/plan/` 移除并在 `INDEX.md` 登记。
+- `.scratch/` 已被 `.gitignore` 忽略：PLAN 只留本地，不 `git add`、不提交、不推送。
 
 ## 章节骨架
 
