@@ -364,7 +364,7 @@ workspace-pages.ts 是页面元数据的唯一来源。默认页为 features，�
 
 工具预览的来源下拉展开时后台刷新目录，已有选项期间只更新 `aria-busy`，不插入挤动锚点的加载文案。分组标题和来源菜单保持挂载；来源变化只重置带来源身份的数据快照与详情列表，旧响应不覆盖新来源。加载期间保留已展开详情的高度，避免短暂收缩触发滚动；聚焦项被刷新移除时，菜单接续到可用项并使用 `preventScroll`，避免闪动、关闭或丢失键盘焦点。
 
-公共参数由 `EngineParamFields` 按 `ENGINE_PARAM_DEFINITIONS` 与 `SHARED_PARAM_KEYS` 生成，能力存在性来自实际模块事实。字段声明可限定受众；PTC 主会话与子代理分别编辑自己的模式，共享能力开关与环境白名单仍属于同一模块。Git Bash 路径、超时与输出上限、指令提示时机、子代理参与和模板正文也沿用此参数链。模型卡写 layerSettings，装配期生成受众限定的 request-params 规则。也可编辑显式请求动作。当前会话模型独立走官方 selectModel。枚举使用 MenuSelect，列表使用 TagInput。
+公共参数由 `EngineParamFields` 按 `ENGINE_PARAM_DEFINITIONS` 与 `SHARED_PARAM_KEYS` 生成，能力存在性来自实际模块事实。字段声明可限定受众；PTC 主会话与子代理分别编辑自己的模式，共享能力开关仍属于同一模块。Git Bash 路径、超时与输出上限、指令提示时机、子代理参与和模板正文也沿用此参数链。模型卡写 layerSettings，装配期生成受众限定的 request-params 规则。也可编辑显式请求动作。当前会话模型独立走官方 selectModel。枚举使用 MenuSelect，列表使用 TagInput。
 
 ### 5.3 状态展示约定
 

@@ -46,10 +46,6 @@ function scopeOf({ disposed = {}, names = ['alpha', 'beta'] } = {}) {
         ;(disposed.registered ??= []).push(definition)
         return () => { disposed.registerDisposed = (disposed.registerDisposed ?? 0) + 1 }
       },
-      restrict: (options) => {
-        ;(disposed.restrict ??= []).push(options)
-        return () => { disposed.restrictDisposed = (disposed.restrictDisposed ?? 0) + 1 }
-      },
       guard: (fn) => {
         ;(disposed.guards ??= []).push(fn)
         return () => { disposed.guardDisposed = (disposed.guardDisposed ?? 0) + 1 }
@@ -102,7 +98,6 @@ test('tool-visibility：deny 同时裁剪目录与 SDK 正文，并注册执行�
   const out = await handler(assembled(toolList('alpha', 'beta'), [{ name: SDK_SECTION_NAME, text: sdk }]), { agent: agentOf(scope) }, async () => assembled(toolList('alpha', 'beta'), [{ name: SDK_SECTION_NAME, text: sdk }]))
   assert.deepEqual(out.tools.map((tool) => tool.name), ['alpha'], '目录只剩未被下架的工具')
   assert.deepEqual(sdkToolNames(out.sections[0].text).sort(), ['alpha'], 'SDK 正文同步删掉被下架工具')
-  assert.equal(disposed.restrict, undefined, '不改发现候选，执行拒绝由封存计划和 guard 负责')
   assert.equal(disposed.guards.length, 1, '登记一条执行闸')
   assert.equal(disposed.guards[0]({ name: 'beta' }), 'v: tool "beta" is denied by tool-visibility')
   assert.equal(disposed.guards[0]({ name: 'alpha' }), undefined)
@@ -117,7 +112,6 @@ test('tool-visibility：allow 与 deny 同时给时先保留再剔除（对齐�
   const input = assembled(toolList('alpha', 'beta'))
   const out = await handler(input, { agent: agentOf(scope) }, async () => input)
   assert.deepEqual(out.tools.map((tool) => tool.name), ['alpha'])
-  assert.equal(disposed.restrict, undefined, 'allow/deny 不改原注册候选')
   assert.equal(disposed.guards[0]({ name: 'beta' }), 'v: tool "beta" is denied by tool-visibility')
   assert.equal(disposed.guards[0]({ name: 'gamma' }), 'v: tool "gamma" is not allowed by tool-visibility; the allow list is the only path; this action has no discovery source')
 })
@@ -203,7 +197,6 @@ test('tool-visibility：run_code 是保留传输，allow 不点名也保留且�
     const input = assembled(toolList('alpha', 'beta', 'run_code'))
     const out = await handler(input, { agent: agentOf(scope) }, async () => input)
     assert.deepEqual(out.tools.map((tool) => tool.name), ['alpha', 'run_code'], `allow ${allow.join(',')} 仍保留传输`)
-    assert.equal(disposed.restrict, undefined, 'allow 模式不调用 restrict')
     assert.equal(disposed.guards[0]({ name: 'beta' }), 'v: tool "beta" is not allowed by tool-visibility; the allow list is the only path; this action has no discovery source')
     assert.deepEqual(rec.warnings, [], 'run_code 不参与 requireMatch 的缺失判定')
   }
@@ -236,7 +229,6 @@ test('tool-visibility：discovery 从持久调用记录回收解锁名（含 PTC
   const input = assembled(toolList('alpha', 'beta', 'gamma', 'delta'))
   const out = await handler(input, { agent }, async () => input)
   assert.deepEqual(out.tools.map((tool) => tool.name), ['alpha', 'beta', 'gamma', 'delta'], '两种调用记录都只做加法')
-  assert.equal(disposed.restrict, undefined, 'allow 模式不调用 restrict')
   assert.equal(disposed.guards[0]({ name: 'gamma' }), undefined, '顶层 tool/call 解锁项通过 allow guard')
   assert.equal(disposed.guards[0]({ name: 'delta' }), undefined, 'PTC 嵌套 dispatch 解锁项通过 allow guard')
   assert.match(disposed.guards[0]({ name: 'epsilon' }), /not allowed by tool-visibility/)
@@ -268,7 +260,6 @@ test('tool-visibility：解锁名按会话冻结——别的会话装配不得�
   const taggedScope = (tag) => ({ tools: {
     schemas: () => toolList('alpha', 'gamma'),
     register: () => () => {},
-    restrict: () => () => {},
     guard: (fn) => { guards.set(tag, fn); return () => {} },
   } })
   const sessionOf = (id, events) => ({ id, header: { delegationDepth: 0 }, snapshotEvents: () => events })
@@ -375,7 +366,6 @@ test('真实规则挂载：条件由真变假时撤销上一轮注册的执行�
   const second = await assemble()
   assert.deepEqual(second.tools.map((tool) => tool.name), ['alpha', 'beta'], '条件为假：不再裁剪')
   assert.equal(disposed.guardDisposed, 1, '条件变假必须撤销 guard')
-  assert.equal(disposed.restrictDisposed, undefined, '没有额外 restriction 所有权')
   dispose()
 })
 
@@ -542,7 +532,6 @@ test('tool-visibility：条件由真变假时撤销上一轮的执行闸（未�
   enabled = false
   await handler(input, { agent }, async () => input)
   assert.equal(disposed.guardDisposed, 1, '条件变假必须撤销 guard')
-  assert.equal(disposed.restrictDisposed, undefined, '没有额外 restriction 所有权')
 })
 
 test('真实规则挂载：工具面与自定义提示共用受众条件且提示仅首轮执行', async () => {

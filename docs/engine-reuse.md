@@ -245,7 +245,7 @@ Cordis waterfall 普通注册先注册者在外；prepend 注册插到最外层�
 
 ### Agent 级能力声明的公共原语（2026-10-22）
 
-`engine/agent-capability.mjs` 收三件事：受众判定（`capabilityAudience`，与 `isDelegated` 同一判据）、Agent scope 的声明表（`createAgentCapability`：session → {scope, key, disposers, data}）、以及 key/scope 变化时先挂新声明、成功后再撤旧的。`mount` 返回 `undefined` 表示依赖未就绪：保留上一轮声明、下次装配重试——旧闸比无闸安全。`scope.effect` 负责 Agent 释放时摘除自己。执行器冲突检测与晚到服务等待由 `present-as` 及官方执行器处理，原语不引入模式开关。`present-as` 只复用受众判定；`tool-visibility` 复用声明表并把 restrict/guard 注册与 failOpen 状态放进 mount 返回值。装配层与注册层的受众判定仍用既有 `isDelegated`，本轮没有统一。
+`engine/agent-capability.mjs` 收三件事：受众判定（`capabilityAudience`，与 `isDelegated` 同一判据）、Agent scope 的声明表（`createAgentCapability`：session → {scope, key, disposers, data}）、以及 key/scope 变化时先挂新声明、成功后再撤旧的。`mount` 返回 `undefined` 表示依赖未就绪：保留上一轮声明、下次装配重试——旧闸比无闸安全。`scope.effect` 负责 Agent 释放时摘除自己。执行器冲突检测与晚到服务等待由 `present-as` 及官方执行器处理，原语不引入模式开关。`present-as` 只复用受众判定；`tool-visibility` 复用声明表，在 mount 返回值中保存 guard disposer、无集合调用的 failOpen 状态与解锁快照；有集合调用只读步骤准入。装配层与注册层的受众判定仍用既有 `isDelegated`，本轮没有统一。
 
 ## 历史读取与去重
 
@@ -287,6 +287,8 @@ surface 缺失或非法时可见视图退回完整日志；合法空 nodes 就�
 `tool-visibility` 是工具面的唯一声明：一份 allow/deny 名单同时投影到装配目录、`tools:sdk` 正文与执行闸，并可声明发现来源。受众统一写在规则或分支的 scope 条件。宿主与独立规则入口共用 root 上的一份公开服务适配器：先等待来源准备，再调用原 `tools.resolve`；原 `systemPrompt.assemble` 完整返回后依次结算所有来源的工具面动作，最后封存步骤。allow 与 deny 都不注册额外 `restrict`，避免继承工具与本层工具口径不同，也不破坏发现候选。
 
 包装的 `ResolvedToolSet` 只暴露 `view` 与 `dispose`；每次 view 先委托原集合，官方 scope、when、替换与移除始终是上限。状态为 pending / sealed / closed，pending 的透明 view 只供装配读取，执行入口与 guard 拒绝 pending 和 closed。原集合与包装集合按同一 Agent 关联同一步骤；native、PTC 和 delegate 都传递该集合，执行只读封存名单。失败、取消与最后一个 owner 释放都会关闭集合，原资源仅释放一次；重试复用封存装配，不重算规则或放宽准入。
+
+步骤 guard 每个 root 只安装一份，由 root 的注入生命周期持有，只查询弱引用步骤关联。最后一个装配 owner 释放会撤销服务适配并关闭集合；仍持有原服务和原/包装集合的调用继续被拒绝，包括不读取集合 view 的 PTC `run_code` 保留入口。重挂复用该 guard，新集合正常装配封存后恢复执行；root 释放时 guard 一并撤销。
 
 三面共用 `engine/actions/shared.mjs#toolSurfacePlan`：`required` 只取静态 allow 再剔除 `run_code` 与 deny 覆盖的名字，解锁名不参与。步骤的 `available` 来自官方集合的当前 view，多个动作依序取交集；裸装配只以目录与 SDK 的并集判断展示。`requireMatch` 只对白名单有意义：静态常驻名一个都不在时仅放宽插件 allow，deny 与官方准入继续生效；只缺一部分照常收窄并留一条诊断。官方工具被替换插件取代时，把实际替换名登记进 allow；未安装的替换名不被宣告，也不会单独触发放宽。无集合的程序调用保留独立保守 guard，不冒充模型步骤。
 

@@ -1,11 +1,23 @@
 import { associateToolStep, associateToolSelection, associateToolAssembly, beginToolCatalog, settleToolCatalog, toolAssemblyContext, hasToolStep, toolStepOf } from './tool-scope.mjs'
 
 const installations = new WeakMap()
+const guardedRoots = new WeakSet()
 const unavailable = () => Object.assign(new Error('prompt-tool: tool step is pending or closed'), { code: 'TOOL_STEP_UNAVAILABLE' })
+const guardToolStep = exec => {
+  const step = toolStepOf(exec.toolSet, exec.agent)
+  if (hasToolStep(exec.toolSet) && step?.status !== 'sealed') return unavailable().message
+  if (step?.allowed !== undefined && exec.name !== 'run_code' && !step.allowed.has(exec.name)) return 'prompt-tool: tool is outside the sealed step'
+  return undefined
+}
 
 /** 多个真实装配入口共用一个公开服务适配，集合只封存一次。 */
 export function installToolStepAssembly(ctx, options) {
   const root = ctx.root
+  if (!guardedRoots.has(root)) {
+    guardedRoots.add(root)
+    // 已发行集合可被原服务保留；唯一拒绝闸随 root 释放，只读取弱关联步骤。
+    root.inject(['tools'], child => { child.tools.guard(guardToolStep) })
+  }
   let installation = installations.get(root)
   if (installation === undefined) {
     installation = createInstallation(root)
@@ -13,7 +25,7 @@ export function installToolStepAssembly(ctx, options) {
   }
   installation.owners.add(options)
   return () => {
-    installation.owners.delete(options)
+    if (!installation.owners.delete(options)) return
     if (installation.owners.size !== 0) return
     installation.dispose()
     installations.delete(root)
@@ -56,14 +68,6 @@ function createInstallation(ctx) {
     closes.add(wrapped.dispose)
     return wrapped
   }
-  const guard = ctx.inject(['tools'], child => {
-    child.tools.guard(exec => {
-      const step = toolStepOf(exec.toolSet, exec.agent)
-      if (hasToolStep(exec.toolSet) && step?.status !== 'sealed') return unavailable().message
-      if (step?.allowed !== undefined && exec.name !== 'run_code' && !step.allowed.has(exec.name)) return 'prompt-tool: tool is outside the sealed step'
-      return undefined
-    })
-  })
   const off = ctx.on('internal/get', (_caller, name, _error, next) => {
     const service = next()
     if ((name !== 'tools' && name !== 'systemPrompt') || service === undefined) return service
@@ -144,5 +148,5 @@ function createInstallation(ctx) {
       }
     } })
   }, { global: true })
-  return { owners, dispose() { active = false; off(); void guard.dispose(); for (const close of closes) close() } }
+  return { owners, dispose() { active = false; off(); for (const close of closes) close() } }
 }

@@ -155,6 +155,60 @@ test('pending 拒绝公开批次和原服务 guard，失败或取消关闭一次
   assert.equal(released, 5)
 })
 
+test('PTC 原服务持有原或包装集合时，pending、失败和卸载均不启动程序，重挂恢复', async t => {
+  const h = await harness(t)
+  let runs = 0, original
+  h.root.provide('workingDirectory', { ensure: async () => process.cwd() })
+  h.root.provide('ptcRuntime', { language: 'typescript', resolve: spec => spec, release() {}, run: async spec => {
+    runs++
+    const Program = Object.getPrototypeOf(async function () {}).constructor
+    return { logs: [], value: await new Program('tools', spec.program)(spec.bindings[0].functions) }
+  } })
+  await h.agent.ctx.plugin(ptc)
+  const resolve = h.rawTools.resolve
+  t.mock.method(h.rawTools, 'resolve', async function (context) {
+    original = await resolve.call(this, context)
+    return original
+  })
+  const run = async toolSet => (await h.rawTools.execute({ ...h.context, toolSet, calls: [{
+    type: 'tool-call', id: 'lifecycle', name: 'run_code', arguments: JSON.stringify({ code: 'return 42', description: 'lifecycle' }),
+  }] })).results[0].result
+  const rejected = async (toolSet, source, expectedRuns) => {
+    const results = [await run(toolSet), await run(source)]
+    assert.equal(runs, expectedRuns, `拒绝步骤不能启动 PTC 程序: ${JSON.stringify(results.map(result => result.value))}`)
+    assert.deepEqual(results.map(result => result.isError), [true, true])
+  }
+  const toolSet = await h.services.tools.resolve(h.context)
+  const source = original
+  await rejected(toolSet, source, 0)
+  await h.services.prompt.assemble({ ...h.context, toolSet })
+  assert.deepEqual((await run(toolSet)).value, { logs: [], result: 42 })
+  assert.equal(runs, 1)
+  const failed = await h.services.tools.resolve(h.context)
+  const failedSource = original
+  const fail = h.root.on('system-prompt/assemble', () => { throw new Error('assembly failed') })
+  await assert.rejects(h.services.prompt.assemble({ ...h.context, toolSet: failed }), /assembly failed/)
+  fail()
+  await rejected(failed, failedSource, 1)
+  await h.runtime.dispose()
+  await h.runtime.dispose()
+  assert.equal(toolSet.view(h.agent).size, 0)
+  await rejected(toolSet, source, 1)
+  const release = mountRuleSources(h.root, [{ moduleId: 'remount', rules: compileRules([
+    { id: 'narrow', then: [{ id: 'allow', kind: 'tool-visibility', allow: ['keep'] }] },
+  ]) }])
+  let services
+  await h.agent.ctx.plugin({ inject: ['tools', 'systemPrompt'], apply(ctx) { services = { tools: ctx.tools, prompt: ctx.systemPrompt } } })
+  const restored = await services.tools.resolve(h.context)
+  await services.prompt.assemble({ ...h.context, toolSet: restored })
+  assert.deepEqual((await run(restored)).value, { logs: [], result: 42 })
+  assert.equal(runs, 2)
+  release(); release()
+  await rejected(restored, original, 2)
+  await h.root.fiber.dispose()
+  assert.equal(h.rawTools.checkGuards({ ...h.context, toolSet, name: 'run_code' }), undefined, 'root 释放会撤销步骤拒绝闸')
+})
+
 test('捕获模型贯穿原与包装集合的真实工具规则，裸装配不猜步骤', async t => {
   const h = await harness(t, [
     { id: 'narrow', then: [{ id: 'allow', kind: 'tool-visibility', allow: ['keep'] }] },
