@@ -6,7 +6,8 @@ import { join } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
 import { createScope } from '@deepseek-ai/dsh-scope'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
-import ToolRuntime from '@deepseek-ai/dsh-tools'
+import ToolRuntime, { ToolArgsError } from '@deepseek-ai/dsh-tools'
+import * as NativeExecutor from '@deepseek-ai/dsh-tool-executor-native'
 import { apply } from '../../engine/tool-config-engine.mjs'
 
 /** 独立临时目录：不依赖共享状态，用例结束清理。 */
@@ -146,6 +147,7 @@ async function realHarness(t, approvals = false) {
   const root = new Context()
   await root.plugin(SystemPrompt)
   await root.plugin(ToolRuntime)
+  await root.plugin(NativeExecutor)
   if (approvals) root.provide('approval', { request: async () => 'allowed-once' })
   t.after(() => root.fiber.dispose())
   const agent = { id: 'agent-' + Math.random().toString(36).slice(2), session: { id: 'session', header: { cwd: process.cwd() } } }
@@ -163,29 +165,68 @@ function mountTools(scope, callback) {
   })
 }
 
-test('delegate 执行器：成功值经真实工具管线透传', async (t) => {
+test('delegate 执行器：嵌套身份和步骤准入保留，最终值、上下文与结束轮次经真实管线透传', async (t) => {
   const { root, agent, scope } = await realHarness(t)
-  let disposeEcho
+  const signal = new AbortController().signal
+  const notifications = []
+  const bodyContext = { role: 'user', content: [{ type: 'text', text: 'body context' }], source: { kind: 'plugin' } }
+  const postContext = { role: 'user', content: [{ type: 'text', text: 'post context' }], source: { kind: 'plugin' } }
+  let outer
+  let nested
+  let conditionRuns = 0
+  root.on('tools/pre-execute', (run, next) => {
+    if (run.name === 'probe') outer = run
+    return next()
+  })
+  root.on('tools/post-execute', (run, result, next) => run.name === 'delegated_echo'
+    ? { kind: 'accept', value: { text: 'after policy' }, additionalContexts: [postContext] }
+    : next())
+  root.on('tools/result', (run, result) => notifications.push({ run, result }))
   await mountTools(scope, ctx => {
-    disposeEcho = ctx.tools.register({
+    ctx.tools.register({
       name: 'delegated_echo',
       description: 'delegated echo',
-      parameters: { type: 'object', additionalProperties: false, properties: {} },
+      parameters: { type: 'object', properties: {}, additionalProperties: true },
       output: {
         schema: { type: 'object', additionalProperties: true },
         render: (_args, value) => [{ type: 'text', text: JSON.stringify(value) }],
       },
-      execute: async () => ({ text: 'from delegated' }),
-    })
-    apply(ctx, { tools: [toolOf({ kind: 'delegate', tool: 'delegated_echo' })] })
+      finalizeContent: () => [{ type: 'text', text: 'final nested content' }],
+      execute: async (args, run) => {
+        nested = run
+        run.deferContext(bodyContext)
+        run.concludeTurn()
+        return { text: 'from delegated', args }
+      },
+    }, { when: () => { conditionRuns++; return true } })
+    apply(ctx, { tools: [toolOf({ kind: 'delegate', tool: 'delegated_echo', args: { count: '{{args.count}}', enabled: '{{args.enabled}}' } })] })
   })
-  t.after(() => disposeEcho())
-  const result = await root.tools.execute({
-    callId: 'delegate-call', name: 'probe', arguments: {}, agent,
-    signal: new AbortController().signal,
+  const toolSet = await root.tools.resolve({ agent, modelSelection: { provider: 'deepseek', model: 'chat' }, signal })
+  t.after(() => toolSet.dispose())
+  const batch = await root.tools.execute({
+    calls: [{ type: 'tool_call', id: 'delegate-call', name: 'probe', arguments: '{"count":3,"enabled":false}' }],
+    agent, toolSet, signal,
   })
+  const result = batch.results[0].result
   assert.equal(result.isError, false, JSON.stringify(result))
-  assert.deepEqual(result.value, { ok: true, value: { text: 'from delegated' } })
+  assert.deepEqual(result.value, { ok: true, value: { text: 'after policy' } })
+  assert.deepEqual(batch.additionalContexts, [bodyContext, postContext])
+  assert.equal(batch.concluded, true)
+  assert.equal(conditionRuns, 1)
+  assert.equal(nested.callId, 'delegate-call:delegate:delegated_echo:1')
+  assert.equal(nested.rootCallId, 'delegate-call')
+  assert.equal(nested.parent, outer.token)
+  assert.equal(nested.agent, agent)
+  assert.equal(nested.name, 'delegated_echo')
+  assert.deepEqual(nested.arguments, { count: 3, enabled: false })
+  assert.equal(nested.signal, signal)
+  assert.equal(nested.toolSet, toolSet)
+  assert.deepEqual(notifications.map(entry => entry.run.name), ['delegated_echo', 'probe'])
+  assert.equal(notifications[0].run, nested)
+  assert.deepEqual(notifications[0].result.value, { text: 'after policy' })
+  assert.deepEqual(notifications[0].result.content, [{ type: 'text', text: 'final nested content' }])
+  assert.equal(notifications[0].result.concludesTurn, true)
+  assert.equal(notifications[1].result, result)
 })
 
 test('ask-user 执行器：批准结果经真实工具管线透传', async (t) => {
@@ -193,12 +234,104 @@ test('ask-user 执行器：批准结果经真实工具管线透传', async (t) =
   await mountTools(scope, ctx => {
     apply(ctx, { tools: [toolOf({ kind: 'ask-user', question: '继续？' })] })
   })
-  const result = await root.tools.execute({
-    callId: 'ask-call', name: 'probe', arguments: {}, agent,
+  const batch = await root.tools.execute({
+    calls: [{ type: 'tool_call', id: 'ask-call', name: 'probe', arguments: '{}' }], agent,
     signal: new AbortController().signal,
   })
+  const result = batch.results[0].result
   assert.equal(result.isError, false, JSON.stringify(result))
   assert.deepEqual(result.value, { ok: true, answer: 'allowed-once' })
+})
+
+test('delegate 执行器：官方审批拒绝不执行 body，拒绝结果仍结算并转发策略上下文', async (t) => {
+  const { root, agent, scope } = await realHarness(t)
+  const approvals = []
+  const notifications = []
+  const context = { role: 'user', content: [{ type: 'text', text: 'denial context' }], source: { kind: 'plugin' } }
+  let bodyRuns = 0
+  let postRuns = 0
+  root.provide('approval', { request: async request => { approvals.push(request); return 'rejected' } })
+  root.on('tools/pre-execute', (run, next) => run.name === 'target' ? { kind: 'ask', reason: 'review delegated operation' } : next())
+  root.on('tools/post-execute', (run, result, next) => {
+    if (run.name !== 'target') return next()
+    postRuns++
+    assert.equal(result.isError, true)
+    return { kind: 'accept', additionalContexts: [context] }
+  })
+  root.on('tools/result', (run, result) => notifications.push({ run, result }))
+  await mountTools(scope, ctx => {
+    ctx.tools.register({
+      name: 'target', description: 'approval target', parameters: { type: 'object', properties: {} },
+      output: { schema: { type: 'object' }, render: () => [] },
+      execute: async () => { bodyRuns++; return {} },
+    })
+    apply(ctx, { tools: [toolOf({ kind: 'delegate', tool: 'target' })] })
+  })
+  const batch = await root.tools.execute({
+    calls: [{ type: 'tool_call', id: 'denied-call', name: 'probe', arguments: '{}' }], agent, signal: new AbortController().signal,
+  })
+  const nested = notifications.find(entry => entry.run.name === 'target')
+  assert.equal(bodyRuns, 0)
+  assert.equal(postRuns, 1)
+  assert.equal(approvals.length, 1)
+  assert.equal(approvals[0].callId, 'denied-call:delegate:target:1')
+  assert.equal(approvals[0].agent, agent)
+  assert.equal(nested.result.isError, true)
+  assert.match(nested.result.error.message, /rejected/)
+  assert.deepEqual(batch.results[0].result.value, { ok: false, error: nested.result.error.message })
+  assert.deepEqual(batch.additionalContexts, [context])
+  assert.equal(batch.concluded, false)
+  assert.deepEqual(notifications.map(entry => entry.run.name), ['target', 'probe'])
+})
+
+test('delegate 执行器：取消与 prepare 失败都结算最终通知，工具异常保留结构化错误', async (t) => {
+  for (const outcome of ['cancel', 'signal-cancel', 'prepare-error', 'body-error']) {
+    await t.test(outcome, async (t) => {
+      const { root, agent, scope } = await realHarness(t)
+      const controller = new AbortController()
+      const notifications = []
+      let bodyRuns = 0
+      let postRuns = 0
+      let finalizations = 0
+      root.on('tools/pre-execute', (run, next) => {
+        if (run.name !== 'target') return next()
+        if (outcome === 'prepare-error') throw new Error('prepare failed')
+        if (outcome === 'signal-cancel') controller.abort()
+        return outcome === 'cancel' ? { kind: 'cancel' } : next()
+      })
+      root.on('tools/post-execute', (run, result, next) => {
+        if (run.name === 'target') postRuns++
+        return next()
+      })
+      root.on('tools/result', (run, result) => notifications.push({ run, result }))
+      await mountTools(scope, ctx => {
+        ctx.tools.register({
+          name: 'target', description: 'failing target', parameters: { type: 'object', properties: {} },
+          output: { schema: { type: 'object' }, render: () => [] },
+          finalizeContent: (_run, result) => { finalizations++; return [{ type: 'text', text: `settled: ${result.error.message}` }] },
+          execute: async () => { bodyRuns++; throw new ToolArgsError(['target rejected input']) },
+        })
+        apply(ctx, { tools: [toolOf({ kind: 'delegate', tool: 'target' })] })
+      })
+      const batch = await root.tools.execute({
+        calls: [{ type: 'tool_call', id: 'failure-call', name: 'probe', arguments: '{}' }], agent, signal: controller.signal,
+      })
+      const nested = notifications[0].result
+      assert.deepEqual(notifications.map(entry => entry.run.name), ['target', 'probe'])
+      assert.equal(bodyRuns, outcome === 'body-error' ? 1 : 0)
+      assert.equal(postRuns, outcome === 'prepare-error' ? 0 : 1)
+      assert.equal(finalizations, 1)
+      assert.equal(nested.isError, true)
+      assert.equal(nested.concludesTurn, undefined)
+      assert.deepEqual(nested.content, [{ type: 'text', text: `settled: ${nested.error.message}` }])
+      if (outcome === 'signal-cancel') assert.equal(batch.results[0].result.error.info.code, 'ABORTED')
+      else assert.deepEqual(batch.results[0].result.value, { ok: false, error: nested.error.message })
+      assert.equal(batch.concluded, false)
+      if (outcome === 'cancel' || outcome === 'signal-cancel') assert.equal(nested.error.info.code, 'ABORTED_BEFORE_DISPATCH')
+      if (outcome === 'prepare-error') assert.equal(nested.error.message, 'prepare failed')
+      if (outcome === 'body-error') assert.deepEqual(nested.error.info, { name: 'ToolArgsError', code: 'INVALID_ARGS' })
+    })
+  }
 })
 
 test('shell 执行器：无会话 cwd 时拒绝执行，不回退宿主进程目录', async () => {

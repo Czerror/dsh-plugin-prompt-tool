@@ -11,6 +11,7 @@ import assert from 'node:assert/strict'
 import { Context } from '@deepseek-ai/cordis'
 import { createScope } from '@deepseek-ai/dsh-scope'
 import ToolRuntime from '@deepseek-ai/dsh-tools'
+import * as PtcExecutor from '@deepseek-ai/dsh-tool-executor-ptc'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import { registerAction } from '../../engine/actions.mjs'
 import { SDK_SECTION_NAME, sdkToolNames } from '../../engine/sdk-strip.mjs'
@@ -325,10 +326,10 @@ test('(7) 按值条件删键：值相等才删、值不等保留、缺失键不�
 // ───────────────────────── 三、第 (5)(6) 类：真实 PTC 子调用拒绝 ─────────────────────────
 
 /** 真实 SystemPrompt + ToolRuntime 的 PTC 环境；只替换语言运行时（不替换工具管线）。 */
-async function ptcHarness({ language = 'typescript', mode = 'ptc', ancestorTools = [] } = {}) {
+async function ptcHarness({ language = 'typescript', ancestorTools = [] } = {}) {
   const root = new Context()
   await root.plugin(SystemPrompt)
-  await root.plugin(ToolRuntime, { mode })
+  await root.plugin(ToolRuntime)
   const bodyRuns = []
   const programs = []
   const definition = (toolName) => ({
@@ -359,6 +360,7 @@ async function ptcHarness({ language = 'typescript', mode = 'ptc', ancestorTools
   // 见其 requireWorkingDirectory）；真实部署由 @deepseek-ai/dsh-working-directory 提供，
   // 这里给最小替身，避免为了一个服务把新包引进 devDependencies。
   root.provide('workingDirectory', { ensure: async () => process.cwd() })
+  await root.plugin(PtcExecutor)
   const makeAgent = async (id, parentScope, depth) => {
     const record = {
       id,
@@ -376,13 +378,12 @@ async function ptcHarness({ language = 'typescript', mode = 'ptc', ancestorTools
   const preset = ancestorTools.length > 0 ? await makeAgent('preset') : undefined
   for (const name of ancestorTools) preset.ctx.tools.register(definition(name))
   const main = await makeAgent('main', preset, 0)
-  const runCode = async (target, program) => root.tools.execute({
-    callId: `c-${programs.length}`,
-    name: 'run_code',
+  const runCode = async (target, program) => (await root.tools.execute({
+    calls: [{ type: 'tool_call', id: `c-${programs.length}`, name: 'run_code',
+      arguments: JSON.stringify({ code: program, description: `run ${program}` }) }],
     agent: target,
-    arguments: { code: program, description: `run ${program}` },
     signal: new AbortController().signal,
-  })
+  })).results[0].result
   // 官方 assembly 上下文形状：`{ agent, scope: agent }`（dsh-agent `assembleContextFor`）。
   const assemble = (target) => root.systemPrompt.assemble({ agent: target, scope: target })
   return { root, tools: root.tools, main, makeAgent, bodyRuns, programs, runCode, assemble }

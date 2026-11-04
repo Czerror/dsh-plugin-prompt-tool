@@ -11,7 +11,7 @@
  * 执行器（kind）：
  *   shell    — 命令执行（execFile 无 shell 解析，env 白名单，cwd=会话工作区）
  *   http     — fetch 请求（method/url/headers/body，{{args.x}} 插值）
- *   delegate — 委托已注册工具（经 ctx.tools.execute 的 nested dispatch 走
+ *   delegate — 委托已注册工具（经官方 ToolExecutionPipeline 走
  *              完整官方管线：参数/输出校验、allow/deny/ask、pre/execute/post
  *              waterfall、timeout、nested token 与 durable result）
  *   fs       — 文件操作（read/write/append/list/delete，真实路径限定 cwd 内）
@@ -57,13 +57,14 @@ import { defineConfig, passthrough } from './fields.mjs'
 import { keepDisposer } from './shared.mjs'
 
 const { ToolArgsError } = await importHostPackage('@deepseek-ai/dsh-tools')
+const { ToolExecutionPipeline } = await importHostPackage('@deepseek-ai/dsh-tools/pipeline')
 
 /** Cordis 插件名，供 loader 诊断使用。 */
 export const name = 'tool-config-engine'
 
 export const inject = ['tools']
 
-/** shell 执行器的 env 白名单（无凭据形态；与 run-code-env 同基调）。 */
+/** shell 执行器只继承工作目录和程序启动所需的非凭据环境变量。 */
 const ENV_ALLOWLIST = [
   'PATH', 'PATHEXT', 'SystemRoot', 'COMSPEC', 'TEMP', 'TMP',
   'USERPROFILE', 'HOME', 'DSH_HOME', 'DSH_WORKSPACE', 'DSH_SESSION_ID',
@@ -222,6 +223,7 @@ function sessionCwdOf(run) {
 /** 执行器分发：返回成功值（registry 按 output.schema 校验）。 */
 function createExecute(ctx, def, requireApproval) {
   const exec = def.execute
+  const pipeline = exec.kind === 'delegate' ? new ToolExecutionPipeline(ctx) : undefined
   // 同一外层调用里重复 delegate 同名工具时，序号保证调用身份不塌缩。
   let delegateSeq = 0
   return async (args, run) => {
@@ -290,15 +292,11 @@ function createExecute(ctx, def, requireApproval) {
       return { status: response.status, ok: response.ok, body: text }
     }
     if (exec.kind === 'delegate') {
-      const tools = ctx.tools ?? ctx.get('tools')
-      if (tools === undefined || typeof tools.execute !== 'function') {
-        return { ok: false, error: 'no tool runtime is available for delegate' }
-      }
       const delegatedArgs = mapDelegateArgs(exec.args, args)
       // nested dispatch：走完整官方管线（校验/allow-deny-ask/pre-execute/post/
       // timeout/nested token/durable result），调用身份由外层 callId 稳定派生，
       // 禁止 Date.now() 生成调用身份。
-      const result = await tools.execute({
+      const prepared = await pipeline.prepare({
         callId: `${run.callId}:delegate:${exec.tool}:${++delegateSeq}`,
         rootCallId: run.rootCallId,
         name: exec.tool,
@@ -306,14 +304,17 @@ function createExecute(ctx, def, requireApproval) {
         parent: run.token,
         arguments: delegatedArgs,
         signal: run.signal,
+        toolSet: run.toolSet,
       })
-      if (result.isError) {
-        return { ok: false, error: String(result.error?.message ?? result.error ?? `delegated tool ${exec.tool} failed`) }
-      }
+      const outcome = prepared.kind === 'dispatch' ? await pipeline.dispatch(prepared.exec) : prepared
+      const result = await pipeline.complete(prepared.exec, outcome)
       for (const context of result.additionalContexts ?? []) {
         run.deferContext(context)
       }
       if (result.concludesTurn === true) run.concludeTurn()
+      if (result.isError) {
+        return { ok: false, error: String(result.error?.message ?? result.error ?? `delegated tool ${exec.tool} failed`) }
+      }
       return { ok: true, value: result.value }
     }
     if (exec.kind === 'fs') {
