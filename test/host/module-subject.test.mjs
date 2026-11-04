@@ -2,7 +2,7 @@
  * 模块主语解析回归网：`resolveEditDir` 只按**声明**定位，接线函数把「未声明」译为无目标；
  * 「这次读写归哪个模块」由归属门一处判（策略表 + 身份一致 + 可写/形状）。
  *
- * 真值源：`docs/superpowers/specs/2026-10-12-module-subject-design.md` §六／§10.2、ADR-0011
+ * 真值源：ADR-0011
  * ——显式 id 命中该模块（与是否在启用表里无关），不存在的 id 与未声明一律返回空串，
  * 不再回退启用表首项；非法 `x-module-id` 在事务边界显式 400，不降级成「未声明」；
  * `required` 无目标 400 `module-dir-unavailable`，载荷主语 ≠ 头声明 400 `module-subject-conflict`。

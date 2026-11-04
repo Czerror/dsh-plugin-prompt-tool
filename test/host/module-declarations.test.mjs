@@ -1,7 +1,7 @@
 /**
  * 声明面真值源：`module.yml` 的**顶层键存在性**。
  *
- * 真值源：`docs/superpowers/specs/2026-10-12-module-subject-design.md` §7.4／ADR-0014
+ * 真值源：ADR-0014
  * ——键整个不存在＝没声明（`customTools: []` 算已声明）；解析失败是错误，
  * 不得降级成「没声明」（那会让损坏的定义变成静默可用）。
  * 断言落在公共接口（`moduleDeclarations` / 登记表）上；`declares` 只是测试本地别名。
