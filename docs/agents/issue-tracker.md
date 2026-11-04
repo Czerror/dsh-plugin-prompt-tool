@@ -6,7 +6,7 @@
 
 - 规格文件为 `.scratch/<feature-slug>/spec.md`
 - 任务与子任务存放于 `.scratch/<feature-slug>/issues/<NN>-<slug>.md`，编号在该目录内全局递增
-- 普通 Issue 的 triage 状态记录在文件顶部附近的 `Status:` 行，取值见 `triage-labels.md`；Wayfinding 子任务则使用下文的 `claimed` 和 `resolved`
+- 普通 Issue 的 triage 状态记录在文件顶部附近的 `Status:` 行，取值见 `triage-labels.md`；同处用 `Category:` 行记录 `bug` / `enhancement`（category 与 state 各恰好一个）；Wayfinding 子任务则使用下文的 `claimed` 和 `resolved`
 - 评论和讨论追加到文件底部的 `## Comments` 标题下
 
 ## 当技能要求“发布到 issue tracker”
