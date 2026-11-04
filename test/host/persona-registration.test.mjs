@@ -22,6 +22,7 @@ const { installSoulRuntime } = await import('../../src/runtime/soul-runtime.ts')
 const { resolveModuleToolTarget } = await import('../../src/host/module-tool-target.ts')
 const dependencies = createRequire(createRequire(import.meta.url).resolve('@deepseek-ai/dsh-agent-preset-registry'))
 const { default: Loader } = await import(pathToFileURL(dependencies.resolve('@deepseek-ai/cordis-plugin-loader')).href)
+const { default: SessionProjections } = await import(pathToFileURL(dependencies.resolve('@deepseek-ai/dsh-session-projection')).href)
 const IDENTITY = 'You are an AI agent powered by DeepSeek Harness.'
 const OfficialPersona = { name: 'fixture-official-persona', inject: ['systemPrompt'], apply(ctx, config) {
   ctx.systemPrompt.section(Object.freeze({ name: 'deployment:persona-prefix', order: 0, text: config.prefix, complete: config.complete }))
@@ -43,7 +44,7 @@ async function personaWorld(t, enabled) {
   await root.plugin(Loader)
   Object.assign(root.loader.builtins, {
     adapter: { name: 'persona-production', apply: ctx => { capture = installPersonaCapture(ctx) } },
-    prompt: SystemPrompt, agents: AgentRegistry,
+    prompt: SystemPrompt, projections: SessionProjections, agents: AgentRegistry,
     driver: { name: 'persona-driver', inject: ['agents', 'systemPrompt'], async apply(ctx) {
       driver = ctx
       standing = createScope(ctx, {})
@@ -61,7 +62,7 @@ async function personaWorld(t, enabled) {
       } }))
     } },
   })
-  await root.loader.root.update([{ id: 'prompt', name: 'cordis:prompt' }, { id: 'agents', name: 'cordis:agents' }, { id: 'driver', name: 'cordis:driver' }])
+  await root.loader.root.update([{ id: 'prompt', name: 'cordis:prompt' }, { id: 'projections', name: 'cordis:projections' }, { id: 'agents', name: 'cordis:agents' }, { id: 'driver', name: 'cordis:driver' }])
   await root.loader.await()
   const originalImport = root.loader.import.bind(root.loader)
   root.loader.import = (name, ...args) => name === '@deepseek-ai/dsh-persona' ? OfficialPersona : originalImport(name, ...args)

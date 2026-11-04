@@ -7,8 +7,8 @@ export function routeContextRuntime(ctx, agent, runtime) {
   for (const service of ['compaction', 'toolResultPruner']) {
     if (!runtime[service]) continue
     const dependency = ctx.inject([service], dependent => {
-      // 已发布Fiber.store公开了这次依赖快照的精确provider身份。
-      const owner = dependent.fiber.store[service].fiber
+      // committed 保留本次激活的公开依赖快照，provider 所有权归其 ctx.fiber。
+      const owner = dependent.fiber.committed[service].ctx.fiber
       const carriers = new WeakMap()
       const offDispatch = service === 'compaction' ? dependent.on('internal/dispatch', (_mode, event, args, carrier) => {
         if (!active || !['agent/pre-step', 'agent/request-error', 'agent/request'].includes(event)

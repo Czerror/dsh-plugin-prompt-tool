@@ -6,6 +6,7 @@ import { parse } from 'yaml'
 import { Context } from '@deepseek-ai/cordis'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime from '@deepseek-ai/dsh-tools'
+import * as NativeExecutor from '@deepseek-ai/dsh-tool-executor-native'
 import { createScope, scopeTarget } from '@deepseek-ai/dsh-scope'
 import { isolatedHome } from '../fixtures/host-harness.mjs'
 
@@ -19,6 +20,7 @@ async function setup(t, rebuild = async () => {}) {
   const root = new Context()
   await root.plugin(SystemPrompt)
   await root.plugin(ToolRuntime)
+  await root.plugin(NativeExecutor)
   const id = `controller-${++calls}`, dir = join(moduleRoot, id)
   mkdirSync(dir, { recursive: true }); writeFileSync(join(dir, 'module.yml'), JSON.stringify({ id, modules: [] }))
   const agent = { id, options: {}, session: { id, header: {}, snapshotEvents: () => [] } }
@@ -30,7 +32,9 @@ async function setup(t, rebuild = async () => {}) {
   const dispose = registerModuleImportTools(agent.ctx, { root: moduleRoot, rebuild: async id => { await rebuild(id); await runtime.refresh(id) } })
   await new Promise(resolve => setImmediate(resolve))
   t.after(async () => { dispose(); await runtime.dispose(); await root.fiber.dispose() })
-  const call = (args, signal = new AbortController().signal) => root.tools.execute({ callId: `call-${++calls}`, name: 'module_import', arguments: args, agent, signal })
+  const call = async (args, signal = new AbortController().signal) => (await root.tools.execute({
+    calls: [{ type: 'tool-call', id: `call-${++calls}`, name: 'module_import', arguments: JSON.stringify(args) }], agent, signal,
+  })).results[0].result
   const success = async args => { const result = await call(args); assert.equal(result.isError, false, JSON.stringify(result)); return result.value }
   const injected = async () => (await root.waterfall(scopeTarget(agent, agent), 'agent/pre-step', { agent, signal: new AbortController().signal }, async () => ({ kind: 'enter', messages: [{ role: 'user', source: { kind: 'user' }, content: [{ type: 'text', text: 'USER' }] }] }))).messages.flatMap(message => message.content.map(block => block.text))
   return { call, success, enabled, runtime, injected }

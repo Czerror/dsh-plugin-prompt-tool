@@ -1484,6 +1484,7 @@ test('「独占」段唯一性：聚合人设动作及跨模块规则，准备�
   await root.plugin({ name: 'test-persona-early', apply(ctx) { persona = installPersonaCapture(ctx) } })
   await root.plugin(SystemPrompt)
   await root.plugin(ToolRuntime)
+  await root.plugin(nativeExecutor)
   root.provide('llm', {})
   root.provide('agents', { list: () => actors, async create(options) {
     const agent = { id: options.sessionId, status: 'idle', options: {}, session: { id: options.sessionId, header: options.meta ?? {}, snapshotEvents: () => [] } }

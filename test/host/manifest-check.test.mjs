@@ -6,6 +6,7 @@ import { Context } from '@deepseek-ai/cordis'
 import { createScope, scopeTarget } from '@deepseek-ai/dsh-scope'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime from '@deepseek-ai/dsh-tools'
+import * as NativeExecutor from '@deepseek-ai/dsh-tool-executor-native'
 import { isolatedHome } from '../fixtures/host-harness.mjs'
 import { createManifestCheckReader } from '../../src/host/module-manifest-check.ts'
 import { runModuleManifest } from '../../src/host/module-manifest.ts'
@@ -152,6 +153,7 @@ test('实际插件接线：主子 Agent 自检注入遵守 TTL，压缩与重挂
   } })
   await root.plugin(SystemPrompt)
   await root.plugin(ToolRuntime)
+  await root.plugin(NativeExecutor)
   root.provide('llm', {})
   root.provide('commands', { register: () => () => {} })
   root.provide('skills', { registerProvider: factory => {
@@ -197,8 +199,10 @@ test('实际插件接线：主子 Agent 自检注入遵守 TTL，压缩与重挂
   }
   let calls = 0
   const check = async expected => {
-    const result = await root.tools.execute({ callId: 'manifest-' + ++calls, name: 'module_manifest',
-      arguments: { moduleId: id, action: 'check' }, agent: agents[0], signal: new AbortController().signal })
+    const result = (await root.tools.execute({
+      calls: [{ type: 'tool-call', id: 'manifest-' + ++calls, name: 'module_manifest', arguments: JSON.stringify({ moduleId: id, action: 'check' }) }],
+      agent: agents[0], signal: new AbortController().signal,
+    })).results[0].result
     assert.equal(result.isError, false, JSON.stringify(result))
     assert.equal(result.value.ok, expected)
   }

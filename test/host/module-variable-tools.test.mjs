@@ -7,6 +7,7 @@ import { Context } from '@deepseek-ai/cordis'
 import { createScope } from '@deepseek-ai/dsh-scope'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime from '@deepseek-ai/dsh-tools'
+import * as NativeExecutor from '@deepseek-ai/dsh-tool-executor-native'
 import Storage from '@deepseek-ai/dsh-storage'
 import { JsonStorageBackend } from '@deepseek-ai/dsh-storage-json'
 import { DomainFacility } from '@deepseek-ai/dsh-storage-domain'
@@ -49,7 +50,7 @@ async function setup(t, id, late = false, sessionStorage = false) {
     withdrawOwner = () => { sessionOwner = undefined; return owned }
     t.after(async () => { await owned.dispose(); await facility.closeAll(); await backend.close() })
   }
-  if (!late) await root.plugin(ToolRuntime)
+  if (!late) { await root.plugin(ToolRuntime); await root.plugin(NativeExecutor) }
   t.after(() => root.fiber.dispose())
   const targets = { ids: [id] }
   const host = { target: (exec, moduleId) => resolveModuleToolTarget(exec, moduleRoot, () => targets.ids, moduleId), rebuild: async () => { assert.fail('变量内容更新不能重新装配 Agent') } }
@@ -60,7 +61,9 @@ async function setup(t, id, late = false, sessionStorage = false) {
   const wrapper = await scope.ctx.plugin(shell)
   await tick()
   let calls = 0
-  const call = (args, signal = new AbortController().signal, caller = agent) => root.tools.execute({ callId: 'call-' + ++calls, name: 'module_variables', arguments: args, agent: caller, signal })
+  const call = async (args, signal = new AbortController().signal, caller = agent) => (await root.tools.execute({
+    calls: [{ type: 'tool-call', id: 'call-' + ++calls, name: 'module_variables', arguments: JSON.stringify(args) }], agent: caller, signal,
+  })).results[0].result
   const success = async args => { const result = await call(args); assert.equal(result.isError, false, JSON.stringify(result)); return result.value }
   return { root, scope, agent, targets, wrapper, call, success, file, dir, sessionOwner, pauseWrite, withdrawOwner }
 }
@@ -184,6 +187,7 @@ test('变量工具主语来自参数：不声明拒绝，声明谁就读写谁�
 test('变量工具边界：tools 服务晚到后挂载，卸载释放且重挂读取已保存值', async t => {
   const f = await setup(t, 'lifecycle', true)
   await f.root.plugin(ToolRuntime)
+  await f.root.plugin(NativeExecutor)
   await tick()
   const before = await f.success({ action: 'list', scope: 'module', moduleId: 'lifecycle' })
   await f.success({ action: 'set', scope: 'module', key: 'new-placeholder', value: '', moduleId: 'lifecycle', expectedRevisions: before.revisions })

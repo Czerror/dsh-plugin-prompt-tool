@@ -7,6 +7,7 @@ import { Context } from '@deepseek-ai/cordis'
 import { createScope } from '@deepseek-ai/dsh-scope'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime from '@deepseek-ai/dsh-tools'
+import * as NativeExecutor from '@deepseek-ai/dsh-tool-executor-native'
 import { isolatedHome } from '../fixtures/host-harness.mjs'
 
 const { moduleRoot } = isolatedHome('pt-module-rule-tools-')
@@ -36,6 +37,7 @@ async function setup(t, id, { late = false, rebuild = async () => {} } = {}) {
   const root = new Context()
   await root.plugin(SystemPrompt)
   await root.plugin(ToolRuntime)
+  await root.plugin(NativeExecutor)
   t.after(() => root.fiber.dispose())
   const agent = { id: 'agent-' + id, session: { id: 'session-' + id, header: {} } }
   const scope = createScope(root, agent)
@@ -46,7 +48,9 @@ async function setup(t, id, { late = false, rebuild = async () => {} } = {}) {
   const wrapper = await scope.ctx.plugin(shell)
   if (!late) { await install(); await tick() }
   let calls = 0
-  const call = (name, args = {}, signal = new AbortController().signal) => root.tools.execute({ callId: 'call-' + ++calls, name, arguments: args, agent, signal })
+  const call = async (name, args = {}, signal = new AbortController().signal) => (await root.tools.execute({
+    calls: [{ type: 'tool-call', id: 'call-' + ++calls, name, arguments: JSON.stringify(args) }], agent, signal,
+  })).results[0].result
   const success = async (name, args) => { const result = await call(name, args); assert.equal(result.isError, false, JSON.stringify(result)); return result.value }
   return { root, scope, agent, targets, wrapper, install, call, success, file, dir, host }
 }
