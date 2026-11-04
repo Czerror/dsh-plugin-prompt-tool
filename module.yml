@@ -15,7 +15,7 @@ version: 1.0.0
 engineCompat: ">=0.7.2"
 modules:
   # 仅启用规则引擎。其他能力保持 opt-in；写入其已登记参数后会自动补齐装配。
-  # 可用模块（engine/compositions 下的文件名）：context-provenance, filesystem-editor, generation-recovery, instruction-hint, module-file-tools, module-import-tools, module-manifest-tools, module-rule-tools, module-variable-tools, persistent-shell-posix, present-as, retrieval, rule-engine, run-code-env, skill-search, soul-ledger, soul-maintenance, tool-bash-disabled, tool-config-engine, tool-git-bash, tool-search
+  # 可用模块（engine/compositions 下的文件名）：context-provenance, filesystem-editor, generation-recovery, instruction-hint, module-file-tools, module-import-tools, module-manifest-tools, module-rule-tools, module-variable-tools, persistent-shell-posix, present-as, retrieval, rule-engine, skill-search, soul-ledger, soul-maintenance, tool-bash-disabled, tool-config-engine, tool-git-bash, tool-search
   # filesystem-editor / persistent-shell-posix / tool-bash-disabled 由会话原有预设提供；声明它们只会产生诊断，插件不挂载官方包。
   # 已退役的引擎名：prompt-config-engine, declared-triggers；旧定义需显式转换。
   # 人设使用普通 persona 动作；启用模块内命中规则按配置序号拼接，字段全省略才继承官方。
@@ -595,8 +595,6 @@ rules:
 #     presentAsEnabled: true # 启用工具呈现配置（主/子共用）；boolean
 #     ptcMainMode: "" # 主会话工具呈现模式；string；native | ptc
 #     ptcSubagentMode: "" # 子代理工具呈现模式；string；native | ptc
-#     runCodeEnvEnabled: true # 启用 run_code 环境变量；boolean
-#     runCodeEnvKeys: "" # run_code 环境变量白名单；string-list
 #     toolGitBashEnabled: true # 启用 Git Bash 工具；boolean
 #     customToolRequireApproval: "" # 执行前需用户批准的工具种类；string-list；shell | http | delegate | fs | ask-user
 #     toolGitBashPath: "" # Git Bash 可执行文件路径；string

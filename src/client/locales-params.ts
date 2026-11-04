@@ -23,8 +23,6 @@ export const PARAMS_ZH = {
   'param.presentAsEnabled': '启用工具呈现配置（主/子共用）',
   'param.ptcMainMode': '主会话工具呈现模式',
   'param.ptcSubagentMode': '子代理工具呈现模式',
-  'param.runCodeEnvEnabled': '启用 run_code 环境变量',
-  'param.runCodeEnvKeys': 'run_code 环境变量白名单',
   'param.toolGitBashPath': 'Git Bash 可执行文件路径',
   'param.toolGitBashTimeoutMs': 'Git Bash 超时毫秒数',
   'param.toolGitBashMaxOutputBytes': 'Git Bash 最大输出字节数',
@@ -46,7 +44,6 @@ export const PARAMS_ZH = {
   'param.option.native': '原生工具调用',
   'param.option.ptc': 'PTC 程序调用',
   'modules.group.present-as': '工具呈现',
-  'modules.group.run-code-env': 'run_code 环境',
   'modules.group.instruction-hint': '指令路径提示',
   'modules.group.tool-git-bash': 'Git Bash',
 
@@ -95,8 +92,6 @@ export const PARAMS_EN: Record<keyof typeof PARAMS_ZH, string> = {
   'param.presentAsEnabled': 'Enable tool presentation (shared by main and subagents)',
   'param.ptcMainMode': 'Main session tool presentation mode',
   'param.ptcSubagentMode': 'Subagent tool presentation mode',
-  'param.runCodeEnvEnabled': 'Enable run_code environment variables',
-  'param.runCodeEnvKeys': 'run_code environment variable allowlist',
   'param.toolGitBashPath': 'Git Bash executable path',
   'param.toolGitBashTimeoutMs': 'Git Bash timeout in milliseconds',
   'param.toolGitBashMaxOutputBytes': 'Git Bash maximum output bytes',
@@ -117,7 +112,6 @@ export const PARAMS_EN: Record<keyof typeof PARAMS_ZH, string> = {
   'param.option.native': 'Native tool calls',
   'param.option.ptc': 'PTC program calls',
   'modules.group.present-as': 'Tool presentation',
-  'modules.group.run-code-env': 'run_code environment',
   'modules.group.instruction-hint': 'Instruction path hints',
   'modules.group.tool-git-bash': 'Git Bash',
 

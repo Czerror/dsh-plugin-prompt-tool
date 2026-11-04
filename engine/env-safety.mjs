@@ -6,7 +6,7 @@
 /** 疑似凭据的名字一律不放行。 */
 export const SENSITIVE_ENV_RE = /KEY|PASSWORD|SECRET|TOKEN/i
 
-/** env-facts 可读取的键：run-code-env 默认白名单 + 路径类事实（CWD/WORKSPACE）。 */
+/** env-facts 可读取的安全环境变量与路径类事实（CWD/WORKSPACE）。 */
 export const SAFE_ENV_KEYS = new Set([
   'PATH', 'PATHEXT', 'HOME', 'USERPROFILE', 'USERNAME', 'COMPUTERNAME', 'OS', 'TEMP', 'TMP',
   'SystemRoot', 'ProgramFiles', 'ProgramFiles(x86)', 'LOCALAPPDATA', 'APPDATA',

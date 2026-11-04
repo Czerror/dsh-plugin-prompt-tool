@@ -1231,8 +1231,8 @@ test('声明面：paramOverrides 写路径建立 layerSettings 声明（读 200 
 
 test('能力参数桥：默认不落盘，主子独立保存回退，所有用户参数往返且非法值零写入', async () => {
   const dir = makeUserPresetDir('pt-engine-fields-'), id = basename(dir), file = join(dir, 'module.yml')
-  writeFileSync(file, JSON.stringify({ id, modules: ['present-as', 'run-code-env', 'tool-git-bash', 'instruction-hint'], rules: [],
-    moduleConfigs: { 'present-as': { mode: 'ptc', privateField: 'do-not-expose' } } }), 'utf8')
+  writeFileSync(file, JSON.stringify({ id, modules: ['present-as', 'tool-config-engine', 'tool-git-bash', 'instruction-hint'], rules: [],
+    moduleConfigs: { 'present-as': { mode: 'ptc', privateField: 'do-not-expose' }, 'tool-config-engine': { requireApproval: ['shell', 'http'] } } }), 'utf8')
   const { ctx, handlers } = makeHarness()
   registerSettingsBridge(ctx, { ns: 'prompt-tool', models: () => ({ available: true, providers: [] }),
     skills: () => skillsStateStub(), moduleDirectory: () => dir })
@@ -1245,7 +1245,7 @@ test('能力参数桥：默认不落盘，主子独立保存回退，所有用�
   assert.deepEqual(initial.overrides, {})
   assert.equal(initial.effective.ptcMainMode, 'ptc')
   assert.equal(initial.effective.ptcSubagentMode, 'ptc')
-  assert.ok(initial.effective.runCodeEnvKeys.includes('PATH'))
+  assert.deepEqual(initial.effective.customToolRequireApproval, ['shell', 'http'])
   assert.equal(initial.effective.toolGitBashTimeoutMs, 120000)
   assert.equal(initial.effective.toolGitBashMaxOutputBytes, 64000)
   assert.equal(initial.effective.instructionHintPromoteOn, 'either')
@@ -1258,7 +1258,7 @@ test('能力参数桥：默认不落盘，主子独立保存回退，所有用�
   assert.equal((await request()).effective.ptcMainMode, 'ptc')
   assert.equal((await request()).effective.ptcSubagentMode, 'native')
   const fields = {
-    presentAsEnabled: false, runCodeEnvEnabled: false, runCodeEnvKeys: ['HOME'],
+    presentAsEnabled: false, customToolRequireApproval: ['fs'],
     toolGitBashPath: 'D:/portable/Git/bin/bash.exe', toolGitBashTimeoutMs: 60000, toolGitBashMaxOutputBytes: 32000,
     instructionHint: true, instructionHintPromoteOn: 'tool-call', instructionHintIncludeSubagents: false,
     instructionHintProjectTemplate: 'Project {{ROOT}}: {{FILES}}', instructionHintGlobalTemplate: 'Global {{FILES}}',
@@ -1274,14 +1274,14 @@ test('能力参数桥：默认不落盘，主子独立保存回退，所有用�
   assert.deepEqual(source.rules, [], '能力编辑不伪造规则')
   assert.equal(source.layerSettings['tool-pipeline'].ptcMainMode, undefined)
   const before = readFileSync(file, 'utf8')
-  for (const overrides of [{ ptcMainMode: 'both' }, { toolGitBashTimeoutMs: 0 }, { toolGitBashMaxOutputBytes: 1.5 }, { instructionHintPromoteOn: 'unknown' }]) {
+  for (const overrides of [{ ptcMainMode: 'both' }, { customToolRequireApproval: ['unknown'] }, { toolGitBashTimeoutMs: 0 }, { toolGitBashMaxOutputBytes: 1.5 }, { instructionHintPromoteOn: 'unknown' }]) {
     const result = await call(handlers, 'paramOverrides', { overrides, expectedModuleId: id })
     assert.equal(result.status, 400, JSON.stringify(result.payload))
     assert.equal(readFileSync(file, 'utf8'), before)
   }
-  await request({ runCodeEnvKeys: [], toolGitBashTimeoutMs: '', instructionHintProjectTemplate: '' })
+  await request({ customToolRequireApproval: [], toolGitBashTimeoutMs: '', instructionHintProjectTemplate: '' })
   const restored = await request()
-  assert.ok(restored.effective.runCodeEnvKeys.includes('PATH'))
+  assert.deepEqual(restored.effective.customToolRequireApproval, ['shell', 'http'])
   assert.equal(restored.effective.toolGitBashTimeoutMs, 120000)
   assert.equal(restored.effective.instructionHintProjectTemplate, initial.effective.instructionHintProjectTemplate)
 })

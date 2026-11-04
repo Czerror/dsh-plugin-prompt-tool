@@ -24,6 +24,7 @@ const { loadModuleSpec } = await import('../../src/host/module-spec.ts')
 const { promptConfigToRule } = await import('../../src/host/rule-builder.ts')
 const { readModuleRules, editModuleRules } = await import('../../src/host/module-rules.ts')
 const { readModuleVariables, editModuleVariables } = await import('../../src/host/module-variables.ts')
+const { ensureModuleSeed } = await import('../../src/host/module-catalog.ts')
 // 夹具模板同时装进隔离 DSH_HOME 的官方模块根（resolveModuleDir 场景）与各测试的输出根（见 makeOptions）。
 installFixtureModuleInHome(home)
 test.after(() => rmSync(home, { recursive: true, force: true }))
@@ -88,6 +89,22 @@ function installWriterModule(id) {
   writeModule({ modulesRoot: moduleDir, moduleId: id, agentsInstructionText: `AGENTS-${id}` })
   return dir
 }
+
+test('内置 PTC 模块只声明工具呈现，补建后保留用户定义', () => {
+  const root = mkdtempSync(join(home, 'ptc-seed-'))
+  const file = join(root, 'ptc-mode', 'module.yml')
+  assert.ok(ensureModuleSeed(root).created.includes('ptc-mode'))
+  const definition = parseYaml(readFileSync(file, 'utf8'))
+  assert.deepEqual(definition.modules, ['present-as'])
+  assert.deepEqual(definition.rules, [], 'PTC 指引由宿主提供，不生成额外规则')
+  const edited = parseDocument(readFileSync(file, 'utf8'))
+  edited.set('description', 'USER PTC DESCRIPTION')
+  edited.set('customField', { preserve: true })
+  writeFileSync(file, String(edited), 'utf8')
+  const before = readFileSync(file, 'utf8')
+  assert.equal(ensureModuleSeed(root).created.includes('ptc-mode'), false)
+  assert.equal(readFileSync(file, 'utf8'), before, '已有用户副本逐字节保留')
+})
 
 test('公共重建入口：规则逐模块重建，不串用模块正文', async () => {
   const dirs = ['writer-a', 'writer-b'].map(installWriterModule)
@@ -189,7 +206,7 @@ test('writeModule 只物化规则切片，产物可装配且二次写入稳定',
   try {
     writeModule(makeOptions(moduleDir))
     const prepared = await prepareAssembly(moduleDir, 'fixture', () => true)
-    for (const module of ['rule-engine', 'run-code-env', 'tool-git-bash', 'skill-search']) {
+    for (const module of ['rule-engine', 'tool-git-bash', 'skill-search']) {
       assert.ok(existsSync(join(ROOT, 'engine', `${module}.mjs`)),
         `说明符 ${module}.mjs 应在包内引擎目录存在（否则引用悬空）`)
     }
@@ -240,13 +257,13 @@ test('writeModule：module.yml 的模块行参数经参数桥进入内存配装'
     mkdirSync(join(moduleDir, FIXTURE_MODULE_ID), { recursive: true })
     writeFileSync(join(moduleDir, FIXTURE_MODULE_ID, 'module.yml'),
       'id: fixture\nname: fixture\nversion: "1"\nengineCompat: ">=0.4.2"\n'
-      // run-code-env 行没有平台条件（tool-git-bash 只在 Windows 装配，Linux CI 上会缺席）。
-      + 'modules: [run-code-env]\nlayerSettings:\n  tool-pipeline:\n    runCodeEnvEnabled: false\n', 'utf8')
+      // instruction-hint 没有平台条件，跨平台都能观察参数桥。
+      + 'modules: [instruction-hint]\nlayerSettings:\n  pre-step:\n    instructionHint: true\n', 'utf8')
     writeModule(makeOptions(moduleDir))
     const rows = (await prepareAssembly(moduleDir, FIXTURE_MODULE_ID, () => true)).modules
-    const runCodeEnv = rows.find((row) => row?.id === 'run-code-env')
-    assert.ok(runCodeEnv, '内存配装应含 run-code-env 行')
-    assert.equal(runCodeEnv.config.enabled, false, '参数桥把 layerSettings 参数写进该行的 config')
+    const instructionHint = rows.find((row) => row?.id === 'instruction-hint')
+    assert.ok(instructionHint, '内存配装应含 instruction-hint 行')
+    assert.equal(instructionHint.config.enabled, true, '参数桥把 layerSettings 参数写进该行的 config')
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }

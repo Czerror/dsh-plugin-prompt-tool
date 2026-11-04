@@ -5,7 +5,6 @@ version: 1.0.0
 engineCompat: ">=0.4.2"
 modules:
   - rule-engine
-  - run-code-env
   - tool-bash-disabled
   - persistent-shell-posix
   - tool-git-bash

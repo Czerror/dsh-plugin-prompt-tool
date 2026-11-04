@@ -92,7 +92,6 @@ export interface ModuleCapability {
 export const MODULE_CAPABILITIES: readonly ModuleCapability[] = [
   { id: 'instruction-hint', moduleKeys: ['instruction-hint'], rowIds: ['instruction-hint'], displayLayer: 'pre-step' },
   { id: 'present-as', moduleKeys: ['present-as'], rowIds: ['present-as'], displayLayer: 'tool-pipeline' },
-  { id: 'run-code-env', moduleKeys: ['run-code-env'], rowIds: ['run-code-env'], displayLayer: 'tool-pipeline' },
   ...[...new Set(Object.values(MODULE_TOOL_CAPABILITIES))].map(id => ({ id, moduleKeys: [id], rowIds: [id], displayLayer: 'tool-pipeline' as const })),
   // B7 T3：tool-bootstrap / context-gate / anchor-turn / promoted-code-mode / tool-filter /
   // deliberation-gate / progress-reminder 七张专用能力卡随对应引擎模块退场，不再登记。

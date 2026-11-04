@@ -19,8 +19,6 @@ export interface EngineParams {
   presentAsEnabled?: boolean
   ptcMainMode?: string
   ptcSubagentMode?: string
-  runCodeEnvEnabled?: boolean
-  runCodeEnvKeys?: string[] | string
   toolGitBashPath?: string
   toolGitBashTimeoutMs?: string
   toolGitBashMaxOutputBytes?: string
@@ -120,8 +118,6 @@ export const ENGINE_PARAM_DEFINITIONS: Record<EngineParamKey, EngineParamDefinit
   presentAsEnabled: { kind: 'boolean', defaultValue: true, card: 'present-as', storageLayer: 'tool-pipeline', module: { row: 'present-as', key: 'enabled' } },
   ptcMainMode: { kind: 'string', options: ['native', 'ptc'], defaultValue: '', card: 'present-as', storageLayer: 'tool-pipeline', audience: 'main', module: { row: 'present-as', key: 'mainMode' } },
   ptcSubagentMode: { kind: 'string', options: ['native', 'ptc'], defaultValue: '', card: 'present-as', storageLayer: 'tool-pipeline', audience: 'subagent', module: { row: 'present-as', key: 'subagentMode' } },
-  runCodeEnvEnabled: { kind: 'boolean', defaultValue: true, card: 'run-code-env', storageLayer: 'tool-pipeline', module: { row: 'run-code-env', key: 'enabled' } },
-  runCodeEnvKeys: { kind: 'string-list', defaultValue: '', card: 'run-code-env', storageLayer: 'tool-pipeline', module: { row: 'run-code-env', key: 'envKeys' } },
   modelProvider: { kind: 'string', defaultValue: '', card: 'main-model', storageLayer: 'agent-request' },
   modelName: { kind: 'string', defaultValue: '', card: 'main-model', storageLayer: 'agent-request' },
   subagentModelProvider: { kind: 'string', defaultValue: '', card: 'subagent-model', storageLayer: 'subagent-start' },

@@ -297,7 +297,7 @@ test('受众页：无规则的已装配能力按受众补编辑卡，已有层�
 test('能力卡只由 modules 声明准入，全局默认派生的 instruction-hint 不变成模块编辑卡', () => {
   const drafts = createWorkspaceDrafts()
   const modules = [{ id: 'ptc-mode', name: 'PTC', enabled: true, declares: ['modules'], facts: {
-    ...facts(), declaredModules: ['present-as', 'run-code-env'], effectiveModules: ['present-as', 'run-code-env', 'instruction-hint'],
+    ...facts(), declaredModules: ['present-as'], effectiveModules: ['present-as', 'instruction-hint'],
   } }]
   const store = stubStore(drafts, modules)
   for (const audience of ['main', 'subagent']) {
@@ -386,8 +386,8 @@ function mountStore(api = { currentSessionId: () => undefined }) {
 const tick = () => new Promise((resolve) => setImmediate(resolve))
 
 test('store：仅 modules 声明读取有效默认，保存与删除受众覆盖不固化其它字段', async () => {
-  const modules = [{ id: 'mod-a', name: 'A', enabled: true, declares: ['modules'], facts: { ...facts(), effectiveModules: ['present-as', 'run-code-env'] } }]
-  const defaults = { presentAsEnabled: true, ptcMainMode: 'ptc', ptcSubagentMode: 'ptc', runCodeEnvEnabled: true, runCodeEnvKeys: ['PATH', 'HOME'] }
+  const modules = [{ id: 'mod-a', name: 'A', enabled: true, declares: ['modules'], facts: { ...facts(), effectiveModules: ['present-as', 'tool-config-engine'] } }]
+  const defaults = { presentAsEnabled: true, ptcMainMode: 'ptc', ptcSubagentMode: 'ptc', customToolRequireApproval: ['shell', 'http'] }
   const saved = {}
   const fetchStub = withFetch(request => {
     if (request.path.endsWith('/bootstrap')) return bootstrapPayload(modules)
@@ -406,7 +406,7 @@ test('store：仅 modules 声明读取有效默认，保存与删除受众覆盖
     store.ensureModuleParams('mod-a'); await tick()
     assert.equal(fetchStub.reads().length, 1)
     assert.equal(store.moduleParamsOf('mod-a').ptcMainMode, 'ptc')
-    assert.equal(store.moduleParamsOf('mod-a').runCodeEnvKeys, 'PATH, HOME')
+    assert.equal(store.moduleParamsOf('mod-a').customToolRequireApproval, 'shell, http')
     store.setModuleParam('mod-a', 'ptcMainMode', 'native')
     await store.persistParamOverrides('mod-a'); await tick()
     assert.deepEqual(fetchStub.writes().at(-1).body.overrides, { ptcMainMode: 'native' })

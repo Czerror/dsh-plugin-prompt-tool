@@ -38,7 +38,6 @@ const CARD_LABEL_KEYS: Record<string, PromptToolLocaleKey> = {
   'str-replace-editor': 'modules.group.str-replace-editor',
   'tool-config-engine': 'modules.group.tool-config-engine',
   'present-as': 'modules.group.present-as',
-  'run-code-env': 'modules.group.run-code-env',
   'instruction-hint': 'modules.group.instruction-hint',
   'tool-git-bash': 'modules.group.tool-git-bash',
 }
