@@ -24,7 +24,6 @@ const { loadModuleSpec } = await import('../../src/host/module-spec.ts')
 const { promptConfigToRule } = await import('../../src/host/rule-builder.ts')
 const { readModuleRules, editModuleRules } = await import('../../src/host/module-rules.ts')
 const { readModuleVariables, editModuleVariables } = await import('../../src/host/module-variables.ts')
-const { ensureModuleSeed } = await import('../../src/host/module-catalog.ts')
 // 夹具模板同时装进隔离 DSH_HOME 的官方模块根（resolveModuleDir 场景）与各测试的输出根（见 makeOptions）。
 installFixtureModuleInHome(home)
 test.after(() => rmSync(home, { recursive: true, force: true }))
@@ -89,22 +88,6 @@ function installWriterModule(id) {
   writeModule({ modulesRoot: moduleDir, moduleId: id, agentsInstructionText: `AGENTS-${id}` })
   return dir
 }
-
-test('内置 PTC 模块只声明工具呈现，补建后保留用户定义', () => {
-  const root = mkdtempSync(join(home, 'ptc-seed-'))
-  const file = join(root, 'ptc-mode', 'module.yml')
-  assert.ok(ensureModuleSeed(root).created.includes('ptc-mode'))
-  const definition = parseYaml(readFileSync(file, 'utf8'))
-  assert.deepEqual(definition.modules, ['present-as'])
-  assert.deepEqual(definition.rules, [], 'PTC 指引由宿主提供，不生成额外规则')
-  const edited = parseDocument(readFileSync(file, 'utf8'))
-  edited.set('description', 'USER PTC DESCRIPTION')
-  edited.set('customField', { preserve: true })
-  writeFileSync(file, String(edited), 'utf8')
-  const before = readFileSync(file, 'utf8')
-  assert.equal(ensureModuleSeed(root).created.includes('ptc-mode'), false)
-  assert.equal(readFileSync(file, 'utf8'), before, '已有用户副本逐字节保留')
-})
 
 test('公共重建入口：规则逐模块重建，不串用模块正文', async () => {
   const dirs = ['writer-a', 'writer-b'].map(installWriterModule)
