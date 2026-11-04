@@ -4,7 +4,7 @@
 //   node scripts/sync-harness-deps.mjs           # 改写 package.json 的 devDependencies，然后 pnpm install
 //   node scripts/sync-harness-deps.mjs --check   # 只比对：落后退出 1，registry 不可达退出 2
 //
-// 为什么需要它:官方按通道发布预发布版(`alpha` tag, vendor 包用 `dsh-<版本>` tag),
+// 为什么需要它:官方按通道发布预发布版(`next` / `alpha` tag, vendor 包用 `dsh-<版本>` tag),
 // 而 semver 的普通范围语法匹配不到预发布版——实测 `>=0.2.0-rc.1` 覆盖 0.2.0-rc.1/rc.2
 // 却**不**覆盖 0.2.1-alpha.1,也没有任何范围写法能同时覆盖 rc 线与 alpha 线。于是
 // devDependencies 会静默停在旧世代,typecheck 也就一直对着旧类型面跑。本脚本从
@@ -36,15 +36,23 @@ if (names.length === 0) {
 /** 读一个包的所有发布通道标签;registry 不可达时抛错。 */
 async function distTags(name) {
   const url = `https://registry.npmjs.org/${name.replace('/', '%2F')}`
-  const response = await fetch(url, { headers: { accept: 'application/vnd.npm.install-v1+json' } })
+  let response
+  let metadata
+  try {
+    response = await fetch(url, { headers: { accept: 'application/vnd.npm.install-v1+json' } })
+    if (response.ok) metadata = await response.json()
+  } catch (error) {
+    throw new Error(`registry 查询 ${name} 失败: ${String(error?.message ?? error)}`)
+  }
   if (response.status === 404) throw new Error(`官方已不再发布 ${name},请从 devDependencies 移除`)
   if (!response.ok) throw new Error(`registry 查询 ${name} 失败: HTTP ${response.status}`)
-  return (await response.json())['dist-tags'] ?? {}
+  return metadata?.['dist-tags'] ?? {}
 }
 
-/** 目标版本 = alpha 通道、vendor 的 dsh-<版本> 通道与 latest 里最高的那个。 */
+/** 目标版本 = next、alpha、vendor 的 dsh-<版本> 与 latest 里最高的那个。 */
 function targetVersion(tags) {
   const candidates = [
+    tags.next,
     tags.alpha,
     ...Object.entries(tags).filter(([tag]) => tag.startsWith('dsh-')).map(([, version]) => version),
     tags.latest,
@@ -80,7 +88,7 @@ for (const name of names) {
 for (const { name, declared, target } of changes) console.log(`${checkOnly ? '落后' : '更新'} ${name}: ${declared} → ${target}`)
 for (const failure of failures) console.error(`sync-harness-deps: ${failure}`)
 
-if (failures.length > 0) process.exit(unreachable && changes.length === 0 ? 2 : 1)
+if (failures.length > 0) process.exit(unreachable ? 2 : 1)
 if (changes.length === 0) {
   console.log(`官方开发依赖已是最新(${names.length} 个包)`)
   process.exit(0)

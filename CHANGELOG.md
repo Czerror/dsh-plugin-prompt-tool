@@ -2,6 +2,10 @@
 
 ## [4.0.0] - 2026-11-05
 
+- 官方开发依赖精确对齐 DSH `0.2.2-rc.1`（28 个 DSH 包）与 Cordis `4.1.0`；最低宿主为 `0.2.2-rc.1`、Node 为 `24.9.0`。旧宿主由 DSH 兼容检查拒绝或跳过，不提供旧宿主兼容层。官方提示档位按发布类型对齐 section 34 项 / context 7 项，补齐 `TOOL_APPLY_PATCH`、`TOOL_SCHEDULE`，区段边界口径不变；`verify:host` 同时检查档位键集合的缺项与多项。
+- 模型条件优先读取本步骤的 `modelSelection.model`，其次读取真实载荷 `model`；已识别步骤缺少可靠模型时保持不可用，不借下一步骤的 current/options 事实补齐。无步骤事实的允许通道才保留旧字段回退；主子 Agent、切换与重试使用各自步骤事实。
+- 工具可见面在公开 `resolve` / `assemble` 适配中按步骤结算，官方 scope、when 与移除始终是准入上限；native、PTC 和 delegate 共享封存工具集合，pending / closed 不执行。目录、提示与 PTC SDK 按同一最终计划收窄，发现解锁从下一请求生效。自定义 delegate 使用官方 `ToolExecutionPipeline`，区分 prepare 的 dispatch / post-result / final-result 并 complete，保留调用身份、集合、上下文与结束轮次。
+- 维护者追新将 `next` 与 `alpha`、vendor `dsh-*`、`latest` 一起按最高 semver 选候选。发布 CI 分别运行固定基线 `verify:host` 与只读动态门禁 `verify:harness`（即 `sync:harness --check`，仅调用一次）；registry 前进或不可达都阻断发布，不自动改变适配目标。类型/单测/包门禁、隔离发布宿主和桌面 UI 的验收分别记录，本条不表示全部运行验收已通过。
 - `present-as` 在真实 Agent scope 挂载官方 native/PTC 执行器，等待异步导入与初始化完成；主/子模式独立，PTC 运行时晚到时继续等待，native 不依赖 PTC。同 scope 执行器冲突由官方拒绝。未启用本能力的 Agent 继续使用宿主执行器。
 - 执行器卸载、模块禁用或 PTC 运行时撤回后，新批次明确不可用，不自动回退祖先或 native；已接受批次按原执行器排空。显式重挂有效执行器后恢复，新会话也需要有效执行器。
 - 删除 `run-code-env` 能力、`runCodeEnvEnabled` / `runCodeEnvKeys` 两个专属参数，以及插件的 `run_code environment` 提示。程序内不再有插件注入的 `env.*` 对象；这是能力收缩，官方没有等价环境对象。独立的 `env-facts`、安全环境白名单和路径能力保留。

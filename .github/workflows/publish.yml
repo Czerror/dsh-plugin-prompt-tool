@@ -27,5 +27,9 @@ jobs:
       - run: pnpm run lint
       - run: pnpm run test
       - run: pnpm run build
+      - name: Verify fixed host baseline
+        run: pnpm run verify:host
+      - name: Verify current registry candidates
+        run: pnpm run verify:harness
       - run: pnpm run verify:pack
       - run: npm publish
