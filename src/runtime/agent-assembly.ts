@@ -19,7 +19,7 @@ import { pathToFileURL } from 'node:url'
 import type { Context, Fiber, Plugin } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import SystemPrompt, { PERSONA_PREFIX_SECTION } from '@deepseek-ai/dsh-system-prompt'
-import type { AssembleContext, PromptSection } from '@deepseek-ai/dsh-system-prompt'
+import type { PromptSection } from '@deepseek-ai/dsh-system-prompt'
 import { scopeChainOf, scopeOf, type ScopeKey } from '@deepseek-ai/dsh-scope'
 import { MANIFEST_CHECK_SERVICE } from '../../engine/service-names.mjs'
 import { packageEngineDir, resolveModuleDir } from '../host/module-dirs.ts'
@@ -45,6 +45,7 @@ import { MODULE_TOOL_CAPABILITIES, OFFICIAL_RECIPE_ROWS, enabledRowIds } from '.
 import { enableTablePath, readGlobalLayerSettings } from '../host/config-store.ts'
 import { createGenerationRecoveryState } from '../host/generation-recovery-state.ts'
 import { contextRuntimeOf } from '../../engine/context-provenance.mjs'
+import { installToolStepAssembly } from './tool-step-assembly.ts'
 
 import { actionAudiences, compileRules, completeRuleSections } from '../../engine/rule-spec.mjs'
 import type { RuleAudience } from '../../engine/rule-spec.mjs'
@@ -449,7 +450,7 @@ export function createAgentAssembly(ctx: Context, options: AgentAssemblyOptions)
       try { await root } catch (error) { await root.dispose(); throw error }
       if (scope === undefined) { await root.dispose(); throw new Error('运行时配装作用域未初始化') }
       let rules: ReturnType<typeof createRuleRuntime>
-      try { rules = createRuleRuntime(scope, { agent, onOutcome: ruleDiagnostics.record, variableStore, standingMountFor: await loadStandingMountFor(), manifestCheck, soulReminder: soulReminderOf(ctx), persona: {
+      try { rules = createRuleRuntime(scope, { agent, deferToolSurface: true, onOutcome: ruleDiagnostics.record, variableStore, standingMountFor: await loadStandingMountFor(), manifestCheck, soulReminder: soulReminderOf(ctx), persona: {
         inherited: name => { const key = scopeOf(agent.ctx); return key === undefined ? undefined : inheritedSection(key, name) },
         suspend: name => { const key = scopeOf(agent.ctx); return key === undefined ? undefined : options.personaCapture?.records(key).find(record => record.name === name)?.suspend() },
       } }) }
@@ -773,30 +774,18 @@ export function createAgentAssembly(ctx: Context, options: AgentAssemblyOptions)
   }
 
     const listeners = [
-      // section provider 在 assemble waterfall 前求值，必须在原方法进入前准备注册。
-      ctx.on('internal/get', (_caller, name, _error, next) => {
-        const service = next()
-        if (name !== 'systemPrompt' || service === undefined) return service
-        return new Proxy(service, { get(target, property, receiver) {
-          const value = Reflect.get(target, property, receiver)
-          if (property !== 'assemble') return value
-          return async (context: AssembleContext = {}) => {
-            context.signal?.throwIfAborted()
-            const agent = context.agent
-            if (agent === undefined || !knownAgents.has(agent)) return Reflect.apply(value, target, [context])
-            await ensureFresh(agent)
-            return withAgent(agent, async () => {
-              context.signal?.throwIfAborted()
-              try { mounts.get(agent.id)?.rules.prepareAssembly(context) } catch (error) {
-                if (error !== null && typeof error === 'object' && 'recoveryFailed' in error && error.recoveryFailed === true) await releaseNow(agent.id, agent)
-                warn(error)
-              }
-              context.signal?.throwIfAborted()
-              return Reflect.apply(value, target, [context])
-            })
+      installToolStepAssembly(ctx, {
+        knows: agent => knownAgents.has(agent), ensureFresh,
+        assemble: (context, invoke) => withAgent(context.agent!, async () => {
+          try { mounts.get(context.agent!.id)?.rules.prepareAssembly(context) } catch (error) {
+            if (error !== null && typeof error === 'object' && 'recoveryFailed' in error && error.recoveryFailed === true) await releaseNow(context.agent!.id, context.agent)
+            warn(error)
           }
-        } })
-      }, { global: true }),
+          context.signal?.throwIfAborted()
+          return invoke()
+        }),
+        settle: (assembly, context) => mounts.get(context.agent!.id)?.rules.settleToolSurface(assembly, context) ?? Promise.resolve(assembly),
+      }),
       // `agent/created` 对四种来源都触发（startup / resume / clear / compact），每次都是一个新
       // Agent。**装配失败不得冒泡**：该事件的监听器被 await，抛错会让会话创建整个失败
       // （`dsh-agent` 的 runtime-types 契约），那会违背「任何一步停下插件都完整可用」。

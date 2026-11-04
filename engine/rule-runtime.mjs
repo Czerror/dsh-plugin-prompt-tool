@@ -23,7 +23,7 @@ const pointKey = point => `${point.channel}:${point.phase}:${point.waterfallPosi
 const compareEntries = (a, b) => a.sequence - b.sequence || a.sourceModuleId.localeCompare(b.sourceModuleId)
   || a.ruleIndex - b.ruleIndex || a.ruleActionIndex - b.ruleActionIndex
 
-function pointHandler(ctx, point, snapshot, warnOnce, report, isActive) {
+function pointHandler(ctx, point, snapshot, warnOnce, report, isActive, assemblyFrame) {
   return (...args) => {
     const handlers = snapshot()
     const free = noNext.has(point.channel)
@@ -31,7 +31,8 @@ function pointHandler(ctx, point, snapshot, warnOnce, report, isActive) {
     const next = free ? () => undefined : args.at(-1)
     if (!isActive()) return next()
     let frame
-    try { frame = ruleFrame(point.channel, payload, warnOnce, ctx, report) }
+    try { frame = assemblyFrame !== undefined && point.channel === 'system-prompt/assemble'
+      ? assemblyFrame(payload[1], payload[0]) : ruleFrame(point.channel, payload, warnOnce, ctx, report) }
     catch (error) {
       warnOnce(`rule engine: frame construction failed on ${point.channel}: ${String(error?.message ?? error)}`)
       return next()
@@ -131,7 +132,8 @@ function mountSources(ctx, sources, options = {}) {
         const created = []
         const on = (channel, handler) => {
           if (channel !== point.channel) throw new TypeError(`rule action registered outside ${point.channel}: ${channel}`)
-          const entry = { rule, handler, sequence: action.channelOrder, sourceModuleId: moduleId, ruleId: rule.id, ruleIndex: item.ruleIndex, ruleActionIndex: action.actionIndex, id: action.id, actionWhen: action.actionWhen, bypassRuleWhen: action.bypassRuleWhen }
+          // shortcut: 独立入口待15统一公开适配，届时移除该内部接线分叉。
+          const entry = { rule, handler, toolSurface: options.deferToolSurface === true && action.kind === 'tool-visibility', sequence: action.channelOrder, sourceModuleId: moduleId, ruleId: rule.id, ruleIndex: item.ruleIndex, ruleActionIndex: action.actionIndex, id: action.id, actionWhen: action.actionWhen, bypassRuleWhen: action.bypassRuleWhen }
           if (channel === 'agent/pre-step' && point.waterfallPosition === 'default') injections.get(moduleId).ruleActions.push(entry)
           else handlers.push(entry)
           created.push(entry)
@@ -198,6 +200,15 @@ export function createRuleRuntime(ctx, options = {}) {
   const ruleOwners = new WeakMap()
   const memo = new Map()
   const report = options.onOutcome === undefined ? undefined : (rule, channel, outcome) => options.onOutcome({ moduleId: ruleOwners.get(rule), ruleId: rule.id, channel, outcome })
+  const assemblyFrames = new WeakMap()
+  const assemblyFrame = (context, assembly = {}) => {
+    let frame = assemblyFrames.get(context)
+    if (frame === undefined) {
+      frame = ruleFrame('system-prompt/assemble', [assembly, context], warnOnce, ctx, report)
+      assemblyFrames.set(context, frame)
+    }
+    return frame
+  }
   let layers
   let releaseMemo, releaseFallback
   const register = (coordinator, source) => {
@@ -276,8 +287,8 @@ export function createRuleRuntime(ctx, options = {}) {
     }
     for (const [key, value] of next) {
       value.handlers.sort(compareEntries)
-      if (!listeners.has(key)) listeners.set(key, ctx.on(value.point.channel,
-        pointHandler(ctx, value.point, () => points.get(key)?.handlers ?? [], warnOnce, report, () => active),
+      if (value.handlers.some(entry => !entry.toolSurface) && !listeners.has(key)) listeners.set(key, ctx.on(value.point.channel,
+        pointHandler(ctx, value.point, () => (points.get(key)?.handlers ?? []).filter(entry => !entry.toolSurface), warnOnce, report, () => active, options.deferToolSurface === true ? assemblyFrame : undefined),
         value.point.waterfallPosition === 'outermost' ? { prepend: true } : undefined))
     }
     points = next
@@ -326,17 +337,13 @@ export function createRuleRuntime(ctx, options = {}) {
   const preparePersona = (context = {}, preview = false) => {
     const entries = [...records.values()].flatMap(record => record.personas).sort(compareEntries)
     if (entries.length === 0 && persona === undefined && options.persona === undefined) return undefined
-    context = { agent: options.agent, ...context }
+    context = context.agent === undefined ? { agent: options.agent, ...context } : context
     context.signal?.throwIfAborted()
     if (entries.length > 0 && context.agent === undefined) throw new TypeError('persona rules require the real Agent')
     const audience = isDelegated(context.agent?.session) ? 'subagent' : 'main'
-    let failed = false
-    const frame = ruleFrame('system-prompt/assemble', [{}, context], warnOnce, ctx, (rule, channel, outcome) => {
-      if (outcome === 'error') failed = true
-      report?.(rule, channel, outcome)
-    })
+    const frame = assemblyFrame(context)
     const selected = entries.filter(entry => matchesAudience(entry.action.audience, audience) && actionMatches(entry, frame))
-    if (failed) throw new Error('persona condition evaluation failed; keeping previous contribution')
+    if ([...frame.decisions.values()].some(decision => decision.outcome === 'error')) throw new Error('persona condition evaluation failed; keeping previous contribution')
     const prompt = getService(ctx, 'systemPrompt')
     const plan = planPersonaActions(selected, context, prompt, options.persona, options.variableStore, warnOnce, preview)
     const rules = [...records.values()].flatMap(record => record.source.rules)
@@ -397,8 +404,20 @@ export function createRuleRuntime(ctx, options = {}) {
     },
     prepareAssembly(context) {
       if (!active) return
+      if (context !== undefined) assemblyFrames.delete(context)
       const plan = preparePersona(context)
       if (plan !== undefined) commitPersona(plan)
+    },
+    async settleToolSurface(assembly, context) {
+      const frame = assemblyFrame(context, assembly)
+      let result = assembly
+      const handlers = [...points.values()].flatMap(point => point.handlers.filter(entry => entry.toolSurface)).sort(compareEntries)
+      for (const entry of handlers) {
+        if (!active) break
+        if (!actionMatches(entry, frame)) { entry.miss?.(frame); continue }
+        result = await entry.handler(result, context, () => result, frame)
+      }
+      return result
     },
     dispose() {
       if (!active) return

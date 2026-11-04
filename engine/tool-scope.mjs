@@ -8,11 +8,29 @@
  * 全局原始 schema 与 visible-only 差集不外露；等真实诊断消费方出现再加字段。
  */
 
+import { SDK_SECTION_NAME, sdkToolNames } from './sdk-strip.mjs'
+
 const schemaList = (tools, scope) => {
   if (typeof tools?.schemas !== 'function') return []
   const schemas = tools.schemas(scope)
   return Array.isArray(schemas) ? schemas : []
 }
+
+// 原集合和包装集合是同一步骤的两个身份；Agent 身份不同不能借用快照。
+const steps = new WeakMap()
+export const hasToolStep = toolSet => toolSet != null && steps.has(toolSet)
+export const toolStepOf = (toolSet, agent) => toolSet != null && agent != null ? steps.get(toolSet)?.get(agent) : undefined
+export function associateToolStep(original, wrapped, agent, step) {
+  for (const identity of [original, wrapped]) {
+    let agents = steps.get(identity)
+    if (agents === undefined) steps.set(identity, agents = new WeakMap())
+    agents.set(agent, step)
+  }
+}
+export const toolSurfaceNames = assembly => new Set([
+  ...assembly.tools.map(tool => tool.name),
+  ...assembly.sections.filter(section => section.name === SDK_SECTION_NAME).flatMap(section => sdkToolNames(section.text)),
+])
 
 export function toolScopeSnapshot(tools, agent) {
   const global = schemaList(tools)

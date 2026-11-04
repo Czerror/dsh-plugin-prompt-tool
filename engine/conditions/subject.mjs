@@ -1,5 +1,6 @@
 import { SUBJECT_FIELDS, lastAssistantText, subagentTextOf, toolArgsText, userMessagesText } from '../condition-facts.mjs'
 import { extractText } from '../shared.mjs'
+import { toolStepOf } from '../tool-scope.mjs'
 
 /**
  * 子代理事件判定期可见的 agent 事实。
@@ -37,6 +38,8 @@ const modelString = value => typeof value === 'string' && value.trim().length > 
  */
 export function modelOf(payload, agent = payload?.agent ?? payload, allowFallback = true) {
   if (payload?.[SUBJECT_MARK] === true) return modelString(payload.model)
+  const step = toolStepOf(payload?.toolSet, agent)
+  if (step !== undefined) return modelString(step.modelSelection?.model)
   if (payload?.modelSelection?.model !== undefined) return modelString(payload.modelSelection.model)
   if (Object.hasOwn(payload ?? {}, 'model') && (payload !== agent || typeof payload.model?.current !== 'function')) return modelString(payload.model)
   if (payload != null && (Object.hasOwn(payload, 'modelSelection') || payload.toolSet != null || payload.step !== undefined)) return undefined
