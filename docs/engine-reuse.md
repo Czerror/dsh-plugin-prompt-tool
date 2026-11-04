@@ -80,7 +80,7 @@ AgentSetup 捕获的同层声明保留原 PromptSection 与 owner 生存状态�
 | `tool-search.mjs`、`skill-search.mjs` | 工具与技能的发现适配器：注册元数据，并各自注册工具 |
 | `tool-config-engine.mjs` | 自定义工具定义到官方注册；shell 超时/输出上限与 fs 真实路径 containment |
 | `instruction-files.mjs` | 指令文件探测的判据：候选清单、目录链与项目根标记的单一来源 + 引擎侧异步执行器 |
-| `env-safety.mjs` | `env-facts` 与 `run-code-env` 共用的敏感环境名与安全环境白名单 |
+| `env-safety.mjs` | `env-facts` 使用的敏感环境名与安全环境白名单 |
 | `path-safety.mjs` | `instruction-hint` 与 custom `fs` 共用的 realpath containment（symlink/junction 不越信任根） |
 
 相对路径均基于包根的 `engine/`。`actions.mjs`、`predicates.mjs`、`strategies.mjs` 只是已有入口，不把实现堆回 barrel。`engine/vendor/yaml/` 是版本化分发快照，通过 package script 生成，不手改。
@@ -245,7 +245,7 @@ Cordis waterfall 普通注册先注册者在外；prepend 注册插到最外层�
 
 ### Agent 级能力声明的公共原语（2026-10-22）
 
-`engine/agent-capability.mjs` 收三件事：受众判定（`capabilityAudience`，与 `isDelegated` 同一判据）、Agent scope 的声明表（`createAgentCapability`：session → {scope, key, disposers, data}）、以及 key/scope 变化时先挂新声明、成功后再撤旧的。`mount` 返回 `undefined` 表示依赖未就绪：保留上一轮声明、下次装配重试——旧闸比无闸安全。`scope.effect` 负责 Agent 释放时摘除自己。冲突检测（`presentAs` 同 scope 二次声明由官方抛错）与晚到服务等待（`ptcRuntime`）仍由调用方各自处理，原语不引入模式开关。`present-as` 只复用受众判定；`tool-visibility` 复用声明表并把 restrict/guard 注册与 failOpen 状态放进 mount 返回值。装配层与注册层的受众判定仍用既有 `isDelegated`，本轮没有统一。
+`engine/agent-capability.mjs` 收三件事：受众判定（`capabilityAudience`，与 `isDelegated` 同一判据）、Agent scope 的声明表（`createAgentCapability`：session → {scope, key, disposers, data}）、以及 key/scope 变化时先挂新声明、成功后再撤旧的。`mount` 返回 `undefined` 表示依赖未就绪：保留上一轮声明、下次装配重试——旧闸比无闸安全。`scope.effect` 负责 Agent 释放时摘除自己。执行器冲突检测与晚到服务等待由 `present-as` 及官方执行器处理，原语不引入模式开关。`present-as` 只复用受众判定；`tool-visibility` 复用声明表并把 restrict/guard 注册与 failOpen 状态放进 mount 返回值。装配层与注册层的受众判定仍用既有 `isDelegated`，本轮没有统一。
 
 ## 历史读取与去重
 
@@ -298,13 +298,15 @@ tool-catalog 使用普通只读变量插值；`templateEvaluation: true` 在编�
 
 ## 工具呈现（present-as）
 
-`present-as` 行在 **Agent scope** 声明工具呈现（官方 `ctx.tools.presentAs`）：`mode: ptc` 让注册表只贡献保留的 `run_code` 传输与生成的 SDK 段，其余可见能力走程序内绑定；`native` 是部署默认，只有「PTC 部署里挑出个别 Agent 回 native」才需要显式声明。它调的是与官方 `@deepseek-ai/dsh-agent-tool-presentation` 行**同一个** `presentAs`，故两条路径语义等价、scope 不同（本行 = Agent scope，官方行 = 预设常驻 scope，`modeFor` 沿链路最近者优先）；**同一 scope 二次声明由官方拒绝**（挂载期 fail loud，不静默覆盖）。进程级默认呈现仍归宿主 `tools` 行的 `config.mode`，运行时改不了。
+`present-as` 行在真实 **Agent scope** 挂载官方 `@deepseek-ai/dsh-tool-executor-native` 或 `@deepseek-ai/dsh-tool-executor-ptc`，等待异步导入与插件初始化完成。`mode: ptc` 只声明保留的 `run_code` 传输与生成的 SDK 段，其余可见能力走程序内绑定；`native` 直接声明与执行当前可用工具。同一 scope 的执行器冲突由官方拒绝。未启用该能力的 Agent 继续由宿主提供执行器，插件不接管部署默认。
 
-`ptc` 需要 `ctx.ptcRuntime`：本行用 `ctx.inject` 等它就绪再声明，等不到就停在 pending 并先 warn 一次，迟到到达再记一次 info，**不静默退回 native**；`ptcRuntime` 刻意不进 `inject`，否则 `native` 行会被绑死在「部署必须有 PTC 运行时」上。`presentAs` 自带 disposer，本行不另包一层。
+`ptc` 需要 `ctx.ptcRuntime`：本行用 `ctx.inject(['ptcRuntime'], ...)` 等它就绪后挂执行器，等不到时先 warn 一次并保持等待，迟到到达再记一次 info。`native` 不依赖 PTC 运行时。执行器与等待的生命周期归挂载 scope；来源替换、Agent 结束或插件释放后，迟到初始化不能恢复旧贡献。
 
-随包内置模块 `ptc-mode` 就是这两行的组合（默认不启用；启用会重挂所有存活 agent）。PTC 部署通常把本行与 `run-code-env` 装在同一模块里：PTC 下 `run_code` 程序里的 `process.env` 恒为空（官方安全设计），而 PATH／HOME 这类非敏感事实常被需要——`run-code-env` 在每个程序执行前注入一份冻结的 `env` 全局并注册 `## run_code environment` 提示段，且只在存在 `run_code` 传输的 scope 生效，对 native 会话零副作用。规则则不必加：模型收到的指引已由官方的 `PTC_ONLY` 段（只有 `run_code` 能直接调用）与生成的 `tools:sdk` 段提供。
+执行器卸载、模块禁用或 PTC 运行时撤回后，新批次以 `TOOL_EXECUTOR_UNAVAILABLE` 明确失败，不自动回退祖先执行器或 native；已接受批次按原执行器排空。显式重挂有效执行器后恢复，新会话也需要有效执行器。装配刷新可为各 Agent 重挂独立贡献，压缩不改变受众。
 
-`mode` 是兼容默认；可选 `mainMode` / `subagentMode` 分别覆盖主会话和子代理，省略仍继承 `mode`。配装通过引擎 `apply(ctx, config, { agent })` 传入真实 Agent，`present-as` 复用 `isDelegated(agent.session)` 选择模式，不从 Context 或页面状态猜测身份，也不修改共享配置。刷新为各 Agent 重挂独立贡献，压缩不改变受众，释放后恢复宿主默认。
+`mode` 是必填默认；可选 `mainMode` / `subagentMode` 分别覆盖主会话和子代理，省略继承 `mode`。配装通过引擎 `apply(ctx, config, { agent })` 传入真实 Agent，`present-as` 复用 `capabilityAudience` 选择模式，不从 Context 或页面状态猜测身份，也不修改共享配置。随包内置模块 `ptc-mode` 默认不启用，只声明本能力，无需另加规则：官方执行器提供 PTC 调用指引和生成的 SDK 段。
+
+程序当前工作目录使用官方 `process.cwd()`，shell 操作使用当前工具面提供的 `tools.bash(...)` / `tools.pwsh(...)`。默认 Node/per-call 程序的 `process.env` 初始为空，OS 仍保留启动所需环境；宿主嵌套 shell 独立收集安全环境，与程序环境不在同一层。持久运行形式的环境也不能称为恒空，官方不提供等价 `env` 对象。独立 `env-facts` 仍可按白名单注入环境事实；升级时用户副本与旧程序的调整见 [CHANGELOG](../CHANGELOG.md)。
 
 ## 重复输出安全截断
 

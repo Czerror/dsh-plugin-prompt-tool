@@ -83,7 +83,7 @@ rules:
 
 变量先 list/get 取版本，再 set/delete；set 必须显式字符串，空串不是删除。global 写影响同一安装的所有模块；session 只访问真实当前会话，写入携 revisions.session 并等待持久化。文件 append 带当前目标身份与显式 path，与规则事务分开；module_manifest 按清单只写 data/、不覆盖。module_import 先预览并完成选择，提交原始 files 与两份预览凭据，默认另存且不自动启用。
 
-共享模型/能力参数以 `ENGINE_PARAM_DEFINITIONS` 为唯一目录，使用登记的 layerSettings 路径：主/子模型路由与采样、PTC 呈现、run_code 环境、Git Bash、指令提示和工具批准都在其中；数量与 options 以源码为准，不抄旧文档的固定键数。也可通过 request-params 动作按受众改请求。官方工具、规划、压缩和普通委派来自官方预设，模块不重声明它们。
+共享模型/能力参数以 `ENGINE_PARAM_DEFINITIONS` 为唯一目录，使用登记的 layerSettings 路径：主/子模型路由与采样、PTC 呈现、Git Bash、指令提示和工具批准都在其中；数量与 options 以源码为准，不抄旧文档的固定键数。也可通过 request-params 动作按受众改请求。官方工具、规划、压缩和普通委派来自官方预设，模块不重声明它们。PTC 的执行器生命周期与程序环境边界见 [reference.md](reference.md#ptc-呈现与程序环境)。
 
 完成判据：声明与实际工具注册一致，目标、版本、批准和取消保护没有绕过。
 

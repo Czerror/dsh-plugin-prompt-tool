@@ -154,13 +154,19 @@ checks:
 - `action`：`next` 返回第一条缺失（`ok` = 是否已完成），`check` 返回全部检查结果（`ok` = 是否全部通过），`apply` 建目录并只落缺失文件（不覆盖、不删除）。
 - 未知键、未知 kind、越界路径与链接都 fail loud。官方工具、规划、压缩与普通委派由会话原有预设提供，空模块不自动获得这些能力。
 
-共享参数由 `ENGINE_PARAM_DEFINITIONS` 唯一登记，`storageLayer` 决定磁盘路径：主/子模型各有路由与采样键，另含 PTC 呈现（presentAsEnabled、ptcMainMode、ptcSubagentMode）、run_code 环境（runCodeEnvEnabled、runCodeEnvKeys）、Git Bash（toolGitBashEnabled、路径、超时、输出上限）、指令提示（instructionHint 及 promoteOn/includeSubagents/模板）和工具批准（customToolRequireApproval）；完整键、options 与默认值以源码为准，不在摘要抄数量。模型卡在装配期合成 request-params 规则；未配置继承宿主。子代理递归深度归官方 `subagent.maxDepth`，插件不提供。
+共享参数由 `ENGINE_PARAM_DEFINITIONS` 唯一登记，`storageLayer` 决定磁盘路径：主/子模型各有路由与采样键，另含 PTC 呈现（presentAsEnabled、ptcMainMode、ptcSubagentMode）、Git Bash（toolGitBashEnabled、路径、超时、输出上限）、指令提示（instructionHint 及 promoteOn/includeSubagents/模板）和工具批准（customToolRequireApproval）；完整键、options 与默认值以源码为准，不在摘要抄数量。模型卡在装配期合成 request-params 规则；未配置继承宿主。子代理递归深度归官方 `subagent.maxDepth`，插件不提供。
 
 - persona 动作：普通规则拥有 prefix/suffix/complete/includeRuntimeContext 与可选 audience。命中动作按既有规则序分别拼接非空片段，两个换行分隔；全省略才继承，显式空串阻止继承但不清其它片段。布尔显式值冲突整组保旧；失配/事实不可用回官方，错误保最后有效组。includeRuntimeContext:true 只撤本插件抑制，祖先 scope 抑制保持。
 - variables：模块持久值，覆盖同安装 global；运行时 session 域按来源模块＋真实会话持久隔离，裸引用依次取 session→module→global。空串保留，删键才回落。工作台只编辑 module/global；普通规则手动建立变量，ST 导入自动登记缺失裸引用为空占位，不自动转成 session。
 - customTools：shell/http/delegate/fs/ask-user，定义见包内 templates/tools。delegate 走官方工具管线。
 - moduleConfigs：已声明共享参数优先于行级配置，不能绕过工具批准。
 - configOrder：模块内规则id→非负序号，排序不修改正文和启停。
+
+### PTC 呈现与程序环境
+
+`present-as` 在真实 Agent scope 挂载官方 native/PTC 执行器，按真实主/子身份选择模式并等待导入与初始化。PTC 通过动态注入等待运行时，native 不依赖它；同 scope 冲突由官方拒绝。执行器卸载、模块禁用或运行时撤回后，新批次明确不可用，已接受批次按原执行器排空；显式重挂有效执行器后恢复。未启用该能力的 Agent 继续由宿主提供执行器。
+
+程序当前工作目录用官方 `process.cwd()`，shell 操作用当前工具面提供的 `tools.bash(...)` / `tools.pwsh(...)`。默认 Node/per-call 程序环境初始为空，OS 启动环境与宿主嵌套 shell 收集的安全环境属于不同层；官方不提供等价 `env` 对象。现有用户模块由用户自行调整，内置种子只补缺失，不覆盖用户副本。
 
 ## 五、上下文激活与模板
 
