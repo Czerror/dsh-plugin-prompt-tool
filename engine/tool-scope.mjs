@@ -8,8 +8,6 @@
  * 全局原始 schema 与 visible-only 差集不外露；等真实诊断消费方出现再加字段。
  */
 
-import { SDK_SECTION_NAME, sdkToolNames } from './sdk-strip.mjs'
-
 const schemaList = (tools, scope) => {
   if (typeof tools?.schemas !== 'function') return []
   const schemas = tools.schemas(scope)
@@ -27,10 +25,6 @@ export function associateToolStep(original, wrapped, agent, step) {
     agents.set(agent, step)
   }
 }
-export const toolSurfaceNames = assembly => new Set([
-  ...assembly.tools.map(tool => tool.name),
-  ...assembly.sections.filter(section => section.name === SDK_SECTION_NAME).flatMap(section => sdkToolNames(section.text)),
-])
 
 export function toolScopeSnapshot(tools, agent) {
   const global = schemaList(tools)

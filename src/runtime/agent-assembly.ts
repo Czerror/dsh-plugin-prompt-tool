@@ -45,7 +45,7 @@ import { MODULE_TOOL_CAPABILITIES, OFFICIAL_RECIPE_ROWS, enabledRowIds } from '.
 import { enableTablePath, readGlobalLayerSettings } from '../host/config-store.ts'
 import { createGenerationRecoveryState } from '../host/generation-recovery-state.ts'
 import { contextRuntimeOf } from '../../engine/context-provenance.mjs'
-import { installToolStepAssembly } from './tool-step-assembly.ts'
+import { installToolStepAssembly } from '../../engine/tool-step-assembly.mjs'
 
 import { actionAudiences, compileRules, completeRuleSections } from '../../engine/rule-spec.mjs'
 import type { RuleAudience } from '../../engine/rule-spec.mjs'
@@ -450,7 +450,7 @@ export function createAgentAssembly(ctx: Context, options: AgentAssemblyOptions)
       try { await root } catch (error) { await root.dispose(); throw error }
       if (scope === undefined) { await root.dispose(); throw new Error('运行时配装作用域未初始化') }
       let rules: ReturnType<typeof createRuleRuntime>
-      try { rules = createRuleRuntime(scope, { agent, deferToolSurface: true, onOutcome: ruleDiagnostics.record, variableStore, standingMountFor: await loadStandingMountFor(), manifestCheck, soulReminder: soulReminderOf(ctx), persona: {
+      try { rules = createRuleRuntime(scope, { agent, externalAssembly: true, onOutcome: ruleDiagnostics.record, variableStore, standingMountFor: await loadStandingMountFor(), manifestCheck, soulReminder: soulReminderOf(ctx), persona: {
         inherited: name => { const key = scopeOf(agent.ctx); return key === undefined ? undefined : inheritedSection(key, name) },
         suspend: name => { const key = scopeOf(agent.ctx); return key === undefined ? undefined : options.personaCapture?.records(key).find(record => record.name === name)?.suspend() },
       } }) }

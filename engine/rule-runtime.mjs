@@ -9,6 +9,8 @@ import { createPromotionPool } from './promotion-pool.mjs'
 import { PROMOTE_EVENTS, createWarnOnce, getService, isDelegated, matchesAudience } from './shared.mjs'
 import { PERSONA_PREFIX, planPersonaActions } from './actions/persona.mjs'
 import { PRE_STEP_COORDINATOR_SERVICE } from './service-names.mjs'
+import { scopeChainOf, scopeOf } from '@deepseek-ai/dsh-scope'
+import { installToolStepAssembly } from './tool-step-assembly.mjs'
 
 const noNext = new Set(['agent/inbox/inserted', 'agent/turn-stopping', 'subagent/start', 'subagent/end'])
 // 判据与 `order.mjs#compareConfigSequence` 有意不同：这里在同通道同点内按 moduleId 字母序 +
@@ -132,8 +134,7 @@ function mountSources(ctx, sources, options = {}) {
         const created = []
         const on = (channel, handler) => {
           if (channel !== point.channel) throw new TypeError(`rule action registered outside ${point.channel}: ${channel}`)
-          // shortcut: 独立入口待15统一公开适配，届时移除该内部接线分叉。
-          const entry = { rule, handler, toolSurface: options.deferToolSurface === true && action.kind === 'tool-visibility', sequence: action.channelOrder, sourceModuleId: moduleId, ruleId: rule.id, ruleIndex: item.ruleIndex, ruleActionIndex: action.actionIndex, id: action.id, actionWhen: action.actionWhen, bypassRuleWhen: action.bypassRuleWhen }
+          const entry = { rule, handler, toolSurface: action.kind === 'tool-visibility', sequence: action.channelOrder, sourceModuleId: moduleId, ruleId: rule.id, ruleIndex: item.ruleIndex, ruleActionIndex: action.actionIndex, id: action.id, actionWhen: action.actionWhen, bypassRuleWhen: action.bypassRuleWhen }
           if (channel === 'agent/pre-step' && point.waterfallPosition === 'default') injections.get(moduleId).ruleActions.push(entry)
           else handlers.push(entry)
           created.push(entry)
@@ -210,6 +211,7 @@ export function createRuleRuntime(ctx, options = {}) {
     return frame
   }
   let layers
+  let releaseAssembly
   let releaseMemo, releaseFallback
   const register = (coordinator, source) => {
     if (coordinator.promotion === undefined) throw new TypeError('prompt-tool: pre-step coordinator v2 must expose a promotion owner')
@@ -288,7 +290,9 @@ export function createRuleRuntime(ctx, options = {}) {
     for (const [key, value] of next) {
       value.handlers.sort(compareEntries)
       if (value.handlers.some(entry => !entry.toolSurface) && !listeners.has(key)) listeners.set(key, ctx.on(value.point.channel,
-        pointHandler(ctx, value.point, () => (points.get(key)?.handlers ?? []).filter(entry => !entry.toolSurface), warnOnce, report, () => active, options.deferToolSurface === true ? assemblyFrame : undefined),
+        pointHandler(ctx, value.point, () => (points.get(key)?.handlers ?? []).filter(entry => !entry.toolSurface), warnOnce, report, () => active,
+          (context, assembly) => options.externalAssembly === true || releaseAssembly !== undefined
+            ? assemblyFrame(context, assembly) : ruleFrame('system-prompt/assemble', [assembly, context], warnOnce, ctx, report)),
         value.point.waterfallPosition === 'outermost' ? { prepend: true } : undefined))
     }
     points = next
@@ -358,7 +362,7 @@ export function createRuleRuntime(ctx, options = {}) {
     context.signal?.throwIfAborted()
     return plan
   }
-  return {
+  const runtime = {
     replace(sources) {
       if (!active) throw new Error('rule runtime disposed')
       validateDeliverySources(sources)
@@ -388,6 +392,17 @@ export function createRuleRuntime(ctx, options = {}) {
         if (text.length > 0) layers ??= createLayerRuntime(ctx, warnOnce, { agent: options.agent, turnStopBudgets: new Map(), sourceError })
         layers?.replace(text)
         publishPoints()
+        if (options.externalAssembly !== true && releaseAssembly === undefined
+          && [...points.values()].some(point => point.handlers.some(entry => entry.toolSurface))) {
+          const scope = scopeOf(ctx)
+          releaseAssembly = installToolStepAssembly(ctx, {
+            knows: agent => active && [...points.values()].some(point => point.handlers.some(entry => entry.toolSurface))
+              && (options.agent === undefined ? scope === undefined || scopeChainOf(agent).includes(scope) : agent === options.agent),
+            ensureFresh: async () => {},
+            assemble: (context, invoke) => { runtime.prepareAssembly(context); return invoke() },
+            settle: (assembly, context) => runtime.settleToolSurface(assembly, context),
+          })
+        }
         if (personaPlan !== undefined) commitPersona(personaPlan)
       } catch (error) {
         for (const record of created.reverse()) record.dispose()
@@ -422,6 +437,7 @@ export function createRuleRuntime(ctx, options = {}) {
     dispose() {
       if (!active) return
       active = false
+      releaseAssembly?.()
       releasePersona(persona)
       persona = undefined
       for (const record of records.values()) record.dispose()
@@ -435,6 +451,7 @@ export function createRuleRuntime(ctx, options = {}) {
       if (ownsPool) pool.dispose()
     },
   }
+  return runtime
 }
 
 /** 兼容一次性挂载；增量调用者持有 createRuleRuntime 的来源集合。 */

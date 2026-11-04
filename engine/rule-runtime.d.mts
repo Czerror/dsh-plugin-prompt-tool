@@ -36,8 +36,8 @@ export interface RuleSourceLike {
 }
 
 export interface MountRuleSourcesOptions {
-  /** 内部宿主适配已拥有完整装配后的工具面结算。 */
-  deferToolSurface?: boolean
+  /** 宿主拥有同一公开装配适配器，运行时只提供规则结算。 */
+  externalAssembly?: boolean
   persona?: {
     inherited(name: string): PromptSection | undefined
     suspend?(name: string): (() => void) | undefined

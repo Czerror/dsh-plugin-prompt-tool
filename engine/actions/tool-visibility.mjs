@@ -1,10 +1,10 @@
 /**
  * tool-visibility —— 工具可见面：一份声明拥有「模型看得见什么、调得动什么」。
  *
- * 三面投影都在 system-prompt/assemble 的 after-next 之后完成：
+ * 三面投影都在完整公开 assemble 返回后完成：
  *  1. 装配目录（tools 数组）——本轮的呈现面；
  *  2. tools:sdk 段正文——模型读到的工具声明；
- *  3. 执行面：deny 用 restrict + guard；allow 只登记 guard（restrict 无法安全覆盖预设/祖先层）。
+ *  3. 执行面：步骤集合封存名单，guard 读取同一准入；无集合调用保守判定。
  *
  * 旧实现把同一个意图拆成三条声明（assembly / sdk-strip / guard），其中 guard 属固定
  * 注册效果、不能带规则级 if，于是「有条件下架」被迫再复制一份名单。这里把名单收在
@@ -14,20 +14,19 @@
  * 名单语义对齐官方 ToolRestriction（deepseek-harness packages/core/tools/src/index.ts:701-706）：
  * allow 与 deny 可以同时给，判据是「先按 allow 保留，再按 deny 剔除」。requireMatch 只在
  * allow 模式有意义，判据是「这份名单与装配面整体错位」：名单里的名字**一个都不在**目录与
- * SDK 正文的并集里，才放弃裁剪、暴露完整目录（fail-open）并告警。只缺一部分是提供方被
+ * 原集合里，才放宽 allow（fail-open）并告警，deny 始终保留。只缺一部分是提供方被
  * 替换或关闭的正常部署差异，收窄照常生效、缺项只留一条诊断；解锁名是只做加法的提示，
  * 不参与这个判定。
  *
- * 执行边界：deny 同时用 restrict（继承面）与 guard（本层/晚到）；allow 不用 restrict——
- * 它的 allow 只能收继承面名字，而 `schemas()` 全局视图会漏掉预设/祖先层，局部 allow 会
- * 把要保留的工具裁掉。allow 统一由 guard 裁决；requireMatch fail-open 时 guard 同步放行。
+ * 原集合的官方 scope/when 与替换、移除始终是上限；不注册额外 restriction，
+ * 发现目录因此仍读取原候选，插件收窄不能变成注册目录权限。
  */
 
 import { RUN_CODE, createMask, labelOf, toolSurfacePlan } from './shared.mjs'
 import { createAgentCapability } from '../agent-capability.mjs'
 import { SDK_SECTION_NAME, stripSdkDeclarations, sdkToolNames } from '../sdk-strip.mjs'
 import { TOOL_INVOCATION_EVENT_TYPES, historyEvents } from '../history.mjs'
-import { toolScopeSnapshot } from '../tool-scope.mjs'
+import { hasToolStep, toolStepOf } from '../tool-scope.mjs'
 import { DISCOVERY_SERVICE } from '../service-names.mjs'
 import { UNLOCKABLE_DISCOVERY_KINDS } from '../discovery.mjs'
 
@@ -108,7 +107,7 @@ export function prepareToolVisibility(action, plugin) {
   }
 
   return (mountCtx, { warnOnce, on, collect, onMiss }) => {
-    /** 执行面：restrict 覆盖继承的全局工具，guard 兜住本层与晚到工具。 */
+    /** 无集合调用保守判定；有集合时只读所属步骤的封存准入。 */
     const capability = createAgentCapability((agent) => {
       const tools = agent?.ctx?.tools
       if (tools === undefined) return undefined
@@ -116,26 +115,15 @@ export function prepareToolVisibility(action, plugin) {
       const state = { failOpen: false, unlocked: undefined }
       const disposers = []
       try {
-        const known = toolScopeSnapshot(tools).globalNames
-        if (mask.deny !== undefined && typeof tools.restrict === 'function' && known !== undefined) {
-        // allow 模式不走 restrict：`schemas()` 是全局视图，过滤后的 allow 会漏掉预设/祖先层的
-        // 工具，restrict 反而把它们裁掉；restrict 只接收继承面名字，无法安全区分本层工具。
-        // allow 的执行面统一由下面的 guard 兜底。
-        const deny = [...mask.deny].filter((name) => known.has(name))
-        if (deny.length > 0) {
-          try {
-            const dispose = tools.restrict({ deny })
-            if (typeof dispose === 'function') disposers.push(dispose)
-          } catch (error) {
-            // restrict 失败不改变呈现面；执行面还有 guard 兜底。
-            warnOnce(`${plugin}: tool-visibility action ${label} restrict skipped: ${String(error?.message ?? error)}`)
-          }
-        }
-      }
         if ((mask.deny !== undefined || mask.allow !== undefined) && typeof tools.guard === 'function') {
           const deny = mask.deny
           disposers.push(tools.guard((exec) => {
             const toolName = exec?.name
+            const step = toolStepOf(exec?.toolSet, exec?.agent)
+            if (hasToolStep(exec?.toolSet)) {
+              if (step?.status !== 'sealed') return `${label}: tool step is pending or closed`
+              return toolName === RUN_CODE || step.allowed?.has(toolName) ? undefined : `${label}: tool is outside the sealed step`
+            }
             if (toolName === RUN_CODE || typeof toolName !== 'string' || toolName.length === 0) return undefined
             if (deny?.has(toolName)) return `${label}: tool ${JSON.stringify(toolName)} is denied by tool-visibility`
             if (mask.allow !== undefined && !state.failOpen && mask.blocks(toolName, state.unlocked)) {
@@ -148,7 +136,7 @@ export function prepareToolVisibility(action, plugin) {
           }))
         }
       } catch (error) {
-        // 声明失败不能丢已注册的 restrict：已收集的 disposer 仍交给声明表统一撤销。
+        // 已收集的 disposer 交给声明表统一撤销。
         warnOnce(`${plugin}: tool-visibility action ${label} failed to mount execution gate: ${String(error?.message ?? error)}`)
       }
       return { disposers, data: state }
@@ -171,7 +159,7 @@ export function prepareToolVisibility(action, plugin) {
 
     collect(on('system-prompt/assemble', async (assembly, context, next) => {
       const assembled = await next()
-      // 解锁名必须先回收：执行闸的 restrict allow 要包含本轮解锁项，否则解锁的工具看得见、调不动。
+      // 解锁名先回收，后续裁剪与执行准入共用同一快照。
       // 工具名与参数键来自发现注册表的 adapter 元数据；声明里的同名字段只作断言。
       if (allowExtra !== undefined) {
         const registry = typeof mountCtx.get === 'function' ? mountCtx.get(DISCOVERY_SERVICE) : undefined
@@ -190,7 +178,7 @@ export function prepareToolVisibility(action, plugin) {
           fillUnlocked(allowExtra, context?.session ?? context?.agent?.session, unlock.tool, unlock.key, warnOnce, plugin, label)
         }
       }
-      // 在 await next() 之前冻结本会话的解锁名：之后的裁剪与执行闸都读这一份，
+      // 冻结本会话的解锁名：之后的裁剪与执行闸都读这一份，
       // 共享的 allowExtra 可能被并发的另一次装配（别的会话 / 探针）清空重填。
       const unlocked = allowExtra === undefined ? undefined : new Set(allowExtra)
       try {
@@ -201,21 +189,23 @@ export function prepareToolVisibility(action, plugin) {
       }
       try {
         let result = assembled
-        // PTC 的 tools 数组只有 run_code 传输；实际可见面在 SDK 正文里，requireMatch 必须
-        // 以两者并集为准，否则 native 的收窄名单会被误判成缺失并 fail-open。
+        // 步骤准入直接读官方集合；裸装配只有展示信息，沿目录与 SDK 并集判定。
         const sdkSection = Array.isArray(result.sections)
           ? result.sections.find((section) => section?.name === SDK_SECTION_NAME && typeof section.text === 'string')
           : undefined
         const sdkNames = sdkSection === undefined ? undefined : new Set(sdkToolNames(sdkSection.text))
-        const available = new Set([
+        const step = toolStepOf(context?.toolSet, context?.agent)
+        const available = step === undefined ? new Set([
           ...(Array.isArray(result.tools) ? result.tools.map((tool) => tool?.name).filter((name) => typeof name === 'string') : []),
           ...(sdkNames ?? []),
-        ])
+        ]) : new Set(context.toolSet.view(context.agent).keys())
         // 没有工具面可观（既无目录也无 SDK 正文）时不裁剪、不告警、不动执行闸：
         // 空 surface 不等于「名单全缺」；空目录（tools=[]）仍是真实观测，照旧 fail-open。
         if (!Array.isArray(result.tools) && sdkSection === undefined) return result
         // 三面（目录 / 正文 / 执行闸）共用这一份判断：名单全缺才整体放宽，呈现与执行不得两套口径。
         const plan = toolSurfacePlan(mask, available)
+        const blocks = name => plan.failOpen ? mask.deny?.has(name) === true : mask.blocks(name, unlocked)
+        if (step !== undefined) step.allowed = new Set([...available].filter(name => !blocks(name)))
         const state = capability.get(context?.session ?? context?.agent?.session)
         if (state !== undefined) {
           state.data.failOpen = plan.failOpen
@@ -223,39 +213,39 @@ export function prepareToolVisibility(action, plugin) {
         }
         if (plan.failOpen) {
           // 去重键固定到动作：缺项名随部署变化，不能让每个新集合各占一条 warnOnce。
-          warnOnce(`${plugin}: tool-visibility action ${label}: none of the resident tools exist (${plan.missing.join(', ')}) — exposing the full tool set (fail-open)`, `${plugin}: tool-visibility action ${label}: requireMatch fail-open`)
-        } else {
-          // 部分缺失不改变裁剪，但必须留痕：否则「某个常驻工具为什么不见了」只能靠猜。
-          if (plan.missing.length > 0) {
-            warnOnce(`${plugin}: tool-visibility action ${label}: resident tools absent (${plan.missing.join(', ')}) — narrowing continues; register replacement providers in the deployment allow list`, `${plugin}: tool-visibility action ${label}: resident tools absent`)
-          }
-          if (Array.isArray(result.tools)) {
-            const kept = result.tools.filter((tool) => !mask.blocks(tool?.name, unlocked))
-            if (kept.length !== result.tools.length) result = { ...result, tools: kept }
-          }
-          if (Array.isArray(result.sections)) {
-            let changed = false
-            let present = sdkNames
-            const sections = result.sections.map((section) => {
-              if (section?.name !== SDK_SECTION_NAME || typeof section.text !== 'string') return section
-              const presentNames = () => {
-                present ??= new Set(sdkToolNames(section.text))
-                return present
-              }
-              const names = mask.allow === undefined
-                ? mask.deny
-                : new Set([...presentNames()].filter((name) => mask.blocks(name, unlocked)))
-              if (names === undefined || names.size === 0) return section
-              const stripped = stripSdkDeclarations(section.text, names)
-              if (stripped === section.text) return section
-              changed = true
-              return { ...section, text: stripped }
-            })
-            if (changed) result = { ...result, sections }
-          }
+          warnOnce(`${plugin}: tool-visibility action ${label}: none of the resident tools exist (${plan.missing.join(', ')}) — relaxing allow only; deny remains enforced (fail-open)`, `${plugin}: tool-visibility action ${label}: requireMatch fail-open`)
+        }
+        // 部分缺失不改变裁剪，但必须留痕：否则「某个常驻工具为什么不见了」只能靠猜。
+        if (!plan.failOpen && plan.missing.length > 0) {
+          warnOnce(`${plugin}: tool-visibility action ${label}: resident tools absent (${plan.missing.join(', ')}) — narrowing continues; register replacement providers in the deployment allow list`, `${plugin}: tool-visibility action ${label}: resident tools absent`)
+        }
+        if (Array.isArray(result.tools)) {
+          const kept = result.tools.filter((tool) => !blocks(tool?.name))
+          if (kept.length !== result.tools.length) result = { ...result, tools: kept }
+        }
+        if (Array.isArray(result.sections)) {
+          let changed = false
+          let present = sdkNames
+          const sections = result.sections.map((section) => {
+            if (section?.name !== SDK_SECTION_NAME || typeof section.text !== 'string') return section
+            const presentNames = () => {
+              present ??= new Set(sdkToolNames(section.text))
+              return present
+            }
+            const names = plan.failOpen || mask.allow === undefined
+              ? mask.deny
+              : new Set([...presentNames()].filter((name) => blocks(name)))
+            if (names === undefined || names.size === 0) return section
+            const stripped = stripSdkDeclarations(section.text, names)
+            if (stripped === section.text) return section
+            changed = true
+            return { ...section, text: stripped }
+          })
+          if (changed) result = { ...result, sections }
         }
         return result
       } catch (error) {
+        if (hasToolStep(context?.toolSet)) throw error
         // 呈现面失败只告警：执行闸已在上面同步过，deny 仍然拦得住。
         warnOnce(`${plugin}: tool-visibility action ${label} failed, keeping the assembled surface: ${String(error?.message ?? error)}`)
         return assembled

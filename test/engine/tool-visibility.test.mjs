@@ -10,7 +10,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { registerAction } from '../../engine/actions.mjs'
 import { compileRules } from '../../engine/rule-spec.mjs'
-import { mountRuleSources } from '../../engine/rule-runtime.mjs'
+import { createRuleRuntime } from '../../engine/rule-runtime.mjs'
 import { createDiscoveryRegistry } from '../../engine/discovery.mjs'
 import { DISCOVERY_SERVICE } from '../../engine/service-names.mjs'
 import { SDK_SECTION_NAME, sdkToolNames } from '../../engine/sdk-strip.mjs'
@@ -102,7 +102,7 @@ test('tool-visibility：deny 同时裁剪目录与 SDK 正文，并注册执行�
   const out = await handler(assembled(toolList('alpha', 'beta'), [{ name: SDK_SECTION_NAME, text: sdk }]), { agent: agentOf(scope) }, async () => assembled(toolList('alpha', 'beta'), [{ name: SDK_SECTION_NAME, text: sdk }]))
   assert.deepEqual(out.tools.map((tool) => tool.name), ['alpha'], '目录只剩未被下架的工具')
   assert.deepEqual(sdkToolNames(out.sections[0].text).sort(), ['alpha'], 'SDK 正文同步删掉被下架工具')
-  assert.deepEqual(disposed.restrict, [{ deny: ['beta'] }], 'restrict 只喂已知全局名')
+  assert.equal(disposed.restrict, undefined, '不改发现候选，执行拒绝由封存计划和 guard 负责')
   assert.equal(disposed.guards.length, 1, '登记一条执行闸')
   assert.equal(disposed.guards[0]({ name: 'beta' }), 'v: tool "beta" is denied by tool-visibility')
   assert.equal(disposed.guards[0]({ name: 'alpha' }), undefined)
@@ -117,7 +117,7 @@ test('tool-visibility：allow 与 deny 同时给时先保留再剔除（对齐�
   const input = assembled(toolList('alpha', 'beta'))
   const out = await handler(input, { agent: agentOf(scope) }, async () => input)
   assert.deepEqual(out.tools.map((tool) => tool.name), ['alpha'])
-  assert.deepEqual(disposed.restrict, [{ deny: ['beta'] }], 'allow 不交给 restrict，避免漏掉预设/祖先层工具')
+  assert.equal(disposed.restrict, undefined, 'allow/deny 不改原注册候选')
   assert.equal(disposed.guards[0]({ name: 'beta' }), 'v: tool "beta" is denied by tool-visibility')
   assert.equal(disposed.guards[0]({ name: 'gamma' }), 'v: tool "gamma" is not allowed by tool-visibility; the allow list is the only path; this action has no discovery source')
 })
@@ -324,6 +324,17 @@ function ruleHarness() {
   }
 }
 
+// 记录桩显式拥有完整装配阶段，生产独立入口由真实 Cordis 服务适配覆盖。
+function mountRuleSources(ctx, sources) {
+  const runtime = createRuleRuntime(ctx, { externalAssembly: true })
+  runtime.replace(sources)
+  const off = ctx.on('system-prompt/assemble', (assembly, context, next) => {
+    runtime.prepareAssembly(context)
+    return Promise.resolve(next()).then(result => runtime.settleToolSurface(result, context))
+  }, { prepend: true })
+  return () => { off(); runtime.dispose() }
+}
+
 test('普通文本条件：批内全部真实用户文本的长度与关键词共同选择注入分支', async () => {
   const h = ruleHarness()
   const agent = { session: { id: 'batch-length', header: { delegationDepth: 0 }, snapshotEvents: () => [] } }
@@ -364,7 +375,7 @@ test('真实规则挂载：条件由真变假时撤销上一轮注册的执行�
   const second = await assemble()
   assert.deepEqual(second.tools.map((tool) => tool.name), ['alpha', 'beta'], '条件为假：不再裁剪')
   assert.equal(disposed.guardDisposed, 1, '条件变假必须撤销 guard')
-  assert.equal(disposed.restrictDisposed, 1, '条件变假必须撤销 restrict')
+  assert.equal(disposed.restrictDisposed, undefined, '没有额外 restriction 所有权')
   dispose()
 })
 
@@ -531,7 +542,7 @@ test('tool-visibility：条件由真变假时撤销上一轮的执行闸（未�
   enabled = false
   await handler(input, { agent }, async () => input)
   assert.equal(disposed.guardDisposed, 1, '条件变假必须撤销 guard')
-  assert.equal(disposed.restrictDisposed, 1, '条件变假必须撤销 restrict')
+  assert.equal(disposed.restrictDisposed, undefined, '没有额外 restriction 所有权')
 })
 
 test('真实规则挂载：工具面与自定义提示共用受众条件且提示仅首轮执行', async () => {

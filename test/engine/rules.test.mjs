@@ -575,7 +575,7 @@ test('统一规则：新动作空种子不生成业务效果，未设模型条�
   const h = harness()
   // 人设空串有明确清空语义，真实官方装配回归在 persona-rules.test.mjs。
   const examples = getRuleEditorMeta().actions.filter(({ kind }) => kind !== 'persona').map(({ kind, example }) => ({ ...example, id: kind }))
-  const dispose = mountRuleSources(h.ctx, [{ moduleId: 'empty', rules: compileRules([{ id: 'empty', then: examples }]) }])
+  const dispose = mountRuleSources(h.ctx, [{ moduleId: 'empty', rules: compileRules([{ id: 'empty', then: examples }]) }], { externalAssembly: true })
   const agent = actor()
   const messages = [{ id: 'u', role: 'user', source: { kind: 'user' }, content: [{ type: 'text', text: 'USER' }] }]
   const baseline = { kind: 'enter', messages }

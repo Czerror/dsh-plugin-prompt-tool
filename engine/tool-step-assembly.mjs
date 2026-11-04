@@ -1,38 +1,46 @@
-import type { Context } from '@deepseek-ai/cordis'
-import type { Agent } from '@deepseek-ai/dsh-agent'
-import type { ScopeKey } from '@deepseek-ai/dsh-scope'
-import type { AssembleContext, PromptAssembly } from '@deepseek-ai/dsh-system-prompt'
-import type { ResolvedToolSet, ToolActivationContext, ToolBatchInput } from '@deepseek-ai/dsh-tools'
-import { associateToolStep, hasToolStep, toolStepOf, toolSurfaceNames, type ToolStep } from '../../engine/tool-scope.mjs'
+import { associateToolStep, hasToolStep, toolStepOf } from './tool-scope.mjs'
 
-interface Options {
-  knows(agent: Agent): boolean
-  ensureFresh(agent: Agent): Promise<void>
-  assemble(context: AssembleContext, invoke: () => Promise<PromptAssembly>): Promise<PromptAssembly>
-  settle(assembly: PromptAssembly, context: AssembleContext): Promise<PromptAssembly>
+const installations = new WeakMap()
+const unavailable = () => Object.assign(new Error('prompt-tool: tool step is pending or closed'), { code: 'TOOL_STEP_UNAVAILABLE' })
+
+/** 多个真实装配入口共用一个公开服务适配，集合只封存一次。 */
+export function installToolStepAssembly(ctx, options) {
+  const root = ctx.root
+  let installation = installations.get(root)
+  if (installation === undefined) {
+    installation = createInstallation(root)
+    installations.set(root, installation)
+  }
+  installation.owners.add(options)
+  return () => {
+    installation.owners.delete(options)
+    if (installation.owners.size !== 0) return
+    installation.dispose()
+    installations.delete(root)
+  }
 }
 
-/** 只适配公开服务；步骤集合拥有准入，裸装配只产生展示，不自动 resolve。 */
-export function installToolStepAssembly(ctx: Context, options: Options): () => void {
-  const wrappers = new WeakMap<ResolvedToolSet, ResolvedToolSet>()
-  const snapshots = new WeakMap<ToolStep, PromptAssembly>()
-  const settling = new WeakMap<ToolStep, Promise<PromptAssembly>>()
-  const closes = new Set<() => void>()
+function createInstallation(ctx) {
+  const owners = new Set()
+  const wrappers = new WeakMap()
+  const snapshots = new WeakMap()
+  const settling = new WeakMap()
+  const closes = new Set()
   let active = true
-  const unavailable = () => Object.assign(new Error('prompt-tool: tool step is pending or closed'), { code: 'TOOL_STEP_UNAVAILABLE' })
-  const wrap = (original: ResolvedToolSet, context: ToolActivationContext): ResolvedToolSet => {
+  const selected = agent => [...owners].filter(owner => owner.knows(agent))
+  const wrap = (original, context) => {
     const existing = wrappers.get(original)
     if (existing !== undefined) {
       if (toolStepOf(existing, context.agent) === undefined) throw new Error('prompt-tool: tool set belongs to another Agent')
       return existing
     }
-    const step: ToolStep = { status: 'pending', modelSelection: context.modelSelection === undefined
+    const step = { status: 'pending', modelSelection: context.modelSelection === undefined
       ? undefined : Object.freeze({ ...context.modelSelection }) }
-    const wrapped: ResolvedToolSet = Object.freeze({
-      view(scope: ScopeKey | undefined) {
+    const wrapped = Object.freeze({
+      view(scope) {
         const admitted = original.view(scope)
         if (step.status === 'closed') return new Map()
-        return step.allowed === undefined ? admitted : new Map([...admitted].filter(([name]) => step.allowed!.has(name)))
+        return step.allowed === undefined ? admitted : new Map([...admitted].filter(([name]) => step.allowed.has(name)))
       },
       dispose() {
         if (step.status === 'closed') return
@@ -60,49 +68,55 @@ export function installToolStepAssembly(ctx: Context, options: Options): () => v
     if ((name !== 'tools' && name !== 'systemPrompt') || service === undefined) return service
     return new Proxy(service, { get(target, property, receiver) {
       const value = Reflect.get(target, property, receiver)
-      if (name === 'tools' && property === 'resolve') return async (context: ToolActivationContext) => {
-        if (!options.knows(context.agent)) return Reflect.apply(value, target, [context])
+      if (name === 'tools' && property === 'resolve') return async context => {
+        const current = selected(context.agent)
+        if (current.length === 0) return Reflect.apply(value, target, [context])
         context.signal.throwIfAborted()
         const captured = { ...context, modelSelection: context.modelSelection === undefined
           ? context.modelSelection : Object.freeze({ ...context.modelSelection }) }
-        await options.ensureFresh(context.agent)
+        for (const owner of current) await owner.ensureFresh(context.agent)
         context.signal.throwIfAborted()
-        const original: ResolvedToolSet = await Reflect.apply(value, target, [captured])
+        const original = await Reflect.apply(value, target, [captured])
         try {
           context.signal.throwIfAborted()
           if (!active) throw unavailable()
           return wrap(original, captured)
         } catch (error) { original.dispose(); throw error }
       }
-      if (name === 'tools' && property === 'execute') return async (input: ToolBatchInput) => {
+      if (name === 'tools' && property === 'execute') return async input => {
         const step = toolStepOf(input.toolSet, input.agent)
         if (hasToolStep(input.toolSet) && step?.status !== 'sealed') throw unavailable()
         return Reflect.apply(value, target, [input])
       }
       if (name !== 'systemPrompt' || property !== 'assemble') return value
-      return async (context: AssembleContext = {}) => {
+      return async (context = {}) => {
         const agent = context.agent
-        if (agent === undefined || !options.knows(agent)) return Reflect.apply(value, target, [context])
+        const current = agent === undefined ? [] : selected(agent)
+        if (current.length === 0) return Reflect.apply(value, target, [context])
         const wrapped = context.toolSet === undefined ? undefined : wrappers.get(context.toolSet)
         if (context.toolSet !== undefined && wrapped === undefined) throw new Error('prompt-tool: assemble requires a tool set from the adapted resolve')
         const step = toolStepOf(wrapped, agent)
         if (wrapped !== undefined && step === undefined) throw new Error('prompt-tool: tool set belongs to another Agent')
         try { context.signal?.throwIfAborted() } catch (error) { wrapped?.dispose(); throw error }
         if (step?.status === 'closed') throw unavailable()
-        if (step?.status === 'sealed') return snapshots.get(step)!
-        if (step !== undefined && settling.has(step)) return settling.get(step)!
+        if (step?.status === 'sealed') return snapshots.get(step)
+        if (step !== undefined && settling.has(step)) return settling.get(step)
         const run = async () => {
           try {
             context.signal?.throwIfAborted()
-            if (step === undefined) await options.ensureFresh(agent)
+            if (step === undefined) for (const owner of current) await owner.ensureFresh(agent)
             const captured = { ...context, ...(step === undefined ? {} : { toolSet: wrapped, modelSelection: step.modelSelection }) }
-            const result = await options.assemble(captured, () => Reflect.apply(value, target, [captured]))
-            captured.signal?.throwIfAborted()
-            const final = await options.settle(result, captured)
+            const invoke = index => index === current.length
+              ? Reflect.apply(value, target, [captured]) : current[index].assemble(captured, () => invoke(index + 1))
+            let final = await invoke(0)
+            for (const owner of current) {
+              captured.signal?.throwIfAborted()
+              final = await owner.settle(final, captured)
+            }
             captured.signal?.throwIfAborted()
             if (step !== undefined) {
               if (step.status === 'closed') throw unavailable()
-              step.allowed = toolSurfaceNames(final)
+              step.allowed ??= new Set(wrapped.view(agent).keys())
               step.status = 'sealed'
               snapshots.set(step, final)
             }
@@ -115,5 +129,5 @@ export function installToolStepAssembly(ctx: Context, options: Options): () => v
       }
     } })
   }, { global: true })
-  return () => { active = false; off(); void guard.dispose(); for (const close of closes) close() }
+  return { owners, dispose() { active = false; off(); void guard.dispose(); for (const close of closes) close() } }
 }
