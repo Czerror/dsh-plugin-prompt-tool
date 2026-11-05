@@ -5,6 +5,7 @@
 - **BREAKING｜技能管理整体移除**：工作台五页收敛为四页，删除全部 `/skill*` 桥端点、`src/host/skills-*.ts`、`src/shared/skills.ts`、`src/client/features/skills/` 与 TUI 的技能开关命令；`inject` 不再等待 `skills`，peer 依赖移除 `@deepseek-ai/dsh-skill-filesystem`。技能实体与调用策略仍由官方技能根及其 frontmatter 拥有，插件不再读写。
 - **保留**：包内 `skills/` 的启动补建移入 `src/host/skill-seed.ts`（仍只补缺失、不覆盖用户副本）；`engine/skill-search.mjs` 的 `skill_search`/`skill_load` 与 `skill-surface` 模块不变，按需发现能力不受影响。
 - **升级后果**：既有 `$DSH_HOME/skills/.system/prompt-tool/skills.yml` 与回收站不再被读写，可自行删除；界面与 `/prompt-tool skill` 入口消失，用户改用技能文件本身与官方发现。
+- **指令文件编辑收成 owner**：池、策略、卡片壳与三条写路径（保存文件、保存策略、重新读取）从 923 行 store facade 移入 `src/client/data/instruction-editor.ts`，注入桥请求与会话身份；会话切换仍在 bootstrap 请求之前，`ingestSnapshot` 只回填。facade 减少 212 行，`InstructionFilesPort` 成员转发 owner、端口形状不变。新增 `test/client/instruction-editor.test.mjs` 三条 seam 回归（逐文件结果与冲突码、在途会话变化、策略 revision 乐观并发）。
 - **评审修正**：清掉 11 处残留测试替身（`skills:` 假依赖、`ctx.provide('skills')`、fixture `skillsRoot`）与 3 处文档例证；新增 [工作台页面表断言](test/client/workspace-pages.test.mjs)，页数变化不再能被静默改回。
 - **验证**：typecheck、lint、test 898 passed、build、`git diff --check` 全绿。
 

@@ -103,6 +103,10 @@
         {
           "path": "src/client/data/use-prompt-tool-store.ts",
           "label": "工作台 facade"
+        },
+        {
+          "path": "src/client/data/instruction-editor.ts",
+          "label": "指令文件编辑 owner"
         }
       ]
     },

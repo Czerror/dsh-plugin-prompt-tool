@@ -427,7 +427,9 @@ use-prompt-tool-store.ts 是唯一工作台 facade，负责把 ConfigForms mirro
 
 **参数编辑生命周期**由 `data/param-editor.ts` 的 `createParamEditor` 持有：模块条目、全局条目、读取集合及读改写协议留在闭包中，页面继续使用既有 `ParamsPort`。值转换复用 `param-overrides.ts`；store 提供当前主语/声明事实、共享保存队列、通知与跨域刷新资格。三个同步入口各保留原语义：bootstrap 快照更新全局参数；普通 load 失效并重读已保留的模块条目；模块操作后的 `/meta` 刷新只重读干净条目，保留参数值与原始输入草稿。模块参数在队列执行时取提交快照，全局参数在入队前取快照；两者均不让旧应答覆盖新编辑。发布失败与其它写端点同形：读共享 `shared/publication.ts` 的 `readPublication`，`refreshOnly` 只重试运行发布。
 
-**资源编辑器的读改写协议**（owner 的共同形状；代码级原语只有 `data/resource-track.ts`，各 owner 分别在 `data/rule-drafts.ts`、`data/module-variables.ts`、`data/instruction-drafts.ts` 与 `data/tools-editor.ts`；人设动作属于规则 owner）：
+**资源编辑器的读改写协议**（owner 的共同形状；代码级原语只有 `data/resource-track.ts`，各 owner 分别在 `data/rule-drafts.ts`、`data/module-variables.ts`、`data/instruction-editor.ts`、`data/instruction-drafts.ts` 与 `data/tools-editor.ts`；人设动作属于规则 owner）：
+
+指令文件的池、策略、卡片壳与三条写路径（保存文件、保存策略、重新读取）由 `data/instruction-editor.ts` 持有；会话切换在 `load` 的请求之前调用 `switchSession`，快照回填走 `ingestSnapshot`，`InstructionFilesPort` 的成员只是转发。纯逻辑仍在 `instruction-drafts` / `instruction-policy` / `instruction-cards`。
 
 - **版本捕获**：读时整份存快照，写时从快照取期望版本——rules（含人设动作）逐条 `rules[id]` ＋ `settings`、variables 按 `scope` ＋ `settings`、instructions 逐文件 `revision`、config-order 整表一个。**没有**统一的「版本对象」类型：各家请求形状不同，硬并会造出假共享。
 - **最新优先**：草稿/状态上的 `latest` 序号（`beginLatest` 开请求、`isLatest` 判落地）。**晚到应答既不写草稿也不清 `busy`/`loading`**——清理权归最新那次请求，否则界面会停在忙碌态。这也是为什么「迟到时不回滚」是对的，不是漏了清理。
