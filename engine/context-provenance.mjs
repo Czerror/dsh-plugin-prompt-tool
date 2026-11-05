@@ -24,6 +24,27 @@ export const configContract = defineConfig({
 const runtimes = new WeakMap()
 export const contextRuntimeOf = agent => runtimes.get(agent)
 
+// 0.2.2-rc.1 的发布形态只带 compaction-basic/pruner，@deepseek-ai/dsh-compaction 不是
+// 任何宿主包的依赖，从宿主入口解析必然失败；配对平衡是纯读逻辑，按同语义本地兜底。
+const localPairing = {
+  toolPairingBalancedBefore: (session, seq) => surfaceCutBalanced(session, seq, 0),
+  toolPairingBalancedAfter: (session, seq) => surfaceCutBalanced(session, seq, 1),
+}
+function surfaceCutBalanced(session, seq, offset) {
+  const seqs = session.surface.nodes
+  const index = seqs.indexOf(seq)
+  if (index < 0) throw new Error(`tool-pairing balance: surface seq ${seq} not found`)
+  let open = 0
+  for (let i = 0; i < index + offset; i++) {
+    const event = session.eventAt(seqs[i])
+    if (event === undefined || event.seq !== seqs[i]) throw new Error(`tool-pairing balance: surface seq ${seqs[i]} has no matching session event`)
+    if (event.type === 'assistant/message') open += event.data.message.content.filter(block => block.type === 'tool-call').length
+    else if (event.type === 'tool/result') open -= 1
+    if (open < 0) throw new Error(`tool-pairing balance: tool/result at surface seq ${seqs[i]} has no matching tool-call`)
+  }
+  return open === 0
+}
+
 /** 用真实surface位置与配对边界选区；保留尾部，不把seq当连续整数。 */
 export function compactableRange(session, measurement, retainTokens, pairing) {
   const nodes = measurement.nodes
@@ -149,8 +170,8 @@ export async function mountContextRuntime(ctx, raw, { agent, sourceModuleId }, p
 export async function apply(ctx, config, options = {}) {
   const parsed = configContract.parse(config, name)
   if (!parsed.enabled) return
-  const [{ BasicCompactionEngine: Basic }, { ToolResultPruner: Pruner }, pairing] = await Promise.all([
-    importHostCapability('@deepseek-ai/dsh-compaction-basic'), importHostCapability('@deepseek-ai/dsh-compaction-tool-result-pruner'), importHostCapability('@deepseek-ai/dsh-compaction'),
+  const [{ BasicCompactionEngine: Basic }, { ToolResultPruner: Pruner }, hostPairing] = await Promise.all([
+    importHostCapability('@deepseek-ai/dsh-compaction-basic'), importHostCapability('@deepseek-ai/dsh-compaction-tool-result-pruner'), importHostCapability('@deepseek-ai/dsh-compaction').catch(() => undefined),
   ])
-  return mountContextRuntime(ctx, parsed, options, { Basic, Pruner, pairing })
+  return mountContextRuntime(ctx, parsed, options, { Basic, Pruner, pairing: hostPairing ?? localPairing })
 }
