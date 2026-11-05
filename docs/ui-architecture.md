@@ -91,6 +91,7 @@
     │  ├─ import-files.ts
     │  ├─ instruction-cards.ts
     │  ├─ instruction-drafts.ts
+    │  ├─ instruction-editor.ts
     │  ├─ instruction-policy.ts
     │  ├─ layer-cards.ts
     │  ├─ module-actions.ts
@@ -387,7 +388,7 @@ workspace-pages.ts 是页面元数据的唯一来源。默认页为 features，�
 | 工具、规则动作、原始 JSON/数字草稿 | store.editorDrafts / workspace-drafts | 按预设和字段身份保留；未存草稿或保存中在覆盖导入时按模块拦截（`poolDirty`）；改名迁移、删除清理对应字段 |
 | 模块规则与条件/动作字段草稿 | rule-drafts + use-rule-editor | 每模块单一 owner、读取去重、稳定编辑 key；改名/删除保留 previousId；CAS 失败和请求期间的新编辑不丢失 |
 | 指令文件正文草稿 | instruction-drafts | 与预设保存队列分离；按指令上下文（`contextId`）隔离，旧上下文迟到响应不覆盖当前视图 |
-| 指令文件卡壳与视图 | instruction-cards 投影（`instructionShellsRef` + 池 + 策略） | 壳只来自 `/bootstrap` 的指令卡会话段（descriptor 不提供该输入，壳来源过滤在 `instructionShellsFrom`）；`fields.instructionCards` 永远是三者投影的结果，不是编辑源 |
+| 指令文件卡壳与视图 | instruction-editor 投影（壳 + 池 + 策略） | 壳只来自 `/bootstrap` 的指令卡会话段（descriptor 不提供该输入，壳来源过滤在 `instructionShellsFrom`）；`fields.instructionCards` 永远是三者投影的结果，不是编辑源 |
 | 导入预览与提交阶段 | use-import-preview-flow | 每次 `run()` 独立生命周期；卸载结束等待、不悬挂 Promise |
 | 创建意图、菜单、删除/导入确认、拖拽 | 对应 feature | 仍随页面卸载失效；不恢复或重放危险操作 |
 | 模板创建目标与发布结果 | template-rule-writer + rule-drafts | 目标意图归视图，显式 moduleId 写入、声明与结果接纳归数据侧；不依赖 owner/readback。共享草稿保存完整成功响应和发布状态，离页只抑制提示／展开，不丢已提交事实；未启用目标的状态仍仅存工作台会话，启用后沿既有 refreshOnly 重试 |
@@ -795,7 +796,7 @@ tool-catalog 填充来源沿现有普通注入表单编辑：params.action 引�
 | seam | 覆盖位置 |
 |---|---|
 | 引擎注入行为（插入点 / 时机 / 次数 / 受众） | `test/engine/*.test.mjs` |
-| 写盘产物语义 | `test/host/write-module.test.mjs`、`test/host/module-*.test.mjs`、`test/host/module-slices.test.mjs`、`test/host/global-params.test.mjs`（全局层写/删键/空层回收与优先级）、`test/host/skill-seed.test.mjs`（内置技能只补缺失、不覆盖用户副本） |
+| 写盘产物语义 | `test/host/write-module.test.mjs`、`test/host/module-*.test.mjs`、`test/host/module-slices.test.mjs`、`test/host/global-params.test.mjs`（全局层写/删键/空层回收与优先级）、`test/host/skill-seed.test.mjs`（内置技能只补缺失、不覆盖用户副本）、`test/client/instruction-editor.test.mjs`（指令文件逐文件保存结果、在途会话变化、策略 revision 乐观并发） |
 | bridge 端点载荷 | `test/shared/bridge-contract.test.mjs`、`test/client/bridge-client.test.mjs`、`test/host/settings-bridge.test.mjs`、`test/host/publication-state.test.mjs`、`test/host/*-bridge.test.mjs`、`test/client/*.test.mjs`（固定卡接线、请求主语与渲染链路，含 layer-cards、instruction-cards） |
 | 安全与拒绝路径 | `test/host/instructions-policy.test.mjs`、`test/host/instruction-scope-guard.test.mjs`、`test/host/module-package-import.test.mjs`、`test/host/wave1-safety.test.mjs`、`test/host/agents-cards.test.mjs`、`test/engine/instruction-files.test.mjs` |
 | UI slot / 入口注册 | `test/client/workbench-sidebar-entry.test.mjs`、`test/client/workbench-host-conventions.test.mjs`（槽位注册与释放）、`test/host/entry-surface.test.mjs`（发布导出与真实依赖门）、`test/host/tui-settings-section.test.mjs`（字段与disposer）；`test/client/rule-facts.test.mjs` 覆盖受众可见性这一渲染入口行为，不锁具体data-*形态 |

@@ -42,9 +42,9 @@ function makeEditor(responses = {}) {
   return { editor, calls, notices, setSession: (next) => { session = next } }
 }
 
-/** 一个已读入两个文件的 owner：两条都在同一上下文里，可写。 */
-function ready() {
-  const harness = makeEditor()
+/** 一个已读入两个文件的 owner：两条都在同一上下文里、都已改过，可直接保存。 */
+function ready(responses) {
+  const harness = makeEditor(responses)
   harness.editor.switchSession('session-a')
   harness.editor.ingestSnapshot({
     instructions: instructionsSnapshot('ctx-a', [file('a', 'A'), file('b', 'B')]),
@@ -58,20 +58,11 @@ function ready() {
 }
 
 test('逐文件结果：一个成功一个冲突，成功文件立即确认基线，失败草稿保留并报出原因', async () => {
-  const harness = makeEditor({
+  const harness = ready({
     agentsFile: (body) => body.fileId === 'a'
       ? { ok: true, value: { fileId: 'a', revision: 'rev-a2' } }
       : { ok: false, code: 'agents-file-conflict', message: '文件已在磁盘上变化' },
   })
-  harness.editor.switchSession('session-a')
-  harness.editor.ingestSnapshot({
-    instructions: instructionsSnapshot('ctx-a', [file('a', 'A'), file('b', 'B')]),
-    promptConfigs: { promptConfigs: [] },
-    policyResult: policyOk('policy-1'),
-    expectPolicy: harness.editor.getPolicy(),
-  })
-  harness.editor.patchText('a', 'A1')
-  harness.editor.patchText('b', 'B1')
 
   assert.equal(await harness.editor.saveFiles(), false)
 
@@ -87,21 +78,13 @@ test('逐文件结果：一个成功一个冲突，成功文件立即确认基�
 })
 
 test('在途会话变化：不再发第二个请求，迟到响应不写回草稿', async () => {
-  const harness = makeEditor({
+  let harness
+  harness = ready({
     agentsFile: () => {
       harness.setSession('session-b')
       return { ok: true, value: { fileId: 'a', revision: 'rev-a2' } }
     },
   })
-  harness.editor.switchSession('session-a')
-  harness.editor.ingestSnapshot({
-    instructions: instructionsSnapshot('ctx-a', [file('a', 'A'), file('b', 'B')]),
-    promptConfigs: { promptConfigs: [] },
-    policyResult: policyOk('policy-1'),
-    expectPolicy: harness.editor.getPolicy(),
-  })
-  harness.editor.patchText('a', 'A1')
-  harness.editor.patchText('b', 'B1')
 
   assert.equal(await harness.editor.saveFiles(), false)
 
