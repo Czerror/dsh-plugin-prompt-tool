@@ -84,13 +84,6 @@ function register(ctx, afterOverridesChange, moduleListChanged = () => {}) {
   registerSettingsBridge(ctx, {
     ns: 'prompt-tool',
     models: () => ({ available: true, providers: [] }),
-    skills: () => ({
-      skillsRoot: join(home, 'skills'),
-      folders: [],
-      listSkills: () => [],
-      setSkillPolicy: () => ({ ok: true, changed: false }),
-      patchSkillFolders: () => ({ ok: true, state: { version: 4, folders: [] }, exists: true }),
-    }),
     // 只按请求声明解析（与生产接线同形）：未声明 = 无目标，不回退任何启用模块。
     moduleDirectory: (moduleId) => moduleId === undefined ? '' : join(moduleRoot, moduleId),
     overridesChanged: afterOverridesChange, // 写盘后重建（module-enable 等端点等它完成才回响应）

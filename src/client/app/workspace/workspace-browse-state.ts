@@ -1,5 +1,3 @@
-import type { SkillStatusTab } from '../../features/skills/skill-status.ts'
-
 /** 仅保留可恢复的浏览上下文；确认、导入、拖拽与业务草稿仍由各自 owner 管理。 */
 export interface ConfigPageBrowse {
   filter: string
@@ -13,7 +11,6 @@ export function createWorkspaceBrowseState() {
   return {
     configs: new Map<string, ConfigPageBrowse>(),
     scroll: new Map<string, number>(),
-    skills: { query: '', status: 'all' as SkillStatusTab },
     tools: { query: '', selectedId: '', expanded: {} as Record<string, boolean> },
   }
 }

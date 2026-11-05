@@ -25,7 +25,7 @@ test('书房导入命令预览不写盘，只补用户选中的缺失数据并�
   writeFileSync(join(source, 'unselected.md'), 'NOT SELECTED')
   let handler
   registerTuiCommand({ inject: (_deps, callback) => callback({ commands: { register: command => { handler = command.handler } } }) },
-    'prompt-tool', () => ({ skillCatalog: [], activeSkillsDirs: [] }), () => ({}), async () => ({}),
+    'prompt-tool', () => ({}), () => ({}), async () => ({}),
     id => id === 'import-study' ? dir : '')
   const request = { moduleId: 'import-study', sourceDirectory: source, paths: ['02-墨.jsonl', 'private.md'] }
   const call = value => handler({ rawInput: 'data-import ' + JSON.stringify(value), agent: { id: 'user-session' } })

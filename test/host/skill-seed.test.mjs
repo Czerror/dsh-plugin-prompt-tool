@@ -10,7 +10,7 @@ import assert from 'node:assert/strict'
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { ensureSkillSeed, packageSkillsDir } from '../../src/host/skills-actions.ts'
+import { ensureSkillSeed, packageSkillsDir } from '../../src/host/skill-seed.ts'
 
 const tempRoot = () => mkdtempSync(join(tmpdir(), 'pt-skill-seed-'))
 

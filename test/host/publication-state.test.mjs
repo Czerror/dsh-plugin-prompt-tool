@@ -28,7 +28,6 @@ function harness(extra = '', deps = {}) {
   registerSettingsBridge(ctx, {
     ns: 'prompt-tool',
     models: () => ({ available: true, providers: [] }),
-    skills: () => ({}),
     moduleDirectory: () => target.dir,
     overridesChanged: async () => { if (state.failOverrides) throw new Error('PUBLISH_FAILED') },
     capabilityChanged: async () => { if (state.failCapability) throw new Error('PUBLISH_FAILED') },

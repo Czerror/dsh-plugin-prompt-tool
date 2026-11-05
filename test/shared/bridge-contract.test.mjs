@@ -57,25 +57,11 @@ function makeHarness(otherServices = {}, logger = undefined) {
   return { ctx, handlers: table.handlers }
 }
 
-/** 文件层调用策略的技能状态替身：技能实体留在官方技能根，插件只提供引用目录、清单与策略写入。 */
-function makeSkillsState(overrides = {}) {
-  const state = { version: 4, folders: [] }
-  return {
-    skillsRoot: 'D:/isolated/skills',
-    folders: [],
-    listSkills: () => [],
-    setSkillPolicy: () => ({ ok: true, changed: true, invocation: { modelInvocable: true, userInvocable: true } }),
-    patchSkillFolders: () => ({ ok: true, state, exists: true }),
-    ...overrides,
-  }
-}
-
-function register(skillsState = makeSkillsState(), bridgeDeps = {}) {
+function register(bridgeDeps = {}) {
   const { ctx, handlers } = makeHarness()
   registerSettingsBridge(ctx, {
     ns: 'prompt-tool',
     models: () => ({ available: true, providers: ['deepseek-official'] }),
-    skills: () => skillsState,
     ...bridgeDeps,
   })
   return handlers
@@ -244,11 +230,11 @@ test('契约：载荷字段形状不进事务——端点保留自己的错误�
   await bridgeTransaction({
     handle: (tx) => {
       assert.deepEqual(tx.record, { sessionId: 42 })
-      tx.write(400, { ok: false, code: 'skills-list-rejected', message: 'sessionId must be a string' })
+      tx.write(400, { ok: false, code: 'session-id-invalid', message: 'sessionId must be a string' })
     },
   }, txDeps())(txReq({ chunks: [JSON.stringify({ sessionId: 42 })] }), res)
   assert.equal(res.state.status, 400)
-  assert.equal(txJson(res).code, 'skills-list-rejected')
+  assert.equal(txJson(res).code, 'session-id-invalid')
 })
 
 test('契约：moduleName 的公开主语与身份安全边界', async () => {
@@ -256,7 +242,7 @@ test('契约：moduleName 的公开主语与身份安全边界', async () => {
   const subjectDir = join(userModulesDir(), 'module-name-subject')
   mkdirSync(subjectDir, { recursive: true })
   writeFileSync(join(subjectDir, 'module.yml'), 'id: module-name-subject\nname: 原名\nmodules: []\nrules: []\n', 'utf8')
-  const handlers = register(makeSkillsState(), {
+  const handlers = register({
     moduleDirectory: (id) => id === 'module-name-subject' ? subjectDir : '',
     overridesChanged: async () => { throw new Error('refresh unavailable') },
   })
@@ -270,7 +256,7 @@ test('契约：moduleName 的公开主语与身份安全边界', async () => {
   assert.equal(conflict.status, 400)
   assert.equal(JSON.parse(conflict.body).code, 'module-subject-conflict')
   const readonly = fakeRes()
-  const readonlyHandlers = register(makeSkillsState(), { moduleDirectory: () => join(tmpdir(), 'pt-module-name-readonly') })
+  const readonlyHandlers = register({ moduleDirectory: () => join(tmpdir(), 'pt-module-name-readonly') })
   await readonlyHandlers.get(path)(fakeReq({ body: { name: '新名', expectedRevision: '0'.repeat(64), expectedModuleId: 'module-name-subject' }, headers: { 'x-module-id': 'module-name-subject' } }), readonly)
   assert.equal(readonly.status, 403)
   assert.equal(JSON.parse(readonly.body).code, 'module-readonly')
@@ -365,7 +351,6 @@ test('部署总闸经桥读写 modulesEnabled', async () => {
   registerSettingsBridge({ inject: (_deps, callback) => callback(scope) }, {
     ns: 'prompt-tool',
     models: () => ({}),
-    skills: () => makeSkillsState(),
     // describe 在策略表里是 required：它的主语就是模块段，读取必须带主语头（无头 → 400）。
     moduleDirectory: () => subjectDir,
   })
@@ -388,12 +373,7 @@ test('部署总闸经桥读写 modulesEnabled', async () => {
 })
 
 test('契约：/bootstrap 聚合 meta + overrides + variables + promptConfigs 供客户端单请求消费', async () => {
-  // 技能事实用非空数据断言透传：stub 的默认空表无法区分「如实下发」与「兜底成空」。
-  const entry = { id: 'user-dsh:D:/isolated/skills:demo-skill', name: 'demo-skill', source: 'user-dsh', rank: 400, valid: true, modelInvocable: false, userInvocable: true, path: 'D:/isolated/skills/demo-skill/SKILL.md' }
-  const handlers = register(makeSkillsState({
-    folders: ['D:/referenced'],
-    listSkills: () => [entry],
-  }))
+  const handlers = register()
   const handler = handlers.get(SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.bootstrap)
   assert.ok(handler, '/bootstrap 端点未注册')
   const res = fakeRes()
@@ -401,17 +381,11 @@ test('契约：/bootstrap 聚合 meta + overrides + variables + promptConfigs �
   assert.equal(res.status, 200)
   const payload = JSON.parse(res.body)
   assert.equal(payload.ok, true)
-  // 没有编辑目标时仍返回已知的设置/技能事实，不捏造模块变量快照或版本。
+  // 没有编辑目标时仍返回已知的设置与模型事实，不捏造模块变量快照或版本。
   assert.ok(payload.meta !== undefined && payload.meta.meta !== undefined)
   assert.deepEqual(payload.overrides.overrides, {}, '无激活模块时参数覆盖是空表（对象），不是数组或 undefined')
   assert.equal(payload.variables, undefined)
   assert.ok(Array.isArray(payload.promptConfigs.promptConfigs))
-  // 技能事实在同一聚合响应里下发：清单 + 引用目录 + 用户技能根。
-  // 调用策略不单独下发——它已经逐条表达在 skillCatalog 条目的 modelInvocable / userInvocable 里。
-  assert.deepEqual(payload.activeSkillsDirs, ['D:/isolated/skills'])
-  assert.deepEqual(payload.skillFolders, ['D:/referenced'])
-  assert.deepEqual(payload.skillCatalog, [entry])
-  assert.equal(payload.skillsComplete, false, '无注册表观测时不得宣称会话技能清单完整')
   // 空主语没有模块段：不再拿包内默认模块冒充当前模块（两个键整体缺席，不是空对象）。
   assert.equal('moduleParams' in payload, false, '空主语时 moduleParams 整体缺席')
   assert.equal('moduleFacts' in payload, false, '空主语时 moduleFacts 整体缺席')
@@ -482,7 +456,6 @@ test('契约：官方装配刻度随 /meta 与 /bootstrap 同源下发，服务�
   registerSettingsBridge(present.ctx, {
     ns: 'prompt-tool',
     models: () => ({ available: true, providers: ['deepseek-official'] }),
-    skills: () => makeSkillsState(),
   })
   const metaRes = fakeRes()
   await present.handlers.get(SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.meta)(fakeReq(), metaRes)
@@ -511,7 +484,6 @@ test('契约：官方装配刻度随 /meta 与 /bootstrap 同源下发，服务�
   registerSettingsBridge(missing.ctx, {
     ns: 'prompt-tool',
     models: () => ({ available: true, providers: ['deepseek-official'] }),
-    skills: () => makeSkillsState(),
   })
   for (const endpoint of [BRIDGE_ENDPOINTS.meta, BRIDGE_ENDPOINTS.meta]) {
     const res = fakeRes()
@@ -537,7 +509,7 @@ test('契约：复制引擎目录即可提供层契约，不依赖 src', async (
 test('契约：成功载荷统一为 { ok: true, value }', async () => {
   const handlers = register()
   // 抽样无需 settings/descriptor 依赖的端点，断言客户端 typed bridge 消费形状（res.value.*）。
-  for (const path of [SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.meta, SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.skillsList]) {
+  for (const path of [SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.meta]) {
     const handler = handlers.get(path)
     assert.ok(handler, `端点未注册: ${path}`)
     const res = fakeRes()
@@ -584,7 +556,7 @@ test('契约：JSON 端点拒绝未知字段——400 bridge-request-invalid', a
 test('契约：/rule-diagnostics 只回判定计数，未启用不入账且读取不触发求值', async () => {
   const { createRuleDiagnosticsLedger } = await import('../../src/runtime/rule-diagnostics.ts')
   const ledger = createRuleDiagnosticsLedger()
-  const handlers = register(undefined, { ruleDiagnostics: () => ledger.snapshot() })
+  const handlers = register({ ruleDiagnostics: () => ledger.snapshot() })
   const handler = handlers.get(SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.ruleDiagnostics)
   assert.ok(handler, '/rule-diagnostics 端点未注册')
   const empty = fakeRes()
@@ -620,7 +592,7 @@ test('契约：/rule-diagnostics 没有账本注入时回空账，不保留旧�
 test('契约：/rule-diagnostics 身份上限溢出可见——512 条封顶并报 dropped', async () => {
   const { createRuleDiagnosticsLedger, RULE_DIAGNOSTIC_LIMIT } = await import('../../src/runtime/rule-diagnostics.ts')
   const ledger = createRuleDiagnosticsLedger()
-  const handlers = register(undefined, { ruleDiagnostics: () => ledger.snapshot() })
+  const handlers = register({ ruleDiagnostics: () => ledger.snapshot() })
   const handler = handlers.get(SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.ruleDiagnostics)
   for (let index = 0; index <= RULE_DIAGNOSTIC_LIMIT; index += 1) {
     ledger.record({ moduleId: 'm', ruleId: `r${index}`, channel: 'agent/pre-step', outcome: 'hit' })
@@ -632,7 +604,7 @@ test('契约：/rule-diagnostics 身份上限溢出可见——512 条封顶并�
   assert.equal(payload.value.records.length, RULE_DIAGNOSTIC_LIMIT)
   assert.equal(payload.value.dropped, 1, '超限丢弃的判定次数随响应下发')
   const cleanLedger = createRuleDiagnosticsLedger()
-  const cleanHandlers = register(undefined, { ruleDiagnostics: () => cleanLedger.snapshot() })
+  const cleanHandlers = register({ ruleDiagnostics: () => cleanLedger.snapshot() })
   const cleanHandler = cleanHandlers.get(SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.ruleDiagnostics)
   const clean = fakeRes()
   await cleanHandler(fakeReq({ body: {} }), clean)
@@ -684,7 +656,7 @@ test('契约：工具预览在 schema 成功或抛错时均释放 revision lease
         return [{ name: 'example', description: 'example' }]
       } },
     })
-    registerSettingsBridge(ctx, { ns: 'prompt-tool', models: () => ({ available: true, providers: [] }), skills: () => makeSkillsState() })
+    registerSettingsBridge(ctx, { ns: 'prompt-tool', models: () => ({ available: true, providers: [] }) })
     const handler = handlers.get(SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.toolSurface)
     const res = fakeRes()
     await handler(fakeReq({ body: { presetId: 'official' } }), res)
@@ -746,15 +718,14 @@ test('契约：客户端层标签字典的键集与 /meta 下发的 layerLabels 
 // 契约声明与 host 标注挡住「类型层面的漏传」；这条挡「运行期真的没发这个键」——
 // 例如某段被条件短路、或 JSON.stringify 把 undefined 键丢掉。两者互为保险。
 
-test('契约：/bootstrap 常态下发的顶层键恰好是那 14 个（空主语、无模块段）', async () => {
+test('契约：/bootstrap 常态下发的顶层键恰好是那 11 个（空主语、无模块段）', async () => {
   const handlers = register()
   const res = fakeRes()
   await handlers.get(SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.bootstrap)(fakeReq(), res)
   assert.equal(res.status, 200)
   const payload = JSON.parse(res.body)
   assert.deepEqual(Object.keys(payload).sort(), [
-    'activeSkillsDirs', 'globalParams', 'instructions', 'meta', 'modelCatalog', 'modelsAvailable',
-    'ok', 'overrides', 'promptConfigs', 'providers', 'skillCatalog', 'skillFolders', 'skillsComplete',
-    'templatePreStepCount', 'value',
+    'globalParams', 'instructions', 'meta', 'modelCatalog', 'modelsAvailable',
+    'ok', 'overrides', 'promptConfigs', 'providers', 'templatePreStepCount', 'value',
   ], '常态清单：少一个多一个都要红。moduleParams／moduleFacts 需模块主语、variables 需声明面、modelsError 仅探测失败，故此场景不在')
 })

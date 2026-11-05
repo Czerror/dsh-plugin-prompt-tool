@@ -32,7 +32,6 @@ test('预设保存等待宿主采用；异步拒绝保留定义并可重试；�
   registerSettingsBridge(ctx, {
     ns: 'prompt-tool',
     models: () => ({}),
-    skills: () => ({}),
     moduleDirectory: () => dir,
     overridesChanged: async () => { calls++; await rebuild() },
   })

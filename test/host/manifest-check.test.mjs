@@ -156,10 +156,6 @@ test('实际插件接线：主子 Agent 自检注入遵守 TTL，压缩与重挂
   await root.plugin(NativeExecutor)
   root.provide('llm', {})
   root.provide('commands', { register: () => () => {} })
-  root.provide('skills', { registerProvider: factory => {
-    factory({ invalidate() {}, signal: new AbortController().signal })
-    return () => {}
-  } })
   root.provide('webServer', { register: () => () => {} })
   const agents = []
   root.provide('agents', { list: () => agents })

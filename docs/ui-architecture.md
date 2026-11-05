@@ -109,8 +109,6 @@
     │  ├─ session-id-source.ts
     │  ├─ session-model-face.ts
     │  ├─ session-preset-face.ts
-    │  ├─ skill-editor.ts
-    │  ├─ skill-import.ts
     │  ├─ store-ports.ts
     │  ├─ template-rule-writer.ts
     │  ├─ tools-editor.ts
@@ -155,11 +153,6 @@
     │  │  ├─ rules.module.css
     │  │  ├─ textarea-resize.ts
     │  │  └─ useTemplatePicker.tsx
-    │  ├─ skills/
-    │  │  ├─ SkillRow.tsx
-    │  │  ├─ SkillsPage.tsx
-    │  │  ├─ skill-status.ts
-    │  │  └─ skills.module.css
     │  └─ tools/
     │     ├─ CustomToolEditor.tsx
     │     ├─ CustomToolsCard.tsx
@@ -266,7 +259,7 @@ slot 使用 ctx.slots.inject() 等待官方槽位声明，再调用 ctx.slots.re
 - 组件树很深，不逐层重建 i18n 上下文：入口组件用注入的 `t`，`PromptToolWorkbenchFace.t` 作为同一 bind 结果的稳定引用向下传递（页面与卡片按需加 `t` prop）。
 - 渲染时才求值（`t('key', params)`），不做模块级缓存；语言切换由 renderer 订阅 locale revision 后整体重渲染跟进。
 - 不进字典的内容：provider/model id、文件路径、用户内容、协议 code 与 bridge 错误码；动态拼接用 `{name}` 占位参数。
-- 已迁移：工作台外壳与悬浮入口、左侧栏入口（label 经 locale thunk）、五页外壳、引擎参数卡与模块列表（标签按 shared 键推导成 `param.<键>` 词条）、规则与人设区、模块页的素材区、自定义工具卡、导入预览卡。用户定义的规则与模块名称保持原值，不作为词条翻译。
+- 已迁移：工作台外壳与悬浮入口、左侧栏入口（label 经 locale thunk）、四页外壳、引擎参数卡与模块列表（标签按 shared 键推导成 `param.<键>` 词条）、规则与人设区、模块页的素材区、自定义工具卡、导入预览卡。用户定义的规则与模块名称保持原值，不作为词条翻译。
 - 仍未迁移：`ui/` 控件的回退文案（`MenuSelect` / `TagInput` / `DialogSurface`），以及 `features/models/**` 与 `data/**` 的状态提示（这两个目录属模型路由任务的文件边界）。
 
 ### 4.3 入口与关闭行为
@@ -282,7 +275,7 @@ slot 使用 ctx.slots.inject() 等待官方槽位声明，再调用 ctx.slots.re
 
 - 采用：shell.overlay 可拖动悬浮入口；Switch 与状态徽章由插件实现。
 - 已满足、无需接入：`host-open-in-app`。`PromptToolHostApi.openPath` 走 `remote.session.openWorkspacePath`，其契约就是宿主交给原生打开器；官方 `ui-open-in-app` 客户端包不提供跨插件服务，只是会话头部的分割按钮。
-- 不适用：`ctx.workspaceFiles` 只覆盖 workspace 根，插件的读写路径域是 DSH_HOME（模块、技能）。
+- 不适用：`ctx.workspaceFiles` 只覆盖 workspace 根，插件的读写路径域是 DSH_HOME（模块）。
 - 不采用：官方右侧栏（`ui-sidebar-right`）实测不适合本项目，已移除（决策见 §4.3）；`client-resources` 资源 tab 需要自建 provider 与第二个 tab 类型，而工作台已在抽屉内就地编辑这些文件，重复呈现没有收益。
 
 ## 5. 工作台与页面信息架构
@@ -294,7 +287,6 @@ slot 使用 ctx.slots.inject() 等待官方槽位声明，再调用 ctx.slots.re
           ├─ 主会话
           ├─ 子代理
           ├─ 工具预览
-          ├─ 技能设置
           └─ 模块
 
     左侧栏入口（sidebar.panellist「提示词工具」）
@@ -313,7 +305,6 @@ workspace-pages.ts 是页面元数据的唯一来源。默认页为 features，�
 | features | 主会话 | `RulesWorkspace` 展示模块规则；原指令文件卡置于规则与诊断卡之前。页面负责模板创建和受众视图，`InjectionPointsPanel#injectionPointSlots` 提供卡内共享设置 |
 | subagent | 子代理 | 同一 `RulesWorkspace` 和 `injectionPointSlots(audience: 'subagent')`，共用模块规则草稿与模板入口；显示同源指令文件卡及指令路径提示设置 |
 | tools | 工具预览 | 顶置统一搜索；当前会话／所选预设两个可折叠分组，预设选择位于分组标题右侧；双列展开详情卡，680px 以下单列 |
-| skills | 技能设置 | 技能根与资产卡（用户技能根、创建、复制导入、技能文件夹引用）、状态与来源筛选、单一列表的 SkillRow（三行摘要、文件编辑、调用策略开关、删除） |
 | modules | 模块 | 统一模块列表（启用、新建、复制、导出、删除、打开目录、导入）及运行总闸；角色卡是导入来源 |
 
 模块页 id 为 modules，所有来源导入后都成为普通模块，统一读取模块列表。卡体只承载名称、描述、id 与状态徽章，动作放卡脚；模块被其他模块引用、仍有依赖时由同一删除守卫拦截。角色来源不维护第二份 charactersList 库存，不创建角色专属状态登记。
@@ -371,7 +362,7 @@ workspace-pages.ts 是页面元数据的唯一来源。默认页为 features，�
 - loading：保留已有数据；只有没有可展示数据时才显示骨架。
 - saving：只禁用冲突动作，不冻结其他草稿输入。
 - notice：配置保存/校验反馈位于操作区，字段错误用 aria-invalid/aria-describedby 关联；同一结果只由一个 live region 播报。
-- destructive action：配置、能力、模块、技能删除以及丢弃文件草稿使用 ConfirmDialog；取消先聚焦、请求中防重复提交，失败保留确认面，关闭后还焦。危险按钮统一为「描边染红」形态（`.pillButton[data-danger]`：透明底 + error 混色的文字与描边），确认按钮与取消按钮是同一个 `.pillButton` 胶囊（尺寸、圆角、字号一致），只以 `data-danger` 区分主次；所有删除入口共用该组件，外观不各走一套。
+- destructive action：配置、能力、模块删除以及丢弃文件草稿使用 ConfirmDialog；取消先聚焦、请求中防重复提交，失败保留确认面，关闭后还焦。危险按钮统一为「描边染红」形态（`.pillButton[data-danger]`：透明底 + error 混色的文字与描边），确认按钮与取消按钮是同一个 `.pillButton` 胶囊（尺寸、圆角、字号一致），只以 `data-danger` 区分主次；所有删除入口共用该组件，外观不各走一套。
 - 长路径与名称允许换行或在展开区提供完整可选择文本，不以原生 title 作为唯一读取入口。
 - 配置操作区与列表共用 canvas 滚动根，sticky 高度由自身 ResizeObserver 测量；短视口退回普通流，焦点与定位避开操作区。
 - 吸顶操作区自身不画背景：区内每一行都是不透明卡片（模块列表卡、过滤行卡），吸顶可读性由卡片提供；卡片之间的窄缝隙会透出滚动内容，这是不画底板的固有代价。
@@ -403,7 +394,6 @@ workspace-pages.ts 是页面元数据的唯一来源。默认页为 features，�
 | 保存队列、revision、草稿版本 | save-queue + store | 工作台挂载期 |
 | 规则判定计数与配置计数（状态栏「X/Y 规则 · A/B 模块 · N 不可用」） | `/rule-diagnostics` 只读端点 + 局部 hook | 数据就绪后读一次；`revision`（模块 + 启用位）变化时重读，否则启停模块后计数停在旧值。**只有首次读取（模块列表尚未回来）才用「读取中」顶替计数**：重载期间计数照旧显示、加载由状态点变灰表达——切模块或启停模块不该让计数消失。规则数 = 已启用模块里启用/全部配置卡（同一次响应顺带下发的 `configs`，读取失败则整段缺席、只留模块段），模块数 = `meta.modules` 的启用/全部；判定计数按「模块+规则+通道」聚合，取每个动作的最终判定（不按动作拆分），身份上限 512，超出只累加已有身份并把丢弃次数作为 `dropped` 下发（该字段保留给外部消费者与后续 UI，当前工作台不渲染）；账本随装配实例持有，`/rule-diagnostics` 只读当前实例，无实例/已释放时回空库，不串账；该段读取失败按 0 处理（不显示） |
 | 大文本和导入原文件 | 文件通道/bridge | 不进入 settings descriptor |
-| 技能调用策略 / 技能文件夹引用 | 技能文件（`SKILL.md` 的两个官方键）+ 插件状态文件（`$DSH_HOME/skills/.system/prompt-tool/skills.yml`，只存 `folders`） | 停用 = 改写该技能 frontmatter 的 `disable-model-invocation` / `user-invocable`（正文与其余字段逐字保留）；引用只登记路径。技能实体归官方各技能根所有，插件不搬迁。契约见 [skills-management.md](skills-management.md) |
 
 不新增 React Context 来广播整个 store。页面通过 usePromptToolFields selector 订阅窄切片，叶子组件接收显式值与 callback。
 
@@ -413,7 +403,7 @@ workspace-pages.ts 是页面元数据的唯一来源。默认页为 features，�
 
 规则操作在入口校验当前编辑资格，用户已发起并进入队列的显式目标保存不因切页取消。已发起的读取、写入及发布响应按共享草稿序号接纳，视图卸载不丢结果，也不让新页面卡在过期的 busy 状态。发布重试同时接纳最新正文与版本：无本地编辑时更新基线，有本地编辑且远端变化时保留输入并进入冲突；不以旧整卡覆盖新输入。模板创建的声明事实、完整响应与发布状态归共享规则草稿，不另建视图级声明缓存；“本次新建”仍是每次选择意图，不跨失败或取消传播到随后选择的既有模块。
 
-业务草稿不写 localStorage，不靠常驻五页保留。工具与规则动作只确认提交快照，保存途中继续编辑仍待存；同预设重挂共享在途状态。干净重挂重新读取远端事实，脏草稿优先保留。技能批量作用于当前结果中合法已选项，固定目标快照，完成后刷新磁盘事实并保留失败选择。
+业务草稿不写 localStorage，不靠常驻四页保留。工具与规则动作只确认提交快照，保存途中继续编辑仍待存；同预设重挂共享在途状态。干净重挂重新读取远端事实，脏草稿优先保留。
 
 ### 6.2 首屏读取与更新
 
@@ -425,7 +415,7 @@ workspace-pages.ts 是页面元数据的唯一来源。默认页为 features，�
       -> /models 按需加载并缓存模型目录
       -> page selector 订阅 fields 引用
 
-bootstrap 是首屏聚合请求，不因筛选或输入字符增加 bridge 请求。模型目录保持惰性加载；技能筛选、状态筛选和搜索在客户端完成。技能写入后局部刷新 `/skills-list`，不重载预设或指令草稿；技能页仅提供“导入技能”和“引用文件夹”两个宿主目录选择按钮，不保留浏览器上传与手动路径输入。复制导入继续经过数据层的覆盖确认与写入流程，引用只登记目录；取消、选择器失败或离页后的迟到结果不提交。
+bootstrap 是首屏聚合请求，不因筛选或输入字符增加 bridge 请求。模型目录保持惰性加载；筛选、状态筛选和搜索在客户端完成。
 
 同一 bootstrap 请求只解析一次声明的模块目录，描述身份、参数、能力事实、变量与配置卡均来自该目录。未带目标请求头时只返回全局段，moduleParams/moduleFacts/variables 缺席，overrides 为空、templatePreStepCount 为0；不投影默认模块目录。
 
@@ -437,16 +427,16 @@ use-prompt-tool-store.ts 是唯一工作台 facade，负责把 ConfigForms mirro
 
 **参数编辑生命周期**由 `data/param-editor.ts` 的 `createParamEditor` 持有：模块条目、全局条目、读取集合及读改写协议留在闭包中，页面继续使用既有 `ParamsPort`。值转换复用 `param-overrides.ts`；store 提供当前主语/声明事实、共享保存队列、通知与跨域刷新资格。三个同步入口各保留原语义：bootstrap 快照更新全局参数；普通 load 失效并重读已保留的模块条目；模块操作后的 `/meta` 刷新只重读干净条目，保留参数值与原始输入草稿。模块参数在队列执行时取提交快照，全局参数在入队前取快照；两者均不让旧应答覆盖新编辑。发布失败与其它写端点同形：读共享 `shared/publication.ts` 的 `readPublication`，`refreshOnly` 只重试运行发布。
 
-**资源编辑器的读改写协议**（owner 的共同形状；代码级原语只有 `data/resource-track.ts`，各 owner 分别在 `data/rule-drafts.ts`、`data/module-variables.ts`、`data/instruction-drafts.ts`、`data/skill-editor.ts` 与 `data/tools-editor.ts`；人设动作属于规则 owner）：
+**资源编辑器的读改写协议**（owner 的共同形状；代码级原语只有 `data/resource-track.ts`，各 owner 分别在 `data/rule-drafts.ts`、`data/module-variables.ts`、`data/instruction-drafts.ts` 与 `data/tools-editor.ts`；人设动作属于规则 owner）：
 
-- **版本捕获**：读时整份存快照，写时从快照取期望版本——rules（含人设动作）逐条 `rules[id]` ＋ `settings`、variables 按 `scope` ＋ `settings`、instructions 逐文件 `revision`、config-order 整表一个、skills 由调用方卡片持有。**没有**统一的「版本对象」类型：各家请求形状不同，硬并会造出假共享。
+- **版本捕获**：读时整份存快照，写时从快照取期望版本——rules（含人设动作）逐条 `rules[id]` ＋ `settings`、variables 按 `scope` ＋ `settings`、instructions 逐文件 `revision`、config-order 整表一个。**没有**统一的「版本对象」类型：各家请求形状不同，硬并会造出假共享。
 - **最新优先**：草稿/状态上的 `latest` 序号（`beginLatest` 开请求、`isLatest` 判落地）。**晚到应答既不写草稿也不清 `busy`/`loading`**——清理权归最新那次请求，否则界面会停在忙碌态。这也是为什么「迟到时不回滚」是对的，不是漏了清理。
-- **发布态**：所有已写盘端点统一读 `shared/publication.ts#readPublication`。普通模块保存只返回 `persisted:true`，确认提交快照后即可继续编辑，不显示待发布提示，也不据此宣称 Agent 已生效；后台发布按同模块 300ms 合并。切片失败或同步 `refreshOnly` 失败返回的显式 `publicationPending`／`publicationError` 仍由 `PublicationNotice` 提示并保留重试。rules（含人设动作）／variables／params／customTools／capability／name／install／clone×2／enable／config-order／delete 使用它；instructions 与 skills 不触发运行发布，仍分别是重读与重写。后台失败仅写日志与 `meta.publicationFailures`，工作台不渲染该字段，也不把它并入模块页会显示的 `moduleWarnings`。
+- **发布态**：所有已写盘端点统一读 `shared/publication.ts#readPublication`。普通模块保存只返回 `persisted:true`，确认提交快照后即可继续编辑，不显示待发布提示，也不据此宣称 Agent 已生效；后台发布按同模块 300ms 合并。切片失败或同步 `refreshOnly` 失败返回的显式 `publicationPending`／`publicationError` 仍由 `PublicationNotice` 提示并保留重试。rules（含人设动作）／variables／params／customTools／capability／name／install／clone×2／enable／config-order／delete 使用它；instructions 不触发运行发布，仍走重读与重写。后台失败仅写日志与 `meta.publicationFailures`，工作台不渲染该字段，也不把它并入模块页会显示的 `moduleWarnings`。
 - **失败分类**：rules 有 `READ_FIRST_CODES`（rules-conflict／module-changed／shared-alias）＋ `retryKind` 三分类；instructions 有四个冲突码的布尔分类；其它 owner 按 message 落 error。
-- **例外保持原样**：skills 用 `writing` 布尔锁 ＋ session 字符串一致性替代版本/序号（其 `seq` 还与 store 的 bootstrap 覆盖保护耦合）；config-order 的 `generation` 是闭包变量、外部不可观测。tools（`data/tools-editor.ts`）的草稿是整组工具，没有 CAS 版本，但已按统一判据记录发布态并支持 `refreshOnly` 重试。改前两家要同时动 store 的覆盖保护，仍超出「统一命名」的范围。
+- **例外保持原样**：config-order 的 `generation` 是闭包变量、外部不可观测；tools（`data/tools-editor.ts`）的草稿是整组工具，没有 CAS 版本，但已按统一判据记录发布态并支持 `refreshOnly` 重试。这两家超出「统一命名」的范围。
 - **`DraftsPort.editorDrafts` 有意不收窄**：它是 6 个消费者的入口，为「不把整池递出去」造 6 套按族的读数面，代价与收益不成比例。需要改草稿的域各自归 owner（上列五个），新域照 tools 那份样板加一个 `data/<资产>-editor.ts`。
 
-**消费方的依赖面按「端口」声明**：端口定义在 `src/client/data/store-ports.ts`（按域切：模块事实、草稿池、参数、变量、技能、指令文件、规则编辑、模块动作、通知、模型、宿主面），每个端口对应一组同源成员。组件 props、内部 helper 参数与 hook 包装写**端口交叉**（如 `store: ModuleFactsPort & DraftsPort`），不再对 `PromptToolStore` 做 `Pick`——「这张卡需要哪些面」由端口名回答，测试桩也按端口写。判别力仍是单向的：`typecheck` 抓得住"少给端口"或"端口的成员没实现"，抓不住"多要一个端口"，所以只取实际用到的端口靠逐处核对。新增卡片时先在 `store-ports.ts` 找端口，找不到再考虑新端口（而不是回退到 Pick 大接口）。
+**消费方的依赖面按「端口」声明**：端口定义在 `src/client/data/store-ports.ts`（按域切：模块事实、草稿池、参数、变量、指令文件、规则编辑、模块动作、通知、模型、宿主面），每个端口对应一组同源成员。组件 props、内部 helper 参数与 hook 包装写**端口交叉**（如 `store: ModuleFactsPort & DraftsPort`），不再对 `PromptToolStore` 做 `Pick`——「这张卡需要哪些面」由端口名回答，测试桩也按端口写。判别力仍是单向的：`typecheck` 抓得住"少给端口"或"端口的成员没实现"，抓不住"多要一个端口"，所以只取实际用到的端口靠逐处核对。新增卡片时先在 `store-ports.ts` 找端口，找不到再考虑新端口（而不是回退到 Pick 大接口）。
 
 **切页与退出时保存**：`store.persistBeforeLeave()` 在切页（`PromptWorkspace.changePage`）与退出工作台（`onClose`）时调用，只覆盖 store 能触及的两个域——**全局开关与指令文件**。**规则草稿不在此列**：它的保存入口是各模块的 rule editor 实例（组件层按 moduleId 现建），store 拿不到；它按 moduleId 留在内存里、不会因离开而丢，且有自己的显式保存。失败只提示一次并保留脏标记，**不阻断**离开。Escape/backdrop 只是收起抽屉、不等于收工，不触发保存。
 
@@ -510,7 +500,7 @@ data/bridge-client.ts 提供泛型 bridgeCall(endpoint key, typed body, subject?
 |---|---|---|---|
 | `required` | 6 | `rules`、`moduleVariables`、`customTools`、`moduleCapability`、`moduleName`、`describe` | 没有主语的调用不成立；客户端类型层要求实参，缺主语不发请求直接失败 |
 | `optional` | 5 | `bootstrap`（空主语只回全局段）、`moduleDelete`（无声明＝没有在用模块）、`promptConfigs`、`mutate`、`paramOverrides`（空主语＝全局层） | 可省；省略时不带该头，端点按自己的无目标语义处理 |
-| `none` | 28 | `meta`、`models`、`modelReasoning`、`skillsList`、`skillPolicy`、`skillRead`、`skillWrite`、`skillsFolders`、`skillsImport`、`skillsImportDirectory`、`skillCreate`、`skillDelete`、`templates`、`agentsFile`、`instructionsPolicy`、`triggers`、`assetUpload`、`assetRelease`、`exportModule`、`importModulePackage`、`moduleClone`、`moduleDuplicate`、`moduleOpen`、`moduleEnable`、`moduleConfigOrder`、`toolSurface`、`contextActivationDiagnostics`、`ruleDiagnostics` | 与模块无关，不接受该实参；带上也会被忽略 |
+| `none` | 19 | `meta`、`models`、`modelReasoning`、`templates`、`agentsFile`、`instructionsPolicy`、`triggers`、`assetUpload`、`assetRelease`、`exportModule`、`importModulePackage`、`moduleClone`、`moduleDuplicate`、`moduleOpen`、`moduleEnable`、`moduleConfigOrder`、`toolSurface`、`contextActivationDiagnostics`、`ruleDiagnostics` | 与模块无关，不接受该实参；带上也会被忽略 |
 
 **空主语只有两条语义**：`bootstrap` 的空目标是合法状态，只回全局段（指令文件卡与 session／scope 事实）——`moduleParams`／`moduleFacts` 键整体缺席（不是空对象）、`variables` 缺席、`overrides` 为空、`templatePreStepCount` 保持 `0`；`paramOverrides` 的空主语是**全局层**（存储根 `config.yml` 的 `layerSettings`，固定卡指令卡的设置区写这里），不是「没有目标」——全局层解析失败是**可诊断软失败**：`/bootstrap` 与模块装配都按「无全局层」继续（诊断随 `meta.moduleWarnings` 下发、模块页可见），只有**写**路径仍响亮 400 拒绝，不覆盖用户内容；其余模块类端点没有主语即拒绝——`required` 一律 400 `module-dir-unavailable`（`describe` 也在其中，它的主体就是模块段）。拒绝路径统一用同一个码与同一条文案。服务端只按声明解析目标（`src/host/config-store.ts` 的 `resolveEditDir`／`resolveRequestedModuleDir`），没有声明就没有目标——不回退启用表首项，不替换成包内同名模块。声明面（「`module.yml` 顶层键是否存在」）的**服务端半边已落地**：归属门的第 4 步按 `src/host/module-declarations.ts` 的 `DECLARED_SECTIONS` 判这次要用的节——**读**没声明即 400 `module-not-declared`（定义不可解析时走既有错误码，不算「没声明」），**写**不查声明面（写一个不存在的节就是创建它，写完它就被声明了）。**阶段 3 已实施**：`/meta` 的 `meta.modules[].declares` 下发顶层键名，`/bootstrap` 的模块段按声明出现，客户端按快照只决定**两件事**——①**这次读发不发**（没声明就不发该节的读，发过去也是 400）；②**空内容从哪来**（未声明的节按空渲染，保存即建立该节）。声明面**不决定界面上的卡在不在**：固定卡（指令卡及其参数设置区）永远在场、可展开、可编辑，未声明时按空内容渲染并给一行「保存即建立该节」的提示；通用资产卡（`customTools`／`variables`，按规则/配置存在）保持「没声明就不出卡、只给添加入口」的既有行为，写路径建立声明后重读 `/meta` 卡片随即出现。**阶段 4 已实施**：Agent 侧模块工具改吃显式 `moduleId`（`src/host/module-tool-target.ts` 的 `MODULE_ID_PARAM` 与 `resolveModuleToolTarget`），给不出目标即拒绝、不再取装配记录 `[0]`；TUI 的主语由**用户显式声明**（`/prompt-tool module <id>` 记进该 Agent 会话，单条命令的 `module <id> …` 前缀可覆盖并成为新主语，既不带主语又未声明过即拒绝），内存态、按 agent 隔离、不持久化。
 
@@ -524,10 +514,6 @@ bridge-transport.ts 只负责 HTTP/Blob 传输和结果 shape guard：
     失败：{ ok: false, code?, message?, conflicts? }
 
 host 侧的边界只有一处：`src/runtime/bridge-transaction.ts` 的事务入口。全部桥端点经它注册，loopback／Origin 校验、只收 POST、32 MiB 上限与 JSON 对象形状在一次请求里由事务完成，端点的 handler 只写业务判断（`tx.record`／`tx.write`／`tx.editDir`）。主语头形状在事务边界**之后**判定（`src/runtime/bridge-runtime.ts` 的注册通道／route 层）：`invalid` 一律 400 `module-identity-invalid` 并终止，与端点自身的 `required`／`optional`／`none` 策略无关；放在 handler 内层是为了不把 403（非 loopback）／405（非 POST）挡在自守边界之前。声明 `body: 'none'` 的端点（`/meta`、`/describe`、`/templates`、`/triggers`、`/asset-upload`）不消费请求流：它们在事务里既不解析也不排空，原始流由端点自己从 `tx.req` 读。新增端点默认继承完整边界，因此拒绝路径的测试面覆盖全部路径，而不是抽样两个端点。
-
-技能导入同名时返回 `skills-overwrite-required` 与目录名单，由技能页复用 ConfirmDialog 等待用户选择。
-确认后以 `overwrite` 名单重发原载荷；取消或页面卸载结束等待，不发覆盖请求。两个导入入口共用
-`data/skill-import.ts` 的确认协议；该协议不使用内容版本或历史备份。
 
 JSON bridge 的统一上限为 32 MiB；原始文件上传独立限制为 64 MiB，避免 base64 膨胀。transport 不解析 feature 数据，也不拥有 Fields。
 
@@ -544,21 +530,20 @@ JSON bridge 的统一上限为 32 MiB；原始文件上传独立限制为 64 MiB
 7. 模块写入携带 expectedModuleId，模块目标由既有请求上下文解析，载荷身份只作校验。读回失败的工具不降级为空列表供覆盖；跨模块旧草稿拒绝，切换等待保存队列。
 8. 模块类读写的目录一律由请求头 `x-module-id` 定位；写端点另在载荷带 `expectedModuleId` 作一致性校验（不一致 400、与当次目录不符 409），载荷不能替请求头选路径；缺头即不发该次请求（§7.1.1），不写 settings、不切换官方会话预设。主语不成立时依赖它的公共参数与模板变量不写盘。逐卡规则事务使用独立模块草稿、显式请求身份与版本，在同一保存队列执行，不受另一主语限制。
 
-9. 技能清单和策略均不进 settings：单端调用策略走 `/skill-policy`（`name/path/side/enabled/sessionId?`，服务器在同工作区重新校验身份；显式两端操作可用 `scope`），引用走 `/skills-folders`，清单走 `/skills-list`。快照保留 `complete`，空数组是权威空结果；调用声明和当前会话注册状态分别呈现。创建/导入走既有端点；删除提交 `name/path/sessionId?`，确认框与请求使用同一条目，用户根及显式引用根按服务器能力开放回收站删除。契约见 [skills-management.md](skills-management.md)。
-10. 指令文件正文走独立草稿池（`data/instruction-drafts.ts`），模块保存与装配集合变化不带文件正文。离开文件卡或折叠前提交 dirty 文件，输入、停顿与输入法组合期间不提交；保存成功只确认请求时快照。在途新输入仍聚焦时保留草稿，已离卡则在当前保存成功后补交最终值。冲突/失败保留草稿并显示「重新读取」。会话或工作区切换建立新的指令上下文：旧上下文的迟到响应不覆盖当前视图，旧 `contextId` 保存由服务端 409 拒绝。
+9. 指令文件正文走独立草稿池（`data/instruction-drafts.ts`），模块保存与装配集合变化不带文件正文。离开文件卡或折叠前提交 dirty 文件，输入、停顿与输入法组合期间不提交；保存成功只确认请求时快照。在途新输入仍聚焦时保留草稿，已离卡则在当前保存成功后补交最终值。冲突/失败保留草稿并显示「重新读取」。会话或工作区切换建立新的指令上下文：旧上下文的迟到响应不覆盖当前视图，旧 `contextId` 保存由服务端 409 拒绝。
     指令上下文优先读取存活本地 Agent 的 `session.header.cwd`；浏览尚未恢复 Agent 的历史会话时，使用官方 `sessionPersistence.stat(sessionId)` 只读 header 恢复工作区，不创建 Agent、不读取整份日志。仅会话记录或服务不存在时回退部署 cwd，读取异常按桥端点失败反馈。普通字段草稿在读取期间变化时仍回填指令上下文与文件卡，不以模块或全局参数编辑阻断文件卡显示；文件正文与策略的并发保护保持独立。
-11. 指令负责人事实来自 `/bootstrap` 的 `instructions.owner.officialInstructions`：`true` 仅在观察到官方装配时出现，但读协调器观察结果的通道已删除、载荷恒为 `null`（见 [ADR-0009](adr/0009-instruction-owner-observed-only.md)），重建上报链前没有生产者。对规则来源不写 `false`——那是插件观察不到的否定事实，三态因此收敛为「观察到 / 未观察到」。文件可读与官方已装配都不能显示为该文件「已经注入」；官方未装配时插件不补建文件注入。
-12. 不再提供「独立指令文件来源」总开关。文件卡启停仅写独立策略 `files[fileId].enabled`，默认放行；关闭只拦截后续官方注入，不撤回历史，重新开启不强制重放。策略不可读时禁用策略编辑，保留诊断；应答成功前不乐观显示已保存。名称与开关跨预设共享，位置、顺序、晋升、受众和模型范围不属于文件卡控制项。
-13. bootstrap 与策略快照均读取完成后再应用，异步边界复核请求序号、会话与草稿状态。暂时离开工作区只暂停文件写资格，保留草稿与版本基线；返回并读取时，版本未变可继续保存，版本变化仍须解决冲突。
-14. 列表保存按钮等待真实 `Promise<boolean>` 结果；文件或预设部分失败时不显示整体成功、不以静默重载清除错误。已经成功保存的文件立即更新其基线，不因后续失败回滚或丢失确认。
-15. 配置排序走 typed `moduleConfigOrder` 端点，服务端校验身份集合与 revision，拒绝未知、重复身份及过期版本。顺序写回 `module.yml.configOrder`，客户端不提交正文、文件路径或序号；模块启用或停用均可保存自身排序，总闸关闭仍可改排序定义。拖拽落点用指针半高判据（`clientY` 对卡片中线）给出「插到目标前/后」，重排**不改卡定义**：可移动集合由 `sameConfigPosition` 过滤（跨插入点的目标不在集合内、原样不写），`system-section` / `runtime-context` 卡的官方档位不参与排序请求，只决定初始槽位。
-16. 两级变量内容校验所选 global/module 域，模块开关校验 settings。草稿按模块+scope分开，切范围不串输入；空字符串保存为值，删行才删除。后台读回和保存只确认对应请求快照，冲突保留编辑。变量值更新不重挂，开关变化只登记后台发布；切片失败或同步重试失败仍可返回 persisted 与 publicationPending，显示“已保存但未发布”。refreshOnly 等待真实发布结果，不重放变量写入；后台运行失败不写入草稿提示。存储边界见 [后端框架](architecture-params.md)。
+10. 指令负责人事实来自 `/bootstrap` 的 `instructions.owner.officialInstructions`：`true` 仅在观察到官方装配时出现，但读协调器观察结果的通道已删除、载荷恒为 `null`（见 [ADR-0009](adr/0009-instruction-owner-observed-only.md)），重建上报链前没有生产者。对规则来源不写 `false`——那是插件观察不到的否定事实，三态因此收敛为「观察到 / 未观察到」。文件可读与官方已装配都不能显示为该文件「已经注入」；官方未装配时插件不补建文件注入。
+11. 不再提供「独立指令文件来源」总开关。文件卡启停仅写独立策略 `files[fileId].enabled`，默认放行；关闭只拦截后续官方注入，不撤回历史，重新开启不强制重放。策略不可读时禁用策略编辑，保留诊断；应答成功前不乐观显示已保存。名称与开关跨预设共享，位置、顺序、晋升、受众和模型范围不属于文件卡控制项。
+12. bootstrap 与策略快照均读取完成后再应用，异步边界复核请求序号、会话与草稿状态。暂时离开工作区只暂停文件写资格，保留草稿与版本基线；返回并读取时，版本未变可继续保存，版本变化仍须解决冲突。
+13. 列表保存按钮等待真实 `Promise<boolean>` 结果；文件或预设部分失败时不显示整体成功、不以静默重载清除错误。已经成功保存的文件立即更新其基线，不因后续失败回滚或丢失确认。
+14. 配置排序走 typed `moduleConfigOrder` 端点，服务端校验身份集合与 revision，拒绝未知、重复身份及过期版本。顺序写回 `module.yml.configOrder`，客户端不提交正文、文件路径或序号；模块启用或停用均可保存自身排序，总闸关闭仍可改排序定义。拖拽落点用指针半高判据（`clientY` 对卡片中线）给出「插到目标前/后」，重排**不改卡定义**：可移动集合由 `sameConfigPosition` 过滤（跨插入点的目标不在集合内、原样不写），`system-section` / `runtime-context` 卡的官方档位不参与排序请求，只决定初始槽位。
+15. 两级变量内容校验所选 global/module 域，模块开关校验 settings。草稿按模块+scope分开，切范围不串输入；空字符串保存为值，删行才删除。后台读回和保存只确认对应请求快照，冲突保留编辑。变量值更新不重挂，开关变化只登记后台发布；切片失败或同步重试失败仍可返回 persisted 与 publicationPending，显示“已保存但未发布”。refreshOnly 等待真实发布结果，不重放变量写入；后台运行失败不写入草稿提示。存储边界见 [后端框架](architecture-params.md)。
 
 模板创建沿用同一规则事务，但使用 `createRule` 直接提交解析后的规则对象；不要求规则卡 owner 已加载或先读回 `/rules`。缺少 `rules` 的目标模块按空基线首写，重复创建在目标模块内按规则 id 自动加后缀。三位身份校验仍适用于首写和普通写入：头体冲突 400 `module-subject-conflict`、目标切换 409 `module-changed`、系统或只读目录 403 `module-readonly`。普通保存写盘与切片验证后即回 200 + `persisted`；提交后切片失败仍回 `persisted/publicationPending`，规则卡与模块页通过同步 `refreshOnly` 恢复，不重放规则写入。未启用目标的该状态只在当前工作台会话保留，启用并挂载规则卡后重试；刷新工作台不恢复该状态。后台运行失败不触发这些提示。
 
-**宿主写盘原语**：进程内同 key 串行由 `src/shared/target-queue.ts#createTargetQueue` 统一（agents-cards、module-package 按目标 key；bridge 两个队列、client save-queue、agent-assembly、skills-runtime 是单 key 全链适配；key 由调用方规范化，不同 key 互不阻塞，前一个失败不毒化后一个）。跨进程互斥只在模块类写路径由 `host/module-write.ts#withModuleLock` 提供；skills 文本、agents 文件与客户端队列没有跨进程锁，靠版本复核兜底。
+**宿主写盘原语**：进程内同 key 串行由 `src/shared/target-queue.ts#createTargetQueue` 统一（agents-cards、module-package 按目标 key；bridge 两个队列、client save-queue、agent-assembly 是单 key 全链适配；key 由调用方规范化，不同 key 互不阻塞，前一个失败不毒化后一个）。跨进程互斥只在模块类写路径由 `host/module-write.ts#withModuleLock` 提供；agents 文件与客户端队列没有跨进程锁，靠版本复核兜底。
 
-文本 CAS 由 `src/host/versioned-text.ts#replaceVersionedText` 统一「读版本 → 校验 expectedRevision → prepare → beforeReplace 再读并 recheck（可选）→ `host/text-file.ts#atomicWriteTextFile`」；prepare 返回 undefined 或原文相同则不写盘。错误码/status 由各域的 `conflict()` 与 prepare/recheck 提供；原语不接管锁、队列或 publication。承接域：config-store、module-variables、instructions-policy、agents-cards、skills-content、skills-policy、skills-config、module-slices（module.yml）；config-store/instructions-policy/skills-config 仅靠 revision 复核，不额外传 recheck。module-package 的目录安装与 module-config-order 的多文件排序回滚仍归各自域，后者继续走 module.yml 提交路径与 bridge 排序队列。
+文本 CAS 由 `src/host/versioned-text.ts#replaceVersionedText` 统一「读版本 → 校验 expectedRevision → prepare → beforeReplace 再读并 recheck（可选）→ `host/text-file.ts#atomicWriteTextFile`」；prepare 返回 undefined 或原文相同则不写盘。错误码/status 由各域的 `conflict()` 与 prepare/recheck 提供；原语不接管锁、队列或 publication。承接域：config-store、module-variables、instructions-policy、agents-cards、module-slices（module.yml）；config-store/instructions-policy 仅靠 revision 复核，不额外传 recheck。module-package 的目录安装与 module-config-order 的多文件排序回滚仍归各自域，后者继续走 module.yml 提交路径与 bridge 排序队列。
 
 四类文本编辑复用 `data/use-autosave.ts` 的逻辑焦点、最新回调、输入法与身份清理，不再有输入停顿计时器。规则 identity 绑定模块主语和稳定条目key；离卡通过下一帧确认逻辑焦点，卡内控件及其portal之间移焦不提交。离卡、折叠、手动保存及选项提交仍由领域编辑器检查写资格；未加载、忙态、未完成字段和远端冲突继续拒写并保留草稿，不建立自动重试队列。组合输入在失焦后才结束时补交最终值；身份变化取消旧回调。折叠卸载早于离区回调时，只兑现同身份、已发生失焦且组合已结束的提交，未离区的卸载不额外写入。后台300ms发布队列不变。
 
@@ -601,7 +586,6 @@ feature 只拥有自己的视图、瞬时状态、领域纯 helper 和 CSS：
 | modules | 模块页管理；引擎能力身份、存在性判定及「本层引擎设置」内容装配 |
 | subagents | 委派工具、子代理模型路由与采样；不重复嵌入工具面 |
 | tools | 自定义工具编辑/保存、参数模板；独立工具预览页与只读工具面 |
-| skills | 按官方六类技能根分组展示清单、来源与遮蔽判定、调用策略开关、宿主目录选择导入与引用、创建、回收站删除；契约见 [skills-management.md](skills-management.md) |
 | modules | 模块页的模块列表：启停、编辑选择、新建/克隆、导入导出、复制/删除/打开（页面壳在 `features/modules/ModulesPage.tsx`） |
 
 业务 feature 直接使用 data/bridge-client.ts 的 endpoint key；共享控件从 ui/导入。跨 feature 组合由 app/workspace/pages/完成，不在 feature 内建立第二个工作台。
@@ -617,11 +601,11 @@ ui/ 只接收 props/callback，当前真实共享 seam 包括：
 - ImportPreviewCard：导入预览卡，展示服务端同源转换报告与有损信息（warning/info/被排除条目各自滚动容器）；导入预览共用。
 - reveal-card.ts：创建后的滚动定位与重试，层设置区与配置卡共用。
 - MenuSelect：封装自有 Menu 的单选控件；触发器直接使用共享 `Button shape="pill" variant="outline"`，与“添加注入模板”“刷新”具有相同描边、字号、留白、悬停与禁用态，不另写一套胶囊外观。支持连续选项的 `group` 分组标题；标准设置使用36px，模块卡内与列表过滤行使用28px，浮层统一portal。
-- SearchInput：主会话、子代理、技能设置、工具预览共用官方 plugin-inventory 搜索形态；自带图标、H36/R12、13px/20px、左右36/34px留位、主题描边与焦点环，查询不会改变宽度，不套用配置编辑框的内容估宽。`inline` 仅表达同行伸缩布局。
-- 列表过滤行：主会话、子代理与技能页的多组件区域共用 `.listFilterRow` 卡片（10px 14px内边距、0.5px描边、R12、`bg-layer-3`），搜索与筛选、胶囊操作在同一行，空间不足时换行。工具预览只有独立搜索框，不额外包卡；卡片属于页面组合而不是SearchInput。
+- SearchInput：主会话、子代理、工具预览共用官方 plugin-inventory 搜索形态；自带图标、H36/R12、13px/20px、左右36/34px留位、主题描边与焦点环，查询不会改变宽度，不套用配置编辑框的内容估宽。`inline` 仅表达同行伸缩布局。
+- 列表过滤行：主会话与子代理的多组件区域共用 `.listFilterRow` 卡片（10px 14px内边距、0.5px描边、R12、`bg-layer-3`），搜索与筛选、胶囊操作在同一行，空间不足时换行。工具预览只有独立搜索框，不额外包卡；卡片属于页面组合而不是SearchInput。
 - CollapsibleCard、EngineModuleCard：具体可复用的折叠/模块卡形态，不是万能 Card。
 - StatusDot：6px实心状态点与3px柔和静态光晕，含success/neutral/danger/warning，语义由相邻文字表达，不使用循环动画。
-- StatusBadge：StatusDot 与自有胶囊；tone 同时驱动两者颜色，技能卡、工具预览与模块「已启用」共用。模块徽章由实际 `enabled` 且可用驱动，与卡脚开关同步；工作台不保留单一编辑目标，卡片归属由卡内文字表达，徽章不冒充启用状态。
+- StatusBadge：StatusDot 与自有胶囊；tone 同时驱动两者颜色，工具预览与模块「已启用」共用。模块徽章由实际 `enabled` 且可用驱动，与卡脚开关同步；工作台不保留单一编辑目标，卡片归属由卡内文字表达，徽章不冒充启用状态。
 - 状态徽章与内部Tag均不参与flex收缩，短状态文字保持单行；模块/角色标题承担剩余宽度并允许换行，长名称不把「使用中」挤成竖排胶囊。
 - 卡体（`.moduleCardBody`，位于 `ui/controls.module.css`）只承载内容，没有点击语义；模块卡共用同一形态，动作一律放卡脚（`.moduleCardFooter`）。需要整块可点的控件不要复用卡体。
 - ImportFileButton：隐藏原生 file input 的导入入口。
@@ -640,8 +624,6 @@ fieldset 禁用时 MenuSelect 同时拒绝 portal 中的选择。Tooltip 的键�
 菜单失焦通过relatedTarget识别自己的触发器/portal条目，跨React portal的焦点归属在下一帧复核；不在focusout微任务中先卸载菜单，以免真实鼠标的click丢失。该回归使用原生pointer按下/抬起，不能仅用element.click代替。
 
 规则卡直接复用 `CollapsibleCard` 的原卡壳、标题与 SVG 折叠箭头，受控展开只扩展现有组件。卡头操作区与展开按钮互为兄弟；原 `dragHandle` 的 `⋮⋮`、上移、下移和总开关同排。拖拽按钮保持 28px、8px 圆角与原悬停色，支持上下方向键，搜索或保存期间禁用排序。粗指针目标为 44px。数字和 JSON 原文由草稿池跨折叠/切页保留；指令卡自身 portal 内的焦点移动不视为离卡写盘。卡内的条件卡与动作卡折叠状态同样归草稿池（`store.editorDrafts.expanded`，键 = 模块 + 规则草稿键 + 路径）。
-
-技能卡复用 `configCard/configToggle/configForm`，收起摘要固定三行：名称与状态、单行描述、来源路径与弱化优先级文字。描述、名称和路径超长省略；技能不按来源分组，单一列表按来源优先级再技能名排序，来源只由来源筛选器与卡片上的来源路径承载，可调用状态保留绿色圆点与胶囊。展开区不重复名称、描述和路径，从调用开关开始；开关组没有胶囊边框或背景，模型/用户名称位于各自开关上方。底部操作按保存、重新读取、删除排列；删除靠右，窄容器自动换行而不压缩按钮。可编辑来源展开后惰性读取描述与 Markdown 正文，正文输入排除 YAML frontmatter 和头部后的分隔空行；显式保存携带完整文件版本，服务端保留原有名称、调用策略、注释与未知字段。读取失败禁用未加载的编辑器，保存失败保留草稿，重新读取脏草稿需确认。草稿与展开状态按会话和文件身份保存在工作台，跨折叠、筛选及切页保留，隐藏区域不进入键盘顺序。
 
 模块卡内的选择器、开关及小型文本/数字输入使用紧凑尺寸；大文本和 JSON 编辑器保留 `field-sizing: content`、手动纵向缩放与现有自动测高，不随紧凑控件一起压缩。
 
@@ -674,7 +656,7 @@ fieldset 禁用时 MenuSelect 同时拒绝 portal 中的选择。Tooltip 的键�
 
 普通圆角使用 `--dsw-radius-sm/md`，兼容未定义 token 的宿主时回退 8/12px；明确的胶囊使用 `999px` 并配 `corner-shape: round`。下拉切换选项时宽度随当前文字改变，不使用最长选项或字符数量估宽；展开菜单独立容纳完整选项。输入不设置 `maxLength`，超长值仍可完整编辑。字段名称不参与控件宽度与点击范围。粗指针输入、按钮和选择器的实际边框至少 H44，开关命中区域至少 44×44 且可见轨道仍为 36×20；菜单原始 pointer 落点在边框外时不打开。
 
-工作台五页以顶部 Tab 标识当前页面，内容区不再重复页名、页面概述或附加摘要。跨页导航聚焦活动 tabpanel，Tab 键导航仍聚焦页签；页面命名由 `aria-labelledby` 关联页签提供。配置卡和能力卡展开后直接显示编辑内容，不额外重复卡名或 ID；基础信息控件保留完整名称与 ID 的编辑能力。
+工作台四页以顶部 Tab 标识当前页面，内容区不再重复页名、页面概述或附加摘要。跨页导航聚焦活动 tabpanel，Tab 键导航仍聚焦页签；页面命名由 `aria-labelledby` 关联页签提供。配置卡和能力卡展开后直接显示编辑内容，不额外重复卡名或 ID；基础信息控件保留完整名称与 ID 的编辑能力。
 
 `request-params` 编辑调用字段，字符串清空删除 patch 键，数字清空删除键而 0 保留。未知动作或嵌套扩展可在 JSON 中编辑，服务端编译失败保留完整输入；改规则级 `layer` 会改「动作未声明 `config.layer` 时」的运行通道（动作自带 `config.layer` 时只改展示分组与筛选），不清除动作数据。
 
@@ -742,7 +724,7 @@ tool-catalog 填充来源沿现有普通注入表单编辑：params.action 引�
 - 工作台抽屉（shell.overlay，role=dialog + aria-modal）在抽屉内提供首尾 Tab 循环，复用 dialog-focus 的 `FOCUSABLE` / `nextDialogFocusIndex`；焦点位于 body portal 弹窗内时由弹窗自身循环接管，抽屉不拦截。
 - 弹窗只操作自己的 ref，不查询宿主页面结构。
 - 数值输入在提交点解析，草稿期保留字符串，避免输入中间态跳动。
-- 提示词排序同时提供 pointer drag 与上移/下移键盘替代；边界按钮有明确 aria-label。技能列表跟随官方来源与会话裁决，不提供自定义注册顺序。
+- 提示词排序同时提供 pointer drag 与上移/下移键盘替代；边界按钮有明确 aria-label。
 - reduced-motion 下关闭平移和过渡；focus-visible 必须清晰。
 - 外层抽屉和工作台壳使用overflow: clip；程序化定位只滚动canvas，不能把页头和导航滚出固定面板。
 
@@ -775,7 +757,6 @@ tool-catalog 填充来源沿现有普通注入表单编辑：params.action 引�
     features/prompts/prompts.module.css
     features/prompts/rules.module.css
     app/workspace/pages/layer-settings.module.css
-    features/skills/skills.module.css
     features/tools/tools.module.css
 
 约束：
@@ -812,9 +793,9 @@ tool-catalog 填充来源沿现有普通注入表单编辑：params.action 引�
 | seam | 覆盖位置 |
 |---|---|
 | 引擎注入行为（插入点 / 时机 / 次数 / 受众） | `test/engine/*.test.mjs` |
-| 写盘产物语义 | `test/host/write-module.test.mjs`、`test/host/module-*.test.mjs`、`test/host/module-slices.test.mjs`、`test/host/global-params.test.mjs`（全局层写/删键/空层回收与优先级）、`test/host/skill-policy.test.mjs` |
+| 写盘产物语义 | `test/host/write-module.test.mjs`、`test/host/module-*.test.mjs`、`test/host/module-slices.test.mjs`、`test/host/global-params.test.mjs`（全局层写/删键/空层回收与优先级）、`test/host/skill-seed.test.mjs`（内置技能只补缺失、不覆盖用户副本） |
 | bridge 端点载荷 | `test/shared/bridge-contract.test.mjs`、`test/client/bridge-client.test.mjs`、`test/host/settings-bridge.test.mjs`、`test/host/publication-state.test.mjs`、`test/host/*-bridge.test.mjs`、`test/client/*.test.mjs`（固定卡接线、请求主语与渲染链路，含 layer-cards、instruction-cards） |
-| 安全与拒绝路径 | `test/host/instructions-policy.test.mjs`、`test/host/instruction-scope-guard.test.mjs`、`test/host/skill-policy.test.mjs`、`test/host/skills-marker.test.mjs`、`test/host/module-package-import.test.mjs`、`test/host/wave1-safety.test.mjs`、`test/host/agents-cards.test.mjs`、`test/engine/instruction-files.test.mjs` |
+| 安全与拒绝路径 | `test/host/instructions-policy.test.mjs`、`test/host/instruction-scope-guard.test.mjs`、`test/host/module-package-import.test.mjs`、`test/host/wave1-safety.test.mjs`、`test/host/agents-cards.test.mjs`、`test/engine/instruction-files.test.mjs` |
 | UI slot / 入口注册 | `test/client/workbench-sidebar-entry.test.mjs`、`test/client/workbench-host-conventions.test.mjs`（槽位注册与释放）、`test/host/entry-surface.test.mjs`（发布导出与真实依赖门）、`test/host/tui-settings-section.test.mjs`（字段与disposer）；`test/client/rule-facts.test.mjs` 覆盖受众可见性这一渲染入口行为，不锁具体data-*形态 |
 
 **安全边界的守护位置**：指令文件读写（授权、上下文白名单、内容版本冲突、读取失败）、导入回滚、路径穿越、大小上限、桥端点安全面、晋升门控与 epoch 这些不变量，由上面「安全与拒绝路径」一栏的文件覆盖；改动它们需要独立授权，不得顺带删减。

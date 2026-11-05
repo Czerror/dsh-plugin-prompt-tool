@@ -35,7 +35,6 @@ function harness({ readonly = false, rebuildFails = false, afterRebuild, onResol
   registerSettingsBridge(ctx, {
     ns: 'prompt-tool',
     models: () => ({}),
-    skills: () => ({}),
     moduleDirectory: () => { onResolveTarget?.(); return activeDirectory },
     overridesChanged: async () => {
       rebuilds++

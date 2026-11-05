@@ -3,7 +3,6 @@ import type { Context } from '@deepseek-ai/cordis'
 import type { CommandResult } from '@deepseek-ai/dsh-commands'
 import type { ModelDetection } from './models.ts'
 import type { PromptSettings } from '../config.ts'
-import type { SkillCatalogEntry } from '../shared/skills.ts'
 import type { RuleDefinition } from '../shared/rules.ts'
 import { readModuleRules, editModuleRules } from '../host/module-rules.ts'
 import { resolveModuleParams } from '../host/module-params.ts'
@@ -32,7 +31,7 @@ function readModuleParams(moduleDir: string | undefined): Record<string, unknown
   }
 }
 
-type TuiSource = PromptSettings & { skillCatalog: SkillCatalogEntry[]; activeSkillsDirs: string[]; enabledModules?: readonly string[] }
+type TuiSource = PromptSettings & { enabledModules?: readonly string[] }
 
 function renderTuiStatus(source: TuiSource, params: Record<string, unknown>, rules: RuleDefinition[], moduleId: string | undefined): string {
   const onOff = (value: boolean): string => value ? '开' : '关'
@@ -49,20 +48,10 @@ function renderTuiStatus(source: TuiSource, params: Record<string, unknown>, rul
       return `${key.padEnd(22)}${onOff(paramBoolean(key))}  ${label}（模块）`
     }),
     `  modelsAvailable         ${source.modelsAvailable ? '是' : '否（未检测到模型服务商）'}`,
-    `  activeSkillsDirs        ${source.activeSkillsDirs.length > 0 ? source.activeSkillsDirs.join(' → ') : '（未解析到技能目录）'}`,
     '行为规则（条件 → 动作）:',
   ]
   for (const rule of rules) {
     lines.push(`${('config ' + rule.id).padEnd(22)}${onOff(rule.enabled !== false)}  ${rule.then.map(action => action.kind).join(' → ')}`)
-  }
-  lines.push('技能开关:')
-  for (const skill of source.skillCatalog) {
-    // 启停来自技能文件的调用策略：两端都被关掉才算停用。
-    const value = skill.modelInvocable || skill.userInvocable
-    const detail = skill.valid
-      ? (skill.modelInvocable ? '模型可调用' : '模型不可调用')
-      : `无效:${skill.issue ?? '不合法'}`
-    lines.push(`${('skill ' + skill.name).padEnd(22)}${onOff(value)}  ${skill.folder}  [${detail}]`)
   }
   return lines.join('\n')
 }
@@ -111,9 +100,6 @@ function parseIdentifierAndAction(
 /** 参数保存回调：写这次显式声明的模块 module.yml；失败必须抛给命令层渲染为错误。 */
 export type SaveModuleParam = (moduleId: string, key: string, value: unknown) => void | Promise<void>
 
-/** 技能启停回调：切换受管实体的根链接。 */
-export type ToggleSkillState = (folder: string, enabled: boolean) => { ok: boolean; message?: string }
-
 /** 通过 DSH 命令注册表暴露 /prompt-tool，Web 与 dsh-tui 都能执行。 */
 export function registerTuiCommand(
   ctx: Context,
@@ -123,7 +109,6 @@ export function registerTuiCommand(
   getModelCatalog: () => Promise<Record<string, string[]>>,
   getModuleDirectory?: (moduleId: string) => string,
   saveModuleParam?: SaveModuleParam,
-  toggleSkillState?: ToggleSkillState,
   refreshModule?: (id: string) => Promise<void>,
 ): void {
   ctx.inject(['settings'], (sctx: Context) => {
@@ -132,7 +117,7 @@ export function registerTuiCommand(
     return sctx.commands.register({
       name: 'prompt-tool',
       description: '提示词工具：查看或切换本插件开关',
-      input: { hint: 'status | module [模块id] | data-import <JSON> | on/off/toggle <开关> | skill <技能名> on/off/toggle | [module <模块id>] config <id> [on/off/toggle]' },
+      input: { hint: 'status | module [模块id] | data-import <JSON> | on/off/toggle <开关> | [module <模块id>] config <id> [on/off/toggle]' },
       handler: async (invocation): Promise<CommandResult> => {
         // 命令由用户直接调用；JSON 保留来源路径中的空格，不经过 token 拆分。
         const dataImport = /^data-import\s+([\s\S]+)$/.exec(invocation.rawInput.trim())
@@ -152,7 +137,6 @@ export function registerTuiCommand(
           kind: 'error',
           text: '用法：/prompt-tool status\n' +
             `      /prompt-tool on|off|toggle <${[...TUI_GLOBAL_SWITCHES, ...TUI_PARAM_SWITCHES].map(([key]) => key).join('|')}>\n` +
-            '      /prompt-tool skill <frontmatter 技能名> on|off|toggle\n' +
             '      /prompt-tool module <模块id>（声明本次会话主语，随后命令都作用在它上面）\n' +
             '      /prompt-tool module（显示当前声明）\n' +
             '      /prompt-tool data-import <JSON>（moduleId + sourceDirectory/paths 或 initialize:true；预览后带 expectedRevision 应用，只补缺失）\n' +
@@ -216,30 +200,6 @@ export function registerTuiCommand(
             ? `检测到的模型名: ${catalogEntries.map(([provider, models]) => `${provider} → ${models.join(', ')}`).join('；')}`
             : '未检测到模型名（adapter 未公布或查询失败）'
           return { kind: 'success', text: renderTuiStatus(source, params, rules, declared) + '\n' + providersLine + '\n' + modelsLine }
-        }
-        if (tokens[0] === 'skill') {
-          const { id, action } = parseIdentifierAndAction(tokens.slice(1), () => true)
-          if (id.length === 0) return usage()
-          commitSubject()
-          const matches = source.skillCatalog.filter((skill) => skill.name === id)
-          if (matches.length !== 1) return { kind: 'error', text: matches.length === 0
-            ? `未找到技能：${id}` : `存在多个同名技能：${id}，请在技能管理页选择具体文件` }
-          const found = matches[0]!
-          if (!found.valid) return { kind: 'error', text: `技能无效：${found.issue ?? id}` }
-          const current = found.modelInvocable || found.userInvocable
-          const next = parseTuiBoolean(action, current)
-          if (next === undefined) return usage()
-          if (toggleSkillState === undefined) {
-            return { kind: 'error', text: `无法切换技能 ${id}：技能启停回调不可用` }
-          }
-          // 技能启停 = 改写技能文件的调用策略键（正文不动），不再写 settings。
-          const toggled = toggleSkillState(id, next)
-          if (toggled.ok === false) {
-            return { kind: 'error', text: toggled.message ?? `技能 ${id} 切换失败` }
-          }
-          return { kind: 'success', text: `已把技能 ${id} 设为 ${next ? '开' : '关'}
-
-${renderTuiStatus(getSource(), readModuleParams(moduleDir), rules, declared)}` }
         }
         if (tokens[0] === 'config') {
           const { id, action } = parseIdentifierAndAction(

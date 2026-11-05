@@ -51,7 +51,6 @@ function bridgeHarness(deps = {}) {
   registerSettingsBridge(ctx, {
     ns: 'prompt-tool',
     models: () => ({ available: true, providers: [] }),
-    skills: () => ({ skillsRoot: moduleRoot, folders: [], listSkills: () => [], setSkillPolicy: () => ({ ok: true, changed: false }) }),
     moduleDirectory: (subject) => resolveRequestedModuleDir(moduleRoot, subject),
     ...deps,
   })

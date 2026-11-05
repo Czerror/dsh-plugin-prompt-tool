@@ -1,5 +1,13 @@
 # Changelog
 
+## [5.0.0] - 2026-11-06
+
+- **BREAKING｜技能管理整体移除**：工作台五页收敛为四页，删除全部 `/skill*` 桥端点、`src/host/skills-*.ts`、`src/shared/skills.ts`、`src/client/features/skills/` 与 TUI 的技能开关命令；`inject` 不再等待 `skills`，peer 依赖移除 `@deepseek-ai/dsh-skill-filesystem`。技能实体与调用策略仍由官方技能根及其 frontmatter 拥有，插件不再读写。
+- **保留**：包内 `skills/` 的启动补建移入 `src/host/skill-seed.ts`（仍只补缺失、不覆盖用户副本）；`engine/skill-search.mjs` 的 `skill_search`/`skill_load` 与 `skill-surface` 模块不变，按需发现能力不受影响。
+- **升级后果**：既有 `$DSH_HOME/skills/.system/prompt-tool/skills.yml` 与回收站不再被读写，可自行删除；界面与 `/prompt-tool skill` 入口消失，用户改用技能文件本身与官方发现。
+- **评审修正**：清掉 11 处残留测试替身（`skills:` 假依赖、`ctx.provide('skills')`、fixture `skillsRoot`）与 3 处文档例证；新增 [工作台页面表断言](test/client/workspace-pages.test.mjs)，页数变化不再能被静默改回。
+- **验证**：typecheck、lint、test 898 passed、build、`git diff --check` 全绿。
+
 ## [4.0.0] - 2026-11-05
 
 - 官方开发依赖精确对齐 DSH `0.2.2-rc.1`（28 个 DSH 包）与 Cordis `4.1.0`；最低宿主为 `0.2.2-rc.1`、Node 为 `24.9.0`。旧宿主由 DSH 兼容检查拒绝或跳过，不提供旧宿主兼容层。官方提示档位按发布类型对齐 section 34 项 / context 7 项，补齐 `TOOL_APPLY_PATCH`、`TOOL_SCHEDULE`，区段边界口径不变；`verify:host` 同时检查档位键集合的缺项与多项。

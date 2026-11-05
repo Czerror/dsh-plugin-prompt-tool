@@ -11,8 +11,7 @@ import {
   type Fields,
   type HostDefaultModel,
 } from './prompt-tool-fields.ts'
-import { bridgeViewFromBoot, fieldsFromView, skillFieldsFromSnapshot } from './prompt-tool-view.ts'
-import { createSkillEditor } from './skill-editor.ts'
+import { bridgeViewFromBoot, fieldsFromView } from './prompt-tool-view.ts'
 import {
   EMPTY_SWITCHES,
   shouldReloadAfterModuleSave,
@@ -64,7 +63,6 @@ import type {
   NoticePort,
   ParamsPort,
   RuleEditingPort,
-  SkillsPort,
   VariablesPort,
 } from './store-ports.ts'
 
@@ -95,7 +93,6 @@ export type PromptToolStore =
   & DraftsPort
   & ParamsPort
   & VariablesPort
-  & SkillsPort
   & InstructionFilesPort
   & RuleEditingPort
   & ModuleActionsPort
@@ -179,13 +176,6 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
     return created
   }, [editorDrafts])
   const [loading, setLoading] = useState(false)
-  const [skillsBusy, setSkillsBusy] = useState(false)
-  /**
-   * 技能目录族的**状态载体**：写锁（并发守卫）、序号（陈旧应答判定）、会话（上下文一致性）同属一族。
-   * 序号与会话与核心 `load` **共用**——它读序号判这次技能读是否过期、在应答落地时写会话。
-   * 忙碌态 `skillsBusy` **不在载体里**：它是 state、要触发重渲染，塞进 ref 会让忙碌态不更新。
-   */
-  const skillCatalogRef = useRef({ seq: 0, session: undefined as string | undefined, writing: false })
   const [notice, setNotice] = useState('')
   const [noticeKind, setNoticeKind] = useState<'ok' | 'error'>('ok')
   /** 通知前导胶囊（会话名）：与 notice 同批更新，清空时一并清掉。 */
@@ -341,14 +331,10 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
     })()
   }, [])
 
-  const applyView = useCallback((res: BridgeResponse<'bootstrap'>, skillsSeq: number): Fields => {
+  const applyView = useCallback((res: BridgeResponse<'bootstrap'>): Fields => {
     setModelCatalog(res.ok ? res.modelCatalog ?? {} : {})
     setHostDefaultModel(res.ok ? res.hostDefaultModel : undefined)
     const next = fieldsFromView(res)
-    if (skillsSeq !== skillCatalogRef.current.seq) {
-      const current = fieldsRef.current
-      Object.assign(next, { skillCatalog: current.skillCatalog, skillsComplete: current.skillsComplete, skillFolders: current.skillFolders, skillsRoot: current.skillsRoot })
-    }
     // descriptor 不供卡；壳由同一次 load 的 /bootstrap 会话段写入。
     instructionShellsRef.current = []
     const projected = projectInstructionFields(next)
@@ -364,7 +350,6 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
     // 并发保护：慢的旧请求不得覆盖新请求（last-good 语义保留旧数据）。
     const seq = ++loadSeqRef.current
     const metaSeq = ++metaSeqRef.current
-    const skillsSeq = skillCatalogRef.current.seq
     const draftVersion = draftVersionRef.current
     const sessionId = api.currentSessionId()
     // silent：保存后静默刷新（不闪 loading、避免重渲染风暴与滚动跳动）；失败仍报错。
@@ -403,10 +388,9 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
       // 主源，不再 await settings.ensure()——宿主全量 describe mirror 是切换模块后
       // 配置卡十几秒才出现的瓶颈。
       if (!fieldsChanged) {
-        applyView(bridgeViewFromBoot(boot), skillsSeq)
+        applyView(bridgeViewFromBoot(boot))
         // 全局参数仍保护读取期间的新输入；指令文件上下文独立回填。
         if (boot.globalParams !== undefined) paramEditorRef.current!.editor.applyGlobal(boot.globalParams)
-        if (skillsSeq === skillCatalogRef.current.seq) skillCatalogRef.current.session = sessionId
       }
       // 指令文件（独立来源）：正文、身份、版本、读取状态来自同一次读取。
       if (boot.ok && boot.instructions !== undefined) {
@@ -857,21 +841,6 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
     enqueue: enqueueRuleTask, actions: moduleActions,
   })
 
-  /**
-   * 技能目录与写入 owner：110 行实现搬进 `skill-editor.ts`，这里只做组装与转发。
-   * 依赖都是稳定的（ref / state setter / useCallback），所以只建一次。
-   */
-  const skillEditorRef = useRef<ReturnType<typeof createSkillEditor>>()
-  const skillEditor = (skillEditorRef.current ??= createSkillEditor({
-    state: skillCatalogRef,
-    currentSessionId: () => api.currentSessionId(),
-    publishSkills: (snapshot) => publishFields({ ...fieldsRef.current, ...skillFieldsFromSnapshot(snapshot) }),
-    setBusy: setSkillsBusy,
-    skillsRoot: () => fieldsRef.current.skillsRoot ?? '',
-    showNotice,
-    openPath: (path) => api.openPath(path),
-  }))
-
   const currentSwitches = snapshotSwitches(fields)
   const dirtySwitches = !switchesEqual(currentSwitches, savedSwitches)
 
@@ -915,7 +884,6 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
     reloadInstructionFile,
     instructionPolicy,
     updateInstructionPolicy,
-    skillsBusy,
     notice,
     noticeKind,
     noticePill,
@@ -949,7 +917,6 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
     createModule,
     moduleActions,
     createTemplateRule: templateWriter.current,
-    ...skillEditor,
     dirtySwitches,
   }
   return storeRef.current

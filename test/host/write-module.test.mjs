@@ -56,7 +56,6 @@ async function liveWriter(t, initial) {
   const { apply } = await import('../../src/index.ts')
   const ctx = new Context()
   t.after(() => ctx.fiber.dispose())
-  ctx.provide('skills', { registerProvider: (factory) => { factory({ invalidate() {}, signal: new AbortController().signal }); return () => {} } })
   ctx.provide('agents', { list: () => [] })
   ctx.provide('webServer', {})
   const values = { modulesEnabled: true, ...initial }

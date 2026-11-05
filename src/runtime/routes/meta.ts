@@ -40,7 +40,7 @@ export function registerMeta(runtime: MetaRuntime): Array<() => void> {
       // mtime 缓存仅解析一次。文件卡正文与 /prompt-configs 走同一读取入口。
       try {
         const meta = await runtime.loadEngineMeta()
-        const extras = await runtime.collectDescribeExtras(dir, session.sessionId)
+        const extras = await runtime.collectDescribeExtras(dir)
         const scope = await resolveInstructionScope(runtime.scope, session.sessionId)
         // 变量段与模块参数同口径：只对声明面登记的节下发，未声明就整体缺席（客户端据此不发这次读；变量卡是通用卡，缺段时走添加入口）。
         const variables = dir.length > 0 && declaresAny(declarationsOf(dir), ['variables', 'variablesEnabled'])

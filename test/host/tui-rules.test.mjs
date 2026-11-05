@@ -24,10 +24,10 @@ test('TUI 主语由用户声明：会话声明后随后命令都作用在它上�
   let rejectRefresh = false
   const savedParams = []
   const ctx = { inject: (_deps, callback) => callback({ commands: { register: command => { handler = command.handler } } }) }
-  registerTuiCommand(ctx, 'prompt-tool', () => ({ modulesEnabled: true, skillCatalog: [], activeSkillsDirs: [], enabledModules: ['tui-rules', 'tui-other'] }),
+  registerTuiCommand(ctx, 'prompt-tool', () => ({ modulesEnabled: true, enabledModules: ['tui-rules', 'tui-other'] }),
     () => ({ available: true, providers: [] }), async () => ({}),
     moduleId => resolveRequestedModuleDir(moduleRoot, moduleId),
-    async (moduleId, key, value) => { savedParams.push([moduleId, key, value]) }, undefined, async id => {
+    async (moduleId, key, value) => { savedParams.push([moduleId, key, value]) }, async id => {
       assert.equal(id, 'tui-rules'); refreshes++
       // 复刻下游真实措辞（agent-assembly 的刷新失败句）：它只说装配，不再自称「已保存」。
       if (rejectRefresh) throw new Error('运行时配装更新失败：模块 tui-rules 装配失败')
@@ -117,10 +117,10 @@ test('TUI 非法模块 id 不解引用到存储根之外：拒绝、零写盘，
   const savedParams = []
   let refreshes = 0
   const ctx = { inject: (_deps, callback) => callback({ commands: { register: command => { handler = command.handler } } }) }
-  registerTuiCommand(ctx, 'prompt-tool', () => ({ modulesEnabled: true, skillCatalog: [], activeSkillsDirs: [], enabledModules: ['tui-rules'] }),
+  registerTuiCommand(ctx, 'prompt-tool', () => ({ modulesEnabled: true, enabledModules: ['tui-rules'] }),
     () => ({ available: true, providers: [] }), async () => ({}),
     moduleId => resolveRequestedModuleDir(moduleRoot, moduleId),
-    async (moduleId, key, value) => { savedParams.push([moduleId, key, value]) }, undefined, async () => { refreshes++ })
+    async (moduleId, key, value) => { savedParams.push([moduleId, key, value]) }, async () => { refreshes++ })
   const call = rawInput => handler({ rawInput, agent: { id: 'evil-session' } })
   const bytes = readFileSync(evilFile, 'utf8')
   for (const rawInput of ['module ../evil config second on', 'module ../evil toggle instructionHint', 'module ..', 'module ../evil']) {
@@ -150,7 +150,7 @@ test('TUI直接官方settings事务切换总闸', async () => {
         }
       } },
     }) }
-    registerTuiCommand(ctx, 'prompt-tool', () => ({ modulesEnabled: readModulesEnabled(value), skillCatalog: [], activeSkillsDirs: [] }),
+    registerTuiCommand(ctx, 'prompt-tool', () => ({ modulesEnabled: readModulesEnabled(value) }),
       () => ({ available: true, providers: [] }), async () => ({}))
     const result = await handler({ rawInput: 'toggle modulesEnabled' })
     assert.equal(result.kind, 'success', result.text)

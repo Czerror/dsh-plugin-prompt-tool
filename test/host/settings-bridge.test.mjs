@@ -9,15 +9,9 @@ import { makeHostContext } from '../fixtures/host-harness.mjs'
 
 const bridgeHome = mkdtempSync(join(tmpdir(), 'pt-settings-bridge-home-'))
 process.env.DSH_HOME = bridgeHome
-// 技能扫描的其余来源一并隔离：不读到真实用户目录 / 真实内置技能目录。
 process.env.DSH_AGENTS_HOME = join(bridgeHome, 'agents')
-process.env.DSH_BUNDLED_SKILL_DIR = join(bridgeHome, 'bundled-skills')
 const { BRIDGE_ENDPOINTS, MAX_BRIDGE_BODY_BYTES, MAX_CHARACTER_CARD_STREAM_BYTES } = await import('../../src/shared/bridge-contract.ts')
 const { registerSettingsBridge } = await import('../../src/runtime/settings-bridge.ts')
-const { catalogFromScan, scanRoots, skillRoots } = await import('../../src/host/skills-scan.ts')
-const { readSkillInvocation, setSkillInvocation } = await import('../../src/host/skills-policy.ts')
-const { readSkillsState, writeSkillsState } = await import('../../src/host/skills-config.ts')
-const { deleteSkillTarget } = await import('../../src/host/skills-actions.ts')
 const { storageRootOf } = await import('../../src/host/paths.ts')
 const { moduleDeclarations } = await import('../../src/host/module-declarations.ts')
 const declares = (dir, section) => moduleDeclarations(dir).has(section)
@@ -25,26 +19,8 @@ after(() => {
   rmSync(bridgeHome, { recursive: true, force: true })
   delete process.env.DSH_HOME
   delete process.env.DSH_AGENTS_HOME
-  delete process.env.DSH_BUNDLED_SKILL_DIR
 })
 
-/** 文件层调用策略模型的技能状态替身：技能实体留在官方技能根，插件只提供引用目录与清单。 */
-function skillsStateStub(overrides = {}) {
-  const state = { version: 4, folders: [] }
-  const result = {
-    skillsRoot: join(bridgeHome, 'skills'),
-    folders: [],
-    listSkills: () => [],
-    setSkillPolicy: () => ({ ok: true, changed: true, invocation: { modelInvocable: false, userInvocable: false } }),
-    patchSkillFolders: () => ({ ok: true, state, exists: true }),
-    ...overrides,
-  }
-  result.deleteSkill ??= (name, path, cwd) => {
-    if (!result.listSkills(cwd).some((entry) => entry.name === name && entry.path === path)) return { ok: false, message: '技能已变化' }
-    return deleteSkillTarget([result.skillsRoot, ...result.folders], path)
-  }
-  return result
-}
 
 const PREFIX = '/api/prompt-tool/settings'
 const userPresetRoot = join(storageRootOf(bridgeHome), 'modules')
@@ -91,7 +67,6 @@ test('settings bridge /describe 无主语 400，有主语才返回宿主默认�
   registerSettingsBridge(ctx, {
     ns: 'prompt-tool',
     models: () => ({ available: true, providers: ['deepseek-official'] }),
-    skills: () => skillsStateStub(),
     moduleDirectory: (id) => id === undefined ? '' : dir,
   })
   const handler = handlers.get(PREFIX + BRIDGE_ENDPOINTS.describe)
@@ -140,7 +115,6 @@ test('settings bridge /meta 返回引擎能力矩阵', async () => {
   registerSettingsBridge(ctx, {
     ns: 'prompt-tool',
     models: () => ({ available: true, providers: [] }),
-    skills: () => skillsStateStub(),
   })
   const handler = handlers.get(`${PREFIX}/meta`)
   assert.ok(handler)
@@ -158,7 +132,6 @@ test('settings bridge /meta 逐模块下发同源事实：可编辑、算不出�
   registerSettingsBridge(ctx, {
     ns: 'prompt-tool',
     models: () => ({ available: true, providers: [] }),
-    skills: () => skillsStateStub(),
   })
   // 场景一：用户副本模块（显式 modules 清单）⇒ editable 真。
   const editableDir = makeUserPresetDir('facts-user-')
@@ -213,7 +186,6 @@ test('settings bridge /meta 下发声明面（顶层键名）：只声明 rules 
   registerSettingsBridge(ctx, {
     ns: 'prompt-tool',
     models: () => ({ available: true, providers: [] }),
-    skills: () => skillsStateStub(),
   })
   const res = fakeRes()
   await handlers.get(`${PREFIX}/meta`)(fakeReq(), res)
@@ -249,7 +221,6 @@ test('声明面：节首次写入＝创建（无版本期望也 200），写后�
   registerSettingsBridge(ctx, {
     ns: 'prompt-tool',
     models: () => ({ available: true, providers: [] }),
-    skills: () => skillsStateStub(),
     moduleDirectory: () => dir,
   })
   /** 判据与门的登记表同口径：该端点读写哪些节，任一「写前没有、写后存在」即算建立声明。 */
@@ -284,7 +255,7 @@ test('声明面：创建语义只认「版本期望整键缺席」——空串�
   writeFileSync(join(dir, 'module.yml'), `id: ${id}\nname: 严格创建\nmodules: []\nrules: []\n`, 'utf8')
   const { ctx, handlers } = makeHarness()
   registerSettingsBridge(ctx, { ns: 'prompt-tool', models: () => ({ available: true, providers: [] }),
-    skills: () => skillsStateStub(), moduleDirectory: () => dir })
+    moduleDirectory: () => dir })
   const call = async (endpoint, body = {}) => {
     const res = fakeRes()
     await handlers.get(PREFIX + BRIDGE_ENDPOINTS[endpoint])(fakeReq({ [Symbol.asyncIterator]: async function* () {
@@ -316,7 +287,6 @@ test('settings bridge /bootstrap 的模块段按声明出现：未声明的节�
   registerSettingsBridge(ctx, {
     ns: 'prompt-tool',
     models: () => ({ available: true, providers: [] }),
-    skills: () => skillsStateStub(),
     moduleDirectory: () => dir,
   })
   const boot = async () => {
@@ -341,84 +311,6 @@ test('settings bridge /bootstrap 的模块段按声明出现：未声明的节�
   assert.deepEqual(withSections.variables.module, { k: 'v' })
 })
 
-test('settings bridge /skills-import 写入技能文件并触发目录刷新回调', async () => {
-  const dir = mkdtempSync(join(tmpdir(), `pt-skills-import-${process.pid}-`))
-  let refreshes = 0
-  try {
-    const { ctx, handlers } = makeHarness()
-    registerSettingsBridge(ctx, {
-      ns: 'prompt-tool',
-      models: () => ({ available: true, providers: [] }),
-      skills: () => skillsStateStub({ skillsRoot: dir }),
-        afterSkillsChange: () => { refreshes += 1 },
-    })
-    const handler = handlers.get(PREFIX + BRIDGE_ENDPOINTS.skillsImport)
-    assert.ok(handler, '/skills-import 端点应注册')
-    const body = JSON.stringify({
-      files: [{
-        path: 'bundle/demo/SKILL.md',
-        content: Buffer.from('---\nname: demo\ndescription: demo\n---\n').toString('base64'),
-      }],
-    })
-    const res = fakeRes()
-    await handler(fakeReq({ [Symbol.asyncIterator]: async function* () { yield Buffer.from(body) } }), res)
-    assert.equal(res.status, 200)
-    const payload = JSON.parse(res.body)
-    assert.equal(payload.ok, true)
-    assert.equal(payload.value.count, 1)
-    assert.equal(readFileSync(join(dir, 'demo', 'SKILL.md'), 'utf8'), '---\nname: demo\ndescription: demo\n---\n')
-    assert.equal(existsSync(join(dir, '.system')), false, '导入不落受管实体库')
-    assert.equal(refreshes, 1)
-  } finally {
-    rmSync(dir, { recursive: true, force: true })
-  }
-})
-
-test('两个技能导入端点先报告冲突，确认名单才能覆盖，非法确认零写入', async () => {
-  const dir = mkdtempSync(join(bridgeHome, 'overwrite-'))
-  const source = join(dir, 'drop', 'demo')
-  const root = join(dir, 'skills')
-  mkdirSync(source, { recursive: true })
-  const marker = (body) => `---\nname: demo\ndescription: demo\n---\n${body}\n`
-  writeFileSync(join(source, 'SKILL.md'), marker('new'))
-  const { ctx, handlers } = makeHarness()
-  let refreshes = 0
-  registerSettingsBridge(ctx, { ns: 'prompt-tool', models: () => ({ available: false, providers: [] }),
-    skills: () => skillsStateStub({ skillsRoot: root }), afterSkillsChange: () => { refreshes += 1 } })
-  for (const [endpoint, body] of [
-    ['skillsImport', { files: [{ path: 'demo/SKILL.md', content: Buffer.from(marker('new')).toString('base64') }] }],
-    ['skillsImportDirectory', { path: source }],
-  ]) {
-    mkdirSync(join(root, 'demo'), { recursive: true })
-    const target = join(root, 'demo', 'SKILL.md')
-    writeFileSync(target, marker('old'))
-    const call = async (extra = {}) => {
-      const res = fakeRes()
-      await handlers.get(PREFIX + BRIDGE_ENDPOINTS[endpoint])(fakeReq({
-        async *[Symbol.asyncIterator]() { yield Buffer.from(JSON.stringify({ ...body, ...extra })) },
-      }), res)
-      return { status: res.status, body: JSON.parse(res.body) }
-    }
-    const before = refreshes
-    const waiting = await call()
-    assert.equal(waiting.status, 409)
-    assert.equal(waiting.body.code, 'skills-overwrite-required')
-    assert.deepEqual(waiting.body.conflicts, ['demo'])
-    assert.equal(readFileSync(target, 'utf8'), marker('old'))
-    assert.equal(refreshes, before)
-    for (const overwrite of [true, null, 'demo', ['../demo'], [42]]) {
-      assert.equal((await call({ overwrite })).status, 400)
-      assert.equal(readFileSync(target, 'utf8'), marker('old'))
-    }
-    assert.equal((await call({ overwrite: ['different'] })).status, 409)
-    const saved = await call({ overwrite: ['demo'] })
-    assert.equal(saved.status, 200, JSON.stringify(saved.body))
-    assert.equal(saved.body.value.overwritten, 1)
-    assert.equal(readFileSync(target, 'utf8'), marker('new'))
-    assert.deepEqual(readdirSync(root), ['demo'], '成功覆盖不保存历史目录')
-    assert.equal(refreshes, before + 1)
-  }
-})
 
 test('模板变量与参数独立保存，读取与 bootstrap 不回退旧 params 内容键', async () => {
   const { ctx, handlers } = makeHarness()
@@ -431,7 +323,7 @@ test('模板变量与参数独立保存，读取与 bootstrap 不回退旧 param
   // 声明面：顶层 `variables` 键必须存在，模块变量端点才可用（键整个不存在＝没声明）。
   writeFileSync(file, `# keep comment\nid: ${basename(dir)}\nparams: ${JSON.stringify(params)}\nlayerSettings: ${JSON.stringify(layerSettings)}\nvariables: {}\n`, 'utf8')
   registerSettingsBridge(ctx, { ns: 'prompt-tool', models: () => ({ available: true, providers: [] }),
-    skills: () => skillsStateStub(), moduleDirectory: () => dir })
+    moduleDirectory: () => dir })
   const write = handlers.get(PREFIX + BRIDGE_ENDPOINTS.moduleVariables)
   const variableRequest = (body = {}) => fakeReq({ async *[Symbol.asyncIterator]() {
     yield Buffer.from(JSON.stringify({ scope: 'module', expectedModuleId: basename(dir), ...body }))
@@ -482,7 +374,6 @@ test('请求模块身份统一 bootstrap 快照与规则写入；错误身份和
   let requestedDir = dirA
   const rebuilt = []
   registerSettingsBridge(ctx, { ns: 'prompt-tool', models: () => ({ available: true, providers: [] }),
-    skills: () => skillsStateStub(),
     moduleDirectory: (id) => id === undefined ? '' : (id === idA ? requestedDir : dirB), overridesChanged: (id) => { rebuilt.push(id) } })
   const call = async (endpoint, body = {}, options = {}) => {
     const target = Object.hasOwn(options, 'target') ? options.target : idA
@@ -589,7 +480,7 @@ test('模块配置排序端点：启用尾部追加、跨模块保存、冲突�
   const rebuilt = []
   let beforeRebuild = async () => {}
   registerSettingsBridge(ctx, { ns: 'prompt-tool', models: () => ({ available: true, providers: [] }),
-    skills: () => skillsStateStub(), moduleDirectory: () => dirs[0],
+    moduleDirectory: () => dirs[0],
     overridesChanged: async (id) => { await beforeRebuild(id); rebuilt.push(id) } })
   const call = async (endpoint, body) => {
     const handler = handlers.get(PREFIX + BRIDGE_ENDPOINTS[endpoint])
@@ -716,7 +607,7 @@ test('契约：曾由 handler 拒绝的端点统一拒绝未知顶层字段', as
   const dir = makeUserPresetDir('pt-unknown-fields-')
   writeFileSync(join(dir, 'module.yml'), `id: ${basename(dir)}\nmodules: []\n`, 'utf8')
   const { ctx, handlers } = makeHarness()
-  registerSettingsBridge(ctx, { ns: 'prompt-tool', models: () => ({ available: true, providers: [] }), skills: () => skillsStateStub(), moduleDirectory: () => dir })
+  registerSettingsBridge(ctx, { ns: 'prompt-tool', models: () => ({ available: true, providers: [] }), moduleDirectory: () => dir })
   for (const endpoint of ['assetRelease', 'exportModule', 'importModulePackage', 'moduleConfigOrder', 'moduleName', 'moduleVariables', 'rules']) {
     const result = await call(handlers, endpoint, { extra: 1 })
     assert.equal(result.status, 400, endpoint)
@@ -736,7 +627,7 @@ test('模块写队列：两个并发写不交错——后入队的写按先入�
   const { ctx, handlers } = makeHarness({}, { modulesEnabled: false })
   let beforeRebuild = async () => {}
   registerSettingsBridge(ctx, { ns: 'prompt-tool', models: () => ({ available: true, providers: [] }),
-    skills: () => skillsStateStub(), moduleDirectory: () => dirs[0],
+    moduleDirectory: () => dirs[0],
     overridesChanged: async (id) => { await beforeRebuild(id) } })
   const call = async (endpoint, body) => {
     const handler = handlers.get(PREFIX + BRIDGE_ENDPOINTS[endpoint])
@@ -783,7 +674,6 @@ test('预设列表、导出、复制、删除、新建与导入都作用于官�
     registerSettingsBridge(ctx, {
       ns: 'prompt-tool',
       models: () => ({ available: true, providers: [] }),
-      skills: () => skillsStateStub(),
         moduleDirectory: () => activeDir,
       moduleInstalled: (id) => { importedIds.push(id) },
       moduleListChanged: () => { registryRefreshes++ },
@@ -829,7 +719,6 @@ test('settings bridge：system 预设拒绝全部当前预设写入', async () =
     registerSettingsBridge(ctx, {
       ns: 'prompt-tool',
       models: () => ({ available: true, providers: [] }),
-      skills: () => skillsStateStub(),
         moduleDirectory: () => dir,
     })
     const rulesRead = fakeRes()
@@ -881,7 +770,6 @@ test('settings bridge /custom-tools 保存时自动追加工具模块', async ()
     registerSettingsBridge(ctx, {
       ns: 'prompt-tool',
       models: () => ({ available: true, providers: [] }),
-      skills: () => skillsStateStub(),
         moduleDirectory: () => dir,
       overridesChanged: () => {},
     })
@@ -905,211 +793,6 @@ test('settings bridge /custom-tools 保存时自动追加工具模块', async ()
 
 
 
-/** 用户技能根（技能实体的落点）：创建、复制导入与回收站都落在这里。 */
-function makeSkillsRoot() {
-  return mkdtempSync(join(tmpdir(), `pt-skills-root-${process.pid}-`))
-}
-
-function skillsPost(handlers, endpoint) {
-  return async (payload) => {
-    const res = fakeRes()
-    await handlers.get(PREFIX + BRIDGE_ENDPOINTS[endpoint])(fakeReq({
-      [Symbol.asyncIterator]: async function* () { yield Buffer.from(JSON.stringify(payload)) },
-    }), res)
-    return { status: res.status, body: JSON.parse(res.body) }
-  }
-}
-
-test('settings bridge 技能端点：创建 → 调用策略写入 → 恢复 → 回收站删除都落在用户技能根', async () => {
-  const root = makeSkillsRoot()
-  let refreshes = 0
-  try {
-    const { ctx, handlers } = makeHarness()
-    // 调用策略用真实文件读写（写盘幂等与恢复靠文件字节断言，不用替身假装成功）。
-    // 身份校验与生产一致：path 必须命中当次扫描的同名有效条目，否则按陈旧界面拒绝。
-    // 用户技能根在下文用 temp 目录直接给出：dshHome 不含它，所以显式列入引用目录参与扫描
-    // （.system 是点目录，一层发现天然跳过，不会被当成技能）。
-    //
-    // 清单缓存也照生产抄（index.ts：按 cwd 缓存 + 写盘后失效）：少了失效这一步，
-    // 端点返回的「新清单」就是写盘前的旧值——这正是被测用例要抓住的行为。
-    const stateFile = join(root, '.system', 'prompt-tool', 'skills.yml')
-    let catalogCache = new Map()
-    const listSkills = (cwd) => {
-      const key = String(cwd)
-      const cached = catalogCache.get(key)
-      if (cached !== undefined) return cached
-      const entries = catalogFromScan(scanRoots(skillRoots({
-        ...(cwd === undefined ? {} : { cwd }),
-        dshHome: root,
-        folders: [root, ...readSkillsState(stateFile).state.folders],
-      })))
-      catalogCache.set(key, entries)
-      return entries
-    }
-    const setSkillPolicy = (name, path, scope, cwd) => {
-      const fresh = listSkills(cwd).find((entry) => entry.name === name && entry.path === path)
-      if (fresh === undefined) return { ok: false, message: `技能已变化，请刷新后重试：${name}` }
-      if (!fresh.valid) return { ok: false, message: `技能无效，无法写入调用策略：${fresh.issue ?? name}` }
-      const written = setSkillInvocation(path, scope)
-      if (written.ok === false) return written
-      catalogCache = new Map()
-      return written
-    }
-    registerSettingsBridge(ctx, { ns: 'prompt-tool', models: () => ({ available: true, providers: [] }),
-      skills: () => skillsStateStub({ skillsRoot: root, listSkills, setSkillPolicy }), afterSkillsChange: () => { refreshes += 1 } })
-    const postCreate = skillsPost(handlers, 'skillCreate')
-    const postPolicy = skillsPost(handlers, 'skillPolicy')
-    const postDelete = skillsPost(handlers, 'skillDelete')
-    const policyOf = (marker) => {
-      const read = readSkillInvocation(marker)
-      assert.equal(read.ok, true, read.message)
-      return read.invocation
-    }
-
-    const created = await postCreate({ name: 'demo-skill', description: 'Demo', content: '# demo\n' })
-    assert.equal(created.status, 200, created.body.message)
-    assert.equal(created.body.value.id, 'demo-skill')
-    const marker = join(root, 'demo-skill', 'SKILL.md')
-    const body = readFileSync(marker, 'utf8')
-    assert.match(body, /name: demo-skill/)
-    // 技能实体是用户根里的普通目录：不建 .system 实体库、不建链接。
-    assert.equal(lstatSync(join(root, 'demo-skill')).isSymbolicLink(), false)
-    // 非法创建：名称不是 kebab-case / 超限正文都先于任何写盘拒绝。
-    assert.equal((await postCreate({ name: 'Bad Name', description: 'x', content: '' })).status, 400)
-    assert.equal((await postCreate({ name: 'other-skill', description: 'x', content: 'y'.repeat(1024 * 1024 + 1) })).status, 400)
-    assert.equal(existsSync(join(root, 'other-skill')), false)
-    assert.equal(refreshes, 1, '创建触发一次技能刷新')
-
-    // 正常写入：200 并返回**新清单**，清单里的按端事实与文件字节一致。
-    const beforeWrite = refreshes
-    const blocked = await postPolicy({ name: 'demo-skill', path: marker, scope: 'all' })
-    assert.equal(blocked.status, 200, blocked.body.message)
-    assert.equal(refreshes, beforeWrite + 1, '成功的策略写入触发一次刷新')
-    const blockedEntry = blocked.body.value.skills.find((skill) => skill.name === 'demo-skill')
-    assert.ok(blockedEntry, '响应必须带回新清单')
-    assert.deepEqual([blockedEntry.modelInvocable, blockedEntry.userInvocable], [false, false], '两端都停用')
-    assert.deepEqual(policyOf(marker), { modelInvocable: false, userInvocable: false })
-    assert.match(readFileSync(marker, 'utf8'), /^disable-model-invocation: true$/m)
-    assert.match(readFileSync(marker, 'utf8'), /^user-invocable: false$/m)
-    assert.equal(readFileSync(marker, 'utf8').includes('# demo'), true, '正文不得被改写')
-
-    // 幂等：同一 scope 重复写入不产生额外变化（第二次是零写入）。
-    const again = await postPolicy({ name: 'demo-skill', path: marker, scope: 'all' })
-    assert.equal(again.status, 200, again.body.message)
-    assert.equal(again.body.value.skills.find((skill) => skill.name === 'demo-skill').modelInvocable, false)
-    assert.deepEqual(policyOf(marker), { modelInvocable: false, userInvocable: false })
-
-    // 两端独立：只关模型端时用户端仍可调用。
-    const modelOnly = await postPolicy({ name: 'demo-skill', path: marker, scope: 'model' })
-    assert.equal(modelOnly.status, 200, modelOnly.body.message)
-    assert.deepEqual(policyOf(marker), { modelInvocable: false, userInvocable: true })
-    assert.match(readFileSync(marker, 'utf8'), /^user-invocable: true$/m)
-    // 反向：只关用户端时模型端仍可调用。
-    const userOnly = await postPolicy({ name: 'demo-skill', path: marker, scope: 'user' })
-    assert.equal(userOnly.status, 200, userOnly.body.message)
-    assert.deepEqual(policyOf(marker), { modelInvocable: true, userInvocable: false })
-
-    // 参数缺失或非法：400，先于任何写盘。
-    const beforeRejected = refreshes
-    const beforeInvalid = readFileSync(marker, 'utf8')
-    assert.equal((await postPolicy({ name: 'demo-skill', scope: 'all' })).status, 400, '缺 path')
-    assert.equal((await postPolicy({ path: marker, scope: 'all' })).status, 400, '缺 name')
-    assert.equal((await postPolicy({ name: 'demo-skill', path: marker })).status, 400, '缺 scope')
-    assert.equal((await postPolicy({ name: 'demo-skill', path: marker, scope: 'yes' })).status, 400, '非法 scope')
-    assert.equal((await postPolicy({ name: '', path: marker, scope: 'all' })).status, 400, '空 name')
-    assert.equal((await postPolicy({ name: 'demo-skill', path: '', scope: 'all' })).status, 400, '空 path')
-    assert.equal(readFileSync(marker, 'utf8'), beforeInvalid, '非法参数不得写盘')
-
-    // path 与最新扫描不一致（陈旧界面 / 伪造路径）：409，且磁盘文件逐字节不变。
-    const stale = await postPolicy({ name: 'demo-skill', path: join(root, 'demo-skill', 'OTHER.md'), scope: 'all' })
-    assert.equal(stale.status, 409, stale.body.message)
-    assert.equal(stale.body.code, 'skill-policy-rejected')
-    assert.equal(readFileSync(marker, 'utf8'), beforeInvalid, '身份校验失败不得写盘')
-    // 同名的另一个真实文件与不存在的技能名同样 409。
-    assert.equal((await postPolicy({ name: 'missing-skill', path: marker, scope: 'all' })).status, 409)
-    assert.equal((await postPolicy({ name: 'demo-skill', path: join(root, 'not-there', 'SKILL.md'), scope: 'all' })).status, 409)
-    assert.equal(readFileSync(marker, 'utf8'), beforeInvalid)
-    // 被拒的 400/409 请求一次都不触发刷新（成功写入的增量已在上面逐处校验）。
-    assert.equal(refreshes, beforeRejected, '被拒请求不触发刷新')
-
-    // 恢复：两端回到可调用。
-    const beforeRestore = refreshes
-    const restored = await postPolicy({ name: 'demo-skill', path: marker, scope: 'none' })
-    assert.equal(restored.status, 200, restored.body.message)
-    const restoredEntry = restored.body.value.skills.find((skill) => skill.name === 'demo-skill')
-    assert.deepEqual([restoredEntry.modelInvocable, restoredEntry.userInvocable], [true, true])
-    assert.deepEqual(policyOf(marker), { modelInvocable: true, userInvocable: true })
-    assert.match(readFileSync(marker, 'utf8'), /^disable-model-invocation: false$/m)
-    assert.match(readFileSync(marker, 'utf8'), /^user-invocable: true$/m)
-    assert.equal(refreshes, beforeRestore + 1, '恢复写入同样触发一次刷新')
-    // 整轮写入都不得在技能目录里留下暂存文件。
-    assert.deepEqual(readdirSync(join(root, 'demo-skill')), ['SKILL.md'])
-
-    // 回收站删除：整个技能目录移入用户根下的 .system/prompt-tool/.trash。
-    const beforeDelete = refreshes
-    const removed = await postDelete({ name: 'demo-skill', path: marker })
-    assert.equal(removed.status, 200, removed.body.message)
-    assert.equal(existsSync(marker), false)
-    const trash = readdirSync(join(root, '.system', 'prompt-tool', '.trash'))
-    assert.equal(trash.length, 1)
-    assert.equal(existsSync(join(root, '.system', 'prompt-tool', '.trash', trash[0], 'demo-skill', 'SKILL.md')), true, '技能目录可人工恢复')
-    assert.equal((await postDelete({ folder: '../escape' })).status, 400)
-    assert.equal((await postDelete({ folder: 'missing-skill' })).status, 400)
-    assert.equal(refreshes, beforeDelete + 1, '回收站删除再触发一次刷新；紧随其后的 400 拒绝请求不触发')
-  } finally { rmSync(root, { recursive: true, force: true }) }
-})
-
-test('settings bridge /skills-folders 只登记引用路径，不复制也不改动引用目录', async () => {
-  const root = makeSkillsRoot()
-  const referenced = mkdtempSync(join(tmpdir(), 'pt-skills-referenced-'))
-  const stateFile = join(root, '.system', 'prompt-tool', 'skills.yml')
-  try {
-    mkdirSync(join(referenced, 'ref-skill'), { recursive: true })
-    writeFileSync(join(referenced, 'ref-skill', 'SKILL.md'), '---\nname: ref-skill\ndescription: ref\n---\nbody\n', 'utf8')
-    const before = readFileSync(join(referenced, 'ref-skill', 'SKILL.md'), 'utf8')
-    const { ctx, handlers } = makeHarness()
-    // 引用目录进入扫描来源（custom 优先级 300），与状态文件同源。
-    // 用户技能根是 dshHome 下的 skills/：这里显式给根目录，让用户根与会话无关地可扫描。
-    const listSkills = (cwd) => catalogFromScan(scanRoots(skillRoots({
-      cwd,
-      dshHome: root,
-      folders: readSkillsState(stateFile).state.folders,
-    })))
-    registerSettingsBridge(ctx, { ns: 'prompt-tool', models: () => ({ available: true, providers: [] }),
-      skills: () => skillsStateStub({
-        skillsRoot: root,
-        listSkills,
-        patchSkillFolders: (folders) => writeSkillsState({ folders }, stateFile),
-      }) })
-    const post = skillsPost(handlers, 'skillsFolders')
-    const namesOf = (payload) => payload.value.skills.map((skill) => skill.name).sort()
-
-    const added = await post({ folders: [referenced] })
-    assert.equal(added.status, 200, added.body.message)
-    assert.deepEqual(added.body.value.folders, [referenced])
-    assert.deepEqual(readSkillsState(stateFile).state.folders, [referenced])
-    assert.deepEqual(namesOf(added.body), ['ref-skill'], '引用目录里的技能按自定义来源进入清单')
-    assert.equal(existsSync(join(root, 'ref-skill')), false, '引用只登记路径，不复制任何文件')
-    assert.equal(readFileSync(join(referenced, 'ref-skill', 'SKILL.md'), 'utf8'), before, '引用不改动源目录内容')
-
-    // 非法载荷与重复登记先于任何写盘拒绝，状态文件保持原样。
-    assert.equal((await post({ folders: 'D:/elsewhere' })).status, 400)
-    assert.equal((await post({ folders: [42] })).status, 400)
-    assert.equal((await post({ folders: [referenced, referenced] })).status, 409)
-    assert.deepEqual(readSkillsState(stateFile).state.folders, [referenced])
-
-    // 移除引用只删记录，源目录与其中的技能文件不受影响。
-    const removed = await post({ folders: [] })
-    assert.equal(removed.status, 200, removed.body.message)
-    assert.deepEqual(removed.body.value.folders, [])
-    assert.deepEqual(namesOf(removed.body), [], '移除引用后不再扫描该目录')
-    assert.deepEqual(readSkillsState(stateFile).state.folders, [])
-    assert.equal(existsSync(join(referenced, 'ref-skill', 'SKILL.md')), true)
-  } finally {
-    rmSync(root, { recursive: true, force: true })
-    rmSync(referenced, { recursive: true, force: true })
-  }
-})
 
 test('归属门：形状豁免只对「编辑目标当身份用」的端点生效——坏定义仍可删模块、可切总闸', async () => {
   const brokenDir = makeUserPresetDir('pt-broken-subject-')
@@ -1123,7 +806,6 @@ test('归属门：形状豁免只对「编辑目标当身份用」的端点生�
   registerSettingsBridge(ctx, {
     ns: 'prompt-tool',
     models: () => ({ available: true, providers: [] }),
-    skills: () => skillsStateStub(),
     moduleDirectory: () => brokenDir,
   })
   const call = async (endpoint, body) => {
@@ -1161,7 +843,7 @@ test('声明面：读没声明 400 module-not-declared，写路径建立声明�
   let dir = undeclared
   const { ctx, handlers } = makeHarness()
   registerSettingsBridge(ctx, { ns: 'prompt-tool', models: () => ({ available: true, providers: [] }),
-    skills: () => skillsStateStub(), moduleDirectory: () => dir })
+    moduleDirectory: () => dir })
 
   const before = readFileSync(join(undeclared, 'module.yml'), 'utf8')
   // 声明面逐节：每个节端点自己那条 400 都要在场——逐节断言（不是遇错即停），
@@ -1218,7 +900,7 @@ test('声明面：paramOverrides 写路径建立 layerSettings 声明（读 200 
   writeFileSync(file, `id: ${basename(dir)}\nmodules: []\nrules: []\n`, 'utf8')
   const { ctx, handlers } = makeHarness()
   registerSettingsBridge(ctx, { ns: 'prompt-tool', models: () => ({ available: true, providers: [] }),
-    skills: () => skillsStateStub(), moduleDirectory: () => dir })
+    moduleDirectory: () => dir })
 
   assert.equal(declares(dir, 'layerSettings'), false, '前置：未声明 layerSettings')
   const write = await call(handlers, 'paramOverrides', { overrides: { modelTemperature: 0.3 } })
@@ -1235,7 +917,7 @@ test('能力参数桥：默认不落盘，主子独立保存回退，所有用�
     moduleConfigs: { 'present-as': { mode: 'ptc', privateField: 'do-not-expose' }, 'tool-config-engine': { requireApproval: ['shell', 'http'] } } }), 'utf8')
   const { ctx, handlers } = makeHarness()
   registerSettingsBridge(ctx, { ns: 'prompt-tool', models: () => ({ available: true, providers: [] }),
-    skills: () => skillsStateStub(), moduleDirectory: () => dir })
+    moduleDirectory: () => dir })
   const request = async overrides => {
     const result = await call(handlers, 'paramOverrides', overrides === undefined ? {} : { overrides, expectedModuleId: id, rebuild: false })
     assert.equal(result.status, 200, JSON.stringify(result.payload))
@@ -1293,7 +975,7 @@ test('param-overrides：空主语＝全局层——写 config.yml 的 layerSetti
   const configFile = join(storageRootOf(bridgeHome), 'config.yml')
   const { ctx, handlers } = makeHarness()
   registerSettingsBridge(ctx, { ns: 'prompt-tool', models: () => ({ available: true, providers: [] }),
-    skills: () => skillsStateStub(), moduleDirectory: (moduleId) => moduleId === undefined ? '' : moduleDir })
+    moduleDirectory: (moduleId) => moduleId === undefined ? '' : moduleDir })
   const call = async (endpoint, body = {}, target) => {
     const handler = handlers.get(PREFIX + BRIDGE_ENDPOINTS[endpoint])
     assert.ok(handler, `${endpoint} 端点应注册`)
@@ -1330,7 +1012,7 @@ test('bootstrap：config.yml 层名笔误只降级成诊断，不打掉首屏（
   try {
     const { ctx, handlers } = makeHarness()
     registerSettingsBridge(ctx, { ns: 'prompt-tool', models: () => ({ available: true, providers: [] }),
-      skills: () => skillsStateStub(), moduleDirectory: (moduleId) => moduleId === undefined ? '' : moduleDir })
+      moduleDirectory: (moduleId) => moduleId === undefined ? '' : moduleDir })
     const res = fakeRes()
     await handlers.get(PREFIX + BRIDGE_ENDPOINTS.bootstrap)(fakeReq({
       async *[Symbol.asyncIterator]() { yield Buffer.from(JSON.stringify({})) },

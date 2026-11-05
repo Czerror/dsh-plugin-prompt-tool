@@ -76,7 +76,7 @@ export function isolatedHome(prefix) {
   // `modules/` 子目录）。这里刻意不 import 它：本夹具被静态 import，内联拼接让「这次装到哪个 HOME」
   // 一眼可见。paths.ts 自 2026-10-16 起按调用求值，不再有 import 期冻结——设置 env 与调用之间的
   // 顺序因此不再是约束，夹具仍然先设、只为语义直白。
-  return { home, moduleRoot: join(home, '.prompt-tool', 'modules'), skillsRoot: join(home, 'skills') }
+  return { home, moduleRoot: join(home, '.prompt-tool', 'modules') }
 }
 
 /**

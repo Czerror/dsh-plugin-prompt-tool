@@ -28,8 +28,7 @@ import {
 import type { PromptSettings, RuntimeOptions } from './config.ts'
 import { modulesDir } from './host/paths.ts'
 import { enabledModuleIds, resolveRequestedModuleDir } from './host/config-store.ts'
-import { ensureSkillSeed } from './host/skills-actions.ts'
-import { createSkillsRuntime } from './host/skills-runtime.ts'
+import { ensureSkillSeed } from './host/skill-seed.ts'
 import { createAgentAssembly } from './runtime/agent-assembly.ts'
 import type { AgentAssemblyRuntime } from './runtime/agent-assembly.ts'
 import { emptyRuleDiagnostics } from './runtime/rule-diagnostics.ts'
@@ -47,7 +46,7 @@ export const name = 'prompt-tool'
 // @deepseek-ai/dsh-base（没有 @deepseek-ai/dsh-web-app），硬注入会让插件
 // pending 并导致启动失败。Web 表面动态等待 webServer，缺失时仅诊断；
 // profile 装配交给官方插件管理流程。
-export const inject = ['skills', 'commands', 'llm']
+export const inject = ['commands', 'llm']
 
 function warn(ctx: Context, message: string): void {
   try {
@@ -87,38 +86,21 @@ export function apply(ctx: Context, configIn: Config): void {
     await assembly?.refresh(id)
   }
 
-  // 宿主模块拥有技能状态、官方引用 provider 与资产操作的生命周期。
-  const skillsRuntime = createSkillsRuntime(ctx)
-
   // 在线编辑不再经 ctx.llm 暴露 settings namespace：改为自建 loopback bridge，
   // 这样模型设置页不会出现「提示词工具」目录条目。
   const settingsBridge = registerSettingsBridge(ctx, {
     ns: settingsNs,
     models: getModelsState,
-    skills: () => ({
-      skillsRoot: skillsRuntime.skillsRoot,
-      get folders() { return skillsRuntime.folders },
-      listSkills: skillsRuntime.listSkills,
-      snapshot: skillsRuntime.snapshot,
-      deleteSkill: skillsRuntime.deleteSkill,
-      setSkillPolicy: skillsRuntime.setPolicy,
-      readSkillContent: skillsRuntime.readContent,
-      writeSkillContent: skillsRuntime.writeContent,
-      patchSkillFolders: skillsRuntime.setFolders,
-    }),
-    afterSkillsChange: skillsRuntime.invalidate,
     // 显式目标不存在就拒绝，不能落到另一个模块；编辑选择不进入部署设置。
     moduleDirectory: (subject) => resolveRequestedModuleDir(modulesDir(), subject),
     overridesChanged: (id) => id === undefined ? assembly?.refresh() : refreshModuleRuntime(id),
     // host 已安装完整候选；不能二次物化覆盖导入资产。
     moduleInstalled: async (id) => {
-      skillsRuntime.invalidate()
       await assembly?.refresh(id)
     },
     capabilityChanged: (id) => id === undefined ? assembly?.refresh() : refreshModuleRuntime(id),
     moduleListChanged: () => assembly?.refresh(),
     schedulePublication: (id, reason) => {
-      if (reason === 'installed') skillsRuntime.invalidate()
       assembly?.schedule(reason === 'list' ? undefined : id)
     },
     publicationFailures: () => assembly?.publicationFailures() ?? [],
@@ -146,7 +128,7 @@ export function apply(ctx: Context, configIn: Config): void {
 registerTuiCommand(
   ctx,
   settingsNs,
-  () => ({ ...currentSource(), skillCatalog: skillsRuntime.listSkills(), activeSkillsDirs: [skillsRuntime.skillsRoot], enabledModules: enabledModuleIds(modulesDir()).filter((id) => moduleDirExists(modulesDir(), id)) }),
+  () => ({ ...currentSource(), enabledModules: enabledModuleIds(modulesDir()).filter((id) => moduleDirExists(modulesDir(), id)) }),
   getModelsState,
   () => listAdvertisedModels(ctx),
   // TUI 的主语由命令里的 `module <id>` 显式声明：这里只把声明的 id 解析成目录，未声明解析为空。
@@ -156,15 +138,6 @@ registerTuiCommand(
   async (moduleId, key, value) => {
     saveModuleParams(modulesDir(), moduleId, { [key]: value }, undefined)
     await refreshModuleRuntime(moduleId)
-  },
-  // 技能启停：改写技能文件的调用策略键（正文不动），失败原因回给命令层。
-  (name, enabled) => {
-    const matches = skillsRuntime.listSkills().filter((skill) => skill.name === name)
-    if (matches.length !== 1) return { ok: false, message: `技能 ${name} 不存在或有多个同名条目，请在技能管理页选择具体文件` }
-    const entry = matches[0]
-    if (entry?.path === undefined) return { ok: false, message: `未找到技能或其文件路径：${name}` }
-    const result = skillsRuntime.setPolicy(name, entry.path, { scope: enabled ? 'none' : 'all' })
-    return result.ok ? { ok: true } : { ok: false, message: result.message }
   },
   (id) => refreshModuleRuntime(id),
 )

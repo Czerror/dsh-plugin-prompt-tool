@@ -1,7 +1,6 @@
 /** 提示词工具客户端状态模型与稳定默认值（无网络、无 React）。 */
 import { ENGINE_PARAM_DEFINITIONS, ENGINE_PARAM_KEYS, type EngineParamKey, type EngineParams } from '../../shared/engine-params.ts'
 import { INJECTION_POINT_ORDER } from '../../shared/engine-capabilities.ts'
-import type { SkillCatalogEntry } from '../../shared/skills.ts'
 import type { EngineMeta, PromptConfigDraft } from '../prompt-tool-types.ts'
 
 /** 宿主默认模型回显（agent-default-model settings：provider/model/reasoningEffort；插件参数未设置 = 继承宿主）。 */
@@ -10,9 +9,6 @@ export interface HostDefaultModel {
   model?: string
   reasoningEffort?: string
 }
-
-/** 技能目录条目：与服务端共用同一契约（来源、优先级、两端调用策略、同名遮蔽）。 */
-export type { SkillCatalogEntry } from '../../shared/skills.ts'
 
 /** 全部引擎参数都可从公共参数入口读写；模型参数归 `main-model` / `subagent-model` 卡。 */
 export type SharedParamKey = EngineParamKey
@@ -28,14 +24,6 @@ export interface Fields extends EngineParamDrafts {
   promptPath: string
   agentsText: string
   agentsPath: string
-  /** 技能清单：官方六类技能根扫描结果（两端调用策略直接来自各技能文件的 frontmatter）。 */
-  skillCatalog: SkillCatalogEntry[]
-  /** 当前会话的注册表观测是否完整；false 不能解释成技能不存在。 */
-  skillsComplete: boolean
-  /** 用户添加的技能文件夹（只引用，不复制）。 */
-  skillFolders: string[]
-  /** 用户技能根（创建、复制导入与回收站的落点）。 */
-  skillsRoot: string
   modulesEnabled: boolean
   /** 指令文件卡投影输出；唯一输入是 /bootstrap 会话段，不是编辑源。 */
   instructionCards: PromptConfigDraft[]
@@ -79,10 +67,6 @@ export const EMPTY_FIELDS: Fields = {
   promptPath: '',
   agentsText: '',
   agentsPath: '',
-  skillCatalog: [],
-  skillsComplete: false,
-  skillFolders: [],
-  skillsRoot: '',
   modulesEnabled: true,
   instructionCards: [],
 }

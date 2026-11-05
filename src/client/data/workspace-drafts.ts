@@ -1,17 +1,7 @@
 /** 工作台实例期的业务草稿。每类数据有明确 owner，切页只卸载视图，不丢原始输入。 */
 import { rulesDirty, type RulesDraft } from './rule-drafts.ts'
-import type { SkillContentSnapshot } from '../../shared/skills.ts'
 import { variablesDirty, type VariablesDraft } from './module-variables.ts'
 
-export interface SkillEditorDraft {
-  saved?: SkillContentSnapshot
-  text: string
-  description: string
-  error: string
-  loading: boolean
-  saving: boolean
-  refresh?: () => void
-}
 export interface FieldDraft {
   source: string
   text: string
@@ -38,7 +28,6 @@ export interface ToolsEditorDraft {
 
 export interface WorkspaceDrafts {
   rules: Map<string, RulesDraft>
-  skills: Map<string, SkillEditorDraft>
   tools: Map<string, ToolsEditorDraft>
   variables: Map<string, VariablesDraft>
   expanded: Map<string, boolean>
@@ -46,7 +35,7 @@ export interface WorkspaceDrafts {
 }
 
 export function createWorkspaceDrafts(): WorkspaceDrafts {
-  return { rules: new Map(), skills: new Map(), tools: new Map(),
+  return { rules: new Map(), tools: new Map(),
     variables: new Map(), fields: new Map(), expanded: new Map() }
 }
 

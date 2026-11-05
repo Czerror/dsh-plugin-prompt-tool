@@ -31,7 +31,6 @@ function register() {
   registerSettingsBridge(ctx, {
     ns: 'prompt-tool',
     models: () => ({ available: true, providers: [] }),
-    skills: () => ({ activeSkillsDirs: [], skillCatalog: [] }),
   })
   return handlers
 }

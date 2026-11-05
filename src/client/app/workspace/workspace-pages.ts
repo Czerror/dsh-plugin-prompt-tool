@@ -1,9 +1,9 @@
 import type { PromptToolLocaleKey } from '../../locales.ts'
 
-export type WorkspacePage = 'features' | 'subagent' | 'tools' | 'skills' | 'modules'
+export type WorkspacePage = 'features' | 'subagent' | 'tools' | 'modules'
 
 /**
- * 五页定义：只存字典键，文案在渲染时经翻译函数求值（语言切换跟随刷新）。
+ * 四页定义：只存字典键，文案在渲染时经翻译函数求值（语言切换跟随刷新）。
  * 页面 id 是稳定契约（tab/panel 的 DOM id 依赖它），不参与翻译。
  */
 export const WORKSPACE_PAGES: ReadonlyArray<{
@@ -21,10 +21,6 @@ export const WORKSPACE_PAGES: ReadonlyArray<{
   {
     id: 'tools',
     labelKey: 'page.tools.label',
-  },
-  {
-    id: 'skills',
-    labelKey: 'page.skills.label',
   },
   {
     id: 'modules',

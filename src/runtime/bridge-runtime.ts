@@ -10,8 +10,6 @@
  * **先挂作用域、再注册端点**——handler 只可能在挂上之后被调用。
  */
 import type { Context } from '@deepseek-ai/cordis'
-import { scopeOf } from '@deepseek-ai/dsh-scope'
-import type { SkillRegistry, SkillViewOptions } from '@deepseek-ai/dsh-skill'
 import type { IncomingMessage } from 'node:http'
 import { createHash } from 'node:crypto'
 import { basename, join } from 'node:path'
@@ -19,11 +17,6 @@ import { pathToFileURL } from 'node:url'
 import type { SettingsDescriptor } from '@deepseek-ai/dsh-settings'
 import { PARAM_KEYS, readModulesEnabled } from '../config.ts'
 import { peekModelCatalog, type ModelDetection } from './models.ts'
-import type { SkillCatalogEntry, SkillPolicyChange, SkillsCatalogSnapshot } from '../shared/skills.ts'
-import type { SkillsStateRead } from '../host/skills-config.ts'
-import type { SkillPolicyWrite } from '../host/skills-policy.ts'
-import type { SkillContentResult } from '../host/skills-content.ts'
-import type { SkillActionResult } from '../host/skills-actions.ts'
 import { enabledModuleIds, readGlobalLayerSettingsSafe } from '../host/config-store.ts'
 import { ModuleConfigOrderError } from '../host/module-config-order.ts'
 import { isEditableModuleDir, packageEngineDir, resolveModuleDir, userModulesDir } from '../host/module-dirs.ts'
@@ -43,7 +36,6 @@ import type { AssetFile, AssetImportRequest, ImportKind } from '../shared/asset-
 import { moduleParamFallbacks } from '../shared/engine-params.ts'
 import { ENGINE_EDITOR_GROUP_MAP, type ModuleFacts } from '../shared/engine-capabilities.ts'
 import { isModuleId } from '../shared/module-ids.ts'
-import { withGlobalSkillFallback, withSkillWinners } from '../host/skills-scan.ts'
 import {
   agentsFileCardSpecs,
   detectAgentsFiles,
@@ -72,29 +64,12 @@ import {
   type EngineMetaLayerContract,
 } from '../shared/bridge-contract.ts'
 
-export interface SkillsBridgeState {
-  /** 用户技能根（技能实体的落点）。 */
-  skillsRoot: string
-  /** 用户添加的技能文件夹（只引用，不复制）。 */
-  folders: string[]
-  /** 技能清单：按会话工作区扫描官方六类技能根，调用策略取自各技能文件的 frontmatter。 */
-  listSkills: (cwd?: string) => SkillCatalogEntry[]
-  snapshot?: (options: SkillViewOptions) => Promise<SkillsCatalogSnapshot>
-  /** 单端写入只提交本端意图；路径必须命中当前来源白名单。 */
-  setSkillPolicy: (name: string, path: string, change: SkillPolicyChange, cwd?: string) => SkillPolicyWrite
-  readSkillContent: (name: string, path: string, cwd?: string) => SkillContentResult
-  writeSkillContent: (name: string, path: string, content: string, description: string, expectedRevision: string, cwd?: string) => SkillContentResult
-  deleteSkill: (name: string, path: string, cwd?: string) => SkillActionResult
-  /** 添加 / 移除引用的技能文件夹。 */
-  patchSkillFolders: (folders: string[]) => SkillsStateRead | Promise<SkillsStateRead>
-}
-
 /** 自建 loopback settings bridge：替代 registerConfigurableProviders，避免模型设置区出现插件条目。 */
 /**
  * 桥的宿主依赖面：`registerSettingsBridge` 需要宿主提供的全部能力都在这里，
  * 不再靠位置对齐（此前 11 个位置参数里 8 个可选，测试必须数逗号跳过前项）。
  *
- * 除 `ns`／`models`／`skills` 外其余都是可选的晚到能力：缺哪个就少哪一类端点的效果，
+ * 除 `ns`／`models` 外其余都是可选的晚到能力：缺哪个就少哪一类端点的效果，
  * 不影响其余端点注册。
  */
 export interface BridgeDeps {
@@ -102,8 +77,6 @@ export interface BridgeDeps {
   ns: string
   /** 当前模型探测结果（/meta 与 /bootstrap 的模型能力事实）。 */
   models: () => ModelDetection
-  /** 技能运行态：技能根、引用目录、清单与策略写入。 */
-  skills: () => SkillsBridgeState
   /**
    * 请求声明的编辑目标（`x-module-id` 头解析而来）：`ok` 定位那个模块，未声明 = 无目标
    * （由 handler 按策略拒绝），不再由 host 回退启用表首项。编辑器因此不必依赖某个全局单选
@@ -122,8 +95,6 @@ export interface BridgeDeps {
   schedulePublication?: (moduleId?: string, reason?: 'installed' | 'capability' | 'list') => void
   /** 当前后台发布失败，不投影到模块页的 moduleWarnings。 */
   publicationFailures?: () => readonly PublicationFailure[]
-  /** 技能策略写入后的目录刷新回调。 */
-  afterSkillsChange?: () => void
   /** 当前装配实例的规则判定账本；无装配时返回空账。 */
   ruleDiagnostics?: () => RuleDiagnosticsSnapshot
   /** 非致命清理/重装告警（如安装成功但暂存目录清理失败）。 */
@@ -414,8 +385,7 @@ export interface BridgeRuntime {
   schedulePublication(moduleId?: string, reason?: 'installed' | 'capability' | 'list'): Promise<PublicationFields>
   writeModuleOrderError(write: BridgeWrite, error: unknown): void
   loadEngineMeta(): Promise<Record<string, unknown> & EngineMetaLayerContract>
-  collectSkills(sessionId?: string): Promise<SkillsCatalogSnapshot>
-  collectDescribeExtras(activeDir: string, sessionId?: string): Promise<BridgeSessionExtras>
+  collectDescribeExtras(activeDir: string): Promise<BridgeSessionExtras>
   readParamOverrides(dir: string): Record<string, unknown>
   readParamEffective(dir: string): Record<string, unknown>
   variableView(dir: string): ModuleVariablesSnapshot
@@ -616,34 +586,12 @@ export function createBridgeRuntime(options: BridgeRuntimeOptions): BridgeRuntim
     return meta
   }
 
-  /** describe 运行时事实（describe 端点与 /bootstrap 共用）：检测状态、技能快照、
-   *  宿主默认模型、模型目录缓存、激活模块参数。不触网（模型目录只读 10min 缓存）。 */
-  const collectSkills = async (sessionId?: string): Promise<SkillsCatalogSnapshot> => {
-    const cwd = sessionId === undefined ? undefined : localAgentCwd(settingsContext(), sessionId)
-    const agents = settingsContext().get?.('agents') as { get?: (id: string) => { ctx?: Context } | undefined } | undefined
-    const agent = sessionId === undefined ? undefined : agents?.get?.(sessionId)
-    const scope = agent?.ctx === undefined ? undefined : scopeOf(agent.ctx)
-    const state = deps.skills()
-    try {
-      if (state.snapshot !== undefined) return await state.snapshot({ cwd, scope })
-      const entries = state.listSkills(cwd)
-      const registry = (settingsContext().get?.('skills') ?? ctx.skills) as Pick<SkillRegistry, 'snapshot'> | undefined
-      if (typeof registry?.snapshot !== 'function') return { skills: entries, complete: false }
-      const view = scope === undefined
-        ? await registry.snapshot({ cwd })
-        : await withGlobalSkillFallback(await registry.snapshot({ cwd, scope }), () => registry.snapshot({ cwd }))
-      return { skills: withSkillWinners(entries, view.skills), complete: view.complete }
-    } catch (error) {
-      ctx.logger?.warn(`prompt-tool: 无法读取技能注册表，暂不标注同名遮蔽：${String(error)}`)
-      return { skills: withSkillWinners(state.listSkills(cwd), []), complete: false }
-    }
-  }
-  const collectDescribeExtras = async (activeDir: string, sessionId?: string): Promise<BridgeSessionExtras> => {
+  /** describe 运行时事实（describe 端点与 /bootstrap 共用）：检测状态、宿主默认模型、
+   *  模型目录缓存、激活模块参数。不触网（模型目录只读 10min 缓存）。 */
+  const collectDescribeExtras = async (activeDir: string): Promise<BridgeSessionExtras> => {
     // 模块段的声明面快照：只对声明面登记的节按声明填（未声明的节不下发，客户端也就不会去读）。
     const declares = activeDir.length > 0 ? declarationsOf(activeDir) : undefined
     const detection = deps.models()
-    const skillsState = deps.skills()
-    const skillsSnapshot = await collectSkills(sessionId)
     // 宿主默认模型（agent-default-model settings：主对话新会话默认）：
     // 插件参数未设置（空 = 继承宿主）时回显给客户端（模型名下拉候选/状态行）。
     let hostDefaultModel: { provider?: string; model?: string; reasoningEffort?: string } | undefined
@@ -708,12 +656,6 @@ export function createBridgeRuntime(options: BridgeRuntimeOptions): BridgeRuntim
       providers: detection.providers,
       modelCatalog,
       modelsError: detection.error,
-      activeSkillsDirs: [skillsState.skillsRoot],
-      skillCatalog: skillsSnapshot.skills,
-      skillsComplete: skillsSnapshot.complete,
-      // 引用目录随 describe 下发。调用策略不再单独发一份：它已经逐条表达在 skillCatalog 的
-      // modelInvocable / userInvocable 里（取自各技能文件的 frontmatter），重复下发只会制造第二个真相。
-      skillFolders: skillsState.folders,
     }
   }
 
@@ -795,7 +737,6 @@ export function createBridgeRuntime(options: BridgeRuntimeOptions): BridgeRuntim
     schedulePublication,
     writeModuleOrderError,
     loadEngineMeta,
-    collectSkills,
     collectDescribeExtras,
     readParamOverrides,
     readParamEffective,

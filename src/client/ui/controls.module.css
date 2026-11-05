@@ -232,40 +232,6 @@
 
 .rowGroup { min-width: 0; }
 
-/* 技能管理卡片：选择框 + 手柄 + 序号 + 主体 + 开关 + 行操作。 */
-.skillCardList { display: flex; min-width: 0; flex-direction: column; gap: 12px; }
-.skillCard {
-  display: flex;
-  position: relative;
-  min-width: 0;
-  align-items: center;
-  gap: 8px;
-  border: 0.5px solid var(--dsw-alias-border-l2);
-  border-radius: 12px;
-  padding: 9px 12px;
-  background: var(--dsw-alias-bg-layer-3);
-  flex-wrap: wrap;
-}
-.skillCard:hover { border-color: var(--dsw-alias-border-l3); }
-.skillCard[data-dragging] { opacity: .4; }
-.skillCard[data-nested] { margin-left: 26px; }
-.skillCard[data-nested]::before {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  left: -13px;
-  width: 0.5px;
-  content: "";
-  background: var(--dsw-alias-border-l2);
-}
-.skillCard[data-drop-before] { box-shadow: 0 -2px 0 0 var(--dsw-alias-state-business-primary); }
-.skillCard[data-drop-after] { box-shadow: 0 2px 0 0 var(--dsw-alias-state-business-primary); }
-.skillCard[data-selected] {
-  border-color: var(--dsw-alias-state-business-primary);
-}
-/* 拖拽进行中禁用卡片过渡：避免整列表重渲染时所有卡片闪动动画。 */
-.skillCardList[data-dragging] .skillCard { transition: none; }
-
 /* 模块卡片：对齐官方主菜单 agent 预设（自定义预设组）的卡片样式。 */
 .moduleGrid {
   display: grid;
@@ -375,14 +341,6 @@
 }
 .dirCardActions { display: flex; flex: 0 0 auto; align-items: center; gap: 6px; flex-wrap: wrap; }
 
-/* Switch：独立切换控件（不包裹卡片主体）。 */
-.skillSwitch {
-  display: inline-flex;
-  flex: 0 0 auto;
-  align-items: center;
-  cursor: pointer;
-}
-
 /* 全选按钮选中态：与统计筛选卡选中态同语言（accent 边框 + ring）。 */
 .listFilterRow .pillButton[data-active] {
   border-color: var(--dsw-alias-state-business-primary);
@@ -405,7 +363,6 @@
   user-select: none;
 }
 
-.skillCard:hover .dragHandle,
 .configCard:hover .dragHandle {
   color: var(--dsw-alias-label-primary);
   background: var(--dsw-alias-interactive-bg-hover);
@@ -817,7 +774,6 @@
   .dragHandle,
   .dialogClose,
   .configEnable,
-  .skillSwitch,
   .menuSelectTrigger { min-width: 44px; min-height: 44px; }
   .iconButton { width: 44px; }
   .dragHandle { width: 44px; height: 44px; }
@@ -827,17 +783,13 @@
 @media (forced-colors: active) {
   .configCard,
   .moduleCard,
-  .skillCard,
   .tagChip,
   .emptyState { border-color: CanvasText; }
   .templatePopover,
   .templateModal { outline: 1px solid CanvasText; }
   .configCard[data-drop-before],
-  .configCard[data-drop-after],
-  .skillCard[data-drop-before],
-  .skillCard[data-drop-after] { outline: 2px solid Highlight; }
-  .moduleCard[data-active],
-  .skillCard[data-selected] { border-color: Highlight; }
+  .configCard[data-drop-after] { outline: 2px solid Highlight; }
+  .moduleCard[data-active] { border-color: Highlight; }
 }
 
 /* 模块页专属样式（模块卡脚、导出对话框与运行总闸）；模块卡体与角色卡共用上面的 .moduleCard*。 */

@@ -30,7 +30,6 @@ function harness(t, refresh = () => {}, resolveDirectory) {
   registerSettingsBridge(ctx, {
     ns: 'prompt-tool',
     models: () => ({}),
-    skills: () => ({}),
     moduleDirectory: () => directoryOf(),
     moduleInstalled: async (id) => { await refresh(id) },
   })

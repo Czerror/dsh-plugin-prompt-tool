@@ -14,14 +14,11 @@ import type { ModuleVariablesView } from './module-variables.ts'
 import type { ParamSnapshot } from './param-overrides.ts'
 import type { PromptToolHostApi } from './host-api.ts'
 import type { WorkspaceDrafts } from './workspace-drafts.ts'
-import type { ConfirmSkillOverwrite } from './skill-import.ts'
 import type { InstructionDraftPool } from './instruction-drafts.ts'
-import type { BridgeResult } from './bridge-client.ts'
 import type { createTemplateRuleWriter } from './template-rule-writer.ts'
 import type { ModelReasoningView } from '../../shared/bridge-contract.ts'
 import type { InstructionPolicyFileOverride, InstructionPolicySnapshot } from '../../shared/instructions.ts'
 import type { ModuleVariableScope } from '../../shared/module-variables.ts'
-import type { SkillCatalogEntry, SkillContentSnapshot, SkillPolicyChange } from '../../shared/skills.ts'
 
 /** 模块事实与字段订阅：几乎每张卡都要。 */
 export interface ModuleFactsPort {
@@ -64,20 +61,6 @@ export interface VariablesPort {
   setModuleVariablesEnabled: (moduleId: string, value: boolean) => void
   saveModuleVariables: (moduleId: string, next?: Record<string, string>, enabled?: boolean) => Promise<boolean>
   retryModuleVariablesPublication: (moduleId: string) => Promise<boolean>
-}
-
-/** 技能资产与调用策略：清单刷新、正文读写、引用目录与宿主目录操作。 */
-export interface SkillsPort {
-  skillsBusy: boolean
-  importSkillsDirectory: (path: string, confirm?: ConfirmSkillOverwrite) => Promise<boolean>
-  refreshSkills: () => Promise<boolean>
-  createSkill: (input: { name: string; description: string; content: string }) => Promise<boolean>
-  readSkill: (skill: SkillCatalogEntry, sessionId: string | undefined) => Promise<BridgeResult<SkillContentSnapshot>>
-  saveSkill: (skill: SkillCatalogEntry, content: string, description: string, expectedRevision: string, sessionId: string | undefined) => Promise<BridgeResult<SkillContentSnapshot>>
-  deleteSkill: (skill: Pick<SkillCatalogEntry, 'name' | 'path'>) => Promise<boolean>
-  setSkillPolicy: (name: string, path: string, change: SkillPolicyChange) => Promise<boolean>
-  patchSkillFolders: (folders: string[]) => Promise<boolean>
-  openSkillsDir: (path?: string) => Promise<void>
 }
 
 /** 指令文件：草稿池读取、显式保存、离开前保存、重读与逐文件策略。 */

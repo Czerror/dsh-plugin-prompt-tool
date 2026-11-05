@@ -6,7 +6,7 @@
  * `bridge-runtime.ts`（descriptor 缓存、上传暂存、两条队列、change 回调都在那里只建一次）。
  */
 import type { Context } from '@deepseek-ai/cordis'
-import { createBridgeRuntime, type BridgeDeps, type SkillsBridgeState } from './bridge-runtime.ts'
+import { createBridgeRuntime, type BridgeDeps } from './bridge-runtime.ts'
 import { registerDefinitions } from './routes/definitions.ts'
 import { registerDiagnostics } from './routes/diagnostics.ts'
 import { registerInstructions } from './routes/instructions.ts'
@@ -14,11 +14,10 @@ import { registerLifecycle } from './routes/lifecycle.ts'
 import { registerMeta } from './routes/meta.ts'
 import { registerParams } from './routes/params.ts'
 import { registerSettingsDomain } from './routes/settings.ts'
-import { registerSkills } from './routes/skills.ts'
 import { registerTemplates } from './routes/templates.ts'
 import { registerTransfer } from './routes/transfer.ts'
 
-export type { BridgeDeps, SkillsBridgeState }
+export type { BridgeDeps }
 /** 指令卡合并的对外入口仍在原处：`src/index.ts` 从这里取。 */
 export { mergeInstructionCards } from './bridge-runtime.ts'
 
@@ -40,7 +39,6 @@ export function registerSettingsBridge(
         runtime.attachSettingsScope(sctx),
         ...registerMeta(runtime),
         ...registerSettingsDomain(runtime),
-        ...registerSkills(runtime),
         ...registerTemplates(runtime),
         ...registerInstructions(runtime),
         ...registerParams(runtime),

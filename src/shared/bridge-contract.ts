@@ -12,7 +12,6 @@ import type { PublicationFailure, PublicationFields } from './publication.ts'
 import type { EngineEditorGroup, InjectionPoint, ModuleFacts } from './engine-capabilities.ts'
 import type { OfficialOrdersView } from './official-orders.ts'
 import { isModuleId } from './module-ids.ts'
-import type { SkillCatalogEntry, SkillContentSnapshot, SkillPolicyChange, SkillsCatalogSnapshot } from './skills.ts'
 import type {
   InstructionFileWriteResult,
   InstructionPolicy,
@@ -35,15 +34,6 @@ export const BRIDGE_ENDPOINTS = {
   models: '/models',
   modelReasoning: '/model-reasoning',
   mutate: '/mutate',
-  skillsList: '/skills-list',
-  skillPolicy: '/skill-policy',
-  skillRead: '/skill-read',
-  skillWrite: '/skill-write',
-  skillsFolders: '/skills-folders',
-  skillsImport: '/skills-import',
-  skillsImportDirectory: '/skills-import-directory',
-  skillCreate: '/skill-create',
-  skillDelete: '/skill-delete',
   templates: '/templates',
   promptConfigs: '/prompt-configs',
   agentsFile: '/agents-file',
@@ -102,15 +92,6 @@ export const BRIDGE_SUBJECT_POLICY = {
   models: 'none',
   modelReasoning: 'none',
   mutate: 'optional',
-  skillsList: 'none',
-  skillPolicy: 'none',
-  skillRead: 'none',
-  skillWrite: 'none',
-  skillsFolders: 'none',
-  skillsImport: 'none',
-  skillsImportDirectory: 'none',
-  skillCreate: 'none',
-  skillDelete: 'none',
   templates: 'none',
   promptConfigs: 'optional',
   agentsFile: 'none',
@@ -204,22 +185,6 @@ export interface BridgeRequestMap {
   models: { refresh?: boolean } | undefined
   modelReasoning: { provider: string; model: string }
   mutate: { ops: unknown[]; expectedRevision?: number }
-  /** 技能清单：按会话工作区扫描官方六类技能根，调用策略取自各技能文件的 frontmatter。 */
-  skillsList: { sessionId?: string } | undefined
-  /** 调用策略开关：改写该技能 SKILL.md frontmatter 的官方两个键（正文不动）；
-   *  path 必须命中服务端当次扫描的同名条目，否则按陈旧界面拒绝。 */
-  skillPolicy: { name: string; path: string; sessionId?: string } & SkillPolicyChange
-  /** 技能描述、Markdown 正文和完整原文摘要；重新扫描同名同路径身份。 */
-  skillRead: { name: string; path: string; sessionId?: string }
-  /** 仅保存描述与正文，保持其余 frontmatter，并用完整原文摘要拒绝并发覆盖。 */
-  skillWrite: { name: string; path: string; sessionId?: string; content: string; description: string; expectedRevision: string }
-  /** 添加 / 移除引用的技能文件夹（只记状态，不复制文件）。 */
-  skillsFolders: { folders: string[]; sessionId?: string }
-  /** overwrite 仅包含用户已确认覆盖的技能目录名；缺省时遇到同名返回冲突且不写盘。 */
-  skillsImport: { files: Array<{ path: string; content: string }>; overwrite?: string[] }
-  skillsImportDirectory: { path: string; overwrite?: string[] }
-  skillCreate: { name: string; description: string; content: string }
-  skillDelete: { name: string; path: string; sessionId?: string }
   templates: undefined
   /** 可选 sessionId：与 /bootstrap 同源解析当前工作区（单读与聚合读取必须一致）。 */
   promptConfigs: { sessionId?: string } | undefined
@@ -474,10 +439,6 @@ export interface BridgeSessionExtras {
   modelCatalog: Record<string, string[]>
   /** 条件：模型探测失败时才有；成功时整键缺席。 */
   modelsError?: string
-  activeSkillsDirs: string[]
-  skillCatalog: SkillCatalogEntry[]
-  skillsComplete: boolean
-  skillFolders: string[]
 }
 
 /**
@@ -507,7 +468,7 @@ export interface BridgeBootstrapExtras {
  *
  * 与 {@link BridgeValueMap} 分开是刻意的——那个描述 `value` **字段本身**的形状（`/bootstrap` 的
  * `value` 只是 settings descriptor），这个描述它旁边的扩展字段。**按端点声明**而不是一份共用：
- * 共用会让每个端点都"看起来"有别人的字段（在 `/meta` 上读 `skillCatalog` 编译通过、运行期
+ * 共用会让每个端点都"看起来"有别人的字段（在 `/meta` 上读 `moduleFacts` 编译通过、运行期
  * `undefined`），而按端点声明把这种误读变成编译错误。
  */
 export interface BridgeExtrasMap {
@@ -533,16 +494,6 @@ export interface BridgeValueMap {
   models: { modelCatalog: Record<string, string[]> }
   modelReasoning: { reasoning: ModelReasoningView }
   mutate: BridgeSettingsView
-  /** 技能清单 + 引用目录 + 技能根（客户端据此渲染来源筛选与调用策略）。 */
-  skillsList: SkillsCatalogSnapshot & { folders: string[]; roots: string[] }
-  skillPolicy: SkillsCatalogSnapshot
-  skillRead: SkillContentSnapshot
-  skillWrite: SkillContentSnapshot
-  skillsFolders: SkillsCatalogSnapshot & { folders: string[] }
-  skillsImport: { path: string; count: number; overwritten: number; warning?: string }
-  skillCreate: { id: string; path: string }
-  skillDelete: { id: string; path: string }
-  skillsImportDirectory: { path: string; count: number; overwritten: number; warning?: string }
   templates: { templates?: unknown[]; toolTemplates?: unknown[] }
   promptConfigs: { promptConfigs: Array<Record<string, unknown> & PromptConfigSourceView>; instructions?: InstructionsSnapshot }
   agentsFile: InstructionFileWriteResult

@@ -4,7 +4,6 @@ import type { PromptToolTranslate } from '../../locales.ts'
 import { usePromptToolStore, type PromptToolSettingsTransport } from '../../data/use-prompt-tool-store.ts'
 import type { PromptToolWorkspaceController } from '../workbench/workspace-controller.ts'
 import { ModulesPage } from '../../features/modules/ModulesPage.tsx'
-import { SkillsPage } from '../../features/skills/SkillsPage.tsx'
 import { ToolsPreviewPage } from '../../features/tools/ToolsPreviewPage.tsx'
 import { AudiencePage } from './pages/AudiencePage.tsx'
 import { WorkspaceFrame } from './WorkspaceFrame.tsx'
@@ -60,9 +59,7 @@ export function PromptWorkspace(props: PromptWorkspaceProps): ReactNode {
       ? <AudiencePage store={store} audience="subagent" t={t} browse={configPageBrowse(browse, scrollKey)} onNavigate={navigate} />
       : page === 'tools'
         ? <ToolsPreviewPage api={props.api} presetId={props.api.sessionPreset.snapshot()} t={t} browse={browse.tools} onNavigate={navigate} onReady={markReady} />
-        : page === 'skills'
-          ? <SkillsPage store={store} api={props.api} t={t} browse={browse.skills} />
-          : <ModulesPage store={store} t={t} onReady={markReady} />
+        : <ModulesPage store={store} t={t} onReady={markReady} />
 
   return (
     <WorkspaceFrame

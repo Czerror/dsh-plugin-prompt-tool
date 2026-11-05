@@ -71,15 +71,6 @@ function makeHarness(cwdBySession, stat = async () => undefined) {
   registerSettingsBridge(ctx, {
     ns: 'prompt-tool',
     models: () => ({ available: true, providers: [] }),
-    // 注册层屏蔽模型的技能状态：技能实体留在官方技能根，插件只提供屏蔽表、引用目录与清单。
-    skills: () => ({
-      skillsRoot: join(home, 'skills'),
-      blocked: [],
-      folders: [],
-      listSkills: () => [],
-      setSkillBlocked: () => ({ ok: true, state: { version: 3, blocked: [], folders: [] }, exists: true }),
-      patchSkillFolders: () => ({ ok: true, state: { version: 3, blocked: [], folders: [] }, exists: true }),
-    }),
   })
   const call = async (endpoint, body, overrides) => {
     const handler = handlers.get(SETTINGS_BRIDGE_PREFIX + endpoint)

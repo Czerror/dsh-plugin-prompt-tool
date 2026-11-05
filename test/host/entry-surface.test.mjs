@@ -19,7 +19,7 @@ test('发布入口只暴露协议四符号与三个构建期符号', () => {
   assert.equal(plugin.name, 'prompt-tool')
   assert.equal(typeof plugin.apply, 'function')
   assert.equal(typeof plugin.Config, 'function')
-  assert.deepEqual([...plugin.inject].sort(), ['commands', 'llm', 'skills'], 'inject 仅等待三个实际必需服务')
+  assert.deepEqual([...plugin.inject].sort(), ['commands', 'llm'], 'inject 仅等待两个实际必需服务')
   for (const symbol of ['loadPromptTemplates', 'writeModule', 'userModulesDir']) {
     assert.equal(typeof plugin[symbol], 'function', '发布入口缺少 ' + symbol)
   }
@@ -28,7 +28,6 @@ test('发布入口只暴露协议四符号与三个构建期符号', () => {
 test('启动依赖：真实必需服务晚到时激活，未使用的服务不阻塞，释放执行一次', async t => {
   const root = new Context()
   t.after(() => root.fiber.dispose())
-  root.provide('skills', {})
   root.provide('commands', {})
   let mounted = 0, disposed = 0
   const fiber = root.plugin({ inject, apply(ctx) {
@@ -39,7 +38,7 @@ test('启动依赖：真实必需服务晚到时激活，未使用的服务不�
   assert.equal(mounted, 0, 'llm 尚未提供时继续等待')
   root.provide('llm', {})
   await new Promise(resolve => setImmediate(resolve))
-  assert.equal(mounted, 1, '三个真实依赖已就绪，不需要 subagents')
+  assert.equal(mounted, 1, '两个真实依赖已就绪，不需要 subagents')
   await fiber.dispose()
   assert.equal(disposed, 1)
 })

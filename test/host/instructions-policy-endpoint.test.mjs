@@ -34,7 +34,7 @@ function handlers() {
     get: () => undefined,
     effect: (fn) => fn(),
   }
-  registerSettingsBridge({ inject: (_deps, cb) => cb(sctx) }, { ns: 'prompt-tool', models: () => ({ available: true }), skills: () => ({}) })
+  registerSettingsBridge({ inject: (_deps, cb) => cb(sctx) }, { ns: 'prompt-tool', models: () => ({ available: true }) })
   return registered
 }
 
