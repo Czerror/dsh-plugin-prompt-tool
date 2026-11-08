@@ -9,6 +9,37 @@
 - 普通 Issue 的 triage 状态记录在文件顶部附近的 `Status:` 行，取值见 `triage-labels.md`；同处用 `Category:` 行记录 `bug` / `enhancement`（category 与 state 各恰好一个）；Wayfinding 子任务则使用下文的 `claimed` 和 `resolved`
 - 评论和讨论追加到文件底部的 `## Comments` 标题下
 
+## 状态行必须是机器可读的
+
+deck 只认拉丁字段名 `Status`（两侧的 `**` 当装饰剥掉，冒号全角半角都行），冒号后是状态词：
+
+- 完成词 `resolved` / `completed` / `closed` / `done`，以及 `wontfix` → 票显示为已关闭；
+- 其余值、或没有状态行 → 票一直显示为打开；
+- 地图子票只有 `claimed` / `resolved` 两档。
+
+**中文写法 `**状态**：已完成` 不被识别**——deck 从没打开过的票就是这么卡在 open 的。
+
+## 票文件模板
+
+实施票（`.scratch/<feature>/issues/<NN>-<slug>.md`）：
+
+    # NN · 标题
+
+    Status: ready-for-agent
+
+    ## 验收
+    ...
+
+完成时把状态行改成 `Status: resolved`。
+
+容器（`spec.md` / `map.md`）读可见的 `Status:` 行优先，没有才读隐藏注释：
+
+    <!-- DSH-STATUS: closed -->
+
+取值 `open` / `ready-for-agent` / `closed`。
+
+改状态一律走 `deck_issue_patch`（关闭用 `close: true`），不要手写——工具会按票型选对写法和取值。
+
 ## 当技能要求“发布到 issue tracker”
 
 按上述路径创建新文件，必要时创建目录。完成标准：规范路径下的文件已写入完整请求，Issue 文件还包含当前 `Status:`。
