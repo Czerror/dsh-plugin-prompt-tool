@@ -4,5 +4,7 @@ lib/
 *.zip
 
 .scratch/
+AGENTS.md
+CLAUDE.md
 docs/agents/label-colors.yaml
 docs/agents/workspace.yaml

@@ -8,7 +8,7 @@
     "quality_profile": "showcase",
     "repository": {
       "url": "https://github.com/Czerror/dsh-plugin-prompt-tool.git",
-      "revision": "47da88eedce4c6c2bab70edcf73370f937ee6aab"
+      "revision": "54e2066ee04216ee02b1708a9ce8eec11b903b3d"
     },
     "views": [
       {
@@ -17,6 +17,7 @@
         "focus": [
           "operator",
           "workbench",
+          "instruction-editor",
           "bridge",
           "runtime",
           "store",
@@ -103,10 +104,27 @@
         {
           "path": "src/client/data/use-prompt-tool-store.ts",
           "label": "工作台 facade"
-        },
+        }
+      ]
+    },
+    {
+      "id": "instruction-editor",
+      "type": "frontend",
+      "label": "指令文件编辑 owner",
+      "sublabel": "草稿池 · 策略 · 卡片投影",
+      "pos": [
+        250,
+        240
+      ],
+      "size": [
+        220,
+        86
+      ],
+      "tag": "保存文件 · 保存策略 · 重新读取",
+      "sources": [
         {
           "path": "src/client/data/instruction-editor.ts",
-          "label": "指令文件编辑 owner"
+          "label": "状态与三条写路径"
         }
       ]
     },
@@ -327,6 +345,21 @@
       "labelDy": 64
     },
     {
+      "id": "workbench-instruction-editor",
+      "from": "workbench",
+      "to": "instruction-editor",
+      "label": "委托编辑 · 注入依赖",
+      "labelDy": 24
+    },
+    {
+      "id": "instruction-editor-bridge",
+      "from": "instruction-editor",
+      "to": "bridge",
+      "label": "注入的 request",
+      "fromSide": "right",
+      "toSide": "bottom"
+    },
+    {
       "id": "bridge-runtime",
       "from": "bridge",
       "to": "runtime",
@@ -361,7 +394,7 @@
       "from": "compiler",
       "to": "engine",
       "label": "compileRules",
-      "labelDy": -45
+      "labelDy": -44
     },
     {
       "id": "engine-host",
